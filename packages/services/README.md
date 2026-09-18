@@ -1,6 +1,8 @@
 # @pluxel/services
 
-为 Pluxel Host 显式安装所需服务。导入入口不会安装服务；资源由 Host 准备和关闭。
+为 Pluxel Host 提供独立服务与官方组合。导入入口不会安装服务；资源由 Host 准备和关闭。
+
+官方应用使用三个配套入口：根入口的 `servicesPreset()` 选择运行时服务，`/vite` 的 `vitePreset()` 组合开发附件，`/build` 的 `buildPreset()` 选择发行默认值。自定义宿主可以逐项选择下列服务，开发附件使用 `/http/vite`、`/node/vite` 和 `@pluxel/workbench/dev`。开发控制台及其类型归 `@pluxel/host-dev/console`。
 
 ```ts
 import { createHost } from '@pluxel/host'
@@ -27,5 +29,7 @@ try {
 - `/commands`：owner 绑定的命令注册与调用；初始目录为空，由插件或宿主明确发布命令。
 
 Plugin 基于 `@pluxel/core`，通过 `ctx.require(Vault)` 或 `ctx.require(Commands)` 读取必需能力；可选集成直接检查相应属性。服务目录类型不表示所有 Host 已安装该服务。
+
+`this.ctx.logger` 由 Core 始终提供，插件无需 import 日志包；宿主的 `logging(plan)` 配置输出、过滤和日志存储。
 
 完整用法与生命周期约束见 [组合 Host 服务](https://github.com/PluxelJS/pluxel/blob/main/docs/reference/runtime-services.md)。

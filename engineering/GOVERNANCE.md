@@ -7,6 +7,8 @@
                                      ^   ^
                                      |   +-- @pluxel/host-dynamic
                                      +------ @pluxel/host-dev <- @pluxel/runtime/vite
+                                                   ^
+                                                   +-- @pluxel/services/vite
 @pluxel/commands --------------------------------------------> @pluxel/services
 @pluxel/cli --optional--> @pluxel/rolldown
 ```

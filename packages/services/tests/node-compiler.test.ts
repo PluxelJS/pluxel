@@ -4,7 +4,7 @@ import { dirname } from 'pathe'
 import { defineNodeModule } from '@pluxel/services/node'
 import { createCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { createDiskFixture } from '@pluxel/test/fixtures'
-import { NodeArtifactCompiler } from '../src/node'
+import { NodeArtifactCompiler } from '../src/node-vite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const nodeBuildMocks = vi.hoisted(() => ({
 	buildNodeModule: vi.fn(),

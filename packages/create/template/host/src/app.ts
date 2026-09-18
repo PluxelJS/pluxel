@@ -1,11 +1,5 @@
 import type { HostApplication } from '@pluxel/host'
-import { standardServices } from '@pluxel/services'
-import { logging } from '@pluxel/logging'
-import { vault } from '@pluxel/services/vault'
-import { managementAccess } from '@pluxel/management/access'
-import { management } from '@pluxel/management/service'
-import { workbenchService } from '@pluxel/workbench/service'
-import { workbenchHttp } from '@pluxel/workbench/http'
+import { servicesPreset } from '@pluxel/services'
 
 import { dynamicSource } from '@pluxel/host-dynamic'
 import { resolve } from 'node:path'
@@ -26,54 +20,15 @@ export default {
 			include: ['*.mjs'],
 		}),
 	],
-	configure({ env, deployment }) {
+	async configure(startup) {
+		const { env } = startup
 		const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
 		return {
-			services: [
-				logging({
-					root: { profile: 'pluxel-example' },
-					sinks: {
-						console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
-						store: { kind: 'store', streamId: 'default', caller: true },
-					},
-					routes: {
-						runtime: [
-							{ sink: 'console', minLevel: 'info' },
-							{ sink: 'store', minLevel: 'trace' },
-						],
-						plugins: [
-							{ sink: 'console', minLevel: 'trace' },
-							{ sink: 'store', minLevel: 'trace' },
-						],
-						debug: [
-							{ sink: 'console', minLevel: 'trace' },
-							{ sink: 'store', minLevel: 'trace' },
-						],
-						meta: [{ sink: 'console', minLevel: 'warning' }],
-					},
-				}),
-				...standardServices({
-					persistence: resolve(dataRoot, 'persistence'),
-					nodeModules: deployment
-						? { root: resolve(deployment.root, 'artifacts/node') }
-						: undefined,
-				}),
-				vault(),
-				managementAccess(),
-				management({ application: { product }, workbench: withWorkbench }),
-				...(withWorkbench
-					? [
-							workbenchService({
-								product,
-								artifacts: deployment ? { root: resolve(deployment.root, 'workbench') } : undefined,
-							}),
-							workbenchHttp({
-								uiBasePath: '/__pluxel/workbench',
-								publicDir: deployment ? resolve(deployment.root, 'workbench/public') : undefined,
-							}),
-						]
-					: []),
-			],
+			services: await servicesPreset(startup, {
+				persistence: resolve(dataRoot, 'persistence'),
+				product,
+				workbench: withWorkbench,
+			}),
 			configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
 			state: exampleHostState(),
 		}

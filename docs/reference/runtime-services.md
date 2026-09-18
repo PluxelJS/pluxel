@@ -1,9 +1,89 @@
 ---
 title: 组合 Host 服务
-description: 使用显式安装清单组合 Core 插件宿主，声明服务依赖并管理准备与清理。
+description: 使用官方默认组合运行应用，或按需选择 Host 服务并管理准备与清理。
 ---
 
-需要只安装指定能力、使用自己的存储服务或运行不带数据库的 Plugin 宿主时，使用 `@pluxel/host`。它默认只提供 Core 能力；官方 Persistence、Vault 分别从 `@pluxel/services/persistence` 和 `@pluxel/services/vault` 选择。
+官方应用和 starter 使用 `HostApplication` 配合 `servicesPreset()`：应用声明插件、数据位置和启动策略，官方入口负责开发附件和部署制品路径。需要自定义服务集合时，使用 `@pluxel/host` 逐项组合；它默认只提供 Core 能力。
+
+## 官方默认组合
+
+```ts
+// src/app.ts
+import type { HostApplication } from '@pluxel/host'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { servicesPreset } from '@pluxel/services'
+import { MyPlugin } from './plugin.js'
+
+export default {
+	plugins: [MyPlugin],
+	async configure(startup) {
+		return {
+			services: await servicesPreset(startup, {
+				persistence: startup.env.PLUXEL_DATA_ROOT ?? './data',
+			}),
+			state: { initial: { autoStart: [pluginNodeAddressOf(MyPlugin)] } },
+		}
+	},
+} satisfies HostApplication
+```
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+import { vitePreset } from '@pluxel/services/vite'
+
+export default defineConfig({
+	plugins: [vitePreset({ entry: './src/app.ts', devConsole: true })],
+})
+```
+
+```ts
+// tsdown.config.ts
+import { defineConfig } from 'tsdown'
+import { buildPreset } from '@pluxel/services/build'
+
+export default defineConfig({
+	entry: './src/app.ts',
+	plugins: [buildPreset()],
+})
+```
+
+`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。数据库或不同管理面组合应使用下文的显式服务安装器。
+
+`vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。`servicesPreset()`、`vitePreset()`、`buildPreset()` 属于同一个 `@pluxel/services` 包，运行时、Vite 与构建分别使用独立入口。
+
+开发控制台归 `@pluxel/host-dev`，基础 `host({ entry, devConsole: true })` 即可启用；官方 `vitePreset()` 接受同样的开关。它不要求安装服务。脚本显式 import 服务 API，通过借用的 `dev.ctx` 访问已安装能力；见[开发控制台](../development/dev-console.md)。Core 始终提供 `ctx.logger`，Logging 配置负责输出与存储，不是插件使用 logger 的前提。
+
+生产 Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
+
+`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。环境变量由应用的 `configure(startup)` 显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+
+官方构建默认携带 Workbench shell，并维护动态插件所需的官方共享入口。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。
+
+## 自定义开发组合
+
+服务与开发附件可分别选择。通用 `host()` 只负责应用加载与 HMR；HTTP、Node 制品和 Workbench 使用普通 Vite 插件显式接入：
+
+```ts
+import { defineConfig } from 'vite'
+import { host } from '@pluxel/host-dev/vite'
+import { serviceSingletons } from '@pluxel/services/vite'
+import { httpDevelopment } from '@pluxel/services/http/vite'
+import { nodeArtifacts } from '@pluxel/services/node/vite'
+import { workbenchArtifacts } from '@pluxel/workbench/dev'
+
+export default defineConfig({
+	plugins: [
+		serviceSingletons(),
+		host({ entry: './src/app.ts' }),
+		httpDevelopment(),
+		nodeArtifacts(),
+		workbenchArtifacts(),
+	],
+})
+```
+
+`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-dev/vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
 
 ## 创建宿主
 
@@ -77,6 +157,8 @@ const host = await createHost({
 Runtime 继续接受其现有 `configService`、`runtimeState`、环境种子和模式配置，但只负责将它们转换为同一 Host 存储输入。`PLUXEL_CONFIG` 及编译生成的环境绑定由 Runtime 解析，通用 Host 不隐式读取进程环境。
 
 ## Plugin 读取能力
+
+`this.ctx.logger` 是 Core 始终提供的基础能力，插件无需 import `@pluxel/logging`，也无需 `ctx.require(Logging)`。宿主的 `logging(plan)` 配置输出 sink、过滤策略和日志存储；省略它不移除 logger，但不由 Host 安装这些输出和管理后端。`Logging` token 是宿主侧日志管理能力，与插件直接使用的 logger 不同。
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -179,7 +261,7 @@ backend 工厂返回 Host 独占的 adapter，Host 在 accepted operations 排�
 服务若拥有 fork 的持久元数据，可声明 `removeNodeMetadata(ctx, node)`。Host 先停止 fork，再删除配置与服务元数据，
 最后提交 fork 删除；服务按依赖逆序清理，失败保留已停止的 fork，以便重试。普通 generation 停止不会删除持久元数据。
 
-## 同一份应用声明用于开发和生产
+## 自定义组合的开发和生产接入
 
 `HostApplication` 固定声明 `plugins`、`sources`，在每次启动时调用
 `configure({ root, mode, env, bindings, deployment })` 获取 `services`、`config`、`state`、`configRecords`。
@@ -208,7 +290,7 @@ export default {
 Vault、Database、Logging、Management、Workbench 另行加入服务数组；它不加入任何 Plugin。
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
 生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
-开发不配置该目录，由 `nodeArtifacts()` 附加源码编译器。自行组合服务时同样把该配置传给 `nodeModules()`。
+开发不配置该目录，使用 `vitePreset()` 接入已安装 NodeModules 的源码编译器，或在 `host()` 旁显式添加 `nodeArtifacts()`。自行组合服务时同样把生产制品配置传给 `nodeModules()`。
 直接 `runHostApplication(application, { startup })`（`@pluxel/host/application`）返回普通 `PluginHost`，
 不创建监听器，也不增加 `fetch` 成员。
 
@@ -217,10 +299,17 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 构建不会执行 `configure()`，运行时才读取最新环境。`variant: 'headless'` 不携带 Workbench shell。
 Workbench 应用显式安装 `workbenchService()` 和 `workbenchHttp()`，并选择 `variant: 'workbench'` 携带 shell。
 
-动态来源的未来 Plugin 无法从静态 import 图推导。用 `pluxel({ sourceFrameworks: [...] })`
+当前开发附件编译源码 Plugin 的 Workbench 声明；它尚不加载已安装包的 `dist/workbench` inventory，这份预编译 inventory 由生产构建合并并加载。因此仅提供编译产物的 Workbench Plugin（包括 npm 安装的 `@pluxel/vault-admin`）在开发时可能因缺少已提交的 view artifact 而启动失败；Workbench shell 可访问不代表这些 Plugin 已就绪。
+
+### 动态插件的共享入口
+
+`sourceFrameworks` 是未来动态 Plugin 可以借用的框架模块入口清单，不是前端框架选择或权限白名单。动态来源的未来 Plugin 无法从静态 import 图推导。使用底层 `@pluxel/rolldown` 时，用 `pluxel({ sourceFrameworks: [...] })`
 列出它们允许借用的选装框架作者入口，例如 `@pluxel/services/http`、`@pluxel/workbench` 和 `elysia/ws`。
 Core 基础作者入口固定提供；清单中的其他入口必须能从应用解析，并随部署一起打包，动态 Plugin 借用同一模块身份。
+构建时，Core、Host 与清单所选包的根入口和子路径统一从应用解析，避免依赖树中的多份物理安装生成不同的 capability token；这不额外收集未导入的子路径。
 该清单不安装服务，也不扫描工作区发现服务；固定 Plugin 的依赖沿实际 import 图打包。
+
+官方 `@pluxel/services/build` 已包含默认服务的共享入口，Workbench variant 还包含 Workbench 作者入口；无需手写这份配套清单。需要自定义服务的动态插件时，`sourceFrameworks` 在官方清单上追加入口，例如 `buildPreset({ sourceFrameworks: ['@acme/service'] })`。应用仍须独立安装对应服务。
 
 开发更新结果可从 `host.status()` 的 `recentUpdate` 和 Management 更新订阅读取，无需额外配置 reader。
 候选加载失败时保留上一版本；整应用替换失败后会尝试从上一次成功声明建立新 Host，并报告补偿结果。

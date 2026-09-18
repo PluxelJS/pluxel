@@ -309,8 +309,10 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/host`：无 Runtime 服务依赖的 catalog、运行意图、图更新控制；
 - `@pluxel/host-dynamic`：显式动态来源的发现、加载、撤回与 producer 文件契约；
 - `valibot-form`：Config schema 的 portable presentation 与 raw-input transport projector；
-- `@pluxel/host-dev`：共享 ModuleRunner、模块失效、源码分类与开发驱动；
-- `@pluxel/runtime/vite`：官方开发组合，包含 Runtime singleton、carrier、开发控制台及 Workbench/Node artifact 接入；
+- `@pluxel/host-dev`：共享 ModuleRunner、模块失效、源码分类、开发附件协议与控制台执行机制，不依赖官方服务；
+- `@pluxel/services`：独立服务与官方组合；`servicesPreset()`、`/vite` 的 `vitePreset()`、`/build` 的 `buildPreset()` 分别拥有运行时、开发与发行默认策略；
+- `@pluxel/services/http/vite`、`@pluxel/services/node/vite`：可单独组合的 HTTP 与 Node 制品开发附件；
+- `@pluxel/runtime/vite`：既有 Runtime 产品的开发适配，复用服务所有的开发附件；
 - `@pluxel/rolldown/vite/workbench-ui`：MF2 producer build primitive。
 - `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound Direct View target 和 Workbench 页面。
 

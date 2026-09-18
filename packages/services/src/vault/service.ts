@@ -1416,19 +1416,21 @@ export class VaultService {
 				}
 			}
 
+			const reason = unlocked ? undefined : probe.reason
+			const lastError = probe.lastError ?? current.lastError
 			return {
 				present: current.present,
 				unlocked: unlocked !== null,
-				reason: unlocked ? undefined : probe.reason,
+				...(reason === undefined ? {} : { reason }),
 				unlockedBy: unlocked?.unlockSource ?? null,
-				lastError: probe.lastError ?? current.lastError,
+				...(lastError === undefined ? {} : { lastError }),
 				deploy: {
 					env: runtime.deployIdentityEnv,
 					identityPresent: await hasDeployIdentity(runtime),
 					recipients: deployRecipients,
 				},
 				hostIdentityPresent: await hasHostIdentity(store),
-				namespaces,
+				...(namespaces === undefined ? {} : { namespaces }),
 			}
 		}
 

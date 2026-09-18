@@ -1,2 +1,2 @@
-/** In-process development script contracts; import installs no services. */
+/** In-process script contracts; importing this entry installs nothing. */
 export * from './dev/contracts'

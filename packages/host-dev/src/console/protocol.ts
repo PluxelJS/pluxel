@@ -51,7 +51,6 @@ type RunMetadata = Readonly<{
 	startedAt?: string
 	hostEpoch?: string
 	revisions?: Readonly<{ before?: JsonValue; after?: JsonValue }>
-	logs?: Readonly<{ before?: JsonValue; after?: JsonValue }>
 }>
 export type DevConsoleRunSnapshot = RunMetadata &
 	(

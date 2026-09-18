@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
-import { host } from '../dist/vite.mjs'
-import { nodeArtifacts } from '../dist/node.mjs'
+import { vitePreset } from '../dist/vite.mjs'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const root = await mkdtemp(join(tmpdir(), 'pluxel-host-node-'))
@@ -63,10 +62,7 @@ try {
 		configFile: false,
 		logLevel: 'silent',
 		server: { port: 0, host: '127.0.0.1' },
-		plugins: [
-			host({ entry: 'app.mjs' }),
-			nodeArtifacts({ cacheDir: join(root, '.pluxel/artifacts') }),
-		],
+		plugins: [vitePreset({ entry: 'app.mjs' })],
 	})
 	await server.listen()
 	await until(() => events.includes(1))

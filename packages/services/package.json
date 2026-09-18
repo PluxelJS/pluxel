@@ -29,6 +29,10 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./build": {
+			"@pluxel/source": "./src/build.ts",
+			"default": "./dist/build.mjs"
+		},
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
@@ -64,6 +68,10 @@
 		"./http/node": {
 			"@pluxel/source": "./src/http/node.ts",
 			"default": "./dist/http/node.mjs"
+		},
+		"./http/vite": {
+			"@pluxel/source": "./src/http-vite.ts",
+			"default": "./dist/http/vite.mjs"
 		},
 		"./internal/database": {
 			"@pluxel/source": "./src/database/internal.ts",
@@ -113,6 +121,10 @@
 			"@pluxel/source": "./src/vault/types.ts",
 			"default": "./dist/internal/vault-types.mjs"
 		},
+		"./internal/vite-node-carrier": {
+			"@pluxel/source": "./src/development/vite-node-carrier.ts",
+			"default": "./dist/internal/vite-node-carrier.mjs"
+		},
 		"./internal/workspace-fs": {
 			"@pluxel/source": "./src/internal/workspace-fs.ts",
 			"default": "./dist/internal/workspace-fs.mjs"
@@ -121,6 +133,10 @@
 			"@pluxel/source": "./src/node.ts",
 			"default": "./dist/node.mjs"
 		},
+		"./node/vite": {
+			"@pluxel/source": "./src/node-vite.ts",
+			"default": "./dist/node/vite.mjs"
+		},
 		"./persistence": {
 			"@pluxel/source": "./src/persistence.ts",
 			"default": "./dist/persistence.mjs"
@@ -128,6 +144,10 @@
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
 			"default": "./dist/vault.mjs"
+		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
 		},
 		"./workers": {
 			"@pluxel/source": "./src/workers.ts",
@@ -142,6 +162,7 @@
 		},
 		"exports": {
 			".": "./dist/index.mjs",
+			"./build": "./dist/build.mjs",
 			"./commands": "./dist/commands.mjs",
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",
@@ -151,6 +172,7 @@
 			"./http/assets": "./dist/http/assets.mjs",
 			"./http/listener": "./dist/http/listener.mjs",
 			"./http/node": "./dist/http/node.mjs",
+			"./http/vite": "./dist/http/vite.mjs",
 			"./internal/database": "./dist/internal/database.mjs",
 			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
 			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
@@ -163,10 +185,13 @@
 			"./internal/security": "./dist/internal/security.mjs",
 			"./internal/vault": "./dist/internal/vault.mjs",
 			"./internal/vault-types": "./dist/internal/vault-types.mjs",
+			"./internal/vite-node-carrier": "./dist/internal/vite-node-carrier.mjs",
 			"./internal/workspace-fs": "./dist/internal/workspace-fs.mjs",
 			"./node": "./dist/node.mjs",
+			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
 			"./vault": "./dist/vault.mjs",
+			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
 			"./package.json": "./package.json"
 		},
@@ -176,13 +201,14 @@
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
 		"test": "pnpm exec vitest run",
-		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts"
+		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs"
 	},
 	"dependencies": {
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
 		"age-encryption": "catalog:prod",
+		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
 		"drizzle-orm": "catalog:backend",
 		"pathe": "catalog:node",
@@ -191,15 +217,27 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/logging": "workspace:*",
+		"@pluxel/management": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"@types/pg": "catalog:types",
 		"elysia": "catalog:prod",
-		"pg": "catalog:backend"
+		"pg": "catalog:backend",
+		"vite": "catalog:build"
 	},
 	"peerDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/logging": "workspace:^",
+		"@pluxel/management": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
 		"elysia": "catalog:prod",
-		"pg": "catalog:backend"
+		"pg": "catalog:backend",
+		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"@electric-sql/pglite": {
@@ -209,6 +247,24 @@
 			"optional": true
 		},
 		"elysia": {
+			"optional": true
+		},
+		"@pluxel/logging": {
+			"optional": true
+		},
+		"@pluxel/management": {
+			"optional": true
+		},
+		"@pluxel/workbench": {
+			"optional": true
+		},
+		"@pluxel/rolldown": {
+			"optional": true
+		},
+		"@pluxel/host-dev": {
+			"optional": true
+		},
+		"vite": {
 			"optional": true
 		}
 	},

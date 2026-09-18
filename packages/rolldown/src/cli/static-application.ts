@@ -24,6 +24,7 @@ import {
 import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 import { readPublicElysiaSpecifiers, staticElysiaSingletonPlugin } from './elysia-singleton'
+import { staticFrameworkSingletonPlugin } from './framework-singletons'
 import {
 	renderStaticApplicationEnvironmentExample,
 	writeStaticConfigEnvironmentExample,
@@ -176,6 +177,13 @@ export function createStaticApplicationConfig(
 					)
 				},
 			}),
+			staticFrameworkSingletonPlugin(entry, [
+				'@pluxel/core',
+				'@pluxel/host',
+				...(options.sourceFrameworks ?? []).filter(
+					(id) => launcher === 'host' || (id !== 'elysia' && !id.startsWith('elysia/')),
+				),
+			]),
 			...(launcher === 'host' ? [] : [staticElysiaSingletonPlugin(cwd)]),
 			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({

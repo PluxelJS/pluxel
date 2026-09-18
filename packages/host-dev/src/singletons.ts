@@ -6,8 +6,11 @@ import { registerViteSsrExternalModuleUrls } from './runner'
 
 const directory = dirname(fileURLToPath(import.meta.url))
 
-/** Resolve the kernel and host through this installed driver, including transitive consumers. */
-export function hostSingletons(): Plugin {
+/**
+ * Pin Core/Host to this driver and explicitly selected packages to the application installation.
+ * Package names include their exported subpaths. Omitted packages selects only Core/Host.
+ */
+export function hostSingletons(options: Readonly<{ packages?: readonly string[] }> = {}): Plugin {
 	const urls = new Map<string, string>()
 	let unregister: (() => void) | undefined
 	let root = directory
@@ -18,21 +21,18 @@ export function hostSingletons(): Plugin {
 			root = server.config.root
 			unregister = registerViteSsrExternalModuleUrls(server, urls)
 		},
-		resolveId(source, _importer, options) {
-			if (!options?.ssr) return null
-			const service = [
-				'@pluxel/services',
-				'@pluxel/workbench',
-				'@pluxel/management',
-				'@pluxel/logging',
-			].some((name) => source === name || source.startsWith(`${name}/`))
+		resolveId(source, _importer, resolveOptions) {
+			if (!resolveOptions?.ssr) return null
+			const selected = (options.packages ?? []).some(
+				(name) => source === name || source.startsWith(`${name}/`),
+			)
 			if (
-				service ||
+				selected ||
 				['@pluxel/core', '@pluxel/host'].some(
 					(name) => source === name || source.startsWith(`${name}/`),
 				)
 			) {
-				const result = resolveWithOxc(service ? root : directory, source, {
+				const result = resolveWithOxc(selected ? root : directory, source, {
 					conditionNames: ['node', 'import', 'default'],
 				})
 				if (!result) throw new Error(`Cannot resolve host singleton: ${source}`)

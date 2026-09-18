@@ -280,8 +280,7 @@ expect(host.require(ConsumerPlugin).connector.ctx.pluginInfo.nodeAddress).toEqua
 requirement 按 definition identity 识别；依赖修改经过 graph，重启受影响 consumer 及其 dependent closure，操作后重新 `require()` 取得实例。
 
 Runtime 的 `change.forks.ensure(East)` 可以先建立 fork，再显式 `change.start(East)`；`change.forks.remove(East)` 移除 fork。
-fixture/catalog/replacement 与 strict assertion 是测试专属。操作在线应用时，对应使用 `dev.dependencies`、`dev.forks` 与 `dev.plugins`；
-console 还提供当前依赖 inspection、配置字段描述和真实日志，具体差异见[基础能力对齐表](./dev-console.md#与-test-host-的基础能力对齐)。
+fixture/catalog/replacement 与 strict assertion 是测试专属。操作在线应用时使用[开发控制台](./dev-console.md)：`dev.plugins` 和 `dev.config` 操作当前 Host，其他能力由脚本显式导入其服务 API。控制台不继承测试 host 的事务或 fixture 接口。
 
 ## Fork 与 replacement
 

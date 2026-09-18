@@ -1,13 +1,13 @@
 import { resolveContextCapability } from '@pluxel/core/host'
-import { HttpServer, type HttpServerApi } from '@pluxel/services/http'
-import type { NodeElysiaApplicationCarrier } from '@pluxel/services/http/node'
+import { HttpServer, type HttpServerApi } from '../http'
+import type { NodeElysiaApplicationCarrier } from '../http/node'
 import type { Plugin } from 'vite'
-import type { HostDevelopmentPluginApi } from './attachments'
+import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
 import {
 	attachSrvxViteNodeCarrier,
 	createViteNodeElysiaApplicationCarrier,
 	type SrvxViteNodeCarrierAttachment,
-} from './internal/vite-node-carrier'
+} from './vite-node-carrier'
 
 /** Borrow Vite's listener for the explicitly installed HTTP service. */
 export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
@@ -19,7 +19,7 @@ export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
 		api: {
 			pluxelHost: {
 				async attach({ host, server }) {
-					if (active) throw new Error('[host-dev] HTTP attachment is already active')
+					if (active) throw new Error('[services/http/vite] HTTP attachment is already active')
 					const http = resolveContextCapability(host.ctx, HttpServer)
 					const carrier = createViteNodeElysiaApplicationCarrier(server, {
 						fetch: http.fetch,
@@ -31,8 +31,22 @@ export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
 					try {
 						transport ??= attachSrvxViteNodeCarrier(server, {
 							transformViteHtml: true,
-							fetch: (request) =>
-								active?.http.fetch(request) ?? new Response('Service Unavailable', { status: 503 }),
+							fetch(request) {
+								if (!active) return new Response('Service Unavailable', { status: 503 })
+								// srvx's NodeRequest is structurally Fetch-compatible but has no native
+								// Request private slots. Normalize at the carrier boundary, preserving
+								// the physical request for authentication and requestIP().
+								const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
+								const input = new Request(request.url, {
+									method: request.method,
+									headers: request.headers,
+									signal: request.signal,
+									body: hasBody ? request.body : undefined,
+									...(hasBody && request.body ? { duplex: 'half' } : {}),
+								} as RequestInit)
+								active.carrier.bindRequest(input, request)
+								return active.http.fetch(input)
+							},
 							shouldHandle(request) {
 								if (!active) return false
 								const url = request.url ?? '/'
@@ -62,7 +76,7 @@ export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
 						} catch (cleanup) {
 							throw new AggregateError(
 								[error, cleanup],
-								'[host-dev] HTTP attachment cleanup failed',
+								'[services/http/vite] HTTP attachment cleanup failed',
 								{ cause: cleanup },
 							)
 						}

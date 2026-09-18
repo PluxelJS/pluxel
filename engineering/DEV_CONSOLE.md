@@ -4,15 +4,15 @@
 
 ## Ownership 与包边界
 
-Vite route 的 `devConsole: true` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 SSR ModuleRunner 求值，并借用当前 runtime root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
+`host({ entry, devConsole: true })` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 SSR ModuleRunner 求值，并借用当前 Host root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
 
-- `@pluxel/host-dev/console`：独立 dev 作者类型、typed targets、必要稳定错误；导入无安装副作用。
-- runtime internal `createDevConsoleScope()`：每 run 的真实 use case、owner-aware capability 与资源接线。
-- Runtime development `console`：Vite 执行根、源码准备、执行队列、内部 socket 协议及结果保留。
-- Runtime Vite：host epoch attachment、观察更新 barrier、watch admission、startup log defaults 和 shutdown。
+- `@pluxel/host-dev/console`：独立脚本类型、typed targets、稳定错误与借用的 `RootContext`。
+- Host-dev：每 run 的基础插件/配置操作、执行队列、源码加载、IPC、Vite 更新 barrier、host epoch 与清理。其中宿主操作仅依赖 Core/Host；控制台不依赖官方服务或其 optional peers。
+- Services 的 `vitePreset()`：组合官方开发附件，将 `devConsole` 开关交给通用 `host()`；不实现控制台。
+- 应用脚本：显式 import 服务 token/API，通过 `dev.ctx` 访问已安装能力，并拥有直接调用的取消传递与资源释放。
 - CLI：只做 discovery/提交/结果/取消，不求值 Plugin，也不依赖开发驱动的发布产物。
 
-Dev API 不继承 RuntimeTestHost。配置、commands、HTTP、Workbench 复用生产事实及相同数据契约；test 的 fixture/catalog/strict assertions 与 dev 的当前宿主控制、真实 apply report 各自独立。不得用新 dev API 绕过 graph coordinator 或修改 Context shape。
+Dev API 不继承 RuntimeTestHost。插件与基础配置操作直接委托 Host，不要求 Management，不复制其协议或展示层。服务操作使用各包现有公开契约，不注册控制台适配器或修改 Context shape。
 
 Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回归使用 test host。交互按“发现实例 → 固定 root/instance → 提交普通 TypeScript export → 检查执行状态、领域结果与日志”组织，具体步骤以用户指南为准。跨命令保留业务 ID、runId 和 JSON cursor，不把 live Plugin/Workbench handle 当作持久会话状态。CLI 或未来编辑器必须保留实例身份与运行结果，不能把请求接纳、脚本完成或领域操作成功混为同一状态。
 
@@ -24,7 +24,7 @@ Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回�
 
 入口在提交、prepare 与 load 后核对内容 hash，变化报 source_changed。依赖使用执行时当前模块图，不承诺整个文件系统 snapshot。公共失败保留阶段（admission/load/execute/encode/cleanup），生产领域结果不被执行 envelope 吞并。
 
-脚本返回值先按纯 JSON 数据约束复制，拒绝 accessor/class/capability/toJSON side effect。undefined 遵循原生 JSON 约定；非有限数字、BigInt、循环等明确失败。结果包含 host epoch、前后 catalog/state revision 和可用的日志边界。失败或编码错误不回滚已经提交的操作，也不自动重试。
+脚本返回值先按纯 JSON 数据约束复制，拒绝 accessor/class/capability/toJSON side effect。undefined 遵循原生 JSON 约定；非有限数字、BigInt、循环等明确失败。结果包含 host epoch 和前后 catalog/state revision；日志数据由脚本显式读取并返回。失败或编码错误不回滚已经提交的操作，也不自动重试。
 
 ## Vite 更新与执行边界
 
@@ -44,25 +44,19 @@ Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回�
 
 `plugins.require()` 对 typed constructor/`{plugin,forkId}` 做当前 catalog identity 检查；地址只用于管理操作，不用来声称具体实例类型。普通 JS 实例没有通用撤销语义，跨 await 使用过期对象的限制需诚实说明。
 
-`plugins.isRunning()` 与 test host 一样同步读取当前 running 状态。基础能力覆盖 concrete/fork 实例、生命周期、dependency selection、fork management 与 production-backed drivers；不继承 test host，也不暴露 fixture/catalog/replacement 或 strict assertion 控制面。
+`plugins.isRunning()` 同步读取当前 running 状态。`list/status` 返回 Host 状态，`start/stop/restart` 返回 `PluginApplyReport`；配置 `get/validate/patch/reset` 返回 `HostPluginConfigResult`。原始 apply report 含 Core slot 等进程内对象；生命周期和保存配置的结果不保证可序列化，脚本返回状态/配置快照或显式 JSON 投影。不提供 Management 展示接口、依赖/fork 管理代理或服务专用 facade。
 
-`dependencies.inspect(consumer)` 返回 `{ ok: true, items }` 或领域 failure；set/clearDefault 与 set/clearOverride 复用生产依赖配置和 apply report。requirement 接受 PluginToken/definition address，并按 definition identity 解析，允许 abstract token；不要求抽象定义存在 concrete catalog entry。default provider 只能是 concrete 默认 node，override provider 可以是 fork。依赖变化由 coordinator 重启受影响 consumer 及 dependent closure，不只替换 provider 而保留旧 caller view。
+`dev.ctx` 是本次执行借用的 RootContext；访问 getter 需要 scope 仍开启。普通 capability 通过 `ctx.require(Token)` 访问，root-only capability 由受信任宿主脚本通过 `resolveContextCapability()` 解析；owner-only capability 仍需要真实插件 Context。已经取得的 Context、实例或 handle 不能被 JavaScript getter 撤销，不得跨 run/epoch 缓存。
 
-`forks.ensure/remove` 接受 `{ plugin, forkId }` 或 fork node address；test `definePluginFork()` 的值结构兼容，无需新 helper。ensure 保存 fork 记录但不隐式表达 session start；新 fork 的 auto-start 关闭，已有 policy 保留。启动显式走 `plugins.start()`。两组 mutation 都持久化到当前宿主，沿原有 scope admission/drain 和生产验证路径执行，不另建 graph 或事务权威。
+每 run 的 DevScope 在 abort 时关闭 admission；dispose 等待已接纳的 Host 操作。配置/lifecycle mutation 沿生产路径 settle，不声称强制中断或回滚。直接服务调用、Plugin 方法和用户自行创建的资源不受自动跟踪；脚本显式传递 `run.signal`，await 操作并使用 `using`/`try/finally` 释放资源。
 
-配置 get/describe/validate/patch/patchField/reset 使用现有配置契约。describe 返回 portable presentation plan，包含准确字段路径与约束；不暴露 raw schema function 或写私有字段。Workbench 使用 exact descriptor、显式 principal 和本地 Cap’n Web session；不验证浏览器登录或 renderer。返回对象/数组 DTO 时使用既有 detachWorkbenchPortableValue 完成普通数据复制与顶层 transport result 释放。
-
-每 run 的 DevScope 在 abort 时关闭 admission、撤回 leases；dispose 等待已接纳 driver 与异步 cleanup。commands/HTTP 合并 run signal；已接纳的 config/lifecycle mutation 沿生产路径 settle，不声称可强制中断。Workbench 仍是原有 RpcStub，所有 RPC 都要求 await，不增加第二层 Proxy 模拟任意方法拦截。直接 Plugin 方法和用户自行创建的 native resource 也不能承诺自动取消/回收。
-
-full-host replacement 先 abort 旧 run、drain 已跟踪资源，再释放旧 root。后续 run 使用新 epoch。任意未协作脚本本体不能被强制终止；旧 run 不转接新 root，执行 slot 在其 settle 前仍被占用。
+full-host replacement 先 abort 旧 run、drain 已跟踪 Host 操作，再释放旧 root。后续 run 使用新 epoch。任意未协作脚本本体不能被强制终止；旧 run 不转接新 root，执行 slot 在其 settle 前仍被占用。
 
 ## 日志
 
-复用当前 RuntimeLogging/RuntimeLogStore。`flushStores()` 只刷 store sink buffer，不依赖 policy persistence；正常 logging.flush 同时刷 store 和 policy。mark 创建 stream 时保留配置的 retention，不凭空创建未配置 default stream。
+Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 logging 配置拥有输出、过滤与 store；开启控制台不会安装 Logging 或自动增加 store。脚本显式解析已安装的 `Logging` 能力，调用既有 `RuntimeLogging`/store API，返回有界普通数据。`flushStores()` 只刷 store sink buffer，不依赖 policy persistence；正常 `flush()` 同时刷 store 和 policy。
 
-read 使用真实 epoch/sequence range，分页先有界扫描再过滤；gap/reset/root change 可判断。wait 先 subscribe 再 recheck，区分 available/more/timeout/reset，使用 run/caller 合成 signal。cursor 是时间窗口，不提供因果隔离。
-
-默认 launcher 在启用控制台时添加或复用 bounded store，headless 也可检查日志；显式 custom/silent logging 优先，不运行期重装 LogTape。进程内脚本可以返回有界日志快照，远程 Workbench live stream 继续使用既有控制 session；不提供另一条业务 HTTP/log follow 路由。
+日志读取保留真实 epoch、sequence、retention 和 gap 契约，游标只是时间窗口，不提供因果隔离。控制台不提供另一条 HTTP/log follow 路由，也不在 run envelope 自动附加日志边界。
 
 ## 执行通道与预算
 
@@ -86,11 +80,11 @@ queued 取消不执行；running 取消保持 cancelling，直到真实代码 se
 
 ## 实现与验证入口
 
-- `packages/runtime/src/dev/`、`src/internal/dev-console.ts`：facade、日志与scope。
-- `packages/runtime/src/development/console.ts`、`src/console/`：Vite接线、队列/协议/IPC。
-- `packages/cli/src/dev/client.ts`、`src/commands/dev.ts`：agent交互。
-- runtime `tests/dev/console.test.ts` 与 logger tests：真实配置、typed RPC填数据、target identity、signal/drain和cursor。
-- Runtime console tests：重复请求、取消、保留预算、JSON与socket边界、真实CLI互操作。
-- Runtime Vite console 与共享 Vite scenario：跨调用状态、工作区源码/HMR、先提交后观察与先观察后提交、host replacement和清理。
+- `packages/host-dev/src/console.ts`、`src/dev/`：脚本契约、Host 操作与 run scope。
+- `packages/host-dev/src/console/`：队列、协议、IPC 与 Host attachment。
+- `packages/services/src/vite.ts`：官方开发附件组合。
+- `packages/cli/src/dev/client.ts`、`src/commands/dev.ts`：实例发现与命令交互。
+- Host-dev console tests：无服务 Host 的插件/配置操作、取消、Host replacement 与公开脚本入口。
+- Runtime console/Vite scenarios：共享执行器、源码/HMR、JSON/socket 边界及 CLI 互操作。
 
-修改协议、loader admission、日志buffer或public types时，执行直接owner测试和类型检查；涉及testing共享边界时运行testing-v2 gate，再按仓库要求完成稳定验证。
+修改 public types、loader admission 或协议时，检查实际脚本调用边界，并运行直接 owner 的测试与类型检查。服务脚本遵循相应能力原有的回归覆盖。

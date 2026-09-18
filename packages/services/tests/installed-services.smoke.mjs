@@ -115,6 +115,9 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			JSON.stringify({ packages: ['.'], overrides: dependencies }),
 		)
 		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
+		await writeFile(join(root, 'bare-console.mjs'), bareConsoleConsumer)
+		const bareConsoleResult = await run(process.execPath, ['bare-console.mjs'], root)
+		expect(bareConsoleResult.stdout).toContain('ISOLATED_BARE_CONSOLE_OK')
 		await writeFile(join(root, 'optional.mjs'), optionalConsumer)
 		const optionalResult = await run(process.execPath, ['optional.mjs'], root)
 		expect(optionalResult.stdout).toContain('ISOLATED_WORKBENCH_OK')
@@ -244,6 +247,10 @@ import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type * as ConsoleContracts from '@pluxel/host-dev/console'
 import { host as viteHost } from '@pluxel/host-dev/vite'
+import { servicesPreset } from '@pluxel/services'
+import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
+import { httpDevelopment } from '@pluxel/services/http/vite'
+import { nodeArtifacts } from '@pluxel/services/node/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
 import { workbenchHttp } from '@pluxel/workbench/http'
 import { createWorkbenchShellHandler } from '@pluxel/workbench/shell'
@@ -257,7 +264,9 @@ class UiConsumer extends BasePlugin { init() {
 } }
 const rootUi = requireWorkbench(uiHost.ctx)
 const serveUi = createWorkbenchArtifactHandler(uiHost.ctx)
-const development = [viteHost({ entry: './app.ts' }), workbenchArtifacts()]
+const development = [serviceSingletons(), viteHost({ entry: './app.ts' }), httpDevelopment(), nodeArtifacts(), workbenchArtifacts()]
+const officialDevelopment = vitePreset({ entry: './app.ts', devConsole: true })
+void [servicesPreset, officialDevelopment]
 void [UiConsumer, rootUi, serveUi, development, workbench, createWorkbenchRenderer, workbenchHttp, createWorkbenchShellHandler]
 `
 
@@ -294,4 +303,31 @@ await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
 console.log('ISOLATED_WORKBENCH_OK')
+`
+
+const bareConsoleConsumer = `
+import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
+const hook = registerHooks({ load(url, context, next) {
+ if (/@pluxel[+/](?:services|management|workbench|logging)|capnweb/.test(url)) {
+  throw new Error('Bare development console loaded an optional service: ' + url)
+ }
+ return next(url, context)
+} })
+const { createHost } = await import('@pluxel/host')
+const { createDevConsoleScope } = await import('@pluxel/host-dev/internal/dev/console')
+const host = await createHost({ plugins: [] })
+const scope = createDevConsoleScope({ ctx: host.ctx })
+try {
+ assert.equal(scope.dev.ctx, host.ctx)
+ assert.equal(typeof scope.dev.ctx.logger.info, 'function')
+ assert.deepEqual(await scope.dev.plugins.list(), [])
+ const missing = { definition: { entry: { kind: 'package-root', packageName: '@test/missing' }, exportName: 'Missing' }, variant: 'default' }
+ assert.equal((await scope.dev.config.get(missing)).ok, false)
+} finally {
+ await scope.dispose()
+ await host.close()
+ hook.deregister()
+}
+console.log('ISOLATED_BARE_CONSOLE_OK')
 `

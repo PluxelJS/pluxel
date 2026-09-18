@@ -22,7 +22,6 @@ export type RunExecution = Readonly<{
 	phase(phase: DevConsolePhase): void
 	hostEpoch(epoch: string): void
 	revision(stage: 'before' | 'after', snapshot: unknown): void
-	logCursor(stage: 'before' | 'after', cursor: unknown): void
 }>
 
 /** Host-local admission and result ownership; cancellation never releases an unsettled execution. */
@@ -197,12 +196,6 @@ export class DevConsoleExecutor {
 						revisions: { ...run.snapshot.revisions, [stage]: snapshotJson(snapshot) },
 					}
 				},
-				logCursor: (stage, cursor) => {
-					run.snapshot = {
-						...run.snapshot,
-						logs: { ...run.snapshot.logs, [stage]: snapshotJson(cursor) },
-					}
-				},
 			})
 			run.controller.signal.throwIfAborted()
 			phase = 'encode'
@@ -271,6 +264,5 @@ function metadata(snapshot: DevConsoleRunSnapshot) {
 		...(snapshot.startedAt ? { startedAt: snapshot.startedAt } : {}),
 		...(snapshot.hostEpoch ? { hostEpoch: snapshot.hostEpoch } : {}),
 		...(snapshot.revisions ? { revisions: snapshot.revisions } : {}),
-		...(snapshot.logs ? { logs: snapshot.logs } : {}),
 	}
 }

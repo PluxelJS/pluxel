@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/core'
-import { requireNodeModuleHost } from '@pluxel/services/internal/node'
+import { requireNodeModuleHost } from '../node/internal'
 import type { Plugin } from 'vite'
-import type { HostDevelopmentPluginApi } from './attachments'
+import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
 import { NodeArtifactCompiler, type NodeArtifactCompilerOptions } from './node-compiler'
 
 export { NodeArtifactCompiler, type NodeArtifactCompilerOptions } from './node-compiler'

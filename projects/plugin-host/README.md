@@ -29,7 +29,12 @@ For production, run `pnpm --filter @pluxel/plugins-host build`, then
 persistence and local S3 storage. Keep this directory outside `dist`; use an absolute
 `PLUXEL_DATA_ROOT` when deploying or launching from a different working directory.
 
-Open the Workbench and select **Architecture Lab**. One report generation exercises this graph:
+Open `/__pluxel/workbench` on the displayed Vite address and select **Architecture Lab**. Set
+`PLUXEL_WORKBENCH=false` to run without the Workbench UI; Management remains installed.
+The reference host seeds configuration and startup policy in memory on each fresh startup;
+Plugin persistence and stored showcase artifacts still use the configured data directory.
+
+One report generation exercises this graph:
 
 ```text
 Rates -> admission Part
@@ -94,12 +99,14 @@ project-local `dev/*.ts` files for further operations; edits do not restart the 
 previous operations. The bundled `inspect.ts` only returns current Plugin status.
 
 Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
-Workbench, logs and recovery. Isolated regressions continue to use the test host.
+explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/host-dev/console` and use `dev.ctx` with service APIs; they pass `run.signal` and release their own service resources. Isolated regressions continue to use the test host.
 
 ## Boundary
 
 - `src/app.ts` owns fixed Plugins, mutable sources, service configuration and startup policy.
-- `vite.config.ts` uses `runtime()` to compose the shared Host development driver and Runtime capabilities.
+- `src/app.ts` uses `servicesPreset()` from `@pluxel/services` for the official service set, data location and optional Workbench.
+- `vite.config.ts` uses `vitePreset()` from `@pluxel/services/vite`; it combines the shared development driver with attachments for installed official services.
+- `tsdown.config.ts` uses `buildPreset()` from `@pluxel/services/build`; the official dynamic-plugin shared entries and Workbench distribution are included by default.
 - Managed entries and Package Manager's data share the explicitly configured application-local directory.
 - Plugin source is always evaluated by the Pluxel Vite/Rolldown transform chain; raw TypeScript
   runners are intentionally not runtime entries.

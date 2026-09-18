@@ -42,10 +42,11 @@ export class Viewer extends BasePlugin {
 ```ts
 import { defineConfig } from 'vite'
 import { host } from '@pluxel/host-dev/vite'
+import { serviceSingletons } from '@pluxel/services/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
 
 export default defineConfig({
-	plugins: [host({ entry: './app.ts' }), workbenchArtifacts()],
+	plugins: [serviceSingletons(), host({ entry: './app.ts' }), workbenchArtifacts()],
 })
 ```
 
@@ -53,7 +54,7 @@ export default defineConfig({
 
 renderer 与 Markdown 更新只更新制品，不替换整个 Host。编译器沿用 revision hashing 已读取的 source/package 文件清单来选择更新，未关联文件不会触发编译。新 renderer revision 的 building/failed 状态由现有 Workbench 可用性协议报告；已提交的不可变 URL 仍可读取。关闭会撤回更新入口并等待已接纳的编译结束。
 
-Node 与 Workers 使用 `@pluxel/services/node`、`@pluxel/services/workers`，并在上述普通插件列表按需加入 `nodeArtifacts()`。安装运行时 token 不会自动开启源码 watcher。
+Node 与 Workers 使用 `@pluxel/services/node`、`@pluxel/services/workers`，并在上述普通插件列表按需加入 `nodeArtifacts()`（来自 `@pluxel/services/node/vite`）。安装运行时 token 不会自动开启源码 watcher。
 
 ## 管理连接与生产制品
 

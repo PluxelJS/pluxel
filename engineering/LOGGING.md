@@ -312,4 +312,4 @@ core 不包含 formatter、sink、policy persistence、host env resolution 或 L
 
 ## Trusted development scripts
 
-Vite 显式开启 devConsole 时，默认 launcher 也会配置 bounded store，不依赖 Workbench；显式 custom/silent logging 保持优先。RuntimeLogging.flushStores 刷出物理 store sink 缓冲，控制台 cursor/read 保留 stream 的配置 retention、epoch 和 gap 语义。可信本机脚本可在进程内读取并返回有界快照，不经 ctx.elysia 安装日志接口，也不增加远程 live follow 通道。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.elysia` 安装日志接口，也不增加远程 live follow 通道。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

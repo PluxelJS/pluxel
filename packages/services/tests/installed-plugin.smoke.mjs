@@ -14,14 +14,11 @@ const { discoverDevInstances, runDevFile, selectDevInstance } = await import(
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(join(workspace, 'packages/host-dev/package.json'))
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href)
-const { host } = await import(
-	pathToFileURL(join(workspace, 'packages/host-dev/dist/vite.mjs')).href
+const { vitePreset } = await import(
+	pathToFileURL(join(workspace, 'packages/services/dist/vite.mjs')).href
 )
 const { readHostRecentUpdates } = await import(
 	pathToFileURL(join(workspace, 'packages/host/dist/internal.mjs')).href
-)
-const { httpDevelopment } = await import(
-	pathToFileURL(join(workspace, 'packages/host-dev/dist/http.mjs')).href
 )
 const root = await mkdtemp(join(tmpdir(), 'pluxel-installed-host-'))
 await mkdir(join(root, 'node_modules/@test/installed'), { recursive: true })
@@ -60,9 +57,9 @@ await writeFile(join(root, 'fixed.mjs'), installed('fixed', fixedDefinition))
 const serviceSource = (
 	revision,
 	fail = false,
-) => `import {http} from '@pluxel/services/http';import {defineContextCapability,installRootCapability} from '@pluxel/core/host';
+) => `import {http,HttpServer} from '@pluxel/services/http';import {defineContextCapability,installRootCapability,resolveContextCapability} from '@pluxel/core/host';
 const token=defineContextCapability('fixture.service');
-export const services=[http(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects,ctx}){globalThis.__installedHostSmokeContext=ctx;await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
+export const services=[http(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects,ctx}){effects.defer(resolveContextCapability(ctx,HttpServer).mountFallback({matchesRequest:r=>new URL(r.url).pathname==='/native-copy',fetch:async r=>new Response(await new Request(r).text())}));globalThis.__installedHostSmokeContext=ctx;await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
@@ -94,13 +91,20 @@ try {
 			},
 		},
 		server: { port: 0, host: '127.0.0.1' },
-		plugins: [host({ entry: 'app.ts', devConsole: true }), httpDevelopment()],
+		plugins: [vitePreset({ entry: 'app.ts', devConsole: true })],
 	})
 	await server.listen()
 	await until(() => globalThis.__installedHostSmoke.includes('fixed'), 'fixed plugin startup')
 	const listener = server.resolvedUrls.local[0]
 	const response = await fetch(new URL('/installed/fixed', listener))
 	assert.equal(await response.text(), 'fixed')
+	// A native Request copy must also work beyond the business Elysia dispatcher.
+	const fallback = await fetch(new URL('/native-copy', listener), {
+		method: 'POST',
+		body: 'native-body',
+	})
+	assert.equal(fallback.status, 200)
+	assert.equal(await fallback.text(), 'native-body')
 	const instance = await selectDevInstance({ root })
 	const consoleFile = join(root, 'inspect.ts')
 	await writeFile(consoleFile, 'export default async (dev) => await dev.plugins.list()')

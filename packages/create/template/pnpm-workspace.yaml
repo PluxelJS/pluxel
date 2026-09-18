@@ -23,8 +23,9 @@ catalogs:
     '@types/react': ^19.2.18
     '@types/react-dom': ^19.2.5
     '@vitejs/plugin-react': ^6.1.1
-    react: ^19.2.8
-    react-dom: ^19.2.8
+    # Match the exact React singleton used by the published Workbench artifacts.
+    react: 19.2.8
+    react-dom: 19.2.8
   pluxel:
     '@pluxel/cli': ^1.0.0
     '@pluxel/core': ^1.0.0

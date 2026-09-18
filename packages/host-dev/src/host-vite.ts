@@ -34,7 +34,7 @@ import { attachHostDevelopmentPlugins, type HostDevelopmentCandidate } from './a
 export type HostViteOptions = Readonly<{
 	/** Application module default-exporting a HostApplication. Relative to Vite root. */
 	entry: string
-	/** Explicitly attach the local TypeScript console to this Vite instance. */
+	/** Enable the local TypeScript console. @default false */
 	devConsole?: boolean
 }>
 

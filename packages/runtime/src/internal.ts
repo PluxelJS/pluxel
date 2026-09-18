@@ -82,6 +82,4 @@ export {
 
 export { PluginRecentUpdateTracker } from '@pluxel/host/internal'
 
-export { createDevConsoleScope, type DevConsoleScope } from '@pluxel/host-dev/internal/dev/console'
-
 export { resolvePackagedNodeModule } from './runtime/packaged-node-artifact'

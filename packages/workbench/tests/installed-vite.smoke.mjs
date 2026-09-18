@@ -16,7 +16,7 @@ const hook = registerHooks({
 		return next(url, context)
 	},
 })
-const { host } = await import('@pluxel/host-dev/vite')
+const { vitePreset } = await import('@pluxel/services/vite')
 const { workbenchArtifacts } = await import('../dist/dev.mjs')
 const { requireWorkbench, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
 let server, instance
@@ -106,7 +106,7 @@ class Page extends RpcTarget {value(){return 42}}
 		logLevel: 'silent',
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
-			host({ entry: 'app.ts' }),
+			vitePreset({ entry: 'app.ts' }),
 			workbenchArtifacts({ cacheDir: join(root, '.pluxel/artifacts') }),
 			{
 				name: 'test:borrow-host',
@@ -157,6 +157,17 @@ class Page extends RpcTarget {value(){return 42}}
 	const firstPage = backend.registry
 		.getLayout({ definition: instance.catalog().entries[0].address, variant: 'default' })
 		.entries.find((entry) => entry.federatedViewRef)
+	// Opening a source Plugin's RpcTarget must use the backend's native Cap'n Web identity.
+	const viewSession = backend.createSession({ provider: 'fixture', subject: 'reader' }, () => {})
+	const viewLayout = viewSession.target.layout({ target: address })
+	const view = viewLayout.entries.find((entry) => entry.federatedViewRef)
+	assert.ok(view)
+	const openedView = await viewSession.target.openEntry({
+		layoutRevision: viewLayout.revision,
+		target: address,
+		descriptor: view.descriptor,
+	})
+	assert.equal(openedView.ok, true, JSON.stringify(openedView))
 	const handler = createWorkbenchArtifactHandler(instance.ctx)
 	const artifact = await handler(
 		new Request(new URL(firstPage.federatedViewRef.manifestUrl, 'http://fixture')),

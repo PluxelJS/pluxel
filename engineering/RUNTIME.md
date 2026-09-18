@@ -16,7 +16,7 @@ prepare、publish 阶段，不创建第二套图提交或动态注册表；publi
 
 Persistence、Vault、Commands、HTTP、Node modules、Workers、Database 通过 `@pluxel/services` 对应子入口显式安装。
 Database backend 从 `/database/pglite` 或 `/database/postgres` 选择，驱动是可选依赖；不选择数据库不会触发数据库准备。
-Logging 属于 `@pluxel/logging`；管理接入与认证属于 `@pluxel/management`；Workbench publication、compiler、browser client
+Core 始终提供 `ctx.logger`，无需插件 import 或安装日志管理服务。日志输出、策略和存储的配置由 `@pluxel/logging` 拥有；管理接入与认证属于 `@pluxel/management`；Workbench publication、compiler、browser client
 及预构建 shell 属于 `@pluxel/workbench`。Vault 管理页面属于普通 `@pluxel/vault-admin` Plugin。
 
 服务类型目录中的可选属性不证明安装。Plugin 用 `ctx.require(Token)` 同步取得必需能力；missing、access 和实际构造异常
@@ -32,9 +32,13 @@ Context kernel 仍严格惰性；异步准备由 Host 完成，factory 不返回
 执行 configure 或连接存储。`standardServices()` 提供明确的常用组合，Database、Vault、Logging、Management、Workbench
 继续显式加入，不以默认全装再关闭的方式决定能力。
 
-Host-dev 的 `host()` 拥有一个 ModuleRunner、更新队列和当前 Host；`nodeArtifacts()`、`workbenchArtifacts()` 与
-`httpDevelopment()` 以普通 Vite 插件接入。服务配置变化替换 Host，普通 Plugin/制品更新复用 Host。开发控制台属于
-Host-dev，借用固定 epoch，取消只撤销尚未接纳的排队操作，不回滚已提交修改。
+官方 `HostApplication` 使用 `servicesPreset(startup, options)`（`@pluxel/services`）选择标准服务、Vault、Logging、Management 和默认 Workbench。它异步返回普通 HostService 清单，Workbench 模块按选择懒加载；prepare、rollback 和 shutdown 仍归 Host；不创建 Runtime singleton 或第二份协调器。应用提供 persistence 与可选 product、logging、workbench，部署制品路径从 startup.deployment 推导。
+
+`@pluxel/services` 拥有同一套官方组合的三个入口：根入口的 `servicesPreset()`、`/vite` 的 `vitePreset()`、`/build` 的 `buildPreset()`。Vite preset 为实际安装的服务懒加载开发附件；build preset 默认选择 Workbench distribution，并维护官方动态插件共享入口，sourceFrameworks 只追加自定义共享入口，不安装服务。既有 `runtime()` / `RuntimeApplication` 产品契约保留。
+
+Host-dev 的 `host()` 只拥有 ModuleRunner、更新队列、当前 Host 与开发附件协议，不识别官方服务 token 或替应用选择附件。HTTP 与 Node 制品附件分别属于 `@pluxel/services/http/vite` 与 `@pluxel/services/node/vite`；Workbench 附件属于 `@pluxel/workbench/dev`。官方 preset 与自定义宿主使用相同接口组合这些附件。Host-dev 保留 `hostSingletons()` 的模块身份机制，官方包清单由 services 的 Vite preset 选择，不反向依赖官方服务。手动组合可使用 `@pluxel/services/vite` 的 `serviceSingletons()` 复用这份清单；自定义包清单使用 `hostSingletons({ packages })`。
+
+服务配置变化替换 Host，普通 Plugin/制品更新复用 Host。开发控制台及 `@pluxel/host-dev/console` 公开类型全部归 Host-dev；插件和基础配置操作直接委托 Host，服务调用由脚本显式 import API 并通过借用的 `dev.ctx` 访问。控制台借用固定 epoch，取消只撤销尚未接纳的排队操作，不回滚已提交修改。
 
 HTTP 服务提供 root-only `HttpServer`：固定路径 endpoint、业务 directory 与唯一 fallback 按顺序分发。
 Management HTTP adapter 挂载管理路径，Workbench HTTP adapter 复用管理接入并提供 shell fallback。
@@ -507,4 +511,4 @@ category，动态等级由 root-owned O(1) policy 控制。完整不变量、启
 
 ## Development console scope
 
-`@pluxel/host-dev/console` 定义由 Vite 执行器注入的在线操作界面。每次脚本借用当前 root，通过生产 use case 读取/修改配置、控制插件、打开 Workbench session、调用 commands/HTTP 并读日志。scope 只拥有临时资源，生命周期仍由既有 coordinator 驱动；不暴露 test catalog/fixture authority，不安装第二个 runtime。详细约束见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`@pluxel/host-dev/console` 定义由 Vite 执行器注入的在线操作界面。每次脚本借用当前 root，通过 Host 读取/修改配置和控制插件；其他能力由脚本显式 import 对应 token/API。scope 跟踪已接纳的 Host 操作；脚本直接调用服务时自行传递 signal 并释放资源，不暴露 test catalog/fixture authority，不安装第二个 runtime。详细约束见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

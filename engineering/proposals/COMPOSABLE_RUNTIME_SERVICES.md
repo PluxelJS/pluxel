@@ -1,6 +1,7 @@
 # 可组合服务：剩余迁移与验证
 
 Core token、正向 Host 安装计划、官方服务拆分、Management、Workbench、开发附件和共享应用启动已经实施。
+官方运行时、Vite 与构建组合统一归 `@pluxel/services` 的三个 preset；通用 Host-dev 不拥有官方服务选择策略。
 当前 API 以[组合 Host 服务](../../docs/reference/runtime-services.md)、[Host 管理接入](../../docs/runtime/management.md)、
 [独立 Workbench](../../docs/workbench/standalone-host.md)及[架构约束](../RUNTIME.md)为准；不再通过本提案维护第二份 API 示例。
 

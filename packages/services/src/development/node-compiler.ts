@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/core'
-import { readNodeModuleDeclaration } from '@pluxel/services/internal/node-declaration'
-import type { NodeModuleSourceSubscription } from '@pluxel/services/internal/node'
-import type { NodeModuleDeclaration } from '@pluxel/services/node'
+import { readNodeModuleDeclaration } from '../node/declaration'
+import type { NodeModuleSourceSubscription } from '../node/internal'
+import type { NodeModuleDeclaration } from '../node'
 import { createHash } from 'node:crypto'
 import { existsSync, type Dirent } from 'node:fs'
 import { readdir, readFile, rm, stat } from 'node:fs/promises'
@@ -119,7 +119,7 @@ export class NodeArtifactCompiler {
 		onUpdate: (url: URL) => void | Promise<void>,
 		onError: (error: unknown) => void,
 	): Promise<NodeModuleSourceSubscription> {
-		if (this.closed) throw new Error('[host-dev] Node artifact compiler is disposed')
+		if (this.closed) throw new Error('[services/node/vite] Node artifact compiler is disposed')
 		const descriptor = readNodeModuleDeclaration(declaration)
 		const declarationFile = fileURLToPath(descriptor.moduleUrl)
 		const entryPath = fileURLToPath(new URL(descriptor.entryPath, descriptor.moduleUrl))
@@ -130,7 +130,7 @@ export class NodeArtifactCompiler {
 		const listener: NodeModuleListener = { onUpdate, onError }
 		let entry = this.nodeEntries.get(key)
 		if (entry && entry.entryPath !== entryPath) {
-			throw new Error(`[host-dev] Node module declaration key collision: ${key}`)
+			throw new Error(`[services/node/vite] Node module declaration key collision: ${key}`)
 		}
 		if (!entry) {
 			entry = {
@@ -149,7 +149,7 @@ export class NodeArtifactCompiler {
 			if (!entry.activeUrl) await this.compileNodeEntry(entry, true)
 			const url = entry.activeUrl
 			if (!entry.active || !url)
-				throw new Error(`[host-dev] Node module build produced no artifact: ${key}`)
+				throw new Error(`[services/node/vite] Node module build produced no artifact: ${key}`)
 			let active = true
 			return {
 				url,

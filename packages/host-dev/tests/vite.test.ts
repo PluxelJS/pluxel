@@ -74,9 +74,9 @@ describe('host-dev Vite plugin stack', () => {
 		const root = fixture.path
 		await writePackage(
 			root,
-			'@pluxel/services',
+			'@acme/services',
 			{
-				name: '@pluxel/services',
+				name: '@acme/services',
 				type: 'module',
 				exports: {
 					'./commands': './index.js',
@@ -88,23 +88,26 @@ describe('host-dev Vite plugin stack', () => {
 			'export const token = {}; export default token\n',
 		)
 		const modulePath = join(root, 'entry.ts')
-		await writeFile(modulePath, "export { token } from '@pluxel/services/vault'\n")
+		await writeFile(modulePath, "export { token } from '@acme/services/vault'\n")
 		const native = await import(
-			/* @vite-ignore */ pathToFileURL(join(root, 'node_modules/@pluxel/services/index.js')).href
+			/* @vite-ignore */ pathToFileURL(join(root, 'node_modules/@acme/services/index.js')).href
 		)
-		await withTestViteServer({ root, plugins: [hostSingletons()] }, async (server) => {
-			const first = await importViteSsrModule<{ token: object }>(server, modulePath)
-			expect(first.token).toBe(native.token)
-			for (const source of [
-				'@pluxel/services/commands',
-				'@pluxel/services/persistence',
-				'@pluxel/services/vault',
-				'@pluxel/services/internal/security',
-			]) {
-				const result = await server.environments.ssr.pluginContainer.resolveId(source, modulePath)
-				expect(result).toMatchObject({ external: true })
-			}
-		})
+		await withTestViteServer(
+			{ root, plugins: [hostSingletons({ packages: ['@acme/services'] })] },
+			async (server) => {
+				const first = await importViteSsrModule<{ token: object }>(server, modulePath)
+				expect(first.token).toBe(native.token)
+				for (const source of [
+					'@acme/services/commands',
+					'@acme/services/persistence',
+					'@acme/services/vault',
+					'@acme/services/internal/security',
+				]) {
+					const result = await server.environments.ssr.pluginContainer.resolveId(source, modulePath)
+					expect(result).toMatchObject({ external: true })
+				}
+			},
+		)
 	})
 
 	it('leaves distribution bare packages to the Node host', () => {

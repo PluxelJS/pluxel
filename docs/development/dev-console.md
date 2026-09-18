@@ -13,11 +13,11 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 ```ts no-twoslash
 import { defineConfig } from 'vite'
-import { runtime } from '@pluxel/runtime/vite'
+import { host } from '@pluxel/host-dev/vite'
 
 export default defineConfig({
 	plugins: [
-		runtime({
+		host({
 			entry: './src/app.ts',
 			devConsole: true,
 		}),
@@ -33,19 +33,7 @@ pnpm exec pluxel dev instances --root /absolute/project-root
 
 从返回结果确认 `root`、`pid` 和 `instanceId`。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
-独立 Host 同样可用标准 Vite 配置开启：
-
-```ts no-twoslash
-import { defineConfig } from 'vite'
-import { host } from '@pluxel/host-dev/vite'
-
-export default defineConfig({
-	plugins: [host({ entry: './src/app.ts', devConsole: true })],
-})
-```
-
-控制台借用当前 Host。HTTP、Commands、Workbench 与日志功能仍要求应用显式安装对应服务；
-开启控制台不代替应用选择服务，也不创建第二份 Host。
+控制台属于 `@pluxel/host-dev`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/services/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
 
 省略 `devConsole` 不安装控制台。Vite integration 只在 serve 时安装。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
 
@@ -104,7 +92,7 @@ pnpm exec pluxel dev run dev/inspect.ts --export add --input '"Verify current da
 
 1. 从项目的 Vite 配置或启动命令确定 root，用 `pluxel dev instances --root <project-root>` 发现实例。核对返回的 `root`、`pid` 和 `instanceId`，将选中的绝对 root 与 instanceId 记入任务上下文。
 2. 后续 `run/result/cancel` 都显式传相同的 `--root` 和 `--instance`，避免切换工作目录或新增 dev 实例后改变操作目标。没有发现服务时先核对 root、原 dev 进程和 `devConsole` 配置。
-3. 在该 root 内维护少数普通 TypeScript 操作文件，通过 default/named export 追加操作。先读取插件状态、配置描述或 Workbench layout，再按项目实际类型修改；参数经 `run.input` 传入并校验，跨次保存业务 ID 和 JSON 游标。
+3. 在该 root 内维护少数普通 TypeScript 操作文件，通过 default/named export 追加操作。先读取插件状态、当前配置或服务公开的 layout，再按项目实际类型修改；参数经 `run.input` 传入并校验，跨次保存业务 ID 和 JSON 游标。
 4. 检查外层请求是否成功、run 的 `state`，再检查脚本返回的领域 `ok`、apply report 和配置 `application`。修改后重新读取目标状态及相关日志；CLI 退出成功不等于配置已应用或插件已启动。
 5. 保留 receipt 中的 root、instanceId 和 runId。工具超时或终端断开后，用这些字段查询 `result`；先确定已发生的操作，再决定下一次提交。已验证的行为需要回归保护时，另写隔离测试。
 
@@ -119,78 +107,24 @@ pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-h
 
 ## 先发现，再修改
 
-`await dev.plugins.list()` 返回当前管理状态及稳定 PluginNodeAddress。`status/start/stop/restart`、配置和日志过滤既接受地址，也接受 Plugin constructor。根据列表里的 definition entry/exportName，从项目源码或 package root import 对应 Plugin 后，就能用 `require()` 得到精确类型。
-
-fork 可用 `{ plugin: ConnectorPlugin, forkId: 'east' }` 表达，其中 concrete Plugin 必须声明 `@Plugin({ forkable: true })`。这个值本身不创建 fork；创建使用 `dev.forks.ensure()`。`require()` 只接受 typed target；不要拿一个地址强制断言成 Plugin 实例类型。
+`await dev.plugins.list()` 返回当前 Host 的插件状态和稳定 PluginNodeAddress。`status/start/stop/restart` 与配置操作接受地址或 Plugin constructor；`require()` 接受具体 constructor 或 `{ plugin: ConnectorPlugin, forkId: 'east' }`，返回精确类型的运行实例。typed target 不会创建 fork，也不自动启动插件。
 
 ```ts no-twoslash
-const stopped = await dev.plugins.stop(TodoPlugin)
-const started = await dev.plugins.start(TodoPlugin)
-return { stopped, started, current: await dev.plugins.status(TodoPlugin) }
+await dev.plugins.stop(TodoPlugin)
+await dev.plugins.start(TodoPlugin)
+return { current: await dev.plugins.status(TodoPlugin) }
 ```
 
-控制接口返回真实执行结果与 apply report，不像 test host 那样注册临时 catalog 或自动把未达成状态转换成断言失败。读取领域结果中的 `ok`、实际状态和 lifecycle issues；CLI 成功执行脚本不代表业务操作一定成功。
-
-## 抽象依赖与 fork
-
-抽象 Plugin 是 requirement，不是 running instance。`dev.dependencies` 接受抽象或具体 `PluginToken`，也接受稳定 definition address；按 definition identity 识别 requirement，不把抽象 constructor 当成待启动的 concrete implementation。`plugins.require()` 仍只接受具体 typed target，不能用抽象 token 自动取得 provider。
-
-先 inspect consumer，查看 requirement 与可选 provider，再修改选择。以下示例假设项目有 `Connector` 抽象契约、实现它的 forkable `ConnectorPlugin` 和依赖该契约的 `ConsumerPlugin`；将这些 token 从项目实际 package root 导入：
-
-```ts no-twoslash
-export async function useEast(dev: DevConsole) {
-	const before = await dev.dependencies.inspect(ConsumerPlugin)
-	if (!before.ok) return before
-
-	const east = { plugin: ConnectorPlugin, forkId: 'east' }
-	const ensured = await dev.forks.ensure(east)
-	if (!ensured.ok) return ensured
-	const started = await dev.plugins.start(east)
-	if (!started.ok) return started
-	const selected = await dev.dependencies.setOverride({
-		consumer: ConsumerPlugin,
-		requirement: Connector,
-		provider: east,
-	})
-	return {
-		selected,
-		dependencies: await dev.dependencies.inspect(ConsumerPlugin),
-		running: dev.plugins.isRunning(east),
-	}
-}
-```
-
-`inspect(consumer)` 成功返回 `{ ok: true, items }`；consumer 地址或 fork 不存在时返回 `ok: false`、`code: 'consumer_unavailable'`、`state: 'unchanged'` 和 `error`，需要先检查 `ok`。过期 typed target 与已关闭 run scope 仍抛出 `DevConsoleError`。`plugins.isRunning(target)` 同步查询当前状态，与 test host 的 `isRunning()` 对齐；它不启动目标。
-
-全局默认选择使用 `dev.dependencies.setDefault({ requirement: Connector, provider: ConnectorPlugin })`，清除使用 `clearDefault(Connector)`。default provider 只接受 concrete constructor 或默认 node address，不能选择 fork。特定 consumer 的 `setOverride({ consumer, requirement, provider })` 可以选择 concrete 默认 node 或 fork；`clearOverride({ consumer, requirement })` 恢复正常选择规则。consumer 和 override provider 均支持 typed target 或 node address。
-
-依赖选择通过宿主的生产配置路径保存，不会随 run 结束撤销；应用选择时由 graph coordinator 重启受影响的 consumer 及其 dependent closure。检查 mutation 的领域结果和 apply report，之后重新取得实例，避免继续使用重启前注入的 provider。
-
-`dev.forks.ensure(east)` 建立 fork 的持久配置记录，不为新 fork 打开 auto-start，也不表达本次进程的启动意图；已有 fork 的 auto-start policy 保持不变。要运行它，显式调用 `plugins.start(east)`。`dev.forks.remove(east)` 通过生产路径移除 fork，检查返回的领域结果与 apply report。两者也接受 fork node address，不接受默认 node。`definePluginFork()` 在测试中生成的值结构兼容这个 typed target，可以直接复用；无需为 console 定义第二种 fork helper。
-
-## 与 test host 的基础能力对齐
-
-| 能力                                                                       | Runtime test host                 | Dev console                                      |
-| -------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------ |
-| 具体实例与 running 状态                                                    | `require` / `isRunning`           | `plugins.require` / `plugins.isRunning`          |
-| 启动、停止、重启 concrete / fork                                           | 顶层方法或 `commit`               | `plugins.start/stop/restart`                     |
-| 默认 provider 与 consumer override                                         | `commit` 内 `change.dependencies` | `dependencies`，另有 `inspect`                   |
-| 建立、移除 fork                                                            | `commit` 内 `change.forks`        | `forks.ensure/remove`                            |
-| 运行期配置修改、commands、HTTP、Workbench                                  | production-backed drivers         | 当前宿主的同类 drivers                           |
-| fixture、临时 catalog、definition replacement、strict lifecycle assertions | 测试专属                          | 使用当前 catalog、真实更新与领域报告             |
-| 当前宿主管理列表、配置字段描述、日志游标与等待                             | 隔离测试无需在线发现              | `plugins.list/status`、`config.describe`、`logs` |
-
-基础语义共享，但 API 不互相继承。测试可以把多个变化放在同一同步 `commit` callback 中并严格断言最终状态；一段 dev 脚本里的多个 awaited 操作不是全局事务。Console 的 HMR 来自现有 Vite，不提供测试替身注册入口。
+生命周期操作直接返回 Host 的 `PluginApplyReport`；检查报告中的实际状态与问题，再重新读取目标状态。原始报告包含 Core slot 等进程内对象，不能整个返回 CLI；返回 `status()` 快照或明确选取的普通 JSON 字段。`plugins.isRunning()` 同步查询当前运行状态。控制台不注册临时 catalog，也不把领域失败转换成测试断言；CLI 成功执行不表示插件一定启动成功。
 
 ## 编辑配置
 
-先读当前值和字段描述，再验证或修改：
+先读当前值，再验证或修改：
 
 ```ts no-twoslash
 export async function inspectConfig(dev: DevConsole) {
 	return {
 		current: await dev.config.get(TodoPlugin),
-		fields: await dev.config.describe(TodoPlugin),
 	}
 }
 
@@ -199,81 +133,45 @@ export async function increaseLimit(dev: DevConsole) {
 	const checked = await dev.config.validate(TodoPlugin, patch)
 	if (!checked.ok) return checked
 	const applied = await dev.config.patch(TodoPlugin, patch)
-	return { applied, current: await dev.config.get(TodoPlugin) }
-}
-```
-
-`get()` 返回 saved raw values、defaults 和 desired/applied revision；`describe()` 返回可序列化的字段展示 plan，包含字段路径、约束和默认值。它不是原始 Valibot schema 对象。
-
-`patch()` 是已有配置契约的浅合并。修改嵌套字段时，用 `describe()` 给出的 field path 调用 `patchField(target, { fieldPath, value })`，避免替换整个父对象。`reset(target, keys)` 清除指定顶层保存值；省略或空 keys 清除全部保存值。
-
-修改始终经过真实 validation、persistence 和 notification。检查返回的 `application`：`applied`、`deferred`、`saved-not-applied` 含义不同。validate 不保存，但它与之后的 patch 不是一个原子操作；patch 会重新验证。需要 restart 的 Plugin 应显式 restart，而不是直接写 config 私有字段。
-
-## 调用 Workbench RPC 填入数据
-
-宿主需要正常启用 Workbench；控制台不会隐式开启它。先用 `dev.workbench.list({ target, principal })` 查看当前 layout，再从项目代码 import exact descriptor。descriptor 保留 API 类型，让 coding agent 能按真实签名传参。
-
-下面假设项目已导出 `TodoWorkbench.editor`，其 View API 提供 `add({ title })`：
-
-```ts no-twoslash
-import type { DevConsole } from '@pluxel/host-dev/console'
-import { TodoPlugin, TodoWorkbench } from '@example/todo-plugin'
-import { detachWorkbenchPortableValue } from '@pluxel/workbench/client'
-
-export default async function (dev: DevConsole) {
-	const principal = { provider: 'dev-console', subject: 'coding-agent' }
-	using editor = await dev.workbench.open({
-		target: TodoPlugin,
-		entry: TodoWorkbench.editor,
-		principal,
-	})
-	const created = await detachWorkbenchPortableValue(
-		editor.api.add({ title: 'Created through the real Workbench API' }),
-	)
-	return created
-}
-```
-
-principal 显式表达本次调用身份，插件仍可按自己的授权规则拒绝。它不证明浏览器登录成功。open 使用真实本地 Cap’n Web session；View 返回 typed `api`，Attachment 返回 `provider/consumer`，交互 Content 返回 `root`。形状与 test 的 Workbench driver 一致。
-
-每个 RPC 都必须 await，结束时用 using 释放句柄；run scope 会兜底释放遗留 session。对象或数组形式的 RPC 结果使用 `detachWorkbenchPortableValue()` 转成普通数据并释放 transport result；需要业务校验时仍要单独校验。不要跨运行保存 RpcStub，不要返回整个打开的 handle 给 CLI。React 渲染、点击、真实 WebSocket 和登录链路仍需浏览器或 carrier 测试。
-
-## 调用业务方法与读取数据库
-
-优先调用 Plugin 的公开业务方法或已注册 command：
-
-```ts no-twoslash
-const commands = dev.commands.list()
-const result = await dev.commands.execute('todo.add', { title: 'Agent fixture' })
-return { commands, result }
-```
-
-直接实例访问适合项目自己的诊断和 fixture。它不会自动给任意字段修改补齐业务校验、通知、数据库写入或缓存失效；没有通用 `state.patch(path, value)`。
-
-Plugin 如果有意公开 owner-bound database handle，可以像 test 一样使用其 `read()` / `transaction()`；PGlite 就是当前 dev root 的那一个实例。控制台不提供 root SQL admin，不读取 Plugin private field，也不会重新打开 data directory。没有公开 handle 时使用领域方法或 command 填数据。
-
-`dev.http.fetch(new URL('/health', dev.http.origin))` 调用当前进程内 HTTP directory；逻辑 origin 不可用于物理网络连接。
-
-## 日志与续读
-
-```ts no-twoslash
-export async function restartWithLogs(dev: DevConsole) {
-	const cursor = await dev.logs.mark()
-	const result = await dev.plugins.restart(TodoPlugin)
+	if (!applied.ok) return { ok: false, code: applied.code, message: applied.message }
 	return {
-		result,
-		logs: await dev.logs.read({ cursor, target: TodoPlugin, limit: 200 }),
+		ok: true,
+		saved: applied.saved,
+		application: applied.application,
+		current: await dev.config.get(TodoPlugin),
 	}
 }
 ```
 
-`mark()` 刷出当前 store 缓冲后取游标；`read()` 有界扫描并返回下一 cursor。`hasMore` 时继续用返回的 cursor 读下一页。stream reset、retention gap 和 logging root 变化都会明确报告，不能当成“没有日志”。cursor 是 JSON 数据，可以保存并作为后续脚本输入，按 `DevLogCursor` 的字段校验后续读。
+`get()` 返回保存的配置、默认值和 desired/applied revision。四个配置方法直接返回 Host 的 `HostPluginConfigResult`，先检查 `ok`，再读取成功值。保存结果可能包含进程内 apply report；像示例一样选择 `saved/application` 等字段并重新读取配置，不把整个 mutation result 返回 CLI。
 
-`tail()` 用于浏览最近窗口，默认 200、最多 2000；不能用它证明没有更早的匹配。`wait()` 默认等 5 秒，最多 30 秒，还受 run deadline/signal 约束；reason 区分 `available`、`more`、`timeout` 和 `reset`。`more` 表示还有待扫描页，不代表已匹配目标日志。
+`patch()` 是已有配置契约的浅合并；修改嵌套字段前先读取当前对象，明确提供需要保留的字段。`reset(target, keys)` 清除指定顶层保存值；省略或空 keys 清除全部保存值。
 
-默认 launcher 在 devConsole 开启时增加或复用 bounded store，Workbench 关闭也能读日志；显式 custom/silent logging 优先，没有可用 store 时抛出 code 为 `logs_unavailable` 的 `DevConsoleError`。日志等级、redaction 和保存窗口沿用宿主设置，不自动打开 debug。
+修改始终经过真实 validation、persistence 和 notification。检查返回的 `application`：`applied`、`deferred`、`saved-not-applied` 含义不同。validate 不保存，但它与之后的 patch 不是一个原子操作；patch 会重新验证。需要 restart 的 Plugin 应显式 restart，而不是直接写 config 私有字段。
 
-每次执行的外层结果还带 host epoch、前后 catalog/state revision，以及可用时的日志起止 cursor。游标表示时间窗口，不是因果 trace；后台任务和浏览器可能同时产生日志。
+## 访问已安装服务
+
+脚本所在应用声明所需包依赖；`host-dev` 不引用这些包，也不提供服务代理。普通能力使用 `dev.ctx.require(Token)`；root-only 能力由受信任脚本使用 `resolveContextCapability()` 解析。owner-only 能力仍必须通过实际插件 Context 使用，不能用 root 代替插件 owner。
+
+```ts no-twoslash
+import type { DevConsole, DevRunContext } from '@pluxel/host-dev/console'
+import { resolveContextCapability } from '@pluxel/core/host'
+import { HttpServer } from '@pluxel/services/http'
+
+export default async function (dev: DevConsole, run: DevRunContext) {
+	const http = resolveContextCapability(dev.ctx, HttpServer)
+	const response = await http.fetch(new Request('http://local.dev/health', { signal: run.signal }))
+	return { status: response.status, body: await response.text() }
+}
+```
+
+这个请求使用当前进程内 HTTP directory，逻辑 origin 不是物理监听地址。应用必须已安装 HTTP 服务；服务缺失按能力解析契约报错，不影响其他控制台操作。
+
+Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [Commands](../runtime/commands.md)、[Workbench](../workbench/index.md) 和 [结构化日志](../runtime/logging.md)。Workbench 的 principal、session 和 RPC 结果释放遵循其原有契约；控制台不会替脚本创建或回收这些资源。Plugin 公开的业务方法也可直接通过 `dev.plugins.require()` 调用。数据库访问使用业务方法或插件公开的 owner-bound handle，不重新打开应用的数据目录。
+
+`this.ctx.logger` 是 Core 基础能力，插件无需 import Logging 包；脚本也能使用 `dev.ctx.logger`。输出、过滤和日志存储由宿主的 logging 配置决定。需要查询存储时显式使用 `@pluxel/logging` 的 `Logging` 能力和 store API；控制台不自动增加 store，也不在执行结果里附加日志游标。读取日志时保留存储本身的 epoch、retention 和 gap 语义，返回有界的普通数据。
+
+`dev.ctx` 只借用本次执行的 Host。不要跨执行或 Host replacement 缓存 Context、Plugin、服务 handle 或 RPC session。直接服务调用不会自动绑定取消；传入 `run.signal`，await 所有调用，并用 `using` 或 `try/finally` 释放脚本创建的资源。
 
 ## 结果、取消和恢复
 
@@ -310,7 +208,7 @@ pluxel dev result run-id --root /workspace/my-host --instance instance-id
 
 默认时限 30 秒，可用 `--timeout` 请求 1 至 300000 毫秒；时限包含排队。超时发出协作取消信号，尚未 settle 的脚本不会提前让出执行位置。CPU 死循环仍会阻塞同进程 dev；执行器不会为强制停止单个脚本而杀掉整个宿主。
 
-每个 host 串行执行脚本，最多排队 16 个。一段脚本不是全局事务，HMR、浏览器和后台任务仍能交错。已提交的插件操作、配置和数据不会自动回滚。请 await 所有 driver/RPC 操作，并对自建 timer、文件等资源使用 using、try/finally 和 run.signal。取消会立即关闭新 driver 操作的入口，并把 signal 传给 commands、HTTP 和日志等待；已经接纳的配置或生命周期操作会继续排空，不承诺强制中断。
+每个 host 串行执行脚本，最多排队 16 个。一段脚本不是全局事务，HMR、浏览器和后台任务仍能交错。已提交的插件操作、配置和数据不会自动回滚。请 await 所有 driver/RPC 操作，并对自建 timer、文件等资源使用 using、try/finally 和 run.signal。取消会立即关闭新的控制台操作入口；已经接纳的配置或生命周期操作会继续排空。直接调用的服务需要脚本显式传入 `run.signal`，不承诺强制中断或自动回收。
 
 仅返回 JSON 投影：对象 undefined 字段省略，数组 undefined 和顶层无返回值编码为 null。函数、BigInt、非有限数字、循环引用、accessor、class instance 和 RPC capability 会明确失败；不自动调用 toJSON。输入/输出最多 1 MiB，另有 64 层/100000 节点限制。编码失败也可能发生在业务写入之后，不应直接重跑。
 

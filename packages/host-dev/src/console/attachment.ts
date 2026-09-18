@@ -4,7 +4,7 @@ import { open, realpath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { normalizePath, type ViteDevServer } from 'vite'
 import type { RootContext } from '@pluxel/core'
-import { createDevConsoleScope } from '../dev/console'
+import { createDevConsoleScope, type DevConsoleScope } from '../dev/console'
 import {
 	collectViteSsrImportFiles,
 	importViteSsrModule,
@@ -17,8 +17,8 @@ import { startDevConsoleServer } from './server'
 export type DevConsoleHost = Readonly<{
 	ctx: RootContext
 	epoch: string
-	fetch?(request: Request): Response | Promise<Response>
 }>
+
 export type DevConsoleAttachment = Readonly<{
 	/** Abort old scopes and drain tracked resources; does not forcibly terminate arbitrary JavaScript. */
 	hostChanged(): Promise<void>
@@ -48,7 +48,7 @@ export async function attachDevConsole(
 		const path = normalizePath(file)
 		return scripts.has(path) || [...scripts.values()].some((dependencies) => dependencies.has(path))
 	}
-	const scopes = new Set<ReturnType<typeof createDevConsoleScope>>()
+	const scopes = new Set<DevConsoleScope>()
 	let closed = false
 	const server = await startDevConsoleServer({
 		root,
@@ -149,30 +149,17 @@ export async function attachDevConsole(
 					'host_changed',
 					'Dev host changed while loading dependencies',
 				)
-			const scope = createDevConsoleScope({ ctx: host.ctx, signal: run.signal, fetch: host.fetch })
+			const scope = createDevConsoleScope({
+				ctx: host.ctx,
+				signal: run.signal,
+			})
 			scopes.add(scope)
-			const captureLogs = async (stage: 'before' | 'after') => {
-				if (run.signal.aborted) return
-				try {
-					run.logCursor(stage, await scope.dev.logs.mark())
-				} catch (error) {
-					if (
-						error &&
-						typeof error === 'object' &&
-						'code' in error &&
-						error.code === 'logs_unavailable'
-					)
-						return
-					throw error
-				}
-			}
 			run.phase('execute')
 			let result: unknown
 			let executionError: unknown
 			let failed = false
 			try {
 				run.revision('before', await scope.snapshot())
-				await captureLogs('before')
 				result = await execute(
 					scope.dev,
 					Object.freeze({ id: input.runId, input: input.input, signal: run.signal }),
@@ -183,7 +170,6 @@ export async function attachDevConsole(
 			}
 			try {
 				run.revision('after', await scope.snapshot())
-				await captureLogs('after')
 			} catch (error) {
 				if (!failed) {
 					failed = true

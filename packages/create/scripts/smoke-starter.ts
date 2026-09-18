@@ -21,6 +21,7 @@ const publishRoots = [
 	'@pluxel/host-dynamic',
 	'@pluxel/host-dev',
 	'@pluxel/test',
+	'@pluxel/vault-admin',
 ] as const
 
 try {
@@ -78,11 +79,18 @@ async function resolveLocalPublishClosure(
 	root: string,
 	rootNames: readonly string[],
 ): Promise<LocalPublishPackage[]> {
-	const entries = await readdir(resolve(root, 'packages'), { withFileTypes: true })
+	const directories = await Promise.all(
+		['packages', 'plugins'].map(async (directory) => {
+			const entries = await readdir(resolve(root, directory), { withFileTypes: true })
+			return entries
+				.filter((entry) => entry.isDirectory())
+				.map((entry) => `${directory}/${entry.name}`)
+		}),
+	)
+	const entries = directories.flat()
 	const discovered = new Map<string, LocalPublishPackage>()
 	for (const entry of entries) {
-		if (!entry.isDirectory()) continue
-		const path = `packages/${entry.name}`
+		const path = entry
 		let manifest: LocalPublishPackage['manifest'] & { name?: string; private?: boolean }
 		try {
 			manifest = JSON.parse(await readFile(resolve(root, path, 'package.json'), 'utf8'))
@@ -186,8 +194,8 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	])
 	const environmentExample = await readFile(resolve(dist, '.env.example'), 'utf8')
 	if (
-		!environmentExample.includes('# EXAMPLE_TODO_MAX_ITEMS=') ||
-		!environmentExample.includes('# Input: number')
+		!environmentExample.includes('# PLUXEL_DATA_ROOT=') ||
+		!environmentExample.includes('# PLUXEL_WORKBENCH=')
 	) {
 		throw new Error(`Created application .env.example is incomplete: ${environmentExample}`)
 	}
@@ -196,10 +204,10 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	const smoke = [
 		'const app = await import(process.argv[1])',
 		'try {',
-		"\tif (app.ctx.workbench === undefined) throw new Error('Workbench should be enabled by default')",
 		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
 		'\tconst initial = await fetch(`${origin}/api/example/todos`)',
-		"\tif (!initial.ok || (await initial.json()).items[0]?.title !== 'Trace a Todo from React to a Plugin') throw new Error(`Frozen Todo route returned ${initial.status}`)",
+		'\tconst initialTodos = await initial.json()',
+		"\tif (!initial.ok || initialTodos.items[0]?.title !== 'Trace a Todo from React to a Plugin' || initialTodos.maxItems !== 2) throw new Error(`Frozen Todo route or deployment config failed: ${initial.status}`)",
 		"\tconst created = await fetch(`${origin}/api/example/todos`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Smoke the frozen route' }) })",
 		'\tif (created.status !== 201 || (await created.json()).items.length !== 2) throw new Error(`Frozen Todo mutation returned ${created.status}`)',
 		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
@@ -217,6 +225,7 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	].join('\n')
 	await runProcess(process.execPath, ['--input-type=module', '--eval', smoke, entry], root, {
 		PLUXEL_HOST_PORT: '0',
+		EXAMPLE_TODO_MAX_ITEMS: '2',
 	})
 }
 

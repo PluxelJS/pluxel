@@ -1,10 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import { host } from '@pluxel/host-dev/vite'
-import { nodeArtifacts } from '@pluxel/host-dev/node'
-import { httpDevelopment } from '@pluxel/host-dev/http'
-import { workbenchArtifacts } from '@pluxel/workbench/dev'
+import { vitePreset } from '@pluxel/services/vite'
 import { hostEnv } from '@pluxel/runtime/environment'
 
 const webRoot = fileURLToPath(new URL('./web', import.meta.url))
@@ -27,11 +24,5 @@ export default defineConfig({
 	optimizeDeps: {
 		entries: [webEntry],
 	},
-	plugins: [
-		react(),
-		host({ entry, devConsole: true }),
-		nodeArtifacts(),
-		process.env.PLUXEL_WORKBENCH !== 'false' ? workbenchArtifacts() : undefined,
-		httpDevelopment(),
-	],
+	plugins: [react(), vitePreset({ entry, devConsole: true })],
 })

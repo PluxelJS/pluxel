@@ -27,10 +27,6 @@
 			"@pluxel/source": "./src/hmr-log.ts",
 			"default": "./dist/hmr-log.mjs"
 		},
-		"./http": {
-			"@pluxel/source": "./src/http.ts",
-			"default": "./dist/http.mjs"
-		},
 		"./internal/console/attachment": {
 			"@pluxel/source": "./src/console/attachment.ts",
 			"default": "./dist/internal/console/attachment.mjs"
@@ -51,41 +47,9 @@
 			"@pluxel/source": "./src/dev/console.ts",
 			"default": "./dist/internal/dev/console.mjs"
 		},
-		"./internal/dev/contracts": {
-			"@pluxel/source": "./src/dev/contracts.ts",
-			"default": "./dist/internal/dev/contracts.mjs"
-		},
-		"./internal/dev/dependencies": {
-			"@pluxel/source": "./src/dev/dependencies.ts",
-			"default": "./dist/internal/dev/dependencies.mjs"
-		},
-		"./internal/dev/forks": {
-			"@pluxel/source": "./src/dev/forks.ts",
-			"default": "./dist/internal/dev/forks.mjs"
-		},
-		"./internal/dev/logs": {
-			"@pluxel/source": "./src/dev/logs.ts",
-			"default": "./dist/internal/dev/logs.mjs"
-		},
-		"./internal/dev/scope": {
-			"@pluxel/source": "./src/dev/scope.ts",
-			"default": "./dist/internal/dev/scope.mjs"
-		},
-		"./internal/dev/workbench": {
-			"@pluxel/source": "./src/dev/workbench.ts",
-			"default": "./dist/internal/dev/workbench.mjs"
-		},
 		"./internal/update-error": {
 			"@pluxel/source": "./src/internal/update-error.ts",
 			"default": "./dist/internal/update-error.mjs"
-		},
-		"./internal/vite-node-carrier": {
-			"@pluxel/source": "./src/internal/vite-node-carrier.ts",
-			"default": "./dist/internal/vite-node-carrier.mjs"
-		},
-		"./node": {
-			"@pluxel/source": "./src/node.ts",
-			"default": "./dist/node.mjs"
 		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
@@ -98,71 +62,42 @@
 			".": "./dist/index.mjs",
 			"./console": "./dist/console.mjs",
 			"./hmr-log": "./dist/hmr-log.mjs",
-			"./http": "./dist/http.mjs",
 			"./internal/console/attachment": "./dist/internal/console/attachment.mjs",
 			"./internal/console/executor": "./dist/internal/console/executor.mjs",
 			"./internal/console/protocol": "./dist/internal/console/protocol.mjs",
 			"./internal/console/server": "./dist/internal/console/server.mjs",
 			"./internal/dev/console": "./dist/internal/dev/console.mjs",
-			"./internal/dev/contracts": "./dist/internal/dev/contracts.mjs",
-			"./internal/dev/dependencies": "./dist/internal/dev/dependencies.mjs",
-			"./internal/dev/forks": "./dist/internal/dev/forks.mjs",
-			"./internal/dev/logs": "./dist/internal/dev/logs.mjs",
-			"./internal/dev/scope": "./dist/internal/dev/scope.mjs",
-			"./internal/dev/workbench": "./dist/internal/dev/workbench.mjs",
 			"./internal/update-error": "./dist/internal/update-error.mjs",
-			"./internal/vite-node-carrier": "./dist/internal/vite-node-carrier.mjs",
-			"./node": "./dist/node.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		},
 		"access": "public"
 	},
 	"scripts": {
-		"test": "pnpm exec vitest run && pnpm run test:installed",
+		"test": "pnpm exec vitest run",
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../..",
-		"test:installed": "node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs"
+		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
-		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
-		"@pluxel/services": "workspace:^",
-		"capnweb": "catalog:prod",
 		"chokidar": "catalog:node",
-		"pathe": "catalog:node",
-		"srvx": "catalog:prod"
+		"pathe": "catalog:node"
 	},
 	"devDependencies": {
 		"@logtape/logtape": "catalog:dev",
-		"@pluxel/logging": "workspace:*",
-		"@pluxel/management": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@pluxel/workbench": "workspace:*",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {
-		"@pluxel/logging": "workspace:^",
-		"@pluxel/management": "workspace:^",
-		"@pluxel/workbench": "workspace:^",
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"vite": {
-			"optional": true
-		},
-		"@pluxel/management": {
-			"optional": true
-		},
-		"@pluxel/logging": {
-			"optional": true
-		},
-		"@pluxel/workbench": {
 			"optional": true
 		}
 	}

@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "pnpm exec vite --config vite.config.ts",
+		"dev": "pnpm exec turbo run build --filter=@pluxel/plugins-host^... --dangerously-disable-package-manager-check && pnpm exec vite --config vite.config.ts",
 		"build": "pnpm exec tsdown",
 		"start": "node dist/app.mjs",
 		"test": "vitest run --config vitest.config.ts",

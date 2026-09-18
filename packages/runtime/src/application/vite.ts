@@ -1,3 +1,4 @@
+import { serviceSingletons } from '@pluxel/services/vite'
 import { portableUpdatePath, describeUpdateError } from '@pluxel/host-dev/internal/update-error'
 import { resolveDevWorkbenchClientEntryUrl } from '@pluxel/workbench/internal/shell'
 import { optionalWorkbench } from '@pluxel/workbench/server'
@@ -7,7 +8,7 @@ import {
 	attachSrvxViteNodeCarrier,
 	createViteNodeElysiaApplicationCarrier,
 	type SrvxViteNodeCarrierAttachment,
-} from '@pluxel/host-dev/internal/vite-node-carrier'
+} from '@pluxel/services/internal/vite-node-carrier'
 import { installPluxelViteUrlPrinter } from '../development/vite-urls.ts'
 import { createWorkbenchViteClientConfig } from '../development/vite-client.ts'
 import { randomUUID } from 'node:crypto'
@@ -22,7 +23,6 @@ import {
 	invalidateHostChangedModules,
 	ViteApplicationRecovery,
 	createHostModuleVitePlugin,
-	hostSingletons,
 	importViteSsrModule,
 	invalidateViteSsrModule,
 } from '@pluxel/host-dev/vite'
@@ -795,7 +795,6 @@ export function runtime(options: RuntimeVitePluginOptions): PluginOption[] {
 							state.host && {
 								ctx: state.host.ctx.root,
 								epoch: hostEpochs.get(state.host)!,
-								fetch: state.host.fetch.bind(state.host),
 							},
 						prepare: async (_file, signal) => {
 							const observed = driver.settled()
@@ -901,7 +900,7 @@ export function runtime(options: RuntimeVitePluginOptions): PluginOption[] {
 	}
 
 	return [
-		hostSingletons(),
+		serviceSingletons(),
 		recovery.plugin,
 		staticConfigEnvironmentVitePlugin({ entry: options.entry }),
 		...sourcePipeline.plugins,

@@ -1063,9 +1063,6 @@ importers:
 
   packages/host-dev:
     dependencies:
-      '@pluxel/commands':
-        specifier: workspace:^
-        version: link:../commands
       '@pluxel/core':
         specifier: workspace:^
         version: link:../core
@@ -1075,37 +1072,19 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:^
         version: link:../rolldown
-      '@pluxel/services':
-        specifier: workspace:^
-        version: link:../services
-      capnweb:
-        specifier: catalog:prod
-        version: 0.12.0
       chokidar:
         specifier: catalog:node
         version: 5.0.0
       pathe:
         specifier: catalog:node
         version: 2.0.3
-      srvx:
-        specifier: catalog:prod
-        version: 0.12.7
     devDependencies:
       '@logtape/logtape':
         specifier: catalog:dev
         version: 2.3.2
-      '@pluxel/logging':
-        specifier: workspace:*
-        version: link:../logging
-      '@pluxel/management':
-        specifier: workspace:*
-        version: link:../management
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
-      '@pluxel/workbench':
-        specifier: workspace:*
-        version: link:../workbench
       react:
         specifier: catalog:frontend
         version: 19.2.8
@@ -1495,6 +1474,9 @@ importers:
       age-encryption:
         specifier: catalog:prod
         version: 0.3.1
+      chokidar:
+        specifier: catalog:node
+        version: 5.0.0
       crossws:
         specifier: catalog:prod
         version: 0.4.12(srvx@0.12.7)
@@ -1514,9 +1496,24 @@ importers:
       '@electric-sql/pglite':
         specifier: catalog:prod
         version: 0.5.8
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../host-dev
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../management
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../workbench
       '@types/pg':
         specifier: catalog:types
         version: 8.23.1
@@ -1526,6 +1523,9 @@ importers:
       pg:
         specifier: catalog:backend
         version: 8.23.0
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
   packages/test:
     dependencies:

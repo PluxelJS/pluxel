@@ -1,4 +1,4 @@
-import { attachNodeArtifactCompiler } from '@pluxel/host-dev/node'
+import { attachNodeArtifactCompiler } from '@pluxel/services/node/vite'
 import type { Context } from '../index.ts'
 import { optionalWorkbench } from '@pluxel/workbench/server'
 

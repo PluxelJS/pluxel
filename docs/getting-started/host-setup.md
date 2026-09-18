@@ -3,6 +3,8 @@ title: 把 Pluxel 接入现有项目
 description: 使用一个应用声明配置插件、可选动态来源、运行状态与 Workbench。
 ---
 
+新建应用优先使用 [HostApplication 官方默认组合](../reference/runtime-services.md#官方默认组合)，与 starter 和官方 plugin-host 一致。本页描述仍受支持的 `RuntimeApplication` 入口。
+
 宿主负责加载插件、持久化配置和提供网络端口。应用通过一个 `RuntimeApplication` 声明固定插件与服务配置；
 需要运行期间增删插件文件时，增加可选 `sources` 即可，开发和生产使用同一个入口。
 
