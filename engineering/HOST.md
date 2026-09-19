@@ -23,7 +23,7 @@
 `ctx.root` 返回真实根引用，持有它的受信任代码可访问 root 能力；这不是不可信代码沙箱。Core 内部图 authority 的 token 不进入普通作者入口。
 
 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers、Persistence。`servicesPreset()` 增加 Vault、Logging、Management、管理命令及可选 Workbench。Database 显式选择 backend。
-未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务。
+未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
 
 ## 应用、开发和部署
 
@@ -47,7 +47,7 @@ Host-dev 是唯一开发驱动；官方服务附件分别由 Services、Workbenc
 `HttpServer` 是 root-only 分发和 carrier 接入，不属于 Plugin owner。物理 listener 由 Node launcher 或 Vite 持有；generation 停止不能关闭共享 listener。
 请求、stream 和 WebSocket 持有 generation lease；停止先拒绝新操作，排空已接纳操作后再清理。跨 owner route collision 只检查已证明的精确 route inventory，不模拟 Elysia matcher grammar。
 
-Management 安装认证、状态投影和 RPC session；Workbench 安装内容/publication、页面和交互能力。它们共享 Host coordinator，不保存第二份插件运行状态。业务 HTTP 不自动继承 Management 认证。
+Management 安装认证、状态投影和 RPC session；Workbench 安装内容/publication、页面和交互能力。它们共享 Host coordinator，不保存第二份插件运行状态。业务 HTTP 不自动继承 Management 认证。`managementHttp()` 唯一持有管理 endpoint；`workbenchHttp()` 只拥有 Shell fallback。preset 通过既有 bindings 组合 Workbench session/artifact handler，并用 `requires: { workbench: WorkbenchHost }` 声明准备顺序。
 `managementCommands()` 把插件查询和 lifecycle 命令发布到显式安装的 Commands catalog；它是独立接入，不能让通用 Commands 服务隐式安装管理面。
 
 ## 资源边界与验证入口

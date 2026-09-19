@@ -58,7 +58,7 @@ export default defineConfig({
 
 `persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。环境变量由应用的 `configure(startup)` 显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
-官方构建默认携带 Workbench shell，并维护动态插件所需的官方共享入口。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。
+官方构建默认携带 Workbench shell，并维护动态插件所需的官方共享入口。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
 ## 自定义开发组合
 
@@ -293,7 +293,11 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 应用 `tsdown.config.ts` 使用 `pluxel()`（`@pluxel/rolldown`）。`launcher: 'host'` 适合后台服务；
 `'fetch'` 输出 HTTP handler，`'node'` 再启动 Node 监听器。后两项要求应用选择 `http()`。
 构建不会执行 `configure()`，运行时才读取最新环境。`variant: 'headless'` 不携带 Workbench shell。
-Workbench 应用显式安装 `workbenchService()` 和 `workbenchHttp()`，并选择 `variant: 'workbench'` 携带 shell。
+Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/standalone-host.md) `workbenchService()`、`managementHttp({ bindings })` 与 `workbenchHttp()`，并选择 `variant: 'workbench'` 携带 shell。
+
+仅安装 Management 无需安装 Workbench，包含 TypeScript 使用场景。自定义 Workbench Shell 可调用
+`createRuntimeSessionClient<WorkbenchSessionApi>()`，分别从 `@pluxel/management/session` 与
+`@pluxel/workbench/client` 导入工厂和 API 类型；普通管理客户端无需指定泛型。
 
 开发附件同时接入源码 Plugin 的 Workbench 声明和已安装包的 `dist/workbench` inventory。对于预编译包，它依据本次实际求值模块的 Core ABI 识别所属包，只接纳 catalog 选中的 Plugin definition，并校验产物；不会重新编译发布包。因此 npm 安装的 `@pluxel/vault-admin` 也可在开发环境启动。源码与包产物共享候选提交、拒绝保留和移除撤回流程；仍应通过插件状态确认启动结果，Workbench shell 可访问不代表所有 Plugin 已就绪。
 

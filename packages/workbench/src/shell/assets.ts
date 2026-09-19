@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'pathe'
@@ -21,34 +20,8 @@ type Manifest = Record<string, ManifestEntry>
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
 
-// Stable URL for packaged shell resources; development resolves the source entry through Vite.
+// Stable URL for packaged shell resources. Explicit source Shells use their Vite entry URL.
 export const DEFAULT_PUBLIC_BASE = UI_PUBLIC_BASE
-
-function toViteFsPath(absPath: string): string {
-	const normalized = absPath.replaceAll('\\', '/')
-	return normalized.startsWith('/') ? `/@fs${normalized}` : `/@fs/${normalized}`
-}
-
-export function resolveDevWorkbenchClientEntryUrl(): string | undefined {
-	const candidates = [
-		resolve(moduleDir, '../../../workbench-app/src/client.tsx'),
-		resolve(moduleDir, '../../workbench-app/src/client.tsx'),
-	]
-
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return toViteFsPath(candidate)
-	}
-
-	return undefined
-}
-
-export function resolveDevAssets(): Assets {
-	const js = resolveDevWorkbenchClientEntryUrl()
-	if (!js) {
-		throw new Error('Workbench source entry is unavailable; use the packaged Workbench assets')
-	}
-	return { js, css: [], preload: [] }
-}
 
 const pickEntry = (manifest: Manifest, entry = '../workbench-app/src/client.tsx') =>
 	entry in manifest

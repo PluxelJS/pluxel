@@ -50,6 +50,10 @@
 			"@pluxel/source": "./src/shell/internal.ts",
 			"default": "./dist/internal/shell.mjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
 		"./paths": {
 			"@pluxel/source": "./src/paths.ts",
 			"default": "./dist/paths.mjs"
@@ -70,6 +74,10 @@
 			"@pluxel/source": "./src/shell.ts",
 			"default": "./dist/shell.mjs"
 		},
+		"./test": {
+			"@pluxel/source": "./src/test.ts",
+			"default": "./dist/test.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -83,11 +91,13 @@
 			"./internal/definition": "./dist/internal/definition.mjs",
 			"./internal/react": "./dist/internal/react.mjs",
 			"./internal/shell": "./dist/internal/shell.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
 			"./paths": "./dist/paths.mjs",
 			"./react": "./dist/react.mjs",
 			"./server": "./dist/server.mjs",
 			"./service": "./dist/service.mjs",
 			"./shell": "./dist/shell.mjs",
+			"./test": "./dist/test.mjs",
 			"./package.json": "./package.json"
 		},
 		"access": "public"

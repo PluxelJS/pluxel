@@ -1,5 +1,4 @@
-import { newWebSocketRpcSession, type RpcStub } from '../../capnweb'
-import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
+import { newWebSocketRpcSession, type RpcStub, type RpcTarget } from '../../capnweb'
 import { ADMIN_ACCESS_COOKIE_COMMIT_PATH } from '../../services/admin-access/transport'
 import {
 	RUNTIME_SESSION_PATH,
@@ -10,7 +9,7 @@ import {
 	type RuntimeSessionRoot,
 } from './protocol'
 
-export type RuntimeClientBootstrap =
+export type RuntimeClientBootstrap<TWorkbench extends RpcTarget = RpcTarget> =
 	| Readonly<{
 			kind: 'authentication-required'
 			profile: 1
@@ -25,47 +24,50 @@ export type RuntimeClientBootstrap =
 			kind: 'workbench'
 			profile: 1
 			management: RpcStub<RuntimeManagementTarget>
-			workbench: RpcStub<WorkbenchSessionApi>
+			workbench: RpcStub<TWorkbench>
 	  }>
 
-type OwnedRuntimeBootstrap = RuntimeClientBootstrap & Disposable
+type OwnedRuntimeBootstrap<TWorkbench extends RpcTarget = RpcTarget> =
+	RuntimeClientBootstrap<TWorkbench> & Disposable
 
 export type RuntimeSessionClientOptions = Readonly<{
 	onBroken?(error: unknown): void
 }>
 
-export interface RuntimeSessionClient extends Disposable {
-	bootstrap(observer: RuntimeSessionObserver): Promise<RuntimeClientBootstrap>
+export interface RuntimeSessionClient<TWorkbench extends RpcTarget = RpcTarget> extends Disposable {
+	bootstrap(observer: RuntimeSessionObserver): Promise<RuntimeClientBootstrap<TWorkbench>>
 	logout(): Promise<RuntimeLogoutResult>
 	commitCookie(ticket: string): Promise<void>
-	readonly current: RuntimeClientBootstrap | undefined
+	readonly current: RuntimeClientBootstrap<TWorkbench> | undefined
 }
 
 /** Creates the document's one non-reconnecting Cap'n Web control session. */
-export function createRuntimeSessionClient(
+export function createRuntimeSessionClient<TWorkbench extends RpcTarget = RpcTarget>(
 	options: RuntimeSessionClientOptions = {},
-): RuntimeSessionClient {
-	return new RuntimeSessionClientImpl(options)
+): RuntimeSessionClient<TWorkbench> {
+	return new RuntimeSessionClientImpl<TWorkbench>(options)
 }
 
-class RuntimeSessionClientImpl implements RuntimeSessionClient {
-	private readonly root: RpcStub<RuntimeSessionRoot>
-	private owned?: OwnedRuntimeBootstrap
+class RuntimeSessionClientImpl<
+	TWorkbench extends RpcTarget,
+> implements RuntimeSessionClient<TWorkbench> {
+	private readonly root: RpcStub<RuntimeSessionRoot<TWorkbench>>
+	private owned?: OwnedRuntimeBootstrap<TWorkbench>
 	private disposed = false
 
 	constructor(options: RuntimeSessionClientOptions) {
 		const socket = new WebSocket(runtimeSessionUrl())
-		this.root = newWebSocketRpcSession<RuntimeSessionRoot>(socket)
+		this.root = newWebSocketRpcSession<RuntimeSessionRoot<TWorkbench>>(socket)
 		if (options.onBroken) this.root.onRpcBroken(options.onBroken)
 	}
 
-	get current(): RuntimeClientBootstrap | undefined {
+	get current(): RuntimeClientBootstrap<TWorkbench> | undefined {
 		return this.owned
 	}
 
-	async bootstrap(observer: RuntimeSessionObserver): Promise<RuntimeClientBootstrap> {
+	async bootstrap(observer: RuntimeSessionObserver): Promise<RuntimeClientBootstrap<TWorkbench>> {
 		if (this.disposed) throw new Error('Runtime session client is disposed')
-		const result = (await this.root.bootstrap(observer)) as OwnedRuntimeBootstrap
+		const result = (await this.root.bootstrap(observer)) as OwnedRuntimeBootstrap<TWorkbench>
 		try {
 			validateBootstrap(result)
 		} catch (error) {

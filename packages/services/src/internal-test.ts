@@ -1,5 +1,3 @@
-import '@pluxel/services/vault'
-
 export { createServiceInternalTestHost } from './testing/service-host'
 export type { ServiceInternalTestHost } from './testing/service-host'
 export {
@@ -21,5 +19,4 @@ export type {
 	ServiceCommandsTestDriver,
 	ServiceConfigTestDriver,
 	ServiceHttpTestDriver,
-	ServiceWorkbenchTestDriver,
 } from './testing/contracts'

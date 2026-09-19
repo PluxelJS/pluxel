@@ -56,13 +56,12 @@ import {
 	requireHostStateStore,
 	type HostStateStore,
 } from '@pluxel/host/internal'
-import { type ServiceTestHostOptions } from './options'
+import { type ServiceTestHostOptions, type ServiceInternalTestHostOptions } from './options'
 
 import {
 	type ServiceCommandsTestDriver,
 	type ServiceConfigTestDriver,
 	type ServiceHttpTestDriver,
-	type ServiceWorkbenchTestDriver,
 } from './contracts'
 import { createServiceTestDriverScope } from './driver-scope'
 import { createServiceTestApplication, type ServiceInternalTestRootOptions } from './service-root'
@@ -110,7 +109,6 @@ export interface ServiceTestHost extends AsyncDisposable {
 	readonly config: ServiceConfigTestDriver
 	readonly http: ServiceHttpTestDriver
 	readonly commands: ServiceCommandsTestDriver
-	readonly workbench: ServiceWorkbenchTestDriver
 	start<TTarget extends PluginTestTarget>(
 		target: TTarget,
 		options?: ServicePluginStartOptions,
@@ -213,14 +211,25 @@ const EMPTY_TEST_SUMMARY: PluginTestCommitSummary = Object.freeze({
 export async function createServiceTestHost(
 	config: ServiceTestHostOptions = {},
 ): Promise<ServiceTestHost> {
+	if (Object.hasOwn(config, 'workbench')) {
+		throw new TypeError(
+			'[pluxel/test] Workbench tests use createWorkbenchTestHost() from @pluxel/workbench/test',
+		)
+	}
 	const world = await createServiceHostWorld(config)
 	return world.host
 }
 
+type ServiceInternalTestHostSetup = ServiceInternalTestRootOptions &
+	Readonly<{
+		/** Release composed test resources after invocation drain, before bodies and Host services close. */
+		beforeClose?: () => void | Promise<void>
+	}>
+
 /** @internal Create the same world with explicit root/service authority. */
 export async function createServiceInternalTestHost(
-	config: ServiceTestHostOptions = {},
-	options: ServiceInternalTestRootOptions = {},
+	config: ServiceInternalTestHostOptions = {},
+	options: ServiceInternalTestHostSetup = {},
 ): Promise<ServiceInternalTestHost> {
 	const world = await createServiceHostWorld(config, options)
 	return world.internalHost
@@ -503,8 +512,8 @@ function createChange(
 }
 
 async function createServiceHostWorld(
-	config: ServiceTestHostOptions,
-	rootOptions: ServiceInternalTestRootOptions = {},
+	config: ServiceInternalTestHostOptions,
+	rootOptions: ServiceInternalTestHostSetup = {},
 ): Promise<Readonly<{ host: ServiceTestHost; internalHost: ServiceInternalTestHost }>> {
 	const application = await createServiceTestApplication(config, rootOptions)
 	const ctx = application.ctx
@@ -818,7 +827,7 @@ async function createServiceHostWorld(
 
 	const dispose = (): Promise<void> => {
 		if (disposal) return disposal
-		disposal = (async () => {
+		const scopeDisposal = scope.dispose(async () => {
 			const errors: unknown[] = []
 			try {
 				await closeOwnerInvocations(ctx.root)
@@ -826,7 +835,18 @@ async function createServiceHostWorld(
 				errors.push(error)
 			}
 			try {
-				await scope.dispose()
+				await rootOptions.beforeClose?.()
+			} catch (error) {
+				errors.push(error)
+			}
+			if (errors.length === 1) throw errors[0]
+			if (errors.length > 0)
+				throw new AggregateError(errors, 'Service test resource cleanup failed')
+		})
+		disposal = (async () => {
+			const errors: unknown[] = []
+			try {
+				await scopeDisposal
 			} catch (error) {
 				errors.push(error)
 			}
@@ -868,7 +888,6 @@ async function createServiceHostWorld(
 		config: scope.config,
 		http: scope.http,
 		commands: scope.commands,
-		workbench: scope.workbench,
 		start,
 		stop,
 		restart,

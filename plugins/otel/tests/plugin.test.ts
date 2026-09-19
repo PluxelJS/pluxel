@@ -41,7 +41,7 @@ describe('OtelPlugin', () => {
 	it('exposes native caller-scoped OTel instruments through Prometheus pull', async () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
-			await using host = await createServiceTestHost({ workbench: false })
+			await using host = await createServiceTestHost()
 			await host.start(OtelPlugin, {
 				catalog: [Consumer],
 				initialConfig: { otlp: [], prometheus: { path: '/metrics' } },

@@ -1,9 +1,10 @@
 import { newWebSocketRpcSession, RpcTarget, type RpcStub } from '../../capnweb'
 import type { AdminAuthenticationSession } from '../../services/admin-access/AdminAccessService'
-import type { WorkbenchServerSession } from '@pluxel/workbench/server'
-import type { WorkbenchPrincipal } from '@pluxel/workbench'
 import type { RuntimeManagementTarget } from '../management-target'
-import type { ManagementAuthenticationProviderStep } from '../../services/admin-access/types'
+import type {
+	AdminAccessPrincipal,
+	ManagementAuthenticationProviderStep,
+} from '../../services/admin-access/types'
 import {
 	RUNTIME_SESSION_PROFILE,
 	type RuntimeLogoutResult,
@@ -21,9 +22,9 @@ const OBSERVER_DEADLINE_MS = 250
 export type RuntimeSessionFactories = Readonly<{
 	createManagement(session: Readonly<{ signal: AbortSignal }>): RuntimeManagementTarget
 	createWorkbench?(
-		principal: WorkbenchPrincipal,
+		principal: AdminAccessPrincipal,
 		invalidate: (cause: Error) => void,
-	): WorkbenchServerSession
+	): Readonly<{ target: RpcTarget; dispose(): void }>
 	onError(error: unknown): void
 }>
 
@@ -98,7 +99,7 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 	private observer?: RpcStub<RuntimeSessionObserver>
 	private management?: RuntimeManagementTarget
 	private readonly scope = new AbortController()
-	private workbenchSession?: WorkbenchServerSession
+	private workbenchSession?: ReturnType<NonNullable<RuntimeSessionFactories['createWorkbench']>>
 	private authenticationDelivered = false
 	private readyDelivered = false
 	private active = true

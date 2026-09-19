@@ -1,3 +1,5 @@
+import { servicesPreset } from '../src/index'
+import { HttpServer } from '../src/http'
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { Commands, commands } from '../src/commands'
@@ -31,6 +33,41 @@ const node = (plugin: typeof Credentials | typeof SearchConsumer) => ({
 })
 
 describe('independently composed official and external services', () => {
+	it.each([false, true])(
+		'keeps Management HTTP independent of Workbench selection (%s)',
+		async (workbench) => {
+			const services = await servicesPreset(
+				{ root: process.cwd(), mode: 'development', env: {}, bindings: {} },
+				{
+					persistence: { mode: 'memory' },
+					workbench,
+				},
+			)
+			// Preparation order follows declared capabilities, not the preset's array order.
+			const host = await createHost({ plugins: [], services: services.toReversed() })
+			try {
+				await host.start()
+				const server = host.ctx.require(HttpServer)
+				const request = new Request('http://local.dev/__pluxel/runtime/session', {
+					headers: { upgrade: 'websocket', connection: 'Upgrade' },
+				})
+				expect(server.matchesRequest(request)).toBe(true)
+				expect(server.matchesWebSocketRoute(request)).toBe(true)
+				const handshake = await server.fetch(new Request(request.url))
+				expect(handshake.status).toBe(400)
+				expect('workbench' in host.ctx).toBe(workbench)
+				const page = new Request('http://local.dev/__pluxel/workbench', {
+					headers: { accept: 'text/html' },
+				})
+				expect(server.matchesRequest(page)).toBe(workbench)
+				const headlessResponse = workbench ? undefined : await server.fetch(page)
+				expect(headlessResponse?.status).toBe(workbench ? undefined : 404)
+			} finally {
+				await host.close()
+			}
+		},
+	)
+
 	it('prepares Vault with explicit persistence, isolates missing service failure, and flushes at close', async () => {
 		observations.length = 0
 		const backend = createMemoryPersistenceBackend()

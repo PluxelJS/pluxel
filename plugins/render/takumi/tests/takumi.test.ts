@@ -1,3 +1,4 @@
+import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { FontsPlugin } from '@pluxel/fonts'
@@ -425,7 +426,7 @@ describe('TakumiPlugin', () => {
 
 	it('places the provider-owned Fonts selection Attachment', async () => {
 		{
-			await using host = await createServiceTestHost({ workbench: true })
+			await using host = await createWorkbenchTestHost()
 
 			await startTakumiFixture(host)
 

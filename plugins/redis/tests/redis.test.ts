@@ -1,3 +1,4 @@
+import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import {
 	formatPluginNodeReference,
 	pluginNodeAddressOf,
@@ -150,7 +151,7 @@ describe('@pluxel/redis', () => {
 
 	it('publishes live connection state and a bounded transient PING form', async () => {
 		{
-			await using host = await createServiceTestHost({ workbench: true })
+			await using host = await createWorkbenchTestHost()
 
 			await host.start(RedisPlugin)
 

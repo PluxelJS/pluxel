@@ -1,3 +1,4 @@
+import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import { standardServices } from '@pluxel/services'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -218,8 +219,7 @@ describe('FontsPlugin', () => {
 			const data = await readFile(fontPath!)
 
 			{
-				await using host = await createServiceTestHost({
-					workbench: true,
+				await using host = await createWorkbenchTestHost({
 					services: standardServices({ persistence: { mode: 'custom', backend } }),
 				})
 
@@ -297,7 +297,7 @@ describe('FontsPlugin', () => {
 
 	it('bounds the serialized managed-font queue before snapshotting upload bytes', async () => {
 		{
-			await using host = await createServiceTestHost({ workbench: true })
+			await using host = await createWorkbenchTestHost()
 
 			await host.start(FontsPlugin, {
 				initialConfig: {
@@ -389,7 +389,7 @@ describe('FontsPlugin', () => {
 
 	it('renders direct consumer and provider-owned Workbench views', async () => {
 		{
-			await using host = await createServiceTestHost({ workbench: true })
+			await using host = await createWorkbenchTestHost()
 
 			await host.start([FontsPlugin, FontsTestConsumer])
 

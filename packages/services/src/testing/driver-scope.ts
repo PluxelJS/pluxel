@@ -2,27 +2,12 @@ import { Commands } from '@pluxel/services/commands'
 import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
 import { PluginTestOperationGate } from '@pluxel/core/internal/test'
 import { type PluginTestTarget } from '@pluxel/core/test'
-import { RpcStub } from 'capnweb'
 import { pluginConfigPatch } from '@pluxel/host/internal'
 import { resolveContextCapability } from '@pluxel/core/host'
-import { HttpServer } from '../http'
-import { requireWorkbench } from '@pluxel/workbench/server'
-import { openWorkbenchEntry, readWorkbenchLayout } from '@pluxel/workbench/client'
-import {
-	readWorkbenchOpenedContentHandle,
-	readWorkbenchOpenedViewHandle,
-	type WorkbenchOpenedContentHandle,
-	type WorkbenchOpenedViewHandle,
-} from '@pluxel/workbench/internal'
-import { readWorkbenchDescriptor } from '@pluxel/workbench/internal/definition'
 import {
 	type ServiceCommandsTestDriver,
 	type ServiceConfigTestDriver,
 	type ServiceHttpTestDriver,
-	type ServiceWorkbenchTestDriver,
-	type WorkbenchTestOpenOptions,
-	type WorkbenchTestOpenableEntry,
-	type OpenedWorkbenchTestEntry,
 } from './contracts'
 
 const TEST_HTTP_ORIGIN = 'http://local.test' as const
@@ -37,25 +22,16 @@ export type ServiceTestDriverScopeOptions<TTarget extends PluginTestTarget> = Re
  * Shared in-process service drivers and their child-resource boundary.
  *
  * Service test hosts compose this scope instead of duplicating driver
- * normalization, mutation exclusion, Workbench ownership, or response-body cleanup.
+ * normalization, mutation exclusion, or response-body cleanup.
  */
 export interface ServiceTestDriverScope<TTarget extends PluginTestTarget> extends AsyncDisposable {
 	readonly config: ServiceConfigTestDriver<TTarget>
 	readonly http: ServiceHttpTestDriver
 	readonly commands: ServiceCommandsTestDriver
-	readonly workbench: ServiceWorkbenchTestDriver<TTarget>
 	runMutation<T>(operation: string, run: () => Promise<T> | T): Promise<T>
 	assertQuery(operation: string): void
-	dispose(): Promise<void>
+	dispose(beforeCleanup?: () => void | Promise<void>): Promise<void>
 }
-
-type TrackedWorkbenchLease = Readonly<{
-	target: PluginNodeAddress
-	descriptor: string
-	createdAt?: string
-	isActive(): boolean
-	dispose(): void
-}>
 
 type TrackedBody = Readonly<{
 	cancel(): Promise<void>
@@ -66,7 +42,6 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 ): ServiceTestDriverScope<TTarget> {
 	const { ctx, resolveTarget } = options
 	const gate = new PluginTestOperationGate()
-	const leases: TrackedWorkbenchLease[] = []
 	const bodies = new Set<TrackedBody>()
 
 	const config: ServiceConfigTestDriver<TTarget> = Object.freeze({
@@ -77,8 +52,15 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 	const fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
 		gate.assertAccepting('http.fetch')
 		const request = normalizeRequest(input, init)
+		const { HttpServer } = await import('../http')
+		gate.assertAccepting('http.fetch')
 		const response = await resolveContextCapability(ctx, HttpServer).fetch(request)
-		gate.assertAccepting('http.fetch result')
+		try {
+			gate.assertAccepting('http.fetch result')
+		} catch (error) {
+			void response.body?.cancel(error).catch((): undefined => undefined)
+			throw error
+		}
 		return trackResponseBody(response, bodies)
 	}
 	const http: ServiceHttpTestDriver = Object.freeze({ origin: TEST_HTTP_ORIGIN, fetch })
@@ -94,106 +76,18 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 		},
 	})
 
-	const workbench: ServiceWorkbenchTestDriver<TTarget> = Object.freeze({
-		async open<const Entry extends WorkbenchTestOpenableEntry>(
-			openOptions: WorkbenchTestOpenOptions<Entry, TTarget>,
-		): Promise<OpenedWorkbenchTestEntry<Entry>> {
-			gate.assertAccepting('workbench.open')
-			const target = resolveTarget(openOptions.target)
-			const backend = requireWorkbench(ctx)
-			const metadata = readWorkbenchDescriptor(openOptions.entry)
-			if (!backend.registry.hasPublishedEntry(target, openOptions.entry)) {
-				throw workbenchSetupError(
-					target,
-					metadata.key,
-					'target_unavailable',
-					'target is not running or did not publish this exact authored entry',
-				)
-			}
-
-			const session = backend.createSession(openOptions.principal, () => undefined)
-			const rpc = new RpcStub(session.target)
-			let handle: WorkbenchOpenedViewHandle | WorkbenchOpenedContentHandle | undefined
-			try {
-				const layout = await readWorkbenchLayout(rpc, { target })
-				const layoutEntry = layout.entries.find(
-					(entry) =>
-						entry.descriptor.kind === metadata.kind && entry.descriptor.key === metadata.key,
-				)
-				if (!layoutEntry) {
-					throw workbenchSetupError(
-						target,
-						metadata.key,
-						'target_unavailable',
-						'entry is absent from the current target layout',
-					)
-				}
-				const opened = await openWorkbenchEntry(rpc, layoutEntry, {
-					layoutRevision: layout.revision,
-					...(openOptions.location === undefined ? {} : { location: openOptions.location }),
-				})
-				if (opened.ok === false) {
-					throw workbenchSetupError(
-						target,
-						metadata.key,
-						opened.code,
-						'production openEntry rejected the fixture',
-					)
-				}
-				handle = opened.handle
-				const value =
-					handle.kind === 'content'
-						? contentLeaseValue(handle)
-						: viewLeaseValue(handle, metadata.kind)
-				const tracked = createTrackedWorkbenchLease({
-					target,
-					descriptor: `${metadata.kind}:${metadata.key}`,
-					handle,
-					rpc,
-					session,
-					onDispose: (lease) => {
-						const index = leases.indexOf(lease)
-						if (index >= 0) leases.splice(index, 1)
-					},
-				})
-				leases.push(tracked.lease)
-				gate.assertAccepting('workbench.open result')
-				return Object.freeze({ ...value, [Symbol.dispose]: tracked.dispose }) as never
-			} catch (error) {
-				try {
-					handle?.[Symbol.dispose]()
-				} finally {
-					try {
-						rpc[Symbol.dispose]()
-					} finally {
-						session.dispose()
-					}
-				}
-				throw error
-			}
-		},
-	})
-
 	let scope!: ServiceTestDriverScope<TTarget>
-	const dispose = () =>
+	const dispose = (beforeCleanup?: () => void | Promise<void>) =>
 		gate.dispose(async () => {
 			const errors: unknown[] = []
+			try {
+				await beforeCleanup?.()
+			} catch (error) {
+				errors.push(error)
+			}
 			for (const body of bodies) {
 				try {
 					await body.cancel()
-				} catch (error) {
-					errors.push(error)
-				}
-			}
-			for (const lease of [...leases].toReversed()) {
-				if (!lease.isActive()) continue
-				errors.push(
-					new Error(
-						`[pluxel/test] Leaked Workbench entry ${lease.descriptor} for ${JSON.stringify(lease.target)}${lease.createdAt ? `\nCreated at:${lease.createdAt}` : ''}`,
-					),
-				)
-				try {
-					lease.dispose()
 				} catch (error) {
 					errors.push(error)
 				}
@@ -205,7 +99,6 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 		config,
 		http,
 		commands,
-		workbench,
 		runMutation: <T>(operation: string, run: () => Promise<T> | T) =>
 			gate.runMutation(operation, run),
 		assertQuery: (operation: string) => gate.assertReadable(operation),
@@ -295,107 +188,6 @@ function trackResponseBody(response: Response, bodies: Set<TrackedBody>): Respon
 		}
 	}
 	return wrapped
-}
-
-function viewLeaseValue(handle: WorkbenchOpenedViewHandle, expectedKind: string) {
-	const value = readWorkbenchOpenedViewHandle(handle)
-	if (expectedKind === 'view' && value.kind === 'local') {
-		return {
-			kind: 'view' as const,
-			api: value.api,
-			params: value.params,
-			federatedViewRef: value.federatedViewRef,
-		}
-	}
-	if (expectedKind === 'attachment-placement' && value.kind === 'attachment') {
-		return {
-			kind: 'attachment' as const,
-			provider: value.provider,
-			consumer: value.consumer,
-			params: value.params,
-			federatedViewRef: value.federatedViewRef,
-		}
-	}
-	throw new Error(
-		`[pluxel/test] Workbench opened kind ${value.kind} does not match authored ${expectedKind}`,
-	)
-}
-
-function contentLeaseValue(handle: WorkbenchOpenedContentHandle) {
-	const value = readWorkbenchOpenedContentHandle(handle)
-	return value.mode === 'static'
-		? {
-				kind: 'content' as const,
-				mode: 'static' as const,
-				params: value.params,
-				contentRef: value.contentRef,
-				plan: value.plan,
-			}
-		: {
-				kind: 'content' as const,
-				mode: 'interactive' as const,
-				params: value.params,
-				contentRef: value.contentRef,
-				plan: value.plan,
-				presentation: value.presentation,
-				root: value.root,
-			}
-}
-
-function createTrackedWorkbenchLease(input: {
-	target: PluginNodeAddress
-	descriptor: string
-	handle: WorkbenchOpenedViewHandle | WorkbenchOpenedContentHandle
-	rpc: RpcStub<import('@pluxel/workbench/internal').WorkbenchSessionApi>
-	session: import('@pluxel/workbench/server').WorkbenchServerSession
-	onDispose(lease: TrackedWorkbenchLease): void
-}): Readonly<{ lease: TrackedWorkbenchLease; dispose(): void }> {
-	let active = true
-	let lease!: TrackedWorkbenchLease
-	const createdAt = new Error('[pluxel/test] Workbench entry created').stack
-		?.split('\n')
-		.slice(2, 7)
-		.join('\n')
-	const dispose = () => {
-		if (!active) return
-		active = false
-		input.onDispose(lease)
-		const errors: unknown[] = []
-		for (const cleanup of [
-			() => input.handle[Symbol.dispose](),
-			() => input.rpc[Symbol.dispose](),
-			() => input.session.dispose(),
-		]) {
-			try {
-				cleanup()
-			} catch (error) {
-				errors.push(error)
-			}
-		}
-		throwCollected(errors, 'Workbench test lease cleanup failed')
-	}
-	lease = Object.freeze({
-		target: input.target,
-		descriptor: input.descriptor,
-		...(createdAt ? { createdAt } : {}),
-		isActive: () => active,
-		dispose,
-	})
-	return Object.freeze({ lease, dispose })
-}
-
-function workbenchSetupError(
-	target: PluginNodeAddress,
-	entry: string,
-	code: string,
-	detail: string,
-): Error {
-	return Object.assign(
-		new Error(
-			`[pluxel/test] workbench.open(${target.definition.exportName}.${entry}) failed (${code}): ${detail}`,
-		),
-		{ code },
-	)
 }
 
 function throwCollected(errors: readonly unknown[], message: string): void {

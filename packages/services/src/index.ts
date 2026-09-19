@@ -42,16 +42,49 @@ export async function servicesPreset(
 ): Promise<HostService[]> {
 	const withWorkbench = options.workbench ?? true
 	const deployment = startup.deployment
-	const [{ logging }, { managementAccess }, { management }, { managementCommands }] =
-		await Promise.all([
-			import('@pluxel/logging'),
-			import('@pluxel/management/access'),
-			import('@pluxel/management/service'),
-			import('@pluxel/management/commands'),
-		])
+	const [
+		{ logging },
+		{ managementAccess },
+		{ management },
+		{ managementCommands },
+		{ managementHttp },
+	] = await Promise.all([
+		import('@pluxel/logging'),
+		import('@pluxel/management/access'),
+		import('@pluxel/management/service'),
+		import('@pluxel/management/commands'),
+		import('@pluxel/management/http'),
+	])
 	const workbench = withWorkbench
-		? await Promise.all([import('@pluxel/workbench/service'), import('@pluxel/workbench/http')])
+		? await Promise.all([
+				import('@pluxel/workbench/service'),
+				import('@pluxel/workbench/http'),
+				import('@pluxel/workbench/server'),
+			]).then(
+				([
+					{ workbenchService },
+					{ workbenchHttp },
+					{ requireWorkbench, createWorkbenchArtifactHandler, WorkbenchHost },
+				]) => ({
+					workbenchService,
+					workbenchHttp,
+					requireWorkbench,
+					createWorkbenchArtifactHandler,
+					WorkbenchHost,
+				}),
+			)
 		: undefined
+	const managementTransport = managementHttp(
+		workbench
+			? {
+					bindings: (ctx) => ({
+						createWorkbench: (principal, invalidate) =>
+							workbench.requireWorkbench(ctx).createSession(principal, invalidate),
+						artifacts: workbench.createWorkbenchArtifactHandler(ctx),
+					}),
+				}
+			: {},
+	)
 	return [
 		logging(
 			options.logging ?? {
@@ -81,14 +114,20 @@ export async function servicesPreset(
 		vault(),
 		managementAccess(),
 		managementCommands(),
+		workbench
+			? {
+					...managementTransport,
+					requires: { ...managementTransport.requires, workbench: workbench.WorkbenchHost },
+				}
+			: managementTransport,
 		management({ application: { product: options.product ?? null }, workbench: withWorkbench }),
 		...(workbench
 			? [
-					workbench[0].workbenchService({
+					workbench.workbenchService({
 						product: options.product,
 						artifacts: deployment ? { root: resolve(deployment.root, 'workbench') } : undefined,
 					}),
-					workbench[1].workbenchHttp({
+					workbench.workbenchHttp({
 						uiBasePath: '/__pluxel/workbench',
 						publicDir: deployment ? resolve(deployment.root, 'workbench/public') : undefined,
 					}),

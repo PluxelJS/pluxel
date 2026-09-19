@@ -16,6 +16,32 @@ const run = async (file, args, cwd) => {
 	}
 }
 
+const checkOptionalDeclarations = async (root) => {
+	const declarations = await run(
+		join(workspace, 'node_modules/.bin/tsc'),
+		['--project', 'tsconfig.json'],
+		root,
+	)
+		.then(() => ({ failed: false, diagnostics: [] }))
+		.catch((error) => ({
+			failed: true,
+			diagnostics: String(error.cause?.stdout ?? '')
+				.trim()
+				.split(/\r?\n/),
+		}))
+	// capnweb 0.12.0 (also upstream main) spreads a Promise union as a tuple tail.
+	// Keep library checking enabled: only the two confirmed upstream diagnostics are allowed.
+	const upstreamDiagnostics = [333, 469].map(
+		(column) =>
+			`node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.d.ts(63,${column}): error TS2574: A rest element type must be an array type.`,
+	)
+	expect(declarations.diagnostics).toEqual(declarations.failed ? upstreamDiagnostics : [])
+	if (declarations.failed)
+		process.stdout.write(
+			'KNOWN_UPSTREAM_CAPNWEB_DECLARATION_ERRORS: 2 TS2574 in capnweb 0.12.0; all other installed declarations checked\n',
+		)
+}
+
 it('consumes real service tarballs outside the workspace with isolated declarations and lazy ESM imports', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-services-consumer-'))
 	try {
@@ -71,8 +97,42 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			}),
 		)
 		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
+		const elysiaVersion = JSON.parse(
+			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
+		).version
+		// Verify the headless management plane before Workbench or browser peers are installed.
+		for (const name of ['logging', 'management']) {
+			const tarball = join(root, `${name}.tgz`)
+			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
+			dependencies[`@pluxel/${name}`] = `file:${tarball}`
+		}
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: 'independent-service-consumer',
+				private: true,
+				type: 'module',
+				dependencies,
+				devDependencies: { '@types/node': nodeTypes, elysia: elysiaVersion },
+			}),
+		)
+		await writeFile(
+			join(root, 'pnpm-workspace.yaml'),
+			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+		)
+		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
+		const headlessInstalled = await readdir(join(root, 'node_modules/.pnpm'))
+		expect(headlessInstalled.some((name) => name.startsWith('@pluxel+workbench@'))).toBe(false)
+		await writeFile(join(root, 'headless.mjs'), headlessManagementConsumer)
+		const headless = await run(process.execPath, ['headless.mjs'], root)
+		expect(headless.stdout).toContain('ISOLATED_MANAGEMENT_OK')
+		await writeFile(
+			join(root, 'consumer.ts'),
+			typeConsumer + headlessManagementConsumer + headlessManagementTypes,
+		)
+		await checkOptionalDeclarations(root)
 		// Expand the same genuinely installed consumer to the optional UI/development plane.
-		for (const name of ['logging', 'management', 'workbench', 'host-dev', 'rolldown']) {
+		for (const name of ['workbench', 'host-dev', 'rolldown']) {
 			const tarball = join(root, `${name}.tgz`)
 			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
 			dependencies[`@pluxel/${name}`] = `file:${tarball}`
@@ -83,9 +143,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 				'utf8',
 			),
 		).version
-		const elysiaVersion = JSON.parse(
-			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
-		).version
+
 		const viteVersion = JSON.parse(
 			await readFile(join(workspace, 'packages/host-dev/node_modules/vite/package.json'), 'utf8'),
 		).version
@@ -116,29 +174,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		const optionalResult = await run(process.execPath, ['optional.mjs'], root)
 		expect(optionalResult.stdout).toContain('ISOLATED_WORKBENCH_OK')
 		await writeFile(join(root, 'consumer.ts'), typeConsumer + optionalTypeConsumer)
-		const declarations = await run(
-			join(workspace, 'node_modules/.bin/tsc'),
-			['--project', 'tsconfig.json'],
-			root,
-		)
-			.then(() => ({ failed: false, diagnostics: [] }))
-			.catch((error) => ({
-				failed: true,
-				diagnostics: String(error.cause?.stdout ?? '')
-					.trim()
-					.split(/\r?\n/),
-			}))
-		// capnweb 0.12.0 (also upstream main) spreads a Promise union as a tuple tail.
-		// Keep library checking enabled: only the two confirmed upstream diagnostics are allowed.
-		const upstreamDiagnostics = [333, 469].map(
-			(column) =>
-				`node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.d.ts(63,${column}): error TS2574: A rest element type must be an array type.`,
-		)
-		expect(declarations.diagnostics).toEqual(declarations.failed ? upstreamDiagnostics : [])
-		if (declarations.failed)
-			process.stdout.write(
-				'KNOWN_UPSTREAM_CAPNWEB_DECLARATION_ERRORS: 2 TS2574 in capnweb 0.12.0; all other installed declarations checked\n',
-			)
+		await checkOptionalDeclarations(root)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
@@ -151,6 +187,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 const loads = []
 const hooks = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
+const { createServiceTestHost } = await import('@pluxel/services/test')
+const emptyTestHost = await createServiceTestHost({ services: [] })
+await emptyTestHost.dispose()
+assert.equal(loads.some(url => /elysia|@pluxel[+/]workbench|@pluxel[+/]management/.test(url)), false, 'base test host must not load HTTP or UI')
 const { Vault, vault } = await import('@pluxel/services/vault')
 assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'token import must not evaluate encryption backend')
 const { persistence, createMemoryPersistenceBackend } = await import('@pluxel/services/persistence')
@@ -197,6 +237,9 @@ finally { await workerHost.close() }
 console.log('ISOLATED_SERVICES_OK')
 `
 const typeConsumer = `
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
+const isolatedTestHost: ServiceTestHost = await createServiceTestHost({ services: [] })
+await isolatedTestHost.dispose()
 import { createHost } from '@pluxel/host'
 import { BasePlugin, type Context } from '@pluxel/core'
 import { Persistence, persistence, createMemoryPersistenceBackend } from '@pluxel/services/persistence'
@@ -234,6 +277,9 @@ await first.close(); await second.close()
 `
 
 const optionalTypeConsumer = `
+import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/workbench/test'
+const typedWorkbenchTestHost: WorkbenchTestHost = await createWorkbenchTestHost()
+await typedWorkbenchTestHost.dispose()
 import { Workbench, workbench } from '@pluxel/workbench'
 import { workbenchService } from '@pluxel/workbench/service'
 import { requireWorkbench, createWorkbenchArtifactHandler } from '@pluxel/workbench/server'
@@ -279,7 +325,10 @@ const { http, HttpServer } = await import('@pluxel/services/http')
 const { persistence } = await import('@pluxel/services/persistence')
 const { management } = await import('@pluxel/management/service')
 const { managementAccess } = await import('@pluxel/management/access')
-const host = await createHost({ plugins: [], services: [http(), persistence({ mode: 'memory' }), management({ workbench: true }), managementAccess(), workbenchService(), workbenchHttp({ uiBasePath: '/admin' })] })
+const { managementHttp } = await import('@pluxel/management/http')
+const { createWorkbenchArtifactHandler, WorkbenchHost } = await import('@pluxel/workbench/server')
+const transport = managementHttp({ bindings: (ctx) => ({ createWorkbench: (principal, invalidate) => requireWorkbench(ctx).createSession(principal, invalidate), artifacts: createWorkbenchArtifactHandler(ctx) }) })
+const host = await createHost({ plugins: [], services: [http(), persistence({ mode: 'memory' }), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
 const server = resolveContextCapability(host.ctx, HttpServer)
 const page = await server.fetch(new Request('http://host.test/admin', { headers: { accept: 'text/html' } }))
 assert.equal(page.status, 200)
@@ -296,6 +345,9 @@ assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
 await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
+const { createWorkbenchTestHost } = await import('@pluxel/workbench/test')
+const workbenchTestHost = await createWorkbenchTestHost()
+await workbenchTestHost.dispose()
 console.log('ISOLATED_WORKBENCH_OK')
 `
 
@@ -324,4 +376,22 @@ try {
  hook.deregister()
 }
 console.log('ISOLATED_BARE_CONSOLE_OK')
+`
+
+const headlessManagementConsumer = `
+import { management } from '@pluxel/management/service'
+import { managementHttp } from '@pluxel/management/http'
+import { managementAccess } from '@pluxel/management/access'
+import * as managementSession from '@pluxel/management/session'
+import { createServiceTestHost as createHeadlessTestHost } from '@pluxel/services/test'
+const headlessHost = await createHeadlessTestHost({ management: true })
+await headlessHost.dispose()
+void [management, managementHttp, managementAccess, managementSession]
+console.log('ISOLATED_MANAGEMENT_OK')
+`
+
+const headlessManagementTypes = `
+import type { RuntimeSessionRoot, RuntimeSessionClient } from '@pluxel/management/session'
+export type HeadlessSession = RuntimeSessionRoot
+export type HeadlessClient = RuntimeSessionClient
 `

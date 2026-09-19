@@ -169,7 +169,51 @@ export default defineDevConsole(async (dev) => {
 
 Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [Commands](../runtime/commands.md)、[Workbench](../workbench/index.md) 和 [结构化日志](../runtime/logging.md)。Workbench 的 principal、session 和 RPC 结果释放遵循其原有契约；控制台不会替脚本创建或回收这些资源。Plugin 公开的业务方法也可直接通过 `dev.plugins.require()` 调用。数据库访问使用业务方法或插件公开的 owner-bound handle，不重新打开应用的数据目录。
 
+需要调用已发布的 Workbench View 时，使用其真实 descriptor 推导 RPC 类型，无需手写代理接口：
+
+```ts no-twoslash
+import { defineDevConsole } from '@pluxel/host-dev/console'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { openLocalWorkbenchEntry } from '@pluxel/workbench/server'
+import { detachWorkbenchPortableValue } from '@pluxel/workbench/client'
+import { ExamplePlugin, ExampleWorkbench } from './example-plugin'
+import { developmentPrincipal } from './development-principal'
+
+export const inspectWorkbench = defineDevConsole(async (dev) => {
+	using opened = await openLocalWorkbenchEntry(dev.ctx, {
+		target: pluginNodeAddressOf(ExamplePlugin),
+		entry: ExampleWorkbench.overview,
+		principal: developmentPrincipal,
+		signal: dev.signal,
+	})
+	return await detachWorkbenchPortableValue(opened.api.inspect(), 'Overview inspection')
+})
+```
+
+将 `ExamplePlugin`、`ExampleWorkbench.overview` 和 `inspect()` 替换为项目实际已发布的 View 与业务方法。`developmentPrincipal` 由项目显式定义，满足 `{ provider: string, subject: string, displayName?: string }`；它是本次调用的身份声明，不是控制台自动授予的管理员身份。
+
+`using` 在脚本离开作用域时关闭打开的 entry 与其本地 session，传入 `dev.signal` 还会在取消时释放这些资源。`detachWorkbenchPortableValue` 复制并验证 RPC 返回的普通数据，同时释放该结果持有的顶层 transport 资源；不能直接将 RPC stub 或 opened handle 返回 CLI。取消不会撤销已经接纳的业务变更，仍应检查返回的领域结果。
+
 `this.ctx.logger` 是 Core 基础能力，插件无需 import Logging 包；脚本也能使用 `dev.ctx.logger`。输出、过滤和日志存储由宿主的 logging 配置决定。需要查询存储时显式使用 `@pluxel/logging` 的 `Logging` 能力和 store API；控制台不自动增加 store，也不在执行结果里附加日志游标。读取日志时保留存储本身的 epoch、retention 和 gap 语义，返回有界的普通数据。
+
+日志可以在业务操作前标记位置，随后读取或等待相关记录：
+
+```ts no-twoslash
+import { defineDevConsole } from '@pluxel/host-dev/console'
+import { Logging, markLogs, readLogs } from '@pluxel/logging'
+import { TodoPlugin } from '@example/todo-plugin'
+
+export const restartWithLogs = defineDevConsole(async (dev) => {
+	const logging = dev.ctx.require(Logging)
+	const cursor = markLogs(logging)
+	const report = await dev.plugins.restart(TodoPlugin)
+	return { report, logs: readLogs(logging, cursor, { limit: 100 }) }
+})
+```
+
+`markLogs` 会先 flush 已缓冲日志，首次访问尚无记录的已配置 stream 时创建空存储，不增加 sink 或修改路由；未配置的 stream 报错。默认 stream 是 `default`。返回的 JSON cursor 可保留并用于下一次操作；`readLogs` 返回下一 cursor，可分页继续读。`root_mismatch`、`stream_replaced`、`epoch_mismatch` 和 `from_too_old` 明确表示宿主更换、stream 更换、reset 和 retention 缺口，不能自动忽略。跨进程输入仍需按 `LogCursor` 字段校验。
+
+等待后续记录用 `await waitForLogs(logging, cursor, { filter, limit: 100, signal: dev.signal })`，从 `@pluxel/logging` 导入。它返回首批匹配记录或 cursor 失效结果，取消时以 signal 的 reason 拒绝并撤销订阅。等待不改变日志过滤与缓冲配置；没有匹配输出时持续到 signal 取消。
 
 `dev.ctx` 只借用本次执行的 Host。不要跨执行或 Host replacement 缓存 Context、Plugin、服务 handle 或 RPC session。直接服务调用不会自动绑定取消；传入 `dev.signal`，await 所有调用，并用 `using` 或 `try/finally` 释放脚本创建的资源。
 

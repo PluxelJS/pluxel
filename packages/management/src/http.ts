@@ -1,5 +1,5 @@
 import type { RootContext } from '@pluxel/core'
-import { defineHostService } from '@pluxel/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { HttpServer } from '@pluxel/services/http'
 import { AdminAccess } from './access'
 import { Management } from './token'
@@ -13,7 +13,7 @@ export type ManagementHttpOptions = Readonly<{
 }>
 
 /** Attach shared management to the selected HTTP carrier without owning its listener. */
-export function managementHttp(options: ManagementHttpOptions = {}) {
+export function managementHttp(options: ManagementHttpOptions = {}): HostService<readonly []> {
 	return defineHostService({
 		name: 'ManagementHTTP',
 		capabilities: [],

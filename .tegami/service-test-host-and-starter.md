@@ -1,12 +1,13 @@
 ---
 packages:
   '@pluxel/services': minor
+  '@pluxel/workbench': minor
   '@pluxel/create': major
 ---
 
 ## Use Host composition in tests and new applications
 
-Add `@pluxel/services/test` with an isolated `createServiceTestHost()` backed by the production Host catalog, state, configuration and lifecycle. Explicit service lists replace the default HTTP, commands, Node artifacts, workers and memory persistence composition; Workbench and Management are opt-in test integrations. Core author symbols remain in `@pluxel/core/test`.
+Add `@pluxel/services/test` with an isolated `createServiceTestHost()` backed by the production Host catalog, state, configuration and lifecycle. Explicit service lists replace the default HTTP, commands, Node artifacts, workers and memory persistence composition; Management is an opt-in test integration. The base test entry with `services: []` loads without optional HTTP or Workbench peers; the default HTTP composition explicitly requires Elysia. `@pluxel/workbench/test` owns `createWorkbenchTestHost()` and `createLocalRpcClient()`. `@pluxel/workbench/server` exposes typed `openLocalWorkbenchEntry()` for local sessions with caller-owned disposal and cancellation. Core author symbols remain in `@pluxel/core/test`.
 
 Generated applications use Host environment settings and the service presets without a Runtime package dependency.
 

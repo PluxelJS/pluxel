@@ -83,6 +83,12 @@ Plugin author 不取得 raw socket、MF Runtime、Shell router/store、Bridge wr
 Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/workbench/internal/react`；它与其他 internal readers
 只供构建器和 Shell 使用，不进入作者 API。
 
+## Host HTTP 与 Shell 开发
+
+`workbenchService()` 拥有后端，`workbenchHttp()` 只挂载 Shell fallback；`managementHttp()` 唯一拥有认证、管理连接与受保护制品接入。组合者通过既有 bindings 绑定 session/artifact handler，并声明 `WorkbenchHost` 准备依赖。官方 preset 在关闭 Workbench 时仍保留管理入口。
+
+`workbenchSourceShell({ entry })` 是 `/dev` 下的显式 Vite 附件：复用已挂载 Shell 的路径，在 Host 开发附件阶段选择源码 HTML renderer。它只将入口加入现有 Vite optimizer/transform/HMR 图，不拥有第二个 server 或 React/CSS 配置。Shell 服务延迟到首次静态请求才加载 packaged manifest，因此源码 checkout 不依赖预构建 UI；直接创建 packaged handler 仍立即验证资源。关闭按 Host 附件与服务 ownership 释放。用户组合见 [standalone host](../docs/workbench/standalone-host.md)。
+
 ## Definition 与源码组织
 
 一个有 Workbench 内容的 Plugin 使用下列文件：
@@ -414,6 +420,11 @@ Workbench document 创建一个物理 WebSocket：
 2. password、TOTP 或 OIDC challenge 在同一 Cap’n Web object graph 中完成；
 3. 认证完成后再次 bootstrap，得到 Management capability；Workbench-enabled host 同时返回 Workbench session；
 4. layout、openEntry、Management mutation、logs follow、Content push 和 Plugin API 都复用这条 socket。
+
+Management 拥有认证与控制会话协议，其发布声明不依赖 Workbench。协议的 Workbench 分支默认只暴露 opaque
+`RpcTarget`，`RuntimeSessionRoot<TWorkbench>` 与 `RuntimeSessionClient<TWorkbench>` 由实际 Shell 绑定具体 API；
+官方 Workbench app 在本地 runtime 入口统一绑定 `WorkbenchSessionApi`。服务端只借用已认证的 `AdminAccessPrincipal`
+与 `{ target, dispose }` 会话，不 import Workbench 实现或复制其 layout/openEntry 协议。
 
 浏览器写入 `HttpOnly` cookie 需要一个 same-origin、single-use cookie-commit POST；它只提交短期 ticket，不承载
 业务 API 或 RPC。MF manifest 和 JS/CSS 使用普通 HTTP。除此之外，Workbench 不建立另一种 API transport。

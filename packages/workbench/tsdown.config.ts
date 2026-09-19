@@ -3,6 +3,8 @@ export default defineConfig({
 	exports: { devExports: '@pluxel/source' },
 	copy: ['public'],
 	entry: {
+		test: 'src/test.ts',
+		'internal/test': 'src/internal-test.ts',
 		shell: 'src/shell.ts',
 		http: 'src/http.ts',
 		'internal/shell': 'src/shell/internal.ts',

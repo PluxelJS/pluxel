@@ -21,9 +21,8 @@ import {
 	type PluginConstructor,
 	type PluginNodeHandle,
 } from '@pluxel/core/internal/test'
-import { type ServiceTestHostOptions } from './options'
+import { type ServiceInternalTestHostOptions } from './options'
 import { resolveContextCapability } from '@pluxel/core/host'
-import { HttpServer } from '../http'
 import {
 	applyHostStatePatch,
 	createPluginCatalogSnapshot,
@@ -133,7 +132,7 @@ function assertCommitStarted(summary: CommitSummary): void {
  * here because that would introduce a competing catalog/lifecycle transaction model.
  */
 export async function createServiceInternalTestHarness(
-	config: ServiceTestHostOptions = {},
+	config: ServiceInternalTestHostOptions = {},
 	rootOptions: ServiceInternalTestRootOptions = {},
 ): Promise<ServiceInternalTestHarness> {
 	const application = await createServiceTestApplication(config, rootOptions)
@@ -308,8 +307,10 @@ export async function createServiceInternalTestHarness(
 		configService,
 		coordinator,
 		stateStore,
-		fetch: (request: Request): Promise<Response> =>
-			resolveContextCapability(ctx, HttpServer).fetch(request),
+		fetch: async (request: Request): Promise<Response> => {
+			const { HttpServer } = await import('../http')
+			return resolveContextCapability(ctx, HttpServer).fetch(request)
+		},
 		add,
 		remove,
 		start: (target: ServiceInternalTestTarget): ServiceInternalTestHarness => {
@@ -404,7 +405,7 @@ export async function createServiceInternalTestHarness(
 
 /** Creates a raw Host root for framework service tests without a Plugin transaction harness. */
 export async function createServiceInternalTestContext(
-	config: ServiceTestHostOptions = {},
+	config: ServiceInternalTestHostOptions = {},
 	rootOptions: ServiceInternalTestRootOptions = {},
 ): Promise<ServiceInternalTestContext> {
 	const application = await createServiceTestApplication(config, rootOptions)

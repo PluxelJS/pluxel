@@ -33,7 +33,7 @@ async function startTypstFixture(host: ServiceTestHost): Promise<void> {
 
 describe('TypstMathPlugin', () => {
 	it('preserves rejected unsafe math as a TypstMathError through the Markdown renderer', async () => {
-		await using host = await createServiceTestHost({ workbench: false })
+		await using host = await createServiceTestHost()
 		await startTypstFixture(host)
 		const consumer = host.require(TypstMathTestConsumer)
 		const renderer = consumer.markdown.createRenderer({

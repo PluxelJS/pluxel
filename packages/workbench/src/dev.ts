@@ -120,3 +120,5 @@ export function workbenchArtifacts(
 		},
 	}
 }
+
+export { workbenchSourceShell } from './development/source-shell'

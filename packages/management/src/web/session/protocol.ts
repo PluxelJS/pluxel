@@ -1,6 +1,5 @@
 import type { RpcTarget } from '../../capnweb'
 import type { ManagementAuthenticationProviderStep } from '../../services/admin-access/types'
-import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type { RuntimeManagementTarget } from '../management-target'
 
 export const RUNTIME_SESSION_PROFILE = 1 as const
@@ -30,7 +29,7 @@ export interface RuntimeAuthenticationTarget extends RpcTarget {
 	): ManagementAuthenticationProviderStep | Promise<ManagementAuthenticationProviderStep>
 }
 
-export type RuntimeBootstrap =
+export type RuntimeBootstrap<TWorkbench extends RpcTarget = RpcTarget> =
 	| Readonly<{
 			kind: 'authentication-required'
 			profile: 1
@@ -45,11 +44,13 @@ export type RuntimeBootstrap =
 			kind: 'workbench'
 			profile: 1
 			management: RuntimeManagementTarget
-			workbench: WorkbenchSessionApi
+			workbench: TWorkbench
 	  }>
 
-export interface RuntimeSessionRoot extends RpcTarget {
-	bootstrap(observer: RuntimeSessionObserver): RuntimeBootstrap | Promise<RuntimeBootstrap>
+export interface RuntimeSessionRoot<TWorkbench extends RpcTarget = RpcTarget> extends RpcTarget {
+	bootstrap(
+		observer: RuntimeSessionObserver,
+	): RuntimeBootstrap<TWorkbench> | Promise<RuntimeBootstrap<TWorkbench>>
 	logout(): RuntimeLogoutResult | Promise<RuntimeLogoutResult>
 }
 

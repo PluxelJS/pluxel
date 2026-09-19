@@ -1,37 +1,16 @@
-import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
-import { type RootCapabilityInstallation } from '@pluxel/core/host'
+import type { RootCapabilityInstallation } from '@pluxel/core/host'
 import { createHost, defineHostService, type PluginHost, type HostService } from '@pluxel/host'
-import { managementAccess } from '@pluxel/management/access'
-import { management } from '@pluxel/management/service'
-import { attachManagementHttp } from '@pluxel/management/internal/http'
-import {
-	WorkbenchBackend,
-	requireWorkbench,
-	createWorkbenchArtifactHandler,
-} from '@pluxel/workbench/server'
-import {
-	createWorkbenchService,
-	type WorkbenchArtifactLookup,
-	type WorkbenchContentArtifactLookup,
-} from '@pluxel/workbench/internal'
-import {
-	readWorkbenchContentSlot,
-	readWorkbenchMarkdownDocument,
-	type WorkbenchMarkdownDocument,
-} from '@pluxel/workbench/internal/definition'
-import { standardServices } from '../index'
-import { HttpServer, type ElysiaCarrierRequestAddress } from '../http'
-import { type ServiceTestHostOptions } from './options'
+import type { ServiceInternalTestHostOptions } from './options'
 
 export type ServiceInternalTestRootOptions = Readonly<{
 	/** Framework test-only installation of capabilities before the root is created. */
 	capabilities?: readonly RootCapabilityInstallation<unknown, undefined>[]
 	/** Simulated physical peer for in-process Management HTTP tests. Defaults to loopback. */
-	requestAddress?: (request: Request) => ElysiaCarrierRequestAddress | null
+	requestAddress?: (request: Request) => Readonly<{ address: string }> | null
 }>
 
 export async function createServiceTestApplication(
-	options: ServiceTestHostOptions = {},
+	options: ServiceInternalTestHostOptions = {},
 	internal: ServiceInternalTestRootOptions = {},
 ): Promise<PluginHost> {
 	const withWorkbench = options.workbench ?? false
@@ -42,26 +21,34 @@ export async function createServiceTestApplication(
 	if (withWorkbench && !withManagement) {
 		throw new TypeError('[pluxel/test] Workbench requires Management')
 	}
-	const services: HostService[] = [
-		...(options.services ?? standardServices({ persistence: { mode: 'memory' } })),
-	]
-	if (withManagement) services.push(managementAccess(), management({ workbench: withWorkbench }))
-	if (withWorkbench) {
-		services.push(
-			createWorkbenchService(
-				{},
-				(root, installOptions) =>
-					new WorkbenchBackend(root, installOptions, testWorkbenchArtifacts, testWorkbenchContents),
-			),
-		)
+	let selectedServices = options.services
+	if (selectedServices === undefined) {
+		const { standardServices } = await import('../index')
+		selectedServices = standardServices({ persistence: { mode: 'memory' } })
 	}
+	const services: HostService[] = [...selectedServices]
+	if (withManagement) {
+		const [{ managementAccess }, { management }] = await Promise.all([
+			import('@pluxel/management/access'),
+			import('@pluxel/management/service'),
+		])
+		services.push(managementAccess(), management({ workbench: withWorkbench }))
+	}
+	if (withWorkbench) {
+		const { testWorkbenchService } = await import('@pluxel/workbench/internal/test')
+		services.push(testWorkbenchService())
+	}
+	const { HttpServer } = withManagement ? await import('../http') : { HttpServer: undefined }
+
 	services.push(
 		defineHostService({
 			name: 'Service test transport',
 			requires: withManagement ? { http: HttpServer } : {},
 			capabilities: internal.capabilities ?? [],
-			prepare({ ctx, effects }) {
+			async prepare({ ctx, effects }) {
 				if (!withManagement) return
+				const { attachManagementHttp } = await import('@pluxel/management/internal/http')
+				const workbench = withWorkbench ? await import('@pluxel/workbench/server') : undefined
 				attachManagementHttp(
 					ctx,
 					effects,
@@ -69,8 +56,8 @@ export async function createServiceTestApplication(
 						? {
 								bindings: () => ({
 									createWorkbench: (principal, identity) =>
-										requireWorkbench(ctx).createSession(principal, identity),
-									artifacts: createWorkbenchArtifactHandler(ctx),
+										workbench!.requireWorkbench(ctx).createSession(principal, identity),
+									artifacts: workbench!.createWorkbenchArtifactHandler(ctx),
 								}),
 							}
 						: {},
@@ -96,83 +83,5 @@ export async function createServiceTestApplication(
 		services,
 		state: options.state,
 		configRecords: options.configRecords,
-	})
-}
-
-/** Test-only artifact seam; production always consumes the committed deployment inventory. */
-const testWorkbenchArtifacts: WorkbenchArtifactLookup = Object.freeze({
-	resolveEntry(definition, descriptor) {
-		const producer = workbenchFederationProducerName(definition)
-		const buildRevision = 'test-build'
-		const entry = Object.freeze({
-			descriptor,
-			expose: workbenchFederationExpose(descriptor.key),
-		})
-		return Object.freeze({
-			artifact: Object.freeze({
-				profile: 1,
-				definition,
-				producer,
-				buildRevision,
-				manifestUrl: `/__pluxel/runtime/federation/${producer}/${buildRevision}/mf-manifest.json`,
-				manifestSha256: '0'.repeat(64),
-				entries: Object.freeze([entry]),
-			}),
-			entry,
-		})
-	},
-})
-
-const testWorkbenchContents: WorkbenchContentArtifactLookup = Object.freeze({
-	resolveContent(definition, descriptor, declaration) {
-		if (descriptor.kind !== 'content') return undefined
-		if (!declaration) {
-			throw new Error('[workbench] test Content lookup requires the current declaration')
-		}
-		const entry = Object.freeze({ descriptor })
-		const plan = testWorkbenchContentPlan(declaration)
-		return Object.freeze({
-			artifact: Object.freeze({
-				profile: 1,
-				definition,
-				definitionDigest: '0'.repeat(64),
-				digest: '1'.repeat(64),
-				entries: Object.freeze([entry]),
-			}),
-			entry,
-			plan,
-		})
-	},
-})
-
-function testWorkbenchContentPlan(declaration: WorkbenchMarkdownDocument) {
-	const slots = readWorkbenchMarkdownDocument(declaration).slots
-	return Object.freeze({
-		version: 1 as const,
-		kind: 'workbench-content' as const,
-		document: Object.freeze({
-			version: 1 as const,
-			blocks: Object.freeze(
-				Object.keys(slots).map((key) => Object.freeze({ type: 'slot' as const, key })),
-			),
-		}),
-		slots: Object.freeze(
-			Object.keys(slots)
-				.sort()
-				.map((key) => {
-					const slot = readWorkbenchContentSlot(slots[key]!)
-					if (slot.kind === 'data') {
-						return Object.freeze({ kind: 'data' as const, key, display: 'block' as const })
-					}
-					return Object.freeze({
-						kind: 'action' as const,
-						key,
-						display: 'block' as const,
-						label: slot.label,
-						input: slot.form,
-						...(slot.confirm === undefined ? {} : { confirm: slot.confirm }),
-					})
-				}),
-		),
 	})
 }

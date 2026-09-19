@@ -11,12 +11,14 @@ export type ServiceTestHostOptions = Readonly<{
 	config?: CoreHostConfig
 	/** Complete service list. Omitted installs HTTP, commands, Node artifacts, workers and in-memory persistence. */
 	services?: readonly HostService[]
-	/** Install the test artifact-backed Workbench and Management. Defaults to false. */
-	workbench?: boolean
-	/** Install Management without Workbench. Defaults to the Workbench selection; false with workbench:true is rejected. */
+	/** Install Management without Workbench. Defaults to false. */
 	management?: boolean
 	/** Isolated graph policy. Defaults to in-memory storage. */
 	state?: HostStateStoreOptions
 	/** Isolated plugin config. Defaults to in-memory storage. */
 	configRecords?: HostConfigStoreOptions
 }>
+
+/** Framework-only selection of synthetic Workbench artifacts. */
+export type ServiceInternalTestHostOptions = ServiceTestHostOptions &
+	Readonly<{ workbench?: boolean }>

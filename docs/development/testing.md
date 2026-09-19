@@ -16,6 +16,7 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 | 纯函数、普通对象                                    | 不使用 host                      |
 | Core graph、config、lifecycle、effects              | `@pluxel/core/test`              |
 | Plugin 与已安装服务                                 | `@pluxel/services/test`          |
+| Workbench publication、local RPC 与 lease           | `@pluxel/workbench/test`         |
 | 应用 configure、prepare 与冷启动策略                | `@pluxel/host` 的真实应用装配    |
 | dynamic source、Vite/HMR、HTTP 或 WebSocket carrier | 项目唯一 Vite 配置与真实构建产物 |
 | static deployment artifact、filesystem、assets、TLS | 启动真实 artifact                |
@@ -39,7 +40,7 @@ host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不�
 npx nypm add -D @pluxel/test @pluxel/core vitest@5.0.0 oxlint
 ```
 
-当前 preset 使用 Vitest `5.0.0`，项目使用 Node.js 24+。下面的 Core 示例只需上述依赖；测试 HTTP 等服务能力时，还需由测试包声明 `@pluxel/services`。
+当前 preset 使用 Vitest `5.0.0`，项目使用 Node.js 24+。下面的 Core 示例只需上述依赖；测试 HTTP 等默认服务能力时，还需由测试包声明 `@pluxel/services` 和 `elysia`。Workbench 会话测试使用 `@pluxel/workbench/test`，并安装 `@pluxel/workbench`、`@pluxel/management` 及其声明的 peers。
 
 最小 `vitest.config.ts`：
 
@@ -329,23 +330,25 @@ Vite/Rolldown semantic lowering。
 
 ## 使用服务 drivers
 
+`createServiceTestHost({ services: [] })` 不加载 HTTP、Management 或 Workbench。省略 `services` 使用默认 HTTP 等服务时，消费项目需安装 `elysia`；Workbench 测试另需安装 `@pluxel/workbench`、`@pluxel/management` 及其声明的 peers。
+
 public author host 不暴露 root `ctx`、raw service、transaction 或 backend admin。通过返回的 Plugin instance 观察公开业务状态；通过 driver
 观察 Plugin 发布的 inbound surface：
 
 - `host.http.origin/fetch`：in-process Fetch，不验证 WebSocket carrier；
 - `host.commands.execute/list`：真实 command catalog、validation、owner registration 和 withdrawal；
-- `host.workbench.open`：真实 publication、session、layout 与 local Cap'n Web membrane；
+- Workbench test host 的 `host.workbench.open`：真实 publication、session、layout 与 local Cap'n Web membrane；
 - `host.config.patch`：production-like config mutation。
 
-`workbench: true` 安装测试用 Workbench 制品查询及 Management，但不创建浏览器 Shell 或监听端口。Workbench 默认关闭；只在测试发布行为时显式开启，并为每次 open 提供 principal：
+`@pluxel/workbench/test` 的 `createWorkbenchTestHost()` 组合服务 host，安装测试用 Workbench 制品查询及 Management，但不创建浏览器 Shell 或监听端口。每次 open 显式提供 principal：
 
 ```ts no-twoslash
+import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import { standardServices } from '@pluxel/services'
 import { vault } from '@pluxel/services/vault'
 
-await using host = await createServiceTestHost({
+await using host = await createWorkbenchTestHost({
 	services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
-	workbench: true,
 })
 
 await host.start(ConnectorPlugin)
@@ -361,14 +364,14 @@ expect(result.action).toMatchObject({ ok: true })
 ```
 
 `open()` 不模拟 renderer 或点击。React 控件、router 和 Shell state 在 browser test 中验证；WebSocket handshake、Origin、framing 与 disconnect
-在 real-carrier test 中验证。Workbench disabled 时 driver 会明确拒绝，不会偷偷安装 capability。
+在 real-carrier test 中验证。基础服务 host 不提供 Workbench driver。
 
 ### Pure `RpcTarget` object contract
 
 不经过 host 的 target object 可以通过本地 Cap'n Web membrane 验证参数/返回值复制和 capability 语义：
 
 ```ts no-twoslash
-import { createLocalRpcClient } from '@pluxel/services/test'
+import { createLocalRpcClient } from '@pluxel/workbench/test'
 import { RpcTarget } from 'capnweb'
 
 interface CounterApi extends RpcTarget {

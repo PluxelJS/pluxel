@@ -344,14 +344,10 @@
 		"react": "catalog:frontend"
 	},
 	"peerDependencies": {
-		"@pluxel/workbench": "workspace:^",
 		"react": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
 		"react": {
-			"optional": true
-		},
-		"@pluxel/workbench": {
 			"optional": true
 		}
 	},

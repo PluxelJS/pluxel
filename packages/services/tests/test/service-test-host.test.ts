@@ -2,9 +2,7 @@ import { Commands } from '@pluxel/services/commands'
 import { pluginDefinitionAddressOf, pluginDefinitionIndexKey } from '@pluxel/core'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { BasePlugin, definePluginFork, Plugin } from '@pluxel/core/test'
-import { createLocalRpcClient, createServiceTestHost } from '@pluxel/services/test'
-import { RpcTarget } from 'capnweb'
-import { workbench } from '@pluxel/workbench'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -32,20 +30,6 @@ class ReplacementV1 extends BasePlugin {
 	readonly version: number = 1
 }
 
-const WorkbenchLeaseDefinition = workbench.define({
-	lease: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/runtime-test-host-lease.md'),
-		placement: workbench.tab({ label: 'Lease' }),
-	}),
-})
-
-@Plugin({ displayName: 'Workbench lease fixture' })
-class WorkbenchLeaseFixture extends BasePlugin {
-	protected override init(): void {
-		this.ctx.workbench?.publish(WorkbenchLeaseDefinition)
-	}
-}
-
 const rollbackCleanup = vi.fn()
 
 @Plugin({ displayName: 'Rollback fixture' })
@@ -53,18 +37,6 @@ class RollbackFixture extends BasePlugin {
 	protected override init(): void {
 		this.ctx.effects.defer(rollbackCleanup)
 		throw new Error('expected public host rollback')
-	}
-}
-
-class BorrowedTarget extends RpcTarget {
-	readonly dispose = vi.fn()
-
-	echo(value: Readonly<{ nested: { count: number } }>) {
-		return value
-	}
-
-	[Symbol.dispose]() {
-		this.dispose()
 	}
 }
 
@@ -223,62 +195,14 @@ describe('service test host', () => {
 		}
 	})
 
-	it('reports and closes a leaked public Workbench lease during host disposal', async () => {
-		const host = await createServiceTestHost({ workbench: true })
-		let disposalAttempted = false
-		try {
-			await host.start(WorkbenchLeaseFixture)
-			const opened = await host.workbench.open({
-				target: WorkbenchLeaseFixture,
-				entry: WorkbenchLeaseDefinition.lease,
-				principal: { provider: 'test', subject: 'runtime-test-host' },
-			})
-
-			disposalAttempted = true
-			const error = await host.dispose().catch((cause: unknown) => cause)
-			expect(error).toBeInstanceOf(AggregateError)
-			expect(error).toMatchObject({
-				message: expect.stringContaining('Service test host disposal failed'),
-			})
-			expect((error as AggregateError).errors).toEqual([
-				expect.objectContaining({ message: expect.stringContaining('Leaked Workbench entry') }),
-			])
-
-			expect(() => opened[Symbol.dispose]()).not.toThrow()
-			await expect(
-				host.workbench.open({
-					target: WorkbenchLeaseFixture,
-					entry: WorkbenchLeaseDefinition.lease,
-					principal: { provider: 'test', subject: 'runtime-test-host' },
-				}),
-			).rejects.toThrow(/closing or closed/i)
-		} finally {
-			if (!disposalAttempted) await host.dispose().catch((): undefined => undefined)
-		}
-	})
-
 	it('shares concurrent disposal settlement and rejects later operations', async () => {
 		const host = await createServiceTestHost()
 		const first = host.dispose()
 		const second = host.dispose()
 		expect(second).toBe(first)
-		await first
 		await expect(host.start(PublicFixture)).rejects.toThrow(/closing or closed/i)
-	})
-})
-
-describe('local RPC ownership', () => {
-	it('borrows the root target while preserving local membrane copies', async () => {
-		const target = new BorrowedTarget()
-		const client = createLocalRpcClient(target)
-		const input = { nested: { count: 1 } }
-		const output = await client.echo(input)
-		expect(output).toEqual(input)
-		expect(output).not.toBe(input)
-		client[Symbol.dispose]()
-		expect(target.dispose).not.toHaveBeenCalled()
-		target[Symbol.dispose]()
-		expect(target.dispose).toHaveBeenCalledOnce()
+		await expect(host.http.fetch('/probe')).rejects.toThrow(/closing or closed/i)
+		await first
 	})
 })
 

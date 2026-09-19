@@ -47,7 +47,7 @@ async function startMarkdownFixture(
 
 describe('TakumiMarkdownPlugin', () => {
 	it('renders GFM tables, removes raw HTML, and gives caller HAST extensions Rangi output', async () => {
-		await using host = await createServiceTestHost({ workbench: false })
+		await using host = await createServiceTestHost()
 		await startMarkdownFixture(host)
 		const consumer = host.require(MarkdownTestConsumer)
 		let sawHighlightedCode = false
@@ -99,7 +99,7 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('runs extension factories and AST phases in declaration order after admission', async () => {
-		await using host = await createServiceTestHost({ workbench: false })
+		await using host = await createServiceTestHost()
 		await startMarkdownFixture(host)
 		const phases: string[] = []
 		const extension = (name: string): MarkdownExtension => ({
@@ -144,7 +144,7 @@ describe('TakumiMarkdownPlugin', () => {
 		}
 	})
 	it('rejects malformed extension parser feature variants before creating a renderer', async () => {
-		await using host = await createServiceTestHost({ workbench: false })
+		await using host = await createServiceTestHost()
 		await startMarkdownFixture(host)
 		const markdown = host.require(MarkdownTestConsumer).markdown
 
@@ -166,7 +166,7 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('does not invoke an extension factory when Takumi admission is full', async () => {
-		await using host = await createServiceTestHost({ workbench: false })
+		await using host = await createServiceTestHost()
 		await startMarkdownFixture(host, {
 			takumi: {
 				maxConcurrentRenders: 1,
@@ -200,7 +200,7 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('keeps extension and generated-asset failures structured, then closes renderer handles', async () => {
-		await using host = await createServiceTestHost({ workbench: false })
+		await using host = await createServiceTestHost()
 		await startMarkdownFixture(host, { markdown: { maxAssets: 1 } })
 		const renderer = host.require(MarkdownTestConsumer).markdown.createRenderer({
 			extensions: [
@@ -249,7 +249,7 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('rejects reserved internal asset sources without executing a conversion', async () => {
-		await using host = await createServiceTestHost({ workbench: false })
+		await using host = await createServiceTestHost()
 		await startMarkdownFixture(host)
 		const renderer = host.require(MarkdownTestConsumer).markdown.createRenderer()
 		try {

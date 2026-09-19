@@ -1,5 +1,5 @@
 import type { PluginConstructor } from '@pluxel/core'
-import type { ServiceTestHost } from '@pluxel/services/test'
+import type { WorkbenchTestHost } from '@pluxel/workbench/test'
 import type { RpcStub } from 'capnweb'
 import type { WorkbenchAttachmentPlacement } from '@pluxel/workbench'
 import type { WorkbenchFederatedViewRef } from '@pluxel/workbench/client'
@@ -17,7 +17,7 @@ type WretchSettingsLease = Readonly<{
 }>
 
 export async function openWretchSettings(
-	host: ServiceTestHost,
+	host: WorkbenchTestHost,
 	consumer: PluginConstructor,
 	entry: WorkbenchAttachmentPlacement<WretchSettingsApi> = ConsumerWorkbench.settings,
 ): Promise<WretchSettingsLease> {

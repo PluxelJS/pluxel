@@ -1,3 +1,9 @@
+import { writeFile } from 'node:fs/promises'
+import { createHost } from '@pluxel/host'
+import { http, HttpServer } from '@pluxel/services/http'
+import { workbenchService } from '../src/service'
+import { workbenchHttp } from '../src/http'
+import { workbenchSourceShell } from '../src/dev'
 import { describe, expect, it, vi } from 'vitest'
 import { createServer } from 'vite'
 import { createDiskFixture } from '@pluxel/test/fixtures'
@@ -56,6 +62,68 @@ describe('Workbench UI HTML rendering', () => {
 		}
 	})
 
+	it('attaches a source Shell to the same Vite graph without built assets or implicit Management', async () => {
+		await using fixture = await createDiskFixture({
+			'source.js': 'export const version = "before"',
+		})
+		const plugin = workbenchSourceShell({ entry: './source.js' })
+		const server = await createServer({
+			configFile: false,
+			root: fixture.getPath(),
+			base: '/development/',
+			appType: 'custom',
+			logLevel: 'silent',
+			server: { middlewareMode: true, hmr: false },
+			plugins: [plugin],
+		})
+		const host = await createHost({
+			plugins: [],
+			services: [
+				http(),
+				workbenchService(),
+				workbenchHttp({ uiBasePath: '/admin', publicDir: fixture.getPath('missing-built-ui') }),
+			],
+		})
+		try {
+			const detach = await plugin.api!.pluxelHost.attach({
+				host,
+				server,
+				semantics: {} as never,
+				catalog: { modules: [], definitions: [] },
+			})
+			if (typeof detach !== 'function') throw new Error('source Shell did not return its cleanup')
+			const httpServer = host.ctx.require(HttpServer)
+			const page = await httpServer.fetch(
+				new Request('http://local.dev/admin', { headers: { accept: 'text/html' } }),
+			)
+			const html = await page.text()
+			const output = await server.transformIndexHtml('/admin', html)
+			const url = `/@fs${fixture.getPath('source.js')}`
+			expect(output).toContain(`/development${url}`)
+			expect(output).toContain('/@vite/client')
+			expect(output).not.toContain('/__pluxel/workbench/assets/')
+			expect((await server.transformRequest(url))!.code).toContain('before')
+			await writeFile(fixture.getPath('source.js'), 'export const version = "after"')
+			await vi.waitFor(async () =>
+				expect((await server.transformRequest(url))!.code).toContain('after'),
+			)
+			const management = await httpServer.fetch(
+				new Request('http://local.dev/__pluxel/runtime/session'),
+			)
+			expect(management.status).toBe(404)
+			await detach()
+			await detach()
+			await expect(
+				httpServer.fetch(
+					new Request('http://local.dev/admin', { headers: { accept: 'text/html' } }),
+				),
+			).rejects.toThrow('Workbench UI manifest not found')
+		} finally {
+			await server.close()
+			await host.close()
+		}
+	})
+
 	it('renders the Workbench UI document without assuming a React refresh endpoint', () => {
 		const html = renderRuntimeUiHtml(assets, {
 			uiBasePath: '/__pluxel/workbench',
@@ -72,7 +140,7 @@ describe('Workbench UI HTML rendering', () => {
 
 describe('packaged shell HTTP boundary', () => {
 	it('serves navigation and immutable assets while allowing business/API fallthrough', async () => {
-		const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
+		const { mkdtemp, mkdir, rm } = await import('node:fs/promises')
 		const { tmpdir } = await import('node:os')
 		const { join } = await import('node:path')
 		const { createWorkbenchShellHandler } = await import('../src/shell')
