@@ -13,12 +13,12 @@ Git/registry 获取 starter。create 自身使用 TypeScript entry；tsdown 的 
 或为空；生成先在同级临时目录完成，再原子落到最终目录。
 
 固定 starter 是 create package 的产品资产，不是 CLI template。它使用中性的 `@example/*` workspace package、无
-`name` 的 private root、默认 static mode、alternative dynamic mode、React Todo client、普通 domain package、三种
+`name` 的 private root、统一应用声明与可选动态来源、React Todo client、普通 domain package、三种
 Plugin 依赖/config 范式、core/runtime Vitest、Turbo、Oxlint/Oxfmt、CI 和 governance。starter workspace 仍安装
 `@pluxel/cli`，用于后续 `pluxel new` 与 build 命令；这不形成 create package 对 CLI 的实现依赖。
 starter 的 `host/web/` 是独立 private workspace package，只拥有纯 React source 与前端直接依赖，不 import Pluxel；
 `host/` application package 把 Web package 声明为 build input，直接依赖 React singleton、runtime 与 workspace Plugins，
-并维护唯一指向 `web/` 的 Vite config，以及 static/dynamic route entry、catalog、config 与 runtime state。starter
+并维护唯一指向 `web/` 的 Vite config，以及 Host 来源接入 entry、catalog、config 与 runtime state。starter
 root 预装 `pncat`，`pncat.config.ts` 是 catalog 分组策略，所有 catalog 增删、迁移与清理由 pncat 完成；package manifest
 仍逐包声明直接依赖，不把 root hoist 当成 Plugin 的隐式依赖来源。static
 application 的 package root 是
@@ -46,7 +46,7 @@ UTF-8、未知 token、path containment、portable collision、目标 parent 和
 
 bundled template 默认安装依赖；local template 默认不执行 package manager，只有显式 `--install` 才提升信任。
 CLI packed smoke 只验证 plugin scaffold 的 install、lint、typecheck、test、build 和 pack。create packed smoke 独立验证
-starter inventory、docs 字节、完整 workspace verify、static distribution 和 unified Vite 的 static/dynamic mode；两种输出有意不同，
+starter inventory、docs 字节、完整 workspace verify、production distribution 和统一 Vite 应用；两种输出有意不同，
 不建立 parity contract。
 
 全局 `pluxel` launcher 在加载命令框架前，从启动 `cwd` 向上查找最近一个直接声明 `@pluxel/cli` 的
@@ -64,6 +64,18 @@ optional owner 保持 external，不得被 CLI bundle 或 nested lazy chunk 内�
 subpath 缺失和 owner 自身加载失败是四类不同诊断；最后一类必须保留原始 cause。当前没有第三方 CLI provider、
 capability registry、动态命令发现或通用 extension contract。至少出现两个真实的仓库外 provider，并且确实需要
 新增命令后，才重新设计命名冲突、版本协商、信任、取消与 cleanup。
+
+官方 capability ID 同时决定加载入口和模块类型；命令调用方不传模块类型泛型。类型映射只使用 type import，不能因此提前加载可选 owner。
+
+## Package source inference
+
+Plugin package provenance 要求显式 `exports` 子路径映射与根 named exports，不以 `@pluxel/hmr` 作为身份标记。
+推断 package plan 与读取其 public entries 使用同一个 source selector：优先 `@pluxel/hmr`、`@pluxel/source`、
+`development`；plain target 或 `import` / `default` 只有指向可执行 TypeScript 时才是 source entry。
+显式 source condition 可指向 JavaScript；普通 built JavaScript、`types` 和 declaration files 不触发源码推断。
+已建立的 Plugin package plan 仍扫描无条件 JavaScript 导出，不能借此绕过 Plugin-bearing subpath 校验。
+自动推断只为实际根导出 marked Plugin 的包建立 plan；普通源码库中的本地 Plugin 仍按 source-space 定位。
+显式 package build 继续要求至少一个 marked Plugin。嵌套条件按同一规则读取；Plugin-bearing subpath、重复 root export 与跨包 re-export 的拒绝规则不变。
 
 ## Independent source workspaces
 
@@ -114,7 +126,7 @@ Drizzle history 一致性检查、manifest rewrite 检查，并在临时副本�
 migration；插件明确放弃原 lineage 时运行 `pluxel database rebase --lineage <new-id>`，工具先在 staging 生成全新 baseline，
 校验成功后再原子替换 `drizzle/`。这是同步更新 lineage、SQL、Drizzle meta 与 checksum manifest 的标准入口。
 
-共享 production compiler 会识别从 `@pluxel/runtime/database` 导入的 module-level `defineDatabase()`；显式 evolution 必须在
+共享 production compiler 会识别从 `@pluxel/services/database` 导入的 module-level `defineDatabase()`；显式 evolution 必须在
 direct object 中使用 literal，未声明时保持默认 `migrations` 并从最近 package 的 `drizzle/` 读取、校验 artifact；
 `reset-on-schema-change` 没有 checked-in history；`generate`、`check`、`rebase` 会明确拒绝它，唯一作者路径是 compiler 从当前 schema 生成 baseline。它在 `.pluxel/` staging 中从空 history 生成 baseline，以去除随机 identity 后的规范化 Drizzle snapshot
 计算稳定 lineage，并删除无需部署的 meta。两种策略都把内部 artifact 参数注入 server output；独立插件 package 同时发布
@@ -125,7 +137,7 @@ artifact；reset baseline staging 在注入后立即清理，因此 HMR schema �
 ## Versioned Plugin lowering ABI
 
 Plugin semantic output 是已构建 Plugin 与 Core/runtime 之间的发布契约。generated module 只从
-`@pluxel/core/toolchain`（或显式转发它的 `@pluxel/runtime/toolchain`）导入 ABI v2 helper；默认 root 和 `/internal`
+`@pluxel/core/toolchain`导入 ABI v2 helper；默认 root 和 `/internal`
 不提供 setter alias。canonical helpers 是 `__setPluginDefinition`、`__setPluginConfig`、`__setPluginParts`、
 `__setPluginPartConfig`、`__setPluginPartRequires` 与 `__setPluginPartOptional`，每个 payload 都携带同一个 numeric
 `abiVersion`。v1 artifact 没有 Part constructor requirement facts，当前 Core 不提供隐式兼容窗口；Core、Runtime 与 Rolldown
@@ -155,7 +167,7 @@ Part facts 服务 occurrence construction 与来源诊断，不建立第二张 g
 ## Plugin package build
 
 `pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
-Rolldown。`pluginPackage()` 与 `staticApplication()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
+Rolldown。`pluginPackage()` 与 `pluxel()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
 legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench semantic lowering 和 decorator
 output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
 `runWithTsdown()` 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
@@ -216,48 +228,42 @@ mapping 会一并清理；devDependencies 保留供作者工具使用。metadata
 application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
 assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表。
 
-Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint、config metadata
-以及 React/Mantine UI singleton dedupe 语义，并由 Vite/OXC 提供 legacy decorator transform。source preset 同时识别
-框架 package 的 `@pluxel/source` 与插件 package 的 `@pluxel/hmr` dev export；static/dynamic route plugin
-会自动组合这套配置，项目不应重复配置 Pluxel core/runtime/UI 的 resolve conditions、dedupe 或插件 source alias。
-preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
-同时用于 Workbench UI production build；plugin semantics、lint 和 config metadata 只应用于 server environment。
-runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
-static/dynamic 对配置 import graph 的收集与失效复用同一个 runtime-dev helper；Node artifact build slot、缓存保留、
-Federation application-root coordinator 和 shared package 集合属于内核不变量，不进入 Context 或 route config。
-Workbench browser entry 在 route `config` hook 进入 Vite optimizer；插件 UI 的 watch graph 则通过 SSR environment
-收集，不能为了编译元数据调用 client transform 并向 optimizer 注入不完整依赖批次。
-Dynamic host 显式使用 `mode: 'distribution'` 时仍保留 source transform/HMR pipeline，但 package resolution 不启用
-`@pluxel/hmr`、`development` 或 `@pluxel/source`，Workbench 改由 `@pluxel/runtime/dist/public` 提供，HTML 也不注入
-Vite client。该模式把 bare SSR package import 留给 Node host，避免已经物化的 CommonJS/native package 被 Vite Module
-Runner 当作 ESM source 内联；显式 source entry 仍经过 Pluxel transform pipeline。该模式用于 host-owned 可搬运 source
-distribution；目录 closure、inventory 与签名不由 route plugin 猜测。
-static/dynamic route 分别使用 `.pluxel/vite/static-runtime-v2` 和 `.pluxel/vite/dynamic-runtime-v2` 作为当前
-optimizer contract 的默认 Vite cache。同一 host Vite 可以同时拥有业务前端 client graph 与 Pluxel SSR graph；默认目录
-避免它与不包含相同 runtime optimizer contract 的其他 Vite 进程互相替换。host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部
-Drizzle generate 成功输出被捕获，失败时才附回完整诊断。dynamic route 的 watcher 默认忽略原生构建 `target/`
-目录与 Turborepo `.turbo/` 缓存，不把 Rust/N-API 编译或任务缓存纳入插件源码 HMR。两条 route 的 Vite watcher
-都忽略生成态 `.pluxel/`。package-level source proxy、optimizer cache 与 artifact output 本来就不属于应用源码 HMR；
-这一排除也是对损坏、旧版或用户手工创建的递归链接的纵深防御。
+Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata，
+并由 Vite/OXC 提供 legacy decorator transform。Host-dev 自动组合该 pipeline；preprocessor 参与所有 environment，
+Plugin semantics、lint 和 config metadata 仅作用于 server environment。Workbench 单独拥有 browser compiler 与 UI singleton 策略。
+源码解析添加 `@pluxel/hmr`、`@pluxel/source`，其余条件遵循 Vite 的 client/server 默认值：浏览器不启用 `node`，
+`development` / `production` 按 Vite 的实际环境选择，不能同时启用。默认启用 Vite 自身的 `resolve.tsconfigPaths`，
+显式 `false` 保持关闭。项目无需再注册路径解析插件。浏览器直接引入 Node builtin 时，adapter 复用 Vite 解析结果：
+没有用户提供的浏览器实现而被 Vite externalize 的 builtin 立即报错，包含 import 与 importer；SSR 不受此 guard 影响。
 
-开发期 Node module externalization 由 runtime-dev 的单一 host-module classifier 决定。它从 importer 所在位置按 Node
-规则解析 bare specifier，找到最近的 `package.json`，并结合 `.node`/`.cjs`/`.cts` 扩展名、package `type`、require-only
-root export 与 `napi`/`binary`/`gypfile` metadata 区分 host CommonJS/native module 和可变换的 ESM source；package、文件和
-specifier 结果使用有界缓存。static/config ModuleRunner 通过 server-only Vite adapter 使用该判断，dynamic HMR runner
-在 fetch boundary 直接使用同一判断并携带明确 module format。项目不得再用 `ssr.external` 或 runtime package 名单复制
-这项策略。该开发期执行边界与 production freezer 的 residual tracing 是两个契约：后者仍负责生成可搬运部署闭包。
+Host-dev 拥有专用 `pluxel` Vite environment、source watcher 和更新队列，应用声明、fixed imports、动态来源和
+开发控制台都在该 environment 的单一 runner / evaluated namespace 求值。其 runner 禁用自动 HMR 求值，所有
+Host 更新由候选提交队列管理，并使用 source-aware stack mapping。Vite 自身负责 runner 与 environment 的关闭。
+Services 提供 HTTP carrier，Workbench 通过开发附件接入 artifact compiler。生产启动使用构建产物与生产来源加载器，
+不以另一个 Vite mode 充当生产 launcher。Vite 默认忽略生成态 `.pluxel`、日志与数据库目录。
 
-仓库 source checkout 中，static/dynamic Vite adapter 通过 relative source bridge 组合当前 Rolldown source preset，
-不能回落到上一次构建的 `dist/vite.mjs`；各 runtime package 的 production build 用 pre-resolve externalizer 把这条
-bridge 精确改写为 `@pluxel/rolldown/vite` 公共入口。这样修改内核 Vite 默认后无需先手工 build 才能启动项目，也不会
-把 Rolldown 工具链内联进 runtime 发布物或增加 dev-only package export。
-配置加载期的 runtime-dev Node carrier 同样直接桥接当前 runtime-node source；runtime-dev 自身发布构建把它精确改写回
-`@pluxel/runtime-node`，而 static/dynamic route build 继续按各自 package closure 内联 carrier。开发启动因此不读取旧 dist，
-发布边界也不残留 monorepo 相对路径。
+Host 的 source conditions、noExternal、singleton 与语义 collector 只作用于 `pluxel` environment。
+默认 `ssr` 和第三方 `ssrLoadModule` 保留 Vite 自己的环境工厂、解析策略和执行缓存；它们不加载 Host 的 Plugin 实例。
+第三方应提交普通数据，或使用已运行 Host 的服务 API；不能把另一 environment 求值出的 Plugin constructor 当作
+Host 同一 evaluated namespace。用户自定义 SSR factory 与 Host 专用 environment 可以共存。
+
+专用 environment 在其工厂返回前装配唯一的 fetchModule 策略：Vite 先解析，再对物理文件分类；
+CommonJS/native 与显式 singleton 交给 Node，其余交给 Vite。Singleton 只登记 canonical 物理身份，
+不维护请求 URL 拼写白名单，不修改 server.close 或私有 runner transport。Vite 只公开 runnable 工厂而不公开构造器，
+因此在工厂中装配公开方法；不借助私有构造器反射。只有 `pluxel` 名称的环境工厂属于 Host，调用方不能替换它。
+文件分类器不另建 bare specifier resolver；production freezer 的 residual tracing 和部署闭包契约不受影响。
+
+浏览器 Node builtin guard 与 preprocessor 仍按原语法职责参与 client 编译；Host pipeline 的 preprocessor
+只参与 client 与所选 Host environment，不处理默认 SSR 或其他 server environment。Vite 的 tsconfigPaths 与 OXC
+选项均为项目级，因此保留显式 tsconfigPaths 选择和 legacy decorator 语法配置；不为声称完全隔离而引入额外解析器
+或一次额外 TypeScript/OXC parse。
+
+Host-dev 直接依赖 `@pluxel/rolldown/vite` 公共入口；workspace source conditions 选择当前源码，发布产物保留工具链外部依赖。
+Services 拥有 Node HTTP carrier，Host-dev 不复制 carrier 实现或维护另一套 source transform。
 
 仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
 `@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的
-`@pluxel/hmr` 只把其他插件解析到源码，Pluxel core/runtime/toolchain 本身消费已构建的公开声明。
+`@pluxel/hmr` 只把其他插件解析到源码，Pluxel Core/Host/toolchain 本身消费已构建的公开声明。
 因此单个插件 typecheck 不会把整个框架源码并入同一个 TypeScript program，也不会用插件编译选项重新检查内部实现。
 
 tsdown `entry` 是 build package subpath 的唯一作者事实源。framework package 配置
@@ -273,23 +279,23 @@ sourcemap handler，覆盖 ModuleRunner 的 source-aware stack mapping；在 eva
 
 ## Static application freezer
 
-static application 的 build preset 归属 `@pluxel/rolldown/build`：
+static application 使用 `@pluxel/rolldown` 的 tsdown 插件；入口与输出选项由普通 tsdown 配置提供：
 
 ```ts
-import { staticApplication } from '@pluxel/rolldown/build'
+import { defineConfig } from 'tsdown'
+import { pluxel } from '@pluxel/rolldown'
 
-export default staticApplication({
-	entry: './src/pluxel.static.ts',
-	variant: 'workbench',
-	target: 'node',
+export default defineConfig({
+	entry: './src/app.ts',
+	plugins: [pluxel({ variant: 'workbench' })],
 })
 ```
 
-freezer 只接受直接默认导出的 `defineStaticRuntime(...)`。它在同一 graph 中执行 macro、config metadata、lint、Workbench
+freezer 接受直接默认导出的应用对象（可带 `satisfies HostApplication`）。它在同一 graph 中执行 macro、config metadata、lint、Workbench
 remote extraction 和 production preprocessing，然后生成以 canonical entry 为 namespace import 的 platform bootstrap。Wrapper
 从 module namespace 消费 default application，并用 runtime shared reader 消费可选 `product` named export；它不按 identifier
 猜测 export、不静态求值 product，也不把产品字段复制进 deployment metadata。direct export、local export 与标准 re-export
-因此具有相同语义。fixed plugins、runtime-static 和可达的
+因此具有相同语义。fixed plugins、runtime 和可达的
 runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
 optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
 缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
@@ -309,7 +315,9 @@ Production projector 复用 config source resolver，把 exported schema 还原�
 transform 或 default getter。无法安全静态还原或无法推导 transport 的 target 使 build 失败，不回退 string/JSON heuristic。
 
 Plugin semantics、config source 与 route-specific validator 都只读 AST，并通过 `pluginUtils` 的 exact-source 有界缓存复用同一
-module parse。Vite/watch source bytes 变化会自然替换该 id 的缓存项；各 pass 仍独立拥有自己的 semantic facts，不能修改共享 AST。
+module parse。缓存键包含 id、language 与完整 source bytes，原始源码和 lowering 后源码可以同时命中，全局最多保留 256 个 parse；
+源码变化必须使用对应的新 AST，语法错误的 recovery AST 不进入缓存。各 pass 仍独立拥有自己的 semantic facts，不能修改共享 AST。
+这不承诺复用 Rolldown/Vite 内部或第三方插件的 parser，也不跨不同源码版本复用 AST。
 
 Binding 非空时 assembly 在 distribution finalization 前写 root `.env.example`。Environment name 按 UTF-8 bytes 排序并去重，
 fan-out target 的 description/input facts 稳定聚合；placeholder 保持注释状态。文件编码为 UTF-8 + LF，不读取 build environment，
@@ -351,14 +359,14 @@ Workbench Shell、producer 和 Content plan 是 browser-facing outputs，不内�
 headless 与 workbench 使用分离的 internal Node adapter；headless dependency graph 不解析 Workbench installer/backend，
 不是只依赖 minifier 删除未用分支。
 
-开发 route 的 URL 输出由 `runtime-dev` 的共享 presenter 负责，static/dynamic 不各自推断 ingress。存在 Portless origin 时它显示同一
+开发 route 的 URL 输出由 `host-dev` 的共享 presenter 负责，static/dynamic 不各自推断 ingress。存在 Portless origin 时它显示同一
 origin 上的 Application `/` 与 Workbench `uiBasePath`；没有 Portless 时保留 Vite 原生 listener URL，并只追加 Workbench mount。
 Workbench-only host 若让 UI 拥有 `/`，不得虚构第二个 Application root。
 
 Workbench Shell 的 browser asset URL 使用 `/__pluxel/workbench/assets/**`；磁盘仍由 distribution 内部的 `workbench/public/`
 inventory 提供。URL namespace 与 artifact filesystem layout 不耦合，也不得退回会与产品 public tree 竞争的 `/dist/public/**`。
 Vite 只有在当前安装中确实存在 Workbench source entry 时才接入它的 client graph；独立消费 workspace 使用
-`@pluxel/runtime` 随包交付的 built assets，不能生成只在 Pluxel monorepo 内成立的 `/packages/workbench-app/**` URL。
+`@pluxel/workbench` 随包交付的 built assets，不能生成只在 Pluxel monorepo 内成立的 `/packages/workbench-app/**` URL。
 
 ## Workbench source declaration
 
@@ -393,18 +401,22 @@ Mixed Content/View 的 generated Bridge 只导入 renderer descriptor 的 identi
 检查 JS、source map 与 dynamic types，确保 Content schema/handler 不进入 browser outputs，而不是依赖普通 tree-shaking。
 
 UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe Workbench definition、
-`@pluxel/runtime/capnweb` 类型、`@pluxel/runtime/workbench/react` 和公开 UI peers，不得包含 Plugin implementation、
+`capnweb` 类型、`@pluxel/workbench/react` 和公开 UI peers，不得包含 Plugin implementation、
 Context、database handle 或 Node API。
 
 额外 Node entry 使用 module-level declaration：
 
 ```ts
+import { defineNodeModule } from '@pluxel/services/node'
+
 const taskModule = defineNodeModule(import.meta.url, './task.ts')
 ```
 
 共享 worker task 使用相同 artifact pipeline，但声明同时携带 input/output 类型：
 
 ```ts
+import { defineWorkerTask } from '@pluxel/services/workers'
+
 const resizeTask = defineWorkerTask<ResizeInput, ResizeOutput>(
 	import.meta.url,
 	'./resize-worker.ts',
@@ -429,7 +441,7 @@ package，再沿 source graph 的 package chain 定位真正 owner，最后从 o
 strict layout 下也不会错误地从最外层 artifact 解析 Canvas 的私有依赖；dynamic/namespace/`export *` native import 会被明确拒绝。
 artifact 的静态 import 仍只剩 Node builtins，`onNativeResidual` 继续报告 binding 给部署追踪。workspace build 优先使用
 `@pluxel/hmr` source condition，发布包使用 `publishConfig` 的 default entry，两条图应用相同 validator。`defineNodeModule`
-本身不定义 worker protocol；`defineWorkerTask` 的 default export contract 与调度生命周期由 runtime 统一拥有。
+本身不定义 worker protocol；`defineWorkerTask` 的 default export contract 与调度生命周期由 `@pluxel/services/workers` 统一拥有。
 
 ## Development compiler
 
@@ -451,6 +463,9 @@ Node module 继续拥有独立 watcher、content-addressed build、staged setup 
 通过 session epoch invalidation 驱动 full document reload；producer-status-only 的 building/failed 展示可在同一 session
 轻量刷新，但不做 Content-local reconnect 或页内 remote replacement。
 
+Node 制品并发构建只共享编译任务；每个消费构建仍独立发布到自己的输出目录并接收 native residual 部署事实，不能因缓存命中跳过。
+原生依赖桥接的相对路径按最终制品目录计算，缓存身份包含该目录到 package root 的相对布局，不能把缓存目录的位置烘焙进发行文件。
+
 `workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path 相对声明模块解析；lowering 从实际
 definition/renderer module 收集 source graph，在 owning package root 的 `.pluxel/workbench-generated/` 生成 Bridge entry，
 并把 package-relative entry 写入 producer plan。Builder 明确区分三个目录事实：producer root 解析 Bridge/source 与 producer
@@ -468,8 +483,8 @@ types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-
 Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
 
 固定 singleton shared 包来自 `@pluxel/core/federation`：React/ReactDOM 及实际 subpaths、`@mantine/core`、
-`@mantine/hooks`、MF React Bridge、`@pluxel/runtime/workbench`、`/client`、`/react` 和 toolchain-only
-`@pluxel/runtime/internal/workbench-react`。每项使用 exact version、`singleton: true`、`loaded-first`；
+`@mantine/hooks`、MF React Bridge、`@pluxel/workbench`、`/client`、`/react` 和 toolchain-only
+`@pluxel/workbench/internal/react`。每项使用 exact version、`singleton: true`、`loaded-first`；
 application root 必须能解析全部 Shell-provided package；producer 自己解析到的 React、Runtime 与可选 Mantine 也必须与 winner
 一致。开发 producer 只启用 `@pluxel/hmr`/`@pluxel/source` package exports，distribution producer 只使用 built exports；调用方必须
 显式选择，不能从目录或现有 dist 猜测。Manifest 缺项或版本不一致使 candidate 失败。Production builder 按同一 build contract 生成 Shell 与 producer，写入 exact
@@ -489,11 +504,11 @@ dynamic type artifact，只校验浏览器运行时 contract；显式 required �
 类型资产。required DTS build 使用 producer-scoped `tsBuildInfoFile` 与串行 cache transaction，避免并发 producer 共享
 MF 默认 cache 文件；production 中类型、Manifest 或 asset 缺失都使 candidate 失败。
 
-Production producer 不输出内嵌源码 sourcemap；runtime-dev producer 保留 sourcemap 供开发诊断。
+Production producer 不输出内嵌源码 sourcemap；host-dev producer 保留 sourcemap 供开发诊断。
 
 static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
 relative file 与 sha256；artifact builder 同时把受控 native residual 的已解析 entry 交给 NF3，因此只在 worker entry 中出现的
 binding 也会被复制进 deployment `node_modules`。variant 只改变 browser Workbench closure。
 
-`@pluxel/core/federation` 是唯一 dependency-neutral build contract。runtime-dev、Rolldown 和 host 直接依赖该
+`@pluxel/core/federation` 是唯一 dependency-neutral build contract。host-dev、Rolldown 和 host 直接依赖该
 contract，不通过 runtime 转手 re-export，也不引入反向 build dependency。

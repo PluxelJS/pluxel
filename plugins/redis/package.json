@@ -33,23 +33,28 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"redis": "catalog:backend"
+		"redis": "catalog:backend",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/cache": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rates": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/cache": "workspace:^",
+		"@pluxel/core": "workspace:^",
 		"@pluxel/rates": "workspace:^",
-		"@pluxel/runtime": "workspace:^"
+		"@pluxel/workbench": "workspace:^"
 	}
 }

@@ -1,5 +1,5 @@
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
 export type DemoEvent = Readonly<{
 	id: string

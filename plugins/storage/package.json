@@ -33,18 +33,26 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"s3mini": "catalog:prod"
+		"s3mini": "catalog:prod",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
+		"capnweb": "catalog:prod",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:^"
+		"@pluxel/core": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^"
 	}
 }

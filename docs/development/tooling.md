@@ -20,7 +20,6 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
 | 发布 npm package 并通知 market                           | `pluxel publish`                                              |
 | 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
-| Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`                            |
 | 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
 | 管理 source workspace                                    | `pluxel workspace`                                            |
 
@@ -68,7 +67,7 @@ npx nypm add -D @pluxel/rolldown tsdown oxlint
 Dynamic host：
 
 ```sh package-install
-npx nypm add -D @pluxel/runtime-dynamic
+npx nypm add -D @pluxel/host-dynamic
 ```
 
 `publish --webhook`：
@@ -80,7 +79,7 @@ npx nypm add -D @pluxel/market
 有 Workbench browser entry 的 host 还需要 Vite/React 等自己的 web toolchain。插件 package 的 canonical scripts 见 [开发和发布插件包](./plugin-package.md)。
 
 这些可选包只在执行对应命令时从当前项目加载。`pluxel --help`、`pluxel --version` 和
-`pluxel new` 不会加载 Rolldown、runtime-dynamic 或 market；缺少对应包时只影响被调用的命令，并给出
+`pluxel new` 不会加载 Rolldown 或 market；缺少对应包时只影响被调用的命令，并给出
 安装提示。
 
 ## 自定义本地 Plugin 模板
@@ -169,12 +168,12 @@ import { pluginPackage } from '@pluxel/rolldown/build'
 Static application 使用不同输出拓扑：
 
 ```ts twoslash
-import { staticApplication } from '@pluxel/rolldown/build'
+import { defineConfig } from 'tsdown'
+import { pluxel } from '@pluxel/rolldown'
 
-export default staticApplication({
-	entry: './src/pluxel.static.ts',
-	variant: 'workbench',
-	target: 'node',
+export default defineConfig({
+	entry: './src/app.ts',
+	plugins: [pluxel({ variant: 'workbench' })],
 })
 ```
 
@@ -187,11 +186,21 @@ export default staticApplication({
 
 ## Source build boundary
 
-Static/dynamic Vite adapters 执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
+Host 的 Vite 接入执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
 Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
 graph 与 server Plugin implementation 保持分离。
 
-Static Vite 更新因新增导入失败时会保留上一版本，并持续观察失败候选需要的文件与 package 安装目录。
+`host()`（以及组合它的官方 `vitePreset()`）拥有专用 `pluxel` Vite environment；应用、动态插件和控制台共享
+其中的执行空间。默认 SSR 与第三方插件的 `ssrLoadModule` 保持独立，也可以配置自己的 SSR environment factory。
+`hostSingletons({ packages })` 在 Host environment 内指定与 Node 宿主共享身份的包，需与 `host()` 一起使用。
+第三方 SSR 加载出来的 Plugin constructor 不属于 Host；操作运行中的插件请使用控制台或 Host 的服务 API。
+
+Host environment 默认使用 Vite 的 `resolve.tsconfigPaths` 解析项目 TypeScript 路径别名；若不需要，在 Vite config 显式设为 `false`。
+包导出条件沿用 Vite 的浏览器/服务端及开发/生产区分；Host 源码环境仅额外启用 Pluxel 的源码条件，不会让浏览器选择 Node 入口或让生产构建选择开发入口。
+包导出与别名均先按当前 Vite 环境解析；Host environment 选中的 CommonJS 文件由 Node 加载，避免 `require is not defined`。浏览器代码误引 `node:fs`、`fs/promises` 等
+Node 内置模块时，开发构建立刻报告模块名和导入者；把调用移到服务端，或通过 Vite alias 提供真正的浏览器实现。
+
+Vite 更新因新增导入失败时会保留上一版本，并持续观察失败候选需要的文件与 package 安装目录。
 只修复新文件或安装缺失依赖就能触发重试，无需再次编辑原 Plugin 文件；更新成功后释放这些临时恢复监听。
 
 `workbench.markdown(import.meta.url, './guide.md')` 的 source 会进入 adapter watch graph，并在 server transform 阶段编译；
@@ -232,7 +241,7 @@ symlinked root，但会拒绝通过文件 symlink 逃出 root。修改 `name`、
 排查更新时分别看三个事实：运行意图决定插件是否应该运行，当前状态说明它是否已经运行，更新历史说明上次更新发生了什么。
 一次更新已提交，不代表每个插件都已启动；某个插件启动失败，也不代表同一批次里的其他插件失败。
 
-Static 与 dynamic host 的插件源码 HMR 都保留运行意图。原来要求运行的插件即使启动失败，也不会被改成手动停止；
+显式 catalog 与动态来源 的插件源码 HMR 都保留运行意图。原来要求运行的插件即使启动失败，也不会被改成手动停止；
 下一次有效源码更新会自动启动修复后的版本，连同被 required dependency 阻塞的 consumer 一起恢复，不需要去工作台点击“启动”。
 用户主动停止的插件则继续停止，源码更新不会覆盖这个选择。
 
@@ -253,7 +262,7 @@ Static 与 dynamic host 的插件源码 HMR 都保留运行意图。原来要求
 修改 application entry 或 host 配置会重建宿主，使用新的启动策略；这与同一宿主内保留运行意图的插件 HMR 不同，
 详见 [宿主设置](../getting-started/host-setup.md)。
 
-Static Vite 会保留失败候选的新依赖：新增 import 导致更新失败后，只修正新文件、创建缺失模块或完成依赖安装，也会自动重新求值。
+Vite 会保留失败候选的新依赖：新增 import 导致更新失败后，只修正新文件、创建缺失模块或完成依赖安装，也会自动重新求值。
 成功接纳后释放这批恢复依赖。更新被拒绝时，旧后端继续使用旧 Workbench Content 与界面产物；候选产物在目录接受时才生效。
 
 已知边界：Vite 8 的原生解析器可能缓存目录包指向不存在入口的成功解析；此时只改该目录包的 `exports`，仍可能返回旧入口。
@@ -266,17 +275,11 @@ Workbench 收到 publication、运行 generation 或产物变化造成的会话�
 连续更新采用递增等待；10 秒内已自动刷新 3 次时暂停，显示手动刷新入口，避免错误导致页面反复跳转。认证失效和连接损坏不会自动重试。
 刷新保留当前地址及已保存的工作区布局，不保存尚未提交的表单草稿。
 
-## HMR diagnostics
+## 更新诊断
 
-Dynamic host 用户通过：
-
-```sh
-pluxel hmr doctor
-pluxel hmr prompt
-pluxel hmr enabled
-```
-
-workspace diagnostics 的 library subpath 是 `@pluxel/runtime-dynamic/hmr/diagnose`。它诊断 profile、source discovery 和 snapshot，不注册 dynamic runtime services。
+Workbench 的插件目录与最近更新展示当前 catalog、来源和更新结果。检查已运行应用时使用
+[开发控制台](./dev-console.md)，固定发现的 root 与 instance 后读取状态和日志。
+应用来源直接在 `app.ts` 中声明，不需要维护单独的发现 profile。
 
 ## 验证顺序
 

@@ -11,7 +11,7 @@ Use @pluxel/canvas/table for a programmatically assembled static report table, a
 
 ```ts
 import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class DocumentImagePlugin extends BasePlugin {

@@ -4,6 +4,7 @@ import {
 	resolveCoreRootInputs,
 	type CoreCommitPublication,
 	type CorePluginLifecycleHooks,
+	createContextHost,
 } from '@pluxel/core/internal'
 import {
 	BasePlugin,
@@ -17,7 +18,7 @@ import {
 	type CoreInternalTestHostOptions,
 	assertPluginLifecycleIssue,
 } from '@pluxel/core/internal/test'
-import { createContextHost, type RootContext } from '@pluxel/core'
+import { type RootContext } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 
 let lifecycleTrace: string[] = []

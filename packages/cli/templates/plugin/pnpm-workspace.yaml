@@ -5,7 +5,6 @@ catalog:
   '@pluxel/cli': ^1.0.0
   '@pluxel/core': ^1.0.0
   '@pluxel/rolldown': ^1.0.0
-  '@pluxel/runtime': ^1.0.0
   '@pluxel/test': ^1.0.0
   oxfmt: ^0.58.0
   oxlint: ^1.73.0
@@ -13,6 +12,7 @@ catalog:
   typescript: ^6.0.3
   vite: ^8.2.2
   vitest: 5.0.0
+  valibot: ^1.4.2
 
 allowBuilds:
   esbuild: true

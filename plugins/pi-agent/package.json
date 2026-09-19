@@ -35,14 +35,18 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "catalog:prod",
-		"typebox": "catalog:prod"
+		"typebox": "catalog:prod",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/agent-tools": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
@@ -51,7 +55,8 @@
 	"peerDependencies": {
 		"@pluxel/agent-tools": "workspace:^",
 		"@pluxel/commands": "workspace:^",
-		"@pluxel/runtime": "workspace:^"
+		"@pluxel/core": "workspace:^",
+		"@pluxel/services": "workspace:^"
 	},
 	"pluxel": {
 		"pluginPackages": {

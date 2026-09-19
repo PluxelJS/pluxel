@@ -1,16 +1,17 @@
 import { createHash } from 'node:crypto'
 import {
-	BasePlugin,
 	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
-	Plugin,
 	type Context,
-	type PersistenceNamespace,
 	type PluginNodeAddress,
-} from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+	BasePlugin,
+	Plugin,
+} from '@pluxel/core'
+
+import { type PersistenceNamespace } from '@pluxel/services/persistence'
+import { RpcTarget } from 'capnweb'
 import wretch, { type Wretch } from 'wretch'
 import { WretchConfig } from './config.ts'
 import {
@@ -52,8 +53,10 @@ export class WretchPlugin extends BasePlugin {
 	private storage?: PersistenceNamespace
 
 	override init(): void {
+		const persistence = this.ctx.root.persistence
+		if (!persistence) throw new Error('WretchPlugin requires the Persistence service')
 		const policy = createOutboundPolicy(this.config)
-		const storage = this.ctx.root.persistence.namespace(SETTINGS_NAMESPACE)
+		const storage = persistence.namespace(SETTINGS_NAMESPACE)
 		this.policy = policy
 		this.storage = storage
 		this.ctx.effects.defer(

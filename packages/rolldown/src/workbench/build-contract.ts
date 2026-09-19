@@ -43,7 +43,7 @@ export function resolveWorkbenchFederationShared(root: string): ResolvedFederati
 	const compatibility = createWorkbenchFederationCompatibilitySet({
 		react: resolveRequiredPackageVersion(applicationRoot, 'react'),
 		reactDom: resolveRequiredPackageVersion(applicationRoot, 'react-dom'),
-		runtime: resolveRequiredPackageVersion(applicationRoot, '@pluxel/runtime'),
+		workbench: resolveRequiredPackageVersion(applicationRoot, '@pluxel/workbench'),
 	})
 	const signature = canonicalCompatibilitySignature(compatibility)
 	const shared = Object.fromEntries(
@@ -74,7 +74,7 @@ export function assertWorkbenchFederationProducerCompatibility(
 	const expected = {
 		react: compatibility.shared.react,
 		'react-dom': compatibility.shared['react-dom'],
-		'@pluxel/runtime': compatibility.shared['@pluxel/runtime/workbench'],
+		'@pluxel/workbench': compatibility.shared['@pluxel/workbench'],
 	} as const
 	for (const [packageName, version] of Object.entries(expected)) {
 		assertProfilePackageVersion(root, packageName, version)

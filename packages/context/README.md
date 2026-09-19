@@ -2,7 +2,7 @@
 
 `@pluxel/context` 是同步、immutable、strict-lazy 的 Context host kernel。它让 standalone application 或 framework host 在
 创建 root 前组合固定能力，并用 root、scope 与 owner-view 表达共享和所有权；本包不依赖 `@pluxel/core` 或
-`@pluxel/runtime`。
+`@pluxel/host`。
 
 ```ts
 import {

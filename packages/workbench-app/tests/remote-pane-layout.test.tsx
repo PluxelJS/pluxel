@@ -3,7 +3,7 @@
 import { act, useEffect, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { WorkbenchPaneDescriptor } from '@pluxel/runtime/workbench/federation'
+import type { WorkbenchPaneDescriptor } from '@pluxel/workbench/federation'
 import type { WorkbenchViewState } from '../src/app/workbench/context'
 import {
 	HostRemotePaneLayout,

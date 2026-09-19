@@ -23,16 +23,26 @@ catalogs:
     '@types/react': ^19.2.18
     '@types/react-dom': ^19.2.5
     '@vitejs/plugin-react': ^6.1.1
-    react: ^19.2.8
-    react-dom: ^19.2.8
+    # Match the exact React singleton used by the published Workbench artifacts.
+    react: 19.2.8
+    react-dom: 19.2.8
   pluxel:
     '@pluxel/cli': ^1.0.0
     '@pluxel/core': ^1.0.0
+    '@pluxel/commands': ^1.0.0
+    '@pluxel/logging': ^0.1.0
+    '@pluxel/host': ^0.1.0
+    '@pluxel/preset': ^0.0.0
+    '@pluxel/services': ^0.1.0
+    '@pluxel/management': ^0.1.0
+    '@pluxel/workbench': ^0.1.0
     '@pluxel/rolldown': ^1.0.0
-    '@pluxel/runtime': ^1.0.0
-    '@pluxel/runtime-dynamic': ^1.0.0
-    '@pluxel/runtime-static': ^1.0.0
+    '@pluxel/vault-admin': ^1.0.0
+    '@pluxel/host-dynamic': ^1.0.0
+    '@pluxel/host-dev': ^1.0.0
     '@pluxel/test': ^1.0.0
+  validation:
+    valibot: ^1.4.2
   test:
     vitest: 5.0.0
   tooling:

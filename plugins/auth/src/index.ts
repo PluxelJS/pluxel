@@ -1,13 +1,12 @@
 import {
-	BasePlugin,
-	Plugin,
 	type ManagementAccessPrincipal,
 	type ManagementAccessProvider,
 	type ManagementAccessProviderStatus,
 	type ManagementAccessRequestContext,
 	type ManagementAuthenticationProviderSession,
 	type ManagementAuthenticationProviderStep,
-} from '@pluxel/runtime'
+} from '@pluxel/management/access'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import {
 	authenticatedSession,
 	FixedAuthenticationSession,

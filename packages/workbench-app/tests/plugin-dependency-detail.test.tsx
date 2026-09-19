@@ -3,7 +3,7 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import type { PluginDependencyGraphSnapshot, PluginStatusSnapshot } from '@pluxel/runtime/web'
+import type { PluginDependencyGraphSnapshot, PluginStatusSnapshot } from '@pluxel/management/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { MantineProvider } from '@mantine/core'

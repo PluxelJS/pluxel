@@ -4,16 +4,19 @@ Pluxel 官方出站 HTTP 插件，基于 [Wretch](https://github.com/elbywan/wre
 outbound policy 的原生、不可变 Wretch base；请求构造、addon、middleware、catcher 和 response chain 仍
 完全使用 Wretch API。
 
+使用该插件的 Host 必须安装 `@pluxel/services/persistence` 提供的 Persistence 服务，用于保存受管出站设置。
+
 ## 使用
 
 ```sh
-pnpm add @pluxel/wretch @pluxel/runtime
+pnpm add @pluxel/wretch @pluxel/core
 ```
 
 把 `WretchPlugin` 放进宿主 catalog，需要 HTTP 的插件通过 constructor 声明 required dependency：
 
 ```ts
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
 
 type Customer = { id: string; name: string }
@@ -93,7 +96,7 @@ retry、dedupe、缓存、鉴权刷新和业务错误解析不属于进程级安
 不实现表单 renderer，也不转发 RPC：
 
 ```ts
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { WretchWorkbench } from '@pluxel/wretch/workbench'
 
 export const CustomerWorkbench = workbench.define({

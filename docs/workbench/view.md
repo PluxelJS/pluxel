@@ -17,8 +17,8 @@ Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使�
 将 browser-safe DTO、API 和静态 definition 放进 `src/workbench.ts`：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
 export type OrdersSnapshot = Readonly<{
 	revision: number
@@ -44,8 +44,8 @@ Definition 是固定 flat record。entry key 是稳定 declaration identity；`w
 接着在 `src/OrdersPlugin.ts` 提供服务端实现。这个最小例子用内存计数，实际项目把读取和刷新替换为自己的业务方法：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { RpcTarget } from 'capnweb'
 import { OrdersWorkbench, type OrdersApi } from './workbench.ts'
 
 @Plugin({ displayName: 'Orders' })
@@ -95,7 +95,7 @@ target，并由新的挂载方自己提供认证、授权、输入预算、取�
 
 ```ts
 // src/ui/overview.scope.ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.ts'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
@@ -149,7 +149,7 @@ export function OrdersPage() {
 每个 renderer graph 只能有一个 server-definition value boundary。默认把它放在 `<entry>.scope.ts`：
 
 ```ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.ts'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
@@ -236,7 +236,7 @@ Document renderer 可以用 `host.document?.params`、`setTitle()` 和 `setDirty
 - 可空的 parameterized `document`；
 
 Renderer 不取得 generic HTTP client、任意 URL navigation、Shell router/store 或 raw WebSocket。需要三栏任务布局时，
-从 `@pluxel/runtime/workbench/react` 使用 `WorkbenchPaneLayout` 和 `WorkbenchPane`；宿主负责 responsive drawer、
+从 `@pluxel/workbench/react` 使用 `WorkbenchPaneLayout` 和 `WorkbenchPane`；宿主负责 responsive drawer、
 resize、focus 和 workspace persistence。
 
 Pane Kit 的三段语义固定为 `navigation | primary | inspector`：两侧可由当前标签页头部的标准控件显示、隐藏或在窄屏
@@ -253,8 +253,8 @@ snapshot + mutation 页面的起点；没有已证实的实时更新需求时，
 把 browser-safe API、DTO 和 definition 放在 `src/workbench.ts`：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
 export type OrdersSnapshot = Readonly<{
 	revision: number
@@ -287,8 +287,8 @@ Definition 必须是固定的 flat record。Entry key 是稳定 declaration iden
 在 Plugin 的 `init()` 中发布 definition：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { RpcTarget, type RpcStub } from 'capnweb'
 import { OrdersWorkbench, type OrdersApi, type OrdersObserver } from './workbench.js'
 
 @Plugin({ displayName: 'Orders' })
@@ -397,7 +397,7 @@ Bindings 必须与 definition 的 key 完全一致。一个 Plugin generation �
 或 React state：
 
 ```ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.js'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
@@ -474,3 +474,13 @@ export function OrdersPage() {
 	)
 }
 ```
+
+### 借用宿主管理操作
+
+官方 Shell 向 View 提供可选的 `host.management`，共享当前已认证会话的 unary management
+操作。自定义 Shell 必须在 `createWorkbenchViewHost({ management, ... })` 中显式绑定；
+未绑定时该字段为 `null`，Renderer 应处理不可用状态。
+
+这不转移会话所有权：没有 raw socket、订阅控制或 session disposal。关闭 View 后，
+已缓存的 namespace 与独立保存的 method 都不能继续发起操作；已经接受的调用仍按原会话完成，
+关闭不表示业务回滚。认证、权限检查和审计与 Shell 内建页面完全相同。

@@ -5,7 +5,7 @@
 > [!NOTE]
 > 本文记录的是 spike 当时的上游能力与发布判断，不是当前 Runtime contract 或实现状态。
 > 下文所有“当前”“目前”“尚未”和 PASS/BLOCKED 状态都只指验证日期的实验快照；后续实现已越过其中部分发布判断。
-> 当前架构与用户可依赖的 API 以 [`../../RUNTIME.md`](../../RUNTIME.md)、
+> 当前架构与用户可依赖的 API 以 [`../../HOST.md`](../../HOST.md)、
 > [`../../PLUGIN_SYSTEM.md`](../../PLUGIN_SYSTEM.md) 和 [`../../../docs/runtime/http.md`](../../../docs/runtime/http.md) 为准。
 
 锁定版本：
@@ -304,7 +304,7 @@ carrier/vite
   srvx Node handler attachment and explicit HMR/business upgrade arbitration
 ```
 
-不要把 [`carrier.mjs`](./carrier.mjs) 搬进 `packages/runtime`。它的作用是证明公开 callback handoff 可行，并把剩余 upstream gaps
+不要把 [`carrier.mjs`](./carrier.mjs) 直接搬进正式 HTTP 服务。它的作用是证明公开 callback handoff 可行，并把剩余 upstream gaps
 变成可复现事实。
 
 ## 运行

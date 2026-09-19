@@ -1,0 +1,134 @@
+{
+	"name": "@pluxel/management",
+	"version": "0.1.0",
+	"description": "Shared authenticated management endpoint and browser client",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/management"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./client": {
+			"@pluxel/source": "./src/client.ts",
+			"default": "./dist/client.mjs"
+		},
+		"./protocol": {
+			"@pluxel/source": "./src/protocol.ts",
+			"default": "./dist/protocol.mjs"
+		},
+		"./react": {
+			"@pluxel/source": "./src/react.ts",
+			"default": "./dist/react.mjs"
+		},
+		"./session": {
+			"@pluxel/source": "./src/web/session/index.ts",
+			"default": "./dist/session.mjs"
+		},
+		"./product": {
+			"@pluxel/source": "./src/product-contract.ts",
+			"default": "./dist/product.mjs"
+		},
+		"./package.json": "./package.json",
+		"./access": {
+			"@pluxel/source": "./src/access.ts",
+			"default": "./dist/access.mjs"
+		},
+		"./service": {
+			"@pluxel/source": "./src/service.ts",
+			"default": "./dist/service.mjs"
+		},
+		"./http": {
+			"@pluxel/source": "./src/http.ts",
+			"default": "./dist/http.mjs"
+		},
+		"./commands": {
+			"@pluxel/source": "./src/commands.ts",
+			"default": "./dist/commands.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./internal/http": {
+			"@pluxel/source": "./src/http-internal.ts",
+			"default": "./dist/internal/http.mjs"
+		},
+		"./internal/test": {
+			"@pluxel/source": "./src/test-internal.ts",
+			"default": "./dist/internal/test.mjs"
+		}
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./client": "./dist/client.mjs",
+			"./protocol": "./dist/protocol.mjs",
+			"./react": "./dist/react.mjs",
+			"./session": "./dist/session.mjs",
+			"./product": "./dist/product.mjs",
+			"./package.json": "./package.json",
+			"./access": "./dist/access.mjs",
+			"./service": "./dist/service.mjs",
+			"./http": "./dist/http.mjs",
+			"./commands": "./dist/commands.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./internal/http": "./dist/internal/http.mjs",
+			"./internal/test": "./dist/internal/test.mjs"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run"
+	},
+	"dependencies": {
+		"@logtape/logtape": "catalog:prod",
+		"capnweb": "catalog:prod",
+		"std-env": "catalog:prod",
+		"valibot-form": "workspace:^"
+	},
+	"devDependencies": {
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/logging": "workspace:*",
+		"@pluxel/preset": "workspace:*",
+		"@pluxel/services": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
+		"@types/node": "catalog:types",
+		"@types/react": "catalog:types",
+		"crossws": "catalog:prod",
+		"elysia": "catalog:prod",
+		"react": "catalog:frontend",
+		"valibot": "catalog:validation"
+	},
+	"peerDependencies": {
+		"@pluxel/commands": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/logging": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"react": "catalog:frontend"
+	},
+	"peerDependenciesMeta": {
+		"react": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

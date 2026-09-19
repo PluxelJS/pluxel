@@ -82,18 +82,25 @@ oxlint.config.ts
 		"verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "catalog:"
+		"@pluxel/core": "catalog:"
 	}
 }
 ```
 
-`@pluxel/hmr` 条件指向 source entry，default 条件指向构建 artifact。source condition 不作为生产部署入口。
+上例用 `@pluxel/hmr` 选择源码、`default` 选择构建制品，适合同时开发和发布的包。
+源码识别也接受 `@pluxel/source`、`development` 条件；仅在工作区消费的 TypeScript 包可以直接写
+`"exports": { ".": "./src/orders.ts" }`，或在 `"."` 下用 `import` / `default` 指向同一 TypeScript
+入口，无需重复添加 `@pluxel/hmr`。这些形式都使用相同的 package-root Plugin identity。
 
-Pluxel runtime 和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
+`exports` 仍须是显式子路径映射；`types` 和 `.d.ts` / `.d.mts` / `.d.cts` 声明文件不提供运行时源码。
+普通 JavaScript 的 `import` / `default` 不会被自动当成源码入口；JavaScript 源码需要显式 source condition。
+可发布包仍应将生产导出指向构建制品。
+
+Pluxel Core、所用服务和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
 
 ## `tsconfig.json`
 
-Plugin source 需要 decorator 和 source condition：
+Plugin source 需要 decorator；使用条件源码导出时，让 TypeScript 选择相同条件：
 
 ```json
 {
@@ -164,6 +171,15 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 - 可选 Workbench Content artifact、MF2 producer 与 Node/worker/database artifacts。
 
 构建失败不会提交部分 metadata。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
+
+## 已安装包的开发期界面
+
+开发宿主可以同时使用源码插件和已构建的已安装插件包。已安装包的 Workbench View/Content 直接读取其
+`dist/workbench` inventory，与插件候选一起验证、接纳和撤回；不用重新编译包内 UI。只有进入本次插件目录的 export 会加载对应产物。
+inventory 中声明的产物缺失或无效会拒绝候选更新，并保留接纳之前的版本；错误可从开发控制台的 `dev.updates.latest()` 与运行日志查看。
+
+服务变化需要重建 Host 时，补偿会复用上一次接纳的产物计划。请保留仍被使用的不可变 revision；如果原地覆盖或删除旧制品，
+补偿可能失败，宿主会报告实际结果，不会把新界面产物配给旧插件。
 
 ## Workbench 内容
 

@@ -6,7 +6,7 @@
 
 ```ts
 import { TakumiPlugin } from '@pluxel/takumi'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class CardsPlugin extends BasePlugin {

@@ -25,8 +25,6 @@ import {
 export interface ConfigSourcePluginOptions {
 	include?: string | string[]
 	exclude?: string | string[]
-	/** @default '@pluxel/runtime/toolchain' */
-	metadataHelperImportSource?: string
 }
 
 export type ConfigImportBinding = {
@@ -80,21 +78,11 @@ export type ConfigSchemaSourceResolver = {
 	): Promise<ConfigSourceSymbol | undefined>
 }
 
-const AUTHORING_PACKAGES = new Set([
-	'@pluxel/core',
-	'@pluxel/core/test',
-	'@pluxel/runtime',
-	'@pluxel/runtime/test',
-	'@pluxel/test',
-])
-const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'
+const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/test', '@pluxel/test'])
+const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/core/toolchain'
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
-	const helperSource =
-		options.metadataHelperImportSource?.trim() || DEFAULT_METADATA_HELPER_IMPORT_SOURCE
-	if (!helperSource.endsWith('/toolchain')) {
-		throw new TypeError('[pluxel-config] metadataHelperImportSource must name a /toolchain subpath')
-	}
+	const helperSource = DEFAULT_METADATA_HELPER_IMPORT_SOURCE
 	const include = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',

@@ -10,7 +10,7 @@ It intentionally does not expose a general Typst document compiler.
 ```ts
 import { TypstMathPlugin } from '@pluxel/takumi-markdown-typst'
 import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class MathDocumentPlugin extends BasePlugin {

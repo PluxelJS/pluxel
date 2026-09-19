@@ -1,6 +1,7 @@
 import { deserialize, serialize } from 'node:v8'
 import { CacheBackend, type CacheValue } from '@pluxel/cache'
-import { Plugin, v } from '@pluxel/runtime'
+import { Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 import { Redis, type RedisConnection } from './client.ts'
 import { defineRedisScript } from './scripts.ts'
 import { isRedisConnectionId, isWellFormedUnicode } from './validation.ts'

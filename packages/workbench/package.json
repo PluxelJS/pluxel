@@ -1,0 +1,151 @@
+{
+	"name": "@pluxel/workbench",
+	"version": "0.1.0",
+	"description": "Composable Pluxel Workbench service and browser SDK",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/workbench"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./client": {
+			"@pluxel/source": "./src/workbench/client.ts",
+			"default": "./dist/client.mjs"
+		},
+		"./dev": {
+			"@pluxel/source": "./src/dev.ts",
+			"default": "./dist/dev.mjs"
+		},
+		"./federation": {
+			"@pluxel/source": "./src/workbench/federation.ts",
+			"default": "./dist/federation.mjs"
+		},
+		"./http": {
+			"@pluxel/source": "./src/http.ts",
+			"default": "./dist/http.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./internal/react": {
+			"@pluxel/source": "./src/workbench/react-internal.tsx",
+			"default": "./dist/internal/react.mjs"
+		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
+		"./react": {
+			"@pluxel/source": "./src/workbench/react.tsx",
+			"default": "./dist/react.mjs"
+		},
+		"./server": {
+			"@pluxel/source": "./src/server.ts",
+			"default": "./dist/server.mjs"
+		},
+		"./service": {
+			"@pluxel/source": "./src/service.ts",
+			"default": "./dist/service.mjs"
+		},
+		"./shell": {
+			"@pluxel/source": "./src/shell.ts",
+			"default": "./dist/shell.mjs"
+		},
+		"./test": {
+			"@pluxel/source": "./src/test.ts",
+			"default": "./dist/test.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./client": "./dist/client.mjs",
+			"./dev": "./dist/dev.mjs",
+			"./federation": "./dist/federation.mjs",
+			"./http": "./dist/http.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./internal/react": "./dist/internal/react.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
+			"./react": "./dist/react.mjs",
+			"./server": "./dist/server.mjs",
+			"./service": "./dist/service.mjs",
+			"./shell": "./dist/shell.mjs",
+			"./test": "./dist/test.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pnpm run build:web && pnpm run build:lib",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run",
+		"test:installed": "node tests/installed-vite.smoke.mjs",
+		"build:web": "vite build",
+		"build:lib": "tsdown"
+	},
+	"dependencies": {
+		"@module-federation/runtime": "catalog:prod",
+		"@module-federation/sdk": "catalog:prod",
+		"@tanstack/query-core": "catalog:frontend",
+		"capnweb": "catalog:prod",
+		"pathe": "catalog:node",
+		"valibot": "catalog:validation"
+	},
+	"devDependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"@module-federation/bridge-react": "catalog:frontend",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/management": "workspace:*",
+		"@pluxel/preset": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/services": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"typescript": "catalog:dev",
+		"valibot-form": "workspace:*",
+		"vite": "catalog:build"
+	},
+	"peerDependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"@module-federation/bridge-react": "catalog:frontend",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/management": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"vite": ">=8.2.2 <9"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host-dev": {
+			"optional": true
+		},
+		"@pluxel/rolldown": {
+			"optional": true
+		},
+		"vite": {
+			"optional": true
+		}
+	}
+}

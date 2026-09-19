@@ -1,7 +1,7 @@
 import { parsePluginDefinitionAddress, parsePluginNodeAddress } from '@pluxel/core'
 import { parseWorkbenchDeclarationIdentity } from '@pluxel/core/federation'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
-import type { WorkbenchLayout, WorkbenchSessionApi } from '@pluxel/runtime/workbench/client'
+import type { RpcStub } from 'capnweb'
+import type { WorkbenchLayout, WorkbenchSessionApi } from '@pluxel/workbench/client'
 import { describe, expect, it, vi } from 'vitest'
 import { WorkbenchLayoutRuntime } from '../src/workbench/client'
 

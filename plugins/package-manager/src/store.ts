@@ -19,6 +19,8 @@ type StoreOptions = Readonly<{
 	ignoreScripts: boolean
 	allowBuilds: readonly string[]
 	minimumReleaseAgeMinutes: number
+	/** Revokes publication; native installation still drains before close resolves. */
+	signal?: AbortSignal
 }>
 
 type ManagedManifest = PackageManifest & {
@@ -42,6 +44,7 @@ export class ManagedPackageStore {
 	readonly entriesDir: string
 	private readonly manifestFile: string
 	private revision = 0
+	private closed = false
 	private dependenciesWithBuildScripts: readonly string[] = Object.freeze([])
 	private queue: Promise<void> = Promise.resolve()
 	private readonly options: StoreOptions
@@ -57,6 +60,7 @@ export class ManagedPackageStore {
 	}
 
 	async initialize(): Promise<void> {
+		this.assertOpen()
 		await mkdir(this.entriesDir, { recursive: true })
 		const manifest = await this.readManifest()
 		await this.writeManifest(manifest)
@@ -169,6 +173,17 @@ export class ManagedPackageStore {
 		}
 	}
 
+	/** Revokes queued work and publication, then waits for admitted native operations. */
+	async close(): Promise<void> {
+		this.closed = true
+		await this.queue
+	}
+
+	private assertOpen(): void {
+		if (this.closed) throw new Error('Package store is closed')
+		this.options.signal?.throwIfAborted()
+	}
+
 	private async installManifest(next: ManagedManifest): Promise<void> {
 		let result: Awaited<ReturnType<PnpmEngine['install']>>
 		try {
@@ -176,6 +191,7 @@ export class ManagedPackageStore {
 		} catch (error) {
 			throw new PublicMutationError('pnpm could not apply the managed dependency graph', error)
 		}
+		this.assertOpen()
 		if (result.depsRequiringBuild) {
 			this.dependenciesWithBuildScripts = Object.freeze([...result.depsRequiringBuild].sort())
 		}
@@ -317,6 +333,7 @@ export class ManagedPackageStore {
 			expected.set(
 				file,
 				[
+					`// installation ${crypto.randomUUID()}`,
 					`export * from ${specifier}`,
 					`import * as pluginModule from ${specifier}`,
 					'export default pluginModule.default',
@@ -330,10 +347,12 @@ export class ManagedPackageStore {
 	private async publishEntries(expected: ReadonlyMap<string, string>): Promise<void> {
 		await mkdir(this.entriesDir, { recursive: true })
 		for (const [file, content] of expected) {
-			await atomicWrite(resolve(this.entriesDir, file), content)
+			this.assertOpen()
+			await atomicWrite(resolve(this.entriesDir, file), content, () => this.assertOpen())
 		}
 		for (const file of await readdir(this.entriesDir)) {
 			if (!file.endsWith('.mjs') || expected.has(file)) continue
+			this.assertOpen()
 			await rm(resolve(this.entriesDir, file), { force: true })
 		}
 	}
@@ -343,7 +362,11 @@ export class ManagedPackageStore {
 	}
 
 	private serialize<T>(task: () => Promise<T>): Promise<T> {
-		const run = this.queue.then(task, task)
+		this.assertOpen()
+		const run = this.queue.then(() => {
+			this.assertOpen()
+			return task()
+		})
 		this.queue = run.then(
 			(): void => undefined,
 			(): void => undefined,
@@ -545,11 +568,16 @@ function networkOptions(config: ResolvedConfig): InstallOptions['networkConfig']
 	}
 }
 
-async function atomicWrite(file: string, content: string): Promise<void> {
+async function atomicWrite(
+	file: string,
+	content: string,
+	beforePublish?: () => void,
+): Promise<void> {
 	await mkdir(resolve(file, '..'), { recursive: true })
 	const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`
 	try {
 		await writeFile(temporary, content, 'utf8')
+		beforePublish?.()
 		await rename(temporary, file)
 	} catch (error) {
 		await rm(temporary, { force: true }).catch((): undefined => undefined)

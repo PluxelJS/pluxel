@@ -27,8 +27,8 @@ Attachment 不自动改变依赖、登录权限或存储位置。一次打开得
 先在提供方的 `src/workbench.ts` 声明 API 和 Attachment。它与 View 的区别是没有固定 `placement`：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
 export type HttpSettings = Readonly<{
 	headers: Readonly<Record<string, string>>
@@ -63,10 +63,10 @@ this.ctx.workbench?.publish(HttpWorkbench, {
 最后在使用方通过 `place()` 选择标签页位置，并传入构造器注入的 provider。下面是使用方的关键代码；`HttpPlugin` 从提供方包根入口导入：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { HttpPlugin } from '@acme/http'
 import { HttpWorkbench } from '@acme/http/workbench'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 
 export const ReportsWorkbench = workbench.define({
 	http: HttpWorkbench.settings.place(
@@ -91,7 +91,7 @@ export class ReportsPlugin extends BasePlugin {
 Renderer 仍位于 provider package：
 
 ```tsx
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { HttpWorkbench } from '../workbench.ts'
 
 const settingsScope = createWorkbenchRenderer(HttpWorkbench.settings)
@@ -127,8 +127,8 @@ export default settingsScope.render(HttpSettingsPanel)
 因此使用一个管理 View 和一个单方 API 的 Attachment 即可：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
 export interface FontSelectionApi extends RpcTarget {
 	snapshot(): Promise<FontSelectionSnapshot>
@@ -189,7 +189,7 @@ export class CanvasPlugin extends BasePlugin {
 Provider-owned renderer 用 descriptor-bound scope 取得唯一 root：
 
 ```tsx
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { FontsWorkbench } from '../workbench.ts'
 
 export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)
@@ -356,7 +356,7 @@ this.ctx.workbench?.publish(CanvasWorkbench, {
 Picker renderer 精确得到两个 owners：
 
 ```tsx
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { FontManagerWorkbench } from '../workbench.ts'
 
 const collectionPickerScope = createWorkbenchRenderer(FontManagerWorkbench.collectionPicker)

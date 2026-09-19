@@ -154,7 +154,7 @@ async function discoverDatabaseSchema(root: string): Promise<string> {
 			}
 			if (!/\.[cm]?[jt]sx?$/.test(entry.name) || entry.name.endsWith('.d.ts')) continue
 			const source = await readFile(path, 'utf8')
-			if (source.includes('@pluxel/runtime/database') && /\bdefineDatabase\s*\(/.test(source)) {
+			if (source.includes('@pluxel/services/database') && /\bdefineDatabase\s*\(/.test(source)) {
 				candidates.push(path)
 			}
 		}

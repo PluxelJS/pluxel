@@ -12,7 +12,8 @@ description: 用一个 Valibot object schema 统一配置类型、默认值、�
 ## 先添加一个有默认值的字段
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
@@ -36,7 +37,8 @@ export class WorkerPlugin extends BasePlugin {
 
 ```ts twoslash
 // @filename: config.ts
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 export const WorkerConfig = v.object({
 	enabled: v.optional(v.pipe(v.boolean(), f.formMeta({ title: '启用同步' })), true),
@@ -54,7 +56,7 @@ export const WorkerConfig = v.object({
 	),
 })
 // @filename: WorkerPlugin.ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { WorkerConfig } from './config.ts'
 
 @Plugin({ displayName: 'Worker' })
@@ -72,7 +74,7 @@ export class WorkerPlugin extends BasePlugin {
 
 ## 宿主如何设置配置
 
-日常手动配置使用 Workbench；以下 `host` 指 [Runtime 测试宿主](../development/testing.md)，适合检查初始值和更新结果。
+日常手动配置使用 Workbench；以下 `host` 指 [服务测试宿主](../development/testing.md)，适合检查初始值和更新结果。
 正在运行的开发应用应通过 [开发控制台](../development/dev-console.md)修改配置。
 测试中，首次启动可以传入 `initialConfig`：
 
@@ -85,7 +87,7 @@ const worker = await host.start(WorkerPlugin, {
 })
 ```
 
-node 已拥有 committed config 或进入过 lifecycle 后，使用 Runtime 的 production-like live mutation：
+node 已拥有 committed config 或进入过 lifecycle 后，使用服务 的 production-like live mutation：
 
 ```ts no-twoslash
 const result = await host.config.patch(WorkerPlugin, {
@@ -121,7 +123,8 @@ reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存
 默认值只由 schema 提供。下面是正确写法与重复 fallback 的对照：
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 declare function request(options: { timeoutMs: number }): Promise<void>
 
@@ -152,7 +155,8 @@ class WorkerPlugin extends BasePlugin {
 runtime 在实例构造完成后、`init()` 开始前注入并校验 config，所以只在 `init()` 或更晚的方法中读取：
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 const ReportsConfig = v.object({ endpoint: v.string() })
 declare function createClient(endpoint: string): { close(): void }
@@ -179,7 +183,8 @@ constructor 只声明 required Plugin dependency，不读取 config，也不创�
 `configs.onUpdate()`；处理完成后，框架才把配置标记为已应用：
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 const GatewayConfig = v.object({
 	timeoutMs: v.optional(v.number(), 5_000),
@@ -246,7 +251,7 @@ normalized output 必须是无环的 plain object/array tree，leaf 使用 JSON-
 每个 Plugin 声明一个 object schema；不同配置域使用嵌套 object 组织，不要多次调用 `configs.use()`：
 
 ```ts twoslash
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 
 const Config = v.object({
 	http: v.object({
@@ -322,7 +327,8 @@ Plugin 需要导出传给 `configs.use()` 的同一个 schema：
 
 ```ts no-twoslash
 // WorkerPlugin.ts
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 export const WorkerConfig = v.object({
 	endpoint: v.pipe(v.string(), v.url()),
@@ -341,10 +347,11 @@ export class WorkerPlugin extends BasePlugin {
 Canonical static entry 直接声明部署名称；不要在 `configure()` 中重复解析类型或拼装 Plugin address：
 
 ```ts no-twoslash
-import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+import { bindConfigEnvironment } from '@pluxel/host/config-environment'
+import type { HostApplication } from '@pluxel/host'
 import { WorkerConfig, WorkerPlugin } from './WorkerPlugin.ts'
 
-export default defineStaticRuntime({
+export default {
 	name: 'worker-app',
 	plugins: [WorkerPlugin],
 	configEnvironmentBootstrap: [
@@ -356,7 +363,7 @@ export default defineStaticRuntime({
 			},
 		}),
 	],
-})
+} satisfies HostApplication
 ```
 
 Mapping 从 schema raw input 递归推导：object 可以继续展开，也可以直接绑定一个 JSON environment；array、tuple、record 和 scalar 是 leaf。根 mapping 也可以直接写一个 environment name，用 JSON object 初始化完整 raw record。环境名称必须匹配 `[A-Z_][A-Z0-9_]*`；`PLUXEL_*` 保留给 framework。
@@ -366,7 +373,7 @@ Transport 只负责把 string 送入原 schema：raw string 保留原文，numbe
 新 store 的优先级固定为：
 
 ```text
-configure() config snapshot
+configure().configRecords.initial
   < configEnvironmentBootstrap
   < PLUXEL_CONFIG complete snapshot
   < existing persisted config file

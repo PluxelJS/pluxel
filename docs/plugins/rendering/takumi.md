@@ -24,7 +24,7 @@ Host catalog 包含 Fonts、Takumi 与 consumer；业务 Plugin 只声明直接�
 
 ```ts
 import { TakumiPlugin } from '@pluxel/takumi'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class SocialCardsPlugin extends BasePlugin {

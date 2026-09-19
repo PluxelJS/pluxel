@@ -3,7 +3,7 @@ import type {
 	PluginDependencyGraphEdge,
 	PluginDependencyGraphNode,
 	PluginDependencyGraphSnapshot,
-} from '@pluxel/runtime/web'
+} from '@pluxel/management/client'
 
 export type PluginDependencyGraphProjection = Readonly<{
 	snapshot: PluginDependencyGraphSnapshot

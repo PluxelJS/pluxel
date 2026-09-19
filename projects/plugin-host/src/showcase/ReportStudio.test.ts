@@ -6,7 +6,7 @@ import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import { OtelPlugin } from '@pluxel/otel'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
-import { createRuntimeTestHost } from '@pluxel/runtime/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { S3, S3Plugin } from '@pluxel/storage'
 import { WretchPlugin } from '@pluxel/wretch'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -29,7 +29,7 @@ describe('ReportStudioPlugin', () => {
 	it('renders through selected providers, caches, and publishes to isolated S3 buckets', async () => {
 		const storageRoot = await mkdtemp(join(tmpdir(), 'pluxel-report-studio-'))
 		temporaryRoots.push(storageRoot)
-		await using host = createRuntimeTestHost()
+		await using host = await createServiceTestHost()
 		await host.commit((change) => {
 			change.catalog.add([
 				MemoryCacheBackendPlugin,

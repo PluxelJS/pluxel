@@ -18,7 +18,7 @@ description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cach
 
 ```ts twoslash
 import { Redis } from '@pluxel/redis'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Queue' })
 export class QueuePlugin extends BasePlugin {
@@ -59,8 +59,8 @@ await host.commit((change) => {
 })
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
-application boundary；production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
+这里的 `host` 是 `createServiceTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
+application boundary；production static/dynamic host 通过自己的 Host config records 和 state 管理相同 topology 与 config。
 
 上例需要本机 Redis 监听 `127.0.0.1:6379`。启动后调用 `push()`，返回值是写入后的队列长度；连接失败时先检查服务地址与启动错误，consumer 不会在 provider 未就绪时运行。
 

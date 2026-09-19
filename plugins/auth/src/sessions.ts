@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import type { ManagementAccessMethod, ManagementAccessPrincipal } from '@pluxel/runtime'
+import type { ManagementAccessMethod, ManagementAccessPrincipal } from '@pluxel/management/access'
 
 type AuthMethod = ManagementAccessMethod
 type AuthPrincipal = ManagementAccessPrincipal

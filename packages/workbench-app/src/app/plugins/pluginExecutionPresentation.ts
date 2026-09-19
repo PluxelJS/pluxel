@@ -7,7 +7,7 @@ import type {
 	PluginExecutionSnapshot,
 	PluginRecentUpdateSnapshot,
 	PluginStatusSnapshot,
-} from '@pluxel/runtime/web'
+} from '@pluxel/management/client'
 
 export type PluginPresentationTone = 'blue' | 'cyan' | 'gray' | 'orange' | 'red' | 'teal' | 'yellow'
 
@@ -305,6 +305,13 @@ function describeUpdateBatch(
 				],
 			}
 		}
+		case 'failed':
+			return {
+				label: '应用启动失败',
+				tone: 'red',
+				meta: attempt,
+				searchTerms: ['failed', 'application-reload', '应用启动失败'],
+			}
 		case 'restored-previous':
 			return {
 				label: '应用重载失败 · 已用上一应用定义恢复',

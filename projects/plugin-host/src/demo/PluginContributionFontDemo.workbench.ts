@@ -1,5 +1,5 @@
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 import type { FontRef, FontSet } from './PluginContributionFontDemo.shared'
 
 export interface FontCatalogApi extends RpcTarget {

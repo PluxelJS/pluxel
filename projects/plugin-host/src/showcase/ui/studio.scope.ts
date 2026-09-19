@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { ReportStudioWorkbench } from '../ReportStudio.workbench'
 
 export const studioScope = createWorkbenchRenderer(ReportStudioWorkbench.studio)

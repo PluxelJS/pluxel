@@ -29,7 +29,7 @@ host catalog 包含 Fonts、Takumi、Markdown 和 consumer。MarkdownPlugin 已 
 Takumi 又 required-depend Fonts；业务 Plugin 只注入直接使用的 Markdown capability：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
 
 @Plugin()
@@ -116,7 +116,7 @@ expression：普通字母、数字、数学符号、空白、分组和表达式�
 字符串、path、import/include/read、image、plugin 等会在编译前拒绝。
 
 它不是通用 Typst document compiler：不能传 main file、package、font、页面选项、网络 source 或外部 input；
-也不支持 MDX。每个公式在 Runtime shared Worker 生成 SVG asset，再进入这一次最终 Takumi render，
+也不支持 MDX。每个公式在 宿主共享 Worker 生成 SVG asset，再进入这一次最终 Takumi render，
 不会创建内嵌 renderer。
 
 ## 自定义受信任 Markdown 扩展

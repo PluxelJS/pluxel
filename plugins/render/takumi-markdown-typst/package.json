@@ -34,24 +34,32 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@myriaddreamin/typst-ts-node-compiler": "0.7.0"
+		"@myriaddreamin/typst-ts-node-compiler": "0.7.0",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/takumi-markdown": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"tsdown": "catalog:build",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
+		"vite": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/services": "workspace:^",
 		"@pluxel/takumi-markdown": "workspace:^"
 	},
 	"engines": {

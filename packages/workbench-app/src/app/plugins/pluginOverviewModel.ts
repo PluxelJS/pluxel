@@ -2,7 +2,7 @@ import type {
 	PluginCatalogSection,
 	PluginCatalogSnapshot,
 	PluginStatusSnapshot,
-} from '@pluxel/runtime/web'
+} from '@pluxel/management/client'
 
 export type PluginStatusEntry = Readonly<
 	Omit<PluginStatusSnapshot, 'label'> & {

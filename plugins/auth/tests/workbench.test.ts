@@ -1,5 +1,7 @@
-import { createRuntimeTestHost, type RuntimeTestHost } from '@pluxel/runtime/test'
-import type { WorkbenchPrincipal } from '@pluxel/runtime/workbench'
+import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/workbench/test'
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
+import type { WorkbenchPrincipal } from '@pluxel/workbench'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
 import { generateTotpForTesting } from '../src/totp.ts'
@@ -8,7 +10,7 @@ import { AuthWorkbench } from '../src/workbench.ts'
 const PASSWORD = 'correct horse battery staple'
 const LOCAL_RECOVERY = Object.freeze({ provider: 'local', subject: 'local' })
 
-function openSetup(host: RuntimeTestHost, principal: WorkbenchPrincipal = LOCAL_RECOVERY) {
+function openSetup(host: WorkbenchTestHost, principal: WorkbenchPrincipal = LOCAL_RECOVERY) {
 	return host.workbench.open({
 		target: AuthPlugin,
 		entry: AuthWorkbench.setup,
@@ -20,7 +22,9 @@ function openSetup(host: RuntimeTestHost, principal: WorkbenchPrincipal = LOCAL_
 describe('Auth Workbench credential setup', () => {
 	it('provisions the first password and refuses credential rotation', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createWorkbenchTestHost({
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			})
 
 			await host.start(AuthPlugin, {
 				initialConfig: { mode: { type: 'password' } },
@@ -62,7 +66,9 @@ describe('Auth Workbench credential setup', () => {
 
 	it('allows mutations only for the loopback recovery principal', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createWorkbenchTestHost({
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			})
 
 			await host.start(AuthPlugin, {
 				initialConfig: { mode: { type: 'password' } },
@@ -84,7 +90,9 @@ describe('Auth Workbench credential setup', () => {
 
 	it('provisions password and TOTP as one credential', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createWorkbenchTestHost({
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			})
 
 			await host.start(AuthPlugin, {
 				initialConfig: { mode: { type: 'password-totp' } },
@@ -115,7 +123,9 @@ describe('Auth Workbench credential setup', () => {
 
 	it('provisions a confidential OIDC secret and skips it for public clients', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createWorkbenchTestHost({
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			})
 
 			await host.start(AuthPlugin, {
 				initialConfig: {
@@ -145,7 +155,7 @@ describe('Auth Workbench credential setup', () => {
 		}
 
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createWorkbenchTestHost()
 
 			await host.start(AuthPlugin, {
 				initialConfig: {

@@ -1,13 +1,9 @@
+import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { FontsPlugin } from '@pluxel/fonts'
-import {
-	BasePlugin,
-	Plugin,
-	createRuntimeTestHost,
-	type RawPluginConfig,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, type RawPluginConfig } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
 import { Renderer } from 'takumi-js/node'
 import { describe, expect, it, vi } from 'vitest'
 import { TakumiPlugin } from '../src/index.ts'
@@ -24,7 +20,7 @@ class TakumiTestConsumer extends BasePlugin {
 	}
 }
 
-function startTakumiFixture(host: RuntimeTestHost, initialConfig?: RawPluginConfig): Promise<void> {
+function startTakumiFixture(host: ServiceTestHost, initialConfig?: RawPluginConfig): Promise<void> {
 	return host.commit((change) => {
 		change.catalog.add([FontsPlugin, TakumiPlugin, TakumiTestConsumer])
 		if (initialConfig) change.config.seed(TakumiPlugin, initialConfig)
@@ -39,7 +35,7 @@ const fontPath = findTestFont()
 describe('TakumiPlugin', () => {
 	it('renders bounded HTML to raster bytes and SVG without Workbench', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host)
 			const takumi = host.require(TakumiTestConsumer).takumi
@@ -87,7 +83,7 @@ describe('TakumiPlugin', () => {
 
 	it.skipIf(!fontPath)('replays FontsPlugin portable resources by revision', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host)
 			const consumer = host.require(TakumiTestConsumer)
@@ -120,7 +116,7 @@ describe('TakumiPlugin', () => {
 		'rejects portable font collections over the resource-count ceiling',
 		async () => {
 			{
-				await using host = createRuntimeTestHost()
+				await using host = await createServiceTestHost()
 
 				await startTakumiFixture(host, { maxFonts: 0 })
 				const consumer = host.require(TakumiTestConsumer)
@@ -138,7 +134,7 @@ describe('TakumiPlugin', () => {
 
 	it('rejects over-budget pixels and blocks implicit remote image fetches', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host, { maxPixels: 100 })
 			const takumi = host.require(TakumiTestConsumer).takumi
@@ -165,7 +161,7 @@ describe('TakumiPlugin', () => {
 
 	it('classifies an invalid cancellation signal as invalid input', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host)
 
@@ -182,7 +178,7 @@ describe('TakumiPlugin', () => {
 
 	it('bounds structured node metadata before native rendering', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host, { maxContentBytes: 128 })
 
@@ -201,7 +197,7 @@ describe('TakumiPlugin', () => {
 
 	it('bounds extracted stylesheets and distinct content image sources by count', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host, { maxStylesheets: 1, maxImages: 1 })
 			const takumi = host.require(TakumiTestConsumer).takumi
@@ -232,7 +228,7 @@ describe('TakumiPlugin', () => {
 
 	it('rejects structured accessors without invoking caller code', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host)
 			let getterCalled = false
@@ -257,7 +253,7 @@ describe('TakumiPlugin', () => {
 
 	it('requires node image bytes to use the bounded preloaded-images path', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startTakumiFixture(host)
 
@@ -294,7 +290,7 @@ describe('TakumiPlugin', () => {
 			})
 		try {
 			{
-				await using host = createRuntimeTestHost()
+				await using host = await createServiceTestHost()
 
 				await startTakumiFixture(host)
 				const controller = new AbortController()
@@ -327,7 +323,7 @@ describe('TakumiPlugin', () => {
 		})
 		try {
 			{
-				await using host = createRuntimeTestHost()
+				await using host = await createServiceTestHost()
 
 				await startTakumiFixture(host)
 				const controller = new AbortController()
@@ -353,7 +349,7 @@ describe('TakumiPlugin', () => {
 		const nativeRender = vi.spyOn(Renderer.prototype, 'render')
 		try {
 			{
-				await using host = createRuntimeTestHost()
+				await using host = await createServiceTestHost()
 
 				await startTakumiFixture(host)
 				const controller = new AbortController()
@@ -382,7 +378,7 @@ describe('TakumiPlugin', () => {
 		})
 		try {
 			{
-				await using host = createRuntimeTestHost()
+				await using host = await createServiceTestHost()
 
 				await startTakumiFixture(host)
 				await expect(
@@ -411,7 +407,7 @@ describe('TakumiPlugin', () => {
 			})
 		try {
 			{
-				await using host = createRuntimeTestHost()
+				await using host = await createServiceTestHost()
 
 				await startTakumiFixture(host, { maxRenderDurationMs: 10 })
 
@@ -430,7 +426,7 @@ describe('TakumiPlugin', () => {
 
 	it('places the provider-owned Fonts selection Attachment', async () => {
 		{
-			await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createWorkbenchTestHost()
 
 			await startTakumiFixture(host)
 
@@ -459,7 +455,7 @@ describe('TakumiPlugin', () => {
 
 describe('Takumi render reservations', () => {
 	it('holds fair capacity before preparation and releases an uncommitted reservation', async () => {
-		await using host = createRuntimeTestHost()
+		await using host = await createServiceTestHost()
 		await startTakumiFixture(host, {
 			maxConcurrentRenders: 1,
 			maxQueuedRenders: 0,
@@ -478,7 +474,7 @@ describe('Takumi render reservations', () => {
 	})
 
 	it('releases an aborted uncommitted reservation and rejects its commit with the abort reason', async () => {
-		await using host = createRuntimeTestHost()
+		await using host = await createServiceTestHost()
 		await startTakumiFixture(host)
 		const controller = new AbortController()
 		const reservation = await host
@@ -496,7 +492,7 @@ describe('Takumi render reservations', () => {
 	})
 
 	it('withdraws reservation handles when their caller generation restarts', async () => {
-		await using host = createRuntimeTestHost()
+		await using host = await createServiceTestHost()
 		await startTakumiFixture(host)
 		const reservation = await host.require(TakumiTestConsumer).takumi.reserveRender()
 
@@ -518,7 +514,7 @@ describe('Takumi render reservations', () => {
 			return Buffer.from([1, 2, 3])
 		})
 		try {
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 			await startTakumiFixture(host, {
 				maxConcurrentRenders: 1,
 				maxQueuedRenders: 0,

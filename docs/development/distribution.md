@@ -18,7 +18,7 @@ starter 的 `pnpm build` 已在 `host/dist` 上执行 create，可直接 `pnpm e
 
 ## 输入必须是最终目录
 
-本页假设静态应用目录已经构建完成。宿主入口和 `staticApplication()` 配置见[配置插件宿主](../getting-started/host-setup.md)。
+本页假设静态应用目录已经构建完成。宿主入口和 `pluxel()` 配置见[配置插件宿主](../getting-started/host-setup.md)。
 
 构建会先写入 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 与 residual `node_modules`。如果后续任务还会写 SPA、SBOM 或业务 `public/`，必须等最后一个写入者结束后再执行 `distribution create`。
 

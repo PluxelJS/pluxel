@@ -3,7 +3,7 @@
 > 状态：验证性 Plugin 迁移已完成，Core/Runtime 删除尚未开始。本文提出删除当前 fork 作者面、控制面、身份与持久化语义，
 > 但完整删除决定尚未被采纳；
 > 当前行为仍以 [`../PLUGIN_SYSTEM.md`](../PLUGIN_SYSTEM.md)、[`../PLUGIN_IDENTITY.md`](../PLUGIN_IDENTITY.md)
-> 和 [`../RUNTIME.md`](../RUNTIME.md) 为准，不得依据本文修改用户代码或推断兼容性。
+> 和 [`../HOST.md`](../HOST.md) 为准，不得依据本文修改用户代码或推断兼容性。
 
 ## 决策问题
 

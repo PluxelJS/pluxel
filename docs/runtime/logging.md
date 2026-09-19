@@ -8,7 +8,7 @@ Plugin 只需要使用 `ctx.logger` 记录事件。宿主为整个进程统一�
 ## 基本写法
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
@@ -135,15 +135,61 @@ logging: {
 
 Workbench 日志流使用同一份有容量上限的存储。传输中的日志行是普通 JSON-like DTO：缺失的可选字段会省略，嵌套对象不会保留
 `undefined`，Plugin 日志同时携带结构化 node address、稳定 reference 与可读 label，便于界面查询和诊断。Range 响应还会按
-Runtime session 的物理 WebSocket ceiling 所派生的 payload 预算分页；单条超预算记录保留 identity、message 与精简 error，并
-明确标记 structured payload 已截断。Store、`@pluxel/runtime/logger` 和 `@pluxel/runtime/web` 共用同一份日志 DTO 类型定义，避免
+Management session 的物理 WebSocket ceiling 所派生的 payload 预算分页；单条超预算记录保留 identity、message 与精简 error，并
+明确标记 structured payload 已截断。Store、`@pluxel/logging` 和 `@pluxel/management/client` 共用同一份日志 DTO 类型定义，避免
 producer、校验器与 Workbench 字段漂移。
 
-Workbench 的交互式 range 与 live follow 复用页面唯一、已认证的 Cap’n Web Runtime session；当前没有平行的 HTTP/SSE
-日志 API。`ctx.elysia` 属于某个 Plugin generation 的业务 HTTP application，不拥有 Runtime logging store、Management
+Workbench 的交互式 range 与 live follow 复用页面唯一、已认证的 Cap’n Web Management session；当前没有平行的 HTTP/SSE
+日志 API。`ctx.require(Http)` 属于某个 Plugin generation 的业务 HTTP application，不拥有 宿主 logging store、Management
 鉴权或 control-plane 生命周期，因此不能用来暴露宿主日志。需要进程外归档时配置 file 或 OpenTelemetry sink；这与浏览器
 交互日志的 transport 是两个职责。
 
 ## 测试与 review
 
 记录一条带原始 `error` 的失败日志，在实际使用的输出中确认可以查看 cause/stack 和插件身份。再关闭、开启对应 debug topic，确认高频诊断按预期过滤。message 用于稳定描述事件，变量放入有界属性；凭据和完整用户数据不进入日志。
+
+## 独立 Host
+
+```ts
+import { createHost } from '@pluxel/host'
+import { logging } from '@pluxel/logging'
+
+const host = await createHost({
+	plugins: [],
+	services: [
+		logging({
+			root: { profile: 'application' },
+			sinks: { memory: { kind: 'store', caller: false } },
+			routes: {
+				runtime: [{ sink: 'memory', minLevel: 'info' }],
+				plugins: [{ sink: 'memory', minLevel: 'trace' }],
+				debug: [],
+				meta: [],
+			},
+		}),
+	],
+})
+
+host.ctx.logger.info('Host ready')
+host.ctx.logging.flushStores()
+const recent = host.ctx.logging.stores.getOrCreate('default').tailWindow(100)
+await host.close()
+```
+
+日志查询和 policy 都属于所选 Host 的 `host.ctx.logging`，不依赖 Management。
+需要持久化 policy 时，把 `createPluginLogPolicyStore(namespace)` 作为 `logging(plan, { policyStore })`
+的选项传入；namespace 是借用资源，关闭由应用或其存储服务负责。
+删除 fork 会在同一 Host 队列内清理日志 policy；写入失败时保留 fork，恢复存储后可重试。
+同一进程仍只允许一个活动日志 Host，第二个安装失败不会影响第一个。
+
+## 有界操作日志与等待
+
+`markLogs(logging, streamId?)` 标记已 flush 的末尾；`readLogs(logging, cursor, { limit: 100, filter })` 返回有界记录和下一 cursor。`waitForLogs(logging, cursor, { signal, limit: 100, filter })` 等待首批匹配记录或 cursor 失效，signal 必填，取消与完成都会释放订阅。三者均从 `@pluxel/logging` 导入，使用同一 store，不创建控制台专用日志通道。
+
+cursor 是普通 JSON，包含 rootId、streamId、bootId、epoch、nextSeq；不可把不同 Host 或重建 stream 的序号相接。读取保留 `root_mismatch`、`stream_replaced`、`store_unavailable`、`epoch_mismatch`、`from_too_old` 与 `invalid` 的失败分支。mark 可为已配置但尚无记录的 stream 创建空存储，未配置且不存在时抛错。调用示例见 [开发控制台](../development/dev-console.md)。
+
+## 宿主安装与访问
+
+自行组合 Host 时，从 `@pluxel/logging` 导入 `logging(plan, options)` 并加入 `services`。Host 负责安装、绑定和关闭唯一的进程日志 owner；运行后通过 `host.ctx.logging` 或在开发控制台用 `dev.ctx.require(Logging)` 访问当前 manager。不要手动创建或绑定另一个 manager。
+
+Plugin 标签由 Core 的 `buildPluginNodeLabels()` 和 `formatPluginNodeStandaloneLabel()` 生成；前者根据完整 catalog 消除重名歧义，后者用于没有 catalog 的日志。标签只是展示信息，不代替 Plugin address。

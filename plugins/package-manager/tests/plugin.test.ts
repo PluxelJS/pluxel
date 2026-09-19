@@ -2,8 +2,10 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { createRuntimeTestHost } from '@pluxel/runtime/test'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { dynamicSource } from '@pluxel/host-dynamic'
+import { installPluginSources } from '@pluxel/host/internal'
+import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PackageManagerPlugin } from '../src/index.ts'
 
@@ -14,13 +16,24 @@ afterEach(async () => {
 })
 
 describe('PackageManagerPlugin', () => {
-	it('fails before filesystem or command side effects outside a declared dynamic source', async () => {
+	it.each([undefined, '*.js'])('validates source %s before producer effects', async (include) => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-plugin-'))
 		roots.push(root)
 		const managedRoot = resolve(root, 'managed')
 
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createServiceInternalTestHost()
+			if (include)
+				installPluginSources(host.ctx, {
+					root,
+					sources: [
+						dynamicSource({
+							kind: 'directory',
+							path: resolve(managedRoot, 'entries'),
+							include: [include],
+						}),
+					],
+				})
 
 			const failure = await host.commitExpectFail((change) => {
 				change.start(PackageManagerPlugin, {
@@ -37,7 +50,7 @@ describe('PackageManagerPlugin', () => {
 				expect.objectContaining({
 					plugin: pluginNodeAddressOf(PackageManagerPlugin),
 					kind: 'start-failed',
-					message: expect.stringContaining('dynamic runtime host'),
+					message: expect.stringContaining('Dynamic plugin source is not declared'),
 				}),
 			)
 			expect(host.isRunning(PackageManagerPlugin)).toBe(false)
@@ -45,5 +58,26 @@ describe('PackageManagerPlugin', () => {
 			expect(host.commands.list().some(({ name }) => name === 'package.install')).toBe(false)
 			expect(host.commands.list().some(({ name }) => name === 'package.remove')).toBe(false)
 		}
+	})
+	it('starts the producer after declaration coverage is installed', async () => {
+		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-plugin-'))
+		roots.push(root)
+		const managedRoot = resolve(root, 'managed')
+		await using host = await createServiceInternalTestHost()
+		installPluginSources(host.ctx, {
+			root,
+			sources: [
+				dynamicSource({
+					kind: 'directory',
+					path: resolve(managedRoot, 'entries'),
+					include: ['*.mjs'],
+				}),
+			],
+		})
+		await host.start(PackageManagerPlugin, {
+			initialConfig: { rootDir: managedRoot, minimumReleaseAgeMinutes: 0 },
+		})
+		expect(existsSync(resolve(managedRoot, 'entries'))).toBe(true)
+		expect(host.commands.list().some(({ name }) => name === 'package.install')).toBe(true)
 	})
 })

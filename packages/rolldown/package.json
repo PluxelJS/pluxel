@@ -14,6 +14,10 @@
 	],
 	"type": "module",
 	"exports": {
+		".": {
+			"@pluxel/source": "./src/application.ts",
+			"default": "./dist/index.mjs"
+		},
 		"./build": {
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
@@ -25,10 +29,6 @@
 		"./distribution": {
 			"@pluxel/source": "./src/distribution/index.ts",
 			"default": "./dist/distribution.mjs"
-		},
-		"./internal/static-config-environment-vite": {
-			"@pluxel/source": "./src/vite/static-config-environment.ts",
-			"default": "./dist/internal/static-config-environment-vite.mjs"
 		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
@@ -91,10 +91,10 @@
 	},
 	"publishConfig": {
 		"exports": {
+			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
-			"./internal/static-config-environment-vite": "./dist/internal/static-config-environment-vite.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
@@ -124,7 +124,6 @@
 		"@module-federation/bridge-react": "catalog:frontend",
 		"@module-federation/sdk": "catalog:prod",
 		"@module-federation/vite": "catalog:build",
-		"@pluxel/core": "workspace:^",
 		"drizzle-kit": "catalog:backend",
 		"mdast-util-directive": "catalog:prod",
 		"mdast-util-from-markdown": "catalog:prod",
@@ -142,7 +141,10 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:^",
 		"@rolldown/pluginutils": "catalog:build",
 		"@types/mdast": "catalog:types",
 		"@types/node": "catalog:types",
@@ -152,9 +154,11 @@
 		"pathe": "catalog:node",
 		"rolldown": "catalog:build",
 		"tsdown": "catalog:build",
+		"tsx": "catalog:dev",
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
 		"rolldown": "catalog:build",
 		"tsdown": "catalog:build",
 		"vite": ">=8.2.2 <9"

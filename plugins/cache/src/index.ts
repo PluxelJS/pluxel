@@ -1,16 +1,17 @@
 import { createHash } from 'node:crypto'
 import { deserialize, serialize } from 'node:v8'
 import {
-	BasePlugin,
 	encodePluginNodeAddressBytes,
-	Plugin,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
 	pluginMethodDecorator,
-	type PersistenceNamespace,
 	type PluginNodeAddress,
-	v,
-} from '@pluxel/runtime'
+	BasePlugin,
+	Plugin,
+} from '@pluxel/core'
+import * as v from 'valibot'
+
+import { type PersistenceNamespace } from '@pluxel/services/persistence'
 import { CacheBackend, type CacheBackendStore, type CacheValue } from './backend.ts'
 
 export { CacheBackend } from './backend.ts'
@@ -892,6 +893,8 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 			if (this.holder.persistenceMode === 'off') return
 
 			const persistence = this.ctx.root.persistence
+			if (!persistence)
+				throw new Error('MemoryCacheBackendPlugin persistence requires the Persistence service')
 			this.holder.storage = persistence.namespace(MEMORY_CACHE_PERSISTENCE_NAMESPACE)
 			if (this.holder.persistenceMode === 'durable') {
 				await persistence.preflight({ durable: true, writable: true })

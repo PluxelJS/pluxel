@@ -1,5 +1,5 @@
 import type { PluginNodeAddress } from '@pluxel/core'
-import type { PluginStatusSnapshot } from '@pluxel/runtime/web'
+import type { PluginStatusSnapshot } from '@pluxel/management/client'
 import { describe, expect, it } from 'vitest'
 import { buildOverview } from '../src/app/plugins/catalog/catalogOverview'
 import type { PluginStatusEntry } from '../src/app/plugins/pluginOverview'

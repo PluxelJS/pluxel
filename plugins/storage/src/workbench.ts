@@ -1,5 +1,6 @@
-import { f, v } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
+import { workbench } from '@pluxel/workbench'
 import { isS3BucketId } from './validation.ts'
 
 const MAX_BUCKETS = 64

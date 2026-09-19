@@ -10,7 +10,6 @@ import { type PnpmWorkspace, readPnpmWorkspace, writePnpmWorkspace } from './pnp
 export type WorkspaceTarget = 'manifest' | 'pnpm'
 
 type LoadWorkspaceInfo = (typeof import('@pluxel/rolldown/workspace/info'))['loadWorkspaceInfo']
-type WorkspaceInfoModule = typeof import('@pluxel/rolldown/workspace/info')
 
 type WorkspacesObject = Exclude<NonNullable<PackageJson['workspaces']>, string[]>
 
@@ -53,7 +52,7 @@ export interface PatternInput {
 
 export async function loadWorkspaceState(root: string): Promise<WorkspaceState> {
 	const { extractPackageWorkspaces, loadWorkspaceInfo } =
-		await loadOfficialCapability<WorkspaceInfoModule>('rolldown-workspace-info')
+		await loadOfficialCapability('rolldown-workspace-info')
 	const absoluteRoot = normalize(resolve(root))
 	const info = await loadWorkspaceInfo(absoluteRoot)
 	const manifestPath = manifestPathFor(absoluteRoot)

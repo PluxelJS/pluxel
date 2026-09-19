@@ -8,7 +8,8 @@ import {
 	IconShieldCheck,
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
-import type { PluxelPlatformSnapshot } from '@pluxel/runtime/environment'
+import type { RuntimeMeta } from '@pluxel/management/client'
+type PluxelPlatformSnapshot = RuntimeMeta['platform']
 import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { useRuntimeMeta } from '../product'

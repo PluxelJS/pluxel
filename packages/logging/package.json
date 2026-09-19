@@ -1,0 +1,65 @@
+{
+	"name": "@pluxel/logging",
+	"version": "0.1.0",
+	"description": "Composable Host logging, policy and bounded stores",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/logging"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./protocol": {
+			"@pluxel/source": "./src/protocol.ts",
+			"default": "./dist/protocol.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./protocol": "./dist/protocol.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run",
+		"bench:logger": "pnpm exec vitest bench bench/logger.bench.ts"
+	},
+	"dependencies": {
+		"@logtape/file": "catalog:prod",
+		"@logtape/logtape": "catalog:prod",
+		"@logtape/pretty": "catalog:prod",
+		"pathe": "catalog:node"
+	},
+	"devDependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@types/node": "catalog:types"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

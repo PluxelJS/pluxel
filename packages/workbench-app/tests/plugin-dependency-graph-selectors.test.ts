@@ -1,5 +1,5 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import type { PluginDependencyGraphSnapshot, PluginStatusSnapshot } from '@pluxel/runtime/web'
+import type { PluginDependencyGraphSnapshot, PluginStatusSnapshot } from '@pluxel/management/client'
 import { describe, expect, it } from 'vitest'
 import { buildPluginDependencyGraphProjection } from '../src/app/plugins/pluginDependencyGraphModel'
 import { selectPluginDependencyDetail } from '../src/app/plugins/pluginDependencyGraphSelectors'

@@ -1,3 +1,4 @@
+import { Commands } from '@pluxel/services/commands'
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import type {
@@ -6,7 +7,8 @@ import type {
 	ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
-import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { describe, expect, it, vi } from 'vitest'
 import type { PiAgentPluginConfig } from '../src/config.ts'
 import { PiAgentController } from '../src/controller.ts'
@@ -25,7 +27,7 @@ const echoCommand = defineCommand({
 @Plugin()
 class NotesPlugin extends BasePlugin {
 	protected override init(): void {
-		this.ctx.commands.register(echoCommand)
+		this.ctx.require(Commands).register(echoCommand)
 	}
 }
 
@@ -117,7 +119,7 @@ class BlockingEngine extends FakeEngine {
 
 describe('PiAgentController', () => {
 	it('starts and stops as an ordinary headless Plugin with AgentTools as a required dependency', async () => {
-		const host = createRuntimeTestHost({ workbench: false })
+		const host = await createServiceTestHost()
 		try {
 			await host.start(AgentToolsPlugin, { initialConfig: policy })
 			await host.start(PiAgentPlugin)
@@ -130,7 +132,7 @@ describe('PiAgentController', () => {
 	})
 
 	it('projects only the bound AgentTools catalog and dispatches through it', async () => {
-		const host = createRuntimeTestHost({ workbench: false })
+		const host = await createServiceTestHost()
 		try {
 			await host.start(AgentToolsPlugin, {
 				catalog: [NotesPlugin],
@@ -169,7 +171,7 @@ describe('PiAgentController', () => {
 	})
 
 	it('atomically refreshes Pi tools when the bound command catalog changes', async () => {
-		const host = createRuntimeTestHost({ workbench: false })
+		const host = await createServiceTestHost()
 		try {
 			await host.start(AgentToolsPlugin, {
 				catalog: [NotesPlugin],
@@ -205,7 +207,7 @@ describe('PiAgentController', () => {
 	})
 
 	it('disposes active sessions while an in-flight session creation settles', async () => {
-		const host = createRuntimeTestHost({ workbench: false })
+		const host = await createServiceTestHost()
 		try {
 			await host.start(AgentToolsPlugin, { initialConfig: policy })
 			const engine = new BlockingEngine()
@@ -237,7 +239,7 @@ describe('PiAgentController', () => {
 	})
 
 	it('keeps real goal state and runs bounded subagents with the inherited setup', async () => {
-		const host = createRuntimeTestHost({ workbench: false })
+		const host = await createServiceTestHost()
 		try {
 			await host.start(AgentToolsPlugin, {
 				catalog: [NotesPlugin],
@@ -294,7 +296,7 @@ describe('PiAgentController', () => {
 	})
 
 	it('rejects unknown tool setup ids instead of creating an empty accidental session', async () => {
-		const host = createRuntimeTestHost({ workbench: false })
+		const host = await createServiceTestHost()
 		try {
 			await host.start(AgentToolsPlugin, { initialConfig: policy })
 			const controller = new PiAgentController(

@@ -8,13 +8,15 @@ Windows、macOS 与 Linux 字体由 `@napi-rs/canvas` 的 platform font manager 
 `system` / `registered` 来源，`fonts.defaultFont` 按 provider preference → host config → 系统自动选择 → generic
 顺序解析。`setPreferredFamily()` 可在 headless host 中修改同一个 provider-wide preference。
 
+Host 必须安装 `@pluxel/services/persistence` 提供的 Persistence 服务，用于保存字体及默认字体偏好。
+
 ## 程序化注册
 
 业务插件随代码携带的静态字体仍由调用方拥有，但注册和 native key 始终由 FontsPlugin 管理：
 
 ```ts
 import { FontsPlugin } from '@pluxel/fonts'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { fileURLToPath } from 'node:url'
 
 @Plugin()
@@ -50,7 +52,7 @@ collection、resource 或 capability entity；字体增删不会改变 layout、
 
 ```ts
 import { FontsWorkbench } from '@pluxel/fonts/workbench'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 
 export const ReportsWorkbench = workbench.define({
 	fonts: FontsWorkbench.selection.place(workbench.tab({ label: 'Fonts' })),

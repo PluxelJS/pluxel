@@ -3,14 +3,15 @@ title: 插件 HTTP
 description: 在插件中添加 HTTP API、webhook 和 WebSocket，并验证路由与热更新行为。
 ---
 
-要给插件增加 API 或 webhook，在 `init()` 中通过 `this.ctx.elysia` 声明路由即可。宿主负责监听端口，关闭 Workbench 也不影响业务 HTTP。
+要给插件增加 API 或 webhook，在 `init()` 中通过 `this.ctx.require(Http)` 声明路由即可。宿主显式安装 `http()` 服务并负责接入请求，关闭 Workbench 也不影响业务 HTTP。`standardServices()` 与 `servicesPreset()` 默认安装该服务。
 
-下面的插件可以加入 [快速开始](../getting-started/index.md) 创建的应用。`ctx.elysia` 使用 Elysia 2 原生 API，路由路径就是最终 URL，不会自动添加插件名前缀。
+下面的插件可以加入 [快速开始](../getting-started/index.md) 创建的应用。`ctx.require(Http)` 使用 Elysia 2 原生 API，路由路径就是最终 URL，不会自动添加插件名前缀。
 
 ## 最小路由
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { Http } from '@pluxel/services/http'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 type Order = { id: string }
 
@@ -19,7 +20,8 @@ type Order = { id: string }
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.elysia
+		this.ctx
+			.require(Http)
 			.get('/health', () => ({ ok: true }))
 			.get('/orders/:id', ({ params }) => this.findOrder(params.id))
 	}
@@ -35,11 +37,14 @@ export class OrdersPlugin extends BasePlugin {
 这里的真实地址就是 `/health` 和 `/orders/:id`。需要共同前缀时直接使用 Elysia 的 `group()`：
 
 ```ts no-twoslash
-this.ctx.elysia.group('/orders', (app) =>
-	app
-		.get('/health', () => ({ ok: true }))
-		.post('/webhooks/payment', ({ body }) => this.acceptPayment(body)),
-)
+import { Http } from '@pluxel/services/http'
+this.ctx
+	.require(Http)
+	.group('/orders', (app) =>
+		app
+			.get('/health', () => ({ ok: true }))
+			.post('/webhooks/payment', ({ body }) => this.acceptPayment(body)),
+	)
 ```
 
 最终地址是 `/orders/health` 和 `/orders/webhooks/payment`。`/__pluxel` 是宿主 control plane 的保留 namespace，Plugin
@@ -51,16 +56,16 @@ fork 或多个 Plugin 若要同时提供 HTTP，必须声明彼此不冲突的�
 
 ### 与产品 SPA 和 Workbench 共用 origin
 
-Runtime 只保留 `/__pluxel`；不会强制业务路由使用 `/api` 或其他前缀。同一 listener 上的请求按以下边界仲裁：
+HTTP 服务保留 `/__pluxel`；不会强制业务路由使用 `/api` 或其他前缀。同一 listener 上的请求按以下边界仲裁：
 
 ```text
-/__pluxel/**                 -> Runtime / Workbench
+/__pluxel/**                 -> Management / Workbench
 匹配 Plugin HTTP/WS route    -> owning Plugin generation
 Workbench document path     -> Workbench shell
 其余 navigation             -> 产品 SPA fallback
 ```
 
-因此 Plugin 显式声明 `GET /settings` 时会优先于产品 SPA 的 `/settings`。这是产品选择的最终路径所有权，不是 Runtime 可以从两个
+因此 Plugin 显式声明 `GET /settings` 时会优先于产品 SPA 的 `/settings`。这是产品选择的最终路径所有权，不是 Host 可以从两个
 独立 Router 自动判定的冲突。应用可以约定 `/api`、`/webhooks` 等首段来降低误用，但 Pluxel 不把团队惯例升级为框架限制；真正需要
 提供独立产品页面的 Plugin 也可以拥有明确的 mount point，并自行配置该前端的 Router basename 与 asset base。
 
@@ -70,13 +75,13 @@ federation artifact 与 Shell asset 均留在 `/__pluxel/**`。包含产品 SPA 
 
 ## 直接使用 Elysia 能力
 
-`ctx.elysia` 是上游 `Elysia` instance，不是 facade 或 Proxy。schema、model、macro、hook、guard、derive、resolve、error handler、
+`ctx.require(Http)` 是上游 `Elysia` instance，不是 facade 或 Proxy。schema、model、macro、hook、guard、derive、resolve、error handler、
 cookie、stream 和普通 function plugin 都按 Elysia 2 API 使用。需要这些 API 的 Plugin package 直接依赖 `elysia`；
-`@pluxel/runtime` 不重新导出 Elysia 或它的官方 plugin。
+`@pluxel/core` 不重新导出 Elysia 或它的官方 plugin。
 
 发布给其他宿主使用的 Plugin package 应把宿主支持的 Elysia 精确版本同时声明为 `peerDependencies` 和 `devDependencies`：peer
 保证运行时复用宿主 singleton，dev dependency 则供本 package 编译、测试和编辑器解析。不要把 Elysia 打进 Plugin bundle，也不要让
-Plugin 自带另一份 runtime copy。当前 Runtime 锁定 `2.0.0-beta.7`，对应声明为：
+Plugin 自带另一份 runtime copy。当前 HTTP 服务锁定 `2.0.0-beta.7`，对应声明为：
 
 ```json
 {
@@ -97,9 +102,10 @@ Plugin 自带另一份 runtime copy。当前 Runtime 锁定 `2.0.0-beta.7`，对
 Elysia 2 的 route schema 位于 handler 之前：
 
 ```ts no-twoslash
+import { Http } from '@pluxel/services/http'
 import { t } from 'elysia'
 
-this.ctx.elysia.post(
+this.ctx.require(Http).post(
 	'/orders',
 	{
 		body: t.Object({
@@ -120,6 +126,7 @@ Context、Error object 或带 credential 的 SDK response。
 可复用的业务路由写成普通 Elysia function plugin，不需要 Pluxel adapter：
 
 ```ts no-twoslash
+import { Http } from '@pluxel/services/http'
 import type { Elysia } from 'elysia'
 
 function ordersApi(service: OrdersService) {
@@ -130,7 +137,7 @@ function ordersApi(service: OrdersService) {
 }
 
 protected override init() {
-	this.ctx.elysia.use(ordersApi(this.orders))
+	this.ctx.require(Http).use(ordersApi(this.orders))
 }
 ```
 
@@ -140,19 +147,23 @@ Node production carrier、static Vite 和 dynamic Vite 已通过真实 listener 
 Elysia，不需要 Pluxel WebSocket facade：
 
 ```ts no-twoslash
+import { Http } from '@pluxel/services/http'
 import { websocket } from 'elysia/websocket'
 
-this.ctx.elysia.use(websocket()).ws('/events', {
-	open(socket) {
-		socket.subscribe('orders')
-	},
-	message(socket, message) {
-		socket.send({ type: 'echo', message })
-	},
-	close(socket) {
-		socket.unsubscribe('orders')
-	},
-})
+this.ctx
+	.require(Http)
+	.use(websocket())
+	.ws('/events', {
+		open(socket) {
+			socket.subscribe('orders')
+		},
+		message(socket, message) {
+			socket.send({ type: 'echo', message })
+		},
+		close(socket) {
+			socket.unsubscribe('orders')
+		},
+	})
 ```
 
 当前 Node 路线支持基础 `open` / `message` / `close` dispatch、send 和 pub/sub。同名 topic 会自动限定在 owning Plugin generation，
@@ -166,9 +177,10 @@ Vite 始终先保留自己的 HMR protocol/path，只有非 HMR 且命中当前 
 同一 generation 的 root Plugin 和所有 Part 共享相同的 application identity。Part 可以直接注册路由：
 
 ```ts no-twoslash
+import { Http } from '@pluxel/services/http'
 class MetricsPart extends PluginPart<OrdersPlugin> {
 	protected override init() {
-		this.ctx.elysia.get('/orders/metrics', () => this.snapshot())
+		this.ctx.require(Http).get('/orders/metrics', () => this.snapshot())
 	}
 }
 ```
@@ -182,7 +194,7 @@ Plugin 或 control plane。
 
 ## Finalization 与生命周期
 
-Plugin 和所有 Part 的 `init()` 成功后，Runtime 会等待 lazy Elysia modules，检查 route inventory，再调用 Elysia 2 自己的
+Plugin 和所有 Part 的 `init()` 成功后，HTTP 服务会等待 lazy Elysia modules，检查 route inventory，再调用 Elysia 2 自己的
 `app.compile()` 固化 application。compile 会 seal 同一个 instance；generation running 后继续增加 route、hook、store 或 decorator
 会由 Elysia 2 fail-fast。
 
@@ -192,7 +204,7 @@ Plugin 和所有 Part 的 `init()` 成功后，Runtime 会等待 lazy Elysia mod
 
 请求进入 app 前会取得 owner generation lease。返回 streaming `Response` 时，lease 延伸到 body close、cancel 或 error；generation
 停止会 abort handler 看到的 `request.signal`，并等待已经接纳的 response settle。无法响应 signal 的任意 JavaScript 仍受宿主 drain
-timeout 约束，Runtime 不会假装能同步终止它。
+timeout 约束，HTTP 服务不会假装能同步终止它。
 
 长期 background task 不应挂在某个 HTTP request Promise 上。把它建模为 owner-bound worker/queue，再让 endpoint 只提交任务或查询状态。
 
@@ -201,7 +213,8 @@ timeout 约束，Runtime 不会假装能同步终止它。
 已有 WinterTC-style Fetch application 使用 Elysia 原生 `mount()`：
 
 ```ts no-twoslash
-this.ctx.elysia.mount('/legacy', (request) => legacyRouter.fetch(request))
+import { Http } from '@pluxel/services/http'
+this.ctx.require(Http).mount('/legacy', (request) => legacyRouter.fetch(request))
 ```
 
 请求仍从整个 generation contribution 的 admission 与 cleanup 边界进入；Pluxel 不再定义另一套 Fetch boundary 或 mount handle。
@@ -214,9 +227,9 @@ URL 层级是产品协议，Plugin 依赖图是生命周期协议；两者可以
 | 需求                                                   | 组织方式                                                             |
 | ------------------------------------------------------ | -------------------------------------------------------------------- |
 | 一组 route 共享发布版本、鉴权、hook 和撤销边界         | 一个 Plugin 拥有 Elysia app，内部用普通 function plugin 拆模块       |
-| webhook、WebSocket 或 API 需要独立启停、失败隔离或 HMR | 对应能力成为独立 Plugin，直接使用自己的 `ctx.elysia`                 |
+| webhook、WebSocket 或 API 需要独立启停、失败隔离或 HMR | 对应能力成为独立 Plugin，直接使用自己的 `ctx.require(Http)`          |
 | provider、adapter 等动态集合只贡献状态或处理器数据     | 一个 Plugin 拥有固定 ingress，其他 Plugin 向 typed registry 注册数据 |
-| Plugin 只有领域能力，没有入站 HTTP                     | 不读取 `ctx.elysia`，保持 Elysia application 严格惰性                |
+| Plugin 只有领域能力，没有入站 HTTP                     | 不读取 `ctx.require(Http)`，保持 Elysia application 严格惰性         |
 
 ### 固定产品 API 由 ingress 依赖领域能力
 
@@ -224,6 +237,7 @@ URL 层级是产品协议，Plugin 依赖图是生命周期协议；两者可以
 Elysia function plugin。不要让领域 Plugin 反向依赖 ingress，也不要把 ingress 的 app 暴露给其他 Plugin 修改：
 
 ```ts no-twoslash
+import { Http } from '@pluxel/services/http'
 function roomRoutes(rooms: Rooms) {
 	return (app: Elysia) =>
 		app.get('/rooms', () => rooms.list()).get('/rooms/:id', ({ params }) => rooms.get(params.id))
@@ -246,9 +260,9 @@ export class MusicApiPlugin extends BasePlugin {
 	}
 
 	protected override init() {
-		this.ctx.elysia.group('/music/api', (app) =>
-			app.use(roomRoutes(this.rooms)).use(queueRoutes(this.queue)),
-		)
+		this.ctx
+			.require(Http)
+			.group('/music/api', (app) => app.use(roomRoutes(this.rooms)).use(queueRoutes(this.queue)))
 	}
 }
 ```
@@ -262,6 +276,7 @@ export class MusicApiPlugin extends BasePlugin {
 初始化后 compile/seal，跨 Plugin 修改还会失去 route ownership。让一个 Plugin 声明固定 route，动态 Plugin 只注册有明确清理语义的数据：
 
 ```ts no-twoslash
+import { Http } from '@pluxel/services/http'
 type DiagnosticSource = Readonly<{
 	id: string
 	snapshot(): Readonly<{
@@ -279,7 +294,9 @@ export class DiagnosticsPlugin extends BasePlugin {
 	}
 
 	protected override init() {
-		this.ctx.elysia.group('/music', (app) => app.get('/diagnostics', () => this.sources.snapshot()))
+		this.ctx
+			.require(Http)
+			.group('/music', (app) => app.get('/diagnostics', () => this.sources.snapshot()))
 	}
 }
 ```
@@ -351,7 +368,7 @@ owner invocation 的 `Request` 传入会明确失败。
 
 ## 当前 Elysia 2 与 carrier 边界
 
-Runtime 当前锁定 Elysia `2.0.0-beta.7`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
+HTTP 服务当前锁定 Elysia `2.0.0-beta.7`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
 compile/seal、atomic generation publication、stream lease、owner withdrawal，以及上述三条 Node listener 路线的基础业务 WebSocket。
 以下能力仍不能按“所有 runtime 上完整等同原生 Elysia server”使用：
 
@@ -363,7 +380,7 @@ compile/seal、atomic generation publication、stream lease、owner withdrawal�
   byte 语义也尚未完成精确对齐，不应据此编写跨 runtime 流控协议。
 - Elysia application-level WebSocket tuning 尚未完整投影到共享 carrier，例如全部 payload、compression、idle timeout 和 transport
   tuning 不能视为每个 Plugin 独立拥有的设置。
-- Runtime 会拒绝相同 method 与相同声明 path 的跨 owner 冲突，也会拒绝 `/__pluxel`；但 beta 的 public inventory 尚不足以证明所有
+- HTTP 服务会拒绝相同 method 与相同声明 path 的跨 owner 冲突，也会拒绝 `/__pluxel`；但 beta 的 public inventory 尚不足以证明所有
   canonical-equivalent pattern 都能与 Elysia matcher 完全一致地预检，例如仅参数名不同的 pattern。当前应给每个业务 API 使用明确、
   唯一的首段 namespace，并用真实请求覆盖边界。
 
@@ -386,7 +403,7 @@ portable parity 或 tuning 的应用应等待对应 conformance 完成。
 
 ## 测试
 
-Runtime test host 的 `host.http.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
+服务 test host 的 `host.http.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
 
 ```ts no-twoslash
 const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
@@ -408,9 +425,32 @@ response 代替。完整 test host 配置见[测试 Pluxel 插件](../developmen
 
 ## 效率模型
 
-未读取 `ctx.elysia` 的 generation 不创建 Elysia app。已发布请求先由 immutable business directory 选择 owner contribution，再进入该
+未读取 `ctx.require(Http)` 的 generation 不创建 Elysia app。已发布请求先由 immutable business directory 选择 owner contribution，再进入该
 owner 的 sealed Elysia app；这是一次有意识的两级 routing，用来隔离跨 Plugin global hook、store、plugin dedupe 与 generation withdrawal。
 
 目前没有同场 benchmark 可以证明这条路径“接近裸 Elysia”或给出跨机器延迟承诺。后续 benchmark 应比较 plain Elysia 与 1/10/100/1000
 contribution 的 directory delegate、snapshot build、stream drain；如果两级 lookup 成为主要瓶颈，应优化内部 dispatcher，而不是把
 route index 或 carrier tuning 变成 Plugin API。
+
+## 独立 Host
+
+安装 `@pluxel/services` 与 `elysia`；Elysia 是 HTTP 服务的可选 peer，不会随其他服务安装。
+
+`http()` 只安装业务路由，不创建端口、管理端点或 Workbench。宿主从 `HttpServer` 取得请求边界，
+并将其交给自己的 Fetch carrier；关闭 Host 会撤回 Plugin 路由。物理 carrier 由宿主关闭。
+
+```ts no-twoslash
+import { createHost } from '@pluxel/host'
+import { http, HttpServer } from '@pluxel/services/http'
+
+const host = await createHost({ plugins: [MyRoutes], services: [http()] })
+await host.startNode(MyRoutesAddress)
+const server = host.ctx.require(HttpServer)
+const response = await server.fetch(new Request('http://localhost/status'))
+await host.close()
+```
+
+`Http` 仅供 Plugin/Part 使用；`HttpServer` 仅供受信任宿主读取。需要 WebSocket 时，carrier 使用
+`attachApplicationCarrier()` 提供 upgrade、连接统计和物理地址，并负责调用 returned disposer 撤回接线。
+
+`HttpServer` 拥有唯一请求边界和业务目录。管理会话与 artifact 鉴权由 Management 的固定端点处理，Workbench shell 在业务路由未命中后提供 fallback；各 attachment 只挂载到已选择的服务，不创建第二个 router。

@@ -15,6 +15,10 @@ Shell 首页可以通过 Management metadata 显示 browser-safe host platform s
 deployment provider、CI、mode 与 OS platform。该 snapshot 是诊断提示而非 capability guarantee；尤其 provider detection 不等于当前
 request 必然运行于该 provider。不得向 browser 投影完整 environment、变量名、路径、token、certificate 或 secret。
 
+Shell 资源处理和 federation URL 拼接属于包内实现，不提供逐文件 package subpath。跨包服务端实现通过
+`@pluxel/workbench/internal` 协作；浏览器生成代码使用独立的 `@pluxel/workbench/internal/react`，
+保证 React Bridge ABI 不引入服务端依赖。白盒测试在本包内直接引用源码，不能为测试单独发布实现路径。
+
 ## 平台边界
 
 Workbench 只定义五个作者概念：
@@ -74,14 +78,20 @@ scope.mutation((roots) => ({ mutationFn, workbench? }))
 
 入口职责固定为：
 
-- `@pluxel/runtime/workbench`：browser-safe definition builder 和类型；
-- `@pluxel/runtime/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
-- `@pluxel/runtime/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable DTO detach；
-- `@pluxel/runtime/capnweb`：固定版本的 `RpcTarget`、`RpcStub` 和 WebSocket session bridge。
+- `@pluxel/workbench`：browser-safe definition builder 和类型；
+- `@pluxel/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
+- `@pluxel/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable DTO detach；
+- `capnweb`：固定版本的 `RpcTarget`、`RpcStub` 和 WebSocket session bridge。
 
 Plugin author 不取得 raw socket、MF Runtime、Shell router/store、Bridge wrapper props 或 server registry。
-Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/runtime/internal/workbench-react`；它与其他 internal readers
+Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/workbench/internal/react`；它与其他 internal readers
 只供构建器和 Shell 使用，不进入作者 API。
+
+## Host HTTP 与 Shell 开发
+
+`workbenchService()` 拥有后端，`workbenchHttp()` 只挂载 Shell fallback；`managementHttp()` 唯一拥有认证、管理连接与受保护制品接入。组合者通过既有 bindings 绑定 session/artifact handler，并声明 `WorkbenchHost` 准备依赖。官方 preset 在关闭 Workbench 时仍保留管理入口。
+
+`workbenchSourceShell({ entry })` 是 `/dev` 下的显式 Vite 附件：复用已挂载 Shell 的路径，在 Host 开发附件阶段选择源码 HTML renderer。它只将入口加入现有 Vite optimizer/transform/HMR 图，不拥有第二个 server 或 React/CSS 配置。Shell 服务延迟到首次静态请求才加载 packaged manifest，因此源码 checkout 不依赖预构建 UI；直接创建 packaged handler 仍立即验证资源。关闭按 Host 附件与服务 ownership 释放。用户组合见 [standalone host](../docs/workbench/standalone-host.md)。
 
 ## Definition 与源码组织
 
@@ -187,13 +197,13 @@ data，`::slot[key]` 是 block data 或 action。每个 declaration 必须恰好
 attributes 或 inline action 都 fail build。浏览器再次验证 plan；Shell 不运行 Markdown parser、不插入 raw HTML，也不加载
 Plugin JavaScript。
 
-Runtime publication 将真实 Valibot schema 投影成 portable presentation，并校验 artifact/declaration/binding exact match。
+Workbench publication 将真实 Valibot schema 投影成 portable presentation，并校验 artifact/declaration/binding exact match。
 Data schema 是 transform-free display validation；action input 是 object/object-intersection form schema，默认 dialog，
 `form: 'embedded'` 固定展开。Server 在 handler 前执行 portable-data budget 与 authoritative Valibot parse；schema、closure、
 handler 和 secret 都不会发到浏览器。
 
-`load()` 的作者返回类型递归只读，允许直接复用 detached domain snapshot；Runtime 仍重新校验并投影 portable value，
-不会要求 Plugin 为 transport 制造可变深拷贝。Action input 则是 Runtime 完成 authoritative parse 后交给 handler 的 fresh value，
+`load()` 的作者返回类型递归只读，允许直接复用 detached domain snapshot；Workbench 服务仍重新校验并投影 portable value，
+不会要求 Plugin 为 transport 制造可变深拷贝。Action input 则是 Workbench 服务完成 authoritative parse 后交给 handler 的 fresh value，
 保持 Valibot `InferOutput` 的原始可变性。
 
 每次 interactive Content open 由 Framework 创建一个 root。含 data 时，`subscribe()` 先 retain Browser callback，再 initial
@@ -237,7 +247,7 @@ export const OrdersWorkbench = workbench.define({
 
 ```tsx
 // src/ui/overview.scope.ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.js'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
@@ -295,7 +305,7 @@ authority；并发 read single-flight，read 中的多次通知合并为一次 f
 `queryFn` 只接收 query-core 原生安全 context，例如 `signal` 和规范化后的 `queryKey`，不混入 Pluxel 自定义参数。
 Query/mutation options 是公开类型明确列出的受控 allowlist，不承诺透传 TanStack Query 的全部 options。TanStack
 原生字段保持顶层；Workbench 自有扩展只使用 `workbench.subscribe` 和 `workbench.invalidates`。Factory 返回类型必须
-对顶层与 `workbench` 字段保持 compile-time exact，Runtime 对绕过类型的未知字段继续 fail-fast。
+对顶层与 `workbench` 字段保持 compile-time exact，Workbench 服务对绕过类型的未知字段继续 fail-fast。
 Options factory 必须同步、确定且无副作用；Hook resolution 和 family target preflight 都可以重复执行它。I/O、subscription
 注册与 mutation 副作用分别只发生在 `queryFn`、`workbench.subscribe` 和 `mutationFn`。
 Workbench 默认 `enabled: true`、无 subscription 时 `staleTime: 0`、有 subscription 时 `staleTime: Infinity`，并默认
@@ -310,7 +320,7 @@ handle 的命令式操作。这些 controls 只属于产生它的 active Hook/�
 使用 callback；input-derived callback 显式复用 mutation variables type，不能放宽成 `any`。Targets 在调用远端方法前验证，owner 仍 active 时在 settle
 后标记 stale。RPC reject 或 result detach failure 仍 invalidates；owner 已关闭时 cache 已被销毁。Mutation 每个 Hook
 single-flight。事件处理器用 `mutate()` 并从 Hook state 观察结果；需要返回值或流程编排时使用
-`mutateAsync()`。Pending 时第二次调用不会覆盖当前 state，`mutateAsync()` 会以稳定 code 失败；Runtime 不猜测写操作的幂等性
+`mutateAsync()`。Pending 时第二次调用不会覆盖当前 state，`mutateAsync()` 会以稳定 code 失败；Workbench 服务不猜测写操作的幂等性
 或执行顺序。若 mutation result 只是下一份 snapshot 的重复副本，领域 API 返回 `void`，由权威 subscription 或 typed invalidation
 触发 query 重读；只有 UI 确实消费的 domain result 才返回 portable DTO。
 
@@ -415,6 +425,11 @@ Workbench document 创建一个物理 WebSocket：
 3. 认证完成后再次 bootstrap，得到 Management capability；Workbench-enabled host 同时返回 Workbench session；
 4. layout、openEntry、Management mutation、logs follow、Content push 和 Plugin API 都复用这条 socket。
 
+Management 拥有认证与控制会话协议，其发布声明不依赖 Workbench。协议的 Workbench 分支默认只暴露 opaque
+`RpcTarget`，`RuntimeSessionRoot<TWorkbench>` 与 `RuntimeSessionClient<TWorkbench>` 由实际 Shell 绑定具体 API；
+官方 Workbench app 在本地 runtime 入口统一绑定 `WorkbenchSessionApi`。服务端只借用已认证的 `AdminAccessPrincipal`
+与 `{ target, dispose }` 会话，不 import Workbench 实现或复制其 layout/openEntry 协议。
+
 浏览器写入 `HttpOnly` cookie 需要一个 same-origin、single-use cookie-commit POST；它只提交短期 ticket，不承载
 业务 API 或 RPC。MF manifest 和 JS/CSS 使用普通 HTTP。除此之外，Workbench 不建立另一种 API transport。
 
@@ -422,9 +437,9 @@ Workbench document 创建一个物理 WebSocket：
 `epoch-invalidated`，随后关闭物理连接；Shell 销毁 active Bridges、释放 opened handles，并自动完整 document reload。刷新遵守 HMR 文档的连续刷新预算；认证撤销与 broken 状态保留明确的人工恢复入口。
 同一 document 不创建第二条 session，不重建部分 roots，也不恢复旧 workspace 上的 remote instance。
 
-Node production 与 static/dynamic Vite 使用同一个 runtime carrier seam。Vite 保留 listener 和 HMR Upgrade 优先权，
-Runtime 只接管匹配的 control/business Upgrade。反向代理必须保持同源 cookie、WebSocket Upgrade 和短期 handoff 的
-实例归属；Runtime 不从 forwarding headers 推导 physical TLS 或 locality。
+Node production 与 Host-dev 的 HTTP 开发附件使用同一个 HTTP carrier seam。Vite 保留 listener 和 HMR Upgrade 优先权，
+HTTP 服务只接管匹配的 control/business Upgrade。反向代理必须保持同源 cookie、WebSocket Upgrade 和短期 handoff 的
+实例归属；HTTP 服务不从 forwarding headers 推导 physical TLS 或 locality。
 
 ## Layout 与打开流程
 
@@ -471,8 +486,8 @@ dist/workbench/
 ```
 
 Inventory、definition digest、content-set digest、canonical path 和内容在加载时全部复核。Plugin package 可以只保留预编译
-Content artifact；production Runtime 不依赖发布包中的 `src/*.md`。Static assembly、dynamic distribution discovery 和 dev
-compiler 都向同一个 Runtime Content artifact store 提交验证后的 immutable Content set。
+Content artifact；production host 不依赖发布包中的 `src/*.md`。Static assembly、dynamic distribution discovery 和 dev
+compiler 都向同一个 Workbench Content artifact store 提交验证后的 immutable Content set。
 
 同一 definition 同时含 Content 与 federated renderer 时，两类 candidate 必须作为一个 revision 原子提交。Prepare 或 commit
 任一步失败都回滚已提交部分并保留完整 last-known-good tuple；成功后才通过 session epoch invalidation 触发 full reload。
@@ -504,8 +519,8 @@ Indirect/re-export/dynamic definition import、错误 entry 或跨 renderer 复�
 - `react-dom`、`react-dom/client`；
 - `@mantine/core`、`@mantine/hooks`；
 - `@module-federation/bridge-react`；
-- `@pluxel/runtime/workbench`、`/client`、`/react`。
-- `@pluxel/runtime/internal/workbench-react`。
+- `@pluxel/workbench`、`/client`、`/react`。
+- `@pluxel/workbench/internal/react`。
 
 版本必须精确匹配并使用 `loaded-first`。Shell 先建立 winner，再按需注册 remote；不接受第二份 React 或 Mantine，
 也不允许 Plugin 局部覆盖 share policy。Producer 对固定 shared 使用 `import: false`，不携带 fallback。Router、编辑器和
@@ -521,7 +536,7 @@ shared module；`@mantine/core` 基础 CSS 同样只由 Shell 加载，producer 
 library 仍由 producer 自己拥有 Provider、module 和 CSS。Remote 可以从 `host.locale`、`host.colorScheme` 等固定 portable fact
 初始化或同步表现，但不能读取 Shell 的私有 Provider 或 theme object。共享 module instance 不会改变 React Context 的祖先边界。
 
-开发期 renderer 变化先发布 definition topology 与 Content artifact；缺失或过期的 producer 不阻塞 Runtime 启动，
+开发期 renderer 变化先发布 definition topology 与 Content artifact；缺失或过期的 producer 不阻塞 Host 启动，
 对应 View/Attachment placement 仍保留在 layout 中，并由 Shell 显示 `building` 状态。producer runtime build 使用持久
 Vite cache 在后台补齐，成功提交后通过 session epoch invalidation 触发整页 reload；失败会把同一 placement 更新为
 `failed` 状态并显示安全错误 message，下一次变更或启动会重试。
@@ -539,6 +554,7 @@ build revision。
 - `notify()`、`confirm()`；
 - 可空的 relative `navigation`；
 - 参数化 document 的 params、dirty marker 和 title；
+- 可选的 management：Shell 显式借用当前已认证会话的 unary management 操作。每个 callable leaf 都绑定到 View 生命周期；缓存 nested namespace 或 detached method 不能绕过关闭检查。已接受的调用保留原会话语义，不承诺撤销或回滚；会话、socket 与订阅仍由 Shell 拥有。
 
 Remote 不取得 generic HTTP client、raw socket、Shell store 或 unrestricted URL navigation。复杂页面可以使用
 `WorkbenchPaneLayout` / `WorkbenchPane` 声明 navigation、primary、inspector 三栏；宿主拥有 resize、drawer、focus
@@ -597,20 +613,20 @@ detach/dispose，不能再更新 React。Framework 自身的 portable、scope、
 
 ## 实现入口
 
-- `packages/runtime/src/workbench/definition.ts`
-- `packages/runtime/src/workbench/client-protocol.ts`
-- `packages/runtime/src/workbench/client.ts`
-- `packages/runtime/src/workbench/portable-value.ts`
-- `packages/runtime/src/workbench/react.tsx`
-- `packages/runtime/src/workbench/renderer-scope.tsx`
-- `packages/runtime/src/workbench/react-internal.tsx`
-- `packages/runtime/src/workbench/federation.ts`
-- `packages/runtime/src/services/workbench/WorkbenchRegistry.ts`
-- `packages/runtime/src/services/workbench/WorkbenchContentArtifactService.ts`
-- `packages/runtime/src/services/workbench/WorkbenchContentPresentation.ts`
-- `packages/runtime/src/services/workbench/WorkbenchContentTarget.ts`
-- `packages/runtime/src/services/workbench/WorkbenchSessionTarget.ts`
-- `packages/runtime/src/web/session/`
+- `packages/workbench/src/workbench/definition.ts`
+- `packages/workbench/src/workbench/client-protocol.ts`
+- `packages/workbench/src/workbench/client.ts`
+- `packages/workbench/src/workbench/portable-value.ts`
+- `packages/workbench/src/workbench/react.tsx`
+- `packages/workbench/src/workbench/renderer-scope.tsx`
+- `packages/workbench/src/workbench/react-internal.tsx`
+- `packages/workbench/src/workbench/federation.ts`
+- `packages/workbench/src/services/workbench/WorkbenchRegistry.ts`
+- `packages/workbench/src/services/workbench/WorkbenchContentArtifactService.ts`
+- `packages/workbench/src/services/workbench/WorkbenchContentPresentation.ts`
+- `packages/workbench/src/services/workbench/WorkbenchContentTarget.ts`
+- `packages/workbench/src/services/workbench/WorkbenchSessionTarget.ts`
+- `packages/management/src/web/session/`
 - `packages/rolldown/src/workbench/semantic-lowering.ts`
 - `packages/rolldown/src/workbench/content-compiler.ts`
 - `packages/rolldown/src/vite/workbench-ui.ts`
@@ -621,3 +637,5 @@ detach/dispose，不能再更新 React。Framework 自身的 portable、scope、
 Plugin Workbench 的中部、概览和底部内容各自拥有受限高度的滚动容器；页签栏不参与内容滚动。概览与目录分成右侧两个视图，避免卡片、折叠区和目录列表嵌套滚动。目录搜索框固定，列表占据剩余高度，滚轮不向外层传播。
 
 目录是否存在由当前编辑器的配置 anchor / Markdown heading 决定，不读取 scrollHeight 判定可用性。保持挂载的非活动编辑器通过 tab activity 撤回自己的目录 claim；右侧目录 portal 只属于当前 Plugin Workbench。配置仍由 FormToc 读取表单 anchor，Markdown 由 ContentOutline 在自身文档中读取渲染后的标题；不扫描其他编辑器或 federated renderer 的 DOM，也不新增 Plugin 作者 API。
+
+Workbench 的 owner capability 直接以闭包固定 owner，只返回冻结的 `publish()`；PluginPart 拒绝仍在调用入口执行，publication 的验证、admission 和清理由同一 backend/registry 持有。无需为这个单方法视图创建额外 wrapper class。测试可在内部 service installation seam 提供 artifact lookup backend，但复用生产的 capability 安装逻辑。Shell UI 路径由 Workbench 本包拥有，不借 Management 的 presentation 入口取得。

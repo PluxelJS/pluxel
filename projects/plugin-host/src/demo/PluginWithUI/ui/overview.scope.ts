@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { PluginWithUIWorkbench } from '../../PluginWithUI.workbench'
 
 export const overviewScope = createWorkbenchRenderer(PluginWithUIWorkbench.overview)

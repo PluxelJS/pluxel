@@ -1,0 +1,182 @@
+{
+	"name": "@pluxel/services",
+	"version": "0.1.0",
+	"description": "Explicitly installed runtime services for Pluxel Hosts",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/services"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"imports": {
+		"#pluxel/database-driver/pglite": {
+			"@pluxel/source": "./src/database/adapters/pglite.ts",
+			"default": "./dist/internal/database/pglite.mjs"
+		},
+		"#pluxel/database-driver/postgres": {
+			"@pluxel/source": "./src/database/adapters/postgres.ts",
+			"default": "./dist/internal/database/postgres.mjs"
+		}
+	},
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./commands": {
+			"@pluxel/source": "./src/commands.ts",
+			"default": "./dist/commands.mjs"
+		},
+		"./database": {
+			"@pluxel/source": "./src/database.ts",
+			"default": "./dist/database.mjs"
+		},
+		"./database/pglite": {
+			"@pluxel/source": "./src/database/pglite.ts",
+			"default": "./dist/database/pglite.mjs"
+		},
+		"./database/postgres": {
+			"@pluxel/source": "./src/database/postgres.ts",
+			"default": "./dist/database/postgres.mjs"
+		},
+		"./http": {
+			"@pluxel/source": "./src/http.ts",
+			"default": "./dist/http.mjs"
+		},
+		"./http/node": {
+			"@pluxel/source": "./src/http-node.ts",
+			"default": "./dist/http/node.mjs"
+		},
+		"./http/vite": {
+			"@pluxel/source": "./src/development/http.ts",
+			"default": "./dist/http/vite.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./node": {
+			"@pluxel/source": "./src/node.ts",
+			"default": "./dist/node.mjs"
+		},
+		"./node/vite": {
+			"@pluxel/source": "./src/development/node.ts",
+			"default": "./dist/node/vite.mjs"
+		},
+		"./persistence": {
+			"@pluxel/source": "./src/persistence.ts",
+			"default": "./dist/persistence.mjs"
+		},
+		"./vault": {
+			"@pluxel/source": "./src/vault.ts",
+			"default": "./dist/vault.mjs"
+		},
+		"./workers": {
+			"@pluxel/source": "./src/workers.ts",
+			"default": "./dist/workers.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"imports": {
+			"#pluxel/database-driver/pglite": "./dist/internal/database/pglite.mjs",
+			"#pluxel/database-driver/postgres": "./dist/internal/database/postgres.mjs"
+		},
+		"exports": {
+			".": "./dist/index.mjs",
+			"./commands": "./dist/commands.mjs",
+			"./database": "./dist/database.mjs",
+			"./database/pglite": "./dist/database/pglite.mjs",
+			"./database/postgres": "./dist/database/postgres.mjs",
+			"./http": "./dist/http.mjs",
+			"./http/node": "./dist/http/node.mjs",
+			"./http/vite": "./dist/http/vite.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./node": "./dist/node.mjs",
+			"./node/vite": "./dist/node/vite.mjs",
+			"./persistence": "./dist/persistence.mjs",
+			"./vault": "./dist/vault.mjs",
+			"./workers": "./dist/workers.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run",
+		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
+		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts"
+	},
+	"dependencies": {
+		"age-encryption": "catalog:prod",
+		"capnweb": "catalog:prod",
+		"chokidar": "catalog:node",
+		"crossws": "catalog:prod",
+		"drizzle-orm": "catalog:backend",
+		"pathe": "catalog:node",
+		"srvx": "catalog:prod",
+		"std-env": "catalog:prod"
+	},
+	"devDependencies": {
+		"@electric-sql/pglite": "catalog:prod",
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/logging": "workspace:*",
+		"@pluxel/management": "workspace:*",
+		"@pluxel/preset": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
+		"@types/pg": "catalog:types",
+		"elysia": "catalog:prod",
+		"fs-fixture": "catalog:dev",
+		"pg": "catalog:backend",
+		"tsx": "catalog:dev",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:*",
+		"vite": "catalog:build"
+	},
+	"peerDependencies": {
+		"@electric-sql/pglite": "catalog:prod",
+		"@pluxel/commands": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
+		"elysia": "catalog:prod",
+		"pg": "catalog:backend",
+		"vite": ">=8.2.2 <9"
+	},
+	"peerDependenciesMeta": {
+		"@electric-sql/pglite": {
+			"optional": true
+		},
+		"pg": {
+			"optional": true
+		},
+		"elysia": {
+			"optional": true
+		},
+		"@pluxel/rolldown": {
+			"optional": true
+		},
+		"@pluxel/host-dev": {
+			"optional": true
+		},
+		"vite": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

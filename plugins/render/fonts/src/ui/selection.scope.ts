@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { FontsWorkbench } from '../workbench.ts'
 
 export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)

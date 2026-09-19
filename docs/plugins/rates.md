@@ -13,7 +13,7 @@ description: 按调用方、身份和成本执行原子的请求准入判定。
 
 ```ts twoslash
 import { Rates, type RateLimiter } from '@pluxel/rates'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Messaging' })
 export class MessagingPlugin extends BasePlugin {
@@ -76,9 +76,9 @@ await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPl
 
 consumer 仍只依赖 `Rates`。Redis adapter 使用 Redis server time，并在单 key Lua 调用中校验 policy、更新状态和 TTL，避免多个实例间的读写竞态。
 
-上面的 `host` 是 `createRuntimeTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；同一 application boundary 的
+上面的 `host` 是 `createServiceTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；同一 application boundary 的
 多项原子 setup 使用同步 `commit()` callback，首次配置使用 `initialConfig`。production static/dynamic host 通过自己的
-ConfigService 与 RuntimeState 表达相同配置和启动策略。
+Host config records 与 state 表达相同配置和启动策略。
 
 同一个 identity 连续消费 100 次后，第 101 次应得到 `denied: true`；换一个 identity 应获得独立额度。用这个结果验证业务返回值映射，再选下节的成本与算法。内存 backend 的测试不证明跨进程共享额度。
 

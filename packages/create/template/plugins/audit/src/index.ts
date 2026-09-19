@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 export type AuditEntry = Readonly<{
 	message: string

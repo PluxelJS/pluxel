@@ -1,6 +1,6 @@
-import type { PluginConstructor } from '@pluxel/runtime'
-import type { OpenedWorkbenchTestEntry, RuntimeTestHost } from '@pluxel/runtime/test'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { PluginConstructor } from '@pluxel/core'
+import type { OpenedLocalWorkbenchEntry, WorkbenchTestHost } from '@pluxel/workbench/test'
+import { workbench } from '@pluxel/workbench'
 import { FontsPlugin } from '../src/index.ts'
 import { FontsWorkbench } from '../src/workbench.ts'
 
@@ -11,8 +11,8 @@ export const FontsTestWorkbench = workbench.define({
 })
 
 export function openFontsManager(
-	host: RuntimeTestHost,
-): Promise<OpenedWorkbenchTestEntry<typeof FontsWorkbench.manager>> {
+	host: WorkbenchTestHost,
+): Promise<OpenedLocalWorkbenchEntry<typeof FontsWorkbench.manager>> {
 	return host.workbench.open({
 		target: FontsPlugin,
 		entry: FontsWorkbench.manager,
@@ -21,9 +21,9 @@ export function openFontsManager(
 }
 
 export function openFontSelection(
-	host: RuntimeTestHost,
+	host: WorkbenchTestHost,
 	consumer: PluginConstructor,
-): Promise<OpenedWorkbenchTestEntry<typeof FontsTestWorkbench.fonts>> {
+): Promise<OpenedLocalWorkbenchEntry<typeof FontsTestWorkbench.fonts>> {
 	return host.workbench.open({
 		target: consumer,
 		entry: FontsTestWorkbench.fonts,

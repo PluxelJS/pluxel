@@ -2,8 +2,9 @@ import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { createServer } from 'node:net'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -16,10 +17,16 @@ const publishRoots = [
 	'@pluxel/core',
 	'@pluxel/create',
 	'@pluxel/rolldown',
-	'@pluxel/runtime',
-	'@pluxel/runtime-dynamic',
-	'@pluxel/runtime-static',
+	'@pluxel/host',
+	'@pluxel/services',
+	'@pluxel/preset',
+	'@pluxel/management',
+	'@pluxel/logging',
+	'@pluxel/workbench',
+	'@pluxel/host-dynamic',
+	'@pluxel/host-dev',
 	'@pluxel/test',
+	'@pluxel/vault-admin',
 ] as const
 
 try {
@@ -53,8 +60,7 @@ try {
 	await runPnpm(['install', '--frozen-lockfile=false'], generatedRoot)
 	await runPnpm(['verify'], generatedRoot, { CI: '1' })
 	await verifyFrozenApplicationDistribution(generatedRoot)
-	await verifyStaticViteApplication(generatedRoot)
-	await verifyDynamicViteHost(generatedRoot)
+	await verifyViteApplication(generatedRoot)
 } finally {
 	if (process.env.PLUXEL_KEEP_TEMPLATE_SMOKE) {
 		console.info(`Create smoke workspace kept at ${temporaryRoot}`)
@@ -78,11 +84,18 @@ async function resolveLocalPublishClosure(
 	root: string,
 	rootNames: readonly string[],
 ): Promise<LocalPublishPackage[]> {
-	const entries = await readdir(resolve(root, 'packages'), { withFileTypes: true })
+	const directories = await Promise.all(
+		['packages', 'plugins'].map(async (directory) => {
+			const entries = await readdir(resolve(root, directory), { withFileTypes: true })
+			return entries
+				.filter((entry) => entry.isDirectory())
+				.map((entry) => `${directory}/${entry.name}`)
+		}),
+	)
+	const entries = directories.flat()
 	const discovered = new Map<string, LocalPublishPackage>()
 	for (const entry of entries) {
-		if (!entry.isDirectory()) continue
-		const path = `packages/${entry.name}`
+		const path = entry
 		let manifest: LocalPublishPackage['manifest'] & { name?: string; private?: boolean }
 		try {
 			manifest = JSON.parse(await readFile(resolve(root, path, 'package.json'), 'utf8'))
@@ -186,8 +199,8 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	])
 	const environmentExample = await readFile(resolve(dist, '.env.example'), 'utf8')
 	if (
-		!environmentExample.includes('# EXAMPLE_TODO_MAX_ITEMS=') ||
-		!environmentExample.includes('# Input: number')
+		!environmentExample.includes('# PLUXEL_DATA_ROOT=') ||
+		!environmentExample.includes('# PLUXEL_WORKBENCH=')
 	) {
 		throw new Error(`Created application .env.example is incomplete: ${environmentExample}`)
 	}
@@ -196,10 +209,10 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	const smoke = [
 		'const app = await import(process.argv[1])',
 		'try {',
-		"\tif (app.ctx.workbench === undefined) throw new Error('Workbench should be enabled by default')",
 		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
 		'\tconst initial = await fetch(`${origin}/api/example/todos`)',
-		"\tif (!initial.ok || (await initial.json()).items[0]?.title !== 'Trace a Todo from React to a Plugin') throw new Error(`Frozen Todo route returned ${initial.status}`)",
+		'\tconst initialTodos = await initial.json()',
+		"\tif (!initial.ok || initialTodos.items[0]?.title !== 'Trace a Todo from React to a Plugin' || initialTodos.maxItems !== 2) throw new Error(`Frozen Todo route or deployment config failed: ${initial.status}`)",
 		"\tconst created = await fetch(`${origin}/api/example/todos`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Smoke the frozen route' }) })",
 		'\tif (created.status !== 201 || (await created.json()).items.length !== 2) throw new Error(`Frozen Todo mutation returned ${created.status}`)',
 		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
@@ -207,27 +220,44 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 		"\tconst workbench = await app.fetch(new Request(`${origin}/__pluxel/workbench/plugins`, { headers: { accept: 'text/html' } }))",
 		'\tconst workbenchHtml = await workbench.text()',
 		'\tif (!workbench.ok || !workbenchHtml.includes(\'content="/__pluxel/workbench"\')) throw new Error(`Frozen Workbench navigation returned ${workbench.status}: ${workbenchHtml.slice(0, 240)}`)',
-		'\tconst shellEntry = workbenchHtml.match(/<script type="module" src="([^"]+)"/)?.[1]',
+		'\tconst shellEntry = workbenchHtml.match(/<script[^>]* type="module"[^>]* src="([^"]+)"/)?.[1]',
 		"\tif (!shellEntry?.startsWith('/__pluxel/workbench/assets/')) throw new Error(`Frozen Workbench asset escaped the reserved namespace: ${shellEntry}`)",
 		'\tconst shellAsset = await fetch(new URL(shellEntry, origin))',
-		'\tif (!shellAsset.ok) throw new Error(`Frozen Workbench asset returned ${shellAsset.status}`)',
+		'\tconst shellSource = await shellAsset.text()',
+		'\tif (!shellAsset.ok || !shellAsset.headers.get("content-type")?.includes("javascript") || shellSource.length === 0) throw new Error(`Frozen Workbench asset returned ${shellAsset.status}`)',
 		'} finally {',
 		'\tawait app.stop()',
 		'}',
 	].join('\n')
 	await runProcess(process.execPath, ['--input-type=module', '--eval', smoke, entry], root, {
 		PLUXEL_HOST_PORT: '0',
+		EXAMPLE_TODO_MAX_ITEMS: '2',
 	})
 }
 
-async function verifyStaticViteApplication(root: string): Promise<void> {
+async function verifyViteApplication(root: string): Promise<void> {
+	const consoleRoot = resolve(root, 'host/web')
+	const inspectionFile = resolve(consoleRoot, 'smoke-inspect.ts')
+	await writeFile(
+		inspectionFile,
+		[
+			"import { defineDevConsole } from '@pluxel/host-dev/console'",
+			"import { examplePlugins } from '../src/runtime-state'",
+			"import { VaultAdminPlugin } from '@pluxel/vault-admin'",
+			'export default defineDevConsole(async (dev) => ({',
+			'  running: examplePlugins.map(plugin => dev.plugins.isRunning(plugin)),',
+			'  vaultArtifact: (await dev.plugins.status(VaultAdminPlugin))?.execution.artifact.kind,',
+			'  status: await dev.plugins.list(),',
+			'}))',
+		].join('\n'),
+	)
 	const port = await reservePort()
-	const vite = startVite(root, '@example/host', 'vite.config.ts', port)
+	const vite = startVite(root, port)
 	try {
 		const initial = await Promise.race([
 			waitForResponse(`http://127.0.0.1:${port}/api/example/todos`, 30_000),
 			vite.exit.then(({ code, signal }) => {
-				throw new Error(`Static Vite host exited before it was ready (${signal ?? code})`)
+				throw new Error(`Vite host exited before it was ready (${signal ?? code})`)
 			}),
 		])
 		const initialSnapshot = (await initial.json()) as {
@@ -238,7 +268,7 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 			initialSnapshot.items?.[0]?.title !== 'Trace a Todo from React to a Plugin' ||
 			initialSnapshot.auditEnabled !== true
 		) {
-			throw new Error('Static Vite host returned an unexpected Todo snapshot')
+			throw new Error('Vite host returned an unexpected Todo snapshot')
 		}
 
 		const created = await fetch(`http://127.0.0.1:${port}/api/example/todos`, {
@@ -248,7 +278,7 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 		})
 		const createdSnapshot = (await created.json()) as { items?: unknown[] }
 		if (created.status !== 201 || createdSnapshot.items?.length !== 2) {
-			throw new Error(`Static Vite Todo mutation returned ${created.status}`)
+			throw new Error(`Vite Todo mutation returned ${created.status}`)
 		}
 
 		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
@@ -260,34 +290,37 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 			throw new Error(`Unified Vite page returned ${page.status}`)
 		}
 		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
-	} finally {
-		await stopVite(vite)
-	}
-}
-
-async function verifyDynamicViteHost(root: string): Promise<void> {
-	const port = await reservePort()
-	const vite = startVite(root, '@example/host', 'vite.config.ts', port, {}, 'dynamic')
-	try {
-		const response = await Promise.race([
-			waitForResponse(`http://127.0.0.1:${port}/api/example/todos`, 30_000),
-			vite.exit.then(({ code, signal }) => {
-				throw new Error(`Dynamic Vite host exited before it was ready (${signal ?? code})`)
-			}),
-		])
-		const snapshot = (await response.json()) as { items?: Array<{ title?: string }> }
-		if (!response.ok || snapshot.items?.[0]?.title !== 'Trace a Todo from React to a Plugin') {
-			throw new Error(`Dynamic Todo route returned ${response.status}`)
+		const discovered = JSON.parse(
+			await runPnpmCapture(['exec', 'pluxel', 'dev', 'instances', '--root', consoleRoot], root),
+		)
+		if (!discovered.ok || discovered.value.length !== 1) {
+			throw new Error(`Expected one starter development console: ${JSON.stringify(discovered)}`)
 		}
-		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
-		const page = await fetch(`http://127.0.0.1:${port}/nested/page`, {
-			headers: { accept: 'text/html' },
-		})
-		const pageSource = await page.text()
-		if (!page.ok || !pageSource.includes('<div id="root"></div>')) {
-			throw new Error(`Dynamic unified Vite page returned ${page.status}`)
+		const inspection = JSON.parse(
+			await runPnpmCapture(
+				[
+					'exec',
+					'pluxel',
+					'dev',
+					'run',
+					inspectionFile,
+					'--root',
+					consoleRoot,
+					'--instance',
+					discovered.value[0].instanceId,
+				],
+				root,
+			),
+		)
+		if (
+			!inspection.ok ||
+			inspection.value.state !== 'succeeded' ||
+			inspection.value.value.running.length !== 4 ||
+			inspection.value.value.vaultArtifact !== 'built-module' ||
+			inspection.value.value.running.some((running: boolean) => !running)
+		) {
+			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(inspection)}`)
 		}
-		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
 	} finally {
 		await stopVite(vite)
 	}
@@ -315,10 +348,14 @@ async function verifyWorkbenchNavigation(origin: string): Promise<void> {
 	if (!source.includes('content="/__pluxel/workbench"')) {
 		throw new Error('Workbench navigation did not preserve its configured router base path')
 	}
-	const entry = source.match(/<script type="module" src="([^"]+)"/)?.[1]
+	const entry = source.match(/<script[^>]* type="module"[^>]* src="([^"]+)"/)?.[1]
 	if (!entry) throw new Error('Workbench navigation did not expose a browser entry')
 	const browserEntry = await waitForResponse(new URL(entry, origin).href, 30_000)
-	if (!browserEntry.headers.get('content-type')?.includes('javascript')) {
+	const browserSource = await browserEntry.text()
+	if (
+		!browserEntry.headers.get('content-type')?.includes('javascript') ||
+		browserSource.length === 0
+	) {
 		throw new Error(`Workbench browser entry is not JavaScript: ${entry}`)
 	}
 }
@@ -370,33 +407,24 @@ function requestDocument(url: string): Promise<{ status: number; text: string }>
 	})
 }
 
-function startVite(
-	root: string,
-	packageName: string,
-	config: string,
-	port: number,
-	environment: Record<string, string> = {},
-	mode?: string,
-) {
-	const command = process.env.npm_execpath ?? 'pnpm'
-	const modeArgs = mode ? ['--mode', mode] : []
+function startVite(root: string, port: number) {
+	const hostRoot = resolve(root, 'host')
+	const require = createRequire(resolve(hostRoot, 'package.json'))
+	const viteBin = resolve(dirname(require.resolve('vite/package.json')), 'bin/vite.js')
+	// Own the actual server process so shutdown cannot stop at a package-manager wrapper.
 	const child = spawn(
-		command,
+		process.execPath,
 		[
-			'--filter',
-			packageName,
-			'exec',
-			'vite',
+			viteBin,
 			'--config',
-			config,
-			...modeArgs,
+			'vite.config.ts',
 			'--host',
 			'127.0.0.1',
 			'--port',
 			String(port),
 			'--strictPort',
 		],
-		{ cwd: root, stdio: 'inherit', env: { ...process.env, ...environment } },
+		{ cwd: hostRoot, stdio: 'inherit', env: process.env },
 	)
 	const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
 		(accept, reject) => {

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import pncatConfig from '../template/pncat.config.ts'
+import { repositoryPackages, isPublishablePackage } from '../../../scripts/repository-packages.mjs'
 
 const packageRoot = resolve(import.meta.dirname, '..')
 const bin = resolve(packageRoot, 'dist/create.mjs')
@@ -99,20 +100,27 @@ describe('create-pluxel', () => {
 			},
 		)
 		assert.equal(hostManifest.devDependencies['@example/web'], 'workspace:*')
+		assert.equal(hostManifest.dependencies['@pluxel/runtime'], undefined)
+		assert.equal(hostManifest.dependencies['@pluxel/host'], 'catalog:pluxel')
+		assert.equal(hostManifest.dependencies['@pluxel/services'], 'catalog:pluxel')
 		for (const plugin of ['audit', 'http', 'todo']) {
 			const pluginManifest = JSON.parse(
 				await readFile(resolve(generated, `plugins/${plugin}/package.json`), 'utf8'),
 			)
 			assert.deepEqual(
 				Object.keys(pluginManifest.dependencies).filter((name) => name.startsWith('@pluxel/')),
-				['@pluxel/runtime'],
+				plugin === 'http' ? ['@pluxel/core', '@pluxel/services'] : ['@pluxel/core'],
 			)
 			assert.equal(pluginManifest.devDependencies.oxlint, undefined)
 		}
 		const viteConfig = await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8')
 		assert.match(viteConfig, /root: webRoot/)
 		assert.equal(viteConfig.match(/\breact\(\)/g)?.length, 1)
-		assert.match(viteConfig, /mode === 'dynamic'[\s\S]*dynamicRuntimeVitePlugin/)
+		assert.match(viteConfig, /vitePreset\(\{ entry, devConsole: true \}\)/)
+		assert.match(
+			await readFile(resolve(generated, 'host/src/app.ts'), 'utf8'),
+			/satisfies HostApplication/,
+		)
 		await assert.rejects(readFile(resolve(generated, 'host/vite.dynamic.config.ts')), {
 			code: 'ENOENT',
 		})
@@ -126,6 +134,26 @@ describe('create-pluxel', () => {
 			/https:\/\/github\.com\/PluxelJS\/pluxel\/blob\/main\/docs\/index\.md/,
 		)
 		await assert.rejects(readFile(resolve(generated, '.pnpmfile.cjs')), { code: 'ENOENT' })
+	})
+
+	it('emits first-party catalog ranges from the actual publishable package versions', async () => {
+		const generated = await readFile(resolve(temporaryRoot, 'starter/pnpm-workspace.yaml'), 'utf8')
+		const source = await readFile(resolve(packageRoot, 'template/pnpm-workspace.yaml'), 'utf8')
+		const catalog = /^  pluxel:\n(?: {4}[^\n]*\n)+/m
+		const generatedCatalog = generated.match(catalog)?.[0]
+		assert.ok(generatedCatalog)
+		const versions = new Map(
+			repositoryPackages
+				.filter(isPublishablePackage)
+				.map(({ manifest }) => [manifest.name, manifest.version]),
+		)
+		const ranges = [...generatedCatalog.matchAll(/^    '(@pluxel\/[^']+)': (.+)$/gm)]
+		assert.ok(ranges.length > 0)
+		for (const [, name, range] of ranges) {
+			assert.ok(versions.has(name), `Unknown first-party catalog package: ${name}`)
+			assert.equal(range, `^${versions.get(name)}`, name)
+		}
+		assert.equal(generated.replace(catalog, ''), source.replace(catalog, ''))
 	})
 
 	it('does not overwrite a non-empty destination', async () => {

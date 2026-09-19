@@ -20,40 +20,40 @@ pnpm governance:check
 
 已有、不使用 catalog 的应用可以在对应包目录执行 `npx nypm add @pluxel/wretch`。使用哪种包管理方式不改变下面的宿主装配。
 
-安装只让代码可导入。还要在应用的 static 入口把 provider 加入 `plugins` 清单，并让需要它的业务插件自动启动：
+安装只让代码可导入。还要在应用入口把 provider 加入 `plugins` 清单，并让需要它的业务插件自动启动：
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import type { HostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/preset'
 import { WretchPlugin } from '@pluxel/wretch'
 import { CustomerPlugin } from './customer-plugin.js'
 
-export default defineStaticRuntime({
+export default {
 	name: 'my-app',
 	plugins: [WretchPlugin, CustomerPlugin],
-	configure: () => ({
-		runtimeState: {
-			snapshot: { autoStart: [pluginNodeAddressOf(CustomerPlugin)] },
-		},
-		configService: {
-			snapshot: {
-				plugins: [
+	async configure(startup) {
+		return {
+			services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+			state: { initial: { autoStart: [pluginNodeAddressOf(CustomerPlugin)] } },
+			configRecords: {
+				initial: [
 					{
 						owner: pluginNodeAddressOf(CustomerPlugin),
 						config: { baseUrl: 'https://catalog.example' },
 					},
 				],
 			},
-		},
-	}),
-})
+		}
+	},
+} satisfies HostApplication
 ```
 
 把 `CustomerPlugin` 保存为入口相邻的 `customer-plugin.ts`，完整实现见 [Wretch](./wretch.md#第一个-http-consumer)。它通过构造函数依赖 `WretchPlugin`，因此启动 consumer 时会一起启动 provider。把这段配置合入现有入口，保留项目已有的插件、启动项和配置记录。
 
 启动后在 Workbench 确认 consumer 与 provider 都处于运行状态，再调用业务方法验证结果。缺少依赖时先检查 `plugins` 清单；配置无效时查看该插件的启动错误。无界面应用通过 [开发控制台](../development/dev-console.md) 或测试读取状态。
 
-本目录的 `host.start()`、`host.commit()`、`initialConfig` 示例用于 [Runtime 测试宿主](../development/testing.md)，不要复制到生产启动文件。应用使用上面的配置记录与自动启动策略；动态宿主和持久化配置见 [宿主配置](../getting-started/host-setup.md)。
+本目录的 `host.start()`、`host.commit()`、`initialConfig` 示例用于 [服务测试宿主](../development/testing.md)，不要复制到生产启动文件。应用使用上面的配置记录与自动启动策略；动态宿主和持久化配置见 [宿主配置](../getting-started/host-setup.md)。
 
 ## 按任务选择
 

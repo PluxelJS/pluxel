@@ -2,12 +2,12 @@
 
 import { MantineProvider } from '@mantine/core'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
+import type { RpcStub } from 'capnweb'
 import type {
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchSessionApi,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import { createMemoryHistory, Outlet, RouterProvider } from '@tanstack/react-router'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'

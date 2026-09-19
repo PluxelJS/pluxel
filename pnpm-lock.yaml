@@ -453,9 +453,6 @@ catalogs:
     fs-fixture:
       specifier: ^2.14.0
       version: 2.14.0
-    ink:
-      specifier: ^7.1.1
-      version: 7.1.1
     jsdom:
       specifier: ^30.0.1
       version: 30.0.1
@@ -903,12 +900,30 @@ importers:
       unplugin-preprocessor-directives:
         specifier: catalog:build
         version: 1.2.0(esbuild@0.28.2)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26))
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       vitest:
         specifier: catalog:test
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       yaml:
         specifier: catalog:dev
         version: 2.9.0
+
+  packages/async:
+    devDependencies:
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/cli:
     dependencies:
@@ -949,27 +964,15 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../runtime-dynamic
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
       '@types/picomatch':
         specifier: catalog:types
         version: 4.0.3
-      '@types/react':
-        specifier: catalog:types
-        version: 19.2.18
       '@types/semver':
         specifier: catalog:types
         version: 7.8.0
-      ink:
-        specifier: catalog:dev
-        version: 7.1.1(@types/react@19.2.18)(react@19.2.8)
-      react:
-        specifier: catalog:frontend
-        version: 19.2.8
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -1054,6 +1057,230 @@ importers:
         specifier: catalog:test
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
+  packages/host:
+    dependencies:
+      '@standard-schema/spec':
+        specifier: catalog:prod
+        version: 1.1.0
+      ohash:
+        specifier: catalog:prod
+        version: 2.0.12
+      std-env:
+        specifier: catalog:prod
+        version: 4.2.0
+      superjson:
+        specifier: catalog:validation
+        version: 2.2.6
+      valibot-form:
+        specifier: workspace:^
+        version: link:../valibot-form
+    devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+
+  packages/host-dev:
+    dependencies:
+      '@pluxel/rolldown':
+        specifier: workspace:^
+        version: link:../rolldown
+      chokidar:
+        specifier: catalog:node
+        version: 5.0.0
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
+    devDependencies:
+      '@logtape/logtape':
+        specifier: catalog:dev
+        version: 2.3.2
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.2.8(react@19.2.8)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+
+  packages/host-dynamic:
+    dependencies:
+      chokidar:
+        specifier: catalog:node
+        version: 5.0.0
+      picomatch:
+        specifier: catalog:prod
+        version: 4.0.7
+    devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+      '@types/picomatch':
+        specifier: catalog:types
+        version: 4.0.3
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  packages/logging:
+    dependencies:
+      '@logtape/file':
+        specifier: catalog:prod
+        version: 2.3.2(@logtape/logtape@2.3.2)
+      '@logtape/logtape':
+        specifier: catalog:prod
+        version: 2.3.2
+      '@logtape/pretty':
+        specifier: catalog:prod
+        version: 2.3.2(@logtape/logtape@2.3.2)
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
+    devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+
+  packages/management:
+    dependencies:
+      '@logtape/logtape':
+        specifier: catalog:prod
+        version: 2.3.2
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      std-env:
+        specifier: catalog:prod
+        version: 4.2.0
+      valibot-form:
+        specifier: workspace:^
+        version: link:../valibot-form
+    devDependencies:
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../preset
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../workbench
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
+      '@types/react':
+        specifier: catalog:types
+        version: 19.2.18
+      crossws:
+        specifier: catalog:prod
+        version: 0.4.12(srvx@0.12.7)
+      elysia:
+        specifier: catalog:prod
+        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+
+  packages/preset:
+    devDependencies:
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../host-dev
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../management
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../workbench
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/rolldown:
     dependencies:
       '@inlang/paraglide-js':
@@ -1068,9 +1295,6 @@ importers:
       '@module-federation/vite':
         specifier: catalog:build
         version: 1.21.1(typescript@7.0.2)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
       drizzle-kit:
         specifier: catalog:backend
         version: 0.31.10
@@ -1117,9 +1341,18 @@ importers:
         specifier: workspace:^
         version: link:../valibot-form
     devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host-dynamic':
+        specifier: workspace:*
+        version: link:../host-dynamic
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:^
+        version: link:../workbench
       '@rolldown/pluginutils':
         specifier: catalog:build
         version: 1.0.1
@@ -1147,308 +1380,94 @@ importers:
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.13
       vite:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
-  packages/runtime:
+  packages/services:
     dependencies:
-      '@electric-sql/pglite':
-        specifier: catalog:prod
-        version: 0.5.8
-      '@logtape/file':
-        specifier: catalog:prod
-        version: 2.3.2(@logtape/logtape@2.3.2)
-      '@logtape/logtape':
-        specifier: catalog:prod
-        version: 2.3.2
-      '@logtape/pretty':
-        specifier: catalog:prod
-        version: 2.3.2(@logtape/logtape@2.3.2)
-      '@module-federation/bridge-react':
-        specifier: catalog:frontend
-        version: 2.9.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@module-federation/runtime':
-        specifier: catalog:prod
-        version: 2.9.0
-      '@module-federation/sdk':
-        specifier: catalog:prod
-        version: 2.9.0
-      '@pluxel/commands':
-        specifier: workspace:^
-        version: link:../commands
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@sinclair/typebox':
-        specifier: catalog:prod
-        version: 0.34.52
-      '@tanstack/query-core':
-        specifier: catalog:frontend
-        version: 5.102.8
       age-encryption:
         specifier: catalog:prod
         version: 0.3.1
       capnweb:
         specifier: catalog:prod
         version: 0.12.0
+      chokidar:
+        specifier: catalog:node
+        version: 5.0.0
+      crossws:
+        specifier: catalog:prod
+        version: 0.4.12(srvx@0.12.7)
       drizzle-orm:
         specifier: catalog:backend
         version: 0.45.2(@electric-sql/pglite@0.5.8)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.23.0)(sql.js@1.14.1)
-      elysia:
-        specifier: catalog:prod
-        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
-      jose:
-        specifier: catalog:prod
-        version: 6.2.10
-      ohash:
-        specifier: catalog:prod
-        version: 2.0.12
-      oxc-resolver:
-        specifier: catalog:prod
-        version: 11.24.2
       pathe:
         specifier: catalog:node
         version: 2.0.3
-      pg:
-        specifier: catalog:backend
-        version: 8.23.0
+      srvx:
+        specifier: catalog:prod
+        version: 0.12.7
       std-env:
         specifier: catalog:prod
         version: 4.2.0
-      superjson:
-        specifier: catalog:validation
-        version: 2.2.6
-      valibot:
-        specifier: catalog:validation
-        version: 1.4.2(typescript@7.0.2)
     devDependencies:
-      '@mantine/core':
-        specifier: catalog:frontend
-        version: 9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@mantine/hooks':
-        specifier: catalog:frontend
-        version: 9.5.2(react@19.2.8)
-      '@mantine/notifications':
-        specifier: catalog:frontend
-        version: 9.5.2(@mantine/core@9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@mantine/hooks@9.5.2(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@electric-sql/pglite':
+        specifier: catalog:prod
+        version: 0.5.8
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../host-dev
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
-      '@tabler/icons-react':
-        specifier: catalog:icons
-        version: 3.46.0(react@19.2.8)
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../workbench
       '@types/pg':
         specifier: catalog:types
         version: 8.23.1
-      '@types/react':
-        specifier: catalog:types
-        version: 19.2.18
-      '@types/react-dom':
-        specifier: catalog:types
-        version: 19.2.5(@types/react@19.2.18)
+      elysia:
+        specifier: catalog:prod
+        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
       fs-fixture:
         specifier: catalog:dev
         version: 2.14.0
-      postcss:
+      pg:
+        specifier: catalog:backend
+        version: 8.23.0
+      tsx:
         specifier: catalog:dev
-        version: 8.5.26
-      postcss-preset-mantine:
-        specifier: catalog:dev
-        version: 1.18.0(postcss@8.5.26)
-      postcss-simple-vars:
-        specifier: catalog:dev
-        version: 7.0.1(postcss@8.5.26)
-      react:
-        specifier: catalog:frontend
-        version: 19.2.8
-      react-dom:
-        specifier: catalog:frontend
-        version: 19.2.8(react@19.2.8)
-      valibot-form:
-        specifier: workspace:*
-        version: link:../valibot-form
-      vite:
-        specifier: catalog:build
-        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
-
-  packages/runtime-dev:
-    dependencies:
-      '@pluxel/core':
-        specifier: workspace:*
-        version: link:../core
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../rolldown
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@pluxel/runtime-node':
-        specifier: workspace:*
-        version: link:../runtime-node
-      chokidar:
-        specifier: catalog:node
-        version: 5.0.0
-      pathe:
-        specifier: catalog:node
-        version: 2.0.3
-      srvx:
-        specifier: catalog:prod
-        version: 0.12.7
-    devDependencies:
-      '@logtape/logtape':
-        specifier: catalog:dev
-        version: 2.3.2
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../test
-      react:
-        specifier: catalog:frontend
-        version: 19.2.8
-      react-dom:
-        specifier: catalog:frontend
-        version: 19.2.8(react@19.2.8)
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
-      vite:
-        specifier: catalog:build
-        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
-
-  packages/runtime-dynamic:
-    dependencies:
-      '@logtape/logtape':
-        specifier: catalog:prod
-        version: 2.3.2
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/rolldown':
-        specifier: workspace:^
-        version: link:../rolldown
-      '@pluxel/runtime':
-        specifier: workspace:^
-        version: link:../runtime
-      '@vitejs/plugin-react':
-        specifier: catalog:build
-        version: 6.1.1(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      chokidar:
-        specifier: catalog:node
-        version: 5.0.0
-      crossws:
-        specifier: catalog:prod
-        version: 0.4.12(srvx@0.12.7)
-      elysia:
-        specifier: catalog:prod
-        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
-      jsonc-parser:
-        specifier: catalog:prod
-        version: 3.3.1
-      pathe:
-        specifier: catalog:node
-        version: 2.0.3
-      picomatch:
-        specifier: catalog:prod
-        version: 4.0.7
-      srvx:
-        specifier: catalog:prod
-        version: 0.12.7
+        version: 4.23.13
       valibot:
         specifier: catalog:validation
         version: 1.4.2(typescript@7.0.2)
-    devDependencies:
-      '@pluxel/runtime-dev':
-        specifier: workspace:*
-        version: link:../runtime-dev
-      '@pluxel/runtime-node':
-        specifier: workspace:*
-        version: link:../runtime-node
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../test
-      react:
-        specifier: catalog:frontend
-        version: 19.2.8
-      react-dom:
-        specifier: catalog:frontend
-        version: 19.2.8(react@19.2.8)
-      superjson:
-        specifier: catalog:validation
-        version: 2.2.6
-      tsx:
-        specifier: catalog:dev
-        version: 4.23.13
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
-      vite:
-        specifier: catalog:build
-        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
-
-  packages/runtime-node:
-    dependencies:
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      crossws:
-        specifier: catalog:prod
-        version: 0.4.12(srvx@0.12.7)
-      elysia:
-        specifier: catalog:prod
-        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
-      srvx:
-        specifier: catalog:prod
-        version: 0.12.7
-    devDependencies:
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
-
-  packages/runtime-static:
-    dependencies:
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/runtime':
-        specifier: workspace:^
-        version: link:../runtime
-      '@standard-schema/spec':
-        specifier: catalog:prod
-        version: 1.1.0
-      crossws:
-        specifier: catalog:prod
-        version: 0.4.12(srvx@0.12.7)
-      elysia:
-        specifier: catalog:prod
-        version: 2.0.0-beta.7(@types/bun@1.3.14)(exact-mirror@1.2.4(typebox@1.3.19))(openapi-types@12.1.3)(typebox@1.3.19)(typescript@7.0.2)
-      pathe:
-        specifier: catalog:node
-        version: 2.0.3
-      srvx:
-        specifier: catalog:prod
-        version: 0.12.7
       valibot-form:
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../valibot-form
-    devDependencies:
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../rolldown
-      '@pluxel/runtime-dev':
-        specifier: workspace:*
-        version: link:../runtime-dev
-      '@pluxel/runtime-node':
-        specifier: workspace:*
-        version: link:../runtime-node
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../test
-      tsx:
-        specifier: catalog:dev
-        version: 4.23.13
       vite:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
@@ -1530,6 +1549,82 @@ importers:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
+  packages/workbench:
+    dependencies:
+      '@module-federation/runtime':
+        specifier: catalog:prod
+        version: 2.9.0
+      '@module-federation/sdk':
+        specifier: catalog:prod
+        version: 2.9.0
+      '@tanstack/query-core':
+        specifier: catalog:frontend
+        version: 5.102.8
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+    devDependencies:
+      '@mantine/core':
+        specifier: catalog:frontend
+        version: 9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@mantine/hooks':
+        specifier: catalog:frontend
+        version: 9.5.2(react@19.2.8)
+      '@module-federation/bridge-react':
+        specifier: catalog:frontend
+        version: 2.9.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../host-dev
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../preset
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@types/react':
+        specifier: catalog:types
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: catalog:types
+        version: 19.2.5(@types/react@19.2.18)
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.2.8(react@19.2.8)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      valibot-form:
+        specifier: workspace:*
+        version: link:../valibot-form
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/workbench-app:
     dependencies:
       '@dagrejs/dagre':
@@ -1553,9 +1648,12 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../runtime
+      '@pluxel/management':
+        specifier: workspace:^
+        version: link:../management
+      '@pluxel/workbench':
+        specifier: workspace:^
+        version: link:../workbench
       '@tanstack/react-form':
         specifier: catalog:frontend
         version: 1.33.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1577,6 +1675,9 @@ importers:
       '@worksplit/react':
         specifier: workspace:*
         version: link:../../vendor/split-like-vscode/packages/react
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form
@@ -1599,9 +1700,6 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../runtime-dynamic
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
@@ -1643,6 +1741,13 @@ importers:
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
 
   plugins/agent-tools:
+    dependencies:
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
@@ -1650,15 +1755,24 @@ importers:
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../../packages/commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -1674,6 +1788,12 @@ importers:
       jose:
         specifier: catalog:prod
         version: 6.2.10
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -1681,18 +1801,27 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../../packages/management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
-      '@pluxel/runtime-node':
-        specifier: workspace:*
-        version: link:../../packages/runtime-node
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
@@ -1702,6 +1831,9 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       crossws:
         specifier: catalog:prod
         version: 0.4.12(srvx@0.12.7)
@@ -1725,16 +1857,26 @@ importers:
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   plugins/cache:
+    dependencies:
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
@@ -1801,6 +1943,12 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: catalog:prod
         version: 2.10.0(@opentelemetry/api@1.9.1)
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@opentelemetry/api':
         specifier: catalog:dev
@@ -1811,15 +1959,24 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@types/node':
         specifier: catalog:types
         version: 26.4.0
@@ -1838,6 +1995,12 @@ importers:
       '@pnpm/napi':
         specifier: catalog:prod
         version: 12.0.0-rc.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -1851,18 +2014,27 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
+      '@pluxel/host-dynamic':
+        specifier: workspace:*
+        version: link:../../packages/host-dynamic
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../../packages/runtime-dynamic
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
@@ -1872,6 +2044,9 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       react:
         specifier: catalog:frontend
         version: 19.2.8
@@ -1902,6 +2077,12 @@ importers:
       typebox:
         specifier: catalog:prod
         version: 1.3.7
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@pluxel/agent-tools':
         specifier: workspace:*
@@ -1912,12 +2093,18 @@ importers:
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../../packages/commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
@@ -1932,16 +2119,26 @@ importers:
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   plugins/rates:
+    dependencies:
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
@@ -1960,6 +2157,12 @@ importers:
       redis:
         specifier: catalog:backend
         version: 6.2.1(@opentelemetry/api@1.9.1)
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@pluxel/cache':
         specifier: workspace:*
@@ -1970,18 +2173,24 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rates':
         specifier: workspace:*
         version: link:../rates
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -2000,22 +2209,37 @@ importers:
       '@napi-rs/canvas':
         specifier: catalog:prod
         version: 1.0.8
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../../packages/runtime
+        version: link:../../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -2031,6 +2255,12 @@ importers:
       echarts:
         specifier: catalog:prod
         version: 6.1.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@pluxel/canvas':
         specifier: workspace:*
@@ -2038,21 +2268,33 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../../../packages/host-dev
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../../packages/runtime
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../../../packages/runtime-dynamic
+        version: link:../../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -2062,6 +2304,9 @@ importers:
       typescript:
         specifier: catalog:dev
         version: 7.0.2
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       vitest:
         specifier: catalog:test
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -2071,6 +2316,12 @@ importers:
       '@napi-rs/canvas':
         specifier: catalog:prod
         version: 1.0.8
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -2078,18 +2329,305 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../../packages/runtime
+        version: link:../../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.46.0(react@19.2.8)
+      '@types/react':
+        specifier: catalog:types
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: catalog:types
+        version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.2.8(react@19.2.8)
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  plugins/render/takumi:
+    dependencies:
+      takumi-js:
+        specifier: catalog:prod
+        version: 2.13.2(csstype@3.2.3)(react@19.2.8)
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@pluxel/fonts':
+        specifier: workspace:*
+        version: link:../fonts
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
+      '@types/react':
+        specifier: catalog:types
+        version: 19.2.18
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  plugins/render/takumi-markdown:
+    dependencies:
+      rangi:
+        specifier: 2.2.0
+        version: 2.2.0
+      satteri:
+        specifier: 0.10.5
+        version: 0.10.5
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@pluxel/fonts':
+        specifier: workspace:*
+        version: link:../fonts
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
+      '@pluxel/takumi':
+        specifier: workspace:*
+        version: link:../takumi
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../../packages/test
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  plugins/render/takumi-markdown-typst:
+    dependencies:
+      '@myriaddreamin/typst-ts-node-compiler':
+        specifier: 0.7.0
+        version: 0.7.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../../packages/valibot-form
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@pluxel/fonts':
+        specifier: workspace:*
+        version: link:../fonts
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../../../packages/host-dev
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
+      '@pluxel/takumi':
+        specifier: workspace:*
+        version: link:../takumi
+      '@pluxel/takumi-markdown':
+        specifier: workspace:*
+        version: link:../takumi-markdown
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.13
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  plugins/storage:
+    dependencies:
+      s3mini:
+        specifier: catalog:prod
+        version: 1.0.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      tsdown:
+        specifier: catalog:build
+        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  plugins/vault-admin:
+    dependencies:
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+    devDependencies:
+      '@mantine/core':
+        specifier: catalog:frontend
+        version: 9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../../packages/management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
+      '@tabler/icons-react':
+        specifier: catalog:icons
+        version: 3.46.0(react@19.2.8)
+      '@types/node':
+        specifier: catalog:types
+        version: 26.4.0
       '@types/react':
         specifier: catalog:types
         version: 19.2.18
@@ -2115,151 +2653,6 @@ importers:
         specifier: catalog:test
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
-  plugins/render/takumi:
-    dependencies:
-      takumi-js:
-        specifier: catalog:prod
-        version: 2.13.2(csstype@3.2.3)(react@19.2.8)
-    devDependencies:
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../../../packages/cli
-      '@pluxel/fonts':
-        specifier: workspace:*
-        version: link:../fonts
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../../packages/rolldown
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../../packages/runtime
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../../../packages/test
-      '@types/react':
-        specifier: catalog:types
-        version: 19.2.18
-      react:
-        specifier: catalog:frontend
-        version: 19.2.8
-      tsdown:
-        specifier: catalog:build
-        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
-      vitest:
-        specifier: catalog:test
-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-
-  plugins/render/takumi-markdown:
-    dependencies:
-      rangi:
-        specifier: 2.2.0
-        version: 2.2.0
-      satteri:
-        specifier: 0.10.5
-        version: 0.10.5
-    devDependencies:
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../../../packages/cli
-      '@pluxel/fonts':
-        specifier: workspace:*
-        version: link:../fonts
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../../packages/rolldown
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../../packages/runtime
-      '@pluxel/takumi':
-        specifier: workspace:*
-        version: link:../takumi
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../../../packages/test
-      tsdown:
-        specifier: catalog:build
-        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
-      vitest:
-        specifier: catalog:test
-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-
-  plugins/render/takumi-markdown-typst:
-    dependencies:
-      '@myriaddreamin/typst-ts-node-compiler':
-        specifier: 0.7.0
-        version: 0.7.0
-    devDependencies:
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../../../packages/cli
-      '@pluxel/fonts':
-        specifier: workspace:*
-        version: link:../fonts
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../../packages/rolldown
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../../packages/runtime
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../../../packages/runtime-dynamic
-      '@pluxel/takumi':
-        specifier: workspace:*
-        version: link:../takumi
-      '@pluxel/takumi-markdown':
-        specifier: workspace:*
-        version: link:../takumi-markdown
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../../../packages/test
-      tsdown:
-        specifier: catalog:build
-        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
-      tsx:
-        specifier: catalog:dev
-        version: 4.23.13
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
-      vitest:
-        specifier: catalog:test
-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-
-  plugins/storage:
-    dependencies:
-      s3mini:
-        specifier: catalog:prod
-        version: 1.0.0
-    devDependencies:
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../../packages/cli
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../packages/rolldown
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../../packages/test
-      tsdown:
-        specifier: catalog:build
-        version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
-      typescript:
-        specifier: catalog:dev
-        version: 7.0.2
-      vitest:
-        specifier: catalog:test
-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-
   plugins/wretch:
     dependencies:
       '@mantine/core':
@@ -2277,6 +2670,12 @@ importers:
       undici:
         specifier: catalog:prod
         version: 8.10.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
       wretch:
         specifier: catalog:prod
         version: 3.0.9
@@ -2284,21 +2683,33 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@types/react':
         specifier: catalog:types
         version: 19.2.18
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       tsdown:
         specifier: catalog:build
         version: 0.22.14(@tsdown/css@0.22.14)(oxc-resolver@11.24.2)(tsx@4.23.13)(typescript@7.0.2)(unrun@0.3.1)
@@ -2423,15 +2834,6 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../../packages/runtime-dynamic
-      '@pluxel/runtime-static':
-        specifier: workspace:*
-        version: link:../../packages/runtime-static
       '@pluxel/storage':
         specifier: workspace:*
         version: link:../../plugins/storage
@@ -2528,12 +2930,27 @@ importers:
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../../packages/commands
+      '@pluxel/core':
+        specifier: workspace:^
+        version: link:../../packages/core
       '@pluxel/echarts':
         specifier: workspace:*
         version: link:../../plugins/render/echarts
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../../plugins/render/fonts
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
+      '@pluxel/host-dynamic':
+        specifier: workspace:*
+        version: link:../../packages/host-dynamic
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../../packages/management
       '@pluxel/otel':
         specifier: workspace:*
         version: link:../../plugins/otel
@@ -2543,30 +2960,42 @@ importers:
       '@pluxel/pi-agent':
         specifier: workspace:*
         version: link:../../plugins/pi-agent
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rates':
         specifier: workspace:*
         version: link:../../plugins/rates
       '@pluxel/redis':
         specifier: workspace:*
         version: link:../../plugins/redis
-      '@pluxel/runtime':
+      '@pluxel/services':
         specifier: workspace:*
-        version: link:../../packages/runtime
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../../packages/runtime-dynamic
-      '@pluxel/runtime-static':
-        specifier: workspace:*
-        version: link:../../packages/runtime-static
+        version: link:../../packages/services
       '@pluxel/storage':
         specifier: workspace:*
         version: link:../../plugins/storage
       '@pluxel/takumi':
         specifier: workspace:*
         version: link:../../plugins/render/takumi
+      '@pluxel/vault-admin':
+        specifier: workspace:*
+        version: link:../../plugins/vault-admin
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       '@pluxel/wretch':
         specifier: workspace:*
         version: link:../../plugins/wretch
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.4.2(typescript@7.0.2)
+      valibot-form:
+        specifier: workspace:^
+        version: link:../../packages/valibot-form
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -2577,6 +3006,9 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../../packages/host-dev
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2670,10 +3102,6 @@ packages:
     engines: {node: '>=22'}
     peerDependencies:
       react: ^18 || ~19.0.1 || ~19.1.2 || ^19.2.1
-
-  '@alcalzone/ansi-tokenize@0.3.0':
-    resolution: {integrity: sha512-p+CMKJ93HFmLkjXKlXiVGlMQEuRb6H0MokBSwUsX+S6BRX8eV5naFZpQJFfJHjRZY0Hmnqy1/r6UWl3x+19zYA==}
-    engines: {node: '>=18'}
 
   '@anthropic-ai/sdk@0.91.1':
     resolution: {integrity: sha512-LAmu761tSN9r66ixvmciswUj/ZC+1Q4iAfpedTfSVLeswRwnY3n2Nb6Tsk+cLPP28aLOPWeMgIuTuCcMC6W/iw==}
@@ -6683,17 +7111,9 @@ packages:
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
 
-  ansi-escapes@7.3.0:
-    resolution: {integrity: sha512-BvU8nYgGQBxcmMuEeUEmNTvrMVjJNSH7RgW24vXexN4Ven6qCvy4TntnvlnwnMLTVlcRQQdbRY8NKnaIoeWDNg==}
-    engines: {node: '>=18'}
-
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
     engines: {node: '>=8'}
-
-  ansi-regex@6.3.0:
-    resolution: {integrity: sha512-WpDfL7NO6j7tH88IDBNVdUJxDh9nmCteAVW9dsep846XdwF4naCBK+/tGLX3KJgcpgMRXCFlTM2hKGoK9FsdrQ==}
-    engines: {node: '>=12'}
 
   ansi-styles@4.3.0:
     resolution: {integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==}
@@ -6702,10 +7122,6 @@ packages:
   ansi-styles@5.2.0:
     resolution: {integrity: sha512-Cxwpt2SfTzTtXcfOlzGEee8O+c+MmUgGrNiBcXnuWxuFJHe6a5Hz7qwhwe5OgaSYI0IJvkLqWX1ASG+cJOkEiA==}
     engines: {node: '>=10'}
-
-  ansi-styles@6.2.3:
-    resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
-    engines: {node: '>=12'}
 
   ansis@4.3.1:
     resolution: {integrity: sha512-BJ8/l4R5LRE7hW9WdSuGYrLSHi2ynxeFpDFbH0K/CgNeY/tyhk+vO6TYxXC5r5CpUhNVX310xzPsN/H9lCdfOA==}
@@ -6728,10 +7144,6 @@ packages:
   astring@1.9.0:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
-
-  auto-bind@5.0.1:
-    resolution: {integrity: sha512-ooviqdwwgfIfNmDwo94wlshcdzfO64XV0Cg6oDsDYBJfITDz1EngD2z7DkbvCWn+XIMsIqW27sEVF6qcpJrRcg==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   babel-dead-code-elimination@1.0.12:
     resolution: {integrity: sha512-GERT7L2TiYcYDtYk1IpD+ASAYXjKbLTDPhBtYj7X1NuRMDTMtAx9kyBenub1Ev41lo91OHCKdmP+egTDmfQ7Ig==}
@@ -6858,18 +7270,6 @@ packages:
   class-variance-authority@0.7.1:
     resolution: {integrity: sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg==}
 
-  cli-boxes@4.0.1:
-    resolution: {integrity: sha512-5IOn+jcCEHEraYolBPs/sT4BxYCe2nHg374OPiItB1O96KZFseS2gthU4twyYzeDcFew4DaUM/xwc5BQf08JJw==}
-    engines: {node: '>=18.20 <19 || >=20.10'}
-
-  cli-cursor@4.0.0:
-    resolution: {integrity: sha512-VGtlMu3x/4DOtIUwEkRezxUZ2lBacNJCHash0N0WeZDBS+7Ux1dm3XWAgWYxLJFMMdOeXMHXorshEFhbMSGelg==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
-  cli-truncate@6.1.1:
-    resolution: {integrity: sha512-06p9vyLahLa4zkGcgsGxU6iEkSOiuI4fhCH6Emhe2lPAcoUv73n72DnODsnHA+5wwXGnV0n9M9/qOQJSjYhFhw==}
-    engines: {node: '>=22'}
-
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
 
@@ -6892,10 +7292,6 @@ packages:
   cnfast@0.1.0:
     resolution: {integrity: sha512-rH0jBKeLkVrK7NsZ5Ba2l7WdMBmm1k0FMpABeXUU1PgTUxbz3261gEuCSsrYuXo4BwAe3yCcIbQ93YyS52lOGQ==}
     hasBin: true
-
-  code-excerpt@4.0.0:
-    resolution: {integrity: sha512-xxodCmBen3iy2i0WtAK8FlFNrRzjUqjRsMfho58xT/wvZU1YTM3fCnRjcy1gJPMepaRlgm/0e6w8SpWHpn3/cA==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   collapse-white-space@2.1.0:
     resolution: {integrity: sha512-loKTxY1zCOuG4j9f6EPnuyyYkf58RnhhWTvRoZEokgB+WbdXehfjFviyOVYkqzEWz1Q5kRiZdBYS5SwxbQYwzw==}
@@ -6948,10 +7344,6 @@ packages:
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
-
-  convert-to-spaces@2.0.1:
-    resolution: {integrity: sha512-rcQ1bsQO9799wq24uE5AM2tAILy4gXGIK/njFWcVQkGNZ96edlpY+A7bjwvzjYvLDyzmG1MmMLZhpcsb+klNMQ==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   cookie-es@3.1.1:
     resolution: {integrity: sha512-UaXxwISYJPTr9hwQxMFYZ7kNhSXboMXP+Z3TRX6f1/NyaGPfuNUZOWP1pUEb75B2HjfklIYLVRfWiFZJyC6Npg==}
@@ -7253,10 +7645,6 @@ packages:
     resolution: {integrity: sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA==}
     engines: {node: '>=20.19.0'}
 
-  environment@1.1.0:
-    resolution: {integrity: sha512-xUtoPkMggbz0MPyPiIWr1Kp4aeWJjDZ6SMvURhimjdZgsRuDplF5/s9hcgGhyXMhs+6vpnuoiZ2kFiu3FMnS8Q==}
-    engines: {node: '>=18'}
-
   es-define-property@1.0.1:
     resolution: {integrity: sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==}
     engines: {node: '>= 0.4'}
@@ -7271,9 +7659,6 @@ packages:
   es-object-atoms@1.1.2:
     resolution: {integrity: sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==}
     engines: {node: '>= 0.4'}
-
-  es-toolkit@1.52.0:
-    resolution: {integrity: sha512-XTNEJQh1tY1ZJVcf6ayP/2n4ZPyaHlW2FWs7xvw5ddPuhUVjLD3olQVQS7kf58JbAB48iL0uL/jerTrjtV3lDA==}
 
   esast-util-from-estree@2.0.0:
     resolution: {integrity: sha512-4CyanoAudUSBAn5K13H4JhsMH6L9ZP7XbLVe/dKybkxMO7eDyLsT8UHl9TRNrU2Gr9nz+FovfSIjuXWJ81uVwQ==}
@@ -7297,10 +7682,6 @@ packages:
 
   escape-html@1.0.3:
     resolution: {integrity: sha512-NiSupZ4OeuGwr68lGIeym/ksIZMJodUGOSCZ/FSnTxcrekbvqrgdUxlJOMpijaKZVjAJrWrGs/6Jy8OMuyj9ow==}
-
-  escape-string-regexp@2.0.0:
-    resolution: {integrity: sha512-UpzcLCXolUWcNu5HtVMHYdXJjArjsF9C0aNnquZYY4uW/Vu0miy5YoWvbV345HauVvcAUnpRuhMMcqTcGOY2+w==}
-    engines: {node: '>=8'}
 
   escape-string-regexp@5.0.0:
     resolution: {integrity: sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw==}
@@ -7804,28 +8185,11 @@ packages:
     resolution: {integrity: sha512-NkJQA7oZ4YHQhd2+H3BoRFKF3d/XNsiKpHZCQEMH9pDX27hQQLsTyOocyRgaIVtf8gHX3Nt3LPkR4e5EdtPAGQ==}
     engines: {node: ^22.18.0 || >=24.0.0}
 
-  indent-string@5.0.0:
-    resolution: {integrity: sha512-m6FAo/spmsW2Ab2fU35JTYwtOKa2yAwXSwgjSv1TJzh4Mh7mC3lzAOVLBprb72XsTrgkEIsl7YrFNAiDiRhIGg==}
-    engines: {node: '>=12'}
-
   inherits@2.0.4:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
 
   ini@1.3.8:
     resolution: {integrity: sha512-JV/yugV2uzW5iMRSiZAyDtQd+nxtUnjeLt0acNdw98kKLrvuRVyB80tsREOE7yvGVgalhZ6RNXCmEHkUKBKxew==}
-
-  ink@7.1.1:
-    resolution: {integrity: sha512-Y43xxa1ZSPvpmfLHcN5o+OdP8Rf8ykkNJEuKYOUNZKT8wXVNLFTtEm1nSDMQkfBH+YANF4Xuu0hhZ4ejqAtN2w==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      '@types/react': '>=19.2.0'
-      react: '>=19.2.0'
-      react-devtools-core: '>=6.1.2'
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-      react-devtools-core:
-        optional: true
 
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==}
@@ -7855,21 +8219,12 @@ packages:
     resolution: {integrity: sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==}
     engines: {node: '>=8'}
 
-  is-fullwidth-code-point@5.1.0:
-    resolution: {integrity: sha512-5XHYaSyiqADb4RnZ1Bdad6cPp8Toise4TzEjcOYDHZkTCbKgiUl7WTUCpNWHuxmDt91wnsZBc9xinNzopv3JMQ==}
-    engines: {node: '>=18'}
-
   is-glob@4.0.3:
     resolution: {integrity: sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==}
     engines: {node: '>=0.10.0'}
 
   is-hexadecimal@2.0.1:
     resolution: {integrity: sha512-DgZQp241c8oO6cA1SbTEWiXeoxV42vlcJxgH+B3hi1AiqqKruZR3ZGF8In3fj4+/y/7rHvlOZLZtgJ/4ttYGZg==}
-
-  is-in-ci@2.0.0:
-    resolution: {integrity: sha512-cFeerHriAnhrQSbpAxL37W1wcJKUUX07HyLWZCW1URJT/ra3GyUTzBgUnh24TMVfNTV2Hij2HLxkPHFZfOZy5w==}
-    engines: {node: '>=20'}
-    hasBin: true
 
   is-plain-obj@4.1.0:
     resolution: {integrity: sha512-+Pgi+vMuUNkJyExiMBt5IlFoMyKnr5zhJ4Uspz58WOhBF5QoIZkFyNHIbBAtHwzVAgk5RtndVNsDRN61/mmDqg==}
@@ -8361,10 +8716,6 @@ packages:
     resolution: {integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==}
     engines: {node: '>=18'}
 
-  mimic-fn@2.1.0:
-    resolution: {integrity: sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg==}
-    engines: {node: '>=6'}
-
   mimic-response@3.1.0:
     resolution: {integrity: sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ==}
     engines: {node: '>=10'}
@@ -8538,10 +8889,6 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
-  onetime@5.1.2:
-    resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
-    engines: {node: '>=6'}
-
   oniguruma-parser@0.12.2:
     resolution: {integrity: sha512-6HVa5oIrgMC6aA6WF6XyyqbhRPJrKR02L20+2+zpDtO5QAzGHAUGw5TKQvwi5vctNnRHkJYmjAhRVQF2EKdTQw==}
 
@@ -8633,10 +8980,6 @@ packages:
 
   partial-json@0.1.7:
     resolution: {integrity: sha512-Njv/59hHaokb/hRUjce3Hdv12wd60MtM9Z5Olmn+nehe0QDAsRtRbJPvJ0Z91TusF0SuZRIvnM+S4l6EIP8leA==}
-
-  patch-console@2.0.0:
-    resolution: {integrity: sha512-0YNdUceMdaQwoKce1gatDScmMo5pu/tfABfnzEqeG0gtTmd7mh/WcwgUjtAeOU7N8nFFlbQBnFK2gXW5fGvmMA==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   path-key@3.1.1:
     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
@@ -8863,12 +9206,6 @@ packages:
       react: ^0.14 || ^15.0.0 || ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^0.14 || ^15.0.0 || ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  react-reconciler@0.33.0:
-    resolution: {integrity: sha512-KetWRytFv1epdpJc3J4G75I4WrplZE5jOL7Yq0p34+OVOKF4Se7WrdIdVC45XsSSmUTlht2FM/fM1FZb1mfQeA==}
-    engines: {node: '>=0.10.0'}
-    peerDependencies:
-      react: ^19.2.0
-
   react-remove-scroll-bar@2.3.8:
     resolution: {integrity: sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==}
     engines: {node: '>=10'}
@@ -8989,10 +9326,6 @@ packages:
 
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
-
-  restore-cursor@4.0.0:
-    resolution: {integrity: sha512-I9fPXU9geO9bHOt9pHHOhOkYerIMsmVaWB0rA2AI9ERh/+x/i7MV5HKBNrg+ljO5eoPVgCcnFuRjJ9uH6I/3eg==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   retry@0.12.0:
     resolution: {integrity: sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow==}
@@ -9285,10 +9618,6 @@ packages:
   sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
 
-  slice-ansi@9.0.0:
-    resolution: {integrity: sha512-SO/3iYL5S3W57LLEniscOGPZgOqZUPCx6d3dB+52B80yJ0XstzsC/eV8gnA4tM3MHDrKz+OCFSLNjswdSC+/bA==}
-    engines: {node: '>=22'}
-
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -9324,10 +9653,6 @@ packages:
     engines: {node: '>=20.16.0'}
     hasBin: true
 
-  stack-utils@2.0.6:
-    resolution: {integrity: sha512-XlkWvfIm6RmsWtNJx+uqtKLS8eqFbxUg0ZzLXqY0caEy9l7hruX8IpiDnjsLavoBgqCCR71TqWO8MaXYheJ3RQ==}
-    engines: {node: '>=10'}
-
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
 
@@ -9342,10 +9667,6 @@ packages:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
     engines: {node: '>=8'}
 
-  string-width@8.2.2:
-    resolution: {integrity: sha512-GaPUh5gfdrYzqeVNZvUfT23vYYxXzKYidUcnMtJg/3rxRV63EFZy3k6xfKlmfeJD0176lnUV/Usr3XcwSvFzpg==}
-    engines: {node: '>=20'}
-
   string_decoder@1.3.0:
     resolution: {integrity: sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==}
 
@@ -9355,10 +9676,6 @@ packages:
   strip-ansi@6.0.1:
     resolution: {integrity: sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==}
     engines: {node: '>=8'}
-
-  strip-ansi@7.2.0:
-    resolution: {integrity: sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==}
-    engines: {node: '>=12'}
 
   strip-json-comments@2.0.1:
     resolution: {integrity: sha512-4gB8na07fecVVkOI6Rs4e7T6NOTki5EmL7TUduTs6bu3EdnSycntVJ4re8kgZA+wx9IueI2Y11bfbgwtzuE0KQ==}
@@ -9443,10 +9760,6 @@ packages:
 
   tegami@1.4.0:
     resolution: {integrity: sha512-QjoIJuAdsp+iAb1NT1CDn6zvxa7HqmEdJLN2BKW7LXZ8pbga/8tktcZr9bArw7KBdT5+Zj5Y9kreF3gjgrpfKQ==}
-
-  terminal-size@4.0.1:
-    resolution: {integrity: sha512-avMLDQpUI9I5XFrklECw1ZEUPJhqzcwSWsyyI8blhRLT+8N1jLJWLWWYQpB2q2xthq8xDvjZPISVh53T/+CLYQ==}
-    engines: {node: '>=18'}
 
   terser@5.50.0:
     resolution: {integrity: sha512-CN9BVxWhgS/hRxtUMjtC2uRWSTcSfQFHMDWma6sKKfIivCD91sM+FOPfvwoaRMqCSrUpe1nv3jDamd9eEQ4y+w==}
@@ -9958,14 +10271,6 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
-  widest-line@6.0.0:
-    resolution: {integrity: sha512-U89AsyEeAsyoF0zVJBkG9zBgekjgjK7yk9sje3F4IQpXBJ10TF6ByLlIfjMhcmHMJgHZI4KHt4rdNfktzxIAMA==}
-    engines: {node: '>=20'}
-
-  wrap-ansi@10.0.1:
-    resolution: {integrity: sha512-M0N4xzyzosiIok3svYlEo1sdLZts/8FPgYH/GPC3wvlmPoRvnoManGMrE54waYj3tISA8w6lsdesfVv67qSr8Q==}
-    engines: {node: '>=20'}
-
   wrap-ansi@7.0.0:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
     engines: {node: '>=10'}
@@ -10039,9 +10344,6 @@ packages:
   yocto-queue@1.2.2:
     resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
     engines: {node: '>=12.20'}
-
-  yoga-layout@3.2.1:
-    resolution: {integrity: sha512-0LPOt3AxKqMdFBZA3HBAt/t/8vIKq7VaQYbuA8WxCgung+p9TVyKRYdpvCb80HcdTN2NkbIKbhNwKUfm3tQywQ==}
 
   yuku-analyzer@0.8.7:
     resolution: {integrity: sha512-nyPXcwwRPEggJqxIP28GeLKPjk9oGUuBlS4I0KfFrezNe93Ie9WIlOYRI42bo+MmZoxH238XHoPy0IZdwZIBxA==}
@@ -10120,11 +10422,6 @@ snapshots:
       throttleit: 2.1.0
     transitivePeerDependencies:
       - zod
-
-  '@alcalzone/ansi-tokenize@0.3.0':
-    dependencies:
-      ansi-styles: 6.2.3
-      is-fullwidth-code-point: 5.1.0
 
   '@anthropic-ai/sdk@0.91.1(zod@4.5.4)':
     dependencies:
@@ -13539,21 +13836,13 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  ansi-escapes@7.3.0:
-    dependencies:
-      environment: 1.1.0
-
   ansi-regex@5.0.1: {}
-
-  ansi-regex@6.3.0: {}
 
   ansi-styles@4.3.0:
     dependencies:
       color-convert: 2.0.1
 
   ansi-styles@5.2.0: {}
-
-  ansi-styles@6.2.3: {}
 
   ansis@4.3.1: {}
 
@@ -13570,8 +13859,6 @@ snapshots:
   assertion-error@2.0.1: {}
 
   astring@1.9.0: {}
-
-  auto-bind@5.0.1: {}
 
   babel-dead-code-elimination@1.0.12(supports-color@8.1.1):
     dependencies:
@@ -13704,17 +13991,6 @@ snapshots:
     dependencies:
       clsx: 2.1.1
 
-  cli-boxes@4.0.1: {}
-
-  cli-cursor@4.0.0:
-    dependencies:
-      restore-cursor: 4.0.0
-
-  cli-truncate@6.1.1:
-    dependencies:
-      slice-ansi: 9.0.0
-      string-width: 8.2.2
-
   client-only@0.0.1:
     optional: true
 
@@ -13731,10 +14007,6 @@ snapshots:
   cnfast@0.0.8: {}
 
   cnfast@0.1.0: {}
-
-  code-excerpt@4.0.0:
-    dependencies:
-      convert-to-spaces: 2.0.1
 
   collapse-white-space@2.1.0: {}
 
@@ -13770,8 +14042,6 @@ snapshots:
   content-type@2.1.0: {}
 
   convert-source-map@2.0.0: {}
-
-  convert-to-spaces@2.0.1: {}
 
   cookie-es@3.1.1: {}
 
@@ -13956,8 +14226,6 @@ snapshots:
 
   entities@8.0.0: {}
 
-  environment@1.1.0: {}
-
   es-define-property@1.0.1: {}
 
   es-errors@1.3.0: {}
@@ -13967,8 +14235,6 @@ snapshots:
   es-object-atoms@1.1.2:
     dependencies:
       es-errors: 1.3.0
-
-  es-toolkit@1.52.0: {}
 
   esast-util-from-estree@2.0.0:
     dependencies:
@@ -14045,8 +14311,6 @@ snapshots:
   escalade@3.2.0: {}
 
   escape-html@1.0.3: {}
-
-  escape-string-regexp@2.0.0: {}
 
   escape-string-regexp@5.0.0: {}
 
@@ -14698,46 +14962,10 @@ snapshots:
 
   import-without-cache@0.4.0: {}
 
-  indent-string@5.0.0: {}
-
   inherits@2.0.4: {}
 
   ini@1.3.8:
     optional: true
-
-  ink@7.1.1(@types/react@19.2.18)(react@19.2.8):
-    dependencies:
-      '@alcalzone/ansi-tokenize': 0.3.0
-      ansi-escapes: 7.3.0
-      ansi-styles: 6.2.3
-      auto-bind: 5.0.1
-      chalk: 5.6.2
-      cli-boxes: 4.0.1
-      cli-cursor: 4.0.0
-      cli-truncate: 6.1.1
-      code-excerpt: 4.0.0
-      es-toolkit: 1.52.0
-      indent-string: 5.0.0
-      is-in-ci: 2.0.0
-      patch-console: 2.0.0
-      react: 19.2.8
-      react-reconciler: 0.33.0(react@19.2.8)
-      scheduler: 0.27.0
-      signal-exit: 3.0.7
-      slice-ansi: 9.0.0
-      stack-utils: 2.0.6
-      string-width: 8.2.2
-      terminal-size: 4.0.1
-      type-fest: 5.8.0
-      widest-line: 6.0.0
-      wrap-ansi: 10.0.1
-      ws: 8.21.3
-      yoga-layout: 3.2.1
-    optionalDependencies:
-      '@types/react': 19.2.18
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
 
   inline-style-parser@0.2.7: {}
 
@@ -14759,18 +14987,12 @@ snapshots:
 
   is-fullwidth-code-point@3.0.0: {}
 
-  is-fullwidth-code-point@5.1.0:
-    dependencies:
-      get-east-asian-width: 1.6.0
-
   is-glob@4.0.3:
     dependencies:
       is-extglob: 2.1.1
     optional: true
 
   is-hexadecimal@2.0.1: {}
-
-  is-in-ci@2.0.0: {}
 
   is-plain-obj@4.1.0: {}
 
@@ -15492,8 +15714,6 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  mimic-fn@2.1.0: {}
-
   mimic-response@3.1.0:
     optional: true
 
@@ -15620,10 +15840,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-
-  onetime@5.1.2:
-    dependencies:
-      mimic-fn: 2.1.0
 
   oniguruma-parser@0.12.2: {}
 
@@ -15781,8 +15997,6 @@ snapshots:
   parseurl@1.3.3: {}
 
   partial-json@0.1.7: {}
-
-  patch-console@2.0.0: {}
 
   path-key@3.1.1: {}
 
@@ -16029,11 +16243,6 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  react-reconciler@0.33.0(react@19.2.8):
-    dependencies:
-      react: 19.2.8
-      scheduler: 0.27.0
-
   react-remove-scroll-bar@2.3.8(@types/react@19.2.18)(react@19.2.8):
     dependencies:
       react: 19.2.8
@@ -16211,11 +16420,6 @@ snapshots:
   reselect@5.3.0: {}
 
   resolve-pkg-maps@1.0.0: {}
-
-  restore-cursor@4.0.0:
-    dependencies:
-      onetime: 5.1.2
-      signal-exit: 3.0.7
 
   retry@0.12.0: {}
 
@@ -16550,11 +16754,6 @@ snapshots:
 
   sisteransi@1.0.5: {}
 
-  slice-ansi@9.0.0:
-    dependencies:
-      ansi-styles: 6.2.3
-      is-fullwidth-code-point: 5.1.0
-
   source-map-js@1.2.1: {}
 
   source-map-support@0.5.21:
@@ -16580,10 +16779,6 @@ snapshots:
 
   srvx@0.12.7: {}
 
-  stack-utils@2.0.6:
-    dependencies:
-      escape-string-regexp: 2.0.0
-
   stackback@0.0.2: {}
 
   statuses@2.0.2: {}
@@ -16595,11 +16790,6 @@ snapshots:
       emoji-regex: 8.0.0
       is-fullwidth-code-point: 3.0.0
       strip-ansi: 6.0.1
-
-  string-width@8.2.2:
-    dependencies:
-      get-east-asian-width: 1.6.0
-      strip-ansi: 7.2.0
 
   string_decoder@1.3.0:
     dependencies:
@@ -16614,10 +16804,6 @@ snapshots:
   strip-ansi@6.0.1:
     dependencies:
       ansi-regex: 5.0.1
-
-  strip-ansi@7.2.0:
-    dependencies:
-      ansi-regex: 6.3.0
 
   strip-json-comments@2.0.1:
     optional: true
@@ -16711,8 +16897,6 @@ snapshots:
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
       yaml: 2.9.0
-
-  terminal-size@4.0.1: {}
 
   terser@5.50.0:
     dependencies:
@@ -17198,15 +17382,6 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
-  widest-line@6.0.0:
-    dependencies:
-      string-width: 8.2.2
-
-  wrap-ansi@10.0.1:
-    dependencies:
-      ansi-styles: 6.2.3
-      string-width: 8.2.2
-
   wrap-ansi@7.0.0:
     dependencies:
       ansi-styles: 4.3.0
@@ -17250,8 +17425,6 @@ snapshots:
       yargs-parser: 21.1.1
 
   yocto-queue@1.2.2: {}
-
-  yoga-layout@3.2.1: {}
 
   yuku-analyzer@0.8.7:
     dependencies:

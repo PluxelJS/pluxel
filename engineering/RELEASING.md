@@ -12,10 +12,10 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 - 全仓进入稳定线后新增的公开包仍从源码 `0.1.0` 开始，并以自己的 `major` intent 进入 `1.0.0`；它不会要求
   已稳定的其他公开包再次 major。治理只允许带有该 intent 的 pre-1.0 新包与既有 1.x 包暂时共存。
 - workspace-only、private、project 和 vendor package 在 `scripts/tegami.mts` 中显式忽略，不参与版本传播；
-- semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为 `^1.0.0`；
-- 第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的 `^1.0.0`；同时以
+- semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为对应 package version 的兼容范围；
+- 第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的对应 package version 兼容范围；同时以
   `workspace:*` devDependency 提供仓库内构建和测试实现；
-- Plugin package 对 runtime 和 required provider 一律使用 peer dependency，避免宿主图出现重复 Plugin identity；
+- Plugin package 对 Core、服务和 required provider 一律使用 peer dependency，避免宿主图出现重复 Plugin identity；
 - workspace 普通依赖变化只为公开 dependent 产生 patch bump，private dependent 不进入发布计划。
 
 ## 记录变化
@@ -25,8 +25,8 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 ```md
 ---
 packages:
-  '@pluxel/runtime': minor
-  '@pluxel/runtime-static': patch
+  '@pluxel/host': minor
+  '@pluxel/services': patch
 ---
 
 ## Describe the change
@@ -80,6 +80,15 @@ gh workflow run release.yml --ref main
 - `beforePublishAll` 分别从真实 create/CLI tarball 验证 example workspace 与独立插件模板，整批发布只执行一次；
 - `willPublish` 按 Tegami 当前即将发布的 package 调用 Turbo build，由 task graph 补齐其构建依赖；
 - 已成功发布的 package 在失败重试时不会重新发布，未完成 package 仍会在发布前单独重建。
+
+## Starter 发行版本
+
+`@pluxel/create` 在 tsdown 的 `build:done` hook 中，复制完成后仅重写 `dist/template/pnpm-workspace.yaml` 的
+`catalogs.pluxel`。每个第一方范围来自当前公开包 manifest 的 `^version`；不修改源码 manifest、publish lock 或外部 catalog。
+源码模板中的第一方范围是可读的基线，不能据此推断发行版本。Tegami Version Packages PR 更新 manifest 后，下一次构建自然生成对应范围。
+
+Create 的 Turbo build inputs 包含框架及插件的 package manifests，避免版本变更命中旧模板缓存。创建测试验证生成范围与当前公开包版本一致，
+并确认其它 catalog 保持原样；tarball smoke 继续验证真实安装、应用构建和启动，不能仅以本地 tarball overrides 掩盖版本范围问题。
 
 ## Trusted Publishing
 

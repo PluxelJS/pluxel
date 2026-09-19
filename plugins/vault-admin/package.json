@@ -1,0 +1,92 @@
+{
+	"name": "@pluxel/vault-admin",
+	"version": "1.0.0",
+	"description": "Optional Vault administration Workbench plugin",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/vault-admin"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./workbench": {
+			"@pluxel/hmr": "./src/workbench.ts",
+			"default": "./dist/workbench.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./workbench": "./dist/workbench.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "vitest run --config vitest.config.ts"
+	},
+	"dependencies": {
+		"capnweb": "catalog:prod"
+	},
+	"devDependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/management": "workspace:*",
+		"@pluxel/preset": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/services": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
+		"@tabler/icons-react": "catalog:icons",
+		"@types/node": "catalog:types",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/management": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
+		"@tabler/icons-react": "catalog:icons",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
+	},
+	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@tabler/icons-react": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

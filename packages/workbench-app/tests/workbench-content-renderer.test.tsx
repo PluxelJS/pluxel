@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { WorkbenchContentPlan } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchContentPlan } from '@pluxel/workbench/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { WorkbenchContentRenderer } from '../src/app/workbench/WorkbenchContentRenderer'

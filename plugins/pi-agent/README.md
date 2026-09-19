@@ -25,7 +25,7 @@ const result = await session.prompt('Complete the current goal')
 await session.dispose()
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续更新使用
+这里的 `host` 是 `createServiceTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续更新使用
 `host.config.patch()`。production deployment 通过自己的 ConfigService 管理相同 records。
 
 Pi built-in filesystem/shell tools and default extension, skill, prompt-template and context discovery are disabled。每个

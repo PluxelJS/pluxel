@@ -18,8 +18,4 @@ export const ALLOWED_TOP_LEVEL_CLASS_WRAPPERS = new Set([
 	'TSTypeAssertion',
 ])
 
-export const ALLOWED_GET_LOGGER_PATHS = [
-	'/packages/core/src/logger/',
-	'/packages/runtime/src/logger/',
-	'/packages/runtime-dynamic/src/hmr/hmr/internals.ts',
-]
+export const ALLOWED_GET_LOGGER_PATHS = ['/packages/core/src/logger/', '/packages/logging/src/']

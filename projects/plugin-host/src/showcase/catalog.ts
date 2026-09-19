@@ -1,3 +1,4 @@
+import { VaultAdminPlugin } from '@pluxel/vault-admin'
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { AuthPlugin } from '@pluxel/auth'
 import { CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
@@ -30,10 +31,12 @@ import {
 
 export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
-export const officialStaticPlugins = Object.freeze([
+export const officialPlugins = Object.freeze([
 	AgentToolsPlugin,
 	PiAgentPlugin,
+	PackageManagerPlugin,
 	AuthPlugin,
+	VaultAdminPlugin,
 	MemoryCacheBackendPlugin,
 	CachePlugin,
 	OtelPlugin,
@@ -48,11 +51,6 @@ export const officialStaticPlugins = Object.freeze([
 	CanvasPlugin,
 	EChartsPlugin,
 	TakumiPlugin,
-] as const)
-
-export const officialDynamicPlugins = Object.freeze([
-	...officialStaticPlugins,
-	PackageManagerPlugin,
 ] as const)
 
 export const showcasePlugins = Object.freeze([
@@ -70,8 +68,8 @@ export const focusedDemoPlugins = Object.freeze([
 	PluginOptionalIntegrationConsumer,
 ] as const)
 
-export const staticHostPlugins = Object.freeze([
-	...officialStaticPlugins,
+export const hostPlugins = Object.freeze([
+	...officialPlugins,
 	...showcasePlugins,
 	...focusedDemoPlugins,
 ] as const)

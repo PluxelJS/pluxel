@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.workspace.json",
+	"include": ["src"],
+	"compilerOptions": {
+		"noEmit": true,
+		"lib": ["ESNext", "DOM"],
+		"types": ["node"]
+	}
+}

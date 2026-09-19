@@ -1,5 +1,5 @@
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { PiAgentConfig } from './config.ts'
 import { PiAgentController } from './controller.ts'
 import { DefaultPiEngine } from './engine.ts'

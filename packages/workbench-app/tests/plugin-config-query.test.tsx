@@ -2,7 +2,7 @@
 
 import type { PluginNodeAddress } from '@pluxel/core'
 import { QueryClientProvider } from '@tanstack/react-query'
-import type { RuntimeManagementClient } from '@pluxel/runtime/web'
+import type { RuntimeManagementClient } from '@pluxel/management/client'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'

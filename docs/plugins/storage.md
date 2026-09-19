@@ -11,7 +11,7 @@ description: 通过统一的 s3mini API 在本地存储、远端 S3 和平台实
 
 ```ts twoslash
 import { S3 } from '@pluxel/storage'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Assets' })
 export class AssetsPlugin extends BasePlugin {

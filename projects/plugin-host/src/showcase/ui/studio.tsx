@@ -16,7 +16,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import type { WorkbenchHostFacade } from '@pluxel/runtime/workbench/react'
+import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { useMemo, useState } from 'react'
 import type { ShowcaseArtifact } from '../ReportStudio.contracts'
 import {

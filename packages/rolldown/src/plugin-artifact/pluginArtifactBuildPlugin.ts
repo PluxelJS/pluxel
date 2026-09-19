@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import {
 	createWorkbenchFederationDeploymentInventory,
@@ -30,12 +30,16 @@ import {
 } from '../rolldown/plugins/pluginUtils.ts'
 import { normalizeViteId } from '../rolldown/plugins/viteNormalizeId.ts'
 import { resolveNodeModuleArtifactKey, resolveNodeModuleBuildSignature } from './declaration.ts'
+import type { NodeModuleNativeResidual } from './node-module.ts'
 
-const NODE_MODULE_BUILD_CACHE_VERSION = 1
+const NODE_MODULE_BUILD_CACHE_VERSION = 2
 const PRODUCTION_ARTIFACT_CACHE_KEEP = 3
 const CODE_HINT = /\b(?:defineNodeModule\s*\(|defineWorkerTask\b)/
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
-const NODE_MODULE_IMPORT_SOURCE = '@pluxel/runtime'
+const NODE_MODULE_IMPORTS = new Map([
+	['@pluxel/services/node', 'defineNodeModule'],
+	['@pluxel/services/workers', 'defineWorkerTask'],
+])
 const NODE_ARTIFACT_RESOLVE_CONDITIONS = [
 	'@pluxel/hmr',
 	'development',
@@ -45,7 +49,11 @@ const NODE_ARTIFACT_RESOLVE_CONDITIONS = [
 	'module',
 	'default',
 ]
-const productionBuilds = new Map<string, Promise<void>>()
+type ProductionNodeBuild = {
+	task: Promise<readonly NodeModuleNativeResidual[]>
+	consumers: number
+}
+const productionBuilds = new Map<string, ProductionNodeBuild>()
 
 type NodeLike = {
 	type?: unknown
@@ -331,66 +339,71 @@ async function buildProductionNodeModule(
 		throw new Error(`[node-module] entry file not found: ${declaration.entryPath}`)
 	}
 	const target = options.node ?? {}
-	const sourceHash = await hashNodeModuleGraph(
-		root,
-		declaration,
-		resolveNodeModuleBuildSignature({
-			minify: target.minify,
-		}),
-	)
-	const cacheRoot = resolve(root, '.pluxel/plugin-artifacts', 'node', declaration.artifactKey)
-	const cachedFile = join(cacheRoot, `${sourceHash}.mjs`)
 	const outFile = resolve(
 		root,
 		options.buildDir ?? 'dist',
 		'artifacts/node',
 		`${declaration.artifactKey}.mjs`,
 	)
-	const key = `${cachedFile}\u0000${sourceHash}`
-	const existing = productionBuilds.get(key)
-	if (existing) return existing
-
-	const task = (async () => {
-		const buildTools = await import('./node-module.ts')
-		const nativeResiduals = await buildTools.resolveNodeModuleNativeResiduals(
-			declaration.entryPath,
-			root,
-		)
-		for (const residual of nativeResiduals) {
+	// Native bridges encode a package-owner path relative to the published artifact.
+	// Equal directory layouts can share bytes; different depths require a different build.
+	const buildSignature = `${resolveNodeModuleBuildSignature({ minify: target.minify })}\0${relative(dirname(outFile), root)}`
+	const sourceHash = await hashNodeModuleGraph(root, declaration, buildSignature)
+	const cacheRoot = resolve(root, '.pluxel/plugin-artifacts', 'node', declaration.artifactKey)
+	const cachedFile = join(cacheRoot, `${sourceHash}.mjs`)
+	let build = productionBuilds.get(cachedFile)
+	if (!build) {
+		const task = (async () => {
+			const buildTools = await import('./node-module.ts')
+			const nativeResiduals = await buildTools.resolveNodeModuleNativeResiduals(
+				declaration.entryPath,
+				root,
+			)
+			let reusable = existsSync(cachedFile)
+			if (reusable) {
+				try {
+					await buildTools.validateNodeModuleArtifact(cachedFile, {
+						root,
+						entryPath: declaration.entryPath,
+					})
+				} catch {
+					reusable = false
+					await rm(cachedFile, { force: true })
+				}
+			}
+			if (!reusable) {
+				options.log?.(`[node-module] build ${declaration.artifactKey} (${sourceHash})`)
+				const buildFile = `${outFile}.build-${randomUUID()}.mjs`
+				try {
+					await buildTools.buildNodeModule({
+						root,
+						entryPath: declaration.entryPath,
+						outFile: buildFile,
+						minify: target.minify ?? true,
+					})
+					await publishCachedFile(buildFile, cachedFile)
+				} finally {
+					await rm(buildFile, { force: true })
+				}
+			} else {
+				options.log?.(`[node-module] reuse ${declaration.artifactKey} (${sourceHash})`)
+			}
+			return nativeResiduals
+		})()
+		build = { task, consumers: 0 }
+		productionBuilds.set(cachedFile, build)
+	}
+	build.consumers++
+	try {
+		// Only compilation is shared. Every consumer owns its output and deployment facts.
+		for (const residual of await build.task) {
 			options.node?.onNativeResidual?.(residual.name, residual.entryPath)
 		}
-		let reusable = existsSync(cachedFile)
-		if (reusable) {
-			try {
-				await buildTools.validateNodeModuleArtifact(cachedFile, {
-					root,
-					entryPath: declaration.entryPath,
-				})
-			} catch {
-				reusable = false
-				await rm(cachedFile, { force: true })
-			}
-		}
-		if (!reusable) {
-			options.log?.(`[node-module] build ${declaration.artifactKey} (${sourceHash})`)
-			await buildTools.buildNodeModule({
-				root,
-				entryPath: declaration.entryPath,
-				outFile: cachedFile,
-				minify: target.minify ?? true,
-			})
-		} else {
-			options.log?.(`[node-module] reuse ${declaration.artifactKey} (${sourceHash})`)
-		}
 		await publishCachedFile(cachedFile, outFile)
-		await cleanupNodeModuleCache(cacheRoot, PRODUCTION_ARTIFACT_CACHE_KEEP, sourceHash)
-	})()
-	productionBuilds.set(key, task)
-	try {
-		await task
 	} finally {
-		if (productionBuilds.get(key) === task) productionBuilds.delete(key)
+		if (--build.consumers === 0) productionBuilds.delete(cachedFile)
 	}
+	await cleanupNodeModuleCache(cacheRoot, PRODUCTION_ARTIFACT_CACHE_KEEP, sourceHash)
 }
 
 async function publishCachedFile(source: string, target: string): Promise<void> {
@@ -429,7 +442,9 @@ async function cleanupNodeModuleCache(
 	}
 	builds.sort((a, b) => b.mtime - a.mtime)
 	for (const stale of builds.slice(Math.max(0, keep - 1))) {
-		await rm(join(cacheRoot, stale.name), { force: true })
+		const file = join(cacheRoot, stale.name)
+		// Recheck after stat awaits; unlink without yielding so a new consumer cannot race deletion.
+		if (!productionBuilds.has(file)) rmSync(file, { force: true })
 	}
 }
 
@@ -545,7 +560,7 @@ function collectNodeModuleImports(ast: Program): Set<string> {
 	for (const statement of ast.body) {
 		if (
 			statement.type !== 'ImportDeclaration' ||
-			statement.source.value !== NODE_MODULE_IMPORT_SOURCE
+			!NODE_MODULE_IMPORTS.has(statement.source.value)
 		) {
 			continue
 		}
@@ -555,7 +570,7 @@ function collectNodeModuleImports(ast: Program): Set<string> {
 				specifier.imported.type === 'Identifier'
 					? specifier.imported.name
 					: String((specifier.imported as { value?: unknown }).value ?? '')
-			if (imported === 'defineNodeModule' || imported === 'defineWorkerTask') {
+			if (imported === NODE_MODULE_IMPORTS.get(statement.source.value)) {
 				names.add(specifier.local.name)
 			}
 		}

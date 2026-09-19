@@ -38,20 +38,26 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@pnpm/napi": "catalog:prod"
+		"@pnpm/napi": "catalog:prod",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-dynamic": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"tsdown": "catalog:build",
@@ -63,9 +69,12 @@
 	"peerDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/commands": "workspace:^",
-		"@pluxel/runtime": "workspace:^",
-		"@pluxel/runtime-dynamic": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host-dynamic": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
 		"@tabler/icons-react": "catalog:icons",
+		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend"
 	},

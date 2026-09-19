@@ -1,4 +1,4 @@
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 
 export type ShowcaseRendererKind = 'echarts' | 'takumi' | 'canvas'
 

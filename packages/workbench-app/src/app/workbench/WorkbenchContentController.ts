@@ -3,8 +3,8 @@ import type {
 	WorkbenchContentDataOutcome,
 	WorkbenchContentRunOutcome,
 	WorkbenchOpenedContentHandle,
-} from '@pluxel/runtime/workbench/client'
-import type { RuntimeJsonObject } from '@pluxel/runtime/web'
+} from '@pluxel/workbench/client'
+import type { RuntimeJsonObject } from '@pluxel/management/client'
 
 export type WorkbenchContentDataState = Readonly<{
 	status: 'loading' | 'ready' | 'error'

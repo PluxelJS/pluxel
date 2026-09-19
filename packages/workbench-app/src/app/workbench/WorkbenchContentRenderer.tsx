@@ -4,7 +4,7 @@ import type {
 	WorkbenchContentInline,
 	WorkbenchContentTableAlignment,
 	WorkbenchContentPlan,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import { createElement, useId, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { WorkbenchContentDataState } from './WorkbenchContentController'
 import { WorkbenchContentSlot, type WorkbenchContentInteraction } from './WorkbenchContentSlots'

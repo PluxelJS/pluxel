@@ -17,7 +17,8 @@ pnpm catalog:add -- @pluxel/wretch
 
 ```ts twoslash
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 type Customer = { id: string; name: string }
 
@@ -63,7 +64,7 @@ await host.start(CustomerPlugin, {
 })
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续 config 更新使用
+这里的 `host` 是 `createServiceTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续 config 更新使用
 `host.config.patch()`。production deployment 通过自己的 ConfigService 管理相同 records。
 
 `client` 本身就是 Wretch。Wretch 的 immutable 语义保证不同 consumer 通过 `.url()`、`.options()`、`.headers()`、`.auth()`、`.addon()` 或 `.middlewares()` 派生 client 时不会互相污染。
@@ -148,7 +149,7 @@ managed settings 使用 runtime persistence，而不是 secret store。不要把
 placement：
 
 ```ts no-twoslash
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { WretchWorkbench } from '@pluxel/wretch/workbench'
 
 export const CustomerWorkbench = workbench.define({

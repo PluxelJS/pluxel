@@ -9,7 +9,9 @@ Workbench 会自动显示配置表单；无需为普通配置另外编写 React 
 ## 先给一个字段加标题
 
 ```ts twoslash
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 @Plugin()
 export class ServicePlugin extends BasePlugin {
@@ -33,7 +35,9 @@ export class ServicePlugin extends BasePlugin {
 <ConfigurationExampleLayout>
 
 ```ts twoslash
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 function startServer(_port: number, _options: { enabled: boolean }) {}
 

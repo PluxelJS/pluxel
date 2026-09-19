@@ -1,4 +1,4 @@
-import type { VaultKvHandle } from '@pluxel/runtime/services/vault'
+import type { VaultKvHandle } from '@pluxel/services/vault'
 import { normalizeUsername, parsePasswordRecord, type PasswordRecord } from './password.ts'
 import { parseTotpRecord, type TotpRecord } from './totp.ts'
 

@@ -1,4 +1,5 @@
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
 

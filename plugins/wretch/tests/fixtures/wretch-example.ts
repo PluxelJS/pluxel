@@ -1,5 +1,8 @@
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
+import { Http } from '@pluxel/services/http'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
+import { workbench } from '@pluxel/workbench'
 import type { Wretch } from 'wretch'
 import { retry } from 'wretch/middlewares'
 import { WretchPlugin } from '../../src/index.ts'
@@ -61,7 +64,7 @@ export class WretchExamplePlugin extends BasePlugin {
 		}
 		this.api = api
 
-		this.ctx.elysia.get('/wretch-example/inspect', () => this.inspect())
+		this.ctx.require(Http).get('/wretch-example/inspect', () => this.inspect())
 		this.ctx.workbench?.publish(WretchExampleWorkbench, {
 			http: { provider: this.http },
 		})

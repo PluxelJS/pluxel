@@ -4,12 +4,12 @@ description: 用可选官方 Plugin 把统一 command catalog 安全投影给外
 ---
 
 `@pluxel/agent-tools` 用于需要把一部分 Pluxel commands 暴露给外部 Agent 的应用。它是普通、可停用的
-官方 Plugin，不是 Runtime capability：只有把它加入 host catalog 并启动后，才会存在 Toolset、assignment 和受限 catalog。
+官方 Plugin，不是宿主服务：只有把它加入 host catalog 并启动后，才会存在 Toolset、assignment 和受限 catalog。
 
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
 
 ```sh
-pnpm catalog:add -- @pluxel/agent-tools @pluxel/commands @pluxel/runtime
+pnpm catalog:add -- @pluxel/agent-tools @pluxel/commands @pluxel/core
 ```
 
 ## 配置 Toolset 与 Agent
@@ -20,7 +20,7 @@ Toolset 保存稳定 command name，Agent 得到所分配 Toolset 的并集。�
 
 ```ts no-twoslash
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { pluginNodeAddressOf } from '@pluxel/core'
 
 const agentToolsRecord = {
 	owner: pluginNodeAddressOf(AgentToolsPlugin),
@@ -34,7 +34,7 @@ const agentToolsRecord = {
 }
 
 // 合入 configure() 的其他配置和已有记录：
-// configService: { snapshot: { plugins: [agentToolsRecord] } }
+// configRecords: { initial: [agentToolsRecord] }
 ```
 
 `notes.read` 与 `notes.create` 是你的业务命令，必须先由对应插件注册，定义方式见 [Commands](../runtime/commands.md)。配置由 ConfigService 校验、持久化与更新，也可以在 Workbench 的通用配置页编辑。
@@ -50,7 +50,7 @@ MCP、OpenAI、Claude 或其他 provider adapter 应建模为普通 Plugin，并
 
 ```ts no-twoslash
 import { AgentToolsPlugin, type AgentCommandCatalog } from '@pluxel/agent-tools'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class ExampleAgentPlugin extends BasePlugin {
@@ -82,7 +82,10 @@ export class ExampleAgentPlugin extends BasePlugin {
 command owner admission 的调用不会被配置更新追溯取消。
 
 adapter 自己负责 provider schema 与 annotations、tool name 映射、principal、授权、确认、rate limit、审计和输出呈现。
-这些概念不会进入 `@pluxel/commands` 或 Runtime。
+这些概念不会进入 `@pluxel/commands` 或 Host。
 
 provider 需要构建 tool setup 选择器时，可以读取 `agentTools.snapshot()`。返回值是 detached 的诊断投影，包含
 policy/catalog revision、Toolsets、assignments 和命令摘要；选择之后仍应创建 `catalog(agentId)`，并让发现与执行都走该 catalog。
+
+Workbench 的状态页面使用独立显示投影：缺省标题与说明显示为空值，command behavior 展开为固定字段。
+业务 snapshot 与 Agent command catalog 保留原有可选字段和 query/mutation 契约。

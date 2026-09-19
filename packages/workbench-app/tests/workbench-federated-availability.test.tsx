@@ -3,11 +3,11 @@
 import { MantineProvider } from '@mantine/core'
 import { parsePluginDefinitionAddress, parsePluginNodeAddress } from '@pluxel/core'
 import { parseWorkbenchDeclarationIdentity } from '@pluxel/core/federation'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
+import type { RpcStub } from 'capnweb'
 import type {
 	WorkbenchSessionApi,
 	WorkbenchUnavailableFederatedLayoutEntry,
-} from '@pluxel/runtime/workbench/client'
+} from '@pluxel/workbench/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -21,8 +21,8 @@ const federationMocks = vi.hoisted(() => ({
 	openFederatedWorkbenchView: vi.fn(),
 }))
 
-vi.mock('@pluxel/runtime/workbench/federation', async (importOriginal) => ({
-	...(await importOriginal<typeof import('@pluxel/runtime/workbench/federation')>()),
+vi.mock('@pluxel/workbench/federation', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@pluxel/workbench/federation')>()),
 	openFederatedWorkbenchView: federationMocks.openFederatedWorkbenchView,
 }))
 

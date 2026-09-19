@@ -49,11 +49,11 @@ function projectWithRolldown(params: {
 describe('official capability loader', () => {
 	it('imports a capability from a project owner without a package root export', async () => {
 		const root = await createProject(projectWithRolldown({}))
-		const loaded = await loadOfficialCapability<{ marker: string }>('rolldown-build', {
+		const loaded = await loadOfficialCapability('rolldown-build', {
 			cwd: root,
 		})
 
-		expect(loaded.marker).toBe('project-owner')
+		expect(loaded).toMatchObject({ marker: 'project-owner' })
 	})
 
 	it('reports missing owners before resolving subpaths', async () => {
@@ -75,11 +75,11 @@ describe('official capability loader', () => {
 
 	it('accepts workspace protocol peers while running the CLI from source', async () => {
 		const root = await createProject(projectWithRolldown({ version: '9.0.0' }))
-		const loaded = await loadOfficialCapability<{ marker: string }>('rolldown-build', {
+		const loaded = await loadOfficialCapability('rolldown-build', {
 			cwd: root,
 		})
 
-		expect(loaded.marker).toBe('project-owner')
+		expect(loaded).toMatchObject({ marker: 'project-owner' })
 	})
 
 	it('separates public subpath errors from owner import failures', async () => {

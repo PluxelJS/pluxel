@@ -5,4 +5,7 @@ export * from './plugin-metadata'
 export * from './tsdown-runner'
 export * from './types'
 export * from './rules'
-export * from './static-application'
+export type {
+	StaticApplicationManagedDatabaseDriver,
+	StaticApplicationResidualDependencies,
+} from './static-application'

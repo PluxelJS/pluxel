@@ -76,8 +76,6 @@ export type PluginSemanticsPluginOptions = {
 	sourceSpaces?: readonly Readonly<{ name: string; root: string }>[]
 	/** Enables package-root provenance and package entry/export invariants. */
 	packageJsonPath?: string
-	/** Generated helper import. Must name a dedicated toolchain subpath. */
-	helperImportSource?: '@pluxel/runtime/toolchain' | '@pluxel/core/toolchain'
 }
 
 export type PluginSemanticsCollector = {
@@ -93,6 +91,8 @@ export type PluginSemanticsCollector = {
 		definition: PluginDefinitionAddress,
 		activeModules?: Iterable<string>,
 	): PluginDefinitionArtifactKind
+	/** Exact prelowered definition keys in the selected evaluated module closure. Toolchain-only artifact input. */
+	builtDefinitionModules(activeModules: Iterable<string>): ReadonlyMap<string, ReadonlySet<string>>
 	/** Begins one non-nested transaction over classification and Workbench semantic facts. */
 	beginArtifactGeneration(): PluginArtifactGeneration
 	/** Final canonical Workbench producer plans for this compilation. */
@@ -184,14 +184,8 @@ type DependencyInventoryNode = Readonly<{
 	readonly parts: readonly string[]
 }>
 
-const AUTHORING_PACKAGES = new Set([
-	'@pluxel/core',
-	'@pluxel/core/test',
-	'@pluxel/runtime',
-	'@pluxel/runtime/test',
-	'@pluxel/test',
-])
-const TOOLCHAIN_PACKAGES = new Set(['@pluxel/core/toolchain', '@pluxel/runtime/toolchain'])
+const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/test', '@pluxel/test'])
+const TOOLCHAIN_PACKAGES = new Set(['@pluxel/core/toolchain'])
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'] as const
 
 /**
@@ -211,15 +205,9 @@ export function createPluginSemanticsPlugin(
 		'**/*.mjs',
 		'**/*.cjs',
 	])
-	const exclude = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.*'])
+	const exclude = normalizePatterns(options.exclude, ['**/*.d.*'])
 	const sourceRoot = resolve(options.root ?? process.cwd())
 	const workbenchLowering = createWorkbenchSemanticLowering(sourceRoot)
-	const helperImportSource = options.helperImportSource ?? '@pluxel/runtime/toolchain'
-	if (!helperImportSource.endsWith('/toolchain')) {
-		throw new TypeError(
-			'[pluxel:plugin-semantics] helperImportSource must name a /toolchain subpath',
-		)
-	}
 	const definitionsByModule = new Map<string, ReadonlyMap<string, PluginSemanticDefinition>>()
 	const builtDefinitionsByModule = new Map<string, ReadonlySet<string>>()
 	const artifactModuleVersions = new Map<string, number>()
@@ -266,8 +254,12 @@ export function createPluginSemanticsPlugin(
 			: { definitionsByModule, builtDefinitionsByModule }
 	}
 
-	const currentWorkbench = (): WorkbenchSemanticLowering =>
-		artifactGenerationContext.getStore()?.workbench.lowering ?? workbenchLowering
+	const currentWorkbench = (): WorkbenchSemanticLowering => {
+		const generation = artifactGenerationContext.getStore()
+		return generation === activeArtifactGeneration && generation?.status === 'active'
+			? generation.workbench.lowering
+			: workbenchLowering
+	}
 
 	const clearModule = (
 		id: string,
@@ -323,7 +315,9 @@ export function createPluginSemanticsPlugin(
 				// Reserve before any asynchronous provenance/resolution work, not just collect().
 				const update = currentWorkbench().beginUpdate(id)
 				const mightContainBuiltFacts = code.includes('__setPluginDefinition')
-				const mightContainSourceFacts = semanticHint(code)
+				// Installed JavaScript may carry our compiled ABI. Observe those exact facts without
+				// treating ordinary dependency source as a Plugin authoring compilation.
+				const mightContainSourceFacts = !/(?:^|\/)node_modules\//.test(id) && semanticHint(code)
 				if (!mightContainBuiltFacts && !mightContainSourceFacts) {
 					clearModule(id, update)
 					return null
@@ -379,7 +373,6 @@ export function createPluginSemanticsPlugin(
 					addresses,
 					packagePlan: activePackagePlan,
 					strictPackagePlan: Boolean(packagePlan),
-					helperImportSource,
 					error: (message) => this.error(message),
 					resolve: async (source) => {
 						const resolved = await this.resolve(source, id, { skipSelf: true })
@@ -447,6 +440,14 @@ export function createPluginSemanticsPlugin(
 				facts.builtDefinitionsByModule,
 				definition,
 				activeModules,
+			)
+		},
+		builtDefinitionModules: (activeModules) => {
+			const active = new Set([...activeModules].map(semanticModuleKey))
+			return new Map(
+				[...currentArtifactFacts().builtDefinitionsByModule]
+					.filter(([moduleId]) => active.has(moduleId))
+					.map(([moduleId, definitions]) => [moduleId, new Set(definitions)]),
 			)
 		},
 		beginArtifactGeneration: () => {
@@ -613,7 +614,7 @@ function extractPreloweredDefinitionKeys(ast: Program): ReadonlySet<string> {
 		) {
 			return
 		}
-		const payload = readStaticJsonValue(args[1])
+		const payload = readStaticJsonValue(args[1], new Set(['abiVersion', 'kind', 'definition']))
 		if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
 		const record = payload as Readonly<Record<string, unknown>>
 		if (
@@ -633,8 +634,17 @@ function extractPreloweredDefinitionKeys(ast: Program): ReadonlySet<string> {
 
 const UNREADABLE_STATIC_VALUE = Symbol('unreadable-static-value')
 
-function readStaticJsonValue(node: AstNode | undefined): unknown | typeof UNREADABLE_STATIC_VALUE {
+function readStaticJsonValue(
+	node: AstNode | undefined,
+	selectedKeys?: ReadonlySet<string>,
+): unknown | typeof UNREADABLE_STATIC_VALUE {
 	if (!node) return UNREADABLE_STATIC_VALUE
+	if (node.type === 'TemplateLiteral' && arrayOf(node.expressions).length === 0) {
+		const quasis = arrayOf(node.quasis)
+		if (quasis.length !== 1) return UNREADABLE_STATIC_VALUE
+		const value = (quasis[0] as AstNode).value as { cooked?: unknown } | undefined
+		return typeof value?.cooked === 'string' ? value.cooked : UNREADABLE_STATIC_VALUE
+	}
 	if (node.type === 'Literal') {
 		return node.value === null ||
 			typeof node.value === 'string' ||
@@ -658,6 +668,12 @@ function readStaticJsonValue(node: AstNode | undefined): unknown | typeof UNREAD
 	const record: Record<string, unknown> = Object.create(null) as Record<string, unknown>
 	for (const rawProperty of arrayOf(node.properties)) {
 		const property = rawProperty as AstNode
+		// Computed keys and spreads could overwrite the evidence fields.
+		if (property.type !== 'Property' || property.computed === true) {
+			return UNREADABLE_STATIC_VALUE
+		}
+		const key = propertyName(property.key)
+		if (selectedKeys && key && !selectedKeys.has(key)) continue
 		if (
 			property.type !== 'Property' ||
 			property.computed === true ||
@@ -668,7 +684,6 @@ function readStaticJsonValue(node: AstNode | undefined): unknown | typeof UNREAD
 		) {
 			return UNREADABLE_STATIC_VALUE
 		}
-		const key = propertyName(property.key)
 		if (!key || key === '__proto__' || Object.hasOwn(record, key)) {
 			return UNREADABLE_STATIC_VALUE
 		}
@@ -750,7 +765,6 @@ async function lowerModule(options: {
 	addresses: ReadonlyMap<string, PluginDefinitionAddress>
 	packagePlan?: PackagePlan
 	strictPackagePlan: boolean
-	helperImportSource: string
 	error(message: string): never
 	resolve(source: string): Promise<string | undefined>
 }): Promise<{
@@ -871,7 +885,7 @@ async function lowerModule(options: {
 		].filter((value): value is string => Boolean(value))
 		const lines = [
 			'// [pluxel-plugin-semantics] Injected facts',
-			`import { ${imports.join(', ')} } from ${JSON.stringify(options.helperImportSource)};`,
+			`import { ${imports.join(', ')} } from ${JSON.stringify('@pluxel/core/toolchain')};`,
 		]
 		for (const definition of definitions) {
 			lines.push(
@@ -944,6 +958,22 @@ async function resolvePartTargets(
 	options: Parameters<typeof lowerModule>[0],
 ): Promise<readonly string[]> {
 	const targets: string[] = []
+	const modules = new Map<string, Promise<ModuleAnalysis>>()
+	const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
+		const moduleKey = resolve(stripQuery(moduleId))
+		let pending = modules.get(moduleKey)
+		if (!pending) {
+			pending = readFile(moduleKey, 'utf8').then((source) => {
+				const ast = parseStandaloneWithLang(source, moduleKey)
+				if (!ast) {
+					options.error(`[pluxel:plugin-part] ${id} could not inspect ${moduleKey}`)
+				}
+				return analyzeModule(ast)
+			})
+			modules.set(moduleKey, pending)
+		}
+		return pending
+	}
 	for (const occurrence of occurrences) {
 		if (analysis.classes.has(occurrence.partName)) {
 			targets.push(originKey(id, occurrence.partName))
@@ -958,22 +988,6 @@ async function resolvePartTargets(
 			)
 		}
 		const clean = resolve(stripQuery(resolved))
-		const modules = new Map<string, Promise<ModuleAnalysis>>()
-		const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
-			const moduleKey = resolve(stripQuery(moduleId))
-			let pending = modules.get(moduleKey)
-			if (!pending) {
-				pending = readFile(moduleKey, 'utf8').then((source) => {
-					const ast = parseStandaloneWithLang(source, moduleKey)
-					if (!ast) {
-						options.error(`[pluxel:plugin-part] ${id} could not inspect ${moduleKey}`)
-					}
-					return analyzeModule(ast)
-				})
-				modules.set(moduleKey, pending)
-			}
-			return pending
-		}
 		const origin = await resolveExportOrigin(
 			clean,
 			binding.imported,
@@ -1525,7 +1539,7 @@ async function inferPackagePlan(
 				})
 			}
 			if (!hasPluginSourceRoot(pkg.exports)) return undefined
-			return createPackagePlan(packageJsonPath, error)
+			return createPackagePlan(packageJsonPath, error, 'infer')
 		})
 		inferredPackagePlans.set(packageJsonPath, plan)
 	}
@@ -1549,15 +1563,14 @@ async function findNearestPackageJson(startDirectory: string): Promise<string | 
 
 function hasPluginSourceRoot(value: unknown): boolean {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-	const root = (value as Record<string, unknown>)['.']
-	if (!root || typeof root !== 'object' || Array.isArray(root)) return false
-	return readSourceCondition((root as Record<string, unknown>)['@pluxel/hmr']) !== undefined
+	return readSourceCondition((value as Record<string, unknown>)['.']) !== undefined
 }
 
 async function createPackagePlan(
 	packageJsonPath: string,
 	error: (message: string) => never,
-): Promise<PackagePlan> {
+	mode: 'explicit' | 'infer' = 'explicit',
+): Promise<PackagePlan | undefined> {
 	const resolvedPackageJson = resolve(packageJsonPath)
 	const packageRoot = dirname(resolvedPackageJson)
 	const raw = await readFile(resolvedPackageJson, 'utf8').catch((cause) => {
@@ -1571,7 +1584,7 @@ async function createPackagePlan(
 	const rootEntry = publicEntries.get('.')
 	if (!rootEntry) {
 		error(
-			`[pluxel:plugin-package] ${packageName} root export must expose a source entry via @pluxel/hmr or @pluxel/source`,
+			`[pluxel:plugin-package] ${packageName} root export must expose executable source via @pluxel/hmr, @pluxel/source, development, or a TypeScript entry`,
 		)
 	}
 	const cache = new Map<string, Promise<ModuleAnalysis>>()
@@ -1614,6 +1627,7 @@ async function createPackagePlan(
 	}
 
 	const rootExports = await enumerate(rootEntry)
+	const concreteCount = [...rootExports.values()].filter((origin) => origin.raw.marked).length
 	const rootModule = await readModule(rootEntry)
 	for (const [exportName, target] of rootModule.exports) {
 		const binding = target.kind === 'local' ? rootModule.imports.get(target.local) : undefined
@@ -1624,24 +1638,41 @@ async function createPackagePlan(
 			)
 		}
 	}
-	const addresses = new Map<string, PluginDefinitionAddress>()
-	const namesByOrigin = new Map<string, string[]>()
-	let concreteCount = 0
 	for (const [exportName, origin] of rootExports) {
-		if (!origin.raw.marked && !origin.raw.abstract) {
-			if (origin.raw.basePluginSubclass) {
+		if (origin.raw.basePluginSubclass && !origin.raw.marked && !origin.raw.abstract) {
+			error(
+				`[pluxel:plugin-package] ${packageName} root export ${exportName} extends BasePlugin but is missing @Plugin`,
+			)
+		}
+	}
+	if (concreteCount === 0 && mode === 'explicit') {
+		error(`[pluxel:plugin-package] ${packageName} root entry does not export a marked Plugin`)
+	}
+	for (const [subpath, entry] of publicEntries) {
+		if (subpath === '.' || subpath === './package.json') continue
+		const exports = await enumerate(entry)
+		for (const [exportName, origin] of exports) {
+			if (
+				origin.raw.marked ||
+				(origin.raw.abstract && (concreteCount > 0 || origin.raw.basePluginSubclass))
+			) {
 				error(
-					`[pluxel:plugin-package] ${packageName} root export ${exportName} extends BasePlugin but is missing @Plugin`,
+					`[pluxel:plugin-package] ${packageName}${subpath.slice(1)} is plugin-bearing (${exportName}); Plugin exports are only allowed at package root`,
 				)
 			}
-			continue
 		}
+	}
+	// Only an ordinary source library may fall back; invalid Plugin exports above still fail.
+	if (concreteCount === 0) return undefined
+	const addresses = new Map<string, PluginDefinitionAddress>()
+	const namesByOrigin = new Map<string, string[]>()
+	for (const [exportName, origin] of rootExports) {
+		if (!origin.raw.marked && !origin.raw.abstract) continue
 		if (!isInside(packageRoot, origin.id)) {
 			error(
 				`[pluxel:plugin-package] ${packageName} root export ${exportName} re-exports a Plugin from another package`,
 			)
 		}
-		if (origin.raw.marked) concreteCount++
 		const key = originKey(origin.id, origin.className)
 		const names = namesByOrigin.get(key) ?? []
 		names.push(exportName)
@@ -1658,20 +1689,6 @@ async function createPackagePlan(
 			)
 		}
 		void key
-	}
-	if (concreteCount === 0) {
-		error(`[pluxel:plugin-package] ${packageName} root entry does not export a marked Plugin`)
-	}
-	for (const [subpath, entry] of publicEntries) {
-		if (subpath === '.' || subpath === './package.json') continue
-		const exports = await enumerate(entry)
-		for (const [exportName, origin] of exports) {
-			if (origin.raw.marked || origin.raw.abstract) {
-				error(
-					`[pluxel:plugin-package] ${packageName}${subpath.slice(1)} is plugin-bearing (${exportName}); Plugin exports are only allowed at package root`,
-				)
-			}
-		}
 	}
 	return { packageName, packageRoot, rootEntry, publicEntries, addresses }
 }
@@ -1742,19 +1759,30 @@ function readSourceExportEntries(
 	}
 	for (const [subpath, target] of Object.entries(value as Record<string, unknown>)) {
 		if (!subpath.startsWith('.')) continue
-		const source = readSourceCondition(target)
-		if (!source || !/\.[cm]?[jt]sx?$/.test(source)) continue
+		// A known Plugin package must also validate its unconditional JS exports.
+		// This does not make a plain JS root opt into automatic package inference.
+		const source = readSourceCondition(target, typeof target === 'string')
+		if (!source) continue
 		entries.set(subpath, resolve(packageRoot, source))
 	}
 	return entries
 }
 
-function readSourceCondition(value: unknown): string | undefined {
-	if (typeof value === 'string') return value
+function readSourceCondition(value: unknown, explicitSource = false): string | undefined {
+	if (typeof value === 'string') {
+		if (/\.d\.[cm]?tsx?$/.test(value)) return undefined
+		// JS requires an explicit source condition; a built default is not a source opt-in.
+		const extension = explicitSource ? /\.(?:[cm]?[jt]s|[jt]sx)$/ : /\.(?:[cm]?ts|tsx)$/
+		return extension.test(value) ? value : undefined
+	}
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
 	const record = value as Record<string, unknown>
 	for (const key of ['@pluxel/hmr', '@pluxel/source', 'development']) {
-		const nested = readSourceCondition(record[key])
+		const nested = readSourceCondition(record[key], true)
+		if (nested) return nested
+	}
+	for (const key of ['import', 'default']) {
+		const nested = readSourceCondition(record[key], explicitSource)
 		if (nested) return nested
 	}
 	return undefined

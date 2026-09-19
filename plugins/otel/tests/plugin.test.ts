@@ -1,6 +1,8 @@
 import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemetry/api'
-import { formatPluginNodeReference, v } from '@pluxel/runtime'
-import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
+import { formatPluginNodeReference } from '@pluxel/core'
+import * as v from 'valibot'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OtelConfig, OtelPlugin } from '../src/index.ts'
 
@@ -39,7 +41,7 @@ describe('OtelPlugin', () => {
 	it('exposes native caller-scoped OTel instruments through Prometheus pull', async () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
-			await using host = createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost()
 			await host.start(OtelPlugin, {
 				catalog: [Consumer],
 				initialConfig: { otlp: [], prometheus: { path: '/metrics' } },

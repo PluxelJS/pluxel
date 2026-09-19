@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { WorkbenchLayoutEntry } from '@pluxel/runtime/workbench/client'
+import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 
 export type RightPaneTabGroup = {
 	id: string

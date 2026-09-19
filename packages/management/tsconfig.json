@@ -1,0 +1,13 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"composite": false,
+		"noEmit": true,
+		"rootDir": "../..",
+		"jsx": "react-jsx",
+		"lib": ["ES2024", "DOM", "DOM.Iterable", "ESNext.Disposable"],
+		"customConditions": ["@pluxel/source", "@pluxel/hmr"],
+		"types": ["node"]
+	},
+	"include": ["src"]
+}

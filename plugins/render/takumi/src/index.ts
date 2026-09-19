@@ -1,5 +1,5 @@
 import { FontsPlugin, type DefaultFontSnapshot, type PortableFontsSnapshot } from '@pluxel/fonts'
-import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
+import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 import { prepareImages } from 'takumi-js/helpers'
 import { fromHtml } from 'takumi-js/helpers/html'
 import { Renderer, type Node as TakumiNode } from 'takumi-js/node'

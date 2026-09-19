@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PluginExecutionSnapshot } from '@pluxel/runtime/web'
+import type { PluginExecutionSnapshot } from '@pluxel/management/client'
 import { DEFAULT_STATUS_FILTER, matchesPluginSearch } from '../src/app/plugins/catalog/filterModel'
 import { parseSearchTokens } from '../src/app/plugins/catalog/searchTokens'
 import {

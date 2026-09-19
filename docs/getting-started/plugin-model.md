@@ -29,7 +29,7 @@ description: 理解 Plugin 的依赖关系、版本代际、可选集成、资�
 
 ```ts twoslash
 // @filename: accounts.ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Accounts' })
 export class AccountsPlugin extends BasePlugin {
@@ -39,7 +39,7 @@ export class AccountsPlugin extends BasePlugin {
 }
 
 // @filename: billing.ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { AccountsPlugin } from './accounts.ts'
 
 @Plugin({ displayName: 'Billing' })
@@ -88,7 +88,7 @@ dependency facade 在 provider construction 完成后固定 ordinary field/proto
 
 ```ts twoslash
 // @filename: audit.ts
-import { BasePlugin } from '@pluxel/runtime'
+import { BasePlugin } from '@pluxel/core'
 
 export declare class AuditPlugin extends BasePlugin {
 	registerSource(source: BasePlugin): void
@@ -96,7 +96,7 @@ export declare class AuditPlugin extends BasePlugin {
 
 // @filename: orders.ts
 import type { AuditPlugin } from './audit.ts'
-import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 
 const Audit = definePluginRef<AuditPlugin>()
 
@@ -214,7 +214,7 @@ this.ctx.effects.defer(() => clearInterval(timer))
 `ctx.events` 订阅和发布：
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 declare module '@pluxel/core' {
 	interface Events {
@@ -242,7 +242,7 @@ module augmentation 只合并 TypeScript 事件词汇，不会 import、安装�
 事件集合在设计时已知时，公开命名的 `EvtChannel`，不要重新实现字符串 registry：
 
 ```ts twoslash
-import { BasePlugin, EvtChannel, Plugin } from '@pluxel/runtime'
+import { BasePlugin, EvtChannel, Plugin } from '@pluxel/core'
 
 type Invoice = { id: string }
 type InvoicePaid = (invoice: Invoice, signal: AbortSignal) => void | Promise<void>
@@ -278,7 +278,7 @@ object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 p
 root export 和 fork，例如
 `package:@acme/orders::OrdersPlugin#fork=east`，不会把 opaque digest 当作公开 Plugin ID。
 
-HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.elysia` 中声明的 path 就是最终产品 contract；fork 若要
+HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.require(Http)` 中声明的 path 就是最终产品 contract；fork 若要
 同时提供 HTTP，必须从已校验业务 config 得到彼此不冲突的显式 namespace，或由唯一 gateway Plugin 统一承载入口。
 
 Plugin source 必须经过 Pluxel Vite/Rolldown pipeline。raw TypeScript runner 不生成这些语义事实。

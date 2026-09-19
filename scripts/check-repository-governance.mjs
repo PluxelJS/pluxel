@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { parseSync } from 'vite'
 import { parse } from 'yaml'
 
 import {
@@ -19,6 +20,27 @@ const dependencyFields = [
 	'optionalDependencies',
 	'peerDependencies',
 ]
+const publishedDependencyFields = ['dependencies', 'optionalDependencies', 'peerDependencies']
+// These packages expose identities shared with the application: Context, service tokens,
+// host instances and registries. Utilities and owned implementation dependencies are not peers.
+const hostIdentityPackages = new Set([
+	'@pluxel/core',
+	'@pluxel/host',
+	'@pluxel/commands',
+	'@pluxel/services',
+	'@pluxel/logging',
+	'@pluxel/management',
+	'@pluxel/workbench',
+])
+// Foundation packages cannot grow upward even when that would not yet create a cycle.
+const foundationDependencies = new Map([
+	['@pluxel/context', new Set()],
+	['@pluxel/core', new Set()],
+	['@pluxel/commands', new Set()],
+	['@pluxel/host', new Set(['@pluxel/core', 'valibot-form'])],
+	['@pluxel/host-dynamic', new Set(['@pluxel/core', '@pluxel/host'])],
+	['@pluxel/host-dev', new Set(['@pluxel/core', '@pluxel/host', '@pluxel/rolldown'])],
+])
 const errors = []
 
 const packageManifests = repositoryPackages
@@ -135,6 +157,38 @@ if (new Set(packageNames).size !== packageNames.length) {
 	errors.push('repository package names must be unique')
 }
 const publicPackages = packageManifests.filter(isPublishablePackage)
+const publishedGraph = new Map(
+	packageManifests
+		.filter(({ kind }) => kind !== 'root')
+		.map(({ manifest }) => [
+			manifest.name,
+			new Set(
+				publishedDependencyFields.flatMap((field) =>
+					Object.keys(manifest[field] ?? {}).filter((name) => workspaceNames.has(name)),
+				),
+			),
+		]),
+)
+// Optional peers are architectural edges too. Moving a dependency between manifest
+// fields or behind import() must not hide a package cycle.
+const visitedPackages = new Set()
+const visitingPackages = new Set()
+const dependencyPath = []
+function visitPublishedPackage(name) {
+	if (visitingPackages.has(name)) {
+		const cycle = [...dependencyPath.slice(dependencyPath.indexOf(name)), name]
+		errors.push(`published package dependency cycle: ${cycle.join(' -> ')}`)
+		return
+	}
+	if (visitedPackages.has(name)) return
+	visitingPackages.add(name)
+	dependencyPath.push(name)
+	for (const dependency of publishedGraph.get(name) ?? []) visitPublishedPackage(dependency)
+	dependencyPath.pop()
+	visitingPackages.delete(name)
+	visitedPackages.add(name)
+}
+for (const name of publishedGraph.keys()) visitPublishedPackage(name)
 const publicVersions = new Map(
 	publicPackages.map(({ manifest }) => [manifest.name, manifest.version]),
 )
@@ -171,6 +225,17 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 	}
 	for (const field of dependencyFields) {
 		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
+			if (publishedDependencyFields.includes(field)) {
+				const permitted = foundationDependencies.get(manifest.name)
+				if (permitted && workspaceNames.has(name) && !permitted.has(name)) {
+					errors.push(`${manifest.name} foundation boundary forbids published dependency ${name}`)
+				}
+				if (isPublic && field !== 'peerDependencies' && hostIdentityPackages.has(name)) {
+					errors.push(
+						`${manifest.name} ${field}.${name} must be a peer dependency to share application identity`,
+					)
+				}
+			}
 			const acceptedCatalogSpecifiers = catalogSpecifiers.get(name)
 			if (specifier.startsWith('catalog:') && !acceptedCatalogSpecifiers?.has(specifier)) {
 				errors.push(`${relative(manifestPath)}: ${field}.${name} is missing from ${specifier}`)
@@ -250,16 +315,30 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 const reusablePackageSources = await Promise.all(
 	packageManifests
 		.filter(({ kind }) => kind === 'package')
-		.map(async ({ packageRoot }) => ({
+		.map(async ({ packageRoot, manifest }) => ({
 			packageRoot,
+			manifest,
 			sources: await sourceContents(resolve(packageRoot, 'src')),
 		})),
 )
-for (const { packageRoot, sources } of reusablePackageSources) {
-	if (/^\s*@Plugin\s*\(\s*\{/m.test(sources)) {
+for (const { packageRoot, manifest, sources } of reusablePackageSources) {
+	if (sources.some(({ source }) => /^\s*@Plugin\s*\(\s*\{/m.test(source))) {
 		errors.push(
 			`${relative(packageRoot)} declares a concrete @Plugin; move it to plugins/ or a domain-specific plugin container such as platforms/`,
 		)
+	}
+	// Parse each source once with the existing Vite toolchain. Generated module text
+	// inside strings/templates is not an actual package dependency.
+	const imports = sources.flatMap(({ path, source }) => sourceImports(path, source))
+	for (const name of new Set(imports.map(packageName))) {
+		if (name === manifest.name || !workspaceNames.has(name)) continue
+		// Core deliberately inlines the standalone kernel's JavaScript and declarations.
+		if (manifest.name === '@pluxel/core' && name === '@pluxel/context') continue
+		if (!publishedGraph.get(manifest.name)?.has(name)) {
+			errors.push(
+				`${manifest.name} published source imports ${name} without a dependencies/optionalDependencies/peerDependencies declaration`,
+			)
+		}
 	}
 }
 
@@ -276,6 +355,45 @@ function isSemver(version) {
 	return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(
 		String(version),
 	)
+}
+
+function packageName(specifier) {
+	return specifier
+		.split('/')
+		.slice(0, specifier.startsWith('@') ? 2 : 1)
+		.join('/')
+}
+
+function sourceImports(path, source) {
+	const parsed = parseSync(path, source)
+	if (parsed.errors.length > 0) {
+		errors.push(
+			`${relative(path)}: dependency scan failed: ${parsed.errors.map((error) => error.message).join('; ')}`,
+		)
+		return []
+	}
+	const imports = []
+	const pending = [parsed.program]
+	while (pending.length > 0) {
+		const node = pending.pop()
+		if (
+			[
+				'ImportDeclaration',
+				'ExportNamedDeclaration',
+				'ExportAllDeclaration',
+				'ImportExpression',
+				'TSImportType',
+			].includes(node.type) &&
+			typeof node.source?.value === 'string'
+		)
+			imports.push(node.source.value)
+		for (const value of Object.values(node)) {
+			if (Array.isArray(value)) {
+				for (const child of value) if (typeof child?.type === 'string') pending.push(child)
+			} else if (typeof value?.type === 'string') pending.push(value)
+		}
+	}
+	return imports
 }
 
 async function childDirectories(directory) {
@@ -297,14 +415,14 @@ async function sourceContents(directory) {
 			if (entry.kind === 'directory') return sourceContents(entry.path)
 			if (
 				/\.[cm]?[jt]sx?$/.test(entry.path) &&
-				!/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(entry.path)
+				!/\.(?:test|spec|typecheck|type-probes)\.[cm]?[jt]sx?$/.test(entry.path)
 			) {
-				return readFile(entry.path, 'utf8')
+				return [{ path: entry.path, source: await readFile(entry.path, 'utf8') }]
 			}
-			return ''
+			return []
 		}),
 	)
-	return fragments.join('')
+	return fragments.flat()
 }
 
 async function childDirectoriesAndFiles(directory) {

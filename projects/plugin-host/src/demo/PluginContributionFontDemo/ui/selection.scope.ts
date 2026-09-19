@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { FontManagerWorkbench } from '../../PluginContributionFontDemo.workbench'
 import type { FontRef } from '../../PluginContributionFontDemo.shared'
 

@@ -14,7 +14,7 @@ import { restoreStaticConfigSchema } from './staticConfigEnvironmentSchema.ts'
 
 const ENVIRONMENT_NAME = /^[A-Z_][A-Z0-9_]*$/
 const RESERVED_ENVIRONMENT_PREFIX = 'PLUXEL_'
-const STATIC_RUNTIME_PACKAGE = '@pluxel/runtime-static'
+const CONFIG_ENVIRONMENT_PACKAGE = '@pluxel/host/config-environment'
 
 type MappingLeaf = Readonly<{
 	environmentName: string
@@ -34,6 +34,7 @@ export type { StaticConfigEnvironmentTarget } from './staticConfigEnvironmentExa
 export { renderStaticConfigEnvironmentExample } from './staticConfigEnvironmentExample.ts'
 
 export type StaticRuntimeDeclarationFacts = Readonly<{
+	hasSources: boolean
 	name?: string
 	targets: readonly StaticConfigEnvironmentTarget[]
 	environmentExample?: string
@@ -64,33 +65,34 @@ export async function parseStaticRuntimeDeclaration(
 	if (defaults.length !== 1) {
 		error(`[static-application] ${id} must contain exactly one default export`)
 	}
-	const expression = (defaults[0] as unknown as AstNode).declaration as AstNode | undefined
-	if (
-		expression?.type !== 'CallExpression' ||
-		readIdentifier(expression.callee) !== 'defineStaticRuntime'
-	) {
-		error(`[static-application] ${id} must default-export defineStaticRuntime(...) directly`)
+	let application = (defaults[0] as unknown as AstNode).declaration as AstNode | undefined
+	while (application?.type === 'TSSatisfiesExpression' || application?.type === 'TSAsExpression') {
+		application = application.expression as AstNode
 	}
-	const applicationArguments = directCallArguments(expression, 'defineStaticRuntime', id, error)
-	if (applicationArguments.length !== 1) {
-		error(`[static-application] ${id} defineStaticRuntime() requires exactly one argument`)
+	if (application?.type !== 'ObjectExpression') {
+		error(`[application] ${id} must default-export an application object directly`)
 	}
-	const application = applicationArguments[0]!
-	if (application.type !== 'ObjectExpression') {
-		return Object.freeze({ targets: Object.freeze([]) })
-	}
+	const directSources = readDirectObjectField(application, 'sources')
+	const hasSources =
+		(directSources !== undefined &&
+			!(
+				directSources.type === 'ArrayExpression' && arrayOf(directSources.elements).length === 0
+			)) ||
+		arrayOf(application.properties).some(
+			(property) => (property as AstNode).type === 'SpreadElement',
+		)
 	const directName = readDirectObjectField(application, 'name')
 	const directBootstrap = readDirectObjectField(application, 'configEnvironmentBootstrap')
 	const name = readLiteralString(directName)
 	if (directBootstrap === undefined) {
 		return Object.freeze({
 			...(name === undefined ? {} : { name }),
+			hasSources,
 			targets: Object.freeze([]),
 		})
 	}
 
-	assertDirectImport(module.imports.get('defineStaticRuntime'), 'defineStaticRuntime', id, error)
-	const fields = directObjectProperties(application, 'defineStaticRuntime() application', id, error)
+	const fields = directObjectProperties(application, 'application', id, error)
 	const bootstrap = fields.get('configEnvironmentBootstrap')?.value
 	if (bootstrap === undefined) {
 		error(`[static-application] ${id} cannot locate direct configEnvironmentBootstrap field`)
@@ -181,6 +183,7 @@ export async function parseStaticRuntimeDeclaration(
 	if (bindings.length === 0) {
 		return Object.freeze({
 			...(name === undefined ? {} : { name }),
+			hasSources,
 			targets: Object.freeze([]),
 		})
 	}
@@ -255,6 +258,7 @@ export async function parseStaticRuntimeDeclaration(
 	const frozenTargets = Object.freeze([...targets])
 	return Object.freeze({
 		...(name === undefined ? {} : { name }),
+		hasSources,
 		targets: frozenTargets,
 		environmentExample: renderStaticConfigEnvironmentExample(frozenTargets),
 	})
@@ -376,11 +380,13 @@ function assertDirectImport(
 ): void {
 	if (
 		!binding ||
-		binding.source !== STATIC_RUNTIME_PACKAGE ||
+		binding.source !== CONFIG_ENVIRONMENT_PACKAGE ||
 		binding.imported !== name ||
 		binding.namespace
 	) {
-		error(`[static-application] ${id} must import ${name} directly from ${STATIC_RUNTIME_PACKAGE}`)
+		error(
+			`[static-application] ${id} must import ${name} directly from ${CONFIG_ENVIRONMENT_PACKAGE}`,
+		)
 	}
 }
 

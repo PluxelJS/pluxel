@@ -8,14 +8,15 @@ import { parseStandaloneWithLang } from '../../src/rolldown/plugins/pluginUtils'
 
 function staticEntry(options: { bootstrap: string; plugins?: string; extra?: string }): string {
 	return `
-		import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+		import { bindConfigEnvironment } from '@pluxel/host/config-environment'
+import type { HostApplication } from '@pluxel/host'
 		import { AlphaConfig, AlphaPlugin, BetaConfig, BetaPlugin, examplePlugins } from './plugins'
 		${options.extra ?? ''}
-		export default defineStaticRuntime({
+		export default {
 			name: 'fixture',
 			plugins: ${options.plugins ?? '[AlphaPlugin, BetaPlugin]'},
 			configEnvironmentBootstrap: ${options.bootstrap},
-		})
+		} satisfies HostApplication
 	`
 }
 
@@ -71,20 +72,21 @@ async function parseFixture(code: string) {
 }
 
 describe('static config environment declaration lowering', () => {
-	it('does not narrow legacy static entry shapes when bootstrap is omitted', async () => {
-		const indirect = await parseFixture(`
-			import { defineStaticRuntime } from '@pluxel/runtime-static'
+	it('requires a direct application object but allows spread without bootstrap', async () => {
+		await expect(
+			parseFixture(`
+			import type { HostApplication } from '@pluxel/host'
 			const application = { name: 'indirect', plugins: [] }
-			export default defineStaticRuntime(application)
-		`)
+			export default application
+		`),
+		).rejects.toThrow('must default-export an application object directly')
 		const spread = await parseFixture(`
-			import { defineStaticRuntime } from '@pluxel/runtime-static'
+			import type { HostApplication } from '@pluxel/host'
 			const base = { plugins: [] }
-			export default defineStaticRuntime({ ...base, name: 'spread' })
+			export default { ...base, name: 'spread' } satisfies HostApplication
 		`)
 
-		expect(indirect).toEqual({ targets: [] })
-		expect(spread).toEqual({ name: 'spread', targets: [] })
+		expect(spread).toEqual({ name: 'spread', targets: [], hasSources: true })
 	})
 
 	it('uses source resolution and raw-input projection to render deterministic fan-out', async () => {
@@ -291,13 +293,14 @@ describe('static config environment declaration lowering', () => {
 				}
 			`,
 			'entry.ts': `
-				import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+				import { bindConfigEnvironment } from '@pluxel/host/config-environment'
+import type { HostApplication } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
-				export default defineStaticRuntime({
+				export default {
 					name: 'unsafe',
 					plugins: [UnsafePlugin],
 					configEnvironmentBootstrap: [bindConfigEnvironment(UnsafePlugin, UnsafeConfig, 'APP_CONFIG')],
-				})
+				} satisfies HostApplication
 			`,
 		})
 		const id = fixture.getPath('entry.ts')
@@ -330,13 +333,14 @@ describe('static config environment declaration lowering', () => {
 				}
 			`,
 			'entry.ts': `
-				import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
+				import { bindConfigEnvironment } from '@pluxel/host/config-environment'
+import type { HostApplication } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
-				export default defineStaticRuntime({
+				export default {
 					name: 'unsafe-valibot-method',
 					plugins: [UnsafePlugin],
 					configEnvironmentBootstrap: [bindConfigEnvironment(UnsafePlugin, UnsafeConfig, 'APP_CONFIG')],
-				})
+				} satisfies HostApplication
 			`,
 		})
 		const id = fixture.getPath('entry.ts')

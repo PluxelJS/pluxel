@@ -1,11 +1,15 @@
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { newWebSocketRpcSession, type RpcStub } from '@pluxel/runtime/capnweb'
-import { requireRuntimeHttpService, type ElysiaApplicationCarrier } from '@pluxel/runtime/internal'
-import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
-import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
-import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/runtime/web/session'
+import { newWebSocketRpcSession, type RpcStub } from 'capnweb'
+import { HttpServer, type ElysiaApplicationCarrier } from '@pluxel/services/http'
+import { resolveContextCapability } from '@pluxel/core/host'
+import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
+import { NodeElysiaApplicationCarrier } from '@pluxel/services/http/node'
+import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/management/session'
 import NodeWebSocket from 'crossws/websocket'
 import { describe, expect, it } from 'vitest'
 import { CredentialStore } from '../src/credentials.ts'
@@ -28,7 +32,12 @@ function peerAddress() {
 
 describe('official authentication vNext Runtime integration', () => {
 	it('authenticates through a physical Runtime Session WebSocket carrier', async () => {
-		const fixture = new AuthRuntimeSessionCarrierFixture()
+		const fixture = new AuthRuntimeSessionCarrierFixture(
+			await createServiceInternalTestHost({
+				management: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			}),
+		)
 		try {
 			await fixture.start()
 			const connection = fixture.connect()
@@ -74,6 +83,22 @@ describe('official authentication vNext Runtime integration', () => {
 				} finally {
 					disposeRpcValue(management)
 				}
+
+				// The accepted operation may lose its reply when it withdraws its own authentication
+				// authority, but it must drain the provider without waiting on the session's lease.
+				const stopped = Promise.resolve(
+					ready.management.applyPluginLifecycleCommands([
+						{ address: pluginNodeAddressOf(AuthPlugin), command: 'stop' },
+					]),
+				).then(
+					(result): void => {
+						disposeRpcValue(result)
+						return undefined
+					},
+					(): void => undefined,
+				)
+				await withRuntimeSessionTimeout(stopped, 'authentication provider self-stop')
+				await expect.poll(() => fixture.host.isRunning(AuthPlugin), { timeout: 3_000 }).toBe(false)
 			} finally {
 				disposeRpcValue(ready)
 				connection.root[Symbol.dispose]()
@@ -86,8 +111,11 @@ describe('official authentication vNext Runtime integration', () => {
 	}, 15_000)
 
 	it('runs password challenge and commits its session through the narrow endpoint', async () => {
-		await using host = createRuntimeInternalTestHost(
-			{ management: true, vault: {} },
+		await using host = await createServiceInternalTestHost(
+			{
+				management: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			},
 			{ requestAddress: peerAddress },
 		)
 		await host.start(AuthPlugin, {
@@ -155,7 +183,7 @@ describe('official authentication vNext Runtime integration', () => {
 	})
 
 	it('returns only the fixed OIDC navigation instruction', async () => {
-		await using host = createRuntimeInternalTestHost(
+		await using host = await createServiceInternalTestHost(
 			{ management: true },
 			{ requestAddress: peerAddress },
 		)
@@ -183,7 +211,6 @@ describe('official authentication vNext Runtime integration', () => {
 })
 
 class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
-	readonly host = createRuntimeInternalTestHost({ management: true, vault: {} })
 	readonly server: Server
 	readonly carrier: NodeElysiaApplicationCarrier
 	readonly trustedCarrier: ElysiaApplicationCarrier
@@ -192,8 +219,8 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 	private detachCarrier: (() => void) | undefined
 	private listening = false
 
-	constructor() {
-		const http = requireRuntimeHttpService(this.host.ctx)
+	constructor(readonly host: Awaited<ReturnType<typeof createServiceInternalTestHost>>) {
+		const http = resolveContextCapability(this.host.ctx, HttpServer)
 		this.server = createServer((_request, response) => response.writeHead(404).end('Not Found'))
 		this.carrier = new NodeElysiaApplicationCarrier({
 			fetch: (request) => this.host.http.fetch(request),
@@ -299,7 +326,7 @@ function bootstrapRuntimeSession(
 ): Promise<RuntimeSessionBootstrap> {
 	// Cap'n Web distributes a union result into a union of Promise types; the wire operation itself
 	// still has one settled bootstrap value, so normalize it before applying the test timeout.
-	return root.bootstrap(() => undefined) as Promise<RuntimeSessionBootstrap>
+	return root.bootstrap((): void => undefined) as Promise<RuntimeSessionBootstrap>
 }
 
 function waitForOpen(socket: WebSocket): Promise<void> {

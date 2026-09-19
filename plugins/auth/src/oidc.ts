@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload } from 'jose'
-import type { ManagementAccessPrincipal as AuthPrincipal } from '@pluxel/runtime'
+import type { ManagementAccessPrincipal as AuthPrincipal } from '@pluxel/management/access'
 import type { OidcAuthMode } from './config.ts'
 import { readCookie } from './sessions.ts'
 

@@ -93,7 +93,7 @@ ctx.database.get(table, id)
 Pluxel 因此把必需插件依赖写在构造函数中：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { AccountsPlugin } from '@acme/accounts'
 
 @Plugin({ displayName: 'Billing' })
@@ -162,7 +162,7 @@ Pluxel Runtime 使用同一个 kernel，在创建 root Context 时一次性编�
 
 ### 原生 HTTP 与框架生命周期如何配合
 
-`ctx.elysia` 是严格惰性创建的真实 Elysia 2 application。同一个 generation 的插件与全部 Part 共享这一个 app，Elysia 中声明的路径就是最终产品路径，插件继续使用上游的路由、schema、hook 和 stream API。
+`ctx.require(Http)` 是严格惰性创建的真实 Elysia 2 application。同一个 generation 的插件与全部 Part 共享这一个 app，Elysia 中声明的路径就是最终产品路径，插件继续使用上游的路由、schema、hook 和 stream API。
 
 Pluxel 补充的是它与插件依赖图的关系：在 `init()` 完成后 compile/seal，随 generation 原子发布或撤销路由，并把请求接纳、退出等待和流式响应体纳入资源生命周期。监听端口以及面向 srvx 的 HTTP carrier 接入由宿主拥有。这样，插件可以使用原生 HTTP 框架，同时让接口的可用性跟随自己的运行实例。具体用法见 [HTTP 指南](./runtime/http.md)。
 
@@ -177,7 +177,7 @@ Pluxel 补充的是它与插件依赖图的关系：在 `init()` 完成后 compi
 - **具名 `EvtChannel`**：直接接收 owner Context，consumer 的订阅通过缓存的普通 facade 绑定到 effects。
 - **`ctx.events`**：共享 root emitter 后端，每个 owner 取得绑定固定 Context 的普通服务视图，订阅进入自己的清理作用域。
 - **配置快照**：每个 revision 返回深冻结的普通 snapshot。`configs.use()` 初始化时的占位 token 也保持冻结；初始化完成前读取配置由工具链拒绝。
-- **`ctx.elysia`**：直接提供真实的上游实例，不用 Proxy 再包一层 HTTP API。
+- **`ctx.require(Http)`**：直接提供真实的上游实例，不用 Proxy 再包一层 HTTP API。
 
 这种选择允许在确有需要的边界使用 Proxy。Workbench 的浏览器 Cap’n Web RPC stub 就是一个例子：远端方法来自运行时已经擦除类型的契约，本地没有可预编译的方法 schema，Proxy 能自然表达远程调用。
 

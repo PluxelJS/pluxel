@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { PluginNodeAddress } from '@pluxel/core'
-import type { ConfigValidationErrors } from '@pluxel/runtime/web'
+import type { ConfigValidationErrors } from '@pluxel/management/client'
 
 import type { RuntimeManagementClient } from '../../../runtime'
 import { useNotify } from '../../hooks/useNotify'

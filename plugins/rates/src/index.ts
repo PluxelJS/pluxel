@@ -6,8 +6,8 @@ import {
 	Plugin,
 	pluginNodeAddressEqual,
 	type PluginNodeAddress,
-	v,
-} from '@pluxel/runtime'
+} from '@pluxel/core'
+import * as v from 'valibot'
 import { RatesBackend, type RatesBackendConsumeRequest } from './backend.ts'
 import {
 	RatesInvalidArgumentError,

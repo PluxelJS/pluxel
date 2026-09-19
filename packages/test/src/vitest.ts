@@ -132,7 +132,7 @@ export function definePluxelVitestConfig(config: PluxelVitestConfig = {}): ViteU
 				externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 			},
 			// Generated metadata imports must share the same source-mode runtime instance as tests.
-			noExternal: ['@pluxel/runtime'],
+			noExternal: ['@pluxel/services'],
 		},
 		test: {
 			environment: 'node',
@@ -140,7 +140,7 @@ export function definePluxelVitestConfig(config: PluxelVitestConfig = {}): ViteU
 			// but still allow CI to fail if a project unexpectedly has no tests.
 			passWithNoTests: !process.env.CI,
 			server: {
-				deps: { inline: ['@pluxel/runtime'] },
+				deps: { inline: ['@pluxel/services'] },
 			},
 		},
 	}
