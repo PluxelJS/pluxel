@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createDiskFixture } from '@pluxel/test/fixtures'
-import { importViteSsrModule } from '@pluxel/host-dev/vite'
-import { createServer } from 'vite'
+import { createServer, type RunnableDevEnvironment } from 'vite'
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import { expect, it } from 'vitest'
 import { vitePreset } from '../src/vite'
 
@@ -36,10 +36,12 @@ export const database = defineDatabase({ schema: {} })`,
 		plugins: vitePreset({ entry: 'app.ts' }),
 	})
 	try {
-		const loaded = await importViteSsrModule<{ database: unknown }>(
-			server,
+		const environment = server.environments[HOST_VITE_ENVIRONMENT] as RunnableDevEnvironment
+		const loaded = await environment.runner.import<{ database: unknown }>(
 			`${fixture.path}/database.ts`,
 		)
+		const standardSsr = await server.ssrLoadModule(`${fixture.path}/database.ts`)
+		expect(standardSsr.database).toBeUndefined()
 		expect(loaded.database).toEqual({
 			evolution: 'migrations',
 			lineage: 'fixture',

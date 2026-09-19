@@ -1,3 +1,4 @@
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import type { Context } from '@pluxel/core'
 import { readNodeModuleDeclaration } from '../node/declaration'
 import type { NodeModuleSourceSubscription } from '../node/service'
@@ -254,7 +255,7 @@ export class NodeArtifactCompiler {
 	}
 
 	private async refreshNodeSourceFiles(entry: NodeModuleCompileEntry): Promise<void> {
-		const environment = this.viteServer?.environments?.ssr
+		const environment = this.viteServer?.environments?.[HOST_VITE_ENVIRONMENT]
 		if (!environment) return
 		let url = entry.entryPath
 		const root = resolve(environment.config.root)

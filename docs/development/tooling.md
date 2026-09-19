@@ -190,8 +190,14 @@ Host 的 Vite 接入执行 Plugin semantic lowering、config extraction、artifa
 Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
 graph 与 server Plugin implementation 保持分离。
 
-开发接入默认使用 Vite 的 `resolve.tsconfigPaths` 解析项目 TypeScript 路径别名；若不需要，在 Vite config 显式设为 `false`。
-别名指向的 CommonJS 文件仍由 Node 加载，避免 `require is not defined`。浏览器代码误引 `node:fs`、`fs/promises` 等
+`host()`（以及组合它的官方 `vitePreset()`）拥有专用 `pluxel` Vite environment；应用、动态插件和控制台共享
+其中的执行空间。默认 SSR 与第三方插件的 `ssrLoadModule` 保持独立，也可以配置自己的 SSR environment factory。
+`hostSingletons({ packages })` 在 Host environment 内指定与 Node 宿主共享身份的包，需与 `host()` 一起使用。
+第三方 SSR 加载出来的 Plugin constructor 不属于 Host；操作运行中的插件请使用控制台或 Host 的服务 API。
+
+Host environment 默认使用 Vite 的 `resolve.tsconfigPaths` 解析项目 TypeScript 路径别名；若不需要，在 Vite config 显式设为 `false`。
+包导出条件沿用 Vite 的浏览器/服务端及开发/生产区分；Host 源码环境仅额外启用 Pluxel 的源码条件，不会让浏览器选择 Node 入口或让生产构建选择开发入口。
+包导出与别名均先按当前 Vite 环境解析；Host environment 选中的 CommonJS 文件由 Node 加载，避免 `require is not defined`。浏览器代码误引 `node:fs`、`fs/promises` 等
 Node 内置模块时，开发构建立刻报告模块名和导入者；把调用移到服务端，或通过 Vite alias 提供真正的浏览器实现。
 
 Vite 更新因新增导入失败时会保留上一版本，并持续观察失败候选需要的文件与 package 安装目录。

@@ -24,6 +24,9 @@ Coding agent 检查当前 Vite 应用时，使用[开发控制台](../developmen
 
 不要把浏览器真正需要的模块加到 `external` 来消除报错；这样可能只是把构建失败变成浏览器加载失败。使用跨仓库源码时，先运行 `pluxel source doctor`，再按[源码开发](../development/source-workspaces.md)检查生成的解析配置。
 
+多个构建可以复用同一份 Node 制品编译缓存，但每个发行目录都必须拥有自己的 `artifacts/node` 文件与原生依赖清单。
+缓存目录存在不代表发行目录已经完整；部署时检查最终发行制品。
+
 ## Cap’n Web 声明报 `TS2574`
 
 `capnweb@0.12.0` 的 `UnstubifyInner` 将 `Unstubify<Tail>` 展开为元组尾部，但该类型包含 `Promise` 和 placeholder，

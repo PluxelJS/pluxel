@@ -44,8 +44,8 @@
 
 ## 文档职责
 
-外部部署验证：[可组合服务、Host 管理面与共享 Workbench](proposals/HOST_DEPLOYMENT_VALIDATION.md)。
-提案只描述尚未验证的外部下游与部署边界。已实现的 Core/Host/Services 契约见 [组合服务](../docs/reference/runtime-services.md) 与上方领域文档。
+下游迁移与部署证据见 [Host 下游与部署验证](HOST_DEPLOYMENT_VALIDATION.md)，其中明确已验证能力与待验证平台。
+Core/Host/Services 契约见 [组合服务](../docs/reference/runtime-services.md) 与上方领域文档。
 
 - `.agents/rules/`：可跨项目复用的 agent 决策规则，不作为 Pluxel 当前架构事实。
 - `engineering/`：为什么这样分层、内部不变量、代码从哪里看起。

@@ -42,10 +42,13 @@ __setPluginDefinition(Built, ${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_
 		logLevel: 'silent',
 		server: { middlewareMode: true },
 		appType: 'custom',
+		environments: { other: { consumer: 'server' } },
 		plugins: [...pipeline.plugins],
 	})
 	try {
 		const builtPath = fixture.getPath('node_modules/@fixture/installed/index.mjs')
+		await server.environments.other.transformRequest(builtPath)
+		expect(pipeline.semantics.builtDefinitionModules([builtPath]).size).toBe(0)
 		await server.environments.ssr.transformRequest(builtPath)
 		expect(pipeline.semantics.classifyDefinitionArtifact(definition, [builtPath])).toBe(
 			'built-module',

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -15,6 +15,11 @@ import { pluginArtifactBuildPlugin } from '../../src/plugin-artifact/pluginArtif
 import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
 import { readWorkbenchFederationDeploymentInventory } from '../../src/workbench/artifact.ts'
 import { readWorkbenchContentDeploymentInventory } from '../../src/workbench/content-artifact.ts'
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+	const fs = await importOriginal<typeof import('node:fs/promises')>()
+	return { ...fs, cp: vi.fn(fs.cp) }
+})
 
 describe('pluginArtifactBuildPlugin', () => {
 	it('atomically emits the host-owned deployment inventory from canonical compilations', async () => {
@@ -341,7 +346,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		expect(builtTask.default(21)).toBe(42)
 	})
 
-	it('reports controlled native worker residuals to deployment assembly', async () => {
+	it('publishes artifacts and native residuals for every concurrent deployment', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ dependencies: { 'fake-native': '1.0.0' } }),
 			'src/index.ts':
@@ -355,29 +360,81 @@ describe('pluginArtifactBuildPlugin', () => {
 			}),
 			'node_modules/fake-native/index.js': 'module.exports = 42\n',
 		})
-		const residuals: Array<{ name: string; entry: string }> = []
-		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/services/node', '@pluxel/services/workers'],
-			plugins: [
-				pluginArtifactBuildPlugin({
-					root: fixture.path,
-					buildDir: 'dist',
-					workbench: false,
-					node: {
-						minify: false,
-						onNativeResidual(name, entry) {
-							residuals.push({ name, entry })
+		const messages: string[] = []
+		const publish = async (buildDir: string) => {
+			const residuals: Array<{ name: string; entry: string }> = []
+			const bundle = await rolldown({
+				input: `${fixture.path}/src/index.ts`,
+				external: ['@pluxel/services/node', '@pluxel/services/workers'],
+				plugins: [
+					pluginArtifactBuildPlugin({
+						root: fixture.path,
+						buildDir,
+						workbench: false,
+						log: (message) => messages.push(message),
+						node: {
+							minify: false,
+							onNativeResidual(name, entry) {
+								residuals.push({ name, entry })
+							},
 						},
-					},
+					}),
+				],
+			})
+			try {
+				await bundle.write({ dir: `${fixture.path}/${buildDir}`, format: 'esm' })
+			} finally {
+				await bundle.close()
+			}
+			expect(residuals).toEqual([
+				expect.objectContaining({
+					name: 'fake-native',
+					entry: expect.stringContaining('index.js'),
 				}),
-			],
+			])
+			const artifacts = await readdir(join(fixture.path, buildDir, 'artifacts/node'))
+			expect(artifacts).toHaveLength(1)
+			const task = await import(
+				pathToFileURL(join(fixture.path, buildDir, 'artifacts/node', artifacts[0]!)).href
+			)
+			expect(task.default()).toBe(42)
+		}
+		const { cp: copyFile } =
+			await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+		const blocked = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		vi.mocked(cp).mockImplementation(async (source, target, options) => {
+			if (
+				String(target).includes('/dist-slow/artifacts/node/') &&
+				String(source).includes('/.pluxel/plugin-artifacts/node/')
+			) {
+				blocked.resolve()
+				await release.promise
+			}
+			return copyFile(source, target, options)
 		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
-
-		expect(residuals).toEqual([
-			expect.objectContaining({ name: 'fake-native', entry: expect.stringContaining('index.js') }),
-		])
+		const slow = publish('dist-slow')
+		try {
+			await Promise.race([
+				blocked.promise,
+				slow.then(() => {
+					throw new Error('Slow publication did not reach its gate')
+				}),
+			])
+			// This same-layout consumer finishes first, but must not release the slow consumer's lease.
+			await publish('dist-fast')
+			// Exceed the cache's retained revision count while the oldest bytes are still in use.
+			for (const buildDir of ['nested/dist-c', 'one/two/dist-d', 'one/two/three/dist-e']) {
+				await publish(buildDir)
+			}
+		} finally {
+			release.resolve()
+			try {
+				await slow
+			} finally {
+				vi.mocked(cp).mockImplementation(copyFile)
+			}
+		}
+		expect(messages.filter((message) => message.startsWith('[node-module] build '))).toHaveLength(4)
 	})
 })

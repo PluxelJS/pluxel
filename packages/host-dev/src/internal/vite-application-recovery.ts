@@ -4,8 +4,9 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { watch, type FSWatcher } from 'chokidar'
 import { normalizePath, type Plugin, type ViteDevServer } from 'vite'
-import { collectViteSsrImportFiles } from '../runner.ts'
+import { collectHostImportFiles, HOST_VITE_ENVIRONMENT } from '../environment'
 import { viteFsPath } from './vite-fs-path'
+import { createViteDiagnostics, type HostDiagnostics } from './update-error'
 
 type Resolution = { importer: string; source: string; resolved?: string; failed: boolean }
 type Candidate = { entries: Set<string>; resolutions: Resolution[] }
@@ -25,13 +26,18 @@ export class ViteApplicationRecovery {
 	private onError?: (error: unknown) => void
 
 	readonly plugin: Plugin
+	private readonly diagnostics: HostDiagnostics
 
-	constructor() {
+	constructor(diagnostics?: HostDiagnostics) {
+		this.diagnostics = diagnostics ?? createViteDiagnostics(() => this.server!.config.logger)
 		const activeCandidate = () => this.candidate
 		this.plugin = {
 			name: 'pluxel:application-recovery',
 			apply: 'serve',
 			enforce: 'pre',
+			applyToEnvironment(environment) {
+				return environment.name === HOST_VITE_ENVIRONMENT
+			},
 			async resolveId(source, importer, options) {
 				const candidate = activeCandidate()
 				const importerFile = importer && filePath(importer)
@@ -97,7 +103,7 @@ export class ViteApplicationRecovery {
 		const server = this.server
 		if (!candidate || !server || this.closed) return undefined
 		const files = new Set(
-			Array.from(candidate.entries, (entry) => collectViteSsrImportFiles(server, entry))
+			Array.from(candidate.entries, (entry) => collectHostImportFiles(server, entry))
 				.flatMap((entryFiles) => Array.from(entryFiles))
 				.flatMap((file) => {
 					const path = filePath(file)
@@ -254,7 +260,7 @@ export class ViteApplicationRecovery {
 			})().catch((cause: unknown) => {
 				const error =
 					cause instanceof Error ? cause : new Error('Recovery update failed', { cause })
-				server.config.logger.error('Application recovery update failed', { error })
+				this.diagnostics.error('Application recovery update failed', { error })
 			})
 		}
 		watcher.on('add', (file) => changed(file, 'create'))
@@ -274,7 +280,7 @@ export class ViteApplicationRecovery {
 				const error =
 					cause instanceof Error ? cause : new Error('Recovery watcher failed', { cause })
 				if (this.onError) this.onError(error)
-				else server.config.logger.error('Application recovery watcher failed', { error })
+				else this.diagnostics.error('Application recovery watcher failed', { error })
 				settleReady()
 			})
 		})

@@ -1,7 +1,13 @@
+import { HOST_VITE_ENVIRONMENT } from '../src/environment'
 import { EventEmitter } from 'node:events'
 import type { ViteDevServer } from 'vite'
 import { expect, it, vi } from 'vitest'
 import { ViteApplicationRecovery } from '../src/internal/vite-application-recovery'
+import {
+	createHostDiagnostics,
+	createViteDiagnostics,
+	type HostDiagnostics,
+} from '../src/internal/update-error'
 
 const state = vi.hoisted(() => ({ watchers: [] as Array<import('node:events').EventEmitter> }))
 vi.mock('chokidar', async () => {
@@ -21,13 +27,18 @@ it('reports recovery watcher and pre-update hook errors without duplicating cand
 	const onChange = vi.fn(async () => {})
 	const watchChange = vi.fn(async () => {})
 	const logger = { error: vi.fn() }
-	const recovery = new ViteApplicationRecovery()
+	let currentLogger: HostDiagnostics | undefined
+	const diagnostics = createHostDiagnostics(
+		() => currentLogger,
+		createViteDiagnostics(() => logger),
+	)
+	const recovery = new ViteApplicationRecovery(diagnostics)
 	const entry = '/fixture/app.ts'
 	recovery.attach(
 		{
 			config: { root: '/fixture', resolve: { extensions: [] }, server: { watch: {} }, logger },
 			environments: {
-				ssr: {
+				[HOST_VITE_ENVIRONMENT]: {
 					moduleGraph: { getModulesByFile: () => new Set() },
 					pluginContainer: { watchChange },
 				},
@@ -58,10 +69,48 @@ it('reports recovery watcher and pre-update hook errors without duplicating cand
 		await vi.waitFor(() => expect(onError).toHaveBeenLastCalledWith(hookError))
 		expect(onChange).not.toHaveBeenCalled()
 
-		const candidateError = new Error('candidate rejected')
+		const candidateError = new AggregateError(
+			[
+				new Error('provider preparation failed', {
+					cause: new Error('database connection refused'),
+				}),
+			],
+			'candidate rejected',
+		)
 		onChange.mockRejectedValueOnce(candidateError)
 		watcher.emit('change', '/fixture/node_modules/missing-package/package.json')
 		await vi.waitFor(() => expect(logger.error).toHaveBeenCalled())
+		const [message, options] = logger.error.mock.calls[0]!
+		expect(message).toContain('Application recovery update failed')
+		expect(message).toContain('AggregateError: candidate rejected')
+		expect(message).toContain('provider preparation failed')
+		expect(message).toContain('database connection refused')
+		expect(message).toContain('vite-application-recovery-errors.test.ts')
+		expect(options).toEqual({ error: candidateError })
+		const contextLogger = { error: vi.fn() }
+		currentLogger = contextLogger
+		onChange.mockRejectedValueOnce(candidateError)
+		watcher.emit('change', '/fixture/node_modules/missing-package/package.json')
+		await vi.waitFor(() =>
+			expect(contextLogger.error).toHaveBeenCalledExactlyOnceWith(
+				'Application recovery update failed',
+				{ error: candidateError },
+			),
+		)
+		expect(logger.error).toHaveBeenCalledOnce()
+		const replacementLogger = { error: vi.fn() }
+		currentLogger = replacementLogger
+		diagnostics.error('replacement failure', { error: candidateError })
+		expect(replacementLogger.error).toHaveBeenCalledExactlyOnceWith('replacement failure', {
+			error: candidateError,
+		})
+		expect(contextLogger.error).toHaveBeenCalledOnce()
+		currentLogger = undefined
+		diagnostics.error('after close', { error: candidateError })
+		expect(logger.error).toHaveBeenLastCalledWith(expect.stringContaining('after close'), {
+			error: candidateError,
+		})
+		expect(replacementLogger.error).toHaveBeenCalledOnce()
 		expect(onError).toHaveBeenCalledTimes(2)
 		await recovery.close()
 		watcher.emit('error', new Error('late watcher error'))

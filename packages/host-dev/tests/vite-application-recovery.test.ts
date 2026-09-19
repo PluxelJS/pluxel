@@ -1,3 +1,4 @@
+import { HOST_VITE_ENVIRONMENT } from '../src/environment'
 import { EventEmitter } from 'node:events'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -27,7 +28,7 @@ async function pendingRecovery(root = '/tmp', dynamic = false) {
 				logger,
 			},
 			environments: {
-				ssr: {
+				[HOST_VITE_ENVIRONMENT]: {
 					moduleGraph: { getModulesByFile: () => new Set() },
 					pluginContainer: { watchChange: vi.fn(async () => {}) },
 				},
@@ -77,12 +78,20 @@ it('reports every watcher error after readiness without losing the listener', as
 		const second = new Error('second filesystem failure')
 		watcher.emit('error', first)
 		watcher.emit('error', second)
-		expect(logger.error).toHaveBeenNthCalledWith(1, 'Application recovery watcher failed', {
-			error: first,
-		})
-		expect(logger.error).toHaveBeenNthCalledWith(2, 'Application recovery watcher failed', {
-			error: second,
-		})
+		expect(logger.error).toHaveBeenNthCalledWith(
+			1,
+			expect.stringContaining('Application recovery watcher failed'),
+			{
+				error: first,
+			},
+		)
+		expect(logger.error).toHaveBeenNthCalledWith(
+			2,
+			expect.stringContaining('Application recovery watcher failed'),
+			{
+				error: second,
+			},
+		)
 	} finally {
 		await recovery.close()
 	}

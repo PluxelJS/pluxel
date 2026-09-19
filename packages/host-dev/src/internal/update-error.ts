@@ -1,5 +1,34 @@
 import { isAbsolute, relative } from 'node:path'
-import { normalizePath } from 'vite'
+import { inspect } from 'node:util'
+import { normalizePath, type Logger } from 'vite'
+
+export type HostDiagnostics = {
+	error(message: string, properties: { error: unknown }): void
+}
+
+/** Vite prints the message; its error option only tracks the original failure. */
+export function createViteDiagnostics(getLogger: () => Pick<Logger, 'error'>): HostDiagnostics {
+	return {
+		error(message, { error }) {
+			getLogger().error(
+				`${message}\n${inspect(error, { depth: null, colors: false, customInspect: false })}`,
+				error instanceof Error ? { error } : undefined,
+			)
+		},
+	}
+}
+
+/** Resolve the current Host on every write so replacement never retains an old root logger. */
+export function createHostDiagnostics(
+	getCurrent: () => HostDiagnostics | undefined,
+	fallback: HostDiagnostics,
+): HostDiagnostics {
+	return {
+		error(message, properties) {
+			;(getCurrent() ?? fallback).error(message, properties)
+		},
+	}
+}
 
 export function portableUpdatePath(file: string, root: string): string {
 	const clean = normalizePath(file).split('?')[0]!

@@ -792,13 +792,20 @@ ${declaration}`
 		expect(definitions.get('OptionalConsumer')?.optional).toEqual([providerAddress])
 	})
 
-	it('maps source-mode package root re-exports to package provenance', async () => {
+	it.each([
+		{ '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+		{ '@pluxel/source': { import: './src/index.ts' }, default: './dist/index.mjs' },
+		{ development: './src/index.ts', default: './dist/index.mjs' },
+		'./src/index.ts',
+		{ types: './src/index.d.ts', import: './src/index.ts', default: './dist/index.mjs' },
+		{ types: './src/index.d.ts', default: './src/index.ts' },
+	])('maps source root %j re-exports to package provenance', async (sourceRoot) => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({
 				name: '@acme/cache',
 				type: 'module',
 				exports: {
-					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+					'.': sourceRoot,
 				},
 			}),
 			'src/backend.ts': `
@@ -845,31 +852,39 @@ ${declaration}`
 		expect(definitions.get('TestCacheBackend')?.provides).toEqual(tokenAddress)
 	})
 
-	it('rejects absolute source identities outside a static application root', async () => {
-		await using fixture = await createFixture({
-			'host/package.json': JSON.stringify({ name: '@acme/host', type: 'module' }),
-			'plugins/orders/package.json': JSON.stringify({
-				name: '@acme/orders',
-				type: 'module',
-				exports: { '.': { types: './src/index.ts', default: './src/index.ts' } },
-			}),
-			'plugins/orders/src/index.ts': `
+	it.each([
+		'./dist/index.mjs',
+		{ types: './src/index.ts', default: './dist/index.mjs' },
+		{ '@pluxel/hmr': './src/index.d.ts', default: './dist/index.mjs' },
+		{ import: './src/index.d.mts', default: './src/index.d.cts' },
+	])(
+		'does not infer source package provenance from %j outside the application',
+		async (sourceRoot) => {
+			await using fixture = await createFixture({
+				'host/package.json': JSON.stringify({ name: '@acme/host', type: 'module' }),
+				'plugins/orders/package.json': JSON.stringify({
+					name: '@acme/orders',
+					type: 'module',
+					exports: { '.': sourceRoot },
+				}),
+				'plugins/orders/src/index.ts': `
 				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class OrdersPlugin extends BasePlugin {}
 			`,
-		})
-		const collector = createPluginSemanticsPlugin({
-			root: fixture.getPath('host'),
-		})
+			})
+			const collector = createPluginSemanticsPlugin({
+				root: fixture.getPath('host'),
+			})
 
-		await expect(
-			rolldown({
-				input: fixture.getPath('plugins/orders/src/index.ts'),
-				external: ['@pluxel/core'],
-				plugins: [collector.plugin],
-			}).then((build) => build.generate({ format: 'esm' })),
-		).rejects.toThrow('outside configured source spaces')
-	})
+			await expect(
+				rolldown({
+					input: fixture.getPath('plugins/orders/src/index.ts'),
+					external: ['@pluxel/core'],
+					plugins: [collector.plugin],
+				}).then((build) => build.generate({ format: 'esm' })),
+			).rejects.toThrow('outside configured source spaces')
+		},
+	)
 
 	it('selects the most specific configured source space', async () => {
 		await using fixture = await createFixture({
@@ -1199,38 +1214,56 @@ ${declaration}`
 		await expect(transform(code)).rejects.toThrow(message)
 	})
 
-	it('validates package-root uniqueness and plugin-free subpaths before bundling', async () => {
-		await using fixture = await createFixture({
-			'package.json': JSON.stringify({
-				name: '@acme/orders',
-				type: 'module',
-				exports: {
-					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
-					'./worker': { '@pluxel/hmr': './src/worker.ts', default: './dist/worker.mjs' },
-				},
-			}),
-			'src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class OrdersPlugin extends BasePlugin {}
-			`,
-			'src/worker.ts': `
+	it.each([
+		{
+			explicit: true,
+			root: "import { BasePlugin, Plugin } from '@pluxel/core'; @Plugin() export class OrdersPlugin extends BasePlugin {}",
+			message: 'is plugin-bearing',
+		},
+		{ explicit: false, root: 'export const ready = true', message: 'is plugin-bearing' },
+		{
+			explicit: false,
+			root: "import { BasePlugin } from '@pluxel/core'; export class OrdersPlugin extends BasePlugin {}",
+			message: 'missing @Plugin',
+		},
+		{
+			explicit: false,
+			root: "export { OrdersPlugin } from '@acme/provider'",
+			message: 'cross-package Plugin re-exports are forbidden',
+		},
+	])(
+		'rejects invalid package exports: $message (explicit=$explicit)',
+		async ({ explicit, root, message }) => {
+			const workerPath = explicit ? 'src/worker.js' : 'src/worker.ts'
+			await using fixture = await createFixture({
+				'package.json': JSON.stringify({
+					name: '@acme/orders',
+					type: 'module',
+					exports: {
+						'.': { default: './src/index.ts' },
+						'./worker': explicit ? `./${workerPath}` : { import: `./${workerPath}` },
+					},
+				}),
+				'src/index.ts': root,
+				[workerPath]: `
 				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class WorkerPlugin extends BasePlugin {}
 			`,
-		})
-		const collector = createPluginSemanticsPlugin({
-			root: fixture.getPath(),
-			packageJsonPath: fixture.getPath('package.json'),
-		})
+			})
+			const collector = createPluginSemanticsPlugin({
+				root: fixture.getPath(),
+				...(explicit ? { packageJsonPath: fixture.getPath('package.json') } : {}),
+			})
 
-		await expect(
-			rolldown({
-				input: fixture.getPath('src/index.ts'),
-				external: ['@pluxel/core'],
-				plugins: [collector.plugin],
-			}).then((build) => build.generate({ format: 'esm' })),
-		).rejects.toThrow('is plugin-bearing')
-	})
+			await expect(
+				rolldown({
+					input: fixture.getPath(explicit ? 'src/index.ts' : workerPath),
+					external: ['@pluxel/core'],
+					plugins: [collector.plugin],
+				}).then((build) => build.generate({ format: 'esm' })),
+			).rejects.toThrow(message)
+		},
+	)
 
 	it('collects package metadata only from owner-reachable local Parts across modules', async () => {
 		await using fixture = await createFixture({

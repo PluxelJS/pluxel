@@ -16,14 +16,14 @@ const mocked = vi.hoisted(() => ({
 	script: vi.fn(),
 	load: vi.fn(async () => {}),
 }))
-vi.mock('../src/runner', () => ({
-	collectViteSsrImportFiles: () => [],
-	importViteSsrModule: async () => {
+vi.mock('../src/environment', () => ({
+	collectHostImportFiles: () => [],
+	importHostModule: async () => {
 		await mocked.load()
 		return { default: mocked.script }
 	},
-	invalidateViteModuleGraphFiles: vi.fn(),
-	invalidateViteSsrModule: vi.fn(),
+	invalidateHostModuleGraphFiles: vi.fn(),
+	invalidateHostModule: vi.fn(),
 }))
 vi.mock('../src/console/server', () => ({
 	startDevConsoleServer: async (options: { execute: typeof mocked.execute }) => {

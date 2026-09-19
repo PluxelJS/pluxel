@@ -2,7 +2,7 @@ import type { PluginConstructor } from '@pluxel/core'
 import type { PluginSource, PluginSourceChange } from '@pluxel/host'
 import { collectPluginModuleExports, openPluginSources } from '@pluxel/host/internal'
 import type { ViteDevServer } from 'vite'
-import { collectViteSsrImportFiles, importViteSsrModule } from './runner.ts'
+import { collectHostImportFiles, importHostModule } from './environment'
 
 type ApplicationSources = {
 	plugins: readonly PluginConstructor[]
@@ -110,9 +110,9 @@ export function createHostSourceEvaluator(options: {
 				const plugins = [...input.application.plugins]
 				for (const path of entries) {
 					options.onEntry?.(path)
-					const namespace = await importViteSsrModule(options.server, path)
+					const namespace = await importHostModule(options.server, path)
 					plugins.push(...collectPluginModuleExports(namespace))
-					for (const file of collectViteSsrImportFiles(options.server, path)) {
+					for (const file of collectHostImportFiles(options.server, path)) {
 						files.add(file)
 						sourceModules.add(file)
 					}

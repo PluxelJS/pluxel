@@ -10,6 +10,7 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { readHostPluginStatusOverview, readHostRecentUpdates } from '@pluxel/host/internal'
 import type { PluginHost } from '@pluxel/host'
 import { vitePreset } from '@pluxel/services/vite'
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import {
 	createServer,
 	createLogger,
@@ -448,7 +449,7 @@ assert.equal(pluginService.isRunning(address), false)
 async function invokeHotUpdate(route: VitePlugin, changedFile: string): Promise<void> {
 	const hook = typeof route.hotUpdate === 'function' ? route.hotUpdate : route.hotUpdate?.handler
 	if (typeof hook !== 'function') throw new Error('static Vite hot-update hook is missing')
-	await hook.call({ environment: server.environments.ssr } as never, {
+	await hook.call({ environment: server.environments[HOST_VITE_ENVIRONMENT] } as never, {
 		type: 'update',
 		file: normalizePath(changedFile),
 		server,
@@ -462,7 +463,10 @@ async function invokeViteWatchChange(
 	changedFile: string,
 	event: 'create' | 'update' | 'delete',
 ): Promise<void> {
-	await server.environments.ssr.pluginContainer.watchChange(normalizePath(changedFile), { event })
+	await server.environments[HOST_VITE_ENVIRONMENT].pluginContainer.watchChange(
+		normalizePath(changedFile),
+		{ event },
+	)
 }
 
 function requiredEnv(name: string): string {

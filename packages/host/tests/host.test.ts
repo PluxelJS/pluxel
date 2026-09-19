@@ -7,11 +7,21 @@ import {
 	lowerTestReplacement,
 } from '@pluxel/test/unsafe'
 import { createHost, type PluginSourceOpenOptions } from '../src/index'
+import { requireHostStateStore } from '../src/host'
 
 describe('Core-only Host', () => {
 	it('owns one catalog and queue, separates admission from intent, and drains shutdown', async () => {
-		@Plugin()
-		class LifecyclePlugin extends BasePlugin {
+		abstract class LifecycleBackend extends BasePlugin {}
+		__setPluginDefinition(LifecycleBackend, {
+			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+			kind: 'abstract',
+			definition: {
+				entry: { kind: 'package-root', packageName: '@test/host' },
+				exportName: 'LifecycleBackend',
+			},
+		})
+		@Plugin(LifecycleBackend)
+		class LifecyclePlugin extends LifecycleBackend {
 			static starts = 0
 			static stops = 0
 			init() {
@@ -28,8 +38,10 @@ describe('Core-only Host', () => {
 				entry: { kind: 'package-root', packageName: '@test/host' },
 				exportName: 'LifecyclePlugin',
 			},
+			provides: pluginDefinitionAddressOf(LifecycleBackend),
 		})
 		const host = await createHost({ plugins: [LifecyclePlugin] })
+		const state = requireHostStateStore(host.ctx)
 		const address = {
 			definition: pluginDefinitionAddressOf(LifecyclePlugin),
 			variant: 'default' as const,
@@ -61,6 +73,11 @@ describe('Core-only Host', () => {
 			await host.close()
 		}
 		expect(LifecyclePlugin.stops).toBe(2)
+		expect(requirePluginService(host.ctx).readCommittedDependencyAdjacency().nodes).toEqual([])
+		// Shutdown withdraws only live bindings; next startup retains its desired provider policy.
+		expect(state.snapshot().providerDefaults).toEqual([
+			{ token: pluginDefinitionAddressOf(LifecycleBackend), provider: address },
+		])
 		await expect(host.close()).resolves.toBeUndefined()
 		await expect(host.startNode(address)).rejects.toThrow('closed')
 	})

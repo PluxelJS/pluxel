@@ -83,8 +83,10 @@ source/package artifact inputs，以便补偿 Host 复用旧计划，而不是�
 
 ## Canonical Vite module graph
 
-每个 `ViteDevServer` 只有一个 Pluxel SSR ModuleRunner 和 evaluated module namespace。应用声明、fixed plugins、mutable source anchors 和普通 ESM dependencies 都通过该实例求值；HMR layer 只增加分类、
-invalidation、source anchor 和诊断，不创建第二个 cache。
+每个 `ViteDevServer` 的专用 `pluxel` environment 只有一个 Host ModuleRunner 和 evaluated module namespace。
+应用声明、fixed plugins、mutable source anchors、开发控制台和普通 ESM dependencies 都通过该实例求值；HMR layer
+只增加分类、invalidation、source anchor 和诊断，不创建第二个 Host cache。默认 `ssr` 与第三方 `ssrLoadModule`
+使用独立的 Vite 环境、执行缓存与生命周期，不接受 Host 的 source conditions、singleton 或语义 collector。
 
 Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons()` 另外固定 Services、Workbench、Management 和 Logging，并保持 Cap’n Web 的 native ESM identity。相应 public、internal 和 workspace source path 都必须解析到
 host 安装的 ESM entry；解析使用 import conditions，不能通过 CJS path 冒充 ESM singleton。Standalone
@@ -100,7 +102,7 @@ Bare specifier 与 `/@fs/` 边界使用同一 classifier，workspace alias 不�
 `InlineConfig` 或自定义 bridge policy。
 通用 source pipeline 默认启用 Vite `resolve.tsconfigPaths`，但保留显式 `false`；alias 的解析仍由 Vite 拥有，
 Host-dev 只分类其物理结果。浏览器 Node builtin guard 使用 Vite 的 browser external 结果报错，允许显式浏览器实现，
-不在 SSR environment 运行。开发诊断的公共事实是应用 recent update 与逐插件 lifecycle reports，不另设无生产者的日志 schema。
+不在 server environment 运行。开发诊断的公共事实是应用 recent update 与逐插件 lifecycle reports，不另设无生产者的日志 schema。
 
 Artifact classifier 也只消费三态正向证据：raw source lowering 对 exact definition 的事实才能产生 `source-module`；active
 module closure 中 toolchain setter 的 exact literal definition 事实才能产生 `built-module`。文件扩展名、package 路径、未命中

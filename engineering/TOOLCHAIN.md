@@ -67,6 +67,16 @@ capability registry、动态命令发现或通用 extension contract。至少出
 
 官方 capability ID 同时决定加载入口和模块类型；命令调用方不传模块类型泛型。类型映射只使用 type import，不能因此提前加载可选 owner。
 
+## Package source inference
+
+Plugin package provenance 要求显式 `exports` 子路径映射与根 named exports，不以 `@pluxel/hmr` 作为身份标记。
+推断 package plan 与读取其 public entries 使用同一个 source selector：优先 `@pluxel/hmr`、`@pluxel/source`、
+`development`；plain target 或 `import` / `default` 只有指向可执行 TypeScript 时才是 source entry。
+显式 source condition 可指向 JavaScript；普通 built JavaScript、`types` 和 declaration files 不触发源码推断。
+已建立的 Plugin package plan 仍扫描无条件 JavaScript 导出，不能借此绕过 Plugin-bearing subpath 校验。
+自动推断只为实际根导出 marked Plugin 的包建立 plan；普通源码库中的本地 Plugin 仍按 source-space 定位。
+显式 package build 继续要求至少一个 marked Plugin。嵌套条件按同一规则读取；Plugin-bearing subpath、重复 root export 与跨包 re-export 的拒绝规则不变。
+
 ## Independent source workspaces
 
 `pluxel source` 是 CLI 拥有的开发期 pnpm 编排层。消费仓库只在 `pluxel.sources.jsonc` 声明稳定 Git
@@ -221,16 +231,32 @@ assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表
 Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata，
 并由 Vite/OXC 提供 legacy decorator transform。Host-dev 自动组合该 pipeline；preprocessor 参与所有 environment，
 Plugin semantics、lint 和 config metadata 仅作用于 server environment。Workbench 单独拥有 browser compiler 与 UI singleton 策略。
-开发解析优先 `@pluxel/hmr`、`development`、`@pluxel/source`，默认启用 Vite 自身的 `resolve.tsconfigPaths`，
+源码解析添加 `@pluxel/hmr`、`@pluxel/source`，其余条件遵循 Vite 的 client/server 默认值：浏览器不启用 `node`，
+`development` / `production` 按 Vite 的实际环境选择，不能同时启用。默认启用 Vite 自身的 `resolve.tsconfigPaths`，
 显式 `false` 保持关闭。项目无需再注册路径解析插件。浏览器直接引入 Node builtin 时，adapter 复用 Vite 解析结果：
 没有用户提供的浏览器实现而被 Vite externalize 的 builtin 立即报错，包含 import 与 importer；SSR 不受此 guard 影响。
 
-Host-dev 拥有唯一 SSR ModuleRunner、source watcher 和更新队列，统一求值应用声明、fixed imports 与动态来源；
+Host-dev 拥有专用 `pluxel` Vite environment、source watcher 和更新队列，应用声明、fixed imports、动态来源和
+开发控制台都在该 environment 的单一 runner / evaluated namespace 求值。其 runner 禁用自动 HMR 求值，所有
+Host 更新由候选提交队列管理，并使用 source-aware stack mapping。Vite 自身负责 runner 与 environment 的关闭。
 Services 提供 HTTP carrier，Workbench 通过开发附件接入 artifact compiler。生产启动使用构建产物与生产来源加载器，
 不以另一个 Vite mode 充当生产 launcher。Vite 默认忽略生成态 `.pluxel`、日志与数据库目录。
-Host-dev 的 host module classifier 按 Node 规则与 package metadata 判断 CommonJS/native module；Vite alias 或 tsconfig paths
-先由 Vite 解析，再对物理目标应用同一分类，确保 workspace CJS 不落入 ESM runner。该边界不重新实现 Vite resolver，
-也不改变 production freezer 的 residual tracing 和部署闭包契约。
+
+Host 的 source conditions、noExternal、singleton 与语义 collector 只作用于 `pluxel` environment。
+默认 `ssr` 和第三方 `ssrLoadModule` 保留 Vite 自己的环境工厂、解析策略和执行缓存；它们不加载 Host 的 Plugin 实例。
+第三方应提交普通数据，或使用已运行 Host 的服务 API；不能把另一 environment 求值出的 Plugin constructor 当作
+Host 同一 evaluated namespace。用户自定义 SSR factory 与 Host 专用 environment 可以共存。
+
+专用 environment 在其工厂返回前装配唯一的 fetchModule 策略：Vite 先解析，再对物理文件分类；
+CommonJS/native 与显式 singleton 交给 Node，其余交给 Vite。Singleton 只登记 canonical 物理身份，
+不维护请求 URL 拼写白名单，不修改 server.close 或私有 runner transport。Vite 只公开 runnable 工厂而不公开构造器，
+因此在工厂中装配公开方法；不借助私有构造器反射。只有 `pluxel` 名称的环境工厂属于 Host，调用方不能替换它。
+文件分类器不另建 bare specifier resolver；production freezer 的 residual tracing 和部署闭包契约不受影响。
+
+浏览器 Node builtin guard 与 preprocessor 仍按原语法职责参与 client 编译；Host pipeline 的 preprocessor
+只参与 client 与所选 Host environment，不处理默认 SSR 或其他 server environment。Vite 的 tsconfigPaths 与 OXC
+选项均为项目级，因此保留显式 tsconfigPaths 选择和 legacy decorator 语法配置；不为声称完全隔离而引入额外解析器
+或一次额外 TypeScript/OXC parse。
 
 Host-dev 直接依赖 `@pluxel/rolldown/vite` 公共入口；workspace source conditions 选择当前源码，发布产物保留工具链外部依赖。
 Services 拥有 Node HTTP carrier，Host-dev 不复制 carrier 实现或维护另一套 source transform。
@@ -436,6 +462,9 @@ Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完�
 Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench producer 成功 commit
 通过 session epoch invalidation 驱动 full document reload；producer-status-only 的 building/failed 展示可在同一 session
 轻量刷新，但不做 Content-local reconnect 或页内 remote replacement。
+
+Node 制品并发构建只共享编译任务；每个消费构建仍独立发布到自己的输出目录并接收 native residual 部署事实，不能因缓存命中跳过。
+原生依赖桥接的相对路径按最终制品目录计算，缓存身份包含该目录到 package root 的相对布局，不能把缓存目录的位置烘焙进发行文件。
 
 `workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path 相对声明模块解析；lowering 从实际
 definition/renderer module 收集 source graph，在 owning package root 的 `.pluxel/workbench-generated/` 生成 Bridge entry，

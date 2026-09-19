@@ -409,8 +409,16 @@ function createPreparedHost(
 				} catch (error) {
 					failures.push(error)
 				}
+				let providerDefaults: readonly PluginDefinitionAddress[] = []
 				try {
-					await coordinator.dispose()
+					// Pin the final applied policy after queued updates, then close admission immediately.
+					const [defaults] = await Promise.all([
+						coordinator.readCommitted(({ applied }) =>
+							[...applied.providerDefaults.values()].map(({ token }) => token),
+						),
+						coordinator.dispose(),
+					])
+					providerDefaults = defaults
 				} catch (error) {
 					failures.push(error)
 				}
@@ -419,6 +427,7 @@ function createPreparedHost(
 					const nodes = registry.readCommittedDependencyAdjacency().nodes
 					if (nodes.length > 0) {
 						const update = registry.beginUpdate({ reason: 'host-close' })
+						for (const token of providerDefaults) update.setProviderDefault(token, null)
 						for (const node of nodes) update.dematerializeNode(node, { cascadeDependents: true })
 						const result = await update.commit()
 						if (result.ok === false) failures.push(result.err)

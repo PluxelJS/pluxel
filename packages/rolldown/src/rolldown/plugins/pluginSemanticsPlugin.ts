@@ -1539,7 +1539,7 @@ async function inferPackagePlan(
 				})
 			}
 			if (!hasPluginSourceRoot(pkg.exports)) return undefined
-			return createPackagePlan(packageJsonPath, error)
+			return createPackagePlan(packageJsonPath, error, 'infer')
 		})
 		inferredPackagePlans.set(packageJsonPath, plan)
 	}
@@ -1563,15 +1563,14 @@ async function findNearestPackageJson(startDirectory: string): Promise<string | 
 
 function hasPluginSourceRoot(value: unknown): boolean {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-	const root = (value as Record<string, unknown>)['.']
-	if (!root || typeof root !== 'object' || Array.isArray(root)) return false
-	return readSourceCondition((root as Record<string, unknown>)['@pluxel/hmr']) !== undefined
+	return readSourceCondition((value as Record<string, unknown>)['.']) !== undefined
 }
 
 async function createPackagePlan(
 	packageJsonPath: string,
 	error: (message: string) => never,
-): Promise<PackagePlan> {
+	mode: 'explicit' | 'infer' = 'explicit',
+): Promise<PackagePlan | undefined> {
 	const resolvedPackageJson = resolve(packageJsonPath)
 	const packageRoot = dirname(resolvedPackageJson)
 	const raw = await readFile(resolvedPackageJson, 'utf8').catch((cause) => {
@@ -1585,7 +1584,7 @@ async function createPackagePlan(
 	const rootEntry = publicEntries.get('.')
 	if (!rootEntry) {
 		error(
-			`[pluxel:plugin-package] ${packageName} root export must expose a source entry via @pluxel/hmr or @pluxel/source`,
+			`[pluxel:plugin-package] ${packageName} root export must expose executable source via @pluxel/hmr, @pluxel/source, development, or a TypeScript entry`,
 		)
 	}
 	const cache = new Map<string, Promise<ModuleAnalysis>>()
@@ -1628,6 +1627,7 @@ async function createPackagePlan(
 	}
 
 	const rootExports = await enumerate(rootEntry)
+	const concreteCount = [...rootExports.values()].filter((origin) => origin.raw.marked).length
 	const rootModule = await readModule(rootEntry)
 	for (const [exportName, target] of rootModule.exports) {
 		const binding = target.kind === 'local' ? rootModule.imports.get(target.local) : undefined
@@ -1638,24 +1638,41 @@ async function createPackagePlan(
 			)
 		}
 	}
-	const addresses = new Map<string, PluginDefinitionAddress>()
-	const namesByOrigin = new Map<string, string[]>()
-	let concreteCount = 0
 	for (const [exportName, origin] of rootExports) {
-		if (!origin.raw.marked && !origin.raw.abstract) {
-			if (origin.raw.basePluginSubclass) {
+		if (origin.raw.basePluginSubclass && !origin.raw.marked && !origin.raw.abstract) {
+			error(
+				`[pluxel:plugin-package] ${packageName} root export ${exportName} extends BasePlugin but is missing @Plugin`,
+			)
+		}
+	}
+	if (concreteCount === 0 && mode === 'explicit') {
+		error(`[pluxel:plugin-package] ${packageName} root entry does not export a marked Plugin`)
+	}
+	for (const [subpath, entry] of publicEntries) {
+		if (subpath === '.' || subpath === './package.json') continue
+		const exports = await enumerate(entry)
+		for (const [exportName, origin] of exports) {
+			if (
+				origin.raw.marked ||
+				(origin.raw.abstract && (concreteCount > 0 || origin.raw.basePluginSubclass))
+			) {
 				error(
-					`[pluxel:plugin-package] ${packageName} root export ${exportName} extends BasePlugin but is missing @Plugin`,
+					`[pluxel:plugin-package] ${packageName}${subpath.slice(1)} is plugin-bearing (${exportName}); Plugin exports are only allowed at package root`,
 				)
 			}
-			continue
 		}
+	}
+	// Only an ordinary source library may fall back; invalid Plugin exports above still fail.
+	if (concreteCount === 0) return undefined
+	const addresses = new Map<string, PluginDefinitionAddress>()
+	const namesByOrigin = new Map<string, string[]>()
+	for (const [exportName, origin] of rootExports) {
+		if (!origin.raw.marked && !origin.raw.abstract) continue
 		if (!isInside(packageRoot, origin.id)) {
 			error(
 				`[pluxel:plugin-package] ${packageName} root export ${exportName} re-exports a Plugin from another package`,
 			)
 		}
-		if (origin.raw.marked) concreteCount++
 		const key = originKey(origin.id, origin.className)
 		const names = namesByOrigin.get(key) ?? []
 		names.push(exportName)
@@ -1672,20 +1689,6 @@ async function createPackagePlan(
 			)
 		}
 		void key
-	}
-	if (concreteCount === 0) {
-		error(`[pluxel:plugin-package] ${packageName} root entry does not export a marked Plugin`)
-	}
-	for (const [subpath, entry] of publicEntries) {
-		if (subpath === '.' || subpath === './package.json') continue
-		const exports = await enumerate(entry)
-		for (const [exportName, origin] of exports) {
-			if (origin.raw.marked || origin.raw.abstract) {
-				error(
-					`[pluxel:plugin-package] ${packageName}${subpath.slice(1)} is plugin-bearing (${exportName}); Plugin exports are only allowed at package root`,
-				)
-			}
-		}
 	}
 	return { packageName, packageRoot, rootEntry, publicEntries, addresses }
 }
@@ -1756,19 +1759,30 @@ function readSourceExportEntries(
 	}
 	for (const [subpath, target] of Object.entries(value as Record<string, unknown>)) {
 		if (!subpath.startsWith('.')) continue
-		const source = readSourceCondition(target)
-		if (!source || !/\.[cm]?[jt]sx?$/.test(source)) continue
+		// A known Plugin package must also validate its unconditional JS exports.
+		// This does not make a plain JS root opt into automatic package inference.
+		const source = readSourceCondition(target, typeof target === 'string')
+		if (!source) continue
 		entries.set(subpath, resolve(packageRoot, source))
 	}
 	return entries
 }
 
-function readSourceCondition(value: unknown): string | undefined {
-	if (typeof value === 'string') return value
+function readSourceCondition(value: unknown, explicitSource = false): string | undefined {
+	if (typeof value === 'string') {
+		if (/\.d\.[cm]?tsx?$/.test(value)) return undefined
+		// JS requires an explicit source condition; a built default is not a source opt-in.
+		const extension = explicitSource ? /\.(?:[cm]?[jt]s|[jt]sx)$/ : /\.(?:[cm]?ts|tsx)$/
+		return extension.test(value) ? value : undefined
+	}
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
 	const record = value as Record<string, unknown>
 	for (const key of ['@pluxel/hmr', '@pluxel/source', 'development']) {
-		const nested = readSourceCondition(record[key])
+		const nested = readSourceCondition(record[key], true)
+		if (nested) return nested
+	}
+	for (const key of ['import', 'default']) {
+		const nested = readSourceCondition(record[key], explicitSource)
 		if (nested) return nested
 	}
 	return undefined

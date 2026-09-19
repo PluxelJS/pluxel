@@ -1,6 +1,9 @@
 import { normalizePath, type EnvironmentModuleNode, type ViteDevServer } from 'vite'
-import { invalidateHostModuleClassifiers } from './host-modules'
-import { collectViteSsrImportFiles } from './runner'
+import {
+	invalidateHostModuleClassifiers,
+	collectHostImportFiles,
+	HOST_VITE_ENVIRONMENT,
+} from './environment'
 
 export function invalidateHostChangedModules(options: {
 	server: ViteDevServer
@@ -25,7 +28,7 @@ export function invalidateHostChangedModules(options: {
 	// Vite may index a package-root module through its symlink while semantic transforms use the
 	// physical file (or vice versa).
 	const modules = new Set<string>([normalizePath(changedFile)])
-	const graph = server.environments.ssr.moduleGraph
+	const graph = server.environments[HOST_VITE_ENVIRONMENT].moduleGraph
 	for (const mod of graph.getModulesByFile(changedFile) ?? []) {
 		queue.push(mod as ModuleLike)
 	}
@@ -41,7 +44,7 @@ export function invalidateHostChangedModules(options: {
 	}
 
 	if (options.reloadDependencies) {
-		for (const file of collectViteSsrImportFiles(server, changedFile)) {
+		for (const file of collectHostImportFiles(server, changedFile)) {
 			for (const mod of graph.getModulesByFile(file) ?? []) queue.push(mod as ModuleLike)
 		}
 	}

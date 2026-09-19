@@ -2,8 +2,8 @@
 
 Core token、正向 Host 安装计划、官方服务拆分、Management、Workbench、开发附件和共享应用启动已经实施。
 官方运行时、Vite 与构建组合统一归 `@pluxel/services` 的三个 preset；通用 Host-dev 不拥有官方服务选择策略。
-当前 API 以[组合 Host 服务](../../docs/reference/runtime-services.md)、[Host 管理接入](../../docs/runtime/management.md)、
-[独立 Workbench](../../docs/workbench/standalone-host.md)及[架构约束](../HOST.md)为准；不再通过本提案维护第二份 API 示例。
+当前 API 以[组合 Host 服务](../docs/reference/runtime-services.md)、[Host 管理接入](../docs/runtime/management.md)、
+[独立 Workbench](../docs/workbench/standalone-host.md)及[架构约束](HOST.md)为准；本文只记录下游验证及其边界。
 
 ## 保持的方向
 
@@ -14,10 +14,27 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 验证优先复用代表性路径：轻量 Host、自有业务 HTTP、官方管理 Plugin、实际 Workbench 页面、独立安装和搬离工作区的生产产物。
 不为每个 facade 复制 graph/lifecycle 测试；测试只在真正的权限、所有权、持久化或发行边界补证据。
 
+## 真实下游迁移验证
+
+三个独立下游使用同一 `HostApplication` 启动契约，按实际产品选择服务；不靠复制框架源码路径或私有 Shell 入口接入。
+
+- **Chatbot：** 固定平台 catalog、官方 Workbench Shell 与显式 PGlite Database；保留既有 Vault、配置目录和内存 auto-start 策略。
+  已通过全部 340 个现有测试、package/root 类型检查、source governance 与生产构建。隔离生产启动验证 Workbench HTML 及其 11 个 JS/CSS 资源返回成功且 MIME 正确。
+- **Rhythm：** Server 使用官方服务组合与自有 LibSQL；Desktop 仅安装 HTTP、持久化、Vault 和日志。
+  已通过消费侧 31 项测试任务、Desktop 250 个现有测试与原生 streamer 测试。原生验证复用 release 构建，避免 debug/release 同时覆盖同一二进制。
+  Desktop 的真实 fetch 产物在临时数据目录启动，五个 provider/account 路由可用，Management/Workbench 路由不存在，最终关闭成功并自然退出。
+  Server 生产构建与 launcher 验证通过，覆盖页面、业务 API、Workbench inventory 和 SIGTERM 关闭。
+  独立消费仓的开发应用与前端验证通过，覆盖七个 provider、管理面、Workbench、动态 provider 生命周期及 GraphQL/RPC 权限。
+- **bot-new-omni：** 官方服务组合加显式 Database；保留开发 PGlite、生产 PostgreSQL 策略及独立 KOOK store。
+  已通过全部现有测试与工作区类型检查，包括 Web 的 150 个测试；测试图显式声明默认 Cache provider，不再依赖旧测试宿主的隐式发现。
+  前端、后端与 distribution 构建通过。独立消费仓在 Workbench 关闭和开启时均通过真实 Vite 验证：控制台操作成功、插件运行、
+  lifecycle/reconciliation 无错误，服务及真实 HTTP carrier 均返回预期的未认证 401；SIGTERM 关闭无强杀或资源释放错误。
+  应用通过 Host 配置声明 30 秒插件启动期限，包含冷 PGlite 初始化及生产数据库迁移；不改变 Core 默认期限。
+
+这些验证使用隔离数据，不代表已有账号的真实平台连接、消息投递或生产数据库升级已验收。
+
 ## 待验证的外部部署边界
 
-- **更多真实下游迁移。** 本仓库 starter 和示例应用采用 Host 声明；Rhythm 等下游没有在此次工作中被修改或启动。
-  需要分别验证 Server 与 Electron/嵌入式 fetch 消费，保留其数据库、gateway、native residual 和自有 SPA 的实际边界。
 - **扩展部署矩阵。** Node carrier、独立 fetch 和纯 Host launcher 不是 Bun/Deno/Worker conformance 的证明。
   新平台必须验证断连、stream、WebSocket ownership 和原生依赖交付，不能仅凭 Fetch 类型兼容宣称支持。
 - **上游声明修复。** capnweb 0.12.0 在 TypeScript 6/7 的完整声明检查中存在两处 TS2574；独立安装检查明确记录这一已知上游错误，

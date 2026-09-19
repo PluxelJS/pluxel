@@ -1,6 +1,6 @@
 import { host, hostSingletons } from '@pluxel/host-dev/vite'
-import { serverOnlyVitePluginFactory } from '@pluxel/rolldown/vite'
-import type { Plugin, PluginOption } from 'vite'
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
+import { perEnvironmentPlugin, type Plugin, type PluginOption } from 'vite'
 import { serviceDevelopment } from './development/service-development'
 
 export type ServicesViteOptions = Readonly<{
@@ -19,7 +19,12 @@ export function serviceSingletons(): Plugin {
 	})
 	// Workbench and RPC Plugins own capnweb as a normal dependency. Keep native ESM identity
 	// without requiring every application to declare that transitive transport package.
-	return { ...singletons, config: () => ({ ssr: { external: ['capnweb'] } }) }
+	return {
+		...singletons,
+		config: () => ({
+			environments: { [HOST_VITE_ENVIRONMENT]: { resolve: { external: ['capnweb'] } } },
+		}),
+	}
 }
 
 /** Official Host development composition; attaches resources only for installed services. */
@@ -28,14 +33,14 @@ export function vitePreset(options: ServicesViteOptions): PluginOption[] {
 		throw new TypeError('[services/vite] devConsole must be a boolean')
 	return [
 		serviceSingletons(),
-		serverOnlyVitePluginFactory(
-			'pluxel:database-source',
-			async (environment) => {
+		{
+			...perEnvironmentPlugin('pluxel:database-source', async (environment) => {
+				if (environment.name !== HOST_VITE_ENVIRONMENT) return false
 				const { databaseSourceVitePlugin } = await import('@pluxel/rolldown/vite')
 				return databaseSourceVitePlugin({ root: environment.config.root })
-			},
-			{ enforce: 'pre' },
-		),
+			}),
+			enforce: 'pre',
+		},
 		...serviceDevelopment(),
 		...host({
 			entry: options.entry,

@@ -87,13 +87,20 @@ oxlint.config.ts
 }
 ```
 
-`@pluxel/hmr` 条件指向 source entry，default 条件指向构建 artifact。source condition 不作为生产部署入口。
+上例用 `@pluxel/hmr` 选择源码、`default` 选择构建制品，适合同时开发和发布的包。
+源码识别也接受 `@pluxel/source`、`development` 条件；仅在工作区消费的 TypeScript 包可以直接写
+`"exports": { ".": "./src/orders.ts" }`，或在 `"."` 下用 `import` / `default` 指向同一 TypeScript
+入口，无需重复添加 `@pluxel/hmr`。这些形式都使用相同的 package-root Plugin identity。
+
+`exports` 仍须是显式子路径映射；`types` 和 `.d.ts` / `.d.mts` / `.d.cts` 声明文件不提供运行时源码。
+普通 JavaScript 的 `import` / `default` 不会被自动当成源码入口；JavaScript 源码需要显式 source condition。
+可发布包仍应将生产导出指向构建制品。
 
 Pluxel Core、所用服务和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
 
 ## `tsconfig.json`
 
-Plugin source 需要 decorator 和 source condition：
+Plugin source 需要 decorator；使用条件源码导出时，让 TypeScript 选择相同条件：
 
 ```json
 {

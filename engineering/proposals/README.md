@@ -13,8 +13,6 @@
 
 仍有未实现边界的文件：
 
-- [`HOST_DEPLOYMENT_VALIDATION.md`](HOST_DEPLOYMENT_VALIDATION.md)：Core 加服务包的作者契约、创建前静态安装、
-  通用管理面与官方 Workbench 复用，以及共享 artifact、开发和生产接入；服务单入口，Runtime 收敛为 Services 根入口的默认 Host。
 - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的
   decoratorless Plugin declaration。

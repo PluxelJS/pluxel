@@ -60,7 +60,6 @@ export function attachSrvxViteNodeCarrier(
 		gracefulShutdown: false,
 		error(error) {
 			const err = error instanceof Error ? error : new Error(String(error))
-			server.ssrFixStacktrace(err)
 			server.config.logger.error('[services/http/vite] srvx request failed', { error: err })
 			return new Response('Internal Server Error', { status: 500 })
 		},
@@ -176,7 +175,6 @@ function isExpectedNodeRequestTermination(
 function reportViteCarrierError(server: ViteDevServer, context: string, cause: unknown): void {
 	const error = viteCarrierError(context, cause)
 	try {
-		server.ssrFixStacktrace(error)
 		server.config.logger.error(`[services/http/vite] ${context}`, { error })
 	} catch {
 		// This is the terminal Promise observation boundary. A diagnostic adapter failure must not
@@ -268,7 +266,6 @@ function isViteHmrUpgrade(
 
 function handleUpgradeError(server: ViteDevServer, socket: Duplex, error: unknown): void {
 	const err = error instanceof Error ? error : new Error(String(error))
-	server.ssrFixStacktrace(err)
 	server.config.logger.error('[services/http/vite] business WebSocket upgrade failed', {
 		error: err,
 	})

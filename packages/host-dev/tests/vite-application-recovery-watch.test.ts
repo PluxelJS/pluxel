@@ -1,3 +1,4 @@
+import { HOST_VITE_ENVIRONMENT } from '../src/environment'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,7 +24,7 @@ it('observes an installation after overlapping missing-package search roots fini
 		{
 			config: { root, resolve: { extensions: ['.js'] }, server: { watch: {} }, logger },
 			environments: {
-				ssr: {
+				[HOST_VITE_ENVIRONMENT]: {
 					moduleGraph: { getModulesByFile: () => new Set() },
 					pluginContainer: { watchChange },
 				},

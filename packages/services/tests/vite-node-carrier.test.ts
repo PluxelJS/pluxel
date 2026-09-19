@@ -138,7 +138,7 @@ describe('Vite Node carrier boundaries', () => {
 		const reported = error.mock.calls[0]![1].error as Error
 		expect(reported).toBeInstanceOf(Error)
 		expect(reported.message).toContain('without a rejection reason')
-		expect(ssrFixStacktrace).toHaveBeenCalledWith(reported)
+		expect(ssrFixStacktrace).not.toHaveBeenCalled()
 		expect(response.statusCode).toBe(500)
 		expect(response.statusMessage).toBe('')
 		expect(response.end).toHaveBeenCalledOnce()

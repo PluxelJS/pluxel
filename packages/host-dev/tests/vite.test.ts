@@ -3,16 +3,26 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
-import { createServer, type InlineConfig, type Plugin, type ViteDevServer } from 'vite'
-import { pluginSourceVitePlugins } from '@pluxel/rolldown/vite'
-
 import {
-	createHostModuleClassifier,
-	createHostModuleVitePlugin,
-	getPluxelViteSsrModuleRunner,
-	importViteSsrModule,
-	hostSingletons,
-} from '../src/vite'
+	createServer,
+	createRunnableDevEnvironment,
+	type RunnableDevEnvironment,
+	type InlineConfig,
+	type Plugin,
+	type ViteDevServer,
+} from 'vite'
+import { pluginSourceVitePlugins, createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
+
+import { hostSingletons } from '../src/vite'
+import { createHostModuleClassifier } from '../src/host-modules'
+import {
+	hostEnvironment,
+	HOST_VITE_ENVIRONMENT,
+	getHostModuleRunner,
+	importHostModule,
+	invalidateHostModule,
+	invalidateHostModuleGraphFiles,
+} from '../src/environment'
 
 function createTestViteServer(config: InlineConfig): Promise<ViteDevServer> {
 	return createServer({
@@ -21,6 +31,7 @@ function createTestViteServer(config: InlineConfig): Promise<ViteDevServer> {
 		appType: 'custom',
 		optimizeDeps: { noDiscovery: true, include: [] },
 		...config,
+		plugins: [hostEnvironment(), ...(config.plugins ?? [])],
 	})
 }
 
@@ -34,6 +45,12 @@ async function withTestViteServer<T>(
 	} finally {
 		await server.close()
 	}
+}
+
+function hostSourcePlugins(options: Parameters<typeof createPluginSourceVitePipeline>[0] = {}) {
+	return [
+		...createPluginSourceVitePipeline({ ...options, environment: HOST_VITE_ENVIRONMENT }).plugins,
+	]
 }
 
 describe('host-dev Vite plugin stack', () => {
@@ -50,13 +67,9 @@ describe('host-dev Vite plugin stack', () => {
 		}
 
 		expect(plugin.name).toBe('pluxel:plugin-source')
-		expect(config.resolve?.conditions?.slice(0, 3)).toEqual([
-			'@pluxel/hmr',
-			'development',
-			'@pluxel/source',
-		])
+		expect(config.resolve?.conditions?.slice(0, 2)).toEqual(['@pluxel/hmr', '@pluxel/source'])
 		expect(config.ssr?.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
+			expect.arrayContaining(['@pluxel/source', 'module', 'node', 'development|production']),
 		)
 		expect(config.resolve?.externalConditions).not.toContain('@pluxel/source')
 		expect(config.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
@@ -91,9 +104,22 @@ describe('host-dev Vite plugin stack', () => {
 			/* @vite-ignore */ pathToFileURL(join(root, 'node_modules/@acme/services/index.js')).href
 		)
 		await withTestViteServer(
-			{ root, plugins: [hostSingletons({ packages: ['@acme/services'] })] },
+			{
+				root,
+				plugins: [
+					{
+						name: 'test:early-host-singleton-consumer',
+						enforce: 'pre',
+						async configureServer(server) {
+							const mod = await getHostModuleRunner(server).import<{ token: object }>(modulePath)
+							expect(mod.token).toBe(native.token)
+						},
+					},
+					hostSingletons({ packages: ['@acme/services'] }),
+				],
+			},
 			async (server) => {
-				const first = await importViteSsrModule<{ token: object }>(server, modulePath)
+				const first = await importHostModule<{ token: object }>(server, modulePath)
 				expect(first.token).toBe(native.token)
 				for (const source of [
 					'@acme/services/commands',
@@ -101,7 +127,10 @@ describe('host-dev Vite plugin stack', () => {
 					'@acme/services/vault',
 					'@acme/services/internal/security',
 				]) {
-					const result = await server.environments.ssr.pluginContainer.resolveId(source, modulePath)
+					const result = await server.environments[HOST_VITE_ENVIRONMENT].pluginContainer.resolveId(
+						source,
+						modulePath,
+					)
 					expect(result).toMatchObject({ external: true })
 				}
 			},
@@ -144,10 +173,10 @@ describe('host-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluginSourceVitePlugins({ lintGuard: false, configSource: false }),
+				plugins: hostSourcePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
-				const mod = await importViteSsrModule<{ branch: string }>(server, modulePath)
+				const mod = await importHostModule<{ branch: string }>(server, modulePath)
 				expect(mod.branch).toBe('included')
 			},
 		)
@@ -180,16 +209,18 @@ describe('host-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
+				environments: {
+					[HOST_VITE_ENVIRONMENT]: { resolve: { external: ['fixture-bundler-condition'] } },
+				},
 				plugins: [
-					createHostModuleVitePlugin(),
-					...pluginSourceVitePlugins({
+					...hostSourcePlugins({
 						lintGuard: false,
 						configSource: false,
 					}),
 				],
 			},
 			async (server) => {
-				const mod = await importViteSsrModule<{ selected: string }>(server, entryPath)
+				const mod = await importHostModule<{ selected: string }>(server, entryPath)
 				expect(mod.selected).toBe('node')
 			},
 		)
@@ -229,14 +260,14 @@ describe('host-dev Vite plugin stack', () => {
 			join(root, 'node_modules', 'fixture-misleading-module', 'index.js'),
 			'exports.value = true\n',
 		)
-		const classifier = createHostModuleClassifier({ root })
+		const classifier = createHostModuleClassifier()
 		expect(
 			await Promise.all([
-				classifier.classifySpecifier('fixture-commonjs'),
-				classifier.classifySpecifier('fixture-misleading-module'),
-				classifier.classifySpecifier('fixture-native'),
-				classifier.classifySpecifier('fixture-esm'),
-				classifier.classifySpecifier('fixture-legacy-esm'),
+				classifier.classifyFile(join(root, 'node_modules/fixture-commonjs/index.js')),
+				classifier.classifyFile(join(root, 'node_modules/fixture-misleading-module/index.js')),
+				classifier.classifyFile(join(root, 'node_modules/fixture-native/index.js')),
+				classifier.classifyFile(join(root, 'node_modules/fixture-esm/index.js')),
+				classifier.classifyFile(join(legacyEsmRoot, 'build/esm/index.js')),
 			]),
 		).toEqual([
 			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
@@ -254,57 +285,79 @@ describe('host-dev Vite plugin stack', () => {
 		expect(await classifier.classifyFile(join(legacyEsmRoot, 'build', 'src', 'index.js'))).toEqual(
 			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
 		)
-		const commonjs = join(legacyEsmRoot, 'build', 'esm', 'compat.cjs').replaceAll('\\', '/')
-		for (const id of [`/@fs/${commonjs}?import#source`, `/@fs//${commonjs}?import`]) {
-			expect(await classifier.classifyFile(id)).toMatchObject({
-				resolvedPath: commonjs,
-				format: 'commonjs',
-			})
-		}
 	})
 
-	it('prefers the ESM side of dual import/require exports in the real Vite runner', async () => {
+	it('isolates Host source conditions from default SSR loading', async () => {
 		await using fixture = await createDiskFixture()
 		const root = fixture.path
 		const entryPath = join(root, 'entry.ts')
 		await writePackage(root, 'fixture-dual', {
 			name: 'fixture-dual',
 			type: 'module',
-			exports: { import: './index.mjs', require: './index.cjs' },
+			exports: { module: './index.mjs', node: './index.cjs', default: './index.mjs' },
 		})
 		await Promise.all([
 			writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
-			writeFile(
-				join(root, 'node_modules', 'fixture-dual', 'index.cjs'),
-				"throw new Error('CJS entry must not be evaluated')\n",
-			),
+			writeFile(join(root, 'node_modules', 'fixture-dual', 'index.cjs'), 'module.exports = 21\n'),
 			writeFile(entryPath, "import answer from 'fixture-dual'\nexport { answer }\n"),
 		])
 
 		await withTestViteServer(
 			{
 				root,
-				plugins: [createHostModuleVitePlugin()],
+				plugins: hostSourcePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
-				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
+				const mod = await importHostModule<{ answer: number }>(server, entryPath)
 				expect(mod.answer).toBe(42)
+				const compat = await server.ssrLoadModule(entryPath)
+				expect(compat.answer).toBe(21)
+				expect(server.environments.client.config.resolve.conditions).toContain('@pluxel/source')
+				expect(server.environments.ssr.config.resolve.conditions).not.toContain('@pluxel/source')
 			},
 		)
 	})
 
-	it('applies host-module externalization only to server environments', async () => {
-		const plugin = createHostModuleVitePlugin()
-		const server = await plugin.applyToEnvironment?.({
-			name: 'ssr',
-			config: { consumer: 'server' },
-		} as never)
-		const client = await plugin.applyToEnvironment?.({
-			name: 'client',
-			config: { consumer: 'client' },
-		} as never)
-		expect(server).toBe(true)
-		expect(client).toBe(false)
+	it('keeps the Host environment separate from custom SSR environments', async () => {
+		await using fixture = await createDiskFixture()
+		let customSsrCreated = false
+		await withTestViteServer(
+			{
+				root: fixture.path,
+				environments: {
+					ssr: {
+						dev: {
+							createEnvironment(name, config) {
+								customSsrCreated = true
+								return createRunnableDevEnvironment(name, config)
+							},
+						},
+					},
+				},
+			},
+			async (server) => {
+				expect(customSsrCreated).toBe(true)
+				expect(server.environments.client.config.consumer).toBe('client')
+				expect(getHostModuleRunner(server)).toBe(
+					(server.environments[HOST_VITE_ENVIRONMENT] as RunnableDevEnvironment).runner,
+				)
+				expect(server.environments.ssr).not.toBe(server.environments[HOST_VITE_ENVIRONMENT])
+			},
+		)
+		await expect(
+			createTestViteServer({
+				root: fixture.path,
+				environments: {
+					[HOST_VITE_ENVIRONMENT]: {
+						dev: {
+							createEnvironment: () => {
+								throw new Error('must not run')
+							},
+						},
+					},
+				},
+			}),
+		).rejects.toThrow(/owned by host/)
 	})
 
 	it('resolves source aliases and CommonJS through Vite while keeping Node imports out of browsers', async () => {
@@ -348,8 +401,19 @@ describe('host-dev Vite plugin stack', () => {
 				{
 					root,
 					plugins: [
-						createHostModuleVitePlugin(),
-						...pluginSourceVitePlugins({
+						{
+							name: 'test:early-host-consumer',
+							enforce: 'pre',
+							async configureServer(server) {
+								const mod = await getHostModuleRunner(server).import<{
+									answer: number
+									name: string
+								}>(entryPath)
+								expect(mod.answer).toBe(43)
+								expect(mod.name).toBe('value')
+							},
+						},
+						...hostSourcePlugins({
 							packageMode,
 							lintGuard: false,
 							configSource: false,
@@ -357,7 +421,7 @@ describe('host-dev Vite plugin stack', () => {
 					],
 				},
 				async (server) => {
-					const mod = await importViteSsrModule<{ answer: number; name: string }>(server, entryPath)
+					const mod = await importHostModule<{ answer: number; name: string }>(server, entryPath)
 					expect(mod.answer).toBe(43)
 					expect(mod.name).toBe('value')
 					await expect(server.environments.client.transformRequest('/browser.ts')).rejects.toThrow(
@@ -370,10 +434,10 @@ describe('host-dev Vite plugin stack', () => {
 			{
 				root,
 				resolve: { tsconfigPaths: false, alias: { 'node:path': join(root, 'browser-path.ts') } },
-				plugins: pluginSourceVitePlugins({ lintGuard: false, configSource: false }),
+				plugins: hostSourcePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
-				await expect(importViteSsrModule(server, entryPath)).rejects.toThrow(/local-commonjs/)
+				await expect(importHostModule(server, entryPath)).rejects.toThrow(/local-commonjs/)
 				const browser = await server.environments.client.transformRequest('/browser.ts')
 				expect(browser?.code).toContain('/browser-path.ts')
 			},
@@ -390,16 +454,21 @@ describe('host-dev Vite plugin stack', () => {
 		)
 
 		await withTestViteServer({ root }, async (server) => {
-			const mod = await importViteSsrModule<{ captureStack(): string }>(server, modulePath)
+			const mod = await importHostModule<{ captureStack(): string }>(server, modulePath)
 
 			expect(mod.captureStack()).toMatch(/probe\.ts:2:\d+/)
+			await writeFile(modulePath, "export function captureStack() { return 'updated' }\n")
+			invalidateHostModuleGraphFiles(server, [modulePath])
+			invalidateHostModule(server, modulePath)
+			const updated = await importHostModule<{ captureStack(): string }>(server, modulePath)
+			expect(updated.captureStack()).toBe('updated')
 		})
 	})
 
 	it('owns one SSR runner per Vite server and closes it with the server', async () => {
 		await using fixture = await createDiskFixture()
 		const root = fixture.path
-		let runner: ReturnType<typeof getPluxelViteSsrModuleRunner> | undefined
+		let runner: ReturnType<typeof getHostModuleRunner> | undefined
 		let runnerOpenDuringCloseBundle = false
 		const server = await createTestViteServer({
 			root,
@@ -412,9 +481,9 @@ describe('host-dev Vite plugin stack', () => {
 				},
 			],
 		})
-		const first = getPluxelViteSsrModuleRunner(server)
+		const first = getHostModuleRunner(server)
 		runner = first
-		const second = getPluxelViteSsrModuleRunner(server)
+		const second = getHostModuleRunner(server)
 		expect(second).toBe(first)
 		await server.close()
 		expect(runnerOpenDuringCloseBundle).toBe(true)
@@ -497,10 +566,10 @@ describe('host-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluginSourceVitePlugins({ lintGuard: false, configSource: false }),
+				plugins: hostSourcePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
-				const mod = await importViteSsrModule<{
+				const mod = await importHostModule<{
 					providerDefinition(): {
 						entry: { kind: string; sourceSpace: string; path: string }
 						exportName: string

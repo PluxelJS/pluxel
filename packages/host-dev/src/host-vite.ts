@@ -25,7 +25,12 @@ import {
 	type PluginUpdateBatchSnapshot,
 	type RuntimeUpdateError,
 } from '@pluxel/host/internal/protocol'
-import { portableUpdatePath, describeUpdateError } from './internal/update-error'
+import {
+	portableUpdatePath,
+	describeUpdateError,
+	createViteDiagnostics,
+	createHostDiagnostics,
+} from './internal/update-error'
 import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 import { createHostDevelopmentDriver, HostDevelopmentClosedError } from './driver'
@@ -33,8 +38,13 @@ import { beginHostCandidate } from './candidate'
 import { createHostSourceEvaluator, type HostSourceCandidate } from './application-sources'
 import { ViteApplicationRecovery } from './internal/vite-application-recovery'
 import { invalidateHostChangedModules } from './invalidation'
-import { collectViteSsrImportFiles, importViteSsrModule, invalidateViteSsrModule } from './runner'
-import { createHostModuleVitePlugin } from './host-modules'
+import {
+	collectHostImportFiles,
+	importHostModule,
+	invalidateHostModule,
+	hostEnvironment,
+	HOST_VITE_ENVIRONMENT,
+} from './environment'
 import { hostSingletons } from './singletons'
 import {
 	attachHostDevelopmentPlugins,
@@ -65,8 +75,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	)
 		throw new TypeError('[host-dev] bindings must be a plain record')
 	const bindings = Object.freeze({ ...options.bindings })
-	const pipeline = createPluginSourceVitePipeline()
-	const recovery = new ViteApplicationRecovery()
+	const pipeline = createPluginSourceVitePipeline({ environment: HOST_VITE_ENVIRONMENT })
 	const driver = createHostDevelopmentDriver()
 	const recentUpdates = new PluginRecentUpdateTracker()
 	let server: ViteDevServer
@@ -84,12 +93,13 @@ export function host(options: HostViteOptions): PluginOption[] {
 		PluginHost,
 		Awaited<ReturnType<typeof attachHostDevelopmentPlugins>>
 	>()
+	const diagnostics = createHostDiagnostics(
+		() => (closing ? undefined : active?.ctx.logger),
+		createViteDiagnostics(() => server.config.logger),
+	)
+	const recovery = new ViteApplicationRecovery(diagnostics)
 	const report = (error: unknown): void => {
-		if (active) active.ctx.logger.error('Host development update failed', { error })
-		else
-			server.config.logger.error('Host development update failed', {
-				error: error as Error,
-			})
+		diagnostics.error('Host development update failed', { error })
 	}
 	const create = async (
 		input: HostApplication,
@@ -144,7 +154,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					(changed.type === 'create' && !sources.covers(changed.file)),
 				reloadDependencies: sources.covers(changed.file),
 			})
-			for (const file of invalidation.modules) invalidateViteSsrModule(server, file)
+			for (const file of invalidation.modules) invalidateHostModule(server, file)
 		}
 		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
 		let sourceCandidate: HostSourceCandidate<HostApplication> | undefined
@@ -176,12 +186,12 @@ export function host(options: HostViteOptions): PluginOption[] {
 		}
 		try {
 			await candidate.run(async () => {
-				const namespace = await importViteSsrModule<Record<string, unknown>>(server, entry)
+				const namespace = await importHostModule<Record<string, unknown>>(server, entry)
 				const declared = namespace.default
 				assertHostApplication(declared)
 				sourceCandidate = await sources.evaluate({
 					application: declared,
-					entryFiles: collectViteSsrImportFiles(server, entry),
+					entryFiles: collectHostImportFiles(server, entry),
 				})
 				if (closing) throw new HostDevelopmentClosedError()
 				const next = sourceCandidate.application
@@ -453,6 +463,9 @@ export function host(options: HostViteOptions): PluginOption[] {
 	const lifecycle: Plugin = {
 		name: 'pluxel:host',
 		apply: 'serve',
+		applyToEnvironment(environment) {
+			return environment.name === HOST_VITE_ENVIRONMENT
+		},
 		async configureServer(value) {
 			server = value
 			entry = normalizePath(resolve(server.config.root, options.entry))
@@ -486,7 +499,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 		hotUpdate: {
 			order: 'post',
 			async handler(context) {
-				if (this.environment.name !== 'ssr' || closing) return undefined
+				if (this.environment.name !== HOST_VITE_ENVIRONMENT || closing) return undefined
 				devConsole?.invalidate(context.file)
 				devConsole?.observed(context.file)
 				if (sources.covers(context.file)) return undefined
@@ -526,13 +539,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 				throw new AggregateError(errors, '[host-dev] development shutdown failed')
 		},
 	}
-	return [
-		hostSingletons(),
-		createHostModuleVitePlugin(),
-		...pipeline.plugins,
-		recovery.plugin,
-		lifecycle,
-	]
+	return [hostSingletons(), hostEnvironment(), ...pipeline.plugins, recovery.plugin, lifecycle]
 }
 
 function sameServices(

@@ -6,11 +6,11 @@ import { normalizePath, type ViteDevServer } from 'vite'
 import type { RootContext } from '@pluxel/core'
 import { createDevConsoleScope, type DevConsoleScope } from '../dev/console'
 import {
-	collectViteSsrImportFiles,
-	importViteSsrModule,
-	invalidateViteModuleGraphFiles,
-	invalidateViteSsrModule,
-} from '../runner'
+	collectHostImportFiles,
+	importHostModule,
+	invalidateHostModuleGraphFiles,
+	invalidateHostModule,
+} from '../environment'
 import { ConsoleExecutionError, DEV_CONSOLE_VALUE_BYTES } from './protocol'
 import { startDevConsoleServer } from './server'
 
@@ -111,7 +111,7 @@ export async function attachDevConsole(
 					'source_changed',
 					'Script changed while preparing execution',
 				)
-			const exports = await importViteSsrModule<Record<string, unknown>>(options.server, file)
+			const exports = await importHostModule<Record<string, unknown>>(options.server, file)
 			run.signal.throwIfAborted()
 			if (options.getHost()?.epoch !== host.epoch)
 				throw new ConsoleExecutionError('host_changed', 'Dev host changed during module loading')
@@ -124,7 +124,7 @@ export async function attachDevConsole(
 					`Export ${input.exportName} is not a function`,
 				)
 			const nextDependencies = new Map<string, string>()
-			for (const dependency of collectViteSsrImportFiles(options.server, file)) {
+			for (const dependency of collectHostImportFiles(options.server, file)) {
 				if (
 					!isAbsolute(dependency) ||
 					dependency.includes('\0') ||
@@ -206,8 +206,8 @@ export async function attachDevConsole(
 		invalidate(file: string) {
 			if (!tracks(file)) return
 			// The route owns publication. Never invalidate again after its new namespace has committed.
-			invalidateViteModuleGraphFiles(options.server, [file])
-			invalidateViteSsrModule(options.server, file)
+			invalidateHostModuleGraphFiles(options.server, [file])
+			invalidateHostModule(options.server, file)
 		},
 		observed(file: string) {
 			const path = normalizePath(file)

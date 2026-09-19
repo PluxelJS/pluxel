@@ -1,4 +1,5 @@
 import type { Plugin, PluginOption } from 'vite'
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
 
 /** Only attach development resources for capabilities already installed by the application. */
@@ -41,6 +42,9 @@ export function serviceDevelopment(): PluginOption[] {
 		{
 			name: 'pluxel:service-development',
 			apply: 'serve',
+			applyToEnvironment(environment) {
+				return environment.name === HOST_VITE_ENVIRONMENT
+			},
 			async closeBundle(...args) {
 				// The listener attachment survives Host replacement, and belongs to Vite.
 				const hook = http?.closeBundle

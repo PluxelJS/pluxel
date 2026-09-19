@@ -14,7 +14,7 @@ export function isBrowserConsumerEnvironment(environment: ViteEnvironment): bool
 export function serverOnlyVitePlugin(
 	name: string,
 	plugin: PluginOption,
-	options: { enforce?: 'pre' | 'post' } = {},
+	options: { enforce?: 'pre' | 'post'; environment?: string } = {},
 ): Plugin {
 	return serverOnlyVitePluginFactory(name, () => plugin, options)
 }
@@ -22,10 +22,13 @@ export function serverOnlyVitePlugin(
 export function serverOnlyVitePluginFactory(
 	name: string,
 	createPlugin: (environment: ViteEnvironment) => PluginOption,
-	options: { enforce?: 'pre' | 'post' } = {},
+	options: { enforce?: 'pre' | 'post'; environment?: string } = {},
 ): Plugin {
 	const wrapped = perEnvironmentPlugin(name, (environment) =>
-		isServerConsumerEnvironment(environment) ? createPlugin(environment) : false,
+		isServerConsumerEnvironment(environment) &&
+		(!options.environment || environment.name === options.environment)
+			? createPlugin(environment)
+			: false,
 	)
 	return options.enforce ? { ...wrapped, enforce: options.enforce } : wrapped
 }
