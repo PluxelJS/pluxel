@@ -1,5 +1,5 @@
 import { pluginDefinitionIndexKey } from '@pluxel/core'
-import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal/vite-urls'
+import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal'
 import { hostEnv } from '@pluxel/host/environment'
 import { workbenchShellMount } from './shell/mount'
 import type { Plugin } from 'vite'

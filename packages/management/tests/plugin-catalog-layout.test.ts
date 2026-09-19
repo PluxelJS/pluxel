@@ -8,12 +8,12 @@ import {
 	type RuntimeInternalTestHost,
 } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PluginCatalogLayoutService } from '@pluxel/management/internal/services/management/PluginCatalogLayoutService'
+import { PluginCatalogLayoutService } from '../src/services/management/PluginCatalogLayoutService.ts'
 import {
 	automaticCatalogGroups,
 	catalogFamilies,
 	type PluginCatalogLayoutEntry,
-} from '@pluxel/management/internal/services/management/catalog-groups'
+} from '../src/services/management/catalog-groups.ts'
 
 const hosts: RuntimeInternalTestHost[] = []
 afterEach(async () => {

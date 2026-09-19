@@ -277,3 +277,11 @@ Host-dev 在候选语义作用域中计算 execution provenance，Host 只在 ca
 补偿沿用已接受 catalog 对应的制品输入；同路径新 inventory 不得替换旧 plan。旧制品字节已删除时仍须诚实报告补偿失败。
 
 Shell 源码开发通过 `@pluxel/workbench/dev` 的 `workbenchSourceShell({ entry })` 显式附加到当前 Vite 图；入口与 React/CSS 配置由应用提供，不自动探测 workspace 或创建新 watcher/server。与 renderer 制品附件相互独立，见 [Workbench Host HTTP](WORKBENCH.md#host-http-与-shell-开发)。
+
+## 实现边界
+
+每个 `dynamicSource()` 只观察自己的一项声明。Host 的 `openPluginSources()` 统一合并多个来源和重复 entry；
+动态 watcher 不再维护第二个来源集合或聚合协议。声明在创建时校验并冻结，打开观察会话只负责 IO 和资源生命周期。
+
+候选生成、失效策略、来源求值和失败恢复属于 `host()` 内部编排，不是 Vite 包入口的独立扩展点。
+服务附件通过 `HostDevelopmentPluginApi` 参与现有生命周期，不绕过 Host 自行推动候选提交。

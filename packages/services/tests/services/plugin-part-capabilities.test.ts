@@ -8,7 +8,7 @@ import { BasePlugin, Plugin, PluginPart } from '@pluxel/core/test'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { Elysia } from 'elysia'
-import { pluginConfigPresentation } from '@pluxel/management/internal/api/usecases/pluginConfig'
+import { pluginConfigPresentation } from '@pluxel/management/internal/test'
 import { requirePluginHostCoordinator } from '@pluxel/host/internal'
 
 let partCommands: unknown

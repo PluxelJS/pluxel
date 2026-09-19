@@ -7,9 +7,8 @@ import {
 	installScopeCapability,
 	resolveContextCapability,
 } from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
+import { defineHostService, type PluginHost } from '@pluxel/host'
 import { ElysiaApplicationDirectory } from './http/ElysiaApplicationDirectory'
-import { HttpDirectory } from './http/internal'
 import type { ElysiaApplicationCarrier } from './http/elysia-application-carrier'
 
 export type {
@@ -56,6 +55,11 @@ declare module '@pluxel/core' {
 		readonly elysia?: Elysia
 	}
 }
+
+const HttpDirectory = defineContextCapability<ElysiaApplicationDirectory>(
+	'services.http.directory',
+	{ access: 'root' },
+)
 
 /** Install business HTTP without management, Workbench or a physical listener. */
 export function http() {
@@ -200,4 +204,10 @@ class HostHttpServer implements HttpServerApi {
 }
 function matchesPrefix(pathname: string, prefix: string): boolean {
 	return pathname === prefix || pathname.startsWith(prefix + '/')
+}
+
+/** Selecting this adapter requires the Host to have installed the HTTP service. */
+export function createHostHttpHandler(host: PluginHost): (request: Request) => Promise<Response> {
+	const server = resolveContextCapability(host.ctx, HttpServer)
+	return server.fetch.bind(server)
 }

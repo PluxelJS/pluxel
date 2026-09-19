@@ -3,7 +3,7 @@ import { standardServices } from '@pluxel/services'
 import { expect, it } from 'vitest'
 import { createServiceTestHost } from '@pluxel/services/test'
 import { createWorkbenchTestHost } from '@pluxel/workbench/test'
-import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/test'
 import { VaultAdminPlugin } from '../src/index.ts'
 import { VaultWorkbench } from '../src/workbench.ts'
 

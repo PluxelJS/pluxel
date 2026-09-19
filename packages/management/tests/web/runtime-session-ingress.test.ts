@@ -3,16 +3,16 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
 	AdminAccessService,
 	AdminAuthenticationSession,
-} from '@pluxel/management/internal/services/admin-access/AdminAccessService'
+} from '../../src/services/admin-access/AdminAccessService.ts'
 import {
 	RuntimeSessionWebSocket,
 	type ManagementSocket,
-} from '@pluxel/management/internal/web/session/elysia-websocket'
+} from '../../src/web/session/elysia-websocket.ts'
 import {
 	matchesRuntimeSessionUpgrade,
 	RuntimeSessionIngress,
 	validateRuntimeSessionOrigin,
-} from '@pluxel/management/internal/web/session/ingress'
+} from '../../src/web/session/ingress.ts'
 
 const RUNTIME_SESSION_URL = 'https://runtime.test/__pluxel/runtime/session'
 

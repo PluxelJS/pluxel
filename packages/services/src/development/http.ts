@@ -1,4 +1,4 @@
-import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal/vite-urls'
+import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal'
 import { hostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { HttpServer, type HttpServerApi } from '../http'

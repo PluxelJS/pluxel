@@ -36,7 +36,7 @@ await host.close()
 
 `assertPluginSource(ctx, requirement)` 供 Package Manager 等来源生产者验证宿主是否声明了目标来源。它不创建来源会话，也不启动监听。
 
-`/internal` 是 Runtime 与工具链使用的框架集成入口，不是 Plugin 作者 API。
+`/internal` 是服务端框架集成入口，不是 Plugin 作者 API。`/internal/protocol` 单独提供无 IO 的 execution/update snapshots 与验证函数，供浏览器和服务端共享；浏览器不能通过服务端 `/internal` 导入这些协议。
 
 开发时使用 `@pluxel/host-dev/vite` 的 `host({ entry: './app.ts' })`。`app.ts` 默认导出同一份 `HostApplication` 声明，Vite 接入负责加载模块和动态来源；应用声明无需自己传 loader。
 

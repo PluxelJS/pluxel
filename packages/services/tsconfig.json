@@ -1,6 +1,7 @@
 {
 	"extends": "../../tsconfig.workspace.json",
 	"include": ["src", "tests", "vitest.config.ts"],
+	"exclude": ["node_modules", "dist", "tests/fs-fixture-*"],
 	"compilerOptions": {
 		"outDir": "dist",
 		"experimentalDecorators": true,

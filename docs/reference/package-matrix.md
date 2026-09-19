@@ -45,9 +45,9 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 `@pluxel/services` 的 `standardServices()` 提供常用基础能力，`@pluxel/services/preset` 的 `servicesPreset()` 组合 Logging、Management、Vault 与默认 Workbench；服务安装仍由应用显式选择。
 `@pluxel/services/vite` 的 `vitePreset()` 与 `/build` 的 `buildPreset()` 为该组合提供开发和生产工具链。
 自定义宿主从 `@pluxel/host-dev/vite` 组合开发附件，使用 `@pluxel/rolldown` 构建。
-开发控制台从 `@pluxel/host-dev` 导入 `defineDevConsole()`，回调使用 `dev.ctx.require()` 读取已安装服务，详见[开发控制台](../development/dev-console.md)。
+开发控制台从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，回调使用 `dev.ctx.require()` 读取已安装服务，详见[开发控制台](../development/dev-console.md)。
 
-`@pluxel/services/http/node` 是标准 Host launcher 使用的 Node srvx/crossws carrier。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
+`@pluxel/services/http/node` 提供标准 Host launcher 使用的 Node srvx/crossws carrier 和 `listenHostHttp()`。`createHostHttpHandler()` 与 HTTP 服务共用 `@pluxel/services/http` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
 
 ## Workspace-only 能力
 

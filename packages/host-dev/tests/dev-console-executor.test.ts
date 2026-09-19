@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DevConsoleExecutor } from '@pluxel/host-dev/internal/console/executor'
-import { snapshotJson, type DevConsoleRunInput } from '@pluxel/host-dev/internal/console/protocol'
+import { DevConsoleExecutor } from '../src/console/executor'
+import { snapshotJson, type DevConsoleRunInput } from '../src/console/protocol'
 
 function input(runId: string, extra: Partial<DevConsoleRunInput> = {}): DevConsoleRunInput {
 	return {

@@ -1,5 +1,6 @@
 import type { Pool } from 'pg'
 
+/** Keep pg-pool idle-client failures operational instead of process-fatal. */
 export function attachPostgresPoolErrorHandler(
 	pool: Pick<Pool, 'on'>,
 	report: (error: Error) => void,

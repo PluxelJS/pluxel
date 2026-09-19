@@ -32,3 +32,5 @@ Pass trusted `ManagementPeer` address, secure-transport and origin facts from th
 Each authenticated control session supplies an abort signal to Host operations. Closing the endpoint rejects queued work before admission. Already admitted mutations settle without rollback, even when their reply cannot reach the disconnected client. Endpoint disposal never closes the borrowed Host or physical listener.
 
 Browser imports live under `/client`, `/react`, `/session` and `/protocol`. They share one authenticated connection with Workbench Views. View `host.management` methods are borrowed, lifetime-checked facades; they do not create another transport.
+
+The package root is the carrier endpoint entry. Internal entries are restricted to the browser-safe presentation integration (`/internal`), HTTP assembly (`/internal/http`) and cross-package white-box tests (`/internal/test`). Implementation directories are not import contracts; package-owned tests import their source directly.

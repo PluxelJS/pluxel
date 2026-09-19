@@ -571,9 +571,9 @@ function buildHostBootstrap(
 	return `
 ${http ? "import 'pluxel:static-elysia-wiring'" : ''}
 import application from ${JSON.stringify(entry)}
-import { runHostApplication } from '@pluxel/host/application'
-${http ? "import { createHostHttpHandler } from '@pluxel/services/http/application'" : ''}
-${launcher === 'node' ? "import { listenHostHttp } from '@pluxel/services/http/listener'" : ''}
+import { runHostApplication } from '@pluxel/host'
+${http ? "import { createHostHttpHandler } from '@pluxel/services/http'" : ''}
+${launcher === 'node' ? "import { listenHostHttp } from '@pluxel/services/http/node'" : ''}
 const host = await runHostApplication(application, {
  startup: {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',variant:${JSON.stringify(variant)}}},
  frameworkModules: ${framework},

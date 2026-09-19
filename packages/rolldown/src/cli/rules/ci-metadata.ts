@@ -1,6 +1,6 @@
-import { resolveRepoFromCi } from '../../ci/context'
-import type { WorkspacePackageJson } from '../../../workspace/package-json'
-import type { RuleContext } from '../types'
+import { resolveRepoFromCi } from '../ci/context'
+import type { WorkspacePackageJson } from '../../workspace/package-json'
+import type { RuleContext } from './types'
 
 export function ciMetadataRule(pkg: WorkspacePackageJson, _context: RuleContext) {
 	const repo = resolveRepoFromCi()

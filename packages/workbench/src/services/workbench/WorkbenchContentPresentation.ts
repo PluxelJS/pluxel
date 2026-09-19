@@ -4,7 +4,7 @@ import {
 	projectDataPresentationField,
 	projectFormPresentationFields,
 	assertFormPresentationRoot,
-} from '@pluxel/management/internal/config-presentation'
+} from '@pluxel/management/internal'
 import {
 	readWorkbenchContentSlot,
 	readWorkbenchMarkdownDocument,

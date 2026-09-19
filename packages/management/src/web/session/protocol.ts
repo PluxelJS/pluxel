@@ -1,4 +1,4 @@
-import type { RpcTarget } from '../../capnweb'
+import type { RpcTarget } from 'capnweb'
 import type { ManagementAuthenticationProviderStep } from '../../services/admin-access/types'
 import type { RuntimeManagementTarget } from '../management-target'
 

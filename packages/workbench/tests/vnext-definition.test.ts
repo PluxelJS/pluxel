@@ -4,7 +4,7 @@ import {
 	readWorkbenchDescriptor,
 	readWorkbenchMarkdownDocument,
 	readWorkbenchRendererEntry,
-} from '@pluxel/workbench/internal/definition'
+} from '../src/workbench/definition'
 import { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 import * as v from 'valibot'

@@ -53,92 +53,28 @@
 			"@pluxel/source": "./src/http.ts",
 			"default": "./dist/http.mjs"
 		},
-		"./http/application": {
-			"@pluxel/source": "./src/http/application.ts",
-			"default": "./dist/http/application.mjs"
-		},
-		"./http/assets": {
-			"@pluxel/source": "./src/http/assets.ts",
-			"default": "./dist/http/assets.mjs"
-		},
-		"./http/listener": {
-			"@pluxel/source": "./src/http/listener.ts",
-			"default": "./dist/http/listener.mjs"
-		},
 		"./http/node": {
-			"@pluxel/source": "./src/http/node.ts",
+			"@pluxel/source": "./src/http-node.ts",
 			"default": "./dist/http/node.mjs"
 		},
 		"./http/vite": {
-			"@pluxel/source": "./src/http-vite.ts",
+			"@pluxel/source": "./src/development/http.ts",
 			"default": "./dist/http/vite.mjs"
 		},
-		"./internal/database": {
-			"@pluxel/source": "./src/database/internal.ts",
-			"default": "./dist/internal/database.mjs"
-		},
-		"./internal/database/pglite": {
-			"@pluxel/source": "./src/database/adapters/pglite.ts",
-			"default": "./dist/internal/database/pglite.mjs"
-		},
-		"./internal/database/postgres": {
-			"@pluxel/source": "./src/database/adapters/postgres.ts",
-			"default": "./dist/internal/database/postgres.mjs"
-		},
-		"./internal/http": {
-			"@pluxel/source": "./src/http/internal.ts",
-			"default": "./dist/internal/http.mjs"
-		},
-		"./internal/node": {
-			"@pluxel/source": "./src/node/internal.ts",
-			"default": "./dist/internal/node.mjs"
-		},
-		"./internal/node-declaration": {
-			"@pluxel/source": "./src/node/declaration.ts",
-			"default": "./dist/internal/node-declaration.mjs"
-		},
-		"./internal/owner-view": {
-			"@pluxel/source": "./src/internal/owner-view.ts",
-			"default": "./dist/internal/owner-view.mjs"
-		},
-		"./internal/persistence": {
-			"@pluxel/source": "./src/persistence/service.ts",
-			"default": "./dist/internal/persistence.mjs"
-		},
-		"./internal/plugin-address": {
-			"@pluxel/source": "./src/internal/plugin-address.ts",
-			"default": "./dist/internal/plugin-address.mjs"
-		},
-		"./internal/security": {
-			"@pluxel/source": "./src/internal/security.ts",
-			"default": "./dist/internal/security.mjs"
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
 		},
 		"./internal/test": {
 			"@pluxel/source": "./src/internal-test.ts",
 			"default": "./dist/internal/test.mjs"
-		},
-		"./internal/vault": {
-			"@pluxel/source": "./src/vault/service.ts",
-			"default": "./dist/internal/vault.mjs"
-		},
-		"./internal/vault-types": {
-			"@pluxel/source": "./src/vault/types.ts",
-			"default": "./dist/internal/vault-types.mjs"
-		},
-		"./internal/vite-node-carrier": {
-			"@pluxel/source": "./src/development/vite-node-carrier.ts",
-			"default": "./dist/internal/vite-node-carrier.mjs"
-		},
-		"./internal/workspace-fs": {
-			"@pluxel/source": "./src/internal/workspace-fs.ts",
-			"default": "./dist/internal/workspace-fs.mjs"
 		},
 		"./node": {
 			"@pluxel/source": "./src/node.ts",
 			"default": "./dist/node.mjs"
 		},
 		"./node/vite": {
-			"@pluxel/source": "./src/node-vite.ts",
+			"@pluxel/source": "./src/development/node.ts",
 			"default": "./dist/node/vite.mjs"
 		},
 		"./persistence": {
@@ -180,26 +116,10 @@
 			"./database/pglite": "./dist/database/pglite.mjs",
 			"./database/postgres": "./dist/database/postgres.mjs",
 			"./http": "./dist/http.mjs",
-			"./http/application": "./dist/http/application.mjs",
-			"./http/assets": "./dist/http/assets.mjs",
-			"./http/listener": "./dist/http/listener.mjs",
 			"./http/node": "./dist/http/node.mjs",
 			"./http/vite": "./dist/http/vite.mjs",
-			"./internal/database": "./dist/internal/database.mjs",
-			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
-			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
-			"./internal/http": "./dist/internal/http.mjs",
-			"./internal/node": "./dist/internal/node.mjs",
-			"./internal/node-declaration": "./dist/internal/node-declaration.mjs",
-			"./internal/owner-view": "./dist/internal/owner-view.mjs",
-			"./internal/persistence": "./dist/internal/persistence.mjs",
-			"./internal/plugin-address": "./dist/internal/plugin-address.mjs",
-			"./internal/security": "./dist/internal/security.mjs",
+			"./internal": "./dist/internal.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
-			"./internal/vault": "./dist/internal/vault.mjs",
-			"./internal/vault-types": "./dist/internal/vault-types.mjs",
-			"./internal/vite-node-carrier": "./dist/internal/vite-node-carrier.mjs",
-			"./internal/workspace-fs": "./dist/internal/workspace-fs.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",

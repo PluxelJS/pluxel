@@ -22,7 +22,7 @@ import type {
 	RuntimeLogError,
 	RuntimeLogEvent,
 	RuntimeLogLine,
-} from './logs'
+} from '@pluxel/logging/protocol'
 import type {
 	ConfigPresentationResult,
 	ConfigResult,
@@ -61,7 +61,10 @@ import type {
 	RuntimePluginLogLevel,
 	VersionedPluginLogPolicySnapshot,
 } from './protocol'
-import { clonePluginExecutionSnapshot, clonePluginRecentUpdateSnapshot } from '../plugin-execution'
+import {
+	clonePluginExecutionSnapshot,
+	clonePluginRecentUpdateSnapshot,
+} from '@pluxel/host/internal/protocol'
 import {
 	parseConfigPresentationPlanV1,
 	parseRuntimePortableData,

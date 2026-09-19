@@ -9,14 +9,8 @@ export default defineConfig({
 	},
 	entry: {
 		console: 'src/console.ts',
-		'internal/dev/console': 'src/dev/console.ts',
+		internal: 'src/internal.ts',
 
-		'internal/vite-urls': 'src/internal/vite-urls.ts',
-		'internal/update-error': 'src/internal/update-error.ts',
-		'internal/console/attachment': 'src/console/attachment.ts',
-		'internal/console/server': 'src/console/server.ts',
-		'internal/console/protocol': 'src/console/protocol.ts',
-		'internal/console/executor': 'src/console/executor.ts',
 		index: 'src/index.ts',
 		vite: 'src/vite.ts',
 	},

@@ -3,8 +3,8 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { describe, expect, it, vi } from 'vitest'
-import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
-import { parsePluginCatalogSnapshot } from '@pluxel/management/internal/web/management-validation'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget.ts'
+import { parsePluginCatalogSnapshot } from '../../src/web/management-validation.ts'
 
 @Plugin()
 class Documents extends BasePlugin {}

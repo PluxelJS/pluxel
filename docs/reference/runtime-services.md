@@ -287,7 +287,7 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
 生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
 开发不配置该目录，使用 `vitePreset()` 接入已安装 NodeModules 的源码编译器，或在 `host()` 旁显式添加 `nodeArtifacts()`。自行组合服务时同样把生产制品配置传给 `nodeModules()`。
-直接 `runHostApplication(application, { startup })`（`@pluxel/host/application`）返回普通 `PluginHost`，
+直接 `runHostApplication(application, { startup })`（`@pluxel/host`）返回普通 `PluginHost`，
 不创建监听器，也不增加 `fetch` 成员。
 
 应用 `tsdown.config.ts` 使用 `pluxel()`（`@pluxel/rolldown`）。`launcher: 'host'` 适合后台服务；

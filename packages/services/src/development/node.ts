@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { requireNodeModuleHost } from '../node/internal'
+import { NodeModuleHost } from '../node/token'
 import type { Plugin } from 'vite'
 import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
 import { NodeArtifactCompiler, type NodeArtifactCompilerOptions } from './node-compiler'
@@ -11,7 +11,8 @@ export function attachNodeArtifactCompiler(
 	ctx: Context,
 	options: NodeArtifactCompilerOptions = {},
 ): Readonly<{ dispose(): Promise<void> }> {
-	const backend = requireNodeModuleHost(ctx)
+	if (ctx !== ctx.root) throw new TypeError('Node artifact host requires a root Context')
+	const backend = ctx.root.require(NodeModuleHost)
 	const compiler = new NodeArtifactCompiler(ctx, options)
 	const detach = backend.attachSourceBinder((declaration, onUpdate, onError) =>
 		compiler.watchNodeModule(declaration, onUpdate, onError),

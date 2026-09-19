@@ -79,4 +79,4 @@ it('opens the selected backend lazily and drains accepted transactions before Ho
 		release.resolve()
 		await host.close()
 	}
-})
+}, 30_000)

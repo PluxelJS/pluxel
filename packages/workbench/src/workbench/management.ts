@@ -1,4 +1,4 @@
-import type { RuntimeManagementClient } from '@pluxel/management/internal/web/client'
+import type { RuntimeManagementClient } from '@pluxel/management/client'
 
 /** Borrowed unary management operations. Session ownership and subscriptions remain with the Shell. */
 export type WorkbenchManagementOperations = Pick<

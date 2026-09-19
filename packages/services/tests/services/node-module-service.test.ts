@@ -1,5 +1,5 @@
 import { standardServices } from '@pluxel/services'
-import { requireNodeModuleHost } from '@pluxel/services/internal/node'
+import { NodeModuleHost } from '../../src/node/token'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
@@ -17,7 +17,7 @@ describe('NodeModuleService', () => {
 	it('makes the first build/setup failure fail plugin startup', async () => {
 		const host = await createServiceInternalTestHost({ workbench: false })
 		try {
-			requireNodeModuleHost(host.ctx).attachSourceBinder(async () => {
+			host.ctx.require(NodeModuleHost).attachSourceBinder(async () => {
 				throw new Error('node build failed')
 			})
 
@@ -50,7 +50,7 @@ describe('NodeModuleService', () => {
 		try {
 			let publish!: (url: URL) => void | Promise<void>
 			let sourceDisposals = 0
-			requireNodeModuleHost(host.ctx).attachSourceBinder(async (_declaration, onUpdate) => {
+			host.ctx.require(NodeModuleHost).attachSourceBinder(async (_declaration, onUpdate) => {
 				publish = onUpdate
 				return {
 					url: new URL('file:///cache/task-a.mjs'),
@@ -101,8 +101,9 @@ describe('NodeModuleService', () => {
 			let sourceDisposed!: () => void
 			const didDisposeSource = new Promise<void>((resolve) => (sourceDisposed = resolve))
 			const events: string[] = []
-			const detach = requireNodeModuleHost(host.ctx).attachSourceBinder(
-				async (_declaration, onUpdate) => {
+			const detach = host.ctx
+				.require(NodeModuleHost)
+				.attachSourceBinder(async (_declaration, onUpdate) => {
 					publish = onUpdate
 					return {
 						url: new URL('file:///cache/initial.mjs'),
@@ -111,8 +112,7 @@ describe('NodeModuleService', () => {
 							sourceDisposed()
 						},
 					}
-				},
-			)
+				})
 
 			@Plugin({ displayName: 'PendingNodeModuleConsumer' })
 			class PendingNodeModuleConsumer extends BasePlugin {

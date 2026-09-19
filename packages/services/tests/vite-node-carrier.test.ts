@@ -8,7 +8,7 @@ import {
 	attachSrvxViteNodeCarrier,
 	createSrvxViteNodeCarrierClose,
 	dispatchSrvxViteNodeRequest,
-} from '@pluxel/services/internal/vite-node-carrier'
+} from '../src/development/vite-node-carrier'
 
 function createServer() {
 	const error = vi.fn()

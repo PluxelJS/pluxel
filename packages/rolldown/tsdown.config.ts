@@ -24,7 +24,6 @@ export default defineConfig({
 		build: 'src/cli/index.ts',
 		database: 'src/database/index.ts',
 		distribution: 'src/distribution/index.ts',
-		'internal/static-config-environment-vite': 'src/vite/static-config-environment.ts',
 		plugins: 'src/rolldown/index.ts',
 		'resolver/oxc': 'src/resolver/oxc.ts',
 		'workbench/artifact': 'src/workbench/artifact.ts',

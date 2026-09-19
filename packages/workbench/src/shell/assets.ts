@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'pathe'
-import { UI_PUBLIC_BASE } from '@pluxel/management/internal/web/paths'
+import { UI_PUBLIC_BASE } from '../paths'
 
 export interface Assets {
 	js: string
@@ -19,9 +19,6 @@ type ManifestEntry = {
 type Manifest = Record<string, ManifestEntry>
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
-
-// Stable URL for packaged shell resources. Explicit source Shells use their Vite entry URL.
-export const DEFAULT_PUBLIC_BASE = UI_PUBLIC_BASE
 
 const pickEntry = (manifest: Manifest, entry = '../workbench-app/src/client.tsx') =>
 	entry in manifest
@@ -83,7 +80,7 @@ export async function resolveBuiltAssets(options?: { publicDirAbs?: string }): P
 
 	visit(entryKey)
 
-	const toUrl = (file: string) => `${DEFAULT_PUBLIC_BASE}/${file}`
+	const toUrl = (file: string) => `${UI_PUBLIC_BASE}/${file}`
 	const [main, ...rest] = files
 
 	return {

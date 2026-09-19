@@ -1,5 +1,9 @@
 import { standardServices } from '@pluxel/services'
-import { vault as installVault } from '@pluxel/services/vault'
+import {
+	vault as installVault,
+	type VaultAdminApi,
+	type VaultStorageApi,
+} from '@pluxel/services/vault'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import {
 	createServiceInternalTestContext,
@@ -9,10 +13,8 @@ import {
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { pluginNodePhysicalKey } from '@pluxel/services/internal/plugin-address'
+import { pluginNodePhysicalKey } from '../../src/internal/plugin-address'
 import { requireWorkbench } from '@pluxel/workbench/server'
-import { type VaultAdminService } from '@pluxel/services/internal/vault'
-import { type VaultStorageApi } from '@pluxel/services/internal/vault-types'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 type RuntimeHostLike = ServiceInternalTestHarness
@@ -57,7 +59,7 @@ describe('VaultService (shared mount runtime)', () => {
 		const disabled = await createServiceInternalTestContext({ workbench: false })
 		try {
 			expectTypeOf(disabled.ctx.vault).toEqualTypeOf<VaultStorageApi | undefined>()
-			expectTypeOf(disabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminService | undefined>()
+			expectTypeOf(disabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminApi | undefined>()
 			expect('vault' in disabled.ctx).toBe(false)
 			expect('vaultAdmin' in disabled.ctx).toBe(false)
 			expect(disabled.ctx.workbench).toBeUndefined()
@@ -75,7 +77,7 @@ describe('VaultService (shared mount runtime)', () => {
 				throw new Error('Explicit Vault configuration did not install its capabilities')
 			}
 			expectTypeOf(enabled.ctx.vault).toEqualTypeOf<VaultStorageApi>()
-			expectTypeOf(enabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminService>()
+			expectTypeOf(enabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminApi>()
 			expect(enabled.ctx.vault).toBeDefined()
 			expect(enabled.ctx.vaultAdmin).toBeDefined()
 		} finally {
@@ -397,7 +399,7 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('rekey() does not create a missing mount as a side effect', async () => {
 		await using host = await createVaultRuntimeHost({ vault: false })
-		const { VaultService, VaultAdminService } = await import('@pluxel/services/internal/vault')
+		const { VaultService, VaultAdminService } = await import('../../src/vault/service')
 		const service = VaultService.create(host.ctx.root, {}, vaultStorage(host))
 		const admin = new VaultAdminService(host.ctx.root, service)
 		await expect(admin.rekey()).rejects.toMatchObject({ name: 'VaultError', code: 'MISSING_MOUNT' })

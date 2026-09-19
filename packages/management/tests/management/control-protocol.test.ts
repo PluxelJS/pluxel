@@ -4,12 +4,9 @@ import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { serialize } from 'capnweb'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import {
-	applyLifecycleCommands,
-	setAutoStart,
-} from '@pluxel/management/internal/api/usecases/pluginStatus'
-import { parsePluginStatusQueryResult } from '@pluxel/management/internal/web/management-validation'
-import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { applyLifecycleCommands, setAutoStart } from '../../src/api/usecases/pluginStatus.ts'
+import { parsePluginStatusQueryResult } from '../../src/web/management-validation.ts'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget.ts'
 import type {
 	ConfigResult,
 	ConfigPresentationResult,
@@ -19,7 +16,7 @@ import type {
 	PluginControlMutationResult,
 	PluginLifecycleCommand,
 	RemoveForkResult,
-} from '@pluxel/management/internal/web/protocol'
+} from '../../src/web/protocol.ts'
 
 @Plugin()
 class ManagedPlugin extends BasePlugin {}

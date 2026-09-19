@@ -35,222 +35,38 @@
 			"@pluxel/source": "./src/web/session/index.ts",
 			"default": "./dist/session.mjs"
 		},
-		"./endpoint": {
-			"@pluxel/source": "./src/index.ts",
-			"default": "./dist/endpoint.mjs"
-		},
 		"./product": {
 			"@pluxel/source": "./src/product-contract.ts",
 			"default": "./dist/product.mjs"
 		},
-		"./internal/web/client": {
-			"@pluxel/source": "./src/web/client.ts",
-			"default": "./dist/internal/web/client.mjs"
-		},
-		"./internal/web/logs": {
-			"@pluxel/source": "./src/web/logs.ts",
-			"default": "./dist/internal/web/logs.mjs"
-		},
-		"./internal/web/management-validation": {
-			"@pluxel/source": "./src/web/management-validation.ts",
-			"default": "./dist/internal/web/management-validation.mjs"
-		},
-		"./internal/web/validation": {
-			"@pluxel/source": "./src/web/validation.ts",
-			"default": "./dist/internal/web/validation.mjs"
-		},
-		"./internal/web/utils": {
-			"@pluxel/source": "./src/web/utils.ts",
-			"default": "./dist/internal/web/utils.mjs"
-		},
-		"./internal/web/protocol": {
-			"@pluxel/source": "./src/web/protocol.ts",
-			"default": "./dist/internal/web/protocol.mjs"
-		},
-		"./internal/web/security": {
-			"@pluxel/source": "./src/web/security.ts",
-			"default": "./dist/internal/web/security.mjs"
-		},
-		"./internal/web/paths": {
-			"@pluxel/source": "./src/web/paths.ts",
-			"default": "./dist/internal/web/paths.mjs"
-		},
-		"./internal/web/react": {
-			"@pluxel/source": "./src/web/react.tsx",
-			"default": "./dist/internal/web/react.mjs"
-		},
-		"./internal/web/management-target": {
-			"@pluxel/source": "./src/web/management-target.ts",
-			"default": "./dist/internal/web/management-target.mjs"
-		},
-		"./internal/web/session/client": {
-			"@pluxel/source": "./src/web/session/client.ts",
-			"default": "./dist/internal/web/session/client.mjs"
-		},
-		"./internal/web/session/index": {
-			"@pluxel/source": "./src/web/session/index.ts",
-			"default": "./dist/internal/web/session/index.mjs"
-		},
-		"./internal/web/session/limits": {
-			"@pluxel/source": "./src/web/session/limits.ts",
-			"default": "./dist/internal/web/session/limits.mjs"
-		},
-		"./internal/web/session/server": {
-			"@pluxel/source": "./src/web/session/server.ts",
-			"default": "./dist/internal/web/session/server.mjs"
-		},
-		"./internal/web/session/elysia-websocket": {
-			"@pluxel/source": "./src/web/session/elysia-websocket.ts",
-			"default": "./dist/internal/web/session/elysia-websocket.mjs"
-		},
-		"./internal/web/session/protocol": {
-			"@pluxel/source": "./src/web/session/protocol.ts",
-			"default": "./dist/internal/web/session/protocol.mjs"
-		},
-		"./internal/web/session/ingress": {
-			"@pluxel/source": "./src/web/session/ingress.ts",
-			"default": "./dist/internal/web/session/ingress.mjs"
-		},
-		"./internal/web/session/endpoint": {
-			"@pluxel/source": "./src/web/session/endpoint.ts",
-			"default": "./dist/internal/web/session/endpoint.mjs"
-		},
-		"./internal/services/admin-access/AdminAccessService": {
-			"@pluxel/source": "./src/services/admin-access/AdminAccessService.ts",
-			"default": "./dist/internal/services/admin-access/AdminAccessService.mjs"
-		},
-		"./internal/services/admin-access/types": {
-			"@pluxel/source": "./src/services/admin-access/types.ts",
-			"default": "./dist/internal/services/admin-access/types.mjs"
-		},
-		"./internal/services/admin-access/transport": {
-			"@pluxel/source": "./src/services/admin-access/transport.ts",
-			"default": "./dist/internal/services/admin-access/transport.mjs"
-		},
-		"./internal/services/admin-access/response-lifetime": {
-			"@pluxel/source": "./src/services/admin-access/response-lifetime.ts",
-			"default": "./dist/internal/services/admin-access/response-lifetime.mjs"
-		},
-		"./internal/services/admin-access/ManagementAccessService": {
-			"@pluxel/source": "./src/services/admin-access/ManagementAccessService.ts",
-			"default": "./dist/internal/services/admin-access/ManagementAccessService.mjs"
-		},
-		"./internal/product-contract": {
-			"@pluxel/source": "./src/product-contract.ts",
-			"default": "./dist/internal/product-contract.mjs"
-		},
-		"./internal/validation": {
-			"@pluxel/source": "./src/web/validation.ts",
-			"default": "./dist/internal/validation.mjs"
-		},
-		"./internal/management-validation": {
-			"@pluxel/source": "./src/web/management-validation.ts",
-			"default": "./dist/internal/management-validation.mjs"
-		},
-		"./internal/access-types": {
-			"@pluxel/source": "./src/services/admin-access/types.ts",
-			"default": "./dist/internal/access-types.mjs"
-		},
 		"./package.json": "./package.json",
-		"./internal/config-presentation": {
-			"@pluxel/source": "./src/api/presenters/configPresentation.ts",
-			"default": "./dist/internal/config-presentation.mjs"
-		},
 		"./access": {
 			"@pluxel/source": "./src/access.ts",
 			"default": "./dist/access.mjs"
-		},
-		"./internal/api/usecases/pluginStatus": {
-			"@pluxel/source": "./src/api/usecases/pluginStatus.ts",
-			"default": "./dist/internal/api/usecases/pluginStatus.mjs"
-		},
-		"./internal/api/usecases/logs": {
-			"@pluxel/source": "./src/api/usecases/logs.ts",
-			"default": "./dist/internal/api/usecases/logs.mjs"
-		},
-		"./internal/api/usecases/pluginConfig": {
-			"@pluxel/source": "./src/api/usecases/pluginConfig.ts",
-			"default": "./dist/internal/api/usecases/pluginConfig.mjs"
-		},
-		"./internal/api/usecases/pluginForks": {
-			"@pluxel/source": "./src/api/usecases/pluginForks.ts",
-			"default": "./dist/internal/api/usecases/pluginForks.mjs"
-		},
-		"./internal/api/usecases/pluginDependencies": {
-			"@pluxel/source": "./src/api/usecases/pluginDependencies.ts",
-			"default": "./dist/internal/api/usecases/pluginDependencies.mjs"
-		},
-		"./internal/api/usecases/logsLlm": {
-			"@pluxel/source": "./src/api/usecases/logsLlm.ts",
-			"default": "./dist/internal/api/usecases/logsLlm.mjs"
-		},
-		"./internal/api/usecases/pluginDependencyGraph": {
-			"@pluxel/source": "./src/api/usecases/pluginDependencyGraph.ts",
-			"default": "./dist/internal/api/usecases/pluginDependencyGraph.mjs"
-		},
-		"./internal/api/usecases/plugins": {
-			"@pluxel/source": "./src/api/usecases/plugins.ts",
-			"default": "./dist/internal/api/usecases/plugins.mjs"
-		},
-		"./internal/api/features/pluginCatalog/service": {
-			"@pluxel/source": "./src/api/features/pluginCatalog/service.ts",
-			"default": "./dist/internal/api/features/pluginCatalog/service.mjs"
-		},
-		"./internal/api/features/plugins/catalog-projection": {
-			"@pluxel/source": "./src/api/features/plugins/catalog-projection.ts",
-			"default": "./dist/internal/api/features/plugins/catalog-projection.mjs"
-		},
-		"./internal/api/presenters/pluginApplyReport": {
-			"@pluxel/source": "./src/api/presenters/pluginApplyReport.ts",
-			"default": "./dist/internal/api/presenters/pluginApplyReport.mjs"
-		},
-		"./internal/services/management/log-transport": {
-			"@pluxel/source": "./src/services/management/log-transport.ts",
-			"default": "./dist/internal/services/management/log-transport.mjs"
-		},
-		"./internal/services/management/PluginCatalogLayoutService": {
-			"@pluxel/source": "./src/services/management/PluginCatalogLayoutService.ts",
-			"default": "./dist/internal/services/management/PluginCatalogLayoutService.mjs"
-		},
-		"./internal/services/management/RuntimeManagementTarget": {
-			"@pluxel/source": "./src/services/management/RuntimeManagementTarget.ts",
-			"default": "./dist/internal/services/management/RuntimeManagementTarget.mjs"
-		},
-		"./internal/services/management/catalog-groups": {
-			"@pluxel/source": "./src/services/management/catalog-groups.ts",
-			"default": "./dist/internal/services/management/catalog-groups.mjs"
-		},
-		"./internal/services/RuntimeManagementService": {
-			"@pluxel/source": "./src/services/RuntimeManagementService.ts",
-			"default": "./dist/internal/services/RuntimeManagementService.mjs"
-		},
-		"./internal/services/http/InternalApiValidationService": {
-			"@pluxel/source": "./src/services/http/InternalApiValidationService.ts",
-			"default": "./dist/internal/services/http/InternalApiValidationService.mjs"
-		},
-		"./internal/platform-host": {
-			"@pluxel/source": "./src/platform-host.ts",
-			"default": "./dist/internal/platform-host.mjs"
 		},
 		"./service": {
 			"@pluxel/source": "./src/service.ts",
 			"default": "./dist/service.mjs"
 		},
-		"./internal/host-options": {
-			"@pluxel/source": "./src/host-options.ts",
-			"default": "./dist/internal/host-options.mjs"
-		},
 		"./http": {
 			"@pluxel/source": "./src/http.ts",
 			"default": "./dist/http.mjs"
+		},
+		"./commands": {
+			"@pluxel/source": "./src/commands.ts",
+			"default": "./dist/commands.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
 		},
 		"./internal/http": {
 			"@pluxel/source": "./src/http-internal.ts",
 			"default": "./dist/internal/http.mjs"
 		},
-		"./commands": {
-			"@pluxel/source": "./src/commands.ts",
-			"default": "./dist/commands.mjs"
+		"./internal/test": {
+			"@pluxel/source": "./src/test-internal.ts",
+			"default": "./dist/internal/test.mjs"
 		}
 	},
 	"publishConfig": {
@@ -260,61 +76,15 @@
 			"./protocol": "./dist/protocol.mjs",
 			"./react": "./dist/react.mjs",
 			"./session": "./dist/session.mjs",
-			"./endpoint": "./dist/endpoint.mjs",
 			"./product": "./dist/product.mjs",
-			"./internal/web/client": "./dist/internal/web/client.mjs",
-			"./internal/web/logs": "./dist/internal/web/logs.mjs",
-			"./internal/web/management-validation": "./dist/internal/web/management-validation.mjs",
-			"./internal/web/validation": "./dist/internal/web/validation.mjs",
-			"./internal/web/utils": "./dist/internal/web/utils.mjs",
-			"./internal/web/protocol": "./dist/internal/web/protocol.mjs",
-			"./internal/web/security": "./dist/internal/web/security.mjs",
-			"./internal/web/paths": "./dist/internal/web/paths.mjs",
-			"./internal/web/react": "./dist/internal/web/react.mjs",
-			"./internal/web/management-target": "./dist/internal/web/management-target.mjs",
-			"./internal/web/session/client": "./dist/internal/web/session/client.mjs",
-			"./internal/web/session/index": "./dist/internal/web/session/index.mjs",
-			"./internal/web/session/limits": "./dist/internal/web/session/limits.mjs",
-			"./internal/web/session/server": "./dist/internal/web/session/server.mjs",
-			"./internal/web/session/elysia-websocket": "./dist/internal/web/session/elysia-websocket.mjs",
-			"./internal/web/session/protocol": "./dist/internal/web/session/protocol.mjs",
-			"./internal/web/session/ingress": "./dist/internal/web/session/ingress.mjs",
-			"./internal/web/session/endpoint": "./dist/internal/web/session/endpoint.mjs",
-			"./internal/services/admin-access/AdminAccessService": "./dist/internal/services/admin-access/AdminAccessService.mjs",
-			"./internal/services/admin-access/types": "./dist/internal/services/admin-access/types.mjs",
-			"./internal/services/admin-access/transport": "./dist/internal/services/admin-access/transport.mjs",
-			"./internal/services/admin-access/response-lifetime": "./dist/internal/services/admin-access/response-lifetime.mjs",
-			"./internal/services/admin-access/ManagementAccessService": "./dist/internal/services/admin-access/ManagementAccessService.mjs",
-			"./internal/product-contract": "./dist/internal/product-contract.mjs",
-			"./internal/validation": "./dist/internal/validation.mjs",
-			"./internal/management-validation": "./dist/internal/management-validation.mjs",
-			"./internal/access-types": "./dist/internal/access-types.mjs",
 			"./package.json": "./package.json",
-			"./internal/config-presentation": "./dist/internal/config-presentation.mjs",
 			"./access": "./dist/access.mjs",
-			"./internal/api/usecases/pluginStatus": "./dist/internal/api/usecases/pluginStatus.mjs",
-			"./internal/api/usecases/logs": "./dist/internal/api/usecases/logs.mjs",
-			"./internal/api/usecases/pluginConfig": "./dist/internal/api/usecases/pluginConfig.mjs",
-			"./internal/api/usecases/pluginForks": "./dist/internal/api/usecases/pluginForks.mjs",
-			"./internal/api/usecases/pluginDependencies": "./dist/internal/api/usecases/pluginDependencies.mjs",
-			"./internal/api/usecases/logsLlm": "./dist/internal/api/usecases/logsLlm.mjs",
-			"./internal/api/usecases/pluginDependencyGraph": "./dist/internal/api/usecases/pluginDependencyGraph.mjs",
-			"./internal/api/usecases/plugins": "./dist/internal/api/usecases/plugins.mjs",
-			"./internal/api/features/pluginCatalog/service": "./dist/internal/api/features/pluginCatalog/service.mjs",
-			"./internal/api/features/plugins/catalog-projection": "./dist/internal/api/features/plugins/catalog-projection.mjs",
-			"./internal/api/presenters/pluginApplyReport": "./dist/internal/api/presenters/pluginApplyReport.mjs",
-			"./internal/services/management/log-transport": "./dist/internal/services/management/log-transport.mjs",
-			"./internal/services/management/PluginCatalogLayoutService": "./dist/internal/services/management/PluginCatalogLayoutService.mjs",
-			"./internal/services/management/RuntimeManagementTarget": "./dist/internal/services/management/RuntimeManagementTarget.mjs",
-			"./internal/services/management/catalog-groups": "./dist/internal/services/management/catalog-groups.mjs",
-			"./internal/services/RuntimeManagementService": "./dist/internal/services/RuntimeManagementService.mjs",
-			"./internal/services/http/InternalApiValidationService": "./dist/internal/services/http/InternalApiValidationService.mjs",
-			"./internal/platform-host": "./dist/internal/platform-host.mjs",
 			"./service": "./dist/service.mjs",
-			"./internal/host-options": "./dist/internal/host-options.mjs",
 			"./http": "./dist/http.mjs",
+			"./commands": "./dist/commands.mjs",
+			"./internal": "./dist/internal.mjs",
 			"./internal/http": "./dist/internal/http.mjs",
-			"./commands": "./dist/commands.mjs"
+			"./internal/test": "./dist/internal/test.mjs"
 		},
 		"access": "public"
 	},
@@ -341,7 +111,8 @@
 		"@types/react": "catalog:types",
 		"crossws": "catalog:prod",
 		"elysia": "catalog:prod",
-		"react": "catalog:frontend"
+		"react": "catalog:frontend",
+		"valibot": "catalog:validation"
 	},
 	"peerDependencies": {
 		"react": "catalog:frontend"

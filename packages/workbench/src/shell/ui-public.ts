@@ -4,8 +4,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { dirname, extname, resolve } from 'pathe'
 
-import { UI_PUBLIC_ASSET_BASE, UI_PUBLIC_BASE } from '@pluxel/management/internal/web/paths'
-export { UI_PUBLIC_BASE } from '@pluxel/management/internal/web/paths'
+import { UI_PUBLIC_ASSET_BASE, UI_PUBLIC_BASE } from '../paths'
 
 export type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
 

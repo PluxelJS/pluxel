@@ -2,15 +2,18 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { HostApplicationMeta } from '../product-contract'
 import type { PluxelPlatformSnapshot } from '../platform'
-import type { PluginExecutionSnapshot, PluginRecentUpdateSnapshot } from '../plugin-execution'
+import type {
+	PluginExecutionSnapshot,
+	PluginRecentUpdateSnapshot,
+} from '@pluxel/host/internal/protocol'
 export type {
 	PluginArtifactSnapshot,
 	PluginExecutionSnapshot,
 	PluginRecentUpdateSnapshot,
 	PluginUpdateBatchSnapshot,
 	PluginUpdateLifecycleIssue,
-} from '../plugin-execution'
-export type { VaultKeyPair } from '@pluxel/services/internal/vault-types'
+} from '@pluxel/host/internal/protocol'
+export type { VaultKeyPair } from '@pluxel/services/vault'
 
 export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 6 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([

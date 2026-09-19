@@ -4,7 +4,6 @@ import { formatPluginNodeReference, type Context as CoreContext } from '@pluxel/
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
-import { attachPostgresPoolErrorHandler } from './adapters/shared'
 import { readDatabaseDefinition, type DatabaseArtifact, type DatabaseMigration } from './artifact'
 import type { DatabaseDefinition, PluginDatabaseHandle } from './definition'
 import { pinOwnerContext } from '../internal/owner-view'
@@ -188,7 +187,7 @@ class DatabaseCoordinator {
 		const artifact = readDatabaseDefinition(definition)
 		const ownerId = formatPluginNodeReference(address)
 		const instance = await this.prepare(ownerId, definition, artifact)
-		return new OwnerDatabaseHandle(this, owner, definition, instance)
+		return new OwnerDatabaseHandle<Definition>(this, owner, instance)
 	}
 
 	operation<T>(
@@ -594,7 +593,6 @@ class OwnerDatabaseHandle<
 	constructor(
 		private readonly coordinator: DatabaseCoordinator,
 		private readonly owner: CoreContext,
-		private readonly definition: Definition,
 		private readonly instance: PreparedDatabaseInstance,
 	) {
 		owner.effects.defer(() => this.dispose(), { tag: 'PluginDatabase' })
@@ -611,11 +609,6 @@ class OwnerDatabaseHandle<
 	subscribe(tables: ReadonlySet<string>, listener: () => void): () => void {
 		this.assertActive()
 		return this.coordinator.subscribe(this.instance.ownerSchema, tables, listener)
-	}
-
-	ownsTables(tables: readonly unknown[]): boolean {
-		const known = new Set(schemaTableNames(this.definition))
-		return tables.every((table) => known.has(readTableName(table)))
 	}
 
 	private run<Result>(
@@ -706,15 +699,6 @@ export function subscribeDatabaseHandle(
 	}
 	const names = new Set(tables.map(readTableName))
 	return handle.subscribe(names, listener)
-}
-
-/** @internal */
-export function databaseHandleOwnsTables(
-	handle: PluginDatabaseHandle,
-	tables: readonly unknown[],
-): boolean {
-	if (!(handle instanceof OwnerDatabaseHandle)) return false
-	return handle.ownsTables(tables)
 }
 
 function schemaTableNames(definition: DatabaseDefinition): string[] {
@@ -947,9 +931,6 @@ async function grantOwnerTables(
 		`,
 	)
 }
-
-/** @internal Keeps pg-pool idle-client failures operational instead of process-fatal. */
-export { attachPostgresPoolErrorHandler }
 
 function resultRows(result: unknown): Array<Record<string, unknown>> {
 	if (Array.isArray(result)) return result as Array<Record<string, unknown>>

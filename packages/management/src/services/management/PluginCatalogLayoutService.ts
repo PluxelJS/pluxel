@@ -1,5 +1,4 @@
 import type { HostOperationOptions } from '@pluxel/host/internal'
-import { Persistence } from '@pluxel/services/persistence'
 import { resolveContextCapability } from '@pluxel/core/host'
 import {
 	formatPluginDefinitionReference,
@@ -9,7 +8,11 @@ import {
 	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { PersistenceError, type PersistenceNamespace } from '@pluxel/services/internal/persistence'
+import {
+	Persistence,
+	PersistenceError,
+	type PersistenceNamespace,
+} from '@pluxel/services/persistence'
 import {
 	automaticCatalogGroups,
 	catalogFamilies,

@@ -8,21 +8,12 @@ import {
 	pluginConfigValidate as validateConfig,
 	pluginConfigPatch as patchConfig,
 	pluginConfigReset as resetConfig,
+	projectPluginApplyReport,
 } from '@pluxel/host/internal'
 import type { HostPluginConfigResult } from '@pluxel/host'
 import type { ConfigPresentationResult, ConfigResult } from '../../web/protocol'
-import { projectPluginApplyReport } from '../presenters/pluginApplyReport'
 import { compileConfigPresentationPlanV1 } from '../presenters/configPresentation'
 import { parseConfigFieldPathSegments } from '../../web/validation'
-
-export type PluginConfigPresentationResult = ConfigPresentationResult
-export type PluginConfigPresentationSection = Readonly<{
-	path: readonly string[]
-	fieldName: string
-	schema: Parameters<typeof compileConfigPresentationPlanV1>[0]['schema']
-	defaults: Record<string, unknown>
-}>
-export type PluginConfigResult = ConfigResult
 
 function projectConfigResult(ctx: Context, result: HostPluginConfigResult): ConfigResult {
 	if (result.ok === false) return result
@@ -33,7 +24,7 @@ export async function pluginConfigGet(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	options?: HostOperationOptions,
-): Promise<PluginConfigResult> {
+): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await getConfig(ctx, owner, options))
 }
 export async function pluginConfigValidate(
@@ -41,7 +32,7 @@ export async function pluginConfigValidate(
 	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
 	options?: HostOperationOptions,
-): Promise<PluginConfigResult> {
+): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await validateConfig(ctx, owner, patch, options))
 }
 export async function pluginConfigPatch(
@@ -49,7 +40,7 @@ export async function pluginConfigPatch(
 	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
 	options?: HostOperationOptions,
-): Promise<PluginConfigResult> {
+): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await patchConfig(ctx, owner, patch, options))
 }
 export async function pluginConfigReset(
@@ -57,7 +48,7 @@ export async function pluginConfigReset(
 	owner: PluginNodeAddress,
 	keys?: string[],
 	options?: HostOperationOptions,
-): Promise<PluginConfigResult> {
+): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await resetConfig(ctx, owner, keys, options))
 }
 
@@ -88,7 +79,7 @@ export async function pluginConfigPresentation(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	options?: HostOperationOptions,
-): Promise<PluginConfigPresentationResult> {
+): Promise<ConfigPresentationResult> {
 	const lookup = await lookupPluginConfig(ctx, owner, options)
 	if (lookup.ok === false) {
 		return {
@@ -105,7 +96,7 @@ export async function pluginConfigPresentation(
 		),
 	]
 	const sections = await Promise.all(
-		declarations.map(async ({ path, declaration }): Promise<PluginConfigPresentationSection> =>
+		declarations.map(async ({ path, declaration }) =>
 			Object.freeze({
 				path: Object.freeze([...path]),
 				fieldName: declaration.fieldName,
@@ -132,7 +123,7 @@ export async function pluginConfigPatchField(
 	owner: PluginNodeAddress,
 	input: unknown,
 	options?: HostOperationOptions,
-): Promise<PluginConfigResult> {
+): Promise<ConfigResult> {
 	const parsed = parseConfigFieldMutation(input)
 	if (parsed.ok === false) {
 		return {

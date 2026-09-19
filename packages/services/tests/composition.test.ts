@@ -66,6 +66,7 @@ describe('independently composed official and external services', () => {
 				await host.close()
 			}
 		},
+		30_000,
 	)
 
 	it('prepares Vault with explicit persistence, isolates missing service failure, and flushes at close', async () => {

@@ -17,12 +17,14 @@ import {
 	installPluginSources,
 	setHostCatalogProvenance,
 	type PluginCatalogProvenance,
-	type PluginExecutionSnapshot,
 	installHostRecentUpdates,
 	PluginRecentUpdateTracker,
+} from '@pluxel/host/internal'
+import {
+	type PluginExecutionSnapshot,
 	type PluginUpdateBatchSnapshot,
 	type RuntimeUpdateError,
-} from '@pluxel/host/internal'
+} from '@pluxel/host/internal/protocol'
 import { portableUpdatePath, describeUpdateError } from './internal/update-error'
 import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
@@ -175,7 +177,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 		try {
 			await candidate.run(async () => {
 				const namespace = await importViteSsrModule<Record<string, unknown>>(server, entry)
-				const declared = readApplication(namespace.default)
+				const declared = namespace.default
+				assertHostApplication(declared)
 				sourceCandidate = await sources.evaluate({
 					application: declared,
 					entryFiles: collectViteSsrImportFiles(server, entry),
@@ -530,11 +533,6 @@ export function host(options: HostViteOptions): PluginOption[] {
 		recovery.plugin,
 		lifecycle,
 	]
-}
-
-function readApplication(value: unknown): HostApplication {
-	assertHostApplication(value)
-	return value
 }
 
 function sameServices(

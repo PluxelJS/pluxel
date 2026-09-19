@@ -15,6 +15,7 @@ import {
 	listForkIds,
 	type HostPluginGraphCommittedView,
 	type HostOperationOptions,
+	projectPluginApplyReport,
 } from '@pluxel/host/internal'
 import type {
 	PluginConsumerRequirementState,
@@ -22,7 +23,6 @@ import type {
 	PluginProviderOption,
 	PluginProviderPolicyInfo,
 } from '../../web/protocol'
-import { projectPluginApplyReport } from '../presenters/pluginApplyReport'
 
 export class PluginNodeUnavailableError extends Error {
 	constructor() {

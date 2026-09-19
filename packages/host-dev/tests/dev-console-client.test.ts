@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { startDevConsoleServer } from '@pluxel/host-dev/internal/console/server'
+import { startDevConsoleServer } from '../src/console/server'
 import { requestDev, runDevFile, selectDevInstance } from '../../cli/src/dev/client'
 
 const cleanup: Array<() => Promise<void>> = []

@@ -65,6 +65,8 @@ subpath 缺失和 owner 自身加载失败是四类不同诊断；最后一类�
 capability registry、动态命令发现或通用 extension contract。至少出现两个真实的仓库外 provider，并且确实需要
 新增命令后，才重新设计命名冲突、版本协商、信任、取消与 cleanup。
 
+官方 capability ID 同时决定加载入口和模块类型；命令调用方不传模块类型泛型。类型映射只使用 type import，不能因此提前加载可选 owner。
+
 ## Independent source workspaces
 
 `pluxel source` 是 CLI 拥有的开发期 pnpm 编排层。消费仓库只在 `pluxel.sources.jsonc` 声明稳定 Git

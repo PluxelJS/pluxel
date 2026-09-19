@@ -3,7 +3,7 @@ import {
 	type Context as PluxelContext,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { pinOwnerContext } from '@pluxel/services/internal/owner-view'
+import { pinOwnerContext } from '@pluxel/services/internal'
 
 export type InternalApiValidationContext = {
 	path: string

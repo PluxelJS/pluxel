@@ -9,7 +9,6 @@ export * from './driver'
 export { installPluginSources } from './sources'
 export { openPluginSources, type PluginSourceSession } from './source-session'
 export { collectPluginModuleExports } from './module'
-export * from './execution'
 
 export { planHostServices, prepareHostServices, createHostServiceLifecycle } from './services'
 export {

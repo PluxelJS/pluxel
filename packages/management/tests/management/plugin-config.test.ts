@@ -12,15 +12,12 @@ import {
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/core/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as v from 'valibot'
-import {
-	pluginConfigPatch,
-	pluginConfigPatchField,
-} from '@pluxel/management/internal/api/usecases/pluginConfig'
+import { pluginConfigPatch, pluginConfigPatchField } from '../../src/api/usecases/pluginConfig.ts'
 import { removeFork } from '@pluxel/host/internal'
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
-} from '@pluxel/services/internal/persistence'
+} from '@pluxel/services/persistence'
 
 const ConfigSchema = v.object({
 	value: v.optional(v.string(), 'initial'),

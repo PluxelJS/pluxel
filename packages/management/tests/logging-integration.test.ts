@@ -7,7 +7,7 @@ import {
 	type RuntimeLoggingInput,
 } from '@pluxel/logging/internal'
 import { afterEach, describe, expect, it } from 'vitest'
-import { parseLogRangeResult } from '@pluxel/management/internal/web/management-validation'
+import { parseLogRangeResult } from '../src/web/management-validation.ts'
 
 function storePlan(initialPluginPolicy?: RuntimeLoggingInput['root']['initialPluginPolicy']) {
 	return {

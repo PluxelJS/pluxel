@@ -1,4 +1,4 @@
-import { newWebSocketRpcSession, RpcTarget, type RpcStub } from '../../capnweb'
+import { newWebSocketRpcSession, RpcTarget, type RpcStub } from 'capnweb'
 import type { AdminAuthenticationSession } from '../../services/admin-access/AdminAccessService'
 import type { RuntimeManagementTarget } from '../management-target'
 import type {

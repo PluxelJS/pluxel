@@ -3,13 +3,9 @@ import { dirname } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import type { PgliteOptions } from '../pglite'
-import type { ManagedDatabaseAdapter } from './types'
+import type { DatabaseAdapter } from '../service'
 
-type PgliteDatabaseConfig = PgliteOptions
-
-export async function createPgliteDatabaseAdapter(
-	config: PgliteDatabaseConfig,
-): Promise<ManagedDatabaseAdapter> {
+export async function createPgliteDatabaseAdapter(config: PgliteOptions): Promise<DatabaseAdapter> {
 	const dataDir = config.dataDir
 	if (!dataDir.includes('://')) await mkdir(dirname(dataDir), { recursive: true })
 	const client = new PGlite(dataDir)

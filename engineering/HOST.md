@@ -64,3 +64,11 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 
 代码、公开类型、文档必须描述同一所有权。不允许用测试宿主证明在线应用当前状态，或以 source-mode 测试代替独立安装和搬离工作区后的发行验证。
 Node carrier 与 Node-backed Vite 已有覆盖；Bun/Deno/Worker、published Elysia peer admission 和真实外部下游迁移需要各自独立验证，不由本分层自动保证。
+
+Services 的包入口按能力、可选 backend 和运行环境划分；HTTP handler 与 `/http` 同属可移植请求边界，listener 与 `/http/node` 同属 Node carrier。框架跨包共享的 owner-view/security helpers 收敛到不加载 backend 的 `/internal`；白盒测试另用 `/internal/test`。仅包内测试使用的实现通过相对源码导入，数据库 driver 通过 package `imports` 私有加载，不成为导出子路径。
+
+### 可移植 execution 协议
+
+`@pluxel/host/internal/protocol` 是浏览器和服务端共享 execution/update snapshots 与验证函数的唯一内部跨包入口，直接构建无外部依赖的 `src/execution.ts`。服务端框架集成仍使用 `/internal`，该入口不再转发 execution 协议。Management 客户端直接消费 protocol，不经过包含来源加载、IO 和生命周期编排的服务端 barrel；此拆分表达真实的运行环境边界，不能因减少路径而合并。
+
+服务内部不为单个 consumer 建立 token/resolve 转发层：HTTP directory token 与安装器同属 `http.ts`，开发附件直接读取 Node backend token。Vite 子入口直接映射开发模块；只有需要限制导出集合或组合多个实现的入口才保留 facade。数据库 adapter 实现与调用方共享 `DatabaseAdapter` 和 backend options 类型，资源策略仍由原有 coordinator 统一拥有。

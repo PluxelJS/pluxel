@@ -334,7 +334,7 @@ describe('application', () => {
 		expect(resolved).toBe('\0pluxel:static-application-bootstrap')
 		expect(source).toContain('import application from')
 		expect(source).toContain('/tmp/pluxel-static-node/src/pluxel.static.ts')
-		expect(source).toContain("from '@pluxel/host/application'")
+		expect(source).toContain("from '@pluxel/host'")
 		expect(source.indexOf("import 'pluxel:static-elysia-wiring'")).toBeLessThan(
 			source.indexOf('import application from'),
 		)
@@ -392,7 +392,7 @@ describe('application', () => {
 		const resolved = plugin?.resolveId?.('pluxel:static-application-bootstrap')
 		const source = String(await plugin?.load?.(String(resolved)))
 
-		expect(source).toContain('@pluxel/services/http/application')
+		expect(source).toContain('@pluxel/services/http')
 		expect(source).toContain('createHostHttpHandler(host)')
 		expect(source).toContain('export const fetch = handler')
 		expect(source).not.toContain('runStaticNodeApplication')
@@ -660,8 +660,8 @@ describe('application', () => {
 
 		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
 		expect(source).not.toContain("from '@pluxel/runtime/internal'")
-		expect(source).toContain("from '@pluxel/host/application'")
-		expect(source).toContain('@pluxel/services/http/listener')
+		expect(source).toContain("from '@pluxel/host'")
+		expect(source).toContain('@pluxel/services/http/node')
 		expect(source).toContain('listenHostHttp(host,')
 		expect(source).toContain('...RuntimeFullTracePackages')
 		expect(source).toContain('...residualDependencies.fullTrace')

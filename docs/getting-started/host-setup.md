@@ -126,7 +126,7 @@ export default defineConfig({
 })
 ```
 
-自定义组合使用 `@pluxel/rolldown` 的 `pluxel()`。生产 bootstrap 通过 `@pluxel/host/application` 启动同一应用，HTTP handler/listener 属于 `@pluxel/services/http/*`。
+自定义组合使用 `@pluxel/rolldown` 的 `pluxel()`。生产 bootstrap 通过 `@pluxel/host` 启动同一应用，HTTP handler/listener 属于 `@pluxel/services/http/*`。
 `launcher` 可以选择 `node`、`fetch` 或 `host`；资源 variant 与服务安装是不同决定。动态插件需要的额外 framework 入口通过 `sourceFrameworks` 明确声明。
 
 交付和搬离工作区验证见[发行物](../development/distribution.md)。Node 已有回归覆盖；其他平台需要独立验证网络与原生依赖，不能只凭 Fetch 类型兼容推定支持。

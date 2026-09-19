@@ -1,6 +1,6 @@
-import { MANIFEST_PLUGIN_PACKAGES_FIELD } from '../../env'
-import type { WorkspacePackageJson } from '../../../workspace/package-json'
-import type { RuleContext } from '../types'
+import { MANIFEST_PLUGIN_PACKAGES_FIELD } from '../env'
+import type { WorkspacePackageJson } from '../../workspace/package-json'
+import type { RuleContext } from './types'
 
 export function pluginDependencyRule(pkg: WorkspacePackageJson, context: RuleContext) {
 	const versions = resolvePluginVersions(pkg, context)

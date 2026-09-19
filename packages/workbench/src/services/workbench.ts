@@ -137,14 +137,6 @@ export type WorkbenchInstallOptions = Readonly<{
 	artifacts?: Readonly<{ root?: string }>
 }>
 
-export type WorkbenchBackendFactory = (
-	root: Context,
-	options: WorkbenchInstallOptions,
-) => WorkbenchBackend
-
-export const createWorkbenchBackend: WorkbenchBackendFactory = (root, options) =>
-	new WorkbenchBackend(root, options)
-
 /** @internal */
 export function requireWorkbench(ctx: Context): WorkbenchBackend {
 	if (ctx !== ctx.root) throw new TypeError('[workbench] backend requires root Context')

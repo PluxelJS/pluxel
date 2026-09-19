@@ -23,9 +23,6 @@ export type HostModuleClassifier = Readonly<{
 type PackageManifest = {
 	name?: unknown
 	type?: unknown
-	module?: unknown
-	esnext?: unknown
-	exports?: unknown
 	napi?: unknown
 	binary?: unknown
 	gypfile?: unknown
@@ -33,7 +30,6 @@ type PackageManifest = {
 
 type PackageInfo = Readonly<{
 	name: string | null
-	root: string
 	manifest: PackageManifest
 }>
 
@@ -86,7 +82,7 @@ export function createHostModuleClassifier(options: {
 			return {
 				packageName: pkg?.name ?? null,
 				resolvedPath: normalized,
-				format: inferFormat(normalized, pkg?.manifest, native || commonjs),
+				format: inferFormat(normalized, pkg?.manifest),
 				reason: native ? 'native' : 'commonjs',
 			}
 		})
@@ -208,7 +204,6 @@ async function findPackageInfo(filePath: string): Promise<PackageInfo | null> {
 			const manifest = JSON.parse(await readFile(resolve(current, 'package.json'), 'utf8'))
 			return {
 				name: typeof manifest?.name === 'string' ? manifest.name : null,
-				root: current,
 				manifest,
 			}
 		} catch {}
@@ -222,14 +217,13 @@ async function findPackageInfo(filePath: string): Promise<PackageInfo | null> {
 function inferFormat(
 	resolvedPath: string,
 	manifest: PackageManifest | undefined,
-	fallbackCommonjs: boolean,
 ): 'module' | 'commonjs' {
 	const extension = extname(resolvedPath).toLowerCase()
 	if (extension === '.mjs' || extension === '.mts') return 'module'
 	if (extension === '.cjs' || extension === '.cts' || extension === '.node') return 'commonjs'
 	if (manifest?.type === 'module') return 'module'
 	if (manifest?.type === 'commonjs') return 'commonjs'
-	return fallbackCommonjs ? 'commonjs' : 'module'
+	return 'commonjs'
 }
 
 function isBarePackageSpecifier(specifier: string): boolean {

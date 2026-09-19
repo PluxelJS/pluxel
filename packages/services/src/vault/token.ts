@@ -1,6 +1,5 @@
 import { defineContextCapability, type ContextCapability } from '@pluxel/core/host'
-import type { VaultAdminService } from './service'
-import type { VaultStorageApi } from './types'
+import type { VaultAdminApi, VaultStorageApi } from './types'
 
 export const Vault: ContextCapability<VaultStorageApi> = defineContextCapability<VaultStorageApi>(
 	'services.vault',
@@ -9,8 +8,8 @@ export const Vault: ContextCapability<VaultStorageApi> = defineContextCapability
 		property: 'vault',
 	},
 )
-export const VaultAdmin: ContextCapability<VaultAdminService, 'root'> =
-	defineContextCapability<VaultAdminService>('services.vault-admin', {
+export const VaultAdmin: ContextCapability<VaultAdminApi, 'root'> =
+	defineContextCapability<VaultAdminApi>('services.vault-admin', {
 		access: 'root',
 		property: 'vaultAdmin',
 	})
@@ -20,6 +19,6 @@ declare module '@pluxel/core' {
 		readonly vault: VaultStorageApi
 	}
 	interface RootContextServices {
-		readonly vaultAdmin: VaultAdminService
+		readonly vaultAdmin: VaultAdminApi
 	}
 }

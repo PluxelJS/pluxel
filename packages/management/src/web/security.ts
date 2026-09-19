@@ -1,9 +1,9 @@
-import type { SecurityEvent } from '@pluxel/services/internal/security'
+import type { SecurityEvent } from '@pluxel/services/internal'
 import type { AdminAccessOverview } from '../services/admin-access/types'
-import type { VaultAdminState, VaultKeyPair } from '@pluxel/services/internal/vault-types'
+import type { VaultAdminState, VaultKeyPair } from '@pluxel/services/vault'
 
 export type { AdminAccessOverview } from '../services/admin-access/types'
-export type { VaultAdminState, VaultKeyPair } from '@pluxel/services/internal/vault-types'
+export type { VaultAdminState, VaultKeyPair } from '@pluxel/services/vault'
 
 export type SecurityAuditEvent = SecurityEvent
 

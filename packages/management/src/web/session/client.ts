@@ -1,4 +1,4 @@
-import { newWebSocketRpcSession, type RpcStub, type RpcTarget } from '../../capnweb'
+import { newWebSocketRpcSession, type RpcStub, type RpcTarget } from 'capnweb'
 import { ADMIN_ACCESS_COOKIE_COMMIT_PATH } from '../../services/admin-access/transport'
 import {
 	RUNTIME_SESSION_PATH,

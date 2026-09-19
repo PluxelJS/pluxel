@@ -1,9 +1,6 @@
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
-import {
-	parseFormPresentationFields,
-	parseRuntimePortableData,
-} from '@pluxel/management/internal/web/validation'
-import type { RuntimeJsonObject } from '@pluxel/management/internal/web/protocol'
+import { parseFormPresentationFields, parseRuntimePortableData } from '@pluxel/management/internal'
+import type { RuntimeJsonObject } from '@pluxel/management/protocol'
 import type {
 	WorkbenchContentActionOutcome,
 	WorkbenchContentActionPresentation,

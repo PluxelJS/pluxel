@@ -17,7 +17,7 @@ import { readManagementHostOptions } from '../../host-options'
 import {
 	clonePluginExecutionSnapshot,
 	clonePluginRecentUpdateSnapshot,
-} from '../../plugin-execution'
+} from '@pluxel/host/internal/protocol'
 import type {
 	PluginDependencyGraphEdge,
 	PluginDependencyGraphNode,

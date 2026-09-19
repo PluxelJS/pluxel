@@ -1,5 +1,4 @@
 import { requireHostStateStore, isPluginAutoStartEnabled, listForkIds } from '@pluxel/host/internal'
-import { Persistence } from '@pluxel/services/persistence'
 import { standardServices } from '@pluxel/services'
 import {
 	pluginDefinitionAddressOf,
@@ -13,7 +12,7 @@ import {
 } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { afterEach, describe, expect, it } from 'vitest'
-import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget.ts'
 import {
 	logging as loggingService,
 	Logging,
@@ -21,10 +20,11 @@ import {
 	type RuntimeLoggingInput,
 } from '@pluxel/logging'
 import {
+	Persistence,
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
-} from '@pluxel/services/internal/persistence'
-import type { PluginApplyReport } from '@pluxel/management/internal/web/protocol'
+} from '@pluxel/services/persistence'
+import type { PluginApplyReport } from '../../src/web/protocol.ts'
 
 @Plugin({ forkable: true })
 class ForkProvider extends BasePlugin {}

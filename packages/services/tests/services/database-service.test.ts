@@ -20,11 +20,9 @@ import {
 	type ServiceInternalTestHarness,
 } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import {
-	type DatabaseArtifact,
-	attachPostgresPoolErrorHandler,
-	subscribeDatabaseHandle,
-} from '@pluxel/services/internal/database'
+import type { DatabaseArtifact } from '../../src/database/artifact'
+import { attachPostgresPoolErrorHandler } from '../../src/database/adapters/shared'
+import { subscribeDatabaseHandle } from '../../src/database/service'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const migrationSql = `

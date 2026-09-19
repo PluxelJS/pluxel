@@ -7,7 +7,6 @@ export default defineConfig({
 		'internal/test': 'src/internal-test.ts',
 		shell: 'src/shell.ts',
 		http: 'src/http.ts',
-		'internal/shell': 'src/shell/internal.ts',
 		index: 'src/index.ts',
 		service: 'src/service.ts',
 		server: 'src/server.ts',
@@ -16,8 +15,6 @@ export default defineConfig({
 		react: 'src/workbench/react.tsx',
 		federation: 'src/workbench/federation.ts',
 		'internal/react': 'src/workbench/react-internal.tsx',
-		'internal/definition': 'src/workbench/definition.ts',
-		paths: 'src/paths.ts',
 		dev: 'src/dev.ts',
 	},
 	deps: {

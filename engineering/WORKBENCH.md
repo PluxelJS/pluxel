@@ -15,6 +15,10 @@ Shell 首页可以通过 Management metadata 显示 browser-safe host platform s
 deployment provider、CI、mode 与 OS platform。该 snapshot 是诊断提示而非 capability guarantee；尤其 provider detection 不等于当前
 request 必然运行于该 provider。不得向 browser 投影完整 environment、变量名、路径、token、certificate 或 secret。
 
+Shell 资源处理和 federation URL 拼接属于包内实现，不提供逐文件 package subpath。跨包服务端实现通过
+`@pluxel/workbench/internal` 协作；浏览器生成代码使用独立的 `@pluxel/workbench/internal/react`，
+保证 React Bridge ABI 不引入服务端依赖。白盒测试在本包内直接引用源码，不能为测试单独发布实现路径。
+
 ## 平台边界
 
 Workbench 只定义五个作者概念：
@@ -633,3 +637,5 @@ detach/dispose，不能再更新 React。Framework 自身的 portable、scope、
 Plugin Workbench 的中部、概览和底部内容各自拥有受限高度的滚动容器；页签栏不参与内容滚动。概览与目录分成右侧两个视图，避免卡片、折叠区和目录列表嵌套滚动。目录搜索框固定，列表占据剩余高度，滚轮不向外层传播。
 
 目录是否存在由当前编辑器的配置 anchor / Markdown heading 决定，不读取 scrollHeight 判定可用性。保持挂载的非活动编辑器通过 tab activity 撤回自己的目录 claim；右侧目录 portal 只属于当前 Plugin Workbench。配置仍由 FormToc 读取表单 anchor，Markdown 由 ContentOutline 在自身文档中读取渲染后的标题；不扫描其他编辑器或 federated renderer 的 DOM，也不新增 Plugin 作者 API。
+
+Workbench 的 owner capability 直接以闭包固定 owner，只返回冻结的 `publish()`；PluginPart 拒绝仍在调用入口执行，publication 的验证、admission 和清理由同一 backend/registry 持有。无需为这个单方法视图创建额外 wrapper class。测试可在内部 service installation seam 提供 artifact lookup backend，但复用生产的 capability 安装逻辑。Shell UI 路径由 Workbench 本包拥有，不借 Management 的 presentation 入口取得。

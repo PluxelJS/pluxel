@@ -3,8 +3,8 @@ import { vault } from '@pluxel/services/vault'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { describe, expect, it } from 'vitest'
 
-import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
-import { RUNTIME_SESSION_PATH } from '@pluxel/management/internal/web/session/protocol'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget.ts'
+import { RUNTIME_SESSION_PATH } from '../../src/web/session/protocol.ts'
 
 describe('runtime Management plane installation', () => {
 	it('installs headless Management as a capability with no dynamic HTTP API', async () => {

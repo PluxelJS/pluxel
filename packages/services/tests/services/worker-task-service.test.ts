@@ -9,7 +9,7 @@ import {
 	defineWorkerTask,
 	type WorkerTaskError,
 } from '@pluxel/services/workers'
-import { requireNodeModuleHost } from '@pluxel/services/internal/node'
+import { NodeModuleHost } from '../../src/node/token'
 
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -360,7 +360,7 @@ describe('WorkerTaskService', () => {
 		})
 		let releaseRoute!: () => void
 		const routeGate = new Promise<void>((resolve) => void (releaseRoute = resolve))
-		const detach = requireNodeModuleHost(host.ctx).attachSourceBinder(async () => {
+		const detach = host.ctx.require(NodeModuleHost).attachSourceBinder(async () => {
 			await routeGate
 			return {
 				url: new URL('./fixtures/worker-task.mjs', import.meta.url),

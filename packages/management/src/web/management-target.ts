@@ -1,8 +1,8 @@
-import type { RuntimeUpdateSnapshot } from '../plugin-execution'
+import type { RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import type { RpcTarget } from '../capnweb'
+import type { RpcTarget } from 'capnweb'
 import type { SecurityAuditEvent, SecurityOverview } from './security'
-import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
+import type { LogFilter, LogRangeResult, LogStreamMeta } from '@pluxel/logging/protocol'
 import type {
 	ConfigFieldMutation,
 	ConfigPresentationResult,
@@ -24,7 +24,7 @@ import type {
 	RuntimeMeta,
 	VaultKeyPair,
 } from './protocol'
-import type { VaultAdminState } from '@pluxel/services/internal/vault-types'
+import type { VaultAdminState } from '@pluxel/services/vault'
 
 export type RuntimeLogStreamsIndex = Readonly<{ streams: readonly LogStreamMeta[] }>
 

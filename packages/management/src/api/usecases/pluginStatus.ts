@@ -8,6 +8,7 @@ import {
 	HostStatePersistenceError,
 	requirePluginHostCoordinator,
 	hostStatePatch,
+	projectPluginApplyReport,
 } from '@pluxel/host/internal'
 import type {
 	PluginAutoStartBatchItem,
@@ -18,7 +19,6 @@ import type {
 	PluginLifecycleCommand,
 	PluginLifecycleCommandBatchItem,
 } from '../../web/protocol'
-import { projectPluginApplyReport } from '../presenters/pluginApplyReport'
 import { pluginStatus } from './plugins'
 
 const MAX_CONTROL_BATCH_ITEMS = 1_000
@@ -47,14 +47,6 @@ function controlOf(
 	}
 }
 
-async function ensureKnown(
-	ctx: Context,
-	address: PluginNodeAddress,
-	options?: HostOperationOptions,
-) {
-	return await pluginStatus(ctx, address, options)
-}
-
 async function setOneAutoStart(
 	ctx: Context,
 	address: PluginNodeAddress,
@@ -65,7 +57,7 @@ async function setOneAutoStart(
 		// Enabling is admitted against the pinned catalog inside the coordinator so a stale or
 		// otherwise absent address receives the precise node_unavailable contract. Disabling an
 		// unknown address remains a query-level not-found instead of becoming a successful no-op.
-		if (!(await ensureKnown(ctx, address, options)) && !autoStart) return notFound(address)
+		if (!(await pluginStatus(ctx, address, options)) && !autoStart) return notFound(address)
 		const report = await requirePluginHostCoordinator(ctx).updateRuntimeState(
 			hostStatePatch({ type: 'set-auto-start', node: address, autoStart }),
 			'plugin-auto-start-set',
@@ -93,7 +85,7 @@ async function runLifecycleCommand(
 	options?: HostOperationOptions,
 ): Promise<PluginControlMutationResult> {
 	try {
-		if (!(await ensureKnown(ctx, address, options))) return notFound(address)
+		if (!(await pluginStatus(ctx, address, options))) return notFound(address)
 		const coordinator = requirePluginHostCoordinator(ctx)
 		const report =
 			command === 'start'

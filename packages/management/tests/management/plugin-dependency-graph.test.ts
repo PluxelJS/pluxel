@@ -15,9 +15,9 @@ import { requirePluginService, type ConcretePluginDefinitionCandidate } from '@p
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { describe, expect, it, vi } from 'vitest'
-import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
-import { projectPluginDependencyGraph } from '@pluxel/management/internal/api/usecases/pluginDependencyGraph'
-import { parsePluginDependencyGraphSnapshot } from '@pluxel/management/internal/web/management-validation'
+import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget.ts'
+import { projectPluginDependencyGraph } from '../../src/api/usecases/pluginDependencyGraph.ts'
+import { parsePluginDependencyGraphSnapshot } from '../../src/web/management-validation.ts'
 
 @Plugin()
 class DirectProvider extends BasePlugin {}

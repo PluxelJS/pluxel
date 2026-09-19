@@ -1,6 +1,9 @@
-import { cloneRuntimeUpdateSnapshot, type RuntimeUpdateSnapshot } from '../plugin-execution'
+import {
+	cloneRuntimeUpdateSnapshot,
+	type RuntimeUpdateSnapshot,
+} from '@pluxel/host/internal/protocol'
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import type { RpcStub } from '../capnweb'
+import type { RpcStub } from 'capnweb'
 import type {
 	ConfigFieldMutation,
 	ConfigPresentationResult,
@@ -27,7 +30,7 @@ import type {
 	RuntimeLogStreamsIndex,
 	RuntimeManagementTarget,
 } from './management-target'
-import type { LogRangeResult, LogStreamMeta, RuntimeLogEvent } from './logs'
+import type { LogRangeResult, LogStreamMeta, RuntimeLogEvent } from '@pluxel/logging/protocol'
 import type { RuntimeSecurityClient } from './security'
 import {
 	parseConfigPresentationResult,

@@ -1,7 +1,6 @@
 import { createHost } from '@pluxel/host'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { http as httpService } from '@pluxel/services/http'
-import { createHostHttpHandler } from '@pluxel/services/http/application'
+import { http as httpService, createHostHttpHandler } from '@pluxel/services/http'
 import { describe, expect, it } from 'vitest'
 import { HttpPlugin } from '@example/http-plugin'
 import { TodoPlugin } from '@example/todo-plugin'

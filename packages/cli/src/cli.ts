@@ -13,7 +13,6 @@ import {
 	sourceCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
-import { formatOfficialCapabilityError, OfficialCapabilityError } from './capability-loader'
 
 const commands = new Map<string, SubCommandable>([
 	[
@@ -95,16 +94,10 @@ async function main() {
 			subCommands: commands,
 		})
 	} catch (error) {
-		const msg = formatCliError(error)
+		const msg = error instanceof Error ? error.message : String(error)
 		process.stderr.write(`${msg}\n`)
 		process.exitCode = 1
 	}
-}
-
-function formatCliError(error: unknown): string {
-	if (error instanceof OfficialCapabilityError) return formatOfficialCapabilityError(error)
-	const message = error instanceof Error ? error.message : String(error)
-	return message
 }
 
 await main()

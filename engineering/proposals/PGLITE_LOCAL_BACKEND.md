@@ -33,7 +33,7 @@ PGlite 的职责是快速、零外部服务的本机 PostgreSQL 语义执行器�
 
 ## 尚未实施：删除 runtime-managed invalidation/outbox
 
-当前 `@pluxel/services/database/internal` 仍导出 table invalidation helper，底层使用 trigger、outbox 和 polling。用户文档已经要求 Workbench/业务 API 由 Plugin 自己定义 snapshot 与 `watch()`；因此这层 infrastructure 值得在单独的破坏性设计中重新评估，但不能作为普通性能重构顺手删除。
+当前 Services 数据库内部实现仍包含 table invalidation helper，底层使用 trigger、outbox 和 polling。用户文档已经要求 Workbench/业务 API 由 Plugin 自己定义 snapshot 与 `watch()`；因此这层 infrastructure 值得在单独的破坏性设计中重新评估，但不能作为普通性能重构顺手删除。
 
 若未来决定删除，必须先完成以下 gate：
 

@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import type { DevScript } from '@pluxel/host-dev/console'
-import { createDevConsoleScope } from '@pluxel/host-dev/internal/dev/console'
+import { createDevConsoleScope } from '@pluxel/host-dev/internal'
 import { http, Http, HttpServer } from '@pluxel/services/http'
 import { Commands, commands } from '@pluxel/services/commands'
 import { expect, it, vi } from 'vitest'

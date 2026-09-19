@@ -6,7 +6,7 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import { expect, it } from 'vitest'
 import { dynamicSource } from '../src/index'
-import { runHostApplication } from '@pluxel/host/application'
+import { runHostApplication } from '@pluxel/host'
 
 const address = (name: string): PluginNodeAddress => ({
 	definition: {

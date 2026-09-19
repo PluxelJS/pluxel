@@ -2,8 +2,7 @@ import type { Context } from '@pluxel/core'
 import { createWorkbenchShellHandler, type WorkbenchShellOptions } from '../shell'
 import { normalizeWorkbenchUiBasePath } from './config'
 import { createHtmlResponse, renderRuntimeUiHtml } from './html'
-import { createShellRouter } from './router'
-import type { RenderHandler } from './types'
+import { createShellRouter, type RenderHandler } from './router'
 
 type ShellMount = Readonly<{
 	path: string

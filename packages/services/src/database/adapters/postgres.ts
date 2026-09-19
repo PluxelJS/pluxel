@@ -2,17 +2,16 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import type { PostgresOptions } from '../postgres'
 import { attachPostgresPoolErrorHandler } from './shared'
-import type { ManagedDatabaseAdapter } from './types'
-
-type PostgresDatabaseConfig = PostgresOptions
+import type { DatabaseAdapter } from '../service'
 
 export async function createPostgresDatabaseAdapter(
-	config: PostgresDatabaseConfig,
+	config: PostgresOptions,
 	onPoolError: (error: Error) => void,
-): Promise<ManagedDatabaseAdapter> {
+): Promise<DatabaseAdapter> {
+	const concurrency = config.pool?.max ?? 10
 	const pool = new Pool({
 		connectionString: config.connectionString,
-		max: config.pool?.max ?? 10,
+		max: concurrency,
 		idleTimeoutMillis: config.pool?.idleTimeoutMs,
 		connectionTimeoutMillis: config.pool?.connectionTimeoutMs,
 		ssl:
@@ -26,7 +25,7 @@ export async function createPostgresDatabaseAdapter(
 	return {
 		driver: 'postgres',
 		db: drizzle(pool),
-		concurrency: config.pool?.max ?? 10,
+		concurrency,
 		close: async () => await pool.end(),
 	}
 }

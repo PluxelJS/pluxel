@@ -2,61 +2,38 @@ import { dirname, relative, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { watch } from 'chokidar'
 import picomatch from 'picomatch'
-import { assertDynamicPluginSources, type DynamicPluginSource } from './declarations'
+import type { PluginSource, PluginSourceOpenOptions } from '@pluxel/host'
+import type { DynamicPluginSource } from './declarations'
 
-export type SourceChange = Readonly<{ type: 'add' | 'change' | 'unlink'; path: string }>
-export type DynamicSourceSession = Readonly<{
-	/** Snapshot at readiness. Subsequent changes are delivered through onChange. */
-	entries: readonly string[]
-	/** Stops admission synchronously and waits for the watcher to close. Idempotent. */
-	close(): Promise<void>
-}>
-
-/** Initial discovery and later publication use one watcher, including initially absent directories. */
-export async function watchDynamicSources(options: {
-	root: string
-	sources: readonly DynamicPluginSource[]
-	onChange(change: SourceChange): void
-	onError(error: unknown): void
-	/** Abort stops notifications and closes the watcher; it does not cancel a caller's module evaluation. */
-	signal?: AbortSignal
-}): Promise<DynamicSourceSession> {
-	assertDynamicPluginSources(options.sources)
+/** Watch one immutable declaration; Host owns composition and deduplication across sources. */
+export async function watchDynamicSource(
+	source: DynamicPluginSource,
+	options: PluginSourceOpenOptions,
+): ReturnType<PluginSource['open']> {
 	options.signal?.throwIfAborted()
-	const selectors = options.sources.map((source) => {
-		const path = normalize(resolve(options.root, source.path))
-		const matches =
-			source.kind === 'directory' ? picomatch([...source.include], { dot: true }) : undefined
-		return source.kind === 'file'
-			? { kind: source.kind, path, root: dirname(path), match: (entry: string) => entry === path }
-			: {
-					kind: source.kind,
-					path,
-					root: path,
-					match: (entry: string) => {
-						const name = normalize(relative(path, entry))
-						return name !== '' && !name.startsWith('../') && matches!(name)
-					},
-				}
-	})
-	const roots = [...new Set(selectors.map((selector) => existingAncestor(selector.root)))]
+	const sourcePath = normalize(resolve(options.root, source.path))
+	const root = source.kind === 'file' ? dirname(sourcePath) : sourcePath
+	const pattern =
+		source.kind === 'directory' ? picomatch([...source.include], { dot: true }) : undefined
+	const matches = (entry: string): boolean => {
+		if (source.kind === 'file') return entry === sourcePath
+		const name = normalize(relative(sourcePath, entry))
+		return name !== '' && !name.startsWith('../') && pattern!(name)
+	}
 	const entries = new Set<string>()
 	let ready = false
 	let closed = false
 	let closing: Promise<void> | undefined
-	const watcher = watch(roots, {
+	const watcher = watch(existingAncestor(root), {
 		ignoreInitial: false,
 		followSymlinks: false,
 		ignored: (path, stats) => {
 			const normalized = normalize(resolve(path))
-			return stats?.isFile()
-				? !selectors.some((selector) => selector.match(normalized))
-				: !selectors.some((selector) =>
-						selector.kind === 'directory'
-							? related(normalized, selector.root)
-							: normalized === selector.root ||
-								selector.root.startsWith(normalized.endsWith('/') ? normalized : `${normalized}/`),
-					)
+			if (stats?.isFile()) return !matches(normalized)
+			return source.kind === 'directory'
+				? !related(normalized, root)
+				: normalized !== root &&
+						!root.startsWith(normalized.endsWith('/') ? normalized : `${normalized}/`)
 		},
 	})
 	const close = (): Promise<void> => {
@@ -72,7 +49,7 @@ export async function watchDynamicSources(options: {
 		watcher.on(type, (path) => {
 			if (closed) return
 			const normalized = normalize(resolve(path))
-			if (!selectors.some((selector) => selector.match(normalized))) return
+			if (!matches(normalized)) return
 			if (type === 'unlink') entries.delete(normalized)
 			else entries.add(normalized)
 			if (ready) options.onChange(Object.freeze({ type, path: normalized }))

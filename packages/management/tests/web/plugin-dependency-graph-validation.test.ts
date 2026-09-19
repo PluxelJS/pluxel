@@ -5,8 +5,8 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
-import { parsePluginDependencyGraphSnapshot } from '@pluxel/management/internal/web/management-validation'
-import { RuntimeProtocolValidationError } from '@pluxel/management/internal/web/validation'
+import { parsePluginDependencyGraphSnapshot } from '../../src/web/management-validation.ts'
+import { RuntimeProtocolValidationError } from '../../src/web/validation.ts'
 
 function definition(name: string): PluginDefinitionAddress {
 	return {

@@ -19,10 +19,6 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./application": {
-			"@pluxel/source": "./src/application.ts",
-			"default": "./dist/application.mjs"
-		},
 		"./config-environment": {
 			"@pluxel/source": "./src/config-environment.ts",
 			"default": "./dist/config-environment.mjs"
@@ -35,15 +31,19 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
+		"./internal/protocol": {
+			"@pluxel/source": "./src/execution.ts",
+			"default": "./dist/internal/protocol.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./application": "./dist/application.mjs",
 			"./config-environment": "./dist/config-environment.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/protocol": "./dist/internal/protocol.mjs",
 			"./package.json": "./package.json"
 		},
 		"access": "public"

@@ -2,7 +2,7 @@ import { relative, resolve } from 'node:path'
 import picomatch from 'picomatch'
 import type { PluginSource } from '@pluxel/host'
 import { assertDynamicPluginSource, type DynamicPluginSource } from './declarations'
-import { watchDynamicSources } from './watch'
+import { watchDynamicSource } from './watch'
 
 export type { DynamicPluginSource } from './declarations'
 
@@ -35,7 +35,7 @@ export function dynamicSource(declaration: DynamicPluginSource): PluginSource {
 			)
 		},
 		open(options) {
-			return watchDynamicSources({ ...options, sources: [source] })
+			return watchDynamicSource(source, options)
 		},
 	} satisfies PluginSource)
 }

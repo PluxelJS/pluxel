@@ -4,8 +4,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.unstubAllEnvs())
 import { http, HttpServer } from '../src/http'
-import { createHostHttpHandler } from '../src/http/application'
-import { listenHostHttp } from '../src/http/listener'
+import { createHostHttpHandler } from '@pluxel/services/http'
+import { listenHostHttp } from '@pluxel/services/http/node'
 
 it('binds Node request metadata and propagates client disconnect before closing the Host', async () => {
 	const host = await createHost({ plugins: [], services: [http()] })

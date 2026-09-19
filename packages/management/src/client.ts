@@ -24,7 +24,7 @@ export type {
 	LogStreamMeta,
 	RuntimeLogError,
 	RuntimeLogLine,
-} from './web/logs'
+} from '@pluxel/logging/protocol'
 export * from './web/protocol'
 export {
 	parseConfigFieldPathSegments,
@@ -34,4 +34,4 @@ export {
 	RuntimeProtocolValidationError,
 } from './web/validation'
 
-export type { RuntimeUpdateSnapshot, RuntimeUpdateError } from './plugin-execution'
+export type { RuntimeUpdateSnapshot, RuntimeUpdateError } from '@pluxel/host/internal/protocol'

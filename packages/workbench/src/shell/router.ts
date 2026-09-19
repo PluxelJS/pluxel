@@ -1,7 +1,8 @@
-import { UI_PUBLIC_ASSET_BASE } from '@pluxel/management/internal/web/paths'
+import { UI_PUBLIC_ASSET_BASE } from '../paths'
 import { matchesWorkbenchUiBasePath } from './config'
-import type { RenderHandler } from './types'
 import type { UiPublicAssetHandler } from './ui-public'
+
+export type RenderHandler = (request: Request) => Response | Promise<Response>
 
 /** Shared request arbitration for packaged and explicitly attached source Shells. */
 export function createShellRouter(options: {

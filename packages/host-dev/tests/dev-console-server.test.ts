@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { createConnection } from 'node:net'
-import type { DevConsoleInstance } from '@pluxel/host-dev/internal/console/protocol'
+import type { DevConsoleInstance } from '../src/console/protocol'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { requestDev } from '../../cli/src/dev/client'
-import { startDevConsoleServer } from '@pluxel/host-dev/internal/console/server'
+import { startDevConsoleServer } from '../src/console/server'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {

@@ -16,15 +16,6 @@ export type DynamicPluginSource =
 			include: readonly string[]
 	  }>
 
-export function assertDynamicPluginSources(
-	value: unknown,
-): asserts value is readonly DynamicPluginSource[] {
-	if (!Array.isArray(value)) {
-		throw new TypeError('[host-dynamic] sources must be an array')
-	}
-	for (const source of value) assertDynamicPluginSource(source)
-}
-
 export function assertDynamicPluginSource(value: unknown): asserts value is DynamicPluginSource {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new TypeError('[host-dynamic] each source must be an object')

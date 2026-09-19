@@ -3,8 +3,13 @@ import { Management } from '../../token'
 import { AdminAccess } from '../../access'
 import { optionalVaultAdmin } from '../../vault'
 import { readManagementHostOptions } from '../../host-options'
-import type { PluginRecentUpdateRead } from '@pluxel/host/internal'
-import type { RuntimeUpdateSnapshot } from '../../plugin-execution'
+import {
+	type PluginRecentUpdateRead,
+	ensureFork,
+	removeFork,
+	projectPluginApplyReport,
+} from '@pluxel/host/internal'
+import type { RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
@@ -18,7 +23,7 @@ import {
 	writePluginCatalogLayout,
 } from '../../api/features/pluginCatalog/service'
 import { PluginCatalogLayoutError } from './PluginCatalogLayoutService'
-import { PersistenceError } from '@pluxel/services/internal/persistence'
+import { PersistenceError } from '@pluxel/services/persistence'
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
@@ -33,11 +38,9 @@ import {
 	setPluginProviderPolicyDefault as applyPluginProviderPolicyDefault,
 } from '../../api/usecases/pluginDependencies'
 import { pluginDependencyGraph } from '../../api/usecases/pluginDependencyGraph'
-import { ensureFork, removeFork } from '../../api/usecases/pluginForks'
 import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
 import { logsFollow, logsIndex, logsMeta, logsRange } from '../../api/usecases/logs'
 import { pluginStatus as readPluginStatus } from '../../api/usecases/plugins'
-import { projectPluginApplyReport } from '../../api/presenters/pluginApplyReport'
 import { requireContextRuntimeLogging } from '@pluxel/logging/internal'
 import type {
 	PluginLogPolicyMutationResult,
@@ -46,8 +49,8 @@ import type {
 	VersionedPluginLogPolicySnapshot,
 } from '@pluxel/logging'
 import type { LogFilter, RuntimeLogEvent } from '@pluxel/logging/protocol'
-import { listSecurityEvents } from '@pluxel/services/internal/security'
-import type { VaultAdminApi } from '@pluxel/services/internal/vault-types'
+import { listSecurityEvents } from '@pluxel/services/internal'
+import type { VaultAdminApi } from '@pluxel/services/vault'
 import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
 import type {
 	RuntimeLogFollowInput,

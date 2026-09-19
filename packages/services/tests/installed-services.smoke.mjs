@@ -388,7 +388,7 @@ const hook = registerHooks({ load(url, context, next) {
  return next(url, context)
 } })
 const { createHost } = await import('@pluxel/host')
-const { createDevConsoleScope } = await import('@pluxel/host-dev/internal/dev/console')
+const { createDevConsoleScope } = await import('@pluxel/host-dev/internal')
 const host = await createHost({ plugins: [] })
 const scope = createDevConsoleScope({ id: 'installed-services', ctx: host.ctx })
 try {

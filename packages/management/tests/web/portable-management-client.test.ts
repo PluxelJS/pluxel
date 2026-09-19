@@ -1,13 +1,13 @@
 import type { RpcStub } from 'capnweb'
 import { describe, expect, it, vi } from 'vitest'
 
-import { createRuntimeManagementClient } from '@pluxel/management/internal/web/client'
-import { RUNTIME_MANAGEMENT_CAPABILITIES } from '@pluxel/management/internal/web/protocol'
+import { createRuntimeManagementClient } from '../../src/web/client.ts'
+import { RUNTIME_MANAGEMENT_CAPABILITIES } from '../../src/web/protocol.ts'
 import type {
 	RuntimeLogObserver,
 	RuntimeSubscriptionTarget,
 	RuntimeManagementTarget,
-} from '@pluxel/management/internal/web/management-target'
+} from '../../src/web/management-target.ts'
 
 const metadata = Object.freeze({
 	service: 'pluxel-runtime' as const,

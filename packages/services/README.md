@@ -20,7 +20,8 @@ try {
 }
 ```
 
-- `/http`：原生 Elysia Plugin 路由与宿主请求边界；物理 listener 单独接入。
+- `/http`：原生 Elysia Plugin 路由、宿主请求边界及 `createHostHttpHandler()`。
+- `/http/node`：Node carrier 与 `listenHostHttp()`；只有选择 Node listener 才引入 Node 传输实现。
 - `/database`：owner 数据库 API；从 `/database/pglite` 或 `/database/postgres` 显式选择 backend。
 - `/persistence`：存储 token、显式安装器、文件/内存/只读/自定义 backend。
 - `/vault`：加密 owner 存储 token、类型和安装器。需要显式安装 Persistence。

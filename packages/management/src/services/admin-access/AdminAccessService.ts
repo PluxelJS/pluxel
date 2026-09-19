@@ -1,8 +1,7 @@
 import type { Context as PluxelContext, PluginContext } from '@pluxel/core'
 import { enterOwnerInvocation, requirePluginService } from '@pluxel/core/internal'
 
-import { pinOwnerContext } from '@pluxel/services/internal/owner-view'
-import { recordSecurityEvent } from '@pluxel/services/internal/security'
+import { pinOwnerContext, recordSecurityEvent } from '@pluxel/services/internal'
 import { responseWithLease, type ResponseLease } from './response-lifetime'
 import {
 	ADMIN_ACCESS_COOKIE_COMMIT_PATH,

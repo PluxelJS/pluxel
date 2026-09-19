@@ -1,6 +1,6 @@
 import type { Context } from '@pluxel/core'
 import { readNodeModuleDeclaration } from '../node/declaration'
-import type { NodeModuleSourceSubscription } from '../node/internal'
+import type { NodeModuleSourceSubscription } from '../node/service'
 import type { NodeModuleDeclaration } from '../node'
 import { createHash } from 'node:crypto'
 import { existsSync, type Dirent } from 'node:fs'

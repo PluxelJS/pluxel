@@ -100,7 +100,10 @@ reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它�
 
 - public export 必须对应稳定用户概念；
 - internal/helper/debug 默认不导出；
-- 优先明确 subpath，避免 broad barrel 隐藏依赖；
+- 入口按稳定领域、运行环境和可选依赖划分，不按实现目录或文件逐项导出；同一依赖边界的重复入口应合并；
+- 包内测试直接使用相对源码路径，不为测试便利增加 package exports；跨包白盒测试使用窄的 `/internal/test`；
+- 框架间协作集中在显式 allowlist 的 `/internal`；只有浏览器 ABI、HTTP 适配等真实依赖边界才拆分 internal 子入口，不使用 wildcard 暴露实现树；
+- 合并入口前核对传递依赖，不能让 browser 入口引入 Node、基础服务引入可选 backend，或生产入口引入开发工具；
 - 不为已删除设计保留兼容 alias；
 - toolchain helper 只能从 toolchain/internal subpath 使用。
 

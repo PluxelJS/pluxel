@@ -1,6 +1,6 @@
 import type { Context as PluxelContext } from '@pluxel/core'
 import { isPluginPartContext } from '@pluxel/core/internal'
-import { pinOwnerContext } from '@pluxel/services/internal/owner-view'
+import { pinOwnerContext } from '@pluxel/services/internal'
 import type { AdminAccessService } from './AdminAccessService'
 import type { ManagementAccessProvider, ManagementAccessRegistration } from './types'
 
