@@ -295,7 +295,7 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 构建不会执行 `configure()`，运行时才读取最新环境。`variant: 'headless'` 不携带 Workbench shell。
 Workbench 应用显式安装 `workbenchService()` 和 `workbenchHttp()`，并选择 `variant: 'workbench'` 携带 shell。
 
-当前开发附件编译源码 Plugin 的 Workbench 声明；它尚不加载已安装包的 `dist/workbench` inventory，这份预编译 inventory 由生产构建合并并加载。因此仅提供编译产物的 Workbench Plugin（包括 npm 安装的 `@pluxel/vault-admin`）在开发时可能因缺少已提交的 view artifact 而启动失败；Workbench shell 可访问不代表这些 Plugin 已就绪。
+开发附件同时接入源码 Plugin 的 Workbench 声明和已安装包的 `dist/workbench` inventory。对于预编译包，它依据本次实际求值模块的 Core ABI 识别所属包，只接纳 catalog 选中的 Plugin definition，并校验产物；不会重新编译发布包。因此 npm 安装的 `@pluxel/vault-admin` 也可在开发环境启动。源码与包产物共享候选提交、拒绝保留和移除撤回流程；仍应通过插件状态确认启动结果，Workbench shell 可访问不代表所有 Plugin 已就绪。
 
 ### 动态插件的共享入口
 
