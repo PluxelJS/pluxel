@@ -18,7 +18,6 @@ export default defineConfig({
 		'internal/console/protocol': 'src/console/protocol.ts',
 		'internal/console/executor': 'src/console/executor.ts',
 		index: 'src/index.ts',
-		'hmr-log': 'src/hmr-log.ts',
 		vite: 'src/vite.ts',
 	},
 	dts: {

@@ -300,33 +300,75 @@ describe('host-dev Vite plugin stack', () => {
 		expect(client).toBe(false)
 	})
 
-	it('loads CommonJS from Node while transforming distribution source entries', async () => {
+	it('resolves source aliases and CommonJS through Vite while keeping Node imports out of browsers', async () => {
 		await using fixture = await createDiskFixture()
 		const root = fixture.path
 		const entryPath = join(root, 'entry.ts')
-		await writePackage(
-			root,
-			'fixture-commonjs',
-			{ name: 'fixture-commonjs', type: 'commonjs', main: './index.js' },
-			'module.exports = { answer: 42 }\n',
+		await mkdir(join(root, 'commonjs'))
+		await writeFile(
+			join(root, 'commonjs/index.cjs'),
+			"const { basename } = require('node:path'); module.exports = { answer: 42, name: basename('/fixture/value') }\n",
+		)
+		await writeFile(
+			join(root, 'tsconfig.json'),
+			JSON.stringify({
+				include: ['**/*'],
+				compilerOptions: {
+					baseUrl: '.',
+					paths: {
+						'local-value': ['./value.ts'],
+						'local-commonjs': ['./commonjs/index.cjs'],
+					},
+				},
+			}),
+		)
+		await writeFile(join(root, 'value.ts'), 'export const increment: number = 1\n')
+		await writeFile(
+			join(root, 'browser-path.ts'),
+			'export const basename = (value: string) => value\n',
+		)
+		await writeFile(
+			join(root, 'browser.ts'),
+			"import { basename } from 'node:path'; export const name = basename('/value')\n",
 		)
 		await writeFile(
 			entryPath,
-			"import value from 'fixture-commonjs'\nexport const answer: number = value.answer\n",
+			"import value from 'local-commonjs'\nimport { increment } from 'local-value'\nimport { basename } from 'node:path'\nexport const answer: number = value.answer + increment\nexport const name = basename('/fixture/' + value.name)\n",
 		)
 
+		for (const packageMode of ['development', 'distribution'] as const) {
+			await withTestViteServer(
+				{
+					root,
+					plugins: [
+						createHostModuleVitePlugin(),
+						...pluginSourceVitePlugins({
+							packageMode,
+							lintGuard: false,
+							configSource: false,
+						}),
+					],
+				},
+				async (server) => {
+					const mod = await importViteSsrModule<{ answer: number; name: string }>(server, entryPath)
+					expect(mod.answer).toBe(43)
+					expect(mod.name).toBe('value')
+					await expect(server.environments.client.transformRequest('/browser.ts')).rejects.toThrow(
+						/Node-only import.*node:path.*browser.ts/,
+					)
+				},
+			)
+		}
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluginSourceVitePlugins({
-					packageMode: 'distribution',
-					lintGuard: false,
-					configSource: false,
-				}),
+				resolve: { tsconfigPaths: false, alias: { 'node:path': join(root, 'browser-path.ts') } },
+				plugins: pluginSourceVitePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
-				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
-				expect(mod.answer).toBe(42)
+				await expect(importViteSsrModule(server, entryPath)).rejects.toThrow(/local-commonjs/)
+				const browser = await server.environments.client.transformRequest('/browser.ts')
+				expect(browser?.code).toContain('/browser-path.ts')
 			},
 		)
 	})

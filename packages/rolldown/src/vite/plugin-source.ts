@@ -1,11 +1,16 @@
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/vite'
+import { isBuiltin } from 'node:module'
 import type { Plugin, PluginOption } from 'vite'
 import {
 	configSourcePlugin,
 	type ConfigSourcePluginOptions,
 } from '../rolldown/plugins/configSourcePlugin'
 import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugins/lintGuardPlugin'
-import { serverOnlyVitePlugin, serverOnlyVitePluginFactory } from './environment'
+import {
+	isBrowserConsumerEnvironment,
+	serverOnlyVitePlugin,
+	serverOnlyVitePluginFactory,
+} from './environment'
 import {
 	createPluginSemanticsPlugin,
 	type PluginSemanticsCollector,
@@ -82,6 +87,22 @@ function createPluginSourcePlugins(
 ): PluginOption[] {
 	const plugins: PluginOption[] = [
 		PreprocessorDirectives(),
+		{
+			name: 'pluxel:browser-node-imports',
+			enforce: 'pre',
+			applyToEnvironment: isBrowserConsumerEnvironment,
+			async resolveId(source, importer, resolveOptions) {
+				if (!isBuiltin(source)) return null
+				// Let Vite and user aliases supply an intentional browser implementation first.
+				const resolved = await this.resolve(source, importer, { ...resolveOptions, skipSelf: true })
+				if (resolved?.id.startsWith('__vite-browser-external')) {
+					this.error(
+						`[pluxel] Node-only import ${JSON.stringify(source)} in browser module ${JSON.stringify(importer ?? '<entry>')}; move it to server code or provide a browser implementation.`,
+					)
+				}
+				return resolved
+			},
+		},
 		serverOnlyVitePluginFactory(
 			'pluxel:plugin-semantics',
 			(environment) => semantics(options.root ?? environment.config.root) as Plugin,
@@ -188,6 +209,7 @@ function createSourceConfigPlugin(options: PluginSourceVitePluginsOptions): Plug
 							},
 						}),
 				resolve: {
+					tsconfigPaths: config.resolve?.tsconfigPaths ?? true,
 					conditions: packageConditions,
 					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
 					preserveSymlinks: false,

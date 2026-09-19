@@ -1,4 +1,3 @@
-export * from './hmr-log.ts'
 export {
 	createHostDevelopmentDriver,
 	HostDevelopmentClosedError,

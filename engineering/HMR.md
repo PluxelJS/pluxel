@@ -98,6 +98,9 @@ Host-dev classifier 固定优先级：
 
 Bare specifier 与 `/@fs/` 边界使用同一 classifier，workspace alias 不能绕过分类。Project 不注入第二份 Vite
 `InlineConfig` 或自定义 bridge policy。
+通用 source pipeline 默认启用 Vite `resolve.tsconfigPaths`，但保留显式 `false`；alias 的解析仍由 Vite 拥有，
+Host-dev 只分类其物理结果。浏览器 Node builtin guard 使用 Vite 的 browser external 结果报错，允许显式浏览器实现，
+不在 SSR environment 运行。开发诊断的公共事实是应用 recent update 与逐插件 lifecycle reports，不另设无生产者的日志 schema。
 
 Artifact classifier 也只消费三态正向证据：raw source lowering 对 exact definition 的事实才能产生 `source-module`；active
 module closure 中 toolchain setter 的 exact literal definition 事实才能产生 `built-module`。文件扩展名、package 路径、未命中
@@ -272,3 +275,5 @@ Host-dev 在候选语义作用域中计算 execution provenance，Host 只在 ca
 物理 `node_modules` 中的模块只采集正向已编译 ABI definition facts，不将普通第三方代码作为 Plugin 源码 lowering。
 整应用失败补偿在候选语义作用域之外、rollback 后进行；已结束 generation 的异步 continuation 也只能读取 committed Workbench facts。
 补偿沿用已接受 catalog 对应的制品输入；同路径新 inventory 不得替换旧 plan。旧制品字节已删除时仍须诚实报告补偿失败。
+
+Shell 源码开发通过 `@pluxel/workbench/dev` 的 `workbenchSourceShell({ entry })` 显式附加到当前 Vite 图；入口与 React/CSS 配置由应用提供，不自动探测 workspace 或创建新 watcher/server。与 renderer 制品附件相互独立，见 [Workbench Host HTTP](WORKBENCH.md#host-http-与-shell-开发)。

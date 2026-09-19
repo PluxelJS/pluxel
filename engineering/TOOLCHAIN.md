@@ -216,35 +216,22 @@ mapping 会一并清理；devDependencies 保留供作者工具使用。metadata
 application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
 assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表。
 
-Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint、config metadata
-以及 React/Mantine UI singleton dedupe 语义，并由 Vite/OXC 提供 legacy decorator transform。source preset 同时识别
-框架 package 的 `@pluxel/source` 与插件 package 的 `@pluxel/hmr` dev export；Host 来源接入 plugin
-会自动组合这套配置，项目不应重复配置 Pluxel core/runtime/UI 的 resolve conditions、dedupe 或插件 source alias。
-preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
-同时用于 Workbench UI production build；plugin semantics、lint 和 config metadata 只应用于 server environment。
-host-dev 增加 ModuleRunner、watcher；Runtime 开发组合接入 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
-统一开发驱动对配置 import graph 的收集与失效复用同一个 host-dev helper；Node artifact build slot、缓存保留、
-Federation application-root coordinator 和 shared package 集合属于内核不变量，不进入 Context 或 route config。
-Workbench browser entry 在 route `config` hook 进入 Vite optimizer；插件 UI 的 watch graph 则通过 SSR environment
-收集，不能为了编译元数据调用 client transform 并向 optimizer 注入不完整依赖批次。
-Runtime Vite 统一加载应用声明，并把固定 imports 与动态来源交给同一开发会话。生产启动使用构建产物与生产来源加载器，
-不以另一个 Vite mode 充当生产 launcher。Vite 默认忽略生成态 `.pluxel/`、原生构建 `target/` 与任务缓存 `.turbo/`；
-动态来源中位于 `.pluxel` 下的显式目录由受控来源 watcher 观察，避免扫描整个数据或 package 安装目录。
+Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata，
+并由 Vite/OXC 提供 legacy decorator transform。Host-dev 自动组合该 pipeline；preprocessor 参与所有 environment，
+Plugin semantics、lint 和 config metadata 仅作用于 server environment。Workbench 单独拥有 browser compiler 与 UI singleton 策略。
+开发解析优先 `@pluxel/hmr`、`development`、`@pluxel/source`，默认启用 Vite 自身的 `resolve.tsconfigPaths`，
+显式 `false` 保持关闭。项目无需再注册路径解析插件。浏览器直接引入 Node builtin 时，adapter 复用 Vite 解析结果：
+没有用户提供的浏览器实现而被 Vite externalize 的 builtin 立即报错，包含 import 与 importer；SSR 不受此 guard 影响。
 
-开发期 Node module externalization 由 host-dev 的单一 host-module classifier 决定。它从 importer 所在位置按 Node
-规则解析 bare specifier，找到最近的 `package.json`，并结合 `.node`/`.cjs`/`.cts` 扩展名、package `type`、require-only
-root export 与 `napi`/`binary`/`gypfile` metadata 区分 host CommonJS/native module 和可变换的 ESM source；package、文件和
-specifier 结果使用有界缓存。static/config ModuleRunner 通过 server-only Vite adapter 使用该判断，dynamic HMR runner
-在 fetch boundary 直接使用同一判断并携带明确 module format。项目不得再用 `ssr.external` 或 runtime package 名单复制
-这项策略。该开发期执行边界与 production freezer 的 residual tracing 是两个契约：后者仍负责生成可搬运部署闭包。
+Host-dev 拥有唯一 SSR ModuleRunner、source watcher 和更新队列，统一求值应用声明、fixed imports 与动态来源；
+Services 提供 HTTP carrier，Workbench 通过开发附件接入 artifact compiler。生产启动使用构建产物与生产来源加载器，
+不以另一个 Vite mode 充当生产 launcher。Vite 默认忽略生成态 `.pluxel`、日志与数据库目录。
+Host-dev 的 host module classifier 按 Node 规则与 package metadata 判断 CommonJS/native module；Vite alias 或 tsconfig paths
+先由 Vite 解析，再对物理目标应用同一分类，确保 workspace CJS 不落入 ESM runner。该边界不重新实现 Vite resolver，
+也不改变 production freezer 的 residual tracing 和部署闭包契约。
 
-仓库 source checkout 中，Runtime Vite adapter 通过 relative source bridge 组合当前 Rolldown source preset，
-不能回落到上一次构建的 `dist/vite.mjs`；各 runtime package 的 production build 用 pre-resolve externalizer 把这条
-bridge 精确改写为 `@pluxel/rolldown/vite` 公共入口。这样修改内核 Vite 默认后无需先手工 build 才能启动项目，也不会
-把 Rolldown 工具链内联进 runtime 发布物或增加 dev-only package export。
-配置加载期的 Runtime development Node carrier 同样直接桥接当前 Services Node carrier source；Runtime 发布构建把它精确改写回
-`@pluxel/services/http/node`，production adapter 按部署闭包携带 carrier。开发启动因此不读取旧 dist，
-发布边界也不残留 monorepo 相对路径。
+Host-dev 直接依赖 `@pluxel/rolldown/vite` 公共入口；workspace source conditions 选择当前源码，发布产物保留工具链外部依赖。
+Services 拥有 Node HTTP carrier，Host-dev 不复制 carrier 实现或维护另一套 source transform。
 
 仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
 `@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的

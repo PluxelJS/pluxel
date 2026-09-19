@@ -186,9 +186,13 @@ export default defineConfig({
 
 ## Source build boundary
 
-Runtime Vite 接入 执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
+Host 的 Vite 接入执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
 Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
 graph 与 server Plugin implementation 保持分离。
+
+开发接入默认使用 Vite 的 `resolve.tsconfigPaths` 解析项目 TypeScript 路径别名；若不需要，在 Vite config 显式设为 `false`。
+别名指向的 CommonJS 文件仍由 Node 加载，避免 `require is not defined`。浏览器代码误引 `node:fs`、`fs/promises` 等
+Node 内置模块时，开发构建立刻报告模块名和导入者；把调用移到服务端，或通过 Vite alias 提供真正的浏览器实现。
 
 Vite 更新因新增导入失败时会保留上一版本，并持续观察失败候选需要的文件与 package 安装目录。
 只修复新文件或安装缺失依赖就能触发重试，无需再次编辑原 Plugin 文件；更新成功后释放这些临时恢复监听。

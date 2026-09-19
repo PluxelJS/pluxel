@@ -154,10 +154,11 @@ export function createHostModuleVitePlugin(): Plugin {
 		},
 		async resolveId(source, importer, options) {
 			if (!options?.ssr || !classifier || isBuiltin(source) || source.startsWith('\0')) return null
-			let decision: HostModuleDecision | null
-			if (isBarePackageSpecifier(source))
-				decision = await classifier.classifySpecifier(source, importer)
-			else {
+			let decision = isBarePackageSpecifier(source)
+				? await classifier.classifySpecifier(source, importer)
+				: null
+			if (!decision) {
+				// Vite owns aliases and tsconfig paths; classify their resolved physical target too.
 				const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
 				decision = resolved ? await classifier.classifyFile(resolved.id) : null
 			}
