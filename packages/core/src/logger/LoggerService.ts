@@ -11,7 +11,7 @@ const unmanagedRootIds = new WeakMap<object, string>()
 let unmanagedRootIdSequence = 0
 
 export type LoggerServiceConfig = Readonly<{
-	/** @internal Runtime launchers install the single active root identity. */
+	/** @internal Core pins this identity to the root; Host logging uses the same identity. */
 	rootId: string
 }>
 

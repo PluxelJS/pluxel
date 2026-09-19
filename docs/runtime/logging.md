@@ -181,3 +181,9 @@ await host.close()
 的选项传入；namespace 是借用资源，关闭由应用或其存储服务负责。
 删除 fork 会在同一 Host 队列内清理日志 policy；写入失败时保留 fork，恢复存储后可重试。
 同一进程仍只允许一个活动日志 Host，第二个安装失败不会影响第一个。
+
+## 有界操作日志与等待
+
+`markLogs(logging, streamId?)` 标记已 flush 的末尾；`readLogs(logging, cursor, { limit: 100, filter })` 返回有界记录和下一 cursor。`waitForLogs(logging, cursor, { signal, limit: 100, filter })` 等待首批匹配记录或 cursor 失效，signal 必填，取消与完成都会释放订阅。三者均从 `@pluxel/logging` 导入，使用同一 store，不创建控制台专用日志通道。
+
+cursor 是普通 JSON，包含 rootId、streamId、bootId、epoch、nextSeq；不可把不同 Host 或重建 stream 的序号相接。读取保留 `root_mismatch`、`stream_replaced`、`store_unavailable`、`epoch_mismatch`、`from_too_old` 与 `invalid` 的失败分支。mark 可为已配置但尚无记录的 stream 创建空存储，未配置且不存在时抛错。调用示例见 [开发控制台](../development/dev-console.md)。

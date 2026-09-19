@@ -1,4 +1,4 @@
-import type { Context, PluginNodeAddress } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import {
 	defineContextCapability,
 	installRootCapability,
@@ -56,20 +56,14 @@ export function logging(input: RuntimeLoggingInput, options: LoggingOptions = {}
 			meta: input.routes.meta.map((binding) => ({ ...binding })),
 		},
 	}
-	return loggingService((ctx) => createContextRuntimeLogging(ctx, plan), {
-		policyStore: options.policyStore,
-	})
-}
-
-/** @internal Runtime launchers may have installed the same manager before their Core root exists. */
-export function installedLogging(manager: RuntimeLogging, options: LoggingOptions = {}) {
-	return loggingService(() => manager, options)
-}
-
-function loggingService(create: (ctx: Context) => RuntimeLogging, options: LoggingOptions = {}) {
 	return defineHostService({
 		name: 'Logging',
-		capabilities: [installRootCapability(Logging, { property: 'logging', create })],
+		capabilities: [
+			installRootCapability(Logging, {
+				property: 'logging',
+				create: (ctx) => createContextRuntimeLogging(ctx, plan),
+			}),
+		],
 		async prepare({ ctx, effects }) {
 			const manager = resolveContextCapability(ctx, Logging)
 			effects.defer(() => manager.dispose(), { tag: 'HostLogging' })

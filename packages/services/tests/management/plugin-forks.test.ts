@@ -15,11 +15,11 @@ import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
 import {
-	createRuntimeLogging,
-	installedLogging,
+	logging as loggingService,
+	Logging,
+	type PluginLogPolicyStore,
 	type RuntimeLoggingInput,
-} from '@pluxel/logging/internal'
-import type { PluginLogPolicyStore } from '@pluxel/logging'
+} from '@pluxel/logging'
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
@@ -348,17 +348,14 @@ describe('Plugin fork control plane', () => {
 				persisted.push(snapshot)
 			},
 		}
-		const logging = createRuntimeLogging(loggingPlan())
-		await logging.install()
-		await logging.initializePolicy(loggingStore)
 		const host = await createServiceInternalTestHarness({
 			workbench: false,
-			config: { logger: logging.contextBinding },
 			services: [
 				...standardServices({ persistence: { mode: 'memory' } }),
-				installedLogging(logging, { policyStore: loggingStore }),
+				loggingService(loggingPlan(), { policyStore: loggingStore }),
 			],
 		})
+		const logging = host.ctx.require(Logging)
 		hosts.push(host)
 		try {
 			host.add(ForkProvider)
@@ -394,7 +391,6 @@ describe('Plugin fork control plane', () => {
 			expect(persisted.at(-1)?.overrides).toEqual([])
 		} finally {
 			await host.dispose()
-			await logging.dispose()
 		}
 	})
 })

@@ -6,5 +6,3 @@ export * from './file'
 export * from './serialization'
 export * from './llm'
 export * from './filters'
-
-export { installedLogging } from './service'

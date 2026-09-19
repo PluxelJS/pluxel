@@ -61,4 +61,12 @@ export {
 } from './logging'
 
 export { Logging, logging, type LoggingOptions } from './service'
+export {
+	markLogs,
+	readLogs,
+	waitForLogs,
+	type LogCursor,
+	type LogReadOptions,
+	type LogReadResult,
+} from './read'
 export { createPluginLogPolicyStore, type PluginLogPolicyStorage } from './storage'
