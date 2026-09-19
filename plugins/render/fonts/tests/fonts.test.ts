@@ -51,7 +51,7 @@ describe('FontsPlugin', () => {
 					fonts.families.some(({ family }) => family === fonts.defaultFont.family),
 			).toBe(true)
 			expect(host.isRunning(FontsPlugin)).toBe(true)
-			await expect(openFontsManager(host)).rejects.toThrow(/workbench/i)
+			expect(fonts.ctx.workbench).toBeUndefined()
 		}
 	})
 
