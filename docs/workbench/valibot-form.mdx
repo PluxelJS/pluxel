@@ -10,7 +10,8 @@ Workbench 会自动显示配置表单；无需为普通配置另外编写 React 
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 @Plugin()
 export class ServicePlugin extends BasePlugin {
@@ -35,7 +36,8 @@ export class ServicePlugin extends BasePlugin {
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 function startServer(_port: number, _options: { enabled: boolean }) {}
 

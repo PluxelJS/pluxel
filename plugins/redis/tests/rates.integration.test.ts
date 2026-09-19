@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { RedisPlugin, RedisRatesBackendPlugin } from '../src/index.ts'
 
@@ -24,7 +25,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.commit((change) => {
 				change.start(RedisPlugin, {

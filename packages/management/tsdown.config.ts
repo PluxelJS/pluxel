@@ -1,6 +1,7 @@
 import { defineConfig } from 'tsdown'
 export default defineConfig({
 	entry: {
+		commands: 'src/commands.ts',
 		'internal/http': 'src/http-internal.ts',
 		http: 'src/http.ts',
 		'internal/host-options': 'src/host-options.ts',

@@ -1,14 +1,12 @@
+import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf, type PluginConstructor, type PluginNodeAddress } from '@pluxel/core'
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
 } from '@pluxel/services/persistence'
-import {
-	createRuntimeTestHost,
-	type RawPluginConfig,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import { type RawPluginConfig } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { detachWorkbenchPortableValue } from '@pluxel/workbench/client'
 import { ProxyAgent } from 'undici'
 import wretch, { type FetchLike } from 'wretch'
@@ -29,7 +27,7 @@ let fetchA: FetchLike
 let fetchB: FetchLike
 
 async function startWretchFixture(
-	host: RuntimeTestHost,
+	host: ServiceTestHost,
 	plugins: readonly PluginConstructor[],
 	initialConfig?: RawPluginConfig,
 ): Promise<void> {
@@ -130,9 +128,11 @@ describe('WretchPlugin', () => {
 	it('separates same-display-name consumers by node address and persists the full owner', async () => {
 		const persistence = trackedSettingsPersistence()
 		{
-			await using host = await createRuntimeTestHost({
-				workbench: { enabled: true },
-				persistence: { mode: 'custom', backend: persistence.backend },
+			await using host = await createServiceTestHost({
+				workbench: true,
+				services: standardServices({
+					persistence: { mode: 'custom', backend: persistence.backend },
+				}),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
@@ -160,7 +160,7 @@ describe('WretchPlugin', () => {
 
 	it('emits portable settings snapshots without undefined optional fields', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 			using settings = await openWretchSettings(host, ConsumerA)
@@ -198,9 +198,11 @@ describe('WretchPlugin', () => {
 		let expectedOwner!: PluginNodeAddress
 		let wrongOwner: unknown
 		{
-			await using host = await createRuntimeTestHost({
-				workbench: { enabled: true },
-				persistence: { mode: 'custom', backend: persistence.backend },
+			await using host = await createServiceTestHost({
+				workbench: true,
+				services: standardServices({
+					persistence: { mode: 'custom', backend: persistence.backend },
+				}),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
@@ -222,9 +224,11 @@ describe('WretchPlugin', () => {
 		await persistence.put(key, JSON.stringify({ ...stored, owner: wrongOwner }))
 
 		{
-			await using host = await createRuntimeTestHost({
+			await using host = await createServiceTestHost({
 				workbench: false,
-				persistence: { mode: 'custom', backend: persistence.backend },
+				services: standardServices({
+					persistence: { mode: 'custom', backend: persistence.backend },
+				}),
 			})
 
 			const failure = await host.commitExpectFail((change) => {
@@ -243,7 +247,7 @@ describe('WretchPlugin', () => {
 
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerB])
 
@@ -273,7 +277,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 			const consumer = host.require(ConsumerA)
@@ -307,7 +311,7 @@ describe('WretchPlugin', () => {
 
 	it('rejects unsafe proxy, header, and timeout settings', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 1_000 })
 			using settings = await openWretchSettings(host, ConsumerA)
@@ -345,7 +349,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
 
@@ -365,9 +369,11 @@ describe('WretchPlugin', () => {
 		const persistence = gatedSettingsPersistence()
 
 		{
-			await using host = await createRuntimeTestHost({
-				workbench: { enabled: true },
-				persistence: { mode: 'custom', backend: persistence.backend },
+			await using host = await createServiceTestHost({
+				workbench: true,
+				services: standardServices({
+					persistence: { mode: 'custom', backend: persistence.backend },
+				}),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerB])
@@ -389,9 +395,11 @@ describe('WretchPlugin', () => {
 		const persistence = gatedSettingsPersistence()
 
 		{
-			await using host = await createRuntimeTestHost({
+			await using host = await createServiceTestHost({
 				workbench: false,
-				persistence: { mode: 'custom', backend: persistence.backend },
+				services: standardServices({
+					persistence: { mode: 'custom', backend: persistence.backend },
+				}),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerB])
@@ -419,7 +427,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
 				allowedOrigins: ['https://allowed.example'],
@@ -441,7 +449,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
 				maxConcurrentRequests: 1,
@@ -471,7 +479,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerB])
 
@@ -496,7 +504,7 @@ describe('WretchPlugin', () => {
 
 	it('revokes cached managed-settings RPC with its caller generation', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
@@ -513,7 +521,7 @@ describe('WretchPlugin', () => {
 
 	it('revokes a settings capability when its View closes', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
@@ -534,7 +542,7 @@ describe('WretchPlugin', () => {
 		const close = vi.spyOn(ProxyAgent.prototype, 'close')
 		try {
 			{
-				await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+				await using host = await createServiceTestHost({ workbench: true })
 
 				await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
@@ -565,7 +573,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
 				maxConcurrentRequests: 1,
@@ -633,7 +641,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 5 })
 

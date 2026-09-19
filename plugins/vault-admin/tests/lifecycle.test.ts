@@ -1,13 +1,15 @@
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
 import { expect, it } from 'vitest'
-import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/services/management/RuntimeManagementTarget'
 import { VaultAdminPlugin } from '../src/index.ts'
 import { VaultWorkbench } from '../src/workbench.ts'
 
 it('withdraws its View without withdrawing host Vault management', async () => {
-	await using host = await createRuntimeInternalTestHost({
-		workbench: { enabled: true },
-		vault: {},
+	await using host = await createServiceInternalTestHost({
+		workbench: true,
+		services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 	})
 	await host.start(VaultAdminPlugin)
 	const management = new RuntimeManagementTargetImpl(host.ctx)
@@ -26,9 +28,12 @@ it('withdraws its View without withdrawing host Vault management', async () => {
 })
 
 it('can run headless but requires the Vault capability', async () => {
-	await using headless = await createRuntimeInternalTestHost({ workbench: false, vault: {} })
+	await using headless = await createServiceInternalTestHost({
+		workbench: false,
+		services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+	})
 	await headless.start(VaultAdminPlugin)
 	expect(headless.isRunning(VaultAdminPlugin)).toBe(true)
-	await using absent = await createRuntimeInternalTestHost({ workbench: false, vault: false })
+	await using absent = await createServiceInternalTestHost({ workbench: false })
 	await expect(absent.start(VaultAdminPlugin)).rejects.toThrow(/Vault|start|lifecycle/i)
 })

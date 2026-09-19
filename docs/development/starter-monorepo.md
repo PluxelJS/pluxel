@@ -24,7 +24,7 @@ pnpm dev
 | ------------------------ | ------------------------------------------------ | ------------------------------------- |
 | 修改 Todo 规则           | `packages/domain/`                               | 运行该包的普通单元测试                |
 | 修改状态、配置或审计集成 | `plugins/todo/src/index.ts`                      | 运行 Todo 插件测试，再通过页面操作    |
-| 新增 HTTP 接口           | `plugins/http/src/index.ts`                      | 用 Runtime test host 请求最终路径     |
+| 新增 HTTP 接口           | `plugins/http/src/index.ts`                      | 用 服务 test host 请求最终路径        |
 | 修改产品页面             | `host/web/src/client/`                           | 打开 Application 地址                 |
 | 改启动插件或初始配置     | `host/src/app.ts`、`host/src/runtime-state.ts`   | 检查启动结果和 Workbench 中的当前状态 |
 | 新增独立插件             | [第一个插件](../getting-started/first-plugin.md) | 接入宿主后验证业务结果                |
@@ -102,7 +102,7 @@ pnpm governance:check
 
 分别用于添加、重新分组、清理和核对依赖。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
 
-插件生产代码通常只依赖 `@pluxel/runtime`。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](./testing.md)。
+插件生产代码依赖 `@pluxel/core` 与实际使用的服务、Workbench 和 validation 包。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](./testing.md)。
 
 ## 可选动态来源
 
@@ -116,11 +116,11 @@ pnpm governance:check
 - `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
 - `plugins/audit/tests` 使用 `@pluxel/core/test` 的 `createCoreTestHost()` 与立即完成的 `add/remove`。
 - `plugins/todo/tests` 使用 Core host 的 `initialConfig`，验证状态操作及 optional provider 存在与缺失两种情况。
-- `plugins/http/tests` 使用 `@pluxel/runtime/test` 的 `createRuntimeTestHost()`、`await using` 和 `host.http.fetch()` 验证 required edge、
+- `plugins/http/tests` 使用 `@pluxel/services/test` 的 `createServiceTestHost()`、`await using` 和 `host.http.fetch()` 验证 required edge、
   HTTP schema、mutation 与错误状态。
 - `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
 
-选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 Runtime service 才使用 Runtime host。常用 command 会立即提交；
+选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 宿主服务 才使用 服务 host。常用 command 会立即提交；
 多个变化必须共享边界时才使用同步 `commit(change => ...)`。首次配置使用 `initialConfig`，运行期更新使用
 `host.config.patch()`。
 

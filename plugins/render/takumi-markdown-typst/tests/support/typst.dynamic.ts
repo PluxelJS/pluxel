@@ -1,6 +1,7 @@
 import { FontsPlugin } from '@pluxel/fonts'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { type RuntimeApplication } from '@pluxel/runtime'
+import type { HostApplication } from '@pluxel/host'
+import { standardServices } from '@pluxel/services'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
 import { TypstMathPlugin } from '../../src/index.ts'
@@ -18,10 +19,8 @@ export default {
 	name: 'render-fixture',
 	plugins,
 	configure: () => ({
-		configService: { mode: 'memory' },
-		runtimeState: { mode: 'memory', snapshot: { autoStart: plugins.map(pluginNodeAddressOf) } },
-		persistence: { mode: 'memory' },
-		workbench: false,
-		logging: false,
+		configRecords: { mode: 'memory' },
+		state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
+		services: standardServices({ persistence: { mode: 'memory' } }),
 	}),
-} satisfies RuntimeApplication
+} satisfies HostApplication

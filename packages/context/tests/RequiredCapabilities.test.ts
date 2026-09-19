@@ -42,7 +42,7 @@ it('requires exact identities lazily and keeps owner views isolated', () => {
 	expect(() => root.require({ ...capability })).toThrow(TypeError)
 })
 
-it('does not expose host authorities through require, including through ctx.root', () => {
+it('resolves root authorities only on the actual root and rejects owner capabilities there', () => {
 	const authority = defineContextCapability<number>('authority', { access: 'root' })
 	const legacyRoot = defineContextCapability<number>('legacy')
 	const owner = defineContextCapability<number>('generation', { access: 'owner' })
@@ -58,13 +58,16 @@ it('does not expose host authorities through require, including through ctx.root
 	const scope = host.createScope(root, 'plugin')
 	expect(scope.require(owner)).toBe(3)
 	expect(resolveContextCapability(root, authority)).toBe(1)
-	expect(() => scope.root.require(authority as never)).toThrow(ContextCapabilityAccessError)
+	expect(root.require(authority)).toBe(1)
+	expect(scope.root.require(authority)).toBe(1)
+	expect(root.require(legacyRoot)).toBe(2)
+	expect(() => scope.require(authority as never)).toThrow(ContextCapabilityAccessError)
 	expect(() => scope.require(legacyRoot)).toThrow(ContextCapabilityAccessError)
 	expect(() => root.require(owner as never)).toThrow(ContextCapabilityAccessError)
 	expect('generation' in root ? Reflect.get(root, 'generation') : undefined).toBeUndefined()
 	const typeChecks = () => {
-		// @ts-expect-error Root authorities cannot be required by authors, even through ctx.root.
-		scope.root.require(authority)
+		// @ts-expect-error An owner Context cannot directly require a root authority.
+		scope.require(authority)
 		// @ts-expect-error Owner-only services do not belong to the root projection.
 		root.generation
 		// @ts-expect-error The root cannot require an owner-only token.

@@ -1,11 +1,16 @@
-import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
 
 describe('AuthPlugin lifecycle', () => {
 	it('runs in setup-required state and revokes its generation on stop', async () => {
 		{
-			await using host = await createRuntimeInternalTestHost({ vault: {}, management: true })
+			await using host = await createServiceInternalTestHost({
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				management: true,
+			})
 
 			await host.start(AuthPlugin, {
 				initialConfig: { mode: { type: 'password' } },
@@ -29,7 +34,7 @@ describe('AuthPlugin lifecycle', () => {
 
 	it('runs public OIDC without Vault', async () => {
 		{
-			await using host = await createRuntimeInternalTestHost({ management: true })
+			await using host = await createServiceInternalTestHost({ management: true })
 
 			await host.start(AuthPlugin, {
 				initialConfig: {

@@ -1,10 +1,12 @@
+import { standardServices } from '@pluxel/services'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { createMemoryPersistenceBackend } from '@pluxel/services/persistence'
-import { BasePlugin, Plugin, createRuntimeTestHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
 import { FontsTestWorkbench, openFontsManager, openFontSelection } from './workbench-helpers.ts'
@@ -35,7 +37,7 @@ const discoveredFamily = GlobalFonts.families[0]?.family
 describe('FontsPlugin', () => {
 	it('classifies fonts discovered from the host system and resolves an automatic default', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
 			const fonts = host.require(FontsLazyConsumer).fonts
@@ -57,8 +59,8 @@ describe('FontsPlugin', () => {
 		async () => {
 			const backend = createMemoryPersistenceBackend()
 			{
-				await using host = await createRuntimeTestHost({
-					persistence: { mode: 'custom', backend },
+				await using host = await createServiceTestHost({
+					services: standardServices({ persistence: { mode: 'custom', backend } }),
 				})
 
 				await host.start(FontsPlugin, {
@@ -101,7 +103,7 @@ describe('FontsPlugin', () => {
 		const family = `Pluxel Lifecycle ${crypto.randomUUID()}`
 		let registration: FontRegistration | undefined
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
 
@@ -127,7 +129,7 @@ describe('FontsPlugin', () => {
 
 	it.skipIf(!fontPath)('reference-counts duplicate portable resources by content ID', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
 			const fonts = host.require(FontsLazyConsumer).fonts
@@ -147,7 +149,7 @@ describe('FontsPlugin', () => {
 
 	it.skipIf(!fontPath)('bounds native registrations across managed and caller fonts', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start(FontsPlugin, {
 				initialConfig: { maxNativeRegistrations: 1 },
@@ -180,7 +182,7 @@ describe('FontsPlugin', () => {
 			const fontData = await readFile(fontPath!)
 			const byteLength = fontData.byteLength
 			{
-				await using host = await createRuntimeTestHost()
+				await using host = await createServiceTestHost()
 
 				await host.start(FontsPlugin, {
 					initialConfig: { maxTotalFontBytes: byteLength },
@@ -216,9 +218,9 @@ describe('FontsPlugin', () => {
 			const data = await readFile(fontPath!)
 
 			{
-				await using host = await createRuntimeTestHost({
-					workbench: { enabled: true },
-					persistence: { mode: 'custom', backend },
+				await using host = await createServiceTestHost({
+					workbench: true,
+					services: standardServices({ persistence: { mode: 'custom', backend } }),
 				})
 
 				await host.start([FontsPlugin, FontsTestConsumer])
@@ -263,7 +265,7 @@ describe('FontsPlugin', () => {
 
 	it('rejects invalid bytes and enforces the configured byte budget', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start(FontsPlugin, { initialConfig: { maxFontBytes: 4 } })
 			await host.start(FontsLazyConsumer)
@@ -280,7 +282,7 @@ describe('FontsPlugin', () => {
 
 	it('cooperatively snapshots registration bytes and observes cancellation', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
 			const controller = new AbortController()
@@ -295,7 +297,7 @@ describe('FontsPlugin', () => {
 
 	it('bounds the serialized managed-font queue before snapshotting upload bytes', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await host.start(FontsPlugin, {
 				initialConfig: {
@@ -317,7 +319,7 @@ describe('FontsPlugin', () => {
 
 	it('does not commit an async registration after its caller generation stops', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
 			const registration = host.require(FontsLazyConsumer).fonts.register({
@@ -338,7 +340,7 @@ describe('FontsPlugin', () => {
 
 	it.skipIf(!fontPath)('rejects oversized font files before reading their contents', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start(FontsPlugin, { initialConfig: { maxFontBytes: 4 } })
 			await host.start(FontsLazyConsumer)
@@ -363,8 +365,8 @@ describe('FontsPlugin', () => {
 			[selectionBackend, 'Default font preference is corrupt'],
 		] as const) {
 			{
-				await using host = await createRuntimeTestHost({
-					persistence: { mode: 'custom', backend },
+				await using host = await createServiceTestHost({
+					services: standardServices({ persistence: { mode: 'custom', backend } }),
 				})
 
 				const failure = await host.commitExpectFail((change) => {
@@ -387,7 +389,7 @@ describe('FontsPlugin', () => {
 
 	it('renders direct consumer and provider-owned Workbench views', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await host.start([FontsPlugin, FontsTestConsumer])
 

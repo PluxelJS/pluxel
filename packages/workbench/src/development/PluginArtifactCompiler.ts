@@ -66,12 +66,15 @@ export type WorkbenchContentCompilation = Readonly<{
 export type WorkbenchArtifactCompilations = Readonly<{
 	producers: readonly WorkbenchProducerCompilation[]
 	content: readonly WorkbenchContentCompilation[]
+	/** Validated package inventory inputs; admitted with the same source candidate transaction. */
+	packaged?: readonly WorkbenchDefinitionCandidate[]
 }>
 
 type WorkbenchDefinitionCompilation = {
 	definition: WorkbenchFederationProducerPlan['definition']
 	producer?: WorkbenchProducerCompilation
 	content?: WorkbenchContentCompilation
+	packaged?: WorkbenchDefinitionCandidate
 }
 
 type WorkbenchDefinitionCandidate = Readonly<{
@@ -160,6 +163,7 @@ export class PluginArtifactCompiler {
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
+				if (compilation.packaged) return [key, compilation.packaged] as const
 				const [federation, content] = await Promise.all([
 					compilation.producer ? this.materializeProducer(compilation.producer) : undefined,
 					compilation.content ? this.materializeContent(compilation.content) : undefined,
@@ -181,6 +185,14 @@ export class PluginArtifactCompiler {
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
+				if (compilation.packaged)
+					return [
+						key,
+						{
+							...compilation.packaged,
+							producer: undefined as WorkbenchProducerCompilation | undefined,
+						},
+					] as const
 				const content = compilation.content
 					? await this.materializeContent(compilation.content)
 					: undefined
@@ -688,6 +700,12 @@ function groupWorkbenchCompilations(
 		}
 		current.content = content
 		definitions.set(key, current)
+	}
+	for (const packaged of input.packaged ?? []) {
+		const key = pluginDefinitionIndexKey(packaged.definition)
+		if (definitions.has(key))
+			throw new TypeError(`[host-dev] conflicting source or packaged Workbench definition: ${key}`)
+		definitions.set(key, { definition: packaged.definition, packaged })
 	}
 	return definitions
 }

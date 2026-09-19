@@ -62,7 +62,7 @@ Node 与 Workers 使用 `@pluxel/services/node`、`@pluxel/services/workers`，�
 
 受信任的宿主通过 `requireWorkbench(host.ctx)` 创建 session，通过 `createWorkbenchArtifactHandler(host.ctx)` 读取已提交制品。这些函数来自 `@pluxel/workbench/server`，不开放给 Plugin 发布 view。HTTP handler 处理 GET/HEAD、ETag 与不可变缓存头；认证、连接与 session 清理由组合它的管理 endpoint 持有。
 
-浏览器和 producer 统一共享 `@pluxel/workbench`、`/client`、`/react`、`/internal/react` 的精确版本及同一 React 实例。旧 `@pluxel/runtime/workbench*` 入口已移除，修改入口后必须重新生成制品；构建契约版本为 3。
+浏览器和 producer 统一共享 `@pluxel/workbench`、`/client`、`/react`、`/internal/react` 的精确版本及同一 React 实例。修改入口后必须重新生成制品；构建契约版本为 3。
 
 ## 官方 Shell 与 HTTP
 

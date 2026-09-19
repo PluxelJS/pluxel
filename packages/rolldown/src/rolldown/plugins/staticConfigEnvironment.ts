@@ -14,7 +14,7 @@ import { restoreStaticConfigSchema } from './staticConfigEnvironmentSchema.ts'
 
 const ENVIRONMENT_NAME = /^[A-Z_][A-Z0-9_]*$/
 const RESERVED_ENVIRONMENT_PREFIX = 'PLUXEL_'
-const STATIC_RUNTIME_PACKAGE = '@pluxel/runtime'
+const CONFIG_ENVIRONMENT_PACKAGE = '@pluxel/host/config-environment'
 
 type MappingLeaf = Readonly<{
 	environmentName: string
@@ -380,11 +380,13 @@ function assertDirectImport(
 ): void {
 	if (
 		!binding ||
-		binding.source !== STATIC_RUNTIME_PACKAGE ||
+		binding.source !== CONFIG_ENVIRONMENT_PACKAGE ||
 		binding.imported !== name ||
 		binding.namespace
 	) {
-		error(`[static-application] ${id} must import ${name} directly from ${STATIC_RUNTIME_PACKAGE}`)
+		error(
+			`[static-application] ${id} must import ${name} directly from ${CONFIG_ENVIRONMENT_PACKAGE}`,
+		)
 	}
 }
 

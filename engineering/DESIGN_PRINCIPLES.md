@@ -22,10 +22,10 @@
 
 ## 2. 保持能力所有权清晰
 
-- Core 固定提供 logger、effects、events 和插件配置事实；Commands、Persistence、Vault 通过显式服务清单安装。默认 Runtime 还组合 HTTP、database、Node artifacts 等能力。`ctx.events` 提供通过
+- Core 固定提供 logger、effects、events 和插件配置事实；Commands、Persistence、Vault 通过显式服务清单安装。`standardServices()` 组合 HTTP、Commands、NodeModules、Workers 和 Persistence；`servicesPreset()` 另加 Vault、Logging、Management、管理命令及可选 Workbench，不默认安装 Database。`ctx.events` 提供通过
   module augmentation 扩展的松耦合 host 广播；具名 `EvtChannel` 属性表达沿 Plugin dependency edge 暴露的显式协议。
   ambient event 类型声明不建立、加载或替代 Plugin graph dependency。
-- standalone host 可以用 `@pluxel/context` 组合自己的封闭能力集合；Plugin Host 与 Runtime Context 都由宿主在 root 创建前组合；第三方服务通过 `@pluxel/core/host` 使用 Core 所有的 descriptor 身份，Plugin 不能追加、替换或运行时安装 capability。
+- standalone host 可以用 `@pluxel/context` 组合自己的封闭能力集合；Plugin Host 的 Context 由宿主在 root 创建前组合；第三方服务通过 `@pluxel/core/host` 使用 Core 所有的 descriptor 身份，Plugin 不能追加、替换或运行时安装 capability。
 - Workbench definition 只能通过可选的 `ctx.workbench?.publish()` 发布；页面 API 直接使用 fresh Cap’n Web
   `RpcTarget`，跨 Plugin UI 只使用 provider-owned Attachment 与 consumer-owned placement。
 - command 的 root catalog publication 与 carrier-specific publication 是两个显式决定。Carrier provider 通过
@@ -80,7 +80,7 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
   `displayName` 不参与身份，forkability 只属于 concrete definition fact。
 - Rolldown/Vite 共用 semantic pass，在 TypeScript 擦除前生成 root export、definition address、constructor
   required edge、optional ref/edge、forkability 与单 object config facts。
-- generated declaration 只调用带 numeric ABI version 的 `@pluxel/core/toolchain` / `@pluxel/runtime/toolchain`；
+- generated declaration 只调用带 numeric ABI version 的 `@pluxel/core/toolchain`；
   module namespace 求值完成后，route 恰好一次消费并冻结 candidate，不从默认作者入口读取 setter。
 - raw TypeScript runner 不作为插件源码入口；缺少 lowering facts 时必须 fail-fast，不能回退 reflection、class
   name 或 constructor identity。
@@ -92,22 +92,22 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
 ## 7. 保持依赖方向
 
 ```text
-@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/services <- @pluxel/runtime
+@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/services
                                      ^   ^
                                      |   +-- @pluxel/host-dynamic
-                                     +------ @pluxel/host-dev <- @pluxel/runtime/vite
+                                     +------ @pluxel/host-dev
                                                    ^
                                                    +-- @pluxel/services/vite
 @pluxel/commands --------------------------------------------> @pluxel/services
 @pluxel/cli --optional--> @pluxel/rolldown
 ```
 
-- context 是同步、host-neutral 的 Context kernel，不依赖 Core、Runtime、IO 或生命周期服务。
+- context 是同步、host-neutral 的 Context kernel，不依赖 Core、Host、IO 或生命周期服务。
 - core 不依赖 HTTP、持久化、Vite 或宿主策略。
 - core 源码直接复用 context；发布的 Core JS 与 declarations 完全内联该 kernel，不产生
   `@pluxel/context` production dependency。
-- core 与 commands 彼此独立；runtime 组合两者，但不把 command 变成插件内部生命周期协议。
-- Runtime 的生产入口不依赖开发工具链；动态来源通过 Host 来源契约接入。
+- core 与 commands 彼此独立；services 组合两者，但不把 command 变成插件内部生命周期协议。
+- Host 的生产入口不依赖开发工具链；动态来源通过 Host 来源契约接入。
 - Host 来源接入不复制 core lifecycle。
 - build-time tooling 不进入 runtime service graph。
 

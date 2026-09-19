@@ -63,15 +63,13 @@ describe('application', () => {
 	it('exposes one concrete Vite source pipeline and its sole semantic collector', () => {
 		const pipeline = createPluginSourceVitePipeline({
 			root: '/tmp/pluxel-plugin-source',
-			preset: 'runtime',
 			lintGuard: false,
 			configSource: false,
 		})
 		expect(pluginNames(pipeline)).toEqual([
-			'pluxel:database-source',
 			'unplugin-preprocessor-directives',
 			'pluxel:plugin-semantics',
-			'pluxel:runtime-source',
+			'pluxel:plugin-source',
 		])
 		expect(pipeline.semantics.workbenchPlans).toBeTypeOf('function')
 		expect(pipeline.semantics.classifyDefinitionArtifact).toBeTypeOf('function')
@@ -137,8 +135,8 @@ describe('application', () => {
 			await writeFile(
 				applicationEntry,
 				[
-					"import type { RuntimeApplication } from '@pluxel/runtime'",
-					"export default { name: 'fixture-application', plugins: [] } satisfies RuntimeApplication",
+					"import type { HostApplication } from '@pluxel/host'",
+					"export default { name: 'fixture-application', plugins: [] } satisfies HostApplication",
 				].join('\n'),
 			)
 			await writeFile(dependencyEntry, 'export const dependency = true\n')
@@ -333,17 +331,14 @@ describe('application', () => {
 		const source = String(await plugin?.load?.(String(resolved)))
 
 		expect(resolved).toBe('\0pluxel:static-application-bootstrap')
-		expect(source).toContain('import * as __pluxelHostModule')
+		expect(source).toContain('import application from')
 		expect(source).toContain('/tmp/pluxel-static-node/src/pluxel.static.ts')
-		expect(source).toContain('readHostProduct as __readHostProduct')
+		expect(source).toContain("from '@pluxel/host/application'")
 		expect(source.indexOf("import 'pluxel:static-elysia-wiring'")).toBeLessThan(
-			source.indexOf("from '@pluxel/runtime/internal/static-host'"),
+			source.indexOf('import application from'),
 		)
-		expect(source.indexOf("from '@pluxel/runtime/internal/static-host'")).toBeLessThan(
-			source.indexOf('import * as __pluxelHostModule'),
-		)
-		expect(source).toContain('__pluxelHostModule.default')
-		expect(source).toContain('product: __pluxelProduct')
+		expect(source).toContain('runHostApplication(application,')
+		expect(source).not.toContain('@pluxel/runtime')
 	})
 
 	it('statically wires every Elysia TypeBox runtime namespace before the user module', async () => {
@@ -396,9 +391,9 @@ describe('application', () => {
 		const resolved = plugin?.resolveId?.('pluxel:static-application-bootstrap')
 		const source = String(await plugin?.load?.(String(resolved)))
 
-		expect(source).toContain('@pluxel/runtime/internal/fetch-workbench-application')
-		expect(source).toContain('runStaticFetchWorkbenchApplication')
-		expect(source).toContain('export const fetch = __pluxelStaticRuntime.fetch')
+		expect(source).toContain('@pluxel/services/http/application')
+		expect(source).toContain('createHostHttpHandler(host)')
+		expect(source).toContain('export const fetch = handler')
 		expect(source).not.toContain('runStaticNodeApplication')
 		expect(source).not.toContain('export const address')
 	})
@@ -664,9 +659,9 @@ describe('application', () => {
 
 		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
 		expect(source).not.toContain("from '@pluxel/runtime/internal'")
-		expect(source).toContain("from '@pluxel/runtime/internal/static-host'")
-		expect(source).toContain('@pluxel/runtime/internal/node-workbench-application')
-		expect(source).toContain('runStaticNodeWorkbenchApplication')
+		expect(source).toContain("from '@pluxel/host/application'")
+		expect(source).toContain('@pluxel/services/http/listener')
+		expect(source).toContain('listenHostHttp(host,')
 		expect(source).toContain('...RuntimeFullTracePackages')
 		expect(source).toContain('...residualDependencies.fullTrace')
 	})

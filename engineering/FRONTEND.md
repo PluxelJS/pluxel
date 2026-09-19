@@ -5,7 +5,7 @@ Workbench 不得成为 Plugin 核心能力的启动前提。
 
 ## 固定边界
 
-- `@pluxel/management/client`：portable Runtime session、Management API 与严格校验的 DTO；
+- `@pluxel/management/client`：portable host session、Management API 与严格校验的 DTO；
 - `@pluxel/management/react`：Management client 的 React Context adapter；
 - `@pluxel/workbench`：Content/View/Attachment definition；
 - `@pluxel/workbench/client`：layout、portable Content plan/presentation 与 opened entry handle validation；
@@ -234,11 +234,11 @@ building 状态。后台 producer 成功后提交完整 tuple 并触发完整 do
 - `packages/workbench-app/src/workbench/client.ts`
 - `packages/workbench-app/src/workbench/runtime.tsx`
 - `packages/workbench-app/src/app/workbench/`
-- `packages/runtime/src/web/session/`
-- `packages/runtime/src/workbench/client.ts`
-- `packages/runtime/src/workbench/portable-value.ts`
-- `packages/runtime/src/workbench/react.tsx`
-- `packages/runtime/src/workbench/renderer-scope.tsx`
-- `packages/runtime/src/workbench/react-internal.tsx`
-- `packages/runtime/src/workbench/federation.ts`
+- `packages/management/src/web/session/`
+- `packages/workbench/src/workbench/client.ts`
+- `packages/workbench/src/workbench/portable-value.ts`
+- `packages/workbench/src/workbench/react.tsx`
+- `packages/workbench/src/workbench/renderer-scope.tsx`
+- `packages/workbench/src/workbench/react-internal.tsx`
+- `packages/workbench/src/workbench/federation.ts`
 - `packages/workbench-app/src/app/workbench/WorkbenchContentRenderer.tsx`

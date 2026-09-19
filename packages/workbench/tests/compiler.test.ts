@@ -1,5 +1,7 @@
+import { pluginDefinitionIndexKey } from '@pluxel/core'
+import { readDevelopmentPackagedArtifacts } from '../src/development/packaged-artifacts'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, rm } from 'node:fs/promises'
 import {
 	WorkbenchArtifactCoordinator,
 	WorkbenchArtifactService,
@@ -9,6 +11,8 @@ import {
 import { createWorkbenchContentSet, serializeWorkbenchContentSet } from '@pluxel/core/internal'
 import {
 	createWorkbenchFederationCompatibilitySet,
+	createWorkbenchFederationDeploymentInventory,
+	WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE,
 	createWorkbenchFederationProducerPlan,
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
@@ -33,7 +37,11 @@ vi.mock('@pluxel/rolldown/vite/workbench-ui', () => ({
 	buildWorkbenchFederationProducer: producerBuildMocks.buildWorkbenchFederationProducer,
 }))
 
-import { PluginArtifactCompiler } from '@pluxel/workbench/dev'
+import { PluginArtifactCompiler, workbenchArtifacts } from '@pluxel/workbench/dev'
+import { workbenchService } from '@pluxel/workbench/service'
+import { requireWorkbench } from '@pluxel/workbench/server'
+import { createHost } from '@pluxel/host'
+import type { HostDevelopmentCatalog, HostDevelopmentAttachment } from '@pluxel/host-dev/vite'
 
 const definition = {
 	entry: { kind: 'package-root', packageName: '@example/fonts' },
@@ -109,6 +117,160 @@ describe('PluginArtifactCompiler', () => {
 				await writeProducer(input.plan, input.outDir)
 			},
 		)
+	})
+
+	it('admits selected installed artifacts atomically and preserves rejected revisions until withdrawal', async () => {
+		await using fixture = await createDiskFixture({
+			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/dist/index.mjs': 'export const built = true',
+		})
+		await using host = createCoreInternalTestHost()
+		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
+		const compiler = new PluginArtifactCompiler(
+			host.ctx,
+			{ coordinator, producerStatus },
+			{
+				cacheDir: fixture.getPath('cache'),
+				packageMode: 'development',
+			},
+		)
+		const root = fixture.getPath('plugin/dist/workbench')
+		const selected = new Set([pluginDefinitionIndexKey(definition)])
+		const modules = new Map([[fixture.getPath('plugin/dist/index.mjs'), selected]])
+		const accepted = createPlan('installed-accepted')
+		await writeProducer(accepted, join(root, accepted.producer, accepted.buildRevision))
+		const unused = createWorkbenchFederationProducerPlan({
+			definition: { ...definition, exportName: 'UnusedPlugin' },
+			buildRevision: 'unused',
+			entries: [
+				{
+					descriptor: {
+						kind: 'view',
+						owner: { ...definition, exportName: 'UnusedPlugin' },
+						key: 'manager',
+					},
+					bridgeEntryPath: 'generated/unused.tsx',
+				},
+			],
+		})
+		const writeInventory = async (plan: WorkbenchFederationProducerPlan) =>
+			writeFile(
+				join(root, WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE),
+				JSON.stringify(createWorkbenchFederationDeploymentInventory([plan, unused])),
+			)
+		await writeInventory(accepted)
+		const packaged = await readDevelopmentPackagedArtifacts(modules, selected)
+		expect(packaged).toHaveLength(1) // The unselected export has no artifact directory.
+		const initial = await compiler.prepareWorkbenchArtifacts({
+			producers: [],
+			content: [],
+			packaged,
+		})
+		expect(federation.getCurrent(definition)).toBeUndefined()
+		initial.commit()
+		expect(federation.getCurrent(definition)?.buildRevision).toBe('installed-accepted')
+		expect(producerBuildMocks.buildWorkbenchFederationProducer).not.toHaveBeenCalled()
+		const next = createPlan('installed-rejected')
+		await writeProducer(next, join(root, next.producer, next.buildRevision))
+		await writeInventory(next)
+		const rejected = await compiler.prepareWorkbenchArtifacts({
+			producers: [],
+			content: [],
+			packaged: await readDevelopmentPackagedArtifacts(modules, selected),
+		})
+		rejected.rollback()
+		rejected.commit()
+		expect(federation.getCurrent(definition)?.buildRevision).toBe('installed-accepted')
+		const invalid = createPlan('installed-missing')
+		await writeInventory(invalid)
+		await expect(readDevelopmentPackagedArtifacts(modules, selected)).rejects.toThrow(
+			'does not exist',
+		)
+		expect(federation.getCurrent(definition)?.buildRevision).toBe('installed-accepted')
+		expect(await readDevelopmentPackagedArtifacts(modules, new Set())).toEqual([])
+		const removal = await compiler.prepareWorkbenchArtifacts({
+			producers: [],
+			content: [],
+			packaged: [],
+		})
+		removal.commit()
+		expect(federation.getCurrent(definition)).toBeUndefined()
+		await compiler.dispose()
+	})
+
+	it('restores accepted installed artifact inputs and fails if their immutable revision is gone', async () => {
+		await using fixture = await createDiskFixture({
+			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/dist/index.mjs': 'export const built = true',
+		})
+		const root = fixture.getPath('plugin/dist/workbench')
+		const accepted = createPlan('compensation-accepted')
+		const next = createPlan('compensation-rejected')
+		await writeProducer(accepted, join(root, accepted.producer, accepted.buildRevision))
+		await writeProducer(next, join(root, next.producer, next.buildRevision))
+		const writeInventory = (plan: WorkbenchFederationProducerPlan) =>
+			writeFile(
+				join(root, WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE),
+				JSON.stringify(createWorkbenchFederationDeploymentInventory([plan])),
+			)
+		await writeInventory(accepted)
+		const catalog: HostDevelopmentCatalog = {
+			modules: [fixture.getPath('plugin/dist/index.mjs')],
+			definitions: [definition],
+		}
+		const semantics = {
+			invalidateWorkbench() {},
+			async workbenchCompilations() {
+				return []
+			},
+			async workbenchContentCompilations() {
+				return []
+			},
+			builtDefinitionModules() {
+				return new Map([
+					[
+						fixture.getPath('plugin/dist/index.mjs'),
+						new Set([pluginDefinitionIndexKey(definition)]),
+					],
+				])
+			},
+		}
+		const attach = (host: Awaited<ReturnType<typeof createHost>>) =>
+			workbenchArtifacts({
+				cacheDir: fixture.getPath('cache'),
+			}).api!.pluxelHost.attach({
+				host,
+				catalog,
+				semantics: semantics as never,
+				server: {
+					printUrls() {},
+					config: { root: fixture.getPath() },
+					watcher: { add() {} },
+				} as never,
+			}) as Promise<HostDevelopmentAttachment>
+		const first = await createHost({ plugins: [], services: [workbenchService()] })
+		const initial = await attach(first)
+		expect(requireWorkbench(first.ctx).artifacts.getCurrent(definition)?.buildRevision).toBe(
+			accepted.buildRevision,
+		)
+		await initial.dispose!()
+		await first.close()
+		await writeInventory(next)
+		const restored = await createHost({ plugins: [], services: [workbenchService()] })
+		const restoredAttachment = await attach(restored)
+		expect(requireWorkbench(restored.ctx).artifacts.getCurrent(definition)?.buildRevision).toBe(
+			accepted.buildRevision,
+		)
+		await restoredAttachment.dispose!()
+		await restored.close()
+		await rm(join(root, accepted.producer, accepted.buildRevision), { recursive: true })
+		const unavailable = await createHost({ plugins: [], services: [workbenchService()] })
+		try {
+			await expect(attach(unavailable)).rejects.toThrow(/ENOENT|manifest|artifact/i)
+			expect(requireWorkbench(unavailable.ctx).artifacts.getCurrent(definition)).toBeUndefined()
+		} finally {
+			await unavailable.close()
+		}
 	})
 
 	it('does not activate rejected catalog artifacts or cancel the accepted producer build', async () => {

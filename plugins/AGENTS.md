@@ -2,8 +2,8 @@
 
 修改官方插件前，先阅读本目录的 [`README.md`](README.md) 和对应包内的设计文档。
 
-- 只使用 Pluxel 公开的插件作者 API。官方插件不得依赖 `@pluxel/runtime/internal`，也不得在 runtime
-  中获得只服务于自身的特殊入口。
+- 只使用 Pluxel 公开的插件作者 API。官方插件业务源码不得依赖框架的 `/internal` 入口，也不得在 Host 或服务中
+  获得只服务于自身的特殊入口。白盒框架集成测试可以使用 `/internal/test`，普通作者测试使用公开 test host。
 - 将官方插件视为跨插件组成、调用方归属、生命周期、配置、日志和可选 Workbench 集成的实践验证层与
   一致性验证层。
 - Workbench 关闭时，业务能力仍必须完整运行。Plugin 自有管理界面只通过固定 Direct View 或 Attachment 投影

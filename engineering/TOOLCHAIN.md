@@ -125,7 +125,7 @@ artifact；reset baseline staging 在注入后立即清理，因此 HMR schema �
 ## Versioned Plugin lowering ABI
 
 Plugin semantic output 是已构建 Plugin 与 Core/runtime 之间的发布契约。generated module 只从
-`@pluxel/core/toolchain`（或显式转发它的 `@pluxel/runtime/toolchain`）导入 ABI v2 helper；默认 root 和 `/internal`
+`@pluxel/core/toolchain`导入 ABI v2 helper；默认 root 和 `/internal`
 不提供 setter alias。canonical helpers 是 `__setPluginDefinition`、`__setPluginConfig`、`__setPluginParts`、
 `__setPluginPartConfig`、`__setPluginPartRequires` 与 `__setPluginPartOptional`，每个 payload 都携带同一个 numeric
 `abiVersion`。v1 artifact 没有 Part constructor requirement facts，当前 Core 不提供隐式兼容窗口；Core、Runtime 与 Rolldown
@@ -248,7 +248,7 @@ bridge 精确改写为 `@pluxel/rolldown/vite` 公共入口。这样修改内核
 
 仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
 `@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的
-`@pluxel/hmr` 只把其他插件解析到源码，Pluxel core/runtime/toolchain 本身消费已构建的公开声明。
+`@pluxel/hmr` 只把其他插件解析到源码，Pluxel Core/Host/toolchain 本身消费已构建的公开声明。
 因此单个插件 typecheck 不会把整个框架源码并入同一个 TypeScript program，也不会用插件编译选项重新检查内部实现。
 
 tsdown `entry` 是 build package subpath 的唯一作者事实源。framework package 配置
@@ -276,7 +276,7 @@ export default defineConfig({
 })
 ```
 
-freezer 接受直接默认导出的应用对象（可带 `satisfies RuntimeApplication`）。它在同一 graph 中执行 macro、config metadata、lint、Workbench
+freezer 接受直接默认导出的应用对象（可带 `satisfies HostApplication`）。它在同一 graph 中执行 macro、config metadata、lint、Workbench
 remote extraction 和 production preprocessing，然后生成以 canonical entry 为 namespace import 的 platform bootstrap。Wrapper
 从 module namespace 消费 default application，并用 runtime shared reader 消费可选 `product` named export；它不按 identifier
 猜测 export、不静态求值 product，也不把产品字段复制进 deployment metadata。direct export、local export 与标准 re-export
@@ -349,7 +349,7 @@ Workbench-only host 若让 UI 拥有 `/`，不得虚构第二个 Application roo
 Workbench Shell 的 browser asset URL 使用 `/__pluxel/workbench/assets/**`；磁盘仍由 distribution 内部的 `workbench/public/`
 inventory 提供。URL namespace 与 artifact filesystem layout 不耦合，也不得退回会与产品 public tree 竞争的 `/dist/public/**`。
 Vite 只有在当前安装中确实存在 Workbench source entry 时才接入它的 client graph；独立消费 workspace 使用
-`@pluxel/runtime` 随包交付的 built assets，不能生成只在 Pluxel monorepo 内成立的 `/packages/workbench-app/**` URL。
+`@pluxel/workbench` 随包交付的 built assets，不能生成只在 Pluxel monorepo 内成立的 `/packages/workbench-app/**` URL。
 
 ## Workbench source declaration
 
@@ -384,7 +384,7 @@ Mixed Content/View 的 generated Bridge 只导入 renderer descriptor 的 identi
 检查 JS、source map 与 dynamic types，确保 Content schema/handler 不进入 browser outputs，而不是依赖普通 tree-shaking。
 
 UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe Workbench definition、
-`@pluxel/runtime/capnweb` 类型、`@pluxel/workbench/react` 和公开 UI peers，不得包含 Plugin implementation、
+`capnweb` 类型、`@pluxel/workbench/react` 和公开 UI peers，不得包含 Plugin implementation、
 Context、database handle 或 Node API。
 
 额外 Node entry 使用 module-level declaration：

@@ -1,3 +1,5 @@
+import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal/vite-urls'
+import { hostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { HttpServer, type HttpServerApi } from '../http'
 import type { NodeElysiaApplicationCarrier } from '../http/node'
@@ -26,6 +28,13 @@ export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
 						matches: http.matchesWebSocketRoute,
 					})
 					const detach = http.attachApplicationCarrier(carrier)
+					const removeUrlPrinter =
+						'workbench' in host.ctx
+							? undefined
+							: installPluxelViteUrlPrinter(server, {
+									publicOrigin: hostEnv.portlessOrigin,
+									workbenchBasePath: () => undefined,
+								})
 					const current = { http, carrier }
 					active = current
 					try {
@@ -70,6 +79,7 @@ export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
 						})
 					} catch (error) {
 						active = undefined
+						removeUrlPrinter?.()
 						detach()
 						try {
 							await carrier.close()
@@ -84,6 +94,7 @@ export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
 					}
 					return async () => {
 						if (active === current) active = undefined
+						removeUrlPrinter?.()
 						carrier.stopAccepting()
 						detach()
 						await carrier.close()

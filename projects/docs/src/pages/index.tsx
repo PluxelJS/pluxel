@@ -28,26 +28,75 @@ const patterns = [
 
 const hosts = [
 	{
-		code: `export default {
+		code: `import type { HostApplication } from '@pluxel/host'
+import { OrdersPlugin } from '@app/orders'
+
+export default {
   plugins: [OrdersPlugin],
-} satisfies RuntimeApplication`,
-		description: 'Plugin 清单随应用构建，适合固定部署、审计和可复现发行。开发期仍支持 HMR。',
+} satisfies HostApplication`,
+		description:
+			'Plugin 清单随应用构建，开发期支持 HMR。目录表示代码可用，冷启动策略通过 state.initial.autoStart 显式选择。',
 		icon: ServerCog,
 		meta: 'Fixed catalog',
 		title: '固定插件目录',
 	},
 	{
-		code: `export default {
-  plugins: [HostOperationsPlugin],
+		code: `import type { HostApplication } from '@pluxel/host'
+import { dynamicSource } from '@pluxel/host-dynamic'
+
+export default {
   sources: [dynamicSource({
     kind: 'directory', path: './plugins',
     include: ['*.mjs'],
   })],
-} satisfies RuntimeApplication`,
-		description: '运行期间增加或删除 Plugin 文件入口，适合由配置和 package source 驱动的宿主。',
+} satisfies HostApplication`,
+		description:
+			'开发期新增、更新、删除文件入口，变化提交到同一 Host catalog；是否启动仍由运行策略决定。',
 		icon: CloudCog,
 		meta: 'Mutable sources',
 		title: '增加动态来源',
+	},
+]
+
+const toolchain = [
+	{
+		title: '安装服务',
+		file: 'src/app.ts',
+		code: `import type { HostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/services'
+
+export default {
+  async configure(startup) {
+    return {
+      services: await servicesPreset(startup, {
+        persistence: { mode: 'memory' },
+      }),
+    }
+  },
+} satisfies HostApplication`,
+	},
+	{
+		title: '开发与热更新',
+		file: 'vite.config.ts',
+		code: `import { defineConfig } from 'vite'
+import { vitePreset } from '@pluxel/services/vite'
+
+export default defineConfig({
+  plugins: [vitePreset({
+    entry: './src/app.ts', devConsole: true,
+  })],
+})`,
+	},
+	{
+		title: '生产构建',
+		file: 'tsdown.config.ts',
+		code: `import { defineConfig } from 'tsdown'
+import { buildPreset } from '@pluxel/services/build'
+
+export default defineConfig({
+  entry: './src/app.ts',
+  plugins: [buildPreset()],
+})`,
 	},
 ]
 
@@ -143,6 +192,31 @@ export default function HomePage() {
 								</Link>
 							)
 						})}
+					</div>
+				</section>
+
+				<section className="pluxel-docs-section" aria-labelledby="host-toolchain">
+					<div className="pluxel-section-heading">
+						<h2 id="host-toolchain">同一份应用，开发与生产共用</h2>
+						<p>
+							在上面的应用声明中加入
+							configure，显式选择服务；内存存储适合本地尝试，持久部署见宿主配置。
+						</p>
+					</div>
+					<div className="pluxel-host-cards">
+						{toolchain.map((item) => (
+							<Link
+								key={item.file}
+								href="/docs/getting-started/host-setup"
+								className="pluxel-doc-card"
+							>
+								<span className="pluxel-card-meta">{item.file}</span>
+								<h3>{item.title}</h3>
+								<pre className="pluxel-host-code">
+									<code>{item.code}</code>
+								</pre>
+							</Link>
+						))}
 					</div>
 				</section>
 			</div>

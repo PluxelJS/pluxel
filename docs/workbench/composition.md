@@ -27,7 +27,7 @@ Attachment 不自动改变依赖、登录权限或存储位置。一次打开得
 先在提供方的 `src/workbench.ts` 声明 API 和 Attachment。它与 View 的区别是没有固定 `placement`：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 
 export type HttpSettings = Readonly<{
@@ -127,7 +127,7 @@ export default settingsScope.render(HttpSettingsPanel)
 因此使用一个管理 View 和一个单方 API 的 Attachment 即可：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 
 export interface FontSelectionApi extends RpcTarget {

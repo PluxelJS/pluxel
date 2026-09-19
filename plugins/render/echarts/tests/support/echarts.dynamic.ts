@@ -1,7 +1,8 @@
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { type RuntimeApplication } from '@pluxel/runtime'
+import type { HostApplication } from '@pluxel/host'
+import { standardServices } from '@pluxel/services'
 import { EChartsPlugin } from '../../src/index.ts'
 import { EChartsDynamicProbePlugin } from './echarts-dynamic-probe.ts'
 
@@ -11,13 +12,8 @@ export default {
 	name: 'render-fixture',
 	plugins,
 	configure: () => ({
-		configService: { mode: 'memory' },
-		runtimeState: {
-			mode: 'memory',
-			snapshot: { autoStart: plugins.map((plugin) => pluginNodeAddressOf(plugin)) },
-		},
-		persistence: { mode: 'memory' },
-		workbench: false,
-		logging: false,
+		configRecords: { mode: 'memory' },
+		state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
+		services: standardServices({ persistence: { mode: 'memory' } }),
 	}),
-} satisfies RuntimeApplication
+} satisfies HostApplication

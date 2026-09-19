@@ -15,9 +15,9 @@ Pluxel 可以把一段代码构建成独立 Node ESM，也可以把 CPU 密集�
 
 ## 选择安装能力
 
-默认 Runtime 安装 Node modules 与 Workers。组合自己的 Host 时，显式列出 `nodeModules({ root })` 和 `workers()`；Workers 依赖 Node modules，缺少该安装项会在创建资源前失败。`root` 指向已构建的 Node artifact 目录；也可提供声明所属插件的 artifact resolver。只安装 Node modules 不创建线程池。
+`standardServices()` 与 `servicesPreset()` 安装 Node modules 与 Workers。组合自己的 Host 时，显式列出 `nodeModules({ root })` 和 `workers()`；Workers 依赖 Node modules，缺少该安装项会在创建资源前失败。`root` 指向已构建的 Node artifact 目录；也可提供声明所属插件的 artifact resolver。只安装 Node modules 不创建线程池。
 
-服务入口不安装开发编译器。当前官方 Runtime Vite 接入负责源码 artifact 更新；仅在普通 Host 声明服务不等于已接入源码编译与 HMR。
+服务入口不安装开发编译器。`@pluxel/services/vite` 的 `vitePreset()` 负责源码 artifact 更新；仅在普通 Host 声明服务不等于已接入源码编译与 HMR。
 
 ## 独立 Node module
 

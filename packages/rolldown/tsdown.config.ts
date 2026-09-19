@@ -17,16 +17,7 @@ export default defineConfig({
 	deps: {
 		alwaysBundle: inlineRuntimeDeps,
 		onlyBundle: inlineRuntimeDeps,
-		neverBundle: [
-			'@pluxel/core',
-			'@pluxel/core/*',
-			'@pluxel/runtime',
-			'@pluxel/runtime/*',
-			'rolldown',
-			'rolldown/*',
-			'vite',
-			'vite/*',
-		],
+		neverBundle: ['@pluxel/core', '@pluxel/core/*', 'rolldown', 'rolldown/*', 'vite', 'vite/*'],
 	},
 	entry: {
 		index: 'src/application.ts',

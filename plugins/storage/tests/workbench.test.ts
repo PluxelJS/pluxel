@@ -1,12 +1,10 @@
-import {
-	BasePlugin,
-	Plugin,
-	createRuntimeTestHost,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import type { WorkbenchPrincipal } from '@pluxel/workbench'
 import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
+import type { RpcStub } from 'capnweb'
 import { describe, expect, it, vi } from 'vitest'
 import { S3Plugin } from '../src/index.ts'
 import { S3Workbench } from '../src/workbench.ts'
@@ -22,7 +20,7 @@ const ADMIN = Object.freeze({ provider: '@pluxel/auth', subject: 'local:admin' }
 @Plugin()
 class VaultSeeder extends BasePlugin {}
 
-async function startVaultS3(host: RuntimeTestHost): Promise<void> {
+async function startVaultS3(host: ServiceTestHost): Promise<void> {
 	await host.start(VaultSeeder)
 	await host
 		.require(VaultSeeder)
@@ -51,7 +49,7 @@ async function startVaultS3(host: RuntimeTestHost): Promise<void> {
 	})
 }
 
-function openCredentials(host: RuntimeTestHost, principal: WorkbenchPrincipal) {
+function openCredentials(host: ServiceTestHost, principal: WorkbenchPrincipal) {
 	return host.workbench.open({
 		target: S3Plugin,
 		entry: S3Workbench.buckets,
@@ -79,7 +77,10 @@ function contentObserver(
 describe('S3 Workbench credential rotation', () => {
 	it('uses password fields and never echoes replacement credentials', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createServiceTestHost({
+				workbench: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			})
 
 			await startVaultS3(host)
 			using opened = await openCredentials(host, ADMIN)
@@ -184,7 +185,10 @@ describe('S3 Workbench credential rotation', () => {
 
 	it('denies the loopback recovery principal and stops accepting calls with the generation', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true }, vault: {} })
+			await using host = await createServiceTestHost({
+				workbench: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			})
 
 			await startVaultS3(host)
 			using opened = await openCredentials(host, RECOVERY)
@@ -217,7 +221,7 @@ describe('S3 Workbench credential rotation', () => {
 
 	it('keeps credential Content topology fixed and rejects local or anonymous backends', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await host.start(S3Plugin)
 			using opened = await openCredentials(host, ADMIN)
@@ -244,7 +248,7 @@ describe('S3 Workbench credential rotation', () => {
 		}
 
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await host.start(S3Plugin, {
 				initialConfig: {

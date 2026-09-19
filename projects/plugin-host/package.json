@@ -29,13 +29,15 @@
 		"@pluxel/pi-agent": "workspace:*",
 		"@pluxel/rates": "workspace:*",
 		"@pluxel/redis": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/storage": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/vault-admin": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
-		"@pluxel/wretch": "workspace:*"
+		"@pluxel/wretch": "workspace:*",
+		"capnweb": "catalog:prod",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:frontend",

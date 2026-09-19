@@ -15,7 +15,7 @@ description: 用 Markdown 和配置 schema 添加管理界面，无需编写 Rea
 
 ```ts
 // src/workbench.ts
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 import { workbench } from '@pluxel/workbench'
 
 const Status = v.object({

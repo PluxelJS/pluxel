@@ -48,7 +48,7 @@ export default defineConfig({
 })
 ```
 
-`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。数据库或不同管理面组合应使用下文的显式服务安装器。
+`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。数据库或不同管理面组合应使用下文的显式服务安装器。
 
 `vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。`servicesPreset()`、`vitePreset()`、`buildPreset()` 属于同一个 `@pluxel/services` 包，运行时、Vite 与构建分别使用独立入口。
 
@@ -124,7 +124,7 @@ await host.config.reset(owner, ['endpoint'])
 
 `owner` 是 `PluginNodeAddress`。方法会先完成 Host 初始目录接纳，然后与图更新共用一个队列；不存在的节点、未声明的 fork 或没有配置 schema 的节点以结构化失败返回。`validate()` 合并当前记录进行校验，不写入。`patch()` 顶层合并后校验完整对象；`reset()` 删除指定键再经 schema 标准化，省略键列表时重置整个对象。
 
-写入顺序为校验一次 → 暂存标准化快照 → 等待存储完成 → 确认 revision → 通知运行中的 generation。停止的节点返回 `deferred`，通知失败返回 `saved-not-applied`，不会把已经保存的值报告为未修改。省略存储时 Host 使用内存配置；Host 和 Runtime 共用同一个持久化实现，管理 RPC 和开发控制台也委托同一套用例。
+写入顺序为校验一次 → 暂存标准化快照 → 等待存储完成 → 确认 revision → 通知运行中的 generation。停止的节点返回 `deferred`，通知失败返回 `saved-not-applied`，不会把已经保存的值报告为未修改。省略存储时 Host 使用内存配置；Host 拥有唯一的存储实现，管理 RPC 和开发控制台也委托同一套用例。
 
 关闭后所有配置方法拒绝新请求。Host 配置入口是受信任宿主 API，网络端点仍须通过既有认证和授权；它不会自动开放 RPC 或监听器。
 
@@ -154,7 +154,7 @@ const host = await createHost({
 
 文档存储是借用的：Host 关闭时等待自己的写入、清理定时器并报告 flush 失败；不会调用外部 backend 的 close。共享 backend 的创建和关闭由应用或对应服务拥有。`put()` 必须在完整文档提交后才 resolve，并在 `{ atomic: true }` 时提供旧文档或新文档的完整替换语义；不能用“请求已入队”冒充写入成功。
 
-Runtime 继续接受其现有 `configService`、`runtimeState`、环境种子和模式配置，但只负责将它们转换为同一 Host 存储输入。`PLUXEL_CONFIG` 及编译生成的环境绑定由 Runtime 解析，通用 Host 不隐式读取进程环境。
+Host 应用解析器从显式传入的 `startup.env` 读取 `PLUXEL_CONFIG` 及编译生成的环境绑定。初始配置按 `configRecords.initial`、编译绑定、`PLUXEL_CONFIG` 的顺序覆盖合并；持久化记录优先于初始种子。底层 `createHost()` 不隐式读取进程环境。
 
 ## Plugin 读取能力
 
@@ -175,18 +175,14 @@ export class CredentialsPlugin extends BasePlugin {
 
 服务目录声明只让合法的可选属性进入通用 Context 类型，不证明任意宿主已经安装服务。必需能力通过 `ctx.require(token)` 按对象身份读取；未安装抛出 `ContextCapabilityMissingError`，已安装服务的构造异常原样传播。可选路径可以使用 `ctx.vault?.…`，但准备失败不会伪装成可选缺失。
 
-Token 的访问范围与 backend 生命周期不同：`owner` 只允许 Plugin、Part 和 caller Context；`root` 是受信任宿主能力，不能通过作者的 `ctx.root.require()` 取得。共享一个 backend 并不意味着向 root 或全部插件开放同一 API。
+Token 的访问范围与 backend 生命周期不同：`owner` 只允许 Plugin、Part 和 caller Context；`root` 只能在真实 RootContext 上通过 `require()` 取得。`ctx.root` 是同一个宿主根引用，持有它就持有 root 能力访问权；访问范围表达资源所有权，不是隔离不可信插件的安全沙箱。共享一个 backend 并不意味着向 root 或全部插件开放同一 API。
 
 ## 编写服务安装器
 
 同步 Context descriptor 负责属性和 view；Host 的 `prepare()` 负责资源。两者使用同一个 token，不建立额外 registry。
 
 ```ts
-import {
-	defineContextCapability,
-	installRootCapability,
-	resolveContextCapability,
-} from '@pluxel/core/host'
+import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
 import { defineHostService } from '@pluxel/host'
 
 const Clock = defineContextCapability<{ now(): number }>('acme.clock', {
@@ -204,7 +200,7 @@ export function clock() {
 			}),
 		],
 		prepare({ ctx }) {
-			resolveContextCapability(ctx, Clock)
+			ctx.require(Clock)
 		},
 	})
 }
@@ -222,7 +218,7 @@ export function clock() {
 
 每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
 
-HTTP、Database、Persistence、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到独立 Host；Runtime 保留为默认产品与旧应用入口的适配层。
+HTTP、Database、Persistence、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。
 
 ## 服务参与 Plugin 发布
 
@@ -314,3 +310,17 @@ Core 基础作者入口固定提供；清单中的其他入口必须能从应用
 开发更新结果可从 `host.status()` 的 `recentUpdate` 和 Management 更新订阅读取，无需额外配置 reader。
 候选加载失败时保留上一版本；整应用替换失败后会尝试从上一次成功声明建立新 Host，并报告补偿结果。
 首次启动或补偿失败且没有可用 Host 时记录 `failed`，不会报告为已保留或恢复旧版本。
+
+动态来源 watcher、缺失依赖恢复 watcher 及恢复通知失败也进入同一份应用更新记录，并保留原始错误到日志。
+这类失败不会把所有已运行插件标成启动失败；现有 Host 仍运行时报告 `retained-previous`。
+更新记录表示最近一次尝试，不是 watcher 健康检查：后续更新成功可以覆盖该记录，不承诺失效 watcher 会自动重新建立。
+
+官方 `vitePreset()` 同时提供服务所需的数据库声明转换，将已校验的迁移事实注入 `defineDatabase()`；
+通用 `host()` 保持 Core 源码工具链，需要手工组合数据库开发能力时显式添加 `databaseSourceVitePlugin()`。
+
+控制台查询需要已有可用 Host；如果应用首次求值就失败、尚未建立 Host，先查看 Vite 日志并修复源码。
+这与已有 Host 的空插件目录不同：后者仍可执行控制台脚本并读取应用级更新结果。
+
+动态 entry 首次加载就有语法错误或缺失依赖时，修复 entry 或补齐依赖即可再次尝试，无需先有已启动插件。
+单个 entry 的语法修复保持无关服务与插件代继续运行。执行来源仅在工具链有明确事实时标为源码或构建模块；
+未观察到元数据的安装包保持 `unreported`，其动态更新范围仍明确为 entry-only。

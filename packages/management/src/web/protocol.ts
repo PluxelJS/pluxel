@@ -1,10 +1,5 @@
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
-import type {
-	PluginDefinitionAddress,
-	PluginLifecycleIssueKind,
-	PluginLifecycleIssuePhase,
-	PluginNodeAddress,
-} from '@pluxel/core'
+import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { HostApplicationMeta } from '../product-contract'
 import type { PluxelPlatformSnapshot } from '../platform'
 import type { PluginExecutionSnapshot, PluginRecentUpdateSnapshot } from '../plugin-execution'
@@ -178,47 +173,13 @@ export type PluginReconciliationIssue =
 			message: string
 	  }>
 
-export type PluginApplyLifecycleErrorInfo = Readonly<{
-	name: string
-	message: string
-	stack?: string
-	cause?: string
-	partPath?: readonly string[]
-}>
-
-export type PluginApplyLifecycleIssue = Readonly<{
-	plugin: PluginNodeAddress
-	phase: PluginLifecycleIssuePhase
-	kind: PluginLifecycleIssueKind
-	message: string
-	error?: PluginApplyLifecycleErrorInfo
-	blockedBy?: PluginNodeAddress
-}>
-
-export type PluginApplyCommitSummary = Readonly<{
-	pluginChanges: Readonly<{
-		added: readonly PluginNodeAddress[]
-		replaced: readonly Readonly<{ from: PluginNodeAddress; to: PluginNodeAddress }>[]
-		removed: readonly PluginNodeAddress[]
-		restarted: readonly PluginNodeAddress[]
-		availabilityChanged: readonly PluginNodeAddress[]
-	}>
-	runtimeUpdate: Readonly<{ reason?: string }>
-	lifecycleReport: Readonly<{
-		ok: boolean
-		issues: readonly PluginApplyLifecycleIssue[]
-	}>
-}>
-
-/** Address-only control-plane report safe to serialize to browser and worker realms. */
-export type PluginApplyReport = Readonly<{
-	catalogRevision: number
-	runtimeStateRevision: number
-	reconciliation: readonly PluginReconciliationIssue[]
-	core:
-		| Readonly<{ status: 'unchanged' }>
-		| Readonly<{ status: 'committed'; summary: PluginApplyCommitSummary }>
-}>
+export type {
+	PluginApplyLifecycleErrorInfo,
+	PluginApplyLifecycleIssue,
+	PluginApplyCommitSummary,
+	PluginApplyReportSnapshot as PluginApplyReport,
+} from '@pluxel/host'
+import type { PluginApplyReportSnapshot as PluginApplyReport } from '@pluxel/host'
 
 export type ConfigResultOk = import('@pluxel/host').HostPluginConfigResultOk<PluginApplyReport>
 export type ConfigResultErr = import('@pluxel/host').HostPluginConfigResultErr

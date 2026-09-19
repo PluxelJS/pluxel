@@ -5,13 +5,12 @@ import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugi
 
 async function transform(
 	code: string,
-	helper?: string,
 	options: {
 		id?: string
 		resolve?: (source: string, importer: string) => Promise<{ id: string } | null>
 	} = {},
 ) {
-	const plugin = configSourcePlugin(helper ? { metadataHelperImportSource: helper } : undefined)
+	const plugin = configSourcePlugin()
 	const hook = plugin.transform as {
 		handler: (this: unknown, code: string, id: string) => unknown
 	}
@@ -31,7 +30,7 @@ describe('configSourcePlugin', () => {
 	it('lowers Plugin and PluginPart config declarations to their distinct owners', async () => {
 		const result = await transform(`
 			import * as v from 'valibot'
-			import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+			import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
 			const PartConfig = v.object({ size: v.optional(v.number(), 10) })
 			class CachePart extends PluginPart<OwnerPlugin> {
 				readonly config = this.configs.use(PartConfig)
@@ -59,7 +58,7 @@ describe('configSourcePlugin', () => {
 	it('lowers one object config schema to the unified Plugin config fact', async () => {
 		const result = await transform(`
 			import * as v from 'valibot'
-			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, Plugin } from '@pluxel/core'
 			const OrdersConfig = v.object({ batchSize: v.optional(v.number(), 10) })
 			@Plugin({ displayName: 'Orders' })
 			export class OrdersPlugin extends BasePlugin {
@@ -87,7 +86,7 @@ describe('configSourcePlugin', () => {
 			`,
 			'plugin.ts': `
 				import { OrdersConfig } from './schema'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class OrdersPlugin extends BasePlugin {
 					config = this.configs.use(OrdersConfig)
 				}
@@ -95,7 +94,7 @@ describe('configSourcePlugin', () => {
 		})
 		const id = fixture.getPath('plugin.ts')
 		const code = await readFile(id, 'utf8')
-		const result = await transform(code, undefined, {
+		const result = await transform(code, {
 			id,
 			resolve: async (source) =>
 				source === './schema' ? { id: fixture.getPath('schema.ts') } : null,
@@ -109,7 +108,7 @@ describe('configSourcePlugin', () => {
 		const result = await transform(`
 			import { object, pipe, string } from 'valibot'
 			import { formMeta as meta, stringMeta } from 'valibot-form'
-			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, Plugin } from '@pluxel/core'
 			const Schema = object({ name: pipe(string(), meta({ title: 'Name' }), stringMeta({ placeholder: 'Your name' })) })
 			@Plugin() export class P extends BasePlugin {
 				config = this.configs.use(Schema)
@@ -121,27 +120,7 @@ describe('configSourcePlugin', () => {
 		)
 	})
 
-	it('supports an explicit internal helper import', async () => {
-		const result = await transform(
-			`
-				import * as v from 'valibot'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
-				@Plugin() export class P extends BasePlugin {
-					config = this.configs.use(v.object({ enabled: v.boolean() }))
-				}
-			`,
-			'@scope/runtime/toolchain',
-		)
-		expect(result?.code).toContain('from "@scope/runtime/toolchain"')
-	})
-
-	it('rejects a generated-helper root alias', () => {
-		expect(() => configSourcePlugin({ metadataHelperImportSource: '@pluxel/runtime' })).toThrow(
-			'/toolchain subpath',
-		)
-	})
-
-	it.each(['@pluxel/core/test', '@pluxel/runtime/test', '@pluxel/test'])(
+	it.each(['@pluxel/core/test', '@pluxel/test'])(
 		'recognizes the formal test authoring facade %s',
 		async (source) => {
 			const result = await transform(`
@@ -160,7 +139,7 @@ describe('configSourcePlugin', () => {
 			name: 'two schemas',
 			code: `
 				import * as v from 'valibot'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class P extends BasePlugin {
 					a = this.configs.use(v.object({ a: v.string() }))
 					b = this.configs.use(v.object({ b: v.string() }))
@@ -172,7 +151,7 @@ describe('configSourcePlugin', () => {
 			name: '#private config',
 			code: `
 				import * as v from 'valibot'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class P extends BasePlugin {
 					#config = this.configs.use(v.object({ a: v.string() }))
 				}
@@ -191,7 +170,7 @@ describe('configSourcePlugin', () => {
 			name: 'scalar schema',
 			code: `
 				import * as v from 'valibot'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class P extends BasePlugin {
 					config = this.configs.use(v.string())
 				}

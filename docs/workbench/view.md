@@ -17,7 +17,7 @@ Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使�
 将 browser-safe DTO、API 和静态 definition 放进 `src/workbench.ts`：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 
 export type OrdersSnapshot = Readonly<{
@@ -45,7 +45,7 @@ Definition 是固定 flat record。entry key 是稳定 declaration identity；`w
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { RpcTarget } from 'capnweb'
 import { OrdersWorkbench, type OrdersApi } from './workbench.ts'
 
 @Plugin({ displayName: 'Orders' })
@@ -253,7 +253,7 @@ snapshot + mutation 页面的起点；没有已证实的实时更新需求时，
 把 browser-safe API、DTO 和 definition 放在 `src/workbench.ts`：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 
 export type OrdersSnapshot = Readonly<{
@@ -288,7 +288,7 @@ Definition 必须是固定的 flat record。Entry key 是稳定 declaration iden
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
+import { RpcTarget, type RpcStub } from 'capnweb'
 import { OrdersWorkbench, type OrdersApi, type OrdersObserver } from './workbench.js'
 
 @Plugin({ displayName: 'Orders' })

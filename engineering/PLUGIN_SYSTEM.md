@@ -13,7 +13,9 @@ plugin source
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
-@pluxel/runtime: HTTP / persistence / config / commands / optional capabilities
+@pluxel/host: catalog / policy / service lifecycle
+          ↓
+@pluxel/services: HTTP / persistence / commands / optional capabilities
           ↓
 static or dynamic route: catalog / Vite / HMR / host policy
           ↓
@@ -26,16 +28,15 @@ optional Workbench Plane: target layout / immutable Content plans or MF producer
 descriptor 和 root/scope/owner-view installation 组合固定 shape；`overrides` 只允许替换基础集合中相同 descriptor，并保持
 scope/property。host 编译完成后没有 install/mutate API，kernel 也不拥有 `prepare()`、`dispose()` 或资源生命周期。
 
-Pluxel Runtime 使用同一 kernel 组合官方能力和当前 owner identity，但它的能力集合属于 launcher 与受信任 framework route，
-而不是 Plugin extension point。route package 只能在 root 创建前通过 package-private authority 安装自身 descriptor；当前 dynamic
-route 用它组合 Loader/Scan。业务 Plugin 不能在 module evaluation 或 `init()` 中追加、替换 Runtime capability；业务依赖始终
+Plugin Host 使用 Core 内联的 kernel 组合所选服务和当前 owner identity，但它的能力集合属于宿主应用，
+而不是 Plugin extension point。服务只能在 root 创建前通过 HostService 安装固定 descriptor；动态来源通过 Host 来源契约接入。业务 Plugin 不能在 module evaluation 或 `init()` 中追加、替换 Context capability；业务依赖始终
 进入 Plugin graph。Context 也不暴露 host configuration。
 
-Runtime 内建能力明确选择 root、scope 或 owner-view。Core 把 scope 映射为 Plugin generation：PluginPart 与 dependency caller
+服务能力明确选择 root、scope 或 owner-view。Core 把 scope 映射为 Plugin generation：PluginPart 与 dependency caller
 view 共享 generation backing；owner-view 共享 root backend，但 Plugin、Part 与每条 caller edge 各有严格惰性的 view/cache。
 view 是带 immutable owner Context 的普通 class/object，不通过 `Proxy` 改写共享 service 的 `this.ctx`。这样
 `ctx.commands`、`ctx.workers` 等保留调用者注册和 cleanup ownership，同时 registry/pool 等 backend 仍按 root 共享。
-`ctx.elysia` 是 generation scope capability：root Plugin 与全部 Part 共享一个严格惰性的原生 Elysia application，Runtime 的
+`ctx.elysia` 是 generation scope capability：root Plugin 与全部 Part 共享一个严格惰性的原生 Elysia application，HTTP 服务的
 HTTP carrier 与 immutable directory 只存在于 root host authority。可选能力 disabled 时不进入 host shape，不能通过 null stateful
 service 模拟启用。
 
@@ -47,12 +48,12 @@ namespace、`publicPath`、mount id 或 route handle。可复用组合应写成�
 HTTP extension point。
 
 generation 是最小可撤回 application owner。Plugin 与其 Part 共享 app identity，但 Part 不获得独立 route owner、
-publication 或 WebSocket lifecycle。Plugin/Part init 全部成功后，Runtime finalizer 等待 lazy modules、读 public route
+publication 或 WebSocket lifecycle。Plugin/Part init 全部成功后，HTTP 服务的 generation finalizer 等待 lazy modules、读 public route
 inventory、attach owner Server view 并调用 Elysia native `compile()`/seal。Core 随后在同一 operation 中 settlement，构建完整
 immutable directory，再与 running projection 同步交换 ready pointer。start failure 和 rollback 不发布部分 route/socket。
 
 跨 owner route 冲突当前只拒绝 `kind + method + declared path` 完全相同的 inventory fact。canonical-equivalent
-pattern 不在已证明 contract 中，因为 Runtime 不复制 Elysia matcher grammar。HTTP/stream/WS 请求取得 owner generation
+pattern 不在已证明 contract 中，因为 HTTP 服务不复制 Elysia matcher grammar。HTTP/stream/WS 请求取得 owner generation
 lease；Node production 与 Node-backed Vite 已通过 srvx/crossws carrier 运行真实 WS，但 Bun/Deno 第二 carrier 与 portable
 WS conformance 尚未完成。
 
@@ -62,7 +63,7 @@ API 限制，也不按 Plugin identity 自动生成。
 
 Plugin 不拥有物理 listener：`listen()` / `stop()` 与 Server view 的 physical controls 明确 fail-fast。beta.7 也没有
 external application attach/detach public epoch，因此 `setup()` / `cleanup()` 当前在调用点 fail-fast；不读 `~ext` 私有
-callback 来伪装支持。dynamic loader 已统一 Elysia runtime identity，但 published Plugin 的 Elysia peer-range admission 尚未
+callback 来伪装支持。官方 `buildPreset()` 通过显式共享框架依赖保证动态来源的 Elysia identity，但 published Plugin 的 Elysia peer-range admission 尚未
 进入 static/dynamic 共享 catalog contract。
 
 Core events 同样使用 owner-view：每个 root 只有一个 emitter backend，每个 Context owner 得到带固定 `ctx` 的普通
@@ -87,12 +88,12 @@ owner graph requirements 的稳定顺序是 root direct requirements 在前，�
 同一 provider 被 root、不同 Part、nested Part 或同一 Part class 的多个 field occurrence 请求时只形成一条 owner edge；任一来源为
 required 时 graph 与 package metadata 的 effective mode 都是 required，但各 optional callback 与 cleanup facts 仍保留。
 
-同一 constructor 中每个 required definition 最多出现一次。RuntimeState override 使用 stable requirement address，而不是把 parameter
+同一 constructor 中每个 required definition 最多出现一次。Host state override 使用 stable requirement address，而不是把 parameter
 index 持久化为 edge identity；因此同一个 Plugin 或 Part constructor 的两个参数若解析到同一 definition，会由 semantic pass 以
 `plugin_dependency_requirement_duplicate` 拒绝。跨 root/Part constructor 的重复是合法共享，不表示同 token 多角色；参数名、位置和
 `partPath` 都不是持久 identity。
 
-宿主修改 runtime dependency override 时，只修改 owning Plugin node 上的 requirement，并同时作用于它的 root 与全部 Part
+宿主修改 dependency override 时，只修改 owning Plugin node 上的 requirement，并同时作用于它的 root 与全部 Part
 occurrence；没有 per-Part override。commit 必须重启被修改 Plugin 与其 dependent closure。只重建 provider 而保留 dependent 的旧
 caller-bound view 会破坏 Context isolation，并让 Workbench 中的实现选择表面成功、实际继续调用旧 provider。
 
@@ -128,13 +129,13 @@ class SearchPlugin extends BasePlugin {
 
 `parts.use()` 只能是 concrete `@Plugin` 或 direct `PluginPart` subclass 的普通 class field initializer。concrete direct Part
 可以用 constructor 参数声明 required Plugin；参数采用与 Plugin 相同的 package-root value-import provenance 和重复检查。Part 不使用
-`@Plugin`，也没有 node address、catalog、fork、独立 auto-start policy、session start/stop/restart、RuntimeState 或 Workbench owner。同一 Part class 的每个 field
-occurrence 都产生独立实例；Part 可以递归拥有 Part，local containment cycle 在 build 时拒绝，跨模块防线由 runtime 在 generation
+`@Plugin`，也没有 node address、catalog、fork、独立 auto-start policy、session start/stop/restart、Host state 或 Workbench owner。同一 Part class 的每个 field
+occurrence 都产生独立实例；Part 可以递归拥有 Part，local containment cycle 在 build 时拒绝，跨模块防线由 Core 在 generation
 构造阶段 fail-fast。
 
 `PluginPart.ctx/host/parts/plugins/configs` 与 `BasePlugin.parts/plugins/configs` 是 protected author DSL；只有 `BasePlugin.ctx` 保持 public。
 Part 没有 root Plugin getter，外部取得 Part instance 时只能看到 subclass 有意声明的 public 业务 surface。Part occurrence Context 不 pin
-attribution path/identity，Core/Runtime root 也不导出 Part Context/info/owner/parts helper types。nested Part 的 `host` 泛型始终表示 immediate parent；
+attribution path/identity，Core/Host 默认入口 也不导出 Part Context/info/owner/parts helper types。nested Part 的 `host` 泛型始终表示 immediate parent；
 framework 内部以 occurrence state 保存 Context 与 `partPath`，不得用新的 public path/id/locator 代替。
 
 全部 aggregated required provider running 后，Core 才构造 owner generation。root Plugin 按自己的 direct requirements 注入 root-scoped
@@ -166,8 +167,8 @@ graph、state、config、logging、Workbench 或 HMR identity。Workbench/日志
 CLI/诊断使用 node reference，不暴露 digest ID。完整 schema、source `realpath`、codec、作用域和持久化边界见
 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)。
 
-route catalog availability、RuntimeState auto-start policy、process session intent、Core committed graph 与 running generation projection 是五个
-独立平面。Host 来源接入只生产 immutable catalog candidate snapshot；runtime-common coordinator 统一展开 durable forks、校验
+route catalog availability、Host state auto-start policy、process session intent、Core committed graph 与 running generation projection 是五个
+独立平面。Host 来源接入只生产 immutable catalog candidate snapshot；Host coordinator 统一展开 durable forks、校验
 provider/default/override、计算 activation/provider 与 blocked closure 并提交一个 prepared Core update。不在 effective desired graph 中的 durable
 node 不进入 Core，route 不复制 reconciliation，Core 也不吸收 module/source/artifact provenance。
 
@@ -220,11 +221,11 @@ handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；st
 不要求作者维护 history。同 lineage 复用 active instance，新 lineage 原子激活 candidate 并归档旧 instance，不删除旧数据。
 
 `ctx.commands.register()` 共享一个 root command catalog，但注册所有权属于调用插件的 Context。registration 会进入
-owner effects，因此 generation stop、replacement、start rollback 和 shutdown 都会撤销对应命令。runtime registration
+owner effects，因此 generation stop、replacement、start rollback 和 shutdown 都会撤销对应命令。Commands registration
 同时保留 owner invocation lease；generation 停止时先拒绝新调用、abort call/owner 合成 signal，并等待已接纳调用退出，
 再 drain generation effects。此前取得的 command wrapper 也不能越过已关闭的 owner gate。手动 dispose 单个 registration 只撤销
-publication，不取消已经开始的调用。runtime 自身固定注册基础插件查询与生命周期命令，这些 handler 只调用既有
-runtime use case，不复制 graph 或 commit 逻辑。
+publication，不取消已经开始的调用。`commands()` 只安装空 catalog；`@pluxel/management/commands` 的
+`managementCommands()` 显式注册基础插件查询与生命周期命令，`servicesPreset()` 选择该服务。这些 handler 只调用 Host 用例，不复制 graph 或 commit 逻辑。
 
 跨 Plugin 的 carrier publication 是独立路径：provider 创建 `ctx.commands.createMount()`，只通过领域化
 `registerCommand()` 接受 carrier declaration。Mount 利用 caller-capability binder 固定 provider 与 consumer generation，
@@ -233,9 +234,9 @@ registry、不镜像 root catalog，也不让 registry-installed compatible-repl
 carrier exposure 必须分别显式选择。
 
 Management-enabled host 预安装 owner-bound `ctx.managementAccess`。认证 Plugin 可调用一次 `provide()` 发布唯一 provider；candidate
-registration 不因 `init()` 成功前或 commit publication 前而开放，Runtime 只选择当前 running generation。回调进入 owner invocation
+registration 不因 `init()` 成功前或 commit publication 前而开放，Management 只选择当前 running generation。回调进入 owner invocation
 admission，成功的 remote Management call 将 lease 延长到 result/observer settle，因此 replacement/stop 能取消长调用并等待 drain。
-provider 只负责 Management，不能成为业务 HTTP 的隐式全局 auth。官方 `@pluxel/auth` 也只消费这项公开能力，不获得 runtime internal
+provider 只负责 Management，不能成为业务 HTTP 的隐式全局 auth。官方 `@pluxel/auth` 也只消费这项公开能力，不获得 Host internal
 route 或 lifecycle 特例。
 
 ## Optional Workbench Plane
@@ -253,7 +254,7 @@ Definition 只包含 Content、Direct View、Attachment 和 tab/route placement�
 `action()` 与 latest-state `dataChanged()`；交互 transport、observer、sequence、lane 和 root 都由 Framework 拥有。纯 Markdown
 Content 没有 binding/root/retained lease。View 每次打开创建 fresh `RpcTarget`；
 renderer 是零 props React component，通过 `useWorkbench(exactDescriptor)` 取得 exact API root 与受限 host facade。
-Definition 不声明数据库查询、平台事件或动态 collection。Content action 的 Valibot input 由 Runtime authoritative validate；
+Definition 不声明数据库查询、平台事件或动态 collection。Content action 的 Valibot input 由 Workbench 服务 authoritative validate；
 authorization 与真实执行条件仍由 handler 检查。View 的 arbitrary 输入校验、snapshot/watch、任务和稳定失败码由 Plugin 自己的领域 API 负责。
 
 跨 Plugin UI 只使用 Attachment：provider 拥有 renderer 和 provider API，consumer 通过普通 constructor dependency
@@ -266,7 +267,7 @@ entry、MF producer、Bridge expose 或 socket。交互 draft 属于浏览器局
 ## Node module capability
 
 插件用 module-level `defineNodeModule(import.meta.url, literal)` 声明单独构建的 Node ESM entry，并在
-`init()` 中通过 `ctx.require(NodeModules).use(declaration, setup)` 消费。`NodeModuleService` 由 `@pluxel/services/node` 显式安装，默认 Runtime 选择该服务；
+`init()` 中通过 `ctx.require(NodeModules).use(declaration, setup)` 消费。`NodeModuleService` 由 `@pluxel/services/node` 显式安装，`standardServices()` 和 `servicesPreset()` 选择该服务；
 首次 artifact build/load 或 setup 失败会让插件启动失败。开发期更新先完成新 setup，再清理上一成功消费者；
 更新失败保留 last-known-good。owner stop/replacement 通过 effects 自动释放 source lease 和 active cleanup。
 
@@ -277,7 +278,7 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 任务提交到 root 共享线程预算，执行 owner-aware bounded admission、round-robin、公用 cancellation 和 shutdown drain。
 插件不依赖具体 pool implementation，也不各自按 CPU 数创建 pool。该能力不替代异步 I/O：网络、数据库和已经真正异步的
 native API 继续使用原 capability；只有会长时间占用 JS event loop 且能用纯数据描述的工作才进入 worker task。取消 running
-task 会终止对应 worker，runtime 只在 worker 真正退出后归还线程 slot，避免 replacement work 与尚未释放的 native work 重叠。
+task 会终止对应 worker，Workers 服务只在 worker 真正退出后归还线程 slot，避免 replacement work 与尚未释放的 native work 重叠。
 
 `workers.run()` 默认在返回前同步取得输入 snapshot，因此 caller 随后的 mutation 不会影响排队任务。调用方已有明确
 borrow-until-settle contract 时可选择 `inputOwnership: 'borrowed'`，省略 admission clone，只保留 transport clone；它不能
@@ -292,37 +293,35 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 
 - `@pluxel/context`：公开、同步、严格惰性的 standalone Context host kernel；
 - `@pluxel/core`：Plugin Context 投影、graph、DI、lifecycle、effects；源码复用并在发布产物中内联 Context kernel；
-- `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
-- `@pluxel/runtime/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
+- `@pluxel/management/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
 - `@pluxel/agent-tools`：可选官方 Plugin，以标准 Plugin config 在唯一 command registry 上投影 Agent allowlist；
 - `@pluxel/services/database`：server-only database definition 与 owner-bound handle；
 - `@pluxel/host-dev/console`：在线开发脚本的独立操作类型；由 Vite opt-in 执行器借用当前 root，不安装 Plugin Context capability；
 - `@pluxel/services/node` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/services/workers` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；
-- `@pluxel/runtime/capnweb`：固定 Cap’n Web object model 与 WebSocket session bridge；
+- `capnweb`：固定 Cap’n Web object model 与 WebSocket session bridge；
 - `@pluxel/workbench`：browser-safe Definition、host-rendered Content、Direct View、Attachment、placement 和 publication types；
 - `@pluxel/workbench/client`：conforming Shell 的 layout/opened-handle client；
 - `@pluxel/workbench/react`：exact descriptor hook、host facade 和 Pane Kit；
 - `@pluxel/workbench/internal/react`：toolchain/Shell 共用的 generated React Bridge ABI；
 - `@pluxel/core/federation`：Workbench MF producer/descriptor identity 和固定 shared set；
-- `@pluxel/host`：无 Runtime 服务依赖的 catalog、运行意图、图更新控制；
+- `@pluxel/host`：无官方服务依赖的 catalog、运行意图、图更新控制；
 - `@pluxel/host-dynamic`：显式动态来源的发现、加载、撤回与 producer 文件契约；
 - `valibot-form`：Config schema 的 portable presentation 与 raw-input transport projector；
 - `@pluxel/host-dev`：共享 ModuleRunner、模块失效、源码分类、开发附件协议与控制台执行机制，不依赖官方服务；
 - `@pluxel/services`：独立服务与官方组合；`servicesPreset()`、`/vite` 的 `vitePreset()`、`/build` 的 `buildPreset()` 分别拥有运行时、开发与发行默认策略；
 - `@pluxel/services/http/vite`、`@pluxel/services/node/vite`：可单独组合的 HTTP 与 Node 制品开发附件；
-- `@pluxel/runtime/vite`：既有 Runtime 产品的开发适配，复用服务所有的开发附件；
 - `@pluxel/rolldown/vite/workbench-ui`：MF2 producer build primitive。
 - `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound Direct View target 和 Workbench 页面。
 
 dynamic route 与 package manager 之间只有文件协议：producer 在宿主声明的 `sources` 目录原子发布/删除 ESM entry，
-route 观察文件并执行正常 graph transaction。runtime 不提供 package-manager capability、RPC DTO、内置页面或 market
+Host 来源观察文件并执行正常 graph transaction。Core/Host 不提供 package-manager capability、RPC DTO、内置页面或 market
 抽象；其他 registry、离线 bundle 或本地开发工具也可以实现同一文件协议，不需要进入核心。
 
 同一个应用声明使用 `plugins` 提供固定 catalog，使用可选 `sources` 增加 mutable entries。固定 catalog
 使用普通 `plugins`，不拥有单独的 auto-start、session intent、fork 或持久状态；fixed 与 mutable constructor 在同一个 Vite evaluated namespace
-中求值。Package Manager 是宿主显式 import、并由 RuntimeState `autoStart` 声明冷启动策略的 声明受管来源后的普通 fixed plugin。
+中求值。Package Manager 是宿主显式 import 的普通 fixed plugin；宿主通过 Host state `autoStart` 声明其冷启动策略，并显式声明它管理的来源目录。
 
 ## 不变量
 

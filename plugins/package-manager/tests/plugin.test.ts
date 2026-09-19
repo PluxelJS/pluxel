@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { dynamicSource } from '@pluxel/host-dynamic'
 import { installPluginSources } from '@pluxel/host/internal'
-import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PackageManagerPlugin } from '../src/index.ts'
 
@@ -22,7 +22,7 @@ describe('PackageManagerPlugin', () => {
 		const managedRoot = resolve(root, 'managed')
 
 		{
-			await using host = await createRuntimeInternalTestHost()
+			await using host = await createServiceInternalTestHost()
 			if (include)
 				installPluginSources(host.ctx, {
 					root,
@@ -63,7 +63,7 @@ describe('PackageManagerPlugin', () => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-plugin-'))
 		roots.push(root)
 		const managedRoot = resolve(root, 'managed')
-		await using host = await createRuntimeInternalTestHost()
+		await using host = await createServiceInternalTestHost()
 		installPluginSources(host.ctx, {
 			root,
 			sources: [

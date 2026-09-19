@@ -151,6 +151,8 @@ export async function attachDevConsole(
 				)
 			const scope = createDevConsoleScope({
 				ctx: host.ctx,
+				id: input.runId,
+				input: input.input,
 				signal: run.signal,
 			})
 			scopes.add(scope)
@@ -160,10 +162,7 @@ export async function attachDevConsole(
 			let failed = false
 			try {
 				run.revision('before', await scope.snapshot())
-				result = await execute(
-					scope.dev,
-					Object.freeze({ id: input.runId, input: input.input, signal: run.signal }),
-				)
+				result = await execute(scope.dev)
 			} catch (error) {
 				failed = true
 				executionError = error

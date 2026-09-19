@@ -12,6 +12,7 @@ async function attach(attachments: HostDevelopmentAttachment[]) {
 			},
 		} as never,
 		{} as never,
+		{ modules: [], definitions: [] },
 	)
 }
 
@@ -36,7 +37,7 @@ it.each(['commit', 'rollback'] as const)(
 				},
 			})),
 		)
-		const candidate = await controller.prepareCandidate()
+		const candidate = await controller.prepareCandidate({ modules: [], definitions: [] })
 		const orderedFailures = action === 'commit' ? failures : failures.toReversed()
 		expect(() => candidate[action]()).toThrow(
 			expect.objectContaining({
@@ -85,9 +86,11 @@ it('rolls back every prepared candidate and preserves the preparation error', as
 			},
 		},
 	])
-	await expect(controller.prepareCandidate()).rejects.toMatchObject({
-		errors: [primary, cleanup],
-		cause: primary,
-	})
+	await expect(controller.prepareCandidate({ modules: [], definitions: [] })).rejects.toMatchObject(
+		{
+			errors: [primary, cleanup],
+			cause: primary,
+		},
+	)
 	expect(calls).toEqual([2, 1])
 })

@@ -9,14 +9,14 @@ outbound policy 的原生、不可变 Wretch base；请求构造、addon、middl
 ## 使用
 
 ```sh
-pnpm add @pluxel/wretch @pluxel/runtime
+pnpm add @pluxel/wretch @pluxel/core
 ```
 
 把 `WretchPlugin` 放进宿主 catalog，需要 HTTP 的插件通过 constructor 声明 required dependency：
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
 
 type Customer = { id: string; name: string }

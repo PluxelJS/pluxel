@@ -36,6 +36,8 @@ export function createHostSourceEvaluator(options: {
 	root: string
 	onChange(change: PluginSourceChange): void
 	onError(error: unknown): void
+	/** Records separate evaluation roots before loading can fail. */
+	onEntry?(path: string): void
 }) {
 	let active: SourceSlot | undefined
 	let closed = false
@@ -107,6 +109,7 @@ export function createHostSourceEvaluator(options: {
 				const files = new Set(input.entryFiles)
 				const plugins = [...input.application.plugins]
 				for (const path of entries) {
+					options.onEntry?.(path)
 					const namespace = await importViteSsrModule(options.server, path)
 					plugins.push(...collectPluginModuleExports(namespace))
 					for (const file of collectViteSsrImportFiles(options.server, path)) {

@@ -97,8 +97,8 @@ import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。`start()` 会立即提交并等待稳定，`initialConfig` 只用于首次 lifecycle；
-production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
+这里的 `host` 是 `createServiceTestHost()` 作者 fixture。`start()` 会立即提交并等待稳定，`initialConfig` 只用于首次 lifecycle；
+production static/dynamic host 通过自己的 ConfigService 和 Host state 管理相同 topology 与 config。
 
 第三方 adapter 从 `@pluxel/rates` 根入口导入 `RatesBackend` 和 request contract；request 的 `owner` 是完整
 `PluginNodeAddress`，显式 global limiter 为 `null`，adapter 持久化 state 时必须保存并校验它。返回值不是 exact、safe-integer 且

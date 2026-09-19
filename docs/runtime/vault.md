@@ -14,16 +14,17 @@ Vault 是一项需要宿主显式启用的运行时能力，为每个 Plugin 提
 | 大文件、用户上传和远端对象                      | 对象存储（[仓库内 S3 预览](../plugins/storage.md)） |
 | 进程内/跨实例短期加速                           | 缓存（[仓库内预览](../plugins/cache.md)）           |
 
-Core Host 通过 `services: [persistence(...), vault(...)]` 显式安装，见[组合 Host 服务](../reference/runtime-services.md)。Runtime 的启动配置把 `vault` 设为对象时安装；omitted 或 `false` 时没有 capability property、backend、preflight 或管理成本。
+Host 通过 `services: [persistence(...), vault(...)]` 显式安装，见[组合 Host 服务](../reference/runtime-services.md)。未安装时没有 capability property、backend、preflight 或管理成本。官方 `servicesPreset()` 包含 Vault，自定义服务列表按需选择。
 
 ## 启用入口
 
 需要使用 Vault 的宿主在启动配置中显式启用：
 
 ```ts no-twoslash
-configure: () => ({
-	vault: {},
-})
+import { persistence } from '@pluxel/services/persistence'
+import { vault } from '@pluxel/services/vault'
+
+const services = [persistence('.pluxel/persistence'), vault()]
 ```
 
 配置对象承载 Vault 的 lifecycle 输入；导入某个 module 不会修改 Context plan。可以在无 Vault 宿主中运行的通用 Plugin
@@ -63,7 +64,7 @@ export class ConnectorPlugin extends BasePlugin {
 
 ```ts no-twoslash
 const vault = this.ctx.vault
-if (!vault) throw new Error('This Plugin requires host config vault: {}')
+if (!vault) throw new Error('This Plugin requires the Vault service')
 const kv = vault.kv()
 
 await kv.set('token', token)
@@ -87,7 +88,7 @@ batch callback 操作内存中的 copy-on-write transaction，不在其中执行
 
 ```ts no-twoslash
 const vault = this.ctx.vault
-if (!vault) throw new Error('This Plugin requires host config vault: {}')
+if (!vault) throw new Error('This Plugin requires the Vault service')
 const profiles = vault.docs().collection<{ enabled: boolean; label?: string }>('profiles')
 
 await profiles.set('default', { enabled: true })
@@ -102,7 +103,7 @@ documents 是按 ID 读取的小型 JSON records，没有 query planner、second
 
 ```ts no-twoslash
 const vault = this.ctx.vault
-if (!vault) throw new Error('This Plugin requires host config vault: {}')
+if (!vault) throw new Error('This Plugin requires the Vault service')
 const blob = vault.blobs().open('oauth-state')
 
 await blob.writeText(serialized)
@@ -120,7 +121,7 @@ blobs 保存在 Vault snapshot 管理的文件区域，适合小型加密字节�
 
 ```ts no-twoslash
 const vault = this.ctx.vault
-if (!vault) throw new Error('This Plugin requires host config vault: {}')
+if (!vault) throw new Error('This Plugin requires the Vault service')
 const space = vault.namespace()
 
 await space.batch((tx) => {
@@ -145,7 +146,7 @@ Vault 不在普通 Plugin 调用时偷偷 auto-unlock。host 在启动/preflight
 官方 `@pluxel/auth` 也是普通 Vault consumer。它只保存 password verifier、TOTP secret/last accepted counter，以及 confidential
 OIDC client secret；plaintext password、生成的 OTP、session token、OIDC state/nonce/PKCE 和 rate-limit state 都只存在于请求或有界的
 generation memory。凭据更新会在 provider ready snapshot 切换前显式 `flush()`。因此使用 local account 或 confidential OIDC client 的
-host 必须配置 `vault: {}` 并在 Plugin lifecycle 前完成正常 preflight。
+Host 必须安装 `vault()` 并在 Plugin lifecycle 前完成正常 preflight。
 
 ## Flush 与 durability
 
@@ -153,7 +154,7 @@ host 必须配置 `vault: {}` 并在 Plugin lifecycle 前完成正常 preflight�
 
 ```ts no-twoslash
 const vault = this.ctx.vault
-if (!vault) throw new Error('This Plugin requires host config vault: {}')
+if (!vault) throw new Error('This Plugin requires the Vault service')
 await vault.flush()
 ```
 

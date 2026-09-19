@@ -18,7 +18,6 @@
 		"@pluxel/host-dynamic": "catalog:pluxel",
 		"@pluxel/logging": "catalog:pluxel",
 		"@pluxel/management": "catalog:pluxel",
-		"@pluxel/runtime": "catalog:pluxel",
 		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/vault-admin": "catalog:pluxel",
 		"@pluxel/workbench": "catalog:pluxel",

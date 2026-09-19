@@ -16,9 +16,9 @@ module batch
   -> coordinator prepare/commit
   -> stop old consumer/provider closure
   -> drain effects
+  -> commit Workbench topology/Content and any reusable producer
   -> start new generations
   -> publish new Workbench Definitions
-  -> commit Workbench topology/Content and any reusable producer
   -> background build/validate missing MF producer candidate
   -> commit producer inventory when ready
   -> close browser socket epoch
@@ -26,8 +26,8 @@ module batch
 ```
 
 共享开发驱动对新 module namespace 只消费一个 immutable candidate，并把整批 catalog snapshot 交给 Host。
-Runtime 的控制协调器把持久策略接入同一操作序列；Host 在旧 generation 仍开放时完成 role/collision、forkability、binding 和 combined graph prepare；
-catalog/RuntimeState revision race 会丢弃 prepared overlay 并重新 plan。
+Host 的控制协调器把持久策略接入同一操作序列；Host 在旧 generation 仍开放时完成 role/collision、forkability、binding 和 combined graph prepare；
+catalog/Host state revision race 会丢弃 prepared overlay 并重新 plan。
 
 Structural reject 保留旧 catalog revision。第一次关闭旧 generation admission 是 point of no return；之后的 drain/init
 failure 形成新 revision 的 lifecycle facts，不尝试复活旧 implementation。Optional provider 出现、消失或 replacement
@@ -38,7 +38,7 @@ definition replacement 通过同一 coordinator/Core plan 自动启动仍在 des
 不依赖 Workbench 的 Start command。显式 Stop 则从 desired graph 移除节点，后续源码修复不能覆盖它。纯 catalog no-op
 不强制创建 Core transaction，也不增加 timer retry loop；只有实际更新或明确 lifecycle command 才触发对应执行。
 
-Host-dev 与 Runtime 开发组合为受影响 definition 记录进程内 `recentUpdate`，由 Host internal 的 `PluginRecentUpdateTracker` 统一保存。
+Host-dev 与服务开发附件为受影响 definition 记录进程内 `recentUpdate`，由 Host internal 的 `PluginRecentUpdateTracker` 统一保存。
 Host root 绑定路由拥有的 reader，Host status 与 Management 默认读取这份记录；替换宿主继续使用同一路由历史。
 快照分成 `batch` 与 `lifecycle`：前者含 `scope`（application / definitions）、outcome、phase、sequence、durationMs；后者只含
 当前 node 的生命周期 issue，未观察到该节点的完整报告时为 null。空 issues 表示该批执行没有报告此节点的生命周期错误，不代表当前一定运行。
@@ -55,7 +55,7 @@ Management `updates.snapshot()` / `updates.follow()` 沿现有会话提供这份
 批次错误包含有界 message、可用的相对文件和已观察导入链；原始异常写入本地 runtime log，不把绝对路径或 stack 传入页面。
 无法确认影响范围时只发布应用批次，不把所有旧插件标为根因。Plugin 的 `batch.error` 保留其历史批次原因，不能用最新批次覆盖历史。
 
-Runtime Vite 分离已提交应用图与失败候选的恢复依赖。候选解析委托 Vite，观察可达 importer/specifier 关系，
+Host-dev 分离已提交应用图与失败候选的恢复依赖。候选解析委托 Vite，观察可达 importer/specifier 关系，
 失败后监听已解析新文件、缺失导入候选和相关 package manifest。Vite 忽略的安装目录及根外缺失文件由限于失败候选的 watcher 补充；
 修正新文件或完成安装进入原串行更新队列，提交后释放恢复依赖及补充 watcher，关闭后禁止重新接纳。
 补充 watcher 合并相互包含的扫描根，避免重复祖先扫描撤销仍有效的目录监听；精确候选路径过滤保持不变。
@@ -67,12 +67,26 @@ Database handle 固定引用一个 active instance。Replacement 先拒绝旧 ha
 新 generation 复用 instance，schema-derived lineage 改变时构建空 candidate 并原子激活。Database backend、pool、instance
 registry 和 durable rows 属于 root。
 
+## Workbench candidate inputs
+
+Host-dev 给开发附件传递本次 `HostDevelopmentCatalog`：确切求值模块闭包与所选 definition addresses。
+附件不能用仍属于上一代的 `host.catalog()` 推测候选。Workbench 同时接纳源码 lowering 与预编译模块的正向 ABI facts；
+仅加载候选明确选中的 definition，不为只是被 import 的其他 export 发布产物。
+
+预编译包通过确切模块的 owning package 读取 `dist/workbench` inventory，校验 package identity 与已有生产 artifact contract；
+不扫描零散制品目录，不重编译发布包。候选先统一 prepare；graph 接纳时同步 commit，结构拒绝保留旧 tuple，移除时统一撤回。
+未选中的 export 不要求其 artifact 目录存在。物理 `node_modules` 的 ABI facts 可被读取，但第三方原始源码不会因此启用 Plugin lowering。
+
+Host replacement 补偿先退出并回滚失败的 semantic generation。已接纳的 catalog 对象是稳定快照 identity；Workbench 缓存它已提交的
+source/package artifact inputs，以便补偿 Host 复用旧计划，而不是读取已被新版本覆盖的 inventory。缓存不复制包的磁盘 bytes：旧 revision
+被删除或覆盖时仍执行正常 artifact 校验；不能恢复则报告补偿失败，不能给旧 constructor 配上新 artifact 冒充恢复。
+
 ## Canonical Vite module graph
 
 每个 `ViteDevServer` 只有一个 Pluxel SSR ModuleRunner 和 evaluated module namespace。应用声明、fixed plugins、mutable source anchors 和普通 ESM dependencies 都通过该实例求值；HMR layer 只增加分类、
 invalidation、source anchor 和诊断，不创建第二个 cache。
 
-Core、Runtime 与 Elysia host bridge 是 singleton identity 边界。Public、internal 和 workspace source path 都必须解析到
+Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons()` 另外固定 Services、Workbench、Management 和 Logging，并保持 Cap’n Web 的 native ESM identity。相应 public、internal 和 workspace source path 都必须解析到
 host 安装的 ESM entry；解析使用 import conditions，不能通过 CJS path 冒充 ESM singleton。Standalone
 `@pluxel/context` 只有 host 直接安装时才进入 bridge。
 
@@ -93,7 +107,7 @@ source transform 或其他 negative match 都不是 built/source 证据；事实
 generation 的异步 scope 内；不在该 scope 内的并发 ambient transform 仍是独立 authority。Commit 按 module 校验
 generation 开始时的 ambient version，已有更新 ambient 事实的 module 不被旧 candidate 覆盖；rollback 也不撤销这些并发事实。
 
-React transform/refresh 由应用 Vite 配置显式安装一次，Runtime 开发入口不因是否存在动态来源改变 React 所有权。
+React transform/refresh 由应用 Vite 配置显式安装一次，Host-dev 开发入口不因是否存在动态来源改变 React 所有权。
 Starter 的统一 Vite smoke 验证 browser graph 与 `/@react-refresh`，避免重复或缺失 React plugin。
 
 Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevServer` 注入的物理 listener；它不创建第二个 HMR graph。
@@ -102,7 +116,7 @@ Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevS
 
 ## 固定 catalog 与可选动态来源
 
-`runtime({ entry })` 通过 ModuleRunner 加载 canonical `RuntimeApplication` entry。开发驱动使用 Vite 的
+`host({ entry })` 通过 ModuleRunner 加载 canonical `HostApplication` entry。开发驱动使用 Vite 的
 `hotUpdate` 将 create/update/delete 事件送入同一个更新队列；同一次文件事件只执行一次 runtime 更新，避免 client/SSR
 两套环境重复提交或在提交后再次失效已加载的 constructor。普通 Plugin
 dependency 变化精确失效 importer graph；application entry/configure graph 变化重建 host。Single-active logging root
@@ -148,7 +162,7 @@ execution lane 的 direct call 必须以 `HmrClosedError` 失败，不能触碰 
 
 ## Workbench producer build
 
-`PluginArtifactCompiler` 位于 `packages/runtime/src/development/workbench/`。Runtime 开发组合可以安装 Node source provider，
+`PluginArtifactCompiler` 位于 `packages/workbench/src/development/`。服务开发附件可以安装 Node source provider，
 只在 Workbench enabled 时安装 UI source provider；Workbench-disabled 路径不加载 MF builder。
 
 Semantic lowering 在 TypeScript 擦除前读取 `workbench.define()` 和 literal `workbench.entry()`，一次生成 owning Plugin
@@ -167,8 +181,8 @@ compiler 不再为 Workbench 叠加通用 build queue；MF builder 自己拥有�
 process-global application root：同一 application root 最多并发两个 producer；不同 root 按到达顺序形成 cohort，切换前必须等
 当前 cohort 排空，后到的同 root task 不能越过已经等待的其他 root。这个精确约束不能扩大为全局单线程。Node artifact 继续使用
 独立的两个 build slot。同一 output 的 transaction ordering 始终保留，保证 immutable candidate 的 validation/publication 不交错。
-Runtime artifact 接入先准备并验证候选 topology/Content，准备过程不改变 current tuple，也不取消已接受代的后台构建。
-Runtime 开发组合在 Core graph 接受点同步激活候选：正常替换中此时旧代已排空，新代尚未启动；被拒绝候选只丢弃准备结果。
+Workbench artifact 接入先准备并验证候选 topology/Content，准备过程不改变 current tuple，也不取消已接受代的后台构建。
+服务开发附件在 Core graph 接受点同步激活候选：正常替换中此时旧代已排空，新代尚未启动；被拒绝候选只丢弃准备结果。
 只有激活才推进 publication epoch 并启动缺失 producer 的后台构建；后台验证完成后再次检查 epoch，拒绝迟到的过期结果。
 已存在的 producer artifact 可在准备路径快速复用。初启和已接受定义的纯 Content 更新使用相同 prepare/commit 实现。producer 进入构建时记录 name/revision，完成时记录 `built` 或磁盘 `reused` 及端到端耗时；内存 candidate 复用保持
 静默，失败日志保留同一归因和原始错误。开发 producer 使用持久 Vite cache，默认不生成 dynamic types；production 或显式
@@ -240,3 +254,21 @@ Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 
 ## Development console execution
 
 显式启用的 dev console 使用同一个 SSR runner，执行根不是 Plugin catalog entry。脚本等待真实 watcher 接纳已知依赖修改，再等待开发驱动已接纳的有限更新序列；执行期间不锁住整个 HMR coordinator。full-host replacement 撤回旧 run scope，后续提交获取新 epoch。源码观察、finite barrier 与资源边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+
+## 来源观察失败
+
+Host-dev 将来源 watcher、恢复 watcher 和进入更新前的 `watchChange` 失败提交到同一个开发执行队列，
+再发布应用级 recent update；不能在正在执行的 candidate 中途覆写其 sequence 或 settlement。
+这些错误不归因到任意 Plugin definition，也不修改它们的 lifecycle 历史。
+已接纳的 watcher 错误随队列排空；关闭后的通知不再接纳。候选执行自身已经发布的失败只记录日志，不额外创建重复 attempt。
+最近一次更新成功会替换这一记录；它不是持续 watcher 健康状态，也不承诺重建已经失效的 watcher。
+
+动态 entry 的求值根必须在 import 前加入候选恢复集合，即使它不出现在应用入口的 import graph 中。
+失败候选关闭临时来源 watcher 后，修改该 entry 或补齐它的缺失依赖仍能触发下一次候选。
+恢复接纳集合与缺失解析输入集合不同：语法修复只失效受影响模块，不能因为它属于恢复集合就重载全部服务。
+Host-dev 在候选语义作用域中计算 execution provenance，Host 只在 catalog snapshot 中发布事实。
+内部 provenance binding 仅保存下一次 catalog 的输入；拒绝时 committed snapshot 不变，整应用补偿使用上次成功的事实。
+
+物理 `node_modules` 中的模块只采集正向已编译 ABI definition facts，不将普通第三方代码作为 Plugin 源码 lowering。
+整应用失败补偿在候选语义作用域之外、rollback 后进行；已结束 generation 的异步 continuation 也只能读取 committed Workbench facts。
+补偿沿用已接受 catalog 对应的制品输入；同路径新 inventory 不得替换旧 plan。旧制品字节已删除时仍须诚实报告补偿失败。

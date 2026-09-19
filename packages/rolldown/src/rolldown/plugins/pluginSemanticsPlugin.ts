@@ -76,8 +76,6 @@ export type PluginSemanticsPluginOptions = {
 	sourceSpaces?: readonly Readonly<{ name: string; root: string }>[]
 	/** Enables package-root provenance and package entry/export invariants. */
 	packageJsonPath?: string
-	/** Generated helper import. Must name a dedicated toolchain subpath. */
-	helperImportSource?: '@pluxel/runtime/toolchain' | '@pluxel/core/toolchain'
 }
 
 export type PluginSemanticsCollector = {
@@ -93,6 +91,8 @@ export type PluginSemanticsCollector = {
 		definition: PluginDefinitionAddress,
 		activeModules?: Iterable<string>,
 	): PluginDefinitionArtifactKind
+	/** Exact prelowered definition keys in the selected evaluated module closure. Toolchain-only artifact input. */
+	builtDefinitionModules(activeModules: Iterable<string>): ReadonlyMap<string, ReadonlySet<string>>
 	/** Begins one non-nested transaction over classification and Workbench semantic facts. */
 	beginArtifactGeneration(): PluginArtifactGeneration
 	/** Final canonical Workbench producer plans for this compilation. */
@@ -184,14 +184,8 @@ type DependencyInventoryNode = Readonly<{
 	readonly parts: readonly string[]
 }>
 
-const AUTHORING_PACKAGES = new Set([
-	'@pluxel/core',
-	'@pluxel/core/test',
-	'@pluxel/runtime',
-	'@pluxel/runtime/test',
-	'@pluxel/test',
-])
-const TOOLCHAIN_PACKAGES = new Set(['@pluxel/core/toolchain', '@pluxel/runtime/toolchain'])
+const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/test', '@pluxel/test'])
+const TOOLCHAIN_PACKAGES = new Set(['@pluxel/core/toolchain'])
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'] as const
 
 /**
@@ -211,15 +205,9 @@ export function createPluginSemanticsPlugin(
 		'**/*.mjs',
 		'**/*.cjs',
 	])
-	const exclude = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.*'])
+	const exclude = normalizePatterns(options.exclude, ['**/*.d.*'])
 	const sourceRoot = resolve(options.root ?? process.cwd())
 	const workbenchLowering = createWorkbenchSemanticLowering(sourceRoot)
-	const helperImportSource = options.helperImportSource ?? '@pluxel/core/toolchain'
-	if (!helperImportSource.endsWith('/toolchain')) {
-		throw new TypeError(
-			'[pluxel:plugin-semantics] helperImportSource must name a /toolchain subpath',
-		)
-	}
 	const definitionsByModule = new Map<string, ReadonlyMap<string, PluginSemanticDefinition>>()
 	const builtDefinitionsByModule = new Map<string, ReadonlySet<string>>()
 	const artifactModuleVersions = new Map<string, number>()
@@ -266,8 +254,12 @@ export function createPluginSemanticsPlugin(
 			: { definitionsByModule, builtDefinitionsByModule }
 	}
 
-	const currentWorkbench = (): WorkbenchSemanticLowering =>
-		artifactGenerationContext.getStore()?.workbench.lowering ?? workbenchLowering
+	const currentWorkbench = (): WorkbenchSemanticLowering => {
+		const generation = artifactGenerationContext.getStore()
+		return generation === activeArtifactGeneration && generation?.status === 'active'
+			? generation.workbench.lowering
+			: workbenchLowering
+	}
 
 	const clearModule = (
 		id: string,
@@ -323,7 +315,9 @@ export function createPluginSemanticsPlugin(
 				// Reserve before any asynchronous provenance/resolution work, not just collect().
 				const update = currentWorkbench().beginUpdate(id)
 				const mightContainBuiltFacts = code.includes('__setPluginDefinition')
-				const mightContainSourceFacts = semanticHint(code)
+				// Installed JavaScript may carry our compiled ABI. Observe those exact facts without
+				// treating ordinary dependency source as a Plugin authoring compilation.
+				const mightContainSourceFacts = !/(?:^|\/)node_modules\//.test(id) && semanticHint(code)
 				if (!mightContainBuiltFacts && !mightContainSourceFacts) {
 					clearModule(id, update)
 					return null
@@ -379,7 +373,6 @@ export function createPluginSemanticsPlugin(
 					addresses,
 					packagePlan: activePackagePlan,
 					strictPackagePlan: Boolean(packagePlan),
-					helperImportSource,
 					error: (message) => this.error(message),
 					resolve: async (source) => {
 						const resolved = await this.resolve(source, id, { skipSelf: true })
@@ -447,6 +440,14 @@ export function createPluginSemanticsPlugin(
 				facts.builtDefinitionsByModule,
 				definition,
 				activeModules,
+			)
+		},
+		builtDefinitionModules: (activeModules) => {
+			const active = new Set([...activeModules].map(semanticModuleKey))
+			return new Map(
+				[...currentArtifactFacts().builtDefinitionsByModule]
+					.filter(([moduleId]) => active.has(moduleId))
+					.map(([moduleId, definitions]) => [moduleId, new Set(definitions)]),
 			)
 		},
 		beginArtifactGeneration: () => {
@@ -613,7 +614,7 @@ function extractPreloweredDefinitionKeys(ast: Program): ReadonlySet<string> {
 		) {
 			return
 		}
-		const payload = readStaticJsonValue(args[1])
+		const payload = readStaticJsonValue(args[1], new Set(['abiVersion', 'kind', 'definition']))
 		if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
 		const record = payload as Readonly<Record<string, unknown>>
 		if (
@@ -633,8 +634,17 @@ function extractPreloweredDefinitionKeys(ast: Program): ReadonlySet<string> {
 
 const UNREADABLE_STATIC_VALUE = Symbol('unreadable-static-value')
 
-function readStaticJsonValue(node: AstNode | undefined): unknown | typeof UNREADABLE_STATIC_VALUE {
+function readStaticJsonValue(
+	node: AstNode | undefined,
+	selectedKeys?: ReadonlySet<string>,
+): unknown | typeof UNREADABLE_STATIC_VALUE {
 	if (!node) return UNREADABLE_STATIC_VALUE
+	if (node.type === 'TemplateLiteral' && arrayOf(node.expressions).length === 0) {
+		const quasis = arrayOf(node.quasis)
+		if (quasis.length !== 1) return UNREADABLE_STATIC_VALUE
+		const value = (quasis[0] as AstNode).value as { cooked?: unknown } | undefined
+		return typeof value?.cooked === 'string' ? value.cooked : UNREADABLE_STATIC_VALUE
+	}
 	if (node.type === 'Literal') {
 		return node.value === null ||
 			typeof node.value === 'string' ||
@@ -658,6 +668,12 @@ function readStaticJsonValue(node: AstNode | undefined): unknown | typeof UNREAD
 	const record: Record<string, unknown> = Object.create(null) as Record<string, unknown>
 	for (const rawProperty of arrayOf(node.properties)) {
 		const property = rawProperty as AstNode
+		// Computed keys and spreads could overwrite the evidence fields.
+		if (property.type !== 'Property' || property.computed === true) {
+			return UNREADABLE_STATIC_VALUE
+		}
+		const key = propertyName(property.key)
+		if (selectedKeys && key && !selectedKeys.has(key)) continue
 		if (
 			property.type !== 'Property' ||
 			property.computed === true ||
@@ -668,7 +684,6 @@ function readStaticJsonValue(node: AstNode | undefined): unknown | typeof UNREAD
 		) {
 			return UNREADABLE_STATIC_VALUE
 		}
-		const key = propertyName(property.key)
 		if (!key || key === '__proto__' || Object.hasOwn(record, key)) {
 			return UNREADABLE_STATIC_VALUE
 		}
@@ -750,7 +765,6 @@ async function lowerModule(options: {
 	addresses: ReadonlyMap<string, PluginDefinitionAddress>
 	packagePlan?: PackagePlan
 	strictPackagePlan: boolean
-	helperImportSource: string
 	error(message: string): never
 	resolve(source: string): Promise<string | undefined>
 }): Promise<{
@@ -871,7 +885,7 @@ async function lowerModule(options: {
 		].filter((value): value is string => Boolean(value))
 		const lines = [
 			'// [pluxel-plugin-semantics] Injected facts',
-			`import { ${imports.join(', ')} } from ${JSON.stringify(options.helperImportSource)};`,
+			`import { ${imports.join(', ')} } from ${JSON.stringify('@pluxel/core/toolchain')};`,
 		]
 		for (const definition of definitions) {
 			lines.push(

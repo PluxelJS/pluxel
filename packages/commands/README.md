@@ -290,7 +290,7 @@ assignable to it, while `InstalledCommand` and `CommandRegistration` are rejecte
 also expose `dispose`. This is a type-level misuse guard, not a trust or security boundary; JavaScript
 carrier entry points must still validate received objects.
 
-`@pluxel/runtime` provides root-catalog ownership through `ctx.commands.register(command)`. Carrier
+`@pluxel/services/commands` provides root-catalog ownership through `ctx.commands.register(command)`. Carrier
 providers that need a generation-pinned route or SDK publication use
 `ctx.commands.createMount<CarrierContext>()` and bind a `DirectCommand`; a registry-installed handle
 must not become that route's identity. Runtime holds the relevant owner admission while execution

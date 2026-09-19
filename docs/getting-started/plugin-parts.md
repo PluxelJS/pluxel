@@ -63,7 +63,7 @@ export class SearchPlugin extends BasePlugin {
 ```ts no-twoslash
 import { CacheBackendPlugin } from '@acme/cache-backend'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 
 type CacheHandle = {
 	get(key: string): string | undefined

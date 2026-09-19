@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PluxelPlatformSnapshot } from '@pluxel/runtime/environment'
+import type { PluxelPlatformSnapshot } from '@pluxel/management/protocol'
 import { platformNotice } from '../src/app/home/HomeIntro'
 
 function platform(override: Partial<PluxelPlatformSnapshot> = {}): PluxelPlatformSnapshot {

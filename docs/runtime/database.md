@@ -24,7 +24,7 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 
 选择 managed database 后，正式部署使用 native PostgreSQL；PGlite 只用于本机开发和自动化测试。两者统一的是 PostgreSQL 作者 contract，不是性能、并发和 durability 等价。
 
-宿主必须启用 managed database，并选好连接后端；如果现有入口设置了 `database: false`，先在 [宿主配置](../getting-started/host-setup.md) 中调整。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
+宿主通过 `database({ backend: pglite(...) })` 或 `database({ backend: postgres(...) })` 显式安装；默认服务组合不安装数据库，见 [宿主配置](../getting-started/host-setup.md)。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
 
 ## 定义 Plugin schema
 
@@ -165,7 +165,7 @@ export const SearchDatabase = defineDatabase({
 
 当 fixed catalog、schema 和部署都由同一团队维护时，把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。
 
-Static application 应在 `configure()` 返回 `database: false`，使误用 `ctx.database` 的内置 Plugin 直接启动失败；production freezer 同时设置 `managedDatabaseDrivers: []`，避免把未使用的 PGlite 与 `pg` package 复制进发行物。两处配置分别约束运行时 capability 与构建闭包，必须保持一致。
+应用服务列表不安装 `database()`，使误用 `ctx.require(Database)` 的 Plugin 直接启动失败；production freezer 同时设置 `managedDatabaseDrivers: []`，避免把未使用的 PGlite 与 `pg` package 复制进发行物。两处配置分别约束运行时 capability 与构建闭包，必须保持一致。
 
 内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
 
@@ -213,17 +213,18 @@ export function appDatabaseFor(ctx: Context): AppDatabase {
 
 `appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；static application 的泛型不能反向改变独立编译 Plugin 的 Context shape。
 
-Static entry 对部署路径保持唯一 authority，同时供 Runtime persistence 和 application database 使用：
+Static entry 对部署路径保持唯一 authority，同时供 宿主 persistence 和 application database 使用：
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
-import type { RuntimeApplication } from '@pluxel/runtime'
+import type { HostApplication } from '@pluxel/host'
 import { prepareAppDatabase } from '@app/database'
+import { standardServices } from '@pluxel/services'
 
 function storagePaths({ env, deployment }) {
 	const root = resolve(env.APP_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`)
 	return {
-		runtimePersistence: resolve(root, 'runtime'),
+		hostPersistence: resolve(root, 'runtime'),
 		applicationDatabase: resolve(root, 'application.sqlite'),
 	}
 }
@@ -233,8 +234,7 @@ export default {
 	plugins: [BillingPlugin, AuditPlugin],
 	configure(startup) {
 		return {
-			persistence: storagePaths(startup).runtimePersistence,
-			database: false,
+			services: standardServices({ persistence: storagePaths(startup).hostPersistence }),
 		}
 	},
 	async prepare({ host, startup }) {
@@ -242,7 +242,7 @@ export default {
 			filename: storagePaths(startup).applicationDatabase,
 		})
 	},
-} satisfies RuntimeApplication
+} satisfies HostApplication
 ```
 
 Plugin 在 `init()` 或之后同步取得已准备实例：

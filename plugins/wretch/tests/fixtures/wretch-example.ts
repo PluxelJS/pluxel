@@ -1,6 +1,7 @@
 import { Http } from '@pluxel/services/http'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 import { workbench } from '@pluxel/workbench'
 import type { Wretch } from 'wretch'
 import { retry } from 'wretch/middlewares'

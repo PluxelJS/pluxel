@@ -20,10 +20,11 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-services-consumer-'))
 	try {
 		const dependencies = {}
-		for (const name of ['core', 'host', 'commands', 'services']) {
+		// Include Host's publication-time dependency on valibot-form in the base closure.
+		for (const name of ['core', 'host', 'commands', 'services', 'valibot-form']) {
 			const tarball = join(root, `${name}.tgz`)
 			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
-			dependencies[`@pluxel/${name}`] = `file:${tarball}`
+			dependencies[name === 'valibot-form' ? name : `@pluxel/${name}`] = `file:${tarball}`
 		}
 		const nodeTypes = JSON.parse(
 			await readFile(
@@ -46,8 +47,8 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			JSON.stringify({ packages: ['.'], overrides: dependencies }),
 		)
 		await run('pnpm', ['--dir', root, 'install', '--offline', '--ignore-scripts'], workspace)
-		for (const name of ['core', 'host', 'commands', 'services'])
-			expect(await realpath(join(root, 'node_modules/@pluxel', name))).not.toContain(workspace)
+		for (const name of Object.keys(dependencies))
+			expect(await realpath(join(root, 'node_modules', name))).not.toContain(workspace)
 		const installed = await readdir(join(root, 'node_modules/.pnpm'))
 		expect(
 			installed.some((name) => /^(?:@pluxel\+runtime|pg@|@electric-sql\+pglite)/.test(name)),
@@ -71,17 +72,10 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		)
 		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
 		// Expand the same genuinely installed consumer to the optional UI/development plane.
-		for (const name of [
-			'logging',
-			'management',
-			'workbench',
-			'host-dev',
-			'rolldown',
-			'valibot-form',
-		]) {
+		for (const name of ['logging', 'management', 'workbench', 'host-dev', 'rolldown']) {
 			const tarball = join(root, `${name}.tgz`)
 			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
-			dependencies[name === 'valibot-form' ? name : `@pluxel/${name}`] = `file:${tarball}`
+			dependencies[`@pluxel/${name}`] = `file:${tarball}`
 		}
 		const reactTypes = JSON.parse(
 			await readFile(
@@ -224,8 +218,8 @@ class Consumer extends BasePlugin {
  init() {
   const optional: VaultStorageApi | undefined = this.ctx.vault
   const owned: VaultStorageApi = this.ctx.require(Vault)
-  // @ts-expect-error Root authorities cannot be obtained through author require.
-  this.ctx.root.require(Persistence)
+  // @ts-expect-error Root authorities cannot be required on an owner Context.
+  this.ctx.require(Persistence)
   void optional; void owned
  }
 }
@@ -290,7 +284,7 @@ const server = resolveContextCapability(host.ctx, HttpServer)
 const page = await server.fetch(new Request('http://host.test/admin', { headers: { accept: 'text/html' } }))
 assert.equal(page.status, 200)
 const html = await page.text()
-const entry = /<script type="module" src="([^"]+)"/.exec(html)?.[1]
+const entry = /<script[^>]* type="module"[^>]* src="([^"]+)"/.exec(html)?.[1]
 assert.ok(entry)
 const asset = await server.fetch(new Request('http://host.test' + entry))
 assert.equal(asset.status, 200)
@@ -317,7 +311,7 @@ const hook = registerHooks({ load(url, context, next) {
 const { createHost } = await import('@pluxel/host')
 const { createDevConsoleScope } = await import('@pluxel/host-dev/internal/dev/console')
 const host = await createHost({ plugins: [] })
-const scope = createDevConsoleScope({ ctx: host.ctx })
+const scope = createDevConsoleScope({ id: 'installed-services', ctx: host.ctx })
 try {
  assert.equal(scope.dev.ctx, host.ctx)
  assert.equal(typeof scope.dev.ctx.logger.info, 'function')

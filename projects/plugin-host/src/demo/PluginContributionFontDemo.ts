@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { RpcTarget } from 'capnweb'
 import {
 	FontConsumerWorkbench,
 	FontManagerWorkbench,

@@ -1,9 +1,5 @@
 import { createHash } from 'node:crypto'
-import {
-	PRODUCTION_FRAMEWORK_SPECIFIERS,
-	PRODUCTION_FRAMEWORK_FACADE,
-	frameworkFacadeFile,
-} from './production-framework'
+import { frameworkFacadeFile } from './production-framework'
 import { existsSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -23,7 +19,7 @@ import {
 } from '../workbench/deployment-assembly'
 import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
-import { readPublicElysiaSpecifiers, staticElysiaSingletonPlugin } from './elysia-singleton'
+import { staticElysiaSingletonPlugin } from './elysia-singleton'
 import { staticFrameworkSingletonPlugin } from './framework-singletons'
 import {
 	renderStaticApplicationEnvironmentExample,
@@ -37,8 +33,6 @@ export type StaticApplicationBuildOptions = {
 	variant?: 'headless' | 'workbench'
 	/** Runtime adapter emitted by the production bootstrap. @default 'node' */
 	launcher?: 'node' | 'fetch' | 'host'
-	/** @internal Legacy CLI declarations retain their Runtime adapter. */
-	composition?: 'host' | 'runtime'
 	/** Framework author entries shared with dynamically installed Plugins; no services are installed by this list. */
 	sourceFrameworks?: readonly string[]
 	target?: 'node'
@@ -216,7 +210,6 @@ export function createStaticApplicationConfig(
 				variant,
 				launcher,
 				state,
-				composition: options.composition ?? 'runtime',
 				sourceFrameworks: options.sourceFrameworks ?? [],
 			}),
 			staticApplicationAssemblyPlugin({ cwd, outDir, variant, state }),
@@ -514,35 +507,21 @@ function staticApplicationEntryPlugin(options: {
 	entry: string
 	variant: 'headless' | 'workbench'
 	launcher: 'node' | 'fetch' | 'host'
-	composition: 'host' | 'runtime'
 	sourceFrameworks: readonly string[]
 	state: StaticApplicationBuildState
 }): Plugin {
 	return {
 		name: 'pluxel-static-application-entry',
 		resolveId(id) {
-			if (id.startsWith(PRODUCTION_FRAMEWORK_FACADE)) return `\0${id}`
 			if (id === STATIC_APPLICATION_BOOTSTRAP_ID) {
 				return RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID
 			}
 			return null
 		},
 		async load(id) {
-			if (id.startsWith(`\0${PRODUCTION_FRAMEWORK_FACADE}`)) {
-				const specifier = id.slice(PRODUCTION_FRAMEWORK_FACADE.length + 1)
-				const runtime = await this.resolve('@pluxel/runtime/package.json', options.entry, {
-					skipSelf: true,
-				})
-				const resolved =
-					(runtime && (await this.resolve(specifier, runtime.id, { skipSelf: true }))) ??
-					(await this.resolve(specifier, options.entry, { skipSelf: true }))
-				if (!resolved || resolved.external)
-					this.error(`Cannot bundle production framework entry ${specifier}`)
-				return `export * from ${JSON.stringify(resolved.id)}\n${specifier === 'elysia' ? `export { default } from ${JSON.stringify(resolved.id)}` : ''}`
-			}
 			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
 			const frameworkReferences = new Map<string, string>()
-			if (options.state.hasSources && options.composition === 'host') {
+			if (options.state.hasSources) {
 				const selected = new Set([
 					'@pluxel/core',
 					'@pluxel/core/host',
@@ -571,32 +550,12 @@ function staticApplicationEntryPlugin(options: {
 					frameworkReferences.set(specifier, reference)
 				}
 			}
-			if (options.state.hasSources && options.composition !== 'host') {
-				const runtime = await this.resolve('@pluxel/runtime/package.json', options.entry, {
-					skipSelf: true,
-				})
-				const elysia =
-					runtime && (await this.resolve('elysia/package.json', runtime.id, { skipSelf: true }))
-				if (!elysia) this.error('Cannot resolve production Elysia manifest')
-				const specifiers = new Set([
-					...PRODUCTION_FRAMEWORK_SPECIFIERS,
-					...readPublicElysiaSpecifiers(JSON.parse(await readFile(elysia.id, 'utf8'))),
-				])
-				for (const specifier of specifiers) {
-					// AOT integrations run in build tools, never in installed server Plugins.
-					if (specifier.startsWith('elysia/plugin/aot/')) continue
-					const reference = this.emitFile({
-						type: 'chunk',
-						id: `${PRODUCTION_FRAMEWORK_FACADE}${specifier}`,
-						fileName: frameworkFacadeFile(specifier),
-						preserveSignature: 'strict',
-					})
-					frameworkReferences.set(specifier, reference)
-				}
-			}
-			return options.composition === 'host'
-				? buildHostBootstrap(options.entry, options.variant, options.launcher, frameworkReferences)
-				: buildBootstrap(options.entry, options.variant, options.launcher, frameworkReferences)
+			return buildHostBootstrap(
+				options.entry,
+				options.variant,
+				options.launcher,
+				frameworkReferences,
+			)
 		},
 	}
 }
@@ -629,49 +588,6 @@ export const fetch = handler`
 		: ''
 }
 ${launcher === 'node' ? 'const listener = await listenHostHttp(host, {fetch,publicDir:import.meta.dirname+"/public"}).catch(async (error) => { await host.close(); throw error })\nexport const address = listener.address\nexport const stop = listener.close' : 'export const stop = () => host.close()'}
-`
-}
-
-function buildBootstrap(
-	entry: string,
-	variant: 'headless' | 'workbench',
-	launcher: 'node' | 'fetch' | 'host',
-	frameworkReferences: ReadonlyMap<string, string>,
-): string {
-	const deployment = `{ root: import.meta.dirname, target: 'node', variant: ${JSON.stringify(variant)} }`
-	const workbench = variant === 'workbench'
-	const [runnerModule, runner] =
-		launcher === 'fetch'
-			? workbench
-				? [
-						'@pluxel/runtime/internal/fetch-workbench-application',
-						'runStaticFetchWorkbenchApplication',
-					]
-				: ['@pluxel/runtime/internal/fetch-application', 'runStaticFetchApplication']
-			: workbench
-				? [
-						'@pluxel/runtime/internal/node-workbench-application',
-						'runStaticNodeWorkbenchApplication',
-					]
-				: ['@pluxel/runtime/internal/node-application', 'runStaticNodeApplication']
-	return `
-import 'pluxel:static-elysia-wiring'
-import { readHostProduct as __readHostProduct } from '@pluxel/runtime/internal/static-host'
-import { env as __pluxelEnvironment } from '@pluxel/runtime/environment'
-import * as __pluxelHostModule from ${JSON.stringify(entry)}
-import { ${runner} as __runStaticApplication } from ${JSON.stringify(runnerModule)}
-const __pluxelProduct = __readHostProduct(__pluxelHostModule, ${JSON.stringify(`[static-application] ${entry}`)})
-const __pluxelStaticRuntime = await __runStaticApplication(__pluxelHostModule.default, {
-	env: __pluxelEnvironment,
-	deployment: ${deployment},
-	product: __pluxelProduct,
-	frameworkModules: { ${[...frameworkReferences].map(([specifier, reference]) => `${JSON.stringify(specifier)}: import.meta.ROLLUP_FILE_URL_${reference}`).join(', ')} },
-})
-export const ctx = __pluxelStaticRuntime.ctx
-export const fetch = __pluxelStaticRuntime.fetch
-export const start = __pluxelStaticRuntime.start
-export const stop = __pluxelStaticRuntime.stop
-${launcher === 'node' ? 'export const address = __pluxelStaticRuntime.address' : ''}
 `
 }
 

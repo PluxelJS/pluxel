@@ -42,11 +42,13 @@ export async function servicesPreset(
 ): Promise<HostService[]> {
 	const withWorkbench = options.workbench ?? true
 	const deployment = startup.deployment
-	const [{ logging }, { managementAccess }, { management }] = await Promise.all([
-		import('@pluxel/logging'),
-		import('@pluxel/management/access'),
-		import('@pluxel/management/service'),
-	])
+	const [{ logging }, { managementAccess }, { management }, { managementCommands }] =
+		await Promise.all([
+			import('@pluxel/logging'),
+			import('@pluxel/management/access'),
+			import('@pluxel/management/service'),
+			import('@pluxel/management/commands'),
+		])
 	const workbench = withWorkbench
 		? await Promise.all([import('@pluxel/workbench/service'), import('@pluxel/workbench/http')])
 		: undefined
@@ -78,6 +80,7 @@ export async function servicesPreset(
 		}),
 		vault(),
 		managementAccess(),
+		managementCommands(),
 		management({ application: { product: options.product ?? null }, workbench: withWorkbench }),
 		...(workbench
 			? [

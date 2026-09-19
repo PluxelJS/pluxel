@@ -3,13 +3,9 @@ import {
 	pluginNodeAddressOf,
 	type PluginConstructor,
 } from '@pluxel/core'
-import { v } from '@pluxel/runtime'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import * as v from 'valibot'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const redisMock = vi.hoisted(() => {
@@ -91,7 +87,7 @@ class RedisConsumerB extends BasePlugin {
 }
 
 async function startPlugins(
-	host: RuntimeTestHost,
+	host: ServiceTestHost,
 	plugins: readonly PluginConstructor[],
 ): Promise<void> {
 	await host.start(plugins)
@@ -125,7 +121,7 @@ beforeEach(() => {
 describe('@pluxel/redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await startPlugins(host, [RedisPlugin, RedisConsumer])
 
@@ -154,7 +150,7 @@ describe('@pluxel/redis', () => {
 
 	it('publishes live connection state and a bounded transient PING form', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await host.start(RedisPlugin)
 
@@ -252,7 +248,7 @@ describe('@pluxel/redis', () => {
 			.mockImplementationOnce(() => west.client)
 
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.commit((change) => {
 				change.start(RedisPlugin, {
@@ -291,7 +287,7 @@ describe('@pluxel/redis', () => {
 		redisMock.client.connect.mockRejectedValueOnce(new Error('offline'))
 
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			const failure = await host.commitExpectFail((change) => {
 				change.start(RedisPlugin)

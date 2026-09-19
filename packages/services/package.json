@@ -113,6 +113,10 @@
 			"@pluxel/source": "./src/internal/security.ts",
 			"default": "./dist/internal/security.mjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
 		"./internal/vault": {
 			"@pluxel/source": "./src/vault/service.ts",
 			"default": "./dist/internal/vault.mjs"
@@ -140,6 +144,10 @@
 		"./persistence": {
 			"@pluxel/source": "./src/persistence.ts",
 			"default": "./dist/persistence.mjs"
+		},
+		"./test": {
+			"@pluxel/source": "./src/test.ts",
+			"default": "./dist/test.mjs"
 		},
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
@@ -183,6 +191,7 @@
 			"./internal/persistence": "./dist/internal/persistence.mjs",
 			"./internal/plugin-address": "./dist/internal/plugin-address.mjs",
 			"./internal/security": "./dist/internal/security.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
 			"./internal/vault": "./dist/internal/vault.mjs",
 			"./internal/vault-types": "./dist/internal/vault-types.mjs",
 			"./internal/vite-node-carrier": "./dist/internal/vite-node-carrier.mjs",
@@ -190,6 +199,7 @@
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
+			"./test": "./dist/test.mjs",
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
@@ -201,13 +211,15 @@
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
 		"test": "pnpm exec vitest run",
-		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs"
+		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
+		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts"
 	},
 	"dependencies": {
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
 		"age-encryption": "catalog:prod",
+		"capnweb": "catalog:prod",
 		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
 		"drizzle-orm": "catalog:backend",
@@ -225,7 +237,11 @@
 		"@pluxel/workbench": "workspace:*",
 		"@types/pg": "catalog:types",
 		"elysia": "catalog:prod",
+		"fs-fixture": "catalog:dev",
 		"pg": "catalog:backend",
+		"tsx": "catalog:dev",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:*",
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {

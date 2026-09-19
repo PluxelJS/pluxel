@@ -576,7 +576,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 	it('hard-fails when a producer-resolved platform shared version is not exact', async () => {
 		const files = producerFixtureFiles()
 		files['node_modules/@pluxel/workbench/package.json'] = JSON.stringify({
-			name: '@pluxel/runtime',
+			name: '@pluxel/core',
 			version: '',
 			type: 'module',
 			exports: {

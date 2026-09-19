@@ -83,14 +83,9 @@ function fixtureFiles(): Record<string, string> {
 		...packageFiles('react-dom', '19.2.8', ['.', './client']),
 		...packageFiles('@mantine/core', '9.5.2', ['.']),
 		...packageFiles('@mantine/hooks', '9.5.2', ['.']),
-		...packageFiles('@pluxel/workbench', '0.1.0', [
-			'.',
-			'./capnweb',
-			'./internal/react',
-			'./client',
-			'./react',
-		]),
-		'node_modules/@pluxel/runtime/capnweb.d.ts': `
+		...packageFiles('@pluxel/workbench', '0.1.0', ['.', './internal/react', './client', './react']),
+		...packageFiles('capnweb', '0.4.0', ['.']),
+		'node_modules/capnweb/index.d.ts': `
 export interface RpcTarget extends Disposable {}
 `,
 		'node_modules/@pluxel/workbench/index.js': `
@@ -586,7 +581,7 @@ export default function Tool() {
 		)
 		await writeFile(
 			resolve(fixture.path, 'src/protocol.ts'),
-			`import type { RpcTarget } from '@pluxel/runtime/capnweb'
+			`import type { RpcTarget } from 'capnweb'
 export interface SettingsApi extends RpcTarget {
 	snapshot(): { enabled: boolean }
 }
@@ -813,7 +808,7 @@ export default settingsRenderer.render(SettingsPage)
 `
 		await using fixture = await createFixture(files)
 		const code = `
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 import { serverLabel } from './server-label.ts'
 interface SettingsApi extends RpcTarget { snapshot(): { enabled: boolean } }
@@ -1421,7 +1416,7 @@ class SemanticPlugin {}
 	it('binds plans to canonical owners discovered by the Plugin semantic pass', async () => {
 		const files = fixtureFiles()
 		files['src/plugin.ts'] = `
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 export const SemanticWorkbench = workbench.define({
 	settings: workbench.view({
@@ -1440,7 +1435,7 @@ export class SemanticPlugin extends BasePlugin {
 		const collector = createPluginSemanticsPlugin({ root: fixture.path })
 		const bundle = await rolldown({
 			input: resolve(fixture.path, 'src/plugin.ts'),
-			external: ['@pluxel/runtime', '@pluxel/runtime/toolchain', '@pluxel/workbench'],
+			external: ['@pluxel/core', '@pluxel/core/toolchain', '@pluxel/workbench'],
 			plugins: [collector.plugin],
 		})
 		await bundle.generate({ format: 'esm' })

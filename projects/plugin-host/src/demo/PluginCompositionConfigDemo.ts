@@ -3,7 +3,8 @@
 // - 你想把内部模块的配置归入 owner Plugin，而不是创建独立配置命名空间
 
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 const PluginConfig = v.object({
 	enabled: v.pipe(

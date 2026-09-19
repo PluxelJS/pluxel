@@ -48,10 +48,10 @@ Attachment 同时持有 provider 和 consumer owner leases。任一 owner replac
 
 证据集中在：
 
-- `packages/runtime/tests/workbench/workbench-registry.test.ts`
-- `packages/runtime/tests/workbench/workbench-client.test.ts`
-- `packages/runtime/tests/workbench/workbench-federation.test.tsx`
-- `packages/runtime/tests/workbench/workbench-react.test.tsx`
+- `packages/workbench/tests/workbench-registry.test.ts`
+- `packages/workbench-app/tests/workbench-client.test.ts`
+- `packages/workbench-app/tests/workbench-federation.test.tsx`
+- `packages/workbench-app/tests/workbench-react.test.tsx`
 - `packages/workbench-app/tests/workbench-client.test.ts`
 
 ## 设计结论

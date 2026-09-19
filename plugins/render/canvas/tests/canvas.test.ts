@@ -1,12 +1,7 @@
 import { type PluginConstructor } from '@pluxel/core'
-import { v } from '@pluxel/runtime'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RawPluginConfig,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import * as v from 'valibot'
+import { BasePlugin, Plugin, type RawPluginConfig } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
@@ -34,7 +29,7 @@ class CanvasFontAdminConsumer extends BasePlugin {
 }
 
 async function startCanvasFixture(
-	host: RuntimeTestHost,
+	host: ServiceTestHost,
 	plugins: readonly PluginConstructor[],
 	initialConfig?: RawPluginConfig,
 ): Promise<void> {
@@ -60,7 +55,7 @@ describe('CanvasPlugin', () => {
 
 	it('creates native raster and SVG canvases in a headless host', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const canvas = host.require(CanvasTestConsumer).canvas.createCanvasSync(64, 32)
@@ -80,7 +75,7 @@ describe('CanvasPlugin', () => {
 
 	it('creates a bounded native worker adapter from a detached host snapshot', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const capability = host.require(CanvasTestConsumer).canvas
@@ -146,7 +141,7 @@ describe('CanvasPlugin', () => {
 		'applies provider preference changes to subsequently created raster and SVG contexts',
 		async () => {
 			{
-				await using host = await createRuntimeTestHost({ workbench: false })
+				await using host = await createServiceTestHost({ workbench: false })
 
 				await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasFontAdminConsumer])
 				const consumer = host.require(CanvasFontAdminConsumer)
@@ -176,7 +171,7 @@ describe('CanvasPlugin', () => {
 
 	it('decodes caller-provided bytes without adding an outbound HTTP policy', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const capability = host.require(CanvasTestConsumer).canvas
@@ -204,7 +199,7 @@ describe('CanvasPlugin', () => {
 
 	it('cooperatively snapshots borrowed decode bytes and observes cancellation', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const controller = new AbortController()
@@ -218,7 +213,7 @@ describe('CanvasPlugin', () => {
 
 	it('uses bounded Pretext for multiline and rich-inline layout', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const capability = host.require(CanvasTestConsumer).canvas
@@ -241,7 +236,7 @@ describe('CanvasPlugin', () => {
 
 	it('rejects text before Pretext work when the host character budget is exceeded', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
 				maxTextCharacters: 4,
@@ -255,7 +250,7 @@ describe('CanvasPlugin', () => {
 
 	it('enforces allocation and decode boundaries before returning resources', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: false })
+			await using host = await createServiceTestHost({ workbench: false })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
 				maxWidth: 100,
@@ -287,7 +282,7 @@ describe('CanvasPlugin', () => {
 
 	it('places the provider-owned Fonts selection Attachment', async () => {
 		{
-			await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+			await using host = await createServiceTestHost({ workbench: true })
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin])
 

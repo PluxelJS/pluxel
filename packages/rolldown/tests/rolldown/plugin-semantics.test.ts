@@ -41,7 +41,7 @@ function preloweredDefinitionSource(
 	definition: object,
 	options: { abiVersion?: number; toolchain?: string } = {},
 ): string {
-	return `import{__setPluginDefinition as s}from${JSON.stringify(options.toolchain ?? '@pluxel/runtime/toolchain')};class BuiltPlugin{}s(BuiltPlugin,${JSON.stringify(
+	return `import{__setPluginDefinition as s}from${JSON.stringify(options.toolchain ?? '@pluxel/core/toolchain')};class BuiltPlugin{}s(BuiltPlugin,${JSON.stringify(
 		{
 			abiVersion: options.abiVersion ?? 2,
 			kind: 'plugin',
@@ -57,7 +57,7 @@ describe('plugin semantic lowering', () => {
 		const result = await transform(`
 			import type { AuditPlugin } from '@acme/audit'
 			import { SearchPlugin } from '@acme/search'
-			import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/runtime'
+			import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/core'
 			const Audit = definePluginRef<AuditPlugin>()
 			class LeafPart extends PluginPart<BranchPart> {
 				constructor(readonly search: SearchPlugin) { super() }
@@ -89,7 +89,7 @@ describe('plugin semantic lowering', () => {
 	it('keeps mixed package-root imports distinct while required package metadata wins', async () => {
 		const { collector, result } = await transformWithCollector(`
 			import { MainPlugin as Main, SecondaryPlugin as Secondary, type AnotherPlugin as Another } from '@acme/multiple'
-			import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 			const OptionalAnother = definePluginRef<Another>()
 			@Plugin({ displayName: 'Orders', startTimeoutMs: 5000 })
 			export class OrdersPlugin extends BasePlugin {
@@ -143,7 +143,7 @@ describe('plugin semantic lowering', () => {
 		await transformWithExistingCollector(
 			collector,
 			`
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class FirstPlugin extends BasePlugin {}
 			`,
 			`${moduleId}?generation=1`,
@@ -158,7 +158,7 @@ describe('plugin semantic lowering', () => {
 		await transformWithExistingCollector(
 			collector,
 			`
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class SecondPlugin extends BasePlugin {}
 			`,
 			`${moduleId}?generation=2`,
@@ -175,7 +175,7 @@ describe('plugin semantic lowering', () => {
 	it('reports built modules only from exact pre-lowered definition facts', async () => {
 		const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
 		const source = `
-			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, Plugin } from '@pluxel/core'
 			@Plugin() export class TrackedPlugin extends BasePlugin {}
 		`
 		await transformWithExistingCollector(collector, source)
@@ -190,6 +190,10 @@ describe('plugin semantic lowering', () => {
 		expect(collector.classifyDefinitionArtifact(definition, [import.meta.filename])).toBe(
 			'built-module',
 		)
+		expect(collector.builtDefinitionModules([]).size).toBe(0)
+		expect([...collector.builtDefinitionModules([import.meta.filename]).keys()]).toEqual([
+			import.meta.filename,
+		])
 		expect(collector.definitions()).toEqual([])
 		await transformWithExistingCollector(
 			collector,
@@ -231,6 +235,25 @@ describe('plugin semantic lowering', () => {
 		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
 	})
 
+	it.each([
+		{ tail: 'constructorRequires: [resolveDependency()]', expected: 'built-module' },
+		{ tail: 'optional: unknownOptional', expected: 'built-module' },
+		{ tail: 'kind: `plug${suffix}`', expected: 'unreported' },
+		{ tail: '...unknownMetadata', expected: 'unreported' },
+		{ tail: '[unknownKey]: unknownValue', expected: 'unreported' },
+	])('reads minified ABI evidence with $tail as $expected', async ({ tail, expected }) => {
+		const definition = {
+			entry: { kind: 'package-root', packageName: '@pluxel/vault-admin' },
+			exportName: 'VaultAdminPlugin',
+		} as const
+		const { collector } = await transformWithCollector(
+			'import{__setPluginDefinition as a}from"@pluxel/core/toolchain";let s=class{};s=decorate(s),a(s,{abiVersion:2,kind:`plugin`,definition:{entry:{kind:`package-root`,packageName:`@pluxel/vault-admin`},exportName:`VaultAdminPlugin`},' +
+				tail +
+				'});export{s as VaultAdminPlugin};',
+		)
+		expect(collector.classifyDefinitionArtifact(definition, [import.meta.filename])).toBe(expected)
+	})
+
 	it('uses the active closure to disambiguate the same source and built definition', async () => {
 		const collector = createPluginSemanticsPlugin({ root: import.meta.dirname })
 		const sourceModule = import.meta.filename
@@ -238,7 +261,7 @@ describe('plugin semantic lowering', () => {
 		await transformWithExistingCollector(
 			collector,
 			`
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class SharedPlugin extends BasePlugin {}
 			`,
 			sourceModule,
@@ -265,7 +288,7 @@ describe('plugin semantic lowering', () => {
 		const sourceModule = import.meta.filename
 		const builtModule = new URL('./plugins.test.ts', import.meta.url).pathname
 		const source = `
-			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, Plugin } from '@pluxel/core'
 			@Plugin() export class TransactionPlugin extends BasePlugin {}
 		`
 		await transformWithExistingCollector(collector, source, sourceModule)
@@ -309,7 +332,7 @@ describe('plugin semantic lowering', () => {
 		const sourceModule = import.meta.filename
 		const builtModule = new URL('./plugins.test.ts', import.meta.url).pathname
 		const source = `
-			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, Plugin } from '@pluxel/core'
 			@Plugin() export class ConcurrentPlugin extends BasePlugin {}
 		`
 		await transformWithExistingCollector(collector, source, sourceModule)
@@ -367,7 +390,7 @@ describe('plugin semantic lowering', () => {
 	describe('Workbench artifact generations', () => {
 		function contentPlugin(className: string): string {
 			return `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				import { workbench } from '@pluxel/workbench'
 				export const pages = workbench.define({
 					guide: workbench.content({
@@ -391,6 +414,28 @@ describe('plugin semantic lowering', () => {
 			expect(content).toHaveLength(1)
 			expect(content[0]!.contentSet.definition).toEqual(definitions[0]!.definition)
 		}
+
+		it('reads accepted Workbench facts after rollback even inside a settled async candidate scope', async () => {
+			await using fixture = await createFixture({
+				'guide.md': '# Guide',
+				'plugin.ts': contentPlugin('OriginalPlugin'),
+			})
+			const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+			const moduleId = fixture.getPath('plugin.ts')
+			await transformWithExistingCollector(collector, contentPlugin('OriginalPlugin'), moduleId)
+			await expectOwner(collector, 'OriginalPlugin')
+			const generation = collector.beginArtifactGeneration()
+			await generation.run(async () => {
+				await transformWithExistingCollector(collector, contentPlugin('RejectedPlugin'), moduleId)
+				await expectOwner(collector, 'RejectedPlugin')
+				generation.rollback()
+				await Promise.resolve()
+				collector.invalidateWorkbench()
+				await expectOwner(collector, 'OriginalPlugin')
+			})
+			await expectOwner(collector, 'OriginalPlugin')
+			await expect(collector.workbenchCompilations()).resolves.toEqual([])
+		})
 
 		it.each(['commit', 'rollback'] as const)(
 			'%s keeps Workbench publication and source facts in the same generation',
@@ -487,7 +532,7 @@ ${declaration}`
 				'guide.md': '# Guide',
 				'plugin.ts': contentPlugin('OriginalPlugin'),
 				'slow.ts':
-					"import { BasePlugin, Plugin } from '@pluxel/runtime'; @Plugin() export class Slow extends BasePlugin {}",
+					"import { BasePlugin, Plugin } from '@pluxel/core'; @Plugin() export class Slow extends BasePlugin {}",
 			})
 			const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
 			const moduleId = fixture.getPath('plugin.ts')
@@ -602,7 +647,7 @@ ${declaration}`
 				name: 'runtime argument',
 				code: `
 					import type { AuditPlugin } from '@acme/audit'
-					import { definePluginRef } from '@pluxel/runtime'
+					import { definePluginRef } from '@pluxel/core'
 					const Audit = definePluginRef<AuditPlugin>({})
 				`,
 				message: 'with no runtime arguments',
@@ -611,7 +656,7 @@ ${declaration}`
 				name: 'value-imported optional type',
 				code: `
 					import { AuditPlugin } from '@acme/audit'
-					import { definePluginRef } from '@pluxel/runtime'
+					import { definePluginRef } from '@pluxel/core'
 					const Audit = definePluginRef<AuditPlugin>()
 				`,
 				message: 'must use a direct type-only import',
@@ -620,7 +665,7 @@ ${declaration}`
 				name: 'package subpath',
 				code: `
 					import type { AuditPlugin } from '@acme/audit/plugin'
-					import { definePluginRef } from '@pluxel/runtime'
+					import { definePluginRef } from '@pluxel/core'
 					const Audit = definePluginRef<AuditPlugin>()
 				`,
 				message: 'must come from package root',
@@ -629,7 +674,7 @@ ${declaration}`
 				name: 'namespace-qualified type',
 				code: `
 					import type * as AuditPlugins from '@acme/audit'
-					import { definePluginRef } from '@pluxel/runtime'
+					import { definePluginRef } from '@pluxel/core'
 					const Audit = definePluginRef<AuditPlugins.AuditPlugin>()
 				`,
 				message: 'one simple Plugin type from a direct type-only named import',
@@ -638,7 +683,7 @@ ${declaration}`
 				name: 'exported ref',
 				code: `
 					import type { AuditPlugin } from '@acme/audit'
-					import { definePluginRef } from '@pluxel/runtime'
+					import { definePluginRef } from '@pluxel/core'
 					export const Audit = definePluginRef<AuditPlugin>()
 				`,
 				message: 'must not be exported',
@@ -647,7 +692,7 @@ ${declaration}`
 				name: 'inline ref',
 				code: `
 					import type { AuditPlugin } from '@acme/audit'
-					import { definePluginRef } from '@pluxel/runtime'
+					import { definePluginRef } from '@pluxel/core'
 					export function make() { return definePluginRef<AuditPlugin>() }
 				`,
 				message: 'module-level const',
@@ -656,7 +701,7 @@ ${declaration}`
 				name: 'conditional use',
 				code: `
 					import type { AuditPlugin } from '@acme/audit'
-					import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+					import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 					const Audit = definePluginRef<AuditPlugin>()
 					@Plugin() export class ConsumerPlugin extends BasePlugin {
 						init() { if (true) this.plugins.use(Audit, audit => void audit) }
@@ -668,7 +713,7 @@ ${declaration}`
 				name: 'async setup callback',
 				code: `
 					import type { AuditPlugin } from '@acme/audit'
-					import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+					import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 					const Audit = definePluginRef<AuditPlugin>()
 					@Plugin() export class ConsumerPlugin extends BasePlugin {
 						init() { this.plugins.use(Audit, async audit => void audit) }
@@ -683,7 +728,7 @@ ${declaration}`
 
 	it('emits abstract provider facts and a concrete provides edge', async () => {
 		const result = await transform(`
-			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, Plugin } from '@pluxel/core'
 			export abstract class Database extends BasePlugin {}
 			@Plugin(Database)
 			export class MemoryDatabasePlugin extends Database {}
@@ -700,19 +745,19 @@ ${declaration}`
 	it('uses one host-root-relative address across provider and cross-directory edges', async () => {
 		await using fixture = await createFixture({
 			'tests/plugins/Provider.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class Provider extends BasePlugin {}
 			`,
 			'tests/required/RequiredConsumer.ts': `
 				import { Provider } from '../plugins/Provider'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class RequiredConsumer extends BasePlugin {
 					constructor(readonly provider: Provider) { super() }
 				}
 			`,
 			'tests/optional/OptionalConsumer.ts': `
 				import type { Provider } from '../plugins/Provider'
-				import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 				const OptionalProvider = definePluginRef<Provider>()
 				@Plugin() export class OptionalConsumer extends BasePlugin {
 					init() { this.plugins.use(OptionalProvider, provider => void provider) }
@@ -726,7 +771,7 @@ ${declaration}`
 				required: fixture.getPath('tests/required/RequiredConsumer.ts'),
 				optional: fixture.getPath('tests/optional/OptionalConsumer.ts'),
 			},
-			external: ['@pluxel/runtime'],
+			external: ['@pluxel/core'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
@@ -757,25 +802,25 @@ ${declaration}`
 				},
 			}),
 			'src/backend.ts': `
-				import { BasePlugin } from '@pluxel/runtime'
+				import { BasePlugin } from '@pluxel/core'
 				export abstract class CacheBackend extends BasePlugin {}
 			`,
 			'src/index.ts': `
 				import { CacheBackend } from './backend'
-				import { Plugin } from '@pluxel/runtime'
+				import { Plugin } from '@pluxel/core'
 				export { CacheBackend } from './backend'
 				@Plugin(CacheBackend) export class MemoryCacheBackendPlugin extends CacheBackend {}
 			`,
 			'tests/TestCacheBackend.ts': `
 				import { CacheBackend } from '../src/index'
-				import { Plugin } from '@pluxel/runtime'
+				import { Plugin } from '@pluxel/core'
 				@Plugin(CacheBackend) export class TestCacheBackend extends CacheBackend {}
 			`,
 		})
 		const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
 		const build = await rolldown({
 			input: fixture.getPath('tests/TestCacheBackend.ts'),
-			external: ['@pluxel/runtime'],
+			external: ['@pluxel/core'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
@@ -809,7 +854,7 @@ ${declaration}`
 				exports: { '.': { types: './src/index.ts', default: './src/index.ts' } },
 			}),
 			'plugins/orders/src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class OrdersPlugin extends BasePlugin {}
 			`,
 		})
@@ -820,7 +865,7 @@ ${declaration}`
 		await expect(
 			rolldown({
 				input: fixture.getPath('plugins/orders/src/index.ts'),
-				external: ['@pluxel/runtime'],
+				external: ['@pluxel/core'],
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
 		).rejects.toThrow('outside configured source spaces')
@@ -829,7 +874,7 @@ ${declaration}`
 	it('selects the most specific configured source space', async () => {
 		await using fixture = await createFixture({
 			'host/plugins/managed/orders.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class OrdersPlugin extends BasePlugin {}
 			`,
 		})
@@ -839,7 +884,7 @@ ${declaration}`
 		})
 		const build = await rolldown({
 			input: fixture.getPath('host/plugins/managed/orders.ts'),
-			external: ['@pluxel/runtime'],
+			external: ['@pluxel/core'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
@@ -854,7 +899,7 @@ ${declaration}`
 		await using fixture = await createFixture({
 			'host/.keep': '',
 			'physical/orders.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class OrdersPlugin extends BasePlugin {}
 			`,
 		})
@@ -869,7 +914,7 @@ ${declaration}`
 		})
 		const build = await rolldown({
 			input: fixture.getPath('host/managed/orders.ts'),
-			external: ['@pluxel/runtime'],
+			external: ['@pluxel/core'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
@@ -884,7 +929,7 @@ ${declaration}`
 		await using fixture = await createFixture({
 			'host/plugins/.keep': '',
 			'outside/orders.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class OrdersPlugin extends BasePlugin {}
 			`,
 		})
@@ -898,13 +943,13 @@ ${declaration}`
 		await expect(
 			rolldown({
 				input: fixture.getPath('host/plugins/orders.ts'),
-				external: ['@pluxel/runtime'],
+				external: ['@pluxel/core'],
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
 		).rejects.toThrow('outside configured source spaces')
 	})
 
-	it.each(['@pluxel/core/test', '@pluxel/runtime/test', '@pluxel/test'])(
+	it.each(['@pluxel/core/test', '@pluxel/test'])(
 		'recognizes the formal test authoring facade %s',
 		async (source) => {
 			const result = await transform(`
@@ -918,7 +963,7 @@ ${declaration}`
 
 	it('accepts literal concrete forkability and uses only the versioned toolchain entry', async () => {
 		const result = await transform(`
-			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			import { BasePlugin, Plugin } from '@pluxel/core'
 			@Plugin({ forkable: true })
 			export class CachePlugin extends BasePlugin {}
 		`)
@@ -930,17 +975,11 @@ ${declaration}`
 		)
 	})
 
-	it('rejects a semantic helper root alias', () => {
-		expect(() =>
-			createPluginSemanticsPlugin({ helperImportSource: '@pluxel/runtime' as never }),
-		).toThrow('/toolchain subpath')
-	})
-
 	it.each([
 		{
 			name: 'abstract PluginPart',
 			code: `
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				abstract class BadPart extends PluginPart {}
 			`,
 			message: 'must be concrete',
@@ -948,7 +987,7 @@ ${declaration}`
 		{
 			name: 'marked PluginPart',
 			code: `
-				import { Plugin, PluginPart } from '@pluxel/runtime'
+				import { Plugin, PluginPart } from '@pluxel/core'
 				@Plugin() class BadPart extends PluginPart {}
 			`,
 			message: 'must not use @Plugin',
@@ -956,7 +995,7 @@ ${declaration}`
 		{
 			name: 'local Part containment cycle',
 			code: `
-				import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+				import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
 				class FirstPart extends PluginPart { second = this.parts.use(SecondPart) }
 				class SecondPart extends PluginPart { first = this.parts.use(FirstPart) }
 				@Plugin() class Owner extends BasePlugin { first = this.parts.use(FirstPart) }
@@ -966,7 +1005,7 @@ ${declaration}`
 		{
 			name: 'dynamic Part occurrence',
 			code: `
-				import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+				import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
 				class ChildPart extends PluginPart {}
 				@Plugin() class Owner extends BasePlugin {
 					make() { return this.parts.use(ChildPart) }
@@ -978,7 +1017,7 @@ ${declaration}`
 			name: 'type-only Part occurrence',
 			code: `
 				import type { RemotePart } from './part'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() class Owner extends BasePlugin {
 					readonly child = this.parts.use(RemotePart)
 				}
@@ -989,7 +1028,7 @@ ${declaration}`
 			name: 'type-only required dependency',
 			code: `
 				import type { DatabasePlugin } from '@acme/database'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
 					constructor(readonly database: DatabasePlugin) { super() }
 				}
@@ -1000,7 +1039,7 @@ ${declaration}`
 			name: 'type-only PluginPart required dependency',
 			code: `
 				import type { DatabasePlugin } from '@acme/database'
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				class ConsumerPart extends PluginPart {
 					constructor(readonly database: DatabasePlugin) { super() }
 				}
@@ -1011,7 +1050,7 @@ ${declaration}`
 			name: 'optional PluginPart constructor parameter',
 			code: `
 				import { DatabasePlugin } from '@acme/database'
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				class ConsumerPart extends PluginPart {
 					constructor(readonly database: DatabasePlugin | undefined) { super() }
 				}
@@ -1022,7 +1061,7 @@ ${declaration}`
 			name: 'duplicate required dependency definition',
 			code: `
 				import { DatabasePlugin } from '@acme/database'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
 					constructor(readonly primary: DatabasePlugin, readonly replica: DatabasePlugin) { super() }
 				}
@@ -1033,7 +1072,7 @@ ${declaration}`
 			name: 'duplicate PluginPart required dependency definition',
 			code: `
 				import { DatabasePlugin } from '@acme/database'
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				class ConsumerPart extends PluginPart {
 					constructor(readonly primary: DatabasePlugin, readonly replica: DatabasePlugin) { super() }
 				}
@@ -1044,7 +1083,7 @@ ${declaration}`
 			name: 'package subpath dependency',
 			code: `
 				import { DatabasePlugin } from '@acme/database/backend'
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
 					constructor(readonly database: DatabasePlugin) { super() }
 				}
@@ -1055,7 +1094,7 @@ ${declaration}`
 			name: 'PluginPart package subpath dependency',
 			code: `
 				import { DatabasePlugin } from '@acme/database/backend'
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				class ConsumerPart extends PluginPart {
 					constructor(readonly database: DatabasePlugin) { super() }
 				}
@@ -1065,7 +1104,7 @@ ${declaration}`
 		{
 			name: 'false forkability',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin({ forkable: false }) export class ConsumerPlugin extends BasePlugin {}
 			`,
 			message: 'forkable must be the literal true',
@@ -1073,7 +1112,7 @@ ${declaration}`
 		{
 			name: 'dynamic forkability',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				const enabled = true
 				@Plugin({ forkable: enabled }) export class ConsumerPlugin extends BasePlugin {}
 			`,
@@ -1082,7 +1121,7 @@ ${declaration}`
 		{
 			name: 'native private Plugin state',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin { #state = 1 }
 			`,
 			message: 'plugin_caller_view_private_brand_unsupported',
@@ -1090,7 +1129,7 @@ ${declaration}`
 		{
 			name: 'arrow-function Plugin field',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
 					status = () => this.ctx.caller
 				}
@@ -1100,7 +1139,7 @@ ${declaration}`
 		{
 			name: 'function-expression Plugin field',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
 					status = function () { return this.ctx.caller }
 				}
@@ -1110,7 +1149,7 @@ ${declaration}`
 		{
 			name: 'bound Plugin method field',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
 					status() { return this.ctx.caller }
 					boundStatus = this.status.bind(this)
@@ -1121,7 +1160,7 @@ ${declaration}`
 		{
 			name: 'type-only declared Plugin field',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class ConsumerPlugin extends BasePlugin {
 					declare status: string
 				}
@@ -1131,7 +1170,7 @@ ${declaration}`
 		{
 			name: 'callable field in local Plugin base',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				abstract class ConsumerBase extends BasePlugin {
 					status = () => this.ctx.caller
 				}
@@ -1142,7 +1181,7 @@ ${declaration}`
 		{
 			name: 'native private state in local Plugin base',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				abstract class ConsumerBase extends BasePlugin { #read() {} }
 				@Plugin() export class ConsumerPlugin extends ConsumerBase {}
 			`,
@@ -1151,7 +1190,7 @@ ${declaration}`
 		{
 			name: 'legacy marker option',
 			code: `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin({ name: 'Legacy' }) export class ConsumerPlugin extends BasePlugin {}
 			`,
 			message: 'unsupported @Plugin option',
@@ -1171,11 +1210,11 @@ ${declaration}`
 				},
 			}),
 			'src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class OrdersPlugin extends BasePlugin {}
 			`,
 			'src/worker.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class WorkerPlugin extends BasePlugin {}
 			`,
 		})
@@ -1187,7 +1226,7 @@ ${declaration}`
 		await expect(
 			rolldown({
 				input: fixture.getPath('src/index.ts'),
-				external: ['@pluxel/runtime'],
+				external: ['@pluxel/core'],
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
 		).rejects.toThrow('is plugin-bearing')
@@ -1203,7 +1242,7 @@ ${declaration}`
 				},
 			}),
 			'src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				import { UsedPart } from './parts'
 				@Plugin() export class OrdersPlugin extends BasePlugin {
 					readonly used = this.parts.use(UsedPart)
@@ -1215,14 +1254,14 @@ ${declaration}`
 			`,
 			'src/used.ts': `
 				import { UsedProvider } from '@acme/used'
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				export class UsedPart extends PluginPart {
 					constructor(readonly provider: UsedProvider) { super() }
 				}
 			`,
 			'src/unused.ts': `
 				import { UnusedProvider } from '@acme/unused'
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				export class UnusedPart extends PluginPart {
 					constructor(readonly provider: UnusedProvider) { super() }
 				}
@@ -1234,7 +1273,7 @@ ${declaration}`
 		})
 		const build = await rolldown({
 			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/runtime', '@acme/used', '@acme/unused'],
+			external: ['@pluxel/core', '@acme/used', '@acme/unused'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
@@ -1251,7 +1290,7 @@ ${declaration}`
 		{
 			name: 'inherited Part',
 			parts: `
-				import { PluginPart } from '@pluxel/runtime'
+				import { PluginPart } from '@pluxel/core'
 				class BasePart extends PluginPart {}
 				export class UsedPart extends BasePart {}
 			`,
@@ -1262,11 +1301,11 @@ ${declaration}`
 			parts: "export * from './first'; export * from './second'",
 			extra: {
 				'src/first.ts': `
-					import { PluginPart } from '@pluxel/runtime'
+					import { PluginPart } from '@pluxel/core'
 					export class UsedPart extends PluginPart {}
 				`,
 				'src/second.ts': `
-					import { PluginPart } from '@pluxel/runtime'
+					import { PluginPart } from '@pluxel/core'
 					export class UsedPart extends PluginPart {}
 				`,
 			},
@@ -1282,7 +1321,7 @@ ${declaration}`
 				},
 			}),
 			'src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				import { UsedPart } from './parts'
 				@Plugin() export class OrdersPlugin extends BasePlugin {
 					private readonly used = this.parts.use(UsedPart)
@@ -1299,7 +1338,7 @@ ${declaration}`
 		await expect(
 			rolldown({
 				input: fixture.getPath('src/index.ts'),
-				external: ['@pluxel/runtime'],
+				external: ['@pluxel/core'],
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
 		).rejects.toThrow(message)
@@ -1315,7 +1354,7 @@ ${declaration}`
 				},
 			}),
 			'src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class MainPlugin extends BasePlugin {}
 				@Plugin() export class AnotherPlugin extends BasePlugin {}
 			`,
@@ -1326,7 +1365,7 @@ ${declaration}`
 		})
 		const build = await rolldown({
 			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/runtime'],
+			external: ['@pluxel/core'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
@@ -1355,7 +1394,7 @@ ${declaration}`
 				},
 			}),
 			'src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() class OrdersPlugin extends BasePlugin {}
 				export { OrdersPlugin, OrdersPlugin as AliasPlugin }
 			`,
@@ -1368,7 +1407,7 @@ ${declaration}`
 		await expect(
 			rolldown({
 				input: fixture.getPath('src/index.ts'),
-				external: ['@pluxel/runtime'],
+				external: ['@pluxel/core'],
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
 		).rejects.toThrow('multiple root names')

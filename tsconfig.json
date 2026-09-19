@@ -7,7 +7,6 @@
 	// ➤ 最核心：references 只能放在最顶层
 	"references": [
 		{ "path": "packages/core" },
-		{ "path": "packages/runtime" },
 		{ "path": "packages/host-dev" },
 		{ "path": "packages/host-dynamic" },
 		{ "path": "packages/host" }

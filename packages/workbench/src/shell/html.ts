@@ -19,15 +19,21 @@ export const colorSchemeScript = `<script>
 
 export function renderRuntimeUiHtml(
 	assets: Assets,
-	options: { title?: string; uiBasePath?: string } = {},
+	options: { title?: string; uiBasePath?: string; prebuiltAssets?: boolean } = {},
 ) {
 	return renderUiHtmlDocument(assets, {
 		title: options.title,
 		uiBasePath: options.uiBasePath ?? '/',
+		prebuiltAssets: options.prebuiltAssets,
 	})
 }
 
-function renderUiHtmlDocument(assets: Assets, options?: { title?: string; uiBasePath?: string }) {
+function renderUiHtmlDocument(
+	assets: Assets,
+	options?: { title?: string; uiBasePath?: string; prebuiltAssets?: boolean },
+) {
+	// Prebuilt shell assets belong to the static handler, not Vite's source module graph.
+	const viteIgnore = options?.prebuiltAssets ? ' vite-ignore' : ''
 	const title = options?.title ?? DEFAULT_TITLE
 	const uiBasePath = escapeHtmlAttribute(options?.uiBasePath ?? '/')
 	return `<!DOCTYPE html>
@@ -38,9 +44,9 @@ function renderUiHtmlDocument(assets: Assets, options?: { title?: string; uiBase
 	<meta name="pluxel-workbench-ui-base-path" content="${uiBasePath}" />
     <title>${title}</title>
     ${colorSchemeScript}
-    ${assets.css.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n    ')}
-    ${assets.preload.map((href) => `<link rel="modulepreload" href="${href}" />`).join('\n    ')}
-    <script type="module" src="${assets.js}"></script>
+    ${assets.css.map((href) => `<link${viteIgnore} rel="stylesheet" href="${href}" />`).join('\n    ')}
+    ${assets.preload.map((href) => `<link${viteIgnore} rel="modulepreload" href="${href}" />`).join('\n    ')}
+    <script${viteIgnore} type="module" src="${assets.js}"></script>
   </head>
   <body>
     <div id="root"></div>

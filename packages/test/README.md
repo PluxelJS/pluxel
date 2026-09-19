@@ -3,7 +3,7 @@
 Pluxel 的 runner/toolchain 测试支持包。它不再提供 Plugin test host 根入口；从所验证的最小产品边界导入 host：
 
 - Core graph/config/lifecycle：`@pluxel/core/test`
-- Runtime capability：`@pluxel/runtime/test`
+- Runtime capability：`@pluxel/services/test`
 - 应用组装、动态来源、Vite/HMR/carrier：项目 Vite command 与真实 production launcher
 
 本包只保留三个面向调用方的职责：

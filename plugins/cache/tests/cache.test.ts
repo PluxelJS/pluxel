@@ -1,10 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	Cache,
@@ -20,14 +16,14 @@ import {
 } from '../src/index.ts'
 
 async function startPlugins(
-	host: RuntimeTestHost,
+	host: ServiceTestHost,
 	plugins: readonly PluginConstructor[],
 ): Promise<void> {
 	await host.start(plugins)
 }
 
-async function createHost(): Promise<RuntimeTestHost> {
-	return await createRuntimeTestHost()
+async function createHost(): Promise<ServiceTestHost> {
+	return await createServiceTestHost()
 }
 
 type User = { id: string; name: string }

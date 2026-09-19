@@ -47,8 +47,8 @@ await host.commit((change) => {
 })
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
-application boundary；production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
+这里的 `host` 是 `createServiceTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
+application boundary；production static/dynamic host 通过自己的 ConfigService 和 Host state 管理相同 topology 与 config。
 
 - `commandQueueMaxLength` 防止断线或高压期间积累无界 client queue；
 - `disableOfflineQueue: true` 默认让断线期间 command 快速失败，而不是等待不确定时长；
@@ -190,7 +190,7 @@ Workbench entry、RPC root 或 socket。PING 的 transient payload 最多 256 �
 持久化；界面不复制 endpoint，也不提供任意 command 或 key browser。
 
 Workbench 的 host-owned“依赖注入”卡片仍根据 constructor 中的抽象 `Redis` 列出不同实现 provider；connection 选择则是 consumer
-自己的领域配置，不进入 RuntimeState dependency override。
+自己的领域配置，不进入 Host state dependency override。
 Workbench disabled 时不增加 Redis event listener，headless host 使用同一 graph contract。
 
 同一个卡片也会根据 `CachePlugin(CacheBackend)`、`RatesPlugin(RatesBackend)` 列出 memory 与本包 Redis provider，

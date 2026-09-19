@@ -7,19 +7,21 @@ import { normalizePath, type Plugin, type ViteDevServer } from 'vite'
 import { collectViteSsrImportFiles } from '../runner.ts'
 
 type Resolution = { importer: string; source: string; resolved?: string; failed: boolean }
-type Candidate = { entry: string; resolutions: Resolution[] }
+type Candidate = { entries: Set<string>; resolutions: Resolution[] }
 
 /** Observed candidate dependencies are recovery inputs, never the committed application graph. */
 export class ViteApplicationRecovery {
 	private candidate?: Candidate
 	private closed = false
 	private files = new Set<string>()
+	private unresolvedFiles = new Set<string>()
 	private packageRoots = new Set<string>()
 	private watcher?: FSWatcher
 	private watcherKey?: string
 	private settleWatcherReady?: () => void
 	private server?: ViteDevServer
 	private onChange?: (file: string, type: 'create' | 'update' | 'delete') => Promise<unknown>
+	private onError?: (error: unknown) => void
 
 	readonly plugin: Plugin
 
@@ -52,20 +54,36 @@ export class ViteApplicationRecovery {
 	attach(
 		server: ViteDevServer,
 		onChange: (file: string, type: 'create' | 'update' | 'delete') => Promise<unknown>,
+		onError?: (error: unknown) => void,
 	): void {
 		this.server = server
 		this.onChange = onChange
+		this.onError = onError
 	}
 
 	begin(entry: string): void {
 		if (this.closed) return
-		this.candidate = { entry, resolutions: [] }
+		this.candidate = { entries: new Set([entry]), resolutions: [] }
+	}
+
+	/** Dynamic roots are evaluated separately and need not appear in the application import graph. */
+	includeEntry(entry: string): void {
+		this.candidate?.entries.add(normalizePath(entry))
 	}
 
 	matches(file: string): boolean {
 		const normalized = normalizePath(file)
 		return (
 			this.files.has(normalized) || [...this.packageRoots].some((root) => within(normalized, root))
+		)
+	}
+
+	/** Only missing resolution inputs need broad importer recovery; syntax errors have a graph. */
+	requiresResolutionRetry(file: string): boolean {
+		const normalized = normalizePath(file)
+		return (
+			this.unresolvedFiles.has(normalized) ||
+			[...this.packageRoots].some((root) => within(normalized, root))
 		)
 	}
 
@@ -78,12 +96,15 @@ export class ViteApplicationRecovery {
 		const server = this.server
 		if (!candidate || !server || this.closed) return undefined
 		const files = new Set(
-			[...collectViteSsrImportFiles(server, candidate.entry)].flatMap((file) => {
-				const path = filePath(file)
-				return path ? [path] : []
-			}),
+			Array.from(candidate.entries, (entry) => collectViteSsrImportFiles(server, entry))
+				.flatMap((entryFiles) => Array.from(entryFiles))
+				.flatMap((file) => {
+					const path = filePath(file)
+					return path ? [path] : []
+				}),
 		)
 		const packageRoots = new Set<string>()
+		const unresolvedFiles = new Set<string>()
 		const supplementalFiles = new Set<string>()
 		const remaining = new Set(candidate.resolutions)
 		const imports: Resolution[] = []
@@ -101,6 +122,7 @@ export class ViteApplicationRecovery {
 				// Resolution may return a package entry that does not exist yet. Loading that
 				// entry fails later, but its source spelling and manifest still permit recovery.
 				const missingResolved = observation.resolved && !existsSync(observation.resolved)
+				if (missingResolved) unresolvedFiles.add(observation.resolved!)
 				if (missingResolved && !within(observation.resolved!, normalizePath(server.config.root))) {
 					supplementalFiles.add(observation.resolved!)
 				}
@@ -119,6 +141,7 @@ export class ViteApplicationRecovery {
 					if (base.endsWith('.js')) candidates.add(`${base.slice(0, -3)}.tsx`)
 					for (const file of candidates) {
 						files.add(file)
+						unresolvedFiles.add(file)
 						if (!within(file, normalizePath(server.config.root))) supplementalFiles.add(file)
 					}
 				} else if (!source.startsWith('\0') && !source.includes(':')) {
@@ -129,13 +152,16 @@ export class ViteApplicationRecovery {
 						if (!source.startsWith('#')) {
 							packageRoots.add(normalizePath(resolve(directory, 'node_modules', name)))
 						}
-						files.add(normalizePath(resolve(directory, 'package.json')))
+						const manifest = normalizePath(resolve(directory, 'package.json'))
+						files.add(manifest)
+						unresolvedFiles.add(manifest)
 						if (directory === dirname(directory)) break
 					}
 				}
 			}
 		}
 		this.files = files
+		this.unresolvedFiles = unresolvedFiles
 		this.packageRoots = packageRoots
 		this.candidate = undefined
 		await this.replacePackageWatcher(supplementalFiles)
@@ -152,6 +178,7 @@ export class ViteApplicationRecovery {
 	async committed(): Promise<void> {
 		this.candidate = undefined
 		this.files.clear()
+		this.unresolvedFiles.clear()
 		this.packageRoots.clear()
 		await this.closeWatcher()
 	}
@@ -160,6 +187,7 @@ export class ViteApplicationRecovery {
 		this.closed = true
 		this.candidate = undefined
 		this.onChange = undefined
+		this.onError = undefined
 		await this.closeWatcher()
 	}
 
@@ -210,11 +238,17 @@ export class ViteApplicationRecovery {
 		const changed = (file: string, type: 'create' | 'update' | 'delete') => {
 			if (this.watcher !== watcher || !this.matches(file)) return
 			void (async () => {
-				await Promise.all(
-					Object.values(server.environments).map((environment) =>
-						environment.pluginContainer.watchChange(file, { event: type }),
-					),
-				)
+				try {
+					await Promise.all(
+						Object.values(server.environments).map((environment) =>
+							environment.pluginContainer.watchChange(file, { event: type }),
+						),
+					)
+				} catch (error) {
+					if (!this.onError) throw error
+					this.onError(error)
+					return
+				}
 				await this.onChange?.(normalizePath(file), type)
 			})().catch((cause: unknown) => {
 				const error =
@@ -235,9 +269,11 @@ export class ViteApplicationRecovery {
 			// Keep the error listener for the watcher's whole lifetime. Closing during setup releases
 			// the same readiness gate, so shutdown never waits for a ready event that cannot arrive.
 			watcher.on('error', (cause: unknown) => {
+				if (this.watcher !== watcher || this.closed) return
 				const error =
 					cause instanceof Error ? cause : new Error('Recovery watcher failed', { cause })
-				server.config.logger.error('Application recovery watcher failed', { error })
+				if (this.onError) this.onError(error)
+				else server.config.logger.error('Application recovery watcher failed', { error })
 				settleReady()
 			})
 		})

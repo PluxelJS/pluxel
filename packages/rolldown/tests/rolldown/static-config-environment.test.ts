@@ -8,14 +8,15 @@ import { parseStandaloneWithLang } from '../../src/rolldown/plugins/pluginUtils'
 
 function staticEntry(options: { bootstrap: string; plugins?: string; extra?: string }): string {
 	return `
-		import { bindConfigEnvironment, type RuntimeApplication } from '@pluxel/runtime'
+		import { bindConfigEnvironment } from '@pluxel/host/config-environment'
+import type { HostApplication } from '@pluxel/host'
 		import { AlphaConfig, AlphaPlugin, BetaConfig, BetaPlugin, examplePlugins } from './plugins'
 		${options.extra ?? ''}
 		export default {
 			name: 'fixture',
 			plugins: ${options.plugins ?? '[AlphaPlugin, BetaPlugin]'},
 			configEnvironmentBootstrap: ${options.bootstrap},
-		} satisfies RuntimeApplication
+		} satisfies HostApplication
 	`
 }
 
@@ -74,15 +75,15 @@ describe('static config environment declaration lowering', () => {
 	it('requires a direct application object but allows spread without bootstrap', async () => {
 		await expect(
 			parseFixture(`
-			import type { RuntimeApplication } from '@pluxel/runtime'
+			import type { HostApplication } from '@pluxel/host'
 			const application = { name: 'indirect', plugins: [] }
 			export default application
 		`),
 		).rejects.toThrow('must default-export an application object directly')
 		const spread = await parseFixture(`
-			import type { RuntimeApplication } from '@pluxel/runtime'
+			import type { HostApplication } from '@pluxel/host'
 			const base = { plugins: [] }
-			export default { ...base, name: 'spread' } satisfies RuntimeApplication
+			export default { ...base, name: 'spread' } satisfies HostApplication
 		`)
 
 		expect(spread).toEqual({ name: 'spread', targets: [], hasSources: true })
@@ -292,13 +293,14 @@ describe('static config environment declaration lowering', () => {
 				}
 			`,
 			'entry.ts': `
-				import { bindConfigEnvironment, type RuntimeApplication } from '@pluxel/runtime'
+				import { bindConfigEnvironment } from '@pluxel/host/config-environment'
+import type { HostApplication } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
 				export default {
 					name: 'unsafe',
 					plugins: [UnsafePlugin],
 					configEnvironmentBootstrap: [bindConfigEnvironment(UnsafePlugin, UnsafeConfig, 'APP_CONFIG')],
-				} satisfies RuntimeApplication
+				} satisfies HostApplication
 			`,
 		})
 		const id = fixture.getPath('entry.ts')
@@ -331,13 +333,14 @@ describe('static config environment declaration lowering', () => {
 				}
 			`,
 			'entry.ts': `
-				import { bindConfigEnvironment, type RuntimeApplication } from '@pluxel/runtime'
+				import { bindConfigEnvironment } from '@pluxel/host/config-environment'
+import type { HostApplication } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
 				export default {
 					name: 'unsafe-valibot-method',
 					plugins: [UnsafePlugin],
 					configEnvironmentBootstrap: [bindConfigEnvironment(UnsafePlugin, UnsafeConfig, 'APP_CONFIG')],
-				} satisfies RuntimeApplication
+				} satisfies HostApplication
 			`,
 		})
 		const id = fixture.getPath('entry.ts')

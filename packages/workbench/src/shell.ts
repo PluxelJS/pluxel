@@ -42,7 +42,7 @@ export async function createWorkbenchShellHandler(options: WorkbenchShellOptions
 function isHtmlNavigation(request: Request): boolean {
 	if (request.method !== 'GET' && request.method !== 'HEAD') return false
 	const accept = (request.headers.get('accept') ?? '').toLowerCase()
-	if (!accept.includes('text/html') && !accept.includes('*/*')) return false
+	if (!accept.includes('text/html') && accept.trim() !== '*/*') return false
 	const mode = request.headers.get('sec-fetch-mode')
 	if (mode && mode !== 'navigate') return false
 	const destination = request.headers.get('sec-fetch-dest')

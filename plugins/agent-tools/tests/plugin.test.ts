@@ -1,7 +1,8 @@
 import { Commands } from '@pluxel/services/commands'
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { AgentToolsPlugin } from '../src/index.ts'
 
@@ -48,7 +49,7 @@ const policy = {
 
 describe('AgentToolsPlugin', () => {
 	it('projects the shared command catalog and rechecks assignment during execution', async () => {
-		await using host = await createRuntimeTestHost({ workbench: false })
+		await using host = await createServiceTestHost({ workbench: false })
 		await host.start(AgentToolsPlugin, { catalog: [NotesCommands], initialConfig: policy })
 		await host.start(NotesCommands)
 
@@ -67,7 +68,7 @@ describe('AgentToolsPlugin', () => {
 	})
 
 	it('projects toolsets, assignments, missing tools and ungrouped commands for Workbench', async () => {
-		await using host = await createRuntimeTestHost({ workbench: { enabled: true } })
+		await using host = await createServiceTestHost({ workbench: true })
 		await host.start(AgentToolsPlugin, {
 			catalog: [NotesCommands],
 			initialConfig: {
@@ -109,7 +110,7 @@ describe('AgentToolsPlugin', () => {
 	})
 
 	it('keeps missing command names and projects them when an owner starts', async () => {
-		await using host = await createRuntimeTestHost({ workbench: false })
+		await using host = await createServiceTestHost({ workbench: false })
 		await host.start(AgentToolsPlugin, { catalog: [NotesCommands], initialConfig: policy })
 
 		const catalog = host.require(AgentToolsPlugin).catalog('researcher')
@@ -126,7 +127,7 @@ describe('AgentToolsPlugin', () => {
 	})
 
 	it('withdraws stale catalogs when the Plugin stops', async () => {
-		await using host = await createRuntimeTestHost({ workbench: false })
+		await using host = await createServiceTestHost({ workbench: false })
 		await host.start(AgentToolsPlugin, { catalog: [NotesCommands], initialConfig: policy })
 		await host.start(NotesCommands)
 
@@ -144,7 +145,7 @@ describe('AgentToolsPlugin', () => {
 	})
 
 	it('rejects Agent assignments that reference unknown Toolsets', async () => {
-		await using host = await createRuntimeTestHost({ workbench: false })
+		await using host = await createServiceTestHost({ workbench: false })
 		await expect(
 			host.start(AgentToolsPlugin, {
 				initialConfig: {

@@ -3,10 +3,10 @@
 ## 依赖方向
 
 ```text
-@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/services <- @pluxel/runtime
+@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/services
                                      ^   ^
                                      |   +-- @pluxel/host-dynamic
-                                     +------ @pluxel/host-dev <- @pluxel/runtime/vite
+                                     +------ @pluxel/host-dev
                                                    ^
                                                    +-- @pluxel/services/vite
 @pluxel/commands --------------------------------------------> @pluxel/services
@@ -15,7 +15,7 @@
 
 `@pluxel/rolldown` 是 build-time tooling，不进入 runtime graph。
 
-必须保持：context 不依赖 Core/Runtime/IO/lifecycle、core host-free、runtime 不依赖 dynamic、route 不复制 lifecycle、config
+必须保持：context 不依赖 Core/Host/IO/lifecycle、core host-free、Host 通过来源契约接入 dynamic、来源接入不复制 lifecycle、config
 persistence 不进入 core。CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
 
 ## Workspace 与目录
@@ -55,7 +55,7 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
   catalog/semver，机器 checkout 路径只进入用户 registry 与 `.pluxel/` 代理。不得手写跨仓库 `link:`
   override 或链接另一个 checkout 的 `node_modules`。
 - peer 表示必须与宿主共享的运行时身份，不是减少安装声明的手段。Plugin package 在源码中使用
-  `workspace:^` 消费 Pluxel runtime 和 provider contract，发布后由 pnpm 转换为 `^1.0.0`；本地构建/测试
+  `workspace:^` 消费 Core、服务和 provider contract，发布后由 pnpm 转换为各包对应的 semver 范围；本地构建/测试
   副本同时以 `workspace:*` 放入 `devDependencies`，不得把 provider 放入普通 dependencies 形成第二份
   Plugin identity。
 
@@ -67,7 +67,7 @@ Workbench fixed singleton set 由 host 直接安装并由 MF build contract 精�
 subpaths、`@mantine/core`、`@mantine/hooks`、MF React Bridge、`@pluxel/workbench`、`/client`、`/react` 与
 `@pluxel/workbench/internal/react`。插件 UI 把自己 import 的 React 和 Mantine 声明为 peer，并在需要独立开发时声明
 dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实现依赖，不进入 platform shared set。导入 Drizzle schema/query API 的每个 package 都直接声明
-`drizzle-orm`；它与 Pluxel 高度集成并不意味着能从根或 `@pluxel/runtime` 隐式继承。只有确实要求宿主
+`drizzle-orm`；它与 Pluxel 高度集成并不意味着能从工作区根或其他 framework 包 隐式继承。只有确实要求宿主
 共享 Drizzle 运行时身份的公开边界才改用 peer。
 
 `pnpm governance:check` 是 repository policy 的唯一检查入口，先验证共享 package inventory 的分类规则，
@@ -108,22 +108,15 @@ reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它�
 projection types 与显式 resolve；raw plan/context construction 只从 `/internal` 提供给框架实现，不是稳定第三方入口。
 `ContextHost` 编译后没有 capability mutator，公开 `overrides` 也只能在编译前替换相同 descriptor 且保持 scope/property。
 
-`@pluxel/core` 与 `@pluxel/runtime` 默认入口使用逐项 allowlist；runtime 可以逐项转发同一 core 作者面，不能使用
-`export * from '@pluxel/core'`。默认入口只承诺 Plugin 作者模型、服务 token 类型与读取错误、结构化 address codec 与 host
+`@pluxel/core` 默认入口使用逐项 allowlist；Host 与服务包不重新导出 Core 作者面。默认入口只承诺 Plugin 作者模型、服务 token 类型与读取错误、结构化 address codec 与 host
 确实消费的 lifecycle result。`PluginService`、slot registry、record reader、construction/lifecycle adapter、coordinator、lowering setter 和 test host
 不得从默认入口可达；opaque slot 最多以 type-only contract 出现。Federation build contract 只从 `@pluxel/core/federation` 消费。
 
-Core 的服务作者组合入口为 `@pluxel/core/host`；默认作者入口不转发 standalone host construction。受信任框架需要的 raw kernel 组装只在 `/internal`。Runtime 为尚未抽取的能力保留集中 contract；独立 Services 入口增强可选目录，由显式安装项固定实际属性。受信任 framework route 只可通过 package-private `routeContextCapabilities` 在 root 创建前安装自身
-descriptor。该 authority 不进入 public config，route 与业务 Plugin 都不能向已创建的 Runtime Context 追加或替换 capability。
-默认 root 不使用 star barrel 扩张 surface。
-
-runtime route wiring、RuntimeState draft helper、resolver/cache/Vite helper 和 control-plane server DTO 统一从
-`@pluxel/runtime/internal` 供 workspace runtime packages 使用，不创建 `shared`、`plugin-catalog`、`runtime-state`、
-`protocol` 等 public-looking 作者入口。Browser Management 的公开入口是 `@pluxel/management/client`：document session client、
-versioned DTO 和 borrowed Management capability facade；React provider 位于 `/web/react`。Plugin 作者只使用
-`/capnweb`、`/workbench` 和 `/workbench/react`；conforming Shell 另外使用 `/workbench/client` 与
-`/workbench/federation`。Generated Bridge ABI 固定在 `/internal/workbench-react`，raw server registry、wrapper props 和
-MF Runtime 不进入作者 API。
+Core 的服务作者组合入口为 `@pluxel/core/host`；Host 在 root 创建前安装固定 descriptor，插件不能追加或替换能力。
+RootContext 的 require 可以读取 root token；owner Context 不能直接读取 root token。持有真实 root 引用代表宿主访问权，这不是代码沙箱。
+默认入口不使用 star barrel 扩张 surface。内部 graph/state helpers 属于 `@pluxel/host/internal`；服务内部实现由各领域包拥有。
+Browser Management 使用 `@pluxel/management/client`；Plugin 直接使用 capnweb 与 `@pluxel/workbench`，React 接入位于 Workbench 子入口。
+Generated Bridge ABI 属于 Workbench internal，raw server registry 和 MF Runtime 不进入默认作者 API。
 
 Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/host-dynamic/source-producer` 的声明校验；它不得导入
 Vite、watcher、workspace scanner 或 package manager。固定 catalog 只从 dynamic config 的 `plugins` 进入，不提供 package、

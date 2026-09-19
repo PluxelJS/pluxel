@@ -14,8 +14,9 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 ```ts no-twoslash
 import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { type RuntimeApplication } from '@pluxel/runtime'
-import { resolveHostEnv } from '@pluxel/runtime/environment'
+import type { HostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/services'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host-dynamic'
 
@@ -32,10 +33,13 @@ export default {
 			include: ['*.mjs'],
 		}),
 	],
-	configure: () => ({
-		configService: {
-			snapshot: {
-				plugins: [
+	async configure(startup) {
+		return {
+			services: await servicesPreset(startup, {
+				persistence: resolve(resolveHostEnv().dataRoot, 'persistence'),
+			}),
+			configRecords: {
+				initial: [
 					{
 						owner: packageManagerNode,
 						config: {
@@ -47,18 +51,17 @@ export default {
 					},
 				],
 			},
-		},
-		runtimeState: { snapshot: { autoStart: [packageManagerNode] } },
-		workbench: { enabled: true },
-	}),
-} satisfies RuntimeApplication
+			state: { initial: { autoStart: [packageManagerNode] } },
+		}
+	},
+} satisfies HostApplication
 ```
 
 四处配置缺一不可：
 
 1. `plugins` 把 Package Manager 放进 fixed catalog；
-2. `configService` 为它提供 Plugin config；
-3. `runtimeState` 显式让它随宿主自动启动；
+2. `configRecords` 为它提供 Plugin config；
+3. `state` 显式让它随宿主自动启动；
 4. `sources` 声明它被允许生产的 directory source。
 
 示例通过 `PLUXEL_DATA_ROOT` 统一定位存储和来源；默认是 cwd 下的 `.pluxel`。生产运行时设置 distribution root 外的绝对路径。
@@ -103,7 +106,7 @@ Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager`
 install/remove mutation，Framework 自动 detach 返回 DTO、释放 transport ownership，并刷新写入后的 snapshot：
 
 ```ts no-twoslash
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 
 interface PackageManagerApi extends RpcTarget {
 	snapshot(): Promise<PackageManagerSnapshot>
@@ -128,10 +131,10 @@ package.install
   -> 确认每个 direct dependency 已 materialize
   -> 原子发布 entries/*.mjs
   -> dynamic source batch 观察变化
-  -> 正常 catalog/RuntimeState/依赖图 commit
+  -> 正常 catalog/Host state/依赖图 commit
 ```
 
-安装成功只表示 source 已发布，不会替新 Plugin 打开 RuntimeState auto-start policy，也不会创建 process session start intent。删除时先让 pnpm
+安装成功只表示 source 已发布，不会替新 Plugin 打开 Host state auto-start policy，也不会创建 process session start intent。删除时先让 pnpm
 prune managed graph，再删除 entry；source batch 随后按正常 lifecycle 卸载 module。mutation 被串行化，一批 specs 只执行一次 native install。
 
 受管目录结构是：

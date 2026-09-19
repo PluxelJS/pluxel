@@ -1,10 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
 	MemoryRatesBackendPlugin,
@@ -25,14 +21,14 @@ import { ExpiryHeap } from '../src/expiry-heap.ts'
 const Fixed = { algorithm: 'fixed-window', limit: 2, windowMs: 1_000 } as const
 
 async function startPlugins(
-	host: RuntimeTestHost,
+	host: ServiceTestHost,
 	plugins: readonly PluginConstructor[],
 ): Promise<void> {
 	await host.start(plugins)
 }
 
-async function createHost(): Promise<RuntimeTestHost> {
-	return await createRuntimeTestHost()
+async function createHost(): Promise<ServiceTestHost> {
+	return await createServiceTestHost()
 }
 
 @Plugin({ displayName: 'RatesConsumer' })

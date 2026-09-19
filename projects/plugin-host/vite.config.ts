@@ -1,6 +1,6 @@
 import { vitePreset } from '@pluxel/services/vite'
 import { defineConfig } from 'vite'
-import { hostEnv } from '@pluxel/runtime/environment'
+import { hostEnv } from '@pluxel/host/environment'
 
 export default defineConfig({
 	appType: 'spa',

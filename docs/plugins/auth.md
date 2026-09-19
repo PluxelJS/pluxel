@@ -20,29 +20,24 @@ pnpm catalog:add -- @pluxel/auth
 ```ts no-twoslash
 import { AuthPlugin } from '@pluxel/auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import type { RuntimeApplication } from '@pluxel/runtime'
+import type { HostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/services'
 
 export default {
 	name: 'my-app',
 	plugins: [AuthPlugin],
-	configure: () => ({
-		vault: {},
-		workbench: { enabled: true },
-		runtimeState: {
-			snapshot: { autoStart: [pluginNodeAddressOf(AuthPlugin)] },
-		},
-		configService: {
-			snapshot: {
-				plugins: [
-					{
-						owner: pluginNodeAddressOf(AuthPlugin),
-						config: { mode: { type: 'password' } },
-					},
+	async configure(startup) {
+		return {
+			services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+			state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
+			configRecords: {
+				initial: [
+					{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } },
 				],
 			},
-		},
-	}),
-} satisfies RuntimeApplication
+		}
+	},
+} satisfies HostApplication
 ```
 
 首次启动后，在本机 Workbench 进入 Auth 的 setup 页面完成账号配置；远程服务器通过 SSH tunnel 打开 loopback Workbench。完成后从远端打开 Workbench 验证登录，退出后重新加载应再次要求认证。密码、TOTP 和 confidential OIDC 的密钥依赖 [Vault](../runtime/vault.md)；public OIDC 只需下节配置。
@@ -126,11 +121,11 @@ authenticated + single-use cookie commit ticket
 
 当前 socket 在 authenticated step 后立即取得 principal authority。浏览器随后用 60 秒、single-use ticket 调用固定 cookie-commit endpoint；响应只有 `204 + Set-Cookie`，cookie 用于下一 document/session。Authentication challenge 和 Management API 始终留在同一 Cap’n Web session。
 
-logout 也是 control capability：插件先撤销当前或刚签发的 server session，再返回 60 秒、single-use clear-cookie ticket，Runtime 随后关闭整个 socket epoch。浏览器使用同一个固定 cookie-commit endpoint 清理 `HttpOnly` cookie；server session 一旦撤销，遗留 cookie 也不能恢复它。
+logout 也是 control capability：插件先撤销当前或刚签发的 server session，再返回 60 秒、single-use clear-cookie ticket，Management 随后关闭整个 socket epoch。浏览器使用同一个固定 cookie-commit endpoint 清理 `HttpOnly` cookie；server session 一旦撤销，遗留 cookie 也不能恢复它。
 
 ## 安全与生命周期
 
-- 远端 control socket 与 OIDC 要求可信 physical carrier 提供 HTTPS；Runtime 不相信 forwarding headers 或 URL hostname。
+- 远端 control socket 与 OIDC 要求可信 physical carrier 提供 HTTPS；Management 不相信 forwarding headers 或 URL hostname。
 - password scrypt、登录失败、challenge、session、cookie commit、OIDC pending state 和 TOTP replay counter 都有固定上界。
 - stop、replacement 或 credential mutation 会撤销对应 generation 的 authority。
 - 业务 HTTP authorization、Bearer token 与 RBAC 由业务 Plugin 自己设计，不属于此 provider。

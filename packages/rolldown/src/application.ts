@@ -26,7 +26,6 @@ export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugi
 				throw new TypeError('[pluxel:application] application deployment requires esm format')
 			const preset = createStaticApplicationConfig({
 				...options,
-				composition: 'host',
 				entry: applicationEntry(config.entry),
 				cwd: config.cwd,
 				outDir: config.outDir,

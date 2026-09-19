@@ -1,3 +1,5 @@
+import { publishWorkbenchShellMount } from './shell/mount'
+import { normalizeWorkbenchUiBasePath } from './shell/config'
 import { defineHostService, type HostService } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { HttpServer } from '@pluxel/services/http'
@@ -22,6 +24,13 @@ export function workbenchHttp(options: WorkbenchShellOptions = {}): HostService 
 		prepare: async (environment) => {
 			await management.prepare?.(environment)
 			const shell = await createWorkbenchShellHandler(options)
+			environment.effects.defer(
+				publishWorkbenchShellMount(
+					environment.ctx,
+					normalizeWorkbenchUiBasePath(options.uiBasePath),
+				),
+				{ tag: 'WorkbenchShellMount', phase: 'shutdown' },
+			)
 			const unmount = resolveContextCapability(environment.ctx, HttpServer).mountFallback({
 				fetch: shell,
 				matchesRequest: shell.matchesRequest,

@@ -3,7 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import { parsePluginDefinitionAddress, parsePluginNodeAddress } from '@pluxel/core'
 import { parseWorkbenchDeclarationIdentity } from '@pluxel/core/federation'
-import type { RpcStub } from '@pluxel/runtime/capnweb'
+import type { RpcStub } from 'capnweb'
 import type {
 	WorkbenchSessionApi,
 	WorkbenchUnavailableFederatedLayoutEntry,

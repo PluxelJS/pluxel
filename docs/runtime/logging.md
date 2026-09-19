@@ -135,12 +135,12 @@ logging: {
 
 Workbench 日志流使用同一份有容量上限的存储。传输中的日志行是普通 JSON-like DTO：缺失的可选字段会省略，嵌套对象不会保留
 `undefined`，Plugin 日志同时携带结构化 node address、稳定 reference 与可读 label，便于界面查询和诊断。Range 响应还会按
-Runtime session 的物理 WebSocket ceiling 所派生的 payload 预算分页；单条超预算记录保留 identity、message 与精简 error，并
+Management session 的物理 WebSocket ceiling 所派生的 payload 预算分页；单条超预算记录保留 identity、message 与精简 error，并
 明确标记 structured payload 已截断。Store、`@pluxel/logging` 和 `@pluxel/management/client` 共用同一份日志 DTO 类型定义，避免
 producer、校验器与 Workbench 字段漂移。
 
-Workbench 的交互式 range 与 live follow 复用页面唯一、已认证的 Cap’n Web Runtime session；当前没有平行的 HTTP/SSE
-日志 API。`ctx.require(Http)` 属于某个 Plugin generation 的业务 HTTP application，不拥有 Runtime logging store、Management
+Workbench 的交互式 range 与 live follow 复用页面唯一、已认证的 Cap’n Web Management session；当前没有平行的 HTTP/SSE
+日志 API。`ctx.require(Http)` 属于某个 Plugin generation 的业务 HTTP application，不拥有 宿主 logging store、Management
 鉴权或 control-plane 生命周期，因此不能用来暴露宿主日志。需要进程外归档时配置 file 或 OpenTelemetry sink；这与浏览器
 交互日志的 transport 是两个职责。
 
@@ -176,7 +176,7 @@ const recent = host.ctx.logging.stores.getOrCreate('default').tailWindow(100)
 await host.close()
 ```
 
-日志查询和 policy 都属于所选 Host 的 `host.ctx.logging`，不依赖 Runtime 或 Management。
+日志查询和 policy 都属于所选 Host 的 `host.ctx.logging`，不依赖 Management。
 需要持久化 policy 时，把 `createPluginLogPolicyStore(namespace)` 作为 `logging(plan, { policyStore })`
 的选项传入；namespace 是借用资源，关闭由应用或其存储服务负责。
 删除 fork 会在同一 Host 队列内清理日志 policy；写入失败时保留 fork，恢复存储后可重试。

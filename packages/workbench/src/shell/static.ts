@@ -6,6 +6,7 @@ async function buildStaticHtml(options?: { publicDirAbs?: string; uiBasePath?: s
 	return resolveBuiltAssets(options).then((assets) =>
 		renderRuntimeUiHtml(assets, {
 			uiBasePath: options?.uiBasePath,
+			prebuiltAssets: true,
 		}),
 	)
 }

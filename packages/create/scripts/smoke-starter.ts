@@ -17,7 +17,11 @@ const publishRoots = [
 	'@pluxel/core',
 	'@pluxel/create',
 	'@pluxel/rolldown',
-	'@pluxel/runtime',
+	'@pluxel/host',
+	'@pluxel/services',
+	'@pluxel/management',
+	'@pluxel/logging',
+	'@pluxel/workbench',
 	'@pluxel/host-dynamic',
 	'@pluxel/host-dev',
 	'@pluxel/test',
@@ -215,10 +219,11 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 		"\tconst workbench = await app.fetch(new Request(`${origin}/__pluxel/workbench/plugins`, { headers: { accept: 'text/html' } }))",
 		'\tconst workbenchHtml = await workbench.text()',
 		'\tif (!workbench.ok || !workbenchHtml.includes(\'content="/__pluxel/workbench"\')) throw new Error(`Frozen Workbench navigation returned ${workbench.status}: ${workbenchHtml.slice(0, 240)}`)',
-		'\tconst shellEntry = workbenchHtml.match(/<script type="module" src="([^"]+)"/)?.[1]',
+		'\tconst shellEntry = workbenchHtml.match(/<script[^>]* type="module"[^>]* src="([^"]+)"/)?.[1]',
 		"\tif (!shellEntry?.startsWith('/__pluxel/workbench/assets/')) throw new Error(`Frozen Workbench asset escaped the reserved namespace: ${shellEntry}`)",
 		'\tconst shellAsset = await fetch(new URL(shellEntry, origin))',
-		'\tif (!shellAsset.ok) throw new Error(`Frozen Workbench asset returned ${shellAsset.status}`)',
+		'\tconst shellSource = await shellAsset.text()',
+		'\tif (!shellAsset.ok || !shellAsset.headers.get("content-type")?.includes("javascript") || shellSource.length === 0) throw new Error(`Frozen Workbench asset returned ${shellAsset.status}`)',
 		'} finally {',
 		'\tawait app.stop()',
 		'}',
@@ -230,6 +235,21 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 }
 
 async function verifyViteApplication(root: string): Promise<void> {
+	const consoleRoot = resolve(root, 'host/web')
+	const inspectionFile = resolve(consoleRoot, 'smoke-inspect.ts')
+	await writeFile(
+		inspectionFile,
+		[
+			"import { defineDevConsole } from '@pluxel/host-dev/console'",
+			"import { examplePlugins } from '../src/runtime-state'",
+			"import { VaultAdminPlugin } from '@pluxel/vault-admin'",
+			'export default defineDevConsole(async (dev) => ({',
+			'  running: examplePlugins.map(plugin => dev.plugins.isRunning(plugin)),',
+			'  vaultArtifact: (await dev.plugins.status(VaultAdminPlugin))?.execution.artifact.kind,',
+			'  status: await dev.plugins.list(),',
+			'}))',
+		].join('\n'),
+	)
 	const port = await reservePort()
 	const vite = startVite(root, port)
 	try {
@@ -269,6 +289,37 @@ async function verifyViteApplication(root: string): Promise<void> {
 			throw new Error(`Unified Vite page returned ${page.status}`)
 		}
 		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
+		const discovered = JSON.parse(
+			await runPnpmCapture(['exec', 'pluxel', 'dev', 'instances', '--root', consoleRoot], root),
+		)
+		if (!discovered.ok || discovered.value.length !== 1) {
+			throw new Error(`Expected one starter development console: ${JSON.stringify(discovered)}`)
+		}
+		const inspection = JSON.parse(
+			await runPnpmCapture(
+				[
+					'exec',
+					'pluxel',
+					'dev',
+					'run',
+					inspectionFile,
+					'--root',
+					consoleRoot,
+					'--instance',
+					discovered.value[0].instanceId,
+				],
+				root,
+			),
+		)
+		if (
+			!inspection.ok ||
+			inspection.value.state !== 'succeeded' ||
+			inspection.value.value.running.length !== 4 ||
+			inspection.value.value.vaultArtifact !== 'built-module' ||
+			inspection.value.value.running.some((running: boolean) => !running)
+		) {
+			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(inspection)}`)
+		}
 	} finally {
 		await stopVite(vite)
 	}
@@ -296,10 +347,14 @@ async function verifyWorkbenchNavigation(origin: string): Promise<void> {
 	if (!source.includes('content="/__pluxel/workbench"')) {
 		throw new Error('Workbench navigation did not preserve its configured router base path')
 	}
-	const entry = source.match(/<script type="module" src="([^"]+)"/)?.[1]
+	const entry = source.match(/<script[^>]* type="module"[^>]* src="([^"]+)"/)?.[1]
 	if (!entry) throw new Error('Workbench navigation did not expose a browser entry')
 	const browserEntry = await waitForResponse(new URL(entry, origin).href, 30_000)
-	if (!browserEntry.headers.get('content-type')?.includes('javascript')) {
+	const browserSource = await browserEntry.text()
+	if (
+		!browserEntry.headers.get('content-type')?.includes('javascript') ||
+		browserSource.length === 0
+	) {
 		throw new Error(`Workbench browser entry is not JavaScript: ${entry}`)
 	}
 }

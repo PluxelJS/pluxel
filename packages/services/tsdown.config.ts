@@ -4,6 +4,8 @@ export default defineConfig({
 	exports: { devExports: '@pluxel/source' },
 	deps: { neverBundle: ['#pluxel/database-driver/pglite', '#pluxel/database-driver/postgres'] },
 	entry: {
+		test: './src/test.ts',
+		'internal/test': './src/internal-test.ts',
 		vite: './src/vite.ts',
 		'http/vite': './src/http-vite.ts',
 		'node/vite': './src/node-vite.ts',

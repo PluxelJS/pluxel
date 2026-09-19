@@ -11,7 +11,7 @@ vi.mock('chokidar', () => ({ watch: vi.fn() }))
 
 afterEach(() => vi.clearAllMocks())
 
-async function pendingRecovery(root = '/tmp') {
+async function pendingRecovery(root = '/tmp', dynamic = false) {
 	const watcher = Object.assign(new EventEmitter(), { close: vi.fn(async () => {}) })
 	vi.mocked(watch).mockReturnValue(watcher as never)
 	const logger = { error: vi.fn() }
@@ -36,11 +36,13 @@ async function pendingRecovery(root = '/tmp') {
 		onChange,
 	)
 	recovery.begin(entry)
+	const importer = dynamic ? resolve(root, 'entries/broken.entry.mjs') : entry
+	if (dynamic) recovery.includeEntry(importer)
 	const resolveId = recovery.plugin.resolveId
 	if (typeof resolveId !== 'function') throw new Error('Expected a recovery resolution observer')
 	await Reflect.apply(resolveId, { resolve: async () => null }, [
 		'hmr-recovery-test-package',
-		entry,
+		importer,
 		{ ssr: true },
 	])
 	const failure = recovery.failed()
@@ -102,6 +104,30 @@ it('does not retry an unchanged failed import after watcher setup', async () => 
 		watcher.emit('ready')
 		await failure
 		expect(onChange).not.toHaveBeenCalled()
+	} finally {
+		await recovery.close()
+	}
+})
+
+it('tracks separately evaluated dynamic roots and their missing dependencies before any catalog commits', async () => {
+	const { recovery, watcher, failure } = await pendingRecovery('/tmp', true)
+	try {
+		watcher.emit('ready')
+		await expect(failure).resolves.toMatchObject({
+			imports: [{ importer: '/tmp/entries/broken.entry.mjs', source: 'hmr-recovery-test-package' }],
+		})
+		expect(recovery.matches('/tmp/entries/broken.entry.mjs')).toBe(true)
+		expect(recovery.requiresResolutionRetry('/tmp/entries/broken.entry.mjs')).toBe(false)
+		expect(
+			recovery.requiresResolutionRetry(
+				'/tmp/entries/node_modules/hmr-recovery-test-package/index.mjs',
+			),
+		).toBe(true)
+		expect(recovery.matches('/tmp/entries/node_modules/hmr-recovery-test-package/index.mjs')).toBe(
+			true,
+		)
+		await recovery.committed()
+		expect(recovery.matches('/tmp/entries/broken.entry.mjs')).toBe(false)
 	} finally {
 		await recovery.close()
 	}

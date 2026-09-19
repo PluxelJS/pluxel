@@ -1,10 +1,13 @@
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { newWebSocketRpcSession, type RpcStub } from '@pluxel/runtime/capnweb'
-import { requireRuntimeHttpService, type ElysiaApplicationCarrier } from '@pluxel/runtime/internal'
-import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
+import { newWebSocketRpcSession, type RpcStub } from 'capnweb'
+import { HttpServer, type ElysiaApplicationCarrier } from '@pluxel/services/http'
+import { resolveContextCapability } from '@pluxel/core/host'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { NodeElysiaApplicationCarrier } from '@pluxel/services/http/node'
 import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/management/session'
 import NodeWebSocket from 'crossws/websocket'
@@ -30,7 +33,10 @@ function peerAddress() {
 describe('official authentication vNext Runtime integration', () => {
 	it('authenticates through a physical Runtime Session WebSocket carrier', async () => {
 		const fixture = new AuthRuntimeSessionCarrierFixture(
-			await createRuntimeInternalTestHost({ management: true, vault: {} }),
+			await createServiceInternalTestHost({
+				management: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			}),
 		)
 		try {
 			await fixture.start()
@@ -105,8 +111,11 @@ describe('official authentication vNext Runtime integration', () => {
 	}, 15_000)
 
 	it('runs password challenge and commits its session through the narrow endpoint', async () => {
-		await using host = await createRuntimeInternalTestHost(
-			{ management: true, vault: {} },
+		await using host = await createServiceInternalTestHost(
+			{
+				management: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			},
 			{ requestAddress: peerAddress },
 		)
 		await host.start(AuthPlugin, {
@@ -174,7 +183,7 @@ describe('official authentication vNext Runtime integration', () => {
 	})
 
 	it('returns only the fixed OIDC navigation instruction', async () => {
-		await using host = await createRuntimeInternalTestHost(
+		await using host = await createServiceInternalTestHost(
 			{ management: true },
 			{ requestAddress: peerAddress },
 		)
@@ -210,8 +219,8 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 	private detachCarrier: (() => void) | undefined
 	private listening = false
 
-	constructor(readonly host: Awaited<ReturnType<typeof createRuntimeInternalTestHost>>) {
-		const http = requireRuntimeHttpService(this.host.ctx)
+	constructor(readonly host: Awaited<ReturnType<typeof createServiceInternalTestHost>>) {
+		const http = resolveContextCapability(this.host.ctx, HttpServer)
 		this.server = createServer((_request, response) => response.writeHead(404).end('Not Found'))
 		this.carrier = new NodeElysiaApplicationCarrier({
 			fetch: (request) => this.host.http.fetch(request),

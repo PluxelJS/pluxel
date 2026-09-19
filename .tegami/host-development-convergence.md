@@ -3,8 +3,8 @@ packages:
   '@pluxel/host': minor
   '@pluxel/host-dev': patch
   '@pluxel/management': minor
-  '@pluxel/runtime': minor
   '@pluxel/cli': patch
+  '@pluxel/services': minor
 ---
 
 ## Share Host development reports and HTTP assembly
@@ -14,5 +14,5 @@ candidates, application compensation and lifecycle issues. Update outcomes inclu
 startup or compensation leaves no active Host. Failed cleanup preserves the original diagnostics
 and does not skip remaining settlement or compensation.
 
-Runtime delegates HTTP and management ingress to the same services as composable Hosts. Plugin
+Official application presets delegate HTTP and management ingress to their owning services. Plugin
 scaffolding consistently declares Core and validation dependencies.

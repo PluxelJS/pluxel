@@ -44,7 +44,7 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "catalog:build",

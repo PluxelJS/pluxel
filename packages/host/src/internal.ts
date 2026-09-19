@@ -37,3 +37,9 @@ export { requireHostStateStore } from './host'
 export { createProductionSourceLoader } from './production-source-loader'
 
 export * from './recent-update'
+
+export { projectPluginApplyReport } from './apply-report'
+
+export { setHostCatalogProvenance } from './catalog-provenance'
+
+export { updateHostCatalog } from './host'

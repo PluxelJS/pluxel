@@ -36,7 +36,6 @@ catalogs:
     '@pluxel/management': ^0.1.0
     '@pluxel/workbench': ^0.1.0
     '@pluxel/rolldown': ^1.0.0
-    '@pluxel/runtime': ^1.0.0
     '@pluxel/vault-admin': ^1.0.0
     '@pluxel/host-dynamic': ^1.0.0
     '@pluxel/host-dev': ^1.0.0

@@ -51,7 +51,7 @@ const fixedDefinition = {
 	exportName: 'Installed',
 }
 const installed = (value, identity = definition) =>
-	`import {BasePlugin,Plugin} from '@pluxel/core';import {Http} from '@pluxel/services/http';import {__setPluginDefinition,PLUGIN_LOWERING_ABI_VERSION} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.require(Http).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:PLUGIN_LOWERING_ABI_VERSION,kind:'plugin',definition:${JSON.stringify(identity)}});`
+	`import {BasePlugin,Plugin} from '@pluxel/core';import {Http} from '@pluxel/services/http';import {__setPluginDefinition} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.require(Http).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(identity)}});`
 await writeFile(join(root, 'node_modules/@test/installed/index.mjs'), installed('one'))
 await writeFile(join(root, 'fixed.mjs'), installed('fixed', fixedDefinition))
 const serviceSource = (
@@ -63,7 +63,7 @@ export const services=[http(),{name:'fixture.service',capabilities:[installRootC
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
-	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host-dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs']})],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'}]}}};`,
+	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host-dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'}]}}};`,
 )
 globalThis.__installedHostSmoke = []
 let server
@@ -138,11 +138,38 @@ try {
 	)
 	assert.equal(upgradedPlugin.recentUpdate.batch.outcome, 'applied')
 	assert.equal(upgradedPlugin.recentUpdate.batch.scope, 'definitions')
+	assert.deepEqual(upgradedPlugin.execution, {
+		kind: 'dynamic-entry',
+		artifact: { kind: 'built-module' },
+		update: { kind: 'definition-hmr', scope: 'entry-only' },
+	})
 	const latestUpdate = () =>
 		readHostRecentUpdates(globalThis.__installedHostSmokeContext)?.latestUpdate()
+	const beforeWatcherFailure = latestUpdate()
+	globalThis.__installedHostSmokeSourceError(new Error('source watcher failed'))
+	await until(
+		() => latestUpdate()?.sequence > beforeWatcherFailure.sequence,
+		'source watcher failure published',
+	)
+	assert.equal(latestUpdate().outcome, 'retained-previous')
+	assert.equal(latestUpdate().phase, 'evaluate')
+	assert.match(latestUpdate().error.message, /source watcher failed/)
+	const watcherFailure = await inspect()
+	assert.equal(watcherFailure.state, 'succeeded', JSON.stringify(watcherFailure))
+	assert.deepEqual(
+		watcherFailure.value.find(
+			(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
+		).recentUpdate,
+		upgradedPlugin.recentUpdate,
+		'watcher failure must not rewrite individual Plugin lifecycle history',
+	)
+	const watcherRetainedResponse = await fetch(new URL('/installed/two', listener))
+	assert.equal(await watcherRetainedResponse.text(), 'two')
+	const watcherSequence = latestUpdate().sequence
 	await writeFile(join(root, 'entries/installed.mjs'), 'export const invalid = ;\n')
 	await until(
-		() => latestUpdate()?.outcome === 'retained-previous',
+		() =>
+			latestUpdate()?.sequence > watcherSequence && latestUpdate()?.outcome === 'retained-previous',
 		'failed candidate retained previous catalog',
 	)
 	const failedAttempt = latestUpdate()

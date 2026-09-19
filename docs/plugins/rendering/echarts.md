@@ -140,7 +140,7 @@ data URL 在 ZRender 前被替换为 render-local key，并通过 Canvas worker 
 ECharts 的同步 placeholder 会直接交给 Canvas `decodeImageInto()`；每个 distinct source 只做一次 native decode，不会先生成
 第二个 Image 再触发 `src` setter 重复解码。Canvas decode queue 满时映射为 ECharts `RENDER_BUSY`。
 
-Canvas worker adapter 默认每次只提交 1 个 native decode；Runtime 默认最多运行 4 个 worker，因此 ECharts 默认最多贡献
+Canvas worker adapter 默认每次只提交 1 个 native decode；Workers 默认最多运行 4 个 worker，因此 ECharts 默认最多贡献
 4 个同时在途的 Canvas decode，而不是形成 4 × 4 的嵌套并行。这个 admission 只协调 Pluxel 自己提交的工作，不能接管
 进程共享 libuv pool。图片失败会中止同一次 render 尚未开始的 decode；已提交的 native work 不可抢占，worker handler
 会等待它真实完成，再把线程用于下一 job。
@@ -196,7 +196,7 @@ await host.start(EChartsPlugin, {
 })
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
+这里的 `host` 是 `createServiceTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
 `host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
 
 | 字段                      |    默认值 | 职责                                               |

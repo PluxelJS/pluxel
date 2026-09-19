@@ -1,14 +1,21 @@
+import type { PluginDefinitionAddress } from '@pluxel/core'
 import type { PluginHost } from '@pluxel/host'
 import type { PluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import type { ViteDevServer } from 'vite'
+
+/** Evaluated application catalog inputs; attachments must not infer candidates from the old Host catalog. */
+export type HostDevelopmentCatalog = Readonly<{
+	modules: Iterable<string>
+	definitions: readonly PluginDefinitionAddress[]
+}>
 
 export type HostDevelopmentCandidate = Readonly<{ commit(): unknown; rollback(): void }>
 export type HostDevelopmentAttachment = Readonly<{
 	dispose?(): void | Promise<void>
 	/** True only for source files owned by this attachment. */
 	tracks?(file: string): boolean
-	/** Prepare privately; Host commits only after its catalog accepts this same candidate. */
-	prepareCandidate?(): Promise<HostDevelopmentCandidate>
+	/** Prepare privately; commit synchronously at graph acceptance, before new Plugin startup. Roll back only before acceptance. */
+	prepareCandidate?(catalog: HostDevelopmentCatalog): Promise<HostDevelopmentCandidate>
 }>
 
 /** Vite plugin API for resources attached after Host preparation and before Plugin activation. */
@@ -20,6 +27,8 @@ export type HostDevelopmentPluginApi = Readonly<{
 				host: PluginHost
 				server: ViteDevServer
 				semantics: PluginSourceVitePipeline['semantics']
+				/** Exact evaluated modules and selected definitions for this candidate. */
+				catalog: HostDevelopmentCatalog
 			}>,
 		):
 			| void
@@ -33,8 +42,12 @@ export async function attachHostDevelopmentPlugins(
 	host: PluginHost,
 	server: ViteDevServer,
 	semantics: PluginSourceVitePipeline['semantics'],
+	initialCatalog: HostDevelopmentCatalog,
 ): Promise<
-	Readonly<{ tracks(file: string): boolean; prepareCandidate(): Promise<HostDevelopmentCandidate> }>
+	Readonly<{
+		tracks(file: string): boolean
+		prepareCandidate(catalog: HostDevelopmentCatalog): Promise<HostDevelopmentCandidate>
+	}>
 > {
 	const attachments: HostDevelopmentAttachment[] = []
 	for (const plugin of server.config.plugins) {
@@ -42,7 +55,7 @@ export async function attachHostDevelopmentPlugins(
 		if (!api) continue
 		if (typeof api.attach !== 'function')
 			throw new TypeError(`[host-dev] ${plugin.name}: api.pluxelHost.attach must be a function`)
-		const result = await api.attach({ host, server, semantics })
+		const result = await api.attach({ host, server, semantics, catalog: initialCatalog })
 		if (result === undefined) continue
 		const attachment = typeof result === 'function' ? { dispose: result } : result
 		if (
@@ -75,11 +88,11 @@ export async function attachHostDevelopmentPlugins(
 	}
 	return Object.freeze({
 		tracks: (file: string) => attachments.some((attachment) => attachment.tracks?.(file) === true),
-		async prepareCandidate() {
+		async prepareCandidate(catalog) {
 			const prepared: HostDevelopmentCandidate[] = []
 			try {
 				for (const attachment of attachments) {
-					const candidate = await attachment.prepareCandidate?.()
+					const candidate = await attachment.prepareCandidate?.(catalog)
 					if (candidate) prepared.push(candidate)
 				}
 			} catch (error) {

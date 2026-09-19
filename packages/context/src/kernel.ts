@@ -163,8 +163,12 @@ export type RootContextProjection<TInstallations extends readonly ContextCapabil
 /** Plan-neutral Context shared by one root host. */
 export interface Context<TRoot extends RootContext<any> = RootContext> {
 	readonly [CONTEXT_TYPE]: true
-	/** Read an installed author capability; root authorities are never exposed through require. */
+	/** Read an installed capability permitted for this Context's ownership scope. */
 	require<T>(capability: ContextCapability<T, 'all'>): T
+	require<T>(
+		capability: ContextCapability<T, 'root'> &
+			(this extends { readonly [ROOT_CONTEXT_TYPE]: true } ? unknown : never),
+	): T
 	require<T>(
 		capability: ContextCapability<T, 'owner'> &
 			(this extends { readonly [ROOT_CONTEXT_TYPE]: true } ? never : unknown),
@@ -409,15 +413,15 @@ class ContextImpl {
 			}
 	}
 
-	require<T>(capability: ContextCapability<T, 'all' | 'owner'>): T {
+	require<T>(capability: ContextCapability<T, ContextCapabilityAccess>): T {
 		const ctx = this as unknown as Context
 		const state = stateOf(ctx)
 		assertCapability(capability)
 		const access = CAPABILITIES.get(capability)!.access
 		if (
-			access === 'root' ||
+			(access === 'root' && ctx !== state.root) ||
 			(access === 'owner' && ctx === state.root) ||
-			state.plan.rootCapabilities.has(capability)
+			(state.plan.rootCapabilities.has(capability) && ctx !== state.root)
 		) {
 			throw new ContextCapabilityAccessError(capability.description)
 		}

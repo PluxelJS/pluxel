@@ -9,6 +9,8 @@ import {
 } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import {
+	projectPluginApplyReport,
+	readHostRecentUpdates,
 	pluginConfigGet,
 	pluginConfigValidate,
 	pluginConfigPatch,
@@ -24,6 +26,7 @@ import {
 	type DevPluginInstance,
 } from './contracts'
 import { DevScope } from './scope'
+import type { HostPluginConfigResult, PluginApplyReportSnapshot } from '@pluxel/host'
 
 export interface DevConsoleScope {
 	readonly dev: DevConsole
@@ -34,7 +37,7 @@ export interface DevConsoleScope {
 
 /** Borrow a root for one run. Closing never disposes the root or rolls back application changes. */
 export function createDevConsoleScope(
-	options: Readonly<{ ctx: RootContext; signal?: AbortSignal }>,
+	options: Readonly<{ ctx: RootContext; id: string; input?: unknown; signal?: AbortSignal }>,
 ): DevConsoleScope {
 	const { ctx } = options
 	const scope = new DevScope(options.signal)
@@ -71,10 +74,29 @@ export function createDevConsoleScope(
 		return address
 	}
 	const lifecycle = (target: DevPluginTarget, command: 'start' | 'stop' | 'restart') =>
-		scope.run(() =>
-			coordinator[`${command}Node`](resolveTarget(target), `dev-console-${command}`, admission),
+		scope.run(async () =>
+			projectPluginApplyReport(
+				ctx,
+				await coordinator[`${command}Node`](
+					resolveTarget(target),
+					`dev-console-${command}`,
+					admission,
+				),
+			),
 		)
+	const projectConfig = (
+		result: HostPluginConfigResult,
+	): HostPluginConfigResult<PluginApplyReportSnapshot> => {
+		if (result.ok === false || result.saved === false) return result
+		return { ...result, report: projectPluginApplyReport(ctx, result.report) }
+	}
 	const dev: DevConsole = Object.freeze({
+		id: options.id,
+		input: options.input,
+		signal: options.signal ?? scope.controller.signal,
+		updates: Object.freeze({
+			latest: () => scope.run(() => readHostRecentUpdates(ctx)?.latestUpdate() ?? null),
+		}),
 		get ctx() {
 			scope.assertOpen()
 			return ctx
@@ -111,13 +133,21 @@ export function createDevConsoleScope(
 		}),
 		config: Object.freeze({
 			get: (target: DevPluginTarget) =>
-				scope.run(() => pluginConfigGet(ctx, resolveTarget(target), admission)),
+				scope.run(async () =>
+					projectConfig(await pluginConfigGet(ctx, resolveTarget(target), admission)),
+				),
 			validate: (target: DevPluginTarget, patch: Readonly<Record<string, unknown>>) =>
-				scope.run(() => pluginConfigValidate(ctx, resolveTarget(target), patch, admission)),
+				scope.run(async () =>
+					projectConfig(await pluginConfigValidate(ctx, resolveTarget(target), patch, admission)),
+				),
 			patch: (target: DevPluginTarget, patch: Readonly<Record<string, unknown>>) =>
-				scope.run(() => pluginConfigPatch(ctx, resolveTarget(target), patch, admission)),
+				scope.run(async () =>
+					projectConfig(await pluginConfigPatch(ctx, resolveTarget(target), patch, admission)),
+				),
 			reset: (target: DevPluginTarget, keys?: readonly string[]) =>
-				scope.run(() => pluginConfigReset(ctx, resolveTarget(target), keys, admission)),
+				scope.run(async () =>
+					projectConfig(await pluginConfigReset(ctx, resolveTarget(target), keys, admission)),
+				),
 		}),
 	})
 	return Object.freeze({

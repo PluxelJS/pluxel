@@ -9,7 +9,8 @@ Pluxel 官方、可选的 pnpm package source producer。它使用 `@pnpm/napi` 
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host-dynamic'
-import type { RuntimeApplication } from '@pluxel/runtime'
+import type { HostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/services'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
 const packageManagerConfig = {
@@ -29,31 +30,32 @@ export default {
 			include: ['*.mjs'],
 		}),
 	],
-	configure: () => ({
-		configService: {
-			snapshot: {
-				plugins: [{ owner: packageManagerNode, config: packageManagerConfig }],
+	async configure(startup) {
+		return {
+			services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+			configRecords: {
+				mode: 'memory',
+				initial: [{ owner: packageManagerNode, config: packageManagerConfig }],
 			},
-		},
-		runtimeState: { snapshot: { autoStart: [packageManagerNode] } },
-		workbench: { enabled: true },
-	}),
-} satisfies RuntimeApplication
+			state: { mode: 'memory', initial: { autoStart: [packageManagerNode] } },
+		}
+	},
+} satisfies HostApplication
 ```
 
-`plugins` 把管理插件加入固定 catalog，ConfigService 提供 Plugin config，RuntimeState 的 `autoStart` 声明其冷启动策略；`sources`
+`plugins` 把管理插件加入固定 catalog，Host config records 提供 Plugin config，Host state 的 `autoStart` 声明其冷启动策略；`sources`
 是唯一的 runtime 接缝。source directory 必须和插件的 `rootDir/entries` 一致。插件会在加载 pnpm native engine、创建目录、注册
 commands 或发布 Direct View 前验证这项声明；没有声明来源的 host 会以 `DYNAMIC_SOURCE_REQUIRED` 启动失败，声明不匹配则以
 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 Workbench enabled 时，插件发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
 每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound `managerScope` 声明
-snapshot query 与 install/remove mutation。Runtime 自动 detach DTO、释放 transport ownership，并在写入 settle 后失效 snapshot。
+snapshot query 与 install/remove mutation。Workbench 自动 detach DTO、释放 transport ownership，并在写入 settle 后失效 snapshot。
 Workbench 根据 catalog node address 生成导航，调用方不拼接 Plugin 名称 URL。headless host 仍可使用 `package.install` 和
 `package.remove` commands。
 
-安装成功、entry 发布、catalog 接受、插件运行是独立事实。生产 Runtime 使用原生 ESM 加载，升级已经加载的 entry 会报告 `PLUGIN_SOURCE_RESTART_REQUIRED`，需要重启进程；开发驱动才拥有完整模块图失效能力。
+安装成功、entry 发布、catalog 接受、插件运行是独立事实。生产 Host 使用原生 ESM 加载，升级已经加载的 entry 会报告 `PLUGIN_SOURCE_RESTART_REQUIRED`，需要重启进程；开发驱动才拥有完整模块图失效能力。
 
-安装、自动启动策略和当前进程启停是三个独立操作。安装成功只发布 source；dynamic runtime 按 RuntimeState、session intent 和正常 dependency graph 决定插件是否
+安装、自动启动策略和当前进程启停是三个独立操作。安装成功只发布 source；Host 按持久运行策略、session intent 和正常 dependency graph 决定插件是否
 启动。删除 package 会先让 pnpm prune managed project，再删除 entry，之后由 dynamic batch 卸载对应 module。
 
 ## 安全默认值

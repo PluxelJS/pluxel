@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 import { createServer, type InlineConfig, type Plugin, type ViteDevServer } from 'vite'
-import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
+import { pluginSourceVitePlugins } from '@pluxel/rolldown/vite'
 
 import {
 	createHostModuleClassifier,
@@ -38,7 +38,7 @@ async function withTestViteServer<T>(
 
 describe('host-dev Vite plugin stack', () => {
 	it('exposes source/server semantics as a dedicated plugin', () => {
-		const plugins = pluxelRuntimeSourceVitePlugins() as Plugin[]
+		const plugins = pluginSourceVitePlugins() as Plugin[]
 		const plugin = plugins.at(-1)!
 		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' }) as {
 			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
@@ -49,7 +49,7 @@ describe('host-dev Vite plugin stack', () => {
 			oxc?: { decorator?: { legacy?: boolean; emitDecoratorMetadata?: boolean } }
 		}
 
-		expect(plugin.name).toBe('pluxel:runtime-source')
+		expect(plugin.name).toBe('pluxel:plugin-source')
 		expect(config.resolve?.conditions?.slice(0, 3)).toEqual([
 			'@pluxel/hmr',
 			'development',
@@ -61,10 +61,8 @@ describe('host-dev Vite plugin stack', () => {
 		expect(config.resolve?.externalConditions).not.toContain('@pluxel/source')
 		expect(config.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
 		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
-		expect(config.resolve?.dedupe).toEqual(expect.arrayContaining(['@pluxel/runtime']))
-		expect(config.resolve?.dedupe).not.toContain('@pluxel/core')
-		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
-		expect(config.ssr?.external).toContain('@pluxel/core')
+		expect(config.resolve?.dedupe).toBeUndefined()
+		expect(config.ssr?.external).toEqual([])
 		expect(config.oxc?.decorator?.legacy).toBe(true)
 		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(false)
 	})
@@ -111,7 +109,7 @@ describe('host-dev Vite plugin stack', () => {
 	})
 
 	it('leaves distribution bare packages to the Node host', () => {
-		const plugins = pluxelRuntimeSourceVitePlugins({ packageMode: 'distribution' }) as Plugin[]
+		const plugins = pluginSourceVitePlugins({ packageMode: 'distribution' }) as Plugin[]
 		const plugin = plugins.at(-1)!
 		const config = plugin.config?.({} as never, {
 			command: 'serve',
@@ -146,7 +144,7 @@ describe('host-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
+				plugins: pluginSourceVitePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
 				const mod = await importViteSsrModule<{ branch: string }>(server, modulePath)
@@ -184,7 +182,7 @@ describe('host-dev Vite plugin stack', () => {
 				root,
 				plugins: [
 					createHostModuleVitePlugin(),
-					...pluxelRuntimeSourceVitePlugins({
+					...pluginSourceVitePlugins({
 						lintGuard: false,
 						configSource: false,
 					}),
@@ -320,7 +318,7 @@ describe('host-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluxelRuntimeSourceVitePlugins({
+				plugins: pluginSourceVitePlugins({
 					packageMode: 'distribution',
 					lintGuard: false,
 					configSource: false,
@@ -381,9 +379,9 @@ describe('host-dev Vite plugin stack', () => {
 		const modulePath = join(root, 'plugin.ts')
 		await writePackage(
 			root,
-			'@pluxel/runtime',
+			'@pluxel/core',
 			{
-				name: '@pluxel/runtime',
+				name: '@pluxel/core',
 				type: 'module',
 				exports: {
 					'.': './index.js',
@@ -401,7 +399,7 @@ describe('host-dev Vite plugin stack', () => {
 		)
 		await Promise.all([
 			writeFile(
-				join(root, 'node_modules', '@pluxel/runtime', 'state.js'),
+				join(root, 'node_modules', '@pluxel/core', 'state.js'),
 				[
 					'export const facts = new WeakMap()',
 					'export const addresses = new WeakMap()',
@@ -411,7 +409,7 @@ describe('host-dev Vite plugin stack', () => {
 				].join('\n'),
 			),
 			writeFile(
-				join(root, 'node_modules', '@pluxel/runtime', 'toolchain.js'),
+				join(root, 'node_modules', '@pluxel/core', 'toolchain.js'),
 				[
 					"import { addresses, facts, partOccurrences, partRequires } from './state.js'",
 					'export function __setPluginDefinition(target, value) { facts.set(target, value); addresses.set(target, value.definition) }',
@@ -420,7 +418,7 @@ describe('host-dev Vite plugin stack', () => {
 				].join('\n'),
 			),
 			writeFile(
-				join(root, 'node_modules', '@pluxel/runtime', 'internal.js'),
+				join(root, 'node_modules', '@pluxel/core', 'internal.js'),
 				[
 					"import { facts, partOccurrences, partRequires } from './state.js'",
 					'function collectPartRequires(owner, output) { for (const occurrence of partOccurrences.get(owner) ?? []) { output.push(...(partRequires.get(occurrence.Part) ?? [])); collectPartRequires(occurrence.Part, output) } }',
@@ -431,8 +429,8 @@ describe('host-dev Vite plugin stack', () => {
 		await writeFile(
 			modulePath,
 			[
-				"import { BasePlugin, pluginDefinitionAddressOf, Plugin, PluginPart } from '@pluxel/runtime'",
-				"import { consumePluginDefinitionCandidate } from '@pluxel/runtime/internal'",
+				"import { BasePlugin, pluginDefinitionAddressOf, Plugin, PluginPart } from '@pluxel/core'",
+				"import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'",
 				'@Plugin()',
 				'export class Provider extends BasePlugin {}',
 				'@Plugin()',
@@ -450,7 +448,7 @@ describe('host-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
+				plugins: pluginSourceVitePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
 				const mod = await importViteSsrModule<{

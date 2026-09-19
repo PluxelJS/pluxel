@@ -2,7 +2,7 @@
 packages:
   '@pluxel/rolldown':
     type: patch
-  '@pluxel/runtime':
+  '@pluxel/host-dev':
     type: patch
 ---
 

@@ -7,11 +7,22 @@
 
 - 普通对象和纯领域规则不创建 host。
 - Core graph、config、lifecycle 和 effects 使用 `@pluxel/core/test`。
-- 使用 Runtime capability 的 Plugin 使用 `@pluxel/runtime/test`；public host 不暴露 root Context、transaction 或 backend。
+- 使用宿主服务的 Plugin 使用 `@pluxel/services/test`；public host 不暴露 root Context、transaction 或 backend。
 - static application 只验证 application wiring；dynamic source、Vite/HMR、physical HTTP/WebSocket 使用 production launcher 或项目 Vite command。
 
 同一个 Plugin behavior 只在它最小的 owning boundary 断言一次。删除外层 route、artifact 或 carrier 后仍成立的断言必须回到更小的 host；真实
 carrier、browser 和 deployment 行为仍要在各自真实边界验证。
+
+## Service test host
+
+`@pluxel/services/test` 的 `createServiceTestHost()` 直接组合 `createHost()`；Core 作者符号从 `@pluxel/core/test` 导入，不通过服务入口转发。
+省略 `services` 时安装 HTTP、commands、Node artifacts、workers 与内存 persistence；显式列表完整替代默认值，不按名称合并。
+`workbench`、`management` 是测试交互平面的布尔选择，Vault、数据库和管理命令使用真实服务工厂显式安装。
+`config`、`state`、`configRecords` 分别使用 Core 和 Host 原有契约，不再解释另一套产品配置。
+
+事务 draft 只负责测试断言、目标校验与同步回调作用域；catalog、状态修改、配置应用与 graph commit 仍由 Host 唯一 authority 执行。
+测试 HTTP 与 Workbench driver 拥有本次测试打开的响应 body、RPC handle 和 lease；泄漏会在关闭时报告，所有清理仍然执行。
+framework 白盒 fixture 从 `@pluxel/services/internal/test` 导入，不能成为普通 Plugin 的业务依赖或在线运行状态的替代。
 
 ## Vitest preset and bootstrap
 
@@ -22,7 +33,7 @@ options 参数、root entry alias 或相对 source preset import。
 Vitest/Vite 在 preset 能返回 `resolve.conditions` 之前先求值 `vitest.config.ts`。因此 source overlay 的 workspace test task 必须先运行
 `pluxel source build --package @pluxel/test`，再通过已发布 package export 载入 preset；不能用相对 `src` import 或 process-wide
 condition 绕过这一步。该命令只交给 `@pluxel/test` 自己的 build graph 处理 bootstrap artifact 与其真实前置，不预构建整个 source
-closure 或 Runtime。config 已加载后，preset 为 test module graph 设置 `@pluxel/source` / `@pluxel/hmr` conditions。
+closure 或业务服务。config 已加载后，preset 为 test module graph 设置 `@pluxel/source` / `@pluxel/hmr` conditions。
 
 ## Verification ownership
 

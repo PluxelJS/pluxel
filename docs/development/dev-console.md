@@ -51,28 +51,28 @@ dev 命令会在连接前拒绝未知选项；例如拼错 `--instance` 会返�
 
 ```ts no-twoslash
 // dev/inspect.ts
-import type { DevConsole } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-dev/console'
 import { TodoPlugin } from '@example/todo-plugin'
 
-export default async function (dev: DevConsole) {
+export default defineDevConsole(async (dev) => {
 	return {
 		status: await dev.plugins.status(TodoPlugin),
 		todos: dev.plugins.require(TodoPlugin).snapshot(),
 	}
-}
+})
 ```
 
 需要写入数据时，在同一文件增加下面的 named export（合并已有 import）：
 
 ```ts no-twoslash
-import type { DevConsole, DevRunContext } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-dev/console'
 import { TodoPlugin } from '@example/todo-plugin'
 
-export async function add(dev: DevConsole, run: DevRunContext) {
-	if (typeof run.input !== 'string') throw new TypeError('Expected a todo title')
-	const result = dev.plugins.require(TodoPlugin).add(run.input)
+export const add = defineDevConsole(async (dev) => {
+	if (typeof dev.input !== 'string') throw new TypeError('Expected a todo title')
+	const result = dev.plugins.require(TodoPlugin).add(dev.input)
 	return result
-}
+})
 ```
 
 ```sh
@@ -80,7 +80,9 @@ pnpm exec pluxel dev run dev/inspect.ts --root /absolute/project-root --instance
 pnpm exec pluxel dev run dev/inspect.ts --export add --input '"Verify current data"' --root /absolute/project-root --instance INSTANCE_ID
 ```
 
-默认调用 default export；`--export` 选择具名函数。`--input` 是 JSON，较大输入可以用互斥的 `--input-file`；省略时 `run.input` 为 `undefined`。`DevRunContext` 同时提供 `id` 和 `signal`。跨进程的 input 类型始终是 unknown，需要脚本校验。
+默认调用 default export；`--export` 选择具名函数。`--input` 是 JSON，较大输入可以用互斥的 `--input-file`；省略时 `dev.input` 为 `undefined`。`dev` 同时提供本次执行的 `id` 和 `signal`。跨进程的 input 类型始终是 unknown，需要脚本校验。
+
+`defineDevConsole()` 推导回调参数与返回类型，只定义操作，不会在模块加载时执行。同步、异步或无返回值函数均可使用。
 
 修改文件、增加 export、换文件、传入新参数都不需要重启。每次提交调用当前导出函数；模块顶层不是每次运行的入口，不要把写数据放在那里。HMR 更新代码，但不会自动重放脚本。
 
@@ -92,7 +94,7 @@ pnpm exec pluxel dev run dev/inspect.ts --export add --input '"Verify current da
 
 1. 从项目的 Vite 配置或启动命令确定 root，用 `pluxel dev instances --root <project-root>` 发现实例。核对返回的 `root`、`pid` 和 `instanceId`，将选中的绝对 root 与 instanceId 记入任务上下文。
 2. 后续 `run/result/cancel` 都显式传相同的 `--root` 和 `--instance`，避免切换工作目录或新增 dev 实例后改变操作目标。没有发现服务时先核对 root、原 dev 进程和 `devConsole` 配置。
-3. 在该 root 内维护少数普通 TypeScript 操作文件，通过 default/named export 追加操作。先读取插件状态、当前配置或服务公开的 layout，再按项目实际类型修改；参数经 `run.input` 传入并校验，跨次保存业务 ID 和 JSON 游标。
+3. 在该 root 内维护少数普通 TypeScript 操作文件，通过 default/named export 追加操作。先读取插件状态、当前配置或服务公开的 layout，再按项目实际类型修改；参数经 `dev.input` 传入并校验，跨次保存业务 ID 和 JSON 游标。
 4. 检查外层请求是否成功、run 的 `state`，再检查脚本返回的领域 `ok`、apply report 和配置 `application`。修改后重新读取目标状态及相关日志；CLI 退出成功不等于配置已应用或插件已启动。
 5. 保留 receipt 中的 root、instanceId 和 runId。工具超时或终端断开后，用这些字段查询 `result`；先确定已发生的操作，再决定下一次提交。已验证的行为需要回归保护时，另写隔离测试。
 
@@ -115,35 +117,34 @@ await dev.plugins.start(TodoPlugin)
 return { current: await dev.plugins.status(TodoPlugin) }
 ```
 
-生命周期操作直接返回 Host 的 `PluginApplyReport`；检查报告中的实际状态与问题，再重新读取目标状态。原始报告包含 Core slot 等进程内对象，不能整个返回 CLI；返回 `status()` 快照或明确选取的普通 JSON 字段。`plugins.isRunning()` 同步查询当前运行状态。控制台不注册临时 catalog，也不把领域失败转换成测试断言；CLI 成功执行不表示插件一定启动成功。
+生命周期操作返回可直接传回 CLI 的 `PluginApplyReportSnapshot`，其中插件身份是稳定地址，保留实际生命周期问题、错误与阻塞关系。检查报告中的实际状态与问题，再重新读取目标状态。`plugins.isRunning()` 同步查询当前运行状态。控制台不注册临时 catalog，也不把领域失败转换成测试断言；CLI 成功执行不表示插件一定启动成功。
+
+`await dev.updates.latest()` 返回最近一次应用更新，包括尚未进入插件目录的新入口加载错误。结合 `plugins.list()` 的节点状态与相关日志判断候选被拒绝、旧版本保留或提交后的启动失败；没有已记录更新时返回 `null`。
 
 ## 编辑配置
 
 先读当前值，再验证或修改：
 
 ```ts no-twoslash
-export async function inspectConfig(dev: DevConsole) {
+export const inspectConfig = defineDevConsole(async (dev) => {
 	return {
 		current: await dev.config.get(TodoPlugin),
 	}
-}
+})
 
-export async function increaseLimit(dev: DevConsole) {
+export const increaseLimit = defineDevConsole(async (dev) => {
 	const patch = { maxItems: 100 }
 	const checked = await dev.config.validate(TodoPlugin, patch)
 	if (!checked.ok) return checked
 	const applied = await dev.config.patch(TodoPlugin, patch)
-	if (!applied.ok) return { ok: false, code: applied.code, message: applied.message }
 	return {
-		ok: true,
-		saved: applied.saved,
-		application: applied.application,
+		result: applied,
 		current: await dev.config.get(TodoPlugin),
 	}
-}
+})
 ```
 
-`get()` 返回保存的配置、默认值和 desired/applied revision。四个配置方法直接返回 Host 的 `HostPluginConfigResult`，先检查 `ok`，再读取成功值。保存结果可能包含进程内 apply report；像示例一样选择 `saved/application` 等字段并重新读取配置，不把整个 mutation result 返回 CLI。
+`get()` 返回保存的配置、默认值和 desired/applied revision。四个配置方法直接返回 Host 的 `HostPluginConfigResult`，先检查 `ok`，再读取成功值。保存结果的 `report` 已投影为稳定地址，可直接返回整个结果；仍应检查 `application` 和 `applyFailure`，保存成功不等于运行实例已采用新配置。
 
 `patch()` 是已有配置契约的浅合并；修改嵌套字段前先读取当前对象，明确提供需要保留的字段。`reset(target, keys)` 清除指定顶层保存值；省略或空 keys 清除全部保存值。
 
@@ -151,18 +152,17 @@ export async function increaseLimit(dev: DevConsole) {
 
 ## 访问已安装服务
 
-脚本所在应用声明所需包依赖；`host-dev` 不引用这些包，也不提供服务代理。普通能力使用 `dev.ctx.require(Token)`；root-only 能力由受信任脚本使用 `resolveContextCapability()` 解析。owner-only 能力仍必须通过实际插件 Context 使用，不能用 root 代替插件 owner。
+脚本所在应用声明所需包依赖；`host-dev` 不引用这些包，也不提供服务代理。all/root 能力统一使用 `dev.ctx.require(Token)`。owner-only 能力仍必须通过实际插件 Context 使用，不能用 root 代替插件 owner。
 
 ```ts no-twoslash
-import type { DevConsole, DevRunContext } from '@pluxel/host-dev/console'
-import { resolveContextCapability } from '@pluxel/core/host'
+import { defineDevConsole } from '@pluxel/host-dev/console'
 import { HttpServer } from '@pluxel/services/http'
 
-export default async function (dev: DevConsole, run: DevRunContext) {
-	const http = resolveContextCapability(dev.ctx, HttpServer)
-	const response = await http.fetch(new Request('http://local.dev/health', { signal: run.signal }))
+export default defineDevConsole(async (dev) => {
+	const http = dev.ctx.require(HttpServer)
+	const response = await http.fetch(new Request('http://local.dev/health', { signal: dev.signal }))
 	return { status: response.status, body: await response.text() }
-}
+})
 ```
 
 这个请求使用当前进程内 HTTP directory，逻辑 origin 不是物理监听地址。应用必须已安装 HTTP 服务；服务缺失按能力解析契约报错，不影响其他控制台操作。
@@ -171,7 +171,7 @@ Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [C
 
 `this.ctx.logger` 是 Core 基础能力，插件无需 import Logging 包；脚本也能使用 `dev.ctx.logger`。输出、过滤和日志存储由宿主的 logging 配置决定。需要查询存储时显式使用 `@pluxel/logging` 的 `Logging` 能力和 store API；控制台不自动增加 store，也不在执行结果里附加日志游标。读取日志时保留存储本身的 epoch、retention 和 gap 语义，返回有界的普通数据。
 
-`dev.ctx` 只借用本次执行的 Host。不要跨执行或 Host replacement 缓存 Context、Plugin、服务 handle 或 RPC session。直接服务调用不会自动绑定取消；传入 `run.signal`，await 所有调用，并用 `using` 或 `try/finally` 释放脚本创建的资源。
+`dev.ctx` 只借用本次执行的 Host。不要跨执行或 Host replacement 缓存 Context、Plugin、服务 handle 或 RPC session。直接服务调用不会自动绑定取消；传入 `dev.signal`，await 所有调用，并用 `using` 或 `try/finally` 释放脚本创建的资源。
 
 ## 结果、取消和恢复
 
@@ -208,7 +208,7 @@ pluxel dev result run-id --root /workspace/my-host --instance instance-id
 
 默认时限 30 秒，可用 `--timeout` 请求 1 至 300000 毫秒；时限包含排队。超时发出协作取消信号，尚未 settle 的脚本不会提前让出执行位置。CPU 死循环仍会阻塞同进程 dev；执行器不会为强制停止单个脚本而杀掉整个宿主。
 
-每个 host 串行执行脚本，最多排队 16 个。一段脚本不是全局事务，HMR、浏览器和后台任务仍能交错。已提交的插件操作、配置和数据不会自动回滚。请 await 所有 driver/RPC 操作，并对自建 timer、文件等资源使用 using、try/finally 和 run.signal。取消会立即关闭新的控制台操作入口；已经接纳的配置或生命周期操作会继续排空。直接调用的服务需要脚本显式传入 `run.signal`，不承诺强制中断或自动回收。
+每个 host 串行执行脚本，最多排队 16 个。一段脚本不是全局事务，HMR、浏览器和后台任务仍能交错。已提交的插件操作、配置和数据不会自动回滚。请 await 所有 driver/RPC 操作，并对自建 timer、文件等资源使用 using、try/finally 和 dev.signal。取消会立即关闭新的控制台操作入口；已经接纳的配置或生命周期操作会继续排空。直接调用的服务需要脚本显式传入 `dev.signal`，不承诺强制中断或自动回收。
 
 仅返回 JSON 投影：对象 undefined 字段省略，数组 undefined 和顶层无返回值编码为 null。函数、BigInt、非有限数字、循环引用、accessor、class instance 和 RPC capability 会明确失败；不自动调用 toJSON。输入/输出最多 1 MiB，另有 64 层/100000 节点限制。编码失败也可能发生在业务写入之后，不应直接重跑。
 
@@ -221,3 +221,5 @@ pluxel dev result run-id --root /workspace/my-host --instance instance-id
 脚本与辅助模块走当前 Vite 编译、解析和模块身份规则。已知依赖刚修改时，执行会等待 Vite 观察变更并完成更新；控制台不会再制造一次热更新。禁用或忽略这些文件的 watcher 可能使执行等待至超时。首次加载保证当前已提交宿主与已观察更新，不承诺发现所有尚未观察的磁盘修改。提交后入口文件改变会报告 `source_changed`，依赖使用执行时模块图，不承诺整棵文件系统 snapshot。
 
 首版每宿主最多跟踪 128 个脚本入口，每个最多 4096 个本地依赖文件，源码文件最多 1 MiB。优先复用少数诊断文件和 named exports。完整宿主替换会取消旧 run 并撤回其 driver；后续提交连接当前 host epoch。
+
+开发集成需要注入进程内依赖时，`host({ entry, bindings })` 与 `vitePreset({ entry, bindings })` 接受普通对象，并在创建集成时浅复制、冻结为 `startup.bindings`，供应用的 `configure/prepare` 使用。省略时是冻结的空对象；对象中的资源仍由注入方拥有，不随控制台执行释放。

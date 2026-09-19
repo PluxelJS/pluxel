@@ -4,6 +4,8 @@ import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { expect, it } from 'vitest'
 import { createDevConsoleScope } from '../src/dev/console'
 import { DevScope } from '../src/dev/scope'
+import { defineDevConsole } from '../src/console'
+import { snapshotJson } from '../src/console/protocol'
 
 const schema = {
 	'~standard': {
@@ -33,7 +35,7 @@ class Counter extends BasePlugin {
 it('borrows a Host without official services, retains state, and exposes its baseline logger', async () => {
 	const host = await createHost({ plugins: [Counter] })
 	await host.start()
-	const scope = createDevConsoleScope({ ctx: host.ctx })
+	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 	try {
 		const { dev } = scope
 		expect(dev.ctx).toBe(host.ctx)
@@ -48,7 +50,7 @@ it('borrows a Host without official services, retains state, and exposes its bas
 		await scope.dispose()
 		await expect(dev.plugins.list()).rejects.toMatchObject({ code: 'scope_closed' })
 		expect(() => dev.ctx).toThrow(expect.objectContaining({ code: 'scope_closed' }))
-		const next = createDevConsoleScope({ ctx: host.ctx })
+		const next = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 		try {
 			expect(next.dev.plugins.require(Counter)).toBe(first)
 			expect(next.dev.plugins.require(Counter).count).toBe(4)
@@ -68,7 +70,7 @@ it('borrows a Host without official services, retains state, and exposes its bas
 it('validates and changes Host config without Management or persistence services', async () => {
 	const host = await createHost({ plugins: [Counter] })
 	await host.start()
-	const scope = createDevConsoleScope({ ctx: host.ctx })
+	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 	try {
 		await scope.dev.plugins.start(Counter)
 		expect(await scope.dev.config.get(Counter)).toMatchObject({
@@ -79,11 +81,13 @@ it('validates and changes Host config without Management or persistence services
 			ok: false,
 			code: 'validation_failed',
 		})
-		expect(await scope.dev.config.patch(Counter, { label: 'changed' })).toMatchObject({
-			ok: true,
-			saved: true,
-			application: 'applied',
-		})
+		expect(snapshotJson(await scope.dev.config.patch(Counter, { label: 'changed' }))).toMatchObject(
+			{
+				ok: true,
+				saved: true,
+				application: 'applied',
+			},
+		)
 		expect(await scope.dev.config.get(Counter)).toMatchObject({ config: { label: 'changed' } })
 		expect(scope.dev.plugins.require(Counter).label).toBe('changed')
 		expect(await scope.dev.config.reset(Counter)).toMatchObject({
@@ -102,7 +106,7 @@ class Forkable extends BasePlugin {}
 it('borrows an existing typed fork and preserves it after the run closes', async () => {
 	const host = await createHost({ plugins: [Forkable] })
 	await host.start()
-	const scope = createDevConsoleScope({ ctx: host.ctx })
+	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 	const fork = { plugin: Forkable, forkId: 'east' }
 	try {
 		expect(await host.forks.ensure(pluginNodeAddressOf(Forkable), fork.forkId)).toMatchObject({
@@ -111,7 +115,7 @@ it('borrows an existing typed fork and preserves it after the run closes', async
 		await scope.dev.plugins.start(fork)
 		const instance = scope.dev.plugins.require(fork)
 		await scope.dispose()
-		const next = createDevConsoleScope({ ctx: host.ctx })
+		const next = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 		try {
 			expect(next.dev.plugins.require(fork)).toBe(instance)
 		} finally {
@@ -129,7 +133,7 @@ class Replaceable extends BasePlugin {}
 it('rejects a constructor superseded by the live Host catalog', async () => {
 	const host = await createHost({ plugins: [Replaceable] })
 	await host.start()
-	const scope = createDevConsoleScope({ ctx: host.ctx })
+	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 	try {
 		await scope.dev.plugins.start(Replaceable)
 		const replacement = lowerTestReplacement(Replaceable, class extends Replaceable {})
@@ -162,4 +166,78 @@ it('closes admission immediately and drains admitted operations before disposal 
 	await admitted
 	await disposal
 	expect(finished).toBe(true)
+})
+
+@Plugin()
+class Broken extends BasePlugin {
+	init() {
+		throw new Error('console start failed')
+	}
+}
+
+it('returns serializable lifecycle failures without mistaking a commit for successful startup', async () => {
+	const host = await createHost({ plugins: [Broken] })
+	await host.start()
+	const scope = createDevConsoleScope({ id: 'failure', input: { requested: true }, ctx: host.ctx })
+	try {
+		let invoked = false
+		const script = defineDevConsole(async (dev) => {
+			invoked = true
+			expect(dev.id).toBe('failure')
+			expect(dev.input).toEqual({ requested: true })
+			expect(dev.signal.aborted).toBe(false)
+			expect(await dev.updates.latest()).toBeNull()
+			return dev.plugins.start(Broken)
+		})
+		expect(invoked).toBe(false)
+		const report = snapshotJson(await script(scope.dev))
+		expect(report).toMatchObject({
+			core: {
+				status: 'committed',
+				summary: {
+					lifecycleReport: {
+						ok: false,
+						issues: [
+							{ plugin: pluginNodeAddressOf(Broken), error: { message: 'console start failed' } },
+						],
+					},
+				},
+			},
+		})
+		expect(scope.dev.plugins.isRunning(Broken)).toBe(false)
+	} finally {
+		await scope.dispose()
+		await host.close()
+	}
+})
+
+@Plugin()
+class RejectConfig extends BasePlugin {
+	readonly config = this.configs.use(schema)
+	init() {
+		this.configs.onUpdate(this.config, () => {
+			throw new Error('config listener failed')
+		})
+	}
+}
+
+it('preserves saved-but-not-applied configuration in the portable result', async () => {
+	const host = await createHost({ plugins: [RejectConfig] })
+	await host.start()
+	const scope = createDevConsoleScope({ id: 'config', ctx: host.ctx })
+	try {
+		await scope.dev.plugins.start(RejectConfig)
+		expect(
+			snapshotJson(await scope.dev.config.patch(RejectConfig, { label: 'saved' })),
+		).toMatchObject({
+			ok: true,
+			saved: true,
+			application: 'saved-not-applied',
+			applyFailure: { code: 'listener_failed' },
+			config: { label: 'saved' },
+		})
+	} finally {
+		await scope.dispose()
+		await host.close()
+	}
 })

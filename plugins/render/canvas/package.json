@@ -65,7 +65,7 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"tsdown": "catalog:build",

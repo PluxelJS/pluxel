@@ -1,6 +1,6 @@
 # Database Architecture
 
-插件数据库是 `@pluxel/runtime` 的常驻 capability。PostgreSQL 是唯一 SQL dialect，Drizzle 是唯一作者查询界面；
+插件数据库是 `@pluxel/services/database` 的常驻 capability。PostgreSQL 是唯一 SQL dialect，Drizzle 是唯一作者查询界面；
 未配置宿主使用 root-scoped lazy PGlite，显式配置时使用共享的有界 `pg` pool。
 
 ## Author boundary

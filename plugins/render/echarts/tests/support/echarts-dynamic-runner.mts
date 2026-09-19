@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { runtime as runtimePlugin } from '@pluxel/runtime/vite'
+import { vitePreset } from '@pluxel/services/vite'
 import { createServer } from 'vite'
 
 const entry = process.env.PLUXEL_ECHARTS_DYNAMIC_ENTRY
@@ -7,7 +7,7 @@ assert.ok(entry, 'missing PLUXEL_ECHARTS_DYNAMIC_ENTRY')
 
 const server = await createServer({
 	configFile: false,
-	plugins: [runtimePlugin({ entry })],
+	plugins: [vitePreset({ entry })],
 	server: { host: '127.0.0.1', port: 0 },
 	logLevel: 'silent',
 })

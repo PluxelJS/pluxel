@@ -153,7 +153,7 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 | Core graph/DI      | required/optional edge target                  | slot、lifecycle owner                          | generation                         |
 | HMR                | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot              | module revision                    |
 | Config             | schema、defaults、declaration path             | value、revision、update notification           | config record revision             |
-| RuntimeState       | fork family、required token                    | auto-start、provider target、consumer override | file revision                      |
+| HostState          | fork family、required token                    | auto-start、provider target、consumer override | file revision                      |
 | Logging            | 无 policy owner                                | category、filter、policy、reference/label      | rootId、bootId、stream epoch/seq   |
 | Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping            | group id、preference revision      |
 | HTTP               | 无                                             | final Elysia path 的 contribution owner        | sealed application generation      |
@@ -181,7 +181,7 @@ generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终
 
 | 领域                          | 当前版本/编码                | 当前 owner 契约                     |
 | ----------------------------- | ---------------------------- | ----------------------------------- |
-| RuntimeState                  | v5                           | structured definition/node address  |
+| HostState                     | v5                           | structured definition/node address  |
 | Config file/env               | v3                           | structured node address             |
 | Logger policy                 | v3                           | structured node address             |
 | Management catalog preference | v3                           | structured definition address       |
@@ -215,9 +215,9 @@ generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终
 - Core address/slot/codec：`packages/core/src/plugins/runtime/identity.ts`
 - Core logger category codec：`packages/core/src/logger/categories.ts`
 - source canonicalization：`packages/rolldown/src/rolldown/plugins/pluginSemanticsPlugin.ts`
-- catalog projection/label：`packages/runtime/src/api/features/plugins/catalog-projection.ts`、`packages/runtime/src/runtime/plugin-label.ts`
+- catalog projection/label：`packages/management/src/api/features/plugins/catalog-projection.ts`、`packages/host/src/plugin-label.ts`
 - Workbench route/browser state：`packages/workbench-app/src/workbench/paths.ts`、`packages/workbench-app/src/app/workbench/state.ts`
-- RuntimeState/Config/logger/catalog persistence：对应 `packages/runtime/src/services/` 与 `packages/runtime/src/logger/`
+- HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/logging/src/` 与 `packages/management/src/`
 
 变更 identity 时至少验证 package/source、default/fork、reference/route round-trip、encoded separator 拒绝、native realpath containment、
 definition-wide HMR、fork config isolation、definition-family classification、logger structured owner、HTTP readable route 和全部当前版本 reader。

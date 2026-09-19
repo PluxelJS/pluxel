@@ -1,3 +1,4 @@
+import { readHostCatalogProvenance } from './catalog-provenance'
 import { readHostPluginStatusOverview, type HostPluginStatusOverview } from './status'
 import { ensureFork, removeFork, type ForkEnsureResult, type ForkRemoveResult } from './forks'
 import { hostStatePatch } from './state'
@@ -79,6 +80,8 @@ export type HostRuntimeOptions = Omit<HostBaseOptions, 'plugins'>
 export type HostApplication = HostBaseOptions &
 	Readonly<{
 		name?: string
+		/** Decode fixed Plugin config inputs from startup environment before loading stored records. */
+		configEnvironmentBootstrap?: readonly import('./config-environment').ConfigEnvironmentBinding[]
 		sources?: readonly PluginSource[]
 		configure?(
 			startup: import('./application').HostStartupContext,
@@ -231,7 +234,7 @@ function createPreparedHost(
 		if (change.type === 'unlink') next.delete(change.path)
 		else next.set(change.path, collectPluginModuleExports(await options.loadModule!(change.path)))
 		if (closing) return
-		await coordinator.updateCatalog(catalog(++revision, combined(next)))
+		await coordinator.updateCatalog(catalog(++revision, combined(next), ctx))
 		modules = next
 	}
 	const enqueueSourceChange = (change: PluginSourceChange): void => {
@@ -256,9 +259,37 @@ function createPreparedHost(
 					modules.set(path, collectPluginModuleExports(await options.loadModule(path)))
 			}
 			assertOpen()
-			return coordinator.reconcileStartup(catalog(++revision, combined(modules)))
+			return coordinator.reconcileStartup(catalog(++revision, combined(modules), ctx))
 		})())
 	}
+	const updateCatalog = async (
+		plugins: readonly PluginConstructor[],
+		onGraphCommitted?: () => void,
+	): Promise<PluginApplyReport> => {
+		assertOpen()
+		await startHost()
+		assertOpen()
+		const next = [...plugins]
+		const task = sourceTail.then(async () => {
+			assertOpen()
+			const report = await coordinator.update({
+				catalog: catalog(++revision, combined(modules, next), ctx),
+				reason: 'catalog-update',
+				onGraphCommitted: () => {
+					fixedPlugins = next
+					onGraphCommitted?.()
+				},
+			})
+			return report
+		})
+		sourceTail = task.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return task
+	}
+	hostCatalogUpdaters.set(ctx, updateCatalog)
+
 	return Object.freeze({
 		ctx,
 		start: startHost,
@@ -334,23 +365,7 @@ function createPreparedHost(
 			},
 		}),
 		catalog: () => coordinator.catalogSnapshot(),
-		async updateCatalog(plugins: readonly PluginConstructor[]) {
-			assertOpen()
-			await startHost()
-			assertOpen()
-			const next = [...plugins]
-			const task = sourceTail.then(async () => {
-				assertOpen()
-				const report = await coordinator.updateCatalog(catalog(++revision, combined(modules, next)))
-				fixedPlugins = next
-				return report
-			})
-			sourceTail = task.then(
-				(): void => undefined,
-				(): void => undefined,
-			)
-			return task
-		},
+		updateCatalog: (plugins: readonly PluginConstructor[]) => updateCatalog(plugins),
 		async startNode(address: PluginNodeAddress) {
 			assertOpen()
 			await startHost()
@@ -424,10 +439,17 @@ function createPreparedHost(
 	})
 }
 
-function catalog(revision: number, plugins: readonly PluginConstructor[]): PluginCatalogSnapshot {
+function catalog(
+	revision: number,
+	plugins: readonly PluginConstructor[],
+	ctx?: RootContext,
+): PluginCatalogSnapshot {
 	return createPluginCatalogSnapshot(
 		revision,
-		plugins.map((plugin) => ({ candidate: consumePluginDefinitionCandidate(plugin) })),
+		plugins.map((plugin) => ({
+			candidate: consumePluginDefinitionCandidate(plugin),
+			provenance: ctx ? readHostCatalogProvenance(ctx, plugin) : undefined,
+		})),
 	)
 }
 
@@ -437,4 +459,22 @@ export function requireHostStateStore(ctx: Context): HostStateStore {
 	const store = hostStateStores.get(ctx.root)
 	if (!store) throw new Error('[host] root has no Host state store')
 	return store
+}
+
+const hostCatalogUpdaters = new WeakMap<
+	RootContext,
+	(
+		plugins: readonly PluginConstructor[],
+		onGraphCommitted?: () => void,
+	) => Promise<PluginApplyReport>
+>()
+/** Development adapters activate prepared resources at graph acceptance, before new Plugin startup. */
+export function updateHostCatalog(
+	host: PluginHost,
+	plugins: readonly PluginConstructor[],
+	options: Readonly<{ onGraphCommitted: () => void }>,
+): Promise<PluginApplyReport> {
+	const update = hostCatalogUpdaters.get(host.ctx)
+	if (!update) throw new Error('[host] catalog updater is unavailable')
+	return update(plugins, options.onGraphCommitted)
 }

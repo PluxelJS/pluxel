@@ -304,7 +304,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		expect(key).toMatch(/^node-[a-f\d]{16}$/)
 		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
 		expect(artifact).toContain('answer')
-		expect(artifact).not.toContain('@pluxel/runtime')
+		expect(artifact).not.toContain('@pluxel/core')
 	})
 
 	it('lowers a worker declaration through the shared Node artifact pipeline', async () => {

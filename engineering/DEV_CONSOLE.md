@@ -1,4 +1,4 @@
-# Runtime Development Console
+# Host Development Console
 
 用户工作流与 API 示例见 [在线开发控制台](../docs/development/dev-console.md)。本文件记录执行边界和实现约束。
 
@@ -18,7 +18,7 @@ Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回�
 
 ## 提交与执行
 
-一个 run 调用一个 project-local TS/JS 模块的导出函数，输入从 unknown 校验。模块顶层不是可重复操作入口。一次运行拥有 id、signal、临时 driver scope；宿主业务状态持续存在。
+一个 run 调用一个 project-local TS/JS 模块的导出函数，输入从 unknown 校验。`defineDevConsole()` 只提供回调上下文推导；函数只有一个 `dev` 参数，包含本次执行的 `id/input/signal` 与宿主访问。控制台执行不是 Plugin generation，不进入插件图，不因 HMR 自动重放。模块顶层不是可重复操作入口。一次运行拥有 id、signal、临时 driver scope；宿主业务状态持续存在。
 
 接纳前验证协议、实例凭据、允许的 realpath、输入/源码限额及函数导出名。入口不能在 .pluxel/.git/node_modules。已由 Vite 合法加载的工作区依赖可位于 Vite root 之外；追踪时只接受真实 absolute file，忽略虚拟/NUL id 和 node_modules。
 
@@ -40,15 +40,15 @@ Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回�
 
 脚本体不锁住整个 coordinator/HMR；它可以调用 restart 等异步 mutation。后台任务、浏览器和未来更新可交错，单个脚本不是全局事务。
 
-## Runtime API 与资源
+## 操作 API 与资源
 
 `plugins.require()` 对 typed constructor/`{plugin,forkId}` 做当前 catalog identity 检查；地址只用于管理操作，不用来声称具体实例类型。普通 JS 实例没有通用撤销语义，跨 await 使用过期对象的限制需诚实说明。
 
-`plugins.isRunning()` 同步读取当前 running 状态。`list/status` 返回 Host 状态，`start/stop/restart` 返回 `PluginApplyReport`；配置 `get/validate/patch/reset` 返回 `HostPluginConfigResult`。原始 apply report 含 Core slot 等进程内对象；生命周期和保存配置的结果不保证可序列化，脚本返回状态/配置快照或显式 JSON 投影。不提供 Management 展示接口、依赖/fork 管理代理或服务专用 facade。
+`plugins.isRunning()` 同步读取当前 running 状态。`list/status` 返回 Host 状态，`start/stop/restart` 返回 Host 所有的 `PluginApplyReportSnapshot`；配置结果使用相同报告投影，保留 `saved/application/applyFailure`。投影只把 Core slot 转成稳定地址，保留生命周期问题与错误，不将提交成功等同于启动成功。Management 与控制台共享投影，不维护平行协议。`updates.latest()` 读取 Host 最近的应用更新，覆盖尚无插件节点的候选失败。
 
-`dev.ctx` 是本次执行借用的 RootContext；访问 getter 需要 scope 仍开启。普通 capability 通过 `ctx.require(Token)` 访问，root-only capability 由受信任宿主脚本通过 `resolveContextCapability()` 解析；owner-only capability 仍需要真实插件 Context。已经取得的 Context、实例或 handle 不能被 JavaScript getter 撤销，不得跨 run/epoch 缓存。
+`dev.ctx` 是本次执行借用的 RootContext；访问 getter 需要 scope 仍开启。通过 `ctx.require(Token)` 访问 all/root capability；owner-only capability 仍需要真实插件 Context。已经取得的 Context、实例或 handle 不能被 JavaScript getter 撤销，不得跨 run/epoch 缓存。执行不拥有宿主 effects，也不提供同名的临时清理设施；脚本使用 `using`、`await using` 或 `try/finally`。
 
-每 run 的 DevScope 在 abort 时关闭 admission；dispose 等待已接纳的 Host 操作。配置/lifecycle mutation 沿生产路径 settle，不声称强制中断或回滚。直接服务调用、Plugin 方法和用户自行创建的资源不受自动跟踪；脚本显式传递 `run.signal`，await 操作并使用 `using`/`try/finally` 释放资源。
+每 run 的 DevScope 在 abort 时关闭 admission；dispose 等待已接纳的 Host 操作。配置/lifecycle mutation 沿生产路径 settle，不声称强制中断或回滚。直接服务调用、Plugin 方法和用户自行创建的资源不受自动跟踪；脚本显式传递 `dev.signal`，await 操作并使用 `using`/`try/finally` 释放资源。
 
 full-host replacement 先 abort 旧 run、drain 已跟踪 Host 操作，再释放旧 root。后续 run 使用新 epoch。任意未协作脚本本体不能被强制终止；旧 run 不转接新 root，执行 slot 在其 settle 前仍被占用。
 
@@ -85,6 +85,7 @@ queued 取消不执行；running 取消保持 cancelling，直到真实代码 se
 - `packages/services/src/vite.ts`：官方开发附件组合。
 - `packages/cli/src/dev/client.ts`、`src/commands/dev.ts`：实例发现与命令交互。
 - Host-dev console tests：无服务 Host 的插件/配置操作、取消、Host replacement 与公开脚本入口。
-- Runtime console/Vite scenarios：共享执行器、源码/HMR、JSON/socket 边界及 CLI 互操作。
+- Host-dev console/Vite scenarios：共享执行器、源码/HMR、JSON/socket 边界及 CLI 互操作。
+- Services Vite scenarios：真实 watcher 恢复、服务 replacement、HTTP/WebSocket 与 Workbench 制品。
 
 修改 public types、loader admission 或协议时，检查实际脚本调用边界，并运行直接 owner 的测试与类型检查。服务脚本遵循相应能力原有的回归覆盖。

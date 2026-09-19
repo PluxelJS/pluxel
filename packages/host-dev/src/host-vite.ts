@@ -1,3 +1,4 @@
+import { pluginDefinitionAddressOf, type PluginConstructor } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { randomUUID } from 'node:crypto'
 import type { DevConsoleAttachment } from './console/attachment'
@@ -12,7 +13,11 @@ import {
 	type PluginApplyReport,
 } from '@pluxel/host'
 import {
+	updateHostCatalog,
 	installPluginSources,
+	setHostCatalogProvenance,
+	type PluginCatalogProvenance,
+	type PluginExecutionSnapshot,
 	installHostRecentUpdates,
 	PluginRecentUpdateTracker,
 	type PluginUpdateBatchSnapshot,
@@ -29,21 +34,36 @@ import { invalidateHostChangedModules } from './invalidation'
 import { collectViteSsrImportFiles, importViteSsrModule, invalidateViteSsrModule } from './runner'
 import { createHostModuleVitePlugin } from './host-modules'
 import { hostSingletons } from './singletons'
-import { attachHostDevelopmentPlugins, type HostDevelopmentCandidate } from './attachments'
+import {
+	attachHostDevelopmentPlugins,
+	type HostDevelopmentCandidate,
+	type HostDevelopmentCatalog,
+} from './attachments'
 
 export type HostViteOptions = Readonly<{
 	/** Application module default-exporting a HostApplication. Relative to Vite root. */
 	entry: string
 	/** Enable the local TypeScript console. @default false */
 	devConsole?: boolean
+	/** Shallow immutable startup bindings shared by configure/prepare; omitted means an empty record. */
+	bindings?: Readonly<Record<string, unknown>>
 }>
 
-/** Composable Host Vite assembly, sharing the Runtime's runner, source evaluator and candidate protocol. */
+/** Host Vite assembly owning one runner, source evaluator and candidate protocol. */
 export function host(options: HostViteOptions): PluginOption[] {
 	if (!options.entry?.trim()) throw new TypeError('[host-dev/vite] entry is required')
 	if (options.devConsole !== undefined && typeof options.devConsole !== 'boolean')
 		throw new TypeError('[host-dev] devConsole must be a boolean')
-	const pipeline = createPluginSourceVitePipeline({ preset: 'core' })
+	if (
+		options.bindings !== undefined &&
+		(!options.bindings ||
+			typeof options.bindings !== 'object' ||
+			(Object.getPrototypeOf(options.bindings) !== Object.prototype &&
+				Object.getPrototypeOf(options.bindings) !== null))
+	)
+		throw new TypeError('[host-dev] bindings must be a plain record')
+	const bindings = Object.freeze({ ...options.bindings })
+	const pipeline = createPluginSourceVitePipeline()
 	const recovery = new ViteApplicationRecovery()
 	const driver = createHostDevelopmentDriver()
 	const recentUpdates = new PluginRecentUpdateTracker()
@@ -52,7 +72,9 @@ export function host(options: HostViteOptions): PluginOption[] {
 	let sources: ReturnType<typeof createHostSourceEvaluator>
 	let active: PluginHost | undefined
 	let application: HostApplication | undefined
+	let provenance = new Map<PluginConstructor, PluginCatalogProvenance>()
 	let files = new Set<string>()
+	let acceptedCatalog: HostDevelopmentCatalog | undefined
 	let closing = false
 	let devConsole: DevConsoleAttachment | undefined
 	const epochs = new WeakMap<PluginHost, string>()
@@ -61,18 +83,22 @@ export function host(options: HostViteOptions): PluginOption[] {
 		Awaited<ReturnType<typeof attachHostDevelopmentPlugins>>
 	>()
 	const report = (error: unknown): void => {
-		if (active) active.ctx.logger.error('Host candidate rejected', { error })
+		if (active) active.ctx.logger.error('Host development update failed', { error })
 		else
-			server.config.logger.error('Host candidate rejected', {
+			server.config.logger.error('Host development update failed', {
 				error: error as Error,
 			})
 	}
-	const create = async (input: HostApplication): Promise<PluginHost> => {
+	const create = async (
+		input: HostApplication,
+		facts: ReadonlyMap<PluginConstructor, PluginCatalogProvenance>,
+		catalog: HostDevelopmentCatalog,
+	): Promise<PluginHost> => {
 		const startup = {
 			root: server.config.root,
 			mode: 'development' as const,
 			env: process.env,
-			bindings: {},
+			bindings,
 		}
 		const declaration = await resolveHostApplication(input, startup)
 		const instance = await createHost({
@@ -83,6 +109,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			services: declaration.services,
 		})
 		try {
+			setHostCatalogProvenance(instance.ctx, facts)
 			installHostRecentUpdates(instance.ctx, recentUpdates)
 			installPluginSources(instance.ctx, {
 				root: server.config.root,
@@ -90,7 +117,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			})
 			attachments.set(
 				instance,
-				await attachHostDevelopmentPlugins(instance, server, pipeline.semantics),
+				await attachHostDevelopmentPlugins(instance, server, pipeline.semantics, catalog),
 			)
 			await prepareHostApplication(declaration, instance, startup)
 			epochs.set(instance, randomUUID())
@@ -111,7 +138,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 				applicationFiles: recovery.invalidationFiles(files),
 				changedModules: [],
 				recoverMissingImports:
-					recovery.matches(changed.file) ||
+					recovery.requiresResolutionRetry(changed.file) ||
 					(changed.type === 'create' && !sources.covers(changed.file)),
 				reloadDependencies: sources.covers(changed.file),
 			})
@@ -119,9 +146,12 @@ export function host(options: HostViteOptions): PluginOption[] {
 		}
 		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
 		let sourceCandidate: HostSourceCandidate<HostApplication> | undefined
+		let nextProvenance = provenance
+		let nextCatalog: HostDevelopmentCatalog | undefined
 		let accepted = false
 		let restored = false
 		let replacement = false
+		let compensation: HostApplication | undefined
 		let lifecycle: PluginApplyReport | undefined
 		let updateError: RuntimeUpdateError | null = null
 		const started = performance.now()
@@ -152,6 +182,35 @@ export function host(options: HostViteOptions): PluginOption[] {
 				})
 				if (closing) throw new HostDevelopmentClosedError()
 				const next = sourceCandidate.application
+				nextCatalog = Object.freeze({
+					modules: sourceCandidate.files,
+					definitions: Object.freeze(next.plugins.map(pluginDefinitionAddressOf)),
+				})
+				const fixed = new Set(declared.plugins)
+				nextProvenance = new Map(
+					next.plugins.map((plugin) => {
+						const artifact = {
+							kind: pipeline.semantics.classifyDefinitionArtifact(
+								pluginDefinitionAddressOf(plugin),
+								sourceCandidate!.files,
+							),
+						}
+						const execution: PluginExecutionSnapshot = fixed.has(plugin)
+							? { kind: 'static-catalog', artifact, update: { kind: 'catalog-hmr' } }
+							: artifact.kind === 'source-module'
+								? {
+										kind: 'dynamic-entry',
+										artifact: { kind: 'source-module' },
+										update: { kind: 'definition-hmr', scope: 'source-graph' },
+									}
+								: {
+										kind: 'dynamic-entry',
+										artifact: { kind: artifact.kind },
+										update: { kind: 'definition-hmr', scope: 'entry-only' },
+									}
+						return [plugin, { execution }]
+					}),
+				)
 				const catalogChanged =
 					!application ||
 					application.plugins.length !== next.plugins.length ||
@@ -172,42 +231,29 @@ export function host(options: HostViteOptions): PluginOption[] {
 					await devConsole?.hostChanged()
 					const previousHost = active
 					active = undefined
+					compensation = previous
 					let nextHost: PluginHost | undefined
 					try {
 						await previousHost?.close()
 						if (closing) throw new HostDevelopmentClosedError()
-						nextHost = await create(next)
+						nextHost = await create(next, nextProvenance, nextCatalog)
 						if (closing) throw new HostDevelopmentClosedError()
 						lifecycle = await nextHost.start()
 					} catch (error) {
 						const failure = await closeFailedHost(nextHost, error)
-						if (previous && !closing) {
-							let restoredHost: PluginHost | undefined
-							try {
-								restoredHost = await create(previous)
-								if (closing) throw new HostDevelopmentClosedError()
-								lifecycle = await restoredHost.start()
-								active = restoredHost
-								restored = true
-							} catch (restoreError) {
-								const restoreFailure = await closeFailedHost(restoredHost, restoreError)
-								throw new AggregateError(
-									[failure, restoreFailure],
-									'[host-dev] replacement and compensation failed',
-									{ cause: restoreError },
-								)
-							}
-						}
 						throw failure
 					}
 					active = nextHost
 					accepted = true
 				} else {
 					try {
+						setHostCatalogProvenance(active!.ctx, nextProvenance)
 						recentUpdates.updatePhase('artifacts')
-						artifactCandidate = await attachments.get(active!)?.prepareCandidate()
+						artifactCandidate = await attachments.get(active!)?.prepareCandidate(nextCatalog)
 						recentUpdates.updatePhase('commit')
-						lifecycle = await active!.updateCatalog(next.plugins)
+						lifecycle = await updateHostCatalog(active!, next.plugins, {
+							onGraphCommitted: () => artifactCandidate?.commit(),
+						})
 						accepted = true
 					} catch (error) {
 						// Post-PONR lifecycle/observer failure cannot roll semantic facts back behind the graph.
@@ -216,6 +262,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 					}
 				}
 				application = next
+				provenance = nextProvenance
+				acceptedCatalog = nextCatalog
 				files = sourceCandidate.files
 				await settle(true)
 			})
@@ -224,9 +272,12 @@ export function host(options: HostViteOptions): PluginOption[] {
 			try {
 				if (accepted && sourceCandidate) {
 					application = sourceCandidate.application
+					provenance = nextProvenance
+					acceptedCatalog = nextCatalog
 					files = sourceCandidate.files
 					await settle(true)
 				} else {
+					if (active) setHostCatalogProvenance(active.ctx, provenance)
 					await settle(false)
 				}
 			} catch (settlementError) {
@@ -235,6 +286,24 @@ export function host(options: HostViteOptions): PluginOption[] {
 					'[host-dev] update settlement failed',
 					{ cause: error },
 				)
+			}
+			// Compensation borrows only committed semantic facts, outside the rejected candidate scope.
+			if (!accepted && compensation && !closing) {
+				let restoredHost: PluginHost | undefined
+				try {
+					restoredHost = await create(compensation, provenance, acceptedCatalog!)
+					if (closing) throw new HostDevelopmentClosedError()
+					lifecycle = await restoredHost.start()
+					active = restoredHost
+					restored = true
+				} catch (restoreError) {
+					const restoreFailure = await closeFailedHost(restoredHost, restoreError)
+					failure = new AggregateError(
+						[failure, restoreFailure],
+						'[host-dev] replacement and compensation failed',
+						{ cause: restoreError },
+					)
+				}
 			}
 			updateError = describeUpdateError(failure, server.config.root)
 			if (!accepted) {
@@ -308,7 +377,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			recentUpdates.updatePhase('artifacts')
 			try {
 				await candidate.run(async () => {
-					prepared = await attachments.get(active!)?.prepareCandidate()
+					prepared = await attachments.get(active!)?.prepareCandidate(acceptedCatalog!)
 				})
 				if (closing) throw new HostDevelopmentClosedError()
 				committed = true
@@ -355,6 +424,29 @@ export function host(options: HostViteOptions): PluginOption[] {
 		devConsole?.observed(file)
 		return driver.enqueue(() => apply({ file: normalizePath(file), type }))
 	}
+	const sourceFailed = (cause: unknown): void => {
+		if (closing) return
+		// Watcher failures are application facts, even without a matching catalog definition.
+		// Publish in the same lane so an in-flight candidate retains its own settlement.
+		void driver
+			.enqueue(async () => {
+				const diagnostic = describeUpdateError(cause, server.config.root)
+				recentUpdates.beginUpdate(diagnostic.file)
+				recentUpdates.record({
+					definitionKeys: [],
+					batch: {
+						scope: 'application',
+						durationMs: 0,
+						...(active
+							? ({ outcome: 'retained-previous', phase: 'evaluate' } as const)
+							: ({ outcome: 'failed', phase: 'application-reload' } as const)),
+					},
+				})
+				recentUpdates.finishUpdate(diagnostic)
+				report(cause)
+			})
+			.catch(report)
+	}
 	const lifecycle: Plugin = {
 		name: 'pluxel:host',
 		apply: 'serve',
@@ -362,11 +454,12 @@ export function host(options: HostViteOptions): PluginOption[] {
 			server = value
 			entry = normalizePath(resolve(server.config.root, options.entry))
 			files.add(entry)
-			recovery.attach(server, update)
+			recovery.attach(server, update, sourceFailed)
 			sources = createHostSourceEvaluator({
 				server,
 				root: server.config.root,
-				onError: report,
+				onError: sourceFailed,
+				onEntry: (path) => recovery.includeEntry(path),
 				onChange: (change) => {
 					void update(
 						change.path,

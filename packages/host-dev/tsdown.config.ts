@@ -11,6 +11,7 @@ export default defineConfig({
 		console: 'src/console.ts',
 		'internal/dev/console': 'src/dev/console.ts',
 
+		'internal/vite-urls': 'src/internal/vite-urls.ts',
 		'internal/update-error': 'src/internal/update-error.ts',
 		'internal/console/attachment': 'src/console/attachment.ts',
 		'internal/console/server': 'src/console/server.ts',

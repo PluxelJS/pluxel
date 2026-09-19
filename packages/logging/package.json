@@ -40,7 +40,8 @@
 	"scripts": {
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
-		"test": "pnpm exec vitest run"
+		"test": "pnpm exec vitest run",
+		"bench:logger": "pnpm exec vitest bench bench/logger.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/file": "catalog:prod",

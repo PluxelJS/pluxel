@@ -35,7 +35,6 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "catalog:prod",
-		"@pluxel/workbench": "workspace:^",
 		"gunshi": "catalog:prod",
 		"jsonc-parser": "catalog:prod",
 		"package-manager-detector": "catalog:prod",

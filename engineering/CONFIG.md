@@ -8,14 +8,14 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
   -> core composite defaults / validation / normalized aggregate snapshot
 	  -> one Plugin config record / revision / notification owner
   -> Host config get / validate / patch / reset
-  -> Runtime persistence / transport report / Workbench section projection
+  -> Host persistence / Management transport report / Workbench section projection
 ```
 
 ## Host 管理用例
 
 `@pluxel/host` 的 `host.config` 提供 get、validate、patch 和 reset。节点可用性与 fork 查询来自同一个 Host coordinator；配置记录、revision、validation ticket 与 generation notification 继续由 Core 拥有。读取和校验也经过协调器队列，异步 schema 处理不会跨越正在接受的配置/目录事务读取混合状态。
 
-Runtime 的配置 RPC、开发控制台和管理客户端通过原 usecase 入口委托 Host；Runtime 只保留 fieldPath 输入解析、presentation 编译和 Slot 到 Address 的 transport report 投影。`ConfigMutationRejectedError` 是 Host 的存储策略拒绝信号，Host readonly adapter 使用同一类，不复制错误判别。
+Management 配置 RPC 与 Host-dev 开发控制台委托 Host；Management 负责 fieldPath 输入解析和 presentation 编译，Host 的共享 report 投影将 Slot 转换为 Address。`ConfigMutationRejectedError` 是 Host 的存储策略拒绝信号，Host readonly adapter 使用同一类，不复制错误判别。
 
 ## 不变量
 
@@ -27,7 +27,7 @@ Runtime 的配置 RPC、开发控制台和管理客户端通过原 usecase 入�
 - config owner 始终是 canonical `PluginNodeAddress`，内存索引使用其稳定 binary-derived index key；ConfigService 不创建或保留 Core slot，
   也不使用 Plugin name/schema key。
 - core validation 不依赖文件系统或 Workbench Plane。
-- raw record、revision 与 validation cache 只有 core `ConfigService` 一份；HostConfigStore 子类只增加持久化策略，Runtime 使用该同一实现。
+- raw record、revision 与 validation cache 只有 core `ConfigService` 一份；HostConfigStore 子类只增加持久化策略，所有 Host 使用该同一实现。
 - `getRawConfig()` 对同一 revision 复用一个深冻结普通 snapshot；revision 改变后返回新 identity，旧引用不变，不使用 live `Proxy` view。
 - 任意 Part config patch 都重新验证 composite record，并通知当前 owning Plugin generation；没有 Part config revision 或独立
   persistence/application owner。
@@ -39,12 +39,12 @@ Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` �
 
 `HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留原 SuperJSON v3/v5 格式、初始值覆盖规则、破损文档隔离与 readonly 失败语义。Config debounce、digest 去重、写失败重试、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
 
-Core 的 `createCoreContextHost({ createConfigService })` 只允许在固定 CONFIG_SERVICE descriptor 的严格惰性工厂位置创建 CoreConfigService；它不是任意 root factory，不暴露替换 Core token 的权限。Host 准备阶段等待两个 store.ready 后交付，关闭先排空已接纳操作，再等待 store 自己的写入并聚合 flush 错误。Runtime 的 config/state 文件只保留既有启动输入类型与共享实现转导，环境与 backend capability 到模式的转换留在 Runtime composition。
+Core 的 `createCoreContextHost({ createConfigService })` 只允许在固定 CONFIG_SERVICE descriptor 的严格惰性工厂位置创建 CoreConfigService；它不是任意 root factory，不暴露替换 Core token 的权限。Host 准备阶段等待两个 store.ready 后交付，关闭先排空已接纳操作，再等待 store 自己的写入并聚合 flush 错误。环境配置在 Host 应用启动阶段解析，存储 backend 由应用显式提供。
 
 ## Static startup config
 
-`RuntimeApplication` 的 `configure(startup)` 将固定 catalog 与启动值分开。`startup` 提供 mode、env、platform bindings
-和 deployment facts；resolver 每次 host startup 重新执行，可选择 persistence、ConfigService、RuntimeState、HTTP、
+`HostApplication` 的 `configure(startup)` 将固定 catalog 与启动值分开。`startup` 提供 mode、env、platform bindings
+和 deployment facts；resolver 每次 host startup 重新执行，可选择 服务、configRecords、state、HTTP、
 logging、profile 和 Workbench policy。
 
 Static application 可以另外声明 `configEnvironmentBootstrap`。每个 direct `bindConfigEnvironment(Plugin, Schema, mapping)`
@@ -53,7 +53,7 @@ Static application 可以另外声明 `configEnvironmentBootstrap`。每个 dire
 JSON subtree leaf，array/tuple/record/scalar 只能作为 leaf。Binding 位于 product host，不进入 Plugin metadata、decorator 或
 schema，也不扩展到 Part、fork 或 dynamic source。
 
-Host behavior environment 与 Plugin config bootstrap 是两个契约。前者由 `@pluxel/runtime/environment` 直接转导 `std-env` 的 universal
+Host behavior environment 与 Plugin config bootstrap 是两个契约。前者由 `@pluxel/host/environment` 直接转导 `std-env` 的 universal
 `env`，并以 `hostEnv` 暴露校验后且包含默认 data root 的有效 view；launcher 注入环境时使用同一 `resolveHostEnv()` 解析
 `PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH` 和 listener 字段。下游 host 不直接读取 `process.env` 或复制默认路径。
 后者仍只通过本节的 typed binding/`PLUXEL_CONFIG` 进入 ConfigService。完整 environment 不进入 Plugin Context 或 config snapshot。
@@ -67,17 +67,17 @@ validator。环境缺失不生成 raw path；string 空值保留，number/boolea
 新 store 的 merge authority 固定为：
 
 ```text
-configure() configService.snapshot
+configure() configRecords.initial
   < configEnvironmentBootstrap decoded seed
   < PLUXEL_CONFIG bootstrap snapshot
   < existing persisted file
 ```
 
-最后一层继续由既有 `ConfigService.loadFromDisk()` 实现。Writable file 首次保存合成 seed；memory 每个新 host 重建；readonly
+最后一层继续由既有 `HostConfigStore.loadFromDisk()` 实现。Writable file 首次保存合成 seed；memory 每个新 host 重建；readonly
 在没有 file 时只在当前 host 使用 seed。Binding 不是 permanent overlay，不改变 revision、patch/reset、persistence format、
 Workbench presentation 或 update notification。普通 config 仍不承载长期 secret。
 
-Plugin config records 与 auto-start policy 继续由 ConfigService/RuntimeState 管理，可以在 fixed catalog 范围内修改并跨启动
+Plugin config records 与 auto-start policy 继续由 HostConfigStore/HostStateStore 管理，可以在 fixed catalog 范围内修改并跨启动
 持久化。production bundle 不把这些 records 烘焙成不可变常量。
 
 Static 与 dynamic Node host 读取单一 `PLUXEL_CONFIG` 环境变量。它必须是 ConfigService v3 的完整 JSON snapshot，owner
@@ -155,7 +155,7 @@ serialized config bytes；当前契约不宣称适合无界 fork/config 基数�
 semantic pass 同时 lower Part occurrence field path；这些 build helper 不是作者 API。
 
 core 按 path partition raw input，分别执行 owner/Part schema default、transform 与校验，再冻结 aggregate output。Plugin field
-只注入 root owner slice，每个 Part field只注入自己的 slice。runtime management API 把每个 declaration 编译成带 path、defaults
+只注入 root owner slice，每个 Part field只注入自己的 slice。Management API 把每个 declaration 编译成带 path、defaults
 和可移植 field node 的 version 1 presentation plan；无法表达的 node 显式成为 read-only `unsupported`，浏览器不执行 schema source。
 Workbench 可以按 General/Part sections 编辑，但提交、持久化和 server validation 仍指向同一个 Plugin node owner。
 Workbench Plane 不拥有配置事实，也不恢复 layout/template DSL。
@@ -180,14 +180,14 @@ control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: fa
 - `packages/core/src/plugins/composition/ConfigUpdate.ts`
 - `packages/core/src/plugins/runtime/plugin-service/ConfigUpdate.ts`
 - `packages/core/src/plugins/runtime/definition.ts`
-- `packages/runtime/src/services/ConfigService.ts`
-- `packages/runtime/src/services/config-environment.ts`
-- `packages/runtime/src/application/config-environment.ts`
+- `packages/host/src/config-store.ts`
+- `packages/host/src/config-records.ts`
+- `packages/host/src/config-environment.ts`
 - `packages/valibot-form/src/core/rawInput.ts`
-- `packages/runtime/src/api/usecases/pluginConfig.ts`
+- `packages/host/src/config.ts`
 - `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
 - `packages/rolldown/src/rolldown/plugins/staticConfigEnvironment.ts`
 - `packages/rolldown/src/cli/static-config-environment-output.ts`
-- `packages/runtime/docs/config/contract.md`
+- `docs/getting-started/configuration.md`
 
 作者用法见 [`docs/getting-started/configuration.md`](../docs/getting-started/configuration.md#声明规则)。

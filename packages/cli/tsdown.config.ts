@@ -14,8 +14,6 @@ export default defineConfig({
 			'@pluxel/market/*',
 			'@pluxel/rolldown',
 			'@pluxel/rolldown/*',
-			'@pluxel/runtime',
-			'@pluxel/runtime/*',
 			'rolldown',
 			'rolldown/*',
 		],

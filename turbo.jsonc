@@ -110,42 +110,8 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/runtime#build": {
-			"dependsOn": [
-				"@pluxel/commands#build",
-				"@pluxel/core#build",
-				"@pluxel/rolldown#build",
-				"valibot-form#build",
-				"@pluxel/host#build",
-				"@pluxel/host-dev#build",
-			],
-			"outputs": ["dist/**", "public/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/packages/workbench-app/src/**",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
 		"@pluxel/host-dev#build": {
-			"dependsOn": [
-				"@pluxel/core#build",
-				"@pluxel/host#build",
-				"@pluxel/rolldown#build",
-				"@pluxel/management#build",
-				"@pluxel/workbench#build",
-			],
+			"dependsOn": ["@pluxel/core#build", "@pluxel/host#build", "@pluxel/rolldown#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -189,6 +155,8 @@
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/packages/*/package.json",
+				"$TURBO_ROOT$/plugins/**/package.json",
 				"$TURBO_ROOT$/docs/**",
 				"!README.md",
 				"!IMPLEMENTATION_INDEX.md",
@@ -266,14 +234,11 @@
 		"@pluxel/create#test": {
 			"dependsOn": ["^build", "build", "@pluxel/test#build"],
 		},
-		"@pluxel/runtime#test": {
-			"dependsOn": ["^build", "@pluxel/runtime#build"],
-		},
 		"@pluxel/host-dev#test": {
 			"dependsOn": ["^build", "build", "@pluxel/host-dynamic#build", "@pluxel/test#build"],
 		},
 		"@pluxel/rolldown#test": {
-			"dependsOn": ["^build", "@pluxel/runtime#build"],
+			"dependsOn": ["^build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -289,10 +254,10 @@
 			"outputLogs": "errors-only",
 		},
 		"@worksplit/react#test": {
-			"dependsOn": ["^build", "@pluxel/test#build", "@pluxel/runtime#build"],
+			"dependsOn": ["^build", "@pluxel/test#build"],
 		},
 		"typecheck": {
-			"dependsOn": ["^build", "@pluxel/runtime#build"],
+			"dependsOn": ["^build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -305,7 +270,7 @@
 			"outputLogs": "errors-only",
 		},
 		"@worksplit/react#typecheck": {
-			"dependsOn": ["^build", "@pluxel/runtime#build", "@pluxel/host-dev#build"],
+			"dependsOn": ["^build", "@pluxel/host-dev#build"],
 		},
 		"@pluxel/plugins-host#typecheck": {
 			"dependsOn": ["^build"],
@@ -318,7 +283,7 @@
 			"persistent": true,
 		},
 		"@pluxel/services#build": {
-			"dependsOn": ["@pluxel/commands#build", "@pluxel/host#build"],
+			"dependsOn": ["@pluxel/commands#build", "@pluxel/host#build", "@pluxel/host-dev#build"],
 			"outputs": ["dist/**", "public/**"],
 		},
 		"@pluxel/logging#build": {
@@ -337,6 +302,14 @@
 		"@pluxel/workbench#build": {
 			"dependsOn": ["@pluxel/management#build", "@pluxel/rolldown#build", "@worksplit/react#build"],
 			"outputs": ["dist/**", "public/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/packages/workbench-app/src/**",
+				"!README.md",
+				"!**/*.md",
+				"!tests/**",
+				"!**/*.test.*",
+			],
 		},
 		"@pluxel/host#build": {
 			"dependsOn": ["@pluxel/core#build"],

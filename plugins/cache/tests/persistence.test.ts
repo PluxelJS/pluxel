@@ -1,9 +1,11 @@
+import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import {
 	createMemoryPersistenceBackend,
 	type PersistenceBackend,
 } from '@pluxel/services/persistence'
-import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
 
@@ -33,7 +35,9 @@ async function withPersistentCache(
 	} = {},
 ): Promise<void> {
 	{
-		await using host = await createRuntimeTestHost({ persistence: { mode: 'custom', backend } })
+		await using host = await createServiceTestHost({
+			services: standardServices({ persistence: { mode: 'custom', backend } }),
+		})
 
 		const persistence = {
 			mode: options.mode ?? 'durable',
@@ -153,7 +157,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 
 	it('fails lifecycle honestly when durable persistence is unavailable', async () => {
 		{
-			await using host = await createRuntimeTestHost({ persistence: { mode: 'memory' } })
+			await using host = await createServiceTestHost()
 
 			const failure = await host.commitExpectFail((change) => {
 				change.start(MemoryCacheBackendPlugin, {
@@ -190,8 +194,8 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		}
 
 		{
-			await using host = await createRuntimeTestHost({
-				persistence: { mode: 'custom', backend: persistence },
+			await using host = await createServiceTestHost({
+				services: standardServices({ persistence: { mode: 'custom', backend: persistence } }),
 			})
 
 			const failure = await host.commitExpectFail((change) => {

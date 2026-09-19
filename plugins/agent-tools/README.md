@@ -6,7 +6,7 @@ Pluxel 官方 Agent command allowlist 插件。它把统一 command catalog 中�
 ## 使用
 
 ```sh
-pnpm add @pluxel/agent-tools @pluxel/commands @pluxel/runtime
+pnpm add @pluxel/agent-tools @pluxel/commands @pluxel/core
 ```
 
 把 `AgentToolsPlugin` 和业务 command 插件放进 host catalog，然后使用标准 Plugin config 声明策略：

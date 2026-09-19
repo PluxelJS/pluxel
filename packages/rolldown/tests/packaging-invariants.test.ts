@@ -268,7 +268,7 @@ describe('toolchain package boundaries', () => {
 
 	it('keeps production hosts independent of the development toolchain', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		for (const name of ['host', 'host-dynamic', 'runtime']) {
+		for (const name of ['host', 'host-dynamic']) {
 			const manifest = await readJson(`${root}/packages/${name}/package.json`)
 			const required = { ...manifest.dependencies, ...manifest.optionalDependencies }
 			const toolchain = ['vite', '@pluxel/host-dev', '@pluxel/rolldown']
@@ -317,8 +317,7 @@ describe('toolchain package boundaries', () => {
 
 		for (const file of cliFiles) {
 			const code = await readFile(file, 'utf8')
-			if (code.includes('../runtime/src/') || code.includes('../host-dev/src/'))
-				offenders.push(file)
+			if (code.includes('../host/src/') || code.includes('../host-dev/src/')) offenders.push(file)
 		}
 
 		expect(offenders).toEqual([])
@@ -326,7 +325,7 @@ describe('toolchain package boundaries', () => {
 
 	it('keeps native toolchain packages external to generated bundles', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const packageNames = ['cli', 'rolldown', 'runtime', 'host-dev', 'host-dynamic', 'host', 'test']
+		const packageNames = ['cli', 'rolldown', 'host-dev', 'host-dynamic', 'host', 'test']
 		const offenders: string[] = []
 		const nativeToolchainPackage =
 			/^(?:oxc-(?:parser|resolver)|@oxc-(?:parser|resolver)\/binding-|rolldown|@rolldown\/binding-|oxlint|@oxlint\/binding-|oxfmt|@oxfmt\/binding-)$/
@@ -351,14 +350,11 @@ describe('toolchain package boundaries', () => {
 
 		for (const file of files) {
 			const code = await readFile(file, 'utf8')
-			if (
-				code.includes("'@pluxel/runtime/services'") ||
-				code.includes('"@pluxel/runtime/services"')
-			) {
+			if (code.includes("'@pluxel/core/services'") || code.includes('"@pluxel/core/services"')) {
 				offenders.push(file)
 			}
-			if (code.includes('@pluxel/runtime/config')) offenders.push(`${file}:@pluxel/runtime/config`)
-			if (code.includes('@pluxel/runtime/base')) offenders.push(`${file}:@pluxel/runtime/base`)
+			if (code.includes('@pluxel/core/config')) offenders.push(`${file}:@pluxel/core/config`)
+			if (code.includes('@pluxel/core/base')) offenders.push(`${file}:@pluxel/core/base`)
 		}
 
 		expect(offenders).toEqual([])
@@ -368,7 +364,7 @@ describe('toolchain package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const coreManifest = await readJson(`${root}/packages/core/package.json`)
 		const coreBuildConfig = await readFile(`${root}/packages/core/tsdown.config.ts`, 'utf8')
-		const runtimePackages = ['core', 'runtime', 'host-dev', 'host-dynamic', 'host']
+		const runtimePackages = ['core', 'host-dev', 'host-dynamic', 'host']
 		const packageSourceFiles = await Promise.all(
 			runtimePackages.map((name) => collectSourceFiles(`${root}/packages/${name}/src`)),
 		)
@@ -394,34 +390,14 @@ describe('toolchain package boundaries', () => {
 		}
 	})
 
-	it('keeps dev/HMR capabilities out of the runtime route contract', async () => {
+	it('keeps development dependencies out of the Host application contract', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const capabilities = await readFile(
-			`${root}/packages/runtime/src/runtime/capabilities.ts`,
-			'utf8',
+		const application = await readFile(`${root}/packages/host/src/application.ts`, 'utf8')
+		const hostPackage = await readJson(`${root}/packages/host/package.json`)
+		expect(importedModuleSpecifiers('application.ts', application)).not.toEqual(
+			expect.arrayContaining(['vite', '@pluxel/host-dev', '@pluxel/rolldown']),
 		)
-		const runtimePackage = JSON.parse(
-			await readFile(`${root}/packages/runtime/package.json`, 'utf8'),
-		) as { exports?: Record<string, unknown> }
-
-		const routeType = capabilities.match(
-			/export type RuntimeRouteCapabilities = \{[\s\S]*?\n\}/,
-		)?.[0]
-		expect(routeType).toBeTruthy()
-		expect(routeType).not.toContain('dev?:')
-		expect(capabilities).not.toContain('RuntimeDevCapabilities')
-		expect(capabilities).not.toContain('RuntimeWorkerWatchOptions')
-		expect(capabilities).not.toMatch(/\bworker\?:\s*\{/)
-		expect(runtimePackage.exports).not.toHaveProperty('./plugin')
-		for (const subpath of [
-			'./api',
-			'./shared',
-			'./plugin-catalog',
-			'./runtime-state',
-			'./protocol',
-		]) {
-			expect(runtimePackage.exports).not.toHaveProperty(subpath)
-		}
-		expect(existsSync(`${root}/packages/runtime/src/protocol.ts`)).toBe(false)
+		expect(hostPackage.exports).not.toHaveProperty('./vite')
+		expect(hostPackage.exports).not.toHaveProperty('./console')
 	})
 })

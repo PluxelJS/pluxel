@@ -4,6 +4,7 @@ import { serve } from 'srvx/node'
 import { resolveApplicationAsset } from './assets'
 import type { ServerRequest } from 'srvx'
 import type { PluginHost } from '@pluxel/host'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { HttpServer } from '../http'
 import { NodeElysiaApplicationCarrier } from './node'
@@ -13,15 +14,18 @@ export async function listenHostHttp(
 	host: PluginHost,
 	options: Readonly<{
 		fetch(request: Request): Response | Promise<Response>
+		/** Overrides PLUXEL_HOST_BIND / Portless HOST; defaults to 0.0.0.0. */
 		hostname?: string
+		/** Overrides PLUXEL_HOST_PORT / Portless PORT; defaults to 3000. Zero selects a free port. */
 		port?: number
 		/** Optional application public directory, served only after a non-reserved 404. */
 		publicDir?: string
 	}>,
 ) {
 	const http = resolveContextCapability(host.ctx, HttpServer)
-	const hostname = options.hostname ?? process.env.PLUXEL_HOST_BIND ?? '0.0.0.0'
-	const port = options.port ?? Number(process.env.PLUXEL_HOST_PORT ?? 3000)
+	const environment = resolveHostEnv()
+	const hostname = options.hostname ?? environment.hostBind ?? '0.0.0.0'
+	const port = options.port ?? environment.hostPort ?? 3000
 	if (!Number.isInteger(port) || port < 0 || port > 65535)
 		throw new TypeError('[host] port must be an integer from 0 to 65535')
 	let server: ReturnType<typeof serve> | undefined

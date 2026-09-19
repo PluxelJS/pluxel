@@ -23,6 +23,14 @@
 			"@pluxel/source": "./src/application.ts",
 			"default": "./dist/application.mjs"
 		},
+		"./config-environment": {
+			"@pluxel/source": "./src/config-environment.ts",
+			"default": "./dist/config-environment.mjs"
+		},
+		"./environment": {
+			"@pluxel/source": "./src/environment.ts",
+			"default": "./dist/environment.mjs"
+		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
@@ -33,6 +41,8 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./application": "./dist/application.mjs",
+			"./config-environment": "./dist/config-environment.mjs",
+			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./package.json": "./package.json"
 		},
@@ -41,16 +51,21 @@
 	"scripts": {
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
-		"test": "pnpm exec vitest run"
+		"test": "pnpm exec vitest run",
+		"bench:state": "pnpm exec vitest bench bench/state.bench.ts"
 	},
 	"dependencies": {
 		"@pluxel/core": "workspace:^",
+		"@standard-schema/spec": "catalog:prod",
 		"ohash": "catalog:prod",
-		"superjson": "catalog:validation"
+		"std-env": "catalog:prod",
+		"superjson": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/test": "workspace:*",
-		"@types/node": "catalog:types"
+		"@types/node": "catalog:types",
+		"valibot": "catalog:validation"
 	},
 	"engines": {
 		"node": ">=24"

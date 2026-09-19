@@ -1,6 +1,8 @@
 import { createHost } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+
+afterEach(() => vi.unstubAllEnvs())
 import { http, HttpServer } from '../src/http'
 import { createHostHttpHandler } from '../src/http/application'
 import { listenHostHttp } from '../src/http/listener'
@@ -52,3 +54,31 @@ it('binds Node request metadata and propagates client disconnect before closing 
 	}
 	expect(() => host.start()).toThrow('host is closed')
 }, 10000)
+
+it('rejects malformed listener environment before attaching a carrier', async () => {
+	const host = await createHost({ plugins: [], services: [http()] })
+	try {
+		vi.stubEnv('PLUXEL_HOST_PORT', '')
+		await expect(listenHostHttp(host, { fetch: createHostHttpHandler(host) })).rejects.toThrow(
+			'PLUXEL_HOST_PORT',
+		)
+	} finally {
+		await host.close()
+	}
+})
+
+it('uses validated Portless bind and port defaults', async () => {
+	vi.stubEnv('PLUXEL_HOST_BIND', undefined)
+	vi.stubEnv('PLUXEL_HOST_PORT', undefined)
+	vi.stubEnv('PORTLESS_URL', 'http://pluxel.localhost:1355')
+	vi.stubEnv('HOST', '127.0.0.1')
+	vi.stubEnv('PORT', '0')
+	const host = await createHost({ plugins: [], services: [http()] })
+	const listener = await listenHostHttp(host, { fetch: createHostHttpHandler(host) })
+	try {
+		expect(listener.address.host).toBe('127.0.0.1')
+		expect(listener.address.port).toBeGreaterThan(0)
+	} finally {
+		await listener.close()
+	}
+})

@@ -1,5 +1,8 @@
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { BasePlugin, Plugin, createRuntimeTestHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {
@@ -73,7 +76,9 @@ describe('S3Plugin remote backend', () => {
 
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
 		{
-			await using host = await createRuntimeTestHost({ vault: {} })
+			await using host = await createServiceTestHost({
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			})
 
 			await host.start(S3VaultSeeder)
 			await host
@@ -101,7 +106,7 @@ describe('S3Plugin remote backend', () => {
 
 	it('provides O(1) named bucket selection and owner-bound handles', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start(S3Plugin, {
 				initialConfig: {
@@ -134,7 +139,7 @@ describe('S3Plugin remote backend', () => {
 
 	it('fails lifecycle when a configured Vault reference is missing', async () => {
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			const failure = await host.commitExpectFail((change) => {
 				change.catalog.add([S3Plugin, S3Consumer])
@@ -164,7 +169,7 @@ describe('S3Plugin remote backend', () => {
 		vi.stubGlobal('fetch', fetchMock)
 
 		{
-			await using host = await createRuntimeTestHost()
+			await using host = await createServiceTestHost()
 
 			await host.start(S3Plugin, {
 				initialConfig: remoteConfig({ type: 'anonymous' }),
@@ -212,7 +217,7 @@ async function withRemoteS3(
 	run: (s3: S3, client: Record<string, any>, config: Record<string, any>) => void | Promise<void>,
 ): Promise<void> {
 	{
-		await using host = await createRuntimeTestHost()
+		await using host = await createServiceTestHost()
 
 		await host.start(S3Plugin, {
 			initialConfig: remoteConfig({ type: 'anonymous' }),

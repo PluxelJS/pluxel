@@ -22,6 +22,18 @@ export async function loadPackagedWorkbenchDeployment(
 	artifacts: WorkbenchArtifactCoordinator,
 	workbenchRoot: string,
 ): Promise<readonly WorkbenchArtifactBatchCommit[]> {
+	const candidates = await readPackagedWorkbenchCandidates(workbenchRoot)
+	const prepared = await Promise.all(
+		candidates.map((candidate) => artifacts.prepareCandidate(candidate)),
+	)
+	return Object.freeze(prepared.map((candidate) => artifacts.commitPrepared(candidate)))
+}
+
+/** Reads the same validated inventory for development admission without publishing it. */
+export async function readPackagedWorkbenchCandidates(
+	workbenchRoot: string,
+	selected?: ReadonlySet<string>,
+): Promise<readonly WorkbenchArtifactBatchCandidate[]> {
 	const root = await canonicalWorkbenchRoot(workbenchRoot)
 	const inventoryPath = resolve(root, WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE)
 	let input: unknown
@@ -35,6 +47,7 @@ export async function loadPackagedWorkbenchDeployment(
 	const inventory = parseWorkbenchFederationDeploymentInventory(input)
 	const candidates = new Map<string, WorkbenchArtifactBatchCandidate>()
 	for (const producer of inventory.producers) {
+		if (selected && !selected.has(pluginDefinitionIndexKey(producer.plan.definition))) continue
 		const candidateRoot = await resolveDeploymentArtifactRoot(
 			root,
 			producer.artifactRoot,
@@ -72,6 +85,7 @@ export async function loadPackagedWorkbenchDeployment(
 	}
 	const contentInventory = parseWorkbenchContentDeploymentInventory(contentInput)
 	for (const content of contentInventory.entries) {
+		if (selected && !selected.has(pluginDefinitionIndexKey(content.definition))) continue
 		const candidateRoot = await resolveDeploymentArtifactRoot(
 			root,
 			content.artifactRoot,
@@ -95,11 +109,11 @@ export async function loadPackagedWorkbenchDeployment(
 		)
 	}
 
-	const ordered = [...candidates].sort(([left], [right]) => left.localeCompare(right))
-	const prepared = await Promise.all(
-		ordered.map(([, candidate]) => artifacts.prepareCandidate(candidate)),
+	return Object.freeze(
+		[...candidates]
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([, candidate]) => candidate),
 	)
-	return Object.freeze(prepared.map((candidate) => artifacts.commitPrepared(candidate)))
 }
 
 async function resolveDeploymentArtifactRoot(

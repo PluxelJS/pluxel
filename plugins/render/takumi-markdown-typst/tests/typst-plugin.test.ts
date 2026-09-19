@@ -1,11 +1,7 @@
 import { FontsPlugin } from '@pluxel/fonts'
 import type { PluginConstructor } from '@pluxel/core'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
 import { describe, expect, it } from 'vitest'
@@ -21,7 +17,7 @@ class TypstMathTestConsumer extends BasePlugin {
 	}
 }
 
-async function startTypstFixture(host: RuntimeTestHost): Promise<void> {
+async function startTypstFixture(host: ServiceTestHost): Promise<void> {
 	const plugins: readonly PluginConstructor[] = [
 		FontsPlugin,
 		TakumiPlugin,
@@ -37,7 +33,7 @@ async function startTypstFixture(host: RuntimeTestHost): Promise<void> {
 
 describe('TypstMathPlugin', () => {
 	it('preserves rejected unsafe math as a TypstMathError through the Markdown renderer', async () => {
-		await using host = await createRuntimeTestHost({ workbench: false })
+		await using host = await createServiceTestHost({ workbench: false })
 		await startTypstFixture(host)
 		const consumer = host.require(TypstMathTestConsumer)
 		const renderer = consumer.markdown.createRenderer({

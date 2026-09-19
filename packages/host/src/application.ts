@@ -1,3 +1,4 @@
+import { mergeConfigRecords, configRecordsFromEnvironment } from './config-records'
 import { createProductionSourceLoader } from './production-source-loader'
 import type { PluginConstructor } from '@pluxel/core'
 import type { HostService } from './services'
@@ -28,6 +29,7 @@ const fields = new Set([
 	'state',
 	'configRecords',
 	'configure',
+	'configEnvironmentBootstrap',
 	'prepare',
 ])
 const runtimeFields = new Set(['services', 'config', 'state', 'configRecords'])
@@ -49,6 +51,11 @@ export function assertHostApplication(input: unknown): asserts input is HostAppl
 		throw new TypeError('[host] Application sources must be an array')
 	if (app.services !== undefined && !Array.isArray(app.services))
 		throw new TypeError('[host] Application services must be an array')
+	if (
+		app.configEnvironmentBootstrap !== undefined &&
+		!Array.isArray(app.configEnvironmentBootstrap)
+	)
+		throw new TypeError('[host] Application configEnvironmentBootstrap must be an array')
 	if (app.configure !== undefined && typeof app.configure !== 'function')
 		throw new TypeError('[host] Application configure must be a function')
 	if (app.prepare !== undefined && typeof app.prepare !== 'function')
@@ -65,12 +72,26 @@ export async function resolveHostApplication(
 		'[host] configure() result',
 	)
 	assertFields(runtime, runtimeFields, '[host] configure() result')
-	const { configure: _configure, ...fixed } = application
+	const { configure: _configure, configEnvironmentBootstrap, ...fixed } = application
 	const resolved = { ...fixed, ...runtime } as ResolvedHostApplication
 	if (resolved.services !== undefined && !Array.isArray(resolved.services))
 		throw new TypeError('[host] configure() services must be an array')
+	let bootstrap: import('@pluxel/core/services').PluginConfigRecordSnapshot[] = []
+	if (configEnvironmentBootstrap && configEnvironmentBootstrap.length > 0) {
+		const { resolveConfigEnvironmentBootstrap } = await import('./config-environment')
+		bootstrap = resolveConfigEnvironmentBootstrap(application, startup.env)
+	}
+	const environmentSeed = mergeConfigRecords(bootstrap, configRecordsFromEnvironment(startup.env))
 	return {
 		...resolved,
+		...(environmentSeed.length > 0
+			? {
+					configRecords: {
+						...resolved.configRecords,
+						initial: mergeConfigRecords(resolved.configRecords?.initial, environmentSeed),
+					},
+				}
+			: {}),
 		plugins: [...application.plugins],
 		...(application.sources ? { sources: [...application.sources] } : {}),
 		...(resolved.services ? { services: [...resolved.services] as readonly HostService[] } : {}),

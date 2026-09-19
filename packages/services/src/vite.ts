@@ -1,4 +1,5 @@
 import { host, hostSingletons } from '@pluxel/host-dev/vite'
+import { serverOnlyVitePluginFactory } from '@pluxel/rolldown/vite'
 import type { Plugin, PluginOption } from 'vite'
 import { serviceDevelopment } from './development/service-development'
 
@@ -7,6 +8,8 @@ export type ServicesViteOptions = Readonly<{
 	entry: string
 	/** Enable the official local TypeScript console. @default false */
 	devConsole?: boolean
+	/** Shallow immutable Host startup bindings; defaults to an empty record. */
+	bindings?: Readonly<Record<string, unknown>>
 }>
 
 /** Preserve official service token identity across the Vite and native module graphs. */
@@ -25,10 +28,19 @@ export function vitePreset(options: ServicesViteOptions): PluginOption[] {
 		throw new TypeError('[services/vite] devConsole must be a boolean')
 	return [
 		serviceSingletons(),
+		serverOnlyVitePluginFactory(
+			'pluxel:database-source',
+			async (environment) => {
+				const { databaseSourceVitePlugin } = await import('@pluxel/rolldown/vite')
+				return databaseSourceVitePlugin({ root: environment.config.root })
+			},
+			{ enforce: 'pre' },
+		),
 		...serviceDevelopment(),
 		...host({
 			entry: options.entry,
 			devConsole: options.devConsole,
+			bindings: options.bindings,
 		}),
 	]
 }

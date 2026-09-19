@@ -253,7 +253,7 @@ await host.start(CanvasPlugin, {
 })
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
+这里的 `host` 是 `createServiceTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
 `host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
 
 | 字段                                   |       默认值 | 检查对象                                      |
@@ -276,7 +276,7 @@ output bytes、DPR 或主题：
 
 - Worker task 的线程并发与队列由 runtime 的 root-owned `ctx.workers` 配置。
 - `maxConcurrentDecodesPerWorkerAdapter` 是每个 adapter 的局部上限；ECharts 每 job 创建一个 adapter，默认 4 个
-  Runtime workers × 1 个 decode，仍不是可接管 libuv 的进程级线程池。提高它会按 active worker 数产生乘法，应与
+  宿主 Workers × 1 个 decode，仍不是可接管 libuv 的进程级线程池。提高它会按 active worker 数产生乘法，应与
   `UV_THREADPOOL_SIZE`、其他 native work 和 RSS
   基准一起调整。
 - encoded output 的格式与大小由调用方和上游 encoder 决定。

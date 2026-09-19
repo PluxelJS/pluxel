@@ -3,7 +3,7 @@ title: 插件 HTTP
 description: 在插件中添加 HTTP API、webhook 和 WebSocket，并验证路由与热更新行为。
 ---
 
-要给插件增加 API 或 webhook，在 `init()` 中通过 `this.ctx.require(Http)` 声明路由即可。宿主显式安装 `http()` 服务并负责接入请求，关闭 Workbench 也不影响业务 HTTP。官方 Runtime 默认安装该服务。
+要给插件增加 API 或 webhook，在 `init()` 中通过 `this.ctx.require(Http)` 声明路由即可。宿主显式安装 `http()` 服务并负责接入请求，关闭 Workbench 也不影响业务 HTTP。`standardServices()` 与 `servicesPreset()` 默认安装该服务。
 
 下面的插件可以加入 [快速开始](../getting-started/index.md) 创建的应用。`ctx.require(Http)` 使用 Elysia 2 原生 API，路由路径就是最终 URL，不会自动添加插件名前缀。
 
@@ -56,16 +56,16 @@ fork 或多个 Plugin 若要同时提供 HTTP，必须声明彼此不冲突的�
 
 ### 与产品 SPA 和 Workbench 共用 origin
 
-Runtime 只保留 `/__pluxel`；不会强制业务路由使用 `/api` 或其他前缀。同一 listener 上的请求按以下边界仲裁：
+HTTP 服务保留 `/__pluxel`；不会强制业务路由使用 `/api` 或其他前缀。同一 listener 上的请求按以下边界仲裁：
 
 ```text
-/__pluxel/**                 -> Runtime / Workbench
+/__pluxel/**                 -> Management / Workbench
 匹配 Plugin HTTP/WS route    -> owning Plugin generation
 Workbench document path     -> Workbench shell
 其余 navigation             -> 产品 SPA fallback
 ```
 
-因此 Plugin 显式声明 `GET /settings` 时会优先于产品 SPA 的 `/settings`。这是产品选择的最终路径所有权，不是 Runtime 可以从两个
+因此 Plugin 显式声明 `GET /settings` 时会优先于产品 SPA 的 `/settings`。这是产品选择的最终路径所有权，不是 Host 可以从两个
 独立 Router 自动判定的冲突。应用可以约定 `/api`、`/webhooks` 等首段来降低误用，但 Pluxel 不把团队惯例升级为框架限制；真正需要
 提供独立产品页面的 Plugin 也可以拥有明确的 mount point，并自行配置该前端的 Router basename 与 asset base。
 
@@ -77,11 +77,11 @@ federation artifact 与 Shell asset 均留在 `/__pluxel/**`。包含产品 SPA 
 
 `ctx.require(Http)` 是上游 `Elysia` instance，不是 facade 或 Proxy。schema、model、macro、hook、guard、derive、resolve、error handler、
 cookie、stream 和普通 function plugin 都按 Elysia 2 API 使用。需要这些 API 的 Plugin package 直接依赖 `elysia`；
-`@pluxel/runtime` 不重新导出 Elysia 或它的官方 plugin。
+`@pluxel/core` 不重新导出 Elysia 或它的官方 plugin。
 
 发布给其他宿主使用的 Plugin package 应把宿主支持的 Elysia 精确版本同时声明为 `peerDependencies` 和 `devDependencies`：peer
 保证运行时复用宿主 singleton，dev dependency 则供本 package 编译、测试和编辑器解析。不要把 Elysia 打进 Plugin bundle，也不要让
-Plugin 自带另一份 runtime copy。当前 Runtime 锁定 `2.0.0-beta.7`，对应声明为：
+Plugin 自带另一份 runtime copy。当前 HTTP 服务锁定 `2.0.0-beta.7`，对应声明为：
 
 ```json
 {
@@ -194,7 +194,7 @@ Plugin 或 control plane。
 
 ## Finalization 与生命周期
 
-Plugin 和所有 Part 的 `init()` 成功后，Runtime 会等待 lazy Elysia modules，检查 route inventory，再调用 Elysia 2 自己的
+Plugin 和所有 Part 的 `init()` 成功后，HTTP 服务会等待 lazy Elysia modules，检查 route inventory，再调用 Elysia 2 自己的
 `app.compile()` 固化 application。compile 会 seal 同一个 instance；generation running 后继续增加 route、hook、store 或 decorator
 会由 Elysia 2 fail-fast。
 
@@ -204,7 +204,7 @@ Plugin 和所有 Part 的 `init()` 成功后，Runtime 会等待 lazy Elysia mod
 
 请求进入 app 前会取得 owner generation lease。返回 streaming `Response` 时，lease 延伸到 body close、cancel 或 error；generation
 停止会 abort handler 看到的 `request.signal`，并等待已经接纳的 response settle。无法响应 signal 的任意 JavaScript 仍受宿主 drain
-timeout 约束，Runtime 不会假装能同步终止它。
+timeout 约束，HTTP 服务不会假装能同步终止它。
 
 长期 background task 不应挂在某个 HTTP request Promise 上。把它建模为 owner-bound worker/queue，再让 endpoint 只提交任务或查询状态。
 
@@ -368,7 +368,7 @@ owner invocation 的 `Request` 传入会明确失败。
 
 ## 当前 Elysia 2 与 carrier 边界
 
-Runtime 当前锁定 Elysia `2.0.0-beta.7`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
+HTTP 服务当前锁定 Elysia `2.0.0-beta.7`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
 compile/seal、atomic generation publication、stream lease、owner withdrawal，以及上述三条 Node listener 路线的基础业务 WebSocket。
 以下能力仍不能按“所有 runtime 上完整等同原生 Elysia server”使用：
 
@@ -380,7 +380,7 @@ compile/seal、atomic generation publication、stream lease、owner withdrawal�
   byte 语义也尚未完成精确对齐，不应据此编写跨 runtime 流控协议。
 - Elysia application-level WebSocket tuning 尚未完整投影到共享 carrier，例如全部 payload、compression、idle timeout 和 transport
   tuning 不能视为每个 Plugin 独立拥有的设置。
-- Runtime 会拒绝相同 method 与相同声明 path 的跨 owner 冲突，也会拒绝 `/__pluxel`；但 beta 的 public inventory 尚不足以证明所有
+- HTTP 服务会拒绝相同 method 与相同声明 path 的跨 owner 冲突，也会拒绝 `/__pluxel`；但 beta 的 public inventory 尚不足以证明所有
   canonical-equivalent pattern 都能与 Elysia matcher 完全一致地预检，例如仅参数名不同的 pattern。当前应给每个业务 API 使用明确、
   唯一的首段 namespace，并用真实请求覆盖边界。
 
@@ -403,7 +403,7 @@ portable parity 或 tuning 的应用应等待对应 conformance 完成。
 
 ## 测试
 
-Runtime test host 的 `host.http.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
+服务 test host 的 `host.http.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
 
 ```ts no-twoslash
 const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
@@ -441,12 +441,11 @@ route index 或 carrier tuning 变成 Plugin API。
 
 ```ts no-twoslash
 import { createHost } from '@pluxel/host'
-import { resolveContextCapability } from '@pluxel/core/host'
 import { http, HttpServer } from '@pluxel/services/http'
 
 const host = await createHost({ plugins: [MyRoutes], services: [http()] })
 await host.startNode(MyRoutesAddress)
-const server = resolveContextCapability(host.ctx, HttpServer)
+const server = host.ctx.require(HttpServer)
 const response = await server.fetch(new Request('http://localhost/status'))
 await host.close()
 ```
@@ -454,4 +453,4 @@ await host.close()
 `Http` 仅供 Plugin/Part 使用；`HttpServer` 仅供受信任宿主读取。需要 WebSocket 时，carrier 使用
 `attachApplicationCarrier()` 提供 upgrade、连接统计和物理地址，并负责调用 returned disposer 撤回接线。
 
-旧 Runtime 应用与独立 Host 共用同一个 `HttpServer` 请求边界和业务目录；Runtime 只适配原有 UI 资源配置与开发重载信号。管理会话与 artifact 鉴权复用 Management 的固定端点，Workbench shell 作为业务路由未命中后的 fallback，不再叠加另一层 Runtime Elysia router。
+`HttpServer` 拥有唯一请求边界和业务目录。管理会话与 artifact 鉴权由 Management 的固定端点处理，Workbench shell 在业务路由未命中后提供 fallback；各 attachment 只挂载到已选择的服务，不创建第二个 router。

@@ -77,7 +77,7 @@ scope.mutation((roots) => ({ mutationFn, workbench? }))
 - `@pluxel/workbench`：browser-safe definition builder 和类型；
 - `@pluxel/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
 - `@pluxel/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable DTO detach；
-- `@pluxel/runtime/capnweb`：固定版本的 `RpcTarget`、`RpcStub` 和 WebSocket session bridge。
+- `capnweb`：固定版本的 `RpcTarget`、`RpcStub` 和 WebSocket session bridge。
 
 Plugin author 不取得 raw socket、MF Runtime、Shell router/store、Bridge wrapper props 或 server registry。
 Toolchain 生成的 Bridge wrapper ABI 固定在 `@pluxel/workbench/internal/react`；它与其他 internal readers
@@ -187,13 +187,13 @@ data，`::slot[key]` 是 block data 或 action。每个 declaration 必须恰好
 attributes 或 inline action 都 fail build。浏览器再次验证 plan；Shell 不运行 Markdown parser、不插入 raw HTML，也不加载
 Plugin JavaScript。
 
-Runtime publication 将真实 Valibot schema 投影成 portable presentation，并校验 artifact/declaration/binding exact match。
+Workbench publication 将真实 Valibot schema 投影成 portable presentation，并校验 artifact/declaration/binding exact match。
 Data schema 是 transform-free display validation；action input 是 object/object-intersection form schema，默认 dialog，
 `form: 'embedded'` 固定展开。Server 在 handler 前执行 portable-data budget 与 authoritative Valibot parse；schema、closure、
 handler 和 secret 都不会发到浏览器。
 
-`load()` 的作者返回类型递归只读，允许直接复用 detached domain snapshot；Runtime 仍重新校验并投影 portable value，
-不会要求 Plugin 为 transport 制造可变深拷贝。Action input 则是 Runtime 完成 authoritative parse 后交给 handler 的 fresh value，
+`load()` 的作者返回类型递归只读，允许直接复用 detached domain snapshot；Workbench 服务仍重新校验并投影 portable value，
+不会要求 Plugin 为 transport 制造可变深拷贝。Action input 则是 Workbench 服务完成 authoritative parse 后交给 handler 的 fresh value，
 保持 Valibot `InferOutput` 的原始可变性。
 
 每次 interactive Content open 由 Framework 创建一个 root。含 data 时，`subscribe()` 先 retain Browser callback，再 initial
@@ -295,7 +295,7 @@ authority；并发 read single-flight，read 中的多次通知合并为一次 f
 `queryFn` 只接收 query-core 原生安全 context，例如 `signal` 和规范化后的 `queryKey`，不混入 Pluxel 自定义参数。
 Query/mutation options 是公开类型明确列出的受控 allowlist，不承诺透传 TanStack Query 的全部 options。TanStack
 原生字段保持顶层；Workbench 自有扩展只使用 `workbench.subscribe` 和 `workbench.invalidates`。Factory 返回类型必须
-对顶层与 `workbench` 字段保持 compile-time exact，Runtime 对绕过类型的未知字段继续 fail-fast。
+对顶层与 `workbench` 字段保持 compile-time exact，Workbench 服务对绕过类型的未知字段继续 fail-fast。
 Options factory 必须同步、确定且无副作用；Hook resolution 和 family target preflight 都可以重复执行它。I/O、subscription
 注册与 mutation 副作用分别只发生在 `queryFn`、`workbench.subscribe` 和 `mutationFn`。
 Workbench 默认 `enabled: true`、无 subscription 时 `staleTime: 0`、有 subscription 时 `staleTime: Infinity`，并默认
@@ -310,7 +310,7 @@ handle 的命令式操作。这些 controls 只属于产生它的 active Hook/�
 使用 callback；input-derived callback 显式复用 mutation variables type，不能放宽成 `any`。Targets 在调用远端方法前验证，owner 仍 active 时在 settle
 后标记 stale。RPC reject 或 result detach failure 仍 invalidates；owner 已关闭时 cache 已被销毁。Mutation 每个 Hook
 single-flight。事件处理器用 `mutate()` 并从 Hook state 观察结果；需要返回值或流程编排时使用
-`mutateAsync()`。Pending 时第二次调用不会覆盖当前 state，`mutateAsync()` 会以稳定 code 失败；Runtime 不猜测写操作的幂等性
+`mutateAsync()`。Pending 时第二次调用不会覆盖当前 state，`mutateAsync()` 会以稳定 code 失败；Workbench 服务不猜测写操作的幂等性
 或执行顺序。若 mutation result 只是下一份 snapshot 的重复副本，领域 API 返回 `void`，由权威 subscription 或 typed invalidation
 触发 query 重读；只有 UI 确实消费的 domain result 才返回 portable DTO。
 
@@ -422,9 +422,9 @@ Workbench document 创建一个物理 WebSocket：
 `epoch-invalidated`，随后关闭物理连接；Shell 销毁 active Bridges、释放 opened handles，并自动完整 document reload。刷新遵守 HMR 文档的连续刷新预算；认证撤销与 broken 状态保留明确的人工恢复入口。
 同一 document 不创建第二条 session，不重建部分 roots，也不恢复旧 workspace 上的 remote instance。
 
-Node production 与 Runtime Vite 使用同一个 runtime carrier seam。Vite 保留 listener 和 HMR Upgrade 优先权，
-Runtime 只接管匹配的 control/business Upgrade。反向代理必须保持同源 cookie、WebSocket Upgrade 和短期 handoff 的
-实例归属；Runtime 不从 forwarding headers 推导 physical TLS 或 locality。
+Node production 与 Host-dev 的 HTTP 开发附件使用同一个 HTTP carrier seam。Vite 保留 listener 和 HMR Upgrade 优先权，
+HTTP 服务只接管匹配的 control/business Upgrade。反向代理必须保持同源 cookie、WebSocket Upgrade 和短期 handoff 的
+实例归属；HTTP 服务不从 forwarding headers 推导 physical TLS 或 locality。
 
 ## Layout 与打开流程
 
@@ -471,8 +471,8 @@ dist/workbench/
 ```
 
 Inventory、definition digest、content-set digest、canonical path 和内容在加载时全部复核。Plugin package 可以只保留预编译
-Content artifact；production Runtime 不依赖发布包中的 `src/*.md`。Static assembly、dynamic distribution discovery 和 dev
-compiler 都向同一个 Runtime Content artifact store 提交验证后的 immutable Content set。
+Content artifact；production host 不依赖发布包中的 `src/*.md`。Static assembly、dynamic distribution discovery 和 dev
+compiler 都向同一个 Workbench Content artifact store 提交验证后的 immutable Content set。
 
 同一 definition 同时含 Content 与 federated renderer 时，两类 candidate 必须作为一个 revision 原子提交。Prepare 或 commit
 任一步失败都回滚已提交部分并保留完整 last-known-good tuple；成功后才通过 session epoch invalidation 触发 full reload。
@@ -521,7 +521,7 @@ shared module；`@mantine/core` 基础 CSS 同样只由 Shell 加载，producer 
 library 仍由 producer 自己拥有 Provider、module 和 CSS。Remote 可以从 `host.locale`、`host.colorScheme` 等固定 portable fact
 初始化或同步表现，但不能读取 Shell 的私有 Provider 或 theme object。共享 module instance 不会改变 React Context 的祖先边界。
 
-开发期 renderer 变化先发布 definition topology 与 Content artifact；缺失或过期的 producer 不阻塞 Runtime 启动，
+开发期 renderer 变化先发布 definition topology 与 Content artifact；缺失或过期的 producer 不阻塞 Host 启动，
 对应 View/Attachment placement 仍保留在 layout 中，并由 Shell 显示 `building` 状态。producer runtime build 使用持久
 Vite cache 在后台补齐，成功提交后通过 session epoch invalidation 触发整页 reload；失败会把同一 placement 更新为
 `failed` 状态并显示安全错误 message，下一次变更或启动会重试。
@@ -598,20 +598,20 @@ detach/dispose，不能再更新 React。Framework 自身的 portable、scope、
 
 ## 实现入口
 
-- `packages/runtime/src/workbench/definition.ts`
-- `packages/runtime/src/workbench/client-protocol.ts`
-- `packages/runtime/src/workbench/client.ts`
-- `packages/runtime/src/workbench/portable-value.ts`
-- `packages/runtime/src/workbench/react.tsx`
-- `packages/runtime/src/workbench/renderer-scope.tsx`
-- `packages/runtime/src/workbench/react-internal.tsx`
-- `packages/runtime/src/workbench/federation.ts`
-- `packages/runtime/src/services/workbench/WorkbenchRegistry.ts`
-- `packages/runtime/src/services/workbench/WorkbenchContentArtifactService.ts`
-- `packages/runtime/src/services/workbench/WorkbenchContentPresentation.ts`
-- `packages/runtime/src/services/workbench/WorkbenchContentTarget.ts`
-- `packages/runtime/src/services/workbench/WorkbenchSessionTarget.ts`
-- `packages/runtime/src/web/session/`
+- `packages/workbench/src/workbench/definition.ts`
+- `packages/workbench/src/workbench/client-protocol.ts`
+- `packages/workbench/src/workbench/client.ts`
+- `packages/workbench/src/workbench/portable-value.ts`
+- `packages/workbench/src/workbench/react.tsx`
+- `packages/workbench/src/workbench/renderer-scope.tsx`
+- `packages/workbench/src/workbench/react-internal.tsx`
+- `packages/workbench/src/workbench/federation.ts`
+- `packages/workbench/src/services/workbench/WorkbenchRegistry.ts`
+- `packages/workbench/src/services/workbench/WorkbenchContentArtifactService.ts`
+- `packages/workbench/src/services/workbench/WorkbenchContentPresentation.ts`
+- `packages/workbench/src/services/workbench/WorkbenchContentTarget.ts`
+- `packages/workbench/src/services/workbench/WorkbenchSessionTarget.ts`
+- `packages/management/src/web/session/`
 - `packages/rolldown/src/workbench/semantic-lowering.ts`
 - `packages/rolldown/src/workbench/content-compiler.ts`
 - `packages/rolldown/src/vite/workbench-ui.ts`

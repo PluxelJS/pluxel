@@ -17,6 +17,7 @@ export {
 
 export type {
 	HostDevelopmentPluginApi,
+	HostDevelopmentCatalog,
 	HostDevelopmentAttachment,
 	HostDevelopmentCandidate,
 } from './attachments'

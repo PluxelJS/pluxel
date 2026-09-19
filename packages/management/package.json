@@ -247,6 +247,10 @@
 		"./internal/http": {
 			"@pluxel/source": "./src/http-internal.ts",
 			"default": "./dist/internal/http.mjs"
+		},
+		"./commands": {
+			"@pluxel/source": "./src/commands.ts",
+			"default": "./dist/commands.mjs"
 		}
 	},
 	"publishConfig": {
@@ -309,7 +313,8 @@
 			"./service": "./dist/service.mjs",
 			"./internal/host-options": "./dist/internal/host-options.mjs",
 			"./http": "./dist/http.mjs",
-			"./internal/http": "./dist/internal/http.mjs"
+			"./internal/http": "./dist/internal/http.mjs",
+			"./commands": "./dist/commands.mjs"
 		},
 		"access": "public"
 	},
@@ -320,6 +325,7 @@
 	},
 	"dependencies": {
 		"@logtape/logtape": "catalog:prod",
+		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
 		"@pluxel/logging": "workspace:^",

@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createServer } from 'vite'
+import { createDiskFixture } from '@pluxel/test/fixtures'
 
 import { renderRuntimeUiHtml } from '../src/shell/html'
 
@@ -9,6 +11,51 @@ const assets = {
 }
 
 describe('Workbench UI HTML rendering', () => {
+	it('keeps built assets out of Vite pre-transform while preserving HTML and source transforms', async () => {
+		await using fixture = await createDiskFixture({ 'source.js': 'export const ready = true' })
+		const server = await createServer({
+			configFile: false,
+			root: fixture.getPath(),
+			appType: 'custom',
+			logLevel: 'silent',
+			server: { middlewareMode: true, hmr: false },
+			plugins: [
+				{
+					name: 'test-shell-html-transform',
+					transformIndexHtml: (html) =>
+						html.replace('</head>', '<meta name="still-transformed" /></head>'),
+				},
+			],
+		})
+		const warmup = vi.spyOn(server, 'warmupRequest')
+		const errors = vi.spyOn(server.config.logger, 'error')
+		try {
+			const built = {
+				js: '/__pluxel/workbench/assets/client-built.js',
+				css: ['/__pluxel/workbench/assets/client-built.css'],
+				preload: ['/__pluxel/workbench/assets/vendor-built.js'],
+			}
+			const output = await server.transformIndexHtml(
+				'/admin',
+				renderRuntimeUiHtml(built, { prebuiltAssets: true }),
+			)
+			expect(output).toContain('/@vite/client')
+			expect(output).toContain('name="still-transformed"')
+			for (const url of [built.js, ...built.css, ...built.preload]) expect(output).toContain(url)
+			expect(output).not.toContain('vite-ignore')
+			expect(warmup).not.toHaveBeenCalled()
+			await server.transformIndexHtml(
+				'/admin',
+				renderRuntimeUiHtml({ js: '/source.js', css: [], preload: [] }),
+			)
+			expect(warmup).toHaveBeenCalledWith('/source.js')
+			await Promise.all(warmup.mock.results.map((result) => result.value))
+			expect(errors).not.toHaveBeenCalled()
+		} finally {
+			await server.close()
+		}
+	})
+
 	it('renders the Workbench UI document without assuming a React refresh endpoint', () => {
 		const html = renderRuntimeUiHtml(assets, {
 			uiBasePath: '/__pluxel/workbench',
@@ -43,8 +90,27 @@ describe('packaged shell HTTP boundary', () => {
 				new Request(`http://host.test${path}`, init)
 			const navigation = request('/admin/plugins', { headers: { accept: 'text/html' } })
 			expect(shell.matchesRequest(navigation)).toBe(true)
+			expect(
+				shell.matchesRequest(
+					request('/admin/plugin-graph/source/Consumer.ts', { headers: { accept: 'text/html' } }),
+				),
+			).toBe(true)
+			expect(
+				shell.matchesRequest(
+					request('/admin/plugin-graph/source/Consumer.ts', {
+						headers: { accept: 'text/css,*/*' },
+					}),
+				),
+			).toBe(false)
+			expect(
+				shell.matchesRequest(
+					request('/admin', { method: 'POST', headers: { accept: 'text/html' } }),
+				),
+			).toBe(false)
 			const html = await shell(navigation)
-			expect(await html!.text()).toContain('/__pluxel/workbench/assets/client.js')
+			expect(await html!.text()).toContain(
+				'<script vite-ignore type="module" src="/__pluxel/workbench/assets/client.js">',
+			)
 			expect(await shell(request('/api', { headers: { accept: 'application/json' } }))).toBeNull()
 			expect(shell.matchesRequest(request('/@vite/client'))).toBe(false)
 			const asset = await shell(request('/__pluxel/workbench/assets/client.js'))

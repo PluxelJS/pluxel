@@ -61,3 +61,11 @@ export {
 	type ResolvedHostApplication,
 } from './application'
 export type { HostRuntimeOptions } from './host'
+
+export type {
+	PluginApplyReportSnapshot,
+	PluginApplyCommitSummary,
+	PluginApplyLifecycleIssue,
+	PluginApplyLifecycleErrorInfo,
+} from './apply-report'
+export type { RuntimeUpdateSnapshot } from './execution'

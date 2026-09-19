@@ -5,7 +5,7 @@ description: 在独立 Host 中组合认证、管理投影与所选 HTTP carrier
 
 ## 在独立 Host 中组合 Management
 
-Management 现在由 `@pluxel/management` 提供。`managementAccess()` 安装认证权威，`management()` 在已有 Persistence 上安装管理投影，`managementHttp()` 将控制入口接入已选中的 HTTP carrier。三者都不创建 Runtime 或物理 listener。
+Management 现在由 `@pluxel/management` 提供。`managementAccess()` 安装认证权威，`management()` 在已有 Persistence 上安装管理投影，`managementHttp()` 将控制入口接入已选中的 HTTP carrier。三者都借用已存在的 Host，不创建物理 listener。
 
 ```ts
 import { http } from '@pluxel/services/http'

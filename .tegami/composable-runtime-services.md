@@ -8,7 +8,6 @@ packages:
   '@pluxel/management': major
   '@pluxel/workbench': major
   '@pluxel/logging': major
-  '@pluxel/runtime': major
   '@pluxel/rolldown': major
   '@pluxel/auth': major
   '@pluxel/vault-admin': major
@@ -34,8 +33,8 @@ Context.require(), with stable missing-capability and access errors.
 
 Persistence and Vault move to dedicated @pluxel/services entries. Vault explicitly requires Persistence,
 loads its encryption implementation during preparation and flushes pending writes during Host cleanup.
-Runtime uses the same service installations. Import Persistence helpers and Vault types from the service
-entries; the Runtime root helpers and Runtime services/vault entry are removed.
+Import Persistence helpers and Vault types from their service entries. The Runtime package is removed;
+servicesPreset() supplies the official default service composition.
 
 ## Preserve identity through development and generated metadata
 
@@ -48,13 +47,13 @@ metadata defaults to the Core toolchain, without requiring Runtime in independen
 
 Plugin examples and official packages import the Core authoring model directly. Commands, Node modules
 and Workers are explicitly installed services; their tokens, declarations and types live at the service
-entries. Worker installations declare their Node module dependency. Runtime retains its default product
-composition while using the same installations. The default Core author entry no longer forwards raw
+entries. Worker installations declare their Node module dependency. servicesPreset() combines these
+installations without introducing a second application or lifecycle model. The default Core author entry no longer forwards raw
 Context host construction helpers; service authors use @pluxel/core/host.
 
 Host exposes generic configuration get/validate/patch/reset through its existing coordinator, preserving
-Core validation, storage confirmation and generation notification. Runtime management delegates to
-these operations and retains browser report projection. Vault operations participate in owner and root
+Core validation, storage confirmation and generation notification. Management delegates to these
+operations and retains browser report projection. Vault operations participate in owner and root
 admission: stop drains accepted work, rejects cached handles and flushes after pending storage IO.
 
 ## Use standard tsdown application plugins
@@ -67,7 +66,7 @@ same freezer, artifact assembly and deployment validation.
 
 Install http() from @pluxel/services/http and use ctx.require(Http) for the native generation-owned
 Elysia application. Independent Hosts expose business requests through the root-only HttpServer token,
-without management, Workbench or a listener. Runtime uses the same installation and publication stages.
+without management, Workbench or a listener. Official presets use the same installation and publication stages.
 Host services may bind fixed Core lifecycle stages before Plugin admission; no dynamic registration or
 secondary graph commit is introduced.
 
@@ -95,7 +94,7 @@ an admitted operation retains its existing completion and persistence semantics.
 
 ## Share startup declarations and transport ownership
 
-Runtime and its test-host factories now await the same createHost service preparation path. Official
+Application startup and service test-host factories await the same createHost service preparation path. Official
 plugins import validation and RPC contracts from their owning packages, removing the Runtime peer
 where no runtime implementation is used. Services owns the Node HTTP/WebSocket carrier; Host-dev owns
 the development console, and queued management mutations honor cancellation before admission.

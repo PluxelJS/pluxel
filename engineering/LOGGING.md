@@ -263,7 +263,7 @@ error summary。它不是新的 author-facing LogRecord。
 | bounded store/chunks               | UI 日志内存由 retention 决定，不由历史总日志量决定          |
 | optional/lazy store registry       | headless/Workbench-disabled host 不承担 store 常驻成本      |
 
-`packages/runtime/bench/logger.bench.ts` 同时覆盖普通 override hit 和 100,000 overrides hit。基准用于检查 Map
+`packages/logging/bench/logger.bench.ts` 同时覆盖普通 override hit 和 100,000 overrides hit。基准用于检查 Map
 规模增长是否改变 lookup 复杂度，不把单机绝对 ops/s 当作跨环境承诺。
 
 ## Package boundaries
@@ -281,8 +281,8 @@ error summary。它不是新的 author-facing LogRecord。
 @pluxel/logging/internal
   RuntimeLogging installation and active owner binding
 
-@pluxel/runtime
-  launcher defaults, boot ordering, shutdown ownership
+@pluxel/host + @pluxel/services
+  Host shutdown ownership and official service defaults
 ```
 
 core 不包含 formatter、sink、policy persistence、host env resolution 或 LogTape installation。
@@ -295,9 +295,9 @@ core 不包含 formatter、sink、policy persistence、host env resolution 或 L
 - `packages/logging/src/policy.ts`
 - `packages/logging/src/sink.ts`
 - `packages/logging/src/store.ts`
-- `packages/runtime/src/services/management/RuntimeManagementTarget.ts`
-- `packages/runtime/src/application/internal/host.ts`
-- `packages/runtime/src/application/vite.ts`
+- `packages/management/src/services/management/RuntimeManagementTarget.ts`
+- `packages/host/src/host.ts`
+- `packages/host-dev/src/host-vite.ts`
 
 ## 不变量
 

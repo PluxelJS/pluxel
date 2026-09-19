@@ -74,10 +74,10 @@ async function fixture() {
 
 it('executes against a Host without official services or configured logging', async () => {
 	const current = await fixture()
-	mocked.script.mockImplementation(async (dev, run) => ({
+	mocked.script.mockImplementation(async (dev) => ({
 		plugins: await dev.plugins.list(),
 		logger: typeof dev.ctx.logger.info,
-		signal: run.signal === current.run.signal,
+		signal: dev.signal === current.run.signal,
 	}))
 	expect(await current.execute()).toEqual({ plugins: [], logger: 'function', signal: true })
 	expect(current.run.revision).toHaveBeenCalledTimes(2)

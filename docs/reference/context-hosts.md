@@ -4,9 +4,9 @@ description: 使用 @pluxel/context 为 standalone host 组合固定、严格惰
 ---
 
 `@pluxel/context` 适合需要共享 root 服务、隔离 scope 状态并保留 owner identity 的应用或框架宿主。它是一套同步、
-host-neutral 的 Context kernel，不要求使用 Pluxel Plugin Runtime。
+host-neutral 的 Context kernel，不要求使用 Pluxel Plugin Host。
 
-写普通 Pluxel Plugin 时不需要直接使用它：Runtime 已经组合好 `ctx`，Plugin 间的业务依赖应写进 constructor，而不是尝试
+写普通 Pluxel Plugin 时不需要直接使用它：Host 已经组合好 `ctx`，Plugin 间的业务依赖应写进 constructor，而不是尝试
 安装 Context capability。
 
 需要在 Core Plugin 宿主中安装服务、异步准备资源和管理关闭顺序时，使用[组合 Host 服务](./runtime-services.md)。服务作者从 `@pluxel/core/host` 导入组合工具，确保与 Core 内联的 kernel 保持同一身份；不要把独立 `@pluxel/context` 创建的 token 传入 Core Host。
@@ -102,7 +102,7 @@ console.assert(handler.actions.owner === handler)
 ```
 
 有 `property` 的 capability 会出现在推导出的 Context 类型上。若能力不适合成为属性，可以省略 `property`，再通过
-`resolveContextCapability(ctx, descriptor)` 显式读取。
+`root.require(descriptor)` 显式读取。owner Context 只能直接 require all/owner token，RootContext 只能 require all/root token；持有真实 root 引用代表 root 访问权，不构成不可信代码隔离。
 
 ### 让应用配置保留类型提示
 
@@ -149,8 +149,7 @@ try {
 ```
 
 `ContextHost` 本身没有 `prepare()`、`dispose()` 或通用异步 hook；资源启动、失败重试和关闭顺序属于上层 host，而不是
-Context kernel。Pluxel Runtime 也遵循这一点：launcher 显式 prepare Runtime-owned service，root/generation effects 和
-launcher `stop()` 负责清理。
+Context kernel。Plugin Host 也遵循这一点：Host 显式准备服务，root/generation effects 与 Host `close()` 负责清理。
 
 ## 在创建前替换实现
 
@@ -172,12 +171,12 @@ const testContextHost = createContextHost({
 每个 override 必须匹配基础集合中同一个 descriptor，并保持原来的 scope 和 `property`；未知 descriptor、重复替换或 shape
 变化都会在 host 编译时失败。override 不是运行时 mutator：host 创建后，其 Context shape 永久固定。
 
-## 与 Pluxel Runtime 的边界
+## 与 Plugin Host 的边界
 
 - standalone application/framework 可以直接安装 `@pluxel/context` 并组合自己的 host；
 - `@pluxel/core` 源码复用这个 kernel，但发布的 Core JS 与 declarations 已完整内联，Core 消费者不需要额外安装它；
-- static、dynamic 和 test Runtime 都由 Runtime launcher 组合固定能力；
-- Plugin 不能向现有 Runtime Context 安装、替换或删除 capability；
+- static、dynamic 和 test Host 都在创建 root 前通过服务清单组合固定能力；
+- Plugin 不能向现有 Host Context 安装、替换或删除 capability；
 - Plugin 间业务依赖使用 constructor 或 optional Plugin ref，不使用 Context descriptor 模拟第二张依赖图。
 
 ## 保持同一 kernel identity
