@@ -145,6 +145,10 @@
 			"@pluxel/source": "./src/persistence.ts",
 			"default": "./dist/persistence.mjs"
 		},
+		"./preset": {
+			"@pluxel/source": "./src/preset.ts",
+			"default": "./dist/preset.mjs"
+		},
 		"./test": {
 			"@pluxel/source": "./src/test.ts",
 			"default": "./dist/test.mjs"
@@ -199,6 +203,7 @@
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
+			"./preset": "./dist/preset.mjs",
 			"./test": "./dist/test.mjs",
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",

@@ -254,6 +254,13 @@ describe('host-dev Vite plugin stack', () => {
 		expect(await classifier.classifyFile(join(legacyEsmRoot, 'build', 'src', 'index.js'))).toEqual(
 			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
 		)
+		const commonjs = join(legacyEsmRoot, 'build', 'esm', 'compat.cjs').replaceAll('\\', '/')
+		for (const id of [`/@fs/${commonjs}?import#source`, `/@fs//${commonjs}?import`]) {
+			expect(await classifier.classifyFile(id)).toMatchObject({
+				resolvedPath: commonjs,
+				format: 'commonjs',
+			})
+		}
 	})
 
 	it('prefers the ESM side of dual import/require exports in the real Vite runner', async () => {

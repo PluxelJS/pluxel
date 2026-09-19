@@ -94,7 +94,7 @@ Content/MF candidate 全部验证并原子提交后才生效。
 
 保持 Vite dev 运行时，可以修改独立 `workbench.ts`，在 `workbench.content()` 与 `workbench.view()` 之间切换，
 或更换 renderer；相应的 `publish()` bindings 也必须符合新定义。源码暂时出错时，修正并保存即可触发下一次更新。
-Static Vite 开发同样处理定义文件的删除与重新创建，无需重启 dev。若更新导致插件初始化失败，后续有效更新会自动恢复
+Host 的 Vite 开发同样处理定义文件的删除与重新创建，无需重启 dev。若更新导致插件初始化失败，后续有效更新会自动恢复
 仍需运行的插件及其依赖方；手动停止的插件仍保持停止。
 
 Bridge destroy 也会关闭 per-open renderer owner：私有 `QueryClient`、subscription 与 active mutation lifetime 一次清理。Pending

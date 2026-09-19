@@ -11,7 +11,7 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 // src/app.ts
 import type { HostApplication } from '@pluxel/host'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { servicesPreset } from '@pluxel/services'
+import { servicesPreset } from '@pluxel/services/preset'
 import { MyPlugin } from './plugin.js'
 
 export default {
@@ -50,7 +50,7 @@ export default defineConfig({
 
 `servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。数据库或不同管理面组合应使用下文的显式服务安装器。
 
-`vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。`servicesPreset()`、`vitePreset()`、`buildPreset()` 属于同一个 `@pluxel/services` 包，运行时、Vite 与构建分别使用独立入口。
+`vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。`@pluxel/services/preset`、`@pluxel/services/vite`、`@pluxel/services/build` 分别拥有运行时、开发与发行的官方默认组合。根入口只提供 `standardServices()`，其声明不依赖 Management、Logging 或 Workbench。
 
 开发控制台归 `@pluxel/host-dev`，基础 `host({ entry, devConsole: true })` 即可启用；官方 `vitePreset()` 接受同样的开关。它不要求安装服务。脚本显式 import 服务 API，通过借用的 `dev.ctx` 访问已安装能力；见[开发控制台](../development/dev-console.md)。Core 始终提供 `ctx.logger`，Logging 配置负责输出与存储，不是插件使用 logger 的前提。
 

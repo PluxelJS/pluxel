@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { watch, type FSWatcher } from 'chokidar'
 import { normalizePath, type Plugin, type ViteDevServer } from 'vite'
 import { collectViteSsrImportFiles } from '../runner.ts'
+import { viteFsPath } from './vite-fs-path'
 
 type Resolution = { importer: string; source: string; resolved?: string; failed: boolean }
 type Candidate = { entries: Set<string>; resolutions: Resolution[] }
@@ -301,7 +302,8 @@ function filePath(id: string): string | undefined {
 	if (id.includes('\0')) return undefined
 	const clean = id.split(/[?#]/, 1)[0]!
 	if (clean.startsWith('file:')) return normalizePath(fileURLToPath(clean))
-	if (clean.startsWith('/@fs/')) return normalizePath(clean.slice(4))
+	const fsPath = viteFsPath(clean)
+	if (fsPath !== undefined) return fsPath
 	return isAbsolute(clean) ? normalizePath(clean) : undefined
 }
 

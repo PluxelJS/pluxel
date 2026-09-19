@@ -68,6 +68,7 @@ describe('application', () => {
 		})
 		expect(pluginNames(pipeline)).toEqual([
 			'unplugin-preprocessor-directives',
+			'pluxel:browser-node-imports',
 			'pluxel:plugin-semantics',
 			'pluxel:plugin-source',
 		])

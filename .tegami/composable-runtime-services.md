@@ -98,3 +98,5 @@ Application startup and service test-host factories await the same createHost se
 plugins import validation and RPC contracts from their owning packages, removing the Runtime peer
 where no runtime implementation is used. Services owns the Node HTTP/WebSocket carrier; Host-dev owns
 the development console, and queued management mutations honor cancellation before admission.
+
+The root `@pluxel/services` entry contains only `standardServices()` and its base service types. Import the official `servicesPreset()` from `@pluxel/services/preset`; its Management and Logging configuration types remain owned by those packages and do not leak into independent base-service consumers. Generated hosts and current examples use the explicit preset entry.

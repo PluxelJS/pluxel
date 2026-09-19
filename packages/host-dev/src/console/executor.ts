@@ -212,15 +212,9 @@ export class DevConsoleExecutor {
 				state: run.controller.signal.aborted ? 'cancelled' : 'failed',
 				finishedAt: new Date().toISOString(),
 				phase,
-				error: consoleFailure(
-					run.controller.signal.aborted
-						? run.controller.signal.reason
-						: error instanceof AggregateError && error.cause !== undefined
-							? error.errors[0]
-							: error,
-				),
-				...(error instanceof AggregateError && error.cause !== undefined
-					? { cleanupError: consoleFailure(error.errors[1] ?? error) }
+				error: consoleFailure(run.controller.signal.aborted ? run.controller.signal.reason : error),
+				...(run.controller.signal.aborted && error !== run.controller.signal.reason
+					? { executionError: consoleFailure(error) }
 					: {}),
 			}
 		} finally {

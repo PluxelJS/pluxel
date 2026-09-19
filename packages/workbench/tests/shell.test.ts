@@ -135,6 +135,14 @@ describe('Workbench UI HTML rendering', () => {
 		)
 		expect(html).not.toContain('/@react-refresh')
 		expect(html).not.toContain('window.$RefreshReg$')
+		const escaped = renderRuntimeUiHtml({
+			js: '/src/shell&copy;.ts',
+			css: ['/assets/theme?name="day"&mode=light'],
+			preload: ['/assets/vendor<main>.js'],
+		})
+		expect(escaped).toContain('src="/src/shell&amp;copy;.ts"')
+		expect(escaped).toContain('href="/assets/theme?name=&quot;day&quot;&amp;mode=light"')
+		expect(escaped).toContain('href="/assets/vendor&lt;main&gt;.js"')
 	})
 })
 

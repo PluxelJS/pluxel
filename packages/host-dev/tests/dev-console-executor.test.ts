@@ -60,39 +60,55 @@ describe('dev console execution ownership', () => {
 		executor.close()
 	})
 
-	it('keeps timeout cancellation observable while cleanup is still running', async () => {
-		vi.useFakeTimers()
-		const gate = deferred()
-		const entered = deferred()
-		const executor = new DevConsoleExecutor('instance', async (_request, run) => {
-			entered.resolve()
-			await gate.promise
-			run.phase('cleanup')
-			expect(executor.result('first')).toMatchObject({
-				state: 'cancelling',
-				cancelReason: 'timeout',
+	it.each(['none', 'finally', 'using'] as const)(
+		'keeps timeout cancellation and actual %s failures observable while cleanup settles',
+		async (failure) => {
+			vi.useFakeTimers()
+			const gate = deferred()
+			const entered = deferred()
+			const executor = new DevConsoleExecutor('instance', async (_request, run) => {
+				entered.resolve()
+				await gate.promise
+				run.phase('cleanup')
+				expect(executor.result('first')).toMatchObject({
+					state: 'cancelling',
+					cancelReason: 'timeout',
+				})
+				if (failure === 'finally') throw new Error('resource cleanup failed')
+				if (failure === 'using') {
+					using resource = {
+						[Symbol.dispose]() {
+							throw new Error('resource cleanup failed')
+						},
+					}
+					void resource
+					run.signal.throwIfAborted()
+				}
+				return null
 			})
-			return null
-		})
-		try {
-			executor.submit(input('first', { timeoutMs: 10 }))
-			await vi.advanceTimersByTimeAsync(0)
-			await entered.promise
-			await vi.advanceTimersByTimeAsync(10)
-			expect(executor.result('first')).toMatchObject({
-				state: 'cancelling',
-				cancelReason: 'timeout',
-			})
-			gate.resolve()
-			expect(await executor.settled('first')).toMatchObject({
-				state: 'cancelled',
-				error: { code: 'timeout' },
-			})
-		} finally {
-			executor.close()
-			vi.useRealTimers()
-		}
-	})
+			try {
+				executor.submit(input('first', { timeoutMs: 10 }))
+				await vi.advanceTimersByTimeAsync(0)
+				await entered.promise
+				await vi.advanceTimersByTimeAsync(10)
+				expect(executor.result('first')).toMatchObject({
+					state: 'cancelling',
+					cancelReason: 'timeout',
+				})
+				gate.resolve()
+				const result = await executor.settled('first')
+				expect(result).toMatchObject({ state: 'cancelled', error: { code: 'timeout' } })
+				const expectedFailure = {
+					executionError: { message: expect.stringContaining('resource cleanup failed') },
+				}
+				expect(result).toMatchObject(failure === 'none' ? {} : expectedFailure)
+				expect('executionError' in result).toBe(failure !== 'none')
+			} finally {
+				executor.close()
+				vi.useRealTimers()
+			}
+		},
+	)
 
 	it('cancels queued operations without invoking them and limits admission', async () => {
 		const gate = deferred()

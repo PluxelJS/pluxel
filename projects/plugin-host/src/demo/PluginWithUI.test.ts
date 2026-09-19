@@ -1,4 +1,4 @@
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import { describe, expect, it, vi } from 'vitest'
 import { PluginWithUI } from './PluginWithUI'
 import { PluginWithUIWorkbench } from './PluginWithUI.workbench'
@@ -7,7 +7,7 @@ const principal = Object.freeze({ provider: 'local', subject: 'plugin-host-test'
 
 describe('PluginWithUI Workbench observer', () => {
 	it('delivers updates through a disposable Workbench observer subscription', async () => {
-		await using host = await createServiceTestHost({ workbench: true })
+		await using host = await createWorkbenchTestHost()
 		await host.start(PluginWithUI)
 		using opened = await host.workbench.open({
 			target: PluginWithUI,

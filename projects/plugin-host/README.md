@@ -104,7 +104,7 @@ explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/
 ## Boundary
 
 - `src/app.ts` owns fixed Plugins, mutable sources, service configuration and startup policy.
-- `src/app.ts` uses `servicesPreset()` from `@pluxel/services` for the official service set, data location and optional Workbench.
+- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set, data location and optional Workbench.
 - `vite.config.ts` uses `vitePreset()` from `@pluxel/services/vite`; it combines the shared development driver with attachments for installed official services.
 - `tsdown.config.ts` uses `buildPreset()` from `@pluxel/services/build`; the official dynamic-plugin shared entries and Workbench distribution are included by default.
 - Managed entries and Package Manager's data share the explicitly configured application-local directory.

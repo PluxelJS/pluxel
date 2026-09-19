@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolveWithOxc, clearOxcResolutionCache } from '@pluxel/rolldown/resolver/oxc'
 import { normalizePath, parseSync, type Plugin, type ViteDevServer } from 'vite'
 import { registerViteSsrExternalModuleUrls } from './runner'
+import { viteFsPath } from './internal/vite-fs-path'
 
 export type HostModuleDecision = Readonly<{
 	packageName: string | null
@@ -37,7 +38,6 @@ type PackageInfo = Readonly<{
 }>
 
 const DEFAULT_CACHE_LIMIT = 2_000
-const VITE_FS_PREFIX = '/@fs/'
 const classifiers = new WeakMap<ViteDevServer, Set<() => void>>()
 
 export function invalidateHostModuleClassifiers(server: ViteDevServer): void {
@@ -193,7 +193,8 @@ function normalizeFilePath(root: string, value: string): string | null {
 			return null
 		}
 	}
-	if (clean.startsWith(VITE_FS_PREFIX)) return clean.slice(VITE_FS_PREFIX.length - 1)
+	const fsPath = viteFsPath(clean)
+	if (fsPath !== undefined) return fsPath
 	if (isAbsolute(clean)) return clean
 	if (clean.startsWith('/')) return resolve(root, clean.slice(1))
 	return null

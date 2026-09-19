@@ -25,7 +25,7 @@ pnpm governance:check
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/core'
 import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services'
+import { servicesPreset } from '@pluxel/services/preset'
 import { WretchPlugin } from '@pluxel/wretch'
 import { CustomerPlugin } from './customer-plugin.js'
 

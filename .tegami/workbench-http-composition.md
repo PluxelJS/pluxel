@@ -18,3 +18,6 @@ The Shell service loads packaged assets on its first static request, allowing so
 without a prebuilt UI; the standalone packaged handler still validates assets when created.
 
 HTTP mount factories expose the Host service contract without publishing their internal HTTP carrier dependency types, so importing their declarations does not pull Elysia into unrelated consumer type checking.
+
+Shell HTML escapes all asset URL attributes, preserving source paths that contain HTML entities
+and preventing URL punctuation from being interpreted as markup.

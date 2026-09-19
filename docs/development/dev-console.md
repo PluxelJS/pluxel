@@ -219,6 +219,8 @@ export const restartWithLogs = defineDevConsole(async (dev) => {
 
 ## 结果、取消和恢复
 
+取消后的结果仍为 `cancelled`，`error` 保留取消原因；如果脚本同时抛出不同的执行或资源释放异常，`executionError` 保留该异常。普通失败不会把业务 `AggregateError` 猜成执行/清理两个阶段；复合错误的诊断消息在深度、数量和长度限制内保留子错误，包括 `using` 的 `SuppressedError`。
+
 命令执行结果在 stdout 输出单一 JSON envelope。帮助输出和参数解析失败遵循普通 CLI 输出规则，agent 还需检查退出码与 stderr。同步 run 接纳后，stderr 会先输出一行包含 root/instanceId/runId 的 receipt，方便 agent 工具超时后恢复查询。run/result/cancel 返回的 snapshot 同样带 root，便于 agent 校验目标。领域返回值在成功运行 snapshot 的 `value` 中。长操作可以先 detach：
 
 ```sh

@@ -100,6 +100,30 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		const elysiaVersion = JSON.parse(
 			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
 		).version
+		// Standard services add only the HTTP peer; Management, Logging and Workbench remain absent.
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: 'independent-service-consumer',
+				private: true,
+				type: 'module',
+				dependencies,
+				devDependencies: { '@types/node': nodeTypes, elysia: elysiaVersion },
+			}),
+		)
+		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
+		const standardInstalled = await readdir(join(root, 'node_modules/.pnpm'))
+		expect(
+			standardInstalled.some((name) =>
+				['@pluxel+management@', '@pluxel+logging@', '@pluxel+workbench@'].some((prefix) =>
+					name.startsWith(prefix),
+				),
+			),
+		).toBe(false)
+		await writeFile(join(root, 'standard.mjs'), standardServicesConsumer)
+		const standardResult = await run(process.execPath, ['standard.mjs'], root)
+		expect(standardResult.stdout).toContain('ISOLATED_STANDARD_SERVICES_OK')
+		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
 		// Verify the headless management plane before Workbench or browser peers are installed.
 		for (const name of ['logging', 'management']) {
 			const tarball = join(root, `${name}.tgz`)
@@ -237,6 +261,9 @@ finally { await workerHost.close() }
 console.log('ISOLATED_SERVICES_OK')
 `
 const typeConsumer = `
+import { standardServices } from '@pluxel/services'
+const baseServices = standardServices({ persistence: { mode: 'memory' } })
+void baseServices
 import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 const isolatedTestHost: ServiceTestHost = await createServiceTestHost({ services: [] })
 await isolatedTestHost.dispose()
@@ -287,7 +314,7 @@ import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type * as ConsoleContracts from '@pluxel/host-dev/console'
 import { host as viteHost } from '@pluxel/host-dev/vite'
-import { servicesPreset } from '@pluxel/services'
+import { servicesPreset } from '@pluxel/services/preset'
 import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
 import { httpDevelopment } from '@pluxel/services/http/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
@@ -394,4 +421,18 @@ const headlessManagementTypes = `
 import type { RuntimeSessionRoot, RuntimeSessionClient } from '@pluxel/management/session'
 export type HeadlessSession = RuntimeSessionRoot
 export type HeadlessClient = RuntimeSessionClient
+`
+
+const standardServicesConsumer = `
+import assert from 'node:assert/strict'
+import { createHost } from '@pluxel/host'
+import { standardServices } from '@pluxel/services'
+import { HttpServer } from '@pluxel/services/http'
+const standardHost = await createHost({ plugins: [], services: standardServices({ persistence: { mode: 'memory' } }) })
+try {
+ const response = await standardHost.ctx.require(HttpServer).fetch(new Request('http://local.test/missing'))
+ assert.equal(response.status, 404)
+ await response.body?.cancel()
+} finally { await standardHost.close() }
+console.log('ISOLATED_STANDARD_SERVICES_OK')
 `

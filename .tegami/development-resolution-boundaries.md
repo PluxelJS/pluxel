@@ -10,6 +10,8 @@ Enable Vite tsconfig path resolution by default while respecting an explicit `fa
 alias-resolved CommonJS files through the same Node execution boundary as installed dependencies.
 Report browser imports of Node builtins immediately with their importer, while allowing explicit
 browser implementations and leaving server imports unchanged.
+Normalize Vite filesystem IDs consistently for recovery and host module classification, including
+Windows drive paths, duplicate POSIX slashes, and query/hash suffixes.
 
 Remove the unused Host-dev `hmr-log` entry and root log-schema exports. Application update reports
 and plugin lifecycle reports remain the authoritative development diagnostics.

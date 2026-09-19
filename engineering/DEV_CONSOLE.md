@@ -76,6 +76,8 @@ Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 loggi
 | admission tombstones | 每实例100000次，到限拒绝，不因结果过期允许重放 |
 | 脚本入口/本地依赖    | 128 / 每入口4096；每源码文件1MiB               |
 
+取消终态保留取消原因 `error`；若实际执行抛错不同于取消原因，另存 `executionError`。错误诊断按标准 AggregateError/SuppressedError 有界展开消息（深度 3、最多 16 节点、每组至多 4 个 Aggregate 子错误、最终 4096 字符，循环截断），不根据 cause 猜测业务/清理阶段。
+
 queued 取消不执行；running 取消保持 cancelling，直到真实代码 settle。断线/超时不自动重放。结果过期与执行结果不确定是不同失败；进程崩溃后的 exactly-once 不作承诺。
 
 ## 实现与验证入口

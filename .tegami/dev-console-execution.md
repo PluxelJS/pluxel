@@ -36,3 +36,10 @@ contribute positive prelowered ABI facts without enabling source lowering for th
 
 Prebuilt Workbench shell assets carry Vite's HTML ignore markers, preventing false source-module
 pre-transform failures while preserving the HTML pipeline, Vite client injection, and source Shell HMR.
+
+## Preserve cancellation and resource failure diagnostics
+
+Cancelled executions keep their cancellation reason in `error` and retain a distinct thrown
+execution/resource failure in `executionError`. Compound error messages preserve bounded child
+diagnostics, including `using` disposal failures, without interpreting arbitrary AggregateError
+children as execution and cleanup phases.

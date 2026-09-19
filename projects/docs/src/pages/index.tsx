@@ -63,7 +63,7 @@ const toolchain = [
 		title: '安装服务',
 		file: 'src/app.ts',
 		code: `import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services'
+import { servicesPreset } from '@pluxel/services/preset'
 
 export default {
   async configure(startup) {

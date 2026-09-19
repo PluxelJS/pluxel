@@ -13,7 +13,7 @@ import { Management } from '@pluxel/management/service'
 import { parseVaultAdminState } from '@pluxel/management/internal/management-validation'
 import { NodeModuleHost } from '../src/node/token'
 import { createNodeModuleDeclaration } from '../src/node/declaration'
-import { servicesPreset } from '../src/index'
+import { servicesPreset } from '../src/preset'
 
 const startup: HostStartupContext = {
 	root: process.cwd(),

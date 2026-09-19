@@ -21,7 +21,7 @@ import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import type { HostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { servicesPreset } from '@pluxel/services'
+import { servicesPreset } from '@pluxel/services/preset'
 import { TodoPlugin } from '@app/todo'
 
 export default {

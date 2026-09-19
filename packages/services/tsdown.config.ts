@@ -12,6 +12,7 @@ export default defineConfig({
 		'internal/vite-node-carrier': './src/development/vite-node-carrier.ts',
 
 		index: './src/index.ts',
+		preset: './src/preset.ts',
 		build: './src/build.ts',
 		'http/application': './src/http/application.ts',
 		'http/listener': './src/http/listener.ts',

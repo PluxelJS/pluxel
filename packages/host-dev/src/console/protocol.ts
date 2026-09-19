@@ -65,7 +65,8 @@ export type DevConsoleRunSnapshot = RunMetadata &
 				finishedAt: string
 				phase: DevConsolePhase
 				error: DevConsoleFailure
-				cleanupError?: DevConsoleFailure
+				/** Actual execution failure when it differs from the cancellation reason. */
+				executionError?: DevConsoleFailure
 		  }>
 	)
 export type DevConsoleResponse =
@@ -87,7 +88,7 @@ export function consoleFailure(error: unknown, fallback = 'execution_failed'): D
 		const code = 'code' in error && typeof error.code === 'string' ? error.code : fallback
 		return {
 			code,
-			message: error.message.slice(0, 4096),
+			message: failureMessage(error),
 			...(error.stack ? { stack: error.stack.slice(0, 16384) } : {}),
 		}
 	}
@@ -95,6 +96,31 @@ export function consoleFailure(error: unknown, fallback = 'execution_failed'): D
 		code: fallback,
 		message: typeof error === 'string' ? error.slice(0, 4096) : 'Script threw a non-Error value',
 	}
+}
+
+/** Preserve standard compound diagnostics without assigning domain or cleanup meaning to children. */
+function failureMessage(error: Error): string {
+	const seen = new Set<Error>()
+	let remaining = 16
+	const read = (value: unknown, depth: number): string => {
+		if (remaining-- <= 0) return '[error limit]'
+		if (!(value instanceof Error))
+			return typeof value === 'string' ? value.slice(0, 4096) : 'Non-Error value'
+		if (seen.has(value)) return '[circular error]'
+		seen.add(value)
+		const message = value.message.slice(0, 4096)
+		if (depth >= 3) return message
+		const nested =
+			value instanceof SuppressedError
+				? [value.error, value.suppressed]
+				: value instanceof AggregateError
+					? value.errors.slice(0, 4)
+					: []
+		return [message, ...nested.map((cause: unknown) => read(cause, depth + 1))]
+			.join(' | ')
+			.slice(0, 4096)
+	}
+	return read(error, 0)
 }
 
 /** Native JSON conventions for undefined; reject capabilities, accessors and lossy numeric values. */

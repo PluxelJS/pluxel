@@ -45,6 +45,15 @@ async function pendingRecovery(root = '/tmp', dynamic = false) {
 		importer,
 		{ ssr: true },
 	])
+	if (dynamic) {
+		for (const id of ['/@fs/C:/workspace/helper.ts?import#source', '/@fs//tmp/helper.ts?import']) {
+			await Reflect.apply(resolveId, { resolve: async () => ({ id }) }, [
+				'./helper',
+				`/@fs/${importer}?import#source`,
+				{ ssr: true },
+			])
+		}
+	}
 	const failure = recovery.failed()
 	await vi.waitFor(() => expect(watcher.listenerCount('ready')).toBe(1))
 	return { recovery, watcher, logger, failure, onChange }
@@ -114,7 +123,15 @@ it('tracks separately evaluated dynamic roots and their missing dependencies bef
 	try {
 		watcher.emit('ready')
 		await expect(failure).resolves.toMatchObject({
-			imports: [{ importer: '/tmp/entries/broken.entry.mjs', source: 'hmr-recovery-test-package' }],
+			imports: [
+				{ importer: '/tmp/entries/broken.entry.mjs', source: 'hmr-recovery-test-package' },
+				{
+					importer: '/tmp/entries/broken.entry.mjs',
+					resolved: 'C:/workspace/helper.ts',
+					failed: false,
+				},
+				{ importer: '/tmp/entries/broken.entry.mjs', resolved: '/tmp/helper.ts', failed: false },
+			],
 		})
 		expect(recovery.matches('/tmp/entries/broken.entry.mjs')).toBe(true)
 		expect(recovery.requiresResolutionRetry('/tmp/entries/broken.entry.mjs')).toBe(false)

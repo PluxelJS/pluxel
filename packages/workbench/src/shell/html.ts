@@ -44,9 +44,9 @@ function renderUiHtmlDocument(
 	<meta name="pluxel-workbench-ui-base-path" content="${uiBasePath}" />
     <title>${title}</title>
     ${colorSchemeScript}
-    ${assets.css.map((href) => `<link${viteIgnore} rel="stylesheet" href="${href}" />`).join('\n    ')}
-    ${assets.preload.map((href) => `<link${viteIgnore} rel="modulepreload" href="${href}" />`).join('\n    ')}
-    <script${viteIgnore} type="module" src="${assets.js}"></script>
+    ${assets.css.map((href) => `<link${viteIgnore} rel="stylesheet" href="${escapeHtmlAttribute(href)}" />`).join('\n    ')}
+    ${assets.preload.map((href) => `<link${viteIgnore} rel="modulepreload" href="${escapeHtmlAttribute(href)}" />`).join('\n    ')}
+    <script${viteIgnore} type="module" src="${escapeHtmlAttribute(assets.js)}"></script>
   </head>
   <body>
     <div id="root"></div>

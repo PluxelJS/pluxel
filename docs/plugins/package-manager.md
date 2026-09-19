@@ -15,7 +15,7 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services'
+import { servicesPreset } from '@pluxel/services/preset'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host-dynamic'
