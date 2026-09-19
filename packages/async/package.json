@@ -1,0 +1,57 @@
+{
+	"name": "@pluxel/async",
+	"version": "0.0.0",
+	"description": "Typed async dependency graphs and bounded async iteration",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/async"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"!**/*.map",
+		"!**/*.tsbuildinfo"
+	],
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		"./grfn": {
+			"@pluxel/source": "./src/grfn/index.ts",
+			"default": "./dist/grfn.js"
+		},
+		"./iter": {
+			"@pluxel/source": "./src/iter/index.ts",
+			"default": "./dist/iter.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			"./grfn": "./dist/grfn.js",
+			"./iter": "./dist/iter.js",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"postbuild": "pnpm run test:installed",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run",
+		"test:watch": "pnpm exec vitest",
+		"test:installed": "node tests/installed-package.smoke.mjs",
+		"bench": "pnpm exec vitest bench --run --typecheck.enabled=false",
+		"prepack": "pnpm build"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:types",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}
