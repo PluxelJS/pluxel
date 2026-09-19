@@ -1,0 +1,99 @@
+{
+	"name": "@pluxel/preset",
+	"version": "0.0.0",
+	"description": "Official Pluxel application, development and deployment compositions",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/preset"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./build": {
+			"@pluxel/source": "./src/build.ts",
+			"default": "./dist/build.mjs"
+		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
+		"./test": {
+			"@pluxel/source": "./src/test.ts",
+			"default": "./dist/test.mjs"
+		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./build": "./dist/build.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
+			"./test": "./dist/test.mjs",
+			"./vite": "./dist/vite.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/logging": "workspace:*",
+		"@pluxel/management": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/services": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
+		"capnweb": "catalog:prod",
+		"vite": "catalog:build"
+	},
+	"peerDependencies": {
+		"@pluxel/commands": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/logging": "workspace:^",
+		"@pluxel/management": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
+		"vite": ">=8.2.2 <9"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/workbench": {
+			"optional": true
+		},
+		"@pluxel/host-dev": {
+			"optional": true
+		},
+		"@pluxel/rolldown": {
+			"optional": true
+		},
+		"vite": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

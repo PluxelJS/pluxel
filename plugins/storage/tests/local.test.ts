@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
 

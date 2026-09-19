@@ -14,7 +14,8 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/create`                | 创建包含宿主、插件、前端和测试的示例项目                      | [快速开始](../getting-started/index.md)                     |
 | `@pluxel/context`               | 为独立宿主组合固定能力与惰性服务                              | [组合 Context host](./context-hosts.md)                     |
 | `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                              | [Plugin 模型](../getting-started/plugin-model.md)           |
-| `@pluxel/services`              | 显式服务、标准服务组合与开发/构建 preset                      | [组合 Context host](./context-hosts.md)                     |
+| `@pluxel/services`              | 基础服务与 `standardServices()`                               | [组合 Context host](./context-hosts.md)                     |
+| `@pluxel/preset`                | 官方服务、开发、构建与集成测试组合                            | [组合 Host 服务](./runtime-services.md)                     |
 | `@pluxel/management`            | 认证入口、Host 管理投影与浏览器协议                           | [Management](../runtime/management.md)                      |
 | `@pluxel/workbench`             | Content、View、Attachment 发布与浏览器客户端                  | [View](../workbench/view.md)                                |
 | `@pluxel/logging`               | Host 日志配置与查询投影                                       | [配置插件宿主](../getting-started/host-setup.md)            |
@@ -43,8 +44,8 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 `@pluxel/management/client`、`/session` 和 `/protocol` 提供浏览器管理客户端、认证会话与 DTO；`/react` 只提供 React Context adapter。`@pluxel/workbench` 提供 browser-safe Content、Direct View 与 Attachment definition，`/client` 提供 Shell layout/opened-handle client，`/react` 提供 exact descriptor hook、host facade 与 Pane Kit。React 入口使用宿主提供的 singleton。RPC object model 直接从 `capnweb` 导入。
 
 `@pluxel/host` 提供 `HostApplication` 与宿主控制；`@pluxel/core` 负责插件图、Context 能力与 generation 生命周期。
-`@pluxel/services` 的 `standardServices()` 提供常用基础能力，`@pluxel/services/preset` 的 `servicesPreset()` 组合 Logging、Management、Vault 与默认 Workbench；服务安装仍由应用显式选择。
-`@pluxel/services/vite` 的 `vitePreset()` 与 `/build` 的 `buildPreset()` 为该组合提供开发和生产工具链。
+`@pluxel/services` 的 `standardServices()` 提供常用基础能力，`@pluxel/preset` 的 `servicesPreset()` 组合 Logging、Management、Vault 与默认 Workbench；服务安装仍由应用显式选择。
+`@pluxel/preset/vite` 的 `vitePreset()` 与 `/build` 的 `buildPreset()` 为该组合提供开发和生产工具链。
 自定义宿主从 `@pluxel/host-dev/vite` 组合开发附件，使用 `@pluxel/rolldown` 构建。
 开发控制台从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，回调使用 `dev.ctx.require()` 读取已安装服务，详见[开发控制台](../development/dev-console.md)。
 
@@ -77,6 +78,6 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 1. 写 Plugin 时从 `@pluxel/core` 和实际需要的能力 package 开始。
 2. 装配宿主时使用 Host 应用声明和显式 services，按需增加动态来源。业务 Plugin 不依赖宿主实现。
-3. 测试 host 从所验证层的 `@pluxel/core/test` 或 `@pluxel/services/test` 导入；`@pluxel/test` 只使用 `/vitest`、`/fixtures` 或 `/unsafe` subpath，不直接 new 内部 host。
+3. 测试 host 从所验证层的 `@pluxel/core/test` 或 `@pluxel/preset/test` 导入；`@pluxel/test` 只使用 `/vitest`、`/fixtures` 或 `/unsafe` subpath，不直接 new 内部 host。
 4. 导入路径必须存在于所安装版本的 `exports`，且目标 package 不能是 private。
 5. `package.json#exports` 与真实源码 export 是入口契约；文档必须与该契约保持一致。

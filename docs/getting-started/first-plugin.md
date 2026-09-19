@@ -83,7 +83,7 @@ export class StatusPlugin extends BasePlugin {
 用下面的内容替换 `tests/status.test.ts`：
 
 ```ts no-twoslash
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { describe, expect, it } from 'vitest'
 import { StatusPlugin } from '@acme/pluxel-plugin-status'
 

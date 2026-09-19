@@ -187,3 +187,9 @@ await host.close()
 `markLogs(logging, streamId?)` 标记已 flush 的末尾；`readLogs(logging, cursor, { limit: 100, filter })` 返回有界记录和下一 cursor。`waitForLogs(logging, cursor, { signal, limit: 100, filter })` 等待首批匹配记录或 cursor 失效，signal 必填，取消与完成都会释放订阅。三者均从 `@pluxel/logging` 导入，使用同一 store，不创建控制台专用日志通道。
 
 cursor 是普通 JSON，包含 rootId、streamId、bootId、epoch、nextSeq；不可把不同 Host 或重建 stream 的序号相接。读取保留 `root_mismatch`、`stream_replaced`、`store_unavailable`、`epoch_mismatch`、`from_too_old` 与 `invalid` 的失败分支。mark 可为已配置但尚无记录的 stream 创建空存储，未配置且不存在时抛错。调用示例见 [开发控制台](../development/dev-console.md)。
+
+## 宿主安装与访问
+
+自行组合 Host 时，从 `@pluxel/logging` 导入 `logging(plan, options)` 并加入 `services`。Host 负责安装、绑定和关闭唯一的进程日志 owner；运行后通过 `host.ctx.logging` 或在开发控制台用 `dev.ctx.require(Logging)` 访问当前 manager。不要手动创建或绑定另一个 manager。
+
+Plugin 标签由 Core 的 `buildPluginNodeLabels()` 和 `formatPluginNodeStandaloneLabel()` 生成；前者根据完整 catalog 消除重名歧义，后者用于没有 catalog 的日志。标签只是展示信息，不代替 Plugin address。

@@ -47,13 +47,17 @@
 		"@logtape/file": "catalog:prod",
 		"@logtape/logtape": "catalog:prod",
 		"@logtape/pretty": "catalog:prod",
-		"@pluxel/core": "workspace:^",
-		"@pluxel/host": "workspace:^",
 		"pathe": "catalog:node"
 	},
 	"devDependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/node": "catalog:types"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^"
 	},
 	"engines": {
 		"node": ">=24"

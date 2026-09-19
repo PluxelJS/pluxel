@@ -55,7 +55,6 @@
 		"bench:state": "pnpm exec vitest bench bench/state.bench.ts"
 	},
 	"dependencies": {
-		"@pluxel/core": "workspace:^",
 		"@standard-schema/spec": "catalog:prod",
 		"ohash": "catalog:prod",
 		"std-env": "catalog:prod",
@@ -63,9 +62,13 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
+		"@pluxel/core": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/node": "catalog:types",
 		"valibot": "catalog:validation"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^"
 	},
 	"engines": {
 		"node": ">=24"

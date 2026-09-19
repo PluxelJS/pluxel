@@ -1,9 +1,9 @@
 import { host, hostSingletons } from '@pluxel/host-dev/vite'
 import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import { perEnvironmentPlugin, type Plugin, type PluginOption } from 'vite'
-import { serviceDevelopment } from './development/service-development'
+import { serviceDevelopment } from './service-development'
 
-export type ServicesViteOptions = Readonly<{
+export type PresetViteOptions = Readonly<{
 	/** Application module default-exporting a HostApplication, relative to Vite root. */
 	entry: string
 	/** Enable the official local TypeScript console. @default false */
@@ -28,9 +28,9 @@ export function serviceSingletons(): Plugin {
 }
 
 /** Official Host development composition; attaches resources only for installed services. */
-export function vitePreset(options: ServicesViteOptions): PluginOption[] {
+export function vitePreset(options: PresetViteOptions): PluginOption[] {
 	if (options.devConsole !== undefined && typeof options.devConsole !== 'boolean')
-		throw new TypeError('[services/vite] devConsole must be a boolean')
+		throw new TypeError('[preset/vite] devConsole must be a boolean')
 	return [
 		serviceSingletons(),
 		{

@@ -8,7 +8,7 @@ import {
 	type Registration,
 } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
+import { createServiceInternalTestHarness } from '@pluxel/preset/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { describe, expect, it } from 'vitest'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'

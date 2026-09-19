@@ -21,7 +21,7 @@ import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import type { HostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { servicesPreset } from '@pluxel/services/preset'
+import { servicesPreset } from '@pluxel/preset'
 import { TodoPlugin } from '@app/todo'
 
 export default {
@@ -54,7 +54,7 @@ export default {
 
 ```ts no-twoslash
 import { defineConfig } from 'vite'
-import { vitePreset } from '@pluxel/services/vite'
+import { vitePreset } from '@pluxel/preset/vite'
 import { hostEnv } from '@pluxel/host/environment'
 
 export default defineConfig({
@@ -118,7 +118,7 @@ schema 必须与该插件 `configs.use()` 的对象相同。优先级为声明 s
 
 ```ts no-twoslash
 import { defineConfig } from 'tsdown'
-import { buildPreset } from '@pluxel/services/build'
+import { buildPreset } from '@pluxel/preset/build'
 
 export default defineConfig({
 	entry: './src/app.ts',
@@ -133,4 +133,4 @@ export default defineConfig({
 
 ## 测试
 
-Core 插件测试使用 `@pluxel/core/test`；服务组合使用 `@pluxel/services/test` 的 `createServiceTestHost()`。它们是隔离宿主，不能代表已经运行的开发应用。具体调用见[测试插件](../development/testing.md)。
+Core 插件测试使用 `@pluxel/core/test`；服务组合使用 `@pluxel/preset/test` 的 `createServiceTestHost()`。它们是隔离宿主，不能代表已经运行的开发应用。具体调用见[测试插件](../development/testing.md)。

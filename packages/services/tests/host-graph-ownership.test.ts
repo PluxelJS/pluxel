@@ -8,7 +8,7 @@ import {
 } from '@pluxel/core'
 import { requirePluginHostCoordinator, readHostPluginStatusOverview } from '@pluxel/host/internal'
 import { BasePlugin, Plugin as PluginDecorator } from '@pluxel/core/test'
-import { createServiceInternalTestHarness } from '../src/internal-test'
+import { createServiceInternalTestHarness } from '@pluxel/preset/internal/test'
 import { lowerTestPlugin } from './helpers/lowered-plugin'
 const node = (definition: PluginDefinitionAddress): PluginNodeAddress => ({
 	definition,

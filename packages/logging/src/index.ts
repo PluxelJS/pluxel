@@ -50,15 +50,7 @@ export type {
 	RuntimeStoreSinkInput,
 } from './logging'
 
-export {
-	createRuntimeLogging,
-	getActiveRuntimeLogging,
-	requireActiveRuntimeLogging,
-	bindContextRuntimeLogging,
-	getContextRuntimeLogging,
-	requireContextRuntimeLogging,
-	type RuntimeLogging,
-} from './logging'
+export type { RuntimeLogging } from './logging'
 
 export { Logging, logging, type LoggingOptions } from './service'
 export {

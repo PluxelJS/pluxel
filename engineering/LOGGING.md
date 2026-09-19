@@ -267,7 +267,7 @@ error summary。它不是新的 author-facing LogRecord。
 
 ```text
 @pluxel/core
-  ContextLogger, LoggerService, category identity
+  ContextLogger, LoggerService, category identity, pure Plugin labels
 
 @pluxel/logging
   HostService descriptor, RuntimeLogging manager, policy/stores/sinks
@@ -282,7 +282,9 @@ error summary。它不是新的 author-facing LogRecord。
   Host shutdown ownership and official service defaults
 ```
 
-core 不包含 formatter、sink、policy persistence、host env resolution 或 LogTape installation。
+core 不包含 log formatter、sink、policy persistence、host env resolution 或 LogTape installation。
+Logging 的 Host 依赖只用于服务声明与生命周期装配；formatter 直接使用 Core 的纯 Plugin label 投影，不读取 Host 内部实现。
+公共入口通过 `logging()` 安装、`Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于既有 `/internal` 框架入口。
 
 关键实现入口：
 

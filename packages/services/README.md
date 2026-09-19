@@ -2,7 +2,7 @@
 
 为 Pluxel Host 提供独立服务与官方组合。导入入口不会安装服务；资源由 Host 准备和关闭。
 
-官方应用使用三个配套入口：`/preset` 的 `servicesPreset()` 选择运行时服务，`/vite` 的 `vitePreset()` 组合开发附件，`/build` 的 `buildPreset()` 选择发行默认值。根入口的 `standardServices()` 只组合 HTTP、Commands、Node artifacts、Workers 和 Persistence，不需要 Management 或 Logging。自定义宿主可以逐项选择下列服务，开发附件使用 `/http/vite`、`/node/vite` 和 `@pluxel/workbench/dev`。开发控制台及其类型归 `@pluxel/host-dev/console`。
+根入口的 `standardServices()` 只组合 HTTP、Commands、Node artifacts、Workers 和 Persistence，不依赖 Management、Logging 或 Workbench。官方完整应用组合使用 `@pluxel/preset`，开发与发行使用它的 `/vite`、`/build`。自定义宿主逐项选择服务与 `/http/vite`、`/node/vite` 开发附件。开发控制台归 `@pluxel/host-dev/console`。
 
 ```ts
 import { createHost } from '@pluxel/host'

@@ -6,7 +6,7 @@ import {
 import {
 	createServiceInternalTestHost,
 	type RuntimeInternalTestHost,
-} from '@pluxel/services/internal/test'
+} from '@pluxel/preset/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PluginCatalogLayoutService } from '../src/services/management/PluginCatalogLayoutService.ts'
 import {

@@ -59,7 +59,7 @@ host.fork()
 host.fetch(new URL('/probe', host.http.origin))
 // @ts-expect-error Publication belongs to running Plugins, not a test-host driver.
 host.commands.createMount()
-// @ts-expect-error Workbench testing belongs to @pluxel/workbench/test.
+// @ts-expect-error Workbench testing uses createWorkbenchTestHost().
 host.workbench
 // @ts-expect-error Service installation uses an explicit list, not a second product configuration.
 await createServiceTestHost({ vault: {} })

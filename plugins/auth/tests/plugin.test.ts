@@ -1,6 +1,6 @@
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
-import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
 

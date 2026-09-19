@@ -1,6 +1,6 @@
 import { dynamicSource } from '@pluxel/host-dynamic'
 import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services/preset'
+import { servicesPreset } from '@pluxel/preset'
 
 import { resolve } from 'pathe'
 import { hostPlugins } from './showcase/catalog'

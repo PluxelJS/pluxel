@@ -1,5 +1,5 @@
 import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services/preset'
+import { servicesPreset } from '@pluxel/preset'
 
 import { dynamicSource } from '@pluxel/host-dynamic'
 import { resolve } from 'node:path'

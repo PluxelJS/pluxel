@@ -49,14 +49,14 @@
 		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
-		"@pluxel/core": "workspace:^",
-		"@pluxel/host": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"chokidar": "catalog:node",
 		"pathe": "catalog:node"
 	},
 	"devDependencies": {
 		"@logtape/logtape": "catalog:dev",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
@@ -64,6 +64,8 @@
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {

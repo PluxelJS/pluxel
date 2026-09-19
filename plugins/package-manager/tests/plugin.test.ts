@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { dynamicSource } from '@pluxel/host-dynamic'
 import { installPluginSources } from '@pluxel/host/internal'
-import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PackageManagerPlugin } from '../src/index.ts'
 

@@ -900,6 +900,9 @@ importers:
       unplugin-preprocessor-directives:
         specifier: catalog:build
         version: 1.2.0(esbuild@0.28.2)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26))
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       vitest:
         specifier: catalog:test
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1056,9 +1059,6 @@ importers:
 
   packages/host:
     dependencies:
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
       '@standard-schema/spec':
         specifier: catalog:prod
         version: 1.1.0
@@ -1075,6 +1075,9 @@ importers:
         specifier: workspace:^
         version: link:../valibot-form
     devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -1087,12 +1090,6 @@ importers:
 
   packages/host-dev:
     dependencies:
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/host':
-        specifier: workspace:^
-        version: link:../host
       '@pluxel/rolldown':
         specifier: workspace:^
         version: link:../rolldown
@@ -1106,6 +1103,12 @@ importers:
       '@logtape/logtape':
         specifier: catalog:dev
         version: 2.3.2
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -1124,12 +1127,6 @@ importers:
 
   packages/host-dynamic:
     dependencies:
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/host':
-        specifier: workspace:^
-        version: link:../host
       chokidar:
         specifier: catalog:node
         version: 5.0.0
@@ -1137,6 +1134,12 @@ importers:
         specifier: catalog:prod
         version: 4.0.7
     devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
       '@types/node':
         specifier: catalog:types
         version: 26.4.0
@@ -1164,16 +1167,16 @@ importers:
       '@logtape/pretty':
         specifier: catalog:prod
         version: 2.3.2(@logtape/logtape@2.3.2)
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/host':
-        specifier: workspace:^
-        version: link:../host
       pathe:
         specifier: catalog:node
         version: 2.0.3
     devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -1186,21 +1189,6 @@ importers:
       '@logtape/logtape':
         specifier: catalog:prod
         version: 2.3.2
-      '@pluxel/commands':
-        specifier: workspace:^
-        version: link:../commands
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/host':
-        specifier: workspace:^
-        version: link:../host
-      '@pluxel/logging':
-        specifier: workspace:^
-        version: link:../logging
-      '@pluxel/services':
-        specifier: workspace:^
-        version: link:../services
       capnweb:
         specifier: catalog:prod
         version: 0.12.0
@@ -1211,6 +1199,24 @@ importers:
         specifier: workspace:^
         version: link:../valibot-form
     devDependencies:
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../preset
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -1236,6 +1242,45 @@ importers:
         specifier: catalog:validation
         version: 1.4.2(typescript@7.0.2)
 
+  packages/preset:
+    devDependencies:
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
+      '@pluxel/host-dev':
+        specifier: workspace:*
+        version: link:../host-dev
+      '@pluxel/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../management
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../workbench
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      vite:
+        specifier: catalog:build
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+
   packages/rolldown:
     dependencies:
       '@inlang/paraglide-js':
@@ -1250,9 +1295,6 @@ importers:
       '@module-federation/vite':
         specifier: catalog:build
         version: 1.21.1(typescript@7.0.2)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
       drizzle-kit:
         specifier: catalog:backend
         version: 0.31.10
@@ -1299,6 +1341,9 @@ importers:
         specifier: workspace:^
         version: link:../valibot-form
     devDependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
       '@pluxel/host-dynamic':
         specifier: workspace:*
         version: link:../host-dynamic
@@ -1344,15 +1389,6 @@ importers:
 
   packages/services:
     dependencies:
-      '@pluxel/commands':
-        specifier: workspace:^
-        version: link:../commands
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/host':
-        specifier: workspace:^
-        version: link:../host
       age-encryption:
         specifier: catalog:prod
         version: 0.3.1
@@ -1381,6 +1417,15 @@ importers:
       '@electric-sql/pglite':
         specifier: catalog:prod
         version: 0.5.8
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
       '@pluxel/host-dev':
         specifier: workspace:*
         version: link:../host-dev
@@ -1390,6 +1435,9 @@ importers:
       '@pluxel/management':
         specifier: workspace:*
         version: link:../management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
@@ -1503,33 +1551,12 @@ importers:
 
   packages/workbench:
     dependencies:
-      '@mantine/core':
-        specifier: catalog:frontend
-        version: 9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@mantine/hooks':
-        specifier: catalog:frontend
-        version: 9.5.2(react@19.2.8)
-      '@module-federation/bridge-react':
-        specifier: catalog:frontend
-        version: 2.9.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@module-federation/runtime':
         specifier: catalog:prod
         version: 2.9.0
       '@module-federation/sdk':
         specifier: catalog:prod
         version: 2.9.0
-      '@pluxel/core':
-        specifier: workspace:^
-        version: link:../core
-      '@pluxel/host':
-        specifier: workspace:^
-        version: link:../host
-      '@pluxel/management':
-        specifier: workspace:^
-        version: link:../management
-      '@pluxel/services':
-        specifier: workspace:^
-        version: link:../services
       '@tanstack/query-core':
         specifier: catalog:frontend
         version: 5.102.8
@@ -1539,22 +1566,40 @@ importers:
       pathe:
         specifier: catalog:node
         version: 2.0.3
-      react:
-        specifier: catalog:frontend
-        version: 19.2.8
-      react-dom:
-        specifier: catalog:frontend
-        version: 19.2.8(react@19.2.8)
       valibot:
         specifier: catalog:validation
         version: 1.4.2(typescript@7.0.2)
     devDependencies:
+      '@mantine/core':
+        specifier: catalog:frontend
+        version: 9.5.2(@mantine/hooks@9.5.2(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@mantine/hooks':
+        specifier: catalog:frontend
+        version: 9.5.2(react@19.2.8)
+      '@module-federation/bridge-react':
+        specifier: catalog:frontend
+        version: 2.9.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
       '@pluxel/host-dev':
         specifier: workspace:*
         version: link:../host-dev
+      '@pluxel/management':
+        specifier: workspace:*
+        version: link:../management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -1564,6 +1609,12 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      react:
+        specifier: catalog:frontend
+        version: 19.2.8
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.2.8(react@19.2.8)
       typescript:
         specifier: catalog:dev
         version: 7.0.2
@@ -1707,6 +1758,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -1753,6 +1807,9 @@ importers:
       '@pluxel/management':
         specifier: workspace:*
         version: link:../../packages/management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -1811,6 +1868,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -1902,6 +1962,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -1957,6 +2020,9 @@ importers:
       '@pluxel/host-dynamic':
         specifier: workspace:*
         version: link:../../packages/host-dynamic
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2030,6 +2096,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2061,6 +2130,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2101,6 +2173,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rates':
         specifier: workspace:*
         version: link:../rates
@@ -2150,6 +2225,9 @@ importers:
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2202,6 +2280,9 @@ importers:
       '@pluxel/host-dev':
         specifier: workspace:*
         version: link:../../../packages/host-dev
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2251,6 +2332,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2315,6 +2399,9 @@ importers:
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2367,6 +2454,9 @@ importers:
       '@pluxel/fonts':
         specifier: workspace:*
         version: link:../fonts
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2416,6 +2506,9 @@ importers:
       '@pluxel/host-dev':
         specifier: workspace:*
         version: link:../../../packages/host-dev
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2468,6 +2561,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2511,6 +2607,9 @@ importers:
       '@pluxel/management':
         specifier: workspace:*
         version: link:../../packages/management
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2587,6 +2686,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2858,6 +2960,9 @@ importers:
       '@pluxel/pi-agent':
         specifier: workspace:*
         version: link:../../plugins/pi-agent
+      '@pluxel/preset':
+        specifier: workspace:*
+        version: link:../../packages/preset
       '@pluxel/rates':
         specifier: workspace:*
         version: link:../../plugins/rates

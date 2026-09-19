@@ -95,16 +95,17 @@
 	},
 	"dependencies": {
 		"@logtape/logtape": "catalog:prod",
-		"@pluxel/commands": "workspace:^",
-		"@pluxel/core": "workspace:^",
-		"@pluxel/host": "workspace:^",
-		"@pluxel/logging": "workspace:^",
-		"@pluxel/services": "workspace:^",
 		"capnweb": "catalog:prod",
 		"std-env": "catalog:prod",
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/logging": "workspace:*",
+		"@pluxel/preset": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@types/node": "catalog:types",
@@ -115,6 +116,11 @@
 		"valibot": "catalog:validation"
 	},
 	"peerDependencies": {
+		"@pluxel/commands": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/logging": "workspace:^",
+		"@pluxel/services": "workspace:^",
 		"react": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {

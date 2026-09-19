@@ -10,7 +10,7 @@ import { pluginNodeAddressOf } from '@pluxel/core'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host-dynamic'
 import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services/preset'
+import { servicesPreset } from '@pluxel/preset'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
 const packageManagerConfig = {

@@ -25,7 +25,7 @@ export function serviceDevelopment(): PluginOption[] {
 	let http: Plugin<HostDevelopmentPluginApi> | undefined
 	return [
 		attachment('nodeModules', 'pluxel:node-artifacts', async () => {
-			const { nodeArtifacts } = await import('./node')
+			const { nodeArtifacts } = await import('@pluxel/services/node/vite')
 			return nodeArtifacts()
 		}),
 		attachment('workbench', 'pluxel:workbench-artifacts', async () => {
@@ -34,7 +34,7 @@ export function serviceDevelopment(): PluginOption[] {
 		}),
 		attachment('elysia', 'pluxel:host-http', async () => {
 			if (!http) {
-				const { httpDevelopment } = await import('./http')
+				const { httpDevelopment } = await import('@pluxel/services/http/vite')
 				http = httpDevelopment()
 			}
 			return http

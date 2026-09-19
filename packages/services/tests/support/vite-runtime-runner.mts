@@ -9,7 +9,7 @@ import {
 import { requirePluginService } from '@pluxel/core/internal'
 import { readHostPluginStatusOverview, readHostRecentUpdates } from '@pluxel/host/internal'
 import type { PluginHost } from '@pluxel/host'
-import { vitePreset } from '@pluxel/services/vite'
+import { vitePreset } from '@pluxel/preset/vite'
 import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import {
 	createServer,

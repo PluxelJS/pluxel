@@ -1,5 +1,5 @@
 import { RpcStub } from 'capnweb'
-import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
 import { expect, it } from 'vitest'
 import { PluginRecentUpdateTracker, installHostRecentUpdates } from '@pluxel/host/internal'
 import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/test'

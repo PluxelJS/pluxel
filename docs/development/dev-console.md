@@ -33,7 +33,7 @@ pnpm exec pluxel dev instances --root /absolute/project-root
 
 从返回结果确认 `root`、`pid` 和 `instanceId`。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
-控制台属于 `@pluxel/host-dev`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/services/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
+控制台属于 `@pluxel/host-dev`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/preset/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
 
 省略 `devConsole` 不安装控制台。Vite integration 只在 serve 时安装。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
 

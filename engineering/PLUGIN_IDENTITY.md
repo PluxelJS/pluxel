@@ -142,6 +142,8 @@ route 用于 Workbench navigation、management catalog projection 和 logger cat
 
 ### Plugin node label
 
+Core 的 `buildPluginNodeLabels()` 与 `formatPluginNodeStandaloneLabel()` 是 catalog 和日志共用的纯身份展示投影；它们不读取 Host、graph 或运行状态。
+
 label 只用于 Workbench 和 pretty log。runtime 先使用 `displayName`，fork 追加 ` / <forkId>`；发生冲突时依次追加 package/source
 provenance、root export，最终可回退完整 reference。相同 address 重复出现直接报错。新增同名 Plugin 可以改变必要的 label qualification，
 但不能改变 address、reference、route、React key、policy 或持久状态。
@@ -215,7 +217,7 @@ generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终
 - Core address/slot/codec：`packages/core/src/plugins/runtime/identity.ts`
 - Core logger category codec：`packages/core/src/logger/categories.ts`
 - source canonicalization：`packages/rolldown/src/rolldown/plugins/pluginSemanticsPlugin.ts`
-- catalog projection/label：`packages/management/src/api/features/plugins/catalog-projection.ts`、`packages/host/src/plugin-label.ts`
+- catalog projection/label：`packages/management/src/api/features/plugins/catalog-projection.ts`、`packages/core/src/plugins/runtime/plugin-label.ts`
 - Workbench route/browser state：`packages/workbench-app/src/workbench/paths.ts`、`packages/workbench-app/src/app/workbench/state.ts`
 - HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/logging/src/` 与 `packages/management/src/`
 

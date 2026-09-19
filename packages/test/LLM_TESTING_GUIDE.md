@@ -2,14 +2,14 @@
 
 先问：删除哪一层以后，断言不再成立？选择仍不可删除的最小边界。
 
-| 事实                                                    | 入口                                                   |
-| ------------------------------------------------------- | ------------------------------------------------------ |
-| 普通函数/对象                                           | 无 host                                                |
-| Core graph、DI、config composition、lifecycle、effects  | `createCoreTestHost()` from `@pluxel/core/test`        |
-| Plugin + HTTP、commands、database、Vault、Workbench     | `createServiceTestHost()` from `@pluxel/services/test` |
-| static application configure/prepare/bindings/cold boot | `startStaticApplicationTestHost()`                     |
-| dynamic source、Vite/HMR、physical HTTP/WebSocket       | 项目 Vite command 或 `startDynamicDevRuntime()`        |
-| Workbench React/Shell                                   | browser/React test                                     |
+| 事实                                                    | 入口                                                 |
+| ------------------------------------------------------- | ---------------------------------------------------- |
+| 普通函数/对象                                           | 无 host                                              |
+| Core graph、DI、config composition、lifecycle、effects  | `createCoreTestHost()` from `@pluxel/core/test`      |
+| Plugin + HTTP、commands、database、Vault、Workbench     | `createServiceTestHost()` from `@pluxel/preset/test` |
+| static application configure/prepare/bindings/cold boot | `startStaticApplicationTestHost()`                   |
+| dynamic source、Vite/HMR、physical HTTP/WebSocket       | 项目 Vite command 或 `startDynamicDevRuntime()`      |
+| Workbench React/Shell                                   | browser/React test                                   |
 
 ## Canonical patterns
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { vitePreset } from '@pluxel/services/vite'
+import { vitePreset } from '@pluxel/preset/vite'
 import { createServer } from 'vite'
 
 const entry = process.env.PLUXEL_ECHARTS_DYNAMIC_ENTRY

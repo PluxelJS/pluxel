@@ -7,7 +7,7 @@ import {
 	type PersistenceBackend,
 } from '@pluxel/services/persistence'
 import { type RawPluginConfig } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
 import { detachWorkbenchPortableValue } from '@pluxel/workbench/client'
 import { ProxyAgent } from 'undici'
 import wretch, { type FetchLike } from 'wretch'

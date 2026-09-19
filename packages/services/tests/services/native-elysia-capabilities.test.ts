@@ -1,6 +1,6 @@
 import { Http } from '@pluxel/services/http'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { Elysia, t } from 'elysia'
 import { describe, expect, it } from 'vitest'
 

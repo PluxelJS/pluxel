@@ -39,17 +39,21 @@
 		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
-		"@pluxel/core": "workspace:^",
-		"@pluxel/host": "workspace:^",
 		"chokidar": "catalog:node",
 		"picomatch": "catalog:prod"
 	},
 	"devDependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@types/node": "catalog:types",
 		"@types/picomatch": "catalog:types",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^"
 	},
 	"engines": {
 		"node": ">=24"

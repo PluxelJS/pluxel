@@ -15,8 +15,9 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 | --------------------------------------------------- | -------------------------------- |
 | 纯函数、普通对象                                    | 不使用 host                      |
 | Core graph、config、lifecycle、effects              | `@pluxel/core/test`              |
-| Plugin 与已安装服务                                 | `@pluxel/services/test`          |
-| Workbench publication、local RPC 与 lease           | `@pluxel/workbench/test`         |
+| Plugin 与已安装服务                                 | `@pluxel/preset/test`            |
+| Workbench publication 与 lease                      | `@pluxel/preset/test`            |
+| 独立 local RPC                                      | `@pluxel/workbench/test`         |
 | 应用 configure、prepare 与冷启动策略                | `@pluxel/host` 的真实应用装配    |
 | dynamic source、Vite/HMR、HTTP 或 WebSocket carrier | 项目唯一 Vite 配置与真实构建产物 |
 | static deployment artifact、filesystem、assets、TLS | 启动真实 artifact                |
@@ -40,7 +41,7 @@ host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不�
 npx nypm add -D @pluxel/test @pluxel/core vitest@5.0.0 oxlint
 ```
 
-当前 preset 使用 Vitest `5.0.0`，项目使用 Node.js 24+。下面的 Core 示例只需上述依赖；测试 HTTP 等默认服务能力时，还需由测试包声明 `@pluxel/services` 和 `elysia`。Workbench 会话测试使用 `@pluxel/workbench/test`，并安装 `@pluxel/workbench`、`@pluxel/management` 及其声明的 peers。
+当前 preset 使用 Vitest `5.0.0`，项目使用 Node.js 24+。下面的 Core 示例只需上述依赖；测试 HTTP 等默认服务能力时，还需由测试包声明 `@pluxel/preset`、`@pluxel/services` 和 `elysia`。Workbench 会话测试使用 `@pluxel/preset/test`，并安装 `@pluxel/workbench`、`@pluxel/management` 及其声明的 peers。
 
 最小 `vitest.config.ts`：
 
@@ -149,7 +150,7 @@ callback 只同步描述变化。不要把它声明为 `async`、在其中 `awai
 ```ts no-twoslash
 import { Http } from '@pluxel/services/http'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { expect, it } from 'vitest'
 
 @Plugin()
@@ -310,7 +311,7 @@ await host.commit((change) => {
 测试 replacement 时，替身必须像真实模块求值一样拥有目标 canonical definition facts：
 
 ```ts no-twoslash
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { InngestPlugin } from '@acme/inngest'
 
@@ -340,10 +341,10 @@ public author host 不暴露 root `ctx`、raw service、transaction 或 backend 
 - Workbench test host 的 `host.workbench.open`：真实 publication、session、layout 与 local Cap'n Web membrane；
 - `host.config.patch`：production-like config mutation。
 
-`@pluxel/workbench/test` 的 `createWorkbenchTestHost()` 组合服务 host，安装测试用 Workbench 制品查询及 Management，但不创建浏览器 Shell 或监听端口。每次 open 显式提供 principal：
+`@pluxel/preset/test` 的 `createWorkbenchTestHost()` 组合服务 host，安装测试用 Workbench 制品查询及 Management，但不创建浏览器 Shell 或监听端口。每次 open 显式提供 principal：
 
 ```ts no-twoslash
-import { createWorkbenchTestHost } from '@pluxel/workbench/test'
+import { createWorkbenchTestHost } from '@pluxel/preset/test'
 import { standardServices } from '@pluxel/services'
 import { vault } from '@pluxel/services/vault'
 

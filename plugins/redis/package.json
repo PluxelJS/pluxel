@@ -41,6 +41,7 @@
 		"@pluxel/cache": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rates": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",

@@ -24,7 +24,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 能力 token 的 access 表达调用 Context 的所有权：`all` 通用，`owner` 需要真实插件/Part owner，`root` 需要真实 RootContext。宿主代码使用 `ctx.require(Token)`，缺失、访问越界和构造失败保留各自错误。
 `ctx.root` 返回真实根引用，持有它的受信任代码可访问 root 能力；这不是不可信代码沙箱。Core 内部图 authority 的 token 不进入普通作者入口。
 
-`@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers、Persistence。独立 `@pluxel/services/preset` 入口的 `servicesPreset()` 增加 Vault、Logging、Management、管理命令及可选 Workbench。Database 显式选择 backend。
+`@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers、Persistence。独立 `@pluxel/preset` 入口的 `servicesPreset()` 增加 Vault、Logging、Management、管理命令及可选 Workbench。Database 显式选择 backend。
 未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
 
 ## 应用、开发和部署

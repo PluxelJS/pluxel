@@ -131,7 +131,7 @@ export interface ServiceTestHost extends AsyncDisposable {
 
 export type { ServiceTestHostOptions } from './options'
 
-/** @internal Framework-only host authority; absent from `@pluxel/services/test`. */
+/** @internal Framework-only host authority; absent from `@pluxel/preset/test`. */
 export interface ServiceInternalTestHost extends ServiceTestHost {
 	readonly ctx: RootContext
 	readonly root: RootContext
@@ -213,7 +213,7 @@ export async function createServiceTestHost(
 ): Promise<ServiceTestHost> {
 	if (Object.hasOwn(config, 'workbench')) {
 		throw new TypeError(
-			'[pluxel/test] Workbench tests use createWorkbenchTestHost() from @pluxel/workbench/test',
+			'[pluxel/test] Workbench tests use createWorkbenchTestHost() from @pluxel/preset/test',
 		)
 	}
 	const world = await createServiceHostWorld(config)

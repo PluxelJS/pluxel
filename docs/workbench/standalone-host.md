@@ -42,7 +42,7 @@ export class Viewer extends BasePlugin {
 ```ts
 import { defineConfig } from 'vite'
 import { host } from '@pluxel/host-dev/vite'
-import { serviceSingletons } from '@pluxel/services/vite'
+import { serviceSingletons } from '@pluxel/preset/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
 
 export default defineConfig({
@@ -114,7 +114,7 @@ HTTP 组合还需安装 `elysia`，它是 `@pluxel/services` 的可选 peer。�
 
 ```ts
 import { defineConfig } from 'vite'
-import { vitePreset } from '@pluxel/services/vite'
+import { vitePreset } from '@pluxel/preset/vite'
 import { workbenchSourceShell } from '@pluxel/workbench/dev'
 
 export default defineConfig({

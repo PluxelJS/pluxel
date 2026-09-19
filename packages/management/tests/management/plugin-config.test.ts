@@ -8,7 +8,7 @@ import {
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
-} from '@pluxel/services/internal/test'
+} from '@pluxel/preset/internal/test'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/core/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as v from 'valibot'

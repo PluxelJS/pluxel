@@ -97,7 +97,7 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
                                      |   +-- @pluxel/host-dynamic
                                      +------ @pluxel/host-dev
                                                    ^
-                                                   +-- @pluxel/services/vite
+                                                   +-- @pluxel/preset/vite
 @pluxel/commands --------------------------------------------> @pluxel/services
 @pluxel/cli --optional--> @pluxel/rolldown
 ```

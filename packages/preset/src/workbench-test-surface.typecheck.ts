@@ -1,14 +1,15 @@
 import type { BasePlugin } from '@pluxel/core'
 import type { RpcStub, RpcTarget } from 'capnweb'
-import type { OpenedLocalWorkbenchEntry, WorkbenchTestHost } from './test'
-import { createLocalRpcClient } from './test'
+import type { WorkbenchTestHost } from './test'
+import type { OpenedLocalWorkbenchEntry } from '@pluxel/workbench/test'
+import { createLocalRpcClient } from '@pluxel/workbench/test'
 import type { RuntimeClientBootstrap } from '@pluxel/management/session'
-import type { WorkbenchSessionApi } from './workbench/client-protocol'
+import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type {
 	WorkbenchAttachmentPlacement,
 	WorkbenchPrincipal,
 	WorkbenchView,
-} from './workbench/definition'
+} from '@pluxel/workbench'
 
 type Equal<Left, Right> =
 	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false

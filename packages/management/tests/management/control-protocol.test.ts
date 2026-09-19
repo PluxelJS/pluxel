@@ -1,5 +1,5 @@
 import { requirePluginHostCoordinator, requireHostStateStore } from '@pluxel/host/internal'
-import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
+import { createServiceInternalTestHarness } from '@pluxel/preset/internal/test'
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { serialize } from 'capnweb'

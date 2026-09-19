@@ -54,7 +54,7 @@ export type ServiceInternalTestConfigHandle<TPlugin extends PluginConstructor> =
 /**
  * Privileged Service test authority.
  *
- * Framework protocol suites can stage catalog, raw config and lifecycle before one commit. Plugin-author tests must use `createServiceTestHost()` from `@pluxel/services/test`.
+ * Framework protocol suites can stage catalog, raw config and lifecycle before one commit. Plugin-author tests must use `createServiceTestHost()` from `@pluxel/preset/test`.
  */
 export interface ServiceInternalTestHarness extends AsyncDisposable {
 	readonly ctx: RootContext
@@ -308,7 +308,7 @@ export async function createServiceInternalTestHarness(
 		coordinator,
 		stateStore,
 		fetch: async (request: Request): Promise<Response> => {
-			const { HttpServer } = await import('../http')
+			const { HttpServer } = await import('@pluxel/services/http')
 			return resolveContextCapability(ctx, HttpServer).fetch(request)
 		},
 		add,

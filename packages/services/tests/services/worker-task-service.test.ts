@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
-} from '@pluxel/services/internal/test'
+} from '@pluxel/preset/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 
 type TaskInput = Readonly<{ label: string; delay: number }>

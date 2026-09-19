@@ -1,4 +1,4 @@
-import { servicesPreset } from '../src/preset'
+import { servicesPreset } from '@pluxel/preset'
 import { HttpServer } from '../src/http'
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'

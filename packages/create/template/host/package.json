@@ -23,7 +23,8 @@
 		"@pluxel/workbench": "catalog:pluxel",
 		"elysia": "catalog:backend",
 		"react": "catalog:frontend",
-		"react-dom": "catalog:frontend"
+		"react-dom": "catalog:frontend",
+		"@pluxel/preset": "catalog:pluxel"
 	},
 	"devDependencies": {
 		"@example/web": "workspace:*",

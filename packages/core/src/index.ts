@@ -87,3 +87,9 @@ export type {
 export { EvtChannel } from './services'
 export type { Events, EventsService, EventsServiceConfig, EventsWhenGuard } from './services'
 export type { Cleanup, DisposableLike, Effects, EffectsScope } from './services'
+
+export {
+	buildPluginNodeLabels,
+	formatPluginNodeStandaloneLabel,
+	type PluginNodeLabel,
+} from './plugins/runtime/plugin-label'

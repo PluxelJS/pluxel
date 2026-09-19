@@ -52,7 +52,7 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 	const fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
 		gate.assertAccepting('http.fetch')
 		const request = normalizeRequest(input, init)
-		const { HttpServer } = await import('../http')
+		const { HttpServer } = await import('@pluxel/services/http')
 		gate.assertAccepting('http.fetch')
 		const response = await resolveContextCapability(ctx, HttpServer).fetch(request)
 		try {

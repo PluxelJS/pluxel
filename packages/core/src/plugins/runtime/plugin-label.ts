@@ -1,4 +1,4 @@
-import { formatPluginNodeReference, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
+import { formatPluginNodeReference, pluginNodeIndexKey, type PluginNodeAddress } from './identity'
 
 export type PluginNodeLabel = Readonly<{
 	title: string

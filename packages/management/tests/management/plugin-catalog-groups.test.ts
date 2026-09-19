@@ -1,6 +1,6 @@
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
-import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
+import { createServiceInternalTestHarness } from '@pluxel/preset/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { describe, expect, it, vi } from 'vitest'
 import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget.ts'

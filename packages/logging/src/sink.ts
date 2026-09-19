@@ -1,11 +1,10 @@
 import { compareLogLevel, type LogLevel, type LogRecord, type Sink } from '@logtape/logtape'
-import { formatPluginNodeReference } from '@pluxel/core'
+import { formatPluginNodeReference, formatPluginNodeStandaloneLabel } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
 import { captureCaller, formatLogName, isReservedLogProperty } from './host'
 import type { RuntimeLogError, RuntimeLogLine } from './protocol'
 import { toPortableLogValue } from './serialization'
 import { RuntimeLogStoreRegistry } from './store'
-import { formatPluginNodeStandaloneLabel } from '@pluxel/host/internal'
 
 type RuntimeLogSinkCaps = {
 	/** Max chars for the derived `msg` (primary list). Defaults to 4000. */

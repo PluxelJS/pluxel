@@ -282,6 +282,10 @@
 			"cache": false,
 			"persistent": true,
 		},
+		"@pluxel/preset#build": {
+			"dependsOn": ["@pluxel/workbench#build", "@pluxel/host-dev#build"],
+			"outputs": ["dist/**"],
+		},
 		"@pluxel/services#build": {
 			"dependsOn": ["@pluxel/commands#build", "@pluxel/host#build", "@pluxel/host-dev#build"],
 			"outputs": ["dist/**", "public/**"],

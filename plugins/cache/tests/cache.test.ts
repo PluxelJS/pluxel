@@ -1,6 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	Cache,

@@ -21,7 +21,7 @@ pnpm catalog:add -- @pluxel/auth
 import { AuthPlugin } from '@pluxel/auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services/preset'
+import { servicesPreset } from '@pluxel/preset'
 
 export default {
 	name: 'my-app',

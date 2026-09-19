@@ -1,8 +1,8 @@
 import { Commands } from '@pluxel/services/commands'
 import { pluginDefinitionAddressOf, pluginDefinitionIndexKey } from '@pluxel/core'
-import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
 import { BasePlugin, definePluginFork, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
 

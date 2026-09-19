@@ -29,10 +29,6 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./build": {
-			"@pluxel/source": "./src/build.ts",
-			"default": "./dist/build.mjs"
-		},
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
@@ -65,10 +61,6 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
-		"./internal/test": {
-			"@pluxel/source": "./src/internal-test.ts",
-			"default": "./dist/internal/test.mjs"
-		},
 		"./node": {
 			"@pluxel/source": "./src/node.ts",
 			"default": "./dist/node.mjs"
@@ -81,21 +73,9 @@
 			"@pluxel/source": "./src/persistence.ts",
 			"default": "./dist/persistence.mjs"
 		},
-		"./preset": {
-			"@pluxel/source": "./src/preset.ts",
-			"default": "./dist/preset.mjs"
-		},
-		"./test": {
-			"@pluxel/source": "./src/test.ts",
-			"default": "./dist/test.mjs"
-		},
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
 			"default": "./dist/vault.mjs"
-		},
-		"./vite": {
-			"@pluxel/source": "./src/vite.ts",
-			"default": "./dist/vite.mjs"
 		},
 		"./workers": {
 			"@pluxel/source": "./src/workers.ts",
@@ -110,7 +90,6 @@
 		},
 		"exports": {
 			".": "./dist/index.mjs",
-			"./build": "./dist/build.mjs",
 			"./commands": "./dist/commands.mjs",
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",
@@ -119,14 +98,10 @@
 			"./http/node": "./dist/http/node.mjs",
 			"./http/vite": "./dist/http/vite.mjs",
 			"./internal": "./dist/internal.mjs",
-			"./internal/test": "./dist/internal/test.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
-			"./preset": "./dist/preset.mjs",
-			"./test": "./dist/test.mjs",
 			"./vault": "./dist/vault.mjs",
-			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
 			"./package.json": "./package.json"
 		},
@@ -140,9 +115,6 @@
 		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts"
 	},
 	"dependencies": {
-		"@pluxel/commands": "workspace:^",
-		"@pluxel/core": "workspace:^",
-		"@pluxel/host": "workspace:^",
 		"age-encryption": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"chokidar": "catalog:node",
@@ -154,9 +126,13 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/host-dev": "workspace:*",
 		"@pluxel/logging": "workspace:*",
 		"@pluxel/management": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
@@ -171,11 +147,11 @@
 	},
 	"peerDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@pluxel/commands": "workspace:^",
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/host-dev": "workspace:^",
-		"@pluxel/logging": "workspace:^",
-		"@pluxel/management": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
-		"@pluxel/workbench": "workspace:^",
 		"elysia": "catalog:prod",
 		"pg": "catalog:backend",
 		"vite": ">=8.2.2 <9"
@@ -188,15 +164,6 @@
 			"optional": true
 		},
 		"elysia": {
-			"optional": true
-		},
-		"@pluxel/logging": {
-			"optional": true
-		},
-		"@pluxel/management": {
-			"optional": true
-		},
-		"@pluxel/workbench": {
 			"optional": true
 		},
 		"@pluxel/rolldown": {

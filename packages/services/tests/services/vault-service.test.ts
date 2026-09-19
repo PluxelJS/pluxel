@@ -9,7 +9,7 @@ import {
 	createServiceInternalTestContext,
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
-} from '@pluxel/services/internal/test'
+} from '@pluxel/preset/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, expectTypeOf, it } from 'vitest'

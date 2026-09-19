@@ -2,9 +2,9 @@ import { resolve } from 'node:path'
 import type { HostService, HostStartupContext } from '@pluxel/host'
 import type { RuntimeLoggingInput } from '@pluxel/logging'
 import type { ProductDescriptor } from '@pluxel/management/product'
-import type { PersistenceServiceConfig } from './persistence'
-import { standardServices } from './index'
-import { vault } from './vault'
+import type { PersistenceServiceConfig } from '@pluxel/services/persistence'
+import { standardServices } from '@pluxel/services'
+import { vault } from '@pluxel/services/vault'
 
 /** Official application services. Host owns preparation, rollback and shutdown. */
 export async function servicesPreset(

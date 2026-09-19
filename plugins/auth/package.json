@@ -48,6 +48,7 @@
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/management": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",

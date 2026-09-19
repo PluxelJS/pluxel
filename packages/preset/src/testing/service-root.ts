@@ -23,7 +23,7 @@ export async function createServiceTestApplication(
 	}
 	let selectedServices = options.services
 	if (selectedServices === undefined) {
-		const { standardServices } = await import('../index')
+		const { standardServices } = await import('@pluxel/services')
 		selectedServices = standardServices({ persistence: { mode: 'memory' } })
 	}
 	const services: HostService[] = [...selectedServices]
@@ -38,7 +38,9 @@ export async function createServiceTestApplication(
 		const { testWorkbenchService } = await import('@pluxel/workbench/internal/test')
 		services.push(testWorkbenchService())
 	}
-	const { HttpServer } = withManagement ? await import('../http') : { HttpServer: undefined }
+	const { HttpServer } = withManagement
+		? await import('@pluxel/services/http')
+		: { HttpServer: undefined }
 
 	services.push(
 		defineHostService({

@@ -7,16 +7,11 @@ export default defineConfig({
 	},
 	deps: { neverBundle: ['#pluxel/database-driver/pglite', '#pluxel/database-driver/postgres'] },
 	entry: {
-		test: './src/test.ts',
-		'internal/test': './src/internal-test.ts',
-		vite: './src/vite.ts',
 		'http/vite': './src/development/http.ts',
 		'node/vite': './src/development/node.ts',
 
 		index: './src/index.ts',
 		internal: './src/internal.ts',
-		preset: './src/preset.ts',
-		build: './src/build.ts',
 		'database/pglite': './src/database/pglite.ts',
 		'database/postgres': './src/database/postgres.ts',
 		database: './src/database.ts',

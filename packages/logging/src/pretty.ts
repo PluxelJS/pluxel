@@ -1,8 +1,7 @@
 import { getConsoleSink, type LogRecord, type Sink } from '@logtape/logtape'
 import { getPrettyFormatter } from '@logtape/pretty'
-import { formatPluginNodeReference } from '@pluxel/core'
+import { formatPluginNodeReference, formatPluginNodeStandaloneLabel } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
-import { formatPluginNodeStandaloneLabel } from '@pluxel/host/internal'
 import { formatPrettyTimestamp, isReservedLogProperty } from './host'
 import { toPlainObject } from './serialization'
 

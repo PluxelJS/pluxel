@@ -9,7 +9,7 @@ import { requireConfigService } from '@pluxel/core/internal'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
-} from '@pluxel/services/internal/test'
+} from '@pluxel/preset/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RuntimeManagementTargetImpl } from '../../src/services/management/RuntimeManagementTarget.ts'

@@ -19,6 +19,7 @@ const publishRoots = [
 	'@pluxel/rolldown',
 	'@pluxel/host',
 	'@pluxel/services',
+	'@pluxel/preset',
 	'@pluxel/management',
 	'@pluxel/logging',
 	'@pluxel/workbench',

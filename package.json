@@ -57,6 +57,7 @@
 		"turbo": "catalog:dev",
 		"typescript": "catalog:dev",
 		"unplugin-preprocessor-directives": "catalog:build",
+		"vite": "catalog:build",
 		"vitest": "catalog:test",
 		"yaml": "catalog:dev"
 	},

@@ -29,8 +29,6 @@ export * from './status'
 
 export { ensureFork, removeFork, type ForkEnsureResult, type ForkRemoveResult } from './forks'
 
-export * from './plugin-label'
-
 export { requireHostStateStore } from './host'
 
 export { createProductionSourceLoader } from './production-source-loader'

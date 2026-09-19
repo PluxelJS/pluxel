@@ -11,3 +11,9 @@ export type {
 	ServiceTestHost,
 	ServiceTestHostOptions,
 } from './testing/service-host'
+
+export {
+	createWorkbenchTestHost,
+	type WorkbenchTestHost,
+	type WorkbenchTestHostOptions,
+} from './testing/workbench-host'

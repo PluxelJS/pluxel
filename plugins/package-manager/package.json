@@ -49,6 +49,7 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/host-dynamic": "workspace:*",
+		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",

@@ -1,7 +1,7 @@
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { expect, it } from 'vitest'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost } from '@pluxel/preset/test'
 import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/test'
 import { VaultAdminPlugin } from '../src/index.ts'

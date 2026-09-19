@@ -3,7 +3,7 @@ import { createDiskFixture } from '@pluxel/test/fixtures'
 import { createServer, type RunnableDevEnvironment } from 'vite'
 import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import { expect, it } from 'vitest'
-import { vitePreset } from '../src/vite'
+import { vitePreset } from '@pluxel/preset/vite'
 
 it('loads checked database migration facts through the official Vite preset', async () => {
 	const sql = 'CREATE TABLE items (id text PRIMARY KEY);'

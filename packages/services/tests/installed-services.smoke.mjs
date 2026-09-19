@@ -100,7 +100,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		const elysiaVersion = JSON.parse(
 			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
 		).version
-		// Standard services add only the HTTP peer; Management, Logging and Workbench remain absent.
+		// Standard services add only the HTTP peer; application presets and management/UI remain absent.
 		await writeFile(
 			join(root, 'package.json'),
 			JSON.stringify({
@@ -115,8 +115,8 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		const standardInstalled = await readdir(join(root, 'node_modules/.pnpm'))
 		expect(
 			standardInstalled.some((name) =>
-				['@pluxel+management@', '@pluxel+logging@', '@pluxel+workbench@'].some((prefix) =>
-					name.startsWith(prefix),
+				['@pluxel+preset@', '@pluxel+management@', '@pluxel+logging@', '@pluxel+workbench@'].some(
+					(prefix) => name.startsWith(prefix),
 				),
 			),
 		).toBe(false)
@@ -156,7 +156,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		)
 		await checkOptionalDeclarations(root)
 		// Expand the same genuinely installed consumer to the optional UI/development plane.
-		for (const name of ['workbench', 'host-dev', 'rolldown']) {
+		for (const name of ['workbench', 'host-dev', 'rolldown', 'preset']) {
 			const tarball = join(root, `${name}.tgz`)
 			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
 			dependencies[`@pluxel/${name}`] = `file:${tarball}`
@@ -211,10 +211,6 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 const loads = []
 const hooks = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
-const { createServiceTestHost } = await import('@pluxel/services/test')
-const emptyTestHost = await createServiceTestHost({ services: [] })
-await emptyTestHost.dispose()
-assert.equal(loads.some(url => /elysia|@pluxel[+/]workbench|@pluxel[+/]management/.test(url)), false, 'base test host must not load HTTP or UI')
 const { Vault, vault } = await import('@pluxel/services/vault')
 assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'token import must not evaluate encryption backend')
 const { persistence, createMemoryPersistenceBackend } = await import('@pluxel/services/persistence')
@@ -264,9 +260,6 @@ const typeConsumer = `
 import { standardServices } from '@pluxel/services'
 const baseServices = standardServices({ persistence: { mode: 'memory' } })
 void baseServices
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
-const isolatedTestHost: ServiceTestHost = await createServiceTestHost({ services: [] })
-await isolatedTestHost.dispose()
 import { createHost } from '@pluxel/host'
 import { BasePlugin, type Context } from '@pluxel/core'
 import { Persistence, persistence, createMemoryPersistenceBackend } from '@pluxel/services/persistence'
@@ -304,7 +297,10 @@ await first.close(); await second.close()
 `
 
 const optionalTypeConsumer = `
-import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/workbench/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
+const isolatedTestHost: ServiceTestHost = await createServiceTestHost({ services: [] })
+await isolatedTestHost.dispose()
+import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/preset/test'
 const typedWorkbenchTestHost: WorkbenchTestHost = await createWorkbenchTestHost()
 await typedWorkbenchTestHost.dispose()
 import { Workbench, workbench } from '@pluxel/workbench'
@@ -314,8 +310,8 @@ import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type * as ConsoleContracts from '@pluxel/host-dev/console'
 import { host as viteHost } from '@pluxel/host-dev/vite'
-import { servicesPreset } from '@pluxel/services/preset'
-import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
+import { servicesPreset } from '@pluxel/preset'
+import { vitePreset, serviceSingletons } from '@pluxel/preset/vite'
 import { httpDevelopment } from '@pluxel/services/http/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
@@ -342,6 +338,12 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 const loads = []
 const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
+const { createServiceTestHost } = await import('@pluxel/preset/test')
+const emptyTestHost = await createServiceTestHost({ services: [] })
+await emptyTestHost.dispose()
+assert.equal(loads.some(url => /elysia|@pluxel[+/]workbench|@pluxel[+/]management/.test(url)), false, 'base test host must not load HTTP or UI')
+const managedTestHost = await createServiceTestHost({ management: true })
+await managedTestHost.dispose()
 const { createHost } = await import('@pluxel/host')
 const { resolveContextCapability } = await import('@pluxel/core/host')
 const { Workbench } = await import('@pluxel/workbench')
@@ -372,7 +374,7 @@ assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
 await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
-const { createWorkbenchTestHost } = await import('@pluxel/workbench/test')
+const { createWorkbenchTestHost } = await import('@pluxel/preset/test')
 const workbenchTestHost = await createWorkbenchTestHost()
 await workbenchTestHost.dispose()
 console.log('ISOLATED_WORKBENCH_OK')
@@ -410,9 +412,12 @@ import { management } from '@pluxel/management/service'
 import { managementHttp } from '@pluxel/management/http'
 import { managementAccess } from '@pluxel/management/access'
 import * as managementSession from '@pluxel/management/session'
-import { createServiceTestHost as createHeadlessTestHost } from '@pluxel/services/test'
-const headlessHost = await createHeadlessTestHost({ management: true })
-await headlessHost.dispose()
+import { createHost as createManagementHost } from '@pluxel/host'
+import { standardServices as managementServices } from '@pluxel/services'
+const headlessHost = await createManagementHost({ plugins: [], services: [
+ ...managementServices({ persistence: { mode: 'memory' } }), managementAccess(), management(), managementHttp(),
+] })
+await headlessHost.close()
 void [management, managementHttp, managementAccess, managementSession]
 console.log('ISOLATED_MANAGEMENT_OK')
 `

@@ -1,4 +1,6 @@
 import {
+	buildPluginNodeLabels,
+	type PluginNodeLabel,
 	formatPluginNodeReference,
 	formatPluginNodeRoute,
 	pluginNodeIndexKey,
@@ -7,15 +9,13 @@ import {
 } from '@pluxel/core'
 import {
 	readHostPluginStatusOverview,
-	buildPluginNodeLabels,
-	type PluginNodeLabel,
 	hostPluginStatusOverviewFromView,
 	type HostPluginStatusOverview,
 	type HostPluginStatusProjectionView,
 	type HostPluginStatusSnapshot,
 } from '@pluxel/host/internal'
 
-export { buildPluginNodeLabels, type PluginNodeLabel } from '@pluxel/host/internal'
+export { buildPluginNodeLabels, type PluginNodeLabel } from '@pluxel/core'
 
 export type PluginCatalogProjectionEntry = HostPluginStatusSnapshot &
 	Readonly<{

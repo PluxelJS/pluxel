@@ -3,17 +3,23 @@
 ## 依赖方向
 
 ```text
-@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/services
-                                     ^   ^
-                                     |   +-- @pluxel/host-dynamic
-                                     +------ @pluxel/host-dev
-                                                   ^
-                                                   +-- @pluxel/services/vite
-@pluxel/commands --------------------------------------------> @pluxel/services
-@pluxel/cli --optional--> @pluxel/rolldown
+Core <- Host <- Services <- Management <- Workbench <- Preset
+          ^         ^            ^                       |
+          |         +------------+-----------------------+
+          +-- Host Dynamic
+          +-- Host Dev <- 服务开发附件、Preset /vite
+Commands <- Services、Management
+Logging <- Management、Preset
 ```
 
-`@pluxel/rolldown` 是 build-time tooling，不进入 runtime graph。
+箭头从消费者指向提供者；图只画主要层次，不重复每层对 Core/Host 的直接依赖。
+`@pluxel/preset` 拥有官方组合策略；Services 只提供可组合能力，不反向导入 Management、Workbench 或 Preset。
+Management 拥有管理用例和协议，Workbench 在其上提供展示、会话和 UI；Management 不反向依赖 Workbench。
+Host Dev 只拥有 Vite 环境与开发协议，不选择官方服务。
+
+`@pluxel/rolldown` 是 build-time tooling，消费 Core 的 lowering ABI 和 federation contract；
+CLI 按命令可选消费它，Host Dev 消费其编译实现。Core 不通过发布依赖反向引入构建工具。
+`@pluxel/context` 的源码复用和下文的测试依赖是开发图，不是上述发布图的一层。
 
 必须保持：context 不依赖 Core/Host/IO/lifecycle、core host-free、Host 通过来源契约接入 dynamic、来源接入不复制 lifecycle、config
 persistence 不进入 core。CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
@@ -54,10 +60,24 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 - 独立仓库共同开发未发布源码时使用 `pluxel source`；项目提交 repository identity 和正常
   catalog/semver，机器 checkout 路径只进入用户 registry 与 `.pluxel/` 代理。不得手写跨仓库 `link:`
   override 或链接另一个 checkout 的 `node_modules`。
-- peer 表示必须与宿主共享的运行时身份，不是减少安装声明的手段。Plugin package 在源码中使用
+- peer 表示必须与应用共享的身份或平台兼容边界，不是减少安装声明的手段。公开集成包对 Core、Host、
+  Commands、Services、Logging、Management、Workbench 的引用使用 peer；即使当前只引用它们的公开类型，
+  发布声明仍需要调用方提供兼容版本。编译器对 Core 的 lowering ABI 同样使用 peer，避免静默编译到另一版本协议。
+  包自身拥有的解析器、文件监视器、查询缓存等实现继续使用 dependencies；不要求所有第一方库都成为 peer。
+- Plugin package 在源码中使用
   `workspace:^` 消费 Core、服务和 provider contract，发布后由 pnpm 转换为各包对应的 semver 范围；本地构建/测试
   副本同时以 `workspace:*` 放入 `devDependencies`，不得把 provider 放入普通 dependencies 形成第二份
   Plugin identity。
+- 真正隔离在可选入口或条件加载后的集成可以标记 optional peer。optional 只影响安装要求，既不消除架构边，
+  也不允许无条件入口加载缺失的包。`devDependencies` 只承载开发工具、测试夹具和已明确内联的源码；
+  不能用它隐藏发布 JavaScript 或 declarations 仍引用的包。
+
+发布依赖图包含 `dependencies`、`optionalDependencies` 和所有 `peerDependencies`，必须无环；
+`governance:check` 对完整 workspace 图做检查，并保护 Context、Core、Commands、Host 与来源/开发驱动的向下边界。
+同时扫描包源码的实际 import（包含类型和动态 import），要求跨 workspace 引用有发布依赖声明，不能只删除 manifest
+边来通过检查；测试和类型探针不算发布源，Core 内联 Context 是明确例外。
+测试夹具可能依赖被测框架，Core 的构建也使用官方 toolchain，因此开发依赖图可以有环；这不表示运行时循环，
+但 Turbo 任务必须保持可执行的顺序，不能用发布依赖调整来掩盖任务编排问题。
 
 `@pluxel/core` 源码对 `@pluxel/context` 的复用是构建时源码边界：Core 将其声明为 `devDependencies: workspace:*`，并用
 tsdown `alwaysBundle` 内联所有 JavaScript 与 declarations。发布 tarball 不得含外部 `@pluxel/context` import，也不得把它加入

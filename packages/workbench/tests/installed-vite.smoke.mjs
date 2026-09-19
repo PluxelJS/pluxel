@@ -16,7 +16,7 @@ const hook = registerHooks({
 		return next(url, context)
 	},
 })
-const { vitePreset } = await import('@pluxel/services/vite')
+const { vitePreset } = await import('@pluxel/preset/vite')
 const { workbenchArtifacts } = await import('../dist/dev.mjs')
 const { requireWorkbench, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
 let server, instance

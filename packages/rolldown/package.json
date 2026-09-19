@@ -124,7 +124,6 @@
 		"@module-federation/bridge-react": "catalog:frontend",
 		"@module-federation/sdk": "catalog:prod",
 		"@module-federation/vite": "catalog:build",
-		"@pluxel/core": "workspace:^",
 		"drizzle-kit": "catalog:backend",
 		"mdast-util-directive": "catalog:prod",
 		"mdast-util-from-markdown": "catalog:prod",
@@ -142,6 +141,7 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
+		"@pluxel/core": "workspace:*",
 		"@pluxel/host-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:^",
@@ -158,6 +158,7 @@
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
 		"rolldown": "catalog:build",
 		"tsdown": "catalog:build",
 		"vite": ">=8.2.2 <9"

@@ -1,7 +1,7 @@
 # Host 下游与部署验证
 
 Core token、正向 Host 安装计划、官方服务拆分、Management、Workbench、开发附件和共享应用启动已经实施。
-官方运行时、Vite 与构建组合统一归 `@pluxel/services` 的三个 preset；通用 Host-dev 不拥有官方服务选择策略。
+官方运行时、Vite 与构建组合统一归 `@pluxel/preset`；通用 Host-dev 不拥有官方服务选择策略。
 当前 API 以[组合 Host 服务](../docs/reference/runtime-services.md)、[Host 管理接入](../docs/runtime/management.md)、
 [独立 Workbench](../docs/workbench/standalone-host.md)及[架构约束](HOST.md)为准；本文只记录下游验证及其边界。
 
@@ -48,3 +48,9 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 `headless` / `workbench` 仅保留为现有构建资源选择，不作为 Host 的运行模式，也不增加服务安装禁令。
 应用显式选择服务和 HTTP/UI 接入；实际需要的制品或文件不存在时，由使用它的服务报告具体错误。
 未选择的能力仍应避免进入产物闭包。服务声明变化替换 Host，普通 Plugin/制品更新复用 Host；失败准备不发布半成品。
+
+## 包边界整理验证
+
+官方组合与完整测试宿主归 Preset；Services 不再反向导入 Management/Workbench。发布图检查包含 optional peer 与实际源码导入，当前无环；开发测试依赖图与发布图分开审查。
+
+本轮通过 10 个相关框架包的类型检查、42 项原有定向测试、Services/Management/Preset 分阶段独立安装检查与 starter 检查。移动后的 Preset 测试再次验证入口解析。三个下游仅重跑受影响包的类型检查：Rhythm 15 个、Chatbot 13 个及根项目、Omni 11 个；本轮未重复上述整套业务与部署验收。
