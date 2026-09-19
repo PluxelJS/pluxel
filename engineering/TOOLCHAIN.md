@@ -289,7 +289,9 @@ Production projector 复用 config source resolver，把 exported schema 还原�
 transform 或 default getter。无法安全静态还原或无法推导 transport 的 target 使 build 失败，不回退 string/JSON heuristic。
 
 Plugin semantics、config source 与 route-specific validator 都只读 AST，并通过 `pluginUtils` 的 exact-source 有界缓存复用同一
-module parse。Vite/watch source bytes 变化会自然替换该 id 的缓存项；各 pass 仍独立拥有自己的 semantic facts，不能修改共享 AST。
+module parse。缓存键包含 id、language 与完整 source bytes，原始源码和 lowering 后源码可以同时命中，全局最多保留 256 个 parse；
+源码变化必须使用对应的新 AST，语法错误的 recovery AST 不进入缓存。各 pass 仍独立拥有自己的 semantic facts，不能修改共享 AST。
+这不承诺复用 Rolldown/Vite 内部或第三方插件的 parser，也不跨不同源码版本复用 AST。
 
 Binding 非空时 assembly 在 distribution finalization 前写 root `.env.example`。Environment name 按 UTF-8 bytes 排序并去重，
 fan-out target 的 description/input facts 稳定聚合；placeholder 保持注释状态。文件编码为 UTF-8 + LF，不读取 build environment，

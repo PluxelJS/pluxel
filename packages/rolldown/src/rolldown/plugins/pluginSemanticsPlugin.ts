@@ -958,6 +958,22 @@ async function resolvePartTargets(
 	options: Parameters<typeof lowerModule>[0],
 ): Promise<readonly string[]> {
 	const targets: string[] = []
+	const modules = new Map<string, Promise<ModuleAnalysis>>()
+	const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
+		const moduleKey = resolve(stripQuery(moduleId))
+		let pending = modules.get(moduleKey)
+		if (!pending) {
+			pending = readFile(moduleKey, 'utf8').then((source) => {
+				const ast = parseStandaloneWithLang(source, moduleKey)
+				if (!ast) {
+					options.error(`[pluxel:plugin-part] ${id} could not inspect ${moduleKey}`)
+				}
+				return analyzeModule(ast)
+			})
+			modules.set(moduleKey, pending)
+		}
+		return pending
+	}
 	for (const occurrence of occurrences) {
 		if (analysis.classes.has(occurrence.partName)) {
 			targets.push(originKey(id, occurrence.partName))
@@ -972,22 +988,6 @@ async function resolvePartTargets(
 			)
 		}
 		const clean = resolve(stripQuery(resolved))
-		const modules = new Map<string, Promise<ModuleAnalysis>>()
-		const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
-			const moduleKey = resolve(stripQuery(moduleId))
-			let pending = modules.get(moduleKey)
-			if (!pending) {
-				pending = readFile(moduleKey, 'utf8').then((source) => {
-					const ast = parseStandaloneWithLang(source, moduleKey)
-					if (!ast) {
-						options.error(`[pluxel:plugin-part] ${id} could not inspect ${moduleKey}`)
-					}
-					return analyzeModule(ast)
-				})
-				modules.set(moduleKey, pending)
-			}
-			return pending
-		}
 		const origin = await resolveExportOrigin(
 			clean,
 			binding.imported,

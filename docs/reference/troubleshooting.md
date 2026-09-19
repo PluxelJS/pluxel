@@ -24,6 +24,20 @@ Coding agent 检查当前 Vite 应用时，使用[开发控制台](../developmen
 
 不要把浏览器真正需要的模块加到 `external` 来消除报错；这样可能只是把构建失败变成浏览器加载失败。使用跨仓库源码时，先运行 `pluxel source doctor`，再按[源码开发](../development/source-workspaces.md)检查生成的解析配置。
 
+## Cap’n Web 声明报 `TS2574`
+
+`capnweb@0.12.0` 的 `UnstubifyInner` 将 `Unstubify<Tail>` 展开为元组尾部，但该类型包含 `Promise` 和 placeholder，
+不保证是数组。TypeScript 6/7 在 `skipLibCheck: false` 时会报告两处 `A rest element type must be an array type`。
+这是上游声明问题；这一诊断本身不表示 RPC 运行时失败，但会阻塞严格类型检查。
+
+框架的独立安装检查只容忍这两处精确诊断，使用侧不会继承该例外。需要完整声明检查的项目应等待上游修复，或在自己的
+依赖管理中维护经过验证的类型补丁；框架 workspace 的补丁不会自动随 npm 包传递给使用侧。不要为此替换 RPC 协议。
+
+## Plugin 源码解析失败
+
+Vite/Rolldown lowering 只接受无语法错误的 AST；OXC 能生成恢复 AST 并不代表源码有效。修复报错模块中的语法后重试，
+不要依赖切换 parser 或关闭检查来生成 Plugin 元数据。
+
 ## Plugin 看起来是普通 class
 
 **现象：** Plugin 元数据、依赖、`configs.use()` 或 HMR 行为缺失。
