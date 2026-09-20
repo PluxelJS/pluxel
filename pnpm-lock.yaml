@@ -1793,6 +1793,9 @@ importers:
       valibot-form:
         specifier: workspace:^
         version: link:../../packages/valibot-form
+      yaml:
+        specifier: catalog:prod
+        version: 2.9.0
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend

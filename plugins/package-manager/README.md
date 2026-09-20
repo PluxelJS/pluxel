@@ -53,6 +53,8 @@ snapshot query 与 install/remove mutation。Workbench 自动 detach DTO、释�
 Workbench 根据 catalog node address 生成导航，调用方不拼接 Plugin 名称 URL。headless host 仍可使用 `package.install` 和
 `package.remove` commands。
 
+初始化保留有效的既存 entry；安装按锁定依赖图更新变化的 entry，删除包不会重新发布图未变的其他包。传递依赖、peer 和 optional 依赖变化仍触发对应来源更新；无法识别锁文件时保守重新发布。
+
 安装成功、entry 发布、catalog 接受、插件运行是独立事实。生产 Host 使用原生 ESM 加载，升级已经加载的 entry 会报告 `PLUGIN_SOURCE_RESTART_REQUIRED`，需要重启进程；开发驱动才拥有完整模块图失效能力。
 
 安装、自动启动策略和当前进程启停是三个独立操作。安装成功只发布 source；Host 按持久运行策略、session intent 和正常 dependency graph 决定插件是否

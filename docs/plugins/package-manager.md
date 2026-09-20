@@ -101,6 +101,8 @@ await ctx.root.commands.execute('package.remove', {
 - 每次接受 1–100 个 spec，返回 `{ ok, succeeded, failed }`；
 - failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`。
 
+初始化保留有效的既存 entry，不因包管理器重启触发 HMR。安装按 pnpm 锁定的依赖图识别变化，纯删除不会重新发布图未变化的包；传递依赖、peer 或 optional 依赖变化也会失效对应 entry。无法识别 lockfile 时，安装保守重新发布。生产环境已经加载的同路径 entry 升级仍需重启进程（`PLUGIN_SOURCE_RESTART_REQUIRED`）；初始化修复损坏 entry 也不绕过这个边界。
+
 Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
 每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound scope 声明 snapshot query 与
 install/remove mutation，Framework 自动 detach 返回 DTO、释放 transport ownership，并刷新写入后的 snapshot：

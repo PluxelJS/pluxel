@@ -88,7 +88,7 @@ source/package artifact inputs，以便补偿 Host 复用旧计划，而不是�
 只增加分类、invalidation、source anchor 和诊断，不创建第二个 Host cache。默认 `ssr` 与第三方 `ssrLoadModule`
 使用独立的 Vite 环境、执行缓存与生命周期，不接受 Host 的 source conditions、singleton 或语义 collector。
 
-Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons()` 另外固定 Services、Workbench、Management 和 Logging，并保持 Cap’n Web 的 native ESM identity。相应 public、internal 和 workspace source path 都必须解析到
+Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons()` 另外固定 Services（含 Management、Logging）与 Workbench，并保持 Cap’n Web 的 native ESM identity。相应 public、internal 和 workspace source path 都必须解析到
 host 安装的 ESM entry；解析使用 import conditions，不能通过 CJS path 冒充 ESM singleton。Standalone
 `@pluxel/context` 只有 host 直接安装时才进入 bridge。
 
@@ -289,3 +289,5 @@ Shell 源码开发通过 `@pluxel/workbench/dev` 的 `workbenchSourceShell({ ent
 服务附件通过 `HostDevelopmentPluginApi` 参与现有生命周期，不绕过 Host 自行推动候选提交。
 
 Workbench renderer 的 semantic candidate 被拒绝时，应用更新报告 `retained-previous` / `artifacts`，保留已接受的 renderer；已接受计划的后台构建失败才投影 producer `failed`。两条失败路径都记录原始错误，Host hot-update 诊断经当前 Host logger 后继续交给 Vite。
+
+动态入口的集中集成覆盖见 `packages/services/tests/installed-plugin.smoke.mjs`：真实 Vite 启动后新增 `.ts` wrapper，按 `@pluxel/hmr` 选择 TypeScript 源码，修改其传递依赖完成 replacement，删除 wrapper 撤回能力；同一进程还验证已编译 `.mjs` 包安装、升级、失败保留与卸载。入口被发现不等于自动启动：仍服从 Host 的 auto-start/session intent，撤回后保留配置意图而非伪装成正在运行。

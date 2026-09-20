@@ -29,13 +29,15 @@ commands/Workbench publication。校验只读取 route generation 的 resolved d
 2. 在 manifest copy 上应用 dependency change；
 3. 把完整 in-memory manifest 交给一次 `install()`；adapter 使用 `ignorePackageManifest`，失败不会先改写持久 manifest；
 4. install 成功后先确认全部 direct dependency 已 materialize，再原子写 manifest；
-5. 全部 wrapper 内容准备完成后逐文件原子发布并删除 stale wrapper；
+5. 从 pnpm v9 lockfile 提取每个 direct package 的可达 resolution/snapshot 图（含 peer context 与 optional edges），生成 wrapper 指纹；仅原子发布内容变化的 wrapper 并删除 stale wrapper；
 6. dynamic watcher 把文件变化合并为自己的 graph batch。
 
 同一进程内 mutation 串行，避免两个 manifest transaction 相互覆盖。pnpm failure 保持先前 manifest 且不发布新 entry；若
 engine 已完成而后续 filesystem publication 失败，持久 manifest 保留实际已安装 graph，下一次 operation/initialize 会重新
 发布 entries。插件不暴露 `reinstall`：native `update: true` 是全图更新，
 不能诚实实现 selected-package reinstall，也不能把已请求 range 静默改成 `latest`。
+
+初始化保留正文有效的既存 wrapper（包括旧 UUID publication），不因 Producer 重启而触发来源更新。缺失或损坏的 wrapper 会修复；若生产进程已求值该路径，修复仍服从同路径更新需要进程重启的边界。无法识别 lockfile 或缺少完整图时，实际安装保守重新发布，而不假定依赖未变。删除包不改写图未变化的其他 entry；传递依赖或 peer/optional 图改变仍更新受影响 entry。
 
 wrapper re-export named exports，并把 package default export 继续作为 default。它不注入 Pluxel metadata、不决定 auto-start policy 或 session lifecycle，
 也不建立第二份 plugin inventory。可信 package source、catalog、lifecycle 和 status 仍由 runtime graph 投影。

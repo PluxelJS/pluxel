@@ -40,7 +40,8 @@
 	"dependencies": {
 		"@pnpm/napi": "catalog:prod",
 		"valibot": "catalog:validation",
-		"valibot-form": "workspace:^"
+		"valibot-form": "workspace:^",
+		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:frontend",

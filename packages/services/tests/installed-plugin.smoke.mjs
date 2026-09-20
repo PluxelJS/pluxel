@@ -30,6 +30,39 @@ await symlink(
 	'dir',
 )
 await mkdir(join(root, 'entries'))
+const typedRoot = join(root, 'packages/typed')
+await mkdir(join(typedRoot, 'src'), { recursive: true })
+await symlink(typedRoot, join(root, 'node_modules/@test/typed'), 'dir')
+await writeFile(
+	join(typedRoot, 'package.json'),
+	JSON.stringify({
+		name: '@test/typed',
+		type: 'module',
+		exports: { '.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' } },
+	}),
+)
+await writeFile(join(typedRoot, 'src/version.ts'), "export const version: string = 'ts-one'\n")
+await writeFile(
+	join(typedRoot, 'src/index.ts'),
+	`
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Http } from '@pluxel/services/http'
+import { version } from './version'
+@Plugin()
+export class Typed extends BasePlugin {
+ init() {
+  this.ctx.require(Http).get('/typed', () => version)
+  globalThis.__typedHostSmoke.push(version)
+  this.ctx.effects.defer(() => { globalThis.__typedHostSmoke.push('-' + version) })
+ }
+}
+`,
+)
+const typedDefinition = {
+	entry: { kind: 'package-root', packageName: '@test/typed' },
+	exportName: 'Typed',
+}
+
 await writeFile(
 	join(root, 'package.json'),
 	JSON.stringify({ name: '@test/installed-host-smoke', type: 'module' }),
@@ -59,15 +92,23 @@ export const services=[http(),{name:'fixture.service',capabilities:[installRootC
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
-	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host/dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'}]}}};`,
+	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host/dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs','*.ts']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'},{definition:${JSON.stringify(typedDefinition)},variant:'default'}]}}};`,
 )
 globalThis.__installedHostSmoke = []
+globalThis.__typedHostSmoke = []
 let server
 async function until(check, label) {
 	const deadline = Date.now() + 10000
 	while (!check()) {
 		if (Date.now() > deadline)
-			throw new Error(label + ' ' + JSON.stringify(globalThis.__installedHostSmoke))
+			throw new Error(
+				label +
+					' ' +
+					JSON.stringify({
+						installed: globalThis.__installedHostSmoke,
+						typed: globalThis.__typedHostSmoke,
+					}),
+			)
 		await delay(25)
 	}
 }
@@ -202,6 +243,39 @@ try {
 			stoppedBeforeRemoval,
 		'uninstall',
 	)
+	// Discover a new TypeScript entry after startup, then invalidate its imported source graph.
+	await writeFile(join(root, 'entries/typed.ts'), "export { Typed } from '@test/typed'\n")
+	await until(() => globalThis.__typedHostSmoke.includes('ts-one'), 'new TypeScript entry')
+	const typedFirstResponse = await fetch(new URL('/typed', listener))
+	assert.equal(await typedFirstResponse.text(), 'ts-one')
+	await writeFile(join(typedRoot, 'src/version.ts'), "export const version: string = 'ts-two'\n")
+	await until(() => globalThis.__typedHostSmoke.includes('ts-two'), 'TypeScript dependency HMR')
+	const typedUpdatedResponse = await fetch(new URL('/typed', listener))
+	assert.equal(await typedUpdatedResponse.text(), 'ts-two')
+	const typedInspection = await inspect()
+	assert.equal(typedInspection.state, 'succeeded', JSON.stringify(typedInspection))
+	assert.equal(typedInspection.hostEpoch, initial.hostEpoch, 'Plugin HMR keeps the Host')
+	const typedPlugin = typedInspection.value.find(
+		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
+	)
+	assert.deepEqual(typedPlugin.execution, {
+		kind: 'dynamic-entry',
+		artifact: { kind: 'source-module' },
+		update: { kind: 'definition-hmr', scope: 'source-graph' },
+	})
+	await rm(join(root, 'entries/typed.ts'))
+	await until(() => globalThis.__typedHostSmoke.includes('-ts-two'), 'TypeScript entry removal')
+	const typedRemovedResponse = await fetch(new URL('/typed', listener))
+	assert.equal(typedRemovedResponse.status, 404)
+	const removedTyped = await inspect()
+	assert.equal(removedTyped.state, 'succeeded', JSON.stringify(removedTyped))
+	const withdrawn = removedTyped.value.find(
+		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
+	)
+	assert.equal(withdrawn.availability, 'unavailable')
+	assert.equal(withdrawn.lifecycleState, 'stopped')
+	assert.equal(withdrawn.autoStart, true, 'withdrawal preserves the configured startup intent')
+	assert.deepEqual(globalThis.__typedHostSmoke, ['ts-one', '-ts-one', 'ts-two', '-ts-two'])
 	await writeFile(join(root, 'services.mjs'), serviceSource('failed', true))
 	await until(
 		() => globalThis.__installedHostSmoke.filter((entry) => entry === 'fixed').length === 2,
