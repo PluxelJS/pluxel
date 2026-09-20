@@ -81,7 +81,7 @@ const publicEntryChecks = new Map([
 		['createCoreContext', 'createCoreHost', 'withCoreContext', 'withCoreHost'],
 	],
 	[
-		'packages/preset/src/test.ts',
+		'packages/services/src/test.ts',
 		['createRuntimeContext', 'createRuntimeHost', 'RuntimeHost', 'RuntimeTestContext'],
 	],
 	[

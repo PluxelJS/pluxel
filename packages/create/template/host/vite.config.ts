@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import { vitePreset } from '@pluxel/preset/vite'
+import { vitePreset } from '@pluxel/services/vite'
 import { hostEnv } from '@pluxel/host/environment'
 
 const webRoot = fileURLToPath(new URL('./web', import.meta.url))

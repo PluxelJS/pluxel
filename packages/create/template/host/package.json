@@ -15,16 +15,12 @@
 		"@pluxel/commands": "catalog:pluxel",
 		"@pluxel/core": "catalog:pluxel",
 		"@pluxel/host": "catalog:pluxel",
-		"@pluxel/host-dynamic": "catalog:pluxel",
-		"@pluxel/logging": "catalog:pluxel",
-		"@pluxel/management": "catalog:pluxel",
 		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/vault-admin": "catalog:pluxel",
 		"@pluxel/workbench": "catalog:pluxel",
 		"elysia": "catalog:backend",
 		"react": "catalog:frontend",
-		"react-dom": "catalog:frontend",
-		"@pluxel/preset": "catalog:pluxel"
+		"react-dom": "catalog:frontend"
 	},
 	"devDependencies": {
 		"@example/web": "workspace:*",

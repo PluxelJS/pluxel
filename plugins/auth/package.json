@@ -47,8 +47,6 @@
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/management": "workspace:*",
-		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -68,7 +66,6 @@
 	"peerDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/core": "workspace:^",
-		"@pluxel/management": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@pluxel/workbench": "workspace:^",
 		"@tabler/icons-react": "catalog:icons",

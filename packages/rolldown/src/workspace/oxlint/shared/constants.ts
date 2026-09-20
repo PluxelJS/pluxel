@@ -18,4 +18,7 @@ export const ALLOWED_TOP_LEVEL_CLASS_WRAPPERS = new Set([
 	'TSTypeAssertion',
 ])
 
-export const ALLOWED_GET_LOGGER_PATHS = ['/packages/core/src/logger/', '/packages/logging/src/']
+export const ALLOWED_GET_LOGGER_PATHS = [
+	'/packages/core/src/logger/',
+	'/packages/services/src/logging/',
+]

@@ -1,6 +1,6 @@
 import * as v from 'valibot'
 import { Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,

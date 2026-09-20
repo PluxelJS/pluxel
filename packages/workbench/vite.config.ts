@@ -1,39 +1,20 @@
 import { resolve } from 'pathe'
-import { defineConfig } from 'vite'
-import {
-	buildPluxelFrontendResolveConditions,
-	createPluxelUiChunkGroups,
-	PLUXEL_UI_DEDUPE_PACKAGES,
-} from '@pluxel/rolldown/workspace/vite'
+import { defineConfig, mergeConfig } from 'vite'
+import shellConfig from './shell/vite.config'
 
-export default defineConfig({
-	appType: 'custom',
-	publicDir: false,
-
-	resolve: {
-		conditions: buildPluxelFrontendResolveConditions(),
-		dedupe: [...PLUXEL_UI_DEDUPE_PACKAGES],
-	},
-
-	build: {
-		outDir: 'public/',
-		manifest: true,
-		emptyOutDir: true,
-		rolldownOptions: {
-			input: resolve(__dirname, '../workbench-app/src/client.tsx'),
-			output: {
-				codeSplitting: {
-					groups: [
-						{
-							name: 'plugin-graph-vendor',
-							test: /[\\/]node_modules[\\/](@xyflow|@dagrejs)[\\/]/,
-							priority: 100,
-							entriesAware: true,
-						},
-						...createPluxelUiChunkGroups(),
-					],
-				},
+// Shell development and packaged assets share React, router and CSS configuration.
+export default defineConfig((environment) =>
+	mergeConfig(shellConfig(environment), {
+		root: import.meta.dirname,
+		appType: 'custom',
+		publicDir: false,
+		build: {
+			outDir: 'public/',
+			manifest: true,
+			emptyOutDir: true,
+			rolldownOptions: {
+				input: resolve(import.meta.dirname, 'shell/src/client.tsx'),
 			},
 		},
-	},
-})
+	}),
+)

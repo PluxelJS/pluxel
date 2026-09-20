@@ -3,7 +3,6 @@ packages:
   '@pluxel/services': major
   '@pluxel/rolldown': patch
   '@pluxel/create': patch
-  '@pluxel/management': patch
   '@pluxel/workbench': patch
 ---
 

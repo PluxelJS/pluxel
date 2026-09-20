@@ -8,7 +8,7 @@ import { readHostPluginStatusOverview, readHostRecentUpdates } from '@pluxel/hos
 import { requireWorkbench } from '@pluxel/workbench/server'
 import type { PluginHost } from '@pluxel/host'
 import { createServer, createLogger } from 'vite'
-import { vitePreset } from '@pluxel/preset/vite'
+import { vitePreset } from '@pluxel/services/vite'
 
 const fixtureRoot = process.env.PLUXEL_WORKBENCH_HMR_ROOT!
 const root = resolve(fixtureRoot, 'app')

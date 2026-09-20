@@ -23,6 +23,14 @@
 			"@pluxel/source": "./src/config-environment.ts",
 			"default": "./dist/config-environment.mjs"
 		},
+		"./dynamic": {
+			"@pluxel/source": "./src/dynamic/index.ts",
+			"default": "./dist/dynamic.mjs"
+		},
+		"./dynamic/source-producer": {
+			"@pluxel/source": "./src/dynamic/source-producer.ts",
+			"default": "./dist/dynamic/source-producer.mjs"
+		},
 		"./environment": {
 			"@pluxel/source": "./src/environment.ts",
 			"default": "./dist/environment.mjs"
@@ -41,6 +49,8 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./config-environment": "./dist/config-environment.mjs",
+			"./dynamic": "./dist/dynamic.mjs",
+			"./dynamic/source-producer": "./dist/dynamic/source-producer.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/protocol": "./dist/internal/protocol.mjs",
@@ -56,7 +66,9 @@
 	},
 	"dependencies": {
 		"@standard-schema/spec": "catalog:prod",
+		"chokidar": "catalog:node",
 		"ohash": "catalog:prod",
+		"picomatch": "catalog:prod",
 		"std-env": "catalog:prod",
 		"superjson": "catalog:validation",
 		"valibot-form": "workspace:^"
@@ -65,6 +77,7 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/node": "catalog:types",
+		"@types/picomatch": "catalog:types",
 		"valibot": "catalog:validation"
 	},
 	"peerDependencies": {

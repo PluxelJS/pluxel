@@ -6,7 +6,10 @@ import type {
 } from '@pluxel/core/federation'
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
 import type { RpcTarget } from 'capnweb'
-import type { ConfigPresentationFieldV1, RuntimeJsonObject } from '@pluxel/management/protocol'
+import type {
+	ConfigPresentationFieldV1,
+	RuntimeJsonObject,
+} from '@pluxel/services/management/protocol'
 import type { WorkbenchPlacement } from './definition.ts'
 
 export type WorkbenchFederatedViewRef = Readonly<{

@@ -1,9 +1,9 @@
 import { RpcStub } from 'capnweb'
-import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { expect, it } from 'vitest'
 import { PluginRecentUpdateTracker, installHostRecentUpdates } from '@pluxel/host/internal'
-import { RuntimeManagementTargetImpl } from '@pluxel/management/internal/test'
-import { createRuntimeManagementClient } from '@pluxel/management/client'
+import { RuntimeManagementTargetImpl } from '@pluxel/services/management/internal/test'
+import { createRuntimeManagementClient } from '@pluxel/services/management/client'
 
 it('delivers the current route attempt and later failures through RPC, then releases the observer', async () => {
 	const host = await createServiceInternalTestHost({ workbench: false, management: true })

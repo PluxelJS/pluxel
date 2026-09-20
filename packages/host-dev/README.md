@@ -16,7 +16,7 @@ export default defineConfig({ plugins: [host({ entry: './app.ts', devConsole: tr
 安装来源重新发布入口时会刷新包解析元数据及已加载的 ESM 依赖。原生模块和 CommonJS 由 Node 持有；
 升级应使用新的不可变安装路径，原路径覆盖已加载的原生模块或 CommonJS 文件需要重启进程。
 
-官方应用使用 `@pluxel/preset/vite` 的 `vitePreset({ entry, devConsole: true })`，在此驱动上组合官方服务附件。`host()` 本身不选择官方服务附件；自定义附件通过 `HostDevelopmentPluginApi` 接入同一生命周期，模块身份通过与 `host()` 配合的 `hostSingletons({ packages })` 显式选择。
+官方应用使用 `@pluxel/services/vite` 的 `vitePreset({ entry, devConsole: true })`，在此驱动上组合官方服务附件。`host()` 本身不选择官方服务附件；自定义附件通过 `HostDevelopmentPluginApi` 接入同一生命周期，模块身份通过与 `host()` 配合的 `hostSingletons({ packages })` 显式选择。
 
 `host()` 通过 Vite 的环境工厂创建专用 `pluxel` environment，并使用该环境自带的 runner 和关闭流程。
 应用声明、动态插件与控制台共享它的模块身份及 HMR 队列。默认 SSR、第三方 `ssrLoadModule` 及用户自定义 SSR

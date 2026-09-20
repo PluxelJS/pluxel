@@ -217,9 +217,9 @@ generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终
 - Core address/slot/codec：`packages/core/src/plugins/runtime/identity.ts`
 - Core logger category codec：`packages/core/src/logger/categories.ts`
 - source canonicalization：`packages/rolldown/src/rolldown/plugins/pluginSemanticsPlugin.ts`
-- catalog projection/label：`packages/management/src/api/features/plugins/catalog-projection.ts`、`packages/core/src/plugins/runtime/plugin-label.ts`
-- Workbench route/browser state：`packages/workbench-app/src/workbench/paths.ts`、`packages/workbench-app/src/app/workbench/state.ts`
-- HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/logging/src/` 与 `packages/management/src/`
+- catalog projection/label：`packages/services/src/management/api/features/plugins/catalog-projection.ts`、`packages/core/src/plugins/runtime/plugin-label.ts`
+- Workbench route/browser state：`packages/workbench/shell/src/workbench/paths.ts`、`packages/workbench/shell/src/app/workbench/state.ts`
+- HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/services/src/logging/` 与 `packages/services/src/management/`
 
 变更 identity 时至少验证 package/source、default/fork、reference/route round-trip、encoded separator 拒绝、native realpath containment、
 definition-wide HMR、fork config isolation、definition-family classification、logger structured owner、HTTP readable route 和全部当前版本 reader。

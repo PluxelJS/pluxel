@@ -25,18 +25,14 @@ async function runScenario(scenario) {
 	}
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-		await symlink(
-			join(workspace, 'packages/host-dynamic'),
-			join(root, 'node_modules/@pluxel/host-dynamic'),
-			'dir',
-		)
+		await symlink(join(workspace, 'packages/host'), join(root, 'node_modules/@pluxel/host'), 'dir')
 		await writeFile(
 			join(root, 'package.json'),
 			JSON.stringify({ name: 'initial-source-fixture', type: 'module' }),
 		)
 		await writeFile(
 			join(root, 'app.ts'),
-			`import {dynamicSource} from '@pluxel/host-dynamic';
+			`import {dynamicSource} from '@pluxel/host/dynamic';
 export default {plugins:[],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.entry.mjs']})],prepare(){globalThis[${JSON.stringify(key)}]=(globalThis[${JSON.stringify(key)}]??0)+1}}`,
 		)
 		await mkdir(join(root, 'entries'))

@@ -1,4 +1,4 @@
-import type { ManagementAuthenticationProviderStep } from '@pluxel/management/access'
+import type { ManagementAuthenticationProviderStep } from '@pluxel/services/management/access'
 import { describe, expect, it, vi } from 'vitest'
 import { PasswordAuthenticationSession } from '../src/challenge.ts'
 

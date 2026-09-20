@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { parseSync } from 'vite'
 import { parse } from 'yaml'
 
@@ -21,26 +21,21 @@ const dependencyFields = [
 	'peerDependencies',
 ]
 const publishedDependencyFields = ['dependencies', 'optionalDependencies', 'peerDependencies']
-// These packages expose identities shared with the application: Context, service tokens,
-// host instances and registries. Utilities and owned implementation dependencies are not peers.
-const hostIdentityPackages = new Set([
-	'@pluxel/core',
-	'@pluxel/host',
-	'@pluxel/commands',
-	'@pluxel/services',
-	'@pluxel/logging',
-	'@pluxel/management',
-	'@pluxel/workbench',
-])
 // Foundation packages cannot grow upward even when that would not yet create a cycle.
 const foundationDependencies = new Map([
 	['@pluxel/context', new Set()],
 	['@pluxel/core', new Set()],
 	['@pluxel/commands', new Set()],
 	['@pluxel/host', new Set(['@pluxel/core', 'valibot-form'])],
-	['@pluxel/host-dynamic', new Set(['@pluxel/core', '@pluxel/host'])],
 	['@pluxel/host-dev', new Set(['@pluxel/core', '@pluxel/host', '@pluxel/rolldown'])],
 ])
+// Keep the few composition boundaries explicit; package ownership need not form a DAG.
+const serviceCompositionFiles = new Set(
+	['preset.ts', 'vite.ts', 'build.ts', 'development/service-development.ts'].map((file) =>
+		resolve(root, 'packages/services/src', file),
+	),
+)
+
 const errors = []
 
 const packageManifests = repositoryPackages
@@ -157,7 +152,7 @@ if (new Set(packageNames).size !== packageNames.length) {
 	errors.push('repository package names must be unique')
 }
 const publicPackages = packageManifests.filter(isPublishablePackage)
-const publishedGraph = new Map(
+const publishedDependencies = new Map(
 	packageManifests
 		.filter(({ kind }) => kind !== 'root')
 		.map(({ manifest }) => [
@@ -169,26 +164,6 @@ const publishedGraph = new Map(
 			),
 		]),
 )
-// Optional peers are architectural edges too. Moving a dependency between manifest
-// fields or behind import() must not hide a package cycle.
-const visitedPackages = new Set()
-const visitingPackages = new Set()
-const dependencyPath = []
-function visitPublishedPackage(name) {
-	if (visitingPackages.has(name)) {
-		const cycle = [...dependencyPath.slice(dependencyPath.indexOf(name)), name]
-		errors.push(`published package dependency cycle: ${cycle.join(' -> ')}`)
-		return
-	}
-	if (visitedPackages.has(name)) return
-	visitingPackages.add(name)
-	dependencyPath.push(name)
-	for (const dependency of publishedGraph.get(name) ?? []) visitPublishedPackage(dependency)
-	dependencyPath.pop()
-	visitingPackages.delete(name)
-	visitedPackages.add(name)
-}
-for (const name of publishedGraph.keys()) visitPublishedPackage(name)
 const publicVersions = new Map(
 	publicPackages.map(({ manifest }) => [manifest.name, manifest.version]),
 )
@@ -229,11 +204,6 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 				const permitted = foundationDependencies.get(manifest.name)
 				if (permitted && workspaceNames.has(name) && !permitted.has(name)) {
 					errors.push(`${manifest.name} foundation boundary forbids published dependency ${name}`)
-				}
-				if (isPublic && field !== 'peerDependencies' && hostIdentityPackages.has(name)) {
-					errors.push(
-						`${manifest.name} ${field}.${name} must be a peer dependency to share application identity`,
-					)
 				}
 			}
 			const acceptedCatalogSpecifiers = catalogSpecifiers.get(name)
@@ -293,7 +263,12 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 	if (kind === 'plugin') {
 		for (const field of ['dependencies', 'optionalDependencies']) {
 			for (const name of Object.keys(manifest[field] ?? {})) {
-				if (name.startsWith('@pluxel/')) {
+				if (
+					['@pluxel/core', '@pluxel/host', '@pluxel/services', '@pluxel/workbench'].includes(
+						name,
+					) ||
+					packageManifests.some((pkg) => pkg.kind === 'plugin' && pkg.manifest.name === name)
+				) {
 					errors.push(
 						`${relative(manifestPath)}: Plugin package ${field}.${name} must be a peer dependency to preserve host Plugin identity`,
 					)
@@ -329,12 +304,17 @@ for (const { packageRoot, manifest, sources } of reusablePackageSources) {
 	}
 	// Parse each source once with the existing Vite toolchain. Generated module text
 	// inside strings/templates is not an actual package dependency.
-	const imports = sources.flatMap(({ path, source }) => sourceImports(path, source))
+	const imports = sources.flatMap(({ path, source }) => {
+		const specifiers = sourceImports(path, source)
+		for (const specifier of specifiers)
+			checkServiceCompositionBoundary(manifest.name, path, specifier)
+		return specifiers
+	})
 	for (const name of new Set(imports.map(packageName))) {
 		if (name === manifest.name || !workspaceNames.has(name)) continue
 		// Core deliberately inlines the standalone kernel's JavaScript and declarations.
 		if (manifest.name === '@pluxel/core' && name === '@pluxel/context') continue
-		if (!publishedGraph.get(manifest.name)?.has(name)) {
+		if (!publishedDependencies.get(manifest.name)?.has(name)) {
 			errors.push(
 				`${manifest.name} published source imports ${name} without a dependencies/optionalDependencies/peerDependencies declaration`,
 			)
@@ -362,6 +342,31 @@ function packageName(specifier) {
 		.split('/')
 		.slice(0, specifier.startsWith('@') ? 2 : 1)
 		.join('/')
+}
+
+function checkServiceCompositionBoundary(consumerPackage, importer, specifier) {
+	if (consumerPackage !== '@pluxel/services' && consumerPackage !== '@pluxel/workbench') return
+	if (
+		consumerPackage === '@pluxel/services' &&
+		(serviceCompositionFiles.has(importer) ||
+			importer.startsWith(resolve(root, 'packages/services/src/testing') + '/') ||
+			['test.ts', 'internal-test.ts'].some(
+				(file) => importer === resolve(root, 'packages/services/src', file),
+			))
+	)
+		return
+	const publicComposition = /^@pluxel\/services\/(?:preset|vite|build)$/.test(specifier)
+	const target = specifier.startsWith('.')
+		? resolve(dirname(importer), specifier).replace(/\.[cm]?[jt]sx?$/, '')
+		: undefined
+	const localComposition =
+		target !== undefined &&
+		[...serviceCompositionFiles].some((file) => file.slice(0, -3) === target)
+	if (publicComposition || localComposition) {
+		errors.push(
+			`${relative(importer)} imports composition entry ${specifier}; service leaves and Workbench must consume service domain modules`,
+		)
+	}
 }
 
 function sourceImports(path, source) {

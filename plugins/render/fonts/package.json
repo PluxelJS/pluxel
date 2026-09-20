@@ -47,7 +47,6 @@
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",

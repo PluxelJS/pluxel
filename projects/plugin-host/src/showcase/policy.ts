@@ -5,7 +5,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { type HostStateSnapshot } from '@pluxel/host'
-import { defineProduct } from '@pluxel/management/product'
+import { defineProduct } from '@pluxel/services/management/product'
 
 export const product = defineProduct({
 	displayName: 'Pluxel Architecture Lab',

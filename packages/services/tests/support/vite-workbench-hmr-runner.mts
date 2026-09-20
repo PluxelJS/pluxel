@@ -9,7 +9,7 @@ import { readHostRecentUpdates } from '@pluxel/host/internal'
 import { requireWorkbench } from '@pluxel/workbench/server'
 import type { PluginHost } from '@pluxel/host'
 import { createServer, createLogger } from 'vite'
-import { vitePreset } from '@pluxel/preset/vite'
+import { vitePreset } from '@pluxel/services/vite'
 
 const root = process.env.PLUXEL_WORKBENCH_HMR_ROOT!
 process.chdir(root)

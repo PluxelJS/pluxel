@@ -142,7 +142,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/core": "workspace:*",
-		"@pluxel/host-dynamic": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:^",
 		"@rolldown/pluginutils": "catalog:build",

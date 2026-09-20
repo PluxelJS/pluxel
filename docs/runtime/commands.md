@@ -3,7 +3,7 @@ title: Commands 与 Agent 集成
 description: 定义一次命令契约，再复用于统一注册表、可选 Agent Plugin、CLI、HTTP 和 Workbench。
 ---
 
-Host 通过 `@pluxel/services/commands` 的 `commands()` 安装空命令目录，Plugin 通过 `ctx.require(Commands)` 取得当前 owner 的服务。`@pluxel/management/commands` 的 `managementCommands()` 显式发布六个插件管理命令，并依赖同一 Commands 服务。`servicesPreset()` 包含两者；`standardServices()` 只提供空目录。
+Host 通过 `@pluxel/services/commands` 的 `commands()` 安装空命令目录，Plugin 通过 `ctx.require(Commands)` 取得当前 owner 的服务。`@pluxel/services/management/commands` 的 `managementCommands()` 显式发布六个插件管理命令，并依赖同一 Commands 服务。`servicesPreset()` 包含两者；`standardServices()` 只提供空目录。
 
 `@pluxel/commands` 让可携带的业务命令只定义一次输入、输出、副作用等级和执行函数，再由调用方显式发布到 Agent、CLI、HTTP、Workbench 或 carrier。只属于某个 carrier 的命令也使用同一条校验和错误管线，但可以要求该 carrier 构造的扩展 Context，不必进入 root catalog。
 

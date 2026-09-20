@@ -2,7 +2,6 @@
 packages:
   '@pluxel/host': major
   '@pluxel/host-dev': major
-  '@pluxel/host-dynamic': major
   '@pluxel/rolldown': major
   '@pluxel/create': major
   '@pluxel/cli': major

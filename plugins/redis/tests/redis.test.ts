@@ -6,7 +6,7 @@ import {
 } from '@pluxel/core'
 import * as v from 'valibot'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const redisMock = vi.hoisted(() => {

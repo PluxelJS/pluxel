@@ -5,7 +5,7 @@ import {
 	type ManagementAccessRequestContext,
 	type ManagementAuthenticationProviderSession,
 	type ManagementAuthenticationProviderStep,
-} from '@pluxel/management/access'
+} from '@pluxel/services/management/access'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import {
 	authenticatedSession,

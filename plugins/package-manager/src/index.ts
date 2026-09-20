@@ -6,7 +6,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
-import { requireDynamicPluginSource } from '@pluxel/host-dynamic/source-producer'
+import { requireDynamicPluginSource } from '@pluxel/host/dynamic/source-producer'
 import type {
 	PackageManagerApi,
 	PackageManagerSnapshot,

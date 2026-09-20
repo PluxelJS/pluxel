@@ -2,8 +2,7 @@
 packages:
   '@pluxel/core': minor
   '@pluxel/host': patch
-  '@pluxel/logging': minor
-  '@pluxel/management': patch
+  '@pluxel/services': minor
 ---
 
 ## Keep Plugin label projection independent of Host

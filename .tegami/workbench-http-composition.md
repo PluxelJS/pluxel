@@ -1,9 +1,8 @@
 ---
+
 packages:
-  '@pluxel/workbench': major
-  '@pluxel/services': patch
-  '@pluxel/management': patch
----
+'@pluxel/workbench': major
+'@pluxel/services': patch---
 
 ## Separate management transport from the Workbench Shell
 

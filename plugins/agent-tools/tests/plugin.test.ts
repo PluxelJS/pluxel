@@ -3,7 +3,7 @@ import { Commands } from '@pluxel/services/commands'
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { AgentToolsPlugin } from '../src/index.ts'
 

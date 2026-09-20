@@ -10,7 +10,7 @@ PackageManagerPlugin
   └─ atomic entries/*.mjs publication
                          │ file add/change/unlink
                          ▼
-@pluxel/host-dynamic  source discovery -> shared loader -> Host graph transaction
+@pluxel/host/dynamic  source discovery -> shared loader -> Host graph transaction
 ```
 
 package acquisition 是可替换的产品策略；file-source lifecycle 是 dynamic route 的机制。两者只共享 ESM 文件协议。
@@ -18,7 +18,7 @@ runtime 不知道 registry、market、版本选择、lockfile、安装进度或�
 plugin instance。
 
 插件只允许在声明了 `rootDir/entries` 与 `['*.mjs']` 的 dynamic host generation 中运行。`init()` 先解析目标目录并通过
-`@pluxel/host-dynamic/source-producer` 校验声明，之后才加载 `@pnpm/napi`、创建 managed project、发布 entry 或注册
+`@pluxel/host/dynamic/source-producer` 校验声明，之后才加载 `@pnpm/napi`、创建 managed project、发布 entry 或注册
 commands/Workbench publication。校验只读取 route generation 的 resolved declaration，不扫描文件系统，也不返回 loader handle。
 
 ## Mutation model

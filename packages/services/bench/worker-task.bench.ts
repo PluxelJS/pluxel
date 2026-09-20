@@ -3,7 +3,7 @@ import { Workers, defineWorkerTask, workers } from '@pluxel/services/workers'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { afterAll, beforeAll, test } from 'vitest'
 import { lowerTestPlugin } from '../tests/helpers/lowered-plugin'

@@ -1,6 +1,6 @@
 import { defineDevConsole } from '@pluxel/host-dev/console'
 import { HttpServer } from '@pluxel/services/http'
-import { Logging } from '@pluxel/logging'
+import { Logging } from '@pluxel/services/logging'
 
 export default defineDevConsole((dev) => {
 	return dev.plugins.list()

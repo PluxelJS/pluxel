@@ -83,7 +83,7 @@ ctx.logger.getDebugChannel('cache:lookup').debug('cache miss', { key })
 
 ## RuntimeLogging lifecycle
 
-Host 使用 `@pluxel/logging` 的 `logging(plan, { policyStore })` descriptor。声明阶段不做 IO；Core 先创建 root，service capability 使用已有 root logger identity 创建 manager。Host prepare 顺序如下：
+Host 使用 `@pluxel/services/logging` 的 `logging(plan, { policyStore })` descriptor。声明阶段不做 IO；Core 先创建 root，service capability 使用已有 root logger identity 创建 manager。Host prepare 顺序如下：
 
 ```text
 1. 安装 LogTape config，绑定已有 Context root
@@ -260,7 +260,7 @@ error summary。它不是新的 author-facing LogRecord。
 | bounded store/chunks               | UI 日志内存由 retention 决定，不由历史总日志量决定          |
 | optional/lazy store registry       | 未配置 store 的 Host 不承担 store 常驻成本                  |
 
-`packages/logging/bench/logger.bench.ts` 同时覆盖普通 override hit 和 100,000 overrides hit。基准用于检查 Map
+`packages/services/bench/logger.bench.ts` 同时覆盖普通 override hit 和 100,000 overrides hit。基准用于检查 Map
 规模增长是否改变 lookup 复杂度，不把单机绝对 ops/s 当作跨环境承诺。
 
 ## Package boundaries
@@ -269,13 +269,13 @@ error summary。它不是新的 author-facing LogRecord。
 @pluxel/core
   ContextLogger, LoggerService, category identity, pure Plugin labels
 
-@pluxel/logging
+@pluxel/services/logging
   HostService descriptor, RuntimeLogging manager, policy/stores/sinks
 
-@pluxel/logging/protocol
+@pluxel/services/logging/protocol
   Browser-safe log DTOs and filters
 
-@pluxel/logging/internal
+@pluxel/services/logging/internal
   RuntimeLogging installation and active owner binding
 
 @pluxel/host + @pluxel/services
@@ -283,18 +283,18 @@ error summary。它不是新的 author-facing LogRecord。
 ```
 
 core 不包含 log formatter、sink、policy persistence、host env resolution 或 LogTape installation。
-Logging 的 Host 依赖只用于服务声明与生命周期装配；formatter 直接使用 Core 的纯 Plugin label 投影，不读取 Host 内部实现。
-公共入口通过 `logging()` 安装、`Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于既有 `/internal` 框架入口。
+Logging 是 Services 包内的具体 Host 服务，通过 `/logging` 显式选择。它的 Host 依赖只用于服务声明与生命周期装配；formatter 直接使用 Core 的纯 Plugin label 投影，不读取 Host 内部实现。
+公共入口通过 `logging()` 安装、`Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于 `/logging/internal` 框架入口。
 
 关键实现入口：
 
 - `packages/core/src/logger/LoggerService.ts`
 - `packages/core/src/logger/categories.ts`
-- `packages/logging/src/logging.ts`
-- `packages/logging/src/policy.ts`
-- `packages/logging/src/sink.ts`
-- `packages/logging/src/store.ts`
-- `packages/management/src/services/management/RuntimeManagementTarget.ts`
+- `packages/services/src/logging/logging.ts`
+- `packages/services/src/logging/policy.ts`
+- `packages/services/src/logging/sink.ts`
+- `packages/services/src/logging/store.ts`
+- `packages/services/src/management/services/management/RuntimeManagementTarget.ts`
 - `packages/host/src/host.ts`
 - `packages/host-dev/src/host-vite.ts`
 
@@ -311,4 +311,4 @@ Logging 的 Host 依赖只用于服务声明与生命周期装配；formatter �
 
 ## Trusted development scripts
 
-`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.elysia` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/services/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.elysia` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

@@ -7,7 +7,7 @@ import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
 import { pluginNodeAddressOf } from '@pluxel/core'
 
-import { createServiceInternalTestHost } from '@pluxel/preset/internal/test'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 

@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
-} from '@pluxel/preset/internal/test'
+} from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import type { DatabaseArtifact } from '../../src/database/artifact'
 import { attachPostgresPoolErrorHandler } from '../../src/database/adapters/shared'

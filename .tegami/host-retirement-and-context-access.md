@@ -3,9 +3,7 @@ packages:
   '@pluxel/context': major
   '@pluxel/core': major
   '@pluxel/host': major
-  '@pluxel/host-dynamic': patch
   '@pluxel/services': major
-  '@pluxel/management': minor
   '@pluxel/rolldown': major
   '@pluxel/test': major
   '@pluxel/cli': patch
@@ -23,7 +21,7 @@ RootContext.require accepts installed root/all capabilities; owner Context.requi
 capabilities. Root references carry root authority and are not a sandbox. The development console can
 therefore use dev.ctx.require without a separate service resolver or a new require namespace.
 
-Management commands are an explicit @pluxel/management/commands service installed by servicesPreset.
+Management commands are an explicit @pluxel/services/management/commands service installed by servicesPreset.
 Generic Commands and standardServices keep an initially empty command catalog. Regression suites,
 benchmarks and type probes now live with their owning packages; test hosts use actual Host service plans.
 

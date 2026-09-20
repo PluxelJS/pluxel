@@ -1,7 +1,7 @@
 # Host 下游与部署验证
 
 Core token、正向 Host 安装计划、官方服务拆分、Management、Workbench、开发附件和共享应用启动已经实施。
-官方运行时、Vite 与构建组合统一归 `@pluxel/preset`；通用 Host-dev 不拥有官方服务选择策略。
+官方运行时、Vite 与构建组合分别使用 Services 的 `/preset`、`/vite`、`/build`；通用 Host-dev 不拥有官方服务选择策略。
 当前 API 以[组合 Host 服务](../docs/reference/runtime-services.md)、[Host 管理接入](../docs/runtime/management.md)、
 [独立 Workbench](../docs/workbench/standalone-host.md)及[架构约束](HOST.md)为准；本文只记录下游验证及其边界。
 
@@ -51,6 +51,14 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 
 ## 包边界整理验证
 
-官方组合与完整测试宿主归 Preset；Services 不再反向导入 Management/Workbench。发布图检查包含 optional peer 与实际源码导入，当前无环；开发测试依赖图与发布图分开审查。
+上一轮将组合与测试宿主移到独立 Preset 包，曾验证当时的发布图无环。该拓扑已被当前合包设计替代，不能作为当前依赖图结论。
 
-本轮通过 10 个相关框架包的类型检查、42 项原有定向测试、Services/Management/Preset 分阶段独立安装检查与 starter 检查。移动后的 Preset 测试再次验证入口解析。三个下游仅重跑受影响包的类型检查：Rhythm 15 个、Chatbot 13 个及根项目、Omni 11 个；本轮未重复上述整套业务与部署验收。
+上一轮通过 10 个相关框架包的类型检查、42 项原有定向测试、Services/Management/Preset 分阶段独立安装检查与 starter 检查；移动后的 Preset 测试也验证了入口解析。三个下游仅重跑受影响包的类型检查：Rhythm 15 个、Chatbot 13 个及根项目、Omni 11 个；没有重复上述整套业务与部署验收。
+
+当前整理把 Logging、Management、preset 与组合测试归入 Services，动态来源归入 Host，官方 Shell 归入 Workbench。包级可选互相引用不再等同于模块循环；本轮验收需检查基础入口不加载未选择后端、浏览器协议独立求值、合包后的真实安装与下游入口。上述上一轮结果不代替这些验证。
+
+本轮合包后已通过：框架 source build 的 15 项任务；Host、Host-dev、Services、Workbench 与 Shell 类型检查；Services/Logging 35 项、Management 145 项、Shell 265 项和动态来源 4 项现有测试；基础服务与完整 UI 两阶段的独立安装检查、14 项仓库治理测试及 8 项 starter 测试。Shell 并发运行中的两项超时在限制并发后单独通过，未扩大超时阈值。动态来源测试改为验证文件事件契约，不再要求同次写入恰好一次通知。
+
+三个下游再次完成 source 安装与受影响包类型检查：Rhythm 15 个、Chatbot 14 个及根项目、Omni 11 个。没有重复全部业务测试或外部平台连接验收。
+
+真实 Vite Workbench smoke 同时验证语义候选拒绝（保留旧制品并记录 application artifact error）、后台 producer 构建失败、修复恢复、旧制品可读与关闭。Host hot-update 的原始异常已确认进入显式选择的日志后端；对应 Host-dev 单包构建与既有诊断测试通过。

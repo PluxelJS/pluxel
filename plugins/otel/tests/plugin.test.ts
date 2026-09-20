@@ -2,7 +2,7 @@ import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemet
 import { formatPluginNodeReference } from '@pluxel/core'
 import * as v from 'valibot'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OtelConfig, OtelPlugin } from '../src/index.ts'
 

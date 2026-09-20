@@ -224,7 +224,7 @@ handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；st
 owner effects，因此 generation stop、replacement、start rollback 和 shutdown 都会撤销对应命令。Commands registration
 同时保留 owner invocation lease；generation 停止时先拒绝新调用、abort call/owner 合成 signal，并等待已接纳调用退出，
 再 drain generation effects。此前取得的 command wrapper 也不能越过已关闭的 owner gate。手动 dispose 单个 registration 只撤销
-publication，不取消已经开始的调用。`commands()` 只安装空 catalog；`@pluxel/management/commands` 的
+publication，不取消已经开始的调用。`commands()` 只安装空 catalog；`@pluxel/services/management/commands` 的
 `managementCommands()` 显式注册基础插件查询与生命周期命令，`servicesPreset()` 选择该服务。这些 handler 只调用 Host 用例，不复制 graph 或 commit 逻辑。
 
 跨 Plugin 的 carrier publication 是独立路径：provider 创建 `ctx.commands.createMount()`，只通过领域化
@@ -293,7 +293,7 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 
 - `@pluxel/context`：公开、同步、严格惰性的 standalone Context host kernel；
 - `@pluxel/core`：Plugin Context 投影、graph、DI、lifecycle、effects；源码复用并在发布产物中内联 Context kernel；
-- `@pluxel/management/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
+- `@pluxel/services/management/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
 - `@pluxel/agent-tools`：可选官方 Plugin，以标准 Plugin config 在唯一 command registry 上投影 Agent allowlist；
 - `@pluxel/services/database`：server-only database definition 与 owner-bound handle；
@@ -307,14 +307,18 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/workbench/internal/react`：toolchain/Shell 共用的 generated React Bridge ABI；
 - `@pluxel/core/federation`：Workbench MF producer/descriptor identity 和固定 shared set；
 - `@pluxel/host`：无官方服务依赖的 catalog、运行意图、图更新控制；
-- `@pluxel/host-dynamic`：显式动态来源的发现、加载、撤回与 producer 文件契约；
+- `@pluxel/host/dynamic`：Host 同包的显式文件来源、加载、撤回与 producer 文件契约；
 - `valibot-form`：Config schema 的 portable presentation 与 raw-input transport projector；
 - `@pluxel/host-dev`：共享 ModuleRunner、模块失效、源码分类、开发附件协议与控制台执行机制，不依赖官方服务；
-- `@pluxel/services`：基础服务与 `standardServices()`，不依赖 Logging、Management 或 Workbench；
-- `@pluxel/preset`：`servicesPreset()`、`/vite` 的 `vitePreset()`、`/build` 的 `buildPreset()` 拥有官方运行时、开发与发行组合；`/test` 组合完整测试宿主；
+- `@pluxel/services`：官方服务所在包；根入口的 `standardServices()` 只选择基础服务，不加载日志、管理面或 Workbench 后端；
+- `@pluxel/services/logging`、`/management`：同包的日志与管理领域；各自的协议入口保持 browser-safe；
+- `@pluxel/services/preset`、`@pluxel/services/vite`、`@pluxel/services/build`：官方运行时、开发与发行组合；`@pluxel/services/test` 组合测试宿主；
+- `@pluxel/workbench/shell`：随 Workbench 构建交付的官方 Shell handler，源码在该包的 `shell/`；
 - `@pluxel/services/http/vite`、`@pluxel/services/node/vite`：可单独组合的 HTTP 与 Node 制品开发附件；
 - `@pluxel/rolldown/vite/workbench-ui`：MF2 producer build primitive。
 - `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound Direct View target 和 Workbench 页面。
+
+这些领域入口不等于独立发布包。Services 的可选组合与 Workbench 可以相互引用叶子模块；基础入口与浏览器协议不穿过组合层，也不依赖循环初始化。
 
 dynamic route 与 package manager 之间只有文件协议：producer 在宿主声明的 `sources` 目录原子发布/删除 ESM entry，
 Host 来源观察文件并执行正常 graph transaction。Core/Host 不提供 package-manager capability、RPC DTO、内置页面或 market

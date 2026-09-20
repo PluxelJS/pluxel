@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/management': major
+  '@pluxel/services': major
 ---
 
 ## Keep management sessions independent of Workbench installation

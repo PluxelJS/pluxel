@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { RedisPlugin, RedisRatesBackendPlugin } from '../src/index.ts'
 

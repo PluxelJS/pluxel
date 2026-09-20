@@ -1,7 +1,7 @@
 ---
 packages:
-  '@pluxel/management': major
   '@pluxel/workbench': patch
+  '@pluxel/services': major
 ---
 
 ## Consolidate Management integration entries

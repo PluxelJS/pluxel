@@ -1,4 +1,4 @@
-import { vitePreset } from '@pluxel/preset/vite'
+import { vitePreset } from '@pluxel/services/vite'
 import { defineConfig } from 'vite'
 import { hostEnv } from '@pluxel/host/environment'
 

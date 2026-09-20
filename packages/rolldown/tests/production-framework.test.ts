@@ -9,7 +9,7 @@ it('shares frozen framework identity with installed modules in a fresh Node proc
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-production-bridge-'))
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-		for (const name of ['core', 'host', 'host-dynamic', 'commands', 'services']) {
+		for (const name of ['core', 'host', 'commands', 'services']) {
 			await symlink(
 				fileURLToPath(new URL(`../../${name}/`, import.meta.url)),
 				join(root, 'node_modules/@pluxel', name),
@@ -71,7 +71,7 @@ Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',def
 		await writeFile(join(root, 'task.ts'), 'export default (value: number) => value * 2')
 		await writeFile(
 			join(root, 'app.ts'),
-			`import {dynamicSource} from '@pluxel/host-dynamic';
+			`import {dynamicSource} from '@pluxel/host/dynamic';
 import {Persistence} from '@pluxel/services/persistence';
 import {standardServices} from '@pluxel/services';
 import {BasePlugin,Plugin,pluginNodeAddressOf} from '@pluxel/core';

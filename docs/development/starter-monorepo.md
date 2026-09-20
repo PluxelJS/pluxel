@@ -63,7 +63,7 @@ workspace dependency 对应 constructor required edge。Todo 对 Audit 使用 op
 
 ## 开发与部署
 
-一个 `HostApplication` 声明同时用于开发和生产。`@pluxel/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/preset/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/preset/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../reference/runtime-services.md)。
+一个 `HostApplication` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../reference/runtime-services.md)。
 
 ```sh
 pnpm dev
@@ -116,7 +116,7 @@ pnpm governance:check
 - `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
 - `plugins/audit/tests` 使用 `@pluxel/core/test` 的 `createCoreTestHost()` 与立即完成的 `add/remove`。
 - `plugins/todo/tests` 使用 Core host 的 `initialConfig`，验证状态操作及 optional provider 存在与缺失两种情况。
-- `plugins/http/tests` 使用 `@pluxel/preset/test` 的 `createServiceTestHost()`、`await using` 和 `host.http.fetch()` 验证 required edge、
+- `plugins/http/tests` 使用 `@pluxel/services/test` 的 `createServiceTestHost()`、`await using` 和 `host.http.fetch()` 验证 required edge、
   HTTP schema、mutation 与错误状态。
 - `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
 

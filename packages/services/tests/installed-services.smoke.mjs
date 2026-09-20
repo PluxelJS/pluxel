@@ -58,6 +58,9 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 				'utf8',
 			),
 		).version
+		const elysiaVersion = JSON.parse(
+			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
+		).version
 		await writeFile(
 			join(root, 'package.json'),
 			JSON.stringify({
@@ -65,7 +68,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 				private: true,
 				type: 'module',
 				dependencies,
-				devDependencies: { '@types/node': nodeTypes },
+				devDependencies: { '@types/node': nodeTypes, elysia: elysiaVersion },
 			}),
 		)
 		await writeFile(
@@ -97,56 +100,11 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			}),
 		)
 		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
-		const elysiaVersion = JSON.parse(
-			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
-		).version
-		// Standard services add only the HTTP peer; application presets and management/UI remain absent.
-		await writeFile(
-			join(root, 'package.json'),
-			JSON.stringify({
-				name: 'independent-service-consumer',
-				private: true,
-				type: 'module',
-				dependencies,
-				devDependencies: { '@types/node': nodeTypes, elysia: elysiaVersion },
-			}),
-		)
-		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
-		const standardInstalled = await readdir(join(root, 'node_modules/.pnpm'))
-		expect(
-			standardInstalled.some((name) =>
-				['@pluxel+preset@', '@pluxel+management@', '@pluxel+logging@', '@pluxel+workbench@'].some(
-					(prefix) => name.startsWith(prefix),
-				),
-			),
-		).toBe(false)
+		// The same base installation serves explicit, standard, and headless Management compositions.
 		await writeFile(join(root, 'standard.mjs'), standardServicesConsumer)
 		const standardResult = await run(process.execPath, ['standard.mjs'], root)
 		expect(standardResult.stdout).toContain('ISOLATED_STANDARD_SERVICES_OK')
-		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
-		// Verify the headless management plane before Workbench or browser peers are installed.
-		for (const name of ['logging', 'management']) {
-			const tarball = join(root, `${name}.tgz`)
-			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
-			dependencies[`@pluxel/${name}`] = `file:${tarball}`
-		}
-		await writeFile(
-			join(root, 'package.json'),
-			JSON.stringify({
-				name: 'independent-service-consumer',
-				private: true,
-				type: 'module',
-				dependencies,
-				devDependencies: { '@types/node': nodeTypes, elysia: elysiaVersion },
-			}),
-		)
-		await writeFile(
-			join(root, 'pnpm-workspace.yaml'),
-			JSON.stringify({ packages: ['.'], overrides: dependencies }),
-		)
-		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
-		const headlessInstalled = await readdir(join(root, 'node_modules/.pnpm'))
-		expect(headlessInstalled.some((name) => name.startsWith('@pluxel+workbench@'))).toBe(false)
+		// Management must work before Workbench or browser peers are installed.
 		await writeFile(join(root, 'headless.mjs'), headlessManagementConsumer)
 		const headless = await run(process.execPath, ['headless.mjs'], root)
 		expect(headless.stdout).toContain('ISOLATED_MANAGEMENT_OK')
@@ -156,7 +114,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		)
 		await checkOptionalDeclarations(root)
 		// Expand the same genuinely installed consumer to the optional UI/development plane.
-		for (const name of ['workbench', 'host-dev', 'rolldown', 'preset']) {
+		for (const name of ['workbench', 'host-dev', 'rolldown']) {
 			const tarball = join(root, `${name}.tgz`)
 			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
 			dependencies[`@pluxel/${name}`] = `file:${tarball}`
@@ -234,6 +192,7 @@ try {
  assert.throws(() => second.ctx.require(Vault), ContextCapabilityMissingError)
  assert.equal('database' in first.ctx, false)
  assert.equal('database' in second.ctx, false)
+ assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
  assert.equal(loads.some(url => /age-encryption/.test(url)), true, 'prepare loads the explicitly selected backend')
  assert.equal(loads.some(url => /(?:@pluxel\\/runtime|\\/pg\\/|pglite)/.test(url)), false)
 } finally {
@@ -297,10 +256,10 @@ await first.close(); await second.close()
 `
 
 const optionalTypeConsumer = `
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 const isolatedTestHost: ServiceTestHost = await createServiceTestHost({ services: [] })
 await isolatedTestHost.dispose()
-import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/preset/test'
+import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/services/test'
 const typedWorkbenchTestHost: WorkbenchTestHost = await createWorkbenchTestHost()
 await typedWorkbenchTestHost.dispose()
 import { Workbench, workbench } from '@pluxel/workbench'
@@ -310,8 +269,8 @@ import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type * as ConsoleContracts from '@pluxel/host-dev/console'
 import { host as viteHost } from '@pluxel/host-dev/vite'
-import { servicesPreset } from '@pluxel/preset'
-import { vitePreset, serviceSingletons } from '@pluxel/preset/vite'
+import { servicesPreset } from '@pluxel/services/preset'
+import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
 import { httpDevelopment } from '@pluxel/services/http/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
@@ -338,10 +297,11 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 const loads = []
 const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
-const { createServiceTestHost } = await import('@pluxel/preset/test')
+const { createServiceTestHost } = await import('@pluxel/services/test')
 const emptyTestHost = await createServiceTestHost({ services: [] })
 await emptyTestHost.dispose()
-assert.equal(loads.some(url => /elysia|@pluxel[+/]workbench|@pluxel[+/]management/.test(url)), false, 'base test host must not load HTTP or UI')
+assert.equal(loads.some(url => /elysia/.test(url)), false, 'empty test host must not load HTTP')
+assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
 const managedTestHost = await createServiceTestHost({ management: true })
 await managedTestHost.dispose()
 const { createHost } = await import('@pluxel/host')
@@ -352,9 +312,9 @@ const { requireWorkbench } = await import('@pluxel/workbench/server')
 const { workbenchHttp } = await import('@pluxel/workbench/http')
 const { http, HttpServer } = await import('@pluxel/services/http')
 const { persistence } = await import('@pluxel/services/persistence')
-const { management } = await import('@pluxel/management/service')
-const { managementAccess } = await import('@pluxel/management/access')
-const { managementHttp } = await import('@pluxel/management/http')
+const { management } = await import('@pluxel/services/management/service')
+const { managementAccess } = await import('@pluxel/services/management/access')
+const { managementHttp } = await import('@pluxel/services/management/http')
 const { createWorkbenchArtifactHandler, WorkbenchHost } = await import('@pluxel/workbench/server')
 const transport = managementHttp({ bindings: (ctx) => ({ createWorkbench: (principal, invalidate) => requireWorkbench(ctx).createSession(principal, invalidate), artifacts: createWorkbenchArtifactHandler(ctx) }) })
 const host = await createHost({ plugins: [], services: [http(), persistence({ mode: 'memory' }), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
@@ -374,7 +334,7 @@ assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
 await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
-const { createWorkbenchTestHost } = await import('@pluxel/preset/test')
+const { createWorkbenchTestHost } = await import('@pluxel/services/test')
 const workbenchTestHost = await createWorkbenchTestHost()
 await workbenchTestHost.dispose()
 console.log('ISOLATED_WORKBENCH_OK')
@@ -384,7 +344,7 @@ const bareConsoleConsumer = `
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 const hook = registerHooks({ load(url, context, next) {
- if (/@pluxel[+/](?:services|management|workbench|logging)|capnweb/.test(url)) {
+ if (/@pluxel[+/](?:services|workbench)|capnweb/.test(url)) {
   throw new Error('Bare development console loaded an optional service: ' + url)
  }
  return next(url, context)
@@ -408,10 +368,10 @@ console.log('ISOLATED_BARE_CONSOLE_OK')
 `
 
 const headlessManagementConsumer = `
-import { management } from '@pluxel/management/service'
-import { managementHttp } from '@pluxel/management/http'
-import { managementAccess } from '@pluxel/management/access'
-import * as managementSession from '@pluxel/management/session'
+import { management } from '@pluxel/services/management/service'
+import { managementHttp } from '@pluxel/services/management/http'
+import { managementAccess } from '@pluxel/services/management/access'
+import * as managementSession from '@pluxel/services/management/session'
 import { createHost as createManagementHost } from '@pluxel/host'
 import { standardServices as managementServices } from '@pluxel/services'
 const headlessHost = await createManagementHost({ plugins: [], services: [
@@ -423,21 +383,25 @@ console.log('ISOLATED_MANAGEMENT_OK')
 `
 
 const headlessManagementTypes = `
-import type { RuntimeSessionRoot, RuntimeSessionClient } from '@pluxel/management/session'
+import type { RuntimeSessionRoot, RuntimeSessionClient } from '@pluxel/services/management/session'
 export type HeadlessSession = RuntimeSessionRoot
 export type HeadlessClient = RuntimeSessionClient
 `
 
 const standardServicesConsumer = `
 import assert from 'node:assert/strict'
-import { createHost } from '@pluxel/host'
-import { standardServices } from '@pluxel/services'
-import { HttpServer } from '@pluxel/services/http'
+import { registerHooks } from 'node:module'
+const loads = []
+const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
+const { createHost } = await import('@pluxel/host')
+const { standardServices } = await import('@pluxel/services')
+const { HttpServer } = await import('@pluxel/services/http')
 const standardHost = await createHost({ plugins: [], services: standardServices({ persistence: { mode: 'memory' } }) })
 try {
  const response = await standardHost.ctx.require(HttpServer).fetch(new Request('http://local.test/missing'))
  assert.equal(response.status, 404)
  await response.body?.cancel()
-} finally { await standardHost.close() }
+ assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
+} finally { await standardHost.close(); hook.deregister() }
 console.log('ISOLATED_STANDARD_SERVICES_OK')
 `

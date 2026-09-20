@@ -29,6 +29,10 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./build": {
+			"@pluxel/source": "./src/build.ts",
+			"default": "./dist/build.mjs"
+		},
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
@@ -61,6 +65,74 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
+		"./internal/test": {
+			"@pluxel/source": "./src/internal-test.ts",
+			"default": "./dist/internal/test.mjs"
+		},
+		"./logging": {
+			"@pluxel/source": "./src/logging/index.ts",
+			"default": "./dist/logging.mjs"
+		},
+		"./logging/internal": {
+			"@pluxel/source": "./src/logging/internal.ts",
+			"default": "./dist/logging/internal.mjs"
+		},
+		"./logging/protocol": {
+			"@pluxel/source": "./src/logging/protocol.ts",
+			"default": "./dist/logging/protocol.mjs"
+		},
+		"./management": {
+			"@pluxel/source": "./src/management/index.ts",
+			"default": "./dist/management.mjs"
+		},
+		"./management/access": {
+			"@pluxel/source": "./src/management/access.ts",
+			"default": "./dist/management/access.mjs"
+		},
+		"./management/client": {
+			"@pluxel/source": "./src/management/client.ts",
+			"default": "./dist/management/client.mjs"
+		},
+		"./management/commands": {
+			"@pluxel/source": "./src/management/commands.ts",
+			"default": "./dist/management/commands.mjs"
+		},
+		"./management/http": {
+			"@pluxel/source": "./src/management/http.ts",
+			"default": "./dist/management/http.mjs"
+		},
+		"./management/internal": {
+			"@pluxel/source": "./src/management/internal.ts",
+			"default": "./dist/management/internal.mjs"
+		},
+		"./management/internal/http": {
+			"@pluxel/source": "./src/management/http-internal.ts",
+			"default": "./dist/management/internal/http.mjs"
+		},
+		"./management/internal/test": {
+			"@pluxel/source": "./src/management/test-internal.ts",
+			"default": "./dist/management/internal/test.mjs"
+		},
+		"./management/product": {
+			"@pluxel/source": "./src/management/product-contract.ts",
+			"default": "./dist/management/product.mjs"
+		},
+		"./management/protocol": {
+			"@pluxel/source": "./src/management/protocol.ts",
+			"default": "./dist/management/protocol.mjs"
+		},
+		"./management/react": {
+			"@pluxel/source": "./src/management/react.ts",
+			"default": "./dist/management/react.mjs"
+		},
+		"./management/service": {
+			"@pluxel/source": "./src/management/service.ts",
+			"default": "./dist/management/service.mjs"
+		},
+		"./management/session": {
+			"@pluxel/source": "./src/management/web/session/index.ts",
+			"default": "./dist/management/session.mjs"
+		},
 		"./node": {
 			"@pluxel/source": "./src/node.ts",
 			"default": "./dist/node.mjs"
@@ -73,9 +145,21 @@
 			"@pluxel/source": "./src/persistence.ts",
 			"default": "./dist/persistence.mjs"
 		},
+		"./preset": {
+			"@pluxel/source": "./src/preset.ts",
+			"default": "./dist/preset.mjs"
+		},
+		"./test": {
+			"@pluxel/source": "./src/test.ts",
+			"default": "./dist/test.mjs"
+		},
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
 			"default": "./dist/vault.mjs"
+		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
 		},
 		"./workers": {
 			"@pluxel/source": "./src/workers.ts",
@@ -90,6 +174,7 @@
 		},
 		"exports": {
 			".": "./dist/index.mjs",
+			"./build": "./dist/build.mjs",
 			"./commands": "./dist/commands.mjs",
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",
@@ -98,10 +183,30 @@
 			"./http/node": "./dist/http/node.mjs",
 			"./http/vite": "./dist/http/vite.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/test": "./dist/internal/test.mjs",
+			"./logging": "./dist/logging.mjs",
+			"./logging/internal": "./dist/logging/internal.mjs",
+			"./logging/protocol": "./dist/logging/protocol.mjs",
+			"./management": "./dist/management.mjs",
+			"./management/access": "./dist/management/access.mjs",
+			"./management/client": "./dist/management/client.mjs",
+			"./management/commands": "./dist/management/commands.mjs",
+			"./management/http": "./dist/management/http.mjs",
+			"./management/internal": "./dist/management/internal.mjs",
+			"./management/internal/http": "./dist/management/internal/http.mjs",
+			"./management/internal/test": "./dist/management/internal/test.mjs",
+			"./management/product": "./dist/management/product.mjs",
+			"./management/protocol": "./dist/management/protocol.mjs",
+			"./management/react": "./dist/management/react.mjs",
+			"./management/service": "./dist/management/service.mjs",
+			"./management/session": "./dist/management/session.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
+			"./preset": "./dist/preset.mjs",
+			"./test": "./dist/test.mjs",
 			"./vault": "./dist/vault.mjs",
+			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
 			"./package.json": "./package.json"
 		},
@@ -112,9 +217,13 @@
 		"typecheck": "tsc --noEmit --pretty false",
 		"test": "pnpm exec vitest run",
 		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
-		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts"
+		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts",
+		"bench:logger": "vitest bench bench/logger.bench.ts"
 	},
 	"dependencies": {
+		"@logtape/file": "catalog:prod",
+		"@logtape/logtape": "catalog:prod",
+		"@logtape/pretty": "catalog:prod",
 		"age-encryption": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"chokidar": "catalog:node",
@@ -122,7 +231,8 @@
 		"drizzle-orm": "catalog:backend",
 		"pathe": "catalog:node",
 		"srvx": "catalog:prod",
-		"std-env": "catalog:prod"
+		"std-env": "catalog:prod",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
@@ -130,19 +240,18 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/host-dev": "workspace:*",
-		"@pluxel/logging": "workspace:*",
-		"@pluxel/management": "workspace:*",
-		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
+		"@types/node": "catalog:types",
 		"@types/pg": "catalog:types",
+		"@types/react": "catalog:types",
 		"elysia": "catalog:prod",
 		"fs-fixture": "catalog:dev",
 		"pg": "catalog:backend",
+		"react": "catalog:frontend",
 		"tsx": "catalog:dev",
 		"valibot": "catalog:validation",
-		"valibot-form": "workspace:*",
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {
@@ -152,8 +261,10 @@
 		"@pluxel/host": "workspace:^",
 		"@pluxel/host-dev": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/workbench": "workspace:^",
 		"elysia": "catalog:prod",
 		"pg": "catalog:backend",
+		"react": "catalog:frontend",
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
@@ -173,6 +284,12 @@
 			"optional": true
 		},
 		"vite": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"@pluxel/workbench": {
 			"optional": true
 		}
 	},

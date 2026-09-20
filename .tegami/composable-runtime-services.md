@@ -5,9 +5,7 @@ packages:
   '@pluxel/host': major
   '@pluxel/host-dev': major
   '@pluxel/services': major
-  '@pluxel/management': major
   '@pluxel/workbench': major
-  '@pluxel/logging': major
   '@pluxel/rolldown': major
   '@pluxel/auth': major
   '@pluxel/vault-admin': major

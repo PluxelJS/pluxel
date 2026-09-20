@@ -1,4 +1,4 @@
-import type { RuntimeSecurityClient } from '@pluxel/management/client'
+import type { RuntimeSecurityClient } from '@pluxel/services/management/client'
 import { createWorkbenchRenderer, type WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { VaultWorkbench } from '../workbench.ts'
 

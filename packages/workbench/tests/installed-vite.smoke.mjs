@@ -16,9 +16,11 @@ const hook = registerHooks({
 		return next(url, context)
 	},
 })
-const { vitePreset } = await import('@pluxel/preset/vite')
+const { vitePreset } = await import('@pluxel/services/vite')
 const { workbenchArtifacts } = await import('../dist/dev.mjs')
 const { requireWorkbench, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
+const { readHostRecentUpdates } = await import('@pluxel/host/internal')
+const diagnostics = []
 let server, instance
 const until = async (predicate) => {
 	const deadline = Date.now() + 20000
@@ -98,7 +100,11 @@ class Page extends RpcTarget {value(){return 42}}
 	)
 	await write(
 		'app.ts',
-		`import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';export default {plugins:[Viewer],services:[workbenchService()],state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}`,
+		`import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { logging } from '@pluxel/services/logging';
+export default {plugins:[Viewer],configure({bindings}){return {services:[logging({
+ root:{profile:'fixture'},sinks:{console:{kind:'console',format:'pretty',caller:false,timezone:'utc'},capture:{kind:'logtape',label:'test diagnostics',sink:bindings.captureLog,caller:false}},
+ routes:{runtime:[{sink:'console',minLevel:'error'},{sink:'capture',minLevel:'error'}],plugins:[],debug:[],meta:[]}
+}),workbenchService()]}},state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}`,
 	)
 	server = await createServer({
 		root,
@@ -106,7 +112,10 @@ class Page extends RpcTarget {value(){return 42}}
 		logLevel: 'silent',
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
-			vitePreset({ entry: 'app.ts' }),
+			vitePreset({
+				entry: 'app.ts',
+				bindings: { captureLog: (record) => diagnostics.push(record) },
+			}),
 			workbenchArtifacts({ cacheDir: join(root, '.pluxel/artifacts') }),
 			{
 				name: 'test:borrow-host',
@@ -181,6 +190,29 @@ class Page extends RpcTarget {value(){return 42}}
 	assert.equal(cached.status, 304)
 	const pageRevision = firstPage.federatedViewRef.buildRevision
 	await write('view.ts', 'export default function Broken( {\n')
+	await until(
+		() => readHostRecentUpdates(instance.ctx)?.latestUpdate()?.outcome === 'retained-previous',
+	)
+	const rejected = readHostRecentUpdates(instance.ctx).latestUpdate()
+	assert.equal(rejected.phase, 'artifacts')
+	assert.match(rejected.error.message, /cannot verify renderer dependency.*view\.ts/)
+	assert.equal(instance, original)
+	assert.equal(
+		backend.registry.getLayout(address).entries.find((entry) => entry.federatedViewRef)
+			?.federatedViewRef.buildRevision,
+		pageRevision,
+	)
+	assert.ok(
+		diagnostics.some((record) =>
+			record.properties.error?.message?.includes('cannot verify renderer dependency'),
+		),
+		'semantic HMR errors reach the selected Host logger',
+	)
+	// A valid semantic plan with an unavailable CSS import fails in the background producer instead.
+	await write(
+		'view.ts',
+		"import './missing.css';import { useWorkbench } from '@pluxel/workbench/react';import { UI } from './definition';export default function View(){useWorkbench(UI.page);return 'unbuildable renderer'}\n",
+	)
 	await until(() =>
 		backend.registry
 			.getLayout(address)

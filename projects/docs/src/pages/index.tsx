@@ -42,7 +42,7 @@ export default {
 	},
 	{
 		code: `import type { HostApplication } from '@pluxel/host'
-import { dynamicSource } from '@pluxel/host-dynamic'
+import { dynamicSource } from '@pluxel/host/dynamic'
 
 export default {
   sources: [dynamicSource({
@@ -63,7 +63,7 @@ const toolchain = [
 		title: '安装服务',
 		file: 'src/app.ts',
 		code: `import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/preset'
+import { servicesPreset } from '@pluxel/services/preset'
 
 export default {
   async configure(startup) {
@@ -79,7 +79,7 @@ export default {
 		title: '开发与热更新',
 		file: 'vite.config.ts',
 		code: `import { defineConfig } from 'vite'
-import { vitePreset } from '@pluxel/preset/vite'
+import { vitePreset } from '@pluxel/services/vite'
 
 export default defineConfig({
   plugins: [vitePreset({
@@ -91,7 +91,7 @@ export default defineConfig({
 		title: '生产构建',
 		file: 'tsdown.config.ts',
 		code: `import { defineConfig } from 'tsdown'
-import { buildPreset } from '@pluxel/preset/build'
+import { buildPreset } from '@pluxel/services/build'
 
 export default defineConfig({
   entry: './src/app.ts',

@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/logging': minor
+  '@pluxel/services': minor
 ---
 
 ## Keep operation log cursors in the Logging domain

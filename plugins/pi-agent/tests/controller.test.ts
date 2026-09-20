@@ -8,7 +8,7 @@ import type {
 } from '@earendil-works/pi-coding-agent'
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it, vi } from 'vitest'
 import type { PiAgentPluginConfig } from '../src/config.ts'
 import { PiAgentController } from '../src/controller.ts'

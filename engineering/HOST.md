@@ -2,14 +2,13 @@
 
 ## 唯一职责分层
 
-| 层                                          | 所有权                                                                | 不承担                            |
-| ------------------------------------------- | --------------------------------------------------------------------- | --------------------------------- |
-| Context                                     | 同步、不可变的能力 shape 与 root/scope/owner-view 解析                | IO、异步 prepare、插件图          |
-| Core                                        | 插件 metadata、依赖图、generation、logger/events/effects/config facts | 网络、数据库、开发工具、部署策略  |
-| Host                                        | catalog、运行策略、服务准备关闭、应用启动与配置存储                   | 默认服务选择、物理 listener、Vite |
-| Host-dev                                    | Vite ModuleRunner、候选更新队列、开发附件、控制台 execution           | 官方服务选择、第二套插件生命周期  |
-| Host-dynamic                                | 声明范围内的入口发现与 watcher                                        | 包安装、独立 committed catalog    |
-| Services / Logging / Management / Workbench | 对应领域的能力、资源和适配                                            | 修改 Core 图所有权                |
+| 层                                  | 所有权                                                                | 不承担                            |
+| ----------------------------------- | --------------------------------------------------------------------- | --------------------------------- |
+| Context                             | 同步、不可变的能力 shape 与 root/scope/owner-view 解析                | IO、异步 prepare、插件图          |
+| Core                                | 插件 metadata、依赖图、generation、logger/events/effects/config facts | 网络、数据库、开发工具、部署策略  |
+| Host                                | catalog、运行策略、服务准备关闭、应用启动、配置存储与动态来源         | 默认服务选择、物理 listener、Vite |
+| Host-dev                            | Vite ModuleRunner、候选更新队列、开发附件、控制台 execution           | 官方服务选择、第二套插件生命周期  |
+| Services（含日志与管理）/ Workbench | 对应领域的能力、资源和适配                                            | 修改 Core 图所有权                |
 
 应用只有 `HostApplication` 一个声明模型。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
 
@@ -24,7 +23,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 能力 token 的 access 表达调用 Context 的所有权：`all` 通用，`owner` 需要真实插件/Part owner，`root` 需要真实 RootContext。宿主代码使用 `ctx.require(Token)`，缺失、访问越界和构造失败保留各自错误。
 `ctx.root` 返回真实根引用，持有它的受信任代码可访问 root 能力；这不是不可信代码沙箱。Core 内部图 authority 的 token 不进入普通作者入口。
 
-`@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers、Persistence。独立 `@pluxel/preset` 入口的 `servicesPreset()` 增加 Vault、Logging、Management、管理命令及可选 Workbench。Database 显式选择 backend。
+`@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers、Persistence。同包的 `@pluxel/services/preset` 入口的 `servicesPreset()` 增加 Vault、Logging、Management、管理命令及可选 Workbench。Database 显式选择 backend。
 未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
 
 ## 应用、开发和部署
@@ -67,7 +66,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 代码、公开类型、文档必须描述同一所有权。不允许用测试宿主证明在线应用当前状态，或以 source-mode 测试代替独立安装和搬离工作区后的发行验证。
 Node carrier 与 Node-backed Vite 已有覆盖；Bun/Deno/Worker、published Elysia peer admission 和真实外部下游迁移需要各自独立验证，不由本分层自动保证。
 
-Services 的包入口按能力、可选 backend 和运行环境划分；HTTP handler 与 `/http` 同属可移植请求边界，listener 与 `/http/node` 同属 Node carrier。框架跨包共享的 owner-view/security helpers 收敛到不加载 backend 的 `/internal`；白盒测试另用 `/internal/test`。仅包内测试使用的实现通过相对源码导入，数据库 driver 通过 package `imports` 私有加载，不成为导出子路径。
+Services 包含基础服务、Logging、Management 与官方 preset；子入口按能力、可选 backend 和运行环境划分，不各自发布。基础入口不加载未选择的后端。HTTP handler 与 `/http` 同属可移植请求边界，listener 与 `/http/node` 同属 Node carrier。框架跨包共享的 owner-view/security helpers 收敛到不加载 backend 的 `/internal`；白盒测试另用 `/internal/test`。仅包内测试使用的实现通过相对源码导入，数据库 driver 通过 package `imports` 私有加载，不成为导出子路径。
 
 ### 可移植 execution 协议
 

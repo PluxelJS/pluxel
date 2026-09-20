@@ -20,7 +20,7 @@ import {
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
 import { createDiskFixture } from '@pluxel/test/fixtures'
-import { createServiceInternalTestHarness } from '@pluxel/preset/internal/test'
+import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import * as React from 'react'
 import * as ReactDom from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'

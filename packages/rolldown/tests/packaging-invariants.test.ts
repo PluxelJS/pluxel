@@ -268,7 +268,7 @@ describe('toolchain package boundaries', () => {
 
 	it('keeps production hosts independent of the development toolchain', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		for (const name of ['host', 'host-dynamic']) {
+		for (const name of ['host']) {
 			const manifest = await readJson(`${root}/packages/${name}/package.json`)
 			const required = { ...manifest.dependencies, ...manifest.optionalDependencies }
 			const toolchain = ['vite', '@pluxel/host-dev', '@pluxel/rolldown']
@@ -325,7 +325,7 @@ describe('toolchain package boundaries', () => {
 
 	it('keeps native toolchain packages external to generated bundles', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const packageNames = ['cli', 'rolldown', 'host-dev', 'host-dynamic', 'host', 'test']
+		const packageNames = ['cli', 'rolldown', 'host-dev', 'host', 'test']
 		const offenders: string[] = []
 		const nativeToolchainPackage =
 			/^(?:oxc-(?:parser|resolver)|@oxc-(?:parser|resolver)\/binding-|rolldown|@rolldown\/binding-|oxlint|@oxlint\/binding-|oxfmt|@oxfmt\/binding-)$/
@@ -364,7 +364,7 @@ describe('toolchain package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const coreManifest = await readJson(`${root}/packages/core/package.json`)
 		const coreBuildConfig = await readFile(`${root}/packages/core/tsdown.config.ts`, 'utf8')
-		const runtimePackages = ['core', 'host-dev', 'host-dynamic', 'host']
+		const runtimePackages = ['core', 'host-dev', 'host']
 		const packageSourceFiles = await Promise.all(
 			runtimePackages.map((name) => collectSourceFiles(`${root}/packages/${name}/src`)),
 		)

@@ -5,7 +5,7 @@ import {
 	type PersistenceBackend,
 } from '@pluxel/services/persistence'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
 

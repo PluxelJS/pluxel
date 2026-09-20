@@ -626,11 +626,11 @@ detach/dispose，不能再更新 React。Framework 自身的 portable、scope、
 - `packages/workbench/src/services/workbench/WorkbenchContentPresentation.ts`
 - `packages/workbench/src/services/workbench/WorkbenchContentTarget.ts`
 - `packages/workbench/src/services/workbench/WorkbenchSessionTarget.ts`
-- `packages/management/src/web/session/`
+- `packages/services/src/management/web/session/`
 - `packages/rolldown/src/workbench/semantic-lowering.ts`
 - `packages/rolldown/src/workbench/content-compiler.ts`
 - `packages/rolldown/src/vite/workbench-ui.ts`
-- `packages/workbench-app/src/app/workbench/WorkbenchContentRenderer.tsx`
+- `packages/workbench/shell/src/app/workbench/WorkbenchContentRenderer.tsx`
 
 ### 内置编辑器滚动与目录
 

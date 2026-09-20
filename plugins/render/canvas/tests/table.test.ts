@@ -1,6 +1,6 @@
 import { type PluginConstructor } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { FontsPlugin } from '@pluxel/fonts'
 import { CanvasPlugin } from '../src/index.ts'

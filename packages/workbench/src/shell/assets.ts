@@ -20,7 +20,7 @@ type Manifest = Record<string, ManifestEntry>
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
 
-const pickEntry = (manifest: Manifest, entry = '../workbench-app/src/client.tsx') =>
+const pickEntry = (manifest: Manifest, entry = 'shell/src/client.tsx') =>
 	entry in manifest
 		? entry
 		: (Object.keys(manifest).find((key) => manifest[key]?.isEntry) ?? Object.keys(manifest)[0])

@@ -1,7 +1,7 @@
 import type { ContextLogger } from '@pluxel/core'
 import { RpcTarget, type RpcStub } from 'capnweb'
-import { parseRuntimePortableData } from '@pluxel/management/internal'
-import type { RuntimeJsonObject } from '@pluxel/management/protocol'
+import { parseRuntimePortableData } from '@pluxel/services/management/internal'
+import type { RuntimeJsonObject } from '@pluxel/services/management/protocol'
 import type {
 	WorkbenchContentActionOutcome,
 	WorkbenchContentDataOutcome,

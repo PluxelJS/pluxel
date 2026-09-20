@@ -2,7 +2,7 @@ import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {

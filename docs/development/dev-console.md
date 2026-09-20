@@ -33,7 +33,7 @@ pnpm exec pluxel dev instances --root /absolute/project-root
 
 从返回结果确认 `root`、`pid` 和 `instanceId`。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
-控制台属于 `@pluxel/host-dev`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/preset/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
+控制台属于 `@pluxel/host-dev`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/services/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
 
 省略 `devConsole` 不安装控制台。Vite integration 只在 serve 时安装。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
 
@@ -194,13 +194,13 @@ export const inspectWorkbench = defineDevConsole(async (dev) => {
 
 `using` 在脚本离开作用域时关闭打开的 entry 与其本地 session，传入 `dev.signal` 还会在取消时释放这些资源。`detachWorkbenchPortableValue` 复制并验证 RPC 返回的普通数据，同时释放该结果持有的顶层 transport 资源；不能直接将 RPC stub 或 opened handle 返回 CLI。取消不会撤销已经接纳的业务变更，仍应检查返回的领域结果。
 
-`this.ctx.logger` 是 Core 基础能力，插件无需 import Logging 包；脚本也能使用 `dev.ctx.logger`。输出、过滤和日志存储由宿主的 logging 配置决定。需要查询存储时显式使用 `@pluxel/logging` 的 `Logging` 能力和 store API；控制台不自动增加 store，也不在执行结果里附加日志游标。读取日志时保留存储本身的 epoch、retention 和 gap 语义，返回有界的普通数据。
+`this.ctx.logger` 是 Core 基础能力，插件无需 import Logging 包；脚本也能使用 `dev.ctx.logger`。输出、过滤和日志存储由宿主的 logging 配置决定。需要查询存储时显式使用 `@pluxel/services/logging` 的 `Logging` 能力和 store API；控制台不自动增加 store，也不在执行结果里附加日志游标。读取日志时保留存储本身的 epoch、retention 和 gap 语义，返回有界的普通数据。
 
 日志可以在业务操作前标记位置，随后读取或等待相关记录：
 
 ```ts no-twoslash
 import { defineDevConsole } from '@pluxel/host-dev/console'
-import { Logging, markLogs, readLogs } from '@pluxel/logging'
+import { Logging, markLogs, readLogs } from '@pluxel/services/logging'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export const restartWithLogs = defineDevConsole(async (dev) => {
@@ -213,7 +213,7 @@ export const restartWithLogs = defineDevConsole(async (dev) => {
 
 `markLogs` 会先 flush 已缓冲日志，首次访问尚无记录的已配置 stream 时创建空存储，不增加 sink 或修改路由；未配置的 stream 报错。默认 stream 是 `default`。返回的 JSON cursor 可保留并用于下一次操作；`readLogs` 返回下一 cursor，可分页继续读。`root_mismatch`、`stream_replaced`、`epoch_mismatch` 和 `from_too_old` 明确表示宿主更换、stream 更换、reset 和 retention 缺口，不能自动忽略。跨进程输入仍需按 `LogCursor` 字段校验。
 
-等待后续记录用 `await waitForLogs(logging, cursor, { filter, limit: 100, signal: dev.signal })`，从 `@pluxel/logging` 导入。它返回首批匹配记录或 cursor 失效结果，取消时以 signal 的 reason 拒绝并撤销订阅。等待不改变日志过滤与缓冲配置；没有匹配输出时持续到 signal 取消。
+等待后续记录用 `await waitForLogs(logging, cursor, { filter, limit: 100, signal: dev.signal })`，从 `@pluxel/services/logging` 导入。它返回首批匹配记录或 cursor 失效结果，取消时以 signal 的 reason 拒绝并撤销订阅。等待不改变日志过滤与缓冲配置；没有匹配输出时持续到 signal 取消。
 
 `dev.ctx` 只借用本次执行的 Host。不要跨执行或 Host replacement 缓存 Context、Plugin、服务 handle 或 RPC session。直接服务调用不会自动绑定取消；传入 `dev.signal`，await 所有调用，并用 `using` 或 `try/finally` 释放脚本创建的资源。
 

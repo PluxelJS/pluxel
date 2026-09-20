@@ -92,22 +92,24 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
 ## 7. 保持依赖方向
 
 ```text
-@pluxel/context <- @pluxel/core <- @pluxel/host <- @pluxel/services
-                                     ^   ^
-                                     |   +-- @pluxel/host-dynamic
-                                     +------ @pluxel/host-dev
-                                                   ^
-                                                   +-- @pluxel/preset/vite
-@pluxel/commands --------------------------------------------> @pluxel/services
-@pluxel/cli --optional--> @pluxel/rolldown
+Core: Context、Plugin graph 与 lifecycle
+  ↑
+Host: catalog、运行意图、来源与 dynamic 文件加载
+  ↑
+Services: HTTP、存储、日志、Management 与官方组合
+Workbench: UI capability、客户端与随包 Shell
+Host-dev / Rolldown: 开发驱动与构建工具
 ```
+
+Services 与 Workbench 的可选组合可以形成包级相互引用；约束针对真实模块与求值入口，不要求每个领域都成为独立发布包。
+基础服务与 browser-safe 协议不导入上层组合，未选择的后端不因同包而自动加载。
 
 - context 是同步、host-neutral 的 Context kernel，不依赖 Core、Host、IO 或生命周期服务。
 - core 不依赖 HTTP、持久化、Vite 或宿主策略。
 - core 源码直接复用 context；发布的 Core JS 与 declarations 完全内联该 kernel，不产生
   `@pluxel/context` production dependency。
 - core 与 commands 彼此独立；services 组合两者，但不把 command 变成插件内部生命周期协议。
-- Host 的生产入口不依赖开发工具链；动态来源通过 Host 来源契约接入。
+- Host 的生产入口不依赖开发工具链；`@pluxel/host/dynamic` 在同包内通过来源契约接入文件发现。
 - Host 来源接入不复制 core lifecycle。
 - build-time tooling 不进入 runtime service graph。
 

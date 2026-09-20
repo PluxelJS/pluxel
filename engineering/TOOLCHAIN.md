@@ -366,7 +366,7 @@ Workbench-only host 若让 UI 拥有 `/`，不得虚构第二个 Application roo
 Workbench Shell 的 browser asset URL 使用 `/__pluxel/workbench/assets/**`；磁盘仍由 distribution 内部的 `workbench/public/`
 inventory 提供。URL namespace 与 artifact filesystem layout 不耦合，也不得退回会与产品 public tree 竞争的 `/dist/public/**`。
 Vite 只有在当前安装中确实存在 Workbench source entry 时才接入它的 client graph；独立消费 workspace 使用
-`@pluxel/workbench` 随包交付的 built assets，不能生成只在 Pluxel monorepo 内成立的 `/packages/workbench-app/**` URL。
+`@pluxel/workbench` 随包交付的 built assets，不能生成只在 Pluxel monorepo 内成立的 源码 workspace 的 `/packages/**` URL。
 
 ## Workbench source declaration
 

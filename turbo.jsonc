@@ -165,26 +165,6 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/workbench-app#build": {
-			"dependsOn": ["@pluxel/workbench#build", "@worksplit/react#build", "valibot-form#build"],
-			"outputs": ["dist/**", "public/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
 		"pluxel-docs#build": {
 			"dependsOn": ["valibot-form#build"],
 			"outputs": ["dist/**", ".source/**", ".vercel/output/**"],
@@ -235,7 +215,7 @@
 			"dependsOn": ["^build", "build", "@pluxel/test#build"],
 		},
 		"@pluxel/host-dev#test": {
-			"dependsOn": ["^build", "build", "@pluxel/host-dynamic#build", "@pluxel/test#build"],
+			"dependsOn": ["^build", "build", "@pluxel/host#build", "@pluxel/test#build"],
 		},
 		"@pluxel/rolldown#test": {
 			"dependsOn": ["^build"],
@@ -282,45 +262,22 @@
 			"cache": false,
 			"persistent": true,
 		},
-		"@pluxel/preset#build": {
-			"dependsOn": ["@pluxel/workbench#build", "@pluxel/host-dev#build"],
-			"outputs": ["dist/**"],
-		},
 		"@pluxel/services#build": {
 			"dependsOn": ["@pluxel/commands#build", "@pluxel/host#build", "@pluxel/host-dev#build"],
 			"outputs": ["dist/**", "public/**"],
 		},
-		"@pluxel/logging#build": {
-			"dependsOn": ["@pluxel/host#build"],
-			"outputs": ["dist/**", "public/**"],
-		},
-		"@pluxel/management#build": {
+		"@pluxel/workbench#build": {
 			"dependsOn": [
-				"@pluxel/host#build",
 				"@pluxel/services#build",
-				"@pluxel/logging#build",
+				"@pluxel/rolldown#build",
+				"@worksplit/react#build",
 				"valibot-form#build",
 			],
 			"outputs": ["dist/**", "public/**"],
-		},
-		"@pluxel/workbench#build": {
-			"dependsOn": ["@pluxel/management#build", "@pluxel/rolldown#build", "@worksplit/react#build"],
-			"outputs": ["dist/**", "public/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/packages/workbench-app/src/**",
-				"!README.md",
-				"!**/*.md",
-				"!tests/**",
-				"!**/*.test.*",
-			],
+			"inputs": ["$TURBO_DEFAULT$", "!README.md", "!**/*.md", "!tests/**", "!**/*.test.*"],
 		},
 		"@pluxel/host#build": {
 			"dependsOn": ["@pluxel/core#build"],
-			"outputs": ["dist/**"],
-		},
-		"@pluxel/host-dynamic#build": {
-			"dependsOn": ["@pluxel/host#build"],
 			"outputs": ["dist/**"],
 		},
 	},

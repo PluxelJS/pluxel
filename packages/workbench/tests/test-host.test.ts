@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 import { workbench } from '@pluxel/workbench'
-import { createWorkbenchTestHost } from '@pluxel/preset/test'
+import { createWorkbenchTestHost } from '@pluxel/services/test'
 import { createLocalRpcClient } from '@pluxel/workbench/test'
 import { WorkbenchOpenedContentHandle } from '@pluxel/workbench/internal'
 import { RpcTarget } from 'capnweb'

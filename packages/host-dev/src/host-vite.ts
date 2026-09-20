@@ -500,22 +500,27 @@ export function host(options: HostViteOptions): PluginOption[] {
 			order: 'post',
 			async handler(context) {
 				if (this.environment.name !== HOST_VITE_ENVIRONMENT || closing) return undefined
-				devConsole?.invalidate(context.file)
-				devConsole?.observed(context.file)
-				if (sources.covers(context.file)) return undefined
-				if (
-					!files.has(context.file) &&
-					!recovery.matches(context.file) &&
-					!sources.covers(context.file)
-				) {
-					if (active && attachments.get(active)?.tracks(context.file)) {
-						await updateArtifacts(context.file)
-						return []
+				try {
+					devConsole?.invalidate(context.file)
+					devConsole?.observed(context.file)
+					if (sources.covers(context.file)) return undefined
+					if (
+						!files.has(context.file) &&
+						!recovery.matches(context.file) &&
+						!sources.covers(context.file)
+					) {
+						if (active && attachments.get(active)?.tracks(context.file)) {
+							await updateArtifacts(context.file)
+							return []
+						}
+						return undefined
 					}
-					return undefined
+					await update(context.file, context.type)
+					return []
+				} catch (error) {
+					report(error)
+					throw error
 				}
-				await update(context.file, context.type)
-				return []
 			},
 		},
 		async closeBundle() {

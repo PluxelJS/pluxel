@@ -2,7 +2,6 @@
 packages:
   '@pluxel/host-dev': major
   '@pluxel/host': minor
-  '@pluxel/management': patch
   '@pluxel/services': minor
   '@pluxel/workbench': patch
   '@pluxel/rolldown': patch

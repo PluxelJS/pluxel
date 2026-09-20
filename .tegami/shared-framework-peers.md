@@ -1,12 +1,10 @@
 ---
 packages:
   '@pluxel/host': patch
-  '@pluxel/host-dynamic': patch
   '@pluxel/host-dev': patch
-  '@pluxel/logging': patch
-  '@pluxel/management': patch
   '@pluxel/workbench': patch
   '@pluxel/rolldown': patch
+  '@pluxel/services': patch
 ---
 
 ## Share framework identities with the application

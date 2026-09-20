@@ -8,7 +8,6 @@
 	"references": [
 		{ "path": "packages/core" },
 		{ "path": "packages/host-dev" },
-		{ "path": "packages/host-dynamic" },
 		{ "path": "packages/host" }
 	]
 }

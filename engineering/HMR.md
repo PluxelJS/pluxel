@@ -287,3 +287,5 @@ Shell 源码开发通过 `@pluxel/workbench/dev` 的 `workbenchSourceShell({ ent
 
 候选生成、失效策略、来源求值和失败恢复属于 `host()` 内部编排，不是 Vite 包入口的独立扩展点。
 服务附件通过 `HostDevelopmentPluginApi` 参与现有生命周期，不绕过 Host 自行推动候选提交。
+
+Workbench renderer 的 semantic candidate 被拒绝时，应用更新报告 `retained-previous` / `artifacts`，保留已接受的 renderer；已接受计划的后台构建失败才投影 producer `failed`。两条失败路径都记录原始错误，Host hot-update 诊断经当前 Host logger 后继续交给 Vite。

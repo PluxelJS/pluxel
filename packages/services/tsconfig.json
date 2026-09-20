@@ -5,6 +5,7 @@
 	"compilerOptions": {
 		"outDir": "dist",
 		"experimentalDecorators": true,
-		"lib": ["ESNext", "DOM"]
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx"
 	}
 }

@@ -1,5 +1,5 @@
 import { createWorkbenchTestHost } from '@pluxel/workbench/test'
-import { createServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost } from '@pluxel/services/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchExamplePlugin, WretchExampleWorkbench } from './fixtures/wretch-example.ts'

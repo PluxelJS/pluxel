@@ -67,7 +67,7 @@ npx nypm add -D @pluxel/rolldown tsdown oxlint
 Dynamic host：
 
 ```sh package-install
-npx nypm add -D @pluxel/host-dynamic
+npx nypm add @pluxel/host
 ```
 
 `publish --webhook`：

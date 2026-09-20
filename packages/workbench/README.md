@@ -1,6 +1,6 @@
 # @pluxel/workbench
 
-可组合的 Workbench 发布服务、制品库存与浏览器 SDK。独立 Host 和官方服务组合使用同一 registry、session、renderer scope 和制品提交实现。
+可组合的 Workbench 发布服务、制品库存与浏览器 SDK。独立 Host 和官方服务组合使用同一 registry、session、renderer scope 和制品提交实现。官方 Shell 源码在本包 `shell/`，构建资源随包交付，不需要另一个应用包。
 
 - `@pluxel/workbench`：`workbench` 定义 DSL 与 owner-only `Workbench` token。
 - `@pluxel/workbench/service`：`workbenchService()`，在 Host 准备阶段装载配置的 production artifact inventory。

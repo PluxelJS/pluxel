@@ -1,4 +1,4 @@
-// Built-artifact boundary: run after building Host, Host-dev, Host-dynamic and Rolldown.
+// Built-artifact boundary: run after building Host, Host-dev and Rolldown.
 import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,11 +23,7 @@ const { readHostRecentUpdates } = await import(
 const root = await mkdtemp(join(tmpdir(), 'pluxel-installed-host-'))
 await mkdir(join(root, 'node_modules/@test/installed'), { recursive: true })
 await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-await symlink(
-	join(workspace, 'packages/host-dynamic'),
-	join(root, 'node_modules/@pluxel/host-dynamic'),
-	'dir',
-)
+await symlink(join(workspace, 'packages/host'), join(root, 'node_modules/@pluxel/host'), 'dir')
 await symlink(
 	join(workspace, 'packages/services'),
 	join(root, 'node_modules/@pluxel/services'),
@@ -63,7 +59,7 @@ export const services=[http(),{name:'fixture.service',capabilities:[installRootC
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
-	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host-dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'}]}}};`,
+	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host/dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'}]}}};`,
 )
 globalThis.__installedHostSmoke = []
 let server

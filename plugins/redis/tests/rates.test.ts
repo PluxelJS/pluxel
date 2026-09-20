@@ -2,7 +2,7 @@ import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
 import { formatPluginNodeReference, type PluginConstructor } from '@pluxel/core'
 import * as v from 'valibot'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,

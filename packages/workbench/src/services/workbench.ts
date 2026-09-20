@@ -3,7 +3,7 @@ import {
 	readProductDescriptor,
 	type HostApplicationMeta,
 	type ProductDescriptor,
-} from '@pluxel/management/product'
+} from '@pluxel/services/management/product'
 import type {
 	AnyWorkbenchDefinition,
 	WorkbenchPublishBindings,

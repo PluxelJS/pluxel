@@ -1,6 +1,6 @@
 # @pluxel/host
 
-用显式服务清单组合插件宿主；省略清单时只安装 Core 能力。Runtime 使用同一个 Host coordinator，并在其上安装官方服务与持久化策略。
+用显式服务清单组合插件宿主；省略清单时只安装 Core 能力。官方服务组合使用同一个 Host coordinator，并在其上安装服务与持久化策略。
 
 ```ts
 import { pluginDefinitionAddressOf } from '@pluxel/core'
@@ -32,7 +32,7 @@ await host.close()
 `plugins` 是完整的显式定义目录，`state.initial.autoStart` 是启动策略。未指定策略时不会自动启动目录中的插件；可以通过 `startNode()` 启动。
 `updateCatalog()` 替换显式目录，并保留仍存在地址的运行意图。新定义必须经过 Pluxel 源码转换或来自已构建的插件产物。
 
-动态发现由 `@pluxel/host-dynamic` 提供。传入 `root`、`sources` 和 `loadModule(path)` 即可组合相同的宿主。Host 不加载文件、不创建 Vite，也不实现 Node 模块缓存：调用方的 loader 负责路径解析和更新后的模块身份。失败候选保留已提交目录，通过 `onSourceError` 报告；关闭时会先停止并释放来源监听。
+动态发现由同包的 `@pluxel/host/dynamic` 提供。传入 `root`、`sources` 和 `loadModule(path)` 即可组合相同的宿主。Host 核心不创建 Vite，也不实现 Node 模块缓存；同包 `/dynamic` 负责文件发现，调用方的 loader 负责路径解析和更新后的模块身份。失败候选保留已提交目录，通过 `onSourceError` 报告；关闭时会先停止并释放来源监听。
 
 `assertPluginSource(ctx, requirement)` 供 Package Manager 等来源生产者验证宿主是否声明了目标来源。它不创建来源会话，也不启动监听。
 
@@ -53,3 +53,19 @@ export default {
 入口或宿主配置变化会创建新宿主；插件实现更新在当前宿主内提交目录事务。失败候选不覆盖已接受的模块事实，修复缺失导入后会通过同一开发队列重新求值。
 
 开发驱动会在来源 entry 重新发布时失效其已观察的 ESM 依赖闭包，并重新解析 package metadata。CommonJS 与 native 模块继续由 Node 执行：正常安装应发布新的不可变包路径；直接覆盖已经加载的 CommonJS/native 文件需要重启进程，不承诺清空 Node 全局模块缓存。
+
+## 动态文件来源
+
+```ts
+import { dynamicSource } from '@pluxel/host/dynamic'
+
+const sources = [
+	dynamicSource({ kind: 'directory', path: '.pluxel/managed-plugins/entries', include: ['*.mjs'] }),
+]
+```
+
+`dynamicSource()` 只校验并复制声明，不启动 IO。Host 打开来源会话后扫描并监听新增、修改、删除；尚不存在的目录可在启动后创建。路径相对于应用 root，include glob 必须留在声明目录内。来源只交付路径，加载与提交仍由 Host 和开发驱动负责。关闭会立即停止通知并等待 watcher 释放，重复关闭复用同一 Promise。
+
+来源生产者从 `@pluxel/host/dynamic/source-producer` 调用 `requireDynamicPluginSource(ctx, declaration)`，在创建目录或安装包前确认 Host 已声明目标来源；此校验不授予修改 catalog 的权限。
+
+原生生产加载支持初始 entry、新路径与撤回；已经求值的路径重新发布时返回 `PLUGIN_SOURCE_RESTART_REQUIRED`，需要重启进程。Node ESM 缓存无法靠给入口追加 query 完整刷新，开发更新交给 Vite 的同一个 Pluxel environment。

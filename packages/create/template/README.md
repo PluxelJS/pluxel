@@ -13,7 +13,7 @@ pnpm dev
 
 The host declares its fixed Plugin catalog and optional mutable sources in `host/src/app.ts`.
 Vite development and production builds consume that same `HostApplication` declaration.
-Its `configure()` returns an explicit service list; `servicesPreset()` from `@pluxel/preset` combines base services,
+Its `configure()` returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
 Logging, Vault, Management and optional Workbench. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
 configuration, installs the workspace Plugins and serves the page and Plugin routes on

@@ -1,16 +1,16 @@
 # `@pluxel/package-manager`
 
 Pluxel 官方、可选的 pnpm package source producer。它使用 `@pnpm/napi` 管理一个隔离 pnpm project，把每个受管 package
-原子发布为普通 `.mjs` entry。`@pluxel/host-dynamic` 只观察这些文件并执行正常 graph/HMR lifecycle。
+原子发布为普通 `.mjs` entry。`@pluxel/host/dynamic` 只观察这些文件并执行正常 graph/HMR lifecycle。
 
 ## Host 装配
 
 ```ts
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
-import { dynamicSource } from '@pluxel/host-dynamic'
+import { dynamicSource } from '@pluxel/host/dynamic'
 import type { HostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/preset'
+import { servicesPreset } from '@pluxel/services/preset'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
 const packageManagerConfig = {

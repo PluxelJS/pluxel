@@ -5,8 +5,8 @@ Workbench 不得成为 Plugin 核心能力的启动前提。
 
 ## 固定边界
 
-- `@pluxel/management/client`：portable host session、Management API 与严格校验的 DTO；
-- `@pluxel/management/react`：Management client 的 React Context adapter；
+- `@pluxel/services/management/client`：portable host session、Management API 与严格校验的 DTO；
+- `@pluxel/services/management/react`：Management client 的 React Context adapter；
 - `@pluxel/workbench`：Content/View/Attachment definition；
 - `@pluxel/workbench/client`：layout、portable Content plan/presentation 与 opened entry handle validation；
 - `@pluxel/workbench/react`：descriptor-bound renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
@@ -178,7 +178,7 @@ Remote 需要 navigation/primary/inspector 三栏时，使用 `WorkbenchPaneLayo
 Plugin 不复制这组 chrome，也不把宿主私有的 plugin rail、assist 或 bottom dock 误当作 Pane Kit role。
 
 `split-like-vscode` 是独立 UI library，不知道 Plugin、View、route 或 persistence。Pluxel adapter 收敛在
-`packages/workbench-app/src/app/workbench/split/`。Remote bundle 不 import Worksplit、宿主 router、split adapter 或
+`packages/workbench/shell/src/app/workbench/split/`。Remote bundle 不 import Worksplit、宿主 router、split adapter 或
 workspace store。
 
 Workspace controller 独立拥有 tabs、editor groups、focus 和递归 grid。URL 只镜像 focused document；打开同一完整
@@ -229,16 +229,16 @@ building 状态。后台 producer 成功后提交完整 tuple 并触发完整 do
 
 ## 实现入口
 
-- `packages/workbench-app/src/client.tsx`
-- `packages/workbench-app/src/app/managementQuery.tsx`
-- `packages/workbench-app/src/workbench/client.ts`
-- `packages/workbench-app/src/workbench/runtime.tsx`
-- `packages/workbench-app/src/app/workbench/`
-- `packages/management/src/web/session/`
+- `packages/workbench/shell/src/client.tsx`
+- `packages/workbench/shell/src/app/managementQuery.tsx`
+- `packages/workbench/shell/src/workbench/client.ts`
+- `packages/workbench/shell/src/workbench/runtime.tsx`
+- `packages/workbench/shell/src/app/workbench/`
+- `packages/services/src/management/web/session/`
 - `packages/workbench/src/workbench/client.ts`
 - `packages/workbench/src/workbench/portable-value.ts`
 - `packages/workbench/src/workbench/react.tsx`
 - `packages/workbench/src/workbench/renderer-scope.tsx`
 - `packages/workbench/src/workbench/react-internal.tsx`
 - `packages/workbench/src/workbench/federation.ts`
-- `packages/workbench-app/src/app/workbench/WorkbenchContentRenderer.tsx`
+- `packages/workbench/shell/src/app/workbench/WorkbenchContentRenderer.tsx`

@@ -33,7 +33,7 @@ Do not introduce a custom primitive to hide a single screen's layout or visual p
 ## Working Rules
 
 - First-party Workbench UI imports Mantine directly and uses its primitives, hooks, props, and local `styles` before introducing custom CSS.
-- `packages/workbench-app/src/theme/mantine/theme.ts` is direct Mantine theme configuration. It is deliberately named as such, not as an adapter.
+- `packages/workbench/shell/src/theme/mantine/theme.ts` is direct Mantine theme configuration. It is deliberately named as such, not as an adapter.
 - The theme directory may define product semantic color tokens for layout and neutral surfaces. It does not create a second component skin system.
 - Each federated Mantine renderer installs `MantineProvider` inside its own root. It must not import `@mantine/core/styles.css`; the Shell loads it once.
 - Do not introduce HeroUI, Tailwind, React Aria, or library-neutral UI abstractions into first-party Workbench code without an approved replacement decision.
@@ -46,4 +46,4 @@ Revisit this decision only when a concrete, current requirement cannot be met wi
 
 - [`FRONTEND.md`](FRONTEND.md) owns Workbench renderer and Federation behavior.
 - [`../docs/workbench/renderer-resources.md`](../docs/workbench/renderer-resources.md) owns the public renderer Provider and stylesheet rules.
-- [`../packages/workbench-app/src/theme/README.md`](../packages/workbench-app/src/theme/README.md) owns local theme editing rules.
+- [`../packages/workbench/shell/src/theme/README.md`](../packages/workbench/shell/src/theme/README.md) owns local theme editing rules.

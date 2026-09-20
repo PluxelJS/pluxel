@@ -3,7 +3,7 @@ import type {
 	ManagementAuthenticationCookieCommit,
 	ManagementAuthenticationProviderSession,
 	ManagementAuthenticationProviderStep,
-} from '@pluxel/management/access'
+} from '@pluxel/services/management/access'
 
 const AUTHENTICATION_TTL_MS = 2 * 60_000
 

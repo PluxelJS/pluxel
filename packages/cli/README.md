@@ -125,5 +125,5 @@ import { resolveBuildContext } from '@pluxel/rolldown/build'
 `pluxel build` 调用 `@pluxel/rolldown/build` 的构建 preset；`pluxel distribution` 调用发行产物的
 finalizer 与离线验证。`pluxel dev` 连接已经运行的宿主，提交应用操作并读取结果。
 
-应用的固定插件与动态来源直接写在应用声明中，Vite 使用 `@pluxel/preset/vite` 的 `vitePreset()` 接入共享开发驱动。
+应用的固定插件与动态来源直接写在应用声明中，Vite 使用 `@pluxel/services/vite` 的 `vitePreset()` 接入共享开发驱动。
 CLI 不拥有另一份插件列表、HMR profile 或宿主状态。

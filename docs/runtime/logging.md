@@ -136,7 +136,7 @@ logging: {
 Workbench 日志流使用同一份有容量上限的存储。传输中的日志行是普通 JSON-like DTO：缺失的可选字段会省略，嵌套对象不会保留
 `undefined`，Plugin 日志同时携带结构化 node address、稳定 reference 与可读 label，便于界面查询和诊断。Range 响应还会按
 Management session 的物理 WebSocket ceiling 所派生的 payload 预算分页；单条超预算记录保留 identity、message 与精简 error，并
-明确标记 structured payload 已截断。Store、`@pluxel/logging` 和 `@pluxel/management/client` 共用同一份日志 DTO 类型定义，避免
+明确标记 structured payload 已截断。Store、`@pluxel/services/logging` 和 `@pluxel/services/management/client` 共用同一份日志 DTO 类型定义，避免
 producer、校验器与 Workbench 字段漂移。
 
 Workbench 的交互式 range 与 live follow 复用页面唯一、已认证的 Cap’n Web Management session；当前没有平行的 HTTP/SSE
@@ -152,7 +152,7 @@ Workbench 的交互式 range 与 live follow 复用页面唯一、已认证的 C
 
 ```ts
 import { createHost } from '@pluxel/host'
-import { logging } from '@pluxel/logging'
+import { logging } from '@pluxel/services/logging'
 
 const host = await createHost({
 	plugins: [],
@@ -184,12 +184,12 @@ await host.close()
 
 ## 有界操作日志与等待
 
-`markLogs(logging, streamId?)` 标记已 flush 的末尾；`readLogs(logging, cursor, { limit: 100, filter })` 返回有界记录和下一 cursor。`waitForLogs(logging, cursor, { signal, limit: 100, filter })` 等待首批匹配记录或 cursor 失效，signal 必填，取消与完成都会释放订阅。三者均从 `@pluxel/logging` 导入，使用同一 store，不创建控制台专用日志通道。
+`markLogs(logging, streamId?)` 标记已 flush 的末尾；`readLogs(logging, cursor, { limit: 100, filter })` 返回有界记录和下一 cursor。`waitForLogs(logging, cursor, { signal, limit: 100, filter })` 等待首批匹配记录或 cursor 失效，signal 必填，取消与完成都会释放订阅。三者均从 `@pluxel/services/logging` 导入，使用同一 store，不创建控制台专用日志通道。
 
 cursor 是普通 JSON，包含 rootId、streamId、bootId、epoch、nextSeq；不可把不同 Host 或重建 stream 的序号相接。读取保留 `root_mismatch`、`stream_replaced`、`store_unavailable`、`epoch_mismatch`、`from_too_old` 与 `invalid` 的失败分支。mark 可为已配置但尚无记录的 stream 创建空存储，未配置且不存在时抛错。调用示例见 [开发控制台](../development/dev-console.md)。
 
 ## 宿主安装与访问
 
-自行组合 Host 时，从 `@pluxel/logging` 导入 `logging(plan, options)` 并加入 `services`。Host 负责安装、绑定和关闭唯一的进程日志 owner；运行后通过 `host.ctx.logging` 或在开发控制台用 `dev.ctx.require(Logging)` 访问当前 manager。不要手动创建或绑定另一个 manager。
+自行组合 Host 时，从 `@pluxel/services/logging` 导入 `logging(plan, options)` 并加入 `services`。Host 负责安装、绑定和关闭唯一的进程日志 owner；运行后通过 `host.ctx.logging` 或在开发控制台用 `dev.ctx.require(Logging)` 访问当前 manager。不要手动创建或绑定另一个 manager。
 
 Plugin 标签由 Core 的 `buildPluginNodeLabels()` 和 `formatPluginNodeStandaloneLabel()` 生成；前者根据完整 catalog 消除重名歧义，后者用于没有 catalog 的日志。标签只是展示信息，不代替 Plugin address。

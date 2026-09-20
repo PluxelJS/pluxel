@@ -5,6 +5,8 @@ export default defineConfig({
 	entry: {
 		'config-environment': './src/config-environment.ts',
 		environment: './src/environment.ts',
+		dynamic: './src/dynamic/index.ts',
+		'dynamic/source-producer': './src/dynamic/source-producer.ts',
 		index: './src/index.ts',
 		internal: './src/internal.ts',
 		'internal/protocol': './src/execution.ts',

@@ -1,7 +1,7 @@
 import { FontsPlugin } from '@pluxel/fonts'
 import type { PluginConstructor } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/preset/test'
+import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
 import { describe, expect, it } from 'vitest'

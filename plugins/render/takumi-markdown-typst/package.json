@@ -44,7 +44,6 @@
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/host-dev": "workspace:*",
-		"@pluxel/preset": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/takumi": "workspace:*",

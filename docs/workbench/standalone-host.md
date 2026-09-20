@@ -42,7 +42,7 @@ export class Viewer extends BasePlugin {
 ```ts
 import { defineConfig } from 'vite'
 import { host } from '@pluxel/host-dev/vite'
-import { serviceSingletons } from '@pluxel/preset/vite'
+import { serviceSingletons } from '@pluxel/services/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
 
 export default defineConfig({
@@ -71,9 +71,9 @@ Node 与 Workers 使用 `@pluxel/services/node`、`@pluxel/services/workers`，�
 ```ts
 import { http } from '@pluxel/services/http'
 import { persistence } from '@pluxel/services/persistence'
-import { managementAccess } from '@pluxel/management/access'
-import { management } from '@pluxel/management/service'
-import { managementHttp } from '@pluxel/management/http'
+import { managementAccess } from '@pluxel/services/management/access'
+import { management } from '@pluxel/services/management/service'
+import { managementHttp } from '@pluxel/services/management/http'
 import { workbenchService } from '@pluxel/workbench/service'
 import { workbenchHttp } from '@pluxel/workbench/http'
 import {
@@ -114,7 +114,7 @@ HTTP 组合还需安装 `elysia`，它是 `@pluxel/services` 的可选 peer。�
 
 ```ts
 import { defineConfig } from 'vite'
-import { vitePreset } from '@pluxel/preset/vite'
+import { vitePreset } from '@pluxel/services/vite'
 import { workbenchSourceShell } from '@pluxel/workbench/dev'
 
 export default defineConfig({
@@ -124,7 +124,7 @@ export default defineConfig({
 
 `entry` 是相对 Vite root 或绝对文件路径，必须存在。应用仍需安装 `workbenchHttp()`；附件沿用其 UI 路径，将 HTML 交给同一 Vite 的转换链与 HMR，不创建另一个 server、管理连接或 Plugin generation。Host 替换或关闭会释放附件，重复附加到同一 Shell 会失败。
 
-浏览器入口及其 React、CSS、路由生成配置由应用负责。开发仓库官方 Shell 时，指定 `packages/workbench-app/src/client.tsx`，并沿用 `packages/workbench-app/vite.config.ts` 对应的前端转换、共享依赖和 Sass 配置；附件不会根据 workspace 路径猜测这些配置。源码模式不要求先构建 Shell，生产构建仍需要交付已构建资源。原始模块与更新错误由现有 Vite 报告。
+浏览器入口及其 React、CSS、路由生成配置由应用负责。开发仓库官方 Shell 时，指定 `packages/workbench/shell/src/client.tsx`，并沿用 `packages/workbench/shell/vite.config.ts` 对应的前端转换、共享依赖和 Sass 配置；附件不会根据 workspace 路径猜测这些配置。源码模式不要求先构建 Shell，生产构建仍需要交付已构建资源。原始模块与更新错误由现有 Vite 报告。
 
 ## 外部声明校验的上游限制
 
