@@ -4,7 +4,7 @@ import { workbenchFederationExpose, workbenchFederationProducerName } from '@plu
 import { RpcTarget, type RpcStub } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import { requireWorkbench, WorkbenchBackend } from '@pluxel/workbench/server'
@@ -283,437 +283,401 @@ class ConsumerPlugin extends BasePlugin {
 
 describe('Workbench vNext publication', () => {
 	it('rejects an explicit undefined binding for a binding-free Content definition', async () => {
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(NoPublicationPlugin)
 		host.start(NoPublicationPlugin)
 		await host.commit()
 
-		try {
-			const instance = requirePluginService(host.ctx).getInstance(
-				pluginNodeAddressOf(NoPublicationPlugin),
-			)
-			if (!instance) throw new Error('NoPublicationPlugin did not start')
-			const registry = requireWorkbench(host.ctx).registry as unknown as {
-				publish(owner: Context, definition: unknown, ...bindings: unknown[]): void
-			}
-
-			expect(() => registry.publish(instance.ctx, ContentWorkbench, undefined)).toThrow(
-				'bindings must be omitted for a binding-free definition',
-			)
-		} finally {
-			await host.dispose()
+		const instance = requirePluginService(host.ctx).getInstance(
+			pluginNodeAddressOf(NoPublicationPlugin),
+		)
+		if (!instance) throw new Error('NoPublicationPlugin did not start')
+		const registry = requireWorkbench(host.ctx).registry as unknown as {
+			publish(owner: Context, definition: unknown, ...bindings: unknown[]): void
 		}
+
+		expect(() => registry.publish(instance.ctx, ContentWorkbench, undefined)).toThrow(
+			'bindings must be omitted for a binding-free definition',
+		)
 	})
 
 	it('opens a static Content without a target, retained lease, or View quota', async () => {
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(ContentPlugin)
 		host.start(ContentPlugin)
 		await host.commit()
 
-		try {
-			const backend = requireWorkbench(host.ctx)
-			const session = backend.createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(ContentPlugin)
-			const layout = session.target.layoutDto({ target })
-			expect(layout.entries).toHaveLength(1)
-			const entry = layout.entries[0]!
-			expect(entry.descriptor).toMatchObject({ kind: 'content', key: 'guide' })
-			expect(entry).toHaveProperty('contentRef')
-			expect(entry).not.toHaveProperty('renderer')
-			expect(entry).not.toHaveProperty('federatedViewRef')
+		const backend = requireWorkbench(host.ctx)
+		const session = backend.createSession(localPrincipal, () => {})
+		const target = pluginNodeAddressOf(ContentPlugin)
+		const layout = session.target.layoutDto({ target })
+		expect(layout.entries).toHaveLength(1)
+		const entry = layout.entries[0]!
+		expect(entry.descriptor).toMatchObject({ kind: 'content', key: 'guide' })
+		expect(entry).toHaveProperty('contentRef')
+		expect(entry).not.toHaveProperty('renderer')
+		expect(entry).not.toHaveProperty('federatedViewRef')
 
-			for (let index = 0; index < 65; index += 1) {
-				const result = await session.target.openEntry({
-					layoutRevision: layout.revision,
-					target,
-					descriptor: entry.descriptor,
-				})
-				expect(result.ok).toBe(true)
-				if (!result.ok || result.value.kind !== 'content') throw new Error('Content open failed')
-				expect(result.value).not.toHaveProperty('api')
-				expect(result.value).not.toHaveProperty('provider')
-				expect(result.value.plan).toEqual({
-					version: 1,
-					kind: 'workbench-content',
-					document: { version: 1, blocks: [] },
-					slots: [],
-				})
-			}
-
-			host.stop(ContentPlugin)
-			await host.commit()
-			expect(session.signal.aborted).toBe(true)
-		} finally {
-			await host.dispose()
+		for (let index = 0; index < 65; index += 1) {
+			const result = await session.target.openEntry({
+				layoutRevision: layout.revision,
+				target,
+				descriptor: entry.descriptor,
+			})
+			expect(result.ok).toBe(true)
+			if (!result.ok || result.value.kind !== 'content') throw new Error('Content open failed')
+			expect(result.value).not.toHaveProperty('api')
+			expect(result.value).not.toHaveProperty('provider')
+			expect(result.value.plan).toEqual({
+				version: 1,
+				kind: 'workbench-content',
+				document: { version: 1, blocks: [] },
+				slots: [],
+			})
 		}
+
+		host.stop(ContentPlugin)
+		await host.commit()
+		expect(session.signal.aborted).toBe(true)
 	})
 
 	it('opens interactive Content on one framework root and releases its lifetime lease', async () => {
 		contentCount = 0
 		contentChanged = undefined
 		contentSignal = undefined
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(InteractiveContentPlugin)
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		try {
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(InteractiveContentPlugin)
-			const layout = session.target.layoutDto({ target })
-			const entry = layout.entries[0]!
-			const opened = await session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: entry.descriptor,
-			})
-			expect(opened.ok).toBe(true)
-			if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
-				throw new Error('interactive Content open failed')
-			}
-			expect(opened.value.presentation.slots.map((slot) => slot.key)).toEqual(['refresh', 'status'])
-			const updates: unknown[] = []
-			const disposeObserver = vi.fn()
-			const observer = Object.assign(
-				(outcome: unknown) =>
-					Object.assign(
-						Promise.resolve().then(() => updates.push(outcome)),
-						{
-							[Symbol.dispose]: vi.fn(),
-						},
-					),
-				{
-					dup: () => observer,
-					[Symbol.dispose]: disposeObserver,
-				},
-			) as unknown as Parameters<typeof opened.value.root.subscribe>[0] & WorkbenchContentObserver
-			await expect(opened.value.root.subscribeDto(observer)).resolves.toMatchObject({
-				ok: true,
-				data: { status: { count: 0 } },
-			})
-			await expect(opened.value.root.runDto('refresh')).resolves.toMatchObject({
-				action: { ok: true },
-				data: { ok: true, data: { status: { count: 1 } } },
-			})
-
-			contentCount = 2
-			contentChanged?.()
-			await vi.waitFor(() => expect(updates).toHaveLength(1))
-			expect(updates[0]).toMatchObject({ ok: true, data: { status: { count: 2 } } })
-
-			opened.value.root[Symbol.dispose]()
-			expect(contentSignal?.aborted).toBe(true)
-			expect(disposeObserver).toHaveBeenCalledTimes(1)
-			session.dispose()
-		} finally {
-			await host.dispose()
+		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const target = pluginNodeAddressOf(InteractiveContentPlugin)
+		const layout = session.target.layoutDto({ target })
+		const entry = layout.entries[0]!
+		const opened = await session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: entry.descriptor,
+		})
+		expect(opened.ok).toBe(true)
+		if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+			throw new Error('interactive Content open failed')
 		}
+		expect(opened.value.presentation.slots.map((slot) => slot.key)).toEqual(['refresh', 'status'])
+		const updates: unknown[] = []
+		const disposeObserver = vi.fn()
+		const observer = Object.assign(
+			(outcome: unknown) =>
+				Object.assign(
+					Promise.resolve().then(() => updates.push(outcome)),
+					{
+						[Symbol.dispose]: vi.fn(),
+					},
+				),
+			{
+				dup: () => observer,
+				[Symbol.dispose]: disposeObserver,
+			},
+		) as unknown as Parameters<typeof opened.value.root.subscribe>[0] & WorkbenchContentObserver
+		await expect(opened.value.root.subscribeDto(observer)).resolves.toMatchObject({
+			ok: true,
+			data: { status: { count: 0 } },
+		})
+		await expect(opened.value.root.runDto('refresh')).resolves.toMatchObject({
+			action: { ok: true },
+			data: { ok: true, data: { status: { count: 1 } } },
+		})
+
+		contentCount = 2
+		contentChanged?.()
+		await vi.waitFor(() => expect(updates).toHaveLength(1))
+		expect(updates[0]).toMatchObject({ ok: true, data: { status: { count: 2 } } })
+
+		opened.value.root[Symbol.dispose]()
+		expect(contentSignal?.aborted).toBe(true)
+		expect(disposeObserver).toHaveBeenCalledTimes(1)
+		session.dispose()
 	})
 
 	it('aborts the Content lifetime and releases opened quota when an observer rejects', async () => {
 		contentCount = 0
 		contentChanged = undefined
 		contentSignal = undefined
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(InteractiveContentPlugin)
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		try {
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(InteractiveContentPlugin)
-			const layout = session.target.layoutDto({ target })
-			const input = {
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			}
-			const opened = await session.target.openEntry(input)
-			if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
-				throw new Error('interactive Content open failed')
-			}
-			const lifetime = contentSignal
-			if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
-			const retained = retainedContentObserver(() => Promise.reject(new Error('browser gone')))
-			await opened.value.root.subscribeDto(retained.observer)
-
-			contentChanged?.()
-			await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
-			expect(retained.disposeObserver).toHaveBeenCalledTimes(1)
-			expect(retained.disposeResults[0]).toHaveBeenCalledTimes(1)
-
-			for (let index = 0; index < 64; index += 1) {
-				await expect(session.target.openEntry(input)).resolves.toMatchObject({ ok: true })
-			}
-			await expect(session.target.openEntry(input)).resolves.toEqual({
-				ok: false,
-				code: 'quota_exceeded',
-			})
-			session.dispose()
-		} finally {
-			await host.dispose()
+		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const target = pluginNodeAddressOf(InteractiveContentPlugin)
+		const layout = session.target.layoutDto({ target })
+		const input = {
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
 		}
+		const opened = await session.target.openEntry(input)
+		if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+			throw new Error('interactive Content open failed')
+		}
+		const lifetime = contentSignal
+		if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
+		const retained = retainedContentObserver(() => Promise.reject(new Error('browser gone')))
+		await opened.value.root.subscribeDto(retained.observer)
+
+		contentChanged?.()
+		await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
+		expect(retained.disposeObserver).toHaveBeenCalledTimes(1)
+		expect(retained.disposeResults[0]).toHaveBeenCalledTimes(1)
+
+		for (let index = 0; index < 64; index += 1) {
+			await expect(session.target.openEntry(input)).resolves.toMatchObject({ ok: true })
+		}
+		await expect(session.target.openEntry(input)).resolves.toEqual({
+			ok: false,
+			code: 'quota_exceeded',
+		})
+		session.dispose()
 	})
 
 	it('aborts the Content lifetime when an observer throws synchronously', async () => {
 		contentChanged = undefined
 		contentSignal = undefined
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(InteractiveContentPlugin)
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		try {
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(InteractiveContentPlugin)
-			const layout = session.target.layoutDto({ target })
-			const opened = await session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			})
-			if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
-				throw new Error('interactive Content open failed')
-			}
-			const lifetime = contentSignal
-			if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
-			const disposeObserver = vi.fn()
-			const observer = Object.assign(
-				vi.fn(() => {
-					throw new Error('synchronous callback failure')
-				}),
-				{
-					dup: () => observer,
-					[Symbol.dispose]: disposeObserver,
-				},
-			) as unknown as Parameters<typeof opened.value.root.subscribe>[0]
-			await opened.value.root.subscribeDto(observer)
-
-			contentChanged?.()
-			await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
-			expect(disposeObserver).toHaveBeenCalledTimes(1)
-			session.dispose()
-		} finally {
-			await host.dispose()
+		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const target = pluginNodeAddressOf(InteractiveContentPlugin)
+		const layout = session.target.layoutDto({ target })
+		const opened = await session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
+		})
+		if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
+			throw new Error('interactive Content open failed')
 		}
+		const lifetime = contentSignal
+		if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
+		const disposeObserver = vi.fn()
+		const observer = Object.assign(
+			vi.fn(() => {
+				throw new Error('synchronous callback failure')
+			}),
+			{
+				dup: () => observer,
+				[Symbol.dispose]: disposeObserver,
+			},
+		) as unknown as Parameters<typeof opened.value.root.subscribe>[0]
+		await opened.value.root.subscribeDto(observer)
+
+		contentChanged?.()
+		await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
+		expect(disposeObserver).toHaveBeenCalledTimes(1)
+		session.dispose()
 	})
 
 	it('keeps layout capability-free and opens one fresh root lazily', async () => {
 		localFactoryCalls = 0
 		disposedTargets.length = 0
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
 
-		try {
-			const backend = requireWorkbench(host.ctx)
-			let invalidated = false
-			const session = backend.createSession(localPrincipal, () => {
-				invalidated = true
-			})
-			const target = pluginNodeAddressOf(LocalPlugin)
-			const layout = session.target.layoutDto({ target })
+		const backend = requireWorkbench(host.ctx)
+		let invalidated = false
+		const session = backend.createSession(localPrincipal, () => {
+			invalidated = true
+		})
+		const target = pluginNodeAddressOf(LocalPlugin)
+		const layout = session.target.layoutDto({ target })
 
-			expect(layout.entries).toHaveLength(1)
-			expect(localFactoryCalls).toBe(0)
-			expect(layout.entries[0]).not.toHaveProperty('api')
+		expect(layout.entries).toHaveLength(1)
+		expect(localFactoryCalls).toBe(0)
+		expect(layout.entries[0]).not.toHaveProperty('api')
 
-			const result = await session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			})
-			expect(result.ok).toBe(true)
-			expect(localFactoryCalls).toBe(1)
-			if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
-			const openedTarget = result.value.api as SettingsTarget
-			expect(openedTarget.snapshot()).toEqual({ enabled: true })
+		const result = await session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
+		})
+		expect(result.ok).toBe(true)
+		expect(localFactoryCalls).toBe(1)
+		if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
+		const openedTarget = result.value.api as SettingsTarget
+		expect(openedTarget.snapshot()).toEqual({ enabled: true })
 
-			session.dispose()
-			expect(openedTarget.disposed).toBe(true)
-			expect(openedTarget.signal.aborted).toBe(true)
-			expect(invalidated).toBe(false)
-		} finally {
-			await host.dispose()
-		}
+		session.dispose()
+		expect(openedTarget.disposed).toBe(true)
+		expect(openedTarget.signal.aborted).toBe(true)
+		expect(invalidated).toBe(false)
 	})
 
 	it('opens ready entries after producer-status-only layout revisions', async () => {
 		localFactoryCalls = 0
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
 
-		try {
-			const target = pluginNodeAddressOf(LocalPlugin)
-			const instance = requirePluginService(host.ctx).getInstance(target)
-			if (!instance) throw new Error('LocalPlugin did not start')
-			const artifacts = mutableWorkbenchArtifactLookup()
-			artifacts.setReady()
-			const backend = new WorkbenchBackend(host.ctx, {}, artifacts.lookup, emptyContentLookup)
-			backend.producerStatus.enablePendingProducerBuilds()
-			backend.publish(instance.ctx, LocalWorkbench, {
-				settings: ({ signal }) => {
-					localFactoryCalls += 1
-					return new SettingsTarget(signal)
-				},
-			})
-			const session = backend.createSession(localPrincipal, () => {})
-			const layout = session.target.layoutDto({ target })
+		const target = pluginNodeAddressOf(LocalPlugin)
+		const instance = requirePluginService(host.ctx).getInstance(target)
+		if (!instance) throw new Error('LocalPlugin did not start')
+		const artifacts = mutableWorkbenchArtifactLookup()
+		artifacts.setReady()
+		const backend = new WorkbenchBackend(host.ctx, {}, artifacts.lookup, emptyContentLookup)
+		backend.producerStatus.enablePendingProducerBuilds()
+		backend.publish(instance.ctx, LocalWorkbench, {
+			settings: ({ signal }) => {
+				localFactoryCalls += 1
+				return new SettingsTarget(signal)
+			},
+		})
+		const session = backend.createSession(localPrincipal, () => {})
+		const layout = session.target.layoutDto({ target })
 
-			backend.producerStatus.setBuilding({
-				definition: target.definition,
-				producer: workbenchFederationProducerName(target.definition),
-				buildRevision: 'pending-build',
-			})
+		backend.producerStatus.setBuilding({
+			definition: target.definition,
+			producer: workbenchFederationProducerName(target.definition),
+			buildRevision: 'pending-build',
+		})
 
-			const result = await session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			})
-			expect(result.ok).toBe(true)
-			expect(localFactoryCalls).toBe(1)
-			session.dispose()
-		} finally {
-			await host.dispose()
-		}
+		const result = await session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
+		})
+		expect(result.ok).toBe(true)
+		expect(localFactoryCalls).toBe(1)
+		session.dispose()
 	})
 
 	it('keeps federated entries visible while their producer artifact is unavailable', async () => {
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
 
-		try {
-			const target = pluginNodeAddressOf(LocalPlugin)
-			const instance = requirePluginService(host.ctx).getInstance(target)
-			if (!instance) throw new Error('LocalPlugin did not start')
-			const artifacts = mutableWorkbenchArtifactLookup()
-			const backend = new WorkbenchBackend(host.ctx, {}, artifacts.lookup, emptyContentLookup)
-			backend.producerStatus.enablePendingProducerBuilds()
-			backend.producerStatus.setBuilding({
-				definition: target.definition,
-				producer: workbenchFederationProducerName(target.definition),
-				buildRevision: 'pending-build',
-			})
-			backend.publish(instance.ctx, LocalWorkbench, {
-				settings: ({ signal }) => new SettingsTarget(signal),
-			})
+		const target = pluginNodeAddressOf(LocalPlugin)
+		const instance = requirePluginService(host.ctx).getInstance(target)
+		if (!instance) throw new Error('LocalPlugin did not start')
+		const artifacts = mutableWorkbenchArtifactLookup()
+		const backend = new WorkbenchBackend(host.ctx, {}, artifacts.lookup, emptyContentLookup)
+		backend.producerStatus.enablePendingProducerBuilds()
+		backend.producerStatus.setBuilding({
+			definition: target.definition,
+			producer: workbenchFederationProducerName(target.definition),
+			buildRevision: 'pending-build',
+		})
+		backend.publish(instance.ctx, LocalWorkbench, {
+			settings: ({ signal }) => new SettingsTarget(signal),
+		})
 
-			let invalidated: Error | undefined
-			const session = backend.createSession(localPrincipal, (cause) => {
-				invalidated = cause
-			})
-			const building = session.target.layoutDto({ target })
-			expect(building.entries).toHaveLength(1)
-			expect(building.entries[0]).toMatchObject({
-				descriptor: { kind: 'view', key: 'settings' },
-				federatedViewUnavailable: { reason: 'building' },
-			})
-			expect(building.entries[0]).not.toHaveProperty('federatedViewRef')
-			await expect(
-				backend.registry.openEntry(
-					localPrincipal,
-					new AbortController().signal,
-					{
-						layoutRevision: building.revision,
-						target,
-						descriptor: {
-							kind: 'view',
-							owner: target.definition,
-							key: 'settings',
-						},
+		let invalidated: Error | undefined
+		const session = backend.createSession(localPrincipal, (cause) => {
+			invalidated = cause
+		})
+		const building = session.target.layoutDto({ target })
+		expect(building.entries).toHaveLength(1)
+		expect(building.entries[0]).toMatchObject({
+			descriptor: { kind: 'view', key: 'settings' },
+			federatedViewUnavailable: { reason: 'building' },
+		})
+		expect(building.entries[0]).not.toHaveProperty('federatedViewRef')
+		await expect(
+			backend.registry.openEntry(
+				localPrincipal,
+				new AbortController().signal,
+				{
+					layoutRevision: building.revision,
+					target,
+					descriptor: {
+						kind: 'view',
+						owner: target.definition,
+						key: 'settings',
 					},
-					new Set(),
-				),
-			).resolves.toEqual({ ok: false, code: 'target_unavailable' })
+				},
+				new Set(),
+			),
+		).resolves.toEqual({ ok: false, code: 'target_unavailable' })
 
-			backend.producerStatus.setFailed({
-				definition: target.definition,
+		backend.producerStatus.setFailed({
+			definition: target.definition,
+			producer: workbenchFederationProducerName(target.definition),
+			buildRevision: 'failed-build',
+			error: new Error('renderer syntax error'),
+		})
+		expect(session.signal.aborted).toBe(false)
+		expect(invalidated).toBeUndefined()
+		const failed = backend.registry.getLayout(target)
+		expect(failed.revision).toBeGreaterThan(building.revision)
+		expect(failed.entries).toHaveLength(1)
+		expect(failed.entries[0]).toMatchObject({
+			descriptor: { kind: 'view', key: 'settings' },
+			federatedViewUnavailable: {
+				reason: 'failed',
+				message: 'renderer syntax error',
+			},
+		})
+
+		artifacts.setReady()
+		const visible = backend.registry.getLayout(target)
+		expect(visible.entries).toHaveLength(1)
+		expect(visible.entries[0]).toMatchObject({
+			descriptor: { kind: 'view', key: 'settings' },
+			federatedViewRef: {
 				producer: workbenchFederationProducerName(target.definition),
-				buildRevision: 'failed-build',
-				error: new Error('renderer syntax error'),
-			})
-			expect(session.signal.aborted).toBe(false)
-			expect(invalidated).toBeUndefined()
-			const failed = backend.registry.getLayout(target)
-			expect(failed.revision).toBeGreaterThan(building.revision)
-			expect(failed.entries).toHaveLength(1)
-			expect(failed.entries[0]).toMatchObject({
-				descriptor: { kind: 'view', key: 'settings' },
-				federatedViewUnavailable: {
-					reason: 'failed',
-					message: 'renderer syntax error',
-				},
-			})
-
-			artifacts.setReady()
-			const visible = backend.registry.getLayout(target)
-			expect(visible.entries).toHaveLength(1)
-			expect(visible.entries[0]).toMatchObject({
-				descriptor: { kind: 'view', key: 'settings' },
-				federatedViewRef: {
-					producer: workbenchFederationProducerName(target.definition),
-					buildRevision: 'ready-build',
-					expose: workbenchFederationExpose('settings'),
-				},
-			})
-			expect(visible.entries[0]).not.toHaveProperty('federatedViewUnavailable')
-		} finally {
-			await host.dispose()
-		}
+				buildRevision: 'ready-build',
+				expose: workbenchFederationExpose('settings'),
+			},
+		})
+		expect(visible.entries[0]).not.toHaveProperty('federatedViewUnavailable')
 	})
 
 	it('rejects federated publications without artifacts outside development pending mode', async () => {
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
 
-		try {
-			const target = pluginNodeAddressOf(LocalPlugin)
-			const instance = requirePluginService(host.ctx).getInstance(target)
-			if (!instance) throw new Error('LocalPlugin did not start')
-			const pendingOnlyBackend = new WorkbenchBackend(
-				host.ctx,
-				{},
-				Object.freeze({ resolveEntry: () => undefined }),
-				emptyContentLookup,
-			)
-			pendingOnlyBackend.producerStatus.enablePendingProducerBuilds()
+		const target = pluginNodeAddressOf(LocalPlugin)
+		const instance = requirePluginService(host.ctx).getInstance(target)
+		if (!instance) throw new Error('LocalPlugin did not start')
+		const pendingOnlyBackend = new WorkbenchBackend(
+			host.ctx,
+			{},
+			Object.freeze({ resolveEntry: () => undefined }),
+			emptyContentLookup,
+		)
+		pendingOnlyBackend.producerStatus.enablePendingProducerBuilds()
 
-			expect(() =>
-				pendingOnlyBackend.publish(instance.ctx, LocalWorkbench, {
-					settings: ({ signal }) => new SettingsTarget(signal),
-				}),
-			).toThrow('no committed federation artifact for view "settings"')
+		expect(() =>
+			pendingOnlyBackend.publish(instance.ctx, LocalWorkbench, {
+				settings: ({ signal }) => new SettingsTarget(signal),
+			}),
+		).toThrow('no committed federation artifact for view "settings"')
 
-			const strictStatusBackend = new WorkbenchBackend(
-				host.ctx,
-				{},
-				Object.freeze({ resolveEntry: () => undefined }),
-				emptyContentLookup,
-			)
-			strictStatusBackend.producerStatus.setFailed({
-				definition: target.definition,
-				producer: workbenchFederationProducerName(target.definition),
-				buildRevision: 'failed-build',
-				error: new Error('renderer syntax error'),
-			})
+		const strictStatusBackend = new WorkbenchBackend(
+			host.ctx,
+			{},
+			Object.freeze({ resolveEntry: () => undefined }),
+			emptyContentLookup,
+		)
+		strictStatusBackend.producerStatus.setFailed({
+			definition: target.definition,
+			producer: workbenchFederationProducerName(target.definition),
+			buildRevision: 'failed-build',
+			error: new Error('renderer syntax error'),
+		})
 
-			expect(() =>
-				strictStatusBackend.publish(instance.ctx, LocalWorkbench, {
-					settings: ({ signal }) => new SettingsTarget(signal),
-				}),
-			).toThrow('no committed federation artifact for view "settings"')
-		} finally {
-			await host.dispose()
-		}
+		expect(() =>
+			strictStatusBackend.publish(instance.ctx, LocalWorkbench, {
+				settings: ({ signal }) => new SettingsTarget(signal),
+			}),
+		).toThrow('no committed federation artifact for view "settings"')
 	})
 
 	it('rejects an RpcTarget that a factory already exported', async () => {
@@ -909,126 +873,110 @@ describe('Workbench vNext publication', () => {
 
 	it('server-rematches parameterized routes and rejects browser params', async () => {
 		routedParams = undefined
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(RoutedPlugin)
 		host.start(RoutedPlugin)
 		await host.commit()
-		try {
-			const backend = requireWorkbench(host.ctx)
-			const session = backend.createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(RoutedPlugin)
-			const layout = session.target.layoutDto({ target })
-			// Global routing includes parameterized routes that do not enter navigation.
-			expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
-			const result = await session.target.openEntry({
+		const backend = requireWorkbench(host.ctx)
+		const session = backend.createSession(localPrincipal, () => {})
+		const target = pluginNodeAddressOf(RoutedPlugin)
+		const layout = session.target.layoutDto({ target })
+		// Global routing includes parameterized routes that do not enter navigation.
+		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
+		const result = await session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
+			location: '/accounts/account%201',
+		})
+		expect(result.ok).toBe(true)
+		expect(routedParams).toEqual({ accountId: 'account 1' })
+		await expect(
+			session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
 				descriptor: layout.entries[0]!.descriptor,
-				location: '/accounts/account%201',
-			})
-			expect(result.ok).toBe(true)
-			expect(routedParams).toEqual({ accountId: 'account 1' })
-			await expect(
-				session.target.openEntry({
-					layoutRevision: layout.revision,
-					target,
-					descriptor: layout.entries[0]!.descriptor,
-					location: '/other/account%201',
-				}),
-			).resolves.toEqual({ ok: false, code: 'target_unavailable' })
-			session.dispose()
-		} finally {
-			await host.dispose()
-		}
+				location: '/other/account%201',
+			}),
+		).resolves.toEqual({ ok: false, code: 'target_unavailable' })
+		session.dispose()
 	})
 
 	it('scopes identical route paths to their target Plugin', async () => {
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add([SharedRoutePluginA, SharedRoutePluginB])
 		host.start(SharedRoutePluginA)
 		host.start(SharedRoutePluginB)
 		await host.commit()
-		try {
-			const backend = requireWorkbench(host.ctx)
-			const session = backend.createSession(localPrincipal, () => {})
-			const layoutA = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginA) })
-			const layoutB = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginB) })
-			expect(layoutA.entries[0]?.placement).toMatchObject({ path: '/settings' })
-			expect(layoutB.entries[0]?.placement).toMatchObject({ path: '/settings' })
-			expect(session.target.layoutDto({ target: null }).entries).toEqual(
-				expect.arrayContaining([...layoutA.entries, ...layoutB.entries]),
-			)
-			session.dispose()
-		} finally {
-			await host.dispose()
-		}
+		const backend = requireWorkbench(host.ctx)
+		const session = backend.createSession(localPrincipal, () => {})
+		const layoutA = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginA) })
+		const layoutB = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginB) })
+		expect(layoutA.entries[0]?.placement).toMatchObject({ path: '/settings' })
+		expect(layoutB.entries[0]?.placement).toMatchObject({ path: '/settings' })
+		expect(session.target.layoutDto({ target: null }).entries).toEqual(
+			expect.arrayContaining([...layoutA.entries, ...layoutB.entries]),
+		)
+		session.dispose()
 	})
 
 	it('opens an Attachment through one exact required edge', async () => {
 		attachmentConsumerNode = undefined
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add([ProviderPlugin, ConsumerPlugin])
 		host.start(ProviderPlugin)
 		host.start(ConsumerPlugin)
 		await host.commit()
-		try {
-			const backend = requireWorkbench(host.ctx)
-			const session = backend.createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(ConsumerPlugin)
-			const layout = session.target.layoutDto({ target })
-			expect(layout.entries).toHaveLength(1)
-			expect(layout.entries[0]!.descriptor).toMatchObject({
-				kind: 'attachment-placement',
-				key: 'fonts',
-				provider: { kind: 'attachment', key: 'picker' },
-			})
+		const backend = requireWorkbench(host.ctx)
+		const session = backend.createSession(localPrincipal, () => {})
+		const target = pluginNodeAddressOf(ConsumerPlugin)
+		const layout = session.target.layoutDto({ target })
+		expect(layout.entries).toHaveLength(1)
+		expect(layout.entries[0]!.descriptor).toMatchObject({
+			kind: 'attachment-placement',
+			key: 'fonts',
+			provider: { kind: 'attachment', key: 'picker' },
+		})
 
-			const result = await session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			})
-			expect(result.ok).toBe(true)
-			if (!result.ok || result.value.kind !== 'attachment') throw new Error('open failed')
-			expect(result.value).toHaveProperty('provider')
-			expect(result.value).toHaveProperty('consumer')
-			expect(attachmentConsumerNode).toEqual(target)
-			session.dispose()
-		} finally {
-			await host.dispose()
-		}
+		const result = await session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok || result.value.kind !== 'attachment') throw new Error('open failed')
+		expect(result.value).toHaveProperty('provider')
+		expect(result.value).toHaveProperty('consumer')
+		expect(attachmentConsumerNode).toEqual(target)
+		session.dispose()
 	})
 
 	it('expires the whole socket epoch and opened root on owner withdrawal', async () => {
-		const host = await createServiceInternalTestHarness({ workbench: true })
+		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
-		try {
-			const backend = requireWorkbench(host.ctx)
-			let invalidation: Error | undefined
-			const session = backend.createSession(localPrincipal, (cause) => {
-				invalidation = cause
-			})
-			const target = pluginNodeAddressOf(LocalPlugin)
-			const layout = session.target.layoutDto({ target })
-			const result = await session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			})
-			if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
-			const openedTarget = result.value.api as SettingsTarget
+		const backend = requireWorkbench(host.ctx)
+		let invalidation: Error | undefined
+		const session = backend.createSession(localPrincipal, (cause) => {
+			invalidation = cause
+		})
+		const target = pluginNodeAddressOf(LocalPlugin)
+		const layout = session.target.layoutDto({ target })
+		const result = await session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
+		})
+		if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
+		const openedTarget = result.value.api as SettingsTarget
 
-			host.stop(LocalPlugin)
-			await host.commit()
-			expect(openedTarget.signal.aborted).toBe(true)
-			expect(openedTarget.disposed).toBe(true)
-			expect(session.signal.aborted).toBe(true)
-			expect(invalidation?.message).toContain('publication changed')
-		} finally {
-			await host.dispose()
-		}
+		host.stop(LocalPlugin)
+		await host.commit()
+		expect(openedTarget.signal.aborted).toBe(true)
+		expect(openedTarget.disposed).toBe(true)
+		expect(session.signal.aborted).toBe(true)
+		expect(invalidation?.message).toContain('publication changed')
 	})
 })
 

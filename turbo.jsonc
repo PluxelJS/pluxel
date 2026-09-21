@@ -27,6 +27,10 @@
 			],
 			"outputLogs": "new-only",
 		},
+		"@pluxel/commands#build": {
+			"dependsOn": [],
+			"outputs": ["dist/**"],
+		},
 		"@pluxel/core#build": {
 			"dependsOn": ["@pluxel/context#build"],
 			"outputs": ["dist/**"],
@@ -91,7 +95,7 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/test#build": {
-			"dependsOn": ["@pluxel/rolldown#build"],
+			"dependsOn": ["@pluxel/rolldown#build", "@pluxel/services#build", "@pluxel/workbench#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",

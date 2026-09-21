@@ -221,7 +221,7 @@ import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
 await host.start([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
 ```
 
-这里的 `host` 是 `createServiceTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；需要同一边界内原子设置多个
+这里的 `host` 是 `createTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；需要同一边界内原子设置多个
 Plugin 时使用同步 `commit()` callback，首次配置放在 `initialConfig`。production static/dynamic host 通过自己的
 ConfigService 和 Host state 管理相同 topology 与 config。
 

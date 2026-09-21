@@ -1,5 +1,5 @@
 import { defineDevConsole } from '@pluxel/host-dev/console'
-import { definePluginFork } from '@pluxel/core/test'
+import { definePluginFork } from '@pluxel/core/internal/test'
 import type { BasePlugin, PluginNodeAddress } from '@pluxel/core'
 import type { DevConsole, DevScript } from '@pluxel/host-dev/console'
 

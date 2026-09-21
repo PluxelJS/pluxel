@@ -76,7 +76,7 @@ await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPl
 
 consumer 仍只依赖 `Rates`。Redis adapter 使用 Redis server time，并在单 key Lua 调用中校验 policy、更新状态和 TTL，避免多个实例间的读写竞态。
 
-上面的 `host` 是 `createServiceTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；同一 application boundary 的
+上面的 `host` 是 `createTestHost()` 作者 fixture。`start()` 立即提交并等待 lifecycle 稳定；同一 application boundary 的
 多项原子 setup 使用同步 `commit()` callback，首次配置使用 `initialConfig`。production static/dynamic host 通过自己的
 Host config records 与 state 表达相同配置和启动策略。
 

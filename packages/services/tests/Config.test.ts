@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { consumePluginDefinitionCandidate } from '@pluxel/test/unsafe'
 import * as v from 'valibot'
 

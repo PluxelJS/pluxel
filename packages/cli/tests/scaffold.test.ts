@@ -388,7 +388,7 @@ describe('scaffold template rendering', () => {
 		expect(pluginTest).toContain("from 'pluxel-plugin-hello-world'")
 		expect(pluginTest).not.toContain("from '../src/")
 		expect(source).not.toContain('export default')
-		expect(pluginTest).toContain('createCoreTestHost')
+		expect(pluginTest).toContain('createTestHost')
 		expect(pluginTest).toContain("initialConfig: { message: 'configured' }")
 		expect(pluginTest).not.toContain('createRuntimeHost')
 		expect(pluginTest).not.toContain('host.cfg(')

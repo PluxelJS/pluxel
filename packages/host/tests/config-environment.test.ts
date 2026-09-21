@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { requireConfigService } from '@pluxel/core/internal'
 import * as v from 'valibot'

@@ -398,27 +398,23 @@ async function canonicalArtifactFile(root: string): Promise<string> {
 }
 
 async function readArtifactFile(path: string): Promise<Buffer> {
-	const file = await open(path, 'r')
-	try {
-		const fileStat = await file.stat()
-		if (!fileStat.isFile()) throw new TypeError('[workbench] Content artifact is not a file')
-		if (fileStat.size > MAX_CONTENT_ARTIFACT_BYTES) {
-			throw new TypeError('[workbench] Content artifact exceeds the serialized byte budget')
-		}
-		const buffer = Buffer.allocUnsafe(MAX_CONTENT_ARTIFACT_BYTES + 1)
-		let bytesRead = 0
-		while (bytesRead < buffer.byteLength) {
-			const result = await file.read(buffer, bytesRead, buffer.byteLength - bytesRead, bytesRead)
-			if (result.bytesRead === 0) break
-			bytesRead += result.bytesRead
-		}
-		if (bytesRead > MAX_CONTENT_ARTIFACT_BYTES) {
-			throw new TypeError('[workbench] Content artifact exceeds the serialized byte budget')
-		}
-		return buffer.subarray(0, bytesRead)
-	} finally {
-		await file.close()
+	await using file = await open(path, 'r')
+	const fileStat = await file.stat()
+	if (!fileStat.isFile()) throw new TypeError('[workbench] Content artifact is not a file')
+	if (fileStat.size > MAX_CONTENT_ARTIFACT_BYTES) {
+		throw new TypeError('[workbench] Content artifact exceeds the serialized byte budget')
 	}
+	const buffer = Buffer.allocUnsafe(MAX_CONTENT_ARTIFACT_BYTES + 1)
+	let bytesRead = 0
+	while (bytesRead < buffer.byteLength) {
+		const result = await file.read(buffer, bytesRead, buffer.byteLength - bytesRead, bytesRead)
+		if (result.bytesRead === 0) break
+		bytesRead += result.bytesRead
+	}
+	if (bytesRead > MAX_CONTENT_ARTIFACT_BYTES) {
+		throw new TypeError('[workbench] Content artifact exceeds the serialized byte budget')
+	}
+	return buffer.subarray(0, bytesRead)
 }
 
 function digest(input: unknown, label: string): string {

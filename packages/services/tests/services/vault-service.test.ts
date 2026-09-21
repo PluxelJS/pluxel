@@ -10,7 +10,7 @@ import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
 } from '@pluxel/services/internal/test'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { pluginNodePhysicalKey } from '../../src/internal/plugin-address'
@@ -56,33 +56,29 @@ async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
 
 describe('VaultService (shared mount runtime)', () => {
 	it('keeps optional capability types and disabled plans honest', async () => {
-		const disabled = await createServiceInternalTestContext({ workbench: false })
-		try {
+		{
+			await using disabled = await createServiceInternalTestContext({ workbench: false })
+
 			expectTypeOf(disabled.ctx.vault).toEqualTypeOf<VaultStorageApi | undefined>()
 			expectTypeOf(disabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminApi | undefined>()
 			expect('vault' in disabled.ctx).toBe(false)
 			expect('vaultAdmin' in disabled.ctx).toBe(false)
 			expect(disabled.ctx.workbench).toBeUndefined()
 			expect(() => requireWorkbench(disabled.ctx)).toThrow('does not install workbench.host')
-		} finally {
-			await disabled.dispose()
 		}
 
-		const enabled = await createServiceInternalTestContext({
+		await using enabled = await createServiceInternalTestContext({
 			workbench: false,
 			services: [...standardServices({ persistence: { mode: 'memory' } }), installVault()],
 		})
-		try {
-			if (!enabled.ctx.vault || !enabled.ctx.vaultAdmin) {
-				throw new Error('Explicit Vault configuration did not install its capabilities')
-			}
-			expectTypeOf(enabled.ctx.vault).toEqualTypeOf<VaultStorageApi>()
-			expectTypeOf(enabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminApi>()
-			expect(enabled.ctx.vault).toBeDefined()
-			expect(enabled.ctx.vaultAdmin).toBeDefined()
-		} finally {
-			await enabled.dispose()
+
+		if (!enabled.ctx.vault || !enabled.ctx.vaultAdmin) {
+			throw new Error('Explicit Vault configuration did not install its capabilities')
 		}
+		expectTypeOf(enabled.ctx.vault).toEqualTypeOf<VaultStorageApi>()
+		expectTypeOf(enabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminApi>()
+		expect(enabled.ctx.vault).toBeDefined()
+		expect(enabled.ctx.vaultAdmin).toBeDefined()
 	})
 
 	it('startup preflight creates an empty shared mount before plugin access', async () => {

@@ -58,6 +58,11 @@ export class NodeModuleService {
 		return owner === this.ctx ? this : new NodeModuleService(owner, undefined, this.shared)
 	}
 
+	/** @internal Explicit artifact configuration must not be replaced by automatic source compilation. */
+	get hasArtifactConfiguration(): boolean {
+		return this.shared.artifacts.root !== undefined || this.shared.artifacts.resolve !== undefined
+	}
+
 	async use(declaration: NodeModuleDeclaration, setup: NodeModuleSetup): Promise<void> {
 		if (typeof setup !== 'function') {
 			throw new TypeError('[pluxel/runtime] nodeModules.use() requires a setup callback')

@@ -178,19 +178,17 @@ describe('one-epoch Workbench layout runtime', () => {
 	it('publishes layout compilation failures as error snapshots', async () => {
 		const dispose = vi.fn()
 		const read = vi.fn(async () => ({ ...routeConflictLayout(), [Symbol.dispose]: dispose }))
-		const runtime = new WorkbenchLayoutRuntime({
-			layoutDto: read,
-		} as unknown as RpcStub<WorkbenchSessionApi>)
+		{
+			using runtime = new WorkbenchLayoutRuntime({
+				layoutDto: read,
+			} as unknown as RpcStub<WorkbenchSessionApi>)
 
-		try {
 			const release = runtime.retain(node)
 			await vi.waitFor(() => expect(runtime.getSnapshot(node).state).toBe('error'))
 			expect(runtime.getSnapshot(node).error?.message).toContain('ambiguous routes')
 			expect(read).toHaveBeenCalledOnce()
 			expect(dispose).toHaveBeenCalledOnce()
 			release()
-		} finally {
-			runtime[Symbol.dispose]()
 		}
 	})
 
@@ -200,14 +198,14 @@ describe('one-epoch Workbench layout runtime', () => {
 			.fn()
 			.mockResolvedValueOnce({ ...producerStatusLayout('building'), [Symbol.dispose]: dispose })
 			.mockResolvedValueOnce({ ...producerStatusLayout('failed'), [Symbol.dispose]: dispose })
-		const runtime = new WorkbenchLayoutRuntime(
-			{
-				layoutDto: read,
-			} as unknown as RpcStub<WorkbenchSessionApi>,
-			{ statusPollMs: 10 },
-		)
+		{
+			using runtime = new WorkbenchLayoutRuntime(
+				{
+					layoutDto: read,
+				} as unknown as RpcStub<WorkbenchSessionApi>,
+				{ statusPollMs: 10 },
+			)
 
-		try {
 			const release = runtime.retain(node)
 			await ready(runtime)
 			expect(runtime.getSnapshot(node).layout?.revision).toBe(8)
@@ -223,8 +221,6 @@ describe('one-epoch Workbench layout runtime', () => {
 			})
 
 			release()
-		} finally {
-			runtime[Symbol.dispose]()
 		}
 		expect(dispose).toHaveBeenCalledTimes(2)
 	})
@@ -235,14 +231,14 @@ describe('one-epoch Workbench layout runtime', () => {
 			.fn()
 			.mockResolvedValueOnce({ ...producerStatusLayout('failed'), [Symbol.dispose]: dispose })
 			.mockResolvedValueOnce({ ...layout(), [Symbol.dispose]: dispose })
-		const runtime = new WorkbenchLayoutRuntime(
-			{
-				layoutDto: read,
-			} as unknown as RpcStub<WorkbenchSessionApi>,
-			{ statusPollMs: 10 },
-		)
+		{
+			using runtime = new WorkbenchLayoutRuntime(
+				{
+					layoutDto: read,
+				} as unknown as RpcStub<WorkbenchSessionApi>,
+				{ statusPollMs: 10 },
+			)
 
-		try {
 			const release = runtime.retain(node)
 			await ready(runtime)
 			expect(runtime.getSnapshot(node).layout?.revision).toBe(9)
@@ -254,8 +250,6 @@ describe('one-epoch Workbench layout runtime', () => {
 			expect(runtime.getSnapshot(node).tabs[0]).not.toHaveProperty('federatedViewUnavailable')
 
 			release()
-		} finally {
-			runtime[Symbol.dispose]()
 		}
 		expect(dispose).toHaveBeenCalledTimes(2)
 	})

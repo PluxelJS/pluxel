@@ -1,6 +1,6 @@
-import { Http } from '@pluxel/services/http'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { Http, http } from '@pluxel/services/http'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
+import { createTestHost } from '@pluxel/test'
 import { Elysia, t } from 'elysia'
 import { describe, expect, it } from 'vitest'
 
@@ -71,7 +71,7 @@ class NativeElysiaIsolationB extends BasePlugin {
 describe('native Elysia authoring capability', () => {
 	it('preserves function plugins, async modules, context, schemas, errors and mounts', async () => {
 		{
-			await using host = await createServiceTestHost()
+			await using host = await createTestHost({ services: [http()] })
 
 			await host.start(NativeElysiaCapabilities)
 
@@ -130,7 +130,7 @@ describe('native Elysia authoring capability', () => {
 
 	it('keeps decorators and hooks local to each generation application', async () => {
 		{
-			await using host = await createServiceTestHost()
+			await using host = await createTestHost({ services: [http()] })
 
 			await host.start([NativeElysiaIsolationA, NativeElysiaIsolationB])
 

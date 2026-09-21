@@ -52,11 +52,6 @@
 			"import": "./dist/services.mjs",
 			"require": "./dist/services.cjs"
 		},
-		"./test": {
-			"@pluxel/source": "./src/test.ts",
-			"import": "./dist/test.mjs",
-			"require": "./dist/test.cjs"
-		},
 		"./toolchain": {
 			"@pluxel/source": "./src/toolchain.ts",
 			"import": "./dist/toolchain.mjs",
@@ -93,10 +88,6 @@
 			"./services": {
 				"import": "./dist/services.mjs",
 				"require": "./dist/services.cjs"
-			},
-			"./test": {
-				"import": "./dist/test.mjs",
-				"require": "./dist/test.cjs"
 			},
 			"./toolchain": {
 				"import": "./dist/toolchain.mjs",

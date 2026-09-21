@@ -26,4 +26,4 @@ Plugin definition facts由 Pluxel Vite/Rolldown semantic pass 生成。required 
 - `@pluxel/core`：Plugin Context、Plugin 作者面、standalone Context host re-export，以及 address/lifecycle 等只读公共契约；
 - `@pluxel/core/services`：effects、config helpers、module-augmented `EventsService` 与 `EvtChannel` 等基础服务；
 - `@pluxel/core/logger`：Context logger facade 与 structured Plugin category identity；
-- `@pluxel/core/test`：明确的 core 测试边界；测试 Plugin 仍应使用 semantic lowering。
+- `@pluxel/core/internal/test`：明确的 core 测试边界；测试 Plugin 仍应使用 semantic lowering。

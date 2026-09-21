@@ -88,7 +88,7 @@ class OrdersTarget extends RpcTarget implements OrdersApi {
 此例没有订阅或长任务，因此不需要额外的空 disposer。
 
 `RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
-`createLocalRpcClient()` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。
+Cap’n Web 的 `new RpcStub(target)` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。
 复用的是 contract、target class 和底层领域 service，不是已经打开的 target 实例：每个 session/open 都必须创建 fresh
 target，并由新的挂载方自己提供认证、授权、输入预算、取消和释放语义，不能假定 Workbench session 的保障仍然存在。
 只有出现这种真实的第二消费者时，才将共用 DTO/API 从 `workbench.ts` 提取到中立 contract module 或独立 package subpath；

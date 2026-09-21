@@ -196,7 +196,7 @@ await host.start(EChartsPlugin, {
 })
 ```
 
-这里的 `host` 是 `createServiceTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
+这里的 `host` 是 `createTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
 `host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
 
 | 字段                      |    默认值 | 职责                                               |

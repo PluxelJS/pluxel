@@ -1,4 +1,4 @@
-import type { PluginTestTarget } from '@pluxel/core/test'
+import type { PluginTestTarget } from '@pluxel/core/internal/test'
 import type {
 	WorkbenchOpenableEntry,
 	LocalWorkbenchEntryOptions,

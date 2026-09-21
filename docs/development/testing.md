@@ -3,37 +3,234 @@ title: 测试 Pluxel 插件
 description: 选择最小测试边界，用真实构建语义验证依赖、配置、HTTP、Workbench 与资源回收。
 ---
 
-本页帮助你验证插件能否启动、处理请求并在停止后释放资源。CLI 模板已配置 Vitest preset；在生成的插件目录运行 `pnpm test` 即可。手动接入已有项目时，先按下面的表选择测试宿主，再安装 preset。
+本页帮助你验证插件能否启动、处理请求并在停止后释放资源。CLI 模板已配置 Vitest preset；在生成的插件目录运行 `pnpm test` 即可。手动接入已有项目时，安装 preset，并显式选择测试需要的服务。
 
 插件测试需要真实的装饰器、依赖和配置转换。直接 `new` 实例或模拟 Context 只能验证普通对象行为，不能验证宿主加载和生命周期。
 
 如果目标是操作眼前正在运行的 dev 实例，coding agent 必须使用 [开发控制台](./dev-console.md)。本页的 test host 用于独立的回归测试，不连接当前 dev，也不共享它的数据目录。
 
-## 先选择最小边界
+## 目标：一个宿主，按需安装能力
 
-| 需要验证                                            | 测试入口                         |
-| --------------------------------------------------- | -------------------------------- |
-| 纯函数、普通对象                                    | 不使用 host                      |
-| Core graph、config、lifecycle、effects              | `@pluxel/core/test`              |
-| Plugin 与已安装服务                                 | `@pluxel/services/test`          |
-| Workbench publication 与 lease                      | `@pluxel/services/test`          |
-| 独立 local RPC                                      | `@pluxel/workbench/test`         |
-| 应用 configure、prepare 与冷启动策略                | `@pluxel/host` 的真实应用装配    |
-| dynamic source、Vite/HMR、HTTP 或 WebSocket carrier | 项目唯一 Vite 配置与真实构建产物 |
-| static deployment artifact、filesystem、assets、TLS | 启动真实 artifact                |
-| Workbench renderer 与 Shell                         | React/browser test               |
+插件作者只做两个选择：是否需要运行插件，以及这个测试需要哪些服务。需要运行插件时统一使用 `createTestHost()`；不再选择 Core host、Service host 或 Workbench host。
 
-删除外层 application、source 或 carrier 后仍成立的断言，应回到更小的 host。同一 Plugin behavior 不要在服务宿主、应用和开发集成
-三层重复测试。
+- 纯函数和普通对象直接测试；纯 RPC 使用 Cap’n Web 的 `RpcStub`。
+- 插件的依赖、配置、生命周期、HTTP、commands 与 Workbench 都使用同一个测试宿主模型。
+- 真实应用启动、物理网络、构建产物与浏览器仍使用对应真实环境；统一 host 不冒充这些环境。
+- 内部始终复用生产 Host 的运行图、配置与生命周期，不按选项切换两套具有不同语义的 Core/Services 执行器。
 
-所有 public host 都由创建它的测试拥有：
+## 唯一作者入口与默认值
+
+从 `@pluxel/test` 导入 `createTestHost()`、`definePluginFork()` 和测试断言错误类型。业务声明继续从 `@pluxel/core` 导入 `BasePlugin`、`Plugin`，服务工厂继续从原领域入口导入。`@pluxel/test/vitest` 只负责测试编译，`@pluxel/test/fixtures` 只负责文件等资源，不转发业务服务。
 
 ```ts no-twoslash
-await using host = await createServiceTestHost()
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { createTestHost } from '@pluxel/test'
+import { expect, it } from 'vitest'
+
+@Plugin()
+class CounterPlugin extends BasePlugin {
+	private count = 0
+	increment() {
+		return ++this.count
+	}
+}
+
+it('runs a plugin without optional services', async () => {
+	await using host = await createTestHost()
+	const counter = await host.start(CounterPlugin)
+	expect(counter.increment()).toBe(1)
+	await host.stop(CounterPlugin)
+	expect(host.isRunning(CounterPlugin)).toBe(false)
+})
 ```
 
-host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不支持 explicit resource management 时，在 `finally` 中调用
-`await host.dispose()`。
+配置面：
+
+```ts no-twoslash
+// 简化的配置轮廓；精确类型以 TestHostOptions 为准。
+type TestHostOptions = Readonly<{
+	services?: readonly HostService[]
+	workbench?: boolean
+	management?: boolean
+	config?: CoreHostConfig
+	state?: HostStateStoreOptions
+	configRecords?: HostConfigStoreOptions
+}>
+```
+
+| 选项                      | 语义                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `services`                | 默认 `[]`；完整服务列表，不隐式合并、不自动安装 standardServices                                                            |
+| `workbench`               | 默认 `false`；`true` 安装 Workbench 测试后端、Management 与打开 entry 的 driver                                             |
+| `management`              | 省略时随 `workbench` 启用，否则为 `false`；可单独设为 `true` 测管理面；与 `workbench: true` 同时显式设为 `false` 时拒绝配置 |
+| `config`                  | 复用 Core 配置，省略时采用测试 root 的默认配置；不是服务或插件 catalog 的容器                                               |
+| `state` / `configRecords` | 复用 Host 存储选项，省略时每个测试宿主独立使用内存，不写应用目录                                                            |
+
+Host 自己的图策略、配置记录与 Plugin 可消费的 Persistence 服务是不同职责。内存 Host 存储不等于默认安装 `ctx.persistence`；插件需要 Persistence 时仍显式选择服务。
+
+`createTestHost()` 统一返回 Promise，所有调用都写 `await using host = await createTestHost(...)`。不提供另一种同步工厂，也不提供 `mode: 'core' | 'service'`。
+
+## 官方源码工具链与运行时服务
+
+`@pluxel/test/vitest` 默认安装 Plugin 语义、依赖、配置、lint guard 与 Database 源码声明转换。测试仍显式选择运行时服务；配置编译插件不等于安装 Context capability。
+
+选择 `nodeModules()` 后，测试组合层为没有显式制品来源的服务接入正式 Node 源码编译器；搭配 `workers()` 可以从 TypeScript task entry 按需编译并执行真实 worker。编译资源由本次 host 拥有并回收，空服务或 HTTP-only 测试不创建该编译器。显式配置 Node 制品来源时仍消费该来源，不用源码编译掩盖损坏或缺失的产物。
+
+Workbench 测试后端使用测试制品，验证发布、RPC 和资源生命周期；不验证 MF/UI 制品构建、React 渲染或物理 WebSocket。Node 发布打包、native dependency 布局和开发 HMR 同样需要对应真实环境的验证。
+
+## 最终配置形态：包显式选择，工具链集中复用
+
+每个插件包可以保留一份很薄的 `vitest.config.ts`，明确选择测试 preset；无需重复列出官方转换插件。不自动查找、继承或合并仓库根配置，也不导入会启动开发应用的 Vite 配置。
+
+```ts no-twoslash
+// plugins/example/vitest.config.ts
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
+
+export default definePluxelVitestConfig({
+	root: import.meta.dirname,
+	test: { include: ['tests/**/*.test.ts'] },
+})
+```
+
+有项目自定义转换时，将可复用的插件工厂放在项目共享文件中，由开发和测试配置显式调用。以下文件与函数名属于项目示例，不是新增的框架 API：
+
+```ts no-twoslash
+// plugins/example/vitest.config.ts
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
+import { projectSourcePlugins } from '../../tooling/source-plugins'
+
+export default definePluxelVitestConfig({
+	root: import.meta.dirname,
+	plugins: projectSourcePlugins(),
+	test: { include: ['tests/**/*.test.ts'] },
+})
+```
+
+共享文件只创建所需插件，不启动 host、监听端口或读取当前开发实例。每份配置调用工厂取得自己的插件实例，避免跨项目共享有状态实例。需要先于官方转换执行的插件放入 `pluxel.prePlugins`；普通 `plugins` 接在 preset 的官方插件之后，实际执行仍遵循 Vite 的 `enforce` 和 hook 规则。官方插件由 preset 安装一次，共享列表不重复添加。
+
+确实需要共享整份配置时，作者显式导入并用 Vitest 的 `mergeConfig()` 合并，再将结果传给一次 `definePluxelVitestConfig()`；数组按合并规则组合，不能假设会自动去重插件。根配置可以通过 `test.projects` 发现各包的配置文件，负责统一执行；包的工具链仍由自身配置明确表达。独立插件项目在自己的根目录采用同一写法，不要求存在上级仓库。
+
+Vitest 默认可以读取 `vite.config.*`，但存在独立 `vitest.config.*` 时优先使用后者，不会自动合并两者。这里选择显式测试配置，是为了让测试接入可见且能独立运行，不是 Vitest 强制每包配置。外部服务的 Vite 转换按上述方式正常组合；纯 Rolldown 构建插件需接入对应构建流程。Vitest 的 `plugins` 只作用于其模块图，不会自动进入 Node/Worker 的独立制品构建。外部转换必须按对应构建入口配置，不能把 Vite 插件列表视为所有构建流程的通用配置。
+
+## 用生产服务工厂组合测试能力
+
+只测试 HTTP 的插件：
+
+```ts no-twoslash
+import { createTestHost } from '@pluxel/test'
+import { http } from '@pluxel/services/http'
+
+await using host = await createTestHost({ services: [http()] })
+await host.start(HealthPlugin)
+const response = await host.http.fetch(new URL('/health', host.http.origin))
+expect(await response.json()).toEqual({ ok: true })
+```
+
+需要常用基础服务与 Vault 时，显式表达这个组合：
+
+```ts no-twoslash
+import { standardServices } from '@pluxel/services'
+import { vault } from '@pluxel/services/vault'
+
+await using host = await createTestHost({
+	services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+})
+```
+
+自定义服务直接放入同一 `services` 数组，不为每个服务增加 `database: true`、`vault: { ... }` 等平行配置字段。服务仍通过生产声明表达依赖；缺少依赖时在创建 host 阶段失败，不等到测试调用时才悄悄补装。
+
+Workbench 的最小组合：
+
+```ts no-twoslash
+import { http } from '@pluxel/services/http'
+import { persistence } from '@pluxel/services/persistence'
+
+await using host = await createTestHost({
+	services: [http(), persistence({ mode: 'memory' })],
+	workbench: true,
+})
+await host.start(OrdersPlugin)
+using opened = await host.workbench.open({
+	target: OrdersPlugin,
+	entry: OrdersWorkbench.overview,
+	principal: { provider: 'test', subject: 'administrator' },
+})
+using snapshot = await opened.api.snapshotDto()
+expect(snapshot.openOrders).toBe(0)
+```
+
+`workbench` 和 `management` 是测试交互平面的组合选项：它们选择测试 artifact、身份交接与资源跟踪，而不是业务服务快捷开关。HTTP 与 Persistence 仍是显式前置，不因启用选项而偷偷装入。生产应用继续使用生产 Workbench/Management 装配，不把测试后端传给生产 Host。
+
+## 一套生命周期词汇
+
+| 作者操作                                          | 唯一语义                                                                                                   |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `await host.start(Target, options?)`              | 确保目标实现可用，建立本次运行意图，提交并等待稳定；返回当前实例                                           |
+| `await host.start([A, B])`                        | 一次提交启动多个目标，返回有类型的实例 tuple                                                               |
+| `await host.stop(Target)`                         | 撤销目标的运行意图，按生产依赖规则收敛运行图；保留 catalog 和配置，不承诺停止仍被其他消费者需要的 provider |
+| `await host.restart(Target)`                      | 执行生产 restart 并返回新实例；依赖传播遵循生产规则                                                        |
+| `host.require(Target)` / `host.isRunning(Target)` | 读取当前运行事实，不启动、不注册                                                                           |
+| `await host.replaceDefinition(Current, Next)`     | 显式替换同一 definition 的实现，沿生产 replacement 路径收敛                                                |
+| `await host.config.patch(Target, patch)`          | 应用运行期配置变更，返回权威结果；不伪装成首次配置，也不隐式 restart                                       |
+
+不保留顶层 `host.add()` / `host.remove()` 作为生命周期同义词。只有 catalog 的可用性操作叫 `add/remove`，并放入事务的 `change.catalog` 中。
+
+单目标的便利操作内部调用同一 commit 路径，resolve 后即可断言，不再手动提交一次。`start` 的 `initialConfig` 仅在 node 第一次进入生命周期前接受；`catalog: [Provider]` 仅提供依赖解析候选，真实 dependency 仍由 constructor 声明。
+
+## 普通操作一步完成，复杂变化显式提交
+
+```ts no-twoslash
+const consumer = await host.start(ConsumerPlugin, {
+	catalog: [ProviderPlugin],
+	initialConfig: { endpoint: 'https://example.test' },
+})
+
+await host.commit((change) => {
+	change.catalog.add([AlternateProvider, AnotherConsumer])
+	change.dependencies.setDefault({
+		requirement: Transport,
+		provider: AlternateProvider,
+	})
+	change.start(AnotherConsumer)
+})
+```
+
+`change.start/stop/restart/replaceDefinition` 与顶层操作使用同样的领域语义，只是暂存在本次事务里。`change.catalog.add/remove` 只修改实现可用性；删除后如何停止实例、处理阻塞依赖，由生产 Host 判定。Fork 使用 `definePluginFork()` 和 `change.forks.ensure/remove`，不把 fork 身份压成字符串或新增另一种测试宿主。
+
+`commit` callback 只同步声明变化，不 `await`、不嵌套提交、不读中途状态。一个提交代表一个 graph boundary，不承诺把已发生的外部副作用回滚成数据库事务。需要观察先后状态时写两次 awaited 操作。
+
+成功路径默认严格检查目标结果；失败测试使用现有 `commitExpectFail()` 返回的结构化 lifecycle report。它只接受预期的生命周期失败，不吞掉输入错误、配置错误或测试自身异常。不增加第三种“宽松启动”方法。
+
+## Driver 是测试访问方式，不是第二套服务
+
+使用 `host.http`、`host.commands`、`host.config`，避免另建通用 `getDriver(token)` registry。HTTP 和 commands driver 只调用已安装的生产服务；方法入口可以稳定存在，但没有选择对应服务时，调用必须给出明确的未安装错误。`config` 属于 Host 本身，不要求额外安装 Plugin Persistence 服务。
+
+`host.workbench` 只在 `workbench: true` 时存在：literal `true` 提供确定的类型，省略或 `false` 不暴露该属性；动态 boolean 对应需要收窄的可选属性。不要从任意 `HostService[]` 静态推断所有第三方服务的 driver 类型，也不要给运行时未安装的能力制造空实现。
+
+| Driver/边界                 | 能验证什么                                                   | 不能替代什么                                 |
+| --------------------------- | ------------------------------------------------------------ | -------------------------------------------- |
+| `host.http.fetch()`         | 真实路由、输入处理、owner admission 和响应                   | 物理 listener、TLS、Upgrade、网络断开        |
+| `host.commands`             | 命令注册、验证、调用和撤回                                   | 业务客户端或外部消息 carrier                 |
+| `host.workbench.open()`     | 发布、principal/params、Content/View/Attachment RPC 与 lease | 真实登录链路、WebSocket、MF 构建、React 渲染 |
+| `new RpcStub(new Target())` | 原生本地 RPC contract 与引用语义                             | Workbench publication 或网络 transport       |
+
+自定义服务通常通过被测 Plugin 的业务入口验证，不为了可测试性公开内部 registry。`start/require` 返回的 Plugin 实例也不替代跨插件 caller facade；验证调用者身份与撤回时建立真实 Consumer，并从注入依赖发起调用。
+
+## 清理和失败保持一个 owner
+
+Host、fixture 使用 `await using`；打开的 RPC entry、手动取得的 RPC 结果与子 capability 使用对应的 `using`。借用引用不释放，框架已接管的结果不重复释放。测试声明资源时按依赖顺序取得，退出时逆序释放。
+
+Host 关闭时沿现有生产顺序拒收新操作、等待已接纳调用并清理测试资源与服务。测试 driver 负责跟踪其创建的 body、subscription 和 lease；泄漏仍应报告，其他清理仍应执行。故意验证关闭、失败或资源泄漏的测试允许显式 dispose，不为追求统一语法改变测试含义。
+
+## 包边界与安装依赖
+
+`@pluxel/test` 是上层作者组合包，显式依赖官方 Services 与所需测试驱动。正常安装测试工具时包管理器会安装这些依赖；直接 import `@pluxel/services/*` 的插件包仍须声明自己的直接依赖，不能依赖传递安装。
+
+安装包、加载模块和初始化服务是不同层次。`services: []` 不初始化可选官方服务；fixture/preset 子入口不主动启动服务运行时。生产 Host/Core 不反向依赖测试组合包，第三方服务仍遵循生产 `HostService` 契约。Core 白盒测试继续使用内部 harness，普通插件作者只使用统一根入口。
+
+仓库 TypeScript 测试默认用 `using` 管理 `Disposable`，用 `await using` 管理异步释放的 host、fixture 和文件句柄；取得资源后立即声明，初始化或断言失败时也会清理。需要检查释放后的状态时，用显式 `{ ... }` 块限定资源寿命，再在块外断言。依赖资源的异步操作应在退出作用域前完成，返回 Promise 时按需使用 `return await`。
+
+`using` 不替代所有 `finally`：恢复 fake timers、环境变量、锁和运行状态，或者处理所有权转移、特殊清理顺序时，继续使用明确的 `try/finally`。资源只有 `close()` 而不实现释放协议时，也不必为替换语法临时包装。业务执行与释放同时失败时，`using` 使用标准 `SuppressedError` 保存两者；需要不同错误优先级的代码保留显式处理。借用的 RPC root 不进入 `using`，已交给框架消费的 DTO 结果也不重复释放。
 
 ## 安装 Vitest preset
 
@@ -41,7 +238,7 @@ host 的 `dispose()` 与异步释放协议是同一个幂等操作。环境不�
 npx nypm add -D @pluxel/test @pluxel/core vitest@5.0.0 oxlint
 ```
 
-当前 preset 使用 Vitest `5.0.0`，项目使用 Node.js 24+。下面的 Core 示例只需上述依赖；测试 HTTP 等默认服务能力时，还需由测试包声明 `@pluxel/services` 和 `elysia`。Workbench 会话测试使用 `@pluxel/services/test`，并安装 `@pluxel/workbench` 及其声明的 peers。
+当前 preset 使用 Vitest `5.0.0`，项目使用 Node.js 24+。直接使用服务工厂时声明 `@pluxel/services`；选择 HTTP 时满足 Elysia peer，直接使用 Workbench 声明时安装 `@pluxel/workbench` 及相应 peers。
 
 最小 `vitest.config.ts`：
 
@@ -69,7 +266,7 @@ preset 在 TypeScript 擦除前运行 Pluxel semantic lowering 和 build-correct
 间接导入的 fixture Plugin 也可能需要后者覆盖。两者不要混用。要在 semantic lowering 前增加 Vite transform，使用
 `pluxel.prePlugins`；其余 Vite plugin 保持在顶层 `plugins`。
 
-`@pluxel/test` 没有根入口。它只从明确 subpath 提供 runner、fixture 和 unsafe lowering 工具；test host 从所验证层的 package 导入。
+`@pluxel/test` 根入口提供 host；`/vitest`、`/fixtures` 和 `/unsafe` 分别提供编译配置、文件资源和受限 toolchain 测试工具。
 
 使用本地 source overlay 时，Vitest 需要先从已构建的 `@pluxel/test/vitest` 读取 config bootstrap，因为 config 本身早于
 Vite conditions 求值。普通测试脚本应先运行：
@@ -80,124 +277,6 @@ pluxel source build --package @pluxel/test
 
 这只构建 preset 的 artifact 及其自身 build graph 前置；config 加载后，测试模块仍通过 `@pluxel/source` / `@pluxel/hmr` 读取当前源码。
 不要改用相对 `src` import 或给整个 Vitest 进程加 condition。需要验证 production launcher/artifact 的测试才额外构建它自己的 owner。
-
-## Core：立即修改 graph
-
-将下面内容保存为 `tests/plugin.test.ts`，运行 `pnpm exec vitest run`。通过时应证明 provider 先启动，依赖实例一致，移除后 cleanup 恰好执行一次。
-
-Core host 验证本次测试内的插件依赖与生命周期，不管理应用下次启动的策略。`add/remove/restart/replaceDefinition` 都会立即提交并等待 lifecycle
-稳定；方法 resolve 后可以直接断言，不再额外调用无参数 `commit()`。
-
-```ts no-twoslash
-import { BasePlugin, createCoreTestHost, Plugin } from '@pluxel/core/test'
-import { expect, it, vi } from 'vitest'
-
-const cleanup = vi.fn()
-
-@Plugin()
-class ProviderPlugin extends BasePlugin {
-	protected override init() {
-		return cleanup
-	}
-}
-
-@Plugin()
-class ConsumerPlugin extends BasePlugin {
-	constructor(readonly provider: ProviderPlugin) {
-		super()
-	}
-}
-
-it('starts providers first and drains the graph', async () => {
-	await using host = createCoreTestHost()
-
-	const [provider, consumer] = await host.add([ProviderPlugin, ConsumerPlugin])
-	expect(provider).toBe(host.require(ProviderPlugin))
-	expect(consumer.provider).toBe(provider)
-
-	await host.commit((change) => {
-		change.remove(ConsumerPlugin)
-		change.remove(ProviderPlugin)
-	})
-
-	expect(cleanup).toHaveBeenCalledOnce()
-})
-```
-
-单个目标使用顶层 command；只有多个变化必须共享一个 graph boundary 时才用 callback：
-
-```ts no-twoslash
-await host.commit((change) => {
-	change.add(ProviderPlugin)
-	change.add(ConsumerPlugin, {
-		initialConfig: { endpoint: 'https://api.example.test' },
-	})
-})
-```
-
-callback 只同步描述变化。不要把它声明为 `async`、在其中 `await`、返回值、嵌套 commit，或把 `change` 保存到外部。互相矛盾的 command
-会在 production work 开始前失败；需要观察两个先后状态时，写两个明确 awaited operation。
-
-## 服务宿主：立即表达本次进程意图
-
-省略 `services` 时安装 HTTP、commands、Node artifacts、workers 与内存 persistence；Workbench、Management、Vault、数据库和管理命令都不默认安装。
-
-`services` 是完整列表，不与默认值合并。需要 Vault 或数据库时，显式组合 `standardServices()` 与对应服务工厂；Core 参数放在 `config`，Host 存储参数放在 `state`、`configRecords`。每项服务的资源随测试宿主关闭。
-
-需要 HTTP、commands 或 Workbench 等宿主能力时，使用 服务 test host。它的 `start/stop/restart/replaceDefinition` 同样立即提交。`start()` 会让目标 implementation 进入 test catalog、建立本次
-进程的 running intent、启动 required provider closure，并返回当前实例；它不会修改下次冷启动的 auto-start policy。
-
-```ts no-twoslash
-import { Http } from '@pluxel/services/http'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
-import { expect, it } from 'vitest'
-
-@Plugin()
-class HealthPlugin extends BasePlugin {
-	protected override init() {
-		this.ctx.require(Http).get('/health', () => ({ ok: true }))
-	}
-}
-
-it('publishes and withdraws its route', async () => {
-	await using host = await createServiceTestHost()
-	await host.start(HealthPlugin)
-
-	const url = new URL('/health', host.http.origin)
-	const response = await host.http.fetch(url)
-	expect(await response.json()).toEqual({ ok: true })
-
-	await host.stop(HealthPlugin)
-	expect((await host.http.fetch(url)).status).toBe(404)
-})
-```
-
-`host.http.fetch()` 经过真实 route directory、generation admission 和已 seal 的 Elysia app，但不打开物理端口。`host.http.origin`
-是逻辑 origin，不是可连接 listener。WebSocket Upgrade、disconnect、close code 和 backpressure 必须走真实 carrier。
-
-有 required provider 时，只把 implementation candidate 加入 `catalog`；依赖 edge 仍只来自 consumer constructor：
-
-```ts no-twoslash
-const consumer = await host.start(ConsumerPlugin, {
-	catalog: [ProviderPlugin],
-})
-```
-
-多个独立 root 可以一次启动，并保持 tuple 推导：
-
-```ts no-twoslash
-const [api, worker] = await host.start([ApiPlugin, WorkerPlugin])
-```
-
-不同目标需要不同首次配置时，使用一个同步 callback：
-
-```ts no-twoslash
-await host.commit((change) => {
-	change.start(ApiPlugin, { initialConfig: { port: 8080 } })
-	change.start(WorkerPlugin, { initialConfig: { concurrency: 4 } })
-})
-```
 
 ## 区分首次配置和运行期更新
 
@@ -227,8 +306,7 @@ expect(result).toMatchObject({ ok: true, application: 'applied' })
 配置的 Plugin，应在 patch 后显式调用 `await host.restart(WorkerPlugin)`。不要直接给实例 private field 赋值，也不要用 bootstrap helper
 绕过运行期配置语义。
 
-Core 没有 Host persistence/config driver；需要在一个 Core graph boundary 中改变 desired config 时使用 callback
-`change.config.patch()`。服务 host 的 live `host.config.patch()` 才代表完整宿主配置 mutation。
+Core 内部 harness 的 desired config mutation 属于白盒图测试；普通插件测试使用这里的生产 Host 配置路径。
 
 ## 断言 lifecycle failure
 
@@ -236,7 +314,7 @@ Core 没有 Host persistence/config driver；需要在一个 Core graph boundary
 `summary.lifecycleReport`。预期 start、blocked 或 drain failure 时使用 `commitExpectFail()`：
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/core/test'
+import { pluginNodeAddressOf } from '@pluxel/core'
 
 const failure = await host.commitExpectFail((change) => {
 	change.start(ConsumerPlugin, { catalog: [BrokenProviderPlugin] })
@@ -280,7 +358,6 @@ expect(host.require(ConsumerPlugin).connector.ctx.pluginInfo.nodeAddress).toEqua
 )
 ```
 
-此例使用服务 host；Core host 同样在 `commit` callback 中使用 `change.dependencies`，通过 `change.add()` 加入目标。
 全局 default 只能选 concrete Plugin，不能选 fork。为特定 consumer 选择 fork 时，使用 `definePluginFork()` 得到 target，再调用
 `change.dependencies.setOverride({ consumer: ConsumerPlugin, requirement: Connector, provider: East })`。
 `clearDefault(Connector)` 和 `clearOverride({ consumer: ConsumerPlugin, requirement: Connector })` 分别清除选择。
@@ -294,7 +371,7 @@ fixture/catalog/replacement 与 strict assertion 是测试专属。操作在线�
 Fork 是独立于 host 的 typed value。concrete Plugin 必须用 `@Plugin({ forkable: true })` 声明可并行运行多个 node：
 
 ```ts no-twoslash
-import { definePluginFork } from '@pluxel/core/test'
+import { definePluginFork } from '@pluxel/test'
 
 const East = definePluginFork(ConnectorPlugin, 'east')
 const West = definePluginFork(ConnectorPlugin, 'west')
@@ -311,7 +388,7 @@ await host.commit((change) => {
 测试 replacement 时，替身必须像真实模块求值一样拥有目标 canonical definition facts：
 
 ```ts no-twoslash
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createTestHost } from '@pluxel/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { InngestPlugin } from '@acme/inngest'
 
@@ -321,7 +398,7 @@ class TestInngestPlugin extends InngestPlugin {
 
 lowerTestReplacement(InngestPlugin, TestInngestPlugin)
 
-await using host = await createServiceTestHost()
+await using host = await createTestHost()
 await host.start(InngestPlugin)
 await host.replaceDefinition(InngestPlugin, TestInngestPlugin)
 ```
@@ -331,7 +408,7 @@ Vite/Rolldown semantic lowering。
 
 ## 使用服务 drivers
 
-`createServiceTestHost({ services: [] })` 不加载 HTTP、Management 或 Workbench。省略 `services` 使用默认 HTTP 等服务时，消费项目需安装 `elysia`；Workbench 测试另需安装 `@pluxel/workbench` 及其声明的 peers。
+`createTestHost()` 默认不安装可选服务。需要 HTTP、commands 或 Workbench 时显式组合服务。
 
 public author host 不暴露 root `ctx`、raw service、transaction 或 backend admin。通过返回的 Plugin instance 观察公开业务状态；通过 driver
 观察 Plugin 发布的 inbound surface：
@@ -341,14 +418,15 @@ public author host 不暴露 root `ctx`、raw service、transaction 或 backend 
 - Workbench test host 的 `host.workbench.open`：真实 publication、session、layout 与 local Cap'n Web membrane；
 - `host.config.patch`：production-like config mutation。
 
-`@pluxel/services/test` 的 `createWorkbenchTestHost()` 组合服务 host，安装测试用 Workbench 制品查询及 Management，但不创建浏览器 Shell 或监听端口。每次 open 显式提供 principal：
+`workbench: true` 安装测试用 Workbench 制品查询及 Management，不创建浏览器 Shell 或监听端口。每次 open 显式提供 principal：
 
 ```ts no-twoslash
-import { createWorkbenchTestHost } from '@pluxel/services/test'
+import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import { vault } from '@pluxel/services/vault'
 
-await using host = await createWorkbenchTestHost({
+await using host = await createTestHost({
+	workbench: true,
 	services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 })
 
@@ -372,9 +450,8 @@ expect(result.action).toMatchObject({ ok: true })
 不经过 host 的 target object 可以通过本地 Cap'n Web membrane 验证参数/返回值复制和 capability 语义：
 
 ```ts no-twoslash
-import { createLocalRpcClient } from '@pluxel/workbench/test'
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
-import { RpcTarget } from 'capnweb'
+import { RpcStub, RpcTarget } from 'capnweb'
 
 interface CounterApi extends RpcTarget {
 	readDto(): { count: number }
@@ -388,11 +465,12 @@ class CounterTarget extends RpcTarget implements CounterApi {
 	}
 }
 
-using api = createLocalRpcClient<CounterApi>(new CounterTarget())
-expect(await api.readDto()).toEqual({ count: 1 })
+using api = new RpcStub<CounterApi>(new CounterTarget())
+using result = await api.readDto()
+expect(result).toEqual({ count: 1 })
 ```
 
-`createLocalRpcClient()` 借用 target：释放返回的 stub 不会释放 target 或它的领域服务。它不验证 Elysia mount、HTTP Upgrade、WebSocket、Origin
+`RpcStub` 使用 Cap’n Web 的原生引用所有权；测试创建 fresh target，由 stub 生命周期负责释放，不再额外手动释放同一 target。它不验证 Elysia mount、HTTP Upgrade、WebSocket、Origin
 或 disconnect；mounted HTTP endpoint 使用 `host.http.fetch()`，WebSocket carrier 使用真实 listener。
 直接调用 target instance 只能证明本地 class 行为，不能证明 RPC contract；需要作为 Workbench View、CLI 或其他
 Cap’n Web session 入口的 target，至少用上述 local membrane 覆盖其 portable 参数/返回值、callback 和 child capability 所有权。
@@ -436,7 +514,7 @@ expect(fixture.fs.existsSync(fixture.getPath('packages/a/src/index.ts'))).toBe(t
 
 ## 应用与开发集成验证
 
-Plugin 行为继续使用最小 Core/服务 test host。完整应用的声明、启动策略、动态发现、HMR、Workbench 与浏览器图，
+Plugin 行为使用统一 test host，并选择最小服务集合。完整应用的声明、启动策略、动态发现、HMR、Workbench 与浏览器图，
 通过项目唯一的 Vite 配置验证，不建立第二个测试启动器。已经运行的应用使用[开发控制台](./dev-console.md)检查。
 
 生产目录的文件、assets、listener 和 signal ownership 通过真实 `pluxel()` 构建产物的 smoke 验证，不能以

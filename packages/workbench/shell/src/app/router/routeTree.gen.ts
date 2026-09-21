@@ -27,376 +27,383 @@ import { Route as WorkbenchPluginsNameSplatRouteImport } from './routes/_workben
 import { Route as WorkbenchWorkbenchPluginNameSplatRouteImport } from './routes/_workbench.workbench.$pluginName.$'
 
 const StandaloneRoute = StandaloneRouteImport.update({
-	id: '/_standalone',
-	getParentRoute: () => rootRouteImport,
+  id: '/_standalone',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WorkbenchRoute = WorkbenchRouteImport.update({
-	id: '/_workbench',
-	getParentRoute: () => rootRouteImport,
+  id: '/_workbench',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WorkbenchIndexRoute = WorkbenchIndexRouteImport.update({
-	id: '/',
-	path: '/',
-	getParentRoute: () => WorkbenchRoute,
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchSplatRoute = WorkbenchSplatRouteImport.update({
-	id: '/$',
-	path: '/$',
-	getParentRoute: () => WorkbenchRoute,
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchLogsRoute = WorkbenchLogsRouteImport.update({
-	id: '/logs',
-	path: '/logs',
-	getParentRoute: () => WorkbenchRoute,
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchPluginGraphRoute = WorkbenchPluginGraphRouteImport.update({
-	id: '/plugin-graph',
-	path: '/plugin-graph',
-	getParentRoute: () => WorkbenchRoute,
+  id: '/plugin-graph',
+  path: '/plugin-graph',
+  getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchPluginsRoute = WorkbenchPluginsRouteImport.update({
-	id: '/plugins',
-	path: '/plugins',
-	getParentRoute: () => WorkbenchRoute,
+  id: '/plugins',
+  path: '/plugins',
+  getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchSecurityRoute = WorkbenchSecurityRouteImport.update({
-	id: '/security',
-	path: '/security',
-	getParentRoute: () => WorkbenchRoute,
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchPluginsIndexRoute = WorkbenchPluginsIndexRouteImport.update({
-	id: '/',
-	path: '/',
-	getParentRoute: () => WorkbenchPluginsRoute,
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkbenchPluginsRoute,
 } as any)
 const WorkbenchPluginsNameRoute = WorkbenchPluginsNameRouteImport.update({
-	id: '/$name',
-	path: '/$name',
-	getParentRoute: () => WorkbenchPluginsRoute,
+  id: '/$name',
+  path: '/$name',
+  getParentRoute: () => WorkbenchPluginsRoute,
 } as any)
 const WorkbenchSecurityAuditRoute = WorkbenchSecurityAuditRouteImport.update({
-	id: '/security_/audit',
-	path: '/security/audit',
-	getParentRoute: () => WorkbenchRoute,
+  id: '/security_/audit',
+  path: '/security/audit',
+  getParentRoute: () => WorkbenchRoute,
 } as any)
 const StandaloneWorkbenchStandalonePluginNameSplatRoute =
-	StandaloneWorkbenchStandalonePluginNameSplatRouteImport.update({
-		id: '/workbench-standalone/$pluginName/$',
-		path: '/workbench-standalone/$pluginName/$',
-		getParentRoute: () => StandaloneRoute,
-	} as any)
-const WorkbenchPluginGraphKindSplatRoute = WorkbenchPluginGraphKindSplatRouteImport.update({
-	id: '/plugin-graph_/$kind/$',
-	path: '/plugin-graph/$kind/$',
-	getParentRoute: () => WorkbenchRoute,
-} as any)
-const WorkbenchPluginsNameIndexRoute = WorkbenchPluginsNameIndexRouteImport.update({
-	id: '/',
-	path: '/',
-	getParentRoute: () => WorkbenchPluginsNameRoute,
-} as any)
-const WorkbenchPluginsNameSplatRoute = WorkbenchPluginsNameSplatRouteImport.update({
-	id: '/$',
-	path: '/$',
-	getParentRoute: () => WorkbenchPluginsNameRoute,
-} as any)
-const WorkbenchWorkbenchPluginNameSplatRoute = WorkbenchWorkbenchPluginNameSplatRouteImport.update({
-	id: '/workbench/$pluginName/$',
-	path: '/workbench/$pluginName/$',
-	getParentRoute: () => WorkbenchRoute,
-} as any)
+  StandaloneWorkbenchStandalonePluginNameSplatRouteImport.update({
+    id: '/workbench-standalone/$pluginName/$',
+    path: '/workbench-standalone/$pluginName/$',
+    getParentRoute: () => StandaloneRoute,
+  } as any)
+const WorkbenchPluginGraphKindSplatRoute =
+  WorkbenchPluginGraphKindSplatRouteImport.update({
+    id: '/plugin-graph_/$kind/$',
+    path: '/plugin-graph/$kind/$',
+    getParentRoute: () => WorkbenchRoute,
+  } as any)
+const WorkbenchPluginsNameIndexRoute =
+  WorkbenchPluginsNameIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => WorkbenchPluginsNameRoute,
+  } as any)
+const WorkbenchPluginsNameSplatRoute =
+  WorkbenchPluginsNameSplatRouteImport.update({
+    id: '/$',
+    path: '/$',
+    getParentRoute: () => WorkbenchPluginsNameRoute,
+  } as any)
+const WorkbenchWorkbenchPluginNameSplatRoute =
+  WorkbenchWorkbenchPluginNameSplatRouteImport.update({
+    id: '/workbench/$pluginName/$',
+    path: '/workbench/$pluginName/$',
+    getParentRoute: () => WorkbenchRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
-	'/': typeof WorkbenchIndexRoute
-	'/$': typeof WorkbenchSplatRoute
-	'/logs': typeof WorkbenchLogsRoute
-	'/plugin-graph': typeof WorkbenchPluginGraphRoute
-	'/plugins': typeof WorkbenchPluginsRouteWithChildren
-	'/security': typeof WorkbenchSecurityRoute
-	'/plugins/$name': typeof WorkbenchPluginsNameRouteWithChildren
-	'/security/audit': typeof WorkbenchSecurityAuditRoute
-	'/plugins/': typeof WorkbenchPluginsIndexRoute
-	'/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
-	'/plugin-graph/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
-	'/plugins/$name/$': typeof WorkbenchPluginsNameSplatRoute
-	'/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
-	'/plugins/$name/': typeof WorkbenchPluginsNameIndexRoute
+  '/': typeof WorkbenchIndexRoute
+  '/$': typeof WorkbenchSplatRoute
+  '/logs': typeof WorkbenchLogsRoute
+  '/plugin-graph': typeof WorkbenchPluginGraphRoute
+  '/plugins': typeof WorkbenchPluginsRouteWithChildren
+  '/security': typeof WorkbenchSecurityRoute
+  '/plugins/$name': typeof WorkbenchPluginsNameRouteWithChildren
+  '/security/audit': typeof WorkbenchSecurityAuditRoute
+  '/plugins/': typeof WorkbenchPluginsIndexRoute
+  '/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
+  '/plugin-graph/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
+  '/plugins/$name/$': typeof WorkbenchPluginsNameSplatRoute
+  '/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
+  '/plugins/$name/': typeof WorkbenchPluginsNameIndexRoute
 }
 export interface FileRoutesByTo {
-	'/': typeof WorkbenchIndexRoute
-	'/$': typeof WorkbenchSplatRoute
-	'/logs': typeof WorkbenchLogsRoute
-	'/plugin-graph': typeof WorkbenchPluginGraphRoute
-	'/security': typeof WorkbenchSecurityRoute
-	'/security/audit': typeof WorkbenchSecurityAuditRoute
-	'/plugins': typeof WorkbenchPluginsIndexRoute
-	'/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
-	'/plugin-graph/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
-	'/plugins/$name/$': typeof WorkbenchPluginsNameSplatRoute
-	'/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
-	'/plugins/$name': typeof WorkbenchPluginsNameIndexRoute
+  '/': typeof WorkbenchIndexRoute
+  '/$': typeof WorkbenchSplatRoute
+  '/logs': typeof WorkbenchLogsRoute
+  '/plugin-graph': typeof WorkbenchPluginGraphRoute
+  '/security': typeof WorkbenchSecurityRoute
+  '/security/audit': typeof WorkbenchSecurityAuditRoute
+  '/plugins': typeof WorkbenchPluginsIndexRoute
+  '/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
+  '/plugin-graph/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
+  '/plugins/$name/$': typeof WorkbenchPluginsNameSplatRoute
+  '/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
+  '/plugins/$name': typeof WorkbenchPluginsNameIndexRoute
 }
 export interface FileRoutesById {
-	__root__: typeof rootRouteImport
-	'/_standalone': typeof StandaloneRouteWithChildren
-	'/_workbench': typeof WorkbenchRouteWithChildren
-	'/_workbench/$': typeof WorkbenchSplatRoute
-	'/_workbench/logs': typeof WorkbenchLogsRoute
-	'/_workbench/plugin-graph': typeof WorkbenchPluginGraphRoute
-	'/_workbench/plugins': typeof WorkbenchPluginsRouteWithChildren
-	'/_workbench/security': typeof WorkbenchSecurityRoute
-	'/_workbench/': typeof WorkbenchIndexRoute
-	'/_workbench/plugins/$name': typeof WorkbenchPluginsNameRouteWithChildren
-	'/_workbench/security_/audit': typeof WorkbenchSecurityAuditRoute
-	'/_workbench/plugins/': typeof WorkbenchPluginsIndexRoute
-	'/_standalone/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
-	'/_workbench/plugin-graph_/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
-	'/_workbench/plugins/$name/$': typeof WorkbenchPluginsNameSplatRoute
-	'/_workbench/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
-	'/_workbench/plugins/$name/': typeof WorkbenchPluginsNameIndexRoute
+  __root__: typeof rootRouteImport
+  '/_standalone': typeof StandaloneRouteWithChildren
+  '/_workbench': typeof WorkbenchRouteWithChildren
+  '/_workbench/$': typeof WorkbenchSplatRoute
+  '/_workbench/logs': typeof WorkbenchLogsRoute
+  '/_workbench/plugin-graph': typeof WorkbenchPluginGraphRoute
+  '/_workbench/plugins': typeof WorkbenchPluginsRouteWithChildren
+  '/_workbench/security': typeof WorkbenchSecurityRoute
+  '/_workbench/': typeof WorkbenchIndexRoute
+  '/_workbench/plugins/$name': typeof WorkbenchPluginsNameRouteWithChildren
+  '/_workbench/security_/audit': typeof WorkbenchSecurityAuditRoute
+  '/_workbench/plugins/': typeof WorkbenchPluginsIndexRoute
+  '/_standalone/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
+  '/_workbench/plugin-graph_/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
+  '/_workbench/plugins/$name/$': typeof WorkbenchPluginsNameSplatRoute
+  '/_workbench/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
+  '/_workbench/plugins/$name/': typeof WorkbenchPluginsNameIndexRoute
 }
 export interface FileRouteTypes {
-	fileRoutesByFullPath: FileRoutesByFullPath
-	fullPaths:
-		| '/'
-		| '/$'
-		| '/logs'
-		| '/plugin-graph'
-		| '/plugins'
-		| '/security'
-		| '/plugins/$name'
-		| '/security/audit'
-		| '/plugins/'
-		| '/workbench-standalone/$pluginName/$'
-		| '/plugin-graph/$kind/$'
-		| '/plugins/$name/$'
-		| '/workbench/$pluginName/$'
-		| '/plugins/$name/'
-	fileRoutesByTo: FileRoutesByTo
-	to:
-		| '/'
-		| '/$'
-		| '/logs'
-		| '/plugin-graph'
-		| '/security'
-		| '/security/audit'
-		| '/plugins'
-		| '/workbench-standalone/$pluginName/$'
-		| '/plugin-graph/$kind/$'
-		| '/plugins/$name/$'
-		| '/workbench/$pluginName/$'
-		| '/plugins/$name'
-	id:
-		| '__root__'
-		| '/_standalone'
-		| '/_workbench'
-		| '/_workbench/$'
-		| '/_workbench/logs'
-		| '/_workbench/plugin-graph'
-		| '/_workbench/plugins'
-		| '/_workbench/security'
-		| '/_workbench/'
-		| '/_workbench/plugins/$name'
-		| '/_workbench/security_/audit'
-		| '/_workbench/plugins/'
-		| '/_standalone/workbench-standalone/$pluginName/$'
-		| '/_workbench/plugin-graph_/$kind/$'
-		| '/_workbench/plugins/$name/$'
-		| '/_workbench/workbench/$pluginName/$'
-		| '/_workbench/plugins/$name/'
-	fileRoutesById: FileRoutesById
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths:
+    | '/'
+    | '/$'
+    | '/logs'
+    | '/plugin-graph'
+    | '/plugins'
+    | '/security'
+    | '/plugins/$name'
+    | '/security/audit'
+    | '/plugins/'
+    | '/workbench-standalone/$pluginName/$'
+    | '/plugin-graph/$kind/$'
+    | '/plugins/$name/$'
+    | '/workbench/$pluginName/$'
+    | '/plugins/$name/'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/$'
+    | '/logs'
+    | '/plugin-graph'
+    | '/security'
+    | '/security/audit'
+    | '/plugins'
+    | '/workbench-standalone/$pluginName/$'
+    | '/plugin-graph/$kind/$'
+    | '/plugins/$name/$'
+    | '/workbench/$pluginName/$'
+    | '/plugins/$name'
+  id:
+    | '__root__'
+    | '/_standalone'
+    | '/_workbench'
+    | '/_workbench/$'
+    | '/_workbench/logs'
+    | '/_workbench/plugin-graph'
+    | '/_workbench/plugins'
+    | '/_workbench/security'
+    | '/_workbench/'
+    | '/_workbench/plugins/$name'
+    | '/_workbench/security_/audit'
+    | '/_workbench/plugins/'
+    | '/_standalone/workbench-standalone/$pluginName/$'
+    | '/_workbench/plugin-graph_/$kind/$'
+    | '/_workbench/plugins/$name/$'
+    | '/_workbench/workbench/$pluginName/$'
+    | '/_workbench/plugins/$name/'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-	StandaloneRoute: typeof StandaloneRouteWithChildren
-	WorkbenchRoute: typeof WorkbenchRouteWithChildren
+  StandaloneRoute: typeof StandaloneRouteWithChildren
+  WorkbenchRoute: typeof WorkbenchRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
-	interface FileRoutesByPath {
-		'/_standalone': {
-			id: '/_standalone'
-			path: ''
-			fullPath: '/'
-			preLoaderRoute: typeof StandaloneRouteImport
-			parentRoute: typeof rootRouteImport
-		}
-		'/_workbench': {
-			id: '/_workbench'
-			path: ''
-			fullPath: '/'
-			preLoaderRoute: typeof WorkbenchRouteImport
-			parentRoute: typeof rootRouteImport
-		}
-		'/_workbench/': {
-			id: '/_workbench/'
-			path: '/'
-			fullPath: '/'
-			preLoaderRoute: typeof WorkbenchIndexRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_workbench/$': {
-			id: '/_workbench/$'
-			path: '/$'
-			fullPath: '/$'
-			preLoaderRoute: typeof WorkbenchSplatRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_workbench/logs': {
-			id: '/_workbench/logs'
-			path: '/logs'
-			fullPath: '/logs'
-			preLoaderRoute: typeof WorkbenchLogsRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_workbench/plugin-graph': {
-			id: '/_workbench/plugin-graph'
-			path: '/plugin-graph'
-			fullPath: '/plugin-graph'
-			preLoaderRoute: typeof WorkbenchPluginGraphRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_workbench/plugins': {
-			id: '/_workbench/plugins'
-			path: '/plugins'
-			fullPath: '/plugins'
-			preLoaderRoute: typeof WorkbenchPluginsRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_workbench/security': {
-			id: '/_workbench/security'
-			path: '/security'
-			fullPath: '/security'
-			preLoaderRoute: typeof WorkbenchSecurityRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_workbench/plugins/': {
-			id: '/_workbench/plugins/'
-			path: '/'
-			fullPath: '/plugins/'
-			preLoaderRoute: typeof WorkbenchPluginsIndexRouteImport
-			parentRoute: typeof WorkbenchPluginsRoute
-		}
-		'/_workbench/plugins/$name': {
-			id: '/_workbench/plugins/$name'
-			path: '/$name'
-			fullPath: '/plugins/$name'
-			preLoaderRoute: typeof WorkbenchPluginsNameRouteImport
-			parentRoute: typeof WorkbenchPluginsRoute
-		}
-		'/_workbench/security_/audit': {
-			id: '/_workbench/security_/audit'
-			path: '/security/audit'
-			fullPath: '/security/audit'
-			preLoaderRoute: typeof WorkbenchSecurityAuditRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_standalone/workbench-standalone/$pluginName/$': {
-			id: '/_standalone/workbench-standalone/$pluginName/$'
-			path: '/workbench-standalone/$pluginName/$'
-			fullPath: '/workbench-standalone/$pluginName/$'
-			preLoaderRoute: typeof StandaloneWorkbenchStandalonePluginNameSplatRouteImport
-			parentRoute: typeof StandaloneRoute
-		}
-		'/_workbench/plugin-graph_/$kind/$': {
-			id: '/_workbench/plugin-graph_/$kind/$'
-			path: '/plugin-graph/$kind/$'
-			fullPath: '/plugin-graph/$kind/$'
-			preLoaderRoute: typeof WorkbenchPluginGraphKindSplatRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-		'/_workbench/plugins/$name/': {
-			id: '/_workbench/plugins/$name/'
-			path: '/'
-			fullPath: '/plugins/$name/'
-			preLoaderRoute: typeof WorkbenchPluginsNameIndexRouteImport
-			parentRoute: typeof WorkbenchPluginsNameRoute
-		}
-		'/_workbench/plugins/$name/$': {
-			id: '/_workbench/plugins/$name/$'
-			path: '/$'
-			fullPath: '/plugins/$name/$'
-			preLoaderRoute: typeof WorkbenchPluginsNameSplatRouteImport
-			parentRoute: typeof WorkbenchPluginsNameRoute
-		}
-		'/_workbench/workbench/$pluginName/$': {
-			id: '/_workbench/workbench/$pluginName/$'
-			path: '/workbench/$pluginName/$'
-			fullPath: '/workbench/$pluginName/$'
-			preLoaderRoute: typeof WorkbenchWorkbenchPluginNameSplatRouteImport
-			parentRoute: typeof WorkbenchRoute
-		}
-	}
+  interface FileRoutesByPath {
+    '/_standalone': {
+      id: '/_standalone'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof StandaloneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_workbench': {
+      id: '/_workbench'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof WorkbenchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_workbench/': {
+      id: '/_workbench/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof WorkbenchIndexRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/$': {
+      id: '/_workbench/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof WorkbenchSplatRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/logs': {
+      id: '/_workbench/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof WorkbenchLogsRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/plugin-graph': {
+      id: '/_workbench/plugin-graph'
+      path: '/plugin-graph'
+      fullPath: '/plugin-graph'
+      preLoaderRoute: typeof WorkbenchPluginGraphRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/plugins': {
+      id: '/_workbench/plugins'
+      path: '/plugins'
+      fullPath: '/plugins'
+      preLoaderRoute: typeof WorkbenchPluginsRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/security': {
+      id: '/_workbench/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof WorkbenchSecurityRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/plugins/': {
+      id: '/_workbench/plugins/'
+      path: '/'
+      fullPath: '/plugins/'
+      preLoaderRoute: typeof WorkbenchPluginsIndexRouteImport
+      parentRoute: typeof WorkbenchPluginsRoute
+    }
+    '/_workbench/plugins/$name': {
+      id: '/_workbench/plugins/$name'
+      path: '/$name'
+      fullPath: '/plugins/$name'
+      preLoaderRoute: typeof WorkbenchPluginsNameRouteImport
+      parentRoute: typeof WorkbenchPluginsRoute
+    }
+    '/_workbench/security_/audit': {
+      id: '/_workbench/security_/audit'
+      path: '/security/audit'
+      fullPath: '/security/audit'
+      preLoaderRoute: typeof WorkbenchSecurityAuditRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_standalone/workbench-standalone/$pluginName/$': {
+      id: '/_standalone/workbench-standalone/$pluginName/$'
+      path: '/workbench-standalone/$pluginName/$'
+      fullPath: '/workbench-standalone/$pluginName/$'
+      preLoaderRoute: typeof StandaloneWorkbenchStandalonePluginNameSplatRouteImport
+      parentRoute: typeof StandaloneRoute
+    }
+    '/_workbench/plugin-graph_/$kind/$': {
+      id: '/_workbench/plugin-graph_/$kind/$'
+      path: '/plugin-graph/$kind/$'
+      fullPath: '/plugin-graph/$kind/$'
+      preLoaderRoute: typeof WorkbenchPluginGraphKindSplatRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/plugins/$name/': {
+      id: '/_workbench/plugins/$name/'
+      path: '/'
+      fullPath: '/plugins/$name/'
+      preLoaderRoute: typeof WorkbenchPluginsNameIndexRouteImport
+      parentRoute: typeof WorkbenchPluginsNameRoute
+    }
+    '/_workbench/plugins/$name/$': {
+      id: '/_workbench/plugins/$name/$'
+      path: '/$'
+      fullPath: '/plugins/$name/$'
+      preLoaderRoute: typeof WorkbenchPluginsNameSplatRouteImport
+      parentRoute: typeof WorkbenchPluginsNameRoute
+    }
+    '/_workbench/workbench/$pluginName/$': {
+      id: '/_workbench/workbench/$pluginName/$'
+      path: '/workbench/$pluginName/$'
+      fullPath: '/workbench/$pluginName/$'
+      preLoaderRoute: typeof WorkbenchWorkbenchPluginNameSplatRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+  }
 }
 
 interface StandaloneRouteChildren {
-	StandaloneWorkbenchStandalonePluginNameSplatRoute: typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
+  StandaloneWorkbenchStandalonePluginNameSplatRoute: typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
 }
 
 const StandaloneRouteChildren: StandaloneRouteChildren = {
-	StandaloneWorkbenchStandalonePluginNameSplatRoute:
-		StandaloneWorkbenchStandalonePluginNameSplatRoute,
+  StandaloneWorkbenchStandalonePluginNameSplatRoute:
+    StandaloneWorkbenchStandalonePluginNameSplatRoute,
 }
 
-const StandaloneRouteWithChildren = StandaloneRoute._addFileChildren(StandaloneRouteChildren)
+const StandaloneRouteWithChildren = StandaloneRoute._addFileChildren(
+  StandaloneRouteChildren,
+)
 
 interface WorkbenchPluginsNameRouteChildren {
-	WorkbenchPluginsNameSplatRoute: typeof WorkbenchPluginsNameSplatRoute
-	WorkbenchPluginsNameIndexRoute: typeof WorkbenchPluginsNameIndexRoute
+  WorkbenchPluginsNameSplatRoute: typeof WorkbenchPluginsNameSplatRoute
+  WorkbenchPluginsNameIndexRoute: typeof WorkbenchPluginsNameIndexRoute
 }
 
 const WorkbenchPluginsNameRouteChildren: WorkbenchPluginsNameRouteChildren = {
-	WorkbenchPluginsNameSplatRoute: WorkbenchPluginsNameSplatRoute,
-	WorkbenchPluginsNameIndexRoute: WorkbenchPluginsNameIndexRoute,
+  WorkbenchPluginsNameSplatRoute: WorkbenchPluginsNameSplatRoute,
+  WorkbenchPluginsNameIndexRoute: WorkbenchPluginsNameIndexRoute,
 }
 
-const WorkbenchPluginsNameRouteWithChildren = WorkbenchPluginsNameRoute._addFileChildren(
-	WorkbenchPluginsNameRouteChildren,
-)
+const WorkbenchPluginsNameRouteWithChildren =
+  WorkbenchPluginsNameRoute._addFileChildren(WorkbenchPluginsNameRouteChildren)
 
 interface WorkbenchPluginsRouteChildren {
-	WorkbenchPluginsNameRoute: typeof WorkbenchPluginsNameRouteWithChildren
-	WorkbenchPluginsIndexRoute: typeof WorkbenchPluginsIndexRoute
+  WorkbenchPluginsNameRoute: typeof WorkbenchPluginsNameRouteWithChildren
+  WorkbenchPluginsIndexRoute: typeof WorkbenchPluginsIndexRoute
 }
 
 const WorkbenchPluginsRouteChildren: WorkbenchPluginsRouteChildren = {
-	WorkbenchPluginsNameRoute: WorkbenchPluginsNameRouteWithChildren,
-	WorkbenchPluginsIndexRoute: WorkbenchPluginsIndexRoute,
+  WorkbenchPluginsNameRoute: WorkbenchPluginsNameRouteWithChildren,
+  WorkbenchPluginsIndexRoute: WorkbenchPluginsIndexRoute,
 }
 
-const WorkbenchPluginsRouteWithChildren = WorkbenchPluginsRoute._addFileChildren(
-	WorkbenchPluginsRouteChildren,
-)
+const WorkbenchPluginsRouteWithChildren =
+  WorkbenchPluginsRoute._addFileChildren(WorkbenchPluginsRouteChildren)
 
 interface WorkbenchRouteChildren {
-	WorkbenchSplatRoute: typeof WorkbenchSplatRoute
-	WorkbenchLogsRoute: typeof WorkbenchLogsRoute
-	WorkbenchPluginGraphRoute: typeof WorkbenchPluginGraphRoute
-	WorkbenchPluginsRoute: typeof WorkbenchPluginsRouteWithChildren
-	WorkbenchSecurityRoute: typeof WorkbenchSecurityRoute
-	WorkbenchIndexRoute: typeof WorkbenchIndexRoute
-	WorkbenchSecurityAuditRoute: typeof WorkbenchSecurityAuditRoute
-	WorkbenchPluginGraphKindSplatRoute: typeof WorkbenchPluginGraphKindSplatRoute
-	WorkbenchWorkbenchPluginNameSplatRoute: typeof WorkbenchWorkbenchPluginNameSplatRoute
+  WorkbenchSplatRoute: typeof WorkbenchSplatRoute
+  WorkbenchLogsRoute: typeof WorkbenchLogsRoute
+  WorkbenchPluginGraphRoute: typeof WorkbenchPluginGraphRoute
+  WorkbenchPluginsRoute: typeof WorkbenchPluginsRouteWithChildren
+  WorkbenchSecurityRoute: typeof WorkbenchSecurityRoute
+  WorkbenchIndexRoute: typeof WorkbenchIndexRoute
+  WorkbenchSecurityAuditRoute: typeof WorkbenchSecurityAuditRoute
+  WorkbenchPluginGraphKindSplatRoute: typeof WorkbenchPluginGraphKindSplatRoute
+  WorkbenchWorkbenchPluginNameSplatRoute: typeof WorkbenchWorkbenchPluginNameSplatRoute
 }
 
 const WorkbenchRouteChildren: WorkbenchRouteChildren = {
-	WorkbenchSplatRoute: WorkbenchSplatRoute,
-	WorkbenchLogsRoute: WorkbenchLogsRoute,
-	WorkbenchPluginGraphRoute: WorkbenchPluginGraphRoute,
-	WorkbenchPluginsRoute: WorkbenchPluginsRouteWithChildren,
-	WorkbenchSecurityRoute: WorkbenchSecurityRoute,
-	WorkbenchIndexRoute: WorkbenchIndexRoute,
-	WorkbenchSecurityAuditRoute: WorkbenchSecurityAuditRoute,
-	WorkbenchPluginGraphKindSplatRoute: WorkbenchPluginGraphKindSplatRoute,
-	WorkbenchWorkbenchPluginNameSplatRoute: WorkbenchWorkbenchPluginNameSplatRoute,
+  WorkbenchSplatRoute: WorkbenchSplatRoute,
+  WorkbenchLogsRoute: WorkbenchLogsRoute,
+  WorkbenchPluginGraphRoute: WorkbenchPluginGraphRoute,
+  WorkbenchPluginsRoute: WorkbenchPluginsRouteWithChildren,
+  WorkbenchSecurityRoute: WorkbenchSecurityRoute,
+  WorkbenchIndexRoute: WorkbenchIndexRoute,
+  WorkbenchSecurityAuditRoute: WorkbenchSecurityAuditRoute,
+  WorkbenchPluginGraphKindSplatRoute: WorkbenchPluginGraphKindSplatRoute,
+  WorkbenchWorkbenchPluginNameSplatRoute:
+    WorkbenchWorkbenchPluginNameSplatRoute,
 }
 
-const WorkbenchRouteWithChildren = WorkbenchRoute._addFileChildren(WorkbenchRouteChildren)
+const WorkbenchRouteWithChildren = WorkbenchRoute._addFileChildren(
+  WorkbenchRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
-	StandaloneRoute: StandaloneRouteWithChildren,
-	WorkbenchRoute: WorkbenchRouteWithChildren,
+  StandaloneRoute: StandaloneRouteWithChildren,
+  WorkbenchRoute: WorkbenchRouteWithChildren,
 }
 export const routeTree = rootRouteImport
-	._addFileChildren(rootRouteChildren)
-	._addFileTypes<FileRouteTypes>()
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()

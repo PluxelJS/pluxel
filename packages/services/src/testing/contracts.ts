@@ -1,5 +1,5 @@
 import type { CommandContext, CommandDescriptor } from '@pluxel/commands'
-import type { PluginTestTarget, RawPluginConfig } from '@pluxel/core/test'
+import type { PluginTestTarget, RawPluginConfig } from '@pluxel/core/internal/test'
 import type { HostPluginConfigResult } from '@pluxel/host'
 
 export interface ServiceConfigTestDriver<TTarget extends PluginTestTarget = PluginTestTarget> {

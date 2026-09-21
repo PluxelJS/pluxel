@@ -1,4 +1,4 @@
-import '@pluxel/services/test'
+import '@pluxel/test'
 
 import { type PluginContext, type RootContext } from '@pluxel/core'
 import { type Elysia } from 'elysia'

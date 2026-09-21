@@ -19,7 +19,7 @@ import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
 } from '@pluxel/services/internal/test'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import type { DatabaseArtifact } from '../../src/database/artifact'
 import { attachPostgresPoolErrorHandler } from '../../src/database/adapters/shared'
 import { subscribeDatabaseHandle } from '../../src/database/service'
@@ -352,26 +352,23 @@ describe('DatabaseService', () => {
 
 	it('fails honestly when the host disables database capability', async () => {
 		const definition = databaseFixture()
-		const host = await createServiceInternalTestHarness({
+		await using host = await createServiceInternalTestHarness({
 			workbench: false,
 			services: standardServices({ persistence: { mode: 'memory' } }),
 		})
-		try {
-			@Plugin({ displayName: 'DisabledDatabasePlugin' })
-			class DisabledDatabasePlugin extends BasePlugin {
-				override async init() {
-					await this.ctx.require(Database).use(definition.database)
-				}
+
+		@Plugin({ displayName: 'DisabledDatabasePlugin' })
+		class DisabledDatabasePlugin extends BasePlugin {
+			override async init() {
+				await this.ctx.require(Database).use(definition.database)
 			}
-			lowerTestPlugin(DisabledDatabasePlugin)
-			host.add(DisabledDatabasePlugin)
-			host.cfg(DisabledDatabasePlugin).setAutoStart(true)
-			host.start(DisabledDatabasePlugin)
-			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
-			expect(host.isRunning(DisabledDatabasePlugin)).toBe(false)
-		} finally {
-			await host.dispose()
 		}
+		lowerTestPlugin(DisabledDatabasePlugin)
+		host.add(DisabledDatabasePlugin)
+		host.cfg(DisabledDatabasePlugin).setAutoStart(true)
+		host.start(DisabledDatabasePlugin)
+		await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
+		expect(host.isRunning(DisabledDatabasePlugin)).toBe(false)
 	})
 
 	it('reuses persisted PGlite instance metadata on a clean root restart', async () => {
@@ -380,14 +377,15 @@ describe('DatabaseService', () => {
 		const dataDir = join(root, 'pglite')
 		let instanceId: string
 		try {
-			const firstHost = await createServiceInternalTestHarness({
-				workbench: false,
-				services: [
-					...standardServices({ persistence: { mode: 'memory' } }),
-					installDatabase({ backend: pglite({ dataDir }) }),
-				],
-			})
-			try {
+			{
+				await using firstHost = await createServiceInternalTestHarness({
+					workbench: false,
+					services: [
+						...standardServices({ persistence: { mode: 'memory' } }),
+						installDatabase({ backend: pglite({ dataDir }) }),
+					],
+				})
+
 				@Plugin({ displayName: 'PersistentDatabasePlugin' })
 				class FirstProcessPlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
@@ -404,38 +402,33 @@ describe('DatabaseService', () => {
 				firstHost.start(FirstProcessPlugin)
 				await firstHost.commit()
 				instanceId = (firstHost.require(FirstProcessPlugin).db as any).instance.instanceId
-			} finally {
-				await firstHost.dispose()
 			}
 
-			const secondHost = await createServiceInternalTestHarness({
+			await using secondHost = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
 					...standardServices({ persistence: { mode: 'memory' } }),
 					installDatabase({ backend: pglite({ dataDir }) }),
 				],
 			})
-			try {
-				@Plugin({ displayName: 'PersistentDatabasePlugin' })
-				class SecondProcessPlugin extends BasePlugin {
-					db!: PluginDatabaseHandle<typeof definition.database>
-					override async init() {
-						this.db = await this.ctx.require(Database).use(definition.database)
-					}
+
+			@Plugin({ displayName: 'PersistentDatabasePlugin' })
+			class SecondProcessPlugin extends BasePlugin {
+				db!: PluginDatabaseHandle<typeof definition.database>
+				override async init() {
+					this.db = await this.ctx.require(Database).use(definition.database)
 				}
-				lowerTestPlugin(SecondProcessPlugin, { id: 'PersistentDatabasePlugin' })
-				secondHost.add(SecondProcessPlugin)
-				secondHost.cfg(SecondProcessPlugin).setAutoStart(true)
-				secondHost.start(SecondProcessPlugin)
-				await secondHost.commit()
-				const database = secondHost.require(SecondProcessPlugin).db
-				expect((database as any).instance.instanceId).toBe(instanceId!)
-				await expect(database.read((db) => db.select().from(definition.items))).resolves.toEqual([
-					{ id: 'kept', value: 'persisted' },
-				])
-			} finally {
-				await secondHost.dispose()
 			}
+			lowerTestPlugin(SecondProcessPlugin, { id: 'PersistentDatabasePlugin' })
+			secondHost.add(SecondProcessPlugin)
+			secondHost.cfg(SecondProcessPlugin).setAutoStart(true)
+			secondHost.start(SecondProcessPlugin)
+			await secondHost.commit()
+			const database = secondHost.require(SecondProcessPlugin).db
+			expect((database as any).instance.instanceId).toBe(instanceId!)
+			await expect(database.read((db) => db.select().from(definition.items))).resolves.toEqual([
+				{ id: 'kept', value: 'persisted' },
+			])
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}

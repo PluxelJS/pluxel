@@ -184,7 +184,7 @@ type DependencyInventoryNode = Readonly<{
 	readonly parts: readonly string[]
 }>
 
-const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/test', '@pluxel/test'])
+const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/internal/test'])
 const TOOLCHAIN_PACKAGES = new Set(['@pluxel/core/toolchain'])
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'] as const
 

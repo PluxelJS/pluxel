@@ -120,7 +120,7 @@ describe('configSourcePlugin', () => {
 		)
 	})
 
-	it.each(['@pluxel/core/test', '@pluxel/test'])(
+	it.each(['@pluxel/core', '@pluxel/core/internal/test'])(
 		'recognizes the formal test authoring facade %s',
 		async (source) => {
 			const result = await transform(`

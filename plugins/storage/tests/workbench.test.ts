@@ -1,7 +1,7 @@
-import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/workbench/test'
+import { createTestHost, type TestHost } from '@pluxel/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import type { WorkbenchPrincipal } from '@pluxel/workbench'
 import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
 import type { RpcStub } from 'capnweb'
@@ -20,7 +20,7 @@ const ADMIN = Object.freeze({ provider: '@pluxel/auth', subject: 'local:admin' }
 @Plugin()
 class VaultSeeder extends BasePlugin {}
 
-async function startVaultS3(host: WorkbenchTestHost): Promise<void> {
+async function startVaultS3(host: TestHost<true>): Promise<void> {
 	await host.start(VaultSeeder)
 	await host
 		.require(VaultSeeder)
@@ -49,7 +49,7 @@ async function startVaultS3(host: WorkbenchTestHost): Promise<void> {
 	})
 }
 
-function openCredentials(host: WorkbenchTestHost, principal: WorkbenchPrincipal) {
+function openCredentials(host: TestHost<true>, principal: WorkbenchPrincipal) {
 	return host.workbench.open({
 		target: S3Plugin,
 		entry: S3Workbench.buckets,
@@ -77,7 +77,8 @@ function contentObserver(
 describe('S3 Workbench credential rotation', () => {
 	it('uses password fields and never echoes replacement credentials', async () => {
 		{
-			await using host = await createWorkbenchTestHost({
+			await using host = await createTestHost({
+				workbench: true,
 				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 			})
 
@@ -85,7 +86,7 @@ describe('S3 Workbench credential rotation', () => {
 			using opened = await openCredentials(host, ADMIN)
 			using second = await openCredentials(host, ADMIN)
 			const secondUpdates = vi.fn()
-			await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
+			await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
 				ok: true,
 				data: {
 					status: {
@@ -99,7 +100,7 @@ describe('S3 Workbench credential rotation', () => {
 					},
 				},
 			})
-			await second.root.subscribe(contentObserver(secondUpdates))
+			await second.root.subscribeDto(contentObserver(secondUpdates))
 			const action = opened.presentation.slots.find((slot) => slot.kind === 'action')
 			expect(action).toMatchObject({
 				kind: 'action',
@@ -127,7 +128,7 @@ describe('S3 Workbench credential rotation', () => {
 				accessKeyId: 'replacement-access-key',
 				secretAccessKey: 'replacement-secret-key',
 			}
-			const result = await opened.root.run('rotate', replacement)
+			const result = await opened.root.runDto('rotate', replacement)
 			expect(result).toMatchObject({
 				action: { ok: true, message: expect.stringContaining('Restart') },
 				data: {
@@ -176,7 +177,7 @@ describe('S3 Workbench credential rotation', () => {
 				),
 			)
 			second[Symbol.dispose]()
-			await opened.root.run('rotate', replacement)
+			await opened.root.runDto('rotate', replacement)
 			await Promise.resolve()
 			expect(secondUpdates).toHaveBeenCalledTimes(1)
 		}
@@ -184,19 +185,20 @@ describe('S3 Workbench credential rotation', () => {
 
 	it('denies the loopback recovery principal and stops accepting calls with the generation', async () => {
 		{
-			await using host = await createWorkbenchTestHost({
+			await using host = await createTestHost({
+				workbench: true,
 				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 			})
 
 			await startVaultS3(host)
 			using opened = await openCredentials(host, RECOVERY)
-			await opened.root.subscribe(contentObserver())
+			await opened.root.subscribeDto(contentObserver())
 			const replacement = {
 				bucketId: 'assets',
 				accessKeyId: 'forbidden-access-key',
 				secretAccessKey: 'forbidden-secret-key',
 			}
-			await expect(opened.root.run('rotate', replacement)).resolves.toMatchObject({
+			await expect(opened.root.runDto('rotate', replacement)).resolves.toMatchObject({
 				action: { ok: false, code: 'rejected' },
 				data: { ok: true },
 			})
@@ -211,7 +213,7 @@ describe('S3 Workbench credential rotation', () => {
 			})
 
 			await host.stop(S3Plugin)
-			await expect(opened.root.run('rotate', replacement)).resolves.toMatchObject({
+			await expect(opened.root.runDto('rotate', replacement)).resolves.toMatchObject({
 				action: { ok: false, code: 'invalid_input' },
 			})
 		}
@@ -219,11 +221,14 @@ describe('S3 Workbench credential rotation', () => {
 
 	it('keeps credential Content topology fixed and rejects local or anonymous backends', async () => {
 		{
-			await using host = await createWorkbenchTestHost()
+			await using host = await createTestHost({
+				workbench: true,
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.start(S3Plugin)
 			using opened = await openCredentials(host, ADMIN)
-			await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
+			await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
 				data: {
 					status: {
 						buckets: [
@@ -237,7 +242,7 @@ describe('S3 Workbench credential rotation', () => {
 				},
 			})
 			await expect(
-				opened.root.run('rotate', {
+				opened.root.runDto('rotate', {
 					bucketId: 'default',
 					accessKeyId: 'unused-access-key',
 					secretAccessKey: 'unused-secret-key',
@@ -246,7 +251,10 @@ describe('S3 Workbench credential rotation', () => {
 		}
 
 		{
-			await using host = await createWorkbenchTestHost()
+			await using host = await createTestHost({
+				workbench: true,
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.start(S3Plugin, {
 				initialConfig: {
@@ -267,7 +275,7 @@ describe('S3 Workbench credential rotation', () => {
 				},
 			})
 			using opened = await openCredentials(host, ADMIN)
-			await expect(opened.root.subscribe(contentObserver())).resolves.toMatchObject({
+			await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
 				data: {
 					status: {
 						buckets: [
@@ -281,7 +289,7 @@ describe('S3 Workbench credential rotation', () => {
 				},
 			})
 			await expect(
-				opened.root.run('rotate', {
+				opened.root.runDto('rotate', {
 					bucketId: 'public',
 					accessKeyId: 'unused-access-key',
 					secretAccessKey: 'unused-secret-key',

@@ -78,7 +78,7 @@ export type ConfigSchemaSourceResolver = {
 	): Promise<ConfigSourceSymbol | undefined>
 }
 
-const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/test', '@pluxel/test'])
+const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/internal/test'])
 const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/core/toolchain'
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {

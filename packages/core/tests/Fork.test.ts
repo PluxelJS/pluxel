@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 @Plugin({ forkable: true })
 class Forkable extends BasePlugin {}

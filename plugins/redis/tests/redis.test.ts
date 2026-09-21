@@ -1,12 +1,13 @@
-import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import {
 	formatPluginNodeReference,
 	pluginNodeAddressOf,
 	type PluginConstructor,
+	BasePlugin,
+	Plugin,
 } from '@pluxel/core'
+import { standardServices } from '@pluxel/services'
+import { createTestHost, type TestHost } from '@pluxel/test'
 import * as v from 'valibot'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const redisMock = vi.hoisted(() => {
@@ -88,7 +89,7 @@ class RedisConsumerB extends BasePlugin {
 }
 
 async function startPlugins(
-	host: ServiceTestHost,
+	host: TestHost<boolean>,
 	plugins: readonly PluginConstructor[],
 ): Promise<void> {
 	await host.start(plugins)
@@ -122,7 +123,9 @@ beforeEach(() => {
 describe('@pluxel/redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		{
-			await using host = await createServiceTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await startPlugins(host, [RedisPlugin, RedisConsumer])
 
@@ -151,7 +154,10 @@ describe('@pluxel/redis', () => {
 
 	it('publishes live connection state and a bounded transient PING form', async () => {
 		{
-			await using host = await createWorkbenchTestHost()
+			await using host = await createTestHost({
+				workbench: true,
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.start(RedisPlugin)
 
@@ -163,7 +169,7 @@ describe('@pluxel/redis', () => {
 
 			const updates: unknown[] = []
 			await expect(
-				opened.root.subscribe(async (outcome) => {
+				opened.root.subscribeDto(async (outcome) => {
 					updates.push(outcome)
 				}),
 			).resolves.toMatchObject({
@@ -182,7 +188,7 @@ describe('@pluxel/redis', () => {
 				},
 			})
 			await expect(
-				opened.root.run('ping', { connectionId: 'default', payload: 'workbench' }),
+				opened.root.runDto('ping', { connectionId: 'default', payload: 'workbench' }),
 			).resolves.toMatchObject({
 				action: { ok: true, message: expect.stringContaining('replied in') },
 				data: {
@@ -192,7 +198,7 @@ describe('@pluxel/redis', () => {
 			})
 			expect(redisMock.client.ping).toHaveBeenCalledWith('workbench')
 			await expect(
-				opened.root.run('ping', {
+				opened.root.runDto('ping', {
 					connectionId: 'default',
 					payload: 'x'.repeat(257),
 				}),
@@ -249,7 +255,9 @@ describe('@pluxel/redis', () => {
 			.mockImplementationOnce(() => west.client)
 
 		{
-			await using host = await createServiceTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.commit((change) => {
 				change.start(RedisPlugin, {
@@ -288,7 +296,9 @@ describe('@pluxel/redis', () => {
 		redisMock.client.connect.mockRejectedValueOnce(new Error('offline'))
 
 		{
-			await using host = await createServiceTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			const failure = await host.commitExpectFail((change) => {
 				change.start(RedisPlugin)

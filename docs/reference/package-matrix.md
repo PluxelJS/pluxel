@@ -9,31 +9,31 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 ## 公开包
 
-| Package                         | 用途                                                          | 从哪里开始                                                  |
-| ------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------- |
-| `@pluxel/create`                | 创建包含宿主、插件、前端和测试的示例项目                      | [快速开始](../getting-started/index.md)                     |
-| `@pluxel/context`               | 为独立宿主组合固定能力与惰性服务                              | [组合 Context host](./context-hosts.md)                     |
-| `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                              | [Plugin 模型](../getting-started/plugin-model.md)           |
-| `@pluxel/services`              | 官方服务、日志、管理面与应用组合                              | [组合 Host 服务](./runtime-services.md)                     |
-| `@pluxel/workbench`             | Content、View、Attachment、浏览器 SDK 与官方 Shell            | [View](../workbench/view.md)                                |
-| `@pluxel/vault-admin`           | 可选 Vault 管理 View                                          | [Vault](../runtime/vault.md)                                |
-| `@pluxel/host`                  | catalog、运行意图、图更新与动态来源                           | [配置插件宿主](../getting-started/host-setup.md)            |
-| `@pluxel/host-dev`              | 通用 Vite、HMR 与一次性开发脚本                               | [CLI 与工具链](../development/tooling.md)                   |
-| `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、开发控制台与源码工作区命令      | [CLI 与工具链](../development/tooling.md)                   |
-| `@pluxel/rolldown`              | Plugin package 与 static application 构建集成                 | [开发和发布插件包](../development/plugin-package.md)        |
-| `@pluxel/test`                  | Vitest/Vite preset、filesystem fixture 与显式 unsafe lowering | [测试 Plugin](../development/testing.md)                    |
-| `@pluxel/async`                 | 零依赖 async 任务图与有界并发迭代                             | [Async 任务图与有界迭代](./async.md)                        |
-| `@pluxel/commands`              | command 定义、校验、live registry 与 argv/message 参数路由    | [Commands](../runtime/commands.md)                          |
-| `@pluxel/agent-tools`           | 可选 Agent Toolset 与 command allowlist Plugin                | [Agent tools](../plugins/agent-tools.md)                    |
-| `valibot-form`                  | Valibot 表单 metadata 与可选 Web adapter                      | [Valibot 配置表单](../workbench/valibot-form.mdx)           |
-| `@pluxel/auth`                  | Workbench 与 Management API 认证 provider                     | [Management 认证](../plugins/auth.md)                       |
-| `@pluxel/wretch`                | Plugin-owned HTTP client                                      | [Wretch HTTP client](../plugins/wretch.md)                  |
-| `@pluxel/fonts`                 | 服务端字体注册与 provider                                     | [字体](../plugins/rendering/fonts.md)                       |
-| `@pluxel/canvas`                | 有预算约束的服务端 Canvas、Pretext 文字准备与静态表格工具     | [Canvas](../plugins/rendering/canvas.md)                    |
-| `@pluxel/echarts`               | 服务端 ECharts 渲染                                           | [ECharts](../plugins/rendering/echarts.md)                  |
-| `@pluxel/takumi`                | 有预算约束的 HTML/node-tree 图片渲染                          | [Takumi](../plugins/rendering/takumi.md)                    |
-| `@pluxel/takumi-markdown`       | 有预算约束的 GFM Markdown、表格与静态代码高亮图片渲染         | [Markdown / Typst](../plugins/rendering/takumi-markdown.md) |
-| `@pluxel/takumi-markdown-typst` | 可选受限 Typst 数学 SVG Markdown extension                    | [Markdown / Typst](../plugins/rendering/takumi-markdown.md) |
+| Package                         | 用途                                                       | 从哪里开始                                                  |
+| ------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------- |
+| `@pluxel/create`                | 创建包含宿主、插件、前端和测试的示例项目                   | [快速开始](../getting-started/index.md)                     |
+| `@pluxel/context`               | 为独立宿主组合固定能力与惰性服务                           | [组合 Context host](./context-hosts.md)                     |
+| `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                           | [Plugin 模型](../getting-started/plugin-model.md)           |
+| `@pluxel/services`              | 官方服务、日志、管理面与应用组合                           | [组合 Host 服务](./runtime-services.md)                     |
+| `@pluxel/workbench`             | Content、View、Attachment、浏览器 SDK 与官方 Shell         | [View](../workbench/view.md)                                |
+| `@pluxel/vault-admin`           | 可选 Vault 管理 View                                       | [Vault](../runtime/vault.md)                                |
+| `@pluxel/host`                  | catalog、运行意图、图更新与动态来源                        | [配置插件宿主](../getting-started/host-setup.md)            |
+| `@pluxel/host-dev`              | 通用 Vite、HMR 与一次性开发脚本                            | [CLI 与工具链](../development/tooling.md)                   |
+| `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、开发控制台与源码工作区命令   | [CLI 与工具链](../development/tooling.md)                   |
+| `@pluxel/rolldown`              | Plugin package 与 static application 构建集成              | [开发和发布插件包](../development/plugin-package.md)        |
+| `@pluxel/test`                  | 统一插件测试 host、Vitest/Vite preset 与文件 fixture       | [测试 Plugin](../development/testing.md)                    |
+| `@pluxel/async`                 | 零依赖 async 任务图与有界并发迭代                          | [Async 任务图与有界迭代](./async.md)                        |
+| `@pluxel/commands`              | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../runtime/commands.md)                          |
+| `@pluxel/agent-tools`           | 可选 Agent Toolset 与 command allowlist Plugin             | [Agent tools](../plugins/agent-tools.md)                    |
+| `valibot-form`                  | Valibot 表单 metadata 与可选 Web adapter                   | [Valibot 配置表单](../workbench/valibot-form.mdx)           |
+| `@pluxel/auth`                  | Workbench 与 Management API 认证 provider                  | [Management 认证](../plugins/auth.md)                       |
+| `@pluxel/wretch`                | Plugin-owned HTTP client                                   | [Wretch HTTP client](../plugins/wretch.md)                  |
+| `@pluxel/fonts`                 | 服务端字体注册与 provider                                  | [字体](../plugins/rendering/fonts.md)                       |
+| `@pluxel/canvas`                | 有预算约束的服务端 Canvas、Pretext 文字准备与静态表格工具  | [Canvas](../plugins/rendering/canvas.md)                    |
+| `@pluxel/echarts`               | 服务端 ECharts 渲染                                        | [ECharts](../plugins/rendering/echarts.md)                  |
+| `@pluxel/takumi`                | 有预算约束的 HTML/node-tree 图片渲染                       | [Takumi](../plugins/rendering/takumi.md)                    |
+| `@pluxel/takumi-markdown`       | 有预算约束的 GFM Markdown、表格与静态代码高亮图片渲染      | [Markdown / Typst](../plugins/rendering/takumi-markdown.md) |
+| `@pluxel/takumi-markdown-typst` | 可选受限 Typst 数学 SVG Markdown extension                 | [Markdown / Typst](../plugins/rendering/takumi-markdown.md) |
 
 这些 package 未标记为 private，并声明了面向消费者的入口。消费者只从 package `exports` 导入；版本可用性以 registry 和 release metadata 为准。
 
@@ -49,7 +49,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 ## 同包的可选入口
 
-`@pluxel/services/logging`、`/management`、`/preset`、`/vite`、`/build` 与 `/test` 都属于 `@pluxel/services`；`@pluxel/host/dynamic` 属于 Host。安装包不等于启用所有领域：基础入口不加载未选择的日志、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
+`@pluxel/services/logging`、`/management`、`/preset`、`/vite` 与 `/build` 都属于 `@pluxel/services`；`@pluxel/host/dynamic` 属于 Host。安装包不等于启用所有领域：基础入口不加载未选择的日志、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
 
 ## Workspace-only 能力
 
@@ -78,6 +78,6 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 1. 写 Plugin 时从 `@pluxel/core` 和实际需要的能力 package 开始。
 2. 装配宿主时使用 Host 应用声明和显式 services，按需增加动态来源。业务 Plugin 不依赖宿主实现。
-3. 测试 host 从所验证层的 `@pluxel/core/test` 或 `@pluxel/services/test` 导入；`@pluxel/test` 只使用 `/vitest`、`/fixtures` 或 `/unsafe` subpath，不直接 new 内部 host。
+3. 测试 host 统一从 `@pluxel/test` 根入口导入；`/vitest`、`/fixtures` 和 `/unsafe` 分别提供编译配置、文件资源和受限 toolchain 测试工具，不直接 new 内部 host。
 4. 导入路径必须存在于所安装版本的 `exports`，且目标 package 不能是 private。
 5. `package.json#exports` 与真实源码 export 是入口契约；文档必须与该契约保持一致。

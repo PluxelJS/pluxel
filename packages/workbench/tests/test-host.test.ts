@@ -1,10 +1,10 @@
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
-import { createWorkbenchTestHost } from '@pluxel/services/test'
-import { createLocalRpcClient } from '@pluxel/workbench/test'
+import { createTestHost } from '@pluxel/test'
+import { http } from '@pluxel/services/http'
+import { persistence } from '@pluxel/services/persistence'
 import { WorkbenchOpenedContentHandle } from '@pluxel/workbench/internal'
-import { RpcTarget } from 'capnweb'
-import { describe, expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
 const WorkbenchLeaseDefinition = workbench.define({
 	lease: workbench.content({
@@ -20,20 +20,26 @@ class WorkbenchLeaseFixture extends BasePlugin {
 	}
 }
 
-class BorrowedTarget extends RpcTarget {
-	readonly dispose = vi.fn()
-
-	echo(value: Readonly<{ nested: { count: number } }>) {
-		return value
-	}
-
-	[Symbol.dispose]() {
-		this.dispose()
-	}
-}
+it('opens a Workbench entry with only HTTP and Persistence as base services', async () => {
+	await using host = await createTestHost({
+		workbench: true,
+		services: [http(), persistence({ mode: 'memory' })],
+	})
+	await host.start(WorkbenchLeaseFixture)
+	using opened = await host.workbench.open({
+		target: WorkbenchLeaseFixture,
+		entry: WorkbenchLeaseDefinition.lease,
+		principal: { provider: 'test', subject: 'minimal-workbench-host' },
+	})
+	expect(opened).toBeDefined()
+	expect(() => host.commands.list()).toThrow(/commands/i)
+})
 
 it('reports and closes a leaked public Workbench lease during host disposal', async () => {
-	const host = await createWorkbenchTestHost()
+	const host = await createTestHost({
+		workbench: true,
+		services: [http(), persistence({ mode: 'memory' })],
+	})
 	let disposalAttempted = false
 	try {
 		await host.start(WorkbenchLeaseFixture)
@@ -96,19 +102,4 @@ it('reports and closes a leaked public Workbench lease during host disposal', as
 	} finally {
 		if (!disposalAttempted) await host.dispose().catch((): undefined => undefined)
 	}
-})
-
-describe('local RPC ownership', () => {
-	it('borrows the root target while preserving local membrane copies', async () => {
-		const target = new BorrowedTarget()
-		const client = createLocalRpcClient(target)
-		const input = { nested: { count: 1 } }
-		const output = await client.echo(input)
-		expect(output).toEqual(input)
-		expect(output).not.toBe(input)
-		client[Symbol.dispose]()
-		expect(target.dispose).not.toHaveBeenCalled()
-		target[Symbol.dispose]()
-		expect(target.dispose).toHaveBeenCalledOnce()
-	})
 })

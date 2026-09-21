@@ -24,7 +24,8 @@ const definition = (defineDatabase as Function)({ schema: { items } }, artifact)
 	typeof defineDatabase<{ items: typeof items }>
 >
 let handle!: PluginDatabaseHandle<typeof definition>
-@Plugin()
+// PGlite cold-start includes WASM compilation; this test measures draining, not startup latency.
+@Plugin({ startTimeoutMs: 15_000 })
 class Owner extends BasePlugin {
 	async init() {
 		handle = await this.ctx.require(Database).use(definition)
@@ -57,7 +58,11 @@ it('opens the selected backend lazily and drains accepted transactions before Ho
 	const release = Promise.withResolvers<void>()
 	try {
 		expect(opens).toBe(0)
-		await host.startNode(pluginNodeAddressOf(Owner))
+		const started = await host.startNode(pluginNodeAddressOf(Owner))
+		expect(started.core).toMatchObject({
+			status: 'committed',
+			summary: { lifecycleReport: { ok: true } },
+		})
 		expect(opens).toBe(1)
 		const operation = handle.transaction(async (tx) => {
 			await tx.insert(items).values({ id: 'before-close' })

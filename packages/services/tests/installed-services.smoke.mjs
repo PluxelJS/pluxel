@@ -54,7 +54,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		}
 		const nodeTypes = JSON.parse(
 			await readFile(
-				join(workspace, 'packages/context/node_modules/@types/node/package.json'),
+				join(workspace, 'packages/services/node_modules/@types/node/package.json'),
 				'utf8',
 			),
 		).version
@@ -75,7 +75,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			join(root, 'pnpm-workspace.yaml'),
 			JSON.stringify({ packages: ['.'], overrides: dependencies }),
 		)
-		await run('pnpm', ['--dir', root, 'install', '--offline', '--ignore-scripts'], workspace)
+		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
 		for (const name of Object.keys(dependencies))
 			expect(await realpath(join(root, 'node_modules', name))).not.toContain(workspace)
 		const installed = await readdir(join(root, 'node_modules/.pnpm'))
@@ -114,7 +114,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		)
 		await checkOptionalDeclarations(root)
 		// Expand the same genuinely installed consumer to the optional UI/development plane.
-		for (const name of ['workbench', 'host-dev', 'rolldown']) {
+		for (const name of ['workbench', 'rolldown', 'test']) {
 			const tarball = join(root, `${name}.tgz`)
 			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
 			dependencies[`@pluxel/${name}`] = `file:${tarball}`
@@ -143,6 +143,22 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 					elysia: elysiaVersion,
 				},
 			}),
+		)
+		await writeFile(
+			join(root, 'pnpm-workspace.yaml'),
+			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+		)
+		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
+		await writeFile(join(root, 'node-test.mjs'), nodeTestConsumer)
+		const nodeTestResult = await run(process.execPath, ['node-test.mjs'], root)
+		expect(nodeTestResult.stdout).toContain('ISOLATED_NODE_TEST_OK')
+		const hostDevTarball = join(root, 'host-dev.tgz')
+		await run('pnpm', ['pack', '--out', hostDevTarball], join(workspace, 'packages/host-dev'))
+		dependencies['@pluxel/host-dev'] = `file:${hostDevTarball}`
+		const consumerManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({ ...consumerManifest, dependencies }),
 		)
 		await writeFile(
 			join(root, 'pnpm-workspace.yaml'),
@@ -256,11 +272,11 @@ await first.close(); await second.close()
 `
 
 const optionalTypeConsumer = `
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
-const isolatedTestHost: ServiceTestHost = await createServiceTestHost({ services: [] })
+import { createTestHost, type TestHost } from '@pluxel/test'
+const isolatedTestHost: TestHost = await createTestHost()
 await isolatedTestHost.dispose()
-import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/services/test'
-const typedWorkbenchTestHost: WorkbenchTestHost = await createWorkbenchTestHost()
+const typedWorkbenchTestHost: TestHost<true> = await createTestHost({ workbench: true, services: baseServices })
+void typedWorkbenchTestHost.workbench.open
 await typedWorkbenchTestHost.dispose()
 import { Workbench, workbench } from '@pluxel/workbench'
 import { workbenchService } from '@pluxel/workbench/service'
@@ -297,13 +313,12 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 const loads = []
 const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
-const { createServiceTestHost } = await import('@pluxel/services/test')
-const emptyTestHost = await createServiceTestHost({ services: [] })
+const { createTestHost } = await import('@pluxel/test')
+const emptyTestHost = await createTestHost()
+assert.equal(emptyTestHost.workbench, undefined)
 await emptyTestHost.dispose()
 assert.equal(loads.some(url => /elysia/.test(url)), false, 'empty test host must not load HTTP')
 assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
-const managedTestHost = await createServiceTestHost({ management: true })
-await managedTestHost.dispose()
 const { createHost } = await import('@pluxel/host')
 const { resolveContextCapability } = await import('@pluxel/core/host')
 const { Workbench } = await import('@pluxel/workbench')
@@ -334,8 +349,8 @@ assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
 await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
-const { createWorkbenchTestHost } = await import('@pluxel/services/test')
-const workbenchTestHost = await createWorkbenchTestHost()
+const workbenchTestHost = await createTestHost({ workbench: true, services: [http(), persistence({ mode: 'memory' })] })
+assert.equal(typeof workbenchTestHost.workbench.open, 'function')
 await workbenchTestHost.dispose()
 console.log('ISOLATED_WORKBENCH_OK')
 `
@@ -404,4 +419,29 @@ try {
  assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
 } finally { await standardHost.close(); hook.deregister() }
 console.log('ISOLATED_STANDARD_SERVICES_OK')
+`
+
+const nodeTestConsumer = `
+import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
+import { writeFile, access } from 'node:fs/promises'
+const hook = registerHooks({ load(url, context, next) {
+ if (/@pluxel[+/]host-dev/.test(url)) throw new Error('Node test compiler loaded development host: ' + url)
+ return next(url, context)
+} })
+const { createTestHost } = await import('@pluxel/test')
+const { nodeModules, defineNodeModule } = await import('@pluxel/services/node')
+const { workers, defineWorkerTask } = await import('@pluxel/services/workers')
+await writeFile(new URL('./test-task.ts', import.meta.url), 'export default (value: number): number => value * 2')
+let ctx
+let artifact
+const host = await createTestHost({ services: [nodeModules(), workers(), { name: 'capture test owner', capabilities: [], prepare(input) { ctx = input.ctx } }] })
+try {
+ const task = defineWorkerTask(import.meta.url, './test-task.ts')
+ assert.equal(await ctx.workers.run(task, 21), 42)
+ await ctx.nodeModules.use(defineNodeModule(import.meta.url, './test-task.ts'), url => { artifact = url })
+ await access(artifact)
+} finally { await host.dispose(); hook.deregister() }
+await assert.rejects(access(artifact), { code: 'ENOENT' })
+console.log('ISOLATED_NODE_TEST_OK')
 `

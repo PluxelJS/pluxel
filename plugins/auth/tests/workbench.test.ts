@@ -1,4 +1,4 @@
-import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/services/test'
+import { createTestHost, type TestHost } from '@pluxel/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import type { WorkbenchPrincipal } from '@pluxel/workbench'
@@ -10,7 +10,7 @@ import { AuthWorkbench } from '../src/workbench.ts'
 const PASSWORD = 'correct horse battery staple'
 const LOCAL_RECOVERY = Object.freeze({ provider: 'local', subject: 'local' })
 
-function openSetup(host: WorkbenchTestHost, principal: WorkbenchPrincipal = LOCAL_RECOVERY) {
+function openSetup(host: TestHost<true>, principal: WorkbenchPrincipal = LOCAL_RECOVERY) {
 	return host.workbench.open({
 		target: AuthPlugin,
 		entry: AuthWorkbench.setup,
@@ -22,7 +22,8 @@ function openSetup(host: WorkbenchTestHost, principal: WorkbenchPrincipal = LOCA
 describe('Auth Workbench credential setup', () => {
 	it('provisions the first password and refuses credential rotation', async () => {
 		{
-			await using host = await createWorkbenchTestHost({
+			await using host = await createTestHost({
+				workbench: true,
 				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 			})
 
@@ -66,7 +67,8 @@ describe('Auth Workbench credential setup', () => {
 
 	it('allows mutations only for the loopback recovery principal', async () => {
 		{
-			await using host = await createWorkbenchTestHost({
+			await using host = await createTestHost({
+				workbench: true,
 				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 			})
 
@@ -90,7 +92,8 @@ describe('Auth Workbench credential setup', () => {
 
 	it('provisions password and TOTP as one credential', async () => {
 		{
-			await using host = await createWorkbenchTestHost({
+			await using host = await createTestHost({
+				workbench: true,
 				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 			})
 
@@ -123,7 +126,8 @@ describe('Auth Workbench credential setup', () => {
 
 	it('provisions a confidential OIDC secret and skips it for public clients', async () => {
 		{
-			await using host = await createWorkbenchTestHost({
+			await using host = await createTestHost({
+				workbench: true,
 				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 			})
 
@@ -155,7 +159,10 @@ describe('Auth Workbench credential setup', () => {
 		}
 
 		{
-			await using host = await createWorkbenchTestHost()
+			await using host = await createTestHost({
+				workbench: true,
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.start(AuthPlugin, {
 				initialConfig: {

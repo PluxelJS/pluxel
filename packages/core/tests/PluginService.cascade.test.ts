@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CorePluginGraphVerificationError, requirePluginService } from '@pluxel/core/internal'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 @Plugin({ displayName: 'Cascade provider' })
 class CascadeProvider extends BasePlugin {}

@@ -9,8 +9,7 @@ import {
 	requirePluginService,
 	resolveCoreRootInputs,
 } from '@pluxel/core/internal'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { describe, expect, it, vi } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 

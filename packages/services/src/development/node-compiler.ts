@@ -1,4 +1,3 @@
-import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
 import type { Context } from '@pluxel/core'
 import { readNodeModuleDeclaration } from '../node/declaration'
 import type { NodeModuleSourceSubscription } from '../node/service'
@@ -18,6 +17,8 @@ import type { ViteDevServer } from 'vite'
 
 export type NodeArtifactCompilerOptions = Readonly<{
 	cacheDir?: string
+	/** Disable filesystem watching for isolated, one-shot test hosts. Defaults to true. */
+	watch?: boolean
 	viteServer?: {
 		config: Pick<ViteDevServer['config'], 'root'>
 		environments?: ViteDevServer['environments']
@@ -92,12 +93,14 @@ export class NodeArtifactCompiler {
 	private closed = false
 	private closeTask?: Promise<void>
 	private readonly cacheDir: string
+	private readonly watchSources: boolean
 	private readonly viteServer: NodeArtifactCompilerOptions['viteServer']
 	constructor(
 		private readonly ctx: Context,
 		options: NodeArtifactCompilerOptions = {},
 	) {
 		this.viteServer = options.viteServer
+		this.watchSources = options.watch ?? true
 		this.cacheDir = resolve(options.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts'))
 	}
 	dispose(): Promise<void> {
@@ -255,6 +258,8 @@ export class NodeArtifactCompiler {
 	}
 
 	private async refreshNodeSourceFiles(entry: NodeModuleCompileEntry): Promise<void> {
+		if (!this.viteServer?.environments) return
+		const { HOST_VITE_ENVIRONMENT } = await import('@pluxel/host-dev/internal')
 		const environment = this.viteServer?.environments?.[HOST_VITE_ENVIRONMENT]
 		if (!environment) return
 		let url = entry.entryPath
@@ -270,7 +275,7 @@ export class NodeArtifactCompiler {
 
 	private setupNodeWatcher(entry: NodeModuleCompileEntry): void {
 		this.disposeNodeWatcher(entry)
-		if (!entry.active || entry.sourceFiles.length === 0) return
+		if (!this.watchSources || !entry.active || entry.sourceFiles.length === 0) return
 		const watcher = watch(entry.sourceFiles, {
 			ignoreInitial: true,
 			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },

@@ -333,6 +333,6 @@ Core 基础作者入口固定提供；清单中的其他入口必须能从应用
 
 应用显式提供使用到的 Core、Host、Services 等框架 peer，以保证能力 token、Context 和编译 ABI 使用同一实例。optional peer 仅在启用对应入口时需要，例如 Workbench、Vite 与构建工具。普通实现依赖由所属包安装。
 
-Core 拥有插件内核，Host 拥有应用与动态来源，Services 拥有官方服务及其组合，Workbench 拥有 UI 能力与 Shell。Logging、Management 和 preset 是 Services 的领域入口，不需要分别安装包。Services 的可选 Workbench 组合与 Workbench 使用的 Services 协议允许包级相互引用；具体模块不能依靠循环初始化，也不能从基础入口加载未选择的后端。集成测试宿主使用 `@pluxel/services/test`。
+Core 拥有插件内核，Host 拥有应用与动态来源，Services 拥有官方服务及其组合，Workbench 拥有 UI 能力与 Shell。Logging、Management 和 preset 是 Services 的领域入口，不需要分别安装包。Services 的可选 Workbench 组合与 Workbench 使用的 Services 协议允许包级相互引用；具体模块不能依靠循环初始化，也不能从基础入口加载未选择的后端。插件集成测试宿主使用 `@pluxel/test`。
 
 Workbench renderer 的语法或语义候选被拒绝时，查看应用更新报告中的 `retained-previous` 与原始错误，上一已接受制品继续可读；只有已接受计划的后台构建失败才显示 producer `failed`。Hot update 错误同时写入所选 Host 日志并交给 Vite。

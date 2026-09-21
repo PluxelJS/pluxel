@@ -1,3 +1,5 @@
+import { standardServices } from '@pluxel/services'
+import { createTestHost } from '@pluxel/test'
 import { Commands } from '@pluxel/services/commands'
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
@@ -7,8 +9,7 @@ import type {
 	ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 import type { PiAgentPluginConfig } from '../src/config.ts'
 import { PiAgentController } from '../src/controller.ts'
@@ -119,200 +120,192 @@ class BlockingEngine extends FakeEngine {
 
 describe('PiAgentController', () => {
 	it('starts and stops as an ordinary headless Plugin with AgentTools as a required dependency', async () => {
-		const host = await createServiceTestHost()
-		try {
-			await host.start(AgentToolsPlugin, { initialConfig: policy })
-			await host.start(PiAgentPlugin)
-			expect(host.isRunning(AgentToolsPlugin)).toBe(true)
-			expect(host.isRunning(PiAgentPlugin)).toBe(true)
-			expect(host.require(PiAgentPlugin).sessions()).toEqual([])
-		} finally {
-			await host.dispose()
-		}
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+
+		await host.start(AgentToolsPlugin, { initialConfig: policy })
+		await host.start(PiAgentPlugin)
+		expect(host.isRunning(AgentToolsPlugin)).toBe(true)
+		expect(host.isRunning(PiAgentPlugin)).toBe(true)
+		expect(host.require(PiAgentPlugin).sessions()).toEqual([])
 	})
 
 	it('projects only the bound AgentTools catalog and dispatches through it', async () => {
-		const host = await createServiceTestHost()
-		try {
-			await host.start(AgentToolsPlugin, {
-				catalog: [NotesPlugin],
-				initialConfig: policy,
-			})
-			await host.start(NotesPlugin)
-			const engine = new FakeEngine()
-			const controller = new PiAgentController(
-				host.require(AgentToolsPlugin),
-				engine,
-				config,
-				() => {},
-			)
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
-			const session = await controller.createSession({ id: 'main' })
-			const definitions = engine.created[0].options.tools
-			expect(definitions.map(({ name }) => name)).toEqual(
-				expect.arrayContaining(['pluxel_goal', 'pluxel_subagent']),
-			)
-			expect(definitions.map(({ name }) => name)).not.toContain('read')
-			expect(definitions.map(({ name }) => name)).not.toContain('bash')
-			const command = definitions.find(({ description }) => description.includes('notes.echo'))
-			expect(command?.name).toMatch(/^pluxel_cmd_notes_echo_/)
-			await expect(execute(command!, { text: 'hello' })).resolves.toMatchObject({
-				content: [{ text: '{"text":"hello"}' }],
-			})
-			expect(session.snapshot().availableCommandNames).toEqual(['notes.echo'])
+		await host.start(AgentToolsPlugin, {
+			catalog: [NotesPlugin],
+			initialConfig: policy,
+		})
+		await host.start(NotesPlugin)
+		const engine = new FakeEngine()
+		const controller = new PiAgentController(
+			host.require(AgentToolsPlugin),
+			engine,
+			config,
+			() => {},
+		)
 
-			await controller.close()
-			expect(engine.created[0].session.abort).toHaveBeenCalled()
-			expect(engine.created[0].session.waitForIdle).toHaveBeenCalled()
-			expect(engine.created[0].session.dispose).toHaveBeenCalledOnce()
-		} finally {
-			await host.dispose()
-		}
+		const session = await controller.createSession({ id: 'main' })
+		const definitions = engine.created[0].options.tools
+		expect(definitions.map(({ name }) => name)).toEqual(
+			expect.arrayContaining(['pluxel_goal', 'pluxel_subagent']),
+		)
+		expect(definitions.map(({ name }) => name)).not.toContain('read')
+		expect(definitions.map(({ name }) => name)).not.toContain('bash')
+		const command = definitions.find(({ description }) => description.includes('notes.echo'))
+		expect(command?.name).toMatch(/^pluxel_cmd_notes_echo_/)
+		await expect(execute(command!, { text: 'hello' })).resolves.toMatchObject({
+			content: [{ text: '{"text":"hello"}' }],
+		})
+		expect(session.snapshot().availableCommandNames).toEqual(['notes.echo'])
+
+		await controller.close()
+		expect(engine.created[0].session.abort).toHaveBeenCalled()
+		expect(engine.created[0].session.waitForIdle).toHaveBeenCalled()
+		expect(engine.created[0].session.dispose).toHaveBeenCalledOnce()
 	})
 
 	it('atomically refreshes Pi tools when the bound command catalog changes', async () => {
-		const host = await createServiceTestHost()
-		try {
-			await host.start(AgentToolsPlugin, {
-				catalog: [NotesPlugin],
-				initialConfig: policy,
-			})
-			const engine = new FakeEngine()
-			const controller = new PiAgentController(
-				host.require(AgentToolsPlugin),
-				engine,
-				config,
-				() => {},
-			)
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
-			const session = await controller.createSession({ id: 'main' })
-			expect(session.snapshot().availableCommandNames).toEqual([])
-			expect(
-				engine.created[0].session.agent.state.tools.some(({ description }) =>
-					description.includes('notes.echo'),
-				),
-			).toBe(false)
+		await host.start(AgentToolsPlugin, {
+			catalog: [NotesPlugin],
+			initialConfig: policy,
+		})
+		const engine = new FakeEngine()
+		const controller = new PiAgentController(
+			host.require(AgentToolsPlugin),
+			engine,
+			config,
+			() => {},
+		)
 
-			await host.start(NotesPlugin)
-			expect(session.snapshot().availableCommandNames).toEqual(['notes.echo'])
-			expect(
-				engine.created[0].session.agent.state.tools.some(({ description }) =>
-					description.includes('notes.echo'),
-				),
-			).toBe(true)
-			await controller.close()
-		} finally {
-			await host.dispose()
-		}
+		const session = await controller.createSession({ id: 'main' })
+		expect(session.snapshot().availableCommandNames).toEqual([])
+		expect(
+			engine.created[0].session.agent.state.tools.some(({ description }) =>
+				description.includes('notes.echo'),
+			),
+		).toBe(false)
+
+		await host.start(NotesPlugin)
+		expect(session.snapshot().availableCommandNames).toEqual(['notes.echo'])
+		expect(
+			engine.created[0].session.agent.state.tools.some(({ description }) =>
+				description.includes('notes.echo'),
+			),
+		).toBe(true)
+		await controller.close()
 	})
 
 	it('disposes active sessions while an in-flight session creation settles', async () => {
-		const host = await createServiceTestHost()
-		try {
-			await host.start(AgentToolsPlugin, { initialConfig: policy })
-			const engine = new BlockingEngine()
-			const controller = new PiAgentController(
-				host.require(AgentToolsPlugin),
-				engine,
-				config,
-				() => {},
-			)
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
-			await controller.createSession({ id: 'active' })
-			engine.blockNext = true
-			const pending = controller.createSession({ id: 'pending' }).then(
-				(): undefined => undefined,
-				(error: unknown) => error,
-			)
-			await vi.waitFor(() => expect(engine.hasPendingCreate()).toBe(true))
+		await host.start(AgentToolsPlugin, { initialConfig: policy })
+		const engine = new BlockingEngine()
+		const controller = new PiAgentController(
+			host.require(AgentToolsPlugin),
+			engine,
+			config,
+			() => {},
+		)
 
-			const closing = controller.close()
-			await vi.waitFor(() => expect(engine.created[0].session.abort).toHaveBeenCalled())
-			const detached = engine.finishPendingCreate()
+		await controller.createSession({ id: 'active' })
+		engine.blockNext = true
+		const pending = controller.createSession({ id: 'pending' }).then(
+			(): undefined => undefined,
+			(error: unknown) => error,
+		)
+		await vi.waitFor(() => expect(engine.hasPendingCreate()).toBe(true))
 
-			await expect(pending).resolves.toMatchObject({ code: 'NOT_RUNNING' })
-			await closing
-			expect(detached.dispose).toHaveBeenCalledOnce()
-		} finally {
-			await host.dispose()
-		}
+		const closing = controller.close()
+		await vi.waitFor(() => expect(engine.created[0].session.abort).toHaveBeenCalled())
+		const detached = engine.finishPendingCreate()
+
+		await expect(pending).resolves.toMatchObject({ code: 'NOT_RUNNING' })
+		await closing
+		expect(detached.dispose).toHaveBeenCalledOnce()
 	})
 
 	it('keeps real goal state and runs bounded subagents with the inherited setup', async () => {
-		const host = await createServiceTestHost()
-		try {
-			await host.start(AgentToolsPlugin, {
-				catalog: [NotesPlugin],
-				initialConfig: policy,
-			})
-			await host.start(NotesPlugin)
-			const engine = new FakeEngine()
-			const controller = new PiAgentController(
-				host.require(AgentToolsPlugin),
-				engine,
-				config,
-				() => {},
-			)
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
-			const session = await controller.createSession({ id: 'main' })
-			session.setGoal('Ship the integration')
-			expect(session.snapshot().goal).toMatchObject({
-				text: 'Ship the integration',
-				status: 'active',
-			})
-			const child = await session.spawnSubagent('Review lifecycle ownership')
-			expect(child).toEqual({
-				ok: true,
-				id: expect.any(String),
-				text: 'completed: Review lifecycle ownership',
-			})
-			expect(engine.created).toHaveLength(2)
-			expect(
-				engine.created[1].options.tools.some(({ description }) =>
-					description.includes('notes.echo'),
-				),
-			).toBe(true)
-			expect(session.snapshot().subagents).toMatchObject([
-				{ task: 'Review lifecycle ownership', status: 'completed' },
-			])
-			expect(engine.created[1].session.dispose).toHaveBeenCalledOnce()
+		await host.start(AgentToolsPlugin, {
+			catalog: [NotesPlugin],
+			initialConfig: policy,
+		})
+		await host.start(NotesPlugin)
+		const engine = new FakeEngine()
+		const controller = new PiAgentController(
+			host.require(AgentToolsPlugin),
+			engine,
+			config,
+			() => {},
+		)
 
-			const abort = new AbortController()
-			abort.abort()
-			await expect(
-				session.spawnSubagent('Cancelled before admission', { signal: abort.signal }),
-			).rejects.toMatchObject({ code: 'ABORTED' })
-			expect(session.snapshot().subagents.at(-1)).toMatchObject({ status: 'aborted' })
+		const session = await controller.createSession({ id: 'main' })
+		session.setGoal('Ship the integration')
+		expect(session.snapshot().goal).toMatchObject({
+			text: 'Ship the integration',
+			status: 'active',
+		})
+		const child = await session.spawnSubagent('Review lifecycle ownership')
+		expect(child).toEqual({
+			ok: true,
+			id: expect.any(String),
+			text: 'completed: Review lifecycle ownership',
+		})
+		expect(engine.created).toHaveLength(2)
+		expect(
+			engine.created[1].options.tools.some(({ description }) => description.includes('notes.echo')),
+		).toBe(true)
+		expect(session.snapshot().subagents).toMatchObject([
+			{ task: 'Review lifecycle ownership', status: 'completed' },
+		])
+		expect(engine.created[1].session.dispose).toHaveBeenCalledOnce()
 
-			session.completeGoal('Reviewed and ready')
-			expect(session.snapshot().goal).toMatchObject({
-				status: 'completed',
-				summary: 'Reviewed and ready',
-			})
-			await controller.close()
-		} finally {
-			await host.dispose()
-		}
+		const abort = new AbortController()
+		abort.abort()
+		await expect(
+			session.spawnSubagent('Cancelled before admission', { signal: abort.signal }),
+		).rejects.toMatchObject({ code: 'ABORTED' })
+		expect(session.snapshot().subagents.at(-1)).toMatchObject({ status: 'aborted' })
+
+		session.completeGoal('Reviewed and ready')
+		expect(session.snapshot().goal).toMatchObject({
+			status: 'completed',
+			summary: 'Reviewed and ready',
+		})
+		await controller.close()
 	})
 
 	it('rejects unknown tool setup ids instead of creating an empty accidental session', async () => {
-		const host = await createServiceTestHost()
-		try {
-			await host.start(AgentToolsPlugin, { initialConfig: policy })
-			const controller = new PiAgentController(
-				host.require(AgentToolsPlugin),
-				new FakeEngine(),
-				config,
-				() => {},
-			)
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
-			await expect(controller.createSession({ toolSetupId: 'missing' })).rejects.toMatchObject({
-				code: 'TOOL_SETUP_NOT_FOUND',
-			})
-			await controller.close()
-		} finally {
-			await host.dispose()
-		}
+		await host.start(AgentToolsPlugin, { initialConfig: policy })
+		const controller = new PiAgentController(
+			host.require(AgentToolsPlugin),
+			new FakeEngine(),
+			config,
+			() => {},
+		)
+
+		await expect(controller.createSession({ toolSetupId: 'missing' })).rejects.toMatchObject({
+			code: 'TOOL_SETUP_NOT_FOUND',
+		})
+		await controller.close()
 	})
 })
 

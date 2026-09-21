@@ -133,4 +133,4 @@ export default defineConfig({
 
 ## 测试
 
-Core 插件测试使用 `@pluxel/core/test`；服务组合使用 `@pluxel/services/test` 的 `createServiceTestHost()`。它们是隔离宿主，不能代表已经运行的开发应用。具体调用见[测试插件](../development/testing.md)。
+插件测试统一使用 `@pluxel/test` 的 `createTestHost()`，按需显式组合服务。它们是隔离宿主，不能代表已经运行的开发应用。具体调用见[测试插件](../development/testing.md)。

@@ -1,7 +1,7 @@
-import type { PluginForkRef } from '@pluxel/core/test'
+import type { PluginForkRef } from '@pluxel/core/internal/test'
 import type { BasePlugin } from '@pluxel/core'
-import type { ServiceTestHost } from './test'
-import { createServiceTestHost } from './test'
+import type { TestHost } from './index'
+import { createTestHost } from './index'
 
 type Equal<Left, Right> =
 	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false
@@ -13,7 +13,7 @@ declare class FirstPlugin extends BasePlugin {
 declare class SecondPlugin extends BasePlugin {
 	readonly second: true
 }
-declare const host: ServiceTestHost
+declare const host: TestHost
 declare const fork: PluginForkRef<typeof FirstPlugin>
 
 const single = host.start(FirstPlugin)
@@ -59,10 +59,19 @@ host.fork()
 host.fetch(new URL('/probe', host.http.origin))
 // @ts-expect-error Publication belongs to running Plugins, not a test-host driver.
 host.commands.createMount()
-// @ts-expect-error Workbench testing uses createWorkbenchTestHost().
+// @ts-expect-error Workbench is absent unless explicitly enabled.
 host.workbench
 // @ts-expect-error Service installation uses an explicit list, not a second product configuration.
-await createServiceTestHost({ vault: {} })
+await createTestHost({ vault: {} })
 
 void (null as unknown as Single)
 void (null as unknown as Batch)
+
+const withWorkbench = await createTestHost({ workbench: true })
+withWorkbench.workbench.open
+const withoutWorkbench = await createTestHost()
+// @ts-expect-error No Workbench driver on a bare host.
+withoutWorkbench.workbench.open
+declare const enabled: boolean
+const maybeWorkbench = await createTestHost({ workbench: enabled })
+maybeWorkbench.workbench?.open

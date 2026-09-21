@@ -1,9 +1,8 @@
 import type { BasePlugin } from '@pluxel/core'
 import type { RpcStub, RpcTarget } from 'capnweb'
-import type { WorkbenchTestHost } from './test'
+import type { TestHost } from './index'
 import type { OpenedLocalWorkbenchEntry } from '@pluxel/workbench/test'
-import { createLocalRpcClient } from '@pluxel/workbench/test'
-import type { RuntimeClientBootstrap } from './management/web/session/index'
+import type { RuntimeClientBootstrap } from '@pluxel/services/management/session'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type {
 	WorkbenchAttachmentPlacement,
@@ -15,7 +14,7 @@ type Equal<Left, Right> =
 	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false
 type Assert<Value extends true> = Value
 declare class FirstPlugin extends BasePlugin {}
-declare const host: WorkbenchTestHost
+declare const host: TestHost<true>
 declare const unbound: Extract<RuntimeClientBootstrap, { kind: 'workbench' }>
 // @ts-expect-error Management alone does not promise Workbench methods.
 unbound.workbench.layoutDto({})
@@ -33,12 +32,6 @@ interface ProviderApi extends RpcTarget {
 interface ConsumerApi extends RpcTarget {
 	select(): void
 }
-
-declare const localTarget: ProviderApi
-const localClient = createLocalRpcClient<ProviderApi>(localTarget)
-type LocalClient = Assert<Equal<typeof localClient, RpcStub<ProviderApi>>>
-// @ts-expect-error Local RPC requires a Cap'n Web RpcTarget contract.
-createLocalRpcClient({})
 
 declare const principal: WorkbenchPrincipal
 declare const view: WorkbenchView<ProviderApi>
@@ -72,4 +65,3 @@ void (null as unknown as ViewApi)
 void (null as unknown as ProviderOnlyApi)
 void (null as unknown as ProviderOnlyConsumer)
 void (null as unknown as ConsumerApiLease)
-void (null as unknown as LocalClient)

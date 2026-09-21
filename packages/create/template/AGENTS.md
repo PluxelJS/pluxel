@@ -20,7 +20,7 @@ Keep these boundaries intact:
   extend its fixed Plugin catalog without another configuration or Vite mode;
 - browser-only React/Vite code stays in `web/`; Node runtime catalog, config and route policy stay in
   `host/`; shared neutral logic stays in `packages/`;
-- plugin tests use `@pluxel/test/vitest` and the smallest matching core/runtime test host;
+- plugin tests use `@pluxel/test/vitest` and the unified `createTestHost()` from `@pluxel/test` with explicit services;
 - run `pnpm verify` after changes and do not bypass Pluxel lint rules without a documented reason.
 
 ## Live development operations

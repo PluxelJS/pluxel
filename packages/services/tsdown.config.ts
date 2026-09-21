@@ -26,7 +26,6 @@ export default defineConfig({
 		preset: './src/preset.ts',
 		build: './src/build.ts',
 		'internal/test': './src/internal-test.ts',
-		test: './src/test.ts',
 		vite: './src/vite.ts',
 
 		'http/vite': './src/development/http.ts',

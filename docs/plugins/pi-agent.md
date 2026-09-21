@@ -39,7 +39,7 @@ await host.start(PiAgentPlugin, {
 })
 ```
 
-这里的 `host` 是 `createServiceTestHost()` fixture，`initialConfig` 只用于首次 lifecycle；production deployment 通过 ConfigService
+这里的 `host` 是 `createTestHost()` fixture，`initialConfig` 只用于首次 lifecycle；production deployment 通过 ConfigService
 管理相同 records。AgentTools assignment 用作 Pi 的 tool setup。模型 credential 不进入普通 Plugin config；Pi `ModelRuntime`
 从标准 Pi credential store 读取。省略 `model` 时由 Pi 解析已配置的默认可用模型。
 

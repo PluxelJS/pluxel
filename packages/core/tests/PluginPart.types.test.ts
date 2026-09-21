@@ -18,13 +18,13 @@ type PluginPartOwner = import('@pluxel/core').PluginPartOwner
 type PluginParts = import('@pluxel/core').PluginParts
 
 // @ts-expect-error Core's test root does not restore removed author-surface types.
-type TestPluginPartContext = import('@pluxel/core/test').PluginPartContext
+type TestPluginPartContext = import('@pluxel/core/internal/test').PluginPartContext
 // @ts-expect-error Core's test root does not restore removed author-surface types.
-type TestPluginPartInfo = import('@pluxel/core/test').PluginPartInfo
+type TestPluginPartInfo = import('@pluxel/core/internal/test').PluginPartInfo
 // @ts-expect-error Core's test root does not restore removed author-surface types.
-type TestPluginPartOwner = import('@pluxel/core/test').PluginPartOwner
+type TestPluginPartOwner = import('@pluxel/core/internal/test').PluginPartOwner
 // @ts-expect-error Core's test root does not restore removed author-surface types.
-type TestPluginParts = import('@pluxel/core/test').PluginParts
+type TestPluginParts = import('@pluxel/core/internal/test').PluginParts
 
 type FixtureContext = PluginContext & {
 	readonly fixtureCapability: { readonly value: number }

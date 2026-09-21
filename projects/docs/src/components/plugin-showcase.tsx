@@ -82,13 +82,13 @@ class StatusPlugin extends BasePlugin {
 		status: 'Schema → 全链路配置',
 	},
 	{
-		code: `import { createCoreTestHost } from '@pluxel/core/test'
+		code: `import { createTestHost } from '@pluxel/test'
 import { expect, it } from 'vitest'
 import { StatusPlugin } from '../src/status'
 
 it('运行完整的 Plugin graph', async () => {
-  await using host = createCoreTestHost()
-  const [plugin] = await host.add([StatusPlugin])
+  await using host = await createTestHost()
+  const [plugin] = await host.start([StatusPlugin])
   expect(plugin.status()).toEqual({ ready: true, label: 'ready' })
 })
 

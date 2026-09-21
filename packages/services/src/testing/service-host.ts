@@ -21,9 +21,6 @@ import {
 	projectPluginTestCommitSummary,
 	resolvePluginTestTarget,
 	type PluginTestDraftAuthority,
-} from '@pluxel/core/internal/test'
-import { validateConfigRecord } from '@pluxel/core/services'
-import {
 	PluginLifecycleAssertionError,
 	type DependencyOverrideInput,
 	type DependencyOverrideTarget,
@@ -39,7 +36,8 @@ import {
 	type PluginToken,
 	type ProviderDefaultInput,
 	type RawPluginConfig,
-} from '@pluxel/core/test'
+} from '@pluxel/core/internal/test'
+import { validateConfigRecord } from '@pluxel/core/services'
 import {
 	removeFork,
 	createPluginCatalogSnapshot,
@@ -56,7 +54,7 @@ import {
 	requireHostStateStore,
 	type HostStateStore,
 } from '@pluxel/host/internal'
-import { type ServiceTestHostOptions, type ServiceInternalTestHostOptions } from './options'
+import { type ServiceInternalTestHostOptions } from './options'
 
 import {
 	type ServiceCommandsTestDriver,
@@ -131,7 +129,7 @@ export interface ServiceTestHost extends AsyncDisposable {
 
 export type { ServiceTestHostOptions } from './options'
 
-/** @internal Framework-only host authority; absent from `@pluxel/services/test`. */
+/** @internal Framework-only host authority; absent from `@pluxel/test`. */
 export interface ServiceInternalTestHost extends ServiceTestHost {
 	readonly ctx: RootContext
 	readonly root: RootContext
@@ -206,19 +204,6 @@ type RawCommit = Readonly<{
 const EMPTY_TEST_SUMMARY: PluginTestCommitSummary = Object.freeze({
 	lifecycleReport: Object.freeze({ ok: true, issues: Object.freeze([]) }),
 })
-
-/** Create an isolated Service Plugin world without starting or materializing a Plugin. */
-export async function createServiceTestHost(
-	config: ServiceTestHostOptions = {},
-): Promise<ServiceTestHost> {
-	if (Object.hasOwn(config, 'workbench')) {
-		throw new TypeError(
-			'[pluxel/test] Workbench tests use createWorkbenchTestHost() from @pluxel/services/test',
-		)
-	}
-	const world = await createServiceHostWorld(config)
-	return world.host
-}
 
 type ServiceInternalTestHostSetup = ServiceInternalTestRootOptions &
 	Readonly<{

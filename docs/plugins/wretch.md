@@ -64,7 +64,7 @@ await host.start(CustomerPlugin, {
 })
 ```
 
-这里的 `host` 是 `createServiceTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续 config 更新使用
+这里的 `host` 是 `createTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续 config 更新使用
 `host.config.patch()`。production deployment 通过自己的 ConfigService 管理相同 records。
 
 `client` 本身就是 Wretch。Wretch 的 immutable 语义保证不同 consumer 通过 `.url()`、`.options()`、`.headers()`、`.auth()`、`.addon()` 或 `.middlewares()` 派生 client 时不会互相污染。

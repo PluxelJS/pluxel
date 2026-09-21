@@ -1345,6 +1345,12 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:^
         version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:^
+        version: link:../services
+      '@pluxel/workbench':
+        specifier: workspace:^
+        version: link:../workbench
     devDependencies:
       '@platformatic/vfs':
         specifier: catalog:dev
@@ -1352,6 +1358,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       fs-fixture:
         specifier: catalog:dev
         version: 2.14.0

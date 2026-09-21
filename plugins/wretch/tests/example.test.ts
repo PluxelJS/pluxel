@@ -1,4 +1,5 @@
-import { createServiceTestHost, createWorkbenchTestHost } from '@pluxel/services/test'
+import { standardServices } from '@pluxel/services'
+import { createTestHost } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchExamplePlugin, WretchExampleWorkbench } from './fixtures/wretch-example.ts'
@@ -16,7 +17,9 @@ describe('WretchExamplePlugin', () => {
 		)
 
 		{
-			await using host = await createServiceTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin, {
 				initialConfig: {
@@ -44,7 +47,10 @@ describe('WretchExamplePlugin', () => {
 
 	it('places and opens the provider-owned settings Attachment', async () => {
 		{
-			await using host = await createWorkbenchTestHost()
+			await using host = await createTestHost({
+				workbench: true,
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin)
 

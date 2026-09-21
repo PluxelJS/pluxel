@@ -1,8 +1,12 @@
 import { Http, HttpServer, type ElysiaApplicationCarrier } from '@pluxel/services/http'
 import { resolveContextCapability } from '@pluxel/core/host'
-import { assertPluginLifecycleIssue } from '@pluxel/core/internal/test'
+import {
+	assertPluginLifecycleIssue,
+	BasePlugin,
+	Plugin,
+	PluginPart,
+} from '@pluxel/core/internal/test'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
-import { BasePlugin, Plugin, PluginPart } from '@pluxel/core/test'
 import { Elysia } from 'elysia'
 import { websocket } from 'elysia/websocket'
 

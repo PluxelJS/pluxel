@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { afterAll, beforeAll, test } from 'vitest'
 import { lowerTestPlugin } from '../tests/helpers/lowered-plugin'
 

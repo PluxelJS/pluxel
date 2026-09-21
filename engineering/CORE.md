@@ -192,5 +192,4 @@ module-augmented `ctx.events`，其订阅绑定 owner effects。Core lifecycle �
 - `packages/core/src/services/effects/EffectsService.ts`
 - `packages/core/src/services/config/`
 
-只验证 DI、lifecycle、optional restart、config 和 effects 时使用 core test host；需要 runtime service 时进入
-`@pluxel/services/test`。测试中的 Plugin 仍必须经过 semantic lowering；unsafe facts helper 只用于明确的 core/runtime 内部测试。
+普通插件测试统一使用 `@pluxel/test`，显式选择 runtime services；Core 图语义白盒回归使用 `@pluxel/core/internal/test`。测试中的 Plugin 仍必须经过 semantic lowering；unsafe facts helper 只用于明确的 core/runtime 内部测试。

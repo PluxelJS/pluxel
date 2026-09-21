@@ -2,19 +2,28 @@
 
 先问：删除哪一层以后，断言不再成立？选择仍不可删除的最小边界。
 
-| 事实                                                    | 入口                                                   |
-| ------------------------------------------------------- | ------------------------------------------------------ |
-| 普通函数/对象                                           | 无 host                                                |
-| Core graph、DI、config composition、lifecycle、effects  | `createCoreTestHost()` from `@pluxel/core/test`        |
-| Plugin + HTTP、commands、database、Vault、Workbench     | `createServiceTestHost()` from `@pluxel/services/test` |
-| static application configure/prepare/bindings/cold boot | `startStaticApplicationTestHost()`                     |
-| dynamic source、Vite/HMR、physical HTTP/WebSocket       | 项目 Vite command 或 `startDynamicDevRuntime()`        |
-| Workbench React/Shell                                   | browser/React test                                     |
+| 事实                                                    | 入口                                            |
+| ------------------------------------------------------- | ----------------------------------------------- |
+| 普通函数/对象                                           | 无 host                                         |
+| Plugin DI、config、lifecycle、effects 与可选服务        | `createTestHost()` from `@pluxel/test`          |
+| Core graph 白盒回归                                     | `@pluxel/core/internal/test`                    |
+| static application configure/prepare/bindings/cold boot | `startStaticApplicationTestHost()`              |
+| dynamic source、Vite/HMR、physical HTTP/WebSocket       | 项目 Vite command 或 `startDynamicDevRuntime()` |
+| Workbench React/Shell                                   | browser/React test                              |
 
 ## Canonical patterns
 
+Node/Worker 的独立制品构建不会继承 Vitest `plugins`。普通 TypeScript task 使用 host 自动接入的正式编译器；依赖外部构建转换的 task 应先通过项目构建流程产出制品，再显式选择 `nodeModules({ root })` 或 `nodeModules({ resolve })` 测试该制品。显式制品来源不会被源码编译兜底；测试 host 不运行源码 watcher，HMR 另用开发环境验证。
+
+测试 host 与编译配置分开：`@pluxel/test/vitest` 提供官方源码转换，`@pluxel/test` 根入口提供异步 host。每包薄配置显式选择 preset；共享自定义 Vite 插件通过普通导入组合，不自动继承开发配置。Vite 插件不自动进入独立 Node/Worker 制品构建。
+
+`createTestHost({ services })` 默认 `services: []`；使用生产服务工厂显式选择完整列表。`workbench: true` 增加测试后端与 `workbench.open()`，要求服务列表含 HTTP 与 Persistence，不提供真实浏览器或物理 WebSocket。详细示例以[插件测试教程](../../docs/development/testing.md)为准。
+
 ```ts
-await using host = createServiceTestHost({ vault: {} })
+import { createTestHost } from '@pluxel/test'
+import { http } from '@pluxel/services/http'
+
+await using host = await createTestHost({ services: [http()] })
 
 const plugin = await host.start(Plugin, {
 	initialConfig: { endpoint: 'https://upstream.test' },
@@ -25,7 +34,7 @@ const response = await host.http.fetch(new URL('/health', host.http.origin))
 expect(await response.json()).toEqual({ ok: true })
 ```
 
-- `host.start/add/stop/remove/restart()` 已经提交并等待稳定；不要再调用无参数 `commit()`。
+- 生命周期统一 `start/stop/restart()`；操作已提交并等待稳定，不再调用无参数 `commit()`。只有 `change.catalog.add/remove()` 表达候选实现的注册与删除。
 - 多个独立 root 使用 literal batch：`await host.start([A, B, C])`。
 - 多个同边界变化或异构 bootstrap config 使用同步 callback：
 
@@ -42,19 +51,18 @@ callback 内不使用 `await`、不 return value、不读取 host 状态。预�
 `initialConfig` 只用于首次 lifecycle 前的 fixture bootstrap。运行中或已经进入过 lifecycle 的 Plugin 使用
 `await host.config.patch(Plugin, patch)`；需要新 generation 时再显式 `restart()`。
 
-required dependency 只声明在 Consumer constructor。Runtime `{ catalog: [Provider] }` 只让 implementation 可用，不重新声明 dependency；Core 使用
-`add([Provider, Consumer])`。
+required dependency 只声明在 Consumer constructor。`{ catalog: [Provider] }` 只让 implementation 可用，不重新声明 dependency；`change.catalog.add()` 只注册候选，不建立运行意图。测试 helpers/types 从 `@pluxel/test` 导入，业务声明从 `@pluxel/core` 导入。
 
 ## Inbound boundaries
 
 - HTTP/mounted HTTP RPC：`host.http.fetch()`。
 - Workbench entry：`using opened = await host.workbench.open({ target, entry, principal })`。
-- pure `RpcTarget` contract：`using api = createLocalRpcClient<Api>(target)`。
+- pure `RpcTarget` contract：`using api = new RpcStub(new Target())`，直接从 `capnweb` 导入，不创建 Workbench host。
 - WebSocket/Origin/framing/disconnect：真实 carrier，不使用 local RPC 或 `http.fetch()` 冒充。
 - command：`host.commands.execute/list()`。
 - database/Vault 内容：从当前 running instance 取得 owner-bound handle；restart/replacement 后重新取得。
 
-`start/add/require()` 返回 raw Plugin instance。它可以观察 Plugin 自身业务状态，但不代表 constructor dependency 的 caller-bound facade。测试
+`start/require()` 返回 raw Plugin instance。它可以观察 Plugin 自身业务状态，但不代表 constructor dependency 的 caller-bound facade。测试
 `ctx.caller`、consumer admission 或跨 Plugin withdrawal 时，建立真实 Consumer Plugin 并从注入 dependency 调用。
 
 ## Ownership and prohibited shortcuts

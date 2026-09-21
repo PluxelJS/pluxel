@@ -1126,43 +1126,39 @@ async function readBoundedFontFile(
 	signal: AbortSignal,
 ): Promise<Buffer> {
 	signal.throwIfAborted()
-	const handle = await open(path, 'r')
-	try {
-		const file = await handle.stat()
-		if (!file.isFile()) throw new TypeError('Path is not a file')
-		if (!Number.isSafeInteger(file.size) || file.size <= 0) {
-			throw new FontsError('INVALID_INPUT', 'Font file must not be empty')
-		}
-		if (file.size > maxBytes) {
-			throw new FontsError(
-				'FONT_TOO_LARGE',
-				`Font is ${file.size} bytes; the configured limit is ${maxBytes}`,
-			)
-		}
-		const data = Buffer.allocUnsafe(file.size)
-		const chunkBytes = 1024 * 1024
-		let offset = 0
-		while (offset < data.byteLength) {
-			signal.throwIfAborted()
-			const { bytesRead } = await handle.read(
-				data,
-				offset,
-				Math.min(chunkBytes, data.byteLength - offset),
-				offset,
-			)
-			if (bytesRead === 0) throw new Error('Font file changed while it was being read')
-			offset += bytesRead
-		}
-		signal.throwIfAborted()
-		const probe = Buffer.allocUnsafe(1)
-		const probeResult = await handle.read(probe, 0, 1, data.byteLength)
-		if (probeResult.bytesRead !== 0) {
-			throw new Error('Font file changed while it was being read')
-		}
-		return data
-	} finally {
-		await handle.close()
+	await using handle = await open(path, 'r')
+	const file = await handle.stat()
+	if (!file.isFile()) throw new TypeError('Path is not a file')
+	if (!Number.isSafeInteger(file.size) || file.size <= 0) {
+		throw new FontsError('INVALID_INPUT', 'Font file must not be empty')
 	}
+	if (file.size > maxBytes) {
+		throw new FontsError(
+			'FONT_TOO_LARGE',
+			`Font is ${file.size} bytes; the configured limit is ${maxBytes}`,
+		)
+	}
+	const data = Buffer.allocUnsafe(file.size)
+	const chunkBytes = 1024 * 1024
+	let offset = 0
+	while (offset < data.byteLength) {
+		signal.throwIfAborted()
+		const { bytesRead } = await handle.read(
+			data,
+			offset,
+			Math.min(chunkBytes, data.byteLength - offset),
+			offset,
+		)
+		if (bytesRead === 0) throw new Error('Font file changed while it was being read')
+		offset += bytesRead
+	}
+	signal.throwIfAborted()
+	const probe = Buffer.allocUnsafe(1)
+	const probeResult = await handle.read(probe, 0, 1, data.byteLength)
+	if (probeResult.bytesRead !== 0) {
+		throw new Error('Font file changed while it was being read')
+	}
+	return data
 }
 
 async function snapshotBytes(

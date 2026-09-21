@@ -122,6 +122,7 @@ export function definePluxelVitestConfig(config: PluxelVitestConfig = {}): ViteU
 	const baseConditions = buildPluxelResolveConditions()
 
 	const base: ViteUserConfig = {
+		oxc: { decorator: { legacy: true } },
 		resolve: {
 			conditions: baseConditions,
 			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],

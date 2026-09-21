@@ -1,13 +1,8 @@
 # @pluxel/test
 
-Pluxel 的 runner/toolchain 测试支持包。它不再提供 Plugin test host 根入口；从所验证的最小产品边界导入 host：
+Pluxel 的插件测试与工具链支持包。根入口提供统一的 `createTestHost()`，复用生产 Host 的依赖、配置与生命周期；服务显式选择，默认空列表。
 
-- Core graph/config/lifecycle：`@pluxel/core/test`
-- Runtime capability：`@pluxel/services/test`
-- 应用组装、动态来源、Vite/HMR/carrier：项目 Vite command 与真实 production launcher
-
-本包只保留三个面向调用方的职责：
-
+- `@pluxel/test`：插件测试宿主、fork 声明、测试类型与失败诊断
 - `@pluxel/test/vitest`：Vitest/Vite preset 与 Pluxel source toolchain
 - `@pluxel/test/fixtures`：VFS/disk filesystem fixture
 - `@pluxel/test/unsafe`：显式 synthetic lowering/replacement facts
@@ -39,8 +34,17 @@ export default definePluxelVitestConfig({
 ```
 
 preset 在 TypeScript 擦除前执行 Plugin semantic lowering。lifecycle failure 直接断言
-`commitExpectFail()` 返回的 structured `lifecycleReport`，不向 consumer 注册 Vitest matcher 或 `setupFiles`。Core/Runtime
-test entries 不依赖 Vitest。
+`commitExpectFail()` 返回的 structured `lifecycleReport`，不向 consumer 注册 Vitest matcher 或 `setupFiles`。测试宿主根入口不依赖 Vitest 的运行时。
+
+```ts
+import { createTestHost } from '@pluxel/test'
+import { http } from '@pluxel/services/http'
+
+await using host = await createTestHost({ services: [http()] })
+await host.start(MyPlugin)
+```
+
+Workbench 使用同一个工厂的 `workbench: true` 选项，并显式安装 HTTP 与 Persistence。Node 服务未指定制品来源时，测试宿主自动接入按需源码编译与回收。应用启动、真实网络和浏览器测试使用其生产边界，详见教程。
 
 `test.include` 决定 Vitest 发现哪些测试；`pluxel.include` / `exclude` 决定哪些源码经过 Pluxel lowering 和 config
 extraction，两者不能互相替代。需要在 lowering 前运行额外 Vite transform 时使用 `pluxel.prePlugins`；普通 Vite plugin

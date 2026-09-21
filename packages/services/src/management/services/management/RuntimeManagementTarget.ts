@@ -666,12 +666,8 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 				const event = this.queue.shift()
 				if (!event) return
 				this.queuedBytes = Math.max(0, this.queuedBytes - estimateRuntimeRpcPayloadBytes(event))
-				const result = this.observer(event)
-				try {
-					await result
-				} finally {
-					result[Symbol.dispose]()
-				}
+				using result = this.observer(event)
+				await result
 			}
 		} catch {
 			this[Symbol.dispose]()
@@ -1063,12 +1059,8 @@ class RuntimeUpdateSubscription extends RpcTarget {
 			while (this.active && this.pending !== undefined) {
 				const snapshot = this.pending
 				this.pending = undefined
-				const result = this.observer(snapshot)
-				try {
-					await result
-				} finally {
-					result[Symbol.dispose]()
-				}
+				using result = this.observer(snapshot)
+				await result
 			}
 		} catch {
 			this[Symbol.dispose]()

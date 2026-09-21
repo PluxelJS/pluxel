@@ -20,3 +20,12 @@ export type {
 	ServiceConfigTestDriver,
 	ServiceHttpTestDriver,
 } from './testing/contracts'
+
+export type {
+	ServiceTestHost,
+	ServicePluginStartOptions,
+	ServicePluginBatchStartOptions,
+	ServicePluginTestChange,
+	ServiceTestHostOptions,
+} from './testing/service-host'
+export { attachTestNodeCompiler } from './testing/node-compiler'

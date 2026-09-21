@@ -32,82 +32,79 @@ function peerAddress() {
 
 describe('official authentication vNext Runtime integration', () => {
 	it('authenticates through a physical Runtime Session WebSocket carrier', async () => {
-		const fixture = new AuthRuntimeSessionCarrierFixture(
+		await using fixture = new AuthRuntimeSessionCarrierFixture(
 			await createServiceInternalTestHost({
 				management: true,
 				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
 			}),
 		)
+
+		await fixture.start()
+		const connection = fixture.connect()
+		await withRuntimeSessionTimeout(waitForOpen(connection.socket), 'Auth socket open')
+
+		const challenge = await withRuntimeSessionTimeout(
+			bootstrapRuntimeSession(connection.root),
+			'Auth password challenge',
+		)
 		try {
-			await fixture.start()
-			const connection = fixture.connect()
-			await withRuntimeSessionTimeout(waitForOpen(connection.socket), 'Auth socket open')
-
-			const challenge = await withRuntimeSessionTimeout(
-				bootstrapRuntimeSession(connection.root),
-				'Auth password challenge',
-			)
-			try {
-				expect(challenge).toMatchObject({ kind: 'authentication-required', profile: 2 })
-				if (challenge.kind !== 'authentication-required') {
-					throw new Error('Expected Runtime Session authentication challenge')
-				}
-				const step = await challenge.authentication.submitDto({ password: PASSWORD })
-				try {
-					expect(step).toMatchObject({
-						kind: 'authenticated',
-						principal: { subject: 'local:admin', displayName: 'Admin' },
-					})
-				} finally {
-					disposeRpcValue(step)
-				}
-			} finally {
-				disposeRpcValue(challenge)
+			expect(challenge).toMatchObject({ kind: 'authentication-required', profile: 2 })
+			if (challenge.kind !== 'authentication-required') {
+				throw new Error('Expected Runtime Session authentication challenge')
 			}
-
-			const ready = await withRuntimeSessionTimeout(
-				bootstrapRuntimeSession(connection.root),
-				'Auth management bootstrap',
-			)
+			const step = await challenge.authentication.submitDto({ password: PASSWORD })
 			try {
-				expect(ready).toMatchObject({ kind: 'management', profile: 2 })
-				if (ready.kind !== 'management') {
-					throw new Error('Expected Runtime Session Management capability')
-				}
-				const management = await ready.management.describeDto()
-				try {
-					expect(management).toMatchObject({
-						protocol: { name: 'pluxel.management', major: 7 },
-						workbench: { enabled: false },
-					})
-				} finally {
-					disposeRpcValue(management)
-				}
-
-				// The accepted operation may lose its reply when it withdraws its own authentication
-				// authority, but it must drain the provider without waiting on the session's lease.
-				const stopped = Promise.resolve(
-					ready.management.applyPluginLifecycleCommandsDto([
-						{ address: pluginNodeAddressOf(AuthPlugin), command: 'stop' },
-					]),
-				).then(
-					(result): void => {
-						disposeRpcValue(result)
-						return undefined
-					},
-					(): void => undefined,
-				)
-				await withRuntimeSessionTimeout(stopped, 'authentication provider self-stop')
-				await expect.poll(() => fixture.host.isRunning(AuthPlugin), { timeout: 3_000 }).toBe(false)
+				expect(step).toMatchObject({
+					kind: 'authenticated',
+					principal: { subject: 'local:admin', displayName: 'Admin' },
+				})
 			} finally {
-				disposeRpcValue(ready)
-				connection.root[Symbol.dispose]()
-				connection.socket.close()
+				disposeRpcValue(step)
 			}
-			expect(fixture.upgradeCount).toBe(1)
 		} finally {
-			await fixture.dispose()
+			disposeRpcValue(challenge)
 		}
+
+		const ready = await withRuntimeSessionTimeout(
+			bootstrapRuntimeSession(connection.root),
+			'Auth management bootstrap',
+		)
+		try {
+			expect(ready).toMatchObject({ kind: 'management', profile: 2 })
+			if (ready.kind !== 'management') {
+				throw new Error('Expected Runtime Session Management capability')
+			}
+			const management = await ready.management.describeDto()
+			try {
+				expect(management).toMatchObject({
+					protocol: { name: 'pluxel.management', major: 7 },
+					workbench: { enabled: false },
+				})
+			} finally {
+				disposeRpcValue(management)
+			}
+
+			// The accepted operation may lose its reply when it withdraws its own authentication
+			// authority, but it must drain the provider without waiting on the session's lease.
+			const stopped = Promise.resolve(
+				ready.management.applyPluginLifecycleCommandsDto([
+					{ address: pluginNodeAddressOf(AuthPlugin), command: 'stop' },
+				]),
+			).then(
+				(result): void => {
+					disposeRpcValue(result)
+					return undefined
+				},
+				(): void => undefined,
+			)
+			await withRuntimeSessionTimeout(stopped, 'authentication provider self-stop')
+			await expect.poll(() => fixture.host.isRunning(AuthPlugin), { timeout: 3_000 }).toBe(false)
+		} finally {
+			disposeRpcValue(ready)
+			connection.root[Symbol.dispose]()
+			connection.socket.close()
+		}
+		expect(fixture.upgradeCount).toBe(1)
 	}, 15_000)
 
 	it('runs password challenge and commits its session through the narrow endpoint', async () => {

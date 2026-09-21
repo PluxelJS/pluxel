@@ -1,8 +1,9 @@
+import { standardServices } from '@pluxel/services'
+import { createTestHost } from '@pluxel/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
 
@@ -190,7 +191,9 @@ describe('S3Plugin local backend', () => {
 	it('revokes the caller facade and captured local client on provider stop', async () => {
 		const root = await temporaryRoot()
 		{
-			await using host = await createServiceTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.start(S3Plugin, {
 				initialConfig: {
@@ -226,7 +229,9 @@ async function temporaryRoot(): Promise<string> {
 
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
 	{
-		await using host = await createServiceTestHost()
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
 		await host.start(S3Plugin, {
 			initialConfig: {

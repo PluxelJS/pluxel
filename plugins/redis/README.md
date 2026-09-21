@@ -47,7 +47,7 @@ await host.commit((change) => {
 })
 ```
 
-这里的 `host` 是 `createServiceTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
+这里的 `host` 是 `createTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
 application boundary；production static/dynamic host 通过自己的 ConfigService 和 Host state 管理相同 topology 与 config。
 
 - `commandQueueMaxLength` 防止断线或高压期间积累无界 client queue；

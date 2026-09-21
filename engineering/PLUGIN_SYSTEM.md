@@ -312,7 +312,7 @@ cloneable worker input，真正 handler 继续只在 worker artifact 中运行�
 - `@pluxel/host-dev`：共享 ModuleRunner、模块失效、源码分类、开发附件协议与控制台执行机制，不依赖官方服务；
 - `@pluxel/services`：官方服务所在包；根入口的 `standardServices()` 只选择基础服务，不加载日志、管理面或 Workbench 后端；
 - `@pluxel/services/logging`、`/management`：同包的日志与管理领域；各自的协议入口保持 browser-safe；
-- `@pluxel/services/preset`、`@pluxel/services/vite`、`@pluxel/services/build`：官方运行时、开发与发行组合；`@pluxel/services/test` 组合测试宿主；
+- `@pluxel/services/preset`、`@pluxel/services/vite`、`@pluxel/services/build`：官方运行时、开发与发行组合；`@pluxel/test` 组合测试宿主；
 - `@pluxel/workbench/shell`：随 Workbench 构建交付的官方 Shell handler，源码在该包的 `shell/`；
 - `@pluxel/services/http/vite`、`@pluxel/services/node/vite`：可单独组合的 HTTP 与 Node 制品开发附件；
 - `@pluxel/rolldown/vite/workbench-ui`：MF2 producer build primitive。

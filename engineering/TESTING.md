@@ -6,21 +6,23 @@
 ## Boundary selection
 
 - 普通对象和纯领域规则不创建 host。
-- Core graph、config、lifecycle 和 effects 使用 `@pluxel/core/test`。
-- 使用宿主服务的 Plugin 使用 `@pluxel/services/test`；public host 不暴露 root Context、transaction 或 backend。
+- 纯 Cap’n Web target contract 直接使用库的 `RpcStub` 与原生资源所有权，不通过 Workbench test helper 或借用代理。
+- 普通插件的 DI、配置、lifecycle 与服务测试统一使用 `@pluxel/test`；public host 不暴露 root Context、transaction 或 backend。
+- Core graph 白盒回归使用 `@pluxel/core/internal/test`，避免内核反向依赖作者组合包。
 - static application 只验证 application wiring；dynamic source、Vite/HMR、physical HTTP/WebSocket 使用 production launcher 或项目 Vite command。
 
 同一个 Plugin behavior 只在它最小的 owning boundary 断言一次。删除外层 route、artifact 或 carrier 后仍成立的断言必须回到更小的 host；真实
 carrier、browser 和 deployment 行为仍要在各自真实边界验证。
 
-## Service test host
+## Unified author test host
 
-`@pluxel/services/test` 的 `createServiceTestHost()` 直接组合 `createHost()`；Core 作者符号从 `@pluxel/core/test` 导入，不通过服务入口转发。
-省略 `services` 时安装 HTTP、commands、Node artifacts、workers 与内存 persistence；显式列表完整替代默认值，不按名称合并。
-`management` 是显式测试交互平面选择；HTTP 默认组合需要消费项目安装 Elysia。`services: []` 不加载 HTTP、Logging、Management 或 UI 后端；同包可解析不表示已安装能力。
-Workbench 作者使用 `@pluxel/services/test` 的 `createWorkbenchTestHost()`；它复用同一个服务 host 的事务和生命周期，独立持有 Workbench 会话并报告未释放 lease。
-Vault、数据库和管理命令使用真实服务工厂显式安装。
-`config`、`state`、`configRecords` 分别使用 Core 和 Host 原有契约，不再解释另一套产品配置。
+`@pluxel/test` 根入口的异步 `createTestHost()` 组合生产 `createHost()`；业务符号从 `@pluxel/core` 导入，服务工厂从原领域入口导入。`services` 默认 `[]`，完整列表不隐式合并；`standardServices()` 由调用方显式选择。
+
+`workbench: true` 增加 Management、测试后端和本地 RPC driver，要求显式提供 HTTP 与 Persistence；`management: false` 与它冲突时拒绝创建。Workbench 禁用时不初始化后端。HTTP/commands driver 调用已安装的生产服务，缺服务时明确失败。
+
+选择无显式制品来源的 Node 服务后，组合层接入正式按需源码编译器并拥有其关闭；显式制品来源保留制品消费路径。Vitest 插件只作用于 Vitest 模块图，不会隐式流入独立 Node 制品构建。领域 driver 与 compiler 仍由各自 package 维护，组合层负责接线和测试寿命。
+
+`@pluxel/test` 显式声明 Services 等安装依赖；生产 Host/Core 不反向依赖它。安装依赖与初始化可选服务分开，不用 optional peer 或动态 import 吞错伪造 API 可用性。`config`、`state`、`configRecords` 复用 Core/Host 契约，默认 Host 内存存储不等于安装 Plugin Persistence 服务。
 
 事务 draft 只负责测试断言、目标校验与同步回调作用域；catalog、状态修改、配置应用与 graph commit 仍由 Host 唯一 authority 执行。
 测试 HTTP 与 Workbench driver 拥有本次测试打开的响应 body、RPC handle 和 lease；泄漏会在关闭时报告，所有清理仍然执行。
@@ -36,7 +38,7 @@ options 参数、root entry alias 或相对 source preset import。
 Vitest/Vite 在 preset 能返回 `resolve.conditions` 之前先求值 `vitest.config.ts`。因此 source overlay 的 workspace test task 必须先运行
 `pluxel source build --package @pluxel/test`，再通过已发布 package export 载入 preset；不能用相对 `src` import 或 process-wide
 condition 绕过这一步。该命令只交给 `@pluxel/test` 自己的 build graph 处理 bootstrap artifact 与其真实前置，不预构建整个 source
-closure 或业务服务。config 已加载后，preset 为 test module graph 设置 `@pluxel/source` / `@pluxel/hmr` conditions。
+closure。统一测试组合依赖 Services/Workbench 的发布入口，因此这两者的构建属于真实前置；这不表示测试会初始化这些服务。config 已加载后，preset 为 test module graph 设置 `@pluxel/source` / `@pluxel/hmr` conditions。
 
 ## Verification ownership
 

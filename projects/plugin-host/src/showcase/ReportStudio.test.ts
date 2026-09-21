@@ -1,3 +1,4 @@
+import { standardServices } from '@pluxel/services'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,7 +7,7 @@ import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import { OtelPlugin } from '@pluxel/otel'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createTestHost } from '@pluxel/test'
 import { S3, S3Plugin } from '@pluxel/storage'
 import { WretchPlugin } from '@pluxel/wretch'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -29,7 +30,9 @@ describe('ReportStudioPlugin', () => {
 	it('renders through selected providers, caches, and publishes to isolated S3 buckets', async () => {
 		const storageRoot = await mkdtemp(join(tmpdir(), 'pluxel-report-studio-'))
 		temporaryRoots.push(storageRoot)
-		await using host = await createServiceTestHost()
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 		await host.commit((change) => {
 			change.catalog.add([
 				MemoryCacheBackendPlugin,

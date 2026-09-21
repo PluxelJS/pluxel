@@ -243,14 +243,10 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		const observer = this.observer
 		try {
 			if (observer) {
-				const result = observer(
+				using result = observer(
 					Object.freeze({ kind: 'epoch-invalidated', cause }) satisfies RuntimeSessionEvent,
 				)
-				try {
-					await Promise.race([result, observerDeadline()])
-				} finally {
-					result[Symbol.dispose]()
-				}
+				await Promise.race([result, observerDeadline()])
 			}
 		} catch {
 			// The physical close below is authoritative.

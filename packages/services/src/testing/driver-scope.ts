@@ -1,7 +1,6 @@
 import { Commands } from '../commands'
 import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
-import { PluginTestOperationGate } from '@pluxel/core/internal/test'
-import { type PluginTestTarget } from '@pluxel/core/test'
+import { PluginTestOperationGate, type PluginTestTarget } from '@pluxel/core/internal/test'
 import { pluginConfigPatch } from '@pluxel/host/internal'
 import { resolveContextCapability } from '@pluxel/core/host'
 import {

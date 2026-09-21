@@ -1,6 +1,5 @@
 import type { RootContext, PluginNodeAddress } from '@pluxel/core'
-import type { PluginTestTarget } from '@pluxel/core/test'
-import { PluginTestOperationGate } from '@pluxel/core/internal/test'
+import { PluginTestOperationGate, type PluginTestTarget } from '@pluxel/core/internal/test'
 import {
 	openLocalWorkbenchEntry,
 	type OpenedLocalWorkbenchEntry,

@@ -10,7 +10,7 @@ import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
 } from '@pluxel/services/internal/test'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import {
@@ -348,7 +348,7 @@ describe('Plugin fork control plane', () => {
 				persisted.push(snapshot)
 			},
 		}
-		const host = await createServiceInternalTestHarness({
+		await using host = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
 				...standardServices({ persistence: { mode: 'memory' } }),
@@ -357,49 +357,46 @@ describe('Plugin fork control plane', () => {
 		})
 		const logging = host.ctx.require(Logging)
 		hosts.push(host)
-		try {
-			host.add(ForkProvider)
-			await host.commit()
-			const rpc = new RuntimeManagementTargetImpl(host.ctx)
-			const base = pluginNodeAddressOf(ForkProvider)
-			const ensured = await rpc.ensurePluginForkDto({
-				base,
-				forkId: 'logging-retry',
-				autoStart: true,
-			})
-			if (ensured.ok === false) throw new Error(ensured.error)
-			logging.policy.setPluginLevel(ensured.fork, 'debug')
-			await logging.policy.flush()
-			expect(persisted.at(-1)?.overrides).toMatchObject([{ owner: ensured.fork, level: 'debug' }])
 
-			rejectLoggingWrite = true
-			await expect(
-				rpc.removePluginForkDto({ base, forkId: 'logging-retry' }),
-			).resolves.toMatchObject({
+		host.add(ForkProvider)
+		await host.commit()
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
+		const base = pluginNodeAddressOf(ForkProvider)
+		const ensured = await rpc.ensurePluginForkDto({
+			base,
+			forkId: 'logging-retry',
+			autoStart: true,
+		})
+		if (ensured.ok === false) throw new Error(ensured.error)
+		logging.policy.setPluginLevel(ensured.fork, 'debug')
+		await logging.policy.flush()
+		expect(persisted.at(-1)?.overrides).toMatchObject([{ owner: ensured.fork, level: 'debug' }])
+
+		rejectLoggingWrite = true
+		await expect(rpc.removePluginForkDto({ base, forkId: 'logging-retry' })).resolves.toMatchObject(
+			{
 				ok: false,
 				code: 'persistence_failed',
 				state: 'stopped-retained',
 				fork: ensured.fork,
-			})
-			let state = requireHostStateStore(host.ctx).snapshot()
-			expect(listForkIds(state, base.definition)).toContain('logging-retry')
-			expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
-			expect(logging.policy.persistence).toBe('failed')
+			},
+		)
+		let state = requireHostStateStore(host.ctx).snapshot()
+		expect(listForkIds(state, base.definition)).toContain('logging-retry')
+		expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
+		expect(logging.policy.persistence).toBe('failed')
 
-			rejectLoggingWrite = false
-			await expect(
-				rpc.removePluginForkDto({ base, forkId: 'logging-retry' }),
-			).resolves.toMatchObject({
+		rejectLoggingWrite = false
+		await expect(rpc.removePluginForkDto({ base, forkId: 'logging-retry' })).resolves.toMatchObject(
+			{
 				ok: true,
 				status: 'removed',
-			})
-			state = requireHostStateStore(host.ctx).snapshot()
-			expect(listForkIds(state, base.definition)).not.toContain('logging-retry')
-			expect(logging.policy.persistence).toBe('clean')
-			expect(persisted.at(-1)?.overrides).toEqual([])
-		} finally {
-			await host.dispose()
-		}
+			},
+		)
+		state = requireHostStateStore(host.ctx).snapshot()
+		expect(listForkIds(state, base.definition)).not.toContain('logging-retry')
+		expect(logging.policy.persistence).toBe('clean')
+		expect(persisted.at(-1)?.overrides).toEqual([])
 	})
 })
 
