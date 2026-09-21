@@ -171,6 +171,7 @@ this.ctx
 其他 owner 的连接不受影响。若 transport 没有回报 close，宿主会在有界等待后终止连接并释放 generation lease。
 
 Vite 始终先保留自己的 HMR protocol/path，只有非 HMR 且命中当前 Elysia `.ws()` route 的 upgrade 才进入业务 carrier。
+业务 WebSocket 成功升级后不会进入 Host 的页面 fallback，因此可以与 Workbench 或应用 SPA 共用同一 listener。
 
 ## PluginPart 与 Elysia scope
 

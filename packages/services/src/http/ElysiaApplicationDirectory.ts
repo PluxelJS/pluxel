@@ -425,7 +425,9 @@ export class ElysiaApplicationDirectory {
 			this.upgradeIngress.set(ownerRequest, ingress)
 			try {
 				const response = await fetch(ownerRequest, ...rest)
-				if (ingress.transferred) return response
+				// Elysia returns undefined after a successful upgrade. Keep that handled
+				// request out of the host fallback; the carrier consumes its upgrade hooks.
+				if (ingress.transferred) return response ?? new Response(null, { status: 204 })
 				if (!(response instanceof Response)) {
 					throw new Error(
 						'[pluxel/http] Elysia fetch returned no Response without transferring a WebSocket upgrade',

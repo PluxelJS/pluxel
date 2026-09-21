@@ -1,11 +1,72 @@
 import { createHost } from '@pluxel/host'
+import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
 import { resolveContextCapability } from '@pluxel/core/host'
+import { websocket } from 'elysia/websocket'
 import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.unstubAllEnvs())
-import { http, HttpServer } from '../src/http'
+import { http, Http, HttpServer } from '../src/http'
 import { createHostHttpHandler } from '@pluxel/services/http'
 import { listenHostHttp } from '@pluxel/services/http/node'
+
+@Plugin()
+class ListenerSocketProbe extends BasePlugin {
+	protected override init() {
+		this.ctx
+			.require(Http)
+			.use(websocket())
+			.ws('/probe/socket', {
+				message(socket, message) {
+					socket.send(message)
+				},
+			})
+	}
+}
+
+it.each([false, true])(
+	'upgrades business sockets with a shell fallback enabled: %s',
+	async (fallback) => {
+		const host = await createHost({ plugins: [ListenerSocketProbe], services: [http()] })
+		const fallbackFetch = vi.fn(async () => new Response('shell'))
+		if (fallback) {
+			host.ctx.require(HttpServer).mountFallback({
+				matchesRequest: () => true,
+				fetch: fallbackFetch,
+			})
+		}
+		await host.startNode({
+			definition: pluginDefinitionAddressOf(ListenerSocketProbe),
+			variant: 'default',
+		})
+		const listener = await listenHostHttp(host, {
+			fetch: createHostHttpHandler(host),
+			hostname: '127.0.0.1',
+			port: 0,
+		})
+		const socket = new WebSocket(`ws://127.0.0.1:${listener.address.port}/probe/socket`)
+		try {
+			const reply = await new Promise<unknown>((resolve, reject) => {
+				socket.addEventListener('open', () => socket.send('echo probe'), { once: true })
+				socket.addEventListener('message', (event) => resolve(event.data), { once: true })
+				socket.addEventListener('error', () => reject(new Error('WebSocket handshake failed')), {
+					once: true,
+				})
+			})
+			expect(reply).toBe('echo probe')
+			expect(fallbackFetch).not.toHaveBeenCalled()
+		} finally {
+			if (socket.readyState !== WebSocket.CLOSED) {
+				const closed = new Promise<void>((resolve) =>
+					socket.addEventListener('close', () => resolve(), { once: true }),
+				)
+				socket.close()
+				await closed
+			}
+			await listener.close()
+		}
+	},
+	10_000,
+)
 
 it('binds Node request metadata and propagates client disconnect before closing the Host', async () => {
 	const host = await createHost({ plugins: [], services: [http()] })
