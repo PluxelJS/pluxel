@@ -1,3 +1,4 @@
+import { parseRuntimeLogoutResult } from './validation'
 import { newWebSocketRpcSession, type RpcStub, type RpcTarget } from 'capnweb'
 import { ADMIN_ACCESS_COOKIE_COMMIT_PATH } from '../../services/admin-access/transport'
 import {
@@ -12,17 +13,17 @@ import {
 export type RuntimeClientBootstrap<TWorkbench extends RpcTarget = RpcTarget> =
 	| Readonly<{
 			kind: 'authentication-required'
-			profile: 1
+			profile: 2
 			authentication: RpcStub<RuntimeAuthenticationTarget>
 	  }>
 	| Readonly<{
 			kind: 'management'
-			profile: 1
+			profile: 2
 			management: RpcStub<RuntimeManagementTarget>
 	  }>
 	| Readonly<{
 			kind: 'workbench'
-			profile: 1
+			profile: 2
 			management: RpcStub<RuntimeManagementTarget>
 			workbench: RpcStub<TWorkbench>
 	  }>
@@ -82,11 +83,15 @@ class RuntimeSessionClientImpl<
 
 	async logout(): Promise<RuntimeLogoutResult> {
 		if (this.disposed) throw new Error('Runtime session client is disposed')
-		const result = await this.root.logout()
+		const result = await this.root.logoutDto()
+		const dispose = Object.getOwnPropertyDescriptor(result, Symbol.dispose)?.value
 		try {
-			return validateLogoutResult(result)
+			if (typeof dispose !== 'function' || !Reflect.deleteProperty(result, Symbol.dispose)) {
+				throw new TypeError('Runtime logout result must have a configurable disposer')
+			}
+			return parseRuntimeLogoutResult(result)
 		} finally {
-			result[Symbol.dispose]()
+			if (typeof dispose === 'function') dispose.call(result)
 		}
 	}
 
@@ -128,7 +133,7 @@ function validateBootstrap(value: unknown): asserts value is OwnedRuntimeBootstr
 		throw new TypeError('Runtime session bootstrap must be an object')
 	}
 	const input = value as Record<PropertyKey, unknown>
-	if (input.profile !== 1 || typeof input[Symbol.dispose] !== 'function') {
+	if (input.profile !== 2 || typeof input[Symbol.dispose] !== 'function') {
 		throw new TypeError('Runtime session bootstrap has an invalid profile or lifetime')
 	}
 	switch (input.kind) {
@@ -161,33 +166,4 @@ function assertTarget(value: unknown, name: string): void {
 	if ((!value || typeof value !== 'object') && typeof value !== 'function') {
 		throw new TypeError(`Runtime session ${name} target is invalid`)
 	}
-}
-
-function validateLogoutResult(input: unknown): RuntimeLogoutResult {
-	if (!input || typeof input !== 'object' || Array.isArray(input)) {
-		throw new TypeError('Runtime logout result must be an object')
-	}
-	const value = input as Record<string, unknown>
-	if (value.kind === 'closed') {
-		assertExactKeys(value, ['kind'])
-		return Object.freeze({ kind: 'closed' })
-	}
-	if (value.kind !== 'cookie-commit-required') {
-		throw new TypeError('Runtime logout result kind is invalid')
-	}
-	assertExactKeys(value, ['expiresAt', 'kind', 'ticket'])
-	if (
-		typeof value.ticket !== 'string' ||
-		!value.ticket ||
-		value.ticket.length > 4_096 ||
-		!Number.isSafeInteger(value.expiresAt) ||
-		Number(value.expiresAt) <= 0
-	) {
-		throw new TypeError('Runtime logout cookie commit is invalid')
-	}
-	return Object.freeze({
-		kind: 'cookie-commit-required',
-		ticket: value.ticket,
-		expiresAt: Number(value.expiresAt),
-	})
 }

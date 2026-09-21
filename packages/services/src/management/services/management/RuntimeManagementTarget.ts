@@ -1,3 +1,4 @@
+import { validateRuntimePortableData } from '../../web/validation'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { Management } from '../../token'
 import { AdminAccess } from '../../access'
@@ -48,18 +49,27 @@ import type {
 	RuntimePluginLogLevel,
 	VersionedPluginLogPolicySnapshot,
 } from '../../../logging/index'
-import type { LogFilter, RuntimeLogEvent } from '../../../logging/protocol'
+import type {
+	LogFilter,
+	RuntimeLogEvent,
+	LogRangeResult,
+	LogStreamMeta,
+} from '../../../logging/protocol'
 import { listSecurityEvents } from '../../../internal'
-import type { VaultAdminApi } from '../../../vault'
+import type { VaultAdminApi, VaultAdminState, VaultKeyPair } from '../../../vault'
+import type { SecurityOverview, SecurityAuditEvent } from '../../web/security'
 import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
 import type {
 	RuntimeLogFollowInput,
+	RuntimeLogStreamsIndex,
 	RuntimeLogObserver,
 	RuntimeSubscriptionTarget,
 	RuntimeManagementTarget,
 } from '../../web/management-target'
 import type {
 	ConfigResult,
+	ConfigPresentationResult,
+	RuntimeMeta,
 	EnsureForkResult,
 	RemoveForkResult,
 	PluginConsumerRequirementsInspectionResult,
@@ -79,9 +89,15 @@ import {
 } from '../../web/management-validation'
 import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
 
+/** Assert the producer's existing snapshot without rebuilding its value tree. */
+function checkedDto<const T>(value: T): T {
+	validateRuntimePortableData(value, 'Management DTO', true)
+	return value
+}
+
 export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
 	private readonly ctx: Context
-	private get admission() {
+	get #admission() {
 		return this.signal ? { signal: this.signal } : undefined
 	}
 
@@ -93,16 +109,16 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		this.ctx = ctx
 	}
 
-	describe() {
+	describeDto(): RuntimeMeta {
 		this.signal?.throwIfAborted()
 		const management = resolveContextCapability(this.ctx.root, Management)
 		if (!management) throw new Error('Runtime Management is unavailable')
-		return management.describe()
+		return checkedDto(management.describe())
 	}
 
-	runtimeUpdate(): RuntimeUpdateSnapshot | null {
+	runtimeUpdateDto(): RuntimeUpdateSnapshot | null {
 		this.signal?.throwIfAborted()
-		return readManagementHostOptions(this.ctx)?.recentUpdate?.latestUpdate?.() ?? null
+		return checkedDto(readManagementHostOptions(this.ctx)?.recentUpdate?.latestUpdate?.() ?? null)
 	}
 
 	followRuntimeUpdates(observer: (snapshot: unknown) => Promise<void>): RuntimeSubscriptionTarget {
@@ -113,123 +129,129 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		)
 	}
 
-	async pluginCatalog(): Promise<PluginCatalogSnapshot> {
+	async pluginCatalogDto(): Promise<PluginCatalogSnapshot> {
 		this.signal?.throwIfAborted()
-		return await readPluginCatalog(this.ctx, this.admission)
+		return checkedDto(await readPluginCatalog(this.ctx, this.#admission))
 	}
 
-	async pluginStatus(owner: unknown): Promise<PluginStatusQueryResult> {
+	async pluginStatusDto(owner: unknown): Promise<PluginStatusQueryResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
 		if (!address) {
-			return {
+			return checkedDto({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 				error: 'Invalid Plugin node address',
-			}
+			})
 		}
-		return { ok: true, value: await readPluginStatus(this.ctx, address, this.admission) }
+		return checkedDto({
+			ok: true,
+			value: await readPluginStatus(this.ctx, address, this.#admission),
+		})
 	}
 
-	async updatePluginCatalogLayout(input: unknown): Promise<PluginCatalogLayoutMutationResult> {
+	async updatePluginCatalogLayoutDto(input: unknown): Promise<PluginCatalogLayoutMutationResult> {
 		this.signal?.throwIfAborted()
 		const parsed = parseRpcPluginCatalogLayout(input)
 		if (parsed.ok === false) {
-			return {
+			return checkedDto({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 				error: parsed.error,
-			}
+			})
 		}
 		try {
-			return {
+			return checkedDto({
 				ok: true,
-				sections: await writePluginCatalogLayout(this.ctx, parsed.value, this.admission),
-			}
+				sections: await writePluginCatalogLayout(this.ctx, parsed.value, this.#admission),
+			})
 		} catch (error) {
 			if (error instanceof PluginCatalogLayoutError) {
-				return {
+				return checkedDto({
 					ok: false,
 					code: 'mutation_rejected',
 					state: 'unchanged',
 					error: error.message,
-				}
+				})
 			}
 			if (error instanceof PersistenceError) {
-				return {
+				return checkedDto({
 					ok: false,
 					code: 'persistence_failed',
 					state: 'unknown',
 					error: error.message,
-				}
+				})
 			}
 			throw error
 		}
 	}
 
-	async pluginConfigPresentation(owner: unknown) {
+	async pluginConfigPresentationDto(owner: unknown): Promise<ConfigPresentationResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
 		if (!address) {
-			return {
+			return checkedDto({
 				ok: false as const,
 				code: 'invalid_input' as const,
 				message: 'Invalid Plugin node address',
-			}
+			})
 		}
 		return parseConfigPresentationResult(
-			await pluginConfigPresentation(this.ctx, address, this.admission),
+			await pluginConfigPresentation(this.ctx, address, this.#admission),
 		)
 	}
 
-	async pluginConfig(owner: unknown): Promise<ConfigResult> {
+	async pluginConfigDto(owner: unknown): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
-		if (!address) return invalidConfigInput('Invalid Plugin node address')
-		return parseConfigResult(await pluginConfigGet(this.ctx, address, this.admission))
+		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
+		return parseConfigResult(await pluginConfigGet(this.ctx, address, this.#admission))
 	}
 
-	async patchPluginConfig(owner: unknown, patch: unknown): Promise<ConfigResult> {
+	async patchPluginConfigDto(owner: unknown, patch: unknown): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
-		if (!address) return invalidConfigInput('Invalid Plugin node address')
+		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
 		const record = readRpcRecord(patch)
-		if (!record) return invalidConfigInput('Config patch must be an object')
-		return parseConfigResult(await pluginConfigPatch(this.ctx, address, record, this.admission))
+		if (!record) return checkedDto(invalidConfigInput('Config patch must be an object'))
+		return parseConfigResult(await pluginConfigPatch(this.ctx, address, record, this.#admission))
 	}
 
-	async patchPluginConfigField(owner: unknown, input: unknown): Promise<ConfigResult> {
+	async patchPluginConfigFieldDto(owner: unknown, input: unknown): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
-		if (!address) return invalidConfigInput('Invalid Plugin node address')
-		if (!readRpcRecord(input)) return invalidConfigInput('Config field mutation must be an object')
-		return parseConfigResult(await pluginConfigPatchField(this.ctx, address, input, this.admission))
+		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
+		if (!readRpcRecord(input))
+			return checkedDto(invalidConfigInput('Config field mutation must be an object'))
+		return parseConfigResult(
+			await pluginConfigPatchField(this.ctx, address, input, this.#admission),
+		)
 	}
 
-	async pluginDependencyGraph(): Promise<PluginDependencyGraphSnapshot> {
+	async pluginDependencyGraphDto(): Promise<PluginDependencyGraphSnapshot> {
 		this.signal?.throwIfAborted()
-		return await pluginDependencyGraph(this.ctx, this.admission)
+		return checkedDto(await pluginDependencyGraph(this.ctx, this.#admission))
 	}
 
-	async inspectPluginConsumerRequirements(
+	async inspectPluginConsumerRequirementsDto(
 		consumer: unknown,
 	): Promise<PluginConsumerRequirementsInspectionResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(consumer)
-		if (!address) return invalidDependencyInput('Invalid Plugin node address')
+		if (!address) return checkedDto(invalidDependencyInput('Invalid Plugin node address'))
 		try {
-			return {
+			return checkedDto({
 				ok: true,
-				items: await inspectPluginConsumerRequirements(this.ctx, address, this.admission),
-			}
+				items: await inspectPluginConsumerRequirements(this.ctx, address, this.#admission),
+			})
 		} catch (error) {
-			return unavailableConsumerRequirementsQuery(error)
+			return checkedDto(unavailableConsumerRequirementsQuery(error))
 		}
 	}
 
-	async setPluginConsumerOverride(input: unknown): Promise<PluginDependencyMutationResult> {
+	async setPluginConsumerOverrideDto(input: unknown): Promise<PluginDependencyMutationResult> {
 		this.signal?.throwIfAborted()
 		const record = readRpcRecord(input)
 		const consumer = parseRpcNode(record?.consumer)
@@ -242,34 +264,36 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			!requirement ||
 			!provider.ok
 		) {
-			return invalidDependencyInput('Invalid consumer override input')
+			return checkedDto(invalidDependencyInput('Invalid consumer override input'))
 		}
-		return await applyPluginConsumerOverride(
-			this.ctx,
-			consumer,
-			requirement,
-			provider.value,
-			this.admission,
+		return checkedDto(
+			await applyPluginConsumerOverride(
+				this.ctx,
+				consumer,
+				requirement,
+				provider.value,
+				this.#admission,
+			),
 		)
 	}
 
-	async inspectPluginProviderPolicy(
+	async inspectPluginProviderPolicyDto(
 		policyOwner: unknown,
 	): Promise<PluginProviderPolicyInspectionResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(policyOwner)
-		if (!address) return invalidDependencyInput('Invalid Plugin node address')
+		if (!address) return checkedDto(invalidDependencyInput('Invalid Plugin node address'))
 		try {
-			return {
+			return checkedDto({
 				ok: true,
-				value: await inspectPluginProviderPolicy(this.ctx, address, this.admission),
-			}
+				value: await inspectPluginProviderPolicy(this.ctx, address, this.#admission),
+			})
 		} catch (error) {
-			return unavailableProviderPolicyQuery(error)
+			return checkedDto(unavailableProviderPolicyQuery(error))
 		}
 	}
 
-	async setPluginProviderPolicyDefault(input: unknown): Promise<PluginDependencyMutationResult> {
+	async setPluginProviderPolicyDefaultDto(input: unknown): Promise<PluginDependencyMutationResult> {
 		this.signal?.throwIfAborted()
 		const record = readRpcRecord(input)
 		const policyOwner = parseRpcNode(record?.policyOwner)
@@ -280,17 +304,19 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			!policyOwner ||
 			!provider.ok
 		) {
-			return invalidDependencyInput('Invalid provider policy input')
+			return checkedDto(invalidDependencyInput('Invalid provider policy input'))
 		}
-		return await applyPluginProviderPolicyDefault(
-			this.ctx,
-			policyOwner,
-			provider.value,
-			this.admission,
+		return checkedDto(
+			await applyPluginProviderPolicyDefault(
+				this.ctx,
+				policyOwner,
+				provider.value,
+				this.#admission,
+			),
 		)
 	}
 
-	async ensurePluginFork(input: unknown): Promise<EnsureForkResult> {
+	async ensurePluginForkDto(input: unknown): Promise<EnsureForkResult> {
 		this.signal?.throwIfAborted()
 		const record = readRpcRecord(input)
 		const base = parseRpcNode(record?.base)
@@ -303,43 +329,43 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			(record.autoStart !== undefined && typeof record.autoStart !== 'boolean') ||
 			!selectFor.ok
 		) {
-			return {
+			return checkedDto({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 				error: 'Invalid fork input',
-			}
+			})
 		}
 		const result = await ensureFork(this.ctx, base, record.forkId, {
 			autoStart: record.autoStart === true,
-			...this.admission,
+			...this.#admission,
 			...(selectFor.value === undefined ? {} : { selectFor: selectFor.value }),
 		})
 		if (result.ok === true) {
-			return {
+			return checkedDto({
 				ok: true,
 				status: result.status,
 				fork: parsePluginNodeAddress(result.node),
 				report: projectPluginApplyReport(this.ctx, result.report),
-			}
+			})
 		}
 		if (result.code === 'persistence_failed') {
-			return {
+			return checkedDto({
 				ok: false,
 				code: result.code,
 				state: result.state,
 				error: result.message,
-			}
+			})
 		}
-		return {
+		return checkedDto({
 			ok: false,
 			code: result.code,
 			state: result.state,
 			error: result.message,
-		}
+		})
 	}
 
-	async removePluginFork(input: unknown): Promise<RemoveForkResult> {
+	async removePluginForkDto(input: unknown): Promise<RemoveForkResult> {
 		this.signal?.throwIfAborted()
 		const record = readRpcRecord(input)
 		const base = parseRpcNode(record?.base)
@@ -349,31 +375,31 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			!base ||
 			typeof record.forkId !== 'string'
 		) {
-			return {
+			return checkedDto({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 				error: 'Invalid fork removal input',
-			}
+			})
 		}
-		const result = await removeFork(this.ctx, base, record.forkId, this.admission)
+		const result = await removeFork(this.ctx, base, record.forkId, this.#admission)
 		if (result.ok === true) {
 			if (result.status === 'already-absent') {
-				return {
+				return checkedDto({
 					ok: true,
 					status: result.status,
 					fork: parsePluginNodeAddress(result.node),
-				}
+				})
 			}
-			return {
+			return checkedDto({
 				ok: true,
 				status: result.status,
 				fork: parsePluginNodeAddress(result.node),
 				report: projectPluginApplyReport(this.ctx, result.report),
-			}
+			})
 		}
 		if (result.code === 'fork_referenced') {
-			return {
+			return checkedDto({
 				ok: false,
 				code: result.code,
 				state: result.state,
@@ -386,103 +412,103 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 					),
 				),
 				error: result.message,
-			}
+			})
 		}
 		if (result.code === 'persistence_failed') {
-			return {
+			return checkedDto({
 				ok: false,
 				code: result.code,
 				state: result.state,
 				fork: parsePluginNodeAddress(result.node),
 				...(result.report ? { report: projectPluginApplyReport(this.ctx, result.report) } : {}),
 				error: result.message,
-			}
+			})
 		}
-		return {
+		return checkedDto({
 			ok: false,
 			code: result.code,
 			state: result.state,
 			error: result.message,
-		}
+		})
 	}
 
-	async setPluginAutoStart(items: unknown): Promise<PluginControlBatchResult> {
+	async setPluginAutoStartDto(items: unknown): Promise<PluginControlBatchResult> {
 		this.signal?.throwIfAborted()
-		return parsePluginControlBatchResult(await setAutoStart(this.ctx, items, this.admission))
+		return parsePluginControlBatchResult(await setAutoStart(this.ctx, items, this.#admission))
 	}
 
-	async applyPluginLifecycleCommands(items: unknown): Promise<PluginControlBatchResult> {
+	async applyPluginLifecycleCommandsDto(items: unknown): Promise<PluginControlBatchResult> {
 		this.signal?.throwIfAborted()
 		return parsePluginControlBatchResult(
-			await applyLifecycleCommands(this.ctx, items, this.admission),
+			await applyLifecycleCommands(this.ctx, items, this.#admission),
 		)
 	}
 
-	async getLogPolicy(): Promise<VersionedPluginLogPolicySnapshot> {
+	async getLogPolicyDto(): Promise<VersionedPluginLogPolicySnapshot> {
 		this.signal?.throwIfAborted()
 		const logging = requireContextRuntimeLogging(this.ctx)
 		await logging.ready
-		return logging.policy.describe()
+		return checkedDto(logging.policy.describe())
 	}
 
-	async replaceLogPolicy(
+	async replaceLogPolicyDto(
 		expectedRevision: number,
 		snapshot: PluginLogPolicySnapshot,
 	): Promise<PluginLogPolicyMutationResult> {
 		this.signal?.throwIfAborted()
-		const policy = await this.logPolicy(expectedRevision)
-		return policy.replace(snapshot)
+		const policy = await this.#logPolicy(expectedRevision)
+		return checkedDto(policy.replace(snapshot))
 	}
 
-	async setDefaultLogLevel(
+	async setDefaultLogLevelDto(
 		expectedRevision: number,
 		level: RuntimePluginLogLevel,
 	): Promise<PluginLogPolicyMutationResult> {
 		this.signal?.throwIfAborted()
-		const policy = await this.logPolicy(expectedRevision)
-		return policy.setDefaultLevel(level)
+		const policy = await this.#logPolicy(expectedRevision)
+		return checkedDto(policy.setDefaultLevel(level))
 	}
 
-	async setPluginLogLevel(
+	async setPluginLogLevelDto(
 		expectedRevision: number,
 		owner: PluginNodeAddress,
 		level: RuntimePluginLogLevel,
 	): Promise<PluginLogPolicyMutationResult> {
 		this.signal?.throwIfAborted()
-		const policy = await this.logPolicy(expectedRevision)
-		return policy.setPluginLevel(owner, level)
+		const policy = await this.#logPolicy(expectedRevision)
+		return checkedDto(policy.setPluginLevel(owner, level))
 	}
 
-	async clearPluginLogLevel(
+	async clearPluginLogLevelDto(
 		expectedRevision: number,
 		owner: PluginNodeAddress,
 	): Promise<PluginLogPolicyMutationResult> {
 		this.signal?.throwIfAborted()
-		const policy = await this.logPolicy(expectedRevision)
-		return policy.clearPluginLevel(owner)
+		const policy = await this.#logPolicy(expectedRevision)
+		return checkedDto(policy.clearPluginLevel(owner))
 	}
 
-	async resetLogPolicy(expectedRevision: number): Promise<VersionedPluginLogPolicySnapshot> {
+	async resetLogPolicyDto(expectedRevision: number): Promise<VersionedPluginLogPolicySnapshot> {
 		this.signal?.throwIfAborted()
-		const policy = await this.logPolicy(expectedRevision)
+		const policy = await this.#logPolicy(expectedRevision)
 		policy.reset()
-		return policy.describe()
+		return checkedDto(policy.describe())
 	}
 
-	logStreams() {
+	logStreamsDto(): RuntimeLogStreamsIndex {
 		this.signal?.throwIfAborted()
-		return logsIndex(this.ctx)
+		return checkedDto(logsIndex(this.ctx))
 	}
 
-	logMeta(streamId: unknown) {
+	logMetaDto(streamId: unknown): LogStreamMeta {
 		this.signal?.throwIfAborted()
-		return logsMeta(this.ctx, { streamId: parseLogStreamId(streamId) })
+		return checkedDto(logsMeta(this.ctx, { streamId: parseLogStreamId(streamId) }))
 	}
 
-	logRange(streamId: unknown, query: unknown) {
+	logRangeDto(streamId: unknown, query: unknown): LogRangeResult {
 		this.signal?.throwIfAborted()
 		const input = parseLogRangeInput(streamId, query)
-		return prepareRuntimeLogRangeForRpc(logsRange(this.ctx, input))
+		return checkedDto(prepareRuntimeLogRangeForRpc(logsRange(this.ctx, input)))
 	}
 
 	async followLogs(
@@ -497,45 +523,49 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		)
 	}
 
-	async securityOverview() {
+	async securityOverviewDto(): Promise<SecurityOverview> {
 		this.signal?.throwIfAborted()
 		const adminAccess = resolveContextCapability(this.ctx.root, AdminAccess)
 		if (!adminAccess) throw new Error('Runtime Management authentication is unavailable')
 		const vault = optionalVaultAdmin(this.ctx)
-		return Object.freeze({
-			adminAccess: await adminAccess.describe(),
-			vault: vault
-				? Object.freeze({ enabled: true as const, state: await vault.describe() })
-				: Object.freeze({ enabled: false as const }),
-		})
+		return checkedDto(
+			Object.freeze({
+				adminAccess: await adminAccess.describe(),
+				vault: vault
+					? Object.freeze({ enabled: true as const, state: await vault.describe() })
+					: Object.freeze({ enabled: false as const }),
+			}),
+		)
 	}
 
-	securityEvents(limit?: unknown) {
+	securityEventsDto(limit?: unknown): readonly SecurityAuditEvent[] {
 		this.signal?.throwIfAborted()
-		return Object.freeze(listSecurityEvents(this.ctx, parseSecurityEventLimit(limit)))
+		return checkedDto(Object.freeze(listSecurityEvents(this.ctx, parseSecurityEventLimit(limit))))
 	}
 
-	async vaultUnlock() {
+	async vaultUnlockDto(): Promise<VaultAdminState> {
 		this.signal?.throwIfAborted()
-		return await this.vaultAdmin().unlock()
+		return checkedDto(await this.#vaultAdmin().unlock())
 	}
 
-	async vaultEnsureHostKey() {
+	async vaultEnsureHostKeyDto(): Promise<Readonly<{ publicKey: string }>> {
 		this.signal?.throwIfAborted()
-		return Object.freeze({ publicKey: await this.vaultAdmin().ensureHostKey() })
+		return checkedDto(Object.freeze({ publicKey: await this.#vaultAdmin().ensureHostKey() }))
 	}
 
-	async vaultGenerateDeployKey() {
+	async vaultGenerateDeployKeyDto(): Promise<VaultKeyPair> {
 		this.signal?.throwIfAborted()
-		return await this.vaultAdmin().generateDeployKey()
+		return checkedDto(await this.#vaultAdmin().generateDeployKey())
 	}
 
-	async vaultSetDeployRecipients(publicKeys: unknown) {
+	async vaultSetDeployRecipientsDto(publicKeys: unknown): Promise<VaultAdminState> {
 		this.signal?.throwIfAborted()
-		return await this.vaultAdmin().setDeployRecipients(parseDeployRecipients(publicKeys))
+		return checkedDto(
+			await this.#vaultAdmin().setDeployRecipients(parseDeployRecipients(publicKeys)),
+		)
 	}
 
-	private async logPolicy(expectedRevision: number) {
+	async #logPolicy(expectedRevision: number) {
 		const logging = requireContextRuntimeLogging(this.ctx)
 		await logging.ready
 		this.signal?.throwIfAborted()
@@ -543,7 +573,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return logging.policy
 	}
 
-	private vaultAdmin(): VaultAdminApi {
+	#vaultAdmin(): VaultAdminApi {
 		const vault = optionalVaultAdmin(this.ctx)
 		if (!vault) throw new Error('Runtime Vault is unavailable')
 		return vault
@@ -575,7 +605,7 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 		}
 		this.observer = observer.dup()
 		try {
-			this.unsubscribe = logsFollow(ctx, input, (event) => this.enqueue(event))
+			this.unsubscribe = logsFollow(ctx, input, (event) => this.#enqueue(event))
 		} catch (error) {
 			this.observer[Symbol.dispose]()
 			throw error
@@ -591,13 +621,13 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 		this.observer[Symbol.dispose]()
 	}
 
-	private enqueue(event: RuntimeLogEvent): void {
+	#enqueue(event: RuntimeLogEvent): void {
 		if (!this.active) return
 		if (event.type === 'reset') {
 			this.queue.length = 0
 			this.queuedBytes = 0
-			this.push(event)
-			this.startDrain()
+			this.#push(event)
+			this.#startDrain()
 			return
 		}
 
@@ -612,25 +642,25 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 			const gap = collapseLogGap(this.queue, event)
 			this.queue.length = 0
 			this.queuedBytes = 0
-			this.push(gap)
+			this.#push(gap)
 		} else {
-			this.push(event, bytes)
+			this.#push(event, bytes)
 		}
-		this.startDrain()
+		this.#startDrain()
 	}
 
-	private push(event: RuntimeLogEvent, bytes = estimateRuntimeRpcPayloadBytes(event)): void {
+	#push(event: RuntimeLogEvent, bytes = estimateRuntimeRpcPayloadBytes(event)): void {
 		this.queue.push(event)
 		this.queuedBytes += bytes
 	}
 
-	private startDrain(): void {
+	#startDrain(): void {
 		if (this.draining) return
 		this.draining = true
-		void this.drain()
+		void this.#drain()
 	}
 
-	private async drain(): Promise<void> {
+	async #drain(): Promise<void> {
 		try {
 			while (this.active) {
 				const event = this.queue.shift()
@@ -647,7 +677,7 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 			this[Symbol.dispose]()
 		} finally {
 			this.draining = false
-			if (this.active && this.queue.length > 0) this.startDrain()
+			if (this.active && this.queue.length > 0) this.#startDrain()
 		}
 	}
 }
@@ -1009,8 +1039,8 @@ class RuntimeUpdateSubscription extends RpcTarget {
 			throw new TypeError('Update observer must be an RPC callback')
 		this.observer = observer.dup()
 		this.unsubscribe =
-			source?.subscribeUpdates?.((snapshot) => this.enqueue(snapshot)) ?? (() => {})
-		this.enqueue(source?.latestUpdate?.() ?? null)
+			source?.subscribeUpdates?.((snapshot) => this.#enqueue(snapshot)) ?? (() => {})
+		this.#enqueue(source?.latestUpdate?.() ?? null)
 	}
 
 	[Symbol.dispose](): void {
@@ -1021,13 +1051,13 @@ class RuntimeUpdateSubscription extends RpcTarget {
 		this.observer[Symbol.dispose]()
 	}
 
-	private enqueue(snapshot: RuntimeUpdateSnapshot | null): void {
+	#enqueue(snapshot: RuntimeUpdateSnapshot | null): void {
 		if (!this.active) return
 		this.pending = snapshot
-		if (!this.draining) void this.drain()
+		if (!this.draining) void this.#drain()
 	}
 
-	private async drain(): Promise<void> {
+	async #drain(): Promise<void> {
 		this.draining = true
 		try {
 			while (this.active && this.pending !== undefined) {

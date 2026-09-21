@@ -110,7 +110,8 @@ action keys 都必须 exact。含 data 的 Content 执行 Action 后，Framework
 关闭、session 失效或 Plugin replacement 时用于清理领域订阅。
 
 只有 action 的 Content 不调用 `subscribe()`，打开后可直接执行按钮或表单；只有声明了 data，Shell 才建立一个 observer 并执行
-initial `load()`。
+initial `load()`。这是本地 opened handle 和作者 binding 的领域命名；底层 Content RPC root 使用
+`subscribeDto()`、`loadDto()`、`runDto()`，纯数据结果与 root 持有的订阅寿命分离。
 
 纯 Markdown Content 省略 slots，并继续 `publish(ServiceWorkbench)`，不创建 root、不占 opened-entry quota，也不生成 MF
 producer/Bridge。需要 lossless events、独立并发状态、progress/cancel、server pagination 或任意 React UI 时使用完整 View。

@@ -41,7 +41,7 @@ Workbench 是应用自带的管理工作台。普通插件已经可以在这里�
 Content 使用 Markdown 排版，用 slot 插入数据或操作。宿主统一显示，不需要单独编写前端组件。
 完整示例、表单和 Markdown 支持范围见 [Content](./content.md)。
 
-## 完整 View 参考：server push 与 custom callback
+## 完整 View 参考：订阅后台变化
 
 先完成 [View 的读取与刷新示例](./view.md)。后台变化需要通知页面时，再查该页后半部分的订阅示例。
 `query`、`mutation`、错误恢复与数据限制集中在 [页面资源参考](./renderer-resources.md)。

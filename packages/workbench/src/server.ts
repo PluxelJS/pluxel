@@ -10,3 +10,6 @@ export type {
 	LocalWorkbenchEntryOptions,
 	OpenedLocalWorkbenchEntry,
 } from './local-entry'
+
+export { assertWorkbenchDto } from './workbench/portable-value'
+export { createWorkbenchWatch, type WorkbenchWatchOptions } from './workbench/watch'

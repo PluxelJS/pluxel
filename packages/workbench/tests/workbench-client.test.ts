@@ -7,11 +7,11 @@ import {
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import {
 	createRemoteValue,
-	detachWorkbenchPortableValue,
+	consumeWorkbenchValue,
 	openWorkbenchEntry,
 	readWorkbenchLayout,
 	WorkbenchPortableValueError,
-	type WorkbenchDetached,
+	type WorkbenchSnapshot,
 	type WorkbenchLayoutEntry,
 	type WorkbenchPortableValue,
 	type WorkbenchPortableValueErrorCode,
@@ -19,7 +19,7 @@ import {
 	type WorkbenchContentLayoutEntry,
 	type WorkbenchUnavailableFederatedLayoutEntry,
 } from '@pluxel/workbench/client'
-import { serialize, type RpcStub } from 'capnweb'
+import type { RpcStub } from 'capnweb'
 
 const definition = parsePluginDefinitionAddress({
 	entry: { kind: 'package-root', packageName: '@example/settings' },
@@ -269,7 +269,7 @@ describe('Workbench opened View client', () => {
 	it('rejects layout icon values outside the fixed host set', async () => {
 		const disposeResult = vi.fn()
 		const session = {
-			layout: vi.fn().mockResolvedValue({
+			layoutDto: vi.fn().mockResolvedValue({
 				profile: 1,
 				revision: 1,
 				target: null,
@@ -287,7 +287,7 @@ describe('Workbench opened View client', () => {
 	it('accepts unavailable federated layout entries and does not open them', async () => {
 		const disposeResult = vi.fn()
 		const session = {
-			layout: vi.fn().mockResolvedValue({
+			layoutDto: vi.fn().mockResolvedValue({
 				profile: 1,
 				revision: 1,
 				target: null,
@@ -314,7 +314,7 @@ describe('Workbench opened View client', () => {
 	it('rejects federated layout entries with ambiguous availability', async () => {
 		const disposeResult = vi.fn()
 		const session = {
-			layout: vi.fn().mockResolvedValue({
+			layoutDto: vi.fn().mockResolvedValue({
 				profile: 1,
 				revision: 1,
 				target: null,
@@ -336,29 +336,82 @@ describe('Workbench opened View client', () => {
 })
 
 describe('remote value owner', () => {
-	it('detaches, validates, and releases a transport-owned portable DTO', () => {
+	it('takes ownership of the full local tree without allocating a second snapshot', () => {
+		const input = { rows: [{ name: 'first' }] }
+		const snapshot = consumeWorkbenchValue(input)
+		expect(snapshot).toBe(input)
+		expect(snapshot.rows).toBe(input.rows)
+		expect(snapshot.rows[0]).toBe(input.rows[0])
+		expect(Object.isFrozen(snapshot.rows[0])).toBe(true)
+		expect(() => {
+			input.rows[0]!.name = 'changed'
+		}).toThrow(TypeError)
+	})
+
+	it('rejects accessors without invoking them, including then before consumption', () => {
+		for (const key of ['then', 'secret']) {
+			const getter = vi.fn(() => 'private')
+			const dispose = vi.fn()
+			const input = Object.defineProperties(
+				{},
+				{
+					[key]: { get: getter, enumerable: true },
+					[Symbol.dispose]: { value: dispose, configurable: true },
+				},
+			)
+			expect(() => consumeWorkbenchValue(input)).toThrowError(
+				expect.objectContaining({ code: 'WORKBENCH_NON_PORTABLE_VALUE' }),
+			)
+			expect(getter).not.toHaveBeenCalled()
+			expect(dispose).toHaveBeenCalledOnce()
+		}
+	})
+
+	it('validates the whole tree before freezing and rejects hidden data and sparse arrays', () => {
+		const nested = { value: 1 }
+		const input = { nested, invalid: undefined }
+		expect(() => consumeWorkbenchValue(input)).toThrowError(WorkbenchPortableValueError)
+		expect(Object.isFrozen(nested)).toBe(false)
+		const sparse: unknown[] = []
+		sparse.length = 2
+		for (const value of [sparse, Object.defineProperty({}, 'hidden', { value: 1 })]) {
+			expect(() => consumeWorkbenchValue(value)).toThrowError(WorkbenchPortableValueError)
+		}
+	})
+
+	it('releases but rejects a result whose transport metadata cannot be removed', () => {
+		const dispose = vi.fn()
+		const input = Object.defineProperty({ value: 1 }, Symbol.dispose, { value: dispose })
+		expect(() => consumeWorkbenchValue(input)).toThrowError(
+			expect.objectContaining({ code: 'WORKBENCH_NON_PORTABLE_VALUE' }),
+		)
+		expect(dispose).toHaveBeenCalledOnce()
+	})
+
+	it('consumes, validates, and releases a transport-owned portable value', () => {
 		const dispose = vi.fn()
 		const input = Object.assign(Object.create(null), {
 			nested: Object.assign(Object.create(null), { value: 'safe' }),
 		})
-		Object.defineProperty(input, Symbol.dispose, { value: dispose })
+		Object.defineProperty(input, Symbol.dispose, { configurable: true, value: dispose })
 
-		const detached = detachWorkbenchPortableValue(input, 'test Workbench DTO') as {
+		const detached = consumeWorkbenchValue(input, 'test Workbench DTO') as {
 			readonly nested: Readonly<{ value: string }>
 		}
 
 		expect(detached).toEqual({ nested: { value: 'safe' } })
-		expect(Object.getPrototypeOf(detached)).toBe(Object.prototype)
-		expect(Object.getPrototypeOf(detached.nested)).toBe(Object.prototype)
+		expect(detached).toBe(input)
+		expect(detached.nested).toBe(input.nested)
+		expect(Object.getPrototypeOf(detached)).toBe(null)
+		expect(Object.getPrototypeOf(detached.nested)).toBe(null)
 		expect(Object.isFrozen(detached)).toBe(true)
 		expect(Object.isFrozen(detached.nested)).toBe(true)
 		expect(Object.getOwnPropertySymbols(detached)).toEqual([])
-		expect(() => serialize(detached)).not.toThrow()
 		expect(dispose).toHaveBeenCalledOnce()
 	})
 
 	it('retains the synchronous overload and exposes deeply readonly output types', () => {
-		const detached = detachWorkbenchPortableValue({
+		const detached = consumeWorkbenchValue({
 			nested: { value: 'safe' },
 			items: [1, 2],
 		})
@@ -368,10 +421,10 @@ describe('remote value owner', () => {
 			readonly nested: { readonly value: string }
 			readonly items: readonly number[]
 		}>()
-		expectTypeOf<WorkbenchDetached<{ value: { count: number } }>>().toEqualTypeOf<{
+		expectTypeOf<WorkbenchSnapshot<{ value: { count: number } }>>().toEqualTypeOf<{
 			readonly value: { readonly count: number }
 		}>()
-		expectTypeOf<WorkbenchDetached<[string, { count: number }]>>().toEqualTypeOf<
+		expectTypeOf<WorkbenchSnapshot<[string, { count: number }]>>().toEqualTypeOf<
 			readonly [string, { readonly count: number }]
 		>()
 		expectTypeOf<WorkbenchPortableValueErrorCode>().toEqualTypeOf<
@@ -388,10 +441,11 @@ describe('remote value owner', () => {
 	it('awaits a PromiseLike before detaching and releasing its resolved result', async () => {
 		const dispose = vi.fn()
 		const input = Object.defineProperty({ nested: { value: 'safe' } }, Symbol.dispose, {
+			configurable: true,
 			value: dispose,
 		})
 
-		const detached = detachWorkbenchPortableValue(Promise.resolve(input))
+		const detached = consumeWorkbenchValue(Promise.resolve(input))
 		expectTypeOf(detached).toEqualTypeOf<
 			Promise<{
 				readonly nested: { readonly value: string }
@@ -404,10 +458,11 @@ describe('remote value owner', () => {
 	it('releases a transport-owned DTO when portable-data validation fails', () => {
 		const dispose = vi.fn()
 		const input = Object.defineProperty({ missing: undefined }, Symbol.dispose, {
+			configurable: true,
 			value: dispose,
 		})
 
-		expect(() => detachWorkbenchPortableValue(input)).toThrowError(
+		expect(() => consumeWorkbenchValue(input)).toThrowError(
 			expect.objectContaining({
 				name: 'WorkbenchPortableValueError',
 				code: 'WORKBENCH_NON_PORTABLE_VALUE',
@@ -420,11 +475,15 @@ describe('remote value owner', () => {
 		const disposeTopLevel = vi.fn()
 		const disposeNested = vi.fn()
 		const nested = Object.defineProperty({ value: 'unsafe' }, Symbol.dispose, {
+			configurable: true,
 			value: disposeNested,
 		})
-		const input = Object.defineProperty({ nested }, Symbol.dispose, { value: disposeTopLevel })
+		const input = Object.defineProperty({ nested }, Symbol.dispose, {
+			configurable: true,
+			value: disposeTopLevel,
+		})
 
-		expect(() => detachWorkbenchPortableValue(input)).toThrowError(
+		expect(() => consumeWorkbenchValue(input)).toThrowError(
 			expect.objectContaining({ code: 'WORKBENCH_NON_PORTABLE_VALUE' }),
 		)
 		expect(disposeTopLevel).toHaveBeenCalledOnce()
@@ -436,11 +495,14 @@ describe('remote value owner', () => {
 		const dispose = vi.fn(() => {
 			throw cleanupFailure
 		})
-		const input = Object.defineProperty({ value: 'safe' }, Symbol.dispose, { value: dispose })
+		const input = Object.defineProperty({ value: 'safe' }, Symbol.dispose, {
+			configurable: true,
+			value: dispose,
+		})
 
 		let error: unknown
 		try {
-			detachWorkbenchPortableValue(input)
+			consumeWorkbenchValue(input)
 		} catch (caught) {
 			error = caught
 		}
@@ -458,12 +520,13 @@ describe('remote value owner', () => {
 			throw cleanupFailure
 		})
 		const input = Object.defineProperty({ credential: undefined }, Symbol.dispose, {
+			configurable: true,
 			value: dispose,
 		})
 
 		let error: unknown
 		try {
-			detachWorkbenchPortableValue(input, 'settings payload')
+			consumeWorkbenchValue(input, 'settings payload')
 		} catch (caught) {
 			error = caught
 		}
@@ -480,12 +543,12 @@ describe('remote value owner', () => {
 		let tooDeep: Record<string, unknown> = {}
 		for (let depth = 0; depth < 66; depth += 1) tooDeep = { nested: tooDeep }
 
-		expect(() => detachWorkbenchPortableValue(tooDeep)).toThrowError(
+		expect(() => consumeWorkbenchValue(tooDeep)).toThrowError(
 			expect.objectContaining({ code: 'WORKBENCH_PORTABLE_VALUE_TOO_DEEP' }),
 		)
-		expect(() =>
-			detachWorkbenchPortableValue(Array.from({ length: 10_001 }, () => 0)),
-		).toThrowError(expect.objectContaining({ code: 'WORKBENCH_PORTABLE_VALUE_TOO_LARGE' }))
+		expect(() => consumeWorkbenchValue(Array.from({ length: 10_001 }, () => 0))).toThrowError(
+			expect.objectContaining({ code: 'WORKBENCH_PORTABLE_VALUE_TOO_LARGE' }),
+		)
 	})
 
 	it('subscribes before reading and coalesces invalidation during an active read', async () => {

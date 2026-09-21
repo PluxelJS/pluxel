@@ -4,9 +4,11 @@ import { RpcTarget } from 'capnweb'
 import type { WorkbenchPrincipal } from '../../workbench/definition.ts'
 import type {
 	WorkbenchLayoutInput,
+	WorkbenchLayout,
 	WorkbenchOpenEntryInput,
 	WorkbenchSessionApi,
 } from '../../workbench/client-protocol.ts'
+import { assertWorkbenchDto } from '../../workbench/portable-value.ts'
 import { OpenedEntryLease, WorkbenchRegistry } from './WorkbenchRegistry.ts'
 
 const EXPIRE = Symbol('pluxel.workbench.session.expire')
@@ -25,9 +27,11 @@ export class WorkbenchSessionTarget extends RpcTarget implements WorkbenchSessio
 		super()
 	}
 
-	layout(input: WorkbenchLayoutInput) {
+	layoutDto(input: WorkbenchLayoutInput): WorkbenchLayout {
 		this.#assertActive()
-		return this.registry.getLayout(parseLayoutInput(input).target)
+		const layout = this.registry.getLayout(parseLayoutInput(input).target)
+		assertWorkbenchDto(layout, 'Workbench layout')
+		return layout
 	}
 
 	async openEntry(input: WorkbenchOpenEntryInput) {

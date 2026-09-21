@@ -5,7 +5,7 @@ export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)
 
 export const fontSelectionQuery = selectionScope.query(({ provider }) => ({
 	queryKey: ['fonts', 'selection'] as const,
-	queryFn: () => provider.snapshot(),
+	queryFn: () => provider.snapshotDto(),
 }))
 
 export const setPreferredFontMutation = selectionScope.mutation(({ provider }) => ({

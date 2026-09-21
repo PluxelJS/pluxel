@@ -3,11 +3,11 @@ import { workbench } from '@pluxel/workbench'
 import type { FontRef, FontSet } from './PluginContributionFontDemo.shared'
 
 export interface FontCatalogApi extends RpcTarget {
-	list(): readonly FontSet[]
+	listDto(): readonly FontSet[]
 }
 
 export interface FontSelectionApi extends RpcTarget {
-	current(): FontRef | null
+	currentDto(): FontRef | null
 	set(ref: FontRef | null): void
 }
 

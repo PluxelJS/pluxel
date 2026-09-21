@@ -40,7 +40,7 @@ The browser-safe `@pluxel/auth/workbench` entry exports the exact `AuthWorkbench
 types. The owning Plugin publishes that View at `/auth/setup`; no Runtime setup resource, generic capability registry or second transport
 exists. Each open creates a fresh `AuthSetupTarget` and `CredentialProvisioning`, both bound to the open signal and Plugin generation.
 
-`snapshot()` is a closed union over the configured mode and `configured`, `setup-required` or `unavailable` readiness. Mutations require
+`snapshotDto()` is a closed union over the configured mode and `configured`, `setup-required` or `unavailable` readiness. Mutations require
 the Runtime-issued physical-loopback recovery principal and a current `setup-required` snapshot. Remote provider principals are denied,
 configured credentials cannot be overwritten, public OIDC accepts no secret, and unavailable Vault state fails closed. Successful mutation
 commits the Vault record before updating in-memory readiness, revokes old cookie sessions and returns the resulting snapshot.

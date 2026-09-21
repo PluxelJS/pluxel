@@ -73,7 +73,7 @@ describe('runtime web control protocol', () => {
 			const address = host.cfg(RecoverablePlugin).owner
 			const other = host.cfg(ManagedPlugin).owner
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
-			await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			await rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }])
 			expect(logged).toHaveBeenCalledWith(
 				'Plugin lifecycle operation failed',
 				expect.objectContaining({
@@ -82,7 +82,7 @@ describe('runtime web control protocol', () => {
 					error: expect.objectContaining({ message: 'database initialization failed' }),
 				}),
 			)
-			const failed = parsePluginStatusQueryResult(await rpc.pluginStatus(address))
+			const failed = parsePluginStatusQueryResult(await rpc.pluginStatusDto(address))
 			expect(failed).toMatchObject({
 				ok: true,
 				value: {
@@ -90,14 +90,14 @@ describe('runtime web control protocol', () => {
 					issues: [{ code: 'start-failed', message: 'database initialization failed' }],
 				},
 			})
-			await rpc.applyPluginLifecycleCommands([{ address: other, command: 'start' }])
-			expect(await rpc.pluginStatus(address)).toMatchObject({
+			await rpc.applyPluginLifecycleCommandsDto([{ address: other, command: 'start' }])
+			expect(await rpc.pluginStatusDto(address)).toMatchObject({
 				ok: true,
 				value: { issues: [{ code: 'start-failed' }] },
 			})
 			recoverableFailure = false
-			await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
-			expect(await rpc.pluginStatus(address)).toMatchObject({
+			await rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }])
+			expect(await rpc.pluginStatusDto(address)).toMatchObject({
 				ok: true,
 				value: { lifecycleState: 'running', issues: [] },
 			})
@@ -118,7 +118,7 @@ describe('runtime web control protocol', () => {
 			const address = host.cfg(ManagedPlugin).owner
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
-			const startResult = await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			const startResult = await rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }])
 			expect(startResult).toMatchObject({
 				ok: true,
 				status: 'applied',
@@ -145,7 +145,7 @@ describe('runtime web control protocol', () => {
 			stateStore.commitVersioned = async () => {
 				throw new Error('durable store unavailable')
 			}
-			const persistenceFailure = await rpc.setPluginAutoStart([{ address, autoStart: true }])
+			const persistenceFailure = await rpc.setPluginAutoStartDto([{ address, autoStart: true }])
 			expect(persistenceFailure).toMatchObject({
 				ok: false,
 				status: 'rejected',
@@ -173,7 +173,7 @@ describe('runtime web control protocol', () => {
 			const address = host.cfg(FailingManagedPlugin).owner
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
-			const result = await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			const result = await rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }])
 			expect(result).toMatchObject({
 				ok: true,
 				status: 'applied',
@@ -220,11 +220,11 @@ describe('runtime web control protocol', () => {
 			const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
 			const token = pluginDefinitionAddressOf(ManagedProviderToken)
 
-			await expect(rpc.inspectPluginProviderPolicy(consumer)).resolves.toEqual({
+			await expect(rpc.inspectPluginProviderPolicyDto(consumer)).resolves.toEqual({
 				ok: true,
 				value: null,
 			})
-			await expect(rpc.inspectPluginProviderPolicy(policyOwner)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginProviderPolicyDto(policyOwner)).resolves.toMatchObject({
 				ok: true,
 				value: {
 					token,
@@ -234,7 +234,7 @@ describe('runtime web control protocol', () => {
 					]),
 				},
 			})
-			const providerPolicy = await rpc.inspectPluginProviderPolicy(policyOwner)
+			const providerPolicy = await rpc.inspectPluginProviderPolicyDto(policyOwner)
 			if (!providerPolicy.ok || !providerPolicy.value) {
 				throw new Error('expected provider policy')
 			}
@@ -244,12 +244,12 @@ describe('runtime web control protocol', () => {
 			expect(providerPolicy.value.options).not.toContainEqual(
 				expect.objectContaining({ address: providerFork }),
 			)
-			await expect(rpc.inspectPluginProviderPolicy(providerFork)).resolves.toEqual({
+			await expect(rpc.inspectPluginProviderPolicyDto(providerFork)).resolves.toEqual({
 				ok: true,
 				value: null,
 			})
 			await expect(
-				rpc.setPluginProviderPolicyDefault({
+				rpc.setPluginProviderPolicyDefaultDto({
 					consumer,
 					token,
 					provider: alternateProvider,
@@ -260,7 +260,7 @@ describe('runtime web control protocol', () => {
 				state: 'unchanged',
 			})
 			await expect(
-				rpc.setPluginProviderPolicyDefault({
+				rpc.setPluginProviderPolicyDefaultDto({
 					policyOwner: consumer,
 					provider: alternateProvider,
 				}),
@@ -269,22 +269,22 @@ describe('runtime web control protocol', () => {
 				code: 'provider_policy_unavailable',
 				state: 'unchanged',
 			})
-			const result = await rpc.setPluginProviderPolicyDefault({
+			const result = await rpc.setPluginProviderPolicyDefaultDto({
 				policyOwner,
 				provider: alternateProvider,
 			})
 			expect(result).toMatchObject({ ok: true, status: 'applied', report: {} })
 			if (result.ok) expectBrowserSafeReport(result.report)
 
-			await expect(rpc.inspectPluginProviderPolicy(policyOwner)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginProviderPolicyDto(policyOwner)).resolves.toMatchObject({
 				ok: true,
 				value: { defaultProvider: alternateProvider, policyOwnerIsDefault: false },
 			})
-			await expect(rpc.inspectPluginProviderPolicy(alternateProvider)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginProviderPolicyDto(alternateProvider)).resolves.toMatchObject({
 				ok: true,
 				value: { defaultProvider: alternateProvider, policyOwnerIsDefault: true },
 			})
-			await expect(rpc.inspectPluginConsumerRequirements(consumer)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginConsumerRequirementsDto(consumer)).resolves.toMatchObject({
 				ok: true,
 				items: [
 					{ requirement: token, consumerOverride: null, inheritedProvider: alternateProvider },
@@ -292,13 +292,13 @@ describe('runtime web control protocol', () => {
 			})
 
 			await expect(
-				rpc.setPluginConsumerOverride({
+				rpc.setPluginConsumerOverrideDto({
 					consumer,
 					requirement: token,
 					provider: policyOwner,
 				}),
 			).resolves.toMatchObject({ ok: true, status: 'applied' })
-			await expect(rpc.inspectPluginConsumerRequirements(consumer)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginConsumerRequirementsDto(consumer)).resolves.toMatchObject({
 				ok: true,
 				items: [
 					{
@@ -322,7 +322,7 @@ describe('runtime web control protocol', () => {
 			const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
 			const requirement = pluginDefinitionAddressOf(ManagedProviderToken)
 
-			const inspection = await rpc.inspectPluginConsumerRequirements(consumer)
+			const inspection = await rpc.inspectPluginConsumerRequirementsDto(consumer)
 			expect(inspection).toMatchObject({ ok: true, items: [{ requirement }] })
 			if (inspection.ok === false) throw new Error(inspection.error)
 			expect(inspection.items[0]).not.toHaveProperty('index')
@@ -333,7 +333,7 @@ describe('runtime web control protocol', () => {
 			expect(inspection.items[0]).toHaveProperty('consumerOverride', null)
 
 			await expect(
-				rpc.inspectPluginConsumerRequirements(pluginNodeAddressOf(ManagedDirectConsumer)),
+				rpc.inspectPluginConsumerRequirementsDto(pluginNodeAddressOf(ManagedDirectConsumer)),
 			).resolves.toMatchObject({
 				ok: true,
 				items: [
@@ -350,10 +350,10 @@ describe('runtime web control protocol', () => {
 			})
 
 			await expect(
-				rpc.setPluginConsumerOverride({ consumer, index: 0, provider: null }),
+				rpc.setPluginConsumerOverrideDto({ consumer, index: 0, provider: null }),
 			).resolves.toMatchObject({ ok: false, code: 'invalid_input', state: 'unchanged' })
 			await expect(
-				rpc.setPluginConsumerOverride({
+				rpc.setPluginConsumerOverrideDto({
 					consumer,
 					requirement: pluginDefinitionAddressOf(ManagedPlugin),
 					provider: null,
@@ -364,7 +364,7 @@ describe('runtime web control protocol', () => {
 				state: 'unchanged',
 			})
 			await expect(
-				rpc.setPluginConsumerOverride({ consumer, requirement, provider: null }),
+				rpc.setPluginConsumerOverrideDto({ consumer, requirement, provider: null }),
 			).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
 		} finally {
 			await host.dispose()
@@ -402,7 +402,7 @@ describe('runtime web control protocol', () => {
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
 			await expect(
-				rpc.applyPluginLifecycleCommands([
+				rpc.applyPluginLifecycleCommandsDto([
 					{ address, command: 'start' },
 					{ address, command: 'enable' },
 				]),
@@ -415,7 +415,9 @@ describe('runtime web control protocol', () => {
 				results: [],
 			})
 			await expect(
-				rpc.applyPluginLifecycleCommands([{ address: { variant: 'default' }, command: 'start' }]),
+				rpc.applyPluginLifecycleCommandsDto([
+					{ address: { variant: 'default' }, command: 'start' },
+				]),
 			).resolves.toMatchObject({
 				ok: false,
 				status: 'rejected',
@@ -424,7 +426,7 @@ describe('runtime web control protocol', () => {
 				results: [],
 			})
 			await expect(
-				rpc.applyPluginLifecycleCommands([{ address, action: 'enable' }]),
+				rpc.applyPluginLifecycleCommandsDto([{ address, action: 'enable' }]),
 			).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
@@ -432,7 +434,7 @@ describe('runtime web control protocol', () => {
 				results: [],
 			})
 			await expect(
-				rpc.setPluginAutoStart([{ address, autoStart: true, enabled: true }]),
+				rpc.setPluginAutoStartDto([{ address, autoStart: true, enabled: true }]),
 			).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
@@ -440,7 +442,7 @@ describe('runtime web control protocol', () => {
 				results: [],
 			})
 			await expect(
-				rpc.patchPluginConfigField(address, {
+				rpc.patchPluginConfigFieldDto(address, {
 					fieldPath: '__proto__.polluted',
 					value: true,
 				}),
@@ -460,62 +462,62 @@ describe('runtime web control protocol', () => {
 		try {
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 			const invalidNode = { variant: 'default' }
-			await expect(rpc.pluginConfigPresentation(invalidNode)).resolves.toMatchObject({
+			await expect(rpc.pluginConfigPresentationDto(invalidNode)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 			})
-			await expect(rpc.pluginConfig(invalidNode)).resolves.toMatchObject({
-				ok: false,
-				code: 'invalid_input',
-				state: 'unchanged',
-			})
-			await expect(rpc.patchPluginConfig(invalidNode, null)).resolves.toMatchObject({
+			await expect(rpc.pluginConfigDto(invalidNode)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.patchPluginConfigField(invalidNode, null)).resolves.toMatchObject({
+			await expect(rpc.patchPluginConfigDto(invalidNode, null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.inspectPluginConsumerRequirements(null)).resolves.toMatchObject({
+			await expect(rpc.patchPluginConfigFieldDto(invalidNode, null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.setPluginConsumerOverride(null)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginConsumerRequirementsDto(null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.inspectPluginProviderPolicy([])).resolves.toMatchObject({
+			await expect(rpc.setPluginConsumerOverrideDto(null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.setPluginProviderPolicyDefault(undefined)).resolves.toMatchObject({
+			await expect(rpc.inspectPluginProviderPolicyDto([])).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.setPluginAutoStart(null)).resolves.toMatchObject({
+			await expect(rpc.setPluginProviderPolicyDefaultDto(undefined)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.applyPluginLifecycleCommands(null)).resolves.toMatchObject({
+			await expect(rpc.setPluginAutoStartDto(null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.ensurePluginFork('invalid')).resolves.toMatchObject({
+			await expect(rpc.applyPluginLifecycleCommandsDto(null)).resolves.toMatchObject({
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+			})
+			await expect(rpc.ensurePluginForkDto('invalid')).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
 			await expect(
-				rpc.ensurePluginFork({
+				rpc.ensurePluginForkDto({
 					base: pluginNodeAddressOf(ManagedPlugin),
 					forkId: 'invalid-selection',
 					selectFor: { consumer: null },
@@ -525,7 +527,7 @@ describe('runtime web control protocol', () => {
 				code: 'invalid_input',
 				state: 'unchanged',
 			})
-			await expect(rpc.removePluginFork(null)).resolves.toMatchObject({
+			await expect(rpc.removePluginForkDto(null)).resolves.toMatchObject({
 				ok: false,
 				code: 'invalid_input',
 				state: 'unchanged',
@@ -577,7 +579,7 @@ describe('runtime web control protocol', () => {
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
 
 			await expect(
-				rpc.applyPluginLifecycleCommands([{ address, command: 'start' }]),
+				rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }]),
 			).resolves.toMatchObject({
 				ok: false,
 				status: 'rejected',
@@ -592,7 +594,7 @@ describe('runtime web control protocol', () => {
 			})
 
 			await expect(
-				rpc.applyPluginLifecycleCommands([{ address, command: 'stop' }]),
+				rpc.applyPluginLifecycleCommandsDto([{ address, command: 'stop' }]),
 			).resolves.toMatchObject({
 				ok: true,
 				status: 'applied',
@@ -610,11 +612,15 @@ describe('runtime web control protocol', () => {
 				],
 			})
 
-			await expect(rpc.setPluginAutoStart([{ address, autoStart: false }])).resolves.toMatchObject({
+			await expect(
+				rpc.setPluginAutoStartDto([{ address, autoStart: false }]),
+			).resolves.toMatchObject({
 				ok: true,
 				results: [{ ok: true, control: { autoStart: false, desiredState: 'stopped' } }],
 			})
-			await expect(rpc.setPluginAutoStart([{ address, autoStart: true }])).resolves.toMatchObject({
+			await expect(
+				rpc.setPluginAutoStartDto([{ address, autoStart: true }]),
+			).resolves.toMatchObject({
 				ok: false,
 				status: 'rejected',
 				results: [
@@ -638,13 +644,13 @@ describe('runtime web control protocol', () => {
 			await host.commit()
 			const address = host.cfg(ManagedPlugin).owner
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
-			await rpc.applyPluginLifecycleCommands([{ address, command: 'start' }])
+			await rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }])
 
 			host.remove(ManagedPlugin)
 			await host.commit()
 
 			await expect(
-				rpc.applyPluginLifecycleCommands([{ address, command: 'stop' }]),
+				rpc.applyPluginLifecycleCommandsDto([{ address, command: 'stop' }]),
 			).resolves.toMatchObject({
 				ok: true,
 				status: 'applied',
@@ -664,7 +670,7 @@ describe('runtime web control protocol', () => {
 			})
 
 			await expect(
-				rpc.applyPluginLifecycleCommands([{ address, command: 'stop' }]),
+				rpc.applyPluginLifecycleCommandsDto([{ address, command: 'stop' }]),
 			).resolves.toMatchObject({
 				ok: false,
 				status: 'rejected',

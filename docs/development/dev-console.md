@@ -175,7 +175,7 @@ Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [C
 import { defineDevConsole } from '@pluxel/host-dev/console'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { openLocalWorkbenchEntry } from '@pluxel/workbench/server'
-import { detachWorkbenchPortableValue } from '@pluxel/workbench/client'
+import { consumeWorkbenchValue } from '@pluxel/workbench/client'
 import { ExamplePlugin, ExampleWorkbench } from './example-plugin'
 import { developmentPrincipal } from './development-principal'
 
@@ -186,13 +186,13 @@ export const inspectWorkbench = defineDevConsole(async (dev) => {
 		principal: developmentPrincipal,
 		signal: dev.signal,
 	})
-	return await detachWorkbenchPortableValue(opened.api.inspect(), 'Overview inspection')
+	return await consumeWorkbenchValue(opened.api.inspectDto(), 'Overview inspection')
 })
 ```
 
 将 `ExamplePlugin`、`ExampleWorkbench.overview` 和 `inspect()` 替换为项目实际已发布的 View 与业务方法。`developmentPrincipal` 由项目显式定义，满足 `{ provider: string, subject: string, displayName?: string }`；它是本次调用的身份声明，不是控制台自动授予的管理员身份。
 
-`using` 在脚本离开作用域时关闭打开的 entry 与其本地 session，传入 `dev.signal` 还会在取消时释放这些资源。`detachWorkbenchPortableValue` 复制并验证 RPC 返回的普通数据，同时释放该结果持有的顶层 transport 资源；不能直接将 RPC stub 或 opened handle 返回 CLI。取消不会撤销已经接纳的业务变更，仍应检查返回的领域结果。
+`using` 在脚本离开作用域时关闭打开的 entry 与其本地 session，传入 `dev.signal` 还会在取消时释放这些资源。`consumeWorkbenchValue` 接管并验证 RPC 返回的普通数据，原地深冻结后移除并释放顶层 transport 资源；不能直接将 RPC stub 或 opened handle 返回 CLI。取消不会撤销已经接纳的业务变更，仍应检查返回的领域结果。
 
 `this.ctx.logger` 是 Core 基础能力，插件无需 import Logging 包；脚本也能使用 `dev.ctx.logger`。输出、过滤和日志存储由宿主的 logging 配置决定。需要查询存储时显式使用 `@pluxel/services/logging` 的 `Logging` 能力和 store API；控制台不自动增加 store，也不在执行结果里附加日志游标。读取日志时保留存储本身的 epoch、retention 和 gap 语义，返回有界的普通数据。
 

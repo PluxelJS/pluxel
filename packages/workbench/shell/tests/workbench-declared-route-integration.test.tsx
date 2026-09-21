@@ -131,7 +131,7 @@ async function mount(
 			}
 		},
 	)
-	const session = { layout } as unknown as RpcStub<WorkbenchSessionApi>
+	const session = { layoutDto: layout } as unknown as RpcStub<WorkbenchSessionApi>
 	const container = document.body.appendChild(document.createElement('div'))
 	const root = createRoot(container)
 	roots.push(root)

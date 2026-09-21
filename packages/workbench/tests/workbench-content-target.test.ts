@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import type { ContextLogger } from '@pluxel/core'
-import type { RpcStub } from 'capnweb'
+import { RpcStub } from 'capnweb'
 import type {
 	WorkbenchContentActionPresentation,
 	WorkbenchContentObserver,
 } from '@pluxel/workbench/client'
-import { WorkbenchContentTarget, type WorkbenchContentContract } from '@pluxel/workbench/internal'
+import {
+	WorkbenchContentTarget,
+	attachWorkbenchContentTarget,
+	type WorkbenchContentContract,
+} from '@pluxel/workbench/internal'
 
 const dataField = Object.freeze({
 	kind: 'object' as const,
@@ -94,16 +98,40 @@ function rpcObserver(handler: (outcome: unknown) => void | Promise<void>) {
 }
 
 describe('WorkbenchContentTarget', () => {
+	it('keeps binding and lifecycle helpers outside the remotely callable surface', async () => {
+		const load = vi.fn(() => ({ status: { count: 1 } }))
+		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
+		attachWorkbenchContentTarget(root, { load })
+		using remote = new RpcStub(root)
+		const caller = remote as unknown as Record<string, () => Promise<unknown>>
+		for (const method of [
+			'attach',
+			'loadData',
+			'runAction',
+			'advance',
+			'closeAfterObserverFailure',
+		]) {
+			await expect(caller[method]!()).rejects.toThrow(/not a function/)
+		}
+		expect(load).not.toHaveBeenCalled()
+		expect(Object.getOwnPropertyNames(Object.getPrototypeOf(root)).sort()).toEqual([
+			'constructor',
+			'loadDto',
+			'runDto',
+			'subscribeDto',
+		])
+	})
+
 	it('retains the observer before initial load and pushes coalesced latest data', async () => {
 		let state = 1
 		const load = vi.fn(() => ({ status: { count: state } }))
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		root.attach({ load })
+		attachWorkbenchContentTarget(root, { load })
 		const updates: unknown[] = []
 		const observer = rpcObserver((outcome) => updates.push(outcome))
 
 		root.dataChanged()
-		const initial = await root.subscribe(observer.callback)
+		const initial = await root.subscribeDto(observer.callback)
 		expect(initial).toMatchObject({ sequence: 1, ok: true, data: { status: { count: 1 } } })
 		expect(updates).toEqual([])
 
@@ -124,7 +152,7 @@ describe('WorkbenchContentTarget', () => {
 		const gate = Promise.withResolvers<void>()
 		let call = 0
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		root.attach({
+		attachWorkbenchContentTarget(root, {
 			load: async () => {
 				call += 1
 				if (call === 1) return { status: { count: 1 } }
@@ -138,12 +166,12 @@ describe('WorkbenchContentTarget', () => {
 			},
 		})
 		const observer = rpcObserver(() => undefined)
-		await root.subscribe(observer.callback)
+		await root.subscribeDto(observer.callback)
 
 		root.dataChanged()
 		await Promise.resolve()
-		const waiting = root.load()
-		await expect(root.load()).resolves.toEqual({ ok: false, code: 'busy' })
+		const waiting = root.loadDto()
+		await expect(root.loadDto()).resolves.toEqual({ ok: false, code: 'busy' })
 		root.dataChanged()
 		root.dataChanged()
 		gate.resolve()
@@ -171,15 +199,15 @@ describe('WorkbenchContentTarget', () => {
 			contract({ data: true, actions: [{ key: 'probe', schema: probeSchema }] }),
 			logger(),
 		)
-		root.attach({ load, actions: new Map([['probe', handler]]) })
-		await root.subscribe(rpcObserver(() => undefined).callback)
+		attachWorkbenchContentTarget(root, { load, actions: new Map([['probe', handler]]) })
+		await root.subscribeDto(rpcObserver(() => undefined).callback)
 
-		const invalid = await root.run('probe', { value: 1 })
+		const invalid = await root.runDto('probe', { value: 1 })
 		expect(invalid.action).toMatchObject({ ok: false, code: 'validation_failed' })
 		expect(invalid.data).toBeNull()
 		expect(handler).not.toHaveBeenCalled()
 
-		const result = await root.run('probe', { value: '7' })
+		const result = await root.runDto('probe', { value: '7' })
 		expect(handler).toHaveBeenCalledWith({ value: 7 })
 		expect(result).toMatchObject({
 			action: { ok: true, message: 'updated' },
@@ -201,10 +229,10 @@ describe('WorkbenchContentTarget', () => {
 			contract({ actions: [{ key: 'mutate' }], data: true }),
 			log,
 		)
-		root.attach({ load, actions: new Map([['mutate', handler]]) })
-		await root.subscribe(rpcObserver(() => undefined).callback)
+		attachWorkbenchContentTarget(root, { load, actions: new Map([['mutate', handler]]) })
+		await root.subscribeDto(rpcObserver(() => undefined).callback)
 
-		await expect(root.run('mutate')).resolves.toMatchObject({
+		await expect(root.runDto('mutate')).resolves.toMatchObject({
 			action: { ok: false, code: 'action_failed' },
 			data: { ok: true, data: { status: { count: 2 } } },
 		})
@@ -225,8 +253,8 @@ describe('WorkbenchContentTarget', () => {
 			await callbackGate.promise
 		})
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		root.attach({ load })
-		await root.subscribe(observer.callback)
+		attachWorkbenchContentTarget(root, { load })
+		await root.subscribeDto(observer.callback)
 
 		state = 2
 		root.dataChanged()
@@ -261,12 +289,12 @@ describe('WorkbenchContentTarget', () => {
 		})
 		const observer = rpcObserver(() => undefined)
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		root.attach({ load })
-		await root.subscribe(observer.callback)
+		attachWorkbenchContentTarget(root, { load })
+		await root.subscribeDto(observer.callback)
 
 		root.dataChanged()
 		await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
-		const pending = root.load()
+		const pending = root.loadDto()
 		root[Symbol.dispose]()
 
 		await expect(pending).resolves.toMatchObject({ ok: false, code: 'load_failed' })
@@ -283,7 +311,7 @@ describe('WorkbenchContentTarget', () => {
 		const loadFinished = Promise.withResolvers<void>()
 		const observer = rpcObserver(() => undefined)
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		root.attach({
+		attachWorkbenchContentTarget(root, {
 			load: async () => {
 				loadStarted.resolve()
 				await loadGate.promise
@@ -292,7 +320,7 @@ describe('WorkbenchContentTarget', () => {
 			},
 		})
 
-		const initial = root.subscribe(observer.callback)
+		const initial = root.subscribeDto(observer.callback)
 		await loadStarted.promise
 		root[Symbol.dispose]()
 
@@ -311,9 +339,9 @@ describe('WorkbenchContentTarget', () => {
 		vi.useFakeTimers()
 		try {
 			const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-			root.attach({ load: () => ({ status: { count: 1 } }) })
+			attachWorkbenchContentTarget(root, { load: () => ({ status: { count: 1 } }) })
 			const observer = rpcObserver(() => undefined)
-			await root.subscribe(observer.callback)
+			await root.subscribeDto(observer.callback)
 
 			root.dataChanged()
 			await vi.advanceTimersByTimeAsync(0)
@@ -328,15 +356,15 @@ describe('WorkbenchContentTarget', () => {
 	it('closes only this root when its retained observer rejects', async () => {
 		const log = logger()
 		const root = new WorkbenchContentTarget(contract({ data: true }), log)
-		root.attach({ load: () => ({ status: { count: 1 } }) })
+		attachWorkbenchContentTarget(root, { load: () => ({ status: { count: 1 } }) })
 		const observer = rpcObserver(() => Promise.reject(new Error('browser gone')))
-		await root.subscribe(observer.callback)
+		await root.subscribeDto(observer.callback)
 
 		root.dataChanged()
 		await vi.waitFor(() => expect(observer.disposeObserver).toHaveBeenCalledTimes(1))
 		expect(observer.disposeResults).toHaveLength(1)
 		expect(observer.disposeResults[0]).toHaveBeenCalledTimes(1)
-		await expect(root.run('missing')).resolves.toMatchObject({
+		await expect(root.runDto('missing')).resolves.toMatchObject({
 			action: { ok: false, code: 'invalid_input' },
 		})
 	})
@@ -345,9 +373,9 @@ describe('WorkbenchContentTarget', () => {
 		vi.useFakeTimers()
 		try {
 			const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-			root.attach({ load: () => ({ status: { count: 1 } }) })
+			attachWorkbenchContentTarget(root, { load: () => ({ status: { count: 1 } }) })
 			const observer = rpcObserver(() => new Promise<void>(() => {}))
-			await root.subscribe(observer.callback)
+			await root.subscribeDto(observer.callback)
 
 			root.dataChanged()
 			await vi.advanceTimersByTimeAsync(0)
@@ -355,7 +383,7 @@ describe('WorkbenchContentTarget', () => {
 			await vi.advanceTimersByTimeAsync(10_000)
 			expect(observer.disposeObserver).toHaveBeenCalledTimes(1)
 			expect(observer.disposeResults[0]).toHaveBeenCalledTimes(1)
-			await expect(root.load()).resolves.toMatchObject({ ok: false, code: 'load_failed' })
+			await expect(root.loadDto()).resolves.toMatchObject({ ok: false, code: 'load_failed' })
 		} finally {
 			vi.useRealTimers()
 		}

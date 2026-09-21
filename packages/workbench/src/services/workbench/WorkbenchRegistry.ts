@@ -64,7 +64,7 @@ import {
 	validateWorkbenchContentBinding,
 	type WorkbenchContentContract,
 } from './WorkbenchContentPresentation.ts'
-import { WorkbenchContentTarget } from './WorkbenchContentTarget.ts'
+import { WorkbenchContentTarget, attachWorkbenchContentTarget } from './WorkbenchContentTarget.ts'
 
 const OPEN_ENTRY_TIMEOUT_MS = 15_000
 const MAX_OPEN_ENTRIES_PER_SESSION = 64
@@ -328,7 +328,7 @@ export class WorkbenchRegistry {
 					candidate.entry.contract,
 					await raceAbort(pending, lease.signal),
 				)
-				root.attach(binding)
+				attachWorkbenchContentTarget(root, binding)
 				lease.activate([root])
 				return Object.freeze({
 					ok: true as const,

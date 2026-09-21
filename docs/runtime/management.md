@@ -28,3 +28,9 @@ const services = [
 关闭管理入口会关闭连接、取消认证交接，并使尚未进入 Host 执行队列的请求失效。已经接受的变更继续完成，不因浏览器断开而回滚。入口不拥有 Host 或 listener。Workbench 可将会话工厂与 artifact handler 绑定到同一入口，浏览器使用同一认证连接。`workbenchHttp()` 只安装 Shell，不隐式安装管理入口；完整的[显式组合示例](../workbench/standalone-host.md)同时声明 Workbench 准备依赖。官方 `servicesPreset()` 总是安装 `managementHttp()`，`workbench: false` 只关闭 Workbench。
 
 自定义 carrier 从 `@pluxel/services/management` 根入口导入 `createManagementEndpoint()`；浏览器管理 API 使用 `/client`、`/session`、`/protocol`，React 接入使用 `/react`。
+
+## 读取管理快照
+
+Management client 返回经过校验的不可变本地快照，调用方可直接读取或缓存，不需要复制 DTO 或释放 RPC result。客户端负责消费 transport envelope；领域 parser 负责字段、identity、集合引用等约束，并构造最终快照。配置、日志和表单中的任意数据叶子也与输入对象隔离。
+
+Portable 数据只接受有限数值、字符串、boolean、null、稠密普通数组和普通数据对象；拒绝 accessor、非枚举业务字段、symbol、循环、显式 `undefined` 和额外数组属性。TypeScript 类型不会替代这些运行时校验。订阅返回的资源仍须由订阅者释放，不能当作快照放入缓存。数据与资源的选择见 [API 契约](../api/contracts.md)。

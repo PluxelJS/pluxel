@@ -5,7 +5,7 @@ export const overviewScope = createWorkbenchRenderer(PluginWithUIWorkbench.overv
 
 export const overviewSnapshot = overviewScope.query(({ api }) => ({
 	queryKey: ['plugin-with-ui', 'overview', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 	workbench: {
 		subscribe: ({ invalidate }) => api.watch(invalidate),
 	},

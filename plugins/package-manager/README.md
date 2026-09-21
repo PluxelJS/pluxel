@@ -85,3 +85,5 @@ graph，`entries/*.mjs` 是 dynamic runtime 的公开文件协议。不要让其
 
 工程不变量见 [`DESIGN.md`](DESIGN.md)，宿主用户路径见
 [`../../docs/plugins/package-manager.md`](../../docs/plugins/package-manager.md)。
+
+Workbench 的 `PackageManagerApi` 使用 `snapshotDto()`、`installDto()` 和 `removeDto()` 返回纯数据；本地 Plugin 的 `snapshot()`、`install()` 和 `remove()` 保持领域命名。RPC target 在返回前校验数据，不复制 store 快照。

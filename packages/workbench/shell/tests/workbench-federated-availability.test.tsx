@@ -52,7 +52,7 @@ const entry: WorkbenchUnavailableFederatedLayoutEntry = Object.freeze({
 
 const session = Object.freeze({
 	openEntry: vi.fn(),
-	layout: vi.fn(),
+	layoutDto: vi.fn(),
 }) as unknown as RpcStub<WorkbenchSessionApi>
 
 const host: WorkbenchBrowserHost = Object.freeze({

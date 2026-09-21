@@ -73,7 +73,7 @@ describe('Plugin dependency graph read model', () => {
 			const registry = requirePluginService(host.ctx)
 			const internNode = vi.spyOn(registry, 'internNodeAddress')
 			const internDefinition = vi.spyOn(registry, 'internDefinitionAddress')
-			const graph = await new RuntimeManagementTargetImpl(host.ctx).pluginDependencyGraph()
+			const graph = await new RuntimeManagementTargetImpl(host.ctx).pluginDependencyGraphDto()
 			expect(() => parsePluginDependencyGraphSnapshot(graph)).not.toThrow()
 			expect(internNode).not.toHaveBeenCalled()
 			expect(internDefinition).not.toHaveBeenCalled()
@@ -128,7 +128,7 @@ describe('Plugin dependency graph read model', () => {
 			host.cfg(BlockedConsumer).setAutoStart(true)
 			host.start(BlockedConsumer)
 			await host.commitAllowFail()
-			const graph = await new RuntimeManagementTargetImpl(host.ctx).pluginDependencyGraph()
+			const graph = await new RuntimeManagementTargetImpl(host.ctx).pluginDependencyGraphDto()
 			expect(() => parsePluginDependencyGraphSnapshot(graph)).not.toThrow()
 			const provider = graph.nodes.find(
 				(node) =>
@@ -307,10 +307,10 @@ describe('Plugin dependency graph read model', () => {
 			host.override(CycleConsumer, CycleTokenDefinition, pluginNodeAddressOf(SafeProvider))
 			await host.commit()
 			const rpc = new RuntimeManagementTargetImpl(host.ctx)
-			const before = await rpc.pluginDependencyGraph()
+			const before = await rpc.pluginDependencyGraphDto()
 
 			await expect(
-				rpc.setPluginConsumerOverride({
+				rpc.setPluginConsumerOverrideDto({
 					consumer: pluginNodeAddressOf(CycleConsumer),
 					requirement: CycleTokenDefinition,
 					provider: pluginNodeAddressOf(CycleProvider),
@@ -323,7 +323,7 @@ describe('Plugin dependency graph read model', () => {
 			expect(requireHostStateStore(host.ctx).snapshot().dependencyOverrides).toEqual([
 				expect.objectContaining({ providerAddress: pluginNodeAddressOf(SafeProvider) }),
 			])
-			expect(await rpc.pluginDependencyGraph()).toEqual(before)
+			expect(await rpc.pluginDependencyGraphDto()).toEqual(before)
 		} finally {
 			await host.dispose()
 		}

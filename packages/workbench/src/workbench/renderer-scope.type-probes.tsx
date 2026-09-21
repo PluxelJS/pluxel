@@ -1,5 +1,5 @@
 import type { RpcTarget } from 'capnweb'
-import { detachWorkbenchPortableValue, type WorkbenchDetached } from './client.ts'
+import { consumeWorkbenchValue, type WorkbenchSnapshot } from './client.ts'
 import { workbench } from './definition.ts'
 import { createWorkbenchRenderer, type WorkbenchResourceKey } from './react.tsx'
 
@@ -213,26 +213,24 @@ function SettingsPage() {
 	const explicitSettings = explicitSettingsQuery.useQuery()
 	const save = saveSettings.useMutation()
 	const reset = resetSettings.useMutation()
-	const directlyDetachedLabels = detachWorkbenchPortableValue(api.labels())
-	const directlyDetachedSave = detachWorkbenchPortableValue(
-		api.save({ id: 'first', mode: 'manual' }),
-	)
+	const directlyDetachedLabels = consumeWorkbenchValue(api.labels())
+	const directlyDetachedSave = consumeWorkbenchValue(api.save({ id: 'first', mode: 'manual' }))
 
 	type _SettingsDataIsNotAny = Expect<IsAny<typeof settings.data> extends false ? true : false>
 	type _SettingsDataIsExact = Expect<
-		IsExactly<typeof settings.data, WorkbenchDetached<SettingsSnapshot> | undefined>
+		IsExactly<typeof settings.data, WorkbenchSnapshot<SettingsSnapshot> | undefined>
 	>
 	type _SettingsRefetchIsNotAny = Expect<
 		IsAny<Awaited<ReturnType<typeof settings.refetch>>> extends false ? true : false
 	>
 	type _SettingsRefetchIsExact = Expect<
-		IsExactly<ReturnType<typeof settings.refetch>, Promise<WorkbenchDetached<SettingsSnapshot>>>
+		IsExactly<ReturnType<typeof settings.refetch>, Promise<WorkbenchSnapshot<SettingsSnapshot>>>
 	>
 	type _ItemDataIsNotAny = Expect<IsAny<typeof item.data> extends false ? true : false>
 	type _ItemDataIsExact = Expect<
 		IsExactly<
 			typeof item.data,
-			WorkbenchDetached<Readonly<{ id: string; enabled: boolean }>> | undefined
+			WorkbenchSnapshot<Readonly<{ id: string; enabled: boolean }>> | undefined
 		>
 	>
 	type _ItemRefetchIsNotAny = Expect<
@@ -241,14 +239,14 @@ function SettingsPage() {
 	type _ItemRefetchIsExact = Expect<
 		IsExactly<
 			ReturnType<typeof item.refetch>,
-			Promise<WorkbenchDetached<Readonly<{ id: string; enabled: boolean }>>>
+			Promise<WorkbenchSnapshot<Readonly<{ id: string; enabled: boolean }>>>
 		>
 	>
 	type _LabelsDataIsNotAny = Expect<IsAny<typeof labels.data> extends false ? true : false>
 	type _LabelsDataIsExact = Expect<
 		IsExactly<
 			typeof labels.data,
-			WorkbenchDetached<readonly Readonly<{ id: string; label: string }>[]> | undefined
+			WorkbenchSnapshot<readonly Readonly<{ id: string; label: string }>[]> | undefined
 		>
 	>
 	type _LabelsRefetchIsNotAny = Expect<
@@ -257,12 +255,12 @@ function SettingsPage() {
 	type _LabelsRefetchIsExact = Expect<
 		IsExactly<
 			ReturnType<typeof labels.refetch>,
-			Promise<WorkbenchDetached<readonly Readonly<{ id: string; label: string }>[]>>
+			Promise<WorkbenchSnapshot<readonly Readonly<{ id: string; label: string }>[]>>
 		>
 	>
 	type _SelectionDataIsNotAny = Expect<IsAny<typeof selection.data> extends false ? true : false>
 	type _SelectionDataIsExact = Expect<
-		IsExactly<typeof selection.data, WorkbenchDetached<Readonly<{ id: string }> | null> | undefined>
+		IsExactly<typeof selection.data, WorkbenchSnapshot<Readonly<{ id: string }> | null> | undefined>
 	>
 	type _SelectionRefetchIsNotAny = Expect<
 		IsAny<Awaited<ReturnType<typeof selection.refetch>>> extends false ? true : false
@@ -270,12 +268,12 @@ function SettingsPage() {
 	type _SelectionRefetchIsExact = Expect<
 		IsExactly<
 			ReturnType<typeof selection.refetch>,
-			Promise<WorkbenchDetached<Readonly<{ id: string }> | null>>
+			Promise<WorkbenchSnapshot<Readonly<{ id: string }> | null>>
 		>
 	>
 	type _PromisedDataIsNotAny = Expect<IsAny<typeof promised.data> extends false ? true : false>
 	type _PromisedDataIsExact = Expect<
-		IsExactly<typeof promised.data, WorkbenchDetached<{ source: 'promise' }> | undefined>
+		IsExactly<typeof promised.data, WorkbenchSnapshot<{ source: 'promise' }> | undefined>
 	>
 	type _PromisedRefetchIsNotAny = Expect<
 		IsAny<Awaited<ReturnType<typeof promised.refetch>>> extends false ? true : false
@@ -283,14 +281,14 @@ function SettingsPage() {
 	type _PromisedRefetchIsExact = Expect<
 		IsExactly<
 			ReturnType<typeof promised.refetch>,
-			Promise<WorkbenchDetached<{ source: 'promise' }>>
+			Promise<WorkbenchSnapshot<{ source: 'promise' }>>
 		>
 	>
 	type _SynchronousDataIsNotAny = Expect<
 		IsAny<typeof synchronous.data> extends false ? true : false
 	>
 	type _SynchronousDataIsExact = Expect<
-		IsExactly<typeof synchronous.data, WorkbenchDetached<{ source: 'sync' }> | undefined>
+		IsExactly<typeof synchronous.data, WorkbenchSnapshot<{ source: 'sync' }> | undefined>
 	>
 	type _SynchronousRefetchIsNotAny = Expect<
 		IsAny<Awaited<ReturnType<typeof synchronous.refetch>>> extends false ? true : false
@@ -298,14 +296,14 @@ function SettingsPage() {
 	type _SynchronousRefetchIsExact = Expect<
 		IsExactly<
 			ReturnType<typeof synchronous.refetch>,
-			Promise<WorkbenchDetached<{ source: 'sync' }>>
+			Promise<WorkbenchSnapshot<{ source: 'sync' }>>
 		>
 	>
 	type _ExplicitDataIsNotAny = Expect<
 		IsAny<typeof explicitSettings.data> extends false ? true : false
 	>
 	type _ExplicitDataIsExact = Expect<
-		IsExactly<typeof explicitSettings.data, WorkbenchDetached<SettingsSnapshot> | undefined>
+		IsExactly<typeof explicitSettings.data, WorkbenchSnapshot<SettingsSnapshot> | undefined>
 	>
 	type _DirectLabelsIsNotAny = Expect<
 		IsAny<Awaited<typeof directlyDetachedLabels>> extends false ? true : false
@@ -313,24 +311,24 @@ function SettingsPage() {
 	type _DirectLabelsIsExact = Expect<
 		IsExactly<
 			typeof directlyDetachedLabels,
-			Promise<WorkbenchDetached<readonly Readonly<{ id: string; label: string }>[]>>
+			Promise<WorkbenchSnapshot<readonly Readonly<{ id: string; label: string }>[]>>
 		>
 	>
 	type _DirectSaveIsNotAny = Expect<
 		IsAny<Awaited<typeof directlyDetachedSave>> extends false ? true : false
 	>
 	type _DirectSaveIsExact = Expect<
-		IsExactly<typeof directlyDetachedSave, Promise<WorkbenchDetached<SaveResult>>>
+		IsExactly<typeof directlyDetachedSave, Promise<WorkbenchSnapshot<SaveResult>>>
 	>
 	type _SaveDataIsNotAny = Expect<IsAny<typeof save.data> extends false ? true : false>
 	type _SaveDataIsExact = Expect<
-		IsExactly<typeof save.data, WorkbenchDetached<SaveResult> | undefined>
+		IsExactly<typeof save.data, WorkbenchSnapshot<SaveResult> | undefined>
 	>
 	type _SaveMutationIsNotAny = Expect<
 		IsAny<Awaited<ReturnType<typeof save.mutateAsync>>> extends false ? true : false
 	>
 	type _SaveMutationIsExact = Expect<
-		IsExactly<ReturnType<typeof save.mutateAsync>, Promise<WorkbenchDetached<SaveResult>>>
+		IsExactly<ReturnType<typeof save.mutateAsync>, Promise<WorkbenchSnapshot<SaveResult>>>
 	>
 	type _ResetDataIsNotAny = Expect<IsAny<typeof reset.data> extends false ? true : false>
 	type _ResetDataIsExact = Expect<IsExactly<typeof reset.data, void>>
@@ -342,7 +340,7 @@ function SettingsPage() {
 	>
 
 	api.snapshot()
-	const saveResult: Promise<WorkbenchDetached<SaveResult>> = save.mutateAsync({
+	const saveResult: Promise<WorkbenchSnapshot<SaveResult>> = save.mutateAsync({
 		id: 'first',
 		mode: 'manual',
 	})
@@ -357,14 +355,14 @@ function SettingsPage() {
 	// @ts-expect-error The exact descriptor exposes SettingsApi, not OtherApi.
 	api.inspect()
 
-	const snapshot: WorkbenchDetached<SettingsSnapshot> | undefined = settings.data
+	const snapshot: WorkbenchSnapshot<SettingsSnapshot> | undefined = settings.data
 	const enabled: boolean | undefined = item.data?.enabled
 	const labelNames: string[] | undefined = labels.data?.map((label) => label.label)
 	const selected: Readonly<{ readonly id: string }> | null | undefined = selection.data
 	const selectedId: string | undefined = selection.data?.id
 	const promisedSource: 'promise' | undefined = promised.data?.source
 	const synchronousSource: 'sync' | undefined = synchronous.data?.source
-	const saveOutcome: WorkbenchDetached<SaveResult> | undefined = save.data
+	const saveOutcome: WorkbenchSnapshot<SaveResult> | undefined = save.data
 	void saveResult
 	void resetResult
 	void saveVoid

@@ -52,7 +52,7 @@ Management 或 Plugin RPC。
 | Plugin renderer resource  | 单次 `openEntry()` / Bridge    | `createWorkbenchRenderer()` 创建的 per-open owner，内部使用 Query Core       | Shell workspace、跨 open cache                      |
 
 Shell 不复用 Plugin renderer adapter，也不伪造 descriptor 或 opened owner。`RuntimeManagementClient` 已经负责 Cap’n Web
-result 的 wire validation、portable copy 与 top-level disposal；React Query 只负责本地 DTO 的去重、缓存、竞态隔离、loading/error
+result 的 transport 元数据移除与释放；领域 parser 验证原树并直接构造最终 frozen snapshot，只有不透明数据叶子需要独立复制。React Query 只负责本地 DTO 的去重、缓存、竞态隔离、loading/error
 状态和失效。Query cache 中禁止存放 `RpcStub`、opened handle、subscription 或其他需要显式释放的对象。
 
 Shell 的 QueryClient 与 authenticated session 同寿命，在 `App` 内创建，session epoch 销毁时整体清空。Query key 统一从
@@ -118,7 +118,7 @@ import { SettingsWorkbench } from '../workbench.js'
 export const settingsScope = createWorkbenchRenderer(SettingsWorkbench.settings)
 export const settingsQuery = settingsScope.query(({ api }) => ({
 	queryKey: ['settings', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 	workbench: {
 		subscribe: ({ invalidate }) => api.watch(invalidate),
 	},
@@ -134,8 +134,8 @@ export default settingsScope.render(SettingsPage)
 Scope/resource 是 module-scoped declaration；每次 `render()` Bridge mount 创建独立 renderer owner 和私有 Query Core client，
 持有当前 exact roots/host、subscription 与 close state。相同 descriptor 或 parameterized route 同时打开多次，也不会跨
 handle、params、principal、session 或 owner generation 共享 cache。Query result 在进入 cache 前完成 portable validation、
-deep copy/freeze 和 top-level result disposal；带 watch 的 snapshot 必须 subscribe-before-read，读取期间的 invalidation 合并成
-一次 follow-up。Renderer close 停用 controls、subscription 和 cache，晚到 RPC 只完成 detach/dispose，不能提交 React state。
+原地 deep freeze、transport 元数据移除和 top-level result disposal；带 watch 的 snapshot 必须 subscribe-before-read，读取期间的 invalidation 合并成
+一次 follow-up。Renderer close 停用 controls、subscription 和 cache，晚到 RPC 只完成 consume/dispose，不能提交 React state。
 
 公开 query/mutation options、默认值、错误码、inactive controls 与 typed invalidation 只由
 [`docs/workbench/index.md`](../docs/workbench/index.md) 定义；本文件不重复维护作者 API 教程。Frontend 实现只要求这些公共语义
@@ -149,7 +149,7 @@ client snapshot owner：
 - 合并 reading 期间的 invalidation；
 - error 不引入自动 reconnect 或全局 cache；
 - dispose subscription 并拒绝 late read 覆盖；
-- awaited object DTO 使用 `detachWorkbenchPortableValue()` 校验、深拷贝并释放 transport result。
+- awaited object DTO 使用 `consumeWorkbenchValue()` 接管并校验数据、原地深冻结、移除和释放 transport result。
 
 Plugin 可以围绕自己的 API 写领域 callback、progress/cancel 或 lossless stream helper，但 Workbench 不提供查询语言、
 跨 renderer cache、collection store 或通用 event model。Remote 不取得 wrapper props、raw socket、MF Runtime、Shell

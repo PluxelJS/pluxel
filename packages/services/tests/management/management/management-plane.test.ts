@@ -1,7 +1,9 @@
 import { standardServices } from '@pluxel/services'
 import { vault } from '@pluxel/services/vault'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { RpcStub, RpcTarget } from 'capnweb'
+import { RuntimeManagementService } from '../../../src/management/services/RuntimeManagementService'
 
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import { RUNTIME_SESSION_PATH } from '../../../src/management/web/session/protocol.ts'
@@ -16,17 +18,17 @@ describe('runtime Management plane installation', () => {
 			expect(host.ctx.root.pluginCatalogLayout).toBeDefined()
 
 			const target = new RuntimeManagementTargetImpl(host.ctx)
-			expect(target.describe()).toMatchObject({
-				protocol: { name: 'pluxel.management', major: 6 },
+			expect(target.describeDto()).toMatchObject({
+				protocol: { name: 'pluxel.management', major: 7 },
 				workbench: { enabled: false },
 			})
-			expect(target.describe().protocol.capabilities).not.toContain('vault')
-			await expect(target.pluginCatalog()).resolves.toMatchObject({
+			expect(target.describeDto().protocol.capabilities).not.toContain('vault')
+			await expect(target.pluginCatalogDto()).resolves.toMatchObject({
 				plugins: [],
 				sections: [],
 				summary: { total: 0 },
 			})
-			await expect(target.securityOverview()).resolves.toMatchObject({
+			await expect(target.securityOverviewDto()).resolves.toMatchObject({
 				vault: { enabled: false },
 			})
 
@@ -35,6 +37,38 @@ describe('runtime Management plane installation', () => {
 			)
 			expect(oldDynamicPath.status).toBe(404)
 			expect(await oldDynamicPath.text()).toContain('Not Found')
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('keeps local helpers off the RPC surface and rejects capability-bearing producer DTOs', async () => {
+		const host = await createServiceInternalTestHost({ workbench: false, management: true })
+		try {
+			const target = new RuntimeManagementTargetImpl(host.ctx)
+			using remote = new RpcStub(target)
+			const names = Object.getOwnPropertyNames(RuntimeManagementTargetImpl.prototype)
+			expect(names.filter((name) => name !== 'constructor' && !name.endsWith('Dto'))).toEqual([
+				'followRuntimeUpdates',
+				'followLogs',
+			])
+			await expect(
+				(remote as unknown as { logPolicy(): Promise<unknown> }).logPolicy(),
+			).rejects.toThrow(/logPolicy/)
+			const valid = target.describeDto()
+			const describeSnapshot = vi
+				.spyOn(RuntimeManagementService.prototype, 'describe')
+				.mockReturnValue(valid)
+			try {
+				expect(target.describeDto()).toBe(valid)
+				describeSnapshot.mockReturnValue({
+					...valid,
+					application: { product: new RpcTarget() },
+				} as unknown as ReturnType<RuntimeManagementService['describe']>)
+				expect(() => target.describeDto()).toThrow(/plain object/)
+			} finally {
+				describeSnapshot.mockRestore()
+			}
 		} finally {
 			await host.dispose()
 		}
@@ -80,8 +114,8 @@ describe('runtime Management plane installation', () => {
 		})
 		try {
 			const target = new RuntimeManagementTargetImpl(host.ctx)
-			expect(target.describe().protocol.capabilities).toContain('vault')
-			await expect(target.securityOverview()).resolves.toMatchObject({
+			expect(target.describeDto().protocol.capabilities).toContain('vault')
+			await expect(target.securityOverviewDto()).resolves.toMatchObject({
 				vault: { enabled: true },
 			})
 		} finally {

@@ -360,7 +360,7 @@ using opened = await host.workbench.open({
 	principal: ADMIN,
 })
 
-const result = await opened.root.run('replace', { authKey: 'test-secret' })
+const result = await opened.root.runDto('replace', { authKey: 'test-secret' })
 expect(result.action).toMatchObject({ ok: true })
 ```
 
@@ -373,20 +373,23 @@ expect(result.action).toMatchObject({ ok: true })
 
 ```ts no-twoslash
 import { createLocalRpcClient } from '@pluxel/workbench/test'
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { RpcTarget } from 'capnweb'
 
 interface CounterApi extends RpcTarget {
-	read(): { count: number }
+	readDto(): { count: number }
 }
 
 class CounterTarget extends RpcTarget implements CounterApi {
-	read() {
-		return { count: 1 }
+	readDto(): { count: number } {
+		const dto = { count: 1 }
+		assertWorkbenchDto(dto)
+		return dto
 	}
 }
 
 using api = createLocalRpcClient<CounterApi>(new CounterTarget())
-expect(await api.read()).toEqual({ count: 1 })
+expect(await api.readDto()).toEqual({ count: 1 })
 ```
 
 `createLocalRpcClient()` 借用 target：释放返回的 stub 不会释放 target 或它的领域服务。它不验证 Elysia mount、HTTP Upgrade、WebSocket、Origin

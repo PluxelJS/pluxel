@@ -116,7 +116,7 @@ it('serves a real authenticated socket for a Core Host and leaves it alive when 
 			},
 		)
 		await entered.promise
-		const calls = vi.spyOn(RuntimeManagementTargetImpl.prototype, 'applyPluginLifecycleCommands')
+		const calls = vi.spyOn(RuntimeManagementTargetImpl.prototype, 'applyPluginLifecycleCommandsDto')
 		const queued = client.plugins.applyLifecycleCommands([{ address, command: 'stop' }])
 		const outcome = queued.then(
 			(): undefined => undefined,

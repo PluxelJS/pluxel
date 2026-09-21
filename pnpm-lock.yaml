@@ -823,6 +823,9 @@ catalogs:
     vitest:
       specifier: 5.0.0
       version: 5.0.0
+    ws:
+      specifier: 8.21.3
+      version: 8.21.3
   types:
     '@types/mdast':
       specifier: 4.0.4
@@ -848,6 +851,9 @@ catalogs:
     '@types/semver':
       specifier: ^7.8.0
       version: 7.8.0
+    '@types/ws':
+      specifier: 8.18.1
+      version: 8.18.1
   validation:
     option-t:
       specifier: ^56.1.2
@@ -1513,6 +1519,9 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.2.5(@types/react@19.2.18)
+      '@types/ws':
+        specifier: catalog:types
+        version: 8.18.1
       '@vitejs/plugin-react':
         specifier: catalog:build
         version: 6.1.1(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1546,6 +1555,9 @@ importers:
       vite:
         specifier: catalog:build
         version: 8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.103.1)(sass@1.103.1)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
+      ws:
+        specifier: catalog:test
+        version: 8.21.3
 
   plugins/agent-tools:
     dependencies:
@@ -13185,7 +13197,6 @@ snapshots:
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 26.4.0
-    optional: true
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true

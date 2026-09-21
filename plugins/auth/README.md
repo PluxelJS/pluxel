@@ -55,8 +55,8 @@ Public OIDC 只依赖配置。Password、password + TOTP 与 confidential OIDC �
 损坏时 provider 返回 `ready: false` / `access_unavailable`。
 
 Workbench enabled 时，插件发布 browser-safe `@pluxel/auth/workbench` 中的 `AuthWorkbench.setup` Direct View，固定 route
-`/auth/setup`。它提供 `AuthSetupApi.snapshot()`、`setupPassword()`、`beginTotp()`、`confirmTotp()` 和
-`setupOidcSecret()`。Snapshot 是封闭的 `configured | setup-required | unavailable` 联合；mutation 返回带稳定 code 的
+`/auth/setup`。它提供 `AuthSetupApi.snapshotDto()`、`setupPasswordDto()`、`beginTotpDto()`、`confirmTotpDto()` 和
+`setupOidcSecretDto()`。Snapshot 是封闭的 `configured | setup-required | unavailable` 联合；mutation 返回带稳定 code 的
 `AuthSetupMutationResult` / `AuthTotpEnrollmentResult`。
 
 Mutation 只允许真实 loopback recovery principal，并且只在 credential `missing` / `invalid` 时执行；不能覆盖已配置记录，

@@ -20,9 +20,9 @@ import {
 	type ReactNode,
 } from 'react'
 import {
-	detachWorkbenchPortableValue,
+	consumeWorkbenchValue,
 	WorkbenchPortableValueError,
-	type WorkbenchDetached,
+	type WorkbenchSnapshot,
 } from './client.ts'
 import { readWorkbenchDescriptor, type WorkbenchRenderableDescriptor } from './definition.ts'
 import type { WorkbenchResolvedPortableValue } from './portable-value.ts'
@@ -77,6 +77,7 @@ export type WorkbenchQueryOptions<
 	Value,
 > = Readonly<{
 	queryKey: QueryKey
+	/** Transfers the returned tree to this renderer; return RPC data or an owned local value, not borrowed mutable state. */
 	queryFn(context: WorkbenchQueryExecutionContext<QueryKey>): WorkbenchAwaitable<Value>
 	/** Whether this observer automatically reads and owns its subscription. @defaultValue true */
 	enabled?: boolean
@@ -163,11 +164,11 @@ export interface WorkbenchQueryResource<
 	Descriptor,
 	Value,
 > extends WorkbenchQueryInvalidation<Descriptor> {
-	useQuery(): WorkbenchQueryResult<WorkbenchDetached<Value>>
+	useQuery(): WorkbenchQueryResult<WorkbenchSnapshot<Value>>
 }
 
 export interface WorkbenchQueryFamilyResource<Descriptor, Input, Value> {
-	useQuery(input: Input): WorkbenchQueryResult<WorkbenchDetached<Value>>
+	useQuery(input: Input): WorkbenchQueryResult<WorkbenchSnapshot<Value>>
 	target(input: Input): WorkbenchQueryInvalidation<Descriptor>
 	all(): WorkbenchQueryInvalidation<Descriptor>
 }
@@ -179,6 +180,7 @@ export type WorkbenchMutationExecutionContext<Context> = Context &
 	}>
 
 export type WorkbenchMutationOptions<Descriptor, Input, Result> = Readonly<{
+	/** Transfers any returned data tree to this renderer; void is valid when invalidation is sufficient. */
 	mutationFn(input: Input): WorkbenchAwaitable<Result>
 	/** Workbench extensions must be declared under `workbench`. */
 	watch?: never
@@ -222,9 +224,9 @@ type WorkbenchInferredMutationOptions<
 	}>
 }>
 
-type WorkbenchDetachedResolvedMutationResult<Result> = Result extends void
+type WorkbenchSnapshotResolvedMutationResult<Result> = Result extends void
 	? void
-	: WorkbenchDetached<Result>
+	: WorkbenchSnapshot<Result>
 
 type MutationArguments<Input> = [Input] extends [void] ? [] : [input: Input]
 
@@ -264,7 +266,7 @@ export type WorkbenchMutationState<Input, Result> = WorkbenchMutationControls<In
 	)
 
 export interface WorkbenchMutationResource<Input, Result> {
-	useMutation(): WorkbenchMutationState<Input, WorkbenchDetachedResolvedMutationResult<Result>>
+	useMutation(): WorkbenchMutationState<Input, WorkbenchSnapshotResolvedMutationResult<Result>>
 }
 
 export type WorkbenchRendererErrorCode =
@@ -289,6 +291,7 @@ export class WorkbenchRendererError extends Error {
 
 export interface WorkbenchRendererScope<Descriptor extends WorkbenchRenderableDescriptor> {
 	render(component: ComponentType<WorkbenchZeroProps>): ComponentType<WorkbenchZeroProps>
+	/** Borrow this open's shared roots and host. Does not acquire or duplicate RPC references; do not dispose them. */
 	useWorkbench(): WorkbenchHookValue<Descriptor>
 	query<
 		const QueryKey extends readonly WorkbenchResourceKey[],
@@ -643,7 +646,7 @@ class RendererOwner<Descriptor extends WorkbenchRenderableDescriptor> implements
 	async executeQuery<QueryKey extends readonly WorkbenchResourceKey[], Value>(
 		entry: QueryEntry<QueryKey, Value>,
 		context: QueryFunctionContext<readonly unknown[]>,
-	): Promise<WorkbenchDetached<WorkbenchResolvedResult<Value>>> {
+	): Promise<WorkbenchSnapshot<WorkbenchResolvedResult<Value>>> {
 		// Access the query-core signal before awaiting an async Workbench subscription. This makes
 		// removeObserver() cancel the fetch even while subscription setup is still pending.
 		const signal = context.signal
@@ -658,10 +661,10 @@ class RendererOwner<Descriptor extends WorkbenchRenderableDescriptor> implements
 					signal,
 				}) as WorkbenchQueryExecutionContext<QueryKey>
 				const result = entry.options.queryFn(authorContext)
-				const value = (await detachWorkbenchPortableValue(
+				const value = (await consumeWorkbenchValue(
 					Promise.resolve(result),
 					'Workbench query result',
-				)) as WorkbenchDetached<WorkbenchResolvedResult<Value>>
+				)) as WorkbenchSnapshot<WorkbenchResolvedResult<Value>>
 				this.#throwIfClosedOrCancelled(signal)
 				if (entry.revision === revision) return value
 			}
@@ -686,8 +689,8 @@ class RendererOwner<Descriptor extends WorkbenchRenderableDescriptor> implements
 
 	refetch<QueryKey extends readonly WorkbenchResourceKey[], Value>(
 		entry: QueryEntry<QueryKey, Value>,
-		observer: QueryObserver<WorkbenchDetached<WorkbenchResolvedResult<Value>>, unknown>,
-	): Promise<WorkbenchDetached<WorkbenchResolvedResult<Value>>> {
+		observer: QueryObserver<WorkbenchSnapshot<WorkbenchResolvedResult<Value>>, unknown>,
+	): Promise<WorkbenchSnapshot<WorkbenchResolvedResult<Value>>> {
 		if (this.#closed) return Promise.reject(this.#closedError())
 		// Every explicit refetch owns a temporary Workbench lease so concurrent or cancel-restart
 		// reads cannot release one another's subscription.
@@ -696,7 +699,7 @@ class RendererOwner<Descriptor extends WorkbenchRenderableDescriptor> implements
 			(result) => {
 				if (this.#closed) throw this.#closedError()
 				if (result.status === 'error') throw reportedQueryError(result.error)
-				return result.data as WorkbenchDetached<WorkbenchResolvedResult<Value>>
+				return result.data as WorkbenchSnapshot<WorkbenchResolvedResult<Value>>
 			},
 			(error: unknown) => Promise.reject(reportedQueryError(error)),
 		)
@@ -1051,13 +1054,13 @@ function useQueryResource<
 >(
 	definition: QueryDefinition<Descriptor, Input, QueryKey, Value>,
 	input: Input,
-): WorkbenchQueryResult<WorkbenchDetached<WorkbenchResolvedResult<Value>>> {
-	type DetachedValue = WorkbenchDetached<WorkbenchResolvedResult<Value>>
+): WorkbenchQueryResult<WorkbenchSnapshot<WorkbenchResolvedResult<Value>>> {
+	type SnapshotValue = WorkbenchSnapshot<WorkbenchResolvedResult<Value>>
 	const owner = useScopedOwner(definition.scope)
 	const entry = owner.resolve(definition, input)
 	const observer = useMemo(
 		() =>
-			new QueryObserver<DetachedValue, unknown>(owner.queryClient, {
+			new QueryObserver<SnapshotValue, unknown>(owner.queryClient, {
 				queryKey: entry.internalKey,
 				queryFn: (context) => owner.executeQuery(entry, context),
 				enabled: entry.options.enabled,
@@ -1180,9 +1183,9 @@ function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, I
 	definition: MutationDefinition<Descriptor, Input, Result>,
 ): WorkbenchMutationState<
 	Input,
-	WorkbenchDetachedResolvedMutationResult<WorkbenchResolvedResult<Result>>
+	WorkbenchSnapshotResolvedMutationResult<WorkbenchResolvedResult<Result>>
 > {
-	type DetachedResult = WorkbenchDetachedResolvedMutationResult<WorkbenchResolvedResult<Result>>
+	type SnapshotResult = WorkbenchSnapshotResolvedMutationResult<WorkbenchResolvedResult<Result>>
 	const owner = useScopedOwner(definition.scope)
 	const options = useMemo(() => {
 		const context = Object.freeze({
@@ -1200,7 +1203,7 @@ function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, I
 	const mounted = useRef(true)
 	const pending = useRef(false)
 	const sequence = useRef(0)
-	const [snapshot, setSnapshot] = useState<MutationSnapshot<DetachedResult>>(() =>
+	const [snapshot, setSnapshot] = useState<MutationSnapshot<SnapshotResult>>(() =>
 		Object.freeze({ status: 'idle', isPending: false, data: undefined, error: null }),
 	)
 
@@ -1219,7 +1222,7 @@ function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, I
 	}, [])
 
 	const mutateAsync = useCallback(
-		(...args: MutationArguments<Input>): Promise<DetachedResult> => {
+		(...args: MutationArguments<Input>): Promise<SnapshotResult> => {
 			if (!mounted.current) return Promise.reject(hookInactiveError())
 			if (owner.closed) {
 				return rejectBeforeStart(
@@ -1265,10 +1268,10 @@ function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, I
 				)
 			}
 
-			const operation = (async (): Promise<DetachedResult> => {
+			const operation = (async (): Promise<SnapshotResult> => {
 				let failure: unknown
 				let failed = false
-				let value: DetachedResult | undefined
+				let value: SnapshotResult | undefined
 				try {
 					const result =
 						args.length === 0
@@ -1278,8 +1281,8 @@ function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, I
 					value = (
 						settled === undefined
 							? undefined
-							: detachWorkbenchPortableValue(settled, 'Workbench mutation result')
-					) as DetachedResult
+							: consumeWorkbenchValue(settled, 'Workbench mutation result')
+					) as SnapshotResult
 				} catch (error) {
 					failed = true
 					failure = error
@@ -1320,12 +1323,12 @@ function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, I
 						Object.freeze({
 							status: 'success',
 							isPending: false,
-							data: value as DetachedResult,
+							data: value as SnapshotResult,
 							error: null,
 						}),
 					)
 				}
-				return value as DetachedResult
+				return value as SnapshotResult
 			})()
 			return owner.raceClose(operation, 'Workbench renderer instance closed during its mutation')
 		},
@@ -1348,7 +1351,7 @@ function useMutationResource<Descriptor extends WorkbenchRenderableDescriptor, I
 	return useMemo(
 		() => Object.freeze({ ...snapshot, mutate, mutateAsync, reset }),
 		[mutate, mutateAsync, reset, snapshot],
-	) as WorkbenchMutationState<Input, DetachedResult>
+	) as WorkbenchMutationState<Input, SnapshotResult>
 }
 
 function useScopedOwner<Descriptor extends WorkbenchRenderableDescriptor>(

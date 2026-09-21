@@ -51,7 +51,7 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 6,
+				major: 7,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },
@@ -64,6 +64,9 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			workbench: { enabled: true },
 		}
 		expect(parseRuntimeMeta(metadata)).toEqual(metadata)
+		expect(() =>
+			parseRuntimeMeta({ ...metadata, platform: { ...metadata.platform, mode: ['test'] } }),
+		).toThrow(/platform.mode/)
 		expect(() => parseRuntimeMeta({ ...metadata, transport: {} })).toThrow(
 			'runtime metadata contains unsupported field transport',
 		)
@@ -75,7 +78,7 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 6,
+				major: 7,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },

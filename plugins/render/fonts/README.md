@@ -106,3 +106,5 @@ FontsPlugin-owned bytes，因此不在其中。renderer 先比较 `portableFonts
 render 复制全部字体。可移植性仍是 renderer 的业务策略；通用 Workbench selector 不伪造第二份 filtered collection。
 
 完整用户路径见 [`docs/plugins/rendering/fonts.md`](../../../docs/plugins/rendering/fonts.md)，设计不变量见 [`DESIGN.md`](DESIGN.md)。
+
+Workbench 管理页与 Selection Attachment 使用 `snapshotDto()` 读取纯数据快照；`setPreferredFamily()`、`install()` 和 `remove()` 是不返回数据的命令，完成后重新查询快照。RPC target 在返回前校验数据，不复制字体字节或缓存快照。

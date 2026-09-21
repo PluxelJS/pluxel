@@ -1,3 +1,4 @@
+import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
 import { Http } from '@pluxel/services/http'
 import { Commands } from '@pluxel/services/commands'
 import { Cache, type CacheNamespace, type CacheStats } from '@pluxel/cache'
@@ -10,7 +11,7 @@ import { Rates, type RateDecision, type RateLimiter } from '@pluxel/rates'
 import { BasePlugin, formatPluginNodeReference, Plugin, PluginPart } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
-import { RpcTarget, type RpcStub } from 'capnweb'
+import { RpcTarget } from 'capnweb'
 import { S3 } from '@pluxel/storage'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { WretchPlugin } from '@pluxel/wretch'
@@ -429,7 +430,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		return artifact
 	}
 
-	async probeOutbound(): Promise<ShowcaseSnapshot['lastOutbound']> {
+	async probeOutbound(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>> {
 		try {
 			const response = await this.http.client
 				.url(this.config.outboundBaseUrl, true)
@@ -485,77 +486,36 @@ class ReportStudioTarget extends RpcTarget implements ReportStudioApi {
 		super()
 	}
 
-	snapshot(): ShowcaseSnapshot {
-		return this.studio.snapshot()
+	snapshotDto(): ShowcaseSnapshot {
+		const snapshot = this.studio.snapshot()
+		assertWorkbenchDto(snapshot)
+		return snapshot
 	}
 
 	watch(observer: ShowcaseObserver): RpcTarget {
-		return new ReportStudioSubscription(
-			this.studio,
-			observer as RpcStub<ShowcaseObserver>,
-			this.signal,
-		)
+		return createWorkbenchWatch({
+			observer,
+			signal: this.signal,
+			subscribe: (notify) => this.studio.subscribe(notify),
+		})
 	}
 
-	generate(title: string): Promise<ShowcaseArtifact> {
-		return this.studio.generate(title)
+	async generateDto(title: string): Promise<ShowcaseArtifact> {
+		const result = await this.studio.generate(title)
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	probeOutbound(): Promise<ShowcaseSnapshot['lastOutbound']> {
-		return this.studio.probeOutbound()
+	async probeOutboundDto(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>> {
+		const result = await this.studio.probeOutbound()
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	clearCache(): Promise<ShowcaseCacheStats> {
-		return this.studio.clearCache()
-	}
-}
-
-class ReportStudioSubscription extends RpcTarget {
-	private readonly observer: RpcStub<ShowcaseObserver>
-	private readonly subscription: Disposable
-	private readonly onAbort: () => void
-	private active = true
-
-	constructor(
-		studio: ReportStudioPlugin,
-		observer: RpcStub<ShowcaseObserver>,
-		private readonly signal: AbortSignal,
-	) {
-		super()
-		if (!observer || typeof observer !== 'function' || typeof observer.dup !== 'function') {
-			throw new TypeError('watch observer must be a Cap’n Web callback')
-		}
-		this.observer = observer.dup()
-		this.onAbort = () => this[Symbol.dispose]()
-		this.subscription = studio.subscribe((revision) => this.notify(revision))
-		if (signal.aborted) this[Symbol.dispose]()
-		else signal.addEventListener('abort', this.onAbort, { once: true })
-	}
-
-	[Symbol.dispose](): void {
-		if (!this.active) return
-		this.active = false
-		this.signal.removeEventListener('abort', this.onAbort)
-		this.subscription[Symbol.dispose]()
-		this.observer[Symbol.dispose]()
-	}
-
-	private notify(revision: number): void {
-		if (!this.active) return
-		try {
-			const result = this.observer(revision)
-			void (async () => {
-				try {
-					await result
-				} catch {
-					this[Symbol.dispose]()
-				} finally {
-					result[Symbol.dispose]()
-				}
-			})()
-		} catch {
-			this[Symbol.dispose]()
-		}
+	async clearCacheDto(): Promise<ShowcaseCacheStats> {
+		const result = await this.studio.clearCache()
+		assertWorkbenchDto(result)
+		return result
 	}
 }
 

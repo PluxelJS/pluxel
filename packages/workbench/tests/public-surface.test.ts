@@ -10,8 +10,8 @@ describe('Workbench public author surface', () => {
 			'WorkbenchOpenedContentHandle',
 			'WorkbenchOpenedViewHandle',
 			'WorkbenchPortableValueError',
+			'consumeWorkbenchValue',
 			'createRemoteValue',
-			'detachWorkbenchPortableValue',
 			'openWorkbenchEntry',
 			'readWorkbenchLayout',
 		])

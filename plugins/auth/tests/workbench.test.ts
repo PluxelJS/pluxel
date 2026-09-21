@@ -1,4 +1,4 @@
-import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/workbench/test'
+import { createWorkbenchTestHost, type WorkbenchTestHost } from '@pluxel/services/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import type { WorkbenchPrincipal } from '@pluxel/workbench'
@@ -31,13 +31,13 @@ describe('Auth Workbench credential setup', () => {
 			})
 
 			using opened = await openSetup(host)
-			await expect(opened.api.snapshot()).resolves.toEqual({
+			await expect(opened.api.snapshotDto()).resolves.toEqual({
 				mode: 'password',
 				state: 'setup-required',
 				reason: 'missing',
 			})
 			await expect(
-				opened.api.setupPassword({
+				opened.api.setupPasswordDto({
 					username: 'Admin',
 					password: PASSWORD,
 					passwordConfirmation: PASSWORD,
@@ -46,19 +46,19 @@ describe('Auth Workbench credential setup', () => {
 				ok: true,
 				snapshot: { mode: 'password', state: 'configured' },
 			})
-			await expect(opened.api.snapshot()).resolves.toEqual({
+			await expect(opened.api.snapshotDto()).resolves.toEqual({
 				mode: 'password',
 				state: 'configured',
 			})
 			await expect(
-				opened.api.setupPassword({
+				opened.api.setupPasswordDto({
 					username: 'Other',
 					password: PASSWORD,
 					passwordConfirmation: PASSWORD,
 				}),
 			).resolves.toMatchObject({ ok: false, code: 'not_required' })
 			opened[Symbol.dispose]()
-			await expect(Promise.resolve().then((): unknown => opened.api.snapshot())).rejects.toThrow(
+			await expect(Promise.resolve().then((): unknown => opened.api.snapshotDto())).rejects.toThrow(
 				/Auth setup View is closed|disposed/i,
 			)
 		}
@@ -79,7 +79,7 @@ describe('Auth Workbench credential setup', () => {
 				subject: 'local:admin',
 			})
 			await expect(
-				opened.api.setupPassword({
+				opened.api.setupPasswordDto({
 					username: 'Admin',
 					password: PASSWORD,
 					passwordConfirmation: PASSWORD,
@@ -99,14 +99,14 @@ describe('Auth Workbench credential setup', () => {
 			})
 
 			using opened = await openSetup(host)
-			const enrollment = await opened.api.beginTotp({
+			const enrollment = await opened.api.beginTotpDto({
 				username: 'Admin',
 				password: PASSWORD,
 				passwordConfirmation: PASSWORD,
 			})
 			if (enrollment.ok === false) throw new Error(enrollment.message)
 			await expect(
-				opened.api.confirmTotp({
+				opened.api.confirmTotpDto({
 					enrollmentId: enrollment.enrollment.id,
 					code: generateTotpForTesting(enrollment.enrollment.secret),
 				}),
@@ -114,7 +114,7 @@ describe('Auth Workbench credential setup', () => {
 				ok: true,
 				snapshot: { mode: 'password-totp', state: 'configured' },
 			})
-			await expect(opened.api.snapshot()).resolves.toEqual({
+			await expect(opened.api.snapshotDto()).resolves.toEqual({
 				mode: 'password-totp',
 				state: 'configured',
 			})
@@ -140,15 +140,15 @@ describe('Auth Workbench credential setup', () => {
 			})
 
 			using opened = await openSetup(host)
-			await expect(opened.api.snapshot()).resolves.toMatchObject({
+			await expect(opened.api.snapshotDto()).resolves.toMatchObject({
 				mode: 'oidc-confidential',
 				state: 'setup-required',
 			})
-			await expect(opened.api.setupOidcSecret({ secret: 'client-secret' })).resolves.toEqual({
+			await expect(opened.api.setupOidcSecretDto({ secret: 'client-secret' })).resolves.toEqual({
 				ok: true,
 				snapshot: { mode: 'oidc-confidential', state: 'configured' },
 			})
-			await expect(opened.api.snapshot()).resolves.toEqual({
+			await expect(opened.api.snapshotDto()).resolves.toEqual({
 				mode: 'oidc-confidential',
 				state: 'configured',
 			})
@@ -170,11 +170,11 @@ describe('Auth Workbench credential setup', () => {
 			})
 
 			using opened = await openSetup(host)
-			await expect(opened.api.snapshot()).resolves.toEqual({
+			await expect(opened.api.snapshotDto()).resolves.toEqual({
 				mode: 'oidc-public',
 				state: 'configured',
 			})
-			await expect(opened.api.setupOidcSecret({ secret: 'unused' })).resolves.toMatchObject({
+			await expect(opened.api.setupOidcSecretDto({ secret: 'unused' })).resolves.toMatchObject({
 				ok: false,
 				code: 'not_required',
 			})

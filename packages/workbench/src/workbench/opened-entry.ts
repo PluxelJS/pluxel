@@ -137,18 +137,20 @@ export class WorkbenchOpenedContentHandle implements Disposable {
 
 	async subscribe(observer: WorkbenchContentObserver): Promise<WorkbenchContentDataOutcome> {
 		const root = this.#interactiveRoot()
-		const outcome = await root.subscribe((value) =>
+		const outcome = await root.subscribeDto((value) =>
 			observer(parseWorkbenchContentDataOutcome(value)),
 		)
 		return parseWorkbenchContentDataOutcome(outcome)
 	}
 
 	async load(): Promise<WorkbenchContentLoadOutcome> {
-		return parseWorkbenchContentLoadOutcome(await this.#interactiveRoot().load())
+		return parseWorkbenchContentLoadOutcome(await this.#interactiveRoot().loadDto())
 	}
 
 	async run(actionKey: string, rawInput?: unknown): Promise<WorkbenchContentRunOutcome> {
-		return parseWorkbenchContentRunOutcome(await this.#interactiveRoot().run(actionKey, rawInput))
+		return parseWorkbenchContentRunOutcome(
+			await this.#interactiveRoot().runDto(actionKey, rawInput),
+		)
 	}
 
 	[Symbol.dispose](): void {

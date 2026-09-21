@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { PluginStatusSnapshot } from '../../../src/management/web/protocol'
 import {
 	parseConfigResult,
@@ -533,6 +533,51 @@ describe('management protocol validation', () => {
 				],
 			}),
 		).toThrow(/successes and failures/)
+	})
+
+	it('rejects accessors, sparse arrays and nested capabilities without executing getters', () => {
+		const getter = vi.fn(() => plugin)
+		const items = [plugin]
+		Object.defineProperty(items, '0', { enumerable: true, get: getter })
+		const catalog = (plugins: unknown) => ({
+			plugins,
+			sections: [] as unknown[],
+			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
+		})
+		expect(() => parsePluginCatalogSnapshot(catalog(items))).toThrow(/data property/)
+		expect(getter).not.toHaveBeenCalled()
+		const sparse: unknown[] = []
+		sparse.length = 1
+		expect(() => parsePluginCatalogSnapshot(catalog(sparse))).toThrow(/dense array/)
+		expect(() =>
+			parsePluginCatalogSnapshot(catalog([{ ...plugin, [Symbol.dispose]() {} }])),
+		).toThrow(/symbols/)
+		expect(() =>
+			parsePluginCatalogSnapshot(catalog([{ ...plugin, extra: { constructor: null } }])),
+		).toThrow(/reserved field/)
+	})
+
+	it('detaches opaque configuration leaves without freezing or retaining the caller tree', () => {
+		const input = {
+			ok: true,
+			saved: false,
+			application: 'applied',
+			desiredRevision: 0,
+			appliedRevision: 0,
+			config: { nested: [{ value: 'before' }] },
+			defaults: { nested: { enabled: true } },
+		}
+		const parsed = parseConfigResult(input)
+		input.config.nested[0]!.value = 'after'
+		input.defaults.nested.enabled = false
+		expect(parsed).toMatchObject({
+			config: { nested: [{ value: 'before' }] },
+			defaults: { nested: { enabled: true } },
+		})
+		expect(Object.isFrozen(input.config)).toBe(false)
+		if (!parsed.ok || !('defaults' in parsed)) throw new Error('Expected a configuration read')
+		expect(Object.isFrozen(parsed.config.nested)).toBe(true)
+		expect(Object.isFrozen(parsed.defaults.nested)).toBe(true)
 	})
 
 	it('enforces portable-data budgets before interpreting a result', () => {

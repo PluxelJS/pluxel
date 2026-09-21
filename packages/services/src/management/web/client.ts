@@ -142,9 +142,9 @@ export function createRuntimeManagementClient(
 	): Promise<T> => readPortableResult(run(management), parse)
 
 	const client: RuntimeManagementClient = {
-		describe: () => call((root) => root.describe(), parseRuntimeMeta),
+		describe: () => call((root) => root.describeDto(), parseRuntimeMeta),
 		updates: Object.freeze({
-			snapshot: () => call((root) => root.runtimeUpdate(), cloneRuntimeUpdateSnapshot),
+			snapshot: () => call((root) => root.runtimeUpdateDto(), cloneRuntimeUpdateSnapshot),
 			follow: async (observer) => {
 				if (typeof observer !== 'function')
 					throw new TypeError('Update observer must be a function')
@@ -157,11 +157,11 @@ export function createRuntimeManagementClient(
 			},
 		}),
 		catalog: Object.freeze({
-			snapshot: () => call((root) => root.pluginCatalog(), parsePluginCatalogSnapshot),
+			snapshot: () => call((root) => root.pluginCatalogDto(), parsePluginCatalogSnapshot),
 			updateLayout: (input) =>
 				call(
 					(root) =>
-						root.updatePluginCatalogLayout({
+						root.updatePluginCatalogLayoutDto({
 							sections:
 								input.sections === null
 									? null
@@ -175,81 +175,86 @@ export function createRuntimeManagementClient(
 				),
 		}),
 		plugins: Object.freeze({
-			status: (owner) => call((root) => root.pluginStatus(owner), parsePluginStatusQueryResult),
+			status: (owner) => call((root) => root.pluginStatusDto(owner), parsePluginStatusQueryResult),
 			setAutoStart: (items) =>
-				call((root) => root.setPluginAutoStart([...items]), parsePluginControlBatchResult),
+				call((root) => root.setPluginAutoStartDto([...items]), parsePluginControlBatchResult),
 			applyLifecycleCommands: (items) =>
 				call(
-					(root) => root.applyPluginLifecycleCommands([...items]),
+					(root) => root.applyPluginLifecycleCommandsDto([...items]),
 					parsePluginControlBatchResult,
 				),
 		}),
 		config: Object.freeze({
 			presentation: (owner) =>
-				call((root) => root.pluginConfigPresentation(owner), parseConfigPresentationResult),
-			get: (owner) => call((root) => root.pluginConfig(owner), parseConfigResult),
+				call((root) => root.pluginConfigPresentationDto(owner), parseConfigPresentationResult),
+			get: (owner) => call((root) => root.pluginConfigDto(owner), parseConfigResult),
 			patch: (owner, patch) =>
-				call((root) => root.patchPluginConfig(owner, patch), parseConfigResult),
+				call((root) => root.patchPluginConfigDto(owner, patch), parseConfigResult),
 			patchField: (owner, input) =>
-				call((root) => root.patchPluginConfigField(owner, input), parseConfigResult),
+				call((root) => root.patchPluginConfigFieldDto(owner, input), parseConfigResult),
 		}),
 		dependencies: Object.freeze({
-			graph: () => call((root) => root.pluginDependencyGraph(), parsePluginDependencyGraphSnapshot),
+			graph: () =>
+				call((root) => root.pluginDependencyGraphDto(), parsePluginDependencyGraphSnapshot),
 			inspectConsumerRequirements: (consumer) =>
 				call(
-					(root) => root.inspectPluginConsumerRequirements(consumer),
+					(root) => root.inspectPluginConsumerRequirementsDto(consumer),
 					parsePluginConsumerRequirementsInspectionResult,
 				),
 			setConsumerOverride: (input) =>
-				call((root) => root.setPluginConsumerOverride(input), parsePluginDependencyMutationResult),
+				call(
+					(root) => root.setPluginConsumerOverrideDto(input),
+					parsePluginDependencyMutationResult,
+				),
 			inspectProviderPolicy: (policyOwner) =>
 				call(
-					(root) => root.inspectPluginProviderPolicy(policyOwner),
+					(root) => root.inspectPluginProviderPolicyDto(policyOwner),
 					parsePluginProviderPolicyInspectionResult,
 				),
 			setProviderPolicyDefault: (input) =>
 				call(
-					(root) => root.setPluginProviderPolicyDefault(input),
+					(root) => root.setPluginProviderPolicyDefaultDto(input),
 					parsePluginDependencyMutationResult,
 				),
 		}),
 		forks: Object.freeze({
-			ensure: (input) => call((root) => root.ensurePluginFork(input), parseEnsureForkResult),
-			remove: (input) => call((root) => root.removePluginFork(input), parseRemoveForkResult),
+			ensure: (input) => call((root) => root.ensurePluginForkDto(input), parseEnsureForkResult),
+			remove: (input) => call((root) => root.removePluginForkDto(input), parseRemoveForkResult),
 		}),
 		logging: Object.freeze({
-			getPolicy: () => call((root) => root.getLogPolicy(), parseVersionedPluginLogPolicySnapshot),
+			getPolicy: () =>
+				call((root) => root.getLogPolicyDto(), parseVersionedPluginLogPolicySnapshot),
 			replacePolicy: (expectedRevision, snapshot) =>
 				call(
-					(root) => root.replaceLogPolicy(expectedRevision, snapshot),
+					(root) => root.replaceLogPolicyDto(expectedRevision, snapshot),
 					parsePluginLogPolicyMutationResult,
 				),
 			setDefaultLevel: (expectedRevision, level) =>
 				call(
-					(root) => root.setDefaultLogLevel(expectedRevision, level),
+					(root) => root.setDefaultLogLevelDto(expectedRevision, level),
 					parsePluginLogPolicyMutationResult,
 				),
 			setPluginLevel: (expectedRevision, owner, level) =>
 				call(
-					(root) => root.setPluginLogLevel(expectedRevision, owner, level),
+					(root) => root.setPluginLogLevelDto(expectedRevision, owner, level),
 					parsePluginLogPolicyMutationResult,
 				),
 			clearPluginLevel: (expectedRevision, owner) =>
 				call(
-					(root) => root.clearPluginLogLevel(expectedRevision, owner),
+					(root) => root.clearPluginLogLevelDto(expectedRevision, owner),
 					parsePluginLogPolicyMutationResult,
 				),
 			resetPolicy: (expectedRevision) =>
 				call(
-					(root) => root.resetLogPolicy(expectedRevision),
+					(root) => root.resetLogPolicyDto(expectedRevision),
 					parseVersionedPluginLogPolicySnapshot,
 				),
 		}),
 		logs: Object.freeze({
-			streams: () => call((root) => root.logStreams(), parseRuntimeLogStreamsIndex),
-			meta: (streamId) => call((root) => root.logMeta(streamId), parseLogStreamMeta),
+			streams: () => call((root) => root.logStreamsDto(), parseRuntimeLogStreamsIndex),
+			meta: (streamId) => call((root) => root.logMetaDto(streamId), parseLogStreamMeta),
 			range: (streamId, query) =>
-				call((root) => root.logRange(streamId, query), parseLogRangeResult),
+				call((root) => root.logRangeDto(streamId, query), parseLogRangeResult),
 			follow: async (input, observer) => {
 				if (typeof observer !== 'function') throw new TypeError('Log observer must be a function')
 				const subscription = await management.followLogs(input, async (event) => {
@@ -262,14 +267,17 @@ export function createRuntimeManagementClient(
 			},
 		}),
 		security: Object.freeze({
-			readOverview: () => call((root) => root.securityOverview(), parseSecurityOverview),
-			listEvents: (limit) => call((root) => root.securityEvents(limit), parseSecurityAuditEvents),
+			readOverview: () => call((root) => root.securityOverviewDto(), parseSecurityOverview),
+			listEvents: (limit) =>
+				call((root) => root.securityEventsDto(limit), parseSecurityAuditEvents),
 			vault: Object.freeze({
-				unlock: () => call((root) => root.vaultUnlock(), parseVaultAdminState),
-				ensureHostKey: () => call((root) => root.vaultEnsureHostKey(), parseVaultPublicKeyResult),
-				generateDeployKey: () => call((root) => root.vaultGenerateDeployKey(), parseVaultKeyPair),
+				unlock: () => call((root) => root.vaultUnlockDto(), parseVaultAdminState),
+				ensureHostKey: () =>
+					call((root) => root.vaultEnsureHostKeyDto(), parseVaultPublicKeyResult),
+				generateDeployKey: () =>
+					call((root) => root.vaultGenerateDeployKeyDto(), parseVaultKeyPair),
 				setDeployRecipients: (publicKeys: readonly string[]) =>
-					call((root) => root.vaultSetDeployRecipients([...publicKeys]), parseVaultAdminState),
+					call((root) => root.vaultSetDeployRecipientsDto([...publicKeys]), parseVaultAdminState),
 			}),
 		}),
 	}
@@ -283,18 +291,18 @@ async function readPortableResult<T>(
 	const result = await resultPromise
 	const dispose =
 		result && (typeof result === 'object' || typeof result === 'function')
-			? (result as { [Symbol.dispose]?: () => void })[Symbol.dispose]
+			? Object.getOwnPropertyDescriptor(result, Symbol.dispose)?.value
 			: undefined
 	try {
-		const portable =
-			typeof dispose === 'function'
-				? Array.isArray(result)
-					? [...result]
-					: Object.fromEntries(Object.entries(result as object))
-				: result
-		return parse(portable)
+		if (
+			typeof dispose === 'function' &&
+			!Reflect.deleteProperty(result as object, Symbol.dispose)
+		) {
+			throw new TypeError('Management result disposer must be configurable')
+		}
+		return parse(result)
 	} finally {
-		dispose?.call(result)
+		if (typeof dispose === 'function') dispose.call(result)
 	}
 }
 

@@ -68,10 +68,10 @@ import {
 import {
 	parseConfigPresentationPlanV1,
 	parseRuntimePortableData,
+	validateRuntimePortableData,
 	RuntimeProtocolValidationError,
 } from './validation'
 
-const DANGEROUS_FIELDS = new Set(['__proto__', 'prototype', 'constructor'])
 const LIFECYCLE_PHASES = ['resolve', 'config', 'start', 'dependency', 'drain'] as const
 const LIFECYCLE_KINDS = [
 	'resolve-failed',
@@ -1717,10 +1717,17 @@ function logLine(input: unknown, label: string): RuntimeLogLine {
 		msg: text(value.msg, `${label}.msg`),
 		...(value.message === undefined
 			? {}
-			: { message: Object.freeze([...array(value.message, `${label}.message`)]) as unknown[] }),
+			: {
+					message: parseRuntimePortableData(
+						array(value.message, `${label}.message`),
+						`${label}.message`,
+					) as unknown[],
+				}),
 		...(value.props === undefined ? {} : { props: portableRecord(value.props, `${label}.props`) }),
 		...(value.error === undefined ? {} : { error: runtimeLogError(value.error, `${label}.error`) }),
-		...(value.raw === undefined ? {} : { raw: value.raw }),
+		...(value.raw === undefined
+			? {}
+			: { raw: parseRuntimePortableData(value.raw, `${label}.raw`) }),
 	})
 }
 
@@ -1729,7 +1736,7 @@ function runtimeLogError(input: unknown, label: string): RuntimeLogError {
 	for (const key of ['name', 'message', 'stack'] as const) {
 		if (value[key] !== undefined) text(value[key], `${label}.${key}`)
 	}
-	return value as RuntimeLogError
+	return parseRuntimePortableData(value, label) as RuntimeLogError
 }
 
 function adminAccessOverview(input: unknown, label: string): AdminAccessOverview {
@@ -1849,9 +1856,8 @@ function securityAuditEvent(input: unknown, label: string): SecurityAuditEvent {
 }
 
 function rootValue(input: unknown, label: string): RuntimeJsonValue {
-	const value = parseRuntimePortableData(input, label)
-	rejectDangerousFields(value, label)
-	return value
+	validateRuntimePortableData(input, label, true)
+	return input
 }
 
 function rootRecord(input: unknown, label: string): Record<string, unknown> {
@@ -1860,20 +1866,6 @@ function rootRecord(input: unknown, label: string): Record<string, unknown> {
 
 function rootArray(input: unknown, label: string): readonly RuntimeJsonValue[] {
 	return array(rootValue(input, label), label)
-}
-
-function rejectDangerousFields(input: RuntimeJsonValue, label: string): void {
-	if (input === null || typeof input !== 'object') return
-	if (Array.isArray(input)) {
-		for (let index = 0; index < input.length; index += 1) {
-			rejectDangerousFields(input[index]!, `${label}[${index}]`)
-		}
-		return
-	}
-	for (const [key, value] of Object.entries(input)) {
-		if (DANGEROUS_FIELDS.has(key)) fail(`${label} contains reserved field ${key}`)
-		rejectDangerousFields(value, `${label}.${key}`)
-	}
 }
 
 function object(input: unknown, label: string): Record<string, unknown> {
@@ -1889,7 +1881,7 @@ function array(input: unknown, label: string): readonly RuntimeJsonValue[] {
 }
 
 function portableRecord(input: unknown, label: string): RuntimeJsonObject {
-	return object(input, label) as RuntimeJsonObject
+	return parseRuntimePortableData(object(input, label), label) as RuntimeJsonObject
 }
 
 function shape(

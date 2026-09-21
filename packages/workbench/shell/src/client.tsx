@@ -151,7 +151,7 @@ function AuthenticationChallenge({
 		if (state.submitting || !secret) return
 		setState({ ...state, submitting: true, error: undefined })
 		void readAuthenticationStep(
-			state.authentication.submit(
+			state.authentication.submitDto(
 				challenge.kind === 'password' ? { password: secret } : { code: secret },
 			),
 		)
@@ -214,7 +214,7 @@ async function acceptBootstrap(
 	if (bootstrap.kind === 'management') {
 		throw new Error('此部署未启用核心 Workbench capability')
 	}
-	const step = await readAuthenticationStep(bootstrap.authentication.state())
+	const step = await readAuthenticationStep(bootstrap.authentication.stateDto())
 	await acceptAuthenticationStep(bootstrap.authentication, step, setState)
 }
 

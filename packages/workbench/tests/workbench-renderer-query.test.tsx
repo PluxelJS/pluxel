@@ -51,6 +51,52 @@ const host: WorkbenchHostFacade = Object.freeze({
 })
 
 describe('Workbench renderer query scope', () => {
+	it('lends the same opened root to components, queries and mutations without duplicating it', async () => {
+		const scope = createWorkbenchRenderer(QueryWorkbench.query)
+		const borrowed = new Set<RpcStub<QueryApi>>()
+		const query = scope.query(({ api }) => {
+			borrowed.add(api)
+			return { queryKey: ['shared-root'], queryFn: () => api.snapshot() }
+		})
+		const mutation = scope.mutation(({ api }) => {
+			borrowed.add(api)
+			return { mutationFn: () => api.snapshot() }
+		})
+		function Child() {
+			borrowed.add(scope.useWorkbench().api)
+			query.useQuery()
+			mutation.useMutation()
+			return null
+		}
+		function Page() {
+			const [visible, setVisible] = useState(true)
+			return (
+				<StrictMode>
+					<button type="button" onClick={() => setVisible(false)}>
+						Hide
+					</button>
+					{visible && <Child />}
+					<Child />
+				</StrictMode>
+			)
+		}
+		const api = {
+			snapshot: vi.fn(() => ({ value: 1 })),
+			dup: vi.fn(),
+			[Symbol.dispose]: vi.fn(),
+		}
+		const opened = await renderOpened(identity, scope.render(Page), api)
+		await vi.waitFor(() => expect(api.snapshot).toHaveBeenCalledTimes(1))
+		expect(borrowed.size).toBe(1)
+		expect([...borrowed][0]).toBe(api)
+		expect(api.dup).not.toHaveBeenCalled()
+		await act(async () => opened.dom.querySelector('button')!.click())
+		expect(api[Symbol.dispose]).not.toHaveBeenCalled()
+		await opened.dispose()
+		// Renderer consumers never dispose the borrowed child; the opened envelope owns it.
+		expect(api[Symbol.dispose]).not.toHaveBeenCalled()
+	})
+
 	it('rejects flat legacy options when their factories bind to an owner', async () => {
 		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
@@ -112,8 +158,10 @@ describe('Workbench renderer query scope', () => {
 			return <p>{value.data?.value ?? 'pending'}</p>
 		}
 		const Renderer = scope.render(Page)
-		const firstApi = { snapshot: vi.fn(() => ({ value: 1 })) }
-		const secondApi = { snapshot: vi.fn(() => ({ value: 2 })) }
+		const firstValue = { value: 1 }
+		const secondValue = { value: 2 }
+		const firstApi = { snapshot: vi.fn(() => firstValue) }
+		const secondApi = { snapshot: vi.fn(() => secondValue) }
 		const first = await renderOpened(identity, Renderer, firstApi)
 		const second = await renderOpened(identity, Renderer, secondApi)
 
@@ -124,6 +172,10 @@ describe('Workbench renderer query scope', () => {
 		expect(firstApi.snapshot).toHaveBeenCalledTimes(1)
 		expect(secondApi.snapshot).toHaveBeenCalledTimes(1)
 		expect(observed.some((value) => value.status === 'pending')).toBe(true)
+		expect(observed.some((value) => value.data === firstValue)).toBe(true)
+		expect(observed.some((value) => value.data === secondValue)).toBe(true)
+		expect(Object.isFrozen(firstValue)).toBe(true)
+		expect(Object.isFrozen(secondValue)).toBe(true)
 
 		await first.dispose()
 		await second.dispose()
@@ -1023,7 +1075,7 @@ describe('Workbench renderer query scope', () => {
 })
 
 describe('Workbench renderer mutation resource', () => {
-	it('is single-flight per hook, detaches its result, invalidates, and resets settled state', async () => {
+	it('is single-flight per hook, consumes its result, invalidates, and resets settled state', async () => {
 		const result = deferred<Readonly<{ value: number }>>()
 		const resultDispose = vi.fn()
 		let reads = 0
@@ -1289,7 +1341,7 @@ describe('Workbench renderer mutation resource', () => {
 		await opened.dispose()
 	})
 
-	it('invalidates after rejection and after fulfilled-result detach failure', async () => {
+	it('invalidates after rejection and after fulfilled-result consumption failure', async () => {
 		const domainFailure = new Error('write outcome is unknown')
 		const invalidDispose = vi.fn()
 		let reads = 0

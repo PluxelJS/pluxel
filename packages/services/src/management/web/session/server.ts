@@ -1,5 +1,8 @@
 import { newWebSocketRpcSession, RpcTarget, type RpcStub } from 'capnweb'
-import type { AdminAuthenticationSession } from '../../services/admin-access/AdminAccessService'
+import {
+	providerStepSnapshot,
+	type AdminAuthenticationSession,
+} from '../../services/admin-access/AdminAccessService'
 import type { RuntimeManagementTarget } from '../management-target'
 import type {
 	AdminAccessPrincipal,
@@ -16,6 +19,9 @@ import {
 	type RuntimeSessionRoot,
 } from './protocol'
 import { RuntimeSessionWebSocket } from './elysia-websocket'
+import { parseRuntimeLogoutResult } from './validation'
+
+const invalidateFromHost = Symbol('invalidateFromHost')
 
 const OBSERVER_DEADLINE_MS = 250
 
@@ -59,7 +65,7 @@ export class RuntimeSessionServer implements Disposable {
 
 	invalidate(cause: RuntimeSessionInvalidationCause): void {
 		if (this.disposed) return
-		this.root.invalidateFromHost(cause)
+		this.root[invalidateFromHost](cause)
 	}
 
 	[Symbol.dispose](): void {
@@ -77,15 +83,15 @@ class RuntimeAuthenticationTargetImpl extends RpcTarget implements RuntimeAuthen
 		super()
 	}
 
-	async state(): Promise<ManagementAuthenticationProviderStep> {
+	async stateDto(): Promise<ManagementAuthenticationProviderStep> {
 		return this.active
-			? await this.session.state()
+			? providerStepSnapshot(await this.session.state())
 			: Object.freeze({ kind: 'failed', code: 'authentication_expired' })
 	}
 
-	async submit(input: unknown): Promise<ManagementAuthenticationProviderStep> {
+	async submitDto(input: unknown): Promise<ManagementAuthenticationProviderStep> {
 		return this.active
-			? await this.session.submit(input)
+			? providerStepSnapshot(await this.session.submit(input))
 			: Object.freeze({ kind: 'failed', code: 'authentication_expired' })
 	}
 
@@ -118,10 +124,10 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 	}
 
 	async bootstrap(observer: RpcStub<RuntimeSessionObserver>): Promise<RuntimeBootstrap> {
-		this.assertActive()
-		this.retainObserver(observer)
+		this.#assertActive()
+		this.#retainObserver(observer)
 		const step = await this.options.authentication.state()
-		this.assertActive()
+		this.#assertActive()
 
 		if (step.kind !== 'authenticated') {
 			if (this.authenticationDelivered) {
@@ -156,7 +162,7 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 				: { displayName: step.principal.displayName }),
 		})
 		const workbench = (this.workbenchSession ??= this.options.createWorkbench(principal, (cause) =>
-			this.invalidate('workbench', cause),
+			this.#invalidate('workbench', cause),
 		))
 		return Object.freeze({
 			kind: 'workbench',
@@ -166,10 +172,10 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		})
 	}
 
-	async logout(): Promise<RuntimeLogoutResult> {
-		this.assertActive()
+	async logoutDto(): Promise<RuntimeLogoutResult> {
+		this.#assertActive()
 		const commit = await this.options.authentication.logout()
-		this.assertActive()
+		this.#assertActive()
 		const result: RuntimeLogoutResult = commit
 			? Object.freeze({
 					kind: 'cookie-commit-required',
@@ -178,11 +184,11 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 				})
 			: Object.freeze({ kind: 'closed' })
 		const timer = setTimeout(
-			() => this.invalidate('authentication', new Error('Management session logged out')),
+			() => this.#invalidate('authentication', new Error('Management session logged out')),
 			0,
 		)
 		timer.unref?.()
-		return result
+		return parseRuntimeLogoutResult(result)
 	}
 
 	[Symbol.dispose](): void {
@@ -194,20 +200,20 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		this.authenticationTarget[Symbol.dispose]()
 		this.workbenchSession?.dispose()
 		this.workbenchSession = undefined
-		this.releaseAuthentication()
+		this.#releaseAuthentication()
 		this.observer?.[Symbol.dispose]()
 		this.observer = undefined
 	}
 
-	invalidateFromHost(cause: RuntimeSessionInvalidationCause): void {
-		this.invalidate(cause, new Error('Runtime session host epoch changed'))
+	[invalidateFromHost](cause: RuntimeSessionInvalidationCause): void {
+		this.#invalidate(cause, new Error('Runtime session host epoch changed'))
 	}
 
 	private readonly authenticationInvalidated = (): void => {
-		this.invalidate('authentication', new Error('Authentication authority changed'))
+		this.#invalidate('authentication', new Error('Authentication authority changed'))
 	}
 
-	private retainObserver(observer: RpcStub<RuntimeSessionObserver>): void {
+	#retainObserver(observer: RpcStub<RuntimeSessionObserver>): void {
 		if (this.observer) return
 		if (!observer || typeof observer !== 'function' || typeof observer.dup !== 'function') {
 			throw new TypeError('Runtime session observer must be an RPC callback')
@@ -215,7 +221,7 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		this.observer = observer.dup()
 	}
 
-	private invalidate(cause: RuntimeSessionInvalidationCause, _error: Error): void {
+	#invalidate(cause: RuntimeSessionInvalidationCause, _error: Error): void {
 		if (!this.active || this.invalidating) return
 		this.invalidating = true
 		this.active = false
@@ -223,17 +229,17 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		this.authenticationTarget[Symbol.dispose]()
 		this.workbenchSession?.dispose()
 		this.workbenchSession = undefined
-		this.releaseAuthentication()
-		void this.notifyInvalidationAndClose(cause)
+		this.#releaseAuthentication()
+		void this.#notifyInvalidationAndClose(cause)
 	}
 
-	private releaseAuthentication(): void {
+	#releaseAuthentication(): void {
 		if (this.authenticationReleased) return
 		this.authenticationReleased = true
 		this.options.authentication.release()
 	}
 
-	private async notifyInvalidationAndClose(cause: RuntimeSessionInvalidationCause): Promise<void> {
+	async #notifyInvalidationAndClose(cause: RuntimeSessionInvalidationCause): Promise<void> {
 		const observer = this.observer
 		try {
 			if (observer) {
@@ -255,7 +261,7 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		}
 	}
 
-	private assertActive(): void {
+	#assertActive(): void {
 		if (!this.active || this.options.authentication.signal.aborted) {
 			throw new Error('Runtime session epoch is no longer active')
 		}

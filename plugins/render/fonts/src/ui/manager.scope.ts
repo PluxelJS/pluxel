@@ -6,7 +6,7 @@ export const managerScope = createWorkbenchRenderer(FontsWorkbench.manager)
 
 export const fontManagerSnapshotQuery = managerScope.query(({ api }) => ({
 	queryKey: ['fonts', 'manager', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 }))
 
 export const setPreferredFontMutation = managerScope.mutation(({ api }) => ({

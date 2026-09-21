@@ -151,7 +151,7 @@ content ID，最后一个 registration 释放后才从集合移除。平台自�
 
 FontsPlugin 自己的 manager View 管理 provider-owned 字体集合：上传、删除字体并设置默认 family。上传字体持久化在
 host persistence 中，provider 重启时会恢复；这个集合是 Fonts 的领域状态，不是 Workbench 平台概念，也不属于任一
-Canvas/ECharts consumer。Manager 使用 descriptor-bound snapshot query 和 mutations；Workbench 负责 DTO detach、关闭时的
+Canvas/ECharts consumer。Manager 使用 descriptor-bound snapshot query 和 mutations；Workbench 负责 DTO 接管与原地冻结、关闭时的
 远端请求所有权与写后刷新。浏览器会先按当前上限检查 `File.size`，再通过 `File.arrayBuffer()` 准备上传 bytes。该 Web API
 不能取消已经开始的读取；关闭页面只会丢弃晚到的 bytes 并阻止随后发起 RPC，服务端仍会再次执行 authoritative 校验。
 

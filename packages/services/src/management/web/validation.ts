@@ -41,7 +41,16 @@ export class RuntimeProtocolValidationError extends TypeError {
 
 /** Clone one untrusted wire value into a deeply frozen portable-data tree. */
 export function parseRuntimePortableData(input: unknown, label = 'value'): RuntimeJsonValue {
-	return clonePortable(input, label, new Set(), 0, { nodes: 0, text: 0 })
+	return visitPortable(input, label, new Set(), 0, { nodes: 0, text: 0 }, true, false)
+}
+
+/** @internal Inspect a borrowed result before domain parsers construct owned values. */
+export function validateRuntimePortableData(
+	input: unknown,
+	label: string,
+	rejectReservedFields = false,
+): asserts input is RuntimeJsonValue {
+	visitPortable(input, label, new Set(), 0, { nodes: 0, text: 0 }, false, rejectReservedFields)
 }
 
 export function parseConfigFieldPathSegments(
@@ -58,7 +67,8 @@ export function parseConfigFieldPathSegments(
 
 /** Validate, clone, and freeze runtime discovery received from an untrusted host. */
 export function parseRuntimeMeta(input: unknown): RuntimeMeta {
-	const meta = record(parseRuntimePortableData(input, 'runtime metadata'), 'runtime metadata')
+	validateRuntimePortableData(input, 'runtime metadata')
+	const meta = record(input, 'runtime metadata')
 	exact(
 		meta,
 		['service', 'ready', 'protocol', 'application', 'platform', 'workbench'],
@@ -136,14 +146,16 @@ function platformSnapshot(input: unknown): RuntimeMeta['platform'] {
 	if (typeof deployment.ci !== 'boolean') {
 		fail('runtime metadata.platform.deployment.ci must be boolean')
 	}
-	if (!['development', 'production', 'test', 'unknown'].includes(String(snapshot.mode))) {
-		fail('runtime metadata.platform.mode is invalid')
-	}
+	const mode = enumValue(
+		snapshot.mode,
+		['development', 'production', 'test', 'unknown'],
+		'runtime metadata.platform.mode',
+	)
 	const platform = nullableString(snapshot.platform, 'runtime metadata.platform.platform')
 	return Object.freeze({
 		runtime: Object.freeze({ name: runtimeName, version: runtimeVersion }),
 		deployment: Object.freeze({ provider: deploymentProvider, ci: deployment.ci }),
-		mode: snapshot.mode as 'development' | 'production' | 'test' | 'unknown',
+		mode,
 		platform,
 	})
 }
@@ -156,11 +168,15 @@ function nullableString(input: unknown, label: string): string | null {
 
 /** Validate the serializable config form plan received from a runtime boundary. */
 export function parseConfigPresentationPlanV1(input: unknown): ConfigPresentationPlanV1 {
-	const plan = record(parseRuntimePortableData(input, 'config presentation plan'), 'plan')
+	validateRuntimePortableData(input, 'config presentation plan')
+	const plan = record(input, 'plan')
 	exact(plan, ['version', 'fieldName', 'defaults', 'fields', 'sections'], 'plan')
 	if (plan.version !== 1) fail('plan.version must be 1')
 	const fieldName = text(plan.fieldName, 'plan.fieldName')
-	const defaults = record(plan.defaults, 'plan.defaults') as RuntimeJsonObject
+	const defaults = parseRuntimePortableData(
+		record(plan.defaults, 'plan.defaults'),
+		'plan.defaults',
+	) as RuntimeJsonObject
 	const fields = fieldArray(plan.fields, 'plan.fields', 0)
 	if (!Array.isArray(plan.sections)) fail('plan.sections must be an array')
 	const sections = plan.sections.map((inputSection, index) => {
@@ -170,7 +186,10 @@ export function parseConfigPresentationPlanV1(input: unknown): ConfigPresentatio
 		return Object.freeze({
 			path,
 			fieldName: text(section.fieldName, `plan.sections[${index}].fieldName`),
-			defaults: record(section.defaults, `plan.sections[${index}].defaults`) as RuntimeJsonObject,
+			defaults: parseRuntimePortableData(
+				record(section.defaults, `plan.sections[${index}].defaults`),
+				`plan.sections[${index}].defaults`,
+			) as RuntimeJsonObject,
 			fields: fieldArray(section.fields, `plan.sections[${index}].fields`, 0),
 		})
 	})
@@ -342,7 +361,7 @@ function fieldNode(input: unknown, label: string, depth: number): ConfigPresenta
 				...optionalText(node, 'emptyHint', label),
 				...(node.defaultItem === undefined
 					? {}
-					: { defaultItem: node.defaultItem as RuntimeJsonValue }),
+					: { defaultItem: parseRuntimePortableData(node.defaultItem, `${label}.defaultItem`) }),
 			})
 		}
 		case 'record': {
@@ -750,12 +769,14 @@ function exact(
 	if (extra.length > 0) fail(`${label} contains unsupported field ${extra[0]}`)
 }
 
-function clonePortable(
+function visitPortable(
 	input: unknown,
 	label: string,
 	ancestors: Set<object>,
 	depth: number,
 	budget: ValidationBudget,
+	copy: boolean,
+	rejectReservedFields: boolean,
 ): RuntimeJsonValue {
 	if (++budget.nodes > MAX_TOTAL_NODES) fail(`${label} exceeds total node budget`)
 	if (depth > MAX_TREE_DEPTH * 2) fail(`${label} exceeds maximum nesting depth`)
@@ -773,33 +794,49 @@ function clonePortable(
 	if (ancestors.has(input)) fail(`${label} contains a cycle`)
 	ancestors.add(input)
 	try {
-		if (Array.isArray(input)) {
-			if (input.length > MAX_ARRAY_ITEMS) fail(`${label} exceeds ${MAX_ARRAY_ITEMS} items`)
-			return Object.freeze(
-				input.map((item, index) =>
-					clonePortable(item, `${label}[${index}]`, ancestors, depth + 1, budget),
-				),
-			)
-		}
+		const isArray = Array.isArray(input)
 		const prototype = Object.getPrototypeOf(input)
-		if (prototype !== Object.prototype && prototype !== null) {
-			fail(`${label} must be a plain object`)
+		if (
+			isArray ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null
+		) {
+			fail(`${label} must be a plain ${isArray ? 'array' : 'object'}`)
 		}
 		if (Object.getOwnPropertySymbols(input).length > 0) fail(`${label} must not contain symbols`)
-		const out: Record<string, unknown> = {}
-		const descriptors = Object.entries(Object.getOwnPropertyDescriptors(input))
-		if (descriptors.length > MAX_OBJECT_FIELDS) fail(`${label} has too many fields`)
-		for (const [key, descriptor] of descriptors) {
-			consumeText(key, `${label} key`, budget)
+		const descriptors = Object.getOwnPropertyDescriptors(input)
+		const keys = Object.keys(descriptors)
+		if (isArray) {
+			if (input.length > MAX_ARRAY_ITEMS) fail(`${label} exceeds ${MAX_ARRAY_ITEMS} items`)
+			if (keys.length !== input.length + 1)
+				fail(`${label} must be a dense array without extra fields`)
+		} else if (keys.length > MAX_OBJECT_FIELDS) fail(`${label} has too many fields`)
+		const out = copy ? (isArray ? [] : {}) : undefined
+		for (const key of keys) {
+			if (isArray && key === 'length') continue
+			if (isArray && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= input.length)) {
+				fail(`${label} contains unsupported array field ${key}`)
+			}
+			if (
+				rejectReservedFields &&
+				(key === '__proto__' || key === 'prototype' || key === 'constructor')
+			) {
+				fail(`${label} contains reserved field ${key}`)
+			}
+			if (!isArray) consumeText(key, `${label} key`, budget)
+			const descriptor = descriptors[key]!
 			if (!('value' in descriptor)) fail(`${label}.${key} must be a data property`)
-			if (descriptor.value === undefined) fail(`${label}.${key} is not portable data`)
-			defineRecordField(
-				out,
-				key,
-				clonePortable(descriptor.value, `${label}.${key}`, ancestors, depth + 1, budget),
+			if (!descriptor.enumerable) fail(`${label}.${key} must be enumerable`)
+			const value = visitPortable(
+				descriptor.value,
+				isArray ? `${label}[${key}]` : `${label}.${key}`,
+				ancestors,
+				depth + 1,
+				budget,
+				copy,
+				rejectReservedFields,
 			)
+			if (out) defineRecordField(out as Record<string, unknown>, key, value)
 		}
-		return Object.freeze(out) as RuntimeJsonObject
+		return (out ? Object.freeze(out) : input) as RuntimeJsonValue
 	} finally {
 		ancestors.delete(input)
 	}

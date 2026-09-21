@@ -36,7 +36,7 @@ export type PackageManagerSnapshot = Readonly<{
 }>
 
 export interface PackageManagerApi extends RpcTarget {
-	snapshot(): Promise<PackageManagerSnapshot>
-	install(specs: readonly string[]): Promise<PackageMutationResult>
-	remove(names: readonly string[]): Promise<PackageMutationResult>
+	snapshotDto(): Promise<PackageManagerSnapshot>
+	installDto(specs: readonly string[]): Promise<PackageMutationResult>
+	removeDto(names: readonly string[]): Promise<PackageMutationResult>
 }

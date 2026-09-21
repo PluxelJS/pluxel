@@ -176,9 +176,9 @@ export type WorkbenchContentObserver = (
 ) => void | Promise<void>
 
 export interface WorkbenchContentRoot extends RpcTarget {
-	subscribe(observer: WorkbenchContentObserver): Promise<WorkbenchContentDataOutcome>
-	load(): Promise<WorkbenchContentLoadOutcome>
-	run(actionKey: string, rawInput?: unknown): Promise<WorkbenchContentRunOutcome>
+	subscribeDto(observer: WorkbenchContentObserver): Promise<WorkbenchContentDataOutcome>
+	loadDto(): Promise<WorkbenchContentLoadOutcome>
+	runDto(actionKey: string, rawInput?: unknown): Promise<WorkbenchContentRunOutcome>
 }
 
 type WorkbenchOpenedContentBase = Readonly<{
@@ -211,6 +211,6 @@ export type WorkbenchOpenEntryResult =
 	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
 
 export interface WorkbenchSessionApi extends RpcTarget {
-	layout(input: WorkbenchLayoutInput): WorkbenchLayout
+	layoutDto(input: WorkbenchLayoutInput): WorkbenchLayout
 	openEntry(input: WorkbenchOpenEntryInput): Promise<WorkbenchOpenEntryResult>
 }

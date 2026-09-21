@@ -44,7 +44,7 @@ service 每次操作读取文件文本，文本未变不重复 parse。读写在
 
 ## Management protocol
 
-Protocol major 6：
+Protocol major 7：
 
 - `catalog.snapshot()` 返回一次 pinned catalog 的 plugins/summary 和当前解析的 sections。
 - `catalog.updateLayout({ sections })` 提交完整人工布局；section 包含 `sectionId/name/nodes`，允许创建、改名和删除。

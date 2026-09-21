@@ -17,6 +17,8 @@ import type {
 	WorkbenchContentRuntimeBinding,
 } from './WorkbenchContentPresentation.ts'
 
+const ATTACH = Symbol('pluxel.workbench.content.attach')
+
 const OBSERVER_DEADLINE_MS = 10_000
 const MAX_ACTION_MESSAGE = 1_024
 const MAX_VALIDATION_ISSUES = 64
@@ -33,7 +35,7 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 	readonly dataChanged = (): void => {
 		if (!this.active || this.contract.data.size === 0) return
 		this.dirty = true
-		this.advance()
+		this.#advance()
 	}
 
 	private binding?: WorkbenchContentRuntimeBinding
@@ -55,17 +57,17 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 		super()
 	}
 
-	attach(binding: WorkbenchContentRuntimeBinding): void {
+	[ATTACH](binding: WorkbenchContentRuntimeBinding): void {
 		if (!this.active || this.binding) {
 			throw new Error('[workbench] Content root cannot attach its binding')
 		}
 		this.binding = binding
 	}
 
-	async subscribe(
+	async subscribeDto(
 		observer: RpcStub<WorkbenchContentObserver>,
 	): Promise<WorkbenchContentDataOutcome> {
-		this.assertActive()
+		this.#assertActive()
 		if (this.contract.data.size === 0) {
 			throw new TypeError('[workbench] action-only Content cannot subscribe')
 		}
@@ -78,28 +80,28 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 		}
 		this.observer = observer.dup()
 		this.subscribed = true
-		return await this.browserRequest<WorkbenchContentDataOutcome>(
-			() => this.loadData(),
-			() => this.failedData(),
-			() => this.failedData(),
+		return await this.#browserRequest<WorkbenchContentDataOutcome>(
+			() => this.#loadData(),
+			() => this.#failedData(),
+			() => this.#failedData(),
 		)
 	}
 
-	async load(): Promise<WorkbenchContentLoadOutcome> {
-		if (!this.canReadData()) return this.failedData()
-		return await this.browserRequest<WorkbenchContentLoadOutcome>(
-			() => this.loadData(),
+	async loadDto(): Promise<WorkbenchContentLoadOutcome> {
+		if (!this.#canReadData()) return this.#failedData()
+		return await this.#browserRequest<WorkbenchContentLoadOutcome>(
+			() => this.#loadData(),
 			() => Object.freeze({ ok: false as const, code: 'busy' as const }),
-			() => this.failedData(),
+			() => this.#failedData(),
 		)
 	}
 
-	async run(actionKey: string, rawInput?: unknown): Promise<WorkbenchContentRunOutcome> {
+	async runDto(actionKey: string, rawInput?: unknown): Promise<WorkbenchContentRunOutcome> {
 		if (!this.active || (this.contract.data.size > 0 && !this.subscribed)) {
 			return runFailure('invalid_input')
 		}
-		return await this.browserRequest(
-			() => this.runAction(actionKey, rawInput),
+		return await this.#browserRequest(
+			() => this.#runAction(actionKey, rawInput),
 			() => runFailure('busy'),
 			() => runFailure('action_failed'),
 		)
@@ -121,10 +123,7 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 		if (pending) pending.resolve(pending.closed())
 	}
 
-	private async runAction(
-		actionKey: string,
-		rawInput: unknown,
-	): Promise<WorkbenchContentRunOutcome> {
+	async #runAction(actionKey: string, rawInput: unknown): Promise<WorkbenchContentRunOutcome> {
 		const action =
 			typeof actionKey === 'string' && actionKey.length <= 128
 				? this.contract.actions.get(actionKey)
@@ -169,11 +168,11 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 			actionOutcome = Object.freeze({ ok: false, code: 'action_failed' })
 		}
 
-		const data = this.contract.data.size === 0 ? null : await this.loadData()
+		const data = this.contract.data.size === 0 ? null : await this.#loadData()
 		return Object.freeze({ action: actionOutcome, data })
 	}
 
-	private async loadData(): Promise<WorkbenchContentDataOutcome> {
+	async #loadData(): Promise<WorkbenchContentDataOutcome> {
 		const sequence = ++this.sequence
 		this.dirty = false
 		try {
@@ -206,7 +205,7 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 		}
 	}
 
-	private failedData(): WorkbenchContentDataOutcome {
+	#failedData(): WorkbenchContentDataOutcome {
 		return Object.freeze({
 			sequence: ++this.sequence,
 			ok: false as const,
@@ -214,16 +213,16 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 		})
 	}
 
-	private canReadData(): boolean {
+	#canReadData(): boolean {
 		return this.active && this.contract.data.size > 0 && this.subscribed
 	}
 
-	private assertActive(): void {
+	#assertActive(): void {
 		if (!this.active) throw new Error('[workbench] Content root is closed')
 		if (!this.binding) throw new Error('[workbench] Content root is not active')
 	}
 
-	private browserRequest<T>(run: () => Promise<T>, busy: () => T, closed: () => T): Promise<T> {
+	#browserRequest<T>(run: () => Promise<T>, busy: () => T, closed: () => T): Promise<T> {
 		if (!this.active) return Promise.resolve(closed())
 		if (this.running === 'browser' || this.pendingBrowser) return Promise.resolve(busy())
 		return new Promise<T>((resolve) => {
@@ -233,11 +232,11 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 				resolve: (value) => resolve(value as T),
 			}
 			if (this.running === 'background') this.pendingBrowser = request
-			else this.startBrowser(request)
+			else this.#startBrowser(request)
 		})
 	}
 
-	private startBrowser(request: PendingBrowserRequest): void {
+	#startBrowser(request: PendingBrowserRequest): void {
 		this.running = 'browser'
 		this.runningBrowser = request
 		void request
@@ -246,16 +245,16 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 			.finally(() => {
 				if (this.runningBrowser === request) this.runningBrowser = undefined
 				this.running = null
-				this.advance()
+				this.#advance()
 			})
 	}
 
-	private advance(): void {
+	#advance(): void {
 		if (!this.active || this.running) return
 		const request = this.pendingBrowser
 		if (request) {
 			this.pendingBrowser = undefined
-			this.startBrowser(request)
+			this.#startBrowser(request)
 			return
 		}
 		if (
@@ -271,33 +270,33 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 		queueMicrotask(() => {
 			this.backgroundScheduled = false
 			if (!this.active || this.running) {
-				this.advance()
+				this.#advance()
 				return
 			}
 			if (!this.dirty || !this.observer || !this.binding) return
 			this.running = 'background'
-			void this.pushLatest().finally(() => {
+			void this.#pushLatest().finally(() => {
 				this.running = null
-				this.advance()
+				this.#advance()
 			})
 		})
 	}
 
-	private async pushLatest(): Promise<void> {
-		const outcome = await this.loadData()
+	async #pushLatest(): Promise<void> {
+		const outcome = await this.#loadData()
 		if (!this.active || !this.observer) return
 		let result: ReturnType<RpcStub<WorkbenchContentObserver>> | undefined
 		try {
 			result = this.observer(outcome)
 			await waitForObserver(result)
 		} catch (error) {
-			this.closeAfterObserverFailure(error)
+			this.#closeAfterObserverFailure(error)
 		} finally {
 			result?.[Symbol.dispose]()
 		}
 	}
 
-	private closeAfterObserverFailure(reason: unknown): void {
+	#closeAfterObserverFailure(reason: unknown): void {
 		try {
 			this.onFatalClose?.(reason)
 		} finally {
@@ -413,4 +412,12 @@ async function waitForObserver(result: PromiseLike<unknown>): Promise<void> {
 	} finally {
 		if (timer !== undefined) clearTimeout(timer)
 	}
+}
+
+/** Host-only binding; symbol methods are not part of the remotely callable string surface. */
+export function attachWorkbenchContentTarget(
+	target: WorkbenchContentTarget,
+	binding: WorkbenchContentRuntimeBinding,
+): void {
+	target[ATTACH](binding)
 }

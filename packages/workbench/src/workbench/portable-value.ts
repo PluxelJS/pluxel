@@ -1,4 +1,4 @@
-import type { RpcPromise } from 'capnweb'
+import { RpcPromise, RpcStub } from 'capnweb'
 
 const MAX_TREE_DEPTH = 64
 const MAX_ARRAY_ITEMS = 10_000
@@ -18,15 +18,15 @@ export type WorkbenchPortableValue =
 	| readonly WorkbenchPortableValue[]
 	| { readonly [key: string]: WorkbenchPortableValue }
 
-export type WorkbenchDetached<Value> = Value extends null | boolean | number | string
+export type WorkbenchSnapshot<Value> = Value extends null | boolean | number | string
 	? Value
 	: Value extends readonly unknown[]
-		? { readonly [Index in keyof Value]: WorkbenchDetached<Value[Index]> }
+		? { readonly [Index in keyof Value]: WorkbenchSnapshot<Value[Index]> }
 		: Value extends object
 			? {
 					readonly [
 						Key in keyof Value as Key extends typeof Symbol.dispose ? never : Key
-					]: WorkbenchDetached<Value[Key]>
+					]: WorkbenchSnapshot<Value[Key]>
 				}
 			: never
 
@@ -60,32 +60,46 @@ export class WorkbenchPortableValueError extends TypeError {
 	}
 }
 
-/**
- * Copies one Workbench RPC DTO into a deeply frozen portable-data tree and releases the awaited
- * top-level Cap'n Web result that owned it. This validates portability, not a domain schema.
- */
-export function detachWorkbenchPortableValue<Input extends PromiseLike<unknown>>(
-	input: Input,
-	label?: string,
-): Promise<WorkbenchDetached<WorkbenchResolvedPortableValue<Input>>>
-export function detachWorkbenchPortableValue<Value>(
-	input: Value,
-	label?: string,
-): WorkbenchDetached<Value>
-export function detachWorkbenchPortableValue<Value>(
-	input: Value | PromiseLike<Value>,
-	label = 'Workbench RPC result',
-): WorkbenchDetached<Value> | Promise<WorkbenchDetached<Value>> {
-	if (isPromiseLike(input)) {
-		return Promise.resolve(input).then((value) => detachResolvedWorkbenchValue(value, label))
+/** Validate a producer-owned DTO without copying, freezing, disposing, or changing its identity. */
+export function assertWorkbenchDto(
+	value: unknown,
+	label = 'Workbench DTO',
+): asserts value is WorkbenchPortableValue {
+	try {
+		validatePortable(value, new Set(), 0, { nodes: 0, text: 0 })
+	} catch (error) {
+		throw portableError(
+			error instanceof WorkbenchPortableValueError ? error.code : 'WORKBENCH_NON_PORTABLE_VALUE',
+			readBoundedLabel(label),
+		)
 	}
-	return detachResolvedWorkbenchValue(input, label)
 }
 
-function detachResolvedWorkbenchValue<Value>(
+/**
+ * Consumes a value or awaited RPC result, validates and freezes its data tree in place, and releases
+ * its top-level transport owner. The caller transfers the entire tree: do not pass borrowed mutable
+ * state. Returns the same object, without transport metadata. This validates portability, not a
+ * domain schema. Consumption also applies on failure; callers must not reuse the input.
+ */
+export function consumeWorkbenchValue<Input extends PromiseLike<unknown>>(
+	input: Input,
+	label?: string,
+): Promise<WorkbenchSnapshot<WorkbenchResolvedPortableValue<Input>>>
+export function consumeWorkbenchValue<Value>(input: Value, label?: string): WorkbenchSnapshot<Value>
+export function consumeWorkbenchValue<Value>(
+	input: Value | PromiseLike<Value>,
+	label = 'Workbench RPC result',
+): WorkbenchSnapshot<Value> | Promise<WorkbenchSnapshot<Value>> {
+	if (isPromiseLike(input)) {
+		return Promise.resolve(input).then((value) => consumeResolvedWorkbenchValue(value, label))
+	}
+	return consumeResolvedWorkbenchValue(input, label)
+}
+
+function consumeResolvedWorkbenchValue<Value>(
 	input: Value,
 	label: string,
-): WorkbenchDetached<Value> {
+): WorkbenchSnapshot<Value> {
 	const boundedLabel = readBoundedLabel(label)
 	let dispose: (() => void) | undefined
 	try {
@@ -94,10 +108,14 @@ function detachResolvedWorkbenchValue<Value>(
 		throw portableError('WORKBENCH_NON_PORTABLE_VALUE', boundedLabel)
 	}
 
-	let output: WorkbenchPortableValue | undefined
+	const objects: object[] = []
 	let validationFailure: WorkbenchPortableValueError | undefined
 	try {
-		output = clonePortable(input, new Set(), 0, { nodes: 0, text: 0 }, dispose !== undefined)
+		validatePortable(input, new Set(), 0, { nodes: 0, text: 0 }, objects, dispose !== undefined)
+		if (dispose && !Reflect.deleteProperty(input as object, Symbol.dispose)) {
+			fail('WORKBENCH_NON_PORTABLE_VALUE')
+		}
+		for (const object of objects) Object.freeze(object)
 	} catch (error) {
 		validationFailure =
 			error instanceof WorkbenchPortableValueError
@@ -127,99 +145,67 @@ function detachResolvedWorkbenchValue<Value>(
 			cause: disposeFailure,
 		})
 	}
-	return output as WorkbenchDetached<Value>
+	return input as WorkbenchSnapshot<Value>
 }
 
-function clonePortable(
+function validatePortable(
 	input: unknown,
 	ancestors: Set<object>,
 	depth: number,
 	budget: PortableBudget,
+	objects?: object[],
 	ignoreTopLevelDisposer = false,
-): WorkbenchPortableValue {
+): void {
 	if (++budget.nodes > MAX_TOTAL_NODES) fail('WORKBENCH_PORTABLE_VALUE_TOO_LARGE')
 	if (depth > MAX_TREE_DEPTH) fail('WORKBENCH_PORTABLE_VALUE_TOO_DEEP')
 	if (typeof input === 'string') {
 		consumeText(input, budget)
-		return input
+		return
 	}
-	if (input === null) return null
-	if (typeof input === 'boolean') return input
+	if (input === null || typeof input === 'boolean') return
 	if (typeof input === 'number') {
 		if (!Number.isFinite(input)) fail('WORKBENCH_NON_PORTABLE_VALUE')
-		return input
+		return
 	}
-	if (typeof input !== 'object') fail('WORKBENCH_NON_PORTABLE_VALUE')
-	if (ancestors.has(input)) fail('WORKBENCH_NON_PORTABLE_VALUE')
+	if (typeof input !== 'object' || ancestors.has(input)) fail('WORKBENCH_NON_PORTABLE_VALUE')
 
-	ancestors.add(input)
-	try {
-		if (Array.isArray(input)) {
-			return clonePortableArray(input, ancestors, depth, budget, ignoreTopLevelDisposer)
-		}
-		return clonePortableObject(input, ancestors, depth, budget, ignoreTopLevelDisposer)
-	} finally {
-		ancestors.delete(input)
-	}
-}
-
-function clonePortableArray(
-	input: readonly unknown[],
-	ancestors: Set<object>,
-	depth: number,
-	budget: PortableBudget,
-	ignoreTopLevelDisposer: boolean,
-): readonly WorkbenchPortableValue[] {
-	if (Object.getPrototypeOf(input) !== Array.prototype) fail('WORKBENCH_NON_PORTABLE_VALUE')
-	if (input.length > MAX_ARRAY_ITEMS) fail('WORKBENCH_PORTABLE_VALUE_TOO_LARGE')
-	assertPortableSymbols(input, ignoreTopLevelDisposer)
-	const descriptors = Object.getOwnPropertyDescriptors(input)
-	for (const key of Object.keys(descriptors)) {
-		if (key !== 'length' && !isArrayIndex(key, input.length)) {
-			fail('WORKBENCH_NON_PORTABLE_VALUE')
-		}
-	}
-
-	const output: WorkbenchPortableValue[] = []
-	for (let index = 0; index < input.length; index += 1) {
-		const descriptor = descriptors[index]
-		if (!descriptor || !('value' in descriptor) || descriptor.value === undefined) {
-			fail('WORKBENCH_NON_PORTABLE_VALUE')
-		}
-		output.push(clonePortable(descriptor.value, ancestors, depth + 1, budget))
-	}
-	return Object.freeze(output)
-}
-
-function clonePortableObject(
-	input: object,
-	ancestors: Set<object>,
-	depth: number,
-	budget: PortableBudget,
-	ignoreTopLevelDisposer: boolean,
-): Readonly<Record<string, WorkbenchPortableValue>> {
+	const array = Array.isArray(input)
 	const prototype = Object.getPrototypeOf(input)
-	if (prototype !== Object.prototype && prototype !== null) {
+	if (
+		array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null
+	) {
 		fail('WORKBENCH_NON_PORTABLE_VALUE')
 	}
 	assertPortableSymbols(input, ignoreTopLevelDisposer)
-	const descriptors = Object.entries(Object.getOwnPropertyDescriptors(input))
-	if (descriptors.length > MAX_OBJECT_FIELDS) fail('WORKBENCH_PORTABLE_VALUE_TOO_LARGE')
-
-	const output: Record<string, WorkbenchPortableValue> = {}
-	for (const [key, descriptor] of descriptors) {
-		consumeText(key, budget)
-		if (!('value' in descriptor) || descriptor.value === undefined) {
+	const descriptors = Object.getOwnPropertyDescriptors(input)
+	const keys = Object.keys(descriptors)
+	if (array) {
+		if (input.length > MAX_ARRAY_ITEMS) fail('WORKBENCH_PORTABLE_VALUE_TOO_LARGE')
+		if (
+			keys.length !== input.length + 1 ||
+			keys.some((key) => key !== 'length' && !isArrayIndex(key, input.length))
+		) {
 			fail('WORKBENCH_NON_PORTABLE_VALUE')
 		}
-		Object.defineProperty(output, key, {
-			value: clonePortable(descriptor.value, ancestors, depth + 1, budget),
-			enumerable: true,
-			configurable: true,
-			writable: true,
-		})
+	} else if (keys.length > MAX_OBJECT_FIELDS) {
+		fail('WORKBENCH_PORTABLE_VALUE_TOO_LARGE')
 	}
-	return Object.freeze(output)
+
+	ancestors.add(input)
+	try {
+		for (const key of keys) {
+			if (array && key === 'length') continue
+			if (!array) consumeText(key, budget)
+			const descriptor = descriptors[key]!
+			if (!('value' in descriptor) || descriptor.value === undefined || !descriptor.enumerable) {
+				fail('WORKBENCH_NON_PORTABLE_VALUE')
+			}
+			validatePortable(descriptor.value, ancestors, depth + 1, budget, objects)
+		}
+		objects?.push(input)
+	} finally {
+		ancestors.delete(input)
+	}
 }
 
 function assertPortableSymbols(input: object, ignoreTopLevelDisposer: boolean): void {
@@ -230,6 +216,7 @@ function assertPortableSymbols(input: object, ignoreTopLevelDisposer: boolean): 
 }
 
 function readOwnTransportDisposer(input: unknown): (() => void) | undefined {
+	if (input instanceof RpcStub) return input[Symbol.dispose]
 	if ((typeof input !== 'object' && typeof input !== 'function') || input === null) {
 		return undefined
 	}
@@ -252,11 +239,18 @@ function isArrayIndex(key: string, length: number): boolean {
 }
 
 function isPromiseLike(input: unknown): input is PromiseLike<unknown> {
-	return (
-		input !== null &&
-		(typeof input === 'object' || typeof input === 'function') &&
-		typeof (input as { then?: unknown }).then === 'function'
-	)
+	if (input instanceof RpcPromise) return true
+	if (input === null || (typeof input !== 'object' && typeof input !== 'function')) return false
+	// Read ordinary thenables without executing an untrusted accessor before portable validation.
+	for (
+		let current: object | null = input;
+		current !== null;
+		current = Object.getPrototypeOf(current)
+	) {
+		const descriptor = Object.getOwnPropertyDescriptor(current, 'then')
+		if (descriptor) return 'value' in descriptor && typeof descriptor.value === 'function'
+	}
+	return false
 }
 
 function readBoundedLabel(input: string): string {
@@ -271,12 +265,12 @@ function portableError(
 ): WorkbenchPortableValueError {
 	const message =
 		code === 'WORKBENCH_NON_PORTABLE_VALUE'
-			? `[workbench/client] ${label} contains non-portable data`
+			? `[workbench] ${label} contains non-portable data`
 			: code === 'WORKBENCH_PORTABLE_VALUE_TOO_DEEP'
-				? `[workbench/client] ${label} exceeds the portable data nesting limit`
+				? `[workbench] ${label} exceeds the portable data nesting limit`
 				: code === 'WORKBENCH_PORTABLE_VALUE_TOO_LARGE'
-					? `[workbench/client] ${label} exceeds the portable data size limit`
-					: `[workbench/client] ${label} transport disposer failed`
+					? `[workbench] ${label} exceeds the portable data size limit`
+					: `[workbench] ${label} transport disposer failed`
 	return options === undefined
 		? new WorkbenchPortableValueError(code, message)
 		: new WorkbenchPortableValueError(code, message, options)

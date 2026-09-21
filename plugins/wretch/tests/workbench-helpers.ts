@@ -1,5 +1,5 @@
 import type { PluginConstructor } from '@pluxel/core'
-import type { WorkbenchTestHost } from '@pluxel/workbench/test'
+import type { WorkbenchTestHost } from '@pluxel/services/test'
 import type { RpcStub } from 'capnweb'
 import type { WorkbenchAttachmentPlacement } from '@pluxel/workbench'
 import type { WorkbenchFederatedViewRef } from '@pluxel/workbench/client'

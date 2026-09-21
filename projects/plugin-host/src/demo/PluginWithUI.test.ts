@@ -1,4 +1,4 @@
-import { createWorkbenchTestHost } from '@pluxel/workbench/test'
+import { createWorkbenchTestHost } from '@pluxel/services/test'
 import { describe, expect, it, vi } from 'vitest'
 import { PluginWithUI } from './PluginWithUI'
 import { PluginWithUIWorkbench } from './PluginWithUI.workbench'

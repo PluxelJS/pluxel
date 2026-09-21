@@ -9,7 +9,7 @@ description: 从一个可读取、可刷新的页面开始，再按需添加分�
 Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使用 `height: 100%` 填满可用高度，
 并自行管理内容滚动；Pane Kit 根据该窗格的实际宽度调整分栏。
 
-开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为四份文件：页面声明、服务端实现、查询声明和 React 入口。
+开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为五份文件：页面声明、服务端实现、查询声明、React 入口和页面组件。
 `RpcTarget` 是可以由页面调用的服务端对象；`scope` 将 React 组件与它对应的页面 API 关联。
 
 ## 默认路径：snapshot + mutation
@@ -26,7 +26,7 @@ export type OrdersSnapshot = Readonly<{
 }>
 
 export interface OrdersApi extends RpcTarget {
-	snapshot(): Promise<OrdersSnapshot>
+	snapshotDto(): Promise<OrdersSnapshot>
 	refresh(): Promise<void>
 }
 
@@ -46,7 +46,8 @@ Definition 是固定 flat record。entry key 是稳定 declaration identity；`w
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
-import { OrdersWorkbench, type OrdersApi } from './workbench.ts'
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
+import { OrdersWorkbench, type OrdersApi, type OrdersSnapshot } from './workbench.ts'
 
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
@@ -71,10 +72,12 @@ class OrdersTarget extends RpcTarget implements OrdersApi {
 	constructor(private readonly orders: OrdersPlugin) {
 		super()
 	}
-	snapshot() {
-		return this.orders.snapshot()
+	async snapshotDto(): Promise<OrdersSnapshot> {
+		const dto = await this.orders.snapshot()
+		assertWorkbenchDto(dto, 'Orders snapshot')
+		return dto
 	}
-	refresh() {
+	refresh(): Promise<void> {
 		return this.orders.refresh()
 	}
 }
@@ -102,7 +105,7 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 export const ordersQuery = overviewScope.query(({ api }) => ({
 	queryKey: ['orders', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 }))
 
 export const refreshOrders = overviewScope.mutation(({ api }) => ({
@@ -131,18 +134,35 @@ export function OrdersPage() {
 	const refresh = refreshOrders.useMutation()
 
 	if (orders.status === 'pending') return <p>Loading…</p>
-	if (orders.status === 'error' && orders.data === undefined) return <p>Unavailable</p>
+	if (orders.status === 'error' && orders.data === undefined) {
+		return (
+			<button
+				type="button"
+				onClick={() => {
+					void orders.refetch().catch(() => {})
+				}}
+			>
+				读取失败，点击重试
+			</button>
+		)
+	}
 
 	return (
-		<button disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-			Refresh {orders.data.openOrders} orders (revision {orders.data.revision})
-		</button>
+		<>
+			{orders.status === 'error' && <p role="alert">刷新读取失败，当前显示最近一次成功的数据。</p>}
+			{refresh.status === 'error' && <p role="alert">操作失败，请重试。</p>}
+			<button type="button" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+				Refresh {orders.data.openOrders} orders (revision {orders.data.revision})
+			</button>
+		</>
 	)
 }
 ```
 
 每次 Bridge mount 都有独立 renderer owner 和 private `QueryClient`；不同 open、principal、params 或 Plugin generation
 不共享 query、mutation、cache 或 subscription。
+
+`mutate()` 将失败交给 mutation state；显式 `refetch()` 返回的 Promise 需要处理 rejection，错误同时保留在 query state 中。
 
 ## 必须遵守的 renderer scope 边界
 
@@ -174,7 +194,8 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 ## 页面 API 与宿主边界
 
-- 返回 bounded immutable snapshot；大列表使用 cursor/limit。
+- 纯数据 RPC 方法使用 `*Dto` 后缀和显式返回类型，返回前用 `assertWorkbenchDto()` 校验可传输性；大列表使用 cursor/limit。
+- DTO 生产、输入校验与授权规则见 [API 契约](../api/contracts.md#rpc-方法名表达返回值所有权)。
 - mutation 只有页面需要 result 时才返回 DTO；否则返回 `void`，用 subscription 或 typed invalidation 刷新。
 - API 不返回 Plugin、Context、database handle、native object、raw socket 或 Shell service。
 - `host` 只提供 locale、color scheme、notify/confirm、relative navigation 和 parameterized document facade。
@@ -243,9 +264,9 @@ Pane Kit 的三段语义固定为 `navigation | primary | inspector`：两侧可
 打开为 drawer；中间控件用于聚焦 primary 并恢复先前两侧。`primary` 始终可见，不能被隐藏。官方插件详情页中的
 plugin rail、辅助栏和底部 dock 属于另一套宿主私有布局，不应被 View 当作 Pane Kit role 或自行复制其 chrome。
 
-## 完整 View 参考：server push 与 custom callback
+## 完整 View 参考：订阅后台变化
 
-下面的例子刻意包含 `watch()` 和 server-side callback target，用于说明跨调用 observer 的 ownership。它不是普通
+下面的例子通过 `watch()` 和 `createWorkbenchWatch()` 将领域变更通知接入页面。它不是普通
 snapshot + mutation 页面的起点；没有已证实的实时更新需求时，使用[本页的默认路径](#默认路径snapshot--mutation)。
 
 ### 1. 声明 API 和 View
@@ -266,8 +287,8 @@ export interface OrdersObserver {
 }
 
 export interface OrdersApi extends RpcTarget {
-	snapshot(): OrdersSnapshot
-	refresh(): OrdersSnapshot
+	snapshotDto(): OrdersSnapshot
+	refreshDto(): OrdersSnapshot
 	watch(observer: OrdersObserver): RpcTarget
 }
 
@@ -288,8 +309,14 @@ Definition 必须是固定的 flat record。Entry key 是稳定 declaration iden
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { RpcTarget, type RpcStub } from 'capnweb'
-import { OrdersWorkbench, type OrdersApi, type OrdersObserver } from './workbench.js'
+import { RpcTarget } from 'capnweb'
+import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
+import {
+	OrdersWorkbench,
+	type OrdersApi,
+	type OrdersObserver,
+	type OrdersSnapshot,
+} from './workbench.js'
 
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
@@ -315,7 +342,11 @@ export class OrdersPlugin extends BasePlugin {
 
 	subscribe(listener: (revision: number) => void) {
 		this.listeners.add(listener)
-		return () => this.listeners.delete(listener)
+		return {
+			[Symbol.dispose]: () => {
+				this.listeners.delete(listener)
+			},
+		}
 	}
 }
 
@@ -327,56 +358,24 @@ class OrdersTarget extends RpcTarget implements OrdersApi {
 		super()
 	}
 
-	snapshot() {
-		return this.plugin.snapshot()
+	snapshotDto(): OrdersSnapshot {
+		const dto = this.plugin.snapshot()
+		assertWorkbenchDto(dto, 'Orders snapshot')
+		return dto
 	}
 
-	refresh() {
-		return this.plugin.refresh()
+	refreshDto(): OrdersSnapshot {
+		const dto = this.plugin.refresh()
+		assertWorkbenchDto(dto, 'Orders refresh receipt')
+		return dto
 	}
 
 	watch(observer: OrdersObserver) {
-		return new OrdersSubscription(this.plugin, observer as RpcStub<OrdersObserver>, this.signal)
-	}
-}
-
-class OrdersSubscription extends RpcTarget {
-	readonly #observer: RpcStub<OrdersObserver>
-	readonly #unsubscribe: () => void
-	readonly #signal: AbortSignal
-	readonly #onAbort = () => this[Symbol.dispose]()
-	#active = true
-
-	constructor(plugin: OrdersPlugin, observer: RpcStub<OrdersObserver>, signal: AbortSignal) {
-		super()
-		this.#observer = observer.dup()
-		this.#unsubscribe = plugin.subscribe((revision) => {
-			try {
-				const result = this.#observer(revision)
-				void (async () => {
-					try {
-						await result
-					} catch {
-						this[Symbol.dispose]()
-					} finally {
-						result[Symbol.dispose]()
-					}
-				})()
-			} catch {
-				this[Symbol.dispose]()
-			}
+		return createWorkbenchWatch({
+			observer,
+			signal: this.signal,
+			subscribe: (notify) => this.plugin.subscribe(notify),
 		})
-		this.#signal = signal
-		if (signal.aborted) this[Symbol.dispose]()
-		else signal.addEventListener('abort', this.#onAbort, { once: true })
-	}
-
-	[Symbol.dispose]() {
-		if (!this.#active) return
-		this.#active = false
-		this.#signal.removeEventListener('abort', this.#onAbort)
-		this.#unsubscribe()
-		this.#observer[Symbol.dispose]()
 	}
 }
 ```
@@ -384,8 +383,7 @@ class OrdersSubscription extends RpcTarget {
 每次打开 View 都会调用 factory，所以必须返回新的 `RpcTarget`。`principal`、server-matched `params` 和
 `signal` 都在 factory context 中；按用户授权或按 route 打开对象时就在这里 admission。
 
-`OrdersSubscription` 对需要跨调用保留的 observer 调用 `dup()`，在每次 callback settle 后释放 invocation result，并在自己的
-`[Symbol.dispose]()` 中 unsubscribe 和释放 observer。这样 View close、socket close 和 Plugin replacement 都走同一清理路径。
+`createWorkbenchWatch()` 负责保留和释放 observer、清理 callback result，并在取消订阅、open signal abort 或 callback 失败时退订本地源。插件只实现自己的 `subscribe()`，无需另写订阅 target。它用于最新状态失效通知：同时最多一个 callback 在途，期间发生的通知只保留最后一个 revision；需要保留每条事件的日志或进度流仍使用自己的领域协议。完整生命周期见[页面资源](./renderer-resources.md#服务端最新状态通知)。
 
 Bindings 必须与 definition 的 key 完全一致。一个 Plugin generation 只调用一次 `publish()`；`PluginPart` 把 UI
 需求交给 owning Plugin 聚合。
@@ -404,21 +402,21 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 export const ordersQuery = overviewScope.query(({ api }) => ({
 	queryKey: ['orders', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 	workbench: {
 		subscribe: ({ invalidate }) => api.watch(invalidate),
 	},
 }))
 
 export const refreshOrders = overviewScope.mutation(({ api }) => ({
-	mutationFn: () => api.refresh(),
+	mutationFn: () => api.refreshDto(),
 }))
 ```
 
 Renderer-specific scope module 优先与 descriptor entry 同名：`overview` 使用 `overview.scope.ts`，scope symbol 使用
 `overviewScope`。这样 entry、scope 与 build error 能直接互相定位；resource 则继续使用领域名称。
 
-这里 `api.refresh()` 提交后会通过领域 `watch()` 推送 subscription 通知，所以 mutation 不再重复声明
+这里 `api.refreshDto()` 提交后会通过领域 `watch()` 推送 subscription 通知，所以 mutation 不再重复声明
 `workbench.invalidates`。如果 query 没有 subscription，或该 contract 不覆盖这项写操作，再由 mutation 显式声明
 invalidation；不要为同一次提交同时建立两条刷新路径。
 

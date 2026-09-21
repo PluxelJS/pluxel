@@ -45,45 +45,49 @@ export type RuntimeLogObserver = (event: unknown) => Promise<void>
 /** Disposal is the only cancellation operation for a live Management subscription. */
 export interface RuntimeSubscriptionTarget extends RpcTarget {}
 
-/** Authenticated, connection-bound Management capability for the current protocol major. */
+/**
+ * Authenticated, connection-bound Management capability for the current protocol major.
+ * Every *Dto method returns a validated portable snapshot without nested capabilities.
+ * Subscription methods return owned resources and deliberately have no Dto suffix.
+ */
 export interface RuntimeManagementTarget extends RpcTarget {
-	describe: () => RuntimeMeta | Promise<RuntimeMeta>
-	runtimeUpdate: () => RuntimeUpdateSnapshot | null
+	describeDto: () => RuntimeMeta | Promise<RuntimeMeta>
+	runtimeUpdateDto: () => RuntimeUpdateSnapshot | null
 	followRuntimeUpdates: (
 		observer: (snapshot: unknown) => Promise<void>,
 	) => RuntimeSubscriptionTarget
-	pluginCatalog: () => Promise<PluginCatalogSnapshot>
-	updatePluginCatalogLayout: (
+	pluginCatalogDto: () => Promise<PluginCatalogSnapshot>
+	updatePluginCatalogLayoutDto: (
 		input: PluginCatalogLayoutInput,
 	) => Promise<PluginCatalogLayoutMutationResult>
-	pluginStatus: (owner: PluginNodeAddress) => Promise<PluginStatusQueryResult>
-	pluginConfigPresentation: (owner: PluginNodeAddress) => Promise<ConfigPresentationResult>
-	pluginConfig: (owner: PluginNodeAddress) => Promise<ConfigResult>
-	patchPluginConfig: (
+	pluginStatusDto: (owner: PluginNodeAddress) => Promise<PluginStatusQueryResult>
+	pluginConfigPresentationDto: (owner: PluginNodeAddress) => Promise<ConfigPresentationResult>
+	pluginConfigDto: (owner: PluginNodeAddress) => Promise<ConfigResult>
+	patchPluginConfigDto: (
 		owner: PluginNodeAddress,
 		patch: Record<string, unknown>,
 	) => Promise<ConfigResult>
-	patchPluginConfigField: (
+	patchPluginConfigFieldDto: (
 		owner: PluginNodeAddress,
 		input: ConfigFieldMutation,
 	) => Promise<ConfigResult>
-	pluginDependencyGraph: () => Promise<PluginDependencyGraphSnapshot>
-	inspectPluginConsumerRequirements: (
+	pluginDependencyGraphDto: () => Promise<PluginDependencyGraphSnapshot>
+	inspectPluginConsumerRequirementsDto: (
 		consumer: PluginNodeAddress,
 	) => Promise<PluginConsumerRequirementsInspectionResult>
-	setPluginConsumerOverride: (input: {
+	setPluginConsumerOverrideDto: (input: {
 		consumer: PluginNodeAddress
 		requirement: PluginDefinitionAddress
 		provider: PluginNodeAddress | null
 	}) => Promise<PluginDependencyMutationResult>
-	inspectPluginProviderPolicy: (
+	inspectPluginProviderPolicyDto: (
 		policyOwner: PluginNodeAddress,
 	) => Promise<PluginProviderPolicyInspectionResult>
-	setPluginProviderPolicyDefault: (input: {
+	setPluginProviderPolicyDefaultDto: (input: {
 		policyOwner: PluginNodeAddress
 		provider: PluginNodeAddress | null
 	}) => Promise<PluginDependencyMutationResult>
-	ensurePluginFork: (input: {
+	ensurePluginForkDto: (input: {
 		base: PluginNodeAddress
 		forkId: string
 		autoStart?: boolean
@@ -92,37 +96,37 @@ export interface RuntimeManagementTarget extends RpcTarget {
 			requirement: PluginDefinitionAddress
 		}
 	}) => Promise<EnsureForkResult>
-	removePluginFork: (input: {
+	removePluginForkDto: (input: {
 		base: PluginNodeAddress
 		forkId: string
 	}) => Promise<RemoveForkResult>
-	setPluginAutoStart: (items: PluginAutoStartBatchItem[]) => Promise<PluginControlBatchResult>
-	applyPluginLifecycleCommands: (
+	setPluginAutoStartDto: (items: PluginAutoStartBatchItem[]) => Promise<PluginControlBatchResult>
+	applyPluginLifecycleCommandsDto: (
 		items: PluginLifecycleCommandBatchItem[],
 	) => Promise<PluginControlBatchResult>
 
-	getLogPolicy: LoggingHandleApi['getPolicy']
-	replaceLogPolicy: LoggingHandleApi['replacePolicy']
-	setDefaultLogLevel: LoggingHandleApi['setDefaultLevel']
-	setPluginLogLevel: LoggingHandleApi['setPluginLevel']
-	clearPluginLogLevel: LoggingHandleApi['clearPluginLevel']
-	resetLogPolicy: LoggingHandleApi['resetPolicy']
-	logStreams: () => RuntimeLogStreamsIndex | Promise<RuntimeLogStreamsIndex>
-	logMeta: (streamId: unknown) => LogStreamMeta | Promise<LogStreamMeta>
-	logRange: (streamId: unknown, query: unknown) => LogRangeResult | Promise<LogRangeResult>
+	getLogPolicyDto: LoggingHandleApi['getPolicy']
+	replaceLogPolicyDto: LoggingHandleApi['replacePolicy']
+	setDefaultLogLevelDto: LoggingHandleApi['setDefaultLevel']
+	setPluginLogLevelDto: LoggingHandleApi['setPluginLevel']
+	clearPluginLogLevelDto: LoggingHandleApi['clearPluginLevel']
+	resetLogPolicyDto: LoggingHandleApi['resetPolicy']
+	logStreamsDto: () => RuntimeLogStreamsIndex | Promise<RuntimeLogStreamsIndex>
+	logMetaDto: (streamId: unknown) => LogStreamMeta | Promise<LogStreamMeta>
+	logRangeDto: (streamId: unknown, query: unknown) => LogRangeResult | Promise<LogRangeResult>
 	followLogs: (
 		input: unknown,
 		observer: RuntimeLogObserver,
 	) => RuntimeSubscriptionTarget | Promise<RuntimeSubscriptionTarget>
 
-	securityOverview: () => SecurityOverview | Promise<SecurityOverview>
-	securityEvents: (
+	securityOverviewDto: () => SecurityOverview | Promise<SecurityOverview>
+	securityEventsDto: (
 		limit?: unknown,
 	) => readonly SecurityAuditEvent[] | Promise<readonly SecurityAuditEvent[]>
-	vaultUnlock: () => VaultAdminState | Promise<VaultAdminState>
-	vaultEnsureHostKey: () =>
+	vaultUnlockDto: () => VaultAdminState | Promise<VaultAdminState>
+	vaultEnsureHostKeyDto: () =>
 		| Readonly<{ publicKey: string }>
 		| Promise<Readonly<{ publicKey: string }>>
-	vaultGenerateDeployKey: () => VaultKeyPair | Promise<VaultKeyPair>
-	vaultSetDeployRecipients: (publicKeys: unknown) => VaultAdminState | Promise<VaultAdminState>
+	vaultGenerateDeployKeyDto: () => VaultKeyPair | Promise<VaultKeyPair>
+	vaultSetDeployRecipientsDto: (publicKeys: unknown) => VaultAdminState | Promise<VaultAdminState>
 }

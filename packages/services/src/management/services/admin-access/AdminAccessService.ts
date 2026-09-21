@@ -86,7 +86,8 @@ function statusSnapshot(value: unknown): ManagementAccessProviderStatus {
 	return Object.freeze({ id, label, method: input.method, ready: input.ready })
 }
 
-function providerStepSnapshot(value: unknown): ManagementAuthenticationProviderStep {
+/** @internal Closed data projection shared by provider admission and the RPC producer. */
+export function providerStepSnapshot(value: unknown): ManagementAuthenticationProviderStep {
 	const input = readRecord(value, 'authentication step')
 	switch (input.kind) {
 		case 'challenge': {

@@ -29,7 +29,7 @@ describe('committed Management catalog groups', () => {
 			const registry = requirePluginService(host.ctx)
 			const intern = vi.spyOn(registry, 'internNodeAddress')
 			const target = new RuntimeManagementTargetImpl(host.ctx)
-			const snapshot = parsePluginCatalogSnapshot(await target.pluginCatalog())
+			const snapshot = parsePluginCatalogSnapshot(await target.pluginCatalogDto())
 			expect(intern).not.toHaveBeenCalled()
 			expect(snapshot.summary).toMatchObject({ total: 3, running: 0 })
 			expect(snapshot.sections).toHaveLength(1)
@@ -39,7 +39,7 @@ describe('committed Management catalog groups', () => {
 			})
 			expect(snapshot.sections[0]!.nodes).toContainEqual(pluginNodeAddressOf(Reports))
 			expect(snapshot.sections[0]!.nodes).toContainEqual(pluginNodeAddressOf(Documents))
-			const saved = await target.updatePluginCatalogLayout({
+			const saved = await target.updatePluginCatalogLayoutDto({
 				sections: [
 					{
 						sectionId: 'manual:business',
@@ -53,9 +53,9 @@ describe('committed Management catalog groups', () => {
 				sections: [{ name: '业务', basis: { kind: 'manual' } }],
 			})
 			await expect(
-				target.updatePluginCatalogLayout({ sections: [{ sectionId: 'manual:bad', nodes: [] }] }),
+				target.updatePluginCatalogLayoutDto({ sections: [{ sectionId: 'manual:bad', nodes: [] }] }),
 			).resolves.toMatchObject({ ok: false, code: 'invalid_input' })
-			await expect(target.updatePluginCatalogLayout({ sections: null })).resolves.toEqual({
+			await expect(target.updatePluginCatalogLayoutDto({ sections: null })).resolves.toEqual({
 				ok: true,
 				sections: snapshot.sections,
 			})

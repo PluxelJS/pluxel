@@ -40,9 +40,9 @@ export {
 	type WorkbenchOpenedClientValue,
 } from './opened-entry.ts'
 export {
-	detachWorkbenchPortableValue,
+	consumeWorkbenchValue,
 	WorkbenchPortableValueError,
-	type WorkbenchDetached,
+	type WorkbenchSnapshot,
 	type WorkbenchPortableValue,
 	type WorkbenchPortableValueErrorCode,
 } from './portable-value.ts'
@@ -69,7 +69,7 @@ export async function readWorkbenchLayout(
 	session: RpcStub<WorkbenchSessionApi>,
 	input: WorkbenchLayoutInput,
 ): Promise<WorkbenchLayout> {
-	const result = await session.layout(input)
+	const result = await session.layoutDto(input)
 	try {
 		return parseWorkbenchLayout(result)
 	} finally {
@@ -146,7 +146,7 @@ export type RemoteValueSnapshot<Value> =
 	| Readonly<{ state: 'error'; error: unknown }>
 
 export type RemoteValueOptions<Value> = Readonly<{
-	/** Return a caller-owned local value; dispose any Cap'n Web result after copying its DTO fields. */
+	/** Return an owned local snapshot; consume RPC data with consumeWorkbenchValue before returning. */
 	read(): Value | PromiseLike<Value>
 	subscribe?(invalidate: () => void): Disposable | PromiseLike<Disposable>
 }>

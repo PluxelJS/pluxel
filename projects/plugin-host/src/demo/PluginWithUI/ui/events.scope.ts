@@ -5,7 +5,7 @@ export const eventsScope = createWorkbenchRenderer(PluginWithUIWorkbench.events)
 
 export const eventsSnapshot = eventsScope.query(({ api }) => ({
 	queryKey: ['plugin-with-ui', 'events', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 	workbench: {
 		subscribe: ({ invalidate }) => api.watch(invalidate),
 	},

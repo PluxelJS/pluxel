@@ -315,7 +315,7 @@ describe('Workbench vNext publication', () => {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(ContentPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			expect(layout.entries).toHaveLength(1)
 			const entry = layout.entries[0]!
 			expect(entry.descriptor).toMatchObject({ kind: 'content', key: 'guide' })
@@ -361,7 +361,7 @@ describe('Workbench vNext publication', () => {
 		try {
 			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(InteractiveContentPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			const entry = layout.entries[0]!
 			const opened = await session.target.openEntry({
 				layoutRevision: layout.revision,
@@ -388,11 +388,11 @@ describe('Workbench vNext publication', () => {
 					[Symbol.dispose]: disposeObserver,
 				},
 			) as unknown as Parameters<typeof opened.value.root.subscribe>[0] & WorkbenchContentObserver
-			await expect(opened.value.root.subscribe(observer)).resolves.toMatchObject({
+			await expect(opened.value.root.subscribeDto(observer)).resolves.toMatchObject({
 				ok: true,
 				data: { status: { count: 0 } },
 			})
-			await expect(opened.value.root.run('refresh')).resolves.toMatchObject({
+			await expect(opened.value.root.runDto('refresh')).resolves.toMatchObject({
 				action: { ok: true },
 				data: { ok: true, data: { status: { count: 1 } } },
 			})
@@ -423,7 +423,7 @@ describe('Workbench vNext publication', () => {
 		try {
 			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(InteractiveContentPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			const input = {
 				layoutRevision: layout.revision,
 				target,
@@ -436,7 +436,7 @@ describe('Workbench vNext publication', () => {
 			const lifetime = contentSignal
 			if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
 			const retained = retainedContentObserver(() => Promise.reject(new Error('browser gone')))
-			await opened.value.root.subscribe(retained.observer)
+			await opened.value.root.subscribeDto(retained.observer)
 
 			contentChanged?.()
 			await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
@@ -467,7 +467,7 @@ describe('Workbench vNext publication', () => {
 		try {
 			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(InteractiveContentPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			const opened = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
@@ -488,7 +488,7 @@ describe('Workbench vNext publication', () => {
 					[Symbol.dispose]: disposeObserver,
 				},
 			) as unknown as Parameters<typeof opened.value.root.subscribe>[0]
-			await opened.value.root.subscribe(observer)
+			await opened.value.root.subscribeDto(observer)
 
 			contentChanged?.()
 			await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
@@ -514,7 +514,7 @@ describe('Workbench vNext publication', () => {
 				invalidated = true
 			})
 			const target = pluginNodeAddressOf(LocalPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 
 			expect(layout.entries).toHaveLength(1)
 			expect(localFactoryCalls).toBe(0)
@@ -562,7 +562,7 @@ describe('Workbench vNext publication', () => {
 				},
 			})
 			const session = backend.createSession(localPrincipal, () => {})
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 
 			backend.producerStatus.setBuilding({
 				definition: target.definition,
@@ -609,7 +609,7 @@ describe('Workbench vNext publication', () => {
 			const session = backend.createSession(localPrincipal, (cause) => {
 				invalidated = cause
 			})
-			const building = session.target.layout({ target })
+			const building = session.target.layoutDto({ target })
 			expect(building.entries).toHaveLength(1)
 			expect(building.entries[0]).toMatchObject({
 				descriptor: { kind: 'view', key: 'settings' },
@@ -730,7 +730,7 @@ describe('Workbench vNext publication', () => {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(ReusedTargetPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			const input = {
 				layoutRevision: layout.revision,
 				target,
@@ -772,7 +772,7 @@ describe('Workbench vNext publication', () => {
 			const backend = requireWorkbench(host.ctx)
 			const target = pluginNodeAddressOf(ReusedTargetPlugin)
 			const firstSession = backend.createSession(localPrincipal, () => {})
-			const firstLayout = firstSession.target.layout({ target })
+			const firstLayout = firstSession.target.layoutDto({ target })
 			const first = await firstSession.target.openEntry({
 				layoutRevision: firstLayout.revision,
 				target,
@@ -784,7 +784,7 @@ describe('Workbench vNext publication', () => {
 			reusedFactory = Promise.withResolvers<SettingsTarget>()
 			reusedFactoryStarted = Promise.withResolvers<void>()
 			const secondSession = backend.createSession(localPrincipal, () => {})
-			const secondLayout = secondSession.target.layout({ target })
+			const secondLayout = secondSession.target.layoutDto({ target })
 			const secondOpening = secondSession.target.openEntry({
 				layoutRevision: secondLayout.revision,
 				target,
@@ -827,7 +827,7 @@ describe('Workbench vNext publication', () => {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(LateFactoryPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			const opening = session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
@@ -867,7 +867,7 @@ describe('Workbench vNext publication', () => {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(LateFactoryPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			vi.useFakeTimers()
 			fakeTimers = true
 			const opening = session.target.openEntry({
@@ -917,9 +917,9 @@ describe('Workbench vNext publication', () => {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(RoutedPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			// Global routing includes parameterized routes that do not enter navigation.
-			expect(session.target.layout({ target: null }).entries).toEqual(layout.entries)
+			expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
 			const result = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,
@@ -951,11 +951,11 @@ describe('Workbench vNext publication', () => {
 		try {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
-			const layoutA = session.target.layout({ target: pluginNodeAddressOf(SharedRoutePluginA) })
-			const layoutB = session.target.layout({ target: pluginNodeAddressOf(SharedRoutePluginB) })
+			const layoutA = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginA) })
+			const layoutB = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginB) })
 			expect(layoutA.entries[0]?.placement).toMatchObject({ path: '/settings' })
 			expect(layoutB.entries[0]?.placement).toMatchObject({ path: '/settings' })
-			expect(session.target.layout({ target: null }).entries).toEqual(
+			expect(session.target.layoutDto({ target: null }).entries).toEqual(
 				expect.arrayContaining([...layoutA.entries, ...layoutB.entries]),
 			)
 			session.dispose()
@@ -975,7 +975,7 @@ describe('Workbench vNext publication', () => {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = pluginNodeAddressOf(ConsumerPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			expect(layout.entries).toHaveLength(1)
 			expect(layout.entries[0]!.descriptor).toMatchObject({
 				kind: 'attachment-placement',
@@ -1011,7 +1011,7 @@ describe('Workbench vNext publication', () => {
 				invalidation = cause
 			})
 			const target = pluginNodeAddressOf(LocalPlugin)
-			const layout = session.target.layout({ target })
+			const layout = session.target.layoutDto({ target })
 			const result = await session.target.openEntry({
 				layoutRevision: layout.revision,
 				target,

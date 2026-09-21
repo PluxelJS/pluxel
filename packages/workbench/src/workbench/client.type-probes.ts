@@ -1,6 +1,6 @@
 import {
-	detachWorkbenchPortableValue,
-	type WorkbenchDetached,
+	consumeWorkbenchValue,
+	type WorkbenchSnapshot,
 	type WorkbenchPortableValue,
 } from './client.ts'
 
@@ -14,14 +14,14 @@ type DomainDto = {
 }
 
 const dto = null as unknown as DomainDto
-const detached = detachWorkbenchPortableValue(dto)
-const promised = detachWorkbenchPortableValue(Promise.resolve(dto))
+const detached = consumeWorkbenchValue(dto)
+const promised = consumeWorkbenchValue(Promise.resolve(dto))
 const transportOwned = null as unknown as PromiseLike<DomainDto & Disposable>
-const transportDetached = detachWorkbenchPortableValue(transportOwned)
+const transportDetached = consumeWorkbenchValue(transportOwned)
 
-const detachedType: WorkbenchDetached<DomainDto> = detached
-const promisedType: Promise<WorkbenchDetached<DomainDto>> = promised
-const transportDetachedType: Promise<WorkbenchDetached<DomainDto>> = transportDetached
+const detachedType: WorkbenchSnapshot<DomainDto> = detached
+const promisedType: Promise<WorkbenchSnapshot<DomainDto>> = promised
+const transportDetachedType: Promise<WorkbenchSnapshot<DomainDto>> = transportDetached
 const portableScalars: readonly WorkbenchPortableValue[] = [null, true, 1, 'safe']
 
 // @ts-expect-error Detached object fields are deeply readonly.

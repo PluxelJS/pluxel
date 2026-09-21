@@ -1,5 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
-import type { OpenedLocalWorkbenchEntry, WorkbenchTestHost } from '@pluxel/workbench/test'
+import type { WorkbenchTestHost } from '@pluxel/services/test'
+import type { OpenedLocalWorkbenchEntry } from '@pluxel/workbench/test'
 import { workbench } from '@pluxel/workbench'
 import { FontsPlugin } from '../src/index.ts'
 import { FontsWorkbench } from '../src/workbench.ts'

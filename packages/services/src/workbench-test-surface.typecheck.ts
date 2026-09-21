@@ -18,7 +18,7 @@ declare class FirstPlugin extends BasePlugin {}
 declare const host: WorkbenchTestHost
 declare const unbound: Extract<RuntimeClientBootstrap, { kind: 'workbench' }>
 // @ts-expect-error Management alone does not promise Workbench methods.
-unbound.workbench.layout({})
+unbound.workbench.layoutDto({})
 declare const bound: Extract<RuntimeClientBootstrap<WorkbenchSessionApi>, { kind: 'workbench' }>
 type BoundWorkbench = Assert<Equal<typeof bound.workbench, RpcStub<WorkbenchSessionApi>>>
 void (null as unknown as BoundWorkbench)

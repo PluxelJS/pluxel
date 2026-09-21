@@ -1,3 +1,4 @@
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
@@ -1007,8 +1008,10 @@ class FontsManagerRpc extends RpcTarget implements FontsManagerApi {
 		super()
 	}
 
-	snapshot(): Promise<FontsManagerSnapshot> {
-		return this.read()
+	async snapshotDto(): Promise<FontsManagerSnapshot> {
+		const snapshot = await this.read()
+		assertWorkbenchDto(snapshot)
+		return snapshot
 	}
 
 	setPreferredFamily(family: string | null): Promise<void> {
@@ -1032,8 +1035,10 @@ class FontSelectionRpc extends RpcTarget implements FontSelectionApi {
 		super()
 	}
 
-	snapshot(): Promise<FontSelectionSnapshot> {
-		return this.read()
+	async snapshotDto(): Promise<FontSelectionSnapshot> {
+		const snapshot = await this.read()
+		assertWorkbenchDto(snapshot)
+		return snapshot
 	}
 
 	setPreferredFamily(family: string | null): Promise<void> {

@@ -5,7 +5,7 @@ export const dashboardScope = createWorkbenchRenderer(PluginWithUIWorkbench.dash
 
 export const dashboardSnapshot = dashboardScope.query(({ api }) => ({
 	queryKey: ['plugin-with-ui', 'dashboard', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 	workbench: {
 		subscribe: ({ invalidate }) => api.watch(invalidate),
 	},

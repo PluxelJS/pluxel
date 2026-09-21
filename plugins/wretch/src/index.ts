@@ -1,3 +1,4 @@
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { createHash } from 'node:crypto'
 import {
 	encodePluginNodeAddressBytes,
@@ -282,16 +283,18 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 		this.#signal = signal
 	}
 
-	snapshot(): WretchManagedSettingsSnapshot {
+	snapshotDto(): WretchManagedSettingsSnapshot {
 		this.#assertActive()
-		return Object.freeze({
+		const snapshot: WretchManagedSettingsSnapshot = Object.freeze({
 			settings: this.#state.current,
 			hostTimeoutMs: this.#hostTimeoutMs,
 			effectiveTimeoutMs: effectiveTimeout(this.#hostTimeoutMs, this.#state.current.timeoutMs),
 		})
+		assertWorkbenchDto(snapshot)
+		return snapshot
 	}
 
-	async update(settings: WretchManagedSettings): Promise<WretchManagedSettingsSnapshot> {
+	async updateDto(settings: WretchManagedSettings): Promise<WretchManagedSettingsSnapshot> {
 		this.#assertActive()
 		await replaceManagedSettings(
 			this.#state,
@@ -300,13 +303,13 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 			settings,
 			this.#hostTimeoutMs,
 		)
-		return this.snapshot()
+		return this.snapshotDto()
 	}
 
-	async reset(): Promise<WretchManagedSettingsSnapshot> {
+	async resetDto(): Promise<WretchManagedSettingsSnapshot> {
 		this.#assertActive()
 		await resetManagedSettings(this.#state, this.#storage, this.#key)
-		return this.snapshot()
+		return this.snapshotDto()
 	}
 
 	#assertActive(): void {

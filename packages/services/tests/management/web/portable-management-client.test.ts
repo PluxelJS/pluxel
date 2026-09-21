@@ -1,4 +1,4 @@
-import { RpcTarget, type RpcStub } from 'capnweb'
+import { RpcTarget, RpcStub } from 'capnweb'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createRuntimeManagementClient } from '../../../src/management/web/client.ts'
@@ -13,7 +13,7 @@ const metadata = Object.freeze({
 	ready: true as const,
 	protocol: Object.freeze({
 		name: 'pluxel.management' as const,
-		major: 6 as const,
+		major: 7 as const,
 		capabilities: RUNTIME_MANAGEMENT_CAPABILITIES,
 	}),
 	application: Object.freeze({ product: null }),
@@ -41,16 +41,16 @@ describe('injected Runtime Management client', () => {
 	it('projects one borrowed capability without fetch, discovery, or transport options', async () => {
 		const subscriptionDispose = vi.fn()
 		const target = {
-			describe: vi.fn(async () => metadata),
-			pluginCatalog: vi.fn(async () => ({
+			describeDto: vi.fn(async () => metadata),
+			pluginCatalogDto: vi.fn(async () => ({
 				plugins: [],
 				sections: [],
 				summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 			})),
-			updatePluginCatalogLayout: vi.fn(async () => ({ ok: true, sections: [] })),
-			logStreams: vi.fn(async () => ({ streams: [logMeta] })),
-			logMeta: vi.fn(async () => logMeta),
-			logRange: vi.fn(async () => ({
+			updatePluginCatalogLayoutDto: vi.fn(async () => ({ ok: true, sections: [] })),
+			logStreamsDto: vi.fn(async () => ({ streams: [logMeta] })),
+			logMetaDto: vi.fn(async () => logMeta),
+			logRangeDto: vi.fn(async () => ({
 				ok: true,
 				streamId: 'default',
 				epoch: 1,
@@ -86,7 +86,7 @@ describe('injected Runtime Management client', () => {
 			sections: [],
 		})
 		await client.catalog.updateLayout({ sections: null })
-		expect(target.updatePluginCatalogLayout).toHaveBeenLastCalledWith({ sections: null })
+		expect(target.updatePluginCatalogLayoutDto).toHaveBeenLastCalledWith({ sections: null })
 		await expect(client.logs.streams()).resolves.toEqual({ streams: [logMeta] })
 		await expect(
 			client.logs.range('default', { epoch: 1, fromSeq: '1', limit: 100 }),
@@ -107,7 +107,7 @@ describe('injected Runtime Management client', () => {
 		])
 		subscription[Symbol.dispose]()
 		expect(subscriptionDispose).toHaveBeenCalledOnce()
-		expect(target.describe).toHaveBeenCalledOnce()
+		expect(target.describeDto).toHaveBeenCalledOnce()
 		expect(target.followLogs).toHaveBeenCalledOnce()
 	})
 })
@@ -124,7 +124,7 @@ it('validates update snapshots received over the borrowed Management capability 
 		error: { message: 'Missing import', file: 'new.ts', importChain: ['entry.ts', 'new.ts'] },
 	}
 	const target = {
-		runtimeUpdate: async () => snapshot,
+		runtimeUpdateDto: async () => snapshot,
 		followRuntimeUpdates: async (observer: (value: unknown) => Promise<void>) => {
 			await observer(snapshot)
 			return { [Symbol.dispose]: dispose }
@@ -141,4 +141,62 @@ it('validates update snapshots received over the borrowed Management capability 
 	expect(dispose).toHaveBeenCalledOnce()
 	snapshot.state = 'updating'
 	await expect(client.updates.snapshot()).rejects.toThrow(/state\/outcome/)
+})
+
+it('reads a real local RPC result and releases its envelope without retaining transport fields', async () => {
+	class CatalogTarget extends RpcTarget {
+		pluginCatalogDto() {
+			return {
+				plugins: [] as unknown[],
+				sections: [] as unknown[],
+				summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
+			}
+		}
+		runtimeUpdateDto(): ReturnType<RuntimeManagementTarget['runtimeUpdateDto']> {
+			return {
+				sequence: 1,
+				state: 'settled',
+				phase: 'evaluate',
+				outcome: 'retained-previous',
+				durationMs: 3,
+				trigger: 'entry.ts',
+				error: null,
+			}
+		}
+	}
+	using target = new RpcStub(new CatalogTarget())
+	const client = createRuntimeManagementClient(
+		target as unknown as RpcStub<RuntimeManagementTarget>,
+	)
+	const result = await client.catalog.snapshot()
+	expect(result.summary.total).toBe(0)
+	expect(Object.isFrozen(result.summary)).toBe(true)
+	expect(Object.getOwnPropertySymbols(result)).toEqual([])
+	await expect(client.updates.snapshot()).resolves.toMatchObject({ sequence: 1, state: 'settled' })
+})
+
+it('releases result envelopes after validation success or failure without invoking payload getters', async () => {
+	const dispose = vi.fn()
+	const getter = vi.fn(() => [])
+	const result = {
+		plugins: [] as unknown[],
+		sections: [] as unknown[],
+		summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
+		[Symbol.dispose]: dispose,
+	}
+	const target = {
+		pluginCatalogDto: async () => result,
+	} as unknown as RpcStub<RuntimeManagementTarget>
+	const client = createRuntimeManagementClient(target)
+	await expect(client.catalog.snapshot()).resolves.toMatchObject({ plugins: [] })
+	expect(dispose).toHaveBeenCalledTimes(1)
+	Object.defineProperty(result, Symbol.dispose, { value: dispose, configurable: true })
+	Object.defineProperty(result, 'plugins', { enumerable: true, get: getter })
+	await expect(client.catalog.snapshot()).rejects.toThrow(/data property/)
+	expect(getter).not.toHaveBeenCalled()
+	expect(dispose).toHaveBeenCalledTimes(2)
+	Object.defineProperty(result, Symbol.dispose, { value: dispose, configurable: false })
+	await expect(client.catalog.snapshot()).rejects.toThrow(/disposer must be configurable/)
+	expect(dispose).toHaveBeenCalledTimes(3)
+	expect(getter).not.toHaveBeenCalled()
 })

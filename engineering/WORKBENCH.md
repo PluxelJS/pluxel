@@ -80,7 +80,7 @@ scope.mutation((roots) => ({ mutationFn, workbench? }))
 
 - `@pluxel/workbench`：browser-safe definition builder 和类型；
 - `@pluxel/workbench/react`：renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
-- `@pluxel/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable DTO detach；
+- `@pluxel/workbench/client`：conforming Shell 使用的 session/opened-handle client，以及手动 portable value ownership transfer；
 - `capnweb`：固定版本的 `RpcTarget`、`RpcStub` 和 WebSocket session bridge。
 
 Plugin author 不取得 raw socket、MF Runtime、Shell router/store、Bridge wrapper props 或 server registry。
@@ -206,8 +206,9 @@ handler 和 secret 都不会发到浏览器。
 不会要求 Plugin 为 transport 制造可变深拷贝。Action input 则是 Workbench 服务完成 authoritative parse 后交给 handler 的 fresh value，
 保持 Valibot `InferOutput` 的原始可变性。
 
-每次 interactive Content open 由 Framework 创建一个 root。含 data 时，`subscribe()` 先 retain Browser callback，再 initial
-`load()`；action-only Content 不订阅。`dataChanged()` 只置 dirty，Framework 串行 load、合并中间通知，并推送带递增 sequence 的
+每次 interactive Content open 由 Framework 创建一个 root。含 data 时，`subscribeDto()` 先 retain Browser callback，再 initial
+`load()`；其返回值是 initial DTO，observer registration 由 root 持有。Raw root 的另外两个数据方法是
+`loadDto()` 与 `runDto()`；本地 opened handle 继续使用 `subscribe()`、`load()`、`run()`。action-only Content 不订阅。`dataChanged()` 只置 dirty，Framework 串行 load、合并中间通知，并推送带递增 sequence 的
 latest full state。手动 load 与 action 共用一个有界 lane；含 data 时，action 在 handler 已开始后总会 post-load；action-only 返回
 `data: null`。Shell 只应用较新的 sequence，
 后续读取失败保留最近成功 data 并标记 stale。Observer failure 会关闭对应 opened-entry lease、abort author lifetime signal 并释放
@@ -223,12 +224,14 @@ Content 与 View 共用已有 quota、owner lease、session epoch 和 disposal�
 
 ## View
 
-View 同时拥有 renderer、placement 和一个 API root：
+View 同时拥有 renderer、placement 和一个 API root。纯数据 RPC 使用 `*Dto` 后缀与显式返回类型，target 在返回前用
+`assertWorkbenchDto()` 验证 producer-owned 数据；该验证不复制、不冻结、不释放。命名、授权、领域投影与资源结果的规则统一见
+[API 契约](../docs/api/contracts.md#rpc-方法名表达返回值所有权)：
 
 ```ts
 export interface OrdersApi extends RpcTarget {
-	snapshot(): OrdersSnapshot
-	refresh(): Promise<OrdersSnapshot>
+	snapshotDto(): OrdersSnapshot
+	refreshDto(): Promise<OrdersSnapshot>
 	watch(invalidate: () => void): RpcTarget
 }
 
@@ -253,13 +256,13 @@ import { OrdersWorkbench } from '../workbench.js'
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 export const ordersQuery = overviewScope.query(({ api }) => ({
 	queryKey: ['orders', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 	workbench: {
 		subscribe: ({ invalidate }) => api.watch(invalidate),
 	},
 }))
 export const refreshOrders = overviewScope.mutation(({ api }) => ({
-	mutationFn: () => api.refresh(),
+	mutationFn: () => api.refreshDto(),
 }))
 ```
 
@@ -292,13 +295,18 @@ exact roots、host、subscription 和 close state；Bridge destroy 时从一条�
 Attachment 同时打开，也不会跨 open handle、principal、params、session 或 owner generation 共享状态。私有 client
 随 renderer owner 清理；Workbench 不暴露 raw `QueryClient`、query key/cache 或 global client。
 
-Query 的结果进入 cache 前统一通过 portable detach：只接受有界的 `null`、boolean、finite number、string、dense array 和 plain
-object，不接受显式 `undefined`、class、accessor、cycle、capability 或 binary。Framework 深拷贝、深冻结并恰好释放一次
+Query 的结果进入 cache 前统一通过 portable value consumption：只接受有界的 `null`、boolean、finite number、string、dense array 和 plain
+object，不接受显式 `undefined`、非枚举业务字段、class、accessor、cycle、capability 或 binary。Framework 接管整个返回树，完整校验后移除 transport 元数据、原地深冻结并恰好释放一次
 top-level transport result；late result 也会释放但不会提交。带 `workbench.subscribe` 的 query 先订阅再读取，以
 invalidation 为 freshness
 authority；并发 read single-flight，read 中的多次通知合并为一次 follow-up read。后台读取失败保留最近成功 data 并标 stale/error。
 `workbench.subscribe` 若保留 callback，必须同步返回或异步 resolve 到 `Disposable`；领域 API 通常返回 child
 `RpcTarget`，browser-side `RpcPromise` / `RpcStub` 提供该 disposer。
+
+普通 latest-state invalidation 的 server adapter 使用 `@pluxel/workbench/server` 的 `createWorkbenchWatch()`。
+Plugin 保留领域 subscribe/revision 权威，adapter 只拥有 callback 引用、在途 invocation 和本地注册；最多一个 callback
+在途和一个最新 pending revision。Open abort、remote disposal、callback failure 共享幂等 teardown。它不承担日志或 lossless
+event delivery，也不建立额外 registry、连接或业务状态。作者契约见 `docs/workbench/renderer-resources.md`。
 
 无输入的 `scope.query(factory)` 和按输入构建的 `scope.queryFamily((context, input) => options)` 都必须产生
 领域稳定的具体 `queryKey`。Workbench roots（`api` / `provider` / `consumer`）只由外层 factory 捕获；
@@ -318,7 +326,7 @@ handle 的命令式操作。这些 controls 只属于产生它的 active Hook/�
 以 `WORKBENCH_RENDERER_HOOK_INACTIVE` 失败，不能在 cache GC 后复活脱离 typed invalidation sidecar 的 observer。Concrete query 本身就是 scope-typed exact invalidation target；query family 显式提供
 `query.target(input)` / `query.all()`。静态关系声明为 `workbench: { invalidates: [query] }`，需要 mutation input 时才
 使用 callback；input-derived callback 显式复用 mutation variables type，不能放宽成 `any`。Targets 在调用远端方法前验证，owner 仍 active 时在 settle
-后标记 stale。RPC reject 或 result detach failure 仍 invalidates；owner 已关闭时 cache 已被销毁。Mutation 每个 Hook
+后标记 stale。RPC reject 或 result consume failure 仍 invalidates；owner 已关闭时 cache 已被销毁。Mutation 每个 Hook
 single-flight。事件处理器用 `mutate()` 并从 Hook state 观察结果；需要返回值或流程编排时使用
 `mutateAsync()`。Pending 时第二次调用不会覆盖当前 state，`mutateAsync()` 会以稳定 code 失败；Workbench 服务不猜测写操作的幂等性
 或执行顺序。若 mutation result 只是下一份 snapshot 的重复副本，领域 API 返回 `void`，由权威 subscription 或 typed invalidation
@@ -330,7 +338,7 @@ single-flight。事件处理器用 `mutate()` 并从 Hook state 观察结果；�
 
 Descriptor 同时完成 TypeScript 推导和运行时 identity 校验。`createWorkbenchRenderer()`、scope hook 与 invalidation target 都会拒绝
 scope mismatch。低层 `useWorkbench(exactDescriptor)`、`useRemoteValue()` / `createRemoteValue()` 和
-`detachWorkbenchPortableValue()` 继续作为高级 escape hatch：适用于单组件自管读取、callback/progress/cancel、lossless event 或
+`consumeWorkbenchValue()` 继续作为高级 escape hatch：适用于单组件自管读取、callback/progress/cancel、lossless event 或
 其他不应放入 query cache 的 capability protocol。它们不接受字符串 key，也没有可枚举的全局 API namespace。
 
 参数化 route 只声明一次：
@@ -446,14 +454,14 @@ HTTP 服务只接管匹配的 control/business Upgrade。反向代理必须保�
 `WorkbenchSessionApi` 只有两个操作：
 
 ```ts
-layout({ target })
+layoutDto({ target })
 openEntry({ layoutRevision, target, descriptor, location? })
 ```
 
 Layout 是 capability-free 的 immutable snapshot，只包含目标、placement、declaration/openable identity、owner revisions，
 以及 discriminated federated View 或 Content reference。它不携带 Plugin API root、Content plan 或可遍历的服务字典。
 
-`layout({ target: null })` 包含所有已提交 route placement（含无 navigation 的参数化 route 与 standalone 页面），
+`layoutDto({ target: null })` 包含所有已提交 route placement（含无 navigation 的参数化 route 与 standalone 页面），
 不包含 tab。它是 Shell 路由目录的唯一事实来源；navigation 只是该目录的显示筛选，不能决定可寻址性。
 Shell 在这个完整 snapshot 上纯计算短路径与冲突：跨 node 路径重叠时所有参与者使用 canonical node URL；
 保留 Shell 路径同样回退，不能按 publication 顺序分配赢家。同 node 保持静态 route 优先。完整 node URL 始终
@@ -579,13 +587,14 @@ Content validation 或 Bridge activation failure 只拒绝本次 activation，�
 
 Owner withdrawal 先关闭 invocation admission、abort open signal，再等待已接纳调用并 drain generation effects。
 Opened handle 对 Cap’n Web 返回的顶层 object graph 负责；renderer 若手工 await object DTO，使用
-`detachWorkbenchPortableValue()` 完成 portable-data 校验、深拷贝和 transport result 释放。不能把 transport-owned result
+`consumeWorkbenchValue()` 完成 portable-data 校验、原地深冻结和 transport result 释放。不能把 transport-owned result
 直接放入 React state，也不能用 Plugin 自己的宽松 clone 绕过普通对象、`undefined`、accessor、cycle 与容量约束。
+本地 query/mutation 值也转移所有权；不得返回其他代码仍会修改的借用树。消费后的 `WorkbenchSnapshot<T>` 保留解码对象身份，不再持有 transport disposer。
 Observer/callback 需要跨调用保留时必须 `dup()`，subscription target 的 disposer 负责释放 callback 和领域 unsubscribe。
 
 Renderer query/mutation owner 仍遵守同一边界：Bridge teardown 使私有 QueryClient、subscription 和 active Hook state inactive，pending
 `refetch()` / `mutateAsync()` 及时 closed-reject；无法取消的 RPC 可以继续 settle，但晚到的 fulfilled DTO 必须
-detach/dispose，不能再更新 React。Framework 自身的 portable、scope、key、limit、closed 与 mutation-pending failure 使用
+consume/dispose，不能再更新 React。Framework 自身的 portable、scope、key、limit、closed 与 mutation-pending failure 使用
 稳定 error code；领域/RPC error 保持原样。
 
 ## 验证不变量
@@ -602,8 +611,8 @@ detach/dispose，不能再更新 React。Framework 自身的 portable、scope、
 - 每次 open 都返回 fresh roots，close/timeout/replacement 会 abort 并清理；
 - 同一 descriptor 并行打开时 renderer QueryClient、subscription、mutation 和 invalidation 完全隔离；
 - query subscribe-before-read、single-flight/coalescing、stale-data failure、canonical key 与 typed invalidation 均有测试；
-- mutation per-hook single-flight，且 reject/detach failure 后仍执行已声明 invalidation；
-- portable DTO 同步/Promise detach 都深冻结并在成功、失败和 late settle 时释放 top-level transport result；
+- mutation per-hook single-flight，且 reject/consume failure 后仍执行已声明 invalidation；
+- portable DTO 同步/Promise consumption 都深冻结并在成功、失败和 late settle 时释放 top-level transport result；
 - provider-only 与 provider+consumer Attachment 都保持正确 owner；
 - Manifest/expose/shared/Bridge 不匹配会在 commit 或 activation 前失败；
 - Bridge destroy 发生在 opened handle dispose 之前；

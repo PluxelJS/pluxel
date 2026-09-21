@@ -36,9 +36,9 @@ export type HttpSettings = Readonly<{
 }>
 
 export interface HttpSettingsApi extends RpcTarget {
-	snapshot(): HttpSettings
-	update(input: HttpSettings): Promise<HttpSettings>
-	reset(): Promise<HttpSettings>
+	snapshotDto(): HttpSettings
+	updateDto(input: HttpSettings): Promise<HttpSettings>
+	resetDto(): Promise<HttpSettings>
 }
 
 export const HttpWorkbench = workbench.define({
@@ -47,6 +47,9 @@ export const HttpWorkbench = workbench.define({
 	}),
 })
 ```
+
+这些 `*Dto` 方法由 target 完成授权、输入校验和 DTO 投影，并在返回前调用 `assertWorkbenchDto()`；
+具体边界见 [API 契约](../api/contracts.md#生产者负责-dto-边界)。
 
 然后在提供方 `init()` 中发布。下面假设业务服务 `settings` 已按使用方保存设置，`HttpSettingsTarget` 是实现该 API 的 `RpcTarget`：
 
@@ -97,13 +100,13 @@ import { HttpWorkbench } from '../workbench.ts'
 const settingsScope = createWorkbenchRenderer(HttpWorkbench.settings)
 const httpSettingsQuery = settingsScope.query(({ provider }) => ({
 	queryKey: ['http', 'settings'] as const,
-	queryFn: () => provider.snapshot(),
+	queryFn: () => provider.snapshotDto(),
 }))
 
 function HttpSettingsPanel() {
 	const { host } = settingsScope.useWorkbench()
 	const settings = httpSettingsQuery.useQuery()
-	// render host + detached settings.data
+	// render host + immutable settings.data
 }
 
 export default settingsScope.render(HttpSettingsPanel)
@@ -131,8 +134,8 @@ import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 
 export interface FontSelectionApi extends RpcTarget {
-	snapshot(): Promise<FontSelectionSnapshot>
-	setPreferredFamily(family: string | null): Promise<FontSelectionSnapshot>
+	snapshotDto(): Promise<FontSelectionSnapshot>
+	setPreferredFamilyDto(family: string | null): Promise<FontSelectionSnapshot>
 }
 
 export const FontsWorkbench = workbench.define({
@@ -195,10 +198,10 @@ import { FontsWorkbench } from '../workbench.ts'
 export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)
 export const fontSelectionQuery = selectionScope.query(({ provider }) => ({
 	queryKey: ['fonts', 'selection'] as const,
-	queryFn: () => provider.snapshot(),
+	queryFn: () => provider.snapshotDto(),
 }))
 export const setPreferredFontMutation = selectionScope.mutation(({ provider }) => ({
-	mutationFn: (family: string | null) => provider.setPreferredFamily(family),
+	mutationFn: (family: string | null) => provider.setPreferredFamilyDto(family),
 	workbench: {
 		invalidates: [fontSelectionQuery],
 	},
@@ -207,7 +210,7 @@ export const setPreferredFontMutation = selectionScope.mutation(({ provider }) =
 function FontSelectionPanel() {
 	const selection = fontSelectionQuery.useQuery()
 	const setPreferred = setPreferredFontMutation.useMutation()
-	// render detached selection.data and call setPreferred.mutateAsync(family)
+	// render immutable selection.data and call setPreferred.mutateAsync(family)
 }
 
 export default selectionScope.render(FontSelectionPanel)
@@ -221,7 +224,7 @@ export default selectionScope.render(FontSelectionPanel)
 - 字体数量变化不会增加 definition、View、Attachment、MF expose 或 WebSocket；
 - RPC 输入的大小、family、容量和持久化失败仍由 FontsPlugin 校验，不额外引入 Workbench schema；
 - Selection UI 没有已证实的实时同步需求，因此 query 不声明 `workbench.subscribe`；mutation settle 后失效 snapshot，Runtime 自动完成
-  portable detach、deep freeze 与 top-level transport result 释放。
+  portable 校验、原地 deep freeze 与 top-level transport result 释放。
 
 这里的“选择”仍是 provider-wide preference。把选择器放到 Canvas、ECharts 或 Takumi 页面，不会把它变成
 consumer-owned state。完整业务能力见[字体插件](../plugins/rendering/fonts.md)，真实源码位于
@@ -264,24 +267,24 @@ export type FontSelection = Readonly<{
 }>
 
 export interface FontCatalogApi extends RpcTarget {
-	list(input: { cursor: string | null; limit: number; query?: string }): Readonly<{
+	listDto(input: { cursor: string | null; limit: number; query?: string }): Readonly<{
 		items: readonly FontCollectionRow[]
 		nextCursor: string | null
 	}>
-	get(input: { collectionId: string }):
+	getDto(input: { collectionId: string }):
 		| Readonly<{ ok: true; value: FontCollectionSnapshot }>
 		| Readonly<{ ok: false; code: 'not_found' }>
 	watch(invalidate: () => void): RpcTarget
 }
 
 export interface FontManagerApi extends RpcTarget {
-	listCollections(input: {
+	listCollectionsDto(input: {
 		cursor: string | null
 		limit: number
 		query?: string
 	}): Promise<Readonly<{ items: readonly FontCollectionRow[]; nextCursor: string | null }>>
-	createCollection(input: { name: string }): Promise<FontCollectionSnapshot>
-	updateCollection(input: {
+	createCollectionDto(input: { name: string }): Promise<FontCollectionSnapshot>
+	updateCollectionDto(input: {
 		id: string
 		expectedRevision: number
 		name?: string
@@ -290,22 +293,22 @@ export interface FontManagerApi extends RpcTarget {
 		| Readonly<{ ok: true; value: FontCollectionSnapshot }>
 		| Readonly<{ ok: false; code: 'conflict' | 'not_found' }>
 	>
-	removeCollection(input: { id: string; expectedRevision: number }): Promise<
+	removeCollectionDto(input: { id: string; expectedRevision: number }): Promise<
 		| Readonly<{ ok: true }>
 		| Readonly<{ ok: false; code: 'conflict' | 'not_found' }>
 	>
 }
 
 export interface FontSelectionApi extends RpcTarget {
-	snapshot(): FontSelection
-	select(input: { collectionId: string; expectedRevision: number }): Promise<
+	snapshotDto(): FontSelection
+	selectDto(input: { collectionId: string; expectedRevision: number }): Promise<
 		| Readonly<{ ok: true; value: FontSelection }>
 		| Readonly<{
 				ok: false
 				code: 'conflict' | 'collection_missing' | 'rejected'
 				current: FontSelection
 		  }>
-	clear(input: { expectedRevision: number }): Promise<FontSelection>
+	clearDto(input: { expectedRevision: number }): Promise<FontSelection>
 	watch(invalidate: () => void): RpcTarget
 }
 
@@ -362,11 +365,11 @@ import { FontManagerWorkbench } from '../workbench.ts'
 const collectionPickerScope = createWorkbenchRenderer(FontManagerWorkbench.collectionPicker)
 const fontCatalogQuery = collectionPickerScope.query(({ provider }) => ({
 	queryKey: ['fonts', 'catalog'] as const,
-	queryFn: () => provider.list({ cursor: null, limit: 50 }),
+	queryFn: () => provider.listDto({ cursor: null, limit: 50 }),
 }))
 const fontSelectionQuery = collectionPickerScope.query(({ consumer }) => ({
 	queryKey: ['fonts', 'consumer-selection'] as const,
-	queryFn: () => consumer.snapshot(),
+	queryFn: () => consumer.snapshotDto(),
 }))
 
 function FontCollectionPicker() {
@@ -410,10 +413,10 @@ Rename 保持 stable ID；delete 后 picker 可投影 `missing`，但 provider �
 
 Manager API 应直接满足管理页，而不是为每一行制造 capability：
 
-- `listCollections({ cursor, limit, query })` 返回 bounded rows；
-- `createCollection()` 成功时返回完整 snapshot，让 UI 直接进入编辑态；
-- `updateCollection({ expectedRevision, ... })` 返回 success/conflict/not-found；
-- `removeCollection()` 不隐式修改 consumer state；
+- `listCollectionsDto({ cursor, limit, query })` 返回 bounded rows；
+- `createCollectionDto()` 成功时返回完整 snapshot，让 UI 直接进入编辑态；
+- `updateCollectionDto({ expectedRevision, ... })` 返回 success/conflict/not-found；
+- `removeCollectionDto()` 不隐式修改 consumer state；
 - watch 只通知当前 bounded read model 重读。
 
 只有确实需要同时打开多个 collection editor 时，才增加一个 `/collections/:collectionId` View。它仍是一个

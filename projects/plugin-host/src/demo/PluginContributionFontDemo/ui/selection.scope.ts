@@ -6,12 +6,12 @@ export const selectionScope = createWorkbenchRenderer(FontManagerWorkbench.selec
 
 export const fontCatalog = selectionScope.query(({ provider }) => ({
 	queryKey: ['font-contribution', 'catalog'] as const,
-	queryFn: () => provider.list(),
+	queryFn: () => provider.listDto(),
 }))
 
 export const fontSelection = selectionScope.query(({ consumer }) => ({
 	queryKey: ['font-contribution', 'selection'] as const,
-	queryFn: () => consumer.current(),
+	queryFn: () => consumer.currentDto(),
 }))
 
 export const setFontSelection = selectionScope.mutation(({ consumer }) => ({

@@ -224,6 +224,7 @@ catalogs:
     yaml: ^2.9.0
   test:
     vitest: 5.0.0
+    ws: 8.21.3
   types:
     '@types/mdast': 4.0.4
     '@types/mdx': 2.0.14
@@ -233,6 +234,7 @@ catalogs:
     '@types/react': ^19.2.18
     '@types/react-dom': ^19.2.5
     '@types/semver': ^7.8.0
+    '@types/ws': 8.18.1
   validation:
     option-t: ^56.1.2
     superjson: ^2.2.6

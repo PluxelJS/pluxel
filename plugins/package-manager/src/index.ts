@@ -1,3 +1,4 @@
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { Commands } from '@pluxel/services/commands'
 import { resolve } from 'node:path'
 import { defineCommand } from '@pluxel/commands'
@@ -155,16 +156,22 @@ class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 		super()
 	}
 
-	snapshot(): Promise<PackageManagerSnapshot> {
-		return this.store.snapshot()
+	async snapshotDto(): Promise<PackageManagerSnapshot> {
+		const result = await this.store.snapshot()
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	install(specs: readonly string[]): Promise<PackageMutationResult> {
-		return this.store.install(specs)
+	async installDto(specs: readonly string[]): Promise<PackageMutationResult> {
+		const result = await this.store.install(specs)
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	remove(names: readonly string[]): Promise<PackageMutationResult> {
-		return this.store.remove(names)
+	async removeDto(names: readonly string[]): Promise<PackageMutationResult> {
+		const result = await this.store.remove(names)
+		assertWorkbenchDto(result)
+		return result
 	}
 }
 

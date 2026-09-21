@@ -132,6 +132,7 @@
 		"@tanstack/router-plugin": "catalog:dev",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"@types/ws": "catalog:types",
 		"@vitejs/plugin-react": "catalog:build",
 		"@worksplit/react": "workspace:*",
 		"postcss": "catalog:dev",
@@ -142,7 +143,8 @@
 		"sass-embedded": "catalog:dev",
 		"typescript": "catalog:dev",
 		"valibot-form": "workspace:*",
-		"vite": "catalog:build"
+		"vite": "catalog:build",
+		"ws": "catalog:test"
 	},
 	"peerDependencies": {
 		"@mantine/core": "catalog:frontend",

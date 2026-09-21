@@ -1,4 +1,3 @@
-import { createWorkbenchTestHost } from '@pluxel/workbench/test'
 import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf, type PluginConstructor, type PluginNodeAddress } from '@pluxel/core'
 import * as v from 'valibot'
@@ -7,8 +6,12 @@ import {
 	type PersistenceBackend,
 } from '@pluxel/services/persistence'
 import { type RawPluginConfig } from '@pluxel/core/test'
-import { createServiceTestHost, type ServiceTestHost } from '@pluxel/services/test'
-import { detachWorkbenchPortableValue } from '@pluxel/workbench/client'
+import {
+	createServiceTestHost,
+	createWorkbenchTestHost,
+	type ServiceTestHost,
+} from '@pluxel/services/test'
+import { consumeWorkbenchValue } from '@pluxel/workbench/client'
 import { ProxyAgent } from 'undici'
 import wretch, { type FetchLike } from 'wretch'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -140,8 +143,8 @@ describe('WretchPlugin', () => {
 			const late = host.require(ConsumerLateSettings)
 			using aSettings = await openWretchSettings(host, ConsumerA)
 			using lateSettings = await openWretchSettings(host, ConsumerLateSettings)
-			await aSettings.api.update({ headers: { 'X-Owner': 'a' } })
-			await lateSettings.api.update({ headers: { 'X-Owner': 'late' } })
+			await aSettings.api.updateDto({ headers: { 'X-Owner': 'a' } })
+			await lateSettings.api.updateDto({ headers: { 'X-Owner': 'late' } })
 
 			expect([...persistence.writes.keys()]).toHaveLength(2)
 			for (const [key, text] of persistence.writes) {
@@ -165,15 +168,15 @@ describe('WretchPlugin', () => {
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 			using settings = await openWretchSettings(host, ConsumerA)
 
-			const headersOnly = await detachWorkbenchPortableValue(
-				settings.api.update({ headers: { 'X-Mode': 'headers' } }),
+			const headersOnly = await consumeWorkbenchValue(
+				settings.api.updateDto({ headers: { 'X-Mode': 'headers' } }),
 			)
 			expect(headersOnly.settings).toEqual({ headers: { 'x-mode': 'headers' } })
 			expect(Object.hasOwn(headersOnly.settings, 'proxyUrl')).toBe(false)
 			expect(Object.hasOwn(headersOnly.settings, 'timeoutMs')).toBe(false)
 
-			const proxyOnly = await detachWorkbenchPortableValue(
-				settings.api.update({ headers: {}, proxyUrl: 'http://proxy.example:8080' }),
+			const proxyOnly = await consumeWorkbenchValue(
+				settings.api.updateDto({ headers: {}, proxyUrl: 'http://proxy.example:8080' }),
 			)
 			expect(proxyOnly.settings).toEqual({
 				headers: {},
@@ -181,13 +184,13 @@ describe('WretchPlugin', () => {
 			})
 			expect(Object.hasOwn(proxyOnly.settings, 'timeoutMs')).toBe(false)
 
-			const timeoutOnly = await detachWorkbenchPortableValue(
-				settings.api.update({ headers: {}, timeoutMs: 1_000 }),
+			const timeoutOnly = await consumeWorkbenchValue(
+				settings.api.updateDto({ headers: {}, timeoutMs: 1_000 }),
 			)
 			expect(timeoutOnly.settings).toEqual({ headers: {}, timeoutMs: 1_000 })
 			expect(Object.hasOwn(timeoutOnly.settings, 'proxyUrl')).toBe(false)
 
-			const queried = detachWorkbenchPortableValue(await settings.api.snapshot())
+			const queried = consumeWorkbenchValue(await settings.api.snapshotDto())
 			expect(queried).toEqual(timeoutOnly)
 		}
 	})
@@ -206,7 +209,7 @@ describe('WretchPlugin', () => {
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 			using settings = await openWretchSettings(host, ConsumerA)
-			await settings.api.update({ headers: {} })
+			await settings.api.updateDto({ headers: {} })
 			key = [...persistence.writes.keys()][0]!
 			expectedOwner = host.require(ConsumerA).ctx.pluginInfo.nodeAddress
 			wrongOwner = host.require(ConsumerLateSettings).ctx.pluginInfo.nodeAddress
@@ -282,7 +285,7 @@ describe('WretchPlugin', () => {
 			const client = consumer.client
 			using settings = await openWretchSettings(host, ConsumerA)
 
-			await settings.api.update({
+			await settings.api.updateDto({
 				headers: { 'Accept-Language': 'zh-HK', 'X-Consumer': 'managed' },
 				proxyUrl: 'http://proxy.example:8080',
 				timeoutMs: 5_000,
@@ -298,7 +301,7 @@ describe('WretchPlugin', () => {
 			await host.start(ConsumerA)
 
 			using restarted = await openWretchSettings(host, ConsumerA)
-			const restartedSnapshot = await restarted.api.snapshot()
+			const restartedSnapshot = await restarted.api.snapshotDto()
 			expect(restartedSnapshot.settings).toMatchObject({
 				headers: { 'accept-language': 'zh-HK', 'x-consumer': 'managed' },
 				proxyUrl: 'http://proxy.example:8080/',
@@ -315,15 +318,15 @@ describe('WretchPlugin', () => {
 			using settings = await openWretchSettings(host, ConsumerA)
 
 			await expect(
-				settings.api.update({ headers: {}, proxyUrl: 'http://user:pass@proxy.example' }),
+				settings.api.updateDto({ headers: {}, proxyUrl: 'http://user:pass@proxy.example' }),
 			).rejects.toThrow('Authenticated proxy URLs are not supported')
 			await expect(
-				settings.api.update({ headers: {}, proxyUrl: 'http://proxy.example/tunnel' }),
+				settings.api.updateDto({ headers: {}, proxyUrl: 'http://proxy.example/tunnel' }),
 			).rejects.toThrow('without path')
 			await expect(
-				settings.api.update({ headers: { Authorization: 'Bearer secret' } }),
+				settings.api.updateDto({ headers: { Authorization: 'Bearer secret' } }),
 			).rejects.toThrow('secret-bearing')
-			await expect(settings.api.update({ headers: {}, timeoutMs: 2_000 })).rejects.toThrow(
+			await expect(settings.api.updateDto({ headers: {}, timeoutMs: 2_000 })).rejects.toThrow(
 				'cannot exceed the host limit',
 			)
 		}
@@ -353,7 +356,7 @@ describe('WretchPlugin', () => {
 
 			const consumer = host.require(ConsumerLateSettings)
 			using settings = await openWretchSettings(host, ConsumerLateSettings)
-			await settings.api.update({
+			await settings.api.updateDto({
 				headers: { 'Accept-Language': 'zh-HK' },
 			})
 
@@ -383,7 +386,7 @@ describe('WretchPlugin', () => {
 			persistence.release()
 			await Promise.all([first, second])
 			using settings = await openWretchSettings(host, ConsumerB)
-			const settingsSnapshot = await settings.api.snapshot()
+			const settingsSnapshot = await settings.api.snapshotDto()
 			expect(settingsSnapshot.settings.headers).toEqual({})
 		}
 	})
@@ -508,8 +511,8 @@ describe('WretchPlugin', () => {
 			const commands = settings.api
 			await host.stop(ConsumerA)
 
-			await expect(commands.snapshot()).rejects.toThrow('stopped or replaced plugin generation')
-			await expect(commands.update({ headers: {} })).rejects.toThrow(
+			await expect(commands.snapshotDto()).rejects.toThrow('stopped or replaced plugin generation')
+			await expect(commands.updateDto({ headers: {} })).rejects.toThrow(
 				'stopped or replaced plugin generation',
 			)
 		}
@@ -527,9 +530,9 @@ describe('WretchPlugin', () => {
 			expect(independentSettings.api).not.toBe(api)
 			settings[Symbol.dispose]()
 
-			expect(await settledCall(() => api.snapshot())).toEqual({ ok: false })
-			expect(await settledCall(() => api.update({ headers: {} }))).toEqual({ ok: false })
-			const independentSnapshot = await independentSettings.api.snapshot()
+			expect(await settledCall(() => api.snapshotDto())).toEqual({ ok: false })
+			expect(await settledCall(() => api.updateDto({ headers: {} }))).toEqual({ ok: false })
+			const independentSnapshot = await independentSettings.api.snapshotDto()
 			expect(independentSnapshot.settings.headers).toEqual({})
 		}
 	})
@@ -543,7 +546,7 @@ describe('WretchPlugin', () => {
 				await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
 				using settings = await openWretchSettings(host, ConsumerA)
-				await settings.api.update({
+				await settings.api.updateDto({
 					headers: {},
 					proxyUrl: 'http://proxy.example:8080',
 				})

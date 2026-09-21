@@ -1,4 +1,4 @@
-import { createWorkbenchTestHost } from '@pluxel/workbench/test'
+import { createServiceTestHost, createWorkbenchTestHost } from '@pluxel/services/test'
 import { standardServices } from '@pluxel/services'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -7,7 +7,6 @@ import { GlobalFonts } from '@napi-rs/canvas'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { createMemoryPersistenceBackend } from '@pluxel/services/persistence'
 import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { createServiceTestHost } from '@pluxel/services/test'
 import { describe, expect, it } from 'vitest'
 import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
 import { FontsTestWorkbench, openFontsManager, openFontSelection } from './workbench-helpers.ts'
@@ -231,7 +230,7 @@ describe('FontsPlugin', () => {
 					manager.api.install({ fileName: 'brand-copy.ttf', family, data }),
 				])
 				expect(installed).toEqual([undefined, undefined])
-				const first = await manager.api.snapshot()
+				const first = await manager.api.snapshotDto()
 				expect(first.managedFonts).toHaveLength(1)
 				expect(GlobalFonts.has(family)).toBe(true)
 				const id = first.managedFonts[0]!.id
@@ -241,7 +240,7 @@ describe('FontsPlugin', () => {
 
 				await host.start(FontsTestConsumer)
 				using restoredManager = await openFontsManager(host)
-				const restored = await restoredManager.api.snapshot()
+				const restored = await restoredManager.api.snapshotDto()
 				expect(restored.managedFonts).toEqual([
 					expect.objectContaining({ id, fileName: 'brand.ttf', family }),
 				])
@@ -249,14 +248,14 @@ describe('FontsPlugin', () => {
 
 				await host.restart(FontsPlugin)
 				using reloadedManager = await openFontsManager(host)
-				const reloaded = await reloadedManager.api.snapshot()
+				const reloaded = await reloadedManager.api.snapshotDto()
 				expect(reloaded.managedFonts).toEqual([
 					expect.objectContaining({ id, fileName: 'brand.ttf', family }),
 				])
 				expect(GlobalFonts.has(family)).toBe(true)
 
 				await expect(reloadedManager.api.remove(id)).resolves.toBeUndefined()
-				const removed = await reloadedManager.api.snapshot()
+				const removed = await reloadedManager.api.snapshotDto()
 				expect(removed.managedFonts).toEqual([])
 				expect(GlobalFonts.has(family)).toBe(false)
 			}
@@ -312,7 +311,7 @@ describe('FontsPlugin', () => {
 				data: new Uint8Array(2 * 1024 * 1024),
 			})
 
-			await expect(manager.api.snapshot()).rejects.toMatchObject({ code: 'FONT_BUSY' })
+			await expect(manager.api.snapshotDto()).rejects.toMatchObject({ code: 'FONT_BUSY' })
 			await expect(active).rejects.toMatchObject({ code: 'INVALID_FONT' })
 		}
 	})
@@ -402,7 +401,7 @@ describe('FontsPlugin', () => {
 				federatedViewRef: expect.any(Object),
 			})
 			await expect(selection.provider.setPreferredFamily(null)).resolves.toBeUndefined()
-			await expect(selection.provider.snapshot()).resolves.toMatchObject({
+			await expect(selection.provider.snapshotDto()).resolves.toMatchObject({
 				defaultFont: { family: expect.any(String) },
 			})
 
@@ -415,7 +414,7 @@ describe('FontsPlugin', () => {
 				federatedViewRef: expect.any(Object),
 			})
 			await expect(manager.api.setPreferredFamily(null)).resolves.toBeUndefined()
-			await expect(manager.api.snapshot()).resolves.toMatchObject({ managedFonts: [] })
+			await expect(manager.api.snapshotDto()).resolves.toMatchObject({ managedFonts: [] })
 		}
 	})
 })

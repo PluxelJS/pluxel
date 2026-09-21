@@ -129,7 +129,7 @@ function routeConflictLayout(): WorkbenchLayout {
 function fixture() {
 	const dispose = vi.fn()
 	const read = vi.fn(async () => ({ ...layout(), [Symbol.dispose]: dispose }))
-	const session = { layout: read } as unknown as RpcStub<WorkbenchSessionApi>
+	const session = { layoutDto: read } as unknown as RpcStub<WorkbenchSessionApi>
 	return { dispose, read, runtime: new WorkbenchLayoutRuntime(session) }
 }
 
@@ -179,7 +179,7 @@ describe('one-epoch Workbench layout runtime', () => {
 		const dispose = vi.fn()
 		const read = vi.fn(async () => ({ ...routeConflictLayout(), [Symbol.dispose]: dispose }))
 		const runtime = new WorkbenchLayoutRuntime({
-			layout: read,
+			layoutDto: read,
 		} as unknown as RpcStub<WorkbenchSessionApi>)
 
 		try {
@@ -202,7 +202,7 @@ describe('one-epoch Workbench layout runtime', () => {
 			.mockResolvedValueOnce({ ...producerStatusLayout('failed'), [Symbol.dispose]: dispose })
 		const runtime = new WorkbenchLayoutRuntime(
 			{
-				layout: read,
+				layoutDto: read,
 			} as unknown as RpcStub<WorkbenchSessionApi>,
 			{ statusPollMs: 10 },
 		)
@@ -237,7 +237,7 @@ describe('one-epoch Workbench layout runtime', () => {
 			.mockResolvedValueOnce({ ...layout(), [Symbol.dispose]: dispose })
 		const runtime = new WorkbenchLayoutRuntime(
 			{
-				layout: read,
+				layoutDto: read,
 			} as unknown as RpcStub<WorkbenchSessionApi>,
 			{ statusPollMs: 10 },
 		)

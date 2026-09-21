@@ -1,5 +1,4 @@
-import { createWorkbenchTestHost } from '@pluxel/workbench/test'
-import { createServiceTestHost } from '@pluxel/services/test'
+import { createServiceTestHost, createWorkbenchTestHost } from '@pluxel/services/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchExamplePlugin, WretchExampleWorkbench } from './fixtures/wretch-example.ts'
@@ -62,7 +61,7 @@ describe('WretchExamplePlugin', () => {
 				params: {},
 				federatedViewRef: { expose: './views/settings' },
 			})
-			expect(await settings.api.snapshot()).toMatchObject({
+			expect(await settings.api.snapshotDto()).toMatchObject({
 				settings: { headers: {} },
 				hostTimeoutMs: 30_000,
 				effectiveTimeoutMs: 30_000,
