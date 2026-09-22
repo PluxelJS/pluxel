@@ -13,6 +13,7 @@
 
 仍有未实现边界的文件：
 
+- [`UNIFIED_PLUGIN_CONFIGURATION.md`](UNIFIED_PLUGIN_CONFIGURATION.md)：统一插件配置体验的讨论草案：唯一 defineConfig(factory) 入口、config/Vault 分工、显式 env 绑定、多账号扫码及运行时更新，尚未采纳或实现。
 - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的
   decoratorless Plugin declaration。
