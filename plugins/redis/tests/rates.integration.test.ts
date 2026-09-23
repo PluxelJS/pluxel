@@ -16,10 +16,10 @@ class IntegrationConsumer extends BasePlugin {
 }
 
 const algorithms = [
-	{ algorithm: 'token-bucket', limit: 3, windowMs: 100, burst: 3 },
-	{ algorithm: 'fixed-window', limit: 3, windowMs: 100 },
-	{ algorithm: 'sliding-window-counter', limit: 3, windowMs: 100 },
-	{ algorithm: 'sliding-window-log', limit: 3, windowMs: 100 },
+	{ algorithm: 'token-bucket', limit: 3, windowMs: 60_000, burst: 3 },
+	{ algorithm: 'fixed-window', limit: 3, windowMs: 60_000 },
+	{ algorithm: 'sliding-window-counter', limit: 3, windowMs: 60_000 },
+	{ algorithm: 'sliding-window-log', limit: 3, windowMs: 60_000 },
 ] satisfies RatePolicy[]
 
 describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
