@@ -197,15 +197,15 @@ export class ConfigService {
 			throw new Error('[ConfigService] Config revision changed during validation.')
 		}
 		const snapshot = immutableConfigRecord(input.value)
-		this.replaceRecord(owner, snapshot)
 		const key = pluginNodeIndexKey(owner)
 		const ticket = Object.freeze({
 			owner,
 			authority,
-			revision: this.getConfigRevision(owner),
+			revision: ++this.sequence,
 			snapshot,
 		})
-		this.staged.set(key, { ticket, revision: ticket.revision })
+		this.staged.set(key, { ticket, revision: expectedRevision })
+		this.onConfigChanged(owner)
 		return ticket
 	}
 
@@ -213,10 +213,12 @@ export class ConfigService {
 	confirmValidatedConfig(ticket: StagedPluginConfigValidation): Readonly<ConfigRecord> {
 		const key = pluginNodeIndexKey(ticket.owner)
 		const staged = this.staged.get(key)
-		if (staged?.ticket !== ticket || this.getConfigRevision(ticket.owner) !== ticket.revision) {
+		if (staged?.ticket !== ticket || this.getConfigRevision(ticket.owner) !== staged.revision) {
 			throw new Error('[ConfigService] Staged config validation is stale.')
 		}
 		this.staged.delete(key)
+		this.records.set(key, { owner: ticket.owner, config: ticket.snapshot })
+		this.revisions.set(key, ticket.revision)
 		this.validated.set(key, {
 			rev: ticket.revision,
 			authority: ticket.authority,
@@ -285,9 +287,9 @@ export class ConfigService {
 	/** Wait until this backend has durably persisted all queued desired Config records. */
 	async flush(_options: { force?: boolean } = {}): Promise<void> {}
 
-	private replaceRecord(owner: PluginNodeAddress, value: Readonly<ConfigRecord>): void {
+	protected replaceRecord(owner: PluginNodeAddress, value: Readonly<ConfigRecord>): void {
 		const ownerKey = pluginNodeIndexKey(owner)
-		this.records.set(ownerKey, { owner, config: value })
+		this.records.set(ownerKey, { owner, config: immutableConfigRecord(value) })
 		this.changed(owner, ownerKey)
 	}
 

@@ -1,15 +1,18 @@
 import type { RootContext } from '@pluxel/core'
 import { installOwnerViewCapability, installRootCapability } from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
+import { defineHostService, type HostServiceDependencies } from '@pluxel/host'
+import { HostVaultBindings } from '@pluxel/host/bindings'
 import { Persistence } from './persistence/token'
+import type { PersistenceService } from './persistence/service'
 import { Vault, VaultAdmin } from './vault/token'
 import type { VaultService, VaultAdminService } from './vault/service'
 import type { VaultServiceConfig } from './vault/types'
 
 export { Vault, VaultAdmin } from './vault/token'
+export { VaultError } from './vault/error'
 export type * from './vault/types'
 
-/** Install encrypted owner storage. Persistence must be explicitly installed in the same Host. */
+/** Install owner-scoped Vault. Bindings-only mode does not require Persistence or create keys. */
 export function vault(config: VaultServiceConfig = {}) {
 	const snapshot = Object.freeze({ ...config })
 	const prepared = new WeakMap<RootContext, { vault: VaultService; admin: VaultAdminService }>()
@@ -18,9 +21,11 @@ export function vault(config: VaultServiceConfig = {}) {
 		if (!value) throw new Error('[services.vault] Vault has not been prepared')
 		return value
 	}
+	const requires: HostServiceDependencies =
+		snapshot.backend === 'bindings' ? {} : { persistence: Persistence }
 	return defineHostService({
 		name: 'Vault',
-		requires: { persistence: Persistence },
+		requires,
 		capabilities: [
 			installOwnerViewCapability(Vault, {
 				property: 'vault',
@@ -31,18 +36,24 @@ export function vault(config: VaultServiceConfig = {}) {
 				property: 'vaultAdmin',
 				create: (ctx) => backing(ctx as RootContext).admin,
 			}),
+			installRootCapability(HostVaultBindings, {
+				create: (ctx) => ({
+					install: (records) => backing(ctx as RootContext).vault.installBindings(records),
+				}),
+			}),
 		],
 		async prepare({ ctx, dependencies, effects }) {
 			const { VaultService, VaultAdminService } = await import('./vault/service')
-			await dependencies.persistence.preflight({ writable: true })
-			const service = VaultService.create(
-				ctx,
-				snapshot,
-				dependencies.persistence.namespace('vault'),
-			)
+			const storage =
+				snapshot.backend === 'bindings'
+					? undefined
+					: (dependencies.persistence as PersistenceService)
+			await storage?.preflight({ writable: true })
+			const service = VaultService.create(ctx, snapshot, storage?.namespace('vault'))
 			effects.defer(() => service.managedVault().flush(), { tag: 'VaultFlush', phase: 'shutdown' })
 			const admin = new VaultAdminService(ctx, service)
 			await admin.prepare()
+			await service.migrateLegacyNamespaces(snapshot.legacyNamespaces ?? [])
 			prepared.set(ctx, { vault: service, admin })
 			effects.defer(
 				() => {

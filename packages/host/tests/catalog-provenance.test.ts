@@ -23,14 +23,14 @@ it('snapshots route execution facts only with accepted catalogs and releases the
 		execution: {
 			kind: 'static-catalog',
 			artifact: { kind: 'source-module' },
-			update: { kind: 'catalog-hmr' },
+			update: { kind: 'host-reload' },
 		},
 	}
 	const built: PluginCatalogProvenance = {
 		execution: {
 			kind: 'static-catalog',
 			artifact: { kind: 'built-module' },
-			update: { kind: 'catalog-hmr' },
+			update: { kind: 'host-reload' },
 		},
 	}
 	const host = await createHost({ plugins: [Original] })

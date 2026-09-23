@@ -19,9 +19,9 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./config-environment": {
-			"@pluxel/source": "./src/config-environment.ts",
-			"default": "./dist/config-environment.mjs"
+		"./bindings": {
+			"@pluxel/source": "./src/bindings.ts",
+			"default": "./dist/bindings.mjs"
 		},
 		"./dynamic": {
 			"@pluxel/source": "./src/dynamic/index.ts",
@@ -48,7 +48,7 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./config-environment": "./dist/config-environment.mjs",
+			"./bindings": "./dist/bindings.mjs",
 			"./dynamic": "./dist/dynamic.mjs",
 			"./dynamic/source-producer": "./dist/dynamic/source-producer.mjs",
 			"./environment": "./dist/environment.mjs",

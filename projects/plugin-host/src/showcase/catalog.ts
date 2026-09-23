@@ -31,7 +31,7 @@ import {
 
 export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
-export const officialPlugins = Object.freeze([
+export const hostPlugins = [
 	AgentToolsPlugin,
 	PiAgentPlugin,
 	PackageManagerPlugin,
@@ -51,28 +51,16 @@ export const officialPlugins = Object.freeze([
 	CanvasPlugin,
 	EChartsPlugin,
 	TakumiPlugin,
-] as const)
-
-export const showcasePlugins = Object.freeze([
 	EChartsShowcaseRenderer,
 	TakumiShowcaseRenderer,
 	CanvasShowcaseRenderer,
 	ReleaseArchivePlugin,
 	ReportStudioPlugin,
-] as const)
-
-export const focusedDemoPlugins = Object.freeze([
 	PluginEventsDeclaredProducer,
 	PluginEventsDeclaredConsumer,
 	PluginOptionalIntegrationProvider,
 	PluginOptionalIntegrationConsumer,
-] as const)
-
-export const hostPlugins = Object.freeze([
-	...officialPlugins,
-	...showcasePlugins,
-	...focusedDemoPlugins,
-] as const)
+] as const
 
 export const redisBackedPlugins = Object.freeze([
 	RedisPlugin,

@@ -106,6 +106,33 @@ export class AuthPlugin extends BasePlugin {
 			},
 			{ tag: 'auth-generation', phase: 'shutdown' },
 		)
+		this.ctx.effects.defer(
+			await store.watch(async () => {
+				if (!this.active) return
+				const [account, oidc] = await Promise.all([store.loadAccount(), store.loadOidcSecret()])
+				if (!this.active) return
+				const identity = (value: LocalAccountRecord | undefined) =>
+					value &&
+					JSON.stringify({
+						username: value.normalizedUsername,
+						password: value.password,
+						totpSecret: value.totp?.secret,
+					})
+				if (
+					identity(this.account) !== identity(account.account) ||
+					this.oidcSecret !== oidc.secret
+				) {
+					this.sessions.clear()
+					this.loginFailures.clear()
+					this.oidc?.clear()
+				}
+				this.account = account.account
+				this.accountInvalid = account.invalid
+				this.oidcSecret = oidc.secret
+				this.oidcSecretInvalid = oidc.invalid
+			}),
+			{ tag: 'auth-vault-observation' },
+		)
 		this.ctx.managementAccess?.provide(this.provider)
 		this.ctx.workbench?.publish(AuthWorkbench, {
 			setup: ({ principal, signal }) =>
@@ -370,3 +397,5 @@ export class AuthPlugin extends BasePlugin {
 		return this.oidc
 	}
 }
+
+export { AuthVaultSchema } from './credentials.ts'

@@ -1,6 +1,6 @@
 import { FontsPlugin } from '@pluxel/fonts'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
@@ -15,12 +15,10 @@ const plugins = [
 	TypstDynamicProbePlugin,
 ] as const
 
-export default {
+export default defineConfig(() => ({
 	name: 'render-fixture',
 	plugins,
-	configure: () => ({
-		configRecords: { mode: 'memory' },
-		state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
-		services: standardServices({ persistence: { mode: 'memory' } }),
-	}),
-} satisfies HostApplication
+	configRecords: { mode: 'memory' },
+	state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
+	services: standardServices({ persistence: { mode: 'memory' } }),
+}))

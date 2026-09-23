@@ -63,9 +63,9 @@ describe('plugin execution presentation', () => {
 			execution: {
 				kind: 'static-catalog',
 				artifact: { kind: 'built-module' },
-				update: { kind: 'catalog-hmr' },
+				update: { kind: 'host-reload' },
 			},
-			badge: '目录 HMR',
+			badge: '宿主重载',
 		},
 		{
 			execution: {
@@ -119,19 +119,19 @@ describe('plugin execution presentation', () => {
 		expect(describePluginExecution(execution).badgeLabel).toBe(badge)
 	})
 
-	it('describes static Vite catalog HMR without hiding its application rebuild boundary', () => {
+	it('describes fixed Vite plugins as complete Host replacements', () => {
 		expect(
 			describePluginExecution({
 				kind: 'static-catalog',
 				artifact: { kind: 'unreported' },
-				update: { kind: 'catalog-hmr' },
+				update: { kind: 'host-reload' },
 			}),
 		).toMatchObject({
-			badgeLabel: '目录 HMR',
-			badgeTone: 'blue',
+			badgeLabel: '宿主重载',
+			badgeTone: 'orange',
 			artifactLabel: '制品未报告',
-			updateLabel: '应用模块图变化时热替换插件目录；entry/应用配置边界变化时重建应用',
-			searchTerms: expect.arrayContaining(['hmr', 'catalog-hmr', '目录 HMR', '重建应用']),
+			updateLabel: '应用及固定插件变化时重建宿主',
+			searchTerms: expect.arrayContaining(['host-reload', '宿主重载', '重建应用']),
 		})
 	})
 

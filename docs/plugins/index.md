@@ -24,29 +24,27 @@ pnpm governance:check
 
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/core'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { WretchPlugin } from '@pluxel/wretch'
 import { CustomerPlugin } from './customer-plugin.js'
 
-export default {
-	name: 'my-app',
-	plugins: [WretchPlugin, CustomerPlugin],
-	async configure(startup) {
-		return {
-			services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
-			state: { initial: { autoStart: [pluginNodeAddressOf(CustomerPlugin)] } },
-			configRecords: {
-				initial: [
-					{
-						owner: pluginNodeAddressOf(CustomerPlugin),
-						config: { baseUrl: 'https://catalog.example' },
-					},
-				],
-			},
-		}
-	},
-} satisfies HostApplication
+export default defineConfig(async (startup) => {
+	return {
+		name: 'my-app',
+		plugins: [WretchPlugin, CustomerPlugin],
+		services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+		state: { initial: { autoStart: [pluginNodeAddressOf(CustomerPlugin)] } },
+		configRecords: {
+			initial: [
+				{
+					owner: pluginNodeAddressOf(CustomerPlugin),
+					config: { baseUrl: 'https://catalog.example' },
+				},
+			],
+		},
+	}
+})
 ```
 
 把 `CustomerPlugin` 保存为入口相邻的 `customer-plugin.ts`，完整实现见 [Wretch](./wretch.md#第一个-http-consumer)。它通过构造函数依赖 `WretchPlugin`，因此启动 consumer 时会一起启动 provider。把这段配置合入现有入口，保留项目已有的插件、启动项和配置记录。

@@ -73,9 +73,6 @@ export type ConfigSchemaSourceResolver = {
 		module: ConfigSchemaModule,
 		expression: AstNode,
 	): Promise<readonly ConfigSourceSymbol[] | undefined>
-	resolvePluginConfigSchemaSymbol(
-		plugin: ConfigSourceSymbol,
-	): Promise<ConfigSourceSymbol | undefined>
 }
 
 const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/internal/test'])
@@ -484,29 +481,6 @@ export function createConfigSchemaSourceResolver(
 		return symbols
 	}
 
-	const resolvePluginConfigSchemaSymbol = async (
-		plugin: ConfigSourceSymbol,
-	): Promise<ConfigSourceSymbol | undefined> => {
-		const module = await loadModule(plugin.moduleId)
-		const declaration = module?.classes.get(plugin.local)
-		if (!module || !declaration) return undefined
-		const schemas: AstNode[] = []
-		for (const rawMember of arrayOf((declaration.body as AstNode | undefined)?.body)) {
-			const member = rawMember as AstNode
-			if (member.type !== 'PropertyDefinition') continue
-			const use = configsUse(member.value)
-			if (!use) continue
-			const args = arrayOf(use.arguments)
-			if (args.length !== 1 || (args[0] as AstNode).type === 'SpreadElement') return undefined
-			schemas.push(args[0] as AstNode)
-		}
-		if (schemas.length !== 1) return undefined
-		const schema = unwrapStaticExpression(schemas[0]!)
-		if (schema.type !== 'Identifier') return undefined
-		const name = readIdentifier(schema)
-		return name ? resolveLocalSymbol(module, name, new Set()) : undefined
-	}
-
 	const renderExport = async (
 		module: ConfigSchemaModule,
 		name: string,
@@ -653,7 +627,6 @@ export function createConfigSchemaSourceResolver(
 		async resolveArraySymbols(module, expression) {
 			return resolveArrayExpressionSymbols(module, expression, new Set())
 		},
-		resolvePluginConfigSchemaSymbol,
 	}
 }
 

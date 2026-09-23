@@ -1,0 +1,5 @@
+{
+	"extends": "./tsconfig.explicit.json",
+	"compilerOptions": { "noEmit": true },
+	"files": ["explicit-consumer.ts"]
+}

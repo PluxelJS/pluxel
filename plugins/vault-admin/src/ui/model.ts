@@ -26,11 +26,10 @@ export function summarizeInventory(vault: VaultSnapshot) {
 		(acc, row) => {
 			acc.namespaces += 1
 			acc.kv += row.kvKeys
-			acc.docs += row.docDocuments
 			acc.blobs += row.blobs
 			return acc
 		},
-		{ namespaces: 0, kv: 0, docs: 0, blobs: 0 },
+		{ namespaces: 0, kv: 0, blobs: 0 },
 	)
 }
 

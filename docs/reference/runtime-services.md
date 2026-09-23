@@ -3,28 +3,26 @@ title: 组合 Host 服务
 description: 使用官方默认组合运行应用，或按需选择 Host 服务并管理准备与清理。
 ---
 
-官方应用和 starter 使用 `HostApplication` 配合 `servicesPreset()`：应用声明插件、数据位置和启动策略，官方入口负责开发附件和部署制品路径。需要自定义服务集合时，使用 `@pluxel/host` 逐项组合；它默认只提供 Core 能力。
+官方应用和 starter 使用 `defineConfig(factory)` 配合 `servicesPreset()`：应用声明插件、数据位置和启动策略，官方入口负责开发附件和部署制品路径。需要自定义服务集合时，使用 `@pluxel/host` 逐项组合；它默认只提供 Core 能力。
 
 ## 官方默认组合
 
 ```ts
 // src/app.ts
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { servicesPreset } from '@pluxel/services/preset'
 import { MyPlugin } from './plugin.js'
 
-export default {
-	plugins: [MyPlugin],
-	async configure(startup) {
-		return {
-			services: await servicesPreset(startup, {
-				persistence: startup.env.PLUXEL_DATA_ROOT ?? './data',
-			}),
-			state: { initial: { autoStart: [pluginNodeAddressOf(MyPlugin)] } },
-		}
-	},
-} satisfies HostApplication
+export default defineConfig(async (startup) => {
+	return {
+		plugins: [MyPlugin],
+		services: await servicesPreset(startup, {
+			persistence: startup.env.PLUXEL_DATA_ROOT ?? './data',
+		}),
+		state: { initial: { autoStart: [pluginNodeAddressOf(MyPlugin)] } },
+	}
+})
 ```
 
 ```ts
@@ -56,7 +54,7 @@ export default defineConfig({
 
 生产 Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
-`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。环境变量由应用的 `configure(startup)` 显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。环境变量由应用的 配置工厂 显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
 官方构建默认携带 Workbench shell，并维护动态插件所需的官方共享入口。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
@@ -104,7 +102,7 @@ try {
 }
 ```
 
-`plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 明确依赖 Persistence，Host 不自动补装依赖。
+`plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端明确依赖 Persistence；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不依赖 Persistence。Host 不自动补装依赖。
 
 两个 Host 可以使用不同清单；同一份服务声明也可创建多个相互隔离的 Host。安装集合创建后固定，普通 Plugin 更新复用已准备的服务。修改安装清单需要创建新 Host。
 
@@ -154,7 +152,7 @@ const host = await createHost({
 
 文档存储是借用的：Host 关闭时等待自己的写入、清理定时器并报告 flush 失败；不会调用外部 backend 的 close。共享 backend 的创建和关闭由应用或对应服务拥有。`put()` 必须在完整文档提交后才 resolve，并在 `{ atomic: true }` 时提供旧文档或新文档的完整替换语义；不能用“请求已入队”冒充写入成功。
 
-Host 应用解析器从显式传入的 `startup.env` 读取 `PLUXEL_CONFIG` 及编译生成的环境绑定。初始配置按 `configRecords.initial`、编译绑定、`PLUXEL_CONFIG` 的顺序覆盖合并；持久化记录优先于初始种子。底层 `createHost()` 不隐式读取进程环境。
+Host 应用解析器从本次 `startup.env` 读取显式 `envBindings`，文件输入来自 `fileBindings`。普通配置优先级为基础对象/文件 < 管理保存值 < env，合并后由 schema 校验；env 控制的路径只读且不落盘。Vault env/file 绑定是整记录只读。底层 `createHost()` 不隐式读取进程环境。
 
 ## Plugin 读取能力
 
@@ -168,7 +166,9 @@ import { Vault } from '@pluxel/services/vault'
 export class CredentialsPlugin extends BasePlugin {
 	init() {
 		const storage = this.ctx.require(Vault)
-		// 使用该 Plugin owner 绑定的 storage。
+		// get/set/delete 返回带 revision、source 和 writable 的不可变快照。
+		const kv = storage.kv()
+		// 持久写在确认提交后返回；部署绑定整条只读。
 	}
 }
 ```
@@ -259,27 +259,27 @@ backend 工厂返回 Host 独占的 adapter，Host 在 accepted operations 排�
 
 ## 自定义组合的开发和生产接入
 
-`HostApplication` 固定声明 `plugins`、`sources`，在每次启动时调用
-`configure({ root, mode, env, bindings, deployment })` 获取 `services`、`config`、`state`、`configRecords`。
-`configure` 不能替换 Plugin 目录。服务准备完成、开发附件接好之后，Host 调用可选的
+`defineConfig(factory)` 提供 startup 上下文类型并保留工厂返回类型；`HostApplicationFactory` 表示工厂，`HostApplication` 表示其返回的完整配置对象。
+Host 每次启动传入 `{ root, mode, env, bindings, deployment }`，等待同步或异步工厂返回
+`plugins`、`sources`、`services`、`config`、`state`、`configRecords` 与可选 `prepare`。
+Host 为每次装配浅复制并冻结 startup、env、bindings 和 deployment，工厂与 `prepare` 共用这份快照。bindings 中的资源对象保留原身份与调用方所有权；冻结不会递归到这些资源。直接调用 `runHostApplication` 时，传入的 env 是完整输入，不会隐式合并进程环境。
+模块导入不执行工厂。普通静态片段可用 `satisfies` 检查，在工厂中组合；工厂只描述装配，资源应由服务 `prepare` 获取。服务准备完成、开发附件接好之后，Host 调用可选的
 `prepare({ host, startup })`，再启动 Plugin；失败由启动入口回滚整个 Host。
 
 ```ts
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { resolve } from 'node:path'
 
-export default {
-	plugins: [],
-	configure({ env, deployment }) {
-		return {
-			services: standardServices({
-				persistence: env.DATA_DIRECTORY ?? './data',
-				nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
-			}),
-		}
-	},
-} satisfies HostApplication
+export default defineConfig(({ env, deployment }) => {
+	return {
+		plugins: [],
+		services: standardServices({
+			persistence: env.DATA_DIRECTORY ?? './data',
+			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
+		}),
+	}
+})
 ```
 
 `standardServices()` 明确提供 HTTP、Commands、NodeModules、Workers、Persistence。
@@ -292,7 +292,7 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 
 应用 `tsdown.config.ts` 使用 `pluxel()`（`@pluxel/rolldown`）。`launcher: 'host'` 适合后台服务；
 `'fetch'` 输出 HTTP handler，`'node'` 再启动 Node 监听器。后两项要求应用选择 `http()`。
-构建不会执行 `configure()`，运行时才读取最新环境。`variant: 'headless'` 不携带 Workbench shell。
+构建不会执行配置工厂，运行时才读取最新环境。`variant: 'headless'` 不携带 Workbench shell。
 Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/standalone-host.md) `workbenchService()`、`managementHttp({ bindings })` 与 `workbenchHttp()`，并选择 `variant: 'workbench'` 携带 shell。
 
 仅安装 Management 无需安装 Workbench，包含 TypeScript 使用场景。自定义 Workbench Shell 可调用

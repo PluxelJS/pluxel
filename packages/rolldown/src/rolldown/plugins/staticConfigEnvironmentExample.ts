@@ -1,6 +1,8 @@
 import type { RawInputProjection } from 'valibot-form'
 
 export type StaticConfigEnvironmentTarget = Readonly<{
+	kind: 'config' | 'vault'
+	namespace?: string
 	environmentName: string
 	pluginName: string
 	schemaName: string
@@ -19,8 +21,8 @@ export function renderStaticConfigEnvironmentExample(
 		else grouped.set(target.environmentName, [target])
 	}
 	const lines = [
-		'# Generated Pluxel static config bootstrap variables.',
-		'# Existing persisted config remains authoritative.',
+		'# Generated Pluxel config and Vault environment bindings.',
+		'# Present environment values override saved and base values; they are never persisted.',
 		'',
 	]
 	for (const environmentName of [...grouped.keys()].sort(compareUtf8)) {

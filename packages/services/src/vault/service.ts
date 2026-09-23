@@ -1,9 +1,9 @@
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
+import type { HostVaultBindingRecord } from '@pluxel/host/bindings'
 import type { Context as PluxelContext } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { pinOwnerContext } from '../internal/owner-view'
 import { basename, join } from 'pathe'
-import { env as stdEnv } from 'std-env'
 import type { PersistenceNamespace } from '../persistence/service'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import { recordSecurityEvent } from '../internal/security'
@@ -11,14 +11,13 @@ import type {
 	VaultAdminState,
 	VaultBlobHandle,
 	VaultBlobsHandle,
-	VaultCollectionHandle,
-	VaultCollectionTransaction,
-	VaultDocsHandle,
 	VaultKeyPair,
+	VaultRecordSnapshot,
+	VaultWriteOptions,
+	VaultListOptions,
 	VaultKvHandle,
 	VaultKvTransaction,
 	VaultNamespace,
-	VaultNamespaceTransaction,
 	VaultNamespaceStats,
 	VaultNamespaceOptions,
 	VaultServiceConfig,
@@ -41,23 +40,8 @@ async function runVaultOperation<T>(ctx: PluxelContext, run: () => Promise<T>): 
 	}
 }
 
-export class VaultError extends Error {
-	public readonly code:
-		| 'ACCESS_DENIED'
-		| 'DECRYPT_FAILED'
-		| 'INVALID_CONFIG'
-		| 'INVALID_FORMAT'
-		| 'IO'
-		| 'MISSING_MOUNT'
-		| 'MISSING_IDENTITY'
-
-	constructor(code: VaultError['code'], message: string, options?: { cause?: unknown }) {
-		super(message)
-		this.name = 'VaultError'
-		this.code = code
-		if (options?.cause !== undefined) (this as unknown as { cause?: unknown }).cause = options.cause
-	}
-}
+export { VaultError } from './error'
+import { VaultError } from './error'
 
 type VaultStore = {
 	exists(key: string): Promise<boolean>
@@ -74,8 +58,8 @@ type MountRuntime = {
 	keysPath: string
 	statePath: string
 	blobsDir: string
-	flushDebounceMs: number
-	deployIdentityEnv: string
+	backend: 'encrypted' | 'bindings'
+	deployIdentity: string
 }
 
 type VaultRuntimePhase = 'sealed' | 'unlocking' | 'ready' | 'blocked' | 'error'
@@ -103,11 +87,13 @@ type SecurityIdentityDoc = {
 
 type VaultSnapshot = {
 	kind: 'pluxel.vault.snapshot'
+	version: 2
+	migrations?: Record<string, string>
 	namespaces: Record<
 		string,
 		{
 			kv: Record<string, unknown>
-			docs: Record<string, Record<string, Record<string, unknown>>>
+			revisions: Record<string, number>
 		}
 	>
 }
@@ -126,7 +112,6 @@ type MountCacheState =
 
 type ManagedVault = {
 	kv: (options?: VaultNamespaceOptions) => VaultKvHandle
-	docs: (options?: VaultNamespaceOptions) => VaultDocsHandle
 	blobs: (options?: VaultNamespaceOptions) => VaultBlobsHandle
 	namespace: (name?: string) => VaultNamespace
 	flush: () => Promise<void>
@@ -141,6 +126,11 @@ type ManagedVault = {
 
 type MountCacheEntry = {
 	lock: AsyncLock
+	overlays: Map<string, Map<string, VaultRecordSnapshot>>
+	watchers: Map<
+		string,
+		Set<{ key: string; prefix?: boolean; notify(snapshot: VaultRecordSnapshot): void }>
+	>
 	state: MountCacheState
 	status: {
 		phase: VaultRuntimePhase
@@ -180,7 +170,6 @@ class AsyncLock {
 const STATE_MAGIC = textEncode('PVLT2')
 const NONCE_BYTES = 12
 const SHARED_MOUNT = 'global'
-const DEFAULT_FLUSH_DEBOUNCE_MS = 50
 const DEFAULT_DEPLOY_IDENTITY_ENV = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
 
 function cloneStatusError(error?: VaultStatusError): VaultStatusError | undefined {
@@ -243,7 +232,77 @@ function createVaultStore(storage: PersistenceNamespace): VaultStore {
 }
 
 function cloneJson<T>(value: T): T {
-	return JSON.parse(JSON.stringify(value)) as T
+	const seen = new Set<object>()
+	const copy = (input: unknown): unknown => {
+		if (input === null || typeof input === 'string' || typeof input === 'boolean') return input
+		if (typeof input === 'number' && Number.isFinite(input)) return input
+		if (!input || typeof input !== 'object' || seen.has(input))
+			throw new VaultError('INVALID_FORMAT', 'Vault values must be finite acyclic JSON data.')
+		const prototype = Object.getPrototypeOf(input)
+		if (
+			Object.getOwnPropertySymbols(input).length > 0 ||
+			(Array.isArray(input) && Object.keys(input).length !== input.length)
+		)
+			throw new VaultError(
+				'INVALID_FORMAT',
+				'Vault values cannot contain symbols or sparse arrays.',
+			)
+		if (!Array.isArray(input) && prototype !== Object.prototype && prototype !== null)
+			throw new VaultError('INVALID_FORMAT', 'Vault values must be plain JSON data.')
+		seen.add(input)
+		try {
+			const output: Record<string, unknown> | unknown[] = Array.isArray(input)
+				? []
+				: Object.create(null)
+			for (const key of Object.keys(input)) {
+				const descriptor = Object.getOwnPropertyDescriptor(input, key)!
+				if (!('value' in descriptor))
+					throw new VaultError('INVALID_FORMAT', 'Vault values cannot contain accessors.')
+				Object.defineProperty(output, key, {
+					value: copy(descriptor.value),
+					enumerable: true,
+					writable: true,
+					configurable: true,
+				})
+			}
+			return output
+		} finally {
+			seen.delete(input)
+		}
+	}
+	return copy(value) as T
+}
+function freezeJson<T>(input: T): T {
+	if (input && typeof input === 'object') {
+		for (const child of Object.values(input)) freezeJson(child)
+		Object.freeze(input)
+	}
+	return input
+}
+function validateKey(key: string): void {
+	if (
+		typeof key !== 'string' ||
+		key.length === 0 ||
+		key.length > 512 ||
+		[...key].some((character) => character.charCodeAt(0) < 32) ||
+		['__proto__', 'prototype', 'constructor'].includes(key)
+	)
+		throw new VaultError('INVALID_CONFIG', 'Invalid Vault record key.')
+}
+function recordSnapshot(
+	state: VaultSnapshot['namespaces'][string] | undefined,
+	key: string,
+	writable: boolean,
+): VaultRecordSnapshot {
+	const exists = !!state && Object.hasOwn(state.kv, key)
+	return Object.freeze({
+		key,
+		exists,
+		value: exists ? freezeJson(cloneJson(state!.kv[key])) : undefined,
+		revision: state?.revisions[key] ?? 0,
+		source: 'kv',
+		writable,
+	})
 }
 
 function getWebCrypto(): Crypto {
@@ -316,7 +375,7 @@ async function aesDecrypt(keyBytes: Uint8Array, input: Uint8Array): Promise<Uint
 }
 
 function createEmptySnapshot(): VaultSnapshot {
-	return { kind: 'pluxel.vault.snapshot', namespaces: {} }
+	return { kind: 'pluxel.vault.snapshot', version: 2, namespaces: {} }
 }
 
 function parseSnapshot(bytes: Uint8Array): VaultSnapshot {
@@ -340,10 +399,63 @@ function parseSnapshot(bytes: Uint8Array): VaultSnapshot {
 	) {
 		throw new VaultError('INVALID_FORMAT', 'Vault snapshot namespaces must be an object.')
 	}
-	return {
-		kind: 'pluxel.vault.snapshot',
-		namespaces: candidate.namespaces as VaultSnapshot['namespaces'],
+	if (candidate.version !== undefined && candidate.version !== 2)
+		throw new VaultError('INVALID_FORMAT', 'Unsupported vault snapshot version.')
+	const namespaces: VaultSnapshot['namespaces'] = Object.create(null)
+	for (const [name, input] of Object.entries(candidate.namespaces)) {
+		if (!input || typeof input !== 'object' || Array.isArray(input))
+			throw new VaultError('INVALID_FORMAT', 'Invalid vault namespace.')
+		const raw = input as Record<string, unknown>
+		if (!raw.kv || typeof raw.kv !== 'object' || Array.isArray(raw.kv))
+			throw new VaultError('INVALID_FORMAT', 'Invalid vault records.')
+		const kv = cloneJson(raw.kv) as Record<string, unknown>
+		const revisions: Record<string, number> = Object.create(null)
+		if (candidate.version === 2) {
+			if (!raw.revisions || typeof raw.revisions !== 'object' || Array.isArray(raw.revisions))
+				throw new VaultError('INVALID_FORMAT', 'Invalid vault revisions.')
+			for (const [key, revision] of Object.entries(raw.revisions)) {
+				if (!Number.isSafeInteger(revision) || (revision as number) < 1)
+					throw new VaultError('INVALID_FORMAT', 'Invalid vault revision.')
+				revisions[key] = revision as number
+			}
+			for (const key of Object.keys(kv))
+				if (!revisions[key]) throw new VaultError('INVALID_FORMAT', 'Missing vault revision.')
+		} else {
+			for (const key of Object.keys(kv)) revisions[key] = 1
+			if (!raw.docs || typeof raw.docs !== 'object' || Array.isArray(raw.docs))
+				throw new VaultError('INVALID_FORMAT', 'Invalid legacy Vault documents.')
+			for (const [collection, documents] of Object.entries(raw.docs)) {
+				if (!documents || typeof documents !== 'object' || Array.isArray(documents))
+					throw new VaultError('INVALID_FORMAT', 'Invalid legacy Vault collection.')
+				for (const [id, value] of Object.entries(documents)) {
+					const key = `documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`
+					if (Object.hasOwn(kv, key))
+						throw new VaultError(
+							'INVALID_FORMAT',
+							'Legacy Vault document migration collides with a KV record.',
+						)
+					kv[key] = cloneJson(value)
+					revisions[key] = 1
+				}
+			}
+		}
+		namespaces[name] = { kv, revisions }
 	}
+	const migrations: Record<string, string> = Object.create(null)
+	if (candidate.migrations !== undefined) {
+		if (
+			!candidate.migrations ||
+			typeof candidate.migrations !== 'object' ||
+			Array.isArray(candidate.migrations)
+		)
+			throw new VaultError('INVALID_FORMAT', 'Invalid Vault migration markers.')
+		for (const [target, source] of Object.entries(candidate.migrations)) {
+			if (typeof source !== 'string' || !source)
+				throw new VaultError('INVALID_FORMAT', 'Invalid Vault migration source.')
+			migrations[target] = source
+		}
+	}
+	return { kind: 'pluxel.vault.snapshot', version: 2, namespaces, migrations }
 }
 
 function serializeSnapshot(snapshot: VaultSnapshot): Uint8Array {
@@ -364,8 +476,8 @@ function resolveRuntime(config: VaultServiceConfig = {}): MountRuntime {
 		keysPath: join(dir, 'keys.age'),
 		statePath: join(dir, 'state.enc'),
 		blobsDir: join(dir, 'blobs'),
-		flushDebounceMs: config.flushDebounceMs ?? DEFAULT_FLUSH_DEBOUNCE_MS,
-		deployIdentityEnv: config.deployIdentityEnv?.trim() || DEFAULT_DEPLOY_IDENTITY_ENV,
+		backend: config.backend ?? 'encrypted',
+		deployIdentity: config.deployIdentity ?? '',
 	}
 }
 
@@ -465,9 +577,7 @@ async function writeDeployRecipients(store: VaultStore, recipients: string[]): P
 }
 
 async function hasDeployIdentity(runtime: MountRuntime): Promise<boolean> {
-	return (
-		splitMaterialLines((stdEnv[runtime.deployIdentityEnv] as string | undefined) ?? '').length > 0
-	)
+	return splitMaterialLines(runtime.deployIdentity).length > 0
 }
 
 async function ensureIdentity(
@@ -524,9 +634,7 @@ async function resolveManagedIdentities(
 	const localIdentity = await ensureIdentity(store, false)
 	if (localIdentity) identities.push(localIdentity)
 	if (options.includeDeployIdentity !== false) {
-		identities.push(
-			...splitMaterialLines((stdEnv[runtime.deployIdentityEnv] as string | undefined) ?? ''),
-		)
+		identities.push(...splitMaterialLines(runtime.deployIdentity))
 	}
 	return identities
 }
@@ -580,6 +688,8 @@ async function decryptDek(
 function createMountCacheEntry(): MountCacheEntry {
 	return {
 		lock: new AsyncLock(),
+		overlays: new Map(),
+		watchers: new Map(),
 		state: { status: 'locked' },
 		status: { phase: 'sealed', dirty: false },
 	}
@@ -652,9 +762,10 @@ function setStatusFailure(
 
 function namespaceFrom(ctx: PluxelContext, options?: VaultNamespaceOptions): string {
 	const address = ctx.pluginInfo?.nodeAddress
-	return normalizeSegment(
-		options?.namespace ?? (address ? `plugin-${pluginNodePhysicalKey(address)}` : 'default'),
-	)
+	const base = address ? `plugin-${pluginNodePhysicalKey(address)}` : 'default'
+	if (options?.namespace === undefined) return base
+	validateKey(options.namespace)
+	return address ? `${base}~${encodeURIComponent(options.namespace)}` : options.namespace
 }
 
 async function loadMountState(
@@ -675,9 +786,11 @@ async function loadMountState(
 	const keys = await store.readBytes(runtime.keysPath)
 	if (!keys) return undefined
 	const dek = await decryptDek(store, runtime, keys, options)
-	if (!(await store.exists(runtime.statePath))) return { dek, snapshot: createEmptySnapshot() }
+	if (!(await store.exists(runtime.statePath)))
+		throw new VaultError('INVALID_FORMAT', 'Vault snapshot is missing from an existing mount.')
 	const stateBytes = await store.readBytes(runtime.statePath)
-	if (!stateBytes) return { dek, snapshot: createEmptySnapshot() }
+	if (!stateBytes)
+		throw new VaultError('INVALID_FORMAT', 'Vault snapshot is missing from an existing mount.')
 	const plaintext = await aesDecrypt(dek, stateBytes)
 	return { dek, snapshot: parseSnapshot(plaintext) }
 }
@@ -696,8 +809,8 @@ async function createMountKey(
 	return dek
 }
 
-async function createDeployKeyPair(runtime: MountRuntime): Promise<VaultKeyPair> {
-	const envName = runtime.deployIdentityEnv
+async function createDeployKeyPair(): Promise<VaultKeyPair> {
+	const envName = DEFAULT_DEPLOY_IDENTITY_ENV
 	const privateKey = await generateIdentity()
 	return {
 		publicKey: await identityToRecipient(privateKey),
@@ -724,36 +837,8 @@ function clearTimer(state: Extract<MountCacheState, { status: 'unlocked' }>) {
 	}
 }
 
-function scheduleFlush(store: VaultStore, runtime: MountRuntime, entry: MountCacheEntry) {
-	if (entry.state.status !== 'unlocked') return
-	updateStatus(store, runtime, entry, { phase: 'ready', dirty: true, lastError: undefined })
-	clearTimer(entry.state)
-	entry.state.timer = setTimeout(() => {
-		void entry.lock.run(async () => {
-			if (entry.state.status !== 'unlocked') return
-			entry.state.flushPromise = flushUnlockedState(store, runtime, entry.state)
-				.then((): undefined => {
-					updateStatus(store, runtime, entry, {
-						phase: 'ready',
-						dirty: false,
-						lastError: undefined,
-					})
-					return undefined
-				})
-				.catch((error) => {
-					setStatusFailure(store, runtime, entry, error)
-					throw error
-				})
-				.finally(() => {
-					if (entry.state.status === 'unlocked') entry.state.flushPromise = null
-				})
-			await entry.state.flushPromise
-		})
-	}, runtime.flushDebounceMs)
-}
-
 function cloneNamespaceState(state?: VaultSnapshot['namespaces'][string]) {
-	return cloneJson(state ?? { kv: {}, docs: {} })
+	return cloneJson(state ?? { kv: {}, revisions: {} })
 }
 
 function blobPath(runtime: MountRuntime, namespace: string, name: string): string {
@@ -766,7 +851,7 @@ function blobPath(runtime: MountRuntime, namespace: string, name: string): strin
  * Design:
  * - one logical mount is a shared encrypted container
  * - `age` only wraps the mount DEK
- * - hot data (`kv` + `docs`) stays in memory and flushes to a symmetric snapshot
+ * - structured KV commits to an encrypted snapshot before publication
  * - blobs are separate symmetric files keyed by the same DEK
  */
 export class VaultService {
@@ -782,14 +867,127 @@ export class VaultService {
 	static create(
 		ctx: PluxelContext,
 		config: VaultServiceConfig,
-		storage: PersistenceNamespace,
+		storage?: PersistenceNamespace,
 	): VaultService {
-		return new VaultService(ctx, createVaultRootBacking(ctx, config, storage))
+		const backing = createVaultRootBacking(ctx, config, storage)
+		if (config.backend === 'bindings')
+			backing.entry.state = {
+				status: 'unlocked',
+				dek: new Uint8Array(),
+				snapshot: createEmptySnapshot(),
+				unlockSource: 'host',
+				dirty: false,
+				timer: null,
+				flushPromise: null,
+			}
+		return new VaultService(ctx, backing)
 	}
 
 	/** @internal Create an owner projection over the root-owned mount state. */
 	forOwner(owner: PluxelContext): VaultService {
 		return owner === this.ctx ? this : new VaultService(owner, this.backing)
+	}
+
+	isBindingsOnly(): boolean {
+		return this.backing.runtime.backend === 'bindings'
+	}
+
+	async migrateLegacyNamespaces(
+		mappings: NonNullable<VaultServiceConfig['legacyNamespaces']>,
+	): Promise<void> {
+		const { entry, store, runtime } = this.backing
+		if (mappings.length === 0) return
+		if (runtime.backend === 'bindings')
+			throw new VaultError('INVALID_CONFIG', 'Legacy migration requires the encrypted backend.')
+		await entry.lock.run(async () => {
+			if (!isUnlockedState(entry.state))
+				throw new VaultError('ACCESS_DENIED', 'Vault must be unlocked before migration.')
+			const state = entry.state
+			const next = cloneJson(state.snapshot)
+			next.migrations ??= Object.create(null)
+			let changed = false
+			for (const mapping of mappings) {
+				validateKey(mapping.namespace)
+				validateKey(mapping.from)
+				if (normalizeSegment(mapping.from) !== mapping.from)
+					throw new VaultError(
+						'INVALID_CONFIG',
+						'Legacy namespace must match its exact stored name.',
+					)
+				const target = `plugin-${pluginNodePhysicalKey(mapping.owner)}~${encodeURIComponent(mapping.namespace)}`
+				const previous = next.migrations![target]
+				if (previous !== undefined) {
+					if (previous !== mapping.from)
+						throw new VaultError(
+							'INVALID_CONFIG',
+							'Vault namespace migration already has a different source.',
+						)
+					continue
+				}
+				if (Object.hasOwn(next.namespaces, target))
+					throw new VaultError(
+						'INVALID_CONFIG',
+						'Vault namespace migration target already contains records.',
+					)
+				const old = next.namespaces[mapping.from]
+				if (old) next.namespaces[target] = cloneNamespaceState(old)
+				// Copy encrypted blobs before committing the marker. The source remains an audit backup.
+				for (const file of await store.listChildren(join(runtime.blobsDir, mapping.from))) {
+					if (!file.endsWith('.blob')) continue
+					const from = join(runtime.blobsDir, mapping.from, file)
+					const to = join(runtime.blobsDir, target, file)
+					const bytes = await store.readBytes(from)
+					if (!bytes) continue
+					const existing = await store.readBytes(to)
+					if (
+						existing &&
+						(existing.length !== bytes.length ||
+							existing.some((byte, index) => byte !== bytes[index]))
+					)
+						throw new VaultError('INVALID_CONFIG', 'Vault namespace migration blob collision.')
+					if (!existing) await store.writeBytes(to, bytes)
+				}
+				next.migrations![target] = mapping.from
+				changed = true
+			}
+			if (changed) {
+				await store.writeBytes(
+					runtime.statePath,
+					await aesEncrypt(state.dek, serializeSnapshot(next)),
+				)
+				state.snapshot = next
+			}
+		})
+	}
+
+	/** Host-only bootstrap boundary; never exposed through the owner storage facade. */
+	installBindings(records: readonly HostVaultBindingRecord[]): void {
+		if (this.ctx !== this.ctx.root)
+			throw new VaultError('ACCESS_DENIED', 'Vault bindings require the root Context.')
+		const pending = new Map<string, Map<string, VaultRecordSnapshot>>()
+		for (const record of records) {
+			validateKey(record.key)
+			const base = `plugin-${pluginNodePhysicalKey(record.owner)}`
+			if (record.namespace !== undefined) validateKey(record.namespace)
+			const namespace =
+				record.namespace === undefined ? base : `${base}~${encodeURIComponent(record.namespace)}`
+			const values = pending.get(namespace) ?? new Map(this.backing.entry.overlays.get(namespace))
+			if (values.has(record.key))
+				throw new VaultError('INVALID_CONFIG', 'Duplicate Vault deployment binding.')
+			values.set(
+				record.key,
+				Object.freeze({
+					key: record.key,
+					exists: record.value !== undefined,
+					value: record.value === undefined ? undefined : freezeJson(cloneJson(record.value)),
+					revision: 1,
+					source: record.source,
+					writable: false,
+				}),
+			)
+			pending.set(namespace, values)
+		}
+		for (const [namespace, values] of pending) this.backing.entry.overlays.set(namespace, values)
 	}
 
 	managedVault(): ManagedVault {
@@ -908,28 +1106,43 @@ export class VaultService {
 
 		const mutateNamespace = async <T>(
 			namespace: string,
-			run: (
-				nextNamespaceState: VaultSnapshot['namespaces'][string],
-			) => Promise<{ result: T; changed: boolean }>,
-		): Promise<T | undefined> => {
-			return await runVaultOperation(ctx, () =>
+			run: (next: VaultSnapshot['namespaces'][string]) => Promise<T>,
+		): Promise<T> => {
+			const changed: VaultRecordSnapshot[] = []
+			const result = await runVaultOperation(ctx, () =>
 				entry.lock.run(async () => {
-					try {
-						const state = requireUnlockedState()
-						const nextNamespaceState = cloneNamespaceState(state.snapshot.namespaces[namespace])
-						const { result, changed } = await run(nextNamespaceState)
-						if (!changed) return result
-
-						state.snapshot.namespaces[namespace] = nextNamespaceState
-						state.dirty = true
-						scheduleFlush(store, runtime, entry)
-						return result
-					} catch (error) {
-						setStatusFailure(store, runtime, entry, error)
-						throw error
+					if (runtime.backend === 'bindings')
+						throw new VaultError('READ_ONLY', 'Vault has no writable backend.')
+					const state = requireUnlockedState()
+					const previous = state.snapshot.namespaces[namespace]
+					const next = cloneNamespaceState(previous)
+					const transactionResult = await run(next)
+					for (const key of Object.keys(next.revisions)) {
+						if (next.revisions[key] !== previous?.revisions[key])
+							changed.push(recordSnapshot(next, key, true))
 					}
+					if (changed.length === 0) return transactionResult
+					const snapshot: VaultSnapshot = {
+						...state.snapshot,
+						namespaces: { ...state.snapshot.namespaces, [namespace]: next },
+					}
+					// Only publish after the encrypted atomic replace is confirmed.
+					await store.writeBytes(
+						runtime.statePath,
+						await aesEncrypt(state.dek, serializeSnapshot(snapshot)),
+					)
+					state.snapshot = snapshot
+					return transactionResult
 				}),
 			)
+			for (const snapshot of changed)
+				for (const observer of entry.watchers.get(namespace) ?? []) {
+					if (
+						observer.prefix ? snapshot.key.startsWith(observer.key) : observer.key === snapshot.key
+					)
+						observer.notify(snapshot)
+				}
+			return result
 		}
 
 		const readSnapshot = async <T>(
@@ -951,6 +1164,8 @@ export class VaultService {
 			return await entry.lock.run(async () => {
 				try {
 					void createIfMissing
+					if (runtime.backend === 'bindings')
+						throw new VaultError('READ_ONLY', 'Vault has no blob backend.')
 					return requireUnlockedState().dek
 				} catch (error) {
 					setStatusFailure(store, runtime, entry, error)
@@ -1084,156 +1299,184 @@ export class VaultService {
 
 		const kv = (namespaceOptions?: VaultNamespaceOptions): VaultKvHandle => {
 			const namespace = namespaceFrom(ctx, namespaceOptions)
-			const stateOf = (snapshot: VaultSnapshot) => snapshot.namespaces[namespace]
-
-			return {
-				get: async <T>(key: string) =>
-					await readSnapshot((snapshot) => stateOf(snapshot)?.kv[key] as T | undefined),
-				has: async (key: string) =>
-					await readSnapshot((snapshot) => key in (stateOf(snapshot)?.kv ?? {})),
-				set: async (key: string, value: unknown) => {
-					await mutateNamespace(namespace, async (namespaceState) => {
-						namespaceState.kv[key] = value
-						return { result: undefined, changed: true }
-					})
-				},
-				setMany: async (entries) => {
-					await mutateNamespace(namespace, async (namespaceState) => {
-						const kvState = namespaceState.kv
-						for (const [key, value] of Object.entries(entries)) kvState[key] = value
-						return { result: undefined, changed: Object.keys(entries).length > 0 }
-					})
-				},
-				delete: async (key: string) => {
-					await mutateNamespace(namespace, async (namespaceState) => {
-						const kvState = namespaceState.kv
-						const changed = key in kvState
-						delete kvState[key]
-						return { result: undefined, changed }
-					})
-				},
-				clear: async () => {
-					await mutateNamespace(namespace, async (namespaceState) => {
-						const kvState = namespaceState.kv
-						const changed = Object.keys(kvState).length > 0
-						namespaceState.kv = {}
-						return { result: undefined, changed }
-					})
-				},
-				keys: async () =>
-					await readSnapshot((snapshot) => Object.keys(stateOf(snapshot)?.kv ?? {}).sort()),
-				entries: async <T = unknown>() =>
-					await readSnapshot(
-						(snapshot) => Object.entries(stateOf(snapshot)?.kv ?? {}) as Array<[string, T]>,
-					),
-				batch: async <T>(run: (tx: VaultKvTransaction) => T | Promise<T>) => {
-					const result = await mutateNamespace(namespace, async (namespaceState) => {
-						const kvState = namespaceState.kv
-						let changed = false
-						const tx: VaultKvTransaction = {
-							get: <U = unknown>(key: string) => kvState[key] as U | undefined,
-							has: (key: string) => key in kvState,
-							set: (key: string, value: unknown) => {
-								changed = true
-								kvState[key] = value
-							},
-							delete: (key: string) => {
-								if (!(key in kvState)) return
-								changed = true
-								delete kvState[key]
-							},
-							clear: () => {
-								if (Object.keys(kvState).length === 0) return
-								changed = true
-								for (const key of Object.keys(kvState)) delete kvState[key]
-							},
-							keys: () => Object.keys(kvState).sort(),
-							entries: <U = unknown>() => Object.entries(kvState) as Array<[string, U]>,
-						}
-						return { result: await run(tx), changed }
-					})
-					return result as T
-				},
+			const snapshotOf = <T = unknown>(
+				state: VaultSnapshot['namespaces'][string] | undefined,
+				key: string,
+			): VaultRecordSnapshot<T> => {
+				validateKey(key)
+				return (entry.overlays.get(namespace)?.get(key) ??
+					recordSnapshot(state, key, runtime.backend === 'encrypted')) as VaultRecordSnapshot<T>
 			}
-		}
-
-		const docs = (namespaceOptions?: VaultNamespaceOptions): VaultDocsHandle => {
-			const namespace = namespaceFrom(ctx, namespaceOptions)
-			const stateOf = (snapshot: VaultSnapshot) => snapshot.namespaces[namespace]
-
-			return {
-				collection: <TDoc extends Record<string, unknown> = Record<string, unknown>>(
-					collectionInput: string,
-				): VaultCollectionHandle<TDoc> => {
-					const collectionName = normalizeSegment(collectionInput)
-
-					const docHandle = (id: string) => {
-						const docId = normalizeSegment(id)
-						return {
-							get: async () =>
-								await readSnapshot(
-									(snapshot) =>
-										stateOf(snapshot)?.docs[collectionName]?.[docId] as TDoc | undefined,
-								),
-							set: async (value: TDoc) => {
-								await mutateNamespace(namespace, async (namespaceState) => {
-									namespaceState.docs[collectionName] ??= {}
-									namespaceState.docs[collectionName][docId] = cloneJson(value)
-									return { result: undefined, changed: true }
-								})
+			const keysOf = (
+				state: VaultSnapshot['namespaces'][string] | undefined,
+				options?: VaultListOptions,
+			) => {
+				const limit = options?.limit ?? 100
+				if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
+					throw new VaultError('INVALID_CONFIG', 'Vault list limit must be between 1 and 1000.')
+				return Object.freeze(
+					[
+						...new Set([
+							...Object.keys(state?.kv ?? {}),
+							...(entry.overlays.get(namespace)?.keys() ?? []),
+						]),
+					]
+						.filter(
+							(key) =>
+								(!options?.prefix || key.startsWith(options.prefix)) &&
+								(!options?.after || key > options.after),
+						)
+						.sort()
+						.slice(0, limit),
+				)
+			}
+			const batch = <T>(run: (tx: VaultKvTransaction) => T | Promise<T>): Promise<T> =>
+				mutateNamespace(namespace, async (state) => {
+					let active = true
+					const check = () => {
+						if (!active) throw new VaultError('ACCESS_DENIED', 'Vault transaction is closed.')
+					}
+					const write = (
+						key: string,
+						value: unknown,
+						options: VaultWriteOptions | undefined,
+						remove: boolean,
+					) => {
+						check()
+						validateKey(key)
+						if (entry.overlays.get(namespace)?.has(key))
+							throw new VaultError(
+								'READ_ONLY',
+								'Vault record is controlled by a deployment binding.',
+							)
+						const revision = state.revisions[key] ?? 0
+						if (options?.expectedRevision !== undefined && options.expectedRevision !== revision)
+							throw new VaultError('REVISION_CONFLICT', 'Vault record revision has changed.')
+						if (revision >= Number.MAX_SAFE_INTEGER)
+							throw new VaultError('INVALID_FORMAT', 'Vault revision exhausted.')
+						if (remove) delete state.kv[key]
+						else state.kv[key] = cloneJson(value)
+						state.revisions[key] = revision + 1
+						return snapshotOf(state, key)
+					}
+					try {
+						return await run({
+							get: (key) => {
+								check()
+								return snapshotOf(state, key)
 							},
-							patch: async (value: Partial<TDoc>) => {
-								const result = await mutateNamespace(namespace, async (namespaceState) => {
-									namespaceState.docs[collectionName] ??= {}
-									const current = (namespaceState.docs[collectionName][docId] ?? {}) as TDoc
-									const next = { ...current, ...cloneJson(value) } as TDoc
-									namespaceState.docs[collectionName][docId] = next
-									return { result: next, changed: true }
-								})
-								return result as TDoc
+							set: (key, value, options) => write(key, value, options, false),
+							delete: (key, options) => write(key, undefined, options, true),
+							keys: (options) => {
+								check()
+								return keysOf(state, options)
 							},
-							delete: async () => {
-								await mutateNamespace(namespace, async (namespaceState) => {
-									const docsState = namespaceState.docs[collectionName]
-									const changed = !!docsState && docId in docsState
-									delete docsState?.[docId]
-									return { result: undefined, changed }
-								})
-							},
-							exists: async () =>
-								await readSnapshot(
-									(snapshot) => docId in (stateOf(snapshot)?.docs[collectionName] ?? {}),
-								),
+						})
+					} finally {
+						active = false
+					}
+				})
+			const subscribe = (
+				initial: readonly VaultRecordSnapshot[],
+				key: string,
+				prefix: boolean,
+				listener: (snapshot: VaultRecordSnapshot) => void | Promise<void>,
+			) => {
+				let closed = false
+				let running = false
+				const revisions = new Map(initial.map((snapshot) => [snapshot.key, snapshot.revision]))
+				const pending = new Map<string, VaultRecordSnapshot>()
+				const observers = entry.watchers.get(namespace) ?? new Set()
+				entry.watchers.set(namespace, observers)
+				const dispose = () => {
+					closed = true
+					pending.clear()
+					observers.delete(observer)
+					if (observers.size === 0) entry.watchers.delete(namespace)
+				}
+				const schedule = () => {
+					if (closed || running || pending.size === 0) return
+					running = true
+					const drain = async () => {
+						await Promise.resolve()
+						try {
+							while (pending.size > 0 && !closed) {
+								const next = pending.values().next().value!
+								pending.delete(next.key)
+								try {
+									await runVaultOperation(ctx, () => Promise.resolve(listener(next)))
+								} catch {
+									/* Committed storage is independent of consumer application. */
+								}
+							}
+						} finally {
+							running = false
+							schedule()
 						}
 					}
+					void drain()
+				}
+				const observer = {
+					key,
+					prefix,
+					notify(value: VaultRecordSnapshot) {
+						if (closed || value.revision <= (revisions.get(value.key) ?? -1)) return
+						revisions.set(value.key, value.revision)
+						pending.set(value.key, value)
+						schedule()
+					},
+				}
+				observers.add(observer)
+				ctx.effects.defer(dispose, { tag: 'VaultWatch' })
+				return dispose
+			}
 
-					return {
-						doc: docHandle,
-						get: async (id: string) => await docHandle(id).get(),
-						set: async (id: string, value: TDoc) => await docHandle(id).set(value),
-						patch: async (id: string, value: Partial<TDoc>) => await docHandle(id).patch(value),
-						delete: async (id: string) => await docHandle(id).delete(),
-						ids: async () =>
-							await readSnapshot((snapshot) =>
-								Object.keys(stateOf(snapshot)?.docs[collectionName] ?? {}).sort(),
-							),
-						list: async () =>
-							await readSnapshot((snapshot) => {
-								const docsState = stateOf(snapshot)?.docs[collectionName] ?? {}
-								return Object.entries(docsState).map(([id, value]) => ({
-									id,
-									value: value as TDoc,
-								}))
-							}),
-						clear: async () => {
-							await mutateNamespace(namespace, async (namespaceState) => {
-								const changed = !!namespaceState.docs[collectionName]
-								delete namespaceState.docs[collectionName]
-								return { result: undefined, changed }
-							})
-						},
-					}
+			return {
+				get: (key) => readSnapshot((snapshot) => snapshotOf(snapshot.namespaces[namespace], key)),
+				set: async (key, value, options) => {
+					const input = cloneJson(value)
+					const expected = options ? { ...options } : undefined
+					return batch((tx) => tx.set(key, input, expected))
 				},
+				delete: (key, options) => {
+					const expected = options ? { ...options } : undefined
+					return batch((tx) => tx.delete(key, expected))
+				},
+				keys: (options) =>
+					readSnapshot((snapshot) => keysOf(snapshot.namespaces[namespace], options)),
+				batch,
+				watch: (key, listener) =>
+					readSnapshot((snapshot) => {
+						const initial = snapshotOf(snapshot.namespaces[namespace], key)
+						return Object.freeze({
+							snapshot: initial as never,
+							dispose: subscribe([initial], key, false, listener as never),
+						})
+					}),
+				watchPrefix: (prefix, listener) =>
+					readSnapshot((snapshot) => {
+						if (typeof prefix !== 'string' || prefix.length > 512)
+							throw new VaultError('INVALID_CONFIG', 'Invalid Vault prefix.')
+						const state = snapshot.namespaces[namespace]
+						const keys = [
+							...new Set([
+								...Object.keys(state?.kv ?? {}),
+								...(entry.overlays.get(namespace)?.keys() ?? []),
+							]),
+						]
+							.filter((key) => key.startsWith(prefix))
+							.sort()
+						if (keys.length > 1000)
+							throw new VaultError(
+								'INVALID_CONFIG',
+								'Vault watch prefix exceeds 1000 initial records.',
+							)
+						const initial = Object.freeze(keys.map((key) => snapshotOf(state, key)))
+						return Object.freeze({
+							snapshots: initial as never,
+							dispose: subscribe(initial, prefix, true, listener as never),
+						})
+					}),
 			}
 		}
 
@@ -1300,88 +1543,24 @@ export class VaultService {
 		}
 
 		const namespaceHandle = (name?: string): VaultNamespace => {
-			const namespaceOptions = name === undefined ? undefined : { namespace: name }
-			const resolvedNamespace = namespaceFrom(ctx, namespaceOptions)
-			const batch = async <T>(run: (tx: VaultNamespaceTransaction) => T | Promise<T>) => {
-				const result = await mutateNamespace(resolvedNamespace, async (namespaceState) => {
-					let changed = false
-					const kvTx: VaultKvTransaction = {
-						get: <U = unknown>(key: string) => namespaceState.kv[key] as U | undefined,
-						has: (key: string) => key in namespaceState.kv,
-						set: (key: string, value: unknown) => {
-							changed = true
-							namespaceState.kv[key] = value
-						},
-						delete: (key: string) => {
-							if (!(key in namespaceState.kv)) return
-							changed = true
-							delete namespaceState.kv[key]
-						},
-						clear: () => {
-							if (Object.keys(namespaceState.kv).length === 0) return
-							changed = true
-							namespaceState.kv = {}
-						},
-						keys: () => Object.keys(namespaceState.kv).sort(),
-						entries: <U = unknown>() => Object.entries(namespaceState.kv) as Array<[string, U]>,
-					}
-
-					const docsTx = {
-						collection: <TDoc extends Record<string, unknown> = Record<string, unknown>>(
-							collectionNameInput: string,
-						): VaultCollectionTransaction<TDoc> => {
-							const collectionName = normalizeSegment(collectionNameInput)
-							namespaceState.docs[collectionName] ??= {}
-							const collectionState = namespaceState.docs[collectionName]!
-							return {
-								get: (id: string) => collectionState[normalizeSegment(id)] as TDoc | undefined,
-								set: (id: string, value: TDoc) => {
-									changed = true
-									collectionState[normalizeSegment(id)] = cloneJson(value)
-								},
-								patch: (id: string, value: Partial<TDoc>) => {
-									const docId = normalizeSegment(id)
-									const current = (collectionState[docId] ?? {}) as TDoc
-									const next = { ...current, ...cloneJson(value) } as TDoc
-									changed = true
-									collectionState[docId] = next
-									return next
-								},
-								delete: (id: string) => {
-									const docId = normalizeSegment(id)
-									if (!(docId in collectionState)) return
-									changed = true
-									delete collectionState[docId]
-								},
-								ids: () => Object.keys(collectionState).sort(),
-								list: () =>
-									Object.entries(collectionState).map(([id, value]) => ({
-										id,
-										value: value as TDoc,
-									})),
-								clear: () => {
-									if (Object.keys(collectionState).length === 0) return
-									changed = true
-									namespaceState.docs[collectionName] = {}
-								},
-							}
-						},
-					}
-
-					return { result: await run({ kv: kvTx, docs: docsTx }), changed }
-				})
-				return result as T
-			}
+			const options = name === undefined ? undefined : { namespace: name }
 			return {
-				name: resolvedNamespace,
-				kv: () => kv(namespaceOptions),
-				docs: () => docs(namespaceOptions),
-				blobs: () => blobs(namespaceOptions),
-				batch,
+				name: namespaceFrom(ctx, options),
+				kv: () => kv(options),
+				blobs: () => blobs(options),
 			}
 		}
 
 		const describe = async (): Promise<VaultAdminState> => {
+			if (runtime.backend === 'bindings')
+				return {
+					present: false,
+					unlocked: true,
+					unlockedBy: null,
+					deploy: { env: DEFAULT_DEPLOY_IDENTITY_ENV, identityPresent: false, recipients: [] },
+					hostIdentityPresent: false,
+					namespaces: [],
+				}
 			const probe = await probeUnlockState()
 			const unlocked = isUnlockedState(entry.state) ? entry.state : null
 			const deployRecipients = await readDeployRecipients(store)
@@ -1398,18 +1577,12 @@ export class VaultService {
 				namespaces = []
 				for (const namespaceName of [...namespaceNames].sort()) {
 					const snapshotState = unlocked.snapshot.namespaces[namespaceName]
-					const docsState = snapshotState?.docs ?? {}
-					let docDocuments = 0
-					for (const collection of Object.values(docsState)) {
-						docDocuments += Object.keys(collection ?? {}).length
-					}
 					const blobNames = await store
 						.listChildren(join(runtime.blobsDir, namespaceName))
 						.catch((): string[] => [])
 					const row: VaultNamespaceStats = {
 						namespace: namespaceName,
 						kvKeys: Object.keys(snapshotState?.kv ?? {}).length,
-						docDocuments,
 						blobs: blobNames.filter((name) => name.endsWith('.blob')).length,
 					}
 					namespaces.push(row)
@@ -1425,7 +1598,7 @@ export class VaultService {
 				unlockedBy: unlocked?.unlockSource ?? null,
 				...(lastError === undefined ? {} : { lastError }),
 				deploy: {
-					env: runtime.deployIdentityEnv,
+					env: DEFAULT_DEPLOY_IDENTITY_ENV,
 					identityPresent: await hasDeployIdentity(runtime),
 					recipients: deployRecipients,
 				},
@@ -1435,6 +1608,7 @@ export class VaultService {
 		}
 
 		const preflight = async (): Promise<VaultAdminState> => {
+			if (runtime.backend === 'bindings') return describe()
 			try {
 				if (!(await isMountPresent(store, runtime))) {
 					await entry.lock.run(async () => {
@@ -1512,6 +1686,7 @@ export class VaultService {
 		}
 
 		const unlock = async (): Promise<VaultAdminState> => {
+			if (runtime.backend === 'bindings') return describe()
 			try {
 				if (!(await isMountPresent(store, runtime))) {
 					recordSecurityEvent(ctx, {
@@ -1566,7 +1741,6 @@ export class VaultService {
 
 		const vault: ManagedVault = {
 			kv,
-			docs,
 			blobs,
 			namespace: namespaceHandle,
 			unlock,
@@ -1590,6 +1764,8 @@ export class VaultService {
 				return await describe()
 			},
 			ensureHostKey: async () => {
+				if (runtime.backend === 'bindings')
+					throw new VaultError('READ_ONLY', 'Vault has no encryption backend.')
 				try {
 					const identity = await ensureIdentity(store, true)
 					if (!identity) throw new VaultError('MISSING_IDENTITY', 'Missing local age identity.')
@@ -1610,10 +1786,6 @@ export class VaultService {
 		return this.managedVault().kv(options)
 	}
 
-	docs(options?: VaultNamespaceOptions): VaultDocsHandle {
-		return this.managedVault().docs(options)
-	}
-
 	blobs(options?: VaultNamespaceOptions): VaultBlobsHandle {
 		return this.managedVault().blobs(options)
 	}
@@ -1628,7 +1800,7 @@ export class VaultService {
 
 	/** @internal Root admin projection reuses the immutable mount runtime inputs. */
 	generateDeployKey(): Promise<VaultKeyPair> {
-		return runVaultOperation(this.ctx, () => createDeployKeyPair(this.backing.runtime))
+		return runVaultOperation(this.ctx, () => createDeployKeyPair())
 	}
 
 	/** @internal */
@@ -1654,19 +1826,10 @@ export class VaultAdminService {
 	}
 
 	async prepare(): Promise<VaultAdminState> {
-		try {
-			const vault = await this.describe()
-			if (!vault.present && !vault.hostIdentityPresent) {
-				await this.ensureHostKey()
-			}
-			return await this.preflight()
-		} catch (error) {
-			const reason = error instanceof Error ? error.message : String(error)
-			throw new Error(
-				`[runtime:vault] Vault is enabled but not ready. It must be unlocked before plugins start. Reason: ${reason}.`,
-				{ cause: error },
-			)
-		}
+		if (this.vault.isBindingsOnly()) return this.describe()
+		const state = await this.describe()
+		if (!state.present && !state.hostIdentityPresent) await this.ensureHostKey()
+		return this.preflight()
 	}
 
 	describe(): Promise<VaultAdminState> {
@@ -1697,13 +1860,29 @@ export class VaultAdminService {
 function createVaultRootBacking(
 	ctx: PluxelContext,
 	config: VaultServiceConfig,
-	storage: PersistenceNamespace,
+	storage?: PersistenceNamespace,
 ): VaultRootBacking {
 	if (ctx !== ctx.root) {
 		throw new TypeError('[runtime:vault] Vault root backing requires the root Context')
 	}
 	return Object.freeze({
-		store: createVaultStore(storage),
+		store: storage
+			? createVaultStore(storage)
+			: {
+					exists: async () => false,
+					readText: async (): Promise<string | undefined> => undefined,
+					readBytes: async (): Promise<Uint8Array | undefined> => undefined,
+					listChildren: async (): Promise<string[]> => [],
+					writeText: async () => {
+						throw new VaultError('READ_ONLY', 'Vault has no persistent backend.')
+					},
+					writeBytes: async () => {
+						throw new VaultError('READ_ONLY', 'Vault has no persistent backend.')
+					},
+					delete: async () => {
+						throw new VaultError('READ_ONLY', 'Vault has no persistent backend.')
+					},
+				},
 		runtime: resolveRuntime(config),
 		entry: createMountCacheEntry(),
 	})

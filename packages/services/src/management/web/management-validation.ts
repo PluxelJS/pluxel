@@ -878,6 +878,28 @@ function validatePluginCatalogSections(
 	}
 }
 
+function configSources(input: unknown): readonly import('@pluxel/host').HostConfigSource[] {
+	if (input === undefined) return Object.freeze([])
+	return Object.freeze(
+		array(input, 'config result.sources').map((item) => {
+			const source = object(item, 'config source')
+			shape(source, ['owner', 'path', 'kind', 'readonly'], ['name'], 'config source')
+			const path = array(source.path, 'config source.path').map((segment) =>
+				text(segment, 'config source.path segment'),
+			)
+			if (path.some((segment) => ['__proto__', 'constructor', 'prototype'].includes(segment)))
+				fail('Invalid config source path')
+			return Object.freeze({
+				owner: nodeAddress(source.owner, 'config source.owner'),
+				path: Object.freeze(path),
+				kind: literal(source.kind, ['base', 'file', 'saved', 'env'], 'config source.kind'),
+				readonly: boolean(source.readonly, 'config source.readonly'),
+				...(source.name === undefined ? {} : { name: text(source.name, 'config source.name') }),
+			})
+		}),
+	)
+}
+
 function configSuccess(value: Record<string, unknown>): ConfigResult {
 	const saved = boolean(value.saved, 'config result.saved')
 	const application = literal(
@@ -891,11 +913,12 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 		'config result.appliedRevision',
 	)
 	const config = portableRecord(value.config, 'config result.config')
+	const sources = configSources(value.sources)
 	if (!saved) {
 		shape(
 			value,
 			['ok', 'saved', 'application', 'desiredRevision', 'appliedRevision', 'config', 'defaults'],
-			[],
+			['sources'],
 			'config result',
 		)
 		return Object.freeze({
@@ -905,13 +928,14 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 			desiredRevision,
 			appliedRevision,
 			config,
+			sources,
 			defaults: portableRecord(value.defaults, 'config result.defaults'),
 		})
 	}
 	shape(
 		value,
 		['ok', 'saved', 'application', 'desiredRevision', 'appliedRevision', 'config', 'report'],
-		application === 'saved-not-applied' ? ['applyFailure'] : [],
+		application === 'saved-not-applied' ? ['applyFailure', 'sources'] : ['sources'],
 		'config result',
 	)
 	const report = pluginApplyReport(value.report, 'config result.report')
@@ -926,6 +950,7 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 			desiredRevision,
 			appliedRevision,
 			config,
+			sources,
 			report,
 		})
 	}
@@ -946,6 +971,7 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 		desiredRevision,
 		appliedRevision,
 		config,
+		sources,
 		report,
 		applyFailure: Object.freeze({
 			code: failureCode,
@@ -982,7 +1008,7 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 		})
 	}
 	if (code === 'persistence_failed') {
-		shape(value, ['ok', 'code', 'state', 'message', 'config'], [], 'config result')
+		shape(value, ['ok', 'code', 'state', 'message', 'config'], ['sources'], 'config result')
 		literal(value.state, ['unknown'], 'config result.state')
 		return Object.freeze({
 			ok: false,
@@ -990,6 +1016,7 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 			state: 'unknown',
 			message: text(value.message, 'config result.message'),
 			config: portableRecord(value.config, 'config result.config'),
+			sources: configSources(value.sources),
 		})
 	}
 	shape(value, ['ok', 'code', 'state', 'message'], [], 'config result')
@@ -1827,11 +1854,10 @@ function vaultNamespace(
 	label: string,
 ): NonNullable<VaultAdminState['namespaces']>[number] {
 	const value = object(input, label)
-	shape(value, ['namespace', 'kvKeys', 'docDocuments', 'blobs'], [], label)
+	shape(value, ['namespace', 'kvKeys', 'blobs'], [], label)
 	return Object.freeze({
 		namespace: text(value.namespace, `${label}.namespace`),
 		kvKeys: nonNegativeInteger(value.kvKeys, `${label}.kvKeys`),
-		docDocuments: nonNegativeInteger(value.docDocuments, `${label}.docDocuments`),
 		blobs: nonNegativeInteger(value.blobs, `${label}.blobs`),
 	})
 }

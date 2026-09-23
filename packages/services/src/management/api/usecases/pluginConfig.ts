@@ -141,6 +141,7 @@ export async function pluginConfigPatchField(
 			'plugin-config-patch-field',
 			(current) => writeNestedField(current, parsed.segments, parsed.value),
 			options,
+			[parsed.segments],
 		),
 	)
 }

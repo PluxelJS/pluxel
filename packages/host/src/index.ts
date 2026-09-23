@@ -40,7 +40,12 @@ export {
 	type HostPluginConfigResultErr,
 } from './config'
 export type { HostDocumentStorage, HostStoreStorageOptions } from './document-storage'
-export type { HostConfigStoreOptions } from './config-store'
+export type {
+	HostConfigStoreOptions,
+	HostConfigOverlay,
+	HostConfigBaseSource,
+	HostConfigSource,
+} from './config-store'
 export type { HostStateStoreOptions } from './state-store'
 
 export type {
@@ -54,6 +59,8 @@ export { HostStateMutationRejectedError } from './mutation'
 export type { HostOperationOptions } from './coordinator'
 
 export {
+	defineConfig,
+	type HostApplicationFactory,
 	runHostApplication,
 	assertHostApplication,
 	resolveHostApplication,
@@ -70,3 +77,14 @@ export type {
 	PluginApplyLifecycleErrorInfo,
 } from './apply-report'
 export type { RuntimeUpdateSnapshot } from './execution'
+
+export {
+	envBinding,
+	fileBinding,
+	type HostEnvironmentBinding,
+	type HostFileBinding,
+	type InputMapping,
+	type VaultInputMapping,
+} from './bindings'
+
+export { InputBindingError } from './input-bindings'

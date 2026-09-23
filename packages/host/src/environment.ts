@@ -5,7 +5,6 @@ import { env as standardEnvironment } from 'std-env'
  * Applications may augment this interface with their own deployment variables.
  */
 export interface PluxelEnvironmentVariables extends Readonly<Record<string, string | undefined>> {
-	readonly PLUXEL_CONFIG?: string
 	readonly PLUXEL_DATA_ROOT?: string
 	readonly PLUXEL_WORKBENCH?: 'true' | 'false'
 	readonly PLUXEL_HOST_BIND?: string

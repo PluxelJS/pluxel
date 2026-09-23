@@ -651,7 +651,7 @@ describe("management Cap'n Web DTO validation", () => {
 			unlockedBy: 'host',
 			deploy: { env: 'PLUXEL_VAULT_DEPLOY_IDENTITY', identityPresent: false, recipients: [] },
 			hostIdentityPresent: true,
-			namespaces: [{ namespace: 'fixture', kvKeys: 1, docDocuments: 2, blobs: 3 }],
+			namespaces: [{ namespace: 'fixture', kvKeys: 1, blobs: 3 }],
 		} as const
 		const overview = parseSecurityOverview({
 			adminAccess: {

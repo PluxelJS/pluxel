@@ -29,7 +29,7 @@ const catalog = {
 			execution: {
 				kind: 'static-catalog',
 				artifact: { kind: 'built-module' },
-				update: { kind: 'catalog-hmr' },
+				update: { kind: 'host-reload' },
 			},
 			recentUpdate: null,
 		},

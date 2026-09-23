@@ -44,7 +44,7 @@ const S3BucketOperationsStatus = v.object({
 		f.formMeta({ title: 'Active backend' }),
 	),
 	credentialRotation: v.pipe(
-		v.picklist(['not-applicable', 'available', 'restart-required']),
+		v.picklist(['not-applicable', 'available', 'read-only']),
 		f.formMeta({ title: 'Credential rotation' }),
 	),
 })
@@ -67,7 +67,7 @@ export const S3Workbench = workbench.define({
 				label: 'Replace Vault credentials',
 				input: S3CredentialRotation,
 				confirm:
-					'This replaces the selected bucket Vault record. Its running client keeps the current credentials until S3Plugin is restarted.',
+					'This replaces the selected bucket Vault record. New requests use the updated credentials; existing requests may complete with their previous snapshot.',
 			}),
 		}),
 		placement: workbench.route('/storage/s3', {

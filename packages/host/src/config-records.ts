@@ -44,7 +44,7 @@ function upsert(target: PluginConfigRecordSnapshot[], input: PluginConfigRecordS
 	else target[index] = entry
 }
 
-function mergeRecord(
+export function mergeRecord(
 	base: Readonly<Record<string, unknown>> | undefined,
 	override: Readonly<Record<string, unknown>> | undefined,
 ): Record<string, unknown> {
@@ -66,24 +66,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
 	const prototype = Object.getPrototypeOf(value)
 	return prototype === Object.prototype || prototype === null
-}
-
-/** Decode the official startup snapshot; persisted Host documents remain authoritative. */
-export function configRecordsFromEnvironment(
-	environment: Readonly<Record<string, string | undefined>>,
-): PluginConfigRecordSnapshot[] {
-	const text = environment.PLUXEL_CONFIG
-	if (text === undefined) return []
-	let value: unknown
-	try {
-		value = JSON.parse(text)
-	} catch (cause) {
-		throw new TypeError('[host] PLUXEL_CONFIG must contain JSON', { cause })
-	}
-	if (!value || typeof value !== 'object' || Array.isArray(value))
-		throw new TypeError('[host] PLUXEL_CONFIG must contain an object snapshot')
-	const record = value as Record<string, unknown>
-	if (record.version !== 3 || !Array.isArray(record.plugins))
-		throw new TypeError('[host] PLUXEL_CONFIG must contain config snapshot version 3')
-	return coercePluginConfigRecords(record.plugins)
 }

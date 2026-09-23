@@ -150,10 +150,10 @@ import { runHostApplication } from ${JSON.stringify(new URL('dist/index.mjs', ho
 import { dynamicSource } from ${JSON.stringify(new URL('dist/dynamic.mjs', hostManifest).href)}
 import { requirePluginService } from ${JSON.stringify(new URL('dist/internal.mjs', coreManifest).href)}
 const addresses = ${JSON.stringify(names.map(address))}
-const host = await runHostApplication({
+const host = await runHostApplication(() => ({
   plugins: [], sources: [dynamicSource({ kind: 'directory', path: ${JSON.stringify(store.entriesDir)}, include: ['*.mjs'] })],
-  configure: () => ({ state: { initial: { autoStart: addresses } } })
-}, { startup: { root: ${JSON.stringify(root)}, mode: 'production', env: {}, bindings: {} }, frameworkModules: {
+  state: { initial: { autoStart: addresses } } }
+}), { startup: { root: ${JSON.stringify(root)}, mode: 'production', env: {}, bindings: {} }, frameworkModules: {
   '@pluxel/core': ${JSON.stringify(new URL('dist/index.mjs', coreManifest).href)},
   '@pluxel/core/toolchain': ${JSON.stringify(new URL('dist/toolchain.mjs', coreManifest).href)}
 } })

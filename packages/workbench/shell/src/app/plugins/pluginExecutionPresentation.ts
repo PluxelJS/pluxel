@@ -126,13 +126,11 @@ export function describePluginExecution(
 		case 'static-catalog': {
 			const manual = execution.update.kind === 'manual'
 			return {
-				badgeLabel: manual ? '手动重载' : '目录 HMR',
-				badgeTone: manual ? 'orange' : 'blue',
+				badgeLabel: manual ? '手动重载' : '宿主重载',
+				badgeTone: 'orange',
 				currentLabel: '静态插件目录',
 				artifactLabel: artifactLabel(execution.artifact.kind),
-				updateLabel: manual
-					? '手动重载插件目录'
-					: '应用模块图变化时热替换插件目录；entry/应用配置边界变化时重建应用',
+				updateLabel: manual ? '手动重载插件目录' : '应用及固定插件变化时重建宿主',
 				searchTerms: [
 					'static',
 					'catalog',
@@ -141,9 +139,7 @@ export function describePluginExecution(
 					execution.update.kind,
 					artifactLabel(execution.artifact.kind),
 					'静态目录',
-					...(manual
-						? ['手动重载']
-						: ['hmr', 'catalog-hmr', '目录 HMR', '应用模块图', '热替换插件目录', '重建应用']),
+					...(manual ? ['手动重载'] : ['host-reload', '宿主重载', '重建应用']),
 				],
 			}
 		}

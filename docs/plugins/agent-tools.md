@@ -16,7 +16,7 @@ pnpm catalog:add -- @pluxel/agent-tools @pluxel/commands @pluxel/core
 
 Toolset 保存稳定 command name，Agent 得到所分配 Toolset 的并集。没有 assignment 的 Agent 默认没有任何命令：
 
-在 [应用入口](./index.md#把一个插件加入应用) 的 `configure()` 返回值中加入下面的配置记录，并把 `AgentToolsPlugin`、命令提供者和 adapter 加入 `plugins` 清单。让 adapter 自动启动，它的构造函数依赖会启动 Agent Tools。
+在 [应用入口](./index.md#把一个插件加入应用) 的 配置工厂 返回值中加入下面的配置记录，并把 `AgentToolsPlugin`、命令提供者和 adapter 加入 `plugins` 清单。让 adapter 自动启动，它的构造函数依赖会启动 Agent Tools。
 
 ```ts no-twoslash
 import { AgentToolsPlugin } from '@pluxel/agent-tools'
@@ -33,7 +33,7 @@ const agentToolsRecord = {
 	},
 }
 
-// 合入 configure() 的其他配置和已有记录：
+// 合入 配置工厂 的其他配置和已有记录：
 // configRecords: { initial: [agentToolsRecord] }
 ```
 

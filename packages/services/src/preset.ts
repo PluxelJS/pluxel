@@ -4,13 +4,15 @@ import type { RuntimeLoggingInput } from './logging/index'
 import type { ProductDescriptor } from './management/product-contract'
 import type { PersistenceServiceConfig } from './persistence'
 import { standardServices } from './index'
-import { vault } from './vault'
+import { vault, type VaultServiceConfig } from './vault'
 
 /** Official application services. Host owns preparation, rollback and shutdown. */
 export async function servicesPreset(
 	startup: HostStartupContext,
 	options: Readonly<{
 		persistence: PersistenceServiceConfig
+		/** Explicit Vault backend and legacy owner assignments. */
+		vault?: VaultServiceConfig
 		/** Omitted when the application has no product branding. */
 		product?: ProductDescriptor
 		/** Include the Workbench UI at /__pluxel/workbench. @default true */
@@ -90,7 +92,7 @@ export async function servicesPreset(
 			persistence: options.persistence,
 			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
 		}),
-		vault(),
+		vault({ deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY, ...options.vault }),
 		managementAccess(),
 		managementCommands(),
 		workbench

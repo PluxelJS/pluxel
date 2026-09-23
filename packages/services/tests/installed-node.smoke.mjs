@@ -39,6 +39,7 @@ try {
 	await writeFile(
 		join(root, 'app.mjs'),
 		`
+ import { defineConfig } from '@pluxel/host';
  import { BasePlugin, Plugin } from '@pluxel/core';
  import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain';
  import { nodeModules, NodeModules, defineNodeModule } from '@pluxel/services/node';
@@ -54,7 +55,7 @@ try {
  }
  Plugin()(Consumer);
  __setPluginDefinition(Consumer, { abiVersion: PLUGIN_LOWERING_ABI_VERSION, kind: 'plugin', definition: ${JSON.stringify(definition)} });
- export default { plugins: [Consumer], services: [nodeModules()], state: { initial: { autoStart: [{ definition: ${JSON.stringify(definition)}, variant: 'default' }] } } };
+ export default defineConfig(() => ({ plugins: [Consumer], services: [nodeModules()], state: { initial: { autoStart: [{ definition: ${JSON.stringify(definition)}, variant: 'default' }] } } }));
  `,
 	)
 	server = await createServer({

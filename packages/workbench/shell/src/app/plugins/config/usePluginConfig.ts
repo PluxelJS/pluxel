@@ -4,13 +4,15 @@ import type { FieldNode } from 'valibot-form'
 
 import { useRuntimeManagementClient, type RuntimeManagementClient } from '../../../runtime'
 import { managementQueryKeys, refetchManagementQuery } from '../../managementQuery'
-import { adaptConfigPresentationFields } from './presentationAdapter'
+import { adaptConfigPresentationFields, applyConfigSources } from './presentationAdapter'
+import type { HostConfigSource } from '@pluxel/host'
 
 export type PluginConfigData = {
 	fieldName: string
 	fields: readonly FieldNode[]
 	defaults: Record<string, unknown>
 	savedConfig: Record<string, unknown>
+	sources: readonly HostConfigSource[]
 	sections: readonly PluginConfigSection[]
 }
 
@@ -28,7 +30,7 @@ export type PluginConfigState = {
 	refetch: () => Promise<void>
 }
 
-type PluginConfigPresentation = Omit<PluginConfigData, 'savedConfig'>
+type PluginConfigPresentation = Omit<PluginConfigData, 'savedConfig' | 'sources'>
 
 async function readPresentation(
 	client: RuntimeManagementClient,
@@ -58,24 +60,28 @@ async function readPresentation(
 async function readSavedConfig(
 	client: RuntimeManagementClient,
 	owner: PluginNodeAddress,
-): Promise<Record<string, unknown>> {
+): Promise<{ config: Record<string, unknown>; sources: readonly HostConfigSource[] }> {
 	const result = await client.config.get(owner)
 	if (result.ok === false) {
 		// A Plugin without a config declaration has no persisted config to read. The
 		// presentation query reports that as an empty form, so keep both reads in
 		// agreement instead of turning the Config tab into a load failure.
-		if (result.code === 'config_not_found') return {}
+		if (result.code === 'config_not_found') return { config: {}, sources: [] }
 		throw new Error(result.message ?? result.code ?? '配置加载失败')
 	}
-	return result.config ?? {}
+	return { config: result.config ?? {}, sources: result.sources ?? [] }
 }
 
 export function commitPluginConfig(
 	queryClient: QueryClient,
 	owner: PluginNodeAddress,
 	savedConfig: Record<string, unknown>,
+	sources: readonly HostConfigSource[] = [],
 ): void {
-	queryClient.setQueryData(managementQueryKeys.pluginSavedConfig(owner), savedConfig)
+	queryClient.setQueryData(managementQueryKeys.pluginSavedConfig(owner), {
+		config: savedConfig,
+		sources,
+	})
 }
 
 export async function refreshPluginConfig(
@@ -105,7 +111,18 @@ export function usePluginConfig(owner: PluginNodeAddress | undefined): PluginCon
 	})
 	const error = presentation.error ?? saved.error
 	const data =
-		presentation.data && saved.data ? { ...presentation.data, savedConfig: saved.data } : undefined
+		presentation.data && saved.data
+			? {
+					...presentation.data,
+					savedConfig: saved.data.config,
+					sources: saved.data.sources,
+					fields: applyConfigSources(presentation.data.fields, saved.data.sources),
+					sections: presentation.data.sections.map((section) => ({
+						...section,
+						fields: applyConfigSources(section.fields, saved.data!.sources, section.path),
+					})),
+				}
+			: undefined
 
 	return {
 		...(data ? { data } : {}),

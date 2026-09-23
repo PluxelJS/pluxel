@@ -1,0 +1,14 @@
+{
+	"name": "@pluxel/experiment-content-mapper",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"typescript": {
+		"contentMapper": {
+			"exec": [
+				"node",
+				"mapper.mjs"
+			]
+		}
+	}
+}

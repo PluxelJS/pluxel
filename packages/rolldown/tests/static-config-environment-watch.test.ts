@@ -13,21 +13,21 @@ describe('static config environment production watch', () => {
 				import { DemoConfig } from './schema'
 				export { DemoConfig } from './schema'
 				export class DemoPlugin {
+
 					readonly settings = this.configs.use(DemoConfig)
 				}
 				export const plugins = [DemoPlugin] as const
 			`,
 			'entry.ts': `
-				import { bindConfigEnvironment } from '@pluxel/host/config-environment'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
 				import { DemoConfig, DemoPlugin, plugins } from './plugin'
-				export default {
+				export default defineConfig(() => ({
 					name: 'watch-fixture',
 					plugins,
-					configEnvironmentBootstrap: [
-						bindConfigEnvironment(DemoPlugin, DemoConfig, { endpoint: 'APP_ENDPOINT' }),
+					envBindings: [
+						envBinding(DemoPlugin, { config: { schema: DemoConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
 					],
-				} satisfies HostApplication
+				}))
 			`,
 		})
 		const entry = fixture.getPath('entry.ts')

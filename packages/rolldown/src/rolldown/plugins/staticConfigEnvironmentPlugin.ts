@@ -29,6 +29,7 @@ export function staticConfigEnvironmentDeclarationPlugin(
 			const ast = parseStandaloneWithLang(code, entry)
 			if (!ast) this.error(`[static-application] failed to parse entry: ${entry}`)
 			const facts = await parseStaticRuntimeDeclaration({
+				requireStaticPlugins: true,
 				ast,
 				code,
 				id: entry,

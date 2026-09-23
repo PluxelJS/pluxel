@@ -121,11 +121,11 @@ Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevS
 
 ## 固定 catalog 与可选动态来源
 
-`host({ entry })` 通过 ModuleRunner 加载 canonical `HostApplication` entry。开发驱动使用 Vite 的
+`host({ entry })` 通过 ModuleRunner 加载 canonical `HostApplicationFactory` entry。开发驱动使用 Vite 的
 `hotUpdate` 将 create/update/delete 事件送入同一个更新队列；同一次文件事件只执行一次 runtime 更新，避免 client/SSR
 两套环境重复提交或在提交后再次失效已加载的 constructor。普通 Plugin
-dependency 变化精确失效 importer graph；application entry/configure graph 变化重建 host。Single-active logging root
-要求先停止旧 host；新 application 创建或 start 抛出错误时先停止并清理失败的新 host，再从上一次成功 application definition 创建一个
+dependency 变化精确失效 importer graph；application factory identity 变化重建 host。Single-active logging root
+在候选工厂成功求值后，要求先停止旧 host；候选服务准备、prepare 或 start 抛出错误时先停止并清理失败的新 host，再从上一次成功工厂及 startup 快照创建一个
 fresh host。只有补偿 host 成功启动才记录 `restored-previous / application-reload`。这是 full-host replacement 的 compensation，
 不是保留或复活旧 running generation，也不把同一进程内的普通 definition transaction 改成可回滚；补偿本身失败时不得报告
 `restored`；Host-dev 在首次启动或补偿失败、没有 active Host 时记录 `failed / application-reload`。Start 正常返回的部分节点 lifecycle issue 保留新 host 并逐节点报告，不触发宿主补偿。
@@ -133,10 +133,11 @@ fresh host。只有补偿 host 成功启动才记录 `restored-previous / applic
 Management status 将当前 committed definition 的执行方式投影为 Host 提供的 `execution` fact，而不是从文件扩展名、
 `displayName` 或 package label 猜测。production freezer 产物固定为 `static-bundle / application-bundle / deployment`；
 Vite catalog 仅根据上述 source/built 正向 semantic fact 报告 `source-module` 或 `built-module`，无法证明时使用
-`unreported`，三者的更新方式都是 `catalog-hmr`。它表示 application module closure 变化会在当前 host 内提交 live catalog
-transaction；canonical entry、应用 metadata 或只影响 `configure()` 的依赖变化仍会重建 host。不经过 Vite 的通用显式 catalog
-使用 `manual`。Artifact 与更新机制是正交事实：不能用 `source-module` 推断 HMR，也不能因 artifact 未报告而隐藏宿主已知的
-catalog HMR。这些值不提供把 running definition 在线切换到另一种来源或加载机制 的控制 API。
+`unreported`。固定 catalog 的更新方式为 `host-reload`；工厂 identity 变化（包含固定插件 import 失效）会重新求值并重建 Host。
+动态来源的更新方式为 `definition-hmr`；来源更新且 factory identity 不变时，复用已解析配置，在当前 Host 内提交 live catalog transaction。
+工厂求值失败发生在关闭旧 Host 前，旧 Host 保持运行。不经过 Vite 的通用显式 catalog 使用 `manual`。
+Artifact 与更新机制是正交事实：不能用 `source-module` 推断 HMR，也不能因 artifact 未报告而隐藏宿主已知的更新方式。
+这些值不提供把 running definition 在线切换到另一种来源或加载机制 的控制 API。
 
 启动时先完成固定 imports 与所有显式来源的初始发现、求值，再向 Host 提交同一份初始 catalog，避免固定插件
 先启动时看不到来源提供的 required dependency。Source 只接受精确文件或不能逃逸 directory 的正向 include glob，

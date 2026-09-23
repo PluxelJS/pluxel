@@ -3,7 +3,7 @@ import { type Context, Plugin } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 
-import type { VaultKvHandle } from '@pluxel/services/vault'
+import type { VaultRecordSnapshot } from '@pluxel/services/vault'
 import type { WorkbenchContentActionResult, WorkbenchPrincipal } from '@pluxel/workbench'
 import { S3mini } from 's3mini'
 import {
@@ -203,6 +203,24 @@ export type S3AccessKeyCredentials = Readonly<{
 	secretAccessKey: string
 }>
 
+export const S3VaultSchema = v.record(
+	v.string(),
+	v.object({
+		accessKeyId: v.pipe(
+			v.string(),
+			v.minLength(1),
+			v.maxLength(256),
+			v.check((value) => value.trim().length > 0 && !/[\r\n]/.test(value)),
+		),
+		secretAccessKey: v.pipe(
+			v.string(),
+			v.minLength(1),
+			v.maxLength(4096),
+			v.check((value) => value.trim().length > 0 && !/[\r\n]/.test(value)),
+		),
+	}),
+)
+
 export class S3CredentialsError extends Error {
 	override name = 'S3CredentialsError'
 	readonly code = 'S3_CREDENTIALS_ERROR'
@@ -225,7 +243,9 @@ type RemoteCredentials = RemoteBackend['credentials']
 
 type S3BucketState = {
 	readonly config: S3BucketConfig
-	readonly client: S3Client
+	client: S3Client
+	credentialError?: Error
+	credentialWritable?: boolean
 }
 
 type S3OwnerState = {
@@ -242,7 +262,6 @@ export class S3Plugin extends S3 {
 	private readonly states = new Map<string, S3BucketState>()
 	private readonly owners = new WeakMap<Context, S3OwnerState>()
 	private readonly activeOwners = new Set<S3OwnerState>()
-	private credentialReplacementSaved?: Set<string>
 	private credentialMutation?: Promise<void>
 	private active = false
 	private workbenchDataListeners?: Set<() => void>
@@ -258,6 +277,7 @@ export class S3Plugin extends S3 {
 		if (existing) return existing
 		const handle = new S3BucketHandle(id, () => {
 			this.assertActive(owner, state)
+			if (state.credentialError) throw state.credentialError
 			return state.client
 		})
 		owner.handles.set(id, handle)
@@ -301,7 +321,6 @@ export class S3Plugin extends S3 {
 		}
 		if (this.ctx.workbench) {
 			this.workbenchDataListeners = new Set()
-			this.credentialReplacementSaved = new Set()
 			this.credentialMutation = Promise.resolve()
 		}
 		this.ctx.workbench?.publish(S3Workbench, {
@@ -354,54 +373,79 @@ export class S3Plugin extends S3 {
 		backend: RemoteBackend,
 		signal: AbortSignal,
 	): Promise<void> {
-		const credentials = await this.resolveCredentials(config.id, backend.credentials)
 		signal.throwIfAborted()
 		const lifecycle = new AbortController()
 		const abort = (): void => lifecycle.abort(new S3NotRunningError())
 		signal.addEventListener('abort', abort, { once: true })
-		const client = new S3mini({
-			accessKeyId: credentials?.accessKeyId ?? '',
-			secretAccessKey: credentials?.secretAccessKey ?? '',
-			endpoint: backend.endpoint,
-			region: backend.region,
-			requestSizeInBytes: backend.requestSizeInBytes,
-			requestAbortTimeout: backend.requestAbortTimeout,
-			minPartSize: backend.minPartSize,
-			fetch: lifecycleFetch(lifecycle.signal),
-		})
-		await this.activate(
-			config,
-			client,
-			() => {
-				signal.removeEventListener('abort', abort)
-				lifecycle.abort(new S3NotRunningError())
-			},
-			`S3miniClient:${config.id}`,
-		)
-	}
-
-	private async resolveCredentials(
-		bucketId: string,
-		config: RemoteCredentials,
-	): Promise<S3AccessKeyCredentials | undefined> {
-		if (config.type === 'anonymous') return undefined
-		const key = credentialKey(bucketId, config)
-		let value: unknown
+		const createClient = (credentials?: S3AccessKeyCredentials) =>
+			new S3mini({
+				accessKeyId: credentials?.accessKeyId ?? '',
+				secretAccessKey: credentials?.secretAccessKey ?? '',
+				endpoint: backend.endpoint,
+				region: backend.region,
+				requestSizeInBytes: backend.requestSizeInBytes,
+				requestAbortTimeout: backend.requestAbortTimeout,
+				minPartSize: backend.minPartSize,
+				fetch: lifecycleFetch(lifecycle.signal),
+			})
+		let disposeWatch: (() => void) | undefined
 		try {
-			const vault = this.ctx.vault
-			if (!vault) throw new Error('S3 Vault credentials require host config vault: {}')
-			const credentials: VaultKvHandle = vault.kv(
-				config.namespace ? { namespace: config.namespace } : undefined,
+			let credentials: S3AccessKeyCredentials | undefined
+			let state: S3BucketState | undefined
+			let snapshot: VaultRecordSnapshot | undefined
+			if (backend.credentials.type === 'vault') {
+				const reference = backend.credentials
+				const key = credentialKey(config.id, reference)
+				const vault = this.ctx.vault
+				if (!vault) throw new S3CredentialsError('unavailable', config.id, key)
+				const parse = (record: VaultRecordSnapshot): S3AccessKeyCredentials => {
+					if (!record.exists) throw new S3CredentialsError('missing', config.id, key)
+					try {
+						return normalizeCredentials(record.value)
+					} catch (error) {
+						throw new S3CredentialsError('invalid', config.id, key, error)
+					}
+				}
+				const subscription = await vault
+					.kv(reference.namespace ? { namespace: reference.namespace } : undefined)
+					.watch(key, (record) => {
+						snapshot = record
+						if (!state) return
+						state.credentialWritable = record.writable
+						try {
+							state.client = createClient(parse(record))
+							state.credentialError = undefined
+						} catch (error) {
+							state.credentialError =
+								error instanceof Error ? error : new Error('Invalid S3 credentials')
+						}
+						this.notifyWorkbenchDataChanged()
+					})
+				disposeWatch = subscription.dispose
+				snapshot ??= subscription.snapshot
+				credentials = parse(snapshot)
+			}
+			signal.throwIfAborted()
+			const initialRevision = snapshot?.revision
+			await this.activate(
+				config,
+				createClient(credentials),
+				() => {
+					disposeWatch?.()
+					signal.removeEventListener('abort', abort)
+					lifecycle.abort(new S3NotRunningError())
+				},
+				`S3miniClient:${config.id}`,
 			)
-			value = await credentials.get(key)
+			state = this.states.get(config.id)!
+			state.credentialWritable = snapshot?.writable
+			if (snapshot && snapshot.revision !== initialRevision)
+				state.client = createClient(normalizeCredentials(snapshot.value))
 		} catch (error) {
-			throw new S3CredentialsError('unavailable', bucketId, key, error)
-		}
-		if (value === undefined) throw new S3CredentialsError('missing', bucketId, key)
-		try {
-			return normalizeCredentials(value)
-		} catch (error) {
-			throw new S3CredentialsError('invalid', bucketId, key, error)
+			disposeWatch?.()
+			signal.removeEventListener('abort', abort)
+			lifecycle.abort(error)
+			throw error
 		}
 	}
 
@@ -451,9 +495,10 @@ export class S3Plugin extends S3 {
 				return {
 					id: config.id,
 					backend: 'remote-vault' as const,
-					credentialRotation: this.credentialReplacementSaved?.has(config.id)
-						? ('restart-required' as const)
-						: ('available' as const),
+					credentialRotation:
+						this.states.get(config.id)?.credentialWritable === false
+							? ('read-only' as const)
+							: ('available' as const),
 				}
 			}),
 		}
@@ -506,11 +551,10 @@ export class S3Plugin extends S3 {
 					message: 'The replacement credentials could not be persisted.',
 				})
 			}
-			this.credentialReplacementSaved?.add(input.bucketId)
 			this.notifyWorkbenchDataChanged()
 			return Object.freeze({
 				ok: true as const,
-				message: `Credentials for bucket "${input.bucketId}" were saved. Restart S3Plugin to apply them.`,
+				message: `Credentials for bucket "${input.bucketId}" were saved. New requests use the updated credentials.`,
 			})
 		})
 	}
@@ -576,7 +620,6 @@ export class S3Plugin extends S3 {
 		for (const owner of this.activeOwners) this.releaseOwner(owner)
 		this.workbenchDataListeners?.clear()
 		this.workbenchDataListeners = undefined
-		this.credentialReplacementSaved = undefined
 		this.credentialMutation = undefined
 	}
 

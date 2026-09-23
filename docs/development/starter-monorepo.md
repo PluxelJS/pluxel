@@ -63,7 +63,7 @@ workspace dependency 对应 constructor required edge。Todo 对 Audit 使用 op
 
 ## 开发与部署
 
-一个 `HostApplication` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../reference/runtime-services.md)。
+一个 `defineConfig(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../reference/runtime-services.md)。
 
 ```sh
 pnpm dev

@@ -9,15 +9,16 @@ Workbench 可以独立组合到 Host。`@pluxel/workbench` 提供定义与 token
 
 ```ts
 // app.ts
+import { defineConfig } from '@pluxel/host'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { workbenchService } from '@pluxel/workbench/service'
 import { Viewer } from './viewer'
 
-export default {
+export default defineConfig(() => ({
 	plugins: [Viewer],
 	services: [workbenchService()],
 	state: { initial: { autoStart: [pluginNodeAddressOf(Viewer)] } },
-}
+}))
 ```
 
 Plugin 使用 Core 作者 API，以及从 Workbench 包导入的 `Workbench` token：

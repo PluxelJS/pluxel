@@ -1,4 +1,4 @@
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
 import { dynamicSource } from '@pluxel/host/dynamic'
@@ -8,29 +8,29 @@ import { exampleConfigRecords, examplePlugins, exampleHostState } from './runtim
 
 export { product }
 
-const dataRoot = resolve(process.cwd(), process.env.PLUXEL_DATA_ROOT ?? '.pluxel')
-
-export default {
-	name: 'pluxel-example',
-	plugins: examplePlugins,
-	sources: [
-		dynamicSource({
-			kind: 'directory',
-			path: resolve(dataRoot, 'managed-plugins'),
-			include: ['*.mjs'],
-		}),
-	],
-	async configure(startup) {
-		const { env } = startup
-		const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
-		return {
-			services: await servicesPreset(startup, {
-				persistence: resolve(dataRoot, 'persistence'),
-				product,
-				workbench: withWorkbench,
+export default defineConfig(async (startup) => {
+	const dataRoot = resolve(
+		startup.deployment?.root ?? startup.root,
+		startup.env.PLUXEL_DATA_ROOT ?? '.pluxel',
+	)
+	const { env } = startup
+	const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
+	return {
+		name: 'pluxel-example',
+		plugins: examplePlugins,
+		sources: [
+			dynamicSource({
+				kind: 'directory',
+				path: resolve(dataRoot, 'managed-plugins'),
+				include: ['*.mjs'],
 			}),
-			configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
-			state: exampleHostState(),
-		}
-	},
-} satisfies HostApplication
+		],
+		services: await servicesPreset(startup, {
+			persistence: resolve(dataRoot, 'persistence'),
+			product,
+			workbench: withWorkbench,
+		}),
+		configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
+		state: exampleHostState(),
+	}
+})

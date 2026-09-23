@@ -291,12 +291,14 @@ export default defineConfig({
 })
 ```
 
-freezer 接受直接默认导出的应用对象（可带 `satisfies HostApplication`）。它在同一 graph 中执行 macro、config metadata、lint、Workbench
+freezer 接受直接默认导出的 `defineConfig(factory)`。工厂是同步或异步的箭头/函数表达式，直接返回对象，或在块中以唯一、无条件的顶层 `return` 返回对象。返回对象不允许 spread。`plugins` 使用直接数组或模块级 const/imported 数组，不能依赖 startup 分支或函数调用；构建不会执行工厂或静态求值任意 JavaScript。它在同一 graph 中执行 macro、config metadata、lint、Workbench
 remote extraction 和 production preprocessing，然后生成以 canonical entry 为 namespace import 的 platform bootstrap。Wrapper
 从 module namespace 消费 default application，并用 runtime shared reader 消费可选 `product` named export；它不按 identifier
 猜测 export、不静态求值 product，也不把产品字段复制进 deployment metadata。direct export、local export 与标准 re-export
 因此具有相同语义。fixed plugins、runtime 和可达的
 runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
+静态插件清单是部署合同：模块声明与导入的数组在模块求值、配置工厂执行及其 helper/callback 中都必须保持原始成员，不能通过赋值、别名、mutator 或动态 import 追加插件。检查器拒绝工厂中的明显赋值、删除、mutator、引用别名和向 helper 传递数组；允许 `map`、`slice` 等读取，但作者仍须保证 callback 没有修改原数组。该检查只覆盖有限语法，不做跨模块副作用分析，也不证明任意 JavaScript 的清单完整性。需要可变插件时使用显式 `sources` 来源合同。
+
 optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
 缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
 
@@ -305,13 +307,18 @@ exports，并把 Elysia subpath、TypeBox 的 type/system/value/schema/compile n
 随后调用 Elysia 公开 `setupTypebox()`。因此 source-linked Plugin 不能带入第二份 Elysia，搬离 workspace 的 schema-backed
 distribution 也不依赖相对生成 chunk 的同步 module lookup。resolve hook 使用原生 id filter，非相关 graph import 不进入该插件。
 
-同一个 static entry validator 还 lower optional `configEnvironmentBootstrap`。该字段只能是 direct array literal；每项必须是
-direct `bindConfigEnvironment()` call，mapping 只能由 direct string literal 或 direct object tree 组成。Identifier indirection、
-spread、computed/duplicate property、runtime branch、非 portable/reserved name 在 Vite 与 production 使用同一 diagnostic 拒绝。
-Lowering 只产生 Plugin/schema export、raw path 和 environment name facts；startup decoder 仍读取 runtime canonical candidate。
+同一个 static entry validator 解析可选 `envBindings`。它是直接数组，每项调用从 `@pluxel/host` 导入的 `envBinding(Plugin, { config?, vault?, namespace? })`；
+`Plugin` 是静态目录中的直接标识符，config/vault 各自声明 `schema` 与 `mapping`。工具链解析显式 schema 引用，
+不读取 Plugin 静态 schema 字段。mapping 是环境变量名字字符串或直接 object tree。Vault 顶层 key 对应完整凭据 record，可映射为一个 JSON
+变量或多个字段变量。生成 `.env.example` 只包含变量名、输入类型与 schema 描述，不包含环境值或凭据默认值。
+`fileBindings` 只在实际 Host 启动时读取 JSON 文件；构建不打开或复制这些文件，不把凭据烘焙进制品。
 
-Production projector 复用 config source resolver，把 exported schema 还原为封闭的 Valibot schema DSL，再调用
-`valibot-form` 的同一个 raw-input projector；它不执行 canonical application、`configure()`、Plugin module side effect、validation、
+应用对象与映射的 spread、computed/duplicate property、非 portable 环境名直接拒绝；静态解析不执行工厂、Plugin 模块副作用、
+validation、transform 或 default getter。环境值是否存在、解码及最终校验归 Host 启动。配置优先级与 env 路径只读规则见
+[`CONFIG.md`](CONFIG.md)，Vault record 的来源和撤销规则由 Vault 服务负责。
+
+Production projector 复用 config source resolver，把绑定中显式引用的 schema 还原为封闭的 Valibot schema DSL，再调用
+`valibot-form` 的同一个 raw-input projector；它不执行 canonical application、配置工厂、Plugin module side effect、validation、
 transform 或 default getter。无法安全静态还原或无法推导 transport 的 target 使 build 失败，不回退 string/JSON heuristic。
 
 Plugin semantics、config source 与 route-specific validator 都只读 AST，并通过 `pluginUtils` 的 exact-source 有界缓存复用同一
@@ -330,7 +337,7 @@ Node target 用 `nf3` externalize 并追踪 native/non-bundleable 或无法安�
 freezer 只发布 Node application；在提供真正 platform-neutral 的 runtime/service closure 前，不生成伪 neutral Worker bundle。
 Managed database driver 默认同时追踪 PGlite 与 `pg`；`managedDatabaseDrivers` 可以按 deployment 收窄实际复制的 driver。
 未选择的 driver 被 lowering 成明确 absent module，使 dead runtime branch 不会反向进入 bundle 或留下 unresolved external；
-选择与 startup config 不一致会在真正加载 driver 时明确失败，而不是从 build config 猜测或改写 canonical `configure()`。
+选择与 startup config 不一致会在真正加载 driver 时明确失败，而不是从 build config 猜测或改写 canonical 配置工厂。
 Production source map 可用 `sourcemapExcludeSources` 省略重复的 `sourcesContent`，仍保留 Node stack mapping 所需的
 source path、name 和 mapping；是否另存完整源码归档由 deployment/release policy 决定。
 
@@ -355,7 +362,7 @@ Workbench Shell、producer 和 Content plan 是 browser-facing outputs，不内�
 `workbench/content/<definition-digest>/<content-set-digest>/content-plan.json`；Workbench root 分别写唯一
 `pluxel-workbench-producers.json` 与 `pluxel-workbench-content.json`。业务 SPA 可以独立输出到 `public/`，不会覆盖这些 inventory。
 `variant: 'workbench'`
-表示产物具备能力；是否在某次启动安装 Workbench 仍由 application `configure()` 返回值决定。
+表示产物具备能力；是否在某次启动安装 Workbench 仍由 application 配置工厂 返回值决定。
 headless 与 workbench 使用分离的 internal Node adapter；headless dependency graph 不解析 Workbench installer/backend，
 不是只依赖 minifier 删除未用分支。
 

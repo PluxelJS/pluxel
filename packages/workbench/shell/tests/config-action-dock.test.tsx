@@ -170,7 +170,7 @@ describe('config action dock', () => {
 			rootEnabled: false,
 			cache: { enabled: false, child: { secret: 'preserved' } },
 		}
-		client.config.patchField.mockResolvedValue({
+		client.config.patch.mockResolvedValue({
 			ok: true,
 			config: { ...savedConfig, cache: { ...savedConfig.cache, enabled: true } },
 			application: 'applied',
@@ -200,11 +200,10 @@ describe('config action dock', () => {
 			await act(async () =>
 				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
 			)
-			expect(client.config.patchField).toHaveBeenCalledExactlyOnceWith(OWNER, {
-				fieldPath: 'cache',
-				value: { enabled: true, child: { secret: 'preserved' } },
+			expect(client.config.patch).toHaveBeenCalledExactlyOnceWith(OWNER, {
+				cache: { enabled: true },
 			})
-			expect(client.config.patch).not.toHaveBeenCalled()
+			expect(client.config.patchField).not.toHaveBeenCalled()
 			expect(sibling.checked).toBe(true)
 			expect(nested.checked).toBe(true)
 			expect(container.textContent).toContain('待保存 1')
@@ -248,14 +247,14 @@ describe('config action dock', () => {
 
 	it('ignores another native section submit while a save is pending and permits it after completion', async () => {
 		let resolve!: (result: unknown) => void
-		const patch = vi.fn().mockImplementation(
+		const patch = vi.fn().mockImplementationOnce(
 			() =>
 				new Promise((done) => {
 					resolve = done
 				}),
 		)
 		const client = createFakeManagementClient(patch)
-		client.config.patchField.mockResolvedValue({
+		client.config.patch.mockResolvedValue({
 			ok: true,
 			config: { rootEnabled: true, cache: { enabled: true } },
 			application: 'applied',
@@ -299,9 +298,8 @@ describe('config action dock', () => {
 			await act(async () =>
 				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
 			)
-			expect(client.config.patchField).toHaveBeenCalledExactlyOnceWith(OWNER, {
-				fieldPath: 'cache',
-				value: { enabled: true },
+			expect(client.config.patch).toHaveBeenNthCalledWith(2, OWNER, {
+				cache: { enabled: true },
 			})
 		} finally {
 			await act(async () => root.unmount())
@@ -673,10 +671,14 @@ describe('config action dock', () => {
 		}
 	})
 
-	it('saves all dirty sections in one patch and preserves unrendered nested values', async () => {
+	it('saves editable fields in one merge patch without resubmitting unrendered values', async () => {
 		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => ({
 			ok: true as const,
-			config: input,
+			config: {
+				...input,
+				cache: { ...(input.cache as object), preserved: 'keep-me' },
+				untouched: 'keep-too',
+			},
 			application: 'applied' as const,
 		}))
 		patch.mockResolvedValueOnce({
@@ -738,7 +740,7 @@ describe('config action dock', () => {
 			expect(patch).toHaveBeenCalledTimes(2)
 			expect(patch).toHaveBeenCalledWith(OWNER, {
 				rootEnabled: true,
-				cache: { enabled: true, preserved: 'keep-me' },
+				cache: { enabled: true },
 			})
 		} finally {
 			await act(async () => root.unmount())

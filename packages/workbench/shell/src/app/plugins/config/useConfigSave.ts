@@ -42,7 +42,7 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 				return
 			}
 
-			commitPluginConfig(queryClient, owner, result.config)
+			commitPluginConfig(queryClient, owner, result.config, result.sources)
 			onSaved()
 			// A failed read-model refresh must not turn an acknowledged write into a save failure.
 			await Promise.allSettled([refreshPluginReadModels(queryClient)])

@@ -10,7 +10,7 @@
 | Host-dev                            | Vite ModuleRunner、候选更新队列、开发附件、控制台 execution           | 官方服务选择、第二套插件生命周期  |
 | Services（含日志与管理）/ Workbench | 对应领域的能力、资源和适配                                            | 修改 Core 图所有权                |
 
-应用只有 `HostApplication` 一个声明模型。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
+应用以 `defineConfig(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
 
 ## 服务与资源
 
@@ -28,10 +28,10 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 
 ## 应用、开发和部署
 
-应用静态声明 `plugins`、`sources`，每次启动执行 `configure(startup)` 取得 services/config/state/configRecords；`prepare` 在服务与开发附件准备好后、插件启动前执行。
-Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`PLUXEL_CONFIG` 与 schema 环境绑定只生成启动 seed，持久文档继续拥有配置 authority。
+应用每次启动执行配置工厂，取得完整 plugins/sources/services/config/state/configRecords；`prepare` 在服务与开发附件准备好后、插件启动前执行。
+Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings`显式选择输入；config按基础对象/文件 < 管理保存值 < env合并，env控制路径只读且不落盘。
 
-Vite、生产 launcher 共用 Host 应用解析。普通插件变化提交 catalog；配置/服务变化替换 Host。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。
+Vite、生产 launcher 共用 Host 应用解析。工厂 identity 变化时重新求值完整配置并替换 Host，固定插件 import 更新也可能使工厂失效。工厂求值失败保留旧 Host。动态来源更新若工厂未变，则复用本次配置并提交 catalog。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。
 Host-dev 是唯一开发驱动；官方服务附件分别由 Services、Workbench 拥有。数据库 lowering 属于官方 Vite preset 的工具插件，不是运行时服务。
 生产 bootstrap 调用 `runHostApplication`；Fetch handler 和 Node listener 属于 HTTP 服务。构建资源 variant 不替应用安装服务。
 
@@ -73,3 +73,16 @@ Services 包含基础服务、Logging、Management 与官方 preset；子入口�
 `@pluxel/host/internal/protocol` 是浏览器和服务端共享 execution/update snapshots 与验证函数的唯一内部跨包入口，直接构建无外部依赖的 `src/execution.ts`。服务端框架集成仍使用 `/internal`，该入口不再转发 execution 协议。Management 客户端直接消费 protocol，不经过包含来源加载、IO 和生命周期编排的服务端 barrel；此拆分表达真实的运行环境边界，不能因减少路径而合并。
 
 服务内部不为单个 consumer 建立 token/resolve 转发层：HTTP directory token 与安装器同属 `http.ts`，开发附件直接读取 Node backend token。Vite 子入口直接映射开发模块；只有需要限制导出集合或组合多个实现的入口才保留 facade。数据库 adapter 实现与调用方共享 `DatabaseAdapter` 和 backend options 类型，资源策略仍由原有 coordinator 统一拥有。
+
+## Vault 记录与宿主输入
+
+Vault 只用结构化 KV 表达记录，blobs 保留独立文件语义。默认加密后端依赖 Persistence；bindings 后端只安装读取能力，
+不准备密钥、磁盘或 Persistence。Host 在服务准备后、插件启动前，通过 root-only `HostVaultBindings` 安装 schema 已验证的
+owner/key/value/source 记录；缺少安装能力属于装配错误。Services 不反向拥有 Host 的环境解析。
+
+KV mutation 在唯一 backend lock 内 clone、检查 revision、加密并原子提交，然后才交换 snapshot 与发布通知；失败不推进
+revision。删除保留 tombstone。watch/watchPrefix 在同一 lock 内读取初始 snapshot 并注册，通知在锁外、owner invocation 内运行。
+部署 env/file 整记录只读且不落盘；任何KV写入路径都检查overlay。owner namespace和其命名子空间隔离，root保持受信任管理权限。
+
+旧 docs迁移为普通KV key；旧全局自定义namespace必须由应用显式 `legacyNamespaces` 指定owner。复制完成后持久提交迁移标记，
+保留原数据，碰撞fail-fast。完整加密格式、操作与恢复边界见 [Vault](../docs/runtime/vault.md)。

@@ -38,19 +38,21 @@ await host.close()
 
 `/internal` 是服务端框架集成入口，不是 Plugin 作者 API。`/internal/protocol` 单独提供无 IO 的 execution/update snapshots 与验证函数，供浏览器和服务端共享；浏览器不能通过服务端 `/internal` 导入这些协议。
 
-开发时使用 `@pluxel/host-dev/vite` 的 `host({ entry: './app.ts' })`。`app.ts` 默认导出同一份 `HostApplication` 声明，Vite 接入负责加载模块和动态来源；应用声明无需自己传 loader。
+开发时使用 `@pluxel/host-dev/vite` 的 `host({ entry: './app.ts' })`。`app.ts` 默认导出 `defineConfig(factory)` 声明的配置工厂，Vite 接入负责加载模块和动态来源；应用声明无需自己传 loader。
 
 ```ts
 // app.ts
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { MyPlugin } from './plugin.js'
 
-export default {
+export default defineConfig(() => ({
 	plugins: [MyPlugin],
-} satisfies HostApplication
+}))
 ```
 
-入口或宿主配置变化会创建新宿主；插件实现更新在当前宿主内提交目录事务。失败候选不覆盖已接受的模块事实，修复缺失导入后会通过同一开发队列重新求值。
+配置工厂每次创建 Host 时接收独立 startup，并同步或异步返回完整配置。`HostApplicationFactory` 表示工厂，`HostApplication` 表示返回对象；模块导入不执行工厂。
+
+工厂 identity 变化（包含固定插件 import 更新）会创建新宿主；动态来源更新且工厂未变时在当前宿主内提交目录事务。失败候选不覆盖已接受的模块事实，修复缺失导入后会通过同一开发队列重新求值。
 
 开发驱动会在来源 entry 重新发布时失效其已观察的 ESM 依赖闭包，并重新解析 package metadata。CommonJS 与 native 模块继续由 Node 执行：正常安装应发布新的不可变包路径；直接覆盖已经加载的 CommonJS/native 文件需要重启进程，不承诺清空 Node 全局模块缓存。
 
@@ -69,3 +71,41 @@ const sources = [
 来源生产者从 `@pluxel/host/dynamic/source-producer` 调用 `requireDynamicPluginSource(ctx, declaration)`，在创建目录或安装包前确认 Host 已声明目标来源；此校验不授予修改 catalog 的权限。
 
 原生生产加载支持初始 entry、新路径与撤回；已经求值的路径重新发布时返回 `PLUGIN_SOURCE_RESTART_REQUIRED`，需要重启进程。Node ESM 缓存无法靠给入口追加 query 完整刷新，开发更新交给 Vite 的同一个 Pluxel environment。
+
+## 显式部署输入
+
+插件继续通过任意命名的 `this.configs.use(schema)` 字段声明配置，包括普通 TypeScript
+`private` 字段。需要部署绑定时导出同一个 schema 值，应用导入它，使用 helper 获得输入字段补全：
+
+```ts
+import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+import { MyPlugin, ConfigSchema, CredentialRecords } from './plugin.js'
+
+export default defineConfig(() => ({
+	plugins: [MyPlugin],
+	envBindings: [
+		envBinding(MyPlugin, {
+			config: { schema: ConfigSchema, mapping: { endpoint: 'APP_ENDPOINT' } },
+			vault: { schema: CredentialRecords, mapping: { credentials: { token: 'APP_TOKEN' } } },
+		}),
+	],
+	fileBindings: [
+		fileBinding(MyPlugin, {
+			config: { schema: ConfigSchema, path: './settings.json' },
+		}),
+	],
+}))
+```
+
+不需要 `static configSchema`、`static vaultSchema` 或声明生成插件。配置 schema 只定义一次；
+Host 首次解析时检查它与 `configs.use()` 提取的 schema 为同一对象。补全来自显式传入 schema
+的 Input 类型，保留默认值前的可选性和 transform 前的字段；不会从 Plugin constructor 反推私有字段。
+
+Vault 的根 schema 是应用固定的部署契约，验证记录名与完整记录，包括动态 `record` 的 key
+约束。使用 `vault: { schema, paths: { credentials: './credentials.json' } }` 绑定 JSON 文件。
+插件替换不会改变或重新执行这个固定部署 schema；修改契约需要重新加载应用。插件私有 KV
+仍由业务代码验证，不受部署 schema 自动约束。
+
+配置的文件值作为基础值，环境输入作为只读覆盖，不写回持久化配置。数组和嵌套动态对象应
+使用一个环境变量传入完整 JSON；Vault 根层允许选择动态记录名。Vault 环境和文件输入均为
+整条只读记录，缺少映射输入时拒绝启动，错误不会包含输入值。

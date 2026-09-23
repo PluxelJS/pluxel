@@ -23,7 +23,7 @@ export type PluginExecutionSnapshot =
 				| Readonly<{ kind: 'source-module' }>
 				| Readonly<{ kind: 'built-module' }>
 				| Readonly<{ kind: 'unreported' }>
-			update: Readonly<{ kind: 'catalog-hmr' }> | Readonly<{ kind: 'manual' }>
+			update: Readonly<{ kind: 'host-reload' }> | Readonly<{ kind: 'manual' }>
 	  }>
 	| Readonly<{
 			kind: 'dynamic-fixed'
@@ -231,7 +231,7 @@ export function clonePluginExecutionSnapshot(
 				artifact === 'source-module' || artifact === 'built-module' || artifact === 'unreported',
 				label,
 			)
-			const updateKind = oneOf(update.kind, ['catalog-hmr', 'manual'], `${label}.update.kind`)
+			const updateKind = oneOf(update.kind, ['host-reload', 'manual'], `${label}.update.kind`)
 			assertNoScope(update, label)
 			return frozenExecution(kind, artifact, updateKind)
 		}
@@ -387,7 +387,7 @@ function assertCombination(condition: boolean, label: string): asserts condition
 function frozenExecution<
 	K extends 'static-bundle' | 'static-catalog' | 'dynamic-fixed',
 	A extends PluginArtifactSnapshot['kind'],
-	U extends 'deployment' | 'catalog-hmr' | 'manual' | 'host-reload',
+	U extends 'deployment' | 'host-reload' | 'manual',
 >(kind: K, artifact: A, update: U): PluginExecutionSnapshot {
 	return Object.freeze({
 		kind,

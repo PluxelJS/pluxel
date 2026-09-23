@@ -8,7 +8,7 @@ Core token、正向 Host 安装计划、官方服务拆分、Management、Workbe
 ## 保持的方向
 
 Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安装、资源准备、管理页面与网络承载分别拥有明确的生命周期。
-应用用固定 `plugins` 和 `sources` 声明目录，在每次启动的 `configure(startup)` 中构造服务和存储配置；Vite 与生产共用启动路径。
+应用用固定 `plugins` 和 `sources` 声明目录，在每次启动的 配置工厂 中构造服务和存储配置；Vite 与生产共用启动路径。
 管理页面是普通 Plugin，关闭页面不关闭被管理服务。普通 Vite/tsdown 插件复用同一 lowering、artifact 与 candidate 实现。
 
 验证优先复用代表性路径：轻量 Host、自有业务 HTTP、官方管理 Plugin、实际 Workbench 页面、独立安装和搬离工作区的生产产物。
@@ -16,7 +16,7 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 
 ## 真实下游迁移验证
 
-三个独立下游使用同一 `HostApplication` 启动契约，按实际产品选择服务；不靠复制框架源码路径或私有 Shell 入口接入。
+三个独立下游使用同一 `defineConfig(factory)` 启动契约，按实际产品选择服务；不靠复制框架源码路径或私有 Shell 入口接入。
 
 - **Chatbot：** 固定平台 catalog、官方 Workbench Shell 与显式 PGlite Database；保留既有 Vault、配置目录和内存 auto-start 策略。
   已通过全部 340 个现有测试、package/root 类型检查、source governance 与生产构建。隔离生产启动验证 Workbench HTML 及其 11 个 JS/CSS 资源返回成功且 MIME 正确。
@@ -62,3 +62,28 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 三个下游再次完成 source 安装与受影响包类型检查：Rhythm 15 个、Chatbot 14 个及根项目、Omni 11 个。没有重复全部业务测试或外部平台连接验收。
 
 真实 Vite Workbench smoke 同时验证语义候选拒绝（保留旧制品并记录 application artifact error）、后台 producer 构建失败、修复恢复、旧制品可读与关闭。Host hot-update 的原始异常已确认进入显式选择的日志后端；对应 Host-dev 单包构建与既有诊断测试通过。
+
+## 配置与 Vault 重设计验证（2026-09-22）
+
+本轮改为明确的 `envBindings` / `fileBindings`、config base/saved/env 分层和结构化 Vault KV。框架通过 Core 242、Rolldown 357、Host 119、Host-dev 54、Services 306、Auth 46、S3 16 项回归；Host 额外验证 binding 输入隔离、来源缺失、文件输入、replacement schema 与 transform 执行次数。S3 在仅安装 `vault({ backend: 'bindings' })`、没有 Persistence 时向本地 HTTP 服务完成真实签名写入。仓库治理、lint、format、22 项类型/构建任务及独立 tarball/Vite smoke 已通过。
+
+Workbench 446 项通过。全套检查另外暴露 `workbench-editor-grid.test.tsx` 的最大化恢复失败，单独复验仍失败；其 adapter/test 未被本轮修改，工作区已存在的 `vendor/split-like-vscode` revision 变更保留原状。这项独立布局问题不计入通过数。
+
+- Chatbot：17 包及 root 类型检查、343 项测试覆盖和完整构建通过；负载期超时的 3 个文件单 worker 复验通过。新增回归覆盖账户分页、外部新增/替换/删除和 observer 清理。
+- bot-new-omni：35 项类型、测试及构建任务通过；新增相同业务 revision 下的凭据替换与删除后客户端清理回归。
+- Rhythm：71 项检查、应用/前端/生产 smoke 通过；桌面类型检查、250 tests 和 Pluxel build 通过。生产 smoke 断言 env 不写入 saved config。音乐源及 TeamSpeak 覆盖结构化记录迁移、外部更新、删除和 revision 冲突。
+- Backend：26 项类型、40 项测试和 25 项生产构建任务通过；539 项 distribution inventory 与生产 smoke 通过，覆盖 SPA/RPC、AgentENV 控制面、guest 失败诊断及 SIGTERM。连接设置通过应用显式绑定的 Host config 保存，凭据通过结构化 Vault/CAS 保存；真实 Host 回归覆盖外部轮换、删除与无凭据配置。
+
+这些结果验证本地可重复行为与制品边界，不证明外部平台账号、真实 TeamSpeak 服务器或生产数据升级已被在线操作验证。普通配置迁移与加密数据保留细节以各下游迁移文档为准。
+
+## 移除静态 schema 字段（2026-09-23）
+
+本轮保留普通 `.ts` 和 `this.configs.use(schema)`，应用通过 `envBinding` / `fileBinding` 显式导入 schema。插件不再声明两个 static schema 字段。Config 在启动时核对同一 schema 对象，HMR 继续检查候选 metadata；Vault 根 schema 是本次 Host 的部署输入契约，保留记录 key 和整记录校验，不随 Plugin 热替换重复执行 transform。
+
+- 官方 Content Mapper 实验固定验证 7.0.2 与 7.1.0-dev.20260922.1：前者不支持，后者拒绝内建 `.ts` / `.tsx`；自定义扩展名的 CLI、LSP 和声明消费者路径可运行，但没有用于生产。复现见 `engineering/experiments/tsgo-content-mapper/README.md`。
+- 生产公开声明消费者只加载 Core/Host `dist`、不使用 source condition 或 paths，在 TypeScript 7.0.2 的 `strict`、`skipLibCheck: false` 下通过 10 个负例检查。真实 LSP 验证 config/Vault 根字段、嵌套输入字段、file record key 的补全，以及错误 key 的 TS2353。复现见 `engineering/experiments/tsgo-plugin-inputs/check-production.mjs`。
+- Host 124 项测试、Rolldown 365 项测试、Host-dev 54 项测试、Services 的真实 Vite 启动/HMR 测试通过；对应 Host、Rolldown、Host-dev、Services 类型检查通过。Host 与 Rolldown 独立构建通过。
+- Auth 46 项、S3 16 项测试及两个包的构建/类型检查通过；S3 覆盖 bindings-only 后端的实际签名请求。Chatbot 343 项测试、17 包及根项目类型检查和静态构建通过；Omni 19 项类型/构建任务、16 项测试任务通过；Rhythm 37 项类型检查、11 项生产构建/制品/启动检查通过；Backend 26 项类型检查及本轮涉及的四个连接器测试通过。各应用的 `.env.example` 继续从显式 schema 提取约束。
+- 根仓库治理、lint 与 format 检查通过；源码扫描确认框架、官方插件和四个 local-projects 均没有两个 static schema 声明残留。没有修改 TypeScript 版本、要求编译器插件或改变插件文件扩展名。
+
+上述检查针对本轮 schema 声明与绑定变化，不替代上一节对凭据存储、Workbench 布局和外部平台连接的验证边界。

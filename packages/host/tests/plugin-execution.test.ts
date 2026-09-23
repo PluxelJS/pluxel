@@ -15,7 +15,7 @@ const validExecutions = [
 	{
 		kind: 'static-catalog',
 		artifact: { kind: 'source-module' },
-		update: { kind: 'catalog-hmr' },
+		update: { kind: 'host-reload' },
 	},
 	{
 		kind: 'static-catalog',
@@ -101,11 +101,11 @@ describe('Plugin execution snapshots', () => {
 			},
 		],
 		[
-			'static catalog with the legacy application-reload update',
+			'static catalog with an in-host catalog update',
 			{
 				kind: 'static-catalog',
 				artifact: { kind: 'source-module' },
-				update: { kind: 'application-reload' },
+				update: { kind: 'catalog-hmr' },
 			},
 		],
 		[

@@ -30,10 +30,10 @@ function waitForClose(signal: AbortSignal): Promise<void> {
 		: new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
 }
 
-it('drains an accepted transaction before generation stop and rejects retained KV, document and blob handles', async () => {
+it('drains an accepted transaction before generation stop and rejects retained KV and blob handles', async () => {
 	const host = await createHost({
 		plugins: [VaultOwner],
-		services: [persistence({ mode: 'memory' }), vault({ flushDebounceMs: 60_000 })],
+		services: [persistence({ mode: 'memory' }), vault()],
 	})
 	const entered = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
@@ -41,7 +41,6 @@ it('drains an accepted transaction before generation stop and rejects retained K
 		const owner = pluginNodeAddressOf(VaultOwner)
 		await host.startNode(owner)
 		const kv = ownerVault.kv()
-		const doc = ownerVault.docs().collection('documents').doc('cached')
 		const blob = ownerVault.blobs().open('cached')
 		const signal = closingSignal(ownerContext)
 		const accepted = kv.batch(async (tx) => {
@@ -59,17 +58,24 @@ it('drains an accepted transaction before generation stop and rejects retained K
 		await waitForClose(signal)
 		expect(stopped).toBe(false)
 		await expect(kv.set('stale', true)).rejects.toThrow('stopped')
-		await expect(doc.set({ stale: true })).rejects.toThrow('stopped')
 		await expect(blob.remove()).rejects.toThrow('stopped')
 		await expect(ownerVault.flush()).rejects.toThrow('stopped')
 		release.resolve()
 		await accepted
 		await stop
 		await host.startNode(owner)
-		await expect(ownerVault.kv().entries()).resolves.toEqual([
-			['before', 'accepted'],
-			['after', 'drained'],
-		])
+		expect(
+			await ownerVault
+				.kv()
+				.get('before')
+				.then((result) => result.value),
+		).toBe('accepted')
+		expect(
+			await ownerVault
+				.kv()
+				.get('after')
+				.then((result) => result.value),
+		).toBe('drained')
 	} finally {
 		release.resolve()
 		await host.close()
@@ -99,7 +105,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 			}
 		},
 	}
-	const services = [persistence({ mode: 'custom', backend }), vault({ flushDebounceMs: 60_000 })]
+	const services = [persistence({ mode: 'custom', backend }), vault()]
 	const host = await createHost({ plugins: [], services })
 	const rootVault = host.ctx.require(Vault)
 	const blob = rootVault.blobs().open('root-blob')
@@ -120,7 +126,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 		release.resolve()
 		await accepted
 		await closing
-		expect(events).toEqual(['blob completed', 'snapshot flushed'])
+		expect(events).toEqual(['blob completed'])
 	} finally {
 		release.resolve()
 		await host.close()
@@ -129,7 +135,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 	const reopened = await createHost({ plugins: [], services })
 	try {
 		const storage = reopened.ctx.require(Vault)
-		await expect(storage.kv().get('final')).resolves.toBe('persisted')
+		await expect(storage.kv().get('final')).resolves.toMatchObject({ value: 'persisted' })
 		await expect(storage.blobs().open('root-blob').readText()).resolves.toBe('payload')
 	} finally {
 		await reopened.close()

@@ -9,7 +9,7 @@ Pluxel 官方、可选的 pnpm package source producer。它使用 `@pnpm/napi` 
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host/dynamic'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
@@ -20,7 +20,7 @@ const packageManagerConfig = {
 	minimumReleaseAgeMinutes: 1_440,
 }
 
-export default {
+export default defineConfig(async (startup) => ({
 	name: 'plugin-host',
 	plugins: [PackageManagerPlugin],
 	sources: [
@@ -30,17 +30,13 @@ export default {
 			include: ['*.mjs'],
 		}),
 	],
-	async configure(startup) {
-		return {
-			services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
-			configRecords: {
-				mode: 'memory',
-				initial: [{ owner: packageManagerNode, config: packageManagerConfig }],
-			},
-			state: { mode: 'memory', initial: { autoStart: [packageManagerNode] } },
-		}
+	services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+	configRecords: {
+		mode: 'memory',
+		initial: [{ owner: packageManagerNode, config: packageManagerConfig }],
 	},
-} satisfies HostApplication
+	state: { mode: 'memory', initial: { autoStart: [packageManagerNode] } },
+}))
 ```
 
 `plugins` 把管理插件加入固定 catalog，Host config records 提供 Plugin config，Host state 的 `autoStart` 声明其冷启动策略；`sources`

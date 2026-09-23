@@ -100,11 +100,11 @@ class Page extends RpcTarget {value(){return 42}}
 	)
 	await write(
 		'app.ts',
-		`import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { logging } from '@pluxel/services/logging';
-export default {plugins:[Viewer],configure({bindings}){return {services:[logging({
+		`import { defineConfig } from '@pluxel/host';import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { logging } from '@pluxel/services/logging';
+export default defineConfig(({bindings}) => ({plugins:[Viewer],services:[logging({
  root:{profile:'fixture'},sinks:{console:{kind:'console',format:'pretty',caller:false,timezone:'utc'},capture:{kind:'logtape',label:'test diagnostics',sink:bindings.captureLog,caller:false}},
  routes:{runtime:[{sink:'console',minLevel:'error'},{sink:'capture',minLevel:'error'}],plugins:[],debug:[],meta:[]}
-}),workbenchService()]}},state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}`,
+}),workbenchService()],state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}))`,
 	)
 	server = await createServer({
 		root,
@@ -143,7 +143,7 @@ export default {plugins:[Viewer],configure({bindings}){return {services:[logging
 	const target = instance.catalog().entries[0].address
 	const address = { definition: target, variant: 'default' }
 	const session = backend.createSession({ provider: 'fixture', subject: 'reader' }, () => {})
-	const layout = session.target.layout({ target: address })
+	const layout = session.target.layoutDto({ target: address })
 	const guide = layout.entries.find((entry) => entry.descriptor.kind === 'content')
 	assert.ok(guide)
 	const opened = await session.target.openEntry({
@@ -168,7 +168,7 @@ export default {plugins:[Viewer],configure({bindings}){return {services:[logging
 		.entries.find((entry) => entry.federatedViewRef)
 	// Opening a source Plugin's RpcTarget must use the backend's native Cap'n Web identity.
 	const viewSession = backend.createSession({ provider: 'fixture', subject: 'reader' }, () => {})
-	const viewLayout = viewSession.target.layout({ target: address })
+	const viewLayout = viewSession.target.layoutDto({ target: address })
 	const view = viewLayout.entries.find((entry) => entry.federatedViewRef)
 	assert.ok(view)
 	const openedView = await viewSession.target.openEntry({

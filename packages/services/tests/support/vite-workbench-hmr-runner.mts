@@ -64,18 +64,17 @@ await writeFile(
 	resolve(root, 'pluxel.static.ts'),
 	`
 import { pluginNodeAddressOf } from '@pluxel/core'
+import { defineConfig } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { workbenchService } from '@pluxel/workbench/service'
 
 import { Owner, Dependent } from './src/index'
-export default ({
+export default defineConfig((startup) => ({
   name: 'workbench-hmr', plugins: [Owner, Dependent],
-  configure() { return {
     services: [...standardServices({ persistence: { mode: 'memory' } }), workbenchService()],
     state: { initial: { autoStart: [Owner, Dependent].map(pluginNodeAddressOf) } },
-  } },
-  prepare({ host, startup }) { startup.bindings.capture(host) },
-})
+  prepare({ host }) { startup.bindings.capture(host) },
+}))
 `,
 )
 let host: PluginHost | undefined
@@ -103,7 +102,7 @@ const server = await createServer({
 try {
 	await server.listen()
 	assert.ok(host, errors.join('\n'))
-	const service = requirePluginService(host.ctx)
+	const service = () => requirePluginService(host!.ctx)
 	const initialStatus = await host.status()
 	const owner = initialStatus.statuses.find(
 		(item) => item.address.definition.exportName === 'Owner',
@@ -111,16 +110,18 @@ try {
 	const dependent = initialStatus.statuses.find(
 		(item) => item.address.definition.exportName === 'Dependent',
 	)!.address
-	const backend = requireWorkbench(host.ctx)
+	const backend = () => requireWorkbench(host!.ctx)
 	const healthy = async (version: string) => {
-		const entry = backend.registry.getLayout(owner).entries[0]
+		const entry = backend().registry.getLayout(owner).entries[0]
 		assert.ok(entry, JSON.stringify(await host!.status()))
 		assert.equal('federatedViewUnavailable' in entry, false, JSON.stringify(entry))
-		assert.equal(service.isRunning(owner), true, JSON.stringify(host!.catalog()))
-		assert.equal(service.isRunning(dependent), true, JSON.stringify(host!.catalog()))
-		assert.equal(Reflect.get(service.getInstance(owner)!, 'version'), version)
+		assert.equal(service().isRunning(owner), true, JSON.stringify(host!.catalog()))
+		assert.equal(service().isRunning(dependent), true, JSON.stringify(host!.catalog()))
+		assert.equal(Reflect.get(service().getInstance(owner)!, 'version'), version)
 		assert.equal(
-			Reflect.get(service.getInstance(dependent)!, 'version').call(service.getInstance(dependent)),
+			Reflect.get(service().getInstance(dependent)!, 'version').call(
+				service().getInstance(dependent),
+			),
 			version,
 		)
 	}
@@ -138,18 +139,18 @@ try {
 		await eventually(() => healthy(version))
 	}
 	// Renderer-only changes must rebuild the producer even though the Plugin source is untouched.
-	const beforeRenderer = backend.artifacts.getCurrent(owner.definition)
+	const beforeRenderer = backend().artifacts.getCurrent(owner.definition)
 	assert.ok(
 		beforeRenderer,
 		JSON.stringify({
 			owner,
-			layout: backend.registry.getLayout(owner),
-			revision: backend.artifacts.revision,
+			layout: backend().registry.getLayout(owner),
+			revision: backend().artifacts.revision,
 		}),
 	)
 	await writeFile(resolve(root, 'src/renderer.ts'), renderer('renderer-updated'))
 	await eventually(async () => {
-		const current = backend.artifacts.getCurrent(owner.definition)
+		const current = backend().artifacts.getCurrent(owner.definition)
 		assert.ok(current)
 		assert.notEqual(current.buildRevision, beforeRenderer.buildRevision)
 		await healthy('view-second')
@@ -167,14 +168,14 @@ try {
 	await eventually(() => healthy('recreated'))
 	await writeFile(resolve(root, 'src/workbench.ts'), definition('view', 'init-broken', true))
 	await eventually(async () => {
-		assert.equal(service.isRunning(owner), false)
-		assert.equal(service.isRunning(dependent), false)
+		assert.equal(service().isRunning(owner), false)
+		assert.equal(service().isRunning(dependent), false)
 	})
 	await writeFile(resolve(root, 'src/workbench.ts'), definition('content', 'recovered'))
 	await eventually(() => healthy('recovered'))
 	// A candidate changes Content and introduces a required cycle in the same source event.
-	// Catalog rejection must retain both the previous running instances and their Content tuple.
-	const previousContent = backend.content.getCurrent(owner.definition)
+	// A rejected replacement must recreate the committed application and its Content tuple.
+	const previousContent = backend().content.getCurrent(owner.definition)
 	assert.ok(previousContent)
 	const candidateSource = (
 		cyclic: boolean,
@@ -192,25 +193,30 @@ export class Owner extends BasePlugin {
 export { Dependent } from './dependent'
 `
 	await writeFile(resolve(root, 'src/index.ts'), candidateSource(true))
-	await retainedPrevious()
-	assert.equal(readHostRecentUpdates(host.ctx)?.latestUpdate()?.phase, 'commit')
+	await eventually(() => {
+		assert.equal(readHostRecentUpdates(host!.ctx)?.latestUpdate()?.outcome, 'restored-previous')
+		assert.equal(readHostRecentUpdates(host!.ctx)?.latestUpdate()?.phase, 'application-reload')
+	})
 	await healthy('recovered')
-	assert.equal(backend.content.getCurrent(owner.definition)?.digest, previousContent.digest)
-	const retainedEntry = backend.registry.getLayout(owner).entries[0]!
+	assert.equal(backend().content.getCurrent(owner.definition)?.digest, previousContent.digest)
+	const retainedEntry = backend().registry.getLayout(owner).entries[0]!
 	assert.equal(retainedEntry.descriptor.kind, 'content')
 	if (retainedEntry.descriptor.kind !== 'content') throw new Error('Expected Content')
-	const retainedContent = backend.content.resolveContent(owner.definition, retainedEntry.descriptor)
+	const retainedContent = backend().content.resolveContent(
+		owner.definition,
+		retainedEntry.descriptor,
+	)
 	assert.ok(retainedContent)
 	assert.equal(JSON.stringify(retainedContent.plan.document).includes('HMR guide'), true)
 	assert.equal(JSON.stringify(retainedContent.plan.document).includes('Candidate guide'), false)
 	await writeFile(resolve(root, 'src/index.ts'), candidateSource(false))
 	await eventually(async () => {
 		await healthy('catalog-candidate')
-		assert.notEqual(backend.content.getCurrent(owner.definition)?.digest, previousContent.digest)
-		const entry = backend.registry.getLayout(owner).entries[0]!
+		assert.notEqual(backend().content.getCurrent(owner.definition)?.digest, previousContent.digest)
+		const entry = backend().registry.getLayout(owner).entries[0]!
 		assert.equal(entry.descriptor.kind, 'content')
 		if (entry.descriptor.kind !== 'content') throw new Error('Expected Content')
-		const acceptedContent = backend.content.resolveContent(owner.definition, entry.descriptor)
+		const acceptedContent = backend().content.resolveContent(owner.definition, entry.descriptor)
 		assert.ok(acceptedContent)
 		assert.equal(JSON.stringify(acceptedContent.plan.document).includes('Candidate guide'), true)
 	})

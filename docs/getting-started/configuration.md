@@ -319,9 +319,9 @@ Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织�
 - structured log properties；
 - status snapshot、command output 或序列化错误。
 
-## 用部署环境初始化 static config
+## 绑定部署环境与 JSON 文件
 
-Static application 可以把少量部署环境变量绑定到固定 Plugin 的 raw config path。这个能力只初始化新的 config store；它不是每次启动都覆盖管理员配置的 environment overlay。
+Static application 可以把部署环境变量绑定到固定 Plugin 的 raw config path。每次 Host 启动从本次 `startup.env` 生成覆盖层，优先于保存值；该层不写入配置存储。
 
 Plugin 需要导出传给 `configs.use()` 的同一个 schema：
 
@@ -344,44 +344,62 @@ export class WorkerPlugin extends BasePlugin {
 }
 ```
 
-Canonical static entry 直接声明部署名称；不要在 `configure()` 中重复解析类型或拼装 Plugin address：
+Canonical static entry 直接声明部署名称；不要在配置工厂中重复解析类型或拼装 Plugin address：
 
 ```ts no-twoslash
-import { bindConfigEnvironment } from '@pluxel/host/config-environment'
-import type { HostApplication } from '@pluxel/host'
-import { WorkerConfig, WorkerPlugin } from './WorkerPlugin.ts'
+import { defineConfig, envBinding } from '@pluxel/host'
+import { WorkerPlugin, WorkerConfig } from './WorkerPlugin.ts'
 
-export default {
+export default defineConfig(() => ({
 	name: 'worker-app',
 	plugins: [WorkerPlugin],
-	configEnvironmentBootstrap: [
-		bindConfigEnvironment(WorkerPlugin, WorkerConfig, {
-			endpoint: 'WORKER_ENDPOINT',
-			http: {
-				enabled: 'WORKER_HTTP_ENABLED',
-				timeoutMs: 'WORKER_HTTP_TIMEOUT_MS',
+	envBindings: [
+		envBinding(WorkerPlugin, {
+			config: {
+				schema: WorkerConfig,
+				mapping: {
+					endpoint: 'WORKER_ENDPOINT',
+					http: { enabled: 'WORKER_HTTP_ENABLED', timeoutMs: 'WORKER_HTTP_TIMEOUT_MS' },
+				},
 			},
 		}),
 	],
-} satisfies HostApplication
+}))
 ```
 
-Mapping 从 schema raw input 递归推导：object 可以继续展开，也可以直接绑定一个 JSON environment；array、tuple、record 和 scalar 是 leaf。根 mapping 也可以直接写一个 environment name，用 JSON object 初始化完整 raw record。环境名称必须匹配 `[A-Z_][A-Z0-9_]*`；`PLUXEL_*` 保留给 framework。
+插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineConfig` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
 
-Transport 只负责把 string 送入原 schema：raw string 保留原文，number 要求 finite JSON number，boolean 只接受 JSON `true`/`false`，compound/nullable/mixed union 使用 JSON。环境缺失不产生对应 raw path；空 string 对 string 是显式值，对 number、boolean、JSON 是 decode error；JSON `null` 也是显式值。默认值、URL/range/refinement、transform 和最终 validation 仍只由 `WorkerConfig` 决定。
+Mapping 从 schema input 推导：object 可展开，也可绑定一个 JSON 变量；array、tuple 与动态 record 使用完整 JSON。环境名称匹配 `[A-Z_][A-Z0-9_]*`。string 保留原文，number 要求有限 JSON number，boolean 只接受 `true`/`false`，复合类型使用 JSON。config 环境缺失不生成覆盖，空字符串和 `null` 按 schema 校验；诊断不包含输入值。
 
-新 store 的优先级固定为：
+配置优先级为：
 
 ```text
-configure().configRecords.initial
-  < configEnvironmentBootstrap
-  < PLUXEL_CONFIG complete snapshot
-  < existing persisted config file
+configRecords.initial < fileBindings config < saved config < envBindings config
 ```
 
-Writable file mode 会保存第一次合成的 seed；后续修改环境不会覆盖该文件。Memory mode 在每个新 host 上重新初始化；readonly mode 在无文件时只在本次 host 使用 seed。长期 credential 不要经过这条路径写入普通 config store，继续使用 Vault、secret provider 或部署平台的 secret capability。
+对象递归合并，数组整体替换。持久文件只保存管理界面或 Host API 修改的层；基础值、schema 默认值和 env 覆盖不会被复制进去。移除 env 后，下一次启动重新显示 saved 或基础值。reset 删除 saved 值，重新显示基础值。
 
-Static production build 会从同一 declaration 和 schema facts 生成 root `.env.example`。文件只包含注释说明与注释状态的空 placeholder，不读取构建机环境、不生成或加载真实 `.env`，也不复制 schema default。为了让 Vite 与 production 都能确定地检查声明，`configEnvironmentBootstrap` 必须是 direct array literal；元素必须是 direct `bindConfigEnvironment()` call，mapping 只使用 direct object tree 和 string literal，不使用 identifier、spread、computed property 或 runtime branch。
+被 env 控制的路径及其祖先、后代拒绝修改和 reset，包括提交相同值。Workbench 显示来源并禁用对应字段；Host 返回的 `sources` 只有路径、来源种类、名称和只读状态，不含凭据。未绑定的兄弟字段仍可编辑。
+
+JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: WorkerConfig, path: './worker.json' } })]` 提供基础值（`fileBinding` 从 `@pluxel/host` 导入），路径相对 `startup.root`。文件只在启动时读取，不由构建读取或打包。修改文件或 env 需要重新创建 Host。
+
+### 部署凭据与 Vault
+
+普通 config 只存设置。部署凭据使用导出的根 schema，例如 `export const WorkerVault = v.object({ credentials: v.object({ token: v.string() }) })`。根 schema 保留记录 key 与记录内容的校验；宿主导入它并选择来源：
+
+```ts no-twoslash
+envBindings: [envBinding(WorkerPlugin, {
+	vault: { schema: WorkerVault, mapping: { credentials: { token: 'WORKER_TOKEN' } } },
+})],
+// 或让一个 JSON 文件提供整条凭据记录：
+fileBindings: [fileBinding(WorkerPlugin, {
+	vault: { schema: WorkerVault, paths: { credentials: './credentials.json' } },
+})],
+```
+
+Vault schema 属于本次应用启动的部署输入契约，插件热替换不会自动更换它；修改 schema 或来源须重新创建 Host。私有 KV 的业务校验仍由插件负责。显式绑定的 Vault 记录整体只读，不能与旧 KV 字段混合。每个映射的变量都必须存在；缺失或校验失败会阻止启动，不回退到旧凭据。需要交互登录的应用不声明这些部署绑定，使用可写加密 Vault。只有部署记录的应用可显式安装 `vault({ backend: 'bindings' })`，无需 Persistence 或磁盘密钥。详见[运行时服务](../reference/runtime-services.md)。
+
+Static production build 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是静态目录中的 Plugin 标识符，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
 
 直接消费 runtime control-plane `ConfigResult` 时按 discriminant 处理返回值：query 返回 `config` 和 `defaults`，并标记
 `saved: false`；成功 mutation 返回已持久化的 `config`、`application` 与 apply report，不再重复返回 defaults。

@@ -18,7 +18,7 @@ const meta = {
 	definition: '@fixture/accounts',
 	exportName: 'AccountManagementPlugin',
 	reference: 'package:@fixture/accounts::AccountManagementPlugin',
-	executionLabel: '目录 HMR',
+	executionLabel: '宿主重载',
 	executionTone: 'blue' as const,
 	executionDescription: '静态插件目录 · 构建模块；应用模块图变化时更新',
 }
@@ -86,7 +86,7 @@ describe('compact plugin catalog rows', () => {
 			const row = container.querySelector('[data-plugin-row]')!
 			expect(row.textContent).toBe(name)
 			expect(row.querySelector('.mantine-Badge-root')).toBeNull()
-			expect(row.querySelector('[aria-label="目录 HMR"]')).not.toBeNull()
+			expect(row.querySelector('[aria-label="宿主重载"]')).not.toBeNull()
 			expect(row.querySelector('[aria-label="运行中"]')).not.toBeNull()
 			expect(row.querySelector<HTMLAnchorElement>('[data-plugin-link]')?.style.flexGrow).toBe('1')
 		},
@@ -108,7 +108,7 @@ describe('compact plugin catalog rows', () => {
 	it('reveals complete execution details when the indicator receives keyboard focus', async () => {
 		const container = await mount(<SortableRow {...props} />)
 		await act(async () => {
-			container.querySelector<HTMLElement>('[aria-label="目录 HMR"]')!.focus()
+			container.querySelector<HTMLElement>('[aria-label="宿主重载"]')!.focus()
 		})
 		expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
 			meta.executionDescription,

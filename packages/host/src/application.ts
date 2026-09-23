@@ -1,4 +1,5 @@
-import { mergeConfigRecords, configRecordsFromEnvironment } from './config-records'
+import { mergeConfigRecords } from './config-records'
+import { resolveInputBindings } from './input-bindings'
 import { createProductionSourceLoader } from './production-source-loader'
 import type { PluginConstructor } from '@pluxel/core'
 import type { HostService } from './services'
@@ -13,8 +14,28 @@ export type HostStartupContext<
 	bindings: TBindings
 	deployment?: Readonly<{ root: string; target: 'node'; variant: 'headless' | 'workbench' }>
 }>
+/** Complete application configuration evaluated once for each fresh Host. */
+export type HostApplicationFactory = (
+	startup: HostStartupContext,
+) => HostApplication | Promise<HostApplication>
+
+type UnsupportedApplicationFields<T> = T extends unknown
+	? Exclude<keyof T, keyof HostApplication>
+	: never
+
+/** Declare a deferred application factory, preserving its inferred result type. */
+export function defineConfig<const T extends HostApplicationFactory>(
+	factory: T &
+		(UnsupportedApplicationFields<Awaited<ReturnType<T>>> extends never ? unknown : never),
+): T {
+	if (typeof factory !== 'function') throw new TypeError('[host] Application must be a factory')
+	return factory
+}
+
 export type ResolvedHostApplication = HostRuntimeOptions &
 	Readonly<{
+		/** Immutable shallow snapshot shared by the factory and prepare callback. */
+		startup: HostStartupContext
 		name?: string
 		plugins: readonly PluginConstructor[]
 		sources?: HostApplication['sources']
@@ -28,11 +49,10 @@ const fields = new Set([
 	'config',
 	'state',
 	'configRecords',
-	'configure',
-	'configEnvironmentBootstrap',
+	'envBindings',
+	'fileBindings',
 	'prepare',
 ])
-const runtimeFields = new Set(['services', 'config', 'state', 'configRecords'])
 function record(input: unknown, label: string): Record<string, unknown> {
 	if (!input || typeof input !== 'object' || Array.isArray(input))
 		throw new TypeError(`${label} must be an object`)
@@ -51,47 +71,38 @@ export function assertHostApplication(input: unknown): asserts input is HostAppl
 		throw new TypeError('[host] Application sources must be an array')
 	if (app.services !== undefined && !Array.isArray(app.services))
 		throw new TypeError('[host] Application services must be an array')
-	if (
-		app.configEnvironmentBootstrap !== undefined &&
-		!Array.isArray(app.configEnvironmentBootstrap)
-	)
-		throw new TypeError('[host] Application configEnvironmentBootstrap must be an array')
-	if (app.configure !== undefined && typeof app.configure !== 'function')
-		throw new TypeError('[host] Application configure must be a function')
+	for (const key of ['envBindings', 'fileBindings'])
+		if (app[key] !== undefined && !Array.isArray(app[key]))
+			throw new TypeError(`[host] Application ${key} must be an array`)
 	if (app.prepare !== undefined && typeof app.prepare !== 'function')
 		throw new TypeError('[host] Application prepare must be a function')
 }
-/** Resolve fresh runtime configuration while retaining the statically declared Plugin catalog. */
+/** Evaluate a fresh application against an isolated startup snapshot. */
 export async function resolveHostApplication(
-	application: HostApplication,
-	startup: HostStartupContext,
+	factory: HostApplicationFactory,
+	input: HostStartupContext,
 ): Promise<ResolvedHostApplication> {
+	if (typeof factory !== 'function') throw new TypeError('[host] Application must be a factory')
+	const startup: HostStartupContext = Object.freeze({
+		...input,
+		env: Object.freeze({ ...input.env }),
+		bindings: Object.freeze({ ...input.bindings }),
+		...(input.deployment ? { deployment: Object.freeze({ ...input.deployment }) } : {}),
+	})
+	const application = await factory(startup)
 	assertHostApplication(application)
-	const runtime = record(
-		(await application.configure?.(startup)) ?? {},
-		'[host] configure() result',
-	)
-	assertFields(runtime, runtimeFields, '[host] configure() result')
-	const { configure: _configure, configEnvironmentBootstrap, ...fixed } = application
-	const resolved = { ...fixed, ...runtime } as ResolvedHostApplication
-	if (resolved.services !== undefined && !Array.isArray(resolved.services))
-		throw new TypeError('[host] configure() services must be an array')
-	let bootstrap: import('@pluxel/core/services').PluginConfigRecordSnapshot[] = []
-	if (configEnvironmentBootstrap && configEnvironmentBootstrap.length > 0) {
-		const { resolveConfigEnvironmentBootstrap } = await import('./config-environment')
-		bootstrap = resolveConfigEnvironmentBootstrap(application, startup.env)
-	}
-	const environmentSeed = mergeConfigRecords(bootstrap, configRecordsFromEnvironment(startup.env))
+	const { envBindings: _envBindings, fileBindings: _fileBindings, ...resolved } = application
+	const inputs = await resolveInputBindings(application, startup)
 	return {
 		...resolved,
-		...(environmentSeed.length > 0
-			? {
-					configRecords: {
-						...resolved.configRecords,
-						initial: mergeConfigRecords(resolved.configRecords?.initial, environmentSeed),
-					},
-				}
-			: {}),
+		startup,
+		vaultBindings: inputs.vaultBindings,
+		configRecords: {
+			...resolved.configRecords,
+			initial: mergeConfigRecords(resolved.configRecords?.initial, inputs.base),
+			baseSources: [...(resolved.configRecords?.baseSources ?? []), ...inputs.baseSources],
+			overlays: [...(resolved.configRecords?.overlays ?? []), ...inputs.overlays],
+		},
 		plugins: [...application.plugins],
 		...(application.sources ? { sources: [...application.sources] } : {}),
 		...(resolved.services ? { services: [...resolved.services] as readonly HostService[] } : {}),
@@ -105,14 +116,13 @@ export async function resolveHostApplication(
 export async function prepareHostApplication(
 	application: ResolvedHostApplication,
 	host: PluginHost,
-	startup: HostStartupContext,
 ): Promise<void> {
-	await application.prepare?.({ host, startup })
+	await application.prepare?.({ host, startup: application.startup })
 }
 
 /** Run the same declaration outside Vite. No transport, environment globals, or default services are installed. */
 export async function runHostApplication(
-	application: HostApplication,
+	application: HostApplicationFactory,
 	options: Readonly<{
 		startup: HostStartupContext
 		frameworkModules?: Readonly<Record<string, string>>
@@ -127,20 +137,21 @@ export async function runHostApplication(
 			config: resolved.config,
 			state: resolved.state,
 			configRecords: resolved.configRecords,
+			vaultBindings: resolved.vaultBindings,
 			services: resolved.services,
 		}
 		host = await createHost(
 			resolved.sources?.length
 				? {
 						...common,
-						root: options.startup.root,
+						root: resolved.startup.root,
 						sources: resolved.sources,
 						loadModule: loader.load,
 					}
 				: common,
 		)
 		host.ctx.effects.defer(() => loader.close(), { tag: 'ProductionSourceLoader' })
-		await prepareHostApplication(resolved, host, options.startup)
+		await prepareHostApplication(resolved, host)
 		await host.start()
 		return host
 	} catch (error) {

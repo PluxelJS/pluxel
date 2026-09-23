@@ -18,7 +18,9 @@ class Credentials extends BasePlugin {
 	async init() {
 		const storage = this.ctx.require(Vault).kv()
 		await storage.set('credential', 'secret')
-		observations.push((await storage.get<string>('credential')) ?? '')
+		observations.push(
+			(await storage.get<string>('credential').then((snapshot) => snapshot.value)) ?? '',
+		)
 	}
 }
 @Plugin()
@@ -91,7 +93,7 @@ describe('independently composed official and external services', () => {
 		const plugins = [Credentials, SearchConsumer]
 		const first = await createHost({
 			plugins,
-			services: [vault({ flushDebounceMs: 60_000 }), search, storage],
+			services: [vault(), search, storage],
 		})
 		try {
 			expect('database' in first.ctx).toBe(false)

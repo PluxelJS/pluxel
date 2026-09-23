@@ -11,6 +11,7 @@ import {
 import {
 	adaptConfigPresentationFields,
 	buildEditableConfigPatch,
+	applyConfigSources,
 } from '../../src/app/plugins/config/presentationAdapter'
 
 const baseField = (path: string): ConfigPresentationFieldV1 => ({
@@ -231,7 +232,7 @@ describe('ConfigPresentationPlanV1 validation', () => {
 })
 
 describe('Workbench presentation adapter', () => {
-	it('never emits unsupported values in an editable patch and preserves nested server values', () => {
+	it('emits only editable nested paths so the server deep merge preserves unsupported values', () => {
 		const unsupported: ConfigPresentationFieldV1 = {
 			kind: 'unsupported',
 			name: 'opaque',
@@ -287,8 +288,54 @@ describe('Workbench presentation adapter', () => {
 
 		expect(patch).toEqual({
 			title: 'changed',
-			nested: { name: 'changed', secret: 'server value' },
+			nested: { name: 'changed' },
 		})
 		expect(fields.find((field) => field.name === 'opaqueList')?.meta.readOnly).toBe(true)
 	})
+})
+
+it('explains env locks on nested fields while preserving editable siblings in the patch', () => {
+	const fields = applyConfigSources(
+		adaptConfigPresentationFields([
+			{
+				kind: 'object',
+				name: 'nested',
+				path: 'nested',
+				depth: 0,
+				meta: {},
+				required: true,
+				fields: [
+					{ ...baseField('nested.locked'), name: 'locked', depth: 1 },
+					{ ...baseField('nested.free'), name: 'free', depth: 1 },
+				],
+			},
+		]),
+		[
+			{
+				owner: {
+					definition: {
+						entry: { kind: 'package-root', packageName: '@test/owner' },
+						exportName: 'Owner',
+					},
+					variant: 'default',
+				},
+				path: ['nested', 'locked'],
+				kind: 'env',
+				name: 'LOCKED_VALUE',
+				readonly: true,
+			},
+		],
+	)
+	const object = fields[0]!
+	if (object.kind !== 'object') throw new Error('Expected object')
+	expect(object.meta.readOnly).not.toBe(true)
+	expect(object.fields[0]?.meta.readOnly).toBe(true)
+	expect(object.fields[0]?.meta.description).toContain('LOCKED_VALUE')
+	expect(
+		buildEditableConfigPatch(
+			fields,
+			{ nested: { locked: 'env', free: 'edit' } },
+			{ nested: { locked: 'env', free: 'old' } },
+		),
+	).toEqual({ nested: { free: 'edit' } })
 })

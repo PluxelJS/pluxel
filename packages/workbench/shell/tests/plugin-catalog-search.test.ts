@@ -128,9 +128,9 @@ describe('plugin catalog search', () => {
 			execution: {
 				kind: 'static-catalog',
 				artifact: { kind: 'built-module' },
-				update: { kind: 'catalog-hmr' },
+				update: { kind: 'host-reload' },
 			},
-			query: 'exec:构建模块 exec:catalog-hmr',
+			query: 'exec:构建模块 exec:host-reload',
 		},
 		{
 			name: 'known dynamic route with unreported artifact',

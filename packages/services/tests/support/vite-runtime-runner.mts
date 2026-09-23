@@ -94,14 +94,19 @@ assert.deepEqual(address.definition.entry, {
 })
 const east = { definition: address.definition, variant: 'fork' as const, forkId: 'east' }
 const west = { definition: address.definition, variant: 'fork' as const, forkId: 'west' }
-const pluginService = requirePluginService(capturedHost.ctx)
+const initialImplementation = startupImplementation
+const currentHost = (): PluginHost => {
+	assert.ok(host, 'application Host is missing')
+	return host
+}
+const currentPlugins = () => requirePluginService(currentHost().ctx)
 const listenerAddress = server.httpServer?.address()
 assert.ok(listenerAddress && typeof listenerAddress !== 'string')
 const runtimeUrl = `http://127.0.0.1:${listenerAddress.port}`
 const sockets: WebSocket[] = []
 
 try {
-	const startupStatusesOverview = await readHostPluginStatusOverview(capturedHost.ctx)
+	const startupStatusesOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const startupStatuses = startupStatusesOverview.statuses
 	const startupSourceStatus = startupStatuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
@@ -112,35 +117,37 @@ try {
 	assert.deepEqual(startupSourceStatus?.execution, {
 		kind: 'static-catalog',
 		artifact: { kind: 'source-module' },
-		update: { kind: 'catalog-hmr' },
+		update: { kind: 'host-reload' },
 	})
 	assert.equal(startupSourceStatus?.recentUpdate?.batch.outcome, 'applied')
 	assert.deepEqual(startupBuiltStatus?.execution, {
 		kind: 'static-catalog',
 		artifact: { kind: 'built-module' },
-		update: { kind: 'catalog-hmr' },
+		update: { kind: 'host-reload' },
 	})
 	assert.equal(JSON.stringify(startupSourceStatus?.execution).includes(root), false)
 	assert.equal(JSON.stringify(startupBuiltStatus?.execution).includes(root), false)
 
-	const startupInstances = [address, east, west].map((node) => pluginService.getInstance(node))
-	assert.ok(startupInstances[0], JSON.stringify(capturedHost.catalog()))
+	const startupInstances = [address, east, west].map((node) => currentPlugins().getInstance(node))
+	assert.ok(startupInstances[0], JSON.stringify(currentHost().catalog()))
 	assert.deepEqual(
 		startupInstances.map((instance) => Reflect.get(instance ?? {}, 'version')),
 		['v1', 'v1', 'v1'],
 	)
 	assert.equal(
-		Reflect.get(pluginService.getInstance(configuredAddress) ?? {}, 'configuredLabel'),
+		Reflect.get(currentPlugins().getInstance(configuredAddress) ?? {}, 'configuredLabel'),
 		'configured-through-vite',
 	)
 	const firstVersionResponse = await fetch(`${runtimeUrl}/configured/version`)
 	assert.equal(await firstVersionResponse.text(), 'v1')
 	assert.equal(
-		capturedHost.ctx.require(HttpServer).matchesWebSocketRoute(
-			new Request(`${runtimeUrl}/configured/socket`, {
-				headers: { connection: 'Upgrade', upgrade: 'websocket' },
-			}),
-		),
+		currentHost()
+			.ctx.require(HttpServer)
+			.matchesWebSocketRoute(
+				new Request(`${runtimeUrl}/configured/socket`, {
+					headers: { connection: 'Upgrade', upgrade: 'websocket' },
+				}),
+			),
 		true,
 	)
 	const firstSocket = await openWebSocket(`${runtimeUrl.replace(/^http/, 'ws')}/configured/socket`)
@@ -148,7 +155,7 @@ try {
 	assert.equal(await firstSocket.nextMessage(), 'v1')
 	const firstSocketClosed = firstSocket.closed
 	assert.equal(
-		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
+		Reflect.get(currentPlugins().getInstance(partOwnerAddress) ?? {}, 'injected'),
 		'part-provider-v1',
 	)
 	for (const instance of startupInstances) {
@@ -157,27 +164,30 @@ try {
 
 	await writeFile(pluginPath, pluginSource('v2', true))
 	await invokeHotUpdate(routePlugin, pluginPath)
-	const replacementInstances = [address, east, west].map((node) => pluginService.getInstance(node))
+	const replacementInstances = [address, east, west].map((node) =>
+		currentPlugins().getInstance(node),
+	)
 	assert.deepEqual(
 		replacementInstances.map((instance) => Reflect.get(instance ?? {}, 'version')),
 		['v2', 'v2', 'v2'],
 	)
 	const replacementImplementation = replacementInstances[0]?.constructor
-	assert.notEqual(replacementImplementation, startupImplementation)
+	assert.notEqual(replacementImplementation, initialImplementation)
+	assert.notEqual(currentHost(), capturedHost, 'factory dependency update replaces the Host')
 	for (const instance of replacementInstances) {
 		assert.equal(instance?.constructor, replacementImplementation)
 	}
-	const appliedStatusOverview = await readHostPluginStatusOverview(capturedHost.ctx)
+	const appliedStatusOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const appliedStatus = appliedStatusOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
 	)
 	assert.equal(appliedStatus?.execution.artifact.kind, 'source-module')
-	assert.equal(appliedStatus?.execution.update.kind, 'catalog-hmr')
+	assert.equal(appliedStatus?.execution.update.kind, 'host-reload')
 	assert.equal(appliedStatus?.recentUpdate?.batch.outcome, 'applied')
 	assert.equal(appliedStatus?.recentUpdate?.batch.phase, null)
 	assert.ok((appliedStatus?.recentUpdate?.batch.sequence ?? 0) > 0)
 	assert.equal(
-		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
+		Reflect.get(currentPlugins().getInstance(partOwnerAddress) ?? {}, 'injected'),
 		'part-provider-v2',
 	)
 	const replacementVersionResponse = await fetch(`${runtimeUrl}/configured/version`)
@@ -192,27 +202,32 @@ try {
 	const originalBuiltPlugin = await readFile(builtPluginPath, 'utf8')
 	await writeFile(builtPluginPath, 'export const invalidBuiltPlugin =')
 	await assert.rejects(() => invokeHotUpdate(routePlugin, builtPluginPath))
-	const statusesAfterBuiltFailureOverview = await readHostPluginStatusOverview(capturedHost.ctx)
+	const statusesAfterBuiltFailureOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const statusesAfterBuiltFailure = statusesAfterBuiltFailureOverview.statuses
 	const retainedBuiltStatus = statusesAfterBuiltFailure.find((status) =>
 		pluginNodeAddressEqual(status.address, builtAddress),
 	)
-	const builtAttempt = readHostRecentUpdates(capturedHost.ctx)?.latestUpdate()
+	const builtAttempt = readHostRecentUpdates(currentHost().ctx)?.latestUpdate()
 	assert.equal(builtAttempt?.outcome, 'retained-previous')
 	assert.equal(builtAttempt?.phase, 'evaluate')
-	assert.deepEqual(retainedBuiltStatus?.recentUpdate, startupBuiltStatus?.recentUpdate)
+	assert.deepEqual(
+		retainedBuiltStatus?.recentUpdate,
+		appliedStatusOverview.statuses.find((status) =>
+			pluginNodeAddressEqual(status.address, builtAddress),
+		)?.recentUpdate,
+	)
 	assert.equal(retainedBuiltStatus?.execution.artifact.kind, 'built-module')
-	assert.equal(retainedBuiltStatus?.execution.update.kind, 'catalog-hmr')
+	assert.equal(retainedBuiltStatus?.execution.update.kind, 'host-reload')
 	assert.ok((builtAttempt?.sequence ?? 0) > (appliedStatus?.recentUpdate?.batch.sequence ?? 0))
 	await writeFile(builtPluginPath, originalBuiltPlugin)
 
 	await writeFile(pluginPath, 'export const invalidReplacement =')
 	await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
-	const retainedStatusOverview = await readHostPluginStatusOverview(capturedHost.ctx)
+	const retainedStatusOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const retainedStatus = retainedStatusOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
 	)
-	const sourceAttempt = readHostRecentUpdates(capturedHost.ctx)?.latestUpdate()
+	const sourceAttempt = readHostRecentUpdates(currentHost().ctx)?.latestUpdate()
 	assert.equal(sourceAttempt?.outcome, 'retained-previous')
 	assert.equal(sourceAttempt?.phase, 'evaluate')
 	assert.deepEqual(retainedStatus?.recentUpdate, appliedStatus?.recentUpdate)
@@ -233,7 +248,7 @@ try {
 	// A valid source edit after evaluation failure must activate without a Start command.
 	await writeFile(pluginPath, pluginSource('syntax-fixed', true))
 	await invokeHotUpdate(routePlugin, pluginPath)
-	assert.equal(pluginService.isRunning(address), true)
+	assert.equal(currentPlugins().isRunning(address), true)
 	assert.equal(
 		await fetch(`${runtimeUrl}/configured/version`).then((response) => response.text()),
 		'syntax-fixed',
@@ -243,10 +258,10 @@ try {
 	// and a later source edit must recover both provider and required consumer automatically.
 	await writeFile(pluginPath, pluginSource('init-broken', true, true))
 	await invokeHotUpdate(routePlugin, pluginPath)
-	assert.equal(pluginService.isRunning(partProviderAddress), false)
-	assert.equal(pluginService.isRunning(partOwnerAddress), false)
-	assert.equal(pluginService.isRunning(configuredAddress), true)
-	const failedOverview = await readHostPluginStatusOverview(capturedHost.ctx)
+	assert.equal(currentPlugins().isRunning(partProviderAddress), false)
+	assert.equal(currentPlugins().isRunning(partOwnerAddress), false)
+	assert.equal(currentPlugins().isRunning(configuredAddress), true)
+	const failedOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const failedProvider = failedOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, partProviderAddress),
 	)
@@ -271,13 +286,13 @@ try {
 	)
 	await writeFile(pluginPath, pluginSource('v2', true))
 	await invokeHotUpdate(routePlugin, pluginPath)
-	assert.equal(pluginService.isRunning(partProviderAddress), true)
-	assert.equal(pluginService.isRunning(partOwnerAddress), true)
+	assert.equal(currentPlugins().isRunning(partProviderAddress), true)
+	assert.equal(currentPlugins().isRunning(partOwnerAddress), true)
 	assert.equal(
-		Reflect.get(pluginService.getInstance(partOwnerAddress) ?? {}, 'injected'),
+		Reflect.get(currentPlugins().getInstance(partOwnerAddress) ?? {}, 'injected'),
 		'part-provider-v2',
 	)
-	const recoveredOverview = await readHostPluginStatusOverview(capturedHost.ctx)
+	const recoveredOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	for (const recoveredAddress of [partProviderAddress, partOwnerAddress]) {
 		const recoveredStatus = recoveredOverview.statuses.find((status) =>
 			pluginNodeAddressEqual(status.address, recoveredAddress),
@@ -300,24 +315,26 @@ try {
 	await writeFile(pluginPath, pluginSource('removed', false))
 	await invokeHotUpdate(routePlugin, pluginPath)
 	assert.deepEqual(
-		[address, east, west].map((node) => pluginService.getInstance(node)),
+		[address, east, west].map((node) => currentPlugins().getInstance(node)),
 		[undefined, undefined, undefined],
 	)
 	const removedResponse = await fetch(`${runtimeUrl}/vite-static/version`)
 	assert.equal(removedResponse.status, 404)
 	assert.equal(
-		capturedHost.ctx.require(HttpServer).matchesWebSocketRoute(
-			new Request(`${runtimeUrl}/vite-static/socket`, {
-				headers: { connection: 'Upgrade', upgrade: 'websocket' },
-			}),
-		),
+		currentHost()
+			.ctx.require(HttpServer)
+			.matchesWebSocketRoute(
+				new Request(`${runtimeUrl}/vite-static/socket`, {
+					headers: { connection: 'Upgrade', upgrade: 'websocket' },
+				}),
+			),
 		false,
 	)
 	assert.deepEqual(await removableSocketClosed, { code: 1012, reason: 'Service Restart' })
 
 	await writeFile(pluginPath, pluginSource('v3', true))
 	await invokeHotUpdate(routePlugin, pluginPath)
-	assert.equal(pluginService.isRunning(address), true)
+	assert.equal(currentPlugins().isRunning(address), true)
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
 		'v3',
@@ -330,7 +347,7 @@ try {
 	restoredSocket.socket.close()
 	await restoredSocket.closed
 
-	const beforeReplacementStatusesOverview = await readHostPluginStatusOverview(capturedHost.ctx)
+	const beforeReplacementStatusesOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const beforeReplacementStatuses = beforeReplacementStatusesOverview.statuses
 	const beforeReplacementSource = beforeReplacementStatuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
@@ -339,19 +356,30 @@ try {
 		pluginNodeAddressEqual(status.address, builtAddress),
 	)?.execution
 	const originalEntry = await readFile(entryPath, 'utf8')
+	const beforeFactoryFailure = currentHost()
+	await writeFile(
+		entryPath,
+		originalEntry.replace(
+			'export default defineConfig(() => {',
+			"export default defineConfig(() => { throw new Error('factory rejected')",
+		),
+	)
+	await assert.rejects(() => invokeHotUpdate(routePlugin, entryPath), /factory rejected/)
+	assert.equal(currentHost(), beforeFactoryFailure, 'factory failure retains the running Host')
+	assert.equal(
+		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
+		'v3',
+	)
 	const failingEntry = originalEntry.replace(
-		'  configure() {',
-		"  configure() { throw new Error('replacement configure failed')",
+		'  prepare({ host, startup }) {',
+		"  prepare({ host, startup }) { throw new Error('replacement prepare failed')",
 	)
 	assert.notEqual(failingEntry, originalEntry)
 	await writeFile(entryPath, failingEntry)
-	await assert.rejects(
-		() => invokeHotUpdate(routePlugin, entryPath),
-		/replacement configure failed/,
-	)
+	await assert.rejects(() => invokeHotUpdate(routePlugin, entryPath), /replacement prepare failed/)
 	const compensatedHost = host
 	assert.ok(compensatedHost, 'previous application was not restored after replacement failure')
-	assert.notEqual(compensatedHost, capturedHost)
+	assert.notEqual(compensatedHost, beforeFactoryFailure)
 	const compensatedStatusesOverview = await readHostPluginStatusOverview(compensatedHost.ctx)
 	const compensatedStatuses = compensatedStatusesOverview.statuses
 	const compensatedSource = compensatedStatuses.find((status) =>
@@ -392,7 +420,7 @@ try {
 	])
 	const serializedHost = host
 	assert.ok(serializedHost, 'serialized source updates lost the active host')
-	assert.equal(serializedHost, replacementHost)
+	assert.notEqual(serializedHost, replacementHost)
 	const serializedStatusOverview = await readHostPluginStatusOverview(serializedHost.ctx)
 	const serializedStatus = serializedStatusOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
@@ -444,7 +472,7 @@ try {
 	}
 	await server.close()
 }
-assert.equal(pluginService.isRunning(address), false)
+assert.equal(currentPlugins().isRunning(address), false)
 
 async function invokeHotUpdate(route: VitePlugin, changedFile: string): Promise<void> {
 	const hook = typeof route.hotUpdate === 'function' ? route.hotUpdate : route.hotUpdate?.handler

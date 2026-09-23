@@ -92,7 +92,7 @@ export const services=[http(),{name:'fixture.service',capabilities:[installRootC
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
-	`import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host/dynamic';export default {services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs','*.ts']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'},{definition:${JSON.stringify(typedDefinition)},variant:'default'}]}}};`,
+	`import {defineConfig} from '@pluxel/host';import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host/dynamic';export default defineConfig(() => ({services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs','*.ts']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'},{definition:${JSON.stringify(typedDefinition)},variant:'default'}]}}}));`,
 )
 globalThis.__installedHostSmoke = []
 globalThis.__typedHostSmoke = []

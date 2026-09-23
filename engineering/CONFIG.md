@@ -31,82 +31,31 @@ Management 配置 RPC 与 Host-dev 开发控制台委托 Host；Management 负�
 - `getRawConfig()` 对同一 revision 复用一个深冻结普通 snapshot；revision 改变后返回新 identity，旧引用不变，不使用 live `Proxy` view。
 - 任意 Part config patch 都重新验证 composite record，并通知当前 owning Plugin generation；没有 Part config revision 或独立
   persistence/application owner。
-- static application build 固定的是 Plugin code graph 和 `configure()` resolver code，不是 resolver 的启动返回值。
+- static application build 固定的是 Plugin code graph 和 配置工厂代码，不是 resolver 的启动返回值。
 
 ## 存储与创建边界
 
 Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` 与模式。`HostDocumentStorage` 是借用的 namespaced 文档接口，仅包含现有读取、完整提交写入与 existence/stat 操作；Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。无 storage 时为 memory，有 storage 时默认 writable，可显式 readonly。
 
-`HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留原 SuperJSON v3/v5 格式、初始值覆盖规则、破损文档隔离与 readonly 失败语义。Config debounce、digest 去重、写失败重试、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
+`HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留 SuperJSON v3/v5 格式与 readonly 失败语义。Config debounce、digest 去重、写失败重试、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
 
 Core 的 `createCoreContextHost({ createConfigService })` 只允许在固定 CONFIG_SERVICE descriptor 的严格惰性工厂位置创建 CoreConfigService；它不是任意 root factory，不暴露替换 Core token 的权限。Host 准备阶段等待两个 store.ready 后交付，关闭先排空已接纳操作，再等待 store 自己的写入并聚合 flush 错误。环境配置在 Host 应用启动阶段解析，存储 backend 由应用显式提供。
 
 ## Static startup config
 
-`HostApplication` 的 `configure(startup)` 将固定 catalog 与启动值分开。`startup` 提供 mode、env、platform bindings
+`HostApplicationFactory` 接收 startup 并返回完整 `HostApplication`。`startup` 提供 mode、env、platform bindings
 和 deployment facts；resolver 每次 host startup 重新执行，可选择 服务、configRecords、state、HTTP、
 logging、profile 和 Workbench policy。
 
-Static application 可以另外声明 `configEnvironmentBootstrap`。每个 direct `bindConfigEnvironment(Plugin, Schema, mapping)`
-把 portable environment name 绑定到该 Plugin default node 的 raw config path；`Schema` 必须与 Plugin root
-`configs.use()` 的实际对象 identity 相同。Mapping 由 `StandardSchemaV1.InferInput<Schema>` 递归推导，object 可展开或作为
-JSON subtree leaf，array/tuple/record/scalar 只能作为 leaf。Binding 位于 product host，不进入 Plugin metadata、decorator 或
-schema，也不扩展到 Part、fork 或 dynamic source。
+应用通过 `envBindings` / `fileBindings` 显式选取插件输入。`envBinding(Plugin, inputs)` / `fileBinding(Plugin, inputs)` 接收导出的 schema 引用；config schema 必须与 `configs.use()` metadata 中的同一对象一致，Vault 根 schema 声明 KV key 到记录的 shape。绑定 helper 从 schema input 推导 mapping / 文件记录 key，不从 Plugin 的静态字段推断。schema 定义只有一份，插件内部仍可使用任意普通 private 配置字段。
 
-Host behavior environment 与 Plugin config bootstrap 是两个契约。前者由 `@pluxel/host/environment` 直接转导 `std-env` 的 universal
-`env`，并以 `hostEnv` 暴露校验后且包含默认 data root 的有效 view；launcher 注入环境时使用同一 `resolveHostEnv()` 解析
-`PLUXEL_DATA_ROOT`、`PLUXEL_WORKBENCH` 和 listener 字段。下游 host 不直接读取 `process.env` 或复制默认路径。
-后者仍只通过本节的 typed binding/`PLUXEL_CONFIG` 进入 ConfigService。完整 environment 不进入 Plugin Context 或 config snapshot。
+Host 从本次不可变 `startup.env` 解析环境映射，fileBindings 的 JSON 路径相对 `startup.root`。Host 不隐式解析整个环境配置 snapshot。来源元数据只包含路径、kind/name 和 readonly，不包含值。具体 mapping 与 Vault 规则见[用户配置文档](../docs/getting-started/configuration.md)。
 
-`bindConfigEnvironment()` 在 canonical module evaluation 时用 `valibot-form` raw-input projector 从真实 schema node 冻结唯一
-`string | number | boolean | json` transport；startup 在 graph construction 前读取 canonical candidate、断言同一 schema identity，
-再解码当前 environment。Projector 不执行 validation、transform、lazy/default getter，也不复制默认值、requiredness 或 custom
-validator。环境缺失不生成 raw path；string 空值保留，number/boolean/JSON 空值失败，JSON `null` 保持显式值。Malformed value
-的诊断只包含 environment name 和 target，不包含原始 value。
+Config effective authority 为 `configRecords.initial < file base < saved < env`；plain object 递归合并、array 替换。HostConfigStore 只持久化 saved layer，reset 删除 saved path；env 缺失不产生 overlay。env 路径与其祖先/后代拒绝管理写入，Core low-level mutation 也不能绕过。validation 使用 effective record，默认值或 env normalization 不被反写为 saved。source facts 在同一 coordinator 查询中投影。
 
-新 store 的 merge authority 固定为：
+Vault 绑定由 Host 在服务准备后、插件 admission 前通过 root-only `HostVaultBindings` 安装；缺失服务 fail-fast。config 与 Vault 绑定以稳定 node address 为目标。动态候选在 admission 前检查 config metadata 与已声明环境路径兼容性，失败保留原 catalog。Vault 根 schema 是本次 Host 固定的部署输入契约，在首次解析时校验记录 key 与原始值，不能因 Plugin 热替换重新执行 transform 或更改已安装记录。修改 Vault schema 或来源需要重新创建 Host；插件仍负责私有 KV 的业务校验。
 
-```text
-configure() configRecords.initial
-  < configEnvironmentBootstrap decoded seed
-  < PLUXEL_CONFIG bootstrap snapshot
-  < existing persisted file
-```
-
-最后一层继续由既有 `HostConfigStore.loadFromDisk()` 实现。Writable file 首次保存合成 seed；memory 每个新 host 重建；readonly
-在没有 file 时只在当前 host 使用 seed。Binding 不是 permanent overlay，不改变 revision、patch/reset、persistence format、
-Workbench presentation 或 update notification。普通 config 仍不承载长期 secret。
-
-Plugin config records 与 auto-start policy 继续由 HostConfigStore/HostStateStore 管理，可以在 fixed catalog 范围内修改并跨启动
-持久化。production bundle 不把这些 records 烘焙成不可变常量。
-
-Static 与 dynamic Node host 读取单一 `PLUXEL_CONFIG` 环境变量。它必须是 ConfigService v3 的完整 JSON snapshot，owner
-使用结构化 Plugin node address：
-
-```json
-{
-	"version": 3,
-	"plugins": [
-		{
-			"owner": {
-				"definition": {
-					"entry": { "kind": "package-root", "packageName": "@acme/orders" },
-					"exportName": "OrdersPlugin"
-				},
-				"variant": "default"
-			},
-			"config": { "endpoint": "https://orders.example.com", "concurrency": 8 }
-		}
-	]
-}
-```
-
-JSON parse、snapshot version、address 或 config record 非法时启动 fail-fast。environment snapshot 覆盖 host initial snapshot
-中相同 owner 的字段，并只初始化新的 config store；已有 file config 始终是权威来源。结果继续进入同一 Standard Schema
-校验、raw record、revision、Workbench 与持久化链，不建立第二套 env 状态。secret 仍进入 Vault/credential contract。
-
-file writer 用 atomic replace 持久化完整 v3 snapshot；file reader 和 `PLUXEL_CONFIG` 都只接受 v3。其他版本、非法 owner 或
-重复 node record 一律 fail-fast，不从 class/display name 猜测或转换。
+持久配置继续使用 SuperJSON v3；file writer atomic replace 只写 saved layer，malformed/version error fail-fast。config 和 state 的 initial 语义不同：config initial 是永久 base，state initial 仍是创建策略 seed。
 
 control-plane patch/reset/field mutation 与 fork/catalog mutation 共用 host coordinator exclusive queue。顺序固定为 validate once -> stage
 normalized immutable snapshot -> flush -> confirm persisted revision -> notify addressed running generation。stage 不是已提交的内存
@@ -182,7 +131,7 @@ control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: fa
 - `packages/core/src/plugins/runtime/definition.ts`
 - `packages/host/src/config-store.ts`
 - `packages/host/src/config-records.ts`
-- `packages/host/src/config-environment.ts`
+- `packages/host/src/input-bindings.ts`
 - `packages/valibot-form/src/core/rawInput.ts`
 - `packages/host/src/config.ts`
 - `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`

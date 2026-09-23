@@ -159,9 +159,7 @@ function ConfigFormInstance({
 				section,
 				patch: buildEditableConfigPatch(section.fields, state.values, section.savedValue),
 			}))
-			const { section: currentSection, patch: sectionPatch } = patches[0]!
-			const patch =
-				key === undefined ? buildCombinedConfigPatch(savedConfig, patches) : sectionPatch
+			const patch = buildCombinedConfigPatch(patches)
 			if (Object.keys(patch).length === 0) return
 			const unchanged = () =>
 				targets.every(
@@ -169,14 +167,7 @@ function ConfigFormInstance({
 						forms.get()[section.key]?.form === bridge.form &&
 						bridge.form.state.values === state.values,
 				)
-			const request =
-				key !== undefined && currentSection.path.length > 0
-					? () =>
-							management.config.patchField(owner, {
-								fieldPath: currentSection.path.join('.'),
-								value: { ...currentSection.savedValue, ...sectionPatch },
-							})
-					: () => management.config.patch(owner, patch)
+			const request = () => management.config.patch(owner, patch)
 			savingRef.current = true
 			for (const { bridge } of targets)
 				bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
@@ -208,7 +199,7 @@ function ConfigFormInstance({
 				savingRef.current = false
 			}
 		},
-		[forms, management, owner, savedConfig, saveConfig, sectionItems],
+		[forms, management, owner, saveConfig, sectionItems],
 	)
 	const saveAll = useCallback(() => save(), [save])
 
@@ -342,10 +333,9 @@ function recordAtPath(record: Record<string, unknown>, path: readonly string[]) 
 }
 
 function buildCombinedConfigPatch(
-	savedConfig: Record<string, unknown>,
 	submissions: readonly { section: SectionItem; patch: Record<string, unknown> }[],
 ): Record<string, unknown> {
-	const candidate = structuredClone(savedConfig)
+	const candidate: Record<string, unknown> = {}
 	const changedRootKeys = new Set<string>()
 
 	for (const { section, patch: editablePatch } of submissions) {

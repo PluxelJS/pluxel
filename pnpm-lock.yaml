@@ -2344,6 +2344,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown

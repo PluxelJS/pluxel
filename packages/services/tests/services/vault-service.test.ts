@@ -1,673 +1,494 @@
-import { standardServices } from '@pluxel/services'
+import { describe, expect, it } from 'vitest'
+import { createHost } from '@pluxel/host'
+import { HostVaultBindings } from '@pluxel/host/bindings'
+import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import {
-	vault as installVault,
-	type VaultAdminApi,
+	persistence,
+	createMemoryPersistenceBackend,
+	type PersistenceBackend,
+} from '../../src/persistence'
+import {
+	vault,
+	Vault,
+	VaultAdmin,
+	type VaultServiceConfig,
 	type VaultStorageApi,
-} from '@pluxel/services/vault'
-import { pluginNodeAddressOf } from '@pluxel/core'
-import {
-	createServiceInternalTestContext,
-	createServiceInternalTestHarness,
-	type ServiceInternalTestHarness,
-} from '@pluxel/services/internal/test'
-import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
-import { env as stdEnv } from 'std-env'
-import { describe, expect, expectTypeOf, it } from 'vitest'
-import { pluginNodePhysicalKey } from '../../src/internal/plugin-address'
-import { requireWorkbench } from '@pluxel/workbench/server'
-import { lowerTestPlugin } from '../helpers/lowered-plugin'
+	type VaultKvTransaction,
+} from '../../src/vault'
+import { Decrypter } from 'age-encryption'
 
-type RuntimeHostLike = ServiceInternalTestHarness
-
-async function createVaultRuntimeHost(
-	config: { vault?: Parameters<typeof installVault>[0] | false } = {},
-): Promise<ServiceInternalTestHarness> {
-	return await createServiceInternalTestHarness({
-		services: [
-			...standardServices({ persistence: { mode: 'memory' } }),
-			...(config.vault === false ? [] : [installVault(config.vault)]),
-		],
+function setup(backend = createMemoryPersistenceBackend(), config?: VaultServiceConfig) {
+	return createHost({
+		plugins: [],
+		services: [persistence({ mode: 'custom', backend }), vault(config)],
 	})
 }
-
-async function sealVaultForTesting(vault: unknown): Promise<void> {
-	await (vault as { sealMountForTesting: () => Promise<void> }).sealMountForTesting()
-}
-
-function vaultStorage(host: RuntimeHostLike) {
-	return host.ctx.root.persistence!.namespace('vault')
-}
-
-function displayKey(key: string): string {
-	return key.startsWith('/') ? key : `/${key}`
-}
-
-async function listVaultFiles(host: RuntimeHostLike, prefix: string): Promise<string[]> {
-	const out: string[] = []
-	for await (const entry of vaultStorage(host).list(prefix)) {
-		if (entry.kind === 'file') out.push(displayKey(entry.key))
+const owners = new Map<string, VaultStorageApi>()
+@Plugin()
+class Owner extends BasePlugin {
+	init() {
+		owners.set('one', this.ctx.require(Vault))
 	}
-	return out.sort()
+}
+@Plugin()
+class OtherOwner extends BasePlugin {
+	init() {
+		owners.set('two', this.ctx.require(Vault))
+	}
 }
 
-async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
-	await vaultStorage(host).delete('security/identity.json')
+function decode(bytes: Uint8Array) {
+	return new TextDecoder().decode(bytes)
+}
+async function decryptState(backend: PersistenceBackend) {
+	const storage = backend.namespace('vault')
+	const identity = JSON.parse((await storage.getText('security/identity.json'))!)
+	const decrypter = new Decrypter()
+	decrypter.addIdentity(identity.vault.hostIdentity)
+	const dek = await decrypter.decrypt((await storage.get('global/keys.age'))!)
+	const key = await crypto.subtle.importKey('raw', dek as BufferSource, 'AES-GCM', false, [
+		'decrypt',
+		'encrypt',
+	])
+	const bytes = (await storage.get('global/state.enc'))!
+	const plain = await crypto.subtle.decrypt(
+		{ name: 'AES-GCM', iv: bytes.slice(5, 17) },
+		key,
+		bytes.slice(17),
+	)
+	return { key, snapshot: JSON.parse(decode(new Uint8Array(plain))) }
+}
+async function replaceSnapshot(backend: PersistenceBackend, snapshot: unknown) {
+	const { key } = await decryptState(backend)
+	const nonce = crypto.getRandomValues(new Uint8Array(12))
+	const cipher = new Uint8Array(
+		await crypto.subtle.encrypt(
+			{ name: 'AES-GCM', iv: nonce },
+			key,
+			new TextEncoder().encode(JSON.stringify(snapshot)),
+		),
+	)
+	await backend
+		.namespace('vault')
+		.put(
+			'global/state.enc',
+			new Uint8Array([...new TextEncoder().encode('PVLT2'), ...nonce, ...cipher]),
+			{ atomic: true },
+		)
 }
 
-describe('VaultService (shared mount runtime)', () => {
-	it('keeps optional capability types and disabled plans honest', async () => {
-		{
-			await using disabled = await createServiceInternalTestContext({ workbench: false })
-
-			expectTypeOf(disabled.ctx.vault).toEqualTypeOf<VaultStorageApi | undefined>()
-			expectTypeOf(disabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminApi | undefined>()
-			expect('vault' in disabled.ctx).toBe(false)
-			expect('vaultAdmin' in disabled.ctx).toBe(false)
-			expect(disabled.ctx.workbench).toBeUndefined()
-			expect(() => requireWorkbench(disabled.ctx)).toThrow('does not install workbench.host')
+describe('Vault structured records', () => {
+	it('commits immutable snapshots before returning and preserves revision tombstones across restart', async () => {
+		const backend = createMemoryPersistenceBackend()
+		const host = await setup(backend)
+		try {
+			const kv = host.ctx.require(Vault).kv()
+			const input = { token: 'secret', nested: { enabled: true } }
+			expect(await kv.get('account')).toMatchObject({
+				exists: false,
+				revision: 0,
+				writable: true,
+			})
+			const first = await kv.set('account', input, { expectedRevision: 0 })
+			input.nested.enabled = false
+			expect(first).toMatchObject({ revision: 1, value: { nested: { enabled: true } } })
+			expect(Object.isFrozen(first)).toBe(true)
+			expect(Object.isFrozen((first.value as typeof input).nested)).toBe(true)
+			await expect(kv.set('account', 'stale', { expectedRevision: 0 })).rejects.toMatchObject({
+				code: 'REVISION_CONFLICT',
+			})
+			expect(
+				await kv.delete('account', { expectedRevision: 1 }).then((result) => result.revision),
+			).toBe(2)
+			expect(
+				await kv.set('account', 'new', { expectedRevision: 2 }).then((result) => result.revision),
+			).toBe(3)
+		} finally {
+			await host.close()
 		}
-
-		await using enabled = await createServiceInternalTestContext({
-			workbench: false,
-			services: [...standardServices({ persistence: { mode: 'memory' } }), installVault()],
-		})
-
-		if (!enabled.ctx.vault || !enabled.ctx.vaultAdmin) {
-			throw new Error('Explicit Vault configuration did not install its capabilities')
+		const reopened = await setup(backend)
+		try {
+			expect(await reopened.ctx.require(Vault).kv().get('account')).toMatchObject({
+				revision: 3,
+				value: 'new',
+			})
+		} finally {
+			await reopened.close()
 		}
-		expectTypeOf(enabled.ctx.vault).toEqualTypeOf<VaultStorageApi>()
-		expectTypeOf(enabled.ctx.vaultAdmin).toEqualTypeOf<VaultAdminApi>()
-		expect(enabled.ctx.vault).toBeDefined()
-		expect(enabled.ctx.vaultAdmin).toBeDefined()
 	})
 
-	it('startup preflight creates an empty shared mount before plugin access', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
+	it('does not publish values, revisions or notifications when persistent commit fails', async () => {
+		const memory = createMemoryPersistenceBackend()
+		let reject = false
+		const backend: PersistenceBackend = {
+			capability: memory.capability,
+			namespace(name) {
+				const storage = memory.namespace(name)
+				return {
+					...storage,
+					async put(key, value, options) {
+						if (reject && key.endsWith('state.enc')) throw new Error('commit rejected')
+						await storage.put(key, value, options)
+					},
+				}
+			},
+		}
+		const host = await setup(backend)
+		try {
+			const kv = host.ctx.require(Vault).kv()
+			await kv.set('token', 'old')
+			const observed: unknown[] = []
+			const subscription = await kv.watch('token', (value) => {
+				observed.push(value)
+			})
+			reject = true
+			await expect(kv.set('token', 'new')).rejects.toThrow('commit rejected')
+			expect(await kv.get('token')).toEqual(subscription.snapshot)
+			expect(observed).toEqual([])
+			reject = false
+			expect(await kv.set('token', 'committed').then((result) => result.revision)).toBe(2)
+		} finally {
+			reject = false
+			await host.close()
+		}
+	})
 
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			const kv = plugin.ctx.vault.kv()
-			const docs = plugin.ctx.vault.docs().collection('profiles')
-
-			expect(await kv.get('missing')).toBeUndefined()
-			expect(await kv.keys()).toEqual([])
-			expect(await docs.get('default')).toBeUndefined()
-
+	it('commits a batch atomically, rolls back conflicts and prevents retained transaction access', async () => {
+		const host = await setup()
+		try {
+			const kv = host.ctx.require(Vault).kv()
+			let retained!: VaultKvTransaction
 			await kv.batch((tx) => {
-				tx.get('x')
-				tx.entries()
+				retained = tx
+				tx.set('one', 1)
+				tx.set('two', 2)
 			})
-
-			expect(await listVaultFiles(host, 'global')).toEqual([
-				'/global/keys.age',
-				'/global/state.enc',
-			])
-			expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
-		}
-	})
-
-	it('writes to the preflighted shared mount with key envelope and snapshot', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			const kv = plugin.ctx.vault.kv()
-
-			await kv.set('github.token', 'ghp_test')
-			await plugin.ctx.vault.flush()
-			await sealVaultForTesting(plugin.ctx.vault)
-			await host.ctx.vaultAdmin.preflight()
-
-			expect(await kv.get('github.token')).toBe('ghp_test')
-
-			expect(await listVaultFiles(host, 'global')).toEqual([
-				'/global/keys.age',
-				'/global/state.enc',
-			])
-			expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
-		}
-	})
-
-	it('flush writes one snapshot for multiple kv mutations', async () => {
-		{
-			await using host = await createVaultRuntimeHost({ vault: { flushDebounceMs: 1 } })
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			const kv = plugin.ctx.vault.kv()
-
-			await kv.set('a', '0')
-			await plugin.ctx.vault.flush()
-			const statePath = 'global/state.enc'
-			const before = await vaultStorage(host).get(statePath)
-
-			await kv.batch((tx) => {
-				tx.set('a', '1')
-				tx.set('b', '2')
-				tx.set('json', { ok: true })
-			})
-			await plugin.ctx.vault.flush()
-
-			const after = await vaultStorage(host).get(statePath)
-			expect(before).toBeTruthy()
-			expect(after).toBeTruthy()
-			expect(after).not.toEqual(before)
-			expect(await kv.get('a')).toBe('1')
-			expect(await kv.get('b')).toBe('2')
-		}
-	})
-
-	it('shared mount keeps plugin namespaces separate', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			@Plugin({ displayName: 'PluginB' })
-			class PluginB extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			lowerTestPlugin(PluginB)
-			host.add(PluginB)
-			host.cfg(PluginB).setAutoStart(true)
-			host.start(PluginB)
-			await host.commit()
-
-			const a = host.require(PluginA)
-			const b = host.require(PluginB)
-
-			await a.ctx.vault.kv().set('token', 'a-secret')
-			await b.ctx.vault.kv().set('token', 'b-secret')
-			await a.ctx.vault.flush()
-
-			expect(await a.ctx.vault.kv().get('token')).toBe('a-secret')
-			expect(await b.ctx.vault.kv().get('token')).toBe('b-secret')
-			expect(await a.ctx.vault.kv({ namespace: b.ctx.vault.namespace().name }).get('token')).toBe(
-				'b-secret',
-			)
-		}
-	})
-
-	it('namespace() provides a stable scoped facade over kv/docs/blobs', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			const space = plugin.ctx.vault.namespace()
-			const kv = space.kv()
-			const docs = space.docs().collection<{ ready: boolean }>('profiles')
-			const blob = space.blobs().open('notes')
-			const ownerNamespace = `plugin-${pluginNodePhysicalKey(pluginNodeAddressOf(PluginA))}`
-
-			expect(space.name).toBe(ownerNamespace)
-			await kv.set('token', 'value')
-			await docs.set('default', { ready: true })
-			await blob.writeText('scoped')
-			await plugin.ctx.vault.flush()
-
-			expect(await kv.get('token')).toBe('value')
-			expect(await docs.get('default')).toEqual({ ready: true })
-			expect(await blob.readText()).toBe('scoped')
-		}
-	})
-
-	it('namespace.batch() updates kv and docs atomically within one namespace copy-on-write', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			const space = plugin.ctx.vault.namespace()
-
-			await space.batch((tx) => {
-				tx.kv.set('token', 'value')
-				tx.docs.collection<{ ready: boolean }>('profiles').set('default', { ready: true })
-			})
-			await plugin.ctx.vault.flush()
-
-			expect(await space.kv().get('token')).toBe('value')
-			expect(await space.docs().collection<{ ready: boolean }>('profiles').get('default')).toEqual({
-				ready: true,
-			})
-		}
-	})
-
-	it('tampered shared snapshot fails to decrypt after relock', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			const kv = plugin.ctx.vault.kv()
-
-			await kv.set('token', 'secret')
-			await plugin.ctx.vault.flush()
-			await sealVaultForTesting(plugin.ctx.vault)
-
-			const path = 'global/state.enc'
-			const bytes = await vaultStorage(host).get(path)
-			expect(bytes).toBeTruthy()
-			const tampered = Uint8Array.from(bytes!)
-			tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff
-			await vaultStorage(host).put(path, tampered, { atomic: true })
-
-			await expect(host.ctx.vaultAdmin.preflight()).rejects.toMatchObject({
-				name: 'VaultError',
-				code: 'DECRYPT_FAILED',
-			})
-		}
-	})
-
-	it('describe stays pure-read when a local host identity is available', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			await plugin.ctx.vault.kv().set('token', 'secret')
-			await plugin.ctx.vault.flush()
-			await sealVaultForTesting(plugin.ctx.vault)
-
-			const admin = await host.ctx.vaultAdmin.describe()
-			expect(admin).toMatchObject({
-				present: true,
-				unlocked: false,
-				unlockedBy: null,
-			})
-			await host.ctx.vaultAdmin.preflight()
-			expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
-		}
-	})
-
-	it('unlock() uses deploy key when the private identity is injected', async () => {
-		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
-
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			await plugin.ctx.vault.kv().set('token', 'secret')
-			await plugin.ctx.vault.flush()
-
-			const pair = await host.ctx.vaultAdmin.generateDeployKey()
-			envName = pair.envName
-			await host.ctx.vaultAdmin.setDeployRecipients([pair.publicKey])
-			await sealVaultForTesting(plugin.ctx.vault)
-
-			stdEnv[envName] = pair.privateKey
-
-			const admin = await host.ctx.vaultAdmin.unlock()
-			expect(admin).toMatchObject({
-				present: true,
-				unlocked: true,
-				unlockedBy: 'deploy',
-				deploy: expect.objectContaining({
-					recipients: [pair.publicKey],
-					identityPresent: true,
+			expect(() => retained.set('late', 3)).toThrow('closed')
+			await expect(
+				kv.batch((tx) => {
+					tx.set('one', 9)
+					tx.delete('two', { expectedRevision: 0 })
 				}),
-			})
-			expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
-		}
-
-		delete stdEnv[envName]
-	})
-
-	it('rekey() does not create a missing mount as a side effect', async () => {
-		await using host = await createVaultRuntimeHost({ vault: false })
-		const { VaultService, VaultAdminService } = await import('../../src/vault/service')
-		const service = VaultService.create(host.ctx.root, {}, vaultStorage(host))
-		const admin = new VaultAdminService(host.ctx.root, service)
-		await expect(admin.rekey()).rejects.toMatchObject({ name: 'VaultError', code: 'MISSING_MOUNT' })
-		expect(await listVaultFiles(host, 'global')).toEqual([])
-	})
-
-	it('rekey() rewrites only the managed key envelope without rewriting the snapshot payload', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			await plugin.ctx.vault.kv().set('token', 'value')
-			await plugin.ctx.vault.flush()
-			const keyPath = 'global/keys.age'
-			const statePath = 'global/state.enc'
-			const beforeKey = await vaultStorage(host).get(keyPath)
-			const beforeState = await vaultStorage(host).get(statePath)
-
-			await host.ctx.vaultAdmin.rekey()
-			const afterKey = await vaultStorage(host).get(keyPath)
-			const afterState = await vaultStorage(host).get(statePath)
-			expect(beforeKey).toBeTruthy()
-			expect(afterKey).toBeTruthy()
-			expect(afterKey).not.toEqual(beforeKey)
-			expect(afterState).toEqual(beforeState)
-
-			await sealVaultForTesting(plugin.ctx.vault)
-			await host.ctx.vaultAdmin.preflight()
-			expect(await plugin.ctx.vault.kv().get('token')).toBe('value')
+			).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
+			expect(await kv.get('one').then((result) => result.value)).toBe(1)
+			expect(await kv.get('two').then((result) => result.value)).toBe(2)
+			expect(await kv.keys({ after: 'one', limit: 1 })).toEqual(['two'])
+			await expect(kv.keys({ limit: 1001 })).rejects.toMatchObject({ code: 'INVALID_CONFIG' })
+		} finally {
+			await host.close()
 		}
 	})
 
-	it('stores blobs separately from the shared snapshot', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'PluginA' })
-			class PluginA extends BasePlugin {}
-
-			lowerTestPlugin(PluginA)
-
-			host.add(PluginA)
-			host.cfg(PluginA).setAutoStart(true)
-			host.start(PluginA)
-			await host.commit()
-
-			const plugin = host.require(PluginA)
-			const blob = plugin.ctx.vault.blobs().open('notes')
-
-			await blob.writeText('hello vault')
-			expect(await blob.readText()).toBe('hello vault')
-			expect(await plugin.ctx.vault.blobs().list()).toEqual(['notes'])
-			const ownerNamespace = `plugin-${pluginNodePhysicalKey(pluginNodeAddressOf(PluginA))}`
-			expect(blob.describe().path).toBe(`global/blobs/${ownerNamespace}/notes.blob`)
+	it('atomically watches the initial snapshot, observes committed data outside the lock and isolates listener failures', async () => {
+		const host = await setup()
+		try {
+			const kv = host.ctx.require(Vault).kv()
+			const observed: number[] = []
+			const sub = await kv.watch('token', async (snapshot) => {
+				observed.push(snapshot.revision)
+				expect(await kv.get('token').then((result) => result.revision)).toBeGreaterThanOrEqual(
+					snapshot.revision,
+				)
+				throw new Error('consumer apply failed')
+			})
+			expect(sub.snapshot.revision).toBe(0)
+			await kv.set('token', 'a')
+			await expect.poll(() => observed).toEqual([1])
+			await kv.set('token', 'b')
+			await expect.poll(() => observed).toEqual([1, 2])
+			sub.dispose()
+			await kv.set('token', 'c')
+			expect(observed).toEqual([1, 2])
+		} finally {
+			await host.close()
 		}
 	})
 
-	it('host preflight initializes an empty shared mount', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			const admin = await host.ctx.vaultAdmin.preflight()
-			expect(admin).toMatchObject({
-				present: true,
-				unlocked: true,
-				unlockedBy: 'host',
-			})
-			const described = await host.ctx.vaultAdmin.describe()
-			expect(described).toMatchObject({
-				present: true,
-				unlocked: true,
-			})
-			expect(await listVaultFiles(host, 'global')).toEqual([
-				'/global/keys.age',
-				'/global/state.enc',
-			])
-			expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
-		}
-	})
-
-	it('host preflight fails when an existing sealed mount has no unlock identity', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'Seeder' })
-			class Seeder extends BasePlugin {}
-
-			lowerTestPlugin(Seeder)
-
-			host.add(Seeder)
-			host.cfg(Seeder).setAutoStart(true)
-			host.start(Seeder)
-			await host.commit()
-
-			const seeder = host.require(Seeder)
-			await seeder.ctx.vault.kv().set('token', 'secret')
-			await seeder.ctx.vault.flush()
-			await sealVaultForTesting(seeder.ctx.vault)
-			await deleteVaultIdentity(host)
-
-			await expect(host.ctx.vaultAdmin.preflight()).rejects.toMatchObject({
-				name: 'VaultError',
-				code: 'ACCESS_DENIED',
-			})
-			expect(await host.ctx.vaultAdmin.describe()).toMatchObject({
-				present: true,
-				lastError: {
-					code: 'ACCESS_DENIED',
-					message: 'Vault mount "global" is sealed and can not be unlocked during host startup.',
+	it('rejects values that cannot form an immutable JSON snapshot without invoking accessors', async () => {
+		const host = await setup()
+		try {
+			const kv = host.ctx.require(Vault).kv()
+			const cycle: Record<string, unknown> = {}
+			cycle.self = cycle
+			for (const value of [
+				new Date(),
+				Number.NaN,
+				undefined,
+				cycle,
+				{
+					get secret() {
+						throw new Error('getter ran')
+					},
 				},
-			})
+			]) {
+				await expect(kv.set('invalid', value)).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
+			}
+			expect(await kv.get('invalid').then((result) => result.revision)).toBe(0)
+		} finally {
+			await host.close()
 		}
 	})
 
-	it('host preflight auto-unlocks from deploy identity when available', async () => {
-		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
-
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'Seeder' })
-			class Seeder extends BasePlugin {}
-
-			lowerTestPlugin(Seeder)
-
-			host.add(Seeder)
-			host.cfg(Seeder).setAutoStart(true)
-			host.start(Seeder)
-			await host.commit()
-
-			const seeder = host.require(Seeder)
-			await seeder.ctx.vault.kv().set('token', 'secret')
-			await seeder.ctx.vault.flush()
-			const pair = await host.ctx.vaultAdmin.generateDeployKey()
-			envName = pair.envName
-			await host.ctx.vaultAdmin.setDeployRecipients([pair.publicKey])
-			await sealVaultForTesting(seeder.ctx.vault)
-			await deleteVaultIdentity(host)
-
-			stdEnv[envName] = pair.privateKey
-
-			const admin = await host.ctx.vaultAdmin.preflight()
-			expect(admin).toMatchObject({
-				present: true,
-				unlocked: true,
-				unlockedBy: 'deploy',
-				deploy: expect.objectContaining({
-					identityPresent: true,
-				}),
-			})
-			expect(await host.ctx.vaultAdmin.describe()).toMatchObject({
-				present: true,
-				unlocked: true,
-			})
-			expect(await seeder.ctx.vault.kv().get('token')).toBe('secret')
-		}
-
-		delete stdEnv[envName]
-	})
-
-	it('sealed mounts report unlock_required when no matching identity is available', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'Seeder' })
-			class Seeder extends BasePlugin {}
-
-			lowerTestPlugin(Seeder)
-
-			host.add(Seeder)
-			host.cfg(Seeder).setAutoStart(true)
-			host.start(Seeder)
-			await host.commit()
-
-			const seeder = host.require(Seeder)
-			await seeder.ctx.vault.kv().set('token', 'secret')
-			await seeder.ctx.vault.flush()
-			await sealVaultForTesting(seeder.ctx.vault)
-
-			await deleteVaultIdentity(host)
-
-			await expect(seeder.ctx.vault.kv().get('token')).rejects.toMatchObject({
-				code: 'ACCESS_DENIED',
-			})
-			const described = await host.ctx.vaultAdmin.unlock()
-			expect(described).toMatchObject({
-				reason: 'unlock_required',
-				unlocked: false,
-			})
-			expect(described).toMatchObject({
-				present: true,
-				lastError: expect.objectContaining({
-					code: 'ACCESS_DENIED',
-					message: expect.any(String),
-				}),
-			})
-		}
-	})
-
-	it('does not rerun host preflight during later graph commits', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'Seeder' })
-			class Seeder extends BasePlugin {}
-
-			@Plugin({ displayName: 'VaultConsumer' })
-			class VaultConsumer extends BasePlugin {}
-
-			lowerTestPlugin(Seeder)
-
-			host.add(Seeder)
-			host.cfg(Seeder).setAutoStart(true)
-			host.start(Seeder)
-			await host.commit()
-
-			const seeder = host.require(Seeder)
-			await seeder.ctx.vault.kv().set('token', 'secret')
-			await seeder.ctx.vault.flush()
-			await sealVaultForTesting(seeder.ctx.vault)
-			await deleteVaultIdentity(host)
-
-			lowerTestPlugin(VaultConsumer)
-
-			host.add(VaultConsumer)
-			host.cfg(VaultConsumer).setAutoStart(true)
-			host.start(VaultConsumer)
-			await expect(host.commitAllowFail()).resolves.toBeDefined()
-			expect(host.get(VaultConsumer)).toBeDefined()
-
-			const unlock = await host.ctx.vaultAdmin.unlock()
-			expect(unlock.unlocked).toBe(false)
-			expect(unlock.reason).toBe('unlock_required')
-		}
-	})
-
-	it('replacing deploy recipients rekeys the envelope for all saved recipients', async () => {
-		{
-			await using host = await createVaultRuntimeHost({})
-
-			@Plugin({ displayName: 'Seeder' })
-			class Seeder extends BasePlugin {}
-
-			lowerTestPlugin(Seeder)
-
-			host.add(Seeder)
-			host.cfg(Seeder).setAutoStart(true)
-			host.start(Seeder)
-			await host.commit()
-
-			const seeder = host.require(Seeder)
-			await seeder.ctx.vault.kv().set('token', 'secret')
-			await seeder.ctx.vault.flush()
-
-			const pairA = await host.ctx.vaultAdmin.generateDeployKey()
-			const pairB = await host.ctx.vaultAdmin.generateDeployKey()
-			const admin = await host.ctx.vaultAdmin.setDeployRecipients([
-				pairA.publicKey,
-				pairB.publicKey,
-				pairA.publicKey,
+	it('serves bindings without Persistence, disk, encryption keys or writable fallback', async () => {
+		const host = await createHost({
+			plugins: [Owner, OtherOwner],
+			services: [vault({ backend: 'bindings' })],
+		})
+		try {
+			host.ctx.require(HostVaultBindings).install([
+				{
+					owner: pluginNodeAddressOf(Owner),
+					key: 'primary',
+					value: { token: 'from-env' },
+					source: 'env',
+				},
+				{ owner: pluginNodeAddressOf(Owner), key: 'missing', value: undefined, source: 'env' },
 			])
-			expect(admin.deploy.recipients).toEqual([pairA.publicKey, pairB.publicKey])
+			await host.startNode(pluginNodeAddressOf(Owner))
+			await host.startNode(pluginNodeAddressOf(OtherOwner))
+			const first = host.ctx.require(Vault).kv({
+				namespace: `plugin-${(await import('../../src/internal/plugin-address').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`,
+			})
+			expect(await first.get('primary')).toMatchObject({
+				source: 'env',
+				writable: false,
+				value: { token: 'from-env' },
+			})
+			expect(await first.get('missing')).toMatchObject({
+				source: 'env',
+				exists: false,
+				writable: false,
+			})
+			await expect(first.set('primary', 'new')).rejects.toMatchObject({ code: 'READ_ONLY' })
+			expect(await host.ctx.require(VaultAdmin).describe()).toMatchObject({
+				present: false,
+				hostIdentityPresent: false,
+			})
+			await expect(first.get('unknown')).resolves.toMatchObject({ exists: false, writable: false })
+		} finally {
+			await host.close()
 		}
+	})
+
+	it('overlays whole records without mixing or persisting deployment values', async () => {
+		const backend = createMemoryPersistenceBackend()
+		const host = await setup(backend)
+		const namespace = `plugin-${(await import('../../src/internal/plugin-address').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`
+		try {
+			const kv = host.ctx.require(Vault).kv({ namespace })
+			await kv.set('primary', { refreshToken: 'persisted' })
+			host.ctx.require(HostVaultBindings).install([
+				{
+					owner: pluginNodeAddressOf(Owner),
+					key: 'primary',
+					value: { token: 'deployment' },
+					source: 'file',
+				},
+			])
+			expect(await kv.get('primary').then((result) => result.value)).toEqual({
+				token: 'deployment',
+			})
+			await expect(
+				kv.batch((tx) => {
+					tx.set('other', 1)
+					tx.delete('primary')
+				}),
+			).rejects.toMatchObject({ code: 'READ_ONLY' })
+			expect(await kv.get('other').then((result) => result.exists)).toBe(false)
+		} finally {
+			await host.close()
+		}
+		const next = await setup(backend)
+		try {
+			expect(
+				await next.ctx
+					.require(Vault)
+					.kv({ namespace })
+					.get('primary')
+					.then((result) => result.value),
+			).toEqual({ refreshToken: 'persisted' })
+		} finally {
+			await next.close()
+		}
+	})
+
+	it('watches new keys and deletions in a prefix and never leaks another owner namespace', async () => {
+		const host = await createHost({
+			plugins: [Owner, OtherOwner],
+			services: [persistence({ mode: 'memory' }), vault()],
+		})
+		try {
+			await host.startNode(pluginNodeAddressOf(Owner))
+			await host.startNode(pluginNodeAddressOf(OtherOwner))
+			const one = owners.get('one')!.namespace('accounts').kv()
+			const two = owners.get('two')!.namespace('accounts').kv()
+			await one.set('account/first', { token: 'one' })
+			expect(await two.get('account/first').then((result) => result.exists)).toBe(false)
+			const seen: Array<[string, boolean]> = []
+			const sub = await one.watchPrefix('account/', (snapshot) => {
+				seen.push([snapshot.key, snapshot.exists])
+			})
+			expect(sub.snapshots.map((snapshot) => snapshot.key)).toEqual(['account/first'])
+			await one.set('account/new', 'new')
+			await expect.poll(() => seen).toEqual([['account/new', true]])
+			await one.delete('account/first')
+			await expect
+				.poll(() => seen)
+				.toEqual([
+					['account/new', true],
+					['account/first', false],
+				])
+			await host.stopNode(pluginNodeAddressOf(Owner))
+			await expect(one.get('account/new')).rejects.toThrow('stopped')
+			sub.dispose()
+		} finally {
+			await host.close()
+		}
+	})
+
+	it('explicitly migrates an old global namespace once, copies blobs and retains the original data', async () => {
+		const backend = createMemoryPersistenceBackend()
+		const first = await setup(backend)
+		try {
+			await first.ctx.require(Vault).namespace('legacy-accounts').kv().set('token', 'original')
+			await first.ctx
+				.require(Vault)
+				.namespace('legacy-accounts')
+				.blobs()
+				.open('photo')
+				.writeText('blob')
+		} finally {
+			await first.close()
+		}
+		const options = {
+			legacyNamespaces: [
+				{ owner: pluginNodeAddressOf(Owner), namespace: 'accounts', from: 'legacy-accounts' },
+			],
+		}
+		const start = () =>
+			createHost({
+				plugins: [Owner],
+				services: [persistence({ mode: 'custom', backend }), vault(options)],
+			})
+		const next = await start()
+		try {
+			await next.startNode(pluginNodeAddressOf(Owner))
+			const space = owners.get('one')!.namespace('accounts')
+			expect(
+				await space
+					.kv()
+					.get('token')
+					.then((result) => result.value),
+			).toBe('original')
+			expect(await space.blobs().open('photo').readText()).toBe('blob')
+			await space.kv().set('token', 'updated')
+		} finally {
+			await next.close()
+		}
+		const again = await start()
+		try {
+			await again.startNode(pluginNodeAddressOf(Owner))
+			expect(
+				await owners
+					.get('one')!
+					.namespace('accounts')
+					.kv()
+					.get('token')
+					.then((result) => result.value),
+			).toBe('updated')
+			expect(
+				await again.ctx
+					.require(Vault)
+					.namespace('legacy-accounts')
+					.kv()
+					.get('token')
+					.then((result) => result.value),
+			).toBe('original')
+		} finally {
+			await again.close()
+		}
+	})
+
+	it('migrates legacy documents into structured KV without losing record identity or overwriting collisions', async () => {
+		const backend = createMemoryPersistenceBackend()
+		const host = await setup(backend)
+		await host.close()
+		const legacy = {
+			kind: 'pluxel.vault.snapshot',
+			namespaces: {
+				default: {
+					kv: { token: 'old' },
+					docs: { accounts: { primary: { refreshToken: 'kept' } } },
+				},
+			},
+		}
+		await replaceSnapshot(backend, legacy)
+		const migrated = await setup(backend)
+		try {
+			const kv = migrated.ctx.require(Vault).kv()
+			expect(await kv.get('documents/accounts/primary').then((result) => result.value)).toEqual({
+				refreshToken: 'kept',
+			})
+			expect(await kv.get('token').then((result) => result.value)).toBe('old')
+			await kv.set('new', true)
+			expect(await decryptState(backend).then((result) => result.snapshot.version)).toBe(2)
+		} finally {
+			await migrated.close()
+		}
+		await replaceSnapshot(backend, {
+			...legacy,
+			namespaces: {
+				default: {
+					kv: { 'documents/accounts/primary': 'collision' },
+					docs: legacy.namespaces.default.docs,
+				},
+			},
+		})
+		await expect(setup(backend)).rejects.toThrow('migration collides')
+	})
+
+	it('rekeys only the envelope, reopens with explicit deployment identity and rejects missing or damaged state', async () => {
+		const backend = createMemoryPersistenceBackend()
+		const host = await setup(backend)
+		const storage = backend.namespace('vault')
+		await host.ctx.require(Vault).kv().set('token', 'secret')
+		const before = await storage.get('global/state.enc')
+		const pair = await host.ctx.require(VaultAdmin).generateDeployKey()
+		await host.ctx.require(VaultAdmin).setDeployRecipients([pair.publicKey])
+		await host.ctx.require(VaultAdmin).rekey()
+		expect(await storage.get('global/state.enc')).toEqual(before)
+		await host.close()
+		await storage.delete('security/identity.json')
+		await expect(setup(backend)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
+		const unlocked = await setup(backend, { deployIdentity: pair.privateKey })
+		try {
+			expect(
+				await unlocked.ctx
+					.require(Vault)
+					.kv()
+					.get('token')
+					.then((result) => result.value),
+			).toBe('secret')
+			expect(
+				await unlocked.ctx
+					.require(VaultAdmin)
+					.describe()
+					.then((result) => result.unlockedBy),
+			).toBe('deploy')
+		} finally {
+			await unlocked.close()
+		}
+		const original = (await storage.get('global/state.enc'))!
+		const damaged = new Uint8Array(original)
+		damaged[damaged.length - 1] ^= 1
+		await storage.put('global/state.enc', damaged)
+		await expect(setup(backend, { deployIdentity: pair.privateKey })).rejects.toMatchObject({
+			code: 'DECRYPT_FAILED',
+		})
+		expect(await storage.get('global/state.enc')).toEqual(damaged)
+		await storage.delete('global/state.enc')
+		await expect(setup(backend, { deployIdentity: pair.privateKey })).rejects.toMatchObject({
+			code: 'INVALID_FORMAT',
+		})
 	})
 })

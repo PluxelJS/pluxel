@@ -1,17 +1,16 @@
-export type VaultServiceConfig = {
-	/**
-	 * Debounce window for snapshot flushes.
-	 *
-	 * @default 50
-	 */
-	flushDebounceMs?: number
+import type { PluginNodeAddress } from '@pluxel/core'
 
-	/**
-	 * Environment variable that may contain an age private identity for deploy-time unlock.
-	 *
-	 * @default "PLUXEL_VAULT_DEPLOY_IDENTITY"
-	 */
-	deployIdentityEnv?: string
+export type VaultServiceConfig = {
+	/** Encrypted persistent KV by default; bindings installs read-only records without storage or keys. */
+	backend?: 'encrypted' | 'bindings'
+	/** Explicit age private identity supplied by the application startup factory. */
+	deployIdentity?: string
+	/** Explicitly assign legacy global namespaces to an owner. Migration is persisted once and keeps the source data. */
+	legacyNamespaces?: readonly Readonly<{
+		owner: PluginNodeAddress
+		namespace: string
+		from: string
+	}>[]
 }
 
 export type VaultNamespaceOptions = {
@@ -29,7 +28,6 @@ export type VaultAccessReason = 'unlock_required'
 export type VaultNamespaceStats = {
 	namespace: string
 	kvKeys: number
-	docDocuments: number
 	blobs: number
 }
 
@@ -54,73 +52,45 @@ export type VaultKeyPair = {
 	envName: string
 }
 
+export type VaultRecordSnapshot<T = unknown> = Readonly<{
+	key: string
+	exists: boolean
+	value: T | undefined
+	revision: number
+	source: 'kv' | 'env' | 'file'
+	writable: boolean
+}>
+export type VaultWriteOptions = Readonly<{ expectedRevision?: number }>
+export type VaultListOptions = Readonly<{ prefix?: string; after?: string; limit?: number }>
+export type VaultSubscription<T = unknown> = Readonly<{
+	snapshot: VaultRecordSnapshot<T>
+	dispose(): void
+}>
+export type VaultPrefixSubscription<T = unknown> = Readonly<{
+	/** Atomic initial prefix snapshot. Prefixes larger than 1000 records are rejected. */
+	snapshots: readonly VaultRecordSnapshot<T>[]
+	dispose(): void
+}>
 export type VaultKvTransaction = {
-	get: <T = unknown>(key: string) => T | undefined
-	has: (key: string) => boolean
-	set: (key: string, value: unknown) => void
-	delete: (key: string) => void
-	clear: () => void
-	keys: () => string[]
-	entries: <T = unknown>() => Array<[string, T]>
+	get<T = unknown>(key: string): VaultRecordSnapshot<T>
+	set(key: string, value: unknown, options?: VaultWriteOptions): VaultRecordSnapshot
+	delete(key: string, options?: VaultWriteOptions): VaultRecordSnapshot
+	keys(options?: VaultListOptions): readonly string[]
 }
-
 export type VaultKvHandle = {
-	get: <T = unknown>(key: string) => Promise<T | undefined>
-	has: (key: string) => Promise<boolean>
-	set: (key: string, value: unknown) => Promise<void>
-	setMany: (entries: Record<string, unknown>) => Promise<void>
-	delete: (key: string) => Promise<void>
-	clear: () => Promise<void>
-	keys: () => Promise<string[]>
-	entries: <T = unknown>() => Promise<Array<[string, T]>>
-	batch: <T>(run: (tx: VaultKvTransaction) => T | Promise<T>) => Promise<T>
-}
-
-export type VaultDocHandle<TDoc extends Record<string, unknown> = Record<string, unknown>> = {
-	get: () => Promise<TDoc | undefined>
-	set: (value: TDoc) => Promise<void>
-	patch: (value: Partial<TDoc>) => Promise<TDoc>
-	delete: () => Promise<void>
-	exists: () => Promise<boolean>
-}
-
-export type VaultCollectionHandle<TDoc extends Record<string, unknown> = Record<string, unknown>> =
-	{
-		doc: (id: string) => VaultDocHandle<TDoc>
-		get: (id: string) => Promise<TDoc | undefined>
-		set: (id: string, value: TDoc) => Promise<void>
-		patch: (id: string, value: Partial<TDoc>) => Promise<TDoc>
-		delete: (id: string) => Promise<void>
-		ids: () => Promise<string[]>
-		list: () => Promise<Array<{ id: string; value: TDoc }>>
-		clear: () => Promise<void>
-	}
-
-export type VaultDocsHandle = {
-	collection: <TDoc extends Record<string, unknown> = Record<string, unknown>>(
-		name: string,
-	) => VaultCollectionHandle<TDoc>
-}
-
-export type VaultCollectionTransaction<
-	TDoc extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	get: (id: string) => TDoc | undefined
-	set: (id: string, value: TDoc) => void
-	patch: (id: string, value: Partial<TDoc>) => TDoc
-	delete: (id: string) => void
-	ids: () => string[]
-	list: () => Array<{ id: string; value: TDoc }>
-	clear: () => void
-}
-
-export type VaultNamespaceTransaction = {
-	kv: VaultKvTransaction
-	docs: {
-		collection: <TDoc extends Record<string, unknown> = Record<string, unknown>>(
-			name: string,
-		) => VaultCollectionTransaction<TDoc>
-	}
+	get<T = unknown>(key: string): Promise<VaultRecordSnapshot<T>>
+	set(key: string, value: unknown, options?: VaultWriteOptions): Promise<VaultRecordSnapshot>
+	delete(key: string, options?: VaultWriteOptions): Promise<VaultRecordSnapshot>
+	keys(options?: VaultListOptions): Promise<readonly string[]>
+	batch<T>(run: (tx: VaultKvTransaction) => T | Promise<T>): Promise<T>
+	watchPrefix<T = unknown>(
+		prefix: string,
+		listener: (snapshot: VaultRecordSnapshot<T>) => void | Promise<void>,
+	): Promise<VaultPrefixSubscription<T>>
+	watch<T = unknown>(
+		key: string,
+		listener: (snapshot: VaultRecordSnapshot<T>) => void | Promise<void>,
+	): Promise<VaultSubscription<T>>
 }
 
 export type VaultBlobHandle = {
@@ -141,14 +111,11 @@ export type VaultBlobsHandle = {
 export type VaultNamespace = {
 	name: string
 	kv: () => VaultKvHandle
-	docs: () => VaultDocsHandle
 	blobs: () => VaultBlobsHandle
-	batch: <T>(run: (tx: VaultNamespaceTransaction) => T | Promise<T>) => Promise<T>
 }
 
 export type VaultStorageApi = {
 	kv: (options?: VaultNamespaceOptions) => VaultKvHandle
-	docs: (options?: VaultNamespaceOptions) => VaultDocsHandle
 	blobs: (options?: VaultNamespaceOptions) => VaultBlobsHandle
 	namespace: (name?: string) => VaultNamespace
 	flush: () => Promise<void>

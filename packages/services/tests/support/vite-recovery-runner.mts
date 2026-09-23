@@ -66,18 +66,17 @@ await writeFile(
 	resolve(root, 'pluxel.static.ts'),
 	`
 import { pluginNodeAddressOf } from '@pluxel/core'
+import { defineConfig } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { workbenchService } from '@pluxel/workbench/service'
 
 import { Owner, Dependent } from './src/index'
-export default ({
+export default defineConfig((startup) => ({
   name: 'workbench-hmr', plugins: [Owner, Dependent],
-  configure() { return {
     services: [...standardServices({ persistence: { mode: 'memory' } }), workbenchService()],
     state: { initial: { autoStart: [Owner, Dependent].map(pluginNodeAddressOf) } },
-  } },
-  prepare({ host, startup }) { startup.bindings.capture(host) },
-})
+  prepare({ host }) { startup.bindings.capture(host) },
+}))
 `,
 )
 let host: PluginHost | undefined
@@ -105,7 +104,7 @@ const server = await createServer({
 try {
 	await server.listen()
 	assert.ok(host, errors.join('\n'))
-	const service = requirePluginService(host.ctx)
+	const service = () => requirePluginService(host!.ctx)
 	const initialStatus = await host.status()
 	const owner = initialStatus.statuses.find(
 		(item) => item.address.definition.exportName === 'Owner',
@@ -113,16 +112,18 @@ try {
 	const dependent = initialStatus.statuses.find(
 		(item) => item.address.definition.exportName === 'Dependent',
 	)!.address
-	const backend = requireWorkbench(host.ctx)
+	const backend = () => requireWorkbench(host!.ctx)
 	const healthy = async (version: string) => {
-		const entry = backend.registry.getLayout(owner).entries[0]
+		const entry = backend().registry.getLayout(owner).entries[0]
 		assert.ok(entry, JSON.stringify(await host!.status()))
 		assert.equal('federatedViewUnavailable' in entry, false, JSON.stringify(entry))
-		assert.equal(service.isRunning(owner), true, JSON.stringify(host!.catalog()))
-		assert.equal(service.isRunning(dependent), true, JSON.stringify(host!.catalog()))
-		assert.equal(Reflect.get(service.getInstance(owner)!, 'version'), version)
+		assert.equal(service().isRunning(owner), true, JSON.stringify(host!.catalog()))
+		assert.equal(service().isRunning(dependent), true, JSON.stringify(host!.catalog()))
+		assert.equal(Reflect.get(service().getInstance(owner)!, 'version'), version)
 		assert.equal(
-			Reflect.get(service.getInstance(dependent)!, 'version').call(service.getInstance(dependent)),
+			Reflect.get(service().getInstance(dependent)!, 'version').call(
+				service().getInstance(dependent),
+			),
 			version,
 		)
 	}

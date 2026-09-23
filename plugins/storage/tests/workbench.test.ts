@@ -1,7 +1,6 @@
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
-import { BasePlugin, Plugin } from '@pluxel/core'
 import type { WorkbenchPrincipal } from '@pluxel/workbench'
 import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
 import type { RpcStub } from 'capnweb'
@@ -17,18 +16,7 @@ const REFERENCE = Object.freeze({
 const RECOVERY = Object.freeze({ provider: 'local', subject: 'local' })
 const ADMIN = Object.freeze({ provider: '@pluxel/auth', subject: 'local:admin' })
 
-@Plugin()
-class VaultSeeder extends BasePlugin {}
-
 async function startVaultS3(host: TestHost<true>): Promise<void> {
-	await host.start(VaultSeeder)
-	await host
-		.require(VaultSeeder)
-		.ctx.vault!.kv({ namespace: REFERENCE.namespace })
-		.set(REFERENCE.key, {
-			accessKeyId: 'old-access-key',
-			secretAccessKey: 'old-secret-key',
-		})
 	await host.start(S3Plugin, {
 		initialConfig: {
 			buckets: [
@@ -37,16 +25,37 @@ async function startVaultS3(host: TestHost<true>): Promise<void> {
 					backend: {
 						type: 'remote',
 						endpoint: 'https://bucket.s3.example.com',
-						region: 'auto',
-						credentials: REFERENCE,
-						requestSizeInBytes: 8 * 1024 * 1024,
-						requestAbortTimeout: 30_000,
-						minPartSize: 8 * 1024 * 1024,
+						credentials: { type: 'anonymous' },
 					},
 				},
 			],
 		},
 	})
+	await host
+		.require(S3Plugin)
+		.ctx.vault!.kv({ namespace: REFERENCE.namespace })
+		.set(REFERENCE.key, {
+			accessKeyId: 'old-access-key',
+			secretAccessKey: 'old-secret-key',
+		})
+	await host.stop(S3Plugin)
+	await host.config.patch(S3Plugin, {
+		buckets: [
+			{
+				id: 'assets',
+				backend: {
+					type: 'remote',
+					endpoint: 'https://bucket.s3.example.com',
+					region: 'auto',
+					credentials: REFERENCE,
+					requestSizeInBytes: 8 * 1024 * 1024,
+					requestAbortTimeout: 30_000,
+					minPartSize: 8 * 1024 * 1024,
+				},
+			},
+		],
+	})
+	await host.start(S3Plugin)
 }
 
 function openCredentials(host: TestHost<true>, principal: WorkbenchPrincipal) {
@@ -130,7 +139,7 @@ describe('S3 Workbench credential rotation', () => {
 			}
 			const result = await opened.root.runDto('rotate', replacement)
 			expect(result).toMatchObject({
-				action: { ok: true, message: expect.stringContaining('Restart') },
+				action: { ok: true, message: expect.stringContaining('New requests') },
 				data: {
 					ok: true,
 					data: {
@@ -139,7 +148,7 @@ describe('S3 Workbench credential rotation', () => {
 								{
 									id: 'assets',
 									backend: 'remote-vault',
-									credentialRotation: 'restart-required',
+									credentialRotation: 'available',
 								},
 							],
 						},
@@ -151,9 +160,10 @@ describe('S3 Workbench credential rotation', () => {
 			expect(serializedResult).not.toContain(replacement.secretAccessKey)
 			await expect(
 				host
-					.require(VaultSeeder)
+					.require(S3Plugin)
 					.ctx.vault!.kv({ namespace: REFERENCE.namespace })
-					.get(REFERENCE.key),
+					.get(REFERENCE.key)
+					.then((snapshot) => snapshot.value),
 			).resolves.toEqual({
 				accessKeyId: replacement.accessKeyId,
 				secretAccessKey: replacement.secretAccessKey,
@@ -168,7 +178,7 @@ describe('S3 Workbench credential rotation', () => {
 									{
 										id: 'assets',
 										backend: 'remote-vault',
-										credentialRotation: 'restart-required',
+										credentialRotation: 'available',
 									},
 								],
 							},
@@ -176,10 +186,11 @@ describe('S3 Workbench credential rotation', () => {
 					}),
 				),
 			)
+			const updatesBeforeDispose = secondUpdates.mock.calls.length
 			second[Symbol.dispose]()
 			await opened.root.runDto('rotate', replacement)
 			await Promise.resolve()
-			expect(secondUpdates).toHaveBeenCalledTimes(1)
+			expect(secondUpdates).toHaveBeenCalledTimes(updatesBeforeDispose)
 		}
 	})
 
@@ -204,9 +215,10 @@ describe('S3 Workbench credential rotation', () => {
 			})
 			await expect(
 				host
-					.require(VaultSeeder)
+					.require(S3Plugin)
 					.ctx.vault!.kv({ namespace: REFERENCE.namespace })
-					.get(REFERENCE.key),
+					.get(REFERENCE.key)
+					.then((snapshot) => snapshot.value),
 			).resolves.toEqual({
 				accessKeyId: 'old-access-key',
 				secretAccessKey: 'old-secret-key',

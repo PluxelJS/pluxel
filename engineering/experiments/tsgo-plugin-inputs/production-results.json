@@ -1,0 +1,21 @@
+{
+	"version": "Version 7.0.2",
+	"typecheck": "passed (strict, skipLibCheck=false; 10 @ts-expect-error checks)",
+	"publicDeclarations": [
+		"<repository>/packages/core/dist/index.d.mts",
+		"<repository>/packages/host/dist/index.d.mts"
+	],
+	"lsp": {
+		"config-completion": ["mode", "payload", "transport", "labels", "options"],
+		"payload-completion": ["raw"],
+		"vault-completion": ["credentials"],
+		"credential-completion": ["token"],
+		"file-completion": ["credentials"],
+		"diagnostics": [
+			{
+				"code": 2353,
+				"message": "Object literal may only specify known properties, and 'wrongKey' does not exist in type '{ readonly credentials?: InputMapping<{ token: string; }> | undefined; }'."
+			}
+		]
+	}
+}

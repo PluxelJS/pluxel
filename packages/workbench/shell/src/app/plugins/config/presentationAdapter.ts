@@ -34,7 +34,7 @@ function editableValue(
 	if (node.kind !== 'object') return { editable: true, value: candidate }
 	const candidateRecord = plainRecord(candidate)
 	const currentRecord = plainRecord(current)
-	const output: Record<string, unknown> = { ...currentRecord }
+	const output: Record<string, unknown> = Object.create(null)
 	let editable = false
 	for (const child of node.fields) {
 		if (!child.name) continue
@@ -50,4 +50,38 @@ function plainRecord(input: unknown): Record<string, unknown> {
 	return input && typeof input === 'object' && !Array.isArray(input)
 		? (input as Record<string, unknown>)
 		: Object.create(null)
+}
+
+/** Mark only controlled paths readonly; object siblings remain independently editable. */
+export function applyConfigSources(
+	fields: readonly FieldNode[],
+	sources: readonly import('@pluxel/host').HostConfigSource[],
+	parent: readonly string[] = [],
+): FieldNode[] {
+	return fields.map((field) => {
+		const path = field.name ? [...parent, field.name] : parent
+		const source = sources.find(
+			(item) =>
+				item.readonly &&
+				(contains(item.path, path) || (field.kind !== 'object' && contains(path, item.path))),
+		)
+		const meta = source
+			? {
+					...field.meta,
+					readOnly: true,
+					description: [
+						field.meta.description,
+						source.kind === 'env' ? `由环境变量 ${source.name ?? ''} 控制，只读` : '此配置来源只读',
+					]
+						.filter(Boolean)
+						.join('。'),
+				}
+			: field.meta
+		return field.kind === 'object'
+			? { ...field, meta, fields: applyConfigSources(field.fields, sources, path) }
+			: { ...field, meta }
+	})
+}
+function contains(parent: readonly string[], child: readonly string[]): boolean {
+	return parent.length <= child.length && parent.every((key, index) => key === child[index])
 }

@@ -62,7 +62,7 @@ const pluginExecution = Type.Union([
 		kind: Type.Literal('static-catalog'),
 		artifact: moduleArtifact,
 		update: Type.Union([
-			obj({ kind: Type.Literal('catalog-hmr') }),
+			obj({ kind: Type.Literal('host-reload') }),
 			obj({ kind: Type.Literal('manual') }),
 		]),
 	}),

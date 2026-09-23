@@ -1,3 +1,10 @@
+import { validateInputBindingCandidates } from './input-bindings'
+import {
+	HostVaultBindings,
+	type HostVaultBindingRecord,
+	type HostEnvironmentBinding,
+	type HostFileBinding,
+} from './bindings'
 import { readHostCatalogProvenance } from './catalog-provenance'
 import { readHostPluginStatusOverview, type HostPluginStatusOverview } from './status'
 import { ensureFork, removeFork, type ForkEnsureResult, type ForkRemoveResult } from './forks'
@@ -73,19 +80,19 @@ type HostBaseOptions<TServices extends readonly HostService[] = readonly HostSer
 	state?: HostStateStoreOptions
 	/** Plugin config seeds and optional borrowed document storage. Omitted means in-memory config. */
 	configRecords?: HostConfigStoreOptions
+	/** Resolved deployment records installed before Plugin admission. */
+	vaultBindings?: readonly HostVaultBindingRecord[]
 }>
 
 export type HostRuntimeOptions = Omit<HostBaseOptions, 'plugins'>
-/** Fixed catalog and sources; runtime configuration resolves once for each fresh Host. */
-export type HostApplication = HostBaseOptions &
+/** Complete configuration returned by an application factory for one fresh Host. */
+export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 	Readonly<{
 		name?: string
-		/** Decode fixed Plugin config inputs from startup environment before loading stored records. */
-		configEnvironmentBootstrap?: readonly import('./config-environment').ConfigEnvironmentBinding[]
+		/** Explicit config overlays and complete read-only Vault records. */
+		envBindings?: readonly HostEnvironmentBinding[]
+		fileBindings?: readonly HostFileBinding[]
 		sources?: readonly PluginSource[]
-		configure?(
-			startup: import('./application').HostStartupContext,
-		): HostRuntimeOptions | Promise<HostRuntimeOptions>
 		prepare?(input: {
 			host: PluginHost
 			startup: import('./application').HostStartupContext
@@ -153,6 +160,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 	const initialConfig = coercePluginConfigRecords(options.configRecords?.initial ?? [])
 	const fixed = [...options.plugins]
 	catalog(1, fixed) // Admit explicit definitions before creating any root resources.
+	await validateInputBindingCandidates(fixed, options)
 	const services = planHostServices(options.services ?? [])
 	const shape = createCoreContextHost({
 		...options.config,
@@ -174,6 +182,8 @@ export async function createHost<const TServices extends readonly HostService[] 
 		await Promise.all([state.ready, requireConfigService(ctx).ready])
 		installPluginHostCoordinator(ctx, { state })
 		await prepareHostServices(ctx, services)
+		if (options.vaultBindings?.length)
+			await ctx.require(HostVaultBindings).install(options.vaultBindings)
 		return createPreparedHost(options, fixed, ctx) as PluginHost<TServices>
 	} catch (error) {
 		const failures: unknown[] = [error]
@@ -234,6 +244,7 @@ function createPreparedHost(
 		if (change.type === 'unlink') next.delete(change.path)
 		else next.set(change.path, collectPluginModuleExports(await options.loadModule!(change.path)))
 		if (closing) return
+		await validateInputBindingCandidates(combined(next), options)
 		await coordinator.updateCatalog(catalog(++revision, combined(next), ctx))
 		modules = next
 	}
@@ -259,6 +270,7 @@ function createPreparedHost(
 					modules.set(path, collectPluginModuleExports(await options.loadModule(path)))
 			}
 			assertOpen()
+			await validateInputBindingCandidates(combined(modules), options)
 			return coordinator.reconcileStartup(catalog(++revision, combined(modules), ctx))
 		})())
 	}
@@ -272,6 +284,7 @@ function createPreparedHost(
 		const next = [...plugins]
 		const task = sourceTail.then(async () => {
 			assertOpen()
+			await validateInputBindingCandidates(combined(modules, next), options)
 			const report = await coordinator.update({
 				catalog: catalog(++revision, combined(modules, next), ctx),
 				reason: 'catalog-update',

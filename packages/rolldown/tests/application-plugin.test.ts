@@ -54,7 +54,7 @@ describe('tsdown application plugin', () => {
 	})
 })
 
-it('freezes a Host-only application without evaluating configure and runs fresh configuration outside the workspace', async () => {
+it('freezes a Host-only application without evaluating its async factory and runs fresh configuration outside the workspace', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-host-application-'))
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
@@ -71,16 +71,13 @@ it('freezes a Host-only application without evaluating configure and runs fresh 
 		await writeFile(
 			join(root, 'app.ts'),
 			`
-import { defineHostService } from '@pluxel/host';
+import { defineConfig, defineHostService } from '@pluxel/host';
 import { defineContextCapability, installRootCapability } from '@pluxel/core/host';
 const Selected = defineContextCapability('Selected');
-export default {
- plugins: [],
- configure({env}) {
-  if (env.APPLICATION_STAGE !== 'run') throw new Error('CONFIGURE_EXECUTED_DURING_BUILD');
-  return { services: [defineHostService({name:'Selected',capabilities:[installRootCapability(Selected,{create:()=>env.APPLICATION_VALUE})],prepare({effects}) { process.stdout.write('SERVICE_READY:'+env.APPLICATION_VALUE+'\\n'); effects.defer(()=>{process.stdout.write('SERVICE_CLOSED\\n')}) }})] };
- }
-};`,
+export default defineConfig(async ({env}) => {
+  if (env.APPLICATION_STAGE !== 'run') throw new Error('FACTORY_EXECUTED_DURING_BUILD');
+  return { plugins: [], services: [defineHostService({name:'Selected',capabilities:[installRootCapability(Selected,{create:()=>env.APPLICATION_VALUE})],prepare({effects}) { process.stdout.write('SERVICE_READY:'+env.APPLICATION_VALUE+'\\n'); effects.defer(()=>{process.stdout.write('SERVICE_CLOSED\\n')}) }})] };
+});`,
 		)
 		const script = join(root, 'build.mts')
 		await writeFile(

@@ -13,6 +13,7 @@ import { BasePlugin, Plugin, PluginPart } from '@pluxel/core/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as v from 'valibot'
 import {
+	pluginConfigGet,
 	pluginConfigPatch,
 	pluginConfigPatchField,
 } from '../../../src/management/api/usecases/pluginConfig.ts'
@@ -754,7 +755,7 @@ describe('ConfigService persistence', () => {
 			ok: false,
 			code: 'persistence_failed',
 			state: 'unknown',
-			config: { value: 'desired' },
+			config: {},
 		})
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
@@ -791,3 +792,30 @@ function deferred<T>() {
 	})
 	return { promise, resolve, reject }
 }
+
+it('rejects same-value and parent field writes to an environment-controlled config', async () => {
+	const owner = pluginNodeAddressOf(ConfigOwner)
+	const host = await runtimeHost({
+		configRecords: {
+			overlays: [
+				{
+					owner,
+					config: { value: 'env' },
+					sources: [{ path: ['value'], kind: 'env', name: 'CONFIG_VALUE' }],
+				},
+			],
+		},
+	})
+	host.add(ConfigOwner)
+	await host.commit()
+	await expect(pluginConfigGet(host.ctx, owner)).resolves.toMatchObject({
+		ok: true,
+		sources: [{ path: ['value'], kind: 'env', readonly: true, name: 'CONFIG_VALUE' }],
+	})
+	await expect(
+		pluginConfigPatchField(host.ctx, owner, { fieldPath: 'value', value: 'env' }),
+	).resolves.toMatchObject({ ok: false, code: 'mutation_rejected' })
+	await expect(
+		pluginConfigPatchField(host.ctx, owner, { fieldPath: 'value.child', value: 'changed' }),
+	).resolves.toMatchObject({ ok: false, code: 'mutation_rejected' })
+})

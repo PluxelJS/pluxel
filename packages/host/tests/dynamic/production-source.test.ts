@@ -33,16 +33,14 @@ it('starts the initial dynamic catalog and accepts fresh built entries and withd
 	try {
 		await writeFile(join(root, 'initial.mjs'), builtModule('initial'))
 		runtime = await runHostApplication(
-			{
+			() => ({
 				name: 'production-source',
 				plugins: [],
 				sources: [dynamicSource({ kind: 'directory', path: root, include: ['*.mjs'] })],
-				configure: () => ({
-					state: {
-						initial: { autoStart: [address('initial'), address('added')] },
-					},
-				}),
-			},
+				state: {
+					initial: { autoStart: [address('initial'), address('added')] },
+				},
+			}),
 			{ startup: { root, mode: 'production', env: {}, bindings: {} } },
 		)
 		expect(requirePluginService(runtime.ctx).isRunning(address('initial'))).toBe(true)
@@ -64,7 +62,7 @@ it('drains the host after startup rejection even when a source fails to close', 
 	const cleanup: string[] = []
 	await expect(
 		runHostApplication(
-			{
+			() => ({
 				name: 'failed-production-source',
 				plugins: [],
 				sources: [
@@ -81,15 +79,13 @@ it('drains the host after startup rejection even when a source fails to close', 
 						},
 					},
 				],
-				configure: () => ({
-					state: { mode: 'memory' },
-				}),
+				state: { mode: 'memory' },
 				prepare({ host }) {
 					host.ctx.effects.defer(() => {
 						cleanup.push('host')
 					})
 				},
-			},
+			}),
 			{ startup: { root: process.cwd(), mode: 'production', env: {}, bindings: {} } },
 		),
 	).rejects.toBeInstanceOf(AggregateError)

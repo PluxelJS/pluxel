@@ -7,8 +7,8 @@ import {
 	createHost,
 	resolveHostApplication,
 	prepareHostApplication,
-	assertHostApplication,
-	type HostApplication,
+	type HostApplicationFactory,
+	type ResolvedHostApplication,
 	type PluginHost,
 	type PluginApplyReport,
 } from '@pluxel/host'
@@ -53,11 +53,11 @@ import {
 } from './attachments'
 
 export type HostViteOptions = Readonly<{
-	/** Application module default-exporting a HostApplication. Relative to Vite root. */
+	/** Application module default-exporting defineConfig(factory). Relative to Vite root. */
 	entry: string
 	/** Enable the local TypeScript console. @default false */
 	devConsole?: boolean
-	/** Shallow immutable startup bindings shared by configure/prepare; omitted means an empty record. */
+	/** Shallow immutable startup bindings shared by the application factory and prepare; omitted means an empty record. */
 	bindings?: Readonly<Record<string, unknown>>
 }>
 
@@ -82,7 +82,9 @@ export function host(options: HostViteOptions): PluginOption[] {
 	let entry: string
 	let sources: ReturnType<typeof createHostSourceEvaluator>
 	let active: PluginHost | undefined
-	let application: HostApplication | undefined
+	let application: ResolvedHostApplication | undefined
+	let applicationFactory: HostApplicationFactory | undefined
+	let fixedApplication: ResolvedHostApplication | undefined
 	let provenance = new Map<PluginConstructor, PluginCatalogProvenance>()
 	let files = new Set<string>()
 	let acceptedCatalog: HostDevelopmentCatalog | undefined
@@ -102,22 +104,16 @@ export function host(options: HostViteOptions): PluginOption[] {
 		diagnostics.error('Host development update failed', { error })
 	}
 	const create = async (
-		input: HostApplication,
+		declaration: ResolvedHostApplication,
 		facts: ReadonlyMap<PluginConstructor, PluginCatalogProvenance>,
 		catalog: HostDevelopmentCatalog,
 	): Promise<PluginHost> => {
-		const startup = {
-			root: server.config.root,
-			mode: 'development' as const,
-			env: process.env,
-			bindings,
-		}
-		const declaration = await resolveHostApplication(input, startup)
 		const instance = await createHost({
 			plugins: declaration.plugins,
 			config: declaration.config,
 			state: declaration.state,
 			configRecords: declaration.configRecords,
+			vaultBindings: declaration.vaultBindings,
 			services: declaration.services,
 		})
 		try {
@@ -131,7 +127,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 				instance,
 				await attachHostDevelopmentPlugins(instance, server, pipeline.semantics, catalog),
 			)
-			await prepareHostApplication(declaration, instance, startup)
+			await prepareHostApplication(declaration, instance)
 			epochs.set(instance, randomUUID())
 			return instance
 		} catch (error) {
@@ -157,13 +153,15 @@ export function host(options: HostViteOptions): PluginOption[] {
 			for (const file of invalidation.modules) invalidateHostModule(server, file)
 		}
 		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
-		let sourceCandidate: HostSourceCandidate<HostApplication> | undefined
+		let sourceCandidate: HostSourceCandidate<ResolvedHostApplication> | undefined
 		let nextProvenance = provenance
 		let nextCatalog: HostDevelopmentCatalog | undefined
 		let accepted = false
 		let restored = false
 		let replacement = false
-		let compensation: HostApplication | undefined
+		let compensation: ResolvedHostApplication | undefined
+		let nextFactory: HostApplicationFactory | undefined
+		let nextFixed: ResolvedHostApplication | undefined
 		let lifecycle: PluginApplyReport | undefined
 		let updateError: RuntimeUpdateError | null = null
 		const started = performance.now()
@@ -187,8 +185,21 @@ export function host(options: HostViteOptions): PluginOption[] {
 		try {
 			await candidate.run(async () => {
 				const namespace = await importHostModule<Record<string, unknown>>(server, entry)
-				const declared = namespace.default
-				assertHostApplication(declared)
+				if (typeof namespace.default !== 'function')
+					throw new TypeError('[host-dev] Application must default-export defineConfig(factory)')
+				nextFactory = namespace.default as HostApplicationFactory
+				// Source-only changes reuse this Host's startup snapshot and fixed assembly.
+				// A re-evaluated application factory is a new assembly, including its closures.
+				const declared =
+					active && nextFactory === applicationFactory && fixedApplication
+						? fixedApplication
+						: await resolveHostApplication(nextFactory, {
+								root: server.config.root,
+								mode: 'development',
+								env: process.env,
+								bindings,
+							})
+				nextFixed = declared
 				sourceCandidate = await sources.evaluate({
 					application: declared,
 					entryFiles: collectHostImportFiles(server, entry),
@@ -209,7 +220,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 							),
 						}
 						const execution: PluginExecutionSnapshot = fixed.has(plugin)
-							? { kind: 'static-catalog', artifact, update: { kind: 'catalog-hmr' } }
+							? { kind: 'static-catalog', artifact, update: { kind: 'host-reload' } }
 							: artifact.kind === 'source-module'
 								? {
 										kind: 'dynamic-entry',
@@ -224,19 +235,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 						return [plugin, { execution }]
 					}),
 				)
-				const catalogChanged =
-					!application ||
-					application.plugins.length !== next.plugins.length ||
-					application.plugins.some((plugin, index) => plugin !== next.plugins[index])
 				const replace =
-					!active ||
-					sourceCandidate.declarationsChanged ||
-					!sameServices(application?.services, next.services) ||
-					changed?.file === entry ||
-					(!catalogChanged &&
-						changed &&
-						!sourceCandidate.sourceModules.has(changed.file) &&
-						!sourceCandidate.sourceFiles.has(changed.file))
+					!active || sourceCandidate.declarationsChanged || nextFactory !== applicationFactory
 				if (replace) {
 					replacement = true
 					recentUpdates.updatePhase('application-reload')
@@ -275,6 +275,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 					}
 				}
 				application = next
+				applicationFactory = nextFactory
+				fixedApplication = nextFixed
 				provenance = nextProvenance
 				acceptedCatalog = nextCatalog
 				files = sourceCandidate.files
@@ -285,6 +287,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 			try {
 				if (accepted && sourceCandidate) {
 					application = sourceCandidate.application
+					applicationFactory = nextFactory
+					fixedApplication = nextFixed
 					provenance = nextProvenance
 					acceptedCatalog = nextCatalog
 					files = sourceCandidate.files
@@ -304,10 +308,17 @@ export function host(options: HostViteOptions): PluginOption[] {
 			if (!accepted && compensation && !closing) {
 				let restoredHost: PluginHost | undefined
 				try {
-					restoredHost = await create(compensation, provenance, acceptedCatalog!)
+					const restoredFixed = await resolveHostApplication(
+						applicationFactory!,
+						compensation.startup,
+					)
+					const restoredApplication = { ...restoredFixed, plugins: compensation.plugins }
+					restoredHost = await create(restoredApplication, provenance, acceptedCatalog!)
 					if (closing) throw new HostDevelopmentClosedError()
 					lifecycle = await restoredHost.start()
 					active = restoredHost
+					application = restoredApplication
+					fixedApplication = restoredFixed
 					restored = true
 				} catch (restoreError) {
 					const restoreFailure = await closeFailedHost(restoredHost, restoreError)
@@ -545,17 +556,6 @@ export function host(options: HostViteOptions): PluginOption[] {
 		},
 	}
 	return [hostSingletons(), hostEnvironment(), ...pipeline.plugins, recovery.plugin, lifecycle]
-}
-
-function sameServices(
-	left: HostApplication['services'],
-	right: HostApplication['services'],
-): boolean {
-	const previous = left ?? []
-	const next = right ?? []
-	return (
-		previous.length === next.length && previous.every((service, index) => service === next[index])
-	)
 }
 
 async function closeFailedHost(instance: PluginHost | undefined, error: unknown): Promise<unknown> {

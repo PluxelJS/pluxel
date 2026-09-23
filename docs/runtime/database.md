@@ -217,7 +217,7 @@ Static entry 对部署路径保持唯一 authority，同时供 宿主 persistenc
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { prepareAppDatabase } from '@app/database'
 import { standardServices } from '@pluxel/services'
 
@@ -229,20 +229,18 @@ function storagePaths({ env, deployment }) {
 	}
 }
 
-export default {
-	name: 'application',
-	plugins: [BillingPlugin, AuditPlugin],
-	configure(startup) {
-		return {
-			services: standardServices({ persistence: storagePaths(startup).hostPersistence }),
-		}
-	},
-	async prepare({ host, startup }) {
-		await prepareAppDatabase(host.ctx, {
-			filename: storagePaths(startup).applicationDatabase,
-		})
-	},
-} satisfies HostApplication
+export default defineConfig((startup) => {
+	return {
+		name: 'application',
+		plugins: [BillingPlugin, AuditPlugin],
+		services: standardServices({ persistence: storagePaths(startup).hostPersistence }),
+		async prepare({ host, startup }) {
+			await prepareAppDatabase(host.ctx, {
+				filename: storagePaths(startup).applicationDatabase,
+			})
+		},
+	}
+})
 ```
 
 Plugin 在 `init()` 或之后同步取得已准备实例：

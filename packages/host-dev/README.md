@@ -9,8 +9,8 @@ import { defineConfig } from 'vite'
 export default defineConfig({ plugins: [host({ entry: './app.ts', devConsole: true })] })
 ```
 
-`app.ts` 默认导出 `HostApplication`，通过 `plugins` 声明固定目录，通过可选 `sources` 组合动态来源，在每次启动的 `configure(startup)` 中选择服务和存储配置。
-服务准备完成后才启动插件；服务声明变化会排空并重建整个 Host，创建失败则从上一份应用声明创建补偿宿主。
+`app.ts` 默认导出 `defineConfig(factory)`（来自 `@pluxel/host`）。每次启动向工厂传入 startup，等待其返回完整 plugins、sources、services 与存储配置。
+服务准备完成后才启动插件；工厂 identity 变化（包括固定插件 import 失效）会重新求值并重建整个 Host。工厂求值失败保留旧 Host；服务准备或启动失败则从上次成功工厂与 startup 快照创建补偿宿主。动态来源单独更新且工厂不变时仍提交 catalog HMR。
 源码更新经过同一串行队列；求值失败保留已接受目录，修复后重新提交。关闭时撤回 watcher 并排空已接纳的工作。
 
 安装来源重新发布入口时会刷新包解析元数据及已加载的 ESM 依赖。原生模块和 CommonJS 由 Node 持有；

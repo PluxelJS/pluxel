@@ -132,7 +132,6 @@ interface NamespaceInventoryPanelProps {
 	filteredNamespaces: VaultSnapshot['namespaces']
 	inventory: {
 		blobs: number
-		docs: number
 		kv: number
 		namespaces: number
 	}
@@ -164,7 +163,7 @@ export function NamespaceInventoryPanel({
 							{filteredNamespaces.length} / {totalNamespaces}
 						</Badge>
 						<Badge variant="light" color="gray">
-							{inventory.kv} KV / {inventory.docs} Docs / {inventory.blobs} Blobs
+							{inventory.kv} KV / {inventory.blobs} Blobs
 						</Badge>
 					</Group>
 					<TextInput
@@ -182,7 +181,6 @@ export function NamespaceInventoryPanel({
 								<Table.Tr>
 									<Table.Th>Namespace</Table.Th>
 									<Table.Th>KV</Table.Th>
-									<Table.Th>Docs</Table.Th>
 									<Table.Th>Blobs</Table.Th>
 								</Table.Tr>
 							</Table.Thead>
@@ -196,13 +194,12 @@ export function NamespaceInventoryPanel({
 												</Text>
 											</Table.Td>
 											<Table.Td>{row.kvKeys}</Table.Td>
-											<Table.Td>{row.docDocuments}</Table.Td>
 											<Table.Td>{row.blobs}</Table.Td>
 										</Table.Tr>
 									))
 								) : (
 									<Table.Tr>
-										<Table.Td colSpan={4}>
+										<Table.Td colSpan={3}>
 											<Text size="sm" c="dimmed">
 												无匹配 namespace
 											</Text>

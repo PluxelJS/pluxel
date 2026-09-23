@@ -14,47 +14,49 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 ```ts no-twoslash
 import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host/dynamic'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
-const managedPackagesRoot = resolve(process.cwd(), resolveHostEnv().dataRoot, 'managed-plugins')
 
-export default {
-	name: 'managed-plugins',
-	plugins: [PackageManagerPlugin],
-	sources: [
-		dynamicSource({
-			kind: 'directory',
-			path: resolve(managedPackagesRoot, 'entries'),
-			include: ['*.mjs'],
-		}),
-	],
-	async configure(startup) {
-		return {
-			services: await servicesPreset(startup, {
-				persistence: resolve(resolveHostEnv().dataRoot, 'persistence'),
+export default defineConfig(async (startup) => {
+	const dataRoot = resolve(
+		startup.deployment?.root ?? startup.root,
+		resolveHostEnv(startup.env).dataRoot,
+	)
+	const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
+	return {
+		name: 'managed-plugins',
+		plugins: [PackageManagerPlugin],
+		sources: [
+			dynamicSource({
+				kind: 'directory',
+				path: resolve(managedPackagesRoot, 'entries'),
+				include: ['*.mjs'],
 			}),
-			configRecords: {
-				initial: [
-					{
-						owner: packageManagerNode,
-						config: {
-							rootDir: managedPackagesRoot,
-							ignoreScripts: true,
-							allowBuilds: [],
-							minimumReleaseAgeMinutes: 1_440,
-						},
+		],
+		services: await servicesPreset(startup, {
+			persistence: resolve(dataRoot, 'persistence'),
+		}),
+		configRecords: {
+			initial: [
+				{
+					owner: packageManagerNode,
+					config: {
+						rootDir: managedPackagesRoot,
+						ignoreScripts: true,
+						allowBuilds: [],
+						minimumReleaseAgeMinutes: 1_440,
 					},
-				],
-			},
-			state: { initial: { autoStart: [packageManagerNode] } },
-		}
-	},
-} satisfies HostApplication
+				},
+			],
+		},
+		state: { initial: { autoStart: [packageManagerNode] } },
+	}
+})
 ```
 
 四处配置缺一不可：

@@ -394,6 +394,15 @@ export const WorkbenchEditorGrid = forwardRef<EditorGridHandle, WorkbenchEditorG
 			}
 			handle.restoreLayout({
 				...current,
+				...(current.editorArrangement
+					? {
+							editorArrangement: {
+								...current.editorArrangement,
+								layout,
+								maximizedGroupId: nextMaximizedGroupId,
+							},
+						}
+					: {}),
 				editorLayout: layout,
 				maximizedEditorGroupId: nextMaximizedGroupId,
 			})

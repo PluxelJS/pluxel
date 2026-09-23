@@ -22,6 +22,9 @@ import type {
 } from './coordinator'
 import type { HostStateSnapshot } from './policy'
 import { requirePluginHostCoordinator } from './install'
+import type { HostConfigStore, HostConfigSource } from './config-store'
+import { mergeRecord } from './config-records'
+import { configLeafPaths, changedConfigPaths } from './config-paths'
 
 type ReadonlyConfigValue<T> = T extends object
 	? { readonly [K in keyof T]: ReadonlyConfigValue<T[K]> }
@@ -30,8 +33,12 @@ type ConfigValidationErrors = ReadonlyConfigValue<CoreConfigValidationErrors>
 
 export class ConfigMutationRejectedError extends Error {
 	readonly code = 'config_mutation_rejected' as const
-	constructor(action: string) {
-		super(`[ConfigService] ${action} is disabled in readonly mode.`)
+	constructor(action: string, binding?: { path: readonly string[]; source: string }) {
+		super(
+			binding
+				? `[ConfigService] ${action} is disabled for environment-controlled path ${binding.path.join('.') || '<root>'} (${binding.source}).`
+				: `[ConfigService] ${action} is disabled in readonly mode.`,
+		)
 		this.name = 'ConfigMutationRejectedError'
 	}
 }
@@ -39,9 +46,13 @@ export class ConfigMutationRejectedError extends Error {
 type ConfigSnapshotResult = Readonly<{
 	config: Readonly<Record<string, unknown>>
 	defaults: Readonly<Record<string, unknown>>
+	sources: readonly HostConfigSource[]
 }>
 
-type ConfigValueResult = Readonly<{ config: Readonly<Record<string, unknown>> }>
+type ConfigValueResult = Readonly<{
+	config: Readonly<Record<string, unknown>>
+	sources: readonly HostConfigSource[]
+}>
 
 export type HostPluginConfigResultOk<TReport = PluginApplyReport> =
 	| (ConfigSnapshotResult &
@@ -179,7 +190,7 @@ export function lookupPluginConfig(
 }
 
 function configApplicationState(ctx: Context, owner: PluginNodeAddress) {
-	const configService = requireConfigService(ctx)
+	const configService = requireConfigService(ctx) as HostConfigStore
 	const desiredRevision = configService.getConfigRevision(owner)
 	const appliedRevision = configService.getAppliedConfigRevision(owner)
 	return {
@@ -202,7 +213,7 @@ export async function pluginConfigGet(
 	return coordinator.runExclusive(
 		'plugin-config-read',
 		async (session) => {
-			const configService = requireConfigService(ctx)
+			const configService = requireConfigService(ctx) as HostConfigStore
 			const lookup = configLookup(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
@@ -214,6 +225,7 @@ export async function pluginConfigGet(
 				saved: false,
 				...configApplicationState(ctx, owner),
 				config: plainRecord(configService.getRawConfig(owner)),
+				sources: configService.getConfigSources(owner),
 				defaults: await collectConfigDefaults(lookup.config.schema, {
 					missingObjectDefault: {},
 				}),
@@ -233,15 +245,30 @@ export async function pluginConfigValidate(
 	return coordinator.runExclusive(
 		'plugin-config-read',
 		async (session) => {
-			const configService = requireConfigService(ctx)
+			const configService = requireConfigService(ctx) as HostConfigStore
 			const lookup = configLookup(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
 			)
 			if (lookup.ok === false) return lookup
-			const current = plainRecord(configService.getRawConfig(owner))
-			const candidate = { ...current, ...patch }
+			let candidate: Record<string, unknown>
+			try {
+				configService.assertPathsMutable(owner, configLeafPaths(patch))
+				candidate = configService.composeConfig(
+					owner,
+					mergeRecord(configService.getManagedConfig(owner), patch),
+				)
+			} catch (error) {
+				if (error instanceof ConfigMutationRejectedError)
+					return {
+						ok: false,
+						code: 'mutation_rejected',
+						state: 'unchanged',
+						message: error.message,
+					}
+				throw error
+			}
 			const [defaults, validation] = await Promise.all([
 				collectConfigDefaults(lookup.config.schema, { missingObjectDefault: {} }),
 				validateConfigRecord(lookup.config.schema, candidate),
@@ -261,6 +288,7 @@ export async function pluginConfigValidate(
 				saved: false,
 				...configApplicationState(ctx, owner),
 				config: validation.output,
+				sources: configService.getConfigSources(owner),
 				defaults,
 			}
 		},
@@ -322,21 +350,38 @@ export async function mutatePluginConfig(
 	reason: string,
 	buildCandidate: (current: Record<string, unknown>) => Record<string, unknown>,
 	options?: HostOperationOptions,
+	requestedPaths?: readonly (readonly string[])[],
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	return await coordinator.runExclusive(
 		reason,
 		async (session) => {
-			const configService = requireConfigService(ctx)
+			const configService = requireConfigService(ctx) as HostConfigStore
 			const lookup = configLookup(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
 			)
 			if (lookup.ok === false) return lookup
-			const current = plainRecord(configService.getRawConfig(owner))
+			const current = configService.getManagedConfig(owner)
 			const expectedRevision = configService.getConfigRevision(owner)
-			const candidate = buildCandidate(current)
+			let managed: Record<string, unknown>
+			let paths: readonly (readonly string[])[]
+			try {
+				managed = buildCandidate(current)
+				paths = requestedPaths ?? changedConfigPaths(current, managed)
+				configService.assertPathsMutable(owner, paths)
+			} catch (error) {
+				if (error instanceof ConfigMutationRejectedError)
+					return {
+						ok: false,
+						code: 'mutation_rejected',
+						state: 'unchanged',
+						message: error.message,
+					}
+				throw error
+			}
+			const candidate = configService.composeConfig(owner, managed)
 			const validation = await validateConfigRecord(lookup.config.schema, candidate)
 			if (validation.ok === false) {
 				return {
@@ -349,11 +394,13 @@ export async function mutatePluginConfig(
 			}
 			let staged: ReturnType<typeof configService.stageValidatedConfig>
 			try {
-				staged = configService.stageValidatedConfig({
+				staged = configService.stageManagedConfig({
 					owner,
 					authority: lookup.config,
 					expectedRevision,
 					value: validation.output,
+					managed,
+					paths,
 				})
 			} catch (error) {
 				if (error instanceof ConfigMutationRejectedError) {
@@ -375,6 +422,7 @@ export async function mutatePluginConfig(
 					state: 'unknown',
 					message: errorText(error),
 					config: plainRecord(configService.getRawConfig(owner)),
+					sources: configService.getConfigSources(owner),
 				}
 			}
 			const desired = configService.confirmValidatedConfig(staged)
@@ -386,6 +434,7 @@ export async function mutatePluginConfig(
 				desiredRevision: configService.getConfigRevision(owner),
 				appliedRevision: configService.getAppliedConfigRevision(owner),
 				config: plainRecord(configService.getRawConfig(owner)),
+				sources: configService.getConfigSources(owner),
 			}
 		},
 		options,
@@ -402,11 +451,9 @@ export async function pluginConfigPatch(
 		ctx,
 		owner,
 		'plugin-config-patch',
-		(current) => ({
-			...current,
-			...patch,
-		}),
+		(current) => mergeRecord(current, patch),
 		options,
+		configLeafPaths(patch),
 	)
 }
 
@@ -426,6 +473,7 @@ export async function pluginConfigReset(
 			return candidate
 		},
 		options,
+		keys?.length ? keys.map((key) => [key]) : [[]],
 	)
 }
 

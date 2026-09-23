@@ -1,9 +1,10 @@
+import * as v from 'valibot'
 import type { VaultKvHandle } from '@pluxel/services/vault'
 import { normalizeUsername, parsePasswordRecord, type PasswordRecord } from './password.ts'
 import { parseTotpRecord, type TotpRecord } from './totp.ts'
 
-const ACCOUNT_KEY = 'management-account-v1'
-const OIDC_SECRET_KEY = 'oidc-client-secret-v1'
+export const ACCOUNT_KEY = 'management-account-v1'
+export const OIDC_SECRET_KEY = 'oidc-client-secret-v1'
 
 export type LocalAccountRecord = Readonly<{
 	version: 1
@@ -62,6 +63,45 @@ function parseOidcSecret(value: unknown): string | undefined {
 		: undefined
 }
 
+export const AuthVaultSchema = v.object({
+	[ACCOUNT_KEY]: v.optional(
+		v.pipe(
+			v.object({
+				version: v.literal(1),
+				type: v.literal('local-account'),
+				username: v.string(),
+				normalizedUsername: v.string(),
+				password: v.object({
+					algorithm: v.literal('scrypt'),
+					n: v.number(),
+					r: v.number(),
+					p: v.number(),
+					keyLength: v.number(),
+					salt: v.string(),
+					hash: v.string(),
+				}),
+				totp: v.optional(
+					v.object({
+						algorithm: v.literal('sha1'),
+						digits: v.literal(6),
+						period: v.literal(30),
+						secret: v.string(),
+						lastAcceptedCounter: v.number(),
+					}),
+				),
+			}),
+			v.check((value) => parseAccount(value) !== undefined, 'Invalid local account record'),
+		),
+	),
+	[OIDC_SECRET_KEY]: v.optional(
+		v.object({
+			version: v.literal(1),
+			type: v.literal('oidc-client-secret'),
+			secret: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
+		}),
+	),
+})
+
 export class CredentialStore {
 	private readonly kv?: VaultKvHandle
 
@@ -78,8 +118,26 @@ export class CredentialStore {
 		return this.kv !== undefined
 	}
 
+	async watch(listener: () => Promise<void>): Promise<() => void> {
+		if (!this.kv) return () => {}
+		const subscriptions = await Promise.all([
+			this.kv.watch(ACCOUNT_KEY, listener),
+			this.kv.watch(OIDC_SECRET_KEY, listener),
+		])
+		try {
+			await listener()
+		} catch (error) {
+			for (const subscription of subscriptions) subscription.dispose()
+			throw error
+		}
+		return () => {
+			for (const subscription of subscriptions) subscription.dispose()
+		}
+	}
+
 	async loadAccount(): Promise<{ account?: LocalAccountRecord; invalid: boolean }> {
-		const value = await this.kv?.get(ACCOUNT_KEY)
+		const snapshot = await this.kv?.get(ACCOUNT_KEY)
+		const value = snapshot?.value
 		if (value === undefined) return { invalid: false }
 		const account = parseAccount(value)
 		return account ? { account, invalid: false } : { invalid: true }
@@ -92,7 +150,8 @@ export class CredentialStore {
 	}
 
 	async loadOidcSecret(): Promise<{ secret?: string; invalid: boolean }> {
-		const value = await this.kv?.get(OIDC_SECRET_KEY)
+		const snapshot = await this.kv?.get(OIDC_SECRET_KEY)
+		const value = snapshot?.value
 		if (value === undefined) return { invalid: false }
 		const secret = parseOidcSecret(value)
 		return secret ? { secret, invalid: false } : { invalid: true }

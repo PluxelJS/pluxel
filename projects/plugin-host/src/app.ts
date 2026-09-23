@@ -1,5 +1,5 @@
 import { dynamicSource } from '@pluxel/host/dynamic'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
 import { resolve } from 'pathe'
@@ -13,36 +13,36 @@ import {
 
 export { product }
 
-const dataRoot = resolve(process.cwd(), process.env.PLUXEL_DATA_ROOT ?? '.pluxel')
-const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
-
-export default {
-	name: 'pluxel-architecture-lab',
-	plugins: hostPlugins,
-	sources: [
-		dynamicSource({
-			kind: 'directory',
-			path: resolve(managedPackagesRoot, 'entries'),
-			include: ['*.mjs'],
-		}),
-	],
-	async configure(startup) {
-		const { env } = startup
-		const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
-		return {
-			services: await servicesPreset(startup, {
-				persistence: resolve(dataRoot, 'persistence'),
-				product,
-				workbench: withWorkbench,
+export default defineConfig(async (startup) => {
+	const dataRoot = resolve(
+		startup.deployment?.root ?? startup.root,
+		startup.env.PLUXEL_DATA_ROOT ?? '.pluxel',
+	)
+	const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
+	const { env } = startup
+	const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
+	return {
+		name: 'pluxel-architecture-lab',
+		plugins: hostPlugins,
+		sources: [
+			dynamicSource({
+				kind: 'directory',
+				path: resolve(managedPackagesRoot, 'entries'),
+				include: ['*.mjs'],
 			}),
-			configRecords: {
-				mode: 'memory',
-				initial: [
-					...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
-					{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
-				],
-			},
-			state: { mode: 'memory', initial: createHostRuntimeState() },
-		}
-	},
-} satisfies HostApplication
+		],
+		services: await servicesPreset(startup, {
+			persistence: resolve(dataRoot, 'persistence'),
+			product,
+			workbench: withWorkbench,
+		}),
+		configRecords: {
+			mode: 'memory',
+			initial: [
+				...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
+				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
+			],
+		},
+		state: { mode: 'memory', initial: createHostRuntimeState() },
+	}
+})

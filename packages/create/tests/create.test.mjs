@@ -119,7 +119,7 @@ describe('create-pluxel', () => {
 		assert.match(viteConfig, /vitePreset\(\{ entry, devConsole: true \}\)/)
 		assert.match(
 			await readFile(resolve(generated, 'host/src/app.ts'), 'utf8'),
-			/satisfies HostApplication/,
+			/defineConfig\(async \(startup\) =>/,
 		)
 		await assert.rejects(readFile(resolve(generated, 'host/vite.dynamic.config.ts')), {
 			code: 'ENOENT',

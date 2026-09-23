@@ -20,24 +20,20 @@ pnpm catalog:add -- @pluxel/auth
 ```ts no-twoslash
 import { AuthPlugin } from '@pluxel/auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import type { HostApplication } from '@pluxel/host'
+import { defineConfig } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
-export default {
-	name: 'my-app',
-	plugins: [AuthPlugin],
-	async configure(startup) {
-		return {
-			services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
-			state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
-			configRecords: {
-				initial: [
-					{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } },
-				],
-			},
-		}
-	},
-} satisfies HostApplication
+export default defineConfig(async (startup) => {
+	return {
+		name: 'my-app',
+		plugins: [AuthPlugin],
+		services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+		state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
+		configRecords: {
+			initial: [{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } }],
+		},
+	}
+})
 ```
 
 首次启动后，在本机 Workbench 进入 Auth 的 setup 页面完成账号配置；远程服务器通过 SSH tunnel 打开 loopback Workbench。完成后从远端打开 Workbench 验证登录，退出后重新加载应再次要求认证。密码、TOTP 和 confidential OIDC 的密钥依赖 [Vault](../runtime/vault.md)；public OIDC 只需下节配置。

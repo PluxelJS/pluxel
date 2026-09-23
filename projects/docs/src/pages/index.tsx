@@ -28,12 +28,12 @@ const patterns = [
 
 const hosts = [
 	{
-		code: `import type { HostApplication } from '@pluxel/host'
+		code: `import { defineConfig } from '@pluxel/host'
 import { OrdersPlugin } from '@app/orders'
 
-export default {
+export default defineConfig(() => ({
   plugins: [OrdersPlugin],
-} satisfies HostApplication`,
+}))`,
 		description:
 			'Plugin 清单随应用构建，开发期支持 HMR。目录表示代码可用，冷启动策略通过 state.initial.autoStart 显式选择。',
 		icon: ServerCog,
@@ -41,15 +41,16 @@ export default {
 		title: '固定插件目录',
 	},
 	{
-		code: `import type { HostApplication } from '@pluxel/host'
+		code: `import { defineConfig } from '@pluxel/host'
 import { dynamicSource } from '@pluxel/host/dynamic'
 
-export default {
+export default defineConfig(() => ({
+  plugins: [],
   sources: [dynamicSource({
     kind: 'directory', path: './plugins',
     include: ['*.mjs'],
   })],
-} satisfies HostApplication`,
+}))`,
 		description:
 			'开发期新增、更新、删除文件入口，变化提交到同一 Host catalog；是否启动仍由运行策略决定。',
 		icon: CloudCog,
@@ -62,18 +63,15 @@ const toolchain = [
 	{
 		title: '安装服务',
 		file: 'src/app.ts',
-		code: `import type { HostApplication } from '@pluxel/host'
+		code: `import { defineConfig } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
-export default {
-  async configure(startup) {
-    return {
-      services: await servicesPreset(startup, {
-        persistence: { mode: 'memory' },
-      }),
-    }
-  },
-} satisfies HostApplication`,
+export default defineConfig(async (startup) => ({
+  plugins: [],
+  services: await servicesPreset(startup, {
+    persistence: { mode: 'memory' },
+  }),
+}))`,
 	},
 	{
 		title: '开发与热更新',
