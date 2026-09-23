@@ -1,4 +1,4 @@
-import { BasePlugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
@@ -14,6 +14,7 @@ export const ExampleConfig = v.object({
 	options: v.record(v.string(), v.number()),
 })
 export const ExampleCredentials = v.object({ credentials: v.object({ token: v.string() }) })
+@Plugin()
 export class ExamplePlugin extends BasePlugin {
 	private readonly settings = this.configs.use(ExampleConfig)
 	readPayloadLength(): number {
@@ -49,28 +50,30 @@ const invalidOutput: StandardSchemaV1.InferOutput<typeof ExampleConfig> = {
 void invalidInput
 void invalidOutput
 
-const configEnvironment = envBinding(ExamplePlugin, {
-	config: {
-		schema: ExampleConfig,
-		mapping: {
-			payload: { raw: 'RAW' },
-			transport: { endpoint: 'ENDPOINT' },
-			labels: 'LABELS',
-			options: 'OPTIONS',
-		},
-	},
-})
-const vaultEnvironment = envBinding(ExamplePlugin, {
-	vault: { schema: ExampleCredentials, mapping: { credentials: { token: 'TOKEN' } } },
-})
-const files = fileBinding(ExamplePlugin, {
-	config: { schema: ExampleConfig, path: './config.json' },
-	vault: { schema: ExampleCredentials, paths: { credentials: './credential.json' } },
-})
 export default defineConfig(async () => ({
 	plugins: [ExamplePlugin],
-	envBindings: [configEnvironment, vaultEnvironment],
-	fileBindings: [files],
+	envBindings: [
+		envBinding(ExamplePlugin, {
+			config: {
+				schema: ExampleConfig,
+				mapping: {
+					payload: { raw: 'RAW' },
+					transport: { endpoint: 'ENDPOINT' },
+					labels: 'LABELS',
+					options: 'OPTIONS',
+				},
+			},
+		}),
+		envBinding(ExamplePlugin, {
+			vault: { schema: ExampleCredentials, mapping: { credentials: { token: 'TOKEN' } } },
+		}),
+	],
+	fileBindings: [
+		fileBinding(ExamplePlugin, {
+			config: { schema: ExampleConfig, path: './config.json' },
+			vault: { schema: ExampleCredentials, paths: { credentials: './credential.json' } },
+		}),
+	],
 }))
 
 // @ts-expect-error Unknown configuration property cannot widen the schema.

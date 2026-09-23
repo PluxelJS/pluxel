@@ -1,4 +1,5 @@
 import type { PluginConstructor } from '@pluxel/core'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
 import { defineConfig } from './application'
 import { envBinding, fileBinding } from './bindings'
@@ -15,6 +16,22 @@ const config = v.object({
 })
 const vault = v.object({ credentials: v.object({ token: v.string(), expires: v.number() }) })
 declare const Plugin: PluginConstructor
+declare const nonValibotSchema: StandardSchemaV1
+
+envBinding(Plugin, {
+	config: {
+		// @ts-expect-error Host input projection requires a Valibot schema.
+		schema: nonValibotSchema,
+		mapping: 'CONFIG',
+	},
+})
+fileBinding(Plugin, {
+	config: {
+		// @ts-expect-error File bindings also require a Valibot schema.
+		schema: nonValibotSchema,
+		path: 'config.json',
+	},
+})
 
 defineConfig(() => ({
 	plugins: [Plugin],

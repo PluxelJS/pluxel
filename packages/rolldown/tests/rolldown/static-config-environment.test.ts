@@ -1,5 +1,6 @@
 import { dirname, resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
 import { createConfigSchemaSourceResolver } from '../../src/rolldown/plugins/configSourcePlugin'
@@ -76,6 +77,20 @@ async function parseFixture(code: string, requireStaticPlugins = false) {
 }
 
 describe('static config environment declaration lowering', () => {
+	it('accepts the public Host consumer fixture as a static application entry', async () => {
+		const consumer = await readFile(
+			resolve(
+				dirname(fileURLToPath(import.meta.url)),
+				'../../../../engineering/experiments/tsgo-plugin-inputs/production-consumer.ts',
+			),
+			'utf8',
+		)
+		const result = await parseFixture(consumer, true)
+		expect(result.targets).toHaveLength(5)
+		expect(result.environmentExample).toContain('RAW')
+		expect(result.environmentExample).toContain('TOKEN')
+	})
+
 	it('requires a direct factory and rejects hidden fields', async () => {
 		await expect(parseFixture(`export default { plugins: [] }`)).rejects.toThrow(
 			'must default-export defineConfig(factory)',

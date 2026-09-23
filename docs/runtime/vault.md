@@ -6,6 +6,7 @@ description: 选择 Vault 后端，绑定部署凭据，并读写带版本的私
 # Vault：凭据与结构化记录
 
 Vault 存放 API key、账号 token 和需要加密的业务状态。普通运行设置留在 Plugin config，通过账号 ID 引用 Vault 记录；插件只读取自己的记录，不读取整个环境。
+插件自行读写私有 KV 时不必声明 Vault 根 schema；只有宿主从环境变量或 JSON 文件安装部署凭据时才需要它。
 
 ## 选择后端
 
@@ -22,7 +23,28 @@ services: [
 
 只有部署凭据时选择 `vault({ backend: 'bindings' })`。它不依赖 Persistence，不创建密钥或磁盘文件；没有绑定的记录不存在，所有写入拒绝。`servicesPreset(startup, options)` 显式从该 startup 环境读取部署解锁身份，`options.vault` 可以覆盖后端和迁移配置。直接 `vault()` 不读取进程环境。
 
+## 部署凭据
+
 宿主在应用工厂中通过 `envBindings` 或 `fileBindings` 用 `envBinding` / `fileBinding` 把导出的凭据根 schema 绑定到输入。Host 先完成 schema 校验、准备服务，再安装绑定，最后启动插件。见[应用入口](../getting-started/host-setup.md)。
+
+```ts no-twoslash
+import { defineConfig, envBinding } from '@pluxel/host'
+import * as v from 'valibot'
+import { MyPlugin } from './MyPlugin.ts'
+
+const Credentials = v.object({ primary: v.object({ token: v.string() }) })
+
+export default defineConfig(() => ({
+	plugins: [MyPlugin],
+	envBindings: [
+		envBinding(MyPlugin, {
+			vault: { schema: Credentials, mapping: { primary: { token: 'APP_TOKEN' } } },
+		}),
+	],
+}))
+```
+
+若凭据由挂载的 JSON 文件提供，则在同一个应用入口中用 `fileBindings: [fileBinding(MyPlugin, { vault: { schema: Credentials, paths: { primary: './credentials.json' } } })]` 替换上面的 `envBindings`。同一记录只能绑定一个来源。
 
 显式绑定的 env/file 是整条只读记录，绝不与已存 KV 拼接。缺失输入不会偷偷回退到旧凭据；移除绑定后才重新读取持久记录。部署输入不写入加密 snapshot。
 
@@ -83,7 +105,17 @@ await applyCredential(subscription.snapshot)
 
 默认 namespace 来自 Plugin node identity。`namespace('accounts')` 或 `kv({ namespace: 'accounts' })` 是该 owner 的子空间，不能借另一个插件的名称访问它。Part 与所属 Plugin 使用同一 owner；fork 各自隔离。Root 是受信任管理代码，能够按完整持久 namespace 名读取。
 
-结构化 KV 是唯一记录模型。账号用 `account/<id>` 等业务 key 组织，不需要 collection。已有 blob 消费者继续使用 `vault.blobs().open(name)` 的加密字节或文本 IO；blob 是独立文件，不参与 KV batch。
+结构化 KV 是唯一记录模型。账号用 `account/<id>` 等业务 key 组织，不需要 collection。
+
+小型二进制仍使用加密 blob；例如证书、密钥文件或少量缓存字节：
+
+```ts no-twoslash
+const blob = this.ctx.require(Vault).blobs().open('client-certificate')
+await blob.writeBytes(certificateBytes)
+const bytes = await blob.readBytes() // 不存在时为 undefined
+```
+
+`readText()` / `writeText()` 使用同一 blob 入口。blob 是独立文件，不参与 KV batch，也没有 KV revision 或 watch；读写会处理完整字节数组，大对象和流式文件应交给对象存储。
 
 ## 迁移、密钥与备份
 

@@ -85,4 +85,7 @@ transformed schema inputs, valid environment/file bindings, and ten negative ass
 invalid config fields, transformed input paths, array/dynamic-record projection, Vault keys,
 Vault fields, Vault root shape, and file record keys. The real TS7 LSP checks root/nested config
 and Vault completion, file record key completion, and an unsuppressed invalid-key diagnostic.
+Its application entry uses direct `envBinding(...)` calls inside the `envBindings` array, matching
+the static build parser's accepted source shape. The Rolldown static declaration test parses this
+same fixture and checks the resulting environment names.
 This validates the production declarations in addition to the standalone experiment above.

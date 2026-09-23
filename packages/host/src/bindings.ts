@@ -1,6 +1,7 @@
 import type { PluginConstructor, PluginNodeAddress } from '@pluxel/core'
 import { defineContextCapability } from '@pluxel/core/host'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
+import type { Schema } from 'valibot-form'
 
 /** Mapping leaves are explicit environment variable names, never values or defaults. */
 export type InputMapping<T = unknown> =
@@ -22,11 +23,11 @@ export type VaultInputMapping<T> = [NonNullable<T>] extends [readonly unknown[]]
 		? { readonly [K in keyof NonNullable<T>]?: InputMapping<NonNullable<T>[K]> }
 		: never
 
-type SchemaMapping<S extends StandardSchemaV1> = Readonly<{
+type SchemaMapping<S extends Schema> = Readonly<{
 	schema: S
 	mapping: InputMapping<StandardSchemaV1.InferInput<S>>
 }>
-type VaultSchemaMapping<S extends StandardSchemaV1> = Readonly<{
+type VaultSchemaMapping<S extends Schema> = Readonly<{
 	schema: S
 	mapping: VaultInputMapping<StandardSchemaV1.InferInput<S>>
 }>
@@ -35,28 +36,24 @@ type VaultSchemaMapping<S extends StandardSchemaV1> = Readonly<{
 export type HostEnvironmentBinding<P extends PluginConstructor = PluginConstructor> = Readonly<{
 	plugin: P
 	namespace?: string
-	config?: Readonly<{ schema: StandardSchemaV1; mapping: InputMapping }>
+	config?: Readonly<{ schema: Schema; mapping: InputMapping }>
 	vault?: Readonly<{
-		schema: StandardSchemaV1
+		schema: Schema
 		mapping: Readonly<Record<string, InputMapping | undefined>>
 	}>
 }>
 export type HostFileBinding<P extends PluginConstructor = PluginConstructor> = Readonly<{
 	plugin: P
 	namespace?: string
-	config?: Readonly<{ schema: StandardSchemaV1; path: string }>
+	config?: Readonly<{ schema: Schema; path: string }>
 	vault?: Readonly<{
-		schema: StandardSchemaV1
+		schema: Schema
 		paths: Readonly<Record<string, string | undefined>>
 	}>
 }>
 
 /** Select environment inputs from one imported config schema and one deployment Vault root schema. */
-export function envBinding<
-	P extends PluginConstructor,
-	C extends StandardSchemaV1,
-	V extends StandardSchemaV1,
->(
+export function envBinding<P extends PluginConstructor, C extends Schema, V extends Schema>(
 	plugin: P,
 	inputs: Readonly<{
 		namespace?: string
@@ -68,11 +65,7 @@ export function envBinding<
 }
 
 /** JSON files provide config base values and complete Vault records. */
-export function fileBinding<
-	P extends PluginConstructor,
-	C extends StandardSchemaV1,
-	V extends StandardSchemaV1,
->(
+export function fileBinding<P extends PluginConstructor, C extends Schema, V extends Schema>(
 	plugin: P,
 	inputs: Readonly<{
 		namespace?: string

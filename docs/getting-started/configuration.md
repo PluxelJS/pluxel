@@ -321,7 +321,9 @@ Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织�
 
 ## 绑定部署环境与 JSON 文件
 
-Static application 可以把部署环境变量绑定到固定 Plugin 的 raw config path。每次 Host 启动从本次 `startup.env` 生成覆盖层，优先于保存值；该层不写入配置存储。
+大多数插件只需 `configs.use(schema)`，通过 Workbench 或 Host 配置 API 设置值。只有部署系统负责提供固定值时，才在应用入口加绑定：环境变量使用 `envBinding`，挂载的 JSON 文件使用 `fileBinding`。两者都由 Host 在启动时读取。
+
+环境绑定从本次 `startup.env` 生成覆盖层，优先于保存值；该层不写入配置存储。
 
 Plugin 需要导出传给 `configs.use()` 的同一个 schema：
 
@@ -367,7 +369,7 @@ export default defineConfig(() => ({
 }))
 ```
 
-插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineConfig` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
+插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 Valibot schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。`envBinding` 和 `fileBinding` 都要求 Valibot schema，普通 Standard Schema 实现不能用于这两个绑定。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineConfig` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
 
 Mapping 从 schema input 推导：object 可展开，也可绑定一个 JSON 变量；array、tuple 与动态 record 使用完整 JSON。环境名称匹配 `[A-Z_][A-Z0-9_]*`。string 保留原文，number 要求有限 JSON number，boolean 只接受 `true`/`false`，复合类型使用 JSON。config 环境缺失不生成覆盖，空字符串和 `null` 按 schema 校验；诊断不包含输入值。
 
@@ -383,21 +385,7 @@ configRecords.initial < fileBindings config < saved config < envBindings config
 
 JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: WorkerConfig, path: './worker.json' } })]` 提供基础值（`fileBinding` 从 `@pluxel/host` 导入），路径相对 `startup.root`。文件只在启动时读取，不由构建读取或打包。修改文件或 env 需要重新创建 Host。
 
-### 部署凭据与 Vault
-
-普通 config 只存设置。部署凭据使用导出的根 schema，例如 `export const WorkerVault = v.object({ credentials: v.object({ token: v.string() }) })`。根 schema 保留记录 key 与记录内容的校验；宿主导入它并选择来源：
-
-```ts no-twoslash
-envBindings: [envBinding(WorkerPlugin, {
-	vault: { schema: WorkerVault, mapping: { credentials: { token: 'WORKER_TOKEN' } } },
-})],
-// 或让一个 JSON 文件提供整条凭据记录：
-fileBindings: [fileBinding(WorkerPlugin, {
-	vault: { schema: WorkerVault, paths: { credentials: './credentials.json' } },
-})],
-```
-
-Vault schema 属于本次应用启动的部署输入契约，插件热替换不会自动更换它；修改 schema 或来源须重新创建 Host。私有 KV 的业务校验仍由插件负责。显式绑定的 Vault 记录整体只读，不能与旧 KV 字段混合。每个映射的变量都必须存在；缺失或校验失败会阻止启动，不回退到旧凭据。需要交互登录的应用不声明这些部署绑定，使用可写加密 Vault。只有部署记录的应用可显式安装 `vault({ backend: 'bindings' })`，无需 Persistence 或磁盘密钥。详见[运行时服务](../reference/runtime-services.md)。
+部署凭据不放在普通 config。需要从环境变量或挂载文件提供凭据时，按 [Vault 部署绑定](../runtime/vault.md#部署凭据)声明只读记录；需要交互登录或刷新凭据时，使用可写 Vault。
 
 Static production build 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是静态目录中的 Plugin 标识符，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
 

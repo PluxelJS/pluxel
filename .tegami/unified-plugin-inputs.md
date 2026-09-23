@@ -15,6 +15,7 @@ packages:
 Application factories declare `envBindings` and `fileBindings` with `envBinding` and
 `fileBinding`, importing the configuration and Vault root schemas explicitly. Binding helpers
 check schema input keys; Plugins keep `configs.use(schema)` without static schema fields.
+Bindings require Valibot schemas, matching the Host's input projection at runtime.
 Host verifies that a config binding references the same schema as the Plugin's lowered declaration.
 Static builds derive `.env.example` from the explicit schemas without evaluating factories or
 reading deployment values. Published declarations provide field completion without compiler plugins.
