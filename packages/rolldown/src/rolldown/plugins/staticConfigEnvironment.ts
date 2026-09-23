@@ -63,21 +63,21 @@ export async function parseStaticRuntimeDeclaration(
 	if (
 		!configBinding ||
 		configBinding.source !== '@pluxel/host' ||
-		configBinding.imported !== 'defineConfig' ||
+		configBinding.imported !== 'defineHostApplication' ||
 		configBinding.namespace
 	) {
 		error(
-			`[application] ${id} must default-export defineConfig(factory) imported from @pluxel/host`,
+			`[application] ${id} must default-export defineHostApplication(factory) imported from @pluxel/host`,
 		)
 	}
-	const factoryArguments = directCallArguments(declaration, 'defineConfig', id, error)
+	const factoryArguments = directCallArguments(declaration, 'defineHostApplication', id, error)
 	const factory = factoryArguments[0] && unwrapExpression(factoryArguments[0])
 	if (
 		factoryArguments.length !== 1 ||
 		!factory ||
 		!['ArrowFunctionExpression', 'FunctionExpression'].includes(String(factory.type))
 	) {
-		error(`[application] ${id} defineConfig requires one inline factory`)
+		error(`[application] ${id} defineHostApplication requires one inline factory`)
 	}
 	// Factory bindings must never accidentally resolve to a same-named module import.
 	const shadowed = factoryBindings(factory)

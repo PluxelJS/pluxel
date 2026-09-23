@@ -11,7 +11,7 @@ it('loads checked database migration facts through the official Vite preset', as
 	await using fixture = await createDiskFixture({
 		'package.json': JSON.stringify({ name: 'database-source-fixture', type: 'module' }),
 		'app.ts':
-			"import { defineConfig } from '@pluxel/host'; export default defineConfig(() => ({ plugins: [] }))",
+			"import { defineHostApplication } from '@pluxel/host'; export default defineHostApplication(() => ({ plugins: [] }))",
 		'database.ts': `import { defineDatabase } from '@pluxel/services/database'
 export const database = defineDatabase({ schema: {} })`,
 		'drizzle/0000_initial.sql': sql,

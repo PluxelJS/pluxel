@@ -349,10 +349,10 @@ export class WorkerPlugin extends BasePlugin {
 Canonical static entry 直接声明部署名称；不要在配置工厂中重复解析类型或拼装 Plugin address：
 
 ```ts no-twoslash
-import { defineConfig, envBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding } from '@pluxel/host'
 import { WorkerPlugin, WorkerConfig } from './WorkerPlugin.ts'
 
-export default defineConfig(() => ({
+export default defineHostApplication(() => ({
 	name: 'worker-app',
 	plugins: [WorkerPlugin],
 	envBindings: [
@@ -369,7 +369,7 @@ export default defineConfig(() => ({
 }))
 ```
 
-插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 Valibot schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。`envBinding` 和 `fileBinding` 都要求 Valibot schema，普通 Standard Schema 实现不能用于这两个绑定。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineConfig` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
+插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 Valibot schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。`envBinding` 和 `fileBinding` 都要求 Valibot schema，普通 Standard Schema 实现不能用于这两个绑定。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineHostApplication` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
 
 Mapping 从 schema input 推导：object 可展开，也可绑定一个 JSON 变量；array、tuple 与动态 record 使用完整 JSON。环境名称匹配 `[A-Z_][A-Z0-9_]*`。string 保留原文，number 要求有限 JSON number，boolean 只接受 `true`/`false`，复合类型使用 JSON。config 环境缺失不生成覆盖，空字符串和 `null` 按 schema 校验；诊断不包含输入值。
 

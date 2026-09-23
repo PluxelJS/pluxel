@@ -12,7 +12,7 @@ packages:
 ## Compose applications around one Plugin Host
 
 Host owns catalog and lifecycle control, with a shared development driver and optional dynamic file
-sources. Applications default-export `defineConfig(startup => ({ ... }))`, declaring
+sources. Applications default-export `defineHostApplication(startup => ({ ... }))`, declaring
 `plugins`, optional `sources`, `services` and `prepare`. Dynamic declarations perform no IO until the
 Host opens their discovery session; producers validate declared coverage before creating resources.
 

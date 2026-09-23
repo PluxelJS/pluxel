@@ -28,13 +28,13 @@ services: [
 宿主在应用工厂中通过 `envBindings` 或 `fileBindings` 用 `envBinding` / `fileBinding` 把导出的凭据根 schema 绑定到输入。Host 先完成 schema 校验、准备服务，再安装绑定，最后启动插件。见[应用入口](../getting-started/host-setup.md)。
 
 ```ts no-twoslash
-import { defineConfig, envBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding } from '@pluxel/host'
 import * as v from 'valibot'
 import { MyPlugin } from './MyPlugin.ts'
 
 const Credentials = v.object({ primary: v.object({ token: v.string() }) })
 
-export default defineConfig(() => ({
+export default defineHostApplication(() => ({
 	plugins: [MyPlugin],
 	envBindings: [
 		envBinding(MyPlugin, {

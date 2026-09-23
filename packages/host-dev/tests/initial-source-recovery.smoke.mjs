@@ -32,8 +32,8 @@ async function runScenario(scenario) {
 		)
 		await writeFile(
 			join(root, 'app.ts'),
-			`import {defineConfig} from '@pluxel/host';import {dynamicSource} from '@pluxel/host/dynamic';
-export default defineConfig(() => ({plugins:[],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.entry.mjs']})],prepare(){globalThis[${JSON.stringify(key)}]=(globalThis[${JSON.stringify(key)}]??0)+1}}))`,
+			`import {defineHostApplication} from '@pluxel/host';import {dynamicSource} from '@pluxel/host/dynamic';
+export default defineHostApplication(() => ({plugins:[],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.entry.mjs']})],prepare(){globalThis[${JSON.stringify(key)}]=(globalThis[${JSON.stringify(key)}]??0)+1}}))`,
 		)
 		await mkdir(join(root, 'entries'))
 		const source = join(root, 'entries/broken.entry.mjs')

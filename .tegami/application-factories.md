@@ -10,7 +10,7 @@ packages:
 
 ## Declare applications with one deferred configuration factory
 
-Applications now default-export `defineConfig(startup => ({ ... }))` from `@pluxel/host`.
+Applications now default-export `defineHostApplication(startup => ({ ... }))` from `@pluxel/host`.
 The factory returns the complete application configuration, synchronously or asynchronously;
 plain application exports and nested `configure` merging are removed. Each Host receives a
 shallow immutable startup snapshot shared by its factory and `prepare` callback. The helper

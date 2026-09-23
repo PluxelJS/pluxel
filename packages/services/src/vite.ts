@@ -4,7 +4,7 @@ import { perEnvironmentPlugin, type Plugin, type PluginOption } from 'vite'
 import { serviceDevelopment } from './development/service-development'
 
 export type PresetViteOptions = Readonly<{
-	/** Application module default-exporting defineConfig(factory), relative to Vite root. */
+	/** Application module default-exporting defineHostApplication(factory), relative to Vite root. */
 	entry: string
 	/** Enable the official local TypeScript console. @default false */
 	devConsole?: boolean

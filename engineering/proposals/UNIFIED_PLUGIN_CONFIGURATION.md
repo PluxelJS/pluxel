@@ -7,7 +7,7 @@
 - [Config 架构](../CONFIG.md)：单一 revision、管理写入、持久确认与动态候选检查。
 - [Toolchain](../TOOLCHAIN.md)：静态声明边界与 `.env.example`。
 
-普通静态对象优先使用 `satisfies`；应用的 `defineConfig(factory)` 保留启动上下文，`envBinding` / `fileBinding` 从显式导入的 schema 推导输入映射。插件只声明数据形状，宿主选择部署变量和文件名称。
+普通静态对象优先使用 `satisfies`；应用的 `defineHostApplication(factory)` 保留启动上下文，`envBinding` / `fileBinding` 从显式导入的 schema 推导输入映射。插件只声明数据形状，宿主选择部署变量和文件名称。
 
 移除两个静态 schema 字段后的取舍与实测：
 

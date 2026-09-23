@@ -59,7 +59,7 @@ export { HostStateMutationRejectedError } from './mutation'
 export type { HostOperationOptions } from './coordinator'
 
 export {
-	defineConfig,
+	defineHostApplication,
 	type HostApplicationFactory,
 	runHostApplication,
 	assertHostApplication,

@@ -16,7 +16,7 @@ Plugin 基于 Core，必需服务通过 `ctx.require(Token)` 读取。服务安�
 
 ## 真实下游迁移验证
 
-三个独立下游使用同一 `defineConfig(factory)` 启动契约，按实际产品选择服务；不靠复制框架源码路径或私有 Shell 入口接入。
+三个独立下游使用同一 `defineHostApplication(factory)` 启动契约，按实际产品选择服务；不靠复制框架源码路径或私有 Shell 入口接入。
 
 - **Chatbot：** 固定平台 catalog、官方 Workbench Shell 与显式 PGlite Database；保留既有 Vault、配置目录和内存 auto-start 策略。
   已通过全部 340 个现有测试、package/root 类型检查、source governance 与生产构建。隔离生产启动验证 Workbench HTML 及其 11 个 JS/CSS 资源返回成功且 MIME 正确。

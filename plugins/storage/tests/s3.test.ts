@@ -1,6 +1,6 @@
 import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { envBinding, defineConfig, runHostApplication } from '@pluxel/host'
+import { envBinding, defineHostApplication, runHostApplication } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -72,7 +72,7 @@ describe('S3Plugin remote backend', () => {
 	})
 
 	it('starts an environment-only deployment without encrypted storage and fails closed for missing input', async () => {
-		const application = defineConfig(() => ({
+		const application = defineHostApplication(() => ({
 			plugins: [S3Plugin],
 			services: [vault({ backend: 'bindings' })],
 			state: { initial: { autoStart: [pluginNodeAddressOf(S3Plugin)] } },

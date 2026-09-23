@@ -86,8 +86,8 @@ class FrozenWorker extends BasePlugin {
   process.stdout.write('FROZEN_WORKER_OK\\n');
  }
 }
-import {defineConfig} from '@pluxel/host';
-export default defineConfig(({deployment}) => ({name:'production-bridge', plugins:[FrozenWorker],sources:[dynamicSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkPersistence=Persistence},services:standardServices({persistence:{mode:'memory'},nodeModules:{root:resolve(deployment.root,'artifacts/node')}}),state:{initial:{autoStart:[pluginNodeAddressOf(FrozenWorker),${JSON.stringify(address)}]}}}))
+import {defineHostApplication} from '@pluxel/host';
+export default defineHostApplication(({deployment}) => ({name:'production-bridge', plugins:[FrozenWorker],sources:[dynamicSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkPersistence=Persistence},services:standardServices({persistence:{mode:'memory'},nodeModules:{root:resolve(deployment.root,'artifacts/node')}}),state:{initial:{autoStart:[pluginNodeAddressOf(FrozenWorker),${JSON.stringify(address)}]}}}))
 `,
 		)
 		const buildScript = join(root, 'build.mts')

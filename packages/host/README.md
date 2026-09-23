@@ -38,14 +38,14 @@ await host.close()
 
 `/internal` 是服务端框架集成入口，不是 Plugin 作者 API。`/internal/protocol` 单独提供无 IO 的 execution/update snapshots 与验证函数，供浏览器和服务端共享；浏览器不能通过服务端 `/internal` 导入这些协议。
 
-开发时使用 `@pluxel/host-dev/vite` 的 `host({ entry: './app.ts' })`。`app.ts` 默认导出 `defineConfig(factory)` 声明的配置工厂，Vite 接入负责加载模块和动态来源；应用声明无需自己传 loader。
+开发时使用 `@pluxel/host-dev/vite` 的 `host({ entry: './app.ts' })`。`app.ts` 默认导出 `defineHostApplication(factory)` 声明的配置工厂，Vite 接入负责加载模块和动态来源；应用声明无需自己传 loader。
 
 ```ts
 // app.ts
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { MyPlugin } from './plugin.js'
 
-export default defineConfig(() => ({
+export default defineHostApplication(() => ({
 	plugins: [MyPlugin],
 }))
 ```
@@ -78,10 +78,10 @@ const sources = [
 `private` 字段。需要部署绑定时导出同一个 schema 值，应用导入它，使用 helper 获得输入字段补全：
 
 ```ts
-import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 import { MyPlugin, ConfigSchema, CredentialRecords } from './plugin.js'
 
-export default defineConfig(() => ({
+export default defineHostApplication(() => ({
 	plugins: [MyPlugin],
 	envBindings: [
 		envBinding(MyPlugin, {

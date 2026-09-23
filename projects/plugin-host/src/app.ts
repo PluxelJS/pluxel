@@ -1,5 +1,5 @@
 import { dynamicSource } from '@pluxel/host/dynamic'
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
 import { resolve } from 'pathe'
@@ -13,7 +13,7 @@ import {
 
 export { product }
 
-export default defineConfig(async (startup) => {
+export default defineHostApplication(async (startup) => {
 	const dataRoot = resolve(
 		startup.deployment?.root ?? startup.root,
 		startup.env.PLUXEL_DATA_ROOT ?? '.pluxel',

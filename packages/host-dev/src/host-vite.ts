@@ -53,7 +53,7 @@ import {
 } from './attachments'
 
 export type HostViteOptions = Readonly<{
-	/** Application module default-exporting defineConfig(factory). Relative to Vite root. */
+	/** Application module default-exporting defineHostApplication(factory). Relative to Vite root. */
 	entry: string
 	/** Enable the local TypeScript console. @default false */
 	devConsole?: boolean
@@ -186,7 +186,9 @@ export function host(options: HostViteOptions): PluginOption[] {
 			await candidate.run(async () => {
 				const namespace = await importHostModule<Record<string, unknown>>(server, entry)
 				if (typeof namespace.default !== 'function')
-					throw new TypeError('[host-dev] Application must default-export defineConfig(factory)')
+					throw new TypeError(
+						'[host-dev] Application must default-export defineHostApplication(factory)',
+					)
 				nextFactory = namespace.default as HostApplicationFactory
 				// Source-only changes reuse this Host's startup snapshot and fixed assembly.
 				// A re-evaluated application factory is a new assembly, including its closures.

@@ -32,7 +32,7 @@ Rolldown/Vite 工具链入口：
 
 工具链不包含公开 API bridge 或兼容 rewrite。
 
-应用入口使用 `defineConfig(factory)`（来自 `@pluxel/host`）。生产构建只读取静态插件目录和 `envBindings`，
+应用入口使用 `defineHostApplication(factory)`（来自 `@pluxel/host`）。生产构建只读取静态插件目录和 `envBindings`，
 从 `envBinding(Plugin, { config: { schema, mapping }, vault: { schema, mapping } })` 显式引用的 schema 生成 `.env.example`，不会执行工厂、读取环境值或打开 `fileBindings` 文件。
 环境映射直接使用 `{ plugin: MyPlugin, config: { endpoint: 'APP_ENDPOINT' }, vault: { token: 'APP_TOKEN' } }`；
 秘密文件只在实际 Host 启动时读取，不进入构建产物。完整约束见 [Host 配置](../../docs/getting-started/host-setup.md)。

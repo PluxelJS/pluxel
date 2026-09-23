@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
-import { envBinding, defineConfig, runHostApplication } from '@pluxel/host'
+import { envBinding, defineHostApplication, runHostApplication } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
 import { S3, S3VaultSchema, S3Plugin } from '../src/index.ts'
@@ -29,7 +29,7 @@ it('signs and completes an S3 write using only env-backed Vault records', async 
 	try {
 		const address = server.address()
 		if (!address || typeof address === 'string') throw new Error('Missing test listener')
-		const application = defineConfig(() => ({
+		const application = defineHostApplication(() => ({
 			plugins: [S3Plugin, DeploymentWriter],
 			services: [vault({ backend: 'bindings' })],
 			state: { initial: { autoStart: [pluginNodeAddressOf(DeploymentWriter)] } },

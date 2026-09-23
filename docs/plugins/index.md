@@ -24,12 +24,12 @@ pnpm governance:check
 
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { WretchPlugin } from '@pluxel/wretch'
 import { CustomerPlugin } from './customer-plugin.js'
 
-export default defineConfig(async (startup) => {
+export default defineHostApplication(async (startup) => {
 	return {
 		name: 'my-app',
 		plugins: [WretchPlugin, CustomerPlugin],

@@ -136,8 +136,8 @@ describe('application', () => {
 			await writeFile(
 				applicationEntry,
 				[
-					"import { defineConfig } from '@pluxel/host'",
-					"export default defineConfig(() => ({ name: 'fixture-application', plugins: [] }))",
+					"import { defineHostApplication } from '@pluxel/host'",
+					"export default defineHostApplication(() => ({ name: 'fixture-application', plugins: [] }))",
 				].join('\n'),
 			)
 			await writeFile(dependencyEntry, 'export const dependency = true\n')

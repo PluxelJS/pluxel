@@ -19,9 +19,9 @@ describe('static config environment production watch', () => {
 				export const plugins = [DemoPlugin] as const
 			`,
 			'entry.ts': `
-import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 				import { DemoConfig, DemoPlugin, plugins } from './plugin'
-				export default defineConfig(() => ({
+				export default defineHostApplication(() => ({
 					name: 'watch-fixture',
 					plugins,
 					envBindings: [

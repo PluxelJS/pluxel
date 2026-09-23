@@ -360,8 +360,8 @@ try {
 	await writeFile(
 		entryPath,
 		originalEntry.replace(
-			'export default defineConfig(() => {',
-			"export default defineConfig(() => { throw new Error('factory rejected')",
+			'export default defineHostApplication(() => {',
+			"export default defineHostApplication(() => { throw new Error('factory rejected')",
 		),
 	)
 	await assert.rejects(() => invokeHotUpdate(routePlugin, entryPath), /factory rejected/)

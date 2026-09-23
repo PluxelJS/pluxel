@@ -1,4 +1,4 @@
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
 import { dynamicSource } from '@pluxel/host/dynamic'
@@ -8,7 +8,7 @@ import { exampleConfigRecords, examplePlugins, exampleHostState } from './runtim
 
 export { product }
 
-export default defineConfig(async (startup) => {
+export default defineHostApplication(async (startup) => {
 	const dataRoot = resolve(
 		startup.deployment?.root ?? startup.root,
 		startup.env.PLUXEL_DATA_ROOT ?? '.pluxel',

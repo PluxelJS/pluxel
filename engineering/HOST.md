@@ -10,7 +10,7 @@
 | Host-dev                            | Vite ModuleRunner、候选更新队列、开发附件、控制台 execution           | 官方服务选择、第二套插件生命周期  |
 | Services（含日志与管理）/ Workbench | 对应领域的能力、资源和适配                                            | 修改 Core 图所有权                |
 
-应用以 `defineConfig(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
+应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
 
 ## 服务与资源
 

@@ -9,7 +9,7 @@ Pluxel 官方、可选的 pnpm package source producer。它使用 `@pnpm/napi` 
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dynamicSource } from '@pluxel/host/dynamic'
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
@@ -20,7 +20,7 @@ const packageManagerConfig = {
 	minimumReleaseAgeMinutes: 1_440,
 }
 
-export default defineConfig(async (startup) => ({
+export default defineHostApplication(async (startup) => ({
 	name: 'plugin-host',
 	plugins: [PackageManagerPlugin],
 	sources: [

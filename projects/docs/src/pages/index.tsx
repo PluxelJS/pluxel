@@ -28,10 +28,10 @@ const patterns = [
 
 const hosts = [
 	{
-		code: `import { defineConfig } from '@pluxel/host'
+		code: `import { defineHostApplication } from '@pluxel/host'
 import { OrdersPlugin } from '@app/orders'
 
-export default defineConfig(() => ({
+export default defineHostApplication(() => ({
   plugins: [OrdersPlugin],
 }))`,
 		description:
@@ -41,10 +41,10 @@ export default defineConfig(() => ({
 		title: '固定插件目录',
 	},
 	{
-		code: `import { defineConfig } from '@pluxel/host'
+		code: `import { defineHostApplication } from '@pluxel/host'
 import { dynamicSource } from '@pluxel/host/dynamic'
 
-export default defineConfig(() => ({
+export default defineHostApplication(() => ({
   plugins: [],
   sources: [dynamicSource({
     kind: 'directory', path: './plugins',
@@ -63,10 +63,10 @@ const toolchain = [
 	{
 		title: '安装服务',
 		file: 'src/app.ts',
-		code: `import { defineConfig } from '@pluxel/host'
+		code: `import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
-export default defineConfig(async (startup) => ({
+export default defineHostApplication(async (startup) => ({
   plugins: [],
   services: await servicesPreset(startup, {
     persistence: { mode: 'memory' },

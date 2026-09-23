@@ -20,10 +20,10 @@ pnpm catalog:add -- @pluxel/auth
 ```ts no-twoslash
 import { AuthPlugin } from '@pluxel/auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
-export default defineConfig(async (startup) => {
+export default defineHostApplication(async (startup) => {
 	return {
 		name: 'my-app',
 		plugins: [AuthPlugin],

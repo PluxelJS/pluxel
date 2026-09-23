@@ -7,7 +7,11 @@ import { expect, it } from 'vitest'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defineConfig, resolveHostApplication, runHostApplication } from '../src/application'
+import {
+	defineHostApplication,
+	resolveHostApplication,
+	runHostApplication,
+} from '../src/application'
 import { createDocumentStorage } from './helpers/document-storage'
 
 const Config = v.object({
@@ -26,7 +30,7 @@ const binding = envBinding(Configured, {
 
 it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or seed mutation', async () => {
 	const owner = pluginNodeAddressOf(Configured)
-	const application = defineConfig(() => ({
+	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		configRecords: { initial: [{ owner, config: { limit: 1 } }] },
 		envBindings: [binding],
@@ -64,7 +68,7 @@ it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or 
 it('keeps env out of storage and reveals the saved value after env removal', async () => {
 	const owner = pluginNodeAddressOf(Configured)
 	const storage = createDocumentStorage()
-	const application = defineConfig(() => ({
+	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		configRecords: { storage, initial: [{ owner, config: { limit: 2 } }] },
 		envBindings: [binding],
@@ -91,7 +95,7 @@ it('keeps env out of storage and reveals the saved value after env removal', asy
 })
 
 it('validates a complete Vault record, rejects partial deployment inputs, and redacts values', async () => {
-	const application = defineConfig(() => ({
+	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		envBindings: [
 			envBinding(Configured, {
@@ -161,7 +165,7 @@ class OtherConfigured extends BasePlugin {
 }
 
 it('infers heterogeneous async binding arrays without const assertions', async () => {
-	const application = defineConfig(async () => ({
+	const application = defineHostApplication(async () => ({
 		plugins: [Configured, OtherConfigured],
 		envBindings: [
 			envBinding(Configured, { config: { schema: Config, mapping: { enabled: 'ENABLED' } } }),
@@ -225,7 +229,7 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 		],
 	})
 	const host = await runHostApplication(
-		defineConfig(() => ({
+		defineHostApplication(() => ({
 			plugins: [Bound],
 			services: [service],
 			envBindings: [
@@ -329,7 +333,7 @@ it('checks environment paths against replacement config metadata without another
 		})
 	}
 	const host = await runHostApplication(
-		defineConfig(() => ({
+		defineHostApplication(() => ({
 			plugins: [BeforeConfigReplacement],
 			envBindings: [
 				envBinding(BeforeConfigReplacement, {
@@ -351,7 +355,7 @@ it('checks environment paths against replacement config metadata without another
 it.each(['environment', 'file'] as const)(
 	'rejects empty Vault %s descriptors rather than silently omitting their target',
 	async (kind) => {
-		const application = defineConfig(() => ({
+		const application = defineHostApplication(() => ({
 			plugins: [Configured],
 			...(kind === 'environment'
 				? { envBindings: [envBinding(Configured, { vault: { schema: Credentials, mapping: {} } })] }

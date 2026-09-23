@@ -79,7 +79,7 @@ ordinary default package exports, no `@pluxel/source` condition, and no `paths` 
 compiler's resolved file list must contain both `@pluxel/core` and `@pluxel/host` built `dist/index.d.mts`
 and must not contain their source files. The temporary directory is removed on completion.
 
-`production-consumer.ts` imports the actual `envBinding`, `fileBinding`, `defineConfig`, and
+`production-consumer.ts` imports the actual `envBinding`, `fileBinding`, `defineHostApplication`, and
 `BasePlugin`. Strict compilation with `skipLibCheck: false` checks optional/defaulted and
 transformed schema inputs, valid environment/file bindings, and ten negative assertions covering
 invalid config fields, transformed input paths, array/dynamic-record projection, Vault keys,

@@ -3,7 +3,7 @@ title: 配置插件宿主
 description: 用一份 HostApplication 组合插件、服务、开发工具和生产部署。
 ---
 
-Host 拥有插件目录、运行策略和服务生命周期。应用入口默认导出 `defineConfig(factory)` 声明的 `HostApplicationFactory`；Vite 和生产构建读取同一个入口。
+Host 拥有插件目录、运行策略和服务生命周期。应用入口默认导出 `defineHostApplication(factory)` 声明的 `HostApplicationFactory`；Vite 和生产构建读取同一个入口。
 插件只依赖 Core 和实际使用的服务，不需要全局 Runtime。
 
 ## 选择组合
@@ -19,12 +19,12 @@ Database 单独安装；关闭 Workbench 不会关闭插件业务能力。详细
 ```ts no-twoslash
 import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
 import { TodoPlugin } from '@app/todo'
 
-export default defineConfig(async (startup) => {
+export default defineHostApplication(async (startup) => {
 	const environment = resolveHostEnv(startup.env)
 	return {
 		name: 'my-app',
@@ -44,7 +44,7 @@ export default defineConfig(async (startup) => {
 `plugins` 表示代码可用，不代表自动启动。`state.initial.autoStart` 选择冷启动时运行的节点，插件自己的 required dependencies 由图统一处理。
 
 配置工厂每次创建新 Host 时执行，可以读取 `env`、`bindings`、`root` 和 `deployment`。构建不会执行它。
-Vite 和生产构建都要求入口直接默认导出 `defineConfig(内联工厂)`：工厂直接返回对象，或在块中以唯一、无条件的最后一条顶层 `return` 返回对象；返回对象不使用 spread。生产构建中的 `plugins` 使用直接数组或模块级 const/imported 数组，不使用条件、函数调用或 startup 计算。构建只分析静态清单，不执行工厂。没有环境绑定时，Vite 可运行条件插件数组。
+Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内联工厂)`：工厂直接返回对象，或在块中以唯一、无条件的最后一条顶层 `return` 返回对象；返回对象不使用 spread。生产构建中的 `plugins` 使用直接数组或模块级 const/imported 数组，不使用条件、函数调用或 startup 计算。构建只分析静态清单，不执行工厂。没有环境绑定时，Vite 可运行条件插件数组。
 
 静态清单的数组必须始终保留声明时的成员：不要在模块、工厂、helper 或 callback 中修改、通过别名修改，或用动态 import 追加插件。构建会拒绝工厂中的明显修改、别名和向 helper 传递数组；`map`、`slice` 等只读使用可以保留，但 callback 也不得修改原数组。这是部署合同，有限语法检查不能证明任意 JavaScript 的副作用。需要可变插件时，使用显式 `sources`。
 
@@ -102,10 +102,10 @@ Vite 支持动态新增、更新、删除；来源入口变化不等于监视安
 普通部署变量可以绑定到固定插件的实际 schema：
 
 ```ts no-twoslash
-import { defineConfig, envBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding } from '@pluxel/host'
 import { OrdersPlugin, OrdersConfig } from '@app/orders'
 
-export default defineConfig(() => ({
+export default defineHostApplication(() => ({
 	plugins: [OrdersPlugin],
 	envBindings: [
 		envBinding(OrdersPlugin, {

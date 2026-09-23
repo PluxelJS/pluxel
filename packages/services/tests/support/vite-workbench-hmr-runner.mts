@@ -64,12 +64,12 @@ await writeFile(
 	resolve(root, 'pluxel.static.ts'),
 	`
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { workbenchService } from '@pluxel/workbench/service'
 
 import { Owner, Dependent } from './src/index'
-export default defineConfig((startup) => ({
+export default defineHostApplication((startup) => ({
   name: 'workbench-hmr', plugins: [Owner, Dependent],
     services: [...standardServices({ persistence: { mode: 'memory' } }), workbenchService()],
     state: { initial: { autoStart: [Owner, Dependent].map(pluginNodeAddressOf) } },

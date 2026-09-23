@@ -3,18 +3,18 @@ title: 组合 Host 服务
 description: 使用官方默认组合运行应用，或按需选择 Host 服务并管理准备与清理。
 ---
 
-官方应用和 starter 使用 `defineConfig(factory)` 配合 `servicesPreset()`：应用声明插件、数据位置和启动策略，官方入口负责开发附件和部署制品路径。需要自定义服务集合时，使用 `@pluxel/host` 逐项组合；它默认只提供 Core 能力。
+官方应用和 starter 使用 `defineHostApplication(factory)` 配合 `servicesPreset()`：应用声明插件、数据位置和启动策略，官方入口负责开发附件和部署制品路径。需要自定义服务集合时，使用 `@pluxel/host` 逐项组合；它默认只提供 Core 能力。
 
 ## 官方默认组合
 
 ```ts
 // src/app.ts
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { servicesPreset } from '@pluxel/services/preset'
 import { MyPlugin } from './plugin.js'
 
-export default defineConfig(async (startup) => {
+export default defineHostApplication(async (startup) => {
 	return {
 		plugins: [MyPlugin],
 		services: await servicesPreset(startup, {
@@ -259,7 +259,7 @@ backend 工厂返回 Host 独占的 adapter，Host 在 accepted operations 排�
 
 ## 自定义组合的开发和生产接入
 
-`defineConfig(factory)` 提供 startup 上下文类型并保留工厂返回类型；`HostApplicationFactory` 表示工厂，`HostApplication` 表示其返回的完整配置对象。
+`defineHostApplication(factory)` 提供 startup 上下文类型并保留工厂返回类型；`HostApplicationFactory` 表示工厂，`HostApplication` 表示其返回的完整配置对象。
 Host 每次启动传入 `{ root, mode, env, bindings, deployment }`，等待同步或异步工厂返回
 `plugins`、`sources`、`services`、`config`、`state`、`configRecords` 与可选 `prepare`。
 Host 为每次装配浅复制并冻结 startup、env、bindings 和 deployment，工厂与 `prepare` 共用这份快照。bindings 中的资源对象保留原身份与调用方所有权；冻结不会递归到这些资源。直接调用 `runHostApplication` 时，传入的 env 是完整输入，不会隐式合并进程环境。
@@ -267,11 +267,11 @@ Host 为每次装配浅复制并冻结 startup、env、bindings 和 deployment�
 `prepare({ host, startup })`，再启动 Plugin；失败由启动入口回滚整个 Host。
 
 ```ts
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { resolve } from 'node:path'
 
-export default defineConfig(({ env, deployment }) => {
+export default defineHostApplication(({ env, deployment }) => {
 	return {
 		plugins: [],
 		services: standardServices({

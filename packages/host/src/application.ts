@@ -24,7 +24,7 @@ type UnsupportedApplicationFields<T> = T extends unknown
 	: never
 
 /** Declare a deferred application factory, preserving its inferred result type. */
-export function defineConfig<const T extends HostApplicationFactory>(
+export function defineHostApplication<const T extends HostApplicationFactory>(
 	factory: T &
 		(UnsupportedApplicationFields<Awaited<ReturnType<T>>> extends never ? unknown : never),
 ): T {

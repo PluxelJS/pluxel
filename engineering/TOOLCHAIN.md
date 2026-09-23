@@ -291,7 +291,7 @@ export default defineConfig({
 })
 ```
 
-freezer 接受直接默认导出的 `defineConfig(factory)`。工厂是同步或异步的箭头/函数表达式，直接返回对象，或在块中以唯一、无条件的顶层 `return` 返回对象。返回对象不允许 spread。`plugins` 使用直接数组或模块级 const/imported 数组，不能依赖 startup 分支或函数调用；构建不会执行工厂或静态求值任意 JavaScript。它在同一 graph 中执行 macro、config metadata、lint、Workbench
+freezer 接受直接默认导出的 `defineHostApplication(factory)`。工厂是同步或异步的箭头/函数表达式，直接返回对象，或在块中以唯一、无条件的顶层 `return` 返回对象。返回对象不允许 spread。`plugins` 使用直接数组或模块级 const/imported 数组，不能依赖 startup 分支或函数调用；构建不会执行工厂或静态求值任意 JavaScript。它在同一 graph 中执行 macro、config metadata、lint、Workbench
 remote extraction 和 production preprocessing，然后生成以 canonical entry 为 namespace import 的 platform bootstrap。Wrapper
 从 module namespace 消费 default application，并用 runtime shared reader 消费可选 `product` named export；它不按 identifier
 猜测 export、不静态求值 product，也不把产品字段复制进 deployment metadata。direct export、local export 与标准 re-export

@@ -53,11 +53,11 @@ describe('static Vite runtime', () => {
 		await fixture.writeFile(
 			'pluxel.static.ts',
 			[
-				"import { defineConfig, envBinding } from '@pluxel/host'",
+				"import { defineHostApplication, envBinding } from '@pluxel/host'",
 				"import { pluginNodeAddressOf } from '@pluxel/core'",
 				"import { standardServices } from '@pluxel/services'",
 				"import { ConfiguredPlugin, ConfiguredPluginConfig, PartOwner, PartProvider, runtimePlugins, ViteStatic } from '@fixture/vite-static'",
-				'export default defineConfig(() => {',
+				'export default defineHostApplication(() => {',
 				'    const implementation = runtimePlugins.includes(ViteStatic) ? ViteStatic : undefined',
 				'    const defaultNode = implementation ? pluginNodeAddressOf(implementation) : undefined',
 				'    const configuredNode = pluginNodeAddressOf(ConfiguredPlugin)',

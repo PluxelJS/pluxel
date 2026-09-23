@@ -14,7 +14,7 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 ```ts no-twoslash
 import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { defineConfig } from '@pluxel/host'
+import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
@@ -22,7 +22,7 @@ import { dynamicSource } from '@pluxel/host/dynamic'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
 
-export default defineConfig(async (startup) => {
+export default defineHostApplication(async (startup) => {
 	const dataRoot = resolve(
 		startup.deployment?.root ?? startup.root,
 		resolveHostEnv(startup.env).dataRoot,

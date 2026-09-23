@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
 
@@ -50,7 +50,7 @@ const invalidOutput: StandardSchemaV1.InferOutput<typeof ExampleConfig> = {
 void invalidInput
 void invalidOutput
 
-export default defineConfig(async () => ({
+export default defineHostApplication(async () => ({
 	plugins: [ExamplePlugin],
 	envBindings: [
 		envBinding(ExamplePlugin, {

@@ -2,7 +2,7 @@ import { defineContextCapability, installRootCapability } from '@pluxel/core/hos
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { defineHostService } from '../src/services'
 import {
-	defineConfig,
+	defineHostApplication,
 	prepareHostApplication,
 	resolveHostApplication,
 	runHostApplication,
@@ -16,7 +16,7 @@ const startup = { root: process.cwd(), mode: 'test' as const, bindings: {}, env:
 describe('shared Host application startup', () => {
 	it('declares without evaluation and preserves contextual startup and concrete return types', async () => {
 		let calls = 0
-		const application = defineConfig((input) => {
+		const application = defineHostApplication((input) => {
 			expectTypeOf(input).toEqualTypeOf<HostStartupContext>()
 			calls++
 			return { plugins: [], name: 'specific' as const }
@@ -27,20 +27,20 @@ describe('shared Host application startup', () => {
 		expect(calls).toBe(1)
 		expect(() => {
 			// @ts-expect-error An application declaration must be a factory.
-			defineConfig({ plugins: [] })
+			defineHostApplication({ plugins: [] })
 		}).toThrow('must be a factory')
 		// The helper defers evaluation, including invalid JavaScript factory results.
 		// @ts-expect-error Unknown result fields are not application configuration.
-		defineConfig(() => ({ plugins: [], typo: true }))
+		defineHostApplication(() => ({ plugins: [], typo: true }))
 		// @ts-expect-error Unknown async result fields are rejected as well.
-		defineConfig(async () => ({ plugins: [], configure() {} }))
+		defineHostApplication(async () => ({ plugins: [], configure() {} }))
 		// @ts-expect-error The factory must return a complete application.
-		defineConfig(async () => ({ services: [] }))
+		defineHostApplication(async () => ({ services: [] }))
 	})
 
 	it('resolves fresh services and rolls back when application preparation fails', async () => {
 		const events: string[] = []
-		const application = defineConfig(async ({ env }) => {
+		const application = defineHostApplication(async ({ env }) => {
 			events.push(`factory:${env.VALUE}`)
 			await Promise.resolve()
 			return {
@@ -95,7 +95,7 @@ describe('shared Host application startup', () => {
 		const barrier = new Promise<void>((resolve) => {
 			release = resolve
 		})
-		const application = defineConfig(async (snapshot) => {
+		const application = defineHostApplication(async (snapshot) => {
 			seen.push(snapshot)
 			await barrier
 			return {
@@ -138,7 +138,7 @@ describe('shared Host application startup', () => {
 		const failure = new Error('factory failure')
 		await expect(
 			runHostApplication(
-				defineConfig(async () => {
+				defineHostApplication(async () => {
 					throw failure
 				}),
 				{ startup },

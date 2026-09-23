@@ -71,10 +71,10 @@ it('freezes a Host-only application without evaluating its async factory and run
 		await writeFile(
 			join(root, 'app.ts'),
 			`
-import { defineConfig, defineHostService } from '@pluxel/host';
+import { defineHostApplication, defineHostService } from '@pluxel/host';
 import { defineContextCapability, installRootCapability } from '@pluxel/core/host';
 const Selected = defineContextCapability('Selected');
-export default defineConfig(async ({env}) => {
+export default defineHostApplication(async ({env}) => {
   if (env.APPLICATION_STAGE !== 'run') throw new Error('FACTORY_EXECUTED_DURING_BUILD');
   return { plugins: [], services: [defineHostService({name:'Selected',capabilities:[installRootCapability(Selected,{create:()=>env.APPLICATION_VALUE})],prepare({effects}) { process.stdout.write('SERVICE_READY:'+env.APPLICATION_VALUE+'\\n'); effects.defer(()=>{process.stdout.write('SERVICE_CLOSED\\n')}) }})] };
 });`,

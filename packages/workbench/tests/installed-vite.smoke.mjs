@@ -100,8 +100,8 @@ class Page extends RpcTarget {value(){return 42}}
 	)
 	await write(
 		'app.ts',
-		`import { defineConfig } from '@pluxel/host';import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { logging } from '@pluxel/services/logging';
-export default defineConfig(({bindings}) => ({plugins:[Viewer],services:[logging({
+		`import { defineHostApplication } from '@pluxel/host';import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { logging } from '@pluxel/services/logging';
+export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services:[logging({
  root:{profile:'fixture'},sinks:{console:{kind:'console',format:'pretty',caller:false,timezone:'utc'},capture:{kind:'logtape',label:'test diagnostics',sink:bindings.captureLog,caller:false}},
  routes:{runtime:[{sink:'console',minLevel:'error'},{sink:'capture',minLevel:'error'}],plugins:[],debug:[],meta:[]}
 }),workbenchService()],state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}))`,

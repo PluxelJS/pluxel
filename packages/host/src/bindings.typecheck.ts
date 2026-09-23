@@ -1,7 +1,7 @@
 import type { PluginConstructor } from '@pluxel/core'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
-import { defineConfig } from './application'
+import { defineHostApplication } from './application'
 import { envBinding, fileBinding } from './bindings'
 
 const config = v.object({
@@ -33,7 +33,7 @@ fileBinding(Plugin, {
 	},
 })
 
-defineConfig(() => ({
+defineHostApplication(() => ({
 	plugins: [Plugin],
 	envBindings: [
 		envBinding(Plugin, {

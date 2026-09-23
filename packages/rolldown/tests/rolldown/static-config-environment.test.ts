@@ -9,10 +9,10 @@ import { parseStandaloneWithLang } from '../../src/rolldown/plugins/pluginUtils'
 
 function staticEntry(options: { bindings: string; plugins?: string; extra?: string }): string {
 	return `
-import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 		import { AlphaConfig, AlphaVault, AlphaPlugin, BetaConfig, BetaPlugin, examplePlugins } from './plugins'
 		${options.extra ?? ''}
-		export default defineConfig(() => ({
+		export default defineHostApplication(() => ({
 			name: 'fixture',
 			plugins: ${options.plugins ?? '[AlphaPlugin, BetaPlugin]'},
 			envBindings: ${options.bindings},
@@ -93,20 +93,20 @@ describe('static config environment declaration lowering', () => {
 
 	it('requires a direct factory and rejects hidden fields', async () => {
 		await expect(parseFixture(`export default { plugins: [] }`)).rejects.toThrow(
-			'must default-export defineConfig(factory)',
+			'must default-export defineHostApplication(factory)',
 		)
 		await expect(
 			parseFixture(`
-			import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			const base = { plugins: [] }
-			export default defineConfig(() => ({ ...base, name: 'spread' }))
+			export default defineHostApplication(() => ({ ...base, name: 'spread' }))
 		`),
 		).rejects.toThrow('does not allow spread properties')
 	})
 
 	it('reads an asynchronous factory without running preparation or nested callbacks', async () => {
 		const result = await parseFixture(`
-			import { defineConfig as application } from '@pluxel/host'
+			import { defineHostApplication as application } from '@pluxel/host'
 			export default application(async (startup) => {
 				throw new Error('FACTORY_MUST_NOT_EXECUTE')
 				return { name: 'async', plugins: [], services: await prepare(startup), prepare() { return undefined } }
@@ -122,7 +122,7 @@ describe('static config environment declaration lowering', () => {
 	])('rejects factory results whose complete declaration cannot be proven: %s', async (factory) => {
 		await expect(
 			parseFixture(
-				`import { defineConfig, envBinding, fileBinding } from '@pluxel/host'; export default defineConfig(${factory})`,
+				`import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'; export default defineHostApplication(${factory})`,
 			),
 		).rejects.toThrow(/factory must/)
 	})
@@ -131,9 +131,9 @@ describe('static config environment declaration lowering', () => {
 		await expect(
 			parseFixture(
 				`
-			import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { AlphaPlugin, BetaPlugin } from './plugins'
-			export default defineConfig((startup) => ({ plugins: startup.env.BETA ? [BetaPlugin] : [AlphaPlugin] }))
+			export default defineHostApplication((startup) => ({ plugins: startup.env.BETA ? [BetaPlugin] : [AlphaPlugin] }))
 		`,
 				true,
 			),
@@ -144,9 +144,9 @@ describe('static config environment declaration lowering', () => {
 		await expect(
 			parseFixture(
 				`
-			import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { examplePlugins } from './plugins'
-			export default defineConfig(({ examplePlugins }) => ({ plugins: examplePlugins }))
+			export default defineHostApplication(({ examplePlugins }) => ({ plugins: examplePlugins }))
 		`,
 				true,
 			),
@@ -165,9 +165,9 @@ describe('static config environment declaration lowering', () => {
 		await expect(
 			parseFixture(
 				`
-			import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { examplePlugins as plugins } from './plugins'
-			export default defineConfig(async (startup) => { ${preparation}; return {plugins} })
+			export default defineHostApplication(async (startup) => { ${preparation}; return {plugins} })
 		`,
 				true,
 			),
@@ -186,9 +186,9 @@ describe('static config environment declaration lowering', () => {
 			await expect(
 				parseFixture(
 					`
-			import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { examplePlugins as plugins } from './plugins'
-			export default defineConfig(() => { ${preparation}; return {plugins} })
+			export default defineHostApplication(() => { ${preparation}; return {plugins} })
 		`,
 					true,
 				),
@@ -205,9 +205,9 @@ describe('static config environment declaration lowering', () => {
 		await expect(
 			parseFixture(
 				`
-			import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { examplePlugins as plugins } from './plugins'
-			export default defineConfig(${factory})
+			export default defineHostApplication(${factory})
 		`,
 				true,
 			),
@@ -217,9 +217,9 @@ describe('static config environment declaration lowering', () => {
 	it('derives config and Vault transports from explicit schemas without reading bound files', async () => {
 		const facts = await parseFixture(
 			`
-			import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig, AlphaVault } from './plugins'
-			export default defineConfig(() => ({
+			export default defineHostApplication(() => ({
 				plugins: [AlphaPlugin],
 				fileBindings: [fileBinding(AlphaPlugin, {config:{schema:AlphaConfig,path:'/must/not/read.json'}, vault:{schema:AlphaVault,paths:{token:'/must/not/read.secret'}}})],
 				envBindings: [envBinding(AlphaPlugin, {namespace:'account-a', config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}, vault:{schema:AlphaVault,mapping:{token:'APP_TOKEN', account:{password:'APP_PASSWORD'}}}})],
@@ -240,10 +240,10 @@ describe('static config environment declaration lowering', () => {
 
 	it('resolves an aliased helper and inline schema without class static metadata', async () => {
 		const facts = await parseFixture(`
-			import { defineConfig, envBinding as bind } from '@pluxel/host'
+			import { defineHostApplication, envBinding as bind } from '@pluxel/host'
 			import { AlphaPlugin } from './plugins'
 			import * as v from 'valibot'
-			export default defineConfig(() => ({ plugins: [AlphaPlugin], envBindings: [
+			export default defineHostApplication(() => ({ plugins: [AlphaPlugin], envBindings: [
 				bind(AlphaPlugin, {config: {schema: v.object({name: v.string()}), mapping: {name: 'APP_NAME'}}})
 			]}))
 		`)
@@ -275,9 +275,9 @@ describe('static config environment declaration lowering', () => {
 	it('rejects factory-local helpers that shadow the imported binding authority', async () => {
 		await expect(
 			parseFixture(`
-			import { defineConfig, envBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig } from './plugins'
-			export default defineConfig((envBinding) => ({plugins:[AlphaPlugin],envBindings:[
+			export default defineHostApplication((envBinding) => ({plugins:[AlphaPlugin],envBindings:[
 				envBinding(AlphaPlugin,{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
 			]}))
 		`),
@@ -287,9 +287,9 @@ describe('static config environment declaration lowering', () => {
 	it('preserves module schema identity when a factory shadows the schema import', async () => {
 		await expect(
 			parseFixture(`
-			import { defineConfig, envBinding } from '@pluxel/host'
+			import { defineHostApplication, envBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig } from './plugins'
-			export default defineConfig((AlphaConfig) => ({plugins:[AlphaPlugin],envBindings:[
+			export default defineHostApplication((AlphaConfig) => ({plugins:[AlphaPlugin],envBindings:[
 				envBinding(AlphaPlugin,{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
 			]}))
 		`),
@@ -499,9 +499,9 @@ describe('static config environment declaration lowering', () => {
 				}
 			`,
 			'entry.ts': `
-import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
-				export default defineConfig(() => ({
+				export default defineHostApplication(() => ({
 					name: 'unsafe',
 					plugins: [UnsafePlugin],
 					envBindings: [envBinding(UnsafePlugin, { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
@@ -539,9 +539,9 @@ import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
 				}
 			`,
 			'entry.ts': `
-import { defineConfig, envBinding, fileBinding } from '@pluxel/host'
+import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
-				export default defineConfig(() => ({
+				export default defineHostApplication(() => ({
 					name: 'unsafe-valibot-method',
 					plugins: [UnsafePlugin],
 					envBindings: [envBinding(UnsafePlugin, { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],

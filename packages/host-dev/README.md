@@ -9,7 +9,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({ plugins: [host({ entry: './app.ts', devConsole: true })] })
 ```
 
-`app.ts` 默认导出 `defineConfig(factory)`（来自 `@pluxel/host`）。每次启动向工厂传入 startup，等待其返回完整 plugins、sources、services 与存储配置。
+`app.ts` 默认导出 `defineHostApplication(factory)`（来自 `@pluxel/host`）。每次启动向工厂传入 startup，等待其返回完整 plugins、sources、services 与存储配置。
 服务准备完成后才启动插件；工厂 identity 变化（包括固定插件 import 失效）会重新求值并重建整个 Host。工厂求值失败保留旧 Host；服务准备或启动失败则从上次成功工厂与 startup 快照创建补偿宿主。动态来源单独更新且工厂不变时仍提交 catalog HMR。
 源码更新经过同一串行队列；求值失败保留已接受目录，修复后重新提交。关闭时撤回 watcher 并排空已接纳的工作。
 
