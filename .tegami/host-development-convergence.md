@@ -1,10 +1,10 @@
 ---
-
 packages:
-'@pluxel/host': minor
-'@pluxel/host-dev': patch
-'@pluxel/cli': patch
-'@pluxel/services': minor---
+  '@pluxel/host': minor
+  '@pluxel/host-dev': patch
+  '@pluxel/cli': patch
+  '@pluxel/services': minor
+---
 
 ## Share Host development reports and HTTP assembly
 

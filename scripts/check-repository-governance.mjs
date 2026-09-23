@@ -169,6 +169,28 @@ const publicVersions = new Map(
 )
 if (publicPackages.length === 0) errors.push('no public packages found under packages/ or plugins/')
 
+for (const filename of await readdir(resolve(root, '.tegami'))) {
+	if (!filename.endsWith('.md')) continue
+	const source = await readFile(resolve(root, '.tegami', filename), 'utf8')
+	const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(source)
+	if (!frontmatter) {
+		errors.push(`.tegami/${filename}: missing fenced YAML front matter`)
+		continue
+	}
+	try {
+		const metadata = parse(frontmatter[1])
+		if (
+			!metadata?.packages ||
+			typeof metadata.packages !== 'object' ||
+			Array.isArray(metadata.packages) ||
+			Object.keys(metadata.packages).length === 0
+		)
+			errors.push(`.tegami/${filename}: front matter must declare package bumps`)
+	} catch (error) {
+		errors.push(`.tegami/${filename}: invalid YAML front matter: ${String(error)}`)
+	}
+}
+
 const releaseDraft = await paper.draft()
 const plannedPackages = []
 const plannedTypes = new Map()

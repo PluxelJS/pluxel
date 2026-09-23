@@ -11,10 +11,10 @@ packages:
 
 ## Complete Host ownership and retire the Runtime package
 
-HostApplication is the single application contract for development and production. Environment parsing
-moves to @pluxel/host/environment, schema bootstrap binding to @pluxel/host/config-environment, and
-production launchers use Host plus explicitly composed HTTP services. PLUXEL_CONFIG and field bindings
-seed Host config records while existing persisted documents remain authoritative. The Runtime package,
+HostApplication is the single application contract for development and production. Environment facts
+move to @pluxel/host/environment; applications explicitly select configuration and Vault deployment
+inputs with `envBinding()` and `fileBinding()`. Production launchers use Host plus explicitly composed
+HTTP services. The Runtime package,
 its parallel Vite driver, production adapters, toolchain aliases and author barrels are removed.
 
 RootContext.require accepts installed root/all capabilities; owner Context.require accepts owner/all
