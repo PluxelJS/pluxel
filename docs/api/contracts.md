@@ -56,6 +56,9 @@ function findOrder(id: string): SharedResult<{ id: string }, MissingOrder> {
 Core 的 ESM 与 Node 24+ CJS 子入口都引用同一上游包，Core 主入口不会加载它。
 `Result` 实例只用于本地 API。通过 Workbench、Worker 或 JSON 传输时，由生产者投影为经过校验的普通 DTO，
 消费者按领域协议恢复；部分成功、已保存未应用等状态继续保留各自语义。
+仅将调用方需要按类型恢复的预期业务失败放进错误分支；输入 schema 损坏、底层服务故障和
+Plugin 生命周期失败仍按各自契约传播。官方 [Wretch consumer 示例](../plugins/wretch.md#将可预期失败返回给调用方)
+演示了 404 到本地 Result 的映射，以及 HTTP 调用方投影普通响应。
 
 ## 共享 RPC 能力按作用域持有
 

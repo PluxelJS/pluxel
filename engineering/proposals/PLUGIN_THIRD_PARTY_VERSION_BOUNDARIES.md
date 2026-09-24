@@ -108,10 +108,12 @@ dev 与实际安装版本，并写入生成字段 `pluxel.workbenchCapnweb`。�
 真实 WebSocket 打开 View；同版本第二份模块被 registry 拒绝。Content-only Storage 包构建不触发
 准入。Core 的独立安装双消费包探针验证 ESM/CJS、类型声明、Result 方法组合、跨包对象身份和主入口惰性。
 
-Auth 的 credential preparation 是唯一官方 Result 试用：输入、账户名、确认与异步 hash 的可预期
-失败通过 Result 组合；调用方在 Workbench 边界一次投影回原有的 `AuthSetupFailureCode` 普通 DTO。
-这使局部错误传播更直接，但代码量增加，不构成批量迁移其它业务 API 的理由。Command、生命周期、
-RPC DTO 与部分成功协议继续按各自契约。
+Auth 的 credential preparation 将输入、账户名、确认与异步 hash 的可预期失败通过 Result 组合；
+调用方在 Workbench 边界投影回原有的 `AuthSetupFailureCode` 普通 DTO。
+[Wretch consumer 示例](../../plugins/wretch/tests/fixtures/wretch-example.ts)则公开返回本地 Result：
+404 成为可分支处理的 `CustomerNotFound`，另一个 Plugin 的 HTTP route 将其投影为普通 JSON 与 404 状态；
+其它 HTTP、网络及生命周期错误继续按原契约传播。两处演示都不构成批量迁移其它业务 API 的理由；
+Command、生命周期、RPC DTO 与部分成功协议继续按各自契约。
 
 ## 5. 后续边界
 
