@@ -82,6 +82,46 @@ import { Shared as schema } from './barrel.ts';
 		expect(report.diagnostics[0]!.code).toBe('config_declaration_invalid')
 	})
 
+	it('retains exact field and wrapped schema locations for a default export', async () => {
+		const code = `${imported}
+const schema = customFactory();
+@Plugin() export default class Example { private settings = this.configs.use(schema satisfies unknown); }
+`
+		const report = await inspectOwnerConfigs([{ id: '/project/plugin.ts', code }], noResolve)
+		expect(report.diagnostics).toEqual([])
+		const config = report.declarations[0]!
+		expect(code.slice(config.start, config.end)).toBe(
+			'private settings = this.configs.use(schema satisfies unknown);',
+		)
+		expect(code.slice(config.schema.start, config.schema.end)).toBe('schema satisfies unknown')
+		expect(config.schema.inline).toBe(false)
+		expect(config.schema.declaration?.symbol).toBe('schema')
+	})
+
+	it('uses the caller source snapshot and propagates its failures', async () => {
+		const id = '/project/plugin.ts'
+		const code = `${imported} import { Schema } from './schema.ts';
+@Plugin() export class Example { config = this.configs.use(Schema); }`
+		const readIds: string[] = []
+		const report = await inspectOwnerConfigs([{ id, code }], async () => '/project/schema.ts', {
+			async readSource(fileId) {
+				readIds.push(fileId)
+				return 'export const Schema = customFactory();'
+			},
+		})
+		expect(readIds).toEqual(['/project/schema.ts'])
+		expect(report.diagnostics).toEqual([])
+		expect(report.declarations[0]!.schema.declaration?.moduleId).toBe('/project/schema.ts')
+		const failure = Object.assign(new Error('Source changed'), { code: 'source_changed' })
+		await expect(
+			inspectOwnerConfigs([{ id, code }], async () => '/project/schema.ts', {
+				async readSource() {
+					throw failure
+				},
+			}),
+		).rejects.toBe(failure)
+	})
+
 	it('honors cancellation', async () => {
 		const controller = new AbortController()
 		controller.abort()

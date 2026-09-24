@@ -1,9 +1,9 @@
 ---
 title: 查询插件源码
-description: 用 TypeScript 找出包的插件、Part 组成、配置声明和依赖来源，为 coding agent 提供准确修改位置。
+description: 用 TypeScript 定位插件、Part、配置声明与应用输入，帮助 coding agent 找到修改位置和验证入口。
 ---
 
-修改插件前，可以通过 `@pluxel/rolldown/inspect` 找到公开插件、Part 组成和配置声明。查询返回可以直接 JSON 序列化的数据及源码位置，不需要启动应用，也不会执行插件模块、schema 工厂或构建脚本。
+修改插件前，可以通过 `@pluxel/rolldown/inspect` 找到插件、Part 组成、配置声明和应用绑定。查询返回可以直接 JSON 序列化的数据及源码位置，不需要启动应用，也不会执行插件模块、应用工厂、schema 工厂或构建脚本。
 
 源码查询适合回答“在哪里改、影响哪些声明”。检查当前生效配置、调用业务方法和验证在线状态，使用[开发控制台](./dev-console.md)；验证隔离的行为回归，使用[插件测试](./testing.md)。
 
@@ -57,6 +57,8 @@ if (plugins.data.status !== 'unavailable') {
 | `dependencies` | 整个所属 Plugin 的 required/optional 依赖、provider requirement，以及各 occurrence 的依赖来源 |
 | `checks`       | 所属包在 `package.json` 声明的 scripts、执行目录和 manifest 位置；查询不运行命令              |
 
+`inputs` section 定位所选应用的 `configRecords` 表达式和目标 Plugin 的 config env/file bindings，需要显式 `application`。
+
 只改一个 Part 时，通过它的实际字段路径缩小范围：
 
 ```ts no-twoslash
@@ -70,7 +72,81 @@ const report = await project.plugin('package:@example/mail::MailPlugin', {
 
 Config 的 `configPath` 是所属 occurrence 的路径：Plugin 根为 `[]`，Part 为它的 `partPath`，不会追加保存配置值的 class field 名称。`schema.usage` 定位 `configs.use()` 的 schema 参数；`schema.declaration` 定位可解析的 schema 声明。引用无法解析时后者为 `null`，并通过 section 缺口说明原因。内联 schema 的声明位置就是其使用位置。
 
-这里只提供声明与定位，不推断完整 schema 字段、运行期默认值、校验输出或 Host binding。当前也没有 Vault、RPC 或应用声明 section。
+这里只提供声明与定位，不推断完整 schema 字段、运行期默认值或校验输出。应用绑定按下节显式选择；Vault 用法与 RPC 查询不在此接口范围内。
+
+## 定位应用的配置输入
+
+同一个 Plugin 可以被不同应用使用。修改环境映射、文件输入或应用初始配置时，给 `plugin()` 指定应用，再请求 `inputs`：
+
+```ts no-twoslash
+const report = await project.plugin('package:@example/mail::MailPlugin', {
+	application: { root: 'host', entry: 'src/app.ts' },
+	include: ['config', 'inputs', 'checks'],
+})
+
+const inputs = report.data.sections.inputs
+if (inputs.status === 'unavailable') {
+	console.log(inputs.reason)
+} else {
+	console.log(inputs.value.configRecords, inputs.value.bindings)
+	if (inputs.status === 'partial') console.log(inputs.gaps)
+}
+```
+
+这个例子假设 project root 下有 `host/src/app.ts`。application.root 必填，相对路径基于 project root；entry 相对 application.root。
+这项选择仅影响本次调用，不会改变其他查询。所有请求的 sections 都使用所选应用的源码解析上下文，包从 entry 的位置解析，
+不会优先拿 workspace 中的同名包替代。没有 application 时，保留前述 workspace 包优先的行为。
+
+`inputs.value` 包含：
+
+- `application`：规范化的 root、entry 与 sourceSpaces 绝对路径，方便核对结果属于哪个应用。
+- `configRecords`：应用对象中该字段的值表达式位置；确认没有字段时为 `null`。例如 `configRecords: makeRecords(startup.env)`
+  会定位 `makeRecords(...)`，供继续阅读，不执行工厂，也不声称其中一定包含所选 Plugin。
+- `bindings`：目标 Plugin 的 config env/file 声明。每个 env mapping 叶子有一条记录，file binding 有一条记录。
+
+每条 binding 的 `configPath` 是声明的 schema **输入**路径；整体 JSON/env 输入和 config file 输入为 `[]`。
+`declaration` 指向 helper 调用，`schema` 提供表达式与可解析的声明位置；`source.kind` 为 `env` 时读取 `name`，为 `file` 时读取 `path`，
+`source.usage` 是变量名或文件路径表达式的准确位置。查询不读取环境值或绑定文件；相对文件路径由运行时 `startup.root` 解释，
+不能把返回的 path 直接当成相对 entry 目录的部署路径。
+
+`inputs` 始终描述整个 owning Plugin；即使同时传入 `partPath` 缩小 config 查询，也会保留整体 JSON/file 输入。
+它只查询 config binding，不包含 Vault binding，也不发现 fork 的运行期配置。
+空 bindings 只表示没有找到该范围内的绑定；配置仍可能来自 `configRecords` 或运行时保存的记录。
+
+动态 mapping、未知 binding target 或无法定位的 schema 通过 gaps 给出源码位置；其他可独立确认的记录仍可使用。
+若应用对象的 spread、重复字段等使配置入口无法确认，inputs 返回 unavailable，其他独立 sections 仍可用。
+`complete` 表示声明导航完整，不表示 schema 已验证、环境变量存在或绑定已经生效。
+
+## 查询应用中的源码插件
+
+已知本地 Plugin 文件时，使用正式 source reference，并显式提供 application：
+
+```ts no-twoslash
+const local = await project.plugin('source:app/plugins/mail.ts::MailPlugin', {
+	application: { root: 'host', entry: 'src/app.ts' },
+	include: ['parts', 'config', 'dependencies', 'inputs', 'checks'],
+})
+```
+
+内建 `app` 对应 application.root，所以上例定位 `host/plugins/mail.ts`。外部或嵌套源码目录使用工具链相同的显式映射：
+
+```ts no-twoslash
+const managed = await project.plugin('source:managed/mail.ts::MailPlugin', {
+	application: {
+		root: 'host',
+		entry: 'src/app.ts',
+		sourceSpaces: [{ name: 'managed', root: '../managed-plugins' }],
+	},
+	include: ['config', 'inputs'],
+})
+```
+
+sourceSpaces 省略时只有内建 app；附加 root 相对 application.root。查询使用工具链相同的 package 优先、最具体 source root 和 native realpath 规则。
+不能把包根 Plugin 当成本地 source Plugin，也不能通过 symlink 逃出映射范围；地址与实际 canonical identity 不符时查询会拒绝。
+`checks` 使用源码文件最近的所属 package scripts，没有所属 package 时返回 unavailable。
+
+这是定向源码查询，不会扫描整个 sourceSpace。`plugins()` 与 `file()` 仍保持 workspace/package 的发现与反查范围。
+离线解析不加载 Vite 配置、不执行自定义 resolver hook，也不声称结果就是当前 Host catalog；需要在线事实时使用开发控制台。
 
 ## 从项目和文件反查
 
@@ -100,10 +176,21 @@ console.log(JSON.stringify({ overview, owners }, null, 2))
 
 每次查询使用新的解析状态读取源码；编辑后直接再次查询即可，没有需要手动刷新的长期索引。返回前会复核本次已读取的文件；检测到变化时，以 `source_changed` 拒绝查询。
 
-`revision` 只标识本次观察到的文件内容集合，不是文件系统的原子快照，也不是 Host revision。未命中的解析候选、尚不存在的文件等负向查询不在这个集合中；不能用 revision 相同证明整个项目没有变化，或证明源码与当前运行实例一致。
+`revision` 标识本次观察到的文件内容集合与显式应用解析选择，不是文件系统的原子快照，也不是 Host revision。未命中的解析候选、尚不存在的文件等负向查询不在这个集合中；不能用 revision 相同证明整个项目没有变化，或证明源码与当前运行实例一致。
+
+请求 `inputs` 或 source-entry 却没有 application 时，以 `invalid_input` 拒绝。诊断的 `location`（可用时）给出可继续阅读的表达式位置。
 
 调用失败使用 `InspectionError.code` 分支。例如 `package_not_found`、`plugin_not_found` 和 `part_not_found` 指向选择错误；`analysis_unavailable` 表示无法完成本次分析；`source_changed` / `cursor_stale` 可在源码稳定后重新查询。错误的 `message` 供诊断，不作为程序分支协议。
 
 打开和每次查询都可以传入 `AbortSignal`；打开时的 signal 只控制打开过程。查询在一个 project 内串行执行，最多允许 16 个等待请求，超过时报告 `query_queue_full`。优先一次请求需要的 sections，减少重复分析。
 
 `await using` 在作用域结束时释放查询对象；释放会拒绝新请求并等待已接纳的工作退出，重复释放安全。它不会启动 watcher 或保留在线应用资源。
+
+查询有整体预算：最多读取 4096 个文件、32 MiB 源码，展开 2048 个 Part occurrence（深度最多 64），返回数据最多 1 MiB。
+超过预算报告 `analysis_unavailable`，不会静默截断。可以减少 sections、选择 Part 子树，或直接读取已定位的源码。
+
+## 用查询完成一次修改
+
+先用已知 Plugin 或文件定向查询；不知道目标时再列出包与插件。按返回的 declaration/schema/binding 位置读源码，
+修改后运行 `checks` 中实际声明的脚本；脚本存在不代表它覆盖了本次行为，需要结合测试内容判断。
+编辑后直接重查，不需要刷新索引。若任务需要确认当前配置或应用结果，使用开发控制台，不用离线 revision 代替运行实例证据。

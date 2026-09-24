@@ -39,6 +39,8 @@ export interface InspectionDiagnostic {
 	readonly code: string
 	readonly message: string
 	readonly file?: string
+	/** Expression to read next, when a source location is available. */
+	readonly location?: InspectionSourceLocation
 }
 
 /** Complete describes the declared query scope, not arbitrary runtime behavior. */
@@ -129,7 +131,39 @@ export interface InspectionDependencyOrigin {
 	readonly optional: readonly PluginDefinitionAddress[]
 }
 
+export interface InspectionApplicationSelection {
+	/** Required application root; relative paths resolve against the project root. */
+	readonly root: string
+	/** Source application entry, relative to the application root. Never evaluated. */
+	readonly entry: string
+	/** Additional compiler source mappings. Omitted means only the built-in app mapping. */
+	readonly sourceSpaces?: readonly Readonly<{ name: string; root: string }>[]
+}
+
+export type InspectionConfigBinding = Readonly<{
+	/** Declared schema input path; [] means the entire config input. */
+	configPath: readonly string[]
+	declaration: InspectionSourceLocation
+	schema: InspectionConfigDeclaration['schema']
+	source:
+		| Readonly<{ kind: 'env'; name: string; usage: InspectionSourceLocation }>
+		| Readonly<{ kind: 'file'; path: string; usage: InspectionSourceLocation }>
+}>
+
+export type InspectionInputs = Readonly<{
+	application: Readonly<{
+		root: string
+		entry: string
+		sourceSpaces: readonly Readonly<{ name: string; root: string }>[]
+	}>
+	/** Application-wide expression only; null means confirmed absent, never unknown. */
+	configRecords: InspectionSourceLocation | null
+	/** Whole owning Plugin's config bindings, unaffected by partPath; excludes Vault. */
+	bindings: readonly InspectionConfigBinding[]
+}>
+
 export interface InspectionSectionData {
+	inputs: InspectionInputs
 	parts: Readonly<{ occurrences: readonly InspectionPart[] }>
 	config: Readonly<{ declarations: readonly InspectionConfigDeclaration[] }>
 	dependencies: Readonly<{
@@ -154,6 +188,8 @@ export type InspectionPluginReport<S extends readonly InspectionPluginSection[]>
 
 export interface InspectionPluginOptions extends InspectionQueryOptions {
 	readonly partPath?: readonly string[]
+	/** Selects source resolution for this query only. Required for inputs and source-entry targets. */
+	readonly application?: InspectionApplicationSelection
 }
 
 export interface InspectionFileOwner {

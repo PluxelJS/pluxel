@@ -6,9 +6,31 @@ Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
 `@pluxel/rolldown/inspect` 的 `openProject()` 提供源码查询作用域：`overview()`、`plugins()`、`plugin()` 和 `file()` 返回冻结的普通数据、规范 definition identity 与源码位置。用户用法见[查询插件源码](../docs/development/inspection.md)。它不启动 Host、不求值项目模块、不执行 schema 或 package scripts；在线操作继续由 devconsole 拥有。
 
-Inspection 复用 Plugin semantic pass 的 package-root export、constructor dependency 与 Part composition 规则；config 复用 declaration validator 和 source symbol resolver，不创建第二套 decorator/配置扫描语义。Part 按 occurrence path 展开，config root 为 `[]`，Part config path 为 occurrence path。依赖 aggregate 始终属于整个 Plugin，子树查询只限制 origin 位置。
+构建与查询共享同一套声明事实：`pluginSemanticsPlugin.ts` 的 `analyzeSemanticModule()` 生成 definition、direct dependency、
+Part target/mount 与源码范围，`lowerModule()` 单独生成注入代码；inspection 不执行 lowering 来取得信息。
+`configSourcePlugin.ts` 的 `extractConfigDeclarationFacts()` 统一声明校验和 field/schema 范围，构建再 render/normalize；
+`staticConfigEnvironment.ts` 统一 application factory、shadowing、对象字段、binding helper 和 mapping 规则，构建再执行 schema 还原与 transport 投影。
+这些是包内共享函数，不是新的 public analyzer 或持久化索引。
 
-每次查询创建新的 resolver 与观察集合，不保留跨查询索引或 watcher。返回前复核已读取文件，`revision` 标识该集合的内容，不能作为文件系统原子快照、负向解析候选的完整证明或运行实例 revision。分页 cursor 绑定查询与结果，源码变化使旧 cursor 失效。缺失源码或未解析关系必须成为 `partial` 的 gaps 或 `unavailable` 的 reason，不得以空列表伪装完整。当前仅支持 package-root 源码声明，以及 parts/config/dependencies/checks sections；应用绑定、Vault 和 RPC 不在此版本查询范围。
+`plugin(target, { application, include: ['config', 'inputs'] })` 在一次查询内固定 application root/entry/sourceSpaces。
+package target 从 entry 的解析上下文解析，source target 按正式 package 优先、最具体 source root、native realpath 和 containment 规则确认。
+没有 application 时继续保留 workspace 包优先的既有语义；有 application 时不能按包名改用另一份 workspace 源码。
+本次观察到同一 canonical definition 的冲突物理来源使查询失败。离线 resolver 不执行 Vite/custom hooks，不声称得到运行时 catalog。
+source-entry 支持定向查询，`plugins/file` 的 workspace 发现范围不隐式扩大。
+
+`inputs` 投影目标 Plugin 的 config env/file bindings 与应用级 configRecords 表达式位置，不执行工厂、不读取部署值。
+configPath 描述 schema input mapping，不是 normalized output；Part 按 occurrence 展开，config root 为 []，Part config path 为 occurrence path。
+依赖 aggregate 与 inputs 始终属于整个 Plugin，partPath 只缩小 parts/config/dependency origins。schema 符号证据不替代 Host 的运行期同对象校验。
+未解析的关系保留具名诊断与可用的源码位置；不能以空列表或 configRecords:null 代替未知。
+
+每次查询创建新的 resolver 与观察集合，同次查询共用已读取源码和总预算，不保留 watcher 或跨查询索引。
+返回前复核成功读取的文件；revision 标识观察内容及显式应用解析选择，不能作为文件系统原子快照、负向解析候选的完整证明或 Host revision。
+分页 cursor 绑定查询与结果。读取预算、取消和 source_changed 必须穿过内部 resolver 的恢复路径，以查询级失败结束，不能降为缺失源码的 gap。
+当前查询覆盖 parts/config/dependencies/checks/inputs；Vault 业务用法、RPC 类型展开、运行时影响范围不在这个合同内。
+
+修改这些共享函数时，验证同源码/相同解析上下文的构建与查询事实一致，同时保留独立的已知预期，避免两个消费者重复同一错误。
+公开入口测试覆盖多 entry、实际 package 来源、source-space/symlink、动态缺口、重复 Part 和无求值。
+交付还需用构建后的 `/inspect` 入口在普通 Node 脚本中查询真实源码，检查返回位置能否支持下一步修改。
 
 ## CLI distribution and capability ownership
 

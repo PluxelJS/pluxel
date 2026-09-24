@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { realpath } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import {
 	formatPluginNodeReference,
@@ -12,10 +12,14 @@ import {
 import { ResolverFactory } from 'oxc-resolver'
 import {
 	inspectPluginPackage,
+	inspectPluginSource,
+	inspectSourceSpaces,
 	type InspectedPluginPackage,
 	type InspectedSemanticOwner,
 } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { inspectOwnerConfigs } from './config'
+import { inspectApplicationInputs } from './application'
+import type { ConfigSourceSymbol } from '../rolldown/plugins/configSourcePlugin'
 import {
 	discoverPackages,
 	resolveInspectionPackage,
@@ -29,7 +33,9 @@ import {
 	type InspectionFileOwner,
 	type InspectionPage,
 	type InspectionPageOptions,
-	type InspectionQueryOptions,
+	type InspectionApplicationSelection,
+	type InspectionInputs,
+	type InspectionPluginOptions,
 	type InspectionPart,
 	type InspectionPluginReport,
 	type InspectionPluginSection,
@@ -42,7 +48,13 @@ import {
 	type ProjectInspection,
 } from './contracts'
 
-const SECTIONS = new Set<InspectionPluginSection>(['parts', 'config', 'dependencies', 'checks'])
+const SECTIONS = new Set<InspectionPluginSection>([
+	'parts',
+	'config',
+	'dependencies',
+	'checks',
+	'inputs',
+])
 const MAX_FILES = 4096
 const MAX_SOURCE_BYTES = 32 * 1024 * 1024
 const MAX_OCCURRENCES = 2048
@@ -54,7 +66,7 @@ type Occurrence = {
 	path: string[]
 	mount?: InspectionSourceLocation
 }
-type LoadedPackage = { pkg: WorkspacePackage; semantic: InspectedPluginPackage }
+type LoadedPackage = { pkg?: WorkspacePackage; semantic: InspectedPluginPackage }
 
 /**
  * Open a read-only query scope. No project module, build hook or application is evaluated.
@@ -211,12 +223,12 @@ export async function openProject(openOptions: OpenProjectOptions): Promise<Proj
 		},
 		async plugin<const S extends readonly InspectionPluginSection[] = readonly []>(
 			target: PluginDefinitionAddress | string,
-			input: InspectionQueryOptions & {
+			input: InspectionPluginOptions & {
 				readonly include?: S
 				readonly partPath?: readonly string[]
 			} = {},
 		): Promise<Inspection<InspectionPluginReport<S>>> {
-			validateObject(input, ['signal', 'include', 'partPath'])
+			validateObject(input, ['signal', 'include', 'partPath', 'application'])
 			const options = { ...input }
 			if (options.include !== undefined && !Array.isArray(options.include))
 				invalid('include must be an array')
@@ -229,20 +241,28 @@ export async function openProject(openOptions: OpenProjectOptions): Promise<Proj
 			if (partPath.some((part) => typeof part !== 'string' || !part))
 				invalid('partPath must contain non-empty field names')
 			const address = definitionTarget(target)
-			if (address.entry.kind !== 'package-root')
-				invalid('This inspection entry currently supports package-root Plugin definitions only.')
-			const packageName = address.entry.packageName
+			const application = copyApplication(options.application)
+			if (!application && (address.entry.kind === 'source-entry' || include.includes('inputs')))
+				invalid('An explicit application is required for inputs and source-entry queries.')
 			return query(options.signal, async (snapshot) => {
-				const pkg = await resolveInspectionPackage(root, packageName, await snapshot.packages())
-				const loaded = await snapshot.load(pkg)
+				const loaded = application
+					? await snapshot.applicationTarget(address, application)
+					: await snapshot.load(
+							await resolveInspectionPackage(
+								root,
+								(address.entry as { packageName: string }).packageName,
+								await snapshot.packages(),
+							),
+						)
+				const pkg = loaded.pkg
 				const definition = loaded.semantic.definitions.find((item) =>
 					sameDefinition(item.definition, address),
 				)
 				if (!definition)
 					throw new InspectionError(
 						'plugin_not_found',
-						`The package does not export ${address.exportName} as a Plugin.`,
-						{ context: { packageName } },
+						`The selected source does not declare ${address.exportName} at the requested Plugin address.`,
+						{ context: { reference: reference(address) } },
 					)
 				const expanded = occurrences(loaded.semantic, definition, snapshot)
 				if (!expanded.value.some((item) => samePath(item.path, partPath))) {
@@ -317,7 +337,26 @@ export async function openProject(openOptions: OpenProjectOptions): Promise<Proj
 						[...expanded.gaps, ...configs.diagnostics],
 					)
 				}
-				if (include.includes('checks')) sections.checks = section({ scripts: scripts(pkg) }, [])
+				if (include.includes('checks'))
+					sections.checks = pkg
+						? section({ scripts: scripts(pkg) }, [])
+						: {
+								status: 'unavailable',
+								reason: {
+									code: 'package_not_found',
+									message: 'No owning package manifest for this source declaration.',
+								},
+							}
+				if (include.includes('inputs')) {
+					sections.inputs = await inspectApplicationInputs({
+						application: snapshot.application!,
+						read: (file) => snapshot.read(file),
+						resolve: snapshot.resolve,
+						location: (file, start, end) => snapshot.location(file, start, end),
+						signal: options.signal,
+						matchesPlugin: (symbol) => snapshot.matchesPlugin(symbol, definition),
+					})
+				}
 				return { summary: summary(definition, snapshot), sections } as InspectionPluginReport<S>
 			})
 		},
@@ -399,6 +438,11 @@ export async function openProject(openOptions: OpenProjectOptions): Promise<Proj
 class Snapshot {
 	readonly files = new Map<string, string>()
 	private sourceBytes = 0
+	private readFailure: unknown
+	private readonly loadedPackages = new Map<string, Promise<LoadedPackage>>()
+	private readonly loadedModules = new Map<string, Promise<InspectedPluginPackage>>()
+	private readonly definitionOrigins = new Map<string, string>()
+	application?: InspectionInputs['application']
 	private readonly resolver = new ResolverFactory({
 		conditionNames: ['@pluxel/hmr', '@pluxel/source', 'development', 'node', 'import', 'default'],
 		extensions: ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.json'],
@@ -412,9 +456,18 @@ class Snapshot {
 	) {}
 	async read(file: string): Promise<string> {
 		checkSignal(this.signal)
-		const code = await readBounded(file, this.signal)
-		this.observe([{ id: file, code }])
-		return code
+		if (this.readFailure) throw this.readFailure
+		try {
+			const id = await realpath(file)
+			const known = this.files.get(id)
+			if (known !== undefined) return known
+			const code = await readBounded(id, this.signal)
+			this.observe([{ id, code }])
+			return code
+		} catch (cause) {
+			if (cause instanceof InspectionError || this.signal?.aborted) this.readFailure = cause
+			throw cause
+		}
 	}
 	observe(files: readonly ReadFile[]): void {
 		checkSignal(this.signal)
@@ -448,20 +501,184 @@ class Snapshot {
 		return result.path ? await realpath(result.path) : undefined
 	}
 	async load(pkg: WorkspacePackage): Promise<LoadedPackage> {
-		this.observe([{ id: pkg.manifestPath, code: pkg.source }])
-		const semantic = await inspectPluginPackage({
-			packageJsonPath: pkg.manifestPath,
-			resolve: this.resolve,
-			signal: this.signal,
-		})
-		this.observe(semantic.files)
-		return { pkg, semantic }
+		let pending = this.loadedPackages.get(pkg.manifestPath)
+		if (!pending) {
+			pending = (async () => {
+				this.observe([{ id: pkg.manifestPath, code: pkg.source }])
+				const semantic = await inspectPluginPackage({
+					packageJsonPath: pkg.manifestPath,
+					resolve: this.resolve,
+					signal: this.signal,
+					readSource: (file) => this.read(file),
+					root: this.application?.root,
+					sourceSpaces: this.application?.sourceSpaces.filter((space) => space.name !== 'app'),
+				})
+				this.observe(semantic.files)
+				return { pkg, semantic }
+			})().catch((cause) => this.failRead(cause))
+			this.loadedPackages.set(pkg.manifestPath, pending)
+		}
+		return pending
+	}
+	private failRead(cause: unknown): never {
+		if (
+			cause instanceof Error &&
+			'code' in cause &&
+			['analysis_unavailable', 'source_changed', 'aborted'].includes(String(cause.code))
+		)
+			this.readFailure ??= normalizeError(cause)
+		throw this.readFailure ?? cause
+	}
+
+	async packageFor(file: string): Promise<WorkspacePackage | undefined> {
+		let directory = dirname(file)
+		for (;;) {
+			const manifestPath = resolve(directory, 'package.json')
+			let source: string | undefined
+			try {
+				source = await this.read(manifestPath)
+			} catch (cause) {
+				if (!isMissing(cause)) throw cause
+			}
+			if (source !== undefined) {
+				const manifest: unknown = JSON.parse(source)
+				if (
+					!manifest ||
+					typeof manifest !== 'object' ||
+					Array.isArray(manifest) ||
+					('name' in manifest && typeof manifest.name !== 'string')
+				)
+					throw new InspectionError(
+						'analysis_unavailable',
+						`Invalid package manifest: ${manifestPath}`,
+					)
+				return {
+					root: directory,
+					manifestPath,
+					source,
+					manifest: manifest as WorkspacePackage['manifest'],
+				}
+			}
+			const parent = dirname(directory)
+			if (parent === directory) return undefined
+			directory = parent
+		}
+	}
+	async sourceModule(moduleId: string): Promise<InspectedPluginPackage> {
+		const id = await realpath(moduleId)
+		let pending = this.loadedModules.get(id)
+		if (!pending) {
+			pending = inspectPluginSource({
+				moduleId: id,
+				root: this.application!.root,
+				sourceSpaces: this.application!.sourceSpaces.filter((space) => space.name !== 'app'),
+				resolve: this.resolve,
+				readSource: (file) => this.read(file),
+				signal: this.signal,
+			})
+				.then((semantic) => {
+					this.observe(semantic.files)
+					return semantic
+				})
+				.catch((cause) => this.failRead(cause))
+			this.loadedModules.set(id, pending)
+		}
+		return pending
+	}
+	async applicationTarget(
+		address: PluginDefinitionAddress,
+		selection: InspectionApplicationSelection,
+	): Promise<LoadedPackage> {
+		const declaredRoot = resolve(this.root, selection.root)
+		const root = await realpath(declaredRoot)
+		const rootStat = await stat(root)
+		if (!rootStat.isDirectory()) invalid('application.root must be a directory')
+		const entry = await realpath(resolve(declaredRoot, selection.entry))
+		await this.read(entry)
+		let sourceSpaces: InspectionInputs['application']['sourceSpaces']
+		try {
+			sourceSpaces = await inspectSourceSpaces(declaredRoot, selection.sourceSpaces)
+		} catch (cause) {
+			throw new InspectionError('invalid_input', 'Invalid application sourceSpaces.', { cause })
+		}
+		this.application = { root, entry, sourceSpaces }
+		if (address.entry.kind === 'package-root') {
+			const file = await this.resolve(address.entry.packageName, entry)
+			if (!file)
+				throw new InspectionError(
+					'package_not_found',
+					`Cannot resolve ${address.entry.packageName} from ${entry}`,
+				)
+			const pkg = await this.packageFor(file)
+			if (!pkg || pkg.manifest.name !== address.entry.packageName)
+				throw new InspectionError(
+					'analysis_unavailable',
+					'Resolved package does not match the requested package identity.',
+				)
+			return this.load(pkg)
+		}
+		const sourceEntry = address.entry
+		const selectedSpace = sourceSpaces.find((space) => space.name === sourceEntry.sourceSpace)
+		if (!selectedSpace) invalid(`Unknown source space: ${address.entry.sourceSpace}`)
+		const file = await realpath(resolve(selectedSpace.root, address.entry.path))
+		const semantic = await this.sourceModule(file)
+		const canonical = semantic.definitions.find(
+			(item) => item.definition.exportName === address.exportName && item.moduleId === file,
+		)
+		if (canonical && !sameDefinition(canonical.definition, address))
+			throw new InspectionError(
+				'analysis_unavailable',
+				'The requested source address differs from its canonical Plugin identity.',
+				{ context: { reference: reference(canonical.definition) } },
+			)
+		return { semantic, pkg: await this.packageFor(file) }
+	}
+	async matchesPlugin(
+		symbol: ConfigSourceSymbol,
+		target: InspectedPluginPackage['definitions'][number],
+	): Promise<boolean> {
+		const targetOrigin = `${target.moduleId}\0${target.className}`
+		this.definitionOrigins.set(pluginDefinitionIndexKey(target.definition), targetOrigin)
+		const file = await realpath(symbol.moduleId)
+		if (file === target.moduleId && symbol.local === target.className) return true
+		let semantic: InspectedPluginPackage
+		try {
+			semantic = await this.sourceModule(file)
+		} catch (cause) {
+			if (this.readFailure) throw this.readFailure
+			checkSignal(this.signal)
+			if (cause instanceof InspectionError) throw cause
+			throw Object.assign(new Error('Cannot establish binding Plugin identity.', { cause }), {
+				code: 'unresolved_symbol',
+			})
+		}
+		const candidate = semantic.definitions.find(
+			(item) => item.moduleId === file && item.className === symbol.local,
+		)
+		if (!candidate)
+			throw Object.assign(new Error('Binding target is not a confirmed Plugin declaration.'), {
+				code: 'unresolved_symbol',
+			})
+		const key = pluginDefinitionIndexKey(candidate.definition)
+		const origin = `${candidate.moduleId}\0${candidate.className}`
+		const previous = this.definitionOrigins.get(key)
+		if (previous !== undefined && previous !== origin)
+			throw new InspectionError(
+				'analysis_unavailable',
+				'Conflicting physical sources for one Plugin definition.',
+				{ context: { reference: reference(candidate.definition) } },
+			)
+		this.definitionOrigins.set(key, origin)
+		return sameDefinition(candidate.definition, target.definition)
 	}
 	async configs(loaded: LoadedPackage) {
 		const files = loaded.semantic.files.filter(
 			(file) => /\.(?:[cm]?[jt]sx?)$/.test(file.id) && !/\.d\.[cm]?ts$/.test(file.id),
 		)
-		const result = await inspectOwnerConfigs(files, this.resolve, { signal: this.signal })
+		const result = await inspectOwnerConfigs(files, this.resolve, {
+			signal: this.signal,
+			readSource: (file) => this.read(file),
+		})
 		this.observe(result.files)
 		return result
 	}
@@ -472,9 +689,15 @@ class Snapshot {
 		return { file, start: position(code, start), end: position(code, end) }
 	}
 	revision(): string {
-		return digest(['inspection-v1', this.root, [...this.files].sort(([a], [b]) => compare(a, b))])
+		return digest([
+			'inspection-v1',
+			this.root,
+			this.application ?? null,
+			[...this.files].sort(([a], [b]) => compare(a, b)),
+		])
 	}
 	async verify(): Promise<void> {
+		if (this.readFailure) throw this.readFailure
 		for (const [file, code] of this.files) {
 			checkSignal(this.signal)
 			if ((await readBounded(file, this.signal).catch((): null => null)) !== code)
@@ -482,6 +705,37 @@ class Snapshot {
 		}
 		checkSignal(this.signal)
 	}
+}
+
+function copyApplication(
+	input: InspectionApplicationSelection | undefined,
+): InspectionApplicationSelection | undefined {
+	if (input === undefined) return undefined
+	validateObject(input, ['root', 'entry', 'sourceSpaces'])
+	if (
+		typeof input.root !== 'string' ||
+		!input.root.trim() ||
+		typeof input.entry !== 'string' ||
+		!input.entry.trim()
+	)
+		invalid('application.root and entry must be non-empty paths')
+	if (input.sourceSpaces !== undefined && !Array.isArray(input.sourceSpaces))
+		invalid('sourceSpaces must be an array')
+	const sourceSpaces =
+		input.sourceSpaces === undefined
+			? undefined
+			: Array.from(input.sourceSpaces, (space) => {
+					validateObject(space, ['name', 'root'])
+					if (
+						typeof space.name !== 'string' ||
+						!space.name ||
+						typeof space.root !== 'string' ||
+						!space.root.trim()
+					)
+						invalid('Each source space must have a name and root')
+					return { name: space.name, root: space.root }
+				})
+	return { root: input.root, entry: input.entry, ...(sourceSpaces ? { sourceSpaces } : {}) }
 }
 
 function occurrences(

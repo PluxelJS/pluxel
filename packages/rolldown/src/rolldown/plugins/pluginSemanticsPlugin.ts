@@ -35,6 +35,16 @@ type InspectionReadState = {
 	signal?: AbortSignal
 	maxFiles: number
 	maxSourceBytes: number
+	readSource?(file: string): Promise<string>
+	failure?: Error
+}
+function failInspectionRead(
+	state: InspectionReadState,
+	message: string,
+	code = 'analysis_unavailable',
+): never {
+	state.failure ??= Object.assign(new Error(message), { code })
+	throw state.failure
 }
 const inspectionReads = new AsyncLocalStorage<InspectionReadState>()
 function readFile(path: string, encoding: 'utf8'): Promise<string>
@@ -46,7 +56,25 @@ async function readFile(path: string, encoding?: 'utf8'): Promise<string | Buffe
 	const key = await realpath(path)
 	const previous = state.files.get(key)
 	if (previous === undefined && state.files.size >= state.maxFiles) {
-		throw new Error('[pluxel:inspection] source file budget exceeded')
+		failInspectionRead(state, '[pluxel:inspection] source file budget exceeded')
+	}
+	if (state.readSource) {
+		const code = await state.readSource(key).catch((cause) => {
+			if (
+				cause instanceof Error &&
+				'code' in cause &&
+				['analysis_unavailable', 'source_changed', 'aborted'].includes(String(cause.code))
+			)
+				state.failure ??= cause
+			throw cause
+		})
+		if (previous !== undefined && previous !== code)
+			failInspectionRead(state, `Source changed: ${key}`, 'source_changed')
+		if (previous === undefined) state.bytes += Buffer.byteLength(code)
+		if (state.bytes > state.maxSourceBytes)
+			failInspectionRead(state, '[pluxel:inspection] source byte budget exceeded')
+		state.files.set(key, code)
+		return encoding ? code : Buffer.from(code)
 	}
 	const remaining =
 		state.maxSourceBytes - state.bytes + (previous === undefined ? 0 : Buffer.byteLength(previous))
@@ -57,7 +85,8 @@ async function readFile(path: string, encoding?: 'utf8'): Promise<string | Buffe
 		for await (const chunk of stream) {
 			const buffer = chunk as Buffer
 			bytes += buffer.byteLength
-			if (bytes > remaining) throw new Error('[pluxel:inspection] source byte budget exceeded')
+			if (bytes > remaining)
+				failInspectionRead(state, '[pluxel:inspection] source byte budget exceeded')
 			chunks.push(buffer)
 		}
 	} finally {
@@ -66,9 +95,11 @@ async function readFile(path: string, encoding?: 'utf8'): Promise<string | Buffe
 	const buffer = Buffer.concat(chunks, bytes)
 	const code = buffer.toString('utf8')
 	if (previous !== undefined && previous !== code) {
-		throw Object.assign(new Error(`[pluxel:inspection] source changed during inspection: ${key}`), {
-			code: 'source_changed',
-		})
+		failInspectionRead(
+			state,
+			`[pluxel:inspection] source changed during inspection: ${key}`,
+			'source_changed',
+		)
 	}
 	if (previous === undefined) state.bytes += Buffer.byteLength(code)
 	state.files.set(key, code)
@@ -840,25 +871,48 @@ export type InspectedPluginPackage = Readonly<{
  * Each call owns fresh semantic state. The caller owns resolver policy and cancellation.
  * Strict compiler diagnostics deliberately propagate: an invalid package is not an empty inventory.
  */
-export async function inspectPluginPackage(options: {
-	packageJsonPath: string
+type SourceInspectionOptions = {
+	packageJsonPath?: string
+	moduleId?: string
+	root?: string
+	sourceSpaces?: PluginSemanticsPluginOptions['sourceSpaces']
 	resolve?(source: string, importer: string): Promise<string | undefined>
+	readSource?(file: string): Promise<string>
 	signal?: AbortSignal
 	maxFiles?: number
 	maxSourceBytes?: number
-}): Promise<InspectedPluginPackage> {
+}
+
+export function inspectPluginPackage(
+	options: SourceInspectionOptions & { packageJsonPath: string },
+): Promise<InspectedPluginPackage> {
+	return inspectPluginSource(options)
+}
+
+/** Internal targeted source inspection, using the same package/source precedence as transforms. */
+export async function inspectPluginSource(
+	options: SourceInspectionOptions,
+): Promise<InspectedPluginPackage> {
 	const reads: InspectionReadState = {
 		files: new Map(),
 		bytes: 0,
 		signal: options.signal,
 		maxFiles: options.maxFiles ?? 4096,
 		maxSourceBytes: options.maxSourceBytes ?? 32 * 1024 * 1024,
+		readSource: options.readSource,
 	}
 	return inspectionReads.run(reads, async () => {
 		const result = await inspectPluginPackageSource({
 			...options,
-			packageJsonPath: await realpath(options.packageJsonPath),
+			...(options.packageJsonPath
+				? { packageJsonPath: await realpath(options.packageJsonPath) }
+				: {}),
+			...(options.moduleId ? { moduleId: await realpath(options.moduleId) } : {}),
+		}).catch((cause) => {
+			throw reads.failure ?? cause
 		})
+		if (reads.failure) throw reads.failure
+		options.signal?.throwIfAborted()
 		const paths = new Map<string, string>()
 		const canonical = async (path: string): Promise<string> => {
 			let resolved = paths.get(path)
@@ -898,11 +952,9 @@ export async function inspectPluginPackage(options: {
 	})
 }
 
-async function inspectPluginPackageSource(options: {
-	packageJsonPath: string
-	resolve?(source: string, importer: string): Promise<string | undefined>
-	signal?: AbortSignal
-}): Promise<InspectedPluginPackage> {
+async function inspectPluginPackageSource(
+	options: SourceInspectionOptions,
+): Promise<InspectedPluginPackage> {
 	const error = (message: string): never => {
 		throw new Error(message)
 	}
@@ -910,17 +962,25 @@ async function inspectPluginPackageSource(options: {
 		options.signal?.throwIfAborted()
 	}
 	check()
-	const plan = await createPackagePlan(options.packageJsonPath, error, 'inspect')
+	const plan = options.packageJsonPath
+		? await createPackagePlan(options.packageJsonPath, error, 'inspect')
+		: undefined
 	check()
-	if (!plan) error('[pluxel:plugin-package] inspection did not produce a package plan')
+	if (!plan && !options.moduleId)
+		error('[pluxel:inspection] a package or source module is required')
+	const sourceRoot = options.root ?? plan!.packageRoot
+	const packageOwnerCache = new Map<string, Promise<string | undefined>>()
+	const inferredPackagePlans = new Map<string, Promise<PackagePlan | undefined>>()
 	const files = new Map(inspectionReads.getStore()?.files)
 	const owners: InspectedSemanticOwner[] = []
 	const definitions: Array<
 		PluginSemanticDefinition & { moduleId: string; start: number; end: number }
 	> = []
-	const pending = [...new Set([...plan.addresses.keys()].map((key) => key.split('\0')[0]!))]
+	const pending = plan
+		? [...new Set([...plan.addresses.keys()].map((key) => key.split('\0')[0]!))]
+		: [options.moduleId!]
 	const visited = new Set<string>()
-	const sourceSpaces = resolveSourceSpaces(plan.packageRoot, undefined)
+	const sourceSpaces = Promise.resolve(await resolveSourceSpaces(sourceRoot, options.sourceSpaces))
 	const sourceFileRealpaths = new Map<string, Promise<string>>()
 	while (pending.length > 0) {
 		check()
@@ -933,23 +993,34 @@ async function inspectPluginPackageSource(options: {
 		const ast = parseStandaloneWithLang(code, id)
 		if (!ast) error(`[pluxel:plugin-package] failed to parse ${id}`)
 		const analysis = analyzeModule(ast)
-		const lowerOptions: Parameters<typeof lowerModule>[0] = {
+		const activePlan =
+			plan ?? (await inferPackagePlan(id, packageOwnerCache, inferredPackagePlans, error))
+		const addresses =
+			plan?.addresses ??
+			(await sourceAddresses(
+				analysis,
+				id,
+				sourceSpaces,
+				sourceFileRealpaths,
+				activePlan?.addresses,
+			))
+		const lowerOptions: SemanticModuleOptions = {
 			analysis,
 			code,
 			id,
-			sourceRoot: plan.packageRoot,
+			sourceRoot,
 			sourceSpaces,
 			sourceFileRealpaths,
-			addresses: plan.addresses,
-			packagePlan: plan,
-			strictPackagePlan: true,
+			addresses,
+			packagePlan: activePlan,
+			strictPackagePlan: Boolean(plan),
 			error,
 			resolve: async (source) => {
 				check()
 				return options.resolve ? options.resolve(source, id) : resolveLocalFile(source, id)
 			},
 		}
-		const result = await lowerModule(lowerOptions)
+		const result = await analyzeSemanticModule(lowerOptions)
 		check()
 		for (const definition of result.definitions) {
 			const raw = analysis.classes.get(definition.className)!
@@ -960,50 +1031,11 @@ async function inspectPluginPackageSource(options: {
 				end: numberPosition(raw.node.end, error, 'class end'),
 			})
 		}
-		const resolvedParts = new Map<string, Promise<readonly string[]>>()
-		for (const raw of analysis.classes.values()) {
-			if (!raw.marked && !raw.abstract && !raw.pluginPartSubclass) continue
-			const key = originKey(id, raw.name)
-			const inventory = result.dependencyInventory.find((node) => node.key === key)
-			const occurrences = partOccurrences(raw, analysis, id, error)
-			const parts: InspectedSemanticOwner['parts'][number][] = []
-			for (const occurrence of occurrences) {
-				// Resolve each occurrence independently: a bare external Part has no source target,
-				// so zipping filtered target keys against fields would attach the wrong owner.
-				let resolving = resolvedParts.get(occurrence.partName)
-				if (!resolving) {
-					resolving = resolvePartTargets([occurrence], analysis, id, lowerOptions)
-					resolvedParts.set(occurrence.partName, resolving)
-				}
-				const [targetKey] = await resolving
-				const [moduleId, className] = targetKey?.split('\0') ?? []
-				const target = moduleId && className ? { moduleId, className } : undefined
-				if (target && !visited.has(target.moduleId)) pending.push(target.moduleId)
-				const member = arrayOf((raw.node.body as AstNode).body).find((value) => {
-					const node = value as AstNode
-					return (
-						node.type === 'PropertyDefinition' && propertyName(node.key) === occurrence.fieldName
-					)
-				}) as AstNode
-				const mount = partsUse(member.value)!
-				parts.push({
-					...occurrence,
-					...(target ? { target } : {}),
-					start: numberPosition(mount.start, error, 'Part mount start'),
-					end: numberPosition(mount.end, error, 'Part mount end'),
-				})
+		owners.push(...result.owners)
+		for (const owner of result.owners) {
+			for (const part of owner.parts) {
+				if (part.target && !visited.has(part.target.moduleId)) pending.push(part.target.moduleId)
 			}
-			owners.push({
-				key,
-				moduleId: id,
-				className: raw.name,
-				kind: raw.pluginPartSubclass ? 'part' : raw.marked ? 'plugin' : 'abstract',
-				start: numberPosition(raw.node.start, error, 'class start'),
-				end: numberPosition(raw.node.end, error, 'class end'),
-				requires: inventory?.requires ?? [],
-				optional: inventory?.optional ?? [],
-				parts,
-			})
 		}
 	}
 	// The compiler validates local cycles immediately; offline traversal also guards cycles
@@ -1024,15 +1056,15 @@ async function inspectPluginPackageSource(options: {
 	for (const owner of owners) visit(owner.key, new Set())
 	check()
 	return {
-		packageName: plan.packageName,
-		rootEntry: plan.rootEntry,
+		packageName: plan?.packageName ?? '',
+		rootEntry: plan?.rootEntry ?? options.moduleId!,
 		definitions,
 		owners,
 		files: [...files].map(([id, code]) => ({ id, code })),
 	}
 }
 
-async function lowerModule(options: {
+type SemanticModuleOptions = {
 	analysis: ModuleAnalysis
 	code: string
 	id: string
@@ -1044,15 +1076,12 @@ async function lowerModule(options: {
 	strictPackagePlan: boolean
 	error(message: string): never
 	resolve(source: string): Promise<string | undefined>
-}): Promise<{
-	code: string
-	definitions: PluginSemanticDefinition[]
-	dependencyInventory: DependencyInventoryNode[]
-	requiredSources: Set<string>
-}> {
+}
+
+async function analyzeSemanticModule(options: SemanticModuleOptions) {
 	const { analysis, id } = options
 	const requiredSources = new Set<string>()
-	const replacements: Replacement[] = []
+	const refs: { start: number; end: number; definition: PluginDefinitionAddress }[] = []
 	const refAddresses = new Map<string, PluginDefinitionAddress>()
 
 	for (const ref of analysis.refs.values()) {
@@ -1063,11 +1092,7 @@ async function lowerModule(options: {
 		refAddresses.set(ref.name, address)
 		const start = numberPosition(ref.call.start, options.error, `${id} ref start`)
 		const end = numberPosition(ref.call.end, options.error, `${id} ref end`)
-		replacements.push({
-			start,
-			end,
-			text: `__pluxelDefinePluginRef(${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, definition: address })})`,
-		})
+		refs.push({ start, end, definition: address })
 	}
 
 	const definitions: PluginSemanticDefinition[] = []
@@ -1075,6 +1100,7 @@ async function lowerModule(options: {
 	const partOwners: PartOwnerFacts[] = []
 	const partRequired: PartRequiredFacts[] = []
 	const partOptional: PartOptionalFacts[] = []
+	const owners: InspectedSemanticOwner[] = []
 	for (const raw of analysis.classes.values()) {
 		validateCallerViewPrivateBrand(raw, analysis, id, options.error)
 		validateCallerViewCallableFields(raw, analysis, id, options.error)
@@ -1085,7 +1111,39 @@ async function lowerModule(options: {
 			)
 		}
 		const occurrences = partOccurrences(raw, analysis, id, options.error)
-		const partTargets = await resolvePartTargets(occurrences, analysis, id, options)
+		const targets = await resolvePartTargets(occurrences, analysis, id, options)
+		const partTargets = targets.filter((target): target is string => target !== undefined)
+		const owner = {
+			key: originKey(id, raw.name),
+			moduleId: id,
+			className: raw.name,
+			kind: raw.pluginPartSubclass
+				? ('part' as const)
+				: raw.marked
+					? ('plugin' as const)
+					: ('abstract' as const),
+			start: numberPosition(raw.node.start, options.error, 'class start'),
+			end: numberPosition(raw.node.end, options.error, 'class end'),
+			requires: [] as readonly PluginDefinitionAddress[],
+			optional: [] as readonly PluginDefinitionAddress[],
+			parts: occurrences.map((occurrence, index) => {
+				const [moduleId, className] = targets[index]?.split('\0') ?? []
+				const member = arrayOf((raw.node.body as AstNode).body).find((value) => {
+					const node = value as AstNode
+					return (
+						node.type === 'PropertyDefinition' && propertyName(node.key) === occurrence.fieldName
+					)
+				}) as AstNode
+				const mount = partsUse(member.value)!
+				return {
+					...occurrence,
+					...(moduleId && className ? { target: { moduleId, className } } : {}),
+					start: numberPosition(mount.start, options.error, 'Part mount start'),
+					end: numberPosition(mount.end, options.error, 'Part mount end'),
+				}
+			}),
+		}
+		if (raw.marked || raw.abstract || raw.pluginPartSubclass) owners.push(owner)
 		if (occurrences.length > 0) {
 			partOwners.push({ className: raw.name, occurrences })
 		}
@@ -1095,6 +1153,8 @@ async function lowerModule(options: {
 			if (requires.length > 0) partRequired.push({ className: raw.name, requires })
 			const optional = optionalRequirements(raw, analysis, refAddresses, id, options.error)
 			if (optional.length > 0) partOptional.push({ className: raw.name, optional })
+			owner.requires = requires
+			owner.optional = optional
 			dependencyInventory.push({
 				key: originKey(id, raw.name),
 				kind: 'part',
@@ -1120,6 +1180,8 @@ async function lowerModule(options: {
 		const optional = raw.marked
 			? optionalRequirements(raw, analysis, refAddresses, id, options.error)
 			: []
+		owner.requires = requires
+		owner.optional = optional
 		const provides = raw.marked ? await markerProvider(raw, analysis, id, options) : undefined
 		definitions.push({
 			className: raw.name,
@@ -1141,6 +1203,33 @@ async function lowerModule(options: {
 	}
 	validateLocalPartContainment(partOwners, analysis, id, options.error)
 
+	return {
+		definitions,
+		dependencyInventory,
+		requiredSources,
+		refs,
+		partOwners,
+		partRequired,
+		partOptional,
+		owners,
+	}
+}
+
+async function lowerModule(options: SemanticModuleOptions) {
+	const {
+		definitions,
+		dependencyInventory,
+		requiredSources,
+		refs,
+		partOwners,
+		partRequired,
+		partOptional,
+	} = await analyzeSemanticModule(options)
+	const replacements: Replacement[] = refs.map(({ start, end, definition }) => ({
+		start,
+		end,
+		text: `__pluxelDefinePluginRef(${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, definition })})`,
+	}))
 	let transformed = applyReplacements(options.code, replacements)
 	if (
 		definitions.length > 0 ||
@@ -1233,8 +1322,8 @@ async function resolvePartTargets(
 	analysis: ModuleAnalysis,
 	id: string,
 	options: Parameters<typeof lowerModule>[0],
-): Promise<readonly string[]> {
-	const targets: string[] = []
+): Promise<readonly (string | undefined)[]> {
+	const targets: (string | undefined)[] = []
 	const modules = new Map<string, Promise<ModuleAnalysis>>()
 	const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
 		const moduleKey = resolve(stripQuery(moduleId))
@@ -1257,7 +1346,10 @@ async function resolvePartTargets(
 			continue
 		}
 		const binding = analysis.imports.get(occurrence.partName)
-		if (!binding || isBareSpecifier(binding.source)) continue
+		if (!binding || isBareSpecifier(binding.source)) {
+			targets.push(undefined)
+			continue
+		}
 		const resolved = await options.resolve(binding.source)
 		if (!resolved) {
 			options.error(
@@ -2415,6 +2507,18 @@ function isBareSpecifier(source: string): boolean {
 function isInside(root: string, file: string): boolean {
 	const path = relative(resolve(root), resolve(file))
 	return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !isAbsolute(path))
+}
+
+/** Internal projection of the compiler's normalized source mappings. */
+export async function inspectSourceSpaces(
+	root: string,
+	configured?: PluginSemanticsPluginOptions['sourceSpaces'],
+) {
+	const spaces = await resolveSourceSpaces(root, configured)
+	return spaces.map((space) => ({
+		name: space.name,
+		root: space.realRoot,
+	}))
 }
 
 async function resolveSourceSpaces(

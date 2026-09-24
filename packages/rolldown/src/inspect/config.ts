@@ -2,10 +2,10 @@ import { createReadStream } from 'node:fs'
 import {
 	collectConfigSchemaModule,
 	createConfigSchemaSourceResolver,
-	extractConfigDeclarations,
+	extractConfigDeclarationFacts,
 	type ConfigSchemaModule,
 } from '../rolldown/plugins/configSourcePlugin.ts'
-import { type AstNode, parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
+import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 
 type SourceFile = { readonly id: string; readonly code: string }
 type SourceRange = { readonly moduleId: string; readonly start: number; readonly end: number }
@@ -24,7 +24,10 @@ type Diagnostic = { readonly code: string; readonly message: string; readonly fi
 export async function inspectOwnerConfigs(
 	files: readonly SourceFile[],
 	resolve: (source: string, importer: string) => Promise<string | undefined>,
-	options: { readonly signal?: AbortSignal } = {},
+	options: {
+		readonly signal?: AbortSignal
+		readonly readSource?: (id: string) => Promise<string>
+	} = {},
 ): Promise<{
 	declarations: readonly OwnerConfig[]
 	diagnostics: readonly Diagnostic[]
@@ -51,6 +54,23 @@ export async function inspectOwnerConfigs(
 		if (observed.size >= 4096) {
 			readFailure = sourceBudgetError('Inspection source file budget exceeded (4096 files).')
 			throw readFailure
+		}
+		if (options.readSource) {
+			let code: string
+			try {
+				code = await options.readSource(id)
+			} catch (error) {
+				readFailure = error instanceof Error ? error : new Error(String(error))
+				throw readFailure
+			}
+			check()
+			sourceBytes += Buffer.byteLength(code)
+			if (sourceBytes > maxBytes) {
+				readFailure = sourceBudgetError('Inspection source byte budget exceeded (32 MiB).')
+				throw readFailure
+			}
+			observed.set(id, { id, code })
+			return code
 		}
 		const stream = createReadStream(id, { signal: options.signal, highWaterMark: 64 * 1024 })
 		const chunks: Buffer[] = []
@@ -107,65 +127,21 @@ export async function inspectOwnerConfigs(
 			})
 			continue
 		}
-		const expressions: { module: ConfigSchemaModule; expression: AstNode }[] = []
 		try {
-			const found = await extractConfigDeclarations(
+			const { module, declarations: found } = extractConfigDeclarationFacts(
 				ast,
 				file.code,
 				file.id,
-				{
-					...resolver,
-					async render(module, expression) {
-						expressions.push({ module, expression })
-						return module.code.slice(Number(expression.start), Number(expression.end))
-					},
-				},
 				(message) => {
 					throw new Error(message)
 				},
 			)
-			for (const [index, config] of found.entries()) {
+			modules.set(file.id, module)
+			for (const config of found) {
 				check()
-				const { module, expression } = expressions[index]!
-				const start = Number(expression.start)
-				const end = Number(expression.end)
-				const owner =
-					module.classes.get(config.className) ??
-					ast.body
-						.map((statement) => statement as unknown as AstNode)
-						.map((statement) =>
-							statement.type === 'ExportDefaultDeclaration'
-								? (statement.declaration as AstNode)
-								: statement,
-						)
-						.find(
-							(statement) =>
-								statement.type === 'ClassDeclaration' &&
-								(statement.id as AstNode | undefined)?.name === config.className,
-						)
-				const members = (owner?.body as AstNode | undefined)?.body
-				const field = Array.isArray(members)
-					? (members.find(
-							(member: AstNode) =>
-								member.type === 'PropertyDefinition' &&
-								Number(member.start) <= start &&
-								Number(member.end) >= end,
-						) as AstNode | undefined)
-					: undefined
+				const { start, end, inline, reference } = config.schema
 				let declaration: OwnerConfig['schema']['declaration']
-				let unwrapped = expression
-				while (
-					[
-						'TSAsExpression',
-						'TSSatisfiesExpression',
-						'TSNonNullExpression',
-						'ParenthesizedExpression',
-					].includes(String(unwrapped.type))
-				) {
-					unwrapped = unwrapped.expression as AstNode
-				}
-				const inline = unwrapped.type !== 'Identifier' && unwrapped.type !== 'MemberExpression'
-				const symbol = await resolver.resolveSymbol(module, unwrapped)
+				const symbol = await resolver.resolveSymbol(module, reference)
 				check()
 				if (readFailure) throw readFailure
 				if (symbol) {
@@ -193,8 +169,8 @@ export async function inspectOwnerConfigs(
 					moduleId: file.id,
 					className: config.className,
 					fieldName: config.fieldName,
-					start: Number(field?.start ?? start),
-					end: Number(field?.end ?? end),
+					start: config.field.start,
+					end: config.field.end,
 					schema: {
 						moduleId: file.id,
 						start,

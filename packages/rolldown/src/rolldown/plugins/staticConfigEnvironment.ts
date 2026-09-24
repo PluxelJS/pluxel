@@ -12,10 +12,16 @@ import {
 } from './staticConfigEnvironmentExample.ts'
 import { restoreStaticConfigSchema } from './staticConfigEnvironmentSchema.ts'
 
+type DeclarationError = (
+	message: string,
+	detail?: { code: 'invalid_declaration' | 'unsupported_expression'; node?: AstNode },
+) => never
+
 const ENVIRONMENT_NAME = /^[A-Z_][A-Z0-9_]*$/
 
-type MappingLeaf = Readonly<{
+export type MappingLeaf = Readonly<{
 	environmentName: string
+	node: AstNode
 	path: readonly string[]
 }>
 
@@ -36,7 +42,7 @@ export type StaticRuntimeDeclarationParserOptions = {
 	code: string
 	id: string
 	sourceResolver: ConfigSchemaSourceResolver
-	error(message: string): never
+	error: DeclarationError
 }
 
 /**
@@ -50,6 +56,257 @@ export async function parseStaticRuntimeDeclaration(
 	options: StaticRuntimeDeclarationParserOptions,
 ): Promise<StaticRuntimeDeclarationFacts> {
 	const { ast, code, id, sourceResolver, error } = options
+	const { module, factory, application, fields } = readApplicationDeclaration({
+		ast,
+		code,
+		id,
+		error,
+	})
+	if (options.requireStaticPlugins) {
+		const plugins = fields.get('plugins')?.value
+		if (!plugins) error(`[static-application] ${id} must declare plugins`)
+		await resolveStaticCatalogPluginSymbols(plugins, module, sourceResolver, id, error)
+		assertCatalogNotMutated(factory, plugins, id, error)
+	}
+	const directSources = readDirectObjectField(application, 'sources')
+	const hasSources =
+		(directSources !== undefined &&
+			!(
+				directSources.type === 'ArrayExpression' && arrayOf(directSources.elements).length === 0
+			)) ||
+		arrayOf(application.properties).some(
+			(property) => (property as AstNode).type === 'SpreadElement',
+		)
+	const directName = readDirectObjectField(application, 'name')
+	const directBindings = fields.get('envBindings')?.value
+	const name = readLiteralString(directName)
+	if (directBindings === undefined)
+		return Object.freeze({
+			...(name === undefined ? {} : { name }),
+			hasSources,
+			targets: Object.freeze([]),
+		})
+	if (directBindings.type !== 'ArrayExpression')
+		error(`[static-application] ${id} envBindings must be a direct array literal`)
+	const plugins = fields.get('plugins')?.value
+	if (!plugins) error(`[static-application] ${id} must declare plugins`)
+	const catalogPlugins = await resolveStaticCatalogPluginSymbols(
+		plugins,
+		module,
+		sourceResolver,
+		id,
+		error,
+	)
+	const targets: StaticConfigEnvironmentTarget[] = []
+	const seenTargets = new Set<string>()
+	for (const [index, raw] of arrayOf(directBindings.elements).entries()) {
+		const binding = raw ? unwrapExpression(raw as AstNode) : undefined
+		const { bindingFields, pluginNode, pluginName } = readApplicationBinding(
+			binding,
+			'env',
+			index,
+			module,
+			id,
+			error,
+		)
+		const pluginSymbol = await sourceResolver.resolveSymbol(module, pluginNode)
+		if (!pluginSymbol || !catalogPlugins.has(sourceSymbolKey(pluginSymbol)))
+			error(
+				`[static-application] ${id} environment binding Plugin ${pluginName} is not present in the statically resolved plugins catalog`,
+			)
+		const namespace = readBindingNamespace(bindingFields, 'env', index, id, error)
+		for (const kind of ['config', 'vault'] as const) {
+			const descriptor = bindingFields.get(kind)?.value
+			if (!descriptor) continue
+			const { schemaExpression, source: mapping } = readBindingDescriptor(
+				descriptor,
+				'env',
+				kind,
+				id,
+				error,
+			)
+			if (kind === 'vault' && mapping.type !== 'ObjectExpression')
+				error(`[static-application] ${id} vault mapping must declare record keys directly`)
+			const leaves = parseDirectMapping(
+				mapping,
+				[],
+				`envBindings[${index}].${kind}.mapping`,
+				id,
+				error,
+			)
+			const schemaName = readIdentifier(schemaExpression) ?? `${pluginName}.${kind}`
+			const schemaSource = await sourceResolver.renderResolved(module, schemaExpression)
+			const schema = restoreStaticConfigSchema(schemaSource, { id, schemaName, error })
+			const targetKeys =
+				kind === 'config' ? [''] : [...new Set(leaves.map((leaf) => leaf.path[0]!))]
+			for (const targetKey of targetKeys) {
+				const identity = JSON.stringify([
+					sourceSymbolKey(pluginSymbol!),
+					kind,
+					kind === 'vault' ? (namespace ?? '') : '',
+					targetKey,
+				])
+				registerBindingTarget(seenTargets, identity, pluginName, id, error)
+			}
+			for (const leaf of leaves) {
+				const inputSchema =
+					kind === 'vault' ? staticVaultRecordSchema(schema, leaf.path[0]!, id, error) : schema
+				const projection = projectRawInput(
+					inputSchema as never,
+					kind === 'vault' ? leaf.path.slice(1) : leaf.path,
+				)
+				if (projection.ok === false)
+					error(
+						`[static-application] ${id} cannot bind ${leaf.environmentName} to ${pluginName} schema ${schemaName} path ${formatPath(leaf.path)}: ${projection.reason}`,
+					)
+				targets.push(
+					Object.freeze({
+						environmentName: leaf.environmentName,
+						pluginName,
+						schemaName,
+						kind,
+						...(namespace ? { namespace } : {}),
+						path: leaf.path,
+						projection: projection as RawInputProjection,
+					}),
+				)
+			}
+		}
+	}
+
+	assertCompatibleFanout(targets, id, error)
+	const frozenTargets = Object.freeze([...targets])
+	return Object.freeze({
+		...(name === undefined ? {} : { name }),
+		hasSources,
+		targets: frozenTargets,
+		environmentExample: renderStaticConfigEnvironmentExample(frozenTargets),
+	})
+}
+
+/** Both consumers reject duplicate targets before publishing an unqualified binding. */
+export function registerBindingTarget(
+	seen: Set<string>,
+	identity: string,
+	pluginName: string,
+	id: string,
+	error: DeclarationError,
+): void {
+	if (seen.has(identity))
+		error(`[static-application] ${id} duplicate environment target for Plugin ${pluginName}`, {
+			code: 'invalid_declaration',
+		})
+	seen.add(identity)
+}
+
+export function readBindingNamespace(
+	bindingFields: Map<string, AstNode & { value: AstNode }>,
+	transport: 'env' | 'file',
+	index: number,
+	id: string,
+	error: DeclarationError,
+) {
+	const namespaceNode = bindingFields.get('namespace')?.value
+	const namespace = namespaceNode ? readLiteralString(namespaceNode) : undefined
+	if (
+		namespaceNode &&
+		(namespace === undefined || namespace.length === 0 || namespace.includes('\0'))
+	)
+		error(
+			`[static-application] ${id} ${transport}Bindings namespace must be a nonempty literal string`,
+			{
+				code: namespace === undefined ? 'unsupported_expression' : 'invalid_declaration',
+				node: namespaceNode,
+			},
+		)
+	if (!bindingFields.has('config') && !bindingFields.has('vault'))
+		error(`[static-application] ${id} ${transport}Bindings[${index}] must select config or vault`, {
+			code: 'invalid_declaration',
+		})
+	return namespace
+}
+
+export function readBindingDescriptor(
+	node: AstNode,
+	transport: 'env' | 'file',
+	kind: 'config' | 'vault',
+	id: string,
+	error: DeclarationError,
+) {
+	const sourceKey = transport === 'env' ? 'mapping' : kind === 'config' ? 'path' : 'paths'
+	if (node.type !== 'ObjectExpression')
+		error(
+			`[static-application] ${id} ${kind} binding must declare schema and ${sourceKey} in a direct object literal`,
+			{ code: 'unsupported_expression', node },
+		)
+	const fields = directObjectProperties(node, `${kind} binding`, id, error)
+	for (const key of fields.keys())
+		if (!['schema', sourceKey].includes(key))
+			error(`[static-application] ${id} unknown ${kind} binding field ${key}`, {
+				code: 'invalid_declaration',
+				node: fields.get(key),
+			})
+	const schemaExpression = fields.get('schema')?.value
+	const source = fields.get(sourceKey)?.value
+	if (!schemaExpression || !source)
+		error(`[static-application] ${id} ${kind} binding requires schema and ${sourceKey}`, {
+			code: 'invalid_declaration',
+			node,
+		})
+	return { schemaExpression, source }
+}
+
+/** Shared direct binding helper contract, also used by source navigation. */
+export function readApplicationBinding(
+	binding: AstNode | undefined,
+	kind: 'env' | 'file',
+	index: number,
+	module: ReturnType<typeof collectConfigSchemaModule>,
+	id: string,
+	error: DeclarationError,
+) {
+	const helper = `${kind}Binding`
+	const label = `${kind}Bindings[${index}]`
+	const helperName = binding?.type === 'CallExpression' ? readIdentifier(binding.callee) : undefined
+	const helperImport = helperName ? module.imports.get(helperName) : undefined
+	if (
+		!binding ||
+		!helperImport ||
+		helperImport.source !== '@pluxel/host' ||
+		helperImport.imported !== helper ||
+		helperImport.namespace
+	)
+		error(
+			`[static-application] ${id} ${label} must call ${helper} imported from @pluxel/host directly`,
+		)
+	const args = directCallArguments(binding, helper, id, error)
+	if (args.length !== 2 || args[1]?.type !== 'ObjectExpression')
+		error(`[static-application] ${id} ${helper} requires a Plugin and a direct object literal`)
+	const bindingFields = directObjectProperties(args[1], label, id, error)
+	for (const key of bindingFields.keys())
+		if (!['config', 'vault', 'namespace'].includes(key))
+			error(`[static-application] ${id} unknown ${kind}Bindings field ${key}`, {
+				code: 'invalid_declaration',
+				node: bindingFields.get(key),
+			})
+	const pluginNode = args[0]
+	const pluginName = readIdentifier(pluginNode)
+	if (!pluginNode || !pluginName)
+		error(`[static-application] ${id} ${label} plugin must be a direct identifier`, {
+			code: 'unsupported_expression',
+			node: pluginNode,
+		})
+	return { bindingFields, pluginNode, pluginName }
+}
+
+/** Shared source-only application shape; neither consumer executes the factory. */
+export function readApplicationDeclaration(options: {
+	ast: Program
+	code: string
+	id: string
+	error: DeclarationError
+}) {
+	const { ast, code, id, error } = options
 	let module = collectConfigSchemaModule(ast, code, id)
 
 	const defaults = ast.body.filter((statement) => statement.type === 'ExportDefaultDeclaration')
@@ -109,169 +366,15 @@ export async function parseStaticRuntimeDeclaration(
 		error(`[application] ${id} factory must return an application object directly`)
 	}
 	const fields = directObjectProperties(application, 'application', id, error)
-	if (options.requireStaticPlugins) {
-		const plugins = fields.get('plugins')?.value
-		if (!plugins) error(`[static-application] ${id} must declare plugins`)
-		await resolveStaticCatalogPluginSymbols(plugins, module, sourceResolver, id, error)
-		assertCatalogNotMutated(factory, plugins, id, error)
-	}
-	const directSources = readDirectObjectField(application, 'sources')
-	const hasSources =
-		(directSources !== undefined &&
-			!(
-				directSources.type === 'ArrayExpression' && arrayOf(directSources.elements).length === 0
-			)) ||
-		arrayOf(application.properties).some(
-			(property) => (property as AstNode).type === 'SpreadElement',
-		)
-	const directName = readDirectObjectField(application, 'name')
-	const directBindings = fields.get('envBindings')?.value
-	const name = readLiteralString(directName)
-	if (directBindings === undefined)
-		return Object.freeze({
-			...(name === undefined ? {} : { name }),
-			hasSources,
-			targets: Object.freeze([]),
-		})
-	if (directBindings.type !== 'ArrayExpression')
-		error(`[static-application] ${id} envBindings must be a direct array literal`)
-	const plugins = fields.get('plugins')?.value
-	if (!plugins) error(`[static-application] ${id} must declare plugins`)
-	const catalogPlugins = await resolveStaticCatalogPluginSymbols(
-		plugins,
-		module,
-		sourceResolver,
-		id,
-		error,
-	)
-	const targets: StaticConfigEnvironmentTarget[] = []
-	const seenTargets = new Set<string>()
-	for (const [index, raw] of arrayOf(directBindings.elements).entries()) {
-		const binding = raw ? unwrapExpression(raw as AstNode) : undefined
-		const helperName =
-			binding?.type === 'CallExpression' ? readIdentifier(binding.callee) : undefined
-		const helperImport = helperName ? module.imports.get(helperName) : undefined
-		if (
-			!binding ||
-			!helperImport ||
-			helperImport.source !== '@pluxel/host' ||
-			helperImport.imported !== 'envBinding' ||
-			helperImport.namespace
-		)
-			error(
-				`[static-application] ${id} envBindings[${index}] must call envBinding imported from @pluxel/host directly`,
-			)
-		const args = directCallArguments(binding, 'envBinding', id, error)
-		if (args.length !== 2 || args[1]?.type !== 'ObjectExpression')
-			error(`[static-application] ${id} envBinding requires a Plugin and a direct object literal`)
-		const bindingFields = directObjectProperties(args[1], `envBindings[${index}]`, id, error)
-		for (const key of bindingFields.keys())
-			if (!['config', 'vault', 'namespace'].includes(key))
-				error(`[static-application] ${id} unknown envBindings field ${key}`)
-		const pluginNode = args[0]
-		const pluginName = readIdentifier(pluginNode)
-		if (!pluginNode || !pluginName)
-			error(`[static-application] ${id} envBindings[${index}] plugin must be a direct identifier`)
-		const pluginSymbol = await sourceResolver.resolveSymbol(module, pluginNode)
-		if (!pluginSymbol || !catalogPlugins.has(sourceSymbolKey(pluginSymbol)))
-			error(
-				`[static-application] ${id} environment binding Plugin ${pluginName} is not present in the statically resolved plugins catalog`,
-			)
-		const namespaceNode = bindingFields.get('namespace')?.value
-		const namespace = namespaceNode ? readLiteralString(namespaceNode) : undefined
-		if (
-			namespaceNode &&
-			(namespace === undefined || namespace.length === 0 || namespace.includes('\0'))
-		)
-			error(`[static-application] ${id} envBindings namespace must be a nonempty literal string`)
-		if (!bindingFields.has('config') && !bindingFields.has('vault'))
-			error(`[static-application] ${id} envBindings[${index}] must select config or vault`)
-		for (const kind of ['config', 'vault'] as const) {
-			const descriptor = bindingFields.get(kind)?.value
-			if (!descriptor) continue
-			if (descriptor.type !== 'ObjectExpression')
-				error(
-					`[static-application] ${id} ${kind} binding must declare schema and mapping in a direct object literal`,
-				)
-			const descriptorFields = directObjectProperties(
-				descriptor,
-				`envBindings[${index}].${kind}`,
-				id,
-				error,
-			)
-			for (const key of descriptorFields.keys())
-				if (!['schema', 'mapping'].includes(key))
-					error(`[static-application] ${id} unknown ${kind} binding field ${key}`)
-			const schemaExpression = descriptorFields.get('schema')?.value
-			const mapping = descriptorFields.get('mapping')?.value
-			if (!schemaExpression || !mapping)
-				error(`[static-application] ${id} ${kind} binding requires schema and mapping`)
-			if (kind === 'vault' && mapping.type !== 'ObjectExpression')
-				error(`[static-application] ${id} vault mapping must declare record keys directly`)
-			const leaves = parseDirectMapping(
-				mapping,
-				[],
-				`envBindings[${index}].${kind}.mapping`,
-				id,
-				error,
-			)
-			const schemaName = readIdentifier(schemaExpression) ?? `${pluginName}.${kind}`
-			const schemaSource = await sourceResolver.renderResolved(module, schemaExpression)
-			const schema = restoreStaticConfigSchema(schemaSource, { id, schemaName, error })
-			const targetKeys =
-				kind === 'config' ? [''] : [...new Set(leaves.map((leaf) => leaf.path[0]!))]
-			for (const targetKey of targetKeys) {
-				const identity = JSON.stringify([
-					sourceSymbolKey(pluginSymbol!),
-					kind,
-					kind === 'vault' ? (namespace ?? '') : '',
-					targetKey,
-				])
-				if (seenTargets.has(identity))
-					error(`[static-application] ${id} duplicate environment target for Plugin ${pluginName}`)
-				seenTargets.add(identity)
-			}
-			for (const leaf of leaves) {
-				const inputSchema =
-					kind === 'vault' ? staticVaultRecordSchema(schema, leaf.path[0]!, id, error) : schema
-				const projection = projectRawInput(
-					inputSchema as never,
-					kind === 'vault' ? leaf.path.slice(1) : leaf.path,
-				)
-				if (projection.ok === false)
-					error(
-						`[static-application] ${id} cannot bind ${leaf.environmentName} to ${pluginName} schema ${schemaName} path ${formatPath(leaf.path)}: ${projection.reason}`,
-					)
-				targets.push(
-					Object.freeze({
-						environmentName: leaf.environmentName,
-						pluginName,
-						schemaName,
-						kind,
-						...(namespace ? { namespace } : {}),
-						path: leaf.path,
-						projection: projection as RawInputProjection,
-					}),
-				)
-			}
-		}
-	}
 
-	assertCompatibleFanout(targets, id, error)
-	const frozenTargets = Object.freeze([...targets])
-	return Object.freeze({
-		...(name === undefined ? {} : { name }),
-		hasSources,
-		targets: frozenTargets,
-		environmentExample: renderStaticConfigEnvironmentExample(frozenTargets),
-	})
+	return { module, factory, application, fields }
 }
 
 function staticVaultRecordSchema(
 	value: unknown,
 	key: string,
 	id: string,
-	error: (message: string) => never,
+	error: DeclarationError,
 ): unknown {
 	let current = value as Record<string, unknown>
 	const seen = new Set<unknown>()
@@ -370,7 +473,7 @@ function assertCatalogNotMutated(
 	factory: AstNode,
 	catalog: AstNode,
 	id: string,
-	error: (message: string) => never,
+	error: DeclarationError,
 ): void {
 	const catalogName = readIdentifier(unwrapExpression(catalog))
 	if (!catalogName) return
@@ -459,7 +562,7 @@ function assertCatalogNotMutated(
 	visit(factory.body as AstNode)
 }
 
-function unwrapExpression(node: AstNode): AstNode {
+export function unwrapExpression(node: AstNode): AstNode {
 	while (
 		[
 			'TSSatisfiesExpression',
@@ -500,7 +603,7 @@ async function resolveStaticCatalogPluginSymbols(
 	module: ReturnType<typeof collectConfigSchemaModule>,
 	sourceResolver: ConfigSchemaSourceResolver,
 	id: string,
-	error: (message: string) => never,
+	error: DeclarationError,
 ): Promise<Set<string>> {
 	const symbols = await sourceResolver.resolveArraySymbols(module, expression)
 	if (!symbols) {
@@ -511,53 +614,69 @@ async function resolveStaticCatalogPluginSymbols(
 	return new Set(symbols!.map(sourceSymbolKey))
 }
 
-function parseDirectMapping(
+export function parseDirectMapping(
 	node: AstNode | undefined,
 	path: readonly string[],
 	label: string,
 	id: string,
-	error: (message: string) => never,
+	error: DeclarationError,
+	recover?: (error: unknown, node: AstNode) => void,
 ): MappingLeaf[] {
 	const environmentName = readLiteralString(node)
 	if (environmentName !== undefined) {
 		if (!ENVIRONMENT_NAME.test(environmentName)) {
 			error(
 				`[static-application] ${id} ${label} at ${formatPath(path)} environment name must match [A-Z_][A-Z0-9_]*`,
+				{ code: 'invalid_declaration', node },
 			)
 		}
 
-		return [Object.freeze({ environmentName, path: Object.freeze([...path]) })]
+		return [Object.freeze({ environmentName, node: node!, path: Object.freeze([...path]) })]
 	}
 	if (node?.type !== 'ObjectExpression') {
 		error(
 			`[static-application] ${id} ${label} at ${formatPath(path)} must be a direct environment name string or object literal`,
+			{ code: 'unsupported_expression', node },
 		)
 	}
 	const properties = directObjectProperties(node, label, id, error)
 	if (properties.size === 0) {
 		error(
 			`[static-application] ${id} ${label} at ${formatPath(path)} must contain at least one binding`,
+			{ code: 'invalid_declaration', node },
 		)
 	}
-	return [...properties].flatMap(([key, property]) =>
-		parseDirectMapping(property.value, [...path, key], label, id, error),
-	)
+	return [...properties].flatMap(([key, property]) => {
+		try {
+			return parseDirectMapping(property.value, [...path, key], label, id, error, recover)
+		} catch (failure) {
+			if (!recover) throw failure
+			recover(failure, property.value)
+			return []
+		}
+	})
 }
 
 function directObjectProperties(
 	node: AstNode,
 	label: string,
 	id: string,
-	error: (message: string) => never,
+	error: DeclarationError,
 ): Map<string, AstNode & { value: AstNode }> {
 	const properties = new Map<string, AstNode & { value: AstNode }>()
 	for (const [index, rawProperty] of arrayOf(node.properties).entries()) {
 		const property = rawProperty as AstNode
 		if (property.type === 'SpreadElement') {
-			error(`[static-application] ${id} ${label} does not allow spread properties`)
+			error(`[static-application] ${id} ${label} does not allow spread properties`, {
+				code: 'unsupported_expression',
+				node: property,
+			})
 		}
 		if (property.type !== 'Property' || property.computed === true) {
-			error(`[static-application] ${id} ${label} property[${index}] must use a direct key`)
+			error(`[static-application] ${id} ${label} property[${index}] must use a direct key`, {
+				code: 'unsupported_expression',
+				node: property,
+			})
 		}
 		const key = directPropertyName(property.key)
 		const value = property.value as AstNode | undefined
@@ -568,10 +687,16 @@ function directObjectProperties(
 			key.includes('\0') ||
 			['__proto__', 'constructor', 'prototype'].includes(key)
 		) {
-			error(`[static-application] ${id} ${label} property[${index}] must use a direct data key`)
+			error(`[static-application] ${id} ${label} property[${index}] must use a direct data key`, {
+				code: 'invalid_declaration',
+				node: property,
+			})
 		}
 		if (properties.has(key)) {
-			error(`[static-application] ${id} ${label} contains duplicate key ${JSON.stringify(key)}`)
+			error(`[static-application] ${id} ${label} contains duplicate key ${JSON.stringify(key)}`, {
+				code: 'invalid_declaration',
+				node: property,
+			})
 		}
 		properties.set(key, property as AstNode & { value: AstNode })
 	}
@@ -596,7 +721,7 @@ function directCallArguments(
 	call: AstNode,
 	label: string,
 	id: string,
-	error: (message: string) => never,
+	error: DeclarationError,
 ): AstNode[] {
 	const args = arrayOf(call.arguments).map((argument) => argument as AstNode)
 	if (args.some((argument) => argument.type === 'SpreadElement')) {
@@ -608,7 +733,7 @@ function directCallArguments(
 function assertCompatibleFanout(
 	targets: readonly StaticConfigEnvironmentTarget[],
 	id: string,
-	error: (message: string) => never,
+	error: DeclarationError,
 ): void {
 	const transports = new Map<string, string>()
 	for (const target of targets) {
