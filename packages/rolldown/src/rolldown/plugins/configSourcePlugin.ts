@@ -334,6 +334,8 @@ export function collectConfigSchemaModule(
 
 export function createConfigSchemaSourceResolver(
 	context: Pick<TransformPluginContext, 'resolve'>,
+	readSource: (id: string) => Promise<string> = (id) => readFile(id, 'utf8'),
+	options: { readonly cache?: boolean } = {},
 ): ConfigSchemaSourceResolver {
 	const modules = new Map<string, Promise<ConfigSchemaModule | undefined>>()
 	const pending = new Set<string>()
@@ -342,9 +344,9 @@ export function createConfigSchemaSourceResolver(
 		const clean = stripQuery(id)
 		let result = modules.get(clean)
 		if (!result) {
-			result = readFile(clean, 'utf8')
+			result = readSource(clean)
 				.then((code) => {
-					const ast = parseStandaloneWithLang(code, clean)
+					const ast = parseStandaloneWithLang(code, clean, options)
 					return ast ? collectConfigSchemaModule(ast, code, clean) : undefined
 				})
 				.catch((): undefined => undefined)

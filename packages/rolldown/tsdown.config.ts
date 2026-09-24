@@ -21,6 +21,7 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/application.ts',
+		inspect: 'src/inspect/index.ts',
 		build: 'src/cli/index.ts',
 		database: 'src/database/index.ts',
 		distribution: 'src/distribution/index.ts',

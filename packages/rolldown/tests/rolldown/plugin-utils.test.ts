@@ -31,4 +31,17 @@ describe('plugin AST parsing', () => {
 		expect(parse).toHaveBeenCalledTimes(1)
 		expect(parseStandaloneWithLang('export const value = 1', id)).not.toBeNull()
 	})
+	it('lets query-owned ASTs bypass cache reads and writes', () => {
+		const id = '/virtual/uncached-inspection.ts'
+		const code = 'export const value = 1'
+		const first = parseStandaloneWithLang(code, id, { cache: false })
+		const second = parseStandaloneWithLang(code, id, { cache: false })
+		expect(first).not.toBeNull()
+		expect(second).not.toBe(first)
+		const cached = parseStandaloneWithLang(code, id)
+		expect(cached).not.toBe(first)
+		expect(cached).not.toBe(second)
+		expect(parseStandaloneWithLang(code, id, { cache: false })).not.toBe(cached)
+		expect(parseStandaloneWithLang(code, id)).toBe(cached)
+	})
 })

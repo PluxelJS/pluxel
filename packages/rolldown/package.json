@@ -30,6 +30,10 @@
 			"@pluxel/source": "./src/distribution/index.ts",
 			"default": "./dist/distribution.mjs"
 		},
+		"./inspect": {
+			"@pluxel/source": "./src/inspect/index.ts",
+			"default": "./dist/inspect.mjs"
+		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"
@@ -95,6 +99,7 @@
 			"./build": "./dist/build.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
+			"./inspect": "./dist/inspect.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",

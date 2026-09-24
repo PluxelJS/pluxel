@@ -2,6 +2,14 @@
 
 Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
+## Offline plugin inspection
+
+`@pluxel/rolldown/inspect` 的 `openProject()` 提供源码查询作用域：`overview()`、`plugins()`、`plugin()` 和 `file()` 返回冻结的普通数据、规范 definition identity 与源码位置。用户用法见[查询插件源码](../docs/development/inspection.md)。它不启动 Host、不求值项目模块、不执行 schema 或 package scripts；在线操作继续由 devconsole 拥有。
+
+Inspection 复用 Plugin semantic pass 的 package-root export、constructor dependency 与 Part composition 规则；config 复用 declaration validator 和 source symbol resolver，不创建第二套 decorator/配置扫描语义。Part 按 occurrence path 展开，config root 为 `[]`，Part config path 为 occurrence path。依赖 aggregate 始终属于整个 Plugin，子树查询只限制 origin 位置。
+
+每次查询创建新的 resolver 与观察集合，不保留跨查询索引或 watcher。返回前复核已读取文件，`revision` 标识该集合的内容，不能作为文件系统原子快照、负向解析候选的完整证明或运行实例 revision。分页 cursor 绑定查询与结果，源码变化使旧 cursor 失效。缺失源码或未解析关系必须成为 `partial` 的 gaps 或 `unavailable` 的 reason，不得以空列表伪装完整。当前仅支持 package-root 源码声明，以及 parts/config/dependencies/checks sections；应用绑定、Vault 和 RPC 不在此版本查询范围。
+
 ## CLI distribution and capability ownership
 
 `@pluxel/cli` 是静态命令目录与用户交互 adapter，不是 runtime、构建、HMR 或发行协议的所有者。

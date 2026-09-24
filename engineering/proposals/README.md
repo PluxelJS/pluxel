@@ -13,6 +13,8 @@
 
 仍有未实现边界的文件：
 
+- [`PLUGIN_DEVELOPMENT_INSPECTION.md`](PLUGIN_DEVELOPMENT_INSPECTION.md)：TypeScript 源码查询的后续方向，
+  包括应用绑定、source-space、Vault/RPC、测试关联与制品发现；第一版用法已进入用户文档。
 - [`UNIFIED_PLUGIN_CONFIGURATION.md`](UNIFIED_PLUGIN_CONFIGURATION.md)：配置与 Vault 来源设计已落地的决策摘要，以及仍需验证的平台和部署边界。
 - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的

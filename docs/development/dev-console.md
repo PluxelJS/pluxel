@@ -7,6 +7,8 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 适合检查当前状态、填入测试数据、修改配置和验证真实调用。隔离的行为回归继续使用 [test host](./testing.md)。修改会作用于眼前这份应用；已经保存的配置和数据不会随脚本结束自动还原。
 
+还不清楚插件、Part 或 config schema 在哪里声明时，先用[源码查询](./inspection.md)定位；它不需要运行 Vite，也不读取当前 Host 状态。
+
 ## 开启与发现
 
 先检查项目是否已有开启控制台的 Vite 进程。已有时直接发现实例；尚未配置时，在现有 Vite route 上显式开启：

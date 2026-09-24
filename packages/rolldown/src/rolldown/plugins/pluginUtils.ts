@@ -61,14 +61,22 @@ export function parseWithLang(ctx: unknown, code: string, id: string): Program |
 	return parseStandaloneWithLang(code, id)
 }
 
-export function parseStandaloneWithLang(code: string, id: string): Program | null {
+export function parseStandaloneWithLang(
+	code: string,
+	id: string,
+	options: { cache?: boolean } = {},
+): Program | null {
 	const lang = getLangFromId(id)
-	const cached = readCachedProgram(id, lang, code)
+	const cached = options.cache === false ? undefined : readCachedProgram(id, lang, code)
 	if (cached) return cached
 
 	try {
 		const { program, errors } = parseSync(id, code, { sourceType: 'module', lang })
-		return program && errors.length === 0 ? cacheProgram(id, lang, code, program) : null
+		return program && errors.length === 0
+			? options.cache === false
+				? program
+				: cacheProgram(id, lang, code, program)
+			: null
 	} catch {
 		return null
 	}

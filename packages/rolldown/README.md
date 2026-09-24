@@ -4,6 +4,8 @@ Rolldown/Vite 工具链入口：
 
 应用通过 root 入口的 `pluxel()` 接入普通 tsdown `plugins` 列表；Plugin package 与其他工具使用对应 subpath。
 
+- `@pluxel/rolldown/inspect`：通过 `openProject()` 查询 workspace/package 的公开插件、Part 组成、config 声明位置、依赖来源和 package scripts；不执行项目模块。使用方法与完整性边界见[源码查询](../../docs/development/inspection.md)。
+
 - `@pluxel/rolldown` 的 `pluxel()` 与 `@pluxel/rolldown/build` 的 `pluginPackage()` 通过 tsdown 驱动 Rolldown，并组合同一个
   `createPluginBuildPipeline()`，统一 Plugin definition lowering、preprocessor/macro、lint、单 ObjectSchema config facts、
   Workbench source transform 和输出检查。`pluginPackage()` 的单次 semantic pass 验证 package-root named export，提取
