@@ -7,8 +7,7 @@ description: 了解脚手架、插件构建、静态应用、HMR、源码联调�
 
 Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；先发现并固定项目和实例，再执行 TypeScript 操作。
 
-源码定位使用 [`@pluxel/rolldown/inspect`](./inspection.md) 的 TypeScript API，在普通 Node 脚本中调用，
-没有对应的 `pluxel inspect` 命令。源码查询、在线操作和隔离测试的选择见[开发工作流程](./index.md)。
+源码定位使用 [inspect TypeScript API](./inspection.md)，没有 `pluxel inspect` 子命令。
 
 ## 当前 CLI 命令地图
 

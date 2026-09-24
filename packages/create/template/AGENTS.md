@@ -23,14 +23,8 @@ Keep these boundaries intact:
 - plugin tests use `@pluxel/test/vitest` and the unified `createTestHost()` from `@pluxel/test` with explicit services;
 - run `pnpm verify` after changes and do not bypass Pluxel lint rules without a documented reason.
 
-## Locate source before editing
-
-Read `pnpm exec pluxel docs development/inspection.md` for `@pluxel/rolldown/inspect`.
-Query a known Plugin or file directly; use package discovery when the target is unknown.
-Select `application: { root: 'host', entry: 'src/app.ts' }` relative to the workspace root
-when inspecting application config inputs. Follow returned source locations and analysis gaps;
-`checks` lists package scripts but does not execute them. Use the public package entry from a
-Node script and declare the tool dependency in the package that runs it.
+For source locations and config inputs, read `pnpm exec pluxel docs development/inspection.md`.
+Use workspace-relative `application: { root: 'host', entry: 'src/app.ts' }` for this starter.
 
 ## Live development operations
 

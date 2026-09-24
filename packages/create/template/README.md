@@ -5,7 +5,7 @@ package names and class names are intentionally not generated: rename them only 
 become your own application.
 
 Start with the [current upstream Pluxel documentation](https://github.com/PluxelJS/pluxel/blob/main/docs/index.md),
-or print a focused link with `pnpm exec pluxel docs development/testing.md`, then run:
+or find source inspection, live operations and tests with `pnpm exec pluxel docs development/index.md`, then run:
 
 ```sh
 pnpm dev
@@ -50,13 +50,6 @@ mutable sources and persistence. Keep it outside the immutable `host/dist` distr
 use an absolute path in deployment. Publish built ESM Plugin entries there to make them available in the same
 catalog; availability does not automatically start a Plugin. Remove `sources` from `host/src/app.ts`
 when the application only needs its fixed imports. No Vite mode or second configuration is required.
-
-## Work on an existing feature
-
-Developers and coding agents share the [development workflow](https://www.pluxel.dev/docs/development):
-use `@pluxel/rolldown/inspect` to locate Plugin declarations and application inputs, `pluxel dev`
-to inspect the running Vite host, and `@pluxel/test` for isolated regression tests.
-Run `pnpm exec pluxel docs development/index.md` to find the guide and choose the tool for the task.
 
 ## What the example demonstrates
 
