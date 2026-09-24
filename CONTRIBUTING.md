@@ -23,6 +23,11 @@ pnpm verify
 
 如果不使用 mise，本地工具仍须满足根 `package.json` 中的版本约束。不要提交 `node_modules/`、`dist/`、`.turbo/`、`.pluxel/`、`.bench-results/` 或 `local-projects/` 中的本地产物。
 
+## 定位与验证改动
+
+用[开发工作流程](./docs/development/index.md)选择工具：inspect 定位 Plugin 源码与应用输入，devconsole 操作当前 Vite 实例，测试宿主验证隔离行为。
+修改框架实现时，按下方工程文档路径补充领域约束；工具使用方法以用户指南为准。
+
 ## 修改规则
 
 1. 修改前先阅读 [工程文档入口](./engineering/README.md) 和相关领域文档。

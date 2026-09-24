@@ -65,7 +65,7 @@ export default defineConfig({
 })
 ```
 
-自定义宿主可以使用 `@pluxel/host-dev/vite` 的 `host()` 并显式组合服务开发附件。一个 Vite server 只有一个 SSR ModuleRunner；插件源码必须经过 Pluxel lowering。
+自定义宿主可以使用 `@pluxel/host-dev/vite` 的 `host()` 并显式组合服务开发附件。应用、动态插件和控制台共享 Host 专用的 `pluxel` Vite environment；默认 SSR 和第三方 SSR 加载保持独立。插件源码必须经过 Pluxel lowering，执行空间边界见[工具链说明](../development/tooling.md#source-build-boundary)。
 React 页面由应用显式安装 React Vite plugin。
 
 配置工厂 identity 变化时重新求值完整配置并重建 Host，固定插件的 import 更新也可能触发重建。工厂求值失败保留旧 Host。动态来源更新若未使工厂失效，则复用本次配置并提交 catalog replacement。失败候选保留旧实现；已提交后的 init 失败则报告新一代的生命周期问题，不声称旧代仍然运行。

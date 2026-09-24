@@ -13,7 +13,7 @@ pnpm dev
 
 The host declares its fixed Plugin catalog and optional mutable sources in `host/src/app.ts`.
 Vite development and production builds consume that same `defineHostApplication(factory)` declaration.
-Its the application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
+The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
 Logging, Vault, Management and optional Workbench. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
 configuration, installs the workspace Plugins and serves the page and Plugin routes on
@@ -50,6 +50,13 @@ mutable sources and persistence. Keep it outside the immutable `host/dist` distr
 use an absolute path in deployment. Publish built ESM Plugin entries there to make them available in the same
 catalog; availability does not automatically start a Plugin. Remove `sources` from `host/src/app.ts`
 when the application only needs its fixed imports. No Vite mode or second configuration is required.
+
+## Work on an existing feature
+
+Developers and coding agents share the [development workflow](https://www.pluxel.dev/docs/development):
+use `@pluxel/rolldown/inspect` to locate Plugin declarations and application inputs, `pluxel dev`
+to inspect the running Vite host, and `@pluxel/test` for isolated regression tests.
+Run `pnpm exec pluxel docs development/index.md` to find the guide and choose the tool for the task.
 
 ## What the example demonstrates
 

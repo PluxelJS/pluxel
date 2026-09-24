@@ -1,6 +1,6 @@
 ---
 title: Pluxel 文档
-description: 创建并运行第一个应用，再按任务查找插件、运行时、管理界面和交付指南。
+description: 按任务进入新项目入门、已有项目开发、源码查询、在线控制台和功能指南。
 icon: BookOpen
 ---
 
@@ -8,7 +8,19 @@ Pluxel 用 TypeScript 插件组织业务能力。插件声明依赖和配置，�
 
 想先了解设计动机、Cordis 对比和具体取舍，可以阅读[为什么是 Pluxel](./why-pluxel.md)；想先体验应用，继续下面的创建步骤。
 
-## 先运行一个项目
+## 从当前任务开始
+
+| 当前任务                          | 阅读入口                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------- |
+| 接手项目、定位源码并完成修改      | [理解与修改已有项目](./development/index.md)：inspect、devconsole 与测试的选择和工作流程 |
+| 查询 Plugin、Part、配置与应用输入 | [inspect 源码查询](./development/inspection.md)                                          |
+| 检查或操作正在运行的应用          | [devconsole 开发控制台](./development/dev-console.md)                                    |
+| 创建第一个应用                    | 下方创建步骤与[快速开始](./getting-started/index.md)                                     |
+| 修改框架本身                      | [工程文档入口](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)       |
+
+开发者与 coding agent 使用同一套任务入口。提供任务、项目路径和需要验证的结果后，按需读取对应指南即可。
+
+## 创建新项目
 
 准备 Node.js 24+ 和 pnpm 11，然后执行：
 
@@ -40,13 +52,8 @@ pnpm dev
 
 遇到宿主模式、内部资源拆分等具体需求时，再阅读[宿主配置](./getting-started/host-setup.md)和 [PluginPart](./getting-started/plugin-parts.md)。
 
-## 与 coding agent 一起开发
+## 查找文档与公开入口
 
-给 agent 提供你要完成的任务、项目路径和运行结果，再选择对应文档：
-
-- **开发 Pluxel 应用或插件**：先读[快速开始](./getting-started/index.md)，随后只读当前功能的指南。公开入口不确定时查 [Package 矩阵](./reference/package-matrix.md)。
-- **检查正在运行的应用**：使用[开发控制台](./development/dev-console.md)，先发现实例，再固定项目和实例执行操作、读取结果。
-- **同时修改框架和业务仓库**：按[源码联调](./development/source-workspaces.md)连接 Git checkout。
-- **修改 Pluxel 框架本身**：从[工程文档入口](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)读取对应领域的约束。
-
-生成项目已安装 CLI，可以在项目根目录用 `pnpm exec pluxel docs` 查找本文档，用 `pnpm exec pluxel docs development/testing.md` 打开某一页的链接。`docs/` 是当前用户 API 的文档来源；设计提案和 Git 历史用于理解背景。
+生成项目已安装 CLI，用 `pnpm exec pluxel docs development/index.md` 获取开发入口链接，其他页面也可按路径查找。
+不确定 import 时查 [Package 矩阵](./reference/package-matrix.md)；同时修改框架与业务仓库时查[源码联调](./development/source-workspaces.md)。
+`docs/` 描述当前用户 API，工程文档约束框架实现，提案与 Git 历史用于理解背景。

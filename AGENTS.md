@@ -1,5 +1,18 @@
 # Repository Instructions for Coding Agents
 
+## Find the right development tool
+
+Start with [the development workflow](docs/development/index.md) when investigating or changing an existing application or Plugin.
+
+- Locate Plugin/Part declarations, dependencies, schemas and application bindings with
+  [source inspection](docs/development/inspection.md), using `@pluxel/rolldown/inspect`.
+- Inspect or operate the current Vite application with the [development console](docs/development/dev-console.md); follow the instance rules below.
+- Verify isolated behavior with [Plugin tests](docs/development/testing.md).
+
+Read only the feature guides needed for the task. Offline source facts, live application state and isolated test results answer different questions.
+
+## Framework changes
+
 Before creating or changing a public library API, configuration contract, public type, error contract, extension point, or resource lifecycle, read:
 
 - `.agents/rules/library-api-design.md`

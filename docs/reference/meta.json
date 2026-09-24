@@ -4,6 +4,7 @@
 	"pages": [
 		"troubleshooting",
 		"package-matrix",
+		"runtime-services",
 		"async",
 		"plugin-best-practices",
 		"oxlint",

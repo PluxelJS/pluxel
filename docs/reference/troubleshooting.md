@@ -5,7 +5,16 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 先按报错或看得见的现象找对应小节。构建问题在失败的 package 目录重跑原命令；正在运行的应用先读取真实状态和日志，避免用重启掩盖原因。
 
-Coding agent 检查当前 Vite 应用时，使用[开发控制台](../development/dev-console.md)：先发现实例，固定 `--root` 与 `--instance`，再读取状态、执行操作并核对领域结果。
+## 先确定证据来自哪里
+
+| 问题                                 | 先取得的证据                                                                                                         |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| 不知道依赖、配置或应用输入在哪里声明 | 用 [inspect](../development/inspection.md) 定位 declaration、schema 与 binding；保留分析 gaps                        |
+| 源码看起来正确，但当前应用表现不同   | 用 [devconsole](../development/dev-console.md) 发现并固定 `--root` 与 `--instance`，读取真实状态、应用报告和日志     |
+| 修复后需要防止问题再次出现           | 用[插件测试](../development/testing.md) 在隔离宿主中重现触发条件并验证结果                                           |
+| import、服务安装或构建入口不清楚     | 查 [Package 矩阵](./package-matrix.md)、[组合 Host 服务](./runtime-services.md)与[工具链](../development/tooling.md) |
+
+完整修改流程见[理解与修改已有项目](../development/index.md)。下面按具体症状继续排查。
 
 ## 刚发布的版本安装时报 `ERR_PNPM_NO_MATURE_MATCHING_VERSION`
 

@@ -7,44 +7,42 @@
 
 | 当前任务                             | 从哪里开始                                                         |
 | ------------------------------------ | ------------------------------------------------------------------ |
-| 使用 Pluxel 开发业务功能             | [用户文档的任务导航](../docs/index.md)，随后读取对应功能指南       |
+| 使用 Pluxel 开发业务功能             | [开发工作流程](../docs/development/index.md)，随后读取对应功能指南 |
+| 定位 Plugin 源码、依赖或应用配置输入 | [inspect 源码查询](../docs/development/inspection.md)，不启动应用  |
 | 检查已有 Vite 应用的配置、插件或日志 | [开发控制台](../docs/development/dev-console.md)，先发现并固定实例 |
 | 修改框架的 API、行为或内部实现       | 按下方阅读路径加载通用约束和当前领域文档                           |
 | 维护发布自动化                       | [发布流程](RELEASING.md)                                           |
 
 按任务选择领域文档即可；历史提案描述探索背景，不能用来推断当前公开 API。
 
-## 阅读路径
+## 修改框架的最短阅读路径
 
-1. [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md)：维护者和 coding agent 必须遵守的工程不变量。
-2. [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)：Core、Host、服务、toolchain 和 Workbench Plane 的总边界。
-3. 按改动领域阅读：
-   - [`../docs/reference/context-hosts.md`](../docs/reference/context-hosts.md)：公开 Context host kernel、root/scope/owner-view 语义与 standalone host 组合边界。
-   - [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)：definition/node address 与 slot、source canonicalization、reference/route/label、作用域和持久化边界。
-   - [`CORE.md`](CORE.md)：slot identity、DI graph、optional restart、generation lifecycle 与 effects。
-   - [`CORE_LIFECYCLE_SEMANTICS.md`](CORE_LIFECYCLE_SEMANTICS.md)：Core lifecycle 抽象状态、不变量和测试证据矩阵。
-   - [`HOST.md`](HOST.md)：常驻服务、Host 来源接入、可选宿主能力。
-   - [`PROVIDER_WITHDRAWAL_AUDIT.md`](PROVIDER_WITHDRAWAL_AUDIT.md)：owner-bound 已安装服务能力 的 withdrawal、cached handle 和 in-flight 边界。
-   - [`SPATIOTEMPORAL_COMPOSABILITY_NOTES.md`](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)：Cordis 对照后的 lifecycle、capability withdrawal、system boundary 与 compatibility 思考记录。
-   - [`DATABASE.md`](DATABASE.md)：PostgreSQL/Drizzle、PGlite/PG、migration、隔离与 outbox。
-   - [`LOGGING.md`](LOGGING.md)：single active root、Context identity、plugin policy、sinks 与大基数预算。
-   - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和 Workbench 投影。
-   - [`TESTING.md`](TESTING.md)：测试边界、Vitest preset bootstrap 与验证入口。
-   - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：面向 coding agent 的在线 TypeScript 操作、Vite 更新、配置、Workbench 与日志。
-   - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
-   - [`UI_LIBRARY.md`](UI_LIBRARY.md)：Workbench 的 Mantine 决策、主题边界与 federated renderer Provider/CSS 规则。
-   - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
-   - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。
-   - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。
-   - [`WORKBENCH.md`](WORKBENCH.md)：host-owned 管理工作台。
-   - [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)：Management Plugin catalog 依赖聚合、人工分组与独立文件。
-   - [`COMMANDS.md`](COMMANDS.md)：Agent/CLI/message command kernel 与 carrier 边界。
-4. [`GOVERNANCE.md`](GOVERNANCE.md)：依赖方向、导出和文档维护规则。
-5. [`RELEASING.md`](RELEASING.md)：维护者工具版本、Tegami 与可信发布流程。
+先读 [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) 与 [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)，确认工程不变量和 Core、Host、Services、工具链、Workbench 的边界。随后只加载改动涉及的领域：
+
+| 修改领域                      | 当前约束与实现入口                                                                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Context 与服务组合            | [公开 Context host 契约](../docs/reference/context-hosts.md)、[HOST.md](HOST.md)                                                 |
+| Plugin 身份、依赖图与生命周期 | [PLUGIN_IDENTITY.md](PLUGIN_IDENTITY.md)、[CORE.md](CORE.md)、[生命周期证据矩阵](CORE_LIFECYCLE_SEMANTICS.md)                    |
+| 配置声明、输入与持久化        | [CONFIG.md](CONFIG.md)                                                                                                           |
+| 构建、源码查询与包边界        | [TOOLCHAIN.md](TOOLCHAIN.md)                                                                                                     |
+| Vite 更新与在线开发控制台     | [HMR.md](HMR.md)、[DEV_CONSOLE.md](DEV_CONSOLE.md)                                                                               |
+| 测试设施与验证入口            | [TESTING.md](TESTING.md)                                                                                                         |
+| 数据库与日志                  | [DATABASE.md](DATABASE.md)、[LOGGING.md](LOGGING.md)                                                                             |
+| 插件 UI、Workbench 与 catalog | [FRONTEND.md](FRONTEND.md)、[WORKBENCH.md](WORKBENCH.md)、[UI_LIBRARY.md](UI_LIBRARY.md)、[PLUGIN_CATALOG.md](PLUGIN_CATALOG.md) |
+| Commands 与调用载体           | [COMMANDS.md](COMMANDS.md)                                                                                                       |
+| 分发与发布                    | [DISTRIBUTION.md](DISTRIBUTION.md)、[RELEASING.md](RELEASING.md)                                                                 |
+
+涉及依赖、公开导出或仓库流程时同时读 [GOVERNANCE.md](GOVERNANCE.md)。新增或修改公开契约时读 [library API design guide](../.agents/rules/library-api-design.md)。用户用法仍维护在 `docs/`，工程文档不另建一套 API 教程。
+
+## 按需查阅的验证与背景
+
+- [Host 下游与部署验证](HOST_DEPLOYMENT_VALIDATION.md)：已验证能力与待验证平台。
+- [服务能力撤回审计](PROVIDER_WITHDRAWAL_AUDIT.md)：cached handle、owner withdrawal 和 in-flight 边界的证据。
+- [时空组合思考记录](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)：Cordis 对照与设计背景。
+- [未落地提案](proposals/README.md)：待研究的问题，不作为当前公开契约。
 
 ## 文档职责
 
-下游迁移与部署证据见 [Host 下游与部署验证](HOST_DEPLOYMENT_VALIDATION.md)，其中明确已验证能力与待验证平台。
 Core/Host/Services 契约见 [组合服务](../docs/reference/runtime-services.md) 与上方领域文档。
 
 - `.agents/rules/`：可跨项目复用的 agent 决策规则，不作为 Pluxel 当前架构事实。
@@ -67,3 +65,11 @@ Core/Host/Services 契约见 [组合服务](../docs/reference/runtime-services.m
 - 优先按“如何选择 → 最小用法 → 关键边界 → 失败与验证”组织内容。标题应帮助读者完成任务或作出选择。
 - 对设计取舍给出可核对的实现事实，明确能力与限制，不把偏好写成未经验证的性能结论。
 - 用户无需理解内部 package、helper 或构建阶段名称，除非这些内容会直接影响其代码或交付结果。
+
+### 入口与发现
+
+- `docs/index.md` 按任务分流，新建项目与接手已有项目都有直接入口。
+- `docs/development/index.md` 拥有工具选择和开发工作流程；工具指南拥有调用方法、结果含义与限制。
+- 新增开发工具时同步检查首页、development 侧栏、工具链页、Package 矩阵与 AGENTS 的可发现性；通过链接引用指南，避免复制操作协议。
+- 根 AGENTS 与生成项目的 AGENTS 分别服务框架仓库与业务项目，两者都应能直接找到源码查询、在线操作和验证入口。
+- 移动文档须同步引用和侧栏；按任务重组导航时优先保留已有页面路径。

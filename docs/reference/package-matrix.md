@@ -18,9 +18,9 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/workbench`             | Content、View、Attachment、浏览器 SDK 与官方 Shell         | [View](../workbench/view.md)                                |
 | `@pluxel/vault-admin`           | 可选 Vault 管理 View                                       | [Vault](../runtime/vault.md)                                |
 | `@pluxel/host`                  | catalog、运行意图、图更新与动态来源                        | [配置插件宿主](../getting-started/host-setup.md)            |
-| `@pluxel/host-dev`              | 通用 Vite、HMR 与一次性开发脚本                            | [CLI 与工具链](../development/tooling.md)                   |
+| `@pluxel/host-dev`              | 通用 Vite、HMR 与在线开发控制台                            | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、开发控制台与源码工作区命令   | [CLI 与工具链](../development/tooling.md)                   |
-| `@pluxel/rolldown`              | Plugin package 与 static application 构建集成              | [开发和发布插件包](../development/plugin-package.md)        |
+| `@pluxel/rolldown`              | Plugin 构建集成与源码查询                                  | [开发和发布插件包](../development/plugin-package.md)        |
 | `@pluxel/test`                  | 统一插件测试 host、Vitest/Vite preset 与文件 fixture       | [测试 Plugin](../development/testing.md)                    |
 | `@pluxel/async`                 | 零依赖 async 任务图与有界并发迭代                          | [Async 任务图与有界迭代](./async.md)                        |
 | `@pluxel/commands`              | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../runtime/commands.md)                          |
@@ -46,6 +46,9 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 开发控制台从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，回调使用 `dev.ctx.require()` 读取已安装服务，详见[开发控制台](../development/dev-console.md)。
 
 `@pluxel/services/http/node` 提供标准 Host launcher 使用的 Node srvx/crossws carrier 和 `listenHostHttp()`。`createHostHttpHandler()` 与 HTTP 服务共用 `@pluxel/services/http` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
+
+源码查询从 `@pluxel/rolldown/inspect` 导入 `openProject()`，定位声明、依赖、配置和所选应用的输入；
+不启动 Host 或执行应用模块，详见[inspect 源码查询](../development/inspection.md)。
 
 ## 同包的可选入口
 
