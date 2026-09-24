@@ -106,7 +106,8 @@ Pluxel Core、所用服务和 required provider packages 通常是 peer dependen
 插件私有 RPC 包继续按自己的依赖解析。绕过 `pluxel build` 的包没有生成事实，
 不能依赖生产加载器自动桥接；Workbench 打开 target 时仍检查真实 `RpcTarget` 身份。
 
-希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入；无需另设 `better-result` peer。
+希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入完整上游命名导出；
+无需另设 `better-result` peer。用法见 [better-result 共享入口](../api/better-result.md)。
 发布包的 Core peer 下限须为首次发布此子入口的 Core 版本，宽泛的 `^1` 无法保证旧宿主存在该入口。
 
 ## `tsconfig.json`

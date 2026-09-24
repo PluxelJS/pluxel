@@ -21,6 +21,7 @@ Plugin 间本地调用不需要绕经 Workbench 或先序列化成 RPC DTO。业
 | 任务                                                   | 文档                                             |
 | ------------------------------------------------------ | ------------------------------------------------ |
 | 判断返回 snapshot 还是 handle，避免复制 API 类型和数据 | [契约、数据与资源](./contracts.md)               |
+| 在本地插件之间共享 Result 并处理失败                   | [better-result 共享入口](./better-result.md)     |
 | 声明插件依赖与清理资源                                 | [插件模型](../getting-started/plugin-model.md)   |
 | 编写页面 API 与 React 查询                             | [View](../workbench/view.md)                     |
 | 复用另一个插件的界面                                   | [组合与 Attachment](../workbench/composition.md) |

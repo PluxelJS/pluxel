@@ -104,13 +104,23 @@ export declare function sameResult(): boolean
 		`
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { Result } from '@pluxel/core/better-result'
+import * as shared from '@pluxel/core/better-result'
 import { produce, producerResult } from '@fixture/result-producer'
 import { consume, consumerResult, sameResult } from '@fixture/result-consumer'
 const require = createRequire(import.meta.url)
+const upstreamRequire = createRequire(require.resolve('@pluxel/core/package.json'))
+const upstream = await import(upstreamRequire.resolve('better-result'))
+const sharedCjs = require('@pluxel/core/better-result')
+assert.deepEqual(Object.keys(shared).sort(), Object.keys(upstream).sort())
+assert.deepEqual(Object.keys(sharedCjs).sort(), Object.keys(upstream).sort())
+for (const name of Object.keys(upstream)) {
+	assert.equal(shared[name], upstream[name], name)
+	assert.equal(sharedCjs[name], upstream[name], name)
+}
+const { Result } = shared
 assert.equal(Result, producerResult)
 assert.equal(Result, consumerResult)
-assert.equal(Result, require('@pluxel/core/better-result').Result)
+assert.equal(Result, sharedCjs.Result)
 assert.equal(sameResult(), true)
 assert.equal(produce(2).map(value => value + 1).unwrap(), 3)
 assert.equal(consume(2).unwrap(), 3)
@@ -138,14 +148,34 @@ assert.equal(Result.isError(consume(0)), true)
 	put(
 		'app/consumer-check.mts',
 		`
-import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/better-result'
+import {
+	Err,
+	Ok,
+	Panic,
+	Result,
+	TaggedError,
+	matchError,
+	type InferErr,
+	type InferOk,
+	type Result as SharedResult,
+	type SerializedResult,
+} from '@pluxel/core/better-result'
 import { produce } from '@fixture/result-producer'
 import { consume } from '@fixture/result-consumer'
 class Missing extends TaggedError('Missing')<{ message: string }> {}
 const produced: SharedResult<number, Error> = produce(1)
 const consumed: SharedResult<number, Error> = consume(1)
 const failed: SharedResult<number, Missing> = Result.err(new Missing({ message: 'missing' }))
+const direct = new Ok(1)
+const directFailure = new Err(new Missing({ message: 'missing' }))
+type ExportedTypes = [InferOk<typeof produced>, InferErr<typeof failed>, SerializedResult<number, string>]
+declare const exportedTypes: ExportedTypes
 void failed
+void direct
+void directFailure
+void exportedTypes
+void Panic
+void matchError
 if (Result.isOk(produced) && Result.isOk(consumed)) {
 	const value: number = produced.value + consumed.value
 	void value
@@ -155,9 +185,11 @@ if (Result.isOk(produced) && Result.isOk(consumed)) {
 	put(
 		'app/consumer-check.cts',
 		`
-import { Result, type Result as SharedResult } from '@pluxel/core/better-result'
+import { Ok, Result, type InferOk, type Result as SharedResult } from '@pluxel/core/better-result'
 const result: SharedResult<number, never> = Result.ok(1)
+const direct: InferOk<typeof result> = new Ok(1).value
 void result
+void direct
 `,
 	)
 	const typescript = resolve(coreRoot, '../../node_modules/typescript/bin/tsc')

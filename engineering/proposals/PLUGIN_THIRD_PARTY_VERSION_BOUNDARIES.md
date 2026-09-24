@@ -69,10 +69,9 @@
 
 ### 3.2 better-result：可选的 Pluxel 公共 Result 入口
 
-`@pluxel/core/better-result` 提供一个有界的 `better-result` 再导出，作为**希望在插件间公开 Result 实例**
-的作者入口。使用者从该入口导入，并通过已要求的 `@pluxel/core` peer 共享 Pluxel 所选的 Result API；
-Pluxel 负责其上游版本与公开 API 的升级。公开集合只覆盖实际被作者使用的 `Result`、错误构造与必要类型，
-不自动转发整个上游包，也不复制实现或发明平行的 `Ok`/`Err` 契约。
+`@pluxel/core/better-result` 直接 `export * from 'better-result'`，作为**希望在插件间公开 Result 实例**
+的作者入口。使用者从该入口导入，并通过已要求的 `@pluxel/core` peer 共享 Pluxel 所选版本的全部上游命名导出；
+Pluxel 负责其上游版本与公开 API 的升级，不复制实现或发明平行的 `Ok`/`Err` 契约。
 发布的插件若使用该子入口，其 Core peer 范围必须以首次包含此入口的 Core 版本为下限；
 仅写宽泛的 `^1` 不保证旧宿主存在这个入口。作者不再额外声明 `better-result` peer。
 

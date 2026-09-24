@@ -1,2 +1,2 @@
-/** Optional shared Result contract for local Plugin APIs. */
-export { Result, TaggedError } from 'better-result'
+/** Optional shared better-result contract for local Plugin APIs. */
+export * from 'better-result'

@@ -37,23 +37,10 @@ export const ordersQuery = overviewScope.query(({ api }) => ({
 
 ## 本地插件可选 Result 契约
 
-跨 Plugin 公开可预期失败时，可以共同从 `@pluxel/core/better-result` 导入 `better-result` 的 `Result` 与 `TaggedError`。
-这个子入口只共享上游实现和类型，不改变 Plugin lifecycle、Command 错误或现有领域返回值；纯内部依赖仍由插件自己选择。
+跨 Plugin 公开可预期失败时，可以共同从 `@pluxel/core/better-result` 导入。该子入口直接再导出
+上游的全部命名导出与类型；安装、完整导出范围、同步/异步组合和错误处理见
+[better-result 共享入口](./better-result.md)。
 
-```ts
-import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/better-result'
-
-class MissingOrder extends TaggedError('MissingOrder')<{ id: string; message: string }> {}
-
-function findOrder(id: string): SharedResult<{ id: string }, MissingOrder> {
-	return id === '42'
-		? Result.ok({ id })
-		: Result.err(new MissingOrder({ id, message: 'Order not found' }))
-}
-```
-
-插件发布时，把 `@pluxel/core` peer 下限设为首个包含 `/better-result` 的发行版本；旧 Core 版本没有该子入口。
-Core 的 ESM 与 Node 24+ CJS 子入口都引用同一上游包，Core 主入口不会加载它。
 `Result` 实例只用于本地 API。通过 Workbench、Worker 或 JSON 传输时，由生产者投影为经过校验的普通 DTO，
 消费者按领域协议恢复；部分成功、已保存未应用等状态继续保留各自语义。
 仅将调用方需要按类型恢复的预期业务失败放进错误分支；输入 schema 损坏、底层服务故障和
