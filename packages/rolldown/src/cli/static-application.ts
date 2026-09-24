@@ -21,6 +21,7 @@ import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deploy
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 import { staticElysiaSingletonPlugin } from './elysia-singleton'
 import { staticFrameworkSingletonPlugin } from './framework-singletons'
+import { packageVersion, staticWorkbenchCapnwebPlugin } from './static-workbench-capnweb'
 import {
 	renderStaticApplicationEnvironmentExample,
 	writeStaticConfigEnvironmentExample,
@@ -98,6 +99,17 @@ export function createStaticApplicationConfig(
 	const outDir = resolve(cwd, options.outDir ?? 'dist')
 	const variant = options.variant ?? 'workbench'
 	const launcher = String(options.launcher ?? 'node')
+	if (
+		options.sourceFrameworks?.some(
+			(specifier) =>
+				typeof specifier === 'string' &&
+				(specifier === 'capnweb' || specifier.startsWith('capnweb/')),
+		)
+	) {
+		throw new TypeError(
+			'[static-application] capnweb is reserved for Workbench target publishers; omit it from sourceFrameworks',
+		)
+	}
 	if (launcher !== 'node' && launcher !== 'fetch' && launcher !== 'host') {
 		throw new Error('[static-application] launcher must be node, fetch or host')
 	}
@@ -179,6 +191,7 @@ export function createStaticApplicationConfig(
 				),
 			]),
 			...(launcher === 'host' ? [] : [staticElysiaSingletonPlugin(cwd)]),
+			staticWorkbenchCapnwebPlugin(entry),
 			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({
 				cwd,
@@ -521,6 +534,7 @@ function staticApplicationEntryPlugin(options: {
 		async load(id) {
 			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
 			const frameworkReferences = new Map<string, string>()
+			let workbenchCapnwebVersion: string | undefined
 			if (options.state.hasSources) {
 				const selected = new Set([
 					'@pluxel/core',
@@ -549,12 +563,29 @@ function staticApplicationEntryPlugin(options: {
 					})
 					frameworkReferences.set(specifier, reference)
 				}
+				const workbench = await this.resolve('@pluxel/workbench/package.json', options.entry)
+				if (workbench?.id) {
+					const capnweb = await this.resolve('capnweb', workbench.id)
+					if (!capnweb?.id || capnweb.external)
+						this.error('[static-application] Cannot bundle Workbench capnweb')
+					workbenchCapnwebVersion = await packageVersion(capnweb.id, 'capnweb')
+					frameworkReferences.set(
+						'capnweb',
+						this.emitFile({
+							type: 'chunk',
+							id: capnweb.id,
+							fileName: frameworkFacadeFile('capnweb'),
+							preserveSignature: 'strict',
+						}),
+					)
+				}
 			}
 			return buildHostBootstrap(
 				options.entry,
 				options.variant,
 				options.launcher,
 				frameworkReferences,
+				workbenchCapnwebVersion,
 			)
 		},
 	}
@@ -565,6 +596,7 @@ function buildHostBootstrap(
 	variant: 'headless' | 'workbench',
 	launcher: 'host' | 'node' | 'fetch',
 	frameworkReferences: ReadonlyMap<string, string>,
+	workbenchCapnwebVersion?: string,
 ): string {
 	const framework = `{ ${[...frameworkReferences].map(([specifier, reference]) => `${JSON.stringify(specifier)}: import.meta.ROLLUP_FILE_URL_${reference}`).join(', ')} }`
 	const http = launcher !== 'host'
@@ -577,6 +609,7 @@ ${launcher === 'node' ? "import { listenHostHttp } from '@pluxel/services/http/n
 const host = await runHostApplication(application, {
  startup: {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',variant:${JSON.stringify(variant)}}},
  frameworkModules: ${framework},
+ workbenchCapnwebVersion: ${JSON.stringify(workbenchCapnwebVersion)},
 })
 export const ctx = host.ctx
 export const start = () => host.start()

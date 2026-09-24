@@ -11,6 +11,13 @@ Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使�
 
 开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为五份文件：页面声明、服务端实现、查询声明、React 入口和页面组件。
 `RpcTarget` 是可以由页面调用的服务端对象；`scope` 将 React 组件与它对应的页面 API 关联。
+向 Workbench 发布 View/Attachment target 时，作者直接从 `capnweb` 导入 `RpcTarget`，并把宿主支持的精确版本
+同时列为 peer 和 dev dependency。当前 Workbench 支持 `0.12.0`；官方包使用 `catalog:prod`。
+Workbench 在打开页面时检查 target 是同一运行时的 `RpcTarget`，`pluxel build` 在发布产物前检查该包的
+peer、dev 和实际安装版本。仅自建的 RPC session 不因使用同名库而受 Workbench 版本限制。
+构建产物的 `pluxel.workbenchCapnweb` 事实让 Pluxel 静态应用和生产动态来源只对 target 发布包
+桥接宿主模块；动态来源在加载时还检查实际版本，并给出包名、实际版和宿主支持版。即使版本相同，
+绕过标准构建或采用其它加载器造成的第二份模块仍会在打开时被拒绝。
 
 ## 默认路径：snapshot + mutation
 

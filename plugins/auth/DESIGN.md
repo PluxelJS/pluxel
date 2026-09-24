@@ -49,6 +49,10 @@ TOTP enrollment belongs to one opened target and has bounded count, attempts and
 owner stop or replacement disposes every pending enrollment. Failures use the stable `AuthSetupFailureCode` union; raw storage/crypto
 errors do not cross the RPC boundary.
 
+Credential input validation and password hashing compose through the optional Core Result entry inside
+`CredentialProvisioning`. The setup target consumes the result and returns the existing plain
+`AuthSetupFailureCode` DTO. Result instances and password records never enter the Workbench transport.
+
 The renderer uses one descriptor-bound scope with an owned snapshot query and typed mutation invalidation. Query and mutation resources
 detach their RPC results before React observes them. The TOTP enrollment mutation is reset immediately after its detached result is
 extracted, so the renderer retains only the local UI draft needed to render the enrollment step; that draft is cleared on step reset,

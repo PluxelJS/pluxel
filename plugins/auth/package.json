@@ -89,5 +89,8 @@
 	},
 	"engines": {
 		"node": ">=24"
+	},
+	"pluxel": {
+		"workbenchCapnweb": "0.12.0"
 	}
 }

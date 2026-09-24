@@ -47,6 +47,11 @@
 			"import": "./dist/logger.mjs",
 			"require": "./dist/logger.cjs"
 		},
+		"./result": {
+			"@pluxel/source": "./src/result.ts",
+			"import": "./dist/result.mjs",
+			"require": "./dist/result.cjs"
+		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
 			"import": "./dist/services.mjs",
@@ -85,6 +90,10 @@
 				"import": "./dist/logger.mjs",
 				"require": "./dist/logger.cjs"
 			},
+			"./result": {
+				"import": "./dist/result.mjs",
+				"require": "./dist/result.cjs"
+			},
 			"./services": {
 				"import": "./dist/services.mjs",
 				"require": "./dist/services.cjs"
@@ -99,6 +108,7 @@
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
+		"test:installed-result": "node tests/installed-result.smoke.mjs",
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
 		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
@@ -109,6 +119,7 @@
 	"dependencies": {
 		"@logtape/logtape": "catalog:prod",
 		"@standard-schema/spec": "catalog:prod",
+		"better-result": "catalog:prod",
 		"eventure": "catalog:prod",
 		"std-env": "catalog:prod"
 	},

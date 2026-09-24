@@ -97,6 +97,17 @@ oxlint.config.ts
 可发布包仍应将生产导出指向构建制品。
 
 Pluxel Core、所用服务和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
+发布 Workbench View/Attachment `RpcTarget` 的包还需把宿主支持的 `capnweb` 精确版本同时声明为 peer 和 dev dependency，
+并让生产 bundle 保留该外部依赖。`pluxel build` 根据实际 Workbench target publication 检查声明版本和安装版本，
+当前官方支持 `0.12.0`；仅自建私有 RPC 或只发布 Content 的包不受这项检查约束。
+构建还会生成 `pluxel.workbenchCapnweb` 版本事实。Pluxel 静态应用只把带此事实的 target 包的
+`capnweb` import 解析到宿主 Workbench；生产动态来源加载时核对声明、来源实际安装版与宿主支持版，
+不匹配时报告 `PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH`，匹配时让该包借用宿主模块。
+插件私有 RPC 包继续按自己的依赖解析。绕过 `pluxel build` 的包没有生成事实，
+不能依赖生产加载器自动桥接；Workbench 打开 target 时仍检查真实 `RpcTarget` 身份。
+
+希望跨插件公开 `Result` 实例时，从 `@pluxel/core/result` 导入；无需另设 `better-result` peer。
+发布包的 Core peer 下限须为首次发布此子入口的 Core 版本，宽泛的 `^1` 无法保证旧宿主存在该入口。
 
 ## `tsconfig.json`
 

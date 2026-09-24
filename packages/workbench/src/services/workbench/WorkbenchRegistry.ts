@@ -354,6 +354,7 @@ export class WorkbenchRegistry {
 						signal: lease.signal,
 					}),
 					lease,
+					pluginNodeIndexKey(candidate.target.owner.pluginInfo.nodeAddress),
 				)
 				lease.activate([api])
 				if ('contentRef' in candidate.layoutEntry) {
@@ -398,9 +399,21 @@ export class WorkbenchRegistry {
 				signal: lease.signal,
 			})
 			const roots = await Promise.all([
-				this.runFactory(providerEntry.factory, providerContext, lease),
+				this.runFactory(
+					providerEntry.factory,
+					providerContext,
+					lease,
+					pluginNodeIndexKey(providerPublication.owner.pluginInfo.nodeAddress),
+				),
 				...(candidate.entry.consumerFactory
-					? [this.runFactory(candidate.entry.consumerFactory, consumerContext, lease)]
+					? [
+							this.runFactory(
+								candidate.entry.consumerFactory,
+								consumerContext,
+								lease,
+								pluginNodeIndexKey(candidate.target.owner.pluginInfo.nodeAddress),
+							),
+						]
 					: []),
 			])
 			const provider = roots[0]!
@@ -872,13 +885,14 @@ export class WorkbenchRegistry {
 		factory: (context: any) => RpcTarget | Promise<RpcTarget>,
 		context: WorkbenchViewOpenContext | WorkbenchAttachmentOpenContext,
 		lease: OpenedEntryLease,
+		publisher: string,
 	): Promise<RpcTarget> {
 		const pending = Promise.resolve()
 			.then(() => {
 				if (lease.signal.aborted) throw lease.signal.reason
 				return factory(context)
 			})
-			.then((target) => this.claimFreshRoot(target))
+			.then((target) => this.claimFreshRoot(target, publisher))
 		lease.trackPending(pending)
 		const target = await raceAbort(pending, lease.signal)
 		if (lease.signal.aborted) throw lease.signal.reason
@@ -886,9 +900,11 @@ export class WorkbenchRegistry {
 		return target
 	}
 
-	private claimFreshRoot(target: unknown): RpcTarget {
+	private claimFreshRoot(target: unknown, publisher: string): RpcTarget {
 		if (!(target instanceof RpcTarget)) {
-			throw new TypeError('Workbench factory must return a fresh RpcTarget')
+			throw new TypeError(
+				`[workbench] ${publisher} factory must return a fresh RpcTarget from the host capnweb module; check its installed version and module resolution`,
+			)
 		}
 		if (this.exportedRoots.has(target)) {
 			throw new TypeError('Workbench factory returned an RpcTarget that was already exported')

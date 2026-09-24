@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { Result, type Result as SharedResult } from '@pluxel/core/result'
 import type { AuthMode } from './config.ts'
 import type { LocalAccountRecord } from './credentials.ts'
 import {
@@ -64,8 +65,8 @@ export class CredentialProvisioning {
 			return failure('not_required', 'Password setup is not available.')
 		}
 		const base = await this.prepareAccount(input)
-		if ('ok' in base) return base
-		return await this.saveAccount({ version: 1, type: 'local-account', ...base })
+		if (Result.isError(base)) return base.error
+		return await this.saveAccount({ version: 1, type: 'local-account', ...base.value })
 	}
 
 	async beginTotp(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult> {
@@ -73,7 +74,7 @@ export class CredentialProvisioning {
 			return failure('not_required', 'Password and TOTP setup is not available.')
 		}
 		const base = await this.prepareAccount(input)
-		if ('ok' in base) return base
+		if (Result.isError(base)) return base.error
 		if (this.disposed) return failure('unavailable', 'Credential setup is closed.')
 		this.pruneEnrollments()
 		while (this.enrollments.size >= MAX_ENROLLMENTS) {
@@ -85,7 +86,7 @@ export class CredentialProvisioning {
 		const secret = createTotpSecret()
 		const expiresAt = Date.now() + ENROLLMENT_TTL_MS
 		this.enrollments.set(id, {
-			...base,
+			...base.value,
 			secret,
 			expiresAt,
 			attempts: 0,
@@ -95,7 +96,7 @@ export class CredentialProvisioning {
 			enrollment: Object.freeze({
 				id,
 				secret,
-				provisioningUri: totpProvisioningUri({ secret, username: base.username }),
+				provisioningUri: totpProvisioningUri({ secret, username: base.value.username }),
 				expiresAt,
 			}),
 		})
@@ -173,35 +174,55 @@ export class CredentialProvisioning {
 
 	private async prepareAccount(
 		input: AuthPasswordSetupInput,
-	): Promise<PreparedAccount | AuthSetupFailure> {
-		if (!this.store.available) return failure('unavailable', 'Vault is unavailable.')
-		const parsed = parsePasswordSetup(input)
-		if (!parsed) return failure('invalid_input', 'The account input is invalid.')
-		const username = parsed.username.trim()
-		const normalizedUsername = normalizeUsername(username)
-		if (!normalizedUsername) {
-			return failure(
-				'invalid_input',
-				'Account names may use letters, numbers, dot, underscore, @, and hyphen.',
+	): Promise<SharedResult<PreparedAccount, AuthSetupFailure>> {
+		const account = Result.ok(input)
+			.andThen((candidate) =>
+				this.store.available
+					? Result.ok(candidate)
+					: Result.err(failure('unavailable', 'Vault is unavailable.')),
 			)
-		}
-		if (parsed.password !== parsed.passwordConfirmation) {
-			return failure('invalid_input', 'Passwords do not match.')
-		}
-		try {
-			return Object.freeze({
-				username,
-				normalizedUsername,
-				password: await hashPassword(parsed.password),
+			.andThen((candidate) => {
+				const parsed = parsePasswordSetup(candidate)
+				return parsed
+					? Result.ok(parsed)
+					: Result.err(failure('invalid_input', 'The account input is invalid.'))
 			})
-		} catch (error) {
-			return failure(
-				error instanceof PasswordHashBusyError ? 'busy' : 'invalid_input',
-				error instanceof PasswordHashBusyError
-					? 'Password hashing is temporarily busy.'
-					: 'Use a password of at least 12 characters.',
-			)
-		}
+			.andThen((parsed) => {
+				const username = parsed.username.trim()
+				const normalizedUsername = normalizeUsername(username)
+				if (!normalizedUsername) {
+					return Result.err(
+						failure(
+							'invalid_input',
+							'Account names may use letters, numbers, dot, underscore, @, and hyphen.',
+						),
+					)
+				}
+				if (parsed.password !== parsed.passwordConfirmation) {
+					return Result.err(failure('invalid_input', 'Passwords do not match.'))
+				}
+				return Result.ok({ username, normalizedUsername, password: parsed.password })
+			})
+		return await account.andThenAsync(async (candidate) => {
+			try {
+				return Result.ok(
+					Object.freeze({
+						username: candidate.username,
+						normalizedUsername: candidate.normalizedUsername,
+						password: await hashPassword(candidate.password),
+					}),
+				)
+			} catch (error) {
+				return Result.err(
+					failure(
+						error instanceof PasswordHashBusyError ? 'busy' : 'invalid_input',
+						error instanceof PasswordHashBusyError
+							? 'Password hashing is temporarily busy.'
+							: 'Use a password of at least 12 characters.',
+					),
+				)
+			}
+		})
 	}
 
 	private async saveAccount(account: LocalAccountRecord): Promise<CredentialSetupResult> {

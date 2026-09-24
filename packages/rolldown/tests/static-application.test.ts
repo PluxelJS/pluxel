@@ -18,6 +18,11 @@ function pluginNames(config: { plugins?: unknown }): string[] {
 }
 
 describe('application', () => {
+	it('reserves the Workbench transport bridge instead of making capnweb a global framework', () => {
+		expect(() => application({ entry: './app.ts', sourceFrameworks: ['capnweb'] })).toThrow(
+			/capnweb is reserved for Workbench target publishers/,
+		)
+	})
 	it('exposes one standard plugin package preset and shared source pipeline', () => {
 		const pipeline = createPluginBuildPipeline({ root: '/tmp/pluxel-plugin-package' })
 		const config = pluginPackage({

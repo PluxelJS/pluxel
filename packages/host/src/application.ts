@@ -126,10 +126,15 @@ export async function runHostApplication(
 	options: Readonly<{
 		startup: HostStartupContext
 		frameworkModules?: Readonly<Record<string, string>>
+		/** Exact Workbench transport version embedded by a production application build. */
+		workbenchCapnwebVersion?: string
 	}>,
 ): Promise<PluginHost> {
 	const resolved = await resolveHostApplication(application, options.startup)
-	const loader = createProductionSourceLoader(options.frameworkModules)
+	const loader = createProductionSourceLoader(
+		options.frameworkModules,
+		options.workbenchCapnwebVersion,
+	)
 	let host: PluginHost | undefined
 	try {
 		const common = {

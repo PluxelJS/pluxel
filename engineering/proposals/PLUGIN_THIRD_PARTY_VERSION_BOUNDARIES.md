@@ -1,8 +1,8 @@
 # Plugin 第三方库版本边界提案
 
-状态：待评审，未实现。日期：2026-09-24。
+状态：已实施并验证。日期：2026-09-25。
 
-本文是版本与导入契约提案，不改变当前作者 API。当前行为以[Plugin 系统](../PLUGIN_SYSTEM.md)、
+本文记录版本边界的设计与验收；当前作者行为以[Plugin 系统](../PLUGIN_SYSTEM.md)、
 [HTTP](../../docs/runtime/http.md)、[Workbench](../WORKBENCH.md) 和
 [API 契约](../../docs/api/contracts.md)为准。
 
@@ -38,7 +38,7 @@
   仓库 [catalog](../../pnpm-workspace.yaml)选择 `capnweb`，部分官方插件（如
   [Auth](../../plugins/auth/package.json)）声明它为 peer，
   [Workbench 构建](../../packages/workbench/tsdown.config.ts)将它排除出自己的 bundle。
-  当前文档尚未像 HTTP 一样完整定义宿主 Workbench 与插件私有 RPC 的版本边界、版本准入和产物验证。
+  当前文档已分别定义宿主 Workbench 与插件私有 RPC 的版本边界、版本准入和产物验证。
 - [Workbench federation 约束](../WORKBENCH.md#mf2-与-react-bridge)的固定浏览器 singleton 清单不包含
   `capnweb`；因此不能把 React 的 singleton 保证直接套用到它。
 - Core 当前同时发布 [ESM/CJS](../../packages/core/package.json)，而
@@ -46,7 +46,7 @@
   Core 已有[仅内部使用的轻量 Result](../../packages/core/src/internal/di/result.ts)，
   多个领域另有自己的判别结果。上游 2.x 到 3.x 有破坏性变化。
 
-## 3. 拟议契约
+## 3. 已实施契约
 
 ### 3.1 Elysia 与 capnweb：宿主互操作依赖
 
@@ -69,7 +69,7 @@
 
 ### 3.2 better-result：可选的 Pluxel 公共 Result 入口
 
-建议由 `@pluxel/core/result` 提供一个有界的 `better-result` 再导出，作为**希望在插件间公开 Result 实例**
+`@pluxel/core/result` 提供一个有界的 `better-result` 再导出，作为**希望在插件间公开 Result 实例**
 的作者入口。使用者从该入口导入，并通过已要求的 `@pluxel/core` peer 共享 Pluxel 所选的 Result API；
 Pluxel 负责其上游版本与公开 API 的升级。公开集合只覆盖实际被作者使用的 `Result`、错误构造与必要类型，
 不自动转发整个上游包，也不复制实现或发明平行的 `Ok`/`Err` 契约。
@@ -82,10 +82,9 @@ Pluxel 负责其上游版本与公开 API 的升级。公开集合只覆盖实�
 意外异常和生命周期启动失败仍按原契约传播。Result 实例不得直接作为 Workbench portable DTO；
 跨传输时由边界投影并验证普通数据，消费端按领域协议恢复。
 
-`@pluxel/core/result` 是拟议入口，不是已确认可发布的导出。Core 主入口继续保持不因 Result 加载上游包。
-上游 ESM-only 与 Core 的双格式发布是否可在可选子入口中诚实支持，须由独立安装的 ESM/CJS 消费者验证；
-若不能同时支持，应明确该子入口仅支持 ESM，且不得悄悄使 Core CJS 主入口失效。
-再导出也不能单靠 import 路径保证进程中只有一份模块；构建与跨插件测试必须验证实际 identity 和行为。
+`@pluxel/core/result` 已实现为可选子入口并列入待发布变更。Core 主入口保持不因 Result 加载上游包。
+上游 ESM-only 与 Core 的双格式支持已由独立安装的 ESM/CJS 消费者验证，跨插件测试也验证了实际
+identity 与方法行为；仅凭再导出路径本身不推断进程中只有一份模块。
 
 ### 3.3 版本策略适用于边界，不适用于整个插件系统
 
@@ -95,23 +94,29 @@ Plugin graph 的 required/optional dependency 表示业务能力和生命周期�
 
 ## 4. 采用步骤与验收
 
-本提案不授权批量迁移现有业务 API。拟议的最小实施顺序：
+`pluxel build` 从 Workbench 语义事实识别 View/Attachment target publisher，核对 `capnweb` 的精确 peer、
+dev 与实际安装版本，并写入生成字段 `pluxel.workbenchCapnweb`。字段随 publication 撤回而删除。
+静态应用只把带字段的发布包 import 指向 Workbench 的 `capnweb` copy；生产动态来源核对发布包的
+字段、实际解析版本与宿主支持版本，再借用构建产物中的 Workbench facade。两条路径都不改写
+没有该事实的私有 RPC 包。Workbench registry 继续检查 target 的实际 `RpcTarget` identity；
+非标准加载器或绕过构建的第二份模块会在打开时被拒绝。
 
-1. 明确 Workbench `capnweb` 的宿主边界与官方支持版本，核对当前官方 peer 声明、构建外部化和真实连接。
-   对一个仓库外独立安装的插件包验证兼容版本成功、不兼容版本有明确诊断，以及插件私有 RPC 不被误限制。
-2. 实现可选 Result 子入口，并从独立安装的两个插件包分别导入、公开返回和消费一个 Result；
-   验证类型声明解析、实际实例方法、构建产物、ESM/CJS 支持范围与 Core 主入口惰性。
-3. 只在确有多步可预期失败且调用方会处理错误的一个官方流程中试用该入口。
-   检查是否减少分支与转换成本；不以迁移文件数或统一表面格式作为成功指标。
-4. 决策通过后更新[插件包指南](../../docs/development/plugin-package.md)、HTTP/Workbench 作者文档和
-   [API 契约](../../docs/api/contracts.md)，再按公共包变更规则添加 changelog。用户文档只描述已实现行为。
+验收证据：Rolldown 测试从不同安装路径打包同版本发布包与异版私有 RPC，确认前者身份相同、
+后者保持独立；异版发布包在构建时给出包名、实际版、宿主版。隔离的 Node 生产来源测试分别验证
+同样的桥接与来源加载时的异版诊断。真实静态 Workbench 应用构建后在搬离源码的产物中启动
+独立安装的 target，异版来源被拒绝。Vault Admin 的 npm 发行包在仓库外宿主中以本地 session 和
+真实 WebSocket 打开 View；同版本第二份模块被 registry 拒绝。Content-only Storage 包构建不触发
+准入。Core 的独立安装双消费包探针验证 ESM/CJS、类型声明、Result 方法组合、跨包对象身份和主入口惰性。
 
-验收条件是：宿主互操作与插件私有实现的版本政策可独立解释；兼容与不兼容的实际构建/运行路径有证据；
-Result 的公开入口能被外部插件正确安装和消费；现有 RPC DTO、Command、生命周期与部分成功语义不退化。
+Auth 的 credential preparation 是唯一官方 Result 试用：输入、账户名、确认与异步 hash 的可预期
+失败通过 Result 组合；调用方在 Workbench 边界一次投影回原有的 `AuthSetupFailureCode` 普通 DTO。
+这使局部错误传播更直接，但代码量增加，不构成批量迁移其它业务 API 的理由。Command、生命周期、
+RPC DTO 与部分成功协议继续按各自契约。
 
-## 5. 未决问题
+## 5. 后续边界
 
-- Workbench 的哪些具体加载路径必须共享 `capnweb` 模块 identity，哪些只要求客户端/服务端 wire 兼容？
-  需从真实 publication、session 与构建产物验证，不能从 Elysia 的结论类推。
-- `@pluxel/core/result` 的最小导出集合，以及双格式发布的可支持范围是什么？由独立安装探针决定。
-- `capnweb` 的精确 peer 准入应复用哪一层现有 package metadata，而不让 Core 扫描文件系统或限制私有 RPC？
+目前没有向插件作者开放可把自建 `RpcTarget` 接入宿主 Workbench session 的借用 API。
+`openLocalWorkbenchEntry` 借用的是 Workbench 已拥有的 session，不引入另一个 `capnweb` 对象来源，
+因此本次无需发明额外的准入信号。若未来开放这类入口，应以实际对象交换为准入依据并增加对应测试。
+插件通过独立客户端/服务端 socket 交换 wire 数据仍须自行约定协议版本；Pluxel 的模块桥接不保证
+Cap’n Web 跨版本 wire 兼容。

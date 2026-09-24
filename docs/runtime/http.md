@@ -80,7 +80,7 @@ cookie、stream 和普通 function plugin 都按 Elysia 2 API 使用。需要这
 `@pluxel/core` 不重新导出 Elysia 或它的官方 plugin。
 
 发布给其他宿主使用的 Plugin package 应把宿主支持的 Elysia 精确版本同时声明为 `peerDependencies` 和 `devDependencies`：peer
-保证运行时复用宿主 singleton，dev dependency 则供本 package 编译、测试和编辑器解析。不要把 Elysia 打进 Plugin bundle，也不要让
+声明与宿主互操作的兼容意图，dev dependency 则供本 package 编译、测试和编辑器解析。实际 singleton 还依赖构建与加载解析。不要把 Elysia 打进 Plugin bundle，也不要让
 Plugin 自带另一份 runtime copy。当前 HTTP 服务锁定 `2.0.0-beta.7`，对应声明为：
 
 ```json

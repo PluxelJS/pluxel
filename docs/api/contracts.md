@@ -35,6 +35,28 @@ export const ordersQuery = overviewScope.query(({ api }) => ({
 
 一个公开类型应对应一个真实兼容性承诺。不要直接把数据库 row、SDK 实例或 Plugin implementation 当作浏览器契约。只有出现真实的第二客户端时，才把共用 contract 提取到中立模块或独立 subpath；`import type` 避免运行时加载，但仍需保证公开声明的依赖适合客户端消费。
 
+## 本地插件可选 Result 契约
+
+跨 Plugin 公开可预期失败时，可以共同从 `@pluxel/core/result` 导入 `better-result` 的 `Result` 与 `TaggedError`。
+这个子入口只共享上游实现和类型，不改变 Plugin lifecycle、Command 错误或现有领域返回值；纯内部依赖仍由插件自己选择。
+
+```ts
+import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/result'
+
+class MissingOrder extends TaggedError('MissingOrder')<{ id: string; message: string }> {}
+
+function findOrder(id: string): SharedResult<{ id: string }, MissingOrder> {
+	return id === '42'
+		? Result.ok({ id })
+		: Result.err(new MissingOrder({ id, message: 'Order not found' }))
+}
+```
+
+插件发布时，把 `@pluxel/core` peer 下限设为首个包含 `/result` 的发行版本；旧 Core 版本没有该子入口。
+Core 的 ESM 与 Node 24+ CJS 子入口都引用同一上游包，Core 主入口不会加载它。
+`Result` 实例只用于本地 API。通过 Workbench、Worker 或 JSON 传输时，由生产者投影为经过校验的普通 DTO，
+消费者按领域协议恢复；部分成功、已保存未应用等状态继续保留各自语义。
+
 ## 共享 RPC 能力按作用域持有
 
 Workbench 已经为每次打开页面取得所需 root。`scope.useWorkbench()`、query 和 mutation factory 借用同一组引用，不执行获取 RPC，也不调用 `dup()`。View 使用 `api`，Attachment 使用 `provider` 和可选 `consumer`；这里的 `provider` 表示 Attachment 的能力提供方，不是需要作者再创建的 React Provider。

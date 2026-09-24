@@ -90,5 +90,8 @@
 		"react-dom": {
 			"optional": true
 		}
+	},
+	"pluxel": {
+		"workbenchCapnweb": "0.12.0"
 	}
 }

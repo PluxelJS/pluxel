@@ -24,6 +24,7 @@ Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 
 - Plugin 在 `init()` 中最多 publish 一次；bindings 精确覆盖需要 binding 的 entries，纯 Markdown 不接收 binding。Part 不能直接 publish，由 owning Plugin 聚合。
 - owner 从 Context 推导，publication 进入 generation effects，仅在 owner committed/running 后可见。失败启动不留下可见 entry。
 - 每次 View/Attachment open 产生 fresh roots；interactive Content 由框架建立 per-open root。Factory 只得到已认证 principal、服务端重新匹配的 frozen params 与 lifetime signal。
+- View/Attachment target 来自与 Workbench 兼容的 `capnweb` 模块；registry 的 `instanceof RpcTarget` 是实际 identity 边界。插件包构建只在语义分析确认该类 publication 时检查精确 peer/dev 与实际安装版本，并生成 `pluxel.workbenchCapnweb` 事实。静态构建按该事实把发布包的 import 指向 Workbench copy；动态来源加载时校验实际版并接入部署中的 Workbench facade。Content-only 与私有 RPC 不触发准入或桥接；绕过标准构建的来源仍受 registry identity 检查。
 - Factory 不获得 raw request、consumer Context 或 service locator。Root 可借用领域服务，其 observer、任务和缓存随 signal/disposer 释放。
 - Attachment provider 只取得 exact consumer node address；可选 consumer root 保留自己的 owner、授权和 cleanup。两个 roots 不合并为万能 facade。
 

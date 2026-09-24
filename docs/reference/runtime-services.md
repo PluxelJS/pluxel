@@ -306,7 +306,8 @@ Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/stand
 `sourceFrameworks` 是未来动态 Plugin 可以借用的框架模块入口清单，不是前端框架选择或权限白名单。动态来源的未来 Plugin 无法从静态 import 图推导。使用底层 `@pluxel/rolldown` 时，用 `pluxel({ sourceFrameworks: [...] })`
 列出它们允许借用的选装框架作者入口，例如 `@pluxel/services/http`、`@pluxel/workbench` 和 `elysia/ws`。
 Core 基础作者入口固定提供；清单中的其他入口必须能从应用解析，并随部署一起打包，动态 Plugin 借用同一模块身份。
-构建时，Core、Host 与清单所选包的根入口和子路径统一从应用解析，避免依赖树中的多份物理安装生成不同的 capability token；这不额外收集未导入的子路径。
+构建时，Core、Host 与清单所选包的根入口和子路径统一从应用解析，避免依赖树中的多份物理安装生成不同的 capability token；这不额外收集未导入的子路径。部署安装 Workbench 时，构建还为带有 `pluxel.workbenchCapnweb` 事实的 target 发布包准备 `capnweb` facade；私有 RPC 包不会因此改用宿主版本。
+`capnweb` 不放入 `sourceFrameworks`；它的 Workbench target 桥接由生成事实管理。
 该清单不安装服务，也不扫描工作区发现服务；固定 Plugin 的依赖沿实际 import 图打包。
 
 官方 `@pluxel/services/build` 已包含默认服务的共享入口，Workbench variant 还包含 Workbench 作者入口；无需手写这份配套清单。需要自定义服务的动态插件时，`sourceFrameworks` 在官方清单上追加入口，例如 `buildPreset({ sourceFrameworks: ['@acme/service'] })`。应用仍须独立安装对应服务。
