@@ -73,15 +73,15 @@ tunnel 打开 loopback Workbench 后进入该 route。View API 是：
 
 ```ts no-twoslash
 interface AuthSetupApi extends RpcTarget {
-	snapshot(): AuthSetupSnapshot
-	setupPassword(input: AuthPasswordSetupInput): Promise<AuthSetupMutationResult>
-	beginTotp(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult>
-	confirmTotp(input: AuthTotpConfirmationInput): Promise<AuthSetupMutationResult>
-	setupOidcSecret(input: AuthOidcSecretSetupInput): Promise<AuthSetupMutationResult>
+	snapshotDto(): AuthSetupSnapshot
+	setupPasswordDto(input: AuthPasswordSetupInput): Promise<AuthSetupMutationResult>
+	beginTotpDto(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult>
+	confirmTotpDto(input: AuthTotpConfirmationInput): Promise<AuthSetupMutationResult>
+	setupOidcSecretDto(input: AuthOidcSecretSetupInput): Promise<AuthSetupMutationResult>
 }
 ```
 
-`snapshot()` 只返回以下封闭状态：
+`snapshotDto()` 只返回以下封闭状态：
 
 | mode                 | state            | reason                | 含义                                 |
 | -------------------- | ---------------- | --------------------- | ------------------------------------ |
@@ -90,7 +90,7 @@ interface AuthSetupApi extends RpcTarget {
 | 其余 credential mode | `setup-required` | `missing` / `invalid` | loopback recovery 可以执行一次性配置 |
 | 其余 credential mode | `unavailable`    | `vault-unavailable`   | Vault 不可用，mutation fail closed   |
 
-Password 与 TOTP enrollment 共用 `{ username, password, passwordConfirmation }`。`beginTotp()` 返回 enrollment ID、secret、
+Password 与 TOTP enrollment 共用 `{ username, password, passwordConfirmation }`。`beginTotpDto()` 返回 enrollment ID、secret、
 provisioning URI 和过期时间，只有同一个 opened target 能用 `{ enrollmentId, code }` 确认。Confidential OIDC 只接受
 `{ secret }`。失败返回稳定 code：`forbidden`、`not_required`、`unavailable`、`invalid_input`、`busy`、
 `enrollment_expired`、`verification_failed` 或 `storage_failed`。
@@ -98,6 +98,8 @@ provisioning URI 和过期时间，只有同一个 opened target 能用 `{ enrol
 所有 mutation 同时要求真实 loopback recovery principal 和当前 `setup-required` 状态；即使已认证的远端管理员也不能调用，
 已配置 credential 不能通过这个 API 覆盖。成功保存后同一 Plugin generation 立即变为 ready，并撤销旧 cookie session。每次打开
 View 都得到 fresh target 和 provisioning session；close、abort、socket epoch 失效或 Plugin stop 会销毁未完成的 TOTP enrollment。
+
+Vault record 更新会刷新 provider 凭据；账号身份、密码、TOTP secret 或 OIDC secret 改变时撤销旧 cookie session。
 
 没有接入 Workbench setup View/API 的应用，使用 local credential 或 confidential OIDC 时必须预置同一 Vault record，
 或先用提供该配置页面、指向同一 persistence 的部署完成配置；否则 provider 保持 `ready: false`。

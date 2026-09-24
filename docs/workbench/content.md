@@ -4,7 +4,7 @@ description: 用 Markdown 和配置 schema 添加管理界面，无需编写 Rea
 ---
 
 当页面只需要说明、最新状态、少量按钮或一次性表单时，使用 Content。你写 Markdown 和数据处理函数，Workbench 负责显示。
-开始前，宿主应已[启用 Workbench](../getting-started/host-setup.md#workbench-与-management-access)，Plugin 应能正常启动。
+开始前，宿主应已[启用 Workbench](../getting-started/host-setup.md#选择组合)，Plugin 应能正常启动。
 
 不要用 Content 做分页、progress/cancel、多份独立 loading state、lossless stream 或自定义组件。这些需求直接使用
 [View 标准配方](./view.md)。普通非敏感配置仍使用 `configs.use()` 的标准 Config UI。

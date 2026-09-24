@@ -4,7 +4,7 @@ description: 将官方插件加入应用清单、配置和启动策略，并按�
 icon: Blocks
 ---
 
-先用 [快速开始](../getting-started/index.md) 创建并跑通应用，再按业务任务添加插件。运行时已提供 [HTTP](../runtime/http.md)、[日志](../runtime/logging.md)、[数据库](../runtime/database.md) 与 [Worker](../runtime/node-artifacts.md) API；本目录提供认证、出站请求、图像生成等可选能力。
+先用 [快速开始](../getting-started/index.md) 创建并跑通应用，再按业务任务添加插件。宿主可安装 [HTTP](../runtime/http.md)、[日志](../runtime/logging.md)、[数据库](../runtime/database.md) 与 [Worker](../runtime/node-artifacts.md) 等服务；本目录提供认证、出站请求、图像生成等可选能力。
 
 ## 把一个插件加入应用
 
@@ -49,20 +49,9 @@ export default defineHostApplication(async (startup) => {
 
 把 `CustomerPlugin` 保存为入口相邻的 `customer-plugin.ts`，完整实现见 [Wretch](./wretch.md#第一个-http-consumer)。它通过构造函数依赖 `WretchPlugin`，因此启动 consumer 时会一起启动 provider。把这段配置合入现有入口，保留项目已有的插件、启动项和配置记录。
 
-启动后在 Workbench 确认 consumer 与 provider 都处于运行状态，再调用业务方法验证结果。缺少依赖时先检查 `plugins` 清单；配置无效时查看该插件的启动错误。无界面应用通过 [开发控制台](../development/dev-console.md) 或测试读取状态。
+启动后在 Workbench 确认 consumer 与 provider 都处于运行状态，再调用业务方法验证结果。缺少依赖时先检查 `plugins` 清单；配置无效时查看该插件的启动错误。运行中的开发应用通过 [开发控制台](../development/dev-console.md) 读取实际状态；[测试宿主](../development/testing.md) 用于独立回归。
 
 本目录的 `host.start()`、`host.commit()`、`initialConfig` 示例用于 [服务测试宿主](../development/testing.md)，不要复制到生产启动文件。应用使用上面的配置记录与自动启动策略；动态宿主和持久化配置见 [宿主配置](../getting-started/host-setup.md)。
-
-## 按任务选择
-
-| 你要完成的任务             | 从这里开始                         |
-| -------------------------- | ---------------------------------- |
-| 保护管理工作台             | [Management 认证](./auth.md)       |
-| 调用外部 HTTP API          | [Wretch](./wretch.md)              |
-| 把业务命令提供给 Agent     | [Agent tools](./agent-tools.md)    |
-| 生成分享图、图表或文档图片 | [服务端渲染](./rendering/index.md) |
-
-以下清单区分公开包与仓库内部预览；先确认可用范围，再选择 API。
 
 ## 可公开安装
 

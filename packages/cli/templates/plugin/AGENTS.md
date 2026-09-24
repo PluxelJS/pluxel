@@ -4,7 +4,7 @@ Before changing plugin code, public contracts, package metadata, `tsdown.config.
 `oxlint.config.ts`, consult the documentation for the installed Pluxel version. Keep local notes
 focused on this package instead of forking Pluxel's API guidance.
 
-Run `pnpm exec pluxel docs` to print the canonical upstream documentation entry.
+Run `pnpm exec pluxel docs development/index.md` to choose source inspection, live operations or tests.
 
 Keep these boundaries intact:
 

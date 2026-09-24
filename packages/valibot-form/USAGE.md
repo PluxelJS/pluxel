@@ -1,9 +1,6 @@
 # valibot-form 使用指南
 
-本文档面向 LLM，展示如何使用 `valibot-form` 将 Valibot schema 转换为表单字段。  
-当前版本为全量重构：API 更少、命名统一、交互效率优先。
-
----
+使用 `valibot-form` 为 Valibot schema 添加展示偏好；校验仍由 schema 负责。
 
 ## 基础用法
 
@@ -20,8 +17,6 @@ const schema = v.pipe(
 )
 ```
 
----
-
 ## 类型映射表
 
 | Valibot 类型                | Meta 函数      | 默认控件    | 说明                                        |
@@ -34,8 +29,6 @@ const schema = v.pipe(
 | `v.record()`                | `recordMeta`   | Table       | 可切换 list                                 |
 | `v.object()`                | `objectMeta`   | Card        | 可切换 stack / 可折叠                       |
 | `v.variant()` / `v.union()` | `unionMeta`    | Select      | 可切换 segmented / radio / switch           |
-
----
 
 ## 通用字段元数据 (formMeta)
 
@@ -66,8 +59,6 @@ v.pipe(
 原生 `v.title()`、`v.description()` 与 `v.metadata({ title, description })` 仍可被读取；同一字段重复声明时按 pipe
 顺序由最后一个对应属性生效。标准用法优先用一次 `formMeta()` 集中描述。
 
----
-
 ## 字符串字段 (stringMeta)
 
 ```ts
@@ -90,8 +81,6 @@ v.pipe(v.string(), f.formMeta({ title: '简介' }), f.stringMeta({ control: 'tex
 Valibot 校验会自动提取 `minLength` / `maxLength` 等限制。  
 `v.email()` / `v.url()` / `v.hexColor()` 会被识别为格式提示，但 UI 控件仍保持实用输入。
 
----
-
 ## 数字字段 (numberMeta)
 
 ```ts
@@ -107,15 +96,11 @@ v.pipe(
 范围、整数和倍数约束分别使用 `v.minValue()`、`v.maxValue()`、`v.integer()` 和
 `v.multipleOf()`；`numberMeta.step` 只控制输入步进。
 
----
-
 ## 布尔字段
 
 ```ts
 v.pipe(v.boolean(), f.formMeta({ title: '启用通知' }))
 ```
-
----
 
 ## 枚举/选择字段 (picklistMeta)
 
@@ -150,8 +135,6 @@ v.pipe(
 )
 ```
 
----
-
 ## 数组字段 (arrayMeta)
 
 数组项类型应通过 schema 本身描述：
@@ -172,8 +155,6 @@ v.pipe(
 
 `layout: 'picker'` 仅在数组项为 `picklist` 时生效。
 
----
-
 ## Record 字段 (recordMeta)
 
 ```ts
@@ -191,8 +172,6 @@ v.pipe(
 
 Record 会根据 value schema 渲染对应控件。
 
----
-
 ## Object 字段 (objectMeta)
 
 ```ts
@@ -204,13 +183,10 @@ v.pipe(
 	f.formMeta({ title: '用户信息' }),
 	f.objectMeta({
 		variant: 'card', // card | stack
-		columns: 2,
 		collapsible: true,
 	}),
 )
 ```
-
----
 
 ## Union 字段 (unionMeta)
 
@@ -237,13 +213,6 @@ v.pipe(
 - `preserve`: 是否保留分支值
 - `compact`: 是否去掉 Card 边框
 
----
-
 ## 布局规则
 
-自动布局遵循 `LAYOUT_DESIGN_GUIDELINES.md`：
-
-- 空间优先、多列布局
-- 类型感知
-- 嵌套递减
-- 可显式覆盖（`formMeta.layout` / `objectMeta.columns` / `arrayMeta.layout` 等）
+自动布局与覆盖优先级见[布局规则](./LAYOUT_DESIGN_GUIDELINES.md)。

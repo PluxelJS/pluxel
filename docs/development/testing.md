@@ -9,14 +9,10 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 
 如果目标是操作眼前正在运行的 dev 实例，coding agent 必须使用 [开发控制台](./dev-console.md)。本页的 test host 用于独立的回归测试，不连接当前 dev，也不共享它的数据目录。
 
-## 目标：一个宿主，按需安装能力
+## 选择测试边界
 
-插件作者只做两个选择：是否需要运行插件，以及这个测试需要哪些服务。需要运行插件时统一使用 `createTestHost()`；不再选择 Core host、Service host 或 Workbench host。
-
-- 纯函数和普通对象直接测试；纯 RPC 使用 Cap’n Web 的 `RpcStub`。
-- 插件的依赖、配置、生命周期、HTTP、commands 与 Workbench 都使用同一个测试宿主模型。
-- 真实应用启动、物理网络、构建产物与浏览器仍使用对应真实环境；统一 host 不冒充这些环境。
-- 内部始终复用生产 Host 的运行图、配置与生命周期，不按选项切换两套具有不同语义的 Core/Services 执行器。
+纯函数直接测试；Plugin 的依赖、配置、生命周期和所选服务统一使用 `createTestHost()`。
+物理网络、构建产物与浏览器分别在真实 listener、发行物与 browser 中验证，test host 不覆盖这些边界。
 
 ## 唯一作者入口与默认值
 
@@ -44,20 +40,6 @@ it('runs a plugin without optional services', async () => {
 })
 ```
 
-配置面：
-
-```ts no-twoslash
-// 简化的配置轮廓；精确类型以 TestHostOptions 为准。
-type TestHostOptions = Readonly<{
-	services?: readonly HostService[]
-	workbench?: boolean
-	management?: boolean
-	config?: CoreHostConfig
-	state?: HostStateStoreOptions
-	configRecords?: HostConfigStoreOptions
-}>
-```
-
 | 选项                      | 语义                                                                                                                        |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `services`                | 默认 `[]`；完整服务列表，不隐式合并、不自动安装 standardServices                                                            |
@@ -68,7 +50,7 @@ type TestHostOptions = Readonly<{
 
 Host 自己的图策略、配置记录与 Plugin 可消费的 Persistence 服务是不同职责。内存 Host 存储不等于默认安装 `ctx.persistence`；插件需要 Persistence 时仍显式选择服务。
 
-`createTestHost()` 统一返回 Promise，所有调用都写 `await using host = await createTestHost(...)`。不提供另一种同步工厂，也不提供 `mode: 'core' | 'service'`。
+`createTestHost()` 返回 Promise，使用 `await using host = await createTestHost(...)` 管理关闭。
 
 ## 官方源码工具链与运行时服务
 
@@ -78,39 +60,12 @@ Host 自己的图策略、配置记录与 Plugin 可消费的 Persistence 服务
 
 Workbench 测试后端使用测试制品，验证发布、RPC 和资源生命周期；不验证 MF/UI 制品构建、React 渲染或物理 WebSocket。Node 发布打包、native dependency 布局和开发 HMR 同样需要对应真实环境的验证。
 
-## 最终配置形态：包显式选择，工具链集中复用
+## 共享测试配置
 
-每个插件包可以保留一份很薄的 `vitest.config.ts`，明确选择测试 preset；无需重复列出官方转换插件。不自动查找、继承或合并仓库根配置，也不导入会启动开发应用的 Vite 配置。
-
-```ts no-twoslash
-// plugins/example/vitest.config.ts
-import { definePluxelVitestConfig } from '@pluxel/test/vitest'
-
-export default definePluxelVitestConfig({
-	root: import.meta.dirname,
-	test: { include: ['tests/**/*.test.ts'] },
-})
-```
-
-有项目自定义转换时，将可复用的插件工厂放在项目共享文件中，由开发和测试配置显式调用。以下文件与函数名属于项目示例，不是新增的框架 API：
-
-```ts no-twoslash
-// plugins/example/vitest.config.ts
-import { definePluxelVitestConfig } from '@pluxel/test/vitest'
-import { projectSourcePlugins } from '../../tooling/source-plugins'
-
-export default definePluxelVitestConfig({
-	root: import.meta.dirname,
-	plugins: projectSourcePlugins(),
-	test: { include: ['tests/**/*.test.ts'] },
-})
-```
-
-共享文件只创建所需插件，不启动 host、监听端口或读取当前开发实例。每份配置调用工厂取得自己的插件实例，避免跨项目共享有状态实例。需要先于官方转换执行的插件放入 `pluxel.prePlugins`；普通 `plugins` 接在 preset 的官方插件之后，实际执行仍遵循 Vite 的 `enforce` 和 hook 规则。官方插件由 preset 安装一次，共享列表不重复添加。
-
-确实需要共享整份配置时，作者显式导入并用 Vitest 的 `mergeConfig()` 合并，再将结果传给一次 `definePluxelVitestConfig()`；数组按合并规则组合，不能假设会自动去重插件。根配置可以通过 `test.projects` 发现各包的配置文件，负责统一执行；包的工具链仍由自身配置明确表达。独立插件项目在自己的根目录采用同一写法，不要求存在上级仓库。
-
-Vitest 默认可以读取 `vite.config.*`，但存在独立 `vitest.config.*` 时优先使用后者，不会自动合并两者。这里选择显式测试配置，是为了让测试接入可见且能独立运行，不是 Vitest 强制每包配置。外部服务的 Vite 转换按上述方式正常组合；纯 Rolldown 构建插件需接入对应构建流程。Vitest 的 `plugins` 只作用于其模块图，不会自动进入 Node/Worker 的独立制品构建。外部转换必须按对应构建入口配置，不能把 Vite 插件列表视为所有构建流程的通用配置。
+每个包显式使用下文的 [Vitest preset](#安装-vitest-preset)，不导入会启动应用的 Vite 配置。
+项目自定义转换用普通工厂复用，每份配置创建自己的插件实例；必须先于官方转换的放入 `pluxel.prePlugins`，其余放入 `plugins`。
+需要整份共享配置时用 Vitest `mergeConfig()`，最后只调用一次 `definePluxelVitestConfig()`；数组不会自动去重。
+根配置可用 `test.projects` 发现各包配置。Vite 的插件列表不自动进入 Node/Worker 的独立制品构建。
 
 ## 用生产服务工厂组合测试能力
 
@@ -222,15 +177,11 @@ Host、fixture 使用 `await using`；打开的 RPC entry、手动取得的 RPC 
 
 Host 关闭时沿现有生产顺序拒收新操作、等待已接纳调用并清理测试资源与服务。测试 driver 负责跟踪其创建的 body、subscription 和 lease；泄漏仍应报告，其他清理仍应执行。故意验证关闭、失败或资源泄漏的测试允许显式 dispose，不为追求统一语法改变测试含义。
 
-## 包边界与安装依赖
+## 依赖与清理
 
-`@pluxel/test` 是上层作者组合包，显式依赖官方 Services 与所需测试驱动。正常安装测试工具时包管理器会安装这些依赖；直接 import `@pluxel/services/*` 的插件包仍须声明自己的直接依赖，不能依赖传递安装。
-
-安装包、加载模块和初始化服务是不同层次。`services: []` 不初始化可选官方服务；fixture/preset 子入口不主动启动服务运行时。生产 Host/Core 不反向依赖测试组合包，第三方服务仍遵循生产 `HostService` 契约。Core 白盒测试继续使用内部 harness，普通插件作者只使用统一根入口。
-
-仓库 TypeScript 测试默认用 `using` 管理 `Disposable`，用 `await using` 管理异步释放的 host、fixture 和文件句柄；取得资源后立即声明，初始化或断言失败时也会清理。需要检查释放后的状态时，用显式 `{ ... }` 块限定资源寿命，再在块外断言。依赖资源的异步操作应在退出作用域前完成，返回 Promise 时按需使用 `return await`。
-
-`using` 不替代所有 `finally`：恢复 fake timers、环境变量、锁和运行状态，或者处理所有权转移、特殊清理顺序时，继续使用明确的 `try/finally`。资源只有 `close()` 而不实现释放协议时，也不必为替换语法临时包装。业务执行与释放同时失败时，`using` 使用标准 `SuppressedError` 保存两者；需要不同错误优先级的代码保留显式处理。借用的 RPC root 不进入 `using`，已交给框架消费的 DTO 结果也不重复释放。
+测试中直接 import 的服务包仍须声明直接依赖。`@pluxel/test` 不让生产 Host 依赖测试工具。
+Host、fixture 用 `await using`，手动取得的 RPC 资源用 `using`；借用引用和已交给框架的结果不重复释放。
+恢复 fake timers、环境变量或特殊所有权转移继续使用 `try/finally`。需要验证清理后的状态时，用显式代码块限定资源寿命。
 
 ## 安装 Vitest preset
 
@@ -363,7 +314,7 @@ expect(host.require(ConsumerPlugin).connector.ctx.pluginInfo.nodeAddress).toEqua
 `clearDefault(Connector)` 和 `clearOverride({ consumer: ConsumerPlugin, requirement: Connector })` 分别清除选择。
 requirement 按 definition identity 识别；依赖修改经过 graph，重启受影响 consumer 及其 dependent closure，操作后重新 `require()` 取得实例。
 
-服务 host 的 `change.forks.ensure(East)` 可以先建立 fork，再显式 `change.start(East)`；`change.forks.remove(East)` 移除 fork。
+`change.forks.ensure(East)` 可以先建立 fork，再显式 `change.start(East)`；`change.forks.remove(East)` 移除 fork。
 fixture/catalog/replacement 与 strict assertion 是测试专属。操作在线应用时使用[开发控制台](./dev-console.md)：`dev.plugins` 和 `dev.config` 操作当前 Host，其他能力由脚本显式导入其服务 API。控制台不继承测试 host 的事务或 fixture 接口。
 
 ## Fork 与 replacement
@@ -410,13 +361,7 @@ Vite/Rolldown semantic lowering。
 
 `createTestHost()` 默认不安装可选服务。需要 HTTP、commands 或 Workbench 时显式组合服务。
 
-public author host 不暴露 root `ctx`、raw service、transaction 或 backend admin。通过返回的 Plugin instance 观察公开业务状态；通过 driver
-观察 Plugin 发布的 inbound surface：
-
-- `host.http.origin/fetch`：in-process Fetch，不验证 WebSocket carrier；
-- `host.commands.execute/list`：真实 command catalog、validation、owner registration 和 withdrawal；
-- Workbench test host 的 `host.workbench.open`：真实 publication、session、layout 与 local Cap'n Web membrane；
-- `host.config.patch`：production-like config mutation。
+通过 Plugin 业务 API 观察状态，通过上文 drivers 检查发布的能力；测试宿主不暴露 raw root 或后台管理入口。
 
 `workbench: true` 安装测试用 Workbench 制品查询及 Management，不创建浏览器 Shell 或监听端口。每次 open 显式提供 principal：
 
@@ -443,7 +388,7 @@ expect(result.action).toMatchObject({ ok: true })
 ```
 
 `open()` 不模拟 renderer 或点击。React 控件、router 和 Shell state 在 browser test 中验证；WebSocket handshake、Origin、framing 与 disconnect
-在 real-carrier test 中验证。基础服务 host 不提供 Workbench driver。
+在 real-carrier test 中验证。未启用 `workbench` 时不提供该 driver。
 
 ### Pure `RpcTarget` object contract
 

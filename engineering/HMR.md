@@ -194,18 +194,7 @@ Workbench artifact 接入先准备并验证候选 topology/Content，准备过�
 静默，失败日志保留同一归因和原始错误。开发 producer 使用持久 Vite cache，默认不生成 dynamic types；production 或显式
 required type policy 仍严格生成和校验类型资产。
 
-每个 candidate 必须验证：
-
-- producer name 和 build revision；
-- `mf-manifest.json` 与标准 Snapshot；
-- exact `./views/<key>` expose inventory；
-- `remoteEntry.js`、全部 JS/CSS runtime assets 均存在；
-- fixed singleton shared 包和 exact versions；
-- generated React Bridge declaration identity。
-
-验证失败不提交 producer inventory；开发期对应 layout entry 保留原位置并显示 failed 状态，等待下一次重试。成功 candidate 原子进入
-`WorkbenchArtifactService` 的 immutable producer inventory；production freezer 写入同构的
-`pluxel-workbench-producers.json`，runtime 不从 source 重新编译。Production candidate 额外要求 dynamic type files 存在。
+Candidate 的 Manifest/Snapshot、exposes、assets、shared 与 Bridge 验证统一遵守 [Workbench](WORKBENCH.md#mf2-与-react-bridge)。开发失败保留 placement 并显示 failed；生产另外要求 dynamic types。验证成功才进入 immutable artifact inventory，runtime 不从源码重新编译。
 
 ## Browser update policy
 
@@ -228,38 +217,20 @@ producer 成功后的 full reload。
 
 ## Node module update
 
-Node module declaration 保持独立 artifact lifecycle。`ctx.nodeModules.use()` 对每个 consumer 串行 staged setup：新 setup
+Node module declaration 保持独立 artifact lifecycle。`ctx.require(NodeModules).use()` 对每个 consumer 串行 staged setup：新 setup
 成功后才 cleanup previous；失败保留 last-known-good。Owner stop 使 pending generation 失效，迟到 setup cleanup 立即执行。
 Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 task 继续使用原 module；取消/stop 仍等待真实 worker
 退出。
 
 ## 验证
 
-- definition-wide default/fork replacement 不出现 mixed constructor generation；
-- structural reject 保留旧 catalog，PONR 后 failure 只报告 lifecycle facts；
-- 连续失败的源码求值保留旧 HTTP/WebSocket generation，修复后自动替换；
-- config/init 失败后的有效 replacement 自动恢复 required closure，未修改的 consumer 也能重新启动；
-- 显式 Stop 保持停止，前一次更新 rejection 不堵住排队的修复更新；
-- execution snapshot 只允许 来源、artifact 与 update 的合法组合，`entry-only` 不误报 package source graph；
-- source/built 只来自 exact positive semantic facts，失败 artifact generation rollback 后不污染 active facts；
-- recent update 区分 retained previous、commit/lifecycle applied-with-issues 与 application-reload restored previous；
-- 同一批次的 node/fork 历史不串线，批次异常不等于每个节点异常；
-- full-host replacement 只在 fresh compensation host 成功启动后报告 restored previous；
-- Management DTO 不包含 absolute path、`file:` URL、`/@fs/` 或 Vite module ID；
-- optional provider replacement 正确重启 consumer closure；
-- database accepted operations 在 replacement 前 drain；
-- 固定 imports 与动态来源共享一个 ModuleRunner 与 source classifier；
-- Host generation 不改变 Vite 进程 cwd；
-- Workbench candidate failure 不推进 producer inventory；
-- stale/superseded producer 不能 commit；
-- successful producer commit 关闭 socket epoch 并触发 full reload；
-- 新 document 不复用旧 roots、Bridge、host facade 或 MF registration；
-- Workbench-disabled host 不加载 MF builder；
-- Node module staged setup 保持 last-known-good。
+围绕更新边界验证：structural reject 保留旧 catalog；PONR 后仅报告新 lifecycle facts；definition-wide replacement 与 required/optional closure 一致；显式 Stop 不被源码恢复覆盖；失败候选不污染 semantic/artifact authority；迟到 producer 不提交；full-host compensation 只在 fresh host 启动成功后报告 restored。
+
+使用真实 Vite 验证单一 Host namespace、来源恢复、execution provenance、watcher 关闭与队列排空。Management DTO 不泄漏绝对路径/Vite ID，批次错误不伪装成所有节点失败。Workbench/browser 与 Node staged setup 分别在各自真实资源边界验证。
 
 ## Development console execution
 
-显式启用的 dev console 使用同一个 SSR runner，执行根不是 Plugin catalog entry。脚本等待真实 watcher 接纳已知依赖修改，再等待开发驱动已接纳的有限更新序列；执行期间不锁住整个 HMR coordinator。full-host replacement 撤回旧 run scope，后续提交获取新 epoch。源码观察、finite barrier 与资源边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+显式启用的 dev console 使用同一个 `pluxel` environment runner，执行根不是 Plugin catalog entry。脚本等待真实 watcher 接纳已知依赖修改，再等待开发驱动已接纳的有限更新序列；执行期间不锁住整个 HMR coordinator。full-host replacement 撤回旧 run scope，后续提交获取新 epoch。源码观察、finite barrier 与资源边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
 
 ## 来源观察失败
 

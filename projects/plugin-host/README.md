@@ -99,7 +99,7 @@ project-local `dev/*.ts` files for further operations; edits do not restart the 
 previous operations. The bundled `inspect.ts` only returns current Plugin status.
 
 Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
-explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/host-dev/console` and use `dev.ctx` with service APIs; they pass `run.signal` and release their own service resources. Isolated regressions continue to use the test host.
+explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/host-dev/console` and use `dev.ctx` with service APIs; they pass `dev.signal` and release their own service resources. Isolated regressions continue to use the test host.
 
 ## Boundary
 

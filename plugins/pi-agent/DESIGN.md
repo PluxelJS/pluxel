@@ -30,6 +30,5 @@ Subagent 是实际 child `AgentSession`，继承父 session 的 setup、cwd、mo
 
 ## Workbench
 
-Pi Agent 当前不发布 Workbench Definition。未来的 session UI 同时包含 streaming、goal、subagent、abort 与并发状态，属于
-完整 Direct View，不拆成 Content。普通 Plugin 配置继续使用标准 Config UI；模型 credential 继续由 Pi `ModelRuntime` 的
-credential contract 管理，在 Pluxel 有稳定 Vault-backed 写入契约前不增加平行的 secret form。
+当前不发布 Workbench Definition。普通 Plugin 配置使用标准 Config UI；模型 credential 由 Pi
+`ModelRuntime` 的 credential contract 管理。

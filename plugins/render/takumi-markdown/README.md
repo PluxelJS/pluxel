@@ -1,56 +1,16 @@
-# @pluxel/takumi-markdown
+# `@pluxel/takumi-markdown`
 
-@pluxel/takumi-markdown renders a bounded GFM Markdown document to a Takumi PNG, JPEG,
-WebP, or SVG. It is the document-oriented layer above @pluxel/takumi: acquire one Takumi
-admission slot, parse Markdown and apply fixed code highlighting, then perform one final native
-render.
+将 GFM Markdown、表格与固定代码高亮渲染为图片或 SVG。
 
-Use it for document screenshots, release notes, reports, and social cards that start as Markdown.
-Use @pluxel/canvas/table for a programmatically assembled static report table, and
-@pluxel/echarts for charts; this package deliberately does not reproduce either layout engine.
+在直接导入它的包目录安装（catalog 工作区见下方指南）：
 
-```ts
-import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
-import { BasePlugin, Plugin } from '@pluxel/core'
-
-@Plugin()
-export class DocumentImagePlugin extends BasePlugin {
-	private renderer!: MarkdownRenderer
-
-	constructor(private readonly markdown: TakumiMarkdownPlugin) {
-		super()
-	}
-
-	override init(): void {
-		this.renderer = this.markdown.createRenderer({ theme: 'light' })
-	}
-
-	render(markdown: string, signal?: AbortSignal) {
-		return this.renderer.render({
-			markdown,
-			width: 1200,
-			height: 630,
-			signal,
-		})
-	}
-}
+```sh
+pnpm add @pluxel/takumi-markdown
 ```
 
-The caller-generation-owned renderer is closed automatically when its consumer stops or is
-replaced. Call close() yourself when a handle has a shorter lifetime.
+宿主 catalog 需要 FontsPlugin、TakumiPlugin、TakumiMarkdownPlugin；业务插件通过 constructor 注入直接使用的能力。
 
-GFM is always enabled, including tables. Raw HTML is disabled and removed after trusted HAST
-extensions run. Fenced code uses the fixed, classes-only Rangi mapping and built-in light/dark
-stylesheet; unsupported fence names render as plain code. There is no Shiki grammar download,
-theme selection, language autodetection, MDX evaluation, network fetch, or browser runtime.
+- [用法、配置与验证](../../../docs/plugins/rendering/takumi-markdown.md)
+- [维护约束](DESIGN.md)
 
-Extensions are trusted startup-time composition, not request data. Each extension factory runs
-after Takumi admission, once per accepted document and in renderer-array order. It can request a
-small fixed set of Satteri parser features and add generated PNG/JPEG/WebP/SVG bytes through its
-per-render asset sink. The sink chooses opaque internal sources, copies its data under limits, and
-stops accepting assets when that render settles.
-
-For optional restricted Typst math, add @pluxel/takumi-markdown-typst and pass
-typst.createMarkdownExtension() to createRenderer(). The user-facing guide is
-[docs/plugins/rendering/takumi-markdown.md](../../../docs/plugins/rendering/takumi-markdown.md);
-[DESIGN.md](DESIGN.md) records execution and ownership boundaries.
+跨 renderer 的调度、输入所有权与取消规则见 [执行架构](../ARCHITECTURE.md)。

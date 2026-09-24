@@ -1,93 +1,39 @@
-# Commands
+# Commands 集成边界
 
-`@pluxel/commands` is the transport-neutral command kernel for capabilities exposed through Agent,
-argv/message, HTTP, or Workbench-backed host integrations. This document is authoritative for its
-repository integration and lifecycle boundaries.
+`@pluxel/commands` 拥有 transport-neutral command kernel。作者与宿主用法见 [Commands](../docs/runtime/commands.md)，完整 API 见 [package README](../packages/commands/README.md)，parser/projection/performance 决策见 [package design](../packages/commands/docs/DESIGN.md)。本页只定义 Host 集成与 lifecycle。
 
-Documentation ownership is deliberately split:
+## Root publication
 
-- [`docs/runtime/commands.md`](../docs/runtime/commands.md): standard author and host usage;
-- [`packages/commands/README.md`](../packages/commands/README.md): complete package API and recipes;
-- [`packages/commands/docs/DESIGN.md`](../packages/commands/docs/DESIGN.md): package implementation,
-  performance, parser, and projection decisions.
+`@pluxel/services/commands` 的 `commands()` 安装一个空 root registry，Plugin 通过 `ctx.require(Commands)` 获得 owner view。List/snapshot/subscription/execute 委托同一 registry，不复制 revision 或 listeners。
 
-Runtime and host integrations must preserve these boundaries:
+`register()` 返回 typed installed command 与 disposer，并绑定注册者 effects。执行持有 owner invocation gate；generation stop 关闭 admission、abort 合成 signal、等待调用退出，再 drain effects。手动 dispose 只撤销 publication，不取消已接纳调用、不关闭 sibling admission。
 
-- lifecycle behavior remains implemented by the existing core/runtime use case;
-- a command handler delegates to that use case rather than reproducing start/stop logic;
-- the installing host owns exposure, principal mapping, permission, confirmation, audit, and
-  registration lifetime;
-- runtime registrations retain their plugin Context owner;
-- disabled carriers do not allocate servers, model clients, or watchers;
-- Agent adapters filter descriptors before publishing a tool catalog and map behavior to standard
-  read-only, destructive, idempotent, and open-world annotations.
+管理命令由 `@pluxel/services/management/commands` 的 `managementCommands()` 显式安装，`servicesPreset()` 选择它；通用 Commands 不加载管理面。Handler 委托 Host 用例，不复制 start/stop/graph。
 
-Runtime does not install an Agent, Toolset, provider adapter, policy store, or Agent-specific Management API.
-Hosts that need managed Agent allowlists install the ordinary official `@pluxel/agent-tools` Plugin. Its
-Toolsets and Agent assignments are one standard Plugin config, so ConfigService remains the only persistence,
-validation, and update authority. Missing stable command names remain in config and become available when a
-Plugin publishes the same name.
+## Carrier publication
 
-`AgentToolsPlugin.catalog(agentId)` returns a live constrained catalog. Its `list()` only exposes
-currently registered commands assigned to that Agent; its single throwing `execute()` checks the current
-assignment again before dispatching through the root command catalog. Carriers must use this bound
-catalog for both publication and execution. Calling `ctx.require(Commands).execute()` directly would bypass the
-Agent assignment and is only appropriate for a separately authorized host control path.
+Root catalog 与 carrier exposure 是两个显式选择。Provider 使用 `createMount<CarrierContext>()`，通过 caller-bound `bind()` 接收 exact `DirectCommand`，固定 provider 与 publication owner generation，并把同步 router/SDK registration cleanup 归入 caller effects。
 
-The bound catalog publishes `{ catalogRevision, policyRevision }` snapshots and subscriptions. Command
-registration, withdrawal, replacement, or Toolset edits therefore invalidate carrier projections without
-creating a second registry. A policy edit does not cancel calls already admitted before the edit; it prevents
-subsequent calls, matching command publication withdrawal semantics.
+Mount 没有第二个 registry、name lookup、snapshot 或 caller-supplied owner。其返回值是 disposer，不是 executable installed command；compatible-replacement registry handle 不能充当 route identity，类型与运行期边界都要拒绝误用。
 
-`@pluxel/services/commands` exports `Commands` and `commands()`, installing one empty root registry. Plugins obtain the owner view with `ctx.require(Commands)`. Runtime uses the same installer. Its list, snapshot, subscription, and
-execution methods delegate to that registry, so runtime does not maintain another revision or listener set.
-`register()` returns the registry's typed installed command plus disposer and binds disposal to the calling
-Plugin Context's effects. Runtime wraps execution in the owner's internal invocation gate; Core closes and
-drains that gate once per generation before effects drain. A manually disposed registration withdraws
-publication and does not cancel work that already entered execution or close sibling admission.
+`createArgvRouter()` 只拥有 grammar、routing 和不可信 candidate construction。Carrier 完成授权、构造 invocation Context，再调用 mounted command；presentation/error rendering 也在该 execution 内结算，确保双方 admission 保持有效。扩展 Context 的命令只进入对应 carrier，不能进入要求 common `CommandContext` 的 root catalog。
 
-Carrier providers that publish a command into their own router or SDK callback surface use
-`ctx.require(Commands).createMount<CarrierContext>()`. A mount is not a second registry: it has no name lookup,
-snapshot, subscription, dynamic execution, or caller-supplied owner. Its caller-bound `bind()` accepts a
-`DirectCommand`, pins the exact command implementation to the provider and publication-owner generations,
-and adopts the provider's synchronous route/SDK registration into the publication owner's effects. The
-returned handle is a plain disposer, not an executable installed command.
+Host 拥有 exposure、principal、permission、confirmation、audit 与 registration lifetime。关闭 carrier 不创建 server/model client/watcher。CLI 是开发构建工具，不自动连接在线 command catalog；在线检查使用 [devconsole](DEV_CONSOLE.md)。
 
-`DirectCommand` is the commands-package type for an exact implementation. Ordinary `defineCommand()`
-results and hand-authored commands satisfy it, while the compatible-replacement handle returned by a
-registry does not—even when widened to `InstalledCommand`. This is a type-level misuse guard; JavaScript
-carrier entry points and Runtime still validate received objects. Root catalog publication and carrier
-publication remain two independent, explicit decisions.
+## Agent tools
 
-Runtime registers its six built-in plugin management commands during root preparation in the same catalog; the Commands service does not import management operations or install them in a custom Host. Unscoped host-control carriers
-consume `ctx.root.require(Commands).list()` and dispatch through `execute()` rather than copying descriptors or
-handlers; Agent adapter Plugins consume a constructor-injected `AgentToolsPlugin` bound catalog.
+`@pluxel/agent-tools` 是普通可选 Plugin；Toolsets 与 Agent assignments 使用标准 Plugin config，ConfigService 继续唯一持久化、校验与更新。缺失 command name 保留，重新发布同名 command 后恢复可用。
 
-An argv/message carrier explicitly binds its allowed commands to `createArgvRouter()`. The router owns only
-route grammar and candidate construction: after `resolve()`, the carrier performs authorization, constructs
-the invocation Context, and calls the mounted command's throwing `execute()`. It may maintain one private
-catalog only when the carrier has a real discovery use case, but the route must retain the mounted direct
-command rather than a registry-installed handle. The workspace `@pluxel/cli` executable remains a
-build/development tool and is not implicitly connected to a running runtime.
+`AgentToolsPlugin.catalog(agentId)` 同时用于 list 与 execute：publication 前过滤，调用时重新检查 assignment，再交给 root registry。绕过它直接执行 root catalog 会绕过 Agent allowlist，只能用于另行授权的宿主路径。
 
-The root runtime catalog accepts commands requiring the common `CommandContext`. A carrier that constructs
-additional invocation facts parameterizes its mount/router with that extended context. Common direct
-commands can mount into the carrier; commands requiring the extended context cannot enter the root catalog.
-Carrier declarations own route syntax, admission and result rendering, while the underlying command keeps
-the single schema/validation/codec/execution pipeline. Presentation and error rendering must settle inside
-the mounted execution so both provider and publication-owner admission remain held.
+`{ catalogRevision, policyRevision }` 与 subscription 使 carrier 在 command 变化或配置更新时重投影，不建立第二套 registry。Policy 修改只约束之后接纳的调用，不取消已接纳工作。Agent adapters 投影标准 read-only/destructive/idempotent/open-world annotations，不让 Runtime 安装 Agent provider、Toolset store 或专用管理 API。
 
-Implementation entry points:
+## 实现与验证
 
-- `packages/commands/src/schema.ts`: single schema projection, validation, and codec compiler;
-- `packages/commands/src/compile.ts`: final command plan, descriptor, and example compilation;
-- `packages/commands/src/define.ts`: validated call-time execution boundary;
-- `packages/commands/src/registry.ts`: lifecycle-neutral registration, discovery, and dynamic dispatch;
-- `packages/commands/src/argv/compile.ts`: schema-derived argv binding and help compilation;
-- `packages/commands/src/argv/parse.ts`: option coercion and untrusted candidate construction;
-- `packages/commands/src/argv/router.ts`: trie registration, routing, and resolution;
-- `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
-- `packages/services/src/commands/service.ts`: root publication and owner-bound carrier mounts;
-- `plugins/agent-tools/src/index.ts`: optional Toolset/Agent config projection and call-time enforcement.
-- `plugins/pi-agent/src/tool-adapter.ts`: Pi provider-safe schema/name projection that still dispatches
-  through the bound AgentTools catalog; Pi built-ins and default resource discovery stay disabled.
+- `packages/commands/src/schema.ts`、`compile.ts`、`define.ts`：schema/codec、plan、call-time validation。
+- 同目录 `registry.ts`、`argv/`：publication、dynamic dispatch 与 argv grammar。
+- `packages/services/src/commands/service.ts`：root view、caller-bound mount 与 invocation ownership。
+- `plugins/agent-tools/src/index.ts`：配置投影和调用时 enforcement。
+- `plugins/pi-agent/src/tool-adapter.ts`：provider schema/name projection；仍通过 bound catalog 调用。
+
+修改集成时验证 cached handle、manual dispose 与 stop 的差异、双 owner withdrawal、扩展 Context 限制，以及 allowlist 在发布和执行两处生效。纯 parser/codec 行为在 Commands 包内验证。

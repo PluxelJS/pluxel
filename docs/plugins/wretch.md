@@ -13,6 +13,8 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 pnpm catalog:add -- @pluxel/wretch
 ```
 
+宿主需安装 Persistence 服务，用于保存受管出站设置。
+
 ## 第一个 HTTP consumer
 
 ```ts twoslash
@@ -63,9 +65,6 @@ await host.start(CustomerPlugin, {
 	initialConfig: { baseUrl: 'https://catalog.example' },
 })
 ```
-
-这里的 `host` 是 `createTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续 config 更新使用
-`host.config.patch()`。production deployment 通过自己的 ConfigService 管理相同 records。
 
 `client` 本身就是 Wretch。Wretch 的 immutable 语义保证不同 consumer 通过 `.url()`、`.options()`、`.headers()`、`.auth()`、`.addon()` 或 `.middlewares()` 派生 client 时不会互相污染。
 
@@ -175,7 +174,7 @@ protected override async init(): Promise<void> {
 View 打开时，`WretchPlugin` 根据 Workbench 提供的 exact `consumer.node` 找到已经初始化的 managed state，
 并创建 fresh `WretchSettingsApi` capability。若没有先完成 `enableManagedSettings()`，打开 View 会失败。
 provider-owned zero-props renderer 通过 descriptor-bound scope 的 query/mutation resources 取得 provider stub；
-它提供 `snapshot()`、`update(settings)` 与 `reset()`，Framework 自动 detach 返回 DTO 并在 mutation settle 后刷新 snapshot。
+它提供 `snapshotDto()`、`updateDto(settings)` 与 `resetDto()`，Framework 自动 detach 返回 DTO 并在 mutation settle 后刷新 snapshot。
 snapshot 同时包含 `hostTimeoutMs` 和最终 `effectiveTimeoutMs`。
 
 同一 caller 并发执行 `enableManagedSettings()` 会共享一次初始化。View 关闭、session 结束或

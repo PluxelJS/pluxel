@@ -1,40 +1,11 @@
 # @pluxel/test
 
-Pluxel 的插件测试与工具链支持包。根入口提供统一的 `createTestHost()`，复用生产 Host 的依赖、配置与生命周期；服务显式选择，默认空列表。
-
-- `@pluxel/test`：插件测试宿主、fork 声明、测试类型与失败诊断
-- `@pluxel/test/vitest`：Vitest/Vite preset 与 Pluxel source toolchain
-- `@pluxel/test/fixtures`：VFS/disk filesystem fixture
-- `@pluxel/test/unsafe`：显式 synthetic lowering/replacement facts
-
-完整用户教程见 [`docs/development/testing.md`](../../docs/development/testing.md)，coding agent 的局部选择规则见
-[`LLM_TESTING_GUIDE.md`](LLM_TESTING_GUIDE.md)。
-
-## Vitest preset
-
-此 preset 固定对应 Vitest `5.0.0`（upstream 要求 Node.js `>=22.12.0`、Vite `>=6.4.0`）；Pluxel package 与生成项目
-统一要求 Node.js `>=24`。不要把版本范围降回 Vitest 4，或用 `clearMocks: false` 恢复旧的 mock history 语义。
+使用生产 Host 的依赖、配置与生命周期验证插件；服务显式选择，默认空列表。
 
 ```ts
 // vitest.config.ts
 export { default } from '@pluxel/test/vitest'
 ```
-
-需要配置时：
-
-```ts
-import { definePluxelVitestConfig } from '@pluxel/test/vitest'
-
-export default definePluxelVitestConfig({
-	// Native Vitest discovery and runner options.
-	test: { include: ['tests/**/*.test.ts'], passWithNoTests: false },
-	// Pluxel source transforms; this namespace is consumed before Vite sees the config.
-	pluxel: { include: ['src/**/*.ts', 'tests/**/*.ts'] },
-})
-```
-
-preset 在 TypeScript 擦除前执行 Plugin semantic lowering。lifecycle failure 直接断言
-`commitExpectFail()` 返回的 structured `lifecycleReport`，不向 consumer 注册 Vitest matcher 或 `setupFiles`。测试宿主根入口不依赖 Vitest 的运行时。
 
 ```ts
 import { createTestHost } from '@pluxel/test'
@@ -44,26 +15,13 @@ await using host = await createTestHost({ services: [http()] })
 await host.start(MyPlugin)
 ```
 
-Workbench 使用同一个工厂的 `workbench: true` 选项，并显式安装 HTTP 与 Persistence。Node 服务未指定制品来源时，测试宿主自动接入按需源码编译与回收。应用启动、真实网络和浏览器测试使用其生产边界，详见教程。
+| 入口           | 用途                                                                             |
+| -------------- | -------------------------------------------------------------------------------- |
+| `@pluxel/test` | 统一 `createTestHost()`、fork 声明、断言与诊断                                   |
+| `/vitest`      | Plugin lowering 的 Vitest/Vite preset；`definePluxelVitestConfig()` 接收定制配置 |
+| `/fixtures`    | 默认 VFS；watcher、child process 或原生工具需磁盘时显式选择 disk                 |
+| `/unsafe`      | 框架测试用 synthetic lowering/replacement facts，不代替正常编译                  |
 
-`test.include` 决定 Vitest 发现哪些测试；`pluxel.include` / `exclude` 决定哪些源码经过 Pluxel lowering 和 config
-extraction，两者不能互相替代。需要在 lowering 前运行额外 Vite transform 时使用 `pluxel.prePlugins`；普通 Vite plugin
-仍写在顶层 `plugins`。
+使用仓库要求的 Node.js 24+ 与 Vitest 5。`test.include` 选择测试文件，`pluxel.include/exclude` 选择转换源码；根入口不依赖 Vitest runtime。
 
-## Filesystem fixture
-
-```ts
-import { createFixture } from '@pluxel/test/fixtures'
-
-await using fixture = await createFixture({
-	'packages/a/src/index.ts': 'export const entry = "a"\n',
-})
-
-await fixture.fsp.writeFile(fixture.getPath('tmp.txt'), 'ok\n', 'utf8')
-```
-
-默认使用 VFS；只有 watcher、child process 或原生工具链确实需要磁盘时才使用 disk fixture。fixture 拥有并释放自己创建的 filesystem resource。
-
-## Unsafe lowering
-
-`@pluxel/test/unsafe` 只用于明确模拟 module evaluation/replacement facts。普通 Plugin 测试不能用它绕过 semantic lowering、identity 或 lifecycle。
+完整选项、错误断言及 HTTP/Workbench/Node 测试见[测试指南](../../docs/development/testing.md)。框架测试边界见 [LLM_TESTING_GUIDE.md](./LLM_TESTING_GUIDE.md)。

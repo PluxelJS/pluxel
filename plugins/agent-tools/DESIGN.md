@@ -14,7 +14,7 @@ Runtime capability。
 
 Agent provider Plugin 通过 constructor required dependency 消费 `AgentToolsPlugin`。它负责模型连接、principal
 映射、确认、审计、provider tool schema/annotation、工具名映射和结果呈现。provider 必须同时使用 bound
-catalog 的 `list()/subscribe()` 与 `execute()`，不能在 tool call 时改走裸 `ctx.commands.execute()`。
+catalog 的 `list()/subscribe()` 与 `execute()`，不能在 tool call 时改走裸 `ctx.require(Commands).execute()`。
 
 Workbench Content 和 `snapshot()` 都只读取这份 policy/catalog 投影。宿主渲染的 Content 通过现有 Workbench
 session 接收 policy 与 command catalog 的更新，不保存编辑状态，也不需要 Plugin 自有 React renderer；Pi 等

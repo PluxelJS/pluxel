@@ -22,7 +22,7 @@ try {
 
 - `/logging`：显式 Host 日志安装、策略与有界存储；`/logging/protocol` 是浏览器安全的 DTO。
 - `/management`：认证、Host 管理投影与会话；协议与客户端使用对应子入口。
-- `/test`：Service 与 Workbench 的隔离测试宿主。
+- 插件与服务的隔离测试使用 `@pluxel/test`；本包 `/internal/test` 仅供框架测试集成。
 - `/http`：原生 Elysia Plugin 路由、宿主请求边界及 `createHostHttpHandler()`。
 - `/http/node`：Node carrier 与 `listenHostHttp()`；只有选择 Node listener 才引入 Node 传输实现。
 - `/database`：owner 数据库 API；从 `/database/pglite` 或 `/database/postgres` 显式选择 backend。

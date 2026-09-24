@@ -47,8 +47,8 @@ Vite/Rolldown lowering 只接受无语法错误的 AST；OXC 能生成恢复 AST
 
 Plugin 源码必须经过 Pluxel 的 Vite/Rolldown 转换。不要用普通 TypeScript runner 直接执行 Plugin 文件，也不要把包的构建命令替换成裸 `tsc`。构建使用 `pluxel build`，测试使用 [Pluxel 测试宿主](../development/testing.md)。
 
-若出现 `plugin_lowering_abi_unsupported`，说明已构建 Plugin 与当前 Core/Runtime 工具链不属于同一 lowering ABI。升级匹配版本的
-Core、Runtime 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payload 或把旧产物当作缺省 metadata 继续加载。
+若出现 `plugin_lowering_abi_unsupported`，说明已构建 Plugin 与当前 Core/Host 工具链不属于同一 lowering ABI。升级匹配版本的
+Core、Host 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payload 或把旧产物当作缺省 metadata 继续加载。
 
 ## Plugin 没有启动
 

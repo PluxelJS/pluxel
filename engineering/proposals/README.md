@@ -13,12 +13,11 @@
 
 仍有未实现边界的文件：
 
-- [`UNIFIED_PLUGIN_CONFIGURATION.md`](UNIFIED_PLUGIN_CONFIGURATION.md)：配置与 Vault 来源设计已落地的决策摘要，以及仍需验证的平台和部署边界。
 - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的
   decoratorless Plugin declaration。
 - [`REMOVE_PLUGIN_FORKS.md`](REMOVE_PLUGIN_FORKS.md)：评估删除通用 Plugin fork；Redis/S3 的 producer-owned bounded catalog
-  验证迁移已完成，Core/Runtime 身份与控制面的完整删除仍待决策。
+  验证迁移已完成，Core/Host 身份与控制面的完整删除仍待决策。
 - [`NATIVE_ELYSIA_APPLICATION.md`](NATIVE_ELYSIA_APPLICATION.md)：核心 HTTP application contract 已进入当前架构；本文只应
   跟踪 beta.7 fail-fast、第二 carrier、portable WS 与 peer-range admission 等尚未完成的 gate。
 - [`IDENTITY_PLATFORM.md`](IDENTITY_PLATFORM.md)：尚未实现的自托管身份产品架构，研究 protocol-neutral Authority、认证方式、

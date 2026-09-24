@@ -6,7 +6,7 @@ description: 用静态 Part composition 隔离配置、注册和清理，同时�
 一个 Plugin 的代码需要拆开，但拆出的缓存、连接或同步任务仍应一起启停时，使用 `PluginPart`。
 Part 可以有自己的配置和资源清理；某个 Part 启动失败，整个插件都会启动失败。
 
-开始前，你应知道 Plugin 的 `init()` 和资源清理方法。需要独立启停，或需要被其他插件注入的功能，继续使用 Plugin。
+资源和 `init()` 基础见[插件模型](./plugin-model.md)。下面用一个带配置与依赖的缓存说明完整路径。
 
 ## 先判断是否应该使用 Part
 
@@ -19,42 +19,6 @@ Part 可以有自己的配置和资源清理；某个 Part 启动失败，整个
 | 需要被其他 Plugin 注入或被多个 owner 共享            | 独立 `Plugin`              |
 
 选择依据是能否独立运行，而不是代码量。下文将包含 Part 的插件称为 owner，将直接包含它的 Plugin 或 Part 称为 host。
-
-## 先拆出一个缓存
-
-```ts twoslash
-import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
-
-class CachePart extends PluginPart<SearchPlugin> {
-	private readonly values = new Map<string, string>()
-
-	get(key: string) {
-		return this.values.get(key)
-	}
-	set(key: string, value: string) {
-		this.values.set(key, value)
-	}
-
-	protected override init() {
-		return () => this.values.clear()
-	}
-}
-
-@Plugin({ displayName: 'Search' })
-export class SearchPlugin extends BasePlugin {
-	private readonly cache = this.parts.use(CachePart)
-
-	remember(key: string, value: string) {
-		this.cache.set(key, value)
-	}
-	read(key: string) {
-		return this.cache.get(key)
-	}
-}
-```
-
-启动 Search 后调用 `remember()` 再 `read()`，应读到保存的值。停止并重新启动后缓存为空。
-工作台只会显示 Search 这个插件，不会多出一个 Cache 插件。下面的例子进一步加入配置和依赖。
 
 ## 标准写法
 
@@ -266,13 +230,3 @@ field 会改变公开配置 path，应按配置 contract 变更处理。
 - lifecycle failure 是否携带预期 `partPath`。
 
 只有业务确实需要的 projection 才值得成为 public Part method。完整测试入口见[测试 Pluxel 插件](../development/testing.md#pluginpartoptional-integration-与-cleanup)。
-
-## 提交前检查
-
-- Part 只服务一个 owner，并且不需要独立治理。
-- owner 和 nested Part field 默认为 `private readonly`。
-- required dependency 只写在真正消费它的 Part constructor。
-- field initializer 没有 IO、registration 或其他副作用。
-- config、资源和 optional setup 都由 Part 自己声明并随 owner cleanup。
-- public surface 只包含领域方法，不泄露 Context、host、path 或 composition DSL。
-- 需要独立选择、启停、共享或 HMR identity 的组成已经升级为 Plugin。

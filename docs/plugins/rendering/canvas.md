@@ -233,28 +233,7 @@ const prepared = text.prepareText({ text: 'Hello', fontSize: 24 })
 
 ## 配置与职责
 
-```ts no-twoslash
-await host.start(CanvasPlugin, {
-	catalog: [FontsPlugin],
-	initialConfig: {
-		maxWidth: 8192,
-		maxHeight: 8192,
-		maxPixels: 16_777_216,
-		maxImageBytes: 32 * 1024 * 1024,
-		maxConcurrentDecodes: 2,
-		maxQueuedDecodes: 32,
-		maxQueuedDecodesPerConsumer: 8,
-		maxConcurrentDecodesPerWorkerAdapter: 1,
-		maxQueuedDecodesPerWorkerAdapter: 32,
-		maxTextCharacters: 100_000,
-		maxRichTextItems: 2_048,
-		maxTextCacheCharacters: 1_000_000,
-	},
-})
-```
-
-这里的 `host` 是 `createTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
-`host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
+在应用的 Plugin config 中按需覆盖以下默认值：
 
 | 字段                                   |       默认值 | 检查对象                                      |
 | -------------------------------------- | -----------: | --------------------------------------------- |
@@ -274,7 +253,7 @@ await host.start(CanvasPlugin, {
 CanvasConfig 分开配置 Canvas root 与每个 worker adapter 的 native decode admission，不配置通用 worker task queue、render timeout、
 output bytes、DPR 或主题：
 
-- Worker task 的线程并发与队列由 runtime 的 root-owned `ctx.workers` 配置。
+- Worker task 的线程并发与队列由 runtime 的 root-owned `ctx.require(Workers)` 配置。
 - `maxConcurrentDecodesPerWorkerAdapter` 是每个 adapter 的局部上限；ECharts 每 job 创建一个 adapter，默认 4 个
   宿主 Workers × 1 个 decode，仍不是可接管 libuv 的进程级线程池。提高它会按 active worker 数产生乘法，应与
   `UV_THREADPOOL_SIZE`、其他 native work 和 RSS

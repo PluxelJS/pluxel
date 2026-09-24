@@ -47,7 +47,7 @@ export class SocialCardsPlugin extends BasePlugin {
 }
 ```
 
-上面的 `escapeHtml()` 是应用自己的文本转义函数；如果没有 HTML 模板，直接使用下节 node tree，文本通过 `text` 字段传入。调用 `renderCard()` 后将 `result.data` 保存为 WebP，验证尺寸、文字与背景。HTML 不执行 script，动态 attribute 和 CSS value 仍需按模板位置编码。
+上面的 `escapeHtml()` 是应用自己的文本转义函数；如果没有 HTML 模板，直接使用下节 node tree，文本通过 `text` 字段传入。调用 `renderCard()` 后将返回的 Buffer 保存为 WebP，验证尺寸、文字与背景。HTML 不执行 script，动态 attribute 和 CSS value 仍需按模板位置编码。
 
 ## 选择输入
 
@@ -90,8 +90,7 @@ await this.takumi.render({
 })
 ```
 
-这里 consumer 如果要注册随包字体，需要同时直接注入 `FontsPlugin`；仅渲染时仍只注入 Takumi。Takumi detail 的 Fonts tab
-只列可移植 family。操作系统自动发现的 system font 没有 FontsPlugin-owned bytes，Canvas 可以直接使用，但 Takumi 不会
+这里 consumer 如果要注册随包字体，需要同时直接注入 `FontsPlugin`；仅渲染时仍只注入 Takumi。Takumi detail 的 Fonts tab 使用统一 selector，展示 Fonts 的完整 catalog；渲染只使用可移植 family。操作系统自动发现的 system font 没有 FontsPlugin-owned bytes，Canvas 可以直接使用，但 Takumi 不会
 假装已加载；没有可移植字体时最终回落到 Takumi 内嵌 Geist。
 
 ## 预加载远程图片
@@ -127,11 +126,8 @@ Takumi raster/SVG 通过 N-API async work 在进程共享的 libuv worker pool �
 丢弃结果并拒绝 caller。字体 registration 是同一 revision 的共享准备工作，且 Takumi 发布包装器的注册入口当前不接受
 signal；单个 caller 或 provider stop 会在 registration 之间或完成后的 checkpoint 停止后续 render。
 
-这里没有为了“render 都很重”而重复套 Worker：Takumi raster/SVG 已由 N-API 提交到共享 libuv pool，再套一层仍占同一
-libuv slot，同时额外占用 runtime Worker，并复制输入和字体。剩余风险是上游同步 `fromHtml()` parser，以及 N-API 提交前
-的 JS-to-Rust node/options 反序列化和 stylesheet cache parse；它们在 scheduler admission
-后运行并受默认 1 MiB content ceiling 约束，但单次调用不能被 signal 抢占。结构 walk 与大 byte copy 会 cooperative yield。
-大 HTML/node/stylesheet 与 SVG output 的 UTF-8 byte 计量也按 64 Ki characters 分片，可在 checkpoint 取消。
+同步 HTML parser 与 N-API 输入转换仍在宿主线程、admission 后运行，受 content 等预算约束，但单次调用不可抢占。
+大结构遍历与 byte copy 会让出 event loop。另套 Worker 不能消除 libuv 占用，反而增加一个线程槽和输入复制。
 
 ## 渲染 Markdown 文档
 

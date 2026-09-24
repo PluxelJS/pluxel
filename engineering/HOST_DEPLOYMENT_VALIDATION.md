@@ -1,5 +1,7 @@
 # Host 下游与部署验证
 
+本页是历次验证记录，测试数量与结论只属于对应轮次；不是本次 checkout 的测试结果或持续支持承诺。运行当前验证见 [TESTING](TESTING.md)。
+
 Core token、正向 Host 安装计划、官方服务拆分、Management、Workbench、开发附件和共享应用启动已经实施。
 官方运行时、Vite 与构建组合分别使用 Services 的 `/preset`、`/vite`、`/build`；通用 Host-dev 不拥有官方服务选择策略。
 当前 API 以[组合 Host 服务](../docs/reference/runtime-services.md)、[Host 管理接入](../docs/runtime/management.md)、

@@ -150,7 +150,7 @@ Browser Management 使用 `@pluxel/services/management/client`；Plugin 直接�
 Generated Bridge ABI 属于 Workbench internal，raw server registry 和 MF Runtime 不进入默认作者 API。
 
 Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/host/dynamic/source-producer` 的声明校验；它不得导入
-Vite、watcher、workspace scanner 或 package manager。固定 catalog 只从 dynamic config 的 `plugins` 进入，不提供 package、
+Vite、watcher、workspace scanner 或 package manager。固定 catalog 从统一应用声明的 `plugins` 进入，不提供 package、
 module、export key 或首次启用 author options。
 
 ## 变更流程

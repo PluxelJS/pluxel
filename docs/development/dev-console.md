@@ -3,7 +3,7 @@ title: 在线开发控制台
 description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件、修改配置、调用 Workbench API 并读取真实日志。
 ---
 
-开发控制台让你保持 dev 运行，随时用 TypeScript 操作当前插件和数据。Coding agent 使用 CLI 提交脚本，代码在当前 Vite SSR 模块图和同一个 Node 宿主中执行；不用重启 dev 或创建测试宿主。
+开发控制台让你保持 dev 运行，随时用 TypeScript 操作当前插件和数据。Coding agent 使用 CLI 提交脚本，代码在 Host 专用的 `pluxel` Vite environment 和同一个 Node 宿主中执行；不用重启 dev 或创建测试宿主。
 
 适合检查当前状态、填入测试数据、修改配置和验证真实调用。隔离的行为回归继续使用 [test host](./testing.md)。修改会作用于眼前这份应用；已经保存的配置和数据不会随脚本结束自动还原。
 
@@ -192,7 +192,7 @@ export const inspectWorkbench = defineDevConsole(async (dev) => {
 })
 ```
 
-将 `ExamplePlugin`、`ExampleWorkbench.overview` 和 `inspect()` 替换为项目实际已发布的 View 与业务方法。`developmentPrincipal` 由项目显式定义，满足 `{ provider: string, subject: string, displayName?: string }`；它是本次调用的身份声明，不是控制台自动授予的管理员身份。
+将 `ExamplePlugin`、`ExampleWorkbench.overview` 和 `inspectDto()` 替换为项目实际已发布的 View 与业务方法。`developmentPrincipal` 由项目显式定义，满足 `{ provider: string, subject: string, displayName?: string }`；它是本次调用的身份声明，不是控制台自动授予的管理员身份。
 
 `using` 在脚本离开作用域时关闭打开的 entry 与其本地 session，传入 `dev.signal` 还会在取消时释放这些资源。`consumeWorkbenchValue` 接管并验证 RPC 返回的普通数据，原地深冻结后移除并释放顶层 transport 资源；不能直接将 RPC stub 或 opened handle 返回 CLI。取消不会撤销已经接纳的业务变更，仍应检查返回的领域结果。
 
@@ -268,6 +268,6 @@ pluxel dev result run-id --root /workspace/my-host --instance instance-id
 
 脚本与辅助模块走当前 Vite 编译、解析和模块身份规则。已知依赖刚修改时，执行会等待 Vite 观察变更并完成更新；控制台不会再制造一次热更新。禁用或忽略这些文件的 watcher 可能使执行等待至超时。首次加载保证当前已提交宿主与已观察更新，不承诺发现所有尚未观察的磁盘修改。提交后入口文件改变会报告 `source_changed`，依赖使用执行时模块图，不承诺整棵文件系统 snapshot。
 
-首版每宿主最多跟踪 128 个脚本入口，每个最多 4096 个本地依赖文件，源码文件最多 1 MiB。优先复用少数诊断文件和 named exports。完整宿主替换会取消旧 run 并撤回其 driver；后续提交连接当前 host epoch。
+每宿主最多跟踪 128 个脚本入口，每个最多 4096 个本地依赖文件，源码文件最多 1 MiB。优先复用少数诊断文件和 named exports。完整宿主替换会取消旧 run 并撤回其 driver；后续提交连接当前 host epoch。
 
 开发集成需要注入进程内依赖时，`host({ entry, bindings })` 与 `vitePreset({ entry, bindings })` 接受普通对象，并在创建集成时浅复制、冻结为 `startup.bindings`，供应用的 配置工厂与 `prepare` 使用。省略时是冻结的空对象；对象中的资源仍由注入方拥有，不随控制台执行释放。

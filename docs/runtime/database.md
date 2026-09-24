@@ -221,8 +221,9 @@ import { defineHostApplication } from '@pluxel/host'
 import { prepareAppDatabase } from '@app/database'
 import { standardServices } from '@pluxel/services'
 
-function storagePaths({ env, deployment }) {
-	const root = resolve(env.APP_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`)
+function storagePaths({ env }) {
+	// 部署时传入发行目录外的绝对路径。
+	const root = resolve(env.APP_DATA_ROOT ?? './data')
 	return {
 		hostPersistence: resolve(root, 'runtime'),
 		applicationDatabase: resolve(root, 'application.sqlite'),
@@ -251,7 +252,7 @@ protected override init() {
 }
 ```
 
-不要读取已移除的 `ctx.config.persistence`，也不要从 `ctx.root.persistence` 猜 filesystem path。前者会把 host config 泄露给 Plugin；后者是 `namespace/get/put` 操作抽象，backend 可能是 memory、readonly 或 custom，并不保证存在 SQLite 可以打开的目录。SQLite path、DSN、TLS 和 pool options 都从 static `startup` 的 env、bindings 或 deployment facts 解析。
+SQLite path、DSN、TLS 和 pool options 从 `startup.env`、`bindings` 或部署配置显式解析，不从 Context 猜测。Persistence 是 `namespace/get/put` 抽象，backend 可能是 memory、readonly 或 custom，不保证存在可打开的文件目录。
 
 `prepare()` 不是通用 service lifecycle：这里只表达“数据库是整个应用的硬 readiness 前提”。数据库 package 负责领域初始化，root effects 负责 acquisition rollback、正常 stop 和 shutdown；consumer replacement 不能关闭共享实例。
 
@@ -268,8 +269,8 @@ Workbench 不提供数据库专用查询协议。Plugin 在自己的 Direct View
 
 ```ts no-twoslash
 interface NotesApi extends RpcTarget {
-	list(input: { cursor: string | null; limit: number }): Promise<NotesPage>
-	update(input: UpdateNoteInput): Promise<UpdateNoteResult>
+	listDto(input: { cursor: string | null; limit: number }): Promise<NotesPage>
+	updateDto(input: UpdateNoteInput): Promise<UpdateNoteResult>
 	watch(invalidate: () => void): RpcTarget
 }
 ```

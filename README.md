@@ -32,18 +32,9 @@ Pluxel 将应用拆分为具有依赖、配置和生命周期的 Plugin。框架
 - **可选 Workbench** — 提供配置和运行状态管理；关闭时不产生对应 compiler、watcher 与 transport 成本。
 - **完整工具链** — CLI、Vite/Rolldown 集成、Plugin metadata、测试 harness 与 static artifact。
 
-## 🧭 两种宿主模式，同一种 Plugin
+## 🧭 一个应用声明
 
-Static 与 Dynamic 的区别不在于能否热更新，而在于可用的 Plugin 集合能否在运行时改变。
-
-|                        | Static Runtime               | Dynamic Runtime                      |
-| ---------------------- | ---------------------------- | ------------------------------------ |
-| Plugin 来源            | 入口文件导入的固定清单       | 固定清单加运行时可增删的文件来源     |
-| 适用场景               | 冻结、审计和部署完整代码闭包 | 开发工具或需要动态接入 Plugin 的宿主 |
-| 开发期更新             | Vite HMR                     | Vite HMR                             |
-| 依赖图、配置与生命周期 | 共享同一套实现               | 共享同一套实现                       |
-
-Plugin 不需要感知宿主模式。无论来自固定清单还是动态文件，模块更新都会经过同一套依赖图更新、generation 替换和资源回收流程。
+应用在 `defineHostApplication(factory)` 中选择固定 Plugin catalog、可选动态 sources 和服务。Vite 开发与生产构建消费同一声明；加入 catalog 不等于自动启动，运行策略由 Host 管理。装配方式见[宿主配置](./docs/getting-started/host-setup.md)。
 
 ## 📚 了解更多
 

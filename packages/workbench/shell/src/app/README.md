@@ -43,10 +43,3 @@ This folder contains the Pluxel runtime UI application shell.
 
 7. Scope failures and state to their owners.
    Each workspace document has its own route error boundary. Path changes reset errors, not the Shell. Persist only sanitized workspace UI state, coalesce writes, and flush pending changes on page hide or teardown.
-
-## LLM Edit Protocol
-
-1. Identify the owning domain first.
-2. Edit the narrowest domain-local file possible.
-3. Promote code upward only after proving reuse.
-4. When in doubt, add structure docs before adding new top-level folders.

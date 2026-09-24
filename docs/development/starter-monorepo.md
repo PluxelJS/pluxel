@@ -120,7 +120,7 @@ pnpm governance:check
   HTTP schema、mutation 与错误状态。
 - `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
 
-选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 宿主服务 才使用 服务 host。常用 command 会立即提交；
+统一使用 `createTestHost()`，只安装本次需要的 HTTP、Workbench 或 Vault 等服务。常用操作会立即提交；
 多个变化必须共享边界时才使用同步 `commit(change => ...)`。首次配置使用 `initialConfig`，运行期更新使用
 `host.config.patch()`。
 

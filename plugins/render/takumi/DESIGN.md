@@ -13,10 +13,7 @@
 - `ctx.workbench?.publish()` 只放置 provider-owned Fonts selection Attachment，Workbench disabled 不影响字体 replay 或 render；
 - prototype methods 是唯一跨 Plugin callable surface，返回值是 caller-owned data，不暴露 raw Renderer、registry 或 queue。
 
-这些现有能力已经覆盖 graph ordering、ownership、withdrawal、config、diagnostics 与可选 UI。Takumi 暴露出的缺口是
-FontsPlugin 原来只投影 Canvas `GlobalFonts` family metadata，无法把 provider-owned bytes 交给第二种 native registry。
-该问题属于字体 package 的跨 renderer 业务 contract，因此新增 `portableFonts` + `readPortableFont()`，而不向
-core/runtime 添加 Takumi/font 专用 Context capability。
+字体资源由 FontsPlugin 的 `portableFonts` / `readPortableFont()` contract 提供，不向 Core/Runtime 增加 renderer 专用能力。
 
 ## 字体 revision 与资源所有权
 
@@ -39,7 +36,7 @@ portable filtering 保持 Takumi runtime policy，不通过无状态 consumer ta
 Takumi 的 raster/SVG/font N-API 方法返回 napi-rs `AsyncTask`：JS-to-Rust 输入反序列化、stylesheet cache parse 与 task
 建立仍在宿主线程，`Task.compute()` 则通过 `napi_queue_async_work` 占用进程共享的 libuv pool。Takumi 另有 lazy owned Rayon pool，但只在
 本 Plugin 未暴露的 animation `compute()` 内并行帧渲染/编码，静态 raster/SVG 不使用它。按照 Pluxel worker 边界，
-本 Plugin 继续使用原 API，不进入 `ctx.workers`；否则仍占一个共享 libuv slot，同时额外占用 Runtime Worker，并增加
+本 Plugin 继续使用原 API，不进入 `ctx.require(Workers)`；否则仍占一个共享 libuv slot，同时额外占用 Runtime Worker，并增加
 一次 clone/dispatch。package-local scheduler 只负责 admission：默认并发 2、global/per-owner queue 上限和 owner
 round-robin；默认不吃满 Node 的 4-slot libuv pool，host 可以结合启动时的 `UV_THREADPOOL_SIZE` 调整吞吐。
 provider cleanup 会 abort generation/caller signals、拒绝 queued render，并等待所有已接纳 Promise settle 后才完成

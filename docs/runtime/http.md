@@ -199,7 +199,7 @@ Plugin 和所有 Part 的 `init()` 成功后，HTTP 服务会等待 lazy Elysia 
 `app.compile()` 固化 application。compile 会 seal 同一个 instance；generation running 后继续增加 route、hook、store 或 decorator
 会由 Elysia 2 fail-fast。
 
-作者不需要保存 publication handle。配置或源码变化建立新 generation；不要在 running generation 内原地改 route tree。finalization
+作者不需要保存 publication handle。需要改变 route tree 时，显式 restart 或由源码更新建立新 generation；配置保存本身不会自动重启。finalization
 失败不会发布部分路由；成功 contribution 与 Core running projection 一起提交。Plugin stop、replacement 或 rollback 后，
 旧 generation 不再接收新请求。
 
@@ -313,41 +313,9 @@ this.plugins.use(Diagnostics, (diagnostics) =>
 )
 ```
 
-`plugins.use()` 同时建立 lifecycle edge：Diagnostics provider 出现、消失或 replacement 时，调用它的 consumer 会重启。若
-consumer 本身拥有不应被诊断系统 HMR 打断的长连接、播放器或其他昂贵资源，把 contribution 放在已有的产品集成 Plugin；没有合适
-集成层时，再建立一个只拥有这条跨域集成 lifecycle 的小 Plugin。它通过 constructor 依赖业务能力，并可选依赖 ingress：
+`plugins.use()` 建立真实依赖边；provider 变化会重启 consumer。业务长连接不应因此重启时，把这条可选集成放在独立的轻量 integration Plugin，由它依赖业务 Plugin 并登记/撤销 source。
 
-```ts no-twoslash
-const Diagnostics = definePluginRef<DiagnosticsPlugin>()
-
-@Plugin()
-export class VoiceProductIntegrationPlugin extends BasePlugin {
-	constructor(private readonly voice: VoiceGatewayPlugin) {
-		super()
-	}
-
-	protected override init() {
-		this.plugins.use(Diagnostics, (diagnostics) =>
-			diagnostics.registerSource(voiceDiagnosticSource(this.voice)),
-		)
-	}
-}
-```
-
-这样 Diagnostics replacement 只重启轻量集成层，不会反向重启 `VoiceGatewayPlugin`。只有当重启业务 Plugin 本来就是正确语义时，
-才在业务 Plugin 本体声明 optional integration；该业务 Plugin 自己拥有的 command registration、临时状态和其他 effects 也会一起重建。
-如果这些资源同样不能中断，就使用示例中的专用小型集成 Plugin。不要用 ambient event handshake 隐藏这条真实依赖。
-
-这样 contributor replacement 只撤销旧 source 并注册新 source；固定 ingress、鉴权和 schema 不发生 late mutation。source ID、重复注册、
-snapshot 上限、错误隔离与 disposer 幂等性属于 registry contract。请求期 snapshot 应读取已经拥有的有界内存状态，不执行平台探测；
-需要异步采集时由 owner 调度并缓存 snapshot。聚合层必须按公开 DTO 逐字段投影并运行时校验，不用对象 spread 把 contributor 的额外字段
-带到 HTTP 边界；TypeScript 类型不能阻止 token、连接地址、内部 Error 或第三方 SDK 对象意外进入运行时对象。固定 ingress 还应直接用
-Elysia 原生 `response` schema 声明完整 HTTP DTO，让运行时响应校验、序列化和 OpenAPI 继续只有一个上游契约。
-
-异步聚合还要单独记录 source-set revision：采集中发生注册或撤销时，丢弃已失效结果，再从最新 source set 重算；普通领域事件和周期采样
-应合并 refresh demand，不能持续使正在进行的有效采集失效。要求 source 集合精确的 endpoint 只等待当前 refresh barrier；普通领域事实
-采用事件触发与周期采样的最终一致语义，纯读取本身不标记新变化或重新采样。事件订阅可以稍后收到新 snapshot，但不能在撤销后重新发布
-旧 generation 的 contribution。
+Registry 自己负责稳定 ID、重复注册、结果上限与幂等 disposer。请求读取已采集的有界 snapshot，并按公开 DTO 投影、校验；不把 SDK 对象、凭据或任意额外字段带到 HTTP。异步聚合须丢弃已撤销 source 的迟到结果。HTTP 输出使用 Elysia 原生 `response` schema。
 
 以下模式会破坏边界，应改用上面的 owner 或 registry：
 
@@ -423,15 +391,6 @@ const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
 carrier 能力时必须使用 Node production、static Vite 或 dynamic Vite 对应的 ephemeral real-listener integration test；不能用普通 Fetch
 response 代替。完整 test host 配置见[测试 Pluxel 插件](../development/testing.md)。
 出站请求可以使用官方 [Wretch Plugin](../plugins/wretch.md) 或领域 HTTP client，不要与入站 Elysia application ownership 混在一起。
-
-## 效率模型
-
-未读取 `ctx.require(Http)` 的 generation 不创建 Elysia app。已发布请求先由 immutable business directory 选择 owner contribution，再进入该
-owner 的 sealed Elysia app；这是一次有意识的两级 routing，用来隔离跨 Plugin global hook、store、plugin dedupe 与 generation withdrawal。
-
-目前没有同场 benchmark 可以证明这条路径“接近裸 Elysia”或给出跨机器延迟承诺。后续 benchmark 应比较 plain Elysia 与 1/10/100/1000
-contribution 的 directory delegate、snapshot build、stream drain；如果两级 lookup 成为主要瓶颈，应优化内部 dispatcher，而不是把
-route index 或 carrier tuning 变成 Plugin API。
 
 ## 独立 Host
 

@@ -50,9 +50,9 @@ Attachment 同时持有 provider 和 consumer owner leases。任一 owner replac
 
 - `packages/workbench/tests/workbench-registry.test.ts`
 - `packages/workbench/shell/tests/workbench-client.test.ts`
-- `packages/workbench/shell/tests/workbench-federation.test.tsx`
-- `packages/workbench/shell/tests/workbench-react.test.tsx`
-- `packages/workbench/shell/tests/workbench-client.test.ts`
+- `packages/workbench/tests/workbench-federation.test.tsx`
+- `packages/workbench/tests/workbench-react.test.tsx`
+- `packages/workbench/tests/workbench-client.test.ts`
 
 ## 设计结论
 

@@ -120,7 +120,7 @@ try {
 }
 ```
 
-raw command 的 `execute()` 是唯一 validation/codec/business pipeline：它完整执行 wire JSON 检查、schema validation、Decode、自定义 validation、handler、Encode 和 output validation，失败统一抛 `CommandError`。Carrier 可以在这个 pipeline 得到已校验 output 后执行自己的 presenter，但不能复制或绕过它。`deadlineMs` 在 pipeline 阶段之间检查；IO 取消要求实现观察 `context.signal`。
+raw command 的 `execute()` 是唯一 validation/codec/business pipeline：它完整执行 wire JSON 检查、schema validation、Decode、自定义 validation、handler、Encode 和 output validation；若提供 `validateOutput`，还会将校验后的 wire output Decode 给该 validator。失败统一抛 `CommandError`。Carrier 可以在这个 pipeline 得到已校验 output 后执行自己的 presenter，但不能复制或绕过它。`deadlineMs` 在 pipeline 阶段之间检查；IO 取消要求实现观察 `context.signal`。
 
 需要向 carrier 暴露可预期失败时抛 `CommandError`：
 

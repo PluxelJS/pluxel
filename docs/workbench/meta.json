@@ -12,6 +12,7 @@
 		"---按需参考---",
 		"renderer-resources",
 		"operations",
+		"standalone-host",
 		"---配置表单---",
 		"configuration-playground",
 		"valibot-form"

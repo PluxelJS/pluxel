@@ -1,46 +1,16 @@
-# @pluxel/takumi-markdown-typst
+# `@pluxel/takumi-markdown-typst`
 
-@pluxel/takumi-markdown-typst is an optional @pluxel/takumi-markdown extension for
-small inline and display math. It compiles each accepted formula in the Runtime shared Worker,
-adds the resulting SVG through the Markdown render's asset sink, and lets the already-reserved
-Takumi render lay it out once.
+可选的受限 Typst 数学扩展，在共享 Worker 生成 Markdown SVG 资产。
 
-It intentionally does not expose a general Typst document compiler.
+在直接导入它的包目录安装（catalog 工作区见下方指南）：
 
-```ts
-import { TypstMathPlugin } from '@pluxel/takumi-markdown-typst'
-import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
-import { BasePlugin, Plugin } from '@pluxel/core'
-
-@Plugin()
-export class MathDocumentPlugin extends BasePlugin {
-	private renderer!: MarkdownRenderer
-
-	constructor(
-		private readonly markdown: TakumiMarkdownPlugin,
-		private readonly typst: TypstMathPlugin,
-	) {
-		super()
-	}
-
-	override init(): void {
-		this.renderer = this.markdown.createRenderer({
-			extensions: [this.typst.createMarkdownExtension()],
-		})
-	}
-}
+```sh
+pnpm add @pluxel/takumi-markdown-typst
 ```
 
-The extension enables Satteri math and accepts a deliberately small formula dialect: ordinary
-letters, numbers, math symbols, whitespace, grouping and common expression punctuation. It rejects
-code escapes, # commands, strings, backslashes, paths, imports, reads, images, plugins and
-dynamic Typst APIs before the compiler runs. Callers cannot select a Typst main file, package,
-font, page setup, network source, or compiler option.
+宿主 catalog 需要 FontsPlugin、TakumiPlugin、TakumiMarkdownPlugin、TypstMathPlugin；业务插件通过 constructor 注入直接使用的能力。
 
-Each formula is subject to count, character, per-SVG and total-SVG limits. Cancellation stops the
-shared Worker task through the normal Runtime worker lifecycle; generated SVG bytes are copied only
-into the active Markdown render. The final native Takumi work remains governed by the parent
-reservation's cancellation semantics.
+- [用法、配置与验证](../../../docs/plugins/rendering/takumi-markdown.md#可选的-typst-数学)
+- [维护约束](DESIGN.md)
 
-See [the Markdown / Typst guide](../../../docs/plugins/rendering/takumi-markdown.md) for installation
-and user-facing limits, and [DESIGN.md](DESIGN.md) for the worker and trust boundary.
+跨 renderer 的调度、输入所有权与取消规则见 [执行架构](../ARCHITECTURE.md)。

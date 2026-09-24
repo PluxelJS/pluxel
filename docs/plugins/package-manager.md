@@ -89,11 +89,13 @@ production host。
 Plugin running 后发布两个 runtime command：
 
 ```ts no-twoslash
-await ctx.root.commands.execute('package.install', {
+import { Commands } from '@pluxel/services/commands'
+
+await ctx.require(Commands).execute('package.install', {
 	specs: ['@acme/example-plugin@^2.0.0'],
 })
 
-await ctx.root.commands.execute('package.remove', {
+await ctx.require(Commands).execute('package.remove', {
 	specs: ['@acme/example-plugin'],
 })
 ```
@@ -113,9 +115,9 @@ install/remove mutation，Framework 自动 detach 返回 DTO、释放 transport 
 import type { RpcTarget } from 'capnweb'
 
 interface PackageManagerApi extends RpcTarget {
-	snapshot(): Promise<PackageManagerSnapshot>
-	install(specs: readonly string[]): Promise<PackageMutationResult>
-	remove(names: readonly string[]): Promise<PackageMutationResult>
+	snapshotDto(): Promise<PackageManagerSnapshot>
+	installDto(specs: readonly string[]): Promise<PackageMutationResult>
+	removeDto(names: readonly string[]): Promise<PackageMutationResult>
 }
 ```
 
@@ -152,10 +154,6 @@ prune managed graph，再删除 entry；source batch 随后按正常 lifecycle �
 ```
 
 不要让其他工具直接改写 `entries/`，也不要让 dynamic route 调用 Package Manager 私有 store。要实现另一种 registry、market 或审批策略，应实现另一个 source producer，并继续通过普通 file source protocol 接入 runtime。
-
-生产原生 ESM 加载器不能替换已经缓存的传递依赖。升级或重新安装涉及已加载入口时，来源层会报告
-`PLUGIN_SOURCE_RESTART_REQUIRED`，需要重启宿主；开发期升级由共享 ModuleRunner 失效并重新求值。
-安装结果只说明 package 与 entry 发布结果，必须另查 catalog 接受和插件运行状态。
 
 ## 输入边界与失败语义
 

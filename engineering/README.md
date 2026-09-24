@@ -26,6 +26,8 @@
 - [Host 下游与部署验证](HOST_DEPLOYMENT_VALIDATION.md)：已验证能力与待验证平台。
 - [服务能力撤回审计](PROVIDER_WITHDRAWAL_AUDIT.md)：cached handle、owner withdrawal 和 in-flight 边界的证据。
 - [时空组合思考记录](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)：Cordis 对照与设计背景。
+- 源码输入实验：[显式 schema 绑定](experiments/tsgo-plugin-inputs/README.md)、[TypeScript Content Mapper](experiments/tsgo-content-mapper/README.md)。仅记录固定版本证据。
+- [Carrier spikes](spikes/README.md)：带日期的上游能力实验，不代表当前支持矩阵。
 - [未落地提案](proposals/README.md)：待研究的问题，不作为当前公开契约。
 
 ## 文档维护

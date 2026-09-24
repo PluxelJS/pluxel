@@ -21,22 +21,21 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-Plugin 使用 Core 作者 API，以及从 Workbench 包导入的 `Workbench` token：
+Plugin 沿用可选 publication，关闭 Workbench 时业务仍能运行：
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { Workbench } from '@pluxel/workbench'
 import { UI, createBindings } from './ui-definition'
 
 @Plugin()
 export class Viewer extends BasePlugin {
 	init() {
-		this.ctx.require(Workbench).publish(UI, createBindings(this))
+		this.ctx.workbench?.publish(UI, createBindings(this))
 	}
 }
 ```
 
-`publish` 仍是 `init()` 中唯一、无条件的发布语句；定义和 renderer 的静态规则不变。Token 没有安装时立即抛出缺失能力错误。通用 Context 上的可选 `ctx.workbench` 不能证明任意 Host 都安装了 Workbench。
+`publish` 仍是 `init()` 中唯一的静态发布语句；定义和 renderer 规则与普通 Host 相同。省略服务时，optional chaining 跳过 bindings 的创建。
 
 ## Vite 制品开发
 
@@ -127,6 +126,6 @@ export default defineConfig({
 
 浏览器入口及其 React、CSS、路由生成配置由应用负责。开发仓库官方 Shell 时，指定 `packages/workbench/shell/src/client.tsx`，并沿用 `packages/workbench/shell/vite.config.ts` 对应的前端转换、共享依赖和 Sass 配置；附件不会根据 workspace 路径猜测这些配置。源码模式不要求先构建 Shell，生产构建仍需要交付已构建资源。原始模块与更新错误由现有 Vite 报告。
 
-## 外部声明校验的上游限制
+## 类型检查问题
 
-`capnweb@0.12.0` 的声明在 TypeScript 6.0.3 与 7.0.2、开启库检查时，存在两处 `TS2574`：tuple tail 使用的 `Unstubify<Tail>` 同时包含 Promise。仓库的真实 tarball consumer 保持库检查开启，并仅识别该版本 `dist/index.d.ts` 中这两处已确认诊断；其他诊断仍导致验证失败。独立 Core/Host/Services 基础组合无此例外。完整 Workbench 声明的零诊断校验需要等待上游修正版；不会通过关闭所有库检查或复制 RPC 实现掩盖它。
+`capnweb@0.12.0` 的严格声明检查限制见[排错：TS2574](../reference/troubleshooting.md#capn-web-声明报-ts2574)。

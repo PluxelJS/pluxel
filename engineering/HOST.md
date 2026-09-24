@@ -1,14 +1,6 @@
 # Host 与服务架构
 
-## 唯一职责分层
-
-| 层                                  | 所有权                                                                | 不承担                            |
-| ----------------------------------- | --------------------------------------------------------------------- | --------------------------------- |
-| Context                             | 同步、不可变的能力 shape 与 root/scope/owner-view 解析                | IO、异步 prepare、插件图          |
-| Core                                | 插件 metadata、依赖图、generation、logger/events/effects/config facts | 网络、数据库、开发工具、部署策略  |
-| Host                                | catalog、运行策略、服务准备关闭、应用启动、配置存储与动态来源         | 默认服务选择、物理 listener、Vite |
-| Host-dev                            | Vite ModuleRunner、候选更新队列、开发附件、控制台 execution           | 官方服务选择、第二套插件生命周期  |
-| Services（含日志与管理）/ Workbench | 对应领域的能力、资源和适配                                            | 修改 Core 图所有权                |
+本页拥有服务安装、应用启动与 Host 资源边界。整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)；应用组合用法见 [Host services](../docs/reference/runtime-services.md)。
 
 应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
 
@@ -37,10 +29,7 @@ Host-dev 是唯一开发驱动；官方服务附件分别由 Services、Workbenc
 
 ## 控制台 execution
 
-一次显式提交创建一个 Dev console execution。它通过 Vite 加载普通导出函数，借用当前 Host 和 RootContext，不注册 Plugin definition、不进入依赖图，HMR 不自动重放操作。
-`defineDevConsole(dev => ...)` 自动推导类型，dev 带 input/id/signal、插件与配置操作和更新查询。跨进程 input 保持 unknown。
-控制台没有 effects 资源 API；脚本自己创建的资源使用 using/await using 或 try/finally。取消是协作式，已经提交的写入不回滚；已接纳 Host 操作排空后才能释放旧 root。
-详见 [DEV_CONSOLE.md](DEV_CONSOLE.md)。
+控制台借用当前 Host/RootContext 执行普通 TypeScript export，不进入 Plugin graph；HMR 不重放操作。运行撤回、有限更新 barrier、协作取消与脚本资源边界由 [DEV_CONSOLE](DEV_CONSOLE.md)统一定义。
 
 ## HTTP 与管理页面
 

@@ -5,33 +5,9 @@
 
 ## 模型
 
-Pluxel 日志只有两个所有者层级：
+`RuntimeLogging` 拥有唯一 active rootId、LogTape installation、routes/sinks、plugin policy、debug matcher、持久化与 stores。`ContextLogger` 只固定 Context identity、properties 并委托 LogTape。
 
-```text
-RuntimeLogging                 进程级唯一 owner
-  ├─ active rootId
-  ├─ LogTape installation
-  ├─ family routes and sinks
-  ├─ plugin policy
-  ├─ debug matcher
-  ├─ policy persistence
-  └─ runtime log stores
-
-ContextLogger                  Context-owned author capability
-  ├─ immutable root/plugin identity
-  ├─ bound context properties
-  └─ LogTape method delegation
-```
-
-一个进程只允许一个 active logging root，因此不需要 `Map<scopeId, LoggingScope>`。第二个
-`RuntimeLogging.install()` 会失败；失败候选的清理不得 reset 已有 owner 的 LogTape 安装；旧 Context 或错误 rootId 产生的 record 会被 active root filter 拒绝。
-
-这个限制同时简化正确性和性能：
-
-- 没有 process-global scope registry 查询；
-- 没有多个 LogTape config 的合并、lease 或引用计数；
-- policy、debug matcher 和 store ownership 都只有一个事实源；
-- Host shutdown 可以直接按 root 生命周期 flush 和 dispose。
+一个进程只能有一个 active logging root。第二次 install 或已有 foreign LogTape config 都失败；失败候选清理不能 reset 原 owner。旧 Context/错误 rootId 的 record 被 active-root filter 拒绝。Host 关闭负责 flush/dispose，无额外 scope registry、config merge 或引用计数。
 
 ## Category identity
 
@@ -63,13 +39,7 @@ category builders/parser 位于：
 
 ## ContextLogger
 
-插件和 runtime 代码只使用：
-
-```ts
-ctx.logger.info('started', { port })
-ctx.logger.with({ requestId }).warn('retrying')
-ctx.logger.getDebugChannel('cache:lookup').debug('cache miss', { key })
-```
+作者调用见 [日志指南](../docs/runtime/logging.md)。
 
 约束：
 
@@ -95,32 +65,13 @@ Host 使用 `@pluxel/services/logging` 的 `logging(plan, { policyStore })` desc
 
 Logging 的安装与关闭均归 Host service plan 所有。Core root 创建到 Logging prepare 之前的日志不承诺被此 sink 捕获。
 
-`logging: false` 表示安装一个无 sinks/routes 的 silent root，不表示跳过 manager。这样 root identity、policy
-ownership 和 shutdown 语义不会因为输出关闭而分叉。
+需要 silent logging 时显式安装无 sinks/routes 的 plan；省略 Logging 服务与安装 silent manager 是不同的资源选择。
 
 `RuntimeLogging` 拒绝已有 foreign LogTape config，不静默复用或重置其他 owner 的配置。
 
 ## Routes and sinks
 
-`RuntimeLoggingInput` 由一个 root、显式 sinks 和四个 family routes 组成：
-
-```ts
-type RuntimeLoggingInput = {
-	root: {
-		profile: string
-		initialPluginPolicy?: PluginLogPolicySnapshot
-		debugTopics?: readonly string[]
-		policyLoadFailure?: 'warn' | 'fail'
-	}
-	sinks: Record<string, RuntimeLoggingSinkInput>
-	routes: {
-		runtime: readonly RuntimeLoggingRouteBinding[]
-		plugins: readonly RuntimeLoggingRouteBinding[]
-		debug: readonly RuntimeLoggingRouteBinding[]
-		meta: readonly RuntimeLoggingRouteBinding[]
-	}
-}
-```
+Logging plan 显式声明 root policy、physical sinks 与 runtime/plugins/debug/meta 四个 family routes；完整配置 shape 以[日志指南](../docs/runtime/logging.md)为准。
 
 内建 sink：
 
@@ -153,32 +104,7 @@ route、日志 API 访问或显式 `logging.stores` 访问时不分配 registry/
 
 ## Dynamic plugin policy
 
-policy snapshot：
-
-```ts
-type PluginLogPolicySnapshot = {
-	version: 3
-	defaultLevel: LogLevel | 'off'
-	overrides: readonly {
-		owner: PluginNodeAddress
-		level: LogLevel | 'off'
-	}[]
-}
-```
-
-热状态只有一个 encoded map：
-
-```ts
-class RuntimePluginLogPolicy {
-	private defaultRank: number
-	private ranks = new Map<string, { owner: PluginNodeAddress; rank: number }>()
-
-	allows(owner: PluginNodeAddress, level: LogLevel): boolean {
-		const rank = this.ranks.get(ownerKey(owner))?.rank ?? this.defaultRank
-		return rank !== OFF_RANK && LEVEL_RANK[level] >= rank
-	}
-}
-```
+Policy 使用 v3 structured node owner 与 default/override level（含 `off`）。热状态只有 canonical owner key 到 numeric rank 的 Map。
 
 plugin filter 在 rootId 检查后执行一次 `Map.get()` 和数值比较，不读取 properties、不生成 snapshot，也不重新
 configure LogTape。
@@ -242,26 +168,11 @@ Workbench 的 bounded range/follow 固定经过页面唯一的已认证 Runtime 
 `RuntimeLogLine` 是 UI/transport projection，保留 category、plugin/context identity、structured message、props 和
 error summary。它不是新的 author-facing LogRecord。
 
-## Large-cardinality budget
+## 性能验证
 
-插件数量增长时，常驻和热路径成本必须按以下规则控制：
+热路径不做 caller capture、properties 求值、snapshot、序列化或持久化；单 owner policy lookup 为 O(1)。Snapshot/reset/replace/persistence 是显式 O(N) 操作。Lazy logger、prototype methods、无 per-topic cache 与 bounded store 限制常驻成本。
 
-| 决策                               | 对大基数的影响                                              |
-| ---------------------------------- | ----------------------------------------------------------- |
-| 一个 active root                   | 不需要 `Map<scopeId, LoggingScope>` 或每条日志 scope lookup |
-| family-level LogTape config        | logger config 数量不随插件数量增长                          |
-| category plugin identity           | filter 不读取/求值 properties                               |
-| plugin-isolated lazy LoggerService | 从未记录日志的插件不创建 logger service                     |
-| prototype level methods            | 每插件不创建六个 method closure                             |
-| 无 per-plugin debug cache          | topic 数量不会乘以插件数量形成常驻 Map                      |
-| 单一 encoded policy Map            | lookup O(1)，一个 override 一个 Map entry                   |
-| compact mutation result            | 单插件调级不会复制 10 万条 overrides                        |
-| snapshot/persistence 显式 O(N)     | 线性成本只出现在控制面和持久化，不进入 log hot path         |
-| bounded store/chunks               | UI 日志内存由 retention 决定，不由历史总日志量决定          |
-| optional/lazy store registry       | 未配置 store 的 Host 不承担 store 常驻成本                  |
-
-`packages/services/bench/logger.bench.ts` 同时覆盖普通 override hit 和 100,000 overrides hit。基准用于检查 Map
-规模增长是否改变 lookup 复杂度，不把单机绝对 ops/s 当作跨环境承诺。
+`packages/services/bench/logger.bench.ts` 对比普通与 100,000 overrides hit，检查规模增长下的 lookup 趋势；单机绝对 ops/s 不是跨环境承诺。
 
 ## Package boundaries
 

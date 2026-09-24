@@ -1,36 +1,17 @@
 ---
 title: 插件提交检查
-description: 用 14 项检查确认 Plugin 的边界、生命周期、配置和交付契约。
+description: 按改动影响选择验证，确认当前实例与可交付产物。
 ---
 
-准备提交插件变化时，先运行项目的 `pnpm verify`，再按下面的分组核对本次涉及的行为。只修改普通业务函数时，不必为了满足清单新建插件或宿主。
+提交前按本次变化核对以下结果；具体契约留在对应指南，不需要每次重读全部文档。
 
-## 14 项检查
+| 改动                     | 应有的证据                                                                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 依赖或生命周期           | 真实 Consumer 的成功/缺失路径，失败初始化与 stop/replacement 后资源回收；见[插件模型](../getting-started/plugin-model.md)和[测试](../development/testing.md) |
+| 配置或 Part              | 默认值、非法值、公开路径与保存后应用状态；见[配置](../getting-started/configuration.md)和[Part](../getting-started/plugin-parts.md)                          |
+| HTTP、command 或数据操作 | 从公开入口验证结果、输入错误及 owner 失效；外部网络行为使用真实 listener                                                                                     |
+| Workbench                | 真实页面读取/操作/关闭，关闭 Workbench 后业务仍运行；见[页面资源](../workbench/renderer-resources.md)                                                        |
+| 交付契约                 | exports、peers 与生成制品一致，`pnpm pack --dry-run` 包含所需文件；见[插件包](../development/plugin-package.md)                                              |
 
-### 拆分与依赖
-
-- [ ] 只有需要独立依赖、配置、失败、启停或治理的单元才是 Plugin；其余逻辑保持为普通对象或函数。
-- [ ] Plugin class 从 package root 导出；domain package 不依赖 Runtime、Context、Workbench 或 host policy。
-- [ ] Plugin/PluginPart 的 required dependency 使用 package-root value import 和实际 consumer constructor；optional capability 使用 module-level `definePluginRef<T>()`。
-- [ ] optional absence、provider failure 与单次请求失败分别处理，不用一个 `undefined` 或 catch-all 混淆。
-
-### 配置与组成
-
-- [ ] 一个 module-level Valibot object schema 是类型、默认值、校验、归一化和表单 metadata 的唯一真源。
-- [ ] `this.configs.use(schema)` 是普通 class field；constructor 和 field initializer 不提前读取配置值。
-- [ ] 只服务当前 owner、但需要局部 config/effects 的组成使用静态 field-owned `PluginPart`；Part requirement 不在 owner 重复声明，field initializer 不创建资源，副作用留在 `init()`/`plugins.use()` callback；需要独立治理时使用 Plugin。
-- [ ] `PluginPart.ctx/host/parts/plugins/configs` 与 `BasePlugin.parts/plugins/configs` 只在对应 subclass 内使用；`BasePlugin.ctx` 保持 public。owner 默认用 private Part field，若公开 Part，只暴露 Part 自己声明的窄业务 API，不增加 root-owner、Context path 或 composition getter。
-
-### 资源与业务边界
-
-- [ ] 资源创建后立即登记 owner-bound、幂等 cleanup；startup 失败、replacement、stop 与 shutdown 都能完整回收。
-- [ ] 长请求和后台任务观察 `AbortSignal`，owner 停止后不接受新工作；Plugin 不调用 `process.exit()`。
-- [ ] HTTP、command、database、cache、storage 与 secret 都有明确 owner；validation、authorization 和 deployment policy 不混入业务实现。
-- [ ] Workbench 只投影 browser-safe contract；关闭 UI 时，核心业务能力仍可运行且不会初始化 UI backend。
-
-### 验证与交付
-
-- [ ] 根据本次行为选择 Core 或 Runtime test host，覆盖相关的配置错误、依赖失败、部分初始化清理、替换和取消；不以普通 `new` 实例替代生命周期测试。
-- [ ] package exports、peer dependencies、构建入口和文档一致；`pnpm verify` 通过且没有宽泛规则豁免。
-
-依赖和生命周期契约见 [Plugin 模型](../getting-started/plugin-model.md)，Part composition 见[使用 PluginPart](../getting-started/plugin-parts.md)，配置契约见[配置模型](../getting-started/configuration.md)，验证入口见[测试插件](../development/testing.md)。
+运行 package 实际声明的相关 scripts；发布前运行完整 `verify` 与构建。
+[inspect](../development/inspection.md) 可定位声明和验证脚本；[devconsole](../development/dev-console.md) 确认当前实例的状态、应用报告和日志。隔离测试使用 `@pluxel/test`，不替代在线实例证据。

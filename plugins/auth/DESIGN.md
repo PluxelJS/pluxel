@@ -65,7 +65,8 @@ mode/readiness UI and mutation authority. The simpler password and client-secret
 Vault records remain versioned `management-account-v1` and `oidc-client-secret-v1` values. Password verification uses bounded async scrypt. TOTP verification serializes record mutation and persists `lastAcceptedCounter` before success. OIDC uses Authorization Code + PKCE with bounded discovery/token/JWKS IO.
 
 Credential provisioning remains a transport-free domain service behind the setup target, with password setup, bounded TOTP
-enrollment/confirmation and confidential client-secret mutation. A headless distribution has neither the View nor another provisioning API:
-it must use public OIDC, start with a pre-provisioned Vault record, or reuse persistence configured by a Workbench-capable deployment.
+enrollment/confirmation and confidential client-secret mutation. Without the setup View, a deployment must use public OIDC, pre-provision its Vault record, or reuse persistence configured by a deployment that exposes the View. The available services and artifacts determine this capability, not the headless build label.
+
+Vault watches reload account and OIDC credentials. A changed account identity/password/TOTP secret or OIDC secret clears cookie sessions, login failure state and OIDC pending/cache state; replay-counter-only updates preserve them.
 
 All sessions, tickets, challenges, enrollments, rate limits and OIDC pending/cache state belong to one Plugin generation. Stop, replacement or rollback withdraws the provider and clears them deterministically.

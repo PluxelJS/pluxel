@@ -18,8 +18,6 @@
 - raw Context construction、toolchain 和 runtime installation helper 不进入默认 Plugin 作者入口；
   `@pluxel/context` 的公开 installation helper 只用于 root 创建前的 host composition。
 
-收益：作者代码保持单一、可推导，内部实现可以重构而不扩大兼容面。
-
 ## 2. 保持能力所有权清晰
 
 - Core 固定提供 logger、effects、events 和插件配置事实；Commands、Persistence、Vault 通过显式服务清单安装。`standardServices()` 组合 HTTP、Commands、NodeModules、Workers 和 Persistence；`servicesPreset()` 另加 Vault、Logging、Management、管理命令及可选 Workbench，不默认安装 Database。`ctx.events` 提供通过
@@ -31,9 +29,7 @@
 - command 的 root catalog publication 与 carrier-specific publication 是两个显式决定。Carrier provider 通过
   caller-bound mount 固定 provider/consumer ownership，不接受 caller-supplied owner，也不自动镜像 root catalog。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
-- 业务状态和业务 API 不得依赖可选Workbench。
-
-收益：同一插件可在 static、dynamic、headless 和 workbench-disabled host 中运行。
+- 业务状态和业务 API 不得依赖可选 Workbench。
 
 ## 3. 可选能力关闭时不得产生隐式成本
 
@@ -43,8 +39,6 @@
 
 Workbench 一旦启用，Cap’n Web over WebSocket、MF2 Manifest/Snapshot 和 React Bridge 都是固定实现契约；
 disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任一项。
-
-收益：能力边界可验证，headless host 不承担Workbench成本，也不会得到虚假成功状态。
 
 ## 4. Context 必须并发隔离
 
@@ -61,8 +55,6 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
 - Core 把一个 kernel scope 映射为一次 Plugin generation，Part child 与 dependency caller view 共享 scope backing，
   但分别持有 owner-view cache；不引入新的全局上下文协议。
 
-收益：并发与 HMR replacement 下的注册、日志和资源回收保持确定性。
-
 ## 5. 生命周期只由 graph 和 commit 驱动
 
 - provider 先启动、后停止；required failure 只传播到 dependents。
@@ -71,8 +63,6 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
 - `init()` 返回的 cleanup/disposable 自动进入当前 generation effects；replacement、rollback、optional
   restart、正常停止和 shutdown 只 drain 这一套 effects。
 - core 返回 lifecycle facts；宿主决定退出、告警或降级。
-
-收益：失败隔离、重试、HMR 和关闭行为共享一套可测试语义。
 
 ## 6. 插件源码必须经过 Pluxel 工具链
 
@@ -86,8 +76,6 @@ disabled 只表示整个 Plane 不安装，不表示启用后可缺少其中任�
   name 或 constructor identity。
 - Node 原生 type stripping 只用于不依赖 decorator transform 的普通工具脚本。
 - 工具链不得注入第二套作者 API。
-
-收益：runtime 只消费确定 metadata，开发和生产保持同一插件写法。
 
 ## 7. 保持依赖方向
 
@@ -113,8 +101,6 @@ Services 与 Workbench 的可选组合可以形成包级相互引用；约束针
 - Host 来源接入不复制 core lifecycle。
 - build-time tooling 不进入 runtime service graph。
 
-收益：fixed catalog、dynamic loader、测试 host 和未来部署入口可以复用同一内核。
-
 ## 8. 变更必须有对应验证
 
 - 作者面变更：检查 public exports、user docs 和所有 workspace plugins。
@@ -124,13 +110,9 @@ Services 与 Workbench 的可选组合可以形成包级相互引用；约束针
 - lifecycle 变更：覆盖 provider failure、dependent blocking、replacement 和 teardown。
 - 删除旧设计后搜索旧符号、旧入口和旧文档链接。
 
-收益：验证直接对应风险，不用大而无目标的测试掩盖边界缺口。
-
 ## 9. 文档只描述当前事实
 
 - `docs/` 给出标准用法和必要设计原因，不暴露 internal helper。
 - `engineering/` 记录架构不变量和实现入口，不重复用户教程。
 - 未实现内容只进入 `engineering/proposals/`。
 - 当前文档不保存迁移过程或旧 API 清单；历史由 Git 保存。
-
-收益：用户和 agent 不会从历史方案推导出错误的当前 API。

@@ -155,7 +155,7 @@ await host.start(S3Plugin, {
 ```
 
 省略 `namespace` 时使用当前 `S3Plugin` 的 Vault namespace；default bucket 的 `key` 默认是 `s3.credentials`，其他 bucket 默认是
-`s3.<bucket-id>.credentials`。provider 在 `init()` 中为每个 remote/vault bucket 读取一次 credential snapshot。Vault 不可用、key
+`s3.<bucket-id>.credentials`。provider 在 `init()` 中为每个 remote/vault bucket 订阅 credential record，并校验初始 snapshot。Vault 不可用、key
 缺失或对象非法分别以 `S3CredentialsError.reason` 的 `unavailable`、`missing`、`invalid` 失败整个 generation。
 
 Workbench enabled 时，provider 固定发布一个 `S3 buckets` Content，以 bounded rows 显示各 ID 的 local、remote/anonymous 或
@@ -163,7 +163,7 @@ remote/vault；只有选中的 remote/vault bucket 接受一次性 password form
 不访问 Vault。Handler 将 replacement access key 写入当前配置引用的 Vault record，
 并重新检查 authenticated Management principal、当前 generation 与 backend，
 串行执行写入和 `flush()`。Content 不读取或展示旧 credential，新 credential 也不会进入 plan、load、action result 或日志。
-保存后仍需通过正常 Plugin management restart 当前 S3 generation，新的 client 才会读取 replacement。
+保存后新请求使用更新的 client；已发出的请求可继续使用旧 snapshot。record 缺失或非法时，后续 client 访问失败，不回退 anonymous。环境和文件绑定只读；修改绑定源后重启应用。
 
 这条 Content 不能用于首次 provisioning。缺失或非法 record 会让 S3Plugin 启动失败，而失败 generation 的 Workbench publication
 必然回滚；宿主必须在启动前写入 credential。不要为了显示 setup Content 让 S3 capability 半启动，也不要另建脱离 Plugin owner

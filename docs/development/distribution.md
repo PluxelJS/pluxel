@@ -126,13 +126,7 @@ statement 是 in-toto Statement v1，唯一 subject 是 manifest 原始 bytes �
 
 `pluxel-distribution.dsse.json` 被 manifest 明确排除，因此可在 create 后写入而不使 inventory 失效；不要在签名后修改其他 artifact。V1 不实现 threshold、certificate chain、transparency log、revocation 或 trusted timestamp，需要这些保证时由外层 release system 提供。
 
-## 发布门禁
+## 交付验证
 
-1. 在干净 staging 目录完成所有构建和可选 marker。
-2. 最后一次写入后执行 `distribution create`。
-3. 在隔离流水线对 manifest statement 的 PAE bytes 签名。
-4. 用独立配置的 trusted public key 执行 `distribution verify`。
-5. 将目录复制/归档后，在解包副本上再次 verify。
-6. 将 verification report、private delivery record 和可信时间证据保存在 distribution root 外。
-
+将最终目录复制或归档后，在安全解包的副本上再次执行 `verify`。Verification report、private delivery record 与 trusted key 均留在发行目录外。
 Dynamic workspace 是可变 source graph，不生成这种 artifact manifest。公开 raw schema 位于 `@pluxel/rolldown/distribution/schema.json`。

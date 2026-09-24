@@ -63,8 +63,6 @@ class BillingPlugin extends BasePlugin {
 同一个 Plugin definition 不能在一个 constructor 中重复声明。dependency override 按 requirement definition 识别依赖，参数名和位置不会成为
 持久配置；如果需要 primary/replica 这类双角色，应先定义具有不同语义身份的 Plugin token，而不是重复同一个参数类型。
 
-provider 启动失败时，consumer 不会拿到一个半可用实例：consumer 被标记为 blocked，其他无关分支仍可以继续运行。
-
 注入值是绑定 consumer caller Context 和当前 provider generation 的轻量 facade。provider replacement 后旧 facade、旧 method
 reference 与旧字段写入都会被拒绝；普通 public field 的读写仍作用于 provider 自己的实例，不会在 consumer 侧形成影子字段。
 
@@ -125,7 +123,7 @@ provider absent、当前未运行或 start-failed 时 callback 不执行，也�
 连接管理、缓存和同步任务需要各自的配置与清理，但始终跟随同一个 Plugin 启停时，使用 `PluginPart`。
 这里的 owner 就是包含这个 Part 的插件；Part 不会变成可单独启停或被其他插件注入的新节点。
 
-从[使用 PluginPart](./plugin-parts.md)的最小缓存例子开始。没有这些资源需求时，普通函数或类即可。
+完整缓存示例见[使用 PluginPart](./plugin-parts.md)。没有这些资源需求时，普通函数或类即可。
 
 ## Generation 是资源所有权边界
 
@@ -141,8 +139,6 @@ protected override async init(signal: AbortSignal) {
 	await client.connect({ signal })
 }
 ```
-
-创建成功后立即登记 cleanup。这样即使后续启动检查失败，已经创建的资源也会被释放。
 
 ### 选择 effects primitive
 
@@ -168,27 +164,8 @@ cleanup 必须幂等，并在 Promise resolve 前真正停止底层工作。只�
 
 ## `init()` 的职责
 
-`init()` 做三件事：
-
-1. 验证插件是否真的能提供能力；
-2. 注册 HTTP、commands、Workbench 等 owner-bound capability；
-3. 启动并登记长期资源。
-
-必要上游不可达、schema 不匹配或凭据无效时直接抛错：
-
-```ts no-twoslash
-protected override async init(signal: AbortSignal) {
-	const pool = createPool(this.config)
-	this.ctx.effects.defer(() => pool.end())
-
-	await assertReachable(pool, { signal })
-	await assertSchemaVersion(pool, EXPECTED_SCHEMA_VERSION)
-}
-```
-
-不要捕获启动错误后只写日志继续运行。那会制造“runtime 显示 running，但能力不可用”的半启动状态。
-
-`init()` 可以返回 cleanup/disposable；它同样会进入当前 generation effects。复杂启动流程优先在每个 acquire 后立即登记，避免只在函数末尾返回一个覆盖不完整的 cleanup。
+校验必要上游与凭据，注册能力，启动长期资源。无法提供能力时直接抛错，不捕获后只写日志继续运行。
+`init()` 可以返回 cleanup/disposable；有多步资源获取时，在每次获取成功后立即登记，确保部分初始化失败也能清理。
 
 ## 调用失败和生命周期失败
 
@@ -238,8 +215,6 @@ module augmentation 只合并 TypeScript 事件词汇，不会 import、安装�
 
 如果事件属于某个 provider 的公开能力，consumer 必须依赖该 provider，或者 availability 会影响 consumer lifecycle，则公开
 具名 `EvtChannel`，不要把依赖伪装成 ambient 广播：
-
-事件集合在设计时已知时，公开命名的 `EvtChannel`，不要重新实现字符串 registry：
 
 ```ts twoslash
 import { BasePlugin, EvtChannel, Plugin } from '@pluxel/core'

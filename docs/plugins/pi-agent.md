@@ -39,10 +39,6 @@ await host.start(PiAgentPlugin, {
 })
 ```
 
-这里的 `host` 是 `createTestHost()` fixture，`initialConfig` 只用于首次 lifecycle；production deployment 通过 ConfigService
-管理相同 records。AgentTools assignment 用作 Pi 的 tool setup。模型 credential 不进入普通 Plugin config；Pi `ModelRuntime`
-从标准 Pi credential store 读取。省略 `model` 时由 Pi 解析已配置的默认可用模型。
-
 开始前先配置 Pi 支持的模型凭据，并确认 `NotesPlugin` 已注册 Toolset 中的命令。装配成功后执行下面的会话，检查是否收到 `text_delta`，以及 `researcher` 只发现读取工具；模型调用错误从 `prompt()` 的结果或异常处理。
 
 ## 创建会话

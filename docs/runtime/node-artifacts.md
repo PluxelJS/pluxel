@@ -49,7 +49,7 @@ export function setup({ logger }: { logger: { info(message: string): void } }) {
 
 启动插件后应看到 `rules module ready`；停用插件后应看到释放日志。
 
-`defineNodeModule()` 只声明 entry，不创建线程。`ctx.nodeModules.use()`：
+`defineNodeModule()` 只声明 entry，不创建线程。`ctx.require(NodeModules).use()`：
 
 - 等待 artifact 首次可用和 setup 完成；
 - setup/import 失败会让 Plugin `init()` 失败；
@@ -161,7 +161,7 @@ borrowed 模式在 queue 中保留 caller graph，因此 mutation 会改变尚�
 如果 domain budget walk 或 snapshot 本身较重，先用共享 queue admission，再准备输入：
 
 ```ts no-twoslash
-return this.ctx.workers.runPrepared(
+return this.ctx.require(Workers).runPrepared(
 	renderTask,
 	async (signal) => {
 		await assertBoundedDeclarativeGraph(option, signal)

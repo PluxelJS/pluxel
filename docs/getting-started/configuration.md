@@ -74,7 +74,7 @@ export class WorkerPlugin extends BasePlugin {
 
 ## 宿主如何设置配置
 
-日常手动配置使用 Workbench；以下 `host` 指 [服务测试宿主](../development/testing.md)，适合检查初始值和更新结果。
+日常手动配置使用 Workbench；以下 `host` 指 [插件测试宿主](../development/testing.md)，适合检查初始值和更新结果。
 正在运行的开发应用应通过 [开发控制台](../development/dev-console.md)修改配置。
 测试中，首次启动可以传入 `initialConfig`：
 
@@ -118,64 +118,11 @@ reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存
 构造器和其他字段初始化器中提前读取会被构建检查拒绝。
 `configs` 只在 Plugin/Part 子类内部使用；测试和宿主通过配置 API 操作，不直接改实例字段。
 
-## 默认值只写一次
+## 默认值与读取时机
 
-默认值只由 schema 提供。下面是正确写法与重复 fallback 的对照：
-
-```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
-import * as v from 'valibot'
-
-declare function request(options: { timeoutMs: number }): Promise<void>
-
-const Config = v.object({
-	timeoutMs: v.optional(v.number(), 5_000),
-})
-
-@Plugin({ displayName: 'Worker' })
-class WorkerPlugin extends BasePlugin {
-	private readonly config = this.configs.use(Config)
-
-	async run() {
-		// 直接读取 schema 已补全的默认值。
-		await request({ timeoutMs: this.config.timeoutMs })
-
-		// 避免再次补默认值：这里会与 schema 的默认值重复。
-		await request({ timeoutMs: this.config.timeoutMs ?? 5_000 })
-	}
-}
-```
-
-同样，trim、枚举映射、范围限制和 cross-field validation 应在 schema 中表达。这样 CLI、runtime、测试和配置 UI 看到的是同一个 contract。
-字段标题、说明和展示偏好集中写入 `f.formMeta({ title, description, ... })`。它产生 Valibot 标准 metadata；requiredness、
-格式和范围仍由 `v.optional()`、`v.url()`、`v.minValue()` 等 schema/validation action 表达。
-
-## 何时可以读取配置
-
-runtime 在实例构造完成后、`init()` 开始前注入并校验 config，所以只在 `init()` 或更晚的方法中读取：
-
-```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
-import * as v from 'valibot'
-
-const ReportsConfig = v.object({ endpoint: v.string() })
-declare function createClient(endpoint: string): { close(): void }
-
-@Plugin()
-export class ReportsPlugin extends BasePlugin {
-	private readonly config = this.configs.use(ReportsConfig)
-
-	// 错误：field initializer 运行时尚未完成 config injection。
-	// private readonly client = createClient(this.config.endpoint)
-
-	protected override init() {
-		const client = createClient(this.config.endpoint)
-		this.ctx.effects.defer(() => client.close())
-	}
-}
-```
-
-constructor 只声明 required Plugin dependency，不读取 config，也不创建依赖 config 的资源。
+默认值、trim、范围和跨字段校验统一写在 schema 中；业务代码直接使用校验结果，不再加 `?? default`。
+字段标题和说明用 `f.formMeta()`；必填、格式和范围由 Valibot 表达。
+配置在构造完成后、`init()` 前注入。依赖配置的连接在 `init()` 中创建，并立即登记 cleanup；constructor 和其他 field initializer 不读取配置。
 
 ## 让运行中的 Plugin 接收配置更新
 
@@ -400,12 +347,7 @@ Plugin generation。
 
 使用 [配置 Playground](../workbench/configuration-playground.md) 可编辑 schema、操作生成的表单，并比较原始输入与 Valibot 输出。完整 metadata 与 React adapter 见 [Valibot 配置表单](../workbench/valibot-form.mdx)。浏览器表单只是编辑界面；提交到宿主后仍必须由 server runtime 使用同一个 schema 校验。
 
-## 检查清单
+## 验证
 
-- schema 产出一个 object，且每个 Plugin/Part class 只声明一次 `configs.use()`。
-- 所有默认值和 normalization 都在 schema 中。
-- normalized output 是无环、可持久化的 plain object/array tree。
-- constructor 与 field initializer 不读取 config。
-- secret 没有进入普通 UI/config/log contract。
-- 测试覆盖默认值、边界值、非法值和 transform 后的 output。
-- schema 变化后重新运行 build，确认提取 metadata 与 Workbench 表单一致。
+测试默认值、非法输入、归一化输出，以及保存后实际 `application` 状态；schema 变化后重新构建并检查标准配置表单。
+用 [inspect](../development/inspection.md) 定位 schema 与应用绑定，用[开发控制台](../development/dev-console.md)核对当前生效值。

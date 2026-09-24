@@ -99,6 +99,9 @@ describe('StatusPlugin', () => {
 
 		expect(response.status).toBe(200)
 		expect(await response.json()).toMatchObject({ label: 'healthy', samples: 0 })
+		await host.stop(StatusPlugin)
+		const stopped = await host.http.fetch(new URL('/status', host.http.origin))
+		expect(stopped.status).toBe(404)
 	})
 })
 ```

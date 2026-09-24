@@ -5,22 +5,7 @@ Workbench 不得成为 Plugin 核心能力的启动前提。
 
 ## 固定边界
 
-- `@pluxel/services/management/client`：portable host session、Management API 与严格校验的 DTO；
-- `@pluxel/services/management/react`：Management client 的 React Context adapter；
-- `@pluxel/workbench`：Content/View/Attachment definition；
-- `@pluxel/workbench/client`：layout、portable Content plan/presentation 与 opened entry handle validation；
-- `@pluxel/workbench/react`：descriptor-bound renderer scope、query/mutation、低层 exact descriptor hook、host facade 和 Pane Kit；
-- `@pluxel/workbench/federation`：Shell-owned MF Runtime 和 View activation orchestration。
-- `@pluxel/workbench/internal/react`：toolchain-generated React Bridge wrapper ABI，不是作者入口。
-
-普通 Plugin UI 的 renderer-specific `*.scope.ts(x)` 是唯一可以 value-import 自己 Workbench definition 的 module；renderer graph
-内的 page/panel 只 import scope/resource，跨 renderer shared component 只接收普通 props/data。低层
-`useWorkbench(exactDescriptor)` renderer 可改由 default entry 作为唯一 direct definition boundary。Browser contract 可以
-type-only import。UI 不能 import Plugin implementation、Context、database schema/handle、Node builtin 或 secret。Toolchain
-独立构建每个含 renderer 的 Plugin definition 的 UI producer，验证 scope/entry 绑定 exact descriptor，并把该 import 改写成
-browser-only projection。Projection 保留 exact View/Attachment API types，但 generated JS 不执行 source definition，也不把同一
-definition 中 Content 的 schema、handler 或 server imports 带进 browser graph。Content Markdown 在 build time 降为 portable
-plan，也不进入 browser module graph。
+Management client/react 拥有认证会话与管理 DTO；Workbench client/react/federation 拥有 layout/opened handle、per-open renderer 和 activation。Definition、browser-safe projection、MF singleton 与 Bridge contract 统一见 [WORKBENCH](WORKBENCH.md)，本页只记录 Shell 的状态与 UI 所有权。
 
 ## 一个 document，一条 session
 
@@ -107,65 +92,11 @@ lane 返回 busy；带 `confirm` 文案的 action 先用 host confirm。Dialog/e
 validation issues 映射到字段；validation/domain/unexpected failure 保留 draft，成功清理。Content close 后 observer 和 late unary result
 都不能更新 React state。
 
-每个 expose 是标准 React Bridge application。Toolchain 生成 wrapper，wrapper 把 opened handle 和 host facade 放入
-per-Bridge React Context，再渲染 Plugin 默认导出的零 props component。Plugin 用 renderer-specific scope 绑定默认 entry：
-
-```tsx
-// settings.scope.ts
-import { createWorkbenchRenderer } from '@pluxel/workbench/react'
-import { SettingsWorkbench } from '../workbench.js'
-
-export const settingsScope = createWorkbenchRenderer(SettingsWorkbench.settings)
-export const settingsQuery = settingsScope.query(({ api }) => ({
-	queryKey: ['settings', 'snapshot'] as const,
-	queryFn: () => api.snapshotDto(),
-	workbench: {
-		subscribe: ({ invalidate }) => api.watch(invalidate),
-	},
-}))
-
-// settings.tsx
-import { SettingsPage } from './settings-page.js'
-import { settingsScope } from './settings.scope.js'
-
-export default settingsScope.render(SettingsPage)
-```
-
-Scope/resource 是 module-scoped declaration；每次 `render()` Bridge mount 创建独立 renderer owner 和私有 Query Core client，
-持有当前 exact roots/host、subscription 与 close state。相同 descriptor 或 parameterized route 同时打开多次，也不会跨
-handle、params、principal、session 或 owner generation 共享 cache。Query result 在进入 cache 前完成 portable validation、
-原地 deep freeze、transport 元数据移除和 top-level result disposal；带 watch 的 snapshot 必须 subscribe-before-read，读取期间的 invalidation 合并成
-一次 follow-up。Renderer close 停用 controls、subscription 和 cache，晚到 RPC 只完成 consume/dispose，不能提交 React state。
-
-公开 query/mutation options、默认值、错误码、inactive controls 与 typed invalidation 只由
-[`docs/workbench/index.md`](../docs/workbench/index.md) 定义；本文件不重复维护作者 API 教程。Frontend 实现只要求这些公共语义
-映射到 per-open owner，且不向 Remote 暴露 raw QueryClient、cache、socket 或 document-global client。
-
-`useWorkbench(exactDescriptor)` 同时完成 TypeScript API 推导和 runtime declaration identity 校验，并与
-`useRemoteValue()` / `createRemoteValue()` 一起保留为高级 escape hatch。后两者仍是 Plugin-owned `read()`/`watch()` 的小型
-client snapshot owner：
-
-- 先建立 optional subscription，再首次读取，避免初始窗口丢失 invalidation；
-- 合并 reading 期间的 invalidation；
-- error 不引入自动 reconnect 或全局 cache；
-- dispose subscription 并拒绝 late read 覆盖；
-- awaited object DTO 使用 `consumeWorkbenchValue()` 接管并校验数据、原地深冻结、移除和释放 transport result。
-
-Plugin 可以围绕自己的 API 写领域 callback、progress/cancel 或 lossless stream helper，但 Workbench 不提供查询语言、
-跨 renderer cache、collection store 或通用 event model。Remote 不取得 wrapper props、raw socket、MF Runtime、Shell
-router/store 或官方 App private Context。
+Renderer 每次 Bridge mount 都有独立 owner 与 cache；Shell 不共享其 QueryClient，也不把 transport-owned capability 放入 React state。公开 resource API、Provider/CSS 与 DTO consumption 见 [renderer resources](../docs/workbench/renderer-resources.md)；其生命周期约束见 [WORKBENCH](WORKBENCH.md#renderer-resource-与撤回)。
 
 ## Host facade
 
-Remote 只得到：
-
-- appearance：`locale`、`colorScheme`；
-- feedback：`notify()`、`confirm()`；
-- relative navigation：`navigate()`、`openDocument()`；
-- parameterized document：server-matched params、dirty marker、display title；
-
-`navigation` 和 `document` 在不适用的 frame 中为 `null`。所有 path 都重新规范化，Remote 不能导航任意宿主 URL。
-Document dirty/title registration 属于 per-open host handle；View close 时幂等撤销。
+Remote 只得到固定 appearance、feedback、受限 relative navigation、document 状态与显式借用的 unary Management 操作。Navigation/document 不适用时为 null；路径重新规范化，dirty/title registration 随 per-open handle 撤销。它不取得 raw socket、MF Runtime、Shell store 或私有 Provider。
 
 ## Pane Kit 与 Workspace
 
@@ -193,24 +124,13 @@ Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写�
 
 ## Module Federation policy
 
-每个 Workbench document 只有一个 MF Runtime。Shell 先建立 exact singleton shared winners，再以 `loaded-first` 按需注册 producer：
+每 document 只有一个 MF Runtime。Shell 建立 fixed shared winners 后才按需加载 exposes；未打开的 View 不请求其 expose，Content-only 不产生 producer。完整 shared、CSS、candidate 与更新契约见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Frontend 不实现页内 revision swap 或 old-remote fallback。
 
-- React/ReactDOM 及其实际 subpaths；
-- `@mantine/core`、`@mantine/hooks`；
-- `@module-federation/bridge-react`；
-- `@pluxel/workbench`、`/client`、`/react`。
-- `@pluxel/workbench/internal/react`。
+## 内置编辑器滚动与目录
 
-Plugin 不能修改 share scope、runtime plugin、manifest resolution 或 fallback。Mantine 基础 CSS 由 Shell 唯一加载，remote
-只创建自己的 `MantineProvider`；producer 不得重复导入 Core stylesheet。其他 UI/领域依赖由 producer 自己 bundle。
-未打开 View 不请求其 expose；一个 Plugin definition 的多个 Views 共用 producer，但按 expose/chunk 延迟加载。
-Content-only Plugin 没有 producer，不参与 shared compatibility 或 Bridge activation。
-`@tanstack/query-core` 是 renderer owner 的内部实现依赖，不进入这个 fixed shared set。
+中部、概览和底部各自拥有受限高度的滚动容器，页签栏不参与滚动。概览与目录是右侧独立视图；目录搜索框固定，列表滚轮不向外传播。
 
-Development Content/UI update 先发布 topology/Content；缺失 producer 在后台构建，未就绪 View 保留 layout 位置并显示
-building 状态。后台 producer 成功后提交完整 tuple 并触发完整 document reload；失败不推进 producer inventory，而是
-显示 failed 状态和安全错误 message。Production/static build 仍要求完整 immutable candidate 一次性通过验证。Frontend 不实现
-页内 remote revision swap 或 last-known-old fallback。
+目录是否可用由当前编辑器的 config anchors / Markdown headings 决定，不靠 scrollHeight。非活动编辑器撤回目录 claim，portal 只属于当前 Plugin Workbench。FormToc 与 ContentOutline 只读取自己的文档，不扫描其他编辑器或 federated renderer DOM。
 
 ## React state correctness
 

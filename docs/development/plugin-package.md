@@ -170,6 +170,8 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 - config schema source；
 - 可选 Workbench Content artifact、MF2 producer 与 Node/worker/database artifacts。
 
+Reachable Part 的 constructor requirements 自动聚合到所属 Plugin，同一 provider package 去重且 required 覆盖 optional；未挂载 Part 不计入清单。外部预构建 Part 由其自己的包声明 provider peers，consumer 不复制传递 inventory。
+
 构建失败不会提交部分 metadata。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
 
 ## 已安装包的开发期界面
@@ -196,14 +198,7 @@ Workbench 的声明和 API 类型放在可供浏览器导入的 `workbench.ts`�
 Content-only package 不加载 Federation builder、不生成 remote entry，也不要求 React/Mantine compatibility；schema 与 handler
 只存在于 server binding。完整 View 的 browser graph 不得导入 Node builtin、database handle、secret 或 Plugin implementation。
 
-`pluxel build` 在 TypeScript 擦除前提取 owning Plugin definition、entry key 和 literal source，生成一个标准 MF2
-producer、每个 declaration 的 React Bridge expose 和 `mf-manifest.json`。作者不手写 remote name、expose、shared
-或 Bridge wrapper。Server bundle 与 browser producer 分离。
-
-同一 definition 可以同时含 Content 与 View；发布包和 static/distribution build 中，两类 artifact 必须全部构建成功后再作为
-一个 revision 提交。开发 host 会先发布 Content/topology，再在后台补齐缺失 producer；未就绪 View 显示构建中，
-producer 失败时在对应位置显示错误。
-没有 renderer declaration 时，不加载 Federation builder，也不创建 producer。
+带 renderer 的包由工具链生成 MF2 producer、React Bridge 和 manifest；作者不手写 shared/expose。发布与 static build 要求 Content 和 renderer 制品一起构建成功，开发期状态见[工作台故障](../workbench/operations.md#生命周期和故障)。
 
 ## 数据库与 Node artifacts
 

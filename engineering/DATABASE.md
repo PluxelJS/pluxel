@@ -1,7 +1,6 @@
 # Database Architecture
 
-插件数据库是 `@pluxel/services/database` 的常驻 capability。PostgreSQL 是唯一 SQL dialect，Drizzle 是唯一作者查询界面；
-未配置宿主使用 root-scoped lazy PGlite，显式配置时使用共享的有界 `pg` pool。
+`@pluxel/services/database` 是显式安装的 capability；`standardServices()` 与 `servicesPreset()` 都不默认安装。PostgreSQL 是唯一 SQL dialect，Drizzle 是作者查询界面。用法见 [数据库指南](../docs/runtime/database.md)。
 
 ## Author boundary
 
@@ -25,12 +24,9 @@ transaction 中确认 instance 仍 active，再设置 instance role、`search_pa
 
 ## Backend ownership
 
-- 配置省略：在 host persistence root 下 lazy 创建一个共享 PGlite；
-- `{ driver: 'pglite', dataDir }`：显式本地位置，测试可使用 `memory://`；
-- `{ driver: 'postgres', connectionString, pool, tls }`：共享远端 pool；
-- `false`：完全关闭，任何 `use()` 都使对应 plugin 启动失败。
+`database({ backend })` 要求应用提供 backend factory：本机开发/测试选择 `/database/pglite`，部署选择 `/database/postgres`。两个 factory 彼此不引用，通用入口不加载 driver。未安装 descriptor 时，`ctx.require(Database)` 报标准 capability 缺失错误。
 
-没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox backend。PGlite 是本机开发/测试默认；它的持久目录只支持正常关闭后的便利重启，不是部署存储 contract。
+没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox。PGlite 使用单个 root-scoped instance，测试可用 `memory://`；持久目录只支持正常关闭后的便利重启，不是部署存储 contract。PostgreSQL 使用共享、有界 pool。
 
 Pluxel 不计划通过 filesystem flush 或 fault-injection 验收把 PGlite 提升为 production backend。生产并发、锁、deadlock、pool exhaustion 和 connection-loss 门禁必须运行在真正 PostgreSQL。
 
@@ -92,6 +88,4 @@ operation 排空；内部 invalidation listener 随 owner cleanup 撤销。同 l
 `database({ backend })` 安装 owner-only capability；backend 为 Host 独占的 lazy adapter factory。
 PGlite 与 PostgreSQL 工厂分别从 `@pluxel/services/database/pglite` 和 `/postgres` 导入，彼此不引用；
 通用入口不包含 driver 选择或 driver import。应用显式安装其所选 driver，Services 仅声明 optional peers。
-Runtime 保留旧 `database`/`persistence` 配置的默认路径转换，并组合这些工厂，不拥有第二套数据库实现。
-`database: false` 在 Runtime 中省略 descriptor，Plugin 通过 `ctx.require(Database)` 得到标准 capability 缺失错误。
 acquire 与 cached handle read/transaction 都进入 Core root/owner invocation lease；Host 关闭先排空已接受的操作，再关闭 adapter。

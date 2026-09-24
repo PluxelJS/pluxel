@@ -16,8 +16,3 @@ icon: Image
 | [Takumi](./takumi.md)                                | 使用 Fonts 可移植字体从 HTML/node tree 生成图片或 SVG |
 | [Markdown](./takumi-markdown.md)                     | 将 GFM Markdown、表格和固定代码高亮渲染为 Takumi 图片 |
 | [Typst 数学](./takumi-markdown.md#可选的-typst-数学) | 可选地把受限数学公式编译为 Markdown 中的 SVG 数学资产 |
-
-只需要字体管理时安装 `@pluxel/fonts`；命令式绘图使用 Fonts 与 Canvas；服务端图表再加入 ECharts；
-HTML/CSS 图片使用 Fonts 与 Takumi，不要求 Canvas/ECharts。需要文档、GFM 表格或静态代码块时再加 Markdown；需要受限数学时才加 Typst。
-具体配置和 API 见[服务端字体](./fonts.md)、[服务端 Canvas](./canvas.md)、[服务端 ECharts](./echarts.md)、
-[Takumi HTML 图片渲染](./takumi.md)和[Markdown / Typst 图片渲染](./takumi-markdown.md)。

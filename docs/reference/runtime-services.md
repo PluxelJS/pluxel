@@ -311,28 +311,13 @@ Core 基础作者入口固定提供；清单中的其他入口必须能从应用
 
 官方 `@pluxel/services/build` 已包含默认服务的共享入口，Workbench variant 还包含 Workbench 作者入口；无需手写这份配套清单。需要自定义服务的动态插件时，`sourceFrameworks` 在官方清单上追加入口，例如 `buildPreset({ sourceFrameworks: ['@acme/service'] })`。应用仍须独立安装对应服务。
 
-开发更新结果可从 `host.status()` 的 `recentUpdate` 和 Management 更新订阅读取，无需额外配置 reader。
-候选加载失败时保留上一版本；整应用替换失败后会尝试从上一次成功声明建立新 Host，并报告补偿结果。
-首次启动或补偿失败且没有可用 Host 时记录 `failed`，不会报告为已保留或恢复旧版本。
+开发更新状态见 `host.status().recentUpdate` 或 Management 更新订阅，恢复语义见[HMR 失败与自动恢复](../development/tooling.md#hmr-失败与自动恢复)。
+动态 watcher 或恢复通知失败同样记录原始错误；已有 Host 仍运行时可报告 `retained-previous`，但这不保证失效 watcher 自动重建。首次应用求值失败、尚无 Host 时，先修复 Vite 日志中的错误，不能使用控制台查询。
 
-动态来源 watcher、缺失依赖恢复 watcher 及恢复通知失败也进入同一份应用更新记录，并保留原始错误到日志。
-这类失败不会把所有已运行插件标成启动失败；现有 Host 仍运行时报告 `retained-previous`。
-更新记录表示最近一次尝试，不是 watcher 健康检查：后续更新成功可以覆盖该记录，不承诺失效 watcher 会自动重新建立。
-
-官方 `vitePreset()` 同时提供服务所需的数据库声明转换，将已校验的迁移事实注入 `defineDatabase()`；
-通用 `host()` 保持 Core 源码工具链，需要手工组合数据库开发能力时显式添加 `databaseSourceVitePlugin()`。
-
-控制台查询需要已有可用 Host；如果应用首次求值就失败、尚未建立 Host，先查看 Vite 日志并修复源码。
-这与已有 Host 的空插件目录不同：后者仍可执行控制台脚本并读取应用级更新结果。
-
-动态 entry 首次加载就有语法错误或缺失依赖时，修复 entry 或补齐依赖即可再次尝试，无需先有已启动插件。
-单个 entry 的语法修复保持无关服务与插件代继续运行。执行来源仅在工具链有明确事实时标为源码或构建模块；
-未观察到元数据的安装包保持 `unreported`，其动态更新范围仍明确为 entry-only。
+官方 `vitePreset()` 包含 Database 声明转换；自定义开发组合使用 `databaseSourceVitePlugin()`。
 
 ## 包依赖与共享实例
 
 应用显式提供使用到的 Core、Host、Services 等框架 peer，以保证能力 token、Context 和编译 ABI 使用同一实例。optional peer 仅在启用对应入口时需要，例如 Workbench、Vite 与构建工具。普通实现依赖由所属包安装。
 
 Core 拥有插件内核，Host 拥有应用与动态来源，Services 拥有官方服务及其组合，Workbench 拥有 UI 能力与 Shell。Logging、Management 和 preset 是 Services 的领域入口，不需要分别安装包。Services 的可选 Workbench 组合与 Workbench 使用的 Services 协议允许包级相互引用；具体模块不能依靠循环初始化，也不能从基础入口加载未选择的后端。插件集成测试宿主使用 `@pluxel/test`。
-
-Workbench renderer 的语法或语义候选被拒绝时，查看应用更新报告中的 `retained-previous` 与原始错误，上一已接受制品继续可读；只有已接受计划的后台构建失败才显示 producer `failed`。Hot update 错误同时写入所选 Host 日志并交给 Vite。

@@ -4,7 +4,7 @@
 
 ## Ownership 与包边界
 
-`host({ entry, devConsole: true })` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 SSR ModuleRunner 求值，并借用当前 Host root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
+`host({ entry, devConsole: true })` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 `pluxel` environment ModuleRunner 求值，并借用当前 Host root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
 
 - `@pluxel/host-dev/console`：独立脚本类型、typed targets、稳定错误与借用的 `RootContext`。
 - Host-dev：每 run 的基础插件/配置操作、执行队列、源码加载、IPC、Vite 更新 barrier、host epoch 与清理。其中宿主操作仅依赖 Core/Host；控制台不依赖官方服务或其 optional peers。
@@ -14,7 +14,7 @@
 
 Dev API 不继承 RuntimeTestHost。插件与基础配置操作直接委托 Host，不要求 Management，不复制其协议或展示层。服务操作使用各包现有公开契约，不注册控制台适配器或修改 Context shape。
 
-Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回归使用 test host。交互按“发现实例 → 固定 root/instance → 提交普通 TypeScript export → 检查执行状态、领域结果与日志”组织，具体步骤以用户指南为准。跨命令保留业务 ID、runId 和 JSON cursor，不把 live Plugin/Workbench handle 当作持久会话状态。Workbench 操作使用领域包的 `openLocalWorkbenchEntry(dev.ctx, { target, entry, principal, signal })`；真实 descriptor 推导 RPC 类型，项目提供 principal，脚本用 `using` 持有 entry，并通过 `consumeWorkbenchValue` 释放结果 transport 后返回普通数据。CLI 或未来编辑器必须保留实例身份与运行结果，不能把请求接纳、脚本完成或领域操作成功混为同一状态。
+跨命令只保留业务 ID、runId 与 JSON cursor，不持久化 live handles。Workbench 操作复用领域包的 `openLocalWorkbenchEntry()` 与 portable value consumption；CLI/编辑器必须分别保留请求接纳、脚本终态和领域结果，不能把它们合为一个 success。
 
 ## 提交与执行
 
@@ -28,7 +28,7 @@ Coding agent 对已运行应用的诊断和修改使用此控制台；隔离回�
 
 ## Vite 更新与执行边界
 
-每个 Vite server 只有既有 SSR runner；不追加一次性 query ID 创建无限 namespace，不全量 clearCache，不建立第二套 import cache。运行未改变的导出函数可以直接复用模块。
+每个 Vite server 只有既有 `pluxel` environment runner；不追加一次性 query ID 创建无限 namespace，不全量 clearCache，不建立第二套 import cache。运行未改变的导出函数可以直接复用模块。
 
 每次调用先核对已知依赖版本。尚未观察的修改等待真实 Vite watcher 在 route 同步入队时确认，再等待有限 barrier；此等待受 run signal 与 deadline 约束。等待范围覆盖统一开发驱动已经接纳的源码与来源更新序列。不以全局 idle 或 sleep 模拟源码已应用。
 

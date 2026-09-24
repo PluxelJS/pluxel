@@ -3,8 +3,6 @@ title: Vault：凭据与结构化记录
 description: 选择 Vault 后端，绑定部署凭据，并读写带版本的私有记录。
 ---
 
-# Vault：凭据与结构化记录
-
 Vault 存放 API key、账号 token 和需要加密的业务状态。普通运行设置留在 Plugin config，通过账号 ID 引用 Vault 记录；插件只读取自己的记录，不读取整个环境。
 插件自行读写私有 KV 时不必声明 Vault 根 schema；只有宿主从环境变量或 JSON 文件安装部署凭据时才需要它。
 
@@ -141,4 +139,4 @@ vault({
 
 Root 通过 `VaultAdmin` 管理解锁、宿主密钥和部署 recipients。`rekey()` 原子重写密钥 envelope，数据密钥与密文内容保持；失败保留先前可用数据。部署私钥由宿主显式输入，不放入 Plugin config、日志或 UI。
 
-备份与回滚应在 Host 停止后整体复制 Persistence 的 `vault` namespace：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。保留迁移前副本可以恢复原格式与原 namespace。不要分别恢复不匹配的 key envelope 与数据文件；本轮不提供跨进程 writer 或跨 config/Vault 事务。
+备份与回滚应在 Host 停止后整体复制 Persistence 的 `vault` namespace：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。保留迁移前副本可以恢复原格式与原 namespace。不要分别恢复不匹配的 key envelope 与数据文件；不支持跨进程 writer 或跨 config/Vault 事务。

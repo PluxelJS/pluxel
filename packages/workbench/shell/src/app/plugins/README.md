@@ -31,12 +31,3 @@ This directory is the frontend surface for plugin browsing, detail, config, and 
 
 5. Shared code must be truly shared.
    If only one area uses it, keep it local to that area.
-
-## LLM Edit Protocol
-
-When editing plugin UI:
-
-1. Decide whether the change belongs to `catalog/`, `detail/`, `config/`, `pluginOverview.tsx`, or `pluginStatusActions.ts`.
-2. Change the narrowest layer first.
-3. Prefer deleting compatibility wrappers instead of adding new ones.
-4. Add a new folder only when at least two files would immediately live under it.

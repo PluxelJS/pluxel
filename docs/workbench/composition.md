@@ -121,114 +121,9 @@ export default settingsScope.render(HttpSettingsPanel)
 
 ## 官方 FontsPlugin：先用 provider-only
 
-`@pluxel/fonts` 是这套模型的官方参考实现。它的真实需求是：
+[FontsPlugin](../plugins/rendering/fonts.md) 的 `FontsWorkbench.selection` 是现成示例：Fonts 拥有字体与统一默认 family，Canvas、ECharts、Takumi 只放置同一个选择器。consumer stop 撤销 placement，不删除 Fonts 的数据；关闭 Workbench 也不改变服务端字体能力。
 
-- FontsPlugin 拥有唯一的 managed 字体集合、持久化和 provider-wide 默认 family；
-- Canvas、ECharts、Takumi 只希望在自己的详情页放置同一个选择器；
-- consumer 不拥有另一份选择状态，也不需要修改 FontsPlugin 之外的数据。
-
-因此使用一个管理 View 和一个单方 API 的 Attachment 即可：
-
-```ts
-import type { RpcTarget } from 'capnweb'
-import { workbench } from '@pluxel/workbench'
-
-export interface FontSelectionApi extends RpcTarget {
-	snapshotDto(): Promise<FontSelectionSnapshot>
-	setPreferredFamilyDto(family: string | null): Promise<FontSelectionSnapshot>
-}
-
-export const FontsWorkbench = workbench.define({
-	manager: workbench.view<FontsManagerApi>({
-		renderer: workbench.entry(import.meta.url, './ui/manager.tsx'),
-		placement: workbench.tab({
-			label: 'Fonts',
-			icon: workbench.icons.Typography,
-		}),
-	}),
-	selection: workbench.attachment<FontSelectionApi>({
-		renderer: workbench.entry(import.meta.url, './ui/selection.tsx'),
-	}),
-})
-```
-
-FontsPlugin 只发布自己拥有的两个 API。Factory 每次打开都会返回 fresh target；当前 target 不保留
-subscription 或其他 per-open 资源，因此不需要制造空 disposer：
-
-```ts
-this.ctx.workbench?.publish(FontsWorkbench, {
-	manager: () => this.createWorkbenchManager(),
-	selection: () => this.createSelectionTarget(),
-})
-```
-
-Canvas 等 consumer 仍通过 constructor dependency 获得 `FontsPlugin`，Workbench 只增加 placement：
-
-```ts
-export const CanvasWorkbench = workbench.define({
-	fonts: FontsWorkbench.selection.place(
-		workbench.tab({
-			label: 'Fonts',
-			icon: workbench.icons.Typography,
-			order: 30,
-		}),
-	),
-})
-
-@Plugin()
-export class CanvasPlugin extends BasePlugin {
-	constructor(private readonly fonts: FontsPlugin) {
-		super()
-	}
-
-	override init() {
-		this.ctx.workbench?.publish(CanvasWorkbench, {
-			fonts: { provider: this.fonts },
-		})
-	}
-}
-```
-
-Provider-owned renderer 用 descriptor-bound scope 取得唯一 root：
-
-```tsx
-import { createWorkbenchRenderer } from '@pluxel/workbench/react'
-import { FontsWorkbench } from '../workbench.ts'
-
-export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)
-export const fontSelectionQuery = selectionScope.query(({ provider }) => ({
-	queryKey: ['fonts', 'selection'] as const,
-	queryFn: () => provider.snapshotDto(),
-}))
-export const setPreferredFontMutation = selectionScope.mutation(({ provider }) => ({
-	mutationFn: (family: string | null) => provider.setPreferredFamilyDto(family),
-	workbench: {
-		invalidates: [fontSelectionQuery],
-	},
-}))
-
-function FontSelectionPanel() {
-	const selection = fontSelectionQuery.useQuery()
-	const setPreferred = setPreferredFontMutation.useMutation()
-	// render immutable selection.data and call setPreferred.mutateAsync(family)
-}
-
-export default selectionScope.render(FontSelectionPanel)
-```
-
-阅读官方实现时，重点检查这些可观察的行为：
-
-- manager API 才能上传和删除；selection API 只暴露读取候选和修改统一默认值，调用面没有被 UI 复用扩大；
-- consumer stop 只撤销 placement；字体、preference 和 native registration 继续属于 FontsPlugin；
-- Workbench disabled 时，constructor dependency、字体恢复、注册和渲染路径完全不变；
-- 字体数量变化不会增加 definition、View、Attachment、MF expose 或 WebSocket；
-- RPC 输入的大小、family、容量和持久化失败仍由 FontsPlugin 校验，不额外引入 Workbench schema；
-- Selection UI 没有已证实的实时同步需求，因此 query 不声明 `workbench.subscribe`；mutation settle 后失效 snapshot，Runtime 自动完成
-  portable 校验、原地 deep freeze 与 top-level transport result 释放。
-
-这里的“选择”仍是 provider-wide preference。把选择器放到 Canvas、ECharts 或 Takumi 页面，不会把它变成
-consumer-owned state。完整业务能力见[字体插件](../plugins/rendering/fonts.md)，真实源码位于
-`plugins/render/fonts/src/workbench.ts`、`src/index.ts`、`src/ui/selection.scope.ts` 和 `src/ui/selection.tsx`。
+不要因页面位于 consumer 下，就复制一份 consumer selection。只有 consumer 确实拥有独立设置时，才使用下面的双 API。
 
 ## 多 collection 且 consumer 自有选择
 
@@ -238,100 +133,43 @@ consumer-owned state。完整业务能力见[字体插件](../plugins/rendering/
 - consumer 持久化自己的 `collectionId` 与 fallback policy；
 - picker 同时需要读 provider catalog 和修改 consumer selection。
 
-以下是产品扩展示例，不是官方 FontsPlugin 已有的配置项。数据分别保存在两侧：
-
-- provider 拥有字体资产和 collection catalog；
-- consumer 拥有“当前选择哪个 collection”及自己的 fallback policy；
-- picker UI 需要同时读取 catalog 和修改 selection。
-
-因此 Attachment 声明两个 roots：
+以下是扩展示例，不是官方 FontsPlugin 已有功能。provider 拥有候选，consumer 拥有选择；两个 API 仅暴露各自任务需要的读取与写入：
 
 ```ts
-export type FontCollectionRow = Readonly<{
-	id: string
-	name: string
-	revision: number
-	fontCount: number
-}>
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
-export type FontCollectionSnapshot = Readonly<{
-	id: string
-	name: string
-	revision: number
-	fontIds: readonly string[]
+type CollectionPage = Readonly<{
+	items: readonly Readonly<{ id: string; name: string }>[]
+	nextCursor: string | null
 }>
+type Selection = Readonly<{ revision: number; collectionId: string | null }>
 
-export type FontSelection = Readonly<{
-	revision: number
-	collectionId: string | null
-}>
-
-export interface FontCatalogApi extends RpcTarget {
-	listDto(input: { cursor: string | null; limit: number; query?: string }): Readonly<{
-		items: readonly FontCollectionRow[]
-		nextCursor: string | null
-	}>
-	getDto(input: { collectionId: string }):
-		| Readonly<{ ok: true; value: FontCollectionSnapshot }>
-		| Readonly<{ ok: false; code: 'not_found' }>
-	watch(invalidate: () => void): RpcTarget
+interface FontCatalogApi extends RpcTarget {
+	listDto(input: { cursor: string | null; limit: number }): Promise<CollectionPage>
 }
-
-export interface FontManagerApi extends RpcTarget {
-	listCollectionsDto(input: {
-		cursor: string | null
-		limit: number
-		query?: string
-	}): Promise<Readonly<{ items: readonly FontCollectionRow[]; nextCursor: string | null }>>
-	createCollectionDto(input: { name: string }): Promise<FontCollectionSnapshot>
-	updateCollectionDto(input: {
-		id: string
+interface FontSelectionApi extends RpcTarget {
+	snapshotDto(): Promise<Selection>
+	selectDto(input: {
+		collectionId: string | null
 		expectedRevision: number
-		name?: string
-		fontIds?: readonly string[]
 	}): Promise<
-		| Readonly<{ ok: true; value: FontCollectionSnapshot }>
-		| Readonly<{ ok: false; code: 'conflict' | 'not_found' }>
+		| Readonly<{ ok: true; value: Selection }>
+		| Readonly<{ ok: false; code: 'conflict' | 'collection_missing' }>
 	>
-	removeCollectionDto(input: { id: string; expectedRevision: number }): Promise<
-		| Readonly<{ ok: true }>
-		| Readonly<{ ok: false; code: 'conflict' | 'not_found' }>
-	>
-}
-
-export interface FontSelectionApi extends RpcTarget {
-	snapshotDto(): FontSelection
-	selectDto(input: { collectionId: string; expectedRevision: number }): Promise<
-		| Readonly<{ ok: true; value: FontSelection }>
-		| Readonly<{
-				ok: false
-				code: 'conflict' | 'collection_missing' | 'rejected'
-				current: FontSelection
-		  }>
-	clearDto(input: { expectedRevision: number }): Promise<FontSelection>
-	watch(invalidate: () => void): RpcTarget
 }
 
 export const FontManagerWorkbench = workbench.define({
-	manager: workbench.view<FontManagerApi>({
-		renderer: workbench.entry(import.meta.url, './ui/manager.tsx'),
-		placement: workbench.route('/fonts', {
-			title: 'Fonts',
-			navigation: { label: 'Fonts' },
-		}),
-	}),
 	collectionPicker: workbench.attachment<FontCatalogApi, FontSelectionApi>({
 		renderer: workbench.entry(import.meta.url, './ui/collection-picker.tsx'),
 	}),
 })
 ```
 
-FontManager 发布 manager 和 catalog roots：
+Provider 发布 catalog root：
 
 ```ts
 this.ctx.workbench?.publish(FontManagerWorkbench, {
-	manager: ({ principal, signal }) =>
-		new FontManagerTarget(this.collections.authorizedFor(principal), signal),
 	collectionPicker: ({ consumer, principal, signal }) =>
 		new FontCatalogTarget(this.collections.visibleTo(consumer.node, principal), signal),
 })
@@ -383,70 +221,10 @@ export default collectionPickerScope.render(FontCollectionPicker)
 Provider root 不代理 consumer selection，consumer root 也不转发 catalog。两个 target 各自保留 owner admission 与
 cleanup；任一 owner withdrawal 都会使当前 opened Attachment 和 socket epoch 失效，但错误来源和清理责任仍保持清楚。
 
-## Collection 是领域对象
+## 动态数据与生命周期
 
-`collection` 不是 Workbench 概念。它是 FontManager 自己的普通记录：
+Collection、账号等是 API 返回的领域记录，不按每条记录创建 Workbench entry。列表分页，编辑器需要独立地址时声明一个参数化 route。
+consumer 只保存稳定 ID；删除、冲突与 fallback 由双方领域 API 定义。实际渲染或发送消息仍走 constructor dependency，不依赖页面是否打开。
 
-```ts
-type FontCollection = Readonly<{
-	id: string
-	name: string
-	revision: number
-	fontIds: readonly string[]
-}>
-```
-
-Workbench topology 保持常数：一个 manager View、一个 picker Attachment。1 个或 10,000 个 collections 都不改变
-definition、layout、MF producer/expose 或 WebSocket 数量。
-
-Consumer 只持久化 `collectionId`。实际 render 仍走正常 Plugin dependency：
-
-```ts
-const selected = this.settings.fontCollectionId
-const collection = selected ? this.fonts.resolveCollection(selected) : null
-if (!collection || collection.kind === 'missing') return this.renderWithFallback(input)
-return this.renderWithFamilies(input, collection.families)
-```
-
-Rename 保持 stable ID；delete 后 picker 可投影 `missing`，但 provider 不自动清空所有 consumers。是否 fallback、
-报错还是要求重新选择，是 consumer 的业务政策，不是 Workbench lifecycle。
-
-Manager API 应直接满足管理页，而不是为每一行制造 capability：
-
-- `listCollectionsDto({ cursor, limit, query })` 返回 bounded rows；
-- `createCollectionDto()` 成功时返回完整 snapshot，让 UI 直接进入编辑态；
-- `updateCollectionDto({ expectedRevision, ... })` 返回 success/conflict/not-found；
-- `removeCollectionDto()` 不隐式修改 consumer state；
-- watch 只通知当前 bounded read model 重读。
-
-只有确实需要同时打开多个 collection editor 时，才增加一个 `/collections/:collectionId` View。它仍是一个
-descriptor 和 expose，每个实际打开的 document 才创建 fresh root。
-
-## BotManager
-
-Bot 管理与 FontManager 的结构相同，但动态对象通常是 account：
-
-| 需求                     | 合适的形状                                   |
-| ------------------------ | -------------------------------------------- |
-| 平台总览                 | local View + bounded snapshot                |
-| account 列表/CRUD        | manager View 的分页 API                      |
-| 独立 account editor/logs | 一个 parameterized account View              |
-| 共用 HTTP 设置页         | HTTP provider-owned Attachment               |
-| 另一 Plugin 选择 account | catalog + selection Attachment               |
-| 实际发送消息             | constructor-injected bot platform dependency |
-
-Telegram、KOOK、Discord 可以用普通 TypeScript function 复用相同的 View declaration shape，但每个平台继续拥有
-自己的 Plugin definition、persistence、authentication、factories 和 failure boundary。不要为复用几段 UI wiring 创建
-中心 registry 或可以查找任意 bot provider 的 service locator。
-
-## 判断 Attachment 是否合适
-
-使用 Attachment 前逐项确认：
-
-1. Renderer 的产品和领域 ownership 确实属于 provider。
-2. Placement ownership 确实属于 consumer。
-3. Consumer 已通过 constructor 声明对 provider 的 required dependency。
-4. Provider API 和可选 consumer API 可以独立说明授权、失败和 cleanup。
-5. 动态 rows 不会被误建模成 entries 或 capabilities。
-
-有一项不成立时，通常应改用 local View、普通 shared React component 或纯服务端 Plugin dependency。
+Provider API 与 consumer API 分别校验输入、授权、限制返回规模并清理资源。任一 owner withdrawal 都使当前 Attachment 失效；不能缓存打开的 root 供其他页面复用。
+只想复用布局和按钮时，使用普通 React 组件与 props。

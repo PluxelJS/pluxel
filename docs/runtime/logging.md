@@ -103,7 +103,7 @@ Workbench 修改的是 root-owned plugin log policy，不为每个 Plugin 安装
 
 ## Host logging plan
 
-static/dynamic launcher 提供合理默认值。需要自定义时，host 传入完整 logging plan：
+`servicesPreset()` 安装默认日志方案。自定义时通过它的 `logging` 选项传入完整 plan；自行组合的 Host 使用下文 `logging(plan)` 服务：
 
 ```ts no-twoslash
 logging: {
@@ -133,16 +133,9 @@ logging: {
 
 ## 在 Workbench 查看与归档
 
-Workbench 日志流使用同一份有容量上限的存储。传输中的日志行是普通 JSON-like DTO：缺失的可选字段会省略，嵌套对象不会保留
-`undefined`，Plugin 日志同时携带结构化 node address、稳定 reference 与可读 label，便于界面查询和诊断。Range 响应还会按
-Management session 的物理 WebSocket ceiling 所派生的 payload 预算分页；单条超预算记录保留 identity、message 与精简 error，并
-明确标记 structured payload 已截断。Store、`@pluxel/services/logging` 和 `@pluxel/services/management/client` 共用同一份日志 DTO 类型定义，避免
-producer、校验器与 Workbench 字段漂移。
-
-Workbench 的交互式 range 与 live follow 复用页面唯一、已认证的 Cap’n Web Management session；当前没有平行的 HTTP/SSE
-日志 API。`ctx.require(Http)` 属于某个 Plugin generation 的业务 HTTP application，不拥有 宿主 logging store、Management
-鉴权或 control-plane 生命周期，因此不能用来暴露宿主日志。需要进程外归档时配置 file 或 OpenTelemetry sink；这与浏览器
-交互日志的 transport 是两个职责。
+Workbench 使用同一份有界日志存储，通过已认证的 Management 会话查询与 follow，不增加 HTTP/SSE 日志 API。
+日志携带 node address、reference 和可读标签；range 按传输预算分页，超大单条记录明确标记 payload 截断。
+需要进程外归档时配置 file 或 OpenTelemetry sink；Plugin 的业务 HTTP 不负责暴露宿主日志。
 
 ## 测试与 review
 
@@ -191,5 +184,3 @@ cursor 是普通 JSON，包含 rootId、streamId、bootId、epoch、nextSeq；�
 ## 宿主安装与访问
 
 自行组合 Host 时，从 `@pluxel/services/logging` 导入 `logging(plan, options)` 并加入 `services`。Host 负责安装、绑定和关闭唯一的进程日志 owner；运行后通过 `host.ctx.logging` 或在开发控制台用 `dev.ctx.require(Logging)` 访问当前 manager。不要手动创建或绑定另一个 manager。
-
-Plugin 标签由 Core 的 `buildPluginNodeLabels()` 和 `formatPluginNodeStandaloneLabel()` 生成；前者根据完整 catalog 消除重名歧义，后者用于没有 catalog 的日志。标签只是展示信息，不代替 Plugin address。

@@ -1,6 +1,6 @@
 # EffectsService（Core）设计说明
 
-`effects` 服务负责在 **单个 Context 内**管理副作用/资源生命周期：
+`effects` 服务负责在 **Plugin generation 及其子 scope 内**管理副作用/资源生命周期：
 
 - 注册 cleanup / Disposable
 - 支持事务回滚（init 失败自动释放已登记资源）
@@ -50,4 +50,4 @@ Guard 是唯一关键句柄：
 - `await guard.dispose()`：立即执行并注销（at-most-once）
 - `guard.cancel()`：只注销不执行
 
-> 详细语义与实现 checklist：`packages/core/src/services/effects/DESIGN.md`。
+详细状态机、错误和实现约束见 [DESIGN.md](./DESIGN.md)。

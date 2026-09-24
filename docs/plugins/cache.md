@@ -28,6 +28,16 @@ consumer 只依赖 `Cache` 抽象；host catalog 选择：
 
 业务 Plugin 不同时维护独立 Redis client、第二套 namespace 和 cleanup。backend 选择属于 host composition。
 
+默认 `CachePlugin` 策略是 `ttlMs: 300000`、`maxEntries: 1000`、`maxInFlight: 256`、
+`readPolicy: 'cache-first'`、`backendFailure: 'required'`。应用将 `CachePlugin`、所选 backend 和 consumer
+加入 catalog，配置记录与启动策略见 [添加插件](./index.md#把一个插件加入应用)。
+
+`MemoryCacheBackendPlugin` 默认 `maxEntries: 10000`，`persistence.mode: 'off'` 不需要 Persistence。
+启用 `best-effort` 或 `durable` 时，宿主必须安装 Persistence：前者恢复/保存失败只告警，后者要求 durable、writable
+存储且恢复失败时拒绝启动。`persistence.flushIntervalMs` 默认 1000，用于合并快照写入。
+快照只恢复异步 backend，停机时间计入 TTL；可写快照要求 value 能被 Node structured-clone codec 序列化。
+这是重启预热，不是数据库 durability。
+
 ## 显式绑定稳定 scope
 
 复杂缓存应在 Plugin generation 启动时创建一次：
@@ -81,7 +91,7 @@ handle 绑定 caller 和 provider generation。任一 stop/replacement 后继续
 
 ## Key 设计
 
-key 可以是 primitive、primitive tuple 或 primitive-value plain record：
+key 支持 `string | number | bigint | boolean`、最多 16 项的 primitive tuple 或最多 16 字段的 primitive-value plain record；canonical encoding 最多 1024 UTF-8 bytes。拒绝 nested object、accessor、symbol、非 finite number 和未配对 surrogate：
 
 ```ts no-twoslash
 catalog.getOrLoad(itemId, load)
@@ -108,6 +118,19 @@ const user = await users.getOrLoad(userId, async () => {
 这是进程内 single-flight，不是跨进程 distributed lock。多个实例可能同时执行 loader；写入和外部 side effect 必须本身幂等或由 repository/database 协调。
 
 达到 `maxInFlight` 时新 key 会抛出 `CacheBusyError`。调用方决定返回 503、绕过缓存或排队；不要在 cache 内建立无界等待队列。
+
+## 读取策略与取消
+
+| `readPolicy`        | 行为                                                                      |
+| ------------------- | ------------------------------------------------------------------------- |
+| `cache-first`       | 默认：local → backend → loader                                            |
+| `cache-and-refresh` | 有效 local hit 立即返回，后台通过同一 single-flight 刷新；过期值仍是 miss |
+| `remote-first`      | 跳过 local read，backend / loader 结果仍写回 local                        |
+
+provider / scope 设置稳定策略，`get()` / `getOrLoad()` 可以按次覆盖 `readPolicy`。
+`set(key, value, { ttlMs })` 按值覆盖 TTL，`0` 表示不过期。
+subscriber 的 `AbortSignal` 只取消自己的等待，不取消其他 subscriber 的共享工作。
+`global` 共享值和同进程 single-flight，handle 仍绑定各自 caller；最后一个 owner 停止后清理 local registration，backend 值按 TTL 存续。
 
 ## Backend failure policy
 
@@ -151,40 +174,15 @@ featureEnabled(name: string): boolean {
 }
 ```
 
-`@Cached` 要求 Promise-returning method；同步方法使用 `@Memoized`。参数必须能形成稳定 primitive tuple，复杂参数通过 `key` 显式映射。
+constructor 仍需声明 `Cache` required dependency。`@Cached` 要求 Promise-returning method；同步方法使用 `@Memoized`。参数必须能形成稳定 primitive tuple，复杂参数通过 `key` 显式映射。
 
 需要主动失效、查看 stats、按操作覆盖 read policy 或组合 repository 时，使用显式 scope，避免把 lifecycle 和 policy 藏在 decorator 中。
 
-## Database + 外部 API freshness
+## 长期 freshness
 
-缓存不应承担长期 freshness。典型职责链：
-
-```text
-Cache local / Redis（分钟）
-        ↓ miss
-Repository / Database（长期保存 + refreshedAt）
-        ↓ stale
-External API（受控刷新）
-```
-
-repository 负责：
-
-1. 读取数据库 authoritative snapshot；
-2. 未过期时直接返回；
-3. stale 时通过 claim/CAS 获取刷新权；
-4. 在 transaction 外调用外部 API；
-5. 用 fencing token 提交新值；
-6. 外部失败时按领域规则返回旧值或抛错。
-
-Cache 只包住 `repository.loadFresh()`：
-
-```ts no-twoslash
-return this.catalog.getOrLoad([tenantId, itemId], () =>
-	this.repository.loadFresh({ tenantId, itemId, maxAgeMs: 30 * 24 * 60 * 60_000 }),
-)
-```
-
-404 可以在数据库保存带 `refreshedAt` 的 tombstone，再向 Cache 返回 `null`。不要向 Cache API 添加 database transaction、distributed lock 或 stale ownership 语义。
+`getOrLoad(key, () => repository.loadFresh(...))` 只包住短期缓存。长期保存、`refreshedAt`、
+跨实例 refresh claim/CAS/fencing、事务与外部 API 失败后的旧值策略属于 repository/database。
+数据库中的 missing/tombstone 可向 Cache 返回 `null`；进程内 single-flight 不提供跨实例锁。
 
 ## 检查清单
 
