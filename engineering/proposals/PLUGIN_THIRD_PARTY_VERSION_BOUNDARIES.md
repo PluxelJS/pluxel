@@ -69,7 +69,7 @@
 
 ### 3.2 better-result：可选的 Pluxel 公共 Result 入口
 
-`@pluxel/core/result` 提供一个有界的 `better-result` 再导出，作为**希望在插件间公开 Result 实例**
+`@pluxel/core/better-result` 提供一个有界的 `better-result` 再导出，作为**希望在插件间公开 Result 实例**
 的作者入口。使用者从该入口导入，并通过已要求的 `@pluxel/core` peer 共享 Pluxel 所选的 Result API；
 Pluxel 负责其上游版本与公开 API 的升级。公开集合只覆盖实际被作者使用的 `Result`、错误构造与必要类型，
 不自动转发整个上游包，也不复制实现或发明平行的 `Ok`/`Err` 契约。
@@ -82,7 +82,7 @@ Pluxel 负责其上游版本与公开 API 的升级。公开集合只覆盖实�
 意外异常和生命周期启动失败仍按原契约传播。Result 实例不得直接作为 Workbench portable DTO；
 跨传输时由边界投影并验证普通数据，消费端按领域协议恢复。
 
-`@pluxel/core/result` 已实现为可选子入口并列入待发布变更。Core 主入口保持不因 Result 加载上游包。
+`@pluxel/core/better-result` 已实现为可选子入口并列入待发布变更。Core 主入口保持不因 Result 加载上游包。
 上游 ESM-only 与 Core 的双格式支持已由独立安装的 ESM/CJS 消费者验证，跨插件测试也验证了实际
 identity 与方法行为；仅凭再导出路径本身不推断进程中只有一份模块。
 

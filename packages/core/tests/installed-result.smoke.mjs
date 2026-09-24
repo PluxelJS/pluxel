@@ -50,7 +50,7 @@ try {
 	const producer = packPlugin(
 		'result-producer',
 		`
-import { Result, TaggedError } from '@pluxel/core/result'
+import { Result, TaggedError } from '@pluxel/core/better-result'
 export class Rejected extends TaggedError('Rejected') {}
 export const producerResult = Result
 export function produce(input) {
@@ -58,8 +58,8 @@ export function produce(input) {
 }
 `,
 		`
-import type { Result } from '@pluxel/core/result'
-export { Result as producerResult } from '@pluxel/core/result'
+import type { Result } from '@pluxel/core/better-result'
+export { Result as producerResult } from '@pluxel/core/better-result'
 export declare class Rejected extends Error { readonly _tag: 'Rejected' }
 export declare function produce(input: number): Result<number, Rejected>
 `,
@@ -67,16 +67,16 @@ export declare function produce(input: number): Result<number, Rejected>
 	const consumer = packPlugin(
 		'result-consumer',
 		`
-import { Result } from '@pluxel/core/result'
+import { Result } from '@pluxel/core/better-result'
 import { produce, producerResult } from '@fixture/result-producer'
 export const consumerResult = Result
 export function consume(input) { return produce(input).map(value => value + 1) }
 export function sameResult() { return producerResult === Result }
 `,
 		`
-import type { Result } from '@pluxel/core/result'
+import type { Result } from '@pluxel/core/better-result'
 import type { Rejected } from '@fixture/result-producer'
-export { Result as consumerResult } from '@pluxel/core/result'
+export { Result as consumerResult } from '@pluxel/core/better-result'
 export declare function consume(input: number): Result<number, Rejected>
 export declare function sameResult(): boolean
 `,
@@ -104,13 +104,13 @@ export declare function sameResult(): boolean
 		`
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { Result } from '@pluxel/core/result'
+import { Result } from '@pluxel/core/better-result'
 import { produce, producerResult } from '@fixture/result-producer'
 import { consume, consumerResult, sameResult } from '@fixture/result-consumer'
 const require = createRequire(import.meta.url)
 assert.equal(Result, producerResult)
 assert.equal(Result, consumerResult)
-assert.equal(Result, require('@pluxel/core/result').Result)
+assert.equal(Result, require('@pluxel/core/better-result').Result)
 assert.equal(sameResult(), true)
 assert.equal(produce(2).map(value => value + 1).unwrap(), 3)
 assert.equal(consume(2).unwrap(), 3)
@@ -138,7 +138,7 @@ assert.equal(Result.isError(consume(0)), true)
 	put(
 		'app/consumer-check.mts',
 		`
-import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/result'
+import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/better-result'
 import { produce } from '@fixture/result-producer'
 import { consume } from '@fixture/result-consumer'
 class Missing extends TaggedError('Missing')<{ message: string }> {}
@@ -155,7 +155,7 @@ if (Result.isOk(produced) && Result.isOk(consumed)) {
 	put(
 		'app/consumer-check.cts',
 		`
-import { Result, type Result as SharedResult } from '@pluxel/core/result'
+import { Result, type Result as SharedResult } from '@pluxel/core/better-result'
 const result: SharedResult<number, never> = Result.ok(1)
 void result
 `,

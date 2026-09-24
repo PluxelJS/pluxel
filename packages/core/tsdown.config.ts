@@ -26,7 +26,7 @@ export default defineConfig({
 		host: 'src/host.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
-		result: 'src/result.ts',
+		'better-result': 'src/better-result.ts',
 		toolchain: 'src/toolchain.ts',
 	},
 	dts: {

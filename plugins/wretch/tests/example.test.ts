@@ -1,4 +1,4 @@
-import { Result } from '@pluxel/core/result'
+import { Result } from '@pluxel/core/better-result'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'

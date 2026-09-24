@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { Result } from '@pluxel/core/result'
+import { Result } from '@pluxel/core/better-result'
 import { Http } from '@pluxel/services/http'
 import { WretchExamplePlugin } from './wretch-example.ts'
 

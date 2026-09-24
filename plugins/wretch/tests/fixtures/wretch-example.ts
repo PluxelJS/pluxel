@@ -1,6 +1,10 @@
 import { Http } from '@pluxel/services/http'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { Result, TaggedError as tagged, type Result as SharedResult } from '@pluxel/core/result'
+import {
+	Result,
+	TaggedError as tagged,
+	type Result as SharedResult,
+} from '@pluxel/core/better-result'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { workbench } from '@pluxel/workbench'

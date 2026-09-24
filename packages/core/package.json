@@ -22,6 +22,11 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
+		"./better-result": {
+			"@pluxel/source": "./src/better-result.ts",
+			"import": "./dist/better-result.mjs",
+			"require": "./dist/better-result.cjs"
+		},
 		"./federation": {
 			"@pluxel/source": "./src/federation.ts",
 			"import": "./dist/federation.mjs",
@@ -47,11 +52,6 @@
 			"import": "./dist/logger.mjs",
 			"require": "./dist/logger.cjs"
 		},
-		"./result": {
-			"@pluxel/source": "./src/result.ts",
-			"import": "./dist/result.mjs",
-			"require": "./dist/result.cjs"
-		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
 			"import": "./dist/services.mjs",
@@ -69,6 +69,10 @@
 			".": {
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
+			},
+			"./better-result": {
+				"import": "./dist/better-result.mjs",
+				"require": "./dist/better-result.cjs"
 			},
 			"./federation": {
 				"import": "./dist/federation.mjs",
@@ -89,10 +93,6 @@
 			"./logger": {
 				"import": "./dist/logger.mjs",
 				"require": "./dist/logger.cjs"
-			},
-			"./result": {
-				"import": "./dist/result.mjs",
-				"require": "./dist/result.cjs"
 			},
 			"./services": {
 				"import": "./dist/services.mjs",

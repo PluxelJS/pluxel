@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { Result, type Result as SharedResult } from '@pluxel/core/result'
+import { Result, type Result as SharedResult } from '@pluxel/core/better-result'
 import type { AuthMode } from './config.ts'
 import type { LocalAccountRecord } from './credentials.ts'
 import {
