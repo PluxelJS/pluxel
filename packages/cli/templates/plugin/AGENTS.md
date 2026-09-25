@@ -20,6 +20,8 @@ Keep these boundaries intact:
 - `tsdown.config.ts` only describes package input/output; `pluxel build` owns compiler semantics and
   generated plugin dependency metadata;
 - business HTTP and core lifecycle must work with Workbench Plane disabled;
+- use original API names and direct calls; add aliases or wrappers only for a concrete naming or behavior need;
+- before choosing a local recoverable-failure contract, read `pnpm exec pluxel docs api/better-result.md` and its official-plugin examples;
 - plugin tests use `@pluxel/test/vitest` and `createTestHost()` from `@pluxel/test` with explicitly selected services;
 - run `pnpm verify` after changes and do not bypass Pluxel lint rules without a documented reason.
 

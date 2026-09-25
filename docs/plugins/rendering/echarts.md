@@ -196,3 +196,40 @@ allocation。高并发 host 应联合测量 `workers.maxThreads`、Canvas per-wo
 - execution：`WORKER_INPUT_UNSUPPORTED`、`OUTPUT_TOO_LARGE`、`RENDER_BUSY`、`RENDER_FAILED`。
 
 Canvas dimensions/pixels 校验发生在 render 前；底层 Canvas failure 最终作为带 cause 的 render failure 暴露。业务层应按 code 决定拒绝、降级或重试，不要解析 message。
+
+## 将可恢复失败交给业务调用方
+
+报表 consumer 如果能在繁忙时展示已有图表，可把 `RENDER_BUSY` 转成明确的业务 Err。
+下面的 `charts` 来自 constructor 注入；其余错误继续遵守 ECharts 原来的异常契约。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import {
+	EChartsError,
+	type EChartsPlugin,
+	type EChartsRenderInput,
+	type EChartsRenderResult,
+} from '@pluxel/echarts'
+
+export class ChartBusy extends TaggedError('ChartBusy')<{ message: string }> {}
+
+export async function renderChart(
+	charts: EChartsPlugin,
+	input: EChartsRenderInput,
+): Promise<Result<EChartsRenderResult, ChartBusy>> {
+	try {
+		return Result.ok(await charts.render(input))
+	} catch (error) {
+		if (error instanceof EChartsError && error.code === 'RENDER_BUSY') {
+			return Result.err(new ChartBusy({ message: 'Chart renderer is busy; retry later.' }))
+		}
+		throw error
+	}
+}
+```
+
+`result.isErr()` 时展示已有图表并让调用方决定何时重试，Ok 时使用 `value.data` / `mediaType`。
+不要把取消、Worker 故障、输入损坏或 `RENDER_FAILED` 统一映射成 busy，也不要在这里无界重试。
+成功的 Buffer 走 HTTP 图片响应或存储协议，不直接进入 Workbench portable DTO。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/echarts/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/echarts/tests/echarts.test.ts)。

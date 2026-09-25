@@ -21,10 +21,10 @@ describe('@pluxel/test/fixtures', () => {
 			await expect(fixture.exists('written.txt')).resolves.toBe(true)
 
 			await fixture[Symbol.asyncDispose]()
-			expect(realPathExists(filePath)).toBe(false)
+			expect(existsSync(filePath)).toBe(false)
 		}
 
-		expect(realPathExists(filePath)).toBe(false)
+		expect(existsSync(filePath)).toBe(false)
 	})
 
 	it('creates isolated in-memory fixtures by default', async () => {
@@ -40,7 +40,7 @@ describe('@pluxel/test/fixtures', () => {
 			expect(fixture.fs.readFileSync(filePath, 'utf8')).toBe('export const answer = 42\n')
 		}
 
-		expect(realPathExists(filePath)).toBe(false)
+		expect(existsSync(filePath)).toBe(false)
 	})
 
 	it('supports cpSync and createWriteStream inside the VFS root', async () => {
@@ -93,7 +93,3 @@ describe('@pluxel/test/fixtures', () => {
 		expect(fixture.fs.existsSync(fixture.getPath('missing'))).toBe(false)
 	})
 })
-
-function realPathExists(path: string) {
-	return existsSync(path)
-}

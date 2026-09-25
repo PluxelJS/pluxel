@@ -785,8 +785,8 @@ export class CachePlugin extends Cache {
 				(parentPolicy ?? this.config) as CacheDefaults,
 			)
 			const backendPrefix = global
-				? `cache:v3:global:${name ? `${escapePart(name)}:` : ''}`
-				: `cache:v3:plugin:${ownerAddressDigest(owner.context.pluginInfo.nodeAddress)}:${name ? `${escapePart(name)}:` : ''}`
+				? `cache:v3:global:${name ? `${encodeURIComponent(name)}:` : ''}`
+				: `cache:v3:plugin:${ownerAddressDigest(owner.context.pluginInfo.nodeAddress)}:${name ? `${encodeURIComponent(name)}:` : ''}`
 			const bucket: Bucket = {
 				active: true,
 				entries: new Map(),
@@ -799,7 +799,7 @@ export class CachePlugin extends Cache {
 			registration = {
 				namespace,
 				backendPrefix,
-				ownerAddress: global ? null : normalizeOwnerAddress(owner.context.pluginInfo.nodeAddress),
+				ownerAddress: global ? null : parsePluginNodeAddress(owner.context.pluginInfo.nodeAddress),
 				ownerSlot: global ? null : ownerSlot,
 				lookup,
 				lookupKey: name,
@@ -1838,13 +1838,9 @@ function assertBackendValue(value: unknown): void {
 	}
 }
 
-function normalizeOwnerAddress(address: PluginNodeAddress): PluginNodeAddress {
-	return parsePluginNodeAddress(address)
-}
-
 function ownerAddressDigest(address: PluginNodeAddress): string {
 	return createHash('sha256')
-		.update(encodePluginNodeAddressBytes(normalizeOwnerAddress(address)))
+		.update(encodePluginNodeAddressBytes(parsePluginNodeAddress(address)))
 		.digest('hex')
 }
 
@@ -1908,10 +1904,6 @@ function snapshotStats(bucket: Bucket): CacheStats {
 		entries: bucket.entries.size,
 		inFlight: bucket.inFlight.size,
 	})
-}
-
-function escapePart(value: string): string {
-	return encodeURIComponent(value)
 }
 
 async function settle(pending: Promise<unknown> | undefined): Promise<void> {

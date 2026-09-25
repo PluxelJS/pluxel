@@ -89,3 +89,62 @@ policy/catalog revision、Toolsets、assignments 和命令摘要；选择之后�
 
 Workbench 的状态页面使用独立显示投影：缺省标题与说明显示为空值，command behavior 展开为固定字段。
 业务 snapshot 与 Agent command catalog 保留原有可选字段和 query/mutation 契约。
+
+## 业务 Result 与 Command 边界
+
+Result 留在本地业务方法里，command handler 显式消费两支：成功返回 output schema 能验证的普通 JSON，
+业务失败映射到现有 CommandError 协议。这个例子将不存在的笔记 ID 标为带稳定 issue code 的输入错误。
+
+```ts no-twoslash
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { CommandError, defineCommand, validation } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
+import { Commands } from '@pluxel/services/commands'
+
+export class NoteNotFound extends TaggedError('NoteNotFound')<{ id: string }> {}
+type Note = Readonly<{ id: string; text: string }>
+
+@Plugin()
+export class NotesWithResults extends BasePlugin {
+	find(id: string): Result<Note, NoteNotFound> {
+		return id === 'welcome'
+			? Result.ok({ id, text: 'Welcome' })
+			: Result.err(new NoteNotFound({ id }))
+	}
+
+	protected override init(): void {
+		this.ctx.require(Commands).register(
+			defineCommand({
+				name: 'notes.lookup',
+				description: 'Read a note, including explicit absence.',
+				behavior: { kind: 'query', world: 'closed' },
+				input: obj({ id: Type.String() }),
+				output: obj({ id: Type.String(), text: Type.String() }),
+				execute: ({ id }) => {
+					const result = this.find(id)
+					if (result.isErr()) {
+						throw new CommandError('INPUT_VALIDATION', 'Note not found', {
+							details: {
+								issues: [validation.constraint('id', 'Note not found', { code: 'note_not_found' })],
+							},
+						})
+					}
+					return result.value
+				},
+			}),
+		)
+	}
+}
+```
+
+把 `notes.lookup` 加入 assignment 后，Agent adapter 继续使用同一个 `catalog(agentId).execute()`。
+成功返回笔记 JSON，缺失以 `INPUT_VALIDATION` 拒绝，其 `details.issues[].code` 为 `note_not_found`；
+未获授权仍以 `FORBIDDEN` 拒绝，未知 handler 异常仍由 command pipeline 分类为 `INTERNAL`。
+Adapter 按 CommandError 的 `code` / `publicMessage` 与领域 issue code 呈现，不能把所有失败都降级为
+“笔记不存在”，也不能绕过 catalog 直接调用业务方法。
+
+在普通 `if` 分支中抛 CommandError，不能放进会把 throw 转成 Panic 的 Result `match()` / `map()` 回调。
+这样保留 command 的 expected/fault 分类，也不把 Result/Error 实例作为 JSON output 返回。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/agent-tools/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/agent-tools/tests/result-example.test.ts)。

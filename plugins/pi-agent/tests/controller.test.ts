@@ -119,6 +119,43 @@ class BlockingEngine extends FakeEngine {
 }
 
 describe('PiAgentController', () => {
+	it('preserves prompt outcomes and session ownership', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await host.start(AgentToolsPlugin, { initialConfig: policy })
+		const engine = new FakeEngine()
+		const controller = new PiAgentController(
+			host.require(AgentToolsPlugin),
+			engine,
+			config,
+			() => {},
+		)
+		try {
+			const session = await controller.createSession()
+			try {
+				const completed = await session.prompt('notes')
+				expect(completed).toMatchObject({ ok: true, text: 'completed: notes' })
+				const aborted = await session.prompt('notes', { signal: AbortSignal.abort() })
+				expect(aborted).toMatchObject({ ok: false, reason: 'aborted' })
+				vi.spyOn(engine.created[0].session, 'prompt').mockRejectedValueOnce(
+					new Error('model unavailable'),
+				)
+				const failed = await session.prompt('notes')
+				expect(failed).toMatchObject({ ok: false, reason: 'model_error' })
+				await expect(session.prompt('')).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+			} finally {
+				await session.dispose()
+			}
+			expect(engine.created[0].session.dispose).toHaveBeenCalledOnce()
+			await expect(session.prompt('notes')).rejects.toMatchObject({
+				code: 'NOT_RUNNING',
+			})
+		} finally {
+			await controller.close()
+		}
+	})
+
 	it('starts and stops as an ordinary headless Plugin with AgentTools as a required dependency', async () => {
 		await using host = await createTestHost({
 			services: standardServices({ persistence: { mode: 'memory' } }),

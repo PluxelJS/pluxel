@@ -542,13 +542,14 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			if (!this.revisionsMatch(committedCatalog, pinnedState)) continue
 			const operations: CorePluginOperation[] = [...plan.coreOperations]
 			for (const address of update.retryStartNodes ?? []) {
-				const key = pluginNodeKey(address)
+				const key = pluginNodeIndexKey(address)
 				if (
 					!plan.applied.nodes.has(key) ||
 					this.core.isRunning(address) ||
 					operations.some(
 						(operation) =>
-							operation.type === 'materialize-node' && pluginNodeKey(operation.address) === key,
+							operation.type === 'materialize-node' &&
+							pluginNodeIndexKey(operation.address) === key,
 					)
 				) {
 					continue
@@ -556,7 +557,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 				operations.push({ type: 'restart-node', address, cascadeDependents: true })
 			}
 			for (const address of update.restartNodes ?? []) {
-				if (!plan.applied.nodes.has(pluginNodeKey(address)) || !this.core.isRunning(address)) {
+				if (!plan.applied.nodes.has(pluginNodeIndexKey(address)) || !this.core.isRunning(address)) {
 					throw new PluginRestartUnavailableError(address)
 				}
 				operations.push({
@@ -633,7 +634,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			const operations: CorePluginOperation[] = []
 			const seen = new Set<string>()
 			for (const address of restartNodes) {
-				const key = pluginNodeKey(address)
+				const key = pluginNodeIndexKey(address)
 				if (seen.has(key)) continue
 				seen.add(key)
 				if (!this.applied.nodes.has(key) || !this.core.isRunning(address)) {
@@ -753,7 +754,7 @@ function applySessionPatch(
 	if (!patch || patch.length === 0) return current
 	const next = new Map(current)
 	for (const operation of patch) {
-		const key = pluginNodeKey(operation.address)
+		const key = pluginNodeIndexKey(operation.address)
 		if (operation.intent === 'inherit') next.delete(key)
 		else next.set(key, Object.freeze({ address: operation.address, intent: operation.intent }))
 	}
@@ -774,7 +775,7 @@ function applyCanonicalLifecycleCommands(
 	if (!commands || commands.length === 0) return current
 	const next = new Map(current)
 	for (const command of commands) {
-		const key = pluginNodeKey(command.address)
+		const key = pluginNodeIndexKey(command.address)
 		next.delete(key)
 		const inherited = reconcilePluginGraph({
 			catalog,
@@ -804,8 +805,12 @@ function rebaseSessionForPolicyPatch(
 	before: HostStateSnapshot,
 	after: HostStateSnapshot,
 ): ReadonlyMap<string, HostPluginSessionEntry> {
-	const beforeByKey = new Map(before.autoStart.map((address) => [pluginNodeKey(address), address]))
-	const afterByKey = new Map(after.autoStart.map((address) => [pluginNodeKey(address), address]))
+	const beforeByKey = new Map(
+		before.autoStart.map((address) => [pluginNodeIndexKey(address), address]),
+	)
+	const afterByKey = new Map(
+		after.autoStart.map((address) => [pluginNodeIndexKey(address), address]),
+	)
 	const changed = new Set([...beforeByKey.keys(), ...afterByKey.keys()])
 	const next = new Map(current)
 	let didChange = false
@@ -846,10 +851,10 @@ function cleanupRemovedSessionIntents(
 	const next = new Map(current)
 	for (const operation of patch.operations) {
 		if (operation.type === 'remove-node-policy') {
-			next.delete(pluginNodeKey(operation.node))
+			next.delete(pluginNodeIndexKey(operation.node))
 		} else if (operation.type === 'remove-fork') {
 			next.delete(
-				pluginNodeKey({
+				pluginNodeIndexKey({
 					definition: operation.definition,
 					variant: 'fork',
 					forkId: operation.forkId,
@@ -866,10 +871,6 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 		(typeof value === 'object' || typeof value === 'function') &&
 		typeof (value as { then?: unknown }).then === 'function'
 	)
-}
-
-function pluginNodeKey(address: PluginNodeAddress): string {
-	return pluginNodeIndexKey(address)
 }
 
 function applyCoreOperation<TSummary>(

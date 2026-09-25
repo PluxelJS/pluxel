@@ -196,3 +196,36 @@ Workbench-enabled host 会用一张固定 Content 展示 bounded connection rows
 状态 listener。
 
 连接建立失败属于 lifecycle failure，required dependents 会被阻塞。调用期间的 node-redis command error、script error 或 adapter error 属于调用事实，应保留 error/cause，让 consumer 或上层 transport 明确选择重试、降级或失败；不要吞掉 Redis error 后报告成功。
+
+## 将缺失映射为业务 Result
+
+Redis 保留原生 node-redis API。只有领域确定“没有这个 key”需要调用方分支时，才在 consumer 转成 Result。
+下面读取应用自己管理的草稿文本，使用 default connection；空字符串仍是成功值。
+
+```ts twoslash
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { Redis } from '@pluxel/redis'
+
+export class DraftNotFound extends TaggedError('DraftNotFound')<{ id: string }> {}
+
+@Plugin()
+export class DraftsPlugin extends BasePlugin {
+	constructor(private readonly redis: Redis) {
+		super()
+	}
+
+	async read(id: string): Promise<Result<string, DraftNotFound>> {
+		const text = await this.redis.connection().client.get(`drafts:${id}`)
+		if (text === null) return Result.err(new DraftNotFound({ id }))
+		if (typeof text !== 'string') throw new TypeError('Expected UTF-8 draft text from Redis')
+		return Result.ok(text)
+	}
+}
+```
+
+调用方在 `read()` 返回 Err 时可展示“草稿不存在”，Ok 时显示 `value`。连接失败、权限错误、错误 Redis type 和
+generation 撤回继续 reject，不能降级为不存在。不要按 message 猜测 Redis 故障。
+Cache/Rates adapter 沿用各自的 miss/decision 契约，见[缓存示例](./cache.md#在缓存之外构造-result)与[限流示例](./rates.md#消费业务-result)。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/redis/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/redis/tests/redis.test.ts)。

@@ -415,7 +415,7 @@ class ContextImpl {
 
 	require<T>(capability: ContextCapability<T, ContextCapabilityAccess>): T {
 		const ctx = this as unknown as Context
-		const state = stateOf(ctx)
+		const state = readContextState(ctx)
 		assertCapability(capability)
 		const access = CAPABILITIES.get(capability)!.access
 		if (
@@ -643,7 +643,7 @@ export function resolveContextCapability<T>(
 	ctx: Context,
 	capability: ContextCapability<T, ContextCapabilityAccess>,
 ): T {
-	const state = stateOf(ctx)
+	const state = readContextState(ctx)
 	const resolver = state.plan.resolverByCapability.get(capability as AnyCapability)
 	if (resolver === undefined) {
 		assertCapability(capability)
@@ -758,7 +758,7 @@ export function createRootContext(plan: ContextPlan, name = 'root'): RootContext
 	const compiled = compiledPlan(plan)
 	const values: unknown[] = []
 	const root = allocateRootContext(compiled)
-	installState(root, {
+	initializeContextState(root, {
 		plan: compiled,
 		root,
 		scope: root,
@@ -772,11 +772,11 @@ export function createRootContext(plan: ContextPlan, name = 'root'): RootContext
 
 /** @internal */
 export function createScopeContext(root: RootContext, name: string): Context {
-	const rootState = stateOf(root)
+	const rootState = readContextState(root)
 	if (rootState.root !== root)
 		throw new TypeError('[pluxel/context] A scope requires a root Context')
 	const ctx = allocateContext(rootState.plan)
-	installState(ctx, {
+	initializeContextState(ctx, {
 		plan: rootState.plan,
 		root,
 		scope: ctx,
@@ -790,9 +790,9 @@ export function createScopeContext(root: RootContext, name: string): Context {
 
 /** @internal */
 export function createChildContext(parent: Context, name: string): Context {
-	const parentState = stateOf(parent)
+	const parentState = readContextState(parent)
 	const ctx = allocateContext(parentState.plan)
-	installState(ctx, {
+	initializeContextState(ctx, {
 		plan: parentState.plan,
 		root: parentState.root,
 		scope: parentState.scope,
@@ -807,9 +807,9 @@ export function createChildContext(parent: Context, name: string): Context {
 
 /** @internal Create a fresh owner view over the source scope without adding a containment parent. */
 export function createContextView(source: Context): Context {
-	const sourceState = stateOf(source)
+	const sourceState = readContextState(source)
 	const ctx = allocateContext(sourceState.plan)
-	installState(ctx, {
+	initializeContextState(ctx, {
 		plan: sourceState.plan,
 		root: sourceState.root,
 		scope: sourceState.scope,
@@ -920,7 +920,7 @@ function compiledPlan(plan: ContextPlan): CompiledContextPlan {
 }
 
 function assertPlanContext(plan: ContextPlan, ctx: Context): void {
-	if (stateOf(ctx).plan !== compiledPlan(plan)) {
+	if (readContextState(ctx).plan !== compiledPlan(plan)) {
 		throw new TypeError('[pluxel/context] Context belongs to a different host')
 	}
 }
@@ -931,14 +931,6 @@ function allocateContext(plan: CompiledContextPlan): Context {
 
 function allocateRootContext(plan: CompiledContextPlan): RootContext {
 	return new plan.RootContextConstructor() as unknown as RootContext
-}
-
-function installState(ctx: Context, state: ContextState): void {
-	initializeContextState(ctx, state)
-}
-
-function stateOf(ctx: Context): ContextState {
-	return readContextState(ctx)
 }
 
 function hidePrototypeConstructor(prototype: object): void {

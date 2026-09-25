@@ -6,6 +6,10 @@ import { FontsPlugin } from '@pluxel/fonts'
 import { describe, expect, it } from 'vitest'
 import { EChartsPlugin, type EChartsThemeRegistration } from '../src/index.ts'
 import { EChartsWorkbench } from '../src/workbench.ts'
+import { persistence } from '@pluxel/services/persistence'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
+import { renderChart } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class EChartsTestConsumer extends BasePlugin {
@@ -40,6 +44,35 @@ async function startEChartsFixture(
 }
 
 describe('EChartsPlugin', () => {
+	it('demonstrates worker admission pressure as a Result while cancellation still rejects', async () => {
+		await using host = await createTestHost({
+			services: [
+				persistence({ mode: 'memory' }),
+				nodeModules(),
+				workers({ maxThreads: 1, maxQueuedTasks: 1, maxQueuedTasksPerPlugin: 1 }),
+			],
+		})
+		await startEChartsFixture(host)
+		const charts = host.require(EChartsTestConsumer).echarts
+		const input = { option: {}, width: 32, height: 32 }
+		const [first, second, third] = await Promise.all([
+			renderChart(charts, input),
+			renderChart(charts, input),
+			renderChart(charts, input),
+		])
+		expect(first.isOk()).toBe(true)
+		expect(second.isOk()).toBe(true)
+		expect(third.isErr()).toBe(true)
+		if (third.isOk()) throw new Error('Unexpected Result branch')
+		expect(third.error._tag).toBe('ChartBusy')
+		const aborted = new Error('caller cancelled')
+		await expect(
+			renderChart(charts, { ...input, signal: AbortSignal.abort(aborted) }),
+		).rejects.toBe(aborted)
+		await host.stop(EChartsTestConsumer)
+		await expect(renderChart(charts, input)).rejects.toThrow(Error)
+	})
+
 	it('starts through the public Runtime host without requesting a worker artifact', async () => {
 		await using host = await createTestHost({
 			services: standardServices({ persistence: { mode: 'memory' } }),

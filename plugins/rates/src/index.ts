@@ -215,7 +215,9 @@ export class RatesPlugin extends Rates {
 		registration.owners.add(owner)
 		owner.registrations.add(registration)
 
-		const ownerAddress = global ? null : normalizeOwnerAddress(owner.context.pluginInfo.nodeAddress)
+		const ownerAddress = global
+			? null
+			: parsePluginNodeAddress(owner.context.pluginInfo.nodeAddress)
 		const prefix = global
 			? `rates|v3|global|${encodeString(name)}|`
 			: `rates|v3|plugin|${ownerAddressDigest(ownerAddress!)}|${encodeString(name)}|`
@@ -383,12 +385,8 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 	}
 }
 
-function normalizeOwnerAddress(address: PluginNodeAddress): PluginNodeAddress {
-	return parsePluginNodeAddress(address)
-}
-
 function normalizeBackendOwner(owner: PluginNodeAddress | null): PluginNodeAddress | null {
-	return owner === null ? null : normalizeOwnerAddress(owner)
+	return owner === null ? null : parsePluginNodeAddress(owner)
 }
 
 function ownerAddressesEqual(
@@ -401,7 +399,7 @@ function ownerAddressesEqual(
 
 function ownerAddressDigest(address: PluginNodeAddress): string {
 	return createHash('sha256')
-		.update(encodePluginNodeAddressBytes(normalizeOwnerAddress(address)))
+		.update(encodePluginNodeAddressBytes(parsePluginNodeAddress(address)))
 		.digest('hex')
 }
 

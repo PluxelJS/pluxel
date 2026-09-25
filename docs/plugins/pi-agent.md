@@ -51,11 +51,15 @@ const unsubscribe = session.subscribe((event) => {
 	if (event.type === 'text_delta') process.stdout.write(event.text)
 })
 
-session.setGoal('归纳今天的 notes')
-const result = await session.prompt('完成当前 goal')
-
-unsubscribe()
-await session.dispose()
+try {
+	session.setGoal('归纳今天的 notes')
+	const result = await session.prompt('完成当前 goal')
+	if (result.ok === true) console.log(result.text)
+	else console.error(result.reason, result.message)
+} finally {
+	unsubscribe()
+	await session.dispose()
+}
 ```
 
 `createSession()` 会拒绝不存在的 setup，不会静默创建意外的空权限 session。Toolset 内 command 的注册、撤销或替换
@@ -81,3 +85,23 @@ headless host 与有界面 host 使用同一安全边界。
 通用 Plugin Config 页面保存。
 
 Pi Agent 当前没有专用 Workbench 会话管理界面。会话输出、取消与释放由调用它的应用负责；模型凭据仍由 Pi `ModelRuntime` 管理。
+
+## 直接处理会话结果
+
+`prompt()` 已有 `ok` 判别字段，直接处理成功、取消和模型失败即可：
+
+```ts no-twoslash
+const outcome = await session.prompt('总结今天的 notes')
+if (outcome.ok === true) {
+	console.log(outcome.text)
+} else if (outcome.reason === 'aborted') {
+	console.log('任务已取消')
+} else {
+	console.error(outcome.message)
+}
+```
+
+这份回执已经足以分支处理，无需再转换成 Result 或定义一套错误类型。`SESSION_BUSY`、参数错误和
+已释放 session 的调用仍会 reject；调用方继续负责释放自己创建的 session。`spawnSubagent()` 的回执还包含 child ID，直接保留。
+
+[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/pi-agent/tests/controller.test.ts)验证成功、取消、模型失败、异常和 session 释放。

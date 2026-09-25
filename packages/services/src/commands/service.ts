@@ -2,7 +2,7 @@ import {
 	CommandError,
 	createCommandRegistry,
 	type Command,
-	type CommandCatalogSnapshot as RegistryCommandCatalogSnapshot,
+	type CommandCatalogSnapshot,
 	type CommandContext,
 	type CommandDescriptor,
 	type CommandRegistration,
@@ -12,7 +12,7 @@ import { enterOwnerInvocation } from '@pluxel/core/internal'
 import { createCommandMount, type CommandMount } from './mount'
 import { pinOwnerContext } from '../internal/owner-view'
 
-export type CommandCatalogSnapshot = RegistryCommandCatalogSnapshot
+export type { CommandCatalogSnapshot } from '@pluxel/commands'
 export type { CommandMount } from './mount'
 
 export class CommandsService {

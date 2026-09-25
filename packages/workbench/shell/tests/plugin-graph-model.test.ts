@@ -28,7 +28,11 @@ const unresolved = definition('UnresolvedRequirement')
 
 describe('plugin graph visual model', () => {
 	it('projects provider-to-consumer effective edges and retains isolated effective nodes', () => {
-		const model = buildPluginGraphVisualModel(projection(snapshot()), 'effective', 'all')
+		const model = buildPluginGraphVisualModel(
+			buildPluginDependencyGraphProjection(snapshot()),
+			'effective',
+			'all',
+		)
 
 		expect(model.nodes.map((item) => item.id)).toContain(pluginGraphPluginNodeId(isolated))
 		expect(model.isolatedNodes.map((item) => item.id)).toEqual([pluginGraphPluginNodeId(isolated)])
@@ -52,7 +56,11 @@ describe('plugin graph visual model', () => {
 	})
 
 	it('adds namespaced hollow placeholders only to declaration relations', () => {
-		const model = buildPluginGraphVisualModel(projection(snapshot()), 'declaration', 'all')
+		const model = buildPluginGraphVisualModel(
+			buildPluginDependencyGraphProjection(snapshot()),
+			'declaration',
+			'all',
+		)
 
 		expect(model.nodes.filter((item) => item.kind === 'plugin')).toHaveLength(5)
 		expect(model.nodes.filter((item) => item.kind === 'absent-provider')).toHaveLength(1)
@@ -68,7 +76,7 @@ describe('plugin graph visual model', () => {
 	})
 
 	it('filters edge modes without dropping status nodes', () => {
-		const graph = projection(snapshot())
+		const graph = buildPluginDependencyGraphProjection(snapshot())
 		const required = buildPluginGraphVisualModel(graph, 'declaration', 'required')
 		const optional = buildPluginGraphVisualModel(graph, 'declaration', 'optional')
 
@@ -80,7 +88,7 @@ describe('plugin graph visual model', () => {
 
 	it('keeps auto-start policy independent from observed lifecycle state', () => {
 		const model = buildPluginGraphVisualModel(
-			projection(snapshot({ providerAutoStart: false })),
+			buildPluginDependencyGraphProjection(snapshot({ providerAutoStart: false })),
 			'effective',
 			'all',
 		)
@@ -97,18 +105,22 @@ describe('plugin graph visual model', () => {
 
 	it('lays out a latent declaration cycle deterministically and reuses pure-status layout', () => {
 		clearPluginGraphLayoutCacheForTests()
-		const firstModel = buildPluginGraphVisualModel(projection(snapshot()), 'declaration', 'all')
+		const firstModel = buildPluginGraphVisualModel(
+			buildPluginDependencyGraphProjection(snapshot()),
+			'declaration',
+			'all',
+		)
 		const firstLayout = layoutPluginGraph(firstModel)
 		const statusOnlyRefresh = snapshot({ providerRunning: false })
 		const secondModel = buildPluginGraphVisualModel(
-			projection(statusOnlyRefresh),
+			buildPluginDependencyGraphProjection(statusOnlyRefresh),
 			'declaration',
 			'all',
 		)
 		const secondLayout = layoutPluginGraph(secondModel)
 		const withAnotherIsolate = snapshot()
 		const thirdModel = buildPluginGraphVisualModel(
-			projection(
+			buildPluginDependencyGraphProjection(
 				Object.freeze({
 					...withAnotherIsolate,
 					nodes: Object.freeze([
@@ -143,7 +155,11 @@ describe('plugin graph visual model', () => {
 	})
 
 	it('rebases manual selection by stable ID after refresh and clears missing selections', () => {
-		const firstModel = buildPluginGraphVisualModel(projection(snapshot()), 'declaration', 'all')
+		const firstModel = buildPluginGraphVisualModel(
+			buildPluginDependencyGraphProjection(snapshot()),
+			'declaration',
+			'all',
+		)
 		const providerId = pluginGraphPluginNodeId(provider)
 		const firstProvider = firstModel.byId.get(providerId)
 		expect(firstProvider?.kind).toBe('plugin')
@@ -151,7 +167,7 @@ describe('plugin graph visual model', () => {
 		const selectionKey = pluginGraphSelectionKey({ kind: 'node', node: firstProvider })
 
 		const refreshedModel = buildPluginGraphVisualModel(
-			projection(snapshot({ providerRunning: false })),
+			buildPluginDependencyGraphProjection(snapshot({ providerRunning: false })),
 			'declaration',
 			'all',
 		)
@@ -164,7 +180,11 @@ describe('plugin graph visual model', () => {
 		expect(refreshed.selection.node).not.toBe(firstProvider)
 		expect(refreshed.selection.node.node.status.lifecycleState).toBe('stopped')
 
-		const filteredModel = buildPluginGraphVisualModel(projection(snapshot()), 'effective', 'all')
+		const filteredModel = buildPluginGraphVisualModel(
+			buildPluginDependencyGraphProjection(snapshot()),
+			'effective',
+			'all',
+		)
 		const inactive = firstModel.byId.get(pluginGraphPluginNodeId(inactiveA))
 		expect(inactive).toBeDefined()
 		if (!inactive) throw new Error('expected inactive node')
@@ -177,7 +197,11 @@ describe('plugin graph visual model', () => {
 	})
 
 	it('keeps explicit close closed while undefined manual selection follows route focus', () => {
-		const model = buildPluginGraphVisualModel(projection(snapshot()), 'effective', 'all')
+		const model = buildPluginGraphVisualModel(
+			buildPluginDependencyGraphProjection(snapshot()),
+			'effective',
+			'all',
+		)
 		const routeNode = model.byId.get(pluginGraphPluginNodeId(provider))
 		expect(routeNode).toBeDefined()
 		if (!routeNode) throw new Error('expected route node')
@@ -193,10 +217,6 @@ describe('plugin graph visual model', () => {
 		})
 	})
 })
-
-function projection(value: PluginDependencyGraphSnapshot) {
-	return buildPluginDependencyGraphProjection(value)
-}
 
 function snapshot(
 	options: { providerRunning?: boolean; providerAutoStart?: boolean } = {},

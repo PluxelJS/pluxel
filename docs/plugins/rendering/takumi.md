@@ -180,3 +180,40 @@ width/height budget 检查应用 DPR 后的 physical dimensions。font count 在
 limits 是输入 bytes 预算，不能把 native renderer
 变成安全 sandbox；decoded image 与 glyph 内存还受 Takumi 实现影响。`maxOutputBytes` 在编码完成后检查，用于限制返回值，
 不能撤销已经发生的编码成本。
+
+## 将可恢复失败交给业务调用方
+
+卡片 consumer 可在 renderer 繁忙时返回占位卡片，因此只将 `RENDER_BUSY` 转成 `CardBusy`。
+下面的 `takumi` 来自 constructor 注入，不修改 renderer 本身的 API。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import {
+	TakumiError,
+	type TakumiPlugin,
+	type TakumiRenderInput,
+	type TakumiRenderResult,
+} from '@pluxel/takumi'
+
+export class CardBusy extends TaggedError('CardBusy')<{ message: string }> {}
+
+export async function renderCard(
+	takumi: TakumiPlugin,
+	input: TakumiRenderInput,
+): Promise<Result<TakumiRenderResult, CardBusy>> {
+	try {
+		return Result.ok(await takumi.render(input))
+	} catch (error) {
+		if (error instanceof TakumiError && error.code === 'RENDER_BUSY') {
+			return Result.err(new CardBusy({ message: 'Card renderer is busy; retry later.' }))
+		}
+		throw error
+	}
+}
+```
+
+Err 时由调用方展示占位卡片，Ok 时使用 `value.data`。`RENDER_TIMEOUT` 不自动表示可以立即重试：已经提交的
+native work 可能仍在占用 slot。未知故障、无效输入和取消继续 reject；Result 不改变 input borrowing、reservation
+或 native settlement。回归测试先持有 reservation 制造 busy，再释放并成功渲染。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi/tests/takumi.test.ts)。

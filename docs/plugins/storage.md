@@ -216,3 +216,34 @@ provider stop/replacement 后，旧 `S3` caller facade 先由 Core generation ga
 会被 revoke 并抛 `S3NotRunningError`（code `S3_NOT_RUNNING`）；remote client 的 in-flight fetch 会收到 lifecycle abort。
 
 对象存储不是关系型事务。若数据库 metadata 与对象必须协调，先设计显式 state machine，再用 outbox、幂等 key 和补偿流程处理对象 side effect；不要假设 DB transaction 能回滚 S3 PUT。
+
+## 将对象缺失返回给调用方
+
+S3 继续提供 s3mini 原生接口；业务 consumer 才知道缺少对象是否是可恢复失败。`getObject()` 以 `null`
+表示对象不存在，空文本是成功值。下面用 default bucket 读取文本文件：
+
+```ts twoslash
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { S3 } from '@pluxel/storage'
+
+export class DocumentNotFound extends TaggedError('DocumentNotFound')<{ id: string }> {}
+
+@Plugin()
+export class DocumentsPlugin extends BasePlugin {
+	constructor(private readonly s3: S3) {
+		super()
+	}
+
+	async read(id: string): Promise<Result<string, DocumentNotFound>> {
+		const text = await this.s3.bucket().client.getObject(`documents/${id}.txt`)
+		return text === null ? Result.err(new DocumentNotFound({ id })) : Result.ok(text)
+	}
+}
+```
+
+调用方可对 `DocumentNotFound` 提供重新上传入口，成功时使用 `value`。不要捕获所有异常并返回缺失：bucket
+未配置、认证/权限、网络/磁盘错误和 generation 撤回应继续拒绝。该示例只读取文本；流式 `Response`、multipart
+或已经开始的写入仍遵循自己的 body、取消、补偿和部分成功协议，不能靠 Result 回滚。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/storage/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/storage/tests/s3.test.ts)。

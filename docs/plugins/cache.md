@@ -187,3 +187,60 @@ constructor 仍需声明 `Cache` required dependency。`@Cached` 要求 Promise-
 ## 检查清单
 
 在 [测试宿主](../development/testing.md) 中用计数 loader 连续读取同一个 key，两次调用应只加载一次；执行 `delete()` 后再读，应重新加载。使用不同 tenant 的 tuple key 验证隔离，用 `null` 验证负缓存。需要 Redis 共享缓存时，再在目标 backend 验证失效；单进程的请求合并不保证跨实例只运行一次 loader。
+
+## 在缓存之外构造 Result
+
+如果调用方必须区分“账号不存在”，在业务方法返回 Result；Cache 的 miss 仍是 `undefined`，不改成 Err。
+下面的 `AccountSource` 是测试用内存数据源，实际应用换成权威 repository。`CachedAccounts` 只缓存普通账号或
+明确的负缓存 `null`，每次读取后才创建 Result。空值会缓存 60 秒；新建账号后调用 `invalidate()` 撤销负缓存。
+
+```ts twoslash
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { Cache, type CacheNamespace } from '@pluxel/cache'
+
+export type Account = Readonly<{ id: string; name: string }>
+
+export class AccountNotFound extends TaggedError('AccountNotFound')<{ id: string }> {}
+
+// 示例数据源；实际应用替换为 repository。
+@Plugin()
+export class AccountSource extends BasePlugin {
+	async find(id: string): Promise<Account | null> {
+		return id === 'alice' ? { id, name: 'Alice' } : null
+	}
+}
+
+@Plugin()
+export class CachedAccounts extends BasePlugin {
+	private accounts!: CacheNamespace
+
+	constructor(
+		private readonly cache: Cache,
+		private readonly source: AccountSource,
+	) {
+		super()
+	}
+
+	protected override init(): void {
+		this.accounts = this.cache.scope('accounts', { ttlMs: 60_000 })
+	}
+
+	async find(id: string): Promise<Result<Account, AccountNotFound>> {
+		// Only data and the deliberate negative-cache sentinel cross the backend.
+		const account = await this.accounts.getOrLoad(id, () => this.source.find(id))
+		return account === null ? Result.err(new AccountNotFound({ id })) : Result.ok(account)
+	}
+
+	invalidate(id: string): Promise<boolean> {
+		return this.accounts.delete(id)
+	}
+}
+```
+
+不要直接在返回 `Result` 的方法上使用 `@Cached`，也不要让 `getOrLoad()` 的 loader 返回 `Err`：它是普通的
+fulfilled value，可能被缓存，经过 Redis / Persistence 序列化后也不保留 Result/Error prototype。
+这里 repository 或 backend 的拒绝继续传播，不会被保存成“找不到账号”。
+调用方对 `find()` 的 Err 提示账号缺失，对 Ok 使用 `value`；网络故障不应导致创建重复账号。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/cache/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/cache/tests/result-example.test.ts)。

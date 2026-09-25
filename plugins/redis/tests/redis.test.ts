@@ -38,6 +38,7 @@ const redisMock = vi.hoisted(() => {
 				state.ready = false
 			}),
 			ping: vi.fn(async (payload?: string) => payload || 'PONG'),
+			get: vi.fn<() => Promise<string | null>>(),
 		}
 		client.on.mockImplementation((event: string, listener: Listener) => {
 			let eventListeners = listeners.get(event)
@@ -66,6 +67,7 @@ vi.mock('redis', () => ({ createClient: redisMock.createClient }))
 
 import { Redis, RedisConfig, RedisConnectionError, RedisPlugin } from '../src/index.ts'
 import { RedisWorkbench } from '../src/workbench.ts'
+import { DraftsPlugin } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class RedisConsumer extends BasePlugin {
@@ -100,6 +102,7 @@ beforeEach(() => {
 	redisMock.state.ready = false
 	redisMock.listeners.clear()
 	redisMock.createClient.mockClear()
+	redisMock.client.get.mockReset()
 	redisMock.client.on.mockClear()
 	redisMock.client.off.mockClear()
 	redisMock.client.connect.mockReset().mockImplementation(async () => {
@@ -121,6 +124,24 @@ beforeEach(() => {
 })
 
 describe('@pluxel/redis', () => {
+	it('demonstrates a domain Result for GET absence while preserving empty values and command failures', async () => {
+		await using host = await createTestHost()
+		await host.start([RedisPlugin, DraftsPlugin])
+		const drafts = host.require(DraftsPlugin)
+		redisMock.client.get.mockResolvedValueOnce('').mockResolvedValueOnce(null)
+		const empty = await drafts.read('empty')
+		expect(empty.unwrap()).toBe('')
+		const missing = await drafts.read('missing')
+		expect(missing.isErr()).toBe(true)
+		if (missing.isOk()) throw new Error('Expected a missing draft')
+		expect(missing.error).toMatchObject({ _tag: 'DraftNotFound', id: 'missing' })
+		const offline = new Error('connection lost')
+		redisMock.client.get.mockRejectedValueOnce(offline)
+		await expect(drafts.read('offline')).rejects.toBe(offline)
+		await host.stop(RedisPlugin)
+		await expect(drafts.read('stopped')).rejects.toThrow(Error)
+	})
+
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		{
 			await using host = await createTestHost({

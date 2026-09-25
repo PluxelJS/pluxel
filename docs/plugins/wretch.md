@@ -20,7 +20,7 @@ pnpm catalog:add -- @pluxel/wretch
 ```ts twoslash
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/better-result'
+import { Result, TaggedError } from '@pluxel/core/better-result'
 import * as v from 'valibot'
 
 const CustomerSchema = v.object({ id: v.string(), name: v.string() })
@@ -48,7 +48,7 @@ export class CustomerPlugin extends BasePlugin {
 		this.api = this.http.client.url(this.config.baseUrl, true)
 	}
 
-	find(id: string): Promise<SharedResult<Customer, CustomerNotFound>> {
+	find(id: string): Promise<Result<Customer, CustomerNotFound>> {
 		return this.api
 			.get(`/customers/${encodeURIComponent(id)}`)
 			.notFound(() =>

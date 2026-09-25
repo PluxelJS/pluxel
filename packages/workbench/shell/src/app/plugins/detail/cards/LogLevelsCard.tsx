@@ -16,8 +16,7 @@ import {
 } from '../../../../runtime'
 import { managementQueryKeys } from '../../../managementQuery'
 
-type Snapshot = VersionedPluginLogPolicySnapshot
-type Mutation = Pick<Snapshot, 'revision' | 'persistence'>
+type Mutation = Pick<VersionedPluginLogPolicySnapshot, 'revision' | 'persistence'>
 type PolicyCommand =
 	| Readonly<{ kind: 'plugin'; owner: PluginNodeAddress; level: RuntimePluginLogLevel | null }>
 	| Readonly<{ kind: 'default'; level: RuntimePluginLogLevel }>
@@ -59,8 +58,10 @@ export function LogLevelsCard({
 		// Every write consumes the shared revision. Serializing within this session
 		// lets a queued write observe the cache committed by the preceding one.
 		scope: { id: 'management:logging-policy' },
-		mutationFn: async (command: PolicyCommand): Promise<Snapshot> => {
-			const current = queryClient.getQueryData<Snapshot>(managementQueryKeys.loggingPolicy())
+		mutationFn: async (command: PolicyCommand): Promise<VersionedPluginLogPolicySnapshot> => {
+			const current = queryClient.getQueryData<VersionedPluginLogPolicySnapshot>(
+				managementQueryKeys.loggingPolicy(),
+			)
 			if (!current) throw new Error('Plugin log policy is not loaded')
 			if (command.kind === 'reset') return management.logging.resetPolicy(current.revision)
 			let updated: Mutation

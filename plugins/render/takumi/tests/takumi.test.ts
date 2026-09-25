@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { TakumiPlugin } from '../src/index.ts'
 import { RenderScheduler } from '../src/render-scheduler.ts'
 import { TakumiWorkbench } from '../src/workbench.ts'
+import { renderCard } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class TakumiTestConsumer extends BasePlugin {
@@ -36,6 +37,39 @@ function startTakumiFixture(
 const fontPath = findTestFont()
 
 describe('TakumiPlugin', () => {
+	it('demonstrates busy as a Result and releases the held reservation before retrying', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await startTakumiFixture(host, {
+			maxConcurrentRenders: 1,
+			maxQueuedRenders: 0,
+			maxQueuedRendersPerConsumer: 0,
+		})
+		const takumi = host.require(TakumiTestConsumer).takumi
+		const input = { content: '<div>Card</div>', width: 64, height: 32 }
+		const held = await takumi.reserveRender()
+		try {
+			const busy = await renderCard(takumi, input)
+			expect(busy.isErr()).toBe(true)
+			if (busy.isOk()) throw new Error('Unexpected Result branch')
+			expect(busy.error._tag).toBe('CardBusy')
+		} finally {
+			await held.close()
+		}
+		const rendered = await renderCard(takumi, input)
+		expect(rendered.isOk()).toBe(true)
+		if (rendered.isErr()) throw new Error('Unexpected Result branch')
+		expect(rendered.value.mediaType).toBe('image/png')
+		const aborted = new Error('caller cancelled')
+		await expect(renderCard(takumi, { ...input, signal: AbortSignal.abort(aborted) })).rejects.toBe(
+			aborted,
+		)
+		await expect(renderCard(takumi, { ...input, width: 0 })).rejects.toMatchObject({
+			code: 'INVALID_INPUT',
+		})
+	})
+
 	it('renders bounded HTML to raster bytes and SVG without Workbench', async () => {
 		{
 			await using host = await createTestHost({

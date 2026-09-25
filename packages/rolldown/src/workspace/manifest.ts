@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import { resolve as r } from 'pathe'
+import { resolve } from 'pathe'
 import { nodeWorkspaceFs, readTextFile, type WorkspaceFs } from './fs'
 import type { WorkspacePackageJson } from './package-json'
 
@@ -11,7 +11,7 @@ export async function safeReadManifestWithFs(
 	dir: string,
 	fs: WorkspaceFs = nodeWorkspaceFs,
 ): Promise<WorkspacePackageJson | undefined> {
-	const manifestPath = r(dir, 'package.json')
+	const manifestPath = resolve(dir, 'package.json')
 	if (!fs.existsSync(manifestPath)) return undefined
 	try {
 		return JSON.parse(await readTextFile(fs, manifestPath)) as WorkspacePackageJson
@@ -28,7 +28,7 @@ export function manifestPathForWithFs(
 	dir: string,
 	fs: WorkspaceFs = nodeWorkspaceFs,
 ): string | undefined {
-	const path = r(dir, 'package.json')
+	const path = resolve(dir, 'package.json')
 	return fs.existsSync(path) ? path : undefined
 }
 

@@ -278,3 +278,48 @@ Canvas 为每个 caller generation 建立 lease。consumer stop/replacement 会�
 - worker/font：`FONT_UNAVAILABLE`、`INVALID_WORKER_SNAPSHOT`。
 
 不要在 consumer 中捕获后放宽 host budget；应缩小输入、拒绝任务，或由 host operator 明确调整配置。
+
+## 将可恢复失败交给业务调用方
+
+上传预览允许用户换一张图片，所以 consumer 可以只将无效图片和内容超限转换成 `ImageRejected`。
+下面是普通业务 helper，`canvas` 来自 constructor 注入的 `CanvasPlugin`。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { CanvasError, type CanvasPlugin, type Image } from '@pluxel/canvas'
+
+export class ImageRejected extends TaggedError('ImageRejected')<{
+	reason: 'invalid_image' | 'too_large'
+}> {}
+
+// An ordinary business helper; pass the consumer's injected CanvasPlugin.
+export async function decodeUpload(
+	canvas: CanvasPlugin,
+	data: Uint8Array,
+	signal?: AbortSignal,
+): Promise<Result<Image, ImageRejected>> {
+	try {
+		return Result.ok(await canvas.decodeImage(data, { signal }))
+	} catch (error) {
+		if (error instanceof CanvasError) {
+			if (error.code === 'INVALID_IMAGE') {
+				return Result.err(new ImageRejected({ reason: 'invalid_image' }))
+			}
+			if (
+				error.code === 'IMAGE_BYTES_EXCEEDED' ||
+				error.code === 'DIMENSIONS_EXCEEDED' ||
+				error.code === 'PIXELS_EXCEEDED'
+			) {
+				return Result.err(new ImageRejected({ reason: 'too_large' }))
+			}
+		}
+		throw error
+	}
+}
+```
+
+调用方检查 `result.isErr()` 后按 `reason` 提示重新上传；Ok 的 `value` 是 caller-owned native Image。
+不要把 Image/Result 直接作为 Workbench DTO。`DECODE_BUSY`、取消、无效调用参数和停止在此示例中继续 reject；
+需要降级 busy 的产品可以单独建模。Result 不改变 borrowed/owned bytes 或 native decode 的取消语义。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/canvas/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/canvas/tests/canvas.test.ts)。

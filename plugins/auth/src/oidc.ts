@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload } from 'jose'
-import type { ManagementAccessPrincipal as AuthPrincipal } from '@pluxel/services/management/access'
+import type { ManagementAccessPrincipal } from '@pluxel/services/management/access'
 import type { OidcAuthMode } from './config.ts'
 import { readCookie } from './sessions.ts'
 
@@ -26,7 +26,7 @@ type PendingAuthorization = Readonly<{
 }>
 
 export type OidcCallbackResult =
-	| Readonly<{ ok: true; principal: AuthPrincipal; returnTo: string }>
+	| Readonly<{ ok: true; principal: ManagementAccessPrincipal; returnTo: string }>
 	| Readonly<{ ok: false; reason: 'unavailable' | 'invalid_credentials' }>
 
 function randomToken(bytes: number = 32): string {
@@ -111,7 +111,7 @@ function claimsAllowed(payload: JWTPayload, required: OidcAuthMode['requiredClai
 	return true
 }
 
-function principal(payload: JWTPayload, issuer: string): AuthPrincipal | undefined {
+function principal(payload: JWTPayload, issuer: string): ManagementAccessPrincipal | undefined {
 	if (typeof payload.sub !== 'string' || payload.sub.length === 0 || payload.sub.length > 1_024) {
 		return undefined
 	}

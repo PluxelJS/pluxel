@@ -210,3 +210,45 @@ Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程�
 
 默认字体变化只影响之后创建的 Canvas context 和之后执行的 ECharts/Takumi render。已经准备好的文字布局与已有
 native context/renderer state 保持不变；portable 集合变化会让 Takumi 在新 revision 创建新的 registry。
+
+## 将可恢复失败交给业务调用方
+
+业务品牌字体注册允许用户更换文件时，可只将内容不合法和单个文件超限转成 Result。
+下面的 `fonts` 是 consumer 注入的 `FontsPlugin`，并未另建字体管理入口。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import {
+	FontsError,
+	type FontsPlugin,
+	type FontRegistration,
+	type FontRegistrationInput,
+} from '@pluxel/fonts'
+
+export class FontRejected extends TaggedError('FontRejected')<{
+	reason: 'invalid_font' | 'too_large'
+}> {}
+
+export async function registerBrandFont(
+	fonts: FontsPlugin,
+	input: FontRegistrationInput,
+): Promise<Result<FontRegistration, FontRejected>> {
+	try {
+		return Result.ok(await fonts.register(input))
+	} catch (error) {
+		if (error instanceof FontsError && error.code === 'INVALID_FONT') {
+			return Result.err(new FontRejected({ reason: 'invalid_font' }))
+		}
+		if (error instanceof FontsError && error.code === 'FONT_TOO_LARGE') {
+			return Result.err(new FontRejected({ reason: 'too_large' }))
+		}
+		throw error
+	}
+}
+```
+
+Err 的 `reason` 决定提示换文件还是缩小文件。Ok 的 `value` 仍是 `FontRegistration`：caller generation
+停止时自动释放，也可调用 `dispose()` 提前释放。Result 不负责释放资源，registration 不能变成 DTO。
+调用参数错误、累计容量、存储损坏、busy、取消和停止保持原异常；启动恢复失败仍必须让 Plugin 启动失败。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/fonts/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/fonts/tests/fonts.test.ts)。

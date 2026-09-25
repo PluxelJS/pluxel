@@ -164,7 +164,7 @@ export function HostRemotePaneLayout({
 		splitRef.current?.reset()
 		setActiveDrawer(null)
 	}, [panes, writeState])
-	const collapsibleSides = useMemo(() => panes.filter(isCollapsibleSidePane), [panes])
+	const collapsibleSides = useMemo(() => panes.filter(canCollapse), [panes])
 	const focusActive =
 		collapsibleSides.length > 0 &&
 		activeDrawer === null &&
@@ -548,14 +548,10 @@ function defaultCollapseAt(pane: WorkbenchPaneDescriptor) {
 	return 'never'
 }
 
-function canCollapse(pane: WorkbenchPaneDescriptor) {
-	return pane.role !== 'primary' && pane.collapsible !== false
-}
-
-function isCollapsibleSidePane(
+function canCollapse(
 	pane: WorkbenchPaneDescriptor,
 ): pane is WorkbenchPaneDescriptor & { role: 'navigation' | 'inspector' } {
-	return canCollapse(pane)
+	return pane.role !== 'primary' && pane.collapsible !== false
 }
 
 function isResponsiveDrawer(

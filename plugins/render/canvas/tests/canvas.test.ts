@@ -10,6 +10,7 @@ import { createCanvasWorkerAdapter } from '../src/worker.ts'
 import { layoutWithLines, measureRichInlineStats } from '../src/pretext.ts'
 import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
 import { CanvasWorkbench } from '../src/workbench.ts'
+import { decodeUpload } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class CanvasTestConsumer extends BasePlugin {
@@ -43,6 +44,27 @@ async function startCanvasFixture(
 const discoveredFamily = GlobalFonts.families[0]?.family
 
 describe('CanvasPlugin', () => {
+	it('demonstrates recoverable upload rejection without treating cancellation or withdrawal as an invalid image', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
+		const canvas = host.require(CanvasTestConsumer).canvas
+		const bytes = await canvas.createCanvasSync(2, 2).encode('png')
+		const image = await decodeUpload(canvas, bytes)
+		expect(image.isOk()).toBe(true)
+		if (image.isErr()) throw new Error('Unexpected Result branch')
+		expect(image.value.width).toBe(2)
+		const invalid = await decodeUpload(canvas, new Uint8Array([1, 2, 3]))
+		expect(invalid.isErr()).toBe(true)
+		if (invalid.isOk()) throw new Error('Unexpected Result branch')
+		expect(invalid.error.reason).toBe('invalid_image')
+		const aborted = new Error('caller cancelled')
+		await expect(decodeUpload(canvas, bytes, AbortSignal.abort(aborted))).rejects.toBe(aborted)
+		await host.stop(CanvasTestConsumer)
+		await expect(decodeUpload(canvas, bytes)).rejects.toThrow(Error)
+	})
+
 	it('keeps root and per-worker native decode defaults separate', () => {
 		expect(v.parse(CanvasConfig, {})).toMatchObject({
 			maxConcurrentDecodes: 2,

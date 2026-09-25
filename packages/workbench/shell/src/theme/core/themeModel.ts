@@ -18,8 +18,6 @@ import {
 } from './themeTokens'
 import { alpha, createMaterialThemeSource, mix, toneHex } from './tonalPalette'
 
-export type PlxResolvedThemeMode = PlxThemeMode
-
 export type PlxLogTheme = {
 	panelBg: string
 	panelHeaderBg: string
@@ -42,7 +40,7 @@ export type PlxLogTheme = {
 }
 
 export type PlxThemeModel = {
-	mode: PlxResolvedThemeMode
+	mode: PlxThemeMode
 	app: {
 		bg: string
 		bgAlt: string
@@ -149,7 +147,7 @@ function createLogTheme(tokens: PlxThemeModel, seedHex: string): PlxLogTheme {
 	}
 }
 
-function buildThemeModel(seedHex: string, mode: PlxResolvedThemeMode): PlxThemeModel {
+function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
 	const source = createMaterialThemeSource(seedHex)
 	const { a1 } = source.core
 	const isDark = mode === 'dark'
@@ -226,7 +224,7 @@ function buildThemeModel(seedHex: string, mode: PlxResolvedThemeMode): PlxThemeM
 	return tokens
 }
 
-export function resolveThemeMode(colorScheme?: MantineColorScheme): PlxResolvedThemeMode {
+export function resolveThemeMode(colorScheme?: MantineColorScheme): PlxThemeMode {
 	return colorScheme === 'dark' ? 'dark' : 'light'
 }
 

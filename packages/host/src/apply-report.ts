@@ -3,7 +3,6 @@ import {
 	parsePluginNodeAddress,
 	type CommitSummary,
 	type Context,
-	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 	type PluginLifecycleIssueKind,
 	type PluginLifecycleIssuePhase,
@@ -73,30 +72,30 @@ export function projectPluginApplyReport(
 							pluginChanges: Object.freeze({
 								added: Object.freeze(
 									summary.pluginChanges.added.map((slot) =>
-										projectNodeAddress(plugins.nodeAddressOf(slot)),
+										parsePluginNodeAddress(plugins.nodeAddressOf(slot)),
 									),
 								),
 								replaced: Object.freeze(
 									summary.pluginChanges.replaced.map(({ from, to }) =>
 										Object.freeze({
-											from: projectNodeAddress(plugins.nodeAddressOf(from)),
-											to: projectNodeAddress(plugins.nodeAddressOf(to)),
+											from: parsePluginNodeAddress(plugins.nodeAddressOf(from)),
+											to: parsePluginNodeAddress(plugins.nodeAddressOf(to)),
 										}),
 									),
 								),
 								removed: Object.freeze(
 									summary.pluginChanges.removed.map((slot) =>
-										projectNodeAddress(plugins.nodeAddressOf(slot)),
+										parsePluginNodeAddress(plugins.nodeAddressOf(slot)),
 									),
 								),
 								restarted: Object.freeze(
 									summary.pluginChanges.restarted.map((slot) =>
-										projectNodeAddress(plugins.nodeAddressOf(slot)),
+										parsePluginNodeAddress(plugins.nodeAddressOf(slot)),
 									),
 								),
 								availabilityChanged: Object.freeze(
 									summary.pluginChanges.availabilityChanged.map((slot) =>
-										projectNodeAddress(plugins.nodeAddressOf(slot)),
+										parsePluginNodeAddress(plugins.nodeAddressOf(slot)),
 									),
 								),
 							}),
@@ -110,14 +109,16 @@ export function projectPluginApplyReport(
 								issues: Object.freeze(
 									summary.lifecycleReport.issues.map((issue): PluginApplyLifecycleIssue =>
 										Object.freeze({
-											plugin: projectNodeAddress(plugins.nodeAddressOf(issue.plugin)),
+											plugin: parsePluginNodeAddress(plugins.nodeAddressOf(issue.plugin)),
 											phase: issue.phase,
 											kind: issue.kind,
 											message: issue.message,
 											...(issue.error ? { error: projectLifecycleError(issue.error) } : {}),
 											...(issue.blockedBy
 												? {
-														blockedBy: projectNodeAddress(plugins.nodeAddressOf(issue.blockedBy)),
+														blockedBy: parsePluginNodeAddress(
+															plugins.nodeAddressOf(issue.blockedBy),
+														),
 													}
 												: {}),
 										}),
@@ -146,16 +147,16 @@ function projectReconciliationIssue(issue: PluginReconciliationIssue): PluginRec
 		case 'consumer_unavailable':
 			return Object.freeze({
 				kind: issue.kind,
-				consumer: projectNodeAddress(issue.consumer),
+				consumer: parsePluginNodeAddress(issue.consumer),
 				message: issue.message,
 			})
 		case 'requirement_removed':
 			return Object.freeze({
 				kind: issue.kind,
 				binding: issue.binding,
-				consumer: projectNodeAddress(issue.consumer),
-				requirement: projectDefinitionAddress(issue.requirement),
-				provider: projectNodeAddress(issue.provider),
+				consumer: parsePluginNodeAddress(issue.consumer),
+				requirement: parsePluginDefinitionAddress(issue.requirement),
+				provider: parsePluginNodeAddress(issue.provider),
 				message: issue.message,
 			})
 		case 'provider_unavailable':
@@ -164,39 +165,33 @@ function projectReconciliationIssue(issue: PluginReconciliationIssue): PluginRec
 			return Object.freeze({
 				kind: issue.kind,
 				binding: issue.binding,
-				...(issue.consumer === undefined ? {} : { consumer: projectNodeAddress(issue.consumer) }),
-				requirement: projectDefinitionAddress(issue.requirement),
-				provider: projectNodeAddress(issue.provider),
+				...(issue.consumer === undefined
+					? {}
+					: { consumer: parsePluginNodeAddress(issue.consumer) }),
+				requirement: parsePluginDefinitionAddress(issue.requirement),
+				provider: parsePluginNodeAddress(issue.provider),
 				message: issue.message,
 			})
 		case 'fork_not_allowed':
 			return Object.freeze({
 				kind: issue.kind,
-				node: projectNodeAddress(issue.node),
+				node: parsePluginNodeAddress(issue.node),
 				message: issue.message,
 			})
 		case 'fork_default_forbidden':
 		case 'provider_default_requires_abstract':
 			return Object.freeze({
 				kind: issue.kind,
-				requirement: projectDefinitionAddress(issue.requirement),
-				provider: projectNodeAddress(issue.provider),
+				requirement: parsePluginDefinitionAddress(issue.requirement),
+				provider: parsePluginNodeAddress(issue.provider),
 				message: issue.message,
 			})
 		case 'missing_required_provider':
 			return Object.freeze({
 				kind: issue.kind,
-				consumer: projectNodeAddress(issue.consumer),
-				requirement: projectDefinitionAddress(issue.requirement),
+				consumer: parsePluginNodeAddress(issue.consumer),
+				requirement: parsePluginDefinitionAddress(issue.requirement),
 				message: issue.message,
 			})
 	}
-}
-
-function projectNodeAddress(address: PluginNodeAddress): PluginNodeAddress {
-	return parsePluginNodeAddress(address)
-}
-
-function projectDefinitionAddress(address: PluginDefinitionAddress): PluginDefinitionAddress {
-	return parsePluginDefinitionAddress(address)
 }

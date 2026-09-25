@@ -16,6 +16,7 @@ description: 按任务选择 inspect 源码查询、devconsole 在线操作和�
 ## 按改动范围继续读
 
 - 业务代码：[插件模型](../getting-started/plugin-model.md)、[Part](../getting-started/plugin-parts.md)、[配置](../getting-started/configuration.md)、[API 设计](../api/index.md)。
+- 可恢复失败与错误契约：[Better Result 使用时机与官方示例](../api/better-result.md)。
 - 应用装配：[宿主配置](../getting-started/host-setup.md)、[服务组合](../reference/runtime-services.md)；生成项目入口为 `host/src/app.ts`，目录说明见[示例项目](./starter-monorepo.md)。
 - 工具与交付：[CLI](./tooling.md)、[源码联调](./source-workspaces.md)、[插件发布](./plugin-package.md)、[应用交付](./distribution.md)。
 

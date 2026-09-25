@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto'
-import { Result, type Result as SharedResult } from '@pluxel/core/better-result'
+import { Result } from '@pluxel/core/better-result'
 import type { AuthMode } from './config.ts'
 import type { LocalAccountRecord } from './credentials.ts'
 import {
 	hashPassword,
 	normalizeUsername,
 	PasswordHashBusyError,
+	PasswordInputError,
 	type PasswordRecord,
 } from './password.ts'
 import { createTotpSecret, totpProvisioningUri, verifyTotp, type TotpRecord } from './totp.ts'
@@ -174,55 +175,48 @@ export class CredentialProvisioning {
 
 	private async prepareAccount(
 		input: AuthPasswordSetupInput,
-	): Promise<SharedResult<PreparedAccount, AuthSetupFailure>> {
-		const account = Result.ok(input)
-			.andThen((candidate) =>
-				this.store.available
-					? Result.ok(candidate)
-					: Result.err(failure('unavailable', 'Vault is unavailable.')),
+	): Promise<Result<PreparedAccount, AuthSetupFailure>> {
+		if (!this.store.available) return Result.err(failure('unavailable', 'Vault is unavailable.'))
+		const parsed = parsePasswordSetup(input)
+		if (!parsed) return Result.err(failure('invalid_input', 'The account input is invalid.'))
+		const username = parsed.username.trim()
+		const normalizedUsername = normalizeUsername(username)
+		if (!normalizedUsername) {
+			return Result.err(
+				failure(
+					'invalid_input',
+					'Account names may use letters, numbers, dot, underscore, @, and hyphen.',
+				),
 			)
-			.andThen((candidate) => {
-				const parsed = parsePasswordSetup(candidate)
-				return parsed
-					? Result.ok(parsed)
-					: Result.err(failure('invalid_input', 'The account input is invalid.'))
-			})
-			.andThen((parsed) => {
-				const username = parsed.username.trim()
-				const normalizedUsername = normalizeUsername(username)
-				if (!normalizedUsername) {
-					return Result.err(
-						failure(
-							'invalid_input',
-							'Account names may use letters, numbers, dot, underscore, @, and hyphen.',
-						),
-					)
-				}
-				if (parsed.password !== parsed.passwordConfirmation) {
-					return Result.err(failure('invalid_input', 'Passwords do not match.'))
-				}
-				return Result.ok({ username, normalizedUsername, password: parsed.password })
-			})
-		return await account.andThenAsync(async (candidate) => {
-			try {
-				return Result.ok(
-					Object.freeze({
-						username: candidate.username,
-						normalizedUsername: candidate.normalizedUsername,
-						password: await hashPassword(candidate.password),
-					}),
-				)
-			} catch (error) {
+		}
+		if (parsed.password !== parsed.passwordConfirmation) {
+			return Result.err(failure('invalid_input', 'Passwords do not match.'))
+		}
+		let password: PasswordRecord
+		try {
+			password = await hashPassword(parsed.password)
+		} catch (error) {
+			if (error instanceof PasswordHashBusyError) {
+				return Result.err(failure('busy', 'Password hashing is temporarily busy.'))
+			}
+			if (error instanceof PasswordInputError) {
 				return Result.err(
 					failure(
-						error instanceof PasswordHashBusyError ? 'busy' : 'invalid_input',
-						error instanceof PasswordHashBusyError
-							? 'Password hashing is temporarily busy.'
-							: 'Use a password of at least 12 characters.',
+						'invalid_input',
+						'Use a password of at least 12 characters and at most 1,024 UTF-8 bytes.',
 					),
 				)
 			}
-		})
+			// Diagnostic cause stays local; the transport-visible message contains no crypto/input data.
+			throw new Error('Password hashing failed.', { cause: error })
+		}
+		return Result.ok(
+			Object.freeze({
+				username,
+				normalizedUsername,
+				password,
+			}),
+		)
 	}
 
 	private async saveAccount(account: LocalAccountRecord): Promise<CredentialSetupResult> {

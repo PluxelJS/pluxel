@@ -6,6 +6,7 @@ import { TakumiPlugin } from '@pluxel/takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
 import { describe, expect, it } from 'vitest'
 import { TypstMathPlugin } from '../src/index.ts'
+import { renderFormulaDocument } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class TypstMathTestConsumer extends BasePlugin {
@@ -32,6 +33,38 @@ async function startTypstFixture(host: TestHost<boolean>): Promise<void> {
 }
 
 describe('TypstMathPlugin', () => {
+	it('demonstrates a rejected formula as a Result and preserves closed-renderer failure', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await startTypstFixture(host)
+		const consumer = host.require(TypstMathTestConsumer)
+		const renderer = consumer.markdown.createRenderer({
+			extensions: [consumer.typst.createMarkdownExtension()],
+		})
+		try {
+			const rendered = await renderFormulaDocument(renderer, {
+				markdown: 'No formula',
+				width: 64,
+				height: 32,
+			})
+			expect(rendered.isOk()).toBe(true)
+			const invalid = await renderFormulaDocument(renderer, {
+				markdown: '$#let unsafe = 1$',
+				width: 64,
+				height: 32,
+			})
+			expect(invalid.isErr()).toBe(true)
+			if (invalid.isOk()) throw new Error('Unexpected Result branch')
+			expect(invalid.error.reason).toBe('invalid_formula')
+		} finally {
+			await renderer.close()
+		}
+		await expect(
+			renderFormulaDocument(renderer, { markdown: 'Hi', width: 64, height: 32 }),
+		).rejects.toMatchObject({ code: 'NOT_RUNNING' })
+	})
+
 	it('preserves rejected unsafe math as a TypstMathError through the Markdown renderer', async () => {
 		await using host = await createTestHost({
 			services: standardServices({ persistence: { mode: 'memory' } }),

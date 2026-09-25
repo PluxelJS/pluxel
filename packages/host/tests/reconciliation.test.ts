@@ -335,7 +335,7 @@ describe('Host Plugin reconciliation', () => {
 		])
 		const next = createPluginCatalogSnapshot(2, [
 			{ candidate: candidate(Provider) },
-			{ candidate: previous.byDefinition.get(pluginDefinitionKey(Consumer))!.candidate },
+			{ candidate: previous.byDefinition.get(pluginDefinitionIndexKey(Consumer))!.candidate },
 		])
 		const plan = reconcilePluginGraph({
 			catalog: next,
@@ -363,7 +363,7 @@ describe('Host Plugin reconciliation', () => {
 		])
 		const next = createPluginCatalogSnapshot(2, [
 			{ candidate: candidate(Provider, { forkable: false }) },
-			{ candidate: previous.byDefinition.get(pluginDefinitionKey(Consumer))!.candidate },
+			{ candidate: previous.byDefinition.get(pluginDefinitionIndexKey(Consumer))!.candidate },
 		])
 		const plan = reconcilePluginGraph({
 			catalog: next,
@@ -541,10 +541,6 @@ describe('Host Plugin reconciliation', () => {
 		expect(requirementReads).toBe(count)
 	})
 })
-
-function pluginDefinitionKey(address: PluginDefinitionAddress): string {
-	return pluginDefinitionIndexKey(address)
-}
 
 describe('Host Plugin graph publication', () => {
 	it('clears process-local session intent when reconciling a cold boot', async () => {

@@ -11,6 +11,7 @@ import {
 	type MarkdownExtension,
 	type MarkdownExtensionFeatures,
 } from '../src/index.ts'
+import { renderDocument } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class MarkdownTestConsumer extends BasePlugin {
@@ -46,6 +47,49 @@ async function startMarkdownFixture(
 }
 
 describe('TakumiMarkdownPlugin', () => {
+	it('demonstrates source limits as a Result without hiding extension defects or closed handles', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await startMarkdownFixture(host, { markdown: { maxSourceBytes: 32 } })
+		const markdown = host.require(MarkdownTestConsumer).markdown
+		const renderer = markdown.createRenderer()
+		try {
+			const rendered = await renderDocument(renderer, { markdown: '# Hi', width: 64, height: 32 })
+			expect(rendered.isOk()).toBe(true)
+			const tooLarge = await renderDocument(renderer, {
+				markdown: 'x'.repeat(33),
+				width: 64,
+				height: 32,
+			})
+			expect(tooLarge.isErr()).toBe(true)
+			if (tooLarge.isOk()) throw new Error('Unexpected Result branch')
+			expect(tooLarge.error._tag).toBe('DocumentTooLarge')
+		} finally {
+			await renderer.close()
+		}
+		await expect(
+			renderDocument(renderer, { markdown: 'Hi', width: 64, height: 32 }),
+		).rejects.toMatchObject({ code: 'NOT_RUNNING' })
+		const broken = markdown.createRenderer({
+			extensions: [
+				{
+					name: 'broken',
+					create() {
+						throw new Error('defect')
+					},
+				},
+			],
+		})
+		try {
+			await expect(
+				renderDocument(broken, { markdown: 'Hi', width: 64, height: 32 }),
+			).rejects.toMatchObject({ code: 'EXTENSION_FAILED' })
+		} finally {
+			await broken.close()
+		}
+	})
+
 	it('renders GFM tables, removes raw HTML, and gives caller HAST extensions Rangi output', async () => {
 		await using host = await createTestHost({
 			services: standardServices({ persistence: { mode: 'memory' } }),

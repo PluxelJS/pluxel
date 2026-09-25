@@ -16,6 +16,8 @@ Keep these boundaries intact:
 - keep Part fields private by default and expose explicit business methods instead of Context, root-owner, or path accessors;
 - return generation cleanup from `init()` or register resources immediately with `ctx.effects`;
 - business HTTP must work with Workbench Plane disabled;
+- use original API names and direct calls; add aliases or wrappers only for a concrete naming or behavior need;
+- before choosing a local recoverable-failure contract, read `pnpm exec pluxel docs api/better-result.md` and its official-plugin examples;
 - `host/src/app.ts` is the application authority for development and production; optional `sources`
   extend its fixed Plugin catalog without another configuration or Vite mode;
 - browser-only React/Vite code stays in `host/web/`; Node runtime catalog, config and route policy stay in

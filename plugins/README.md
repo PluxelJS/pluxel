@@ -10,3 +10,6 @@
 
 官方插件同时验证公开作者模型：框架 API 变化时同步迁移受影响实现。包内问题先在包内解决；只有第三方 provider
 也需要的跨插件不变量才进入框架。secret 不进入普通配置、日志或 Workbench DTO。
+
+本地可恢复失败、原生 SDK 和传输回执的选择见 [Better Result 指南与官方示例索引](../docs/api/better-result.md)。
+新增领域 Result 时同时演示 provider 返回、consumer 分支处理和边界投影，验证未知异常不会被误分类。

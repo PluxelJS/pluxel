@@ -27,9 +27,12 @@ function fixturePackage(name: string, version: string, exports: readonly string[
 			name,
 			version,
 			type: 'module',
-			exports: Object.fromEntries(
-				exports.map((subpath) => [subpath, subpath === '.' ? './index.js' : `${subpath}.js`]),
-			),
+			exports: {
+				...Object.fromEntries(
+					exports.map((subpath) => [subpath, subpath === '.' ? './index.js' : `${subpath}.js`]),
+				),
+				'./package.json': './package.json',
+			},
 		}),
 		...Object.fromEntries(
 			exports.map((subpath) => [
@@ -196,12 +199,6 @@ const buildFixtures = {
 		]),
 		...fixturePackage('@pluxel/core', '1.0.0', ['.']),
 		...fixturePackage('capnweb', '0.12.0', ['.']),
-		...fixturePackage('@pluxel/workbench', '0.1.0', [
-			'.',
-			'./client',
-			'./react',
-			'./internal/react',
-		]),
 		'node_modules/@pluxel/core/index.js':
 			'export class BasePlugin {}\nexport function Plugin() { return () => {} }\n',
 		'node_modules/@pluxel/core/index.d.ts':
@@ -242,10 +239,11 @@ export function createWorkbenchBridge(identity, Renderer) {
 					'@mantine/hooks': '9.5.2',
 					'@pluxel/core': '1.0.0',
 					'@pluxel/workbench': '0.1.0',
-					capnweb: '0.12.0',
 					react: '19.2.8',
 					'react-dom': '19.2.8',
 				},
+				peerDependencies: { capnweb: '0.12.0' },
+				devDependencies: { capnweb: '0.12.0' },
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 				},

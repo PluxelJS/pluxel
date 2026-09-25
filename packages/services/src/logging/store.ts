@@ -163,7 +163,7 @@ function addCategoryMeta(meta: ChunkMeta, category: string[], delta: 1 | -1): vo
 }
 
 function addLineMeta(meta: ChunkMeta, line: RuntimeLogLine, delta: 1 | -1): void {
-	if (line.plugin) inc(meta.plugin, pluginKey(line.plugin), delta)
+	if (line.plugin) inc(meta.plugin, pluginNodeIndexKey(line.plugin), delta)
 	if (line.context) inc(meta.context, line.context, delta)
 	if (line.name) inc(meta.name, line.name, delta)
 	addCategoryMeta(meta, line.category, delta)
@@ -195,7 +195,7 @@ function chunkShift(chunk: Chunk): RuntimeLogLine | undefined {
 
 function chunkMayMatch(meta: ChunkMeta, f: CompiledLogFilter): boolean {
 	if (!f.hasFilter) return true
-	if (f.plugin && !meta.plugin.has(pluginKey(f.plugin))) return false
+	if (f.plugin && !meta.plugin.has(pluginNodeIndexKey(f.plugin))) return false
 	if (f.context && !meta.context.has(f.context)) return false
 	if (f.displayName && !meta.name.has(f.displayName)) return false
 	if (f.categoryKey) {
@@ -206,10 +206,6 @@ function chunkMayMatch(meta: ChunkMeta, f: CompiledLogFilter): boolean {
 		}
 	}
 	return true
-}
-
-function pluginKey(plugin: import('@pluxel/core').PluginNodeAddress): string {
-	return pluginNodeIndexKey(plugin)
 }
 
 export class RuntimeLogStore {

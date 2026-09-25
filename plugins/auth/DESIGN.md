@@ -49,9 +49,14 @@ TOTP enrollment belongs to one opened target and has bounded count, attempts and
 owner stop or replacement disposes every pending enrollment. Failures use the stable `AuthSetupFailureCode` union; raw storage/crypto
 errors do not cross the RPC boundary.
 
-Credential input validation and password hashing compose through the optional Core Result entry inside
+Credential input validation uses direct guards and the optional Core Result entry inside
 `CredentialProvisioning`. The setup target consumes the result and returns the existing plain
 `AuthSetupFailureCode` DTO. Result instances and password records never enter the Workbench transport.
+Only `PasswordInputError` and `PasswordHashBusyError` become expected hashing failures. Unexpected crypto
+failures reject with a fixed safe message and a local diagnostic cause; they are not classified as invalid input.
+Hashing runs outside Result callbacks so its unexpected rejection is not implicitly converted to `Panic`.
+The setup target replaces unexpected mutation rejections with a fresh generic Error at the RPC boundary,
+so local diagnostic causes cannot cross the membrane. Expected setup DTOs remain unchanged.
 
 The renderer uses one descriptor-bound scope with an owned snapshot query and typed mutation invalidation. Query and mutation resources
 detach their RPC results before React observes them. The TOTP enrollment mutation is reset immediately after its detached result is

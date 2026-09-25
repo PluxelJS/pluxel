@@ -59,6 +59,8 @@ describe('WretchExamplePlugin', () => {
 			if (input.endsWith('/customers/missing')) {
 				return Response.json({ message: 'not found' }, { status: 404 })
 			}
+			if (input.endsWith('/customers/malformed')) return Response.json({ id: 42 })
+			if (input.endsWith('/customers/offline')) throw new TypeError('network unavailable')
 			return Response.json({ message: 'unavailable' }, { status: 503 })
 		})
 
@@ -103,6 +105,10 @@ describe('WretchExamplePlugin', () => {
 		})
 
 		await expect(customerPlugin.findCustomer('unavailable')).rejects.toMatchObject({ status: 503 })
+		await expect(customerPlugin.findCustomer('malformed')).rejects.toMatchObject({
+			name: 'ValiError',
+		})
+		await expect(customerPlugin.findCustomer('offline')).rejects.toThrow('network unavailable')
 	})
 
 	it('places and opens the provider-owned settings Attachment', async () => {

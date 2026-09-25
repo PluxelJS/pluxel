@@ -1,10 +1,6 @@
 import { Http } from '@pluxel/services/http'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import {
-	Result,
-	TaggedError as tagged,
-	type Result as SharedResult,
-} from '@pluxel/core/better-result'
+import { Result, TaggedError } from '@pluxel/core/better-result'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { workbench } from '@pluxel/workbench'
@@ -16,7 +12,7 @@ import { WretchWorkbench } from '../../src/workbench.ts'
 const CustomerSchema = v.object({ id: v.string(), name: v.string() })
 type Customer = v.InferOutput<typeof CustomerSchema>
 
-export class CustomerNotFound extends tagged('CustomerNotFound')<{
+export class CustomerNotFound extends TaggedError('CustomerNotFound')<{
 	id: string
 	message: string
 }> {}
@@ -87,7 +83,7 @@ export class WretchExamplePlugin extends BasePlugin {
 		return this.api.get(this.config.inspectPath).json<T>()
 	}
 
-	findCustomer(id: string): Promise<SharedResult<Customer, CustomerNotFound>> {
+	findCustomer(id: string): Promise<Result<Customer, CustomerNotFound>> {
 		return this.api
 			.get(`/customers/${encodeURIComponent(id)}`)
 			.notFound(() =>

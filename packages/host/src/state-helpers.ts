@@ -1,5 +1,4 @@
 import {
-	pluginDefinitionAddressEqual,
 	pluginDefinitionIndexKey,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
@@ -37,17 +36,6 @@ export function hostStateReadIndex(state: HostStateSnapshot): HostStateReadIndex
 	return index
 }
 
-export function samePluginDefinitionAddress(
-	left: PluginDefinitionAddress,
-	right: PluginDefinitionAddress,
-): boolean {
-	return pluginDefinitionAddressEqual(left, right)
-}
-
-export function samePluginNodeAddress(left: PluginNodeAddress, right: PluginNodeAddress): boolean {
-	return pluginNodeAddressEqual(left, right)
-}
-
 export function isPluginAutoStartEnabled(
 	state: HostStateSnapshot,
 	node: PluginNodeAddress,
@@ -60,7 +48,7 @@ export function setPluginAutoStart(
 	node: PluginNodeAddress,
 	autoStart: boolean,
 ): void {
-	const index = draft.autoStart.findIndex((candidate) => samePluginNodeAddress(candidate, node))
+	const index = draft.autoStart.findIndex((candidate) => pluginNodeAddressEqual(candidate, node))
 	if (autoStart) {
 		if (index < 0) draft.autoStart.push(node)
 		return

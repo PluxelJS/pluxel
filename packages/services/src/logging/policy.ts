@@ -59,9 +59,6 @@ function rankLevel(rank: number): RuntimePluginLogLevel {
 	if (!level) throw new Error(`Invalid compiled plugin log rank: ${rank}`)
 	return level
 }
-function ownerKey(owner: PluginNodeAddress): string {
-	return pluginNodeIndexKey(owner)
-}
 
 export function normalizePluginLogPolicySnapshot(input: unknown): PluginLogPolicySnapshot {
 	if (!input || typeof input !== 'object' || Array.isArray(input))
@@ -78,7 +75,7 @@ export function normalizePluginLogPolicySnapshot(input: unknown): PluginLogPolic
 			throw new Error(`Plugin log policy overrides[${index}] must be an object`)
 		const override = inputOverride as Record<string, unknown>
 		const owner = parsePluginNodeAddress(override.owner)
-		const key = ownerKey(owner)
+		const key = pluginNodeIndexKey(owner)
 		if (seen.has(key))
 			throw new Error(`Plugin log policy contains duplicate owner at overrides[${index}]`)
 		seen.add(key)
@@ -132,7 +129,7 @@ export class RuntimePluginLogPolicy {
 	allows(owner: PluginNodeAddress, level: LogLevel): boolean {
 		let rank = Object.isFrozen(owner) ? this.resolvedRanks.get(owner) : undefined
 		if (rank === undefined) {
-			rank = this.ranks.get(ownerKey(owner))?.rank ?? this.defaultRank
+			rank = this.ranks.get(pluginNodeIndexKey(owner))?.rank ?? this.defaultRank
 			if (Object.isFrozen(owner)) this.resolvedRanks.set(owner, rank)
 		}
 		return rank !== OFF_RANK && LEVEL_RANK[level] >= rank
@@ -175,7 +172,7 @@ export class RuntimePluginLogPolicy {
 		level: RuntimePluginLogLevel,
 	): PluginLogPolicyMutationResult {
 		const owner = parsePluginNodeAddress(ownerInput)
-		const key = ownerKey(owner)
+		const key = pluginNodeIndexKey(owner)
 		if (!this.ranks.has(key) && this.ranks.size >= MAX_PLUGIN_OVERRIDES)
 			throw new Error(`Plugin log policy has too many overrides: ${this.ranks.size}`)
 		const rank = levelRank(normalizeLevel(level))
@@ -184,7 +181,8 @@ export class RuntimePluginLogPolicy {
 		return this.commitMutation()
 	}
 	clearPluginLevel(owner: PluginNodeAddress): PluginLogPolicyMutationResult {
-		if (!this.ranks.delete(ownerKey(parsePluginNodeAddress(owner)))) return this.mutationResult()
+		if (!this.ranks.delete(pluginNodeIndexKey(parsePluginNodeAddress(owner))))
+			return this.mutationResult()
 		return this.commitMutation()
 	}
 	reset(): VersionedPluginLogPolicySnapshot {
@@ -214,7 +212,7 @@ export class RuntimePluginLogPolicy {
 		this.defaultRank = levelRank(snapshot.defaultLevel)
 		this.ranks = new Map(
 			snapshot.overrides.map(({ owner, level }) => [
-				ownerKey(owner),
+				pluginNodeIndexKey(owner),
 				{ owner, rank: levelRank(level) },
 			]),
 		)

@@ -127,3 +127,26 @@ logout 也是 control capability：插件先撤销当前或刚签发的 server s
 - password scrypt、登录失败、challenge、session、cookie commit、OIDC pending state 和 TOTP replay counter 都有固定上界。
 - stop、replacement 或 credential mutation 会撤销对应 generation 的 authority。
 - 业务 HTTP authorization、Bearer token 与 RBAC 由业务 Plugin 自己设计，不属于此 provider。
+
+## 本地 Result 与设置回执
+
+Auth 的 `CredentialProvisioning.prepareAccount()` 逐项校验 Vault 可用性、用户名和密码确认，失败就直接返回 `Result.err(...)`。
+这些是内部业务步骤；输入、密码 record 和 Result 实例都不作为新的插件公共 API。
+
+密码哈希使用普通 `try/catch`，只把 `PasswordInputError` / `PasswordHashBusyError` 转成 `invalid_input` / `busy`。
+未知 crypto 故障以固定的安全 message 拒绝，保留本地 cause；不会误报为密码格式错误，也不会执行保存或应用。
+简单校验使用提前返回，哈希使用普通 `await`，无需把整个流程包进 Result 组合器。
+
+领域方法显式消费 Result，再返回原有 setup 回执：
+
+```ts no-twoslash
+const base = await this.prepareAccount(input)
+if (Result.isError(base)) return base.error
+return await this.saveAccount({ version: 1, type: 'local-account', ...base.value })
+```
+
+Workbench target 对最终 `AuthSetupMutationResult` 调用 `assertWorkbenchDto()`，成功分支附上 readiness snapshot。
+未知 mutation rejection 在 target 边界重新抛出无 cause 的通用错误，避免本地诊断随 RPC 传出；它不会变成 expected DTO。
+这个稳定 DTO 已经拥有 `ok` / `code`，无需再给它套 Result 或换成 TaggedError。
+
+[实际实现](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/src/credential-provisioning.ts)、[成功与持久化验证](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/tests/credential-provisioning.test.ts)和[预期 / 未知失败验证](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/tests/credential-failures.test.ts)。

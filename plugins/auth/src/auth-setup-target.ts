@@ -48,7 +48,7 @@ export class AuthSetupTarget extends RpcTarget implements AuthSetupApi {
 
 	async beginTotpDto(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult> {
 		this.#assertActive()
-		const result = await this.options.mutate(async () => {
+		const result = await this.#mutate(async () => {
 			const unavailable = this.#setupUnavailable()
 			if (unavailable) return unavailable
 			return await this.options.provisioning.beginTotp(input)
@@ -73,7 +73,7 @@ export class AuthSetupTarget extends RpcTarget implements AuthSetupApi {
 		operation: () => Promise<CredentialSetupResult>,
 	): Promise<AuthSetupMutationResult> {
 		this.#assertActive()
-		const result = await this.options.mutate(async (): Promise<AuthSetupMutationResult> => {
+		const result = await this.#mutate(async (): Promise<AuthSetupMutationResult> => {
 			const unavailable = this.#setupUnavailable()
 			if (unavailable) return unavailable
 			const outcome = await operation()
@@ -82,6 +82,15 @@ export class AuthSetupTarget extends RpcTarget implements AuthSetupApi {
 		})
 		assertWorkbenchDto(result)
 		return result
+	}
+
+	async #mutate<T>(operation: () => Promise<T>): Promise<T> {
+		try {
+			return await this.options.mutate(operation)
+		} catch {
+			// Expected failures are DTOs. Unexpected failures still reject, without private causes.
+			throw new Error('Credential setup failed.')
+		}
 	}
 
 	#setupUnavailable(): AuthSetupFailure | undefined {

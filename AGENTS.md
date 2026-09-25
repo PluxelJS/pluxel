@@ -4,6 +4,12 @@ For source locations and application bindings, use [inspect](docs/development/in
 For isolated regression coverage, use [Plugin tests](docs/development/testing.md).
 Other task entry points: [development guide](docs/development/index.md).
 
+## Keep code and examples direct
+
+Use original API names unless an alias resolves a conflict or clarifies an ambiguous source.
+Avoid importing a value again just for its type, or adding aliases and wrappers with no distinct contract or behavior.
+Documentation should show the shortest complete use of the existing contract.
+
 ## Framework changes
 
 Before creating or changing a public library API, configuration contract, public type, error contract, extension point, or resource lifecycle, read:
@@ -19,6 +25,9 @@ Before changing plugin APIs, runtime capabilities, lifecycle, Context services, 
 3. the relevant domain document linked from `engineering/README.md`
 
 Treat those documents as current engineering constraints. User-facing behavior must also be reflected in `docs/`; proposals and historical notes are not current API authority.
+
+For local Plugin failure contracts, follow [Better Result guidance and official examples](docs/api/better-result.md).
+Model caller-recoverable domain failures explicitly; preserve native SDK contracts, decisions, receipts and lifecycle failures.
 
 For a user-visible change to a public package, add a pending `.tegami/*.md` changelog with explicit
 package bump types and at least one Markdown heading. Internal-only refactors, tests, and documentation

@@ -9,6 +9,7 @@ import { createMemoryPersistenceBackend } from '@pluxel/services/persistence'
 import { describe, expect, it } from 'vitest'
 import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
 import { FontsTestWorkbench, openFontsManager, openFontSelection } from './workbench-helpers.ts'
+import { registerBrandFont } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class FontsTestConsumer extends BasePlugin {
@@ -34,6 +35,42 @@ const fontPath = findTestFont()
 const discoveredFamily = GlobalFonts.families[0]?.family
 
 describe('FontsPlugin', () => {
+	it('demonstrates invalid font data as a Result while cancellation and withdrawal still reject', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await host.start([FontsPlugin, FontsLazyConsumer])
+		const fonts = host.require(FontsLazyConsumer).fonts
+		const input = { data: new Uint8Array([1, 2, 3]) }
+		const invalid = await registerBrandFont(fonts, input)
+		expect(invalid.isErr()).toBe(true)
+		if (invalid.isOk()) throw new Error('Unexpected Result branch')
+		expect(invalid.error.reason).toBe('invalid_font')
+		const aborted = new Error('caller cancelled')
+		await expect(
+			registerBrandFont(fonts, { ...input, signal: AbortSignal.abort(aborted) }),
+		).rejects.toBe(aborted)
+		await host.stop(FontsLazyConsumer)
+		await expect(registerBrandFont(fonts, input)).rejects.toThrow(Error)
+	})
+
+	it.skipIf(!fontPath)('keeps successful Result registrations owned by their caller', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await host.start([FontsPlugin, FontsLazyConsumer])
+		const result = await registerBrandFont(host.require(FontsLazyConsumer).fonts, {
+			data: await readFile(fontPath!),
+			family: `Result example ${crypto.randomUUID()}`,
+		})
+		expect(result.isOk()).toBe(true)
+		if (result.isErr()) throw result.error
+		expect(result.value.active).toBe(true)
+		await host.stop(FontsLazyConsumer)
+		expect(result.value.active).toBe(false)
+		result.value.dispose()
+	})
+
 	it('classifies fonts discovered from the host system and resolves an automatic default', async () => {
 		{
 			await using host = await createTestHost({

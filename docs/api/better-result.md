@@ -3,62 +3,61 @@ title: better-result 共享入口
 description: 在本地插件之间共享完整的 better-result API，并处理错误与传输边界。
 ---
 
-多个 Plugin 需要交换 `Result` 实例时，从 `@pluxel/core/better-result` 导入。Core 的这个子入口直接
-`export * from 'better-result'`：上游的全部**命名**运行时导出和 TypeScript 类型都可用，作者不必为
-`Result`、`Ok`、`Err` 或错误工具分别寻找入口。Core 选择上游版本，并在 ESM 与 Node 24+ CJS 发布包中
-提供相同子路径；导入 Core 主入口不会加载 `better-result`。
+本地插件使用 Better Result 时，从 `@pluxel/core/better-result` 导入。这个子入口提供上游完整的命名 API，
+由 Core 统一选择版本；导入 Core 主入口不会加载 Better Result。
 
 ## 选择与安装
 
-| 操作                                           | 契约选择                                                     |
-| ---------------------------------------------- | ------------------------------------------------------------ |
-| 本地插件方法有调用方需要分支处理的预期失败     | 返回 `Result<T, E>`，错误类型由提供方公开                    |
-| Plugin 启动、generation 撤回或代码不变量失败   | 遵循现有 lifecycle 与异常契约                                |
-| Command、Workbench、Worker、HTTP 或 JSON 边界  | 按领域协议返回并校验普通 DTO；跨边界重建类型由协议拥有者决定 |
-| 批量部分成功、已保存未应用或其他有状态操作回执 | 保留领域回执中的全部状态                                     |
+先写出调用方遇到失败后的动作：提示用户修正输入、使用缺省值、稍后重试，还是终止当前操作。
+只有调用方需要稳定分支的预期业务失败才进入 `E`。`Result` 是可选的本地领域契约，不是给每个 Promise
+套一层的框架要求；`Promise<Result<T, E>>` 也不保证 Promise 永不 reject。
+
+| 操作                                            | 契约选择                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| 本地插件方法有调用方需要分支处理的预期失败      | 返回 `Result<T, E>`，错误类型由提供方公开                    |
+| lookup 的正常空值、缓存 miss、限流 allow/deny   | 保留 `null` / `undefined` / 判定；业务层需要拒绝时再映射     |
+| 原生 Wretch、node-redis、s3mini 或 renderer API | 保留上游值和异常契约；在 consumer 知道业务语义时转换         |
+| Plugin 启动、generation 撤回或代码不变量失败    | 遵循现有 lifecycle 与异常契约                                |
+| Command、Workbench、Worker、HTTP 或 JSON 边界   | 按领域协议返回并校验普通 DTO；跨边界重建类型由协议拥有者决定 |
+| 批量部分成功、已保存未应用或其他有状态操作回执  | 保留领域回执中的全部状态                                     |
 
 发布提供 `Result` API 的插件时，声明包含此子入口的 `@pluxel/core` peer 下限，并在开发依赖中使用 Core。
 这条共享路径由 Core 的正常 `better-result` 依赖提供；插件无需为这项本地契约另设 `better-result` peer。
 具体包配置见[插件包指南](../development/plugin-package.md)。
 
+### 提供方和调用方各做什么
+
+1. 提供方在公开方法签名中写出 `Result<T, E>` 或 `Promise<Result<T, E>>`。错误用 `TaggedError` 或已有的
+   稳定判别类型；已有 code 足够时不再制造一套错误层级。`message` 面向人，不能作为分支条件。
+2. 只在最小失败边界转换已知的状态或错误。404 不等于所有网络异常，限流 deny 不等于 backend unavailable，
+   用户输入不合法也不等于上游 schema 或代码损坏。`cause` 留作本地诊断，不投影原始密钥、输入或 stack。
+3. 调用方用 `isErr()`、`match()` 或错误 union 的穷尽分支作出恢复决定。不要以 `unwrap()` 处理正常失败，
+   也不要用 `unwrapOr()` 默默丢掉所有失败原因。无需恢复的操作可以继续使用普通返回值和 throw/reject。
+4. 资源成功取得后立即落实原有清理责任。`Result.ok(handle)` 不会接管 handle，`Err` 不会回滚前面已完成的
+   写入；`Result.gen()` 的短路也不等于事务。partial/unknown outcome 必须保留在领域回执中。
+
+缓存或跨进程传递的是领域数据。`Err` 是 fulfilled value，`getOrLoad()` / `@Cached` 不会自动把它当成
+rejection 排除；序列化也不会替你恢复 Result/Error prototype。先缓存数据或明确的负缓存 `null`，读取后再
+构造 Result。需要自有 wire envelope 时，使用本页末尾的 codec，并验证两端 schema。
+
 ## 完整导出范围
 
-子入口源码就是：
+子入口直接再导出上游全部命名运行时 API 和类型：
 
 ```ts
 export * from 'better-result'
 ```
 
-当前 Core 选择的 `better-result` 3.0.1 提供以下命名导出。未来上游增删导出时，Core 对上游版本的升级
-会连同本子入口的公开 API 一起评估。
-
-| 运行时导出                                                        | 用途                           |
-| ----------------------------------------------------------------- | ------------------------------ |
-| `Result`、`Ok`、`Err`                                             | 创建、判断、转换和组合结果     |
-| `TaggedError`、`isTaggedError`、`matchError`、`matchErrorPartial` | 定义并处理带稳定 `_tag` 的错误 |
-| `Panic`、`isPanic`、`panic`、`UnhandledException`                 | 诊断未预期的异常与损坏的不变量 |
-| `ResultSerializationError`、`ResultDeserializationError`          | `Result.codec` 的传输校验失败  |
-
-`Result`、`Ok`、`Err` 和上述错误类也可在类型位置使用。额外的仅类型导出如下：
-
-| 类型导出                                                                                                                                      | 用途                          |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `InferOk`、`InferErr`、`CallbackSuccess`、`CallbackError`                                                                                     | 推导结果与回调的成功/错误类型 |
-| `AnyTaggedError`、`TaggedErrorClass`、`TaggedErrorInstance`                                                                                   | 带标签错误的类型契约          |
-| `ResultCodec`、`ResultCodecConfig`、`ResultCodecIssue`、`SerializedOk`、`SerializedErr`、`SerializedResult`                                   | Result 编解码与 wire envelope |
-| `StandardSchemaV1`、`StandardSchemaInput`、`StandardSchemaOutput`、`StandardSchemaIssue`、`StandardSchemaPathSegment`、`StandardSchemaResult` | Standard Schema 适配类型      |
-| `TryContext`、`TryPromiseContext`                                                                                                             | 同步/异步尝试的上下文         |
-
-以上名称是当前版本的导出清单；方法参数、重载及返回类型以
-[上游完整 API 参考](https://better-result.dev/reference/result)和安装版本的 TypeScript 声明为准。
+`Result`、`TaggedError`、错误匹配、组合器和 codec 都从这个入口导入；无需另建包装或逐项转发。
+当前版本为 3.0.1，完整签名见[上游 API 参考](https://better-result.dev/reference/result)和安装版本的类型声明。
 
 ## 返回与处理预期失败
 
-提供方用 `TaggedError` 给可恢复失败稳定标签和字段，并在方法签名中写出错误类型。调用方使用同一子入口的
-`Result.isError()` 或实例的 `.isErr()` 缩窄结果，不依赖人类可读的 `message` 决定分支。
+提供方用 `TaggedError` 定义错误标签和字段，调用方用 `.isErr()` 判断失败。
+`Result` 同时可用于值和类型，直接导入即可；只有类型用法时使用 `import type`。
 
 ```ts twoslash
-import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/better-result'
+import { Result, TaggedError } from '@pluxel/core/better-result'
 
 type Order = Readonly<{ id: string; total: number }>
 const orders = new Map<string, Order>([['42', { id: '42', total: 100 }]])
@@ -68,13 +67,13 @@ export class MissingOrder extends TaggedError('MissingOrder')<{
 	message: string
 }> {}
 
-export function findOrder(id: string): SharedResult<Order, MissingOrder> {
+export function findOrder(id: string): Result<Order, MissingOrder> {
 	const order = orders.get(id)
 	return order ? Result.ok(order) : Result.err(new MissingOrder({ id, message: 'Order not found' }))
 }
 
 const found = findOrder('42')
-if (Result.isError(found)) {
+if (found.isErr()) {
 	console.log(found.error._tag, found.error.id)
 } else {
 	console.log(found.value.total)
@@ -87,24 +86,25 @@ if (Result.isError(found)) {
 
 ## 异步组合与外部异常
 
+简单校验直接用 `if` 和 `return Result.err(...)`。已有 Result 步骤需要组合时，再使用组合器。
 异步领域方法返回 `Promise<Result<T, E>>`。多步操作可用 `Result.gen()` 和 `Result.await()`，遇到第一个
 `Err` 就停止后续步骤；短链也可用 `andThenAsync()`。并行操作按需求选 `Result.allAsync()`（全部成功）或
 `Result.partitionAsync()`（分别收集成功与失败）。
 
 ```ts twoslash
-import { Result, TaggedError, type Result as SharedResult } from '@pluxel/core/better-result'
+import { Result, TaggedError } from '@pluxel/core/better-result'
 
 type Order = Readonly<{ id: string; total: number }>
 class MissingOrder extends TaggedError('MissingOrder')<{ message: string }> {}
 class InvalidTotal extends TaggedError('InvalidTotal')<{ message: string }> {}
 
-async function readOrder(id: string): Promise<SharedResult<Order, MissingOrder>> {
+async function readOrder(id: string): Promise<Result<Order, MissingOrder>> {
 	return id === '42'
 		? Result.ok({ id, total: 100 })
 		: Result.err(new MissingOrder({ message: 'Order not found' }))
 }
 
-function checkTotal(order: Order): SharedResult<Order, InvalidTotal> {
+function checkTotal(order: Order): Result<Order, InvalidTotal> {
 	return order.total >= 0
 		? Result.ok(order)
 		: Result.err(new InvalidTotal({ message: 'Total must be non-negative' }))
@@ -122,8 +122,60 @@ const priced = await Result.gen(async function* () {
 `UnhandledException`。`tryPromise()` 的重试和取消遵循上游选项；实际 I/O 仍须接收它提供的 signal。
 对于 HTTP 非 2xx 等未抛异常的状态，应按协议显式判断并映射，不能把所有失败猜成同一个业务错误。
 
+需要**只捕获部分异常、其余保持原样 reject** 时，使用普通 `try/catch`，并把范围缩小到那一次调用：
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+
+class SourceBusy extends Error {}
+class RetryLater extends TaggedError('RetryLater')<{ message: string }> {}
+declare function readSource(signal: AbortSignal): Promise<string>
+
+async function readReport(signal: AbortSignal): Promise<Result<string, RetryLater>> {
+	try {
+		return Result.ok(await readSource(signal))
+	} catch (error) {
+		if (error instanceof SourceBusy) {
+			return Result.err(new RetryLater({ message: 'Please try again later' }))
+		}
+		throw error
+	}
+}
+```
+
+不要在 `Result.tryPromise({ catch })` 中重抛未知错误来模仿这个行为：3.0.1 会把 catch handler 抛出的异常
+变成 `Panic`。`andThenAsync()`、`gen()`、`allAsync()` 和 `partitionAsync()` 中未适配的 Promise rejection
+同样会变成 `Panic`。只有已经完成错误建模、接受这种 defect 契约的步骤才放入这些组合器；要保留原异常，
+先在普通 `async` 函数中 `await`，判断 Err 后再接续。也不要用函数形式的 `tryPromise()` 将 `Panic` 或取消
+再包成可恢复的 `UnhandledException`。
+
+只有幂等、确实可恢复的操作才配置重试，并用 `shouldRetry` 限定错误。`signal` 交给实际 IO；重试策略应排除
+用户输入错误、取消、generation 撤回或无法确定是否已提交的写入。Result 不改变底层取消能力。
+
 上游回调（如 `map`、`match` 的回调）意外抛出时会抛 `Panic`。在日志或监督边界报告它；不要将
 `Panic` 当作普通 `Err` 静默恢复。详见[上游错误契约](https://better-result.dev/errors/panic-and-defects)。
+
+## 官方插件示例
+
+官方 capability 保留各自成熟的值、错误和资源契约；下表的示例在拥有业务恢复策略的层完成适配。
+
+| 插件                                                                                                                                       | 演示与保留的边界                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [Wretch](../plugins/wretch.md#将可预期失败返回给调用方)                                                                                    | 404 → `CustomerNotFound`；503、网络故障、响应 schema 错误继续 reject，HTTP consumer 投影普通响应 |
+| [Cache](../plugins/cache.md#在缓存之外构造-result)                                                                                         | 缓存数据 / `null`，读取后转换缺失；不缓存 Result/Error 实例                                      |
+| [Rates](../plugins/rates.md#第一个-limiter)                                                                                                | deny → 业务 `MessageRateLimited`；保留 retry 信息，backend failure 仍拒绝                        |
+| [Redis](../plugins/redis.md#将缺失映射为业务-result)                                                                                       | 原生 GET 的 `null` → 业务缺失；空字符串是成功，连接与命令故障不伪装成缺失                        |
+| [S3](../plugins/storage.md#将对象缺失返回给调用方)                                                                                         | 对象不存在 → 业务缺失；bucket 配置、权限和 IO 故障继续拒绝                                       |
+| [Canvas](../plugins/rendering/canvas.md#将可恢复失败交给业务调用方)、[Fonts](../plugins/rendering/fonts.md#将可恢复失败交给业务调用方)     | 用户图片 / 字体内容被拒绝 → 明确的 Err；成功的 native object / registration 保留所有权           |
+| [ECharts](../plugins/rendering/echarts.md#将可恢复失败交给业务调用方)、[Takumi](../plugins/rendering/takumi.md#将可恢复失败交给业务调用方) | consumer 选择处理 render busy；未知 render failure、取消和停止不混为“稍后重试”                   |
+| [Markdown / Typst](../plugins/rendering/takumi-markdown.md#将可恢复失败交给业务调用方)                                                     | 文档超限或受限公式不合法 → 可修正输入；extension defect、Worker 故障继续拒绝                     |
+| [Auth](../plugins/auth.md#本地-result-与设置回执)                                                                                          | 内部校验直接返回 Result；Setup API 保持经过校验的普通 DTO                                        |
+| [Pi Agent](../plugins/pi-agent.md#直接处理会话结果)                                                                                        | 直接消费 `prompt()` 的 outcome 和 aborted / model_error；不再套一层 Result                       |
+| [Agent tools](../plugins/agent-tools.md#业务-result-与-command-边界)                                                                       | command handler 投影领域 Result；catalog 保留 JSON output、CommandError 和权限 / admission 分类  |
+| [Package Manager](../plugins/package-manager.md)、[OTel](../plugins/otel.md)、Vault Admin                                                  | 安装回执、原生 telemetry 和管理 action 已有协议；不增加无业务恢复需求的 Result 包装              |
+
+各指南链接到包内可执行示例。验证时至少检查成功、预期 Err 和非预期 rejection；涉及数据缓存、DTO 或资源时，
+再验证序列化边界、失败后的副作用和清理。只断言 `.isErr()` 不足以证明错误没有被错误分类。
 
 ## 传输与版本边界
 

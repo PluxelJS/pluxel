@@ -24,6 +24,7 @@ vi.mock('s3mini', () => ({
 }))
 
 import { S3, S3NotRunningError, S3VaultSchema, S3Plugin } from '../src/index.ts'
+import { DocumentsPlugin } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class S3Consumer extends BasePlugin {
@@ -53,6 +54,25 @@ beforeEach(() => {
 })
 
 describe('S3Plugin remote backend', () => {
+	it('demonstrates object absence as a Result without swallowing IO or permission failures', async () => {
+		await using host = await createTestHost()
+		await host.start(S3Plugin, { initialConfig: remoteConfig({ type: 'anonymous' }) })
+		const documents = await host.start(DocumentsPlugin)
+		const client = s3Mock.clients.at(-1)!
+		client.getObject.mockResolvedValueOnce('').mockResolvedValueOnce(null)
+		const empty = await documents.read('empty')
+		expect(empty.unwrap()).toBe('')
+		const missing = await documents.read('missing')
+		expect(missing.isErr()).toBe(true)
+		if (missing.isOk()) throw new Error('Expected a missing document')
+		expect(missing.error).toMatchObject({ _tag: 'DocumentNotFound', id: 'missing' })
+		const denied = new Error('AccessDenied')
+		client.getObject.mockRejectedValueOnce(denied)
+		await expect(documents.read('private')).rejects.toBe(denied)
+		await host.stop(S3Plugin)
+		await expect(documents.read('stopped')).rejects.toThrow(Error)
+	})
+
 	it('exposes a real anonymous s3mini client from the same configurable provider', async () => {
 		await withRemoteS3(async (s3, client, config) => {
 			expect(s3.bucket().client).toBe(client)

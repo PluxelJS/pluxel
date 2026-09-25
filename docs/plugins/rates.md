@@ -12,12 +12,19 @@ description: 按调用方、身份和成本执行原子的请求准入判定。
 业务 Plugin 依赖抽象能力 `Rates`，在 `init()` 中用稳定业务名和策略创建 limiter，处理请求时只需传入身份和可选成本：
 
 ```ts twoslash
-import { Rates, type RateLimiter } from '@pluxel/rates'
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { Rates, type RateLimiter } from '@pluxel/rates'
 
-@Plugin({ displayName: 'Messaging' })
+export class MessageRateLimited extends TaggedError('MessageRateLimited')<{
+	retryAfterMs: number
+	resetAt: number
+}> {}
+
+@Plugin()
 export class MessagingPlugin extends BasePlugin {
 	private messages!: RateLimiter
+	private readonly sent: string[] = []
 
 	constructor(private readonly rates: Rates) {
 		super()
@@ -31,15 +38,24 @@ export class MessagingPlugin extends BasePlugin {
 		})
 	}
 
-	async send(tenantId: string, userId: string): Promise<void> {
+	async send(tenantId: string, userId: string): Promise<Result<void, MessageRateLimited>> {
 		const decision = await this.messages.consume({ tenantId, userId })
 		if (decision.denied) {
-			throw new Error(`Rate limited; retry after ${decision.retryAfterMs}ms`)
+			return Result.err(
+				new MessageRateLimited({
+					retryAfterMs: decision.retryAfterMs,
+					resetAt: decision.resetAt,
+				}),
+			)
 		}
-		await this.deliver(userId)
+		// Replace this example's in-memory delivery with the application's transport.
+		this.sent.push(userId)
+		return Result.ok(undefined)
 	}
 
-	private async deliver(_userId: string): Promise<void> {}
+	deliveredCount(): number {
+		return this.sent.length
+	}
 }
 ```
 
@@ -161,3 +177,25 @@ caller、`RatesPlugin` 或 backend generation 停止或被替换后，旧 handle
 | `RATES_INVALID_ARGUMENT` | `RatesInvalidArgumentError` | name、policy、identity 或 cost 非法；含 `argument`            |
 
 transport 层应显式映射这些事实。例如 deny 可以映射为 HTTP 429，而 `RATES_UNAVAILABLE` 应按产品选择 fail-closed、降级或返回服务错误；不要在 capability 内偷偷吞错后放行。
+
+## 消费业务 Result
+
+上面的 `MessagingPlugin.send()` 把正常 deny 映射为 `MessageRateLimited`，保留 `retryAfterMs` / `resetAt`，
+只在允许时执行投递。示例以进程内数组代替实际发送；实际 transport 的未知失败仍 reject，不伪装成限流。
+例如 HTTP consumer 可以这样结束调用：
+
+```ts no-twoslash
+const sent = await messages.send(tenantId, userId)
+if (sent.isErr()) {
+	return Response.json(
+		{ code: 'message_rate_limited', retryAfterMs: sent.error.retryAfterMs },
+		{ status: 429, headers: { 'Retry-After': String(Math.ceil(sent.error.retryAfterMs / 1_000)) } },
+	)
+}
+return new Response(null, { status: 204 })
+```
+
+底层 `consume()` 继续返回 `RateDecision`。`RATES_UNAVAILABLE`、policy conflict 和停止不是可信 deny，不能转成
+`MessageRateLimited`。准入已经扣除的额度也不会因后续发送失败自动恢复；Result 不提供事务或自动退款。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/rates/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/rates/tests/result-example.test.ts)。
