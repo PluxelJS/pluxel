@@ -91,19 +91,23 @@ Plugin running 后发布两个 runtime command：
 ```ts no-twoslash
 import { Commands } from '@pluxel/services/commands'
 
-await ctx.require(Commands).execute('package.install', {
+const installed = await ctx.require(Commands).execute('package.install', {
 	specs: ['@acme/example-plugin@^2.0.0'],
 })
+if (installed.isErr()) throw new Error(installed.error.message)
+console.log(installed.value)
 
-await ctx.require(Commands).execute('package.remove', {
+const removed = await ctx.require(Commands).execute('package.remove', {
 	specs: ['@acme/example-plugin'],
 })
+if (removed.isErr()) throw new Error(removed.error.message)
+console.log(removed.value)
 ```
 
-- `package.install` 是 open-world、non-destructive、idempotent mutation；
-- `package.remove` 是 open-world、destructive、non-idempotent mutation；
-- 每次接受 1–100 个 spec，返回 `{ ok, succeeded, failed }`；
-- failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`。
+- `package.install` 安装插件包，`package.remove` 删除插件包；
+- 每次接受 1–100 个 spec，成功执行返回 `Result.ok({ ok, succeeded, failed })`；
+- 部分成功和每个包的失败仍是提交回执，failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`；
+- 输入校验或命令执行故障返回 `Result.err(CommandFailure)`。
 
 初始化保留有效的既存 entry，不因包管理器重启触发 HMR。安装按 pnpm 锁定的依赖图识别变化，纯删除不会重新发布图未变化的包；传递依赖、peer 或 optional 依赖变化也会失效对应 entry。无法识别 lockfile 时，安装保守重新发布。生产环境已经加载的同路径 entry 升级仍需重启进程（`PLUGIN_SOURCE_RESTART_REQUIRED`）；初始化修复损坏 entry 也不绕过这个边界。
 

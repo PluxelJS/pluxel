@@ -1,0 +1,90 @@
+{
+	"format": "pluxel-rpc-artifact-v1",
+	"publisher": "package:@example/records::RecordsPlugin",
+	"protocol": "rpc-result-json-v1",
+	"id": "records",
+	"methods": [
+		{
+			"method": "read",
+			"command": "records.read",
+			"description": "Read a record.",
+			"inputSchema": {
+				"additionalProperties": false,
+				"type": "object",
+				"required": ["id"],
+				"properties": {
+					"id": {
+						"type": "string"
+					}
+				}
+			}
+		},
+		{
+			"method": "write",
+			"command": "records.write",
+			"description": "Write a record and return its committed receipt.",
+			"inputSchema": {
+				"additionalProperties": false,
+				"type": "object",
+				"required": ["id", "offset"],
+				"properties": {
+					"id": {
+						"description": "Record ID",
+						"type": "string"
+					},
+					"offset": {
+						"type": "string"
+					},
+					"description": {
+						"default": "business value",
+						"type": "string"
+					}
+				}
+			}
+		}
+	],
+	"types": [
+		{
+			"method": "write",
+			"input": "{ \"description\"?: string; \"id\": string; \"offset\": string }",
+			"success": "{ \"operationId\": string; \"committed\": boolean; \"counts\": { \"accepted\": number; \"rejected\": number } }"
+		},
+		{
+			"method": "read",
+			"input": "{ \"id\": string }",
+			"success": "{ \"id\": string; \"text\": null | string }"
+		}
+	],
+	"declaration": "// Generated from real @pluxel/commands definitions.\nexport type RpcFailure = {\n\treadonly message: string\n\treadonly callId: string\n\treadonly outcome: 'not_started' | 'unknown'\n} & (\n\t| {\n\t\t\treadonly code: 'INPUT_VALIDATION'\n\t\t\treadonly issues: readonly {\n\t\t\t\treadonly path?: readonly (string | number)[]\n\t\t\t\treadonly code?: string\n\t\t\t\treadonly message: string\n\t\t\t}[]\n\t  }\n\t| { readonly code: 'REJECTED'; readonly reason: string }\n\t| {\n\t\t\treadonly code:\n\t\t\t\t| 'FORBIDDEN'\n\t\t\t\t| 'COMMAND_NOT_FOUND'\n\t\t\t\t| 'PUBLICATION_GONE'\n\t\t\t\t| 'ABORTED'\n\t\t\t\t| 'TIMEOUT'\n\t\t\t\t| 'DEPENDENCY'\n\t\t\t\t| 'INTERNAL'\n\t\t\t\t| 'OUTPUT_ENCODING'\n\t\t\t\t| 'OUTPUT_LIMIT'\n\t  }\n)\nexport type RpcResult<T> =\n\t| { readonly ok: true; readonly value: T }\n\t| { readonly ok: false; readonly error: RpcFailure }\nexport interface RecordsApi {\n\twrite(input: { description?: string; id: string; offset: string }): Promise<\n\t\tRpcResult<{\n\t\t\toperationId: string\n\t\t\tcommitted: boolean\n\t\t\tcounts: { accepted: number; rejected: number }\n\t\t}>\n\t>\n\tread(input: { id: string }): Promise<RpcResult<{ id: string; text: null | string }>>\n}\n",
+	"sources": [
+		{
+			"file": "provider/commands.ts",
+			"digest": "ed8633590a496f9d2d95c69a3cb1f2756ba659d7eb6a5d47c8e7dd93be34f864"
+		},
+		{
+			"file": "provider/dto.ts",
+			"digest": "116c39beee6568df31d8cb72909928a1e4a27335fbd1f4c814ac4082f2b8d2ba"
+		},
+		{
+			"file": "publisher.ts",
+			"digest": "b298c3d100a02e2b1eeb643ae7a385af6a2a87597f3e4cd6416785f7755ccddb"
+		}
+	],
+	"references": [
+		{
+			"method": "write",
+			"file": "provider/commands.ts",
+			"export": "write"
+		},
+		{
+			"method": "read",
+			"file": "provider/commands.ts",
+			"export": "read"
+		}
+	],
+	"contract": {
+		"id": "records",
+		"hash": "1bc9cb0a786002b1183ef346336de969234bf394d2f8abf96fdb197d843505b4"
+	},
+	"integrity": "9a8bb411a239b17f3eec02307ef73c9a84a2a1f06515e583b86e053b5f8bf5cd"
+}

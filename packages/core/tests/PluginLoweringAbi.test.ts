@@ -12,6 +12,7 @@ import { createCoreInternalTestHost } from '../src/internal-test'
 import {
 	__setPluginConfig,
 	__setPluginDefinition,
+	__setPluginRpcSites,
 	__setPluginPartConfig,
 	__setPluginPartOptional,
 	__setPluginPartRequires,
@@ -186,6 +187,96 @@ describe('Plugin lowering ABI v2', () => {
 					definition: address('Invalid'),
 					unknown: true,
 				} as unknown as PluginDefinitionLoweringPayload),
+			).code,
+		).toBe('plugin_declaration_invalid')
+	})
+
+	it('seals opaque RPC sites on the owning candidate while preserving generated identities', () => {
+		class RpcPlugin extends BasePlugin {}
+		class PlainPlugin extends BasePlugin {}
+		for (const PluginClass of [RpcPlugin, PlainPlugin]) {
+			Plugin()(PluginClass)
+			__setPluginDefinition(PluginClass, {
+				abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+				kind: 'plugin',
+				definition: address(PluginClass.name),
+			})
+		}
+		const command = Object.freeze({ name: 'records.read' })
+		const bindings = Object.freeze({ read: command })
+		const artifact = Object.freeze({ format: 'pluxel-rpc-artifact-v1' })
+		const site = Object.freeze({
+			site: '@fixture/plugin.ts:RpcPlugin:records:0',
+			owner: 'RpcPlugin',
+			artifact,
+			bindings,
+		})
+		const sites = Object.freeze([site])
+		__setPluginRpcSites(RpcPlugin, { abiVersion: PLUGIN_LOWERING_ABI_VERSION, sites })
+		Object.defineProperty(RpcPlugin, 'name', { value: 'minified' })
+		const candidate = consumePluginDefinitionCandidate(RpcPlugin)
+		expect(candidate.rpcSites).toBe(sites)
+		expect(candidate.rpcSites?.[0]).toBe(site)
+		expect(candidate.rpcSites?.[0]?.artifact).toBe(artifact)
+		expect(candidate.rpcSites?.[0]?.bindings.read).toBe(command)
+		expect(Object.hasOwn(consumePluginDefinitionCandidate(PlainPlugin), 'rpcSites')).toBe(false)
+		expect(consumePluginDefinitionCandidate(RpcPlugin)).toBe(candidate)
+		expect(
+			captureLoweringError(() =>
+				__setPluginRpcSites(RpcPlugin, { abiVersion: PLUGIN_LOWERING_ABI_VERSION, sites }),
+			).code,
+		).toBe('plugin_declaration_invalid')
+	})
+
+	it('rejects wrong ABI, owner, duplicate and mutable RPC site facts', () => {
+		class WrongAbi extends BasePlugin {}
+		class WrongOwner extends BasePlugin {}
+		class Duplicate extends BasePlugin {}
+		class Mutable extends BasePlugin {}
+		Plugin()(WrongOwner)
+		__setPluginDefinition(WrongOwner, {
+			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+			kind: 'plugin',
+			definition: address('WrongOwner'),
+		})
+		const site = Object.freeze({
+			site: 'site:0',
+			owner: 'WrongOwner',
+			artifact: Object.freeze({}),
+			bindings: Object.freeze({}),
+		})
+		expect(
+			captureLoweringError(() =>
+				__setPluginRpcSites(WrongAbi, {
+					abiVersion: 1,
+					sites: Object.freeze([site]),
+				} as never),
+			).code,
+		).toBe('plugin_lowering_abi_unsupported')
+		__setPluginRpcSites(WrongOwner, {
+			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+			sites: Object.freeze([Object.freeze({ ...site, owner: 'OtherPlugin' })]),
+		})
+		expect(captureLoweringError(() => consumePluginDefinitionCandidate(WrongOwner)).code).toBe(
+			'plugin_declaration_invalid',
+		)
+		expect(
+			captureLoweringError(() =>
+				__setPluginRpcSites(Duplicate, {
+					abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+					sites: Object.freeze([
+						Object.freeze({ ...site, owner: 'Duplicate' }),
+						Object.freeze({ ...site, owner: 'Duplicate' }),
+					]),
+				}),
+			).code,
+		).toBe('plugin_declaration_invalid')
+		expect(
+			captureLoweringError(() =>
+				__setPluginRpcSites(Mutable, {
+					abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+					sites: [{ ...site, owner: 'Mutable' }],
+				}),
 			).code,
 		).toBe('plugin_declaration_invalid')
 	})

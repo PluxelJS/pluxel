@@ -218,7 +218,7 @@ export function clock() {
 
 每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
 
-HTTP、Database、Persistence、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。
+HTTP、Database、Persistence、Vault、Commands、MCP、RPC、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。[MCP](../runtime/mcp.md) 通过独立的 `@pluxel/services/mcp` 入口安装，要求宿主提供已选传输的 SDK Server 和每次请求的身份解析。[RPC](../runtime/rpc.md) 通过独立的 `@pluxel/services/rpc` 入口安装，只接受工具链生成的显式 Command 发布和可信应用创建的精确契约会话；默认服务清单不会安装它们。
 
 ## 服务参与 Plugin 发布
 

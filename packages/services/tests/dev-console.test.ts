@@ -4,6 +4,7 @@ import type { DevScript } from '@pluxel/host-dev/console'
 import { createDevConsoleScope } from '@pluxel/host-dev/internal'
 import { http, Http, HttpServer } from '@pluxel/services/http'
 import { Commands, commands } from '@pluxel/services/commands'
+import { Result } from '@pluxel/commands'
 import { expect, it, vi } from 'vitest'
 
 @Plugin()
@@ -53,7 +54,7 @@ it('passes run cancellation explicitly to a service without a console proxy', as
 			new Promise((resolve) => {
 				const signal = context!.signal!
 				entered.resolve(signal)
-				signal.addEventListener('abort', () => resolve('aborted'), { once: true })
+				signal.addEventListener('abort', () => resolve(Result.ok('aborted')), { once: true })
 			}),
 	)
 	try {
@@ -62,7 +63,7 @@ it('passes run cancellation explicitly to a service without a console proxy', as
 		const pending = script(scope.dev)
 		expect(await entered.promise).toBe(controller.signal)
 		controller.abort()
-		expect(await pending).toBe('aborted')
+		expect(await pending).toEqual(Result.ok('aborted'))
 	} finally {
 		await scope.dispose()
 		await host.close()

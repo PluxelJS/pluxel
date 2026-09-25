@@ -1,7 +1,7 @@
 import { servicesPreset } from '@pluxel/services/preset'
 import { HttpServer } from '../src/http'
-import { defineCommand } from '@pluxel/commands'
-import { Type, obj } from '@pluxel/commands/typebox'
+import { defineCommand, Result } from '@pluxel/commands'
+import { obj } from '@pluxel/commands/typebox'
 import { Commands, commands } from '../src/commands'
 import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
 import { defineContextCapability, installOwnerViewCapability } from '@pluxel/core/host'
@@ -138,10 +138,15 @@ it('installs an empty command catalog and withdraws Plugin-owned registrations o
 		}
 		await host.startNode(address)
 		expect(catalog.list().map((item) => item.name)).toEqual(['example.read'])
-		await expect(catalog.execute('example.read', {})).resolves.toEqual({ value: 'ready' })
+		await expect(catalog.execute('example.read', {})).resolves.toEqual(
+			Result.ok({ value: 'ready' }),
+		)
 		await host.stopNode(address)
 		expect(catalog.list()).toEqual([])
-		await expect(catalog.execute('example.read', {})).rejects.toThrow(/example.read/)
+		await expect(catalog.execute('example.read', {})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 	} finally {
 		await host.close()
 	}
@@ -154,10 +159,8 @@ class CommandPublisher extends BasePlugin {
 			defineCommand({
 				name: 'example.read',
 				description: 'Read a fixture value',
-				behavior: { kind: 'query', world: 'closed' },
 				input: obj({}),
-				output: obj({ value: Type.String() }),
-				execute: () => ({ value: 'ready' }),
+				execute: () => Result.ok({ value: 'ready' }),
 			}),
 		)
 	}

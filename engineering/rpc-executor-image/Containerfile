@@ -1,0 +1,5 @@
+# This is the linux/amd64 Docker Official Image manifest for Node 24.20.0.
+# The executor supplies `node -e ...` and isolation flags at runtime.
+FROM docker.io/library/node@sha256:6642ef280aebc09c4541bee0b15c9f89f0f3f3c247ddee79ae1d37eddfdcbbaa
+
+USER 1001:1001

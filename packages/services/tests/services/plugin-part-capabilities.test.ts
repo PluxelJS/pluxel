@@ -1,7 +1,7 @@
 import { Http } from '@pluxel/services/http'
 import { Commands } from '@pluxel/services/commands'
-import { defineCommand } from '@pluxel/commands'
-import { obj, Type } from '@pluxel/commands/typebox'
+import { defineCommand, Result } from '@pluxel/commands'
+import { obj } from '@pluxel/commands/typebox'
 import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/core/internal/test'
@@ -28,10 +28,8 @@ class CapabilityPart extends PluginPart<CapabilityOwner> {
 			defineCommand({
 				name: 'part.capability.read',
 				description: 'Read a value registered by a PluginPart.',
-				behavior: { kind: 'query', world: 'closed' },
 				input: obj({}),
-				output: obj({ value: Type.String() }),
-				execute: () => ({ value: 'part' }),
+				execute: () => Result.ok({ value: 'part' }),
 			}),
 		)
 		this.ctx.require(Http).get('/part-capability', () => 'part-route')
@@ -82,9 +80,9 @@ describe('PluginPart runtime capabilities', () => {
 			expect(() => {
 				;(partCommands as { ctx: unknown }).ctx = host.ctx
 			}).toThrow(TypeError)
-			await expect(host.commands.execute('part.capability.read', {})).resolves.toEqual({
-				value: 'part',
-			})
+			await expect(host.commands.execute('part.capability.read', {})).resolves.toEqual(
+				Result.ok({ value: 'part' }),
+			)
 
 			const mounted = await host.http.fetch(new Request('http://local/part-capability'))
 			expect(await mounted.text()).toBe('part-route')

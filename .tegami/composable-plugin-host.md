@@ -5,7 +5,6 @@ packages:
   '@pluxel/rolldown': major
   '@pluxel/create': major
   '@pluxel/cli': major
-  '@pluxel/agent-tools': patch
   '@pluxel/services': major
 ---
 
@@ -26,8 +25,3 @@ attachments are installed only for selected services; the development console is
 
 The CLI no longer maintains HMR discovery profiles or their TUI. Declare fixed plugins and optional
 file/directory sources in the application itself; inspect a running application with `pluxel dev`.
-
-## Restore official Workbench startup
-
-Agent Tools projects its optional business fields and command variants into total portable Content
-display values, so enabling Workbench no longer prevents the Plugin from starting.

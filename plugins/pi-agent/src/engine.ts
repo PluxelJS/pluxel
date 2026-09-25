@@ -18,6 +18,7 @@ export type PiEngineCreateOptions = Readonly<{
 	thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 	model?: ResolvedPiModel
 	tools: readonly ToolDefinition[]
+	beforeTurn?: () => Promise<void>
 }>
 
 export interface PiEngine {
@@ -51,6 +52,21 @@ export class DefaultPiEngine implements PiEngine {
 			noThemes: true,
 			noContextFiles: true,
 			systemPrompt: options.systemPrompt,
+			...(options.beforeTurn
+				? {
+						extensionFactories: [
+							{
+								name: 'pluxel-tool-visibility',
+								hidden: true,
+								factory: (pi: {
+									on: (event: 'turn_start', handler: () => Promise<void>) => void
+								}) => {
+									pi.on('turn_start', options.beforeTurn!)
+								},
+							},
+						],
+					}
+				: {}),
 		})
 		await resources.reload()
 		const { session } = await createAgentSession({

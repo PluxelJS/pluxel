@@ -24,7 +24,6 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/test`                  | 统一插件测试 host、Vitest/Vite preset 与文件 fixture       | [测试 Plugin](../development/testing.md)                    |
 | `@pluxel/async`                 | 零依赖 async 任务图与有界并发迭代                          | [Async 任务图与有界迭代](./async.md)                        |
 | `@pluxel/commands`              | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../runtime/commands.md)                          |
-| `@pluxel/agent-tools`           | 可选 Agent Toolset 与 command allowlist Plugin             | [Agent tools](../plugins/agent-tools.md)                    |
 | `valibot-form`                  | Valibot 表单 metadata 与可选 Web adapter                   | [Valibot 配置表单](../workbench/valibot-form.mdx)           |
 | `@pluxel/auth`                  | Workbench 与 Management API 认证 provider                  | [Management 认证](../plugins/auth.md)                       |
 | `@pluxel/wretch`                | Plugin-owned HTTP client                                   | [Wretch HTTP client](../plugins/wretch.md)                  |
@@ -42,6 +41,10 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 宿主服务、preset 与开发附件的组合见[服务参考](./runtime-services.md)。开发脚本从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
 
 `@pluxel/services/http/node` 提供标准 Host launcher 使用的 Node srvx/crossws carrier 和 `listenHostHttp()`。`createHostHttpHandler()` 与 HTTP 服务共用 `@pluxel/services/http` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
+
+`@pluxel/services/mcp` 是可选的 MCP SDK tool 载体，要求宿主提供已配置传输与身份解析。它只发布 Plugin 显式选择的 Command，见 [MCP](../runtime/mcp.md)。
+
+`@pluxel/services/rpc` 是可选的精确契约 Command 目录，要求工具链生成发布制品、由可信应用创建会话，见 [RPC](../runtime/rpc.md)。
 
 源码查询从 `@pluxel/rolldown/inspect` 导入 `openProject()`，定位声明、依赖、配置和所选应用的输入；
 不启动 Host 或执行应用模块，详见[inspect 源码查询](../development/inspection.md)。

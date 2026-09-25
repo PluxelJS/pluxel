@@ -40,3 +40,9 @@ export { projectPluginApplyReport } from './apply-report'
 export { setHostCatalogProvenance } from './catalog-provenance'
 
 export { updateHostCatalog } from './host'
+
+export {
+	installHostRpcCatalogRegistrar,
+	type HostRpcCatalogRegistrar,
+	type HostRpcCatalogEntry,
+} from './rpc-catalog'

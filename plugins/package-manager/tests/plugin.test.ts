@@ -79,5 +79,9 @@ describe('PackageManagerPlugin', () => {
 		})
 		expect(existsSync(resolve(managedRoot, 'entries'))).toBe(true)
 		expect(host.commands.list().some(({ name }) => name === 'package.install')).toBe(true)
+		await expect(host.commands.execute('package.install', { specs: [] })).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'INPUT_VALIDATION', issues: expect.any(Array) },
+		})
 	})
 })

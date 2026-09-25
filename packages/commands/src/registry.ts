@@ -1,3 +1,4 @@
+import { Result, type Result as BetterResult } from 'better-result'
 import { compareStrings } from './internal/compare'
 import { deepFreeze, isDeepFrozen } from './internal/freeze'
 import {
@@ -13,13 +14,13 @@ import {
 	type CommandContext,
 	type CommandContextArgs,
 	type CommandDescriptor,
+	type CommandFailure,
 	type CommandRegistration,
 } from './types'
 
 type RegistryEntry<Ctx extends CommandContext> = {
-	command: AnyCommand<Ctx>
+	execute: AnyCommand<Ctx>['execute']
 	descriptor: CommandDescriptor
-	compatibilityKey: string
 }
 
 export type CommandCatalogSnapshot = Readonly<{
@@ -42,53 +43,52 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 	register<I, O>(command: Command<I, O, Ctx>): CommandRegistration<I, O, Ctx> {
 		const name = command.name
 		const descriptor = descriptorSnapshot(command.descriptor, name)
+		const execute = command.execute
+		if (typeof execute !== 'function') {
+			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
+				message: `Command "${name}" execute must be a function`,
+			})
+		}
 		if (descriptor.name !== name) {
 			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
 				message: `Command name "${name}" does not match descriptor name "${descriptor.name}"`,
-				details: { command: name, reason: 'descriptor_name_mismatch' },
 			})
 		}
 		if (this.entries.has(name)) {
 			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
 				message: `Command "${name}" is already registered`,
-				details: { command: name, reason: 'duplicate_name' },
 			})
 		}
-
-		const compatibilityKey = commandCompatibilityKey(descriptor)
+		const invoke = (
+			candidate: I,
+			...context: CommandContextArgs<Ctx>
+		): Promise<BetterResult<O, CommandFailure>> =>
+			Reflect.apply(execute, command, [candidate, ...context]) as Promise<
+				BetterResult<O, CommandFailure>
+			>
+		const entry: RegistryEntry<Ctx> = { execute: invoke, descriptor }
 		let active = true
-		let entry!: RegistryEntry<Ctx>
-		const entries = this.entries
-		const bumpRevision = () => this.bumpRevision()
-		const installed = Object.freeze({
-			name,
-			get descriptor(): CommandDescriptor {
-				const current = entries.get(name)
-				return current?.compatibilityKey === compatibilityKey ? current.descriptor : descriptor
-			},
-			execute: async (candidate: unknown, ...context: CommandContextArgs<Ctx>): Promise<O> => {
-				const current = entries.get(name)
-				if (!current) throw commandNotFound(name)
-				if (current.compatibilityKey !== compatibilityKey) throw incompatibleInstalledCommand(name)
-				return (await current.command.execute(candidate, ...context)) as O
-			},
-			dispose: () => {
-				if (!active) return
-				active = false
-				if (entries.get(name) !== entry) return
-				entries.delete(name)
-				bumpRevision()
-			},
-		}) as CommandRegistration<I, O, Ctx>
-
-		entry = {
-			command: command as AnyCommand<Ctx>,
-			descriptor,
-			compatibilityKey,
+		const dispose = () => {
+			if (!active) return
+			active = false
+			if (this.entries.get(name) !== entry) return
+			this.entries.delete(name)
+			this.bumpRevision()
 		}
+		const registration = Object.freeze({
+			name,
+			descriptor,
+			execute: (
+				candidate: I,
+				...context: CommandContextArgs<Ctx>
+			): Promise<BetterResult<O, CommandFailure>> =>
+				active ? invoke(candidate, ...context) : Promise.resolve(notFound(name)),
+			dispose,
+			[Symbol.dispose]: dispose,
+		}) as CommandRegistration<I, O, Ctx>
 		this.entries.set(name, entry)
 		this.bumpRevision()
-		return installed
+		return registration
 	}
 
 	list(): readonly CommandDescriptor[] {
@@ -121,10 +121,10 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 		name: string,
 		candidate: unknown,
 		...context: CommandContextArgs<Ctx>
-	): Promise<unknown> {
+	): Promise<BetterResult<unknown, CommandFailure>> {
 		const entry = this.entries.get(name)
-		if (!entry) throw commandNotFound(name)
-		return await entry.command.execute(candidate, ...context)
+		if (!entry) return notFound(name)
+		return entry.execute(candidate, ...context)
 	}
 
 	private bumpRevision(): void {
@@ -133,7 +133,6 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 		if (this.listeners.size === 0) return
 		this.notificationQueue.push({ snapshot: this.snapshot(), listeners: [...this.listeners] })
 		if (this.notifying) return
-
 		this.notifying = true
 		try {
 			for (let index = 0; index < this.notificationQueue.length; index += 1) {
@@ -142,7 +141,7 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 					try {
 						listener(snapshot)
 					} catch {
-						// Observation failures cannot make a completed catalog mutation appear to fail.
+						/* A subscriber cannot undo a catalog change. */
 					}
 				}
 			}
@@ -153,36 +152,8 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 	}
 }
 
-function commandNotFound(name: string): CommandError<'COMMAND_NOT_FOUND'> {
-	return new CommandError('COMMAND_NOT_FOUND', 'Command not found', {
-		message: `Command "${name}" is not registered`,
-		details: { name },
-	})
-}
-
-function incompatibleInstalledCommand(name: string): CommandError<'COMMAND_NOT_FOUND'> {
-	return new CommandError('COMMAND_NOT_FOUND', 'Command not found', {
-		message: `Command "${name}" no longer matches the installed command schema`,
-		details: { name },
-	})
-}
-
-function commandCompatibilityKey(descriptor: CommandDescriptor): string {
-	return canonicalJson({
-		name: descriptor.name,
-		inputSchema: descriptor.inputSchema,
-		...(descriptor.outputSchema ? { outputSchema: descriptor.outputSchema } : {}),
-	})
-}
-
-function canonicalJson(value: unknown): string {
-	if (value === null || typeof value !== 'object') return JSON.stringify(value)
-	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
-	const object = value as Record<string, unknown>
-	return `{${Object.keys(object)
-		.sort(compareStrings)
-		.map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`)
-		.join(',')}}`
+function notFound(name: string): BetterResult<never, CommandFailure> {
+	return Result.err({ code: 'COMMAND_NOT_FOUND', message: `Command "${name}" is not registered` })
 }
 
 function descriptorSnapshot(descriptor: CommandDescriptor, command: string): CommandDescriptor {
@@ -196,7 +167,6 @@ function descriptorSnapshot(descriptor: CommandDescriptor, command: string): Com
 	} catch (error) {
 		throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
 			message: `Command "${command}" descriptor must be strict JSON`,
-			details: { command, reason: 'invalid_descriptor' },
 			cause: error,
 		})
 	}

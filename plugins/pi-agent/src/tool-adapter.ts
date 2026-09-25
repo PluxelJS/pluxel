@@ -1,8 +1,8 @@
-import type { AgentCommandCatalog, AgentCommandCatalogSnapshot } from '@pluxel/agent-tools'
-import { CommandError, type CommandDescriptor } from '@pluxel/commands'
+import type { CommandDescriptor, CommandFailure, Result } from '@pluxel/commands'
 import type { AgentSession, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { Type, type TSchema } from 'typebox'
 import { PiAgentError } from './errors.ts'
+import { formatToolFailure, formatToolOutput } from './tool-output.ts'
 import type { PiSubagentRunResult } from './types.ts'
 
 type PiAgentTool = AgentSession['agent']['state']['tools'][number]
@@ -13,10 +13,22 @@ type ControlToolOwner = Readonly<{
 	canSpawnSubagent(): boolean
 }>
 
+export type PiToolDelivery = Readonly<{
+	result: Result<unknown, CommandFailure>
+	release(): void
+}>
+
+export type SelectedPiCommand = Readonly<{
+	name: string
+	descriptor: CommandDescriptor
+	available(): boolean
+	allowed(signal?: AbortSignal): Promise<boolean>
+	invoke(candidate: unknown, sessionId: string, signal?: AbortSignal): Promise<PiToolDelivery>
+}>
+
 export function createPiToolDefinitions(input: {
-	catalog: AgentCommandCatalog
-	snapshot: AgentCommandCatalogSnapshot
 	sessionId: string
+	tools: readonly SelectedPiCommand[]
 	maxResultChars: number
 	controls: ControlToolOwner
 }): ToolDefinition[] {
@@ -42,31 +54,33 @@ export function toPiAgentTools(definitions: readonly ToolDefinition[]): PiAgentT
 }
 
 function createCommandTools(input: {
-	catalog: AgentCommandCatalog
-	snapshot: AgentCommandCatalogSnapshot
 	sessionId: string
+	tools: readonly SelectedPiCommand[]
 	maxResultChars: number
 }): ToolDefinition[] {
-	const names = providerToolNames(input.snapshot.descriptors)
-	return input.snapshot.descriptors.map((descriptor) => ({
-		name: names.get(descriptor.name)!,
-		label: descriptor.title ?? descriptor.name,
-		description: `${descriptor.description}\nPluxel command: ${descriptor.name}`,
-		parameters: descriptor.inputSchema as TSchema,
-		executionMode: descriptor.behavior.kind === 'mutation' ? 'sequential' : 'parallel',
+	const names = providerToolNames(input.tools.map((tool) => tool.descriptor))
+	return input.tools.map((tool) => ({
+		name: names.get(tool.name)!,
+		label: tool.name,
+		description: tool.descriptor.description,
+		parameters: tool.descriptor.inputSchema as TSchema,
+		executionMode: 'sequential',
 		execute: async (_toolCallId, params, signal) => {
+			const delivery = await tool.invoke(params, input.sessionId, signal)
 			try {
-				const output = await input.catalog.execute(descriptor.name, params, {
-					signal,
-					meta: Object.freeze({ carrier: 'pi-agent', sessionId: input.sessionId }),
-				})
-				return {
-					content: [{ type: 'text', text: formatToolOutput(output, input.maxResultChars) }],
-					details: { commandName: descriptor.name },
+				if (delivery.result.isErr()) {
+					throw new Error(formatToolFailure(delivery.result.error, input.maxResultChars), {
+						cause: delivery.result.error,
+					})
 				}
-			} catch (error) {
-				if (error instanceof CommandError) throw new Error(error.publicMessage, { cause: error })
-				throw new Error('Pluxel command execution failed', { cause: error })
+				return {
+					content: [
+						{ type: 'text', text: formatToolOutput(delivery.result.value, input.maxResultChars) },
+					],
+					details: { commandName: tool.name },
+				}
+			} finally {
+				delivery.release()
 			}
 		},
 	}))
@@ -140,11 +154,10 @@ function providerToolNames(descriptors: readonly CommandDescriptor[]): ReadonlyM
 			.replaceAll(/^_+|_+$/g, '')
 			.slice(0, 38)
 		const base = `pluxel_cmd_${readable || 'tool'}_${stableHash(descriptor.name)}`.slice(0, 60)
-		let candidate = base
-		let suffix = 2
-		while (used.has(candidate)) candidate = `${base.slice(0, 57)}_${suffix++}`
-		used.add(candidate)
-		output.set(descriptor.name, candidate)
+		if (used.has(base))
+			throw new PiAgentError('TOOL_CONFLICT', `Pi tool name conflicts for "${descriptor.name}"`)
+		used.add(base)
+		output.set(descriptor.name, base)
 	}
 	return output
 }
@@ -156,12 +169,6 @@ function stableHash(value: string): string {
 		hash = Math.imul(hash, 0x01000193)
 	}
 	return (hash >>> 0).toString(36).padStart(7, '0')
-}
-
-function formatToolOutput(value: unknown, limit: number): string {
-	const text = value === undefined ? 'Command completed successfully.' : JSON.stringify(value)
-	if (text.length <= limit) return text
-	return `${text.slice(0, limit)}\n… Pluxel truncated the tool result at ${limit} characters.`
 }
 
 export function requireGoalText(text: string | undefined): string {

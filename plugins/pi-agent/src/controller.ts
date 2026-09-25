@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
-import type {
-	AgentCommandCatalog,
-	AgentCommandCatalogSnapshot,
-	AgentToolsPlugin,
-} from '@pluxel/agent-tools'
+import {
+	Result,
+	type CommandContext,
+	type DirectCommand,
+	type CommandFailure,
+} from '@pluxel/commands'
+import type { Context as CoreContext } from '@pluxel/core'
+import { enterOwnerInvocation } from '@pluxel/core/internal'
 import type {
 	AgentSession,
 	AgentSessionEvent,
@@ -13,9 +16,20 @@ import type {
 import type { PiAgentPluginConfig } from './config.ts'
 import type { PiEngine, ResolvedPiModel } from './engine.ts'
 import { PiAgentError } from './errors.ts'
-import { createPiToolDefinitions, requireGoalText, toPiAgentTools } from './tool-adapter.ts'
+import {
+	createPiToolDefinitions,
+	requireGoalText,
+	toPiAgentTools,
+	type PiToolDelivery,
+	type SelectedPiCommand,
+} from './tool-adapter.ts'
 import type {
 	CreatePiAgentSessionOptions,
+	PiExposureOptions,
+	PiAuthorization,
+	PiToolChoice,
+	PiToolDescriptor,
+	PiToolExposure,
 	PiAgentPromptOptions,
 	PiAgentRunResult,
 	PiAgentSession,
@@ -32,15 +46,27 @@ const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
 
 type SessionCreateInput = Readonly<{
 	id: string
-	toolSetupId: string
+	tools: readonly SelectedPiCommand[]
+	principal: unknown
+	owner: CoreContext
+	context?: CommandContext
+	authorize?: PiAuthorization
 	parent?: ManagedPiSession
 	depth: number
 	model?: PiModelReference
 	thinkingLevel: CreatePiAgentSessionOptions['thinkingLevel']
 	systemPrompt: string
 	cwd: string
-	validateSetup: boolean
 }>
+
+type ExposureRecord = {
+	readonly name: string
+	readonly command: DirectCommand<any, unknown, any>
+	readonly owner: CoreContext
+	readonly options: PiExposureOptions<any>
+	active: boolean
+	guard?: { cancel(): void }
+}
 
 type MutableSubagent = {
 	id: string
@@ -54,7 +80,9 @@ type MutableSubagent = {
 
 export class PiAgentController {
 	private active = true
+	private closePromise?: Promise<void>
 	private config: PiAgentPluginConfig
+	private readonly exposures = new Map<string, ExposureRecord>()
 	private readonly sessionsById = new Map<string, ManagedPiSession>()
 	private readonly pendingCreates = new Set<Promise<unknown>>()
 	private readonly listeners = new Set<() => void>()
@@ -63,7 +91,7 @@ export class PiAgentController {
 	private reservedSessions = 0
 
 	constructor(
-		private readonly agentTools: AgentToolsPlugin,
+		private readonly providerOwner: CoreContext,
 		private readonly engine: PiEngine,
 		config: PiAgentPluginConfig,
 		private readonly reportListenerError: (error: unknown) => void,
@@ -76,35 +104,294 @@ export class PiAgentController {
 		this.requireActive()
 		this.config = config
 		this.subagents.updateLimit(config.maxConcurrentSubagents)
-		for (const session of this.sessionsById.values()) session.refreshTools()
 		this.notify()
 	}
 
-	createSession(options: CreatePiAgentSessionOptions = {}): Promise<PiAgentSession> {
+	createSession<const Tools extends readonly PiToolChoice[]>(
+		options: CreatePiAgentSessionOptions<Tools>,
+		owner?: CoreContext,
+	): Promise<PiAgentSession>
+	createSession(
+		options?: CreatePiAgentSessionOptions<readonly []>,
+		owner?: CoreContext,
+	): Promise<PiAgentSession>
+	async createSession(
+		options: CreatePiAgentSessionOptions = {},
+		owner: CoreContext = this.providerOwner,
+	): Promise<PiAgentSession> {
 		this.requireActive()
 		const id =
 			options.id === undefined ? randomUUID() : normalizeMachineId(options.id, 'session id')
-		const toolSetupId = normalizeMachineId(
-			options.toolSetupId ?? this.config.defaultToolSetupId,
-			'tool setup id',
-		)
 		const systemPrompt = normalizeText(
 			options.systemPrompt ?? this.config.systemPrompt,
 			'system prompt',
 			32_000,
 		)
 		const model = normalizeModelReference(options.model ?? this.config.model)
+		const principal = options.principal
+		const selected = this.resolveTools({ ...options, principal }, owner)
 		const task = this.createManaged({
 			id,
-			toolSetupId,
+			tools: selected,
+			owner,
+			principal,
+			...(options.context ? { context: options.context } : {}),
+			...(options.authorize ? { authorize: options.authorize } : {}),
 			depth: 0,
 			model,
 			thinkingLevel: options.thinkingLevel ?? this.config.thinkingLevel,
 			systemPrompt,
 			cwd: resolve(this.config.cwd),
-			validateSetup: true,
 		})
-		return this.trackCreate(task)
+		return await this.trackCreate(task)
+	}
+
+	expose<I, O, Ctx extends CommandContext>(
+		owner: CoreContext,
+		command: DirectCommand<I, O, Ctx>,
+		options: PiExposureOptions<Ctx>,
+	): PiToolExposure {
+		this.requireActive()
+		if (owner.root !== this.providerOwner.root)
+			throw new TypeError('Pi exposure cannot cross runtime roots')
+		if (
+			typeof command?.name !== 'string' ||
+			command.name !== command.descriptor?.name ||
+			typeof command.execute !== 'function' ||
+			'dispose' in command
+		) {
+			throw new PiAgentError('INVALID_INPUT', 'Pi exposure requires a direct Command')
+		}
+		if (this.exposures.has(command.name))
+			throw new PiAgentError('TOOL_CONFLICT', `Tool "${command.name}" is already exposed`)
+		if (options.context !== undefined && typeof options.context !== 'function')
+			throw new PiAgentError('INVALID_INPUT', 'Exposure context must be a function')
+		const record: ExposureRecord = {
+			name: command.name,
+			command: command as DirectCommand<any, unknown, any>,
+			owner,
+			options,
+			active: true,
+		}
+		const dispose = () => {
+			if (!record.active) return
+			record.active = false
+			record.guard?.cancel()
+			if (this.exposures.get(record.name) === record) this.exposures.delete(record.name)
+		}
+		record.guard = owner.effects.defer(dispose, { tag: `PiTool:${record.name}` })
+		this.exposures.set(record.name, record)
+		return Object.freeze({ name: record.name, dispose, [Symbol.dispose]: dispose })
+	}
+
+	tools(): readonly PiToolDescriptor[] {
+		this.requireActive()
+		return Object.freeze(
+			[...this.exposures.values()]
+				.map(({ name, command }) => Object.freeze({ name, descriptor: command.descriptor }))
+				.sort((left, right) => left.name.localeCompare(right.name)),
+		)
+	}
+
+	private resolveTools(
+		options: Readonly<{
+			tools?: readonly PiToolChoice[]
+			context?: CommandContext
+			authorize?: PiAuthorization
+			principal?: unknown
+		}>,
+		owner: CoreContext,
+	): readonly SelectedPiCommand[] {
+		const choices = options.tools ?? []
+		if (!Array.isArray(choices))
+			throw new PiAgentError('INVALID_INPUT', 'Session tools must be an array')
+		if (choices.every((choice) => typeof choice === 'string') && options.context !== undefined) {
+			throw new PiAgentError(
+				'INVALID_INPUT',
+				'Exposed tools do not accept a session context override',
+			)
+		}
+		const sessionContext =
+			options.context === undefined ? undefined : snapshotBusinessContext(options.context)
+		const seen = new Set<string>()
+		const selected: SelectedPiCommand[] = []
+		for (const choice of choices) {
+			const exposure = typeof choice === 'string' ? this.exposures.get(choice) : undefined
+			if (typeof choice === 'string' && !exposure)
+				throw new PiAgentError('TOOL_NOT_FOUND', `Tool "${choice}" is not exposed`)
+			const command = (exposure?.command ?? choice) as DirectCommand<any, unknown, any>
+			if (
+				typeof command?.name !== 'string' ||
+				command.name !== command.descriptor?.name ||
+				typeof command.execute !== 'function' ||
+				'dispose' in command
+			) {
+				throw new PiAgentError(
+					'INVALID_INPUT',
+					'Session tools must be direct Commands or exposed names',
+				)
+			}
+			if (seen.has(command.name))
+				throw new PiAgentError('TOOL_CONFLICT', `Tool "${command.name}" is selected twice`)
+			validatePiSchema(command.descriptor.inputSchema, command.name)
+			seen.add(command.name)
+			const sourceOwner = exposure?.owner ?? owner
+			const checkAuthorization = async (currentSignal: AbortSignal) => {
+				if (exposure && !exposure.active) return false
+				if (currentSignal.aborted) return false
+				if (
+					options.authorize &&
+					!(await options.authorize({
+						name: command.name,
+						principal: options.principal,
+						signal: currentSignal,
+					}))
+				)
+					return false
+				if (currentSignal.aborted || (exposure && !exposure.active)) return false
+				if (
+					exposure?.options.authorize &&
+					!(await exposure.options.authorize({
+						name: command.name,
+						principal: options.principal,
+						signal: currentSignal,
+					}))
+				)
+					return false
+				return !currentSignal.aborted && (!exposure || exposure.active)
+			}
+			const allowed = async (signal?: AbortSignal) => {
+				if (exposure && !exposure.active) return false
+				let providerLease
+				let ownerLease
+				try {
+					providerLease = enterOwnerInvocation(this.providerOwner, signal)
+					ownerLease =
+						sourceOwner === this.providerOwner
+							? providerLease
+							: enterOwnerInvocation(sourceOwner, providerLease.signal)
+				} catch {
+					providerLease?.dispose()
+					return false
+				}
+				try {
+					return await checkAuthorization(ownerLease.signal)
+				} finally {
+					if (ownerLease !== providerLease) ownerLease.dispose()
+					providerLease.dispose()
+				}
+			}
+			selected.push(
+				Object.freeze({
+					name: command.name,
+					descriptor: command.descriptor,
+					available: () => !exposure || exposure.active,
+					allowed,
+					invoke: async (candidate: unknown, sessionId: string, signal?: AbortSignal) => {
+						if (exposure && !exposure.active)
+							return releasedDelivery(
+								Result.err<unknown, CommandFailure>({
+									code: 'PUBLICATION_GONE',
+									message: 'Tool publication is gone',
+								}),
+							)
+						let providerLease
+						try {
+							providerLease = enterOwnerInvocation(this.providerOwner, signal)
+						} catch (error) {
+							return releasedDelivery(
+								Result.err<unknown, CommandFailure>({
+									code: 'ABORTED',
+									message: 'Pi Agent is stopping',
+									cause: error,
+								}),
+							)
+						}
+						let ownerLease: ReturnType<typeof enterOwnerInvocation> | undefined
+						let released = false
+						let handedOff = false
+						const release = () => {
+							if (released) return
+							released = true
+							try {
+								if (ownerLease && ownerLease !== providerLease) ownerLease.dispose()
+							} finally {
+								providerLease.dispose()
+							}
+						}
+						const deliver = (result: PiToolDelivery['result']): PiToolDelivery => {
+							handedOff = true
+							return { result, release }
+						}
+						try {
+							ownerLease =
+								sourceOwner === this.providerOwner
+									? providerLease
+									: enterOwnerInvocation(sourceOwner, providerLease.signal)
+							const baseContext = exposure?.options.context
+								? snapshotBusinessContext(
+										await exposure.options.context({
+											principal: options.principal,
+											signal: ownerLease.signal,
+											deadlineMs: undefined,
+										}),
+									)
+								: exposure
+									? {}
+									: (sessionContext ?? {})
+							if (exposure && !exposure.active)
+								return deliver(
+									Result.err<unknown, CommandFailure>({
+										code: 'PUBLICATION_GONE',
+										message: 'Tool publication is gone',
+									}),
+								)
+							if (ownerLease.signal.aborted)
+								return deliver(
+									Result.err<unknown, CommandFailure>({
+										code: 'ABORTED',
+										message: 'Tool invocation was aborted',
+									}),
+								)
+							if (!(await checkAuthorization(ownerLease.signal)))
+								return deliver(
+									Result.err<unknown, CommandFailure>({
+										code: exposure && !exposure.active ? 'PUBLICATION_GONE' : 'FORBIDDEN',
+										message:
+											exposure && !exposure.active
+												? 'Tool publication is gone'
+												: 'Tool is not authorized',
+									}),
+								)
+							if (ownerLease.signal.aborted)
+								return deliver(
+									Result.err<unknown, CommandFailure>({
+										code: 'ABORTED',
+										message: 'Tool invocation was aborted',
+									}),
+								)
+							const context = {
+								...baseContext,
+								signal: ownerLease.signal,
+								meta: Object.freeze({ carrier: 'pi-agent', sessionId }),
+							}
+							return deliver(await command.execute(candidate, context))
+						} catch (error) {
+							return deliver(
+								Result.err<unknown, CommandFailure>({
+									code: ownerLease ? 'INTERNAL' : 'ABORTED',
+									message: 'Tool execution failed',
+									cause: error,
+								}),
+							)
+						} finally {
+							if (!handedOff) release()
+						}
+					},
+				}),
+			)
+		}
+		return Object.freeze(selected)
 	}
 
 	sessions(): readonly PiAgentSessionSnapshot[] {
@@ -119,12 +406,6 @@ export class PiAgentController {
 		return this.sessionsById.get(normalizeMachineId(id, 'session id'))
 	}
 
-	async disposeSession(id: string): Promise<void> {
-		const session = this.sessionsById.get(id)
-		if (!session) return
-		await session.disposeOwned()
-	}
-
 	subscribe(listener: () => void): () => void {
 		if (typeof listener !== 'function') throw new TypeError('Pi Agent listener must be a function')
 		this.listeners.add(listener)
@@ -136,15 +417,32 @@ export class PiAgentController {
 		}
 	}
 
-	async close(): Promise<void> {
-		if (!this.active) return
+	close(): Promise<void> {
+		if (this.closePromise) return this.closePromise
 		this.active = false
 		this.subagents.close()
+		for (const exposure of this.exposures.values()) {
+			exposure.active = false
+			exposure.guard?.cancel()
+		}
+		this.exposures.clear()
 		const disposals = [...this.sessionsById.values()]
 			.filter((session) => session.depth === 0)
 			.map((session) => session.disposeOwned())
-		await Promise.allSettled([...this.pendingCreates, ...disposals])
-		this.listeners.clear()
+		const pendingCreates = [...this.pendingCreates]
+		this.closePromise = (async () => {
+			const outcomes = await Promise.allSettled([...pendingCreates, ...disposals])
+			this.listeners.clear()
+			const failures = outcomes.flatMap((outcome, index) =>
+				outcome.status === 'rejected' &&
+				(index >= pendingCreates.length ||
+					!(outcome.reason instanceof PiAgentError && outcome.reason.code === 'NOT_RUNNING'))
+					? [outcome.reason]
+					: [],
+			)
+			if (failures.length > 0) throw new AggregateError(failures, 'Pi Agent cleanup failed')
+		})()
+		return this.closePromise
 	}
 
 	currentConfig(): PiAgentPluginConfig {
@@ -185,14 +483,17 @@ export class PiAgentController {
 			child = await this.trackCreate(
 				this.createManaged({
 					id,
-					toolSetupId: owner.toolSetupId,
+					tools: owner.selectedTools,
+					principal: owner.principal,
+					owner: owner.owner,
+					...(owner.sessionContext ? { context: owner.sessionContext } : {}),
+					...(owner.sessionAuthorize ? { authorize: owner.sessionAuthorize } : {}),
 					parent: owner,
 					depth: owner.depth + 1,
 					model: parentModel ?? undefined,
 					thinkingLevel: owner.thinkingLevel,
 					systemPrompt: `${owner.systemPrompt}\n\nYou are a bounded subagent. Complete only the delegated task and report a concise result.`,
 					cwd: owner.cwd,
-					validateSetup: false,
 				}),
 			)
 			child.setGoal(task)
@@ -244,18 +545,6 @@ export class PiAgentController {
 		if (this.sessionsById.size + this.reservedSessions >= this.config.maxSessions) {
 			throw new PiAgentError('SESSION_LIMIT', 'Pi Agent session limit reached')
 		}
-		if (
-			input.validateSetup &&
-			!this.agentTools.snapshot().assignments.some(({ agentId }) => agentId === input.toolSetupId)
-		) {
-			throw new PiAgentError(
-				'TOOL_SETUP_NOT_FOUND',
-				'Selected AgentTools assignment does not exist',
-				{
-					details: { toolSetupId: input.toolSetupId },
-				},
-			)
-		}
 
 		let model: ResolvedPiModel | undefined
 		if (input.model) {
@@ -269,21 +558,28 @@ export class PiAgentController {
 
 		this.reservedSessions += 1
 		this.reservedSessionIds.add(input.id)
-		const catalog = this.agentTools.catalog(input.toolSetupId)
-		const session = new ManagedPiSession(this, catalog, input, this.reportListenerError)
+		const session = new ManagedPiSession(this, input, this.reportListenerError)
 		try {
 			const upstream = await this.engine.createSession({
 				cwd: input.cwd,
 				systemPrompt: input.systemPrompt,
 				thinkingLevel: input.thinkingLevel ?? this.config.thinkingLevel,
 				...(model ? { model } : {}),
-				tools: session.toolDefinitions(),
+				tools: await session.toolDefinitions(),
+				beforeTurn: () => session.refreshTools(),
 			})
 			if (!this.active) {
 				upstream.dispose()
 				throw new PiAgentError('NOT_RUNNING', 'PiAgentPlugin is not running')
 			}
 			session.attach(upstream)
+			if (input.owner !== this.providerOwner) {
+				session.setOwnerGuard(
+					input.owner.effects.defer(() => session.disposeOwned(), {
+						tag: `PiSession:${session.id}`,
+					}),
+				)
+			}
 			this.sessionsById.set(session.id, session)
 			input.parent?.addChild(session)
 			this.notify()
@@ -323,7 +619,6 @@ export class PiAgentController {
 
 class ManagedPiSession implements PiAgentSession {
 	readonly id: string
-	readonly toolSetupId: string
 	readonly depth: number
 	readonly parent?: ManagedPiSession
 	readonly thinkingLevel: CreatePiAgentSessionOptions['thinkingLevel']
@@ -333,35 +628,45 @@ class ManagedPiSession implements PiAgentSession {
 	private readonly listeners = new Set<(event: PiAgentSessionEvent) => void>()
 	private readonly children = new Set<ManagedPiSession>()
 	private readonly subagentRecords: MutableSubagent[] = []
+	private readonly activePrompts = new Set<Promise<PiAgentRunResult>>()
+	private readonly activeSubagents = new Set<Promise<PiSubagentRunResult>>()
+	private promptAbort?: AbortController
+	private discoveryFailed = false
 	private readonly lifetime = new AbortController()
-	private catalogSnapshot: AgentCommandCatalogSnapshot
+	readonly selectedTools: readonly SelectedPiCommand[]
+	readonly principal: unknown
+	readonly owner: CoreContext
+	readonly sessionContext?: CommandContext
+	readonly sessionAuthorize?: PiAuthorization
+	private visibleTools: readonly SelectedPiCommand[] = []
 	private upstream?: AgentSession
 	private unsubscribeUpstream?: () => void
-	private unsubscribeCatalog: () => void
 	private state: PiAgentSessionSnapshot['state'] = 'idle'
 	private goalValue: PiGoalSnapshot | null = null
 	private lastResponse?: string
 	private disposePromise?: Promise<void>
+	private ownerGuard?: { cancel(): void }
 
 	constructor(
 		private readonly controller: PiAgentController,
-		private readonly catalog: AgentCommandCatalog,
 		input: SessionCreateInput,
 		private readonly reportListenerError: (error: unknown) => void,
 	) {
 		this.id = input.id
-		this.toolSetupId = input.toolSetupId
+		this.selectedTools = input.tools
+		this.principal = input.principal
+		this.owner = input.owner
+		this.sessionContext = input.context
+		this.sessionAuthorize = input.authorize
 		this.parent = input.parent
 		this.depth = input.depth
 		this.thinkingLevel = input.thinkingLevel
 		this.systemPrompt = input.systemPrompt
 		this.cwd = input.cwd
-		this.catalogSnapshot = catalog.snapshot()
-		this.unsubscribeCatalog = catalog.subscribe((snapshot) => {
-			this.catalogSnapshot = snapshot
-			this.refreshTools()
-			this.changed()
-		})
+	}
+
+	setOwnerGuard(guard: { cancel(): void }): void {
+		this.ownerGuard = guard
 	}
 
 	get subagentCount(): number {
@@ -371,14 +676,45 @@ class ManagedPiSession implements PiAgentSession {
 	attach(upstream: AgentSession): void {
 		this.upstream = upstream
 		this.unsubscribeUpstream = upstream.subscribe((event) => this.onUpstreamEvent(event))
-		this.refreshTools()
 	}
 
-	toolDefinitions(): ToolDefinition[] {
+	async toolDefinitions(): Promise<ToolDefinition[]> {
+		const checks = await Promise.allSettled(
+			this.selectedTools.map(async (tool) => ({
+				tool,
+				allowed: await tool.allowed(this.lifetime.signal),
+			})),
+		)
+		const permitted: Array<{ tool: SelectedPiCommand; allowed: boolean }> = []
+		for (const check of checks) {
+			if (check.status === 'rejected') throw check.reason
+			permitted.push(check.value)
+		}
+		if (this.state === 'disposed') return []
+		this.visibleTools = Object.freeze(
+			permitted.filter(({ tool, allowed }) => tool.available() && allowed).map(({ tool }) => tool),
+		)
+		const tools = this.visibleTools.map((tool): SelectedPiCommand => ({
+			...tool,
+			invoke: (candidate, sessionId, signal) =>
+				this.state === 'disposed'
+					? Promise.resolve(
+							releasedDelivery(
+								Result.err<unknown, CommandFailure>({
+									code: 'PUBLICATION_GONE',
+									message: 'Pi session is disposed',
+								}),
+							),
+						)
+					: tool.invoke(
+							candidate,
+							sessionId,
+							signal ? AbortSignal.any([signal, this.lifetime.signal]) : this.lifetime.signal,
+						),
+		}))
 		return createPiToolDefinitions({
-			catalog: this.catalog,
-			snapshot: this.catalogSnapshot,
 			sessionId: this.id,
+			tools,
 			maxResultChars: this.controller.currentConfig().maxToolResultChars,
 			controls: {
 				goal: (action, text, summary) => this.goal(action, text, summary),
@@ -390,9 +726,24 @@ class ManagedPiSession implements PiAgentSession {
 		})
 	}
 
-	refreshTools(): void {
+	async refreshTools(): Promise<void> {
 		if (!this.upstream || this.state === 'disposed') return
-		this.upstream.agent.state.tools = toPiAgentTools(this.toolDefinitions())
+		this.visibleTools = Object.freeze([])
+		this.upstream.agent.state.tools = []
+		this.changed()
+		let definitions: ToolDefinition[]
+		try {
+			definitions = await this.toolDefinitions()
+		} catch (error) {
+			this.visibleTools = Object.freeze([])
+			this.upstream.agent.state.tools = []
+			this.discoveryFailed = true
+			this.changed()
+			throw error
+		}
+		if (this.isDisposed()) return
+		this.upstream.agent.state.tools = toPiAgentTools(definitions)
+		this.changed()
 	}
 
 	snapshot(): PiAgentSessionSnapshot {
@@ -401,13 +752,10 @@ class ManagedPiSession implements PiAgentSession {
 			id: this.id,
 			...(this.parent ? { parentSessionId: this.parent.id } : {}),
 			depth: this.depth,
-			toolSetupId: this.toolSetupId,
 			state: this.state,
 			model,
 			goal: this.goalValue ? Object.freeze({ ...this.goalValue }) : null,
-			availableCommandNames: Object.freeze(
-				this.catalogSnapshot.descriptors.map(({ name }) => name),
-			),
+			availableCommandNames: Object.freeze(this.visibleTools.map(({ name }) => name)),
 			subagents: Object.freeze(this.subagentRecords.map((record) => Object.freeze({ ...record }))),
 			...(this.lastResponse === undefined ? {} : { lastResponse: this.lastResponse }),
 			createdAt: this.createdAt,
@@ -434,6 +782,23 @@ class ManagedPiSession implements PiAgentSession {
 			return Object.freeze({ ok: false, reason: 'aborted', message: 'Prompt was aborted' })
 		}
 		const upstream = this.requireUpstream()
+		const task = this.promptNow(text, options, upstream)
+		this.activePrompts.add(task)
+		try {
+			return await task
+		} finally {
+			this.activePrompts.delete(task)
+		}
+	}
+
+	private async promptNow(
+		text: string,
+		options: PiAgentPromptOptions,
+		upstream: AgentSession,
+	): Promise<PiAgentRunResult> {
+		const promptAbort = new AbortController()
+		this.promptAbort = promptAbort
+		this.discoveryFailed = false
 		this.state = 'running'
 		this.changed()
 		const abort = (): void => {
@@ -441,7 +806,14 @@ class ManagedPiSession implements PiAgentSession {
 		}
 		options.signal?.addEventListener('abort', abort, { once: true })
 		try {
+			await this.refreshTools()
+			if (promptAbort.signal.aborted || this.lifetime.signal.aborted || options.signal?.aborted) {
+				return Object.freeze({ ok: false, reason: 'aborted', message: 'Prompt was aborted' })
+			}
 			await upstream.prompt(text)
+			if (this.discoveryFailed) {
+				return Object.freeze({ ok: false, reason: 'model_error', message: 'Tool discovery failed' })
+			}
 			const result = latestAssistantResult(upstream.messages)
 			this.lastResponse = result.text
 			if (result.reason === 'aborted') {
@@ -452,16 +824,22 @@ class ManagedPiSession implements PiAgentSession {
 			}
 			return Object.freeze({ ok: true, text: result.text })
 		} catch (error) {
-			if (options.signal?.aborted || isAbortError(error)) {
+			if (
+				promptAbort.signal.aborted ||
+				this.lifetime.signal.aborted ||
+				options.signal?.aborted ||
+				isAbortError(error)
+			) {
 				return Object.freeze({ ok: false, reason: 'aborted', message: 'Prompt was aborted' })
 			}
 			return Object.freeze({
 				ok: false,
 				reason: 'model_error',
-				message: publicErrorMessage(error),
+				message: this.discoveryFailed ? 'Tool discovery failed' : publicErrorMessage(error),
 			})
 		} finally {
 			options.signal?.removeEventListener('abort', abort)
+			if (this.promptAbort === promptAbort) this.promptAbort = undefined
 			if (!this.isDisposed()) this.state = 'idle'
 			this.changed()
 		}
@@ -501,7 +879,7 @@ class ManagedPiSession implements PiAgentSession {
 		const signal = options.signal
 			? AbortSignal.any([this.lifetime.signal, options.signal])
 			: this.lifetime.signal
-		return this.controller.runSubagent(this, task, signal)
+		return this.trackSubagent(this.controller.runSubagent(this, task, signal))
 	}
 
 	private spawnSubagentWithSignal(
@@ -509,21 +887,35 @@ class ManagedPiSession implements PiAgentSession {
 		signal?: AbortSignal,
 	): Promise<PiSubagentRunResult> {
 		const composed = signal ? AbortSignal.any([this.lifetime.signal, signal]) : this.lifetime.signal
-		return this.controller.runSubagent(this, task, composed)
+		return this.trackSubagent(this.controller.runSubagent(this, task, composed))
+	}
+
+	private trackSubagent(task: Promise<PiSubagentRunResult>): Promise<PiSubagentRunResult> {
+		this.activeSubagents.add(task)
+		void task.then(
+			() => this.activeSubagents.delete(task),
+			() => this.activeSubagents.delete(task),
+		)
+		return task
 	}
 
 	async abort(): Promise<void> {
 		if (this.state === 'disposed' || !this.upstream) return
+		this.promptAbort?.abort()
 		if (this.state === 'running') this.state = 'aborting'
 		this.changed()
 		await this.upstream.abort()
 		await this.upstream.agent.waitForIdle()
-		if (!this.isDisposed()) this.state = 'idle'
+		if (!this.isDisposed() && this.activePrompts.size === 0) this.state = 'idle'
 		this.changed()
 	}
 
 	dispose(): Promise<void> {
-		return this.controller.disposeSession(this.id)
+		return this.disposeOwned()
+	}
+
+	[Symbol.asyncDispose](): Promise<void> {
+		return this.dispose()
 	}
 
 	disposeOwned(): Promise<void> {
@@ -571,19 +963,39 @@ class ManagedPiSession implements PiAgentSession {
 		this.state = 'disposed'
 		this.changed()
 		this.lifetime.abort()
-		this.unsubscribeCatalog()
+		this.ownerGuard?.cancel()
 		this.unsubscribeUpstream?.()
-		await Promise.allSettled([...this.children].map((child) => child.disposeOwned()))
-		if (this.upstream) {
-			try {
-				await this.upstream.abort()
-				await this.upstream.agent.waitForIdle()
-			} finally {
-				this.upstream.dispose()
-			}
+		const childOutcomes = await Promise.allSettled(
+			[...this.children].map((child) => child.disposeOwned()),
+		)
+		const failures = childOutcomes.flatMap((outcome) =>
+			outcome.status === 'rejected' ? [outcome.reason] : [],
+		)
+		const subagentOutcomes = await Promise.allSettled(this.activeSubagents)
+		for (const outcome of subagentOutcomes) {
+			if (outcome.status === 'rejected' && !failures.includes(outcome.reason))
+				failures.push(outcome.reason)
 		}
-		this.listeners.clear()
-		this.controller.remove(this)
+		try {
+			if (this.upstream) {
+				try {
+					try {
+						await this.upstream.abort()
+						await this.upstream.agent.waitForIdle()
+					} finally {
+						await Promise.allSettled(this.activePrompts)
+					}
+				} finally {
+					this.upstream.dispose()
+				}
+			}
+		} catch (cause) {
+			failures.push(cause)
+		} finally {
+			this.listeners.clear()
+			this.controller.remove(this)
+		}
+		if (failures.length > 0) throw new AggregateError(failures, 'Pi session cleanup failed')
 	}
 
 	private goal(
@@ -790,4 +1202,114 @@ function bounded(value: string, limit: number): string {
 
 function now(): string {
 	return new Date().toISOString()
+}
+
+function releasedDelivery(result: PiToolDelivery['result']): PiToolDelivery {
+	return { result, release() {} }
+}
+
+function snapshotBusinessContext(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new PiAgentError('INVALID_INPUT', 'Tool context must be a data record')
+	}
+	const prototype = Object.getPrototypeOf(value)
+	if (prototype !== Object.prototype && prototype !== null) {
+		throw new PiAgentError('INVALID_INPUT', 'Tool context must be a data record')
+	}
+	if (Object.getOwnPropertySymbols(value).length > 0) {
+		throw new PiAgentError('INVALID_INPUT', 'Tool context must be a data record')
+	}
+	const snapshot: Record<string, unknown> = Object.create(null)
+	for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+		if (key === 'signal' || key === 'deadlineMs' || key === 'meta') {
+			throw new PiAgentError('INVALID_INPUT', `Tool context cannot supply reserved field "${key}"`)
+		}
+		if (!descriptor.enumerable || !('value' in descriptor)) {
+			throw new PiAgentError('INVALID_INPUT', 'Tool context must be a data record')
+		}
+		snapshot[key] = descriptor.value
+	}
+	return snapshot
+}
+
+const unsupportedPiSchemaKeys = new Set([
+	'$ref',
+	'$defs',
+	'definitions',
+	'allOf',
+	'oneOf',
+	'patternProperties',
+	'dependentSchemas',
+	'dependencies',
+	'unevaluatedProperties',
+	'propertyNames',
+	'contains',
+	'prefixItems',
+	'not',
+	'if',
+	'then',
+	'else',
+])
+
+function validatePiSchema(value: unknown, name: string, path = 'input'): void {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new PiAgentError(
+			'TOOL_SCHEMA_UNSUPPORTED',
+			`Pi tool "${name}" has an unsupported schema at ${path}`,
+		)
+	}
+	const schema = value as Record<string, unknown>
+	for (const key of Object.keys(schema)) {
+		if (unsupportedPiSchemaKeys.has(key)) {
+			throw new PiAgentError(
+				'TOOL_SCHEMA_UNSUPPORTED',
+				`Pi tool "${name}" does not support ${key} at ${path}`,
+			)
+		}
+	}
+	if (schema.additionalProperties !== undefined && schema.additionalProperties !== false) {
+		throw new PiAgentError(
+			'TOOL_SCHEMA_UNSUPPORTED',
+			`Pi tool "${name}" requires closed objects at ${path}`,
+		)
+	}
+	if (schema.properties !== undefined) {
+		if (
+			!schema.properties ||
+			typeof schema.properties !== 'object' ||
+			Array.isArray(schema.properties)
+		) {
+			throw new PiAgentError(
+				'TOOL_SCHEMA_UNSUPPORTED',
+				`Pi tool "${name}" has invalid properties at ${path}`,
+			)
+		}
+		for (const [key, child] of Object.entries(schema.properties))
+			validatePiSchema(child, name, `${path}.${key}`)
+	}
+	if (schema.items !== undefined) {
+		if (Array.isArray(schema.items))
+			throw new PiAgentError(
+				'TOOL_SCHEMA_UNSUPPORTED',
+				`Pi tool "${name}" does not support tuple items at ${path}`,
+			)
+		validatePiSchema(schema.items, name, `${path}.items`)
+	}
+	if (schema.anyOf !== undefined) {
+		if (!Array.isArray(schema.anyOf) || schema.anyOf.length === 0) {
+			throw new PiAgentError(
+				'TOOL_SCHEMA_UNSUPPORTED',
+				`Pi tool "${name}" has invalid anyOf at ${path}`,
+			)
+		}
+		for (const [index, child] of schema.anyOf.entries()) {
+			if (child && typeof child === 'object' && ('properties' in child || 'items' in child)) {
+				throw new PiAgentError(
+					'TOOL_SCHEMA_UNSUPPORTED',
+					`Pi tool "${name}" does not support object or array unions at ${path}`,
+				)
+			}
+			validatePiSchema(child, name, `${path}.anyOf[${index}]`)
+		}
+	}
 }

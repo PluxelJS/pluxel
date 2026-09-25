@@ -6,6 +6,8 @@
 		"http",
 		"management",
 		"commands",
+		"mcp",
+		"rpc",
 		"node-artifacts",
 		"---可观测性---",
 		"logging",

@@ -57,17 +57,15 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext, Output = un
 		this.entries.set(name, entry)
 		this.bumpRevision()
 		let active = true
-		return Object.freeze({
-			name,
-			dispose: () => {
-				if (!active) return
-				active = false
-				if (this.entries.get(name) !== entry) return
-				this.entries.delete(name)
-				this.removeRoutes(entry)
-				this.bumpRevision()
-			},
-		})
+		const dispose = () => {
+			if (!active) return
+			active = false
+			if (this.entries.get(name) !== entry) return
+			this.entries.delete(name)
+			this.removeRoutes(entry)
+			this.bumpRevision()
+		}
+		return Object.freeze({ name, dispose, [Symbol.dispose]: dispose })
 	}
 
 	resolve(input: ArgvInput): ArgvResolution<Ctx, Output> | undefined {

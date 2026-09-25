@@ -1,3 +1,10 @@
+import type {
+	CommandContext,
+	DirectCommand,
+	CommandDescriptor,
+	Registration,
+} from '@pluxel/commands'
+
 export type PiModelReference = Readonly<{
 	provider: string
 	id: string
@@ -26,7 +33,6 @@ export type PiAgentSessionSnapshot = Readonly<{
 	id: string
 	parentSessionId?: string
 	depth: number
-	toolSetupId: string
 	state: PiAgentSessionState
 	model: PiModelReference | null
 	goal: PiGoalSnapshot | null
@@ -50,15 +56,68 @@ export type PiSubagentRunResult =
 	| Readonly<{ ok: true; id: string; text: string }>
 	| Readonly<{ ok: false; id: string; reason: 'aborted' | 'model_error'; message: string }>
 
-export type CreatePiAgentSessionOptions = Readonly<{
-	/** Stable caller-selected identity. A UUID is generated when omitted. */
-	id?: string
-	/** AgentTools assignment used as this session's complete command allowlist. */
-	toolSetupId?: string
-	model?: PiModelReference
-	thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-	systemPrompt?: string
+export type PiToolChoice =
+	| string
+	| Readonly<{
+			name: string
+			descriptor: CommandDescriptor
+			execute: (...args: any[]) => unknown
+			dispose?: never
+	  }>
+export type PiAuthorization = (
+	input: Readonly<{ name: string; principal: unknown; signal: AbortSignal }>,
+) => boolean | Promise<boolean>
+export type PiBusinessContext<Ctx extends CommandContext> = Omit<Ctx, keyof CommandContext> & {
+	readonly signal?: never
+	readonly deadlineMs?: never
+	readonly meta?: never
+}
+export type PiContextFactory<Ctx extends CommandContext> = (
+	input: Readonly<{ principal: unknown; signal: AbortSignal; deadlineMs?: number }>,
+) => PiBusinessContext<Ctx> | Promise<PiBusinessContext<Ctx>>
+export type PiExposureOptions<Ctx extends CommandContext> = Readonly<{
+	authorize?: PiAuthorization
+}> &
+	(CommandContext extends Ctx
+		? { readonly context?: PiContextFactory<Ctx> }
+		: { readonly context: PiContextFactory<Ctx> })
+export type PiToolDescriptor = Readonly<{
+	name: string
+	descriptor: CommandDescriptor
 }>
+export type PiToolExposure = Registration
+
+type DirectContext<T> =
+	T extends DirectCommand<infer _I, infer _O, infer Ctx> ? Ctx : CommandContext
+type UnionToIntersection<U> = (U extends unknown ? (value: U) => void : never) extends (
+	value: infer I,
+) => void
+	? I
+	: never
+type SessionContext<Tools extends readonly PiToolChoice[]> = UnionToIntersection<
+	DirectContext<Tools[number]>
+>
+type SessionContextOption<Tools extends readonly PiToolChoice[]> =
+	Extract<Tools[number], { readonly execute: (...args: any[]) => unknown }> extends never
+		? { readonly context?: never }
+		: CommandContext extends SessionContext<Tools>
+			? { readonly context?: PiBusinessContext<SessionContext<Tools>> }
+			: { readonly context: PiBusinessContext<SessionContext<Tools>> }
+
+type SessionOptionsBase<Tools extends readonly PiToolChoice[] = readonly PiToolChoice[]> =
+	Readonly<{
+		id?: string
+		tools?: Tools
+		authorize?: PiAuthorization
+		model?: PiModelReference
+		thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+		systemPrompt?: string
+	}> &
+		SessionContextOption<NoInfer<Tools>>
+
+export type CreatePiAgentSessionOptions<
+	Tools extends readonly PiToolChoice[] = readonly PiToolChoice[],
+> = SessionOptionsBase<Tools> & Readonly<{ principal?: unknown }>
 
 export type PiAgentPromptOptions = Readonly<{
 	signal?: AbortSignal
@@ -71,7 +130,6 @@ export type PiSubagentOptions = Readonly<{
 
 export interface PiAgentSession {
 	readonly id: string
-	readonly toolSetupId: string
 	snapshot(): PiAgentSessionSnapshot
 	subscribe(listener: (event: PiAgentSessionEvent) => void): () => void
 	prompt(text: string, options?: PiAgentPromptOptions): Promise<PiAgentRunResult>
@@ -81,4 +139,5 @@ export interface PiAgentSession {
 	spawnSubagent(task: string, options?: PiSubagentOptions): Promise<PiSubagentRunResult>
 	abort(): Promise<void>
 	dispose(): Promise<void>
+	[Symbol.asyncDispose](): Promise<void>
 }

@@ -1,719 +1,746 @@
-# Agent RPC、沙盒执行与 Commands 重设计提案
+# Command、Agent 与 RPC：直接定义，显式发布
 
-状态：待评审，未实现。日期：2026-09-24。
+状态：分阶段实施中。日期：2026-09-25。Command 内核和现有消费者、可选 Pi 直接工具载体、MCP 显式发布、RPC 显式 Command 目录与精确契约会话已落地；隔离程序和 HTTP 网关仍为内部实现，尚无稳定公开安装入口。旧 AgentTools 包与执行入口已按破坏性重构删除；独立的 `local-projects/chatbot` 已迁移其 Command/CLI 调用方。
+内部执行器现已在真实 Podman 路径验证宿主完成时封闭新调用、未完成请求判定、同机同一运行环境下的跨进程运行上限、绝对 deadline 和排空超时后的关闭等待；网关也限制同一 run 跨 HTTP batch 的并发。启动探针核查容器实际隔离约束和私有挂载访问，Podman 独立超时约束宿主崩溃后的容器运行时间。下次执行器创建可按进程身份、启动锁和容器标签回收异常退出后的运行中容器；跨运行环境恢复仍待验收。容器内的 Node VM 不能隔离同一进程的控制凭据；真实恶意脚本回归证明同一进程可取得控制凭据，但 Podman 阻止读取宿主文件和连接外网，宿主网关拒绝把伪造完成时仍在途的调用结算为成功。仓库已有固定 Node 摘要的执行器专用镜像定义，本机最小镜像已通过真实 Podman 回归。当前平台、预算与运维边界见[执行器文档](../RPC_EXECUTOR.md)；目标部署环境尚未验收，因此执行器仍未公开。
+当前用法以 [Commands](../../docs/runtime/commands.md)、[Pi](../../docs/plugins/pi-agent.md)、[MCP](../../docs/runtime/mcp.md)、[RPC](../../docs/runtime/rpc.md)、[工程边界](../COMMANDS.md)和[开发控制台](../../docs/development/dev-console.md)为准。RPC 的前置实验分别位于[真实 Command 制品绑定](../experiments/agent-rpc-binding/README.md)、[隔离与 HTTP 探针](../experiments/agent-rpc-commands/README.md)和[隔离工作排空](../experiments/agent-rpc-sandbox/README.md)。实验不构成正式发布或完整验收。
 
-本提案允许破坏兼容，不要求保留 AgentTools、旧 Pi 集成或旧 Command 作者 API。
-它不改变当前工程文档的权威，也不授权立即删除实现。文中的新接口是设计契约示例，尚不能在仓库运行。
+## 1. 设计决定
 
-## 1. 决策摘要
-
-Command 是一个带稳定名称、说明、输入契约和校验执行入口的操作定义。它可以成为 CLI、聊天命令、
-LLM tool 和 RPC 方法的共同来源；不因适配多个接收者而膨胀成管理所有业务函数的框架。
+作者只定义操作本身，需要哪个入口就发布到哪个载体。普通业务复用使用函数或 Plugin 方法；Command 负责可发现、可校验的操作边界。
 
 ```text
-领域实现
-  ├─ Command（一次定义操作）
-  │    ├─ toCli / 聊天 carrier → 人类命令
-  │    ├─ 框架 tool adapter / toMcp → 精选原生 LLM tools
-  │    └─ toCapnweb({ methods }) → 原生 RpcTarget class
-  │                                      ↓
-  └─ 原生 RpcTarget ──────────────→ 嵌套能力对象树
-                                         ↓
-                             受限会话 → 沙盒程序 → Agent
+业务函数 / Plugin 方法
+  → Command：输入 schema、说明、执行
+      → 可选 registry / argv
+      → Agent tool
+      → MCP tool
+      → RPC 方法 → 受限 TypeScript 程序
 ```
 
-1. Command 内核保留 name、description、input、execute、输入校验和类型推导；不内置模型 SDK 或 transport。
-2. 删除核心 `behavior`、`output`、`validateOutput` 及 output codec/examples；输入和正常返回值保留。
-3. 平台提示、协议结果与输出投影由 adapter 拥有；含义相同的结果定义共享一份引用。
-4. Command 可以直接作为各框架 LLM tool 的定义来源，不必先变成 MCP 或 RPC；具体 SDK 调用约定仍需薄适配。
-5. `toCapnweb()` 将一组 Command 组成真正的原生 RpcTarget class，实例绑定可信上下文；不重复写 RPC handler。
-6. 生成 class 可嵌入或扩展为原生能力树：Command 方法返回数据，原生方法显式返回子能力，保留原生 promise pipelining。
-7. 授权选择用途明确的对象树，撤销约束覆盖所有子对象；不能只保护根对象或靠文档隐藏方法。
-8. 复杂任务采用发现加沙盒编程；少量操作采用原生 tools。所有出口显式选择，不全量自动暴露。
-9. 删除旧 AgentTools/Toolset 主链；保留插件生命周期基础设施，HTTP batch 边界显式化。
+| 决定         | 目标契约                                                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------- |
+| Command 定义 | `name`、`description`、`input`、`execute` 四项；handler 显式返回 `Result.ok(value)` / `Result.err(failure)` |
+| 本地执行     | `execute(wireInput, context?) → Promise<Result<T, CommandFailure>>`；校验、业务拒绝和执行故障都可显式分支   |
+| 静态类型     | 已知 Command 的参数、结果和必需 context 可检查；动态名称与协议输入仍在运行时校验                            |
+| 多入口       | Agent、MCP、RPC 并列适配；不经过彼此，不自动镜像 root catalog                                               |
+| Plugin 发布  | 载体绑定真实调用者 owner；作者不填写 owner ID，不复制 handler                                               |
+| RPC 首版     | 只发布显式 Command 方法表；普通 DTO 往返，不开放任意类、getter 或业务子能力                                 |
+| 程序编写     | 普通 `async/await`、`Promise.all`；HTTP 批次由客户端内部调度                                                |
+| 授权         | RPC access 绑定具体契约；session 固定 publication generation；发现接口不授予权限                            |
+| 生命周期     | 发布句柄同步撤销；会话异步关闭并等待工作退出；Plugin 长期资源归 effects                                     |
 
-操作定义、对象组合、传输接入各有一个所有者。不为同一操作同时维护 Command handler、RPC handler 和 tool handler。
+Command 是明确的受校验执行边界，作者和调用方使用同一 Result 契约；普通业务函数、SDK、会话创建和清理保留各自契约。
+Result 使用现有 Better Result，不另造 `CommandResult`、抛异常的 `fail` 或平行的 `executeOrThrow`。
+RPC 将本地 Result 投影为普通 DTO，Agent/MCP 转换为原生协议结果；投影不再次执行、不增加一层成功包装。
 
-### 1.1 信息只声明一次，适配是纯函数派生
+首版优先交付 Command 和直接工具。RPC 用于应用内受限 Agent；维护当前开发应用继续使用 devconsole。
+任意 `RpcTarget` 对象图、子能力传递、跨 provider 能力归属和通用接口反射不属于首版；现有 Workbench 继续使用自己的原生 RPC 契约。
 
-同一语义只有一个作者源。适配器引用基础定义，追加自己拥有的事实，不复制一套 name/description/input/handler，
-也不使用后写覆盖前写的 metadata merge。生成的 schema、help、MCP description 和 `.d.ts` 是可重建投影，不是新权威。
+落地顺序为：Command 内核与现有消费者 → 各载体显式适配 → RPC 发布与隔离程序。Pi 只是可选的直接工具载体，不是 Command 或 RPC 的前置依赖。
+RPC 的制品生成与隔离后端须先通过第 13 节的小规模验证，再实现完整管理与发现入口。
+四字段定义、显式 Result、固定发布句柄和 owner 归属作为本轮实现基线，不再并行保留另一套作者 API。
 
-| 信息                                       | 唯一来源                             | 派生方式                                  |
-| ------------------------------------------ | ------------------------------------ | ----------------------------------------- |
-| 命令逻辑名称、业务说明、输入契约、执行函数 | defineCommand 的基础定义             | CLI、聊天、LLM、RPC view 引用同一 command |
-| CLI 路由、别名、位置参数与显示方式         | CLI view                             | parser/help 从 binding 生成               |
-| MCP annotations 与模型操作提示             | MCP view                             | 追加到继承的业务说明，不覆盖说明          |
-| 多出口确实相同的 JSON DTO/schema/project   | 一个普通的共享结果定义               | CLI JSON/LLM/RPC 数据结果引用同一对象     |
-| 生成 RPC 方法的说明、参数和实现            | 源 Command 与共享结果定义            | toCapnweb 派生方法与文档                  |
-| RPC 成员放置位置                           | toCapnweb 的对象成员键或原生类方法名 | 接口路径，不冒充源 Command 的 identity    |
-| 原生 RPC 方法签名、方法说明                | 原生 RpcTarget 方法与 JSDoc          | 类型文档/发现制品由工具链提取             |
-| RPC 对象用途说明                           | target class 的 JSDoc                | publication/发现页面读取生成制品          |
-| RPC 发现别名、实例创建与所有权             | publication                          | 不从 class name 猜稳定身份                |
-
-追加函数属于对应适配器：`toCli`/`toMcp` 返回不可变消费 view，`toCapnweb` 返回原生 target class；
-它们保留源 command 引用和类型，不修改源对象、不注册服务、不执行 handler。`bind()`/`expose()` 才拥有副作用和 disposer。
-基础定义不需要知道这些追加函数存在，也不需要通用 `.extend()`、插件化 metadata 容器或全局装饰器注册表。
-不同平台从同一个源分支派生，不要求 `toMcp(toCli(...))` 这种无意义的跨平台叠加。
-
-平台选项不再次接受相同语义的 `name`/`description`/`input`/`execute`。确有命名空间冲突时，可以显式指定
-`exportAs` 作为外部协议别名；这不是第二个业务身份。默认优先保留合法原名，必要时用确定性编码派生，冲突在 bind 时拒绝。
-CLI 的 `notes search` 是用户输入语法而非重复声明 command identity，因此仍留在 CLI view。
-
-## 2. 已核对的当前事实
-
-以下是本次源码核对结果，不是对未来设计的假设：
-
-| 当前事实                                                                 | 证据                                                                                                                                                                                                   | 对决策的影响                                             |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| Commands 的公开入口只有根、`/argv`、`/typebox`                           | [package.json](../../packages/commands/package.json)、[index.ts](../../packages/commands/src/index.ts)                                                                                                 | 没有一个已经存在的 `/mcp` 模块可直接删除                 |
-| provider name、MCP annotations、输入输出 schema 投影由 carrier 负责      | [Commands 用法](../../docs/runtime/commands.md)、[工程边界](../COMMANDS.md)                                                                                                                            | 保持这个边界，删除“Agent 必须经过 Commands”的依赖        |
-| `output` 参与 encode、严格 JSON 检查、schema 校验和可选 `validateOutput` | [执行实现](../../packages/commands/src/define.ts)、[包文档](../../packages/commands/README.md)                                                                                                         | 把有用的投影/校验迁入实际出口，再删除核心 output 管线    |
-| 当前省略 output 要求 handler 返回 undefined，且 output 限于 object-root  | [公开类型](../../packages/commands/src/types.ts)                                                                                                                                                       | 可以重定这个契约，避免普通消息处理也被迫声明 wire output |
-| 管理命令、Package Manager、ReportStudio 使用 Commands                    | [管理命令](../../packages/services/src/management/commands.ts)、[Package Manager](../../plugins/package-manager/src/index.ts)、[ReportStudio](../../projects/plugin-host/src/showcase/ReportStudio.ts) | 保留实际 CLI/消息与管理用例；不是只剩 Agent 消费者       |
-| Package Manager 的 Command 和 Workbench RpcTarget 已经调用同一个 store   | [实现](../../plugins/package-manager/src/index.ts)                                                                                                                                                     | “共享业务、分别发布入口”已有真实先例                     |
-| Pi 当前遍历整个受限 catalog 生成 tools                                   | [tool-adapter.ts](../../plugins/pi-agent/src/tool-adapter.ts)                                                                                                                                          | token 扩张发生在投影层，不是插件安装本身                 |
-| AgentTools 保存 Toolset/assignment，执行时重新检查                       | [设计](../../plugins/agent-tools/DESIGN.md)                                                                                                                                                            | 复用其授权时机经验，不保留配置模型                       |
-
-本提案保留 Core 的 graph、generation、effects 和 owner invocation 思路，不将其改造成 Agent 专用 runtime。
-Commands、RPC、Workbench 的启用各自显式；关闭 RPC/Agent 时不创建网关、沙盒或模型客户端。
-
-## 3. Commands：哪些简化，哪些留下
-
-### 3.1 操作定义与命令入口
-
-保留 `defineCommand()`、输入 validation/codec、错误、独立 registry，以及 `/argv` 的路由、参数解析、帮助与 tail。
-聊天平台 carrier 继续拥有账号/频道身份、斜杠命令语法、授权、确认与回复渲染。
-CLI carrier 拥有 argv、stdout/stderr、exit code 与 `--json`；不隐式连接到正在运行的应用。
-
-Command 是可被多种接收者调用的操作定义；CLI/聊天仍拥有各自的语法和交互，不让这些信息渗入执行内核。
-名称用于稳定识别源操作和派生导出，不强迫所有 RPC 方法、UI action 或普通领域函数注册为 Command。
-业务内部仍可直接调用普通领域方法，Command 不成为 Plugin dependency 或 lifecycle 协议。
-
-### 3.2 返回值与输出出口
-
-Command 核心只处理输入与执行，handler 正常返回业务结果。核心不再拥有 `output`、`validateOutput`、
-output codec、output examples 或 `outputSchema` descriptor，也不再有 Output/Void 两套定义重载。
-`Command<I, O, Context>` 的 O 从 handler 推导；返回 undefined 就是无结果，不靠额外声明选择模式。
+## 2. 定义与调用
 
 ```ts
-const searchNotes = defineCommand({
-	name: 'notes.search',
-	description: '按关键词搜索当前笔记本的笔记。',
-	input: obj({ query: Type.String() }),
-	async execute({ query }, context: NotebookContext) {
-		return notes
-			.forNotebook(context.actor, context.notebookId)
-			.search(query, { signal: context.signal })
+import { defineCommand, Result } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
+
+const echo = defineCommand({
+	name: 'text.echo',
+	description: '返回输入的文本。',
+	input: obj({ text: Type.String() }),
+	execute({ text }) {
+		return Result.ok(text)
 	},
 })
 
-// CLI JSON、LLM 与 RPC 使用相同 DTO 时，只写一次。
-const noteSearchJson = {
-	schema: NoteSearchResultSchema,
-	project: (notes: NoteSummary[]) => ({ items: notes.map(toNoteSummary) }),
-}
-
-const cliSearch = toCli(searchNotes, {
-	routes: ['notes search'],
-	positionals: ['query'],
-	render: renderNotesTable,
-	json: noteSearchJson,
+const textInfo = defineCommand({
+	name: 'text.info',
+	description: '统计文本的 Unicode 码点数量。',
+	input: obj({ text: Type.String() }),
+	execute({ text }) {
+		return Result.ok({ length: [...text].length })
+	},
 })
 
-cli.bind(cliSearch)
-```
-
-`toCli` 和 `cli.bind` 属于拟议 CLI carrier，分别负责纯定义派生与路由安装；不往现有 `/argv` parser 增加 IO。
-底层 parser 继续只解析候选输入；安装时继承基础 command 的 name/description/input，不能重新填写这些信息。
-`render` 服务文本输出，`json` 是可选且明确承诺的 `--json` 出口。聊天平台类似地绑定自己的消息 renderer。
-
-| 责任                                               | 所有者                                               |
-| -------------------------------------------------- | ---------------------------------------------------- |
-| 参数 schema、defaults、input codec、跨字段输入校验 | Command 内核                                         |
-| 业务结果及其不变量                                 | handler 调用的领域实现                               |
-| 进程内返回类型                                     | handler 推导，不强加 JSON 或 object-root             |
-| CLI 表格、聊天消息                                 | 对应 carrier renderer                                |
-| 稳定 JSON DTO、MCP structured output               | 相同 DTO 的共享结果定义，由出口执行 project + schema |
-| 多出口共用的 DTO 转换                              | 领域边界的普通函数/schema，按需复用                  |
-
-保留 input 的 object-root，因为 argv positionals/options 需要字段模型。字符串动态 dispatch 的结果仍是 unknown。
-原始结果不自动进入日志、RPC 或模型上下文；不盲目 stringify 内部对象。output schema 不是授权，且不能自动代替显式 DTO 投影。
-出口若需要日期/大整数等编码，在 project 中或该出口明确支持的 codec 中完成，不回流到 Command 内核。
-
-CLI 在执行前检查所选输出模式是否受支持；MCP 在 mount 时检查结果出口和 schema 是否可投影。
-缺少 renderer/project 时在 handler 执行前拒绝，避免写入完成后才发现无法返回结果。
-实际 renderer、project 或结果校验仍可能在业务提交后失败，必须报告结果呈现失败，不自动重试业务操作。
-原 `OUTPUT_VALIDATION` 的接收者契约归对应 carrier；不再作为每个 Command 的统一执行错误。
-
-### 3.3 metadata 与注册句柄
-
-- 名称、描述、input 字段说明与输入示例保留，用于命令 help；argv 用法示例留在 binding。
-- `behavior` 整体删除，连同 `world`、`destructive`、`idempotent` 和 query/mutation 分类。
-- 具体确认、授权、并发与重试在实际业务/平台边界处理；不能从函数名或无 metadata 推断只读。
-- registry 保留名称查找、revision、撤销与订阅，服务实际动态 help/router 用例；不变成 RPC catalog。
-- 删除 registration 自动跟随“schema 兼容替换”的 executable handle；正常返回值不再有 schema 可用于这种兼容承诺。
-- 新 `register()` 返回 `{ name, dispose() }`。直接调用持有的 command 是固定实现；`registry.execute(name, ...)`
-  是明确的当前名称查找，返回 unknown；host/carrier 安装的 wrapper 固定 owner generation，旧 wrapper 撤销后拒绝调用。
-- root registration 与 carrier mount 分开发布，保留 provider/consumer ownership、取消和 generation admission。
-
-### 3.4 MCP：适配时补信息，而非污染核心
-
-Command 已经拥有名称、业务说明和输入约束。MCP view 引用这些事实，追加协议自己的信息：
-
-```ts
-const mcpSearch = toMcp(searchNotes, {
-	annotations: { readOnlyHint: true },
-	result: noteSearchJson,
-})
-
-mcp.expose(mcpSearch)
-```
-
-`toMcp` 不再声明 name、description、input 或 handler。名称和说明默认直接来自 searchNotes，
-`result` 引用前面同一个 noteSearchJson；adapter 负责校验/编码，不能再维护第二份 DTO schema 或 project。
-`NoteSearchResultSchema` 描述符合该 MCP 版本要求的结构化 JSON，例如 `{ items: [...] }`。
-只需要文本结果时追加明确的 renderer；不要求每个 tool 都声明 structured result。
-如果 CLI 与 MCP 的实际输出含义不同，则各自拥有投影，不能为“统一”强迫不相同的输出共用 schema。
-
-- 输入 schema 从 Command 复用；不支持的 provider schema/codec 在 bind 时拒绝，不能静默放宽或裁剪校验。
-- 业务 description 只在基础定义中维护。确有模型专用操作提示时追加 `instructions`，adapter 将其作为标识清楚的补充段落生成最终说明；
-  不提供相同字段的隐式覆盖。只有确实不同的操作才建立新基础定义。
-- provider name 转换与反向映射由 adapter 确定性派生，必要的外部别名使用 exportAs；不按注册顺序生成不稳定名字。
-- annotations 只是提示，不是服务端授权、调度或重试规则；缺失时使用协议的保守语义，不伪造只读保证。
-- MCP connection 在可信 carrier 中映射到 actor、授权和取消上下文；模型输入不能填写可信 context。
-- 调用继续经过 Command 输入校验和 owner generation gate，不能为 MCP 暴露 unchecked handler。
-- provider 特有 result blocks、task support、错误和 schema 子集只进入 adapter；MCP 不依赖 AgentTools。
-
-Commands 核心不增加 MCP SDK。适配器可以是独立 carrier/module，不提前承诺一个独立发布包。
-当前没有独立 MCP exporter；上述是目标适配契约，不声称已经存在，也不要求无实际消费者时立即实现。
-
-| Agent 接入方式              | 适用场景                                        | 暴露入口                               |
-| --------------------------- | ----------------------------------------------- | -------------------------------------- |
-| 精选 Command → MCP tools    | 能力少、操作明确，或已有命令要给外部 Agent 使用 | 显式 expose 的命令                     |
-| 发现 → 沙盒代码 → Cap’n Web | 能力多，需要循环、批量调用和跨 API 组合         | search_apis / describe_apis / run_code |
-
-两条路径共享领域实现，不强制对方作为中转。不把全量 command catalog 自动注入模型。
-Cap’n Web API 若需要变成 MCP tool，同样写显式适配；远程对象、回调、stream 不能直接无损映射成 JSON 工具。
-不要求为了支持 MCP 先把 RPC 改写成 Command，也不设计所有接口都可自动互转的框架。
-
-### 3.5 Command 本身就是 LLM tool 的定义来源
-
-典型 tool 的 name、description、JSON input schema 和执行函数都可从 Command 派生，不要求作者另写一份 tool 定义。
-这里的“直接”指信息和执行权威直接来自 Command，不是声称一个 JS 对象能原封不动兼容所有 SDK。
-
-| tool 所需信息                          | 来源/责任                                                          |
-| -------------------------------------- | ------------------------------------------------------------------ |
-| name / description                     | Command，必要的协议别名由 adapter 派生或显式 exportAs              |
-| parameters / inputSchema               | Command 的 wire input schema，不能把 TypeBox codec 函数传给模型    |
-| 实际执行                               | Command.execute(candidate, trustedContext)，codec 只在这里执行一次 |
-| tool call ID、signal、用户身份         | 可信运行时适配，不属于模型参数                                     |
-| result content / structured output     | 共用 result 定义或该框架的显式 renderer                            |
-| strict schema 子集、流式事件和错误呈现 | 对应 SDK adapter，不能反向污染基础定义                             |
-
-例如某个具体框架的 adapter 可导出以下形态；`framework.bind` 只是拟议接入示意，不是任何现成 SDK 的 API：
-
-```ts
-const tool = toTool(searchNotes, { result: noteSearchJson })
-framework.bind(tool, {
-	context: (invocation) => trustedNotebookContext(invocation),
-})
-```
-
-`toTool` 从选定框架的 adapter 入口导入，没有声称统一所有 SDK 的 universal tool 类型。
-也可以由宿主手写几行适配，但必须走同一个校验执行边界。框架可额外校验原始 wire input，不能在进入 Command 前
-先运行其 input codec，导致二次 decode。上下文绑定失败须在 handler 之前拒绝；命令原始返回值不得默认全量送入模型。
-
-注册 adapter 不等于该操作已被授予每个用户；可见集合、调用授权和 owner withdrawal 由实际宿主执行。
-内置代码型 Agent 和直接 tools 型外部 Agent 共享 Command/领域实现，不共享一份全局可调用目录。
-
-## 4. RPC 作者 API：Command 组成 class，原生对象组成能力树
-
-所有示例仍是提案。`NotebookContext` 是服务端绑定的 actor、notebookId、signal 等事实；`readNote`、`createNote`
-与 searchNotes 一样是普通 Command，省略其领域实现。前文的 searchNotes/noteSearchJson 在此直接复用。
-
-### 4.1 一组 Command 生成一个原生 RpcTarget class
-
-```ts
-const searchMethod = { command: searchNotes, result: noteSearchJson }
-const readMethod = { command: readNote, result: noteJson }
-const createMethod = { command: createNote, result: noteJson }
-
-/** 搜索和读取已获授权笔记本中的笔记。 */
-export const NotesReader = toCapnweb({
-	search: searchMethod,
-	read: readMethod,
-})
-
-/** 编辑已获授权笔记本中的笔记。 */
-export const NotesEditor = toCapnweb({
-	search: searchMethod,
-	read: readMethod,
-	create: createMethod,
-})
-```
-
-`toCapnweb(methods)` 是外部适配器，不是 Commands 内核方法；返回真正继承 Cap’n Web RpcTarget 的 class。
-同一个 method binding 可放进不同 target，组合不复制 name/description/input/handler/result。
-`search` 是当前对象上的成员位置，`notes.search` 是源 Command identity；前者允许按领域组织路径，并非重复声明业务名称。
-重复/保留成员名在定义时拒绝，不能覆盖 constructor、协议基础成员或出现静默 last-wins。
-
-构造实例时绑定服务端上下文：`new NotesReader(context)`。多个方法要求的 Context 必须能由同一个 context 满足，
-类型不兼容时组合失败；上下文不可由模型参数提供，也不能通过改写共享 this.ctx 临时切换。
-对象保留不可变的上下文视图，构造时不执行 Command，也不自动授予访问权。
-
-其 search 方法语义等价于下列代码（projectAndValidate 为解释性伪代码，不增加公开 helper）：
-
-```ts
-class GeneratedNotesReader extends RpcTarget {
-	#context: NotebookContext
-	constructor(context: NotebookContext) {
-		super()
-		this.#context = context
-	}
-	async search(input: SearchInput) {
-		const value = await searchNotes.execute(input, this.#context)
-		return projectAndValidate(noteSearchJson, value)
-	}
-}
-```
-
-实际生成固定的 prototype 方法，不返回带任意名称 lookup 的万能 execute(name, args)。
-输入类型来自 Command 的 wire schema，返回类型来自 result 的 wire 契约，文档说明来自 Command。
-本路径无需从手写 wrapper 重新抽取同一套类型，不要求作者再写 RPC schema/class method。
-数据方法必须在 binding 明确选择结果出口；有明确 void 的操作也有对应的无结果出口，不能默默暴露任意内部对象。
-结果出口处理数据转换/校验，不偷偷赋予返回的 RpcTarget 新能力；创建子能力由下面的原生对象方法明确负责。
-
-### 4.2 原生 RpcTarget 组织资源与子能力
-
-```ts
-import { RpcTarget } from 'capnweb'
-
-/** 一个已获读取授权的笔记本。 */
-export class NotebookReader extends RpcTarget {
-	#context: NotebookContext
-	constructor(context: NotebookContext) {
-		super()
-		this.#context = context
-	}
-	/** 获得本笔记本的笔记读取能力。 */
-	notes() {
-		return new NotesReader(this.#context)
-	}
+const echoed = await echo.execute({ text: 'hello' })
+if (echoed.isErr()) {
+	console.error(echoed.error.code, echoed.error.message)
+} else {
+	console.log(echoed.value) // string：'hello'
 }
 
-/** 当前身份可以读取的笔记本集合。 */
-export class LibraryReader extends RpcTarget {
-	#scope: LibraryScope
-	constructor(scope: LibraryScope) {
-		super()
-		this.#scope = scope
-	}
-	/** 校验资源 ID 和访问权，打开一个笔记本。 */
-	async notebook(id: string) {
-		const context = await this.#scope.openNotebook(id)
-		return new NotebookReader(context)
-	}
-}
+await textInfo.execute({ text: '你好' }) // Result<{ length: number }, CommandFailure>
+
+// @ts-expect-error 已知 Command 的 wire 参数必须正确。
+await echo.execute({ tetx: 42 })
 ```
 
-`LibraryScope.openNotebook` 是可信领域入口，负责运行时输入校验和资源授权，返回固定的 NotebookContext；
-不是依据模型提供的 actor/tenant 构造上下文。后续读写仍检查可变的数据权限，不能把一次 open 当作永久授权。
-NotesReader 也可以从 WorkspaceReader 等其他原生 target 返回：重新绑定该资源的可信 context，不改 command。
-NotesEditor 只放进明确的写权限对象树，LibraryReader 的可达对象图中不存在它。
+`input` 推导 wire 类型和 decoded 类型；定义中的 execute 接收 decoded 值，返回 Result 或 Promise<Result>。
+公开 execute 接收 wire 值，统一返回 `Promise<Result<T, CommandFailure>>`；T 从 handler 的成功分支推导，包含同步、异步和 `Result.ok()` 的 void。
+省略 context 仅对没有额外必需字段的命令合法。成功分支可以携带字符串、对象、数组或其他本地值；是否能跨协议交付由出口检查。
 
-反过来，生成 class 也可以作为原生 class 的基类；增加原生方法即可继续返回子能力，不必重写已有 Command 方法：
+拟议的 `@pluxel/commands` 直接依赖仓库统一版本的 `better-result`，并原样再导出 `Result`，不包装或修改上游实现。
+Commands 与 Core 仍彼此独立；Commands 不导入 `@pluxel/core/better-result`。Plugin 领域 API 继续使用现有 Core 子入口，
+两处共享同一上游契约与版本。实现时验证类型互操作、ESM/CJS 发布入口与依赖解析，避免独立打包产生不兼容的 Result 副本。
 
-```ts
-class NotesWithAttachments extends NotesReader {
-	#context: NotebookContext
-	constructor(context: NotebookContext) {
-		super(context)
-		this.#context = context
-	}
-	/** 获得同一笔记本的附件读取能力。 */
-	attachments() {
-		return new AttachmentsReader(this.#context)
-	}
-}
-```
-
-AttachmentsReader 是应用提供的原生读取 target，此处省略其领域方法。组合语义有意区分：
-Command/result binding 只输出数据，原生 prototype 方法负责授予能力；不把 JSON schema/project 暗中当成能力返回协议。
-继承后的契约必须包含 inherited Command 方法与新增原生方法；同名 override 首版拒绝，避免继承说明与实际实现失配。
+类型检查不替代运行时校验。即使调用来自 JavaScript、`any` 或协议载体，也经过同一个输入入口：
 
 ```text
-LibraryReader
-  └─ notebook(id) → NotebookReader
-       └─ notes() → NotesReader
-            ├─ search(input) → 数据
-            └─ read(input) → 数据
+检查取消 / deadline → 检查严格 JSON、克隆、填默认值、校验 → Decode 一次
+  → 检查取消 / deadline → handler → 校验 Result 形状 → 返回 Result
 ```
 
-### 4.3 只发布根对象，元信息不重复
+执行边界检查 Result 的合法形状，不校验或编码 Ok 内的业务值；四字段定义无需为本地成功值补输出 schema。
+定义固定名称、说明、规范化 input 和 handler；返回的定义对象与 descriptor 只读，修改原 config 不改变已定义契约。
+
+不提供公开的 `unknown` overload、`unsafeExecute` 或第二个执行方法。registry、argv 和载体在内部擦除具体输入类型后调用同一受校验函数；
+它们接收 unknown 不表示存在未校验 handler。argv resolve 的动态 command 视图也不承诺知道具体参数类型。
+
+定义不包含 `title`、顶层 `examples`、`validate`、`behavior`、`output` 或 `validateOutput`。
+用途只写在必填 description；完整参数示例写在 input 对象 schema 的 examples，字段示例写在对应字段上。
+普通参数无需凑示例。跨字段与业务检查进入 execute 或领域服务，展示标题归 UI，协议专属 metadata 归载体。
+
+沿用[现有输入内核](../../packages/commands/docs/DESIGN.md)：按作者 schema 身份缓存编译结果，不修改作者对象；
+投影、validator、codec 共用规范化结果；嵌套对象默认封闭；refs、defaults 和 metadata 在定义时检查；示例只验证 wire 数据，不执行 codec。
+需要在 typed 调用中省略的字段应在 schema 中声明 Optional，不能指望运行时 default 改变 TypeScript 的必填性。
+
+## 3. 显式失败、组合与可信 context
+
+Command 的执行失败使用一个固定判别 union。`REJECTED` 的 reason 是业务内稳定的分支信号，说明中写明含义；
+`INPUT_VALIDATION` 必须携带 issues。message 是可公开的安全说明；可选 cause 只供本地诊断，不进入模型或传输数据。
 
 ```ts
+type CommandFailure = {
+	readonly message: string
+	readonly cause?: unknown
+} & (
+	| {
+			readonly code: 'INPUT_VALIDATION'
+			readonly issues: readonly {
+				readonly path?: readonly (string | number)[]
+				readonly code?: string
+				readonly message: string
+			}[]
+	  }
+	| { readonly code: 'REJECTED'; readonly reason: string }
+	| {
+			readonly code:
+				| 'FORBIDDEN'
+				| 'COMMAND_NOT_FOUND'
+				| 'PUBLICATION_GONE'
+				| 'ABORTED'
+				| 'TIMEOUT'
+				| 'DEPENDENCY'
+				| 'INTERNAL'
+				| 'OUTPUT_ENCODING'
+				| 'OUTPUT_LIMIT'
+	  }
+)
+```
+
+作者声明可恢复的业务失败；输入内核、目录、owner 和载体在自己拥有的边界产生其他失败。
+这个 union 为执行边界提供统一处理方式，不承诺每个入口都会产生所有 code，也不要求领域函数放弃自己的窄错误类型。
+
+```ts
+import type { CommandContext } from '@pluxel/commands'
+
+interface NoteContext extends CommandContext {
+	readonly actorId: string
+	readonly store: {
+		read(id: string, actorId: string, signal?: AbortSignal): Promise<string | null>
+	}
+}
+
+const readNote = defineCommand({
+	name: 'notes.read',
+	description: '读取当前用户的笔记；不存在或不属于该用户时拒绝，reason 为 not_found。',
+	input: obj({ id: Type.String({ minLength: 1 }) }),
+	async execute({ id }, context: NoteContext) {
+		const text = await context.store.read(id, context.actorId, context.signal)
+		if (text === null) {
+			return Result.err({
+				code: 'REJECTED',
+				reason: 'not_found',
+				message: '笔记不存在',
+			})
+		}
+		return Result.ok({ id, text })
+	},
+})
+
+const note = await readNote.execute(
+	{ id: 'missing' },
+	{ actorId: 'alice', store: { read: async () => null } },
+)
+if (note.isErr()) {
+	if (note.error.code === 'REJECTED' && note.error.reason === 'not_found') {
+		console.log('可以提示用户选择其他笔记')
+	} else {
+		console.error(note.error.code, note.error.message)
+	}
+} else {
+	console.log(note.value.text)
+}
+```
+
+`actorId` 和 store 由可信调用方提供，模型只填写 id。作者不需要错误类、异常终止 helper 或另写错误 schema。
+类型拒绝漏写 reason/issues；运行时也检查 Result 与失败形状，不依赖调用方遵守 TypeScript。不合法的返回值属于 INTERNAL，不能假装业务拒绝。
+
+### 每类失败在哪一层结算
+
+| 发生的事                                                     | 执行契约                                                         |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| 输入校验或 Decode 失败                                       | `Err(INPUT_VALIDATION)`，不进入 handler                          |
+| 业务拒绝或跨字段检查失败                                     | handler 显式返回 `Result.err(...)`                               |
+| 目录缺失、权限拒绝、发布失效                                 | 拥有该边界的 registry/carrier 返回对应 Err，协议载体再投影       |
+| handler 前已取消 / 超时，或 handler 确认响应本次取消         | `Err(ABORTED/TIMEOUT)`；已返回的有效 Result 按下面的结算规则保留 |
+| 未适配的 SDK rejection、handler throw 或 Better Result Panic | Command 返回 `Err(INTERNAL)`，原异常保留为 cause；载体记录故障   |
+| 定义无效、发布安装失败、会话创建或清理失败                   | 保留各自配置和 lifecycle 异常契约，不能伪装成一次命令执行的 Err  |
+
+execute 的正常结算路径覆盖上述执行失败，调用方不靠 try/catch 区分业务结果。INTERNAL 仍是须报告的 defect，不能归为可恢复业务拒绝。
+纯 Commands 内核不隐式安装 logger；载体负责关联故障日志，本地直接调用由调用方的宿主监督并报告 cause。
+这项承诺来自 Command 的监督实现，不来自 `Promise<Result<...>>` 类型；框架实现自身的缺陷仍可能 reject，由宿主故障边界报告。
+新 handler 使用 Result 声明失败，throw 不再是作者声明预期拒绝的第二条路径；旧 CommandError 的执行用法在迁移时转换，配置与 argv 的原有异常边界另行保留。
+
+作者只在理解语义时将 SDK 的已知失败映射为 REJECTED 或 DEPENDENCY；未知异常留给上述监督边界，不能 catch 整个 handler 后统一伪装成可重试。
+局部适配遵守 [Better Result](../../docs/api/better-result.md)，需要保留未知异常时使用窄 try/catch；不使用会改变原异常语义的 catch mapper 重抛。
+INTERNAL 的 cause 和 stack 留在本地，载体投影只选择公开字段；取消须有当前执行 signal/deadline 的依据，不能只凭异常 name 猜测。
+
+### 取消请求不能覆盖已经取得的结果
+
+deadlineMs 是绝对 Unix 时间戳；省略表示本层不增加 deadline，载体仍施加宿主上限。非法的可信 context（如 NaN deadline）是 INTERNAL。
+每次执行合成调用方、owner 和有效 deadline 的取消信号；有效 deadline 取各层最早值，timer 和 listener 随实际调用退出释放。
+直接本地 execute 同样将 deadline 接入 handler 的 signal，不只在函数前后看时间。实际 IO 必须接收 signal；它仍是协作取消，不强制中断业务。
+
+| 时点 / 结果                 | 唯一结算规则                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| 进入 handler 前             | 先观察既有取消，再检查是否到达 deadline；拒绝启动并返回相应 Err                     |
+| handler 执行期间            | signal 通知停止，继续等待 handler 与其清理退出，不用 Promise.race 提前释放 owner    |
+| handler 返回合法 Ok 或 Err  | 原样保留，包括已提交回执；后来观察到取消或超时不改写它                              |
+| handler 因本次取消而 reject | 原因为当前 signal.reason，或由 SDK 接入明确识别为本次取消时，映射为 ABORTED/TIMEOUT |
+| handler 因其他原因 reject   | INTERNAL 保留原始 cause；不能因 signal 同时 aborted 就把独立故障掩盖成取消          |
+
+运行中的取消链保留首先确定的分类：调用方/owner 撤回为 ABORTED，框架 deadline 为 TIMEOUT。
+调用方传入 Error 的 name/code 不改变分类；继承框架已合成的取消信号时保留其分类。
+写入已经提交时，handler 应返回领域回执；只看到取消并不知道提交结果时，不能自行构造“未执行”或“可重试”的结论。
+远程连接或沙盒先失效时，交付结果仍可能是 unknown；这与本地 Command 已经取得的业务 Result 分开记录。
+
+### Result 组合只有一种默认写法
+
+```ts
+const echoInfo = defineCommand({
+	name: 'text.echoInfo',
+	description: '回显文本后统计其 Unicode 码点数量。',
+	input: obj({ text: Type.String() }),
+	async execute(input, context) {
+		const echoed = await echo.execute(input, context)
+		if (echoed.isErr()) return echoed
+		return textInfo.execute({ text: echoed.value }, context)
+	},
+})
+```
+
+handler 和公开 execute 使用同一种 Result；合法结果直接交付，不执行 `Result.ok(handlerResult)`，也不被执行后的取消检查覆盖。
+直接返回另一个 Command 的 Result 不产生双层包装。需要组合器时使用上游 map/andThen 等契约，不新增框架组合 DSL。
+共享业务优先调用领域函数；领域已有 `Result<T, E>` 时显式将 E 映射为 CommandFailure，成功值只包一次。
+
+成功的业务数据放在 `Result.ok(value)` 内，包括 `{ ok: false }` 和部分成功回执。框架不扫描 value 的字段推断执行成败，
+也不自动 flatten 业务数据里的 Result；命令的结果作为另一命令的控制结果时应直接返回，而不是放进 Ok。
+协议出口不能直接序列化 Result/Error 实例，详见第 10 节。
+
+Err 是 fulfilled value；Promise.all 会等待全部命令，调用方逐项检查结果，不会因一个 Err 自动停止后续工作。
+真正的 Promise rejection 也不会取消兄弟任务。业务须等待自行启动的 IO 退出；Result、取消和异常都不构成回滚。
+取消可能发生在写入之后；调用方不能仅凭 Err 或 ABORTED、TIMEOUT、INTERNAL 判断可以重试。
+
+## 4. 名称目录与用户输入
+
+仅在需要按名称发现和执行时注册：
+
+```ts
+import { createCommandRegistry } from '@pluxel/commands'
+
+const commands = createCommandRegistry()
+using registration = commands.register(echo)
+
+commands.list()
+await registration.execute({ text: 'hello' }) // Result<string, CommandFailure>，固定本次注册
+await commands.execute('text.echo', { text: 'hello' }) // Result<unknown, CommandFailure>，按名称查找
+await commands.execute('text.echo', { text: 42 }) // Err：INPUT_VALIDATION
+```
+
+registration 保留 name、不可变 descriptor、typed execute、dispose 和 Symbol.dispose。撤销后永久失效，同名重新注册不会复活旧句柄。
+只有动态名称调用跟随当前发布。没有输出 schema 后，不再用相同输入契约推断替换实现仍返回旧类型。
+名称缺失或手动撤销使用 COMMAND_NOT_FOUND；owner 停止的接纳失败使用 ABORTED。手动撤销不改写已接纳工作的结果。
+
+Plugin 的 root catalog 仍使用 `ctx.require(Commands).register(command)`，仅接受 common CommandContext 命令，注册归 generation effects。
+它不自动发布 Agent/MCP/RPC，也不能接收需要 NoteContext 的 readNote。registry 的 revision、缓存快照身份、有序重入通知和订阅者错误隔离继续保留。
+
+```ts
+import { createArgvRouter } from '@pluxel/commands/argv'
+
+const router = createArgvRouter()
+using binding = router.bind(echo, { routes: ['text echo'], positionals: ['text'] })
+const resolved = router.resolve('text echo hello')
+if (!resolved) throw new Error('Unknown command')
+const executed = await resolved.command.execute(resolved.candidate)
+if (executed.isErr()) console.error(executed.error.code, executed.error.message)
+else console.log(executed.value)
+```
+
+argv 只解析语法并构造 candidate；无匹配与 ARGUMENT_SYNTAX 由 CLI/聊天载体呈现，stdout、exit code 和消息回复也归载体。
+插件路由绑定受 owner mount 保护的 command，回复与错误呈现在该次调用内完成。
+
+### ParseBox 仍是输入 Transform
+
+```ts
+import { Runtime } from '@sinclair/parsebox'
+import { tail } from '@pluxel/commands/argv'
+
+const grammar = new Runtime.Module({
+	Filter: Runtime.Tuple(
+		[Runtime.Const('warnings'), Runtime.Const('>='), Runtime.Integer()],
+		([field, operator, threshold]) => ({ field, operator, threshold: Number(threshold) }),
+	),
+})
+
+const query = Type.Transform(
+	Type.String({ description: 'warnings >= 整数', examples: ['warnings >= 3'] }),
+)
+	.Decode((source) => {
+		const parsed = grammar.Parse('Filter', `${source}\n`)
+		if (parsed.length !== 2 || parsed[1].trim()) throw new SyntaxError('Invalid filter expression')
+		return { source, expression: parsed[0] }
+	})
+	.Encode((value) => value.source)
+
+const explainFilter = defineCommand({
+	name: 'filter.explain',
+	description: '解析告警次数筛选表达式。',
+	input: obj({ query }),
+	execute({ query }) {
+		return Result.ok(query.expression)
+	},
+})
+
+await explainFilter.execute({ query: 'warnings >= 3' })
+using filterBinding = router.bind(explainFilter, {
+	routes: ['filter'],
+	tail: tail.text('query', '<expression>'),
+})
+```
+
+本地、argv、Agent、MCP 和 RPC 都传字符串；只有 Command Decode 执行解析，不能提前 Decode 后再传一次。
+解析器异常转换为安全的 INPUT_VALIDATION issue，原异常留作诊断。输入 Encode 仍属于 Transform 往返契约。
+保留现有 argv 引号/转义、位置参数、options/aliases、默认值、`--`、tail.text/tail.json、help、建议、冲突检测与原子绑定；ParseBox 保持应用可选依赖。
+
+## 5. 直接 Agent tool
+
+以下 agent 是已配置模型后端的引擎。标准入口仍是异步 createSession；创建失败先清理部分资源，再 reject。
+
+```ts
+await using conversation = await agent.createSession({ tools: [echo, textInfo] })
+const result = await conversation.prompt('统计“你好”的字数。')
+```
+
+Command 直接提供名称、说明、wire schema 和执行。SDK 不支持的 schema 在建立会话时拒绝；名称稳定映射，冲突拒绝，不偷偷改名。
+输入 examples 从同一 schema 投影到 SDK 支持的位置；不能静默丢失，也不另写一份 prompt。
+prompt 保留 Pi 原有 outcome、事件流、goal、受限 subagent、取消与等待退出；内置文件/shell 工具不会因此开启。
+
+跨 Plugin 发布时使用引擎的显式目录：
+
+```ts
+using exposure = agent.expose(readNote, {
+	context: ({ principal }) => ({ actorId: requireActorId(principal), store }),
+})
+
+await using conversation = await agent.createSession({
+	principal: authenticatedUser,
+	tools: ['notes.read'],
+	authorize: ({ name }) => policy.allows(authenticatedUser, name),
+})
+```
+
+例中的 store、authenticatedUser、policy 与 requireActorId 均由应用提供；第 7 节给出完整 Plugin 绑定。
+`agent.tools()` 向可信宿主返回此载体的不可变工具描述，供选择和管理；模型只看到会话获准的工具。
+
+`tools` 的两种元素有固定含义：Command 定义属于本次会话的临时发布；字符串只选择 `agent.expose()` 的已有发布，不查 root Commands。
+创建时解析所有名称并固定其 generation，缺失或重名就失败。已发布工具使用自己的 context，不被会话的 context 覆盖；
+直接定义使用会话 context，类型检查要求它满足全部直接定义。安装前完整验证，失败不留下部分工具。
+同时选择多个直接 Command 时，context 满足它们全部业务字段的交集；类型从 tools 推导，不能由 context 反过来放宽 Command 要求。
+只选择已发布名称时不接受会话 context 覆盖。缺失 tools 表示空直接工具集合，不隐式暴露目录中的其他工具。
+
+每个会话的 tools 是固定上限。每轮模型请求前重算可见列表，每次工具调用再检查当前策略；已经发给模型的描述不能撤回，缓存 callback 不因此获得旧权限。
+新的 publication 或新工具须进入新会话，旧回调不跟随同名替换。直接工具在会话内默认串行；领域服务仍负责跨会话互斥，子会话权限不超过父会话。
+
+## 6. MCP 与载体共同约定
+
+mcp 是已安装传输与认证的 MCP 载体。Command 仍只定义一次：
+
+```ts
+using echoTool = mcp.expose(echo)
+using infoTool = mcp.expose(textInfo, {
+	annotations: { readOnlyHint: true },
+	outputSchema: obj({ length: Type.Integer({ minimum: 0 }) }),
+})
+using noteTool = mcp.expose(readNote, {
+	context: ({ principal }) => ({ actorId: requireActorId(principal), store }),
+})
+```
+
+MCP 先判断 Result。outputSchema 仅约束 Ok 内的成功业务值，并产生 structured content；没有它时，普通对象按 JSON 文本返回。
+它校验 wire 数据，不填输出默认值；包含 TypeBox Transform 的输出 schema 明确拒绝，避免出现隐式输出 codec。
+合法 JSON 不符合 outputSchema 时是载体的 INTERNAL，并记录 schema 诊断；非 JSON 成功值是 OUTPUT_ENCODING，体积超限是 OUTPUT_LIMIT。
+它们都表示业务可能已完成，不能重新执行 handler 来尝试取得另一个输出。
+annotations 使用 MCP 原生语义，不参与授权、重试或框架并发决策。Err 映射为 isError 和安全错误内容，连接取消保持 MCP 取消流程。
+不能将一个 fulfilled Err 当成成功工具输出，也不能对 Result 实例直接 JSON.stringify。
+
+Agent 的 expose/createSession、MCP 的 expose 和 RPC 的 publish 都遵循以下规则；类型由各入口推导，不要求作者学习通用载体基类：
+
+| 选项           | 语义                                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| context        | 每次调用构造业务扩展字段，可同步或异步返回；输入包含 principal、合成 signal 与 deadlineMs；有必需扩展字段时必填 |
+| authorize      | 可选的当前访问判定，接收 principal、Command name 与 signal；同步或异步返回 boolean；同时用于发现与实际调用      |
+| 省略 authorize | 不增加该级限制；仍执行宿主认证、会话上限及其他已配置权限                                                        |
+
+context 返回的对象只包含业务字段；signal、deadlineMs、meta 由载体填写，类型和运行时都拒绝扩展字段覆盖它们。
+这些保留字段在 factory 返回类型中显式禁止；不能只依赖对象字面量的 excess-property 检查。
+可选业务字段不使 factory 变成必填；需要必需字段时，直接 expose、RPC 方法表与会话工具集合均在发布时检查对应要求。
+先逐项推导业务字段再求交集，随后限制 factory 的推导方向；不能把只满足方法表某一项的 context 当成满足整个发布。
+必需业务字段是宿主的 TypeScript 契约，运行时不反射接口或补生成 context schema；JavaScript/any 宿主仍须保证其构造正确。
+context 只构造数据、借用已有能力，不执行业务写入或创建需要额外释放的资源；临时资源由 handler 使用 using/try-finally 管理。
+context 构造后再进行本次操作的 authorize，构造期间尚未取得操作许可；它不能借准备阶段读取业务数据或提前执行命令。
+principal 使用应用的原有身份对象，进入通用载体时为 unknown；应用负责验证，不新建统一用户模型。
+authorize 是操作级权限；输入中的资源 ID 仍由领域服务执行对象级授权。多个生效的权限限制取交集；发现时 false 隐藏该操作，调用时 false 结算为 FORBIDDEN。
+authorize/context 意外抛出则报告 INTERNAL；发现失败不返回一份冒充完整的部分授权列表。它们与 Command 执行共同处于载体监督范围内。
+
+普通成功值不要求 renderer：字符串成为文本，JSON 数据成为 JSON 文本，void 使用载体固定的成功回复。
+Err 按同一 CommandFailure 分类投影到 SDK/MCP 原生失败形式；未知异常只交付安全信息，cause 不公开。
+特殊媒体结果使用实际 SDK 的原生接口，不在首版建立通用 result/project/renderer 抽象。
+
+## 7. 一个完整 Plugin 发布
+
+以下 `Mcp` 和 `Rpc` 是拟议新增的 `@pluxel/services/mcp`、`@pluxel/services/rpc` token；宿主显式安装所需服务，默认 preset 不自动启用。
+PiAgentPlugin 保留现有 package root，新增 expose 和工具选择契约。示例宿主已经安装三项能力；只需要一种载体时删除其他发布即可。
+readNote 与 NoteContext 使用第 3 节定义。
+
+```ts
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { PiAgentPlugin } from '@pluxel/pi-agent'
+import { Mcp } from '@pluxel/services/mcp'
+import { Rpc } from '@pluxel/services/rpc'
+
+function requireActorId(principal: unknown): string {
+	if (
+		typeof principal !== 'object' ||
+		principal === null ||
+		!('id' in principal) ||
+		typeof principal.id !== 'string' ||
+		!principal.id
+	) {
+		throw new TypeError('Authenticated principal must contain a non-empty id')
+	}
+	return principal.id
+}
+
 @Plugin()
 export class NotesPlugin extends BasePlugin {
-	// 领域依赖通过现有 constructor graph 提供。
+	private readonly notes = new Map([['note-1', { ownerId: 'alice', text: '你好' }]])
+
+	constructor(private readonly agent: PiAgentPlugin) {
+		super()
+	}
+
 	protected override init() {
-		this.ctx.require(Rpc).publish(LibraryReader, {
-			id: 'library.read',
-			create: (batch) => new LibraryReader(this.store.scopeFor(batch.principal, batch.signal)),
+		const context = ({ principal }: { principal: unknown }) => ({
+			actorId: requireActorId(principal),
+			store: this,
 		})
+		this.agent.expose(readNote, { context })
+		this.ctx.require(Mcp).expose(readNote, { context })
+		this.ctx.require(Rpc).publish({ id: 'notes', commands: { read: readNote }, context })
+	}
+
+	async read(id: string, actorId: string, signal?: AbortSignal): Promise<string | null> {
+		signal?.throwIfAborted()
+		const note = this.notes.get(id)
+		return note?.ownerId === actorId ? note.text : null
 	}
 }
 ```
 
-`publish(TargetClass, { id, create })` 是唯一 publication 入口。原生 class/method 的说明来自 JSDoc；
-生成 class 的说明来自导出声明 JSDoc，生成 method 的说明来自 Command；publish 不再填写 description。
-id 是发现根的稳定别名，子对象通过原生方法返回，不给每个实例注册全局 ID/目录项。
-直接发布 `NotesReader` 这类生成 class 也合法，create 负责绑定 context；无需为了 publication 再写一层 class。
+载体从调用者的真实 Context 固定 publication owner；`this.agent` 的 caller-bound 接入固定 Agent provider 与 NotesPlugin 双方 owner。
+服务 view 同样绑定调用者。不能从 Command 对象猜 owner，也不允许应用填写 owner ID。
+Plugin `init()` 中没有 using：这些发布应活到 generation 结束，载体立即登记 effects。普通局部发布才使用 using。
 
-根工厂每个 batch、每个被打开 publication 最多执行一次，惰性创建。子对象按领域方法创建，同一个 Command
-可有不同 context 的多个实例。业务连接由 Plugin 共享，batch 资源登记 effects，调用 drain 后才释放。
-Command 与原生方法均可直接调用领域实现，不强迫已有原生 RPC API 先改写为 Commands。
+principal 已由宿主认证；requireActorId 只校验其应用形状，不接受模型提交的身份声明。
+这里的 TypeError 表示宿主身份契约配置错误，载体记录为 INTERNAL；正常访问拒绝由认证入口或 authorize 的 false 表达，不靠此异常分支。
+Handler、身份检查和 DTO 投影都只有一份。store 是可信本地能力，不会进入 schema、发现文档或远程返回；RPC 只暴露 `notes.read`，不会把 NotesPlugin 的原型方法当成远程接口。
 
-## 5. 契约生成与嵌套能力的边界
+## 8. RPC 发布与授权
 
-### 5.1 一张可达接口图，不是第二份手写定义
-
-生成 target 的 method inventory、说明和类型来自 toCapnweb 的静态成员组合及源 Command/result；
-原生 target 的签名与说明由工具链从公开方法/JSDoc 提取。两种来源进入同一份可重建接口图。
-原生返回类型引用生成 class 时，通过生成元信息连接，不需要再从动态 prototype 反推类型。
-
-publication 的制品包含根和可达 target 的接口关系、方法说明、数据类型与 contract digest，不包含 server 实现。
-获取 `library.read` 文档时能理解 notebook → notes → search 的实际调用路径；不为每个资源实例生成 schema。
-契约可以循环引用，但必须使用类型引用封闭表达，不能展开成无限文本。摘要和文档仍需有界。
-
-原生输入继续在方法/领域入口校验；Command 输入只走自己的校验执行器一次。TS 类型不替代运行时校验。
-原生数据结果由领域 DTO 投影负责；生成方法由 result 定义负责。同一个意义的 schema/project 共享引用。
-不能静默把未知类型变成 any；无法提取的动态成员、复杂泛型或跨包类型在构建时明确拒绝，并作为技术 gate 验证。
-
-### 5.2 嵌套对象是正式能力，不是被序列化的普通数据
-
-- 支持原生方法返回生成/原生 target，或在继承生成 class 后添加原生方法；支持原生结果容器中明确声明的 target 引用。
-- 公开 prototype 方法构成远程面；不隐式发布 property/getter、constructor、静态 helper 或任意函数字段。
-- 返回能力必须属于制品中可达的 target 类型。未声明 target、裸函数或意外能力返回 fail closed，不作为普通 JSON 放行。
-- 首版不支持反向 callback、stream 或 sandbox 向服务端传入任意 target。这些是独立双向信任边界，不影响服务端能力嵌套。
-- 生成类和原生类的成员清单必须约束实际服务端 facade；文档删方法不构成授权。
-
-用途明确的小对象是访问单位：只给 Reader 就不能取得 Editor。不靠大对象的方法名过滤拼出角色，
-也不把每个方法都做成独立 capability。工厂、原生返回方法和领域规则决定能力授予，toCapnweb 只转换操作。
-
-### 5.3 所有子引用都继承有效期与权限上界
-
-这是支持嵌套的必要实现条件，不能推迟到“后续加固”：
-
-1. 根 publication 持有 owner address/generation；每个 execution pin 契约和当前授权。
-2. 返回边界将每个 target 引用（包括容器内引用）纳入同一个受限 RPC 范围，绑定 session、execution、batch、
-   授予路径和 owner generation。默认新建子对象由当前 publication 拥有，不从类的 import 来源、构造参数或 closure 猜 provider。
-   publication 必须真实承担其资源生命周期；子对象不能脱离 scope 直接以 raw target 暴露。
-3. 子方法每次接纳都检查当前 session access、execution 状态与 owner gate。撤销根访问或停止 provider 后，
-   已拿到的子引用也不能继续发起调用；不能只检查 root.open。
-4. 调用其他领域 Plugin 继续经过已有 dependency caller/owner-bound 调用边界，不把依赖对象原始实例借出。
-   独立跨 provider 的子能力返回必须经可信的 owner-bound handle 提供 provenance，保留 provider lease 并叠加授予路径约束。
-   现有机制不能携带这些事实时首版拒绝这类返回，不自行给外部对象贴上当前 owner；这不妨碍同一 batch 分别 open 多个 publication。
-   生成类不是生命周期 owner，创建/发布它的受控 scope 才承担归属；class identity 和 closure 都不是可信凭据。
-5. native stub 的引用释放不是权限撤销。dispose 父 stub 不保证其他独立持有的子引用失效；scope 撤销才保证禁止新调用。
-6. 已接纳调用退出前保留 lease，随后释放资源；dispose/重复引用的 cleanup 必须幂等，不依靠 GC 关闭业务事务。
-
-facade/返回能力约束是 Pluxel 的安装边界，不是新 RPC 协议。继续使用 Cap’n Web 的对象引用与 promise pipelining，
-不创建自己的远程 object ID registry，也不要求业务方法换成 execute(name, args)。
-无法正确约束递归返回对象时，嵌套支持尚未完成；不能通过只检查根对象声称支持。
-
-同一 host 的根 publication ID 冲突拒绝；子实例不争用根目录名。public surface 指纹覆盖可达接口图，
-新增返回 Editor 的路径和给 Reader 添加方法一样属于授权面变化，不能用旧 access 自动开放。
-
-## 6. 宿主配置与授权会话
-
-Rpc 服务在 root 创建前由宿主显式安装；其安装入口拟放在 `@pluxel/services/rpc`，遵循现有 capability composition。
-独立协议类型和客户端辅助代码放在 `@pluxel/rpc`。具体 physical HTTP route 由宿主 HTTP integration 安装，不由业务 Plugin listen。
-
-可信应用在认证后创建会话：
+RPC 只接收显式方法表，键决定远程方法名，值必须是直接 Command 定义；不接收 registry 句柄、任意 RpcTarget、函数属性或嵌套对象。
+发布时复制方法表，固定 descriptor、execute 和 receiver；修改原对象不改变已发布入口，更新需撤销后重新发布。
+Cap’n Web HTTP batch 留在内部，作者只传 Command。
 
 ```ts
-const session = rpc.createSession({
+using publication = rpcService.publish({
+	id: 'text',
+	commands: { echo, info: textInfo },
+})
+
+await using session = await rpcService.createSession({
 	principal: authenticatedUser,
-	access: ['library.read', 'orders.read'],
+	access: [publication.contract],
 })
+```
 
-const hits = await session.search({ query: '订单相关笔记', limit: 5 })
-const docs = await session.describe({ apis: ['library.read', 'orders.read'] })
+publication.contract 是只读普通数据 `{ id, hash }`。hash 由框架对规范化调用契约生成，覆盖 publisher 的宿主规范身份、API id、
+方法名到 Command name 的绑定、wire 输入约束与默认值、成功值类型和 wire 协议版本。使用有版本的结构表示和确定性序列化，不依赖绝对路径、行号或构建时间。
+不追求任意 schema/TypeScript 类型的语义等价；规范化结构不同的改写允许产生新 hash。
+description、title、examples、`$comment` 等纯展示信息不进入授权 hash；它们改变时仍重建制品与发布描述。
+排除的是 schema 对应位置上的 annotation，不是按字段名递归删除 JSON；名为 description 的业务属性、默认值和 enum/const 数据仍参与 hash。
+只改文案的新 publication 可由新会话复用既有批准；已有会话依然固定旧 generation，不因此复活。作者不填写 hash，也不维护第二份接口。
+publication 的 dispose / Symbol.dispose 撤销未来调用，不取消已接纳工作。
+同一 RPC 载体中的 API id 必须唯一；重复发布在开放调用前拒绝，替换先撤销再重新发布。
 
-const result = await executor.run({
+创建 session 是可信应用的授权动作：access 必须为精确契约引用，不接受 `['text']`、通配符或“永远使用最新版本”。
+应用持久策略保存被批准的 `{ id, hash }`，不能每次按 id 查最新 hash 来继承旧批准。持有 contract 数据本身不授予访问权；只有可信入口可以创建 session。
+
+session 创建时核对全部契约并固定各 publication generation；任意缺失或不匹配即创建失败，不交付部分会话。
+新增方法、扩大输入或改变绑定都会改变 hash，需要可信应用更新授权。旧 session 不跟随同名重发，即使 hash 相同也不复活；
+新 session 可以使用仍匹配的既有批准。业务实现、权限和实际副作用的变化仍由可信 publisher 负责，hash 不证明语义等价。
+
+`session.revoke(['text'])` 只缩权，撤销后不可恢复；重新授权创建新会话。应用当前权限还在每次接纳时检查，撤销不回滚已接纳工作。
+principal 绑定本次会话的已认证身份，不通过修改共享对象切换用户；权限变化从应用策略读取。
+调用先检查 session 的允许范围；范围外统一拒绝，不通过错误内容透露其他 API 是否存在。
+这几项职责分别固定：契约说明允许调用什么，generation 说明哪次发布有效，领域权限说明用户此刻能操作哪些数据。
+
+## 9. 发现后编写普通 TypeScript
+
+```ts
+await session.search({ query: '文本', limit: 5 })
+const contracts = await session.describe({ apis: ['text'] })
+
+const run = await executor.run({
 	session,
-	contracts: docs,
-	code,
-	signal: request.signal,
+	contracts,
+	code: `
+		const text = rpc.open('text')
+		const echoed = await text.echo({ text: '你好' })
+		if (!echoed.ok) return echoed
+		return await text.info({ text: echoed.value })
+	`,
 })
-
-// 可信应用可缩小/更新权限；模型没有这个入口。
-session.setAccess(['library.read'])
-await session.dispose()
+if (run.isErr()) console.error(run.error.code, run.error.message)
+else console.log(run.value) // { ok: true, value: { length: 2 } }
 ```
 
-`access` 显式选择已经发布的小 API 对象，不支持 `'*'`，也没有“预设名称自动等于权限”。
-createSession/setAccess 将 ID 解析为可信 publication owner 和公开接口指纹，保存授权快照；不存在的 ID 拒绝。
-新增根对象不自动授权，已授权对象图增加公开方法/新能力路径/改变契约时也不自动扩权，必须由可信应用重新 setAccess。
-因此兼容实现替换与权限界面扩张不同，单纯重新 describe 不能越过重新授权边界。
+executor 是宿主已配置真实隔离 backend 的执行器，run 支持额外的 signal。它也是明确的执行边界，返回本地 `Result<JsonValue, RunFailure>`。
+code 固定为 TypeScript async 函数体，允许 return，
+注入受限 rpc；无任意 import、宿主 filesystem、process 或直接网络能力。标准语言对象与 Promise 正常使用。
+编译时使用本次 contracts 的完整客户端类型；语法/类型错误在业务调用前返回稳定 code 与原始代码行列。
+类型检查不承担隔离或授权，使用 any、动态属性访问或构造代码也不能绕过运行时方法表。
 
-应用拥有身份验证与策略来源，RPC session 拥有当前有效 access 快照；不新增 Toolset 管理插件或第二个策略持久库。
-需要持久化时仍由应用配置/权限存储生成 access。`setAccess()` 原子更新，后续调用重新检查；已接纳调用不追溯回滚。
-`dispose()` 拒绝后续调用并取消本 session 的执行，等待可合作清理。日志中的 session ID 本身不是访问凭据。
-
-`search()` 只返回当前可用且获准访问的 ID/摘要；检索发生在服务端。`describe()` 返回不可变的契约快照，包含
-被授权根及可达子对象的接口文档、digest、publication identity 与 generation。快照由调用方/conversation 持有，RPC session 不保存
-“当前已描述版本”的共享可变状态。两个 conversation 共用身份授权时，重新 describe 不会互相替换接口版本。
-
-`executor.run({ contracts })` 显式捕获本次需要的 API 快照集合；只允许 open 其中的 API，生成的类型环境也来自同一集合。
-在任何业务调用前核对快照并 pin 对应 generation；变化时返回 `API_CHANGED` 要求重新 describe，不静默执行旧代码与新签名。
-无关 API 的更新不使本次执行失效。读取文档不授予权限；快照也不能替代每次调用的当前 access 检查。
-
-首次发现用名称、说明、关键词检索和有界分页，提供列举/扩大查询范围的回退。接口名已知时直接 describe；
-不要求先搜索。授权目录很小时允许少量摘要固定可见，但不全量加载所有接口签名。
-
-## 7. 沙盒调用 API：显式 HTTP batch
-
-### 7.1 HTTP batch 的实际语义
-
-仓库锁定 Cap’n Web 0.12.0。其 `newHttpBatchRpcSession()` 是一次 batch，不是可连续 await 的长期连接。
-官方 README 说明 batch 在下一次 I/O tick 发送，需在发送前订阅需要返回的 promise。
-`await api.search(); await api.read()` 若复用同一个已完成的 HTTP batch stub，第二次调用不能成立。
-
-因此首版不承诺一个隐藏 HTTP 边界的长期 `api.notes` proxy，采用显式的 `rpc.batch()`：
+`rpc.open('text')` 同步取得本次 run 的逻辑 API 引用；不执行 IO、不授予权限、不暴露原生 RpcStub。
+方法返回普通 Promise。值依赖正常 await，独立调用正常并发：
 
 ```ts
-const hits = await rpc.batch((root) =>
-	root.open('library.read').notebook('book-123').notes().search({ query: '退款' }),
-)
-
-const notes = await rpc.batch((root) => {
-	const reader = root.open('library.read').notebook('book-123').notes()
-	return Promise.all(hits.items.map((hit) => reader.read({ id: hit.id })))
-})
-
-return notes.map((note) => ({ title: note.title, excerpt: note.body.slice(0, 1000) }))
+const text = rpc.open('text')
+const results = await Promise.all([text.echo({ text: '你好' }), text.info({ text: '你好' })])
+return results
 ```
 
-每次 `rpc.batch()` 建立一个新的原生 batch stub，使用同一个 execution 的受限身份。callback 同步排队调用，
-返回一个待结算的 promise；可以返回 `Promise.all`，不能在 callback 内先 await 再追加调用。
-实现应拒绝批次发送后的调用并返回明确诊断，不能仅靠禁止 `async` 关键字假装静态保证。
-helper 负责订阅返回结果并释放 batch。没有返回/等待的调用也可能已排队执行，因此所有调用仍计入授权、预算和审计；
-fire-and-forget 不提供脱离 execution 的后台执行保证。
+客户端把同一调度轮内的独立调用合并为有界 HTTP batch。await 后的新调用使用后续请求，逻辑 API 引用仍可复用；原生 stub 的创建与释放留在内部。
+批次只包含同一次 run 的调用，不跨 principal、session 或 run 合并；排队中的调用在实际发出前重新检查该 run 是否仍开放。
+批次不是事务，不承诺并行调用的副作用顺序；需要顺序就 await。RPC 可显式并行，不继承直接 Agent 工具的串行默认。
 
-`root.open(id)` 是精确名称访问，返回受限 target facade。其输入不能选择 URL、凭据、租户或 owner。
-生成的 sandbox `.d.ts` 提供本次 contracts 集合的精确 overload；不把服务端类 import 到沙盒。
-同一 batch 内可直接在尚未 await 的 target promise 上继续调用子方法，保留原生 pipeline。
-`rpc.batch()` 结算后只向后续程序交付数据；能力引用可以存在于 batch 内，不能逃逸到下一 HTTP batch 或最终模型结果。
-这是短期 transport 的生命周期边界，不是禁止 API 返回 RpcTarget。helper 必须检测引用逃逸并安全失败。
+脚本必须等待自己的工作。返回时仍有未完成 RPC，run 结算为 Err(RUN_PENDING_CALLS)，拒绝新调用并取消、等待已发出的操作退出。
+运行结束后所有逻辑引用失效；返回值只能是有界 JSON，顶层 void/undefined 规范化为 null，不能携带函数、API 引用或后台任务。
 
-如果直接用原生客户端连接宿主为该会话提供的根，其调用形式为：
+发现接口固定如下：
+
+| 入口     | 返回与边界                                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| search   | 当前获准的 API ID、契约 hash 与匹配操作摘要；同一可见目录和 query 下排序稳定，默认 10 项、最多 50 项；结果标明是否还有匹配项 |
+| describe | 所选 API 的不可变快照：id/hash、generation、方法说明、wire 输入、返回值、错误协议及完整客户端类型；未获准 API 不返回内容     |
+| run      | 校验快照属于该 session 且仍匹配，再编译执行；Ok 携带程序的 JSON 值，控制失败返回 Err(RunFailure)；从不自动重放程序           |
+
+describe 包含 rpc.open、方法和共享 RpcResult 的类型，Agent 不用猜 import 或自己补公共类型。
+run 使用 session 内保存的发现记录复核快照，再提取方法允许表与声明；调用者提供的 hash 或声明文本本身不能作为授权依据。
+省略未选 API，不静默截断所选接口；超预算明确拒绝并提示缩小选择。运行前已过期则拒绝；运行中发生撤销或 owner 停止时，逐次调用仍重新检查接纳。
+每个 run 只开放此次快照中的 API 和方法；生效范围是快照、session access 与当前权限的交集，手写未选择的路径也不会获得访问。
+
+需要模型载体时，应用可把同一 search、describe、run 流程包装为模型工具。载体应为每个 conversation 独立保存 describe 快照，并在每次 run 时捕获它；这属于可选集成，不是 Command 或 RPC 内核的依赖与当前交付 API。
+若 conversation 借用 RPC session，关闭 conversation 只取消自己的 run，关闭 session 则取消所有借用者的工作。与直接工具并用时须共享该 session 的 principal，避免同一次对话混用两个用户。
+
+## 10. 数据出口与不确定结果
+
+RPC 方法把本地 Result 转换为一个普通 DTO；转换只消除运行时对象、投影安全失败字段并添加调用事实，沿用 CommandFailure 分类。
+本地使用 isErr()，受限脚本使用 DTO 的 ok 判别；describe 给出完整声明，不要求远端安装 Better Result 或恢复 Error/Result 原型。
 
 ```ts
-const gateway = newHttpBatchRpcSession<Gateway>(endpoint)
-const reader = gateway.open('library.read').notebook('book-123').notes()
-const result = await Promise.all([
-	reader.search({ query: '退款' }),
-	reader.search({ query: '发票' }),
-])
+type RpcResult<T> =
+	{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: RpcFailure }
 ```
 
-Gateway 的具体类型由本次契约制品生成；它并非把全部能力导出给任意 URL client。
-中间没有 await，多个层级仍可进入一个 HTTP batch。任何单个方法是否有副作用或需要事务，仍由领域定义。
+RpcFailure 的完整判别类型由同一失败定义生成：所有分支都有 `code`、`message`、`callId: string` 和
+`outcome: 'not_started' | 'unknown'`；INPUT_VALIDATION 额外具有 issues，REJECTED 额外具有 reason。
+仅这些字段进入 wire，cause、stack 和任意附加属性不参与投影。错误字段同样经过结构与预算校验，不能用对象展开或 toJSON 替代公开字段选择。
+RPC 方法的 T 是 Command Result 内的成功值；不会生成 `RpcResult<Result<T, CommandFailure>>`。
 
-数据依赖意味着可能有多次 HTTP 往返；上面的先 search 再 read 示例是两个请求，原生并发 search 示例是一个请求。
-`Promise.all`、promise pipelining、一次模型工具调用、
-一次 HTTP 请求、服务端事务是五个不同概念。服务端执行多个方法不会自动构成事务，也不保证并发顺序。
+outcome 描述能否确认 handler 尚未执行。首版采用可实现的保守规则：在网关尚未调用 Command.execute 时拒绝，才标记 not_started；
+调用 execute 后的失败与交付故障一律为 unknown。INPUT_VALIDATION 也可能来自 handler 内跨字段检查，不能仅凭 code 推断未执行。
+由当前调用状态生成 outcome，不继承嵌套命令的分类，不为追求更细状态新增公开执行方法或重复输入校验。
+业务是否提交仍由领域回执说明。`Result.ok({ ok: false, succeeded, failed })` 中的回执位于 RPC 成功分支 value 内，不被框架拆解或冒充执行异常。
 
-### 7.2 多个 API 和多个 endpoint
+callId 在发送前生成，用于关联安全诊断；它不是幂等键。断线、隔离预算、会话取消等控制失败由 executor 结算为 Err(RunFailure)，
+同时停止该 run 的新调用；脚本 catch 不能恢复已经关闭的执行范围。RunFailure 使用以下稳定分类：
 
-第一版一个受限 root 可 `open()` 多个插件 API，同一 batch 可以跨这些 API 排队。
-外部独立 Cap’n Web 服务由宿主可信的接入 provider 包装、保存上游凭据并显式发布；不把任意 URL/fetch 暴露给模型。
-多个上游 endpoint 不会因此合成一个上游 HTTP 请求或分布式事务；其额外延迟需如实计量。
-没有真实外部服务需求时不实现泛化联邦、协议发现或任意远程 `.d.ts` 导入。
+| code                           | 含义与必要字段                                                            |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| CONTRACT_CHANGED / FORBIDDEN   | 快照失效或访问被拒绝；未发出的调用不执行                                  |
+| CODE_SYNTAX / CODE_TYPECHECK   | 编译失败；diagnostics 包含安全 message 与原始代码从 1 开始的 line、column |
+| RUN_PENDING_CALLS / RUN_SCRIPT | 未等待 RPC 或脚本未处理的异常；停止新调用并等待已接纳工作                 |
+| RUN_TRANSPORT / RUN_LIMIT      | 传输失效或隔离预算耗尽；不能猜测远端未执行                                |
+| ABORTED / TIMEOUT / INTERNAL   | 取消、超时或执行器故障；INTERNAL 在本地报告原始 cause                     |
+| OUTPUT_ENCODING / OUTPUT_LIMIT | 程序输出不能交付；不重跑程序                                              |
 
-长期远程对象、双向 callback 或订阅如果成为实际需求，应单独评估 WebSocket transport；不通过自建 object ID 存储
-偷偷把 HTTP batch 变成长连接对象协议。第一版没有该承诺。
+每项 RunFailure 都有安全 message、`phase: 'prepare' | 'compile' | 'execute' | 'drain' | 'encode'` 和
+`calls: readonly { callId: string; outcome: 'not_started' | 'unknown' }[]`；calls 覆盖本次 run 创建的调用，未发起 RPC 时为空。
+outcome 只声明能否证明该 handler 未开始，不是提交回执；无法取得确认的已发送调用保守为 unknown。diagnostics 仅在两个编译分支必填。
+类型由 executor 导出，框架自身未结算的缺陷仍交宿主故障边界；创建与关闭 executor/session 的异常不混入某次 run 的 Result。
+run 的 Ok 仅表示程序完成并交付其 JSON 值，不表示返回值中的所有 RpcResult 都成功；此处的程序结果与方法结果拥有不同范围。
 
-## 8. Agent、沙盒与调用生命周期
+Agent/MCP 消费本地 Result 后保留各自原生成功与失败形式，同样区分输入错误、业务拒绝、未知故障、取消及输出失败；公开错误投影共用经过校验的安全字段。
+协议失败和预算超限不重跑 handler，不截断 JSON 冒充成功。模型再次请求写入时仍需遵守业务幂等与确认规则，不能只依赖框架没有自动 retry。
 
-### 8.1 内置代码执行型 Agent 消费三个工具
+默认 JSON 出口只接受有限数值、字符串、boolean、null、数组和普通数据对象；拒绝嵌套 undefined、BigInt、class、accessor、toJSON、循环和能力引用。
+RPC 顶层 void/undefined 唯一规范化为 null，生成类型同步反映；除此之外不做隐式转换。输入和输出都有深度、节点数与字节预算。
+有图片或 SDK 对象时由实际协议出口显式处理；敏感字段由业务选择，编码器不自动删字段。
+通用工具出口不转移 native 资源的所有权；临时资源在 handler 内释放，长期资源归 owner，结果只返回 DTO 或业务 ID。
+需要向本地调用者交付原生资源时使用已有领域 API 并说明清理责任，不能指望编码失败后载体替作者释放任意返回对象。
 
-```ts
-search_apis({ query: '退款', limit: 5 })
-describe_apis({ apis: ['library.read'] })
-run_code({ code: '...' })
-```
+写入操作优先返回小型、稳定的领域回执。已存在 operation ID、查询接口或幂等键时直接复用；结果未交付时据此确认。
+没有确认能力就报告状态不确定，不增加通用任务存储，也不承诺 exactly-once。
 
-三者绑定同一个可信 RPC session。这是内置复杂任务 Agent 的默认路径，不限制外部 MCP client 使用精选 Commands。
-普通闲聊无需调用发现；业务工具描述不按安装插件数扩张。
-Agent adapter 在每个 conversation 内保存 describe 返回的快照；run_code 捕获本任务当前选择的集合传给 executor，
-无需模型复制 digest 或 generation。一次成功的 describe_apis 显式替换该 conversation 的当前集合；
-需要两个 API 就同时描述它们。已开始的 run 持有不可变快照，后续 describe 不影响它，不引入自动判断任务切换的策略层。
-执行器用该集合和固定 sandbox globals 检查代码类型，再启动执行；类型检查不是权限边界，手写动态访问仍由服务端拒绝。
-预设只拥有指令、模型默认项和预算；不安装业务插件、不赋予权限、不复制角色策略。
-Skills 是按需操作指南，不承担授权或执行入口；首版不引入独立 skill 管理系统。
+## 11. 接纳、清理与隔离
 
-新 agent engine 的最小装配形态：
-
-```ts
-const conversation = agent.createSession({ model, rpc: session, executor })
-await conversation.prompt('从笔记中整理退款问题', { signal })
-await conversation.dispose()
-```
-
-conversation 借用 rpc session，拥有自己的模型运行；dispose 会取消自己的 executions，不撤销其他消费者借用的 session。
-外层应用最终 dispose rpc session。executor 为宿主共享，单次 execution 资源不在 conversation 间共享。
-无需为了删除旧 Pi 插件重写模型 SDK；可在新 engine 内复用 Pi，但不继承其旧 toolSetupId/Toolset 协议。
-
-### 8.2 信任与资源边界
-
-| 对象                | 所有者与结束条件                                          |
-| ------------------- | --------------------------------------------------------- |
-| publication         | Plugin generation；commit 可见，撤销/停止后不接纳新调用   |
-| RPC session         | 可信应用；拥有 principal/access，显式 dispose             |
-| execution           | executor；一次 run_code，固定契约版本和 execution ID      |
-| HTTP batch / target | execution 内的短期范围；含全部子能力，完成并 drain 后释放 |
-| 业务事务/持久资源   | 领域服务；不由 sandbox 退出或 RPC stub GC 隐式回滚        |
-
-沙盒内不保存宿主模型凭据、数据库凭据或上游 API token。execution 凭据短期、限定 endpoint 和 session/execution，
-必须经过受控网络出口；跨 session 重放与撤销后的调用拒绝。principal、access、owner、execution ID 不从业务参数信任。
-
-默认只允许运行临时程序和访问注入的 RPC 客户端；网络、文件、子进程、环境变量均按隔离 backend 明确约束。
-Node vm、worker、TypeScript 类型检查都不是安全隔离。首个支持的平台必须选定并验证实际 OS/container/microVM 边界，
-不可在 backend 缺失时静默退回宿主 eval。当前提案不指定一个未经本机部署验证的沙盒产品。
-
-设定单次执行的 wall time、CPU/内存、batch 数、总 RPC 次数、并发、请求/响应字节、日志和结果预算；数值在实际平台验证后给默认值。
-预算统计覆盖失败、未 await 和嵌套 root.open 调用，不能只数 run_code 次数。队列与沙盒数量均有上限。
-最终返回只接受有界 JSON 数据，日志也计入预算；超限返回 `RESULT_TOO_LARGE` 和安全摘要，不返回损坏的截断 JSON。
-首版不自动保存结果文件；大数据应通过领域 API 分页/筛选，额外 artifact 系统待实际需求再设计。
-
-### 8.3 取消、错误和写入
-
-取消/超时先关闭 execution 接纳，再终止沙盒并向服务端工作发送合作式 signal；已执行写入不能撤销。
-远程已接纳工作在真正 settle 前仍计占用并持有 owner lease；不能因为本地超时就释放服务端资源或宣称副作用不存在。
-不合作的同进程任务不能被 JS 强制杀死，报告未完成清理，由宿主策略处置，不自动重跑。
-
-RPC 控制错误至少区分 `INVALID_INPUT`、`FORBIDDEN`、`UNAVAILABLE`、`API_CHANGED`、`CANCELLED`、`LIMIT_EXCEEDED`、`INTERNAL`。
-Cap’n Web 默认 Error 传递不等于能保留自定义字段；服务端 facade 和 sandbox stub 必须验证稳定错误 codec，不能依赖 message 解析。
-业务预期失败优先用明确的 discriminated DTO；未知异常对外给安全消息，诊断 cause 留在服务端。
-
-每次业务调用记录 session、execution、publication owner/generation、对象授予路径、方法、源 Command identity（若有）和结果状态；参数/返回值默认不全量记录。
-单次 run_code 失败时返回 execution ID，并明确可能已提交副作用；传输断开后的写入结果不确定，不当作未执行。
-幂等键、退款确认和事务由对应领域操作负责，不能用 method metadata 或一次人工批准覆盖整段可变程序。
-需要人工确认的操作必须经过服务端的具体动作授权边界；首版未接入确认 UI 时不得默认开放这类写入。
-
-## 9. 依赖、删除与代码组织
-
-| 组件                        | 决策                                                                                          |
-| --------------------------- | --------------------------------------------------------------------------------------------- |
-| `@pluxel/commands`          | 保留独立包，删除 AI metadata/核心 output 管线，简化 registration                              |
-| `@pluxel/services/commands` | 保留 owner-bound registry/mount；不导入 RPC/Agent                                             |
-| 可选 MCP carrier            | 显式 expose 精选 Command，补协议信息；复用 host mount 归属，不依赖 AgentTools、不自动发布目录 |
-| 框架 tool adapter           | 从 Command 派生 SDK tool，绑定可信 context 与结果出口；不要求先经过 MCP/RPC                   |
-| toCapnweb adapter           | 从 Command/result 组合原生 target class，保留上下文类型和源操作 identity；归 RPC 适配入口     |
-| `@pluxel/agent-tools`       | 删除实现、Toolset/assignment 配置、Workbench 页面、文档与依赖                                 |
-| 旧 `@pluxel/pi-agent`       | 删除旧公开集成；新 engine 可内部复用 SDK，不保留兼容别名                                      |
-| `@pluxel/rpc`               | 协议类型、契约文档、会话与客户端辅助逻辑；不依赖模型 SDK                                      |
-| `@pluxel/services/rpc`      | root 前安装、owner publication、HTTP gateway 与 lifecycle 集成                                |
-| 沙盒模块                    | 隔离执行和受控 RPC 出口；首版先有一个实际 backend，不做泛化 provider 框架                     |
-| Agent 模块                  | 模型循环和三个工具接入；沙盒和 Agent 是否独立发布包不在本提案提前冻结                         |
-| Workbench                   | 继续自己的 fresh target/publication；不把管理对象树直接暴露给 agent                           |
-
-同一领域实现可同时服务 CLI、聊天、Workbench 和 RPC，但每个出口显式发布且分别绑定身份。
-通过显式 toCapnweb 成员组合导出 Command，不自动镜像全量 command registry，也不自动导出 Elysia route 或 Plugin prototype。
-toCapnweb 与框架 tool adapter 对 Commands 的依赖是单向的，Commands 不导入 Cap’n Web 或模型 SDK。
-原生 RpcTarget 不必经过 Command；两者生成/提取的制品进入同一套 publication 和受控生命周期。
-
-Core 不依赖 Cap’n Web、MCP、sandbox 或模型 SDK。Context shape 仍在 root 创建前固定，业务 Plugin 不动态安装新 Context capability。
-
-## 10. 实施顺序与替换范围
-
-本节是未来实施计划，不是本轮实现授权。每个阶段都走最终路径，不落地临时兼容架构。
-
-1. **证明边界**：Command 生成 target + 原生嵌套 target + 两者契约图 + 实际沙盒 backend + HTTP batch。
-   验证权限拒绝、伪造成员、跨 batch 失效、子引用撤销、取消和 generation 撤销。任一关键边界失败先修正设计，不扩展 Agent 产品。
-2. **交付操作基础与适配**：删除核心 output/behavior，迁移其有用投影、编码与校验到领域/输出出口；相同结果定义共享引用，实现新 registration 语义。
-   覆盖管理命令、Package Manager、ReportStudio 和 argv/carrier tests，不能只删除 schema 后丢掉机器输出。
-   清理 `CommandBehavior`、`outputSchema`、Output/Void 定义重载、output examples 和内核输出错误；
-   Input codec、输入示例和输入错误保留。存在真实 MCP 消费者时按第 3.4 节实现显式 carrier，不恢复旧 AgentTools。
-   此阶段不以改造 RPC 为由重写 CLI parser 或改变聊天平台产品语法。
-3. **交付 RPC/执行器**：toCapnweb 与原生对象接入、递归能力约束、publication、session、discovery、版本 pinning、稳定错误、资源预算。
-4. **交付新 Agent 集成**：三个工具、会话生命周期和结果预算。旧 AgentTools/Pi 路径随调用点切换一次删除；
-   需要直接 tools 的框架消费同一个 Command，而非另写 tool 定义或恢复全量工具投影。
-5. **清理权威文档和发布信息**：修改 engineering、docs、package README、showcase catalog/policy、package dependencies 和 docs type fixtures。
-   公共包行为变更添加有显式 bump type 的 Tegami pending changelog；不手改版本或 publish-lock。
-
-删除检查至少覆盖 `plugins/agent-tools`、`plugins/pi-agent` 的旧配置/导出、
-`projects/plugin-host/src/showcase/catalog.ts`、`policy.ts` 与相关测试，以及 `docs/plugins/agent-tools.md`、`pi-agent.md`。
-保留旧配置不生效的静默状态不可接受：清理 bundled 配置，外部旧配置明确报不支持；本次没有迁移兼容期。
-
-## 11. 验收与当前证据
-
-单源组合必须额外验证：只修改基础 command 的 name/description/input，CLI help 与 MCP 投影同步改变；
-基础对象保持不变，派生顺序不改变结果，不支持的重复字段在类型层和非类型调用边界拒绝。
-CLI JSON/LLM/RPC 共用结果定义时只改这一份即可；RPC class/method JSDoc 修改后无需同步编辑 publication。
-`toCli`/`toMcp`/`toCapnweb`/框架 tool adapter 不产生注册副作用，bind/expose/publish 撤销仍正确固定 owner generation。
-
-RPC 组合必须验证同一个 searchMethod 进入 NotesReader/NotesEditor 和两个不同资源实例：类型正确、context 不串线，
-input codec 执行一次、result projection 执行一次。原生父 target 返回生成子 target 时，CLI/MCP 不需要知道这条对象路径。
-先取得子引用，再撤销 access/停止 provider，后续子方法必须拒绝；也要覆盖 DTO 内子引用、重复引用和父 stub 释放。
-LLM adapter 以实际选定 SDK 为证据验证名称、schema 子集、tool call ID、取消、结果与错误，不用自定义假 SDK 代替兼容性验收。
-
-| 需要证明的结果                        | 应使用的证据                                                                                                  |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 普通聊天不承担所有 API 类型成本       | 记录实际模型请求，增加到 100 个 publication，确认未注入全量 schema/目录                                       |
-| 发现可靠且跨插件完成任务              | 只给 agent 公开工具与任务，不给包名；记录成功率、发现轮数、总 token/延迟                                      |
-| HTTP batch 语义诚实                   | 真实 HTTP 验证 pipelining、两轮数据依赖、同 stub 后续调用失败                                                 |
-| 不靠客户端类型保证权限                | 手写/猜测成员、绕过 describe、非法数据、伪造凭据、跨用户 ID 的真实网关调用                                    |
-| access 更新和 HMR 不绕过撤销          | 已获得引用后的调用、进行中调用 drain、旧 generation 不跟随替换                                                |
-| API 对象授权不隐式扩张                | 只开放 NotesReader 时不能取得 NotesEditor；同 ID 换 owner/增加公开方法后旧 access 拒绝调用                    |
-| 契约快照不跨 conversation 串线        | 两个 conversation 共用 session，各自 describe 不同版本，旧代码执行必须报 API_CHANGED                          |
-| 沙盒确实隔离                          | 实际 backend 上尝试宿主文件、环境凭据、任意网络、子进程与资源耗尽                                             |
-| Commands 的 CLI/聊天价值保留          | 类型测试 + argv/消息解析、render、explicit JSON output、codec、取消和 mount ownership                         |
-| 输出语义没有隐式丢失                  | handler 结果推导、出口 project/schema/编码、跨 carrier 一致的领域结果、错误后不自动重试                       |
-| 缺少输出投影不触发写入                | CLI 选择不支持的输出模式/MCP mount 缺少 renderer 时，handler 调用次数为零                                     |
-| MCP 适配没有建立第二条 unchecked 路径 | 实施 carrier 时，让同一 Command 经 CLI/MCP 调用，验证 input codec 只执行一次、可信 actor 映射、结果投影及撤销 |
-| 写入失败不误导重试                    | 部分提交、响应丢失、重复幂等键、出口结果校验失败的受控领域测试                                                |
-
-本次已完成：源码/文档审阅；用 npm 发布的 `capnweb@0.12.0` 在临时 Node HTTP server 上验证以下序列：
+沿用 Services 的 [mount](../../packages/services/src/commands/mount.ts) 与 Core effects。每次调用的完整范围是：
 
 ```text
-请求 1：root.open('notes').search()，open 与 search 通过 promise pipelining 组合
-复用已完成的请求 1 stub：拒绝
-请求 2：新 stub + Promise.all(read('n1'), read('n2'))
-观察结果：HTTP 请求数 2，旧 stub 复用失败，两个 read 结果成功返回
+核对发布 / 会话 / access 上限 → 持有 provider 与 publication owner 调用占用
+  → 构造独立业务 context → 检查当前权限 → 最终接纳检查 → Command 校验 / Decode / handler
+  → 协议编码、异步呈现和发送或失败结算 → 释放调用占用
 ```
 
-补充的原生嵌套探针在同一个 HTTP batch 中执行：
+安装先验证并同步登记 carrier registration 与 effects，再开放调用；失败回滚，不让 SDK 提前调用 preparing 状态的入口。
+owner 占用先保护可能访问 Plugin 资源的异步 authorize/context，它本身不等于业务已经接纳。
+所有准备步骤完成后，同步复核 publication、session access、owner 与取消状态，再调用 Command.execute；复核与分派之间不插入 await。
+异步 authorize 是本次外部策略判定的权威结果；策略自身负责判定一致性，强撤回同时关闭宿主 admission 或取消 owner。
+准备期间发生的 dispose、session.revoke 或 owner stop 必须挡住 handler；通过最终接纳点之后，手动撤销与缩权不取消本次工作。
+generation 停止则关闭 admission、abort 并等待真实工作退出，再释放业务资源。发现时执行的 authorize 也要持有相同的资源保护。
+载体不得只 mount 裸 handler，把 context 构造、编码或回复放到保护范围外。每次调用只校验/Decode 一次。
 
-```text
-root.open('library.read').notebook('book-a').notes().search({ query: 'refund' })
-复用 book-a reader 执行 search({ query: 'invoice' })
-同一 batch 创建 book-b reader 执行 search({ query: 'refund' })
-观察结果：HTTP 请求数 1；三个结果分别绑定 book-a / book-a / book-b，没有资源身份串线。
-```
+| 资源                                                             | 释放与所有权                                                                        |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Command 定义、借用的 store/executor                              | 引用不转移所有权                                                                    |
+| registry 注册、argv binding、Agent/MCP exposure、RPC publication | dispose 与 Symbol.dispose 共用幂等同步撤销；Plugin 发布同时登记 owner effects       |
+| Agent conversation、RPC session                                  | dispose 与 Symbol.asyncDispose 共用一次异步关闭；拒绝新工作、取消并等待所属任务退出 |
+| RPC 请求与隔离程序                                               | executor 跟踪其发出的全部请求，关闭不只等待脚本的返回 Promise                       |
 
-探针使用手写原生 RpcTarget，证明多层对象、异步父方法、pipeline 和不同实例的基本传输行为；
-不证明 toCapnweb 生成器、Pluxel 嵌套授权/撤销或编译出的契约图已实现。
-上述探针均不证明新 `rpc.batch()` helper、沙盒、错误 codec 或 lifecycle 已实现。
-没有执行运行中 Pluxel 应用操作，没有做性能结论；提案代码未进行新 API 的编译验证。
+同步撤销路径 no-throw；后台清理失败进入所属载体诊断。异步清理失败正常传播，并发/重复关闭等待同一次过程。
+Symbol.dispose 必须接在最外层 owner 句柄上，不能绕过 Services 的 guard 清理。await using 按逆序关闭，先 conversation 后 RPC session。
 
-参考上游：[Cap’n Web](https://github.com/cloudflare/capnweb)、
-[本次读取的 0.12.0 发布包](https://registry.npmjs.org/capnweb/-/capnweb-0.12.0.tgz)。
+沙盒的停止不等于服务端工作退出。session/executor 通过受认证的执行标识请求取消、等待服务端已接纳调用结算；
+无法确认远端退出时，关闭不能报告成功，服务端 owner 仍保留真实调用占用。忽略 signal 的业务不具备强制中断保证。
 
-## 12. 未决技术 gate 与不再摇摆的边界
+隔离后端必须实际约束宿主访问、网络、内存、时间与 RPC 数量；Node vm、普通 worker 和 TypeScript 检查都不充当安全沙盒。
+宿主安装时提供有限的执行预算，缺项或后端不能强制关键上限就拒绝启用；作者的 Command 不暴露这些调度参数。
+协议另有描述、输入、输出、队列和并发上限。上限在首个后端验证中定值并文档化，不提供无界默认。
+未安装 RPC/Agent/MCP 时不创建网关、模型客户端或沙盒。RPC 网关只读取接口制品；仅启用代码执行时，由显式 executor 提供受预算约束的类型检查器与隔离运行器。
+构建工具不进入 Core 或常规 Services 求值路径。
 
-架构决策已经明确：Commands 保留且不作为 Agent 必经入口；Command 是 CLI/LLM/RPC 操作的单一来源，原生 RpcTarget 保留能力嵌套；output 契约移到出口；
-旧 AgentTools 模型删除；HTTP batch 显式化。这些不因选用哪个模型 SDK 而改变。
+## 12. RPC 制品与首版范围
 
-实施前仍需解决的技术 gate：
+RPC 方法表与描述制品由同一份发布声明产生。Pluxel 构建/开发工具在类型擦除前读取静态 commands 方法表、Command 输入和 Result 成功分支类型，
+生成 runtime 方法允许表与完整客户端声明；运行时只加载制品并绑定真实发布。RPC 源码开发使用既有 Vite/Rolldown 通道，发行包随包携带制品。
+普通 Command、registry、argv 和直接工具不因此需要 RPC 编译步骤。
 
-1. 选定第一个真实隔离 backend 和支持的平台，验证网络出口、资源限制和退出后的远程 drain。
-2. 验证 Command 元信息与原生 `.d.ts`/JSDoc 的混合可达接口图，含 schema-inferred 类型、跨包 DTO 和生成 class；不手写第二份接口。
-3. 验证 Cap’n Web facade 对嵌套对象/容器引用的完整约束、稳定错误、factory、dispose、取消和 HMR；特别验证已持有子引用的撤销。
-   跨 provider 子能力的 provenance/lease 不可推测；不能可靠携带时拒绝其返回，不以跨对象库引用冒充生命周期支持。
-4. 基于真实任务确定执行预算与发现质量基线；不预先声称比原生工具调用快多少或省多少 token。
+构建工具按真实 import/type 来源识别 publish 与 Command，给实际发布点注入内部制品关联；不扫描运行中对象，也不执行应用工厂来猜类型。
+发布时将实际固定的方法表、Command 名称和规范化输入与制品绑定并核对；不能仅用 API id 或授权 hash 查到某份 .d.ts 就放行。
+制品的内部完整性校验包含实现绑定与说明等生成内容，和前述稳定授权 hash 各司其职，不再暴露第二个作者填写的版本字段。
+运行时只保证 Result/协议 envelope 和严格 JSON；TypeScript 的成功值声明不是自动生成的业务 output validator，领域实现继续拥有这些不变量。
 
-这些 gate 失败时，重新审视对应机制；不保留旧 AgentTools 作为永久 fallback，也不降低权限或隔离要求以宣称完成。
+首版支持静态方法表、可解析的 Command 引用以及 JSON DTO 返回类型；字段级输入 Transform 使用 wire 类型。
+跨包 DTO 必须有可解析的声明；不支持的动态方法表、任意类对象图、函数/能力返回和无法闭合的类型在构建或发布时拒绝，不猜成 any。
+有意返回 unknown 的数据可以保留 unknown，调用方自行缩小；出口仍做 JSON 校验。已知不支持的 Date/BigInt 等类型在适配时拒绝。
+
+方法名冲突和原型/then 等保留名称在发布前拒绝。制品必须匹配实际 id、方法表、Command 定义与协议；缺失或过期不能仅凭同名对象绑定。
+底层生成的 RpcTarget 只承载允许表中的方法，业务对象不进入原生 RPC 分派；不能把 TypeScript private 或“没有写进文档”当成访问限制。
+
+首版不提供任意接口反射、toCapnweb、业务 RpcTarget 工厂、嵌套能力或公开 rpc.batch。
+业务资源通过普通 ID 参数选择并在领域服务授权。只有真实任务证明这些方式不足时，才另行设计资源对象协议；不会提前保留一个尚未解决生命周期的高级入口。
+
+## 13. 实施与验收
+
+### 开工边界与第一条完整路径
+
+先迁移现有 Commands、Services mount 和真实调用方：一个带必需 context 的查询、一个返回提交回执的写入、一次可恢复拒绝和一次 SDK 故障。
+连同 argv、管理命令及旧输出消费者在第一阶段闭合迁移；新 API 不以“旧执行器外面套 Result.tryPromise”实现，取消、返回值和接纳结算必须一起调整。
+第 7 节的三载体 Plugin 是最终组合示例；第一条路径只安装当前交付的载体，不等待 MCP/RPC 完成。
+
+RPC 开工前在临时验证中证明以下三件事，验证失败时保持后续 RPC 入口未开放，继续交付直接工具：
+
+1. 一个跨包 Command 的 wire 输入与 Result 成功类型可生成精确客户端声明；变更绑定能拒绝旧制品，纯文案改动不改变授权 hash。
+2. 一个选定且有实际支持版本的隔离后端能阻止宿主/网络访问、终止超时与超内存脚本；停止脚本后仍能跟踪并等待已发出的服务端工作。
+3. 实际 Cap’n Web HTTP 通道支持顺序 await 与并行调用；run 结束不遗留原生 stub，断线不重放，有界批次不串会话。
+
+隔离后端、支持平台和具体预算在第二项验证产物中定值，进入正式配置与运维文档后才实现第 4 阶段。
+本文不把一个尚未选定和验证的 sandbox 记为已经解决；RPC 的成本不能阻塞 Command 作者面的简化。
+
+### 必须保留的回归断言
+
+| 场景                                                | 必须观察到                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------ |
+| 已取消输入 / deadline 到期                          | handler 未进入；得到明确 Err                                       |
+| 写入返回回执时 signal 已 aborted                    | 本地仍交付原 Result；不丢失 operation ID 或提交事实                |
+| SDK 故障与取消同时发生                              | 独立故障仍是 INTERNAL，原 cause 可追踪                             |
+| authorize/context 等待期间撤销发布或 session access | 准备步骤退出后拒绝分派，handler 不执行，owner 占用最终释放         |
+| factory 缺少任一 Command 的必需字段                 | 发布处类型报错；不能因数组、变量或返回对象多字段而绕过保留字段约束 |
+| handler 返回 INPUT_VALIDATION / 外层转发子命令 Err  | RPC 不凭错误 code 或子命令状态声称本次 handler 未执行              |
+| 修改描述 / 新增 RPC 方法                            | 前者保持授权 hash、更新制品；后者改变 hash，旧批准不能扩大权限     |
+| 业务字段或默认值也叫 description / examples         | 它们仍参与授权 hash，不能被当作 annotation 删除                    |
+
+### 分阶段交付
+
+| 阶段                | 交付内容                                                                                                  | 必须通过                                                                                                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 1. Command 与调用方 | 四字段定义、typed execute 与 Better Result、CommandFailure、固定注册句柄、using；同时迁移执行与输出消费者 | 成功值推导、失败缩小、必需 context、错误参数/裸返回值拒绝、无双层包装、取消保留回执与 cause、ParseBox 与 argv 回归 |
+| 2. 载体适配         | 可选的真实 SDK 直接工具、MCP expose、完整 Plugin 发布与当前权限检查                                       | owner 归属、SDK schema/示例、名字冲突、输出失败、缓存回调缩权、呈现期间停止、异步创建失败清理                      |
+| 3. RPC 发布与发现   | 静态方法表、制品、精确契约授权、session generation 固定、远端结果协议                                     | 编译声明与允许表一致、未批准方法拒绝、新方法不扩权、旧 session 不复活、JSON 出口与回执                             |
+| 4. 受限程序         | 一个真实隔离后端、普通 Promise 客户端、内部 HTTP batching、run 的 Result 契约                             | 类型诊断、预算强制、未等待调用、远程取消/退出及断线不重放                                                          |
+
+删除 output/validateOutput/OUTPUT_VALIDATION 时，同一交付完成[管理命令](../../packages/services/src/management/commands.ts)、
+[Package Manager](../../plugins/package-manager/src/index.ts)、[ReportStudio](../../projects/plugin-host/src/showcase/ReportStudio.ts)及 SDK 消费者迁移。
+保留状态快照、生命周期报告、部分成功回执和显式 DTO 投影；业务输出不变量归领域实现，协议转换归出口。
+同一阶段将 handler 的成功返回改为 Result.ok，将预期 CommandError 拒绝改为 Result.err；消费方先处理 Err，再使用 value。
+宿主取消、owner 接纳与输入内核的既有异常在各自边界转换，保留原始 cause。清理仍在 finally/effects 中，不能因为 Err 不再 reject 而跳过。
+检查所有 catch、Promise.all、缓存和 SDK callbacks 的旧假设；Err 不触发 catch、不会 fail-fast，也不能默认按成功值缓存或呈现。
+Commands 的 Better Result 依赖与 Core 共享版本并验证已发布包互操作；正式 Better Result 指南的 Command 边界说明与示例随实现一起迁移。
+删除 behavior 的同时迁移 Pi 并发默认与所有 descriptor 消费者，不留下无法运行的中间版本。
+
+旧 AgentTools 的 Toolset/assignment 和执行入口已按破坏性重构删除，不保留平行 Command API。独立的 `local-projects/chatbot` 原来把 Command 当 CLI 使用，现已将 Command 定义、调用、carrier 与管理 UI 迁移到新的 Result/descriptor 契约；若需要命令行参数解析，使用 Commands argv 入口。应用需要的授权由实际载体显式表达，不迁入旧 Toolset/assignment 存储。
+ConfigService 继续拥有配置持久化；不新增统一策略存储。每个阶段同步正式 docs 与公共包 changelog。
+
+任务验收至少包含：编写普通命令、接一个会 reject 的 SDK、注入用户 context、读取后修改、处理部分成功、缩权和 HMR 后再调用。Command、RPC 和隔离程序使用确定性调用方直接验证契约；接入具体 LLM 及比较任务成本属于载体验证，不作为内核完成条件。
+权限绕过、重复写入和清理遗漏不能由平均性能收益抵消。RPC 阶段未通过时不开放该能力，已完成的直接工具独立交付。
+
+本版的临时声明级探针使用 TypeScript 7.0.2、现有 TypeBox 与 Better Result 3.0.1 验证 Result 成功值推导、失败分支缩小、
+参数错拼/类型错误拒绝、wire/decoded 区分、必需 context、裸返回值与不完整错误拒绝、固定句柄类型及无双层包装的组合。
+上游运行时探针另验证了直接转发、Promise.all 对 Err 的结算、部分成功回执保留、Panic 的 cause 与显式安全 DTO 投影。
+本轮补充的载体声明探针覆盖必需/可选 context、异构工具数组和方法表、预声明变量、异步 factory、保留字段及 root catalog 约束。
+独立调用现有内核复现了“写入回执被后置取消检查覆盖”和“独立 SDK 故障被取消分类掩盖”；第 3 节结算规则是对此的明确设计变更，实施时须迁移相关旧断言。
+这些探针验证拟议签名与所用库的行为，不证明 Command 监督实现、已发布包互操作或载体集成完成。
+既有源码与测试是输入内核、argv 和 owner 行为的保留基线；RPC 制品、内部批处理和隔离仍按上述阶段验收。

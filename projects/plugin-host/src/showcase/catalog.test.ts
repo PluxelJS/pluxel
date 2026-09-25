@@ -57,7 +57,7 @@ describe('plugin-host catalog', () => {
 		)
 	})
 
-	it('keeps Pi Agent available but stopped until an assignment and model are intentional', () => {
+	it('keeps Pi Agent available but stopped until a model and tools are intentional', () => {
 		const autoStart = createHostRuntimeState().autoStart ?? []
 		expect(
 			autoStart.some((node) => pluginNodeAddressEqual(node, pluginNodeAddressOf(PiAgentPlugin))),

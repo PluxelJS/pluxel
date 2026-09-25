@@ -15,7 +15,6 @@ export const product = defineProduct({
 
 const vaultAdminPlugin = packageNode('@pluxel/vault-admin', 'VaultAdminPlugin')
 const authPlugin = packageNode('@pluxel/auth', 'AuthPlugin')
-const agentToolsPlugin = packageNode('@pluxel/agent-tools', 'AgentToolsPlugin')
 const memoryCacheBackendPlugin = packageNode('@pluxel/cache', 'MemoryCacheBackendPlugin')
 const cachePlugin = packageNode('@pluxel/cache', 'CachePlugin')
 const otelPlugin = packageNode('@pluxel/otel', 'OtelPlugin')
@@ -48,7 +47,6 @@ const optionalConsumer = sourceNode(
 export const s3StorageNode = defaultNode(s3PluginDefinition)
 
 const bootSafeOfficialPlugins = Object.freeze([
-	agentToolsPlugin,
 	authPlugin,
 	vaultAdminPlugin,
 	memoryCacheBackendPlugin,

@@ -9,3 +9,4 @@ packages/core-di/benchmarks/
 packages/workbench/shell/src/app/router/routeTree.gen.ts
 projects/plugin-host/pluxel.loader.hmr.discovered.jsonc
 projects/docs/next-env.d.ts
+engineering/experiments/agent-rpc-commands/generated-client.d.ts

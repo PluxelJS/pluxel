@@ -1,9 +1,11 @@
 import {
 	CommandError,
+	Result,
 	createCommandRegistry,
 	type CommandContext,
 	type CommandDescriptor,
 	type CommandRegistration,
+	type CommandFailure,
 	type DirectCommand,
 	type Registration,
 } from '@pluxel/commands'
@@ -20,7 +22,7 @@ export interface CommandMount<Ctx extends CommandContext = CommandContext> {
 	 */
 	bind<I, O>(
 		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Registration,
+		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
 	): Registration
 }
 
@@ -36,6 +38,7 @@ type CleanupCell = {
 type BindingRecord = {
 	readonly name: string
 	state: BindingState
+	withdrawal?: 'manual' | 'owner'
 	readonly cleanup: CleanupCell
 	guard?: { cancel(): void }
 }
@@ -66,7 +69,7 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 
 	bind<I, O>(
 		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Registration,
+		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
 	): Registration {
 		return this.bindFor(this.providerOwner, command, install)
 	}
@@ -86,7 +89,7 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 	bindFor<I, O>(
 		publicationOwner: CoreContext,
 		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Registration,
+		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
 	): Registration {
 		this.assertBindingAdmission(publicationOwner)
 		if (typeof install !== 'function') {
@@ -176,6 +179,7 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 		return Object.freeze({
 			name: snapshot.name,
 			dispose: () => this.withdraw(record, true),
+			[Symbol.dispose]: () => this.withdraw(record, true),
 		})
 	}
 
@@ -187,16 +191,33 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 		return Object.freeze({
 			name: snapshot.name,
 			descriptor: snapshot.descriptor,
-			execute: async (candidate: unknown, context?: Ctx): Promise<O> => {
-				if (this.state !== 'active' || record.state !== 'active') {
-					throw commandNotFound(snapshot.name)
+			execute: async (candidate: I, context?: Ctx): Promise<Result<O, CommandFailure>> => {
+				if (this.state !== 'active' || record.withdrawal === 'owner') {
+					return Result.err({ code: 'ABORTED', message: 'Command owner stopped' })
+				}
+				if (record.state !== 'active') {
+					return Result.err({ code: 'COMMAND_NOT_FOUND', message: 'Command not found' })
+				}
+
+				let callSignal: AbortSignal | undefined
+				try {
+					callSignal = context?.signal
+				} catch (error) {
+					return Result.err({ code: 'INTERNAL', message: 'Invalid command context', cause: error })
+				}
+				if (callSignal !== undefined && !(callSignal instanceof AbortSignal)) {
+					return Result.err({
+						code: 'INTERNAL',
+						message: 'Invalid command context',
+						cause: new TypeError('Command context signal must be an AbortSignal'),
+					})
 				}
 
 				let providerLease
 				try {
-					providerLease = enterOwnerInvocation(this.providerOwner, context?.signal)
+					providerLease = enterOwnerInvocation(this.providerOwner, callSignal)
 				} catch (error) {
-					throw cancellationError(error)
+					return Result.err(cancellationFailure(error))
 				}
 
 				let publicationLease
@@ -209,12 +230,12 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 					return (await Reflect.apply(snapshot.execute, snapshot.receiver, [
 						candidate,
 						commandContext,
-					])) as O
+					])) as Result<O, CommandFailure>
 				} catch (error) {
 					if (!publicationLease && publicationOwner !== this.providerOwner) {
-						throw cancellationError(error)
+						return Result.err(cancellationFailure(error))
 					}
-					throw error
+					return Result.err({ code: 'INTERNAL', message: 'Command execution failed', cause: error })
 				} finally {
 					publicationLease?.dispose()
 					providerLease.dispose()
@@ -247,6 +268,7 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 
 	private withdraw(record: BindingRecord, cancelGuard: boolean): void {
 		if (record.state === 'withdrawn') return
+		record.withdrawal = cancelGuard ? 'manual' : 'owner'
 		record.state = 'withdrawn'
 		this.bindings.delete(record)
 		if (cancelGuard) this.cancelGuard(record)
@@ -374,7 +396,7 @@ class CommandMountView<Ctx extends CommandContext> implements CommandMount<Ctx> 
 
 	bind<I, O>(
 		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Registration,
+		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
 	): Registration {
 		return this.mount.bindFor(this.publicationOwner, command, install)
 	}
@@ -522,13 +544,6 @@ function commandConfigError(
 	})
 }
 
-function commandNotFound(name: string): CommandError<'COMMAND_NOT_FOUND'> {
-	return new CommandError('COMMAND_NOT_FOUND', 'Command not found', {
-		message: `Command "${name}" is no longer mounted`,
-		details: { name },
-	})
-}
-
 function readThen(value: unknown, command: string): Function | undefined {
 	if (!value || (typeof value !== 'object' && typeof value !== 'function')) return undefined
 	let then: unknown
@@ -549,6 +564,10 @@ function cancellationError(error: unknown): CommandError {
 	return error instanceof CommandError && error.code === 'ABORTED'
 		? error
 		: new CommandError('ABORTED', 'Command cancelled', { cause: error })
+}
+
+function cancellationFailure(error: unknown): CommandFailure {
+	return { code: 'ABORTED', message: 'Command cancelled', cause: error }
 }
 
 export function createCommandMount<Ctx extends CommandContext = CommandContext>(

@@ -53,6 +53,7 @@ import { coercePluginConfigRecords } from './config-records'
 import { installPluginSources, type PluginSource, type PluginSourceChange } from './sources'
 import { openPluginSources, type PluginSourceSession } from './source-session'
 import { collectPluginModuleExports } from './module'
+import { prepareHostRpcCatalog } from './rpc-catalog'
 
 type ServiceCapabilities<TServices extends readonly HostService[]> =
 	number extends TServices['length']
@@ -245,7 +246,13 @@ function createPreparedHost(
 		else next.set(change.path, collectPluginModuleExports(await options.loadModule!(change.path)))
 		if (closing) return
 		await validateInputBindingCandidates(combined(next), options)
-		await coordinator.updateCatalog(catalog(++revision, combined(next), ctx))
+		const nextCatalog = catalog(++revision, combined(next), ctx)
+		const publishRpc = prepareHostRpcCatalog(ctx, nextCatalog)
+		await coordinator.update({
+			catalog: nextCatalog,
+			reason: 'catalog-update',
+			onGraphCommitted: publishRpc,
+		})
 		modules = next
 	}
 	const enqueueSourceChange = (change: PluginSourceChange): void => {
@@ -271,7 +278,14 @@ function createPreparedHost(
 			}
 			assertOpen()
 			await validateInputBindingCandidates(combined(modules), options)
-			return coordinator.reconcileStartup(catalog(++revision, combined(modules), ctx))
+			const initialCatalog = catalog(++revision, combined(modules), ctx)
+			const publishRpc = prepareHostRpcCatalog(ctx, initialCatalog)
+			return coordinator.update({
+				catalog: initialCatalog,
+				mode: 'cold-boot',
+				reason: 'startup',
+				onGraphCommitted: publishRpc,
+			})
 		})())
 	}
 	const updateCatalog = async (
@@ -285,10 +299,13 @@ function createPreparedHost(
 		const task = sourceTail.then(async () => {
 			assertOpen()
 			await validateInputBindingCandidates(combined(modules, next), options)
+			const nextCatalog = catalog(++revision, combined(modules, next), ctx)
+			const publishRpc = prepareHostRpcCatalog(ctx, nextCatalog)
 			const report = await coordinator.update({
-				catalog: catalog(++revision, combined(modules, next), ctx),
+				catalog: nextCatalog,
 				reason: 'catalog-update',
 				onGraphCommitted: () => {
+					publishRpc()
 					fixedPlugins = next
 					onGraphCommitted?.()
 				},

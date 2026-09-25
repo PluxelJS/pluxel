@@ -1,11 +1,12 @@
 import {
-	CommandError,
+	Result,
 	createCommandRegistry,
 	type Command,
 	type CommandCatalogSnapshot,
 	type CommandContext,
 	type CommandDescriptor,
 	type CommandRegistration,
+	type CommandFailure,
 } from '@pluxel/commands'
 import type { Context as CoreContext } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/internal'
@@ -49,7 +50,11 @@ export class CommandsService {
 		return this.rootRegistry().subscribe(listener)
 	}
 
-	execute(name: string, candidate: unknown, context?: CommandContext): Promise<unknown> {
+	execute(
+		name: string,
+		candidate: unknown,
+		context?: CommandContext,
+	): Promise<Result<unknown, CommandFailure>> {
 		return this.rootRegistry().execute(name, candidate, context)
 	}
 
@@ -87,6 +92,12 @@ export class CommandsService {
 			},
 			enumerable: true,
 		})
+		Object.defineProperty(ownedRegistration, Symbol.dispose, {
+			value() {
+				guard.cancel()
+				cleanup()
+			},
+		})
 		return Object.freeze(ownedRegistration)
 	}
 }
@@ -95,18 +106,33 @@ function bindCommandOwner<I, O>(owner: CoreContext, command: Command<I, O>): Com
 	return {
 		name: command.name,
 		descriptor: command.descriptor,
-		async execute(candidate: unknown, context?: CommandContext): Promise<O> {
+		async execute(candidate: I, context?: CommandContext): Promise<Result<O, CommandFailure>> {
+			let signal: AbortSignal | undefined
+			try {
+				signal = context?.signal
+			} catch (error) {
+				return Result.err({ code: 'INTERNAL', message: 'Invalid command context', cause: error })
+			}
+			if (signal !== undefined && !(signal instanceof AbortSignal)) {
+				return Result.err({
+					code: 'INTERNAL',
+					message: 'Invalid command context',
+					cause: new TypeError('Command context signal must be an AbortSignal'),
+				})
+			}
 			let lease
 			try {
-				lease = enterOwnerInvocation(owner, context?.signal)
+				lease = enterOwnerInvocation(owner, signal)
 			} catch (error) {
-				throw cancellationError(error)
+				return Result.err(cancellationFailure(error))
 			}
 			try {
 				return await command.execute(candidate, {
 					...context,
 					signal: lease.signal,
 				})
+			} catch (error) {
+				return Result.err({ code: 'INTERNAL', message: 'Command execution failed', cause: error })
 			} finally {
 				lease.dispose()
 			}
@@ -114,8 +140,6 @@ function bindCommandOwner<I, O>(owner: CoreContext, command: Command<I, O>): Com
 	}
 }
 
-function cancellationError(error: unknown): CommandError {
-	return error instanceof CommandError
-		? error
-		: new CommandError('ABORTED', 'Command cancelled', { cause: error })
+function cancellationFailure(error: unknown): CommandFailure {
+	return { code: 'ABORTED', message: 'Command cancelled', cause: error }
 }

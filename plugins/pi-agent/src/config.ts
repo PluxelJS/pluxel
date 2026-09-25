@@ -1,27 +1,12 @@
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 
-const machineIdPattern = /^[A-Za-z0-9_.:-]{1,128}$/
-
-const MachineId = v.pipe(
-	v.string(),
-	v.trim(),
-	v.regex(machineIdPattern, '必须是 1–128 字符的稳定机器标识'),
-)
-
 const ModelReference = v.strictObject({
 	provider: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(128)),
 	id: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(256)),
 })
 
 export const PiAgentConfig = v.strictObject({
-	defaultToolSetupId: v.pipe(
-		v.optional(MachineId, 'assistant'),
-		f.formMeta({
-			title: 'Default tool setup',
-			description: 'AgentTools assignment used when createSession() does not select one.',
-		}),
-	),
 	model: v.pipe(
 		v.optional(ModelReference),
 		f.formMeta({

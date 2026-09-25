@@ -16,7 +16,6 @@ packages:
   '@pluxel/takumi': major
   '@pluxel/takumi-markdown': major
   '@pluxel/takumi-markdown-typst': major
-  '@pluxel/agent-tools': major
   '@pluxel/create': major
   '@pluxel/cli': major
 ---

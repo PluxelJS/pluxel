@@ -1,7 +1,7 @@
 import { afterAll, test } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
 import { createArgvRouter } from '../src/argv'
-import { createCommandRegistry, defineCommand } from '../src/index'
+import { createCommandRegistry, defineCommand, Result } from '../src/index'
 import { Type, obj } from '../src/typebox'
 
 const options = { time: 500, warmupTime: 100, iterations: 10, warmupIterations: 5 }
@@ -21,16 +21,13 @@ const inputSchema = obj({
 	verbose: Type.Optional(Type.Boolean({ default: false })),
 	tags: Type.Optional(Type.Array(Type.String())),
 })
-const outputSchema = obj({ accepted: Type.Boolean(), count: Type.Integer() })
 
 function defineUpdate(name = 'item.update') {
 	return defineCommand({
 		name,
 		description: 'Update one benchmark item.',
-		behavior: { kind: 'mutation', destructive: false, idempotent: true, world: 'closed' },
 		input: inputSchema,
-		output: outputSchema,
-		execute: ({ count }) => ({ accepted: true, count }),
+		execute: ({ count }) => Result.ok({ accepted: true, count }),
 	})
 }
 
@@ -49,10 +46,8 @@ const smallPayload = largePayload.slice(0, 1)
 const bulk = defineCommand({
 	name: 'item.bulk.inspect',
 	description: 'Inspect a benchmark payload.',
-	behavior: { kind: 'query', world: 'closed' },
 	input: obj({ items: Type.Array(Type.Unknown()) }),
-	output: obj({ items: Type.Array(Type.Unknown()) }),
-	execute: ({ items }) => ({ items }),
+	execute: ({ items }) => Result.ok({ items }),
 })
 
 const queryField = Runtime.Union([Runtime.Const('warnings'), Runtime.Const('playtime')])
@@ -81,13 +76,11 @@ const querySchema = Type.Transform(Type.String())
 const searchPlayers = defineCommand({
 	name: 'players.search',
 	description: 'Search benchmark players with a shared DSL.',
-	behavior: { kind: 'query', world: 'closed' },
 	input: obj({
 		query: querySchema,
 		limit: Type.Optional(Type.Integer({ default: 100 })),
 	}),
-	output: obj({ matched: Type.Boolean() }),
-	execute: ({ query }) => ({ matched: query.expression.threshold >= 0 }),
+	execute: ({ query }) => Result.ok({ matched: query.expression.threshold >= 0 }),
 })
 const catalog = Array.from({ length: 1_000 }, (_, index) => defineUpdate(`item.update.${index}`))
 const catalogRouter100 = createArgvRouter()
@@ -110,10 +103,8 @@ test('command definition', async ({ bench }) => {
 				defineCommand({
 					name: 'item.fresh',
 					description: 'Define one command with fresh schemas.',
-					behavior: { kind: 'query', world: 'closed' },
 					input: obj({ value: Type.Integer() }),
-					output: obj({ value: Type.Integer() }),
-					execute: ({ value }) => ({ value }),
+					execute: ({ value }) => Result.ok({ value }),
 				}),
 			)
 		}),

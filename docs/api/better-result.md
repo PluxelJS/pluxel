@@ -5,21 +5,23 @@ description: 在本地插件之间共享完整的 better-result API，并处理�
 
 本地插件使用 Better Result 时，从 `@pluxel/core/better-result` 导入。这个子入口提供上游完整的命名 API，
 由 Core 统一选择版本；导入 Core 主入口不会加载 Better Result。
+Command 作者从 `@pluxel/commands` 导入同一版本的 `Result`；Commands 与 Core 没有相互依赖。
 
 ## 选择与安装
 
 先写出调用方遇到失败后的动作：提示用户修正输入、使用缺省值、稍后重试，还是终止当前操作。
-只有调用方需要稳定分支的预期业务失败才进入 `E`。`Result` 是可选的本地领域契约，不是给每个 Promise
-套一层的框架要求；`Promise<Result<T, E>>` 也不保证 Promise 永不 reject。
+只有调用方需要稳定分支的预期业务失败才进入 `E`。普通本地领域方法可自行选择 Result。
+Command 是明确的受校验执行边界，统一返回 `Promise<Result<T, CommandFailure>>`；类型本身不保证框架缺陷永不 reject。
 
-| 操作                                            | 契约选择                                                     |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| 本地插件方法有调用方需要分支处理的预期失败      | 返回 `Result<T, E>`，错误类型由提供方公开                    |
-| lookup 的正常空值、缓存 miss、限流 allow/deny   | 保留 `null` / `undefined` / 判定；业务层需要拒绝时再映射     |
-| 原生 Wretch、node-redis、s3mini 或 renderer API | 保留上游值和异常契约；在 consumer 知道业务语义时转换         |
-| Plugin 启动、generation 撤回或代码不变量失败    | 遵循现有 lifecycle 与异常契约                                |
-| Command、Workbench、Worker、HTTP 或 JSON 边界   | 按领域协议返回并校验普通 DTO；跨边界重建类型由协议拥有者决定 |
-| 批量部分成功、已保存未应用或其他有状态操作回执  | 保留领域回执中的全部状态                                     |
+| 操作                                            | 契约选择                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| 本地插件方法有调用方需要分支处理的预期失败      | 返回 `Result<T, E>`，错误类型由提供方公开                           |
+| lookup 的正常空值、缓存 miss、限流 allow/deny   | 保留 `null` / `undefined` / 判定；业务层需要拒绝时再映射            |
+| 原生 Wretch、node-redis、s3mini 或 renderer API | 保留上游值和异常契约；在 consumer 知道业务语义时转换                |
+| Plugin 启动、generation 撤回或代码不变量失败    | 遵循现有 lifecycle 与异常契约                                       |
+| Command 执行                                    | handler 显式返回 Result；执行、输入和授权失败用 CommandFailure 分支 |
+| Workbench、Worker、HTTP 或 JSON 边界            | 按领域协议返回并校验普通 DTO；跨边界重建类型由协议拥有者决定        |
+| 批量部分成功、已保存未应用或其他有状态操作回执  | 保留领域回执中的全部状态                                            |
 
 发布提供 `Result` API 的插件时，声明包含此子入口的 `@pluxel/core` peer 下限，并在开发依赖中使用 Core。
 这条共享路径由 Core 的正常 `better-result` 依赖提供；插件无需为这项本地契约另设 `better-result` peer。
@@ -39,6 +41,37 @@ description: 在本地插件之间共享完整的 better-result API，并处理�
 缓存或跨进程传递的是领域数据。`Err` 是 fulfilled value，`getOrLoad()` / `@Cached` 不会自动把它当成
 rejection 排除；序列化也不会替你恢复 Result/Error prototype。先缓存数据或明确的负缓存 `null`，读取后再
 构造 Result。需要自有 wire envelope 时，使用本页末尾的 codec，并验证两端 schema。
+
+## Command 边界
+
+`defineCommand()` 的 handler 返回 `Result.ok(value)` 或 `Result.err(CommandFailure)`，不能裸返回成功值。
+预期业务拒绝使用 `REJECTED` 与稳定 `reason`；输入 schema 校验失败由 Command 返回带 issues 的
+`INPUT_VALIDATION`。调用方先检查 `.isErr()` 再读取 `.value`。Command 内核保留 handler 已取得的
+Result，包括取消发生在写入之后时的提交回执。未适配的 SDK rejection 变成 `INTERNAL`，原异常保留在本地
+`cause`，载体只向外投影安全字段。
+
+```ts no-twoslash
+import { defineCommand, Result } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
+
+const read = defineCommand({
+	name: 'notes.read',
+	description: 'Read a note.',
+	input: obj({ id: Type.String() }),
+	execute({ id }) {
+		return id === 'known'
+			? Result.ok({ id, text: 'Hello' })
+			: Result.err({ code: 'REJECTED', reason: 'not_found', message: 'Note not found' })
+	},
+})
+
+const result = await read.execute({ id: 'known' })
+if (result.isErr()) console.error(result.error.code, result.error.message)
+else console.log(result.value.text)
+```
+
+另一个 Command 的 Result 可以直接从 handler 返回。`Err` 是 fulfilled value；`Promise.all` 不会因为其中一个
+Err 停止其他调用。协议载体先处理 Err，再将成功值转换为自己的普通 DTO 或原生工具结果，不序列化 Result 实例。
 
 ## 完整导出范围
 
@@ -171,7 +204,6 @@ async function readReport(signal: AbortSignal): Promise<Result<string, RetryLate
 | [Markdown / Typst](../plugins/rendering/takumi-markdown.md#将可恢复失败交给业务调用方)                                                     | 文档超限或受限公式不合法 → 可修正输入；extension defect、Worker 故障继续拒绝                     |
 | [Auth](../plugins/auth.md#本地-result-与设置回执)                                                                                          | 内部校验直接返回 Result；Setup API 保持经过校验的普通 DTO                                        |
 | [Pi Agent](../plugins/pi-agent.md#直接处理会话结果)                                                                                        | 直接消费 `prompt()` 的 outcome 和 aborted / model_error；不再套一层 Result                       |
-| [Agent tools](../plugins/agent-tools.md#业务-result-与-command-边界)                                                                       | command handler 投影领域 Result；catalog 保留 JSON output、CommandError 和权限 / admission 分类  |
 | [Package Manager](../plugins/package-manager.md)、[OTel](../plugins/otel.md)、Vault Admin                                                  | 安装回执、原生 telemetry 和管理 action 已有协议；不增加无业务恢复需求的 Result 包装              |
 
 各指南链接到包内可执行示例。验证时至少检查成功、预期 Err 和非预期 rejection；涉及数据缓存、DTO 或资源时，

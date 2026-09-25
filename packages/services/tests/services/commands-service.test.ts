@@ -1,9 +1,9 @@
 import { standardServices } from '@pluxel/services'
 import { managementCommands } from '@pluxel/services/management/commands'
 import { Commands } from '@pluxel/services/commands'
-import { defineCommand } from '@pluxel/commands'
+import { defineCommand, Result } from '@pluxel/commands'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { Type, obj } from '@pluxel/commands/typebox'
+import { obj } from '@pluxel/commands/typebox'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { describe, expect, it } from 'vitest'
@@ -13,14 +13,45 @@ function valueCommand(value: string, name = 'example.value.get') {
 	return defineCommand({
 		name,
 		description: 'Read the value owned by the active plugin generation.',
-		behavior: { kind: 'query', world: 'closed' },
 		input: obj({}),
-		output: obj({ value: Type.String() }),
-		execute: () => ({ value }),
+		execute: () => Result.ok({ value }),
 	})
 }
 
 describe('CommandsService', () => {
+	it('classifies unreadable trusted context and execution faults as INTERNAL', async () => {
+		await using host = await createServiceInternalTestHarness({ workbench: false })
+		const registration = host.ctx.require(Commands).register(valueCommand('ready'))
+		const signalError = new Error('signal getter failed')
+		const unreadableSignal = Object.defineProperty({}, 'signal', {
+			get() {
+				throw signalError
+			},
+		})
+		await expect(registration.execute({}, unreadableSignal)).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'INTERNAL', cause: signalError },
+		})
+		await expect(registration.execute({}, { signal: {} } as never)).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'INTERNAL', cause: expect.any(TypeError) },
+		})
+
+		const spreadError = new Error('context spread failed')
+		const unreadableFields = new Proxy(
+			{},
+			{
+				ownKeys() {
+					throw spreadError
+				},
+			},
+		)
+		await expect(registration.execute({}, unreadableFields)).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'INTERNAL', cause: spreadError },
+		})
+	})
+
 	it('aborts and drains owner commands before the plugin stop hook', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
@@ -36,7 +67,6 @@ describe('CommandsService', () => {
 					defineCommand({
 						name: 'owner.long.run',
 						description: 'Run until the owner stops.',
-						behavior: { kind: 'query', world: 'closed' },
 						input: obj({}),
 						async execute(_input, { signal }) {
 							started()
@@ -50,6 +80,7 @@ describe('CommandsService', () => {
 									{ once: true },
 								)
 							})
+							return Result.ok()
 						},
 					}),
 				)
@@ -69,7 +100,7 @@ describe('CommandsService', () => {
 		host.remove(LongCommandOwner)
 		await host.commit()
 
-		await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
+		await expect(pending).resolves.toMatchObject({ status: 'error', error: { code: 'ABORTED' } })
 		expect(order).toEqual(['abort', 'cleanup'])
 		expect(
 			host.ctx
@@ -77,8 +108,11 @@ describe('CommandsService', () => {
 				.list()
 				.some(({ name }) => name === 'owner.long.run'),
 		).toBe(false)
-		await expect(captured.execute({}, {})).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
+		await expect(captured.execute({}, {})).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'COMMAND_NOT_FOUND',
+			},
 		})
 	})
 
@@ -140,12 +174,12 @@ describe('CommandsService', () => {
 		expect(revisions).toEqual([initial.revision + 1, initial.revision + 2])
 	})
 
-	it('moves retained installed handles to a compatible replacement without stale ownership', async () => {
+	it('keeps retained registration handles fixed to their original generation', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
 		let retained!: {
 			readonly descriptor: { readonly name: string }
-			readonly execute: (candidate: unknown, context?: {}) => Promise<{ value: string }>
+			readonly execute: (candidate: {}) => Promise<unknown>
 			readonly dispose: () => void
 		}
 		@Plugin({ displayName: 'CommandOwner' })
@@ -168,19 +202,37 @@ describe('CommandsService', () => {
 		host.cfg(CommandOwnerV1).setAutoStart(true)
 		host.start(CommandOwnerV1)
 		await host.commit()
-		await expect(host.ctx.require(Commands).execute('example.value.get', {})).resolves.toEqual({
-			value: 'v1',
+		await expect(
+			host.ctx.require(Commands).execute('example.value.get', {}),
+		).resolves.toMatchObject({
+			status: 'ok',
+			value: {
+				value: 'v1',
+			},
 		})
 
 		host.replace(CommandOwnerV1, CommandOwnerV2)
 		await host.commit()
-		await expect(host.ctx.require(Commands).execute('example.value.get', {})).resolves.toEqual({
-			value: 'v2',
+		await expect(
+			host.ctx.require(Commands).execute('example.value.get', {}),
+		).resolves.toMatchObject({
+			status: 'ok',
+			value: {
+				value: 'v2',
+			},
 		})
-		await expect(retained.execute({})).resolves.toEqual({ value: 'v2' })
+		await expect(retained.execute({})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 		retained.dispose()
-		await expect(host.ctx.require(Commands).execute('example.value.get', {})).resolves.toEqual({
-			value: 'v2',
+		await expect(
+			host.ctx.require(Commands).execute('example.value.get', {}),
+		).resolves.toMatchObject({
+			status: 'ok',
+			value: {
+				value: 'v2',
+			},
 		})
 
 		host.remove(CommandOwnerV2)
@@ -191,7 +243,10 @@ describe('CommandsService', () => {
 				.list()
 				.some(({ name }) => name === 'example.value.get'),
 		).toBe(false)
-		await expect(retained.execute({})).rejects.toMatchObject({ code: 'COMMAND_NOT_FOUND' })
+		await expect(retained.execute({})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 	})
 
 	it('manual dispose revokes cached command wrappers without cancelling entered work', async () => {
@@ -211,18 +266,16 @@ describe('CommandsService', () => {
 					defineCommand({
 						name: 'owner.manual.dispose',
 						description: 'Run until its manual registration is disposed.',
-						behavior: { kind: 'query', world: 'closed' },
 						input: obj({}),
-						output: obj({ completed: Type.Boolean() }),
 						async execute() {
 							started()
 							await gate
-							return { completed: true }
+							return Result.ok({ completed: true })
 						},
 					}),
 				)
 				captured = registration
-				disposeManual = () => registration.dispose()
+				disposeManual = () => registration[Symbol.dispose]()
 				this.ctx.require(Commands).register(valueCommand('live', 'owner.manual.sibling'))
 			}
 		}
@@ -242,18 +295,29 @@ describe('CommandsService', () => {
 				.list()
 				.some(({ name }) => name === 'owner.manual.dispose'),
 		).toBe(false)
-		await expect(captured.execute({}, {})).rejects.toMatchObject({ code: 'COMMAND_NOT_FOUND' })
+		await expect(captured.execute({}, {})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 		await expect(
 			host.ctx.require(Commands).execute('owner.manual.dispose', {}),
-		).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
+		).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'COMMAND_NOT_FOUND',
+			},
 		})
-		await expect(host.ctx.require(Commands).execute('owner.manual.sibling', {})).resolves.toEqual({
-			value: 'live',
+		await expect(
+			host.ctx.require(Commands).execute('owner.manual.sibling', {}),
+		).resolves.toMatchObject({
+			status: 'ok',
+			value: {
+				value: 'live',
+			},
 		})
 
 		release()
-		await expect(pending).resolves.toEqual({ completed: true })
+		await expect(pending).resolves.toMatchObject({ status: 'ok', value: { completed: true } })
 	})
 
 	it('rolls back registrations when plugin startup fails', async () => {
@@ -323,8 +387,11 @@ describe('CommandsService', () => {
 				.list()
 				.some(({ name }) => name === 'owner.a.get'),
 		).toBe(false)
-		await expect(host.ctx.require(Commands).execute('owner.b.get', {})).resolves.toEqual({
-			value: 'b',
+		await expect(host.ctx.require(Commands).execute('owner.b.get', {})).resolves.toMatchObject({
+			status: 'ok',
+			value: {
+				value: 'b',
+			},
 		})
 	})
 
@@ -345,31 +412,48 @@ describe('CommandsService', () => {
 			address,
 		})
 		expect(started).toMatchObject({
-			address,
-			displayName: 'ManagedPlugin',
-			autoStart: false,
-			sessionIntent: 'run',
-			desiredState: 'running',
-			activationReason: 'session',
-			lifecycleState: 'running',
+			status: 'ok',
+			value: {
+				address,
+				displayName: 'ManagedPlugin',
+				autoStart: false,
+				sessionIntent: 'run',
+				desiredState: 'running',
+				activationReason: 'session',
+				lifecycleState: 'running',
+			},
 		})
 
 		const listed = await host.ctx.require(Commands).execute('plugin.list', {})
 		expect(listed).toMatchObject({
-			plugins: [expect.objectContaining({ address, lifecycleState: 'running' })],
-			summary: { total: 1, running: 1, stopped: 0, autoStart: 0 },
+			status: 'ok',
+			value: {
+				plugins: [expect.objectContaining({ address, lifecycleState: 'running' })],
+				summary: { total: 1, running: 1, stopped: 0, autoStart: 0 },
+			},
 		})
 
 		const stopped = await host.ctx.require(Commands).execute('plugin.stop', {
 			address,
 		})
 		expect(stopped).toMatchObject({
-			address,
-			autoStart: false,
-			sessionIntent: 'inherit',
-			desiredState: 'stopped',
-			activationReason: null,
-			lifecycleState: 'stopped',
+			status: 'ok',
+			value: {
+				address,
+				autoStart: false,
+				sessionIntent: 'inherit',
+				desiredState: 'stopped',
+				activationReason: null,
+				lifecycleState: 'stopped',
+			},
+		})
+		host.remove(ManagedPlugin)
+		await host.commit()
+		await expect(
+			host.ctx.require(Commands).execute('plugin.status.get', { address }),
+		).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'REJECTED', reason: 'plugin_not_found' },
 		})
 	})
 
@@ -415,12 +499,15 @@ describe('CommandsService', () => {
 		})
 
 		expect(restarted).toMatchObject({
-			address: providerAddress,
-			autoStart: true,
-			sessionIntent: 'inherit',
-			desiredState: 'running',
-			activationReason: 'auto-start',
-			lifecycleState: 'running',
+			status: 'ok',
+			value: {
+				address: providerAddress,
+				autoStart: true,
+				sessionIntent: 'inherit',
+				desiredState: 'running',
+				activationReason: 'auto-start',
+				lifecycleState: 'running',
+			},
 		})
 		expect({ providerStarts, consumerStarts }).toEqual({ providerStarts: 2, consumerStarts: 2 })
 	})

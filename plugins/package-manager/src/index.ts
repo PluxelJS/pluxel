@@ -1,7 +1,7 @@
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { Commands } from '@pluxel/services/commands'
 import { resolve } from 'node:path'
-import { defineCommand } from '@pluxel/commands'
+import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import * as f from 'valibot-form'
@@ -56,23 +56,6 @@ const mutationInput = obj({
 		maxItems: 100,
 	}),
 })
-const mutationFailureOutput = Type.Object(
-	{
-		input: Type.String(),
-		code: Type.Union([
-			Type.Literal('INVALID_SPEC'),
-			Type.Literal('INSTALL_FAILED'),
-			Type.Literal('REMOVE_FAILED'),
-		]),
-		message: Type.String(),
-	},
-	{ additionalProperties: false },
-)
-const mutationOutput = obj({
-	ok: Type.Boolean(),
-	succeeded: Type.Array(Type.String()),
-	failed: Type.Array(mutationFailureOutput),
-})
 
 @Plugin({ startTimeoutMs: 120_000 })
 export class PackageManagerPlugin extends BasePlugin {
@@ -104,20 +87,16 @@ export class PackageManagerPlugin extends BasePlugin {
 			defineCommand({
 				name: 'package.install',
 				description: 'Install plugin packages into the managed dynamic source project.',
-				behavior: { kind: 'mutation', destructive: false, idempotent: true, world: 'open' },
 				input: mutationInput,
-				output: mutationOutput,
-				execute: async ({ specs }) => toCommandMutation(await store.install(specs)),
+				execute: async ({ specs }) => Result.ok(toCommandMutation(await store.install(specs))),
 			}),
 		)
 		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'package.remove',
 				description: 'Remove plugin packages from the managed dynamic source project.',
-				behavior: { kind: 'mutation', destructive: true, idempotent: false, world: 'open' },
 				input: mutationInput,
-				output: mutationOutput,
-				execute: async ({ specs }) => toCommandMutation(await store.remove(specs)),
+				execute: async ({ specs }) => Result.ok(toCommandMutation(await store.remove(specs))),
 			}),
 		)
 		this.ctx.workbench?.publish(PackageManagerWorkbench, {

@@ -2,7 +2,6 @@ import type {
 	CommandContext,
 	CommandRegistration,
 	DirectCommand,
-	InstalledCommand,
 	Registration,
 } from '@pluxel/commands'
 import type { CommandsService } from './service'
@@ -17,7 +16,6 @@ declare const commands: CommandsService
 declare const portable: DirectCommand<{ id: string }, { value: string }, CommandContext>
 declare const carrierNative: DirectCommand<{ id: string }, { value: string }, CarrierContext>
 declare const installed: CommandRegistration<{ id: string }, { value: string }, CarrierContext>
-declare const widenedInstalled: InstalledCommand<{ id: string }, { value: string }, CarrierContext>
 declare const registration: Registration
 
 mount.bind(portable, () => registration)
@@ -27,9 +25,7 @@ mount.bind(carrierNative, (owned) => {
 })
 commands.register(portable)
 
-// @ts-expect-error Installed handles follow compatible catalog replacement.
+// @ts-expect-error A registration is not a direct command definition.
 mount.bind(installed, () => registration)
-// @ts-expect-error Widening away dispose does not erase InstalledCommand identity.
-mount.bind(widenedInstalled, () => registration)
 // @ts-expect-error Root CommandsService cannot construct carrier-only context fields.
 commands.register(carrierNative)

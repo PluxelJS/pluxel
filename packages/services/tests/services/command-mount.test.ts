@@ -3,11 +3,12 @@ import {
 	CommandError,
 	createCommandRegistry,
 	defineCommand,
+	Result,
 	type CommandContext,
 	type DirectCommand,
 	type Registration,
 } from '@pluxel/commands'
-import { Type, obj } from '@pluxel/commands/typebox'
+import { obj } from '@pluxel/commands/typebox'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { describe, expect, it } from 'vitest'
@@ -17,10 +18,8 @@ function valueCommand(value: string, name: string) {
 	return defineCommand({
 		name,
 		description: 'Return the value captured by this command implementation.',
-		behavior: { kind: 'query', world: 'closed' },
 		input: obj({}),
-		output: obj({ value: Type.String() }),
-		execute: () => ({ value }),
+		execute: () => Result.ok({ value }),
 	})
 }
 
@@ -67,6 +66,30 @@ function carrierProviderClass() {
 }
 
 describe('CommandMount', () => {
+	it('classifies an unreadable trusted context as INTERNAL', async () => {
+		await using host = await createServiceInternalTestHarness({ workbench: false })
+		const mount = host.ctx.require(Commands).createMount()
+		let installed!: DirectCommand<{}, { value: string }>
+		mount.bind(valueCommand('ready', 'mount.context.get'), (owned) => {
+			installed = owned
+			return { name: owned.name, dispose() {} }
+		})
+		const signalError = new Error('signal getter failed')
+		const unreadableSignal = Object.defineProperty({}, 'signal', {
+			get() {
+				throw signalError
+			},
+		})
+		await expect(installed.execute({}, unreadableSignal)).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'INTERNAL', cause: signalError },
+		})
+		await expect(installed.execute({}, { signal: {} } as never)).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'INTERNAL', cause: expect.any(TypeError) },
+		})
+	})
+
 	it('linearizes publication after install and pins one exact command implementation', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
@@ -89,10 +112,16 @@ describe('CommandMount', () => {
 			return { name: owned.name, dispose() {} }
 		})
 
-		await expect(preparing).rejects.toMatchObject({ code: 'COMMAND_NOT_FOUND' })
+		await expect(preparing).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 		expect(host.ctx.require(Commands).snapshot()).toBe(rootSnapshot)
 		expect(installed.descriptor.description).toBe(original.descriptor.description)
-		await expect(installed.execute({})).resolves.toEqual({ value: 'original' })
+		await expect(installed.execute({})).resolves.toMatchObject({
+			status: 'ok',
+			value: { value: 'original' },
+		})
 
 		const catalog = createCommandRegistry()
 		const catalogHandle = catalog.register(valueCommand('catalog', 'mount.catalog.get'))
@@ -138,7 +167,6 @@ describe('CommandMount', () => {
 			descriptor: {
 				name: '',
 				description: 'Invalid empty name.',
-				behavior: { kind: 'query', world: 'closed' },
 				inputSchema: { type: 'object' },
 			},
 			execute: async (): Promise<undefined> => undefined,
@@ -148,7 +176,10 @@ describe('CommandMount', () => {
 		)
 
 		registration.dispose()
-		await expect(installed.execute({})).rejects.toMatchObject({ code: 'COMMAND_NOT_FOUND' })
+		await expect(installed.execute({})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 	})
 
 	it('preserves a hand-authored command receiver while pinning its execute function', async () => {
@@ -161,7 +192,7 @@ describe('CommandMount', () => {
 			descriptor,
 			value: 'original',
 			async execute() {
-				return { value: this.value }
+				return Result.ok({ value: this.value })
 			},
 		}
 		let retained!: DirectCommand<unknown, { value: string }>
@@ -170,8 +201,11 @@ describe('CommandMount', () => {
 			return { name: owned.name, dispose() {} }
 		})
 
-		command.execute = async () => ({ value: 'replacement' })
-		await expect(retained.execute({})).resolves.toEqual({ value: 'original' })
+		command.execute = async () => Result.ok({ value: 'replacement' })
+		await expect(retained.execute({})).resolves.toMatchObject({
+			status: 'ok',
+			value: { value: 'original' },
+		})
 	})
 
 	it('normalizes every admission rejection to ABORTED', async () => {
@@ -186,8 +220,11 @@ describe('CommandMount', () => {
 		const call = new AbortController()
 		call.abort(new CommandError('TIMEOUT', 'Caller deadline elapsed'))
 
-		await expect(retained.execute({}, { signal: call.signal })).rejects.toMatchObject({
-			code: 'ABORTED',
+		await expect(retained.execute({}, { signal: call.signal })).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'ABORTED',
+			},
 		})
 	})
 
@@ -233,10 +270,16 @@ describe('CommandMount', () => {
 
 		expect(carrier.resolve('mount.consumer.a')).toBeUndefined()
 		expect(carrier.resolve('mount.consumer.b')).toBe(b)
-		await expect(oldA.execute({}, { channel: 'a' })).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
+		await expect(oldA.execute({}, { channel: 'a' })).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'ABORTED',
+			},
 		})
-		await expect(b.execute({}, { channel: 'b' })).resolves.toEqual({ value: 'b' })
+		await expect(b.execute({}, { channel: 'b' })).resolves.toMatchObject({
+			status: 'ok',
+			value: { value: 'b' },
+		})
 	})
 
 	it('aborts and drains work through the publication owner before cleanup', async () => {
@@ -258,7 +301,6 @@ describe('CommandMount', () => {
 					defineCommand({
 						name: 'mount.consumer.long',
 						description: 'Wait until the publication owner stops.',
-						behavior: { kind: 'query', world: 'closed' },
 						input: obj({}),
 						async execute(_input, { signal }) {
 							started.resolve()
@@ -295,16 +337,22 @@ describe('CommandMount', () => {
 		await aborted.promise
 		await Promise.resolve()
 		expect(stopped).toBe(false)
-		await expect(retained.execute({}, { channel: 'late' })).rejects.toMatchObject({
-			code: 'ABORTED',
+		await expect(retained.execute({}, { channel: 'late' })).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'ABORTED',
+			},
 		})
 
 		release.resolve()
-		await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
+		await expect(pending).resolves.toMatchObject({ status: 'error', error: { code: 'ABORTED' } })
 		await stopping
 		expect(carrier.resolve('mount.consumer.long')).toBeUndefined()
-		await expect(retained.execute({}, { channel: 'withdrawn' })).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
+		await expect(retained.execute({}, { channel: 'withdrawn' })).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'ABORTED',
+			},
 		})
 	})
 
@@ -314,7 +362,7 @@ describe('CommandMount', () => {
 		const started = Promise.withResolvers<void>()
 		const aborted = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
-		let retained!: DirectCommand<unknown, void>
+		let retained!: DirectCommand<unknown, unknown>
 		let published = false
 
 		@Plugin({ displayName: 'Provider-owned mount' })
@@ -325,7 +373,6 @@ describe('CommandMount', () => {
 					defineCommand({
 						name: 'mount.provider.long',
 						description: 'Wait until the provider stops.',
-						behavior: { kind: 'query', world: 'closed' },
 						input: obj({}),
 						async execute(_input, { signal }) {
 							started.resolve()
@@ -364,13 +411,19 @@ describe('CommandMount', () => {
 		await aborted.promise
 		expect(stopped).toBe(false)
 		expect(published).toBe(true)
-		await expect(retained.execute({})).rejects.toMatchObject({ code: 'ABORTED' })
+		await expect(retained.execute({})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'ABORTED' },
+		})
 
 		release.resolve()
-		await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
+		await expect(pending).resolves.toMatchObject({ status: 'error', error: { code: 'ABORTED' } })
 		await stopping
 		expect(published).toBe(false)
-		await expect(retained.execute({})).rejects.toMatchObject({ code: 'COMMAND_NOT_FOUND' })
+		await expect(retained.execute({})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'ABORTED' },
+		})
 	})
 
 	it('never revives an old wrapper across consumer replacement', async () => {
@@ -416,9 +469,15 @@ describe('CommandMount', () => {
 		await host.commit()
 		const replacement = carrier.resolve<unknown, { value: string }>('mount.replacement.get')!
 		expect(replacement).not.toBe(old)
-		await expect(replacement.execute({}, { channel: 'new' })).resolves.toEqual({ value: 'v2' })
-		await expect(old.execute({}, { channel: 'old' })).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
+		await expect(replacement.execute({}, { channel: 'new' })).resolves.toMatchObject({
+			status: 'ok',
+			value: { value: 'v2' },
+		})
+		await expect(old.execute({}, { channel: 'old' })).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'ABORTED',
+			},
 		})
 	})
 
@@ -487,11 +546,17 @@ describe('CommandMount', () => {
 		)!
 		expect(replacementProvider).not.toBe(firstProvider)
 		expect(replacement).not.toBe(old)
-		await expect(replacement.execute({}, { channel: 'new' })).resolves.toEqual({
-			value: 'generation-2',
+		await expect(replacement.execute({}, { channel: 'new' })).resolves.toMatchObject({
+			status: 'ok',
+			value: {
+				value: 'generation-2',
+			},
 		})
-		await expect(old.execute({}, { channel: 'old' })).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
+		await expect(old.execute({}, { channel: 'old' })).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'ABORTED',
+			},
 		})
 	})
 
@@ -507,13 +572,11 @@ describe('CommandMount', () => {
 			defineCommand({
 				name: 'mount.manual.long',
 				description: 'Finish after manual publication withdrawal.',
-				behavior: { kind: 'query', world: 'closed' },
 				input: obj({}),
-				output: obj({ completed: Type.Boolean() }),
 				async execute() {
 					started.resolve()
 					await release.promise
-					return { completed: true }
+					return Result.ok({ completed: true })
 				},
 			}),
 			(owned) => {
@@ -533,9 +596,12 @@ describe('CommandMount', () => {
 		expect(() => registration.dispose()).not.toThrow()
 		expect(() => registration.dispose()).not.toThrow()
 		expect(cleanupCalls).toBe(1)
-		await expect(retained.execute({})).rejects.toMatchObject({ code: 'COMMAND_NOT_FOUND' })
+		await expect(retained.execute({})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 		release.resolve()
-		await expect(pending).resolves.toEqual({ completed: true })
+		await expect(pending).resolves.toMatchObject({ status: 'ok', value: { completed: true } })
 	})
 
 	it('rolls back all bindings even when one installer disposer throws', async () => {
@@ -576,7 +642,7 @@ describe('CommandMount', () => {
 			// oxlint-disable-next-line unicorn/no-thenable -- Deliberately exercises thenable rejection.
 			get then() {
 				thenReads++
-				return (resolve: (registration: Registration) => void) =>
+				return (resolve: (registration: Pick<Registration, 'name' | 'dispose'>) => void) =>
 					resolve({
 						name: 'mount.async.install',
 						dispose() {
@@ -625,7 +691,7 @@ describe('CommandMount', () => {
 				hybridCleanupCalls++
 			},
 			// oxlint-disable-next-line unicorn/no-thenable -- Deliberately exercises a disposable thenable.
-			then(resolve: (registration: Registration) => void) {
+			then(resolve: (registration: Pick<Registration, 'name' | 'dispose'>) => void) {
 				resolve({
 					name: 'mount.then.hybrid',
 					dispose() {
@@ -647,7 +713,7 @@ describe('CommandMount', () => {
 				selfCleanupCalls++
 			},
 			// oxlint-disable-next-line unicorn/no-thenable -- Deliberately exercises self-resolution.
-			then(resolve: (registration: Registration) => void) {
+			then(resolve: (registration: Pick<Registration, 'name' | 'dispose'>) => void) {
 				resolve(this)
 			},
 		}

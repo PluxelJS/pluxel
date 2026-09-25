@@ -22,6 +22,7 @@ import {
 	type PluginSemanticsCollector,
 	type PluginSemanticsPluginOptions,
 } from '../rolldown/plugins/pluginSemanticsPlugin'
+import { rpcPublicationPlugin } from '../rolldown/plugins/rpcPublicationPlugin'
 
 export type PluginSourceVitePluginsOptions = {
 	root?: string
@@ -114,6 +115,10 @@ function createPluginSourcePlugins(
 		},
 	]
 	const serverPlugins: PluginOption[] = [
+		serverOnlyVitePlugin('pluxel:rpc-publication', rpcPublicationPlugin(), {
+			enforce: 'pre',
+			environment: environmentName,
+		}),
 		serverOnlyVitePluginFactory(
 			'pluxel:plugin-semantics',
 			(environment) => semantics(options.root ?? environment.config.root) as Plugin,

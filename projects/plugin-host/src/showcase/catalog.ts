@@ -1,5 +1,4 @@
 import { VaultAdminPlugin } from '@pluxel/vault-admin'
-import { AgentToolsPlugin } from '@pluxel/agent-tools'
 import { AuthPlugin } from '@pluxel/auth'
 import { CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'
@@ -32,7 +31,6 @@ import {
 export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
 export const hostPlugins = [
-	AgentToolsPlugin,
 	PiAgentPlugin,
 	PackageManagerPlugin,
 	AuthPlugin,

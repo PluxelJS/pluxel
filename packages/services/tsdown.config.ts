@@ -43,6 +43,8 @@ export default defineConfig({
 		node: './src/node.ts',
 		workers: './src/workers.ts',
 		commands: './src/commands.ts',
+		mcp: './src/mcp.ts',
+		rpc: './src/rpc.ts',
 		persistence: './src/persistence.ts',
 		vault: './src/vault.ts',
 	},

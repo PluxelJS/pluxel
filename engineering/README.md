@@ -17,9 +17,12 @@
 | 数据库与日志                  | [DATABASE.md](DATABASE.md)、[LOGGING.md](LOGGING.md)                                                                             |
 | 插件 UI、Workbench 与 catalog | [FRONTEND.md](FRONTEND.md)、[WORKBENCH.md](WORKBENCH.md)、[UI_LIBRARY.md](UI_LIBRARY.md)、[PLUGIN_CATALOG.md](PLUGIN_CATALOG.md) |
 | Commands 与调用载体           | [COMMANDS.md](COMMANDS.md)                                                                                                       |
+| RPC 隔离执行器                | [RPC_EXECUTOR.md](RPC_EXECUTOR.md)                                                                                               |
 | 分发与发布                    | [DISTRIBUTION.md](DISTRIBUTION.md)、[RELEASING.md](RELEASING.md)                                                                 |
 
 涉及依赖、公开导出或仓库流程时同时读 [GOVERNANCE.md](GOVERNANCE.md)。新增或修改公开契约时读 [library API design guide](../.agents/rules/library-api-design.md)。用户用法仍维护在 `docs/`，工程文档不另建一套 API 教程。
+
+评估 API 的入口确定性、编写成本和组合体验时，参照 [面向 coding agent 的 API 设计](../.agents/rules/agent-friendly-api-design.md)。
 
 ## 按需查阅的验证与背景
 

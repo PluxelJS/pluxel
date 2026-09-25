@@ -139,6 +139,7 @@
 		"oxc-parser": "catalog:prod",
 		"oxc-resolver": "catalog:prod",
 		"typescript": "catalog:prod",
+		"typescript-legacy": "catalog:dev",
 		"unplugin-macros": "catalog:build",
 		"unplugin-preprocessor-directives": "catalog:build",
 		"unrun": "catalog:build",

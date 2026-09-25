@@ -40,7 +40,6 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
-		"@pluxel/agent-tools": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
@@ -52,14 +51,8 @@
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/agent-tools": "workspace:^",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/services": "workspace:^"
-	},
-	"pluxel": {
-		"pluginPackages": {
-			"@pluxel/agent-tools": "required"
-		}
 	}
 }

@@ -57,7 +57,6 @@ export default defineHostApplication(async (startup) => {
 
 | Plugin                          | 用途                                     | 文档                                               |
 | ------------------------------- | ---------------------------------------- | -------------------------------------------------- |
-| `@pluxel/agent-tools`           | Agent Toolset 与 command allowlist       | [Agent tools](./agent-tools.md)                    |
 | `@pluxel/auth`                  | Workbench 与 Management API 认证         | [Management 认证](./auth.md)                       |
 | `@pluxel/wretch`                | 带宿主出站策略的 HTTP client             | [Wretch HTTP client](./wretch.md)                  |
 | `@pluxel/fonts`                 | 服务端字体发现与管理                     | [服务端字体](./rendering/fonts.md)                 |

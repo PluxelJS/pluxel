@@ -61,7 +61,8 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@sinclair/typebox": "catalog:prod"
+		"@sinclair/typebox": "catalog:prod",
+		"better-result": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/test": "workspace:*",

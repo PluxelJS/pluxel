@@ -133,6 +133,10 @@
 			"@pluxel/source": "./src/management/web/session/index.ts",
 			"default": "./dist/management/session.mjs"
 		},
+		"./mcp": {
+			"@pluxel/source": "./src/mcp.ts",
+			"default": "./dist/mcp.mjs"
+		},
 		"./node": {
 			"@pluxel/source": "./src/node.ts",
 			"default": "./dist/node.mjs"
@@ -148,6 +152,10 @@
 		"./preset": {
 			"@pluxel/source": "./src/preset.ts",
 			"default": "./dist/preset.mjs"
+		},
+		"./rpc": {
+			"@pluxel/source": "./src/rpc.ts",
+			"default": "./dist/rpc.mjs"
 		},
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
@@ -196,10 +204,12 @@
 			"./management/react": "./dist/management/react.mjs",
 			"./management/service": "./dist/management/service.mjs",
 			"./management/session": "./dist/management/session.mjs",
+			"./mcp": "./dist/mcp.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
 			"./preset": "./dist/preset.mjs",
+			"./rpc": "./dist/rpc.mjs",
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
@@ -219,6 +229,8 @@
 		"@logtape/file": "catalog:prod",
 		"@logtape/logtape": "catalog:prod",
 		"@logtape/pretty": "catalog:prod",
+		"@modelcontextprotocol/sdk": "catalog:prod",
+		"@sinclair/typebox": "catalog:prod",
 		"age-encryption": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"chokidar": "catalog:node",

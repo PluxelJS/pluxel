@@ -1,4 +1,4 @@
-import { AgentToolsPlugin } from '@pluxel/agent-tools'
+import type { CommandContext, DirectCommand } from '@pluxel/commands'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { PiAgentConfig } from './config.ts'
 import { PiAgentController } from './controller.ts'
@@ -6,6 +6,10 @@ import { DefaultPiEngine } from './engine.ts'
 import { PiAgentError } from './errors.ts'
 import type {
 	CreatePiAgentSessionOptions,
+	PiToolChoice,
+	PiToolDescriptor,
+	PiToolExposure,
+	PiExposureOptions,
 	PiAgentSession,
 	PiAgentSessionSnapshot,
 } from './types.ts'
@@ -15,13 +19,9 @@ export class PiAgentPlugin extends BasePlugin {
 	private readonly config = this.configs.use(PiAgentConfig)
 	private controller?: PiAgentController
 
-	constructor(private readonly agentTools: AgentToolsPlugin) {
-		super()
-	}
-
 	protected override async init(): Promise<() => Promise<void>> {
 		const engine = await DefaultPiEngine.create()
-		const controller = new PiAgentController(this.agentTools, engine, this.config, (error) =>
+		const controller = new PiAgentController(this.ctx, engine, this.config, (error) =>
 			this.ctx.logger.error('Pi Agent listener failed', { error }),
 		)
 		this.controller = controller
@@ -32,8 +32,31 @@ export class PiAgentPlugin extends BasePlugin {
 		}
 	}
 
+	createSession<const Tools extends readonly PiToolChoice[]>(
+		options: CreatePiAgentSessionOptions<Tools>,
+	): Promise<PiAgentSession>
+	createSession(options?: CreatePiAgentSessionOptions<readonly []>): Promise<PiAgentSession>
 	createSession(options: CreatePiAgentSessionOptions = {}): Promise<PiAgentSession> {
-		return this.requireController().createSession(options)
+		return this.requireController().createSession(options, this.ctx.caller ?? this.ctx)
+	}
+
+	expose<I, O>(
+		command: DirectCommand<I, O, CommandContext>,
+		options?: PiExposureOptions<CommandContext>,
+	): PiToolExposure
+	expose<I, O, Ctx extends CommandContext>(
+		command: DirectCommand<I, O, Ctx>,
+		options: PiExposureOptions<NoInfer<Ctx>>,
+	): PiToolExposure
+	expose(
+		command: DirectCommand<any, unknown, any>,
+		options: PiExposureOptions<any> = {},
+	): PiToolExposure {
+		return this.requireController().expose(this.ctx.caller ?? this.ctx, command, options)
+	}
+
+	tools(): readonly PiToolDescriptor[] {
+		return this.requireController().tools()
 	}
 
 	sessions(): readonly PiAgentSessionSnapshot[] {
@@ -56,6 +79,10 @@ export { PiAgentError } from './errors.ts'
 export type { PiAgentErrorCode } from './errors.ts'
 export type {
 	CreatePiAgentSessionOptions,
+	PiToolChoice,
+	PiToolDescriptor,
+	PiToolExposure,
+	PiExposureOptions,
 	PiAgentPromptOptions,
 	PiAgentRunResult,
 	PiAgentSession,
