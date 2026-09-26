@@ -47,7 +47,9 @@
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
-		"bench": "node --experimental-strip-types bench/context.bench.ts",
+		"bench": "node --experimental-transform-types bench/context.bench.ts",
+		"bench:compare-legacy": "node --experimental-transform-types bench/legacy-comparison.bench.ts",
+		"bench:legacy-snapshot": "pnpm exec vitest bench legacy/bench/context-getter.bench.ts",
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false"
 	},

@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "bench"],
+	"include": ["src", "tests", "bench", "legacy"],
 	"compilerOptions": {
 		"outDir": "dist",
 		"emitDeclarationOnly": true,
