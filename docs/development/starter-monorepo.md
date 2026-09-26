@@ -116,7 +116,7 @@ pnpm governance:check
 - `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
 - `plugins/audit/tests` 使用 `@pluxel/test` 的 `createTestHost()` 与立即完成的 `start/stop`。
 - `plugins/todo/tests` 使用统一 host 的 `initialConfig`，验证状态操作及 optional provider 存在与缺失两种情况。
-- `plugins/http/tests` 使用 `@pluxel/test` 的 `createTestHost({ services: [http()] })`、`await using` 和 `host.http.fetch()` 验证 required edge、
+- `plugins/http/tests` 使用 `@pluxel/test` 的 `createTestHost({ services: [elysia()] })`、`await using` 和 `host.http.fetch()` 验证 required edge、
   HTTP schema、mutation 与错误状态。
 - `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
 

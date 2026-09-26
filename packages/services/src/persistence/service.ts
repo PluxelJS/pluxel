@@ -1,4 +1,4 @@
-import { basename, isAbsolute, join, resolve } from 'pathe'
+import { join, resolve } from 'pathe'
 
 export type PersistenceCapability = 'durable' | 'ephemeral' | 'readonly'
 
@@ -14,17 +14,20 @@ export type PersistenceRequirement = {
 	writable?: boolean
 }
 
+/** Relative slash-separated keys; empty/dot/parent segments and absolute paths are rejected. */
 export type PersistenceNamespace = {
 	get(key: string): Promise<Uint8Array | undefined>
 	getText(key: string): Promise<string | undefined>
 	put(key: string, value: Uint8Array | string, options?: { atomic?: boolean }): Promise<void>
 	delete(key: string): Promise<void>
+	/** Immediate children of a directory, sorted by key; omitted prefix selects the namespace root. */
 	list(prefix?: string): AsyncIterable<PersistenceEntry>
 	stat(key: string): Promise<PersistenceEntry | undefined>
 }
 
 export type PersistenceBackend = {
 	capability: PersistenceCapability
+	/** Literal relative namespace path; no lossy character replacement. */
 	namespace(name: string): PersistenceNamespace
 	preflight?(requirement?: PersistenceRequirement): Promise<void>
 }
@@ -36,7 +39,9 @@ export type PersistenceServiceConfig =
 	| ({ mode: 'readonly' } & ({ backend: PersistenceBackend } | { dir: string }))
 
 export type WorkspacePersistenceBackendOptions = {
+	/** Defaults to durable. Readonly rejects put and delete without requiring preflight. */
 	capability?: PersistenceCapability
+	/** Resolved once at creation; defaults to the current working directory. Not a symlink sandbox. */
 	root?: string
 }
 
@@ -87,31 +92,31 @@ function getErrnoCode(error: unknown): unknown {
 	return (error as { code?: unknown }).code
 }
 
-function normalizeNamespace(name: string): string {
-	const raw = String(name || 'default').trim()
-	return (
-		raw
-			.split(/[\\/]+/g)
-			.filter(Boolean)
-			.map((part) => basename(part).replaceAll(/[^A-Za-z0-9_.-]/g, '_'))
-			.join('/') || 'default'
-	)
+// Paths are literal relative hierarchies, never repaired or silently aliased.
+function validatePath(value: string, label: string, allowRoot = false): string {
+	if (
+		typeof value !== 'string' ||
+		(!value && !allowRoot) ||
+		// oxlint-disable-next-line no-control-regex -- Reject filesystem control characters at the input boundary.
+		/[\\:\x00-\x1f\x7f]/.test(value) ||
+		(value !== '' && value.split('/').some((part) => !part || part === '.' || part === '..'))
+	) {
+		throw new TypeError(
+			`Persistence ${label} must be a relative slash-separated path without empty, dot or parent segments`,
+		)
+	}
+	return value
 }
 
-function normalizeKey(key: string): string {
-	return String(key || '')
-		.replaceAll('\\', '/')
-		.replace(/^\/+/, '')
+function validateNamespace(name: string): string {
+	return validatePath(name, 'namespace')
+}
+function validateKey(key: string): string {
+	return validatePath(key, 'key')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
-
-function keyMatchesPrefix(key: string, prefix: string): boolean {
-	const clean = normalizeKey(prefix)
-	if (!clean) return true
-	return key === clean || key.startsWith(`${clean}/`)
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -136,8 +141,9 @@ export function createMemoryPersistenceBackend(
 	options: MemoryPersistenceBackendOptions = {},
 ): PersistenceBackend {
 	const data = new Map<string, Uint8Array>()
+	const directories = new Set<string>()
 	const keyFor = (namespace: string, key: string) =>
-		`${normalizeNamespace(namespace)}/${normalizeKey(key)}`
+		`${validateNamespace(namespace)}/${validateKey(key)}`
 	let warned = false
 	const warnOnWrite = (operation: 'put' | 'delete', namespace: string, key: string) => {
 		if (warned || !options.warnOnWrite) return
@@ -148,42 +154,59 @@ export function createMemoryPersistenceBackend(
 	return {
 		capability: 'ephemeral',
 		namespace(name) {
-			const namespace = normalizeNamespace(name)
+			const namespace = validateNamespace(name)
 			return {
 				get: async (key) => {
-					const value = data.get(keyFor(namespace, key))
+					const fullKey = keyFor(namespace, key)
+					if (directories.has(fullKey)) throw new PersistenceError('IO', 'Cannot read a directory')
+					const value = data.get(fullKey)
 					return value ? copyBytes(value) : undefined
 				},
 				getText: async (key) => {
-					const value = data.get(keyFor(namespace, key))
+					const fullKey = keyFor(namespace, key)
+					if (directories.has(fullKey)) throw new PersistenceError('IO', 'Cannot read a directory')
+					const value = data.get(fullKey)
 					return value ? utf8Decode(value) : undefined
 				},
 				put: async (key, value) => {
+					const fullKey = keyFor(namespace, key)
+					if (directories.has(fullKey))
+						throw new PersistenceError('IO', 'Cannot overwrite a directory')
+					const parts = fullKey.split('/')
+					const parents = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'))
+					if (parents.some((parent) => data.has(parent)))
+						throw new PersistenceError('IO', 'Parent is a file')
 					warnOnWrite('put', namespace, key)
-					data.set(
-						keyFor(namespace, key),
-						typeof value === 'string' ? utf8Encode(value) : copyBytes(value),
-					)
+					for (const parent of parents) directories.add(parent)
+					data.set(fullKey, typeof value === 'string' ? utf8Encode(value) : copyBytes(value))
 				},
 				delete: async (key) => {
+					const fullKey = keyFor(namespace, key)
+					if (directories.has(fullKey))
+						throw new PersistenceError('IO', 'Cannot delete a directory')
 					warnOnWrite('delete', namespace, key)
-					data.delete(keyFor(namespace, key))
+					data.delete(fullKey)
 				},
 				list: async function* (prefix = '') {
-					const nsRoot = `${namespace}/`
-					for (const fullKey of [...data.keys()].sort()) {
-						if (!fullKey.startsWith(nsRoot)) continue
-						const key = fullKey.slice(nsRoot.length)
-						if (!keyMatchesPrefix(key, prefix)) continue
-						yield {
-							key,
-							kind: 'file',
-							size: data.get(fullKey)?.byteLength,
-						}
+					validatePath(prefix, 'list prefix', true)
+					const base = prefix ? `${namespace}/${prefix}` : namespace
+					if (data.has(base)) throw new PersistenceError('IO', 'Cannot list a file')
+					for (const fullKey of [...directories, ...data.keys()].sort()) {
+						if (!fullKey.startsWith(`${base}/`)) continue
+						const child = fullKey.slice(base.length + 1)
+						if (child.includes('/')) continue
+						const key = prefix ? `${prefix}/${child}` : child
+						const value = data.get(fullKey)
+						if (!directories.has(fullKey) && !value) continue
+						yield directories.has(fullKey)
+							? { key, kind: 'directory' as const }
+							: { key, kind: 'file' as const, size: value!.byteLength }
 					}
 				},
 				stat: async (key) => {
-					const value = data.get(keyFor(namespace, key))
+					const fullKey = keyFor(namespace, key)
+					if (directories.has(fullKey)) return { key, kind: 'directory' }
+					const value = data.get(fullKey)
 					return value ? { key, kind: 'file', size: value.byteLength } : undefined
 				},
 			}
@@ -281,16 +304,14 @@ export function createWorkspacePersistenceBackend(
 	options: WorkspacePersistenceBackendOptions = {},
 ): PersistenceBackend {
 	const capability = options.capability ?? 'durable'
-	const root = options.root ? resolve(options.root) : ''
-	return {
+	if (options.root === '') throw new TypeError('Persistence root must not be empty')
+	const root = resolve(options.root ?? '.')
+	const backend: PersistenceBackend = {
 		capability,
 		namespace(name) {
-			const prefix = normalizeNamespace(name)
-			const pathFor = (key: string) => {
-				const normalized = isAbsolute(key) ? key : join(prefix, normalizeKey(key))
-				if (!root || isAbsolute(normalized)) return normalized
-				return join(root, normalized)
-			}
+			const prefix = validateNamespace(name)
+			const pathFor = (key: string, allowRoot = false) =>
+				join(root, prefix, validatePath(key, 'key', allowRoot))
 			return {
 				get: async (key) => {
 					try {
@@ -323,13 +344,13 @@ export function createWorkspacePersistenceBackend(
 				list: async function* (listPrefix = '') {
 					let names: string[]
 					try {
-						names = await fs.readdir(pathFor(listPrefix))
+						names = await fs.readdir(pathFor(listPrefix, true))
 					} catch (cause) {
 						if (getErrnoCode(cause) === 'ENOENT') return
 						throw cause
 					}
-					for (const entryName of names) {
-						const key = join(normalizeKey(listPrefix), entryName)
+					for (const entryName of names.sort()) {
+						const key = join(validatePath(listPrefix, 'list prefix', true), entryName)
 						const st = await fs.stat(pathFor(key))
 						if (st.type === 'missing' || st.type === 'other') continue
 						yield {
@@ -359,28 +380,24 @@ export function createWorkspacePersistenceBackend(
 					`[PersistenceService] durable persistence required, but the configured workspace backend is ${capability}. Fix: pass a durable backend or remove the durable preflight requirement.`,
 				)
 			}
-			if (requirement?.writable && capability === 'readonly') {
-				throw new PersistenceError(
-					'READONLY',
-					'[PersistenceService] writable persistence required, but the configured workspace backend is readonly. Fix: pass a writable backend or remove the writable preflight requirement.',
-				)
-			}
+
 			if (requirement?.writable) {
-				const probe = root
-					? join(root, `.pluxel-persistence-probe-${randomHex(4)}`)
-					: `.pluxel-persistence-probe-${randomHex(4)}`
+				const probe = join(root, `.pluxel-persistence-probe-${randomHex(4)}`)
 				await fs.writeTextAtomic(probe, '')
 				await fs.unlink(probe)
 			}
 		},
 	}
+	return capability === 'readonly' ? createReadonlyPersistenceBackend(backend) : backend
 }
 
 export class PersistenceService {
 	private readonly backend: PersistenceBackend
 
 	constructor(config: PersistenceServiceConfig) {
-		this.backend = resolvePersistenceBackend(config)
+		const backend = resolvePersistenceBackend(config)
+		this.backend =
+			backend.capability === 'readonly' ? createReadonlyPersistenceBackend(backend) : backend
 	}
 
 	get capability(): PersistenceCapability {
@@ -398,12 +415,7 @@ export class PersistenceService {
 				`[PersistenceService] durable persistence required, but the configured backend is ${this.backend.capability}.`,
 			)
 		}
-		if (requirement?.writable && this.backend.capability === 'readonly') {
-			throw new PersistenceError(
-				'READONLY',
-				'[PersistenceService] writable persistence required, but the configured backend is readonly.',
-			)
-		}
+
 		await this.backend.preflight?.(requirement)
 	}
 }
@@ -438,8 +450,9 @@ function createFilePersistenceBackend(dir: string): PersistenceBackend {
 function assertPersistenceBackend(value: unknown): PersistenceBackend {
 	if (
 		isRecord(value) &&
-		typeof value.capability === 'string' &&
-		typeof value.namespace === 'function'
+		['durable', 'ephemeral', 'readonly'].includes(value.capability as string) &&
+		typeof value.namespace === 'function' &&
+		(value.preflight === undefined || typeof value.preflight === 'function')
 	) {
 		return value as PersistenceBackend
 	}

@@ -7,9 +7,9 @@ import {
 	BuildEnvKeys,
 	pluginPackage,
 	resolveBuildContext,
-	runWithTsdown,
 	type BuildRuntimeConfig,
 } from '@pluxel/rolldown/build'
+import { runWithTsdown } from '@pluxel/rolldown/internal/cli'
 
 const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
 	pluginPackage({

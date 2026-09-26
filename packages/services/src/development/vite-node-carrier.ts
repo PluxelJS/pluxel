@@ -7,7 +7,7 @@ import type { ResolvedConfig, ViteDevServer } from 'vite'
 import {
 	NodeElysiaApplicationCarrier,
 	type NodeElysiaApplicationCarrierOptions,
-} from '../http/node'
+} from '../elysia/node'
 
 type FetchHandler = (request: Request) => Response | Promise<Response>
 
@@ -60,7 +60,7 @@ export function attachSrvxViteNodeCarrier(
 		gracefulShutdown: false,
 		error(error) {
 			const err = error instanceof Error ? error : new Error(String(error))
-			server.config.logger.error('[services/http/vite] srvx request failed', { error: err })
+			server.config.logger.error('[services/elysia/vite] srvx request failed', { error: err })
 			return new Response('Internal Server Error', { status: 500 })
 		},
 		async fetch(request) {
@@ -175,7 +175,7 @@ function isExpectedNodeRequestTermination(
 function reportViteCarrierError(server: ViteDevServer, context: string, cause: unknown): void {
 	const error = viteCarrierError(context, cause)
 	try {
-		server.config.logger.error(`[services/http/vite] ${context}`, { error })
+		server.config.logger.error(`[services/elysia/vite] ${context}`, { error })
 	} catch {
 		// This is the terminal Promise observation boundary. A diagnostic adapter failure must not
 		// recreate the unhandled rejection that this boundary exists to contain.
@@ -185,7 +185,7 @@ function reportViteCarrierError(server: ViteDevServer, context: string, cause: u
 function viteCarrierError(context: string, cause: unknown): Error {
 	if (cause instanceof Error) return cause
 	const detail = cause === undefined ? 'without a rejection reason' : `with ${String(cause)}`
-	return new Error(`[services/http/vite] ${context} ${detail}`, { cause })
+	return new Error(`[services/elysia/vite] ${context} ${detail}`, { cause })
 }
 
 function isHtmlResponse(response: Response) {
@@ -212,7 +212,8 @@ async function transformViteHtmlResponse(
 
 function requireSrvxNodeHandler(carrier: SrvxServer) {
 	const handler = carrier.node?.handler
-	if (!handler) throw new Error('[services/http/vite] srvx did not provide its public Node handler')
+	if (!handler)
+		throw new Error('[services/elysia/vite] srvx did not provide its public Node handler')
 	return handler
 }
 
@@ -225,7 +226,7 @@ function attachBusinessWebSocketUpgrade(
 	if (!upgrade) return () => undefined
 	if (!httpServer) {
 		throw new Error(
-			'[services/http/vite] business WebSocket routes require a Vite-owned HTTP server; middleware mode has no upgrade listener to attach',
+			'[services/elysia/vite] business WebSocket routes require a Vite-owned HTTP server; middleware mode has no upgrade listener to attach',
 		)
 	}
 
@@ -266,7 +267,7 @@ function isViteHmrUpgrade(
 
 function handleUpgradeError(server: ViteDevServer, socket: Duplex, error: unknown): void {
 	const err = error instanceof Error ? error : new Error(String(error))
-	server.config.logger.error('[services/http/vite] business WebSocket upgrade failed', {
+	server.config.logger.error('[services/elysia/vite] business WebSocket upgrade failed', {
 		error: err,
 	})
 	socket.destroy()

@@ -216,3 +216,41 @@ v.pipe(
 ## 布局规则
 
 自动布局与覆盖优先级见[布局规则](./LAYOUT_DESIGN_GUIDELINES.md)。
+
+## AutoForm 草稿与提交
+
+`AutoForm({ schema })` 的 `formOpts.defaultValues`、validator 与 `onSubmit({ value })` 使用
+`InferInput<typeof schema>`。Schema 用于字段计划；表单不会自动解析或转换提交值。
+需要 schema 校验时显式配置 `validators`；需要转换输出时，在提交边界调用 `v.safeParse(schema, value)`
+并处理 issues。`AutoForm({ fields })` 从必填 `defaultValues` 推导草稿类型，不承诺 schema 输出。
+`formOpts` 使用导出的 `AutoFormOptions<TValues>`（原生 TanStack options）；拼错的 option 不再被字典类型接受。
+
+`AutoForm.Actions` 与 `useAutoFormCtx()` 的 `submit()` 返回 `Promise<void>`，等待异步 `onSubmit`，
+并将拒绝交给调用方。原生 `<form>` submit 是事件入口，不能由浏览器等待；`onSubmit` 应自行处理保存失败并展示反馈，
+或由调用 `submit()` 的代码显式 `await/catch`。表单不把网络失败改写为校验成功，也不自动清除草稿。
+
+```tsx
+<AutoForm
+	schema={schema}
+	formOpts={{
+		defaultValues: { count: '12' },
+		onSubmit: async ({ value }) => {
+			const result = v.safeParse(schema, value)
+			if (!result.success) {
+				showIssues(result.issues)
+				return
+			}
+			try {
+				await save(result.output)
+			} catch (error) {
+				showSaveError(error)
+			}
+		},
+	}}
+>
+	<AutoForm.Fields />
+	<button type="submit">保存</button>
+</AutoForm>
+```
+
+以上提交片段中的 `schema`、`save` 与反馈函数由应用提供；字符串转数字的 schema 仍接收字符串草稿。

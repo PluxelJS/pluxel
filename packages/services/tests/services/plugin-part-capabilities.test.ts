@@ -1,4 +1,4 @@
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { Commands } from '@pluxel/services/commands'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
@@ -22,8 +22,8 @@ class CapabilityPart extends PluginPart<CapabilityOwner> {
 	protected override init() {
 		partCommands = this.ctx.require(Commands)
 		repeatedPartCommands = this.ctx.require(Commands)
-		partElysia = this.ctx.require(Http)
-		repeatedPartElysia = this.ctx.require(Http)
+		partElysia = this.ctx.require(ElysiaApp)
+		repeatedPartElysia = this.ctx.require(ElysiaApp)
 		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'part.capability.read',
@@ -32,7 +32,7 @@ class CapabilityPart extends PluginPart<CapabilityOwner> {
 				execute: () => Result.ok({ value: 'part' }),
 			}),
 		)
-		this.ctx.require(Http).get('/part-capability', () => 'part-route')
+		this.ctx.require(ElysiaApp).get('/part-capability', () => 'part-route')
 	}
 }
 
@@ -42,7 +42,7 @@ class CapabilityOwner extends BasePlugin {
 
 	override init() {
 		ownerCommands = this.ctx.require(Commands)
-		ownerElysia = this.ctx.require(Http)
+		ownerElysia = this.ctx.require(ElysiaApp)
 	}
 }
 

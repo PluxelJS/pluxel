@@ -9,9 +9,9 @@ export { default } from '@pluxel/test/vitest'
 
 ```ts
 import { createTestHost } from '@pluxel/test'
-import { http } from '@pluxel/services/http'
+import { elysia } from '@pluxel/services/elysia'
 
-await using host = await createTestHost({ services: [http()] })
+await using host = await createTestHost({ services: [elysia()] })
 await host.start(MyPlugin)
 ```
 

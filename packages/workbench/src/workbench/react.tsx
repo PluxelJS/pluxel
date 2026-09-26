@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import { createRemoteValue, type RemoteValueOptions, type RemoteValueSnapshot } from './client.ts'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import {
+	createRemoteValue,
+	type RemoteValue,
+	type RemoteValueOptions,
+	type RemoteValueSnapshot,
+} from './client.ts'
 import {
 	resolveWorkbenchHookValue,
 	useWorkbenchReactRuntime,
@@ -19,30 +24,58 @@ export function useRemoteValue<Value>(
 	options: RemoteValueOptions<Value>,
 	dependencies: readonly unknown[] = [],
 ): RemoteValueSnapshot<Value> {
-	const optionsRef = useRef(options)
-	optionsRef.current = options
-	// The dependency array is intentionally caller-controlled for closures over mutable inputs.
-	const remote = useMemo(
-		() =>
-			createRemoteValue<Value>({
-				read: () => optionsRef.current.read(),
-				...(options.subscribe
-					? { subscribe: (invalidate) => optionsRef.current.subscribe!(invalidate) }
-					: {}),
-			}),
-		dependencies,
-	)
-	const ownership = useMemo(() => ({ mounts: 0, remote }), [remote])
+	// Render creates only local state. A discarded render must not start remote work.
+	const owner = useMemo(() => {
+		let snapshot: RemoteValueSnapshot<Value> = Object.freeze({ state: 'loading' })
+		const listeners = new Set<() => void>()
+		return {
+			options,
+			mounts: 0,
+			remote: undefined as RemoteValue<Value> | undefined,
+			unsubscribe: undefined as (() => void) | undefined,
+			getSnapshot: () => snapshot,
+			subscribe(listener: () => void) {
+				listeners.add(listener)
+				return () => {
+					listeners.delete(listener)
+				}
+			},
+			publish(next: RemoteValueSnapshot<Value>) {
+				snapshot = next
+				// Subscription changes during notification apply to the next publication.
+				const currentListeners = [...listeners]
+				for (const listener of currentListeners) listener()
+			},
+		}
+	}, dependencies)
 	useEffect(() => {
-		ownership.mounts += 1
+		owner.options = options
+	})
+	useEffect(() => {
+		owner.mounts += 1
+		if (!owner.remote) {
+			const remote = createRemoteValue<Value>({
+				read: () => owner.options.read(),
+				...(owner.options.subscribe
+					? { subscribe: (invalidate: () => void) => owner.options.subscribe!(invalidate) }
+					: {}),
+			})
+			owner.remote = remote
+			owner.unsubscribe = remote.subscribe(() => owner.publish(remote.getSnapshot()))
+			owner.publish(remote.getSnapshot())
+		}
 		return () => {
-			ownership.mounts -= 1
+			owner.mounts -= 1
 			queueMicrotask(() => {
-				if (ownership.mounts === 0) ownership.remote[Symbol.dispose]()
+				if (owner.mounts !== 0) return
+				owner.unsubscribe?.()
+				owner.unsubscribe = undefined
+				owner.remote?.[Symbol.dispose]()
+				owner.remote = undefined
 			})
 		}
-	}, [ownership])
-	return useSyncExternalStore(remote.subscribe, remote.getSnapshot, remote.getSnapshot)
+	}, [owner])
+	return useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot)
 }
 
 export { WorkbenchPane, WorkbenchPaneLayout, useWorkbenchPaneLayout } from './ui-pane.tsx'

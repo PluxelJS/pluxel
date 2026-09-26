@@ -124,6 +124,7 @@ reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存
 
 使用 TypeScript `private` 或 `protected` 字段即可。构造器和其他字段初始化器中提前读取配置会被构建检查拒绝；读取时机见下节。
 `configs` 只在 Plugin/Part 子类内部使用；测试和宿主通过配置 API 操作，不直接改实例字段。
+`configs.use(schema)` 返回 schema output 的深只读 `ConfigSnapshot`，与运行时深冻结一致，包括嵌套对象、array 和 tuple。需要排序或编辑的临时数据先复制，例如 `[...this.config.targets]`；不通过类型断言绕过冻结。
 
 ## 默认值与读取时机
 

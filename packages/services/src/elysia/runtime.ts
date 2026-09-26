@@ -1,94 +1,39 @@
 import type { RootContext } from '@pluxel/core'
-import type { Elysia } from 'elysia'
-import {
-	defineContextCapability,
-	enterOwnerInvocation,
-	installRootCapability,
-	installScopeCapability,
-	resolveContextCapability,
-} from '@pluxel/core/host'
-import { defineHostService, type PluginHost } from '@pluxel/host'
-import { ElysiaApplicationDirectory } from './http/ElysiaApplicationDirectory'
-import type { ElysiaApplicationCarrier } from './http/elysia-application-carrier'
-
-export type {
-	ElysiaApplicationCarrier,
-	ElysiaCarrierMetadata,
-	ElysiaCarrierRequestAddress,
-	ElysiaWebSocketUpgrade,
-} from './http/elysia-application-carrier'
-
-/** Native Elysia application owned by one Plugin generation and shared with its Parts. */
-export const Http = defineContextCapability<Elysia>('services.http', {
-	access: 'owner',
-	property: 'elysia',
-})
+import { defineContextCapability, enterOwnerInvocation } from '@pluxel/core/host'
+import type { ElysiaApplicationDirectory } from './ElysiaApplicationDirectory'
+import type { ElysiaApplicationCarrier } from './elysia-application-carrier'
+import { requestWithSignal } from './request'
 
 /** A Host-owned fixed path boundary. Requests under the prefix never fall through to Plugin routes. */
-export interface HostHttpEndpoint {
+export interface ElysiaEndpoint {
 	readonly prefix: string
 	fetch(request: Request, carrier: ElysiaApplicationCarrier | undefined): Promise<Response>
 	matchesWebSocketRoute(request: Request): boolean
 }
 
 /** Host-only business request boundary. A physical carrier is separately owned and attached by the host. */
-export interface HostHttpFallback {
+export interface ElysiaFallback {
 	fetch(request: Request): Promise<Response | null>
 	matchesRequest(request: Request): boolean
 }
 
-export interface HttpServerApi {
+export interface ElysiaRuntimeApi {
 	matchesRequest(request: Request): boolean
 	fetch(request: Request): Promise<Response>
 	matchesWebSocketRoute(request: Request): boolean
 	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void
-	mountEndpoint(endpoint: HostHttpEndpoint): () => void
+	mountEndpoint(endpoint: ElysiaEndpoint): () => void
 	/** One Host shell fallback, after business route dispatch misses. */
-	mountFallback(fallback: HostHttpFallback): () => void
+	mountFallback(fallback: ElysiaFallback): () => void
 }
-export const HttpServer = defineContextCapability<HttpServerApi>('services.http.server', {
+export const ElysiaRuntime = defineContextCapability<ElysiaRuntimeApi>('services.elysia.runtime', {
 	access: 'root',
 })
 
-declare module '@pluxel/core' {
-	interface ContextServices {
-		readonly elysia?: Elysia
-	}
-}
-
-const HttpDirectory = defineContextCapability<ElysiaApplicationDirectory>(
-	'services.http.directory',
-	{ access: 'root' },
-)
-
-/** Install business HTTP without management, Workbench or a physical listener. */
-export function http() {
-	return defineHostService({
-		name: 'HTTP',
-		capabilities: [
-			installRootCapability(HttpDirectory, { create: () => new ElysiaApplicationDirectory() }),
-			installScopeCapability(Http, {
-				property: 'elysia',
-				create: (ctx) => resolveContextCapability(ctx.root, HttpDirectory).applicationFor(ctx),
-			}),
-			installRootCapability(HttpServer, {
-				create: (ctx) => new HostHttpServer(ctx, resolveContextCapability(ctx, HttpDirectory)),
-			}),
-		],
-		prepare: ({ ctx, effects }) => {
-			effects.defer(() => (resolveContextCapability(ctx, HttpServer) as HostHttpServer).close(), {
-				tag: 'HostHttpEndpoints',
-				phase: 'shutdown',
-			})
-		},
-		lifecycle: (ctx) => resolveContextCapability(ctx, HttpDirectory).lifecycleHooks,
-	})
-}
-
-class HostHttpServer implements HttpServerApi {
-	private readonly endpoints = new Set<HostHttpEndpoint>()
+export class HostElysiaRuntime implements ElysiaRuntimeApi {
+	private readonly endpoints = new Set<ElysiaEndpoint>()
 	private carrier?: ElysiaApplicationCarrier
-	private fallback?: HostHttpFallback
+	private fallback?: ElysiaFallback
 	private closed = false
 	constructor(
 		private readonly ctx: RootContext,
@@ -105,7 +50,21 @@ class HostHttpServer implements HttpServerApi {
 				return new Response('Service Unavailable', { status: 503 })
 			}
 			try {
-				return await endpoint.fetch(request, this.carrier)
+				const scopedRequest = requestWithSignal(request, lease.signal)
+				const carrier = this.carrier
+				// Carrier state is keyed by ingress identity, not by the signal-bearing view.
+				const scopedCarrier: ElysiaApplicationCarrier | undefined = carrier && {
+					metadata: carrier.metadata,
+					requestIP: (input) => carrier.requestIP(input === scopedRequest ? request : input),
+					upgrade: (input) =>
+						carrier.upgrade({
+							...input,
+							request: input.request === scopedRequest ? request : input.request,
+						}),
+					publish: (...args) => carrier.publish(...args),
+					pending: (owner) => carrier.pending(owner),
+				}
+				return await endpoint.fetch(scopedRequest, scopedCarrier)
 			} finally {
 				lease.dispose()
 			}
@@ -120,7 +79,7 @@ class HostHttpServer implements HttpServerApi {
 				return new Response('Service Unavailable', { status: 503 })
 			}
 			try {
-				const response = await this.fallback.fetch(new Request(request, { signal: lease.signal }))
+				const response = await this.fallback.fetch(requestWithSignal(request, lease.signal))
 				if (response) return response
 			} finally {
 				lease.dispose()
@@ -152,7 +111,7 @@ class HostHttpServer implements HttpServerApi {
 			if (this.carrier === carrier) this.carrier = undefined
 		}
 	}
-	mountEndpoint = (endpoint: HostHttpEndpoint): (() => void) => {
+	mountEndpoint = (endpoint: ElysiaEndpoint): (() => void) => {
 		this.assertOpen()
 		const prefix = endpoint.prefix
 		if (
@@ -175,7 +134,7 @@ class HostHttpServer implements HttpServerApi {
 			this.endpoints.delete(mounted)
 		}
 	}
-	mountFallback = (fallback: HostHttpFallback): (() => void) => {
+	mountFallback = (fallback: ElysiaFallback): (() => void) => {
 		this.assertOpen()
 		if (this.fallback) throw new Error('A Host HTTP fallback is already mounted')
 		this.fallback = fallback
@@ -195,7 +154,7 @@ class HostHttpServer implements HttpServerApi {
 	private assertOpen(): void {
 		if (this.closed) throw new Error('Host HTTP server is closed')
 	}
-	private select(request: Request): HostHttpEndpoint | undefined {
+	private select(request: Request): ElysiaEndpoint | undefined {
 		const pathname = new URL(request.url).pathname
 		for (const endpoint of this.endpoints)
 			if (matchesPrefix(pathname, endpoint.prefix)) return endpoint
@@ -204,10 +163,4 @@ class HostHttpServer implements HttpServerApi {
 }
 function matchesPrefix(pathname: string, prefix: string): boolean {
 	return pathname === prefix || pathname.startsWith(prefix + '/')
-}
-
-/** Selecting this adapter requires the Host to have installed the HTTP service. */
-export function createHostHttpHandler(host: PluginHost): (request: Request) => Promise<Response> {
-	const server = resolveContextCapability(host.ctx, HttpServer)
-	return server.fetch.bind(server)
 }

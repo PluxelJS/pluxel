@@ -28,7 +28,7 @@ export default defineConfig({
 		'internal/test': './src/internal-test.ts',
 		vite: './src/vite.ts',
 
-		'http/vite': './src/development/http.ts',
+		'elysia/vite': './src/development/elysia.ts',
 		'node/vite': './src/development/node.ts',
 
 		index: './src/index.ts',
@@ -38,8 +38,8 @@ export default defineConfig({
 		database: './src/database.ts',
 		'internal/database/pglite': './src/database/adapters/pglite.ts',
 		'internal/database/postgres': './src/database/adapters/postgres.ts',
-		http: './src/http.ts',
-		'http/node': './src/http-node.ts',
+		elysia: './src/elysia.ts',
+		'elysia/node': './src/elysia-node.ts',
 		node: './src/node.ts',
 		workers: './src/workers.ts',
 		commands: './src/commands.ts',

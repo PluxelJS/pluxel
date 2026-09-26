@@ -112,9 +112,9 @@ Host 自己的图策略、配置记录与 Plugin 可消费的 Persistence 服务
 
 ```ts no-twoslash
 import { createTestHost } from '@pluxel/test'
-import { http } from '@pluxel/services/http'
+import { elysia } from '@pluxel/services/elysia'
 
-await using host = await createTestHost({ services: [http()] })
+await using host = await createTestHost({ services: [elysia()] })
 await host.start(HealthPlugin)
 const response = await host.http.fetch(new URL('/health', host.http.origin))
 expect(await response.json()).toEqual({ ok: true })
@@ -136,11 +136,11 @@ await using host = await createTestHost({
 Workbench 的最小组合：
 
 ```ts no-twoslash
-import { http } from '@pluxel/services/http'
+import { elysia } from '@pluxel/services/elysia'
 import { persistence } from '@pluxel/services/persistence'
 
 await using host = await createTestHost({
-	services: [http(), persistence({ mode: 'memory' })],
+	services: [elysia(), persistence({ mode: 'memory' })],
 	workbench: true,
 })
 await host.start(OrdersPlugin)
@@ -446,7 +446,10 @@ await using fixture = await createFixture({
 expect(fixture.fs.existsSync(fixture.getPath('packages/a/src/index.ts'))).toBe(true)
 ```
 
-只有真实 watcher、child process 或工具链需要 native filesystem 时才使用 disk fixture，并由 fixture disposal 清理临时目录。
+Promise 文件操作使用 `fixture.fsp`；`fixture.fs` 保留 Node 的同步、stream 与 callback 形式，callback 方法不能省略 callback。
+
+只有真实 watcher、child process 或工具链需要 native filesystem 时才使用 `createDiskFixture()`，并由 fixture disposal 清理临时目录。
+Memory fixture 自己拥有 filesystem 与临时目录，不接受 `fs/tempDir`；disk fixture 可指定 `tempDir`，但不能替换 native `fs`。
 
 ## 共享测试配置
 

@@ -1,5 +1,4 @@
 import { Alert, Button, Group, Loader, Modal, Stack, Text } from '@mantine/core'
-import { formOptions } from '@tanstack/react-form'
 import type {
 	WorkbenchContentActionOutcome,
 	WorkbenchContentActionPresentation,
@@ -15,7 +14,7 @@ import type {
 	RuntimeJsonValue,
 } from '@pluxel/services/management/client'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AutoForm } from 'valibot-form/web'
+import { AutoForm, type AutoFormOptions } from 'valibot-form/web'
 import type {
 	WorkbenchContentController,
 	WorkbenchContentDataState,
@@ -503,7 +502,7 @@ function ContentActionForm({
 	const fields = useMemo(() => adaptConfigPresentationFields(slot.fields ?? []), [slot.fields])
 	const opts = useMemo(
 		() =>
-			formOptions({
+			({
 				defaultValues: {} as Record<string, unknown>,
 				canSubmitWhenInvalid: true,
 				listeners: {
@@ -526,7 +525,7 @@ function ContentActionForm({
 						} as never)
 					}
 				},
-			}),
+			}) satisfies AutoFormOptions<Record<string, unknown>>,
 		[execution, onSuccess],
 	)
 
@@ -551,19 +550,14 @@ function ContentActionFormButtons({
 }) {
 	return (
 		<AutoForm.Actions>
-			{({ submit, submitting }) => (
+			{({ submitting }) => (
 				<Group justify="flex-end">
 					{onCancel ? (
 						<Button disabled={submitting} onClick={onCancel} type="button" variant="default">
 							取消
 						</Button>
 					) : null}
-					<Button
-						color={slot.confirm ? 'red' : undefined}
-						loading={submitting}
-						onClick={submit}
-						type="button"
-					>
+					<Button color={slot.confirm ? 'red' : undefined} loading={submitting} type="submit">
 						{slot.label}
 					</Button>
 				</Group>

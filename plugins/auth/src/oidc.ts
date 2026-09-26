@@ -1,3 +1,4 @@
+import type { ConfigSnapshot } from '@pluxel/core'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload } from 'jose'
 import type { ManagementAccessPrincipal } from '@pluxel/services/management/access'
@@ -101,7 +102,10 @@ function claimValues(value: unknown): readonly string[] {
 		: []
 }
 
-function claimsAllowed(payload: JWTPayload, required: OidcAuthMode['requiredClaims']): boolean {
+function claimsAllowed(
+	payload: JWTPayload,
+	required: ConfigSnapshot<OidcAuthMode>['requiredClaims'],
+): boolean {
 	if (!required) return true
 	for (const [name, expected] of Object.entries(required)) {
 		const actual = claimValues(Object.hasOwn(payload, name) ? payload[name] : undefined)
@@ -146,7 +150,7 @@ export class OidcClient {
 	private readonly pending = new Map<string, PendingAuthorization>()
 
 	constructor(
-		private readonly config: OidcAuthMode,
+		private readonly config: ConfigSnapshot<OidcAuthMode>,
 		private readonly readClientSecret: () => string | undefined,
 	) {}
 

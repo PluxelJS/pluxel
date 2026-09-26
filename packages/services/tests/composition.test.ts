@@ -1,5 +1,5 @@
 import { servicesPreset } from '@pluxel/services/preset'
-import { HttpServer } from '../src/http'
+import { ElysiaRuntime } from '@pluxel/services/internal'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { Commands, commands } from '../src/commands'
@@ -49,7 +49,7 @@ describe('independently composed official and external services', () => {
 			const host = await createHost({ plugins: [], services: services.toReversed() })
 			try {
 				await host.start()
-				const server = host.ctx.require(HttpServer)
+				const server = host.ctx.require(ElysiaRuntime)
 				const request = new Request('http://local.dev/__pluxel/runtime/session', {
 					headers: { upgrade: 'websocket', connection: 'Upgrade' },
 				})

@@ -49,17 +49,17 @@
 			"@pluxel/source": "./src/database/postgres.ts",
 			"default": "./dist/database/postgres.mjs"
 		},
-		"./http": {
-			"@pluxel/source": "./src/http.ts",
-			"default": "./dist/http.mjs"
+		"./elysia": {
+			"@pluxel/source": "./src/elysia.ts",
+			"default": "./dist/elysia.mjs"
 		},
-		"./http/node": {
-			"@pluxel/source": "./src/http-node.ts",
-			"default": "./dist/http/node.mjs"
+		"./elysia/node": {
+			"@pluxel/source": "./src/elysia-node.ts",
+			"default": "./dist/elysia/node.mjs"
 		},
-		"./http/vite": {
-			"@pluxel/source": "./src/development/http.ts",
-			"default": "./dist/http/vite.mjs"
+		"./elysia/vite": {
+			"@pluxel/source": "./src/development/elysia.ts",
+			"default": "./dist/elysia/vite.mjs"
 		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
@@ -175,9 +175,9 @@
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",
 			"./database/postgres": "./dist/database/postgres.mjs",
-			"./http": "./dist/http.mjs",
-			"./http/node": "./dist/http/node.mjs",
-			"./http/vite": "./dist/http/vite.mjs",
+			"./elysia": "./dist/elysia.mjs",
+			"./elysia/node": "./dist/elysia/node.mjs",
+			"./elysia/vite": "./dist/elysia/vite.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
 			"./logging": "./dist/logging.mjs",

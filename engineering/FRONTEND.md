@@ -140,6 +140,7 @@ Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写�
 - 正常路由切换保留根错误边界、Shell 与 session providers；错误恢复按 pathname 清空 error，不能用 pathname key 重建整棵应用；
 - Plugin detail 只按 canonical node route 重置 owner-local 表单与视图，同一 Plugin 的子路由不重置整个 Plugin 工作台；
 - layout runtime、Content/View activation 和 handle/Bridge cleanup 用 mount count + microtask cleanup 吸收 effect replay；
+- `useRemoteValue` render 只构造本地 store，commit 才订阅/读取；依赖切换隔离 owner，effect replay 复用资源，晚到订阅仍需释放；
 - 跨组件共享事实使用 `subscribe/getSnapshot` store；
 - 空 array/object 和 Context value 保持稳定 identity；
 - Content state 与 remote read 使用 sequence/epoch guard，旧结果不覆盖新 target/route；

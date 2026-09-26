@@ -37,11 +37,11 @@ function projectWithRolldown(params: {
 			type: 'module',
 			exports: {
 				'./package.json': './package.json',
-				...(params.exports ?? { './build': './build.mjs' }),
+				...(params.exports ?? { './internal/cli': './internal/cli.mjs' }),
 			},
 		}),
 		...(params.files ?? {
-			'node_modules/@pluxel/rolldown/build.mjs': 'export const marker = "project-owner"\n',
+			'node_modules/@pluxel/rolldown/internal/cli.mjs': 'export const marker = "project-owner"\n',
 		}),
 	}
 }
@@ -94,9 +94,9 @@ describe('official capability loader', () => {
 
 		const importFailure = await createProject(
 			projectWithRolldown({
-				exports: { './build': './build.mjs' },
+				exports: { './internal/cli': './internal/cli.mjs' },
 				files: {
-					'node_modules/@pluxel/rolldown/build.mjs': 'throw new Error("fixture boom")\n',
+					'node_modules/@pluxel/rolldown/internal/cli.mjs': 'throw new Error("fixture boom")\n',
 				},
 			}),
 		)

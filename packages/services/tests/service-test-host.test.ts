@@ -1,5 +1,5 @@
 import { Commands } from '@pluxel/services/commands'
-import { Http, http } from '@pluxel/services/http'
+import { ElysiaApp, elysia } from '@pluxel/services/elysia'
 import {
 	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
@@ -17,7 +17,7 @@ class PublicFixture extends BasePlugin {}
 @Plugin({ displayName: 'HTTP-only test composition' })
 class HttpOnlyFixture extends BasePlugin {
 	protected override init(): void {
-		this.ctx.require(Http).get('/test-composition', () => 'http-only')
+		this.ctx.require(ElysiaApp).get('/test-composition', () => 'http-only')
 	}
 }
 
@@ -59,7 +59,7 @@ describe('service test host', () => {
 		expect(bare.isRunning(PublicFixture)).toBe(true)
 		expect(() => bare.commands.list()).toThrow(/commands/i)
 
-		await using httpOnly = await createTestHost({ services: [http()] })
+		await using httpOnly = await createTestHost({ services: [elysia()] })
 		await httpOnly.start(HttpOnlyFixture)
 		const response = await httpOnly.http.fetch(new URL('/test-composition', httpOnly.http.origin))
 		expect(await response.text()).toBe('http-only')

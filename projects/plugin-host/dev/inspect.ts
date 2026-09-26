@@ -1,23 +1,30 @@
 import { defineDevConsole } from '@pluxel/host-dev/console'
-import { HttpServer } from '@pluxel/services/http'
 import { Logging } from '@pluxel/services/logging'
 
 export default defineDevConsole((dev) => {
 	return dev.plugins.list()
 })
 
-/** Read the live application's installed HTTP and logging capabilities. */
+/** Check the application's HTTP endpoints and logs. Input: { origin: 'http://localhost:5173' }. */
 export const health = defineDevConsole(async (dev) => {
-	const http = dev.ctx.require(HttpServer)
-	const status = await http.fetch(
-		new Request('http://local.dev/showcase/status', { signal: dev.signal }),
-	)
-	const shell = await http.fetch(
-		new Request('http://local.dev/__pluxel/workbench', {
-			signal: dev.signal,
-			headers: { accept: 'text/html' },
-		}),
-	)
+	const input = dev.input
+	if (
+		typeof input !== 'object' ||
+		input === null ||
+		!('origin' in input) ||
+		typeof input.origin !== 'string'
+	) {
+		throw new TypeError('health requires input.origin: an HTTP(S) application URL')
+	}
+	const origin = new URL(input.origin)
+	if (origin.protocol !== 'http:' && origin.protocol !== 'https:') {
+		throw new TypeError('health requires an HTTP(S) application URL')
+	}
+	const status = await fetch(new URL('/showcase/status', origin), { signal: dev.signal })
+	const shell = await fetch(new URL('/__pluxel/workbench', origin), {
+		signal: dev.signal,
+		headers: { accept: 'text/html' },
+	})
 	const logging = dev.ctx.require(Logging)
 	logging.flushStores()
 	return {

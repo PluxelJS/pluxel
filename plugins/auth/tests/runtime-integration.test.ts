@@ -5,10 +5,10 @@ import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { newWebSocketRpcSession, type RpcStub } from 'capnweb'
-import { HttpServer, type ElysiaApplicationCarrier } from '@pluxel/services/http'
+import { ElysiaRuntime, type ElysiaApplicationCarrier } from '@pluxel/services/internal'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
-import { NodeElysiaApplicationCarrier } from '@pluxel/services/http/node'
+import { NodeElysiaApplicationCarrier } from '../../../packages/services/src/elysia/node'
 import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/services/management/session'
 import NodeWebSocket from 'crossws/websocket'
 import { describe, expect, it } from 'vitest'
@@ -217,7 +217,7 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 	private listening = false
 
 	constructor(readonly host: Awaited<ReturnType<typeof createServiceInternalTestHost>>) {
-		const http = resolveContextCapability(this.host.ctx, HttpServer)
+		const http = resolveContextCapability(this.host.ctx, ElysiaRuntime)
 		this.server = createServer((_request, response) => response.writeHead(404).end('Not Found'))
 		this.carrier = new NodeElysiaApplicationCarrier({
 			fetch: (request) => this.host.http.fetch(request),

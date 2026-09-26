@@ -51,9 +51,9 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 	const fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
 		gate.assertAccepting('http.fetch')
 		const request = normalizeRequest(input, init)
-		const { HttpServer } = await import('../http')
+		const { ElysiaRuntime } = await import('../elysia/runtime')
 		gate.assertAccepting('http.fetch')
-		const response = await resolveContextCapability(ctx, HttpServer).fetch(request)
+		const response = await resolveContextCapability(ctx, ElysiaRuntime).fetch(request)
 		try {
 			gate.assertAccepting('http.fetch result')
 		} catch (error) {

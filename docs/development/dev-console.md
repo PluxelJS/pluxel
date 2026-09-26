@@ -158,16 +158,27 @@ export const increaseLimit = defineDevConsole(async (dev) => {
 
 ```ts no-twoslash
 import { defineDevConsole } from '@pluxel/host-dev/console'
-import { HttpServer } from '@pluxel/services/http'
 
 export default defineDevConsole(async (dev) => {
-	const http = dev.ctx.require(HttpServer)
-	const response = await http.fetch(new Request('http://local.dev/health', { signal: dev.signal }))
+	const input = dev.input
+	if (
+		typeof input !== 'object' ||
+		input === null ||
+		!('origin' in input) ||
+		typeof input.origin !== 'string'
+	) {
+		throw new TypeError('input.origin must be an HTTP(S) application URL')
+	}
+	const origin = new URL(input.origin)
+	if (origin.protocol !== 'http:' && origin.protocol !== 'https:') {
+		throw new TypeError('input.origin must use HTTP(S)')
+	}
+	const response = await fetch(new URL('/health', origin), { signal: dev.signal })
 	return { status: response.status, body: await response.text() }
 })
 ```
 
-这个请求使用当前进程内 HTTP directory，逻辑 origin 不是物理监听地址。应用必须已安装 HTTP 服务；服务缺失按能力解析契约报错，不影响其他控制台操作。
+通过 `--input '{"origin":"http://localhost:5173"}'` 指定已发现的应用监听地址；请求经过真实监听器。不要猜测端口，也不要借用内部 dispatcher 绕过实际 ingress。
 
 Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [Commands](../runtime/commands.md)、[Workbench](../workbench/index.md) 和 [结构化日志](../runtime/logging.md)。Workbench 的 principal、session 和 RPC 结果释放遵循其原有契约；控制台不会替脚本创建或回收这些资源。Plugin 公开的业务方法也可直接通过 `dev.plugins.require()` 调用。数据库访问使用业务方法或插件公开的 owner-bound handle，不重新打开应用的数据目录。
 

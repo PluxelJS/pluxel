@@ -171,6 +171,7 @@ export default defineConfig({
 构建命令仍然是 `pluxel build`。CLI 读取并合并这个 tsdown config，再安装标准 semantic/build pipeline；不要直接把 package script 改成裸 `tsdown`，也不要自行重复安装 decorator transform、config extractor 或 Workbench builder。
 
 `pluginPackage()` 是 `@pluxel/rolldown/build` 的底层集成入口，适合自定义构建工具；canonical CLI package 使用 `pluxel build`。
+`pluxel build --watch` 的 watcher、配置重启与终端交互由命令进程拥有；停止命令结束整个 watch 会话。
 
 ## 依赖 metadata 如何生成
 

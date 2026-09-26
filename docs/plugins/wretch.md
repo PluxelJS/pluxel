@@ -92,7 +92,7 @@ await host.start(CustomerPlugin, {
 ```ts no-twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result } from '@pluxel/core/better-result'
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { CustomerPlugin } from '@acme/customer'
 
 @Plugin()
@@ -102,7 +102,7 @@ export class CustomerHttpPlugin extends BasePlugin {
 	}
 
 	protected override init(): void {
-		this.ctx.require(Http).get('/customers/:id', async ({ params }) => {
+		this.ctx.require(ElysiaApp).get('/customers/:id', async ({ params }) => {
 			const result = await this.customers.find(params.id)
 			if (Result.isError(result)) {
 				return Response.json(
@@ -116,7 +116,7 @@ export class CustomerHttpPlugin extends BasePlugin {
 }
 ```
 
-把 `CustomerHttpPlugin` 加入宿主清单并启动；宿主还需安装 `Http` 服务。
+把 `CustomerHttpPlugin` 加入宿主清单并启动；宿主还需安装 `ElysiaApp` 服务。
 跨插件本地调用保留 Result 实例和 `CustomerNotFound` 类型；HTTP/Workbench/Worker 边界只传普通数据，
 按传输协议选择状态码或 DTO。不要直接序列化 Result 或错误实例。发布 `CustomerPlugin` 时，
 按[插件包指南](../development/plugin-package.md)设置包含 `/better-result` 子入口的 Core peer 下限。

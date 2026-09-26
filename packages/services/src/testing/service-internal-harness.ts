@@ -308,8 +308,8 @@ export async function createServiceInternalTestHarness(
 		coordinator,
 		stateStore,
 		fetch: async (request: Request): Promise<Response> => {
-			const { HttpServer } = await import('../http')
-			return resolveContextCapability(ctx, HttpServer).fetch(request)
+			const { ElysiaRuntime } = await import('../elysia/runtime')
+			return resolveContextCapability(ctx, ElysiaRuntime).fetch(request)
 		},
 		add,
 		remove,

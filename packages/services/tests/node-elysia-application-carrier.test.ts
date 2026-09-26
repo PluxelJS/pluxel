@@ -1,6 +1,6 @@
 import { getWebSocketHooks } from 'crossws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { NodeElysiaApplicationCarrier } from '../src/http/node'
+import { NodeElysiaApplicationCarrier } from '../src/elysia/node'
 
 describe('Node Elysia application carrier', () => {
 	afterEach(() => vi.useRealTimers())

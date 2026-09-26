@@ -101,6 +101,14 @@ await host.config.reset(owner, ['endpoint'])
 
 关闭后所有配置方法拒绝新请求。Host 配置入口是受信任宿主 API，网络端点仍须通过既有认证和授权；它不会自动开放 RPC 或监听器。
 
+## Persistence 文件契约
+
+`@pluxel/services/persistence` 的内存与 Node 后端使用相同的相对分层路径：namespace 和 key 保留原字面（包括 `@pluxel/wretch`），不 trim、替换字符或猜测绝对路径。空段、`.`、`..`、反斜杠、冒号和控制字符会抛出 `TypeError`；仅 `list()` / `list('')` 的空前缀表示 namespace 根。namespace 是路径前缀，不是互相隔离的权限域，例如 `a/b` 位于 `a` 之下。
+
+`list(prefix)` 按 key 排序返回目录的直接子项，包含 `file` 与 `directory`；缺失目录返回空集合，文件不能作为列举前缀。`stat(key)` 可识别文件与目录；内存后端在写入嵌套文件时建立目录，删除最后一个文件不会删除目录。`delete()` 只删除文件，缺失文件无操作；`get()` / `getText()` 的缺失结果为 `undefined`，读取目录失败。`size` / `updatedAt` 是后端可提供的 metadata，不保证存在。
+
+Node 后端在创建时固定 root（省略时使用当时的 cwd）。路径检查限制字面路径，不承诺防御宿主在 root 下放置的符号链接；文件树由宿主控制。自定义后端需实现同一目录与完成语义。`readonly` 在实际 `put()` / `delete()` 边界拒绝操作并给出 `PersistenceError.code === 'READONLY'`，不依赖调用方先执行 `preflight()`。
+
 ## 保存配置和运行策略
 
 Host 分别通过 `configRecords` 与 `state` 指定启动值及可选文档存储。两者不依赖安装 Persistence 服务，已有存储只需提供 `HostDocumentStorage` 的 `getText()`、`put()` 和 `stat()`：
@@ -147,7 +155,7 @@ Host 应用解析器从本次 `startup.env` 读取显式 `envBindings`，文件�
 import { defineConfig } from 'vite'
 import { host } from '@pluxel/host-dev/vite'
 import { serviceSingletons } from '@pluxel/services/vite'
-import { httpDevelopment } from '@pluxel/services/http/vite'
+import { elysiaDevelopment } from '@pluxel/services/elysia/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
 
@@ -155,7 +163,7 @@ export default defineConfig({
 	plugins: [
 		serviceSingletons(),
 		host({ entry: './src/app.ts' }),
-		httpDevelopment(),
+		elysiaDevelopment(),
 		nodeArtifacts(),
 		workbenchArtifacts(),
 	],
@@ -198,7 +206,7 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 不创建监听器，也不增加 `fetch` 成员。
 
 应用 `tsdown.config.ts` 使用 `pluxel()`（`@pluxel/rolldown`）。`launcher: 'host'` 适合后台服务；
-`'fetch'` 输出 HTTP handler，`'node'` 再启动 Node 监听器。后两项要求应用选择 `http()`。
+`'fetch'` 输出 HTTP handler，`'node'` 再启动 Node 监听器。后两项要求应用选择 `elysia()`。
 构建不会执行配置工厂，运行时才读取最新环境。`variant: 'headless'` 不携带 Workbench shell。
 Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/standalone-host.md) `workbenchService()`、`managementHttp({ bindings })` 与 `workbenchHttp()`，并选择 `variant: 'workbench'` 携带 shell。
 
@@ -211,7 +219,7 @@ Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/stand
 ### 动态插件的共享入口
 
 `sourceFrameworks` 是未来动态 Plugin 可以借用的框架模块入口清单，不是前端框架选择或权限白名单。动态来源的未来 Plugin 无法从静态 import 图推导。使用底层 `@pluxel/rolldown` 时，用 `pluxel({ sourceFrameworks: [...] })`
-列出它们允许借用的选装框架作者入口，例如 `@pluxel/services/http`、`@pluxel/workbench` 和 `elysia/ws`。
+列出它们允许借用的选装框架作者入口，例如 `@pluxel/services/elysia`、`@pluxel/workbench` 和 `elysia/ws`。
 Core 基础作者入口固定提供；清单中的其他入口必须能从应用解析，并随部署一起打包，动态 Plugin 借用同一模块身份。
 构建时，Core、Host 与清单所选包的根入口和子路径统一从应用解析，避免依赖树中的多份物理安装生成不同的 capability token；这不额外收集未导入的子路径。部署安装 Workbench 时，构建还为带有 `pluxel.workbenchCapnweb` 事实的 target 发布包准备 `capnweb` facade；私有 RPC 包不会因此改用宿主版本。
 `capnweb` 不放入 `sourceFrameworks`；它的 Workbench target 桥接由生成事实管理。

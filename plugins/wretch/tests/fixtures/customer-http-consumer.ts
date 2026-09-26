@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result } from '@pluxel/core/better-result'
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { WretchExamplePlugin } from './wretch-example.ts'
 
 /** A separate Plugin consumes the local Result and publishes only plain HTTP data. */
@@ -12,7 +12,7 @@ export class CustomerHttpConsumer extends BasePlugin {
 
 	override init(): void {
 		this.ctx
-			.require(Http)
+			.require(ElysiaApp)
 			.get('/wretch-example/customers/:id', ({ params }) => this.customerDto(params.id))
 	}
 

@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { createHost } from '@pluxel/host'
-import { http, HttpServer } from '@pluxel/services/http'
+import { elysia, createElysiaHandler } from '@pluxel/services/elysia'
 import { workbenchService } from '../src/service'
 import { workbenchHttp } from '../src/http'
 import { workbenchSourceShell } from '../src/dev'
@@ -79,7 +79,7 @@ describe('Workbench UI HTML rendering', () => {
 		const host = await createHost({
 			plugins: [],
 			services: [
-				http(),
+				elysia(),
 				workbenchService(),
 				workbenchHttp({ uiBasePath: '/admin', publicDir: fixture.getPath('missing-built-ui') }),
 			],
@@ -92,8 +92,8 @@ describe('Workbench UI HTML rendering', () => {
 				catalog: { modules: [], definitions: [] },
 			})
 			if (typeof detach !== 'function') throw new Error('source Shell did not return its cleanup')
-			const httpServer = host.ctx.require(HttpServer)
-			const page = await httpServer.fetch(
+			const handle = createElysiaHandler(host)
+			const page = await handle(
 				new Request('http://local.dev/admin', { headers: { accept: 'text/html' } }),
 			)
 			const html = await page.text()
@@ -107,16 +107,12 @@ describe('Workbench UI HTML rendering', () => {
 			await vi.waitFor(async () =>
 				expect((await server.transformRequest(url))!.code).toContain('after'),
 			)
-			const management = await httpServer.fetch(
-				new Request('http://local.dev/__pluxel/runtime/session'),
-			)
+			const management = await handle(new Request('http://local.dev/__pluxel/runtime/session'))
 			expect(management.status).toBe(404)
 			await detach()
 			await detach()
 			await expect(
-				httpServer.fetch(
-					new Request('http://local.dev/admin', { headers: { accept: 'text/html' } }),
-				),
+				handle(new Request('http://local.dev/admin', { headers: { accept: 'text/html' } })),
 			).rejects.toThrow('Workbench UI manifest not found')
 		} finally {
 			await server.close()

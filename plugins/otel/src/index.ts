@@ -1,4 +1,4 @@
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import type { Meter, Tracer } from '@opentelemetry/api'
 import type { Logger } from '@opentelemetry/api-logs'
 import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
@@ -140,7 +140,7 @@ export class OtelPlugin extends BasePlugin {
 	}
 
 	private mountPrometheus(reader: PrometheusPullReader, path: string): void {
-		this.ctx.require(Http).get(path, () => this.scrapePrometheus(reader))
+		this.ctx.require(ElysiaApp).get(path, () => this.scrapePrometheus(reader))
 	}
 
 	private async scrapePrometheus(reader: PrometheusPullReader): Promise<Response> {

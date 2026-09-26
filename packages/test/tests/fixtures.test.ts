@@ -4,6 +4,53 @@ import { existsSync } from 'node:fs'
 import { createDiskFixture, createFixture } from '@pluxel/test/fixtures'
 
 describe('@pluxel/test/fixtures', () => {
+	for (const create of [createFixture, createDiskFixture]) {
+		it(`${create.name} separates callback fs from Promise fsp and rejects missing callbacks`, async () => {
+			await using fixture = await create({ 'value.txt': 'initial' })
+			const path = fixture.getPath('value.txt')
+			await new Promise<void>((resolve, reject) => {
+				fixture.fs.writeFile(path, 'callback', (error) => (error ? reject(error) : resolve()))
+			})
+			await expect(fixture.fsp.readFile(path, 'utf8')).resolves.toBe('callback')
+			await fixture.fsp.writeFile(path, 'promise')
+			await new Promise<void>((resolve, reject) => {
+				fixture.fs.readFile(path, 'utf8', (error, data) => {
+					if (error) return reject(error)
+					expect(data).toBe('promise')
+					resolve()
+				})
+			})
+			// Exercise JavaScript consumers that do not receive TypeScript diagnostics.
+			expect(() => Reflect.apply(fixture.fs.writeFile, fixture.fs, [path, 'lost'])).toThrow(
+				TypeError,
+			)
+			expect(() => Reflect.apply(fixture.fs.readFile, fixture.fs, [path, 'utf8'])).toThrow(
+				TypeError,
+			)
+			await expect(fixture.fsp.readFile(path, 'utf8')).resolves.toBe('promise')
+			await expect(fixture.fsp.readFile(fixture.getPath('missing'), 'utf8')).rejects.toMatchObject({
+				code: 'ENOENT',
+			})
+		})
+	}
+
+	it('rejects unsupported filesystem and temporary-directory overrides', async () => {
+		await expect(
+			Reflect.apply(createFixture, undefined, [{}, { tempDir: '/tmp/ignored' }]),
+		).rejects.toThrow('tempDir')
+		await expect(Reflect.apply(createFixture, undefined, [{}, { fs: {} }])).rejects.toThrow('fs')
+		await expect(Reflect.apply(createDiskFixture, undefined, [{}, { fs: {} }])).rejects.toThrow(
+			'fs',
+		)
+		await using parent = await createDiskFixture({})
+		const fixture = await createDiskFixture({ 'child.txt': 'child' }, { tempDir: parent.path })
+		const childPath = fixture.getPath('child.txt')
+		expect(childPath.startsWith(parent.path)).toBe(true)
+		await expect(fixture.fsp.readFile(childPath, 'utf8')).resolves.toBe('child')
+		await fixture[Symbol.asyncDispose]()
+		expect(existsSync(childPath)).toBe(false)
+	})
+
 	it('creates and idempotently disposes disk fixtures', async () => {
 		let filePath = ''
 		{

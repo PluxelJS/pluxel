@@ -13,7 +13,7 @@ import {
 	PasswordAuthenticationSession,
 } from './challenge.ts'
 import { AuthSetupTarget } from './auth-setup-target.ts'
-import { AuthConfig, type AuthPluginConfig } from './config.ts'
+import { AuthConfig } from './config.ts'
 import { handleCookieCommit } from './cookie-commit.ts'
 import { CredentialStore, type LocalAccountRecord } from './credentials.ts'
 import { CredentialProvisioning } from './credential-provisioning.ts'
@@ -47,7 +47,7 @@ function redirect(path: string, cookies: readonly string[]): Response {
 
 @Plugin({ displayName: 'Authentication' })
 export class AuthPlugin extends BasePlugin {
-	private readonly config: AuthPluginConfig = this.configs.use(AuthConfig)
+	private readonly config = this.configs.use(AuthConfig)
 	private readonly sessions = new SessionStore()
 	private readonly loginFailures = new LoginFailureLimiter()
 	private active = false

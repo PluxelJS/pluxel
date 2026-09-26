@@ -1,4 +1,4 @@
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import * as v from 'valibot'
 import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 import { TelegramConfig } from './config'
@@ -29,7 +29,7 @@ export class PluginA extends BasePlugin {
 			this.ctx.logger.info('PluginA optional dep', { pluginC: true })
 		})
 
-		this.ctx.require(Http).get('/a', ({ set }) => {
+		this.ctx.require(ElysiaApp).get('/a', ({ set }) => {
 			set.headers['content-type'] = 'text/html; charset=utf-8'
 			return 'text'
 		})

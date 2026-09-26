@@ -32,10 +32,10 @@ export function serviceDevelopment(): PluginOption[] {
 			const { workbenchArtifacts } = await import('@pluxel/workbench/dev')
 			return workbenchArtifacts()
 		}),
-		attachment('elysia', 'pluxel:host-http', async () => {
+		attachment('elysia', 'pluxel:elysia', async () => {
 			if (!http) {
-				const { httpDevelopment } = await import('./http')
-				http = httpDevelopment()
+				const { elysiaDevelopment } = await import('./elysia')
+				http = elysiaDevelopment()
 			}
 			return http
 		}),

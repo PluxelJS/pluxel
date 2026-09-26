@@ -42,7 +42,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 宿主服务、preset 与开发附件的组合见[服务参考](./runtime-services.md)。开发脚本从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
 
-`@pluxel/services/http/node` 提供标准 Host launcher 使用的 Node srvx/crossws carrier 和 `listenHostHttp()`。`createHostHttpHandler()` 与 HTTP 服务共用 `@pluxel/services/http` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
+`@pluxel/services/elysia/node` 提供标准 Host launcher 使用的 `listenElysia()`；srvx/crossws carrier 为包内实现。`createElysiaHandler()` 与 HTTP 服务共用 `@pluxel/services/elysia` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/elysia` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
 
 源码查询从 `@pluxel/rolldown/inspect` 导入 `openProject()`，定位声明、依赖、配置和所选应用的输入；
 不启动 Host 或执行应用模块，详见[inspect 源码查询](../development/inspection.md)。

@@ -46,12 +46,12 @@ await writeFile(
 	join(typedRoot, 'src/index.ts'),
 	`
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { version } from './version'
 @Plugin()
 export class Typed extends BasePlugin {
  init() {
-  this.ctx.require(Http).get('/typed', () => version)
+  this.ctx.require(ElysiaApp).get('/typed', () => version)
   globalThis.__typedHostSmoke.push(version)
   this.ctx.effects.defer(() => { globalThis.__typedHostSmoke.push('-' + version) })
  }
@@ -80,15 +80,15 @@ const fixedDefinition = {
 	exportName: 'Installed',
 }
 const installed = (value, identity = definition) =>
-	`import {BasePlugin,Plugin} from '@pluxel/core';import {Http} from '@pluxel/services/http';import {__setPluginDefinition} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.require(Http).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(identity)}});`
+	`import {BasePlugin,Plugin} from '@pluxel/core';import {ElysiaApp} from '@pluxel/services/elysia';import {__setPluginDefinition} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.require(ElysiaApp).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(identity)}});`
 await writeFile(join(root, 'node_modules/@test/installed/index.mjs'), installed('one'))
 await writeFile(join(root, 'fixed.mjs'), installed('fixed', fixedDefinition))
 const serviceSource = (
 	revision,
 	fail = false,
-) => `import {http,HttpServer} from '@pluxel/services/http';import {defineContextCapability,installRootCapability,resolveContextCapability} from '@pluxel/core/host';
+) => `import { elysia } from '@pluxel/services/elysia'; import { ElysiaRuntime } from '@pluxel/services/internal';import {defineContextCapability,installRootCapability,resolveContextCapability} from '@pluxel/core/host';
 const token=defineContextCapability('fixture.service');
-export const services=[http(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects,ctx}){effects.defer(resolveContextCapability(ctx,HttpServer).mountFallback({matchesRequest:r=>new URL(r.url).pathname==='/native-copy',fetch:async r=>new Response(await new Request(r).text())}));globalThis.__installedHostSmokeContext=ctx;await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
+export const services=[elysia(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects,ctx}){effects.defer(resolveContextCapability(ctx,ElysiaRuntime).mountFallback({matchesRequest:r=>new URL(r.url).pathname==='/native-copy',fetch:async r=>new Response(await new Request(r).text())}));globalThis.__installedHostSmokeContext=ctx;await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),

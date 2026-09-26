@@ -23,6 +23,7 @@ export default defineConfig({
 		index: 'src/application.ts',
 		inspect: 'src/inspect/index.ts',
 		build: 'src/cli/index.ts',
+		'internal/cli': 'src/internal-cli.ts',
 		database: 'src/database/index.ts',
 		distribution: 'src/distribution/index.ts',
 		plugins: 'src/rolldown/index.ts',

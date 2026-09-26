@@ -185,6 +185,8 @@ typecheck 时拒绝，非 TypeScript 调用方或绕过类型的值仍会由 Run
 或 capability handle。手工读取纯数据时，用 `consumeWorkbenchValue(api.snapshotDto())` 接管结果，取得无 transport 元数据的 `WorkbenchSnapshot<T>`；不要对同一结果再用 `using` 或手动 dispose。订阅和 capability handle 继续由自己的 owner 管理，不能交给数据 helper。不要把 transport-owned result、
 capability 或已经释放的 proxy 放入 React state。
 
+`useRemoteValue()` 在 React commit 后才订阅和读取；未提交的 render 不产生远程工作，StrictMode effect replay 复用同一 owner。依赖变化创建隔离的读取身份，卸载释放订阅，晚到结果不会更新旧视图。`createRemoteValue()` 则立即开始订阅/读取，由调用方用 `Symbol.dispose` 释放。两者都先订阅成功再执行初始 read。
+
 每个 renderer 由 React Bridge 挂载为独立 React root。若 renderer 使用 Mantine、router、i18n 等依赖 Context 的 UI
 library，应在自己的 root 内安装 Provider，并由 producer import 所需样式；Shell 的私有 Provider 不会跨 root 继承，也不是
 Workbench API。例如 Mantine renderer 的入口可以直接写成：

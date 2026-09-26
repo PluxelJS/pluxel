@@ -38,12 +38,14 @@ export async function createServiceTestApplication(
 		const { testWorkbenchService } = await import('@pluxel/workbench/internal/test')
 		services.push(testWorkbenchService())
 	}
-	const { HttpServer } = withManagement ? await import('../http') : { HttpServer: undefined }
+	const { ElysiaRuntime } = withManagement
+		? await import('../elysia/runtime')
+		: { ElysiaRuntime: undefined }
 
 	services.push(
 		defineHostService({
 			name: 'Service test transport',
-			requires: withManagement ? { http: HttpServer } : {},
+			requires: withManagement ? { http: ElysiaRuntime } : {},
 			capabilities: internal.capabilities ?? [],
 			async prepare({ ctx, effects }) {
 				if (!withManagement) return

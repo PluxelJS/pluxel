@@ -1,4 +1,4 @@
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { Workers, defineWorkerTask } from '@pluxel/services/workers'
 // Read this when you need a CPU-bound task on the runtime's shared worker pool.
 
@@ -23,7 +23,7 @@ const squareWorker = defineWorkerTask<{ value: number }, { squared: number }>(
 @Plugin()
 export class PluginHttpWorkerDemo extends BasePlugin {
 	override async init(): Promise<void> {
-		this.ctx.require(Http).group('/demo/worker', (app) =>
+		this.ctx.require(ElysiaApp).group('/demo/worker', (app) =>
 			app
 				.get('/status', async () => this.getWorkerStatus())
 				.get('/square/:value', async ({ params, set }) => {

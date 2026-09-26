@@ -24,6 +24,7 @@ Management 配置 RPC 与 Host-dev 开发控制台委托 Host；Management 负�
 - 每个具体 Plugin 和每个 direct `PluginPart` subclass 各自最多一个普通 class field 调用 `this.configs.use(ObjectSchema)`。
 - Plugin schema 保持现有 flat root；Part schema 位于 occurrence field path。owner schema output 不能与直接 Part field 重名。
 - 默认值和展示 metadata 属于同一个 schema；runtime 和业务代码不重复 fallback。
+- `configs.use()` 将 schema output 投影为深只读 `ConfigSnapshot`，包括数组与 tuple；类型与注入的深冻结值一致。
 - 配置在实例构造后、`init()` 前注入；constructor 和其他 field initializer 不读取配置值。
 - config metadata 是 build-time semantic fact，不是 runtime AST 推断。
 - config owner 始终是 canonical `PluginNodeAddress`，内存索引使用其稳定 binary-derived index key；ConfigService 不创建或保留 Core slot，

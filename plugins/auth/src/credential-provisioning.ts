@@ -1,3 +1,4 @@
+import type { ConfigSnapshot } from '@pluxel/core'
 import { randomBytes } from 'node:crypto'
 import { Result } from '@pluxel/core/better-result'
 import type { AuthMode } from './config.ts'
@@ -55,7 +56,7 @@ export class CredentialProvisioning {
 	private disposed = false
 
 	constructor(
-		private readonly mode: AuthMode,
+		private readonly mode: ConfigSnapshot<AuthMode>,
 		private readonly store: CredentialProvisioningStore,
 		private readonly applyAccount: (account: LocalAccountRecord) => void,
 		private readonly applyOidcSecret: (secret: string) => void,

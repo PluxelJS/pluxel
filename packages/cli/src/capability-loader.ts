@@ -10,7 +10,7 @@ type PackageManifest = {
 }
 
 type OfficialCapabilityModules = {
-	'rolldown-build': typeof import('@pluxel/rolldown/build')
+	'rolldown-build': typeof import('@pluxel/rolldown/internal/cli')
 	'rolldown-database': typeof import('@pluxel/rolldown/database')
 	'rolldown-distribution': typeof import('@pluxel/rolldown/distribution')
 	'rolldown-workspace-fs': typeof import('@pluxel/rolldown/workspace/fs')
@@ -33,7 +33,7 @@ const OFFICIAL_CAPABILITIES = {
 	'rolldown-build': {
 		command: 'build',
 		owner: '@pluxel/rolldown',
-		subpath: './build',
+		subpath: './internal/cli',
 		install: 'pnpm add -D @pluxel/rolldown',
 	},
 	'rolldown-database': {

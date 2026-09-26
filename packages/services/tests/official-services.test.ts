@@ -6,7 +6,7 @@ import { expect, test } from 'vitest'
 import { createHost, type HostStartupContext } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { Logging } from '@pluxel/services/logging'
-import { HttpServer } from '@pluxel/services/http'
+import { ElysiaRuntime } from '@pluxel/services/internal'
 import { VaultAdmin } from '@pluxel/services/vault'
 import { createWorkbenchFederationDeploymentInventory } from '@pluxel/core/federation'
 import { Management } from '@pluxel/services/management/service'
@@ -38,7 +38,7 @@ test('disabled Workbench retains prepared management and vault and releases logg
 		const vault = await resolveContextCapability(host.ctx, VaultAdmin).describe()
 		expect(parseVaultAdminState(vault)).toEqual(vault)
 		expect('workbench' in host.ctx).toBe(false)
-		const response = await resolveContextCapability(host.ctx, HttpServer).fetch(
+		const response = await resolveContextCapability(host.ctx, ElysiaRuntime).fetch(
 			new Request('http://localhost/__pluxel/workbench', { headers: { accept: 'text/html' } }),
 		)
 		expect(response.status).toBe(404)
@@ -75,7 +75,7 @@ test('deployment root supplies Node artifacts and the default Workbench shell', 
 				{ persistence: { mode: 'memory' } },
 			),
 		})
-		const response = await resolveContextCapability(host.ctx, HttpServer).fetch(
+		const response = await resolveContextCapability(host.ctx, ElysiaRuntime).fetch(
 			new Request('http://localhost/__pluxel/workbench', { headers: { accept: 'text/html' } }),
 		)
 		expect(response.status).toBe(200)

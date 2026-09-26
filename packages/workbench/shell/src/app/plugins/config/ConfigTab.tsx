@@ -1,8 +1,7 @@
 import { Box } from '@mantine/core'
-import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useState } from 'react'
 import type { FieldNode } from 'valibot-form'
-import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
+import { AutoForm, type AutoFormOptions, useAutoFormCtx } from 'valibot-form/web'
 
 import { ServerValidationSummary } from '../../forms/serverValidation'
 import { FormToc } from './components/FormToc'
@@ -47,7 +46,7 @@ export function ConfigTabContent({
 	const fieldIdPrefix = makeFieldAnchorPrefix(displayName, tabKey)
 	const opts = useMemo(
 		() =>
-			formOptions({
+			({
 				defaultValues: baseline,
 				canSubmitWhenInvalid: true,
 				listeners: {
@@ -57,7 +56,7 @@ export function ConfigTabContent({
 					},
 				},
 				onSubmit: () => onSubmit(tabKey),
-			}),
+			}) satisfies AutoFormOptions<Record<string, unknown>>,
 		[baseline, onSubmit, tabKey],
 	)
 

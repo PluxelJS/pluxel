@@ -8,7 +8,7 @@ import type {
 	ElysiaCarrierRequestAddress,
 	ElysiaApplicationCarrier,
 	ElysiaWebSocketUpgrade,
-} from '../http'
+} from './elysia-application-carrier'
 import { buildGlobalWSHandler, type ServerWebSocket, type WSConnectionData } from 'elysia/ws'
 import { NodeRequest } from 'srvx/node'
 import type { ServerRequest } from 'srvx'
@@ -128,7 +128,7 @@ export class NodeElysiaApplicationCarrier implements ElysiaApplicationCarrier {
 		const socket = source.runtime?.node?.req.socket
 		if (!socket) {
 			throw new Error(
-				'[pluxel/services/http/node] server.requestIP() requires a Request originating from the srvx Node carrier',
+				'[pluxel/services/elysia/node] server.requestIP() requires a Request originating from the srvx Node carrier',
 			)
 		}
 		if (!socket.remoteAddress || socket.remotePort === undefined) return null
@@ -370,5 +370,5 @@ function payloadByteLength(value: string | ArrayBufferView | ArrayBufferLike): n
 }
 
 function unsupported(operation: string): never {
-	throw new Error(`[pluxel/services/http/node] ${operation} is not exposed by crossws on Node`)
+	throw new Error(`[pluxel/services/elysia/node] ${operation} is not exposed by crossws on Node`)
 }

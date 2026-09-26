@@ -1,5 +1,6 @@
-import { http, HttpServer } from '@pluxel/services/http'
-import { NodeElysiaApplicationCarrier } from '@pluxel/services/http/node'
+import { elysia } from '@pluxel/services/elysia'
+import { ElysiaRuntime } from '@pluxel/services/internal'
+import { NodeElysiaApplicationCarrier } from '../../src/elysia/node'
 import { managementHttp } from '../../src/management/http'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
@@ -151,7 +152,7 @@ it('mounts management through the selected Host HTTP carrier and withdraws it on
 	const host = await createHost({
 		plugins: [ManagedWorker],
 		services: [
-			http(),
+			elysia(),
 			persistence({ mode: 'memory' }),
 			managementAccess(),
 			management(),
@@ -159,7 +160,7 @@ it('mounts management through the selected Host HTTP carrier and withdraws it on
 		],
 	})
 	await host.start()
-	const boundary = resolveContextCapability(host.ctx, HttpServer)
+	const boundary = resolveContextCapability(host.ctx, ElysiaRuntime)
 	const unmountShell = boundary.mountFallback({
 		matchesRequest: (request) => new URL(request.url).pathname === '/shell',
 		fetch: async (request) =>

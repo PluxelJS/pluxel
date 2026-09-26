@@ -162,6 +162,8 @@ protected override init() {
 }
 ```
 
+`effects.transaction(async tx => ...)` 只回滚本事务登记的资源。事务中通过 `tx` 登记并 await acquire；嵌套使用 `tx.transaction()`，同级并发会拒绝。callback 结束后 tx 不再可用；`tx.dispose()` 只撤回本事务，不关闭父 scope。未等待的 acquire 若晚到，会释放资源并 reject；父 scope 的 dispose 不代表这些未登记 Promise 已退出。
+
 cleanup 必须幂等，并在 Promise resolve 前真正停止底层工作。只调用 `abort()` 却不等待 worker、watcher 或 queue consumer 退出，会让旧 generation 与新 generation 重叠。
 
 ## `init()` 的职责
@@ -255,7 +257,7 @@ object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 p
 root export 和 fork，例如
 `package:@acme/orders::OrdersPlugin#fork=east`，不会把 opaque digest 当作公开 Plugin ID。
 
-HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.require(Http)` 中声明的 path 就是最终产品 contract；fork 若要
+HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.require(ElysiaApp)` 中声明的 path 就是最终产品 contract；fork 若要
 同时提供 HTTP，必须从已校验业务 config 得到彼此不冲突的显式 namespace，或由唯一 gateway Plugin 统一承载入口。
 
 Plugin source 必须经过 Pluxel Vite/Rolldown pipeline。raw TypeScript runner 不生成这些语义事实。

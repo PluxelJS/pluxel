@@ -1,6 +1,6 @@
 import type { RootContext } from '@pluxel/core'
 import { defineHostService, type HostService } from '@pluxel/host'
-import { HttpServer } from '../http'
+import { ElysiaRuntime } from '../elysia/runtime'
 import { AdminAccess } from './access'
 import { Management } from './token'
 import type { ManagementEndpointOptions } from './index'
@@ -17,7 +17,7 @@ export function managementHttp(options: ManagementHttpOptions = {}): HostService
 	return defineHostService({
 		name: 'ManagementHTTP',
 		capabilities: [],
-		requires: { http: HttpServer, management: Management, authentication: AdminAccess },
+		requires: { http: ElysiaRuntime, management: Management, authentication: AdminAccess },
 		prepare: ({ ctx, effects }) => attachManagementHttp(ctx, effects, options),
 	})
 }

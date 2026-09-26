@@ -1,6 +1,6 @@
 import type { HostService } from '@pluxel/host'
 
-import { http } from './http'
+import { elysia } from './elysia'
 import { commands } from './commands'
 import { nodeModules, type NodeModuleArtifactHostOptions } from './node'
 import { workers } from './workers'
@@ -15,7 +15,7 @@ export function standardServices(
 	}>,
 ): readonly HostService[] {
 	return [
-		http(),
+		elysia(),
 		commands(),
 		nodeModules(options.nodeModules),
 		workers(),

@@ -284,7 +284,7 @@ export class ConfigService {
 		run()
 	}
 
-	/** Wait until this backend has durably persisted all queued desired Config records. */
+	/** Wait for backend writes. Core is memory-only; persistent subclasses define durability. */
 	async flush(_options: { force?: boolean } = {}): Promise<void> {}
 
 	protected replaceRecord(owner: PluginNodeAddress, value: Readonly<ConfigRecord>): void {

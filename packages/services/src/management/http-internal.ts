@@ -1,6 +1,7 @@
 import type { RootContext, EffectsScope } from '@pluxel/core'
 import { resolveContextCapability, enterOwnerInvocation } from '@pluxel/core/host'
-import { HttpServer, type ElysiaApplicationCarrier } from '../http'
+import { ElysiaRuntime } from '../elysia/runtime'
+import type { ElysiaApplicationCarrier } from '../elysia/elysia-application-carrier'
 import type { WSConnectionData } from 'elysia/ws'
 import { AdminAccess } from './access'
 import { createHostManagementTarget } from './service'
@@ -36,7 +37,7 @@ export function attachManagementHttp(
 		},
 		{ tag: 'ManagementEndpoint', phase: 'shutdown' },
 	)
-	const http = resolveContextCapability(ctx, HttpServer)
+	const http = resolveContextCapability(ctx, ElysiaRuntime)
 	for (const prefix of ['/__pluxel/runtime', '/__pluxel/admin-access']) {
 		const unmount = http.mountEndpoint({
 			prefix,

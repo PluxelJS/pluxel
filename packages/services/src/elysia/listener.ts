@@ -1,3 +1,4 @@
+import { requestWithSignal } from './request'
 import type { Server as NodeHttpServer, IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { serve } from 'srvx/node'
@@ -6,23 +7,22 @@ import type { ServerRequest } from 'srvx'
 import type { PluginHost } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
-import { HttpServer } from '../http'
+import { ElysiaRuntime } from './runtime'
 import { NodeElysiaApplicationCarrier } from './node'
 
-/** Own a Node listener and its WebSocket carrier around the already prepared Host. */
-export async function listenHostHttp(
+/** Start the prepared Host on srvx. close() drains the Host and closes its listener; also handles SIGINT/SIGTERM. */
+export async function listenElysia(
 	host: PluginHost,
 	options: Readonly<{
-		fetch(request: Request): Response | Promise<Response>
 		/** Overrides PLUXEL_HOST_BIND / Portless HOST; defaults to 0.0.0.0. */
 		hostname?: string
 		/** Overrides PLUXEL_HOST_PORT / Portless PORT; defaults to 3000. Zero selects a free port. */
 		port?: number
 		/** Optional application public directory, served only after a non-reserved 404. */
 		publicDir?: string
-	}>,
+	}> = {},
 ) {
-	const http = resolveContextCapability(host.ctx, HttpServer)
+	const http = resolveContextCapability(host.ctx, ElysiaRuntime)
 	const environment = resolveHostEnv()
 	const hostname = options.hostname ?? environment.hostBind ?? '0.0.0.0'
 	const port = options.port ?? environment.hostPort ?? 3000
@@ -30,7 +30,7 @@ export async function listenHostHttp(
 		throw new TypeError('[host] port must be an integer from 0 to 65535')
 	let server: ReturnType<typeof serve> | undefined
 	const carrier = new NodeElysiaApplicationCarrier({
-		fetch: options.fetch,
+		fetch: http.fetch,
 		matches: http.matchesWebSocketRoute,
 		metadata() {
 			if (!server?.url) throw new Error('[host] HTTP listener is not ready')
@@ -81,7 +81,7 @@ export async function listenHostHttp(
 			port,
 			silent: true,
 			gracefulShutdown: false,
-			fetch: (request) => dispatch(request, options.fetch, carrier, options.publicDir),
+			fetch: (request) => dispatch(request, http.fetch, carrier, options.publicDir),
 		})
 		node = server.node?.server as NodeHttpServer | undefined
 		if (!node) throw new Error('[host] HTTP listener has no Node server')
@@ -128,14 +128,7 @@ async function dispatch(
 		response.once('close', onClose)
 		response.once('finish', cleanup)
 	}
-	const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
-	const input = new Request(request.url, {
-		method: request.method,
-		headers: request.headers,
-		signal: AbortSignal.any([request.signal, client.signal]),
-		body: hasBody ? request.body : undefined,
-		...(hasBody && request.body ? { duplex: 'half' } : {}),
-	} as RequestInit)
+	const input = requestWithSignal(request, AbortSignal.any([request.signal, client.signal]))
 	carrier.bindRequest(input, request)
 	const result = await fetch(input)
 	const pathname = new URL(input.url).pathname

@@ -1,5 +1,5 @@
 import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { Commands } from '@pluxel/services/commands'
 import { Cache, type CacheNamespace, type CacheStats } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'
@@ -345,7 +345,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		)
 
 		this.ctx
-			.require(Http)
+			.require(ElysiaApp)
 			.get('/showcase/status', () => compactSnapshot(this.snapshot()))
 			.post('/showcase/generate/:title', async ({ params }) =>
 				pickCommandArtifact(await this.generate(params.title)),

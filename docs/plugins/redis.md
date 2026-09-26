@@ -84,7 +84,8 @@ custom provider 必须自己把连接清理注册到 lifecycle；consumer 和下
 
 ## Typed Lua scripts
 
-需要原子组合多个 Redis command 时，用 `defineRedisScript()` 把 keys、arguments 和返回值绑定成一个 definition：
+需要原子组合多个 Redis command 时，用 `defineRedisScript()` 把 keys、arguments 和返回值绑定成一个 definition。
+`arguments` tuple 含必需成员时，调用必须提供该字段；允许空数组的参数契约（例如 `readonly []` 或 `readonly [] | readonly [string]`）可省略。类型不会解析 Lua 或代替运行时校验。
 
 ```ts no-twoslash
 import { defineRedisScript } from '@pluxel/redis'

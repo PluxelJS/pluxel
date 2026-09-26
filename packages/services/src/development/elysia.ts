@@ -1,8 +1,8 @@
 import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal'
 import { hostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
-import { HttpServer, type HttpServerApi } from '../http'
-import type { NodeElysiaApplicationCarrier } from '../http/node'
+import { ElysiaRuntime, type ElysiaRuntimeApi } from '../elysia/runtime'
+import type { NodeElysiaApplicationCarrier } from '../elysia/node'
 import type { Plugin } from 'vite'
 import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
 import {
@@ -12,17 +12,17 @@ import {
 } from './vite-node-carrier'
 
 /** Borrow Vite's listener for the explicitly installed HTTP service. */
-export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
-	let active: { http: HttpServerApi; carrier: NodeElysiaApplicationCarrier } | undefined
+export function elysiaDevelopment(): Plugin<HostDevelopmentPluginApi> {
+	let active: { http: ElysiaRuntimeApi; carrier: NodeElysiaApplicationCarrier } | undefined
 	let transport: SrvxViteNodeCarrierAttachment | undefined
 	return {
-		name: 'pluxel:host-http',
+		name: 'pluxel:elysia',
 		apply: 'serve',
 		api: {
 			pluxelHost: {
 				async attach({ host, server }) {
-					if (active) throw new Error('[services/http/vite] HTTP attachment is already active')
-					const http = resolveContextCapability(host.ctx, HttpServer)
+					if (active) throw new Error('[services/elysia/vite] HTTP attachment is already active')
+					const http = resolveContextCapability(host.ctx, ElysiaRuntime)
 					const carrier = createViteNodeElysiaApplicationCarrier(server, {
 						fetch: http.fetch,
 						matches: http.matchesWebSocketRoute,
@@ -86,7 +86,7 @@ export function httpDevelopment(): Plugin<HostDevelopmentPluginApi> {
 						} catch (cleanup) {
 							throw new AggregateError(
 								[error, cleanup],
-								'[services/http/vite] HTTP attachment cleanup failed',
+								'[services/elysia/vite] HTTP attachment cleanup failed',
 								{ cause: cleanup },
 							)
 						}

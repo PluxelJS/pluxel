@@ -11,7 +11,6 @@
 
 | 缺口                       | 当前边界                                                                                      | 完成标准                                                                                                |
 | -------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 第二个真实 carrier         | Node 已验证；Bun、Deno 尚无等价证明                                                           | 至少一个 Bun 或 Deno carrier 与 Node 共用 HTTP、stream、WebSocket 和生命周期 conformance suite          |
 | 等价路由冲突               | 能拒绝跨 owner 的相同 kind、method、declared path；不能证明 matcher-equivalent pattern 无冲突 | Elysia 提供公开的 compiled matcher signature，并通过参数改名、可选片段、trailing slash 等冲突测试       |
 | Plugin 包版本准入          | singleton identity 不等于 `elysia` peer range 兼容                                            | 封存包的兼容声明，static/dynamic 使用同一 admission contract，缺失、不可解析、不兼容 range 均有明确诊断 |
 | 外部 application lifecycle | 缺少公开 attach/detach epoch；直接使用 `setup()` / `cleanup()` fail-fast                      | 上游公开 epoch 可支持成功、失败回滚、请求排空与 exactly-once detach，且不访问私有 callback              |
@@ -19,7 +18,7 @@
 
 ## Carrier 验证约束
 
-第二个 carrier 必须复用现有 contribution、dispatcher 与生命周期实现，差异限定在网络平台接入。
+生产接入固定 Elysia 2 + srvx；不把增加 Bun/Deno adapter 作为待完成工作。Node production 与 Vite 接线复用同一 directory 与生命周期实现。
 验证至少包括：
 
 - HTTP 请求、错误与响应语义，以及请求中止和客户端断开。
@@ -27,7 +26,7 @@
 - WebSocket upgrade、消息、连接关闭，以及旧 generation 退出后的连接所有权。
 - init 失败、贡献撤回、宿主关闭与在途请求之间的时序。
 
-Fetch 类型兼容不能代替真实网络验证。不得复制一套 Bun/Deno 业务 dispatcher 来绕过公共 carrier contract 的缺陷。
+Fetch 类型兼容不能代替真实网络验证。内部 carrier 接线不是公开的替换扩展点。
 生产 Node 与 Vite upgrade 都应保留实际 socket 回归。
 
 ## 路由与上游 lifecycle

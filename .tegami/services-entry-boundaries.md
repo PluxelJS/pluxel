@@ -8,8 +8,8 @@ packages:
 
 ## Collapse implementation paths into deliberate service boundaries
 
-Import `createHostHttpHandler` from `@pluxel/services/http` and `listenHostHttp` from
-`@pluxel/services/http/node`. The application, listener and private asset-file subpaths are removed.
+Import `createElysiaHandler` from `@pluxel/services/elysia` and `listenElysia` from
+`@pluxel/services/elysia/node`. The application, listener and private asset-file subpaths are removed.
 Generated launchers and starter applications use these shared domain entries.
 
 Private service implementation files are no longer exported individually. Framework owner-view and

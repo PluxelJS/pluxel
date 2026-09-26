@@ -14,14 +14,14 @@
 - `ctx.effects.own(disposable, meta?) -> Guard`
   - 登记一个 `dispose()` 资源对象（可返回 Promise）
 - `await ctx.effects.acquire(acquire, release, meta?) -> T`
-  - 获取资源并自动登记 release；若登记失败会 best-effort 立刻 release 后 rethrow
+  - 准入检查后获取资源并登记 release；获取期间 scope/tx 撤回时等待 best-effort release 后 rethrow
 
 ## 结构化能力
 
 - `ctx.effects.scope(meta?) -> EffectsScope`
   - 创建子作用域（默认自动被父作用域纳管）
 - `await ctx.effects.transaction(async (tx) => ...)`
-  - 事务：成功 commit=no-op；失败 rollback（checkpoint unwind）
+  - 事务：成功保留登记，失败只回收属于本事务的资源；嵌套事务从活动 tx 开始，同级并发拒绝
 
 ## 托管异步工作
 

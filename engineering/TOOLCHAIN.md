@@ -110,7 +110,10 @@ Part facts 服务 occurrence construction 与来源诊断，不建立第二张 g
 Rolldown。`pluginPackage()` 与 `pluxel()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
 legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench semantic lowering 和 decorator
 output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
-`runWithTsdown()` 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
+官方 CLI 从 `@pluxel/rolldown/internal/cli` 按 allowlist 加载 `resolveBuildContext`、`pluginPackage` 与 `runWithTsdown`。
+Runner 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
+非 watch 等待 success hooks 并清理 bundles，失败保留原错与清理失败。Watch 的 watcher、配置重启及 stdin 属于命令进程，
+不是可独立 dispose 的程序式 session；因此 runner 不属于公开 `/build`。自定义工具使用公开 `pluginPackage` preset 与自己选择的构建宿主。
 
 Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named export table，并 lower：
 

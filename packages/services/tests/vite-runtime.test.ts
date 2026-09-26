@@ -109,7 +109,7 @@ describe('static Vite runtime', () => {
 
 function pluginSource(version: string, available: boolean): string {
 	return [
-		"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; import * as v from 'valibot'; import { Http } from '@pluxel/services/http'",
+		"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; import * as v from 'valibot'; import { ElysiaApp } from '@pluxel/services/elysia'",
 		"import { websocket } from 'elysia/websocket'",
 		"import { BuiltStatic } from '@fixture/vite-built'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
@@ -118,14 +118,14 @@ function pluginSource(version: string, available: boolean): string {
 		'  private readonly settings = this.configs.use(ViteStaticConfig)',
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
-		`  protected override init() { this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.require(Http).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
+		`  protected override init() { this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.require(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',
 		'export class ConfiguredPlugin extends BasePlugin {',
 		'  private readonly settings = this.configs.use(ConfiguredPluginConfig)',
 		"  configuredLabel = ''",
-		`  protected override init() { this.configuredLabel = this.settings.label; this.ctx.require(Http).use(websocket()).get('/configured/version', () => ${JSON.stringify(version)}).ws('/configured/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
+		`  protected override init() { this.configuredLabel = this.settings.label; this.ctx.require(ElysiaApp).use(websocket()).get('/configured/version', () => ${JSON.stringify(version)}).ws('/configured/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		'@Plugin()',
 		'export class PartProvider extends BasePlugin {',

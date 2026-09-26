@@ -1,6 +1,6 @@
 import { mountWorkbenchShell } from './shell/mount'
 import { defineHostService, type HostService } from '@pluxel/host'
-import { HttpServer } from '@pluxel/services/http'
+import { ElysiaRuntime } from '@pluxel/services/internal'
 import { WorkbenchHost } from './token'
 import type { WorkbenchShellOptions } from './shell'
 
@@ -10,11 +10,11 @@ export function workbenchHttp(options: WorkbenchShellOptions = {}): HostService<
 	return defineHostService({
 		name: 'WorkbenchHTTP',
 		capabilities: [],
-		requires: { http: HttpServer, workbench: WorkbenchHost },
+		requires: { elysia: ElysiaRuntime, workbench: WorkbenchHost },
 		prepare: ({ ctx, dependencies, effects }) => {
 			const mounted = mountWorkbenchShell(ctx, snapshot)
 			effects.defer(mounted.dispose, { tag: 'WorkbenchShell', phase: 'shutdown' })
-			const unmount = dependencies.http.mountFallback({
+			const unmount = dependencies.elysia.mountFallback({
 				fetch: mounted.handler,
 				matchesRequest: mounted.handler.matchesRequest,
 			})

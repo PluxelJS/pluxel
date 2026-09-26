@@ -604,8 +604,8 @@ function buildHostBootstrap(
 ${http ? "import 'pluxel:static-elysia-wiring'" : ''}
 import application from ${JSON.stringify(entry)}
 import { runHostApplication } from '@pluxel/host'
-${http ? "import { createHostHttpHandler } from '@pluxel/services/http'" : ''}
-${launcher === 'node' ? "import { listenHostHttp } from '@pluxel/services/http/node'" : ''}
+${http ? "import { createElysiaHandler } from '@pluxel/services/elysia'" : ''}
+${launcher === 'node' ? "import { listenElysia } from '@pluxel/services/elysia/node'" : ''}
 const host = await runHostApplication(application, {
  startup: {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',variant:${JSON.stringify(variant)}}},
  frameworkModules: ${framework},
@@ -616,11 +616,11 @@ export const start = () => host.start()
 ${
 	http
 		? `let handler
-try { handler = createHostHttpHandler(host) } catch (error) { await host.close(); throw error }
+try { handler = createElysiaHandler(host) } catch (error) { await host.close(); throw error }
 export const fetch = handler`
 		: ''
 }
-${launcher === 'node' ? 'const listener = await listenHostHttp(host, {fetch,publicDir:import.meta.dirname+"/public"}).catch(async (error) => { await host.close(); throw error })\nexport const address = listener.address\nexport const stop = listener.close' : 'export const stop = () => host.close()'}
+${launcher === 'node' ? 'const listener = await listenElysia(host, {publicDir:import.meta.dirname+"/public"}).catch(async (error) => { await host.close(); throw error })\nexport const address = listener.address\nexport const stop = listener.close' : 'export const stop = () => host.close()'}
 `
 }
 

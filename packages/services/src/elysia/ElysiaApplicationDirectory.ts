@@ -1,3 +1,4 @@
+import { requestWithSignal } from './request'
 import {
 	enterOwnerInvocation,
 	type CoreCommitPublication,
@@ -118,7 +119,7 @@ function assertApplicationRoutesAvailable(
 	for (const route of routes) {
 		if (!isReservedPath(route.path)) continue
 		throw new Error(
-			`[pluxel/http] Elysia ${route.method} route "${route.path}" from "${ctx.pluginInfo.displayName}" uses the reserved /__pluxel namespace`,
+			`[pluxel/elysia] Elysia ${route.method} route "${route.path}" from "${ctx.pluginInfo.displayName}" uses the reserved /__pluxel namespace`,
 		)
 	}
 }
@@ -181,7 +182,7 @@ function assertNoRouteConflicts(contributions: readonly ApplicationContribution[
 		const conflict = conflictingContribution(contribution, index)
 		if (conflict) {
 			throw new Error(
-				`[pluxel/http] Elysia route conflict for ${conflict.candidateRoute.method} ${conflict.candidateRoute.path} between "${conflict.contribution.ctx.pluginInfo.displayName}" and "${contribution.ctx.pluginInfo.displayName}"`,
+				`[pluxel/elysia] Elysia route conflict for ${conflict.candidateRoute.method} ${conflict.candidateRoute.path} between "${conflict.contribution.ctx.pluginInfo.displayName}" and "${contribution.ctx.pluginInfo.displayName}"`,
 			)
 		}
 		indexContributionRoutes(index, contribution)
@@ -236,7 +237,7 @@ function selectWithElysia(
 ): ApplicationContribution | undefined {
 	const selected = selector.fetch(request)
 	if (selected instanceof Promise) {
-		throw new TypeError('[pluxel/http] Compiled Elysia directory selector became asynchronous')
+		throw new TypeError('[pluxel/elysia] Compiled Elysia directory selector became asynchronous')
 	}
 	const ownerKey = selected.headers.get(ROUTE_OWNER_HEADER)
 	return ownerKey ? snapshot.byOwnerKey.get(ownerKey) : undefined
@@ -326,17 +327,6 @@ function responseWithLease(response: Response, signal: AbortSignal, dispose: () 
 	})
 }
 
-function requestWithSignal(request: Request, signal: AbortSignal): Request {
-	const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
-	return new Request(request.url, {
-		method: request.method,
-		headers: request.headers,
-		signal,
-		body: hasBody ? request.body : undefined,
-		...(hasBody && request.body ? { duplex: 'half' } : {}),
-	} as RequestInit)
-}
-
 /**
  * Runtime-private generation application registry and immutable business dispatcher.
  *
@@ -377,7 +367,7 @@ export class ElysiaApplicationDirectory {
 
 	applicationFor(ctx: PluxelContext): Elysia {
 		if (!ctx.pluginInfo) {
-			throw new Error('[pluxel/http] ctx.elysia requires a Plugin generation Context')
+			throw new Error('[pluxel/elysia] ctx.elysia requires a Plugin generation Context')
 		}
 		const owner = ctx as PluginContext
 		let app = this.applications.get(owner)
@@ -430,7 +420,7 @@ export class ElysiaApplicationDirectory {
 				if (ingress.transferred) return response ?? new Response(null, { status: 204 })
 				if (!(response instanceof Response)) {
 					throw new Error(
-						'[pluxel/http] Elysia fetch returned no Response without transferring a WebSocket upgrade',
+						'[pluxel/elysia] Elysia fetch returned no Response without transferring a WebSocket upgrade',
 					)
 				}
 				return responseWithLease(response, lease.signal, () => {
@@ -452,7 +442,7 @@ export class ElysiaApplicationDirectory {
 
 	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void {
 		if (this.applicationCarrier) {
-			throw new Error('[pluxel/http] An Elysia application carrier is already attached')
+			throw new Error('[pluxel/elysia] An Elysia application carrier is already attached')
 		}
 		this.applicationCarrier = carrier
 		let active = true
@@ -511,7 +501,7 @@ export class ElysiaApplicationDirectory {
 		})
 		const unsupported = (operation: string): never => {
 			throw new Error(
-				`[pluxel/http] ${operation} controls the shared physical carrier and is unavailable to a Plugin Elysia application`,
+				`[pluxel/elysia] ${operation} controls the shared physical carrier and is unavailable to a Plugin Elysia application`,
 			)
 		}
 		let view: OwnerElysiaServerView
@@ -593,12 +583,12 @@ export class ElysiaApplicationDirectory {
 	private denyPhysicalApplicationLifecycle(app: Elysia): void {
 		const physicalUnavailable = (operation: string) => () => {
 			throw new Error(
-				`[pluxel/http] app.${operation}() controls the shared physical carrier and is unavailable to a Plugin Elysia application`,
+				`[pluxel/elysia] app.${operation}() controls the shared physical carrier and is unavailable to a Plugin Elysia application`,
 			)
 		}
 		const externalEpochUnavailable = (operation: 'setup' | 'cleanup') => () => {
 			throw new Error(
-				`[pluxel/http] app.${operation}() is unsupported because Elysia 2 beta.7 exposes no public external application attach/detach epoch`,
+				`[pluxel/elysia] app.${operation}() is unsupported because Elysia 2 beta.7 exposes no public external application attach/detach epoch`,
 			)
 		}
 		Object.defineProperties(app, {
@@ -647,7 +637,7 @@ export class ElysiaApplicationDirectory {
 			assertApplicationRoutesAvailable(generation.ctx, routes)
 			const serverView = this.serverViews.get(generation.ctx)
 			if (!serverView) {
-				throw new Error('[pluxel/http] Elysia owner Server view was not created')
+				throw new Error('[pluxel/elysia] Elysia owner Server view was not created')
 			}
 			Object.defineProperty(app, 'server', {
 				value: serverView,
@@ -708,7 +698,7 @@ export class ElysiaApplicationDirectory {
 					Object.freeze({
 						ctx,
 						error: new Error(
-							`[pluxel/http] Elysia route conflict for ${conflict.candidateRoute.method} ${conflict.candidateRoute.path}; "${conflict.contribution.ctx.pluginInfo.displayName}" already owns the same route`,
+							`[pluxel/elysia] Elysia route conflict for ${conflict.candidateRoute.method} ${conflict.candidateRoute.path}; "${conflict.contribution.ctx.pluginInfo.displayName}" already owns the same route`,
 						),
 					}),
 				)
@@ -750,7 +740,7 @@ export class ElysiaApplicationDirectory {
 	private publishCommit(publication: CoreCommitPublication): undefined {
 		const prepared = this.prepared.get(publication.operation)
 		if (!prepared || prepared.publication !== publication) {
-			throw new Error('[pluxel/http] Elysia application publication was not prepared')
+			throw new Error('[pluxel/elysia] Elysia application publication was not prepared')
 		}
 		this.snapshot = prepared.snapshot
 		this.prepared.delete(publication.operation)

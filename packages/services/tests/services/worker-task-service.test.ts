@@ -1,4 +1,4 @@
-import { http } from '@pluxel/services/http'
+import { elysia } from '@pluxel/services/elysia'
 import { commands } from '@pluxel/services/commands'
 import { persistence } from '@pluxel/services/persistence'
 import { nodeModules } from '@pluxel/services/node'
@@ -105,7 +105,7 @@ async function createWorkerHost(workerOptions: WorkersConfig = {}) {
 	return await createServiceInternalTestHarness({
 		workbench: false,
 		services: [
-			http(),
+			elysia(),
 			commands(),
 			persistence({ mode: 'memory' }),
 			nodeModules({ root: artifactRoot }),

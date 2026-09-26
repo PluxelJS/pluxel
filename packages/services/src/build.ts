@@ -1,7 +1,7 @@
 import { pluxel as applicationBuild, type PluxelApplicationBuildOptions } from '@pluxel/rolldown'
 
 const serviceEntries = [
-	'@pluxel/services/http',
+	'@pluxel/services/elysia',
 	'@pluxel/services/node',
 	'@pluxel/services/workers',
 	'@pluxel/services/commands',

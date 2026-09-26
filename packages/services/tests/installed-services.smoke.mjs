@@ -287,7 +287,7 @@ import type * as ConsoleContracts from '@pluxel/host-dev/console'
 import { host as viteHost } from '@pluxel/host-dev/vite'
 import { servicesPreset } from '@pluxel/services/preset'
 import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
-import { httpDevelopment } from '@pluxel/services/http/vite'
+import { elysiaDevelopment } from '@pluxel/services/elysia/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/dev'
 import { workbenchHttp } from '@pluxel/workbench/http'
@@ -302,7 +302,7 @@ class UiConsumer extends BasePlugin { init() {
 } }
 const rootUi = requireWorkbench(uiHost.ctx)
 const serveUi = createWorkbenchArtifactHandler(uiHost.ctx)
-const development = [serviceSingletons(), viteHost({ entry: './app.ts' }), httpDevelopment(), nodeArtifacts(), workbenchArtifacts()]
+const development = [serviceSingletons(), viteHost({ entry: './app.ts' }), elysiaDevelopment(), nodeArtifacts(), workbenchArtifacts()]
 const officialDevelopment = vitePreset({ entry: './app.ts', devConsole: true })
 void [servicesPreset, officialDevelopment]
 void [UiConsumer, rootUi, serveUi, development, workbench, createWorkbenchRenderer, workbenchHttp, createWorkbenchShellHandler]
@@ -325,15 +325,16 @@ const { Workbench } = await import('@pluxel/workbench')
 const { workbenchService } = await import('@pluxel/workbench/service')
 const { requireWorkbench } = await import('@pluxel/workbench/server')
 const { workbenchHttp } = await import('@pluxel/workbench/http')
-const { http, HttpServer } = await import('@pluxel/services/http')
+const { elysia } = await import('@pluxel/services/elysia')
+const { ElysiaRuntime } = await import('@pluxel/services/internal')
 const { persistence } = await import('@pluxel/services/persistence')
 const { management } = await import('@pluxel/services/management/service')
 const { managementAccess } = await import('@pluxel/services/management/access')
 const { managementHttp } = await import('@pluxel/services/management/http')
 const { createWorkbenchArtifactHandler, WorkbenchHost } = await import('@pluxel/workbench/server')
 const transport = managementHttp({ bindings: (ctx) => ({ createWorkbench: (principal, invalidate) => requireWorkbench(ctx).createSession(principal, invalidate), artifacts: createWorkbenchArtifactHandler(ctx) }) })
-const host = await createHost({ plugins: [], services: [http(), persistence({ mode: 'memory' }), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
-const server = resolveContextCapability(host.ctx, HttpServer)
+const host = await createHost({ plugins: [], services: [elysia(), persistence({ mode: 'memory' }), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
+const server = resolveContextCapability(host.ctx, ElysiaRuntime)
 const page = await server.fetch(new Request('http://host.test/admin', { headers: { accept: 'text/html' } }))
 assert.equal(page.status, 200)
 const html = await page.text()
@@ -349,7 +350,7 @@ assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
 await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
-const workbenchTestHost = await createTestHost({ workbench: true, services: [http(), persistence({ mode: 'memory' })] })
+const workbenchTestHost = await createTestHost({ workbench: true, services: [elysia(), persistence({ mode: 'memory' })] })
 assert.equal(typeof workbenchTestHost.workbench.open, 'function')
 await workbenchTestHost.dispose()
 console.log('ISOLATED_WORKBENCH_OK')
@@ -410,10 +411,10 @@ const loads = []
 const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
 const { createHost } = await import('@pluxel/host')
 const { standardServices } = await import('@pluxel/services')
-const { HttpServer } = await import('@pluxel/services/http')
+const { ElysiaRuntime } = await import('@pluxel/services/internal')
 const standardHost = await createHost({ plugins: [], services: standardServices({ persistence: { mode: 'memory' } }) })
 try {
- const response = await standardHost.ctx.require(HttpServer).fetch(new Request('http://local.test/missing'))
+ const response = await standardHost.ctx.require(ElysiaRuntime).fetch(new Request('http://local.test/missing'))
  assert.equal(response.status, 404)
  await response.body?.cancel()
  assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')

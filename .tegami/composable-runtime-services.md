@@ -61,8 +61,8 @@ same freezer, artifact assembly and deployment validation.
 
 ## Separate business HTTP from management
 
-Install http() from @pluxel/services/http and use ctx.require(Http) for the native generation-owned
-Elysia application. Independent Hosts expose business requests through the root-only HttpServer token,
+Install elysia() from @pluxel/services/elysia and use ctx.require(ElysiaApp) for the native generation-owned
+Elysia application. Independent Hosts expose business requests through createElysiaHandler(host),
 without management, Workbench or a listener. Official presets use the same installation and publication stages.
 Host services may bind fixed Core lifecycle stages before Plugin admission; no dynamic registration or
 secondary graph commit is introduced.

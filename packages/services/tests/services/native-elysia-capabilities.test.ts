@@ -1,4 +1,4 @@
-import { Http, http } from '@pluxel/services/http'
+import { ElysiaApp, elysia } from '@pluxel/services/elysia'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { createTestHost } from '@pluxel/test'
 import { Elysia, t } from 'elysia'
@@ -11,7 +11,7 @@ const reusableApi = (app: Elysia) =>
 class NativeElysiaCapabilities extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(Http)
+			.require(ElysiaApp)
 			.decorate('nativeOwner', 'capabilities')
 			.derive(({ request }) => ({
 				requestMarker: request.headers.get('x-marker') ?? 'missing',
@@ -52,7 +52,7 @@ class NativeElysiaCapabilities extends BasePlugin {
 class NativeElysiaIsolationA extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(Http)
+			.require(ElysiaApp)
 			.decorate('isolatedValue', 'a')
 			.get('/native-isolation/a', ({ isolatedValue }) => isolatedValue)
 	}
@@ -62,7 +62,7 @@ class NativeElysiaIsolationA extends BasePlugin {
 class NativeElysiaIsolationB extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(Http)
+			.require(ElysiaApp)
 			.decorate('isolatedValue', 'b')
 			.get('/native-isolation/b', ({ isolatedValue }) => isolatedValue)
 	}
@@ -71,7 +71,7 @@ class NativeElysiaIsolationB extends BasePlugin {
 describe('native Elysia authoring capability', () => {
 	it('preserves function plugins, async modules, context, schemas, errors and mounts', async () => {
 		{
-			await using host = await createTestHost({ services: [http()] })
+			await using host = await createTestHost({ services: [elysia()] })
 
 			await host.start(NativeElysiaCapabilities)
 
@@ -130,7 +130,7 @@ describe('native Elysia authoring capability', () => {
 
 	it('keeps decorators and hooks local to each generation application', async () => {
 		{
-			await using host = await createTestHost({ services: [http()] })
+			await using host = await createTestHost({ services: [elysia()] })
 
 			await host.start([NativeElysiaIsolationA, NativeElysiaIsolationB])
 

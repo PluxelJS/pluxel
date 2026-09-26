@@ -16,7 +16,7 @@
 
 | 边界                                                      | 需要一致的是什么                                | 版本政策的所有者          |
 | --------------------------------------------------------- | ----------------------------------------------- | ------------------------- |
-| `ctx.require(Http)` 返回宿主 Elysia application           | 实例、扩展和宿主 carrier 所理解的 Elysia 运行时 | HTTP 服务                 |
+| `ctx.require(ElysiaApp)` 返回宿主 Elysia application      | 实例、扩展和宿主 carrier 所理解的 Elysia 运行时 | HTTP 服务                 |
 | 插件向 Workbench 提供 `RpcTarget`，或借用宿主 RPC session | Cap’n Web capability、会话与传输实现            | Workbench                 |
 | 插件自建 HTTP/RPC 端点及其客户端                          | 该端点自己的协议                                | 插件作者                  |
 | 插件间有意交换 `better-result` Result 实例                | 公开的 Result API 与组合语义                    | 拟议的 Pluxel Result 入口 |
@@ -28,7 +28,7 @@
 
 ## 2. 当前事实与证据
 
-- [HTTP 作者契约](../../docs/runtime/http.md#直接使用-elysia-能力)规定 `ctx.require(Http)` 是真实 Elysia 实例；
+- [HTTP 作者契约](../../docs/runtime/http.md#直接使用-elysia-能力)规定 `ctx.require(ElysiaApp)` 是真实 Elysia 实例；
   消费它的插件声明精确 Elysia peer 和同版 dev dependency，不把私有副本打入 Plugin bundle。
   [静态构建](../../packages/rolldown/src/cli/elysia-singleton.ts)把公开入口解析到宿主的实现。
   [现有后续提案](NATIVE_ELYSIA_APPLICATION.md#包版本准入)已记录：模块 identity 成立仍不能代替发布包 peer range 准入；

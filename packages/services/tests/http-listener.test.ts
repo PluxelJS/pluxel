@@ -5,15 +5,15 @@ import { websocket } from 'elysia/websocket'
 import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.unstubAllEnvs())
-import { http, Http, HttpServer } from '../src/http'
-import { createHostHttpHandler } from '@pluxel/services/http'
-import { listenHostHttp } from '@pluxel/services/http/node'
+import { elysia, ElysiaApp } from '../src/elysia'
+import { ElysiaRuntime } from '@pluxel/services/internal'
+import { listenElysia } from '@pluxel/services/elysia/node'
 
 @Plugin()
 class ListenerSocketProbe extends BasePlugin {
 	protected override init() {
 		this.ctx
-			.require(Http)
+			.require(ElysiaApp)
 			.use(websocket())
 			.ws('/probe/socket', {
 				message(socket, message) {
@@ -26,10 +26,10 @@ class ListenerSocketProbe extends BasePlugin {
 it.each([false, true])(
 	'upgrades business sockets with a shell fallback enabled: %s',
 	async (fallback) => {
-		const host = await createHost({ plugins: [ListenerSocketProbe], services: [http()] })
+		const host = await createHost({ plugins: [ListenerSocketProbe], services: [elysia()] })
 		const fallbackFetch = vi.fn(async () => new Response('shell'))
 		if (fallback) {
-			host.ctx.require(HttpServer).mountFallback({
+			host.ctx.require(ElysiaRuntime).mountFallback({
 				matchesRequest: () => true,
 				fetch: fallbackFetch,
 			})
@@ -38,8 +38,7 @@ it.each([false, true])(
 			definition: pluginDefinitionAddressOf(ListenerSocketProbe),
 			variant: 'default',
 		})
-		const listener = await listenHostHttp(host, {
-			fetch: createHostHttpHandler(host),
+		const listener = await listenElysia(host, {
 			hostname: '127.0.0.1',
 			port: 0,
 		})
@@ -69,10 +68,10 @@ it.each([false, true])(
 )
 
 it('binds Node request metadata and propagates client disconnect before closing the Host', async () => {
-	const host = await createHost({ plugins: [], services: [http()] })
+	const host = await createHost({ plugins: [], services: [elysia()] })
 	const entered = Promise.withResolvers<void>()
 	const aborted = Promise.withResolvers<void>()
-	resolveContextCapability(host.ctx, HttpServer).mountEndpoint({
+	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
 		prefix: '/probe',
 		matchesWebSocketRoute: () => false,
 		async fetch(request, carrier) {
@@ -93,8 +92,7 @@ it('binds Node request metadata and propagates client disconnect before closing 
 			return new Response('ok')
 		},
 	})
-	const listener = await listenHostHttp(host, {
-		fetch: createHostHttpHandler(host),
+	const listener = await listenElysia(host, {
 		hostname: '127.0.0.1',
 		port: 0,
 	})
@@ -117,12 +115,10 @@ it('binds Node request metadata and propagates client disconnect before closing 
 }, 10000)
 
 it('rejects malformed listener environment before attaching a carrier', async () => {
-	const host = await createHost({ plugins: [], services: [http()] })
+	const host = await createHost({ plugins: [], services: [elysia()] })
 	try {
 		vi.stubEnv('PLUXEL_HOST_PORT', '')
-		await expect(listenHostHttp(host, { fetch: createHostHttpHandler(host) })).rejects.toThrow(
-			'PLUXEL_HOST_PORT',
-		)
+		await expect(listenElysia(host, {})).rejects.toThrow('PLUXEL_HOST_PORT')
 	} finally {
 		await host.close()
 	}
@@ -134,8 +130,8 @@ it('uses validated Portless bind and port defaults', async () => {
 	vi.stubEnv('PORTLESS_URL', 'http://pluxel.localhost:1355')
 	vi.stubEnv('HOST', '127.0.0.1')
 	vi.stubEnv('PORT', '0')
-	const host = await createHost({ plugins: [], services: [http()] })
-	const listener = await listenHostHttp(host, { fetch: createHostHttpHandler(host) })
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	const listener = await listenElysia(host, {})
 	try {
 		expect(listener.address.host).toBe('127.0.0.1')
 		expect(listener.address.port).toBeGreaterThan(0)

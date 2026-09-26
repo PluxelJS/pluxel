@@ -7,7 +7,7 @@
 
 需要 library API 时直接使用领域包：
 
-- build / Rolldown plugin：`@pluxel/rolldown/build`、`@pluxel/rolldown/vite`；
+- build / Rolldown plugin：`@pluxel/rolldown/internal/cli`（官方 CLI 协作）、`@pluxel/rolldown/vite`；
 
 ## Command loading
 

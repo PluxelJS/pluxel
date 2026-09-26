@@ -1,4 +1,4 @@
-import { HttpServer } from '@pluxel/services/http'
+import { ElysiaRuntime } from '@pluxel/services/internal'
 import assert from 'node:assert/strict'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import {
@@ -142,7 +142,7 @@ try {
 	assert.equal(await firstVersionResponse.text(), 'v1')
 	assert.equal(
 		currentHost()
-			.ctx.require(HttpServer)
+			.ctx.require(ElysiaRuntime)
 			.matchesWebSocketRoute(
 				new Request(`${runtimeUrl}/configured/socket`, {
 					headers: { connection: 'Upgrade', upgrade: 'websocket' },
@@ -322,7 +322,7 @@ try {
 	assert.equal(removedResponse.status, 404)
 	assert.equal(
 		currentHost()
-			.ctx.require(HttpServer)
+			.ctx.require(ElysiaRuntime)
 			.matchesWebSocketRoute(
 				new Request(`${runtimeUrl}/vite-static/socket`, {
 					headers: { connection: 'Upgrade', upgrade: 'websocket' },
@@ -539,7 +539,7 @@ async function openWebSocket(url: string): Promise<{
 
 function pluginSource(version: string, available: boolean, failProvider = false): string {
 	return [
-		"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; import * as v from 'valibot'; import { Http } from '@pluxel/services/http'",
+		"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; import * as v from 'valibot'; import { ElysiaApp } from '@pluxel/services/elysia'",
 		"import { websocket } from 'elysia/websocket'",
 		"import { BuiltStatic } from '@fixture/vite-built'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
@@ -548,14 +548,14 @@ function pluginSource(version: string, available: boolean, failProvider = false)
 		'  private readonly settings = this.configs.use(ViteStaticConfig)',
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
-		`  protected override init() { this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.require(Http).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
+		`  protected override init() { this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.require(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',
 		'export class ConfiguredPlugin extends BasePlugin {',
 		'  private readonly settings = this.configs.use(ConfiguredPluginConfig)',
 		"  configuredLabel = ''",
-		`  protected override init() { this.configuredLabel = this.settings.label; this.ctx.require(Http).use(websocket()).get('/configured/version', () => ${JSON.stringify(version)}).ws('/configured/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
+		`  protected override init() { this.configuredLabel = this.settings.label; this.ctx.require(ElysiaApp).use(websocket()).get('/configured/version', () => ${JSON.stringify(version)}).ws('/configured/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		'@Plugin()',
 		'export class PartProvider extends BasePlugin {',

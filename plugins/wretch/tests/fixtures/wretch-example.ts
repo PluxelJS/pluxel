@@ -1,4 +1,4 @@
-import { Http } from '@pluxel/services/http'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result, TaggedError } from '@pluxel/core/better-result'
 import * as f from 'valibot-form'
@@ -73,7 +73,7 @@ export class WretchExamplePlugin extends BasePlugin {
 		}
 		this.api = api
 
-		this.ctx.require(Http).get('/wretch-example/inspect', () => this.inspect())
+		this.ctx.require(ElysiaApp).get('/wretch-example/inspect', () => this.inspect())
 		this.ctx.workbench?.publish(WretchExampleWorkbench, {
 			http: { provider: this.http },
 		})
