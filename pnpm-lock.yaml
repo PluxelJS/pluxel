@@ -995,6 +995,9 @@ importers:
         specifier: catalog:prod
         version: 3.0.1
     devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: catalog:prod
+        version: 1.30.0(supports-color@8.1.1)(zod@4.5.4)
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -1004,6 +1007,9 @@ importers:
       '@types/node':
         specifier: catalog:types
         version: 26.4.0
+      capnweb:
+        specifier: catalog:dev
+        version: 0.12.0
 
   packages/context:
     devDependencies:
@@ -1297,9 +1303,6 @@ importers:
       '@electric-sql/pglite':
         specifier: catalog:prod
         version: 0.5.8
-      '@modelcontextprotocol/sdk':
-        specifier: catalog:prod
-        version: 1.30.0(supports-color@8.1.1)(zod@4.5.4)
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../commands

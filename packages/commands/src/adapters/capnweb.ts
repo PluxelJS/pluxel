@@ -1,4 +1,4 @@
-import type { CommandContext, CommandFailure, DirectCommand } from '@pluxel/commands'
+import type { CommandContext, CommandFailure, DirectCommand } from '../types'
 import { RpcPromise, RpcStub, RpcTarget, serialize } from 'capnweb'
 
 type Methods = Readonly<Record<string, DirectCommand<any, unknown, any>>>

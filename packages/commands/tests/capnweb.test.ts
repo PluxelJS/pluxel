@@ -1,8 +1,8 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { Result, defineCommand, type CommandContext } from '@pluxel/commands'
-import { Type, obj } from '@pluxel/commands/typebox'
+import { Result, defineCommand, type CommandContext } from '../src/index'
+import { Type, obj } from '../src/typebox'
 import {
 	RpcStub,
 	RpcTarget,
@@ -11,7 +11,7 @@ import {
 	nodeHttpBatchRpcResponse,
 	serialize,
 } from 'capnweb'
-import { toCapnweb } from '../../src/commands/adapters'
+import { toCapnweb } from '../src/adapters'
 
 interface NoteContext extends CommandContext {
 	readonly actor: string

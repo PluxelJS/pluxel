@@ -24,6 +24,11 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
+		"./adapters": {
+			"@pluxel/source": "./src/adapters.ts",
+			"import": "./dist/adapters.mjs",
+			"require": "./dist/adapters.cjs"
+		},
 		"./argv": {
 			"@pluxel/source": "./src/argv.ts",
 			"import": "./dist/argv.mjs",
@@ -41,6 +46,10 @@
 			".": {
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
+			},
+			"./adapters": {
+				"import": "./dist/adapters.mjs",
+				"require": "./dist/adapters.cjs"
 			},
 			"./argv": {
 				"import": "./dist/argv.mjs",
@@ -65,9 +74,20 @@
 		"better-result": "catalog:prod"
 	},
 	"devDependencies": {
+		"@modelcontextprotocol/sdk": "catalog:prod",
 		"@pluxel/test": "workspace:*",
 		"@sinclair/parsebox": "catalog:dev",
-		"@types/node": "catalog:types"
+		"@types/node": "catalog:types",
+		"capnweb": "catalog:dev"
+	},
+	"peerDependencies": {
+		"@modelcontextprotocol/sdk": "catalog:prod",
+		"capnweb": "catalog:prod"
+	},
+	"peerDependenciesMeta": {
+		"@modelcontextprotocol/sdk": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"

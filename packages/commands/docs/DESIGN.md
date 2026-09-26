@@ -1,6 +1,6 @@
 # Commands implementation
 
-The public contract and examples live in [README.md](../README.md). The package owns the validated local call and name registry. Carriers own authorization, protocol projection, output limits, and presentation.
+The public contract and examples live in [README.md](../README.md). The package owns the validated local call, name registry, and optional protocol projections. Carriers own publication, authorization, output limits, and presentation.
 
 ## One input plan
 

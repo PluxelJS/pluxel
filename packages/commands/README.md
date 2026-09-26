@@ -55,3 +55,5 @@ if (resolved) {
 ```
 
 `resolve()` returns `undefined` for an unmatched route. Malformed argv raises `CommandError` with `ARGUMENT_SYNTAX`; the CLI or chat carrier decides how to present it. The router supports generated options, positionals, and text/JSON tails. The [runtime guide](../../docs/runtime/commands.md) covers Plugin publication.
+
+`@pluxel/commands/adapters` exports `toCapnweb()` and `toMcp()` for explicitly selected Commands. The shared adapter entry requires the `capnweb` peer; MCP types additionally use the optional `@modelcontextprotocol/sdk` peer. The application owns the RPC target or MCP server, trusted context, publication, and transport. See the [runtime guide](../../docs/runtime/commands.md) for complete examples.

@@ -1,10 +1,5 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js'
-import type {
-	CommandContext,
-	CommandContextArgs,
-	CommandFailure,
-	DirectCommand,
-} from '@pluxel/commands'
+import type { CommandContext, CommandContextArgs, CommandFailure, DirectCommand } from '../types'
 
 /** One selected Command projected to native MCP tool data and a call handler. */
 export type McpCommand<Ctx extends CommandContext> = Readonly<{

@@ -7,9 +7,9 @@ import {
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
-import { Result, defineCommand, type CommandContext } from '@pluxel/commands'
-import { Type, obj } from '@pluxel/commands/typebox'
-import { toMcp } from '../../src/commands/adapters'
+import { Result, defineCommand, type CommandContext } from '../src/index'
+import { Type, obj } from '../src/typebox'
+import { toMcp } from '../src/adapters'
 
 interface NoteContext extends CommandContext {
 	readonly actor: string

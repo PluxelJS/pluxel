@@ -112,10 +112,10 @@ if (result.isErr() && result.error.code === 'REJECTED') console.log(result.error
 
 ## 发布为 Cap'n Web 方法
 
-`@pluxel/services/commands/adapters` 的 `toCapnweb()` 从明确选择的 Command 生成原生 `RpcTarget` class。构造时传入服务端可信 context；远端只传每个方法的输入。生成的方法位于 prototype，可嵌入原生 Cap'n Web 对象树。
+`@pluxel/commands/adapters` 的 `toCapnweb()` 从明确选择的 Command 生成原生 `RpcTarget` class。构造时传入服务端可信 context；远端只传每个方法的输入。生成的方法位于 prototype，可嵌入原生 Cap'n Web 对象树。
 
 ```ts no-twoslash
-import { toCapnweb } from '@pluxel/services/commands/adapters'
+import { toCapnweb } from '@pluxel/commands/adapters'
 
 const Notes = toCapnweb({ read: readNote })
 const notes = new Notes({ actorId: 'alice', read: async () => 'note text' })
@@ -133,12 +133,12 @@ handler 和公开 `execute()` 使用同一种 Result。组合另一个 Command �
 
 ## 投影为 MCP Tool
 
-`@pluxel/services/commands/adapters` 的 `toMcp()` 返回原生 MCP `Tool` 描述和 `call()` 函数，不创建 server 或发布工具。应用把 `tool` 放入自己的工具列表，并在 SDK 的 `tools/call` handler 中按名称选择它；每次调用由应用传入可信 context。
+`@pluxel/commands/adapters` 的 `toMcp()` 返回原生 MCP `Tool` 描述和 `call()` 函数，不创建 server 或发布工具。应用把 `tool` 放入自己的工具列表，并在 SDK 的 `tools/call` handler 中按名称选择它；每次调用由应用传入可信 context。
 
 ```ts no-twoslash
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { toMcp } from '@pluxel/services/commands/adapters'
+import { toMcp } from '@pluxel/commands/adapters'
 
 const noteTool = toMcp(readNote)
 const server = new Server({ name: 'notes', version: '1.0.0' }, { capabilities: { tools: {} } })
@@ -199,5 +199,5 @@ if (resolved) {
 - `@pluxel/commands`：`defineCommand`、`Result`、`CommandFailure`、registry 与类型。
 - `@pluxel/commands/typebox`：`Type`、`obj`、`openObj`。
 - `@pluxel/commands/argv`：`toCli()`、argv router、tail 与相关类型。
+- `@pluxel/commands/adapters`：明确选择的 Command 到原生 Cap’n Web 方法或 MCP Tool 的投影。
 - `@pluxel/services/commands`：Host 的 Commands token、服务与 carrier mount。
-- `@pluxel/services/commands/adapters`：明确选择的 Command 到原生 Cap’n Web 方法或 MCP Tool 的投影。

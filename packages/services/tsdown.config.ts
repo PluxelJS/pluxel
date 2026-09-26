@@ -43,7 +43,6 @@ export default defineConfig({
 		node: './src/node.ts',
 		workers: './src/workers.ts',
 		commands: './src/commands.ts',
-		'commands/adapters': './src/commands/adapters.ts',
 		persistence: './src/persistence.ts',
 		vault: './src/vault.ts',
 	},

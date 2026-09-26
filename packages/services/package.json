@@ -37,10 +37,6 @@
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
 		},
-		"./commands/adapters": {
-			"@pluxel/source": "./src/commands/adapters.ts",
-			"default": "./dist/commands/adapters.mjs"
-		},
 		"./database": {
 			"@pluxel/source": "./src/database.ts",
 			"default": "./dist/database.mjs"
@@ -176,7 +172,6 @@
 			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
 			"./commands": "./dist/commands.mjs",
-			"./commands/adapters": "./dist/commands/adapters.mjs",
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",
 			"./database/postgres": "./dist/database/postgres.mjs",
@@ -236,7 +231,6 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
-		"@modelcontextprotocol/sdk": "catalog:prod",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
@@ -257,7 +251,6 @@
 	},
 	"peerDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
-		"@modelcontextprotocol/sdk": "catalog:prod",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
@@ -271,9 +264,6 @@
 	},
 	"peerDependenciesMeta": {
 		"@electric-sql/pglite": {
-			"optional": true
-		},
-		"@modelcontextprotocol/sdk": {
 			"optional": true
 		},
 		"pg": {
