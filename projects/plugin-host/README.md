@@ -12,10 +12,8 @@ The same declaration drives Vite development and production builds; `sources` ad
 fixed catalog without a second host mode. Package Manager owns installation and atomic publication,
 while the Host owns catalog acceptance and lifecycle.
 
-Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default. Pi Agent
-also remains stopped until a model and an explicit tool choice are intentional. This keeps the
-host useful without external infrastructure while preserving real implementation choices in the
-Workbench. Memory is the explicit default for both backend tokens.
+Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default.
+Memory is the explicit default for both backend tokens.
 
 ## Run
 
@@ -69,8 +67,6 @@ the image itself is read from the stored artifact route. The same Plugin also re
   and starting Redis. A failed external provider blocks only its required branch.
 - Edit the Report Studio Part config, Wretch Attachment settings, Fonts selection, auth setup and
   official Plugin config forms.
-- Publish selected Commands to an Agent or MCP carrier from the owning Plugin. Tool selection and
-  application authorization stay explicit at each carrier entry.
 - Inspect plugin graph, lifecycle and logs; these are host-owned projections of the same runtime
   state used by the showcase.
 

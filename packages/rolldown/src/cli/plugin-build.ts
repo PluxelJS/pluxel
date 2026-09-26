@@ -6,7 +6,6 @@ import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils'
 import { pluginArtifactBuildPlugin } from '../plugin-artifact/pluginArtifactBuildPlugin'
 import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
-import { rpcPublicationPlugin } from '../rolldown/plugins/rpcPublicationPlugin'
 import { createPluginDependencyMetadataHook } from './plugin-metadata'
 import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
@@ -72,7 +71,6 @@ function createPipeline(
 	return {
 		plugins: [
 			PreprocessorDirectives(),
-			rpcPublicationPlugin(),
 			semantics.plugin,
 			Macros(),
 			options.lint === false ? undefined : lintGuardPlugin({ cwd: options.root }),

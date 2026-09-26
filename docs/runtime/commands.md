@@ -32,7 +32,7 @@ if (result.isErr()) console.error(result.error.code, result.error.message)
 else console.log(result.value)
 ```
 
-已知 Command 的 `execute()` 检查 wire 参数类型；来自 JavaScript、`any`、argv 或模型的输入仍在运行时校验。它统一返回 `Promise<Result<T, CommandFailure>>`，T 从 handler 的成功分支推导。省略 context 只适用于没有额外必需 context 字段的 Command。
+已知 Command 的 `execute()` 检查 wire 参数类型；来自 JavaScript、`any`、argv 或远程调用的输入仍在运行时校验。它统一返回 `Promise<Result<T, CommandFailure>>`，T 从 handler 的成功分支推导。省略 context 只适用于没有额外必需 context 字段的 Command。
 
 成功值可以是字符串、对象、数组或 `void`。本地执行不要求 output schema，也不编码成功值。载体负责将它投影到自己的协议，并验证该出口能否交付。
 
@@ -67,6 +67,19 @@ const result = await readNote.execute({ id: 'one' }, { actorId: 'alice', read: a
 if (result.isErr() && result.error.code === 'REJECTED') console.log(result.error.reason)
 ```
 
+## 发布为 Cap'n Web 方法
+
+`@pluxel/services/capnweb` 的 `toCapnweb()` 从明确选择的 Command 生成原生 `RpcTarget` class。构造时传入服务端可信 context；远端只传每个方法的输入。生成的方法位于 prototype，可嵌入原生 Cap'n Web 对象树。
+
+```ts no-twoslash
+import { toCapnweb } from '@pluxel/services/capnweb'
+
+const Notes = toCapnweb({ read: readNote })
+const notes = new Notes({ actorId: 'alice', read: async () => 'note text' })
+```
+
+方法返回 `{ ok: true, value }` 或 `{ ok: false, error }`，保留 Command 的失败 `code`、公开 `message`、输入问题和业务 `reason`，不传递本地 `cause`。`void` 成功值成为 `null`；其他成功值必须是普通 JSON 数据，无法编码时返回 `OUTPUT_ENCODING`。授权、会话和传输由创建 `RpcTarget` 的应用负责。
+
 `REJECTED.reason` 是稳定业务分支信号，`message` 面向人。`CommandFailure` 还区分输入错误、权限、发布撤销、取消、超时、依赖或内部故障。SDK 的已知领域拒绝可以在 handler 内映射；未知 rejection 由 Command 监督为 `INTERNAL`，原异常保留在本地 cause。配置错误和发布安装失败仍按各自生命周期契约抛出。
 
 handler 和公开 `execute()` 使用同一种 Result。组合另一个 Command 时，检查它的 Err 后可以直接返回该 Result；不要包装为 `Result.ok(result)`。`Err` 是 fulfilled value，`Promise.all()` 不会因其中一个 Err 提前失败。Command 不扫描成功值里的 `ok` 字段，也不替业务处理部分成功回执。
@@ -92,7 +105,7 @@ const dynamic = await commands.execute('text.echo', { text: 'hello' })
 
 Host 用 `@pluxel/services/commands` 的 `commands()` 安装空 root 目录，Plugin 通过 `this.ctx.require(Commands).register(command)` 发布。注册归当前 owner generation 的 effects，停止 Plugin 会撤销发布并等待已接纳的调用退出。root 目录只接受 common `CommandContext`；需要业务扩展 context 的 Command 由对应载体构造 context 并显式发布。
 
-`@pluxel/services/management/commands` 的 `managementCommands()` 显式安装管理命令；`servicesPreset()` 选择它，通用 Commands 服务本身不会启动管理面。注册到 root 不会自动向 Agent、MCP、HTTP 或其他载体暴露。
+`@pluxel/services/management/commands` 的 `managementCommands()` 显式安装管理命令；`servicesPreset()` 选择它，通用 Commands 服务本身不会启动管理面。注册到 root 不会自动向 HTTP 或其他载体暴露。
 
 ## argv 与载体
 
@@ -111,7 +124,7 @@ if (resolved) {
 
 argv 只解析 grammar 并构造 candidate，Command 才执行输入校验和 Decode。router 支持 routes、aliases、位置参数、options、默认值、`--`、tail、help 和建议；语法错误由调用它的 CLI 或消息载体呈现。Host carrier 可通过 `createMount()` 固定 provider 与发布者 owner，并在整个处理、回复和清理期间保留接纳。
 
-Pi Agent 用 `createSession({ tools: [...] })` 明确选择直接 Command 或已发布名称，详见 [Pi Agent](../plugins/pi-agent.md)。MCP 与 RPC 分别通过[显式 MCP 服务](./mcp.md)和[显式 RPC 目录](./rpc.md)发布指定 Command；受限程序执行仍在内部验收。在线检查现有 Host 请使用[开发控制台](../development/dev-console.md)。
+需要把选定 Command 作为 Cap’n Web 方法时，使用显式适配入口；在线检查现有 Host 请使用[开发控制台](../development/dev-console.md)。
 
 ## 公开入口
 

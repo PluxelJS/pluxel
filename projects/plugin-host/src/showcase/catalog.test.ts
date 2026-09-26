@@ -1,5 +1,4 @@
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
-import { PiAgentPlugin } from '@pluxel/pi-agent'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 import {
@@ -55,13 +54,6 @@ describe('plugin-host catalog', () => {
 				}),
 			]),
 		)
-	})
-
-	it('keeps Pi Agent available but stopped until a model and tools are intentional', () => {
-		const autoStart = createHostRuntimeState().autoStart ?? []
-		expect(
-			autoStart.some((node) => pluginNodeAddressEqual(node, pluginNodeAddressOf(PiAgentPlugin))),
-		).toBe(false)
 	})
 
 	it('prepares one S3 provider with isolated draft and release buckets', () => {

@@ -42,10 +42,6 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 `@pluxel/services/http/node` 提供标准 Host launcher 使用的 Node srvx/crossws carrier 和 `listenHostHttp()`。`createHostHttpHandler()` 与 HTTP 服务共用 `@pluxel/services/http` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
 
-`@pluxel/services/mcp` 是可选的 MCP SDK tool 载体，要求宿主提供已配置传输与身份解析。它只发布 Plugin 显式选择的 Command，见 [MCP](../runtime/mcp.md)。
-
-`@pluxel/services/rpc` 是可选的精确契约 Command 目录，要求工具链生成发布制品、由可信应用创建会话，见 [RPC](../runtime/rpc.md)。
-
 源码查询从 `@pluxel/rolldown/inspect` 导入 `openProject()`，定位声明、依赖、配置和所选应用的输入；
 不启动 Host 或执行应用模块，详见[inspect 源码查询](../development/inspection.md)。
 
@@ -65,7 +61,6 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/storage`         | local/remote object storage                | [对象存储](../plugins/storage.md)                |
 | `@pluxel/otel`            | traces、metrics 与 exporters               | [OpenTelemetry](../plugins/otel.md)              |
 | `@pluxel/package-manager` | dynamic host package 管理                  | [Package manager](../plugins/package-manager.md) |
-| `@pluxel/pi-agent`        | Pi embedded engine、goal 与 subagent       | [Pi Agent](../plugins/pi-agent.md)               |
 
 仓库外项目不得把这些 package 视为可安装的公共依赖，也不得用源码相对路径绕过 package boundary。
 

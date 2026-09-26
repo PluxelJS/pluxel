@@ -203,7 +203,6 @@ async function readReport(signal: AbortSignal): Promise<Result<string, RetryLate
 | [ECharts](../plugins/rendering/echarts.md#将可恢复失败交给业务调用方)、[Takumi](../plugins/rendering/takumi.md#将可恢复失败交给业务调用方) | consumer 选择处理 render busy；未知 render failure、取消和停止不混为“稍后重试”                   |
 | [Markdown / Typst](../plugins/rendering/takumi-markdown.md#将可恢复失败交给业务调用方)                                                     | 文档超限或受限公式不合法 → 可修正输入；extension defect、Worker 故障继续拒绝                     |
 | [Auth](../plugins/auth.md#本地-result-与设置回执)                                                                                          | 内部校验直接返回 Result；Setup API 保持经过校验的普通 DTO                                        |
-| [Pi Agent](../plugins/pi-agent.md#直接处理会话结果)                                                                                        | 直接消费 `prompt()` 的 outcome 和 aborted / model_error；不再套一层 Result                       |
 | [Package Manager](../plugins/package-manager.md)、[OTel](../plugins/otel.md)、Vault Admin                                                  | 安装回执、原生 telemetry 和管理 action 已有协议；不增加无业务恢复需求的 Result 包装              |
 
 各指南链接到包内可执行示例。验证时至少检查成功、预期 Err 和非预期 rejection；涉及数据缓存、DTO 或资源时，

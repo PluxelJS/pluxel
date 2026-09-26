@@ -8,11 +8,9 @@ export {
 	__definePluginRef,
 	__setPluginConfig,
 	__setPluginDefinition,
-	__setPluginRpcSites,
 	type PluginConfigLoweringPayload,
 	type PluginDefinitionLoweringPayload,
 	type PluginRefLoweringPayload,
-	type PluginRpcSitesLoweringPayload,
 } from './plugins/runtime/definition.ts'
 export {
 	__setPluginPartConfig,

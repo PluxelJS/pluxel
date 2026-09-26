@@ -120,7 +120,7 @@ artifact；reset baseline staging 在注入后立即清理，因此 HMR schema �
 Plugin semantic output 是已构建 Plugin 与 Core/runtime 之间的发布契约。generated module 只从
 `@pluxel/core/toolchain`导入 ABI v2 helper；默认 root 和 `/internal`
 不提供 setter alias。canonical helpers 是 `__setPluginDefinition`、`__setPluginConfig`、`__setPluginParts`、
-`__setPluginPartConfig`、`__setPluginPartRequires`、`__setPluginPartOptional` 与 `__setPluginRpcSites`，每个 payload 都携带同一个 numeric
+`__setPluginPartConfig`、`__setPluginPartRequires` 与 `__setPluginPartOptional`，每个 payload 都携带同一个 numeric
 `abiVersion`。v1 artifact 没有 Part constructor requirement facts，当前 Core 不提供隐式兼容窗口；Core、Host 与 Rolldown
 必须成套升级并重新构建 Plugin，版本不匹配以 `plugin_lowering_abi_unsupported` fail-fast。
 
@@ -152,20 +152,6 @@ Rolldown。`pluginPackage()` 与 `pluxel()` 都组合唯一的 `createPluginBuil
 legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench semantic lowering 和 decorator
 output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
 `runWithTsdown()` 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
-
-显式从 `@pluxel/services/rpc` 导入 `Rpc` 并直接调用 `ctx.require(Rpc).publish({ id, commands })` 的源码，
-共享 Vite/Rolldown pass 在类型擦除前读取静态 Command 方法表，只接受可解析的源码定义与受限 TypeBox/DTO 形状。
-它生成客户端声明、运行时 artifact 和模块级 `__pluxelRpcPublications` 绑定清单；Host loader 必须从已验证的模块
-登记 artifact 对象与原始 Command 引用后，内核才能接纳发布。未导入 RPC 的模块不加载额外类型编译器，也不产生 RPC
-运行时代码。仅提供 JS 与 `.d.ts` 的 Command 包、动态方法表，以及 TypeScript 与打包器来源不一致的包构建失败。
-RPC pass 将同模块每个 publish site 归属到 owning `@Plugin` constructor，并通过 ABI v2 `__setPluginRpcSites`
-写入一次性 staging。Core 消费 constructor candidate 时保留冻结 site 数组、site、artifact 和原始 Command bindings 的对象身份；
-无 RPC 的 candidate 不带 `rpcSites` 字段。owner 与 lowered root named export identity 核对，不依赖运行时 class name；
-重复写入、错误 ABI、owner 不一致、可变或重复 site，以及消费后更改都 fail-fast。
-Core 仅携带 opaque 构建事实，不解释 RPC 协议，也不导入 Services 或 Commands。setter 的来源可信性不能由 Core 的形状校验
-单独证明；Host loader 仍须从受信构建模块验证并登记这些事实，静态与动态来源的可信登记和 HMR 撤销尚未接线。
-RPC 公共入口保持关闭。
-这些构建事实与限制由[实验](experiments/agent-rpc-binding/README.md)验证。
 
 Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named export table，并 lower：
 

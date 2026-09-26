@@ -13,7 +13,6 @@
 		"redis",
 		"storage",
 		"otel",
-		"package-manager",
-		"pi-agent"
+		"package-manager"
 	]
 }

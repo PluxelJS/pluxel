@@ -80,6 +80,5 @@ export default defineHostApplication(async (startup) => {
 | `@pluxel/storage`         | 本地或远端 S3 对象存储               | [S3 对象存储](./storage.md)             |
 | `@pluxel/otel`            | OpenTelemetry signals 与 exporters   | [OpenTelemetry](./otel.md)              |
 | `@pluxel/package-manager` | 动态宿主的受控 package source        | [Package manager](./package-manager.md) |
-| `@pluxel/pi-agent`        | Pi embedded engine、goal 与 subagent | [Pi Agent](./pi-agent.md)               |
 
 公开状态和允许导入的入口以 [Package 与入口矩阵](../reference/package-matrix.md) 为准。

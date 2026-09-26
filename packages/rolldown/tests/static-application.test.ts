@@ -37,7 +37,6 @@ describe('application', () => {
 		expect(pluginNames(config)).toEqual(pluginNames(pipeline))
 		expect(pluginNames(config)).toEqual([
 			'unplugin-preprocessor-directives',
-			'pluxel:rpc-publication',
 			'pluxel:plugin-semantics',
 			'unplugin-macros',
 			'pluxel-lint-guard',
@@ -75,7 +74,6 @@ describe('application', () => {
 		expect(pluginNames(pipeline)).toEqual([
 			'unplugin-preprocessor-directives',
 			'pluxel:browser-node-imports',
-			'pluxel:rpc-publication',
 			'pluxel:plugin-semantics',
 			'pluxel:plugin-source',
 		])

@@ -44,17 +44,6 @@ export type PluginConfigLoweringPayload = PluginLoweringHeader &
 export type PluginRefLoweringPayload = PluginLoweringHeader &
 	Readonly<{ readonly definition: PluginDefinitionAddress }>
 
-/** Opaque build facts; Core preserves the toolchain's artifact and Command identities. */
-export type PluginRpcSite = Readonly<{
-	readonly site: string
-	readonly owner: string
-	readonly artifact: object
-	readonly bindings: Readonly<Record<string, unknown>>
-}>
-
-export type PluginRpcSitesLoweringPayload = PluginLoweringHeader &
-	Readonly<{ readonly sites: readonly PluginRpcSite[] }>
-
 type PluginDefinitionFacts = Readonly<{
 	readonly kind: PluginDefinitionKind
 	readonly definition: PluginDefinitionAddress
@@ -115,13 +104,11 @@ export type ConcretePluginDefinitionDeclaration = Readonly<{
 export type ConcretePluginDefinitionCandidate = Readonly<{
 	readonly implementation: PluginConstructor
 	readonly declaration: ConcretePluginDefinitionDeclaration
-	readonly rpcSites?: readonly PluginRpcSite[]
 }>
 
 const factsByConstructor = new WeakMap<PluginToken, PluginDefinitionFacts>()
 const addressByConstructor = new WeakMap<PluginToken, PluginAddressProjection>()
 const configByConstructor = new WeakMap<PluginConstructor, PartConfigDeclaration>()
-const rpcSitesByConstructor = new WeakMap<PluginConstructor, readonly PluginRpcSite[]>()
 const consumedCandidates = new WeakSet<PluginConstructor>()
 const candidateByImplementation = new WeakMap<
 	PluginConstructor,
@@ -233,57 +220,6 @@ export function __setPluginDefinition(
 	)
 }
 
-/** @internal Build-generated RPC site facts, sealed before candidate ingestion. */
-export function __setPluginRpcSites(
-	ctor: PluginConstructor,
-	input: PluginRpcSitesLoweringPayload,
-): void {
-	assertLoweringConstructor(ctor, 'Plugin RPC sites target')
-	if (consumedCandidates.has(ctor)) {
-		invalidPluginDeclaration(
-			'[pluxel/core] Plugin RPC sites cannot change after candidate ingestion',
-		)
-	}
-	const payload = parsePluginLoweringPayload(input, 'Plugin RPC sites', ['sites'])
-	if (rpcSitesByConstructor.has(ctor)) {
-		invalidPluginDeclaration('[pluxel/core] Plugin constructor already has RPC site facts')
-	}
-	const sites = payload.sites
-	if (!Array.isArray(sites) || sites.length === 0 || !Object.isFrozen(sites)) {
-		invalidPluginDeclaration('[pluxel/core] Plugin RPC sites must be a non-empty frozen array')
-	}
-	const seen = new Set<string>()
-	for (const [index, site] of sites.entries()) {
-		if (!site || typeof site !== 'object' || Array.isArray(site) || !Object.isFrozen(site)) {
-			invalidPluginDeclaration(`[pluxel/core] Plugin RPC site ${index} must be a frozen object`)
-		}
-		if (Object.keys(site).some((key) => !['site', 'owner', 'artifact', 'bindings'].includes(key))) {
-			invalidPluginDeclaration(`[pluxel/core] Plugin RPC site ${index} has unknown fields`)
-		}
-		if (typeof site.site !== 'string' || site.site.length === 0 || seen.has(site.site)) {
-			invalidPluginDeclaration(
-				`[pluxel/core] Plugin RPC site ${index} has an invalid or duplicate identity`,
-			)
-		}
-		seen.add(site.site)
-		if (typeof site.owner !== 'string' || site.owner.length === 0) {
-			invalidPluginDeclaration(`[pluxel/core] Plugin RPC site ${index} owner is invalid`)
-		}
-		if (!site.artifact || typeof site.artifact !== 'object' || !Object.isFrozen(site.artifact)) {
-			invalidPluginDeclaration(`[pluxel/core] Plugin RPC site ${index} artifact must be frozen`)
-		}
-		if (
-			!site.bindings ||
-			typeof site.bindings !== 'object' ||
-			Array.isArray(site.bindings) ||
-			!Object.isFrozen(site.bindings)
-		) {
-			invalidPluginDeclaration(`[pluxel/core] Plugin RPC site ${index} bindings must be frozen`)
-		}
-	}
-	rpcSitesByConstructor.set(ctor, sites)
-}
-
 /** @internal Build-generated Plugin config declaration. */
 export function __setPluginConfig(
 	ctor: PluginConstructor,
@@ -358,16 +294,6 @@ export function consumePluginDefinitionCandidate(
 	const optional = mergeOptionalDefinitions(facts.optional, collectPartOptional(parts), requires)
 	const dependencyRequests = collectDependencyRequests(facts, parts)
 	const config = createPluginConfigDefinition(configByConstructor.get(implementation), parts)
-	const rpcSites = rpcSitesByConstructor.get(implementation)
-	if (rpcSites) {
-		for (const [index, site] of rpcSites.entries()) {
-			if (site.owner !== facts.definition.exportName) {
-				invalidPluginDeclaration(
-					`[pluxel/core] Plugin RPC site ${index} owner disagrees with lowered root export`,
-				)
-			}
-		}
-	}
 	const declaration: ConcretePluginDefinitionDeclaration = Object.freeze({
 		address: facts.definition,
 		displayName: marker.options.displayName ?? facts.definition.exportName,
@@ -385,12 +311,7 @@ export function consumePluginDefinitionCandidate(
 	})
 	factsByConstructor.delete(implementation)
 	configByConstructor.delete(implementation)
-	rpcSitesByConstructor.delete(implementation)
-	const candidate = Object.freeze({
-		implementation,
-		declaration,
-		...(rpcSites === undefined ? {} : { rpcSites }),
-	})
+	const candidate = Object.freeze({ implementation, declaration })
 	candidateByImplementation.set(implementation, candidate)
 	return candidate
 }

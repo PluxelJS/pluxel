@@ -13,7 +13,6 @@
 
 仍有未实现边界的文件：
 
-- [`AGENT_RPC_COMMANDS.md`](AGENT_RPC_COMMANDS.md)：Command、Pi 直接工具、MCP 与 RPC 发布/发现已实施；仍跟踪 chatbot 调用方迁移及未开放的受限程序入口。
   RPC 拟使用静态 Command 方法表、固定契约与 generation、受限程序及 HTTP 批次；制品、隔离和传输须先通过前置验收。
 - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的

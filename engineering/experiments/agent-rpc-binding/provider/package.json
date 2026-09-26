@@ -1,8 +1,0 @@
-{
-	"name": "@fixture/records-provider",
-	"private": true,
-	"type": "module",
-	"exports": {
-		".": "./index.ts"
-	}
-}

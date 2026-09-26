@@ -59,7 +59,6 @@ export {
 	type ConcretePluginDefinitionCandidate,
 	type ConcretePluginDefinitionDeclaration,
 	type PluginConfigDefinition,
-	type PluginRpcSite,
 } from './plugins/runtime/definition'
 export type {
 	PartConfigDeclaration,
