@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defineCommand, Result } from '../src/index'
-import { createArgvRouter, tail } from '../src/argv'
+import { createArgvRouter, tail, toCli } from '../src/argv'
 import { Type, obj } from '../src/typebox'
 
 describe('argv routing', () => {
@@ -14,7 +14,9 @@ describe('argv routing', () => {
 			},
 		})
 		const router = createArgvRouter()
-		using binding = router.bind(echo, { routes: ['text echo'], tail: tail.text('text') })
+		const cli = toCli(echo, { routes: ['text echo'], tail: tail.text('text') })
+		expect(Object.isFrozen(cli)).toBe(true)
+		using binding = router.bind(cli)
 		const resolved = router.resolve('text echo hello world')!
 		expect(resolved.candidate).toEqual({ text: 'hello world' })
 		const result = await resolved.command.execute(resolved.candidate)
@@ -33,7 +35,8 @@ describe('argv routing', () => {
 			},
 		})
 		const router = createArgvRouter()
-		router.bind(echo, { routes: ['echo'] })
+		router.bind(toCli(echo, { routes: ['echo'] }))
+		expect(() => toCli(echo, { routes: [''] })).toThrow('must bind at least one route')
 		expect(() => router.resolve('echo --unknown x')).toThrow('Unknown')
 	})
 })

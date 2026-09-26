@@ -34,11 +34,54 @@ else console.log(result.value)
 
 已知 Command 的 `execute()` 检查 wire 参数类型；来自 JavaScript、`any`、argv 或远程调用的输入仍在运行时校验。它统一返回 `Promise<Result<T, CommandFailure>>`，T 从 handler 的成功分支推导。省略 context 只适用于没有额外必需 context 字段的 Command。
 
+`@pluxel/commands` 再导出的 `Result` 与 `@pluxel/core/better-result` 的 `Result` 来自同一个上游包。需要组合函数等完整 API 时，从 [Better Result 共享入口](../api/better-result.md) 导入；Command 的 Result 无需另行转换。
+
 成功值可以是字符串、对象、数组或 `void`。本地执行不要求 output schema，也不编码成功值。载体负责将它投影到自己的协议，并验证该出口能否交付。
 
 `input` 必须是 object schema。`obj()` 与嵌套的普通 `Type.Object()` 默认拒绝多余属性；协议确需开放对象时使用 `openObj()`。字段的 description/examples 写在 schema 字段上，完整输入示例写在 input 对象 schema 的 examples。需要在 TypeScript 调用中省略的字段应声明 `Type.Optional()`，不能只依赖运行时 default。
 
 `Type.Transform()` 以 JSON wire 值进入 Command，经过一次 Decode 后交给 handler。定义时检查 refs、defaults 和 schema metadata；输入无效或 Decode 失败得到带 `issues` 的 `INPUT_VALIDATION`。跨字段或领域检查进入 handler，作为显式的业务拒绝。
+
+### 用 Parsebox 解析文本语法
+
+Command 不绑定特定语法解析器。需要自定义文本语法时，在输入字段的 `Type.Transform()` 中调用 Parsebox；argv、Cap’n Web 和直接调用仍提交同一个字符串。应用需自行安装 `@sinclair/parsebox`。
+
+```ts no-twoslash
+import { Runtime } from '@sinclair/parsebox'
+import { defineCommand, Result } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
+
+const filterGrammar = new Runtime.Module({
+	Filter: Runtime.Tuple(
+		[Runtime.Const('level'), Runtime.Const('>='), Runtime.Integer()],
+		([, , threshold]) => Number(threshold),
+	),
+})
+
+const filter = Type.Transform(Type.String())
+	.Decode((source) => {
+		const parsed = filterGrammar.Parse('Filter', source.endsWith('\n') ? source : `${source}\n`)
+		if (parsed.length !== 2 || parsed[1].trim()) throw new Error('Invalid level filter')
+		return { source, threshold: parsed[0] }
+	})
+	.Encode((value) => value.source)
+
+const search = defineCommand({
+	name: 'players.search',
+	description: '按等级筛选玩家。',
+	input: obj({ filter }),
+	execute({ filter }) {
+		return Result.ok({ minimumLevel: filter.threshold })
+	},
+})
+
+const result = await search.execute({ filter: 'level >= 3' })
+if (result.isErr()) {
+	if (result.error.code === 'INPUT_VALIDATION') console.error(result.error.issues)
+} else console.log(result.value.minimumLevel) // 3
+```
+
+解析失败由 Decode 抛出，Command 返回 `INPUT_VALIDATION`；语法通过后，handler 收到已解析的 `filter`。argv router 只构造输入候选，不另行调用 Parsebox。
 
 ## 失败与组合
 
@@ -110,10 +153,11 @@ Host 用 `@pluxel/services/commands` 的 `commands()` 安装空 root 目录，Pl
 ## argv 与载体
 
 ```ts no-twoslash
-import { createArgvRouter } from '@pluxel/commands/argv'
+import { createArgvRouter, toCli } from '@pluxel/commands/argv'
 
+const cli = toCli(echo, { routes: ['text echo'], positionals: ['text'] })
 const router = createArgvRouter()
-using binding = router.bind(echo, { routes: ['text echo'], positionals: ['text'] })
+using binding = router.bind(cli)
 const resolved = router.resolve('text echo hello')
 if (resolved) {
 	const result = await resolved.command.execute(resolved.candidate)
@@ -122,7 +166,7 @@ if (resolved) {
 }
 ```
 
-argv 只解析 grammar 并构造 candidate，Command 才执行输入校验和 Decode。router 支持 routes、aliases、位置参数、options、默认值、`--`、tail、help 和建议；语法错误由调用它的 CLI 或消息载体呈现。Host carrier 可通过 `createMount()` 固定 provider 与发布者 owner，并在整个处理、回复和清理期间保留接纳。
+`toCli()` 在定义端校验 Command 的 argv 语法并生成不可变投影；`router.bind()` 只发布投影并检查路由冲突。argv 只解析 grammar 并构造 candidate，Command 才执行输入校验和 Decode。router 支持 routes、aliases、位置参数、options、默认值、`--`、tail、help 和建议；语法错误由调用它的 CLI 或消息载体呈现。Host carrier 可通过 `createMount()` 固定 provider 与发布者 owner，并在整个处理、回复和清理期间保留接纳。
 
 需要把选定 Command 作为 Cap’n Web 方法时，使用显式适配入口；在线检查现有 Host 请使用[开发控制台](../development/dev-console.md)。
 
@@ -130,5 +174,5 @@ argv 只解析 grammar 并构造 candidate，Command 才执行输入校验和 De
 
 - `@pluxel/commands`：`defineCommand`、`Result`、`CommandFailure`、registry 与类型。
 - `@pluxel/commands/typebox`：`Type`、`obj`、`openObj`。
-- `@pluxel/commands/argv`：argv router、tail 与相关类型。
+- `@pluxel/commands/argv`：`toCli()`、argv router、tail 与相关类型。
 - `@pluxel/services/commands`：Host 的 Commands token、服务与 carrier mount。

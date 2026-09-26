@@ -27,7 +27,11 @@ await commands.execute('text.echo', { text: 'hello' }) // dynamic name lookup
 
 `defineCommand` accepts exactly `name`, `description`, `input`, and `execute`. The handler receives decoded input and a trusted `CommandContext`. It returns `Result.ok(value)` or `Result.err(failure)`, synchronously or asynchronously. The public `execute` accepts wire input and returns `Promise<Result<T, CommandFailure>>`. A known command checks its wire input, output value, and required context at compile time; dynamic names and JavaScript callers are checked at runtime.
 
+The exported `Result` is the same upstream Better Result contract shared by `@pluxel/core/better-result`. Import the latter for the full set of composition functions; Command Results need no conversion.
+
 The input must be a TypeBox object schema. Input is cloned as strict JSON, defaults are filled, validation runs, and Transform codecs decode once before the handler. Nested object schemas are closed by default. Use `openObj()` for extra fields. Optional fields must be declared with `Type.Optional()` for typed callers to omit them. `input` schema examples describe complete wire inputs; field examples belong on their fields.
+
+Custom text grammars can use Parsebox inside a `Type.Transform()` field; the [runtime guide](../../docs/runtime/commands.md#用-parsebox-解析文本语法) shows a complete example. Parsebox is an optional application dependency, not a Command parser.
 
 `CommandFailure` distinguishes `INPUT_VALIDATION` with issues, `REJECTED` with a stable reason, and boundary failures such as `ABORTED`, `TIMEOUT`, `DEPENDENCY`, and `INTERNAL`. The handler should return recoverable business failures explicitly. Thrown errors and malformed Results become `INTERNAL` with a local diagnostic cause. The kernel does not validate or encode successful business values; protocol carriers check what they can transmit.
 
@@ -38,10 +42,11 @@ A registration has immutable `name` and `descriptor`, typed `execute`, idempoten
 Argv routes parse syntax and construct an untrusted candidate for the same execution boundary:
 
 ```ts
-import { createArgvRouter, tail } from '@pluxel/commands/argv'
+import { createArgvRouter, tail, toCli } from '@pluxel/commands/argv'
 
+const cli = toCli(echo, { routes: ['text echo'], tail: tail.text('text') })
 const router = createArgvRouter()
-using binding = router.bind(echo, { routes: ['text echo'], tail: tail.text('text') })
+using binding = router.bind(cli)
 const resolved = router.resolve('text echo hello')
 if (resolved) {
 	const result = await resolved.command.execute(resolved.candidate)

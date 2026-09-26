@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { createCommandRegistry, defineCommand, Result } from '../src/index'
 import { Type, obj } from '../src/typebox'
-import { createArgvRouter } from '../src/argv'
+import { createArgvRouter, toCli } from '../src/argv'
 
 it('shares one input boundary across direct, registry, and argv calls', async () => {
 	const command = defineCommand({
@@ -15,7 +15,7 @@ it('shares one input boundary across direct, registry, and argv calls', async ()
 	const registry = createCommandRegistry()
 	using registration = registry.register(command)
 	const router = createArgvRouter()
-	router.bind(registration, { routes: ['double'], positionals: ['number'] })
+	router.bind(toCli(registration, { routes: ['double'], positionals: ['number'] }))
 	const candidate = router.resolve('double 3')!.candidate
 	const results = await Promise.all([
 		command.execute({ number: 3 }),

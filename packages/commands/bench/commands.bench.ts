@@ -1,6 +1,6 @@
 import { afterAll, test } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
-import { createArgvRouter } from '../src/argv'
+import { createArgvRouter, toCli } from '../src/argv'
 import { createCommandRegistry, defineCommand, Result } from '../src/index'
 import { Type, obj } from '../src/typebox'
 
@@ -36,7 +36,7 @@ const input = { id: 'item-42', count: 42, tags: ['stable', 'bench'] }
 const registry = createCommandRegistry()
 registry.register(update)
 const router = createArgvRouter()
-router.bind(update, { routes: ['item update'], positionals: ['id'] })
+router.bind(toCli(update, { routes: ['item update'], positionals: ['id'] }))
 const largePayload = Array.from({ length: 100 }, (_, index) => ({
 	id: `item-${index}`,
 	labels: ['stable', 'bench', `group-${index % 10}`],
@@ -88,8 +88,9 @@ const catalogRouter1000 = createArgvRouter()
 for (let index = 0; index < catalog.length; index += 1) {
 	const command = catalog[index]!
 	const binding = { routes: [`item update-${index}`], positionals: ['id'] } as const
-	if (index < 100) catalogRouter100.bind(command, binding)
-	catalogRouter1000.bind(command, binding)
+	const cli = toCli(command, binding)
+	if (index < 100) catalogRouter100.bind(cli)
+	catalogRouter1000.bind(cli)
 }
 
 // oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
@@ -213,30 +214,36 @@ test('argv construction scaling', async ({ bench }) => {
 		bench('bind 10 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < 10; index += 1) {
-				current.bind(catalog[index]!, {
-					routes: [`item update-${index}`],
-					positionals: ['id'],
-				})
+				current.bind(
+					toCli(catalog[index]!, {
+						routes: [`item update-${index}`],
+						positionals: ['id'],
+					}),
+				)
 			}
 			consume(current)
 		}),
 		bench('bind 100 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < 100; index += 1) {
-				current.bind(catalog[index]!, {
-					routes: [`item update-${index}`],
-					positionals: ['id'],
-				})
+				current.bind(
+					toCli(catalog[index]!, {
+						routes: [`item update-${index}`],
+						positionals: ['id'],
+					}),
+				)
 			}
 			consume(current)
 		}),
 		bench('bind 1,000 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < catalog.length; index += 1) {
-				current.bind(catalog[index]!, {
-					routes: [`item update-${index}`],
-					positionals: ['id'],
-				})
+				current.bind(
+					toCli(catalog[index]!, {
+						routes: [`item update-${index}`],
+						positionals: ['id'],
+					}),
+				)
 			}
 			consume(current)
 		}),

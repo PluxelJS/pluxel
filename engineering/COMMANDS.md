@@ -16,7 +16,7 @@ Root catalog 与 carrier exposure 是两个显式选择。Provider 使用 `creat
 
 Mount 没有第二个 registry、name lookup、snapshot 或 caller-supplied owner。其返回值是 disposer，不是 executable command；registry 句柄不能充当直接 route identity，类型与运行期边界都要拒绝误用。
 
-`createArgvRouter()` 只拥有 grammar、routing 和不可信 candidate construction。Carrier 完成授权、构造 invocation Context，再调用 mounted command；先处理 Err，再呈现 Ok 的业务值。presentation/error rendering 也在该 execution 内结算，确保双方 admission 保持有效。扩展 Context 的命令只进入对应 carrier，不能进入要求 common `CommandContext` 的 root catalog。
+`toCli()` 在定义侧编译并校验一个 Command 的 argv 投影；`createArgvRouter()` 在 bind 时只负责发布、路由冲突和不可信 candidate construction。Carrier 完成授权、构造 invocation Context，再调用 mounted command；先处理 Err，再呈现 Ok 的业务值。presentation/error rendering 也在该 execution 内结算，确保双方 admission 保持有效。扩展 Context 的命令只进入对应 carrier，不能进入要求 common `CommandContext` 的 root catalog。
 
 Host 拥有 exposure、principal、permission、confirmation、audit 与 registration lifetime。关闭 carrier 不创建 server/model client/watcher。CLI 是开发构建工具，不自动连接在线 command catalog；在线检查使用 [devconsole](DEV_CONSOLE.md)。
 

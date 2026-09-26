@@ -9,3 +9,4 @@ Define Commands with name, description, input, and a Result-returning execute ha
 The execution boundary rejects a returned Result whose status conflicts with its branch methods.
 Absolute deadlines beyond the platform timer range remain scheduled until their actual time instead of expiring immediately.
 Framework deadline cancellation remains `TIMEOUT` when its signal passes through owner or carrier signal composition into a nested Command.
+Use `toCli()` to compile an argv projection before publishing it with `router.bind()`; the router now accepts that projection instead of a Command and separate syntax options.
