@@ -1,70 +1,15 @@
-# Pluxel 官方插件
+# 官方插件维护
 
-`plugins/*` 与 `plugins/<domain>/*` 存放由 Pluxel 与框架一同维护、可独立安装和装配的具体插件。它们不是 runtime 内置服务：
-应用通过正常 catalog 选择插件，其他插件也只通过与第三方作者相同的公开依赖协议消费它们。
+`plugins/*` 和 `plugins/<domain>/*` 是通过公开作者 API 装配的具体 Plugin；`packages/*` 保存框架与通用库。
+领域子目录只做分类，不引入聚合插件或隐式 catalog。
 
-## 仓库定位
+- 选择、安装、配置插件：[用户指南](../docs/plugins/index.md)。
+- 修改实现：先读 [开发约束](AGENTS.md)，再读对应包的 `DESIGN.md`。
+- 渲染插件的共同调度与资源规则：[执行架构](render/ARCHITECTURE.md)。
+- 框架集成验证使用 `projects/plugin-host`；独立产品的源码协作使用 [源码开发工具](../docs/development/tooling.md)。
 
-官方插件是 Pluxel 的实践验证（dogfood）层和一致性验证层，承担两个同等重要的职责：
+官方插件同时验证公开作者模型：框架 API 变化时同步迁移受影响实现。包内问题先在包内解决；只有第三方 provider
+也需要的跨插件不变量才进入框架。secret 不进入普通配置、日志或 Workbench DTO。
 
-1. 提供可复用能力，避免下游插件重复处理生命周期、并发、配置、诊断和 Workbench 集成；
-2. 在真实使用压力下检验公开作者模型，把反复出现的阻力转化为更好的 Pluxel 跨插件设计。
-
-官方插件始终跟随当前 Pluxel 设计。core/runtime 的作者面发生变化时，如果受影响的官方插件仍依赖旧
-模式、兼容别名或私有 helper，这项变化就不算完成。反过来，官方插件也不能成为框架特例的理由：只有
-当问题能够证明是一项对第三方 provider 同样成立、可复用的 ownership 或 lifecycle 需求时，才应反哺
-core/runtime。
-
-## 目录与能力边界
-
-- `plugins/*`：独立领域的具体 `@Plugin` 实现及其包内 Workbench Definition。
-- `plugins/<domain>/*`：共享明确能力链的具体插件；领域目录只做仓库分类，不引入聚合插件或第二套作者 API。
-- `packages/*`：不声明具体插件生命周期的通用 contract、adapter 和框架库。
-- `projects/plugin-host`：框架维护者的动态/静态真实 host 验证场所。
-- 独立产品 workspace：通过 `pluxel source` 验证多个插件的产品级组合。
-- 官方插件只使用 `@pluxel/runtime` 的公开入口，不使用 toolchain 或 host installation internal helper。
-- 必需 capability 写成 constructor dependency；可选集成使用非导出的 module-level
-  `definePluginRef<T>()` 与 `init()` 中的 `plugins.use(ref, setup)`。
-- 调用方状态从依赖注入时绑定的 `ctx.caller` 推导。共享 provider 状态不得依赖可变的全局“当前调用方”。
-- Workbench 是可选且由宿主拥有的能力。它可以通过 Direct View API 投影配置、状态和诊断，但关闭后不得影响
-  业务能力与核心生命周期。
-- secret 只以安全引用表示，并由适当的宿主能力解析；不得复制到 Workbench DTO、日志或普通持久化
-  配置中。
-
-## 反哺流程
-
-```text
-官方插件中的真实使用
-  -> 识别反复出现的作者阻力或缺失不变量
-  -> 用真实生命周期与并发场景验证问题
-  -> 改进最小且通用的 Pluxel 公开边界
-  -> 在同一变更中迁移官方插件
-  -> 更新当前作者模型的权威文档
-```
-
-在需求得到充分理解前，包内 workaround 保留在包内。这样既能让官方插件持续充当设计探针，也能避免
-runtime 逐渐积累只服务于某个集成的特殊 hook。
-
-## 首批插件
-
-- [`@pluxel/agent-tools`](agent-tools/README.md)：以标准 Plugin config 组合 command Toolset，并向外部 Agent adapter 提供 fail-closed 受限 catalog。
-- [`@pluxel/pi-agent`](pi-agent/README.md)：把 Pi 作为 embedded engine，复用 AgentTools policy，并提供内存 session、goal 与 bounded subagent。
-- [`@pluxel/auth`](auth/README.md)：Management 官方认证 provider，支持 OIDC、password 与 password+TOTP，凭据进入 owner Vault。
-- [`@pluxel/cache`](cache/README.md)：显式 scope、同步 local cache、多态异步 backend 与进程内请求合并。
-- [`@pluxel/rates`](rates/README.md)：caller-aware 四算法 admission control、原子 decision 与 memory backend。
-- [`@pluxel/redis`](redis/README.md)：Redis capability、standalone provider、Lua helper 与内置 cache/rates backend。
-- [`@pluxel/storage`](storage/README.md)：以 s3mini API 为契约、通过配置选择 local/remote 的单一 S3 provider。
-- [`@pluxel/wretch`](wretch/README.md)：基于 Wretch 的出站 HTTP capability。
-- [`@pluxel/package-manager`](package-manager/README.md)：基于 pnpm Rust engine 的受控插件包安装、原子 source publication 与可选 Workbench 管理页。
-- [`@pluxel/otel`](otel/README.md)：原生 OpenTelemetry Meter/Tracer/Logger，支持三种 OTLP transport 与 Prometheus pull。
-- [`render/`](render/README.md)：服务端渲染能力链。
-  - [`@pluxel/fonts`](render/fonts/README.md)：统一拥有系统字体发现、上传持久化、默认选择、caller 注册和 Fonts Selection Attachment。
-  - [`@pluxel/canvas`](render/canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas、Pretext 文字准备与静态表格子路径，并以 Fonts 插件管理字体。
-  - [`@pluxel/echarts`](render/echarts/README.md)：基于 Canvas/Fonts 的 Apache ECharts 6 服务端渲染、caller-owned 主题与 Fonts Attachment。
-  - [`@pluxel/takumi`](render/takumi/README.md)：基于 Takumi 的有界 HTML/node-tree raster/SVG 渲染，并消费 Fonts 可移植资源。
-  - [`@pluxel/takumi-markdown`](render/takumi-markdown/README.md)：基于 Takumi reservation 的 GFM、表格和固定 Rangi 静态代码高亮图片渲染。
-  - [`@pluxel/takumi-markdown-typst`](render/takumi-markdown-typst/README.md)：可选、受限的 Typst 数学 SVG Markdown extension，使用共享 Worker。
-
-仍标记为 private 的官方插件会先在真实 consumer 中稳定 contract；开放发布的插件也保持普通 package 与公开作者
-API，不获得 runtime 特例。`@pluxel/wretch` 提供原生 immutable Wretch base、最小宿主级出站策略和可选的统一
-Workbench HTTP 设置 Attachment。
+本地可恢复失败、原生 SDK 和传输回执的选择见 [Better Result 指南与官方示例索引](../docs/api/better-result.md)。
+新增领域 Result 时同时演示 provider 返回、consumer 分支处理和边界投影，验证未知异常不会被误分类。

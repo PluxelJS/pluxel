@@ -1,11 +1,11 @@
 import { deepFreeze } from '../internal/freeze'
 import { compareStrings } from '../internal/compare'
 import { CommandError, type Command, type CommandContext, type Registration } from '../types'
-import { compileEntry, configError, type CompiledEntry } from './compile'
+import { configError, type CompiledEntry } from './compile'
+import { compiledCliCommand, type CliCommand } from './cli'
 import { tokenizeArgv } from './tokenize'
 import { parseCandidate, syntaxError } from './parse'
 import type {
-	ArgvBinding,
 	ArgvCommandDescriptor,
 	ArgvInput,
 	ArgvResolution,
@@ -41,7 +41,9 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext, Output = un
 		this.maxTextLength = maxTextLength
 	}
 
-	bind<I, O extends Output>(command: Command<I, O, Ctx>, binding: ArgvBinding<I>): Registration {
+	bind<I, O extends Output>(projection: CliCommand<I, O, Ctx>): Registration {
+		const entry = compiledCliCommand(projection)
+		const command = entry.command
 		const name = command.name
 		if (this.entries.has(name)) {
 			throw configError(
@@ -51,23 +53,20 @@ export class ArgvRouter<Ctx extends CommandContext = CommandContext, Output = un
 				'duplicate_binding',
 			)
 		}
-		const entry = compileEntry(command, binding)
 		this.assertRoutesAvailable(entry)
 		this.insertRoutes(entry)
 		this.entries.set(name, entry)
 		this.bumpRevision()
 		let active = true
-		return Object.freeze({
-			name,
-			dispose: () => {
-				if (!active) return
-				active = false
-				if (this.entries.get(name) !== entry) return
-				this.entries.delete(name)
-				this.removeRoutes(entry)
-				this.bumpRevision()
-			},
-		})
+		const dispose = () => {
+			if (!active) return
+			active = false
+			if (this.entries.get(name) !== entry) return
+			this.entries.delete(name)
+			this.removeRoutes(entry)
+			this.bumpRevision()
+		}
+		return Object.freeze({ name, dispose, [Symbol.dispose]: dispose })
 	}
 
 	resolve(input: ArgvInput): ArgvResolution<Ctx, Output> | undefined {

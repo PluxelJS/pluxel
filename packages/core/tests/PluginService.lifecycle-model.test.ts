@@ -1,5 +1,10 @@
-import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/test'
-import { withCoreInternalTestHost, type CoreInternalTestHost } from '@pluxel/core/internal/test'
+import {
+	BasePlugin,
+	Plugin,
+	definePluginRef,
+	withCoreInternalTestHost,
+	type CoreInternalTestHost,
+} from '@pluxel/core/internal/test'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 

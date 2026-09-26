@@ -1,0 +1,20 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"strict": true,
+		"skipLibCheck": false,
+		"types": [],
+		"declaration": true,
+		"emitDeclarationOnly": true,
+		"outDir": ".protected-out",
+		"paths": {
+			"valibot": ["../../../packages/host/node_modules/valibot/dist/index.d.mts"],
+			"@standard-schema/spec": [
+				"../../../packages/core/node_modules/@standard-schema/spec/dist/index.d.ts"
+			]
+		}
+	},
+	"files": ["protected-bindings.ts"]
+}

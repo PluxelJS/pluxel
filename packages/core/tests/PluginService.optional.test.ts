@@ -4,8 +4,8 @@ import {
 	definePluginRef,
 	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
-} from '@pluxel/core/test'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+	withCoreInternalTestHost,
+} from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'

@@ -3,6 +3,8 @@
 本文定义当前 Plugin identity、source canonicalization 和人类可读投影。它是实现、持久化、日志、HTTP、Workbench、
 toolchain 和 coding agent 的共同约束；作者模型见 [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)。
 
+新增身份使用点先读[规范词汇](#规范词汇)，选择 Address/Slot/Reference/Route；修改 source resolver 读 [Entry canonicalization](#entry-canonicalization)；修改持久化读[持久化版本](#持久化版本)。不要从展示文本反推身份。
+
 ## 决策摘要
 
 Pluxel 只有两个 Plugin 身份作用域：
@@ -142,6 +144,8 @@ route 用于 Workbench navigation、management catalog projection 和 logger cat
 
 ### Plugin node label
 
+Core 的 `buildPluginNodeLabels()` 与 `formatPluginNodeStandaloneLabel()` 是 catalog 和日志共用的纯身份展示投影；它们不读取 Host、graph 或运行状态。
+
 label 只用于 Workbench 和 pretty log。runtime 先使用 `displayName`，fork 追加 ` / <forkId>`；发生冲突时依次追加 package/source
 provenance、root export，最终可回退完整 reference。相同 address 重复出现直接报错。新增同名 Plugin 可以改变必要的 label qualification，
 但不能改变 address、reference、route、React key、policy 或持久状态。
@@ -153,7 +157,7 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 | Core graph/DI      | required/optional edge target                  | slot、lifecycle owner                          | generation                         |
 | HMR                | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot              | module revision                    |
 | Config             | schema、defaults、declaration path             | value、revision、update notification           | config record revision             |
-| RuntimeState       | fork family、required token                    | auto-start、provider target、consumer override | file revision                      |
+| HostState          | fork family、required token                    | auto-start、provider target、consumer override | file revision                      |
 | Logging            | 无 policy owner                                | category、filter、policy、reference/label      | rootId、bootId、stream epoch/seq   |
 | Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping            | group id、preference revision      |
 | HTTP               | 无                                             | final Elysia path 的 contribution owner        | sealed application generation      |
@@ -166,12 +170,11 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 HMR 对一个 definition 的 default/forks 生成一次 commit plan，不能让部分 fork 使用新源码、部分 fork 使用旧源码。
 artifact build cache 不含 `forkId`，相同输入只编译一次；node binding 和 generation lease 仍各自隔离。
 
-config patch 顺序是 validate -> 保存 desired record -> 通知 addressed running generation -> 报告 apply 结果。listener 缺失或失败返回
-`saved-not-applied`，desired config 保留供后续 mutation、显式 restart 或下次 boot 重试。修改一个 fork 不通知 sibling/default。
+config record/revision 与通知按 node 隔离，修改一个 fork 不通知 sibling/default。保存、应用和 listener 失败的唯一顺序见 [CONFIG](CONFIG.md#保存与应用)。
 
 Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench
 View/Attachment descriptor identity 按 definition，publication/binding owner 按 node，opened target lifetime 按
-generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
+generation/socket epoch。Plugin 在 `ctx.require(ElysiaApp)` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
 也不提供另一份 `publicPath` 映射。多个 node 需要同时暴露 HTTP 时，业务 config 或唯一 gateway 必须让最终 path 保持不冲突。
 
 ## 持久化版本
@@ -179,17 +182,17 @@ generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终
 每个边界只读取和写入当前 schema。版本不匹配、address 非法或 owner envelope 不一致时 fail-fast；浏览器本地 UI 状态则丢弃
 无效 snapshot 并恢复默认值。实现不提供双读、自动转换、URL redirect、physical namespace 领养或 display-name fallback。
 
-| 领域                          | 当前版本/编码                | 当前 owner 契约                     |
-| ----------------------------- | ---------------------------- | ----------------------------------- |
-| RuntimeState                  | v5                           | structured definition/node address  |
-| Config file/env               | v3                           | structured node address             |
-| Logger policy                 | v3                           | structured node address             |
-| Management catalog preference | v3                           | structured definition address       |
-| Workbench browser state       | v4                           | current versioned Plugin route      |
-| Database owner registry       | node reference               | exact current node reference        |
-| Vault                         | full canonical SHA-256       | exact current node address bytes    |
-| Wretch settings               | `consumers/v3` + envelope v2 | exact current node address envelope |
-| Cache/Rates                   | v3 canonical-byte namespace  | exact current node address bytes    |
+| 领域                      | 当前版本/编码                | 当前 owner 契约                     |
+| ------------------------- | ---------------------------- | ----------------------------------- |
+| HostState                 | v5                           | structured definition/node address  |
+| Config file/env           | v3                           | structured node address             |
+| Logger policy             | v3                           | structured node address             |
+| Management catalog groups | v1                           | structured definition address       |
+| Workbench browser state   | v4                           | current versioned Plugin route      |
+| Database owner registry   | node reference               | exact current node reference        |
+| Vault                     | full canonical SHA-256       | exact current node address bytes    |
+| Wretch settings           | `consumers/v3` + envelope v2 | exact current node address envelope |
+| Cache/Rates               | v3 canonical-byte namespace  | exact current node address bytes    |
 
 不能从 display name、class name、catalog 顺序、物理路径或 opaque catalog key 猜测 identity。需要保留数据的部署必须在升级前由
 宿主拥有的显式离线工具转换；runtime 正常启动路径始终只有一个当前契约。
@@ -215,9 +218,9 @@ generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终
 - Core address/slot/codec：`packages/core/src/plugins/runtime/identity.ts`
 - Core logger category codec：`packages/core/src/logger/categories.ts`
 - source canonicalization：`packages/rolldown/src/rolldown/plugins/pluginSemanticsPlugin.ts`
-- catalog projection/label：`packages/runtime/src/api/features/plugins/catalog-projection.ts`、`packages/runtime/src/runtime/plugin-label.ts`
-- Workbench route/browser state：`packages/workbench-app/src/workbench/paths.ts`、`packages/workbench-app/src/app/workbench/state.ts`
-- RuntimeState/Config/logger/catalog persistence：对应 `packages/runtime/src/services/` 与 `packages/runtime/src/logger/`
+- catalog projection/label：`packages/services/src/management/api/features/plugins/catalog-projection.ts`、`packages/core/src/plugins/runtime/plugin-label.ts`
+- Workbench route/browser state：`packages/workbench/shell/src/workbench/paths.ts`、`packages/workbench/shell/src/app/workbench/state.ts`
+- HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/services/src/logging/` 与 `packages/services/src/management/`
 
 变更 identity 时至少验证 package/source、default/fork、reference/route round-trip、encoded separator 拒绝、native realpath containment、
 definition-wide HMR、fork config isolation、definition-family classification、logger structured owner、HTTP readable route 和全部当前版本 reader。

@@ -1,11 +1,11 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { FontsWorkbench } from '../workbench.ts'
 
 export const selectionScope = createWorkbenchRenderer(FontsWorkbench.selection)
 
 export const fontSelectionQuery = selectionScope.query(({ provider }) => ({
 	queryKey: ['fonts', 'selection'] as const,
-	queryFn: () => provider.snapshot(),
+	queryFn: () => provider.snapshotDto(),
 }))
 
 export const setPreferredFontMutation = selectionScope.mutation(({ provider }) => ({

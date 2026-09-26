@@ -8,6 +8,8 @@ description: 发现、注册和管理服务端字体，并为 Canvas、ECharts �
 
 Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字体字节。需要一致的跨机器输出时，随包提供字体或从 Workbench 上传；只安装 Fonts 不会替操作系统安装字体。
 
+宿主需安装 Persistence 服务，保存上传字体与默认字体偏好。
+
 ## 何时直接使用 FontsPlugin
 
 - Plugin 自带 `.ttf`、`.otf`、`.woff` 或 `.woff2` 文件，需要在服务端 renderer 中注册。
@@ -30,7 +32,7 @@ host catalog 必须包含 `FontsPlugin`。直接使用字体能力的 Plugin 将
 
 ```ts twoslash
 import { FontsPlugin } from '@pluxel/fonts'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class ReportsPlugin extends BasePlugin {
@@ -57,7 +59,7 @@ await host.start(ReportsPlugin, { catalog: [FontsPlugin] })
 
 ```ts twoslash
 import { FontsPlugin } from '@pluxel/fonts'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { fileURLToPath } from 'node:url'
 
 @Plugin()
@@ -77,8 +79,7 @@ export class ReportsPlugin extends BasePlugin {
 
 注册后检查 `this.fonts.families` 是否包含 `Report Sans`，再让 renderer 使用它生成一张含中文、数字和标点的图片。部署产物也必须包含 `assets/ReportSans.woff2`，路径相对于最终模块位置解析。
 
-`registerFromPath()` 只接受绝对路径，并使用异步、1 MiB 分块的 bounded 文件 IO。打开 handle 后会先检查 file type/size，
-只分配不超过 `maxFontBytes` 的固定 Buffer；读取期间发生 truncate 或 grow 会拒绝，而不是使用无界 `readFile()`。
+`registerFromPath()` 只接受绝对路径，异步读取并检查 `maxFontBytes`；读取期间文件尺寸变化会被拒绝。
 `family` 是可选 alias；省略时使用字体内嵌的 family metadata。
 
 已经取得字节时使用 `register()`：
@@ -94,10 +95,8 @@ console.log(registration.families)
 registration.dispose()
 ```
 
-`data` 必须是非空 `Uint8Array`，并在 Promise settle 前保持不变；snapshot 与内容 hash 会按 1 MiB chunk 让出 event
-loop。managed record 的大 byte 编解码也使用相同 checkpoint，并在 payload copy/hash 前预检 envelope、声明长度、ID 与
-时间字段。文件读取、snapshot 和 hash 可取消，最终
-`GlobalFonts.register()` 是有单字体 byte ceiling、不可取消的同步 commit。返回的
+`data` 必须是非空 `Uint8Array`，在 Promise settle 前保持不变。读取、复制与 hash 可取消；
+最终 native 注册是受 byte 上限约束的同步操作，不能被抢占。返回的
 `FontRegistration` 包含：
 
 - `families`：本次注册新增或改变的 family。
@@ -150,16 +149,14 @@ content ID，最后一个 registration 释放后才从集合移除。平台自�
 ## Workbench 管理与 Selection Attachment
 
 FontsPlugin 自己的 manager View 管理 provider-owned 字体集合：上传、删除字体并设置默认 family。上传字体持久化在
-host persistence 中，provider 重启时会恢复；这个集合是 Fonts 的领域状态，不是 Workbench 平台概念，也不属于任一
-Canvas/ECharts consumer。Manager 使用 descriptor-bound snapshot query 和 mutations；Runtime 负责 DTO detach、关闭时的
-远端请求所有权与写后刷新。浏览器会先按当前上限检查 `File.size`，再通过 `File.arrayBuffer()` 准备上传 bytes。该 Web API
-不能取消已经开始的读取；关闭页面只会丢弃晚到的 bytes 并阻止随后发起 RPC，服务端仍会再次执行 authoritative 校验。
+host persistence 中，provider 重启时恢复。上传受 `maxFontBytes` / `maxManagedFonts` 约束；
+关闭页面会阻止文件读取完成后的 RPC，但不能取消浏览器已经开始的 `File.arrayBuffer()`。
 
 其他 Plugin 不应复制上传管理界面。如果只需在自己的详情页让用户选择统一默认字体，放置 Fonts 提供的 Attachment：
 
 ```ts no-twoslash
 import { FontsWorkbench } from '@pluxel/fonts/workbench'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 
 export const ReportsWorkbench = workbench.define({
 	fonts: FontsWorkbench.selection.place(workbench.tab({ label: 'Fonts' })),
@@ -172,34 +169,15 @@ protected override init() {
 }
 ```
 
-`FontsWorkbench.selection` 是 provider-only Attachment。它的 renderer module 同样通过
-`createWorkbenchRenderer(FontsWorkbench.selection)` 建立 descriptor-bound scope，并声明 snapshot query 与选择 mutation。
-Scope 取得 Fonts 提供的 `FontSelectionApi`，Runtime 自动 detach 返回 DTO、释放 transport ownership 并在写入后刷新；API 公开
-`snapshot()` 和 `setPreferredFamily(family | null)`，传 `null` 恢复 host config 或自动选择。Consumer 不创建转发 target，也不拥有
-字体 catalog/selection。Canvas、ECharts 和 Takumi 已各自放置这个 selector，普通业务 Plugin 通常不需要重复添加。
+`FontsWorkbench.selection` 提供 `FontSelectionApi.snapshotDto()` 与
+`setPreferredFamily(family | null)`；传 `null` 恢复 host config / 自动选择。selection 修改 provider 统一默认值，
+不是 consumer 私有偏好。Consumer 不创建转发 target；Canvas、ECharts、Takumi 已放置该 selector，通常无需重复添加。
 
 Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。
 
 ## 配置
 
-host 通过 Plugin config 配置 FontsPlugin：
-
-```ts no-twoslash
-await host.start(FontsPlugin, {
-	initialConfig: {
-		defaultFamily: 'Noto Sans',
-		maxRegistrationsPerConsumer: 32,
-		maxNativeRegistrations: 512,
-		maxTotalFontBytes: 256 * 1024 * 1024,
-		maxConcurrentFontTasks: 4,
-		maxQueuedFontTasks: 32,
-		maxQueuedFontTasksPerConsumer: 8,
-		maxPendingManagedTasks: 32,
-		maxManagedFonts: 64,
-		maxFontBytes: 16 * 1024 * 1024,
-	},
-})
-```
+在应用的 Plugin config 中按需覆盖以下默认值：
 
 | 字段                            |    默认值 | 职责                                           |
 | ------------------------------- | --------: | ---------------------------------------------- |
@@ -232,3 +210,45 @@ await host.start(FontsPlugin, {
 
 默认字体变化只影响之后创建的 Canvas context 和之后执行的 ECharts/Takumi render。已经准备好的文字布局与已有
 native context/renderer state 保持不变；portable 集合变化会让 Takumi 在新 revision 创建新的 registry。
+
+## 将可恢复失败交给业务调用方
+
+业务品牌字体注册允许用户更换文件时，可只将内容不合法和单个文件超限转成 Result。
+下面的 `fonts` 是 consumer 注入的 `FontsPlugin`，并未另建字体管理入口。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import {
+	FontsError,
+	type FontsPlugin,
+	type FontRegistration,
+	type FontRegistrationInput,
+} from '@pluxel/fonts'
+
+export class FontRejected extends TaggedError('FontRejected')<{
+	reason: 'invalid_font' | 'too_large'
+}> {}
+
+export async function registerBrandFont(
+	fonts: FontsPlugin,
+	input: FontRegistrationInput,
+): Promise<Result<FontRegistration, FontRejected>> {
+	try {
+		return Result.ok(await fonts.register(input))
+	} catch (error) {
+		if (error instanceof FontsError && error.code === 'INVALID_FONT') {
+			return Result.err(new FontRejected({ reason: 'invalid_font' }))
+		}
+		if (error instanceof FontsError && error.code === 'FONT_TOO_LARGE') {
+			return Result.err(new FontRejected({ reason: 'too_large' }))
+		}
+		throw error
+	}
+}
+```
+
+Err 的 `reason` 决定提示换文件还是缩小文件。Ok 的 `value` 仍是 `FontRegistration`：caller generation
+停止时自动释放，也可调用 `dispose()` 提前释放。Result 不负责释放资源，registration 不能变成 DTO。
+调用参数错误、累计容量、存储损坏、busy、取消和停止保持原异常；启动恢复失败仍必须让 Plugin 启动失败。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/fonts/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/fonts/tests/fonts.test.ts)。

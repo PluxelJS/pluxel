@@ -31,7 +31,7 @@ type IgnorePatterns = NonNullable<OxlintConfig['ignorePatterns']>
 type GlobSet = NonNullable<OxlintOverride['files']>
 
 const reactHooksGlobs: GlobSet = [
-	'packages/workbench-app/src/**/*.{ts,tsx}',
+	'packages/workbench/shell/src/**/*.{ts,tsx}',
 	'packages/valibot-form/src/web/**/*.{ts,tsx}',
 ]
 
@@ -110,6 +110,8 @@ const baselineRules: RuleMap = {
 	'unicorn/no-array-sort': 'off',
 	'unicorn/prefer-add-event-listener': 'off',
 	'unicorn/require-module-specifiers': 'off',
+	// Error-suffixed APIs can be factories (TaggedError); do not rename them to satisfy a name heuristic.
+	'unicorn/throw-new-error': 'off',
 	'vitest/no-standalone-expect': 'off',
 	'vitest/require-mock-type-parameters': 'off',
 }
@@ -146,7 +148,6 @@ const highSignalRules: RuleMap = {
 	'unicorn/prefer-reflect-apply': 'error',
 	'unicorn/prefer-string-replace-all': 'error',
 	'unicorn/prefer-type-error': 'error',
-	'unicorn/throw-new-error': 'error',
 }
 
 const rules: RuleMap = {

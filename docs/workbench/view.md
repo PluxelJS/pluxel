@@ -9,16 +9,18 @@ description: 从一个可读取、可刷新的页面开始，再按需添加分�
 Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使用 `height: 100%` 填满可用高度，
 并自行管理内容滚动；Pane Kit 根据该窗格的实际宽度调整分栏。
 
-开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为四份文件：页面声明、服务端实现、查询声明和 React 入口。
+开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为五份文件：页面声明、服务端实现、查询声明、React 入口和页面组件。
 `RpcTarget` 是可以由页面调用的服务端对象；`scope` 将 React 组件与它对应的页面 API 关联。
+
+先完成[五份文件的最小页面](#默认路径snapshot--mutation)，再按[检查结果](#检查结果)验证。只有需要参数路由、订阅或其他客户端时才继续扩展；[依赖与构建](#依赖与构建)说明发布包必须满足的版本和模块身份。
 
 ## 默认路径：snapshot + mutation
 
 将 browser-safe DTO、API 和静态 definition 放进 `src/workbench.ts`：
 
 ```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
 export type OrdersSnapshot = Readonly<{
 	revision: number
@@ -26,7 +28,7 @@ export type OrdersSnapshot = Readonly<{
 }>
 
 export interface OrdersApi extends RpcTarget {
-	snapshot(): Promise<OrdersSnapshot>
+	snapshotDto(): Promise<OrdersSnapshot>
 	refresh(): Promise<void>
 }
 
@@ -44,9 +46,10 @@ Definition 是固定 flat record。entry key 是稳定 declaration identity；`w
 接着在 `src/OrdersPlugin.ts` 提供服务端实现。这个最小例子用内存计数，实际项目把读取和刷新替换为自己的业务方法：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { OrdersWorkbench, type OrdersApi } from './workbench.ts'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { RpcTarget } from 'capnweb'
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
+import { OrdersWorkbench, type OrdersApi, type OrdersSnapshot } from './workbench.ts'
 
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
@@ -71,10 +74,12 @@ class OrdersTarget extends RpcTarget implements OrdersApi {
 	constructor(private readonly orders: OrdersPlugin) {
 		super()
 	}
-	snapshot() {
-		return this.orders.snapshot()
+	async snapshotDto(): Promise<OrdersSnapshot> {
+		const dto = await this.orders.snapshot()
+		assertWorkbenchDto(dto, 'Orders snapshot')
+		return dto
 	}
-	refresh() {
+	refresh(): Promise<void> {
 		return this.orders.refresh()
 	}
 }
@@ -84,25 +89,18 @@ class OrdersTarget extends RpcTarget implements OrdersApi {
 从 factory 参数取得 `principal`、`params`、`signal`，在这里检查权限并在关闭时清理资源。
 此例没有订阅或长任务，因此不需要额外的空 disposer。
 
-`RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
-`createLocalRpcClient()` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。
-复用的是 contract、target class 和底层领域 service，不是已经打开的 target 实例：每个 session/open 都必须创建 fresh
-target，并由新的挂载方自己提供认证、授权、输入预算、取消和释放语义，不能假定 Workbench session 的保障仍然存在。
-只有出现这种真实的第二消费者时，才将共用 DTO/API 从 `workbench.ts` 提取到中立 contract module 或独立 package subpath；
-仅供 Workbench 使用时保持当前结构。
-
 每个 renderer 声明一个 module-scoped scope 和资源：
 
 ```ts
 // src/ui/overview.scope.ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.ts'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 export const ordersQuery = overviewScope.query(({ api }) => ({
 	queryKey: ['orders', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 }))
 
 export const refreshOrders = overviewScope.mutation(({ api }) => ({
@@ -131,12 +129,27 @@ export function OrdersPage() {
 	const refresh = refreshOrders.useMutation()
 
 	if (orders.status === 'pending') return <p>Loading…</p>
-	if (orders.status === 'error' && orders.data === undefined) return <p>Unavailable</p>
+	if (orders.status === 'error' && orders.data === undefined) {
+		return (
+			<button
+				type="button"
+				onClick={() => {
+					void orders.refetch().catch(() => {})
+				}}
+			>
+				读取失败，点击重试
+			</button>
+		)
+	}
 
 	return (
-		<button disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-			Refresh {orders.data.openOrders} orders (revision {orders.data.revision})
-		</button>
+		<>
+			{orders.status === 'error' && <p role="alert">刷新读取失败，当前显示最近一次成功的数据。</p>}
+			{refresh.status === 'error' && <p role="alert">操作失败，请重试。</p>}
+			<button type="button" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+				Refresh {orders.data.openOrders} orders (revision {orders.data.revision})
+			</button>
+		</>
 	)
 }
 ```
@@ -144,12 +157,22 @@ export function OrdersPage() {
 每次 Bridge mount 都有独立 renderer owner 和 private `QueryClient`；不同 open、principal、params 或 Plugin generation
 不共享 query、mutation、cache 或 subscription。
 
+`mutate()` 将失败交给 mutation state；显式 `refetch()` 返回的 Promise 需要处理 rejection，错误同时保留在 query state 中。
+
+## 检查结果
+
+运行应用，打开 Plugin 的 Orders 标签，应看到订单数量和 Refresh 按钮。点击后按钮在请求期间禁用，成功后重新读取并看到 revision 增加。
+关闭再打开应重新读取；两个同时打开的页面不应共用操作状态。
+
+查询选项、分页输入、错误代码和 Mantine Provider 见 [查询、写入与页面资源](./renderer-resources.md)。
+认证、完整刷新和反向代理见 [使用与排查工作台](./operations.md)。
+
 ## 必须遵守的 renderer scope 边界
 
 每个 renderer graph 只能有一个 server-definition value boundary。默认把它放在 `<entry>.scope.ts`：
 
 ```ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.ts'
 
 export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
@@ -161,6 +184,15 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 低层 `useWorkbench(exactDescriptor)` 只能在 renderer default entry 保留这唯一边界；它不是普通 snapshot 页面首选路径。
 
+## 页面 API 与宿主边界
+
+- 纯数据 RPC 方法使用 `*Dto` 后缀和显式返回类型，返回前用 `assertWorkbenchDto()` 校验可传输性；大列表使用 cursor/limit。
+- DTO 生产、输入校验与授权规则见 [API 契约](../api/contracts.md#rpc-方法名表达返回值所有权)。
+- mutation 只有页面需要 result 时才返回 DTO；否则返回 `void`，用 subscription 或 typed invalidation 刷新。
+- API 不返回 Plugin、Context、database handle、native object、raw socket 或 Shell service。
+- `host` 的外观、导航、文档与可选管理能力见[Host 能力](#host-能力)，不从 Shell 内部取得服务。
+- route params 由 server match 后冻结；browser 不能提交 principal 或 authority object。
+
 ## 何时升级
 
 - read model 会在外部变化：query 通过 `workbench.subscribe: ({ invalidate }) => api.watch(invalidate)` 订阅权威 invalidation。
@@ -171,22 +203,6 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 - 复杂三栏布局：使用 `WorkbenchPaneLayout`/`WorkbenchPane`；不要读取 Shell router、store 或 raw socket。
 
 普通 `scope.query()` 负责 browser-side subscription 的 retain、abort 和 dispose。不要为了普通 latest snapshot 手写 observer target。
-
-## 页面 API 与宿主边界
-
-- 返回 bounded immutable snapshot；大列表使用 cursor/limit。
-- mutation 只有页面需要 result 时才返回 DTO；否则返回 `void`，用 subscription 或 typed invalidation 刷新。
-- API 不返回 Plugin、Context、database handle、native object、raw socket 或 Shell service。
-- `host` 只提供 locale、color scheme、notify/confirm、relative navigation 和 parameterized document facade。
-- route params 由 server match 后冻结；browser 不能提交 principal 或 authority object。
-
-## 检查结果
-
-运行应用，打开 Plugin 的 Orders 标签，应看到订单数量和 Refresh 按钮。点击后按钮在请求期间禁用，成功后重新读取并看到 revision 增加。
-关闭再打开应重新读取；两个同时打开的页面不应共用操作状态。
-
-查询选项、分页输入、错误代码和 Mantine Provider 见 [查询、写入与页面资源](./renderer-resources.md)。
-认证、完整刷新和反向代理见 [使用与排查工作台](./operations.md)。
 
 ## Placement 与参数化 route
 
@@ -223,6 +239,11 @@ host.navigation?.openDocument({
 })
 ```
 
+浏览器地址跟随 `uiBasePath`：`/accounts` 在 `'/__pluxel/workbench'` 下对应 `/__pluxel/workbench/accounts`，不要求设置 `navigation`。
+不同 Plugin/fork 路径重叠时，冲突入口改用带实例身份的完整地址；歧义短地址显示入口选择页。同一 Plugin 内静态路径优先于参数路径。
+Shell 保留首页以及 `plugins`、`plugin-graph`、`security`、`logs`、`workbench`、`workbench-standalone` 及其子路径。
+完整地址始终有效；publication 更新后重算短地址，冲突消失时恢复。固定跨插件链接应选择有业务辨识度的路径。
+
 Server 会重新匹配 route，再把 frozen params 交给 factory。Browser 不能提交 principal 或 authority object。
 Document renderer 可以用 `host.document?.params`、`setTitle()` 和 `setDirty()` 管理当前文档 chrome。
 
@@ -236,178 +257,52 @@ Document renderer 可以用 `host.document?.params`、`setTitle()` 和 `setDirty
 - 可空的 parameterized `document`；
 
 Renderer 不取得 generic HTTP client、任意 URL navigation、Shell router/store 或 raw WebSocket。需要三栏任务布局时，
-从 `@pluxel/runtime/workbench/react` 使用 `WorkbenchPaneLayout` 和 `WorkbenchPane`；宿主负责 responsive drawer、
+从 `@pluxel/workbench/react` 使用 `WorkbenchPaneLayout` 和 `WorkbenchPane`；宿主负责 responsive drawer、
 resize、focus 和 workspace persistence。
 
 Pane Kit 的三段语义固定为 `navigation | primary | inspector`：两侧可由当前标签页头部的标准控件显示、隐藏或在窄屏
 打开为 drawer；中间控件用于聚焦 primary 并恢复先前两侧。`primary` 始终可见，不能被隐藏。官方插件详情页中的
 plugin rail、辅助栏和底部 dock 属于另一套宿主私有布局，不应被 View 当作 Pane Kit role 或自行复制其 chrome。
 
-## 完整 View 参考：server push 与 custom callback
+### 借用宿主管理操作
 
-下面的例子刻意包含 `watch()` 和 server-side callback target，用于说明跨调用 observer 的 ownership。它不是普通
-snapshot + mutation 页面的起点；没有已证实的实时更新需求时，使用[本页的默认路径](#默认路径snapshot--mutation)。
+官方 Shell 向 View 提供可选的 `host.management`，共享当前已认证会话的 unary management
+操作。自定义 Shell 必须在 `createWorkbenchViewHost({ management, ... })` 中显式绑定；
+未绑定时该字段为 `null`，Renderer 应处理不可用状态。
 
-### 1. 声明 API 和 View
+这不转移会话所有权：没有 raw socket、订阅控制或 session disposal。关闭 View 后，
+已缓存的 namespace 与独立保存的 method 都不能继续发起操作；已经接受的调用仍按原会话完成，
+关闭不表示业务回滚。认证、权限检查和审计与 Shell 内建页面完全相同。
 
-把 browser-safe API、DTO 和 definition 放在 `src/workbench.ts`：
+## 完整 View 参考：订阅后台变化
 
-```ts
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+后台或其他页面会修改数据时，在前面的例子中加入 `watch()`，不再复制另一套页面。
 
-export type OrdersSnapshot = Readonly<{
-	revision: number
-	openOrders: number
-}>
-
-export interface OrdersObserver {
-	(revision: number): void | Promise<void>
-}
-
-export interface OrdersApi extends RpcTarget {
-	snapshot(): OrdersSnapshot
-	refresh(): OrdersSnapshot
-	watch(observer: OrdersObserver): RpcTarget
-}
-
-export const OrdersWorkbench = workbench.define({
-	overview: workbench.view<OrdersApi>({
-		renderer: workbench.entry(import.meta.url, './ui/overview.tsx'),
-		placement: workbench.tab({ label: 'Orders', order: 20 }),
-	}),
-})
-```
-
-Definition 必须是固定的 flat record。Entry key 是稳定 declaration identity 的一部分；不要从运行时数据生成 key。
-`workbench.entry()` 的路径必须相对当前 module，构建工具会据此生成 MF2 producer 和 Bridge expose。
-
-### 2. 发布 fresh target
-
-在 Plugin 的 `init()` 中发布 definition：
+1. `OrdersApi` 增加 `watch(observer: (revision: number) => void | Promise<void>): RpcTarget`。
+2. Plugin 的领域服务提供 `subscribe(listener): Disposable`，每次提交后通知递增 revision。
+3. factory 改成 `overview: ({ signal }) => new OrdersTarget(this, signal)`，target 保存本次 open 的 signal。
+4. target 用现有 helper 接管远端 observer：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
-import { OrdersWorkbench, type OrdersApi, type OrdersObserver } from './workbench.js'
+import { createWorkbenchWatch } from '@pluxel/workbench/server'
 
-@Plugin({ displayName: 'Orders' })
-export class OrdersPlugin extends BasePlugin {
-	private revision = 1
-	private openOrders = 0
-	private readonly listeners = new Set<(revision: number) => void>()
-
-	override init() {
-		this.ctx.workbench?.publish(OrdersWorkbench, {
-			overview: ({ signal }) => new OrdersTarget(this, signal),
-		})
-	}
-
-	snapshot() {
-		return Object.freeze({ revision: this.revision, openOrders: this.openOrders })
-	}
-
-	refresh() {
-		this.revision += 1
-		for (const listener of this.listeners) listener(this.revision)
-		return this.snapshot()
-	}
-
-	subscribe(listener: (revision: number) => void) {
-		this.listeners.add(listener)
-		return () => this.listeners.delete(listener)
-	}
-}
-
-class OrdersTarget extends RpcTarget implements OrdersApi {
-	constructor(
-		private readonly plugin: OrdersPlugin,
-		private readonly signal: AbortSignal,
-	) {
-		super()
-	}
-
-	snapshot() {
-		return this.plugin.snapshot()
-	}
-
-	refresh() {
-		return this.plugin.refresh()
-	}
-
-	watch(observer: OrdersObserver) {
-		return new OrdersSubscription(this.plugin, observer as RpcStub<OrdersObserver>, this.signal)
-	}
-}
-
-class OrdersSubscription extends RpcTarget {
-	readonly #observer: RpcStub<OrdersObserver>
-	readonly #unsubscribe: () => void
-	readonly #signal: AbortSignal
-	readonly #onAbort = () => this[Symbol.dispose]()
-	#active = true
-
-	constructor(plugin: OrdersPlugin, observer: RpcStub<OrdersObserver>, signal: AbortSignal) {
-		super()
-		this.#observer = observer.dup()
-		this.#unsubscribe = plugin.subscribe((revision) => {
-			try {
-				const result = this.#observer(revision)
-				void (async () => {
-					try {
-						await result
-					} catch {
-						this[Symbol.dispose]()
-					} finally {
-						result[Symbol.dispose]()
-					}
-				})()
-			} catch {
-				this[Symbol.dispose]()
-			}
-		})
-		this.#signal = signal
-		if (signal.aborted) this[Symbol.dispose]()
-		else signal.addEventListener('abort', this.#onAbort, { once: true })
-	}
-
-	[Symbol.dispose]() {
-		if (!this.#active) return
-		this.#active = false
-		this.#signal.removeEventListener('abort', this.#onAbort)
-		this.#unsubscribe()
-		this.#observer[Symbol.dispose]()
-	}
+// OrdersTarget 中；orders.subscribe() 返回领域订阅的 Disposable。
+watch(observer: (revision: number) => void | Promise<void>): RpcTarget {
+	return createWorkbenchWatch({
+		observer,
+		signal: this.signal,
+		subscribe: (notify) => this.orders.subscribe(notify),
+	})
 }
 ```
 
-每次打开 View 都会调用 factory，所以必须返回新的 `RpcTarget`。`principal`、server-matched `params` 和
-`signal` 都在 factory context 中；按用户授权或按 route 打开对象时就在这里 admission。
-
-`OrdersSubscription` 对需要跨调用保留的 observer 调用 `dup()`，在每次 callback settle 后释放 invocation result，并在自己的
-`[Symbol.dispose]()` 中 unsubscribe 和释放 observer。这样 View close、socket close 和 Plugin replacement 都走同一清理路径。
-
-Bindings 必须与 definition 的 key 完全一致。一个 Plugin generation 只调用一次 `publish()`；`PluginPart` 把 UI
-需求交给 owning Plugin 聚合。
-
-### 3. 声明 renderer scope 与 resources
-
-普通 snapshot/watch 页面先在 renderer-specific `src/ui/overview.scope.ts` 声明 scope。这个 module 是当前 renderer graph
-唯一直接 value-import definition 的边界；scope 和 resource 都是 module-scoped immutable declaration，不保存当前 API root
-或 React state：
+然后只修改原有资源声明，entry 与页面组件保持相同：
 
 ```ts
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
-import { OrdersWorkbench } from '../workbench.js'
-
-export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
-
 export const ordersQuery = overviewScope.query(({ api }) => ({
 	queryKey: ['orders', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
-	workbench: {
-		subscribe: ({ invalidate }) => api.watch(invalidate),
-	},
+	queryFn: () => api.snapshotDto(),
+	workbench: { subscribe: ({ invalidate }) => api.watch(invalidate) },
 }))
 
 export const refreshOrders = overviewScope.mutation(({ api }) => ({
@@ -415,62 +310,22 @@ export const refreshOrders = overviewScope.mutation(({ api }) => ({
 }))
 ```
 
-Renderer-specific scope module 优先与 descriptor entry 同名：`overview` 使用 `overview.scope.ts`，scope symbol 使用
-`overviewScope`。这样 entry、scope 与 build error 能直接互相定位；resource 则继续使用领域名称。
+`refresh()` 提交后必须触发同一权威通知，才可省略 `invalidates`。helper 用于最新状态失效提示，会合并中间 revision；逐条事件和可取消进度使用领域 capability。
+观察者引用、callback result 和退订的完整规则见[服务端最新状态通知](./renderer-resources.md#服务端最新状态通知)。
 
-这里 `api.refresh()` 提交后会通过领域 `watch()` 推送 subscription 通知，所以 mutation 不再重复声明
-`workbench.invalidates`。如果 query 没有 subscription，或该 contract 不覆盖这项写操作，再由 mutation 显式声明
-invalidation；不要为同一次提交同时建立两条刷新路径。
+## 依赖与构建
 
-Toolchain 会把这条 exact definition import 改写为 browser-only projection，同时保留 `RpcStub<OrdersApi>` 的准确类型；原始
-definition module 不会在浏览器执行。Indirect/re-export/dynamic definition import、绑定错误 entry、一个 scope 绑定多个 descriptor，
-或跨 renderer 复用同一 scope 都会在 build 时拒绝。共享 UI 应保持为普通 props/data component，不 import renderer scope。
-只使用低层 `useWorkbench(exactDescriptor)` 的高级 renderer 可以改在 default entry 保留唯一 direct definition import；两条路径都
-不允许 graph 中出现第二个 definition value boundary。
+向 Workbench 发布 View/Attachment target 时，作者直接从 `capnweb` 导入 `RpcTarget`，并把宿主支持的精确版本
+同时列为 peer 和 dev dependency。当前 Workbench 支持 `0.12.0`；官方包使用 `catalog:prod`。
+Workbench 在打开页面时检查 target 是同一运行时的 `RpcTarget`，`pluxel build` 在发布产物前检查该包的
+peer、dev 和实际安装版本。仅自建的 RPC session 不因使用同名库而受 Workbench 版本限制。
+构建产物的 `pluxel.workbenchCapnweb` 事实让 Pluxel 静态应用和生产动态来源只对 target 发布包
+桥接宿主模块；动态来源在加载时还检查实际版本，并给出包名、实际版和宿主支持版。即使版本相同，
+绕过标准构建或采用其它加载器造成的第二份模块仍会在打开时被拒绝。
 
-按输入读取与定向刷新见[页面资源参考](./renderer-resources.md#按参数查询)。
-
-### 4. 绑定 entry 并渲染 page
-
-默认 entry 保持零 props，只负责把 page 绑定到 scope：
-
-```tsx
-// src/ui/overview.tsx
-import { OrdersPage } from './orders-page.js'
-import { overviewScope } from './overview.scope.js'
-
-export default overviewScope.render(OrdersPage)
-```
-
-Renderer graph 内的 page/panel 可以直接 import scope 和 resources，不需要层层传递 `api`、`host` 或 cache：
-
-```tsx
-// src/ui/orders-page.tsx
-import { ordersQuery, overviewScope, refreshOrders } from './overview.scope.js'
-
-export function OrdersPage() {
-	const { host } = overviewScope.useWorkbench()
-	const orders = ordersQuery.useQuery()
-	const refresh = refreshOrders.useMutation()
-
-	if (orders.status === 'pending') return <p>Loading…</p>
-	if (orders.status === 'error' && orders.data === undefined) return <p>Unavailable</p>
-
-	return (
-		<>
-			{orders.status === 'error' ? <p>Showing stale data.</p> : null}
-			<button
-				disabled={refresh.isPending}
-				onClick={() => {
-					void refresh
-						.mutateAsync()
-						.then((next) => host.notify({ message: `Revision ${next.revision}` }))
-						.catch(() => host.notify({ message: 'Refresh failed', tone: 'error' }))
-				}}
-			>
-				Refresh {orders.data.openOrders} orders
-			</button>
-		</>
-	)
-}
-```
+`RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
+Cap’n Web 的 `new RpcStub(target)` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。
+复用的是 contract、target class 和底层领域 service，不是已经打开的 target 实例：每个 session/open 都必须创建 fresh
+target，并由新的挂载方自己提供认证、授权、输入预算、取消和释放语义，不能假定 Workbench session 的保障仍然存在。
+只有出现这种真实的第二消费者时，才将共用 DTO/API 从 `workbench.ts` 提取到中立 contract module 或独立 package subpath；
+仅供 Workbench 使用时保持当前结构。

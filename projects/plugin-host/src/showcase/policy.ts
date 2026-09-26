@@ -3,9 +3,9 @@ import {
 	parsePluginNodeAddress,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
-	type RuntimeStateSnapshot,
-} from '@pluxel/runtime'
-import { defineProduct } from '@pluxel/runtime/product'
+} from '@pluxel/core'
+import { type HostStateSnapshot } from '@pluxel/host'
+import { defineProduct } from '@pluxel/services/management/product'
 
 export const product = defineProduct({
 	displayName: 'Pluxel Architecture Lab',
@@ -13,8 +13,8 @@ export const product = defineProduct({
 	copyright: 'Runnable architecture showcase and official plugin host',
 })
 
+const vaultAdminPlugin = packageNode('@pluxel/vault-admin', 'VaultAdminPlugin')
 const authPlugin = packageNode('@pluxel/auth', 'AuthPlugin')
-const agentToolsPlugin = packageNode('@pluxel/agent-tools', 'AgentToolsPlugin')
 const memoryCacheBackendPlugin = packageNode('@pluxel/cache', 'MemoryCacheBackendPlugin')
 const cachePlugin = packageNode('@pluxel/cache', 'CachePlugin')
 const otelPlugin = packageNode('@pluxel/otel', 'OtelPlugin')
@@ -47,8 +47,8 @@ const optionalConsumer = sourceNode(
 export const s3StorageNode = defaultNode(s3PluginDefinition)
 
 const bootSafeOfficialPlugins = Object.freeze([
-	agentToolsPlugin,
 	authPlugin,
+	vaultAdminPlugin,
 	memoryCacheBackendPlugin,
 	cachePlugin,
 	otelPlugin,
@@ -61,11 +61,11 @@ const bootSafeOfficialPlugins = Object.freeze([
 	takumiPlugin,
 ])
 
-export function createHostRuntimeState(dynamic: boolean): Partial<RuntimeStateSnapshot> {
+export function createHostRuntimeState(): Partial<HostStateSnapshot> {
 	return {
 		autoStart: [
 			...bootSafeOfficialPlugins,
-			...(dynamic ? [packageManagerNode] : []),
+			packageManagerNode,
 			reportStudioPlugin,
 			eventConsumer,
 			optionalProvider,

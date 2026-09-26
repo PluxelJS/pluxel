@@ -1,93 +1,47 @@
-# Commands
+# Commands 集成边界
 
-`@pluxel/commands` is the transport-neutral command kernel for capabilities exposed through Agent,
-argv/message, HTTP, or Workbench-backed host integrations. This document is authoritative for its
-repository integration and lifecycle boundaries.
+`@pluxel/commands` 拥有 transport-neutral command kernel 与可选协议投影；Services 消费 Command 或投影结果，拥有 Host 集成与生命周期。作者与宿主用法见 [Commands](../docs/runtime/commands.md)，完整 API 见 [package README](../packages/commands/README.md)，parser/projection/performance 决策见 [package design](../packages/commands/docs/DESIGN.md)。
 
-Documentation ownership is deliberately split:
+修改注册/撤回读 [Root publication](#root-publication)；修改 router、SDK 接入或双 owner admission 读 [Carrier publication](#carrier-publication)；协议映射分别读 [Cap’n Web](#capn-web-适配) 与 [MCP](#mcp-投影)。Parser 和 Command 定义规则仍由 package design 拥有。
 
-- [`docs/runtime/commands.md`](../docs/runtime/commands.md): standard author and host usage;
-- [`packages/commands/README.md`](../packages/commands/README.md): complete package API and recipes;
-- [`packages/commands/docs/DESIGN.md`](../packages/commands/docs/DESIGN.md): package implementation,
-  performance, parser, and projection decisions.
+## Root publication
 
-Runtime and host integrations must preserve these boundaries:
+`@pluxel/services/commands` 的 `commands()` 安装一个空 root registry，Plugin 通过 `ctx.require(Commands)` 获得 owner view。List/snapshot/subscription/execute 委托同一 registry，不复制 revision 或 listeners。
 
-- lifecycle behavior remains implemented by the existing core/runtime use case;
-- a command handler delegates to that use case rather than reproducing start/stop logic;
-- the installing host owns exposure, principal mapping, permission, confirmation, audit, and
-  registration lifetime;
-- runtime registrations retain their plugin Context owner;
-- disabled carriers do not allocate servers, model clients, or watchers;
-- Agent adapters filter descriptors before publishing a tool catalog and map behavior to standard
-  read-only, destructive, idempotent, and open-world annotations.
+`register()` 返回固定本次发布的 typed command 句柄与 disposer，并绑定注册者 effects。旧句柄在撤销后永久失效；动态名称调用才跟随当前目录。执行返回 `Result<T, CommandFailure>`，持有 owner invocation gate；generation stop 关闭 admission、abort 合成 signal、等待调用退出，再 drain effects。手动 dispose 只撤销 publication，不取消已接纳调用、不关闭 sibling admission。
 
-Runtime does not install an Agent, Toolset, provider adapter, policy store, or Agent-specific Management API.
-Hosts that need managed Agent allowlists install the ordinary official `@pluxel/agent-tools` Plugin. Its
-Toolsets and Agent assignments are one standard Plugin config, so ConfigService remains the only persistence,
-validation, and update authority. Missing stable command names remain in config and become available when a
-Plugin publishes the same name.
+管理命令由 `@pluxel/services/management/commands` 的 `managementCommands()` 显式安装，`servicesPreset()` 选择它；通用 Commands 不加载管理面。Handler 委托 Host 用例，不复制 start/stop/graph。
 
-`AgentToolsPlugin.catalog(agentId)` returns a live constrained catalog. Its `list()` only exposes
-currently registered commands assigned to that Agent; its single throwing `execute()` checks the current
-assignment again before dispatching through the root command catalog. Carriers must use this bound
-catalog for both publication and execution. Calling `ctx.commands.execute()` directly would bypass the
-Agent assignment and is only appropriate for a separately authorized host control path.
+## Carrier publication
 
-The bound catalog publishes `{ catalogRevision, policyRevision }` snapshots and subscriptions. Command
-registration, withdrawal, replacement, or Toolset edits therefore invalidate carrier projections without
-creating a second registry. A policy edit does not cancel calls already admitted before the edit; it prevents
-subsequent calls, matching command publication withdrawal semantics.
+Root catalog 与 carrier exposure 是两个显式选择。Provider 使用 `createMount<CarrierContext>()`，通过 caller-bound `bind(command, { install, handle? })` 接收 exact `DirectCommand`，固定 provider 与 publication owner generation，并把同步 router/SDK registration cleanup 归入 caller effects。
 
-`@pluxel/runtime` installs one root registry behind `ctx.commands`. Its list, snapshot, subscription, and
-execution methods delegate to that registry, so runtime does not maintain another revision or listener set.
-`register()` returns the registry's typed installed command plus disposer and binds disposal to the calling
-Plugin Context's effects. Runtime wraps execution in the owner's internal invocation gate; Core closes and
-drains that gate once per generation before effects drain. A manually disposed registration withdraws
-publication and does not cancel work that already entered execution or close sibling admission.
+Mount 没有第二个 registry、name lookup、snapshot 或 caller-supplied owner。其返回值是 disposer，不是 executable command。Installer 得到带 `mounted: true` 标记的 `MountedCommand`；registry 句柄和 mounted endpoint 均不能充当新的 direct definition，类型与运行期边界都拒绝误用。`snapshotCommand()` 拥有共享的描述校验和执行快照，不借助临时 registry，也不擦除原 publication 的撤回约束。
 
-Carrier providers that publish a command into their own router or SDK callback surface use
-`ctx.commands.createMount<CarrierContext>()`. A mount is not a second registry: it has no name lookup,
-snapshot, subscription, dynamic execution, or caller-supplied owner. Its caller-bound `bind()` accepts a
-`DirectCommand`, pins the exact command implementation to the provider and publication-owner generations,
-and adopts the provider's synchronous route/SDK registration into the publication owner's effects. The
-returned handle is a plain disposer, not an executable installed command.
+`toCli()` 在定义侧编译并校验一个 Command 的 argv 投影；`createArgvRouter()` 在 bind 时只负责发布、路由冲突和不可信 candidate construction。Carrier 的 `handle(command, candidate, context)` 完成授权、构造业务 Context、执行和呈现，整个 callback 在双方 admission 内结算。candidate 为 unknown，由所选 Command 做输入校验。省略 handle 时仅执行原 Command。
 
-`DirectCommand` is the commands-package type for an exact implementation. Ordinary `defineCommand()`
-results and hand-authored commands satisfy it, while the compatible-replacement handle returned by a
-registry does not—even when widened to `InstalledCommand`. This is a type-level misuse guard; JavaScript
-carrier entry points and Runtime still validate received objects. Root catalog publication and carrier
-publication remain two independent, explicit decisions.
+Services 与 Command kernel 复用内部 Result 校验，未知异常或非法返回值监督为 INTERNAL；合法 Result 保持原样。协议投影若发生在 endpoint.execute 返回之后，则不在 mount 的保护范围内，依赖 owner 资源的投影必须进入 handle。扩展 Context 的命令只进入对应 carrier，不能进入要求 common `CommandContext` 的 root catalog。
 
-The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers
-consume `ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or
-handlers; Agent adapter Plugins consume a constructor-injected `AgentToolsPlugin` bound catalog.
+Host 拥有 exposure、principal、permission、confirmation、audit 与 registration lifetime。关闭 carrier 不创建 server/model client/watcher。CLI 是开发构建工具，不自动连接在线 command catalog；在线检查使用 [devconsole](DEV_CONSOLE.md)。
 
-An argv/message carrier explicitly binds its allowed commands to `createArgvRouter()`. The router owns only
-route grammar and candidate construction: after `resolve()`, the carrier performs authorization, constructs
-the invocation Context, and calls the mounted command's throwing `execute()`. It may maintain one private
-catalog only when the carrier has a real discovery use case, but the route must retain the mounted direct
-command rather than a registry-installed handle. The workspace `@pluxel/cli` executable remains a
-build/development tool and is not implicitly connected to a running runtime.
+## Cap’n Web 适配
 
-The root runtime catalog accepts commands requiring the common `CommandContext`. A carrier that constructs
-additional invocation facts parameterizes its mount/router with that extended context. Common direct
-commands can mount into the carrier; commands requiring the extended context cannot enter the root catalog.
-Carrier declarations own route syntax, admission and result rendering, while the underlying command keeps
-the single schema/validation/codec/execution pipeline. Presentation and error rendering must settle inside
-the mounted execution so both provider and publication-owner admission remain held.
+Command 内核不拥有远程会话。需要远程调用时，`toCapnweb()` 把明确选择的 Command 映射为原生 Cap’n Web `RpcTarget` class 上的真实 prototype 方法；不引入万能 `invoke`、第二份目录或代码执行器。每个方法复用 Command 输入校验与执行 Result，并在出口投影普通 JSON 数据。实例由宿主绑定可信 context，远程输入不能提供身份、资源 owner 或策略。
 
-Implementation entry points:
+适配器在创建 class 时拒绝客户端 stub 保留的方法名，以及 Cap’n Web 无法保真的静态输入字段名；动态字段须由应用避开这些键。出口检查特殊键和 Cap’n Web 实际编码能力，避免将会丢字段或超深的结果报告为成功。进程内 `RpcStub` 验证方法与上下文隔离；真实 HTTP batch 回归验证原生 wire 调用，`serialize`/`deserialize` 验证数据往返。HTTP batch 是一次性会话，同一批次可并行发起调用，不能在完成后复用 stub。输入接纳仍发生在所选传输完成解码之后，不能声称校验到已被上游丢弃的原始字段。
 
-- `packages/commands/src/schema.ts`: single schema projection, validation, and codec compiler;
-- `packages/commands/src/compile.ts`: final command plan, descriptor, and example compilation;
-- `packages/commands/src/define.ts`: validated call-time execution boundary;
-- `packages/commands/src/registry.ts`: lifecycle-neutral registration, discovery, and dynamic dispatch;
-- `packages/commands/src/argv/compile.ts`: schema-derived argv binding and help compilation;
-- `packages/commands/src/argv/parse.ts`: option coercion and untrusted candidate construction;
-- `packages/commands/src/argv/router.ts`: trie registration, routing, and resolution;
-- `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
-- `packages/runtime/src/services/CommandsService.ts`: root publication and owner-bound carrier mounts;
-- `plugins/agent-tools/src/index.ts`: optional Toolset/Agent config projection and call-time enforcement.
-- `plugins/pi-agent/src/tool-adapter.ts`: Pi provider-safe schema/name projection that still dispatches
-  through the bound AgentTools catalog; Pi built-ins and default resource discovery stay disabled.
+普通领域能力继续直接使用 Cap’n Web `RpcTarget`。连接、认证、授权与会话清理属于安装该 target 的宿主，不进入 Commands 的定义契约。当前没有独立的 Command RPC 发布、发现或模型运行时；需要这些能力时由实际应用选择并负责。
+
+## MCP 投影
+
+`toMcp()` 只把一个选定的 Command 投影为 MCP SDK `Tool` 描述和按调用传入可信 context 的 `call()`。输入仍由 Command 校验；成功值是 JSON 文本，Err 转为 MCP `isError` 与去除本地 cause 的公开失败。没有 MCP server、工具目录、认证、会话或 transport service。实际应用选择工具、把它们接到 SDK handler，并承担权限与生命周期；需要 Plugin generation admission 时通过 caller-bound mount 的 handle 包住调用与输出映射。`toMcp()` 和 `toCapnweb()` 分别位于 `@pluxel/commands/mcp` 和 `/capnweb`；默认入口与 MCP 入口不加载 Cap’n Web。两项协议 peer 均可选，MCP SDK 仅作为类型依赖。
+
+## 实现与验证
+
+- `packages/commands/src/schema.ts`、`compile.ts`、`define.ts`：schema/codec、plan、call-time validation。
+- 同目录 `snapshot.ts`、`registry.ts`、`argv/`：纯命令快照、publication、dynamic dispatch 与 argv grammar。
+- `packages/services/src/commands/service.ts`：root view、caller-bound mount 与 invocation ownership。
+- `packages/commands/src/adapters/capnweb.ts`：选定 Command 到原生 `RpcTarget` 方法的适配。
+- `packages/commands/src/adapters/mcp.ts`：选定 Command 到原生 MCP Tool 与调用结果的适配。
+
+修改 root publication 或 mount 时验证 cached handle、manual dispose 与 stop 的差异、双 owner withdrawal 和扩展 Context 限制。修改 Cap’n Web 适配时验证原生方法可达性、服务端 context 隔离、Result 投影和实际 wire 编码；修改 MCP 投影时使用 SDK 原生请求与内存传输验证 Tool 和 CallToolResult。纯 parser/codec 行为在 Commands 包内验证。

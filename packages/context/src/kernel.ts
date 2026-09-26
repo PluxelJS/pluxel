@@ -7,15 +7,18 @@ const ROOT_CONTEXT_TYPE: unique symbol = Symbol('pluxel.context.root-type')
 const CONSTRUCTING = Symbol('pluxel.context.constructing')
 const EMPTY_OWNER_VALUES: unknown[] = Object.freeze([]) as unknown as unknown[]
 
+export type ContextCapabilityAccess = 'all' | 'owner' | 'root'
+
 type CapabilityScope = 'root' | 'scope' | 'owner-view'
 
 /** An opaque, identity-based key for one Context capability. */
-export type ContextCapability<T> = Readonly<{
+export interface ContextCapability<T, TAccess extends ContextCapabilityAccess = 'all'> {
+	readonly access: TAccess
 	readonly [CONTEXT_CAPABILITY_TYPE]: (value: T) => T
 	readonly description: string
-}>
+}
 
-type AnyCapability = ContextCapability<any>
+type AnyCapability = ContextCapability<any, ContextCapabilityAccess>
 
 type RootCapabilityOptions<T> = Readonly<{
 	property?: PropertyKey
@@ -41,11 +44,13 @@ export interface ContextCapabilityInstallation<
 	TValue = any,
 	TProperty extends PropertyKey | undefined = any,
 	TScope extends CapabilityScope = CapabilityScope,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
 > {
 	readonly [CONTEXT_INSTALLATION_TYPE]: Readonly<{
 		value: TValue
 		property: TProperty
 		scope: TScope
+		access: TAccess
 	}>
 }
 
@@ -57,18 +62,21 @@ export type RootCapabilityInstallation<
 export type ScopeCapabilityInstallation<
 	TValue = any,
 	TProperty extends PropertyKey | undefined = undefined,
-> = ContextCapabilityInstallation<TValue, TProperty, 'scope'>
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+> = ContextCapabilityInstallation<TValue, TProperty, 'scope', TAccess>
 
 export interface OwnerViewCapabilityInstallation<
 	TRoot = any,
 	TView = any,
 	TProperty extends PropertyKey | undefined = undefined,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
 > {
 	readonly [CONTEXT_INSTALLATION_TYPE]: Readonly<{
 		value: TView
 		rootValue: TRoot
 		property: TProperty
 		scope: 'owner-view'
+		access: TAccess
 	}>
 }
 
@@ -78,6 +86,34 @@ type InstallationMetadata<TInstallation> =
 	}>
 		? TMetadata
 		: never
+
+/** Compile-time validation for literal installation tuples; runtime compilation is authoritative. */
+export type ValidateContextInstallations<
+	T extends readonly ContextCapabilityInstallation[],
+	TReserved extends PropertyKey = keyof Context | 'constructor' | '__proto__',
+	TSeen extends PropertyKey = never,
+> = number extends T['length']
+	? unknown
+	: T extends readonly [
+				infer Head extends ContextCapabilityInstallation,
+				...infer Tail extends readonly ContextCapabilityInstallation[],
+		  ]
+		? InstallationMetadata<Head> extends { property: infer P }
+			? [P] extends [undefined]
+				? ValidateContextInstallations<Tail, TReserved, TSeen>
+				: P extends PropertyKey
+					? string extends P
+						? ValidateContextInstallations<Tail, TReserved, TSeen>
+						: number extends P
+							? ValidateContextInstallations<Tail, TReserved, TSeen>
+							: symbol extends P
+								? ValidateContextInstallations<Tail, TReserved, TSeen>
+								: P extends TReserved | TSeen
+									? { readonly invalidContextProperty: P }
+									: ValidateContextInstallations<Tail, TReserved, TSeen | P>
+					: ValidateContextInstallations<Tail, TReserved, TSeen>
+			: unknown
+		: unknown
 
 type AnyInstallationProjection<TInstallation> = TInstallation extends unknown
 	? InstallationMetadata<TInstallation> extends Readonly<{
@@ -108,15 +144,35 @@ type NonRootInstallationProjection<TInstallation> = TInstallation extends unknow
 
 /** Properties available from every Context in a host. */
 export type ContextProjection<TInstallations extends readonly ContextCapabilityInstallation[]> =
-	ProjectionIntersection<NonRootInstallationProjection<TInstallations[number]>>
+	number extends TInstallations['length']
+		? unknown
+		: ProjectionIntersection<NonRootInstallationProjection<TInstallations[number]>>
+
+type RootInstallationProjection<TInstallation> = TInstallation extends unknown
+	? InstallationMetadata<TInstallation> extends Readonly<{ access: 'owner' }>
+		? never
+		: AnyInstallationProjection<TInstallation>
+	: never
 
 /** Properties available only from the root Context, plus the normal Context projection. */
 export type RootContextProjection<TInstallations extends readonly ContextCapabilityInstallation[]> =
-	ProjectionIntersection<AnyInstallationProjection<TInstallations[number]>>
+	number extends TInstallations['length']
+		? unknown
+		: ProjectionIntersection<RootInstallationProjection<TInstallations[number]>>
 
 /** Plan-neutral Context shared by one root host. */
 export interface Context<TRoot extends RootContext<any> = RootContext> {
 	readonly [CONTEXT_TYPE]: true
+	/** Read an installed capability permitted for this Context's ownership scope. */
+	require<T>(capability: ContextCapability<T, 'all'>): T
+	require<T>(
+		capability: ContextCapability<T, 'root'> &
+			(this extends { readonly [ROOT_CONTEXT_TYPE]: true } ? unknown : never),
+	): T
+	require<T>(
+		capability: ContextCapability<T, 'owner'> &
+			(this extends { readonly [ROOT_CONTEXT_TYPE]: true } ? never : unknown),
+	): T
 	readonly root: TRoot
 	readonly parent?: Context<TRoot>
 	readonly name: string
@@ -156,6 +212,8 @@ export type ContextHostOptions<
 > = Readonly<{
 	name: string
 	capabilities: TCapabilities
+	/** Additional members owned by the embedding framework, unavailable for capability projection. */
+	reservedProperties?: readonly PropertyKey[]
 	/**
 	 * Explicit pre-root replacements. Every item must match one base capability and preserve its
 	 * scope and projected property.
@@ -195,6 +253,7 @@ type CompiledContextPlan = Readonly<{
 	ContextConstructor: new () => ContextImpl
 	RootContextConstructor: new () => ContextImpl
 	resolverByCapability: ReadonlyMap<AnyCapability, ContextResolver>
+	rootCapabilities: ReadonlySet<AnyCapability>
 }>
 
 type ContextState = {
@@ -208,7 +267,10 @@ type ContextState = {
 	ownerValues: unknown[]
 }
 
-const CAPABILITIES = new WeakSet<object>()
+const CAPABILITIES = new WeakMap<
+	object,
+	Readonly<{ access: ContextCapabilityAccess; property?: PropertyKey }>
+>()
 const INSTALLATION_RECORDS = new WeakMap<object, CompiledInstallation>()
 const PLAN_RECORDS = new WeakMap<object, CompiledContextPlan>()
 
@@ -351,6 +413,21 @@ class ContextImpl {
 			}
 	}
 
+	require<T>(capability: ContextCapability<T, ContextCapabilityAccess>): T {
+		const ctx = this as unknown as Context
+		const state = readContextState(ctx)
+		assertCapability(capability)
+		const access = CAPABILITIES.get(capability)!.access
+		if (
+			(access === 'root' && ctx !== state.root) ||
+			(access === 'owner' && ctx === state.root) ||
+			(state.plan.rootCapabilities.has(capability) && ctx !== state.root)
+		) {
+			throw new ContextCapabilityAccessError(capability.description)
+		}
+		return resolveContextCapability(ctx, capability)
+	}
+
 	get [Symbol.toStringTag](): 'PluxelContext' {
 		return 'PluxelContext'
 	}
@@ -371,45 +448,124 @@ class ContextImpl {
 hidePrototypeConstructor(ContextImpl.prototype)
 Object.freeze(ContextImpl.prototype)
 
-export function defineContextCapability<T>(description: string): ContextCapability<T> {
+/** Stable signal for an absent identity; construction failures retain their original error. */
+export class ContextCapabilityMissingError extends Error {
+	readonly code = 'CONTEXT_CAPABILITY_MISSING'
+	constructor(
+		readonly capability: string,
+		readonly host: string,
+	) {
+		super(`[pluxel/context] Context host ${host} does not install ${capability}`)
+		this.name = 'ContextCapabilityMissingError'
+	}
+}
+
+export class ContextCapabilityAccessError extends Error {
+	readonly code = 'CONTEXT_CAPABILITY_ACCESS_DENIED'
+	constructor(readonly capability: string) {
+		super(
+			`[pluxel/context] Capability ${capability} is not available through require in this Context`,
+		)
+		this.name = 'ContextCapabilityAccessError'
+	}
+}
+
+type CapabilityOptions<TAccess extends ContextCapabilityAccess> = Readonly<{
+	access: TAccess
+	/** If specified, every installation must use this exact property. */
+	property?: PropertyKey
+}>
+
+export function defineContextCapability<T>(
+	description: string,
+	options: CapabilityOptions<'root'>,
+): ContextCapability<T, 'root'>
+export function defineContextCapability<T>(
+	description: string,
+	options: CapabilityOptions<'owner'>,
+): ContextCapability<T, 'owner'>
+export function defineContextCapability<T>(
+	description: string,
+	options?: CapabilityOptions<'all'>,
+): ContextCapability<T>
+export function defineContextCapability<T>(
+	description: string,
+	options?: CapabilityOptions<ContextCapabilityAccess>,
+): ContextCapability<T, ContextCapabilityAccess> {
 	if (typeof description !== 'string' || description.length === 0) {
 		throw new TypeError('[pluxel/context] Context capability description is required')
 	}
-	const capability = Object.freeze({ description }) as ContextCapability<T>
-	CAPABILITIES.add(capability)
+	const access = options?.access ?? 'all'
+	if (!['all', 'owner', 'root'].includes(access)) {
+		throw new TypeError('[pluxel/context] Invalid Context capability access')
+	}
+	if (
+		options?.property !== undefined &&
+		!['string', 'number', 'symbol'].includes(typeof options.property)
+	) {
+		throw new TypeError('[pluxel/context] Invalid Context capability property')
+	}
+	const capability = Object.freeze({ description, access }) as ContextCapability<
+		T,
+		ContextCapabilityAccess
+	>
+	CAPABILITIES.set(
+		capability,
+		Object.freeze({
+			access,
+			...(options?.property === undefined ? {} : { property: options.property }),
+		}),
+	)
 	return capability
 }
 
+/** Inspect only the identity needed to validate a host preparation dependency plan. */
+export function getContextInstallationCapability(
+	installation: ContextCapabilityInstallation,
+): ContextCapability<any, ContextCapabilityAccess> {
+	return installationRecord(installation).capability
+}
+
 export function installRootCapability<T, const TProperty extends PropertyKey>(
-	capability: ContextCapability<T>,
+	capability: ContextCapability<T, ContextCapabilityAccess>,
 	options: RootCapabilityOptions<T> & Readonly<{ property: TProperty }>,
 ): RootCapabilityInstallation<T, TProperty>
 export function installRootCapability<T>(
-	capability: ContextCapability<T>,
+	capability: ContextCapability<T, ContextCapabilityAccess>,
 	options: RootCapabilityOptions<T>,
 ): RootCapabilityInstallation<T, undefined>
 export function installRootCapability<T>(
-	capability: ContextCapability<T>,
+	capability: ContextCapability<T, ContextCapabilityAccess>,
 	options: RootCapabilityOptions<T>,
 ): RootCapabilityInstallation<T, PropertyKey | undefined> {
 	return freezeRootInstallation(capability, options)
 }
 
-export function installScopeCapability<T, const TProperty extends PropertyKey>(
-	capability: ContextCapability<T>,
+export function installScopeCapability<
+	T,
+	const TProperty extends PropertyKey,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+>(
+	capability: ContextCapability<T, TAccess>,
 	options: ScopeCapabilityOptions<T> & Readonly<{ property: TProperty }>,
-): ScopeCapabilityInstallation<T, TProperty>
-export function installScopeCapability<T>(
-	capability: ContextCapability<T>,
+): ScopeCapabilityInstallation<T, TProperty, TAccess>
+export function installScopeCapability<
+	T,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+>(
+	capability: ContextCapability<T, TAccess>,
 	options: ScopeCapabilityOptions<T>,
-): ScopeCapabilityInstallation<T, undefined>
-export function installScopeCapability<T>(
-	capability: ContextCapability<T>,
+): ScopeCapabilityInstallation<T, undefined, TAccess>
+export function installScopeCapability<
+	T,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+>(
+	capability: ContextCapability<T, TAccess>,
 	options: ScopeCapabilityOptions<T>,
-): ScopeCapabilityInstallation<T, PropertyKey | undefined> {
+): ScopeCapabilityInstallation<T, PropertyKey | undefined, TAccess> {
 	assertCapability(capability)
 	assertCapabilityFactory(capability, options?.create, 'create')
-	return createInstallationToken<ScopeCapabilityInstallation<T, PropertyKey | undefined>>({
+	return createInstallationToken<ScopeCapabilityInstallation<T, PropertyKey | undefined, TAccess>>({
 		capability,
 		scope: 'scope' as const,
 		...(options.property === undefined ? {} : { property: options.property }),
@@ -417,23 +573,36 @@ export function installScopeCapability<T>(
 	})
 }
 
-export function installOwnerViewCapability<TRoot, TView, const TProperty extends PropertyKey>(
-	capability: ContextCapability<TView>,
+export function installOwnerViewCapability<
+	TRoot,
+	TView,
+	const TProperty extends PropertyKey,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+>(
+	capability: ContextCapability<TView, TAccess>,
 	options: OwnerViewCapabilityOptions<TRoot, TView> & Readonly<{ property: TProperty }>,
-): OwnerViewCapabilityInstallation<TRoot, TView, TProperty>
-export function installOwnerViewCapability<TRoot, TView>(
-	capability: ContextCapability<TView>,
+): OwnerViewCapabilityInstallation<TRoot, TView, TProperty, TAccess>
+export function installOwnerViewCapability<
+	TRoot,
+	TView,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+>(
+	capability: ContextCapability<TView, TAccess>,
 	options: OwnerViewCapabilityOptions<TRoot, TView>,
-): OwnerViewCapabilityInstallation<TRoot, TView, undefined>
-export function installOwnerViewCapability<TRoot, TView>(
-	capability: ContextCapability<TView>,
+): OwnerViewCapabilityInstallation<TRoot, TView, undefined, TAccess>
+export function installOwnerViewCapability<
+	TRoot,
+	TView,
+	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+>(
+	capability: ContextCapability<TView, TAccess>,
 	options: OwnerViewCapabilityOptions<TRoot, TView>,
-): OwnerViewCapabilityInstallation<TRoot, TView, PropertyKey | undefined> {
+): OwnerViewCapabilityInstallation<TRoot, TView, PropertyKey | undefined, TAccess> {
 	assertCapability(capability)
 	assertCapabilityFactory(capability, options?.createRoot, 'createRoot')
 	assertCapabilityFactory(capability, options?.createView, 'createView')
 	return createInstallationToken<
-		OwnerViewCapabilityInstallation<TRoot, TView, PropertyKey | undefined>
+		OwnerViewCapabilityInstallation<TRoot, TView, PropertyKey | undefined, TAccess>
 	>({
 		capability,
 		scope: 'owner-view' as const,
@@ -451,6 +620,7 @@ export function createContextHost<
 	const plan = createContextPlan(
 		options.name,
 		applyOverrides(options.capabilities, options.overrides),
+		options.reservedProperties,
 	)
 	type TContext = ProjectedContext<TCapabilities>
 	type TRoot = ProjectedRoot<TCapabilities>
@@ -469,14 +639,15 @@ export function createContextHost<
 	return Object.freeze(host)
 }
 
-export function resolveContextCapability<T>(ctx: Context, capability: ContextCapability<T>): T {
-	const state = stateOf(ctx)
+export function resolveContextCapability<T>(
+	ctx: Context,
+	capability: ContextCapability<T, ContextCapabilityAccess>,
+): T {
+	const state = readContextState(ctx)
 	const resolver = state.plan.resolverByCapability.get(capability as AnyCapability)
 	if (resolver === undefined) {
 		assertCapability(capability)
-		throw new Error(
-			`[pluxel/context] Context host ${state.plan.name} does not install ${capability.description}`,
-		)
+		throw new ContextCapabilityMissingError(capability.description, state.plan.name)
 	}
 	return resolver(ctx) as T
 }
@@ -485,12 +656,14 @@ export function resolveContextCapability<T>(ctx: Context, capability: ContextCap
 export function createContextPlan(
 	name: string,
 	installations: readonly ContextCapabilityInstallation[],
+	reservedProperties: readonly PropertyKey[] = [],
 ): ContextPlan {
 	if (typeof name !== 'string' || name.length === 0) {
 		throw new TypeError('[pluxel/context] Context host name is required')
 	}
 	const resolverByCapability = new Map<AnyCapability, ContextResolver>()
-	const properties = new Set<PropertyKey>()
+	const properties = new Set<PropertyKey>(reservedProperties)
+	const rootCapabilities = new Set<AnyCapability>()
 	let rootValueCount = 0
 	let scopeValueCount = 0
 	let ownerValueCount = 0
@@ -508,6 +681,21 @@ export function createContextPlan(
 			)
 		}
 		const installation = sourceRecord
+		const contract = CAPABILITIES.get(capability)!
+		if (contract.property !== undefined && contract.property !== installation.property) {
+			throw new TypeError(
+				`[pluxel/context] Capability ${capability.description} requires property ${String(contract.property)}`,
+			)
+		}
+		if (
+			(contract.access === 'root' && installation.scope !== 'root') ||
+			(contract.access === 'owner' && installation.scope === 'root')
+		) {
+			throw new TypeError(
+				`[pluxel/context] Capability ${capability.description} has an incompatible installation scope`,
+			)
+		}
+		if (installation.scope === 'root') rootCapabilities.add(capability)
 		let valueIndex: number
 		let rootIndex: number | undefined
 		if (installation.scope === 'root') {
@@ -537,6 +725,16 @@ export function createContextPlan(
 		)
 	}
 
+	for (const source of installations) {
+		const installation = installationRecord(source)
+		if (
+			installation.property !== undefined &&
+			CAPABILITIES.get(installation.capability)!.access === 'owner'
+		) {
+			Object.defineProperty(rootPrototype, installation.property, { value: undefined })
+		}
+	}
+
 	hidePrototypeConstructor(contextPrototype)
 	hidePrototypeConstructor(rootPrototype)
 	Object.freeze(contextPrototype)
@@ -548,6 +746,7 @@ export function createContextPlan(
 		ContextConstructor,
 		RootContextConstructor,
 		resolverByCapability,
+		rootCapabilities,
 	})
 	const plan = Object.freeze({}) as ContextPlan
 	PLAN_RECORDS.set(plan, compiledPlanRecord)
@@ -559,7 +758,7 @@ export function createRootContext(plan: ContextPlan, name = 'root'): RootContext
 	const compiled = compiledPlan(plan)
 	const values: unknown[] = []
 	const root = allocateRootContext(compiled)
-	installState(root, {
+	initializeContextState(root, {
 		plan: compiled,
 		root,
 		scope: root,
@@ -573,11 +772,11 @@ export function createRootContext(plan: ContextPlan, name = 'root'): RootContext
 
 /** @internal */
 export function createScopeContext(root: RootContext, name: string): Context {
-	const rootState = stateOf(root)
+	const rootState = readContextState(root)
 	if (rootState.root !== root)
 		throw new TypeError('[pluxel/context] A scope requires a root Context')
 	const ctx = allocateContext(rootState.plan)
-	installState(ctx, {
+	initializeContextState(ctx, {
 		plan: rootState.plan,
 		root,
 		scope: ctx,
@@ -591,9 +790,9 @@ export function createScopeContext(root: RootContext, name: string): Context {
 
 /** @internal */
 export function createChildContext(parent: Context, name: string): Context {
-	const parentState = stateOf(parent)
+	const parentState = readContextState(parent)
 	const ctx = allocateContext(parentState.plan)
-	installState(ctx, {
+	initializeContextState(ctx, {
 		plan: parentState.plan,
 		root: parentState.root,
 		scope: parentState.scope,
@@ -608,9 +807,9 @@ export function createChildContext(parent: Context, name: string): Context {
 
 /** @internal Create a fresh owner view over the source scope without adding a containment parent. */
 export function createContextView(source: Context): Context {
-	const sourceState = stateOf(source)
+	const sourceState = readContextState(source)
 	const ctx = allocateContext(sourceState.plan)
-	installState(ctx, {
+	initializeContextState(ctx, {
 		plan: sourceState.plan,
 		root: sourceState.root,
 		scope: sourceState.scope,
@@ -624,7 +823,7 @@ export function createContextView(source: Context): Context {
 }
 
 function freezeRootInstallation<T>(
-	capability: ContextCapability<T>,
+	capability: ContextCapability<T, ContextCapabilityAccess>,
 	options: RootCapabilityOptions<T>,
 ): RootCapabilityInstallation<T, PropertyKey | undefined> {
 	assertCapability(capability)
@@ -721,7 +920,7 @@ function compiledPlan(plan: ContextPlan): CompiledContextPlan {
 }
 
 function assertPlanContext(plan: ContextPlan, ctx: Context): void {
-	if (stateOf(ctx).plan !== compiledPlan(plan)) {
+	if (readContextState(ctx).plan !== compiledPlan(plan)) {
 		throw new TypeError('[pluxel/context] Context belongs to a different host')
 	}
 }
@@ -732,14 +931,6 @@ function allocateContext(plan: CompiledContextPlan): Context {
 
 function allocateRootContext(plan: CompiledContextPlan): RootContext {
 	return new plan.RootContextConstructor() as unknown as RootContext
-}
-
-function installState(ctx: Context, state: ContextState): void {
-	initializeContextState(ctx, state)
-}
-
-function stateOf(ctx: Context): ContextState {
-	return readContextState(ctx)
 }
 
 function hidePrototypeConstructor(prototype: object): void {
@@ -779,7 +970,12 @@ function hasPluxelContextTag(value: object): boolean {
 function looksLikeContextCapability(value: object): boolean {
 	try {
 		const keys = Reflect.ownKeys(value)
-		if (keys.length !== 1 || keys[0] !== 'description' || !Object.isFrozen(value)) return false
+		if (
+			(keys.length !== 1 && keys.length !== 2) ||
+			keys[0] !== 'description' ||
+			!Object.isFrozen(value)
+		)
+			return false
 		const description = Object.getOwnPropertyDescriptor(value, 'description')
 		return (
 			description !== undefined &&

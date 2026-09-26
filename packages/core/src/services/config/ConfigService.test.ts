@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { PluginNodeAddress } from '../../plugins/runtime/identity'

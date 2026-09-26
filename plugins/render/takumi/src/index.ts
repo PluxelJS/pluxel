@@ -1,5 +1,5 @@
 import { FontsPlugin, type DefaultFontSnapshot, type PortableFontsSnapshot } from '@pluxel/fonts'
-import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
+import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 import { prepareImages } from 'takumi-js/helpers'
 import { fromHtml } from 'takumi-js/helpers/html'
 import { Renderer, type Node as TakumiNode } from 'takumi-js/node'
@@ -485,7 +485,7 @@ export class TakumiPlugin extends BasePlugin {
 				height: input.height,
 				devicePixelRatio: input.devicePixelRatio,
 				...input.output,
-				stylesheets: [...prepared.stylesheets],
+				css: [...prepared.stylesheets],
 				images: [...prepared.images],
 				...(prepared.fontFamilies ? { fontFamilies: prepared.fontFamilies } : {}),
 				signal,
@@ -517,7 +517,7 @@ export class TakumiPlugin extends BasePlugin {
 			data = await prepared.renderer.renderer.renderSvg(prepared.node, {
 				width: input.width,
 				height: input.height,
-				stylesheets: [...prepared.stylesheets],
+				css: [...prepared.stylesheets],
 				images: [...prepared.images],
 				...(prepared.fontFamilies ? { fontFamilies: prepared.fontFamilies } : {}),
 				signal,
@@ -542,12 +542,12 @@ export class TakumiPlugin extends BasePlugin {
 		generation: TakumiGeneration,
 	) {
 		signal.throwIfAborted()
-		let content: ReturnType<typeof fromHtml> | { node: TakumiNode; stylesheets: never[] }
+		let content: ReturnType<typeof fromHtml> | { node: TakumiNode; css: never[] }
 		if (input.content.kind === 'html') {
 			await yieldToEventLoop(signal)
 			content = fromHtml(input.content.value)
 		} else {
-			content = { node: input.content.value, stylesheets: [] }
+			content = { node: input.content.value, css: [] }
 		}
 		if (input.content.kind === 'html') {
 			await assertStructuredContentBytes(content.node, this.config.maxContentBytes, signal)
@@ -561,7 +561,7 @@ export class TakumiPlugin extends BasePlugin {
 			},
 			signal,
 		)
-		const stylesheets = Object.freeze([...content.stylesheets, ...input.stylesheets])
+		const stylesheets = Object.freeze([...content.css, ...input.stylesheets])
 		if (stylesheets.length > this.config.maxStylesheets) {
 			throw new TakumiError(
 				'STYLESHEET_TOO_LARGE',

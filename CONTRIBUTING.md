@@ -25,7 +25,7 @@ pnpm verify
 
 ## 修改规则
 
-1. 修改前先阅读 [工程文档入口](./engineering/README.md) 和相关领域文档。
+1. 修改前先阅读 [工程文档入口](./engineering/README.md) 和相关领域文档；定位与验证工具见[开发指南](./docs/development/index.md)。
 2. 用户可见行为必须同步更新 `docs/`；内部架构约束更新 `engineering/`，不要把未实现设计写成当前能力。
 3. 新增或修改公开 API、类型、错误契约、配置契约或资源生命周期时，遵循 [library API design guide](./.agents/rules/library-api-design.md)。
 4. 保持 package boundary；只从 `package.json#exports` 声明的入口导入，不使用其他 package 的源码相对路径。

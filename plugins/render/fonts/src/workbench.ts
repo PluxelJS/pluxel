@@ -1,4 +1,4 @@
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import type { FontSelectionApi, FontsManagerApi } from './workbench-contracts.ts'
 
 export type {

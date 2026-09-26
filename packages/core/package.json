@@ -22,10 +22,20 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
+		"./better-result": {
+			"@pluxel/source": "./src/better-result.ts",
+			"import": "./dist/better-result.mjs",
+			"require": "./dist/better-result.cjs"
+		},
 		"./federation": {
 			"@pluxel/source": "./src/federation.ts",
 			"import": "./dist/federation.mjs",
 			"require": "./dist/federation.cjs"
+		},
+		"./host": {
+			"@pluxel/source": "./src/host.ts",
+			"import": "./dist/host.mjs",
+			"require": "./dist/host.cjs"
 		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
@@ -47,11 +57,6 @@
 			"import": "./dist/services.mjs",
 			"require": "./dist/services.cjs"
 		},
-		"./test": {
-			"@pluxel/source": "./src/test.ts",
-			"import": "./dist/test.mjs",
-			"require": "./dist/test.cjs"
-		},
 		"./toolchain": {
 			"@pluxel/source": "./src/toolchain.ts",
 			"import": "./dist/toolchain.mjs",
@@ -65,9 +70,17 @@
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
 			},
+			"./better-result": {
+				"import": "./dist/better-result.mjs",
+				"require": "./dist/better-result.cjs"
+			},
 			"./federation": {
 				"import": "./dist/federation.mjs",
 				"require": "./dist/federation.cjs"
+			},
+			"./host": {
+				"import": "./dist/host.mjs",
+				"require": "./dist/host.cjs"
 			},
 			"./internal": {
 				"import": "./dist/internal.mjs",
@@ -85,10 +98,6 @@
 				"import": "./dist/services.mjs",
 				"require": "./dist/services.cjs"
 			},
-			"./test": {
-				"import": "./dist/test.mjs",
-				"require": "./dist/test.cjs"
-			},
 			"./toolchain": {
 				"import": "./dist/toolchain.mjs",
 				"require": "./dist/toolchain.cjs"
@@ -99,6 +108,7 @@
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
+		"test:installed-result": "node tests/installed-result.smoke.mjs",
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
 		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
@@ -109,6 +119,7 @@
 	"dependencies": {
 		"@logtape/logtape": "catalog:prod",
 		"@standard-schema/spec": "catalog:prod",
+		"better-result": "catalog:prod",
 		"eventure": "catalog:prod",
 		"std-env": "catalog:prod"
 	},

@@ -1,4 +1,4 @@
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 
 export type ShowcaseRendererKind = 'echarts' | 'takumi' | 'canvas'
 
@@ -47,9 +47,9 @@ export type ShowcaseSnapshot = Readonly<{
 export type ShowcaseObserver = (revision: number) => void | Promise<void>
 
 export interface ReportStudioApi extends RpcTarget {
-	snapshot(): ShowcaseSnapshot
+	snapshotDto(): ShowcaseSnapshot
 	watch(observer: ShowcaseObserver): RpcTarget
-	generate(title: string): Promise<ShowcaseArtifact>
-	probeOutbound(): Promise<ShowcaseSnapshot['lastOutbound']>
-	clearCache(): Promise<ShowcaseCacheStats>
+	generateDto(title: string): Promise<ShowcaseArtifact>
+	probeOutboundDto(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>>
+	clearCacheDto(): Promise<ShowcaseCacheStats>
 }

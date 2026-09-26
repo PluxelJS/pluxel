@@ -9,10 +9,19 @@ description: 用一个 Valibot object schema 统一配置类型、默认值、�
 开始前，你应已有一个能启动的 Plugin。先给配置加默认值，在 `init()` 中读取，再从工作台修改它。
 普通配置不保存密钥；密码、Token 等使用 [Vault](../runtime/vault.md)。
 
+| 本次任务         | 阅读位置                                                             |
+| ---------------- | -------------------------------------------------------------------- |
+| 新增或调整字段   | [最小 schema](#先添加一个有默认值的字段) → [声明规则](#声明规则)     |
+| 保存后立即生效   | [在线更新](#让运行中的-plugin-接收配置更新)，检查保存和应用两个结果  |
+| 拆分局部配置     | [Part config](#嵌套相关设置与-part-config)，字段名会成为公开配置路径 |
+| 部署提供固定输入 | [env/file 绑定](#绑定部署环境与-json-文件)，与管理保存值分层         |
+| 调整编辑界面     | [配置表单](#配置表单)，继续复用同一 schema                           |
+
 ## 先添加一个有默认值的字段
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
@@ -36,7 +45,8 @@ export class WorkerPlugin extends BasePlugin {
 
 ```ts twoslash
 // @filename: config.ts
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 export const WorkerConfig = v.object({
 	enabled: v.optional(v.pipe(v.boolean(), f.formMeta({ title: '启用同步' })), true),
@@ -54,7 +64,7 @@ export const WorkerConfig = v.object({
 	),
 })
 // @filename: WorkerPlugin.ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { WorkerConfig } from './config.ts'
 
 @Plugin({ displayName: 'Worker' })
@@ -72,7 +82,7 @@ export class WorkerPlugin extends BasePlugin {
 
 ## 宿主如何设置配置
 
-日常手动配置使用 Workbench；以下 `host` 指 [Runtime 测试宿主](../development/testing.md)，适合检查初始值和更新结果。
+日常手动配置使用 Workbench；以下 `host` 指 [插件测试宿主](../development/testing.md)，适合检查初始值和更新结果。
 正在运行的开发应用应通过 [开发控制台](../development/dev-console.md)修改配置。
 测试中，首次启动可以传入 `initialConfig`：
 
@@ -85,7 +95,7 @@ const worker = await host.start(WorkerPlugin, {
 })
 ```
 
-node 已拥有 committed config 或进入过 lifecycle 后，使用 Runtime 的 production-like live mutation：
+node 已拥有 committed config 或进入过 lifecycle 后，使用运行期配置 API：
 
 ```ts no-twoslash
 const result = await host.config.patch(WorkerPlugin, {
@@ -112,74 +122,31 @@ reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存
 - 每个 Plugin/Part class 各自最多一次，并且 schema 必须产出 object；
 - schema expression 要能由 semantic pass 追踪，不用动态 runtime 分支拼接。
 
-使用 TypeScript `private` 或 `protected` 字段即可。配置值在构造完成后、`init()` 前才可读取，
-构造器和其他字段初始化器中提前读取会被构建检查拒绝。
+使用 TypeScript `private` 或 `protected` 字段即可。构造器和其他字段初始化器中提前读取配置会被构建检查拒绝；读取时机见下节。
 `configs` 只在 Plugin/Part 子类内部使用；测试和宿主通过配置 API 操作，不直接改实例字段。
+`configs.use(schema)` 返回 schema output 的深只读 `ConfigSnapshot`，与运行时深冻结一致，包括嵌套对象、array 和 tuple。需要排序或编辑的临时数据先复制，例如 `[...this.config.targets]`；不通过类型断言绕过冻结。
 
-## 默认值只写一次
+## 默认值与读取时机
 
-默认值只由 schema 提供。下面是正确写法与重复 fallback 的对照：
-
-```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
-
-declare function request(options: { timeoutMs: number }): Promise<void>
-
-const Config = v.object({
-	timeoutMs: v.optional(v.number(), 5_000),
-})
-
-@Plugin({ displayName: 'Worker' })
-class WorkerPlugin extends BasePlugin {
-	private readonly config = this.configs.use(Config)
-
-	async run() {
-		// 直接读取 schema 已补全的默认值。
-		await request({ timeoutMs: this.config.timeoutMs })
-
-		// 避免再次补默认值：这里会与 schema 的默认值重复。
-		await request({ timeoutMs: this.config.timeoutMs ?? 5_000 })
-	}
-}
-```
-
-同样，trim、枚举映射、范围限制和 cross-field validation 应在 schema 中表达。这样 CLI、runtime、测试和配置 UI 看到的是同一个 contract。
-字段标题、说明和展示偏好集中写入 `f.formMeta({ title, description, ... })`。它产生 Valibot 标准 metadata；requiredness、
-格式和范围仍由 `v.optional()`、`v.url()`、`v.minValue()` 等 schema/validation action 表达。
-
-## 何时可以读取配置
-
-runtime 在实例构造完成后、`init()` 开始前注入并校验 config，所以只在 `init()` 或更晚的方法中读取：
-
-```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
-
-const ReportsConfig = v.object({ endpoint: v.string() })
-declare function createClient(endpoint: string): { close(): void }
-
-@Plugin()
-export class ReportsPlugin extends BasePlugin {
-	private readonly config = this.configs.use(ReportsConfig)
-
-	// 错误：field initializer 运行时尚未完成 config injection。
-	// private readonly client = createClient(this.config.endpoint)
-
-	protected override init() {
-		const client = createClient(this.config.endpoint)
-		this.ctx.effects.defer(() => client.close())
-	}
-}
-```
-
-constructor 只声明 required Plugin dependency，不读取 config，也不创建依赖 config 的资源。
+默认值、trim、范围和跨字段校验统一写在 schema 中；业务代码直接使用校验结果，不再加 `?? default`。
+字段标题和说明用 `f.formMeta()`；必填、格式和范围由 Valibot 表达。
+配置在构造完成后、`init()` 前注入。依赖配置的连接在 `init()` 中创建，并立即登记 cleanup；constructor 和其他 field initializer 不读取配置。
 
 ## 让运行中的 Plugin 接收配置更新
 
-保存配置会先持久化用户希望采用的值，不会自动重启插件。若连接或服务可以原地更新，在 `init()` 中注册一次
-`configs.onUpdate()`；处理完成后，框架才把配置标记为已应用：
+保存配置会先持久化 desired 值，不会自动重启插件。先看 mutation 的 `ok`，再看 `application`：
+
+| `application`       | 已发生什么                         | 调用方下一步                            |
+| ------------------- | ---------------------------------- | --------------------------------------- |
+| `applied`           | 当前 generation 已确认应用         | 核对业务状态                            |
+| `deferred`          | 已保存，节点未运行                 | 下次启动时应用                          |
+| `saved-not-applied` | 已保存，当前 generation 未确认应用 | 查看 apply report，修正处理器或显式重启 |
+
+连接或服务可以原地更新时，在 `init()` 中注册一次 `configs.onUpdate()`；处理完成后，框架才确认 applied：
 
 ```ts twoslash
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 const GatewayConfig = v.object({
 	timeoutMs: v.optional(v.number(), 5_000),
@@ -246,7 +213,7 @@ normalized output 必须是无环的 plain object/array tree，leaf 使用 JSON-
 每个 Plugin 声明一个 object schema；不同配置域使用嵌套 object 组织，不要多次调用 `configs.use()`：
 
 ```ts twoslash
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 
 const Config = v.object({
 	http: v.object({
@@ -295,12 +262,6 @@ Part config 属于静态 owner schema：即使 optional provider absent、对应
 default、transform 和 validation。需要“未启用时不要求凭据”等语义时，在 schema 中使用带 `enabled` discriminator 的 object
 明确表达，不根据 runtime catalog 动态改变配置契约。
 
-Workbench 把父 schema 显示为“常规”分区，把 Part schema 按 nested path 显示为独立分区。配置操作栏固定在内容区顶部，切换分区时会保留
-各自的滚动位置和未保存草稿；分区名称后的圆点与“待保存”计数用于提示尚未提交的变化。使用 `Ctrl/⌘ + S` 保存当前分区，或使用
-`Ctrl/⌘ + Shift + S` 一次保存当前 Plugin 的全部已修改分区。所有分区编辑同一个 Plugin config owner；保存当前分区或全部分区都会在
-server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前 generation；否则只保存
-desired config，不会单独更新 Part 或隐式 restart。
-
 Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./plugin-parts.md)。
 
 ## 敏感信息
@@ -314,15 +275,18 @@ Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织�
 - structured log properties；
 - status snapshot、command output 或序列化错误。
 
-## 用部署环境初始化 static config
+## 绑定部署环境与 JSON 文件
 
-Static application 可以把少量部署环境变量绑定到固定 Plugin 的 raw config path。这个能力只初始化新的 config store；它不是每次启动都覆盖管理员配置的 environment overlay。
+大多数插件只需 `configs.use(schema)`，通过 Workbench 或 Host 配置 API 设置值。只有部署系统负责提供固定值时，才在应用入口加绑定：环境变量使用 `envBinding`，挂载的 JSON 文件使用 `fileBinding`。两者都由 Host 在启动时读取。
+
+环境绑定从本次 `startup.env` 生成覆盖层，优先于保存值；该层不写入配置存储。
 
 Plugin 需要导出传给 `configs.use()` 的同一个 schema：
 
 ```ts no-twoslash
 // WorkerPlugin.ts
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 export const WorkerConfig = v.object({
 	endpoint: v.pipe(v.string(), v.url()),
@@ -338,43 +302,48 @@ export class WorkerPlugin extends BasePlugin {
 }
 ```
 
-Canonical static entry 直接声明部署名称；不要在 `configure()` 中重复解析类型或拼装 Plugin address：
+Canonical static entry 直接声明部署名称；不要在配置工厂中重复解析类型或拼装 Plugin address：
 
 ```ts no-twoslash
-import { bindConfigEnvironment, defineStaticRuntime } from '@pluxel/runtime-static'
-import { WorkerConfig, WorkerPlugin } from './WorkerPlugin.ts'
+import { defineHostApplication, envBinding } from '@pluxel/host'
+import { WorkerPlugin, WorkerConfig } from './WorkerPlugin.ts'
 
-export default defineStaticRuntime({
+export default defineHostApplication(() => ({
 	name: 'worker-app',
 	plugins: [WorkerPlugin],
-	configEnvironmentBootstrap: [
-		bindConfigEnvironment(WorkerPlugin, WorkerConfig, {
-			endpoint: 'WORKER_ENDPOINT',
-			http: {
-				enabled: 'WORKER_HTTP_ENABLED',
-				timeoutMs: 'WORKER_HTTP_TIMEOUT_MS',
+	envBindings: [
+		envBinding(WorkerPlugin, {
+			config: {
+				schema: WorkerConfig,
+				mapping: {
+					endpoint: 'WORKER_ENDPOINT',
+					http: { enabled: 'WORKER_HTTP_ENABLED', timeoutMs: 'WORKER_HTTP_TIMEOUT_MS' },
+				},
 			},
 		}),
 	],
-})
+}))
 ```
 
-Mapping 从 schema raw input 递归推导：object 可以继续展开，也可以直接绑定一个 JSON environment；array、tuple、record 和 scalar 是 leaf。根 mapping 也可以直接写一个 environment name，用 JSON object 初始化完整 raw record。环境名称必须匹配 `[A-Z_][A-Z0-9_]*`；`PLUXEL_*` 保留给 framework。
+插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 Valibot schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。`envBinding` 和 `fileBinding` 都要求 Valibot schema，普通 Standard Schema 实现不能用于这两个绑定。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineHostApplication` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
 
-Transport 只负责把 string 送入原 schema：raw string 保留原文，number 要求 finite JSON number，boolean 只接受 JSON `true`/`false`，compound/nullable/mixed union 使用 JSON。环境缺失不产生对应 raw path；空 string 对 string 是显式值，对 number、boolean、JSON 是 decode error；JSON `null` 也是显式值。默认值、URL/range/refinement、transform 和最终 validation 仍只由 `WorkerConfig` 决定。
+Mapping 从 schema input 推导：object 可展开，也可绑定一个 JSON 变量；array、tuple 与动态 record 使用完整 JSON。环境名称匹配 `[A-Z_][A-Z0-9_]*`。string 保留原文，number 要求有限 JSON number，boolean 只接受 `true`/`false`，复合类型使用 JSON。config 环境缺失不生成覆盖，空字符串和 `null` 按 schema 校验；诊断不包含输入值。
 
-新 store 的优先级固定为：
+配置优先级为：
 
 ```text
-configure() config snapshot
-  < configEnvironmentBootstrap
-  < PLUXEL_CONFIG complete snapshot
-  < existing persisted config file
+configRecords.initial < fileBindings config < saved config < envBindings config
 ```
 
-Writable file mode 会保存第一次合成的 seed；后续修改环境不会覆盖该文件。Memory mode 在每个新 host 上重新初始化；readonly mode 在无文件时只在本次 host 使用 seed。长期 credential 不要经过这条路径写入普通 config store，继续使用 Vault、secret provider 或部署平台的 secret capability。
+对象递归合并，数组整体替换。持久文件只保存管理界面或 Host API 修改的层；基础值、schema 默认值和 env 覆盖不会被复制进去。移除 env 后，下一次启动重新显示 saved 或基础值。reset 删除 saved 值，重新显示基础值。
 
-Static production build 会从同一 declaration 和 schema facts 生成 root `.env.example`。文件只包含注释说明与注释状态的空 placeholder，不读取构建机环境、不生成或加载真实 `.env`，也不复制 schema default。为了让 Vite 与 production 都能确定地检查声明，`configEnvironmentBootstrap` 必须是 direct array literal；元素必须是 direct `bindConfigEnvironment()` call，mapping 只使用 direct object tree 和 string literal，不使用 identifier、spread、computed property 或 runtime branch。
+被 env 控制的路径及其祖先、后代拒绝修改和 reset，包括提交相同值。Workbench 显示来源并禁用对应字段；Host 返回的 `sources` 只有路径、来源种类、名称和只读状态，不含凭据。未绑定的兄弟字段仍可编辑。
+
+JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: WorkerConfig, path: './worker.json' } })]` 提供基础值（`fileBinding` 从 `@pluxel/host` 导入），路径相对 `startup.root`。文件只在启动时读取，不由构建读取或打包。修改文件或 env 需要重新创建 Host。
+
+部署凭据不放在普通 config。需要从环境变量或挂载文件提供凭据时，按 [Vault 部署绑定](../runtime/vault.md#部署凭据)声明只读记录；需要交互登录或刷新凭据时，使用可写 Vault。
+
+Static production build 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是静态目录中的 Plugin 标识符，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
 
 直接消费 runtime control-plane `ConfigResult` 时按 discriminant 处理返回值：query 返回 `config` 和 `defaults`，并标记
 `saved: false`；成功 mutation 返回已持久化的 `config`、`application` 与 apply report，不再重复返回 defaults。
@@ -387,12 +356,13 @@ Plugin generation。
 
 使用 [配置 Playground](../workbench/configuration-playground.md) 可编辑 schema、操作生成的表单，并比较原始输入与 Valibot 输出。完整 metadata 与 React adapter 见 [Valibot 配置表单](../workbench/valibot-form.mdx)。浏览器表单只是编辑界面；提交到宿主后仍必须由 server runtime 使用同一个 schema 校验。
 
-## 检查清单
+Workbench 把父 schema 显示为“常规”分区，把 Part schema 按 nested path 显示为独立分区。配置操作栏固定在内容区顶部，切换分区时会保留
+各自的滚动位置和未保存草稿；分区名称后的圆点与“待保存”计数用于提示尚未提交的变化。使用 `Ctrl/⌘ + S` 保存当前分区，或使用
+`Ctrl/⌘ + Shift + S` 一次保存当前 Plugin 的全部已修改分区。所有分区编辑同一个 Plugin config owner；保存当前分区或全部分区都会在
+server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前 generation；否则只保存
+desired config，不会单独更新 Part 或隐式 restart。
 
-- schema 产出一个 object，且每个 Plugin/Part class 只声明一次 `configs.use()`。
-- 所有默认值和 normalization 都在 schema 中。
-- normalized output 是无环、可持久化的 plain object/array tree。
-- constructor 与 field initializer 不读取 config。
-- secret 没有进入普通 UI/config/log contract。
-- 测试覆盖默认值、边界值、非法值和 transform 后的 output。
-- schema 变化后重新运行 build，确认提取 metadata 与 Workbench 表单一致。
+## 验证
+
+测试默认值、非法输入、归一化输出，以及保存后实际 `application` 状态；schema 变化后重新构建并检查标准配置表单。
+用 [inspect](../development/inspection.md) 定位 schema 与应用绑定，用[开发控制台](../development/dev-console.md)核对当前生效值。

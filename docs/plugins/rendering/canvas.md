@@ -19,7 +19,7 @@ host catalog 至少包含 `FontsPlugin`、`CanvasPlugin` 和 consumer。CanvasPl
 
 ```ts twoslash
 import { CanvasPlugin, Path2D } from '@pluxel/canvas'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class BadgePlugin extends BasePlugin {
@@ -233,28 +233,7 @@ const prepared = text.prepareText({ text: 'Hello', fontSize: 24 })
 
 ## 配置与职责
 
-```ts no-twoslash
-await host.start(CanvasPlugin, {
-	catalog: [FontsPlugin],
-	initialConfig: {
-		maxWidth: 8192,
-		maxHeight: 8192,
-		maxPixels: 16_777_216,
-		maxImageBytes: 32 * 1024 * 1024,
-		maxConcurrentDecodes: 2,
-		maxQueuedDecodes: 32,
-		maxQueuedDecodesPerConsumer: 8,
-		maxConcurrentDecodesPerWorkerAdapter: 1,
-		maxQueuedDecodesPerWorkerAdapter: 32,
-		maxTextCharacters: 100_000,
-		maxRichTextItems: 2_048,
-		maxTextCacheCharacters: 1_000_000,
-	},
-})
-```
-
-这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
-`host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
+在应用的 Plugin config 中按需覆盖以下默认值：
 
 | 字段                                   |       默认值 | 检查对象                                      |
 | -------------------------------------- | -----------: | --------------------------------------------- |
@@ -274,9 +253,9 @@ await host.start(CanvasPlugin, {
 CanvasConfig 分开配置 Canvas root 与每个 worker adapter 的 native decode admission，不配置通用 worker task queue、render timeout、
 output bytes、DPR 或主题：
 
-- Worker task 的线程并发与队列由 runtime 的 root-owned `ctx.workers` 配置。
+- Worker task 的线程并发与队列由 runtime 的 root-owned `ctx.require(Workers)` 配置。
 - `maxConcurrentDecodesPerWorkerAdapter` 是每个 adapter 的局部上限；ECharts 每 job 创建一个 adapter，默认 4 个
-  Runtime workers × 1 个 decode，仍不是可接管 libuv 的进程级线程池。提高它会按 active worker 数产生乘法，应与
+  宿主 Workers × 1 个 decode，仍不是可接管 libuv 的进程级线程池。提高它会按 active worker 数产生乘法，应与
   `UV_THREADPOOL_SIZE`、其他 native work 和 RSS
   基准一起调整。
 - encoded output 的格式与大小由调用方和上游 encoder 决定。
@@ -299,3 +278,48 @@ Canvas 为每个 caller generation 建立 lease。consumer stop/replacement 会�
 - worker/font：`FONT_UNAVAILABLE`、`INVALID_WORKER_SNAPSHOT`。
 
 不要在 consumer 中捕获后放宽 host budget；应缩小输入、拒绝任务，或由 host operator 明确调整配置。
+
+## 将可恢复失败交给业务调用方
+
+上传预览允许用户换一张图片，所以 consumer 可以只将无效图片和内容超限转换成 `ImageRejected`。
+下面是普通业务 helper，`canvas` 来自 constructor 注入的 `CanvasPlugin`。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { CanvasError, type CanvasPlugin, type Image } from '@pluxel/canvas'
+
+export class ImageRejected extends TaggedError('ImageRejected')<{
+	reason: 'invalid_image' | 'too_large'
+}> {}
+
+// An ordinary business helper; pass the consumer's injected CanvasPlugin.
+export async function decodeUpload(
+	canvas: CanvasPlugin,
+	data: Uint8Array,
+	signal?: AbortSignal,
+): Promise<Result<Image, ImageRejected>> {
+	try {
+		return Result.ok(await canvas.decodeImage(data, { signal }))
+	} catch (error) {
+		if (error instanceof CanvasError) {
+			if (error.code === 'INVALID_IMAGE') {
+				return Result.err(new ImageRejected({ reason: 'invalid_image' }))
+			}
+			if (
+				error.code === 'IMAGE_BYTES_EXCEEDED' ||
+				error.code === 'DIMENSIONS_EXCEEDED' ||
+				error.code === 'PIXELS_EXCEEDED'
+			) {
+				return Result.err(new ImageRejected({ reason: 'too_large' }))
+			}
+		}
+		throw error
+	}
+}
+```
+
+调用方检查 `result.isErr()` 后按 `reason` 提示重新上传；Ok 的 `value` 是 caller-owned native Image。
+不要把 Image/Result 直接作为 Workbench DTO。`DECODE_BUSY`、取消、无效调用参数和停止在此示例中继续 reject；
+需要降级 busy 的产品可以单独建模。Result 不改变 borrowed/owned bytes 或 native decode 的取消语义。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/canvas/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/canvas/tests/canvas.test.ts)。

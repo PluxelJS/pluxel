@@ -21,17 +21,11 @@ const AST_METADATA_KEYS = new Set([
 
 export type Lang = 'ts' | 'tsx' | 'js' | 'jsx'
 
-type ParsedProgramCacheEntry = Readonly<{
-	code: string
-	program: Program
-}>
-
-// All Pluxel source passes are read-only AST consumers. Keep the most recent parse for each
-// module so the semantic, config, and route-specific passes do not ask OXC to parse identical
-// source independently. Exact source equality makes invalidation automatic in Vite/watch mode;
-// the bound prevents a long-lived development server from retaining every module revision.
+// All Pluxel source passes consume read-only ASTs. Include the exact source in the key:
+// filesystem analysis and transforms can alternate between revisions of the same module.
+// A global entry bound limits retention across both modules and revisions in watch mode.
 const PARSED_PROGRAM_CACHE_LIMIT = 256
-const parsedProgramCache = new Map<string, ParsedProgramCacheEntry>()
+const parsedProgramCache = new Map<string, Program>()
 
 export function getLangFromId(id: string): Lang {
 	if (id.endsWith('.tsx')) return 'tsx'
@@ -58,44 +52,50 @@ export function parseWithLang(ctx: unknown, code: string, id: string): Program |
 		try {
 			return cacheProgram(id, lang, code, parse.call(ctx, code, { lang }) as Program)
 		} catch {
-			try {
-				return cacheProgram(id, lang, code, parse.call(ctx, code) as Program)
-			} catch {
-				// Fall through to standalone OXC parsers below.
-			}
+			// Rolldown supports lang and throws on syntax errors. Do not retry invalid
+			// source under different parser options or accept a recovery AST.
+			return null
 		}
 	}
 
 	return parseStandaloneWithLang(code, id)
 }
 
-export function parseStandaloneWithLang(code: string, id: string): Program | null {
+export function parseStandaloneWithLang(
+	code: string,
+	id: string,
+	options: { cache?: boolean } = {},
+): Program | null {
 	const lang = getLangFromId(id)
-	const cached = readCachedProgram(id, lang, code)
+	const cached = options.cache === false ? undefined : readCachedProgram(id, lang, code)
 	if (cached) return cached
 
 	try {
-		const program = parseSync(id, code, { sourceType: 'module', lang }).program ?? null
-		return program ? cacheProgram(id, lang, code, program) : null
+		const { program, errors } = parseSync(id, code, { sourceType: 'module', lang })
+		return program && errors.length === 0
+			? options.cache === false
+				? program
+				: cacheProgram(id, lang, code, program)
+			: null
 	} catch {
 		return null
 	}
 }
 
 function readCachedProgram(id: string, lang: Lang, code: string): Program | undefined {
-	const key = `${lang}\0${id}`
+	const key = `${lang}\0${id}\0${code}`
 	const cached = parsedProgramCache.get(key)
-	if (!cached || cached.code !== code) return undefined
+	if (!cached) return undefined
 	// Refresh insertion order so active modules survive bounded eviction.
 	parsedProgramCache.delete(key)
 	parsedProgramCache.set(key, cached)
-	return cached.program
+	return cached
 }
 
 function cacheProgram(id: string, lang: Lang, code: string, program: Program): Program {
-	const key = `${lang}\0${id}`
+	const key = `${lang}\0${id}\0${code}`
 	parsedProgramCache.delete(key)
-	parsedProgramCache.set(key, { code, program })
+	parsedProgramCache.set(key, program)
 	while (parsedProgramCache.size > PARSED_PROGRAM_CACHE_LIMIT) {
 		const oldest = parsedProgramCache.keys().next().value
 		if (oldest === undefined) break

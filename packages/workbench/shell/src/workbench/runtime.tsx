@@ -1,0 +1,729 @@
+import { useRuntimeManagementClient } from '../runtime'
+import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
+import type { RpcStub } from 'capnweb'
+import {
+	openWorkbenchEntry,
+	type WorkbenchFederatedLayoutEntry,
+	type WorkbenchLayoutEntry,
+	type WorkbenchOpenedContentHandle,
+	type WorkbenchReadyFederatedLayoutEntry,
+	type WorkbenchSessionApi,
+	type WorkbenchContentLayoutEntry,
+	type WorkbenchContentPlan,
+	type WorkbenchUnavailableFederatedLayoutEntry,
+} from '@pluxel/workbench/client'
+import {
+	createWorkbenchViewHost,
+	openFederatedWorkbenchView,
+	type FederatedWorkbenchView,
+	type WorkbenchViewHostHandle,
+	type WorkbenchConfirmInput,
+	type WorkbenchNotificationInput,
+	type WorkbenchNavigation,
+	type WorkbenchPaneLayoutRenderer,
+	type WorkbenchPaneLayoutRendererProps,
+} from '@pluxel/workbench/federation'
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+	type ReactNode,
+} from 'react'
+import { InlineNotice } from '../components'
+import { WorkbenchContentRenderer } from '../app/workbench/WorkbenchContentRenderer'
+import { WorkbenchContentController } from '../app/workbench/WorkbenchContentController'
+import type { WorkbenchContentInteraction } from '../app/workbench/WorkbenchContentSlots'
+import {
+	useActiveWorkbenchTabId,
+	useOptionalWorkspaceNavigation,
+	useWorkbenchViewState as useHostWorkbenchViewState,
+	useWorkspaceController,
+} from '../app/workbench/context'
+import {
+	HostRemotePaneLayout,
+	RemotePaneLayoutStateProvider,
+	type RemotePaneLayoutHeaderRegistration,
+} from '../app/workbench/RemotePaneLayout'
+import { WorkbenchErrorBoundary } from './ErrorBoundary'
+import {
+	WorkbenchLayoutRuntime,
+	type WorkbenchResolvedRoute,
+	type WorkbenchTargetId,
+} from './client'
+import { normalizeWorkbenchPath } from './paths'
+import { getWorkbenchDirectoryHref } from './route-directory'
+import { toWorkbenchError } from './errors'
+
+export type WorkbenchBrowserHost = Readonly<{
+	locale: string
+	colorScheme: 'light' | 'dark'
+	notify(input: WorkbenchNotificationInput): void
+	confirm(input: WorkbenchConfirmInput): Promise<boolean>
+	runningPluginKeys: ReadonlySet<string>
+	runningPluginsReady: boolean
+}>
+
+type WorkbenchRuntimeContextValue = WorkbenchBrowserHost & {
+	session: RpcStub<WorkbenchSessionApi>
+	runtime: WorkbenchLayoutRuntime
+}
+
+type WorkbenchTargetContextValue = Readonly<{
+	target: PluginNodeAddress
+	pathname: string
+	snapshot: ReturnType<WorkbenchLayoutRuntime['getSnapshot']>
+}>
+
+type WorkbenchFederatedEntryActivation = {
+	readonly input: Readonly<{
+		activeTabId: ReturnType<typeof useActiveWorkbenchTabId>
+		entry: WorkbenchReadyFederatedLayoutEntry
+		frame: 'shell' | 'standalone'
+		hostNavigation: WorkbenchNavigation | undefined
+		layoutRevision: number
+		location: string | undefined
+		paneLayoutRenderer: WorkbenchPaneLayoutRenderer
+		params: Readonly<Record<string, string>>
+		session: RpcStub<WorkbenchSessionApi>
+		workspace: ReturnType<typeof useWorkspaceController>
+	}>
+	mounts: number
+	started: boolean
+	active: boolean
+	appearanceDirty: boolean
+	host?: WorkbenchViewHostHandle
+	opened?: FederatedWorkbenchView
+}
+
+type WorkbenchContentEntryActivation = {
+	readonly input: Readonly<{
+		entry: WorkbenchContentLayoutEntry
+		layoutRevision: number
+		location: string | undefined
+		session: RpcStub<WorkbenchSessionApi>
+	}>
+	mounts: number
+	started: boolean
+	active: boolean
+	opened?: WorkbenchOpenedContentHandle
+	controller?: WorkbenchContentController
+}
+
+const WorkbenchSessionContext = createContext<RpcStub<WorkbenchSessionApi> | null>(null)
+const WorkbenchRuntimeContext = createContext<WorkbenchRuntimeContextValue | null>(null)
+const WorkbenchTargetContext = createContext<WorkbenchTargetContextValue | null>(null)
+
+export function WorkbenchSessionProvider({
+	session,
+	children,
+}: {
+	session: RpcStub<WorkbenchSessionApi>
+	children: ReactNode
+}) {
+	return (
+		<WorkbenchSessionContext.Provider value={session}>{children}</WorkbenchSessionContext.Provider>
+	)
+}
+
+export function useWorkbenchSession(): RpcStub<WorkbenchSessionApi> {
+	const session = useContext(WorkbenchSessionContext)
+	if (!session) throw new Error('WorkbenchSessionProvider required')
+	return session
+}
+
+export function WorkbenchRuntimeProvider({
+	host,
+	children,
+}: {
+	host: WorkbenchBrowserHost
+	children: ReactNode
+}) {
+	const session = useWorkbenchSession()
+	const [runtime] = useState(() => new WorkbenchLayoutRuntime(session))
+	const [ownership] = useState(() => ({ mounts: 0 }))
+	useEffect(() => {
+		ownership.mounts += 1
+		return () => {
+			ownership.mounts -= 1
+			queueMicrotask(() => {
+				if (ownership.mounts === 0) runtime[Symbol.dispose]()
+			})
+		}
+	}, [ownership, runtime])
+	const value = useMemo<WorkbenchRuntimeContextValue>(
+		() => ({ ...host, session, runtime }),
+		[host, runtime, session],
+	)
+	return (
+		<WorkbenchRuntimeContext.Provider value={value}>{children}</WorkbenchRuntimeContext.Provider>
+	)
+}
+
+export function WorkbenchTargetProvider({
+	target,
+	pathname,
+	children,
+}: {
+	target: PluginNodeAddress
+	pathname: string
+	children: ReactNode
+}) {
+	const snapshot = useWorkbenchTargetSnapshot(target)
+	const value = useMemo(() => ({ target, pathname, snapshot }), [pathname, snapshot, target])
+	return <WorkbenchTargetContext.Provider value={value}>{children}</WorkbenchTargetContext.Provider>
+}
+
+export function useWorkbenchRuntime(): WorkbenchRuntimeContextValue {
+	const value = useContext(WorkbenchRuntimeContext)
+	if (!value) throw new Error('WorkbenchRuntimeProvider required')
+	return value
+}
+
+export function useWorkbenchTarget(): WorkbenchTargetContextValue {
+	const value = useContext(WorkbenchTargetContext)
+	if (!value) throw new Error('WorkbenchTargetProvider required')
+	return value
+}
+
+export function useWorkbenchTargetSnapshot(target: WorkbenchTargetId) {
+	const { runtime } = useWorkbenchRuntime()
+	useEffect(() => runtime.retain(target), [runtime, target])
+	return useSyncExternalStore(
+		(listener) => runtime.subscribe(target, listener),
+		() => runtime.getSnapshot(target),
+		() => runtime.getSnapshot(target),
+	)
+}
+
+export function useWorkbenchRouteDirectory() {
+	return useWorkbenchTargetSnapshot(null).directory
+}
+
+export function useWorkbenchNavigationRoutes(): readonly WorkbenchLayoutEntry[] {
+	return useWorkbenchTargetSnapshot(null).navigationRoutes
+}
+
+export function useWorkbenchTabs(options: { render?: boolean } = {}) {
+	const target = useWorkbenchTarget().target
+	const snapshot = useWorkbenchTargetSnapshot(target)
+	const entries = snapshot.tabs
+	const nodes = useMemo(
+		() =>
+			options.render === false
+				? EMPTY_NODES
+				: entries.map((entry) => (
+						<WorkbenchEntryView
+							key={workbenchEntryKey(entry)}
+							entry={entry}
+							frame="shell"
+							layoutRevision={snapshot.layout?.revision ?? 0}
+							params={EMPTY_ROUTE_PARAMS}
+						/>
+					)),
+		[entries, options.render, snapshot.layout?.revision],
+	)
+	return { entries, nodes, snapshot, hasEntries: entries.length > 0 }
+}
+
+const EMPTY_NODES: ReactNode[] = []
+const EMPTY_ROUTE_PARAMS = Object.freeze({})
+
+export function useResolvedWorkbenchRoute(target: PluginNodeAddress, path: string) {
+	const { runtime } = useWorkbenchRuntime()
+	const snapshot = useWorkbenchTargetSnapshot(target)
+	return useMemo(
+		() => ({ snapshot, route: runtime.resolveRoute(target, path) }),
+		[path, runtime, snapshot, target],
+	)
+}
+
+export function WorkbenchRoute({
+	route,
+	snapshot,
+}: {
+	route: WorkbenchResolvedRoute
+	snapshot: ReturnType<WorkbenchLayoutRuntime['getSnapshot']>
+}) {
+	return (
+		<WorkbenchEntryView
+			entry={route.entry}
+			frame={route.frame}
+			layoutRevision={snapshot.layout?.revision ?? 0}
+			location={route.location}
+			params={route.params}
+		/>
+	)
+}
+
+type WorkbenchEntryViewProps = Readonly<{
+	entry: WorkbenchLayoutEntry
+	frame: 'shell' | 'standalone'
+	layoutRevision: number
+	location?: string
+	params: Readonly<Record<string, string>>
+}>
+
+export function WorkbenchEntryView(props: WorkbenchEntryViewProps) {
+	const { entry, layoutRevision, location } = props
+	if ('contentRef' in entry) {
+		return (
+			<WorkbenchContentEntryView
+				key={`${workbenchEntryKey(entry)}:${layoutRevision}:${location ?? ''}`}
+				entry={entry}
+				layoutRevision={layoutRevision}
+				location={location}
+			/>
+		)
+	}
+	return <FederatedWorkbenchEntryView {...props} entry={entry} />
+}
+
+function FederatedWorkbenchEntryView({
+	entry,
+	frame,
+	layoutRevision,
+	location,
+	params,
+}: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchFederatedLayoutEntry }) {
+	if (isUnavailableFederatedLayoutEntry(entry)) {
+		return <UnavailableFederatedWorkbenchEntryView entry={entry} />
+	}
+	if (!isReadyFederatedLayoutEntry(entry)) {
+		throw new Error('[workbench/shell] federated entry has no renderer availability')
+	}
+	return (
+		<ReadyFederatedWorkbenchEntryView
+			entry={entry}
+			frame={frame}
+			layoutRevision={layoutRevision}
+			location={location}
+			params={params}
+		/>
+	)
+}
+
+function UnavailableFederatedWorkbenchEntryView({
+	entry,
+}: {
+	entry: WorkbenchUnavailableFederatedLayoutEntry
+}) {
+	const unavailable = entry.federatedViewUnavailable
+	const failed = unavailable.reason === 'failed'
+	return (
+		<WorkbenchErrorBoundary
+			pluginName={entry.renderer.definition.exportName}
+			contributionId={entry.descriptor.key}
+			point={entry.placement.kind}
+		>
+			<InlineNotice
+				title={failed ? 'Workbench View 构建失败' : 'Workbench View 正在构建'}
+				tone={failed ? 'error' : 'muted'}
+			>
+				{failed
+					? unavailable.message
+					: '对应界面产物正在后台构建，完成后 Workbench 会话会自动刷新。'}
+			</InlineNotice>
+		</WorkbenchErrorBoundary>
+	)
+}
+
+function ReadyFederatedWorkbenchEntryView({
+	entry,
+	frame,
+	layoutRevision,
+	location,
+	params,
+}: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchReadyFederatedLayoutEntry }) {
+	const management = useRuntimeManagementClient()
+	const { session, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
+	const navigation = useOptionalWorkspaceNavigation()
+	const directory = useWorkbenchRouteDirectory()
+	const workspace = useWorkspaceController()
+	const activeTabId = useActiveWorkbenchTabId()
+	const viewState = useHostWorkbenchViewState(workbenchEntryKey(entry), frame)
+	const domRef = useRef<HTMLDivElement | null>(null)
+	const [error, setError] = useState<Error | null>(null)
+	const [opening, setOpening] = useState(true)
+	const notifyRef = useRef(notify)
+	const confirmRef = useRef(confirm)
+	const localeRef = useRef(locale)
+	const colorSchemeRef = useRef(colorScheme)
+	notifyRef.current = notify
+	confirmRef.current = confirm
+	localeRef.current = locale
+	colorSchemeRef.current = colorScheme
+
+	const resolveShellPath = useCallback(
+		(inputPath: string, operation: 'navigate' | 'openDocument') => {
+			const path = normalizeWorkbenchPath(inputPath)
+			if (!path) throw new Error(`[workbench/shell] ${operation} path must target a Plugin route`)
+			return path
+		},
+		[],
+	)
+	const hostNavigation = useMemo(
+		() =>
+			frame === 'shell' && navigation
+				? {
+						navigate(inputPath: string) {
+							const path = resolveShellPath(inputPath, 'navigate')
+							navigation.navigate(
+								getWorkbenchDirectoryHref(directory, entry.target.node, path, 'shell'),
+							)
+						},
+						openDocument(input: { path: string; title: string; meta?: string }) {
+							const path = resolveShellPath(input.path, 'openDocument')
+							navigation.openTab({
+								path: getWorkbenchDirectoryHref(directory, entry.target.node, path, 'shell'),
+								title: input.title,
+								...(input.meta === undefined ? {} : { meta: input.meta }),
+							})
+						},
+					}
+				: undefined,
+		[directory, entry.target.node, frame, navigation, resolveShellPath],
+	)
+	const paneHeaderRegistration = useMemo<RemotePaneLayoutHeaderRegistration | undefined>(
+		() =>
+			frame === 'shell' && activeTabId
+				? Object.freeze({ registry: workspace.paneLayoutControls, tabId: activeTabId })
+				: undefined,
+		[activeTabId, frame, workspace],
+	)
+	const paneLayoutRenderer = useMemo(
+		() => createPaneLayoutRenderer(viewState, paneHeaderRegistration),
+		[paneHeaderRegistration, viewState],
+	)
+	const activation = useMemo(
+		() =>
+			createFederatedEntryActivation({
+				activeTabId,
+				entry,
+				frame,
+				hostNavigation,
+				layoutRevision,
+				location,
+				paneLayoutRenderer,
+				params,
+				session,
+				workspace,
+			}),
+		[
+			activeTabId,
+			entry,
+			frame,
+			hostNavigation,
+			layoutRevision,
+			location,
+			paneLayoutRenderer,
+			params,
+			session,
+			workspace,
+		],
+	)
+
+	useEffect(() => {
+		const dom = domRef.current
+		if (!dom) return undefined
+		const {
+			activeTabId: openingTabId,
+			entry: openingEntry,
+			frame: openingFrame,
+			hostNavigation: openingNavigation,
+			layoutRevision: openingRevision,
+			location: openingLocation,
+			paneLayoutRenderer: openingPaneLayout,
+			params: openingParams,
+			session: openingSession,
+			workspace: openingWorkspace,
+		} = activation.input
+		activation.mounts += 1
+		if (activation.started) {
+			return () => releaseFederatedActivation(activation)
+		}
+		activation.started = true
+		setOpening(true)
+		setError(null)
+		const originalTab = openingTabId
+			? openingWorkspace.state.uiState.tabs.find((tab) => tab.instanceId === openingTabId)
+			: undefined
+		const host = createWorkbenchViewHost({
+			management,
+			locale: localeRef.current,
+			colorScheme: colorSchemeRef.current,
+			notify: (input) => notifyRef.current(input),
+			confirm: (input) => confirmRef.current(input),
+			...(openingNavigation ? { navigation: openingNavigation } : {}),
+			...(openingFrame === 'shell' && openingTabId
+				? {
+						document: {
+							params: openingParams,
+							setDirty: (dirty: boolean) => openingWorkspace.setTabDirty(openingTabId, dirty),
+							setTitle: (input: { title: string; meta?: string }) =>
+								openingWorkspace.setTabPresentation(openingTabId, input),
+							reset: () => {
+								if (originalTab) {
+									openingWorkspace.setTabPresentation(openingTabId, originalTab)
+								}
+							},
+						},
+					}
+				: {}),
+		})
+		activation.host = host
+		void openFederatedWorkbenchView({
+			session: openingSession,
+			entry: openingEntry,
+			layoutRevision: openingRevision,
+			...(openingLocation === undefined ? {} : { location: openingLocation }),
+			dom,
+			host,
+			paneLayoutRenderer: openingPaneLayout,
+		}).then(
+			(result): undefined => {
+				if (result.ok === false) {
+					if (activation.active) {
+						setOpening(false)
+						setError(new Error(`Workbench View could not open: ${result.code}`))
+					}
+					return undefined
+				}
+				activation.opened = result.view
+				if (!activation.active) {
+					activation.opened[Symbol.dispose]()
+					return undefined
+				}
+				if (activation.appearanceDirty) {
+					activation.appearanceDirty = false
+					void activation.opened.update().catch((cause: unknown) => {
+						if (!activation.active) return
+						setError(toWorkbenchError(cause, 'Workbench View could not be updated'))
+					})
+				}
+				setOpening(false)
+				return undefined
+			},
+			(openError: unknown): undefined => {
+				if (!activation.active) return undefined
+				setOpening(false)
+				setError(toWorkbenchError(openError, 'Workbench View could not be opened'))
+				return undefined
+			},
+		)
+		return () => releaseFederatedActivation(activation)
+	}, [activation, management])
+
+	useEffect(() => {
+		const host = activation.host
+		if (!host?.active) return
+		if (host.facade.locale === locale && host.facade.colorScheme === colorScheme) return
+		host.updateAppearance({ locale, colorScheme })
+		const opened = activation.opened
+		if (!opened?.active) {
+			activation.appearanceDirty = true
+			return
+		}
+		void opened.update().catch((cause: unknown) => {
+			if (!activation.active) return
+			setError(toWorkbenchError(cause, 'Workbench View could not be updated'))
+		})
+	}, [activation, colorScheme, locale])
+
+	return (
+		<WorkbenchErrorBoundary
+			pluginName={entry.renderer.definition.exportName}
+			contributionId={entry.descriptor.key}
+			point={entry.placement.kind}
+		>
+			<div
+				ref={domRef}
+				style={{
+					display: 'grid',
+					flex: 1,
+					gridTemplateColumns: 'minmax(0, 1fr)',
+					gridTemplateRows: 'minmax(0, 1fr)',
+					minWidth: 0,
+					minHeight: 0,
+					height: '100%',
+					width: '100%',
+				}}
+			/>
+			{opening ? <InlineNotice title="Workbench View">正在打开…</InlineNotice> : null}
+			{error ? <InlineNotice title="Workbench View 打开失败">{error.message}</InlineNotice> : null}
+		</WorkbenchErrorBoundary>
+	)
+}
+
+export function WorkbenchContentEntryView({
+	entry,
+	layoutRevision,
+	location,
+}: {
+	entry: WorkbenchContentLayoutEntry
+	layoutRevision: number
+	location?: string
+}) {
+	const { confirm, notify, session } = useWorkbenchRuntime()
+	const confirmRef = useRef(confirm)
+	const notifyRef = useRef(notify)
+	confirmRef.current = confirm
+	notifyRef.current = notify
+	const [content, setContent] = useState<Readonly<{
+		plan: WorkbenchContentPlan
+		interaction: WorkbenchContentInteraction | null
+	}> | null>(null)
+	const [error, setError] = useState<Error | null>(null)
+	const [opening, setOpening] = useState(true)
+	const activation = useMemo(
+		() => createContentEntryActivation({ entry, layoutRevision, location, session }),
+		[entry, layoutRevision, location, session],
+	)
+
+	useEffect(() => {
+		const {
+			entry: openingEntry,
+			layoutRevision: openingRevision,
+			location: openingLocation,
+			session: openingSession,
+		} = activation.input
+		activation.mounts += 1
+		if (activation.started) return () => releaseContentActivation(activation)
+		activation.started = true
+		setOpening(true)
+		setError(null)
+		setContent(null)
+		void openWorkbenchEntry(openingSession, openingEntry, {
+			layoutRevision: openingRevision,
+			...(openingLocation === undefined ? {} : { location: openingLocation }),
+		}).then(
+			(result): undefined => {
+				if (result.ok === false) {
+					if (activation.active) {
+						setOpening(false)
+						setError(new Error(`Workbench Content could not open: ${result.code}`))
+					}
+					return undefined
+				}
+				activation.opened = result.handle
+				if (!activation.active) {
+					activation.opened[Symbol.dispose]()
+					return undefined
+				}
+				const opened = activation.opened
+				if (opened.mode === 'interactive' && opened.presentation) {
+					const controller = new WorkbenchContentController(opened)
+					activation.controller = controller
+					controller.start()
+					setContent({
+						plan: opened.plan,
+						interaction: {
+							presentation: opened.presentation,
+							controller,
+							confirm: (input) => confirmRef.current(input),
+							notify: (input) => notifyRef.current(input),
+						},
+					})
+				} else {
+					setContent({ plan: opened.plan, interaction: null })
+				}
+				setOpening(false)
+				return undefined
+			},
+			(openError: unknown): undefined => {
+				if (!activation.active) return undefined
+				setOpening(false)
+				setError(toWorkbenchError(openError, 'Workbench Content could not be opened'))
+				return undefined
+			},
+		)
+		return () => releaseContentActivation(activation)
+	}, [activation])
+
+	return (
+		<WorkbenchErrorBoundary
+			pluginName={entry.target.node.definition.exportName}
+			contributionId={entry.descriptor.key}
+			point={entry.placement.kind}
+		>
+			{content ? (
+				<WorkbenchContentRenderer interaction={content.interaction} plan={content.plan} />
+			) : null}
+			{opening ? <InlineNotice title="Workbench Content">正在打开…</InlineNotice> : null}
+			{error ? (
+				<InlineNotice title="Workbench Content 打开失败">{error.message}</InlineNotice>
+			) : null}
+		</WorkbenchErrorBoundary>
+	)
+}
+
+function createPaneLayoutRenderer(
+	state: ReturnType<typeof useHostWorkbenchViewState>,
+	headerRegistration?: RemotePaneLayoutHeaderRegistration,
+): WorkbenchPaneLayoutRenderer {
+	return function WorkbenchPaneLayout(props: WorkbenchPaneLayoutRendererProps) {
+		return (
+			<RemotePaneLayoutStateProvider state={state}>
+				<HostRemotePaneLayout {...props} headerRegistration={headerRegistration} />
+			</RemotePaneLayoutStateProvider>
+		)
+	}
+}
+
+function createFederatedEntryActivation(
+	input: WorkbenchFederatedEntryActivation['input'],
+): WorkbenchFederatedEntryActivation {
+	return {
+		input,
+		mounts: 0,
+		started: false,
+		active: true,
+		appearanceDirty: false,
+	}
+}
+
+function releaseFederatedActivation(activation: WorkbenchFederatedEntryActivation): void {
+	activation.mounts -= 1
+	queueMicrotask(() => {
+		if (activation.mounts !== 0 || !activation.active) return
+		activation.active = false
+		if (activation.opened) activation.opened[Symbol.dispose]()
+		else activation.host?.[Symbol.dispose]()
+	})
+}
+
+function createContentEntryActivation(
+	input: WorkbenchContentEntryActivation['input'],
+): WorkbenchContentEntryActivation {
+	return { input, mounts: 0, started: false, active: true }
+}
+
+function releaseContentActivation(activation: WorkbenchContentEntryActivation): void {
+	activation.mounts -= 1
+	queueMicrotask(() => {
+		if (activation.mounts !== 0 || !activation.active) return
+		activation.active = false
+		activation.controller?.[Symbol.dispose]()
+		activation.opened?.[Symbol.dispose]()
+	})
+}
+
+function workbenchEntryKey(entry: WorkbenchLayoutEntry): string {
+	return `${pluginNodeIndexKey(entry.target.node)}:${entry.descriptor.kind}:${entry.descriptor.key}`
+}
+
+function isUnavailableFederatedLayoutEntry(
+	entry: WorkbenchFederatedLayoutEntry,
+): entry is WorkbenchUnavailableFederatedLayoutEntry {
+	return entry.federatedViewUnavailable !== undefined
+}
+
+function isReadyFederatedLayoutEntry(
+	entry: WorkbenchFederatedLayoutEntry,
+): entry is WorkbenchReadyFederatedLayoutEntry {
+	return entry.federatedViewRef !== undefined
+}

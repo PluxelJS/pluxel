@@ -20,6 +20,5 @@ export const ALLOWED_TOP_LEVEL_CLASS_WRAPPERS = new Set([
 
 export const ALLOWED_GET_LOGGER_PATHS = [
 	'/packages/core/src/logger/',
-	'/packages/runtime/src/logger/',
-	'/packages/runtime-dynamic/src/hmr/hmr/internals.ts',
+	'/packages/services/src/logging/',
 ]

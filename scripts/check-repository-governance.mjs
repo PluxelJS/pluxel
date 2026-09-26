@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { parseSync } from 'vite'
 import { parse } from 'yaml'
 
 import {
@@ -19,6 +20,22 @@ const dependencyFields = [
 	'optionalDependencies',
 	'peerDependencies',
 ]
+const publishedDependencyFields = ['dependencies', 'optionalDependencies', 'peerDependencies']
+// Foundation packages cannot grow upward even when that would not yet create a cycle.
+const foundationDependencies = new Map([
+	['@pluxel/context', new Set()],
+	['@pluxel/core', new Set()],
+	['@pluxel/commands', new Set()],
+	['@pluxel/host', new Set(['@pluxel/core', 'valibot-form'])],
+	['@pluxel/host-dev', new Set(['@pluxel/core', '@pluxel/host', '@pluxel/rolldown'])],
+])
+// Keep the few composition boundaries explicit; package ownership need not form a DAG.
+const serviceCompositionFiles = new Set(
+	['preset.ts', 'vite.ts', 'build.ts', 'development/service-development.ts'].map((file) =>
+		resolve(root, 'packages/services/src', file),
+	),
+)
+
 const errors = []
 
 const packageManifests = repositoryPackages
@@ -135,10 +152,44 @@ if (new Set(packageNames).size !== packageNames.length) {
 	errors.push('repository package names must be unique')
 }
 const publicPackages = packageManifests.filter(isPublishablePackage)
+const publishedDependencies = new Map(
+	packageManifests
+		.filter(({ kind }) => kind !== 'root')
+		.map(({ manifest }) => [
+			manifest.name,
+			new Set(
+				publishedDependencyFields.flatMap((field) =>
+					Object.keys(manifest[field] ?? {}).filter((name) => workspaceNames.has(name)),
+				),
+			),
+		]),
+)
 const publicVersions = new Map(
 	publicPackages.map(({ manifest }) => [manifest.name, manifest.version]),
 )
 if (publicPackages.length === 0) errors.push('no public packages found under packages/ or plugins/')
+
+for (const filename of await readdir(resolve(root, '.tegami'))) {
+	if (!filename.endsWith('.md')) continue
+	const source = await readFile(resolve(root, '.tegami', filename), 'utf8')
+	const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(source)
+	if (!frontmatter) {
+		errors.push(`.tegami/${filename}: missing fenced YAML front matter`)
+		continue
+	}
+	try {
+		const metadata = parse(frontmatter[1])
+		if (
+			!metadata?.packages ||
+			typeof metadata.packages !== 'object' ||
+			Array.isArray(metadata.packages) ||
+			Object.keys(metadata.packages).length === 0
+		)
+			errors.push(`.tegami/${filename}: front matter must declare package bumps`)
+	} catch (error) {
+		errors.push(`.tegami/${filename}: invalid YAML front matter: ${String(error)}`)
+	}
+}
 
 const releaseDraft = await paper.draft()
 const plannedPackages = []
@@ -171,6 +222,12 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 	}
 	for (const field of dependencyFields) {
 		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
+			if (publishedDependencyFields.includes(field)) {
+				const permitted = foundationDependencies.get(manifest.name)
+				if (permitted && workspaceNames.has(name) && !permitted.has(name)) {
+					errors.push(`${manifest.name} foundation boundary forbids published dependency ${name}`)
+				}
+			}
 			const acceptedCatalogSpecifiers = catalogSpecifiers.get(name)
 			if (specifier.startsWith('catalog:') && !acceptedCatalogSpecifiers?.has(specifier)) {
 				errors.push(`${relative(manifestPath)}: ${field}.${name} is missing from ${specifier}`)
@@ -228,7 +285,12 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 	if (kind === 'plugin') {
 		for (const field of ['dependencies', 'optionalDependencies']) {
 			for (const name of Object.keys(manifest[field] ?? {})) {
-				if (name.startsWith('@pluxel/')) {
+				if (
+					['@pluxel/core', '@pluxel/host', '@pluxel/services', '@pluxel/workbench'].includes(
+						name,
+					) ||
+					packageManifests.some((pkg) => pkg.kind === 'plugin' && pkg.manifest.name === name)
+				) {
 					errors.push(
 						`${relative(manifestPath)}: Plugin package ${field}.${name} must be a peer dependency to preserve host Plugin identity`,
 					)
@@ -250,16 +312,35 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 const reusablePackageSources = await Promise.all(
 	packageManifests
 		.filter(({ kind }) => kind === 'package')
-		.map(async ({ packageRoot }) => ({
+		.map(async ({ packageRoot, manifest }) => ({
 			packageRoot,
+			manifest,
 			sources: await sourceContents(resolve(packageRoot, 'src')),
 		})),
 )
-for (const { packageRoot, sources } of reusablePackageSources) {
-	if (/^\s*@Plugin\s*\(\s*\{/m.test(sources)) {
+for (const { packageRoot, manifest, sources } of reusablePackageSources) {
+	if (sources.some(({ source }) => /^\s*@Plugin\s*\(\s*\{/m.test(source))) {
 		errors.push(
 			`${relative(packageRoot)} declares a concrete @Plugin; move it to plugins/ or a domain-specific plugin container such as platforms/`,
 		)
+	}
+	// Parse each source once with the existing Vite toolchain. Generated module text
+	// inside strings/templates is not an actual package dependency.
+	const imports = sources.flatMap(({ path, source }) => {
+		const specifiers = sourceImports(path, source)
+		for (const specifier of specifiers)
+			checkServiceCompositionBoundary(manifest.name, path, specifier)
+		return specifiers
+	})
+	for (const name of new Set(imports.map(packageName))) {
+		if (name === manifest.name || !workspaceNames.has(name)) continue
+		// Core deliberately inlines the standalone kernel's JavaScript and declarations.
+		if (manifest.name === '@pluxel/core' && name === '@pluxel/context') continue
+		if (!publishedDependencies.get(manifest.name)?.has(name)) {
+			errors.push(
+				`${manifest.name} published source imports ${name} without a dependencies/optionalDependencies/peerDependencies declaration`,
+			)
+		}
 	}
 }
 
@@ -276,6 +357,70 @@ function isSemver(version) {
 	return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(
 		String(version),
 	)
+}
+
+function packageName(specifier) {
+	return specifier
+		.split('/')
+		.slice(0, specifier.startsWith('@') ? 2 : 1)
+		.join('/')
+}
+
+function checkServiceCompositionBoundary(consumerPackage, importer, specifier) {
+	if (consumerPackage !== '@pluxel/services' && consumerPackage !== '@pluxel/workbench') return
+	if (
+		consumerPackage === '@pluxel/services' &&
+		(serviceCompositionFiles.has(importer) ||
+			importer.startsWith(resolve(root, 'packages/services/src/testing') + '/') ||
+			['test.ts', 'internal-test.ts'].some(
+				(file) => importer === resolve(root, 'packages/services/src', file),
+			))
+	)
+		return
+	const publicComposition = /^@pluxel\/services\/(?:preset|vite|build)$/.test(specifier)
+	const target = specifier.startsWith('.')
+		? resolve(dirname(importer), specifier).replace(/\.[cm]?[jt]sx?$/, '')
+		: undefined
+	const localComposition =
+		target !== undefined &&
+		[...serviceCompositionFiles].some((file) => file.slice(0, -3) === target)
+	if (publicComposition || localComposition) {
+		errors.push(
+			`${relative(importer)} imports composition entry ${specifier}; service leaves and Workbench must consume service domain modules`,
+		)
+	}
+}
+
+function sourceImports(path, source) {
+	const parsed = parseSync(path, source)
+	if (parsed.errors.length > 0) {
+		errors.push(
+			`${relative(path)}: dependency scan failed: ${parsed.errors.map((error) => error.message).join('; ')}`,
+		)
+		return []
+	}
+	const imports = []
+	const pending = [parsed.program]
+	while (pending.length > 0) {
+		const node = pending.pop()
+		if (
+			[
+				'ImportDeclaration',
+				'ExportNamedDeclaration',
+				'ExportAllDeclaration',
+				'ImportExpression',
+				'TSImportType',
+			].includes(node.type) &&
+			typeof node.source?.value === 'string'
+		)
+			imports.push(node.source.value)
+		for (const value of Object.values(node)) {
+			if (Array.isArray(value)) {
+				for (const child of value) if (typeof child?.type === 'string') pending.push(child)
+			} else if (typeof value?.type === 'string') pending.push(value)
+		}
+	}
+	return imports
 }
 
 async function childDirectories(directory) {
@@ -297,14 +442,14 @@ async function sourceContents(directory) {
 			if (entry.kind === 'directory') return sourceContents(entry.path)
 			if (
 				/\.[cm]?[jt]sx?$/.test(entry.path) &&
-				!/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(entry.path)
+				!/\.(?:test|spec|typecheck|type-probes)\.[cm]?[jt]sx?$/.test(entry.path)
 			) {
-				return readFile(entry.path, 'utf8')
+				return [{ path: entry.path, source: await readFile(entry.path, 'utf8') }]
 			}
-			return ''
+			return []
 		}),
 	)
-	return fragments.join('')
+	return fragments.flat()
 }
 
 async function childDirectoriesAndFiles(directory) {

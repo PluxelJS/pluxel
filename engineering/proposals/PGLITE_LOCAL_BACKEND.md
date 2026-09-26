@@ -7,7 +7,7 @@
 
 PGlite 的职责是快速、零外部服务的本机 PostgreSQL 语义执行器，用于开发和自动化测试。它不是 SQLite drop-in replacement，也不是部署数据库。设计优先级是：保持 Plugin 作者模型单一、缩短常见测试路径、避免伪造并发；不为它补齐 production durability、容量或故障恢复承诺。
 
-作者继续只看到一套 API：`defineDatabase()`、`ctx.database.use()`、`read()` 和 `transaction()`。同一份 PostgreSQL schema、migration 和 query 必须能在 PGlite 与 native PostgreSQL 上运行。
+作者继续只看到一套 API：`defineDatabase()`、`ctx.require(Database).use()`、`read()` 和 `transaction()`。同一份 PostgreSQL schema、migration 和 query 必须能在 PGlite 与 native PostgreSQL 上运行。
 
 ## 已确认的边界
 
@@ -19,7 +19,7 @@ PGlite 的职责是快速、零外部服务的本机 PostgreSQL 语义执行器�
 
 ## 当前实现的安全优化
 
-每次 owner operation 仍使用标准 `SET TRANSACTION READ ONLY`、`SET LOCAL ROLE`、PG advisory lock、instance check 和既有 transactional outbox。可合并的 `search_path`、三个 timeout 以及写 transaction id 通过一次 `SELECT set_config(...)` 设置，避免为同一事务反复进入 PGlite。
+每次 operation 保留 owner role、active instance 校验与 transactional outbox，read 设置 `SET TRANSACTION READ ONLY`。PostgreSQL 使用 per-owner advisory lock，PGlite 通过单连接 scheduler 串行化并检查 active instance cache。可合并的 `search_path`、三个 timeout 以及写 transaction id 通过一次 `SELECT set_config(...)` 设置，避免为同一事务反复进入 PGlite。
 
 一次 `memory://` 微基准只能说明方向，不能成为跨机器 SLA：在同一进程内，合并后 read operation 的固定 setup 明显缩短。真正的验收是 schema migration、owner isolation、rollback outbox、handle teardown 和 PostgreSQL integration suite 全部保持通过。
 
@@ -33,11 +33,11 @@ PGlite 的职责是快速、零外部服务的本机 PostgreSQL 语义执行器�
 
 ## 尚未实施：删除 runtime-managed invalidation/outbox
 
-当前 `@pluxel/runtime/internal` 仍导出 table invalidation helper，底层使用 trigger、outbox 和 polling。用户文档已经要求 Workbench/业务 API 由 Plugin 自己定义 snapshot 与 `watch()`；因此这层 infrastructure 值得在单独的破坏性设计中重新评估，但不能作为普通性能重构顺手删除。
+当前 Services 数据库内部实现仍包含 table invalidation helper，底层使用 trigger、outbox 和 polling。用户文档已经要求 Workbench/业务 API 由 Plugin 自己定义 snapshot 与 `watch()`；因此这层 infrastructure 值得在单独的破坏性设计中重新评估，但不能作为普通性能重构顺手删除。
 
 若未来决定删除，必须先完成以下 gate：
 
-1. 审计所有已发布的 `@pluxel/runtime/internal` consumers，而不只搜索本仓库。
+1. 审计数据库 internal helper 的所有下游调用，包括迁移前包入口的调用，而不只搜索本仓库。
 2. 明确 replacement 是无、还是 application-owned domain watch；不得把 table event 偷换成新的作者 API。
 3. 将导出的 internal helper 按发布策略废弃/移除，并给出版本边界。
 4. 对已有 PGlite/PG data directory 制定显式迁移方案，说明旧 trigger、outbox rows、mixed-runtime deployment 和 rollback 的处理方式。

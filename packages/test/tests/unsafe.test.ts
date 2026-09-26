@@ -3,7 +3,7 @@ import {
 	createCoreTestHost,
 	Plugin,
 	pluginDefinitionAddressOf,
-} from '@pluxel/core/test'
+} from '@pluxel/core/internal/test'
 import {
 	__setPluginDefinition,
 	lowerTestReplacement,

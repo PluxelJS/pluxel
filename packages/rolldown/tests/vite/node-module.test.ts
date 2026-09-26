@@ -28,7 +28,7 @@ describe('buildNodeModule', () => {
 
 	it('rejects runtime value imports, browser styles, and nested declarations', async () => {
 		await using fixture = await createFixture({
-			'runtime.ts': "import { Context } from '@pluxel/runtime'\nexport { Context }\n",
+			'runtime.ts': "import { Context } from '@pluxel/core'\nexport { Context }\n",
 			'style.ts': "import './theme.css'\nexport const ok = true\n",
 			'theme.css': 'body {}',
 			'nested.ts': "export const nested = defineNodeModule(import.meta.url, './other.ts')\n",

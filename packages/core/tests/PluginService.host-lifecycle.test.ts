@@ -4,6 +4,7 @@ import {
 	resolveCoreRootInputs,
 	type CoreCommitPublication,
 	type CorePluginLifecycleHooks,
+	createContextHost,
 } from '@pluxel/core/internal'
 import {
 	BasePlugin,
@@ -11,13 +12,11 @@ import {
 	Plugin,
 	PluginPart,
 	pluginNodeAddressOf,
-} from '@pluxel/core/test'
-import {
 	createCoreInternalTestHost,
 	type CoreInternalTestHostOptions,
 	assertPluginLifecycleIssue,
 } from '@pluxel/core/internal/test'
-import { createContextHost, type RootContext } from '@pluxel/core'
+import { type RootContext } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 
 let lifecycleTrace: string[] = []
@@ -139,48 +138,47 @@ describe('Core host lifecycle seams', () => {
 								publications.push(fact)
 							},
 						}
-			const host = createCoreInternalTestHost({}, { createRootContext: createRootFactory(hooks) })
-			try {
-				const registry = requirePluginService(host.ctx)
-				const summaries = vi.fn()
-				host.ctx.effects.defer(registry.subscribeCommitted(summaries))
-				host.add(OrderedPlugin)
-				await host.commit()
-				const first = host.require(OrderedPlugin)
-				host.restart(OrderedPlugin)
-				await host.commit()
-				const second = host.require(OrderedPlugin)
-				expect(second).not.toBe(first)
-				await registry.beginUpdate({ reason: 'empty-publication-test' }).commit()
-				expect(host.require(OrderedPlugin)).toBe(second)
-				expect(summaries).toHaveBeenCalledTimes(3)
-				const expected: CoreCommitPublication[] =
-					consumer === 'none'
-						? []
-						: [
-								{
-									operation: { revision: 1, reason: 'core-test' },
-									started: [first.ctx],
-									stopped: [],
-									failed: [],
-								},
-								{
-									operation: { revision: 2, reason: 'core-test' },
-									started: [second.ctx],
-									stopped: [first.ctx],
-									failed: [],
-								},
-								{
-									operation: { revision: 3, reason: 'empty-publication-test' },
-									started: [],
-									stopped: [],
-									failed: [],
-								},
-							]
-				expect(publications).toEqual(expected)
-			} finally {
-				await host.dispose()
-			}
+			await using host = createCoreInternalTestHost(
+				{},
+				{ createRootContext: createRootFactory(hooks) },
+			)
+			const registry = requirePluginService(host.ctx)
+			const summaries = vi.fn()
+			host.ctx.effects.defer(registry.subscribeCommitted(summaries))
+			host.add(OrderedPlugin)
+			await host.commit()
+			const first = host.require(OrderedPlugin)
+			host.restart(OrderedPlugin)
+			await host.commit()
+			const second = host.require(OrderedPlugin)
+			expect(second).not.toBe(first)
+			await registry.beginUpdate({ reason: 'empty-publication-test' }).commit()
+			expect(host.require(OrderedPlugin)).toBe(second)
+			expect(summaries).toHaveBeenCalledTimes(3)
+			const expected: CoreCommitPublication[] =
+				consumer === 'none'
+					? []
+					: [
+							{
+								operation: { revision: 1, reason: 'core-test' },
+								started: [first.ctx],
+								stopped: [],
+								failed: [],
+							},
+							{
+								operation: { revision: 2, reason: 'core-test' },
+								started: [second.ctx],
+								stopped: [first.ctx],
+								failed: [],
+							},
+							{
+								operation: { revision: 3, reason: 'empty-publication-test' },
+								started: [],
+								stopped: [],
+								failed: [],
+							},
+						]
+			expect(publications).toEqual(expected)
 		},
 	)
 
@@ -190,7 +188,7 @@ describe('Core host lifecycle seams', () => {
 		let publication!: CoreCommitPublication
 		let preparedPublication: CoreCommitPublication | undefined
 		let finalizerOperation: object | undefined
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -218,51 +216,47 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			registry = requirePluginService(host.ctx)
-			expect('finalizeGeneration' in host.ctx).toBe(false)
-			expect('settleGenerations' in host.ctx).toBe(false)
-			expect('prepareCommit' in host.ctx).toBe(false)
-			expect('publishCommit' in host.ctx).toBe(false)
-			const node = registry.internNodeAddress(pluginNodeAddressOf(OrderedPlugin))
-			const unwatch = registry.watchInstance(node, (instance) => {
-				if (instance) lifecycleTrace.push('watcher')
-			})
-			const unsubscribe = registry.subscribeCommitted(() => lifecycleTrace.push('listener'))
-			host.ctx.effects.defer(unwatch)
-			host.ctx.effects.defer(unsubscribe)
+		registry = requirePluginService(host.ctx)
+		expect('finalizeGeneration' in host.ctx).toBe(false)
+		expect('settleGenerations' in host.ctx).toBe(false)
+		expect('prepareCommit' in host.ctx).toBe(false)
+		expect('publishCommit' in host.ctx).toBe(false)
+		const node = registry.internNodeAddress(pluginNodeAddressOf(OrderedPlugin))
+		const unwatch = registry.watchInstance(node, (instance) => {
+			if (instance) lifecycleTrace.push('watcher')
+		})
+		const unsubscribe = registry.subscribeCommitted(() => lifecycleTrace.push('listener'))
+		host.ctx.effects.defer(unwatch)
+		host.ctx.effects.defer(unsubscribe)
 
-			host.add(OrderedPlugin)
-			await host.commit()
-			lifecycleTrace.push('returned')
+		host.add(OrderedPlugin)
+		await host.commit()
+		lifecycleTrace.push('returned')
 
-			expect(lifecycleTrace).toEqual([
-				'part:init',
-				'plugin:init',
-				'host:finalize',
-				'host:prepare',
-				'host:publish',
-				'watcher',
-				'listener',
-				'returned',
-			])
-			expect(publication.operation).toEqual({ revision: 1, reason: 'core-test' })
-			expect(publication.operation).toBe(finalizerOperation)
-			expect(publication.started).toEqual([host.require(OrderedPlugin).ctx])
-			expect(publication.stopped).toEqual([])
-			expect(publication.failed).toEqual([])
-			expect(Object.isFrozen(publication)).toBe(true)
-			expect(Object.isFrozen(publication.operation)).toBe(true)
-			expect(Object.isFrozen(publication.started)).toBe(true)
-		} finally {
-			await host.dispose()
-		}
+		expect(lifecycleTrace).toEqual([
+			'part:init',
+			'plugin:init',
+			'host:finalize',
+			'host:prepare',
+			'host:publish',
+			'watcher',
+			'listener',
+			'returned',
+		])
+		expect(publication.operation).toEqual({ revision: 1, reason: 'core-test' })
+		expect(publication.operation).toBe(finalizerOperation)
+		expect(publication.started).toEqual([host.require(OrderedPlugin).ctx])
+		expect(publication.stopped).toEqual([])
+		expect(publication.failed).toEqual([])
+		expect(Object.isFrozen(publication)).toBe(true)
+		expect(Object.isFrozen(publication.operation)).toBe(true)
+		expect(Object.isFrozen(publication.started)).toBe(true)
 	})
 
 	it('treats finalizer failure as start failure and rolls back generation effects', async () => {
 		lifecycleTrace = []
 		let publication!: CoreCommitPublication
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -280,34 +274,30 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			host.add([FinalizerFailurePlugin, FinalizerBlockedDependent])
-			const summary = await host.commitAllowFail()
+		host.add([FinalizerFailurePlugin, FinalizerBlockedDependent])
+		const summary = await host.commitAllowFail()
 
-			assertPluginLifecycleIssue(summary, FinalizerFailurePlugin, {
-				phase: 'start',
-				kind: 'start-failed',
-				message: 'host finalization failed',
-			})
-			assertPluginLifecycleIssue(summary, FinalizerBlockedDependent, {
-				phase: 'dependency',
-				kind: 'dependency-blocked',
-				blockedBy: FinalizerFailurePlugin,
-			})
-			expect(host.isRunning(FinalizerFailurePlugin)).toBe(false)
-			expect(host.isRunning(FinalizerBlockedDependent)).toBe(false)
-			expect(lifecycleTrace).toEqual(['failure:init', 'host:finalize', 'host:cleanup'])
-			expect(publication.started).toEqual([])
-			expect(publication.failed).toHaveLength(2)
-		} finally {
-			await host.dispose()
-		}
+		assertPluginLifecycleIssue(summary, FinalizerFailurePlugin, {
+			phase: 'start',
+			kind: 'start-failed',
+			message: 'host finalization failed',
+		})
+		assertPluginLifecycleIssue(summary, FinalizerBlockedDependent, {
+			phase: 'dependency',
+			kind: 'dependency-blocked',
+			blockedBy: FinalizerFailurePlugin,
+		})
+		expect(host.isRunning(FinalizerFailurePlugin)).toBe(false)
+		expect(host.isRunning(FinalizerBlockedDependent)).toBe(false)
+		expect(lifecycleTrace).toEqual(['failure:init', 'host:finalize', 'host:cleanup'])
+		expect(publication.started).toEqual([])
+		expect(publication.failed).toHaveLength(2)
 	})
 
 	it('does not finalize a generation when Part init fails', async () => {
 		let finalizations = 0
 		let publication!: CoreCommitPublication
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -321,26 +311,22 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			host.add(BrokenPartOwner)
-			const summary = await host.commitAllowFail()
-			assertPluginLifecycleIssue(summary, BrokenPartOwner, {
-				phase: 'start',
-				kind: 'start-failed',
-				message: 'part lifecycle failure',
-			})
-			expect(finalizations).toBe(0)
-			expect(publication.started).toEqual([])
-			expect(publication.failed).toHaveLength(1)
-		} finally {
-			await host.dispose()
-		}
+		host.add(BrokenPartOwner)
+		const summary = await host.commitAllowFail()
+		assertPluginLifecycleIssue(summary, BrokenPartOwner, {
+			phase: 'start',
+			kind: 'start-failed',
+			message: 'part lifecycle failure',
+		})
+		expect(finalizations).toBe(0)
+		expect(publication.started).toEqual([])
+		expect(publication.failed).toHaveLength(1)
 	})
 
 	it('does not run a finalizer after late init loses the generation', async () => {
 		resetLateInit()
 		let finalizations = 0
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{ plugins: { drainTimeoutMs: 20 } },
 			{
 				createRootContext: createRootFactory({
@@ -351,20 +337,16 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			host.add(LateFinalizerPlugin)
-			const summary = await host.commitAllowFail()
-			assertPluginLifecycleIssue(summary, LateFinalizerPlugin, {
-				phase: 'start',
-				kind: 'start-failed',
-				message: 'start timeout',
-			})
-			settleLateInit()
-			await vi.waitFor(() => expect(host.isRunning(LateFinalizerPlugin)).toBe(false))
-			expect(finalizations).toBe(0)
-		} finally {
-			await host.dispose()
-		}
+		host.add(LateFinalizerPlugin)
+		const summary = await host.commitAllowFail()
+		assertPluginLifecycleIssue(summary, LateFinalizerPlugin, {
+			phase: 'start',
+			kind: 'start-failed',
+			message: 'start timeout',
+		})
+		settleLateInit()
+		await vi.waitFor(() => expect(host.isRunning(LateFinalizerPlugin)).toBe(false))
+		expect(finalizations).toBe(0)
 	})
 
 	it('aborts a timed-out finalizer without publishing the generation as running', async () => {
@@ -410,7 +392,7 @@ describe('Core host lifecycle seams', () => {
 		const completions: string[] = []
 		const settled: string[][] = []
 		let publication!: CoreCommitPublication
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{ plugins: { startConcurrency: 2 } },
 			{
 				createRootContext: createRootFactory({
@@ -434,25 +416,21 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			host.add([ParallelFinalizerB, ParallelFinalizerA])
-			const summary = await host.commitAllowFail()
-			assertPluginLifecycleIssue(summary, ParallelFinalizerA, {
-				phase: 'start',
-				kind: 'start-failed',
-				message: 'parallel predecessor failed',
-			})
-			expect(completions).toEqual(['B:complete', 'A:failed'])
-			expect(settled).toEqual([['ParallelFinalizerB']])
-			expect(publication.started.map((ctx) => ctx.pluginInfo.nodeAddress)).toEqual([
-				pluginNodeAddressOf(ParallelFinalizerB),
-			])
-			expect(publication.failed).toEqual([
-				requirePluginService(host.ctx).resolvePluginNode(ParallelFinalizerA),
-			])
-		} finally {
-			await host.dispose()
-		}
+		host.add([ParallelFinalizerB, ParallelFinalizerA])
+		const summary = await host.commitAllowFail()
+		assertPluginLifecycleIssue(summary, ParallelFinalizerA, {
+			phase: 'start',
+			kind: 'start-failed',
+			message: 'parallel predecessor failed',
+		})
+		expect(completions).toEqual(['B:complete', 'A:failed'])
+		expect(settled).toEqual([['ParallelFinalizerB']])
+		expect(publication.started.map((ctx) => ctx.pluginInfo.nodeAddress)).toEqual([
+			pluginNodeAddressOf(ParallelFinalizerB),
+		])
+		expect(publication.failed).toEqual([
+			requirePluginService(host.ctx).resolvePluginNode(ParallelFinalizerA),
+		])
 	})
 
 	it('turns settlement rejection into start failure and restarts optional dependents', async () => {
@@ -461,7 +439,7 @@ describe('Core host lifecycle seams', () => {
 		optionalSettlementCleanups = 0
 		const settlementBatches: Array<{ started: string[]; stopped: string[] }> = []
 		let publication!: CoreCommitPublication
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -484,44 +462,40 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			host.add([SettledOptionalDependent, SettledRequiredDependent, SettledProvider])
-			const summary = await host.commitAllowFail()
+		host.add([SettledOptionalDependent, SettledRequiredDependent, SettledProvider])
+		const summary = await host.commitAllowFail()
 
-			assertPluginLifecycleIssue(summary, SettledProvider, {
-				phase: 'start',
-				kind: 'start-failed',
-				message: 'route collision',
-			})
-			assertPluginLifecycleIssue(summary, SettledRequiredDependent, {
-				phase: 'dependency',
-				kind: 'dependency-blocked',
-				blockedBy: SettledProvider,
-			})
-			expect(settlementBatches).toEqual([
-				{
-					started: ['SettledProvider', 'SettledOptionalDependent', 'SettledRequiredDependent'],
-					stopped: [],
-				},
-				{
-					started: ['SettledOptionalDependent'],
-					stopped: ['SettledProvider', 'SettledOptionalDependent', 'SettledRequiredDependent'],
-				},
-			])
-			expect(optionalSettlementStarts).toBe(2)
-			expect(optionalSettlementIntegrations).toBe(1)
-			expect(optionalSettlementCleanups).toBe(1)
-			expect(host.isRunning(SettledProvider)).toBe(false)
-			expect(host.isRunning(SettledRequiredDependent)).toBe(false)
-			expect(host.require(SettledOptionalDependent).generation).toBe(2)
-			expect(publication.started).toEqual([host.require(SettledOptionalDependent).ctx])
-			expect(
-				publication.stopped.map((ctx) => ctx.pluginInfo.nodeAddress.definition.exportName),
-			).toEqual(['SettledProvider', 'SettledOptionalDependent', 'SettledRequiredDependent'])
-			expect(publication.failed).toHaveLength(2)
-		} finally {
-			await host.dispose()
-		}
+		assertPluginLifecycleIssue(summary, SettledProvider, {
+			phase: 'start',
+			kind: 'start-failed',
+			message: 'route collision',
+		})
+		assertPluginLifecycleIssue(summary, SettledRequiredDependent, {
+			phase: 'dependency',
+			kind: 'dependency-blocked',
+			blockedBy: SettledProvider,
+		})
+		expect(settlementBatches).toEqual([
+			{
+				started: ['SettledProvider', 'SettledOptionalDependent', 'SettledRequiredDependent'],
+				stopped: [],
+			},
+			{
+				started: ['SettledOptionalDependent'],
+				stopped: ['SettledProvider', 'SettledOptionalDependent', 'SettledRequiredDependent'],
+			},
+		])
+		expect(optionalSettlementStarts).toBe(2)
+		expect(optionalSettlementIntegrations).toBe(1)
+		expect(optionalSettlementCleanups).toBe(1)
+		expect(host.isRunning(SettledProvider)).toBe(false)
+		expect(host.isRunning(SettledRequiredDependent)).toBe(false)
+		expect(host.require(SettledOptionalDependent).generation).toBe(2)
+		expect(publication.started).toEqual([host.require(SettledOptionalDependent).ctx])
+		expect(
+			publication.stopped.map((ctx) => ctx.pluginInfo.nodeAddress.definition.exportName),
+		).toEqual(['SettledProvider', 'SettledOptionalDependent', 'SettledRequiredDependent'])
+		expect(publication.failed).toHaveLength(2)
 	})
 
 	it('serializes a queued commit and gives both hooks the same operation identity', async () => {
@@ -531,7 +505,7 @@ describe('Core host lifecycle seams', () => {
 		let registry!: ReturnType<typeof requirePluginService>
 		let queued: Promise<void> | undefined
 		let reentrantUpdateError: unknown
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -561,30 +535,26 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			registry = requirePluginService(host.ctx)
-			host.add(OrderedPlugin)
-			await host.commit()
-			await queued
+		registry = requirePluginService(host.ctx)
+		host.add(OrderedPlugin)
+		await host.commit()
+		await queued
 
-			expect(publications).toHaveLength(2)
-			expect(reentrantUpdateError).toBeInstanceOf(Error)
-			expect((reentrantUpdateError as Error).message).toContain('another update is active')
-			expect(publications.map((item) => item.operation.revision)).toEqual([1, 2])
-			expect(publications.map((item) => item.operation.reason)).toEqual([
-				'core-test',
-				'queued-restart',
-			])
-			expect(finalizerOperations).toEqual(publications.map((item) => item.operation))
-			expect(publications[1]!.started).toHaveLength(1)
-			expect(publications[1]!.stopped).toHaveLength(1)
-			expect(publications[1]!.started[0]).not.toBe(publications[1]!.stopped[0])
-			expect(settlements).toHaveLength(2)
-			expect(settlements[1]!.started).toEqual(publications[1]!.started)
-			expect(settlements[1]!.stopped).toEqual(publications[1]!.stopped)
-		} finally {
-			await host.dispose()
-		}
+		expect(publications).toHaveLength(2)
+		expect(reentrantUpdateError).toBeInstanceOf(Error)
+		expect((reentrantUpdateError as Error).message).toContain('another update is active')
+		expect(publications.map((item) => item.operation.revision)).toEqual([1, 2])
+		expect(publications.map((item) => item.operation.reason)).toEqual([
+			'core-test',
+			'queued-restart',
+		])
+		expect(finalizerOperations).toEqual(publications.map((item) => item.operation))
+		expect(publications[1]!.started).toHaveLength(1)
+		expect(publications[1]!.stopped).toHaveLength(1)
+		expect(publications[1]!.started[0]).not.toBe(publications[1]!.stopped[0])
+		expect(settlements).toHaveLength(2)
+		expect(settlements[1]!.started).toEqual(publications[1]!.started)
+		expect(settlements[1]!.stopped).toEqual(publications[1]!.stopped)
 	})
 
 	it('prepares removal-only final facts even when there are no candidates to settle', async () => {
@@ -594,7 +564,7 @@ describe('Core host lifecycle seams', () => {
 		}> = []
 		const preparations: CoreCommitPublication[] = []
 		const publications: CoreCommitPublication[] = []
-		const host = createCoreInternalTestHost(
+		await using host = createCoreInternalTestHost(
 			{},
 			{
 				createRootContext: createRootFactory({
@@ -611,23 +581,19 @@ describe('Core host lifecycle seams', () => {
 				}),
 			},
 		)
-		try {
-			host.add(OrderedPlugin)
-			await host.commit()
-			const firstContext = host.require(OrderedPlugin).ctx
-			host.remove(OrderedPlugin)
-			await host.commit()
+		host.add(OrderedPlugin)
+		await host.commit()
+		const firstContext = host.require(OrderedPlugin).ctx
+		host.remove(OrderedPlugin)
+		await host.commit()
 
-			expect(settlements).toHaveLength(1)
-			expect(preparations).toHaveLength(2)
-			expect(publications).toHaveLength(2)
-			expect(preparations[1]).toBe(publications[1])
-			expect(publications[1]!.started).toEqual([])
-			expect(publications[1]!.stopped).toEqual([firstContext])
-			expect(publications[1]!.failed).toEqual([])
-		} finally {
-			await host.dispose()
-		}
+		expect(settlements).toHaveLength(1)
+		expect(preparations).toHaveLength(2)
+		expect(publications).toHaveLength(2)
+		expect(preparations[1]).toBe(publications[1])
+		expect(publications[1]!.started).toEqual([])
+		expect(publications[1]!.stopped).toEqual([firstContext])
+		expect(publications[1]!.failed).toEqual([])
 	})
 
 	it('rejects the original host publication error before summary or watcher visibility', async () => {

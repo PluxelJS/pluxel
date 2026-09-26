@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
-import type { ManagementAccessMethod, ManagementAccessPrincipal } from '@pluxel/runtime'
-
-type AuthMethod = ManagementAccessMethod
-type AuthPrincipal = ManagementAccessPrincipal
+import type {
+	ManagementAccessMethod,
+	ManagementAccessPrincipal,
+} from '@pluxel/services/management/access'
 
 const SECURE_SESSION_COOKIE = '__Host-pluxel_admin_session'
 const LOCAL_SESSION_COOKIE = 'pluxel_admin_local_session'
@@ -13,8 +13,8 @@ const MAX_PENDING_COMMITS = 256
 const MAX_COOKIE_HEADER_BYTES = 8_192
 
 type Session = Readonly<{
-	principal: AuthPrincipal
-	method: AuthMethod
+	principal: ManagementAccessPrincipal
+	method: ManagementAccessMethod
 	localOnly: boolean
 	expiresAt: number
 }>
@@ -47,8 +47,8 @@ export class SessionStore {
 	private readonly pendingCommits = new Map<string, PendingCommit>()
 
 	create(
-		principal: AuthPrincipal,
-		method: AuthMethod,
+		principal: ManagementAccessPrincipal,
+		method: ManagementAccessMethod,
 		secure: boolean = true,
 		now: number = Date.now(),
 	): string {
@@ -59,8 +59,8 @@ export class SessionStore {
 	}
 
 	issueCommit(
-		principal: AuthPrincipal,
-		method: AuthMethod,
+		principal: ManagementAccessPrincipal,
+		method: ManagementAccessMethod,
 		secure: boolean,
 		now: number = Date.now(),
 	): Readonly<{ ticket: string; expiresAt: number }> {
@@ -68,8 +68,8 @@ export class SessionStore {
 	}
 
 	issueBoundCommit(
-		principal: AuthPrincipal,
-		method: AuthMethod,
+		principal: ManagementAccessPrincipal,
+		method: ManagementAccessMethod,
 		secure: boolean,
 		now: number = Date.now(),
 	): Readonly<{
@@ -162,8 +162,8 @@ export class SessionStore {
 	}
 
 	private createSession(
-		principal: AuthPrincipal,
-		method: AuthMethod,
+		principal: ManagementAccessPrincipal,
+		method: ManagementAccessMethod,
 		secure: boolean,
 		now: number,
 	): Readonly<{ cookie: string; sessionKey: string }> {
@@ -182,10 +182,10 @@ export class SessionStore {
 
 	read(
 		request: Request,
-		method: AuthMethod,
+		method: ManagementAccessMethod,
 		allowLocalCookie: boolean = false,
 		now: number = Date.now(),
-	): AuthPrincipal | undefined {
+	): ManagementAccessPrincipal | undefined {
 		this.prune(now)
 		const candidates: readonly Readonly<{ token?: string; localOnly: boolean }>[] = [
 			{ token: readCookie(request, SECURE_SESSION_COOKIE), localOnly: false },

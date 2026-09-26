@@ -35,13 +35,16 @@
 	},
 	"dependencies": {
 		"rangi": "2.2.0",
-		"satteri": "0.10.5"
+		"satteri": "0.10.5",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "catalog:build",
@@ -49,7 +52,7 @@
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:^",
+		"@pluxel/core": "workspace:^",
 		"@pluxel/takumi": "workspace:^"
 	},
 	"engines": {

@@ -1,4 +1,4 @@
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import type { PackageManagerApi } from './contracts.ts'
 
 export const PackageManagerWorkbench = workbench.define({

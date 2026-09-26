@@ -34,12 +34,6 @@ This folder is intentionally layered. Keep rendering logic predictable and avoid
 5. Prefer Mantine primitives over custom chrome.
    If a renderer needs a panel, start from Mantine `Card`/`Paper` before inventing raw styled containers.
 
-## LLM Edit Protocol
-
-1. If the task changes field extraction or field metadata flow, edit `internal/`.
-2. If the task changes how one schema kind looks or behaves, edit the matching file in `renders/`.
-3. If two renderers need the same lightweight chrome, promote only that chrome into `chrome/`.
-
 ## Field ownership
 
 `AutoForm.Fields` and structural renderers recurse with a `FieldNode` and a structured path.

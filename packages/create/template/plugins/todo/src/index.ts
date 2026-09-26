@@ -1,6 +1,7 @@
 import { normalizeTodoTitle, withTodoCompletion, type TodoItem } from '@example/domain'
 import type { AuditPlugin } from '@example/audit-plugin'
-import { BasePlugin, definePluginRef, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 export const TodoConfig = v.object({
 	maxItems: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)), 20),

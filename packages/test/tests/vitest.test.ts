@@ -103,8 +103,8 @@ describe('@pluxel/test/vitest', () => {
 			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
 		)
 		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
-		expect(config.ssr?.noExternal).toEqual(['@pluxel/runtime'])
-		expect(config.test?.server?.deps?.inline).toEqual(['@pluxel/runtime'])
+		expect(config.ssr?.noExternal).toEqual(['@pluxel/services'])
+		expect(config.test?.server?.deps?.inline).toEqual(['@pluxel/services'])
 	})
 
 	it('uses the pluxel namespace for source toolchain roots', () => {

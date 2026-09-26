@@ -1,4 +1,5 @@
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 function isHttpOrigin(value: string): boolean {
 	const url = new URL(value)

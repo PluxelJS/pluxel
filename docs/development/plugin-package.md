@@ -82,18 +82,37 @@ oxlint.config.ts
 		"verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "catalog:"
+		"@pluxel/core": "catalog:"
 	}
 }
 ```
 
-`@pluxel/hmr` 条件指向 source entry，default 条件指向构建 artifact。source condition 不作为生产部署入口。
+上例用 `@pluxel/hmr` 选择源码、`default` 选择构建制品，适合同时开发和发布的包。
+源码识别也接受 `@pluxel/source`、`development` 条件；仅在工作区消费的 TypeScript 包可以直接写
+`"exports": { ".": "./src/orders.ts" }`，或在 `"."` 下用 `import` / `default` 指向同一 TypeScript
+入口，无需重复添加 `@pluxel/hmr`。这些形式都使用相同的 package-root Plugin identity。
 
-Pluxel runtime 和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
+`exports` 仍须是显式子路径映射；`types` 和 `.d.ts` / `.d.mts` / `.d.cts` 声明文件不提供运行时源码。
+普通 JavaScript 的 `import` / `default` 不会被自动当成源码入口；JavaScript 源码需要显式 source condition。
+可发布包仍应将生产导出指向构建制品。
+
+Pluxel Core、所用服务和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
+发布 Workbench View/Attachment `RpcTarget` 的包还需把宿主支持的 `capnweb` 精确版本同时声明为 peer 和 dev dependency，
+并让生产 bundle 保留该外部依赖。`pluxel build` 根据实际 Workbench target publication 检查声明版本和安装版本，
+当前官方支持 `0.12.0`；仅自建私有 RPC 或只发布 Content 的包不受这项检查约束。
+构建还会生成 `pluxel.workbenchCapnweb` 版本事实。Pluxel 静态应用只把带此事实的 target 包的
+`capnweb` import 解析到宿主 Workbench；生产动态来源加载时核对声明、来源实际安装版与宿主支持版，
+不匹配时报告 `PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH`，匹配时让该包借用宿主模块。
+插件私有 RPC 包继续按自己的依赖解析。绕过 `pluxel build` 的包没有生成事实，
+不能依赖生产加载器自动桥接；Workbench 打开 target 时仍检查真实 `RpcTarget` 身份。
+
+希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入完整上游命名导出；
+无需另设 `better-result` peer。用法见 [better-result 共享入口](../api/better-result.md)。
+发布包的 Core peer 下限须为首次发布此子入口的 Core 版本，宽泛的 `^1` 无法保证旧宿主存在该入口。
 
 ## `tsconfig.json`
 
-Plugin source 需要 decorator 和 source condition：
+Plugin source 需要 decorator；使用条件源码导出时，让 TypeScript 选择相同条件：
 
 ```json
 {
@@ -152,6 +171,7 @@ export default defineConfig({
 构建命令仍然是 `pluxel build`。CLI 读取并合并这个 tsdown config，再安装标准 semantic/build pipeline；不要直接把 package script 改成裸 `tsdown`，也不要自行重复安装 decorator transform、config extractor 或 Workbench builder。
 
 `pluginPackage()` 是 `@pluxel/rolldown/build` 的底层集成入口，适合自定义构建工具；canonical CLI package 使用 `pluxel build`。
+`pluxel build --watch` 的 watcher、配置重启与终端交互由命令进程拥有；停止命令结束整个 watch 会话。
 
 ## 依赖 metadata 如何生成
 
@@ -163,7 +183,18 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 - config schema source；
 - 可选 Workbench Content artifact、MF2 producer 与 Node/worker/database artifacts。
 
+Reachable Part 的 constructor requirements 自动聚合到所属 Plugin，同一 provider package 去重且 required 覆盖 optional；未挂载 Part 不计入清单。外部预构建 Part 由其自己的包声明 provider peers，consumer 不复制传递 inventory。
+
 构建失败不会提交部分 metadata。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
+
+## 已安装包的开发期界面
+
+开发宿主可以同时使用源码插件和已构建的已安装插件包。已安装包的 Workbench View/Content 直接读取其
+`dist/workbench` inventory，与插件候选一起验证、接纳和撤回；不用重新编译包内 UI。只有进入本次插件目录的 export 会加载对应产物。
+inventory 中声明的产物缺失或无效会拒绝候选更新，并保留接纳之前的版本；错误可从开发控制台的 `dev.updates.latest()` 与运行日志查看。
+
+服务变化需要重建 Host 时，补偿会复用上一次接纳的产物计划。请保留仍被使用的不可变 revision；如果原地覆盖或删除旧制品，
+补偿可能失败，宿主会报告实际结果，不会把新界面产物配给旧插件。
 
 ## Workbench 内容
 
@@ -180,14 +211,7 @@ Workbench 的声明和 API 类型放在可供浏览器导入的 `workbench.ts`�
 Content-only package 不加载 Federation builder、不生成 remote entry，也不要求 React/Mantine compatibility；schema 与 handler
 只存在于 server binding。完整 View 的 browser graph 不得导入 Node builtin、database handle、secret 或 Plugin implementation。
 
-`pluxel build` 在 TypeScript 擦除前提取 owning Plugin definition、entry key 和 literal source，生成一个标准 MF2
-producer、每个 declaration 的 React Bridge expose 和 `mf-manifest.json`。作者不手写 remote name、expose、shared
-或 Bridge wrapper。Server bundle 与 browser producer 分离。
-
-同一 definition 可以同时含 Content 与 View；发布包和 static/distribution build 中，两类 artifact 必须全部构建成功后再作为
-一个 revision 提交。开发 host 会先发布 Content/topology，再在后台补齐缺失 producer；未就绪 View 显示构建中，
-producer 失败时在对应位置显示错误。
-没有 renderer declaration 时，不加载 Federation builder，也不创建 producer。
+带 renderer 的包由工具链生成 MF2 producer、React Bridge 和 manifest；作者不手写 shared/expose。发布与 static build 要求 Content 和 renderer 制品一起构建成功，开发期状态见[工作台故障](../workbench/operations.md#生命周期和故障)。
 
 ## 数据库与 Node artifacts
 

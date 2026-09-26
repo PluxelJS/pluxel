@@ -1,0 +1,10 @@
+{
+	"extends": "../../tsconfig.workspace.json",
+	"include": ["src"],
+	"compilerOptions": {
+		"noEmit": true,
+		"jsx": "react-jsx",
+		"lib": ["ES2023", "DOM"],
+		"types": ["vite/client"]
+	}
+}

@@ -1,4 +1,4 @@
-import { BasePlugin } from '@pluxel/runtime'
+import { BasePlugin } from '@pluxel/core'
 
 export interface CacheValue<V> {
 	/** A hit value. `null` is valid; `undefined` is forbidden. */

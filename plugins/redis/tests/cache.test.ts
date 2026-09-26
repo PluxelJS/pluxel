@@ -1,5 +1,7 @@
-import { v } from '@pluxel/runtime'
-import { createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
+import { standardServices } from '@pluxel/services'
+import { createTestHost } from '@pluxel/test'
+import * as v from 'valibot'
+import { Plugin } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -112,7 +114,9 @@ describe('@pluxel/redis cache backend', () => {
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.commit((change) => {
 				change.start(FakeRedisPlugin)
@@ -148,7 +152,9 @@ describe('@pluxel/redis cache backend', () => {
 
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.commit((change) => {
 				change.start(FakeRedisPlugin)

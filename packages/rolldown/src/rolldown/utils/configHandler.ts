@@ -1,11 +1,4 @@
-import type {
-	Argument,
-	AssignmentTarget,
-	Expression,
-	ObjectProperty,
-	PrivateIdentifier,
-	Program,
-} from 'oxc-parser'
+import type { Argument, Expression, ObjectProperty, PrivateIdentifier, Program } from 'oxc-parser'
 
 const WRAPPER_PREFIX = 'const __pluxel_schema__ = '
 export type ParseProgram = (code: string, filename: string) => Program
@@ -82,7 +75,7 @@ function printNormalized(expr: Expression, ctx: PrintContext): string {
 				ctx,
 			)}:${printNormalized(normalized.alternate, ctx)}`
 		case 'AssignmentExpression':
-			return `${printAssignmentTarget(normalized.left, ctx)}${normalized.operator}${printNormalized(
+			return `${sliceOriginal(normalized.left, ctx)}${normalized.operator}${printNormalized(
 				normalized.right,
 				ctx,
 			)}`
@@ -129,10 +122,6 @@ function isExpressionNode(node: { type?: unknown } | null | undefined): node is 
 	if (type === 'MetaProperty' || type === 'Super' || type === 'ThisExpression') return true
 	if (type === 'ObjectExpression' || type === 'ArrayExpression') return true
 	return type.endsWith('Expression')
-}
-
-function printAssignmentTarget(target: AssignmentTarget, ctx: PrintContext): string {
-	return sliceOriginal(target, ctx)
 }
 
 function unwrapForDetection(expr: Expression): Expression {

@@ -9,6 +9,8 @@ description: 理解 Plugin 的依赖关系、版本代际、可选集成、资�
 一个 Plugin 只有在必需依赖可用、配置校验成功且 `init()` 完成后才会运行。
 你负责声明依赖、初始化业务资源并登记清理；宿主负责启动顺序、停止和热更新。
 
+本页按“组成关系 → 调用约束 → 资源 → 失败”阅读。只做局部修改时，直接查[必需依赖](#required-dependency)、[可选集成](#optional-integration)或[资源清理](#generation-是资源所有权边界)；身份和事件协议按需查阅。
+
 ## 三种组成关系
 
 先看这部分功能是否需要独立启动和停止。下表给出三种插件组成方式，以及无需插件机制的普通 helper：
@@ -29,7 +31,7 @@ description: 理解 Plugin 的依赖关系、版本代际、可选集成、资�
 
 ```ts twoslash
 // @filename: accounts.ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Accounts' })
 export class AccountsPlugin extends BasePlugin {
@@ -39,7 +41,7 @@ export class AccountsPlugin extends BasePlugin {
 }
 
 // @filename: billing.ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { AccountsPlugin } from './accounts.ts'
 
 @Plugin({ displayName: 'Billing' })
@@ -63,8 +65,6 @@ class BillingPlugin extends BasePlugin {
 同一个 Plugin definition 不能在一个 constructor 中重复声明。dependency override 按 requirement definition 识别依赖，参数名和位置不会成为
 持久配置；如果需要 primary/replica 这类双角色，应先定义具有不同语义身份的 Plugin token，而不是重复同一个参数类型。
 
-provider 启动失败时，consumer 不会拿到一个半可用实例：consumer 被标记为 blocked，其他无关分支仍可以继续运行。
-
 注入值是绑定 consumer caller Context 和当前 provider generation 的轻量 facade。provider replacement 后旧 facade、旧 method
 reference 与旧字段写入都会被拒绝；普通 public field 的读写仍作用于 provider 自己的实例，不会在 consumer 侧形成影子字段。
 
@@ -73,8 +73,8 @@ reference 与旧字段写入都会被拒绝；普通 public field 的读写仍�
 需要 runtime 强封装时，把状态放进 closure，或从 capability 返回带有明确 stop/replacement 失效语义的 handle。这个限制不适用于
 不会作为 provider dependency facade 暴露的 `PluginPart`；Part constructor 接收依赖不会让 Part 自己成为 graph provider。
 
-Plugin 对其他节点暴露的可调用成员应写成普通 prototype method；accessor只返回普通数据或有自身receiver与失效契约的对象handle。
-不要写 `status = () => ...`、function expression field或 `this.status.bind(this)` field。这些写法会捕获 raw provider，无法保留 consumer 的 caller Context，构建工具会报
+Plugin 对其他节点暴露的可调用成员使用 prototype method；accessor 只返回普通数据，或有自身 receiver 与失效契约的对象 handle。
+不要使用 `status = () => ...`、function expression field 或 `this.status.bind(this)` field。这些写法会捕获 raw provider，无法保留 consumer 的 caller Context，构建工具会报
 `plugin_caller_view_callable_field_unsupported`。普通数据 field 仍可读写；需要 callable handle 时返回有独立对象 receiver 和明确
 stop/replacement 失效语义的 capability。
 
@@ -88,7 +88,7 @@ dependency facade 在 provider construction 完成后固定 ordinary field/proto
 
 ```ts twoslash
 // @filename: audit.ts
-import { BasePlugin } from '@pluxel/runtime'
+import { BasePlugin } from '@pluxel/core'
 
 export declare class AuditPlugin extends BasePlugin {
 	registerSource(source: BasePlugin): void
@@ -96,7 +96,7 @@ export declare class AuditPlugin extends BasePlugin {
 
 // @filename: orders.ts
 import type { AuditPlugin } from './audit.ts'
-import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 
 const Audit = definePluginRef<AuditPlugin>()
 
@@ -125,7 +125,7 @@ provider absent、当前未运行或 start-failed 时 callback 不执行，也�
 连接管理、缓存和同步任务需要各自的配置与清理，但始终跟随同一个 Plugin 启停时，使用 `PluginPart`。
 这里的 owner 就是包含这个 Part 的插件；Part 不会变成可单独启停或被其他插件注入的新节点。
 
-从[使用 PluginPart](./plugin-parts.md)的最小缓存例子开始。没有这些资源需求时，普通函数或类即可。
+完整缓存示例见[使用 PluginPart](./plugin-parts.md)。没有这些资源需求时，普通函数或类即可。
 
 ## Generation 是资源所有权边界
 
@@ -141,8 +141,6 @@ protected override async init(signal: AbortSignal) {
 	await client.connect({ signal })
 }
 ```
-
-创建成功后立即登记 cleanup。这样即使后续启动检查失败，已经创建的资源也会被释放。
 
 ### 选择 effects primitive
 
@@ -164,31 +162,14 @@ protected override init() {
 }
 ```
 
+`effects.transaction(async tx => ...)` 只回滚本事务登记的资源。事务中通过 `tx` 登记并 await acquire；嵌套使用 `tx.transaction()`，同级并发会拒绝。callback 结束后 tx 不再可用；`tx.dispose()` 只撤回本事务，不关闭父 scope。未等待的 acquire 若晚到，会释放资源并 reject；父 scope 的 dispose 不代表这些未登记 Promise 已退出。
+
 cleanup 必须幂等，并在 Promise resolve 前真正停止底层工作。只调用 `abort()` 却不等待 worker、watcher 或 queue consumer 退出，会让旧 generation 与新 generation 重叠。
 
 ## `init()` 的职责
 
-`init()` 做三件事：
-
-1. 验证插件是否真的能提供能力；
-2. 注册 HTTP、commands、Workbench 等 owner-bound capability；
-3. 启动并登记长期资源。
-
-必要上游不可达、schema 不匹配或凭据无效时直接抛错：
-
-```ts no-twoslash
-protected override async init(signal: AbortSignal) {
-	const pool = createPool(this.config)
-	this.ctx.effects.defer(() => pool.end())
-
-	await assertReachable(pool, { signal })
-	await assertSchemaVersion(pool, EXPECTED_SCHEMA_VERSION)
-}
-```
-
-不要捕获启动错误后只写日志继续运行。那会制造“runtime 显示 running，但能力不可用”的半启动状态。
-
-`init()` 可以返回 cleanup/disposable；它同样会进入当前 generation effects。复杂启动流程优先在每个 acquire 后立即登记，避免只在函数末尾返回一个覆盖不完整的 cleanup。
+校验必要上游与凭据，注册能力，启动长期资源。无法提供能力时直接抛错，不捕获后只写日志继续运行。
+`init()` 可以返回 cleanup/disposable；有多步资源获取时，在每次获取成功后立即登记，确保部分初始化失败也能清理。
 
 ## 调用失败和生命周期失败
 
@@ -214,7 +195,7 @@ this.ctx.effects.defer(() => clearInterval(timer))
 `ctx.events` 订阅和发布：
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 declare module '@pluxel/core' {
 	interface Events {
@@ -239,10 +220,8 @@ module augmentation 只合并 TypeScript 事件词汇，不会 import、安装�
 如果事件属于某个 provider 的公开能力，consumer 必须依赖该 provider，或者 availability 会影响 consumer lifecycle，则公开
 具名 `EvtChannel`，不要把依赖伪装成 ambient 广播：
 
-事件集合在设计时已知时，公开命名的 `EvtChannel`，不要重新实现字符串 registry：
-
 ```ts twoslash
-import { BasePlugin, EvtChannel, Plugin } from '@pluxel/runtime'
+import { BasePlugin, EvtChannel, Plugin } from '@pluxel/core'
 
 type Invoice = { id: string }
 type InvoicePaid = (invoice: Invoice, signal: AbortSignal) => void | Promise<void>
@@ -278,7 +257,7 @@ object 与 `displayName` 都不参与 identity；`displayName` 用于界面和 p
 root export 和 fork，例如
 `package:@acme/orders::OrdersPlugin#fork=east`，不会把 opaque digest 当作公开 Plugin ID。
 
-HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.elysia` 中声明的 path 就是最终产品 contract；fork 若要
+HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.require(ElysiaApp)` 中声明的 path 就是最终产品 contract；fork 若要
 同时提供 HTTP，必须从已校验业务 config 得到彼此不冲突的显式 namespace，或由唯一 gateway Plugin 统一承载入口。
 
 Plugin source 必须经过 Pluxel Vite/Rolldown pipeline。raw TypeScript runner 不生成这些语义事实。

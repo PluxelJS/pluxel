@@ -2,17 +2,13 @@ import { type ArgValues, define } from 'gunshi'
 import { loadOfficialCapability } from '../capability-loader'
 import { buildCommandArgs, buildCommandDefinition } from '../command-manifest'
 
-type BuildRuntimeConfig = import('@pluxel/rolldown/build').BuildRuntimeConfig
-type BuildModule = typeof import('@pluxel/rolldown/build')
-
 type BuildCommandArgs = typeof buildCommandArgs
 type BuildCommandValues = ArgValues<BuildCommandArgs>
 
 export const buildCommand = define({
 	...buildCommandDefinition,
 	async run(ctx) {
-		const build = await loadOfficialCapability<BuildModule>('rolldown-build')
-		// 先读取 workspace 配置，这里只负责 build 命令，不做 scaffold 以外的逻辑
+		const build = await loadOfficialCapability('rolldown-build')
 		const runtime = await build.resolveBuildContext(ctx.values as BuildCommandValues)
 
 		ctx.log(`[build] root: ${runtime.projectRoot}`)
@@ -28,7 +24,7 @@ export const buildCommand = define({
 		await build.runWithTsdown({
 			context: runtime,
 			log: ctx.log,
-			extraConfig: (context: BuildRuntimeConfig) =>
+			extraConfig: (context) =>
 				build.pluginPackage({
 					root: context.projectRoot,
 					packageMetadata: {

@@ -5,7 +5,7 @@ export {
 	S3UnsupportedOperationError,
 } from './capability.ts'
 export type { S3Bucket, S3Client } from './capability.ts'
-export { S3Config, S3CredentialsError, S3Plugin } from './s3.ts'
+export { S3Config, S3VaultSchema, S3CredentialsError, S3Plugin } from './s3.ts'
 export type { S3AccessKeyCredentials, S3BucketConfig, S3PluginConfig } from './s3.ts'
 export type {
 	CompleteMultipartUploadResult,

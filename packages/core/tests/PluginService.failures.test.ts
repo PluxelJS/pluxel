@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
-import { BasePlugin, Plugin } from '@pluxel/core/test'
 import {
+	BasePlugin,
+	Plugin,
 	type CommitSummary,
 	assertPluginLifecycleIssue,
 	pluginLifecycleIssuePlugins,

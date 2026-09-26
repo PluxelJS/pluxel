@@ -1,25 +1,48 @@
 import type { PlannedField, SectionPlan } from './fieldPlanner'
 import { DEFAULT_TEXTS } from '../../../core/constants'
-import { useForm, type AnyFormApi } from '@tanstack/react-form'
+import {
+	useForm,
+	type AnyFormApi,
+	type FormOptions,
+	type FormValidateOrFn,
+	type FormAsyncValidateOrFn,
+} from '@tanstack/react-form'
 import { createContext, useContext, useMemo, useRef, useState } from 'react'
+
+/** Native TanStack options over unparsed draft values; validators do not transform submission. */
+export type AutoFormOptions<TValues> = FormOptions<
+	TValues,
+	undefined | FormValidateOrFn<TValues>,
+	undefined | FormValidateOrFn<TValues>,
+	undefined | FormAsyncValidateOrFn<TValues>,
+	undefined | FormValidateOrFn<TValues>,
+	undefined | FormAsyncValidateOrFn<TValues>,
+	undefined | FormValidateOrFn<TValues>,
+	undefined | FormAsyncValidateOrFn<TValues>,
+	undefined | FormValidateOrFn<TValues>,
+	undefined | FormAsyncValidateOrFn<TValues>,
+	undefined | FormAsyncValidateOrFn<TValues>,
+	unknown
+>
 
 export const FormResetVersion = createContext(0)
 
-export function useAppForm<TValues>(
-	defaultValues: TValues,
-	formOpts?: { defaultValues?: TValues } & Record<string, unknown>,
-) {
+export function useAppForm<TValues>(defaultValues: TValues, formOpts?: AutoFormOptions<TValues>) {
 	const [resetVersion, setResetVersion] = useState(0)
 	const resetRef = useRef<AnyFormApi['reset'] | undefined>(undefined)
 
 	const opts = useMemo(() => {
-		const listeners = formOpts?.listeners as AnyFormApi['options']['listeners'] | undefined
+		const listeners = formOpts?.listeners
 		return {
 			...formOpts,
 			defaultValues,
 			listeners: {
 				...listeners,
-				onMount: (event: { formApi: AnyFormApi }) => {
+				onMount: (
+					event: Parameters<
+						NonNullable<NonNullable<AutoFormOptions<TValues>['listeners']>['onMount']>
+					>[0],
+				) => {
 					// React Form's returned facade differs from this core instance.
 					// Both must share the reset that ends renderer editing sessions.
 					if (resetRef.current) event.formApi.reset = resetRef.current
@@ -49,7 +72,7 @@ interface Ctx<TValues extends Record<string, unknown>> {
 	sections: SectionPlan[]
 	hiddenFields: PlannedField[]
 	defaultValues: Record<string, unknown>
-	submit: () => void
+	submit: () => Promise<void>
 	reset: (values?: Record<string, unknown>) => void
 }
 export const AutoFormCtx = createContext<Ctx<Record<string, unknown>> | null>(null)

@@ -1,20 +1,19 @@
 import {
-	BasePlugin,
-	Plugin,
 	type ManagementAccessPrincipal,
 	type ManagementAccessProvider,
 	type ManagementAccessProviderStatus,
 	type ManagementAccessRequestContext,
 	type ManagementAuthenticationProviderSession,
 	type ManagementAuthenticationProviderStep,
-} from '@pluxel/runtime'
+} from '@pluxel/services/management/access'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import {
 	authenticatedSession,
 	FixedAuthenticationSession,
 	PasswordAuthenticationSession,
 } from './challenge.ts'
 import { AuthSetupTarget } from './auth-setup-target.ts'
-import { AuthConfig, type AuthPluginConfig } from './config.ts'
+import { AuthConfig } from './config.ts'
 import { handleCookieCommit } from './cookie-commit.ts'
 import { CredentialStore, type LocalAccountRecord } from './credentials.ts'
 import { CredentialProvisioning } from './credential-provisioning.ts'
@@ -48,7 +47,7 @@ function redirect(path: string, cookies: readonly string[]): Response {
 
 @Plugin({ displayName: 'Authentication' })
 export class AuthPlugin extends BasePlugin {
-	private readonly config: AuthPluginConfig = this.configs.use(AuthConfig)
+	private readonly config = this.configs.use(AuthConfig)
 	private readonly sessions = new SessionStore()
 	private readonly loginFailures = new LoginFailureLimiter()
 	private active = false
@@ -106,6 +105,33 @@ export class AuthPlugin extends BasePlugin {
 				this.store = undefined
 			},
 			{ tag: 'auth-generation', phase: 'shutdown' },
+		)
+		this.ctx.effects.defer(
+			await store.watch(async () => {
+				if (!this.active) return
+				const [account, oidc] = await Promise.all([store.loadAccount(), store.loadOidcSecret()])
+				if (!this.active) return
+				const identity = (value: LocalAccountRecord | undefined) =>
+					value &&
+					JSON.stringify({
+						username: value.normalizedUsername,
+						password: value.password,
+						totpSecret: value.totp?.secret,
+					})
+				if (
+					identity(this.account) !== identity(account.account) ||
+					this.oidcSecret !== oidc.secret
+				) {
+					this.sessions.clear()
+					this.loginFailures.clear()
+					this.oidc?.clear()
+				}
+				this.account = account.account
+				this.accountInvalid = account.invalid
+				this.oidcSecret = oidc.secret
+				this.oidcSecretInvalid = oidc.invalid
+			}),
+			{ tag: 'auth-vault-observation' },
 		)
 		this.ctx.managementAccess?.provide(this.provider)
 		this.ctx.workbench?.publish(AuthWorkbench, {
@@ -371,3 +397,5 @@ export class AuthPlugin extends BasePlugin {
 		return this.oidc
 	}
 }
+
+export { AuthVaultSchema } from './credentials.ts'

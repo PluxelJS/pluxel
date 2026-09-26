@@ -1,0 +1,76 @@
+{
+	"name": "@pluxel/host-dev",
+	"version": "0.1.0",
+	"description": "Shared Pluxel host development driver",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/host-dev"
+	},
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./console": {
+			"@pluxel/source": "./src/console.ts",
+			"default": "./dist/console.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./console": "./dist/console.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./vite": "./dist/vite.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"test": "pnpm exec vitest run",
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
+	},
+	"dependencies": {
+		"@pluxel/rolldown": "workspace:^",
+		"chokidar": "catalog:node",
+		"pathe": "catalog:node"
+	},
+	"devDependencies": {
+		"@logtape/logtape": "catalog:dev",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"vite": ">=8.2.2 <9"
+	},
+	"peerDependenciesMeta": {
+		"vite": {
+			"optional": true
+		}
+	}
+}

@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { InstallManagedFontInput } from '../workbench-contracts.ts'
 import { FontsWorkbench } from '../workbench.ts'
 
@@ -6,7 +6,7 @@ export const managerScope = createWorkbenchRenderer(FontsWorkbench.manager)
 
 export const fontManagerSnapshotQuery = managerScope.query(({ api }) => ({
 	queryKey: ['fonts', 'manager', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 }))
 
 export const setPreferredFontMutation = managerScope.mutation(({ api }) => ({

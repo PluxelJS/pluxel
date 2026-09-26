@@ -1,5 +1,5 @@
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
-import { workbench } from '@pluxel/runtime/workbench'
+import type { RpcTarget } from 'capnweb'
+import { workbench } from '@pluxel/workbench'
 
 export type DemoEvent = Readonly<{
 	id: string
@@ -19,7 +19,7 @@ export type PluginWithUISnapshot = Readonly<{
 export type PluginWithUIObserver = (revision: number) => void | Promise<void>
 
 export interface PluginWithUIApi extends RpcTarget {
-	snapshot(): PluginWithUISnapshot
+	snapshotDto(): PluginWithUISnapshot
 	watch(observer: PluginWithUIObserver): RpcTarget
 	addNote(message: string): void
 	increment(delta?: number): void

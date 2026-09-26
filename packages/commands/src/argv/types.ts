@@ -87,7 +87,6 @@ export type ArgvParameterDescriptor = {
 export type ArgvCommandDescriptor = {
 	readonly name: string
 	readonly routes: readonly string[]
-	readonly title: string
 	readonly description: string
 	readonly usage: string
 	readonly parameters: readonly ArgvParameterDescriptor[]

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { resolve as r } from 'pathe'
+import { resolve } from 'pathe'
 import YAML from 'yaml'
 
 export interface PnpmWorkspace {
@@ -8,7 +8,7 @@ export interface PnpmWorkspace {
 }
 
 export function pnpmWorkspacePath(root: string) {
-	return r(root, 'pnpm-workspace.yaml')
+	return resolve(root, 'pnpm-workspace.yaml')
 }
 
 export function readPnpmWorkspace(

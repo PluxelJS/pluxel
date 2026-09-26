@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module'
 import type {
 	InstallOptions,
 	InstallResult,
@@ -19,10 +18,10 @@ export type PnpmEngine = Readonly<{
 
 let cached: PnpmEngine | undefined
 
-export function loadPnpmEngine(): PnpmEngine {
+export async function loadPnpmEngine(): Promise<PnpmEngine> {
 	if (cached) return cached
-	const require = createRequire(import.meta.url)
-	const loaded = require('@pnpm/napi') as PnpmEngine
+	const namespace = await import('@pnpm/napi')
+	const loaded = ('default' in namespace ? namespace.default : namespace) as PnpmEngine
 	if (
 		typeof loaded.engineVersion !== 'function' ||
 		typeof loaded.install !== 'function' ||

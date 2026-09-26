@@ -2,7 +2,7 @@
 // - 你需要同一个插件的多个运行实例
 // - 你要看 consumer 如何依赖某个 fork
 
-import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
 
 @Plugin({ forkable: true })
 export class DemoWorker extends BasePlugin {

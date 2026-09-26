@@ -1,6 +1,12 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/core/test'
-import { createCoreInternalTestHost, withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import {
+	BasePlugin,
+	definePluginRef,
+	Plugin,
+	PluginPart,
+	createCoreInternalTestHost,
+	withCoreInternalTestHost,
+} from '@pluxel/core/internal/test'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { consumePluginDefinitionCandidate } from '../src/internal'
 import { pluginPartContextOf } from '../src/plugins/composition/PluginPart'
@@ -692,17 +698,13 @@ describe('owner-bound PluginPart', () => {
 	})
 
 	it('attributes Part cleanup failures without creating a Part lifecycle state', async () => {
-		const host = createCoreInternalTestHost()
-		try {
-			await host.start(CleanupFailureOwner)
-			host.remove(CleanupFailureOwner)
-			const summary = await host.commitAllowFail()
-			const issue = summary.lifecycleReport.issues.find((item) => item.phase === 'drain')
-			expect(issue?.error?.partPath).toEqual(['failingCleanup'])
-			expect(issue?.message).toContain('part cleanup failed')
-		} finally {
-			await host.dispose()
-		}
+		await using host = createCoreInternalTestHost()
+		await host.start(CleanupFailureOwner)
+		host.remove(CleanupFailureOwner)
+		const summary = await host.commitAllowFail()
+		const issue = summary.lifecycleReport.issues.find((item) => item.phase === 'drain')
+		expect(issue?.error?.partPath).toEqual(['failingCleanup'])
+		expect(issue?.message).toContain('part cleanup failed')
 	})
 
 	it('fails the owning Plugin and rolls back the Part scope when Part init rejects', async () => {

@@ -18,7 +18,7 @@ description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cach
 
 ```ts twoslash
 import { Redis } from '@pluxel/redis'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Queue' })
 export class QueuePlugin extends BasePlugin {
@@ -59,9 +59,6 @@ await host.commit((change) => {
 })
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` 作者 fixture。同步 `commit()` callback 把 provider config 与 consumer 首次启动放在同一
-application boundary；production static/dynamic host 通过自己的 ConfigService 和 RuntimeState 管理相同 topology 与 config。
-
 上例需要本机 Redis 监听 `127.0.0.1:6379`。启动后调用 `push()`，返回值是写入后的队列长度；连接失败时先检查服务地址与启动错误，consumer 不会在 provider 未就绪时运行。
 
 `RedisConnection.client` 的公开类型是 node-redis 的 standalone、Cluster 或 Sentinel client union。这个 capability 是 raw server access，不自动添加 caller prefix；key、channel、consumer group 和 stream 的 namespace 都是 consumer 自己定义的业务 contract。
@@ -87,7 +84,8 @@ custom provider 必须自己把连接清理注册到 lifecycle；consumer 和下
 
 ## Typed Lua scripts
 
-需要原子组合多个 Redis command 时，用 `defineRedisScript()` 把 keys、arguments 和返回值绑定成一个 definition：
+需要原子组合多个 Redis command 时，用 `defineRedisScript()` 把 keys、arguments 和返回值绑定成一个 definition。
+`arguments` tuple 含必需成员时，调用必须提供该字段；允许空数组的参数契约（例如 `readonly []` 或 `readonly [] | readonly [string]`）可省略。类型不会解析 Lua 或代替运行时校验。
 
 ```ts no-twoslash
 import { defineRedisScript } from '@pluxel/redis'
@@ -199,3 +197,36 @@ Workbench-enabled host 会用一张固定 Content 展示 bounded connection rows
 状态 listener。
 
 连接建立失败属于 lifecycle failure，required dependents 会被阻塞。调用期间的 node-redis command error、script error 或 adapter error 属于调用事实，应保留 error/cause，让 consumer 或上层 transport 明确选择重试、降级或失败；不要吞掉 Redis error 后报告成功。
+
+## 将缺失映射为业务 Result
+
+Redis 保留原生 node-redis API。只有领域确定“没有这个 key”需要调用方分支时，才在 consumer 转成 Result。
+下面读取应用自己管理的草稿文本，使用 default connection；空字符串仍是成功值。
+
+```ts twoslash
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { Redis } from '@pluxel/redis'
+
+export class DraftNotFound extends TaggedError('DraftNotFound')<{ id: string }> {}
+
+@Plugin()
+export class DraftsPlugin extends BasePlugin {
+	constructor(private readonly redis: Redis) {
+		super()
+	}
+
+	async read(id: string): Promise<Result<string, DraftNotFound>> {
+		const text = await this.redis.connection().client.get(`drafts:${id}`)
+		if (text === null) return Result.err(new DraftNotFound({ id }))
+		if (typeof text !== 'string') throw new TypeError('Expected UTF-8 draft text from Redis')
+		return Result.ok(text)
+	}
+}
+```
+
+调用方在 `read()` 返回 Err 时可展示“草稿不存在”，Ok 时显示 `value`。连接失败、权限错误、错误 Redis type 和
+generation 撤回继续 reject，不能降级为不存在。不要按 message 猜测 Redis 故障。
+Cache/Rates adapter 沿用各自的 miss/decision 契约，见[缓存示例](./cache.md#在缓存之外构造-result)与[限流示例](./rates.md#消费业务-result)。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/redis/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/redis/tests/redis.test.ts)。

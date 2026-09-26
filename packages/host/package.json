@@ -1,0 +1,89 @@
+{
+	"name": "@pluxel/host",
+	"version": "0.1.0",
+	"description": "Composable Plugin host, catalog and lifecycle control",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/host"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./bindings": {
+			"@pluxel/source": "./src/bindings.ts",
+			"default": "./dist/bindings.mjs"
+		},
+		"./dynamic": {
+			"@pluxel/source": "./src/dynamic/index.ts",
+			"default": "./dist/dynamic.mjs"
+		},
+		"./dynamic/source-producer": {
+			"@pluxel/source": "./src/dynamic/source-producer.ts",
+			"default": "./dist/dynamic/source-producer.mjs"
+		},
+		"./environment": {
+			"@pluxel/source": "./src/environment.ts",
+			"default": "./dist/environment.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./internal/protocol": {
+			"@pluxel/source": "./src/execution.ts",
+			"default": "./dist/internal/protocol.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./bindings": "./dist/bindings.mjs",
+			"./dynamic": "./dist/dynamic.mjs",
+			"./dynamic/source-producer": "./dist/dynamic/source-producer.mjs",
+			"./environment": "./dist/environment.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./internal/protocol": "./dist/internal/protocol.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "pnpm exec vitest run",
+		"bench:state": "pnpm exec vitest bench bench/state.bench.ts"
+	},
+	"dependencies": {
+		"@standard-schema/spec": "catalog:prod",
+		"chokidar": "catalog:node",
+		"ohash": "catalog:prod",
+		"picomatch": "catalog:prod",
+		"std-env": "catalog:prod",
+		"superjson": "catalog:validation",
+		"valibot-form": "workspace:^"
+	},
+	"devDependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@types/node": "catalog:types",
+		"@types/picomatch": "catalog:types",
+		"valibot": "catalog:validation"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

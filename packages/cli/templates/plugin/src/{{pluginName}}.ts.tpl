@@ -1,4 +1,5 @@
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 
 const MessageConfig = v.object({
 	message: v.optional(v.string(), 'ready'),

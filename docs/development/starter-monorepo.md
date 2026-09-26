@@ -1,6 +1,6 @@
 ---
 title: 把示例项目改成自己的应用
-description: 快速开始之后，定位业务代码、添加依赖、切换开发模式并构建应用。
+description: 快速开始之后，定位业务代码、添加依赖、配置动态来源并构建应用。
 ---
 
 完成[快速开始](../getting-started/index.md)后，用本页把 Todo 示例改成自己的应用：找到业务代码、调整配置、增加依赖，再构建可运行的目录。还没有项目时，先完成快速开始的创建和启动步骤。
@@ -20,14 +20,14 @@ pnpm dev
 
 ## 按要修改的功能找文件
 
-| 要做什么                 | 从哪里改                                                 | 如何确认                              |
-| ------------------------ | -------------------------------------------------------- | ------------------------------------- |
-| 修改 Todo 规则           | `packages/domain/`                                       | 运行该包的普通单元测试                |
-| 修改状态、配置或审计集成 | `plugins/todo/src/index.ts`                              | 运行 Todo 插件测试，再通过页面操作    |
-| 新增 HTTP 接口           | `plugins/http/src/index.ts`                              | 用 Runtime test host 请求最终路径     |
-| 修改产品页面             | `host/web/src/client/`                                   | 打开 Application 地址                 |
-| 改启动插件或初始配置     | `host/src/pluxel.static.ts`、`host/src/runtime-state.ts` | 检查启动结果和 Workbench 中的当前状态 |
-| 新增独立插件             | [第一个插件](../getting-started/first-plugin.md)         | 接入宿主后验证业务结果                |
+| 要做什么                 | 从哪里改                                         | 如何确认                              |
+| ------------------------ | ------------------------------------------------ | ------------------------------------- |
+| 修改 Todo 规则           | `packages/domain/`                               | 运行该包的普通单元测试                |
+| 修改状态、配置或审计集成 | `plugins/todo/src/index.ts`                      | 运行 Todo 插件测试，再通过页面操作    |
+| 新增 HTTP 接口           | `plugins/http/src/index.ts`                      | 用 服务 test host 请求最终路径        |
+| 修改产品页面             | `host/web/src/client/`                           | 打开 Application 地址                 |
+| 改启动插件或初始配置     | `host/src/app.ts`、`host/src/runtime-state.ts`   | 检查启动结果和 Workbench 中的当前状态 |
+| 新增独立插件             | [第一个插件](../getting-started/first-plugin.md) | 接入宿主后验证业务结果                |
 
 框架文档可用 `pnpm exec pluxel docs [path]` 定位；项目自己的 `docs/` 留给业务说明。
 
@@ -39,13 +39,11 @@ plugins/audit/              @example/audit-plugin，可选 provider
 plugins/todo/               config + domain + optional AuditPlugin
 plugins/http/               constructor required TodoPlugin + validated HTTP route
 host/
-  src/pluxel.static.ts      默认与生产入口
-  src/pluxel.dynamic.ts     相同 fixed catalog/config + mutable file source
-  src/runtime-state.ts      两种 host 共用的 auto-start/config snapshot
-  vite.config.ts            指向 web/ 的唯一 Vite config；mode 选择 runtime route
-  tsdown.config.ts          staticApplication() + Web public copy
+  src/app.ts                开发与生产应用声明：固定插件 + 可选 sources
+  src/runtime-state.ts      auto-start/config snapshot
+  vite.config.ts            指向 web/ 的唯一 Vite config
+  tsdown.config.ts          pluxel() + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
-pluxel.loader.hmr.jsonc     dynamic loader 的最小 example profile
 pncat.config.ts             catalog 分组和迁移的唯一策略入口
 ```
 
@@ -63,9 +61,9 @@ one Vite origin
 workspace dependency 对应 constructor required edge。Todo 对 Audit 使用 optional peer dependency、
 `peerDependenciesMeta.optional` 和非导出的 module-level `definePluginRef<AuditPlugin>()`，provider 不存在时仍能启动。
 
-## 使用默认的 Static 模式开发与部署
+## 开发与部署
 
-默认模式适合插件集合由应用代码决定的产品。
+一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../reference/runtime-services.md)。
 
 ```sh
 pnpm dev
@@ -73,7 +71,7 @@ pnpm build
 pnpm start
 ```
 
-`pnpm build` 生成 `host/dist/`，`pnpm start` 从 `host/dist/app.mjs` 启动。开发与生产使用同一份 `host/src/pluxel.static.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
+`pnpm build` 生成 `host/dist/`，`pnpm start` 从 `host/dist/app.mjs` 启动。开发与生产使用同一份 `host/src/app.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
 
 构建先生成 `host/web/dist`，再构建服务端并把页面复制到 `host/dist/public`，最后创建包含全部文件的发行清单。扩展构建时，把额外的静态文件写入安排在清单创建之前；详见[发行物](./distribution.md)。
 
@@ -104,34 +102,25 @@ pnpm governance:check
 
 分别用于添加、重新分组、清理和核对依赖。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
 
-插件生产代码通常只依赖 `@pluxel/runtime`。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](./testing.md)。
+插件生产代码依赖 `@pluxel/core` 与实际使用的服务、Workbench 和 validation 包。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](./testing.md)。
 
-## Dynamic 是 alternative host
+## 可选动态来源
 
-```sh
-pnpm dev:dynamic
-```
-
-`pnpm dev:dynamic` 仍读取同一个 `host/vite.config.ts`，只用 Vite `dynamic` mode 把 static route plugin 替换成 dynamic
-route plugin。`host/src/pluxel.dynamic.ts` 复用同一组 fixed plugins、auto-start policy 和 config snapshot，并额外观察：
-
-```text
-.pluxel/managed-plugins/*.mjs
-```
-
-这展示的是 mutable file source，不包含 package 下载或 market 管理。Static 与 dynamic 使用完全相同的 Plugin class、
-constructor dependency、optional ref 和 config authoring model；不要为两条 route 复制业务实现。
+`host/src/app.ts` 在固定 Plugin imports 之外声明 `.pluxel/managed-plugins/*.mjs`，默认数据目录相对进程工作目录。
+`PLUXEL_DATA_ROOT` 可以统一覆盖动态来源与 persistence 的数据根目录；部署时使用 distribution root 外的绝对路径。
+向这个目录原子发布已构建 ESM 入口，就能在同一个 catalog 中增加插件；是否启动由正常运行策略决定。
+这个示例不包含 package 下载或 market 管理。只需要固定插件时删除 `sources` 即可，Vite 配置和命令都不变。
 
 ## 测试层次
 
 - `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
-- `plugins/audit/tests` 使用 `@pluxel/core/test` 的 `createCoreTestHost()` 与立即完成的 `add/remove`。
-- `plugins/todo/tests` 使用 Core host 的 `initialConfig`，验证状态操作及 optional provider 存在与缺失两种情况。
-- `plugins/http/tests` 使用 `@pluxel/runtime/test` 的 `createRuntimeTestHost()`、`await using` 和 `host.http.fetch()` 验证 required edge、
+- `plugins/audit/tests` 使用 `@pluxel/test` 的 `createTestHost()` 与立即完成的 `start/stop`。
+- `plugins/todo/tests` 使用统一 host 的 `initialConfig`，验证状态操作及 optional provider 存在与缺失两种情况。
+- `plugins/http/tests` 使用 `@pluxel/test` 的 `createTestHost({ services: [elysia()] })`、`await using` 和 `host.http.fetch()` 验证 required edge、
   HTTP schema、mutation 与错误状态。
 - `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
 
-选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 Runtime service 才使用 Runtime host。常用 command 会立即提交；
+统一使用 `createTestHost()`，只安装本次需要的 HTTP、Workbench 或 Vault 等服务。常用操作会立即提交；
 多个变化必须共享边界时才使用同步 `commit(change => ...)`。首次配置使用 `initialConfig`，运行期更新使用
 `host.config.patch()`。
 
@@ -139,7 +128,6 @@ constructor dependency、optional ref 和 config authoring model；不要为两�
 
 ```sh
 pnpm dev
-pnpm dev:dynamic
 pnpm build
 pnpm test
 pnpm typecheck

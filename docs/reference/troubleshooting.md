@@ -5,7 +5,18 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 先按报错或看得见的现象找对应小节。构建问题在失败的 package 目录重跑原命令；正在运行的应用先读取真实状态和日志，避免用重启掩盖原因。
 
-Coding agent 检查当前 Vite 应用时，使用[开发控制台](../development/dev-console.md)：先发现实例，固定 `--root` 与 `--instance`，再读取状态、执行操作并核对领域结果。
+源码定位、在线状态和隔离回归分别使用 [inspect、devconsole 与测试](../development/index.md)。下面按具体症状排查。
+
+| 现象             | 优先查证                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| 安装或构建失败   | 报错 package 的直接依赖、exports、实际产物；不要先改 runtime                       |
+| 声明像普通 class | [工具链是否执行](#plugin-看起来是普通-class)                                       |
+| 节点未运行       | [目录、依赖、配置、生命周期报告](#plugin-没有启动)                                 |
+| 配置保存却未生效 | [配置更新结果](../getting-started/configuration.md#让运行中的-plugin-接收配置更新) |
+| HTTP 404         | [generation 发布与实际 carrier](#http-返回-404)                                    |
+| 停止后仍有工作   | [资源 owner 与等待清理](#停止后端口timer-或连接仍存在)                             |
+
+记录实际命令、实例、结构化错误及报告，再进入对应小节。错误消息用于阅读；程序分支依赖稳定 code。
 
 ## 刚发布的版本安装时报 `ERR_PNPM_NO_MATURE_MATCHING_VERSION`
 
@@ -24,14 +35,31 @@ Coding agent 检查当前 Vite 应用时，使用[开发控制台](../developmen
 
 不要把浏览器真正需要的模块加到 `external` 来消除报错；这样可能只是把构建失败变成浏览器加载失败。使用跨仓库源码时，先运行 `pluxel source doctor`，再按[源码开发](../development/source-workspaces.md)检查生成的解析配置。
 
+多个构建可以复用同一份 Node 制品编译缓存，但每个发行目录都必须拥有自己的 `artifacts/node` 文件与原生依赖清单。
+缓存目录存在不代表发行目录已经完整；部署时检查最终发行制品。
+
+## Cap’n Web 声明报 `TS2574`
+
+`capnweb@0.12.0` 的 `UnstubifyInner` 将 `Unstubify<Tail>` 展开为元组尾部，但该类型包含 `Promise` 和 placeholder，
+不保证是数组。TypeScript 6/7 在 `skipLibCheck: false` 时会报告两处 `A rest element type must be an array type`。
+这是上游声明问题；这一诊断本身不表示 RPC 运行时失败，但会阻塞严格类型检查。
+
+框架的独立安装检查只容忍这两处精确诊断，使用侧不会继承该例外。需要完整声明检查的项目应等待上游修复，或在自己的
+依赖管理中维护经过验证的类型补丁；框架 workspace 的补丁不会自动随 npm 包传递给使用侧。不要为此替换 RPC 协议。
+
+## Plugin 源码解析失败
+
+Vite/Rolldown lowering 只接受无语法错误的 AST；OXC 能生成恢复 AST 并不代表源码有效。修复报错模块中的语法后重试，
+不要依赖切换 parser 或关闭检查来生成 Plugin 元数据。
+
 ## Plugin 看起来是普通 class
 
 **现象：** Plugin 元数据、依赖、`configs.use()` 或 HMR 行为缺失。
 
 Plugin 源码必须经过 Pluxel 的 Vite/Rolldown 转换。不要用普通 TypeScript runner 直接执行 Plugin 文件，也不要把包的构建命令替换成裸 `tsc`。构建使用 `pluxel build`，测试使用 [Pluxel 测试宿主](../development/testing.md)。
 
-若出现 `plugin_lowering_abi_unsupported`，说明已构建 Plugin 与当前 Core/Runtime 工具链不属于同一 lowering ABI。升级匹配版本的
-Core、Runtime 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payload 或把旧产物当作缺省 metadata 继续加载。
+若出现 `plugin_lowering_abi_unsupported`，说明已构建 Plugin 与当前 Core/Host 工具链不属于同一 lowering ABI。升级匹配版本的
+Core、Host 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payload 或把旧产物当作缺省 metadata 继续加载。
 
 ## Plugin 没有启动
 
@@ -101,7 +129,7 @@ initializer 无副作用，并把该 integration 的 registration、资源和 cl
 
 业务路由与 Workbench View API 使用不同边界：
 
-- 业务 API 直接注册到 generation-scoped `ctx.elysia`；
+- 业务 API 直接注册到 generation-scoped `ctx.require(ElysiaApp)`；
 - Elysia 中声明的 path 就是最终产品 path，不会再自动增加 Plugin namespace；
 - Workbench API 只有启用 Workbench、owner publication 生效且用户实际打开 View 时才创建 fresh target；
 - route 必须在 Plugin/Part 的 construction 或 `init()` authoring window 声明；finalization 后 app 已由 Elysia 2 seal；

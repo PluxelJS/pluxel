@@ -4,7 +4,7 @@ import {
 	type CanvasWorkerAdapter,
 	type CanvasWorkerSnapshot,
 } from '@pluxel/canvas/worker'
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { EChartsConfig } from '../src/config.ts'
 import {

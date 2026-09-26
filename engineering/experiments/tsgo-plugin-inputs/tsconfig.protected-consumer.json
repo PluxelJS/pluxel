@@ -1,0 +1,7 @@
+{
+	"extends": "./tsconfig.protected.json",
+	"compilerOptions": {
+		"noEmit": true
+	},
+	"files": ["protected-consumer.ts"]
+}

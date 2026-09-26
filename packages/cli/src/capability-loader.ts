@@ -9,18 +9,20 @@ type PackageManifest = {
 	version?: string
 }
 
-export type OfficialCapabilityId =
-	| 'rolldown-build'
-	| 'rolldown-database'
-	| 'rolldown-distribution'
-	| 'rolldown-workspace-fs'
-	| 'rolldown-workspace-info'
-	| 'runtime-dynamic-hmr-diagnose'
-	| 'market'
+type OfficialCapabilityModules = {
+	'rolldown-build': typeof import('@pluxel/rolldown/internal/cli')
+	'rolldown-database': typeof import('@pluxel/rolldown/database')
+	'rolldown-distribution': typeof import('@pluxel/rolldown/distribution')
+	'rolldown-workspace-fs': typeof import('@pluxel/rolldown/workspace/fs')
+	'rolldown-workspace-info': typeof import('@pluxel/rolldown/workspace/info')
+	market: typeof import('@pluxel/market')
+}
+
+type OfficialCapabilityId = keyof OfficialCapabilityModules
 
 type OfficialCapabilityMetadata = {
 	command: string
-	owner: '@pluxel/rolldown' | '@pluxel/runtime-dynamic' | '@pluxel/market'
+	owner: '@pluxel/rolldown' | '@pluxel/market'
 	subpath: '.' | `./${string}`
 	install: string
 }
@@ -31,7 +33,7 @@ const OFFICIAL_CAPABILITIES = {
 	'rolldown-build': {
 		command: 'build',
 		owner: '@pluxel/rolldown',
-		subpath: './build',
+		subpath: './internal/cli',
 		install: 'pnpm add -D @pluxel/rolldown',
 	},
 	'rolldown-database': {
@@ -57,12 +59,6 @@ const OFFICIAL_CAPABILITIES = {
 		owner: '@pluxel/rolldown',
 		subpath: './workspace/info',
 		install: 'pnpm add -D @pluxel/rolldown',
-	},
-	'runtime-dynamic-hmr-diagnose': {
-		command: 'hmr',
-		owner: '@pluxel/runtime-dynamic',
-		subpath: './hmr/diagnose',
-		install: 'pnpm add -D @pluxel/runtime-dynamic',
 	},
 	market: {
 		command: 'publish --webhook',
@@ -103,29 +99,25 @@ export class OfficialCapabilityError extends Error {
 
 const importCache = new Map<string, Promise<unknown>>()
 
-export async function loadOfficialCapability<T>(
-	id: OfficialCapabilityId,
+export async function loadOfficialCapability<TId extends OfficialCapabilityId>(
+	id: TId,
 	options: { cwd?: string } = {},
-): Promise<T> {
+): Promise<OfficialCapabilityModules[TId]> {
 	const metadata = OFFICIAL_CAPABILITIES[id]
 	const cwd = resolve(options.cwd ?? getStartupCwd())
 	const cacheKey = `${cwd}\0${metadata.owner}\0${metadata.subpath}`
 	let promise = importCache.get(cacheKey)
 	if (!promise) {
-		promise = loadOfficialCapabilityUncached<T>(metadata, cwd)
+		promise = loadOfficialCapabilityUncached(metadata, cwd)
 		importCache.set(cacheKey, promise)
 	}
-	return (await promise) as T
+	return (await promise) as OfficialCapabilityModules[TId]
 }
 
-export function formatOfficialCapabilityError(error: OfficialCapabilityError): string {
-	return error.message
-}
-
-async function loadOfficialCapabilityUncached<T>(
+async function loadOfficialCapabilityUncached(
 	metadata: OfficialCapabilityMetadata,
 	cwd: string,
-): Promise<T> {
+): Promise<unknown> {
 	const projectRequire = createRequire(resolve(cwd, 'package.json'))
 	const ownerManifestSpecifier = `${metadata.owner}/package.json`
 	const importSpecifier =
@@ -161,7 +153,7 @@ async function loadOfficialCapabilityUncached<T>(
 	}
 
 	try {
-		return (await import(pathToFileURL(resolvedImport).href)) as T
+		return await import(pathToFileURL(resolvedImport).href)
 	} catch (cause) {
 		throw importFailedError(metadata, resolvedImport, cwd, cause)
 	}

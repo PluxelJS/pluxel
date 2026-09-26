@@ -2,7 +2,7 @@
  * Unsafe / low-level exports for specialized tests.
  *
  * DO NOT use these for normal plugin tests — prefer the smallest public host from
- * `@pluxel/core/test` or `@pluxel/runtime/test`.
+ * `@pluxel/test`.
  * These exist only for cases where you are explicitly testing lowered definition/config facts.
  */
 

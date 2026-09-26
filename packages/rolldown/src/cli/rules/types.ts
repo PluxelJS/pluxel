@@ -4,6 +4,7 @@ export interface RuleContext {
 	packageJsonPath: string
 	manifestField: string
 	pluginUsages: Map<string, PluginDependencyMode>
+	workbenchCapnwebVersion?: string
 }
 
 export type RuleMessages = string[] | undefined

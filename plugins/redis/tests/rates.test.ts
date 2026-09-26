@@ -1,11 +1,8 @@
+import { formatPluginNodeReference, type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
+import { standardServices } from '@pluxel/services'
+import { createTestHost, type TestHost } from '@pluxel/test'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { formatPluginNodeReference, type PluginConstructor, v } from '@pluxel/runtime'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
+import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -78,7 +75,7 @@ class RedisRatesConsumer extends BasePlugin {
 }
 
 async function startPlugins(
-	host: RuntimeTestHost,
+	host: TestHost<boolean>,
 	plugins: readonly PluginConstructor[],
 ): Promise<void> {
 	await host.start(plugins)
@@ -101,7 +98,9 @@ describe('@pluxel/redis rates backend', () => {
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.commit((change) => {
 				change.start(FakeRatesRedisPlugin)
@@ -151,7 +150,9 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await startPlugins(host, [
 				FakeRatesRedisPlugin,
@@ -178,7 +179,9 @@ describe('@pluxel/redis rates backend', () => {
 
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await startPlugins(host, [
 				FakeRatesRedisPlugin,

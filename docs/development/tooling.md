@@ -7,6 +7,8 @@ description: 了解脚手架、插件构建、静态应用、HMR、源码联调�
 
 Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；先发现并固定项目和实例，再执行 TypeScript 操作。
 
+源码定位使用 [inspect TypeScript API](./inspection.md)，没有 `pluxel inspect` 子命令。
+
 ## 当前 CLI 命令地图
 
 | 目标                                                     | 命令                                                          |
@@ -20,7 +22,6 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
 | 发布 npm package 并通知 market                           | `pluxel publish`                                              |
 | 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
-| Dynamic loader 诊断                                      | `pluxel hmr prompt/doctor/enabled`                            |
 | 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
 | 管理 source workspace                                    | `pluxel workspace`                                            |
 
@@ -68,7 +69,7 @@ npx nypm add -D @pluxel/rolldown tsdown oxlint
 Dynamic host：
 
 ```sh package-install
-npx nypm add -D @pluxel/runtime-dynamic
+npx nypm add @pluxel/host
 ```
 
 `publish --webhook`：
@@ -80,7 +81,7 @@ npx nypm add -D @pluxel/market
 有 Workbench browser entry 的 host 还需要 Vite/React 等自己的 web toolchain。插件 package 的 canonical scripts 见 [开发和发布插件包](./plugin-package.md)。
 
 这些可选包只在执行对应命令时从当前项目加载。`pluxel --help`、`pluxel --version` 和
-`pluxel new` 不会加载 Rolldown、runtime-dynamic 或 market；缺少对应包时只影响被调用的命令，并给出
+`pluxel new` 不会加载 Rolldown 或 market；缺少对应包时只影响被调用的命令，并给出
 安装提示。
 
 ## 自定义本地 Plugin 模板
@@ -120,90 +121,37 @@ JavaScript hook 或 post-create command，也不接受 symlink。
 CLI 在首次写入前完成 manifest、UTF-8 token、path containment、portable collision 和已有目标检查。
 local template 默认不运行 package manager；审查模板内容后显式传入 `--install` 才会执行安装及 lifecycle scripts。
 
-## `pluxel build`
+## 构建入口
 
-在插件包目录运行 `pnpm exec pluxel build`。成功后检查 `dist/` 和更新后的 manifest，再通过 `pnpm pack --dry-run` 确认可交付文件。命令只处理当前 package root：
+Plugin package 使用 `pluxel build`，配普通 tsdown config；`--watch` 与 `--debug` 可用于持续构建和诊断。
+CLI 安装标准 semantic pipeline，成功后同步 metadata；作者不重复安装转换插件。
+完整 package 配置、Part 依赖聚合与 pack 验证见[插件包](./plugin-package.md)。自定义构建工具才使用 `@pluxel/rolldown/build` 的 `pluginPackage()`。
 
-1. 读取 `package.json` 与 tsdown config；
-2. 合并标准 Plugin build pipeline；
-3. 运行 preprocessor、decorator/config semantic extraction，并聚合 PluginPart dependency facts；
-4. 生成 server ESM 与 declarations；
-5. 按 declaration 生成 Workbench Content/MF producer、Node module、worker、database artifact；
-6. 成功后事务性同步 generated package metadata。
-
-用户 `tsdown.config.ts` 只描述 entry/output/minify/sourcemap 等普通 bundler 配置。不要再次安装第二套 semantic plugin。
-
-```sh
-pluxel build
-pluxel build --watch
-pluxel build --debug
-```
-
-package script 传参时：
-
-```sh
-pnpm build -- --watch
-```
-
-Plugin 与 concrete direct `PluginPart` subclass 都可以在 constructor 声明 required dependency。工具链保留每个 constructor 的参数
-顺序，再把 reachable Part requirements 提升、去重到 owning Plugin graph。生成 package metadata 时，同一 provider package 只出现
-一次，任一 constructor 来源为 required 都会覆盖 optional classification；作者不要在 owner constructor 或 `package.json` 复制一份
-Part dependency allowlist。metadata collector 从 package 的 concrete Plugin roots 遍历本地 Part containment；仅被 transform、但没有被
-任何 owner 使用的 Part 不进入清单。外部 package 提供的预构建 Part 由其所属 package 声明自己的 provider peers，consumer package
-不会反查或复制它的传递 inventory。
-
-## `pluginPackage()` 与 CLI build
-
-`pluginPackage()` 是 `@pluxel/rolldown/build` 的底层 library integration。CLI template 的 canonical 入口是 `pluxel build` + 普通 tsdown config；不要同时把两种模式叠加。
-
-直接构建自定义工具时才调用 library API：
-
-```ts twoslash
-import { pluginPackage } from '@pluxel/rolldown/build'
-```
-
-普通 Plugin 作者不需要直接使用它。
-
-## Static application build
-
-Static application 使用不同输出拓扑：
-
-```ts twoslash
-import { staticApplication } from '@pluxel/rolldown/build'
-
-export default staticApplication({
-	entry: './src/pluxel.static.ts',
-	variant: 'workbench',
-	target: 'node',
-})
-```
-
-| Build              | 依赖策略                              | 输出目的             |
-| ------------------ | ------------------------------------- | -------------------- |
-| Plugin package     | 保留 runtime/provider peer boundary   | npm 发布与多宿主复用 |
-| Static application | 冻结 fixed closure 与 Node deployment | 可部署完整目录       |
-
-不要把 static application preset 用于独立 Plugin package，也不要把 target 机安装 package 当作 static closure 的一部分。
+应用使用[宿主构建配置](../getting-started/host-setup.md#生产构建)：官方组合为 `buildPreset()`，底层集成为 `pluxel()`。
+Plugin build 保留 provider peer 边界供多宿主使用；应用 build 冻结部署闭包，两种 preset 不混用。
 
 ## Source build boundary
 
-Static/dynamic Vite adapters 执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
+Host 的 Vite 接入执行 Plugin semantic lowering、config extraction、artifact discovery 和 HMR wiring。
 Plugin source entry 必须通过这些 adapters 加载；Node 原生 type stripping 不生成 Pluxel metadata。Workbench browser
 graph 与 server Plugin implementation 保持分离。
 
-Static Vite 更新因新增导入失败时会保留上一版本，并持续观察失败候选需要的文件与 package 安装目录。
-只修复新文件或安装缺失依赖就能触发重试，无需再次编辑原 Plugin 文件；更新成功后释放这些临时恢复监听。
+`host()`（以及组合它的官方 `vitePreset()`）拥有专用 `pluxel` Vite environment；应用、动态插件和控制台共享
+其中的执行空间。默认 SSR 与第三方插件的 `ssrLoadModule` 保持独立，也可以配置自己的 SSR environment factory。
+`hostSingletons({ packages })` 在 Host environment 内指定与 Node 宿主共享身份的包，需与 `host()` 一起使用。
+第三方 SSR 加载出来的 Plugin constructor 不属于 Host；操作运行中的插件请使用控制台或 Host 的服务 API。
 
-`workbench.markdown(import.meta.url, './guide.md')` 的 source 会进入 adapter watch graph，并在 server transform 阶段编译；
-Content-only definition 不创建 browser module graph，即使 Content 包含 data/action slot。Definition 同时含 Content 与 View
-renderer 时，dev compiler 会先提交 definition topology 与 Content plan；已有 producer artifact 快速复用，缺失或过期的
-producer 在后台构建，完成后再提交完整 tuple 并触发 Workbench session reload。后台 producer 失败不会阻塞 Runtime
-启动，对应 View/Attachment placement 会保留在 layout 中，未就绪时显示构建中，失败后显示错误状态。Content schema 与
-handler 只留在 server binding，不进入 browser projection；production/static build 仍要求 Content 与 MF producer 全部严格通过后才发布 artifact。
+Host environment 默认使用 Vite 的 `resolve.tsconfigPaths` 解析项目 TypeScript 路径别名；若不需要，在 Vite config 显式设为 `false`。
+源码中的 `// #if VITE_FEATURE` 条件编译读取当前 Vite mode 对应的环境变量；例如 `--mode staging` 使用 `.env.staging` 中的 `VITE_FEATURE`。条件编译在源码转换时完成，不读取请求期环境变量。
+包导出条件沿用 Vite 的浏览器/服务端及开发/生产区分；Host 源码环境仅额外启用 Pluxel 的源码条件，不会让浏览器选择 Node 入口或让生产构建选择开发入口。
+包导出与别名均先按当前 Vite 环境解析；Host environment 选中的 CommonJS 文件由 Node 加载，避免 `require is not defined`。浏览器代码误引 `node:fs`、`fs/promises` 等
+Node 内置模块时，开发构建立刻报告模块名和导入者；把调用移到服务端，或通过 Vite alias 提供真正的浏览器实现。
+
+Workbench Content 和 renderer 的候选更新、构建中/失败状态见[工作台故障](../workbench/operations.md#生命周期和故障)。
 
 当前生成产物使用 Plugin lowering ABI v2，其中 root constructor arguments、Part constructor arguments 与 owner aggregate graph facts
 是分离字段。旧 ABI artifact 不会被当成“没有 Part dependency”继续加载；看到 `plugin_lowering_abi_unsupported` 时，应配套升级
-Core/Runtime/Rolldown 并重建 Plugin，而不是手写 `@pluxel/core/toolchain` helper。
+Core/Host/Rolldown 并重建 Plugin，而不是手写 `@pluxel/core/toolchain` helper。
 
 低层 source adapter 默认把 `root` 映射为逻辑 source space `app`。需要承载不属于 package root 的额外源码树时，显式声明
 稳定的逻辑名称：
@@ -221,18 +169,12 @@ const plugins = pluginSourceVitePlugins({
 symlinked root，但会拒绝通过文件 symlink 逃出 root。修改 `name`、root 映射或嵌套关系会改变 Plugin address；需要跨宿主布局
 稳定的可发布 Plugin 应使用 package root named export。
 
-## Node/worker artifact
-
-`defineNodeModule()` 和 `defineWorkerTask()` 的 literal declaration 会生成 `dist/artifacts/node/` 下的独立 ESM。artifact 使用独立 graph validator，不能 value-import Plugin runtime/Context。
-
-详细 clone/native/lifecycle 约束见 [Node module 与 worker task](../runtime/node-artifacts.md)。
-
 ## HMR 失败与自动恢复
 
 排查更新时分别看三个事实：运行意图决定插件是否应该运行，当前状态说明它是否已经运行，更新历史说明上次更新发生了什么。
 一次更新已提交，不代表每个插件都已启动；某个插件启动失败，也不代表同一批次里的其他插件失败。
 
-Static 与 dynamic host 的插件源码 HMR 都保留运行意图。原来要求运行的插件即使启动失败，也不会被改成手动停止；
+显式 catalog 与动态来源 的插件源码 HMR 都保留运行意图。原来要求运行的插件即使启动失败，也不会被改成手动停止；
 下一次有效源码更新会自动启动修复后的版本，连同被 required dependency 阻塞的 consumer 一起恢复，不需要去工作台点击“启动”。
 用户主动停止的插件则继续停止，源码更新不会覆盖这个选择。
 
@@ -253,7 +195,7 @@ Static 与 dynamic host 的插件源码 HMR 都保留运行意图。原来要求
 修改 application entry 或 host 配置会重建宿主，使用新的启动策略；这与同一宿主内保留运行意图的插件 HMR 不同，
 详见 [宿主设置](../getting-started/host-setup.md)。
 
-Static Vite 会保留失败候选的新依赖：新增 import 导致更新失败后，只修正新文件、创建缺失模块或完成依赖安装，也会自动重新求值。
+Vite 会保留失败候选的新依赖：新增 import 导致更新失败后，只修正新文件、创建缺失模块或完成依赖安装，也会自动重新求值。
 成功接纳后释放这批恢复依赖。更新被拒绝时，旧后端继续使用旧 Workbench Content 与界面产物；候选产物在目录接受时才生效。
 
 已知边界：Vite 8 的原生解析器可能缓存目录包指向不存在入口的成功解析；此时只改该目录包的 `exports`，仍可能返回旧入口。
@@ -266,35 +208,9 @@ Workbench 收到 publication、运行 generation 或产物变化造成的会话�
 连续更新采用递增等待；10 秒内已自动刷新 3 次时暂停，显示手动刷新入口，避免错误导致页面反复跳转。认证失效和连接损坏不会自动重试。
 刷新保留当前地址及已保存的工作区布局，不保存尚未提交的表单草稿。
 
-## HMR diagnostics
+## 验证
 
-Dynamic host 用户通过：
-
-```sh
-pluxel hmr doctor
-pluxel hmr prompt
-pluxel hmr enabled
-```
-
-workspace diagnostics 的 library subpath 是 `@pluxel/runtime-dynamic/hmr/diagnose`。它诊断 profile、source discovery 和 snapshot，不注册 dynamic runtime services。
-
-## 验证顺序
-
-```sh
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-```
-
-遇到 build-time error 时先按作者边界判断：
-
-- root export 是否唯一可追溯；
-- Plugin/PluginPart constructor dependency 是否从 provider root value-import，同一 constructor 是否重复 definition；
-- Plugin/PluginPart 的 `configs.use()` 是否各自是唯一的 object schema class field；
-- `parts.use()` 是否完整占据普通 class field，并引用 direct `PluginPart` subclass；
-- optional ref/use 是否符合 direct-call shape；
-- Workbench/worker/database declaration 是否使用 literal entry。
-
-跨 checkout 联调见 [跨仓库源码开发](./source-workspaces.md)，发行物命令见 [Static 发行物](./distribution.md)。
+运行受影响 package 的实际 scripts；源码声明位置与脚本可用 [inspect](./inspection.md) 查询。
+构建失败先看报错对应的 root export、constructor、`configs.use()`、`parts.use()` 或 literal declaration，不通过关闭 lowering 绕过错误。
+当前应用的状态、最近更新和日志使用[devconsole](./dev-console.md)读取。
+跨 checkout 联调见[源码开发](./source-workspaces.md)，发行检查见[静态发行物](./distribution.md)。

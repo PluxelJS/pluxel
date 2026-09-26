@@ -1,0 +1,12 @@
+// A minimal schema double keeps this experiment independent of framework APIs.
+const Schema = {
+  input: undefined as unknown as { enabled?: boolean; endpoint: string; retries?: string },
+  output: undefined as unknown as { enabled: boolean; endpoint: string; retries: number },
+}
+class BasePlugin {
+  protected configs = { use<S extends { output: unknown }>(schema: S): S['output'] { return schema.output } }
+}
+export class DemoPlugin extends BasePlugin {
+  private config = this.configs.use(Schema)
+  get retries() { return this.config.retries }
+}

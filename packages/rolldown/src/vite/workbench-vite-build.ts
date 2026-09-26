@@ -81,7 +81,7 @@ function createViteConfig(
 			minify: options.minify,
 			cssCodeSplit: true,
 			sourcemap: options.sourcemap,
-			rollupOptions: {
+			rolldownOptions: {
 				input: Object.fromEntries(
 					Object.entries(options.exposes).map(([expose, entry]) => [
 						expose.slice('./views/'.length),

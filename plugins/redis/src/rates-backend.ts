@@ -6,10 +6,11 @@ import {
 	type ResolvedRatePolicy,
 	RatesPolicyConflictError,
 } from '@pluxel/rates'
-import { formatPluginNodeReference, Plugin, type PluginNodeAddress, v } from '@pluxel/runtime'
+import { formatPluginNodeReference, Plugin, type PluginNodeAddress } from '@pluxel/core'
+import * as v from 'valibot'
 import { Redis, type RedisConnection } from './client.ts'
 import { defineRedisScript, type RedisScriptDefinition, type RedisScriptRunner } from './scripts.ts'
-import { isRedisConnectionId, isWellFormedUnicode } from './validation.ts'
+import { isRedisConnectionId } from './validation.ts'
 
 type RedisRatesReply =
 	| { kind: 'decision'; decision: RateDecision }
@@ -368,7 +369,7 @@ export const RedisRatesBackendConfig = v.object({
 		v.pipe(
 			v.string(),
 			v.maxLength(256),
-			v.check(isWellFormedUnicode, 'keyPrefix must be well-formed Unicode'),
+			v.check((value) => value.isWellFormed(), 'keyPrefix must be well-formed Unicode'),
 		),
 		'pluxel:rates:',
 	),

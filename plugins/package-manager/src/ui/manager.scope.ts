@@ -1,22 +1,22 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { PackageManagerWorkbench } from '../workbench.ts'
 
 export const managerScope = createWorkbenchRenderer(PackageManagerWorkbench.manager)
 
 export const packageManagerSnapshotQuery = managerScope.query(({ api }) => ({
 	queryKey: ['package-manager', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 }))
 
 export const installPackagesMutation = managerScope.mutation(({ api }) => ({
-	mutationFn: (specs: readonly string[]) => api.install(specs),
+	mutationFn: (specs: readonly string[]) => api.installDto(specs),
 	workbench: {
 		invalidates: [packageManagerSnapshotQuery],
 	},
 }))
 
 export const removePackagesMutation = managerScope.mutation(({ api }) => ({
-	mutationFn: (names: readonly string[]) => api.remove(names),
+	mutationFn: (names: readonly string[]) => api.removeDto(names),
 	workbench: {
 		invalidates: [packageManagerSnapshotQuery],
 	},

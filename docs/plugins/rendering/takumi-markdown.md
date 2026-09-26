@@ -29,7 +29,7 @@ host catalog 包含 Fonts、Takumi、Markdown 和 consumer。MarkdownPlugin 已 
 Takumi 又 required-depend Fonts；业务 Plugin 只注入直接使用的 Markdown capability：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
 
 @Plugin()
@@ -116,7 +116,7 @@ expression：普通字母、数字、数学符号、空白、分组和表达式�
 字符串、path、import/include/read、image、plugin 等会在编译前拒绝。
 
 它不是通用 Typst document compiler：不能传 main file、package、font、页面选项、网络 source 或外部 input；
-也不支持 MDX。每个公式在 Runtime shared Worker 生成 SVG asset，再进入这一次最终 Takumi render，
+也不支持 MDX。每个公式在 宿主共享 Worker 生成 SVG asset，再进入这一次最终 Takumi render，
 不会创建内嵌 renderer。
 
 ## 自定义受信任 Markdown 扩展
@@ -154,3 +154,80 @@ native settlement 后才释放。
 缩小输入、延后任务或由 host operator 明确调整 config；consumer 不应捕获错误后自行绕过 host
 budget。Takumi 的字体、remote image loading、render output 与 native cancellation 细节见
 [Takumi HTML 图片渲染](./takumi.md)。
+
+## 将可恢复失败交给业务调用方
+
+文档预览可以要求用户缩短过大的 Markdown，consumer 因而只把 `MARKDOWN_TOO_LARGE` 转成 Err。
+`renderer` 是当前 consumer 从 `createRenderer()` 取得的 handle，使用期间借给这个普通 helper。
+
+```ts no-twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import type { TakumiRenderResult } from '@pluxel/takumi'
+import {
+	MarkdownError,
+	type MarkdownRenderer,
+	type MarkdownRenderInput,
+} from '@pluxel/takumi-markdown'
+
+export class DocumentTooLarge extends TaggedError('DocumentTooLarge')<{ message: string }> {}
+
+export async function renderDocument(
+	renderer: MarkdownRenderer,
+	input: MarkdownRenderInput,
+): Promise<Result<TakumiRenderResult, DocumentTooLarge>> {
+	try {
+		return Result.ok(await renderer.render(input))
+	} catch (error) {
+		if (error instanceof MarkdownError && error.code === 'MARKDOWN_TOO_LARGE') {
+			return Result.err(new DocumentTooLarge({ message: 'Shorten the Markdown document.' }))
+		}
+		throw error
+	}
+}
+```
+
+调用方对 Err 提示缩短文档，Ok 时使用图片数据；最终仍用 `try/finally` 调用 `renderer.close()`，或按既有
+caller generation 清理。extension bug、资源冲突、取消、Worker 故障和已关闭 handle 不属于文档超限。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown/tests/markdown.test.ts)。
+
+### Typst 公式校验
+
+启用数学扩展后，`TypstMathError` 会穿过 Markdown renderer，consumer 按稳定 code 捕获用户能修正的失败。
+将下例的 renderer 创建为 `markdown.createRenderer({ extensions: [typst.createMarkdownExtension()] })`；
+`markdown` 和 `typst` 均来自 constructor dependency。
+
+```ts no-twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import type { TakumiRenderResult } from '@pluxel/takumi'
+import type { MarkdownRenderer, MarkdownRenderInput } from '@pluxel/takumi-markdown'
+import { TypstMathError } from '@pluxel/takumi-markdown-typst'
+
+export class FormulaRejected extends TaggedError('FormulaRejected')<{
+	reason: 'invalid_formula' | 'too_large'
+}> {}
+
+// The renderer must be created with typst.createMarkdownExtension().
+export async function renderFormulaDocument(
+	renderer: MarkdownRenderer,
+	input: MarkdownRenderInput,
+): Promise<Result<TakumiRenderResult, FormulaRejected>> {
+	try {
+		return Result.ok(await renderer.render(input))
+	} catch (error) {
+		if (error instanceof TypstMathError && error.code === 'FORMULA_INVALID') {
+			return Result.err(new FormulaRejected({ reason: 'invalid_formula' }))
+		}
+		if (error instanceof TypstMathError && error.code === 'FORMULA_TOO_LARGE') {
+			return Result.err(new FormulaRejected({ reason: 'too_large' }))
+		}
+		throw error
+	}
+}
+```
+
+Err 时按 `reason` 提示修正受限语法或缩短公式，Ok 时读取图片数据；handle 的关闭责任仍属于创建它的 consumer。
+这里不把 `FORMULA_COMPILE_FAILED`、未知扩展错误或 Worker 故障当成公式语法问题。
+若要组合文档超限与公式错误，在同一个领域方法中明确声明两种错误 union，不重复捕获所有 renderer 异常。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown-typst/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown-typst/tests/typst-plugin.test.ts)。

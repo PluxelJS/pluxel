@@ -7,14 +7,12 @@
 		"wretch",
 		"auth",
 		"rendering",
-		"agent-tools",
 		"---工作区预览（不可安装）---",
 		"cache",
 		"rates",
 		"redis",
 		"storage",
 		"otel",
-		"package-manager",
-		"pi-agent"
+		"package-manager"
 	]
 }

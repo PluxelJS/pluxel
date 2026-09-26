@@ -1,4 +1,4 @@
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { S3Config } from '../src/index.ts'
 

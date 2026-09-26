@@ -1,12 +1,7 @@
+import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
+import { standardServices } from '@pluxel/services'
+import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { FontsPlugin } from '@pluxel/fonts'
-import type { PluginConstructor } from '@pluxel/runtime'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RawPluginConfig,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { defineHastPlugin, defineMdastPlugin } from 'satteri'
 import { describe, expect, it } from 'vitest'
@@ -16,6 +11,7 @@ import {
 	type MarkdownExtension,
 	type MarkdownExtensionFeatures,
 } from '../src/index.ts'
+import { renderDocument } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class MarkdownTestConsumer extends BasePlugin {
@@ -28,7 +24,7 @@ class MarkdownTestConsumer extends BasePlugin {
 }
 
 async function startMarkdownFixture(
-	host: RuntimeTestHost,
+	host: TestHost<boolean>,
 	options: Readonly<{
 		markdown?: RawPluginConfig
 		takumi?: RawPluginConfig
@@ -51,8 +47,53 @@ async function startMarkdownFixture(
 }
 
 describe('TakumiMarkdownPlugin', () => {
+	it('demonstrates source limits as a Result without hiding extension defects or closed handles', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
+		await startMarkdownFixture(host, { markdown: { maxSourceBytes: 32 } })
+		const markdown = host.require(MarkdownTestConsumer).markdown
+		const renderer = markdown.createRenderer()
+		try {
+			const rendered = await renderDocument(renderer, { markdown: '# Hi', width: 64, height: 32 })
+			expect(rendered.isOk()).toBe(true)
+			const tooLarge = await renderDocument(renderer, {
+				markdown: 'x'.repeat(33),
+				width: 64,
+				height: 32,
+			})
+			expect(tooLarge.isErr()).toBe(true)
+			if (tooLarge.isOk()) throw new Error('Unexpected Result branch')
+			expect(tooLarge.error._tag).toBe('DocumentTooLarge')
+		} finally {
+			await renderer.close()
+		}
+		await expect(
+			renderDocument(renderer, { markdown: 'Hi', width: 64, height: 32 }),
+		).rejects.toMatchObject({ code: 'NOT_RUNNING' })
+		const broken = markdown.createRenderer({
+			extensions: [
+				{
+					name: 'broken',
+					create() {
+						throw new Error('defect')
+					},
+				},
+			],
+		})
+		try {
+			await expect(
+				renderDocument(broken, { markdown: 'Hi', width: 64, height: 32 }),
+			).rejects.toMatchObject({ code: 'EXTENSION_FAILED' })
+		} finally {
+			await broken.close()
+		}
+	})
+
 	it('renders GFM tables, removes raw HTML, and gives caller HAST extensions Rangi output', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 		await startMarkdownFixture(host)
 		const consumer = host.require(MarkdownTestConsumer)
 		let sawHighlightedCode = false
@@ -104,7 +145,9 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('runs extension factories and AST phases in declaration order after admission', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 		await startMarkdownFixture(host)
 		const phases: string[] = []
 		const extension = (name: string): MarkdownExtension => ({
@@ -149,7 +192,9 @@ describe('TakumiMarkdownPlugin', () => {
 		}
 	})
 	it('rejects malformed extension parser feature variants before creating a renderer', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 		await startMarkdownFixture(host)
 		const markdown = host.require(MarkdownTestConsumer).markdown
 
@@ -171,7 +216,9 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('does not invoke an extension factory when Takumi admission is full', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 		await startMarkdownFixture(host, {
 			takumi: {
 				maxConcurrentRenders: 1,
@@ -205,7 +252,9 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('keeps extension and generated-asset failures structured, then closes renderer handles', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 		await startMarkdownFixture(host, { markdown: { maxAssets: 1 } })
 		const renderer = host.require(MarkdownTestConsumer).markdown.createRenderer({
 			extensions: [
@@ -254,7 +303,9 @@ describe('TakumiMarkdownPlugin', () => {
 	})
 
 	it('rejects reserved internal asset sources without executing a conversion', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 		await startMarkdownFixture(host)
 		const renderer = host.require(MarkdownTestConsumer).markdown.createRenderer()
 		try {

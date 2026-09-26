@@ -1,24 +1,39 @@
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/vite'
-import type { Plugin, PluginOption } from 'vite'
+import { isBuiltin } from 'node:module'
+import {
+	defaultClientConditions,
+	defaultServerConditions,
+	type Plugin,
+	type PluginOption,
+} from 'vite'
 import {
 	configSourcePlugin,
 	type ConfigSourcePluginOptions,
 } from '../rolldown/plugins/configSourcePlugin'
 import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugins/lintGuardPlugin'
-import { serverOnlyVitePlugin, serverOnlyVitePluginFactory } from './environment'
+import {
+	isBrowserConsumerEnvironment,
+	serverOnlyVitePlugin,
+	serverOnlyVitePluginFactory,
+} from './environment'
 import {
 	createPluginSemanticsPlugin,
 	type PluginSemanticsCollector,
 	type PluginSemanticsPluginOptions,
 } from '../rolldown/plugins/pluginSemanticsPlugin'
-import { databaseSourceVitePlugin } from './database-source'
-import { PLUXEL_UI_DEDUPE_PACKAGES } from '../workspace/vite'
 
 export type PluginSourceVitePluginsOptions = {
 	root?: string
 	sourceSpaces?: PluginSemanticsPluginOptions['sourceSpaces']
 	configSource?: false | ConfigSourcePluginOptions
 	lintGuard?: false | LintGuardPluginOptions
+	/** Vite plugin name for Pluxel source/server resolution and OXC semantics. */
+	name?: string
+	/**
+	 * Selects whether bare package imports may use Pluxel source export conditions.
+	 * `distribution` keeps transforms for explicit source while resolving built package exports.
+	 */
+	packageMode?: 'development' | 'distribution'
 }
 
 export type PluginSourceVitePipeline = Readonly<{
@@ -29,6 +44,7 @@ export type PluginSourceVitePipeline = Readonly<{
 		| 'definitions'
 		| 'classifyDefinitionArtifact'
 		| 'beginArtifactGeneration'
+		| 'builtDefinitionModules'
 		| 'workbenchPlans'
 		| 'workbenchCompilations'
 		| 'workbenchContentCompilations'
@@ -40,85 +56,70 @@ const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
 	// Plugin packages use a dedicated dev export so their generated manifests do
 	// not expose raw TypeScript through the framework-only source condition.
 	'@pluxel/hmr',
-	// Framework-neutral packages use Node's community development condition.
-	'development',
 	'@pluxel/source',
-	'node',
-	'import',
-	'module',
-	'browser',
-	'production',
-	'default',
 ] as const
 
 const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
-
-const PLUXEL_SINGLETON_PACKAGES = [
-	'@pluxel/runtime',
-	'@pluxel/runtime-dev',
-	'@pluxel/runtime-dynamic',
-	'@pluxel/runtime-static',
-	'drizzle-orm',
-] as const
-
-// Browser UI singletons are part of the Pluxel host boundary. Keep them in
-// the shared source preset so static and dynamic projects do not each have to
-// repeat the same Module Federation dedupe configuration.
-const PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES = [
-	...PLUXEL_SINGLETON_PACKAGES,
-	...PLUXEL_UI_DEDUPE_PACKAGES,
-] as const
-
-const PLUXEL_SSR_EXTERNAL_PACKAGES = [
-	'@pluxel/core',
-	'@pluxel/runtime',
-	'@pluxel/runtime-dev',
-	'@pluxel/runtime-static',
-] as const
-
-export type PluxelRuntimeSourceVitePluginsOptions = PluginSourceVitePluginsOptions & {
-	/** Vite plugin name for Pluxel source/server resolution and OXC semantics. */
-	name?: string
-	/**
-	 * Selects whether bare package imports may use development/source export conditions.
-	 * `distribution` keeps transforms for explicit source while resolving built package exports.
-	 */
-	packageMode?: 'development' | 'distribution'
-}
 
 /** Vite adapter for source transforms that are safe in a long-lived dev server. */
 export function pluginSourceVitePlugins(
 	options: PluginSourceVitePluginsOptions = {},
 ): PluginOption[] {
-	return createPluginSourcePlugins(
-		options,
-		(root) =>
-			createPluginSemanticsPlugin({
-				root,
-				sourceSpaces: options.sourceSpaces,
-			}).plugin as Plugin,
-	)
+	return [
+		...createPluginSourcePlugins(
+			options,
+			(root) =>
+				createPluginSemanticsPlugin({
+					root,
+					sourceSpaces: options.sourceSpaces,
+				}).plugin as Plugin,
+		),
+		createSourceConfigPlugin(options),
+	]
 }
 
 function createPluginSourcePlugins(
 	options: PluginSourceVitePluginsOptions,
 	semantics: (root: string) => Plugin,
+	environmentName?: string,
 ): PluginOption[] {
+	const preprocessors = [PreprocessorDirectives()].flat()
+	// Keep configResolved at the top level so Vite supplies mode-specific env values.
+	for (const plugin of preprocessors) {
+		plugin.applyToEnvironment = (environment) =>
+			!environmentName ||
+			environment.name === environmentName ||
+			isBrowserConsumerEnvironment(environment)
+	}
 	const plugins: PluginOption[] = [
-		PreprocessorDirectives(),
-		serverOnlyVitePluginFactory(
-			'pluxel:database-source',
-			(environment) => databaseSourceVitePlugin({ root: options.root ?? environment.config.root }),
-			{ enforce: 'pre' },
-		),
+		...preprocessors,
+		{
+			name: 'pluxel:browser-node-imports',
+			enforce: 'pre',
+			applyToEnvironment: isBrowserConsumerEnvironment,
+			async resolveId(source, importer, resolveOptions) {
+				if (!isBuiltin(source)) return null
+				// Let Vite and user aliases supply an intentional browser implementation first.
+				const resolved = await this.resolve(source, importer, { ...resolveOptions, skipSelf: true })
+				if (resolved?.id.startsWith('__vite-browser-external')) {
+					this.error(
+						`[pluxel] Node-only import ${JSON.stringify(source)} in browser module ${JSON.stringify(importer ?? '<entry>')}; move it to server code or provide a browser implementation.`,
+					)
+				}
+				return resolved
+			},
+		},
+	]
+	const serverPlugins: PluginOption[] = [
 		serverOnlyVitePluginFactory(
 			'pluxel:plugin-semantics',
 			(environment) => semantics(options.root ?? environment.config.root) as Plugin,
-			{ enforce: 'pre' },
+			{ enforce: 'pre', environment: environmentName },
 		),
 	]
+
 	if (options.lintGuard !== false) {
-		plugins.push(
+		serverPlugins.push(
 			serverOnlyVitePluginFactory(
 				'pluxel-lint-guard',
 				(environment) =>
@@ -126,54 +127,62 @@ function createPluginSourcePlugins(
 						cwd: options.root ?? environment.config.root,
 						...options.lintGuard,
 					}),
-				{ enforce: 'pre' },
+				{ enforce: 'pre', environment: environmentName },
 			),
 		)
 	}
 	if (options.configSource !== false) {
-		plugins.push(
-			serverOnlyVitePlugin('pluxel-config-source', configSourcePlugin(options.configSource ?? {}), {
+		serverPlugins.push(
+			serverOnlyVitePlugin('pluxel-config-source', configSourcePlugin(options.configSource), {
 				enforce: 'pre',
+				environment: environmentName,
 			}),
 		)
 	}
-	return plugins
+	return [...plugins, ...serverPlugins]
 }
 
 /**
- * Concrete source pipeline for a runtime route that must consume the exact same semantic facts
+ * Concrete source pipeline for a Host that must consume the exact same semantic facts
  * as its Vite transforms. The returned collector is the sole Workbench plan authority.
  */
 export function createPluginSourceVitePipeline(
-	options: PluxelRuntimeSourceVitePluginsOptions = {},
+	options: PluginSourceVitePluginsOptions & {
+		/** The sole server environment owning this pipeline's semantic collector. @default 'ssr' */
+		environment?: string
+	} = {},
 ): PluginSourceVitePipeline {
+	const environment = options.environment ?? 'ssr'
 	let collector: PluginSemanticsCollector | undefined
 	let collectorRoot: string | undefined
 	const createSemantics = (root: string): Plugin => {
 		if (collector) {
 			if (collectorRoot !== root) {
 				throw new Error(
-					`[pluxel:runtime-source] one source pipeline cannot span Vite roots ${collectorRoot} and ${root}`,
+					`[pluxel:plugin-source] one source pipeline cannot span Vite roots ${collectorRoot} and ${root}`,
 				)
 			}
 			return collector.plugin as Plugin
 		}
 		collectorRoot = root
-		collector = createPluginSemanticsPlugin({ root, sourceSpaces: options.sourceSpaces })
+		collector = createPluginSemanticsPlugin({
+			root,
+			sourceSpaces: options.sourceSpaces,
+		})
 		return collector.plugin as Plugin
 	}
 	if (options.root !== undefined) createSemantics(options.root)
 	const requireCollector = (): PluginSemanticsCollector => {
 		if (!collector) {
 			throw new Error(
-				'[pluxel:runtime-source] semantic facts are unavailable before Vite configures its server environment',
+				'[pluxel:plugin-source] semantic facts are unavailable before Vite configures its server environment',
 			)
 		}
 		return collector
 	}
 	const plugins = [
-		...createPluginSourcePlugins(options, createSemantics),
-		createRuntimeSourceConfigPlugin(options),
+		...createPluginSourcePlugins(options, createSemantics, environment),
+		createSourceConfigPlugin(options, environment),
 	]
 	const semantics = Object.freeze({
 		snapshot: () => requireCollector().snapshot(),
@@ -182,6 +191,8 @@ export function createPluginSourceVitePipeline(
 			...args: Parameters<PluginSemanticsCollector['classifyDefinitionArtifact']>
 		) => requireCollector().classifyDefinitionArtifact(...args),
 		beginArtifactGeneration: () => requireCollector().beginArtifactGeneration(),
+		builtDefinitionModules: (activeModules: Iterable<string>) =>
+			requireCollector().builtDefinitionModules(activeModules),
 		workbenchPlans: () => requireCollector().workbenchPlans(),
 		workbenchCompilations: () => requireCollector().workbenchCompilations(),
 		workbenchContentCompilations: () => requireCollector().workbenchContentCompilations(),
@@ -190,23 +201,24 @@ export function createPluginSourceVitePipeline(
 	return Object.freeze({ plugins: Object.freeze(plugins), semantics })
 }
 
-/** Complete Vite source preset consumed by both static and dynamic runtime routes. */
-export function pluxelRuntimeSourceVitePlugins(
-	options: PluxelRuntimeSourceVitePluginsOptions = {},
-): PluginOption[] {
-	return [...pluginSourceVitePlugins(options), createRuntimeSourceConfigPlugin(options)]
-}
-
-function createRuntimeSourceConfigPlugin(options: PluxelRuntimeSourceVitePluginsOptions): Plugin {
-	const packageConditions =
-		options.packageMode === 'distribution'
-			? [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS, 'module', 'browser', 'production']
-			: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS]
-	const externalPackages =
-		options.packageMode === 'distribution' ? true : [...PLUXEL_SSR_EXTERNAL_PACKAGES]
+function createSourceConfigPlugin(
+	options: PluginSourceVitePluginsOptions,
+	environment?: string,
+): Plugin {
+	const sourceConditions: readonly string[] =
+		options.packageMode === 'distribution' ? [] : PLUXEL_SOURCE_RESOLVE_CONDITIONS
 	const configPlugin: Plugin = {
-		name: options.name ?? 'pluxel:runtime-source',
+		name: options.name ?? 'pluxel:plugin-source',
 		config(config) {
+			const serverResolve = {
+				conditions: [...sourceConditions, ...defaultServerConditions],
+				externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
+				preserveSymlinks: false,
+			}
+			const external =
+				options.packageMode === 'distribution'
+					? { external: true as const }
+					: { noExternal: true as const, external: [] as string[] }
 			return {
 				...(config.server?.watch === null
 					? {}
@@ -219,21 +231,31 @@ function createRuntimeSourceConfigPlugin(options: PluxelRuntimeSourceVitePlugins
 								},
 							},
 						}),
-				resolve: {
-					conditions: packageConditions,
-					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
-					dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
-					preserveSymlinks: false,
-				},
-				ssr: {
-					external: externalPackages,
-					resolve: {
-						conditions: packageConditions,
-						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
-						dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
-						preserveSymlinks: false,
-					},
-				},
+				...(environment
+					? {
+							resolve: { tsconfigPaths: config.resolve?.tsconfigPaths ?? true },
+							environments: {
+								client: {
+									resolve: { conditions: [...sourceConditions, ...defaultClientConditions] },
+								},
+								[environment]: {
+									consumer: 'server' as const,
+									resolve: {
+										...serverResolve,
+										...external,
+									},
+								},
+							},
+						}
+					: {
+							resolve: {
+								tsconfigPaths: config.resolve?.tsconfigPaths ?? true,
+								conditions: [...sourceConditions, ...defaultClientConditions],
+								externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
+								preserveSymlinks: false,
+							},
+							ssr: { ...external, resolve: serverResolve },
+						}),
 				oxc: {
 					decorator: {
 						legacy: true,

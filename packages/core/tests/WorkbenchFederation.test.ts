@@ -255,7 +255,7 @@ describe('Workbench federation producer plan', () => {
 		expect(inventory).toEqual({
 			version: 1,
 			profile: 1,
-			buildContract: 2,
+			buildContract: 3,
 			producers: [
 				{
 					plan,
@@ -280,9 +280,9 @@ describe('Workbench federation producer plan', () => {
 
 describe('Workbench federation Profile 1 artifact contract', () => {
 	const compatibility = createWorkbenchFederationCompatibilitySet({
-		react: '19.2.8',
-		reactDom: '19.2.8',
-		runtime: '1.0.0',
+		react: '19.3.0',
+		reactDom: '19.3.0',
+		workbench: '1.0.0',
 	})
 	const plan = createWorkbenchFederationProducerPlan({
 		definition: provider,

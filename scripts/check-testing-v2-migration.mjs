@@ -25,6 +25,10 @@ const failures = []
 
 const forbiddenTestImports = new Map([
 	[
+		'@pluxel/workbench/test',
+		new Set(['createWorkbenchTestHost', 'WorkbenchTestHost', 'WorkbenchTestHostOptions']),
+	],
+	[
 		'@pluxel/core/test',
 		new Set([
 			'CoreHost',
@@ -71,6 +75,7 @@ const authoritativeDocumentation = [
 	'docs/development/testing.md',
 	'docs/development/source-workspaces.md',
 	'packages/test/README.md',
+	'packages/test/LLM_TESTING_GUIDE.md',
 	'engineering/README.md',
 	'engineering/proposals/README.md',
 ]
@@ -81,7 +86,7 @@ const publicEntryChecks = new Map([
 		['createCoreContext', 'createCoreHost', 'withCoreContext', 'withCoreHost'],
 	],
 	[
-		'packages/runtime/src/test.ts',
+		'packages/services/src/test.ts',
 		['createRuntimeContext', 'createRuntimeHost', 'RuntimeHost', 'RuntimeTestContext'],
 	],
 	[
@@ -125,12 +130,9 @@ if (failures.length > 0) {
 
 function inspectRemovedImports(displayPath, source) {
 	for (const match of source.matchAll(
-		/(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)(['"])@pluxel\/test\1/g,
+		/(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s*)(['"])(@pluxel\/(?:core\/test|services\/test|test\/host))\1/g,
 	)) {
-		reportAt(displayPath, source, match.index, 'removed @pluxel/test root import')
-	}
-	for (const match of source.matchAll(/(?:^|\n)\s*import\s*(['"])@pluxel\/test\1/g)) {
-		reportAt(displayPath, source, match.index, 'removed @pluxel/test root import')
+		reportAt(displayPath, source, match.index, `removed ${match[2]} entry; use @pluxel/test`)
 	}
 	for (const match of source.matchAll(
 		/(?:^|\n)\s*import\s+(?:type\s+)?\{([\s\S]*?)\}\s+from\s+(['"])([^'"]+)\2/g,
@@ -182,6 +184,14 @@ function inspectVitestConfig(displayPath, source) {
 }
 
 async function inspectTestPackageBoundary() {
+	for (const packageName of ['core', 'services']) {
+		const packagePath = `packages/${packageName}/package.json`
+		const packageManifest = await readJson(resolve(root, packagePath))
+		for (const entries of [packageManifest.exports, packageManifest.publishConfig?.exports]) {
+			if (entries && Object.hasOwn(entries, './test'))
+				failures.push(`${packagePath}: removed ./test export; use @pluxel/test`)
+		}
+	}
 	const path = resolve(root, 'packages/test/package.json')
 	const manifest = await readJson(path)
 	const scripts = manifest.scripts ?? {}
@@ -202,11 +212,11 @@ async function inspectTestPackageBoundary() {
 	for (const legacyField of ['main', 'module', 'types', 'typings']) {
 		if (Object.hasOwn(manifest, legacyField)) {
 			failures.push(
-				`packages/test/package.json: ${legacyField} would recreate a removed root entry`,
+				`packages/test/package.json: ${legacyField} bypasses the explicit package exports contract`,
 			)
 		}
 	}
-	const allowed = new Set(['./fixtures', './unsafe', './vitest', './package.json'])
+	const allowed = new Set(['.', './fixtures', './unsafe', './vitest', './package.json'])
 	for (const [label, entries] of [
 		['exports', manifest.exports],
 		['publishConfig.exports', manifest.publishConfig?.exports],
@@ -225,6 +235,8 @@ async function inspectTestPackageBoundary() {
 		}
 	}
 	for (const removedFile of [
+		'packages/core/src/test.ts',
+		'packages/services/src/test.ts',
 		'packages/test/src/setup.ts',
 		'packages/test/src/lifecycle-matcher.ts',
 	]) {
@@ -335,7 +347,11 @@ async function inspectVitestBaselines() {
 
 async function inspectDocumentation() {
 	const checks = [
-		[/from\s+['"]@pluxel\/test['"]/g, 'removed @pluxel/test root import'],
+		[/@pluxel\/(?:core\/test|services\/test|test\/host)\b/g, 'removed test entry'],
+		[
+			/\b(?:createCoreTestHost|createServiceTestHost|createWorkbenchTestHost)\b/g,
+			'removed host factory',
+		],
 		[/@pluxel\/test\/(?:setup|lifecycle-matcher)\b/g, 'removed preset setup/matcher entry'],
 		[
 			/\b(?:toHavePluginLifecycleIssue|PluxelVitestOptions|definePluxelVitestWorkspaceConfig)\b/g,

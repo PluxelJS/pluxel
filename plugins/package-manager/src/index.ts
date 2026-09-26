@@ -1,9 +1,13 @@
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
+import { Commands } from '@pluxel/services/commands'
 import { resolve } from 'node:path'
-import { defineCommand } from '@pluxel/commands'
+import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { requireDynamicPluginSource } from '@pluxel/runtime-dynamic/source-producer'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
+import { RpcTarget } from 'capnweb'
+import { requireDynamicPluginSource } from '@pluxel/host/dynamic/source-producer'
 import type {
 	PackageManagerApi,
 	PackageManagerSnapshot,
@@ -52,66 +56,47 @@ const mutationInput = obj({
 		maxItems: 100,
 	}),
 })
-const mutationFailureOutput = Type.Object(
-	{
-		input: Type.String(),
-		code: Type.Union([
-			Type.Literal('INVALID_SPEC'),
-			Type.Literal('INSTALL_FAILED'),
-			Type.Literal('REMOVE_FAILED'),
-		]),
-		message: Type.String(),
-	},
-	{ additionalProperties: false },
-)
-const mutationOutput = obj({
-	ok: Type.Boolean(),
-	succeeded: Type.Array(Type.String()),
-	failed: Type.Array(mutationFailureOutput),
-})
 
 @Plugin({ startTimeoutMs: 120_000 })
 export class PackageManagerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(PackageManagerConfig)
 	private store?: ManagedPackageStore
 
-	override async init(): Promise<void> {
+	override async init(signal: AbortSignal): Promise<void> {
 		const rootDir = resolve(process.cwd(), this.config.rootDir)
 		requireDynamicPluginSource(this.ctx, {
 			kind: 'directory',
 			path: resolve(rootDir, 'entries'),
 			include: ['*.mjs'],
 		})
-		const store = new ManagedPackageStore(loadPnpmEngine(), {
+		const store = new ManagedPackageStore(await loadPnpmEngine(), {
 			rootDir,
 			ignoreScripts: this.config.ignoreScripts,
 			allowBuilds: this.config.allowBuilds,
 			minimumReleaseAgeMinutes: this.config.minimumReleaseAgeMinutes,
+			signal,
 		})
+		this.ctx.effects.defer(() => store.close())
 		await store.initialize()
 		this.store = store
 		this.ctx.effects.defer(() => {
 			if (this.store === store) this.store = undefined
 		})
 
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'package.install',
 				description: 'Install plugin packages into the managed dynamic source project.',
-				behavior: { kind: 'mutation', destructive: false, idempotent: true, world: 'open' },
 				input: mutationInput,
-				output: mutationOutput,
-				execute: async ({ specs }) => toCommandMutation(await store.install(specs)),
+				execute: async ({ specs }) => Result.ok(toCommandMutation(await store.install(specs))),
 			}),
 		)
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'package.remove',
 				description: 'Remove plugin packages from the managed dynamic source project.',
-				behavior: { kind: 'mutation', destructive: true, idempotent: false, world: 'open' },
 				input: mutationInput,
-				output: mutationOutput,
-				execute: async ({ specs }) => toCommandMutation(await store.remove(specs)),
+				execute: async ({ specs }) => Result.ok(toCommandMutation(await store.remove(specs))),
 			}),
 		)
 		this.ctx.workbench?.publish(PackageManagerWorkbench, {
@@ -150,16 +135,22 @@ class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 		super()
 	}
 
-	snapshot(): Promise<PackageManagerSnapshot> {
-		return this.store.snapshot()
+	async snapshotDto(): Promise<PackageManagerSnapshot> {
+		const result = await this.store.snapshot()
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	install(specs: readonly string[]): Promise<PackageMutationResult> {
-		return this.store.install(specs)
+	async installDto(specs: readonly string[]): Promise<PackageMutationResult> {
+		const result = await this.store.install(specs)
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	remove(names: readonly string[]): Promise<PackageMutationResult> {
-		return this.store.remove(names)
+	async removeDto(names: readonly string[]): Promise<PackageMutationResult> {
+		const result = await this.store.remove(names)
+		assertWorkbenchDto(result)
+		return result
 	}
 }
 

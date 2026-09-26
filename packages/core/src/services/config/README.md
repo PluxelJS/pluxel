@@ -33,7 +33,7 @@ generation 只读取这份 immutable snapshot。
 - owner 是 `ctx.pluginInfo.nodeAddress` 或 control plane 提交的 canonical `PluginNodeAddress`；ConfigService 不 intern Core slot，
   因此 unmaterialized definition/fork 的 durable config 不会创建 Core tombstone。
 - `getValidatedConfig(address, authority)` 不回退 raw；revision 或 candidate authority 不匹配、或未先完成 validation 时抛错。
-- `getRawConfig(address)` 返回持久层 raw snapshot，用于 runtime control plane。
+- `getRawConfig(address)` 返回当前有效 raw snapshot，用于 runtime control plane。
 - `ensureValidated(address, authority)` 只在 raw revision 与 immutable candidate authority 都未变化时复用 cache。
 - control plane 第一次校验成功后先 stage normalized desired record 与 validated snapshot，persistence flush 成功后才 confirm 为新的
   revision；随后 Core generation 注入复用同一对象，不再次执行可能非确定的 schema transform。confirm 同时检查校验前 revision，拒绝覆盖
@@ -44,9 +44,7 @@ generation 只读取这份 immutable snapshot。
 
 ## Runtime adapter
 
-runtime 可以从 disk/readonly backend 或 host snapshot初始化 records。Node host 的 environment 入口是单一
-`PLUXEL_CONFIG` JSON，其中当前 writer 使用 `version: 3`、`plugins[]` 的 `owner` 是结构化 `PluginNodeAddress`，`config` 是一个
-object record。已有 file config 是权威来源；environment 只初始化新 store。reader 只接受 v3，不按旧 owner shape 猜测或迁移。
+Host adapter 从基础记录、saved storage 和显式部署 bindings 合成 effective records。`getRawConfig()` 在 Host 中读取有效层；只有管理修改的 saved layer 写入 SuperJSON v3 文档。`envBindings` 的缺失值不产生覆盖，存在的 env 路径只读；Core 不读取环境或文件。完整来源及 merge 契约见 [`engineering/CONFIG.md`](../../../../../engineering/CONFIG.md)。
 
 ## 测试策略
 

@@ -13,7 +13,11 @@ export interface TsdownRunnerOptions {
 	extraConfig?: TsdownOverride
 }
 
-export async function runWithTsdown(options: TsdownRunnerOptions) {
+/**
+ * Official CLI runner. Watch owns the command process, including native tsdown restarts and stdin.
+ * One-shot builds settle success hooks and release their bundles before returning.
+ */
+export async function runWithTsdown(options: TsdownRunnerOptions): Promise<void> {
 	const debugEnabled = Boolean(options.context.debug)
 	const sources = await resolveConfigSources(options)
 	const mergedOverrides = mergeInlineConfigs(sources.userOverrides ?? {}, sources.cliOverrides)
@@ -33,14 +37,35 @@ export async function runWithTsdown(options: TsdownRunnerOptions) {
 		hasBaseOnSuccess: Boolean(options.onSuccess),
 	})
 
-	const bundles = await runTsdown(configPlan.inlineConfig)
+	const { bundles } = await runTsdown(configPlan.inlineConfig)
 
-	if (!options.context.watch && configPlan.onSuccess) {
-		const controller = new AbortController()
-		for (const bundle of bundles) {
-			await configPlan.onSuccess(bundle.config, controller.signal)
-			if (controller.signal.aborted) break
+	try {
+		if (!options.context.watch && configPlan.onSuccess) {
+			const controller = new AbortController()
+			for (const bundle of bundles) {
+				await configPlan.onSuccess(bundle.config, controller.signal)
+				if (controller.signal.aborted) break
+			}
 		}
+	} catch (error) {
+		const cleanup = await Promise.allSettled(bundles.map((bundle) => bundle[Symbol.asyncDispose]()))
+		const failures = cleanup.flatMap((result) =>
+			result.status === 'rejected' ? [result.reason] : [],
+		)
+		if (failures.length > 0)
+			throw new AggregateError(
+				[error, ...failures],
+				'Build hook failed and bundle cleanup failed',
+				{ cause: error },
+			)
+		throw error
+	}
+	if (!options.context.watch) {
+		const cleanup = await Promise.allSettled(bundles.map((bundle) => bundle[Symbol.asyncDispose]()))
+		const failures = cleanup.flatMap((result) =>
+			result.status === 'rejected' ? [result.reason] : [],
+		)
+		if (failures.length > 0) throw new AggregateError(failures, 'Build bundle cleanup failed')
 	}
 }
 
@@ -491,7 +516,6 @@ function describeDeps(value: InlineConfig['deps']) {
 							sanitizeDebugValue(item),
 						)
 					: undefined,
-		skipNodeModulesBundle: sanitizeDebugValue(value.skipNodeModulesBundle),
 	}
 }
 

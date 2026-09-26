@@ -1,43 +1,31 @@
 # @pluxel/create
 
-`@pluxel/create` owns the fixed Pluxel example workspace used by `pnpm create @pluxel`.
+创建固定的 Pluxel 示例工作区，要求 Node.js 24+。
 
 ```sh
 pnpm create @pluxel my-workspace
 pnpm create @pluxel my-workspace --no-install
 ```
 
-The package has no runtime dependencies and does not load `@pluxel/cli`. Its typed initializer is a
-dedicated tsdown npm CLI entry: tsdown validates/generates the `create-pluxel` bin, preserves its
-shebang, emits one Node 24 ESM chunk and uses the standard `copy` option to publish one immutable asset
-tree:
+目标目录必须不存在或为空。初始化器验证模板只含普通文件、不含符号链接，在相邻临时目录完成复制后 rename 到目标；将模板中的 `gitignore` 映射为 `.gitignore`，其余已发布资产按原内容复制。
 
-- `dist/template/`: a neutral `@example/*` monorepo with an independent `host/web` workspace package, one
-  host-owned Vite config, root-owned `pncat` catalog policy, static/dynamic modes, a same-origin Todo API,
-  tests and build governance. Its local pinned Portless dependency gives `pnpm dev` a stable
-  `https://<directory>.localhost` origin while the application and Workbench remain two paths on the one
-  Vite listener; `dev:direct` and `PORTLESS=0` provide explicit bypasses.
+## 生成的工作区
 
-Creation copies the starter byte-for-byte and maps the package-safe `gitignore` asset to `.gitignore`.
-It links to the canonical upstream documentation instead of copying a snapshot that drifts after
-generation. The destination must be missing or empty. Assets are
-validated as regular files without symlinks and staged in a sibling temporary directory before the
-final rename.
+模板是 `@example/*` monorepo：独立 `host/web` 包、一份宿主 Vite 配置、一份支持可选动态来源的应用声明、同源 Todo API、测试与构建治理。根目录固定安装 Portless，`pnpm dev` 使用稳定的 `https://<directory>.localhost`；应用与 Workbench 是同一个 Vite listener 上的不同路径。`dev:direct` 或 `PORTLESS=0` 显式跳过 Portless。
 
-`@pluxel/cli` remains a development dependency inside the generated workspace so users can run
-`pluxel new` and build commands later. That generated-project dependency is not an implementation
-dependency of this package. The starter root also installs `pncat` as the sole interface for catalog
-changes; individual packages continue declaring their direct runtime, peer and development dependencies.
-Generated governance rejects bare third-party versions so the named catalogs remain the single version
-policy authority, while local package edges retain their package-owned workspace and peer contracts.
+生成项目链接上游权威文档，不复制易过期的文档快照。根目录通过 `pncat` 维护 catalog 版本策略；各包仍声明自己的直接 runtime、peer 和 dev dependencies。治理检查拒绝裸第三方版本，本地包之间保留各包拥有的 workspace / peer 契约。
 
-Maintainer checks:
+## 包与构建边界
+
+本包无 runtime dependencies，也不加载 `@pluxel/cli`。后者只是生成工作区的开发依赖，为用户提供 `pluxel new` 与构建命令。
+
+`tsdown.config.ts` 生成带 shebang 的 `create-pluxel` Node 24 ESM 单文件入口，并复制固定 `template/` 到 `dist/template/`。构建完成时根据当前可发布包 manifest 更新发布模板的 Pluxel catalog；源码模板不是发布版本的另一套权威。文件位置见[实现索引](IMPLEMENTATION_INDEX.md)。
+
+## 验证
 
 ```sh
 pnpm --filter @pluxel/create test
 pnpm --filter @pluxel/create test:starter
 ```
 
-The packed smoke installs the generated workspace outside the repository, verifies its documentation
-link, runs `pnpm verify`, starts the frozen static distribution and exercises both runtime modes of
-the unified Vite application.
+第一项验证创建行为、工作区治理与文档链接。第二项打包后在仓库外安装生成项目，执行 `pnpm verify`，启动生产发行物，并验证统一 Vite 应用集成。

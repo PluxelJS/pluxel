@@ -1,16 +1,17 @@
 import { createHash } from 'node:crypto'
 import { deserialize, serialize } from 'node:v8'
 import {
-	BasePlugin,
 	encodePluginNodeAddressBytes,
-	Plugin,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
 	pluginMethodDecorator,
-	type PersistenceNamespace,
 	type PluginNodeAddress,
-	v,
-} from '@pluxel/runtime'
+	BasePlugin,
+	Plugin,
+} from '@pluxel/core'
+import * as v from 'valibot'
+
+import { type PersistenceNamespace } from '@pluxel/services/persistence'
 import { CacheBackend, type CacheBackendStore, type CacheValue } from './backend.ts'
 
 export { CacheBackend } from './backend.ts'
@@ -784,8 +785,8 @@ export class CachePlugin extends Cache {
 				(parentPolicy ?? this.config) as CacheDefaults,
 			)
 			const backendPrefix = global
-				? `cache:v3:global:${name ? `${escapePart(name)}:` : ''}`
-				: `cache:v3:plugin:${ownerAddressDigest(owner.context.pluginInfo.nodeAddress)}:${name ? `${escapePart(name)}:` : ''}`
+				? `cache:v3:global:${name ? `${encodeURIComponent(name)}:` : ''}`
+				: `cache:v3:plugin:${ownerAddressDigest(owner.context.pluginInfo.nodeAddress)}:${name ? `${encodeURIComponent(name)}:` : ''}`
 			const bucket: Bucket = {
 				active: true,
 				entries: new Map(),
@@ -798,7 +799,7 @@ export class CachePlugin extends Cache {
 			registration = {
 				namespace,
 				backendPrefix,
-				ownerAddress: global ? null : normalizeOwnerAddress(owner.context.pluginInfo.nodeAddress),
+				ownerAddress: global ? null : parsePluginNodeAddress(owner.context.pluginInfo.nodeAddress),
 				ownerSlot: global ? null : ownerSlot,
 				lookup,
 				lookupKey: name,
@@ -892,6 +893,8 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 			if (this.holder.persistenceMode === 'off') return
 
 			const persistence = this.ctx.root.persistence
+			if (!persistence)
+				throw new Error('MemoryCacheBackendPlugin persistence requires the Persistence service')
 			this.holder.storage = persistence.namespace(MEMORY_CACHE_PERSISTENCE_NAMESPACE)
 			if (this.holder.persistenceMode === 'durable') {
 				await persistence.preflight({ durable: true, writable: true })
@@ -1835,13 +1838,9 @@ function assertBackendValue(value: unknown): void {
 	}
 }
 
-function normalizeOwnerAddress(address: PluginNodeAddress): PluginNodeAddress {
-	return parsePluginNodeAddress(address)
-}
-
 function ownerAddressDigest(address: PluginNodeAddress): string {
 	return createHash('sha256')
-		.update(encodePluginNodeAddressBytes(normalizeOwnerAddress(address)))
+		.update(encodePluginNodeAddressBytes(parsePluginNodeAddress(address)))
 		.digest('hex')
 }
 
@@ -1905,10 +1904,6 @@ function snapshotStats(bucket: Bucket): CacheStats {
 		entries: bucket.entries.size,
 		inFlight: bucket.inFlight.size,
 	})
-}
-
-function escapePart(value: string): string {
-	return encodeURIComponent(value)
 }
 
 async function settle(pending: Promise<unknown> | undefined): Promise<void> {

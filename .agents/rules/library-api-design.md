@@ -1,190 +1,121 @@
-# Library API Design Rules for Agents
+# Library API Design
 
-本文档用于 agent 创建或修改 TypeScript/JavaScript 库、SDK、框架、工具包、插件系统和内部基础设施包的 public API。
+为 TypeScript/JavaScript 库、SDK、框架和内部基础设施设计公共契约。目标是让调用方从名称、类型、短示例和错误反馈推导下一步，减少猜测，而不是统一所有 API 的外形或追求字段最少。
 
-目标不是让所有 API 长得一样，而是帮助 agent 在已知需求下做出最小、清晰、诚实且可验证的公共契约。
+本页适用于 public export、签名、配置、公开类型、错误、扩展点、资源生命周期和跨运行时边界，不机械套用到私有 helper。代码示例是设计片段，不是某个包的完整可运行用法。
 
-## Agent 如何执行本文档
+## 阅读与决策
 
-本文档不使用“一切视情况而定”的弱建议。每项设计都应有一个明确默认，再由可观察的例外信号决定是否偏离。
+每次先读本节和[公共契约的硬约束](#公共契约的硬约束)，再按本次变更选择规则与验收，不必依次重读全部示例。
 
-1. 先遵守 **MUST**，它们保护正确性、兼容性、安全性和资源所有权。
-2. 没有明确反证时，直接采用 **SHOULD** 给出的默认方案。
-3. 只有当文档列出的例外信号、项目现有契约或真实调用点提供证据时，才偏离默认。
-4. 偏离 SHOULD 时，在代码、测试、文档或交付说明中保留一句可验证理由，不要只写“更灵活”或“更简单”。
+| 本次任务                              | 阅读                              |
+| ------------------------------------- | --------------------------------- |
+| 新增入口、重命名、引入抽象            | [入口与命名](#入口与命名)         |
+| 修改参数或配置                        | [参数与配置](#参数与配置)         |
+| 修改类型、输入校验或返回值            | [类型与输入边界](#类型与输入边界) |
+| 修改失败、批处理或重试                | [失败与组合](#失败与组合)         |
+| 增加 callback、plugin、adapter 或协议 | [扩展与协议](#扩展与协议)         |
+| 创建资源、取消操作、调整并发或缓存    | [生命周期与成本](#生命周期与成本) |
+| 更新教程、评审设计收益                | [文档与验收](#文档与验收)         |
 
-示例：
+决策优先级：正确性、安全性与数据完整性 → 项目约束、已有公共契约与生态互操作性 → 已知调用方的可读性和误用成本 → 已验证的性能与演进需求 → 假设性的灵活性。项目专属约束优先于本页通用默认。
 
-> 使用位置参数，因为该 API 遵循现有 `slice(start, end)` 契约，两个参数的顺序在所有调用点中都一致。
+- **MUST** 是硬约束，保护契约真实性、正确性和所有权。
+- **SHOULD** 是强默认；只有项目契约、真实调用点或列出的例外信号支持时才偏离。在代码、测试、文档或交付说明中保留一句可验证的理由。
+- “更灵活”“更简单”“模型喜欢”不是证据。`slice(start, end)` 遵循熟悉领域惯例，则是保留位置参数的理由。
 
-这是有证据的例外。“我觉得这样省代码”不是。
+设计前检查当前 exports、类型、实现、用户文档、测试和真实调用点；确认 public / experimental / internal 身份，不从文件位置猜可见性。先延伸已有概念，只有它无法诚实表达需求时才引入新概念。
 
-## 适用边界和优先级
+### 通用原则与 agent 使用条件
 
-在以下变更中使用本文档：
+正文是服务人和 agent 的通用设计规则，不是模型偏好。[Agent 使用验收](#agent-使用验收)另查实际工具与上下文条件下的发现、理解和修正成本；不能因此降低正确性或另建同义 API。共享原则只写一次，特定优化说明使用条件与证据。
 
-- 新增或修改 public export、函数签名、配置、返回值或公开类型。
-- 新增或修改错误契约、扩展点、资源生命周期或跨运行时边界。
-- 判断一个内部概念是否应该变成公共契约。
+## 公共契约的硬约束
 
-不要机械套用到业务流程、私有 helper 或一次性实现细节。
+### MUST：公开面是有意识的承诺
 
-原则冲突时，按以下顺序决策：
-
-1. 正确性、安全性和数据完整性。
-2. 项目 `AGENTS.md`、架构不变量、已有 public contract 和生态互操作性。
-3. 已知调用方的可读性、可用性和误用成本。
-4. 经过验证的性能、可维护性和演进需求。
-5. 尚未被真实需求证明的灵活性。
-
-## 工作流程
-
-设计前：
-
-1. 读取项目约束、当前 exports、类型、文档、测试和真实调用点。
-2. 确认变更对象是 public、experimental 还是 internal，不用文件位置臆测可见性。
-3. 区分已知需求与假设需求。不为只有一个实现的假设场景新建 plugin、adapter、factory 或 config layer。
-4. 优先延伸项目现有概念；只在旧概念无法诚实表达新语义时引入新抽象。
-
-实现后：
-
-1. 验证类型契约与运行时行为一致。
-2. 针对变更的风险边界添加或更新测试。
-3. 检查 public exports、已知调用方和用户文档。
-4. 若替换旧契约，搜索旧符号和旧文档；除非存在明确迁移需求，不自动添加 alias 或平行 API。
-
-## MUST：公共契约必须诚实
-
-### Public API 必须是有意识的兼容性承诺
-
-**规则**
-
-- 不因“也许有用”导出 internal helper、可变内部状态、内部 key 或尚未稳定的实现类型。
-- public、experimental 和 internal 边界必须能从 package exports、命名或文档中被识别。
-- 修改或删除已有 public contract 前，必须检查已知调用方和兼容性影响。
-
-**理由**
-
-每个 export 都可能变成调用方依赖的名称、类型和行为。偶然导出会把内部重构变成破坏性变更。
-
-**默认做法**
+只导出已知调用方需要的能力，不因“也许有用”暴露内部 helper、key、可变状态或未稳定类型。通过 package exports、命名或文档区分 public、experimental 与 internal；修改现有契约前检查已知调用方与兼容影响。
 
 ```ts
-// 默认 public entry point：只包含已知调用方需要的契约
 export { createEngine, type Engine, type EngineConfig }
 ```
 
-**合理例外**
+真实的 low-level、debug 或 adapter 用例可以使用独立入口，例如 `@scope/engine/debug`。小的 public surface 是降低维护成本的手段，不能成为拒绝合法能力的理由。
 
-Low-level、debug 或 adapter API 有真实用例时可以暴露，但应通过独立 entry point、namespace 或 experimental 标记限定承诺：
+替换旧契约时同步处理已知调用方、exports 与文档，搜索旧符号；只有明确迁移需求才保留过渡入口，不自动增加同义 alias。签名不变也可能改变契约：默认值、顺序、错误分类、完成时机和资源寿命的变化同样需要检查调用方。
 
-```ts
-import { inspectEngine } from '@scope/engine/debug'
-```
+### MUST：类型、运行时与文档表达同一事实
 
-“Public surface 应该小”是降低兼容成本的手段，不是拒绝合法能力的目标。
-
-### 类型、运行时和文档必须描述同一个契约
-
-**规则**
-
-- 实际互斥的状态不得被一组无约束 optional 字段伪装成可任意组合的结构。
-- TypeScript 类型不能代替信任边界的运行时校验。
-- 不得声称一项能力可取消、可重试、可回滚或可持久化，除非实现真正提供该语义。
-
-**理由**
-
-公开类型会引导调用方构造数据。如果类型允许实现无法处理的状态，错误只是被从编译期推迟到了运行时。反过来，文件、网络和用户输入并不会因为声明了 TypeScript 类型就变得可信。
+- 互斥状态不能用任意组合的 optional 字段伪装。
+- JSON、环境变量、网络、存储和第三方插件等信任边界必须验证输入；TypeScript 不提供运行时验证。
+- 只有真正实现时，才能承诺取消、重试、回滚、持久化、drain 或 exactly-once。
+- 类型可见不代表获得权限；静态隐藏也不构成运行时授权。直接调用、动态访问、缓存句柄和子引用必须服从同一访问边界。
 
 ```ts
-// 不诚实：允许 success=true 但没有 output，或同时有 output 和 error
-type AmbiguousBuildResult = {
-	success: boolean
-	output?: string
-	error?: Error
-}
-
-// 默认：类型直接表达真实状态
+// 类型表达真实状态，而非 success + optional output + optional error
 type BuildResult = { ok: true; output: string } | { ok: false; error: BuildError }
-```
 
-从 JSON、环境变量、网络、存储或第三方插件进入的数据，必须在进入内部契约时验证。
-
-```ts
-// 外部数据先是 unknown，校验后才进入内部契约
+// 外部输入先校验，再进入内部契约
 const config = ConfigSchema.parse(JSON.parse(source) as unknown)
-return createEngine(config)
 ```
 
-### 可变性、资源和扩展点必须有明确所有权
+### MUST：可变性、资源和扩展点有明确所有者
 
-**规则**
+不隐式改写调用方对象，也不要求调用方修改内部状态完成未明示的配置。原地更新若是 API 本意，要由名称和文档明确表达。
 
-- 不隐式修改调用方传入的对象。原地更新是 API 本意时，必须从命名和文档中表达。
-- 不暴露需要调用方理解或修改的内部可变状态。
-- 扩展点必须说明可用能力、调用顺序、错误传播和清理所有权。
-- 保留资源或注册外部副作用的对象必须提供与项目约定一致的清理机制，并定义重复清理的语义。
+保留资源或注册副作用的对象必须提供项目约定的清理机制，定义重复、并发清理及失败语义。扩展点必须说明可用能力、调用顺序、错误传播与清理归属。`dispose`、`close`、`stop`、`Symbol.dispose` 采用现有惯例，不再创建同义机制。
 
-**理由**
+### MUST：需要程序分支的失败有稳定信号
 
-如果调用方无法判断谁拥有对象、注册和资源，并发调用、错误回滚和测试 teardown 都会出现不确定行为。
+调用方需要恢复、降级、重试或分支时，使用稳定 error class、`code` 或 discriminated result，不能解析 message。
 
-```ts
-const watcher = createWatcher({ paths: ['src'] })
+Message 解释问题，稳定类型或 `code` 供程序分支，`cause` / `details` 保留诊断链路。仅在调用方确实依赖时把 details 结构纳入公共承诺；诊断不得泄露密钥、凭据或不必要的用户数据。编程错误和不可恢复的不变量失败可直接使用 `Error` / `TypeError`，不必给每个 throw 建公开错误码。
 
-try {
-	watcher.on('change', callback)
-} finally {
-	await watcher.dispose()
-}
-```
+## 入口与命名
 
-`dispose` / `close` / `stop` / `Symbol.dispose` 没有绝对优劣；使用项目既有惯例，并明确它是否幂等。
+### SHOULD：同一语义提供一个默认入口
 
-### 可分支处理的公开失败必须有稳定信号
+同一任务、同一契约只有一种推荐写法，能完成常见任务并提供准确类型、合理默认、失败反馈与清理。教程、示例和错误建议都指向它；高级用法优先扩展同一契约。原生 SDK 已有清晰入口时直接复用，不为统一外观包装。
 
-**默认**
+第二入口必须对应真实任务差异，例如读取与订阅、定义与发布、本地与远程、撤销与等待退出。仅名称、参数排列或包装不同，默认合并；标准互操作或明确迁移需求可保留必要入口并说明用途。同一领域的名称、单位、省略值和完成语义保持一致，由权威实现维护。
 
-当调用方需要恢复、降级、重试或分支处理时，使用 error class、稳定 `code` 或 discriminated result，不依赖 message。
+唯一默认不等于万能函数。新概念应承担状态、不变量、寿命或独立策略；否则先用函数、字段或内部实现。低层入口说明适用条件，不与普通入口作为同义推荐并列。
 
-**理由**
+### SHOULD：完整调用表达式说明领域动作和副作用
 
-Message 需要改进、本地化和补充上下文，不是稳定程序协议。但如果所有 throw 都强制错误码，内部编程错误也会被不必要地固化为 public API。
+独立函数表达领域动作，如 `compileProject()`、`startConfigWatcher()`；所属对象已有上下文时，`runner.run()`、`middleware.handle(request)` 足够清楚。对称操作保持一致，不用禁词表，也不堆砌长名称。
 
-Message 面向人，稳定类型或 `code` 面向程序，`cause` / `details` 面向诊断。只有当调用方需要依赖其结构时，才把 details 声明为稳定 public contract；诊断数据不得泄露密钥、凭据或不必要的用户数据。
+`get`、`parse`、`resolve`、`normalize` 不隐藏违反领域惯例的副作用：`httpClient.get()` 的 IO 符合惯例，`config.get()` 悄然启动 watcher 则通常不符合。注册、订阅和释放的成本与所有权应从动词或所属对象可判断。
 
-```ts
-type LoadResult =
-	{ ok: true; value: Config } | { ok: false; code: 'NOT_FOUND' | 'INVALID_CONFIG'; cause?: unknown }
+创建若承诺异步就绪，Promise 应等待就绪并报告失败。惰性 client 或显式 `start()` / `ready()` 也可以成立，但须说明 IO、就绪和失败时机，不能把创建成功写成连接成功。
 
-// 调用方可以稳定分支
-if (!result.ok && result.code === 'NOT_FOUND') {
-	return useDefaults()
-}
-```
+### SHOULD：关键语义在调用点可见，类型负责约束
 
-**合理例外**
+调用方应能从代码文本理解动作、角色、单位与重要行为选择，不必先展开泛型、条件类型或重载。例如 `transfer({ from: primary, to: reserve, amount })` 比 `transfer(primary, reserve, amount)` 更容易判断方向；类型合法不等于符合调用意图。
 
-表示编程错误或不可恢复不变量的失败，可直接使用 `Error` / `TypeError`。
+| 信息                             | 首选表达位置                                          |
+| -------------------------------- | ----------------------------------------------------- |
+| 动作、角色、单位、行为选择       | 名称、字段与语义值，如 `timeoutMs`、`overwrite: true` |
+| 合法结构、输入输出关系、可用状态 | 类型与推导；信任边界同时校验                          |
+| 默认值、失败、时序和所有权       | 紧邻公开声明的简短契约                                |
 
-## SHOULD：有强默认的设计规则
+“字面语义”不要求所有值都是 literal union。保留有效的推导、branded type、typestate 与成熟简写，如 `setEnabled(true)`；不重复传入可推导信息，不用注释弥补含糊命名，也不用类型注解代替运行时行为选择。
 
-### 参数超过 3 个时，默认对象化
+### SHOULD：每个事实有一个权威来源
 
-**强默认**
+分别确定输入约束、实现、说明、权限、输出和生命周期由谁维护。能可靠推导的内容由库生成；协议独有的信息留在协议边界；不能推导的内容明确保留。
 
-- 超过 3 个位置参数时，优先改为已命名对象。
-- 即使不超过 3 个，只要多个参数类型相同、顺序容易对调，或调用点出现含义不明的字面量，也优先对象化。
+TypeScript 返回类型不会自动成为运行时 output validator，JSDoc 不会自然存在于运行中的 class 上。若依赖生成制品，应验证它与实际发布的对应关系，并明确诊断不支持的声明形态。
 
-**理由**
+删除字段或层级后追踪原职责：从 schema 可靠生成是减少重复；移到真正需要它的边界是收窄耦合；让每个调用方补同一转换只是转移成本；让不变量无人负责则不是简化。
 
-位置参数把语义放在声明处，调用点只保留顺序。参数越多、类型越相似，调用方和 agent 越需要靠记忆还原含义。对象参数还允许在不改变旧顺序的情况下增加可选字段。
+## 参数与配置
+
+### SHOULD：参数较多或字面量难懂时对象化
+
+超过 3 个位置参数，或参数同型易对调、字面量无法从调用点理解时，默认使用命名对象。对象既说明语义，也避免以后靠新增位置维护顺序。
 
 ```ts
-// 不推荐：调用点无法解释两个 format、boolean 和 number
-createEngine(source, 'esm', 'cjs', true, false, 3_000)
-
-// 默认
 createEngine({
 	input: source,
 	inputFormat: 'esm',
@@ -195,58 +126,23 @@ createEngine({
 })
 ```
 
-**合理例外**
+例外是熟悉的领域惯例（`slice(start, end)`、`clamp(value, min, max)`）、稳定原子结构（坐标、范围、底层协议）或必须遵守的标准签名。对象写起来更长本身不是例外依据。
 
-保留位置参数需要出现至少一个强信号：
+避免含义不明的裸 boolean 位置参数。真正的二元开关使用 `{ strict: true }`；`setEnabled(true)` 已经表意。只有已知状态超过二元或存在演进需求时才改成 `mode: 'strict' | 'loose' | 'recover'`，不要机械枚举化所有 boolean。
 
-- API 遵循广泛熟悉的领域惯例，例如 `slice(start, end)`、`clamp(value, min, max)`。
-- 参数形成稳定原子结构，例如坐标、范围或底层协议。
-- 该签名是必须遵循的现有标准或兼容契约。
+### SHOULD：默认单一清楚的签名，重载须有具体收益
 
-```ts
-// 合理：三个位置在数值领域中是熟悉原子操作
-clamp(value, min, max)
-```
+同一操作默认使用一个直接签名；同一语义的输入表示可用 union，例如 `string | URL`。不要仅为兼容多种参数排列、callback/Promise 风格或短写法增加重载。若重载确能保留必要的输入输出对应关系，或遵循既有标准，并且调用处仍表意清楚，可以保留；不以宽泛 union 牺牲类型精度来消灭重载。
 
-只因为对象写起来更长，不足以偏离默认。
+需要推演“参数个数 → 类型分支 → 返回类型”才能辨认行为时，先调整 API。真实不同的动作使用领域方法，如 `read()` 与 `watch()`；同一动作的有限变体使用具名 option，相关字段互斥时用 discriminated union。不要把重载换成一袋 optional 字段、多个互相影响的 boolean 或同样难懂的泛型开关。
 
-### 裸 boolean 位置参数默认禁止，已命名 boolean 不禁止
+验收既看调用片段，也看预声明变量、union 输入、返回值推导与错误诊断。复杂类型只有在保护真实关系、减少调用方工作时才值得保留，不能只证明示例中的一个字面量能编译。
 
-**强默认**
+### SHOULD：Options 按真实语义域分组
 
-避免将 `true` / `false` 作为含义不明的位置参数。先使用已命名 boolean；只在状态空间或演进需求超过二元开关时改用语义枚举。
-
-**理由**
-
-`parse(input, true)` 不能从调用点看出 `true` 的意义。但 `{ strict: true }` 和 `setEnabled(true)` 已经表达了完整语义。强制把所有 boolean 变成枚举只会增加词汇，不一定增加信息。
+两个或更多字段共享所有权、默认值、merge 策略或独立覆盖边界时才分组；否则保持平铺。层级应解决边界问题，不应仅为一个字段增加包装。
 
 ```ts
-// 不推荐
-parse(input, true)
-
-// 默认：真正的二元开关
-parse(input, { strict: true })
-
-// 当已知存在多个模式时
-parse(input, { mode: 'strict' })
-type ParseMode = 'strict' | 'loose' | 'recover'
-
-// 合理例外：方法名已表达开关语义
-engine.setEnabled(true)
-```
-
-### Options 只在真实语义域上分组
-
-**强默认**
-
-当两个或更多字段共享所有权、默认值、merge 策略或独立覆盖边界时，将它们分组。否则保持平铺。
-
-**理由**
-
-过度平铺会把输入、输出、执行策略和诊断依赖混成一个无边界的 options 垃圾桶。过度分组则会让调用方为单个字段穿过多层对象。
-
-```ts
-// 已经出现真实语义域：execution 和 diagnostics 可独立默认和覆盖
 createEngine({
 	input: { source, format: 'esm' },
 	output: { format: 'cjs' },
@@ -254,386 +150,208 @@ createEngine({
 	diagnostics: { logger, level: 'warn' },
 })
 
-// 不需要分组：为一个字段创建层级没有提供边界
-createParser({ parser: { mode: 'strict' } })
-
-// 更清楚
 createParser({ mode: 'strict' })
 ```
 
-### 默认值、`undefined` 和配置优先级必须可推导
+### SHOULD：默认值、省略语义与优先级可推导
 
-**强默认**
-
-- 每个 public optional 字段都要说明 `undefined` 是固定默认、继承、自动检测还是禁用。
-- 固定值使用 `@default` / `@defaultValue`；上下文默认描述选择规则。
-- 默认值和 merge 语义保持单一权威实现，不散落在多条路径的 `??` / `||` 中。
-- 配置优先级必须写入 public 文档。
-
-**理由**
-
-可选字段将决策从调用方交给了库。如果库不说明如何决策，类型并不完整。重复实现默认值则容易让不同调用路径产生不同行为。
+每个 public optional 字段说明省略 / `undefined` 表示固定默认、继承、自动检测还是禁用。固定值使用 `@default` / `@defaultValue`；上下文默认说明选择规则。
 
 ```ts
 type EngineConfig = {
-	/**
-	 * Maximum execution time.
-	 *
-	 * @defaultValue 10_000
-	 */
+	/** Maximum execution time. @defaultValue 10_000 */
 	timeoutMs?: number
-
-	/**
-	 * Output format. When omitted, inferred from the output filename.
-	 */
+	/** When omitted, inferred from the output filename. */
 	format?: 'esm' | 'cjs'
 }
 ```
 
-**配置优先级默认**
+默认值和 merge 语义由一处权威实现维护，避免多条路径分别用 `??` / `||` 决策。只有缺失值才应用默认；非法显式输入不悄悄回退成默认值。尤其不能把未知 mode、错误路径或缺少权限解释成成功的另一种操作。宽容解析或自动检测确是领域契约时，说明选择依据、歧义和失败边界。
 
-常见库可以从以下顺序开始：
+公共文档写明配置优先级与 merge 规则：嵌套对象、数组、显式 `false`、`0`、空串、`null` 与 `undefined` 按真实领域语义处理，不能靠 truthiness 抹掉有效输入。常见起点为 `built-in default < project config < call-site override`，但 host policy、安全上限和管理员策略可能优先于调用方，具体顺序由领域决定。
 
-```text
-built-in default < project config < call-site override
-```
+工作目录、环境变量、租户或“当前会话”等隐含输入会影响目标选择。创建实例时解析并固定，或在操作中明确传入；确需随环境变化时声明读取时机。已经绑定范围的 client/handle 无需让每次调用重复传入相同字段。
 
-但 runtime/host policy、安全上限或管理员策略可能必须覆盖 call-site。因此“优先级必须明确”是硬要求，具体顺序是领域决策。
+### SHOULD：配置描述行为，实例承载状态与寿命
 
-### `defineConfig` 只在提供实际价值时引入
+声明性配置可复用、比较或持久化，不由库隐式改写；运行状态、缓存、连接属于实例。需要补齐默认值时生成 resolved config，不修改输入。
 
-**强默认**
+Mutable builder 或动态配置本身就是领域模型时可以可变，但通过明确类型与方法表达，例如 `builder.addPlugin()`、`runtime.updatePolicy()`。
 
-先使用 TypeScript `satisfies`。只当 `defineConfig` 提供更好的泛型推导、运行时验证、标准化、metadata 或 JavaScript 用户体验时，才把它加入 public API。
+### SHOULD：先用 `satisfies`，再判断是否需要 `defineConfig`
 
-**理由**
-
-每个 public helper 都是新的命名和兼容性承诺。一个只接收 `EngineConfig` 再返回 `EngineConfig` 的 identity function 可能不比 `satisfies` 多提供任何信息，甚至会抹平字面量推导。
+无额外语义时使用 `satisfies EngineConfig`。只有 helper 确实改善泛型推导、运行时验证、标准化、metadata 或 JavaScript 使用体验时才公开；identity helper 可能仅增加命名承诺，甚至抹平字面量推导。
 
 ```ts
-// 默认：无额外运行时语义
-const config = {
-	mode: 'strict',
-} satisfies EngineConfig
+const config = { mode: 'strict' } satisfies EngineConfig
 
-// 合理：helper 真正进行校验并保留具体推导
+// 有实际校验价值，并保留具体类型
 function defineEngineConfig<const T extends EngineConfig>(config: T): T {
 	validateEngineConfig(config)
 	return config
 }
 ```
 
-### 配置描述行为，实例承载状态和生命周期
+## 类型与输入边界
 
-**强默认**
+### SHOULD：封闭状态精确，开放扩展诚实
 
-声明性配置在创建后不被库隐式改写；运行时状态、缓存、连接和生命周期存放在实例中。
+互斥状态使用 discriminated union，封闭可枚举值使用 literal union，以支持补全、拼写检查和分支缩小。第三方可注册新值时使用开放 string、branded string 或注册表契约，不把开放集合伪装成封闭 union。
 
-**理由**
+复杂返回值默认使用对象。坐标、范围、熟悉语法惯例等小型原子结构可使用 tuple，例如 `readonly [x: number, y: number]`。
 
-配置通常需要被复用、比较、持久化或用于创建多个实例。如果运行时悄然改写它，后续调用会依赖隐藏历史。
+公共返回对象必须说明它是 snapshot、live view 还是 mutable handle。需要控制状态时提供有语义的方法或 builder，不要求调用方通过修改返回的内部对象反向控制库。
 
-```ts
-function resolveConfig(config: EngineConfig): ResolvedEngineConfig {
-	return {
-		...config,
-		mode: config.mode ?? 'production',
-	}
-}
+### SHOULD：已知数据有准确类型，外部 candidate 有校验边界
 
-const engine = await createEngine({ config })
-try {
-	await engine.run(input)
-} finally {
-	await engine.dispose()
-}
-```
+本地已知数据使用准确参数类型；外部输入在进入时校验，handler 使用解码后的类型。类型检查与运行时校验不互相替代。
 
-**合理例外**
+入口有意接受 `unknown` 时，要说明它接收待校验 candidate，不能同时声称编译器会检查字段拼写。typed overload 后仍留有 `unknown` overload，错误输入依然可编译。不要先加 `unsafeExecute` 绕过问题，应确认调用方需要的是输入边界还是普通业务方法。
 
-Mutable builder 或动态配置本身就是领域模型时，可以可变，但必须用明确类型、命名和更新方法表达，例如 `builder.addPlugin()` 或 `runtime.updatePolicy()`。
+类型复杂度应替调用方做事。默认自然推导，不要求 `as any`、逐个显式泛型或重复手写接口；只有调用方掌握库无法推导的信息时才要求类型参数。公共签名和诊断应保留可理解的领域结构，避免泄露层层实现推导；不能为缩短显示而丢失约束或增设无意义类型别名。
 
-### 用类型精确表达封闭状态，但不关闭开放扩展点
+返回类型的保证来自实现、输入推导或运行时校验，不能仅来自 `<T>`。若 `read<T>()` 只是调用方断言，说明其信任责任；验证外部结构时使用 schema/decoder。
 
-**强默认**
+已知成员优先提供可搜索的具名声明与准确类型，不把有限 API 藏在任意字符串或动态属性后。动态注册、RPC 或开放成员集合确有需求时保留动态契约，并提供相应的描述/发现方式；无此需求不另建 registry。用真实编写任务检查推导，见[验收矩阵](#按风险验证真实任务)。
 
-- 互斥状态、模式和结果使用 discriminated union。
-- 闭合的可枚举值使用 literal union，不使用无约束 `string`。
-- 复杂返回值默认使用对象，小型原子结构才使用 tuple。
+### SHOULD：结果说明完成阶段与信息边界
 
-**理由**
+返回值和 Promise resolve 应对应明确事实：已接纳、已完成、已持久化还是已发布。后台任务可返回 job handle 或接纳回执，不应暗示工作已完成；同步完成的小操作也无需为统一外观增加 job/status 层。
 
-Discriminated union 让分支缩小后的字段可用性与真实运行时状态一致。Literal union 能补全、检查拼写并列出库真正支持的闭合集合。对象返回值为字段命名，新增可选字段时也不改变解构顺序。
+只有可能出现的信息缺口才需要建模：未找到、不允许查看、未查询和部分结果不能都用空列表或 `undefined` 冒充。查询真正完成时，空列表就是清晰结果。若协议为保密有意合并“无权限”与“不存在”，保留这一边界，不为诊断泄露隐藏事实。
 
-```ts
-type ParseResult = { ok: true; ast: Ast; warnings: Warning[] } | { ok: false; error: ParseError }
+结果应能直接支持调用方的下一步。连续操作共享同一身份或值时，复用既有 contract，不要求手拼内部 key、猜测字段转换或再次查询同一事实；跨协议或所有权边界确需投影时，明确转换位置。
 
-type ParseMode = 'strict' | 'loose' | 'recover'
-```
+## 失败与组合
 
-**合理例外**
+### SHOULD：先确定恢复动作，再选择失败形态
 
-- 第三方可以注册新值时，使用开放 string、branded string 或注册表契约，不用闭合 literal union 伪装开放集合。
-- 坐标、范围、语法惯例或被当作一个原子值的小型结果可以使用 tuple。
+沿用领域 Result、原生 SDK 异常、决策和回执契约。同一边界提供一种标准处理方式，不为外观一致把所有失败包成相同 envelope，也不先用 `tryX`、`xOrThrow`、`unwrap` 掩盖未确定的主契约。
 
-```ts
-type PluginId = string & { readonly __brand: 'PluginId' }
-type Point = readonly [x: number, y: number]
-```
+采用 Result 时，明确成功、预期失败及未知异常的责任：哪些异常被监督并转换，哪些仍会 reject。返回 Result 不自动意味着永不抛出，也不会自动阻止调用方启动下一步。已有结果直接转发；必要的协议投影在边界显式完成，不猜测对象中的 `ok`、`error` 字段来决定控制语义。
 
-公共返回值还应说明它是 snapshot、live view 还是 mutable handle。不要要求调用方修改返回的内部对象来完成未明示配置；需要可变性时，提供有语义的方法或 builder。
+诊断应有安全的分类、位置和必要上下文，使调用方知道应改输入、重新发现、取得权限还是终止。能定位字段时指出具体路径与期望约束，批量错误关联对应输入，避免只报“操作失败”。程序恢复依赖稳定字段，message 解释修正方向；只有有依据时才建议重试，建议也不构成自动执行或授权。内部使用 throw 的终止 helper 要说明普通 catch 仍会捕获它。
 
-```ts
-// Snapshot：调用方读取，不通过修改它反向控制 engine
-const state: Readonly<EngineState> = engine.getState()
+### SHOULD：用串联、批量与不确定结果检验契约
 
-// Mutable handle：可变能力由明确方法提供
-const session = engine.openSession()
-session.setMode('strict')
-```
+正常返回之外，检查预期失败可分支、未知依赖 reject 保留原因、第一步失败不误启动第二步、批量部分成功仍能识别完成结果。
 
-### Callback、plugin 和 adapter 按组合需求升级
+执行失败、业务拒绝、部分成功、编码失败和取消可能要求不同恢复动作。写入已发生但结果未送达时，提供领域确认路径或诚实的不确定结果；不能把它描述成可安全重试。幂等性来自业务协议，不来自命名、annotation 或包装。
 
-**强默认**
+## 扩展与协议
 
-- 一两个局部、简单、不需要独立生命周期的定制点，使用 callback 或 function option。
-- 多个独立扩展需要组合、排序、命名、错误隔离或清理时，升级为 plugin 或 middleware。
-- 已有多个运行时实现，或存在明确 IO / trust boundary 时，引入 adapter。
-- Plugin 通过受控 context 或窄能力接口扩展行为，不直接读写 engine 内部状态。
+### SHOULD：按组合需求从 callback 升级
 
-**理由**
+| 已有需求                                   | 默认形式与原因                          |
+| ------------------------------------------ | --------------------------------------- |
+| 一两个局部定制点，无独立寿命               | callback / function option，直接且局部  |
+| 多个扩展要组合、排序、命名、隔离失败或清理 | plugin / middleware，为独立扩展提供治理 |
+| 多个运行时实现，或明确 IO / trust boundary | adapter，稳定真实变化边界               |
 
-Callback 的优点是局部和直接；问题只在它们需要彼此组合时出现。Plugin 的价值是为独立扩展提供身份、顺序和生命周期，不是仅仅把 `onXXX` 搬到另一个对象。Adapter 的价值是稳定真实变化边界，不是为每个 helper 制造 interface。
+Plugin 使用受控 context 或窄能力接口，不直接读写 engine 内部状态。扩展契约说明顺序、调用次数、重入、并发、失败传播与 teardown。Callback 还要说明返回值是否消费、Promise 是否等待；`void` 签名不保证传入函数没有异步工作。后台执行须有明确的错误监督与清理归属。
+
+将确定性计算与文件、网络、数据库 IO 编排分开，但不要因此自动导出 adapter。只有已有多个实现、宿主必须注入能力，或边界需独立验证时才公开替换契约。
 
 ```ts
-// 合理 callback：单一、局部、无独立生命周期
-download(url, { onProgress })
-
-// 合理 plugin：扩展需要独立组合和排序
-createEngine({
-	plugins: [cachePlugin(), diagnosticsPlugin(), transformPlugin()],
-})
-
-interface PluginContext {
-	hooks: HookRegistry
-	diagnostics: Diagnostics
-}
-```
-
-**引入 plugin 时的必要验收**
-
-必须同时定义顺序、重入、失败传播、并发和 teardown 语义。如果这些问题没有答案，把 callbacks 包装成 plugin interface 并没有完成设计。
-
-### Core 与 IO 保持自然边界，不为假设实现制造 adapter
-
-**强默认**
-
-将可确定计算与文件、网络、数据库等 IO 编排分开。只在已有多个实现、宿主必须注入能力、或边界需要独立验证与测试时，公开 adapter contract。
-
-**理由**
-
-分离确定性逻辑和 IO 使得测试、重试和运行时迁移更容易。但如果只有一个实现且调用方不需要替换它，公开 interface 只会扩大契约面。
-
-```ts
-// 保持内部边界：IO 编排与纯转换分开，但不急于导出 adapter
 async function compileFile(path: string) {
 	const source = await fs.readFile(path, 'utf8')
 	return compileSource(source)
 }
-
-function compileSource(source: string): Output {
-	return runCompiler(source)
-}
 ```
 
-当 Node、browser 或 memory 实现已是产品需求时，再将 `ConfigLoader` 之类的 adapter 变成稳定边界。
+只有一个实现且调用方无需替换时，内部边界已经足够；Node、browser、memory 实现成为实际需求后再公开相应 contract。
 
-### 内部 key 由库生成，字符串和结构化协议按边界选择
+### SHOULD：库生成内部 key，自定义多字段协议使用结构
 
-**强默认**
-
-- cache key、dedupe key、task key 和 plugin internal id 由库生成，调用方传递语义输入。
-- 自定义的多字段协议默认使用结构化数据。
-- 字符串协议若作为稳定边界，必须有 parser、validator 和明确 grammar。
-
-**理由**
-
-调用方一旦手工拼接内部 key，分隔符、字段顺序和编码方式都会变成公共契约。结构化输入能够被类型检查和独立演进，但它不会自动解决结构相等和序列化。
+cache、dedupe、task key 和内部 plugin id 由库生成，调用方传语义输入。否则分隔符、顺序和编码都会意外成为公共契约。
 
 ```ts
-// 不推荐：调用方依赖内部编码
-cache.get('compile:src/index.ts:esm:prod')
-
-// 默认：调用方传语义，库负责稳定编码
-compileCache.get({
-	file: 'src/index.ts',
-	format: 'esm',
-	mode: 'production',
-})
-
-// 自定义多字段协议也默认结构化
+compileCache.get({ file: 'src/index.ts', format: 'esm', mode: 'production' })
 transform({
 	pipeline: [{ type: 'parse' }, { type: 'minify' }, { type: 'emit', format: 'cjs' }],
 })
 ```
 
-如果底层使用 `Map` 或持久化 key，库必须定义 canonicalization、字段顺序和 serialization，不得默认两个结构相同但引用不同的对象会自动命中。
+结构化输入不自动解决相等与持久化。使用 `Map` 或存储 key 时定义 canonicalization、字段顺序和 serialization，不能假设同结构的不同对象引用会命中。跨运行时还须说明可传值、编码/解码、错误及引用身份的变化，并验证实际往返；两端同型不证明 `Date`、`undefined` 或 Error 实例被保留。遵循实际协议，不另套通用 JSON 包装。
 
-**合理例外**
+成熟 DSL（URL、glob、RegExp source、cron、CSS selector、GraphQL SDL、SQL）优先遵循生态形式。跨进程、跨语言、CLI 或持久化也可能需要有版本的字符串协议；字符串成为稳定边界时必须有 parser、validator 和明确 grammar。
 
-URL、glob、RegExp source、cron、CSS selector、GraphQL SDL、SQL 等成熟 DSL 应优先遵循生态形式。跨进程、跨语言、命令行或持久化边界也可能更适合有版本的稳定字符串协议。
+## 生命周期与成本
 
-### 命名显示领域与副作用，不使用禁词表
+### SHOULD：创建、接纳、撤销与关闭有可观察的含义
 
-**强默认**
+普通定义通常不持有运行资源；发布句柄说明撤销范围；session 等资源说明关闭过程。沿用项目 effects、`using`、`await using` 或原生清理协议。
 
-- 独立 public function 优先使用能表达领域动作的名称，避免失去上下文的 `run` / `handle` / `process` / `do`。
-- `get` / `parse` / `resolve` / `normalize` 不产生与所在领域惯例不符的隐藏外部副作用。
-- 会写入、注册、启动、订阅或释放资源的 API，从动词或所属对象中能看出成本和所有权。
-- 同一领域的对称操作使用一致命名。
+一份契约应回答：
 
-**理由**
+- 创建何时产生副作用，失败是否遗留资源？
+- 撤销是否只拒绝新调用，已接纳工作如何处理？
+- 清理是否等待工作退出，重复或并发清理如何完成？
+- 失效、权限变化或关闭后，缓存句柄和子对象还能做什么？
 
-调用方会从名称预测 IO、状态变化和资源成本。隐藏副作用会使缓存、并发和测试决策全部失效。但名称的信息量来自完整调用表达式，不是单个动词。
+必需的准备步骤与调用顺序从创建结果、具名方法、状态或简短示例中可见；不能依赖调用方偶然先执行查询才使写入可用。对象构造后即可用时无需额外 `init()`；确有独立准备阶段时，定义未就绪调用会等待还是拒绝。类型可限制调用顺序，但关闭、撤回等外部变化仍需要运行时检查。
 
-```ts
-// 含义不足：独立 export 没有上下文
-run()
+发现、权限预检或状态快照只证明观察时刻，准备 context 也不等于业务已接纳。`if (session.isReady()) await session.execute()` 仍有竞态：执行入口应在接纳边界校验状态并保护检查到接纳的窗口，或使用有明确寿命的保留/授权句柄。库跟踪自己接纳的工作，业务等待自己启动的 IO。
 
-// 清楚
-compileProject()
-startConfigWatcher()
+### SHOULD：长耗时异步操作接受 `AbortSignal`
 
-// 合理例外：所属对象已提供领域上下文
-runner.run()
-middleware.handle(request)
-childProcess.exec(command)
-```
+网络、子进程、队列、watcher、大型编译和持续等待默认接受 signal，方便调用方对齐请求、页面、测试和进程寿命。短小纯计算、原子同步操作或必须遵循的标准签名不必加入无效参数。
 
-`httpClient.get()` 会产生 IO，但这符合 HTTP 领域惯例；`config.get()` 悄然启动 watcher 则通常不符合预期。
+说明 abort 是撤销排队、请求协作停止、终止底层工作、只停止等待还是丢弃结果。Timeout、retry、cancellation 是不同语义；底层无法取消时，说明工作可能继续。
 
-### 长耗时 Async API 默认接受 `AbortSignal`
+`Promise.all` 提前失败不表示其他任务停止，关闭客户端不表示服务端工作退出。取消不能覆盖已取得的领域回执；取消与未知故障并发发生时保留真实故障原因。
 
-**强默认**
+### SHOULD：实现中的成本有界，只公开必要调优项
 
-网络、子进程、队列、watcher、大型编译和可能持续等待的操作，默认接受 `AbortSignal`。
+缓存、队列、并发、批处理和连接池必须有边界，或证明无界就是预期语义。检查热路径的重复计算、IO 与同步阻塞；实际限制来自内存预算、负载测量或产品限额，不照抄示例数值。
 
-**理由**
+只有调用方确需调优时才公开 `ttl`、`maxSize`、`concurrency` 等参数，避免把当前实现冻结成契约。先测量，再增加公共复杂度；不为微优化牺牲可读性，也不因为“更快”就跨并发调用共享可变 context。
 
-库无法预知调用方的请求边界、页面生命周期、测试超时和进程关闭时间。无法停止等待会导致泄漏、卡住和过期结果写入。
+## 文档与验收
 
-```ts
-await compile({
-	input,
-	execution: {
-		signal: abortController.signal,
-		timeoutMs: 30_000,
-	},
-})
-```
+### SHOULD：文档补充类型无法表达的契约
 
-**必须说清的边界**
+文档优先说明省略值、默认与优先级、副作用、错误与恢复、并发、重入、取消和资源寿命，不复述字段名。每个事实只维护一份当前权威说明，其他指南链接它；未实现内容进入 proposal / future work，不混入现行用法。
 
-- Abort 是停止底层工作、撤销排队、只停止等待，还是仅丢弃结果？
-- Timeout、retry 和 cancellation 是不同语义，不能互相假装。
-- 底层无法取消时，文档必须诚实说明 abort 之后工作可能仍在继续。
+最短示例说明公开 import、必需的宿主能力/准备步骤、成功值与清理，不能依赖设计会话里的隐含前提。片段标明接在哪段初始化之后；概念伪码明确标注。常见失败接着展示，组合与底层机制按需引入，不把长篇实现细节塞进入门。
 
-**合理例外**
+若 handler 与公开入口的返回值不同，最短教程就说明转换。调用方无需处理的细节封装在实现中；影响重试、权限、失效与关闭的事实必须可见。
 
-短小的纯计算、原子同步操作，或必须遵循无 cancellation 参数的既有标准签名，不需要为形式一致加入无效 `AbortSignal`。
+### 按风险验证真实任务
 
-### 性能边界默认在实现中有界，只在需要时公开
+验证受本次变更影响的行，不为简单改名建立完整实验平台，也不靠只会 echo 的示例证明复杂边界。先写推荐调用与一个最可能的误用，说明哪个由名称避免、哪个由类型拒绝、哪个由运行时诊断；不能仅以编译通过证明设计清楚。
 
-**强默认**
+| 变更风险             | 应验证的真实动作                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| 参数、泛型、输入边界 | 参数补全、错拼字段、省略必需 context、同步/异步推导、wire/decoded 差异                 |
+| 结果与组合           | 完成阶段、空结果与信息缺口、失败分支缩小、异构数组/方法表/预声明变量；验证整个集合约束 |
+| 失败契约             | 正常、预期失败、未知 reject、串联停止、批量部分成功、必要时不确定结果                  |
+| 资源与时序           | 创建失败、未就绪调用、观察后失效、并发、撤销、取消、已接纳工作与重复清理               |
+| 新抽象或跨边界机制   | 从定义到调用、执行、失败、清理的一条完整路径，包含真实副作用或权限                     |
+| 公开契约替换         | exports、已知调用方、类型、运行时与文档一致，旧符号和链接已处理                        |
 
-- 缓存、队列、并发、批处理和连接池在实现中必须有明确边界，或明确证明无界是预期语义。
-- 检查热路径中的重复计算、重复 IO 和同步阻塞。
-- 只在调用方有合理调优需求时，才将 `ttl`、`maxSize`、`concurrency` 等实现参数暴露为 public config。
+至少一条受影响的消费路径从公开入口验证，不能只测内部 helper 或借用内部状态绕过必需安装。按风险验证示例的类型与行为；纯概念伪码不冒充可运行证据。RPC、生成器、沙盒分别证明边界，上游能力不能替代项目集成验证。
 
-**理由**
+### Agent 使用验收
 
-库会被放入未知规模的调用环境，无界结构会把输入规模直接放大为内存、延迟或连接风险。但把所有内部调优参数公开，又会把当前实现冻结成 API。
+先明确 agent 实际可用的源码搜索、类型查询、编译与执行工具，不假设它总能看到 IDE hover，也不假设它无法利用类型。按本次改动检查：
 
-```ts
-// 实现必须有界
-const cache = createCache({
-	maxSize: 1_000,
-	ttlMs: 60_000,
-})
-```
+- **理解：** 只看 import 和调用片段，能否判断动作、参数角色和关键行为？默认值、失败与资源寿命是否有直接查阅入口？不要求从片段猜出完整契约。
+- **定位：** 只给任务、公开文档和正常工具，不补充设计对话；能否找到推荐入口并完成初始化、调用与清理？缺失的前提应补回权威文档，而非让每个消费 agent 重读实现。
+- **修正：** 常见错误输入能否得到位置、约束与下一步反馈？保留有效类型，信息缺失时查证，不以猜测补齐。
 
-示例数值不是通用推荐值。真实边界应来自内存预算、负载测量或明确产品限额。
+宣称“提升 agent 效率”时，固定模型、工具权限与任务条件，保留失败案例，比较正确完成率、修复次数、查阅量、token、请求数和端到端时间。单次成功或 token 变少不能证明整体改善；失败恢复变难也要计入成本。
 
-**优化约束**
+### 评审只记录必要证据
 
-- 先测量，再为性能增加 public complexity。
-- 不为微优化牺牲调用点可读性和契约清晰度。
-- 不因为“复用 context 可能更快”就在并发调用间共享可变上下文。
+新增公开契约应能简短回答以下问题；简单变更可在代码、测试或交付说明中回答，不另建长篇设计文档。
 
-### Public 文档解释契约，不复述代码
+1. 哪个真实调用方被现有 API 阻塞？默认完整写法是什么？若新增第二入口，调用方依据哪个任务事实选择它？
+2. 新概念承担哪项状态、不变量、寿命或策略？事实分别由谁维护？
+3. 类型能阻止哪些错误，哪些必须运行时校验？
+4. 失败后下一步是什么？并发、取消与关闭的结果是什么？
+5. 哪些验证支持结论？偏离默认的可观察依据是什么？
 
-**强默认**
+维护规则时也用同一标准：指出它要避免的具体误用、推荐默认、合理例外与验收动作。新问题优先补进已有章节；只重复“清晰、简单、友善”而没有可判断行为的条目不加入。
 
-每个影响调用方决策的 public API 都应有简短文档，优先说明：
-
-- `undefined` 和省略字段的语义。
-- 默认值与配置优先级。
-- 外部副作用、错误和可恢复方式。
-- 并发、重入、取消和生命周期语义。
-- 资源由谁创建，何时释放。
-
-**理由**
-
-类型只能表达结构，不能完整表达时序、所有权、成本和失败恢复策略。反过来，重复字段名会增加维护量，却不增加契约信息。
-
-```ts
-// 没有增加信息
-/** Set timeoutMs. */
-timeoutMs?: number
-
-// 解释真正契约
-/**
- * Maximum time allowed for one execution.
- *
- * @defaultValue 10_000
- * When exceeded, the operation fails with `TIMEOUT`.
- */
-timeoutMs?: number
-```
-
-当前文档只描述已实现行为。未实现设计进入 proposal 或明确的 future work，不与当前 API 混写。
-
-## CONSIDER：提交前的定向审查
-
-这些问题用来发现偏离默认规则的地方，不用来重新开始无边界设计。
-
-### 必要性
-
-- 新 export、新类型和新抽象是否对应真实调用方？
-- 是否可以延伸现有概念，而不是建立平行 contract？
-- 是否正在为假设性的第二个实现引入 adapter、plugin 或 factory？
-
-### 调用点
-
-- 超过 3 个位置参数时，是否有明确领域惯例支持保留？
-- 相同类型参数是否可能对调？字面量能否从调用点被理解？
-- Options 是否已成为垃圾桶，或反过来被分成了只包含一个字段的层级？
-- 类型是否精确表达已知状态，还是在建模未知未来？
-
-### 运行时
-
-- 外部输入在何处验证？
-- 并发、重试、取消、部分失败和重复清理的结果是什么？
-- 是否存在无界状态、隐式 IO、隐式可变性或无法回收的资源？
-- 对象 cache key 是否错把引用相等当成结构相等？
-
-### 演进和验证
-
-- 这次变更增加了哪些兼容性承诺？
-- 类型测试、运行时测试和文档是否验证了同一契约？
-- Public exports、已知调用方和用户文档是否一致？
-- 若偏离 SHOULD，是否能用现有惯例、真实调用点或测量结果简短解释？
-
-## 最终原则
-
-好的库设计不是拥有最多模式，而是让已知调用方使用一个小而诚实的契约完成任务。当两种方案都正确时，选择与当前项目概念更一致、调用点更清楚、引入公共承诺更少的方案。
+没有具体消费者、明确职责和最小端到端证据时，机制先保持内部或 experimental。两种方案都正确时，选择更符合现有概念、调用点更清楚、公共承诺更少的一种。

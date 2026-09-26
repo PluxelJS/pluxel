@@ -1,14 +1,14 @@
 import { AuditPlugin } from '@example/audit-plugin'
 import { TodoPlugin } from '@example/todo-plugin'
-import { createCoreTestHost } from '@pluxel/core/test'
+import { createTestHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('TodoPlugin', () => {
 	it('uses validated config and attaches an optional Plugin when available', async () => {
-		await using host = createCoreTestHost()
+		await using host = await createTestHost()
 		await host.commit((change) => {
-			change.add(AuditPlugin)
-			change.add(TodoPlugin, {
+			change.start(AuditPlugin)
+			change.start(TodoPlugin, {
 				initialConfig: { maxItems: 2, seedTitle: 'Read the docs' },
 			})
 		})
@@ -30,9 +30,9 @@ describe('TodoPlugin', () => {
 	})
 
 	it('keeps the optional integration absent-safe', async () => {
-		await using host = createCoreTestHost()
+		await using host = await createTestHost()
 
-		const todos = await host.add(TodoPlugin)
+		const todos = await host.start(TodoPlugin)
 		expect(todos.snapshot().auditEnabled).toBe(false)
 	})
 })

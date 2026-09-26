@@ -1,66 +1,64 @@
-# Pluxel Engineering Docs
+# 框架维护索引
 
-`engineering/` 用于修改 Pluxel 框架本身，记录当前架构、工程不变量和内部入口。
-开发应用或插件的人与 coding agent 都从 [`docs/index.md`](../docs/index.md) 开始；首次创建项目看[快速开始](../docs/getting-started/index.md)。
+修改 Pluxel 框架时使用本页。编写应用或插件从[用户文档](../docs/index.md)进入；定位插件声明、操作在线应用和隔离回归的选择见[开发指南](../docs/development/index.md)。
 
-## 先确定任务范围
+## 最短工作路径
 
-| 当前任务                             | 从哪里开始                                                         |
-| ------------------------------------ | ------------------------------------------------------------------ |
-| 使用 Pluxel 开发业务功能             | [用户文档的任务导航](../docs/index.md)，随后读取对应功能指南       |
-| 检查已有 Vite 应用的配置、插件或日志 | [开发控制台](../docs/development/dev-console.md)，先发现并固定实例 |
-| 修改框架的 API、行为或内部实现       | 按下方阅读路径加载通用约束和当前领域文档                           |
-| 维护发布自动化                       | [发布流程](RELEASING.md)                                           |
+1. 读[工程原则](DESIGN_PRINCIPLES.md)与[系统边界](PLUGIN_SYSTEM.md)，确认本次改动由哪一层拥有。
+2. 在下表选择涉及的领域。沿文档的实现入口读代码、exports、测试和真实调用方；只在跨边界时追加相邻领域。
+3. 改公共契约时使用 [API 设计规则](../.agents/rules/library-api-design.md)；改依赖或包入口时同时读 [Governance](GOVERNANCE.md)。
+4. 在拥有该事实的页面更新约束或用法，并按领域风险验证。测试工具选择见 [TESTING](TESTING.md)。
 
-按任务选择领域文档即可；历史提案描述探索背景，不能用来推断当前公开 API。
+## 按改动定位
 
-## 阅读路径
+每行列出候选入口，不要求整行通读；选本次修改涉及的章节。只改 Context kernel 时先读其公共契约，涉及 Plugin generation 或 Host 服务装配时才追加 Core 或 Host。
 
-1. [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md)：维护者和 coding agent 必须遵守的工程不变量。
-2. [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)：插件、runtime、route、toolchain 和 Workbench Plane 的总边界。
-3. 按改动领域阅读：
-   - [`../docs/reference/context-hosts.md`](../docs/reference/context-hosts.md)：公开 Context host kernel、root/scope/owner-view 语义与 standalone host 组合边界。
-   - [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md)：definition/node address 与 slot、source canonicalization、reference/route/label、作用域和持久化边界。
-   - [`CORE.md`](CORE.md)：slot identity、DI graph、optional restart、generation lifecycle 与 effects。
-   - [`CORE_LIFECYCLE_SEMANTICS.md`](CORE_LIFECYCLE_SEMANTICS.md)：Core lifecycle 抽象状态、不变量和测试证据矩阵。
-   - [`RUNTIME.md`](RUNTIME.md)：常驻服务、static/dynamic route、可选宿主能力。
-   - [`PROVIDER_WITHDRAWAL_AUDIT.md`](PROVIDER_WITHDRAWAL_AUDIT.md)：owner-bound runtime capability 的 withdrawal、cached handle 和 in-flight 边界。
-   - [`SPATIOTEMPORAL_COMPOSABILITY_NOTES.md`](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)：Cordis 对照后的 lifecycle、capability withdrawal、system boundary 与 compatibility 思考记录。
-   - [`DATABASE.md`](DATABASE.md)：PostgreSQL/Drizzle、PGlite/PG、migration、隔离与 outbox。
-   - [`LOGGING.md`](LOGGING.md)：single active root、Context identity、plugin policy、sinks 与大基数预算。
-   - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和 Workbench 投影。
-   - [`TESTING.md`](TESTING.md)：测试边界、Vitest preset bootstrap 与验证入口。
-   - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：面向 coding agent 的在线 TypeScript 操作、Vite 更新、配置、Workbench 与日志。
-   - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
-   - [`UI_LIBRARY.md`](UI_LIBRARY.md)：Workbench 的 Mantine 决策、主题边界与 federated renderer Provider/CSS 规则。
-   - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
-   - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。
-   - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。
-   - [`WORKBENCH.md`](WORKBENCH.md)：host-owned 管理工作台。
-   - [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)：Management Plugin catalog 依赖聚合、人工分组与独立文件。
-   - [`COMMANDS.md`](COMMANDS.md)：Agent/CLI/message command kernel 与 carrier 边界。
-4. [`GOVERNANCE.md`](GOVERNANCE.md)：依赖方向、导出和文档维护规则。
-5. [`RELEASING.md`](RELEASING.md)：维护者工具版本、Tegami 与可信发布流程。
+“源码范围”用于开始搜索，不代表完整影响范围。公开入口以各 package 的 `package.json` exports 为准。
 
-## 文档职责
+| 改动                                    | 当前约束                                                                                 | 源码范围                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Context kernel、scope、能力组合         | [Context 公共契约](../docs/reference/context-hosts.md)、[Host](HOST.md)、[Core](CORE.md) | `packages/context/`、`packages/core/src/host.ts`                                                               |
+| Plugin 身份、依赖图、generation 与清理  | [身份](PLUGIN_IDENTITY.md)、[Core](CORE.md)、[生命周期证据](CORE_LIFECYCLE_SEMANTICS.md) | [Core 实现索引](../packages/core/IMPLEMENTATION_INDEX.md)                                                      |
+| 宿主装配、来源、运行意图与服务所有权    | [Host](HOST.md)                                                                          | `packages/host/`、`packages/services/`                                                                         |
+| 配置声明、输入、revision 与保存         | [Config](CONFIG.md)                                                                      | `packages/core/src/services/config/`、`packages/host/`、`packages/services/`                                   |
+| Plugin 编译与源码查询                   | [Toolchain](TOOLCHAIN.md)                                                                | `packages/rolldown/`                                                                                           |
+| 静态应用构建                            | [Application Build](APPLICATION_BUILD.md)                                                | `packages/rolldown/`、`packages/services/src/build.ts`                                                         |
+| Workbench / Node 制品编译               | [Artifact Build](ARTIFACT_BUILD.md)                                                      | `packages/rolldown/`                                                                                           |
+| CLI、模板与跨仓库源码协作               | [CLI Workspaces](CLI_WORKSPACES.md)                                                      | [CLI 索引](../packages/cli/IMPLEMENTATION_INDEX.md)、[Create 索引](../packages/create/IMPLEMENTATION_INDEX.md) |
+| Vite 更新与开发控制台                   | [HMR](HMR.md)、[Dev Console](DEV_CONSOLE.md)                                             | `packages/host-dev/`                                                                                           |
+| 测试设施                                | [Testing](TESTING.md)                                                                    | `packages/test/`、各包 tests                                                                                   |
+| Commands、协议载体与发布                | [Commands](COMMANDS.md)                                                                  | `packages/commands/`、`packages/services/src/commands/`                                                        |
+| 数据库、日志                            | [Database](DATABASE.md)、[Logging](LOGGING.md)                                           | `packages/services/`                                                                                           |
+| Workbench 发布、会话、renderer 与 Shell | [Workbench](WORKBENCH.md)、[Frontend](FRONTEND.md)                                       | `packages/workbench/`、`packages/workbench/shell/`                                                             |
+| UI 组件与 Plugin catalog                | [UI Library](UI_LIBRARY.md)、[Plugin Catalog](PLUGIN_CATALOG.md)                         | `packages/valibot-form/`、`packages/workbench/`                                                                |
+| 应用制品、scaffold 与发布               | [Distribution](DISTRIBUTION.md)、[Releasing](RELEASING.md)                               | `packages/rolldown/`、[Create 索引](../packages/create/IMPLEMENTATION_INDEX.md)、`scripts/`                    |
 
-- `.agents/rules/`：可跨项目复用的 agent 决策规则，不作为 Pluxel 当前架构事实。
-- `engineering/`：为什么这样分层、内部不变量、代码从哪里看起。
-- `docs/`：用户应该写什么、如何选择 API、如何避免错误设计。
-- package README：安装、入口和本包特有操作。
-- `engineering/proposals/`：尚未实现的研究，不得作为当前 API 依据。
+跨 Plugin 调用或 service handle 变更还要检查缓存句柄、并发、owner 撤回和已接纳工作的处理，证据入口见[服务撤回审计](PROVIDER_WITHDRAWAL_AUDIT.md)。
 
-## 写作规则
+## 证据与背景按需读取
 
-- 只描述当前模型，不维护“旧 API 已删除”清单；历史由 Git 保存。
-- 一个事实只有一个权威位置，其他文档链接过去而不复制长段落。
-- 实现后的 proposal 必须删除或缩成仍未实现的部分。
-- 文档中的示例必须能对应当前公开入口和 workspace 用法。
+| 内容                                                                                                                           | 用途与限制                                         |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| [Host 部署验证](HOST_DEPLOYMENT_VALIDATION.md)                                                                                 | 已验证环境和待验证平台；不能从一个平台推断全部平台 |
+| [服务撤回审计](PROVIDER_WITHDRAWAL_AUDIT.md)                                                                                   | 生命周期与句柄行为的证据，不另定义作者 API         |
+| [时空组合记录](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)                                                                          | 设计动机与 Cordis 对照                             |
+| [显式 schema 实验](experiments/tsgo-plugin-inputs/README.md)、[Content Mapper 实验](experiments/tsgo-content-mapper/README.md) | 固定版本的实验结果                                 |
+| [Carrier spikes](spikes/README.md)                                                                                             | 上游能力实验，不代表当前支持矩阵                   |
+| [提案](proposals/README.md)                                                                                                    | 尚未落地的决定，不作为当前契约                     |
 
-### 用户文档
+## 文档所有权
 
-- 每页开头先回答“它解决什么问题、什么时候使用”，再介绍实现规则；不要用内部名词堆叠代替说明。
-- 中文负责叙述，英文只保留 API 标识符、专有名词和确有区分意义的框架术语。首次出现的术语要用一句话解释。
-- 优先按“如何选择 → 最小用法 → 关键边界 → 失败与验证”组织内容。标题应帮助读者完成任务或作出选择。
-- 对设计取舍给出可核对的实现事实，明确能力与限制，不把偏好写成未经验证的性能结论。
-- 用户无需理解内部 package、helper 或构建阶段名称，除非这些内容会直接影响其代码或交付结果。
+| 位置                             | 维护什么                           | 不重复什么               |
+| -------------------------------- | ---------------------------------- | ------------------------ |
+| `AGENTS.md`                      | 任务分流、必须遵守的工作流程       | 领域教程和完整 API 清单  |
+| `.agents/rules/`                 | 通用设计默认、理由、例外与验收方法 | Pluxel 当前架构事实      |
+| `engineering/` 领域页            | 内部职责、不变量、实现与验证入口   | 公开调用教程             |
+| `docs/`                          | 当前公开用法、失败、资源寿命与限制 | 内部实现说明和迁移历史   |
+| package README / 实现索引        | 本包职责、安装或操作、源码导航     | 第二套插件模型或领域契约 |
+| proposals / experiments / spikes | 未实现方案或有范围的实验依据       | 当前功能承诺             |
+
+改写先明确适用任务与事实归属，保留失败、并发、取消、所有权和验证边界，不用删除限制换取短篇幅。区分必须保持的契约与可替换实现；非显然约束保留一句原因或失败反例，并链接实现或验证依据。
+
+导航摘要指向权威章节，不另定默认值，不省略会改变含义的适用条件。
+
+保持已有页面路径；更改标题时检查锚点引用。新增或移动页面时检查侧栏、相对链接和生成项目的 AGENTS。已实现提案移除落地部分，旧模型由 Git 保存。

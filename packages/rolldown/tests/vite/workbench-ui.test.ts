@@ -7,10 +7,15 @@ import { parsePluginDefinitionAddress } from '@pluxel/core'
 import type { Manifest } from '@module-federation/sdk'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
+import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
 import { buildWorkbenchFederationProducer as buildWorkbenchFederationProducerWithMode } from '../../src/vite/workbench-ui'
 import { validateWorkbenchFederationArtifact } from '../../src/workbench/artifact'
 import { resolveWorkbenchFederationShared } from '../../src/workbench/build-contract'
+
+const reactExportNames = Object.keys(createRequire(import.meta.url)('react')).filter(
+	(name) => name !== 'default',
+)
 
 type DevelopmentBuildOptions = Omit<
 	Parameters<typeof buildWorkbenchFederationProducerWithMode>[0],
@@ -79,11 +84,11 @@ function producerFixtureFiles(): Record<string, string> {
 				packageManager: { name: 'pnpm', version: '>=11 <12', onFail: 'error' },
 			},
 			devDependencies: {
-				'@mantine/core': '9.5.2',
-				'@mantine/hooks': '9.5.2',
-				'@pluxel/runtime': '1.0.0',
-				react: '19.2.8',
-				'react-dom': '19.2.8',
+				'@mantine/core': '9.6.3',
+				'@mantine/hooks': '9.6.3',
+				'@pluxel/workbench': '0.1.0',
+				react: '19.3.0',
+				'react-dom': '19.3.0',
 			},
 		}),
 		'tsconfig.json': JSON.stringify({
@@ -107,21 +112,22 @@ export default () => ({ marker, async render() {}, destroy() {} })
 export const marker = 'profile-one-picker'
 export default () => ({ marker, async render() {}, destroy() {} })
 `,
-		...packageFiles('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...packageFiles('react-dom', '19.2.8', ['.', './client']),
-		'node_modules/react/index.js': [
-			"export const forwardRef = 'must-not-bundle-react-forward-ref'",
-			"export const createElement = 'must-not-bundle-react-create-element'",
-			'',
-		].join('\n'),
-		'node_modules/react/index.d.ts': [
-			'export declare const forwardRef: string',
-			'export declare const createElement: string',
-			'',
-		].join('\n'),
+		...packageFiles('react', '19.3.0', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...packageFiles('react-dom', '19.3.0', ['.', './client']),
+		// The real Bridge implementation also participates in shared export analysis.
+		// Keep its React surface complete while preserving sentinels for accidental bundling.
+		'node_modules/react/index.js': reactExportNames
+			.map(
+				(name) =>
+					`export const ${name} = 'must-not-bundle-react-${name === 'forwardRef' ? 'forward-ref' : name === 'createElement' ? 'create-element' : name}'`,
+			)
+			.join('\n'),
+		'node_modules/react/index.d.ts': reactExportNames
+			.map((name) => `export declare const ${name}: string`)
+			.join('\n'),
 		'node_modules/transitive-react-consumer/package.json': JSON.stringify({
 			name: 'transitive-react-consumer',
-			version: '1.0.0',
+			version: '0.1.0',
 			type: 'module',
 			exports: './index.js',
 			types: './index.d.ts',
@@ -133,19 +139,14 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		].join('\n'),
 		'node_modules/transitive-react-consumer/index.d.ts':
 			'export declare const iconMarker: string\n',
-		...packageFiles('@mantine/core', '9.5.2', ['.']),
-		...packageFiles('@mantine/hooks', '9.5.2', ['.']),
+		...packageFiles('@mantine/core', '9.6.3', ['.']),
+		...packageFiles('@mantine/hooks', '9.6.3', ['.']),
 		'node_modules/@mantine/core/index.js': "export const marker = 'must-not-bundle-mantine-core'\n",
 		'node_modules/@mantine/core/index.d.ts': 'export declare const marker: string\n',
 		'node_modules/@mantine/hooks/index.js':
 			"export const marker = 'must-not-bundle-mantine-hooks'\n",
 		'node_modules/@mantine/hooks/index.d.ts': 'export declare const marker: string\n',
-		...packageFiles('@pluxel/runtime', '1.0.0', [
-			'.',
-			'./workbench',
-			'./workbench/client',
-			'./workbench/react',
-		]),
+		...packageFiles('@pluxel/workbench', '0.1.0', ['.', './client', './react']),
 	}
 }
 
@@ -214,44 +215,44 @@ describe('Workbench Profile 1 federation producer', () => {
 			expect.arrayContaining([
 				expect.objectContaining({
 					name: 'react',
-					version: '19.2.8',
-					requiredVersion: '19.2.8',
+					version: '19.3.0',
+					requiredVersion: '19.3.0',
 					singleton: true,
 				}),
 				expect.objectContaining({
 					name: '@mantine/core',
-					version: '9.5.2',
-					requiredVersion: '9.5.2',
+					version: '9.6.3',
+					requiredVersion: '9.6.3',
 					singleton: true,
 				}),
 				expect.objectContaining({
 					name: '@mantine/hooks',
-					version: '9.5.2',
-					requiredVersion: '9.5.2',
+					version: '9.6.3',
+					requiredVersion: '9.6.3',
 					singleton: true,
 				}),
 				expect.objectContaining({
 					name: '@module-federation/bridge-react',
-					version: '2.9.0',
-					requiredVersion: '2.9.0',
+					version: '2.9.1',
+					requiredVersion: '2.9.1',
 					singleton: true,
 				}),
 				expect.objectContaining({
-					name: '@pluxel/runtime/workbench',
-					version: '1.0.0',
-					requiredVersion: '1.0.0',
+					name: '@pluxel/workbench',
+					version: '0.1.0',
+					requiredVersion: '0.1.0',
 					singleton: true,
 				}),
 				expect.objectContaining({
-					name: '@pluxel/runtime/internal/workbench-react',
-					version: '1.0.0',
-					requiredVersion: '1.0.0',
+					name: '@pluxel/workbench/internal/react',
+					version: '0.1.0',
+					requiredVersion: '0.1.0',
 					singleton: true,
 				}),
 				expect.objectContaining({
-					name: '@pluxel/runtime/workbench/react',
-					version: '1.0.0',
-					requiredVersion: '1.0.0',
+					name: '@pluxel/workbench/react',
+					version: '0.1.0',
+					requiredVersion: '0.1.0',
 					singleton: true,
 				}),
 			]),
@@ -291,7 +292,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 `
 		files['node_modules/conditional-workbench/package.json'] = JSON.stringify({
 			name: 'conditional-workbench',
-			version: '1.0.0',
+			version: '0.1.0',
 			type: 'module',
 			exports: {
 				'.': {
@@ -478,7 +479,7 @@ export default () => ({ async render() {}, destroy() {} })
 				outDir: join(root, 'artifact'),
 				minify: false,
 			}),
-		).rejects.toThrow('Profile 1 requires @mantine/core@9.5.2, resolved 9.5.0')
+		).rejects.toThrow('Profile 1 requires @mantine/core@9.6.3, resolved 9.5.0')
 	}, 60_000)
 
 	it('allows a producer without local Mantine when the application provides the winner', async () => {
@@ -580,21 +581,21 @@ export default () => ({ marker, async render() {}, destroy() {} })
 
 	it('hard-fails when a producer-resolved platform shared version is not exact', async () => {
 		const files = producerFixtureFiles()
-		files['node_modules/@pluxel/runtime/package.json'] = JSON.stringify({
-			name: '@pluxel/runtime',
+		files['node_modules/@pluxel/workbench/package.json'] = JSON.stringify({
+			name: '@pluxel/core',
 			version: '',
 			type: 'module',
 			exports: {
 				'.': './index.js',
 				'./workbench': './workbench.js',
-				'./workbench/client': './workbench/client.js',
-				'./workbench/react': './workbench/react.js',
+				'./client': './workbench/client.js',
+				'./react': './workbench/react.js',
 			},
 		})
 		await using fixture = await createFixture(files)
 
 		expect(() => resolveWorkbenchFederationShared(fixture.path)).toThrow(
-			'shared package has no exact version: @pluxel/runtime',
+			'shared package has no exact version: @pluxel/workbench',
 		)
 	})
 
@@ -609,7 +610,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		await using fixture = await createFixture(files)
 
 		expect(() => resolveWorkbenchFederationShared(fixture.path)).toThrow(
-			'Profile 1 requires @mantine/core@9.5.2, resolved 9.5.0',
+			'Profile 1 requires @mantine/core@9.6.3, resolved 9.5.0',
 		)
 	})
 

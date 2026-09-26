@@ -9,7 +9,7 @@ const workbenchMocks = vi.hoisted(() => ({
 	mutationReset: vi.fn(),
 }))
 
-vi.mock('@pluxel/runtime/workbench/react', () => ({
+vi.mock('@pluxel/workbench/react', () => ({
 	createWorkbenchRenderer: () =>
 		Object.freeze({
 			render: (Component: unknown) => Component,

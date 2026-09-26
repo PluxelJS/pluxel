@@ -17,7 +17,7 @@ host catalog 包含 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 与 consume
 
 ```ts twoslash
 import { EChartsPlugin } from '@pluxel/echarts'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class ReportsPlugin extends BasePlugin {
@@ -137,67 +137,26 @@ data URL 在 ZRender 前被替换为 render-local key，并通过 Canvas worker 
 - ECharts `maxTotalImagePixels`：所有图片完成 native decode 后的总像素数。
 - Canvas `maxImageBytes`、width、height 与 pixels：实际图片解码上限。
 
-ECharts 的同步 placeholder 会直接交给 Canvas `decodeImageInto()`；每个 distinct source 只做一次 native decode，不会先生成
-第二个 Image 再触发 `src` setter 重复解码。Canvas decode queue 满时映射为 ECharts `RENDER_BUSY`。
-
-Canvas worker adapter 默认每次只提交 1 个 native decode；Runtime 默认最多运行 4 个 worker，因此 ECharts 默认最多贡献
-4 个同时在途的 Canvas decode，而不是形成 4 × 4 的嵌套并行。这个 admission 只协调 Pluxel 自己提交的工作，不能接管
-进程共享 libuv pool。图片失败会中止同一次 render 尚未开始的 decode；已提交的 native work 不可抢占，worker handler
-会等待它真实完成，再把线程用于下一 job。
+每个 distinct source 只解码一次。Canvas worker adapter 默认并发 1，宿主 Workers 提供外层并行。
+图片失败会取消尚未开始的 decode；已提交的 native decode 会在复用线程前等待结束。Canvas decode queue 满时返回 `RENDER_BUSY`。
 
 HTTP(S) URL 与服务端文件路径会被拒绝。ECharts/Canvas 不应隐式拥有网络、认证、redirect、proxy 或文件读取权限。
 先通过业务 outbound HTTP capability 获取 bytes，再转换成受支持的 data URL；native Image 不能进入 declarative option。
 
 ## Worker-only execution
 
-EChartsPlugin 先用 `ctx.workers.runPrepared()` 取得 root-owned shared queue 的 fair execution slot，再 cooperative 检查
-borrowed option 并组装 Canvas `workerSnapshot` 与 render policy。queue full 不先遍历 graph；borrowed input 省略重复
-snapshot，真正 dispatch 时仍由 worker transport 建立私有 graph：
+ECharts 使用宿主共享 Workers 服务，线程数与 global / per-owner queue 在服务配置中设置。
+满队列返回 `RENDER_BUSY`，不会先遍历大 option；取得 admission 后，宿主 cooperative 校验输入预算，
+Worker 执行 SSR layout、图片解码、flush 与 encode，并在结束时释放 ECharts instance 和 Canvas adapter。
 
-1. worker 从 snapshot 构造 bounded Canvas adapter。
-2. ECharts 以 SSR mode 初始化。
-3. 等待受支持的 render-local 图片、flush 并编码。
-4. 在 `finally` 中撤销 render-local image scope、等待其 JS task settle、dispose ECharts instance，并关闭 Canvas adapter；
-   adapter close 会等 already-submitted native decode 真正 settle 后才让 worker handler 返回。
-
-Worker task concurrency、每 owner 队列和 host 总队列均由 runtime workers 配置，不是 EChartsConfig 或 CanvasConfig 字段；
-每个 adapter 内的 image decode admission 则来自 CanvasConfig。队列满时抛出 `EChartsError`，code 为 `RENDER_BUSY`。
-
-option 必须由 plain object、array、typed array 和 scalar data 组成。formatter function、accessor、native/class object 和
-SharedArrayBuffer 都会以 `WORKER_INPUT_UNSUPPORTED` 拒绝，不存在 inline fallback。admission 后、worker transport 前会同时检查 option 的
-estimated bytes、value count 与 nesting depth；遍历每 2,048 个 value 让出一次 event loop，单个大字符串也按 64 Ki
-characters 分片计量。真正的 worker transport
-serialization 仍发生在宿主线程，因此 Worker-only 表示重 layout/render 已隔离，不表示主线程成本为零。三项预算把这段
-不可避免的 serialization 成本限制在 host 可配置上界内；`setOption` policy 也计入同一预算并使用相同 declarative contract。
+option 必须是 plain object、array、typed array 和 scalar data；formatter function、accessor、native/class object
+与 SharedArrayBuffer 会以 `WORKER_INPUT_UNSUPPORTED` 拒绝，不回退主线程渲染。
+option 与 `setOption` 共用 bytes、value count、depth 预算；渲染结束前不得修改输入。
+输入检查与 transport serialization 仍有有界主线程成本，Worker 不代表零主线程开销或 native 安全隔离。
 
 ## 配置与职责
 
-```ts no-twoslash
-await host.start(EChartsPlugin, {
-	catalog: [FontsPlugin, CanvasPlugin],
-	initialConfig: {
-		defaultDevicePixelRatio: 1,
-		maxDevicePixelRatio: 4,
-		maxThemesPerConsumer: 32,
-		maxTotalThemes: 256,
-		maxTotalThemeBytes: 16 * 1024 * 1024,
-		maxThemeBytes: 1024 * 1024,
-		maxThemeNodes: 20_000,
-		maxThemeDepth: 64,
-		maxDataUrlBytes: 32 * 1024 * 1024,
-		maxImages: 32,
-		maxTotalImageBytes: 32 * 1024 * 1024,
-		maxTotalImagePixels: 16_777_216,
-		maxOptionBytes: 8 * 1024 * 1024,
-		maxOptionNodes: 100_000,
-		maxOptionDepth: 64,
-		maxOutputBytes: 64 * 1024 * 1024,
-	},
-})
-```
-
-这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle。后续更新使用
-`host.config.patch()`，production deployment 则通过自己的 ConfigService 管理相同 record。
+在应用的 Plugin config 中按需覆盖以下默认值：
 
 | 字段                      |    默认值 | 职责                                               |
 | ------------------------- | --------: | -------------------------------------------------- |
@@ -219,7 +178,7 @@ await host.start(EChartsPlugin, {
 | `maxOutputBytes`          |  `64 MiB` | worker 返回前的 encoded raster 上限                |
 
 `defaultDevicePixelRatio` 不能高于 `maxDevicePixelRatio`。字体由 FontsPlugin 配置，单张图片的 native dimensions/pixels 与
-encoded bytes 由 CanvasPlugin 配置，worker 并发与队列由 runtime `ctx.workers` 配置，网络访问策略由业务 HTTP capability
+encoded bytes 由 CanvasPlugin 配置，worker 并发与队列由 runtime `ctx.require(Workers)` 配置，网络访问策略由业务 HTTP capability
 配置。EChartsConfig 拥有 DPR、theme、option/data URL transport、每次 render 的图片累计预算与 output 限制。
 
 默认单次 render 的 root surface 与 decoded images 各最多约 64 MiB raw RGBA。encoded source、output、ECharts/Skia
@@ -237,3 +196,40 @@ allocation。高并发 host 应联合测量 `workers.maxThreads`、Canvas per-wo
 - execution：`WORKER_INPUT_UNSUPPORTED`、`OUTPUT_TOO_LARGE`、`RENDER_BUSY`、`RENDER_FAILED`。
 
 Canvas dimensions/pixels 校验发生在 render 前；底层 Canvas failure 最终作为带 cause 的 render failure 暴露。业务层应按 code 决定拒绝、降级或重试，不要解析 message。
+
+## 将可恢复失败交给业务调用方
+
+报表 consumer 如果能在繁忙时展示已有图表，可把 `RENDER_BUSY` 转成明确的业务 Err。
+下面的 `charts` 来自 constructor 注入；其余错误继续遵守 ECharts 原来的异常契约。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import {
+	EChartsError,
+	type EChartsPlugin,
+	type EChartsRenderInput,
+	type EChartsRenderResult,
+} from '@pluxel/echarts'
+
+export class ChartBusy extends TaggedError('ChartBusy')<{ message: string }> {}
+
+export async function renderChart(
+	charts: EChartsPlugin,
+	input: EChartsRenderInput,
+): Promise<Result<EChartsRenderResult, ChartBusy>> {
+	try {
+		return Result.ok(await charts.render(input))
+	} catch (error) {
+		if (error instanceof EChartsError && error.code === 'RENDER_BUSY') {
+			return Result.err(new ChartBusy({ message: 'Chart renderer is busy; retry later.' }))
+		}
+		throw error
+	}
+}
+```
+
+`result.isErr()` 时展示已有图表并让调用方决定何时重试，Ok 时使用 `value.data` / `mediaType`。
+不要把取消、Worker 故障、输入损坏或 `RENDER_FAILED` 统一映射成 busy，也不要在这里无界重试。
+成功的 Buffer 走 HTTP 图片响应或存储协议，不直接进入 Workbench portable DTO。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/echarts/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/echarts/tests/echarts.test.ts)。

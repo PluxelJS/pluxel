@@ -1,6 +1,8 @@
+import { standardServices } from '@pluxel/services'
+import { createTestHost } from '@pluxel/test'
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { BasePlugin, createRuntimeTestHost, Plugin } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import { RedisPlugin, RedisRatesBackendPlugin } from '../src/index.ts'
 
@@ -14,17 +16,19 @@ class IntegrationConsumer extends BasePlugin {
 }
 
 const algorithms = [
-	{ algorithm: 'token-bucket', limit: 3, windowMs: 100, burst: 3 },
-	{ algorithm: 'fixed-window', limit: 3, windowMs: 100 },
-	{ algorithm: 'sliding-window-counter', limit: 3, windowMs: 100 },
-	{ algorithm: 'sliding-window-log', limit: 3, windowMs: 100 },
+	{ algorithm: 'token-bucket', limit: 3, windowMs: 60_000, burst: 3 },
+	{ algorithm: 'fixed-window', limit: 3, windowMs: 60_000 },
+	{ algorithm: 'sliding-window-counter', limit: 3, windowMs: 60_000 },
+	{ algorithm: 'sliding-window-log', limit: 3, windowMs: 60_000 },
 ] satisfies RatePolicy[]
 
 describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		{
-			await using host = createRuntimeTestHost()
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
 
 			await host.commit((change) => {
 				change.start(RedisPlugin, {

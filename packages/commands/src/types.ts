@@ -1,3 +1,4 @@
+import type { Result as BetterResult } from 'better-result'
 import type { Static, StaticDecode, TObject, TSchema } from '@sinclair/typebox'
 
 export type Schema = TSchema
@@ -50,7 +51,6 @@ export type CommandErrorCode =
 	| 'COMMAND_NOT_FOUND'
 	| 'ARGUMENT_SYNTAX'
 	| 'INPUT_VALIDATION'
-	| 'OUTPUT_VALIDATION'
 	| 'FORBIDDEN'
 	| 'ABORTED'
 	| 'TIMEOUT'
@@ -92,7 +92,6 @@ type CommandErrorDetailsByCode = {
 		allowedValues?: readonly string[]
 	}
 	INPUT_VALIDATION?: { issues: ValidationIssue[] }
-	OUTPUT_VALIDATION?: { issues: ValidationIssue[] }
 	FORBIDDEN?: { permission?: string; reason?: string }
 	ABORTED?: undefined
 	TIMEOUT?: { now?: number; deadlineMs?: number }
@@ -106,10 +105,7 @@ export type CommandErrorDetails<C extends CommandErrorCode = CommandErrorCode> =
 		: Record<string, unknown> | undefined
 
 function kindOfCommandError(code: CommandErrorCode): CommandErrorKind {
-	return code === 'COMMAND_CONFIG' ||
-		code === 'OUTPUT_VALIDATION' ||
-		code === 'DEPENDENCY' ||
-		code === 'INTERNAL'
+	return code === 'COMMAND_CONFIG' || code === 'DEPENDENCY' || code === 'INTERNAL'
 		? 'fault'
 		: 'expected'
 }
@@ -160,153 +156,92 @@ export function toCommandError(
  * record to replace `signal` with a host-composed signal before execution.
  */
 export interface CommandContext {
-	/** Cooperative cancellation signal. Omitted when the call has no cancellation source. */
 	readonly signal?: AbortSignal
-	/** Absolute Unix timestamp checked before and after execution. */
+	/** Absolute Unix timestamp. */
 	readonly deadlineMs?: number
-	/** Host-owned request metadata. Omitted when the carrier has no metadata to pass. */
 	readonly meta?: Readonly<Record<string, unknown>>
 }
 
-/** Context may be omitted only when the command does not require host-specific fields. */
 export type CommandContextArgs<Ctx extends CommandContext> = CommandContext extends Ctx
 	? [context?: Ctx]
 	: [context: Ctx]
 
-export type Validator<T, Ctx extends CommandContext = CommandContext> = (
-	value: T,
-	context: Ctx,
-) =>
-	| void
-	| ValidationIssue
-	| ValidationIssue[]
-	| Promise<void | ValidationIssue | ValidationIssue[]>
-
-/** Static worst-case behavior for tool discovery, confirmation, and audit policy. */
-export type CommandBehavior =
+export type CommandFailure = {
+	readonly message: string
+	readonly cause?: unknown
+} & (
 	| {
-			readonly kind: 'query'
-			readonly world: 'closed' | 'open'
+			readonly code: 'INPUT_VALIDATION'
+			readonly issues: readonly {
+				readonly path?: readonly (string | number)[]
+				readonly code?: string
+				readonly message: string
+			}[]
 	  }
+	| { readonly code: 'REJECTED'; readonly reason: string }
 	| {
-			readonly kind: 'mutation'
-			readonly destructive: boolean
-			readonly idempotent: boolean
-			readonly world: 'closed' | 'open'
+			readonly code:
+				| 'FORBIDDEN'
+				| 'COMMAND_NOT_FOUND'
+				| 'PUBLICATION_GONE'
+				| 'ABORTED'
+				| 'TIMEOUT'
+				| 'DEPENDENCY'
+				| 'INTERNAL'
+				| 'OUTPUT_ENCODING'
+				| 'OUTPUT_LIMIT'
 	  }
-
-/** Transport-neutral example. Carrier syntax such as argv quoting does not belong here. */
-export type CommandExample<I = unknown, O = unknown> = {
-	readonly title?: string
-	readonly input: I
-	readonly output?: O
-}
+)
 
 export type CommandDescriptor = {
 	readonly name: string
-	readonly title?: string
 	readonly description: string
-	readonly behavior: CommandBehavior
 	readonly inputSchema: Readonly<Record<string, unknown>>
-	readonly outputSchema?: Readonly<Record<string, unknown>>
-	readonly examples?: readonly CommandExample[]
-}
-
-type CommandDefinitionBase<
-	SIn extends ObjectSchema,
-	Ctx extends CommandContext = CommandContext,
-> = {
-	name: string
-	/** Short presentation label. Omitted when the machine name is sufficient. */
-	title?: string
-	description: string
-	behavior: CommandBehavior
-	input: SIn
-	/** Cross-field or context-aware validation after schema decoding. */
-	validate?: Validator<Infer<SIn>, Ctx>
-}
-
-export type OutputCommandDefinition<
-	SIn extends ObjectSchema,
-	SOut extends ObjectSchema,
-	Ctx extends CommandContext = CommandContext,
-> = CommandDefinitionBase<SIn, Ctx> & {
-	output: SOut
-	/** Transport-neutral wire examples. Omitted when the schema is self-explanatory. */
-	examples?: readonly CommandExample<Wire<SIn>, Wire<SOut>>[]
-	/** Domain validation after output encoding and wire validation. */
-	validateOutput?: Validator<Infer<SOut>, Ctx>
-	execute(input: Infer<SIn>, context: Ctx): Infer<SOut> | Promise<Infer<SOut>>
-}
-
-/**
- * Definition contract for a command with no structured business output.
- *
- * Carrier packages may reuse this shape to provide a context-specific command definer while
- * keeping validation and execution semantics aligned with `defineCommand()`.
- */
-export type VoidCommandDefinition<
-	SIn extends ObjectSchema,
-	Ctx extends CommandContext = CommandContext,
-> = CommandDefinitionBase<SIn, Ctx> & {
-	/** Omit output when success has no business value. */
-	output?: never
-	/** Transport-neutral input examples. */
-	examples?: readonly CommandExample<Wire<SIn>, never>[]
-	validateOutput?: never
-	execute(input: Infer<SIn>, context: Ctx): void | Promise<void>
 }
 
 export type DefineCommandConfig<
 	SIn extends ObjectSchema,
-	SOut extends ObjectSchema | undefined = undefined,
+	O,
 	Ctx extends CommandContext = CommandContext,
-> = SOut extends ObjectSchema
-	? OutputCommandDefinition<SIn, SOut, Ctx>
-	: VoidCommandDefinition<SIn, Ctx>
+> = {
+	readonly name: string
+	readonly description: string
+	readonly input: SIn
+	readonly execute: (
+		input: Infer<SIn>,
+		context: Ctx,
+	) => BetterResult<O, CommandFailure> | Promise<BetterResult<O, CommandFailure>>
+}
 
 declare const commandInputType: unique symbol
-declare const installedCommandBrand: unique symbol
 
 export interface Command<I = unknown, O = unknown, Ctx extends CommandContext = CommandContext> {
 	readonly name: string
 	readonly descriptor: CommandDescriptor
-	/** @internal Keeps the argv input type invariant without exposing an unchecked input method. */
+	/** @internal Keeps input invariant for argv bindings. */
 	readonly [commandInputType]?: (input: I) => I
-	readonly execute: (candidate: unknown, ...context: CommandContextArgs<Ctx>) => Promise<O>
+	readonly execute: (
+		candidate: I,
+		...context: CommandContextArgs<Ctx>
+	) => Promise<BetterResult<O, CommandFailure>>
 }
 
-/** A concrete command implementation, never a compatible-replacement catalog handle. */
 export type DirectCommand<
 	I = unknown,
 	O = unknown,
 	Ctx extends CommandContext = CommandContext,
 > = Command<I, O, Ctx> & {
-	readonly [installedCommandBrand]?: never
-	/** Direct implementations are lifecycle-neutral definitions, not disposable registrations. */
 	readonly dispose?: never
+	readonly mounted?: never
 }
-
-/** A command whose input identity is erased and whose dynamically selected output must be narrowed. */
 export type AnyCommand<Ctx extends CommandContext = CommandContext> = Command<any, unknown, Ctx>
-
-/** A catalog-bound command that resolves the current compatible implementation on every call. */
-export interface InstalledCommand<
-	I = unknown,
-	O = unknown,
-	Ctx extends CommandContext = CommandContext,
-> extends Command<I, O, Ctx> {
-	readonly [installedCommandBrand]: true
-}
-
 export type Registration = {
 	readonly name: string
 	readonly dispose: () => void
+	readonly [Symbol.dispose]: () => void
 }
-
-/** Registration ownership and the live, schema-compatible installed command handle. */
 export type CommandRegistration<
 	I = unknown,
 	O = unknown,
 	Ctx extends CommandContext = CommandContext,
-> = InstalledCommand<I, O, Ctx> & Registration
+> = Command<I, O, Ctx> & Registration

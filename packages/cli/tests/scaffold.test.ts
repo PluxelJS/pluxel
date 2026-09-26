@@ -350,7 +350,8 @@ describe('scaffold template rendering', () => {
 		expect(manifest.scripts).not.toHaveProperty('build:plugin')
 		expect(manifest.scripts.build).toBe('pluxel build')
 		expect(manifest.scripts).toHaveProperty('verify')
-		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': 'catalog:' })
+		expect(manifest.peerDependencies).toEqual({ '@pluxel/core': 'catalog:' })
+		expect(manifest.dependencies).toEqual({ valibot: 'catalog:' })
 		expect(manifest.exports).toEqual({
 			'.': {
 				'@pluxel/hmr': './src/hello-world.ts',
@@ -369,10 +370,10 @@ describe('scaffold template rendering', () => {
 			oxfmt: 'catalog:',
 		})
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			"'@pluxel/runtime': ^1.0.0",
+			"'@pluxel/core': ^1.0.0",
 		)
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			'vitest: 5.0.0',
+			'vitest: 5.0.2',
 		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
@@ -387,7 +388,7 @@ describe('scaffold template rendering', () => {
 		expect(pluginTest).toContain("from 'pluxel-plugin-hello-world'")
 		expect(pluginTest).not.toContain("from '../src/")
 		expect(source).not.toContain('export default')
-		expect(pluginTest).toContain('createRuntimeTestHost')
+		expect(pluginTest).toContain('createTestHost')
 		expect(pluginTest).toContain("initialConfig: { message: 'configured' }")
 		expect(pluginTest).not.toContain('createRuntimeHost')
 		expect(pluginTest).not.toContain('host.cfg(')

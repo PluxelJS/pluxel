@@ -54,9 +54,13 @@ export function resolveCoreRootInputs(config: CoreHostConfig = {}): CoreRootInpu
 
 export function createCoreContextInstallations(
 	inputs: CoreRootInputs,
-	lifecycleHooks: CorePluginLifecycleHooks = {},
+	lifecycleHooks: CorePluginLifecycleHooks | ((root: RootContext) => CorePluginLifecycleHooks) = {},
+	createConfigService: (root: RootContext) => ConfigService = (root) => new ConfigService(root),
 ): readonly ContextCapabilityInstallation[] {
-	const fixedLifecycleHooks = freezeCorePluginLifecycleHooks(lifecycleHooks)
+	const fixedLifecycleHooks =
+		typeof lifecycleHooks === 'function'
+			? lifecycleHooks
+			: freezeCorePluginLifecycleHooks(lifecycleHooks)
 	return Object.freeze([
 		installScopeCapability(LOGGER_CAPABILITY, {
 			property: 'logger',
@@ -72,10 +76,17 @@ export function createCoreContextInstallations(
 			createView: (backend, owner) => createEventsServiceView(backend, owner as Context),
 		}),
 		installRootCapability(CONFIG_SERVICE_CAPABILITY, {
-			create: (ctx) => new ConfigService(ctx as RootContext),
+			create: (ctx) => createConfigService(ctx as RootContext),
 		}),
 		installRootCapability(PLUGIN_SERVICE_CAPABILITY, {
-			create: (ctx) => new PluginService(ctx as RootContext, inputs.plugins, fixedLifecycleHooks),
+			create: (ctx) =>
+				new PluginService(
+					ctx as RootContext,
+					inputs.plugins,
+					typeof fixedLifecycleHooks === 'function'
+						? freezeCorePluginLifecycleHooks(fixedLifecycleHooks(ctx as RootContext))
+						: fixedLifecycleHooks,
+				),
 		}),
 	])
 }
@@ -87,4 +98,49 @@ export function createCoreRootContext(config: CoreHostConfig = {}): RootContext 
 		capabilities: createCoreContextInstallations(inputs),
 	})
 	return host.createRoot(inputs.name) as RootContext
+}
+
+/** Compile a Core host with an explicit, immutable set of additional capabilities. */
+export function createCoreContextHost<
+	const TCapabilities extends readonly ContextCapabilityInstallation[] = readonly [],
+>(
+	config: CoreHostConfig & {
+		/** Overrides only the fixed Core config service. The factory is lazy; resources belong to root effects. */
+		readonly createConfigService?: (root: RootContext) => ConfigService
+		/** Fixed host publication stages; evaluated once when the root Plugin service is constructed. */
+		readonly createLifecycleHooks?: (root: RootContext) => CorePluginLifecycleHooks
+		readonly capabilities?: TCapabilities &
+			import('@pluxel/context').ValidateContextInstallations<
+				TCapabilities,
+				| Exclude<keyof Context, keyof import('./Context').ContextServices>
+				| 'constructor'
+				| '__proto__'
+			>
+	} = {},
+) {
+	if (
+		config.createConfigService !== undefined &&
+		typeof config.createConfigService !== 'function'
+	) {
+		throw new TypeError('[pluxel/core] createConfigService must be a function')
+	}
+	const inputs = resolveCoreRootInputs(config)
+	return createContextHost({
+		name: inputs.name,
+		reservedProperties: ['pluginInfo', 'caller'],
+		capabilities: [
+			...createCoreContextInstallations(
+				inputs,
+				config.createLifecycleHooks,
+				config.createConfigService,
+			),
+			...(config.capabilities ?? []),
+		],
+	}) as import('@pluxel/context').ContextHost<
+		Context &
+			import('@pluxel/context').ContextProjection<TCapabilities> & {
+				readonly root: RootContext & import('@pluxel/context').RootContextProjection<TCapabilities>
+			},
+		RootContext & import('@pluxel/context').RootContextProjection<TCapabilities>
+	>
 }

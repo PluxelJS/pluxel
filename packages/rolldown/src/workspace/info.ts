@@ -1,4 +1,4 @@
-import { normalize, resolve as r } from 'pathe'
+import { normalize, resolve } from 'pathe'
 import { nodeWorkspaceFs, readTextFile, type WorkspaceFs } from './fs'
 import { manifestPathForWithFs, safeReadManifestWithFs } from './manifest'
 import type { WorkspacePackageJson } from './package-json'
@@ -28,7 +28,7 @@ export async function loadWorkspaceInfoWithFs(
 		patterns.add(p)
 	}
 
-	const pnpmWorkspacePath = r(root, 'pnpm-workspace.yaml')
+	const pnpmWorkspacePath = resolve(root, 'pnpm-workspace.yaml')
 	if (fs.existsSync(pnpmWorkspacePath)) {
 		for (const p of parsePnpmWorkspace(await readTextFile(fs, pnpmWorkspacePath))) {
 			patterns.add(p)
@@ -79,7 +79,7 @@ async function collectPackageDirsWithFs(
 	for (const pattern of includePatterns) {
 		for (const pkgDir of await expandWorkspacePattern(root, pattern, fs)) {
 			const normalized = normalize(pkgDir)
-			if (!fs.existsSync(r(normalized, 'package.json'))) continue
+			if (!fs.existsSync(resolve(normalized, 'package.json'))) continue
 			if (matchesAnyWorkspacePattern(relativeWorkspacePath(root, normalized), excludePatterns))
 				continue
 			out.add(normalized)
@@ -113,7 +113,7 @@ async function expandWorkspacePattern(
 			await walk(dir, index + 1)
 			for (const entry of await safeReadDirs(fs, dir)) {
 				if (shouldSkipGlobDir(entry.name)) continue
-				await walk(r(dir, entry.name), index)
+				await walk(resolve(dir, entry.name), index)
 			}
 			return
 		}
@@ -121,12 +121,12 @@ async function expandWorkspacePattern(
 			const matcher = segmentMatcher(segment)
 			for (const entry of await safeReadDirs(fs, dir)) {
 				if (!matcher(entry.name)) continue
-				await walk(r(dir, entry.name), index + 1)
+				await walk(resolve(dir, entry.name), index + 1)
 			}
 			return
 		}
 
-		const next = r(dir, segment)
+		const next = resolve(dir, segment)
 		if (fs.existsSync(next)) await walk(next, index + 1)
 	}
 
@@ -198,7 +198,7 @@ export function parsePnpmWorkspace(contents: string): string[] {
 			}
 			continue
 		}
-		if (line.trim() && line.match(new RegExp(`^\\\\s{0,${indent}}\\\\S`))) break
+		if (line.trim() && line.match(new RegExp(`^\\s{0,${indent}}\\S`))) break
 		const match = line.match(/^\s*-\s*['"]?([^'"]+)['"]?\s*$/)
 		if (match) res.push(match[1])
 	}

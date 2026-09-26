@@ -25,8 +25,6 @@ import {
 export interface ConfigSourcePluginOptions {
 	include?: string | string[]
 	exclude?: string | string[]
-	/** @default '@pluxel/runtime/toolchain' */
-	metadataHelperImportSource?: string
 }
 
 export type ConfigImportBinding = {
@@ -41,6 +39,18 @@ export type ConfigDeclaration = {
 	readonly schemaExpression: string
 	readonly source: string
 	readonly target: 'plugin' | 'part'
+}
+
+/** Internal declaration facts shared by build rendering and source inspection. */
+export type ConfigDeclarationFact = Omit<ConfigDeclaration, 'source'> & {
+	readonly field: { readonly start: number; readonly end: number }
+	readonly schema: {
+		readonly start: number
+		readonly end: number
+		readonly expression: AstNode
+		readonly reference: AstNode
+		readonly inline: boolean
+	}
 }
 
 type SourceExport =
@@ -75,26 +85,13 @@ export type ConfigSchemaSourceResolver = {
 		module: ConfigSchemaModule,
 		expression: AstNode,
 	): Promise<readonly ConfigSourceSymbol[] | undefined>
-	resolvePluginConfigSchemaSymbol(
-		plugin: ConfigSourceSymbol,
-	): Promise<ConfigSourceSymbol | undefined>
 }
 
-const AUTHORING_PACKAGES = new Set([
-	'@pluxel/core',
-	'@pluxel/core/test',
-	'@pluxel/runtime',
-	'@pluxel/runtime/test',
-	'@pluxel/test',
-])
-const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'
+const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/internal/test'])
+const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/core/toolchain'
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
-	const helperSource =
-		options.metadataHelperImportSource?.trim() || DEFAULT_METADATA_HELPER_IMPORT_SOURCE
-	if (!helperSource.endsWith('/toolchain')) {
-		throw new TypeError('[pluxel-config] metadataHelperImportSource must name a /toolchain subpath')
-	}
+	const helperSource = DEFAULT_METADATA_HELPER_IMPORT_SOURCE
 	const include = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',
@@ -161,9 +158,30 @@ export async function extractConfigDeclarations(
 	sourceResolver: ConfigSchemaSourceResolver,
 	error: (message: string) => never,
 ): Promise<ConfigDeclaration[]> {
+	const { module, declarations } = extractConfigDeclarationFacts(ast, code, id, error)
+	const out: ConfigDeclaration[] = []
+	for (const declaration of declarations) {
+		out.push({
+			className: declaration.className,
+			fieldName: declaration.fieldName,
+			schemaExpression: declaration.schemaExpression,
+			source: await sourceResolver.render(module, declaration.schema.expression),
+			target: declaration.target,
+		})
+	}
+	return out
+}
+
+/** Validate declaration shape and retain source facts without rendering or evaluating schemas. */
+export function extractConfigDeclarationFacts(
+	ast: Program,
+	code: string,
+	id: string,
+	error: (message: string) => never,
+): { module: ConfigSchemaModule; declarations: readonly ConfigDeclarationFact[] } {
 	const module = collectConfigSchemaModule(ast, code, id)
 	const imports = module.imports
-	const out: ConfigDeclaration[] = []
+	const out: ConfigDeclarationFact[] = []
 	for (const statement of ast.body ?? []) {
 		const top = statement as unknown as AstNode
 		const node =
@@ -175,7 +193,7 @@ export async function extractConfigDeclarations(
 		if (!className) continue
 		const marked = hasPluginMarker(node, imports)
 		const part = extendsPluginPart(node, imports)
-		const declarations: ConfigDeclaration[] = []
+		const declarations: ConfigDeclarationFact[] = []
 		for (const rawMember of arrayOf((node.body as AstNode | undefined)?.body)) {
 			const member = rawMember as AstNode
 			if (member.type !== 'PropertyDefinition') continue
@@ -207,11 +225,22 @@ export async function extractConfigDeclarations(
 			if (!schemaExpression.trim()) {
 				error(`[pluxel-config] ${id} ${className}.${fieldName} schema is empty`)
 			}
+			const reference = unwrapStaticExpression(schema)
 			declarations.push({
 				className,
 				fieldName,
 				schemaExpression,
-				source: await sourceResolver.render(module, schema),
+				field: {
+					start: position(member.start, error, `${className}.${fieldName} field start`),
+					end: position(member.end, error, `${className}.${fieldName} field end`),
+				},
+				schema: {
+					start,
+					end,
+					expression: schema,
+					reference,
+					inline: reference.type !== 'Identifier' && reference.type !== 'MemberExpression',
+				},
 				target: marked ? 'plugin' : 'part',
 			})
 		}
@@ -222,7 +251,7 @@ export async function extractConfigDeclarations(
 		}
 		out.push(...declarations)
 	}
-	return out
+	return { module, declarations: out }
 }
 
 function extendsPluginPart(
@@ -349,6 +378,8 @@ export function collectConfigSchemaModule(
 
 export function createConfigSchemaSourceResolver(
 	context: Pick<TransformPluginContext, 'resolve'>,
+	readSource: (id: string) => Promise<string> = (id) => readFile(id, 'utf8'),
+	options: { readonly cache?: boolean } = {},
 ): ConfigSchemaSourceResolver {
 	const modules = new Map<string, Promise<ConfigSchemaModule | undefined>>()
 	const pending = new Set<string>()
@@ -357,9 +388,9 @@ export function createConfigSchemaSourceResolver(
 		const clean = stripQuery(id)
 		let result = modules.get(clean)
 		if (!result) {
-			result = readFile(clean, 'utf8')
+			result = readSource(clean)
 				.then((code) => {
-					const ast = parseStandaloneWithLang(code, clean)
+					const ast = parseStandaloneWithLang(code, clean, options)
 					return ast ? collectConfigSchemaModule(ast, code, clean) : undefined
 				})
 				.catch((): undefined => undefined)
@@ -494,29 +525,6 @@ export function createConfigSchemaSourceResolver(
 			symbols.push(symbol)
 		}
 		return symbols
-	}
-
-	const resolvePluginConfigSchemaSymbol = async (
-		plugin: ConfigSourceSymbol,
-	): Promise<ConfigSourceSymbol | undefined> => {
-		const module = await loadModule(plugin.moduleId)
-		const declaration = module?.classes.get(plugin.local)
-		if (!module || !declaration) return undefined
-		const schemas: AstNode[] = []
-		for (const rawMember of arrayOf((declaration.body as AstNode | undefined)?.body)) {
-			const member = rawMember as AstNode
-			if (member.type !== 'PropertyDefinition') continue
-			const use = configsUse(member.value)
-			if (!use) continue
-			const args = arrayOf(use.arguments)
-			if (args.length !== 1 || (args[0] as AstNode).type === 'SpreadElement') return undefined
-			schemas.push(args[0] as AstNode)
-		}
-		if (schemas.length !== 1) return undefined
-		const schema = unwrapStaticExpression(schemas[0]!)
-		if (schema.type !== 'Identifier') return undefined
-		const name = readIdentifier(schema)
-		return name ? resolveLocalSymbol(module, name, new Set()) : undefined
 	}
 
 	const renderExport = async (
@@ -665,7 +673,6 @@ export function createConfigSchemaSourceResolver(
 		async resolveArraySymbols(module, expression) {
 			return resolveArrayExpressionSymbols(module, expression, new Set())
 		},
-		resolvePluginConfigSchemaSymbol,
 	}
 }
 

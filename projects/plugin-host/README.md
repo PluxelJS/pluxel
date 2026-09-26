@@ -6,35 +6,33 @@
 starts the dependency chains that work without external infrastructure, and exposes the important
 architecture choices through the Workbench instead of leaving them in logs-only toy examples.
 
-The product identity in both routes is **Pluxel Architecture Lab**:
+The product identity is **Pluxel Architecture Lab**. `src/app.ts` imports the official Plugins,
+showcases and focused demos, and adds a mutable directory for Package Manager's published ESM entries.
+The same declaration drives Vite development and production builds; `sources` adds discovery to the
+fixed catalog without a second host mode. Package Manager owns installation and atomic publication,
+while the Host owns catalog acceptance and lifecycle.
 
-- `dynamic`: host-owned Vite server, all 18 official concrete Plugins source-loaded through loader
-  HMR, including the dynamic-only Package Manager;
-- `static`: host-owned Vite server and production freezer, the other 17 official Plugins. Package
-  Manager is intentionally absent because its source-producer contract is dynamic-only.
-
-Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default. Pi Agent
-also remains stopped until an Agent Tools assignment and model choice are intentional. This keeps the
-host useful without external infrastructure while preserving real implementation choices in the
-Workbench. Memory is the explicit default for both backend tokens.
+Redis and its Cache/Rates backends are loaded into the catalog but remain stopped by default.
+Memory is the explicit default for both backend tokens.
 
 ## Run
 
-dynamic HMR:
-
 ```sh
-pnpm plugin-host:dynamic
-pnpm --filter @pluxel/plugins-host dynamic
+pnpm --filter @pluxel/plugins-host dev
 ```
 
-static fixed catalog:
+For production, run `pnpm --filter @pluxel/plugins-host build`, then
+`pnpm --filter @pluxel/plugins-host start`. Mutable data lives in `PLUXEL_DATA_ROOT`
+(default: `.pluxel` relative to the process working directory), shared by Package Manager,
+persistence and local S3 storage. Keep this directory outside `dist`; use an absolute
+`PLUXEL_DATA_ROOT` when deploying or launching from a different working directory.
 
-```sh
-pnpm plugin-host:static
-pnpm --filter @pluxel/plugins-host static
-```
+Open `/__pluxel/workbench` on the displayed Vite address and select **Architecture Lab**. Set
+`PLUXEL_WORKBENCH=false` to run without the Workbench UI; Management remains installed.
+The reference host seeds configuration and startup policy in memory on each fresh startup;
+Plugin persistence and stored showcase artifacts still use the configured data directory.
 
-Open the Workbench and select **Architecture Lab**. One report generation exercises this graph:
+One report generation exercises this graph:
 
 ```text
 Rates -> admission Part
@@ -69,9 +67,6 @@ the image itself is read from the stored artifact route. The same Plugin also re
   and starting Redis. A failed external provider blocks only its required branch.
 - Edit the Report Studio Part config, Wretch Attachment settings, Fonts selection, auth setup and
   official Plugin config forms.
-- Configure Agent toolsets and assignments through the ordinary `AgentToolsPlugin` config form.
-  External Agent adapters consume its bound catalog; Runtime and Workbench do not own an Agent
-  protocol or dedicated Agent page.
 - Inspect plugin graph, lifecycle and logs; these are host-owned projections of the same runtime
   state used by the showcase.
 
@@ -82,10 +77,10 @@ source references and tests without cluttering the default runtime catalog.
 
 ## Coding agent runtime operations
 
-Both Vite dev configs explicitly enable the development console. Coding agents must use this
+The Vite configuration explicitly enables the development console. Coding agents must use this
 console for runtime inspection, config edits, Plugin methods, Workbench RPC, data and logs.
-The current local transport supports Unix systems; on Windows disable `devConsole` in these
-configs to run the host without the console.
+The current local transport supports Unix systems; on Windows disable `devConsole` in the
+configuration to run the host without the console.
 
 From the repository root, discover the already running host and use its returned instance ID:
 
@@ -94,28 +89,20 @@ pnpm exec pluxel dev instances --root projects/plugin-host
 pnpm exec pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <id>
 ```
 
-Static and dynamic can run together under this same project root, so always keep the selected
-instance ID for subsequent `run`, `result` and `cancel` commands. Add ordinary named exports to
+Multiple Vite processes can share this project root, so always keep the selected instance ID for subsequent `run`, `result` and `cancel` commands. Add ordinary named exports to
 project-local `dev/*.ts` files for further operations; edits do not restart the dev host or replay
 previous operations. The bundled `inspect.ts` only returns current Plugin status.
 
 Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
-Workbench, logs and recovery. Isolated regressions continue to use the test host.
-
-## Loader HMR Tools
-
-```sh
-pnpm --filter @pluxel/plugins-host dynamic:prompt
-pnpm --filter @pluxel/plugins-host dynamic:doctor
-```
+explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/host-dev/console` and use `dev.ctx` with service APIs; they pass `dev.signal` and release their own service resources. Isolated regressions continue to use the test host.
 
 ## Boundary
 
-- Dynamic and static use the same official/showcase catalog and auto-start policy, except for the
-  explicit Package Manager boundary.
-- Dynamic uses a host-owned Vite server and wires loader HMR through `dynamicRuntimeVitePlugin`;
-  official packages, host showcases and managed packages are ordinary mutable sources.
-- Static uses a host-owned Vite server and wires the fixed catalog through `staticRuntimeVitePlugin`.
+- `src/app.ts` owns fixed Plugins, mutable sources, service configuration and startup policy.
+- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set, data location and optional Workbench.
+- `vite.config.ts` uses `vitePreset()` from `@pluxel/services/vite`; it combines the shared development driver with attachments for installed official services.
+- `tsdown.config.ts` uses `buildPreset()` from `@pluxel/services/build`; the official dynamic-plugin shared entries and Workbench distribution are included by default.
+- Managed entries and Package Manager's data share the explicitly configured application-local directory.
 - Plugin source is always evaluated by the Pluxel Vite/Rolldown transform chain; raw TypeScript
   runners are intentionally not runtime entries.
 - Workbench MF2 producers, exposes and shared policy are generated from definitions. This project
@@ -126,9 +113,8 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 ```sh
 pnpm --filter @pluxel/plugins-host typecheck
 pnpm --filter @pluxel/plugins-host test
-pnpm --filter @pluxel/plugins-host dynamic:doctor
-pnpm --filter @pluxel/plugins-host build:static
+pnpm --filter @pluxel/plugins-host build
 ```
 
-The tests assert the 18/17 official catalog boundary, safe provider defaults, stopped Redis/Pi policy,
+The tests cover safe provider defaults, stopped Redis/Pi policy,
 the S3 named-bucket catalog, real render/cache behavior and isolated draft/release storage.
