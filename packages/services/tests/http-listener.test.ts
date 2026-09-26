@@ -114,6 +114,45 @@ it('binds Node request metadata and propagates client disconnect before closing 
 	expect(() => host.start()).toThrow('host is closed')
 }, 10000)
 
+it('propagates disconnect after a streaming response has started', async () => {
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	const aborted = Promise.withResolvers<{ aborted: boolean; reason: unknown }>()
+	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+		prefix: '/stream',
+		matchesWebSocketRoute: () => false,
+		async fetch(request) {
+			return new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode('ready'))
+						request.signal.addEventListener(
+							'abort',
+							() => {
+								aborted.resolve({ aborted: request.signal.aborted, reason: request.signal.reason })
+								controller.close()
+							},
+							{ once: true },
+						)
+					},
+				}),
+			)
+		},
+	})
+	const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 0 })
+	try {
+		const response = await fetch(`http://127.0.0.1:${listener.address.port}/stream`)
+		const reader = response.body!.getReader()
+		const first = await reader.read()
+		expect(new TextDecoder().decode(first.value)).toBe('ready')
+		await reader.cancel()
+		const cancellation = await aborted.promise
+		expect(cancellation.aborted).toBe(true)
+		expect(cancellation.reason).toBeInstanceOf(Error)
+	} finally {
+		await listener.close()
+	}
+}, 10000)
+
 it('rejects malformed listener environment before attaching a carrier', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
 	try {

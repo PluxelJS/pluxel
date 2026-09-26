@@ -485,7 +485,7 @@ export class TakumiPlugin extends BasePlugin {
 				height: input.height,
 				devicePixelRatio: input.devicePixelRatio,
 				...input.output,
-				stylesheets: [...prepared.stylesheets],
+				css: [...prepared.stylesheets],
 				images: [...prepared.images],
 				...(prepared.fontFamilies ? { fontFamilies: prepared.fontFamilies } : {}),
 				signal,
@@ -517,7 +517,7 @@ export class TakumiPlugin extends BasePlugin {
 			data = await prepared.renderer.renderer.renderSvg(prepared.node, {
 				width: input.width,
 				height: input.height,
-				stylesheets: [...prepared.stylesheets],
+				css: [...prepared.stylesheets],
 				images: [...prepared.images],
 				...(prepared.fontFamilies ? { fontFamilies: prepared.fontFamilies } : {}),
 				signal,

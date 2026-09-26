@@ -88,7 +88,7 @@ export async function buildNodeModule(options: BuildNodeModuleOptions): Promise<
 				emptyOutDir: true,
 				minify: options.minify ?? false,
 				sourcemap: false,
-				rollupOptions: {
+				rolldownOptions: {
 					input: entryPath,
 					external: (id: string) => builtins.has(id),
 					output: {

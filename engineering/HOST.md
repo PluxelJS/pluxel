@@ -77,4 +77,4 @@ revision。删除保留 tombstone。watch/watchPrefix 在同一 lock 内读取�
 
 持久 snapshot 只接受 version 2 的结构化 KV 与 revision。完整加密格式、操作与恢复边界见 [Vault](../docs/runtime/vault.md)。
 
-Persistence 的路径、只读执行与目录列举契约由[公开服务文档](../docs/reference/runtime-services.md#persistence-文件契约)维护。Host endpoint 将 root lease signal 传入 handler；carrier 的请求身份仍指向原始 ingress，不能因取消用 Request 派生而丢失地址或 upgrade 状态。
+Persistence 的路径、只读执行与目录列举契约由[公开服务文档](../docs/reference/runtime-services.md#persistence-文件契约)维护。Node 客户端断线由 srvx 原生 `request.signal` 传播，不再另装 response close 监听器；owner 关闭仍由 invocation lease 合成取消。Host endpoint 将 root lease signal 传入 handler；carrier 的请求身份仍指向原始 ingress，不能因取消用 Request 派生而丢失地址或 upgrade 状态。

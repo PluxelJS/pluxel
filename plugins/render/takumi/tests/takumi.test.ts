@@ -120,6 +120,36 @@ describe('TakumiPlugin', () => {
 		}
 	})
 
+	it.each(['render', 'renderSvg'] as const)(
+		'applies extracted and supplied CSS in order through %s',
+		async (method) => {
+			await using host = await createTestHost({
+				services: standardServices({ persistence: { mode: 'memory' } }),
+			})
+			await startTakumiFixture(host)
+			const takumi = host.require(TakumiTestConsumer).takumi
+			const styled = await takumi[method]({
+				content:
+					'<style>.card { width: 32px; height: 32px; background: red; }</style><div class="card"></div>',
+				stylesheets: ['.card { background: blue; }'],
+				width: 32,
+				height: 32,
+			})
+			const inline = await takumi[method]({
+				content: '<div style="width:32px;height:32px;background:blue"></div>',
+				width: 32,
+				height: 32,
+			})
+			const unstyled = await takumi[method]({
+				content: '<div style="width:32px;height:32px;background:red"></div>',
+				width: 32,
+				height: 32,
+			})
+			expect(styled.data).toEqual(inline.data)
+			expect(styled.data).not.toEqual(unstyled.data)
+		},
+	)
+
 	it.skipIf(!fontPath)('replays FontsPlugin portable resources by revision', async () => {
 		{
 			await using host = await createTestHost({

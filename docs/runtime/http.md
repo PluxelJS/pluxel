@@ -215,6 +215,8 @@ Plugin 和所有 Part 的 `init()` 成功后，HTTP 服务会等待 lazy Elysia 
 停止会 abort handler 看到的 `request.signal`，并等待已经接纳的 response settle。无法响应 signal 的任意 JavaScript 仍受宿主 drain
 timeout 约束，HTTP 服务不会假装能同步终止它。
 
+Node 客户端断线沿用 srvx 原生 `request.signal` 及其 `reason`；底层 socket 错误可能是 `ECONNRESET`，不要把取消限定为 `reason.name === 'AbortError'`。用 `signal.aborted` 判断取消，并保留原始原因。
+
 框架内部挂载的 Management/Workbench endpoint 也接收组合了请求取消与 Host 关闭的 `request.signal`。Host 等待其 `fetch()` 完成；endpoint 自行拥有返回后的流或 WebSocket session。传入的 carrier 保留物理 ingress 的 `requestIP()` 和 upgrade 身份，派生 Request 不改变认证所依赖的连接地址。
 
 长期 background task 不应挂在某个 HTTP request Promise 上。把它建模为 owner-bound worker/queue，再让 endpoint 只提交任务或查询状态。

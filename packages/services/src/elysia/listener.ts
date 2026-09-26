@@ -3,7 +3,6 @@ import type { Server as NodeHttpServer, IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { serve } from 'srvx/node'
 import { resolveApplicationAsset } from './assets'
-import type { ServerRequest } from 'srvx'
 import type { PluginHost } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
@@ -113,22 +112,8 @@ async function dispatch(
 	carrier: NodeElysiaApplicationCarrier,
 	publicDir?: string,
 ): Promise<Response> {
-	const client = new AbortController()
-	const response = (request as ServerRequest).runtime?.node?.res
-	if (response) {
-		const cleanup = () => {
-			response.off('close', onClose)
-			response.off('finish', cleanup)
-		}
-		const onClose = () => {
-			if (!response.writableEnded)
-				client.abort(new DOMException('Client disconnected', 'AbortError'))
-			cleanup()
-		}
-		response.once('close', onClose)
-		response.once('finish', cleanup)
-	}
-	const input = requestWithSignal(request, AbortSignal.any([request.signal, client.signal]))
+	// srvx propagates premature response closure through the ingress request signal.
+	const input = requestWithSignal(request, request.signal)
 	carrier.bindRequest(input, request)
 	const result = await fetch(input)
 	const pathname = new URL(input.url).pathname

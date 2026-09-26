@@ -1,3 +1,4 @@
+import { requestWithSignal } from '../elysia/request'
 import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal'
 import { hostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
@@ -45,14 +46,7 @@ export function elysiaDevelopment(): Plugin<HostDevelopmentPluginApi> {
 								// srvx's NodeRequest is structurally Fetch-compatible but has no native
 								// Request private slots. Normalize at the carrier boundary, preserving
 								// the physical request for authentication and requestIP().
-								const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
-								const input = new Request(request.url, {
-									method: request.method,
-									headers: request.headers,
-									signal: request.signal,
-									body: hasBody ? request.body : undefined,
-									...(hasBody && request.body ? { duplex: 'half' } : {}),
-								} as RequestInit)
+								const input = requestWithSignal(request, request.signal)
 								active.carrier.bindRequest(input, request)
 								return active.http.fetch(input)
 							},
