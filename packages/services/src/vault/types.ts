@@ -1,16 +1,8 @@
-import type { PluginNodeAddress } from '@pluxel/core'
-
 export type VaultServiceConfig = {
 	/** Encrypted persistent KV by default; bindings installs read-only records without storage or keys. */
 	backend?: 'encrypted' | 'bindings'
 	/** Explicit age private identity supplied by the application startup factory. */
 	deployIdentity?: string
-	/** Explicitly assign legacy global namespaces to an owner. Migration is persisted once and keeps the source data. */
-	legacyNamespaces?: readonly Readonly<{
-		owner: PluginNodeAddress
-		namespace: string
-		from: string
-	}>[]
 }
 
 export type VaultNamespaceOptions = {

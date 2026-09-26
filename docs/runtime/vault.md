@@ -19,7 +19,7 @@ services: [
 ]
 ```
 
-只有部署凭据时选择 `vault({ backend: 'bindings' })`。它不依赖 Persistence，不创建密钥或磁盘文件；没有绑定的记录不存在，所有写入拒绝。`servicesPreset(startup, options)` 显式从该 startup 环境读取部署解锁身份，`options.vault` 可以覆盖后端和迁移配置。直接 `vault()` 不读取进程环境。
+只有部署凭据时选择 `vault({ backend: 'bindings' })`。它不依赖 Persistence，不创建密钥或磁盘文件；没有绑定的记录不存在，所有写入拒绝。`servicesPreset(startup, options)` 显式从该 startup 环境读取部署解锁身份，`options.vault` 可以覆盖后端和部署解锁身份。直接 `vault()` 不读取进程环境。
 
 ## 部署凭据
 
@@ -115,28 +115,12 @@ const bytes = await blob.readBytes() // 不存在时为 undefined
 
 `readText()` / `writeText()` 使用同一 blob 入口。blob 是独立文件，不参与 KV batch，也没有 KV revision 或 watch；读写会处理完整字节数组，大对象和流式文件应交给对象存储。
 
-## 迁移、密钥与备份
+## 密钥与备份
 
-旧 snapshot 中的 KV 原样保留；旧 Documents 自动映射为 `documents/<encodeURIComponent(collection)>/<encodeURIComponent(id)>`。与已有 KV key 冲突时启动失败，避免覆盖数据。首次后续提交写入带 revision 的新格式。
-
-旧自定义 namespace 曾是全局分区，框架不能猜测其 owner。应用显式声明归属：
-
-```ts
-vault({
-	legacyNamespaces: [
-		{
-			owner: pluginNodeAddressOf(AccountPlugin),
-			namespace: 'accounts',
-			from: 'old-accounts',
-		},
-	],
-})
-```
-
-启动时复制 KV 与加密 blobs，并在持久 snapshot 中提交一次性迁移标记；再次启动不会从旧分区覆盖新记录。原分区保留为审计副本，目标有冲突时明确拒绝。默认 owner namespace 的原身份保持不变，无需这项映射。
+Vault snapshot 使用 version 2，包含结构化 KV 与每条记录的 revision；不支持的版本或缺少 revision 时启动失败。
 
 加密后端使用 `global/keys.age` 包装数据密钥，`global/state.enc` 保存记录，`global/blobs/` 保存独立 blob。`security/identity.json` 保存宿主身份。已有仓库无法解锁、损坏或缺失 snapshot 时启动失败，不作为空仓库覆盖。
 
 Root 通过 `VaultAdmin` 管理解锁、宿主密钥和部署 recipients。`rekey()` 原子重写密钥 envelope，数据密钥与密文内容保持；失败保留先前可用数据。部署私钥由宿主显式输入，不放入 Plugin config、日志或 UI。
 
-备份与回滚应在 Host 停止后整体复制 Persistence 的 `vault` namespace：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。保留迁移前副本可以恢复原格式与原 namespace。不要分别恢复不匹配的 key envelope 与数据文件；不支持跨进程 writer 或跨 config/Vault 事务。
+备份与回滚应在 Host 停止后整体复制 Persistence 的 `vault` namespace：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。不要分别恢复不匹配的 key envelope 与数据文件；不支持跨进程 writer 或跨 config/Vault 事务。

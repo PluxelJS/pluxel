@@ -88,7 +88,6 @@ type SecurityIdentityDoc = {
 type VaultSnapshot = {
 	kind: 'pluxel.vault.snapshot'
 	version: 2
-	migrations?: Record<string, string>
 	namespaces: Record<
 		string,
 		{
@@ -399,7 +398,7 @@ function parseSnapshot(bytes: Uint8Array): VaultSnapshot {
 	) {
 		throw new VaultError('INVALID_FORMAT', 'Vault snapshot namespaces must be an object.')
 	}
-	if (candidate.version !== undefined && candidate.version !== 2)
+	if (candidate.version !== 2)
 		throw new VaultError('INVALID_FORMAT', 'Unsupported vault snapshot version.')
 	const namespaces: VaultSnapshot['namespaces'] = Object.create(null)
 	for (const [name, input] of Object.entries(candidate.namespaces)) {
@@ -410,52 +409,19 @@ function parseSnapshot(bytes: Uint8Array): VaultSnapshot {
 			throw new VaultError('INVALID_FORMAT', 'Invalid vault records.')
 		const kv = cloneJson(raw.kv) as Record<string, unknown>
 		const revisions: Record<string, number> = Object.create(null)
-		if (candidate.version === 2) {
-			if (!raw.revisions || typeof raw.revisions !== 'object' || Array.isArray(raw.revisions))
-				throw new VaultError('INVALID_FORMAT', 'Invalid vault revisions.')
-			for (const [key, revision] of Object.entries(raw.revisions)) {
-				if (!Number.isSafeInteger(revision) || (revision as number) < 1)
-					throw new VaultError('INVALID_FORMAT', 'Invalid vault revision.')
-				revisions[key] = revision as number
-			}
-			for (const key of Object.keys(kv))
-				if (!revisions[key]) throw new VaultError('INVALID_FORMAT', 'Missing vault revision.')
-		} else {
-			for (const key of Object.keys(kv)) revisions[key] = 1
-			if (!raw.docs || typeof raw.docs !== 'object' || Array.isArray(raw.docs))
-				throw new VaultError('INVALID_FORMAT', 'Invalid legacy Vault documents.')
-			for (const [collection, documents] of Object.entries(raw.docs)) {
-				if (!documents || typeof documents !== 'object' || Array.isArray(documents))
-					throw new VaultError('INVALID_FORMAT', 'Invalid legacy Vault collection.')
-				for (const [id, value] of Object.entries(documents)) {
-					const key = `documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`
-					if (Object.hasOwn(kv, key))
-						throw new VaultError(
-							'INVALID_FORMAT',
-							'Legacy Vault document migration collides with a KV record.',
-						)
-					kv[key] = cloneJson(value)
-					revisions[key] = 1
-				}
-			}
+		if (!raw.revisions || typeof raw.revisions !== 'object' || Array.isArray(raw.revisions))
+			throw new VaultError('INVALID_FORMAT', 'Invalid vault revisions.')
+		for (const [key, revision] of Object.entries(raw.revisions)) {
+			if (!Number.isSafeInteger(revision) || (revision as number) < 1)
+				throw new VaultError('INVALID_FORMAT', 'Invalid vault revision.')
+			revisions[key] = revision as number
 		}
+		for (const key of Object.keys(kv))
+			if (!revisions[key]) throw new VaultError('INVALID_FORMAT', 'Missing vault revision.')
+
 		namespaces[name] = { kv, revisions }
 	}
-	const migrations: Record<string, string> = Object.create(null)
-	if (candidate.migrations !== undefined) {
-		if (
-			!candidate.migrations ||
-			typeof candidate.migrations !== 'object' ||
-			Array.isArray(candidate.migrations)
-		)
-			throw new VaultError('INVALID_FORMAT', 'Invalid Vault migration markers.')
-		for (const [target, source] of Object.entries(candidate.migrations)) {
-			if (typeof source !== 'string' || !source)
-				throw new VaultError('INVALID_FORMAT', 'Invalid Vault migration source.')
-			migrations[target] = source
-		}
-	}
-	return { kind: 'pluxel.vault.snapshot', version: 2, namespaces, migrations }
+	return { kind: 'pluxel.vault.snapshot', version: 2, namespaces }
 }
 
 function serializeSnapshot(snapshot: VaultSnapshot): Uint8Array {
@@ -890,74 +856,6 @@ export class VaultService {
 
 	isBindingsOnly(): boolean {
 		return this.backing.runtime.backend === 'bindings'
-	}
-
-	async migrateLegacyNamespaces(
-		mappings: NonNullable<VaultServiceConfig['legacyNamespaces']>,
-	): Promise<void> {
-		const { entry, store, runtime } = this.backing
-		if (mappings.length === 0) return
-		if (runtime.backend === 'bindings')
-			throw new VaultError('INVALID_CONFIG', 'Legacy migration requires the encrypted backend.')
-		await entry.lock.run(async () => {
-			if (!isUnlockedState(entry.state))
-				throw new VaultError('ACCESS_DENIED', 'Vault must be unlocked before migration.')
-			const state = entry.state
-			const next = cloneJson(state.snapshot)
-			next.migrations ??= Object.create(null)
-			let changed = false
-			for (const mapping of mappings) {
-				validateKey(mapping.namespace)
-				validateKey(mapping.from)
-				if (normalizeSegment(mapping.from) !== mapping.from)
-					throw new VaultError(
-						'INVALID_CONFIG',
-						'Legacy namespace must match its exact stored name.',
-					)
-				const target = `plugin-${pluginNodePhysicalKey(mapping.owner)}~${encodeURIComponent(mapping.namespace)}`
-				const previous = next.migrations![target]
-				if (previous !== undefined) {
-					if (previous !== mapping.from)
-						throw new VaultError(
-							'INVALID_CONFIG',
-							'Vault namespace migration already has a different source.',
-						)
-					continue
-				}
-				if (Object.hasOwn(next.namespaces, target))
-					throw new VaultError(
-						'INVALID_CONFIG',
-						'Vault namespace migration target already contains records.',
-					)
-				const old = next.namespaces[mapping.from]
-				if (old) next.namespaces[target] = cloneNamespaceState(old)
-				// Copy encrypted blobs before committing the marker. The source remains an audit backup.
-				for (const file of await store.listChildren(join(runtime.blobsDir, mapping.from))) {
-					if (!file.endsWith('.blob')) continue
-					const from = join(runtime.blobsDir, mapping.from, file)
-					const to = join(runtime.blobsDir, target, file)
-					const bytes = await store.readBytes(from)
-					if (!bytes) continue
-					const existing = await store.readBytes(to)
-					if (
-						existing &&
-						(existing.length !== bytes.length ||
-							existing.some((byte, index) => byte !== bytes[index]))
-					)
-						throw new VaultError('INVALID_CONFIG', 'Vault namespace migration blob collision.')
-					if (!existing) await store.writeBytes(to, bytes)
-				}
-				next.migrations![target] = mapping.from
-				changed = true
-			}
-			if (changed) {
-				await store.writeBytes(
-					runtime.statePath,
-					await aesEncrypt(state.dek, serializeSnapshot(next)),
-				)
-				state.snapshot = next
-			}
-		})
 	}
 
 	/** Host-only bootstrap boundary; never exposed through the owner storage facade. */

@@ -346,106 +346,41 @@ describe('Vault structured records', () => {
 		}
 	})
 
-	it('explicitly migrates an old global namespace once, copies blobs and retains the original data', async () => {
-		const backend = createMemoryPersistenceBackend()
-		const first = await setup(backend)
-		try {
-			await first.ctx.require(Vault).namespace('legacy-accounts').kv().set('token', 'original')
-			await first.ctx
-				.require(Vault)
-				.namespace('legacy-accounts')
-				.blobs()
-				.open('photo')
-				.writeText('blob')
-		} finally {
-			await first.close()
-		}
-		const options = {
-			legacyNamespaces: [
-				{ owner: pluginNodeAddressOf(Owner), namespace: 'accounts', from: 'legacy-accounts' },
-			],
-		}
-		const start = () =>
-			createHost({
-				plugins: [Owner],
-				services: [persistence({ mode: 'custom', backend }), vault(options)],
+	it.each([undefined, 1, 3])(
+		'rejects unsupported snapshot version %s without rewriting storage',
+		async (version) => {
+			const backend = createMemoryPersistenceBackend()
+			const host = await setup(backend)
+			await host.close()
+			await replaceSnapshot(backend, {
+				kind: 'pluxel.vault.snapshot',
+				version,
+				namespaces: { default: { kv: { token: 'saved' }, revisions: { token: 1 } } },
 			})
-		const next = await start()
-		try {
-			await next.startNode(pluginNodeAddressOf(Owner))
-			const space = owners.get('one')!.namespace('accounts')
-			expect(
-				await space
-					.kv()
-					.get('token')
-					.then((result) => result.value),
-			).toBe('original')
-			expect(await space.blobs().open('photo').readText()).toBe('blob')
-			await space.kv().set('token', 'updated')
-		} finally {
-			await next.close()
-		}
-		const again = await start()
-		try {
-			await again.startNode(pluginNodeAddressOf(Owner))
-			expect(
-				await owners
-					.get('one')!
-					.namespace('accounts')
-					.kv()
-					.get('token')
-					.then((result) => result.value),
-			).toBe('updated')
-			expect(
-				await again.ctx
-					.require(Vault)
-					.namespace('legacy-accounts')
-					.kv()
-					.get('token')
-					.then((result) => result.value),
-			).toBe('original')
-		} finally {
-			await again.close()
-		}
-	})
+			const storage = backend.namespace('vault')
+			const before = await storage.get('global/state.enc')
+			await expect(setup(backend)).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
+			expect(await storage.get('global/state.enc')).toEqual(before)
+		},
+	)
 
-	it('migrates legacy documents into structured KV without losing record identity or overwriting collisions', async () => {
-		const backend = createMemoryPersistenceBackend()
-		const host = await setup(backend)
-		await host.close()
-		const legacy = {
-			kind: 'pluxel.vault.snapshot',
-			namespaces: {
-				default: {
-					kv: { token: 'old' },
-					docs: { accounts: { primary: { refreshToken: 'kept' } } },
-				},
-			},
-		}
-		await replaceSnapshot(backend, legacy)
-		const migrated = await setup(backend)
-		try {
-			const kv = migrated.ctx.require(Vault).kv()
-			expect(await kv.get('documents/accounts/primary').then((result) => result.value)).toEqual({
-				refreshToken: 'kept',
+	it.each([undefined, {}, { token: 0 }, { token: 1.5 }])(
+		'rejects invalid snapshot revisions %j without rewriting storage',
+		async (revisions) => {
+			const backend = createMemoryPersistenceBackend()
+			const host = await setup(backend)
+			await host.close()
+			await replaceSnapshot(backend, {
+				kind: 'pluxel.vault.snapshot',
+				version: 2,
+				namespaces: { default: { kv: { token: 'saved' }, revisions } },
 			})
-			expect(await kv.get('token').then((result) => result.value)).toBe('old')
-			await kv.set('new', true)
-			expect(await decryptState(backend).then((result) => result.snapshot.version)).toBe(2)
-		} finally {
-			await migrated.close()
-		}
-		await replaceSnapshot(backend, {
-			...legacy,
-			namespaces: {
-				default: {
-					kv: { 'documents/accounts/primary': 'collision' },
-					docs: legacy.namespaces.default.docs,
-				},
-			},
-		})
-		await expect(setup(backend)).rejects.toThrow('migration collides')
-	})
+			const storage = backend.namespace('vault')
+			const before = await storage.get('global/state.enc')
+			await expect(setup(backend)).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
+			expect(await storage.get('global/state.enc')).toEqual(before)
+		},
+	)
 
 	it('rekeys only the envelope, reopens with explicit deployment identity and rejects missing or damaged state', async () => {
 		const backend = createMemoryPersistenceBackend()

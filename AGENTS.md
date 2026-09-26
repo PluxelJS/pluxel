@@ -12,6 +12,8 @@ Documentation should show the shortest complete use of the existing contract.
 
 ## Framework changes
 
+Pluxel currently serves the local repositories in this workspace. Update known callers together when changing a contract; do not retain compatibility aliases, old-format readers, or startup migration paths for hypothetical external consumers. Convert existing local data once when necessary, then remove the conversion code.
+
 Before creating or changing a public library API, configuration contract, public type, error contract, extension point, or resource lifecycle, read:
 
 - `.agents/rules/library-api-design.md`

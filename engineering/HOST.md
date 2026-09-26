@@ -4,6 +4,8 @@
 
 应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
 
+服务组合与关闭读[服务与资源](#服务与资源)；应用求值与 replacement 读[应用、开发和部署](#应用开发和部署)；请求 lease 与管理接入读 [HTTP 与管理页面](#http-与管理页面)；密钥记录读 [Vault 记录](#vault-记录与宿主输入)。每项资源的实现及验证见[资源边界与验证入口](#资源边界与验证入口)。
+
 ## 服务与资源
 
 `createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源在 `prepare({ ctx, dependencies, effects })` 获取。
@@ -73,5 +75,4 @@ KV mutation 在唯一 backend lock 内 clone、检查 revision、加密并原子
 revision。删除保留 tombstone。watch/watchPrefix 在同一 lock 内读取初始 snapshot 并注册，通知在锁外、owner invocation 内运行。
 部署 env/file 整记录只读且不落盘；任何KV写入路径都检查overlay。owner namespace和其命名子空间隔离，root保持受信任管理权限。
 
-旧 docs迁移为普通KV key；旧全局自定义namespace必须由应用显式 `legacyNamespaces` 指定owner。复制完成后持久提交迁移标记，
-保留原数据，碰撞fail-fast。完整加密格式、操作与恢复边界见 [Vault](../docs/runtime/vault.md)。
+持久 snapshot 只接受 version 2 的结构化 KV 与 revision。完整加密格式、操作与恢复边界见 [Vault](../docs/runtime/vault.md)。

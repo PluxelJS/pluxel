@@ -11,7 +11,7 @@ export async function servicesPreset(
 	startup: HostStartupContext,
 	options: Readonly<{
 		persistence: PersistenceServiceConfig
-		/** Explicit Vault backend and legacy owner assignments. */
+		/** Explicit Vault backend and deployment identity. */
 		vault?: VaultServiceConfig
 		/** Omitted when the application has no product branding. */
 		product?: ProductDescriptor
