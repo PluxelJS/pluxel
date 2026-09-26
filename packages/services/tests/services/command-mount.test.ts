@@ -5,6 +5,7 @@ import {
 	defineCommand,
 	Result,
 	type CommandContext,
+	type Command,
 	type DirectCommand,
 	type Registration,
 } from '@pluxel/commands'
@@ -27,7 +28,7 @@ interface CarrierCommandContext extends CommandContext {
 	readonly channel: string
 }
 
-type MountedCommand = DirectCommand<unknown, unknown, CarrierCommandContext>
+type MountedCommand = Command<unknown, unknown, CarrierCommandContext>
 
 function carrierProviderClass() {
 	@Plugin({ displayName: 'Command mount carrier' })
@@ -41,23 +42,25 @@ function carrierProviderClass() {
 
 		register<I, O>(command: DirectCommand<I, O, CarrierCommandContext>): Registration {
 			const routes = this.routes
-			return this.mount.bind(command, (owned) => {
-				if (routes.has(owned.name)) throw new Error(`duplicate route: ${owned.name}`)
-				routes.set(owned.name, owned as MountedCommand)
-				let active = true
-				return {
-					name: owned.name,
-					dispose() {
-						if (!active) return
-						active = false
-						if (routes.get(owned.name) === owned) routes.delete(owned.name)
-					},
-				}
+			return this.mount.bind(command, {
+				install: (owned) => {
+					if (routes.has(owned.name)) throw new Error(`duplicate route: ${owned.name}`)
+					routes.set(owned.name, owned as MountedCommand)
+					let active = true
+					return {
+						name: owned.name,
+						dispose() {
+							if (!active) return
+							active = false
+							if (routes.get(owned.name) === owned) routes.delete(owned.name)
+						},
+					}
+				},
 			})
 		}
 
-		resolve<I, O>(name: string): DirectCommand<I, O, CarrierCommandContext> | undefined {
-			return this.routes.get(name) as DirectCommand<I, O, CarrierCommandContext> | undefined
+		resolve<I, O>(name: string): Command<I, O, CarrierCommandContext> | undefined {
+			return this.routes.get(name) as Command<I, O, CarrierCommandContext> | undefined
 		}
 	}
 
@@ -69,10 +72,12 @@ describe('CommandMount', () => {
 	it('classifies an unreadable trusted context as INTERNAL', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 		const mount = host.ctx.require(Commands).createMount()
-		let installed!: DirectCommand<{}, { value: string }>
-		mount.bind(valueCommand('ready', 'mount.context.get'), (owned) => {
-			installed = owned
-			return { name: owned.name, dispose() {} }
+		let installed!: Command<{}, { value: string }>
+		mount.bind(valueCommand('ready', 'mount.context.get'), {
+			install: (owned) => {
+				installed = owned
+				return { name: owned.name, dispose() {} }
+			},
 		})
 		const signalError = new Error('signal getter failed')
 		const unreadableSignal = Object.defineProperty({}, 'signal', {
@@ -102,14 +107,16 @@ describe('CommandMount', () => {
 			descriptor: { ...original.descriptor },
 			execute: original.execute,
 		}
-		let installed!: DirectCommand<unknown, { value: string }>
+		let installed!: Command<unknown, { value: string }>
 		let preparing!: Promise<unknown>
-		const registration = mount.bind(mutable, (owned) => {
-			installed = owned
-			preparing = owned.execute({})
-			mutable.execute = replacement.execute
-			mutable.descriptor.description = 'mutated after bind'
-			return { name: owned.name, dispose() {} }
+		const registration = mount.bind(mutable, {
+			install: (owned) => {
+				installed = owned
+				preparing = owned.execute({})
+				mutable.execute = replacement.execute
+				mutable.descriptor.description = 'mutated after bind'
+				return { name: owned.name, dispose() {} }
+			},
 		})
 
 		await expect(preparing).resolves.toMatchObject({
@@ -126,16 +133,20 @@ describe('CommandMount', () => {
 		const catalog = createCommandRegistry()
 		const catalogHandle = catalog.register(valueCommand('catalog', 'mount.catalog.get'))
 		expect(() =>
-			mount.bind(catalogHandle as unknown as DirectCommand, (owned) => ({
-				name: owned.name,
-				dispose() {},
-			})),
+			mount.bind(catalogHandle as unknown as DirectCommand, {
+				install: (owned) => ({
+					name: owned.name,
+					dispose() {},
+				}),
+			}),
 		).toThrow(expect.objectContaining({ code: 'COMMAND_CONFIG' }))
 		let invalidInstallerCalled = false
 		expect(() =>
-			mount.bind({ ...original, dispose: undefined } as unknown as DirectCommand, (owned) => {
-				invalidInstallerCalled = true
-				return { name: owned.name, dispose() {} }
+			mount.bind({ ...original, dispose: undefined } as unknown as DirectCommand, {
+				install: (owned) => {
+					invalidInstallerCalled = true
+					return { name: owned.name, dispose() {} }
+				},
 			}),
 		).toThrow(
 			expect.objectContaining({
@@ -151,10 +162,12 @@ describe('CommandMount', () => {
 			},
 		})
 		expect(() =>
-			mount.bind(unreadableDisposer as unknown as DirectCommand, (owned) => ({
-				name: owned.name,
-				dispose() {},
-			})),
+			mount.bind(unreadableDisposer as unknown as DirectCommand, {
+				install: (owned) => ({
+					name: owned.name,
+					dispose() {},
+				}),
+			}),
 		).toThrow(
 			expect.objectContaining({
 				code: 'COMMAND_CONFIG',
@@ -171,9 +184,9 @@ describe('CommandMount', () => {
 			},
 			execute: async (): Promise<undefined> => undefined,
 		} as unknown as DirectCommand
-		expect(() => mount.bind(malformed, (owned) => ({ name: owned.name, dispose() {} }))).toThrow(
-			expect.objectContaining({ code: 'COMMAND_CONFIG' }),
-		)
+		expect(() =>
+			mount.bind(malformed, { install: (owned) => ({ name: owned.name, dispose() {} }) }),
+		).toThrow(expect.objectContaining({ code: 'COMMAND_CONFIG' }))
 
 		registration.dispose()
 		await expect(installed.execute({})).resolves.toMatchObject({
@@ -195,10 +208,12 @@ describe('CommandMount', () => {
 				return Result.ok({ value: this.value })
 			},
 		}
-		let retained!: DirectCommand<unknown, { value: string }>
-		mount.bind(command, (owned) => {
-			retained = owned
-			return { name: owned.name, dispose() {} }
+		let retained!: Command<unknown, { value: string }>
+		mount.bind(command, {
+			install: (owned) => {
+				retained = owned
+				return { name: owned.name, dispose() {} }
+			},
 		})
 
 		command.execute = async () => Result.ok({ value: 'replacement' })
@@ -212,10 +227,12 @@ describe('CommandMount', () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
 		const mount = host.ctx.require(Commands).createMount()
-		let retained!: DirectCommand<unknown, { value: string }>
-		mount.bind(valueCommand('active', 'mount.admission.abort'), (owned) => {
-			retained = owned
-			return { name: owned.name, dispose() {} }
+		let retained!: Command<unknown, { value: string }>
+		mount.bind(valueCommand('active', 'mount.admission.abort'), {
+			install: (owned) => {
+				retained = owned
+				return { name: owned.name, dispose() {} }
+			},
 		})
 		const call = new AbortController()
 		call.abort(new CommandError('TIMEOUT', 'Caller deadline elapsed'))
@@ -362,7 +379,7 @@ describe('CommandMount', () => {
 		const started = Promise.withResolvers<void>()
 		const aborted = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
-		let retained!: DirectCommand<unknown, unknown>
+		let retained!: Command<unknown, unknown>
 		let published = false
 
 		@Plugin({ displayName: 'Provider-owned mount' })
@@ -386,10 +403,12 @@ describe('CommandMount', () => {
 							throw signal?.reason
 						},
 					}),
-					(owned) => {
-						retained = owned
-						published = true
-						return { name: owned.name, dispose: () => (published = false) }
+					{
+						install: (owned) => {
+							retained = owned
+							published = true
+							return { name: owned.name, dispose: () => (published = false) }
+						},
 					},
 				)
 			}
@@ -495,19 +514,21 @@ describe('CommandMount', () => {
 
 			register<I, O>(command: DirectCommand<I, O, CarrierCommandContext>): Registration {
 				const routes = this.routes
-				return this.mount.bind(command, (owned) => {
-					routes.set(owned.name, owned as MountedCommand)
-					return {
-						name: owned.name,
-						dispose: () => {
-							if (routes.get(owned.name) === owned) routes.delete(owned.name)
-						},
-					}
+				return this.mount.bind(command, {
+					install: (owned) => {
+						routes.set(owned.name, owned as MountedCommand)
+						return {
+							name: owned.name,
+							dispose: () => {
+								if (routes.get(owned.name) === owned) routes.delete(owned.name)
+							},
+						}
+					},
 				})
 			}
 
-			resolve<I, O>(name: string): DirectCommand<I, O, CarrierCommandContext> | undefined {
-				return this.routes.get(name) as DirectCommand<I, O, CarrierCommandContext> | undefined
+			resolve<I, O>(name: string): Command<I, O, CarrierCommandContext> | undefined {
+				return this.routes.get(name) as Command<I, O, CarrierCommandContext> | undefined
 			}
 		}
 
@@ -567,7 +588,7 @@ describe('CommandMount', () => {
 		const started = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
 		let cleanupCalls = 0
-		let retained!: DirectCommand<unknown, { completed: boolean }>
+		let retained!: Command<unknown, { completed: boolean }>
 		const registration = mount.bind(
 			defineCommand({
 				name: 'mount.manual.long',
@@ -579,15 +600,17 @@ describe('CommandMount', () => {
 					return Result.ok({ completed: true })
 				},
 			}),
-			(owned) => {
-				retained = owned
-				return {
-					name: owned.name,
-					dispose() {
-						cleanupCalls++
-						throw new Error('broken disposer')
-					},
-				}
+			{
+				install: (owned) => {
+					retained = owned
+					return {
+						name: owned.name,
+						dispose() {
+							cleanupCalls++
+							throw new Error('broken disposer')
+						},
+					}
+				},
 			},
 		)
 
@@ -613,13 +636,15 @@ describe('CommandMount', () => {
 			override init(): void {
 				const mount = this.ctx.require(Commands).createMount()
 				for (const name of ['mount.rollback.first', 'mount.rollback.second']) {
-					mount.bind(valueCommand(name, name), (owned) => ({
-						name: owned.name,
-						dispose() {
-							cleanupCalls++
-							if (name.endsWith('second')) throw new Error('rollback disposer failed')
-						},
-					}))
+					mount.bind(valueCommand(name, name), {
+						install: (owned) => ({
+							name: owned.name,
+							dispose() {
+								cleanupCalls++
+								if (name.endsWith('second')) throw new Error('rollback disposer failed')
+							},
+						}),
+					})
 				}
 				throw new Error('startup failed')
 			}
@@ -653,7 +678,9 @@ describe('CommandMount', () => {
 		}
 
 		expect(() =>
-			mount.bind(valueCommand('async', 'mount.async.install'), () => lateRegistration as never),
+			mount.bind(valueCommand('async', 'mount.async.install'), {
+				install: () => lateRegistration as never,
+			}),
 		).toThrow(expect.objectContaining({ code: 'COMMAND_CONFIG' }))
 		expect(thenReads).toBe(1)
 		expect(lateCleanupCalls).toBe(1)
@@ -678,7 +705,7 @@ describe('CommandMount', () => {
 			},
 		)
 		expect(() =>
-			mount.bind(valueCommand('then', 'mount.then.throw'), () => unreadableThen),
+			mount.bind(valueCommand('then', 'mount.then.throw'), { install: () => unreadableThen }),
 		).toThrow(expect.objectContaining({ code: 'COMMAND_CONFIG' }))
 		expect(throwingThenReads).toBe(1)
 		expect(throwingThenCleanupCalls).toBe(1)
@@ -701,7 +728,9 @@ describe('CommandMount', () => {
 			},
 		}
 		expect(() =>
-			mount.bind(valueCommand('hybrid', 'mount.then.hybrid'), () => hybridThenable as never),
+			mount.bind(valueCommand('hybrid', 'mount.then.hybrid'), {
+				install: () => hybridThenable as never,
+			}),
 		).toThrow(expect.objectContaining({ code: 'COMMAND_CONFIG' }))
 		expect(hybridCleanupCalls).toBe(1)
 		expect(hybridResolvedCleanupCalls).toBe(1)
@@ -718,19 +747,23 @@ describe('CommandMount', () => {
 			},
 		}
 		expect(() =>
-			mount.bind(valueCommand('self', 'mount.then.self'), () => selfResolvingThenable as never),
+			mount.bind(valueCommand('self', 'mount.then.self'), {
+				install: () => selfResolvingThenable as never,
+			}),
 		).toThrow(expect.objectContaining({ code: 'COMMAND_CONFIG' }))
 		expect(selfCleanupCalls).toBe(1)
 
 		let mismatchCleanupCalls = 0
 		expect(() =>
-			mount.bind(valueCommand('mismatch', 'mount.name.expected'), () => ({
-				name: 'mount.name.other',
-				dispose() {
-					mismatchCleanupCalls++
-					throw new Error('mismatch cleanup failed')
-				},
-			})),
+			mount.bind(valueCommand('mismatch', 'mount.name.expected'), {
+				install: () => ({
+					name: 'mount.name.other',
+					dispose() {
+						mismatchCleanupCalls++
+						throw new Error('mismatch cleanup failed')
+					},
+				}),
+			}),
 		).toThrow(expect.objectContaining({ code: 'COMMAND_CONFIG' }))
 		expect(mismatchCleanupCalls).toBe(1)
 	})

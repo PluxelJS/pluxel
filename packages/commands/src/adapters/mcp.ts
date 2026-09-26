@@ -1,5 +1,5 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js'
-import type { CommandContext, CommandContextArgs, CommandFailure, DirectCommand } from '../types'
+import type { CommandContext, CommandContextArgs, CommandFailure, Command } from '../types'
 
 /** One selected Command projected to native MCP tool data and a call handler. */
 export type McpCommand<Ctx extends CommandContext> = Readonly<{
@@ -9,7 +9,7 @@ export type McpCommand<Ctx extends CommandContext> = Readonly<{
 
 /** The application owns tool publication, authentication, request context and MCP transport. */
 export function toMcp<I, O, Ctx extends CommandContext>(
-	command: DirectCommand<I, O, Ctx>,
+	command: Command<I, O, Ctx>,
 ): McpCommand<Ctx> {
 	if (
 		!command ||
@@ -18,7 +18,7 @@ export function toMcp<I, O, Ctx extends CommandContext>(
 		command.descriptor.inputSchema.type !== 'object' ||
 		typeof command.execute !== 'function'
 	) {
-		throw new TypeError('Expected a direct Command with an object input schema')
+		throw new TypeError('Expected a Command with an object input schema')
 	}
 	const execute = command.execute.bind(command)
 	const tool: Tool = Object.freeze({

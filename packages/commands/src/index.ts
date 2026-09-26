@@ -1,5 +1,6 @@
 export { Result } from 'better-result'
 export { defineCommand } from './define'
+export { snapshotCommand } from './snapshot'
 export { createCommandRegistry } from './registry'
 export type { CommandCatalogSnapshot, CommandRegistry } from './registry'
 export { CommandError } from './types'

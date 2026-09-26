@@ -232,6 +232,7 @@ export type DirectCommand<
 	Ctx extends CommandContext = CommandContext,
 > = Command<I, O, Ctx> & {
 	readonly dispose?: never
+	readonly mounted?: never
 }
 export type AnyCommand<Ctx extends CommandContext = CommandContext> = Command<any, unknown, Ctx>
 export type Registration = {

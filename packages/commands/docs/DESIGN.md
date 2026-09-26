@@ -14,6 +14,8 @@ Each call composes the caller signal with an absolute deadline into a signal del
 
 ## Registry and argv
 
-The registry preserves revision-cached snapshots, synchronous ordered reentrant notifications, and subscriber isolation. A registration captures one implementation and descriptor. Disposal makes that handle permanently unavailable; dynamic lookup alone follows a later registration. Disposal does not alter calls already admitted.
+The registry preserves revision-cached snapshots, synchronous ordered reentrant notifications, and subscriber isolation. `snapshotCommand()` validates and captures one execute function and a detached frozen descriptor without registry state, preserving the receiver and publication marker. Registries and carrier definitions share this operation. A registration captures one implementation and descriptor. Disposal makes that handle permanently unavailable; dynamic lookup alone follows a later registration. Disposal does not alter calls already admitted.
 
 Argv binds an existing command and only constructs a candidate. The command still validates the candidate. Route syntax failures stay in argv; output display belongs to the caller. The router uses longest-prefix lookup and has a revision-cached help list.
+
+Protocol projections have independent `/mcp` and `/capnweb` entries. Neither the kernel nor MCP loads Cap’n Web. Services uses the framework-only `/internal` Result check to supervise carrier handlers with the same failure contract as `defineCommand()`.

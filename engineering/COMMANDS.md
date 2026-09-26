@@ -12,11 +12,13 @@
 
 ## Carrier publication
 
-Root catalog 与 carrier exposure 是两个显式选择。Provider 使用 `createMount<CarrierContext>()`，通过 caller-bound `bind()` 接收 exact `DirectCommand`，固定 provider 与 publication owner generation，并把同步 router/SDK registration cleanup 归入 caller effects。
+Root catalog 与 carrier exposure 是两个显式选择。Provider 使用 `createMount<CarrierContext>()`，通过 caller-bound `bind(command, { install, handle? })` 接收 exact `DirectCommand`，固定 provider 与 publication owner generation，并把同步 router/SDK registration cleanup 归入 caller effects。
 
-Mount 没有第二个 registry、name lookup、snapshot 或 caller-supplied owner。其返回值是 disposer，不是 executable command；registry 句柄不能充当直接 route identity，类型与运行期边界都要拒绝误用。
+Mount 没有第二个 registry、name lookup、snapshot 或 caller-supplied owner。其返回值是 disposer，不是 executable command。Installer 得到带 `mounted: true` 标记的 `MountedCommand`；registry 句柄和 mounted endpoint 均不能充当新的 direct definition，类型与运行期边界都拒绝误用。`snapshotCommand()` 拥有共享的描述校验和执行快照，不借助临时 registry，也不擦除原 publication 的撤回约束。
 
-`toCli()` 在定义侧编译并校验一个 Command 的 argv 投影；`createArgvRouter()` 在 bind 时只负责发布、路由冲突和不可信 candidate construction。Carrier 完成授权、构造 invocation Context，再调用 mounted command；先处理 Err，再呈现 Ok 的业务值。presentation/error rendering 也在该 execution 内结算，确保双方 admission 保持有效。扩展 Context 的命令只进入对应 carrier，不能进入要求 common `CommandContext` 的 root catalog。
+`toCli()` 在定义侧编译并校验一个 Command 的 argv 投影；`createArgvRouter()` 在 bind 时只负责发布、路由冲突和不可信 candidate construction。Carrier 的 `handle(command, candidate, context)` 完成授权、构造业务 Context、执行和呈现，整个 callback 在双方 admission 内结算。candidate 为 unknown，由所选 Command 做输入校验。省略 handle 时仅执行原 Command。
+
+Services 与 Command kernel 复用内部 Result 校验，未知异常或非法返回值监督为 INTERNAL；合法 Result 保持原样。协议投影若发生在 endpoint.execute 返回之后，则不在 mount 的保护范围内，依赖 owner 资源的投影必须进入 handle。扩展 Context 的命令只进入对应 carrier，不能进入要求 common `CommandContext` 的 root catalog。
 
 Host 拥有 exposure、principal、permission、confirmation、audit 与 registration lifetime。关闭 carrier 不创建 server/model client/watcher。CLI 是开发构建工具，不自动连接在线 command catalog；在线检查使用 [devconsole](DEV_CONSOLE.md)。
 
@@ -30,12 +32,12 @@ Command 内核不拥有远程会话。需要远程调用时，`toCapnweb()` 把�
 
 ## MCP 投影
 
-`toMcp()` 只把一个 direct Command 投影为 MCP SDK `Tool` 描述和按调用传入可信 context 的 `call()`。输入仍由 Command 校验；成功值是 JSON 文本，Err 转为 MCP `isError` 与去除本地 cause 的公开失败。没有 MCP server、工具目录、认证、会话或 transport service。实际应用选择工具、把它们接到 SDK handler，并承担权限与生命周期；需要 Plugin generation admission 时先用 caller-bound mount 包裹 Command。`toMcp()` 与 `toCapnweb()` 同属 `@pluxel/commands/adapters` 可选入口，默认 Commands 入口不加载它们。该共享入口运行时依赖 `capnweb`；MCP SDK 仅作为类型依赖。
+`toMcp()` 只把一个选定的 Command 投影为 MCP SDK `Tool` 描述和按调用传入可信 context 的 `call()`。输入仍由 Command 校验；成功值是 JSON 文本，Err 转为 MCP `isError` 与去除本地 cause 的公开失败。没有 MCP server、工具目录、认证、会话或 transport service。实际应用选择工具、把它们接到 SDK handler，并承担权限与生命周期；需要 Plugin generation admission 时通过 caller-bound mount 的 handle 包住调用与输出映射。`toMcp()` 和 `toCapnweb()` 分别位于 `@pluxel/commands/mcp` 和 `/capnweb`；默认入口与 MCP 入口不加载 Cap’n Web。两项协议 peer 均可选，MCP SDK 仅作为类型依赖。
 
 ## 实现与验证
 
 - `packages/commands/src/schema.ts`、`compile.ts`、`define.ts`：schema/codec、plan、call-time validation。
-- 同目录 `registry.ts`、`argv/`：publication、dynamic dispatch 与 argv grammar。
+- 同目录 `snapshot.ts`、`registry.ts`、`argv/`：纯命令快照、publication、dynamic dispatch 与 argv grammar。
 - `packages/services/src/commands/service.ts`：root view、caller-bound mount 与 invocation ownership。
 - `packages/commands/src/adapters/capnweb.ts`：选定 Command 到原生 `RpcTarget` 方法的适配。
 - `packages/commands/src/adapters/mcp.ts`：选定 Command 到原生 MCP Tool 与调用结果的适配。

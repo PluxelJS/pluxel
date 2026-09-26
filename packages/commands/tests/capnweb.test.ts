@@ -11,7 +11,7 @@ import {
 	nodeHttpBatchRpcResponse,
 	serialize,
 } from 'capnweb'
-import { toCapnweb } from '../src/adapters'
+import { toCapnweb } from '../src/capnweb'
 
 interface NoteContext extends CommandContext {
 	readonly actor: string

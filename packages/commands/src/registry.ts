@@ -1,12 +1,7 @@
 import { Result, type Result as BetterResult } from 'better-result'
 import { compareStrings } from './internal/compare'
-import { deepFreeze, isDeepFrozen } from './internal/freeze'
-import {
-	assertJsonValue,
-	cloneJsonValue,
-	isStrictJsonSnapshot,
-	markStrictJsonSnapshot,
-} from './internal/json'
+import { deepFreeze } from './internal/freeze'
+import { snapshotCommand } from './snapshot'
 import {
 	CommandError,
 	type AnyCommand,
@@ -41,31 +36,12 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 	private snapshotCache: CommandCatalogSnapshot = deepFreeze({ revision: 0, descriptors: [] })
 
 	register<I, O>(command: Command<I, O, Ctx>): CommandRegistration<I, O, Ctx> {
-		const name = command.name
-		const descriptor = descriptorSnapshot(command.descriptor, name)
-		const execute = command.execute
-		if (typeof execute !== 'function') {
-			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
-				message: `Command "${name}" execute must be a function`,
-			})
-		}
-		if (descriptor.name !== name) {
-			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
-				message: `Command name "${name}" does not match descriptor name "${descriptor.name}"`,
-			})
-		}
+		const { name, descriptor, execute: invoke } = snapshotCommand(command)
 		if (this.entries.has(name)) {
 			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
 				message: `Command "${name}" is already registered`,
 			})
 		}
-		const invoke = (
-			candidate: I,
-			...context: CommandContextArgs<Ctx>
-		): Promise<BetterResult<O, CommandFailure>> =>
-			Reflect.apply(execute, command, [candidate, ...context]) as Promise<
-				BetterResult<O, CommandFailure>
-			>
 		const entry: RegistryEntry<Ctx> = { execute: invoke, descriptor }
 		let active = true
 		const dispose = () => {
@@ -154,22 +130,6 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 
 function notFound(name: string): BetterResult<never, CommandFailure> {
 	return Result.err({ code: 'COMMAND_NOT_FOUND', message: `Command "${name}" is not registered` })
-}
-
-function descriptorSnapshot(descriptor: CommandDescriptor, command: string): CommandDescriptor {
-	try {
-		if (isStrictJsonSnapshot(descriptor)) return descriptor
-		if (isDeepFrozen(descriptor)) {
-			assertJsonValue(descriptor)
-			return markStrictJsonSnapshot(descriptor)
-		}
-		return markStrictJsonSnapshot(deepFreeze(cloneJsonValue(descriptor) as CommandDescriptor))
-	} catch (error) {
-		throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
-			message: `Command "${command}" descriptor must be strict JSON`,
-			cause: error,
-		})
-	}
 }
 
 export function createCommandRegistry<

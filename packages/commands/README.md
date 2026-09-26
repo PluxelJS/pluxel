@@ -39,6 +39,8 @@ A direct call accepts optional `signal` and absolute `deadlineMs` in context. Ca
 
 A registration has immutable `name` and `descriptor`, typed `execute`, idempotent `dispose`, and `Symbol.dispose`. Registration captures the source command's execute function; changing that property later does not change the published operation. After disposal it returns `COMMAND_NOT_FOUND`; a later registration with the same name never revives the old handle. `commands.execute(name, input)` follows the current registration and returns an unknown success type. Registry snapshots cache their identity until mutation; subscriptions receive ordered revisions, and observer failures are isolated.
 
+`snapshotCommand(command)` captures a validated immutable descriptor and the current execute function without registering a name. It preserves the receiver and any existing publication lifetime; it does not recompile input schemas or supervise execution. Services and custom carriers share this boundary instead of using temporary registries.
+
 Argv routes parse syntax and construct an untrusted candidate for the same execution boundary:
 
 ```ts
@@ -56,4 +58,4 @@ if (resolved) {
 
 `resolve()` returns `undefined` for an unmatched route. Malformed argv raises `CommandError` with `ARGUMENT_SYNTAX`; the CLI or chat carrier decides how to present it. The router supports generated options, positionals, and text/JSON tails. The [runtime guide](../../docs/runtime/commands.md) covers Plugin publication.
 
-`@pluxel/commands/adapters` exports `toCapnweb()` and `toMcp()` for explicitly selected Commands. The shared adapter entry requires the `capnweb` peer; MCP types additionally use the optional `@modelcontextprotocol/sdk` peer. The application owns the RPC target or MCP server, trusted context, publication, and transport. See the [runtime guide](../../docs/runtime/commands.md) for complete examples.
+`@pluxel/commands/capnweb` exports `toCapnweb()` and requires the optional `capnweb` peer. `@pluxel/commands/mcp` exports `toMcp()` and uses the optional `@modelcontextprotocol/sdk` peer for types only. Each entry projects explicitly selected Commands; importing the kernel or MCP entry does not load Cap’n Web. The application owns the RPC target or MCP server, trusted context, publication, and transport. See the [runtime guide](../../docs/runtime/commands.md) for complete examples.

@@ -24,15 +24,25 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
-		"./adapters": {
-			"@pluxel/source": "./src/adapters.ts",
-			"import": "./dist/adapters.mjs",
-			"require": "./dist/adapters.cjs"
-		},
 		"./argv": {
 			"@pluxel/source": "./src/argv.ts",
 			"import": "./dist/argv.mjs",
 			"require": "./dist/argv.cjs"
+		},
+		"./capnweb": {
+			"@pluxel/source": "./src/capnweb.ts",
+			"import": "./dist/capnweb.mjs",
+			"require": "./dist/capnweb.cjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"import": "./dist/internal.mjs",
+			"require": "./dist/internal.cjs"
+		},
+		"./mcp": {
+			"@pluxel/source": "./src/mcp.ts",
+			"import": "./dist/mcp.mjs",
+			"require": "./dist/mcp.cjs"
 		},
 		"./typebox": {
 			"@pluxel/source": "./src/typebox.ts",
@@ -47,13 +57,21 @@
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
 			},
-			"./adapters": {
-				"import": "./dist/adapters.mjs",
-				"require": "./dist/adapters.cjs"
-			},
 			"./argv": {
 				"import": "./dist/argv.mjs",
 				"require": "./dist/argv.cjs"
+			},
+			"./capnweb": {
+				"import": "./dist/capnweb.mjs",
+				"require": "./dist/capnweb.cjs"
+			},
+			"./internal": {
+				"import": "./dist/internal.mjs",
+				"require": "./dist/internal.cjs"
+			},
+			"./mcp": {
+				"import": "./dist/mcp.mjs",
+				"require": "./dist/mcp.cjs"
 			},
 			"./typebox": {
 				"import": "./dist/typebox.mjs",
@@ -86,6 +104,9 @@
 	},
 	"peerDependenciesMeta": {
 		"@modelcontextprotocol/sdk": {
+			"optional": true
+		},
+		"capnweb": {
 			"optional": true
 		}
 	},

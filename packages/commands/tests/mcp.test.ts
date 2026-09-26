@@ -9,7 +9,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { Result, defineCommand, type CommandContext } from '../src/index'
 import { Type, obj } from '../src/typebox'
-import { toMcp } from '../src/adapters'
+import { toMcp } from '../src/mcp'
 
 interface NoteContext extends CommandContext {
 	readonly actor: string

@@ -5,6 +5,7 @@ import { Commands } from './commands/token'
 import { CommandsService } from './commands/service'
 
 export { Commands } from './commands/token'
+export type { MountedCommand } from './commands/mount'
 export type { CommandsService, CommandCatalogSnapshot, CommandMount } from './commands/service'
 
 /** Install an empty root command catalog with generation-owned registrations and carrier mounts. */

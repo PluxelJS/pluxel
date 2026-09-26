@@ -112,10 +112,10 @@ if (result.isErr() && result.error.code === 'REJECTED') console.log(result.error
 
 ## 发布为 Cap'n Web 方法
 
-`@pluxel/commands/adapters` 的 `toCapnweb()` 从明确选择的 Command 生成原生 `RpcTarget` class。构造时传入服务端可信 context；远端只传每个方法的输入。生成的方法位于 prototype，可嵌入原生 Cap'n Web 对象树。
+`@pluxel/commands/capnweb` 的 `toCapnweb()` 从明确选择的 Command 生成原生 `RpcTarget` class。构造时传入服务端可信 context；远端只传每个方法的输入。生成的方法位于 prototype，可嵌入原生 Cap'n Web 对象树。
 
 ```ts no-twoslash
-import { toCapnweb } from '@pluxel/commands/adapters'
+import { toCapnweb } from '@pluxel/commands/capnweb'
 
 const Notes = toCapnweb({ read: readNote })
 const notes = new Notes({ actorId: 'alice', read: async () => 'note text' })
@@ -133,12 +133,12 @@ handler 和公开 `execute()` 使用同一种 Result。组合另一个 Command �
 
 ## 投影为 MCP Tool
 
-`@pluxel/commands/adapters` 的 `toMcp()` 返回原生 MCP `Tool` 描述和 `call()` 函数，不创建 server 或发布工具。应用把 `tool` 放入自己的工具列表，并在 SDK 的 `tools/call` handler 中按名称选择它；每次调用由应用传入可信 context。
+`@pluxel/commands/mcp` 的 `toMcp()` 返回原生 MCP `Tool` 描述和 `call()` 函数，不创建 server 或发布工具。应用把 `tool` 放入自己的工具列表，并在 SDK 的 `tools/call` handler 中按名称选择它；每次调用由应用传入可信 context。
 
 ```ts no-twoslash
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { toMcp } from '@pluxel/commands/adapters'
+import { toMcp } from '@pluxel/commands/mcp'
 
 const noteTool = toMcp(readNote)
 const server = new Server({ name: 'notes', version: '1.0.0' }, { capabilities: { tools: {} } })
@@ -153,7 +153,7 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }, extra) => {
 })
 ```
 
-上例由应用创建并连接 `Server`，实际 context 应从已认证的请求构造。`noteTool.call()` 返回 `CallToolResult`：成功值编码为 JSON 文本块；失败设置 `isError: true`，文本只包含公开的 `code`、`message`、输入问题或业务 `reason`，不传递本地 `cause`。无法无损编码的成功值返回 `OUTPUT_ENCODING`。应用负责工具选择、认证、权限、会话、传输及清理；如需绑定 Plugin generation，应先通过 carrier mount 取得受 owner 保护的 Command，再调用 `toMcp()`。
+上例由应用创建并连接 `Server`，实际 context 应从已认证的请求构造。`noteTool.call()` 返回 `CallToolResult`：成功值编码为 JSON 文本块；失败设置 `isError: true`，文本只包含公开的 `code`、`message`、输入问题或业务 `reason`，不传递本地 `cause`。无法无损编码的成功值返回 `OUTPUT_ENCODING`。应用负责工具选择、认证、权限、会话、传输及清理；如需绑定 Plugin generation，使用下文 carrier mount 的 `handle` 把调用与协议呈现放入同一次 owner 保护。单独对 mounted endpoint 调用 `toMcp()` 只保护 endpoint 的 execute，后续编码仍由外层 carrier 负责。
 
 ## 名称目录和 Plugin owner
 
@@ -190,14 +190,58 @@ if (resolved) {
 }
 ```
 
-`toCli()` 在定义端校验 Command 的 argv 语法并生成不可变投影；`router.bind()` 只发布投影并检查路由冲突。argv 只解析 grammar 并构造 candidate，Command 才执行输入校验和 Decode。router 支持 routes、aliases、位置参数、options、默认值、`--`、tail、help 和建议；语法错误由调用它的 CLI 或消息载体呈现。Host carrier 可通过 `createMount()` 固定 provider 与发布者 owner，并在整个处理、回复和清理期间保留接纳。
+`toCli()` 在定义端校验 Command 的 argv 语法并生成不可变投影；`router.bind()` 只发布投影并检查路由冲突。argv 只解析 grammar 并构造 candidate，Command 才执行输入校验和 Decode。router 支持 routes、aliases、位置参数、options、默认值、`--`、tail、help 和建议；语法错误由调用它的 CLI 或消息载体呈现。Host carrier 可通过 `createMount()` 固定 provider 与发布者 owner；下面的 `handle` 在处理与回复期间保留接纳。
 
 需要把选定 Command 作为 Cap’n Web 方法时，使用显式适配入口；在线检查现有 Host 请使用[开发控制台](../development/dev-console.md)。
 
+## Carrier 的处理与生命周期
+
+Carrier 实现者用 `mount.bind(command, { install, handle? })` 发布一个确定的 Command。`install` 同步安装路由并返回 `{ name, dispose }`；调用方 generation 拥有撤销。省略 `handle` 时直接执行 Command，carrier context 必须满足其必需字段。
+
+需要授权、构造业务身份或异步回复时，在 `handle` 中完成。它接收已快照的 Command、未经校验的 `unknown` candidate 和本次 carrier context；可以构造不同的业务 context，并返回不同的成功类型。整个 callback 都处于 provider 与发布者的 invocation 内：停止会拒绝新调用、发出取消并等待 callback 退出，然后清理资源。
+
+```ts no-twoslash
+import { Result, type CommandContext } from '@pluxel/commands'
+import { createArgvRouter, toCli } from '@pluxel/commands/argv'
+import { Commands } from '@pluxel/services/commands'
+
+interface ReplyContext extends CommandContext {
+	readonly reply: (text: string) => Promise<void>
+}
+
+// 在 carrier provider 的 init 中创建；通过 provider 方法发布时保留 caller binding。
+const mount = this.ctx.require(Commands).createMount<ReplyContext>()
+const router = createArgvRouter<ReplyContext>()
+const registration = mount.bind(echo, {
+	async handle(command, candidate, context) {
+		// 类型断言不跳过 Command 内部的运行时校验与 Decode。
+		const result = await command.execute(candidate as { text: string }, context)
+		if (result.isErr()) {
+			await context.reply(result.error.message)
+			return Result.err(result.error)
+		}
+		await context.reply(result.value)
+		return Result.ok()
+	},
+	install(endpoint) {
+		return router.bind(toCli(endpoint, { routes: ['echo'], positionals: ['text'] }))
+	},
+})
+```
+
+`handle` 必须返回 Result；未知异常和非法 Result 变为 `INTERNAL`，匹配 owner/caller 取消原因的 rejection 变为 `ABORTED`。合法回执保持原样。将 `context.signal` 与 `deadlineMs` 继续传给 Command 和实际 IO；mount 的 owner 保护不替代 Command 的 deadline 监督，也不保证客户端已经收到网络响应。
+
+`install` 得到 `MountedCommand`，它具有固定 descriptor、typed execute 和 `mounted: true` 标记。它可以交给 router 或协议投影，但不能作为新的 direct definition 再次 mount。`bind()` 返回的 registration 只负责撤销发布。手动 dispose 不取消已接纳的 callback；旧 endpoint 不会因同名重新发布而复活。
+
+需要在自定义载体定义时固定 descriptor 和 execute，可用 `snapshotCommand(command)`，不必创建临时 registry。快照验证描述结构、冻结分离的 descriptor、固定 execute 并保留原 receiver；它不重新编译 schema、不添加执行监督，也不赋予独立生命周期。已发布句柄的快照仍跟随原发布撤销，并保留禁止重新 mount 的标记。
+
+业务方法继续拥有自己的 `Result<T, E>` 与领域回执。在 Command handler 中把需要公开的拒绝映射为 `CommandFailure`，不要为了统一工具错误改写 SDK 回执或业务模型。普通领域组合直接调用业务方法。
+
 ## 公开入口
 
-- `@pluxel/commands`：`defineCommand`、`Result`、`CommandFailure`、registry 与类型。
+- `@pluxel/commands`：`defineCommand`、`snapshotCommand`、`Result`、`CommandFailure`、registry 与类型。
 - `@pluxel/commands/typebox`：`Type`、`obj`、`openObj`。
 - `@pluxel/commands/argv`：`toCli()`、argv router、tail 与相关类型。
-- `@pluxel/commands/adapters`：明确选择的 Command 到原生 Cap’n Web 方法或 MCP Tool 的投影。
+- `@pluxel/commands/capnweb`：选定 Command 到原生 Cap’n Web 方法；需要可选 `capnweb` peer。
+- `@pluxel/commands/mcp`：选定 Command 到 MCP Tool；SDK 仅用于类型，不加载 Cap’n Web。
 - `@pluxel/services/commands`：Host 的 Commands token、服务与 carrier mount。

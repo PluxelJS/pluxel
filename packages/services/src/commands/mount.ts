@@ -1,29 +1,60 @@
 import {
 	CommandError,
 	Result,
-	createCommandRegistry,
+	snapshotCommand,
+	type Command,
 	type CommandContext,
-	type CommandDescriptor,
-	type CommandRegistration,
 	type CommandFailure,
 	type DirectCommand,
 	type Registration,
 } from '@pluxel/commands'
+import { isCommandResult } from '@pluxel/commands/internal'
 import type { Context as CoreContext } from '@pluxel/core'
 import { CALLER_CONTEXT_BIND, enterOwnerInvocation } from '@pluxel/core/internal'
+
+/** A carrier endpoint pinned to its provider and publisher generations. */
+export type MountedCommand<I, O, Ctx extends CommandContext = CommandContext> = Command<
+	I,
+	O,
+	Ctx
+> & {
+	readonly mounted: true
+}
+
+type CommandInstaller<I, O, Ctx extends CommandContext> = (
+	endpoint: MountedCommand<I, O, Ctx>,
+) => Pick<Registration, 'name' | 'dispose'>
+
+type CommandHandler<I, O, R, Source extends CommandContext, Ctx extends CommandContext> = (
+	command: Command<I, O, Source>,
+	candidate: unknown,
+	context: Ctx,
+) => Result<R, CommandFailure> | Promise<Result<R, CommandFailure>>
 
 /** Provider-owned scope for generation-pinned carrier command publications. */
 export interface CommandMount<Ctx extends CommandContext = CommandContext> {
 	/**
-	 * Publish one direct command through a synchronous carrier installer.
-	 *
-	 * The installer receives a wrapper pinned to the provider and publication-owner generations.
-	 * The returned registration withdraws future carrier lookup without cancelling admitted calls.
+	 * Run the entire carrier handler within both owner invocations. It constructs the command's
+	 * trusted context, authorizes, executes, and settles presentation before releasing admission.
+	 * Installation and withdrawal remain synchronous; disposal does not cancel admitted calls.
 	 */
+	bind<I, O, R, Source extends CommandContext>(
+		command: DirectCommand<I, O, Source>,
+		binding: {
+			readonly handle: CommandHandler<I, O, R, Source, Ctx>
+			readonly install: CommandInstaller<I, R, Ctx>
+		},
+	): Registration
+	/** Publish the command directly when the carrier already supplies its required context. */
 	bind<I, O>(
 		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
+		binding: { readonly install: CommandInstaller<I, O, Ctx> },
 	): Registration
+}
+
+type BindingOptions<I, O, R, Source extends CommandContext, Ctx extends CommandContext> = {
+	readonly handle?: CommandHandler<I, O, R, Source, Ctx>
+	readonly install: CommandInstaller<I, R, Ctx>
 }
 
 type MountState = 'active' | 'withdrawn'
@@ -43,13 +74,6 @@ type BindingRecord = {
 	guard?: { cancel(): void }
 }
 
-type CommandSnapshot<I, O, Ctx extends CommandContext> = {
-	readonly name: string
-	readonly descriptor: CommandDescriptor
-	readonly receiver: DirectCommand<I, O, Ctx>
-	readonly execute: DirectCommand<I, O, Ctx>['execute']
-}
-
 class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> {
 	private state: MountState = 'active'
 	private readonly bindings = new Set<BindingRecord>()
@@ -67,11 +91,11 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 		return this
 	}
 
-	bind<I, O>(
-		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
+	bind<I, O, R = O, Source extends CommandContext = Ctx>(
+		command: DirectCommand<I, O, Source>,
+		binding: BindingOptions<I, O, R, Source, Ctx>,
 	): Registration {
-		return this.bindFor(this.providerOwner, command, install)
+		return this.bindFor(this.providerOwner, command, binding)
 	}
 
 	[CALLER_CONTEXT_BIND](publicationOwner: CoreContext): CommandMount<Ctx> {
@@ -86,12 +110,19 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 		return view
 	}
 
-	bindFor<I, O>(
+	bindFor<I, O, R, Source extends CommandContext>(
 		publicationOwner: CoreContext,
-		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
+		command: DirectCommand<I, O, Source>,
+		binding: BindingOptions<I, O, R, Source, Ctx>,
 	): Registration {
 		this.assertBindingAdmission(publicationOwner)
+		if (!binding || typeof binding !== 'object') {
+			throw commandConfigError('Command mount binding must be an object', undefined, 'binding')
+		}
+		const { install, handle } = binding
+		if (handle !== undefined && typeof handle !== 'function') {
+			throw commandConfigError('Command mount handler must be a function', undefined, 'handler')
+		}
 		if (typeof install !== 'function') {
 			throw commandConfigError('Command mount installer must be a function', undefined, 'installer')
 		}
@@ -101,7 +132,7 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 			state: 'preparing',
 			cleanup: { state: 'unavailable' },
 		}
-		const owned = this.ownedCommand(snapshot, record, publicationOwner)
+		const owned = this.ownedCommand(snapshot, record, publicationOwner, handle)
 
 		let installerResult: unknown
 		try {
@@ -183,15 +214,17 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 		})
 	}
 
-	private ownedCommand<I, O>(
-		snapshot: CommandSnapshot<I, O, Ctx>,
+	private ownedCommand<I, O, R, Source extends CommandContext>(
+		snapshot: Command<I, O, Source>,
 		record: BindingRecord,
 		publicationOwner: CoreContext,
-	): DirectCommand<I, O, Ctx> {
+		handle?: CommandHandler<I, O, R, Source, Ctx>,
+	): MountedCommand<I, R, Ctx> {
 		return Object.freeze({
+			mounted: true as const,
 			name: snapshot.name,
 			descriptor: snapshot.descriptor,
-			execute: async (candidate: I, context?: Ctx): Promise<Result<O, CommandFailure>> => {
+			execute: async (candidate: I, context?: Ctx): Promise<Result<R, CommandFailure>> => {
 				if (this.state !== 'active' || record.withdrawal === 'owner') {
 					return Result.err({ code: 'ABORTED', message: 'Command owner stopped' })
 				}
@@ -227,21 +260,31 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 					}
 					const signal = publicationLease?.signal ?? providerLease.signal
 					const commandContext = { ...(context ?? ({} as Ctx)), signal } as Ctx
-					return (await Reflect.apply(snapshot.execute, snapshot.receiver, [
-						candidate,
-						commandContext,
-					])) as Result<O, CommandFailure>
+					// Direct bindings require a compatible context and unchanged output at the public overload.
+					const result: unknown = handle
+						? await handle(snapshot, candidate, commandContext)
+						: await Reflect.apply(snapshot.execute, snapshot, [candidate, commandContext])
+					return isCommandResult(result)
+						? (result as Result<R, CommandFailure>)
+						: Result.err({
+								code: 'INTERNAL',
+								message: 'Command handler returned an invalid Result',
+								cause: result,
+							})
 				} catch (error) {
 					if (!publicationLease && publicationOwner !== this.providerOwner) {
 						return Result.err(cancellationFailure(error))
 					}
+					const signal = publicationLease?.signal ?? providerLease.signal
+					if (signal.aborted && error === signal.reason)
+						return Result.err(cancellationFailure(error))
 					return Result.err({ code: 'INTERNAL', message: 'Command execution failed', cause: error })
 				} finally {
 					publicationLease?.dispose()
 					providerLease.dispose()
 				}
 			},
-		}) as DirectCommand<I, O, Ctx>
+		}) as MountedCommand<I, R, Ctx>
 	}
 
 	private assertBindingAdmission(publicationOwner: CoreContext): void {
@@ -394,24 +437,24 @@ class CommandMountView<Ctx extends CommandContext> implements CommandMount<Ctx> 
 		private readonly publicationOwner: CoreContext,
 	) {}
 
-	bind<I, O>(
-		command: DirectCommand<I, O, Ctx>,
-		install: (owned: DirectCommand<I, O, Ctx>) => Pick<Registration, 'name' | 'dispose'>,
+	bind<I, O, R = O, Source extends CommandContext = Ctx>(
+		command: DirectCommand<I, O, Source>,
+		binding: BindingOptions<I, O, R, Source, Ctx>,
 	): Registration {
-		return this.mount.bindFor(this.publicationOwner, command, install)
+		return this.mount.bindFor(this.publicationOwner, command, binding)
 	}
 }
 
 function snapshotDirectCommand<I, O, Ctx extends CommandContext>(
 	command: DirectCommand<I, O, Ctx>,
-): CommandSnapshot<I, O, Ctx> {
+): Command<I, O, Ctx> {
 	if (!command || (typeof command !== 'object' && typeof command !== 'function')) {
 		throw commandConfigError('Mounted command must be an object', undefined, 'invalid_command')
 	}
-	let hasDisposer: boolean
+	let isPublication: boolean
 	try {
-		hasDisposer = Reflect.has(command, 'dispose')
-		if (hasDisposer) Reflect.get(command, 'dispose')
+		isPublication = Reflect.has(command, 'dispose') || Reflect.has(command, 'mounted')
+		if (isPublication) Reflect.get(command, 'dispose')
 	} catch (error) {
 		throw commandConfigError(
 			'Mounted command has an unreadable registration disposer',
@@ -420,60 +463,15 @@ function snapshotDirectCommand<I, O, Ctx extends CommandContext>(
 			error,
 		)
 	}
-	if (hasDisposer) {
+	if (isPublication) {
 		throw commandConfigError(
-			'Mounted command must be a lifecycle-neutral direct implementation without dispose',
+			'Command mount requires an unpublished command without dispose or mounted',
 			undefined,
 			'installed_command',
 		)
 	}
 
-	let execute: unknown
-	try {
-		execute = Reflect.get(command, 'execute')
-	} catch (error) {
-		throw commandConfigError(
-			'Mounted command execute must be readable',
-			undefined,
-			'invalid_command',
-			error,
-		)
-	}
-	if (typeof execute !== 'function') {
-		throw commandConfigError('Mounted command must define execute', undefined, 'invalid_execute')
-	}
-
-	const validationRegistry = createCommandRegistry<Ctx>()
-	let validation: CommandRegistration<I, O, Ctx>
-	try {
-		validation = validationRegistry.register(command)
-	} catch (error) {
-		throw error instanceof CommandError
-			? error
-			: commandConfigError(
-					'Mounted command failed direct-command validation',
-					undefined,
-					'invalid_command',
-					error,
-				)
-	}
-	const name = validation.name
-	const descriptor = validation.descriptor
-	validation.dispose()
-	if (typeof name !== 'string' || name.length === 0) {
-		throw commandConfigError(
-			'Mounted command must define a non-empty string name',
-			undefined,
-			'invalid_name',
-		)
-	}
-
-	return {
-		name,
-		descriptor,
-		receiver: command,
-		execute: execute as DirectCommand<I, O, Ctx>['execute'],
-	}
+	return snapshotCommand(command)
 }
 
 function captureInstallerCleanup(cell: CleanupCell, registration: unknown, command: string): void {

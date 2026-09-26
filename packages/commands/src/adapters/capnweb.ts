@@ -1,10 +1,10 @@
-import type { CommandContext, CommandFailure, DirectCommand } from '../types'
+import type { CommandContext, CommandFailure, Command } from '../types'
 import { RpcPromise, RpcStub, RpcTarget, serialize } from 'capnweb'
 
-type Methods = Readonly<Record<string, DirectCommand<any, unknown, any>>>
-type ContextOf<C> = C extends DirectCommand<any, unknown, infer Ctx> ? Ctx : never
-type InputOf<C> = C extends DirectCommand<infer Input, unknown, any> ? Input : never
-type OutputOf<C> = C extends DirectCommand<any, infer Output, any> ? Output : never
+type Methods = Readonly<Record<string, Command<any, unknown, any>>>
+type ContextOf<C> = C extends Command<any, unknown, infer Ctx> ? Ctx : never
+type InputOf<C> = C extends Command<infer Input, unknown, any> ? Input : never
+type OutputOf<C> = C extends Command<any, infer Output, any> ? Output : never
 type Intersection<U> = (U extends unknown ? (value: U) => void : never) extends (
 	value: infer I,
 ) => void
@@ -67,7 +67,7 @@ export function toCapnweb<const T extends Methods>(
 		if (!property.enumerable || !('value' in property)) {
 			throw new TypeError(`Invalid Cap'n Web command method: ${name}`)
 		}
-		const command = property.value as DirectCommand<any, unknown, any>
+		const command = property.value as Command<any, unknown, any>
 		if (
 			!name ||
 			name === 'constructor' ||

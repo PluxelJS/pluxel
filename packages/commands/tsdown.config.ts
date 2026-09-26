@@ -6,8 +6,10 @@ export default defineConfig({
 	},
 	entry: {
 		index: './src/index.ts',
+		internal: './src/internal.ts',
 		argv: './src/argv.ts',
-		adapters: './src/adapters.ts',
+		mcp: './src/mcp.ts',
+		capnweb: './src/capnweb.ts',
 		typebox: './src/typebox.ts',
 	},
 	dts: {
