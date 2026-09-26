@@ -78,7 +78,7 @@ const Notes = toCapnweb({ read: readNote })
 const notes = new Notes({ actorId: 'alice', read: async () => 'note text' })
 ```
 
-方法返回 `{ ok: true, value }` 或 `{ ok: false, error }`，保留 Command 的失败 `code`、公开 `message`、输入问题和业务 `reason`，不传递本地 `cause`。`void` 成功值成为 `null`；其他成功值必须是普通 JSON 数据，无法编码时返回 `OUTPUT_ENCODING`。授权、会话和传输由创建 `RpcTarget` 的应用负责。
+方法返回 `{ ok: true, value }` 或 `{ ok: false, error }`，保留 Command 的失败 `code`、公开 `message`、输入问题和业务 `reason`，不传递本地 `cause`。`void` 成功值成为 `null`；其他成功值必须是普通 JSON 数据，无法按 Cap’n Web 编码格式表示时返回 `OUTPUT_ENCODING`。适配器拒绝以 `Object.prototype` 的属性名或 `toJSON` 命名的输入字段和输出数据键；Cap’n Web 传输会丢弃它们，动态键输入也不得依赖这些名字。会话可以施加额外的消息预算；授权、会话和传输由创建 `RpcTarget` 的应用负责。Cap’n Web HTTP batch 会话仅承载一次请求；后续调用应建立新会话，持续交互可选用宿主已有的 WebSocket 接入。
 
 `REJECTED.reason` 是稳定业务分支信号，`message` 面向人。`CommandFailure` 还区分输入错误、权限、发布撤销、取消、超时、依赖或内部故障。SDK 的已知领域拒绝可以在 handler 内映射；未知 rejection 由 Command 监督为 `INTERNAL`，原异常保留在本地 cause。配置错误和发布安装失败仍按各自生命周期契约抛出。
 

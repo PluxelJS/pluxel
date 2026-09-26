@@ -1,5 +1,5 @@
 import type { CommandContext, CommandFailure, DirectCommand } from '@pluxel/commands'
-import { RpcTarget } from 'capnweb'
+import { RpcPromise, RpcStub, RpcTarget, serialize } from 'capnweb'
 
 type Methods = Readonly<Record<string, DirectCommand<any, unknown, any>>>
 type ContextOf<C> = C extends DirectCommand<any, unknown, infer Ctx> ? Ctx : never
@@ -11,6 +11,10 @@ type Intersection<U> = (U extends unknown ? (value: U) => void : never) extends 
 	? I
 	: never
 type ContextFor<T extends Methods> = Intersection<ContextOf<T[keyof T]>> & CommandContext
+
+function isReservedDataKey(key: string): boolean {
+	return key in Object.prototype || key === 'toJSON'
+}
 
 /** A Command failure projected without its local-only `cause`. */
 export type CapnwebCommandFailure =
@@ -67,19 +71,26 @@ export function toCapnweb<const T extends Methods>(
 		if (
 			!name ||
 			name === 'constructor' ||
-			name === 'then' ||
+			name === 'toJSON' ||
+			name in RpcStub.prototype ||
+			name in RpcPromise.prototype ||
 			name in Target.prototype ||
 			!command ||
 			typeof command.execute !== 'function'
 		) {
 			throw new TypeError(`Invalid Cap'n Web command method: ${name}`)
 		}
+		assertInputFields(command.descriptor.inputSchema)
+		const execute = command.execute.bind(command)
 		Object.defineProperty(Target.prototype, name, {
 			value: async function (this: RpcTarget, input: unknown) {
-				const result = await command.execute(input, contexts.get(this)!)
+				const result = await execute(input, contexts.get(this)!)
 				try {
-					if (result.isErr()) return { ok: false, error: publicFailure(result.error) }
-					return { ok: true, value: strictJson(result.value === undefined ? null : result.value) }
+					const projected = result.isErr()
+						? { ok: false, error: publicFailure(result.error) }
+						: { ok: true, value: strictJson(result.value === undefined ? null : result.value) }
+					serialize(projected)
+					return projected
 				} catch {
 					return {
 						ok: false,
@@ -93,6 +104,24 @@ export function toCapnweb<const T extends Methods>(
 		})
 	}
 	return Target as new (context: ContextFor<T>) => RpcTarget & TargetMethods<T>
+}
+
+function assertInputFields(schema: unknown, visited = new WeakSet<object>()): void {
+	if (!schema || typeof schema !== 'object' || visited.has(schema)) return
+	visited.add(schema)
+	if (Array.isArray(schema)) {
+		for (const item of schema) assertInputFields(item, visited)
+		return
+	}
+	const node = schema as Record<string, unknown>
+	if (node.type === 'object' && node.properties && typeof node.properties === 'object') {
+		for (const name of Object.keys(node.properties)) {
+			if (isReservedDataKey(name)) {
+				throw new TypeError(`Cap'n Web cannot preserve Command input field: ${name}`)
+			}
+		}
+	}
+	for (const value of Object.values(node)) assertInputFields(value, visited)
 }
 
 function publicFailure(failure: CommandFailure): CapnwebCommandFailure {
@@ -120,6 +149,7 @@ function strictJson<T>(value: T, ancestors = new WeakSet<object>()): T {
 		for (const key of keys) {
 			if (array && key === 'length') continue
 			if (typeof key !== 'string') throw new TypeError('Not JSON data')
+			if (isReservedDataKey(key)) throw new TypeError("Cap'n Web does not preserve this key")
 			if (array && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= (value as unknown[]).length)) {
 				throw new TypeError('Not JSON data')
 			}

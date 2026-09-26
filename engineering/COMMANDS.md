@@ -22,9 +22,11 @@ Host 拥有 exposure、principal、permission、confirmation、audit 与 registr
 
 ## Cap’n Web 适配
 
-Command 内核不拥有远程会话。需要远程调用时，由明确选择的 Command 组成原生 Cap’n Web `RpcTarget` class；每个方法复用 Command 输入校验与执行 Result，并在出口投影可传输的数据。实例由宿主绑定可信 context，远程输入不能提供身份、资源 owner 或策略。
+Command 内核不拥有远程会话。需要远程调用时，`toCapnweb()` 把明确选择的 Command 映射为原生 Cap’n Web `RpcTarget` class 上的真实 prototype 方法；不引入万能 `invoke`、第二份目录或代码执行器。每个方法复用 Command 输入校验与执行 Result，并在出口投影普通 JSON 数据。实例由宿主绑定可信 context，远程输入不能提供身份、资源 owner 或策略。
 
-普通领域能力继续直接使用 Cap’n Web `RpcTarget`。连接、认证、授权与会话清理属于安装该 target 的宿主，不进入 Commands 的定义契约，也不创建另一套目录和分派协议。
+适配器在创建 class 时拒绝客户端 stub 保留的方法名，以及 Cap’n Web 无法保真的静态输入字段名；动态字段须由应用避开这些键。出口检查特殊键和 Cap’n Web 实际编码能力，避免将会丢字段或超深的结果报告为成功。进程内 `RpcStub` 验证方法与上下文隔离；真实 HTTP batch 回归验证原生 wire 调用，`serialize`/`deserialize` 验证数据往返。HTTP batch 是一次性会话，同一批次可并行发起调用，不能在完成后复用 stub。输入接纳仍发生在所选传输完成解码之后，不能声称校验到已被上游丢弃的原始字段。
+
+普通领域能力继续直接使用 Cap’n Web `RpcTarget`。连接、认证、授权与会话清理属于安装该 target 的宿主，不进入 Commands 的定义契约。当前没有独立的 Command RPC 发布、发现或模型运行时；需要这些能力时由实际应用选择并负责。
 
 ## 实现与验证
 
@@ -33,4 +35,4 @@ Command 内核不拥有远程会话。需要远程调用时，由明确选择的
 - `packages/services/src/commands/service.ts`：root view、caller-bound mount 与 invocation ownership。
 - `packages/services/src/capnweb.ts`：选定 Command 到原生 `RpcTarget` 方法的适配。
 
-修改集成时验证 cached handle、manual dispose 与 stop 的差异、双 owner withdrawal、扩展 Context 限制，以及发现和执行的当前授权。纯 parser/codec 行为在 Commands 包内验证。
+修改 root publication 或 mount 时验证 cached handle、manual dispose 与 stop 的差异、双 owner withdrawal 和扩展 Context 限制。修改 Cap’n Web 适配时验证原生方法可达性、服务端 context 隔离、Result 投影和实际 wire 编码。纯 parser/codec 行为在 Commands 包内验证。
