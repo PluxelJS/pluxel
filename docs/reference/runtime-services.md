@@ -5,46 +5,23 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 
 官方应用和 starter 使用 `defineHostApplication(factory)` 配合 `servicesPreset()`：应用声明插件、数据位置和启动策略，官方入口负责开发附件和部署制品路径。需要自定义服务集合时，使用 `@pluxel/host` 逐项组合；它默认只提供 Core 能力。
 
+| 你负责什么               | 从哪里开始                                            |
+| ------------------------ | ----------------------------------------------------- |
+| 应用装配                 | [官方组合](#官方默认组合)或[创建宿主](#创建宿主)      |
+| Plugin 使用现有服务      | [读取能力](#plugin-读取能力)；通常无需阅读安装器实现  |
+| 配置和启动策略持久化     | [保存配置和运行策略](#保存配置和运行策略)             |
+| 自定义服务               | [安装器](#编写服务安装器) → [顺序与失败](#顺序与失败) |
+| 参与 generation 原子发布 | [发布 hooks](#服务参与-plugin-发布)                   |
+
 ## 官方默认组合
 
-```ts
-// src/app.ts
-import { defineHostApplication } from '@pluxel/host'
-import { pluginNodeAddressOf } from '@pluxel/core'
-import { servicesPreset } from '@pluxel/services/preset'
-import { MyPlugin } from './plugin.js'
+新应用直接采用[宿主配置](../getting-started/host-setup.md#应用入口)中的应用、Vite 与构建示例。三处声明分别决定本次运行的能力、开发附件和交付制品：
 
-export default defineHostApplication(async (startup) => {
-	return {
-		plugins: [MyPlugin],
-		services: await servicesPreset(startup, {
-			persistence: startup.env.PLUXEL_DATA_ROOT ?? './data',
-		}),
-		state: { initial: { autoStart: [pluginNodeAddressOf(MyPlugin)] } },
-	}
-})
-```
-
-```ts
-// vite.config.ts
-import { defineConfig } from 'vite'
-import { vitePreset } from '@pluxel/services/vite'
-
-export default defineConfig({
-	plugins: [vitePreset({ entry: './src/app.ts', devConsole: true })],
-})
-```
-
-```ts
-// tsdown.config.ts
-import { defineConfig } from 'tsdown'
-import { buildPreset } from '@pluxel/services/build'
-
-export default defineConfig({
-	entry: './src/app.ts',
-	plugins: [buildPreset()],
-})
-```
+| 入口                                            | 职责                               |
+| ----------------------------------------------- | ---------------------------------- |
+| `@pluxel/services/preset` 的 `servicesPreset()` | 返回运行时服务清单                 |
+| `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件           |
+| `@pluxel/services/build` 的 `buildPreset()`     | 携带 Shell、制品和动态插件共享入口 |
 
 `servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。数据库或不同管理面组合应使用下文的显式服务安装器。
 
@@ -54,34 +31,9 @@ export default defineConfig({
 
 生产 Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
-`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。环境变量由应用的 配置工厂 显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
 官方构建默认携带 Workbench shell，并维护动态插件所需的官方共享入口。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
-
-## 自定义开发组合
-
-服务与开发附件可分别选择。通用 `host()` 只负责应用加载与 HMR；HTTP、Node 制品和 Workbench 使用普通 Vite 插件显式接入：
-
-```ts
-import { defineConfig } from 'vite'
-import { host } from '@pluxel/host-dev/vite'
-import { serviceSingletons } from '@pluxel/services/vite'
-import { httpDevelopment } from '@pluxel/services/http/vite'
-import { nodeArtifacts } from '@pluxel/services/node/vite'
-import { workbenchArtifacts } from '@pluxel/workbench/dev'
-
-export default defineConfig({
-	plugins: [
-		serviceSingletons(),
-		host({ entry: './src/app.ts' }),
-		httpDevelopment(),
-		nodeArtifacts(),
-		workbenchArtifacts(),
-	],
-})
-```
-
-`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-dev/vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
 
 ## 创建宿主
 
@@ -105,6 +57,29 @@ try {
 `plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端明确依赖 Persistence；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不依赖 Persistence。Host 不自动补装依赖。
 
 两个 Host 可以使用不同清单；同一份服务声明也可创建多个相互隔离的 Host。安装集合创建后固定，普通 Plugin 更新复用已准备的服务。修改安装清单需要创建新 Host。
+
+## Plugin 读取能力
+
+`this.ctx.logger` 是 Core 始终提供的基础能力，插件无需 import `@pluxel/services/logging`，也无需 `ctx.require(Logging)`。宿主的 `logging(plan)` 配置输出 sink、过滤策略和日志存储；省略它不移除 logger，但不由 Host 安装这些输出和管理后端。`Logging` token 是宿主侧日志管理能力，与插件直接使用的 logger 不同。
+
+```ts
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Vault } from '@pluxel/services/vault'
+
+@Plugin()
+export class CredentialsPlugin extends BasePlugin {
+	init() {
+		const storage = this.ctx.require(Vault)
+		// get/set/delete 返回带 revision、source 和 writable 的不可变快照。
+		const kv = storage.kv()
+		// 持久写在确认提交后返回；部署绑定整条只读。
+	}
+}
+```
+
+服务目录声明只让合法的可选属性进入通用 Context 类型，不证明任意宿主已经安装服务。必需能力通过 `ctx.require(token)` 按对象身份读取；未安装抛出 `ContextCapabilityMissingError`，已安装服务的构造异常原样传播。可选路径可以使用 `ctx.vault?.…`，但准备失败不会伪装成可选缺失。
+
+Token 的访问范围与 backend 生命周期不同：`owner` 只允许 Plugin、Part 和 caller Context；`root` 只能在真实 RootContext 上通过 `require()` 取得。`ctx.root` 是同一个宿主根引用，持有它就持有 root 能力访问权；访问范围表达资源所有权，不是隔离不可信插件的安全沙箱。共享一个 backend 并不意味着向 root 或全部插件开放同一 API。
 
 ## 读取和修改插件配置
 
@@ -154,99 +129,6 @@ const host = await createHost({
 
 Host 应用解析器从本次 `startup.env` 读取显式 `envBindings`，文件输入来自 `fileBindings`。普通配置优先级为基础对象/文件 < 管理保存值 < env，合并后由 schema 校验；env 控制的路径只读且不落盘。Vault env/file 绑定是整记录只读。底层 `createHost()` 不隐式读取进程环境。
 
-## Plugin 读取能力
-
-`this.ctx.logger` 是 Core 始终提供的基础能力，插件无需 import `@pluxel/services/logging`，也无需 `ctx.require(Logging)`。宿主的 `logging(plan)` 配置输出 sink、过滤策略和日志存储；省略它不移除 logger，但不由 Host 安装这些输出和管理后端。`Logging` token 是宿主侧日志管理能力，与插件直接使用的 logger 不同。
-
-```ts
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { Vault } from '@pluxel/services/vault'
-
-@Plugin()
-export class CredentialsPlugin extends BasePlugin {
-	init() {
-		const storage = this.ctx.require(Vault)
-		// get/set/delete 返回带 revision、source 和 writable 的不可变快照。
-		const kv = storage.kv()
-		// 持久写在确认提交后返回；部署绑定整条只读。
-	}
-}
-```
-
-服务目录声明只让合法的可选属性进入通用 Context 类型，不证明任意宿主已经安装服务。必需能力通过 `ctx.require(token)` 按对象身份读取；未安装抛出 `ContextCapabilityMissingError`，已安装服务的构造异常原样传播。可选路径可以使用 `ctx.vault?.…`，但准备失败不会伪装成可选缺失。
-
-Token 的访问范围与 backend 生命周期不同：`owner` 只允许 Plugin、Part 和 caller Context；`root` 只能在真实 RootContext 上通过 `require()` 取得。`ctx.root` 是同一个宿主根引用，持有它就持有 root 能力访问权；访问范围表达资源所有权，不是隔离不可信插件的安全沙箱。共享一个 backend 并不意味着向 root 或全部插件开放同一 API。
-
-## 编写服务安装器
-
-同步 Context descriptor 负责属性和 view；Host 的 `prepare()` 负责资源。两者使用同一个 token，不建立额外 registry。
-
-```ts
-import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
-
-const Clock = defineContextCapability<{ now(): number }>('acme.clock', {
-	access: 'root',
-	property: 'acmeClock',
-})
-
-export function clock() {
-	return defineHostService({
-		name: 'Acme clock',
-		capabilities: [
-			installRootCapability(Clock, {
-				property: 'acmeClock',
-				create: () => ({ now: () => Date.now() }),
-			}),
-		],
-		prepare({ ctx }) {
-			ctx.require(Clock)
-		},
-	})
-}
-```
-
-安装器只生成声明；不要在调用安装器时打开连接。需要依赖时填写 `requires: { clock: Clock }`，`prepare({ dependencies })` 中的 `dependencies.clock` 从该 token 推导。依赖只能是能在 root 访问的能力；owner-only API 不能注入共享 backend。一个服务可提供多个 descriptor，它们进入同一份计划统一校验。
-
-异步构造的 backend 可以在 `prepare()` 中创建，以 root 为 WeakMap key 保存，再由同步 descriptor 读取并创建 owner view。资源创建成功后立即调用本次准备传入的 `effects.defer()` 或 `effects.own()` 登记清理；准备中途失败也必须释放已经获取的资源。不要在声明闭包中保存由多个 Host 共享的单例 backend。
-
-## 顺序与失败
-
-创建顺序固定：验证插件目录和完整服务清单 → 编译 Context shape → 创建 root → 按依赖顺序准备服务 → 返回 Host。重复 token、属性冲突、缺失依赖和循环都在工厂调用前拒绝；不同 token 不按属性名互相替代。没有依赖关系时按当前可准备项的声明顺序执行。
-
-准备失败会清理已获取的资源，并拒绝 `createHost()`。如果清理也失败，`AggregateError` 保留原始准备异常作为 `cause`。关闭先停止新接纳和来源会话、排空图操作、停止 Plugin generation，再逆序释放服务；某项清理失败不阻止其余清理。`close()` 幂等，重复调用复用同一个 Promise。
-
-每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
-
-HTTP、Database、Persistence、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。
-
-## 服务参与 Plugin 发布
-
-需要像 HTTP 一样随 Plugin generation 原子发布资源的服务可提供固定 `lifecycle(ctx)`，返回 Core 的
-`finalizeGeneration`、`settleGenerations`、`prepareCommit`、`publishCommit` hooks。Host 每个 root 绑定一次，
-按服务依赖顺序调用。finalize 可以在不同 generation 间并发；settle 收集候选拒绝，prepare 完成所有可能失败的工作，
-publish 只同步交换已准备好的状态且必须返回 `undefined`。不得在 publish 分配资源、启动异步工作或抛出预期失败。
-工厂本身不做 IO，不动态添加 hook；资源仍归服务 effects 所有。这复用 Core 的单次提交，不产生第二份生命周期。
-
-## Database
-
-```ts
-import { createHost } from '@pluxel/host'
-import { database } from '@pluxel/services/database'
-import { pglite } from '@pluxel/services/database/pglite'
-
-const host = await createHost({
-	services: [database({ backend: pglite({ dataDir: './data/database' }) })],
-})
-```
-
-安装 PGlite backend 时由应用显式安装 `@electric-sql/pglite`；PostgreSQL 应用安装 `pg`，并使用
-`postgres({ connectionString })`（来自 `@pluxel/services/database/postgres`）。工厂声明不打开数据库；
-第一次 Plugin `ctx.require(Database).use(definition)` 才加载对应驱动并完成 owner migration。
-省略 Database descriptor 不产生数据库 capability、连接、目录或 driver 安装依赖。
-backend 工厂返回 Host 独占的 adapter，Host 在 accepted operations 排空后关闭它；每个 Host 应通过工厂创建自己的资源。
-驱动选择由实际 backend import 决定，Standalone Host 不需要额外维护 driver 启用列表。
-
 ## 宿主管理操作
 
 独立 Host 提供 `status()` 读取一次已提交图的状态，`setAutoStart()` 持久化冷启动意图，
@@ -256,6 +138,31 @@ backend 工厂返回 Host 独占的 adapter，Host 在 accepted operations 排�
 
 服务若拥有 fork 的持久元数据，可声明 `removeNodeMetadata(ctx, node)`。Host 先停止 fork，再删除配置与服务元数据，
 最后提交 fork 删除；服务按依赖逆序清理，失败保留已停止的 fork，以便重试。普通 generation 停止不会删除持久元数据。
+
+## 自定义开发组合
+
+服务与开发附件可分别选择。通用 `host()` 只负责应用加载与 HMR；HTTP、Node 制品和 Workbench 使用普通 Vite 插件显式接入：
+
+```ts
+import { defineConfig } from 'vite'
+import { host } from '@pluxel/host-dev/vite'
+import { serviceSingletons } from '@pluxel/services/vite'
+import { httpDevelopment } from '@pluxel/services/http/vite'
+import { nodeArtifacts } from '@pluxel/services/node/vite'
+import { workbenchArtifacts } from '@pluxel/workbench/dev'
+
+export default defineConfig({
+	plugins: [
+		serviceSingletons(),
+		host({ entry: './src/app.ts' }),
+		httpDevelopment(),
+		nodeArtifacts(),
+		workbenchArtifacts(),
+	],
+})
+```
+
+`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-dev/vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
 
 ## 自定义组合的开发和生产接入
 
@@ -316,6 +223,75 @@ Core 基础作者入口固定提供；清单中的其他入口必须能从应用
 动态 watcher 或恢复通知失败同样记录原始错误；已有 Host 仍运行时可报告 `retained-previous`，但这不保证失效 watcher 自动重建。首次应用求值失败、尚无 Host 时，先修复 Vite 日志中的错误，不能使用控制台查询。
 
 官方 `vitePreset()` 包含 Database 声明转换；自定义开发组合使用 `databaseSourceVitePlugin()`。
+
+## Database
+
+Database 不在默认组合中，需要显式安装：
+
+```ts
+import { createHost } from '@pluxel/host'
+import { database } from '@pluxel/services/database'
+import { pglite } from '@pluxel/services/database/pglite'
+
+const host = await createHost({
+	services: [database({ backend: pglite({ dataDir: './data/database' }) })],
+})
+```
+
+正式部署从 `@pluxel/services/database/postgres` 导入 `postgres({ connectionString })`。schema、migration 和部署选择见[数据库](../runtime/database.md)。
+
+应用直接声明所选 driver：PGlite 使用 `@electric-sql/pglite`，PostgreSQL 使用 `pg`。服务工厂不打开数据库；第一次 Plugin 调用 `ctx.require(Database).use(definition)` 才加载 driver 并执行 owner migration。每个 Host 通过工厂创建自己的 adapter，在已接纳操作排空后关闭。省略 descriptor 不创建 capability、连接、目录或 driver 依赖，也不需要另设 driver 启用列表。
+
+## 编写服务安装器
+
+同步 Context descriptor 负责属性和 view；Host 的 `prepare()` 负责资源。两者使用同一个 token，不建立额外 registry。
+
+```ts
+import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
+import { defineHostService } from '@pluxel/host'
+
+const Clock = defineContextCapability<{ now(): number }>('acme.clock', {
+	access: 'root',
+	property: 'acmeClock',
+})
+
+export function clock() {
+	return defineHostService({
+		name: 'Acme clock',
+		capabilities: [
+			installRootCapability(Clock, {
+				property: 'acmeClock',
+				create: () => ({ now: () => Date.now() }),
+			}),
+		],
+		prepare({ ctx }) {
+			ctx.require(Clock)
+		},
+	})
+}
+```
+
+安装器只生成声明；不要在调用安装器时打开连接。需要依赖时填写 `requires: { clock: Clock }`，`prepare({ dependencies })` 中的 `dependencies.clock` 从该 token 推导。依赖只能是能在 root 访问的能力；owner-only API 不能注入共享 backend。一个服务可提供多个 descriptor，它们进入同一份计划统一校验。
+
+异步构造的 backend 可以在 `prepare()` 中创建，以 root 为 WeakMap key 保存，再由同步 descriptor 读取并创建 owner view。资源创建成功后立即调用本次准备传入的 `effects.defer()` 或 `effects.own()` 登记清理；准备中途失败也必须释放已经获取的资源。不要在声明闭包中保存由多个 Host 共享的单例 backend。
+
+## 顺序与失败
+
+创建顺序固定：验证插件目录和完整服务清单 → 编译 Context shape → 创建 root → 按依赖顺序准备服务 → 返回 Host。重复 token、属性冲突、缺失依赖和循环都在工厂调用前拒绝；不同 token 不按属性名互相替代。没有依赖关系时按当前可准备项的声明顺序执行。
+
+准备失败会清理已获取的资源，并拒绝 `createHost()`。如果清理也失败，`AggregateError` 保留原始准备异常作为 `cause`。关闭先停止新接纳和来源会话、排空图操作、停止 Plugin generation，再逆序释放服务；某项清理失败不阻止其余清理。`close()` 幂等，重复调用复用同一个 Promise。
+
+每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
+
+HTTP、Database、Persistence、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。
+
+## 服务参与 Plugin 发布
+
+需要像 HTTP 一样随 Plugin generation 原子发布资源的服务可提供固定 `lifecycle(ctx)`，返回 Core 的
+`finalizeGeneration`、`settleGenerations`、`prepareCommit`、`publishCommit` hooks。Host 每个 root 绑定一次，
+按服务依赖顺序调用。finalize 可以在不同 generation 间并发；settle 收集候选拒绝，prepare 完成所有可能失败的工作，
+publish 只同步交换已准备好的状态且必须返回 `undefined`。不得在 publish 分配资源、启动异步工作或抛出预期失败。
+工厂本身不做 IO，不动态添加 hook；资源仍归服务 effects 所有。这复用 Core 的单次提交，不产生第二份生命周期。
 
 ## 包依赖与共享实例
 

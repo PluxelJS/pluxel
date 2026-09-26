@@ -2,6 +2,8 @@
 
 本页拥有 publication、session、Content 与 MF/Bridge 的内部约束。作者用法见 [Workbench](../docs/workbench/index.md)，renderer resource 用法见 [renderer resources](../docs/workbench/renderer-resources.md)；Shell 状态与 workspace 实现见 [FRONTEND](FRONTEND.md)。
 
+声明与身份读 [Definition 与 publication](#definition-与-publication)；会话/lease 读 [Session 与打开流程](#session-与打开流程)；Markdown/表单读 [Content trust boundary](#content-trust-boundary)；renderer 读 [MF2 与 React Bridge](#mf2-与-react-bridge) 及 [Renderer resource 与撤回](#renderer-resource-与撤回)。构建实现集中在 [ARTIFACT_BUILD](ARTIFACT_BUILD.md)。
+
 ## 平台边界
 
 Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 Context property、backend、compiler、route 或 transport；业务 Plugin 仍能运行。
@@ -76,7 +78,7 @@ Static assembly、dynamic discovery 与 dev compiler 使用同一 artifact store
 
 ## MF2 与 React Bridge
 
-每个 Plugin definition 的全部 renderers 合为一个 producer，每个 declaration 生成稳定 `./views/<key>` expose 与 Bridge wrapper。Content 不进入 producer；作者不指定 remote name、shared、public path 或 manifest URL。编译与缓存细节见 [TOOLCHAIN](TOOLCHAIN.md#workbench-source-declaration)。
+每个 Plugin definition 的全部 renderers 合为一个 producer，每个 declaration 生成稳定 `./views/<key>` expose 与 Bridge wrapper。Content 不进入 producer；作者不指定 remote name、shared、public path 或 manifest URL。编译与缓存细节见 [ARTIFACT_BUILD](ARTIFACT_BUILD.md#workbench-source-declaration)。
 
 Renderer graph 只允许一个 exact definition value-import boundary：通常是含 `createWorkbenchRenderer(Exact.entry)` 的 scope module；低层 hook 可由 default entry 拥有。其他 page/panel import scope/resource，跨 renderer 组件只接普通数据。Toolchain 改写为 browser-only descriptor projection，保留类型但不执行 server definition；indirect/dynamic/re-export 或跨 renderer scope 均拒绝。
 

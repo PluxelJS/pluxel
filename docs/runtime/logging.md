@@ -5,6 +5,8 @@ description: 使用 Context logger 和稳定属性记录结构化日志，由宿
 
 Plugin 只需要使用 `ctx.logger` 记录事件。宿主为整个进程统一配置控制台、文件、存储或 OpenTelemetry 输出，并负责路由、动态日志等级和关闭时的刷新。
 
+Plugin 作者从[基本写法](#基本写法)开始；调整输出看 [Host plan](#host-logging-plan)；读取当前实例日志看[有界查询](#有界操作日志与等待)。`ctx.logger` 是 Core 基础能力，输出和存储由宿主另外配置。
+
 ## 基本写法
 
 ```ts twoslash
@@ -131,16 +133,6 @@ logging: {
 
 部署与 Workbench store 选项见 [配置插件宿主](../getting-started/host-setup.md)，仓库内部的遥测集成见 [OpenTelemetry 预览](../plugins/otel.md)，该包目前不供外部项目安装。
 
-## 在 Workbench 查看与归档
-
-Workbench 使用同一份有界日志存储，通过已认证的 Management 会话查询与 follow，不增加 HTTP/SSE 日志 API。
-日志携带 node address、reference 和可读标签；range 按传输预算分页，超大单条记录明确标记 payload 截断。
-需要进程外归档时配置 file 或 OpenTelemetry sink；Plugin 的业务 HTTP 不负责暴露宿主日志。
-
-## 测试与 review
-
-记录一条带原始 `error` 的失败日志，在实际使用的输出中确认可以查看 cause/stack 和插件身份。再关闭、开启对应 debug topic，确认高频诊断按预期过滤。message 用于稳定描述事件，变量放入有界属性；凭据和完整用户数据不进入日志。
-
 ## 独立 Host
 
 ```ts
@@ -175,12 +167,22 @@ await host.close()
 删除 fork 会在同一 Host 队列内清理日志 policy；写入失败时保留 fork，恢复存储后可重试。
 同一进程仍只允许一个活动日志 Host，第二个安装失败不会影响第一个。
 
+### 宿主安装与访问
+
+Host 负责安装、绑定和关闭进程日志 owner。通过 `host.ctx.logging` 或控制台的 `dev.ctx.require(Logging)` 访问这一个 manager；控制台查询不创建第二个日志 owner。
+
+## 在 Workbench 查看与归档
+
+Workbench 使用同一份有界日志存储，通过已认证的 Management 会话查询与 follow，不增加 HTTP/SSE 日志 API。
+日志携带 node address、reference 和可读标签；range 按传输预算分页，超大单条记录明确标记 payload 截断。
+需要进程外归档时配置 file 或 OpenTelemetry sink；Plugin 的业务 HTTP 不负责暴露宿主日志。
+
 ## 有界操作日志与等待
 
 `markLogs(logging, streamId?)` 标记已 flush 的末尾；`readLogs(logging, cursor, { limit: 100, filter })` 返回有界记录和下一 cursor。`waitForLogs(logging, cursor, { signal, limit: 100, filter })` 等待首批匹配记录或 cursor 失效，signal 必填，取消与完成都会释放订阅。三者均从 `@pluxel/services/logging` 导入，使用同一 store，不创建控制台专用日志通道。
 
 cursor 是普通 JSON，包含 rootId、streamId、bootId、epoch、nextSeq；不可把不同 Host 或重建 stream 的序号相接。读取保留 `root_mismatch`、`stream_replaced`、`store_unavailable`、`epoch_mismatch`、`from_too_old` 与 `invalid` 的失败分支。mark 可为已配置但尚无记录的 stream 创建空存储，未配置且不存在时抛错。调用示例见 [开发控制台](../development/dev-console.md)。
 
-## 宿主安装与访问
+## 测试与 review
 
-自行组合 Host 时，从 `@pluxel/services/logging` 导入 `logging(plan, options)` 并加入 `services`。Host 负责安装、绑定和关闭唯一的进程日志 owner；运行后通过 `host.ctx.logging` 或在开发控制台用 `dev.ctx.require(Logging)` 访问当前 manager。不要手动创建或绑定另一个 manager。
+记录一条带原始 `error` 的失败日志，在实际使用的输出中确认可以查看 cause/stack 和插件身份。再关闭、开启对应 debug topic，确认高频诊断按预期过滤。message 用于稳定描述事件，变量放入有界属性；凭据和完整用户数据不进入日志。

@@ -42,5 +42,5 @@ Workbench 是应用自带的管理工作台。普通插件已经可以在这里�
 页面的 route、参数、宿主能力和布局见 [View](./view.md)，查询、写入与订阅见[页面资源](./renderer-resources.md)。
 宿主接入官方 Shell、管理连接或自定义 Vite 附件见[独立 Host](./standalone-host.md)。
 
-打开页面验证真实读取与一次写入，再关闭页面确认订阅、长任务得到清理；生产构建验证 Content 与 React 制品。
+生产构建还需验证 Content 与 React 制品；页面能在开发环境打开，不代表发布包已经包含这些资源。
 运行中的应用通过[开发控制台](../development/dev-console.md)检查，隔离回归使用[测试宿主](../development/testing.md)。

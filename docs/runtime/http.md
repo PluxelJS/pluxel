@@ -7,6 +7,14 @@ description: 在插件中添加 HTTP API、webhook 和 WebSocket，并验证路�
 
 下面的插件可以加入 [快速开始](../getting-started/index.md) 创建的应用。`ctx.require(Http)` 使用 Elysia 2 原生 API，路由路径就是最终 URL，不会自动添加插件名前缀。
 
+| 要做什么                     | 本页路径                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| 新增 API/webhook             | [最小路由](#最小路由) → [输入与 Elysia 能力](#直接使用-elysia-能力) → [测试](#测试) |
+| 加 WebSocket                 | [WebSocket](#websocket)与[已验证 carrier 范围](#当前-elysia-2-与-carrier-边界)      |
+| 拆分路由或动态扩展           | [所有权](#按所有权组织大型路由)，先选 generation owner                              |
+| 更新后 404、停止后请求未退出 | [发布与生命周期](#finalization-与生命周期)、[错误边界](#错误边界)                   |
+| 自己接入 listener            | [独立 Host](#独立-host)                                                             |
+
 ## 最小路由
 
 ```ts twoslash
@@ -209,6 +217,42 @@ timeout 约束，HTTP 服务不会假装能同步终止它。
 
 长期 background task 不应挂在某个 HTTP request Promise 上。把它建模为 owner-bound worker/queue，再让 endpoint 只提交任务或查询状态。
 
+## 错误边界
+
+区分可预期的请求错误与 lifecycle 失败：
+
+| 情况                             | 处理                                                            |
+| -------------------------------- | --------------------------------------------------------------- |
+| 参数、权限或状态冲突             | 使用 Elysia status/Response 返回明确 4xx DTO                    |
+| 上游超时或临时不可用             | 返回领域定义的 5xx/503，并保留 server log cause                 |
+| 未知请求异常                     | 交给 Elysia error boundary，向外返回不含敏感信息的通用错误      |
+| reserved path、route conflict 等 | generation start failed；不发布该 contribution                  |
+| Plugin 根本无法继续提供能力      | 触发 lifecycle failure/restart，而不是持续提供半失效的 HTTP 500 |
+
+不要把 stack、token、内部文件路径或完整上游 response body 直接返回客户端。
+
+## 测试
+
+服务 test host 的 `host.http.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
+
+```ts no-twoslash
+const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
+```
+
+至少验证：
+
+- success 和 validation failure；
+- 最终产品 path；
+- Plugin remove/replacement 后旧 route 返回 404；
+- stream cancellation 与 owner stop（若 handler 返回 stream）；
+- auth/signature failure 不泄露内部错误；
+- Workbench disabled 时业务 route 仍工作。
+
+`host.http.fetch()` 不执行 HTTP Upgrade，也不证明真实 listener disconnect、WebSocket close code、backpressure 或 HMR arbitration。需要这些
+carrier 能力时必须使用 Node production、static Vite 或 dynamic Vite 对应的 ephemeral real-listener integration test；不能用普通 Fetch
+response 代替。完整 test host 配置见[测试 Pluxel 插件](../development/testing.md)。
+出站请求可以使用官方 [Wretch Plugin](../plugins/wretch.md) 或领域 HTTP client，不要与入站 Elysia application ownership 混在一起。
+
 ## 挂载已有 Fetch application
 
 已有 WinterTC-style Fetch application 使用 Elysia 原生 `mount()`：
@@ -325,24 +369,13 @@ Registry 自己负责稳定 ID、重复注册、结果上限与幂等 disposer�
 - 用 standalone `new Elysia()` 拼接 Pluxel Plugin：server lifecycle、hook 和 WebSocket owner 可能分裂；
 - 只为共享 path prefix 建立核心 Plugin：`group()` 或普通常量已经能表达 namespace，prefix 本身不是 lifecycle。
 
-宿主拥有 listener、port、process shutdown 和物理 server policy，部署 ingress、反向代理或平台拥有 TLS。Plugin 调用 application 的 `listen()` / `stop()` 会立即
-失败；`setup()` / `cleanup()` 也会立即失败，因为 Elysia 2 beta.7 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
-调用 Server view 的 `stop()`、`reload()`、`ref()` 或 `unref()`，不选择 srvx/runtime adapter。srvx 的接入属于宿主 carrier 工作，
-不是 Plugin 的第二套 Web 作者 API。
-
-handler 取得的 `server` 是 generation-scoped、carrier-backed view。`url`、`port`、`hostname` 和 `development` 反映当前宿主 listener；
-`id` 是本 generation 内稳定的 virtual-server value，不是物理 listener identity。`server.url` 每次返回独立 `URL`，修改它不会重配
-listener。Node carrier 还支持 `server.requestIP(request)` 读取该请求的远端 address、port 和 IP family；把其他来源或已经脱离当前
-owner invocation 的 `Request` 传入会明确失败。
-
 ## 当前 Elysia 2 与 carrier 边界
 
 HTTP 服务当前锁定 Elysia `2.0.0-beta.7`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
 compile/seal、atomic generation publication、stream lease、owner withdrawal，以及上述三条 Node listener 路线的基础业务 WebSocket。
 以下能力仍不能按“所有 runtime 上完整等同原生 Elysia server”使用：
 
-- Elysia `setup()` / `cleanup()` 尚无公开 external attach/detach runner。直接注册会 fail-fast；把带隐藏 lifecycle callback 的 standalone
-  Elysia instance 再通过 `.use()` 合并也不属于受支持路径。Pluxel 不读取 beta private fields 自行模拟。
+- Elysia `setup()` / `cleanup()` 尚无公开 external attach/detach runner，直接注册会 fail-fast。带隐藏 lifecycle callback 的 standalone instance 也不能通过 `.use()` 绕过；listener 所有权见[独立 Host](#独立-host)。
 - 目前只有 Node production、static Vite 和 dynamic Vite carrier 完成 conformance；尚无第二个 Bun、Deno 或 Worker carrier，因此
   “portable application seam”不等于已经证明跨平台 transport parity。
 - crossws 的 portable socket API 尚不能实现 Elysia socket 的主动 `pong()`。不同 runtime 的 send 返回值、backpressure 和 buffered
@@ -355,42 +388,6 @@ compile/seal、atomic generation publication、stream lease、owner withdrawal�
 
 这些限制属于 Elysia/carrier seam，不会通过增加 Pluxel Web wrapper 来掩盖。Node 已验证范围内可以使用业务 WebSocket；依赖上述
 portable parity 或 tuning 的应用应等待对应 conformance 完成。
-
-## 错误边界
-
-区分可预期的请求错误与 lifecycle 失败：
-
-| 情况                             | 处理                                                            |
-| -------------------------------- | --------------------------------------------------------------- |
-| 参数、权限或状态冲突             | 使用 Elysia status/Response 返回明确 4xx DTO                    |
-| 上游超时或临时不可用             | 返回领域定义的 5xx/503，并保留 server log cause                 |
-| 未知请求异常                     | 交给 Elysia error boundary，向外返回不含敏感信息的通用错误      |
-| reserved path、route conflict 等 | generation start failed；不发布该 contribution                  |
-| Plugin 根本无法继续提供能力      | 触发 lifecycle failure/restart，而不是持续提供半失效的 HTTP 500 |
-
-不要把 stack、token、内部文件路径或完整上游 response body 直接返回客户端。
-
-## 测试
-
-服务 test host 的 `host.http.fetch()` 会经过真实 directory、generation admission 和 sealed Elysia app，但不打开端口：
-
-```ts no-twoslash
-const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
-```
-
-至少验证：
-
-- success 和 validation failure；
-- 最终产品 path；
-- Plugin remove/replacement 后旧 route 返回 404；
-- stream cancellation 与 owner stop（若 handler 返回 stream）；
-- auth/signature failure 不泄露内部错误；
-- Workbench disabled 时业务 route 仍工作。
-
-`host.http.fetch()` 不执行 HTTP Upgrade，也不证明真实 listener disconnect、WebSocket close code、backpressure 或 HMR arbitration。需要这些
-carrier 能力时必须使用 Node production、static Vite 或 dynamic Vite 对应的 ephemeral real-listener integration test；不能用普通 Fetch
-response 代替。完整 test host 配置见[测试 Pluxel 插件](../development/testing.md)。
-出站请求可以使用官方 [Wretch Plugin](../plugins/wretch.md) 或领域 HTTP client，不要与入站 Elysia application ownership 混在一起。
 
 ## 独立 Host
 
@@ -414,3 +411,13 @@ await host.close()
 `attachApplicationCarrier()` 提供 upgrade、连接统计和物理地址，并负责调用 returned disposer 撤回接线。
 
 `HttpServer` 拥有唯一请求边界和业务目录。管理会话与 artifact 鉴权由 Management 的固定端点处理，Workbench shell 在业务路由未命中后提供 fallback；各 attachment 只挂载到已选择的服务，不创建第二个 router。
+
+宿主拥有 listener、port、process shutdown 和物理 server policy，部署 ingress、反向代理或平台拥有 TLS。Plugin 调用 application 的 `listen()` / `stop()` 会立即
+失败；`setup()` / `cleanup()` 也会立即失败，因为 Elysia 2 beta.7 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
+调用 Server view 的 `stop()`、`reload()`、`ref()` 或 `unref()`，不选择 srvx/runtime adapter。srvx 的接入属于宿主 carrier 工作，
+不是 Plugin 的第二套 Web 作者 API。
+
+handler 取得的 `server` 是 generation-scoped、carrier-backed view。`url`、`port`、`hostname` 和 `development` 反映当前宿主 listener；
+`id` 是本 generation 内稳定的 virtual-server value，不是物理 listener identity。`server.url` 每次返回独立 `URL`，修改它不会重配
+listener。Node carrier 还支持 `server.requestIP(request)` 读取该请求的远端 address、port 和 IP family；把其他来源或已经脱离当前
+owner invocation 的 `Request` 传入会明确失败。

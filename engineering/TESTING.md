@@ -5,11 +5,16 @@
 
 ## Boundary selection
 
-- 普通对象和纯领域规则不创建 host。
-- 纯 Cap’n Web target contract 直接使用库的 `RpcStub` 与原生资源所有权，不通过 Workbench test helper 或借用代理。
-- 普通插件的 DI、配置、lifecycle 与服务测试统一使用 `@pluxel/test`；public host 不暴露 root Context、transaction 或 backend。
-- Core graph 白盒回归使用 `@pluxel/core/internal/test`，避免内核反向依赖作者组合包。
-- static application 只验证 application wiring；dynamic source、Vite/HMR、physical HTTP/WebSocket 使用 production launcher 或项目 Vite command。
+| 要证明的行为                     | 最小验证边界                            | 不能据此推断                                  |
+| -------------------------------- | --------------------------------------- | --------------------------------------------- |
+| 普通对象、纯领域规则             | 直接测试函数/对象，不创建 host          | DI 或资源生命周期                             |
+| 纯 Cap’n Web target contract     | 原生 `RpcStub` 与原生资源所有权         | 真实传输、认证或 Workbench session            |
+| Plugin DI、配置、lifecycle、服务 | `@pluxel/test`；显式选择 services       | 已运行应用的当前状态                          |
+| Core graph 内部语义              | `@pluxel/core/internal/test`            | carrier 或业务集成正确性                      |
+| 应用 wiring                      | static application 测试                 | dynamic source、Vite/HMR、物理 HTTP/WebSocket |
+| 来源、开发更新、真实 carrier     | production launcher 或项目 Vite command | 未执行的平台与部署矩阵                        |
+
+Public test host 不暴露 root Context、transaction 或 backend；纯 target 测试不借用 Workbench helper/代理；Core 内核不反向依赖作者测试组合包。
 
 同一个 Plugin behavior 只在它最小的 owning boundary 断言一次。删除外层 route、artifact 或 carrier 后仍成立的断言必须回到更小的 host；真实
 carrier、browser 和 deployment 行为仍要在各自真实边界验证。

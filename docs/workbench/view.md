@@ -11,13 +11,8 @@ Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使�
 
 开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为五份文件：页面声明、服务端实现、查询声明、React 入口和页面组件。
 `RpcTarget` 是可以由页面调用的服务端对象；`scope` 将 React 组件与它对应的页面 API 关联。
-向 Workbench 发布 View/Attachment target 时，作者直接从 `capnweb` 导入 `RpcTarget`，并把宿主支持的精确版本
-同时列为 peer 和 dev dependency。当前 Workbench 支持 `0.12.0`；官方包使用 `catalog:prod`。
-Workbench 在打开页面时检查 target 是同一运行时的 `RpcTarget`，`pluxel build` 在发布产物前检查该包的
-peer、dev 和实际安装版本。仅自建的 RPC session 不因使用同名库而受 Workbench 版本限制。
-构建产物的 `pluxel.workbenchCapnweb` 事实让 Pluxel 静态应用和生产动态来源只对 target 发布包
-桥接宿主模块；动态来源在加载时还检查实际版本，并给出包名、实际版和宿主支持版。即使版本相同，
-绕过标准构建或采用其它加载器造成的第二份模块仍会在打开时被拒绝。
+
+先完成[五份文件的最小页面](#默认路径snapshot--mutation)，再按[检查结果](#检查结果)验证。只有需要参数路由、订阅或其他客户端时才继续扩展；[依赖与构建](#依赖与构建)说明发布包必须满足的版本和模块身份。
 
 ## 默认路径：snapshot + mutation
 
@@ -94,13 +89,6 @@ class OrdersTarget extends RpcTarget implements OrdersApi {
 从 factory 参数取得 `principal`、`params`、`signal`，在这里检查权限并在关闭时清理资源。
 此例没有订阅或长任务，因此不需要额外的空 disposer。
 
-`RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
-Cap’n Web 的 `new RpcStub(target)` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。
-复用的是 contract、target class 和底层领域 service，不是已经打开的 target 实例：每个 session/open 都必须创建 fresh
-target，并由新的挂载方自己提供认证、授权、输入预算、取消和释放语义，不能假定 Workbench session 的保障仍然存在。
-只有出现这种真实的第二消费者时，才将共用 DTO/API 从 `workbench.ts` 提取到中立 contract module 或独立 package subpath；
-仅供 Workbench 使用时保持当前结构。
-
 每个 renderer 声明一个 module-scoped scope 和资源：
 
 ```ts
@@ -171,6 +159,14 @@ export function OrdersPage() {
 
 `mutate()` 将失败交给 mutation state；显式 `refetch()` 返回的 Promise 需要处理 rejection，错误同时保留在 query state 中。
 
+## 检查结果
+
+运行应用，打开 Plugin 的 Orders 标签，应看到订单数量和 Refresh 按钮。点击后按钮在请求期间禁用，成功后重新读取并看到 revision 增加。
+关闭再打开应重新读取；两个同时打开的页面不应共用操作状态。
+
+查询选项、分页输入、错误代码和 Mantine Provider 见 [查询、写入与页面资源](./renderer-resources.md)。
+认证、完整刷新和反向代理见 [使用与排查工作台](./operations.md)。
+
 ## 必须遵守的 renderer scope 边界
 
 每个 renderer graph 只能有一个 server-definition value boundary。默认把它放在 `<entry>.scope.ts`：
@@ -188,6 +184,15 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 低层 `useWorkbench(exactDescriptor)` 只能在 renderer default entry 保留这唯一边界；它不是普通 snapshot 页面首选路径。
 
+## 页面 API 与宿主边界
+
+- 纯数据 RPC 方法使用 `*Dto` 后缀和显式返回类型，返回前用 `assertWorkbenchDto()` 校验可传输性；大列表使用 cursor/limit。
+- DTO 生产、输入校验与授权规则见 [API 契约](../api/contracts.md#rpc-方法名表达返回值所有权)。
+- mutation 只有页面需要 result 时才返回 DTO；否则返回 `void`，用 subscription 或 typed invalidation 刷新。
+- API 不返回 Plugin、Context、database handle、native object、raw socket 或 Shell service。
+- `host` 的外观、导航、文档与可选管理能力见[Host 能力](#host-能力)，不从 Shell 内部取得服务。
+- route params 由 server match 后冻结；browser 不能提交 principal 或 authority object。
+
 ## 何时升级
 
 - read model 会在外部变化：query 通过 `workbench.subscribe: ({ invalidate }) => api.watch(invalidate)` 订阅权威 invalidation。
@@ -198,23 +203,6 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 - 复杂三栏布局：使用 `WorkbenchPaneLayout`/`WorkbenchPane`；不要读取 Shell router、store 或 raw socket。
 
 普通 `scope.query()` 负责 browser-side subscription 的 retain、abort 和 dispose。不要为了普通 latest snapshot 手写 observer target。
-
-## 页面 API 与宿主边界
-
-- 纯数据 RPC 方法使用 `*Dto` 后缀和显式返回类型，返回前用 `assertWorkbenchDto()` 校验可传输性；大列表使用 cursor/limit。
-- DTO 生产、输入校验与授权规则见 [API 契约](../api/contracts.md#rpc-方法名表达返回值所有权)。
-- mutation 只有页面需要 result 时才返回 DTO；否则返回 `void`，用 subscription 或 typed invalidation 刷新。
-- API 不返回 Plugin、Context、database handle、native object、raw socket 或 Shell service。
-- `host` 只提供 locale、color scheme、notify/confirm、relative navigation 和 parameterized document facade。
-- route params 由 server match 后冻结；browser 不能提交 principal 或 authority object。
-
-## 检查结果
-
-运行应用，打开 Plugin 的 Orders 标签，应看到订单数量和 Refresh 按钮。点击后按钮在请求期间禁用，成功后重新读取并看到 revision 增加。
-关闭再打开应重新读取；两个同时打开的页面不应共用操作状态。
-
-查询选项、分页输入、错误代码和 Mantine Provider 见 [查询、写入与页面资源](./renderer-resources.md)。
-认证、完整刷新和反向代理见 [使用与排查工作台](./operations.md)。
 
 ## Placement 与参数化 route
 
@@ -276,6 +264,16 @@ Pane Kit 的三段语义固定为 `navigation | primary | inspector`：两侧可
 打开为 drawer；中间控件用于聚焦 primary 并恢复先前两侧。`primary` 始终可见，不能被隐藏。官方插件详情页中的
 plugin rail、辅助栏和底部 dock 属于另一套宿主私有布局，不应被 View 当作 Pane Kit role 或自行复制其 chrome。
 
+### 借用宿主管理操作
+
+官方 Shell 向 View 提供可选的 `host.management`，共享当前已认证会话的 unary management
+操作。自定义 Shell 必须在 `createWorkbenchViewHost({ management, ... })` 中显式绑定；
+未绑定时该字段为 `null`，Renderer 应处理不可用状态。
+
+这不转移会话所有权：没有 raw socket、订阅控制或 session disposal。关闭 View 后，
+已缓存的 namespace 与独立保存的 method 都不能继续发起操作；已经接受的调用仍按原会话完成，
+关闭不表示业务回滚。认证、权限检查和审计与 Shell 内建页面完全相同。
+
 ## 完整 View 参考：订阅后台变化
 
 后台或其他页面会修改数据时，在前面的例子中加入 `watch()`，不再复制另一套页面。
@@ -315,12 +313,19 @@ export const refreshOrders = overviewScope.mutation(({ api }) => ({
 `refresh()` 提交后必须触发同一权威通知，才可省略 `invalidates`。helper 用于最新状态失效提示，会合并中间 revision；逐条事件和可取消进度使用领域 capability。
 观察者引用、callback result 和退订的完整规则见[服务端最新状态通知](./renderer-resources.md#服务端最新状态通知)。
 
-### 借用宿主管理操作
+## 依赖与构建
 
-官方 Shell 向 View 提供可选的 `host.management`，共享当前已认证会话的 unary management
-操作。自定义 Shell 必须在 `createWorkbenchViewHost({ management, ... })` 中显式绑定；
-未绑定时该字段为 `null`，Renderer 应处理不可用状态。
+向 Workbench 发布 View/Attachment target 时，作者直接从 `capnweb` 导入 `RpcTarget`，并把宿主支持的精确版本
+同时列为 peer 和 dev dependency。当前 Workbench 支持 `0.12.0`；官方包使用 `catalog:prod`。
+Workbench 在打开页面时检查 target 是同一运行时的 `RpcTarget`，`pluxel build` 在发布产物前检查该包的
+peer、dev 和实际安装版本。仅自建的 RPC session 不因使用同名库而受 Workbench 版本限制。
+构建产物的 `pluxel.workbenchCapnweb` 事实让 Pluxel 静态应用和生产动态来源只对 target 发布包
+桥接宿主模块；动态来源在加载时还检查实际版本，并给出包名、实际版和宿主支持版。即使版本相同，
+绕过标准构建或采用其它加载器造成的第二份模块仍会在打开时被拒绝。
 
-这不转移会话所有权：没有 raw socket、订阅控制或 session disposal。关闭 View 后，
-已缓存的 namespace 与独立保存的 method 都不能继续发起操作；已经接受的调用仍按原会话完成，
-关闭不表示业务回滚。认证、权限检查和审计与 Shell 内建页面完全相同。
+`RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
+Cap’n Web 的 `new RpcStub(target)` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。
+复用的是 contract、target class 和底层领域 service，不是已经打开的 target 实例：每个 session/open 都必须创建 fresh
+target，并由新的挂载方自己提供认证、授权、输入预算、取消和释放语义，不能假定 Workbench session 的保障仍然存在。
+只有出现这种真实的第二消费者时，才将共用 DTO/API 从 `workbench.ts` 提取到中立 contract module 或独立 package subpath；
+仅供 Workbench 使用时保持当前结构。

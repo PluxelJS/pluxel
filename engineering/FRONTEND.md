@@ -1,7 +1,9 @@
-# Frontend Architecture
+# Frontend：会话、状态与资源
 
 Workbench frontend 是一个固定 Shell，既能直接渲染 Content，也能按需加载完整 Plugin applications。业务 HTTP 与 Workbench 正交；
 Workbench 不得成为 Plugin 核心能力的启动前提。
+
+修改连接读[一个 document，一条 session](#一个-document一条-session)；修改缓存读[三类前端状态](#三类前端状态)；修改打开/关闭读 [Layout 和 entry activation](#layout-和-entry-activation)；修改布局读 [Pane Kit 与 Workspace](#pane-kit-与-workspace)。异步和 StrictMode 变更都需核对 [React state correctness](#react-state-correctness)。
 
 ## 固定边界
 
@@ -162,3 +164,9 @@ Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写�
 - `packages/workbench/src/workbench/react-internal.tsx`
 - `packages/workbench/src/workbench/federation.ts`
 - `packages/workbench/shell/src/app/workbench/WorkbenchContentRenderer.tsx`
+
+## 验证
+
+Shell 测试位于 `packages/workbench/shell/`，client/resource 测试位于 `packages/workbench/tests/`。覆盖 StrictMode 单连接、query cache 不持有 capability、旧请求不覆盖 mutation 后权威快照、每次 open 独立资源、late result 只释放不提交，以及 Bridge → facade → handle 关闭顺序。
+
+浏览器回归验证真实 session epoch/full reload、MF/React root 隔离、布局持久化、键盘焦点与窄屏 Pane 行为。只改纯状态算法时用所属 store/controller 测试；真实连接、Bridge/CSS 或资源泄漏不能以纯状态测试代替。

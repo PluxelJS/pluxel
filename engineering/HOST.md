@@ -4,6 +4,8 @@
 
 应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
 
+服务组合与关闭读[服务与资源](#服务与资源)；应用求值与 replacement 读[应用、开发和部署](#应用开发和部署)；请求 lease 与管理接入读 [HTTP 与管理页面](#http-与管理页面)；密钥记录读 [Vault 记录](#vault-记录与宿主输入)。每项资源的实现及验证见[资源边界与验证入口](#资源边界与验证入口)。
+
 ## 服务与资源
 
 `createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源在 `prepare({ ctx, dependencies, effects })` 获取。

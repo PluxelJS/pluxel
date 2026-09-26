@@ -1,4 +1,4 @@
-# Config Architecture
+# 配置：声明、保存与运行中应用
 
 配置链分成 declaration/validation 与宿主持久化两层：
 
@@ -6,10 +6,12 @@
 Plugin + owned PluginPart fields: configs.use(ObjectSchema)
   -> toolchain owner/path schema facts
   -> core composite defaults / validation / normalized aggregate snapshot
-	  -> one Plugin config record / revision / notification owner
+  -> one Plugin config record / revision / notification owner
   -> Host config get / validate / patch / reset
   -> Host persistence / Management transport report / Workbench section projection
 ```
+
+本页拥有配置的唯一事实链。声明与 UI schema 读[不变量](#不变量)及 [Toolchain metadata](#toolchain-metadata)；启动输入读 [Static startup config](#static-startup-config)；保存失败读[保存与应用](#保存与应用)；在线更新读 [Running generation notification](#running-generation-notification)。完整用法见[配置指南](../docs/getting-started/configuration.md)。
 
 ## Host 管理用例
 
@@ -57,6 +59,8 @@ Vault 绑定由 Host 在服务准备后、插件 admission 前通过 root-only `
 
 持久配置继续使用 SuperJSON v3；file writer atomic replace 只写 saved layer，malformed/version error fail-fast。config 和 state 的 initial 语义不同：config initial 是永久 base，state initial 仍是创建策略 seed。
 
+## 保存与应用
+
 control-plane patch/reset/field mutation 与 fork/catalog mutation 共用 host coordinator exclusive queue。顺序固定为 validate once -> stage
 normalized immutable snapshot -> flush -> confirm persisted revision -> notify addressed running generation。stage 不是已提交的内存
 authority；flush 失败时未确认 revision 和 normalized snapshot 都不能被 Core generation 观察。第一次 schema validation 的 normalized output 是唯一
@@ -74,7 +78,7 @@ Config field 保存最后一次 framework-confirmed slice；Plugin 自己拥有�
 已经发生的 Plugin 副作用。HostStateStore 返回 revision-bound immutable snapshot/cache；同一 revision 的 read 不 deep clone。readonly backend
 读取既有文件但不创建缺失文件，拒绝 mutation；malformed/version error fail-fast，且不隔离或重写原文件。
 
-### Running generation notification
+## Running generation notification
 
 Plugin/Part 在声明者自己的 `init()` 中通过 `configs.onUpdate(this.config, listener)` 为 declaration 注册一次 generation-bound listener。
 `this.config` 同时提供类型推导和运行时 field identity 校验；registration 不进入 schema/toolchain metadata，也不返回 dispose handle。init rollback、
@@ -89,6 +93,8 @@ listener reject 会停止后续通知，保留此前 framework-confirmed fields/
 Management 用稳定 `listener_not_registered`、`listener_failed`、`generation_changed` code 报告未确认原因。框架不提供 restart instruction、
 prepare/commit/discard、compensation 或另一套 effects lifecycle。Listener 应由 Plugin 自己保持幂等并收敛到最新 desired state；不得等待需要进入
 同一 coordinator 的 config mutation、restart 或 graph operation。
+
+## 输入接纳与成本
 
 RPC 输入先按 `unknown` 校验 owner address、patch object 与 field mutation。nested `fieldPath` 必须非空、有界，并拒绝 `__proto__`、
 `constructor`、`prototype` 等危险 segment；非法输入返回封闭 `invalid_input` 或 `validation_failed` 且 `state: 'unchanged'`，不能触发
@@ -140,3 +146,9 @@ control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: fa
 - `docs/getting-started/configuration.md`
 
 作者用法见 [`docs/getting-started/configuration.md`](../docs/getting-started/configuration.md#声明规则)。
+
+## 验证
+
+覆盖 Plugin/重复 Part 的 config 聚合、constructor 不提前读取、schema input/output 差异、env 只读路径与 reset。保存路径必须证明 flush 失败不发布、schema 不重复执行、candidate/revision 不匹配不能复用 snapshot。在线 apply 覆盖 listener 缺失/拒绝、generation 撤回、children-before-owner、fork 隔离以及 `saved-not-applied` 保留 desired record。
+
+直接入口是 `packages/host/tests/config.test.ts`、`config-store.test.ts`、`config-environment.test.ts`，以及 Core config/PluginPart 和 Services management config 测试。操作当前应用仍通过 [devconsole](../docs/development/dev-console.md)，检查返回的 saved/application/applyFailure，不以命令完成代替应用成功。

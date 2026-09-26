@@ -9,6 +9,8 @@ description: 理解 Plugin 的依赖关系、版本代际、可选集成、资�
 一个 Plugin 只有在必需依赖可用、配置校验成功且 `init()` 完成后才会运行。
 你负责声明依赖、初始化业务资源并登记清理；宿主负责启动顺序、停止和热更新。
 
+本页按“组成关系 → 调用约束 → 资源 → 失败”阅读。只做局部修改时，直接查[必需依赖](#required-dependency)、[可选集成](#optional-integration)或[资源清理](#generation-是资源所有权边界)；身份和事件协议按需查阅。
+
 ## 三种组成关系
 
 先看这部分功能是否需要独立启动和停止。下表给出三种插件组成方式，以及无需插件机制的普通 helper：
@@ -71,8 +73,8 @@ reference 与旧字段写入都会被拒绝；普通 public field 的读写仍�
 需要 runtime 强封装时，把状态放进 closure，或从 capability 返回带有明确 stop/replacement 失效语义的 handle。这个限制不适用于
 不会作为 provider dependency facade 暴露的 `PluginPart`；Part constructor 接收依赖不会让 Part 自己成为 graph provider。
 
-Plugin 对其他节点暴露的可调用成员应写成普通 prototype method；accessor只返回普通数据或有自身receiver与失效契约的对象handle。
-不要写 `status = () => ...`、function expression field或 `this.status.bind(this)` field。这些写法会捕获 raw provider，无法保留 consumer 的 caller Context，构建工具会报
+Plugin 对其他节点暴露的可调用成员使用 prototype method；accessor 只返回普通数据，或有自身 receiver 与失效契约的对象 handle。
+不要使用 `status = () => ...`、function expression field 或 `this.status.bind(this)` field。这些写法会捕获 raw provider，无法保留 consumer 的 caller Context，构建工具会报
 `plugin_caller_view_callable_field_unsupported`。普通数据 field 仍可读写；需要 callable handle 时返回有独立对象 receiver 和明确
 stop/replacement 失效语义的 capability。
 

@@ -5,6 +5,14 @@ description: 区分本地能力、RPC 数据和资源引用，让插件作者只
 
 设计 API 时，先回答调用方要读取一个事实，还是取得一项可持续使用的能力。前者返回 snapshot 或操作回执，后者返回有明确生命周期的 handle；不必让每个业务实体都变成远端对象。
 
+| 要决定什么             | 规则位置                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| 本地方法还是浏览器 API | [本地边界](#本地插件-api-按领域设计)、[页面边界](#页面-api-只公开客户端需要的能力)    |
+| 返回数据、回执还是资源 | [方法命名](#rpc-方法名表达返回值所有权)、[数据与资源](#数据与资源分别持有)            |
+| 谁创建、共享、释放引用 | [作用域持有](#共享-rpc-能力按作用域持有)                                              |
+| 哪一层校验和授权       | [生产者边界](#生产者负责-dto-边界)                                                    |
+| 错误如何让调用方恢复   | [本地 Result](#本地插件可选-result-契约)、[签名之外的契约](#方法签名之外还要说明什么) |
+
 ## 本地插件 API 按领域设计
 
 同一 host 中，required dependency 通过 constructor 声明。方法使用领域词汇，按需要返回普通数据或具有明确撤回语义的对象，不为本地调用复制一套 RPC 方法和 DTO。
@@ -78,7 +86,7 @@ Workbench 已经为每次打开页面取得所需 root。`scope.useWorkbench()`�
 
 例如 `refreshDto(): Promise<OrdersSnapshot>` 返回刷新后的事实，`refresh(): Promise<void>` 只承诺操作完成。两者按实际消费需求选择，不为统一命名额外制造回执。纯数据 Result union 仍是 DTO；只要其中一个分支带 capability，整体就是资源或混合结果。
 
-Framework raw RPC 同样遵守这项规则：Workbench session 的 `layoutDto()` 返回布局，`openEntry()` 返回含 root 的打开结果；Content root 的 `subscribeDto()`、`loadDto()`、`runDto()` 返回数据。`subscribeDto()` 会注册 observer，但注册寿命归 Content root，返回的 initial DTO 不持有订阅 handle。对应本地 opened handle 继续使用 `subscribe()`、`load()`、`run()`。Management 的 raw value methods 使用 `*Dto`，消费后的本地 facade 保留领域方法名。
+Framework raw RPC 同样遵守这项规则：`layoutDto()` 返回数据，`openEntry()` 返回含 root 的资源。`*Dto` 不承诺“无副作用”：Content 的 `subscribeDto()` 注册 observer，但订阅寿命属于 root，返回值仍是纯数据。Content 的其余 raw 方法和本地 handle 名称见 [Content](../workbench/content.md#markdown-与字段规则)；Management 消费后的本地 facade 继续使用领域名称。
 
 ## 生产者负责 DTO 边界
 

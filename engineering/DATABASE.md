@@ -1,6 +1,8 @@
-# Database Architecture
+# 数据库：owner handle 与数据换代
 
 `@pluxel/services/database` 是显式安装的 capability；`standardServices()` 与 `servicesPreset()` 都不默认安装。PostgreSQL 是唯一 SQL dialect，Drizzle 是作者查询界面。用法见 [数据库指南](../docs/runtime/database.md)。
+
+修改查询 handle 读 [Author boundary](#author-boundary)，修改安装/driver 读 [Backend ownership](#backend-ownership)，修改数据换代读 [Schema evolution](#schema-evolution)，修改通知/排空读 [Invalidation and outbox](#invalidation-and-outbox) 与 [Resource control](#resource-control)。
 
 ## Author boundary
 
@@ -89,3 +91,9 @@ operation 排空；内部 invalidation listener 随 owner cleanup 撤销。同 l
 PGlite 与 PostgreSQL 工厂分别从 `@pluxel/services/database/pglite` 和 `/postgres` 导入，彼此不引用；
 通用入口不包含 driver 选择或 driver import。应用显式安装其所选 driver，Services 仅声明 optional peers。
 acquire 与 cached handle read/transaction 都进入 Core root/owner invocation lease；Host 关闭先排空已接受的操作，再关闭 adapter。
+
+## 实现与验证
+
+实现位于 `packages/services/src/database/`；schema artifact 编译由 Rolldown 拥有，见 [TOOLCHAIN](TOOLCHAIN.md#database-migrations)。回归入口包括 `packages/services/tests/database-host.test.ts`、`services/database-service.test.ts`、`vite-database.test.ts` 和 `packages/rolldown/tests/database/artifact.test.ts`。
+
+验证 lazy/disabled 零 driver、owner/fork 隔离、cached handle 撤回、排队与 stop、migration 失败保留 active instance、lineage promotion 原子性和 rollback 无 outbox。PGlite 证明本地单连接契约；生产锁、连接丢失与 pool exhaustion 必须使用真实 PostgreSQL，不能从内存测试推断。

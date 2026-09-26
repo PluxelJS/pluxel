@@ -1,7 +1,9 @@
-# Core
+# Core：图、Context 与 generation
 
 `@pluxel/core` 定义 Plugin definition/node、DI graph、Plugin Context projection 和 generation lifecycle，不拥有宿主能力。
 通用 Context host kernel 由公开的 `@pluxel/context` 提供；Core 源码直接复用它，并在发布产物中完整内联。
+
+按修改对象选读：[Context kernel](#context-capability-kernel)、[identity/DI](#identity-与-di-不变量)、[record/graph 成本](#definitionnode-与-generation)、[caller facade](#生命周期与-caller-facade)、[Part/events](#内部组成与事件)。Commit 状态转换和失败证据由 [CORE_LIFECYCLE_SEMANTICS](CORE_LIFECYCLE_SEMANTICS.md) 单独维护。
 
 ## 负责
 

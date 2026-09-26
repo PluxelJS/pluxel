@@ -1,46 +1,44 @@
-# Repository Instructions for Coding Agents
+# Coding agent 工作入口
 
-For source locations and application bindings, use [inspect](docs/development/inspection.md).
-For isolated regression coverage, use [Plugin tests](docs/development/testing.md).
-Other task entry points: [development guide](docs/development/index.md).
+先确认任务属于应用/插件开发还是框架维护，再读取对应文档。已知目标时直接定位文件；不要为一个局部改动通读全部文档。
 
-## Keep code and examples direct
+## 按任务读取
 
-Use original API names unless an alias resolves a conflict or clarifies an ambiguous source.
-Avoid importing a value again just for its type, or adding aliases and wrappers with no distinct contract or behavior.
-Documentation should show the shortest complete use of the existing contract.
+| 任务                                                       | 必读入口                                                                               | 下一步                                                                            |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| 修改插件业务、配置声明或应用装配                           | [开发指南](docs/development/index.md)                                                  | 用 [inspect](docs/development/inspection.md) 定位 Plugin、Part、schema 和应用输入 |
+| 修改框架、Context 服务、生命周期、工具链或包边界           | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md) | 从 [工程索引](engineering/README.md) 选择涉及的领域，再读实现和测试               |
+| 创建或修改公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)                                    | 先读执行方式与硬约束，再按变更类型读取相关规则；检查 exports 和真实调用方         |
+| 设计本地 Plugin 可恢复失败                                 | [Better Result](docs/api/better-result.md)                                             | 明确调用方如何恢复；保留原生 SDK、判定、回执和生命周期失败契约                    |
+| 操作已运行的应用                                           | [开发控制台](docs/development/dev-console.md)                                          | 发现现有 Vite 实例，再固定 root 与 instance                                       |
+| 添加隔离回归                                               | [插件测试](docs/development/testing.md)                                                | 框架测试设施的边界见 [工程测试](engineering/TESTING.md)                           |
 
-## Framework changes
+普通源码查找使用 `rg`、package exports 和领域文档的实现入口。inspect 用于确认声明与应用绑定关系；目标和相关声明已明确时直接读源码，不为执行流程重复查询。它不代替任意 import 影响分析或框架内部搜索。
 
-Pluxel currently serves the local repositories in this workspace. Update known callers together when changing a contract; do not retain compatibility aliases, old-format readers, or startup migration paths for hypothetical external consumers. Convert existing local data once when necessary, then remove the conversion code.
+先满足本任务的必读约束；链接是按需展开的入口，不要求递归读完。同一任务中未变化的文档无需重读。能明确改动位置、契约与所有者、受影响调用方、验证方式后，就开始实现；遇到事实冲突、未知行为或跨领域影响时，再补读对应章节，不靠猜测填空。
 
-Before creating or changing a public library API, configuration contract, public type, error contract, extension point, or resource lifecycle, read:
+## 当前事实与设计决策
 
-- `.agents/rules/library-api-design.md`
+- `docs/` 拥有公开用法；`engineering/` 拥有架构约束和实现入口；`.agents/rules/` 提供可复用的设计方法。项目约束、已有契约和领域惯例优先于通用默认。
+- 提案、实验和历史记录不作为当前 API 依据。文档与源码冲突时检查 exports、实现、测试和调用方，修复差异，不默默选择其中一份。
+- Pluxel 当前服务此工作区的本地仓库。修改契约时同步更新已知调用方，不为假设的外部消费者保留兼容 alias、旧格式读取器或启动迁移路径。必要时一次性转换已有本地数据，然后移除转换代码。
+- 保留原 API 名称。只有解决命名冲突或来源歧义时才加 alias；不为取得类型重复导入同一个值，不添加无独立契约的 wrapper。
+- 示例展示最短完整调用，包含必要的失败处理和清理。不要让调用方猜入口、状态或副作用。
 
-This is a reusable decision guide, not a substitute for repository-specific constraints. Project constraints, existing public contracts, and domain conventions take precedence over its defaults.
+## 在线操作
 
-Before changing plugin APIs, runtime capabilities, lifecycle, Context services, Vite/Rolldown integration, or package boundaries, read:
+对已运行应用的配置修改、Workbench RPC、Plugin 方法、生命周期操作和日志读取，必须使用现有 Vite 进程的开发控制台：
 
-1. `engineering/DESIGN_PRINCIPLES.md`
-2. `engineering/PLUGIN_SYSTEM.md`
-3. the relevant domain document linked from `engineering/README.md`
+1. 先发现实例，后续命令固定其绝对 `--root` 与准确 `--instance`。
+2. 提交普通 TypeScript 导出函数。
+3. 检查运行结果、领域/应用报告和相关日志。
 
-Treat those documents as current engineering constraints. User-facing behavior must also be reflected in `docs/`; proposals and historical notes are not current API authority.
+隔离 test host 不能证明在线状态。具体调用与限制只维护在[控制台指南](docs/development/dev-console.md)。
 
-For local Plugin failure contracts, follow [Better Result guidance and official examples](docs/api/better-result.md).
-Model caller-recoverable domain failures explicitly; preserve native SDK contracts, decisions, receipts and lifecycle failures.
+## 完成变更
 
-For a user-visible change to a public package, add a pending `.tegami/*.md` changelog with explicit
-package bump types and at least one Markdown heading. Internal-only refactors, tests, and documentation
-changes do not require empty changelogs. Do not edit package versions or `.tegami/publish-lock.yaml`
-manually; Tegami owns version and internal dependency updates.
-
-## Working with a running development runtime
-
-For live runtime inspection or changes, coding agents must read and use the
-[development console](docs/development/dev-console.md) against the existing Vite process. This includes configuration edits, Workbench RPC, Plugin methods,
-lifecycle operations, and runtime logs. Discover the instance first, then pin its `--root` and
-`--instance` on subsequent commands. Submit ordinary TypeScript export functions and inspect the
-run result, domain/application reports, and relevant logs. Use test hosts for isolated regression
-coverage; they do not represent the state of an already running application.
+- 根据风险运行相关检查；类型、运行时行为、公开导出和示例必须表达同一契约。
+- 用户可见行为同步更新 `docs/`；内部边界变化同步更新所属工程文档。一个事实维护一处，其他入口链接它。
+- 删除或替换契约后搜索旧符号、旧入口和文档链接；生成项目的 AGENTS 也要检查。
+- 公开包的用户可见变更必须添加 `.tegami/*.md`，包含明确的包 bump 类型和至少一个 Markdown 标题。纯内部重构、测试或文档修改不需要空 changelog。
+- 不手改 package 版本或 `.tegami/publish-lock.yaml`；版本和内部依赖更新由 Tegami 管理。

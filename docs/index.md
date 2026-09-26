@@ -6,6 +6,8 @@ icon: BookOpen
 
 Pluxel 用 TypeScript 插件组织业务能力，管理依赖、配置、启动、热更新与资源清理。
 
+本目录描述当前公开用法。第一次使用从快速开始进入；修改已有项目先选任务，不必按目录顺序阅读。
+
 | 任务                   | 入口                                                                                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 创建并运行应用         | [快速开始](./getting-started/index.md)                                                                                                                  |
@@ -19,4 +21,5 @@ Pluxel 用 TypeScript 插件组织业务能力，管理依赖、配置、启动�
 | 修改框架               | [工程文档](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)                                                                          |
 
 项目内运行 `pnpm exec pluxel docs [path]` 获取页面链接；源码 checkout 可直接读 `docs/`。
+公开导入以 [Package 矩阵](./reference/package-matrix.md) 和所用版本的 exports 为准。源码声明、在线状态与隔离测试分别提供不同证据，选择方式见[开发指南](./development/index.md)。
 设计动机见[为什么是 Pluxel](./why-pluxel.md)。

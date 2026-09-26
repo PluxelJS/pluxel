@@ -1,7 +1,9 @@
-# HMR Architecture
+# HMR：候选、提交与失败恢复
 
 HMR 是 Plugin definition replacement，不是对运行中 instance 的字段修补。Module、Core graph、owner effects、
 Workbench publication 和构建产物必须按一个确定边界切换。
+
+按问题选读：[replacement 与提交边界](#definition-replacement)、[Vite namespace](#canonical-vite-module-graph)、[固定/动态来源](#固定-catalog-与可选动态来源)、[制品候选](#workbench-candidate-inputs)、[producer 构建](#workbench-producer-build)、[来源失败恢复](#来源观察失败)。[验证](#验证)区分 graph、真实 Vite、browser 与 Node 资源边界。
 
 ## Definition replacement
 
@@ -38,6 +40,8 @@ definition replacement 通过同一 coordinator/Core plan 自动启动仍在 des
 不依赖 Workbench 的 Start command。显式 Stop 则从 desired graph 移除节点，后续源码修复不能覆盖它。纯 catalog no-op
 不强制创建 Core transaction，也不增加 timer retry loop；只有实际更新或明确 lifecycle command 才触发对应执行。
 
+### 更新报告：批次与节点事实
+
 Host-dev 与服务开发附件为受影响 definition 记录进程内 `recentUpdate`，由 Host internal 的 `PluginRecentUpdateTracker` 统一保存。
 Host root 绑定路由拥有的 reader，Host status 与 Management 默认读取这份记录；替换宿主继续使用同一路由历史。
 快照分成 `batch` 与 `lifecycle`：前者含 `scope`（application / definitions）、outcome、phase、sequence、durationMs；后者只含
@@ -55,6 +59,8 @@ Management `updates.snapshot()` / `updates.follow()` 沿现有会话提供这份
 批次错误包含有界 message、可用的相对文件和已观察导入链；原始异常写入本地 runtime log，不把绝对路径或 stack 传入页面。
 无法确认影响范围时只发布应用批次，不把所有旧插件标为根因。Plugin 的 `batch.error` 保留其历史批次原因，不能用最新批次覆盖历史。
 
+### 失败候选的恢复输入
+
 Host-dev 分离已提交应用图与失败候选的恢复依赖。候选解析委托 Vite，观察可达 importer/specifier 关系，
 失败后监听已解析新文件、缺失导入候选和相关 package manifest。Vite 忽略的安装目录及根外缺失文件由限于失败候选的 watcher 补充；
 修正新文件或完成安装进入原串行更新队列，提交后释放恢复依赖及补充 watcher，关闭后禁止重新接纳。
@@ -63,9 +69,7 @@ Host-dev 分离已提交应用图与失败候选的恢复依赖。候选解析�
 记录器限制 definition 与 node 保留数量，先验证整条记录再发布；同批次后续诊断可替换记录，但不得靠相同 sequence 复用旧节点错误。
 后续插件重试或运行状态变化不篡改更新历史。Workbench 的红色生命周期提示只来自节点 issue；批次异常和当前运行问题有独立展示位置。
 
-Database handle 固定引用一个 active instance。Replacement 先拒绝旧 handle 的新操作并等待已接纳操作排空；同 lineage
-新 generation 复用 instance，schema-derived lineage 改变时构建空 candidate 并原子激活。Database backend、pool、instance
-registry 和 durable rows 属于 root。
+Database replacement 必须同时满足 generation 撤回与 active instance 切换；同 lineage 复用和新 lineage 原子激活规则由 [DATABASE](DATABASE.md#schema-evolution) 拥有。
 
 ## Workbench candidate inputs
 
@@ -104,6 +108,8 @@ Bare specifier 与 `/@fs/` 边界使用同一 classifier，workspace alias 不�
 Host-dev 只分类其物理结果。浏览器 Node builtin guard 使用 Vite 的 browser external 结果报错，允许显式浏览器实现，
 不在 server environment 运行。开发诊断的公共事实是应用 recent update 与逐插件 lifecycle reports，不另设无生产者的日志 schema。
 
+### Source/built 分类的接纳与撤销
+
 Artifact classifier 也只消费三态正向证据：raw source lowering 对 exact definition 的事实才能产生 `source-module`；active
 module closure 中 toolchain setter 的 exact literal definition 事实才能产生 `built-module`。文件扩展名、package 路径、未命中
 source transform 或其他 negative match 都不是 built/source 证据；事实缺失或冲突必须是 `unreported`。每次开发更新 把这些
@@ -139,6 +145,8 @@ Vite catalog 仅根据上述 source/built 正向 semantic fact 报告 `source-mo
 Artifact 与更新机制是正交事实：不能用 `source-module` 推断 HMR，也不能因 artifact 未报告而隐藏宿主已知的更新方式。
 这些值不提供把 running definition 在线切换到另一种来源或加载机制 的控制 API。
 
+### 来源发现与资源所有权
+
 启动时先完成固定 imports 与所有显式来源的初始发现、求值，再向 Host 提交同一份初始 catalog，避免固定插件
 先启动时看不到来源提供的 required dependency。Source 只接受精确文件或不能逃逸 directory 的正向 include glob，
 结果最多 10,000 entries。来源更新与源码依赖失效都进入共同候选求值和图提交路径。
@@ -157,6 +165,8 @@ launcher cwd 为准。两者不同时，宿主配置应传绝对 Plugin 数据�
 Source producer 只原子发布普通 ESM entry；package acquisition、lockfile、registry、安装状态、RPC 和 UI 都属于 producer
 Plugin。来源层保存发现与待更新事实，commit 后唯一 authority 是 Host 的 immutable catalog snapshot。
 不保留第二份 committed registry 或 post-commit 目录副本。
+
+### 关闭与生产边界
 
 Shutdown 顺序是：停止 watcher/batch/direct-call admission → 等待已接纳的 startup → 丢弃未开始 debounce → 排空 active batch、
 direct execute/warmup 与 Workbench Content refresh 的共享 execution lane → Core lifecycle/effects cleanup → Vite hooks →
@@ -180,6 +190,8 @@ Workbench 的模块事实与 publication 按模块一起替换；每次 transfor
 丢弃后仍使用已提交事实，不从失败源码重建旧定义。解析 Promise 只活在本次编译中，失败不会阻塞下一次有效更新。
 删除模块或将它改成普通模块会撤销原 publication。生成 Bridge 和 renderer projection 的目录包含 build revision，
 后续 candidate 不覆盖已返回 plan 引用的生成文件。
+
+### 构建并发与发布权限
 
 同一 producer task 去重；同一 definition 的新 plan supersede 旧 in-flight build。`@module-federation/vite` 1.21.1 的
 producer build 直接在当前进程运行；真实双 producer 并发回归必须验证 expose、Manifest 和 JavaScript 不串线。统一 artifact

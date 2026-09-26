@@ -1,7 +1,9 @@
-# Logging Architecture
+# 日志：身份、策略与有界读取
 
 本文记录 Pluxel 当前日志模型、性能约束和实现入口。插件作者用法见
 [`docs/reference/plugin-best-practices.md`](../docs/reference/plugin-best-practices.md)；本文面向维护者和宿主实现。
+
+修改身份/归属读 [Category identity](#category-identity) 与 [ContextLogger](#contextlogger)；修改安装或输出读 [RuntimeLogging lifecycle](#runtimelogging-lifecycle) 与 [Routes and sinks](#routes-and-sinks)；修改在线级别读 [Dynamic plugin policy](#dynamic-plugin-policy)；修改读取/游标读 [Runtime store](#runtime-store)。
 
 ## 模型
 
@@ -162,7 +164,7 @@ store 是 Runtime Management API 和 Workbench log viewer 的事实源，不是 
 - range/latest/wait/Cap’n Web `follow(observer)` 使用同一 `RuntimeLogStore`。
 
 Workbench 的 bounded range/follow 固定经过页面唯一的已认证 Runtime Cap’n Web session。Plugin generation-scoped
-`ctx.elysia` 是业务 ingress，不拥有 store、Management principal 或 Runtime session epoch，不能成为日志 fallback 或第二条
+`ctx.require(Http)` 是业务 ingress，不拥有 store、Management principal 或 Runtime session epoch，不能成为日志 fallback 或第二条
 控制通道。长期归档由 file/OTel sink 负责；当前不提供 HTTP archive/download API。
 
 `RuntimeLogLine` 是 UI/transport projection，保留 category、plugin/context identity、structured message、props 和
@@ -209,17 +211,12 @@ Logging 是 Services 包内的具体 Host 服务，通过 `/logging` 显式选�
 - `packages/host/src/host.ts`
 - `packages/host-dev/src/host-vite.ts`
 
-## 不变量
+## 验证
 
-- 不新增第二个 process logging owner；
-- 不新增 module-level mutable policy/store singleton；
-- 不为每个插件生成 LogTape config；
-- 不在 filter 前 capture caller、serialize error 或求值 lazy properties；
-- 不用动态 reconfigure 实现 plugin level 修改；
-- 不引入通用 policy language、processor chain 或 LogTape config merge framework；
-- 不经 `ctx.elysia`、Plugin route 或第二条 live transport 暴露 Runtime logs；
-- 修改 category、Context service、Host prepare order或 policy hot path 时，必须同步更新本文件和对应 benchmark/tests。
+修改 category、Context service、Host prepare order 或 policy hot path 时，覆盖 active root/foreign root 拒绝、缓存 Context 归属、重复安装失败不 reset 原 owner、关闭 flush，以及过滤前不求值 properties/caller。Policy 测试验证 revision、并发写入与串行 persistence；store 测试验证 retention、gap、epoch 和 bounded follow。
+
+直接回归入口为 `packages/services/tests/logging/`；成本变化同时运行[性能验证](#性能验证)中的探针。Logging 不引入通用 policy language、processor chain 或 LogTape config merge framework。
 
 ## Trusted development scripts
 
-`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/services/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.elysia` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/services/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.require(Http)` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

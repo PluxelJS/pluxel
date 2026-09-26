@@ -42,4 +42,4 @@ CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完�
 
 - CLI：参数解析、交互、输出和命令编排；
 - Rolldown：构建 overlay、import tracking 和 workspace build helpers；
-- Host-dev：Vite 模块求值与 HMR；Runtime 的开发入口组合服务与控制台。
+- Host-dev：Vite 模块求值、HMR 与开发控制台；Services 的开发入口组合官方服务附件。

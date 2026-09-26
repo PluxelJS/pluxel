@@ -14,7 +14,7 @@ PackageManagerPlugin
 ```
 
 package acquisition 是可替换的产品策略；file-source lifecycle 是 dynamic route 的机制。两者只共享 ESM 文件协议。
-runtime 不知道 registry、market、版本选择、lockfile、安装进度或管理 UI，package plugin 不调用 loader 或直接修改 running
+Host 来源层不知道 registry、market、版本选择、lockfile、安装进度或管理 UI，package plugin 不调用 loader 或直接修改 running
 plugin instance。
 
 插件只允许在声明了 `rootDir/entries` 与 `['*.mjs']` 的 dynamic host generation 中运行。`init()` 先解析目标目录并通过
@@ -40,11 +40,11 @@ engine 已完成而后续 filesystem publication 失败，持久 manifest 保留
 初始化保留正文有效的既存 wrapper（包括旧 UUID publication），不因 Producer 重启而触发来源更新。缺失或损坏的 wrapper 会修复；若生产进程已求值该路径，修复仍服从同路径更新需要进程重启的边界。无法识别 lockfile 或缺少完整图时，实际安装保守重新发布，而不假定依赖未变。删除包不改写图未变化的其他 entry；传递依赖或 peer/optional 图改变仍更新受影响 entry。
 
 wrapper re-export named exports，并把 package default export 继续作为 default。它不注入 Pluxel metadata、不决定 auto-start policy 或 session lifecycle，
-也不建立第二份 plugin inventory。可信 package source、catalog、lifecycle 和 status 仍由 runtime graph 投影。
+也不建立第二份 plugin inventory。可信 package source 与 catalog 由 Host 管理，lifecycle 和 status 从 Core graph 投影。
 
 ## Capability 与 UI
 
-业务路径是两个 owner-bound commands；Workbench Direct View target 只服务插件自己的管理页面。Runtime session protocol
+业务路径是两个 owner-bound commands；Workbench Direct View target 只服务插件自己的管理页面。Management session protocol
 不增加 package-specific method、DTO 或 navigation kind。插件停止/replacement 时 command registration 和 View publication
 随 owner effects 撤销；已打开 target 的 signal 会 abort，新的调用由 owner admission gate 拒绝。Workbench disabled 不影响
 headless commands 和 package store。
@@ -68,9 +68,9 @@ native engine callback 默认不转发日志，因为事件可能携带 registry
 
 - 安装、auto-start policy、session lifecycle 和 observed lifecycle 是彼此独立的事实；
 - package mutation 不直接调用 dynamic/core internals；
-- dynamic runtime 不依赖 package-manager package；
+- Host dynamic 来源层不依赖 package-manager package；
 - static/普通 test host 和 source 声明不匹配在任何 native/filesystem/UI 副作用前失败；
 - failed install 不发布新 entry；
-- successful source batch 由 dynamic runtime 统一触发 optional availability retry；
+- successful source batch 由 Host 协调器统一触发 optional availability retry；
 - Workbench 页面是插件自带的可选投影，不是 Management API 的 package-manager 特例；
 - market discovery、登录、支付、审核和推荐都属于其他插件或服务。

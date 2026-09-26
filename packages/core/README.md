@@ -1,30 +1,24 @@
 # @pluxel/core
 
-`@pluxel/core` 是 Pluxel Plugin 模型的最小稳定内核：提供 Context projection/DI、opaque definition/node slot、结构化
-address、required/optional graph、generation lifecycle、effects、Plugin/PluginPart composite object config 和具名事件 channel。
+Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实、generation 生命周期和 effects。HTTP、持久化、来源发现、Vite 与宿主退出策略由其他层负责。
 
-Core 源码复用公开的 `@pluxel/context` host kernel；构建时通过 tsdown 完整内联其 JavaScript 与 declarations，因此发布的
-`@pluxel/core` 没有 `@pluxel/context` production dependency，Core 消费者也不需要额外安装它。只有需要直接创建 standalone
-Context host 的应用才依赖 `@pluxel/context`。
+## 按任务进入
 
-Plugin definition facts由 Pluxel Vite/Rolldown semantic pass 生成。required constructor value import 和
-`definePluginRef<T>()` type provenance 都会 lower 成 slot edge；Core 不使用 class/display name、constructor identity
-或通用 decorator metadata 作为 graph facts。optional ref 只观察 host catalog，不负责 package import、安装或 retry。
+| 任务                    | 入口                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 编写 Plugin、依赖与清理 | [插件模型](../../docs/getting-started/plugin-model.md)                                                        |
+| 组合 Part 与配置        | [PluginPart](../../docs/getting-started/plugin-parts.md)、[配置](../../docs/getting-started/configuration.md) |
+| 修改内核                | [Core 约束](../../engineering/CORE.md)、[实现索引](IMPLEMENTATION_INDEX.md)                                   |
+| 验证行为                | [插件测试](../../docs/development/testing.md)、[框架测试边界](../../engineering/TESTING.md)                   |
 
-本包不包含 HTTP/control plane、persistence、workspace scan、包安装、Vite 或 HMR；这些分别位于 runtime 与 route packages。
+## 入口边界
 
-文档入口：
+- `@pluxel/core`：Plugin 作者 API、Context 与 address/lifecycle 等只读公共契约。
+- `/host`：Host 服务作者使用的 token 与 capability descriptor。
+- `/services`：effects、config helpers、`EventsService` 与 `EvtChannel`。
+- `/logger`：Context logger facade 与结构化 Plugin category。
+- `/internal/test`：Core 白盒测试；普通 Plugin 测试使用 `@pluxel/test`。
 
-- [`../../engineering/CORE.md`](../../engineering/CORE.md)
-- [`../../engineering/PLUGIN_SYSTEM.md`](../../engineering/PLUGIN_SYSTEM.md)
-- [`../../engineering/CONFIG.md`](../../engineering/CONFIG.md)
-- [`../../engineering/LOGGING.md`](../../engineering/LOGGING.md)
-- [`../../docs/reference/context-hosts.md`](../../docs/reference/context-hosts.md)
+完整导出以 [package.json](package.json) 为准。Plugin facts 必须经过 Pluxel Vite/Rolldown semantic pass；不能用普通 TypeScript runner 或 constructor/class name 猜测依赖图。
 
-公开入口：
-
-- `@pluxel/core`：Plugin Context、Plugin 作者面、以及 address/lifecycle 等只读公共契约；
-- `@pluxel/core/host`：Host 服务作者的 token 与 capability descriptor；standalone Context host 使用 `@pluxel/context`。
-- `@pluxel/core/services`：effects、config helpers、module-augmented `EventsService` 与 `EvtChannel` 等基础服务；
-- `@pluxel/core/logger`：Context logger facade 与 structured Plugin category identity；
-- `@pluxel/core/internal/test`：明确的 core 测试边界；测试 Plugin 仍应使用 semantic lowering。
+Core 构建内联 `@pluxel/context` 的 JavaScript 和 declarations，消费者无需额外安装该 kernel。直接创建 standalone Context host 时才使用 [@pluxel/context](../context/README.md)；源码与发行依赖约束见 [Governance](../../engineering/GOVERNANCE.md)。

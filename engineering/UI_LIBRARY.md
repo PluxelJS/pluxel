@@ -13,3 +13,7 @@
 更换库需要具体产品、可访问性或维护问题作为证据，并覆盖 Federation shared/CSS、全部 renderer roots 与 `valibot-form` Mantine peer 的影响。不能仅为缩短 JSX 或假设未来复用引入抽象；更换时必须同时移除旧系统。
 
 实现边界见 [FRONTEND](FRONTEND.md)；作者 Provider/CSS 规则见 [renderer resources](../docs/workbench/renderer-resources.md)；本地主题操作见 [theme README](../packages/workbench/shell/src/theme/README.md)。
+
+## 验证
+
+主题或组件变更先检查实际 Shell 与受影响 renderer；涉及 Provider、shared 或 Core CSS 时覆盖独立 React roots 和真实 Federation 加载。交互组件检查键盘、focus、窄屏和可访问名称。不要为单一样式改动引入新的组件抽象或实现镜像测试。

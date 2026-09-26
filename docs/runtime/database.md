@@ -22,7 +22,7 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 
 ## Managed Plugin database
 
-选择 managed database 后，正式部署使用 native PostgreSQL；PGlite 只用于本机开发和自动化测试。两者统一的是 PostgreSQL 作者 contract，不是性能、并发和 durability 等价。
+选择 managed database 后，正式部署使用 native PostgreSQL；本机开发和测试使用 PGlite。两者的能力与验证边界见[backend 选择](#选择-native-postgresql-或-pglite)。
 
 宿主通过 `database({ backend: pglite(...) })` 或 `database({ backend: postgres(...) })` 显式安装；默认服务组合不安装数据库，见 [宿主配置](../getting-started/host-setup.md)。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
 
@@ -88,22 +88,6 @@ schema module 是 server-only。Workbench API/browser bundle 不能导入它。P
 
 `PluginPart` 也不拥有第二个 definition；它的表和 migration 都归属根 Plugin 的这一个 definition。Part 只帮助组织代码和资源，不创造新的数据边界。
 
-## 跨 Plugin 数据关系与扩展
-
-独立发布的 Plugin 不能修改另一个 Plugin 的表模型：不要向其 `pgTable()` 加列、生成 `ALTER TABLE`、添加 foreign key/index，也不要把对方 table object 当作自己的 schema import。表结构和 migration 是 owner 可独立替换的存储 contract；允许第三方修改会把安装顺序、卸载、rebase 和 rollback 耦合在一起。
-
-| 需求                                                                                | 正确做法                                                                                                     |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 为另一个 Plugin 的实体保存本 Plugin 专属数据                                        | extension Plugin 自己拥有表，以 provider 公开的稳定 entity ID 关联，并通过 typed capability 验证或操作该实体 |
-| 需要 join、foreign key、跨表原子 transaction，或 provider 必须直接查询/索引扩展字段 | 将整组表放进同一 application-private database，由同一个应用团队迁移                                          |
-| 需要可插拔的自定义字段                                                              | provider 只在存在具体产品需求时发布自己的领域 extension protocol；不要增加通用“改别人表”的能力               |
-
-第一种方式的两个写入是两个 transaction；需要一致性时，extension 应设计可重试、幂等的领域流程，而不是绕过 owner boundary。若这个代价不能接受，说明这些表本来就不应是独立 Plugin 数据。
-
-跨 Plugin workflow 通过 typed capability/RPC，并接受它是两个 transaction。真正必须满足 foreign key、join 或原子 transaction 的表应该归同一 owner。
-
-不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench target 也只能调用所属 Plugin 的领域 service，再返回 detached DTO；它不是跨 owner 数据库入口。
-
 ## Migration evolution
 
 每个 definition 只走一条表演进流程；不要在两者之间混用 artifact 或命令：
@@ -154,6 +138,20 @@ export const SearchDatabase = defineDatabase({
 这种 definition 只运行 `pluxel build`，不创建或提交 `drizzle/`；`generate`、`check`、`rebase` 会明确拒绝它。构建器从当前 schema 生成 baseline：相同 schema 保留数据，table/column/index/constraint 改变时建立空 candidate，准备成功后替换 active instance 并归档旧数据。
 
 这个声明意味着未来任何 schema 变化都允许清空数据。需要保留或转换旧数据时必须使用 migrations。
+
+## 跨 Plugin 数据关系与扩展
+
+独立发布的 Plugin 不能修改另一个 Plugin 的表模型：不要向其 `pgTable()` 加列、生成 `ALTER TABLE`、添加 foreign key/index，也不要把对方 table object 当作自己的 schema import。表结构和 migration 是 owner 可独立替换的存储 contract；允许第三方修改会把安装顺序、卸载、rebase 和 rollback 耦合在一起。
+
+| 需求                                                                                | 正确做法                                                                                                     |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 为另一个 Plugin 的实体保存本 Plugin 专属数据                                        | extension Plugin 自己拥有表，以 provider 公开的稳定 entity ID 关联，并通过 typed capability 验证或操作该实体 |
+| 需要 join、foreign key、跨表原子 transaction，或 provider 必须直接查询/索引扩展字段 | 将整组表放进同一 application-private database，由同一个应用团队迁移                                          |
+| 需要可插拔的自定义字段                                                              | provider 只在存在具体产品需求时发布自己的领域 extension protocol；不要增加通用“改别人表”的能力               |
+
+第一种方式的两个写入是两个 transaction；需要一致性时，extension 应设计可重试、幂等的领域流程，而不是绕过 owner boundary。若这个代价不能接受，说明这些表本来就不应是独立 Plugin 数据。
+
+不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench target 也只能调用所属 Plugin 的领域 service，再返回 detached DTO；它不是跨 owner 数据库入口。
 
 ## Document 风格数据
 
@@ -213,7 +211,7 @@ export function appDatabaseFor(ctx: Context): AppDatabase {
 
 `appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；static application 的泛型不能反向改变独立编译 Plugin 的 Context shape。
 
-Static entry 对部署路径保持唯一 authority，同时供 宿主 persistence 和 application database 使用：
+应用入口统一决定部署路径，同时供宿主 Persistence 和 application database 使用：
 
 ```ts no-twoslash
 import { resolve } from 'node:path'

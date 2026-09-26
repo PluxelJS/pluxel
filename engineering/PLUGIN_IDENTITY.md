@@ -3,6 +3,8 @@
 本文定义当前 Plugin identity、source canonicalization 和人类可读投影。它是实现、持久化、日志、HTTP、Workbench、
 toolchain 和 coding agent 的共同约束；作者模型见 [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)。
 
+新增身份使用点先读[规范词汇](#规范词汇)，选择 Address/Slot/Reference/Route；修改 source resolver 读 [Entry canonicalization](#entry-canonicalization)；修改持久化读[持久化版本](#持久化版本)。不要从展示文本反推身份。
+
 ## 决策摘要
 
 Pluxel 只有两个 Plugin 身份作用域：
@@ -168,12 +170,11 @@ provenance、root export，最终可回退完整 reference。相同 address 重�
 HMR 对一个 definition 的 default/forks 生成一次 commit plan，不能让部分 fork 使用新源码、部分 fork 使用旧源码。
 artifact build cache 不含 `forkId`，相同输入只编译一次；node binding 和 generation lease 仍各自隔离。
 
-config patch 顺序是 validate -> 保存 desired record -> 通知 addressed running generation -> 报告 apply 结果。listener 缺失或失败返回
-`saved-not-applied`，desired config 保留供后续 mutation、显式 restart 或下次 boot 重试。修改一个 fork 不通知 sibling/default。
+config record/revision 与通知按 node 隔离，修改一个 fork 不通知 sibling/default。保存、应用和 listener 失败的唯一顺序见 [CONFIG](CONFIG.md#保存与应用)。
 
 Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench
 View/Attachment descriptor identity 按 definition，publication/binding owner 按 node，opened target lifetime 按
-generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
+generation/socket epoch。Plugin 在 `ctx.require(Http)` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
 也不提供另一份 `publicPath` 映射。多个 node 需要同时暴露 HTTP 时，业务 config 或唯一 gateway 必须让最终 path 保持不冲突。
 
 ## 持久化版本
@@ -181,17 +182,17 @@ generation/socket epoch。Plugin 在 `ctx.elysia` 中声明的 path 就是最终
 每个边界只读取和写入当前 schema。版本不匹配、address 非法或 owner envelope 不一致时 fail-fast；浏览器本地 UI 状态则丢弃
 无效 snapshot 并恢复默认值。实现不提供双读、自动转换、URL redirect、physical namespace 领养或 display-name fallback。
 
-| 领域                          | 当前版本/编码                | 当前 owner 契约                     |
-| ----------------------------- | ---------------------------- | ----------------------------------- |
-| HostState                     | v5                           | structured definition/node address  |
-| Config file/env               | v3                           | structured node address             |
-| Logger policy                 | v3                           | structured node address             |
-| Management catalog preference | v3                           | structured definition address       |
-| Workbench browser state       | v4                           | current versioned Plugin route      |
-| Database owner registry       | node reference               | exact current node reference        |
-| Vault                         | full canonical SHA-256       | exact current node address bytes    |
-| Wretch settings               | `consumers/v3` + envelope v2 | exact current node address envelope |
-| Cache/Rates                   | v3 canonical-byte namespace  | exact current node address bytes    |
+| 领域                      | 当前版本/编码                | 当前 owner 契约                     |
+| ------------------------- | ---------------------------- | ----------------------------------- |
+| HostState                 | v5                           | structured definition/node address  |
+| Config file/env           | v3                           | structured node address             |
+| Logger policy             | v3                           | structured node address             |
+| Management catalog groups | v1                           | structured definition address       |
+| Workbench browser state   | v4                           | current versioned Plugin route      |
+| Database owner registry   | node reference               | exact current node reference        |
+| Vault                     | full canonical SHA-256       | exact current node address bytes    |
+| Wretch settings           | `consumers/v3` + envelope v2 | exact current node address envelope |
+| Cache/Rates               | v3 canonical-byte namespace  | exact current node address bytes    |
 
 不能从 display name、class name、catalog 顺序、物理路径或 opaque catalog key 猜测 identity。需要保留数据的部署必须在升级前由
 宿主拥有的显式离线工具转换；runtime 正常启动路径始终只有一个当前契约。

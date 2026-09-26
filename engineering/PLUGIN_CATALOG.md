@@ -3,6 +3,8 @@
 Management 拥有插件目录分组；它是管理布局，不是插件能力、生命周期、provider selection 或 Workbench placement。
 用户操作和文件格式见 [`docs/workbench/plugin-groups.md`](../docs/workbench/plugin-groups.md)。
 
+修改自动组规则读 [Automatic grouping](#automatic-grouping)，修改保存/恢复读 [Explicit document](#explicit-document)，修改客户端提交读 [Management protocol](#management-protocol)。所有排序与布局都以 committed definition facts 为输入，不改变运行图。
+
 ## Ownership and projection
 
 - `@Plugin` 和 host route 不声明分类规则。static/dynamic 共用 Management service。
@@ -57,6 +59,12 @@ opaque ID，创建组使用 `manual:` 加 UUID。分组 UI 与文件编辑共享
 
 mutation 拒绝未知 node、重复 node 和把同一 family 的 forks 分散到不同组或部分留在 ungrouped 的输入。
 Persistence failure 仍报告 `persistence_failed / state: unknown`，因为自定义后端可能写入后抛错；客户端重新读取 authority。
+
+## 实现入口
+
+- `packages/services/src/management/services/management/PluginCatalogLayoutService.ts`：文件 authority、串行操作与失败恢复。
+- `packages/services/src/management/` 下的 catalog projection/grouping：从 pinned view 派生布局。
+- `packages/services/tests/management/plugin-catalog-layout.test.ts` 与 `management/plugin-catalog-groups.test.ts`：存储与纯算法回归。
 
 ## Verification
 

@@ -2,6 +2,8 @@
 
 `@pluxel/commands` 拥有 transport-neutral command kernel 与可选协议投影；Services 消费 Command 或投影结果，拥有 Host 集成与生命周期。作者与宿主用法见 [Commands](../docs/runtime/commands.md)，完整 API 见 [package README](../packages/commands/README.md)，parser/projection/performance 决策见 [package design](../packages/commands/docs/DESIGN.md)。
 
+修改注册/撤回读 [Root publication](#root-publication)；修改 router、SDK 接入或双 owner admission 读 [Carrier publication](#carrier-publication)；协议映射分别读 [Cap’n Web](#capn-web-适配) 与 [MCP](#mcp-投影)。Parser 和 Command 定义规则仍由 package design 拥有。
+
 ## Root publication
 
 `@pluxel/services/commands` 的 `commands()` 安装一个空 root registry，Plugin 通过 `ctx.require(Commands)` 获得 owner view。List/snapshot/subscription/execute 委托同一 registry，不复制 revision 或 listeners。

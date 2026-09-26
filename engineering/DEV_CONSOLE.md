@@ -2,6 +2,8 @@
 
 用户工作流与 API 示例见 [在线开发控制台](../docs/development/dev-console.md)。本文件记录执行边界和实现约束。
 
+本页用于修改控制台实现。实际执行脚本的唯一操作说明是[开发控制台指南](../docs/development/dev-console.md)。实现审查按[提交与执行](#提交与执行) → [Vite 更新边界](#vite-更新与执行边界) → [操作与资源](#操作-api-与资源)定位；transport/discovery/预算见[执行通道与预算](#执行通道与预算)。
+
 ## Ownership 与包边界
 
 `host({ entry, devConsole: true })` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 `pluxel` environment ModuleRunner 求值，并借用当前 Host root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。

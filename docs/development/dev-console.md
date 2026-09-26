@@ -9,6 +9,25 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 还不清楚插件、Part 或 config schema 在哪里声明时，先用[源码查询](./inspection.md)定位；它不需要运行 Vite，也不读取当前 Host 状态。
 
+## Coding agent 工作流程
+
+配置、Plugin 方法、Workbench RPC、生命周期和日志都从当前实例操作。一次任务遵循下面的顺序；CLI、脚本和恢复细节按后续章节查阅。
+
+1. 从项目的 Vite 配置或启动命令确定 root，用 `pluxel dev instances --root <project-root>` 发现实例。核对返回的 `root`、`pid` 和 `instanceId`，将选中的绝对 root 与 instanceId 记入任务上下文。
+2. 后续 `run/result/cancel` 都显式传相同的 `--root` 和 `--instance`，避免切换工作目录或新增 dev 实例后改变操作目标。没有发现服务时先核对 root、原 dev 进程和 `devConsole` 配置。
+3. 在该 root 内维护少数普通 TypeScript 操作文件，通过 default/named export 追加操作。先读取插件状态、当前配置或服务公开的 layout，再按项目实际类型修改；参数经 `dev.input` 传入并校验，跨次保存业务 ID 和 JSON 游标。
+4. 检查外层请求是否成功、run 的 `state`，再检查脚本返回的领域 `ok`、apply report 和配置 `application`。修改后重新读取目标状态及相关日志；CLI 退出成功不等于配置已应用或插件已启动。
+5. 保留 receipt 中的 root、instanceId 和 runId。工具超时或终端断开后，用这些字段查询 `result`；先确定已发生的操作，再决定下一次提交。已验证的行为需要回归保护时，另写隔离测试。
+
+本仓库的 `projects/plugin-host` 已开启控制台，并提供只读的 `dev/inspect.ts`。仓库根目录的 `pnpm pluxel` 脚本调用本地 CLI，保留当前目录作为相对路径基准。保持该项目原有 dev 命令运行后，从仓库根目录调用：
+
+```sh
+pnpm pluxel dev instances --root projects/plugin-host
+pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <instanceId>
+```
+
+安装了 `@pluxel/cli` 的用户项目仍使用 `pnpm exec pluxel`，替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
+
 ## 开启与发现
 
 先检查项目是否已有开启控制台的 Vite 进程。已有时直接发现实例；尚未配置时，在现有 Vite route 上显式开启：
@@ -89,25 +108,6 @@ pnpm exec pluxel dev run dev/inspect.ts --export add --input '"Verify current da
 修改文件、增加 export、换文件、传入新参数都不需要重启。每次提交调用当前导出函数；模块顶层不是每次运行的入口，不要把写数据放在那里。HMR 更新代码，但不会自动重放脚本。
 
 每次重新取得当前实例。`require()` 不自动启动插件，也不把旧 constructor 转成新 implementation；旧 target 会报告 `stale_target`。普通实例方法没有额外的可撤销代理，跨 await 后可能已经过期；需要 generation admission 的调用优先使用 commands、Workbench 或已有 database handle。
-
-## Coding agent 工作流程
-
-需要查看或修改**当前运行中的应用**时，coding agent 必须使用这套控制台。配置编辑、Workbench RPC 填数据、调用 Plugin 方法、启停插件和查看日志都在现有 dev 实例上完成；需要隔离环境和可重复断言时使用 test host。
-
-1. 从项目的 Vite 配置或启动命令确定 root，用 `pluxel dev instances --root <project-root>` 发现实例。核对返回的 `root`、`pid` 和 `instanceId`，将选中的绝对 root 与 instanceId 记入任务上下文。
-2. 后续 `run/result/cancel` 都显式传相同的 `--root` 和 `--instance`，避免切换工作目录或新增 dev 实例后改变操作目标。没有发现服务时先核对 root、原 dev 进程和 `devConsole` 配置。
-3. 在该 root 内维护少数普通 TypeScript 操作文件，通过 default/named export 追加操作。先读取插件状态、当前配置或服务公开的 layout，再按项目实际类型修改；参数经 `dev.input` 传入并校验，跨次保存业务 ID 和 JSON 游标。
-4. 检查外层请求是否成功、run 的 `state`，再检查脚本返回的领域 `ok`、apply report 和配置 `application`。修改后重新读取目标状态及相关日志；CLI 退出成功不等于配置已应用或插件已启动。
-5. 保留 receipt 中的 root、instanceId 和 runId。工具超时或终端断开后，用这些字段查询 `result`；先确定已发生的操作，再决定下一次提交。已验证的行为需要回归保护时，另写隔离测试。
-
-本仓库的 `projects/plugin-host` 已开启控制台，并提供只读的 `dev/inspect.ts`。仓库根目录的 `pnpm pluxel` 脚本调用本地 CLI，保留当前目录作为相对路径基准。保持该项目原有 dev 命令运行后，从仓库根目录调用：
-
-```sh
-pnpm pluxel dev instances --root projects/plugin-host
-pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <instanceId>
-```
-
-安装了 `@pluxel/cli` 的用户项目仍使用 `pnpm exec pluxel`，替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
 
 ## 先发现，再修改
 
@@ -221,8 +221,6 @@ export const restartWithLogs = defineDevConsole(async (dev) => {
 
 ## 结果、取消和恢复
 
-取消后的结果仍为 `cancelled`，`error` 保留取消原因；如果脚本同时抛出不同的执行或资源释放异常，`executionError` 保留该异常。普通失败不会把业务 `AggregateError` 猜成执行/清理两个阶段；复合错误的诊断消息在深度、数量和长度限制内保留子错误，包括 `using` 的 `SuppressedError`。
-
 命令执行结果在 stdout 输出单一 JSON envelope。帮助输出和参数解析失败遵循普通 CLI 输出规则，agent 还需检查退出码与 stderr。同步 run 接纳后，stderr 会先输出一行包含 root/instanceId/runId 的 receipt，方便 agent 工具超时后恢复查询。run/result/cancel 返回的 snapshot 同样带 root，便于 agent 校验目标。领域返回值在成功运行 snapshot 的 `value` 中。长操作可以先 detach：
 
 ```sh
@@ -252,7 +250,15 @@ pnpm exec pluxel dev cancel RUN_ID --root /absolute/project-root --instance INST
 pluxel dev result run-id --root /workspace/my-host --instance instance-id
 ```
 
-退出码 0 表示成功完成或 detach 已接纳；1 表示失败/取消/客户端错误；2 表示仍未结束。`result` 读取当前状态，不能把 `cancelling` 当成 `cancelled`。断线不自动重试，不自动取消已经接纳的操作。多个实例时，恢复查询带原 instanceId。
+| 观察结果                  | 含义与下一步                                          |
+| ------------------------- | ----------------------------------------------------- |
+| 退出码 `0`                | 已完成或 detach 已接纳；继续检查 run state 和领域结果 |
+| 退出码 `1`                | 失败、取消或客户端错误；按结构化 `code` 处理          |
+| 退出码 `2` / `cancelling` | 尚未结束；使用原 root、instanceId、runId 查询         |
+| `outcome_unknown`         | 无法确认是否已写入；先查询原结果，不能直接重放        |
+| `result_expired`          | 保留结果已过期；从领域状态和日志核对实际结果          |
+
+断线不自动重试或取消已接纳的操作。取消后的最终状态为 `cancelled`，`error` 保留取消原因；并发发生的执行或释放异常保存在 `executionError`。普通业务 `AggregateError` 不被拆成执行/清理两阶段；诊断在预算内保留子错误和 `using` 的 `SuppressedError`。
 
 默认时限 30 秒，可用 `--timeout` 请求 1 至 300000 毫秒；时限包含排队。超时发出协作取消信号，尚未 settle 的脚本不会提前让出执行位置。CPU 死循环仍会阻塞同进程 dev；执行器不会为强制停止单个脚本而杀掉整个宿主。
 

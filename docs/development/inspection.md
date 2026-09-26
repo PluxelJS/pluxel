@@ -7,6 +7,16 @@ description: 用 TypeScript 定位插件、Part、配置声明与应用输入，
 
 源码查询适合回答“在哪里改、影响哪些声明”。检查当前生效配置、调用业务方法和验证在线状态，使用[开发控制台](./dev-console.md)；验证隔离的行为回归，使用[插件测试](./testing.md)。
 
+| 已知线索                    | 最短查询                                                      |
+| --------------------------- | ------------------------------------------------------------- |
+| Plugin package              | `plugins({ packageName })` → 返回的 `definition` → `plugin()` |
+| Plugin identity             | `plugin(reference, { include })`，只请求需要的 sections       |
+| 待修改文件                  | `file(path)`，再读确认关联的 Plugin 声明                      |
+| 应用 env/file/configRecords | `plugin(..., { application, include: ['inputs', 'config'] })` |
+| 项目结构未知                | `overview()`；列表分页沿用原 `nextCursor`                     |
+
+先检查结果的 `complete / partial / unavailable`，再使用其中的事实；缺口不等于不存在。完整状态、错误和预算见[读取结果](#读取结果和处理变化)。
+
 ## 从一个包开始
 
 项目需要 Node.js 24+，并声明开发依赖 `@pluxel/rolldown`。在项目中保存 `dev/inspect.mts`，替换 root 和包名：

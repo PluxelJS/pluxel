@@ -44,7 +44,7 @@ void handler.cache
 - `overrides` 只在 host 编译前替换基础集合中的同一 descriptor，且必须保持 scope/property；
 - host 编译后没有 install/mutate API；
 - `ContextHost` 没有 `prepare()`、`dispose()` 或资源协议，启动和清理由上层 host 明确拥有；
-- Pluxel Plugin 不能借助本包修改已经创建的 Runtime Context，Plugin 业务依赖仍进入 Plugin graph。
+- Pluxel Plugin 不能借助本包修改已经创建的 Host Context，Plugin 业务依赖仍进入 Plugin graph。
 
 公开入口：
 

@@ -1,4 +1,6 @@
-# Governance
+# 仓库治理：依赖、导出与验证
+
+修改模块依赖先读[依赖方向](#依赖方向)；移动 package 读 [Workspace 与目录](#workspace-与目录)；修改 manifest 读[依赖与版本](#依赖与版本)；增加入口读[导出](#导出)。仓库验证由 `pnpm governance:check` 与 `pnpm verify` 拥有，发布流程见 [RELEASING](RELEASING.md)。
 
 ## 依赖方向
 
@@ -76,6 +78,8 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
   也不允许无条件入口加载缺失的包。`devDependencies` 只承载开发工具、测试夹具和已明确内联的源码；
   不能用它隐藏发布 JavaScript 或 declarations 仍引用的包。
 
+### 发布图、构建图与共享身份
+
 发布依赖声明包含 `dependencies`、`optionalDependencies` 和 `peerDependencies`，不要求整个包图无环。
 `governance:check` 保留 Context、Core、Commands、Host 与来源/开发驱动的基础边界，扫描实际 import
 （含类型和动态 import）是否有发布依赖声明，并检查 Workbench、Services 叶子不反向导入 Services 组合入口。
@@ -97,6 +101,8 @@ subpaths、`@mantine/core`、`@mantine/hooks`、MF React Bridge、`@pluxel/workb
 dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实现依赖，不进入 platform shared set。导入 Drizzle schema/query API 的每个 package 都直接声明
 `drizzle-orm`；它与 Pluxel 高度集成并不意味着能从工作区根或其他 framework 包 隐式继承。只有确实要求宿主
 共享 Drizzle 运行时身份的公开边界才改用 peer。
+
+### 治理、CI 与类型检查
 
 `pnpm governance:check` 是 repository policy 的唯一检查入口，先验证共享 package inventory 的分类规则，
 再固化 workspace 单一来源、catalog 使用、根依赖、具体插件目录边界、工具版本、公开包 metadata、

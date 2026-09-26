@@ -9,6 +9,14 @@ description: 用一个 Valibot object schema 统一配置类型、默认值、�
 开始前，你应已有一个能启动的 Plugin。先给配置加默认值，在 `init()` 中读取，再从工作台修改它。
 普通配置不保存密钥；密码、Token 等使用 [Vault](../runtime/vault.md)。
 
+| 本次任务         | 阅读位置                                                             |
+| ---------------- | -------------------------------------------------------------------- |
+| 新增或调整字段   | [最小 schema](#先添加一个有默认值的字段) → [声明规则](#声明规则)     |
+| 保存后立即生效   | [在线更新](#让运行中的-plugin-接收配置更新)，检查保存和应用两个结果  |
+| 拆分局部配置     | [Part config](#嵌套相关设置与-part-config)，字段名会成为公开配置路径 |
+| 部署提供固定输入 | [env/file 绑定](#绑定部署环境与-json-文件)，与管理保存值分层         |
+| 调整编辑界面     | [配置表单](#配置表单)，继续复用同一 schema                           |
+
 ## 先添加一个有默认值的字段
 
 ```ts twoslash
@@ -87,7 +95,7 @@ const worker = await host.start(WorkerPlugin, {
 })
 ```
 
-node 已拥有 committed config 或进入过 lifecycle 后，使用服务 的 production-like live mutation：
+node 已拥有 committed config 或进入过 lifecycle 后，使用运行期配置 API：
 
 ```ts no-twoslash
 const result = await host.config.patch(WorkerPlugin, {
@@ -114,8 +122,7 @@ reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存
 - 每个 Plugin/Part class 各自最多一次，并且 schema 必须产出 object；
 - schema expression 要能由 semantic pass 追踪，不用动态 runtime 分支拼接。
 
-使用 TypeScript `private` 或 `protected` 字段即可。配置值在构造完成后、`init()` 前才可读取，
-构造器和其他字段初始化器中提前读取会被构建检查拒绝。
+使用 TypeScript `private` 或 `protected` 字段即可。构造器和其他字段初始化器中提前读取配置会被构建检查拒绝；读取时机见下节。
 `configs` 只在 Plugin/Part 子类内部使用；测试和宿主通过配置 API 操作，不直接改实例字段。
 
 ## 默认值与读取时机
@@ -126,8 +133,15 @@ reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存
 
 ## 让运行中的 Plugin 接收配置更新
 
-保存配置会先持久化用户希望采用的值，不会自动重启插件。若连接或服务可以原地更新，在 `init()` 中注册一次
-`configs.onUpdate()`；处理完成后，框架才把配置标记为已应用：
+保存配置会先持久化 desired 值，不会自动重启插件。先看 mutation 的 `ok`，再看 `application`：
+
+| `application`       | 已发生什么                         | 调用方下一步                            |
+| ------------------- | ---------------------------------- | --------------------------------------- |
+| `applied`           | 当前 generation 已确认应用         | 核对业务状态                            |
+| `deferred`          | 已保存，节点未运行                 | 下次启动时应用                          |
+| `saved-not-applied` | 已保存，当前 generation 未确认应用 | 查看 apply report，修正处理器或显式重启 |
+
+连接或服务可以原地更新时，在 `init()` 中注册一次 `configs.onUpdate()`；处理完成后，框架才确认 applied：
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -247,12 +261,6 @@ Part config 属于静态 owner schema：即使 optional provider absent、对应
 default、transform 和 validation。需要“未启用时不要求凭据”等语义时，在 schema 中使用带 `enabled` discriminator 的 object
 明确表达，不根据 runtime catalog 动态改变配置契约。
 
-Workbench 把父 schema 显示为“常规”分区，把 Part schema 按 nested path 显示为独立分区。配置操作栏固定在内容区顶部，切换分区时会保留
-各自的滚动位置和未保存草稿；分区名称后的圆点与“待保存”计数用于提示尚未提交的变化。使用 `Ctrl/⌘ + S` 保存当前分区，或使用
-`Ctrl/⌘ + Shift + S` 一次保存当前 Plugin 的全部已修改分区。所有分区编辑同一个 Plugin config owner；保存当前分区或全部分区都会在
-server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前 generation；否则只保存
-desired config，不会单独更新 Part 或隐式 restart。
-
 Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./plugin-parts.md)。
 
 ## 敏感信息
@@ -346,6 +354,12 @@ Plugin generation。
 `valibot-form` metadata 可以让同一 schema 生成字段、说明、布局和控件选择。它不改变 Valibot validation，也不建立第二份 config model。
 
 使用 [配置 Playground](../workbench/configuration-playground.md) 可编辑 schema、操作生成的表单，并比较原始输入与 Valibot 输出。完整 metadata 与 React adapter 见 [Valibot 配置表单](../workbench/valibot-form.mdx)。浏览器表单只是编辑界面；提交到宿主后仍必须由 server runtime 使用同一个 schema 校验。
+
+Workbench 把父 schema 显示为“常规”分区，把 Part schema 按 nested path 显示为独立分区。配置操作栏固定在内容区顶部，切换分区时会保留
+各自的滚动位置和未保存草稿；分区名称后的圆点与“待保存”计数用于提示尚未提交的变化。使用 `Ctrl/⌘ + S` 保存当前分区，或使用
+`Ctrl/⌘ + Shift + S` 一次保存当前 Plugin 的全部已修改分区。所有分区编辑同一个 Plugin config owner；保存当前分区或全部分区都会在
+server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前 generation；否则只保存
+desired config，不会单独更新 Part 或隐式 restart。
 
 ## 验证
 
