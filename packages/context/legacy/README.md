@@ -17,7 +17,8 @@ current package.
   longer execute it, and document such a mechanical change here.
 
 The benchmark scripts use Node TypeScript transformation because the current kernel contains
-parameter properties that strip-only execution cannot handle. The snapshot source is unchanged.
+parameter properties that strip-only execution cannot handle. The snapshot benchmark has a dedicated
+ten-minute timeout for its fifteen comparison cases. The snapshot source is unchanged.
 
 ## What the snapshot modeled
 
