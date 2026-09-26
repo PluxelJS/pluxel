@@ -542,12 +542,12 @@ export class TakumiPlugin extends BasePlugin {
 		generation: TakumiGeneration,
 	) {
 		signal.throwIfAborted()
-		let content: ReturnType<typeof fromHtml> | { node: TakumiNode; stylesheets: never[] }
+		let content: ReturnType<typeof fromHtml> | { node: TakumiNode; css: never[] }
 		if (input.content.kind === 'html') {
 			await yieldToEventLoop(signal)
 			content = fromHtml(input.content.value)
 		} else {
-			content = { node: input.content.value, stylesheets: [] }
+			content = { node: input.content.value, css: [] }
 		}
 		if (input.content.kind === 'html') {
 			await assertStructuredContentBytes(content.node, this.config.maxContentBytes, signal)
@@ -561,7 +561,7 @@ export class TakumiPlugin extends BasePlugin {
 			},
 			signal,
 		)
-		const stylesheets = Object.freeze([...content.stylesheets, ...input.stylesheets])
+		const stylesheets = Object.freeze([...content.css, ...input.stylesheets])
 		if (stylesheets.length > this.config.maxStylesheets) {
 			throw new TakumiError(
 				'STYLESHEET_TOO_LARGE',
