@@ -44,6 +44,7 @@ export default defineConfig({
 		workers: './src/workers.ts',
 		commands: './src/commands.ts',
 		capnweb: './src/capnweb.ts',
+		mcp: './src/mcp.ts',
 		persistence: './src/persistence.ts',
 		vault: './src/vault.ts',
 	},

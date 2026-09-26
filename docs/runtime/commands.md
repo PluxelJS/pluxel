@@ -131,6 +131,30 @@ handler 和公开 `execute()` 使用同一种 Result。组合另一个 Command �
 
 可信 context 无法读取或展开时，执行返回 `INTERNAL` 并在本地 cause 保留原异常；owner 停止或取消信号触发时返回 `ABORTED`。
 
+## 投影为 MCP Tool
+
+`@pluxel/services/mcp` 的 `toMcp()` 返回原生 MCP `Tool` 描述和 `call()` 函数，不创建 server 或发布工具。应用把 `tool` 放入自己的工具列表，并在 SDK 的 `tools/call` handler 中按名称选择它；每次调用由应用传入可信 context。
+
+```ts no-twoslash
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { toMcp } from '@pluxel/services/mcp'
+
+const noteTool = toMcp(readNote)
+const server = new Server({ name: 'notes', version: '1.0.0' }, { capabilities: { tools: {} } })
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [noteTool.tool] }))
+server.setRequestHandler(CallToolRequestSchema, async ({ params }, extra) => {
+	if (params.name !== noteTool.tool.name) throw new Error('Unknown tool')
+	return noteTool.call(params.arguments ?? {}, {
+		actorId: 'alice',
+		read: async () => 'note text',
+		signal: extra.signal,
+	})
+})
+```
+
+上例由应用创建并连接 `Server`，实际 context 应从已认证的请求构造。`noteTool.call()` 返回 `CallToolResult`：成功值编码为 JSON 文本块；失败设置 `isError: true`，文本只包含公开的 `code`、`message`、输入问题或业务 `reason`，不传递本地 `cause`。无法无损编码的成功值返回 `OUTPUT_ENCODING`。应用负责工具选择、认证、权限、会话、传输及清理；如需绑定 Plugin generation，应先通过 carrier mount 取得受 owner 保护的 Command，再调用 `toMcp()`。
+
 ## 名称目录和 Plugin owner
 
 只有需要按名称发现或调用时才注册：
@@ -176,3 +200,4 @@ if (resolved) {
 - `@pluxel/commands/typebox`：`Type`、`obj`、`openObj`。
 - `@pluxel/commands/argv`：`toCli()`、argv router、tail 与相关类型。
 - `@pluxel/services/commands`：Host 的 Commands token、服务与 carrier mount。
+- `@pluxel/services/capnweb`、`@pluxel/services/mcp`：明确选择的 Command 到原生远程协议的投影。

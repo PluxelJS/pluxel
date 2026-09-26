@@ -28,11 +28,16 @@ Command 内核不拥有远程会话。需要远程调用时，`toCapnweb()` 把�
 
 普通领域能力继续直接使用 Cap’n Web `RpcTarget`。连接、认证、授权与会话清理属于安装该 target 的宿主，不进入 Commands 的定义契约。当前没有独立的 Command RPC 发布、发现或模型运行时；需要这些能力时由实际应用选择并负责。
 
+## MCP 投影
+
+`toMcp()` 只把一个 direct Command 投影为 MCP SDK `Tool` 描述和按调用传入可信 context 的 `call()`。输入仍由 Command 校验；成功值是 JSON 文本，Err 转为 MCP `isError` 与去除本地 cause 的公开失败。没有 MCP server、工具目录、认证、会话或 transport service。实际应用选择工具、把它们接到 SDK handler，并承担权限与生命周期；需要 Plugin generation admission 时先用 caller-bound mount 包裹 Command。MCP SDK 仅作为 `/mcp` 可选入口的类型依赖，不进入默认 Services 入口。
+
 ## 实现与验证
 
 - `packages/commands/src/schema.ts`、`compile.ts`、`define.ts`：schema/codec、plan、call-time validation。
 - 同目录 `registry.ts`、`argv/`：publication、dynamic dispatch 与 argv grammar。
 - `packages/services/src/commands/service.ts`：root view、caller-bound mount 与 invocation ownership。
 - `packages/services/src/capnweb.ts`：选定 Command 到原生 `RpcTarget` 方法的适配。
+- `packages/services/src/mcp.ts`：选定 Command 到原生 MCP Tool 与调用结果的适配。
 
-修改 root publication 或 mount 时验证 cached handle、manual dispose 与 stop 的差异、双 owner withdrawal 和扩展 Context 限制。修改 Cap’n Web 适配时验证原生方法可达性、服务端 context 隔离、Result 投影和实际 wire 编码。纯 parser/codec 行为在 Commands 包内验证。
+修改 root publication 或 mount 时验证 cached handle、manual dispose 与 stop 的差异、双 owner withdrawal 和扩展 Context 限制。修改 Cap’n Web 适配时验证原生方法可达性、服务端 context 隔离、Result 投影和实际 wire 编码；修改 MCP 投影时使用 SDK 原生请求与内存传输验证 Tool 和 CallToolResult。纯 parser/codec 行为在 Commands 包内验证。

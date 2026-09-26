@@ -38,6 +38,8 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 `@pluxel/services/management/client`、`/session` 和 `/protocol` 提供浏览器管理客户端、认证会话与 DTO；`/react` 只提供 React Context adapter。`@pluxel/workbench` 提供 browser-safe Content、Direct View 与 Attachment definition，`/client` 提供 Shell layout/opened-handle client，`/react` 提供 exact descriptor hook、host facade 与 Pane Kit。React 入口使用宿主提供的 singleton。RPC object model 直接从 `capnweb` 导入。
 
+`@pluxel/services/capnweb` 与 `/mcp` 分别把选定 Command 投影为原生 Cap’n Web 方法和 MCP Tool；二者都不安装 server 或会话。
+
 宿主服务、preset 与开发附件的组合见[服务参考](./runtime-services.md)。开发脚本从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
 
 `@pluxel/services/http/node` 提供标准 Host launcher 使用的 Node srvx/crossws carrier 和 `listenHostHttp()`。`createHostHttpHandler()` 与 HTTP 服务共用 `@pluxel/services/http` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/http` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。

@@ -137,6 +137,10 @@
 			"@pluxel/source": "./src/management/web/session/index.ts",
 			"default": "./dist/management/session.mjs"
 		},
+		"./mcp": {
+			"@pluxel/source": "./src/mcp.ts",
+			"default": "./dist/mcp.mjs"
+		},
 		"./node": {
 			"@pluxel/source": "./src/node.ts",
 			"default": "./dist/node.mjs"
@@ -201,6 +205,7 @@
 			"./management/react": "./dist/management/react.mjs",
 			"./management/service": "./dist/management/service.mjs",
 			"./management/session": "./dist/management/session.mjs",
+			"./mcp": "./dist/mcp.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
@@ -236,6 +241,7 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@modelcontextprotocol/sdk": "catalog:prod",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
@@ -256,6 +262,7 @@
 	},
 	"peerDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@modelcontextprotocol/sdk": "catalog:prod",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
@@ -269,6 +276,9 @@
 	},
 	"peerDependenciesMeta": {
 		"@electric-sql/pglite": {
+			"optional": true
+		},
+		"@modelcontextprotocol/sdk": {
 			"optional": true
 		},
 		"pg": {
