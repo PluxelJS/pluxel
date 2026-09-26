@@ -3,7 +3,6 @@ import { isBuiltin } from 'node:module'
 import {
 	defaultClientConditions,
 	defaultServerConditions,
-	perEnvironmentPlugin,
 	type Plugin,
 	type PluginOption,
 } from 'vite'
@@ -84,18 +83,16 @@ function createPluginSourcePlugins(
 	semantics: (root: string) => Plugin,
 	environmentName?: string,
 ): PluginOption[] {
-	const preprocessor = PreprocessorDirectives()
+	const preprocessors = [PreprocessorDirectives()].flat()
+	// Keep configResolved at the top level so Vite supplies mode-specific env values.
+	for (const plugin of preprocessors) {
+		plugin.applyToEnvironment = (environment) =>
+			!environmentName ||
+			environment.name === environmentName ||
+			isBrowserConsumerEnvironment(environment)
+	}
 	const plugins: PluginOption[] = [
-		environmentName
-			? {
-					...perEnvironmentPlugin('unplugin-preprocessor-directives', (environment) =>
-						environment.name === environmentName || isBrowserConsumerEnvironment(environment)
-							? preprocessor
-							: false,
-					),
-					enforce: 'pre',
-				}
-			: preprocessor,
+		...preprocessors,
 		{
 			name: 'pluxel:browser-node-imports',
 			enforce: 'pre',

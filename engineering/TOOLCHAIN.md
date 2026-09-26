@@ -175,6 +175,7 @@ assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表
 Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata，
 并由 Vite/OXC 提供 legacy decorator transform。Host-dev 自动组合该 pipeline；preprocessor 参与所有 environment，
 Plugin semantics、lint 和 config metadata 仅作用于 server environment。Workbench 单独拥有 browser compiler 与 UI singleton 策略。
+预处理插件在顶层注册 `configResolved`，使用原生 `applyToEnvironment` 布尔过滤 transform；配置钩子必须读取 Vite 解析后的 mode/env，不能放到 environment 工厂返回值中。
 源码解析添加 `@pluxel/hmr`、`@pluxel/source`，其余条件遵循 Vite 的 client/server 默认值：浏览器不启用 `node`，
 `development` / `production` 按 Vite 的实际环境选择，不能同时启用。默认启用 Vite 自身的 `resolve.tsconfigPaths`，
 显式 `false` 保持关闭。项目无需再注册路径解析插件。浏览器直接引入 Node builtin 时，adapter 复用 Vite 解析结果：

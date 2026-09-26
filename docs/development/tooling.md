@@ -142,6 +142,7 @@ graph 与 server Plugin implementation 保持分离。
 第三方 SSR 加载出来的 Plugin constructor 不属于 Host；操作运行中的插件请使用控制台或 Host 的服务 API。
 
 Host environment 默认使用 Vite 的 `resolve.tsconfigPaths` 解析项目 TypeScript 路径别名；若不需要，在 Vite config 显式设为 `false`。
+源码中的 `// #if VITE_FEATURE` 条件编译读取当前 Vite mode 对应的环境变量；例如 `--mode staging` 使用 `.env.staging` 中的 `VITE_FEATURE`。条件编译在源码转换时完成，不读取请求期环境变量。
 包导出条件沿用 Vite 的浏览器/服务端及开发/生产区分；Host 源码环境仅额外启用 Pluxel 的源码条件，不会让浏览器选择 Node 入口或让生产构建选择开发入口。
 包导出与别名均先按当前 Vite 环境解析；Host environment 选中的 CommonJS 文件由 Node 加载，避免 `require is not defined`。浏览器代码误引 `node:fs`、`fs/promises` 等
 Node 内置模块时，开发构建立刻报告模块名和导入者；把调用移到服务端，或通过 Vite alias 提供真正的浏览器实现。

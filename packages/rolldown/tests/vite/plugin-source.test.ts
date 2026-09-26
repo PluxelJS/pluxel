@@ -5,6 +5,7 @@ import { build, createServer } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	pluginSourceVitePlugins,
+	createPluginSourceVitePipeline,
 	type PluginSourceVitePluginsOptions,
 } from '../../src/vite/plugin-source.ts'
 
@@ -123,3 +124,46 @@ it.each(['development', 'distribution'] as const)(
 		}
 	},
 )
+
+it('uses resolved Vite mode variables in environment-scoped preprocessing', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-vite-preprocessor-'))
+	try {
+		await writeFile(join(root, '.env.probe'), 'VITE_PLUXEL_PREPROCESS_PROBE=true\n')
+		await writeFile(
+			join(root, 'entry.js'),
+			[
+				'// #if VITE_PLUXEL_PREPROCESS_PROBE',
+				"export const marker = 'configured-branch'",
+				'// #else',
+				"export const marker = 'unconfigured-branch'",
+				'// #endif',
+			].join('\n'),
+		)
+		const pipeline = createPluginSourceVitePipeline({ root, lintGuard: false, configSource: false })
+		const output = await build({
+			root,
+			configFile: false,
+			mode: 'probe',
+			logLevel: 'silent',
+			plugins: [...pipeline.plugins],
+			build: {
+				write: false,
+				minify: false,
+				lib: { entry: join(root, 'entry.js'), formats: ['es'] },
+			},
+		})
+		const outputs = Array.isArray(output) ? output : [output]
+		const code = outputs
+			.flatMap((result) => {
+				if (!('output' in result)) throw new Error('Expected an immediate Vite build result')
+				return result.output
+			})
+			.filter((chunk) => chunk.type === 'chunk')
+			.map((chunk) => chunk.code)
+			.join('\n')
+		expect(code).toContain('configured-branch')
+		expect(code).not.toContain('unconfigured-branch')
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
