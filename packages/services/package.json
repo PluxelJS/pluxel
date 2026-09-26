@@ -33,13 +33,13 @@
 			"@pluxel/source": "./src/build.ts",
 			"default": "./dist/build.mjs"
 		},
-		"./capnweb": {
-			"@pluxel/source": "./src/capnweb.ts",
-			"default": "./dist/capnweb.mjs"
-		},
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
+		},
+		"./commands/adapters": {
+			"@pluxel/source": "./src/commands/adapters.ts",
+			"default": "./dist/commands/adapters.mjs"
 		},
 		"./database": {
 			"@pluxel/source": "./src/database.ts",
@@ -137,10 +137,6 @@
 			"@pluxel/source": "./src/management/web/session/index.ts",
 			"default": "./dist/management/session.mjs"
 		},
-		"./mcp": {
-			"@pluxel/source": "./src/mcp.ts",
-			"default": "./dist/mcp.mjs"
-		},
 		"./node": {
 			"@pluxel/source": "./src/node.ts",
 			"default": "./dist/node.mjs"
@@ -179,8 +175,8 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
-			"./capnweb": "./dist/capnweb.mjs",
 			"./commands": "./dist/commands.mjs",
+			"./commands/adapters": "./dist/commands/adapters.mjs",
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",
 			"./database/postgres": "./dist/database/postgres.mjs",
@@ -205,7 +201,6 @@
 			"./management/react": "./dist/management/react.mjs",
 			"./management/service": "./dist/management/service.mjs",
 			"./management/session": "./dist/management/session.mjs",
-			"./mcp": "./dist/mcp.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",

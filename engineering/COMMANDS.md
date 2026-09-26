@@ -30,7 +30,7 @@ Command 内核不拥有远程会话。需要远程调用时，`toCapnweb()` 把�
 
 ## MCP 投影
 
-`toMcp()` 只把一个 direct Command 投影为 MCP SDK `Tool` 描述和按调用传入可信 context 的 `call()`。输入仍由 Command 校验；成功值是 JSON 文本，Err 转为 MCP `isError` 与去除本地 cause 的公开失败。没有 MCP server、工具目录、认证、会话或 transport service。实际应用选择工具、把它们接到 SDK handler，并承担权限与生命周期；需要 Plugin generation admission 时先用 caller-bound mount 包裹 Command。MCP SDK 仅作为 `/mcp` 可选入口的类型依赖，不进入默认 Services 入口。
+`toMcp()` 只把一个 direct Command 投影为 MCP SDK `Tool` 描述和按调用传入可信 context 的 `call()`。输入仍由 Command 校验；成功值是 JSON 文本，Err 转为 MCP `isError` 与去除本地 cause 的公开失败。没有 MCP server、工具目录、认证、会话或 transport service。实际应用选择工具、把它们接到 SDK handler，并承担权限与生命周期；需要 Plugin generation admission 时先用 caller-bound mount 包裹 Command。`toMcp()` 与 `toCapnweb()` 同属 `@pluxel/services/commands/adapters` 可选入口；MCP SDK 仅作为类型依赖，默认 Services 入口不加载适配器。
 
 ## 实现与验证
 

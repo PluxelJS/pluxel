@@ -9,7 +9,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { Result, defineCommand, type CommandContext } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { toMcp } from '../../src/mcp'
+import { toMcp } from '../../src/commands/adapters'
 
 interface NoteContext extends CommandContext {
 	readonly actor: string
