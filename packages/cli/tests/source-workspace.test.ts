@@ -381,13 +381,6 @@ describe('source workspace planning', () => {
 			mkdir(consumer, { recursive: true }),
 			mkdir(childPackage, { recursive: true }),
 		])
-		const legacyProxy = resolve(
-			consumer,
-			'.pluxel/sources',
-			createHash('sha256').update(childRepository).digest('hex').slice(0, 12),
-		)
-		await mkdir(resolve(legacyProxy, '..'), { recursive: true })
-		await symlink(child, legacyProxy, process.platform === 'win32' ? 'junction' : 'dir')
 		const checkouts: ResolvedSourceCheckout[] = [
 			{
 				repository: 'https://github.com/acme/parent',
@@ -406,6 +399,19 @@ describe('source workspace planning', () => {
 				singletons: [],
 			},
 		]
+		const repositoryPath = resolve(
+			consumer,
+			'.pluxel/sources',
+			createHash('sha256').update(childRepository).digest('hex').slice(0, 12),
+		)
+		await mkdir(resolve(consumer, '.pluxel/sources'), { recursive: true })
+		await symlink(child, repositoryPath)
+		expect(() =>
+			materializeSourceOverrides(consumer, { '@acme/example': `link:${childPackage}` }, checkouts),
+		).toThrow('Refusing to replace non-directory source path')
+		expect(await readlink(repositoryPath)).toBe(child)
+		await rm(repositoryPath)
+
 		const stable = materializeSourceOverrides(
 			consumer,
 			{ '@acme/example': `link:${childPackage}` },

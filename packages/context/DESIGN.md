@@ -37,27 +37,9 @@ Compilation 为 root/scope/owner cache 分别分配数字 slot，并生成 scope
 
 ```sh
 pnpm --filter @pluxel/context bench
-pnpm --filter @pluxel/context bench:compare-legacy
 ```
 
-2026-08-23，Node 24，同进程 comparison benchmark 的一次记录：
-
-| 路径                             | 当前 mean | 当前 median |   旧 mean | 旧 median |
-| -------------------------------- | --------: | ----------: | --------: | --------: |
-| cached root getter               |   1.80 ns |     1.73 ns |   1.13 ns |   1.12 ns |
-| cached scope getter              |   1.88 ns |     1.78 ns |   1.13 ns |   1.08 ns |
-| cached stable owner getter       |   1.95 ns |     1.84 ns |   1.20 ns |   1.18 ns |
-| alternating owner getter         |   1.76 ns |     1.73 ns |   1.19 ns |   1.17 ns |
-| child creation                   |  82.59 ns |    78.62 ns |  80.53 ns |  75.78 ns |
-| scope/selective-isolate creation |  85.37 ns |    81.48 ns | 199.26 ns | 186.22 ns |
-
-这些数字说明的是趋势，而不是跨机器阈值：
-
-- 旧 cached getter 在当前 V8 上更快，差距通常小于一纳秒；
-- 当前 Context/scope 创建不建立 selective overlay，尤其 scope 创建明显更便宜；
-- owner 行不是相同对象语义：旧路径返回同一对象并修改 `ctx`，当前路径返回 stable per-owner facade；
-- 微基准中的循环形状、对象 polymorphism 和 JIT tiering 都可能改变绝对数值，应优先比较同进程成对路径；
-- 一次 logger、registration、Map mutation、validation 或 I/O 通常远大于 getter 差距；极热循环仍可安全缓存当前 stable view。
+基准只运行当前实现。历史实现和历史对照结果由 Git 保存。
 
 2026-08-24，使用相同 root/scope/owner/mixed workload 顺序切换生产实现的 benchmark 中，direct private-state resolver 的
 cached explicit resolve 约为 `10.8–14.1 ns/op`，重复 state validation 的 resolver 约为 `13.5–14.8 ns/op`；mixed
