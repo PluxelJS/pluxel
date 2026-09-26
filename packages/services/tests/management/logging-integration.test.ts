@@ -286,13 +286,14 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('releases the LogTape process exit hook when disposed', async () => {
-		const before = process.listenerCount('exit')
+		const before = process.listeners('exit')
 		for (let index = 0; index < 12; index++) {
 			logging = createRuntimeLogging(storePlan())
 			await logging.install()
-			await logging.dispose()
+			await Promise.all([logging.dispose(), logging.dispose()])
+			expect(process.listeners('exit')).toEqual(before)
 			logging = undefined
 		}
-		expect(process.listenerCount('exit')).toBe(before)
+		expect(process.listeners('exit')).toEqual(before)
 	})
 })

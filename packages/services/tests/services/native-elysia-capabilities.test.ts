@@ -2,6 +2,7 @@ import { ElysiaApp, elysia } from '@pluxel/services/elysia'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { createTestHost } from '@pluxel/test'
 import { Elysia, t } from 'elysia'
+import { WebStandardAdapter } from 'elysia/adapter/web-standard'
 import { describe, expect, it } from 'vitest'
 
 const reusableApi = (app: Elysia) =>
@@ -69,6 +70,31 @@ class NativeElysiaIsolationB extends BasePlugin {
 }
 
 describe('native Elysia authoring capability', () => {
+	it('eagerly compiles TypeBox schemas before the first request', async () => {
+		// Generation publication eagerly compiles routes; lazy fetch alone misses compiler regressions.
+		const app = new Elysia({ adapter: WebStandardAdapter })
+			.post(
+				'/schema',
+				{ body: t.Object({ value: t.String({ minLength: 1 }) }) },
+				({ body, status }) => status(201, body),
+			)
+			.compile()
+
+		const request = (value: string) =>
+			app.fetch(
+				new Request('http://local/schema', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ value }),
+				}),
+			)
+		const valid = await request('accepted')
+		expect(valid.status).toBe(201)
+		expect(await valid.json()).toEqual({ value: 'accepted' })
+		const invalid = await request('')
+		expect(invalid.status).toBe(422)
+	})
+
 	it('preserves function plugins, async modules, context, schemas, errors and mounts', async () => {
 		{
 			await using host = await createTestHost({ services: [elysia()] })

@@ -16,22 +16,29 @@ allowBuilds:
 overrides:
   '@esbuild-kit/core-utils>esbuild': 0.28.2
   react-server-dom-webpack: catalog:build
+  # Use the same Base UI implementation throughout the documentation framework.
+  fumadocs-ui: catalog:docs
+  # This declaration tool still requires the classic JS Compiler API.
+  'dts-bundle-generator>typescript': 6.0.3
+  # MF Vite 1.22.1 still pins 2.9.0; align its producer/runtime contract with the host.
+  '@module-federation/vite>@module-federation/runtime': 2.9.1
+  '@module-federation/vite>@module-federation/sdk': 2.9.1
+  '@module-federation/vite>@module-federation/dts-plugin': 2.9.1
+  typebox: catalog:dev
 
 minimumReleaseAgeExclude:
-  - '@pnpm/napi.darwin-arm64@12.0.0-rc.0'
-  - '@pnpm/napi.darwin-x64@12.0.0-rc.0'
-  - '@pnpm/napi.linux-arm64-musl@12.0.0-rc.0'
-  - '@pnpm/napi.linux-arm64@12.0.0-rc.0'
-  - '@pnpm/napi.linux-x64-musl@12.0.0-rc.0'
-  - '@pnpm/napi.linux-x64@12.0.0-rc.0'
-  - '@pnpm/napi.win32-arm64@12.0.0-rc.0'
-  - '@pnpm/napi.win32-x64@12.0.0-rc.0'
-  - '@pnpm/napi@12.0.0-rc.0'
-  - elysia@2.0.0-beta.7
-  - '@module-federation/vite@1.21.1'
-  - '@vitest/mocker@5.0.0'
-  - '@vitest/spy@5.0.0'
-  - vitest@5.0.0
+  - '@logtape/file@2.3.8'
+  - '@logtape/logtape@2.3.8'
+  - '@logtape/pretty@2.3.8'
+  - '@mantine/core@9.6.3'
+  - '@mantine/dates@9.6.3'
+  - '@mantine/hooks@9.6.3'
+  - '@mantine/modals@9.6.3'
+  - '@mantine/notifications@9.6.3'
+  - '@mantine/store@9.6.3'
+  - '@tanstack/query-core@5.104.0'
+  - '@tanstack/react-query@5.104.0'
+  - '@types/node@26.6.3'
 
 onlyBuiltDependencies:
   - esbuild
@@ -49,155 +56,153 @@ publicHoistPattern:
 
 trustPolicy: no-downgrade
 trustPolicyExclude:
-  - '@pnpm/napi@12.0.0-rc.0'
-  # Elysia 2 beta.7 is signed by npm but was not published through the trusted-publisher path.
+  # Elysia 2 beta.19 uses the same npm publisher as beta.7 and is signed by npm but was not published through the trusted-publisher path.
   # Keep this exact and remove it once the Elysia 2 release line restores publisher evidence.
-  - 'elysia@2.0.0-beta.7'
-  # Required Elysia 2 peer from the same maintainer and publishing path.
-  - 'exact-mirror@1.2.4'
+  - 'elysia@2.0.0-beta.19'
 trustPolicyIgnoreAfter: 43200
 catalogs:
   backend:
-    drizzle-kit: ^0.31.10
-    drizzle-orm: ^0.45.2
+    drizzle-kit: ^0.31.11
+    drizzle-orm: ^0.45.3
     pg: ^8.23.0
     redis: ^6.2.1
   build:
-    '@module-federation/vite': 1.21.1
+    '@module-federation/vite': 1.22.1
     '@rolldown/pluginutils': ^1.0.1
     '@tailwindcss/vite': 4.3.3
-    '@tsdown/css': 0.22.14
+    '@tsdown/css': 0.23.0
     '@vitejs/plugin-react': ^6.1.1
-    react-server-dom-webpack: 19.2.8
-    rolldown: ^1.2.6
-    tsdown: ^0.22.14
+    react-server-dom-webpack: 19.3.0
+    rolldown: ^1.2.11
+    tsdown: ^0.23.0
     unplugin-macros: ^0.23.2
     unplugin-preprocessor-directives: ^1.2.0
     unrun: ^0.3.1
-    vite: ^8.2.2
+    vite: ^8.3.1
   dev:
-    '@fumapress/tegami': 1.1.2
-    '@logtape/logtape': ^2.3.2
+    '@fumapress/tegami': 1.1.3
+    '@logtape/logtape': ^2.3.8
     '@opentelemetry/api': ^1.9.1
-    '@opentelemetry/api-logs': ^0.221.0
+    '@opentelemetry/api-logs': ^0.222.0
     '@platformatic/vfs': ^0.4.0
     '@pluxel/market': ^0.1.0
     '@sinclair/parsebox': ^0.11.6
-    '@tanstack/router-plugin': ^1.168.35
+    '@tanstack/router-plugin': ^1.168.40
     capnweb: ^0.12.0
     cross-env: ^10.1.0
     dts-bundle-generator: ^9.5.1
-    elysia: 2.0.0-beta.7
+    elysia: 2.0.0-beta.19
     fdir: ^6.5.0
-    fs-fixture: ^2.14.0
+    fs-fixture: ^2.16.0
     ink: ^7.1.1
-    jsdom: ^30.0.1
-    oxfmt: ^0.65.0
-    oxlint: ^1.80.0
-    oxlint-tsgolint: ^7.0.2001
-    pncat: ^0.13.2
-    postcss: ^8.5.26
+    jsdom: ^30.1.1
+    oxfmt: ^0.70.0
+    oxlint: ^1.85.0
+    oxlint-tsgolint: ^7.0.2003
+    pncat: ^0.13.4
+    postcss: ^8.5.28
     postcss-preset-mantine: ^1.18.0
     postcss-simple-vars: ^7.0.1
-    sass-embedded: ^1.103.1
-    tinybench: ^6.1.4
-    tsx: ^4.23.13
-    turbo: ^2.10.12
+    sass-embedded: ^1.105.0
+    tinybench: ^6.2.0
+    tsx: ^4.23.15
+    turbo: ^2.11.4
     typescript: ^7.0.2
     typescript-legacy: npm:typescript@6.0.3
     wretch: ^3.0.9
-    yaml: ^2.9.0
+    yaml: ^2.9.1
+    typebox: 1.3.23
   docs:
-    fumadocs-core: 16.15.4
-    fumadocs-mdx: 15.4.0
-    fumadocs-twoslash: 3.3.0
-    fumadocs-ui: npm:@fumadocs/base-ui@16.15.4
+    fumadocs-core: 16.15.14
+    fumadocs-mdx: 15.4.5
+    fumadocs-twoslash: 4.0.1
+    fumadocs-ui: npm:@fumadocs/base-ui@16.15.14
   frontend:
-    '@base-ui/react': ^1.7.0
+    '@base-ui/react': ^1.8.0
     '@dnd-kit/core': ^6.3.1
     '@dnd-kit/modifiers': ^9.0.0
     '@dnd-kit/sortable': ^10.0.0
     '@dnd-kit/utilities': ^3.2.2
-    '@mantine/core': ^9.5.2
-    '@mantine/dates': ^9.5.2
-    '@mantine/hooks': ^9.5.2
-    '@mantine/modals': ^9.5.2
-    '@mantine/notifications': ^9.5.2
-    '@module-federation/bridge-react': 2.9.0
-    '@tanstack/query-core': ^5.102.8
-    '@tanstack/react-query': ^5.102.8
+    '@mantine/core': ^9.6.3
+    '@mantine/dates': ^9.6.3
+    '@mantine/hooks': ^9.6.3
+    '@mantine/modals': ^9.6.3
+    '@mantine/notifications': ^9.6.3
+    '@module-federation/bridge-react': 2.9.1
+    '@tanstack/query-core': ^5.104.0
+    '@tanstack/react-query': ^5.104.0
     '@tanstack/react-form': ^1.33.5
-    '@tanstack/react-hotkeys': ^0.10.0
-    '@tanstack/react-router': ^1.170.32
+    '@tanstack/react-hotkeys': ^0.12.0
+    '@tanstack/react-router': ^1.170.39
     '@tanstack/react-store': ^0.11.1
-    '@tanstack/react-virtual': ^3.14.10
-    react: ^19.2.8
-    react-dom: ^19.2.8
+    '@tanstack/react-virtual': ^3.14.13
+    react: ^19.3.0
+    react-dom: ^19.3.0
     tailwindcss: 4.3.3
   icons:
-    '@tabler/icons-react': ^3.46.0
-    lucide-react: ^1.37.0
+    '@tabler/icons-react': ^3.48.0
+    lucide-react: ^1.48.0
   node:
     chokidar: ^5.0.0
     pathe: ^2.0.3
-    pkg-types: ^2.3.1
+    pkg-types: ^2.3.3
   override:
-    tegami: 1.4.0
+    tegami: 1.5.0
   peer:
     '@opentelemetry/api': ^1.9.1
-    '@opentelemetry/api-logs': ^0.221.0
+    '@opentelemetry/api-logs': ^0.222.0
     '@pluxel/market': ^0.1.0
-    oxlint: ^1.80.0
+    oxlint: ^1.85.0
   prod:
-    '@chenglou/pretext': ^0.0.8
-    '@clack/prompts': ^1.7.0
+    '@chenglou/pretext': ^0.0.9
+    '@clack/prompts': ^1.8.1
     '@dagrejs/dagre': ^3.1.1
     '@electric-sql/pglite': ^0.5.8
-    '@fumapress/ai': 1.1.2
+    '@fumapress/ai': 1.1.3
     '@fumapress/language': 1.1.2
-    '@fumapress/tegami': 1.1.2
-    '@grpc/grpc-js': ^1.14.4
-    '@inlang/paraglide-js': ^2.25.0
-    '@logtape/file': ^2.3.2
-    '@logtape/logtape': ^2.3.2
-    '@logtape/pretty': ^2.3.2
+    '@fumapress/tegami': 1.1.3
+    '@grpc/grpc-js': ^1.14.5
+    '@inlang/paraglide-js': ^2.25.4
+    '@logtape/file': ^2.3.8
+    '@logtape/logtape': ^2.3.8
+    '@logtape/pretty': ^2.3.8
     '@material/material-color-utilities': ^0.4.0
-    '@modelcontextprotocol/sdk': 1.30.0
-    '@module-federation/runtime': 2.9.0
-    '@module-federation/sdk': 2.9.0
-    '@napi-rs/canvas': ^1.0.8
+    '@modelcontextprotocol/sdk': 1.30.1
+    '@module-federation/runtime': 2.9.1
+    '@module-federation/sdk': 2.9.1
+    '@napi-rs/canvas': ^1.0.9
     '@opentelemetry/api': ^1.9.1
-    '@opentelemetry/api-logs': ^0.221.0
-    '@opentelemetry/context-async-hooks': ^2.10.0
-    '@opentelemetry/core': ^2.10.0
-    '@opentelemetry/exporter-logs-otlp-grpc': ^0.221.0
-    '@opentelemetry/exporter-logs-otlp-http': ^0.221.0
-    '@opentelemetry/exporter-logs-otlp-proto': ^0.221.0
-    '@opentelemetry/exporter-metrics-otlp-grpc': ^0.221.0
-    '@opentelemetry/exporter-metrics-otlp-http': ^0.221.0
-    '@opentelemetry/exporter-metrics-otlp-proto': ^0.221.0
-    '@opentelemetry/exporter-prometheus': ^0.221.0
-    '@opentelemetry/exporter-trace-otlp-grpc': ^0.221.0
-    '@opentelemetry/exporter-trace-otlp-http': ^0.221.0
-    '@opentelemetry/exporter-trace-otlp-proto': ^0.221.0
-    '@opentelemetry/resources': ^2.10.0
-    '@opentelemetry/sdk-logs': ^0.221.0
-    '@opentelemetry/sdk-metrics': ^2.10.0
-    '@opentelemetry/sdk-trace-base': ^2.10.0
-    '@pnpm/napi': 12.0.0-rc.0
+    '@opentelemetry/api-logs': ^0.222.0
+    '@opentelemetry/context-async-hooks': ^2.11.0
+    '@opentelemetry/core': ^2.11.0
+    '@opentelemetry/exporter-logs-otlp-grpc': ^0.222.0
+    '@opentelemetry/exporter-logs-otlp-http': ^0.222.0
+    '@opentelemetry/exporter-logs-otlp-proto': ^0.222.0
+    '@opentelemetry/exporter-metrics-otlp-grpc': ^0.222.0
+    '@opentelemetry/exporter-metrics-otlp-http': ^0.222.0
+    '@opentelemetry/exporter-metrics-otlp-proto': ^0.222.0
+    '@opentelemetry/exporter-prometheus': ^0.222.0
+    '@opentelemetry/exporter-trace-otlp-grpc': ^0.222.0
+    '@opentelemetry/exporter-trace-otlp-http': ^0.222.0
+    '@opentelemetry/exporter-trace-otlp-proto': ^0.222.0
+    '@opentelemetry/resources': ^2.11.0
+    '@opentelemetry/sdk-logs': ^0.222.0
+    '@opentelemetry/sdk-metrics': ^2.11.0
+    '@opentelemetry/sdk-trace-base': ^2.11.0
+    '@pnpm/napi': 12.7.0
     '@sinclair/typebox': ^0.34.52
     '@standard-schema/spec': ^1.1.0
     age-encryption: ^0.3.1
     better-result: 3.0.1
     capnweb: 0.12.0
-    cnfast: ^0.1.0
+    cnfast: ^0.2.0
     crossws: 0.4.12
     echarts: ^6.1.0
-    elysia: 2.0.0-beta.7
+    elysia: 2.0.0-beta.19
     eventure: ^0.5.0
-    fumapress: 1.2.0
-    gunshi: ^0.37.1
-    jose: ^6.2.10
+    fumapress: 1.4.1
+    gunshi: ^0.37.3
+    jose: ^6.2.12
     jsonc-parser: ^3.3.1
     mdast-util-directive: 3.1.0
     mdast-util-from-markdown: 2.0.3
@@ -208,34 +213,33 @@ catalogs:
     next-themes: ^0.4.6
     nf3: ^0.3.24
     ohash: ^2.0.12
-    oxc-parser: ^0.147.0
+    oxc-parser: ^0.151.0
     oxc-resolver: ^11.24.2
     package-manager-detector: ^1.8.0
     picomatch: ^4.0.7
-    s3mini: ^1.0.0
+    s3mini: ^1.0.2
     semver: ^7.8.5
-    srvx: 0.12.7
+    srvx: 1.0.5
     std-env: ^4.2.0
-    takumi-js: ^2.13.2
-    twoslash: 0.3.9
+    takumi-js: ^2.14.0
     typescript: ^7.0.2
-    undici: ^8.10.0
+    undici: ^8.11.2
     wretch: ^3.0.9
-    yaml: ^2.9.0
+    yaml: ^2.9.1
   test:
-    vitest: 5.0.0
+    vitest: 5.0.2
     ws: 8.21.3
   types:
     '@types/mdast': 4.0.4
     '@types/mdx': 2.0.14
-    '@types/node': ^26.4.0
+    '@types/node': ^26.6.3
     '@types/pg': ^8.23.1
     '@types/picomatch': ^4.0.3
-    '@types/react': ^19.2.18
-    '@types/react-dom': ^19.2.5
+    '@types/react': ^19.3.0
+    '@types/react-dom': ^19.3.0
     '@types/semver': ^7.8.0
     '@types/ws': 8.18.1
   validation:
     option-t: ^56.1.2
     superjson: ^2.2.6
-    valibot: ^1.4.2
+    valibot: ^1.5.0

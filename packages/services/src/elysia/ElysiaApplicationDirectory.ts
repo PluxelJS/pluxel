@@ -9,7 +9,6 @@ import {
 } from '@pluxel/core/host'
 import { pluginNodeIndexKey, type Context as PluxelContext, type PluginContext } from '@pluxel/core'
 import { Elysia, type AnyElysia } from 'elysia'
-import { createAdapter } from 'elysia/adapter'
 import { WebStandardAdapter } from 'elysia/adapter/web-standard'
 
 import type {
@@ -86,13 +85,6 @@ const EMPTY_SNAPSHOT: ApplicationSnapshot = Object.freeze({
 	contributions: Object.freeze([]),
 	byOwnerKey: new Map(),
 	httpSelectors: new Map(),
-})
-
-const PLUXEL_ELYSIA_ADAPTER = createAdapter({
-	...WebStandardAdapter,
-	name: 'pluxel-srvx',
-	runtime: 'unknown',
-	websocket: true,
 })
 
 function isReservedPath(path: string): boolean {
@@ -374,12 +366,15 @@ export class ElysiaApplicationDirectory {
 		if (app) return app
 		const ownerKey = pluginNodeIndexKey(owner.pluginInfo.nodeAddress)
 		app = new Elysia({
-			adapter: PLUXEL_ELYSIA_ADAPTER,
+			adapter: WebStandardAdapter,
 			name: ctx.pluginInfo ? `pluxel.plugin.${ownerKey}` : 'pluxel.host',
 		})
 		const serverView = this.createServerView(owner, ownerKey, app)
 		this.serverViews.set(owner, serverView)
-		app.wrap((fetch) => async (request, ...rest) => {
+		app.request((context) => {
+			context.server = app!.server ?? null
+		})
+		app.wrap((fetch) => async (request) => {
 			const rootLease = enterOwnerInvocation(owner.root, request.signal)
 			let ownerLease: ReturnType<typeof enterOwnerInvocation>
 			try {
@@ -414,7 +409,7 @@ export class ElysiaApplicationDirectory {
 			}
 			this.upgradeIngress.set(ownerRequest, ingress)
 			try {
-				const response = await fetch(ownerRequest, ...rest)
+				const response = await fetch(ownerRequest)
 				// Elysia returns undefined after a successful upgrade. Keep that handled
 				// request out of the host fallback; the carrier consumes its upgrade hooks.
 				if (ingress.transferred) return response ?? new Response(null, { status: 204 })
@@ -459,7 +454,7 @@ export class ElysiaApplicationDirectory {
 			? selectWebSocketContribution(this.snapshot, request)
 			: selectHttpContribution(this.snapshot, request)
 		if (!contribution) return undefined
-		return contribution.app.fetch(request, contribution.serverView)
+		return contribution.app.fetch(request)
 	}
 
 	matchesHttpRoute(pathname: string, method?: string): boolean {
@@ -527,7 +522,7 @@ export class ElysiaApplicationDirectory {
 			get pendingWebSockets() {
 				return readCarrier()?.pending(ownerKey) ?? 0
 			},
-			fetch: (request) => app.fetch(request, view),
+			fetch: (request) => app.fetch(request),
 			upgrade: (request, options = {}) => this.upgradeOwnerRequest(ctx, ownerKey, request, options),
 			publish: (topic, data, compress) => {
 				const carrier = this.applicationCarrier
@@ -588,7 +583,7 @@ export class ElysiaApplicationDirectory {
 		}
 		const externalEpochUnavailable = (operation: 'setup' | 'cleanup') => () => {
 			throw new Error(
-				`[pluxel/elysia] app.${operation}() is unsupported because Elysia 2 beta.7 exposes no public external application attach/detach epoch`,
+				`[pluxel/elysia] app.${operation}() is unsupported because Elysia 2 beta.19 exposes no public external application attach/detach epoch`,
 			)
 		}
 		Object.defineProperties(app, {

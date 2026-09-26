@@ -37,7 +37,7 @@ export async function runWithTsdown(options: TsdownRunnerOptions): Promise<void>
 		hasBaseOnSuccess: Boolean(options.onSuccess),
 	})
 
-	const bundles = await runTsdown(configPlan.inlineConfig)
+	const { bundles } = await runTsdown(configPlan.inlineConfig)
 
 	try {
 		if (!options.context.watch && configPlan.onSuccess) {
@@ -516,7 +516,6 @@ function describeDeps(value: InlineConfig['deps']) {
 							sanitizeDebugValue(item),
 						)
 					: undefined,
-		skipNodeModulesBundle: sanitizeDebugValue(value.skipNodeModulesBundle),
 	}
 }
 

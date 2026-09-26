@@ -62,7 +62,7 @@ Host 使用 `@pluxel/services/logging` 的 `logging(plan, { policyStore })` desc
 2. 初始化持久化 plugin policy
 3. 后续服务准备完成，启动 plugin graph
 4. 关闭时先停止 plugin graph/effects
-5. 释放 root binding，flush policy 和 sinks，释放 LogTape 安装与 process dispose hook
+5. 释放 root binding，flush policy 和 sinks，通过 LogTape reset 释放安装与其自有 process dispose hook
 ```
 
 Logging 的安装与关闭均归 Host service plan 所有。Core root 创建到 Logging prepare 之前的日志不承诺被此 sink 捕获。

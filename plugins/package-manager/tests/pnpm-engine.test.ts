@@ -152,7 +152,7 @@ import { requirePluginService } from ${JSON.stringify(new URL('dist/internal.mjs
 const addresses = ${JSON.stringify(names.map(address))}
 const host = await runHostApplication(() => ({
   plugins: [], sources: [dynamicSource({ kind: 'directory', path: ${JSON.stringify(store.entriesDir)}, include: ['*.mjs'] })],
-  state: { initial: { autoStart: addresses } } }
+  state: { initial: { autoStart: addresses } }
 }), { startup: { root: ${JSON.stringify(root)}, mode: 'production', env: {}, bindings: {} }, frameworkModules: {
   '@pluxel/core': ${JSON.stringify(new URL('dist/index.mjs', coreManifest).href)},
   '@pluxel/core/toolchain': ${JSON.stringify(new URL('dist/toolchain.mjs', coreManifest).href)}

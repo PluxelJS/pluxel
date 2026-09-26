@@ -16,10 +16,10 @@ export const WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE =
 export const WORKBENCH_FEDERATION_PRODUCER_INVENTORY_VERSION = 1 as const
 export const WORKBENCH_FEDERATION_SHARE_STRATEGY = 'loaded-first' as const
 export const WORKBENCH_FEDERATION_BRIDGE = 'react' as const
-export const WORKBENCH_FEDERATION_VITE_VERSION = '1.21.1' as const
-export const WORKBENCH_FEDERATION_RUNTIME_VERSION = '2.9.0' as const
-export const WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION = '2.9.0' as const
-export const WORKBENCH_FEDERATION_MANTINE_VERSION = '9.5.2' as const
+export const WORKBENCH_FEDERATION_VITE_VERSION = '1.22.1' as const
+export const WORKBENCH_FEDERATION_RUNTIME_VERSION = '2.9.1' as const
+export const WORKBENCH_FEDERATION_REACT_BRIDGE_VERSION = '2.9.1' as const
+export const WORKBENCH_FEDERATION_MANTINE_VERSION = '9.6.3' as const
 
 /**
  * Profile 1 platform shares. Producers cannot add, remove, override, or provide

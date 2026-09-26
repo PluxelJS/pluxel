@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { defineCommand, Result, type CommandContext } from '../src/index'
 import { Type, obj } from '../src/typebox'
 
@@ -155,22 +155,36 @@ describe('command execution', () => {
 	})
 
 	it('passes timeout through the handler signal and waits for cleanup', async () => {
-		let cleaned = false
-		const command = defineCommand({
-			name: 'wait.deadline',
-			description: 'Wait until cancelled.',
-			input: obj({}),
-			async execute(_input, context) {
-				await new Promise<void>((resolve) =>
-					context.signal!.addEventListener('abort', () => resolve(), { once: true }),
-				)
-				cleaned = true
-				throw context.signal!.reason
-			},
-		})
-		const result = await command.execute({}, { deadlineMs: Date.now() + 5 })
-		expect(cleaned).toBe(true)
-		expect(result.isErr() && result.error.code).toBe('TIMEOUT')
+		vi.useFakeTimers()
+		try {
+			let cleaned = false
+			let markEntered!: () => void
+			const entered = new Promise<void>((resolve) => {
+				markEntered = resolve
+			})
+			const command = defineCommand({
+				name: 'wait.deadline',
+				description: 'Wait until cancelled.',
+				input: obj({}),
+				async execute(_input, context) {
+					await new Promise<void>((resolve) => {
+						context.signal!.addEventListener('abort', () => resolve(), { once: true })
+						markEntered()
+					})
+					cleaned = true
+					throw context.signal!.reason
+				},
+			})
+			const execution = command.execute({}, { deadlineMs: Date.now() + 5 })
+			await entered
+			expect(cleaned).toBe(false)
+			await vi.advanceTimersByTimeAsync(5)
+			const result = await execution
+			expect(cleaned).toBe(true)
+			expect(result.isErr() && result.error.code).toBe('TIMEOUT')
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it('retains a framework deadline through an intermediate signal composition', async () => {

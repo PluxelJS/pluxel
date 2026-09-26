@@ -29,6 +29,8 @@ describe('Node artifact compiler', () => {
 		const host = createCoreInternalTestHost()
 		const compiler = new NodeArtifactCompiler(host.ctx, {
 			cacheDir: fixture.getPath('.pluxel/artifacts'),
+			// Rebuilds are triggered explicitly below; filesystem events would race the mock queue.
+			watch: false,
 		})
 		const declaration = defineNodeModule(pathToFileURL(fixture.getPath('plugin.ts')), './task.ts')
 		const updates: URL[][] = [[], []]

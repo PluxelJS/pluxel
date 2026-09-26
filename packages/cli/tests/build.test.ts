@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import {
@@ -10,6 +11,11 @@ import {
 	type BuildRuntimeConfig,
 } from '@pluxel/rolldown/build'
 import { runWithTsdown } from '@pluxel/rolldown/internal/cli'
+
+const toolchainRequire = createRequire(
+	createRequire(import.meta.url).resolve('@pluxel/rolldown/build'),
+)
+const reactExportNames = Object.keys(toolchainRequire('react')).filter((name) => name !== 'default')
 
 const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
 	pluginPackage({
@@ -187,10 +193,17 @@ const buildFixtures = {
 		].join('\n'),
 	},
 	runtimeUi: {
-		...fixturePackage('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...fixturePackage('react-dom', '19.2.8', ['.', './client']),
-		...fixturePackage('@mantine/core', '9.5.2', ['.']),
-		...fixturePackage('@mantine/hooks', '9.5.2', ['.']),
+		...fixturePackage('react', '19.3.0', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...fixturePackage('react-dom', '19.3.0', ['.', './client']),
+		// Shared export analysis inspects the toolchain's real Bridge and its React imports.
+		'node_modules/react/index.js': reactExportNames
+			.map((name) => `export const ${name} = 'must-not-bundle-react-${name}'`)
+			.join('\n'),
+		'node_modules/react/index.d.ts': reactExportNames
+			.map((name) => `export declare const ${name}: string`)
+			.join('\n'),
+		...fixturePackage('@mantine/core', '9.6.3', ['.']),
+		...fixturePackage('@mantine/hooks', '9.6.3', ['.']),
 		...fixturePackage('@pluxel/workbench', '0.1.0', [
 			'.',
 			'./client',
@@ -235,12 +248,12 @@ export function createWorkbenchBridge(identity, Renderer) {
 				version: '1.0.0',
 				type: 'module',
 				dependencies: {
-					'@mantine/core': '9.5.2',
-					'@mantine/hooks': '9.5.2',
+					'@mantine/core': '9.6.3',
+					'@mantine/hooks': '9.6.3',
 					'@pluxel/core': '1.0.0',
 					'@pluxel/workbench': '0.1.0',
-					react: '19.2.8',
-					'react-dom': '19.2.8',
+					react: '19.3.0',
+					'react-dom': '19.3.0',
 				},
 				peerDependencies: { capnweb: '0.12.0' },
 				devDependencies: { capnweb: '0.12.0' },

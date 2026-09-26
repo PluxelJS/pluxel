@@ -280,8 +280,8 @@ describe('Workbench federation producer plan', () => {
 
 describe('Workbench federation Profile 1 artifact contract', () => {
 	const compatibility = createWorkbenchFederationCompatibilitySet({
-		react: '19.2.8',
-		reactDom: '19.2.8',
+		react: '19.3.0',
+		reactDom: '19.3.0',
 		workbench: '1.0.0',
 	})
 	const plan = createWorkbenchFederationProducerPlan({

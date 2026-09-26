@@ -84,6 +84,6 @@
 	},
 	"inlinedDependencies": {
 		"@platformatic/vfs": "0.4.0",
-		"fs-fixture": "2.14.0"
+		"fs-fixture": "2.16.0"
 	}
 }

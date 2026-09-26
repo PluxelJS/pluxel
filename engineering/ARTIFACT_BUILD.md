@@ -98,9 +98,10 @@ Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy
 
 Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Application root 必须解析全部 Shell-provided peers；producer 的 React/Workbench/Mantine 与 winner 精确一致。开发显式选择源码 exports，distribution 使用 built exports，不从目录或已有 dist 猜测。Production builder 按同一 build contract 生成 Shell 与 producer，并用 canonical plan/compatibility set 校验全部候选。
 
-固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 1.21.1 的 used-export collector 不能用公开配置表达
-“完整 export surface”；builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，并在后置 transform 删除。
-这保证传递依赖需要的 React/Mantine export 仍出现在 host-backed facade，同时 marker 和 shared implementation 都不进入产物。
+固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 1.22.1 在真实 Mantine producer 中仍会遗漏
+used-export facade 的命名导出；builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，
+并在后置 transform 删除，确保完整 export surface。Marker 和 shared implementation 都不进入产物。移除此适配前必须
+验证真实 Mantine producer，不能仅凭简化 export fixture 或上游发布说明判断问题已解决。
 
 Dynamic types 使用 MF 2.9 的默认 `tsc`，不再把绝对 compiler executable 交给 package manager。开发 producer 默认省略
 dynamic type artifact，只校验浏览器运行时 contract；显式 required 或 production producer 仍生成并校验 `api` 与 `zip`

@@ -437,6 +437,7 @@ Host 关闭时沿现有生产顺序拒收新操作、等待已接纳调用并清
 纯文件操作使用 VFS fixture：
 
 ```ts twoslash
+import { expect } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 
 await using fixture = await createFixture({

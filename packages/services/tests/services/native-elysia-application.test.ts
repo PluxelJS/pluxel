@@ -172,10 +172,7 @@ describe('native generation Elysia application', () => {
 			).resolves.toBe('part')
 			await expect(
 				Promise.resolve(
-					ownerApplication!.fetch(
-						new Request('http://local.test/native/hello'),
-						ownerApplication!.server,
-					),
+					ownerApplication!.fetch(new Request('http://local.test/native/hello')),
 				).then((response) => response.text()),
 			).resolves.toBe('hello')
 			expect(() => ownerApplication?.get('/native/late', () => 'late')).toThrow(
@@ -187,10 +184,7 @@ describe('native generation Elysia application', () => {
 			const removed = await host.fetch(new Request('http://local.test/native/hello'))
 			expect(removed.status).toBe(404)
 			await expect(
-				ownerApplication!.fetch(
-					new Request('http://local.test/native/hello'),
-					ownerApplication!.server,
-				),
+				ownerApplication!.fetch(new Request('http://local.test/native/hello')),
 			).rejects.toThrow('Plugin owner stopped')
 		}
 	})

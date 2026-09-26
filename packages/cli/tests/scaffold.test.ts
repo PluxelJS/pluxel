@@ -373,7 +373,7 @@ describe('scaffold template rendering', () => {
 			"'@pluxel/core': ^1.0.0",
 		)
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			'vitest: 5.0.0',
+			'vitest: 5.0.2',
 		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)

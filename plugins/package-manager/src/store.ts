@@ -241,7 +241,6 @@ export class ManagedPackageStore {
 			autoInstallPeers: true,
 			preferFrozenLockfile: true,
 			update: false,
-			ignorePackageManifest: true,
 			ignoreScripts: this.options.ignoreScripts,
 			allowBuilds: Object.fromEntries(this.options.allowBuilds.map((name) => [name, true])),
 			minimumReleaseAge: this.options.minimumReleaseAgeMinutes,
@@ -587,6 +586,8 @@ function networkOptions(config: ResolvedConfig): InstallOptions['networkConfig']
 		fetchRetryMintimeout: config.fetchRetryMintimeout,
 		fetchRetryMaxtimeout: config.fetchRetryMaxtimeout,
 		fetchTimeout: config.fetchTimeout,
+		fetchWarnTimeoutMs: config.fetchWarnTimeoutMs,
+		fetchMinSpeedKiBps: config.fetchMinSpeedKiBps,
 		userAgent: config.userAgent,
 	}
 }

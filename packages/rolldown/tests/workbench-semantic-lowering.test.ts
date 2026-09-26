@@ -20,6 +20,7 @@ import {
 } from '../src/workbench/content-artifact'
 
 const testRequire = createRequire(import.meta.url)
+const reactExportNames = Object.keys(testRequire('react')).filter((name) => name !== 'default')
 const typescriptBin = resolve(dirname(testRequire.resolve('typescript/package.json')), 'bin/tsc')
 
 const owner = parsePluginDefinitionAddress({
@@ -54,11 +55,11 @@ function fixtureFiles(): Record<string, string> {
 			name: '@example/semantic-plugin',
 			type: 'module',
 			devDependencies: {
-				'@mantine/core': '9.5.2',
-				'@mantine/hooks': '9.5.2',
+				'@mantine/core': '9.6.3',
+				'@mantine/hooks': '9.6.3',
 				'@pluxel/workbench': '0.1.0',
-				react: '19.2.8',
-				'react-dom': '19.2.8',
+				react: '19.3.0',
+				'react-dom': '19.3.0',
 			},
 		}),
 		'tsconfig.json': JSON.stringify({
@@ -79,10 +80,17 @@ function fixtureFiles(): Record<string, string> {
 		'src/settings.tsx': 'export default function Settings() { return null }\n',
 		'src/picker.tsx': 'export default function Picker() { return null }\n',
 		'src/tool.tsx': 'export default function Tool() { return null }\n',
-		...packageFiles('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...packageFiles('react-dom', '19.2.8', ['.', './client']),
-		...packageFiles('@mantine/core', '9.5.2', ['.']),
-		...packageFiles('@mantine/hooks', '9.5.2', ['.']),
+		...packageFiles('react', '19.3.0', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...packageFiles('react-dom', '19.3.0', ['.', './client']),
+		// Shared export analysis also visits the toolchain's real Bridge implementation.
+		'node_modules/react/index.js': reactExportNames
+			.map((name) => `export const ${name} = 'must-not-bundle-react-${name}'`)
+			.join('\n'),
+		'node_modules/react/index.d.ts': reactExportNames
+			.map((name) => `export declare const ${name}: string`)
+			.join('\n'),
+		...packageFiles('@mantine/core', '9.6.3', ['.']),
+		...packageFiles('@mantine/hooks', '9.6.3', ['.']),
 		...packageFiles('@pluxel/workbench', '0.1.0', ['.', './internal/react', './client', './react']),
 		...packageFiles('capnweb', '0.4.0', ['.']),
 		'node_modules/capnweb/index.d.ts': `
@@ -1106,8 +1114,8 @@ class SemanticPlugin {
 			type: 'module',
 			devDependencies: {
 				'@pluxel/workbench': '0.1.0',
-				react: '19.2.8',
-				'react-dom': '19.2.8',
+				react: '19.3.0',
+				'react-dom': '19.3.0',
 			},
 		})
 		files['packages/nested/tsconfig.json'] = JSON.stringify({

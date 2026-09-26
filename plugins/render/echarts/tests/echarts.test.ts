@@ -44,6 +44,7 @@ async function startEChartsFixture(
 }
 
 describe('EChartsPlugin', () => {
+	// This compiles and starts a real native worker; cold startup is not a 5-second SLA.
 	it('demonstrates worker admission pressure as a Result while cancellation still rejects', async () => {
 		await using host = await createTestHost({
 			services: [
@@ -71,7 +72,7 @@ describe('EChartsPlugin', () => {
 		).rejects.toBe(aborted)
 		await host.stop(EChartsTestConsumer)
 		await expect(renderChart(charts, input)).rejects.toThrow(Error)
-	})
+	}, 30_000)
 
 	it('starts through the public Runtime host without requesting a worker artifact', async () => {
 		await using host = await createTestHost({

@@ -27,7 +27,7 @@ commands/Workbench publication。校验只读取 route generation 的 resolved d
 
 1. parse 并去重一批输入；
 2. 在 manifest copy 上应用 dependency change；
-3. 把完整 in-memory manifest 交给一次 `install()`；adapter 使用 `ignorePackageManifest`，失败不会先改写持久 manifest；
+3. 把完整 in-memory manifest 交给一次 `install()`；adapter 使用普通 `install` 的 in-memory project manifest，失败不会先改写持久 manifest；不能设置 `ignorePackageManifest`，新版 pnpm 中它表示只 fetch lockfile 且不创建 importer 链接；
 4. install 成功后先确认全部 direct dependency 已 materialize，再原子写 manifest；
 5. 从 pnpm v9 lockfile 提取每个 direct package 的可达 resolution/snapshot 图（含 peer context 与 optional edges），生成 wrapper 指纹；仅原子发布内容变化的 wrapper 并删除 stale wrapper；
 6. dynamic watcher 把文件变化合并为自己的 graph batch。

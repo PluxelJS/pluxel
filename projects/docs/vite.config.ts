@@ -13,6 +13,7 @@ function bundleModernMonacoTypeScriptWorker(): Plugin {
 			if (source === 'typescript' && importer?.includes('/modern-monaco/dist/lsp/typescript/')) {
 				return this.resolve('typescript-legacy', fileURLToPath(import.meta.url))
 			}
+			return undefined
 		},
 		transform(code, id) {
 			if (!id.includes('/modern-monaco/dist/lsp/typescript/setup.mjs')) return undefined

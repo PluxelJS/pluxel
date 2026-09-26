@@ -89,15 +89,15 @@ cookie、stream 和普通 function plugin 都按 Elysia 2 API 使用。需要这
 
 发布给其他宿主使用的 Plugin package 应把宿主支持的 Elysia 精确版本同时声明为 `peerDependencies` 和 `devDependencies`：peer
 声明与宿主互操作的兼容意图，dev dependency 则供本 package 编译、测试和编辑器解析。实际 singleton 还依赖构建与加载解析。不要把 Elysia 打进 Plugin bundle，也不要让
-Plugin 自带另一份 runtime copy。当前 HTTP 服务锁定 `2.0.0-beta.7`，对应声明为：
+Plugin 自带另一份 runtime copy。当前 HTTP 服务锁定 `2.0.0-beta.19`，对应声明为：
 
 ```json
 {
 	"peerDependencies": {
-		"elysia": "2.0.0-beta.7"
+		"elysia": "2.0.0-beta.19"
 	},
 	"devDependencies": {
-		"elysia": "2.0.0-beta.7"
+		"elysia": "2.0.0-beta.19"
 	}
 }
 ```
@@ -373,7 +373,7 @@ Registry 自己负责稳定 ID、重复注册、结果上限与幂等 disposer�
 
 ## 当前 Elysia 2 与 carrier 边界
 
-HTTP 服务当前锁定 Elysia `2.0.0-beta.7`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
+HTTP 服务当前锁定 Elysia `2.0.0-beta.19`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
 compile/seal、atomic generation publication、stream lease、owner withdrawal，以及上述三条 Node listener 路线的基础业务 WebSocket。
 以下能力仍不能按“所有 runtime 上完整等同原生 Elysia server”使用：
 
@@ -391,7 +391,16 @@ compile/seal、atomic generation publication、stream lease、owner withdrawal�
 
 ## 独立 Host
 
-安装 `@pluxel/services` 与 `elysia`；Elysia 是 HTTP 服务的可选 peer，不会随其他服务安装。
+安装 `@pluxel/services` 与 `elysia@2.0.0-beta.19`；Elysia 是 HTTP 服务的可选 peer，不会随其他服务安装。
+
+当前 Elysia 的发布前 schema 编译需要 TypeBox 1.3.23。生成项目已包含该约束；手动组装 pnpm 宿主时，在 `pnpm-workspace.yaml` 中加入：
+
+```yaml
+overrides:
+  typebox: 1.3.23
+```
+
+TypeBox 1.3.24 起删除了 Elysia 编译器仍使用的字段；待 Elysia 适配后再移除此约束。
 
 `elysia()` 安装 generation-scoped Elysia application；生产 Node 接线统一使用 srvx。
 `listenElysia()` 使用 Host 的请求分发，并拥有 listener 和 Host 的关闭；不需要重复传 handler。
@@ -413,7 +422,7 @@ await listener.close()
 不提供第二套公共 server API 或可替换 adapter。Management 与 Workbench 复用同一请求分发。
 
 宿主拥有 listener、port、process shutdown 和物理 server policy，部署 ingress、反向代理或平台拥有 TLS。Plugin 调用 application 的 `listen()` / `stop()` 会立即
-失败；`setup()` / `cleanup()` 也会立即失败，因为 Elysia 2 beta.7 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
+失败；`setup()` / `cleanup()` 也会立即失败，因为 Elysia 2 beta.19 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
 调用 Server view 的 `stop()`、`reload()`、`ref()` 或 `unref()`，不选择 srvx/runtime adapter。srvx 的接入属于宿主 carrier 工作，
 不是 Plugin 的第二套 Web 作者 API。
 

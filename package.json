@@ -52,7 +52,7 @@
 		"oxlint": "catalog:dev",
 		"oxlint-tsgolint": "catalog:dev",
 		"pncat": "catalog:dev",
-		"tegami": "1.4.0",
+		"tegami": "1.5.0",
 		"tsdown": "catalog:build",
 		"turbo": "catalog:dev",
 		"typescript": "catalog:dev",
