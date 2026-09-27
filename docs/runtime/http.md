@@ -73,6 +73,8 @@ Workbench document path     -> Workbench shell
 其余 navigation             -> 产品 SPA fallback
 ```
 
+应用 `publicDir` 只在业务路由未命中后服务普通静态文件；不存在的 HTML 导航可回退 `index.html`。静态文件读取失败返回 500 并在服务端记录原始原因，不会被当作 404 或回退到首页。
+
 因此 Plugin 显式声明 `GET /settings` 时会优先于产品 SPA 的 `/settings`。这是产品选择的最终路径所有权，不是 Host 可以从两个
 独立 Router 自动判定的冲突。应用可以约定 `/api`、`/webhooks` 等首段来降低误用，但 Pluxel 不把团队惯例升级为框架限制；真正需要
 提供独立产品页面的 Plugin 也可以拥有明确的 mount point，并自行配置该前端的 Router basename 与 asset base。

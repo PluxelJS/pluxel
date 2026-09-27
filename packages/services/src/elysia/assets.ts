@@ -1,5 +1,4 @@
-import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { extname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
 import { Readable } from 'node:stream'
 
@@ -24,6 +23,14 @@ export async function resolveApplicationAsset(
 	return toApplicationAssetResponse(request, publicDir, resolvePath(publicDir, 'index.html'))
 }
 
+function isMissingFile(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		'code' in error &&
+		(error.code === 'ENOENT' || error.code === 'ENOTDIR')
+	)
+}
+
 async function toApplicationAssetResponse(
 	request: Request,
 	publicDir: string,
@@ -31,14 +38,32 @@ async function toApplicationAssetResponse(
 ): Promise<Response | null> {
 	const relativePath = relative(publicDir, path)
 	if (relativePath.startsWith('..') || isAbsolute(relativePath)) return null
-	const fileStat = await stat(path).catch((): null => null)
+	let fileStat
+	try {
+		fileStat = await stat(path)
+	} catch (cause) {
+		if (isMissingFile(cause)) return null
+		console.error(new Error(`Cannot stat application asset ${path}`, { cause }))
+		return new Response('Internal Server Error', { status: 500 })
+	}
 	if (!fileStat?.isFile()) return null
 	const headers = new Headers({
 		'content-length': String(fileStat.size),
 		'content-type': applicationContentType(path),
 	})
 	if (request.method === 'HEAD') return new Response(null, { status: 200, headers })
-	return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, {
+	let handle
+	try {
+		handle = await open(path, 'r')
+	} catch (cause) {
+		console.error(new Error(`Cannot open application asset ${path}`, { cause }))
+		return new Response('Internal Server Error', { status: 500 })
+	}
+	const stream = handle.createReadStream({ autoClose: true })
+	stream.on('error', (cause) =>
+		console.error(new Error(`Cannot stream application asset ${path}`, { cause })),
+	)
+	return new Response(Readable.toWeb(stream) as unknown as BodyInit, {
 		status: 200,
 		headers,
 	})

@@ -3,10 +3,10 @@ import { createHtmlResponse, renderRuntimeUiHtml } from './html'
 import type { RenderHandler } from './router'
 
 export async function createStaticRenderer(options?: {
-	publicDirAbs?: string
+	publicDirAbs: string
 	uiBasePath?: string
 }): Promise<RenderHandler> {
-	const assets = await resolveBuiltAssets(options)
+	const assets = await resolveBuiltAssets(options.publicDirAbs)
 	const html = renderRuntimeUiHtml(assets, {
 		uiBasePath: options?.uiBasePath,
 		prebuiltAssets: true,

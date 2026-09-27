@@ -102,7 +102,7 @@ const services = [
 
 `requires` 保证绑定前 Workbench 后端已准备好，不依赖数组顺序。没有 UI 的应用可只安装 `managementHttp()`；`servicesPreset(..., { workbench: false })` 也保留认证与管理 HTTP/WebSocket 接入。
 
-`uiBasePath` 默认为 `/`，`publicDir` 默认使用 Workbench 包内的已构建资源，也可指定部署目录中含 `.vite/manifest.json` 与 `assets/` 的目录。固定管理路径优先，业务路由先于 Shell；只有匹配 UI 路径的 HTML 导航才回退到页面，普通 API miss 保留 404。Shell 资源（包括懒加载 chunk 与 preload）固定挂载在 `/__pluxel/workbench/` 下，不随 `uiBasePath` 改变，也不占用应用的 `/assets/`。Shell 支持 HEAD 与静态资源条件请求。服务在首次 Shell 请求时读取已构建 manifest；缺失或无效会使该请求失败，并保留资源路径诊断。
+`uiBasePath` 默认为 `/`，`publicDir` 默认使用 Workbench 包内的已构建资源，也可指定部署目录中含 `.vite/manifest.json` 与 `assets/` 的目录。该 manifest 必须包含 `shell/src/client.tsx` 且标记为入口；它引用的静态与动态 chunk、CSS、asset 文件均须存在于同一目录下，额外入口可共存。缺失或损坏时请重新构建或修正所指定目录，不会选择其他入口或旧产物。固定管理路径优先，业务路由先于 Shell；只有匹配 UI 路径的 HTML 导航才回退到页面，普通 API miss 保留 404。Shell 资源（包括懒加载 chunk 与 preload）固定挂载在 `/__pluxel/workbench/` 下，不随 `uiBasePath` 改变，也不占用应用的 `/assets/`。Shell 支持 HEAD 与静态资源条件请求。服务在首次 Shell 请求时读取并验证已构建 manifest；缺失或无效会使该请求失败，并保留资源路径诊断。不存在的资源返回 404，读取错误返回 500，部署路径与原始原因只写入服务端诊断。
 
 已有自己的 HTTP carrier 时，可使用 `@pluxel/workbench/shell` 的 `createWorkbenchShellHandler(options)`，在业务路由未匹配后调用。它返回可调用的 fetch 函数，并通过 `matchesRequest(request)` 提供开发中间件是否接管请求的判断。此纯 handler 不管理认证或连接生命周期；`workbenchHttp()` 负责 Shell 的 Host 挂载和释放。直接创建 handler 时会立即验证已构建资源。
 

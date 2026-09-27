@@ -4,7 +4,7 @@
 
 声明与身份读 [Definition 与 publication](#definition-与-publication)；会话/lease 读 [Session 与打开流程](#session-与打开流程)；Markdown/表单读 [Content trust boundary](#content-trust-boundary)；renderer 读 [MF2 与 React Bridge](#mf2-与-react-bridge) 及 [Renderer resource 与撤回](#renderer-resource-与撤回)。构建实现集中在 [ARTIFACT_BUILD](ARTIFACT_BUILD.md)。
 
-打包 Shell 的 Vite `base` 与静态资源挂载统一使用 `UI_PUBLIC_BASE`；HTML、懒加载 preload 和 CSS 资源都必须落到该路径，不能依赖应用根路径 `/assets/`。页面导航路径不改变资源挂载。
+打包 Shell 的 Vite `base` 与静态资源挂载统一使用 `UI_PUBLIC_BASE`；HTML、懒加载 chunk 和 CSS 资源都必须落到该路径，不能依赖应用根路径 `/assets/`。页面导航路径不改变资源挂载。构建在写出后验证固定入口 `shell/src/client.tsx`、其静态与动态 import 闭包及所引用的 JS/CSS/asset 文件；HTML 只预加载静态 import。库构建复制到 `dist/public` 后再次以发行入口验证。源码入口使用包根 `public`，发行入口使用 `dist/public`；自定义 `publicDir` 只读取所指定目录，不向其他目录回退。
 
 开发 producer 也编译为 `jsx/jsxs` 调用，以兼容生产构建的 Shell；不能根据宿主进程的 `NODE_ENV` 生成仅开发版 React 提供的 `jsxDEV`。构建语义变化同步更新 renderer revision，避免复用旧产物。
 
@@ -31,6 +31,7 @@ Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 
 - owner 从 Context 推导，publication 进入 generation effects，仅在 owner committed/running 后可见。失败启动不留下可见 entry。
 - 每次 View/Attachment open 产生 fresh roots；interactive Content 由框架建立 per-open root。Factory 只得到已认证 principal、服务端重新匹配的 frozen params 与 lifetime signal。
 - View/Attachment target 来自与 Workbench 兼容的 `capnweb` 模块；registry 的 `instanceof RpcTarget` 是实际 identity 边界。插件包构建只在语义分析确认该类 publication 时检查精确 peer/dev 与实际安装版本，并生成 `pluxel.workbenchCapnweb` 事实。静态构建按该事实把发布包的 import 指向 Workbench copy；动态来源加载时校验实际版并接入部署中的 Workbench facade。Content-only 与私有 RPC 不触发准入或桥接；绕过标准构建的来源仍受 registry identity 检查。
+- Factory 打开失败按实际边界分类；服务端记录原始异常、node/entry 与 `diagnosticId`，客户端只收到 code 和该标识。超时、owner 撤回及已导出 target 的重复使用分别报告，不自动重试。
 - Factory 不获得 raw request、consumer Context 或 service locator。Root 可借用领域服务，其 observer、任务和缓存随 signal/disposer 释放。
 - Attachment provider 只取得 exact consumer node address；可选 consumer root 保留自己的 owner、授权和 cleanup。两个 roots 不合并为万能 facade。
 

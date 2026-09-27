@@ -88,7 +88,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pnpm run build:web && pnpm run build:lib",
+		"build": "pnpm run build:web && pnpm run build:lib && node scripts/verify-shell.mjs",
 		"typecheck": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p shell/tsconfig.json",
 		"test": "vitest run && vitest run --config shell/vitest.config.ts",
 		"test:installed": "node tests/installed-vite.smoke.mjs",

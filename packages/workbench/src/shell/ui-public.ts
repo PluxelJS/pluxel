@@ -1,8 +1,6 @@
-import { createReadStream, existsSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
-import { fileURLToPath } from 'node:url'
-import { dirname, extname, resolve } from 'pathe'
+import { extname, resolve } from 'pathe'
 
 import { UI_PUBLIC_ASSET_BASE, UI_PUBLIC_BASE } from '../paths'
 
@@ -53,26 +51,23 @@ function getCacheControl(pathname: string): string {
 	return 'public, max-age=31536000, immutable'
 }
 
-function resolveUiPublicDirCandidates(moduleDir: string): string[] {
-	return [
-		// dist build: `dist/server/*` → `dist/public`
-		resolve(moduleDir, '../../public'),
-		// fallback layouts (dev/source)
-		resolve(moduleDir, '../public'),
-		resolve(moduleDir, './public'),
-	]
-}
-
-export function resolveDefaultUiPublicDir(): string | null {
-	const moduleDir = dirname(fileURLToPath(import.meta.url))
-	for (const candidate of resolveUiPublicDirCandidates(moduleDir)) {
-		if (existsSync(candidate)) return candidate
-	}
-	return null
+function isMissingFile(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		'code' in error &&
+		(error.code === 'ENOENT' || error.code === 'ENOTDIR')
+	)
 }
 
 async function sendFile(request: Request, absPath: string, absNorm: string): Promise<Response> {
-	const st = await stat(absPath).catch((): null => null)
+	let st
+	try {
+		st = await stat(absPath)
+	} catch (cause) {
+		if (isMissingFile(cause)) return new Response('Not Found', { status: 404 })
+		console.error(new Error(`Cannot stat Workbench UI asset ${absPath}`, { cause }))
+		return new Response('Internal Server Error', { status: 500 })
+	}
 	if (!st?.isFile()) return new Response('Not Found', { status: 404 })
 
 	const etag = `W/"${st.size}-${Math.floor(st.mtimeMs)}"`
@@ -98,7 +93,17 @@ async function sendFile(request: Request, absPath: string, absNorm: string): Pro
 	const method = (request.method ?? 'GET').toUpperCase()
 	if (method === 'HEAD') return new Response(null, { status: 200, headers })
 
-	const stream = createReadStream(absPath)
+	let handle
+	try {
+		handle = await open(absPath, 'r')
+	} catch (cause) {
+		console.error(new Error(`Cannot open Workbench UI asset ${absPath}`, { cause }))
+		return new Response('Internal Server Error', { status: 500 })
+	}
+	const stream = handle.createReadStream({ autoClose: true })
+	stream.on('error', (cause) =>
+		console.error(new Error(`Cannot stream Workbench UI asset ${absPath}`, { cause })),
+	)
 	const body = Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>
 	return new Response(body, { status: 200, headers })
 }

@@ -1,4 +1,6 @@
-import { writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createHost } from '@pluxel/host'
 import { elysia, createElysiaHandler } from '@pluxel/services/elysia'
 import { workbenchService } from '../src/service'
@@ -141,7 +143,7 @@ describe('Workbench UI HTML rendering', () => {
 			await detach()
 			await expect(
 				handle(new Request('http://local.dev/admin', { headers: { accept: 'text/html' } })),
-			).rejects.toThrow('Workbench UI manifest not found')
+			).rejects.toThrow('Workbench UI manifest')
 		} finally {
 			await server.close()
 			await host.close()
@@ -172,9 +174,6 @@ describe('Workbench UI HTML rendering', () => {
 
 describe('packaged shell HTTP boundary', () => {
 	it('serves navigation and immutable assets while allowing business/API fallthrough', async () => {
-		const { mkdtemp, mkdir, rm } = await import('node:fs/promises')
-		const { tmpdir } = await import('node:os')
-		const { join } = await import('node:path')
 		const { createWorkbenchShellHandler } = await import('../src/shell')
 		const publicDir = await mkdtemp(join(tmpdir(), 'workbench-shell-'))
 		try {
@@ -182,7 +181,7 @@ describe('packaged shell HTTP boundary', () => {
 			await mkdir(join(publicDir, 'assets'))
 			await writeFile(
 				join(publicDir, '.vite/manifest.json'),
-				JSON.stringify({ entry: { isEntry: true, file: 'assets/client.js' } }),
+				JSON.stringify({ 'shell/src/client.tsx': { isEntry: true, file: 'assets/client.js' } }),
 			)
 			await writeFile(join(publicDir, 'assets/client.js'), 'console.log("shell")')
 			const shell = await createWorkbenchShellHandler({ publicDir, uiBasePath: '/admin' })
@@ -236,6 +235,123 @@ describe('packaged shell HTTP boundary', () => {
 			expect(prefixedPage!.status).toBe(200)
 			const traversal = await shell(request('/__pluxel/workbench/assets/%2e%2e%2f%2e%2e%2fsecret'))
 			expect(traversal!.status).toBe(404)
+		} finally {
+			await rm(publicDir, { recursive: true, force: true })
+		}
+	})
+})
+
+describe('packaged Shell manifest contract', () => {
+	const entry = 'shell/src/client.tsx'
+	async function fixture(manifest: Record<string, unknown>, files: Record<string, string> = {}) {
+		const publicDir = await mkdtemp(join(tmpdir(), 'workbench-manifest-'))
+		await mkdir(join(publicDir, '.vite'))
+		await mkdir(join(publicDir, 'assets'))
+		await writeFile(join(publicDir, '.vite/manifest.json'), JSON.stringify(manifest))
+		for (const [name, body] of Object.entries(files)) await writeFile(join(publicDir, name), body)
+		return publicDir
+	}
+
+	it('allows other entries while loading only the declared Shell entry and checking lazy files', async () => {
+		const publicDir = await fixture(
+			{
+				other: { isEntry: true, file: 'assets/other.js' },
+				[entry]: {
+					isEntry: true,
+					file: 'assets/client.js',
+					imports: ['shared'],
+					dynamicImports: ['lazy'],
+				},
+				shared: { file: 'assets/shared.js', imports: [entry], css: ['assets/shared.css'] },
+				lazy: { file: 'assets/lazy.js', css: ['assets/lazy.css'] },
+			},
+			{
+				'assets/client.js': '',
+				'assets/shared.js': '',
+				'assets/shared.css': '',
+				'assets/lazy.js': '',
+				'assets/lazy.css': '',
+			},
+		)
+		try {
+			const { resolveBuiltAssets } = await import('../src/shell/assets')
+			const assets = await resolveBuiltAssets(publicDir)
+			expect(assets.js).toBe('/__pluxel/workbench/assets/client.js')
+			expect(assets.preload).toEqual(['/__pluxel/workbench/assets/shared.js'])
+			expect(assets.css).toEqual(['/__pluxel/workbench/assets/shared.css'])
+		} finally {
+			await rm(publicDir, { recursive: true, force: true })
+		}
+	})
+
+	it('rejects missing entry, missing referenced chunk, missing lazy file and incorrect asset base', async () => {
+		const { resolveBuiltAssets } = await import('../src/shell/assets')
+		const cases = [
+			[{ other: { isEntry: true, file: 'assets/other.js' } }, 'expected isEntry entry'],
+			[
+				{ [entry]: { isEntry: true, file: 'assets/client.js', imports: ['missing'] } },
+				'missing or invalid chunk',
+			],
+			[
+				{
+					[entry]: { isEntry: true, file: 'assets/client.js', dynamicImports: ['lazy'] },
+					lazy: { file: 'assets/lazy.js' },
+				},
+				'assets/lazy.js',
+			],
+			[{ [entry]: { isEntry: true, file: '/assets/client.js' } }, 'relative path under assets/'],
+		] as const
+		for (const [manifest, message] of cases) {
+			const publicDir = await fixture(manifest, { 'assets/client.js': '' })
+			try {
+				await expect(resolveBuiltAssets(publicDir)).rejects.toThrow(message)
+			} finally {
+				await rm(publicDir, { recursive: true, force: true })
+			}
+		}
+	})
+
+	it('reports the selected invalid manifest and IO failures instead of serving an alternative', async () => {
+		const publicDir = await fixture(
+			{ [entry]: { isEntry: true, file: 'assets/client.js' } },
+			{ 'assets/client.js': '' },
+		)
+		try {
+			const { resolveBuiltAssets } = await import('../src/shell/assets')
+			await writeFile(join(publicDir, '.vite/manifest.json'), '{invalid')
+			await expect(resolveBuiltAssets(publicDir)).rejects.toThrow(
+				join(publicDir, '.vite/manifest.json'),
+			)
+			await writeFile(
+				join(publicDir, '.vite/manifest.json'),
+				JSON.stringify({ [entry]: { isEntry: true, file: 'assets/client.js' } }),
+			)
+			await symlink('loop', join(publicDir, 'assets/loop'))
+			const { createWorkbenchShellHandler } = await import('../src/shell')
+			const shell = await createWorkbenchShellHandler({ publicDir })
+			const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+			try {
+				const response = await shell(new Request('http://host.test/__pluxel/workbench/assets/loop'))
+				expect(response?.status).toBe(500)
+				expect(logged.mock.calls[0]?.[0]).toEqual(
+					expect.objectContaining({
+						message: expect.stringContaining('Cannot stat Workbench UI asset'),
+					}),
+				)
+				await writeFile(join(publicDir, 'assets/private.js'), 'secret')
+				await chmod(join(publicDir, 'assets/private.js'), 0)
+				const unreadable = await shell(
+					new Request('http://host.test/__pluxel/workbench/assets/private.js'),
+				)
+				expect(unreadable?.status).toBe(500)
+				expect(logged.mock.calls[1]?.[0]).toEqual(
+					expect.objectContaining({
+						message: expect.stringContaining('Cannot open Workbench UI asset'),
+					}),
+				)
+			} finally {
+				logged.mockRestore()
+			}
 		} finally {
 			await rm(publicDir, { recursive: true, force: true })
 		}
