@@ -55,7 +55,8 @@ function selectedText(code: string, location: InspectionSourceLocation) {
 }
 async function packageFixture() {
 	const fixture = await createFixture({
-		'package.json': JSON.stringify({ private: true, workspaces: ['plugins/*'] }),
+		'package.json': JSON.stringify({ private: true }),
+		'pnpm-workspace.yaml': 'packages:\n  - plugins/*\n',
 		'plugins/mail/package.json': manifest,
 		'plugins/mail/src/index.ts': plugin,
 		'installed/mail/package.json': manifest,

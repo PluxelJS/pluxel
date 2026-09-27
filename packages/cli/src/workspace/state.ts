@@ -1,26 +1,13 @@
 import { existsSync } from 'node:fs'
 import { isAbsolute, normalize, relative, resolve } from 'pathe'
-import type { PackageJson } from 'pkg-types'
 import { loadOfficialCapability } from '../capability-loader'
 import { CLI_DEFAULTS } from '../config'
 import { detectPm, type PM } from '../utils/pm'
-import { manifestPathFor, readRawManifest, writeManifest } from './manifest'
 import { type PnpmWorkspace, readPnpmWorkspace, writePnpmWorkspace } from './pnpm'
 
-export type WorkspaceTarget = 'manifest' | 'pnpm'
+export type WorkspaceTarget = 'pnpm'
 
 type LoadWorkspaceInfo = (typeof import('@pluxel/rolldown/workspace/info'))['loadWorkspaceInfo']
-
-type WorkspacesObject = Exclude<NonNullable<PackageJson['workspaces']>, string[]>
-
-export interface ManifestSource {
-	path: string
-	raw: string
-	data: PackageJson
-	mode: 'array' | 'object' | null
-	objectSource?: WorkspacesObject
-	patterns: string[]
-}
 
 export interface PnpmSource {
 	path: string
@@ -33,7 +20,6 @@ export interface WorkspaceState {
 	root: string
 	packageManager: PM
 	info: Awaited<ReturnType<LoadWorkspaceInfo>>
-	manifest?: ManifestSource
 	pnpm?: PnpmSource
 	effectivePatterns: string[]
 }
@@ -51,24 +37,9 @@ export interface PatternInput {
 }
 
 export async function loadWorkspaceState(root: string): Promise<WorkspaceState> {
-	const { extractPackageWorkspaces, loadWorkspaceInfo } =
-		await loadOfficialCapability('rolldown-workspace-info')
+	const { loadWorkspaceInfo } = await loadOfficialCapability('rolldown-workspace-info')
 	const absoluteRoot = normalize(resolve(root))
 	const info = await loadWorkspaceInfo(absoluteRoot)
-	const manifestPath = manifestPathFor(absoluteRoot)
-	let manifest: ManifestSource | undefined
-	if (manifestPath) {
-		const { data, raw } = readRawManifest(manifestPath)
-		const { mode, patterns, objectSource } = readManifestPatterns(data)
-		manifest = {
-			path: manifestPath,
-			raw,
-			data,
-			mode,
-			objectSource,
-			patterns,
-		}
-	}
 	const pnpmSource = readPnpmWorkspace(absoluteRoot)
 	let pnpm: PnpmSource | undefined
 	if (pnpmSource) {
@@ -80,17 +51,12 @@ export async function loadWorkspaceState(root: string): Promise<WorkspaceState> 
 			patterns: [...current],
 		}
 	}
-	const effectivePatterns = pnpm?.patterns.length
-		? [...pnpm.patterns]
-		: manifest?.patterns.length
-			? [...manifest.patterns]
-			: extractPackageWorkspaces(info.manifest)
+	const effectivePatterns = pnpm?.patterns ?? []
 
 	return {
 		root: absoluteRoot,
 		packageManager: await detectPm(absoluteRoot, CLI_DEFAULTS.packageManager.fallback),
 		info,
-		manifest,
 		pnpm,
 		effectivePatterns,
 	}
@@ -115,18 +81,7 @@ async function mutateWorkspacePattern(
 	const changedTargets: WorkspaceTarget[] = []
 
 	for (const target of targets) {
-		if (target === 'manifest' && state.manifest) {
-			const current = new Set(state.manifest.patterns)
-			const had = current.has(pattern)
-			if (action === 'add' ? had : !had) continue
-			if (action === 'add') current.add(pattern)
-			else current.delete(pattern)
-			const list = sortPatterns([...current])
-			applyManifestPatterns(state.manifest, list)
-			writeManifest(state.manifest.path, state.manifest.data, state.manifest.raw)
-			state.manifest.patterns = list
-			changedTargets.push('manifest')
-		} else if (target === 'pnpm' && state.pnpm) {
+		if (target === 'pnpm' && state.pnpm) {
 			const current = new Set(state.pnpm.patterns)
 			const had = current.has(pattern)
 			if (action === 'add' ? had : !had) continue
@@ -158,60 +113,29 @@ export function normalizePatternInput(root: string, input: string): PatternInput
 	let normalized = value.replaceAll('\\', '/')
 	if (normalized.startsWith('./')) normalized = normalized.slice(2)
 	if (!normalized) normalized = '.'
+	const member = normalized.startsWith('!') ? normalized.slice(1) : normalized
+	if (
+		!member ||
+		member.startsWith('/') ||
+		member.split('/').includes('..') ||
+		/[?[\]]/.test(member)
+	) {
+		throw new Error(
+			`Unsupported workspace pattern ${JSON.stringify(input)}; expected a path inside ${root} using * or **`,
+		)
+	}
 	return { pattern: normalized, hasGlob }
 }
 
 function resolveTargets(state: WorkspaceState): WorkspaceTarget[] {
 	const targets: WorkspaceTarget[] = []
 	if (state.pnpm) targets.push('pnpm')
-	if (state.manifest) targets.push('manifest')
 	if (targets.length === 0) {
-		throw new Error('No workspace configuration files found (package.json or pnpm-workspace.yaml)')
+		throw new Error(
+			`Cannot change workspace members without ${resolve(state.root, 'pnpm-workspace.yaml')}`,
+		)
 	}
 	return targets
-}
-
-function readManifestPatterns(
-	manifest: PackageJson,
-): Pick<ManifestSource, 'mode' | 'patterns' | 'objectSource'> {
-	const raw = manifest.workspaces
-	if (!raw) {
-		return {
-			mode: null,
-			patterns: [] as string[],
-			objectSource: undefined as WorkspacesObject | undefined,
-		}
-	}
-	if (Array.isArray(raw)) {
-		return { mode: 'array' as const, patterns: [...raw], objectSource: undefined }
-	}
-	const objectSource: WorkspacesObject = { ...raw }
-	const packages = Array.isArray(raw.packages) ? [...raw.packages] : []
-	return { mode: 'object' as const, patterns: packages, objectSource }
-}
-
-function applyManifestPatterns(source: ManifestSource, patterns: string[]) {
-	if (patterns.length === 0) {
-		delete source.data.workspaces
-		return
-	}
-	if (source.mode === 'array') {
-		source.data.workspaces = [...patterns]
-		return
-	}
-
-	const current = source.data.workspaces
-	const base: WorkspacesObject =
-		source.mode === 'object'
-			? { ...source.objectSource }
-			: current && !Array.isArray(current)
-				? { ...current }
-				: {}
-
-	base.packages = [...patterns]
-	source.data.workspaces = base
-	source.mode = 'object'
-	source.objectSource = base
 }
 
 function sortPatterns(patterns: string[]) {

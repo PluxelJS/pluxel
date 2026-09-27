@@ -12,11 +12,21 @@ export async function safeReadManifestWithFs(
 	fs: WorkspaceFs = nodeWorkspaceFs,
 ): Promise<WorkspacePackageJson | undefined> {
 	const manifestPath = resolve(dir, 'package.json')
-	if (!fs.existsSync(manifestPath)) return undefined
+	let raw: string
 	try {
-		return JSON.parse(await readTextFile(fs, manifestPath)) as WorkspacePackageJson
-	} catch {
-		return undefined
+		raw = await readTextFile(fs, manifestPath)
+	} catch (cause) {
+		if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') return undefined
+		throw new Error(`Cannot read package manifest ${manifestPath}`, { cause })
+	}
+	try {
+		const value: unknown = JSON.parse(raw)
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			throw new Error('Expected a JSON object')
+		}
+		return value as WorkspacePackageJson
+	} catch (cause) {
+		throw new Error(`Invalid package manifest ${manifestPath}`, { cause })
 	}
 }
 

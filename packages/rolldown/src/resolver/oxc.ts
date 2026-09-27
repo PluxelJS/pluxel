@@ -54,7 +54,7 @@ const DEFAULT_EXTENSIONS = [
 	'.json',
 ] as const
 
-const resolverCache = new Map<string, OxcResolverFactory | null>()
+const resolverCache = new Map<string, OxcResolverFactory>()
 
 /** Discard cached package metadata and resolutions after a producer republishes installed packages. */
 export function clearOxcResolutionCache(): void {
@@ -66,19 +66,22 @@ export function resolveWithOxc(
 	request: string,
 	options: OxcToolchainResolveOptions = {},
 ): OxcResolveHit | null {
-	const resolver = getOxcResolver(options)
-	if (!resolver) return null
-
+	const importer = resolve(directory)
+	const resolver = getOxcResolver(options, importer, request)
+	let result: OxcResolveResult
 	try {
-		const result = resolver.sync(resolve(directory), request)
-		if (!result.path) return null
-		return {
-			path: result.path,
-			packageJsonPath: result.packageJsonPath,
-			moduleType: result.moduleType,
-		}
-	} catch {
-		return null
+		result = resolver.sync(importer, request)
+	} catch (cause) {
+		throw new Error(
+			`OXC resolution failed for ${JSON.stringify(request)} from ${importer} with conditions ${JSON.stringify(options.conditionNames ?? DEFAULT_CONDITIONS)}`,
+			{ cause },
+		)
+	}
+	if (!result.path) return null
+	return {
+		path: result.path,
+		packageJsonPath: result.packageJsonPath,
+		moduleType: result.moduleType,
 	}
 }
 
@@ -94,18 +97,25 @@ export function resolvePackageJsonPathWithOxc(
 	return entry?.packageJsonPath ?? null
 }
 
-function getOxcResolver(options: OxcToolchainResolveOptions): OxcResolverFactory | null {
+function getOxcResolver(
+	options: OxcToolchainResolveOptions,
+	importer: string,
+	request: string,
+): OxcResolverFactory {
 	const normalized = normalizeOxcOptions(options)
 	const key = JSON.stringify(normalized)
-	if (resolverCache.has(key)) return resolverCache.get(key) ?? null
+	const cached = resolverCache.get(key)
+	if (cached) return cached
 
 	try {
 		const resolver = new ResolverFactory(normalized)
 		resolverCache.set(key, resolver)
 		return resolver
-	} catch {
-		resolverCache.set(key, null)
-		return null
+	} catch (cause) {
+		throw new Error(
+			`Cannot initialize OXC resolver for ${JSON.stringify(request)} from ${importer} with conditions ${JSON.stringify(normalized.conditionNames)}`,
+			{ cause },
+		)
 	}
 }
 

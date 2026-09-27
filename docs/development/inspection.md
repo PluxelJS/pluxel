@@ -38,7 +38,7 @@ node dev/inspect.mts
 
 脚本使用包的发布入口。使用本地 source overlay 时，先按[源码工作区流程](./source-workspaces.md)运行 `pluxel source build --package @pluxel/rolldown`，使 Node 可加载工具本身的构建产物。不要让普通 Node 脚本直接导入工具链的内部源码。
 
-`root` 是明确选定的项目或 workspace 目录；相对路径在打开时相对当前工作目录解析，之后固定为绝对真实路径。Workspace 包来自 `package.json` 的 `workspaces` 或 `pnpm-workspace.yaml` 的 `packages` 声明。pnpm 当前支持缩进的块状字符串列表；复杂或内联 YAML 写法会明确报告分析不可用。没有声明时不会猜测 `packages/` 或 `apps/` 目录。
+`root` 是明确选定的项目或 workspace 目录；相对路径在打开时相对当前工作目录解析，之后固定为绝对真实路径。Workspace 成员只来自 `pnpm-workspace.yaml` 的 `packages` 声明；没有该文件时只检查根 `package.json`，不会猜测 `packages/` 或 `apps/` 目录。根清单中的 `workspaces` 字段会报错；请把成员列表移到 `pnpm-workspace.yaml`。成员清单损坏、无权限读取或 patterns 无效时查询失败，并指出对应文件。
 
 `plugins()` 默认查询该 workspace 的包；指定 `packageName` 时，优先选择 workspace 包，再从 root 解析已安装的包。插件身份来自包根公开导出，结果同时标明具体 Plugin 与 abstract requirement。查询需要可分析的源码声明：只有已 lower 的发行 JavaScript 时，会返回分析缺口，不能据此推断源码中没有插件。
 

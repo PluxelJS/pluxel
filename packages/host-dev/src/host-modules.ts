@@ -63,16 +63,40 @@ async function findPackageInfo(filePath: string): Promise<PackageInfo | null> {
 	let current = dirname(filePath)
 	const filesystemRoot = parse(current).root
 	while (current !== filesystemRoot) {
+		const manifestPath = resolve(current, 'package.json')
+		let source: string
 		try {
-			const manifest = JSON.parse(await readFile(resolve(current, 'package.json'), 'utf8'))
-			return {
-				name: typeof manifest?.name === 'string' ? manifest.name : null,
-				manifest,
+			source = await readFile(manifestPath, 'utf8')
+		} catch (cause) {
+			if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') {
+				const parent = dirname(current)
+				if (parent === current) break
+				current = parent
+				continue
 			}
-		} catch {}
-		const parent = dirname(current)
-		if (parent === current) break
-		current = parent
+			throw new Error(
+				`Cannot read package manifest ${manifestPath} while classifying ${filePath}`,
+				{ cause },
+			)
+		}
+		let manifest: unknown
+		try {
+			manifest = JSON.parse(source)
+		} catch (cause) {
+			throw new Error(`Invalid package manifest ${manifestPath} while classifying ${filePath}`, {
+				cause,
+			})
+		}
+		if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+			throw new Error(
+				`Invalid package manifest ${manifestPath} while classifying ${filePath}: expected a JSON object`,
+			)
+		}
+		const packageManifest = manifest as PackageManifest
+		return {
+			name: typeof packageManifest.name === 'string' ? packageManifest.name : null,
+			manifest: packageManifest,
+		}
 	}
 	return null
 }

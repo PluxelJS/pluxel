@@ -21,10 +21,8 @@ async function fixture() {
 	roots.push(root)
 	const packageRoot = join(root, 'plugins/mail')
 	await mkdir(join(packageRoot, 'src'), { recursive: true })
-	await writeFile(
-		join(root, 'package.json'),
-		JSON.stringify({ private: true, workspaces: ['plugins/*'] }),
-	)
+	await writeFile(join(root, 'package.json'), JSON.stringify({ private: true }))
+	await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - plugins/*\n')
 	await writeFile(
 		join(packageRoot, 'package.json'),
 		JSON.stringify({

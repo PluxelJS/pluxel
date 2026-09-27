@@ -2,7 +2,26 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { resolvePackageJsonPathWithOxc } from '../../src/resolver/oxc'
+import { resolvePackageJsonPathWithOxc, resolveWithOxc } from '../../src/resolver/oxc'
+
+describe('resolveWithOxc', () => {
+	it('preserves invalid resolver configuration instead of reporting an absent module', () => {
+		const invalid = { conditionNames: [42] as unknown as readonly string[] }
+		let failure: unknown
+		try {
+			resolveWithOxc(process.cwd(), 'missing', invalid)
+		} catch (cause) {
+			failure = cause
+		}
+		expect(failure).toBeInstanceOf(Error)
+		expect((failure as Error).message).toContain('missing')
+		expect((failure as Error).cause).toBeInstanceOf(Error)
+		expect(() => resolveWithOxc(process.cwd(), 'missing', invalid)).toThrow(
+			'Cannot initialize OXC resolver',
+		)
+		expect(resolveWithOxc(process.cwd(), 'missing')).toBeNull()
+	})
+})
 
 describe('resolvePackageJsonPathWithOxc', () => {
 	it('uses package entry metadata when package.json is not exported', async () => {

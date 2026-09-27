@@ -44,7 +44,8 @@ describe('inspection workspace discovery', () => {
 
 	it('rejects duplicate names and malformed manifests instead of choosing a winner', async () => {
 		const root = await fixture()
-		await manifest(root, { workspaces: ['modules/*'] })
+		await manifest(root, { name: 'root' })
+		await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - modules/*\n')
 		await manifest(join(root, 'modules/a'), { name: 'same' })
 		await manifest(join(root, 'modules/b'), { name: 'same' })
 		await expect(discoverPackages(root)).rejects.toMatchObject({ code: 'ambiguous_package' })
@@ -71,10 +72,13 @@ describe('inspection workspace discovery', () => {
 		const source = await fixture()
 		await manifest(source, { name: 'source' })
 		for (const pattern of ['../*', `${source}/*`]) {
-			await manifest(root, { workspaces: [pattern] })
+			await writeFile(
+				join(root, 'pnpm-workspace.yaml'),
+				`packages:\n  - ${JSON.stringify(pattern)}\n`,
+			)
 			await expect(discoverPackages(root)).rejects.toMatchObject({ code: 'analysis_unavailable' })
 		}
-		await manifest(root, { workspaces: ['linked'] })
+		await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - linked\n')
 		await symlink(source, join(root, 'linked'), 'dir')
 		const packages = await discoverPackages(root)
 		expect(packages.some((item) => item.root === source)).toBe(true)
@@ -109,7 +113,8 @@ describe('inspection workspace discovery', () => {
 
 	it('rediscovers membership and symlink targets on the next query', async () => {
 		const root = await fixture()
-		await manifest(root, { workspaces: ['modules/*'] })
+		await manifest(root, { name: 'root' })
+		await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - modules/*\n')
 		expect(await discoverPackages(root)).toHaveLength(1)
 		await manifest(join(root, 'modules/new'), { name: 'new' })
 		expect(await discoverPackages(root)).toHaveLength(2)

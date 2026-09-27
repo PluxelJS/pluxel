@@ -1,6 +1,6 @@
 import { glob, readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { extractPackageWorkspaces, parsePnpmWorkspace } from '../workspace/info.ts'
+import { parsePnpmWorkspace } from '../workspace/info.ts'
 import type { WorkspacePackageJson } from '../workspace/package-json.ts'
 
 export type InspectionPackage = Readonly<{
@@ -98,15 +98,10 @@ async function readManifest(root: string): Promise<InspectionPackage | undefined
 		)
 	}
 	if (manifest.workspaces !== undefined) {
-		const workspaces = Array.isArray(manifest.workspaces)
-			? manifest.workspaces
-			: manifest.workspaces?.packages
-		if (!Array.isArray(workspaces) || workspaces.some((item) => typeof item !== 'string')) {
-			throw new InspectionWorkspaceError(
-				'analysis_unavailable',
-				`Invalid workspaces: ${manifestPath}`,
-			)
-		}
+		throw new InspectionWorkspaceError(
+			'analysis_unavailable',
+			`Workspace membership belongs in pnpm-workspace.yaml, not ${manifestPath}`,
+		)
 	}
 	return { root, manifestPath, manifest, source }
 }
@@ -133,7 +128,7 @@ export async function discoverPackages(
 	}
 	const rootPackage = await readManifest(canonicalRoot)
 	checkSignal(options)
-	const patterns = new Set(extractPackageWorkspaces(rootPackage?.manifest))
+	const patterns = new Set<string>()
 	try {
 		const file = join(canonicalRoot, 'pnpm-workspace.yaml')
 		const source = await readFile(file, 'utf8')

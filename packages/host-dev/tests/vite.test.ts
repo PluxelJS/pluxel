@@ -287,6 +287,20 @@ describe('host-dev Vite plugin stack', () => {
 		)
 	})
 
+	it('rejects a broken nearest package manifest instead of inheriting the parent type', async () => {
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
+		const packageRoot = join(root, 'node_modules', 'fixture-broken')
+		await mkdir(packageRoot, { recursive: true })
+		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }))
+		await writeFile(join(packageRoot, 'package.json'), '{broken')
+		const entry = join(packageRoot, 'index.js')
+		await writeFile(entry, 'module.exports = true\n')
+		await expect(createHostModuleClassifier().classifyFile(entry)).rejects.toThrow(
+			join(packageRoot, 'package.json'),
+		)
+	})
+
 	it('isolates Host source conditions from default SSR loading', async () => {
 		await using fixture = await createDiskFixture()
 		const root = fixture.path

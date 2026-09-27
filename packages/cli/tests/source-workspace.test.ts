@@ -35,7 +35,7 @@ import {
 	sourceCheckoutInstallOverrides,
 } from '../src/source/plan'
 import { registerSourceCheckout } from '../src/source/registry'
-import { sourcePackageNeedsBuild } from '../src/source/workspace'
+import { scanSourceWorkspace, sourcePackageNeedsBuild } from '../src/source/workspace'
 
 const temporaryRoots: string[] = []
 
@@ -94,6 +94,19 @@ describe('source workspace configuration', () => {
 				'https://github.com/PluxelJS/pluxel': resolve(root, 'checkouts/pluxel'),
 			},
 		})
+	})
+})
+
+describe('source workspace membership', () => {
+	it('keeps catalog-only pnpm workspaces at the root package', async () => {
+		const root = await createTemporaryRoot()
+		await writeJson(resolve(root, 'package.json'), { name: 'root' })
+		await writeJson(resolve(root, 'packages/hidden/package.json'), { name: 'hidden' })
+		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'catalog:\n  example: 1.0.0\n')
+		const scanned = await scanSourceWorkspace(root)
+		expect(scanned.packages.map((pkg) => pkg.name)).toEqual(['root'])
+		await writeJson(resolve(root, 'package.json'), { name: 'root', workspaces: ['packages/*'] })
+		await expect(scanSourceWorkspace(root)).rejects.toThrow('pnpm-workspace.yaml')
 	})
 })
 
