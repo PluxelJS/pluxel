@@ -8,6 +8,19 @@ import { expect, it } from 'vitest'
 
 const execFile = promisify(execFileCallback)
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
+const UNSELECTED_BACKEND_LOAD_PATTERN =
+	/\/node_modules\/(?:@logtape\/(?:file|pretty)|capnweb|@pluxel\/workbench)(?:\/|$)|\/(?:logging|management)(?:\/|[-.])/
+
+it('does not confuse a pnpm peer suffix with a loaded capnweb module', () => {
+	const packageUrl =
+		'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_capnweb@0.12.0/node_modules/@pluxel/services/dist/vault.mjs'
+	expect(UNSELECTED_BACKEND_LOAD_PATTERN.test(packageUrl)).toBe(false)
+	expect(
+		UNSELECTED_BACKEND_LOAD_PATTERN.test(
+			'file:///tmp/node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.js',
+		),
+	).toBe(true)
+})
 const run = async (file, args, cwd) => {
 	try {
 		return await execFile(file, args, { cwd, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })
@@ -208,7 +221,7 @@ try {
  assert.throws(() => second.ctx.require(Vault), ContextCapabilityMissingError)
  assert.equal('database' in first.ctx, false)
  assert.equal('database' in second.ctx, false)
- assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
+ assert.equal(loads.some(url => ${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
  assert.equal(loads.some(url => /age-encryption/.test(url)), true, 'prepare loads the explicitly selected backend')
  assert.equal(loads.some(url => /(?:@pluxel\\/runtime|\\/pg\\/|pglite)/.test(url)), false)
 } finally {
@@ -318,7 +331,7 @@ const emptyTestHost = await createTestHost()
 assert.equal(emptyTestHost.workbench, undefined)
 await emptyTestHost.dispose()
 assert.equal(loads.some(url => /elysia/.test(url)), false, 'empty test host must not load HTTP')
-assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
+assert.equal(loads.some(url => ${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
 const { createHost } = await import('@pluxel/host')
 const { resolveContextCapability } = await import('@pluxel/core/host')
 const { Workbench } = await import('@pluxel/workbench')
@@ -417,7 +430,7 @@ try {
  const response = await standardHost.ctx.require(ElysiaRuntime).fetch(new Request('http://local.test/missing'))
  assert.equal(response.status, 404)
  await response.body?.cancel()
- assert.equal(loads.some(url => /@logtape[+/](?:file|pretty)|capnweb|@pluxel[+/]workbench|\\/(?:logging|management)(?:\\/|[-.])/.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
+ assert.equal(loads.some(url => ${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url)), false, 'unselected logging, Management and Workbench backends must stay unloaded')
 } finally { await standardHost.close(); hook.deregister() }
 console.log('ISOLATED_STANDARD_SERVICES_OK')
 `
