@@ -140,7 +140,11 @@ export async function openWorkbenchEntry(
 				...(typeof diagnosticId === 'string' ? { diagnosticId } : {}),
 			})
 		}
-		if (record.ok !== true || Object.hasOwn(record, 'code')) {
+		if (
+			record.ok !== true ||
+			Object.hasOwn(record, 'code') ||
+			Object.hasOwn(record, 'diagnosticId')
+		) {
 			malformed('openEntry result has an invalid discriminant')
 		}
 		const disposable = requireDisposable(result, 'successful openEntry result')

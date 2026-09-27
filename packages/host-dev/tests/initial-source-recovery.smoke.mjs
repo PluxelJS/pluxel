@@ -1,8 +1,9 @@
 // Built-artifact regression: initial dynamic failures have no committed watcher or Plugin catalog.
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, readdir, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createConnection } from 'node:net'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -11,6 +12,39 @@ import { host } from '../dist/vite.mjs'
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { createServer } = await import(require.resolve('vite'))
+async function inspectApplication(root) {
+	const [file] = await readdir(join(root, '.pluxel/dev-console'))
+	assert.ok(file)
+	const instance = JSON.parse(await readFile(join(root, '.pluxel/dev-console', file), 'utf8'))
+	return new Promise((resolve, reject) => {
+		const socket = createConnection(instance.socketPath)
+		let response = ''
+		socket.on('error', reject)
+		socket.once('connect', () =>
+			socket.write(
+				JSON.stringify({
+					protocol: instance.protocol,
+					instanceId: instance.instanceId,
+					nonce: instance.nonce,
+					method: 'inspect',
+				}) + '\n',
+			),
+		)
+		socket.on('data', (chunk) => {
+			response += chunk.toString()
+		})
+		socket.once('end', () => {
+			try {
+				const packet = JSON.parse(response)
+				assert.equal(packet.ok, true)
+				resolve(packet.value.application)
+			} catch (error) {
+				reject(error)
+			}
+		})
+	})
+}
+
 async function runScenario(scenario) {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-initial-source-'))
 	const errors = []
@@ -18,7 +52,7 @@ async function runScenario(scenario) {
 	let server
 	async function until(check, label) {
 		const deadline = Date.now() + 10000
-		while (!check()) {
+		while (!(await check())) {
 			if (Date.now() > deadline) throw new Error(`${label}: ${errors.join('; ')}`)
 			await delay(25)
 		}
@@ -45,7 +79,7 @@ export default defineHostApplication(() => ({plugins:[],sources:[dynamicSource({
 			root,
 			configFile: false,
 			server: { port: 0, host: '127.0.0.1' },
-			plugins: host({ entry: 'app.ts' }),
+			plugins: host({ entry: 'app.ts', devConsole: true }),
 			customLogger: {
 				hasWarned: false,
 				info() {},
@@ -63,11 +97,18 @@ export default defineHostApplication(() => ({plugins:[],sources:[dynamicSource({
 		await server.listen()
 		assert.equal(globalThis[key], undefined)
 		assert.ok(errors.length > 0)
+		const failed = await inspectApplication(root)
+		assert.equal(failed.state, 'unavailable')
+		assert.equal(failed.latestUpdate.outcome, 'failed')
 		if (scenario === 'syntax') await writeFile(source, 'export {}')
 		else await writeFile(join(root, 'entries/missing.mjs'), 'export {}')
 		await until(
 			() => globalThis[key] === 1,
 			`${scenario} repair must recover initial dynamic source`,
+		)
+		await until(
+			async () => (await inspectApplication(root)).state === 'ready',
+			`${scenario} host readiness`,
 		)
 		await server.close()
 		server = undefined
