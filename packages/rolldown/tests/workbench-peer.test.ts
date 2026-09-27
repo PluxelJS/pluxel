@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { createPluginDependencyMetadataHook } from '../src/cli/plugin-metadata'
-import { validateWorkbenchCapnwebPeer } from '../src/cli/workbench-peer'
+import {
+	readWorkbenchCapnwebPackage,
+	validateWorkbenchCapnwebPeer,
+} from '../src/cli/workbench-peer'
+import { packageVersion } from '../src/cli/static-workbench-capnweb'
 
 const roots: string[] = []
 
@@ -137,4 +141,60 @@ it('writes and withdraws the exact generated target publication fact', async () 
 	await hook({} as Parameters<typeof hook>[0], new AbortController().signal)
 	manifest = JSON.parse(await readFile(packageJsonPath, 'utf8')) as typeof manifest
 	expect(manifest.pluxel?.workbenchCapnweb).toBeUndefined()
+})
+
+it('reports malformed selected publisher JSON with its path and parse cause', async () => {
+	const { packageJsonPath } = await fixture({ peer: '0.12.0', dev: '0.12.0' })
+	await writeFile(packageJsonPath, '{')
+	await expect(
+		readWorkbenchCapnwebPackage(join(dirname(packageJsonPath), 'index.js')),
+	).rejects.toMatchObject({
+		message: expect.stringContaining(`Invalid JSON in package manifest ${packageJsonPath}`),
+		cause: expect.any(SyntaxError),
+	})
+})
+
+it('rejects an invalid selected manifest path instead of searching an ancestor', async () => {
+	const { root } = await fixture({ peer: '0.12.0', dev: '0.12.0' })
+	await writeFile(join(root, 'plugin/not-a-directory'), '')
+	await expect(
+		readWorkbenchCapnwebPackage(join(root, 'plugin/not-a-directory/index.js')),
+	).rejects.toMatchObject({
+		message: expect.stringContaining('plugin/not-a-directory/package.json'),
+		cause: expect.objectContaining({ code: 'ENOTDIR' }),
+	})
+})
+
+it('reports a malformed selected workspace catalog with its path and parse cause', async () => {
+	const { root, packageJsonPath } = await fixture({ peer: 'catalog:prod', dev: 'catalog:prod' })
+	const workspaceFile = join(root, 'pnpm-workspace.yaml')
+	await writeFile(workspaceFile, 'catalogs: [')
+	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).rejects.toMatchObject({
+		message: expect.stringContaining(`Cannot parse workspace catalog ${workspaceFile}`),
+		cause: expect.any(Error),
+	})
+})
+
+it('reports an unreadable selected workspace catalog instead of falling back', async () => {
+	const { root, packageJsonPath } = await fixture({ peer: 'catalog:prod', dev: 'catalog:prod' })
+	const workspaceFile = join(root, 'pnpm-workspace.yaml')
+	await rm(workspaceFile)
+	await mkdir(workspaceFile)
+	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).rejects.toMatchObject({
+		message: expect.stringContaining(`Cannot read workspace catalog ${workspaceFile}`),
+		cause: expect.objectContaining({ code: 'EISDIR' }),
+	})
+})
+
+it('reports the selected static package manifest rather than searching an ancestor', async () => {
+	const { root } = await fixture()
+	const manifest = join(root, 'plugin/node_modules/capnweb/package.json')
+	await rm(manifest)
+	await mkdir(manifest)
+	await expect(
+		packageVersion(join(root, 'plugin/node_modules/capnweb/index.js'), 'capnweb'),
+	).rejects.toMatchObject({
+		message: expect.stringContaining(`Cannot read package manifest ${manifest}`),
+		cause: expect.objectContaining({ code: 'EISDIR' }),
+	})
 })

@@ -1,7 +1,10 @@
-import { readFile } from 'node:fs/promises'
-import { assertWorkbenchCapnwebAdmission, readWorkbenchCapnwebPackage } from './workbench-peer'
-import { existsSync } from 'node:fs'
-import { dirname, isAbsolute, join } from 'node:path'
+import {
+	assertWorkbenchCapnwebAdmission,
+	nearestPackageManifest,
+	readPackageManifest,
+	readWorkbenchCapnwebPackage,
+} from './workbench-peer'
+import { isAbsolute } from 'node:path'
 import type { Plugin, ResolvedId } from 'rolldown'
 
 const WORKBENCH_MANIFEST = '@pluxel/workbench/package.json'
@@ -33,7 +36,8 @@ export function staticWorkbenchCapnwebPlugin(entry: string): Plugin {
 				manifests.set(importer, marker)
 			}
 			const publisher = await marker
-			if (!publisher || (publisher.peer === undefined && publisher.marker === undefined)) return null
+			if (!publisher || (publisher.peer === undefined && publisher.marker === undefined))
+				return null
 			if (!canonical)
 				this.error(`[static-application] ${publisher.owner} requires ${WORKBENCH_MANIFEST}`)
 			const own = await this.resolve(id, importer, { ...options, skipSelf: true })
@@ -52,21 +56,10 @@ export function staticWorkbenchCapnwebPlugin(entry: string): Plugin {
 }
 
 export async function packageVersion(entry: string, name: string): Promise<string> {
-	const manifest = await nearestManifest(entry)
+	const manifest = nearestPackageManifest(entry)
 	if (!manifest) throw new Error(`[static-application] Cannot identify ${name} from ${entry}`)
-	const value = JSON.parse(await readFile(manifest, 'utf8')) as { name?: string; version?: string }
-	if (value.name !== name || !value.version)
-		throw new Error(`[static-application] Cannot identify ${name} from ${entry}`)
+	const value = await readPackageManifest(manifest)
+	if (value.name !== name || typeof value.version !== 'string' || value.version.length === 0)
+		throw new Error(`[static-application] Cannot identify ${name} from ${entry} (${manifest})`)
 	return value.version
-}
-
-async function nearestManifest(file: string): Promise<string | undefined> {
-	let directory = dirname(file.split('?', 1)[0]!)
-	for (;;) {
-		const manifest = join(directory, 'package.json')
-		if (existsSync(manifest)) return manifest
-		const parent = dirname(directory)
-		if (parent === directory) return undefined
-		directory = parent
-	}
 }
