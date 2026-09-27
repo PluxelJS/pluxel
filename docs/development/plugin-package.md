@@ -175,7 +175,7 @@ export default defineConfig({
 
 ## 依赖 metadata 如何生成
 
-build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
+`pluxel build` 根据实际 semantic facts 校验每个 provider 的 `peerDependencies`、`peerDependenciesMeta.optional` 和普通依赖字段；缺少 peer、把共享 provider 放入 `dependencies`/`optionalDependencies`、optional 标记不符都会指出 `package.json` 字段并使构建失败。先修改作者维护的清单，再重跑构建；构建本身不搬移或删除这些字段。通过校验后，CLI 同步编译生成的 package metadata：
 
 - required Plugin root imports；
 - generated plugin package records；
@@ -185,7 +185,7 @@ build 成功后，CLI 根据实际 semantic facts 同步 package metadata：
 
 Reachable Part 的 constructor requirements 自动聚合到所属 Plugin，同一 provider package 去重且 required 覆盖 optional；未挂载 Part 不计入清单。外部预构建 Part 由其自己的包声明 provider peers，consumer 不复制传递 inventory。
 
-构建失败不会提交部分 metadata。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
+清单依赖校验失败不会提交生成 metadata；构建工具仍可能生成 bundle 与 exports，不能把该次失败当成可发布结果。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
 
 ## 已安装包的开发期界面
 

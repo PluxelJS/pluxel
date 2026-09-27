@@ -1,11 +1,10 @@
 import type { WorkspacePackageJson } from '../../workspace/package-json'
 import { readWorkspacePackageJson, writeWorkspacePackageJson } from '../package-json'
 import type { RuleContext, RuleMessages } from './types'
-import { ciMetadataRule } from './ci-metadata'
 import { pluginDependencyRule } from './plugin-deps'
 import { workbenchCapnwebRule } from './workbench-capnweb'
 
-const RULES = [pluginDependencyRule, workbenchCapnwebRule, ciMetadataRule] as const
+const RULES = [pluginDependencyRule, workbenchCapnwebRule] as const
 
 export async function runRules(context: RuleContext): Promise<RuleMessages> {
 	const pkg = (await readWorkspacePackageJson(context.packageJsonPath)) as WorkspacePackageJson

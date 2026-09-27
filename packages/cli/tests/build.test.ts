@@ -59,16 +59,16 @@ const buildFixtures = {
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 				},
-				dependencies: {
-					'pluxel-plugin-alpha': '^1.0.0',
-				},
 				devDependencies: {
 					'pluxel-plugin-beta': '^0.5.0',
 				},
 				peerDependencies: {
+					'pluxel-plugin-alpha': '^1.0.0',
+					'pluxel-plugin-beta': '^0.5.0',
 					'pluxel-plugin-stale': '^9.0.0',
 				},
 				peerDependenciesMeta: {
+					'pluxel-plugin-beta': { optional: true },
 					'pluxel-plugin-stale': { optional: true },
 				},
 				optionalDependencies: {},
@@ -138,14 +138,15 @@ const buildFixtures = {
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 				},
-				dependencies: {
-					'acme-plugin-alpha': '1.2.3',
-				},
 				devDependencies: {
 					'acme-plugin-beta': '~1.0.0',
 				},
 				peerDependencies: {
+					'acme-plugin-alpha': '1.2.3',
 					'acme-plugin-beta': '~1.0.0',
+				},
+				peerDependenciesMeta: {
+					'acme-plugin-beta': { optional: true },
 				},
 				optionalDependencies: {},
 			},
@@ -503,8 +504,8 @@ describe('build command', () => {
 			expect(pkg.optionalDependencies?.['pluxel-plugin-beta']).toBeUndefined()
 			expect(pkg.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
-			expect(pkg.peerDependencies?.['pluxel-plugin-stale']).toBeUndefined()
-			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-stale']).toBeUndefined()
+			expect(pkg.peerDependencies?.['pluxel-plugin-stale']).toBe('^9.0.0')
+			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-stale']?.optional).toBe(true)
 			expect(pkg.dependencies?.['pluxel-plugin-alpha']).toBeUndefined()
 			expect(pkg.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-beta']?.optional).toBe(true)
@@ -535,11 +536,37 @@ describe('build command', () => {
 				extraConfig: pluginPackageOverlay(runtime),
 			})
 			const cleaned = await readPackageJSON(runtime.packageJsonPath)
-			expect(cleaned.peerDependencies?.['pluxel-plugin-alpha']).toBeUndefined()
-			expect(cleaned.peerDependencies?.['pluxel-plugin-beta']).toBeUndefined()
-			expect(cleaned.peerDependenciesMeta?.['pluxel-plugin-beta']).toBeUndefined()
+			expect(cleaned.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
+			expect(cleaned.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
+			expect(cleaned.peerDependenciesMeta?.['pluxel-plugin-beta']?.optional).toBe(true)
 			expect(cleaned.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(cleaned.pluxel?.pluginPackages).toBeUndefined()
+		})
+	})
+
+	it('rejects an incorrect Plugin dependency role without rewriting author fields', async () => {
+		await withBuildFixture('basic', async () => {
+			const runtime = await resolveBuildContext({})
+			const original = await readFile(runtime.packageJsonPath, 'utf8')
+			const manifest = JSON.parse(original) as {
+				peerDependencies: Record<string, string>
+				dependencies?: Record<string, string>
+				peerDependenciesMeta?: Record<string, { optional?: boolean }>
+			}
+			delete manifest.peerDependencies['pluxel-plugin-alpha']
+			manifest.dependencies = { 'pluxel-plugin-alpha': '^1.0.0' }
+			await writeFile(runtime.packageJsonPath, JSON.stringify(manifest, null, 2))
+			await expect(
+				runWithTsdown({
+					context: runtime,
+					log: () => {},
+					extraConfig: pluginPackageOverlay(runtime),
+				}),
+			).rejects.toThrow(/peerDependencies\.pluxel-plugin-alpha/)
+			const after = JSON.parse(await readFile(runtime.packageJsonPath, 'utf8')) as typeof manifest
+			expect(after.peerDependencies).toEqual(manifest.peerDependencies)
+			expect(after.dependencies).toEqual(manifest.dependencies)
+			expect(after.peerDependenciesMeta).toEqual(manifest.peerDependenciesMeta)
 		})
 	})
 
@@ -629,7 +656,7 @@ describe('build command', () => {
 		}
 	})
 
-	it('fills repository metadata from supported CI providers', async () => {
+	it('does not rewrite author-maintained repository metadata in CI', async () => {
 		for (const provider of [
 			{
 				env: { GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'pluxel/example' },
@@ -652,9 +679,9 @@ describe('build command', () => {
 						extraConfig: pluginPackageOverlay(runtime),
 					})
 					const pkg = await readPackageJSON(runtime.packageJsonPath)
-					expect(pkg.repository).toEqual({ type: 'git', url: `${provider.baseUrl}.git` })
-					expect(pkg.homepage).toBe(provider.baseUrl)
-					expect(pkg.bugs).toEqual({ url: `${provider.baseUrl}${provider.issues}` })
+					expect(pkg.repository).toBeUndefined()
+					expect(pkg.homepage).toBeUndefined()
+					expect(pkg.bugs).toBeUndefined()
 				})
 			} finally {
 				vi.unstubAllEnvs()

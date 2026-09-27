@@ -163,10 +163,8 @@ root 或 reachable Part constructor 的 concrete package usage 是 `required`，
 facts 仍保留 optional request，以便对应 callback、caller Context 与 cleanup 正常运行。package inventory 从 concrete Plugin root
 沿本地 containment edge 遍历；被构建模块加载但不被任何 owner containment 使用的 Part 不进入 metadata。外部/预构建 Part 的
 provider peers 由定义该 Part 的 package 持有，consumer package 不反射其 runtime facts，也不重复传递 inventory。
-版本范围只来自 peer/dev/dependency authoring metadata；发布边界统一写入 `peerDependencies`，optional 同步
-`peerDependenciesMeta.optional = true`。同一 build 的多格式 output 读取同一 facts snapshot，下一次 `buildStart` 才重置；
-连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时，上一版生成的 peer、optional peer metadata 与 manifest
-mapping 会一并清理；devDependencies 保留供作者工具使用。metadata transaction 任何失败都会使 build 失败。
+版本范围与依赖角色由作者维护的 `package.json` 声明；build 根据编译 facts 验证共享 provider 已声明在 `peerDependencies`、未留在普通依赖，且 optional 标记与 facts 相符，不自动从 dev/dependency 选择版本或搬移字段。同一 build 的多格式 output 读取同一 facts snapshot，下一次 `buildStart` 才重置；
+连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时只清理上一版生成的 manifest mapping；作者维护的 peer 与 optional metadata 保留，供作者按实际用途审查。metadata transaction 任何失败都会使 build 失败。
 
 两条 production route 只在输出拓扑处分叉：plugin package 保留 runtime peer boundary、dts 和 package exports；static
 application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
