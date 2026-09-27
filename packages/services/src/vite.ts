@@ -38,15 +38,26 @@ export function serviceSingletons(): Plugin {
 			return handler.call(this, config)
 		},
 		async resolveId(source, importer, options) {
-			if (source === 'capnweb' && importer && options.ssr && this.environment.name === HOST_VITE_ENVIRONMENT) {
+			if (
+				source === 'capnweb' &&
+				importer &&
+				options.ssr &&
+				this.environment.name === HOST_VITE_ENVIRONMENT
+			) {
 				const publisher = await readWorkbenchCapnwebPackage(importer)
 				// A source publisher has an explicit peer before build metadata exists. Private RPC has neither.
 				if (publisher && (publisher.peer !== undefined || publisher.marker !== undefined)) {
 					const conditions = { conditionNames: ['node', 'import', 'default'] }
 					const workbench = resolveWithOxc(root, '@pluxel/workbench', conditions)
-					if (!workbench) throw new Error(`[services/vite] ${publisher.owner} imports shared capnweb, but @pluxel/workbench is unavailable from ${root}`)
+					if (!workbench)
+						throw new Error(
+							`[services/vite] ${publisher.owner} imports shared capnweb, but @pluxel/workbench is unavailable from ${root}`,
+						)
 					const canonical = resolveWithOxc(dirname(workbench.path), 'capnweb', conditions)
-					if (!canonical) throw new Error(`[services/vite] Cannot resolve Workbench capnweb from ${workbench.path}`)
+					if (!canonical)
+						throw new Error(
+							`[services/vite] Cannot resolve Workbench capnweb from ${workbench.path}`,
+						)
 					const own = resolveWithOxc(dirname(importer), 'capnweb', conditions)
 					assertWorkbenchCapnwebAdmission({
 						package: publisher,
@@ -56,7 +67,8 @@ export function serviceSingletons(): Plugin {
 						development: publisher.dev !== undefined || publisher.marker === undefined,
 						operation: 'services/vite',
 					})
-					if (this.environment.mode === 'dev') registerHostSingleton(this.environment, canonical.path)
+					if (this.environment.mode === 'dev')
+						registerHostSingleton(this.environment, canonical.path)
 					return { id: canonical.path, external: true }
 				}
 			}

@@ -143,14 +143,24 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services
 			}).entries.length === 2,
 	)
 	const shellPage = await new Promise((resolve, reject) => {
-		const request = httpRequest(new URL('/admin', origin), {
-			headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' },
-		}, response => {
-			const chunks = []
-			response.on('data', chunk => chunks.push(chunk))
-			response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString('utf8') }))
-			response.on('error', reject)
-		})
+		const request = httpRequest(
+			new URL('/admin', origin),
+			{
+				headers: {
+					accept: 'text/html',
+					'sec-fetch-mode': 'navigate',
+					'sec-fetch-dest': 'document',
+				},
+			},
+			(response) => {
+				const chunks = []
+				response.on('data', (chunk) => chunks.push(chunk))
+				response.on('end', () =>
+					resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString('utf8') }),
+				)
+				response.on('error', reject)
+			},
+		)
 		request.on('error', reject)
 		request.end()
 	})
@@ -205,7 +215,11 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services
 	assert.equal(openedView.value.api.isReleased(), false)
 	viewSession.dispose()
 	assert.equal(viewSession.signal.aborted, true, 'closing View releases its session')
-	assert.equal(openedView.value.api.isReleased(), true, 'closing View releases the publisher target')
+	assert.equal(
+		openedView.value.api.isReleased(),
+		true,
+		'closing View releases the publisher target',
+	)
 	const handler = createWorkbenchArtifactHandler(instance.ctx)
 	const artifact = await handler(
 		new Request(new URL(firstPage.federatedViewRef.manifestUrl, 'http://fixture')),

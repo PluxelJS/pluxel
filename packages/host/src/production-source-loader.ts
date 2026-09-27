@@ -31,16 +31,31 @@ export function createProductionSourceLoader(
 							try {
 								resolved = nextResolve(specifier, context)
 							} catch (cause) {
-								if (!facts || (facts.workbenchCapnweb === undefined && facts.capnwebPeer === undefined) || specifier !== 'capnweb') throw cause
-								throw workbenchVersionError(facts, '<missing>', '<missing>', workbenchCapnwebVersion)
+								if (
+									!facts ||
+									(facts.workbenchCapnweb === undefined && facts.capnwebPeer === undefined) ||
+									specifier !== 'capnweb'
+								)
+									throw cause
+								throw workbenchVersionError(
+									facts,
+									'<missing>',
+									'<missing>',
+									workbenchCapnwebVersion,
+								)
 							}
-							if (facts && (facts.workbenchCapnweb !== undefined || facts.capnwebPeer !== undefined) && specifier === 'capnweb') {
+							if (
+								facts &&
+								(facts.workbenchCapnweb !== undefined || facts.capnwebPeer !== undefined) &&
+								specifier === 'capnweb'
+							) {
 								const actual = resolved.url.startsWith('file:')
 									? (sourcePackageFacts(resolved.url, packageFacts)?.version ?? '<unknown>')
 									: '<unresolved>'
 								if (
 									facts.capnwebPeer !== workbenchCapnwebVersion ||
-									(facts.workbenchCapnweb !== undefined && facts.workbenchCapnweb !== workbenchCapnwebVersion) ||
+									(facts.workbenchCapnweb !== undefined &&
+										facts.workbenchCapnweb !== workbenchCapnwebVersion) ||
 									actual !== workbenchCapnwebVersion
 								) {
 									throw workbenchVersionError(facts, actual, resolved.url, workbenchCapnwebVersion)
@@ -114,10 +129,10 @@ function workbenchVersionError(
 	return Object.assign(
 		new Error(
 			`Workbench capnweb admission failed for ${facts.owner} (${facts.manifestPath}): ` +
-			`peerDependencies.capnweb ${facts.capnwebPeer ?? '<missing>'}, ` +
-			`pluxel.workbenchCapnweb ${facts.workbenchCapnweb ?? '<absent>'}; ` +
-			`resolved ${actual} at ${actualEntry}; Host Workbench supports ${supported}. ` +
-			`Update the publisher peer and installation, then restart the Host.`,
+				`peerDependencies.capnweb ${facts.capnwebPeer ?? '<missing>'}, ` +
+				`pluxel.workbenchCapnweb ${facts.workbenchCapnweb ?? '<absent>'}; ` +
+				`resolved ${actual} at ${actualEntry}; Host Workbench supports ${supported}. ` +
+				`Update the publisher peer and installation, then restart the Host.`,
 		),
 		{ code: 'PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH' },
 	)
@@ -143,7 +158,8 @@ function sourcePackageFacts(
 				owner: manifest.name ?? path,
 				manifestPath: path,
 				...(typeof manifest.peerDependencies?.capnweb === 'string'
-					? { capnwebPeer: manifest.peerDependencies.capnweb } : {}),
+					? { capnwebPeer: manifest.peerDependencies.capnweb }
+					: {}),
 				...(manifest.version ? { version: manifest.version } : {}),
 				...(typeof manifest.pluxel?.workbenchCapnweb === 'string'
 					? { workbenchCapnweb: manifest.pluxel.workbenchCapnweb }
