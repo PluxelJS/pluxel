@@ -54,6 +54,8 @@ Plugin package provenance 要求显式 `exports` 子路径映射与根 named exp
 自动推断只为实际根导出 marked Plugin 的包建立 plan；普通源码库中的本地 Plugin 仍按 source-space 定位。
 显式 package build 继续要求至少一个 marked Plugin。嵌套条件按同一规则读取；Plugin-bearing subpath、重复 root export 与跨包 re-export 的拒绝规则不变。
 
+OXC 解析器对未安装的包或相对文件保留正常未命中；若已发现物理安装目录，则坏或不可读取的 `package.json`、exports 拒绝及缺失入口会附 importer、specifier、conditions、实际清单路径和原始 cause 报错。相邻的最近 package 清单损坏也不会越过它借用父包的 `type` 或 `name`。OXC 本身对若干失败仅返回字符串而无稳定错误码；无物理包目录的 alias/tsconfig 解析失败仍可能与普通未命中无法区分，调用方不得把空值解释为“必须安装依赖”的确定结论。
+
 ## Independent source workspaces
 
 跨仓库 source registry、pnpm overlay、构建闭包与 bootstrap 见 [CLI 与源码工作区](CLI_WORKSPACES.md#independent-source-workspaces)。
