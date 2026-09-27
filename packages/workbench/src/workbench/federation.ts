@@ -344,7 +344,11 @@ export async function openFederatedWorkbenchView(
 	}
 	if (opened.ok === false) {
 		input.host[Symbol.dispose]()
-		return Object.freeze({ ok: false as const, code: opened.code })
+		return Object.freeze({
+			ok: false as const,
+			code: opened.code,
+			...(opened.diagnosticId ? { diagnosticId: opened.diagnosticId } : {}),
+		})
 	}
 
 	const handle = opened.handle

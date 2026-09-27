@@ -321,7 +321,7 @@ Workbench 在打开页面时检查 target 是同一运行时的 `RpcTarget`，`p
 peer、dev 和实际安装版本。仅自建的 RPC session 不因使用同名库而受 Workbench 版本限制。
 构建产物的 `pluxel.workbenchCapnweb` 事实让 Pluxel 静态应用和生产动态来源只对 target 发布包
 桥接宿主模块；动态来源在加载时还检查实际版本，并给出包名、实际版和宿主支持版。即使版本相同，
-绕过标准构建或采用其它加载器造成的第二份模块仍会在打开时被拒绝。
+绕过标准构建或采用其它加载器造成的第二份模块仍会在打开时被拒绝。`openEntry()` 的失败结果区分 `invalid_target`（不是宿主 `RpcTarget`）、`reused_target`（重复输出同一实例）、`factory_timeout`、`target_unavailable` 和未知 factory 异常的 `factory_failed`。Factory 失败结果包含 `diagnosticId`；页面只显示此标识，服务端日志用同一标识记录 node、entry、阶段和原始异常，供授权开发诊断定位。
 
 `RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
 Cap’n Web 的 `new RpcStub(target)` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。

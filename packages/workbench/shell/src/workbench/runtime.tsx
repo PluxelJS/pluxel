@@ -489,7 +489,11 @@ function ReadyFederatedWorkbenchEntryView({
 				if (result.ok === false) {
 					if (activation.active) {
 						setOpening(false)
-						setError(new Error(`Workbench View could not open: ${result.code}`))
+						setError(
+							new Error(
+								`Workbench View could not open: ${result.code}${result.diagnosticId ? ` (diagnostic ${result.diagnosticId})` : ''}`,
+							),
+						)
 					}
 					return undefined
 				}
@@ -605,7 +609,11 @@ export function WorkbenchContentEntryView({
 				if (result.ok === false) {
 					if (activation.active) {
 						setOpening(false)
-						setError(new Error(`Workbench Content could not open: ${result.code}`))
+						setError(
+							new Error(
+								`Workbench Content could not open: ${result.code}${result.diagnosticId ? ` (diagnostic ${result.diagnosticId})` : ''}`,
+							),
+						)
 					}
 					return undefined
 				}

@@ -54,15 +54,15 @@ export type WorkbenchClientOpenResult =
 			ok: true
 			handle: WorkbenchOpenedViewHandle | WorkbenchOpenedContentHandle
 	  }>
-	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
+	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode; diagnosticId?: string }>
 
 export type WorkbenchClientFederatedOpenResult =
 	| Readonly<{ ok: true; handle: WorkbenchOpenedViewHandle }>
-	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
+	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode; diagnosticId?: string }>
 
 export type WorkbenchClientContentOpenResult =
 	| Readonly<{ ok: true; handle: WorkbenchOpenedContentHandle }>
-	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
+	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode; diagnosticId?: string }>
 
 /** Reads and validates a capability-free layout, releasing the Cap'n Web result immediately. */
 export async function readWorkbenchLayout(
@@ -116,11 +116,29 @@ export async function openWorkbenchEntry(
 	const result = await session.openEntry(input)
 	let adopted = false
 	try {
-		const record = readExactRecord(result, 'openEntry result', ['ok', 'value', 'code'])
+		const record = readExactRecord(result, 'openEntry result', [
+			'ok',
+			'value',
+			'code',
+			'diagnosticId',
+		])
 		if (record.ok === false) {
 			if (Object.hasOwn(record, 'value')) malformed('openEntry failure includes value')
 			const code = readFailureCode(record.code)
-			return Object.freeze({ ok: false as const, code })
+			const diagnosticId = record.diagnosticId
+			if (
+				diagnosticId !== undefined &&
+				(typeof diagnosticId !== 'string' ||
+					!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+						diagnosticId,
+					))
+			)
+				malformed('openEntry diagnosticId is invalid')
+			return Object.freeze({
+				ok: false as const,
+				code,
+				...(typeof diagnosticId === 'string' ? { diagnosticId } : {}),
+			})
 		}
 		if (record.ok !== true || Object.hasOwn(record, 'code')) {
 			malformed('openEntry result has an invalid discriminant')
@@ -638,6 +656,8 @@ function readFailureCode(input: unknown): WorkbenchOpenEntryFailureCode {
 		input !== 'layout_changed' &&
 		input !== 'target_unavailable' &&
 		input !== 'factory_failed' &&
+		input !== 'invalid_target' &&
+		input !== 'reused_target' &&
 		input !== 'factory_timeout' &&
 		input !== 'quota_exceeded'
 	) {

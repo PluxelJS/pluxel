@@ -97,6 +97,8 @@ export type WorkbenchOpenEntryFailureCode =
 	| 'layout_changed'
 	| 'target_unavailable'
 	| 'factory_failed'
+	| 'invalid_target'
+	| 'reused_target'
 	| 'factory_timeout'
 	| 'quota_exceeded'
 
@@ -208,7 +210,7 @@ export type WorkbenchOpenedEntry =
 
 export type WorkbenchOpenEntryResult =
 	| Readonly<{ ok: true; value: WorkbenchOpenedEntry }>
-	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode }>
+	| Readonly<{ ok: false; code: WorkbenchOpenEntryFailureCode; diagnosticId?: string }>
 
 export interface WorkbenchSessionApi extends RpcTarget {
 	layoutDto(input: WorkbenchLayoutInput): WorkbenchLayout

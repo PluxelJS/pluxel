@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
 	BasePlugin,
 	parsePluginNodeAddress,
@@ -69,6 +70,9 @@ import { WorkbenchContentTarget, attachWorkbenchContentTarget } from './Workbenc
 const OPEN_ENTRY_TIMEOUT_MS = 15_000
 const MAX_OPEN_ENTRIES_PER_SESSION = 64
 const PROFILE_VERSION = 1 as const
+
+class InvalidWorkbenchTargetError extends TypeError {}
+class ReusedWorkbenchTargetError extends TypeError {}
 
 type PublishedView = Readonly<{
 	kind: 'view'
@@ -434,12 +438,26 @@ export class WorkbenchRegistry {
 			})
 		} catch (error) {
 			lease.close()
-			if (timedOut) return failure('factory_timeout')
-			if (sessionSignal.aborted || isOwnerClosed(error)) {
+			if (!timedOut && (sessionSignal.aborted || isOwnerClosed(error))) {
 				return failure('target_unavailable')
 			}
-			candidate.target.owner.logger.error('Workbench entry factory failed', { error })
-			return failure('factory_failed')
+			const code: WorkbenchOpenEntryFailureCode = timedOut
+				? 'factory_timeout'
+				: error instanceof InvalidWorkbenchTargetError
+					? 'invalid_target'
+					: error instanceof ReusedWorkbenchTargetError
+						? 'reused_target'
+						: 'factory_failed'
+			const diagnosticId = randomUUID()
+			candidate.target.owner.logger.error('Workbench entry factory failed', {
+				error,
+				diagnosticId,
+				code,
+				node: pluginNodeIndexKey(candidate.target.owner.pluginInfo.nodeAddress),
+				entry: candidate.entry.metadata.key,
+				stage: 'openEntry.factory',
+			})
+			return failure(code, diagnosticId)
 		} finally {
 			clearTimeout(timeout)
 		}
@@ -902,12 +920,14 @@ export class WorkbenchRegistry {
 
 	private claimFreshRoot(target: unknown, publisher: string): RpcTarget {
 		if (!(target instanceof RpcTarget)) {
-			throw new TypeError(
+			throw new InvalidWorkbenchTargetError(
 				`[workbench] ${publisher} factory must return a fresh RpcTarget from the host capnweb module; check its installed version and module resolution`,
 			)
 		}
 		if (this.exportedRoots.has(target)) {
-			throw new TypeError('Workbench factory returned an RpcTarget that was already exported')
+			throw new ReusedWorkbenchTargetError(
+				'Workbench factory returned an RpcTarget that was already exported',
+			)
 		}
 		this.exportedRoots.add(target)
 		return target
@@ -1163,8 +1183,11 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
 	return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
-function failure(code: WorkbenchOpenEntryFailureCode): WorkbenchOpenEntryResult {
-	return Object.freeze({ ok: false, code })
+function failure(
+	code: WorkbenchOpenEntryFailureCode,
+	diagnosticId?: string,
+): WorkbenchOpenEntryResult {
+	return Object.freeze({ ok: false, code, ...(diagnosticId ? { diagnosticId } : {}) })
 }
 
 function isOwnerClosed(error: unknown): boolean {

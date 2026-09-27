@@ -680,6 +680,35 @@ describe('Workbench vNext publication', () => {
 		).toThrow('no committed federation artifact for view "settings"')
 	})
 
+	it('identifies a factory result from the wrong RpcTarget runtime', async () => {
+		reusedTarget = {} as SettingsTarget
+		reusedFactory = undefined
+		const host = await createServiceInternalTestHarness({ workbench: true })
+		host.add(ReusedTargetPlugin)
+		host.start(ReusedTargetPlugin)
+		await host.commit()
+		try {
+			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const target = pluginNodeAddressOf(ReusedTargetPlugin)
+			const layout = session.target.layoutDto({ target })
+			await expect(
+				session.target.openEntry({
+					layoutRevision: layout.revision,
+					target,
+					descriptor: layout.entries[0]!.descriptor,
+				}),
+			).resolves.toMatchObject({
+				ok: false,
+				code: 'invalid_target',
+				diagnosticId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+			})
+			session.dispose()
+		} finally {
+			await host.dispose()
+			reusedTarget = undefined
+		}
+	})
+
 	it('rejects an RpcTarget that a factory already exported', async () => {
 		reusedTarget = undefined
 		reusedFactory = undefined
@@ -705,9 +734,10 @@ describe('Workbench vNext publication', () => {
 			const firstTarget = reusedTarget
 			expect(firstTarget?.disposed).toBe(false)
 
-			await expect(session.target.openEntry(input)).resolves.toEqual({
+			await expect(session.target.openEntry(input)).resolves.toMatchObject({
 				ok: false,
-				code: 'factory_failed',
+				code: 'reused_target',
+				diagnosticId: expect.stringMatching(/^[0-9a-f-]{36}$/),
 			})
 			expect(firstTarget?.disposed).toBe(false)
 
@@ -850,7 +880,11 @@ describe('Workbench vNext publication', () => {
 			await Promise.resolve()
 			expect(settled).toBe(false)
 			await vi.advanceTimersByTimeAsync(1)
-			await expect(opening).resolves.toEqual({ ok: false, code: 'factory_timeout' })
+			await expect(opening).resolves.toMatchObject({
+				ok: false,
+				code: 'factory_timeout',
+				diagnosticId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+			})
 			expect(lateFactorySignal?.aborted).toBe(true)
 
 			resolvedTarget = new SettingsTarget(lateFactorySignal!)

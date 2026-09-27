@@ -249,19 +249,22 @@ describe('Workbench opened View client', () => {
 		expect(disposeResult).toHaveBeenCalledTimes(1)
 	})
 
-	it('returns a closed failure with no retained result', async () => {
+	it('returns a closed failure with its safe diagnostic id and no retained result', async () => {
 		const disposeResult = vi.fn()
+		const diagnosticId = '01234567-89ab-4cde-8f01-23456789abcd'
 		const session = {
 			openEntry: vi.fn().mockResolvedValue({
 				ok: false,
-				code: 'layout_changed',
+				code: 'factory_failed',
+				diagnosticId,
 				[Symbol.dispose]: disposeResult,
 			}),
 		} as unknown as RpcStub<WorkbenchSessionApi>
 
 		await expect(openWorkbenchEntry(session, entry, { layoutRevision: 7 })).resolves.toEqual({
 			ok: false,
-			code: 'layout_changed',
+			code: 'factory_failed',
+			diagnosticId,
 		})
 		expect(disposeResult).toHaveBeenCalledTimes(1)
 	})
