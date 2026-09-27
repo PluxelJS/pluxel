@@ -53,6 +53,7 @@ test('deployment root supplies Node artifacts and the default Workbench shell', 
 	let host: Awaited<ReturnType<typeof createHost>> | undefined
 	try {
 		await mkdir(resolve(root, 'workbench/public/.vite'), { recursive: true })
+		await mkdir(resolve(root, 'workbench/public/assets'), { recursive: true })
 		await mkdir(resolve(root, 'artifacts/node'), { recursive: true })
 		await writeFile(
 			resolve(root, 'workbench/pluxel-workbench-producers.json'),
@@ -61,9 +62,10 @@ test('deployment root supplies Node artifacts and the default Workbench shell', 
 		await writeFile(
 			resolve(root, 'workbench/public/.vite/manifest.json'),
 			JSON.stringify({
-				'client.tsx': { file: 'assets/deployed-shell.js', isEntry: true },
+				'shell/src/client.tsx': { file: 'assets/deployed-shell.js', isEntry: true },
 			}),
 		)
+		await writeFile(resolve(root, 'workbench/public/assets/deployed-shell.js'), 'export {}')
 		await writeFile(resolve(root, 'artifacts/node/example.mjs'), 'export const value = 1')
 		host = await createHost({
 			plugins: [],
