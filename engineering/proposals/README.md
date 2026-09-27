@@ -13,7 +13,7 @@
 
 研究与必要决策记录：
 
-- [`STRICT_CONTRACT_REVIEW.md`](STRICT_CONTRACT_REVIEW.md)：持久数据保护、依赖与模块身份准入、制品完整性及可定位失败的待实施方案。
+- [`STRICT_CONTRACT_REVIEW.md`](STRICT_CONTRACT_REVIEW.md)：严格契约迁移的实施证据、审查修正与剩余验收边界。
 
 - [`PUBLIC_API_DESIGN_REVIEW.md`](PUBLIC_API_DESIGN_REVIEW.md)：13 项已实施修复的必要决策和验证索引。
 
