@@ -110,6 +110,31 @@ describe('private development console server boundaries', () => {
 		expect(calls()).toBe(0)
 	})
 
+	it('reports unavailable application and its last rejection through authorized inspect', async () => {
+		const { root } = await project()
+		const server = await startDevConsoleServer({
+			root,
+			async execute() {
+				throw new Error('Must not execute')
+			},
+			inspect: () => ({
+				application: {
+					state: 'unavailable',
+					latestUpdate: {
+						state: 'settled',
+						outcome: 'failed',
+						phase: 'application-reload',
+						error: { message: 'Invalid app entry', file: 'app.ts', importChain: [] },
+					},
+				},
+			}),
+		})
+		cleanup.push(() => server.close())
+		await expect(requestDev(server.instance, { method: 'inspect' })).resolves.toMatchObject({
+			application: { state: 'unavailable', latestUpdate: { error: { file: 'app.ts' } } },
+		})
+	})
+
 	it('publishes private discovery and removes the descriptor and socket on idempotent close', async () => {
 		const { server, root } = await fixture()
 		const directory = resolve(root, '.pluxel/dev-console')

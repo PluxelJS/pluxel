@@ -21,6 +21,7 @@ export interface DevInstance {
 	root: string
 	socketPath: string
 	startedAt: string
+	application?: Readonly<{ state: 'ready' | 'updating' | 'unavailable'; latestUpdate: unknown }>
 }
 
 export interface DevRunSnapshot {
@@ -373,6 +374,7 @@ export function publicInstance(instance: DevInstance) {
 		pid: instance.pid,
 		root: instance.root,
 		startedAt: instance.startedAt,
+		...(instance.application ? { application: instance.application } : {}),
 	}
 }
 
@@ -386,7 +388,19 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 				const value = await requestDev(instance, { method: 'inspect' }, 500)
 				if (!record(value) || value.instanceId !== instance.instanceId || value.root !== root)
 					fail('protocol_mismatch', 'Console handshake identity does not match discovery')
-				return instance
+				if (value.application === undefined) return instance
+				if (
+					!record(value.application) ||
+					!['ready', 'updating', 'unavailable'].includes(String(value.application.state))
+				)
+					fail('protocol_mismatch', 'Console application status is invalid')
+				return {
+					...instance,
+					application: {
+						state: value.application.state as 'ready' | 'updating' | 'unavailable',
+						latestUpdate: value.application.latestUpdate ?? null,
+					},
+				}
 			}),
 		)
 		for (const result of results) {

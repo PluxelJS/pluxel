@@ -32,6 +32,7 @@ export type DevConsoleAttachment = Readonly<{
 export type AttachDevConsoleOptions = Readonly<{
 	server: ViteDevServer
 	getHost(): DevConsoleHost | undefined
+	getApplicationStatus?(): Readonly<Record<string, unknown>>
 	/** Drain the finite set of real updates admitted before this call, before evaluation. */
 	prepare(file: string, signal: AbortSignal): Promise<void>
 }>
@@ -52,7 +53,10 @@ export async function attachDevConsole(
 	let closed = false
 	const server = await startDevConsoleServer({
 		root,
-		inspect: () => ({ hostEpoch: options.getHost()?.epoch }),
+		inspect: () => ({
+			hostEpoch: options.getHost()?.epoch,
+			application: options.getApplicationStatus?.(),
+		}),
 		execute: async (input, run) => {
 			run.signal.throwIfAborted()
 			const file = normalizePath(input.file)

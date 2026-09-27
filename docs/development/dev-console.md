@@ -52,7 +52,7 @@ export default defineConfig({
 pnpm exec pluxel dev instances --root /absolute/project-root
 ```
 
-从返回结果确认 `root`、`pid` 和 `instanceId`。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
+从返回结果确认 `root`、`pid` 和 `instanceId`。`application.state` 同时说明本次 Vite 进程的应用状态：`ready` 表示已有可运行 Host，`updating` 表示正在接纳候选，`unavailable` 表示尚无可运行 Host。`application.latestUpdate` 保留最近一次接纳的阶段、结果与安全诊断，首次启动失败时也可从 `instances` 查看；Vite 进程存在本身不代表应用可运行。修正源文件后同一进程可重新接纳。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
 控制台属于 `@pluxel/host-dev`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/services/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
 

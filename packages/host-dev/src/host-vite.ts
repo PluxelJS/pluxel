@@ -502,6 +502,17 @@ export function host(options: HostViteOptions): PluginOption[] {
 				devConsole = await attachDevConsole({
 					server,
 					getHost: () => active && { ctx: active.ctx, epoch: epochs.get(active)! },
+					getApplicationStatus: () => {
+						const latestUpdate = recentUpdates.latestUpdate()
+						return {
+							state: !active
+								? 'unavailable'
+								: latestUpdate?.state === 'updating'
+									? 'updating'
+									: 'ready',
+							latestUpdate,
+						}
+					},
 					prepare: async (_file, signal) => {
 						await driver.settled()
 						signal.throwIfAborted()
