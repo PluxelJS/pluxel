@@ -21,6 +21,14 @@ export async function servicesPreset(
 		logging?: RuntimeLoggingInput
 	}>,
 ): Promise<HostService[]> {
+	if (!options || typeof options !== 'object' || Array.isArray(options))
+		throw new TypeError('[services/preset] options must be an object')
+	for (const key of Object.keys(options)) {
+		if (!['persistence', 'vault', 'product', 'workbench', 'logging'].includes(key))
+			throw new TypeError(`[services/preset] Unknown option options.${key}`)
+	}
+	if (options.workbench !== undefined && typeof options.workbench !== 'boolean')
+		throw new TypeError('[services/preset] options.workbench must be a boolean')
 	const withWorkbench = options.workbench ?? true
 	const deployment = startup.deployment
 	const [

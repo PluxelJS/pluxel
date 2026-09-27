@@ -39,6 +39,10 @@ export const CLI_DEFAULTS: CliDefaults = {
 
 export function resolveStateDir(root: string, env: NodeJS.ProcessEnv = process.env) {
 	const overridden = env[CLI_DEFAULTS.paths.stateDirEnv]
-	if (overridden?.trim()) return overridden
+	if (overridden !== undefined) {
+		if (!overridden.trim())
+			throw new TypeError(`${CLI_DEFAULTS.paths.stateDirEnv} must be a nonempty path when set`)
+		return overridden
+	}
 	return resolve(root || '.', CLI_DEFAULTS.paths.stateDirName)
 }

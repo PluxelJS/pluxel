@@ -25,7 +25,7 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
 | 管理 source workspace                                    | `pluxel workspace`                                            |
 
-确切参数通过 `pluxel <command> --help` 查看。
+确切参数通过 `pluxel <command> --help` 查看。CLI 状态目录默认是项目根目录下的 `.pluxel`；设置 `PLUXEL_STATE_DIR` 可指定路径。变量未设置时才使用默认值，显式设置为空字符串或空白会报错，需修改该环境变量后重试。
 
 `pluxel workspace doctor` 校验框架共同拥有的 workspace 契约：pnpm 主版本、workspace 文件，以及已激活时由 CLI
 管理的 machine-local source `.pnpmfile.cjs`。产品自己的依赖方向和目录规则仍由项目 `governance:check` 负责。

@@ -23,7 +23,7 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 | `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件           |
 | `@pluxel/services/build` 的 `buildPreset()`     | 携带 Shell、制品和动态插件共享入口 |
 
-`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。数据库或不同管理面组合应使用下文的显式服务安装器。
+`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。数据库或不同管理面组合应使用下文的显式服务安装器。
 
 `vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。`@pluxel/services/preset`、`@pluxel/services/vite`、`@pluxel/services/build` 分别拥有运行时、开发与发行的官方默认组合。`@pluxel/services` 根入口只提供 `standardServices()`，不加载 Management、Logging 或 Workbench 后端。
 
@@ -31,7 +31,7 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 
 生产 Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
-`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
 官方构建默认携带 Workbench shell，并维护动态插件所需的官方共享入口。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
