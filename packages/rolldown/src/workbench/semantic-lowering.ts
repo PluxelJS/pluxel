@@ -1931,11 +1931,12 @@ async function hashSourceGraph(
 				const installedPackage = installedManifest
 					? await readPackageFingerprint(installedManifest, packageMetadata)
 					: undefined
-				// Declared dependencies may export only subpaths. There is no package-root import
-				// to resolve in that case; its manifest still contributes to the revision.
-				const hit = installedPackage?.subpathOnly
-					? null
-					: resolveImport(resolve(dependencyPackage.root, 'package.json'), dependency)
+				// Declared dependencies may export only subpaths or declarations. Neither has a
+				// package-root runtime import; their manifests still contribute to the revision.
+				const hit =
+					installedPackage?.subpathOnly || installedPackage?.declarationOnly
+						? null
+						: resolveImport(resolve(dependencyPackage.root, 'package.json'), dependency)
 				const childPackageJson =
 					hit?.packageJsonPath ??
 					installedManifest ??
@@ -2013,6 +2014,7 @@ type PackageFingerprint = {
 	identity: string
 	metadata: string
 	subpathOnly: boolean
+	declarationOnly: boolean
 	dependencies: readonly string[]
 	resolutions: Set<string>
 }
@@ -2063,6 +2065,20 @@ async function readPackageFingerprint(
 		Object.keys(exports).length > 0 &&
 		Object.keys(exports).every((key) => key.startsWith('./')) &&
 		!Object.hasOwn(exports, '.')
+	// A declaration entry with no runtime root entry contributes its manifest to the
+	// revision, but cannot be imported as a runtime module.
+	const packageRoot = dirname(canonicalPath)
+	const declarationOnly =
+		typeof parsed.types === 'string' &&
+		/\.d\.(?:ts|mts|cts)$/.test(parsed.types) &&
+		existsSync(resolve(packageRoot, parsed.types)) &&
+		(parsed.main === '' || !Object.hasOwn(parsed, 'main')) &&
+		!Object.hasOwn(parsed, 'exports') &&
+		!Object.hasOwn(parsed, 'module') &&
+		!Object.hasOwn(parsed, 'browser') &&
+		!SOURCE_RESOLVE_OPTIONS.extensions.some((extension) =>
+			existsSync(resolve(packageRoot, `index${extension}`)),
+		)
 	const fingerprint: PackageFingerprint = {
 		path: canonicalPath,
 		root: dirname(canonicalPath),
@@ -2070,6 +2086,7 @@ async function readPackageFingerprint(
 		identity: `${name}@${version}`,
 		metadata,
 		subpathOnly,
+		declarationOnly,
 		dependencies,
 		resolutions: new Set(),
 	}

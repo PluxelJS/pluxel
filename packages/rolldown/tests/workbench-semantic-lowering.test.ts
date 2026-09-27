@@ -1518,6 +1518,8 @@ class SemanticPlugin {
 			dependencies: {
 				'@example/registry-theme': '^1.0.0',
 				'@example/subpath-only': '^1.0.0',
+				'@types/ui-only': '^1.0.0',
+				'bun-types': '^1.0.0',
 			},
 		})
 		files['node_modules/@example/registry-ui/index.js'] =
@@ -1536,6 +1538,19 @@ class SemanticPlugin {
 			exports: { './icon': './icon.js' },
 		})
 		files['node_modules/@example/subpath-only/icon.js'] = 'export const icon = true\n'
+		files['node_modules/@types/ui-only/package.json'] = JSON.stringify({
+			name: '@types/ui-only',
+			version: '1.0.0',
+			main: '',
+			types: 'index.d.ts',
+		})
+		files['node_modules/@types/ui-only/index.d.ts'] = 'export type UiOnly = string\n'
+		files['node_modules/bun-types/package.json'] = JSON.stringify({
+			name: 'bun-types',
+			version: '1.0.0',
+			types: './index.d.ts',
+		})
+		files['node_modules/bun-types/index.d.ts'] = 'export type BunOnly = string\n'
 		files['packages/producer/src/settings.tsx'] = `
 import { siblingLabel } from '@example/sibling-ui'
 import { registryLabel } from '@example/registry-ui'
@@ -1590,6 +1605,8 @@ class SemanticPlugin {
 				dependencies: {
 					'@example/registry-theme': '^1.0.0',
 					'@example/subpath-only': '^1.0.0',
+					'@types/ui-only': '^1.0.0',
+					'bun-types': '^1.0.0',
 				},
 				description: 'non-build metadata changed',
 				scripts: { test: 'exit 1' },
@@ -1607,6 +1624,8 @@ class SemanticPlugin {
 				dependencies: {
 					'@example/registry-theme': '^1.0.0',
 					'@example/subpath-only': '^1.0.0',
+					'@types/ui-only': '^1.0.0',
+					'bun-types': '^1.0.0',
 				},
 				description: 'non-build metadata changed',
 				scripts: { test: 'exit 1' },
@@ -1643,6 +1662,12 @@ class SemanticPlugin {
 				exports: { './icon': './icon.js' },
 			}),
 		)
-		expect(await revision()).not.toBe(transitiveRevision)
+		const subpathRevision = await revision()
+		expect(subpathRevision).not.toBe(transitiveRevision)
+		await writeFile(
+			resolve(fixture.path, 'node_modules/@types/ui-only/package.json'),
+			JSON.stringify({ name: '@types/ui-only', version: '1.1.0', main: '', types: 'index.d.ts' }),
+		)
+		expect(await revision()).not.toBe(subpathRevision)
 	})
 })
