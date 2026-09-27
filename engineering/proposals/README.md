@@ -13,6 +13,8 @@
 
 研究与必要决策记录：
 
+- [`STRICT_CONTRACT_REVIEW.md`](STRICT_CONTRACT_REVIEW.md)：持久数据保护、依赖与模块身份准入、制品完整性及可定位失败的待实施方案。
+
 - [`PUBLIC_API_DESIGN_REVIEW.md`](PUBLIC_API_DESIGN_REVIEW.md)：13 项已实施修复的必要决策和验证索引。
 
 - [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
