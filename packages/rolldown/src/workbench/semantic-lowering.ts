@@ -1927,15 +1927,19 @@ async function hashSourceGraph(
 			if (expandedDependencies.has(dependencyPackage.path)) continue
 			expandedDependencies.add(dependencyPackage.path)
 			for (const dependency of dependencyPackage.dependencies) {
-				const hit = resolveImport(resolve(dependencyPackage.root, 'package.json'), dependency)
+				const installedManifest = findInstalledPackageJson(dependencyPackage.root, dependency)
+				const installedPackage = installedManifest
+					? await readPackageFingerprint(installedManifest, packageMetadata)
+					: undefined
+				// Declared dependencies may export only subpaths. There is no package-root import
+				// to resolve in that case; its manifest still contributes to the revision.
+				const hit = installedPackage?.subpathOnly
+					? null
+					: resolveImport(resolve(dependencyPackage.root, 'package.json'), dependency)
 				const childPackageJson =
 					hit?.packageJsonPath ??
-					resolvePackageJsonPathWithOxc(
-						dependencyPackage.root,
-						dependency,
-						SOURCE_RESOLVE_OPTIONS,
-					) ??
-					findInstalledPackageJson(dependencyPackage.root, dependency)
+					installedManifest ??
+					resolvePackageJsonPathWithOxc(dependencyPackage.root, dependency, SOURCE_RESOLVE_OPTIONS)
 				if (!childPackageJson) continue
 				const childPackage = await readPackageFingerprint(childPackageJson, packageMetadata)
 				if (!hit) {
@@ -2008,6 +2012,7 @@ type PackageFingerprint = {
 	name: string
 	identity: string
 	metadata: string
+	subpathOnly: boolean
 	dependencies: readonly string[]
 	resolutions: Set<string>
 }
@@ -2016,35 +2021,55 @@ async function readPackageFingerprint(
 	packageJsonPath: string,
 	packages: Map<string, PackageFingerprint>,
 ): Promise<PackageFingerprint> {
-	const canonicalPath = await realpath(packageJsonPath).catch(() => resolve(packageJsonPath))
+	const canonicalPath = await realpath(packageJsonPath).catch((cause) => {
+		throw new Error(`[workbench-semantic] Cannot locate package manifest ${packageJsonPath}`, {
+			cause,
+		})
+	})
 	const cached = packages.get(canonicalPath)
 	if (cached) return cached
-	const manifest = await readFile(canonicalPath, 'utf-8').catch(() => '')
-	let name = '<anonymous>'
-	let version = '<workspace>'
-	let dependencies: readonly string[] = []
-	let metadata = '{}'
+	let manifest: string
 	try {
-		const parsed = JSON.parse(manifest) as Record<string, unknown>
-		if (typeof parsed.name === 'string' && parsed.name.length > 0) name = parsed.name
-		if (typeof parsed.version === 'string' && parsed.version.length > 0) version = parsed.version
-		dependencies = [
-			...new Set([
-				...recordKeys(parsed.dependencies),
-				...recordKeys(parsed.optionalDependencies),
-				...recordKeys(parsed.peerDependencies),
-			]),
-		].sort()
-		metadata = canonicalPackageMetadata(parsed)
-	} catch {
-		// The builder owns invalid package metadata diagnostics; keep fingerprinting deterministic.
+		manifest = await readFile(canonicalPath, 'utf-8')
+	} catch (cause) {
+		throw new Error(`[workbench-semantic] Cannot read package manifest ${canonicalPath}`, { cause })
 	}
+	let parsed: Record<string, unknown>
+	try {
+		const value: unknown = JSON.parse(manifest)
+		if (!value || typeof value !== 'object' || Array.isArray(value))
+			throw new Error('Expected a JSON object')
+		parsed = value as Record<string, unknown>
+	} catch (cause) {
+		throw new Error(`[workbench-semantic] Invalid package manifest ${canonicalPath}`, { cause })
+	}
+	const name =
+		typeof parsed.name === 'string' && parsed.name.length > 0 ? parsed.name : '<anonymous>'
+	const version =
+		typeof parsed.version === 'string' && parsed.version.length > 0 ? parsed.version : '<workspace>'
+	const dependencies = [
+		...new Set([
+			...recordKeys(parsed.dependencies),
+			...recordKeys(parsed.optionalDependencies),
+			...recordKeys(parsed.peerDependencies),
+		]),
+	].sort()
+	const metadata = canonicalPackageMetadata(parsed)
+	const exports = parsed.exports
+	const subpathOnly =
+		exports !== null &&
+		typeof exports === 'object' &&
+		!Array.isArray(exports) &&
+		Object.keys(exports).length > 0 &&
+		Object.keys(exports).every((key) => key.startsWith('./')) &&
+		!Object.hasOwn(exports, '.')
 	const fingerprint: PackageFingerprint = {
 		path: canonicalPath,
 		root: dirname(canonicalPath),
 		name,
 		identity: `${name}@${version}`,
 		metadata,
+		subpathOnly,
 		dependencies,
 		resolutions: new Set(),
 	}

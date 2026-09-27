@@ -24,6 +24,7 @@ export default defineConfig({
 		inspect: 'src/inspect/index.ts',
 		build: 'src/cli/index.ts',
 		'internal/cli': 'src/internal-cli.ts',
+		'internal/workbench-capnweb': 'src/cli/workbench-peer.ts',
 		database: 'src/database/index.ts',
 		distribution: 'src/distribution/index.ts',
 		plugins: 'src/rolldown/index.ts',

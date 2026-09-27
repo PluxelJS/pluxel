@@ -44,9 +44,10 @@ async function fixture(
 		JSON.stringify({
 			name: '@pluxel/workbench',
 			version: '0.1.0',
-			exports: { './package.json': './package.json' },
+			exports: { '.': './index.js', './package.json': './package.json' },
 		}),
 	)
+	await put('node_modules/@pluxel/workbench/index.js', 'export {}')
 	await writeCapnweb(
 		'node_modules/@pluxel/workbench/node_modules/capnweb',
 		options.host ?? '0.12.0',
@@ -83,7 +84,7 @@ it('admits an exact catalog peer and development version matching the Workbench 
 it('reports the owner, declarations, actual copy and supported version before package publication', async () => {
 	const { packageJsonPath } = await fixture({ peer: '^0.12.0', dev: '0.12.0', installed: '0.13.0' })
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).rejects.toThrow(
-		/Workbench target publisher @fixture\/view requires capnweb peer and dev dependency 0\.12\.0; declared peer \^0\.12\.0, dev 0\.12\.0, installed 0\.13\.0/,
+		/@fixture\/view.*peerDependencies.capnweb \^0\.12\.0, devDependencies.capnweb 0\.12\.0; resolved 0\.13\.0.*Host Workbench supports 0\.12\.0/,
 	)
 })
 
@@ -95,7 +96,7 @@ it('allows an equal version in an author install that may resolve through the ho
 it('takes the supported version from the installed Workbench dependency', async () => {
 	const { packageJsonPath } = await fixture({ host: '0.13.0', peer: '0.12.0', dev: '0.12.0' })
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).rejects.toThrow(
-		/requires capnweb peer and dev dependency 0\.13\.0/,
+		/Host Workbench supports 0\.13\.0/,
 	)
 })
 

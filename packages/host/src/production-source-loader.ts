@@ -13,7 +13,7 @@ export function createProductionSourceLoader(
 	const loadedEntries = new Set<string>()
 	const frameworks = new Map(Object.entries(frameworkModules ?? {}))
 	const frameworkPackages = new Set([...frameworks.keys()].map(packageName))
-	const packageFacts = new Map<string, Readonly<{ owner: string; workbenchCapnweb?: string }>>()
+	const packageFacts = new Map<string, SourcePackageFacts>()
 	let closed = false
 	const hooks =
 		frameworks.size > 0
@@ -31,28 +31,19 @@ export function createProductionSourceLoader(
 							try {
 								resolved = nextResolve(specifier, context)
 							} catch (cause) {
-								if (!facts?.workbenchCapnweb || specifier !== 'capnweb') throw cause
-								throw workbenchVersionError(
-									facts.owner,
-									facts.workbenchCapnweb,
-									'<missing>',
-									workbenchCapnwebVersion,
-								)
+								if (!facts || (facts.workbenchCapnweb === undefined && facts.capnwebPeer === undefined) || specifier !== 'capnweb') throw cause
+								throw workbenchVersionError(facts, '<missing>', '<missing>', workbenchCapnwebVersion)
 							}
-							if (facts?.workbenchCapnweb && specifier === 'capnweb') {
+							if (facts && (facts.workbenchCapnweb !== undefined || facts.capnwebPeer !== undefined) && specifier === 'capnweb') {
 								const actual = resolved.url.startsWith('file:')
 									? (sourcePackageFacts(resolved.url, packageFacts)?.version ?? '<unknown>')
 									: '<unresolved>'
 								if (
-									facts.workbenchCapnweb !== workbenchCapnwebVersion ||
+									facts.capnwebPeer !== workbenchCapnwebVersion ||
+									(facts.workbenchCapnweb !== undefined && facts.workbenchCapnweb !== workbenchCapnwebVersion) ||
 									actual !== workbenchCapnwebVersion
 								) {
-									throw workbenchVersionError(
-										facts.owner,
-										facts.workbenchCapnweb,
-										actual,
-										workbenchCapnwebVersion,
-									)
+									throw workbenchVersionError(facts, actual, resolved.url, workbenchCapnwebVersion)
 								}
 								const shared = frameworks.get('capnweb')
 								if (!shared) throw new Error('Production Workbench capnweb facade is unavailable')
@@ -106,15 +97,27 @@ export function createProductionSourceLoader(
 	}
 }
 
+type SourcePackageFacts = Readonly<{
+	owner: string
+	manifestPath: string
+	capnwebPeer?: string
+	workbenchCapnweb?: string
+	version?: string
+}>
+
 function workbenchVersionError(
-	owner: string,
-	declared: string,
+	facts: SourcePackageFacts,
 	actual: string,
+	actualEntry: string,
 	supported: string,
 ): Error {
 	return Object.assign(
 		new Error(
-			`Workbench target publisher ${owner} declares capnweb ${declared}, resolves ${actual}; host Workbench supports ${supported}`,
+			`Workbench capnweb admission failed for ${facts.owner} (${facts.manifestPath}): ` +
+			`peerDependencies.capnweb ${facts.capnwebPeer ?? '<missing>'}, ` +
+			`pluxel.workbenchCapnweb ${facts.workbenchCapnweb ?? '<absent>'}; ` +
+			`resolved ${actual} at ${actualEntry}; Host Workbench supports ${supported}. ` +
+			`Update the publisher peer and installation, then restart the Host.`,
 		),
 		{ code: 'PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH' },
 	)
@@ -122,8 +125,8 @@ function workbenchVersionError(
 
 function sourcePackageFacts(
 	url: string,
-	cache: Map<string, Readonly<{ owner: string; workbenchCapnweb?: string; version?: string }>>,
-): Readonly<{ owner: string; workbenchCapnweb?: string; version?: string }> | undefined {
+	cache: Map<string, SourcePackageFacts>,
+): SourcePackageFacts | undefined {
 	let directory = dirname(fileURLToPath(url))
 	for (;;) {
 		const cached = cache.get(directory)
@@ -133,10 +136,14 @@ function sourcePackageFacts(
 			const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
 				name?: string
 				version?: string
+				peerDependencies?: { capnweb?: unknown }
 				pluxel?: { workbenchCapnweb?: unknown }
 			}
 			const facts = Object.freeze({
 				owner: manifest.name ?? path,
+				manifestPath: path,
+				...(typeof manifest.peerDependencies?.capnweb === 'string'
+					? { capnwebPeer: manifest.peerDependencies.capnweb } : {}),
 				...(manifest.version ? { version: manifest.version } : {}),
 				...(typeof manifest.pluxel?.workbenchCapnweb === 'string'
 					? { workbenchCapnweb: manifest.pluxel.workbenchCapnweb }

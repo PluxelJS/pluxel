@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { assertWorkbenchCapnwebAdmission, readWorkbenchCapnwebPackage } from './workbench-peer'
 import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { Plugin, ResolvedId } from 'rolldown'
@@ -9,7 +10,7 @@ const WORKBENCH_MANIFEST = '@pluxel/workbench/package.json'
 export function staticWorkbenchCapnwebPlugin(entry: string): Plugin {
 	let supportedVersion = ''
 	let canonical: ResolvedId | undefined
-	const manifests = new Map<string, Promise<string | undefined>>()
+	const manifests = new Map<string, ReturnType<typeof readWorkbenchCapnwebPackage>>()
 	return {
 		name: 'pluxel:static-workbench-capnweb',
 		async buildStart() {
@@ -28,42 +29,26 @@ export function staticWorkbenchCapnwebPlugin(entry: string): Plugin {
 			if (id !== 'capnweb' || !importer || !isAbsolute(importer)) return null
 			let marker = manifests.get(importer)
 			if (!marker) {
-				marker = workbenchMarker(importer)
+				marker = readWorkbenchCapnwebPackage(importer)
 				manifests.set(importer, marker)
 			}
-			const declared = await marker
-			if (!declared) return null
+			const publisher = await marker
+			if (!publisher || (publisher.peer === undefined && publisher.marker === undefined)) return null
 			if (!canonical)
-				this.error(
-					`[static-application] Workbench target publisher ${importer} requires ${WORKBENCH_MANIFEST}`,
-				)
-			if (declared !== supportedVersion) {
-				this.error(
-					`[static-application] Workbench target publisher ${importer} declares capnweb ${declared}; host Workbench supports ${supportedVersion}`,
-				)
-			}
+				this.error(`[static-application] ${publisher.owner} requires ${WORKBENCH_MANIFEST}`)
 			const own = await this.resolve(id, importer, { ...options, skipSelf: true })
-			const actual =
-				own?.id && !own.external ? await packageVersion(own.id, 'capnweb') : '<missing>'
-			if (actual !== supportedVersion) {
-				this.error(
-					`[static-application] Workbench target publisher ${importer} resolves capnweb ${actual}; host Workbench supports ${supportedVersion}`,
-				)
-			}
+			const actual = own?.id && !own.external ? await packageVersion(own.id, 'capnweb') : undefined
+			assertWorkbenchCapnwebAdmission({
+				package: publisher,
+				supportedVersion,
+				actualVersion: actual,
+				actualEntry: own?.id,
+				development: false,
+				operation: 'static-application',
+			})
 			return canonical
 		},
 	}
-}
-
-async function workbenchMarker(importer: string): Promise<string | undefined> {
-	const manifest = await nearestManifest(importer)
-	if (!manifest) return undefined
-	const value = JSON.parse(await readFile(manifest, 'utf8')) as {
-		pluxel?: { workbenchCapnweb?: unknown }
-	}
-	return typeof value.pluxel?.workbenchCapnweb === 'string'
-		? value.pluxel.workbenchCapnweb
-		: undefined
 }
 
 export async function packageVersion(entry: string, name: string): Promise<string> {

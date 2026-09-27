@@ -100,7 +100,6 @@
 		"@module-federation/runtime": "catalog:prod",
 		"@module-federation/sdk": "catalog:prod",
 		"@tanstack/query-core": "catalog:frontend",
-		"capnweb": "catalog:prod",
 		"pathe": "catalog:node",
 		"valibot": "catalog:validation"
 	},
@@ -135,6 +134,7 @@
 		"@types/ws": "catalog:types",
 		"@vitejs/plugin-react": "catalog:build",
 		"@worksplit/react": "workspace:*",
+		"capnweb": "catalog:prod",
 		"postcss": "catalog:dev",
 		"postcss-preset-mantine": "catalog:dev",
 		"postcss-simple-vars": "catalog:dev",
@@ -155,6 +155,7 @@
 		"@pluxel/host-dev": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/services": "workspace:^",
+		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"vite": ">=8.2.2 <9"

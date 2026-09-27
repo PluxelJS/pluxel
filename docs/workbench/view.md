@@ -315,13 +315,13 @@ export const refreshOrders = overviewScope.mutation(({ api }) => ({
 
 ## 依赖与构建
 
-向 Workbench 发布 View/Attachment target 时，作者直接从 `capnweb` 导入 `RpcTarget`，并把宿主支持的精确版本
-同时列为 peer 和 dev dependency。当前 Workbench 支持 `0.12.0`；官方包使用 `catalog:prod`。
-Workbench 在打开页面时检查 target 是同一运行时的 `RpcTarget`，`pluxel build` 在发布产物前检查该包的
-peer、dev 和实际安装版本。仅自建的 RPC session 不因使用同名库而受 Workbench 版本限制。
-构建产物的 `pluxel.workbenchCapnweb` 事实让 Pluxel 静态应用和生产动态来源只对 target 发布包
-桥接宿主模块；动态来源在加载时还检查实际版本，并给出包名、实际版和宿主支持版。即使版本相同，
-绕过标准构建或采用其它加载器造成的第二份模块仍会在打开时被拒绝。`openEntry()` 的失败结果区分 `invalid_target`（不是宿主 `RpcTarget`）、`reused_target`（重复输出同一实例）、`factory_timeout`、`target_unavailable` 和未知 factory 异常的 `factory_failed`。Factory 失败结果包含 `diagnosticId`；页面只显示此标识，服务端日志用同一标识记录 node、entry、阶段和原始异常，供授权开发诊断定位。
+向 Workbench 发布 View/Attachment target 时，作者直接从 `capnweb` 导入 `RpcTarget`。最终 Host 应用
+在 `dependencies` 安装运行时；target publisher 和提供 target class 的基础库声明宿主支持的精确 peer
+版本，源码开发还声明同版本 dev dependency。当前 Workbench 支持 `0.12.0`；官方包使用 `catalog:prod`。
+`pluxel build` 检查 publisher 的 peer、dev 与实际安装，生成 `pluxel.workbenchCapnweb` 制品事实。
+开发 Vite、静态构建和生产动态来源先核对共享包的声明与实际解析，再接入宿主的原生模块；基础库由
+peer 声明识别，无需手写制品标记。私有 RPC 保留自己的依赖解析。绕过标准加载器造成的第二份模块
+仍会在 Workbench 打开 target 时被拒绝。`openEntry()` 的失败结果区分 `invalid_target`（不是宿主 `RpcTarget`）、`reused_target`（重复输出同一实例）、`factory_timeout`、`target_unavailable` 和未知 factory 异常的 `factory_failed`。Factory 失败结果包含 `diagnosticId`；页面只显示此标识，服务端日志用同一标识记录 node、entry、阶段和原始异常，供授权开发诊断定位。
 
 `RpcTarget` 是 Cap’n Web 的能力对象，不归 Workbench 所有。同一份 browser-safe API contract 和 target class 可以用
 Cap’n Web 的 `new RpcStub(target)` 独立测试，也可在确有 CLI 或其他客户端需求时由另一条明确拥有的 Cap’n Web session 挂载。

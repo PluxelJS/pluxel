@@ -14,7 +14,7 @@ function fixture(installedVersion: string, markerVersion = '0.12.0') {
 		mkdirSync(dirname(file), { recursive: true })
 		writeFileSync(file, value)
 	}
-	const packageModule = (owner: string, version: string, marker?: string) => {
+	const packageModule = (owner: string, version: string, marker?: string, peer?: string) => {
 		put(
 			`node_modules/${owner}/package.json`,
 			JSON.stringify({
@@ -23,6 +23,7 @@ function fixture(installedVersion: string, markerVersion = '0.12.0') {
 				type: 'module',
 				exports: './index.mjs',
 				...(marker ? { pluxel: { workbenchCapnweb: marker } } : {}),
+				...(peer ? { peerDependencies: { capnweb: peer } } : {}),
 			}),
 		)
 		put(
@@ -46,11 +47,12 @@ function fixture(installedVersion: string, markerVersion = '0.12.0') {
 		JSON.stringify({ name: 'capnweb', version: '0.12.0', type: 'module', exports: './index.mjs' }),
 	)
 	put('host-capnweb/index.mjs', 'export class RpcTarget {}')
-	packageModule('target-plugin', installedVersion, markerVersion)
+	packageModule('target-plugin', installedVersion, markerVersion, '0.12.0')
+	packageModule('shared-library', '0.12.0', undefined, '0.12.0')
 	packageModule('private-rpc', '0.13.0')
 	put(
 		'entry.mjs',
-		"export { RpcTarget as Target } from 'target-plugin'; export { RpcTarget as Private } from 'private-rpc'",
+		"export { RpcTarget as Target } from 'target-plugin'; export { RpcTarget as Base } from 'shared-library'; export { RpcTarget as Private } from 'private-rpc'",
 	)
 	return root
 }
@@ -74,6 +76,7 @@ try {
  const module = await source.load(root + '/entry.mjs')
  const host = await import('file://' + root + '/host-capnweb/index.mjs')
  assert.equal(module.Target, host.RpcTarget)
+ assert.equal(module.Base, host.RpcTarget)
  assert.notEqual(module.Private, host.RpcTarget)
  console.log('TARGET_SHARED_PRIVATE_INDEPENDENT')
 } finally { source.close() }
@@ -105,7 +108,7 @@ const source = createProductionSourceLoader({ capnweb: new URL('./host-capnweb/i
 try {
  await assert.rejects(source.load(root + '/entry.mjs'), error => {
   assert.equal(error.code, 'PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH')
-  assert.match(error.message, /target-plugin declares capnweb 0\\.12\\.0, resolves 0\\.13\\.0; host Workbench supports 0\\.12\\.0/)
+  assert.match(error.message, /target-plugin.*peerDependencies.capnweb 0\\.12\\.0.*resolved 0\\.13\\.0.*Host Workbench supports 0\\.12\\.0/)
   return true
  })
  console.log('MISMATCH_DIAGNOSED')

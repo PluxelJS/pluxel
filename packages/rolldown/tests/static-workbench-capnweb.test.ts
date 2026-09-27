@@ -31,9 +31,10 @@ async function fixture(installedVersion: string) {
 	)
 	await put('node_modules/@pluxel/workbench/service.mjs', "export { RpcTarget } from 'capnweb'")
 	await capnweb('node_modules/@pluxel/workbench/node_modules/capnweb', '0.12.0')
-	for (const [name, version, marked] of [
-		['target-plugin', installedVersion, true],
-		['private-rpc', '0.13.0', false],
+	for (const [name, version, shared, marked] of [
+		['target-plugin', installedVersion, true, true],
+		['target-library', installedVersion, true, false],
+		['private-rpc', '0.13.0', false, false],
 	] as const) {
 		await put(
 			`node_modules/${name}/package.json`,
@@ -41,6 +42,7 @@ async function fixture(installedVersion: string) {
 				name,
 				type: 'module',
 				exports: './index.mjs',
+				...(shared ? { peerDependencies: { capnweb: '0.12.0' } } : {}),
 				...(marked ? { pluxel: { workbenchCapnweb: '0.12.0' } } : {}),
 			}),
 		)
@@ -52,8 +54,10 @@ async function fixture(installedVersion: string) {
 		[
 			"import { RpcTarget as Host } from '@pluxel/workbench/service'",
 			"import { RpcTarget as Target } from 'target-plugin'",
+			"import { RpcTarget as Library } from 'target-library'",
 			"import { RpcTarget as Private } from 'private-rpc'",
 			'export const targetShared = Target === Host',
+			'export const libraryShared = Library === Host',
 			'export const privateIndependent = Private !== Host',
 		].join('\n'),
 	)
@@ -68,6 +72,7 @@ it('bundles a marked target with the Workbench constructor while preserving priv
 		await bundle.close()
 		const result = await import(pathToFileURL(join(root, 'bundle.mjs')).href)
 		expect(result.targetShared).toBe(true)
+		expect(result.libraryShared).toBe(true)
 		expect(result.privateIndependent).toBe(true)
 	} finally {
 		await rm(root, { recursive: true, force: true })
@@ -79,7 +84,7 @@ it('rejects a marked target whose installed version differs from Workbench', asy
 	try {
 		const bundle = await rolldown({ input: entry, plugins: [staticWorkbenchCapnwebPlugin(entry)] })
 		await expect(bundle.write({ file: join(root, 'bundle.mjs'), format: 'esm' })).rejects.toThrow(
-			/target-plugin.*resolves capnweb 0\.13\.0; host Workbench supports 0\.12\.0/,
+			/target-plugin.*resolved 0\.13\.0.*Host Workbench supports 0\.12\.0/,
 		)
 		await bundle.close()
 	} finally {

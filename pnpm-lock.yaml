@@ -1452,9 +1452,6 @@ importers:
       '@tanstack/query-core':
         specifier: catalog:frontend
         version: 5.104.0
-      capnweb:
-        specifier: catalog:prod
-        version: 0.12.0
       pathe:
         specifier: catalog:node
         version: 2.0.3
@@ -1552,6 +1549,9 @@ importers:
       '@worksplit/react':
         specifier: workspace:*
         version: link:../../vendor/split-like-vscode/packages/react
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       postcss:
         specifier: catalog:dev
         version: 8.5.28

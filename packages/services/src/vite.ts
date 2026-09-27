@@ -1,4 +1,9 @@
 import { dirname } from 'node:path'
+import {
+	assertWorkbenchCapnwebAdmission,
+	installedWorkbenchCapnwebVersion,
+	readWorkbenchCapnwebPackage,
+} from '@pluxel/rolldown/internal/workbench-capnweb'
 import { resolveWithOxc } from '@pluxel/rolldown/resolver/oxc'
 import { host, hostSingletons } from '@pluxel/host-dev/vite'
 import { HOST_VITE_ENVIRONMENT, registerHostSingleton } from '@pluxel/host-dev/internal'
@@ -32,15 +37,26 @@ export function serviceSingletons(): Plugin {
 				typeof configureSingleton === 'function' ? configureSingleton : configureSingleton.handler
 			return handler.call(this, config)
 		},
-		resolveId(source, importer, options) {
-			if (source === 'capnweb' && options.ssr && this.environment.name === HOST_VITE_ENVIRONMENT) {
-				const conditions = { conditionNames: ['node', 'import', 'default'] }
-				const workbench = resolveWithOxc(root, '@pluxel/workbench', conditions)
-				if (workbench) {
+		async resolveId(source, importer, options) {
+			if (source === 'capnweb' && importer && options.ssr && this.environment.name === HOST_VITE_ENVIRONMENT) {
+				const publisher = await readWorkbenchCapnwebPackage(importer)
+				// A source publisher has an explicit peer before build metadata exists. Private RPC has neither.
+				if (publisher && (publisher.peer !== undefined || publisher.marker !== undefined)) {
+					const conditions = { conditionNames: ['node', 'import', 'default'] }
+					const workbench = resolveWithOxc(root, '@pluxel/workbench', conditions)
+					if (!workbench) throw new Error(`[services/vite] ${publisher.owner} imports shared capnweb, but @pluxel/workbench is unavailable from ${root}`)
 					const canonical = resolveWithOxc(dirname(workbench.path), 'capnweb', conditions)
-					if (!canonical) throw new Error('Cannot resolve Workbench capnweb')
-					if (this.environment.mode === 'dev')
-						registerHostSingleton(this.environment, canonical.path)
+					if (!canonical) throw new Error(`[services/vite] Cannot resolve Workbench capnweb from ${workbench.path}`)
+					const own = resolveWithOxc(dirname(importer), 'capnweb', conditions)
+					assertWorkbenchCapnwebAdmission({
+						package: publisher,
+						supportedVersion: await installedWorkbenchCapnwebVersion(canonical.path),
+						actualVersion: own ? await installedWorkbenchCapnwebVersion(own.path) : undefined,
+						actualEntry: own?.path,
+						development: publisher.dev !== undefined || publisher.marker === undefined,
+						operation: 'services/vite',
+					})
+					if (this.environment.mode === 'dev') registerHostSingleton(this.environment, canonical.path)
 					return { id: canonical.path, external: true }
 				}
 			}

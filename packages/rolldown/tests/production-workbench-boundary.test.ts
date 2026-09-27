@@ -35,6 +35,7 @@ it('bridges an installed target through a relocated Workbench application and di
 				type: 'module',
 				exports: './index.mjs',
 				pluxel: { workbenchCapnweb: '0.12.0' },
+				peerDependencies: { capnweb: '0.12.0' },
 			}),
 		)
 		await put(
@@ -130,7 +131,7 @@ try { await application.start() } finally { await application.stop() }
 			}),
 		)
 		await expect(run()).rejects.toThrow(
-			/installed-target declares capnweb 0\.12\.0, resolves 0\.13\.0; host Workbench supports 0\.12\.0/,
+			/installed-target.*peerDependencies\.capnweb 0\.12\.0.*resolved 0\.13\.0.*Host Workbench supports 0\.12\.0/,
 		)
 	} finally {
 		await rm(root, { recursive: true, force: true })

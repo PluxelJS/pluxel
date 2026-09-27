@@ -97,14 +97,15 @@ oxlint.config.ts
 可发布包仍应将生产导出指向构建制品。
 
 Pluxel Core、所用服务和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
-发布 Workbench View/Attachment `RpcTarget` 的包还需把宿主支持的 `capnweb` 精确版本同时声明为 peer 和 dev dependency，
-并让生产 bundle 保留该外部依赖。`pluxel build` 根据实际 Workbench target publication 检查声明版本和安装版本，
-当前官方支持 `0.12.0`；仅自建私有 RPC 或只发布 Content 的包不受这项检查约束。
-构建还会生成 `pluxel.workbenchCapnweb` 版本事实。Pluxel 静态应用只把带此事实的 target 包的
-`capnweb` import 解析到宿主 Workbench；生产动态来源加载时核对声明、来源实际安装版与宿主支持版，
-不匹配时报告 `PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH`，匹配时让该包借用宿主模块。
-插件私有 RPC 包继续按自己的依赖解析。绕过 `pluxel build` 的包没有生成事实，
-不能依赖生产加载器自动桥接；Workbench 打开 target 时仍检查真实 `RpcTarget` 身份。
+最终 Host 应用在 `dependencies` 直接声明并安装 `capnweb`。发布 Workbench View/Attachment `RpcTarget` 的包，
+以及向这些 publisher 提供 target class 的基础库，把宿主支持的精确版本声明为 `peerDependencies.capnweb`，
+源码开发还需同版本的 `devDependencies.capnweb`；生产 bundle 保留这个外部依赖。当前官方支持 `0.12.0`。
+`pluxel build` 根据实际 Workbench target publication 检查 publisher 的声明与安装，并生成
+`pluxel.workbenchCapnweb` 制品事实。基础库无需再手写发布标记：开发 Vite 与静态构建按该库的 peer
+声明和实际 import 解析结果准入，然后接到宿主 Workbench 的同一原生模块。生产动态来源也在加载前核对
+peer、可用的制品事实和实际解析版；不匹配时报告 `PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH`。
+只使用独立私有 RPC 的包保留普通依赖和自身解析，不受该接线影响。绕过标准构建或其它加载器产生的
+第二份构造器仍会在 Workbench 打开 target 时被拒绝。
 
 希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入完整上游命名导出；
 无需另设 `better-result` peer。用法见 [better-result 共享入口](../api/better-result.md)。
