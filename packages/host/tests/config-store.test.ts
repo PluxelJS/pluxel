@@ -71,6 +71,59 @@ it.each([
 	}
 })
 
+it.each([
+	['malformed JSON', '{', /config\.json: .*position|config\.json: .*JSON/i],
+	['wrong root type', SuperJSON.stringify([]), /config\.json: persisted config must be an object/i],
+	[
+		'unknown version',
+		SuperJSON.stringify({ version: 2, plugins: [] }),
+		/config\.json: unsupported persisted config version: 2/i,
+	],
+	[
+		'invalid records',
+		SuperJSON.stringify({ version: 3, plugins: {} }),
+		/config\.json: .*plugins must be an array/i,
+	],
+] as const)(
+	'rejects %s in writable mode without writing any document',
+	async (_case, text, expected) => {
+		const storage = createDocumentStorage()
+		await storage.put('config.json', text)
+		const ctx = createCoreContextHost().createRoot()
+		const store = new HostConfigStore(ctx, { storage })
+		try {
+			await expect(store.ready).rejects.toThrow(expected)
+			await expect(store.ready).rejects.toThrow(
+				/Existing document unchanged; repair or restore it before restarting/,
+			)
+			expect(store.isReady).toBe(false)
+			expect(() => store.patchConfig(owner, { value: 'replacement' })).toThrow(
+				/requires a successfully loaded config document/,
+			)
+		} finally {
+			await ctx.effects.dispose()
+		}
+		expect(await storage.getText('config.json')).toBe(text)
+		expect([...storage.documents.keys()]).toEqual(['config.json'])
+	},
+)
+
+it('initializes an absent writable config document once', async () => {
+	const storage = createDocumentStorage()
+	const ctx = createCoreContextHost().createRoot()
+	const store = new HostConfigStore(ctx, { storage })
+	try {
+		await store.ready
+		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
+			version: 3,
+			plugins: [],
+		})
+		expect([...storage.documents.keys()]).toEqual(['config.json'])
+	} finally {
+		await ctx.effects.dispose()
+	}
+})
+
 it('requests atomic writes, retains failed work for retry, and recreates a deleted committed file', async () => {
 	const memory = createDocumentStorage()
 	const writes: boolean[] = []

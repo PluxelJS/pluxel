@@ -119,6 +119,35 @@ it('prepares explicit config and state documents, reopens stored values ahead of
 	expect(backendClosed).toBe(false)
 })
 
+it.each(['config', 'state'] as const)(
+	'rejects Host preparation when persisted %s is invalid and preserves both documents',
+	async (broken) => {
+		const configStorage = createDocumentStorage()
+		const stateStorage = createDocumentStorage()
+		const validConfig = JSON.stringify({ version: 3, plugins: [] })
+		const validState = JSON.stringify({
+			version: 5,
+			autoStart: [],
+			forks: [],
+			providerDefaults: [],
+			dependencyOverrides: [],
+		})
+		await configStorage.put('config.json', broken === 'config' ? '{' : validConfig)
+		await stateStorage.put('state.json', broken === 'state' ? '{' : validState)
+		await expect(
+			createHost({
+				plugins: [],
+				configRecords: { storage: configStorage },
+				state: { storage: stateStorage },
+			}),
+		).rejects.toThrow(/Cannot load (config|state)\.json/)
+		expect(await configStorage.getText('config.json')).toBe(broken === 'config' ? '{' : validConfig)
+		expect(await stateStorage.getText('state.json')).toBe(broken === 'state' ? '{' : validState)
+		expect([...configStorage.documents.keys()]).toEqual(['config.json'])
+		expect([...stateStorage.documents.keys()]).toEqual(['state.json'])
+	},
+)
+
 it('rejects canceled queued writes while allowing an already admitted operation to settle', async () => {
 	const { requirePluginHostCoordinator } = await import('../src/internal')
 	const { pluginConfigPatch } = await import('../src/config')

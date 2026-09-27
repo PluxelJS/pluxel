@@ -71,8 +71,9 @@ export class HostStateStore {
 		if (options.initial) applySnapshot(this.data, options.initial)
 		this.refreshSnapshotCache()
 		if (this.mode !== 'memory') {
-			this.ready = this.loadFromDisk(this.file).finally(() => {
+			this.ready = this.loadFromDisk(this.file).then((): void => {
 				this.isReady = true
+				return undefined
 			})
 		} else {
 			this.isReady = true
@@ -131,6 +132,8 @@ export class HostStateStore {
 	}
 
 	private assertMutable(action: string) {
+		if (!this.isReady)
+			throw new Error(`[HostStateStore] ${action} requires a successfully loaded state document.`)
 		if (this.disposed) throw new Error(`[HostStateStore] ${action} is disabled after dispose.`)
 		if (!this.readonlyMode) return
 		throw new Error(`[HostStateStore] ${action} is disabled in readonly mode.`)
@@ -159,28 +162,18 @@ export class HostStateStore {
 			return
 		}
 
-		let parsed: unknown
+		let parsed: HostStateDraft
 		try {
-			parsed = SuperJSON.parse(txt)
+			parsed = coerceHostStateFile(SuperJSON.parse(txt))
 		} catch (error) {
-			if (this.readonlyMode) {
-				throw new Error('[HostStateStore] Persisted readonly state is malformed.', {
-					cause: error,
-				})
-			}
-			this.ctx.logger.warn('HostStateStore parse failed; isolating broken state', {
-				file,
-				error,
-			})
-			await this.isolateBrokenStateFile(file, txt)
-			replaceDraft(this.data, createDefaultDraft())
-			this.revision++
-			this.refreshSnapshotCache()
-			await this.persistDraft(file, this.data)
-			return
+			const reason = error instanceof Error ? error.message : String(error)
+			throw new Error(
+				`[HostStateStore] Cannot load ${file}: ${reason}. Existing document unchanged; repair or restore it before restarting.`,
+				{ cause: error },
+			)
 		}
 
-		replaceDraft(this.data, coerceHostStateFile(parsed))
+		replaceDraft(this.data, parsed)
 		this.revision++
 		this.refreshSnapshotCache()
 	}
@@ -191,20 +184,6 @@ export class HostStateStore {
 	): Promise<void> {
 		const content = SuperJSON.stringify(toHostStateFile(draft))
 		await this.storage!.put(file, content, { atomic: true })
-	}
-
-	private async isolateBrokenStateFile(file: string, content: string) {
-		const safeTs = new Date().toISOString().replaceAll(/[:.]/g, '-')
-		const brokenFile = `${file}.broken.${safeTs}`
-		try {
-			await this.storage!.put(brokenFile, content)
-		} catch (error) {
-			this.ctx.logger.warn('failed to isolate broken runtime state file', {
-				file,
-				brokenFile,
-				error,
-			})
-		}
 	}
 }
 

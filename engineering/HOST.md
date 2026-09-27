@@ -47,7 +47,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 ## 资源边界与验证入口
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
-- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。持久化服务只提供借用的 document storage，不拥有运行事实。
+- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。持久化服务只提供借用的 document storage，不拥有运行事实。 已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
 - 动态 catalog、failed candidate 和 committed authority：Host `source-session.ts`、`coordinator.ts`，Host-dev `host-vite.ts`。细节见 [HMR](HMR.md)。
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/runtime/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移和 backend：[DATABASE.md](DATABASE.md)。

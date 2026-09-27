@@ -70,8 +70,9 @@ export class ConfigService {
 
 	protected setReadyTask(task: Promise<void>): void {
 		this.readyState = false
-		this.readyTask = task.finally(() => {
+		this.readyTask = task.then((): void => {
 			this.readyState = true
+			return undefined
 		})
 	}
 

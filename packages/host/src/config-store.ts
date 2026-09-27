@@ -277,6 +277,8 @@ export class HostConfigStore extends CoreConfigService {
 	}
 
 	protected override assertConfigMutable(action: string): void {
+		if (!this.isReady)
+			throw new Error(`[ConfigService] ${action} requires a successfully loaded config document.`)
 		if (this.disposed) throw new Error(`[ConfigService] ${action} is disabled after dispose.`)
 		if (!this.readonlyMode) return
 		throw new ConfigMutationRejectedError(action)
@@ -353,52 +355,30 @@ export class HostConfigStore extends CoreConfigService {
 			return
 		}
 
-		this.lastWrittenDigest = ohash(text)
-		let parsed: Record<string, unknown>
+		let records: PluginConfigRecordSnapshot[]
 		try {
 			const value = SuperJSON.parse(text) as unknown
 			if (!value || typeof value !== 'object' || Array.isArray(value)) {
 				throw new Error('persisted config must be an object')
 			}
-			parsed = value as Record<string, unknown>
-		} catch (error) {
-			if (this.readonlyMode) {
-				throw new Error('[ConfigService] Persisted readonly config is malformed.', {
-					cause: error,
-				})
+			const parsed = value as Record<string, unknown>
+			if (parsed.version !== 3) {
+				throw new Error(
+					`unsupported persisted config version: ${String(parsed.version)}; expected 3`,
+				)
 			}
-			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', {
-				file: this.file,
-				error,
-			})
-			await this.isolateBrokenConfigFile(text)
-			this.managed = []
-			this.replaceLayers()
-			await this.saveToDisk()
-			return
-		}
-
-		if (parsed.version !== 3) {
+			records = coercePluginConfigRecords(parsed.plugins)
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error)
 			throw new Error(
-				`[ConfigService] Unsupported persisted config version: ${String(parsed.version)}`,
+				`[ConfigService] Cannot load ${this.file}: ${reason}. Existing document unchanged; repair or restore it before restarting.`,
+				{ cause: error },
 			)
 		}
-		this.managed = coercePluginConfigRecords(parsed.plugins)
-		this.replaceLayers()
-	}
 
-	private async isolateBrokenConfigFile(content: string): Promise<void> {
-		const safeTs = new Date().toISOString().replaceAll(/[:.]/g, '-')
-		const brokenFile = `${this.file}.broken.${safeTs}`
-		try {
-			await this.storage!.put(brokenFile, content)
-		} catch (error) {
-			this.ctx.logger.warn('failed to isolate broken config file', {
-				file: this.file,
-				brokenFile,
-				error,
-			})
-		}
+		this.lastWrittenDigest = ohash(text)
+		this.managed = records
+		this.replaceLayers()
 	}
 
 	private async saveToDisk(options: { force?: boolean } = {}): Promise<void> {

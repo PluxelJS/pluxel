@@ -138,6 +138,71 @@ describe('Host state address persistence', () => {
 		}
 	})
 
+	it.each([
+		['malformed JSON', '{', /state\.json:/i],
+		[
+			'wrong root type',
+			SuperJSON.stringify([]),
+			/state\.json: .*persisted state must be an object/i,
+		],
+		[
+			'unknown version',
+			SuperJSON.stringify({ version: 4 }),
+			/state\.json: .*unsupported persisted state version: 4/i,
+		],
+		[
+			'invalid field',
+			SuperJSON.stringify({
+				version: 5,
+				autoStart: {},
+				forks: [],
+				providerDefaults: [],
+				dependencyOverrides: [],
+			}),
+			/state\.json: .*autoStart must be an array/i,
+		],
+	] as const)(
+		'rejects %s in writable mode without writing any document',
+		async (_case, text, expected) => {
+			const backend = createDocumentStorage()
+			await backend.put('state.json', text)
+			const runtime = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
+			try {
+				await expect(runtime.ready).rejects.toThrow(expected)
+				await expect(runtime.ready).rejects.toThrow(
+					/Existing document unchanged; repair or restore it before restarting/,
+				)
+				expect(runtime.isReady).toBe(false)
+				const current = runtime.versionedSnapshot()
+				await expect(runtime.commitVersioned(current.revision, current.state)).rejects.toThrow(
+					/requires a successfully loaded state document/,
+				)
+			} finally {
+				await runtime.ctx.effects.dispose()
+			}
+			expect(await backend.getText('state.json')).toBe(text)
+			expect([...backend.documents.keys()]).toEqual(['state.json'])
+		},
+	)
+
+	it('initializes an absent writable state document once', async () => {
+		const backend = createDocumentStorage()
+		const runtime = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
+		try {
+			await runtime.ready
+			expect(SuperJSON.parse((await backend.getText('state.json'))!)).toEqual({
+				version: 5,
+				autoStart: [],
+				forks: [],
+				providerDefaults: [],
+				dependencyOverrides: [],
+			})
+			expect([...backend.documents.keys()]).toEqual(['state.json'])
+		} finally {
+			await runtime.ctx.effects.dispose()
+		}
+	})
+
 	it('compare-and-commits coordinator snapshots without accepting a stale revision', async () => {
 		const host = new HostStateStore(createCoreContextHost().createRoot())
 		try {
