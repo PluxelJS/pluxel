@@ -275,10 +275,10 @@ describe('packaged Shell manifest contract', () => {
 		)
 		try {
 			const { resolveBuiltAssets } = await import('../src/shell/assets')
-			const assets = await resolveBuiltAssets(publicDir)
-			expect(assets.js).toBe('/__pluxel/workbench/assets/client.js')
-			expect(assets.preload).toEqual(['/__pluxel/workbench/assets/shared.js'])
-			expect(assets.css).toEqual(['/__pluxel/workbench/assets/shared.css'])
+			const builtAssets = await resolveBuiltAssets(publicDir)
+			expect(builtAssets.js).toBe('/__pluxel/workbench/assets/client.js')
+			expect(builtAssets.preload).toEqual(['/__pluxel/workbench/assets/shared.js'])
+			expect(builtAssets.css).toEqual(['/__pluxel/workbench/assets/shared.css'])
 		} finally {
 			await rm(publicDir, { recursive: true, force: true })
 		}

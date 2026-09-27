@@ -106,10 +106,10 @@ export default defineHostApplication(() => ({plugins:[],sources:[dynamicSource({
 			() => globalThis[key] === 1,
 			`${scenario} repair must recover initial dynamic source`,
 		)
-		await until(
-			async () => (await inspectApplication(root)).state === 'ready',
-			`${scenario} host readiness`,
-		)
+		await until(async () => {
+			const application = await inspectApplication(root)
+			return application.state === 'ready'
+		}, `${scenario} host readiness`)
 		await server.close()
 		server = undefined
 		assert.equal(globalThis[key], 1)

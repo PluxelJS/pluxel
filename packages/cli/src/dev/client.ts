@@ -394,13 +394,12 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 					!['ready', 'updating', 'unavailable'].includes(String(value.application.state))
 				)
 					fail('protocol_mismatch', 'Console application status is invalid')
-				return {
-					...instance,
+				return Object.assign({}, instance, {
 					application: {
 						state: value.application.state as 'ready' | 'updating' | 'unavailable',
 						latestUpdate: value.application.latestUpdate ?? null,
 					},
-				}
+				})
 			}),
 		)
 		for (const result of results) {
