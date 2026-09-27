@@ -150,7 +150,7 @@ const WORKBENCH_REACT_IMPORTS = new Set(['@pluxel/workbench/react'])
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'prototype', 'constructor', 'then'])
 const GENERATED_ABI_VERSION = 3
-const BUILD_REVISION_VERSION = 3
+const BUILD_REVISION_VERSION = 4
 const FIXED_SHARED_PACKAGES = new Set(
 	WORKBENCH_FEDERATION_SHARED_MODULES.map(packageNameFromSpecifier),
 )

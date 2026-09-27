@@ -20,6 +20,8 @@ export type ElysiaCarrierRequestAddress = Readonly<{
 }>
 
 export type ElysiaCarrierMetadata = Readonly<{
+	/** Explicit launcher-owned browser origin; never inferred from forwarding headers. */
+	publicOrigin?: string
 	url: URL
 	port: number
 	hostname: string

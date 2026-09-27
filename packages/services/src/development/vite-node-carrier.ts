@@ -30,7 +30,7 @@ export interface SrvxViteNodeCarrierAttachment {
 export type ViteNodeElysiaApplicationCarrierOptions = Pick<
 	NodeElysiaApplicationCarrierOptions,
 	'fetch' | 'matches'
->
+> & { publicOrigin?: string }
 
 /** Creates the one Node/Elysia application carrier shared by a Vite business listener. */
 export function createViteNodeElysiaApplicationCarrier(
@@ -39,7 +39,7 @@ export function createViteNodeElysiaApplicationCarrier(
 ): NodeElysiaApplicationCarrier {
 	return new NodeElysiaApplicationCarrier({
 		...options,
-		metadata: () => viteCarrierMetadata(server),
+		metadata: () => ({ ...viteCarrierMetadata(server), publicOrigin: options.publicOrigin }),
 	})
 }
 

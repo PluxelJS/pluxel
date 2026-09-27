@@ -1,5 +1,7 @@
+import { dirname } from 'node:path'
+import { resolveWithOxc } from '@pluxel/rolldown/resolver/oxc'
 import { host, hostSingletons } from '@pluxel/host-dev/vite'
-import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
+import { HOST_VITE_ENVIRONMENT, registerHostSingleton } from '@pluxel/host-dev/internal'
 import { perEnvironmentPlugin, type Plugin, type PluginOption } from 'vite'
 import { serviceDevelopment } from './development/service-development'
 
@@ -17,13 +19,35 @@ export function serviceSingletons(): Plugin {
 	const singletons = hostSingletons({
 		packages: ['@pluxel/services', '@pluxel/workbench'],
 	})
-	// Workbench and RPC Plugins own capnweb as a normal dependency. Keep native ESM identity
-	// without requiring every application to declare that transitive transport package.
+	const resolveSingleton = singletons.resolveId!
+	const configureSingleton = singletons.configResolved!
+	let root = ''
+	// Linked workspaces can install the same version at different native module paths.
+	// Resolve RpcTarget from the selected Workbench installation, not each publisher.
 	return {
 		...singletons,
-		config: () => ({
-			environments: { [HOST_VITE_ENVIRONMENT]: { resolve: { external: ['capnweb'] } } },
-		}),
+		configResolved(config) {
+			root = config.root
+			const handler =
+				typeof configureSingleton === 'function' ? configureSingleton : configureSingleton.handler
+			return handler.call(this, config)
+		},
+		resolveId(source, importer, options) {
+			if (source === 'capnweb' && options.ssr && this.environment.name === HOST_VITE_ENVIRONMENT) {
+				const conditions = { conditionNames: ['node', 'import', 'default'] }
+				const workbench = resolveWithOxc(root, '@pluxel/workbench', conditions)
+				if (workbench) {
+					const canonical = resolveWithOxc(dirname(workbench.path), 'capnweb', conditions)
+					if (!canonical) throw new Error('Cannot resolve Workbench capnweb')
+					if (this.environment.mode === 'dev')
+						registerHostSingleton(this.environment, canonical.path)
+					return { id: canonical.path, external: true }
+				}
+			}
+			const handler =
+				typeof resolveSingleton === 'function' ? resolveSingleton : resolveSingleton.handler
+			return handler.call(this, source, importer, options)
+		},
 	}
 }
 

@@ -148,77 +148,83 @@ it('serves a real authenticated socket for a Core Host and leaves it alive when 
 	}
 })
 
-it('mounts management through the selected Host HTTP carrier and withdraws it on Host close', async () => {
-	const host = await createHost({
-		plugins: [ManagedWorker],
-		services: [
-			elysia(),
-			persistence({ mode: 'memory' }),
-			managementAccess(),
-			management(),
-			managementHttp(),
-		],
-	})
-	await host.start()
-	const boundary = resolveContextCapability(host.ctx, ElysiaRuntime)
-	const unmountShell = boundary.mountFallback({
-		matchesRequest: (request) => new URL(request.url).pathname === '/shell',
-		fetch: async (request) =>
-			new URL(request.url).pathname === '/shell' ? new Response('shell') : null,
-	})
-	const { fetch: fetchHost } = boundary
-	const shellResponse = await fetchHost(new Request('http://host.test/shell'))
-	expect(await shellResponse.text()).toBe('shell')
-	expect(await fetchHost(new Request('http://host.test/missing'))).toMatchObject({ status: 404 })
-	unmountShell()
-	unmountShell()
-	expect(await fetchHost(new Request('http://host.test/shell'))).toMatchObject({ status: 404 })
-	const server = createServer((_request, response) => response.writeHead(404).end())
-	let origin = ''
-	const carrier = new NodeElysiaApplicationCarrier({
-		fetch: boundary.fetch.bind(boundary),
-		matches: boundary.matchesWebSocketRoute.bind(boundary),
-		metadata: () => ({
-			url: new URL(origin),
-			hostname: '127.0.0.1',
-			port: (server.address() as AddressInfo).port,
-			development: false,
-		}),
-	})
-	const detach = boundary.attachApplicationCarrier(carrier)
-	server.on('upgrade', (request, socket, head) => carrier.handleUpgrade(request, socket, head))
-	server.listen(0, '127.0.0.1')
-	await once(server, 'listening')
-	origin = 'http://127.0.0.1:' + (server.address() as AddressInfo).port
-	const socket = new HeaderWebSocket(
-		origin.replace('http:', 'ws:') + '/__pluxel/runtime/session',
-		[],
-		{ headers: { origin } },
-	)
-	await once(socket, 'open')
-	const root = newWebSocketRpcSession<RuntimeSessionRoot>(socket as unknown as WebSocket)
-	try {
-		const boot = await root.bootstrap(async () => {})
-		if (boot.kind !== 'management') throw new Error('Expected loopback session')
-		const client = createRuntimeManagementClient(boot.management)
-		expect(await client.catalog.snapshot()).toMatchObject({ summary: { total: 1 } })
-		boot[Symbol.dispose]()
-		const closed = once(socket, 'close')
-		await host.close()
-		await closed
-		expect(await boundary.fetch(new Request(origin + '/__pluxel/runtime/session'))).toMatchObject({
-			status: 503,
+it.each([undefined, 'http://bot-new-omni.localhost:1355', 'https://bot-new-omni.localhost'])(
+	'mounts management with public origin %s and withdraws it on Host close',
+	async (publicOrigin) => {
+		const host = await createHost({
+			plugins: [ManagedWorker],
+			services: [
+				elysia(),
+				persistence({ mode: 'memory' }),
+				managementAccess(),
+				management(),
+				managementHttp(),
+			],
 		})
-		expect(boundary.matchesWebSocketRoute(new Request(origin + '/__pluxel/runtime/session'))).toBe(
-			false,
+		await host.start()
+		const boundary = resolveContextCapability(host.ctx, ElysiaRuntime)
+		const unmountShell = boundary.mountFallback({
+			matchesRequest: (request) => new URL(request.url).pathname === '/shell',
+			fetch: async (request) =>
+				new URL(request.url).pathname === '/shell' ? new Response('shell') : null,
+		})
+		const { fetch: fetchHost } = boundary
+		const shellResponse = await fetchHost(new Request('http://host.test/shell'))
+		expect(await shellResponse.text()).toBe('shell')
+		expect(await fetchHost(new Request('http://host.test/missing'))).toMatchObject({ status: 404 })
+		unmountShell()
+		unmountShell()
+		expect(await fetchHost(new Request('http://host.test/shell'))).toMatchObject({ status: 404 })
+		const server = createServer((_request, response) => response.writeHead(404).end())
+		let origin = ''
+		const carrier = new NodeElysiaApplicationCarrier({
+			fetch: boundary.fetch.bind(boundary),
+			matches: boundary.matchesWebSocketRoute.bind(boundary),
+			metadata: () => ({
+				url: new URL(origin),
+				publicOrigin,
+				hostname: '127.0.0.1',
+				port: (server.address() as AddressInfo).port,
+				development: false,
+			}),
+		})
+		const detach = boundary.attachApplicationCarrier(carrier)
+		server.on('upgrade', (request, socket, head) => carrier.handleUpgrade(request, socket, head))
+		server.listen(0, '127.0.0.1')
+		await once(server, 'listening')
+		origin = 'http://127.0.0.1:' + (server.address() as AddressInfo).port
+		const socket = new HeaderWebSocket(
+			origin.replace('http:', 'ws:') + '/__pluxel/runtime/session',
+			[],
+			{ headers: { origin: publicOrigin ?? origin } },
 		)
-	} finally {
-		root[Symbol.dispose]()
-		detach()
-		await carrier.close()
-		await host.close()
-		await new Promise<void>((resolve, reject) =>
-			server.close((error) => (error ? reject(error) : resolve())),
-		)
-	}
-})
+		await once(socket, 'open')
+		const root = newWebSocketRpcSession<RuntimeSessionRoot>(socket as unknown as WebSocket)
+		try {
+			const boot = await root.bootstrap(async () => {})
+			if (boot.kind !== 'management') throw new Error('Expected loopback session')
+			const client = createRuntimeManagementClient(boot.management)
+			expect(await client.catalog.snapshot()).toMatchObject({ summary: { total: 1 } })
+			boot[Symbol.dispose]()
+			const closed = once(socket, 'close')
+			await host.close()
+			await closed
+			expect(await boundary.fetch(new Request(origin + '/__pluxel/runtime/session'))).toMatchObject(
+				{
+					status: 503,
+				},
+			)
+			expect(
+				boundary.matchesWebSocketRoute(new Request(origin + '/__pluxel/runtime/session')),
+			).toBe(false)
+		} finally {
+			root[Symbol.dispose]()
+			detach()
+			await carrier.close()
+			await host.close()
+			await new Promise<void>((resolve, reject) =>
+				server.close((error) => (error ? reject(error) : resolve())),
+			)
+		}
+	},
+)

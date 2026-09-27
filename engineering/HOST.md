@@ -39,6 +39,8 @@ Host-dev 是唯一开发驱动；官方服务附件分别由 Services、Workbenc
 `ElysiaRuntime` 是框架内部 root-only 分发，不进入公共服务入口；`ElysiaApp`、`elysia()`、`createElysiaHandler()` 属于 `/elysia`，`listenElysia()` 属于 `/elysia/node`。唯一生产适配为 Elysia 2 + srvx。物理 listener 由 Node launcher 或 Vite 持有；generation 停止不能关闭共享 listener。
 请求、stream 和 WebSocket 持有 generation lease；停止先拒绝新操作，排空已接纳操作后再清理。跨 owner route collision 只检查已证明的精确 route inventory，不模拟 Elysia matcher grammar。
 
+Carrier metadata 的 `url` 保留物理监听事实；launcher 显式提供的 `publicOrigin` 只用于管理会话同源校验，不能据此推断 TLS 或客户端地址。Vite 从 Host 的 `portlessOrigin` 传入该值。
+
 Management 安装认证、状态投影和 RPC session；Workbench 安装内容/publication、页面和交互能力。它们共享 Host coordinator，不保存第二份插件运行状态。业务 HTTP 不自动继承 Management 认证。`managementHttp()` 唯一持有管理 endpoint；`workbenchHttp()` 只拥有 Shell fallback。preset 通过既有 bindings 组合 Workbench session/artifact handler，并用 `requires: { workbench: WorkbenchHost }` 声明准备顺序。
 `managementCommands()` 把插件查询和 lifecycle 命令发布到显式安装的 Commands catalog；它是独立接入，不能让通用 Commands 服务隐式安装管理面。
 

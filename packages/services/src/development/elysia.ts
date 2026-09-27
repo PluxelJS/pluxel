@@ -25,6 +25,7 @@ export function elysiaDevelopment(): Plugin<HostDevelopmentPluginApi> {
 					if (active) throw new Error('[services/elysia/vite] HTTP attachment is already active')
 					const http = resolveContextCapability(host.ctx, ElysiaRuntime)
 					const carrier = createViteNodeElysiaApplicationCarrier(server, {
+						publicOrigin: hostEnv.portlessOrigin,
 						fetch: http.fetch,
 						matches: http.matchesWebSocketRoute,
 					})

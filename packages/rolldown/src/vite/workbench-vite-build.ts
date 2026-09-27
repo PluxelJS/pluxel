@@ -72,6 +72,9 @@ function createViteConfig(
 				},
 			],
 		},
+		// A development producer can be consumed by the production-built Shell.
+		// Use jsx/jsxs, which both React runtime variants provide; production has no jsxDEV.
+		oxc: { jsx: { development: false } },
 		plugins: createPlugins(options, dtsTsConfigPath),
 		build: {
 			outDir: options.outDir,

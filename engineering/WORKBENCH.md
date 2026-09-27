@@ -4,6 +4,10 @@
 
 声明与身份读 [Definition 与 publication](#definition-与-publication)；会话/lease 读 [Session 与打开流程](#session-与打开流程)；Markdown/表单读 [Content trust boundary](#content-trust-boundary)；renderer 读 [MF2 与 React Bridge](#mf2-与-react-bridge) 及 [Renderer resource 与撤回](#renderer-resource-与撤回)。构建实现集中在 [ARTIFACT_BUILD](ARTIFACT_BUILD.md)。
 
+打包 Shell 的 Vite `base` 与静态资源挂载统一使用 `UI_PUBLIC_BASE`；HTML、懒加载 preload 和 CSS 资源都必须落到该路径，不能依赖应用根路径 `/assets/`。页面导航路径不改变资源挂载。
+
+开发 producer 也编译为 `jsx/jsxs` 调用，以兼容生产构建的 Shell；不能根据宿主进程的 `NODE_ENV` 生成仅开发版 React 提供的 `jsxDEV`。构建语义变化同步更新 renderer revision，避免复用旧产物。
+
 ## 平台边界
 
 Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 Context property、backend、compiler、route 或 transport；业务 Plugin 仍能运行。

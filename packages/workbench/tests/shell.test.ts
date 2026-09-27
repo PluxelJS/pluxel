@@ -5,7 +5,8 @@ import { workbenchService } from '../src/service'
 import { workbenchHttp } from '../src/http'
 import { workbenchSourceShell } from '../src/dev'
 import { describe, expect, it, vi } from 'vitest'
-import { createServer } from 'vite'
+import { build, createServer } from 'vite'
+import { fileURLToPath } from 'node:url'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 
 import { renderRuntimeUiHtml } from '../src/shell/html'
@@ -17,6 +18,33 @@ const assets = {
 }
 
 describe('Workbench UI HTML rendering', () => {
+	it('builds lazy chunk preloads under the packaged shell asset mount', async () => {
+		await using fixture = await createDiskFixture({
+			'entry.js': 'globalThis.load = () => import("./lazy.js")',
+			'lazy.js': 'import "./lazy.css"; import { value } from "./shared.js"; export default value',
+			'lazy.css': 'body { color: red }',
+			'shared.js': 'export const value = 42',
+		})
+		const output = await build({
+			configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
+			logLevel: 'silent',
+			build: {
+				write: false,
+				minify: false,
+				manifest: false,
+				sourcemap: false,
+				rolldownOptions: { input: fixture.getPath('entry.js') },
+			},
+		})
+		const bundles = Array.isArray(output) ? output : [output]
+		const code = bundles
+			.flatMap((bundle) => ('output' in bundle ? bundle.output : []))
+			.filter((item) => item.type === 'chunk')
+			.map((item) => item.code)
+			.join('\n')
+		expect(code).toContain('/__pluxel/workbench/')
+	})
+
 	it('keeps built assets out of Vite pre-transform while preserving HTML and source transforms', async () => {
 		await using fixture = await createDiskFixture({ 'source.js': 'export const ready = true' })
 		const server = await createServer({

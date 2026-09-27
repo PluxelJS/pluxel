@@ -170,7 +170,7 @@ export default defineConfig({
 })
 ```
 
-`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-dev/vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
+`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。Workbench View 的开发源模块也共享所选 Workbench 安装中的 Cap’n Web，跨仓库链接无需应用配置额外 alias；模块接线不替代各包的依赖声明与兼容性检查。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-dev/vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
 
 ## 自定义组合的开发和生产接入
 

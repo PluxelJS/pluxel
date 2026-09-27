@@ -6,6 +6,7 @@ import { createServer as createViteServer, type ViteDevServer } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	attachSrvxViteNodeCarrier,
+	createViteNodeElysiaApplicationCarrier,
 	createSrvxViteNodeCarrierClose,
 	dispatchSrvxViteNodeRequest,
 } from '../src/development/vite-node-carrier'
@@ -71,6 +72,24 @@ function createUpgradeRequest(url: string, protocol?: string): IncomingMessage {
 }
 
 describe('Vite Node carrier boundaries', () => {
+	it('keeps the configured browser origin separate from physical listener facts', async () => {
+		const { server } = createUpgradeServer()
+		server.resolvedUrls = { local: ['http://127.0.0.1:4811/'], network: [] }
+		const carrier = createViteNodeElysiaApplicationCarrier(server, {
+			fetch: async () => new Response(),
+			matches: () => false,
+			publicOrigin: 'https://bot-new-omni.localhost',
+		})
+		try {
+			expect(carrier.metadata.publicOrigin).toBe('https://bot-new-omni.localhost')
+			expect(carrier.metadata.url.href).toBe('http://127.0.0.1:4811/')
+			expect(carrier.metadata.port).toBe(4811)
+			expect(carrier.metadata.hostname).toBe('127.0.0.1')
+		} finally {
+			await carrier.close()
+		}
+	})
+
 	it('runs carrier HTML through the active Vite index pipeline', async () => {
 		const transformedUrls: string[] = []
 		const server = await createViteServer({

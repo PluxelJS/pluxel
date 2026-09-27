@@ -99,6 +99,6 @@ function carrierFacts(request: Request, carrier: ElysiaApplicationCarrier | unde
 	return {
 		address: carrier.requestIP(request)?.address,
 		secure: metadata.url.protocol === 'https:',
-		origin: metadata.url.origin,
+		origin: metadata.publicOrigin ?? metadata.url.origin,
 	}
 }
