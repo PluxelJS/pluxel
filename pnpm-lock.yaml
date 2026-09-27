@@ -2360,18 +2360,6 @@ importers:
 
   plugins/wretch:
     dependencies:
-      '@mantine/core':
-        specifier: catalog:frontend
-        version: 9.6.3(@mantine/hooks@9.6.3(react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@tabler/icons-react':
-        specifier: catalog:icons
-        version: 3.48.0(react@19.3.0)
-      react:
-        specifier: catalog:frontend
-        version: 19.3.0
-      react-dom:
-        specifier: catalog:frontend
-        version: 19.3.0(react@19.3.0)
       undici:
         specifier: catalog:prod
         version: 8.11.2
@@ -2385,6 +2373,9 @@ importers:
         specifier: catalog:prod
         version: 3.0.9
     devDependencies:
+      '@mantine/core':
+        specifier: catalog:frontend
+        version: 9.6.3(@mantine/hooks@9.6.3(react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
@@ -2403,6 +2394,9 @@ importers:
       '@pluxel/workbench':
         specifier: workspace:*
         version: link:../../packages/workbench
+      '@tabler/icons-react':
+        specifier: catalog:icons
+        version: 3.48.0(react@19.3.0)
       '@types/react':
         specifier: catalog:types
         version: 19.3.0
@@ -2412,6 +2406,12 @@ importers:
       capnweb:
         specifier: catalog:prod
         version: 0.12.0
+      react:
+        specifier: catalog:frontend
+        version: 19.3.0
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.3.0(react@19.3.0)
       tsdown:
         specifier: catalog:build
         version: 0.23.0(@tsdown/css@0.23.0)(oxc-resolver@11.24.2)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)
