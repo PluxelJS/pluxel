@@ -94,6 +94,7 @@ types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-
 `dist/workbench/pluxel-workbench-producers.json` 与 `dist/workbench/pluxel-workbench-content.json`。发布包和 static application
 都消费预编译 Content inventory，因此 distribution 不要求保留原始 `src/*.md`。Cache/build revision 包含解析后的 UI 源码图、
 实际命中的 package metadata 与 subpath、fixed shared compatibility set 和 compiler version；无关 workspace lockfile 内容不参与。
+只有类型声明入口的已安装依赖（包括仅向 TypeScript 导出根入口的包）以清单参与 revision，不要求其具有 JS 根入口；若清单声明了运行时根导出，解析失败仍使构建失败。
 Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
 
 Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Application root 必须解析全部 Shell-provided peers；producer 的 React/Workbench/Mantine 与 winner 精确一致。开发显式选择源码 exports，distribution 使用 built exports，不从目录或已有 dist 猜测。Production builder 按同一 build contract 生成 Shell 与 producer，并用 canonical plan/compatibility set 校验全部候选。

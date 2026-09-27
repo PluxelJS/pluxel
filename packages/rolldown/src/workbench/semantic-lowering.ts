@@ -2073,7 +2073,7 @@ async function readPackageFingerprint(
 		/\.d\.(?:ts|mts|cts)$/.test(parsed.types) &&
 		existsSync(resolve(packageRoot, parsed.types)) &&
 		(parsed.main === '' || !Object.hasOwn(parsed, 'main')) &&
-		!Object.hasOwn(parsed, 'exports') &&
+		(!Object.hasOwn(parsed, 'exports') || declarationOnlyRootExport(parsed.exports)) &&
 		!Object.hasOwn(parsed, 'module') &&
 		!Object.hasOwn(parsed, 'browser') &&
 		!SOURCE_RESOLVE_OPTIONS.extensions.some((extension) =>
@@ -2092,6 +2092,27 @@ async function readPackageFingerprint(
 	}
 	packages.set(canonicalPath, fingerprint)
 	return fingerprint
+}
+
+/** A package may export its root only to TypeScript, as @types/react does. */
+function declarationOnlyRootExport(exports: unknown): boolean {
+	if (exports && typeof exports === 'object' && !Array.isArray(exports)) {
+		const record = exports as Record<string, unknown>
+		if (Object.keys(record).some((key) => key.startsWith('.')))
+			return declarationOnlyExportTarget(record['.'])
+	}
+	return declarationOnlyExportTarget(exports)
+}
+
+function declarationOnlyExportTarget(target: unknown): boolean {
+	if (typeof target === 'string') return /\.d\.(?:ts|mts|cts)$/.test(target)
+	if (target === null) return true
+	if (Array.isArray(target)) return target.length > 0 && target.every(declarationOnlyExportTarget)
+	if (target && typeof target === 'object') {
+		const values = Object.values(target)
+		return values.length > 0 && values.every(declarationOnlyExportTarget)
+	}
+	return false
 }
 
 function recordKeys(value: unknown): string[] {

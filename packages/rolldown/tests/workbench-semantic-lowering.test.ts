@@ -1543,7 +1543,15 @@ class SemanticPlugin {
 			version: '1.0.0',
 			main: '',
 			types: 'index.d.ts',
+			exports: {
+				'.': {
+					'types@<=5.0': { default: './ts5.0/index.d.ts' },
+					types: { default: './index.d.ts' },
+				},
+				'./package.json': './package.json',
+			},
 		})
+		files['node_modules/@types/ui-only/ts5.0/index.d.ts'] = 'export type UiOnly = string\n'
 		files['node_modules/@types/ui-only/index.d.ts'] = 'export type UiOnly = string\n'
 		files['node_modules/bun-types/package.json'] = JSON.stringify({
 			name: 'bun-types',
@@ -1666,8 +1674,25 @@ class SemanticPlugin {
 		expect(subpathRevision).not.toBe(transitiveRevision)
 		await writeFile(
 			resolve(fixture.path, 'node_modules/@types/ui-only/package.json'),
-			JSON.stringify({ name: '@types/ui-only', version: '1.1.0', main: '', types: 'index.d.ts' }),
+			JSON.stringify({
+				name: '@types/ui-only',
+				version: '1.1.0',
+				main: '',
+				types: 'index.d.ts',
+				exports: { '.': { types: './index.d.ts' }, './package.json': './package.json' },
+			}),
 		)
 		expect(await revision()).not.toBe(subpathRevision)
+		await writeFile(
+			resolve(fixture.path, 'node_modules/@types/ui-only/package.json'),
+			JSON.stringify({
+				name: '@types/ui-only',
+				version: '1.1.0',
+				main: '',
+				types: 'index.d.ts',
+				exports: { '.': { types: './index.d.ts', default: './missing.js' } },
+			}),
+		)
+		await expect(revision()).rejects.toThrow(/@types\/ui-only/)
 	})
 })
