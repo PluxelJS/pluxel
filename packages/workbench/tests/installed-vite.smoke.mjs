@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { registerHooks } from 'node:module'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createServer } from 'vite'
+import { request as httpRequest } from 'node:http'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const root = await mkdtemp(join(tmpdir(), 'pluxel-independent-workbench-'))
@@ -89,7 +90,7 @@ export const UI = workbench.define({
 	await write(
 		'plugin.ts',
 		`import { BasePlugin, Plugin } from '@pluxel/core';import { Workbench } from '@pluxel/workbench';import { RpcTarget } from 'capnweb';import { UI } from './definition';
-class Page extends RpcTarget {value(){return 42}}
+class Page extends RpcTarget {released=false;value(){return 42}isReleased(){return this.released}[Symbol.dispose](){this.released=true}}
 @Plugin() export class Viewer extends BasePlugin {init(){this.ctx.require(Workbench).publish(UI,{page:()=>new Page()})}}
 `,
 	)
@@ -100,11 +101,11 @@ class Page extends RpcTarget {value(){return 42}}
 	)
 	await write(
 		'app.ts',
-		`import { defineHostApplication } from '@pluxel/host';import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { logging } from '@pluxel/services/logging';
+		`import { defineHostApplication } from '@pluxel/host';import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';import { logging } from '@pluxel/services/logging';
 export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services:[logging({
  root:{profile:'fixture'},sinks:{console:{kind:'console',format:'pretty',caller:false,timezone:'utc'},capture:{kind:'logtape',label:'test diagnostics',sink:bindings.captureLog,caller:false}},
  routes:{runtime:[{sink:'console',minLevel:'error'},{sink:'capture',minLevel:'error'}],plugins:[],debug:[],meta:[]}
-}),workbenchService()],state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}))`,
+}),elysia(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})],state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}))`,
 	)
 	server = await createServer({
 		root,
@@ -130,6 +131,9 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services
 		],
 	})
 	await server.listen()
+	const listenAddress = server.httpServer?.address()
+	assert.ok(listenAddress && typeof listenAddress === 'object')
+	const origin = `http://127.0.0.1:${listenAddress.port}`
 	await until(
 		() =>
 			instance &&
@@ -138,6 +142,25 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services
 				variant: 'default',
 			}).entries.length === 2,
 	)
+	const shellPage = await new Promise((resolve, reject) => {
+		const request = httpRequest(new URL('/admin', origin), {
+			headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' },
+		}, response => {
+			const chunks = []
+			response.on('data', chunk => chunks.push(chunk))
+			response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString('utf8') }))
+			response.on('error', reject)
+		})
+		request.on('error', reject)
+		request.end()
+	})
+	assert.equal(shellPage.status, 200)
+	const shellHtml = shellPage.body
+	const entryUrl = shellHtml.match(/<script[^>]+src="([^"]*\/assets\/client-[^"]+\.js)"/)?.[1]
+	assert.ok(entryUrl, 'packaged Shell document selects its declared entry')
+	const shellEntry = await fetch(new URL(entryUrl, origin))
+	assert.equal(shellEntry.status, 200)
+	assert.match(shellEntry.headers.get('content-type') ?? '', /javascript/)
 	const backend = requireWorkbench(instance.ctx)
 	const original = instance
 	const target = instance.catalog().entries[0].address
@@ -177,6 +200,12 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services
 		descriptor: view.descriptor,
 	})
 	assert.equal(openedView.ok, true, JSON.stringify(openedView))
+	assert.equal(openedView.value.kind, 'local')
+	assert.equal(openedView.value.api.value(), 42, 'independent publisher RPC target is callable')
+	assert.equal(openedView.value.api.isReleased(), false)
+	viewSession.dispose()
+	assert.equal(viewSession.signal.aborted, true, 'closing View releases its session')
+	assert.equal(openedView.value.api.isReleased(), true, 'closing View releases the publisher target')
 	const handler = createWorkbenchArtifactHandler(instance.ctx)
 	const artifact = await handler(
 		new Request(new URL(firstPage.federatedViewRef.manifestUrl, 'http://fixture')),
