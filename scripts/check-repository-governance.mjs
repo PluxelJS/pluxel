@@ -309,36 +309,39 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 	}
 }
 
-const reusablePackageSources = await Promise.all(
+const workspaceSources = await Promise.all(
 	packageManifests
-		.filter(({ kind }) => kind === 'package')
-		.map(async ({ packageRoot, manifest }) => ({
+		.filter(({ kind }) => kind === 'package' || kind === 'plugin' || kind === 'project')
+		.map(async ({ packageRoot, kind, manifest }) => ({
 			packageRoot,
+			kind,
 			manifest,
 			sources: await sourceContents(resolve(packageRoot, 'src')),
 		})),
 )
-for (const { packageRoot, manifest, sources } of reusablePackageSources) {
-	if (sources.some(({ source }) => /^\s*@Plugin\s*\(\s*\{/m.test(source))) {
+for (const { packageRoot, kind, manifest, sources } of workspaceSources) {
+	if (kind === 'package' && sources.some(({ source }) => /^\s*@Plugin\s*\(\s*\{/m.test(source))) {
 		errors.push(
 			`${relative(packageRoot)} declares a concrete @Plugin; move it to plugins/ or a domain-specific plugin container such as platforms/`,
 		)
 	}
 	// Parse each source once with the existing Vite toolchain. Generated module text
 	// inside strings/templates is not an actual package dependency.
-	const imports = sources.flatMap(({ path, source }) => {
+	const declaredDependencies =
+		kind === 'project'
+			? new Set(dependencyFields.flatMap((field) => Object.keys(manifest[field] ?? {})))
+			: publishedDependencies.get(manifest.name)
+	for (const { path, source } of sources) {
 		const specifiers = sourceImports(path, source)
-		for (const specifier of specifiers)
+		for (const specifier of new Set(specifiers)) {
 			checkServiceCompositionBoundary(manifest.name, path, specifier)
-		return specifiers
-	})
-	for (const name of new Set(imports.map(packageName))) {
-		if (name === manifest.name || !workspaceNames.has(name)) continue
-		// Core deliberately inlines the standalone kernel's JavaScript and declarations.
-		if (manifest.name === '@pluxel/core' && name === '@pluxel/context') continue
-		if (!publishedDependencies.get(manifest.name)?.has(name)) {
+			const name = packageName(specifier)
+			if (name === manifest.name || !workspaceNames.has(name)) continue
+			// Core deliberately inlines the standalone kernel's JavaScript and declarations.
+			if (manifest.name === '@pluxel/core' && name === '@pluxel/context') continue
+			if (declaredDependencies?.has(name)) continue
 			errors.push(
-				`${manifest.name} published source imports ${name} without a dependencies/optionalDependencies/peerDependencies declaration`,
+				`${relative(path)} imports ${specifier} without a ${kind === 'project' ? 'workspace dependency' : 'published dependency'} declaration in ${relative(resolve(packageRoot, 'package.json'))}`,
 			)
 		}
 	}

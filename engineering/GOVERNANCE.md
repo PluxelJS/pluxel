@@ -81,8 +81,9 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 ### 发布图、构建图与共享身份
 
 发布依赖声明包含 `dependencies`、`optionalDependencies` 和 `peerDependencies`，不要求整个包图无环。
-`governance:check` 保留 Context、Core、Commands、Host 与来源/开发驱动的基础边界，扫描实际 import
-（含类型和动态 import）是否有发布依赖声明，并检查 Workbench、Services 叶子不反向导入 Services 组合入口。
+`governance:check` 保留 Context、Core、Commands、Host 与来源/开发驱动的基础边界，扫描 `packages/`、`plugins/` 和
+`projects/` 源码的实际内部 workspace import（含类型和动态 import）：发布包必须有发布依赖声明，私有项目必须在本包
+声明依赖；缺失时定位到导入文件和清单。它也检查 Workbench、Services 叶子不反向导入 Services 组合入口。
 组合实现只位于 `src/preset.ts`、`src/vite.ts`、`src/build.ts` 与 `src/development/service-development.ts`；
 测试组合位于 `src/testing/` 及两个测试入口。测试和类型探针不算发布源，Core 内联 Context 是明确例外。
 这些规则保护可核对的模块职责，不维护一个第二模块解析器或通用架构分层框架。
