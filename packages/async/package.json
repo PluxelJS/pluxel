@@ -11,6 +11,8 @@
 	"files": [
 		"dist",
 		"README.md",
+		"docs",
+		"examples",
 		"!**/*.map",
 		"!**/*.tsbuildinfo"
 	],
@@ -63,7 +65,8 @@
 		"test:watch": "pnpm exec vitest",
 		"test:installed": "node tests/installed-package.smoke.mjs",
 		"bench": "pnpm build && pnpm exec vitest bench --config vitest.bench.config.ts --run",
-		"prepack": "pnpm build"
+		"prepack": "pnpm build",
+		"examples": "pnpm build && node examples/run.ts"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:types",

@@ -1,6 +1,6 @@
 # Maintenance rules
 
-Read README.md for orientation and ../../docs/reference/async.md for the public contract. Public types and JSDoc live beside each implementation.
+Read README.md for orientation and docs/guide.md for the public contract. Public types and JSDoc live beside each implementation. Keep this package usable without Pluxel runtime; the framework docs page only links here. Ship docs/ and examples/ with the package, and keep examples on public imports.
 
 - Six runtime-dependency-free subpaths: `grfn`, `iter`, `limit`, `retry`, `singleflight`, `wait`. No root barrel.
 - Change `tsdown.config.ts` entries, build, then commit generated exports. Source condition is `@pluxel/source`.
@@ -18,5 +18,5 @@ Read README.md for orientation and ../../docs/reference/async.md for the public 
 - sleep and waitFor cancel waiting; until and retry await active callbacks. Preserve real results/errors and clean listeners/timers.
 - Do not add persistent caches, graph visualization, global scheduling, reactive hooks, or speculative compatibility layers.
 
-Commands: `pnpm test` (source + types), `pnpm build` (also runs the installed-package smoke), `pnpm bench` (optional).
+Commands: `pnpm test` (source + types), `pnpm build` (also runs the installed-package smoke), `pnpm bench` (optional), `pnpm examples` (build and run standalone examples).
 Tests must run after deleting dist/. Benchmarks instead build first and use native ESM via vitest.bench.config.ts to compare published artifacts without source-loader overhead. Keep benchmark claims scoped to what was actually measured.

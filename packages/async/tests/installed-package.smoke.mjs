@@ -86,7 +86,11 @@ try {
 		options,
 	)
 	execFileSync(process.execPath, ['--unhandled-rejections=strict', 'build/consumer.mjs'], options)
-	console.log('Source-free package import and declarations passed')
+	// Consumers copy TypeScript examples out of node_modules before native Node execution.
+	cpSync(join(root, 'examples'), join(directory, 'examples'), { recursive: true })
+	writeFileSync(join(directory, 'package.json'), JSON.stringify({ type: 'module' }))
+	execFileSync(process.execPath, ['--unhandled-rejections=strict', 'examples/run.ts'], options)
+	console.log('Source-free package imports, declarations and standalone examples passed')
 } finally {
 	rmSync(directory, { recursive: true, force: true })
 }
