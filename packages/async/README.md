@@ -53,6 +53,8 @@ try {
 
 例如 `import { singleflight } from '@pluxel/async/singleflight'`。普通几步 `await` 或 `Promise.all` 已足够时直接使用它们；防抖、节流、时间窗口限速和持久调度不在本包范围。
 
+需要防抖、节流、时间窗口限速、带优先级／过期／启停的队列，或响应式状态与框架 hooks 时，可使用 [TanStack Pacer](https://github.com/TanStack/pacer)。它也有 Vanilla API。双方在并发控制、重试和批处理上有交集，具体选择见[与 Pacer 的边界](https://github.com/PluxelJS/pluxel/blob/main/packages/async/docs/guide.md#与-tanstack-pacer-的边界)；本包不追求补齐完整调度器功能。
+
 ## 组合与资源所有权
 
 - `retry(() => limiter.run(task), options)` 每次尝试取额度，退避期间释放；反过来组合则整个重试过程占用额度。

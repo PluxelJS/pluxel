@@ -21,6 +21,22 @@ pnpm add @pluxel/async
 
 固定几步 `await` 已足够时直接使用普通 async function。防抖、节流、时间窗口限速、响应式状态和持久任务调度不在本包范围。
 
+## 与 TanStack Pacer 的边界
+
+两者有功能交集，不应描述成互不重复。我们提供可直接 await 的小型异步组合原语；需要时间调度、可管理队列或响应式状态时，优先评估 [TanStack Pacer](https://github.com/TanStack/pacer)。Pacer 也有 Vanilla API，不要求使用 React。
+
+| 需求                       | 本包的边界                                                               | Pacer 的对应能力                                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 限制同时执行的任务         | limit 提供 FIFO 额度与每次调用的结果 Promise；不限制单位时间内的启动次数 | [AsyncQueuer](https://tanstack.com/pacer/latest/docs/framework/vanilla/guides/async-queuing) 也控制并发，并提供容量、优先级、过期与启停管理   |
+| 重试                       | retry 是独立函数，必须指定总尝试次数和失败判定                           | [Async Retrying](https://tanstack.com/pacer/latest/docs/framework/vanilla/guides/async-retrying) 提供重试工具，也与异步队列等工具集成         |
+| 批量处理                   | iter.batch 按数量分组拉取的数据，源结束时交付余量；不按时间自动 flush    | [Async Batching](https://tanstack.com/pacer/latest/docs/framework/vanilla/guides/async-batching) 面向收集调用后批量执行，可结合时间和数量触发 |
+| 防抖、节流、时间窗口限速   | 不提供；singleflight 合并在途结果，不是防抖，limit 限并发也不是限速      | Pacer 提供对应的同步／异步工具，见[官方功能说明](https://github.com/TanStack/pacer#readme)                                                    |
+| 响应式调度状态、框架 hooks | 不提供 UI 状态层                                                         | Pacer 提供状态管理与框架适配，见[官方功能说明](https://github.com/TanStack/pacer#readme)                                                      |
+
+这些是职责选择，不是性能排名。Pacer 的队列接纳、结果通知和启停契约与本包不同，不能只替换函数名；尤其不能把暂停调度当作 close 排空。我们不为覆盖上述功能增加另一套调度系统，也不把 Pacer 的本地队列描述成分布式、崩溃恢复的持久任务服务。
+
+组合两者时，为同一种并发或重试策略保留一个明确所有者，避免重复排队或嵌套重试放大请求次数。选用完整调度器时，不必再套同职责的 limit/retry。
+
 ## 复用任务依赖
 
 ```ts
