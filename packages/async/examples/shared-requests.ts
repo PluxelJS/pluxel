@@ -19,19 +19,23 @@ export async function processSharedRecords<T>(
 ): Promise<void> {
 	const { signal, read, shouldRetry, save } = options
 	const requests = limit({ concurrency: 4 })
-	const reads = singleflight((id: string) =>
+	const reads = singleflight<string, T>()
+	const readOnce = (id: string) =>
 		retry(
 			({ signal: attemptSignal }) =>
 				requests.run(() => read(id, attemptSignal), { signal: attemptSignal }),
 			{ attempts: 3, shouldRetry, signal },
-		),
-	)
+		)
 	try {
 		await forEach(
-			mapConcurrent(ids, (id, context) => reads.run(id, { signal: context.signal }), {
-				concurrency: 8,
-				signal,
-			}),
+			mapConcurrent(
+				ids,
+				(id, context) => reads.run(id, () => readOnce(id), { signal: context.signal }),
+				{
+					concurrency: 8,
+					signal,
+				},
+			),
 			save,
 		)
 	} finally {

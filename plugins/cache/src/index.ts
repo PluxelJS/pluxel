@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { deserialize, serialize } from 'node:v8'
 import { waitFor } from '@pluxel/async/wait'
+import { singleflight, type Singleflight } from '@pluxel/async/singleflight'
 import {
 	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
@@ -265,7 +266,7 @@ type MutableStats = {
 type Bucket = {
 	active: boolean
 	entries: Map<string, Entry>
-	inFlight: Map<string, Promise<unknown>>
+	inFlight: Singleflight<string, unknown>
 	mutations: Map<string, Promise<void>>
 	clearBarrier?: Promise<void>
 	stats: MutableStats
@@ -791,7 +792,7 @@ export class CachePlugin extends Cache {
 			const bucket: Bucket = {
 				active: true,
 				entries: new Map(),
-				inFlight: new Map(),
+				inFlight: singleflight<string, unknown>(),
 				mutations: new Map(),
 				stats: emptyStats(),
 				maxEntries: namespace.maxEntries,
@@ -1124,7 +1125,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 		const bucket: Bucket = {
 			active: true,
 			entries: new Map(),
-			inFlight: new Map(),
+			inFlight: singleflight<string, unknown>(),
 			mutations: new Map(),
 			stats: emptyStats(),
 			maxEntries,
@@ -1374,7 +1375,8 @@ class AsyncView extends CacheViewBase {
 		const pending = Promise.resolve().then(async (): Promise<void> => {
 			await priorClear
 			await Promise.all(priorMutations)
-			await Promise.allSettled(bucket.inFlight.values())
+			this.assertUsable()
+			await bucket.inFlight.drain()
 			this.assertUsable()
 			try {
 				await this.backend.clear(this.resolved.backendPrefix)
@@ -1558,14 +1560,8 @@ class AsyncView extends CacheViewBase {
 				this.resolved.bucket.maxInFlight,
 			)
 		}
-		// Publish the flight before invoking user/adapter code, preventing re-entrant duplication.
-		const pending = Promise.resolve().then(work)
-		this.resolved.bucket.inFlight.set(encoded, pending)
-		void pending.then(
-			() => this.clearFlight(encoded, pending),
-			() => this.clearFlight(encoded, pending),
-		)
-		return pending
+		// Cache keys carry caller-declared value types; the shared registry stores unknown.
+		return this.resolved.bucket.inFlight.run(encoded, work) as Promise<T>
 	}
 
 	private async awaitMutation(encoded: string): Promise<void> {
@@ -1582,6 +1578,7 @@ class AsyncView extends CacheViewBase {
 		const pending = Promise.resolve().then(async (): Promise<T> => {
 			await clear
 			await previous
+			this.assertUsable()
 			await settle(bucket.inFlight.get(encoded))
 			return work()
 		})
@@ -1606,12 +1603,6 @@ class AsyncView extends CacheViewBase {
 	private clearGlobalBarrier(barrier: Promise<void>): void {
 		if (this.resolved.bucket.clearBarrier === barrier) {
 			this.resolved.bucket.clearBarrier = undefined
-		}
-	}
-
-	private clearFlight(encoded: string, pending: Promise<unknown>): void {
-		if (this.resolved.bucket.inFlight.get(encoded) === pending) {
-			this.resolved.bucket.inFlight.delete(encoded)
 		}
 	}
 
@@ -1817,7 +1808,7 @@ function clearEntries(bucket: Bucket): void {
 function deactivateBucket(bucket: Bucket): void {
 	bucket.active = false
 	clearEntries(bucket)
-	bucket.inFlight.clear()
+	void bucket.inFlight.close()
 	bucket.mutations.clear()
 	bucket.clearBarrier = undefined
 }

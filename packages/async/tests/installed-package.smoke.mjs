@@ -42,9 +42,14 @@ if (value !== 3 || values.join(',') !== '2,6') throw new Error('Unexpected packa
 const total: number = await reduce(values, (sum, item) => sum + item, 0);
 const limiter = limit({ concurrency: 2 });
 const keyed = keyedLimit<string>({ concurrency: 1 });
-const shared = singleflight((key: string) => limiter.run(() => key.length));
+const shared = singleflight<string, number>();
 try {
-  const lengths: number[] = await Promise.all([shared.run('abc'), shared.run('abc')]);
+  const first = shared.run('abc', () => limiter.run(() => 3));
+  const observed: Promise<number> | undefined = shared.get('abc');
+  if (observed !== first || shared.size !== 1) throw new Error('Unexpected shared observation');
+  const lengths: number[] = await Promise.all([first, shared.run('abc', () => 99)]);
+  await shared.drain();
+  if (shared.get('abc') !== undefined) throw new Error('Settled shared work was retained');
   const result: number = await retry(() => keyed.run('key', () => lengths[0]!), {
     attempts: 2, shouldRetry: () => false,
   });

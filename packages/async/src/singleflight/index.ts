@@ -4,9 +4,22 @@ export interface SingleflightRunOptions {
 }
 
 export interface Singleflight<Key, Value> {
-	/** Share pending work for this key (Map equality). Completed results are not cached. */
-	run(key: Key, options?: SingleflightRunOptions): Promise<Value>
-	/** Stop admission and wait for shared work. Operation errors are reported by run, not close. */
+	/** Number of pending keys, including tasks scheduled to start. */
+	readonly size: number
+	/**
+	 * Share pending work for this key (Map equality). The first task wins; later
+	 * callbacks for that key are not executed. Completed results are not cached.
+	 */
+	run(
+		key: Key,
+		task: () => Value | PromiseLike<Value>,
+		options?: SingleflightRunOptions,
+	): Promise<Awaited<Value>>
+	/** Observe pending work without starting it. Available during close until settled. */
+	get(key: Key): Promise<Awaited<Value>> | undefined
+	/** Wait for a snapshot of current work; later calls are excluded. Never rejects. */
+	drain(): Promise<void>
+	/** Stop admission and drain. Idempotent; task errors belong to run/get, not close. */
 	close(): Promise<void>
 }
 
@@ -26,32 +39,35 @@ interface Flight<Value> {
 }
 
 /**
- * Bind one operation and share only its pending calls by key. Operations start in a
- * microtask; cancelling a waiter never cancels shared work. The creator owns any
- * underlying cancellation through the operation's closure. close is idempotent,
- * drains accepted work, and may wait indefinitely for an operation that never settles.
- * An operation must not await its own key through this instance (a self-dependency).
+ * Share pending work by key within one fixed result domain. The first task starts
+ * in a microtask; cancelling a waiter never cancels shared work. Task closures own
+ * underlying cancellation. drain snapshots current tasks; close first stops admission.
+ * Neither drain nor close cancels work or throws task errors, and both can wait
+ * indefinitely for a task that never settles. A task must not await its own key,
+ * drain, or close through this instance (a self-dependency).
  */
-export function singleflight<Key, Result>(
-	operation: (key: Key) => Result,
-): Singleflight<Key, Awaited<Result>> {
-	if (typeof operation !== 'function') {
-		throw new TypeError('singleflight: operation must be a function')
-	}
-	const pending = new Map<Key, Flight<Awaited<Result>>>()
+export function singleflight<Key, Value>(): Singleflight<Key, Value> {
+	const pending = new Map<Key, Flight<Awaited<Value>>>()
+	let closed = false
 	let closing: Promise<void> | undefined
 
-	function run(key: Key, options: SingleflightRunOptions = {}): Promise<Awaited<Result>> {
-		if (closing) return Promise.reject(new SingleflightClosedError())
+	function run(
+		key: Key,
+		task: () => Value | PromiseLike<Value>,
+		options: SingleflightRunOptions = {},
+	): Promise<Awaited<Value>> {
+		if (closed) return Promise.reject(new SingleflightClosedError())
+		if (typeof task !== 'function')
+			return Promise.reject(new TypeError('singleflight: task must be a function'))
 		const { signal } = options
 		if (signal?.aborted) return Promise.reject(signal.reason)
 		let flight = pending.get(key)
 		if (!flight) {
-			const promise = Promise.resolve().then(() => Promise.resolve(operation(key)))
-			const created: Flight<Awaited<Result>> = { promise, waiters: undefined }
+			const promise = Promise.resolve().then(() => Promise.resolve(task()))
+			const created: Flight<Awaited<Value>> = { promise, waiters: undefined }
 			flight = created
 			pending.set(key, created)
-			const settle = (outcome: Outcome<Awaited<Result>>) => {
+			const settle = (outcome: Outcome<Awaited<Value>>) => {
 				pending.delete(key)
 				const waiters = created.waiters
 				created.waiters = undefined
@@ -69,13 +85,13 @@ export function singleflight<Key, Result>(
 		}
 		if (!signal) return flight.promise
 		const waiters = (flight.waiters ??= new Set())
-		return new Promise<Awaited<Result>>((resolve, reject) => {
+		return new Promise<Awaited<Value>>((resolve, reject) => {
 			const abort = () => {
 				waiters.delete(waiter)
 				signal.removeEventListener('abort', abort)
 				reject(signal.reason)
 			}
-			const waiter: Waiter<Awaited<Result>> = (outcome) => {
+			const waiter: Waiter<Awaited<Value>> = (outcome) => {
 				signal.removeEventListener('abort', abort)
 				if (outcome.ok) resolve(outcome.value)
 				else reject(outcome.reason)
@@ -85,12 +101,29 @@ export function singleflight<Key, Result>(
 		})
 	}
 
-	function close(): Promise<void> {
-		closing ??= Promise.allSettled(Array.from(pending.values(), (flight) => flight.promise)).then(
+	function drain(): Promise<void> {
+		return Promise.allSettled(Array.from(pending.values(), (flight) => flight.promise)).then(
 			() => undefined,
 		)
+	}
+
+	function close(): Promise<void> {
+		if (!closing) {
+			closed = true
+			closing = drain()
+		}
 		return closing
 	}
 
-	return Object.freeze({ run, close })
+	return Object.freeze({
+		get size() {
+			return pending.size
+		},
+		run,
+		get(key: Key) {
+			return pending.get(key)?.promise
+		},
+		drain,
+		close,
+	})
 }

@@ -14,7 +14,7 @@ Read README.md for orientation and ../../docs/reference/async.md for the public 
 - Prefer a test proving a regression/invariant to more copies of happy-path tests. Use gates, not wall-clock sleeps.
 - Keep retry finite and explicitly authorized by shouldRetry; attempts counts the initial call.
 - Limiters retain slots until work settles. close stops admission and gracefully drains accepted work; it does not swallow run failures or cancel IO.
-- singleflight binds one operation; waiter cancellation never owns shared work. Completed keys are released, not cached.
+- singleflight fixes one key/result domain; run supplies a task and the first task wins for a pending key. get/size only observe; drain snapshots; close stops admission. Waiter cancellation never owns shared work. Completed keys are released, not cached.
 - sleep and waitFor cancel waiting; until and retry await active callbacks. Preserve real results/errors and clean listeners/timers.
 - Do not add persistent caches, graph visualization, global scheduling, reactive hooks, or speculative compatibility layers.
 

@@ -135,24 +135,32 @@ await retry(
 ```ts
 import { singleflight } from '@pluxel/async/singleflight'
 
-const loads = singleflight(async (id: string) => {
+const loads = singleflight<string, string>()
+async function load(id: string) {
 	const response = await fetch(`https://example.com/items/${encodeURIComponent(id)}`)
 	if (!response.ok) throw new Error(`HTTP ${response.status}`)
 	return response.text()
-})
+}
 try {
-	const [first, second] = await Promise.all([loads.run('a'), loads.run('a')])
-	console.log(first, second) // 共享同一次操作
+	const first = loads.run('a', () => load('a'))
+	const second = loads.run('a', () => load('a'))
+	console.log(loads.size, loads.get('a') === first) // 1, true；观察不会启动工作
+	console.log(await Promise.all([first, second])) // 共享同一次操作
+	await loads.drain()
 } finally {
 	await loads.close()
 }
 ```
 
-工厂绑定一个操作，run 只传 key，避免同 key 的不同回调被静默合并。key 使用 Map 相等规则；操作在微任务启动，成功或失败后立即移除记录，下一次重新执行，没有 TTL 或结果缓存。
+`singleflight<Key, Value>()` 固定实例的 key 与结果类型；每次 `run(key, task, options?)` 提供惰性任务。同 key 在途期间由首个任务负责执行，后续任务回调不会调用，但仍校验它是函数。调用方必须让同 key 表达可共享的同一种结果；不同结果域使用不同实例。key 使用 Map 相等规则；任务在微任务启动，成功或失败后移除记录，下一次重新执行，没有 TTL 或结果缓存。
 
-`run(key, { signal })` 的 signal 只控制当前调用者等待，不传给共享操作；已取消的调用不会启动新工作。即使全部等待者离开，共享工作也会继续，它的晚到拒绝仍被观察。创建者通过操作闭包拥有底层取消权限，不能让第一个等待者意外成为共享任务所有者。
+`get(key)` 返回当前共享 Promise 或 undefined，只观察、不启动工作，也不会加入一个可取消等待者。`size` 是当前在途 key 数，包含已接纳但尚未执行的任务。关闭过程中仍可观察尚未完成的工作。
 
-`close()` 幂等，拒绝新 run 并等待所有共享操作 settled；错误仍由各 run 报告，close 自身不因操作失败拒绝。关闭后 run 拒绝为 `SingleflightClosedError`。递归等待自己同 key 的工作或在操作内等待自己的 close 会造成自等待；库不做依赖环检测。
+`run(key, task, { signal })` 的 signal 只控制当前调用者等待，不传给共享任务；已取消的调用不会启动新工作。即使全部等待者离开，共享工作也会继续，它的晚到拒绝仍被观察。任务创建者通过闭包拥有底层取消权限，不能让第一个等待者的取消信号意外成为共享任务所有者。
+
+`drain()` 等待调用时已接纳任务的快照，之后加入的新工作不在等待范围内，也不停止接纳。它观察任务失败并正常完成；具体结果与原始错误通过 run/get 获取。
+
+`close()` 幂等，先拒绝新 run，再等待当前任务排空；任务错误同样不使 close 拒绝。关闭后 run 拒绝为 `SingleflightClosedError`。任务内递归等待自己同 key 的工作，或等待本实例的 drain/close，会造成自等待；库不做依赖环检测。drain/close 都不会强制取消任务，不结束的任务会一直阻塞等待。
 
 ## 可取消等待
 

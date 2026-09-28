@@ -77,9 +77,9 @@ for (const distinct of [1, 16]) {
 			executions++
 			return key + 1
 		}
-		const local = singleflight(work)
+		const local = singleflight<number, number>()
 		const upstream = pMemoize(work, { cache: false })
-		const localRun = () => Promise.all(keys.map((key) => local.run(key)))
+		const localRun = () => Promise.all(keys.map((key) => local.run(key, () => work(key))))
 		const upstreamRun = () => Promise.all(keys.map((key) => upstream(key)))
 		try {
 			for (const run of [localRun, upstreamRun]) {

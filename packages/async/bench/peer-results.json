@@ -1,5 +1,5 @@
 {
-	"measuredAt": "2026-09-28T10:46:17.453761+00:00",
+	"measuredAt": "2026-09-28T11:09:02.000283+00:00",
 	"environment": {
 		"node": "24.16.0",
 		"os": "Linux-7.1.5-1-cachyos-x86_64-with-glibc2.40",
@@ -29,13 +29,13 @@
 	"sha256": {
 		"bench/graph-peers.bench.ts": "81bab216bba740914967201596599146658dcbf32996c43e14d54b0c64947dd2",
 		"bench/iter-peers.bench.ts": "54d5d2e5da248a5659fe12522f52ccc9dad064442b84116e18b0c609ebdca146",
-		"bench/primitives-peers.bench.ts": "f5f11dd713ed15e05f0110063c5d1bdfc3619b5d9f623ae6081d40754dcd3632",
+		"bench/primitives-peers.bench.ts": "d36cfdcf50361ef953e00c728f870c48387eac253eb97ead282365e906b547ff",
 		"bench/report.ts": "7a7d533938fd5fed6f34fe9288caede39a272f691dd72f5d805c205c74d762ae",
 		"dist/grfn.js": "f9cce2ef93066bc65b6436b789a3b1c347c414547f9aaedf1f7646253a356529",
 		"dist/iter.js": "ad689124e4723376d700dcad40937426dc11fe17edb038b63ce2df2fbb2b62d8",
 		"dist/limit.js": "b00323986d36d2a763b9c889ff972bc153048eefbc58a03fe0dca6bc40125329",
 		"dist/retry.js": "ccb21b0995dbdcde89179fbc7a0d039d4bbc24add8ca20628c7de938d1fe19e6",
-		"dist/singleflight.js": "a0fb41a58ba631a89fefaa8fb282740f8347b27233f142d61ae8d950013d445e",
+		"dist/singleflight.js": "24ccaa7ce14ef79e87d4fd86095a20aa8b1b47d4e3ce958cf67177225b949417",
 		"dist/wait.js": "c3c1275c10708d5b02bb1fb648ecb1a3c6723e2e0926fa81aac1ae019a9d3f4d",
 		"vitest.bench.config.ts": "a3267ead17325b8e1a345237a4b56f026dd7a97d372271c1c1f4b7885b3a4484"
 	},
@@ -46,17 +46,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 50.34303946838466,
-						"p50Us": 39.54250000006709,
-						"rmePercent": 2.0690268087787125,
-						"samples": 9932
+						"meanUs": 83.61726270903063,
+						"p50Us": 66.4840000000595,
+						"rmePercent": 2.6175221883108666,
+						"samples": 5980
 					},
 					{
 						"name": "p-limit",
-						"meanUs": 87.29649223250163,
-						"p50Us": 72.4209999998493,
-						"rmePercent": 1.8698132636083962,
-						"samples": 5729
+						"meanUs": 134.83322425875872,
+						"p50Us": 113.51449999995111,
+						"rmePercent": 2.5233519123052455,
+						"samples": 3710
 					}
 				]
 			},
@@ -65,17 +65,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 144.90018458417842,
-						"p50Us": 124.36000000002423,
-						"rmePercent": 2.5144597740104517,
-						"samples": 3451
+						"meanUs": 208.03265557404288,
+						"p50Us": 168.4180000000879,
+						"rmePercent": 2.5869768716524755,
+						"samples": 2404
 					},
 					{
 						"name": "p-limit",
-						"meanUs": 184.71501588474598,
-						"p50Us": 156.56099999978323,
-						"rmePercent": 2.246421306719714,
-						"samples": 2707
+						"meanUs": 247.20664673913083,
+						"p50Us": 208.56200000025638,
+						"rmePercent": 2.185424122554617,
+						"samples": 2024
 					}
 				]
 			},
@@ -84,17 +84,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 9.37217636363672,
-						"p50Us": 7.708999999977095,
-						"rmePercent": 0.9841518835895303,
-						"samples": 53350
+						"meanUs": 19.447272801523443,
+						"p50Us": 15.833999999813386,
+						"rmePercent": 1.54745268217777,
+						"samples": 25711
 					},
 					{
 						"name": "p-memoize",
-						"meanUs": 10.167415368660636,
-						"p50Us": 8.085000000392029,
-						"rmePercent": 1.394572617292154,
-						"samples": 49178
+						"meanUs": 16.210872941254028,
+						"p50Us": 13.66199999984019,
+						"rmePercent": 2.29911557531208,
+						"samples": 30844
 					}
 				]
 			},
@@ -103,17 +103,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 20.680582554388092,
-						"p50Us": 13.80250000011074,
-						"rmePercent": 5.070848629917726,
-						"samples": 24178
+						"meanUs": 33.82510587200624,
+						"p50Us": 26.393499999812775,
+						"rmePercent": 4.1049447495343605,
+						"samples": 14782
 					},
 					{
 						"name": "p-memoize",
-						"meanUs": 17.31374725579095,
-						"p50Us": 11.876000000484055,
-						"rmePercent": 5.041935393059166,
-						"samples": 28879
+						"meanUs": 28.883186171445047,
+						"p50Us": 22.65350000016042,
+						"rmePercent": 5.429669815261179,
+						"samples": 17312
 					}
 				]
 			},
@@ -122,17 +122,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 0.6319844606953363,
-						"p50Us": 0.3859999997075647,
-						"rmePercent": 6.843934438865299,
-						"samples": 794244
+						"meanUs": 1.0962872271610287,
+						"p50Us": 0.7709999999860884,
+						"rmePercent": 2.4596410020798594,
+						"samples": 456085
 					},
 					{
 						"name": "p-retry",
-						"meanUs": 0.47103321912345925,
-						"p50Us": 0.33600000006117625,
-						"rmePercent": 1.2860002107317803,
-						"samples": 1061497
+						"meanUs": 0.8295958049063704,
+						"p50Us": 0.5970000001980225,
+						"rmePercent": 2.1198490442657647,
+						"samples": 602704
 					}
 				]
 			},
@@ -141,17 +141,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 1091.7193056769402,
-						"p50Us": 1093.5170000002472,
-						"rmePercent": 0.7646811855598812,
-						"samples": 458
+						"meanUs": 1111.233031111049,
+						"p50Us": 1122.135999999955,
+						"rmePercent": 1.1643618527452606,
+						"samples": 450
 					},
 					{
 						"name": "p-retry",
-						"meanUs": 1092.239742357984,
-						"p50Us": 1087.2779999999693,
-						"rmePercent": 0.3357454756383252,
-						"samples": 458
+						"meanUs": 1106.8610132742829,
+						"p50Us": 1106.2009999996008,
+						"rmePercent": 0.46362748076746224,
+						"samples": 452
 					}
 				]
 			},
@@ -160,17 +160,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 1.5817146701493978,
-						"p50Us": 1.4090000000237524,
-						"rmePercent": 0.6121622317734465,
-						"samples": 316234
+						"meanUs": 3.487263364927677,
+						"p50Us": 2.6939999999058273,
+						"rmePercent": 2.283294868306951,
+						"samples": 143379
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 2.127190459983394,
-						"p50Us": 1.8840000000182044,
-						"rmePercent": 0.48249696832830646,
-						"samples": 235052
+						"meanUs": 5.06251743479652,
+						"p50Us": 4.027000000178305,
+						"rmePercent": 1.7097237294036949,
+						"samples": 98768
 					}
 				]
 			},
@@ -179,17 +179,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 6.438835990419123,
-						"p50Us": 4.245999999966443,
-						"rmePercent": 14.308533756700548,
-						"samples": 77654
+						"meanUs": 8.197127186582026,
+						"p50Us": 6.935999999768683,
+						"rmePercent": 1.8612721874443838,
+						"samples": 60997
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 4.055937003658541,
-						"p50Us": 3.729999999904976,
-						"rmePercent": 3.068204440674525,
-						"samples": 123277
+						"meanUs": 9.229522021633883,
+						"p50Us": 7.60199999967881,
+						"rmePercent": 2.052513791341151,
+						"samples": 54174
 					}
 				]
 			},
@@ -198,17 +198,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 11.486981781841683,
-						"p50Us": 10.602999999719032,
-						"rmePercent": 0.5301442546591446,
-						"samples": 43528
+						"meanUs": 22.41683420757677,
+						"p50Us": 19.821999999749096,
+						"rmePercent": 1.4878207095810125,
+						"samples": 22305
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 16.958384920632906,
-						"p50Us": 15.731000000414497,
-						"rmePercent": 0.6418328957010366,
-						"samples": 29484
+						"meanUs": 39.4603546681412,
+						"p50Us": 34.21299999990879,
+						"rmePercent": 1.7561626099079999,
+						"samples": 12671
 					}
 				]
 			},
@@ -217,17 +217,17 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent",
-						"meanUs": 138.32986283185681,
-						"p50Us": 125.97699999997758,
-						"rmePercent": 0.9704057852820827,
-						"samples": 3616
+						"meanUs": 305.49364569334045,
+						"p50Us": 269.26400000002104,
+						"rmePercent": 2.9940340707765682,
+						"samples": 1637
 					},
 					{
 						"name": "p-map pMapIterable",
-						"meanUs": 111.89840411725245,
-						"p50Us": 101.33799999994153,
-						"rmePercent": 0.9576846901289675,
-						"samples": 4469
+						"meanUs": 272.8984162574997,
+						"p50Us": 230.83700000006502,
+						"rmePercent": 3.1718033513503294,
+						"samples": 1833
 					}
 				]
 			},
@@ -236,17 +236,17 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent",
-						"meanUs": 300.2404945978404,
-						"p50Us": 265.12449999995624,
-						"rmePercent": 1.68363912055516,
-						"samples": 1666
+						"meanUs": 568.3398090909038,
+						"p50Us": 489.50700000011693,
+						"rmePercent": 3.5914292483322696,
+						"samples": 880
 					},
 					{
 						"name": "p-map pMapIterable",
-						"meanUs": 217.78739616891895,
-						"p50Us": 199.84299999987343,
-						"rmePercent": 1.33954646073494,
-						"samples": 2297
+						"meanUs": 417.1305396163432,
+						"p50Us": 359.5050000003539,
+						"rmePercent": 3.280987464223792,
+						"samples": 1199
 					}
 				]
 			},
@@ -255,24 +255,24 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent (1)",
-						"meanUs": 148.5626729055207,
-						"p50Us": 140.5970000000707,
-						"rmePercent": 0.7988722727632362,
-						"samples": 3366
+						"meanUs": 379.0137174242367,
+						"p50Us": 335.6120000003102,
+						"rmePercent": 2.7583450386603476,
+						"samples": 1320
 					},
 					{
 						"name": "p-map pMapIterable (1)",
-						"meanUs": 99.6857836921873,
-						"p50Us": 91.83099999995648,
-						"rmePercent": 0.799922032948145,
-						"samples": 5016
+						"meanUs": 273.8541193866382,
+						"p50Us": 237.12299999988318,
+						"rmePercent": 2.79484927052352,
+						"samples": 1826
 					},
 					{
 						"name": "lfi mapAsync (sequential)",
-						"meanUs": 72.43922276940955,
-						"p50Us": 66.90700000035577,
-						"rmePercent": 0.8097622824050854,
-						"samples": 6904
+						"meanUs": 173.20377450641928,
+						"p50Us": 149.73600000030274,
+						"rmePercent": 2.5878768393571403,
+						"samples": 2887
 					}
 				]
 			}
@@ -283,17 +283,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 39.32858266477903,
-						"p50Us": 34.51600000002486,
-						"rmePercent": 1.3344289485572514,
-						"samples": 12714
+						"meanUs": 65.35477754541893,
+						"p50Us": 53.423999999949956,
+						"rmePercent": 2.0826647085889216,
+						"samples": 7651
 					},
 					{
 						"name": "p-limit",
-						"meanUs": 71.73180361497668,
-						"p50Us": 66.24200000010205,
-						"rmePercent": 1.0126645900990525,
-						"samples": 6971
+						"meanUs": 115.57059302056976,
+						"p50Us": 95.63099999991209,
+						"rmePercent": 1.8931303520903715,
+						"samples": 4327
 					}
 				]
 			},
@@ -302,17 +302,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 121.58253172866404,
-						"p50Us": 113.06899999999587,
-						"rmePercent": 1.9589818880102565,
-						"samples": 4113
+						"meanUs": 189.10956786389164,
+						"p50Us": 160.56600000001708,
+						"rmePercent": 1.8318048395785653,
+						"samples": 2645
 					},
 					{
 						"name": "p-limit",
-						"meanUs": 153.47335635358755,
-						"p50Us": 145.94099999999344,
-						"rmePercent": 0.8647551347126997,
-						"samples": 3258
+						"meanUs": 236.15648441926533,
+						"p50Us": 202.57850000007238,
+						"rmePercent": 1.796480605957757,
+						"samples": 2118
 					}
 				]
 			},
@@ -321,17 +321,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 7.432016439496815,
-						"p50Us": 6.956000000172935,
-						"rmePercent": 0.658291471918482,
-						"samples": 67277
+						"meanUs": 14.585115104135898,
+						"p50Us": 12.208500000042477,
+						"rmePercent": 1.160697719167628,
+						"samples": 34282
 					},
 					{
 						"name": "p-memoize",
-						"meanUs": 7.72015620850465,
-						"p50Us": 7.252999999764143,
-						"rmePercent": 0.7003405336675059,
-						"samples": 64766
+						"meanUs": 13.392088118706786,
+						"p50Us": 11.238000000048487,
+						"rmePercent": 1.2186074378998297,
+						"samples": 37336
 					}
 				]
 			},
@@ -340,17 +340,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 12.1028884854637,
-						"p50Us": 10.561999999936234,
-						"rmePercent": 2.5123354246514134,
-						"samples": 41313
+						"meanUs": 23.582011036173572,
+						"p50Us": 18.707000000176777,
+						"rmePercent": 3.872918330507197,
+						"samples": 21203
 					},
 					{
 						"name": "p-memoize",
-						"meanUs": 10.984577561017984,
-						"p50Us": 9.595999999874039,
-						"rmePercent": 2.4625500226749355,
-						"samples": 45519
+						"meanUs": 19.197102472546355,
+						"p50Us": 15.474499999982072,
+						"rmePercent": 3.2723908737405565,
+						"samples": 26046
 					}
 				]
 			},
@@ -359,17 +359,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 0.40667747804802973,
-						"p50Us": 0.34299999970244244,
-						"rmePercent": 0.3161094403351769,
-						"samples": 1229476
+						"meanUs": 0.9371438438202249,
+						"p50Us": 0.5289999999149586,
+						"rmePercent": 7.601618260845933,
+						"samples": 533537
 					},
 					{
 						"name": "p-retry",
-						"meanUs": 0.37829586742121124,
-						"p50Us": 0.3079999996771221,
-						"rmePercent": 0.8196762840614337,
-						"samples": 1321717
+						"meanUs": 0.551666622532916,
+						"p50Us": 0.38100000074337004,
+						"rmePercent": 1.181295627736825,
+						"samples": 906345
 					}
 				]
 			},
@@ -378,17 +378,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 1098.5599451754756,
-						"p50Us": 1107.1945000003325,
-						"rmePercent": 1.1963825733685496,
-						"samples": 456
+						"meanUs": 1120.6892595078248,
+						"p50Us": 1117.4769999997807,
+						"rmePercent": 0.9429561303562684,
+						"samples": 447
 					},
 					{
 						"name": "p-retry",
-						"meanUs": 1101.2729340659707,
-						"p50Us": 1093.5550000012881,
-						"rmePercent": 0.7422290737630828,
-						"samples": 455
+						"meanUs": 1112.177475555594,
+						"p50Us": 1109.1169999999693,
+						"rmePercent": 0.504712560922939,
+						"samples": 450
 					}
 				]
 			},
@@ -397,17 +397,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 1.97823216921002,
-						"p50Us": 1.5740000000050713,
-						"rmePercent": 1.2822659345825713,
-						"samples": 252751
+						"meanUs": 2.423691711464468,
+						"p50Us": 1.8999999999778083,
+						"rmePercent": 1.1757747360791138,
+						"samples": 206297
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 2.21850349855121,
-						"p50Us": 1.8919999999980064,
-						"rmePercent": 1.9970337159809504,
-						"samples": 225379
+						"meanUs": 3.2346152323408908,
+						"p50Us": 2.705999999989217,
+						"rmePercent": 1.2200644023106635,
+						"samples": 154579
 					}
 				]
 			},
@@ -416,17 +416,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 8.019665893015063,
-						"p50Us": 4.598999999871012,
-						"rmePercent": 19.984433884674377,
-						"samples": 63336
+						"meanUs": 10.602564114361304,
+						"p50Us": 6.605000000035943,
+						"rmePercent": 20.572764047093862,
+						"samples": 47813
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 4.787533503130901,
-						"p50Us": 4.058999999870139,
-						"rmePercent": 3.5868335063321197,
-						"samples": 104438
+						"meanUs": 5.876685985284928,
+						"p50Us": 4.845999999815831,
+						"rmePercent": 4.0553066629730745,
+						"samples": 85082
 					}
 				]
 			},
@@ -435,17 +435,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 12.214090236216983,
-						"p50Us": 11.121000000002823,
-						"rmePercent": 0.8249738245465078,
-						"samples": 40937
+						"meanUs": 17.13882412421967,
+						"p50Us": 14.13200000024517,
+						"rmePercent": 0.9000647625192988,
+						"samples": 29174
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 18.183472979849938,
-						"p50Us": 16.856000000188942,
-						"rmePercent": 0.6286721809935649,
-						"samples": 27498
+						"meanUs": 27.423135029892777,
+						"p50Us": 23.15100000032544,
+						"rmePercent": 1.115686522576694,
+						"samples": 18233
 					}
 				]
 			},
@@ -454,17 +454,17 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent",
-						"meanUs": 142.63851682829375,
-						"p50Us": 118.71000000002141,
-						"rmePercent": 1.5217833009749497,
-						"samples": 3506
+						"meanUs": 194.2517303807292,
+						"p50Us": 159.9909999999909,
+						"rmePercent": 1.9117639505515225,
+						"samples": 2574
 					},
 					{
 						"name": "p-map pMapIterable",
-						"meanUs": 119.57947800095369,
-						"p50Us": 100.48799999992752,
-						"rmePercent": 1.4055836217075768,
-						"samples": 4182
+						"meanUs": 163.28021286320737,
+						"p50Us": 137.98799999995026,
+						"rmePercent": 1.6298187326264046,
+						"samples": 3063
 					}
 				]
 			},
@@ -473,17 +473,17 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent",
-						"meanUs": 300.86486642599186,
-						"p50Us": 254.31400000002213,
-						"rmePercent": 1.9766424413556498,
-						"samples": 1662
+						"meanUs": 363.7695457848845,
+						"p50Us": 311.33150000016485,
+						"rmePercent": 1.9229993613756744,
+						"samples": 1376
 					},
 					{
 						"name": "p-map pMapIterable",
-						"meanUs": 261.2648547544424,
-						"p50Us": 200.35800000027848,
-						"rmePercent": 3.694135457178245,
-						"samples": 1914
+						"meanUs": 273.6813026819901,
+						"p50Us": 239.33100000022023,
+						"rmePercent": 1.8006000401925257,
+						"samples": 1827
 					}
 				]
 			},
@@ -492,24 +492,24 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent (1)",
-						"meanUs": 144.59766281087332,
-						"p50Us": 135.66500000001724,
-						"rmePercent": 0.7893306261703571,
-						"samples": 3458
+						"meanUs": 220.9502240388891,
+						"p50Us": 190.81899999991947,
+						"rmePercent": 1.6181042458698263,
+						"samples": 2263
 					},
 					{
 						"name": "p-map pMapIterable (1)",
-						"meanUs": 111.54433169752458,
-						"p50Us": 101.2749999999869,
-						"rmePercent": 1.127981015592899,
-						"samples": 4483
+						"meanUs": 162.2876423239196,
+						"p50Us": 142.76599999993778,
+						"rmePercent": 1.4964420503031701,
+						"samples": 3081
 					},
 					{
 						"name": "lfi mapAsync (sequential)",
-						"meanUs": 76.81231198156914,
-						"p50Us": 67.98099999969054,
-						"rmePercent": 1.9005228488255783,
-						"samples": 6510
+						"meanUs": 111.15028450766582,
+						"p50Us": 99.3119999998271,
+						"rmePercent": 1.4145126086320763,
+						"samples": 4499
 					}
 				]
 			}
@@ -520,17 +520,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 41.17325461133001,
-						"p50Us": 36.34599999998045,
-						"rmePercent": 1.286407075452239,
-						"samples": 12144
+						"meanUs": 65.09901471162537,
+						"p50Us": 53.2900000000609,
+						"rmePercent": 1.9139522976238814,
+						"samples": 7681
 					},
 					{
 						"name": "p-limit",
-						"meanUs": 80.43487904133848,
-						"p50Us": 67.91900000007445,
-						"rmePercent": 2.821747026401018,
-						"samples": 6217
+						"meanUs": 109.46817491243326,
+						"p50Us": 92.10400000000618,
+						"rmePercent": 1.9651755559343842,
+						"samples": 4568
 					}
 				]
 			},
@@ -539,17 +539,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 143.3684309059621,
-						"p50Us": 126.98500000010426,
-						"rmePercent": 1.5803048792082663,
-						"samples": 3488
+						"meanUs": 169.4966084745805,
+						"p50Us": 146.31650000001173,
+						"rmePercent": 1.706094689348402,
+						"samples": 2950
 					},
 					{
 						"name": "p-limit",
-						"meanUs": 163.3213732854387,
-						"p50Us": 157.59249999996428,
-						"rmePercent": 1.1307453423095946,
-						"samples": 3062
+						"meanUs": 222.3438617163192,
+						"p50Us": 194.0319999998792,
+						"rmePercent": 1.7139455748380032,
+						"samples": 2249
 					}
 				]
 			},
@@ -558,17 +558,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 9.393097796893706,
-						"p50Us": 7.448000000294996,
-						"rmePercent": 2.2569528906660397,
-						"samples": 53243
+						"meanUs": 22.083303506756895,
+						"p50Us": 17.747500000041327,
+						"rmePercent": 1.799752479039566,
+						"samples": 22642
 					},
 					{
 						"name": "p-memoize",
-						"meanUs": 11.821236163320757,
-						"p50Us": 9.770000000116852,
-						"rmePercent": 1.545622965320461,
-						"samples": 42297
+						"meanUs": 20.362104971702706,
+						"p50Us": 17.228000000159227,
+						"rmePercent": 1.4158492832846088,
+						"samples": 24559
 					}
 				]
 			},
@@ -577,17 +577,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 13.249813260194601,
-						"p50Us": 11.023000000022876,
-						"rmePercent": 3.208114786410269,
-						"samples": 37737
+						"meanUs": 36.77033693415362,
+						"p50Us": 28.680999999778578,
+						"rmePercent": 4.815480768203028,
+						"samples": 13608
 					},
 					{
 						"name": "p-memoize",
-						"meanUs": 12.941073271733133,
-						"p50Us": 10.527999999794702,
-						"rmePercent": 2.833825867507187,
-						"samples": 38637
+						"meanUs": 28.966726798746517,
+						"p50Us": 23.837499999899592,
+						"rmePercent": 4.391411740908296,
+						"samples": 17262
 					}
 				]
 			},
@@ -596,17 +596,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 0.4856219095033603,
-						"p50Us": 0.3619999997681589,
-						"rmePercent": 3.576449158294278,
-						"samples": 1029608
+						"meanUs": 0.9993144922589654,
+						"p50Us": 0.74399999994057,
+						"rmePercent": 0.7307327457365443,
+						"samples": 500343
 					},
 					{
 						"name": "p-retry",
-						"meanUs": 0.3916584090011219,
-						"p50Us": 0.31400000079884194,
-						"rmePercent": 0.9143920151592189,
-						"samples": 1276632
+						"meanUs": 0.8306877760994454,
+						"p50Us": 0.5440000004455214,
+						"rmePercent": 6.483018978805576,
+						"samples": 601911
 					}
 				]
 			},
@@ -615,17 +615,17 @@
 				"results": [
 					{
 						"name": "pluxel",
-						"meanUs": 1149.5710873563498,
-						"p50Us": 1107.6370000009774,
-						"rmePercent": 2.7526272461822896,
-						"samples": 435
+						"meanUs": 1142.9203744292095,
+						"p50Us": 1137.3670000002676,
+						"rmePercent": 1.268249629326841,
+						"samples": 438
 					},
 					{
 						"name": "p-retry",
-						"meanUs": 1150.7186988505578,
-						"p50Us": 1136.092999999164,
-						"rmePercent": 1.314603253815951,
-						"samples": 435
+						"meanUs": 1128.7741851016033,
+						"p50Us": 1121.4170000002923,
+						"rmePercent": 0.6477599179408201,
+						"samples": 443
 					}
 				]
 			},
@@ -634,17 +634,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 1.7060155622507984,
-						"p50Us": 1.4660000000503715,
-						"rmePercent": 0.6984899964533231,
-						"samples": 293081
+						"meanUs": 3.239017012902366,
+						"p50Us": 2.521999999999025,
+						"rmePercent": 1.8825606262706591,
+						"samples": 154471
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 2.237598208132288,
-						"p50Us": 1.9090000000687724,
-						"rmePercent": 2.1687857370171306,
-						"samples": 223454
+						"meanUs": 4.999321245025254,
+						"p50Us": 3.937000000178159,
+						"rmePercent": 3.800100440434548,
+						"samples": 100014
 					}
 				]
 			},
@@ -653,17 +653,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 4.969988539221639,
-						"p50Us": 4.175000000032014,
-						"rmePercent": 0.9692901254014367,
-						"samples": 100604
+						"meanUs": 8.886994365746633,
+						"p50Us": 7.827999999790336,
+						"rmePercent": 1.4347933519491,
+						"samples": 56263
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 4.058665933405366,
-						"p50Us": 3.7649999999302963,
-						"rmePercent": 0.4184992579370208,
-						"samples": 123194
+						"meanUs": 8.91486544118905,
+						"p50Us": 7.747999999992317,
+						"rmePercent": 1.4290085550014753,
+						"samples": 56087
 					}
 				]
 			},
@@ -672,17 +672,17 @@
 				"results": [
 					{
 						"name": "local grfn",
-						"meanUs": 11.450987495991715,
-						"p50Us": 10.734999999840511,
-						"rmePercent": 0.47640801392422755,
-						"samples": 43666
+						"meanUs": 23.883215848301887,
+						"p50Us": 20.904999999856955,
+						"rmePercent": 1.4011149507527223,
+						"samples": 20936
 					},
 					{
 						"name": "grfn 3.0.0",
-						"meanUs": 17.3255118849602,
-						"p50Us": 15.820999999959895,
-						"rmePercent": 0.8675563670091295,
-						"samples": 28860
+						"meanUs": 39.87433716107857,
+						"p50Us": 33.77049999994597,
+						"rmePercent": 1.8890352634232597,
+						"samples": 12540
 					}
 				]
 			},
@@ -691,17 +691,17 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent",
-						"meanUs": 150.29380763450376,
-						"p50Us": 130.76999999998407,
-						"rmePercent": 1.2708078702982537,
-						"samples": 3327
+						"meanUs": 276.1421507454441,
+						"p50Us": 238.47399999999652,
+						"rmePercent": 2.815648779535143,
+						"samples": 1811
 					},
 					{
 						"name": "p-map pMapIterable",
-						"meanUs": 121.77437652216236,
-						"p50Us": 104.88999999995485,
-						"rmePercent": 1.3479986497039076,
-						"samples": 4106
+						"meanUs": 259.909596673596,
+						"p50Us": 211.36249999995016,
+						"rmePercent": 3.2928502058091405,
+						"samples": 1924
 					}
 				]
 			},
@@ -710,17 +710,17 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent",
-						"meanUs": 319.44772733077826,
-						"p50Us": 271.06800000001385,
-						"rmePercent": 3.704367658282056,
-						"samples": 1566
+						"meanUs": 604.4112367149767,
+						"p50Us": 525.8620000000747,
+						"rmePercent": 3.7050945217923315,
+						"samples": 828
 					},
 					{
 						"name": "p-map pMapIterable",
-						"meanUs": 231.50058148147846,
-						"p50Us": 202.5619999999435,
-						"rmePercent": 1.5207169976678667,
-						"samples": 2160
+						"meanUs": 427.36295384615534,
+						"p50Us": 366.6364999999132,
+						"rmePercent": 3.446628115489542,
+						"samples": 1170
 					}
 				]
 			},
@@ -729,349 +729,27 @@
 				"results": [
 					{
 						"name": "pluxel mapConcurrent (1)",
-						"meanUs": 160.20974495354523,
-						"p50Us": 148.34400000017922,
-						"rmePercent": 1.0213395787172541,
-						"samples": 3121
+						"meanUs": 351.14379283707484,
+						"p50Us": 306.22650000009344,
+						"rmePercent": 2.9914776491251334,
+						"samples": 1424
 					},
 					{
 						"name": "p-map pMapIterable (1)",
-						"meanUs": 110.55047689586874,
-						"p50Us": 100.06700000030833,
-						"rmePercent": 0.9791574610531605,
-						"samples": 4523
+						"meanUs": 254.9796768603461,
+						"p50Us": 224.54399999992347,
+						"rmePercent": 2.462061312681957,
+						"samples": 1962
 					},
 					{
 						"name": "lfi mapAsync (sequential)",
-						"meanUs": 76.28885906040675,
-						"p50Us": 68.89000000001033,
-						"rmePercent": 1.0075378737899288,
-						"samples": 6556
+						"meanUs": 164.05777821522486,
+						"p50Us": 141.42600000013772,
+						"rmePercent": 2.49360360893865,
+						"samples": 3048
 					}
 				]
 			}
 		]
-	],
-	"optimizationBaseline": {
-		"measuredAt": "2026-09-28T09:52:14.109721+00:00",
-		"note": "Earlier separate processes on the same workstation, not interleaved before/after measurements; absolute changes include environment variation.",
-		"sha256": {
-			"dist/iter.js": "410d019e6ea40bc25dc3f896315817a40218068d1a216d89cdf8fc4f91e529e6",
-			"dist/singleflight.js": "12eecb1b4fe1d236c41c774f22f7a315ca3996d1d0efda88686ac62795faa1da"
-		},
-		"runs": [
-			[
-				{
-					"scenario": "singleflight/128/keys1",
-					"results": [
-						{
-							"name": "pluxel",
-							"meanUs": 7.591705490268909,
-							"p50Us": 6.973000000016327,
-							"rmePercent": 0.8033483132376575,
-							"samples": 65862
-						},
-						{
-							"name": "p-memoize",
-							"meanUs": 8.032300904431763,
-							"p50Us": 7.372999999915919,
-							"rmePercent": 0.8089421080263585,
-							"samples": 62249
-						}
-					]
-				},
-				{
-					"scenario": "singleflight/128/keys16",
-					"results": [
-						{
-							"name": "pluxel",
-							"meanUs": 15.155278400824006,
-							"p50Us": 12.123500000143395,
-							"rmePercent": 5.145814788232399,
-							"samples": 32992
-						},
-						{
-							"name": "p-memoize",
-							"meanUs": 11.368337001501692,
-							"p50Us": 9.615999999368796,
-							"rmePercent": 2.731909287344999,
-							"samples": 43982
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / concurrency 4 / immediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent",
-							"meanUs": 128.54712493573228,
-							"p50Us": 120.1275000000237,
-							"rmePercent": 0.8087539534133872,
-							"samples": 3890
-						},
-						{
-							"name": "p-map pMapIterable",
-							"meanUs": 101.83661446028454,
-							"p50Us": 93.02850000000262,
-							"rmePercent": 0.8913239868219403,
-							"samples": 4910
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / concurrency 4 / setImmediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent",
-							"meanUs": 251.35282864321508,
-							"p50Us": 235.91349999992417,
-							"rmePercent": 1.0729574583046526,
-							"samples": 1990
-						},
-						{
-							"name": "p-map pMapIterable",
-							"meanUs": 214.53657608229435,
-							"p50Us": 189.1289999998662,
-							"rmePercent": 1.5953859725687132,
-							"samples": 2333
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / sequential / immediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent (1)",
-							"meanUs": 162.07745737439066,
-							"p50Us": 149.49299999989307,
-							"rmePercent": 1.0016577240997644,
-							"samples": 3085
-						},
-						{
-							"name": "p-map pMapIterable (1)",
-							"meanUs": 119.1211696045734,
-							"p50Us": 108.3365000001777,
-							"rmePercent": 0.9929751063632749,
-							"samples": 4198
-						},
-						{
-							"name": "lfi mapAsync (sequential)",
-							"meanUs": 73.99312044983499,
-							"p50Us": 67.1345000000656,
-							"rmePercent": 0.989476315887929,
-							"samples": 6758
-						}
-					]
-				}
-			],
-			[
-				{
-					"scenario": "singleflight/128/keys1",
-					"results": [
-						{
-							"name": "pluxel",
-							"meanUs": 7.811700345275525,
-							"p50Us": 7.204999999885331,
-							"rmePercent": 0.7858405993067139,
-							"samples": 64007
-						},
-						{
-							"name": "p-memoize",
-							"meanUs": 8.125988071054415,
-							"p50Us": 7.470000000012078,
-							"rmePercent": 0.751010387643405,
-							"samples": 61531
-						}
-					]
-				},
-				{
-					"scenario": "singleflight/128/keys16",
-					"results": [
-						{
-							"name": "pluxel",
-							"meanUs": 15.403764048056408,
-							"p50Us": 12.25350000004255,
-							"rmePercent": 5.229672448005294,
-							"samples": 32460
-						},
-						{
-							"name": "p-memoize",
-							"meanUs": 11.513166363487798,
-							"p50Us": 9.992999999667518,
-							"rmePercent": 2.562615531146968,
-							"samples": 43429
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / concurrency 4 / immediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent",
-							"meanUs": 126.64148721195373,
-							"p50Us": 118.19000000002688,
-							"rmePercent": 0.7757272816872324,
-							"samples": 3949
-						},
-						{
-							"name": "p-map pMapIterable",
-							"meanUs": 103.9900640465768,
-							"p50Us": 94.27099999993516,
-							"rmePercent": 0.8870850005789555,
-							"samples": 4809
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / concurrency 4 / setImmediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent",
-							"meanUs": 239.1932682926836,
-							"p50Us": 224.82100000001992,
-							"rmePercent": 0.9684308628267786,
-							"samples": 2091
-						},
-						{
-							"name": "p-map pMapIterable",
-							"meanUs": 188.07246107559533,
-							"p50Us": 176.76399999982095,
-							"rmePercent": 0.896177562560083,
-							"samples": 2659
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / sequential / immediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent (1)",
-							"meanUs": 139.0460005560202,
-							"p50Us": 127.15200000002369,
-							"rmePercent": 0.8212037567083487,
-							"samples": 3597
-						},
-						{
-							"name": "p-map pMapIterable (1)",
-							"meanUs": 99.41270099403623,
-							"p50Us": 91.4789999999357,
-							"rmePercent": 0.7732608655919084,
-							"samples": 5030
-						},
-						{
-							"name": "lfi mapAsync (sequential)",
-							"meanUs": 75.0670878246514,
-							"p50Us": 68.57700000000477,
-							"rmePercent": 1.069198931375583,
-							"samples": 6661
-						}
-					]
-				}
-			],
-			[
-				{
-					"scenario": "singleflight/128/keys1",
-					"results": [
-						{
-							"name": "pluxel",
-							"meanUs": 7.600405390204723,
-							"p50Us": 7.039000000077067,
-							"rmePercent": 0.7016507181553722,
-							"samples": 65786
-						},
-						{
-							"name": "p-memoize",
-							"meanUs": 8.478431749584445,
-							"p50Us": 7.623500000136119,
-							"rmePercent": 1.1448452615831952,
-							"samples": 58974
-						}
-					]
-				},
-				{
-					"scenario": "singleflight/128/keys16",
-					"results": [
-						{
-							"name": "pluxel",
-							"meanUs": 15.297893253784435,
-							"p50Us": 12.225999999827764,
-							"rmePercent": 5.421925860129794,
-							"samples": 32685
-						},
-						{
-							"name": "p-memoize",
-							"meanUs": 11.30028874273941,
-							"p50Us": 9.726000000227941,
-							"rmePercent": 2.6532004778271254,
-							"samples": 44247
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / concurrency 4 / immediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent",
-							"meanUs": 124.58871300448395,
-							"p50Us": 113.0089999999484,
-							"rmePercent": 0.8496070285643668,
-							"samples": 4014
-						},
-						{
-							"name": "p-map pMapIterable",
-							"meanUs": 104.21190621092232,
-							"p50Us": 95.00049999996918,
-							"rmePercent": 0.9062462820621355,
-							"samples": 4798
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / concurrency 4 / setImmediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent",
-							"meanUs": 258.47280878552704,
-							"p50Us": 245.09299999999712,
-							"rmePercent": 1.4598307961375556,
-							"samples": 1935
-						},
-						{
-							"name": "p-map pMapIterable",
-							"meanUs": 194.15542430123745,
-							"p50Us": 186.81949999995595,
-							"rmePercent": 0.9474548058549147,
-							"samples": 2576
-						}
-					]
-				},
-				{
-					"scenario": "128 ordered pull items / sequential / immediate",
-					"results": [
-						{
-							"name": "pluxel mapConcurrent (1)",
-							"meanUs": 146.3492988001173,
-							"p50Us": 137.28599999967628,
-							"rmePercent": 0.8366107899793261,
-							"samples": 3417
-						},
-						{
-							"name": "p-map pMapIterable (1)",
-							"meanUs": 103.97216469120237,
-							"p50Us": 94.81699999969351,
-							"rmePercent": 0.8763148006821267,
-							"samples": 4809
-						},
-						{
-							"name": "lfi mapAsync (sequential)",
-							"meanUs": 72.10402710886896,
-							"p50Us": 65.26099999973667,
-							"rmePercent": 1.0878023406568489,
-							"samples": 6935
-						}
-					]
-				}
-			]
-		]
-	}
+	]
 }

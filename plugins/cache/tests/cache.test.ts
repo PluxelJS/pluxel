@@ -88,6 +88,7 @@ class TestCacheBackendPlugin extends CacheBackend {
 	readonly values = new Map<string, CacheValue<unknown>>()
 	readonly metrics = { gets: 0, sets: 0, deletes: 0 }
 	getGate: Promise<void> | undefined
+	setGate: Promise<void> | undefined
 	getError: Error | undefined
 	setError: Error | undefined
 
@@ -100,6 +101,7 @@ class TestCacheBackendPlugin extends CacheBackend {
 
 	async set<V>(key: string, value: V, { ttlMs }: { ttlMs: number }): Promise<void> {
 		this.metrics.sets++
+		await this.setGate
 		if (this.setError) throw this.setError
 		this.values.set(key, { value, ttlMs })
 	}
@@ -407,6 +409,28 @@ describe('@pluxel/cache', () => {
 		}
 	})
 
+	it('clear drains accepted loads before clearing and admits later reads afterward', async () => {
+		await using host = await createHost()
+		await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
+		const cache = host.require(ConsumerA).cache
+		const started = deferred<void>()
+		const gate = deferred<number>()
+		const loading = cache.getOrLoad('before-clear', () => {
+			started.resolve()
+			return gate.promise
+		})
+		await started.promise
+		expect(cache.stats().inFlight).toBe(1)
+		const clearing = cache.clear()
+		const after = cache.getOrLoad('before-clear', () => 2)
+		gate.resolve(1)
+		await expect(loading).resolves.toBe(1)
+		await clearing
+		await expect(after).resolves.toBe(2)
+		expect(cache.stats().inFlight).toBe(0)
+		await expect(cache.get('before-clear')).resolves.toBe(2)
+	})
+
 	it('fails loudly instead of reporting a local-only clear as successful', async () => {
 		{
 			await using host = await createHost()
@@ -428,6 +452,51 @@ describe('@pluxel/cache', () => {
 			await handle.set('live', 1)
 			await host.stop(CachePlugin)
 			await expect(handle.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
+		}
+	})
+
+	it('revokes a bucket without waiting for its loader and rejects late publication', async () => {
+		await using host = await createHost()
+		await startPlugins(host, [MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
+		const cache = host.require(ConsumerA).cache.scope('teardown')
+		const started = deferred<void>()
+		const gate = deferred<number>()
+		const loading = cache.getOrLoad('stopped-load', () => {
+			started.resolve()
+			return gate.promise
+		})
+		await started.promise
+		await host.stop(ConsumerA)
+		gate.resolve(1)
+		await expect(loading).rejects.toBeInstanceOf(CacheStoppedError)
+		expect(() => cache.stats()).toThrow(CacheStoppedError)
+	})
+
+	it('does not drain unrelated loads after a queued clear loses its owner', async () => {
+		await using host = await createHost()
+		await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
+		const cache = host.require(ConsumerA).cache.scope('teardown')
+		const backend = host.require(TestCacheBackendPlugin)
+		const started = deferred<void>()
+		const loadGate = deferred<number>()
+		const writeGate = deferred<void>()
+		const loading = cache.getOrLoad('unrelated', () => {
+			started.resolve()
+			return loadGate.promise
+		})
+		await started.promise
+		backend.setGate = writeGate.promise
+		const writing = cache.set('writing', 1)
+		await vi.waitFor(() => expect(backend.metrics.sets).toBe(1))
+		const clearing = cache.clear()
+		await host.stop(ConsumerA)
+		writeGate.resolve()
+		try {
+			await expect(writing).rejects.toBeInstanceOf(CacheStoppedError)
+			await expect(clearing).rejects.toBeInstanceOf(CacheStoppedError)
+		} finally {
+			loadGate.resolve(2)
+			await expect(loading).rejects.toBeInstanceOf(CacheStoppedError)
 		}
 	})
 
@@ -497,8 +566,12 @@ describe('@pluxel/cache', () => {
 			const joined = cache.getOrLoad('a', () => 99)
 			await expect(cache.getOrLoad('b', () => 2)).rejects.toBeInstanceOf(CacheBusyError)
 			expect(cache.stats().rejected).toBe(1)
+			expect(cache.stats().inFlight).toBe(1)
+			expect(cache.stats().deduplicated).toBe(1)
 			gate.resolve(1)
 			expect(await Promise.all([first, joined])).toEqual([1, 1])
+			expect(cache.stats().inFlight).toBe(0)
+			await expect(cache.getOrLoad('b', () => 2)).resolves.toBe(2)
 		}
 	})
 
