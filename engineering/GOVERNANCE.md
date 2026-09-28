@@ -34,7 +34,7 @@ persistence 不进入 core。CLI 是按命令加载的编排层，不作为 runt
 `workspaces`。目录表达 package 的角色，而不是团队或功能名称：
 
 ```text
-packages/*              框架库、contract、adapter 与其他非具体插件的可复用 package
+packages/*              框架库、contract、adapter 与可含配套 /plugins 的服务 package
 plugins/*               可独立装配的具体插件 package
 plugins/<domain>/*      共享明确能力链的具体插件 package
 projects/*              必须随框架一起演进的可运行维护者宿主
@@ -42,7 +42,7 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 ```
 
 判断依据是所有权而不是“是否导入 Pluxel”：contract 或 adapter 即使依赖 runtime 类型，只要不声明
-具体 `@Plugin`，仍可位于 `packages/*`；声明具体插件生命周期的 package 位于 `plugins/*` 或
+具体 `@Plugin`，仍可位于 `packages/*`；服务包可通过显式 `./plugins` 入口提供配套插件，基础服务入口不反向加载该入口。独立分发的具体插件 package 位于 `plugins/*` 或
 `plugins/<domain>/*`。领域目录只表达仓库分类，不创建隐式依赖、聚合插件或新的公开入口。Pluxel
 仓库内可运行 host 位于 `projects/*`，当前只保留维护者宿主。
 官方浏览器 Shell 属于 `packages/workbench/shell/`，拥有独立 TypeScript 与 Vitest 配置；它随 Workbench 编译成静态资源，

@@ -51,7 +51,7 @@ Workbench 通过可选 `ctx.workbench?.publish()` 接入。业务 Plugin 不依�
 | node       | definition 的 default 或 fork 部署             | 拥有配置、依赖选择与运行意图                     |
 | generation | node 的一次 instance、Context、gate 与 effects | restart/replacement/stop 结束整代资源            |
 
-Address 用于持久化与 RPC，Slot 是进程内 interned key。class name、displayName、物理目录和 constructor object 都不是身份。具体 Plugin package 只有根入口 `"."` 可以承载 Plugin；重复 root 名称、plugin-bearing subpath 与跨包 re-export 均拒绝。完整 codec/source-space 规则见 [PLUGIN_IDENTITY](PLUGIN_IDENTITY.md)。
+Address 用于持久化与 RPC，Slot 是进程内 interned key。class name、displayName、物理目录和 constructor object 都不是身份。具体 Plugin 可以由显式公开的包根或子路径承载；一个 constructor 必须只有一个权威入口和具名导出，重复导出与跨包 re-export 均拒绝。完整 codec/source-space 规则见 [PLUGIN_IDENTITY](PLUGIN_IDENTITY.md)。
 
 Toolchain 是 Plugin 源码入口。语义事实包含 root exports、required/optional edges、forkability 与 config/Part 声明；未 lowering 的 Plugin 必须 fail-fast。ABI 和源码规则由 [TOOLCHAIN](TOOLCHAIN.md) 拥有。
 

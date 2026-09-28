@@ -25,6 +25,7 @@ const canonicalNodeIndexKeys = new WeakMap<PluginNodeAddress, string>()
 
 export type PluginEntryAddress =
 	| Readonly<{ kind: 'package-root'; packageName: string }>
+	| Readonly<{ kind: 'package-subpath'; packageName: string; subpath: string }>
 	| Readonly<{ kind: 'source-entry'; sourceSpace: string; path: string }>
 
 export type PluginDefinitionAddress = Readonly<{
@@ -135,6 +136,23 @@ function readPackageName(value: unknown): string {
 	return packageName
 }
 
+function readPackageSubpath(value: unknown): string {
+	const subpath = readText(value, 'Plugin package subpath', MAX_SOURCE_PATH_BYTES)
+	if (!subpath.startsWith('./'))
+		throw new TypeError('[pluxel/core] Plugin package subpath must start with ./')
+	const path = readSourcePath(subpath.slice(2), 'Plugin package subpath')
+	if (
+		path.includes('%') ||
+		path.includes('*') ||
+		path.split('/').some((segment) => segment.toLowerCase() === 'node_modules')
+	) {
+		throw new TypeError(
+			'[pluxel/core] Plugin package subpath must be a concrete package export path',
+		)
+	}
+	return subpath
+}
+
 function readSourceSpace(value: unknown): string {
 	const sourceSpace = readText(value, 'Plugin source space', MAX_SOURCE_SPACE_BYTES)
 	if (!SOURCE_SPACE_RE.test(sourceSpace)) {
@@ -143,28 +161,28 @@ function readSourceSpace(value: unknown): string {
 	return sourceSpace
 }
 
-function readSourcePath(value: unknown): string {
-	const path = readText(value, 'Plugin source path', MAX_SOURCE_PATH_BYTES)
+function readSourcePath(value: unknown, label = 'Plugin source path'): string {
+	const path = readText(value, label, MAX_SOURCE_PATH_BYTES)
 	if (path.startsWith('/') || path.endsWith('/') || path.includes('\\')) {
-		throw new TypeError('[pluxel/core] Plugin source path must be a relative POSIX path')
+		throw new TypeError(`[pluxel/core] ${label} must be a relative POSIX path`)
 	}
 	if (path.includes('?') || path.includes('#')) {
-		throw new TypeError('[pluxel/core] Plugin source path must not contain query or hash')
+		throw new TypeError(`[pluxel/core] ${label} must not contain query or hash`)
 	}
 	const segments = path.split('/')
 	if (
 		segments.length > MAX_SOURCE_PATH_SEGMENTS ||
 		segments.some((segment) => !segment || segment === '.' || segment === '..')
 	) {
-		throw new TypeError('[pluxel/core] Plugin source path contains invalid segments')
+		throw new TypeError(`[pluxel/core] ${label} contains invalid segments`)
 	}
 	return path
 }
 
 function readExportName(value: unknown): string {
-	const exportName = readText(value, 'Plugin root export name', MAX_EXPORT_NAME_BYTES)
+	const exportName = readText(value, 'Plugin export name', MAX_EXPORT_NAME_BYTES)
 	if (exportName.includes('/') || exportName.includes('\\')) {
-		throw new TypeError('[pluxel/core] Plugin root export name must be one path segment')
+		throw new TypeError('[pluxel/core] Plugin export name must be one path segment')
 	}
 	return exportName
 }
@@ -199,6 +217,14 @@ export function parsePluginEntryAddress(input: unknown): PluginEntryAddress {
 			packageName: readPackageName(record.packageName),
 		})
 	}
+	if (record.kind === 'package-subpath') {
+		assertExactKeys(record, ['kind', 'packageName', 'subpath'], 'Plugin package-subpath address')
+		return canonicalAddress(canonicalEntryAddresses, {
+			kind: 'package-subpath' as const,
+			packageName: readPackageName(record.packageName),
+			subpath: readPackageSubpath(record.subpath),
+		})
+	}
 	if (record.kind === 'source-entry') {
 		assertExactKeys(record, ['kind', 'sourceSpace', 'path'], 'Plugin source-entry address')
 		return canonicalAddress(canonicalEntryAddresses, {
@@ -208,7 +234,7 @@ export function parsePluginEntryAddress(input: unknown): PluginEntryAddress {
 		})
 	}
 	throw new TypeError(
-		'[pluxel/core] Plugin entry address kind must be package-root or source-entry',
+		'[pluxel/core] Plugin entry address kind must be package-root, package-subpath or source-entry',
 	)
 }
 
@@ -358,18 +384,19 @@ export class PluginSlotRegistry {
 		address: PluginDefinitionAddress,
 	): PluginDefinitionSlot | undefined {
 		const entry =
-			address.entry.kind === 'package-root'
-				? this.packageEntries.get(address.entry.packageName)
+			address.entry.kind !== 'source-entry'
+				? this.packageEntries.get(packageEntrySpecifier(address.entry))
 				: this.sourceEntries.get(address.entry.sourceSpace)?.get(address.entry.path)
 		return entry ? this.definitions.get(entry)?.get(address.exportName) : undefined
 	}
 
 	private internParsedEntry(address: PluginEntryAddress): PluginEntrySlot {
-		if (address.kind === 'package-root') {
-			const existing = this.packageEntries.get(address.packageName)
+		if (address.kind !== 'source-entry') {
+			const specifier = packageEntrySpecifier(address)
+			const existing = this.packageEntries.get(specifier)
 			if (existing) return existing
 			const slot = Object.freeze({ address })
-			this.packageEntries.set(address.packageName, slot)
+			this.packageEntries.set(specifier, slot)
 			return slot
 		}
 		let byPath = this.sourceEntries.get(address.sourceSpace)
@@ -416,9 +443,13 @@ export function pluginDefinitionAddressEqual(
 		leftEntry.kind === rightEntry.kind &&
 		(leftEntry.kind === 'package-root'
 			? rightEntry.kind === 'package-root' && leftEntry.packageName === rightEntry.packageName
-			: rightEntry.kind === 'source-entry' &&
-				leftEntry.sourceSpace === rightEntry.sourceSpace &&
-				leftEntry.path === rightEntry.path)
+			: leftEntry.kind === 'package-subpath'
+				? rightEntry.kind === 'package-subpath' &&
+					leftEntry.packageName === rightEntry.packageName &&
+					leftEntry.subpath === rightEntry.subpath
+				: rightEntry.kind === 'source-entry' &&
+					leftEntry.sourceSpace === rightEntry.sourceSpace &&
+					leftEntry.path === rightEntry.path)
 	)
 }
 
@@ -460,7 +491,9 @@ export function encodePluginDefinitionAddressBytes(
 	const entry = definitionAddress.entry
 	return entry.kind === 'package-root'
 		? encodeFields(0x11, [entry.packageName, definitionAddress.exportName])
-		: encodeFields(0x12, [entry.sourceSpace, entry.path, definitionAddress.exportName])
+		: entry.kind === 'package-subpath'
+			? encodeFields(0x13, [entry.packageName, entry.subpath, definitionAddress.exportName])
+			: encodeFields(0x12, [entry.sourceSpace, entry.path, definitionAddress.exportName])
 }
 
 export function encodePluginNodeAddressBytes(nodeAddress: PluginNodeAddress): Uint8Array {
@@ -468,16 +501,22 @@ export function encodePluginNodeAddressBytes(nodeAddress: PluginNodeAddress): Ui
 	const fields =
 		entry.kind === 'package-root'
 			? [entry.packageName, nodeAddress.definition.exportName]
-			: [entry.sourceSpace, entry.path, nodeAddress.definition.exportName]
+			: entry.kind === 'package-subpath'
+				? [entry.packageName, entry.subpath, nodeAddress.definition.exportName]
+				: [entry.sourceSpace, entry.path, nodeAddress.definition.exportName]
 	if (nodeAddress.variant === 'fork') fields.push(nodeAddress.forkId)
 	const tag =
 		entry.kind === 'package-root'
 			? nodeAddress.variant === 'default'
 				? 0x21
 				: 0x22
-			: nodeAddress.variant === 'default'
-				? 0x23
-				: 0x24
+			: entry.kind === 'package-subpath'
+				? nodeAddress.variant === 'default'
+					? 0x25
+					: 0x26
+				: nodeAddress.variant === 'default'
+					? 0x23
+					: 0x24
 	return encodeFields(tag, fields)
 }
 
@@ -504,8 +543,8 @@ export function formatPluginDefinitionReference(
 ): string {
 	const entry = definitionAddress.entry
 	const provenance =
-		entry.kind === 'package-root'
-			? `package:${entry.packageName.split('/').map(encodeSegment).join('/')}`
+		entry.kind !== 'source-entry'
+			? `package:${packageEntrySpecifier(entry).split('/').map(encodeSegment).join('/')}`
 			: `source:${[entry.sourceSpace, ...entry.path.split('/')].map(encodeSegment).join('/')}`
 	return `${provenance}::${encodeSegment(definitionAddress.exportName)}`
 }
@@ -544,10 +583,20 @@ export function formatPluginNodeRoute(nodeAddress: PluginNodeAddress): string {
 	const segments = ['v1']
 	if (nodeAddress.variant === 'fork') segments.push('fork', encodeSegment(nodeAddress.forkId))
 	const entry = nodeAddress.definition.entry
-	segments.push(entry.kind === 'package-root' ? 'package' : 'source')
+	segments.push(
+		entry.kind === 'source-entry'
+			? 'source'
+			: entry.kind === 'package-root'
+				? 'package'
+				: 'package-subpath',
+	)
 	segments.push(encodeSegment(nodeAddress.definition.exportName))
-	if (entry.kind === 'package-root') {
+	if (entry.kind !== 'source-entry') {
 		segments.push(...entry.packageName.split('/').map(encodeSegment))
+		if (entry.kind === 'package-subpath') {
+			const parts = entry.subpath.slice(2).split('/')
+			segments.push(String(parts.length), ...parts.map(encodeSegment))
+		}
 	} else {
 		const pathSegments = entry.path.split('/')
 		segments.push(encodeSegment(entry.sourceSpace), String(pathSegments.length))
@@ -570,17 +619,40 @@ export function parsePluginNodeRoute(rawSegments: readonly string[]): ParsedPlug
 		forkId = decodeSegment(rawSegments[offset++] ?? '', 'Plugin fork id')
 	}
 	const kind = rawSegments[offset++]
-	if (kind !== 'package' && kind !== 'source') {
-		throw new TypeError('[pluxel/core] Plugin node route kind must be package or source')
+	if (kind !== 'package' && kind !== 'package-subpath' && kind !== 'source') {
+		throw new TypeError(
+			'[pluxel/core] Plugin node route kind must be package, package-subpath or source',
+		)
 	}
-	const exportName = decodeSegment(rawSegments[offset++] ?? '', 'Plugin root export name')
+	const exportName = decodeSegment(rawSegments[offset++] ?? '', 'Plugin export name')
 	let entry: PluginEntryAddress
-	if (kind === 'package') {
+	if (kind === 'package' || kind === 'package-subpath') {
 		const first = decodeSegment(rawSegments[offset++] ?? '', 'Plugin package name')
 		const packageName = first.startsWith('@')
 			? `${first}/${decodeSegment(rawSegments[offset++] ?? '', 'Plugin package name')}`
 			: first
-		entry = parsePluginEntryAddress({ kind: 'package-root', packageName })
+		if (kind === 'package-subpath') {
+			const rawCount = rawSegments[offset++] ?? ''
+			const count = Number(rawCount)
+			if (
+				!/^[1-9][0-9]*$/.test(rawCount) ||
+				!Number.isSafeInteger(count) ||
+				count > MAX_SOURCE_PATH_SEGMENTS ||
+				offset + count > rawSegments.length
+			) {
+				throw new TypeError('[pluxel/core] Plugin package subpath route count is invalid')
+			}
+			const subpath =
+				'./' +
+				rawSegments
+					.slice(offset, offset + count)
+					.map((segment) => decodeSegment(segment, 'Plugin package subpath'))
+					.join('/')
+			offset += count
+			entry = parsePluginEntryAddress({ kind: 'package-subpath', packageName, subpath })
+		} else {
+			entry = parsePluginEntryAddress({ kind: 'package-root', packageName })
+		}
 	} else {
 		const sourceSpace = decodeSegment(rawSegments[offset++] ?? '', 'Plugin source space')
 		const rawCount = rawSegments[offset++] ?? ''
@@ -618,15 +690,23 @@ function parseDefinitionReferenceBody(value: string): PluginDefinitionAddress {
 	const provenance = value.slice(0, separatorOffset)
 	const exportName = decodeSegment(
 		value.slice(separatorOffset + separator.length),
-		'Plugin root export name',
+		'Plugin export name',
 	)
 	let entry: PluginEntryAddress
 	if (provenance.startsWith('package:')) {
 		const rawSegments = provenance.slice('package:'.length).split('/')
-		const packageName = rawSegments
-			.map((segment) => decodeSegment(segment, 'Plugin package name'))
-			.join('/')
-		entry = parsePluginEntryAddress({ kind: 'package-root', packageName })
+		const segments = rawSegments.map((segment) => decodeSegment(segment, 'Plugin package entry'))
+		const packageLength = segments[0]!.startsWith('@') ? 2 : 1
+		const packageName = segments.slice(0, packageLength).join('/')
+		entry = parsePluginEntryAddress(
+			segments.length === packageLength
+				? { kind: 'package-root', packageName }
+				: {
+						kind: 'package-subpath',
+						packageName,
+						subpath: './' + segments.slice(packageLength).join('/'),
+					},
+		)
 	} else if (provenance.startsWith('source:')) {
 		const rawSegments = provenance.slice('source:'.length).split('/')
 		if (rawSegments.length < 2) {
@@ -716,4 +796,12 @@ function compareBytes(left: Uint8Array, right: Uint8Array): number {
 		if (difference !== 0) return difference
 	}
 	return left.length - right.length
+}
+
+function packageEntrySpecifier(
+	entry: Exclude<PluginEntryAddress, { kind: 'source-entry' }>,
+): string {
+	return entry.kind === 'package-root'
+		? entry.packageName
+		: entry.packageName + entry.subpath.slice(1)
 }

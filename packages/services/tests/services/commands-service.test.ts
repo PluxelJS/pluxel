@@ -143,6 +143,30 @@ describe('CommandsService', () => {
 		expect(host.ctx.require(Commands).list()).toBe(host.ctx.require(Commands).list())
 	})
 
+	it('accepts package subpath addresses at the management command boundary', async () => {
+		await using host = await createServiceInternalTestHarness({
+			workbench: false,
+			services: [...standardServices({ persistence: { mode: 'memory' } }), managementCommands()],
+		})
+		const address = {
+			definition: {
+				entry: { kind: 'package-subpath', packageName: '@example/services', subpath: './plugins' },
+				exportName: 'AdminPlugin',
+			},
+			variant: 'default',
+		}
+		await expect(
+			host.ctx.require(Commands).execute('plugin.status.get', { address }),
+		).resolves.toMatchObject({
+			status: 'error',
+			error: {
+				code: 'REJECTED',
+				reason: 'plugin_not_found',
+				message: 'Plugin not found: package:@example/services/plugins::AdminPlugin',
+			},
+		})
+	})
+
 	it('delegates stable catalog snapshots and publication subscriptions to the registry', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 

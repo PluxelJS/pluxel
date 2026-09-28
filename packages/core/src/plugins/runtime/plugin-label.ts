@@ -81,7 +81,9 @@ function pluginNodeProvenance(nodeAddress: PluginNodeAddress): string {
 	const entry = nodeAddress.definition.entry
 	return entry.kind === 'package-root'
 		? escapePluginLabelPart(entry.packageName)
-		: `${escapePluginLabelPart(entry.sourceSpace)}:${escapePluginLabelPart(entry.path)}`
+		: entry.kind === 'package-subpath'
+			? escapePluginLabelPart(entry.packageName + entry.subpath.slice(1))
+			: `${escapePluginLabelPart(entry.sourceSpace)}:${escapePluginLabelPart(entry.path)}`
 }
 
 function labelText(entry: { title: string; qualifier?: string }): string {

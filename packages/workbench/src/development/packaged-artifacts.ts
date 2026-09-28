@@ -38,7 +38,7 @@ export async function readDevelopmentPackagedArtifacts(
 			const key = pluginDefinitionIndexKey(candidate.definition)
 			if (!owner.definitions.has(key)) continue
 			if (
-				candidate.definition.entry.kind !== 'package-root' ||
+				candidate.definition.entry.kind === 'source-entry' ||
 				candidate.definition.entry.packageName !== owner.name
 			) {
 				throw new TypeError(

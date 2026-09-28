@@ -49,6 +49,7 @@ class name、constructor object、`displayName`、npm version、物理安装路�
 ```ts
 type PluginEntryAddress =
 	| Readonly<{ kind: 'package-root'; packageName: string }>
+	| Readonly<{ kind: 'package-subpath'; packageName: string; subpath: string }>
 	| Readonly<{ kind: 'source-entry'; sourceSpace: string; path: string }>
 
 type PluginDefinitionAddress = Readonly<{
@@ -77,11 +78,13 @@ identity 的唯一性域是一个 host application/persistence profile，不是�
 
 ## Entry canonicalization
 
-### Package root
+### Package entry
 
-package definition 使用 canonical npm package name + package root named export。只有 package root `"."` 可以承载 Plugin。
-workspace symlink、store path、版本、subpath 和构建产物路径不进入 address。可信 package plan 必须优先于 source-space
-classification；同一 constructor 的多个 root 名称、plugin-bearing subpath 和跨包 Plugin re-export 均 fail-fast。
+package definition 使用 canonical npm package name + 显式公开 export path + named export。
+根入口保留 `package-root` address；子路径使用 `package-subpath`，例如 `{ kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' }`。
+子路径必须是规范的非空 `./` 路径，不能包含 traversal、query/hash 或通配符。它是公开契约的一部分，改变路径会改变 definition identity。
+workspace symlink、store path、版本和物理构建路径不进入 address。可信 package plan 优先于 source-space classification。
+同一 constructor 从多个公开入口或名称导出，以及跨包 Plugin re-export，均 fail-fast。一个 `/plugins` 入口可提供多个不同的具名 Plugin。
 
 ### Source space
 
@@ -91,7 +94,7 @@ classification；同一 constructor 的多个 root 名称、plugin-bearing subpa
 生产 semantic pass 按固定顺序生成 source entry：
 
 1. 由 bundler resolver 得到 filesystem module path，按 bundler grammar 去掉 query/hash；
-2. 先应用可信 package plan，命中 package root 后停止 source classification；
+2. 先应用可信 package plan，命中 package entry 后停止 source classification；
 3. 对 source-space roots 和 existing file 使用 native `realpath()`；
 4. 选择包含该 file 的最具体 root，用 native `path.relative()` 验证 containment；
 5. containment 成功后才转换为 `/` 分隔的 POSIX relative `path`；
@@ -100,7 +103,7 @@ classification；同一 constructor 的多个 root 名称、plugin-bearing subpa
 root 内 symlink 指向 root 外时拒绝；symlinked root 本身可以使用，identity 仍保留 logical source-space name。Linux 不 lowercase，
 Core 不擅自做 Unicode normalization。纯 AST diagnostics 可以生成 lexical test address，但不是 runtime/build identity producer。
 
-修改 source-space name、映射或嵌套关系会改变 address，属于 identity-breaking host 配置变更。需要跨布局稳定性的 Plugin 应从 package root 暴露。
+修改 source-space name、映射或嵌套关系会改变 address，属于 identity-breaking host 配置变更。需要跨布局稳定性的 Plugin 应从显式 package entry 暴露。
 
 ## Canonical codec
 

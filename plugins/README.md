@@ -1,6 +1,6 @@
 # 官方插件维护
 
-`plugins/*` 和 `plugins/<domain>/*` 是通过公开作者 API 装配的具体 Plugin；`packages/*` 保存框架与通用库。
+`plugins/*` 和 `plugins/<domain>/*` 是通过公开作者 API 装配的具体 Plugin；`packages/*` 保存框架、通用库与服务包的可选 `/plugins` 配套入口。
 领域子目录只做分类，不引入聚合插件或隐式 catalog。
 
 - 选择、安装、配置插件：[用户指南](../docs/plugins/index.md)。

@@ -320,9 +320,13 @@ const workspaceSources = await Promise.all(
 		})),
 )
 for (const { packageRoot, kind, manifest, sources } of workspaceSources) {
-	if (kind === 'package' && sources.some(({ source }) => /^\s*@Plugin\s*\(\s*\{/m.test(source))) {
+	if (
+		kind === 'package' &&
+		sources.some(({ source }) => /^\s*@Plugin\s*\(/m.test(source)) &&
+		!manifest.exports?.['./plugins']
+	) {
 		errors.push(
-			`${relative(packageRoot)} declares a concrete @Plugin; move it to plugins/ or a domain-specific plugin container such as platforms/`,
+			`${relative(packageRoot)} declares a concrete @Plugin; expose companion Plugins through ./plugins or move the independently distributed Plugin to plugins/`,
 		)
 	}
 	// Parse each source once with the existing Vite toolchain. Generated module text
@@ -384,6 +388,17 @@ function checkServiceCompositionBoundary(consumerPackage, importer, specifier) {
 	const target = specifier.startsWith('.')
 		? resolve(dirname(importer), specifier).replace(/\.[cm]?[jt]sx?$/, '')
 		: undefined
+	const pluginRoot = resolve(root, 'packages/services/src/plugins')
+	const importsPlugins =
+		specifier === '@pluxel/services/plugins' ||
+		target === pluginRoot ||
+		target?.startsWith(pluginRoot + '/')
+	const insidePlugins = importer === pluginRoot + '.ts' || importer.startsWith(pluginRoot + '/')
+	if (importsPlugins && !insidePlugins) {
+		errors.push(
+			`${relative(importer)} imports optional service Plugins through ${specifier}; only application composition may select the /plugins entry`,
+		)
+	}
 	const localComposition =
 		target !== undefined &&
 		[...serviceCompositionFiles].some((file) => file.slice(0, -3) === target)

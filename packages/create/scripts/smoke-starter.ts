@@ -22,7 +22,6 @@ const publishRoots = [
 	'@pluxel/workbench',
 	'@pluxel/host-dev',
 	'@pluxel/test',
-	'@pluxel/vault-admin',
 ] as const
 
 try {
@@ -239,7 +238,7 @@ async function verifyViteApplication(root: string): Promise<void> {
 		[
 			"import { defineDevConsole } from '@pluxel/host-dev/console'",
 			"import { examplePlugins } from '../src/runtime-state'",
-			"import { VaultAdminPlugin } from '@pluxel/vault-admin'",
+			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
 			'export default defineDevConsole(async (dev) => ({',
 			'  running: examplePlugins.map(plugin => dev.plugins.isRunning(plugin)),',
 			'  vaultArtifact: (await dev.plugins.status(VaultAdminPlugin))?.execution.artifact.kind,',

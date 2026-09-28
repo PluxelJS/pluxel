@@ -3,8 +3,8 @@ import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { expect, it } from 'vitest'
 import { RuntimeManagementTargetImpl } from '@pluxel/services/management/internal/test'
-import { VaultAdminPlugin } from '../src/index.ts'
-import { VaultWorkbench } from '../src/workbench.ts'
+import { VaultAdminPlugin } from '@pluxel/services/plugins'
+import { VaultWorkbench } from '../src/plugins/vault/workbench.ts'
 
 it('withdraws its View without withdrawing host Vault management', async () => {
 	await using host = await createTestHost({

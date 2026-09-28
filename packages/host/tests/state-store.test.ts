@@ -17,6 +17,36 @@ const ProviderNode: PluginNodeAddress = { definition: Provider, variant: 'defaul
 const ConsumerNode: PluginNodeAddress = { definition: Consumer, variant: 'default' }
 
 describe('Host state address persistence', () => {
+	it('persists and reloads a plugin from a package subpath', async () => {
+		const backend = createDocumentStorage()
+		const node: PluginNodeAddress = {
+			definition: {
+				entry: { kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' },
+				exportName: 'VaultAdminPlugin',
+			},
+			variant: 'default',
+		}
+		const host = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
+		try {
+			await host.ready
+			const before = host.versionedSnapshot()
+			await host.commitVersioned(before.revision, { ...before.state, autoStart: [node] })
+			expect(host.snapshot().autoStart).toEqual([node])
+		} finally {
+			await host.ctx.effects.dispose()
+		}
+		const restored = new HostStateStore(createCoreContextHost().createRoot(), {
+			storage: backend,
+			mode: 'readonly',
+		})
+		try {
+			await restored.ready
+			expect(restored.snapshot().autoStart).toEqual([node])
+		} finally {
+			await restored.ctx.effects.dispose()
+		}
+	})
+
 	it('rejects legacy and unknown startup snapshot fields instead of silently dropping them', () => {
 		expect(
 			() =>

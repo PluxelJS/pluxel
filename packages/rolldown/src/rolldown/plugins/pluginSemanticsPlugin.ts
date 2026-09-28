@@ -157,7 +157,7 @@ export type PluginSemanticsPluginOptions = {
 	root?: string
 	/** Additional stable logical source spaces. Relative roots resolve from root. */
 	sourceSpaces?: readonly Readonly<{ name: string; root: string }>[]
-	/** Enables package-root provenance and package entry/export invariants. */
+	/** Enables package export provenance and package entry/export invariants. */
 	packageJsonPath?: string
 }
 
@@ -502,9 +502,9 @@ export function createPluginSemanticsPlugin(
 				for (const definition of collectedSemanticDefinitions(
 					currentArtifactFacts().definitionsByModule,
 				)) {
-					if (definition.definition.entry.kind === 'package-root') continue
+					if (definition.definition.entry.kind !== 'source-entry') continue
 					this.error(
-						`[pluxel:plugin-package] ${definition.className} was not mapped to the package root`,
+						`[pluxel:plugin-package] ${definition.className} was not mapped to a public package export`,
 					)
 				}
 			}
@@ -1168,7 +1168,7 @@ async function analyzeSemanticModule(options: SemanticModuleOptions) {
 		if (!address) {
 			if (options.strictPackagePlan && raw.marked) {
 				options.error(
-					`[pluxel:plugin-package] ${id} marked Plugin ${raw.name} must have one unique package-root named export`,
+					`[pluxel:plugin-package] ${id} marked Plugin ${raw.name} must have one unique public package named export`,
 				)
 			}
 			continue
@@ -1295,7 +1295,7 @@ function collectReachablePackageDependencies(
 	const dependencies = new Map<string, PluginDependencyMode>()
 	const visited = new Set<string>()
 	const record = (address: PluginDefinitionAddress, mode: PluginDependencyMode) => {
-		if (address.entry.kind !== 'package-root') return
+		if (address.entry.kind === 'source-entry') return
 		const packageName = address.entry.packageName
 		if (packageName === ownerPackage || AUTHORING_PACKAGES.has(packageName)) return
 		if (mode === 'required' || !dependencies.has(packageName)) {
@@ -1808,13 +1808,15 @@ async function resolveTypeAddress(
 	}
 	if (isBareSpecifier(binding.source)) {
 		const packageName = packageNameOf(binding.source)
-		if (binding.source !== packageName) {
-			options.error(
-				`[pluxel:plugin-provenance] ${id} Plugin dependencies must come from package root; received ${binding.source}`,
-			)
-		}
 		return {
-			entry: { kind: 'package-root', packageName },
+			entry:
+				binding.source === packageName
+					? { kind: 'package-root', packageName }
+					: {
+							kind: 'package-subpath',
+							packageName,
+							subpath: `.${binding.source.slice(packageName.length)}`,
+						},
 			exportName: binding.imported,
 		}
 	}
@@ -1824,11 +1826,22 @@ async function resolveTypeAddress(
 			`[pluxel:plugin-provenance] ${id} could not resolve local Plugin import ${binding.source}`,
 		)
 	}
-	if (options.packagePlan && resolve(resolved) === resolve(options.packagePlan.rootEntry)) {
-		const rootAddress = [...options.packagePlan.addresses.values()].find(
-			(address) => address.exportName === binding.imported,
+	if (options.packagePlan) {
+		const publicEntry = [...options.packagePlan.publicEntries].find(
+			([, entry]) => resolve(entry) === resolve(resolved),
 		)
-		if (rootAddress) return rootAddress
+		if (publicEntry) {
+			const publicAddress = [...options.packagePlan.addresses.values()].find(
+				(address) =>
+					address.exportName === binding.imported &&
+					(address.entry.kind === 'package-root'
+						? '.'
+						: address.entry.kind === 'package-subpath'
+							? address.entry.subpath
+							: undefined) === publicEntry[0],
+			)
+			if (publicAddress) return publicAddress
+		}
 	}
 	const direct = options.addresses.get(originKey(resolved, binding.imported))
 	if (direct) return direct
@@ -1907,7 +1920,7 @@ async function inferPackagePlan(
 					cause,
 				})
 			}
-			if (!hasPluginSourceRoot(pkg.exports)) return undefined
+			if (!hasPluginSourceEntry(pkg.exports)) return undefined
 			return createPackagePlan(packageJsonPath, error, 'infer')
 		})
 		inferredPackagePlans.set(packageJsonPath, plan)
@@ -1930,9 +1943,11 @@ async function findNearestPackageJson(startDirectory: string): Promise<string | 
 	}
 }
 
-function hasPluginSourceRoot(value: unknown): boolean {
+function hasPluginSourceEntry(value: unknown): boolean {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-	return readSourceCondition((value as Record<string, unknown>)['.']) !== undefined
+	return Object.entries(value as Record<string, unknown>).some(
+		([subpath, target]) => subpath.startsWith('.') && readSourceCondition(target) !== undefined,
+	)
 }
 
 async function createPackagePlan(
@@ -1950,10 +1965,10 @@ async function createPackagePlan(
 	if (!packageName)
 		error(`[pluxel:plugin-package] ${resolvedPackageJson} must declare package name`)
 	const publicEntries = readSourceExportEntries(pkg.exports, packageRoot, error)
-	const rootEntry = publicEntries.get('.')
+	const rootEntry = publicEntries.get('.') ?? publicEntries.values().next().value
 	if (!rootEntry) {
 		error(
-			`[pluxel:plugin-package] ${packageName} root export must expose executable source via @pluxel/hmr, @pluxel/source, development, or a TypeScript entry`,
+			`[pluxel:plugin-package] ${packageName} a public export must expose executable source via @pluxel/hmr, @pluxel/source, development, or a TypeScript entry`,
 		)
 	}
 	const cache = new Map<string, Promise<ModuleAnalysis>>()
@@ -1995,74 +2010,66 @@ async function createPackagePlan(
 		return out
 	}
 
-	const rootExports = await enumerate(rootEntry)
-	const concreteCount = [...rootExports.values()].filter((origin) => origin.raw.marked).length
-	const rootModule = await readModule(rootEntry)
-	for (const [exportName, target] of rootModule.exports) {
-		const binding = target.kind === 'local' ? rootModule.imports.get(target.local) : undefined
-		const source = target.kind === 'reexport' ? target.source : binding?.source
-		if (source && isBareSpecifier(source) && /(?:Plugin|Backend)$/.test(exportName)) {
-			error(
-				`[pluxel:plugin-package] ${packageName} root export ${exportName} re-exports a value from ${source}; cross-package Plugin re-exports are forbidden`,
-			)
-		}
-	}
-	for (const [exportName, origin] of rootExports) {
-		if (origin.raw.basePluginSubclass && !origin.raw.marked && !origin.raw.abstract) {
-			error(
-				`[pluxel:plugin-package] ${packageName} root export ${exportName} extends BasePlugin but is missing @Plugin`,
-			)
-		}
-	}
-	if (concreteCount === 0 && mode === 'explicit') {
-		error(`[pluxel:plugin-package] ${packageName} root entry does not export a marked Plugin`)
-	}
+	const exportsByEntry = new Map<string, Map<string, ClassOrigin>>()
+	let concreteCount = 0
 	for (const [subpath, entry] of publicEntries) {
-		if (subpath === '.' || subpath === './package.json') continue
-		const exports = await enumerate(entry)
-		for (const [exportName, origin] of exports) {
-			if (
-				origin.raw.marked ||
-				(origin.raw.abstract && (concreteCount > 0 || origin.raw.basePluginSubclass))
-			) {
+		const publicExports = await enumerate(entry)
+		exportsByEntry.set(subpath, publicExports)
+		concreteCount += [...publicExports.values()].filter((origin) => origin.raw.marked).length
+		const module = await readModule(entry)
+		for (const [exportName, target] of module.exports) {
+			const binding = target.kind === 'local' ? module.imports.get(target.local) : undefined
+			const source = target.kind === 'reexport' ? target.source : binding?.source
+			if (source && isBareSpecifier(source) && /(?:Plugin|Backend)$/.test(exportName)) {
 				error(
-					`[pluxel:plugin-package] ${packageName}${subpath.slice(1)} is plugin-bearing (${exportName}); Plugin exports are only allowed at package root`,
+					`[pluxel:plugin-package] ${packageName} export ${subpath}#${exportName} re-exports a value from ${source}; cross-package Plugin re-exports are forbidden`,
+				)
+			}
+		}
+		for (const [exportName, origin] of publicExports) {
+			if (origin.raw.basePluginSubclass && !origin.raw.marked && !origin.raw.abstract) {
+				error(
+					`[pluxel:plugin-package] ${packageName} export ${subpath}#${exportName} extends BasePlugin but is missing @Plugin`,
 				)
 			}
 		}
 	}
-	// Only an ordinary source library may fall back; invalid Plugin exports above still fail.
+	if (concreteCount === 0 && mode === 'explicit') {
+		error(`[pluxel:plugin-package] ${packageName} public entries do not export a marked Plugin`)
+	}
 	if (concreteCount === 0) {
 		if (mode !== 'inspect') return undefined
-		// Inference establishes package Plugin identity only when a concrete Plugin is
-		// root-exported. Preserve source evidence without promoting ordinary abstract types.
 		return { packageName, packageRoot, rootEntry, publicEntries, addresses: new Map() }
 	}
 	const addresses = new Map<string, PluginDefinitionAddress>()
 	const namesByOrigin = new Map<string, string[]>()
-	for (const [exportName, origin] of rootExports) {
-		if (!origin.raw.marked && !origin.raw.abstract) continue
-		if (!isInside(packageRoot, origin.id)) {
-			error(
-				`[pluxel:plugin-package] ${packageName} root export ${exportName} re-exports a Plugin from another package`,
-			)
+	for (const [subpath, publicExports] of exportsByEntry) {
+		for (const [exportName, origin] of publicExports) {
+			if (!origin.raw.marked && !origin.raw.abstract) continue
+			if (!isInside(packageRoot, origin.id)) {
+				error(
+					`[pluxel:plugin-package] ${packageName} export ${subpath}#${exportName} re-exports a Plugin from another package`,
+				)
+			}
+			const key = originKey(origin.id, origin.className)
+			const names = namesByOrigin.get(key) ?? []
+			names.push(`${subpath}#${exportName}`)
+			namesByOrigin.set(key, names)
+			addresses.set(key, {
+				entry:
+					subpath === '.'
+						? { kind: 'package-root', packageName }
+						: { kind: 'package-subpath', packageName, subpath },
+				exportName,
+			})
 		}
-		const key = originKey(origin.id, origin.className)
-		const names = namesByOrigin.get(key) ?? []
-		names.push(exportName)
-		namesByOrigin.set(key, names)
-		addresses.set(key, {
-			entry: { kind: 'package-root', packageName },
-			exportName,
-		})
 	}
-	for (const [key, names] of namesByOrigin) {
+	for (const names of namesByOrigin.values()) {
 		if (names.length > 1) {
 			error(
-				`[pluxel:plugin-package] ${packageName} exports one Plugin constructor by multiple root names: ${names.join(', ')}`,
+				`[pluxel:plugin-package] ${packageName} exports one Plugin constructor by multiple public names: ${names.join(', ')}`,
 			)
 		}
-		void key
 	}
 	return { packageName, packageRoot, rootEntry, publicEntries, addresses }
 }
@@ -2615,7 +2622,7 @@ async function canonicalSourceEntry(
 		return Object.freeze({ kind: 'source-entry', sourceSpace: space.name, path })
 	}
 	throw new Error(
-		`[pluxel:plugin-semantics] Plugin source entry ${realFile} is outside configured source spaces; add an explicit sourceSpaces mapping or expose it as a package-root named export`,
+		`[pluxel:plugin-semantics] Plugin source entry ${realFile} is outside configured source spaces; add an explicit sourceSpaces mapping or expose it as a public package named export`,
 	)
 }
 

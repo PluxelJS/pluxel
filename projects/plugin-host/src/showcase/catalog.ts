@@ -1,4 +1,4 @@
-import { VaultAdminPlugin } from '@pluxel/vault-admin'
+import { VaultAdminPlugin } from '@pluxel/services/plugins'
 import { AuthPlugin } from '@pluxel/auth'
 import { CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'

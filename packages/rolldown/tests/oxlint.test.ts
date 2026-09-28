@@ -398,6 +398,20 @@ runRule(
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
+					import { PluginB } from '@pluxel/plugin-b/backend'
+
+					@Plugin({ displayName: 'Plugin A' })
+					class PluginA extends BasePlugin {
+						constructor(pluginB: PluginB) {
+							super()
+							void pluginB
+						}
+					}
+				`,
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
 					import { PluginB } from '@pluxel/plugin-b'
 
 					@Plugin({ displayName: 'Plugin A' })
@@ -469,21 +483,6 @@ runRule(
 					}
 				`,
 				errors: [{ messageId: 'typeOnly' }],
-			},
-			{
-				filename: '/repo/packages/core/tests/plugin-a.ts',
-				code: `
-					import { PluginB } from '@pluxel/plugin-b/backend'
-
-					@Plugin({ displayName: 'Plugin A' })
-					class PluginA extends BasePlugin {
-						constructor(pluginB: PluginB) {
-							super()
-							void pluginB
-						}
-					}
-				`,
-				errors: [{ messageId: 'subpath' }],
 			},
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',

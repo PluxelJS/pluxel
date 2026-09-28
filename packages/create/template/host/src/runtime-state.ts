@@ -1,4 +1,4 @@
-import { VaultAdminPlugin } from '@pluxel/vault-admin'
+import { VaultAdminPlugin } from '@pluxel/services/plugins'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { AuditPlugin } from '@example/audit-plugin'
 import { HttpPlugin } from '@example/http-plugin'

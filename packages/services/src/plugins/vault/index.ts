@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
-import { Vault } from '@pluxel/services/vault'
+import { Vault } from '../../vault.ts'
 import { VaultWorkbench } from './workbench.ts'
 
 /** Publishes UI only; privileged operations use the browser's authenticated management session. */

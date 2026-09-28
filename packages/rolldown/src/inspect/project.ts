@@ -602,8 +602,11 @@ class Snapshot {
 			throw new InspectionError('invalid_input', 'Invalid application sourceSpaces.', { cause })
 		}
 		this.application = { root, entry, sourceSpaces }
-		if (address.entry.kind === 'package-root') {
-			const file = await this.resolve(address.entry.packageName, entry)
+		if (address.entry.kind !== 'source-entry') {
+			const specifier =
+				address.entry.packageName +
+				(address.entry.kind === 'package-subpath' ? address.entry.subpath.slice(1) : '')
+			const file = await this.resolve(specifier, entry)
 			if (!file)
 				throw new InspectionError(
 					'package_not_found',
@@ -874,14 +877,7 @@ function scripts(pkg: WorkspacePackage | undefined): InspectionScript[] {
 		.map(([name, command]) => ({ name, command, cwd: pkg.root, manifest: pkg.manifestPath }))
 }
 function hasExports(pkg: WorkspacePackage): boolean {
-	const entries = pkg.manifest.exports
-	if (entries === undefined) return false
-	if (entries && typeof entries === 'object' && !Array.isArray(entries)) {
-		const keys = Object.keys(entries)
-		// A package exposing only subpaths cannot contain a public package-root Plugin.
-		if (keys.some((key) => key.startsWith('.')) && !keys.includes('.')) return false
-	}
-	return true
+	return pkg.manifest.exports !== undefined
 }
 function section<T>(value: T, gaps: readonly InspectionDiagnostic[]): InspectionSection<T> {
 	return gaps.length > 0 ? { status: 'partial', value, gaps } : { status: 'complete', value }

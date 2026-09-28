@@ -462,14 +462,7 @@ function invalidState(message: string): Error {
 
 function cloneDefinitionAddress(definition: PluginDefinitionAddress): PluginDefinitionAddress {
 	return {
-		entry:
-			definition.entry.kind === 'package-root'
-				? { kind: 'package-root', packageName: definition.entry.packageName }
-				: {
-						kind: 'source-entry',
-						sourceSpace: definition.entry.sourceSpace,
-						path: definition.entry.path,
-					},
+		entry: { ...definition.entry },
 		exportName: definition.exportName,
 	}
 }

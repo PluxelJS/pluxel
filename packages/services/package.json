@@ -145,6 +145,10 @@
 			"@pluxel/source": "./src/persistence.ts",
 			"default": "./dist/persistence.mjs"
 		},
+		"./plugins": {
+			"@pluxel/hmr": "./src/plugins.ts",
+			"default": "./dist/plugins.mjs"
+		},
 		"./preset": {
 			"@pluxel/source": "./src/preset.ts",
 			"default": "./dist/preset.mjs"
@@ -199,6 +203,7 @@
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
 			"./persistence": "./dist/persistence.mjs",
+			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
@@ -213,14 +218,14 @@
 		"test": "pnpm exec vitest run",
 		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
 		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts",
-		"bench:logger": "vitest bench bench/logger.bench.ts"
+		"bench:logger": "vitest bench bench/logger.bench.ts",
+		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs"
 	},
 	"dependencies": {
 		"@logtape/file": "catalog:prod",
 		"@logtape/logtape": "catalog:prod",
 		"@logtape/pretty": "catalog:prod",
 		"age-encryption": "catalog:prod",
-		"capnweb": "catalog:prod",
 		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
 		"drizzle-orm": "catalog:backend",
@@ -231,6 +236,7 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@mantine/core": "catalog:frontend",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
@@ -238,28 +244,36 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
+		"@tabler/icons-react": "catalog:icons",
 		"@types/node": "catalog:types",
 		"@types/pg": "catalog:types",
 		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
 		"fs-fixture": "catalog:dev",
 		"pg": "catalog:backend",
 		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
 		"tsx": "catalog:dev",
 		"valibot": "catalog:validation",
 		"vite": "catalog:build"
 	},
 	"peerDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@mantine/core": "catalog:frontend",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
 		"@pluxel/host-dev": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/workbench": "workspace:^",
+		"@tabler/icons-react": "catalog:icons",
+		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
 		"pg": "catalog:backend",
 		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
@@ -286,9 +300,21 @@
 		},
 		"@pluxel/workbench": {
 			"optional": true
+		},
+		"@mantine/core": {
+			"optional": true
+		},
+		"@tabler/icons-react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
 		}
 	},
 	"engines": {
 		"node": ">=24"
+	},
+	"pluxel": {
+		"workbenchCapnweb": "0.12.0"
 	}
 }

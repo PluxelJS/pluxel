@@ -246,7 +246,7 @@ listener registration 会绑定调用方 Context effects，stop/replacement 时�
 
 ## Identity 不等于 class name
 
-具体 Plugin 必须由 package root `"."` 的唯一 named export 暴露；host-local Plugin 则来自 canonical source entry 的唯一 root export。
+具体 Plugin 必须由显式公开的包根或子路径的唯一 named export 暴露；host-local Plugin 则来自 canonical source entry 的唯一 root export。
 
 配置、日志和跨进程调用使用稳定地址：`PluginDefinitionAddress` 标识实现，`PluginNodeAddress` 标识默认实例或某个 fork。
 不要把类名或展示名称当作持久化 ID。

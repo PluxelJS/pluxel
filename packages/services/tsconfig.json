@@ -6,6 +6,7 @@
 		"outDir": "dist",
 		"experimentalDecorators": true,
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
-		"jsx": "react-jsx"
+		"jsx": "react-jsx",
+		"customConditions": ["@pluxel/hmr", "@pluxel/source"]
 	}
 }

@@ -65,17 +65,19 @@ export function describePluginDefinition(
 	definition: PluginDefinitionAddress,
 ): PluginDefinitionPresentation {
 	const { entry, exportName } = definition
-	if (entry.kind === 'package-root') {
+	if (entry.kind !== 'source-entry') {
+		const specifier =
+			entry.packageName + (entry.kind === 'package-subpath' ? entry.subpath.slice(1) : '')
 		return {
 			entryKind: entry.kind,
 			kindLabel: '包',
-			compactLabel: entry.packageName,
-			detailLabel: `${entry.packageName} · ${exportName}`,
+			compactLabel: specifier,
+			detailLabel: `${specifier} · ${exportName}`,
 			packageName: entry.packageName,
 			sourceSpace: null,
 			path: null,
 			exportName,
-			searchTerms: ['package', 'package-root', '包', entry.packageName, exportName],
+			searchTerms: ['package', entry.kind, '包', specifier, exportName],
 		}
 	}
 

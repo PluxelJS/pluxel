@@ -107,7 +107,7 @@ private readonly cache = new CachePart()
 
 ## 依赖写在实际 consumer
 
-Part 可以像 Plugin 一样在 constructor 声明 required Plugin。provider 必须从其 package root value-import；同一个 constructor 不能重复
+Part 可以像 Plugin 一样在 constructor 声明 required Plugin。provider 必须从其 公开 package entry value-import；同一个 constructor 不能重复
 同一 Plugin definition。
 
 工具链会把所有 reachable Part requirements 提升并去重到 owning Plugin graph。因此不要在 owner constructor 或额外的 Part

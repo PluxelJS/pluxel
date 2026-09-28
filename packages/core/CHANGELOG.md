@@ -129,6 +129,18 @@ Use Module Federation Vite 1.22.1 with Runtime, SDK and React Bridge 2.9.1 and M
 
 Keep shared-surface import analysis, application-root scheduling and isolated declaration caches: real Mantine producer builds and upstream shared state still require these boundaries with the updated plugin.
 
+### Ship optional service UI plugins from one package
+
+Import `VaultAdminPlugin` from `@pluxel/services/plugins`. The separate `@pluxel/vault-admin`
+package is retired before this release. Vault resources remain owned by the explicitly installed
+service; the optional Plugin publishes the Workbench view and uses the authenticated Management
+session. Starter and maintenance applications use the same public entry.
+
+Concrete Plugins may be exported from explicit package subpaths. Their canonical identity contains
+the package name, export path and named export. A constructor exported through multiple public
+paths or names is rejected, as are cross-package Plugin re-exports. Package root identities remain
+unchanged. Compilation, inspection, persistence and packaged Workbench artifacts share this contract.
+
 ### Bind deployment inputs and preserve editable configuration layers
 
 Application factories declare `envBindings` and `fileBindings` with `envBinding` and

@@ -41,7 +41,7 @@ describe('offline semantic package inspection', () => {
 		})
 		await expect(
 			inspectPluginPackage({ packageJsonPath: `${fixture.path}/package.json` }),
-		).rejects.toThrow('multiple root names')
+		).rejects.toThrow('multiple public names')
 	})
 	it('keeps source evidence for ordinary libraries with no Plugins', async () => {
 		await using fixture = await createFixture({

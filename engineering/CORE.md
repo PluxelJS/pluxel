@@ -72,7 +72,7 @@ kernel 传递。该编程错误在边界校验时诊断；开发期 host/runner 
 ## Identity 与 DI 不变量
 
 - graph identity 来自 canonical entry + root named export；class name、constructor 和 `displayName` 都不是 key。
-- package Plugin 只从 package root 的唯一 named export 进入 catalog；source Plugin 使用 route 规范化的 source entry。
+- package Plugin 从显式公开的 package entry 的唯一 named export 进入 catalog；source Plugin 使用 route 规范化的 source entry。
 - required dependency 只来自 semantic pass lower 的 Plugin/PluginPart constructor value-import provenance。Core 把 root direct requirements
   与 reachable Part requirements 按 definition identity 聚合到 owning Plugin graph，不给 Part 创建 node。
 - optional dependency只来自 lower 后的 non-exported module-level `definePluginRef<T>()`；Part optional edge 合并到 owning Plugin，不执行 runtime import。

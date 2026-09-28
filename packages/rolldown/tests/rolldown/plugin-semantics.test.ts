@@ -243,11 +243,11 @@ describe('plugin semantic lowering', () => {
 		{ tail: '[unknownKey]: unknownValue', expected: 'unreported' },
 	])('reads minified ABI evidence with $tail as $expected', async ({ tail, expected }) => {
 		const definition = {
-			entry: { kind: 'package-root', packageName: '@pluxel/vault-admin' },
+			entry: { kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' },
 			exportName: 'VaultAdminPlugin',
 		} as const
 		const { collector } = await transformWithCollector(
-			'import{__setPluginDefinition as a}from"@pluxel/core/toolchain";let s=class{};s=decorate(s),a(s,{abiVersion:2,kind:`plugin`,definition:{entry:{kind:`package-root`,packageName:`@pluxel/vault-admin`},exportName:`VaultAdminPlugin`},' +
+			'import{__setPluginDefinition as a}from"@pluxel/core/toolchain";let s=class{};s=decorate(s),a(s,{abiVersion:2,kind:`plugin`,definition:{entry:{kind:`package-subpath`,packageName:`@pluxel/services`,subpath:`./plugins`},exportName:`VaultAdminPlugin`},' +
 				tail +
 				'});export{s as VaultAdminPlugin};',
 		)
@@ -660,15 +660,6 @@ ${declaration}`
 					const Audit = definePluginRef<AuditPlugin>()
 				`,
 				message: 'must use a direct type-only import',
-			},
-			{
-				name: 'package subpath',
-				code: `
-					import type { AuditPlugin } from '@acme/audit/plugin'
-					import { definePluginRef } from '@pluxel/core'
-					const Audit = definePluginRef<AuditPlugin>()
-				`,
-				message: 'must come from package root',
 			},
 			{
 				name: 'namespace-qualified type',
@@ -1095,28 +1086,6 @@ ${declaration}`
 			message: 'plugin_dependency_requirement_duplicate',
 		},
 		{
-			name: 'package subpath dependency',
-			code: `
-				import { DatabasePlugin } from '@acme/database/backend'
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					constructor(readonly database: DatabasePlugin) { super() }
-				}
-			`,
-			message: 'must come from package root',
-		},
-		{
-			name: 'PluginPart package subpath dependency',
-			code: `
-				import { DatabasePlugin } from '@acme/database/backend'
-				import { PluginPart } from '@pluxel/core'
-				class ConsumerPart extends PluginPart {
-					constructor(readonly database: DatabasePlugin) { super() }
-				}
-			`,
-			message: 'must come from package root',
-		},
-		{
 			name: 'false forkability',
 			code: `
 				import { BasePlugin, Plugin } from '@pluxel/core'
@@ -1215,12 +1184,6 @@ ${declaration}`
 	})
 
 	it.each([
-		{
-			explicit: true,
-			root: "import { BasePlugin, Plugin } from '@pluxel/core'; @Plugin() export class OrdersPlugin extends BasePlugin {}",
-			message: 'is plugin-bearing',
-		},
-		{ explicit: false, root: 'export const ready = true', message: 'is plugin-bearing' },
 		{
 			explicit: false,
 			root: "import { BasePlugin } from '@pluxel/core'; export class OrdersPlugin extends BasePlugin {}",
@@ -1377,6 +1340,102 @@ ${declaration}`
 		).rejects.toThrow(message)
 	})
 
+	it.each([true, false])(
+		'assigns a unique subpath identity with explicit package mode %s',
+		async (explicit) => {
+			await using fixture = await createFixture({
+				'package.json': JSON.stringify({
+					name: '@acme/services',
+					type: 'module',
+					exports: {
+						'./plugins': { '@pluxel/source': './src/plugins.ts', default: './dist/plugins.mjs' },
+					},
+				}),
+				'src/plugins.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/core'
+				@Plugin() export class VaultAdminPlugin extends BasePlugin {}
+				@Plugin() export class JobsAdminPlugin extends BasePlugin {}
+			`,
+			})
+			const collector = createPluginSemanticsPlugin({
+				root: fixture.getPath(),
+				...(explicit ? { packageJsonPath: fixture.getPath('package.json') } : {}),
+			})
+			const build = await rolldown({
+				input: fixture.getPath('src/plugins.ts'),
+				external: ['@pluxel/core'],
+				plugins: [collector.plugin],
+			})
+			await build.generate({ format: 'esm' })
+			expect(collector.definitions().map(({ definition }) => definition)).toEqual([
+				{
+					entry: { kind: 'package-subpath', packageName: '@acme/services', subpath: './plugins' },
+					exportName: 'VaultAdminPlugin',
+				},
+				{
+					entry: { kind: 'package-subpath', packageName: '@acme/services', subpath: './plugins' },
+					exportName: 'JobsAdminPlugin',
+				},
+			])
+		},
+	)
+
+	it('rejects a constructor exported from both root and subpath', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({
+				name: '@acme/services',
+				exports: {
+					'.': './src/index.ts',
+					'./plugins': './src/plugins.ts',
+				},
+			}),
+			'src/index.ts': `export { VaultAdminPlugin } from './plugins'`,
+			'src/plugins.ts': `import { BasePlugin, Plugin } from '@pluxel/core'; @Plugin() export class VaultAdminPlugin extends BasePlugin {}`,
+		})
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath(),
+			packageJsonPath: fixture.getPath('package.json'),
+		})
+		await expect(
+			rolldown({
+				input: fixture.getPath('src/plugins.ts'),
+				external: ['@pluxel/core'],
+				plugins: [collector.plugin],
+			}).then((build) => build.generate({ format: 'esm' })),
+		).rejects.toThrow('multiple public names')
+	})
+
+	it('preserves public subpath addresses for required and optional dependencies', async () => {
+		const { collector, result } = await transformWithCollector(`
+			import { DatabasePlugin } from '@acme/services/plugins'
+			import type { AuditPlugin } from '@acme/services/plugins'
+			import { BasePlugin, Plugin, PluginPart, definePluginRef } from '@pluxel/core'
+			const Audit = definePluginRef<AuditPlugin>()
+			class DatabasePart extends PluginPart { constructor(readonly database: DatabasePlugin) { super() } }
+			@Plugin() export class ConsumerPlugin extends BasePlugin {
+				constructor(readonly database: DatabasePlugin) { super() }
+				override init() { this.plugins.use(Audit, audit => audit.register(this)) }
+			}
+		`)
+		expect(result?.code).toContain(
+			'"kind":"package-subpath","packageName":"@acme/services","subpath":"./plugins"',
+		)
+		expect(collector.definitions()[0]?.requires[0]).toEqual({
+			entry: { kind: 'package-subpath', packageName: '@acme/services', subpath: './plugins' },
+			exportName: 'DatabasePlugin',
+		})
+		expect(collector.definitions()[0]?.optional).toEqual([
+			{
+				entry: { kind: 'package-subpath', packageName: '@acme/services', subpath: './plugins' },
+				exportName: 'AuditPlugin',
+			},
+		])
+		expect(result?.code).toContain(
+			'__pluxelSetPluginPartRequires(DatabasePart, {"abiVersion":2,"requires":[{"entry":{"kind":"package-subpath","packageName":"@acme/services","subpath":"./plugins"},"exportName":"DatabasePlugin"}]}',
+		)
+		expect(collector.snapshot()).toEqual(new Map([['@acme/services', 'required']]))
+	})
+
 	it('assigns distinct package-root identities to different Plugin constructors', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({
@@ -1443,6 +1502,6 @@ ${declaration}`
 				external: ['@pluxel/core'],
 				plugins: [collector.plugin],
 			}).then((build) => build.generate({ format: 'esm' })),
-		).rejects.toThrow('multiple root names')
+		).rejects.toThrow('multiple public names')
 	})
 })

@@ -136,6 +136,42 @@ describe('application-aware public Plugin inspection', () => {
 		expect(Object.isFrozen(available(a!.data.sections.inputs).application.sourceSpaces)).toBe(true)
 	})
 
+	it('inspects a subpath-only package and resolves its public entry from the application', async () => {
+		await using fixture = await packageFixture()
+		const subpathManifest = JSON.stringify({
+			name: '@fixture/mail',
+			type: 'module',
+			exports: {
+				'./plugins': { '@pluxel/source': './src/index.ts', default: './dist/plugins.js' },
+			},
+		})
+		await Promise.all([
+			writeFile(fixture.getPath('plugins/mail/package.json'), subpathManifest),
+			writeFile(fixture.getPath('installed/mail/package.json'), subpathManifest),
+			writeFile(fixture.getPath('host/a.ts'), application('@fixture/mail/plugins', 'MAIL_UI')),
+		])
+		await using project = await openProject({ root: fixture.path })
+		const subpathReference = 'package:@fixture/mail/plugins::MailPlugin'
+		const listResult = await project.plugins({ packageName: '@fixture/mail' })
+		const listed = available(listResult.data)
+		expect(listed.items.map((item) => item.reference)).toEqual([subpathReference])
+		const workspace = await project.plugin(subpathReference)
+		expect(workspace.data.summary.declaration.file).toBe(
+			fixture.getPath('plugins/mail/src/index.ts'),
+		)
+		const installed = await project.plugin(subpathReference, {
+			application: { root: 'host', entry: 'a.ts' },
+			include: ['config', 'inputs'],
+		})
+		expect(installed.data.summary.declaration.file).toBe(
+			fixture.getPath('installed/mail/src/index.ts'),
+		)
+		expect(
+			available(installed.data.sections.inputs).bindings.map((binding) => binding.source.kind),
+		).toEqual(['env', 'file'])
+		expect(available(installed.data.sections.config).declarations).toHaveLength(2)
+	})
+
 	it('rejects a binding that resolves the same Plugin address to another physical source', async () => {
 		await using fixture = await packageFixture()
 		await writeFile(

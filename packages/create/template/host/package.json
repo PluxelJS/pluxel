@@ -16,7 +16,6 @@
 		"@pluxel/core": "catalog:pluxel",
 		"@pluxel/host": "catalog:pluxel",
 		"@pluxel/services": "catalog:pluxel",
-		"@pluxel/vault-admin": "catalog:pluxel",
 		"@pluxel/workbench": "catalog:pluxel",
 		"elysia": "catalog:backend",
 		"react": "catalog:frontend",

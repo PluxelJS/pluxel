@@ -119,6 +119,45 @@ describe('PluginArtifactCompiler', () => {
 		)
 	})
 
+	it('accepts selected package subpath artifacts only from their owning package', async () => {
+		await using fixture = await createDiskFixture({
+			'plugin/package.json': JSON.stringify({ name: '@example/services', type: 'module' }),
+			'plugin/dist/plugins.mjs': 'export const built = true',
+		})
+		const owner = {
+			entry: { kind: 'package-subpath', packageName: '@example/services', subpath: './plugins' },
+			exportName: 'AdminPlugin',
+		} as const
+		const plan = createWorkbenchFederationProducerPlan({
+			definition: owner,
+			buildRevision: 'subpath',
+			entries: [
+				{
+					descriptor: { kind: 'view', owner, key: 'manager' },
+					bridgeEntryPath: 'generated/admin.tsx',
+				},
+			],
+		})
+		const root = fixture.getPath('plugin/dist/workbench')
+		await writeProducer(plan, join(root, plan.producer, plan.buildRevision))
+		await writeFile(
+			join(root, WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE),
+			JSON.stringify(createWorkbenchFederationDeploymentInventory([plan])),
+		)
+		const selected = new Set([pluginDefinitionIndexKey(owner)])
+		const modules = new Map([[fixture.getPath('plugin/dist/plugins.mjs'), selected]])
+		const packaged = await readDevelopmentPackagedArtifacts(modules, selected)
+		expect(packaged).toHaveLength(1)
+		expect(packaged[0]!.definition).toEqual(owner)
+		await writeFile(
+			fixture.getPath('plugin/package.json'),
+			JSON.stringify({ name: '@example/other', type: 'module' }),
+		)
+		await expect(readDevelopmentPackagedArtifacts(modules, selected)).rejects.toThrow(
+			/does not belong to @example\/other/,
+		)
+	})
+
 	it('admits selected installed artifacts atomically and preserves rejected revisions until withdrawal', async () => {
 		await using fixture = await createDiskFixture({
 			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),

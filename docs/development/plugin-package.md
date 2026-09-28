@@ -44,17 +44,35 @@ vitest.config.ts
 oxlint.config.ts
 ```
 
-一个 package root 是一个明确的 plugin-bearing entry。它可以导出 schema、types 和普通 helper，但具体 Plugin class 必须能从 `"."` 的 named export 唯一追溯。
+包根或显式导出的子路径可以作为 plugin-bearing entry。它可以导出 schema、types 和普通 helper，但每个具体 Plugin class 必须能从唯一入口的唯一 named export 追溯。
 
-## 包根入口决定 Plugin 身份
+## 公开入口决定 Plugin 身份
 
-- consumer 从 package root value-import required Plugin。
-- identity 来自 canonical entry + root named export，不是 class name、`displayName` 或 constructor object。
+- consumer 从声明该 Plugin 的公开 package entry value-import required Plugin。
+- identity 来自 canonical entry + named export，不是 class name、`displayName` 或 constructor object。
 - 不从 `src/`、`dist/` 或未声明 subpath 导入 Plugin。
 - 不跨 package re-export 别人的 Plugin class。
-- Workbench definition/API、worker adapter 等 plugin-free 模块可以有独立 subpath，但不得形成第二个模糊 plugin-bearing root。
+- 同一个 Plugin 不得从包根与子路径重复导出；`./plugins` 可以集中导出多个不同的配套 Plugin。
 
-对于可发布包，包名或包根导出名改变会得到新的 Plugin definition identity；二者不变时，内部源码文件移动不改变这个身份。持久 config/runtime state 不按旧 class name 自动迁移。
+对于可发布包，包名、公开入口路径或导出名改变会得到新的 Plugin definition identity；这些公开标识不变时，内部源码文件移动不改变这个身份。持久 config/runtime state 不按旧 class name 自动迁移。
+
+## 服务包的配套插件
+
+服务包可保留纯后端入口，并用一个 `./plugins` 入口集中导出配套插件，无需每个插件单独发包。
+例如 `@pluxel/services/plugins` 提供 `VaultAdminPlugin`；未来增加配套插件时继续使用具名导出。
+
+```ts no-twoslash
+// src/plugins.ts：唯一公开插件入口，不再从 src/index.ts 重复导出。
+export { VaultAdminPlugin } from './plugins/vault/index.ts'
+```
+
+在 package exports 中明确声明 `./plugins` 的源码与发行目标，并把该入口加入标准插件构建的 entry 清单。
+插件入口需要 Pluxel lowering 和 Workbench 制品构建，不能只用普通 TypeScript 转译。
+服务自身的入口不导入插件入口；浏览器组件由 Workbench renderer 加载，服务器只发布页面声明。
+
+应用显式安装服务、选择插件并声明启动策略，完整示例见 [Vault 配套管理页](../runtime/vault.md#可选管理页面与服务配套插件)。
+服务通过 token 提供能力，配套插件使用公开 API 读取能力；官方配套插件也不享有专用框架入口。
+这种组织方式复用普通 Plugin 的停止、失败和页面撤回机制，不新增服务 UI 生命周期。
 
 ## 包清单的关键字段
 

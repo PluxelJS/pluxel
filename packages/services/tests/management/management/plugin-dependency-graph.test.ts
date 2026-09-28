@@ -146,7 +146,10 @@ describe('Plugin dependency graph read model', () => {
 	it('uses the fixed resolution table and expands only eligible declarations', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const Direct = graphDefinition('Direct')
+		const Direct: PluginDefinitionAddress = {
+			entry: { kind: 'package-subpath', packageName: '@graph/services', subpath: './plugins' },
+			exportName: 'DirectPlugin',
+		}
 		const AbstractDefault = graphDefinition('AbstractDefault')
 		const Override = graphDefinition('Override')
 		const InvalidOverride = graphDefinition('InvalidOverride')
@@ -232,6 +235,7 @@ describe('Plugin dependency graph read model', () => {
 		const defaultEdges = graph.edges.filter(
 			(edge) => pluginNodeIndexKey(edge.consumer) === pluginNodeIndexKey(consumer),
 		)
+		expect(edgeByRequirement(defaultEdges, Direct)?.requirement).toEqual(Direct)
 		expect(edgeByRequirement(defaultEdges, Direct)).toMatchObject({
 			mode: 'required',
 			resolution: { state: 'resolved', via: 'direct' },

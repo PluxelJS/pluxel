@@ -38,6 +38,76 @@ const sourceFork = parsePluginNodeAddress({
 })
 
 describe('Plugin identity', () => {
+	it('keeps package subpaths distinct and round-trips references and routes', () => {
+		const slots = new PluginSlotRegistry()
+		const nodes = ['@acme/orders', 'orders'].flatMap((packageName) =>
+			['./plugins', './admin/plugins'].flatMap((subpath) =>
+				['default', 'fork'].map((variant) =>
+					parsePluginNodeAddress({
+						definition: {
+							entry: { kind: 'package-subpath', packageName, subpath },
+							exportName: 'OrdersPlugin',
+						},
+						variant,
+						...(variant === 'fork' ? { forkId: 'east' } : {}),
+					}),
+				),
+			),
+		)
+		const keys = new Set(nodes.map(pluginNodeIndexKey))
+		expect(keys.size).toBe(nodes.length)
+		expect(keys.has(pluginNodeIndexKey(packageDefault))).toBe(false)
+		for (const node of nodes) {
+			const slot = slots.internNode(node)
+			expect(slots.lookupNode(node)).toBe(slot)
+			expect(slots.internNode(parsePluginNodeReference(formatPluginNodeReference(node)))).toBe(slot)
+			const segments = formatPluginNodeRoute(node).split('/')
+			const parsed = parsePluginNodeRoute([...segments, 'view', 'details'])
+			expect(parsed.consumedSegments).toBe(segments.length)
+			expect(pluginNodeAddressEqual(parsed.nodeAddress, node)).toBe(true)
+			expect(pluginNodeAddressEqual(node, packageDefault)).toBe(false)
+		}
+		expect(formatPluginNodeReference(nodes[0]!)).toBe('package:@acme/orders/plugins::OrdersPlugin')
+		expect(formatPluginNodeRoute(nodes[0]!)).toBe(
+			'v1/package-subpath/OrdersPlugin/@acme/orders/1/plugins',
+		)
+	})
+
+	it('rejects ambiguous or non-concrete package subpaths', () => {
+		for (const subpath of [
+			'.',
+			'./',
+			'plugins',
+			'/plugins',
+			'./../plugins',
+			'./a//b',
+			'./a/./b',
+			'./node_modules/plugins',
+			'./%2e%2e/plugins',
+			'./plugins/*',
+			'./plugins?mode=1',
+			'./plugins#view',
+			'./plugins\\admin',
+		]) {
+			expect(() =>
+				parsePluginEntryAddress({ kind: 'package-subpath', packageName: '@acme/orders', subpath }),
+			).toThrow(/Plugin/)
+		}
+		for (const count of ['0', '01', '257', '2']) {
+			expect(() =>
+				parsePluginNodeRoute([
+					'v1',
+					'package-subpath',
+					'OrdersPlugin',
+					'@acme',
+					'orders',
+					count,
+					'plugins',
+				]),
+			).toThrow(/count/)
+		}
+	})
+
 	it('parses only the canonical address shape', () => {
 		expect(Object.isFrozen(packageDefault)).toBe(true)
 		expect(Object.isFrozen(packageDefault.definition)).toBe(true)

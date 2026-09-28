@@ -1,12 +1,35 @@
+import { pluginPackage } from '@pluxel/rolldown/build'
 import { defineConfig } from 'tsdown'
 
+const pluginBuild = pluginPackage({
+	root: import.meta.dirname,
+	packageMetadata: {
+		packageJsonPath: `${import.meta.dirname}/package.json`,
+		manifestField: 'pluxel',
+		log: console.log,
+	},
+})
+
 export default defineConfig({
+	...pluginBuild,
 	exports: {
 		devExports: '@pluxel/source',
+		customExports(exports, { isPublish }) {
+			if (!isPublish)
+				exports['./plugins'] = { '@pluxel/hmr': './src/plugins.ts', default: './dist/plugins.mjs' }
+			return exports
+		},
 		exclude: ['internal/database/pglite', 'internal/database/postgres'],
 	},
-	deps: { neverBundle: ['#pluxel/database-driver/pglite', '#pluxel/database-driver/postgres'] },
+	deps: {
+		neverBundle: [
+			/^@pluxel\//,
+			'#pluxel/database-driver/pglite',
+			'#pluxel/database-driver/postgres',
+		],
+	},
 	entry: {
+		plugins: './src/plugins.ts',
 		management: './src/management/index.ts',
 		'management/client': './src/management/client.ts',
 		'management/protocol': './src/management/protocol.ts',

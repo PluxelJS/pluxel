@@ -124,3 +124,26 @@ Vault snapshot 使用 version 2，包含结构化 KV 与每条记录的 revision
 Root 通过 `VaultAdmin` 管理解锁、宿主密钥和部署 recipients。`rekey()` 原子重写密钥 envelope，数据密钥与密文内容保持；失败保留先前可用数据。部署私钥由宿主显式输入，不放入 Plugin config、日志或 UI。
 
 备份与回滚应在 Host 停止后整体复制 Persistence 的 `vault` namespace：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。不要分别恢复不匹配的 key envelope 与数据文件；不支持跨进程 writer 或跨 config/Vault 事务。
+
+## 可选管理页面与服务配套插件
+
+Vault 管理页由同一个服务包的 `@pluxel/services/plugins` 入口提供，不需要额外安装 UI 插件包。
+`VaultAdminPlugin` 是普通 Plugin：它使用 Vault 能力并发布 Workbench 页面，管理操作仍通过 Management 的已认证会话执行。
+
+```ts no-twoslash
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { defineHostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/services/preset'
+import { VaultAdminPlugin } from '@pluxel/services/plugins'
+
+export default defineHostApplication(async (startup) => ({
+	name: 'vault-example',
+	services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+	plugins: [VaultAdminPlugin],
+	state: { initial: { autoStart: [pluginNodeAddressOf(VaultAdminPlugin)] } },
+}))
+```
+
+在正常 Host 开发或生产入口启动应用后，登录 Workbench 即可访问 Vault 页面。缺少 Vault 服务时插件启动失败；关闭 Workbench 时不发布页面，Vault 服务仍独立运行。页面撤回随 Plugin 停止，后端资源随 Host 服务关闭，不建立第二套生命周期。
+
+第三方服务可以采用同样的结构：服务入口负责业务能力，一个显式 `./plugins` 导出集中提供可选配套 Plugin；应用选择服务、插件与启动策略。基础服务入口不导入 `/plugins`，页面组件不在服务器入口求值。同一个 Plugin 只从一个公开入口具名导出，不能再从根入口重复转发。包内路径、构建和测试示例见 `packages/services/src/plugins.ts` 与 `packages/services/tests/vault-plugin.test.ts`。

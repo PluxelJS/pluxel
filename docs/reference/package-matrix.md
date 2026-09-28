@@ -16,7 +16,6 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                           | [Plugin 模型](../getting-started/plugin-model.md)           |
 | `@pluxel/services`              | 官方服务、日志、管理面与应用组合                           | [组合 Host 服务](./runtime-services.md)                     |
 | `@pluxel/workbench`             | Content、View、Attachment、浏览器 SDK 与官方 Shell         | [View](../workbench/view.md)                                |
-| `@pluxel/vault-admin`           | 可选 Vault 管理 View                                       | [Vault](../runtime/vault.md)                                |
 | `@pluxel/host`                  | catalog、运行意图、图更新与动态来源                        | [配置插件宿主](../getting-started/host-setup.md)            |
 | `@pluxel/host-dev`              | 通用 Vite、HMR 与在线开发控制台                            | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、开发控制台与源码工作区命令   | [CLI 与工具链](../development/tooling.md)                   |

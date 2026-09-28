@@ -87,7 +87,7 @@ Part constructor 的 required dependency 会提升到 owning Plugin graph。它�
 ## PluginPart constructor dependency 无法解析
 
 - Part 必须是 concrete direct `PluginPart` subclass，并由普通 `parts.use(PartClass)` field 静态拥有；
-- constructor 参数必须是从 provider package root value-import 的具体 Plugin type；type-only import 只用于 optional ref；
+- constructor 参数必须是从 provider 公开 package entry value-import 的具体 Plugin type；type-only import 只用于 optional ref；
 - 同一个 Part constructor 不能重复同一 definition，但 root、不同 Part 或同一 Part class 的多个 occurrence 可以合法共享；
 - 不要在 owner constructor 重复一份 Part requirement，也不要用 `this.host` 充当未声明的 provider locator。
 

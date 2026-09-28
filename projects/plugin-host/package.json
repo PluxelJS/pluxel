@@ -27,7 +27,6 @@
 		"@pluxel/services": "workspace:*",
 		"@pluxel/storage": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
-		"@pluxel/vault-admin": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@pluxel/wretch": "workspace:*",
 		"capnweb": "catalog:prod",

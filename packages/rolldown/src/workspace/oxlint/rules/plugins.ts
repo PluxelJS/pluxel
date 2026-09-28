@@ -72,11 +72,6 @@ function importSource(node: OxNode): string | null {
 	return source?.type === 'Literal' && typeof source.value === 'string' ? source.value : null
 }
 
-function packageName(source: string): string {
-	const parts = source.split('/')
-	return source.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0]!
-}
-
 function constructorTypeName(parameter: OxNode): string | null {
 	const value =
 		parameter.type === 'TSParameterProperty' ? getNodeField(parameter, 'parameter') : parameter
@@ -112,15 +107,13 @@ const pluginConstructorCanonicalDependencies = createRule(
 		type: 'problem',
 		docs: {
 			description:
-				'Require Plugin constructor dependencies to use direct value imports from package roots',
+				'Require Plugin constructor dependencies to use direct value imports from canonical public entries',
 		},
 		messages: {
 			typeOnly:
 				'`{{name}}` is a required Plugin constructor dependency and must use a direct value import so package resolution remains mandatory.',
-			subpath:
-				'`{{name}}` is imported from Plugin subpath `{{source}}`; import the root named export from `{{root}}`.',
 			unprovable:
-				'Plugin constructor parameters must be direct imported Plugin references or same-module marked/abstract Plugin references so the toolchain can prove root export provenance.',
+				'Plugin constructor parameters must be direct imported Plugin references or same-module marked/abstract Plugin references so the toolchain can prove public export provenance.',
 		},
 	},
 	(context) => ({
@@ -168,17 +161,6 @@ const pluginConstructorCanonicalDependencies = createRule(
 						}
 						if (imported.typeOnly) {
 							report(context, imported.declaration, 'typeOnly', { name })
-						}
-						if (
-							!imported.source.startsWith('.') &&
-							!imported.source.startsWith('/') &&
-							imported.source !== packageName(imported.source)
-						) {
-							report(context, imported.declaration, 'subpath', {
-								name,
-								source: imported.source,
-								root: packageName(imported.source),
-							})
 						}
 					}
 				}

@@ -13,7 +13,12 @@ export const product = defineProduct({
 	copyright: 'Runnable architecture showcase and official plugin host',
 })
 
-const vaultAdminPlugin = packageNode('@pluxel/vault-admin', 'VaultAdminPlugin')
+const vaultAdminPlugin = defaultNode(
+	parsePluginDefinitionAddress({
+		entry: { kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' },
+		exportName: 'VaultAdminPlugin',
+	}),
+)
 const authPlugin = packageNode('@pluxel/auth', 'AuthPlugin')
 const memoryCacheBackendPlugin = packageNode('@pluxel/cache', 'MemoryCacheBackendPlugin')
 const cachePlugin = packageNode('@pluxel/cache', 'CachePlugin')

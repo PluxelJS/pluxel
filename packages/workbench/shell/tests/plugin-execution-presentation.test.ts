@@ -156,6 +156,39 @@ describe('plugin execution presentation', () => {
 		})
 	})
 
+	it('includes the package export path in presentation and search', () => {
+		const definition = {
+			entry: { kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' },
+			exportName: 'VaultAdminPlugin',
+		} as const
+		expect(describePluginDefinition(definition)).toMatchObject({
+			entryKind: 'package-subpath',
+			kindLabel: '包',
+			compactLabel: '@pluxel/services/plugins',
+			detailLabel: '@pluxel/services/plugins · VaultAdminPlugin',
+			packageName: '@pluxel/services',
+			sourceSpace: null,
+			path: null,
+			searchTerms: expect.arrayContaining([
+				'package-subpath',
+				'@pluxel/services/plugins',
+				'VaultAdminPlugin',
+			]),
+		})
+		expect(
+			describePluginRuntime({
+				address: { definition, variant: 'default' },
+				reference: 'untrusted display',
+				execution: {
+					kind: 'unreported',
+					artifact: { kind: 'unreported' },
+					update: { kind: 'unreported' },
+				},
+				recentUpdate: null,
+			}).canonicalReference,
+		).toBe('package:@pluxel/services/plugins::VaultAdminPlugin')
+	})
+
 	it('derives the detail copy value from the canonical address instead of trusting display text', () => {
 		const address: PluginNodeAddress = {
 			definition: { entry: packageEntry, exportName: 'ToolsPlugin' },

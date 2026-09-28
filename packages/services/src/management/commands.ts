@@ -13,6 +13,11 @@ const pluginEntryAddress = Type.Union([
 		packageName: Type.String({ minLength: 1 }),
 	}),
 	obj({
+		kind: Type.Literal('package-subpath'),
+		packageName: Type.String({ minLength: 1 }),
+		subpath: Type.String({ minLength: 1 }),
+	}),
+	obj({
 		kind: Type.Literal('source-entry'),
 		sourceSpace: Type.String({ minLength: 1 }),
 		path: Type.String({ minLength: 1 }),

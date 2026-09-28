@@ -127,6 +127,18 @@ applications resolve `artifacts/node` from `startup.deployment.root`, so Node mo
 continue to load when the frozen application moves or starts from a different working directory.
 Development still attaches its source compiler separately.
 
+### Ship optional service UI plugins from one package
+
+Import `VaultAdminPlugin` from `@pluxel/services/plugins`. The separate `@pluxel/vault-admin`
+package is retired before this release. Vault resources remain owned by the explicitly installed
+service; the optional Plugin publishes the Workbench view and uses the authenticated Management
+session. Starter and maintenance applications use the same public entry.
+
+Concrete Plugins may be exported from explicit package subpaths. Their canonical identity contains
+the package name, export path and named export. A constructor exported through multiple public
+paths or names is rejected, as are cross-package Plugin re-exports. Package root identities remain
+unchanged. Compilation, inspection, persistence and packaged Workbench artifacts share this contract.
+
 ### Use Host composition in tests and new applications
 
 Add `@pluxel/services/test` with an isolated `createServiceTestHost()` backed by the production Host catalog, state, configuration and lifecycle. Explicit service lists replace the default HTTP, commands, Node artifacts, workers and memory persistence composition; Management is an opt-in test integration. The base test entry with `services: []` loads without optional HTTP or Workbench peers; the default HTTP composition explicitly requires Elysia. `@pluxel/workbench/test` owns `createWorkbenchTestHost()`. `@pluxel/workbench/server` exposes typed `openLocalWorkbenchEntry()` for local sessions with caller-owned disposal and cancellation. Core author symbols remain in `@pluxel/core/test`.

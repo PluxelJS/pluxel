@@ -167,7 +167,7 @@ const plugins = pluginSourceVitePlugins({
 
 相对 `root` 解析物理目录；嵌套映射选择最具体的 source space。工具链对 root 和 entry 使用 native `realpath`，因此可以使用
 symlinked root，但会拒绝通过文件 symlink 逃出 root。修改 `name`、root 映射或嵌套关系会改变 Plugin address；需要跨宿主布局
-稳定的可发布 Plugin 应使用 package root named export。
+稳定的可发布 Plugin 应使用 公开 package entry named export。
 
 ## HMR 失败与自动恢复
 

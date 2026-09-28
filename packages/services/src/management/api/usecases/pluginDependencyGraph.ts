@@ -303,14 +303,7 @@ function defaultNodeAddress(definition: PluginDefinitionAddress): PluginNodeAddr
 }
 
 function cloneDefinitionAddress(address: PluginDefinitionAddress): PluginDefinitionAddress {
-	const entry =
-		address.entry.kind === 'package-root'
-			? Object.freeze({ kind: 'package-root' as const, packageName: address.entry.packageName })
-			: Object.freeze({
-					kind: 'source-entry' as const,
-					sourceSpace: address.entry.sourceSpace,
-					path: address.entry.path,
-				})
+	const entry = Object.freeze({ ...address.entry })
 	return Object.freeze({ entry, exportName: address.exportName })
 }
 
