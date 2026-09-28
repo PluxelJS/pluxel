@@ -1,4 +1,4 @@
-## valibot-form@2.0.0
+## valibot-form@1.1.0
 
 ### Preserve scroll position when focusing collection inputs
 

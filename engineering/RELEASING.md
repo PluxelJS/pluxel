@@ -6,11 +6,10 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 
 ## 版本模型
 
-- 公开包保持独立 semver；`@pluxel/create` 与 `@pluxel/cli` 没有实现依赖或同步版本要求；
-- 首次开源发布是唯一的版本收敛点：全部公开包由同一个 `major` Tegami intent 从 pre-1.0 原子进入
-  `1.0.0`。源码阶段不手改版本；Version Packages PR 同步生成 package version、内部依赖和 publish lock。
-- 全仓进入稳定线后新增的公开包仍从源码 `0.1.0` 开始，并以自己的 `major` intent 进入 `1.0.0`；它不会要求
-  已稳定的其他公开包再次 major。治理只允许带有该 intent 的 pre-1.0 新包与既有 1.x 包暂时共存。
+- 公开包使用统一版本线，由 Tegami 的 `pluxel` group 同步 bump 和 git tag；private、project 和 vendor 不参与。
+- 本轮大 PR 统一收敛到 `1.1.0`，包含新包。由于当前主要服务仓库自身，维护者明确选择将本轮破坏性变更作为一次 minor 发布；原有 breaking change 说明完整保留。这是本轮发布决策，不是以后忽略 semver 的默认规则。
+- 本轮收敛通过 Tegami draft 的 `bumpVersion` 显式指定 `1.1.0`，再由 Tegami 生成 manifests、依赖、changelog 和 publish lock；没有手改生成版本或锁。
+- 后续按变更影响记录 semver bump，组内全部公开包同步推进。新增公开包发布时应通过 Tegami draft 对齐当次版本线，不能单独从 `1.0.0` 发布；源码 pre-1.0 阶段仍须提供初次发布的 `major` intent。
 - workspace-only、private、project 和 vendor package 在 `scripts/tegami.mts` 中显式忽略，不参与版本传播；
 - semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为对应 package version 的兼容范围；
 - 第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的对应 package version 兼容范围；同时以

@@ -1,4 +1,4 @@
-## @pluxel/cli@2.0.0
+## @pluxel/cli@1.1.0
 
 ### Keep author dependencies out of build metadata writes
 

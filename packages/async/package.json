@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/async",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "Small async primitives for dependency graphs, bounded iteration, concurrency, retries and shared work",
 	"license": "AGPL-3.0-only",
 	"repository": {

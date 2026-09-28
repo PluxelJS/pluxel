@@ -1,4 +1,4 @@
-## @pluxel/takumi-markdown-typst@2.0.0
+## @pluxel/takumi-markdown-typst@1.1.0
 
 ### Compose explicitly installed runtime services
 

@@ -7,7 +7,11 @@ import { promisify } from 'node:util'
 import { tegami, type TegamiPlugin } from 'tegami'
 import { runCli } from 'tegami/cli'
 import { github } from 'tegami/plugins/github'
-import { repositoryPackages, tegamiIgnoredPackageNames } from './repository-packages.mjs'
+import {
+	isPublishablePackage,
+	repositoryPackages,
+	tegamiIgnoredPackageNames,
+} from './repository-packages.mjs'
 
 const ignoredPackages = [...tegamiIgnoredPackageNames(repositoryPackages), /^@worksplit\//]
 const execFileAsync = promisify(execFile)
@@ -15,14 +19,16 @@ const execFileAsync = promisify(execFile)
 export const paper = tegami({
 	ignore: ignoredPackages,
 	groups: {
-		cli: {
+		pluxel: {
 			syncBump: true,
 			syncGitTag: true,
 		},
 	},
-	packages: {
-		'@pluxel/cli': { group: 'cli' },
-	},
+	packages: Object.fromEntries(
+		repositoryPackages
+			.filter(isPublishablePackage)
+			.map(({ manifest }) => [manifest.name, { group: 'pluxel' as const }]),
+	),
 	npm: {
 		client: 'pnpm',
 		updateLockFile: true,

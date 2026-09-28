@@ -1,4 +1,4 @@
-## @pluxel/rolldown@2.0.0
+## @pluxel/rolldown@1.1.0
 
 ### Declare applications with one deferred configuration factory
 

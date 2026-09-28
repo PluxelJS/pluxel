@@ -1,4 +1,4 @@
-## @pluxel/async@1.0.0
+## @pluxel/async@1.1.0
 
 ### Add explicit async composition primitives
 

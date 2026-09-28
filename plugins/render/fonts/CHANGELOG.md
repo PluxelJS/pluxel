@@ -1,4 +1,4 @@
-## @pluxel/fonts@2.0.0
+## @pluxel/fonts@1.1.0
 
 ### Compose explicitly installed runtime services
 

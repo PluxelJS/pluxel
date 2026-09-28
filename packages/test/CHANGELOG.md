@@ -1,4 +1,4 @@
-## @pluxel/test@2.0.0
+## @pluxel/test@1.1.0
 
 ### Make filesystem fixture contracts truthful
 

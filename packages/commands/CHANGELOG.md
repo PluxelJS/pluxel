@@ -1,4 +1,4 @@
-## @pluxel/commands@2.0.0
+## @pluxel/commands@1.1.0
 
 ### Make Command execution return Better Result
 

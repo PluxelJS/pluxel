@@ -1,4 +1,4 @@
-## @pluxel/vault-admin@2.0.0
+## @pluxel/vault-admin@1.1.0
 
 ### Compose explicitly installed runtime services
 

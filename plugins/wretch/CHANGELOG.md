@@ -1,4 +1,4 @@
-## @pluxel/wretch@2.0.0
+## @pluxel/wretch@1.1.0
 
 ### Compose explicitly installed runtime services
 

@@ -1,4 +1,4 @@
-## @pluxel/create@2.0.0
+## @pluxel/create@1.1.0
 
 ### Declare applications with one deferred configuration factory
 
