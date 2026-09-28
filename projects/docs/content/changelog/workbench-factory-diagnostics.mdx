@@ -1,0 +1,11 @@
+---
+title: Correlate Workbench factory failures
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/workbench":
+    version: 1.0.0
+---
+
+## Correlate Workbench factory failures
+
+Workbench open failures now distinguish invalid and reused targets from arbitrary factory exceptions. Factory failures expose a diagnostic id linked to the server log, without sending exception details to the browser.

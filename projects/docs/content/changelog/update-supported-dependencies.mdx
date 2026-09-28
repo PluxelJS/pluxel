@@ -1,0 +1,43 @@
+---
+title: Refresh supported tooling and generated projects
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/cli":
+    version: 2.0.0
+  "@pluxel/create":
+    version: 2.0.0
+  "@pluxel/test":
+    version: 2.0.0
+  "@pluxel/commands":
+    version: 2.0.0
+  "@pluxel/host-dev":
+    version: 1.0.0
+  valibot-form:
+    version: 2.0.0
+  "@pluxel/auth":
+    version: 2.0.0
+  "@pluxel/canvas":
+    version: 2.0.0
+  "@pluxel/echarts":
+    version: 2.0.0
+  "@pluxel/fonts":
+    version: 2.0.0
+  "@pluxel/takumi-markdown-typst":
+    version: 2.0.0
+  "@pluxel/takumi-markdown":
+    version: 2.0.0
+  "@pluxel/takumi":
+    version: 2.0.0
+  "@pluxel/vault-admin":
+    version: 2.0.0
+  "@pluxel/wretch":
+    version: 2.0.0
+---
+
+## Refresh supported tooling and generated projects
+
+Update runtime, rendering, validation and tooling dependencies together across the published packages and generated projects.
+New projects use Elysia 2 beta.19 and TypeScript 7, with TypeBox 1.3.23 pinned for Elysia eager schema compilation.
+Update fixture dependencies while retaining the tested VFS release until its newer release restores trusted-publisher evidence.
+
+Read extracted HTML CSS through Takumi’s current `css` result field, avoiding its deprecated alias and per-process warning.

@@ -1,0 +1,13 @@
+---
+title: Use native Cap’n Web ownership in isolated RPC tests
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/workbench":
+    version: 1.0.0
+---
+
+## Use native Cap’n Web ownership in isolated RPC tests
+
+Remove `createLocalRpcClient()` from `@pluxel/workbench/test` and its borrowed-target proxy.
+Pure RPC tests use `new RpcStub(new Target())` from `capnweb`, with the library's native
+reference disposal semantics. Workbench testing types continue to describe Workbench entries and leases.

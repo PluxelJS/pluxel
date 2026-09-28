@@ -1,0 +1,15 @@
+---
+title: Consolidate service domains and application composition
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/services":
+    version: 1.0.0
+  "@pluxel/workbench":
+    version: 1.0.0
+  "@pluxel/create":
+    version: 2.0.0
+---
+
+## Consolidate service domains and application composition
+
+Management, Logging and official presets now belong to Services, retaining separate source domains and browser/server entry points. Use @pluxel/services/management, /logging, /preset, /vite, /build and /test instead of separate package installations. The Workbench Shell belongs to Workbench rather than a separate private workspace. Package-level mutual references are permitted across isolated leaf entries; module initialization and resource ownership remain explicit.

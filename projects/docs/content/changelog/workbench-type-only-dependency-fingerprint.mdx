@@ -1,0 +1,11 @@
+---
+title: Fingerprint type-only package exports without a runtime entry
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/rolldown":
+    version: 2.0.0
+---
+
+## Fingerprint type-only package exports without a runtime entry
+
+Workbench artifact builds now include installed declaration-only packages such as `@types/react` in the dependency revision without trying to resolve a nonexistent JavaScript root. Packages that declare a runtime root still fail on a broken export.

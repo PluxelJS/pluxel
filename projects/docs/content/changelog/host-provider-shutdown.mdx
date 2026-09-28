@@ -1,0 +1,13 @@
+---
+title: Drain Hosts with abstract provider defaults
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/host":
+    version: 1.0.0
+---
+
+## Drain Hosts with abstract provider defaults
+
+Clear applied provider-default bindings in the same shutdown transaction that removes Plugin nodes,
+so Hosts with abstract providers drain their generations successfully. Persisted provider selection
+and startup intent remain available for the next startup.

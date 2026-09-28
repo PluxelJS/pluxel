@@ -1,0 +1,15 @@
+---
+title: Reject incomplete workspace and package discovery
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/rolldown":
+    version: 2.0.0
+  "@pluxel/cli":
+    version: 2.0.0
+  "@pluxel/host-dev":
+    version: 1.0.0
+---
+
+## Reject incomplete workspace and package discovery
+
+Workspace membership now comes from `pnpm-workspace.yaml`. Malformed selected manifests, invalid patterns, and scan IO failures stop discovery instead of silently dropping candidates. Host module classification stops at a broken package manifest, and OXC initialization and thrown resolution failures retain their causes.

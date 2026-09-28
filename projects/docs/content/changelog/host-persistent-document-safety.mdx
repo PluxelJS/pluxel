@@ -1,0 +1,13 @@
+---
+title: Preserve invalid persistent Host documents
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/host":
+    version: 1.0.0
+  "@pluxel/core":
+    version: 2.0.0
+---
+
+## Preserve invalid persistent Host documents
+
+Host startup now rejects malformed or unsupported persisted config and runtime state documents instead of creating `.broken.*` copies and replacing the originals with empty state. The original document stays untouched; repair it or restore a backup before restarting. A failed load also keeps the store unready and blocks direct mutation.

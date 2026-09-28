@@ -1,0 +1,11 @@
+---
+title: Isolate Command protocol entry points
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/commands":
+    version: 2.0.0
+---
+
+## Isolate Command protocol entry points
+
+Replace `@pluxel/commands/adapters` with `@pluxel/commands/mcp` and `@pluxel/commands/capnweb`. The Cap’n Web peer is optional; kernel and MCP consumers no longer need to install or load it. MCP SDK remains an optional type dependency.

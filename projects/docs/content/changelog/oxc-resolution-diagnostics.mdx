@@ -1,0 +1,11 @@
+---
+title: Preserve installed-package resolution failures
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/rolldown":
+    version: 2.0.0
+---
+
+## Preserve installed-package resolution failures
+
+OXC-backed resolution now reports an installed package's invalid or unreadable manifest and rejected exports with its importer and original cause. Ordinary missing packages still return no match.

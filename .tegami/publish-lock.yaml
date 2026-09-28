@@ -1,0 +1,562 @@
+core:changelogs:
+  - content: "---\npackages:\n  \"@pluxel/async\":\n    type: minor\n---\n\n## Add explicit async composition primitives\n\nAdd independent `limit`, `retry`, `singleflight`, and `wait` subpaths without runtime dependencies. Limit shared or per-key concurrency, explicitly authorize bounded retries, share only in-flight work, and cancel waits using native AbortSignal. Stateful handles close admission and drain accepted work; cancelled waiters do not acquire ownership of shared operations.\n\nExtend `iter` with sequential forEach, find, some, every, and reduce consumers that preserve upstream cleanup and drain semantics. Preserve the existing grfn and iter contracts. Generate all source and published exports with tsdown and validate behavior, public types, and source-free consumption.\n"
+    filename: async-composition-primitives.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/async\":\n    type: major\n---\n\n## Add standalone async graph and iteration tools\n\nAdd zero-dependency `grfn` and `iter` subpaths for compile-once async dependency graphs and bounded, pull-based concurrent iteration.\n"
+    filename: async-toolkit.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/cli\":\n    type: major\n---\n\n## Keep author dependencies out of build metadata writes\n\nPlugin builds now reject missing or misplaced provider peers and incorrect optional peer markers. Builds only refresh generated Plugin publication facts; they no longer move or delete dependency declarations or fill repository fields from CI environment variables.\n"
+    filename: build-manifest-ownership.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/host-dev\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/create\":\n    type: major\n  \"@pluxel/cli\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n---\n\n## Compose applications around one Plugin Host\n\nHost owns catalog and lifecycle control, with a shared development driver and optional dynamic file\nsources. Applications default-export `defineHostApplication(startup => ({ ... }))`, declaring\n`plugins`, optional `sources`, `services` and `prepare`. Dynamic declarations perform no IO until the\nHost opens their discovery session; producers validate declared coverage before creating resources.\n\n## Unify development, builds and scaffolding\n\nUse `vitePreset({ entry })` from `@pluxel/services/vite` and `buildPreset()` from\n`@pluxel/services/build` for the official service composition. Custom compositions use\n`host({ entry })` from `@pluxel/host-dev/vite` and `pluxel()` from `@pluxel/rolldown`.\nBoth use the same Host application declaration, including dynamic sources. Workbench and Node artifact\nattachments are installed only for selected services; the development console is explicitly enabled.\n\nThe CLI no longer maintains HMR discovery profiles or their TUI. Declare fixed plugins and optional\nfile/directory sources in the application itself; inspect a running application with `pluxel dev`.\n"
+    filename: composable-plugin-host.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/context\":\n    type: major\n  \"@pluxel/core\":\n    type: major\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/host-dev\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/workbench\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/auth\":\n    type: major\n  \"@pluxel/vault-admin\":\n    type: major\n  \"@pluxel/wretch\":\n    type: major\n  \"@pluxel/fonts\":\n    type: major\n  \"@pluxel/canvas\":\n    type: major\n  \"@pluxel/echarts\":\n    type: major\n  \"@pluxel/takumi\":\n    type: major\n  \"@pluxel/takumi-markdown\":\n    type: major\n  \"@pluxel/takumi-markdown-typst\":\n    type: major\n  \"@pluxel/create\":\n    type: major\n  \"@pluxel/cli\":\n    type: major\n---\n\n## Compose explicitly installed runtime services\n\nHost creation is asynchronous and prepares an explicit service list before Plugin admission. Service\nplans validate identity, properties, reserved Core members and dependencies before creating resources;\npreparation and shutdown preserve dependency order and clean partially prepared resources on failure.\nCore provides its own host composition entry, optional service type catalogs and synchronous token-based\nContext.require(), with stable missing-capability and access errors.\n\nPersistence and Vault move to dedicated @pluxel/services entries. Encrypted Vault explicitly requires\nPersistence and flushes pending writes during Host cleanup; read-only deployment bindings need neither.\nImport Persistence helpers and Vault types from their service entries. The Runtime package is removed;\nservicesPreset() supplies the official default service composition.\n\n## Preserve identity through development and generated metadata\n\nHost development passes service declarations through the shared Host path. Service declaration changes\nreplace the Host; failed asynchronous preparation creates a fresh compensation Host from the previous\nsuccessful declaration. Native ESM and evaluated plugins share official service identity. Plugin/config\nmetadata defaults to the Core toolchain, without requiring Runtime in independent service applications.\n\n## Unify plugin authoring and service ownership\n\nPlugin examples and official packages import the Core authoring model directly. Commands, Node modules\nand Workers are explicitly installed services; their tokens, declarations and types live at the service\nentries. Worker installations declare their Node module dependency. servicesPreset() combines these\ninstallations without introducing a second application or lifecycle model. The default Core author entry no longer forwards raw\nContext host construction helpers; service authors use @pluxel/core/host.\n\nHost exposes generic configuration get/validate/patch/reset through its existing coordinator, preserving\nCore validation, storage confirmation and generation notification. Management delegates to these\noperations and retains browser report projection. Vault operations participate in owner and root\nadmission: stop drains accepted work, rejects cached handles and flushes after pending storage IO.\n\n## Use standard tsdown application plugins\n\nApplications configure entry and output through tsdown and install pluxel() from @pluxel/rolldown in\nthe ordinary plugins list. This replaces the application preset in the build subpath, retaining the\nsame freezer, artifact assembly and deployment validation.\n\n## Separate business HTTP from management\n\nInstall elysia() from @pluxel/services/elysia and use ctx.require(ElysiaApp) for the native generation-owned\nElysia application. Independent Hosts expose business requests through createElysiaHandler(host),\nwithout management, Workbench or a listener. Official presets use the same installation and publication stages.\nHost services may bind fixed Core lifecycle stages before Plugin admission; no dynamic registration or\nsecondary graph commit is introduced.\n\n## Persist and manage Host state directly\n\nHost owns configRecords and state.initial, optional borrowed document storage, read-only handling and\nflush failure reporting. Status snapshots and retained lifecycle diagnostics, startup intent, provider\nselection and fork operations share the same Host coordinator in standalone and default applications.\nService removeNodeMetadata hooks run before durable fork removal; failure retains the stopped fork so\ncleanup can be retried.\n\nDatabase moves from @pluxel/runtime/database to @pluxel/services/database. Install an explicit backend\nfrom @pluxel/services/database/pglite or /postgres. Driver dependencies are optional and only the chosen\nbackend is imported. Missing installation reports the standard capability error. Database acquisition\nand cached handle operations participate in root and owner drain; closing waits for accepted transactions.\n\n## Share management, Workbench and development tooling\n\nThe authenticated management endpoint/client, Workbench publication/browser code and logging backend\nmove to independently selected packages. Vault administration is an ordinary explicitly installed Plugin.\nHost-dev owns the existing local console executor and typed script surface at @pluxel/host-dev/console;\nits Vite Host plugin accepts devConsole: true. Node and Workbench artifacts use ordinary Vite plugins and\nthe shared Host candidate boundary. Canceled management work is rejected before queued execution starts;\nan admitted operation retains its existing completion and persistence semantics.\n\n## Share startup declarations and transport ownership\n\nApplication startup and service test-host factories await the same createHost service preparation path. Official\nplugins import validation and RPC contracts from their owning packages, removing the Runtime peer\nwhere no runtime implementation is used. Services owns the Node HTTP/WebSocket carrier; Host-dev owns\nthe development console, and queued management mutations honor cancellation before admission.\n\nThe root `@pluxel/services` entry contains only `standardServices()` and its base service types. Import the official `servicesPreset()` from `@pluxel/services/preset`; its Management and Logging configuration types remain owned by those packages and do not leak into independent base-service consumers. Generated hosts and current examples use the explicit preset entry.\n"
+    filename: composable-runtime-services.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/cli\":\n    type: major\n---\n\n## Require package-scoped source links\n\nSource overlays require repository directories containing package symlinks. Remove automatic conversion of whole-checkout symlinks; unexpected paths are rejected without replacement.\n"
+    filename: current-source-layout.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: patch\n  \"@pluxel/cli\":\n    type: patch\n---\n\n## Show application readiness in dev discovery\n\n`pluxel dev instances` now reports whether the live Vite console has a ready Host, is applying an update, or has no admitted Host. The existing recent update snapshot remains visible when initial admission fails.\n"
+    filename: dev-application-readiness.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/test\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/cli\":\n    type: patch\n---\n\n## Make filesystem fixture contracts truthful\n\nUse `fixture.fsp` for Promise file operations. `fixture.fs` exposes callback, synchronous and stream\noperations without inheriting conflicting Promise signatures. Missing callbacks now fail explicitly.\nMemory fixtures reject `fs/tempDir` overrides; disk fixtures accept `tempDir` but always own native fs.\n\n## Keep process-owned build orchestration inside the official CLI\n\n`runWithTsdown` is no longer exported from the public `/build` entry. Official CLI cooperation uses\nan explicit `/internal/cli` allowlist. Custom build hosts use the public `pluginPackage` preset.\nThe CLI runner owns one-shot bundle cleanup, including hook failures; watch resources, configuration\nrestarts and terminal interaction remain owned by the command process.\n"
+    filename: fixture-and-build-resource-contracts.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: minor\n  \"@pluxel/host-dev\":\n    type: patch\n  \"@pluxel/cli\":\n    type: patch\n  \"@pluxel/services\":\n    type: minor\n---\n\n## Share Host development reports and HTTP assembly\n\nHost development publishes update history through Host status and Management, including retained\ncandidates, application compensation and lifecycle issues. Update outcomes include `failed` when\nstartup or compensation leaves no active Host. Failed cleanup preserves the original diagnostics\nand does not skip remaining settlement or compensation.\n\nOfficial application presets delegate HTTP and management ingress to their owning services. Plugin\nscaffolding consistently declares Core and validation dependencies.\n"
+    filename: host-development-convergence.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/context\":\n    type: major\n  \"@pluxel/core\":\n    type: major\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/test\":\n    type: major\n  \"@pluxel/cli\":\n    type: patch\n---\n\n## Complete Host ownership and retire the Runtime package\n\nHostApplication is the single application contract for development and production. Environment facts\nmove to @pluxel/host/environment; applications explicitly select configuration and Vault deployment\ninputs with `envBinding()` and `fileBinding()`. Production launchers use Host plus explicitly composed\nHTTP services. The Runtime package,\nits parallel Vite driver, production adapters, toolchain aliases and author barrels are removed.\n\nRootContext.require accepts installed root/all capabilities; owner Context.require accepts owner/all\ncapabilities. Root references carry root authority and are not a sandbox. The development console can\ntherefore use dev.ctx.require without a separate service resolver or a new require namespace.\n\nManagement commands are an explicit @pluxel/services/management/commands service installed by servicesPreset.\nGeneric Commands and standardServices keep an initially empty command catalog. Regression suites,\nbenchmarks and type probes now live with their owning packages; test hosts use actual Host service plans.\n\nThe CLI no longer installs Workbench as an unused direct dependency; applications select it through\ntheir own service composition.\n"
+    filename: host-retirement-and-context-access.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: patch\n  \"@pluxel/cli\":\n    type: patch\n---\n\n## Reject invalid explicit configuration\n\nThe official services preset now rejects unknown top-level options and a non-boolean Workbench selection. The CLI rejects an empty `PLUXEL_STATE_DIR` instead of silently using the default directory.\n"
+    filename: strict-config-inputs.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n  \"@pluxel/cli\":\n    type: patch\n  \"@pluxel/host-dev\":\n    type: patch\n---\n\n## Reject incomplete workspace and package discovery\n\nWorkspace membership now comes from `pnpm-workspace.yaml`. Malformed selected manifests, invalid patterns, and scan IO failures stop discovery instead of silently dropping candidates. Host module classification stops at a broken package manifest, and OXC initialization and thrown resolution failures retain their causes.\n"
+    filename: strict-workspace-discovery.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/test\":\n    type: major\n  \"@pluxel/core\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: minor\n  \"@pluxel/cli\":\n    type: patch\n  \"@pluxel/create\":\n    type: patch\n---\n\n## One production-backed plugin test host\n\nImport `createTestHost()` from `@pluxel/test`. Services are explicit and default to an empty list;\n`workbench: true` adds the local test plane to the same host. Use `start/stop/restart`, typed batch\nstarts, catalog transactions, dependency overrides, configuration and native resource disposal.\nThe public Core and Services test factories are removed; Core graph harnesses remain internal.\n\nNode/Worker source tests automatically attach the real artifact compiler when Node services are\nselected without an explicit artifact source. Each host owns its compiler, temporary cache and\ncleanup. Explicit packaged artifacts remain authoritative. The Vitest preset enables legacy\ndecorators and keeps project plugins explicit; separately built Node artifacts do not inherit\narbitrary Vitest plugins.\n\nOfficial tests, generated plugin examples and testing documentation use the unified root entry.\n"
+    filename: unified-test-host.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/cli\":\n    type: patch\n  \"@pluxel/create\":\n    type: patch\n  \"@pluxel/test\":\n    type: patch\n  \"@pluxel/commands\":\n    type: patch\n  \"@pluxel/host-dev\":\n    type: patch\n  valibot-form:\n    type: patch\n  \"@pluxel/auth\":\n    type: patch\n  \"@pluxel/canvas\":\n    type: patch\n  \"@pluxel/echarts\":\n    type: patch\n  \"@pluxel/fonts\":\n    type: patch\n  \"@pluxel/takumi-markdown-typst\":\n    type: patch\n  \"@pluxel/takumi-markdown\":\n    type: patch\n  \"@pluxel/takumi\":\n    type: patch\n  \"@pluxel/vault-admin\":\n    type: patch\n  \"@pluxel/wretch\":\n    type: patch\n---\n\n## Refresh supported tooling and generated projects\n\nUpdate runtime, rendering, validation and tooling dependencies together across the published packages and generated projects.\nNew projects use Elysia 2 beta.19 and TypeScript 7, with TypeBox 1.3.23 pinned for Elysia eager schema compilation.\nUpdate fixture dependencies while retaining the tested VFS release until its newer release restores trusted-publisher evidence.\n\nRead extracted HTML CSS through Takumi’s current `css` result field, avoiding its deprecated alias and per-process warning.\n"
+    filename: update-supported-dependencies.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/commands\":\n    type: major\n---\n\n## Make Command execution return Better Result\n\nDefine Commands with name, description, input, and a Result-returning execute handler. Direct, registry, and argv calls now return `Result<T, CommandFailure>`. A fixed registration handle stops when disposed, and dynamic name lookup follows the current registration. Remove the obsolete `InstalledCommand` alias. Cancellation reaches the handler and cannot overwrite a completed Result. Remove output schemas and behavior metadata from Command definitions.\nThe execution boundary rejects a returned Result whose status conflicts with its branch methods.\nAbsolute deadlines beyond the platform timer range remain scheduled until their actual time instead of expiring immediately.\nFramework deadline cancellation remains `TIMEOUT` when its signal passes through owner or carrier signal composition into a nested Command.\nUse `toCli()` to compile an argv projection before publishing it with `router.bind()`; the router now accepts that projection instead of a Command and separate syntax options.\n"
+    filename: command-result-kernel.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/commands\":\n    type: minor\n---\n\n## Add a native Cap'n Web adapter for Commands\n\n`@pluxel/commands/adapters` exposes `toCapnweb({ method: command })`. It creates a native `RpcTarget` class whose methods execute selected Commands with a trusted constructor context and return JSON data results.\nThe adapter rejects method and data keys that Cap'n Web cannot preserve and checks its encoder before reporting a successful result.\n"
+    filename: commands-capnweb-adapter.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/commands\":\n    type: minor\n  \"@pluxel/services\":\n    type: major\n---\n\n## Keep carrier handling inside publication ownership\n\nCommand mounts accept `{ install, handle? }` instead of an installer callback. The optional\nhandler receives the captured Command, untrusted input, and carrier context; authorization,\ncontext projection, execution, and response presentation settle within the provider and\npublisher invocations. A custom handler can project its own output type and construct a\ncommand-specific context. Direct bindings still execute the selected Command unchanged.\n\nMounted endpoints carry an explicit marker and cannot be re-mounted as direct definitions.\nThe new `snapshotCommand()` captures and validates the descriptor and execute function without\ncreating a temporary registry, preserving the receiver and existing publication withdrawal.\n"
+    filename: commands-carrier-handlers.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/commands\":\n    type: minor\n---\n\n## Add a native MCP Tool projection for Commands\n\n`@pluxel/commands/adapters` exposes `toMcp(command)`, producing a native MCP Tool descriptor and a per-call handler. Applications own tool publication, authentication, transport and lifecycle. The adapter maps Command Results to MCP text results without exposing local causes.\n"
+    filename: commands-mcp-adapter.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/commands\":\n    type: major\n---\n\n## Isolate Command protocol entry points\n\nReplace `@pluxel/commands/adapters` with `@pluxel/commands/mcp` and `@pluxel/commands/capnweb`. The Cap’n Web peer is optional; kernel and MCP consumers no longer need to install or load it. MCP SDK remains an optional type dependency.\n"
+    filename: commands-protocol-entries.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/host-dev\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/workbench\":\n    type: major\n  \"@pluxel/create\":\n    type: major\n---\n\n## Declare applications with one deferred configuration factory\n\nApplications now default-export `defineHostApplication(startup => ({ ... }))` from `@pluxel/host`.\nThe factory returns the complete application configuration, synchronously or asynchronously;\nplain application exports and nested `configure` merging are removed. Each Host receives a\nshallow immutable startup snapshot shared by its factory and `prepare` callback. The helper\npreserves the inferred factory result and checks unsupported top-level fields.\n\n## Keep development and production assembly consistent\n\nBuilds inspect inline factories without executing them and reject production plugin catalogs\nthat cannot be resolved statically. Module-level and imported constant plugin arrays remain\nsupported. Explicit environment and file bindings are described in the unified configuration change.\n\nRe-evaluating an application factory replaces its Host; fixed-catalog execution reports this as\n`host-reload`. Dynamic source-only updates retain catalog HMR when the application factory is\nunchanged. Factory evaluation failures retain the running Host; failed replacement preparation\nrecreates a Host from the previous successful factory. The starter and application documentation\nuse the same factory declaration.\n"
+    filename: application-factories.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/workbench\":\n    type: minor\n  \"@pluxel/create\":\n    type: patch\n---\n\n## Consolidate service domains and application composition\n\nManagement, Logging and official presets now belong to Services, retaining separate source domains and browser/server entry points. Use @pluxel/services/management, /logging, /preset, /vite, /build and /test instead of separate package installations. The Workbench Shell belongs to Workbench rather than a separate private workspace. Package-level mutual references are permitted across isolated leaf entries; module initialization and resource ownership remain explicit.\n"
+    filename: consolidate-host-services.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: minor\n  \"@pluxel/create\":\n    type: patch\n---\n\n## Resolve Node and Worker artifacts from the deployed application\n\n`standardServices({ nodeModules })` forwards the existing Node artifact configuration. Generated\napplications resolve `artifacts/node` from `startup.deployment.root`, so Node modules and Workers\ncontinue to load when the frozen application moves or starts from a different working directory.\nDevelopment still attaches its source compiler separately.\n"
+    filename: production-node-artifacts.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: minor\n  \"@pluxel/workbench\":\n    type: minor\n  \"@pluxel/create\":\n    type: major\n---\n\n## Use Host composition in tests and new applications\n\nAdd `@pluxel/services/test` with an isolated `createServiceTestHost()` backed by the production Host catalog, state, configuration and lifecycle. Explicit service lists replace the default HTTP, commands, Node artifacts, workers and memory persistence composition; Management is an opt-in test integration. The base test entry with `services: []` loads without optional HTTP or Workbench peers; the default HTTP composition explicitly requires Elysia. `@pluxel/workbench/test` owns `createWorkbenchTestHost()`. `@pluxel/workbench/server` exposes typed `openLocalWorkbenchEntry()` for local sessions with caller-owned disposal and cancellation. Core author symbols remain in `@pluxel/core/test`.\n\nGenerated applications use Host environment settings and the service presets without a Runtime package dependency.\n\nThe published starter derives its first-party catalog ranges from the current package manifests during the create build, so Tegami version changes cannot leave newly generated applications on stale framework ranges.\n"
+    filename: service-test-host-and-starter.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: patch\n  \"@pluxel/create\":\n    type: patch\n  \"@pluxel/workbench\":\n    type: patch\n---\n\n## Collapse implementation paths into deliberate service boundaries\n\nImport `createElysiaHandler` from `@pluxel/services/elysia` and `listenElysia` from\n`@pluxel/services/elysia/node`. The application, listener and private asset-file subpaths are removed.\nGenerated launchers and starter applications use these shared domain entries.\n\nPrivate service implementation files are no longer exported individually. Framework owner-view and\nsecurity integration uses the narrow `@pluxel/services/internal` entry; white-box test support retains\n`/internal/test`. Persistence and Vault contracts come from their existing public domain entries.\nDatabase drivers remain private package imports, preserving lazy optional-backend loading.\n\n`VaultAdmin` and the root `vaultAdmin` property expose the existing `VaultAdminApi` contract,\nkeeping the backend implementation and Host-only preparation method private.\n"
+    filename: services-entry-boundaries.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: major\n  \"@pluxel/host\":\n    type: minor\n  \"@pluxel/services\":\n    type: minor\n  \"@pluxel/workbench\":\n    type: patch\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Define explicit console executions with one inferred context\n\nAdd `defineDevConsole()` and move execution id, input and cancellation signal onto `dev`.\nLifecycle and configuration operations return address-only Host report snapshots shared with\nManagement, preserving lifecycle failures and saved-but-not-applied outcomes. Inspect application\nupdate failures through `dev.updates.latest()`, including failures before a Plugin enters the catalog.\n\n## Retain development startup injection and URL presentation\n\nHost and service Vite integrations accept immutable startup binding snapshots. Workbench and HTTP\nattachments present the active shell mount and Portless application origin across Host replacement.\n\nPrepared development artifacts now activate at graph acceptance before replacement Plugin startup.\nWorkbench Content-to-View updates retain the same Host and can start against their new artifacts;\npre-acceptance graph rejection still discards candidate artifacts. Shell navigation no longer claims\nCSS requests whose Accept header also includes a wildcard.\n\n## Admit installed Workbench artifacts during development\n\nDevelopment attachments receive the exact candidate module closure and selected definitions.\nInstalled Plugin inventories now participate in the same artifact preparation, acceptance, and\nwithdrawal as source Plugins. Unselected exports do not require their artifact directories.\nRejected candidates retain accepted artifacts; Host compensation reuses accepted plans and reports\nfailure if their immutable disk revisions are no longer available. Physical installed modules can\ncontribute positive prelowered ABI facts without enabling source lowering for third-party packages.\n\nPrebuilt Workbench shell assets carry Vite's HTML ignore markers, preventing false source-module\npre-transform failures while preserving the HTML pipeline, Vite client injection, and source Shell HMR.\n\n## Preserve cancellation and resource failure diagnostics\n\nCancelled executions keep their cancellation reason in `error` and retain a distinct thrown\nexecution/resource failure in `executionError`. Compound error messages preserve bounded child\ndiagnostics, including `using` disposal failures, without interpreting arbitrary AggregateError\nchildren as execution and cleanup phases.\n"
+    filename: dev-console-execution.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: minor\n---\n\n## Keep dynamic file discovery with its Host owner\n\nUse `@pluxel/host/dynamic` for file and directory sources and `@pluxel/host/dynamic/source-producer` for producer declaration checks. Dynamic discovery now ships with Host; applications no longer install a separate Host Dynamic package. Source discovery, updates, error reporting and cleanup retain the existing Host lifecycle.\n"
+    filename: host-dynamic-source.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/host-dev\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Consolidate Host application and development integration entries\n\nImport `runHostApplication` from `@pluxel/host`, alongside the existing application contracts.\nRemove the duplicate `/application` entry and update generated production launchers.\n\nHost-dev exposes one explicit `/internal` entry for framework integration. Console execution,\nIPC protocol, server and attachment implementations are private, with package-local tests\nimporting their source directly. The public console and Vite entries remain separate.\n\nPortable execution snapshots and their validators now cross the browser/server boundary through `@pluxel/host/internal/protocol`. Management clients use this dependency-free entry instead of the server integration barrel; the duplicate execution exports and Management forwarding module are removed. Browser builds no longer traverse Host source loading and Node built-ins to validate update reports.\n"
+    filename: host-entry-consolidation.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/core\":\n    type: patch\n---\n\n## Preserve invalid persistent Host documents\n\nHost startup now rejects malformed or unsupported persisted config and runtime state documents instead of creating `.broken.*` copies and replacing the originals with empty state. The original document stays untouched; repair it or restore a backup before restarting. A failed load also keeps the store unready and blocks direct mutation.\n"
+    filename: host-persistent-document-safety.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: patch\n---\n\n## Drain Hosts with abstract provider defaults\n\nClear applied provider-default bindings in the same shutdown transaction that removes Plugin nodes,\nso Hosts with abstract providers drain their generations successfully. Persisted provider selection\nand startup intent remain available for the next startup.\n"
+    filename: host-provider-shutdown.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: patch\n  \"@pluxel/host\":\n    type: patch\n---\n\n## Report dynamic source failures with application updates\n\nPublish dynamic discovery and missing-dependency recovery watcher errors through the same ordered\napplication update history used by candidate evaluation. Preserve running plugins and their individual\nlifecycle history, and retain original errors in logs. Recovery hook failures are visible before a\ncandidate can start, without reporting an already recorded candidate failure twice.\n\n## Recover initial dynamic entries and preserve execution attribution\n\nTrack separately evaluated dynamic roots even when the first candidate fails before a Host or catalog\nexists. Syntax repairs retain unrelated service and Plugin generations; broad resolution retries are\nreserved for missing imports. Snapshot source/built/unknown execution facts with each accepted catalog,\nretain prior facts on rejection, and restore them when an application replacement needs compensation.\n"
+    filename: host-source-diagnostics.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/core\":\n    type: minor\n  \"@pluxel/host\":\n    type: patch\n  \"@pluxel/services\":\n    type: minor\n---\n\n## Keep Plugin label projection independent of Host\n\nMove the shared pure Plugin label functions to Core. Logging formatters and Management catalog projection now consume Core directly; Host no longer re-exports the implementation through its internal entry.\n\nRemove manager creation, active-owner lookup, and Context binding functions from the Logging public root. Framework integrations retain the existing internal entry. Applications install `logging()` as a Host service and access the installed manager through `Logging` or `host.ctx.logging`.\n"
+    filename: logging-package-boundaries.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: minor\n---\n\n## Retain and expose Plugin lifecycle failures\n\nPlugin status and management commands include lifecycle failure codes and messages until recovery or removal, including across unrelated commits. Runtime logs record the affected Plugin, phase and serialized error. Workbench distinguishes startup failures and dependency blocking from pending activation, keeps error notifications open, and lets users copy the notification and full lifecycle report. PGlite initialization errors identify the data directory and explain why retrying a Plugin cannot recreate a failed shared backend.\n"
+    filename: plugin-lifecycle-diagnostics.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/core\":\n    type: minor\n  \"@pluxel/host\":\n    type: minor\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/workbench\":\n    type: patch\n  \"@pluxel/auth\":\n    type: patch\n  \"@pluxel/fonts\":\n    type: patch\n  \"@pluxel/wretch\":\n    type: patch\n  \"@pluxel/vault-admin\":\n    type: patch\n---\n\n## Add bounded third party version contracts\n\nAdd the optional `@pluxel/core/better-result` entry with all named exports from the shared `better-result` dependency.\nCheck the exact `capnweb` peer, development and installed versions when a plugin package publishes a\nWorkbench View or Attachment target. Move Vault Admin's `capnweb` to a peer and development dependency.\nRecord target publication in package metadata so static builds and dynamic source loaders share the\nhost `RpcTarget` constructor only for those publishers. Diagnose deployment version mismatches before\ntarget evaluation. Improve the Workbench identity diagnostic and use Result within Auth credential\npreparation while preserving its portable setup replies.\n"
+    filename: plugin-third-party-version-boundaries.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: patch\n  \"@pluxel/host-dev\":\n    type: patch\n  \"@pluxel/workbench\":\n    type: patch\n  \"@pluxel/rolldown\":\n    type: patch\n  \"@pluxel/services\":\n    type: patch\n---\n\n## Share framework identities with the application\n\nDeclare Core, Host and shared service/management contracts as peer dependencies with local\ndevelopment copies. The compiler likewise consumes the application's Core lowering ABI.\nWorkbench declares React, Mantine and React Bridge as shared platform peers; owned implementation\nlibraries remain normal dependencies. This prevents integrations from silently installing their own\nframework identities and makes compatible application dependencies explicit.\n"
+    filename: shared-framework-peers.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/core\":\n    type: major\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/host-dev\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/workbench\":\n    type: major\n  \"@pluxel/auth\":\n    type: major\n  \"@pluxel/vault-admin\":\n    type: patch\n---\n\n## Bind deployment inputs and preserve editable configuration layers\n\nApplication factories declare `envBindings` and `fileBindings` with `envBinding` and\n`fileBinding`, importing the configuration and Vault root schemas explicitly. Binding helpers\ncheck schema input keys; Plugins keep `configs.use(schema)` without static schema fields.\nBindings require Valibot schemas, matching the Host's input projection at runtime.\nHost verifies that a config binding references the same schema as the Plugin's lowered declaration.\nStatic builds derive `.env.example` from the explicit schemas without evaluating factories or\nreading deployment values. Published declarations provide field completion without compiler plugins.\nConfig merges base, saved values, and environment overrides recursively, replacing arrays.\nOnly management edits persist. Environment-controlled paths reject writes, and management\nresponses expose value-free source metadata. The previous environment bootstrap helper and\nimplicit `PLUXEL_CONFIG` snapshot are removed.\n\n## Use structured Vault snapshots with durable writes and deployment records\n\nVault KV reads return immutable snapshots with revision, source, and writability. Writes support\nexpected revisions, batches publish only after durable commit, and owner-scoped subscriptions\nobserve committed changes. Environment/file records are whole-record read-only overlays;\nbindings-only installations need neither Persistence nor disk keys. Encrypted Vault takes an\nexplicit deployment identity. Named namespaces are owner-local; legacy global namespaces require\nexplicit owner migration mappings. Legacy documents migrate to collision-checked KV keys.\nVault root schemas validate record keys and complete records as an application startup contract;\nPlugin hot replacement does not change that contract or repeat input transforms.\n\nOfficial authentication and storage plugins export their deployment schemas, consume structured\ncredential records, and observe updates. The showcase and local applications migrate their\ncredential and account workflows.\n\nVault administration displays KV and blob counts for the unified storage model.\n"
+    filename: unified-plugin-inputs.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/workbench\":\n    type: major\n---\n\n## Admit shared Workbench Cap'n Web before connecting module identity\n\nWorkbench now declares `capnweb` as a peer, while final Host applications provide the runtime directly. Development, static application builds, and production dynamic sources check a target publisher's peer and actual installed version before connecting its import to the Host Workbench module. A base library that supplies a Workbench target class is checked by its peer declaration even when it has no generated publication marker. Independent private RPC packages keep their own resolution. Source builds also require a matching development copy; installed publishers only require their published peer and installed runtime.\n"
+    filename: workbench-shared-capnweb-admission.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/core\":\n    type: major\n---\n\n## Make effects transactions and config snapshots match their ownership contracts\n\nEffects transactions reject overlapping siblings, require nesting through the active tx, and revoke tx views after their callback settles. Rollback releases only resources owned by that transaction; tx.dispose() no longer disposes the parent scope. Acquire checks admission before starting and releases resources that arrive after withdrawal. Callers must await child transactions and acquisition promises.\n\nPlugin configs.use() now exposes the existing deeply frozen output as ConfigSnapshot, including readonly nested arrays and tuples. Copy configuration into owned mutable state before editing it.\n"
+    filename: core-effects-config-contracts.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/core\":\n    type: minor\n  \"@pluxel/rolldown\":\n    type: minor\n  \"@pluxel/workbench\":\n    type: minor\n---\n\n## Refresh the Workbench Federation profile\n\nUse Module Federation Vite 1.22.1 with Runtime, SDK and React Bridge 2.9.1 and Mantine 9.6.3. The exact producer and Shell compatibility checks remain enforced; rebuild renderer artifacts with the updated profile.\n\nKeep shared-surface import analysis, application-root scheduling and isolated declaration caches: real Mantine producer builds and upstream shared state still require these boundaries with the updated plugin.\n"
+    filename: refresh-federation-profile.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: minor\n---\n\n## Align development console polymorphism with test hosts\n\nAdd dependency inspection and default/consumer provider selection, persistent fork creation and removal, and synchronous running-state queries to the development console. Abstract requirements and typed fork targets use the existing identity and lifecycle rules; mutations return production domain results and application reports.\n"
+    filename: dev-console-polymorphism.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n  \"@pluxel/host-dev\":\n    type: major\n---\n\n## Preserve Vite source resolution and browser diagnostics\n\nEnable Vite tsconfig path resolution by default while respecting an explicit `false`. Classify\nalias-resolved CommonJS files through the same Node execution boundary as installed dependencies.\nReport browser imports of Node builtins immediately with their importer, while allowing explicit\nbrowser implementations and leaving server imports unchanged.\nNormalize Vite filesystem IDs consistently for recovery and host module classification, including\nWindows drive paths, duplicate POSIX slashes, and query/hash suffixes.\n\nRemove the unused Host-dev `hmr-log` entry and root log-schema exports. Application update reports\nand plugin lifecycle reports remain the authoritative development diagnostics.\n"
+    filename: development-resolution-boundaries.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: patch\n---\n\n## Restore HMR after installing a missing package\n\nKeep recovery watches active when package resolution searches overlapping ancestor directories, so installing a previously missing dependency automatically retries the failed application update.\n"
+    filename: hmr-package-install-watch.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: minor\n---\n\n## Recover failed candidates without mixing runtime and Workbench generations\n\nPrepare Workbench artifacts before catalog acceptance and activate them at the graph commit boundary. Rejected candidates preserve the running generation's Content and producer builds; superseded background validations cannot publish.\n\nHost Vite retains failed-candidate recovery dependencies independently of the committed graph, including new files, missing imports and package installation metadata. Fixing those dependencies automatically retries the candidate and restores dependent plugins.\n\nManagement clients can read and subscribe to independent update attempts. Workbench displays batch progress and bounded failure details in its header, preserving the distinction between rejected updates and current plugin health. Revoked Workbench sessions automatically reload the document after cleanup, with a bounded retry interval and manual fallback for repeated refreshes or authentication failures.\n"
+    filename: hmr-recovery-and-workbench-refresh.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: patch\n---\n\n## Report rejected HMR candidates through the Host logger\n\nHost development now reports errors from Vite hot-update handling through its existing structured diagnostics before propagating the original error to Vite. Semantic rejection retains the previous accepted artifact; failures while building an accepted producer plan continue to expose the Workbench producer failure state.\n"
+    filename: host-dev-hot-update-diagnostics.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: minor\n  \"@pluxel/rolldown\":\n    type: minor\n  \"@pluxel/services\":\n    type: patch\n---\n\n## Isolate Host development in its own Vite environment\n\nHost development owns the dedicated `pluxel` environment. Application modules, dynamic plugins, and the development console share its runner, source conditions, singleton identities, semantic collector, and queued HMR. Default SSR and third-party `ssrLoadModule` retain Vite's own environment and are unaffected by Host module policy; custom SSR factories can coexist.\n\nVite resolves modules before the Host environment chooses native Node evaluation for CommonJS, native modules, and explicit singletons. Vite owns the runner and cleanup. Services scope database source transforms and transport externalization to the Host environment, and HTTP diagnostics preserve the runner's source maps without reprocessing them through another environment's graph.\n\nRemove incidental public runner, classifier, and invalidation helpers from `@pluxel/host-dev/vite`. Use `host()` or the Services preset; combine `hostSingletons()` with that Host environment. The reserved `pluxel` environment factory cannot be replaced. Concrete source pipelines now bind their semantic collector to one named environment (default `ssr`). Legacy decorator syntax remains project-wide because Vite does not expose per-environment OXC options.\n\nInitial Host and recovery failures now render their original stack, nested causes, and aggregate errors in Vite's terminal message, preserving the original Error for Vite's reporting bookkeeping.\n\nHost and recovery diagnostics now share one internal structured logging entry that follows the current Host logger across replacement, falling back to the user's Vite logger before startup. It does not replace `customLogger` or install additional sinks.\n"
+    filename: host-dev-ssr-conditions.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/host-dev\":\n    type: major\n---\n\n## Keep candidate orchestration inside the development host\n\nStop exporting candidate creation, invalidation, source evaluation and recovery implementation helpers\nfrom `/vite`. Custom service attachments use `HostDevelopmentPluginApi`; the Host remains responsible\nfor admitting, committing and settling candidates.\n"
+    filename: host-development-surface-cleanup.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n  \"@pluxel/host-dev\":\n    type: patch\n---\n\n## Recover Workbench definition hot updates across edits, failures and file replacement\n\nRefresh standalone Workbench definitions and imported helpers within the same semantic generation as Plugin facts. Reject superseded transforms, discard failed parsing work, withdraw deleted publications, and preserve committed facts when a candidate is rejected. Generated Bridge and renderer projection files now use revision-specific paths.\n\nHost Vite development handles file creation and deletion through the same update queue as edits, allowing recreated definitions and their dependent plugins to recover without restarting dev.\n"
+    filename: workbench-hmr-generations.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/services\":\n    type: patch\n---\n\n## Use one Core metadata ABI for Plugin source\n\nPlugin and configuration lowering now emit only `@pluxel/core/toolchain` imports. Remove Runtime\npreset selection and configurable metadata helper imports. `pluginSourceVitePlugins()` provides the\ncomplete source transform and Vite resolution stack; `createPluginSourceVitePipeline()` additionally\nexposes its semantic collector. Host and service singleton policy belongs to their own Vite plugins.\n\nThe official service Vite preset explicitly installs server database source lowering, preserving\nchecked migration metadata without a Runtime preset.\n\nInstalled modules under `node_modules` contribute execution facts only when they contain a valid\nprelowered Core ABI declaration. Their ordinary source remains outside Plugin lowering. Settled\nsemantic scopes read committed Workbench facts, including asynchronous continuations after rollback.\nPrelowered evidence accepts minified static template strings and reads only the ABI identity fields;\nunrelated dependency expressions do not discard a statically proven definition.\n"
+    filename: core-source-toolchain.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Publish Node artifacts for every concurrent build\n\nDeduplicate compilation without skipping each consumer's output directory or native dependency\nreport. Concurrent builds of the same source now each receive their artifact and deployment facts.\n\nCompile native dependency bridges relative to the final artifact directory, not the disk cache.\nInclude the output layout in the cache identity so nested output directories remain loadable.\n\nKeep cached bytes leased until every concurrent consumer finishes publishing, including during cache eviction.\n"
+    filename: node-artifact-concurrent-consumers.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Preserve installed-package resolution failures\n\nOXC-backed resolution now reports an installed package's invalid or unreadable manifest and rejected exports with its importer and original cause. Ordinary missing packages still return no match.\n"
+    filename: oxc-resolution-diagnostics.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: minor\n---\n\n## Locate Plugin configuration in a selected application\n\nExtend `project.plugin()` with an explicit `application` context and an `inputs` section for config\nenvironment/file bindings, schema references, and the application `configRecords` expression. Support\ntargeted source-entry Plugins using the compiler's source-space identity rules. Application queries\nresolve actual package sources from the selected entry rather than substituting workspace packages.\n\nShare declaration facts between build transforms and inspection without evaluating application or\nschema factories. Preserve actionable source locations for analysis gaps and propagate exhausted\nread budgets as query failures. Existing workspace discovery and file ownership scopes stay unchanged.\n"
+    filename: plugin-application-inspection.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: minor\n---\n\n## Inspect Plugin source from ordinary TypeScript\n\nAdd `@pluxel/rolldown/inspect` with `openProject()` for workspace overview, package-root Plugin\ndiscovery, PluginPart/config/dependency navigation, declared package checks, and reverse file ownership.\nQueries reuse compiler semantics without evaluating project code, return source locations and explicit\nanalysis gaps, and reread source between calls. Results use existing Plugin identity and remain detached\nfrom the query scope and running applications.\n\nCorrect workspace parsing so YAML lists after the pnpm `packages` block are not treated as workspace\nmembers.\n"
+    filename: plugin-project-inspection.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Infer Plugin package identity from TypeScript source exports\n\nUse the same source selection for package inference and explicit package plans. Workspace packages\nwhose root export points directly, or through `import` / `default`, to TypeScript retain package-root\nidentity without a duplicate `@pluxel/hmr` condition. Recognize `@pluxel/source` and `development`\nconsistently, while excluding declaration files and ordinary built JavaScript exports.\n"
+    filename: plugin-source-export-inference.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Reuse exact source parses across transform stages\n\nKeep original and transformed module parses in the same bounded cache instead of evicting each\nother. Reuse imported PluginPart analysis within one resolution operation. Reject standalone OXC\nrecovery ASTs with syntax errors so malformed source cannot produce accepted lowering facts.\n"
+    filename: toolchain-parse-cache.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Adopt the tsdown 0.23 build handle\n\nThe official CLI runner consumes the native build handle while preserving one-shot hook completion and bundle cleanup, including cleanup errors. Watch remains owned by the command process and native tsdown controls. Remove the obsolete dependency diagnostic field; use tsdown's `deps.neverBundle` configuration.\n"
+    filename: tsdown-handle-runner.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Keep Vite browser and server resolution separate\n\nPreserve Vite's browser/server and development/production export conditions when enabling Pluxel source imports. Browser builds no longer select Node-only or development-only dependency entries.\n"
+    filename: vite-consumer-conditions.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Preserve resolved Vite environment values in conditional compilation\n\nRegister preprocessor configuration hooks at the top level and use native environment filtering for transforms. Source pipelines now honor the selected Vite mode and its loaded environment values when choosing conditional branches.\n"
+    filename: vite-preprocessor-environment.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Report selected Workbench runtime manifest failures\n\nWorkbench publisher and static application checks now report the selected package manifest or workspace catalog path and retain the underlying read or parse error. An inaccessible selected path no longer causes an ancestor manifest or catalog to be used; malformed JSON and YAML identify the file that failed.\n"
+    filename: workbench-manifest-failure-paths.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n# Match renderer JSX to the shared Shell runtime\n\nUse production-compatible JSX calls even for development renderers, so a packaged Shell can render them without jsxDEV. Invalidate cached renderer revisions.\n"
+    filename: workbench-renderer-jsx-runtime.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n---\n\n## Keep implementation modules private\n\nRemove unused Workbench `/paths`, `/internal/shell` and `/internal/definition` exports and the unused\nRolldown `/internal/static-config-environment-vite` adapter. Package-local white-box tests import\nsource modules directly. The generated browser React Bridge ABI remains isolated at\n`@pluxel/workbench/internal/react`.\n\nWorkbench owner publication now captures the owner directly in the frozen `publish()` capability, removing the intermediate `WorkbenchService` wrapper while preserving PluginPart rejection and backend admission. Remove the unused `createWorkbenchBackend` factory and `WorkbenchBackendFactory` type; custom internal test assembly still injects a backend through the shared service installation path. Shell asset paths are owned locally by Workbench.\n"
+    filename: workbench-toolchain-entry-cleanup.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/rolldown\":\n    type: patch\n---\n\n## Fingerprint type-only package exports without a runtime entry\n\nWorkbench artifact builds now include installed declaration-only packages such as `@types/react` in the dependency revision without trying to resolve a nonexistent JavaScript root. Packages that declare a runtime root still fail on a broken export.\n"
+    filename: workbench-type-only-dependency-fingerprint.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n---\n\n## Expose the Elysia application directly and keep its dispatcher internal\n\nUse `ElysiaApp`, `elysia()` and `createElysiaHandler(host)` from\n`@pluxel/services/elysia`. Node applications use `listenElysia(host, options?)`\nfrom `/elysia/node`; the srvx listener owns Host shutdown and needs no duplicate\nfetch handler. Vite applications use `elysiaDevelopment()` from `/elysia/vite`.\nRemove the HTTP service aliases and public dispatcher/carrier extension surface.\nRoute ownership, cancellation and WebSocket drain semantics remain unchanged.\n"
+    filename: elysia-service-surface.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: patch\n---\n\n## Adopt current Elysia, srvx and LogTape contracts\n\nUse Elysia 2 beta.19's Web Standard adapter and bind the Plugin-owned server through\nits request hook while keeping cancellation, WebSocket ownership and Host shutdown.\nUse srvx 1.0.5 for Node listeners. Delegate exit-hook disposal and file value rendering\nto LogTape 2.3.8, removing local listener interception and formatter workarounds.\n\nPin TypeBox to 1.3.23 until Elysia no longer uses the Validator internals removed in 1.3.24; preserve schema compilation before publication and cover it with real requests.\n"
+    filename: elysia-srvx-logtape-upgrade.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n---\n\n## Enforce persistence paths, readonly writes and consistent directory queries\n\nPersistence rejects absolute paths, traversal and ambiguous path segments instead of repairing them.\nNamespaces retain literal names including `@pluxel`; any existing files in the former sanitized\n`_pluxel` namespace require a one-time move before using the new backend. No fallback reader is installed.\nMemory and filesystem backends list sorted immediate children and stat directories. Readonly workspace\nand custom service backends reject writes and deletes even without preflight. Filesystem roots are fixed\nwhen the backend is created.\n\n## Forward Host cancellation without losing HTTP carrier identity\n\nMounted Host endpoints receive the root invocation AbortSignal combined with client cancellation.\nCarrier address lookup and WebSocket upgrades continue to use the original ingress request.\n"
+    filename: enforce-persistence-and-http-contracts.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: patch\n---\n\n## Keep successful WebSocket upgrades out of shell fallbacks\n\nBusiness WebSocket connections now complete their handshake when a host shell fallback is installed. A successful Elysia upgrade is treated as a handled request instead of falling through to the shell.\n"
+    filename: http-websocket-fallback.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: minor\n---\n\n## Keep operation log cursors in the Logging domain\n\nAdd markLogs, readLogs and cancellable waitForLogs over existing bounded stores. JSON cursors retain\nHost and stream identity; replacement, reset and retention gaps remain explicit failures. Waiting\nreleases its subscription on delivery, discontinuity or cancellation and never reconfigures logging.\nRemove the unused internal Runtime launcher preinstallation bridge; Host owns logging preparation\nand disposal through the ordinary logging service descriptor.\n"
+    filename: logging-domain-cursors.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: patch\n  \"@pluxel/services\":\n    type: major\n---\n\n## Consolidate Management integration entries\n\nRemove unused and duplicate implementation-file exports, including the redundant `/endpoint` alias; use the package root for carrier endpoints. Official integrations now share `/internal` for portable presentation, `/internal/http` for HTTP assembly and `/internal/test` for cross-package white-box tests. Existing browser client, protocol, session and React imports use their public entries. Management-owned regression tests live with Management and no longer require published private implementation paths.\n\nManagement imports Cap’n Web, Logging wire types and Host fork/report operations directly from their owning packages, removing transparent forwarding modules and unused helpers. Config usecases use the existing wire result types directly. Workbench Shell asset constants move out of Management’s private presentation contract.\n"
+    filename: management-entry-consolidation.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n---\n\n## Keep management sessions independent of Workbench installation\n\nManagement no longer imports Workbench types or declares it as an optional peer. Session bootstrap\ntypes preserve the existing wire variants and expose an opaque RPC target by default. Shells that\nconsume Workbench methods bind the existing session client types to `WorkbenchSessionApi`; the\nofficial Workbench app binds this once in its local runtime entry.\n\nServer composition accepts the authenticated Management principal and a borrowed `{ target, dispose }`\nsession, without depending on Workbench's server implementation.\n"
+    filename: management-session-type-boundary.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: patch\n---\n\n# Fix Workbench sessions behind Portless\n\nUse the configured Portless browser origin for management WebSocket admission while preserving physical listener, TLS and peer-address facts.\n"
+    filename: portless-management-origin.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n  \"@pluxel/workbench\":\n    type: major\n  \"@pluxel/auth\":\n    type: major\n  \"@pluxel/wretch\":\n    type: major\n  \"@pluxel/fonts\":\n    type: major\n---\n\n## Make pure-data RPC contracts explicit\n\nManagement, Workbench and official Plugin RPC methods that return data or receipts now use `*Dto`.\nThis includes authentication `stateDto`/`submitDto`, session `logoutDto`, Workbench `layoutDto`,\nContent `subscribeDto`/`loadDto`/`runDto`, and Plugin `snapshotDto` and data-returning mutations.\nVoid commands, capability acquisition, subscriptions returning handles, mixed bootstrap/open results,\nlocal Plugin methods and local client facades retain their domain names. No previous RPC names remain\nas aliases. Management protocol major is now 7 and the session profile is 2; clients and servers must\nbe deployed together.\n\nProducers validate their DTO output with existing domain parsers or the new\n`assertWorkbenchDto()` from `@pluxel/workbench/server`. The assertion checks bounded pure data without\ncopying, freezing, disposing or changing its identity; clients continue to validate and own received\nvalues. Content subscription registration remains owned by its root even though `subscribeDto`\nreturns the initial data snapshot.\n\nRPC targets keep internal lifecycle and implementation helpers off their remotely callable surface.\nAuthor examples, UI consumers, tests and API documentation use the same contracts.\n"
+    filename: rpc-dto-contracts.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: major\n  \"@pluxel/services\":\n    type: major\n---\n\n## Consume RPC values at their owning boundary\n\nWorkbench replaces `detachWorkbenchPortableValue()` and `WorkbenchDetached<T>` with\n`consumeWorkbenchValue()` and `WorkbenchSnapshot<T>`. Queries, mutations and manual value reads\ntransfer ownership of their entire result tree. The boundary validates, removes transport metadata,\nfreezes the decoded tree in place and releases its transport result, without a second deep copy.\nLocal values must be owned or already immutable; callers must not pass borrowed mutable state or\nseparately dispose a consumed result. Null-prototype objects retain their prototype. Hidden data\nproperties and non-removable transport metadata are rejected.\n\nManagement clients consume transport envelopes before domain parsing. Domain parsers construct the\nfinal immutable snapshot directly, avoiding an intermediate copied tree; opaque config, log and form\nvalues remain independently copied. Portable values reject sparse arrays, extra array properties,\naccessors and non-enumerable payload fields. Lifecycle, cache isolation and late-result disposal remain\nowned by the existing session and renderer scopes.\n"
+    filename: rpc-value-ownership.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n---\n\n## Return Command Result from runtime services\n\nRoot catalog and carrier mount execution now return `Result<T, CommandFailure>`.\nOwner admission, withdrawal, and execution faults have explicit failure branches, while\ncompleted command receipts remain intact. Management commands define recoverable missing\nplugins as `REJECTED` and retain lifecycle failures as `DEPENDENCY`.\nUnreadable trusted command contexts settle as `INTERNAL` with the original local cause.\n"
+    filename: services-command-result.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: patch\n---\n\n# Preserve srvx native client cancellation\n\nNode listeners use srvx request cancellation directly instead of installing a second disconnect listener. Handlers retain the original transport abort reason, including socket errors such as `ECONNRESET`; cancellation is identified by `request.signal.aborted`, not a fixed error name. Owner shutdown cancellation and request address mapping remain intact.\n"
+    filename: srvx-native-request-cancellation.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: patch\n  \"@pluxel/services\":\n    type: patch\n---\n\n## Validate packaged Shell assets and preserve static IO failures\n\nShell builds now verify the declared entry, complete manifest references and files in the selected package layout. Invalid manifests fail instead of selecting another entry. Static file IO errors return HTTP 500 with server-side diagnostics; missing files remain 404 or eligible SPA navigation fallbacks.\n"
+    filename: strict-shell-assets.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: major\n---\n\n## Vault uses only the current storage contract\n\nRemove `legacyNamespaces` and startup namespace migration. Encrypted snapshots require version 2 with per-record revisions; unversioned documents are no longer converted.\n"
+    filename: vault-current-format.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: major\n  \"@pluxel/services\":\n    type: patch\n---\n\n## Separate management transport from the Workbench Shell\n\n`workbenchHttp()` now owns only the Shell fallback. Compose `managementHttp({ bindings })`\nexplicitly for authenticated sessions and artifacts, declaring the `WorkbenchHost` preparation\ndependency exported from `@pluxel/workbench/server`. The official services preset performs this\ncomposition and keeps management HTTP/WebSocket access when Workbench is disabled.\n\nAdd `workbenchSourceShell({ entry })` to the existing development entry for explicit source Shell\nserving through the current Vite server. Application frontend transforms remain application-owned.\nThe Shell service loads packaged assets on its first static request, allowing source development\nwithout a prebuilt UI; the standalone packaged handler still validates assets when created.\n\nHTTP mount factories expose the Host service contract without publishing their internal HTTP carrier dependency types, so importing their declarations does not pull Elysia into unrelated consumer type checking.\n\nShell HTML escapes all asset URL attributes, preserving source paths that contain HTML entities\nand preventing URL punctuation from being interpreted as markup.\n"
+    filename: workbench-http-composition.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/services\":\n    type: patch\n---\n\n# Share the Workbench RpcTarget in development\n\nResolve source publishers' Cap’n Web imports from the selected Workbench installation, so linked workspaces with separate copies can open Views without losing native RpcTarget identity.\n"
+    filename: workbench-rpc-native-identity.md
+    v: 0.0.0
+  - content: "---\npackages:\n  valibot-form:\n    type: patch\n---\n\n## Preserve scroll position when focusing collection inputs\n\nArray and record draft inputs retain keyboard focus without scrolling their containing panels or the page when the form renders or entries change.\n"
+    filename: form-focus-scroll.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: patch\n  valibot-form:\n    type: major\n---\n\n## Acquire remote values only after React commit\n\n`useRemoteValue` no longer starts reads or subscriptions during render. StrictMode replay shares\none owner; dependency changes isolate reads and late subscriptions are released after unmount.\nThe imperative `createRemoteValue` retains eager acquisition and explicit disposal.\n\n## Type AutoForm options against input drafts\n\nSchema forms now infer Valibot input values instead of transformed outputs. Both form modes\naccept typed TanStack options and infer submit callbacks. `submit()` returns its completion\nPromise and propagates callback rejection; DOM-submit callbacks remain responsible for displaying failures.\n"
+    filename: ui-draft-and-remote-ownership.md
+    v: 0.0.0
+  - content: "---\npackages:\n  valibot-form:\n    type: patch\n---\n\n## Share resolved defaults across the form\n\nSchema defaults are resolved once for the controls, form context and reset, keeping values from dynamic default factories consistent. An explicit `defaultValues: undefined` uses schema defaults just like an omitted option.\n"
+    filename: valibot-form-defaults.md
+    v: 0.0.0
+  - content: "---\npackages:\n  valibot-form:\n    type: patch\n---\n\n## Bind nested form fields to TanStack paths\n\nObject, array, union and record editors now bind addressable child fields directly to TanStack Form, preserving independent interaction metadata and field errors. Array operations use TanStack metadata handling; reset also clears local collection drafts and inactive union values, including resets invoked from submission callbacks.\n\nWorkbench config and Content action forms display server errors at mounted field paths, retain unaddressable issues in a summary, and permit correction and retry. Inputs associate field errors with their accessible descriptions.\n\nUnion and Record leaf edits avoid rerendering unchanged sibling controls. Picklist options use Mantine's current render callback, and multi-value picker errors use Mantine's input wrapper to associate the actual input with its error message.\n\nLiteral record keys retain their original meaning. Unaddressable top-level keys are shown as read-only instead of writing to an incorrect nested path; their original values remain in submitted data.\n"
+    filename: valibot-form-nested-binding.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/auth\":\n    type: patch\n---\n\n## Preserve unexpected credential hashing failures\n\nCredential setup returns expected input and hashing-capacity failures through its existing DTO codes.\nUnexpected crypto failures now reject with a safe diagnostic message instead of claiming the password\nis invalid; credentials are neither persisted nor applied. The setup RPC boundary strips diagnostic\ncauses from unexpected mutation rejections while preserving the existing expected-failure DTOs.\nPlugin author guidance and executable\nofficial-plugin examples explain selective Better Result adaptation and transport/resource boundaries.\n"
+    filename: plugin-result-guidance.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: major\n---\n\n## Use native Cap’n Web ownership in isolated RPC tests\n\nRemove `createLocalRpcClient()` from `@pluxel/workbench/test` and its borrowed-target proxy.\nPure RPC tests use `new RpcStub(new Target())` from `capnweb`, with the library's native\nreference disposal semantics. Workbench testing types continue to describe Workbench entries and leases.\n"
+    filename: remove-local-rpc-test-wrapper.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: patch\n---\n\n## Correlate Workbench factory failures\n\nWorkbench open failures now distinguish invalid and reused targets from arbitrary factory exceptions. Factory failures expose a diagnostic id linked to the server log, without sending exception details to the browser.\n"
+    filename: workbench-factory-diagnostics.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: patch\n---\n\n# Fix packaged Shell lazy assets\n\nBuild lazy imports and preload URLs under the Workbench asset mount instead of the application root.\n"
+    filename: workbench-lazy-assets.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: minor\n---\n\n## Prefer declared Workbench route paths and diagnose collisions\n\nWorkbench exposes all committed routes in its global layout, including parameterized routes and pages outside navigation. The Shell uses declared paths below its UI base URL when unambiguous. Overlapping routes from different plugin instances and reserved Shell paths use canonical plugin URLs with visible collision diagnostics. Canonical URLs remain available, and aliases are recomputed after publication changes.\n"
+    filename: workbench-readable-routes.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: patch\n---\n\n## Improve Workbench sidebar scrolling and document navigation\n\nThe built-in Workbench overview scrolls independently with fixed tabs. Configuration and Markdown headings appear in a separate searchable outline tab even when the editor does not overflow. Outline tracking scrolls only its own list, uses the available sidebar height, and follows the active editor. Sidebar tab switches retain mounted scroll positions.\n"
+    filename: workbench-sidebar-outline.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: patch\n---\n\n## Fill the available Workbench space for federated pages\n\nGive federated View and Attachment renderers a sized mount container. Pages now fill their editor pane instead of shrinking to their content width, and Pane Kit responds to the actual available width when choosing columns or drawers.\n"
+    filename: workbench-view-fill.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/workbench\":\n    type: minor\n---\n\n## Simplify latest-state RPC subscriptions\n\nAdd `createWorkbenchWatch()` to `@pluxel/workbench/server`. Plugin targets connect a local\nrevision subscription to a remote observer without implementing a separate subscription target.\nThe helper owns callback references, invocation results and local registration cleanup, closes on\nopen abort or observer failure, and bounds notification work to one in-flight callback and the latest\npending revision. It is intended for snapshot invalidation, not lossless event delivery.\n"
+    filename: workbench-watch.md
+    v: 0.0.0
+core:packages:
+  - changelogIds:
+      - async-composition-primitives.md
+      - async-toolkit.md
+    id: npm:@pluxel/async
+    updated: true
+  - changelogIds:
+      - build-manifest-ownership.md
+      - composable-plugin-host.md
+      - composable-runtime-services.md
+      - current-source-layout.md
+      - dev-application-readiness.md
+      - fixture-and-build-resource-contracts.md
+      - host-development-convergence.md
+      - host-retirement-and-context-access.md
+      - strict-config-inputs.md
+      - strict-workspace-discovery.md
+      - unified-test-host.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/cli
+    updated: true
+  - changelogIds:
+      - command-result-kernel.md
+      - commands-capnweb-adapter.md
+      - commands-carrier-handlers.md
+      - commands-mcp-adapter.md
+      - commands-protocol-entries.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/commands
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - host-retirement-and-context-access.md
+    id: npm:@pluxel/context
+    updated: true
+  - changelogIds:
+      - application-factories.md
+      - composable-plugin-host.md
+      - composable-runtime-services.md
+      - consolidate-host-services.md
+      - production-node-artifacts.md
+      - service-test-host-and-starter.md
+      - services-entry-boundaries.md
+      - unified-test-host.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/create
+    updated: true
+  - changelogIds:
+      - application-factories.md
+      - composable-plugin-host.md
+      - composable-runtime-services.md
+      - dev-console-execution.md
+      - host-development-convergence.md
+      - host-dynamic-source.md
+      - host-entry-consolidation.md
+      - host-persistent-document-safety.md
+      - host-provider-shutdown.md
+      - host-retirement-and-context-access.md
+      - host-source-diagnostics.md
+      - logging-package-boundaries.md
+      - plugin-lifecycle-diagnostics.md
+      - plugin-third-party-version-boundaries.md
+      - shared-framework-peers.md
+      - unified-plugin-inputs.md
+      - workbench-shared-capnweb-admission.md
+    id: npm:@pluxel/host
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - core-effects-config-contracts.md
+      - host-persistent-document-safety.md
+      - host-retirement-and-context-access.md
+      - logging-package-boundaries.md
+      - plugin-third-party-version-boundaries.md
+      - refresh-federation-profile.md
+      - unified-plugin-inputs.md
+      - unified-test-host.md
+    id: npm:@pluxel/core
+    updated: true
+  - changelogIds:
+      - application-factories.md
+      - composable-plugin-host.md
+      - composable-runtime-services.md
+      - dev-application-readiness.md
+      - dev-console-execution.md
+      - dev-console-polymorphism.md
+      - development-resolution-boundaries.md
+      - hmr-package-install-watch.md
+      - hmr-recovery-and-workbench-refresh.md
+      - host-dev-hot-update-diagnostics.md
+      - host-dev-ssr-conditions.md
+      - host-development-convergence.md
+      - host-development-surface-cleanup.md
+      - host-entry-consolidation.md
+      - host-source-diagnostics.md
+      - shared-framework-peers.md
+      - strict-workspace-discovery.md
+      - unified-plugin-inputs.md
+      - update-supported-dependencies.md
+      - workbench-hmr-generations.md
+    id: npm:@pluxel/host-dev
+    updated: true
+  - changelogIds:
+      - application-factories.md
+      - build-manifest-ownership.md
+      - composable-plugin-host.md
+      - composable-runtime-services.md
+      - core-source-toolchain.md
+      - dev-console-execution.md
+      - development-resolution-boundaries.md
+      - fixture-and-build-resource-contracts.md
+      - host-dev-ssr-conditions.md
+      - host-entry-consolidation.md
+      - host-retirement-and-context-access.md
+      - node-artifact-concurrent-consumers.md
+      - oxc-resolution-diagnostics.md
+      - plugin-application-inspection.md
+      - plugin-project-inspection.md
+      - plugin-source-export-inference.md
+      - plugin-third-party-version-boundaries.md
+      - refresh-federation-profile.md
+      - services-entry-boundaries.md
+      - shared-framework-peers.md
+      - strict-workspace-discovery.md
+      - toolchain-parse-cache.md
+      - tsdown-handle-runner.md
+      - unified-plugin-inputs.md
+      - unified-test-host.md
+      - vite-consumer-conditions.md
+      - vite-preprocessor-environment.md
+      - workbench-hmr-generations.md
+      - workbench-manifest-failure-paths.md
+      - workbench-renderer-jsx-runtime.md
+      - workbench-shared-capnweb-admission.md
+      - workbench-toolchain-entry-cleanup.md
+      - workbench-type-only-dependency-fingerprint.md
+    id: npm:@pluxel/rolldown
+    updated: true
+  - changelogIds:
+      - application-factories.md
+      - commands-carrier-handlers.md
+      - composable-plugin-host.md
+      - composable-runtime-services.md
+      - consolidate-host-services.md
+      - core-source-toolchain.md
+      - dev-console-execution.md
+      - elysia-service-surface.md
+      - elysia-srvx-logtape-upgrade.md
+      - enforce-persistence-and-http-contracts.md
+      - host-dev-ssr-conditions.md
+      - host-development-convergence.md
+      - host-retirement-and-context-access.md
+      - http-websocket-fallback.md
+      - logging-domain-cursors.md
+      - logging-package-boundaries.md
+      - management-entry-consolidation.md
+      - management-session-type-boundary.md
+      - portless-management-origin.md
+      - production-node-artifacts.md
+      - rpc-dto-contracts.md
+      - rpc-value-ownership.md
+      - service-test-host-and-starter.md
+      - services-command-result.md
+      - services-entry-boundaries.md
+      - shared-framework-peers.md
+      - srvx-native-request-cancellation.md
+      - strict-config-inputs.md
+      - strict-shell-assets.md
+      - unified-plugin-inputs.md
+      - unified-test-host.md
+      - vault-current-format.md
+      - workbench-http-composition.md
+      - workbench-rpc-native-identity.md
+      - workbench-shared-capnweb-admission.md
+    id: npm:@pluxel/services
+    updated: true
+  - changelogIds:
+      - fixture-and-build-resource-contracts.md
+      - host-retirement-and-context-access.md
+      - unified-test-host.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/test
+    updated: true
+  - changelogIds:
+      - form-focus-scroll.md
+      - ui-draft-and-remote-ownership.md
+      - update-supported-dependencies.md
+      - valibot-form-defaults.md
+      - valibot-form-nested-binding.md
+    id: npm:valibot-form
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - plugin-result-guidance.md
+      - plugin-third-party-version-boundaries.md
+      - rpc-dto-contracts.md
+      - unified-plugin-inputs.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/auth
+    updated: true
+  - changelogIds:
+      - application-factories.md
+      - composable-runtime-services.md
+      - consolidate-host-services.md
+      - dev-console-execution.md
+      - management-entry-consolidation.md
+      - plugin-third-party-version-boundaries.md
+      - refresh-federation-profile.md
+      - remove-local-rpc-test-wrapper.md
+      - rpc-dto-contracts.md
+      - rpc-value-ownership.md
+      - service-test-host-and-starter.md
+      - services-entry-boundaries.md
+      - shared-framework-peers.md
+      - strict-shell-assets.md
+      - ui-draft-and-remote-ownership.md
+      - unified-plugin-inputs.md
+      - workbench-factory-diagnostics.md
+      - workbench-http-composition.md
+      - workbench-lazy-assets.md
+      - workbench-readable-routes.md
+      - workbench-shared-capnweb-admission.md
+      - workbench-sidebar-outline.md
+      - workbench-toolchain-entry-cleanup.md
+      - workbench-view-fill.md
+      - workbench-watch.md
+    id: npm:@pluxel/workbench
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - plugin-third-party-version-boundaries.md
+      - unified-plugin-inputs.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/vault-admin
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - plugin-third-party-version-boundaries.md
+      - rpc-dto-contracts.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/wretch
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/canvas
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/echarts
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - plugin-third-party-version-boundaries.md
+      - rpc-dto-contracts.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/fonts
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/takumi
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/takumi-markdown
+    updated: true
+  - changelogIds:
+      - composable-runtime-services.md
+      - update-supported-dependencies.md
+    id: npm:@pluxel/takumi-markdown-typst
+    updated: true
+npm:packages:
+  - id: npm:@pluxel/async
+  - id: npm:@pluxel/cli
+  - id: npm:@pluxel/commands
+  - id: npm:@pluxel/context
+  - id: npm:@pluxel/create
+  - id: npm:@pluxel/host
+  - id: npm:@pluxel/core
+  - id: npm:@pluxel/host-dev
+  - id: npm:@pluxel/rolldown
+  - id: npm:@pluxel/services
+  - id: npm:@pluxel/test
+  - id: npm:valibot-form
+  - id: npm:@pluxel/auth
+  - id: npm:@pluxel/workbench
+  - id: npm:@pluxel/vault-admin
+  - id: npm:@pluxel/wretch
+  - id: npm:@pluxel/canvas
+  - id: npm:@pluxel/echarts
+  - id: npm:@pluxel/fonts
+  - id: npm:@pluxel/takumi
+  - id: npm:@pluxel/takumi-markdown
+  - id: npm:@pluxel/takumi-markdown-typst

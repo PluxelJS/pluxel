@@ -1,0 +1,13 @@
+---
+title: Show application readiness in dev discovery
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/host-dev":
+    version: 1.0.0
+  "@pluxel/cli":
+    version: 2.0.0
+---
+
+## Show application readiness in dev discovery
+
+`pluxel dev instances` now reports whether the live Vite console has a ready Host, is applying an update, or has no admitted Host. The existing recent update snapshot remains visible when initial admission fails.

@@ -1,0 +1,17 @@
+---
+title: Admit shared Workbench Cap'n Web before connecting module identity
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/host":
+    version: 1.0.0
+  "@pluxel/rolldown":
+    version: 2.0.0
+  "@pluxel/services":
+    version: 1.0.0
+  "@pluxel/workbench":
+    version: 1.0.0
+---
+
+## Admit shared Workbench Cap'n Web before connecting module identity
+
+Workbench now declares `capnweb` as a peer, while final Host applications provide the runtime directly. Development, static application builds, and production dynamic sources check a target publisher's peer and actual installed version before connecting its import to the Host Workbench module. A base library that supplies a Workbench target class is checked by its peer declaration even when it has no generated publication marker. Independent private RPC packages keep their own resolution. Source builds also require a matching development copy; installed publishers only require their published peer and installed runtime.

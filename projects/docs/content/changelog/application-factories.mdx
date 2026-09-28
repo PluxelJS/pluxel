@@ -1,0 +1,37 @@
+---
+title: Declare applications with one deferred configuration factory
+date: 2026-09-28T11:00:58.556Z
+packages:
+  "@pluxel/host":
+    version: 1.0.0
+  "@pluxel/host-dev":
+    version: 1.0.0
+  "@pluxel/rolldown":
+    version: 2.0.0
+  "@pluxel/services":
+    version: 1.0.0
+  "@pluxel/workbench":
+    version: 1.0.0
+  "@pluxel/create":
+    version: 2.0.0
+---
+
+## Declare applications with one deferred configuration factory
+
+Applications now default-export `defineHostApplication(startup => ({ ... }))` from `@pluxel/host`.
+The factory returns the complete application configuration, synchronously or asynchronously;
+plain application exports and nested `configure` merging are removed. Each Host receives a
+shallow immutable startup snapshot shared by its factory and `prepare` callback. The helper
+preserves the inferred factory result and checks unsupported top-level fields.
+
+## Keep development and production assembly consistent
+
+Builds inspect inline factories without executing them and reject production plugin catalogs
+that cannot be resolved statically. Module-level and imported constant plugin arrays remain
+supported. Explicit environment and file bindings are described in the unified configuration change.
+
+Re-evaluating an application factory replaces its Host; fixed-catalog execution reports this as
+`host-reload`. Dynamic source-only updates retain catalog HMR when the application factory is
+unchanged. Factory evaluation failures retain the running Host; failed replacement preparation
+recreates a Host from the previous successful factory. The starter and application documentation
+use the same factory declaration.
