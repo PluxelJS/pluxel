@@ -129,7 +129,7 @@ const user = await users.getOrLoad(userId, async () => {
 
 provider / scope 设置稳定策略，`get()` / `getOrLoad()` 可以按次覆盖 `readPolicy`。
 `set(key, value, { ttlMs })` 按值覆盖 TTL，`0` 表示不过期。
-subscriber 的 `AbortSignal` 只取消自己的等待，不取消其他 subscriber 的共享工作。
+subscriber 的 `AbortSignal` 只取消自己的等待，不取消其他 subscriber 的共享工作。等待取消时原样 reject `signal.reason`（包括非 Error 值）；未指定 reason 时为原生 `AbortError`。
 `global` 共享值和同进程 single-flight，handle 仍绑定各自 caller；最后一个 owner 停止后清理 local registration，backend 值按 TTL 存续。
 
 ## Backend failure policy

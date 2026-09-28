@@ -1688,6 +1688,9 @@ importers:
 
   plugins/cache:
     dependencies:
+      '@pluxel/async':
+        specifier: workspace:^
+        version: link:../../packages/async
       valibot:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)

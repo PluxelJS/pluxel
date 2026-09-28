@@ -44,7 +44,9 @@ TTL 与 SIEVE 正交。TTL 使用绝对 `expiresAt` 并在读取时惰性删除�
 2. 多个 get-or-load 合并 backend 与 loader；
 3. cache-and-refresh 复用相同 single-flight；
 4. `set/delete/clear` 通过 mutation barrier 等待读取，迟到结果不会复活已失效值；
-5. subscriber AbortSignal 只取消当前等待，不取消其他 subscriber 的共享工作。
+5. subscriber AbortSignal 只取消当前等待，不取消其他 subscriber 的共享工作；等待复用 `@pluxel/async/wait`，原样保留 `signal.reason`。
+
+这里的 flight map 同时供 mutation barrier、容量限制和统计读取，且 get/getOrLoad/refresh 具有不同操作语义，保留在 cache coordinator 内；不为复用通用 singleflight 增加第二份 key/任务 registry。
 
 达到 `maxInFlight` 时抛出 `CacheBusyError`，不创建无界等待队列。rejected result 和 `undefined` 不缓存。
 async set 先成功写 backend，再发布 local。

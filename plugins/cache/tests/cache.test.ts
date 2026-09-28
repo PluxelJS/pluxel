@@ -303,37 +303,65 @@ describe('@pluxel/cache', () => {
 		}
 	})
 
-	it('coalesces an external miss and preserves per-subscriber abort', async () => {
-		{
-			await using host = await createHost()
+	it.each([undefined, 'request ended', { code: 'REQUEST_ENDED' }])(
+		'coalesces an external miss and preserves per-subscriber abort: %j',
+		async (reason) => {
+			{
+				await using host = await createHost()
 
-			await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
-			const backend = host.require(TestCacheBackendPlugin)
-			const a = host.require(ConsumerA).cache.global
-			const b = host.require(ConsumerB).cache.global
-			const external = deferred<void>()
-			backend.getGate = external.promise
-			let loads = 0
+				await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
+				const backend = host.require(TestCacheBackendPlugin)
+				const a = host.require(ConsumerA).cache.global
+				const b = host.require(ConsumerB).cache.global
+				const external = deferred<void>()
+				backend.getGate = external.promise
+				let loads = 0
 
-			const plainRead = a.get('2')
-			const controller = new AbortController()
-			const aborted = b.getOrLoad('2', async () => ({ id: '2', name: 'Grace' }), {
-				signal: controller.signal,
-			})
-			const surviving = a.getOrLoad('2', async () => {
-				loads++
-				return { id: '2', name: 'Grace' }
-			})
-			controller.abort()
-			external.resolve()
+				const plainRead = a.get('2')
+				const controller = new AbortController()
+				const aborted = b.getOrLoad('2', async () => ({ id: '2', name: 'Grace' }), {
+					signal: controller.signal,
+				})
+				const surviving = a.getOrLoad('2', async () => {
+					loads++
+					return { id: '2', name: 'Grace' }
+				})
+				controller.abort(reason)
+				external.resolve()
 
-			await expect(aborted).rejects.toMatchObject({ name: 'AbortError' })
-			expect(await plainRead).toBeUndefined()
-			expect(await surviving).toEqual({ id: '2', name: 'Grace' })
-			expect(backend.metrics.gets).toBe(1)
-			expect(backend.metrics.sets).toBe(1)
-			expect(loads).toBe(1)
-		}
+				await expect(aborted).rejects.toBe(controller.signal.reason)
+				expect(await plainRead).toBeUndefined()
+				expect(await surviving).toEqual({ id: '2', name: 'Grace' })
+				expect(backend.metrics.gets).toBe(1)
+				expect(backend.metrics.sets).toBe(1)
+				expect(loads).toBe(1)
+			}
+		},
+	)
+
+	it('cancels an active subscriber while preserving the shared loader failure', async () => {
+		await using host = await createHost()
+		await startPlugins(host, [TestCacheBackendPlugin, CachePlugin, ConsumerA])
+		const cache = host.require(ConsumerA).cache
+		const started = deferred<void>()
+		const result = deferred<string>()
+		const controller = new AbortController()
+		const pending = cache.getOrLoad(
+			'active-abort',
+			() => {
+				started.resolve()
+				return result.promise
+			},
+			{ signal: controller.signal },
+		)
+		await started.promise
+		const surviving = cache.getOrLoad('active-abort', () => 'must not run')
+		const failure = new Error('upstream failed')
+		controller.abort('request ended')
+		await expect(pending).rejects.toBe('request ended')
+		result.reject(failure)
+		await expect(surviving).rejects.toBe(failure)
+		await expect(cache.getOrLoad('active-abort', () => 'recovered')).resolves.toBe('recovered')
 	})
 
 	it('supports cache-first, cache-and-refresh, and remote-first async reads', async () => {

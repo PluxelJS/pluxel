@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { deserialize, serialize } from 'node:v8'
+import { waitFor } from '@pluxel/async/wait'
 import {
 	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
@@ -1422,7 +1423,7 @@ class AsyncView extends CacheViewBase {
 		if (active) {
 			this.resolved.bucket.stats.deduplicated++
 			try {
-				const joined = await waitFor(active as Promise<V | undefined>, options.signal)
+				const joined = await waitFor(active as Promise<V | undefined>, { signal: options.signal })
 				this.assertUsable()
 				if (joined !== undefined) return joined
 				backendAlreadyChecked = true
@@ -1484,7 +1485,7 @@ class AsyncView extends CacheViewBase {
 			return value
 		})
 		try {
-			const value = await waitFor(pending, options.signal)
+			const value = await waitFor(pending, { signal: options.signal })
 			this.assertUsable()
 			return value
 		} catch (error) {
@@ -1650,7 +1651,7 @@ class AsyncView extends CacheViewBase {
 		signal: AbortSignal | undefined,
 	): Promise<V | undefined> {
 		try {
-			const value = await waitFor(pending, signal)
+			const value = await waitFor(pending, { signal })
 			this.assertUsable()
 			return value
 		} catch (error) {
@@ -1913,30 +1914,4 @@ async function settle(pending: Promise<unknown> | undefined): Promise<void> {
 	} catch {
 		// A failed read/load does not prevent a later explicit mutation.
 	}
-}
-
-function waitFor<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
-	if (!signal) return pending
-	if (signal.aborted) return Promise.reject(abortError(signal.reason))
-	return new Promise<T>((resolve, reject) => {
-		const abort = () => reject(abortError(signal.reason))
-		signal.addEventListener('abort', abort, { once: true })
-		void pending.then(
-			(value) => {
-				signal.removeEventListener('abort', abort)
-				return resolve(value)
-			},
-			(error: unknown) => {
-				signal.removeEventListener('abort', abort)
-				return reject(error)
-			},
-		)
-	})
-}
-
-function abortError(reason: unknown): Error {
-	if (reason instanceof Error) return reason
-	const error = new Error(reason === undefined ? 'Cache wait aborted.' : String(reason))
-	error.name = 'AbortError'
-	return error
 }
