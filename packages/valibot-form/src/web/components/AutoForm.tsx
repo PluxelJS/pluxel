@@ -1,19 +1,25 @@
 import { Divider, Stack, Text } from '@mantine/core'
 import { useElementSize, useMediaQuery } from '@mantine/hooks'
 import React, { memo, Suspense, useCallback, useEffect, useMemo } from 'react'
-import { getDefaults, type InferOutput } from 'valibot'
+import { getDefaults, type InferInput } from 'valibot'
 import type { ObjectLikeSchema } from '../../core'
 import type { FieldNode } from '../../core/fields'
 import { DEFAULT_SECTION_ID } from '../../core/constants'
 import { isDevelopmentEnvironment } from '../../core/utils/environment'
 import { planFieldSections, planSchemaFields, type SectionPlan } from './internal/fieldPlanner'
-import { AutoFormCtx, FormResetVersion, useAutoFormCtx, useAppForm } from './internal/formContext'
+import {
+	AutoFormCtx,
+	FormResetVersion,
+	useAutoFormCtx,
+	useAppForm,
+	type AutoFormOptions,
+} from './internal/formContext'
 import { alignToCss, resolveFieldSpan } from './internal/layout'
 import { BoundField } from './internal/BoundField'
 import { FieldRenderer } from './internal/FieldRenderer'
 import { FieldRendererProvider } from './internal/fieldRendererContext'
 
-export { useAutoFormCtx } from './internal/formContext'
+export { useAutoFormCtx, type AutoFormOptions } from './internal/formContext'
 
 type AutoFormSharedProps = {
 	/** 你自由摆放内容：标题/按钮/字段/调试等 */
@@ -27,20 +33,20 @@ type AutoFormSharedProps = {
 export type AutoFormSchemaProps<S extends ObjectLikeSchema> = AutoFormSharedProps & {
 	schema: S
 	fields?: never
-	/** 建议用 useMemo 包装后传入 */
-	formOpts?: Parameters<typeof useAppForm<InferOutput<S>>>[1]
+	/** Draft input options, not parsed schema output. Memoize when declared inline. */
+	formOpts?: Parameters<typeof useAppForm<InferInput<S>>>[1]
 }
 
 export type AutoFormPlanProps<TValues extends Record<string, unknown>> = AutoFormSharedProps & {
 	schema?: never
 	/** Browser-safe renderer plan; plan mode never claims schema-derived output inference. */
 	fields: readonly FieldNode[]
-	formOpts: { defaultValues: TValues } & Record<string, unknown>
+	formOpts: AutoFormOptions<TValues> & { defaultValues: TValues }
 }
 
 export type AutoFormProps<
 	S extends ObjectLikeSchema,
-	TValues extends Record<string, unknown> = InferOutput<S> & Record<string, unknown>,
+	TValues extends Record<string, unknown> = InferInput<S> & Record<string, unknown>,
 > = AutoFormSchemaProps<S> | AutoFormPlanProps<TValues>
 
 export function AutoForm<S extends ObjectLikeSchema>(
@@ -51,7 +57,7 @@ export function AutoForm<TValues extends Record<string, unknown>>(
 ): React.ReactElement
 export function AutoForm<
 	S extends ObjectLikeSchema,
-	TValues extends Record<string, unknown> = InferOutput<S> & Record<string, unknown>,
+	TValues extends Record<string, unknown> = InferInput<S> & Record<string, unknown>,
 >({ schema, fields, formOpts, children, resetKey, formProps }: AutoFormProps<S, TValues>) {
 	const defaultValues = useMemo(
 		() =>
@@ -61,8 +67,11 @@ export function AutoForm<
 			>,
 		[schema, formOpts?.defaultValues],
 	)
-	const { form, resetVersion } = useAppForm<Record<string, unknown>>(defaultValues, formOpts)
-	const submit = useCallback((): void => void form.handleSubmit(), [form])
+	const { form, resetVersion } = useAppForm<Record<string, unknown>>(
+		defaultValues,
+		formOpts as AutoFormOptions<Record<string, unknown>>,
+	)
+	const submit = useCallback(() => form.handleSubmit(), [form])
 	const reset = useCallback((values?: Record<string, unknown>): void => form.reset(values), [form])
 
 	const fieldPlan = useMemo(() => {
@@ -241,7 +250,8 @@ if (isDevelopmentEnvironment()) {
 
 /* ───────── 子组件：动作（render-props，完全自定义外观/位置） ───────── */
 export interface ActionsRenderProps {
-	submit: () => void
+	/** Waits for onSubmit; the caller owns rejection handling. */
+	submit: () => Promise<void>
 	reset: (values?: Record<string, any>) => void
 	/** Update the supplied TanStack field paths without replacing unrelated values. */
 	setValues: (values: Record<string, any>) => void

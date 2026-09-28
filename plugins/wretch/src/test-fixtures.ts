@@ -1,5 +1,6 @@
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
+import { workbench } from '@pluxel/workbench'
 import type { FetchLike, Wretch } from 'wretch'
 import { WretchPlugin } from './index.ts'
 import { WretchWorkbench } from './workbench.ts'

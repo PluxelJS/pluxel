@@ -151,7 +151,6 @@ export function compileEntry<I, O, Ctx extends CommandContext>(
 	const descriptor: ArgvCommandDescriptor = deepFreeze({
 		name: command.name,
 		routes,
-		title: command.descriptor.title ?? command.name,
 		description: command.descriptor.description,
 		usage: usageFor(routes[0]!, positionals, options, tailDescriptor?.placeholder),
 		parameters,

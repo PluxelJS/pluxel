@@ -1,4 +1,6 @@
-import { BasePlugin, f, formatPluginNodeReference, Plugin, type Context, v } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin, type Context } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 import {
 	createClient,
 	type RedisClientType,

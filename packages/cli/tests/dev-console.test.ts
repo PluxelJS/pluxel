@@ -39,7 +39,10 @@ afterEach(async () => {
 	for (const close of cleanup.splice(0).toReversed()) await close()
 })
 
-async function fixture(handler?: (request: Record<string, unknown>, socket: Socket) => void) {
+async function fixture(
+	handler?: (request: Record<string, unknown>, socket: Socket) => void,
+	application?: Readonly<Record<string, unknown>>,
+) {
 	const root = await mkdtemp(resolve(tmpdir(), 'px-cli-'))
 	cleanup.push(() => rm(root, { recursive: true, force: true }))
 	await writeFile(resolve(root, 'package.json'), '{}')
@@ -63,7 +66,12 @@ async function fixture(handler?: (request: Record<string, unknown>, socket: Sock
 			const request = JSON.parse(text.slice(0, text.indexOf('\n')))
 			requests.push(request)
 			if (request.method === 'inspect')
-				socket.end(JSON.stringify({ ok: true, value: publicInstance(instance) }) + '\n')
+				socket.end(
+					JSON.stringify({
+						ok: true,
+						value: { ...publicInstance(instance), ...(application ? { application } : {}) },
+					}) + '\n',
+				)
 			else handler?.(request, socket)
 		})
 	})
@@ -92,6 +100,28 @@ describe('development console CLI', () => {
 		expect(instances.map(publicInstance)).toEqual([publicInstance(instance)])
 		expect(publicInstance(instance)).not.toHaveProperty('nonce')
 		expect(publicInstance(instance)).not.toHaveProperty('socketPath')
+	})
+
+	it('shows a live console whose application has not been admitted', async () => {
+		const { root, instance } = await fixture(undefined, {
+			state: 'unavailable',
+			latestUpdate: {
+				state: 'settled',
+				outcome: 'failed',
+				error: { message: 'Invalid app entry', file: 'app.ts', importChain: [] },
+			},
+		})
+		const instances = await liveDevInstances(root)
+		expect(instances.map(publicInstance)).toEqual([
+			{
+				...publicInstance(instance),
+				application: expect.objectContaining({
+					state: 'unavailable',
+					latestUpdate: expect.objectContaining({ outcome: 'failed' }),
+				}),
+			},
+		])
+		expect(instances[0]).toMatchObject({ nonce: instance.nonce })
 	})
 
 	it('prints exactly one JSON frame with the production CLI name and version enabled', async () => {

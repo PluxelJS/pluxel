@@ -5,14 +5,14 @@ description: 根据数据归属选择 Plugin 数据库或应用数据库，并�
 
 先判断数据是否必须跟随 Plugin 独立安装、替换和迁移，再选择数据库组织方式。不要仅因为代码写在 Plugin class 中，就默认使用 `ctx.database`。
 
-| 数据与生命周期要求                                             | 正确组织方式                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin         | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
-| 需要 Plugin 独立 lineage 或旧 generation handle 撤销           | `defineDatabase()` + `ctx.database.use()`                           |
-| fixed catalog、schema 和部署由同一个应用团队控制               | application-private database package                                |
-| 没有共享数据库，整个 static application 就无法成立             | host `prepare()` + root-bound typed accessor                        |
-| 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行     | application-private provider Plugin + constructor dependency        |
-| 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务 | application-private database package                                |
+| 数据与生命周期要求                                             | 正确组织方式                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin         | `defineDatabase()` + `ctx.require(Database).use()`，每个 Plugin 使用独立实例 |
+| 需要 Plugin 独立 lineage 或旧 generation handle 撤销           | `defineDatabase()` + `ctx.require(Database).use()`                           |
+| fixed catalog、schema 和部署由同一个应用团队控制               | application-private database package                                         |
+| 没有共享数据库，整个 static application 就无法成立             | host `prepare()` + root-bound typed accessor                                 |
+| 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行     | application-private provider Plugin + constructor dependency                 |
+| 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务 | application-private database package                                         |
 
 Managed Plugin database 统一使用 PostgreSQL dialect 和 Drizzle。Plugin 作者只依赖 `drizzle-orm`，不选择 driver；部署宿主在 native PostgreSQL 与 PGlite 之间选择，同一份 schema、migration 和 query 不编写 driver 分支。
 
@@ -22,9 +22,9 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 
 ## Managed Plugin database
 
-选择 managed database 后，正式部署使用 native PostgreSQL；PGlite 只用于本机开发和自动化测试。两者统一的是 PostgreSQL 作者 contract，不是性能、并发和 durability 等价。
+选择 managed database 后，正式部署使用 native PostgreSQL；本机开发和测试使用 PGlite。两者的能力与验证边界见[backend 选择](#选择-native-postgresql-或-pglite)。
 
-宿主必须启用 managed database，并选好连接后端；如果现有入口设置了 `database: false`，先在 [宿主配置](../getting-started/host-setup.md) 中调整。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
+宿主通过 `database({ backend: pglite(...) })` 或 `database({ backend: postgres(...) })` 显式安装；默认服务组合不安装数据库，见 [宿主配置](../getting-started/host-setup.md)。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
 
 ## 定义 Plugin schema
 
@@ -32,7 +32,7 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 // @filename: database.ts
 // 仅服务端
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-import { defineDatabase } from '@pluxel/runtime/database'
+import { defineDatabase } from '@pluxel/services/database'
 
 export const notes = pgTable(
 	'notes',
@@ -49,8 +49,8 @@ export const NotesDatabase = defineDatabase({
 })
 
 // @filename: NotesPlugin.ts
-import type { PluginDatabaseHandle } from '@pluxel/runtime/database'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { Database, type PluginDatabaseHandle } from '@pluxel/services/database'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { notes, NotesDatabase } from './database.ts'
 
 @Plugin({ displayName: 'Notes' })
@@ -58,7 +58,7 @@ export class NotesPlugin extends BasePlugin {
 	private database!: PluginDatabaseHandle<typeof NotesDatabase>
 
 	protected override async init() {
-		this.database = await this.ctx.database.use(NotesDatabase)
+		this.database = await this.ctx.require(Database).use(NotesDatabase)
 	}
 
 	listNotes() {
@@ -87,22 +87,6 @@ schema module 是 server-only。Workbench API/browser bundle 不能导入它。P
 一个 Plugin 只能 `use()` 一个 definition。definition 可以作为 schema 模板由多个 Plugin 复用，但每个 owner 都有独立数据、role 和 operation queue；不能跨 Plugin 共享 handle 或 transaction。
 
 `PluginPart` 也不拥有第二个 definition；它的表和 migration 都归属根 Plugin 的这一个 definition。Part 只帮助组织代码和资源，不创造新的数据边界。
-
-## 跨 Plugin 数据关系与扩展
-
-独立发布的 Plugin 不能修改另一个 Plugin 的表模型：不要向其 `pgTable()` 加列、生成 `ALTER TABLE`、添加 foreign key/index，也不要把对方 table object 当作自己的 schema import。表结构和 migration 是 owner 可独立替换的存储 contract；允许第三方修改会把安装顺序、卸载、rebase 和 rollback 耦合在一起。
-
-| 需求                                                                                | 正确做法                                                                                                     |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 为另一个 Plugin 的实体保存本 Plugin 专属数据                                        | extension Plugin 自己拥有表，以 provider 公开的稳定 entity ID 关联，并通过 typed capability 验证或操作该实体 |
-| 需要 join、foreign key、跨表原子 transaction，或 provider 必须直接查询/索引扩展字段 | 将整组表放进同一 application-private database，由同一个应用团队迁移                                          |
-| 需要可插拔的自定义字段                                                              | provider 只在存在具体产品需求时发布自己的领域 extension protocol；不要增加通用“改别人表”的能力               |
-
-第一种方式的两个写入是两个 transaction；需要一致性时，extension 应设计可重试、幂等的领域流程，而不是绕过 owner boundary。若这个代价不能接受，说明这些表本来就不应是独立 Plugin 数据。
-
-跨 Plugin workflow 通过 typed capability/RPC，并接受它是两个 transaction。真正必须满足 foreign key、join 或原子 transaction 的表应该归同一 owner。
-
-不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench target 也只能调用所属 Plugin 的领域 service，再返回 detached DTO；它不是跨 owner 数据库入口。
 
 ## Migration evolution
 
@@ -155,6 +139,20 @@ export const SearchDatabase = defineDatabase({
 
 这个声明意味着未来任何 schema 变化都允许清空数据。需要保留或转换旧数据时必须使用 migrations。
 
+## 跨 Plugin 数据关系与扩展
+
+独立发布的 Plugin 不能修改另一个 Plugin 的表模型：不要向其 `pgTable()` 加列、生成 `ALTER TABLE`、添加 foreign key/index，也不要把对方 table object 当作自己的 schema import。表结构和 migration 是 owner 可独立替换的存储 contract；允许第三方修改会把安装顺序、卸载、rebase 和 rollback 耦合在一起。
+
+| 需求                                                                                | 正确做法                                                                                                     |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 为另一个 Plugin 的实体保存本 Plugin 专属数据                                        | extension Plugin 自己拥有表，以 provider 公开的稳定 entity ID 关联，并通过 typed capability 验证或操作该实体 |
+| 需要 join、foreign key、跨表原子 transaction，或 provider 必须直接查询/索引扩展字段 | 将整组表放进同一 application-private database，由同一个应用团队迁移                                          |
+| 需要可插拔的自定义字段                                                              | provider 只在存在具体产品需求时发布自己的领域 extension protocol；不要增加通用“改别人表”的能力               |
+
+第一种方式的两个写入是两个 transaction；需要一致性时，extension 应设计可重试、幂等的领域流程，而不是绕过 owner boundary。若这个代价不能接受，说明这些表本来就不应是独立 Plugin 数据。
+
+不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench target 也只能调用所属 Plugin 的领域 service，再返回 detached DTO；它不是跨 owner 数据库入口。
+
 ## Document 风格数据
 
 可以在稳定的 `id`、`version`、`jsonb data` 表中兼容多个 document version。JSON 字段内部变化不一定需要 SQL migration，但新增物理 index、constraint 或 column 仍是 schema evolution。
@@ -165,7 +163,7 @@ export const SearchDatabase = defineDatabase({
 
 当 fixed catalog、schema 和部署都由同一团队维护时，把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。
 
-Static application 应在 `configure()` 返回 `database: false`，使误用 `ctx.database` 的内置 Plugin 直接启动失败；production freezer 同时设置 `managedDatabaseDrivers: []`，避免把未使用的 PGlite 与 `pg` package 复制进发行物。两处配置分别约束运行时 capability 与构建闭包，必须保持一致。
+应用服务列表不安装 `database()`，使误用 `ctx.require(Database)` 的 Plugin 直接启动失败；production freezer 同时设置 `managedDatabaseDrivers: []`，避免把未使用的 PGlite 与 `pg` package 复制进发行物。两处配置分别约束运行时 capability 与构建闭包，必须保持一致。
 
 内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
 
@@ -177,7 +175,7 @@ Application package 导出接收 Context 的 typed accessor，不把数据库投
 
 ```ts no-twoslash
 // @app/database — application-private server module
-import type { Context } from '@pluxel/runtime'
+import type { Context } from '@pluxel/core'
 import { openDatabase, migrate, type AppDatabase, type DatabaseOptions } from './internal.js'
 
 const active = new WeakMap<object, AppDatabase>()
@@ -213,35 +211,34 @@ export function appDatabaseFor(ctx: Context): AppDatabase {
 
 `appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；static application 的泛型不能反向改变独立编译 Plugin 的 Context shape。
 
-Static entry 对部署路径保持唯一 authority，同时供 Runtime persistence 和 application database 使用：
+应用入口统一决定部署路径，同时供宿主 Persistence 和 application database 使用：
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
-import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { defineHostApplication } from '@pluxel/host'
 import { prepareAppDatabase } from '@app/database'
+import { standardServices } from '@pluxel/services'
 
-function storagePaths({ env, deployment }) {
-	const root = resolve(env.APP_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`)
+function storagePaths({ env }) {
+	// 部署时传入发行目录外的绝对路径。
+	const root = resolve(env.APP_DATA_ROOT ?? './data')
 	return {
-		runtimePersistence: resolve(root, 'runtime'),
+		hostPersistence: resolve(root, 'runtime'),
 		applicationDatabase: resolve(root, 'application.sqlite'),
 	}
 }
 
-export default defineStaticRuntime({
-	name: 'application',
-	plugins: [BillingPlugin, AuditPlugin],
-	configure(startup) {
-		return {
-			persistence: storagePaths(startup).runtimePersistence,
-			database: false,
-		}
-	},
-	async prepare({ host, startup }) {
-		await prepareAppDatabase(host.ctx, {
-			filename: storagePaths(startup).applicationDatabase,
-		})
-	},
+export default defineHostApplication((startup) => {
+	return {
+		name: 'application',
+		plugins: [BillingPlugin, AuditPlugin],
+		services: standardServices({ persistence: storagePaths(startup).hostPersistence }),
+		async prepare({ host, startup }) {
+			await prepareAppDatabase(host.ctx, {
+				filename: storagePaths(startup).applicationDatabase,
+			})
+		},
+	}
 })
 ```
 
@@ -253,7 +250,7 @@ protected override init() {
 }
 ```
 
-不要读取已移除的 `ctx.config.persistence`，也不要从 `ctx.root.persistence` 猜 filesystem path。前者会把 host config 泄露给 Plugin；后者是 `namespace/get/put` 操作抽象，backend 可能是 memory、readonly 或 custom，并不保证存在 SQLite 可以打开的目录。SQLite path、DSN、TLS 和 pool options 都从 static `startup` 的 env、bindings 或 deployment facts 解析。
+SQLite path、DSN、TLS 和 pool options 从 `startup.env`、`bindings` 或部署配置显式解析，不从 Context 猜测。Persistence 是 `namespace/get/put` 抽象，backend 可能是 memory、readonly 或 custom，不保证存在可打开的文件目录。
 
 `prepare()` 不是通用 service lifecycle：这里只表达“数据库是整个应用的硬 readiness 前提”。数据库 package 负责领域初始化，root effects 负责 acquisition rollback、正常 stop 和 shutdown；consumer replacement 不能关闭共享实例。
 
@@ -270,8 +267,8 @@ Workbench 不提供数据库专用查询协议。Plugin 在自己的 Direct View
 
 ```ts no-twoslash
 interface NotesApi extends RpcTarget {
-	list(input: { cursor: string | null; limit: number }): Promise<NotesPage>
-	update(input: UpdateNoteInput): Promise<UpdateNoteResult>
+	listDto(input: { cursor: string | null; limit: number }): Promise<NotesPage>
+	updateDto(input: UpdateNoteInput): Promise<UpdateNoteResult>
 	watch(invalidate: () => void): RpcTarget
 }
 ```

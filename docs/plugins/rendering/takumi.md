@@ -24,7 +24,7 @@ Host catalog 包含 Fonts、Takumi 与 consumer；业务 Plugin 只声明直接�
 
 ```ts
 import { TakumiPlugin } from '@pluxel/takumi'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
 export class SocialCardsPlugin extends BasePlugin {
@@ -47,7 +47,7 @@ export class SocialCardsPlugin extends BasePlugin {
 }
 ```
 
-上面的 `escapeHtml()` 是应用自己的文本转义函数；如果没有 HTML 模板，直接使用下节 node tree，文本通过 `text` 字段传入。调用 `renderCard()` 后将 `result.data` 保存为 WebP，验证尺寸、文字与背景。HTML 不执行 script，动态 attribute 和 CSS value 仍需按模板位置编码。
+上面的 `escapeHtml()` 是应用自己的文本转义函数；如果没有 HTML 模板，直接使用下节 node tree，文本通过 `text` 字段传入。调用 `renderCard()` 后将返回的 Buffer 保存为 WebP，验证尺寸、文字与背景。HTML 不执行 script，动态 attribute 和 CSS value 仍需按模板位置编码。
 
 ## 选择输入
 
@@ -90,8 +90,7 @@ await this.takumi.render({
 })
 ```
 
-这里 consumer 如果要注册随包字体，需要同时直接注入 `FontsPlugin`；仅渲染时仍只注入 Takumi。Takumi detail 的 Fonts tab
-只列可移植 family。操作系统自动发现的 system font 没有 FontsPlugin-owned bytes，Canvas 可以直接使用，但 Takumi 不会
+这里 consumer 如果要注册随包字体，需要同时直接注入 `FontsPlugin`；仅渲染时仍只注入 Takumi。Takumi detail 的 Fonts tab 使用统一 selector，展示 Fonts 的完整 catalog；渲染只使用可移植 family。操作系统自动发现的 system font 没有 FontsPlugin-owned bytes，Canvas 可以直接使用，但 Takumi 不会
 假装已加载；没有可移植字体时最终回落到 Takumi 内嵌 Geist。
 
 ## 预加载远程图片
@@ -127,11 +126,8 @@ Takumi raster/SVG 通过 N-API async work 在进程共享的 libuv worker pool �
 丢弃结果并拒绝 caller。字体 registration 是同一 revision 的共享准备工作，且 Takumi 发布包装器的注册入口当前不接受
 signal；单个 caller 或 provider stop 会在 registration 之间或完成后的 checkpoint 停止后续 render。
 
-这里没有为了“render 都很重”而重复套 Worker：Takumi raster/SVG 已由 N-API 提交到共享 libuv pool，再套一层仍占同一
-libuv slot，同时额外占用 runtime Worker，并复制输入和字体。剩余风险是上游同步 `fromHtml()` parser，以及 N-API 提交前
-的 JS-to-Rust node/options 反序列化和 stylesheet cache parse；它们在 scheduler admission
-后运行并受默认 1 MiB content ceiling 约束，但单次调用不能被 signal 抢占。结构 walk 与大 byte copy 会 cooperative yield。
-大 HTML/node/stylesheet 与 SVG output 的 UTF-8 byte 计量也按 64 Ki characters 分片，可在 checkpoint 取消。
+同步 HTML parser 与 N-API 输入转换仍在宿主线程、admission 后运行，受 content 等预算约束，但单次调用不可抢占。
+大结构遍历与 byte copy 会让出 event loop。另套 Worker 不能消除 libuv 占用，反而增加一个线程槽和输入复制。
 
 ## 渲染 Markdown 文档
 
@@ -184,3 +180,40 @@ width/height budget 检查应用 DPR 后的 physical dimensions。font count 在
 limits 是输入 bytes 预算，不能把 native renderer
 变成安全 sandbox；decoded image 与 glyph 内存还受 Takumi 实现影响。`maxOutputBytes` 在编码完成后检查，用于限制返回值，
 不能撤销已经发生的编码成本。
+
+## 将可恢复失败交给业务调用方
+
+卡片 consumer 可在 renderer 繁忙时返回占位卡片，因此只将 `RENDER_BUSY` 转成 `CardBusy`。
+下面的 `takumi` 来自 constructor 注入，不修改 renderer 本身的 API。
+
+```ts twoslash
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import {
+	TakumiError,
+	type TakumiPlugin,
+	type TakumiRenderInput,
+	type TakumiRenderResult,
+} from '@pluxel/takumi'
+
+export class CardBusy extends TaggedError('CardBusy')<{ message: string }> {}
+
+export async function renderCard(
+	takumi: TakumiPlugin,
+	input: TakumiRenderInput,
+): Promise<Result<TakumiRenderResult, CardBusy>> {
+	try {
+		return Result.ok(await takumi.render(input))
+	} catch (error) {
+		if (error instanceof TakumiError && error.code === 'RENDER_BUSY') {
+			return Result.err(new CardBusy({ message: 'Card renderer is busy; retry later.' }))
+		}
+		throw error
+	}
+}
+```
+
+Err 时由调用方展示占位卡片，Ok 时使用 `value.data`。`RENDER_TIMEOUT` 不自动表示可以立即重试：已经提交的
+native work 可能仍在占用 slot。未知故障、无效输入和取消继续 reject；Result 不改变 input borrowing、reservation
+或 native settlement。回归测试先持有 reservation 制造 busy，再释放并成功渲染。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi/tests/takumi.test.ts)。

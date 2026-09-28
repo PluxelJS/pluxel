@@ -1,12 +1,13 @@
-import { normalize, resolve as r } from 'pathe'
+import { normalize, resolve } from 'pathe'
+import YAML from 'yaml'
 import { nodeWorkspaceFs, readTextFile, type WorkspaceFs } from './fs'
-import { manifestPathForWithFs, safeReadManifestWithFs } from './manifest'
+import { safeReadManifestWithFs } from './manifest'
 import type { WorkspacePackageJson } from './package-json'
 
 export interface WorkspaceInfo {
 	root: string
-	manifest?: WorkspacePackageJson
-	manifestPath?: string
+	manifest: WorkspacePackageJson
+	manifestPath: string
 	patterns: string[]
 	packageDirs: string[]
 	isMonorepo: boolean
@@ -20,48 +21,41 @@ export async function loadWorkspaceInfoWithFs(
 	root: string,
 	fs: WorkspaceFs = nodeWorkspaceFs,
 ): Promise<WorkspaceInfo> {
+	root = resolve(root)
 	const manifest = await safeReadManifestWithFs(root, fs)
-	const manifestPath = manifestPathForWithFs(root, fs)
+	const manifestPath = resolve(root, 'package.json')
+	if (!manifest)
+		throw new Error(`Workspace root must contain package.json: ${resolve(root, 'package.json')}`)
+	if (manifest.workspaces !== undefined)
+		throw new Error(`Workspace membership belongs in pnpm-workspace.yaml, not ${manifestPath}`)
 
-	const patterns = new Set<string>()
-	for (const p of extractPackageWorkspaces(manifest)) {
-		patterns.add(p)
-	}
-
-	const pnpmWorkspacePath = r(root, 'pnpm-workspace.yaml')
-	if (fs.existsSync(pnpmWorkspacePath)) {
-		for (const p of parsePnpmWorkspace(await readTextFile(fs, pnpmWorkspacePath))) {
-			patterns.add(p)
+	const pnpmWorkspacePath = resolve(root, 'pnpm-workspace.yaml')
+	let patterns: string[] = []
+	let isMonorepo = false
+	let contents: string | undefined
+	try {
+		contents = await readTextFile(fs, pnpmWorkspacePath)
+	} catch (cause) {
+		if (!isMissing(cause)) {
+			throw new Error(`Cannot read workspace declaration ${pnpmWorkspacePath}`, { cause })
 		}
 	}
-
-	const explicitPatterns = patterns.size > 0
-	if (!explicitPatterns) {
-		patterns.add('packages/*')
-		patterns.add('apps/*')
+	if (contents !== undefined) {
+		isMonorepo = true
+		patterns = parsePnpmWorkspace(contents, pnpmWorkspacePath)
 	}
-
-	const packageDirs = await collectPackageDirsWithFs(root, [...patterns], fs)
-	const isMonorepo = explicitPatterns || packageDirs.length > 0
+	for (const pattern of patterns) validateWorkspacePattern(pattern, pnpmWorkspacePath)
+	const packageDirs = await collectPackageDirsWithFs(root, patterns, fs)
 
 	const info: WorkspaceInfo = {
 		root: normalize(root),
-		patterns: [...patterns],
+		patterns,
 		packageDirs,
 		isMonorepo,
+		manifest,
+		manifestPath,
 	}
-	if (manifest) info.manifest = manifest
-	if (manifestPath) info.manifestPath = manifestPath
 	return info
-}
-
-export function extractPackageWorkspaces(pkg: WorkspacePackageJson | undefined): string[] {
-	if (!pkg) return []
-	const raw = pkg.workspaces
-	if (!raw) return []
-	if (Array.isArray(raw)) return raw
-	if (Array.isArray(raw?.packages)) return raw.packages
-	return []
 }
 
 async function collectPackageDirsWithFs(
@@ -79,9 +73,15 @@ async function collectPackageDirsWithFs(
 	for (const pattern of includePatterns) {
 		for (const pkgDir of await expandWorkspacePattern(root, pattern, fs)) {
 			const normalized = normalize(pkgDir)
-			if (!fs.existsSync(r(normalized, 'package.json'))) continue
 			if (matchesAnyWorkspacePattern(relativeWorkspacePath(root, normalized), excludePatterns))
 				continue
+			const manifest = await safeReadManifestWithFs(normalized, fs)
+			if (!manifest) {
+				if (!pattern.includes('*')) {
+					throw new Error(`Declared workspace member has no package.json: ${normalized}`)
+				}
+				continue
+			}
 			out.add(normalized)
 		}
 	}
@@ -113,7 +113,7 @@ async function expandWorkspacePattern(
 			await walk(dir, index + 1)
 			for (const entry of await safeReadDirs(fs, dir)) {
 				if (shouldSkipGlobDir(entry.name)) continue
-				await walk(r(dir, entry.name), index)
+				await walk(resolve(dir, entry.name), index)
 			}
 			return
 		}
@@ -121,13 +121,26 @@ async function expandWorkspacePattern(
 			const matcher = segmentMatcher(segment)
 			for (const entry of await safeReadDirs(fs, dir)) {
 				if (!matcher(entry.name)) continue
-				await walk(r(dir, entry.name), index + 1)
+				await walk(resolve(dir, entry.name), index + 1)
 			}
 			return
 		}
 
-		const next = r(dir, segment)
-		if (fs.existsSync(next)) await walk(next, index + 1)
+		const next = resolve(dir, segment)
+		try {
+			const stats = await fs.promises.stat(next)
+			if (!stats.isDirectory?.())
+				throw new Error(`Declared workspace member path is not a directory: ${next}`)
+		} catch (cause) {
+			if (isMissing(cause)) {
+				if (!normalizedPattern.includes('*')) {
+					throw new Error(`Declared workspace member does not exist: ${next}`, { cause })
+				}
+				return
+			}
+			throw new Error(`Cannot inspect workspace member path ${next}`, { cause })
+		}
+		await walk(next, index + 1)
 	}
 
 	await walk(root, 0)
@@ -138,8 +151,29 @@ async function safeReadDirs(fs: WorkspaceFs, dir: string) {
 	try {
 		const entries = await fs.promises.readdir(dir, { withFileTypes: true })
 		return entries.filter((entry) => entry.isDirectory?.())
-	} catch {
-		return []
+	} catch (cause) {
+		if (isMissing(cause)) return []
+		throw new Error(`Cannot enumerate workspace directory ${dir}`, { cause })
+	}
+}
+
+function isMissing(error: unknown): boolean {
+	return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+function validateWorkspacePattern(pattern: string, declarationPath: string): void {
+	const path = pattern.startsWith('!') ? pattern.slice(1) : pattern
+	const segments = path.replaceAll('\\', '/').split('/')
+	if (
+		!path.trim() ||
+		path.startsWith('/') ||
+		/^[A-Za-z]:/.test(path) ||
+		segments.includes('..') ||
+		/[?[\]]/.test(path)
+	) {
+		throw new Error(
+			`Unsupported workspace pattern ${JSON.stringify(pattern)} in ${declarationPath}; expected a relative path using * or ** within the workspace root`,
+		)
 	}
 }
 
@@ -182,26 +216,27 @@ function shouldSkipGlobDir(name: string): boolean {
 	return name === 'node_modules' || name === '.git'
 }
 
-export function parsePnpmWorkspace(contents: string): string[] {
-	const lines = contents.split(/\r?\n/)
-	const res: string[] = []
-	let inPk = false
-	let indent = 0
-
-	for (const raw of lines) {
-		const line = raw.replaceAll('	', '  ')
-		if (!inPk) {
-			const match = line.match(/^(\s*)packages\s*:\s*$/)
-			if (match) {
-				inPk = true
-				indent = match[1].length
-			}
-			continue
-		}
-		if (line.trim() && line.match(new RegExp(`^\\\\s{0,${indent}}\\\\S`))) break
-		const match = line.match(/^\s*-\s*['"]?([^'"]+)['"]?\s*$/)
-		if (match) res.push(match[1])
+export function parsePnpmWorkspace(contents: string, path = 'pnpm-workspace.yaml'): string[] {
+	let value: unknown
+	try {
+		const document = YAML.parseDocument(contents, { uniqueKeys: true })
+		if (document.errors.length > 0) throw document.errors[0]
+		value = document.toJS()
+	} catch (cause) {
+		throw new Error(`Invalid workspace declaration ${path}`, { cause })
 	}
-
-	return res
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error(`Invalid workspace declaration ${path}; expected a YAML mapping`)
+	}
+	const packages = (value as { packages?: unknown }).packages
+	if (packages === undefined) return []
+	if (
+		!Array.isArray(packages) ||
+		packages.some((item) => typeof item !== 'string' || !item.trim())
+	) {
+		throw new Error(
+			`Invalid workspace declaration ${path}: packages must be a list of nonempty patterns`,
+		)
+	}
+	return packages
 }

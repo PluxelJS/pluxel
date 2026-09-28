@@ -1,4 +1,0 @@
-{
-	"extends": "./packages/runtime-dev/tsconfig.json",
-	"include": ["packages/runtime-dev/src"]
-}

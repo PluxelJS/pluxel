@@ -1,11 +1,12 @@
 import {
-	BasePlugin,
+	Workers,
 	defineWorkerTask,
-	Plugin,
 	WorkerTaskError,
 	type WorkerRunOptions,
 	type WorkerTaskDeclaration,
-} from '@pluxel/runtime'
+} from '@pluxel/services/workers'
+import { BasePlugin, Plugin } from '@pluxel/core'
+
 import {
 	TakumiMarkdownPlugin,
 	type MarkdownExtension,
@@ -86,7 +87,7 @@ export class TypstMathPlugin extends BasePlugin {
 			controller: new AbortController(),
 			generation,
 			pending: new Set(),
-			workers: this.ctx.workers as WorkerRunner,
+			workers: this.ctx.require(Workers) as WorkerRunner,
 		}
 		generation.extensions.add(state)
 		const owner = this.ctx.caller ?? this.ctx

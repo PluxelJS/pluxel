@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
-import { BasePlugin, Plugin } from '@pluxel/core/test'
 import {
+	BasePlugin,
+	Plugin,
 	assertPluginLifecycleIssue,
 	pluginLifecycleIssuePlugins,
 	withCoreInternalTestHost,

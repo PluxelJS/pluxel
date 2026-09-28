@@ -1,5 +1,4 @@
 import { highlight } from 'fumadocs-core/highlight'
-import * as Twoslash from 'fumadocs-twoslash/ui'
 import { PluginShowcaseClient, type ShowcaseExample } from './plugin-showcase-client'
 
 const examples = [
@@ -21,7 +20,6 @@ class StatusPlugin extends BasePlugin {
 		label: '依赖',
 		packageName: '@acme/health + @acme/audit → src/status.ts',
 		status: '必需 + 可选 → 同一依赖图',
-		twoslash: false,
 	},
 	{
 		code: `class CachePart extends PluginPart<SearchPlugin> {
@@ -42,7 +40,6 @@ class SearchPlugin extends BasePlugin {
 		label: '内部组成',
 		packageName: 'src/search.ts',
 		status: 'Part → owner generation',
-		twoslash: false,
 	},
 	{
 		code: `@Plugin()
@@ -62,28 +59,19 @@ class SamplerPlugin extends BasePlugin {
 		label: '回收',
 		packageName: 'src/sampler.ts',
 		status: 'generation → 统一回收',
-		twoslash: false,
 	},
 	{
-		code: `type Schema<T> = { output: T }
-declare const v: {
-  string(): Schema<string>
-  optional<T>(schema: Schema<T>, fallback: T): Schema<T>
-  object<T>(shape: T): Schema<{ [K in keyof T]: T[K] extends Schema<infer V> ? V : never }>
-}
-declare const Plugin: (...args: unknown[]) => any
-declare class BasePlugin {
-  configs: { use<T>(schema: Schema<T>): Readonly<T> }
-}
-// ---cut---
+		code: `import { BasePlugin, Plugin } from '@pluxel/core'
+import * as v from 'valibot'
+
 const StatusConfig = v.object({
-  label: v.optional(v.string(), 'ready'), // 同一字段还可携带 Workbench 元数据
+  label: v.optional(v.string(), 'ready'),
 })
 
 @Plugin()
 class StatusPlugin extends BasePlugin {
   config = this.configs.use(StatusConfig)
-  // ^?
+  // 推导为冻结的 { label: string }
 }
 
 // 同一份 schema 贯穿默认值、校验与表单`,
@@ -92,27 +80,16 @@ class StatusPlugin extends BasePlugin {
 		label: '配置',
 		packageName: 'src/config.ts → src/plugins.ts',
 		status: 'Schema → 全链路配置',
-		twoslash: true,
 	},
 	{
-		code: `type PluginClass<T> = abstract new (...args: any[]) => T
-declare class StatusPlugin {
-  status(): { ready: true; label: string }
-}
-declare interface RuntimeTestHost {
-  start<T>(plugin: PluginClass<T>): Promise<T>
-  require<T>(plugin: PluginClass<T>): T
-  [Symbol.asyncDispose](): Promise<void>
-}
-declare const createRuntimeTestHost: () => RuntimeTestHost
-// ---cut---
+		code: `import { createTestHost } from '@pluxel/test'
 import { expect, it } from 'vitest'
+import { StatusPlugin } from '../src/status'
 
 it('运行完整的 Plugin graph', async () => {
-  await using host = createRuntimeTestHost()
-  const status = (await host.start(StatusPlugin)).status()
-  //    ^?
-  expect(status).toEqual({ ready: true, label: 'ready' })
+  await using host = await createTestHost()
+  const [plugin] = await host.start([StatusPlugin])
+  expect(plugin.status()).toEqual({ ready: true, label: 'ready' })
 })
 
 // 当前作用域退出：停止依赖图并回收 effects`,
@@ -121,14 +98,10 @@ it('运行完整的 Plugin graph', async () => {
 		label: '测试',
 		packageName: 'tests/status.test.ts',
 		status: '构建语义 → 生命周期',
-		twoslash: true,
 	},
 ] as const
 
 export async function PluginShowcase() {
-	// 让 TypeScript compiler 留在 Node 侧，避免进入 RSC bundle。
-	const twoslashPackage = 'fumadocs-twoslash'
-	const { transformerTwoslash } = await import(/* @vite-ignore */ twoslashPackage)
 	const highlighted: ShowcaseExample[] = await Promise.all(
 		examples.map(async (example) => ({
 			description: example.description,
@@ -139,13 +112,6 @@ export async function PluginShowcase() {
 					light: 'github-light',
 					dark: 'github-dark',
 				},
-				...(example.twoslash
-					? {
-							components: Twoslash,
-							meta: { __raw: 'twoslash' },
-							transformers: [transformerTwoslash()],
-						}
-					: {}),
 			}),
 			href: example.href,
 			label: example.label,

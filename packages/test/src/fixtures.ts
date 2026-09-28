@@ -89,17 +89,23 @@ type SupportedFsPromises = {
 }
 
 type SupportedFs = {
+	access(path: PathLike, callback: (error: NodeJS.ErrnoException | null) => void): void
 	access(
 		path: PathLike,
-		mode: number | ((error: NodeJS.ErrnoException | null) => void),
-		callback?: (error: NodeJS.ErrnoException | null) => void,
+		mode: number,
+		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	accessSync(path: PathLike, mode?: number): void
 	appendFile(
 		path: PathLike,
 		data: string | NodeJS.ArrayBufferView,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null) => void,
+		callback: (error: NodeJS.ErrnoException | null) => void,
+	): void
+	appendFile(
+		path: PathLike,
+		data: string | NodeJS.ArrayBufferView,
+		options: BufferEncoding | { encoding?: BufferEncoding; mode?: number },
+		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	appendFileSync(
 		path: PathLike,
@@ -115,8 +121,13 @@ type SupportedFs = {
 	cp(
 		source: PathLike,
 		destination: PathLike,
-		options: CopyOptions | ((error: NodeJS.ErrnoException | null) => void),
-		callback?: (error: NodeJS.ErrnoException | null) => void,
+		callback: (error: NodeJS.ErrnoException | null) => void,
+	): void
+	cp(
+		source: PathLike,
+		destination: PathLike,
+		options: CopyOptions,
+		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	cpSync(source: PathLike, destination: PathLike, options?: CopyOptions): void
 	createReadStream(
@@ -130,8 +141,12 @@ type SupportedFs = {
 	existsSync(path: PathLike): boolean
 	lstat(
 		path: PathLike,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void,
+		callback: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void,
+	): void
+	lstat(
+		path: PathLike,
+		options: { bigint?: boolean },
+		callback: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void,
 	): void
 	lstatSync(
 		path: PathLike,
@@ -139,8 +154,12 @@ type SupportedFs = {
 	): SupportedStats | undefined
 	mkdir(
 		path: PathLike,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null, createdPath?: string) => void,
+		callback: (error: NodeJS.ErrnoException | null, createdPath?: string) => void,
+	): void
+	mkdir(
+		path: PathLike,
+		options: { recursive?: boolean },
+		callback: (error: NodeJS.ErrnoException | null, createdPath?: string) => void,
 	): void
 	mkdirSync(path: PathLike, options?: { recursive?: boolean }): string | undefined
 	mkdtemp(
@@ -151,8 +170,12 @@ type SupportedFs = {
 	promises: SupportedFsPromises
 	readFile(
 		path: PathLike,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null, data?: string | Buffer) => void,
+		callback: (error: NodeJS.ErrnoException | null, data?: string | Buffer) => void,
+	): void
+	readFile(
+		path: PathLike,
+		options: BufferEncoding | { encoding?: BufferEncoding | null } | null,
+		callback: (error: NodeJS.ErrnoException | null, data?: string | Buffer) => void,
 	): void
 	readFileSync(
 		path: PathLike,
@@ -160,8 +183,15 @@ type SupportedFs = {
 	): string | Buffer
 	readdir(
 		path: PathLike,
-		options: unknown,
-		callback?: (
+		callback: (
+			error: NodeJS.ErrnoException | null,
+			entries?: string[] | SupportedDirEntry[],
+		) => void,
+	): void
+	readdir(
+		path: PathLike,
+		options: { withFileTypes?: boolean },
+		callback: (
 			error: NodeJS.ErrnoException | null,
 			entries?: string[] | SupportedDirEntry[],
 		) => void,
@@ -170,14 +200,22 @@ type SupportedFs = {
 	readdirSync(path: PathLike, options?: { withFileTypes?: false }): string[]
 	readlink(
 		path: PathLike,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null, linkString?: string) => void,
+		callback: (error: NodeJS.ErrnoException | null, linkString?: string) => void,
+	): void
+	readlink(
+		path: PathLike,
+		options: { encoding?: BufferEncoding },
+		callback: (error: NodeJS.ErrnoException | null, linkString?: string) => void,
 	): void
 	readlinkSync(path: PathLike, options?: { encoding?: BufferEncoding }): string
 	realpath(
 		path: PathLike,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null, resolvedPath?: string) => void,
+		callback: (error: NodeJS.ErrnoException | null, resolvedPath?: string) => void,
+	): void
+	realpath(
+		path: PathLike,
+		options: { encoding?: BufferEncoding },
+		callback: (error: NodeJS.ErrnoException | null, resolvedPath?: string) => void,
 	): void
 	realpathSync(path: PathLike, options?: { encoding?: BufferEncoding }): string
 	rename(
@@ -186,22 +224,28 @@ type SupportedFs = {
 		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	renameSync(source: PathLike, destination: PathLike): void
+	rm(path: PathLike, callback: (error: NodeJS.ErrnoException | null) => void): void
 	rm(
 		path: PathLike,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null) => void,
+		options: RmOptions,
+		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	rmSync(path: PathLike, options?: RmOptions): void
+	rmdir(path: PathLike, callback: (error: NodeJS.ErrnoException | null) => void): void
 	rmdir(
 		path: PathLike,
-		options: RmdirOptions | ((error: NodeJS.ErrnoException | null) => void),
-		callback?: (error: NodeJS.ErrnoException | null) => void,
+		options: RmdirOptions,
+		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	rmdirSync(path: PathLike): void
 	stat(
 		path: PathLike,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void,
+		callback: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void,
+	): void
+	stat(
+		path: PathLike,
+		options: { bigint?: boolean },
+		callback: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void,
 	): void
 	statSync(
 		path: PathLike,
@@ -210,8 +254,13 @@ type SupportedFs = {
 	symlink(
 		target: string,
 		path: PathLike,
-		type: unknown,
-		callback?: (error: NodeJS.ErrnoException | null) => void,
+		callback: (error: NodeJS.ErrnoException | null) => void,
+	): void
+	symlink(
+		target: string,
+		path: PathLike,
+		type: string,
+		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	symlinkSync(target: string, path: PathLike, type?: string): void
 	unlink(path: PathLike, callback: (error: NodeJS.ErrnoException | null) => void): void
@@ -219,8 +268,13 @@ type SupportedFs = {
 	writeFile(
 		path: PathLike,
 		data: string | NodeJS.ArrayBufferView,
-		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null) => void,
+		callback: (error: NodeJS.ErrnoException | null) => void,
+	): void
+	writeFile(
+		path: PathLike,
+		data: string | NodeJS.ArrayBufferView,
+		options: BufferEncoding | { encoding?: BufferEncoding; mode?: number } | null,
+		callback: (error: NodeJS.ErrnoException | null) => void,
 	): void
 	writeFileSync(
 		path: PathLike,
@@ -238,7 +292,16 @@ type FixtureFsApi = {
 	vfs?: VirtualFileSystem
 }
 
-export type TestFixture = FsFixture & FixtureFsApi
+export type TestFixture = Omit<FsFixture, 'fs'> & FixtureFsApi
+
+export type MemoryFixtureOptions = Omit<CreateFixtureOptions, 'fs' | 'tempDir'> & {
+	fs?: never
+	tempDir?: never
+}
+
+export type DiskFixtureOptions = Omit<CreateFixtureOptions, 'fs'> & {
+	fs?: never
+}
 
 function randomSuffix(): string {
 	if (typeof randomUUID === 'function') return randomUUID()
@@ -290,12 +353,18 @@ function callbackify<T>(
 	run: () => Promise<T>,
 	callback: (error: NodeJS.ErrnoException | null, value?: T) => void,
 ) {
+	if (typeof callback !== 'function')
+		throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
+	// Only IO failures reach the error callback; consumer exceptions must not invoke it twice.
 	void (async () => {
+		let value: T
 		try {
-			callback(null, await run())
+			value = await run()
 		} catch (error) {
 			callback(error as NodeJS.ErrnoException)
+			return
 		}
+		callback(null, value)
 	})()
 }
 
@@ -678,7 +747,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		access(path: PathLike, mode: any, callback?: (error: NodeJS.ErrnoException | null) => void) {
 			const resolvedCallback = typeof mode === 'function' ? mode : callback
 			const resolvedMode = typeof mode === 'function' ? undefined : mode
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.access(path, resolvedMode), resolvedCallback)
 		},
 		accessSync(path: PathLike, mode?: number) {
@@ -693,7 +763,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(
 				() => fsp.appendFile(path, normalizeData(data), resolvedOptions),
 				resolvedCallback,
@@ -713,7 +784,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.cp(source, destination, resolvedOptions), resolvedCallback)
 		},
 		cpSync(source: PathLike, destination: PathLike, options?: CopyOptions) {
@@ -775,7 +847,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.lstat(path, resolvedOptions), resolvedCallback as never)
 		},
 		lstatSync(path: PathLike, options?: { bigint?: boolean; throwIfNoEntry?: boolean }) {
@@ -794,7 +867,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.mkdir(path, resolvedOptions), resolvedCallback as never)
 		},
 		mkdirSync(path: PathLike, options?: { recursive?: boolean }) {
@@ -817,7 +891,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.readFile(path, resolvedOptions), resolvedCallback as never)
 		},
 		readFileSync(
@@ -837,7 +912,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.readdir(path, resolvedOptions), resolvedCallback as never)
 		},
 		readdirSync: ((path: PathLike, options?: { withFileTypes?: boolean }) => {
@@ -850,7 +926,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.readlink(path, resolvedOptions), resolvedCallback as never)
 		},
 		readlinkSync(path: PathLike, options?: { encoding?: BufferEncoding }) {
@@ -864,7 +941,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.realpath(path, resolvedOptions), resolvedCallback as never)
 		},
 		realpathSync(path: PathLike, options?: { encoding?: BufferEncoding }) {
@@ -880,7 +958,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		rm(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null) => void) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.rm(path, resolvedOptions), resolvedCallback)
 		},
 		rmSync(path: PathLike, options?: RmOptions) {
@@ -889,7 +968,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		rmdir(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null) => void) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.rmdir(path, resolvedOptions), resolvedCallback)
 		},
 		rmdirSync(path: PathLike) {
@@ -902,7 +982,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.stat(path, resolvedOptions), resolvedCallback as never)
 		},
 		statSync(path: PathLike, options?: { bigint?: boolean; throwIfNoEntry?: boolean }) {
@@ -922,7 +1003,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof type === 'function' ? type : callback
 			const resolvedType = typeof type === 'function' ? undefined : type
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.symlink(target, path, resolvedType), resolvedCallback)
 		},
 		symlinkSync(target: string, path: PathLike, type?: string) {
@@ -942,7 +1024,8 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
-			if (!resolvedCallback) return
+			if (typeof resolvedCallback !== 'function')
+				throw new TypeError('A callback is required; use fixture.fsp for Promise operations')
 			callbackify(() => fsp.writeFile(path, data, resolvedOptions), resolvedCallback)
 		},
 		writeFileSync(path: PathLike, data, options?) {
@@ -988,24 +1071,28 @@ function wrapFixture(raw: FsFixture, runtime: FixtureFsApi): TestFixture {
 
 export async function createFixture(
 	source?: string | FileTree,
-	options: CreateFixtureOptions = {},
+	options: MemoryFixtureOptions = {},
 ): Promise<TestFixture> {
+	if ('fs' in options || 'tempDir' in options)
+		throw new TypeError(
+			'Memory fixtures own fs and tempDir; use createDiskFixture for a native temporary directory',
+		)
 	const state = createMemoryState()
 	const runtime = createVirtualRuntime(state)
-	// Memory fixtures own their VFS/runtime. Ignore external fs/tempDir injection here.
-	const { fs: _ignoredFs, tempDir: _ignoredTempDir, ...rest } = options
 	const raw = await createRawFixture(source, {
 		tempDir: state.root,
 		fs: runtime.fsp as unknown as CreateFixtureOptions['fs'],
-		...rest,
+		...options,
 	})
 	return wrapFixture(raw, runtime)
 }
 
 export async function createDiskFixture(
 	source?: string | FileTree,
-	options: CreateFixtureOptions = {},
+	options: DiskFixtureOptions = {},
 ): Promise<TestFixture> {
+	if ('fs' in options)
+		throw new TypeError('Disk fixtures use the native filesystem; fs cannot be overridden')
 	const raw = await createRawFixture(source, options)
 	const root = dirname(raw.path)
 	return wrapFixture(raw, {

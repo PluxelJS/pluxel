@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/test",
 	"version": "1.0.0",
-	"description": "Core/plugin test utilities for Pluxel packages (fixtures + Vitest preset).",
+	"description": "Production-backed plugin test host, fixtures, and Vitest toolchain for Pluxel.",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -14,6 +14,11 @@
 	],
 	"type": "module",
 	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
+		},
 		"./fixtures": {
 			"@pluxel/source": "./src/fixtures.ts",
 			"import": "./dist/fixtures.mjs",
@@ -33,6 +38,10 @@
 	},
 	"publishConfig": {
 		"exports": {
+			".": {
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
+			},
 			"./fixtures": {
 				"import": "./dist/fixtures.mjs",
 				"require": "./dist/fixtures.cjs"
@@ -55,11 +64,14 @@
 		"typecheck": "tsc -p tsconfig.json --noEmit"
 	},
 	"dependencies": {
-		"@pluxel/rolldown": "workspace:^"
+		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"@pluxel/workbench": "workspace:^"
 	},
 	"devDependencies": {
 		"@platformatic/vfs": "catalog:dev",
 		"@pluxel/core": "workspace:*",
+		"capnweb": "catalog:prod",
 		"fs-fixture": "catalog:dev",
 		"vitest": "catalog:test"
 	},
@@ -72,6 +84,6 @@
 	},
 	"inlinedDependencies": {
 		"@platformatic/vfs": "0.4.0",
-		"fs-fixture": "2.14.0"
+		"fs-fixture": "2.16.0"
 	}
 }

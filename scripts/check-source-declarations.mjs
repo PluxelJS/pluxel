@@ -10,12 +10,11 @@ const declarationMapPattern = /\.d\.[cm]?ts\.map$/
 // Register them explicitly; a tracked file or a declaration-looking name alone
 // must never exempt generated compiler output from this check.
 const allowedDeclarations = new Set([
-	'packages/runtime-dynamic/src/third-party.d.ts',
 	'packages/test/src/vendor-types.d.ts',
 	'packages/valibot-form/src/web/vite-env.d.ts',
-	'packages/workbench-app/src/theme/mantine/mantine.d.ts',
-	'packages/workbench-app/src/types/worksplit-react.d.ts',
-	'packages/workbench-app/src/vite-env.d.ts',
+	'packages/workbench/shell/src/theme/mantine/mantine.d.ts',
+	'packages/workbench/shell/src/types/worksplit-react.d.ts',
+	'packages/workbench/shell/src/vite-env.d.ts',
 	'projects/docs/src/styles.d.ts',
 ])
 

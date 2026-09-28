@@ -2,7 +2,7 @@
 // - 你需要“抽象能力 token + 多个 provider 实现”
 // - 你不想让 consumer 依赖某个具体插件类
 
-import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
 
 export abstract class DemoClock extends BasePlugin {
 	abstract now(): number

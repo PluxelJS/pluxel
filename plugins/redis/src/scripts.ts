@@ -3,13 +3,10 @@ import type { RedisArgument } from 'redis'
 
 declare const REDIS_SCRIPT_TYPES: unique symbol
 
-export interface RedisScriptCall<
+export type RedisScriptCall<
 	Keys extends readonly RedisArgument[] = readonly RedisArgument[],
 	Arguments extends readonly RedisArgument[] = readonly RedisArgument[],
-> {
-	keys: Keys
-	arguments?: Arguments
-}
+> = { keys: Keys } & ([] extends Arguments ? { arguments?: Arguments } : { arguments: Arguments })
 
 export interface RedisScriptDefinition<
 	Keys extends readonly RedisArgument[] = readonly RedisArgument[],
@@ -97,7 +94,8 @@ type ScriptCommandOptions = {
 }
 
 export class RedisScripts {
-	private readonly runners = new WeakMap<object, RedisScriptRunner>()
+	// Definition identity fixes each cached runner's key/argument/result types.
+	private readonly runners = new WeakMap<object, unknown>()
 
 	constructor(private readonly getClient: () => unknown) {}
 
@@ -107,7 +105,7 @@ export class RedisScripts {
 		const existing = this.runners.get(definition)
 		if (existing) return existing as RedisScriptRunner<Keys, Arguments, Result>
 		const runner: RedisScriptRunner<Keys, Arguments, Result> = (call) => this.run(definition, call)
-		this.runners.set(definition, runner as RedisScriptRunner)
+		this.runners.set(definition, runner)
 		return runner
 	}
 

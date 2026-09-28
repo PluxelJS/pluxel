@@ -33,14 +33,14 @@ exceptional platform lifecycle -> custom @Plugin(S3, ...)
 
 ordinary config 只保存 per-bucket Vault namespace/key 引用，不保存 access key。vault mode 从 owner-bound `ctx.vault` 读取一个
 `S3AccessKeyCredentials` object；local/anonymous 分支不触碰 Vault。Vault 缺失、引用不存在或 payload 非法会让 `init()` 失败，
-不会构造半配置 client。credential snapshot 每 generation 读取一次，rotation 通过正常 restart/replacement 生效。
+不会构造半配置 client。每个 remote/vault bucket 通过 Vault watch 取得初始 snapshot 并观察更新；新请求使用替换后的 client，已发出请求保留旧 snapshot。缺失或非法更新撤销后续 client 访问，不回退 anonymous。watch 随 generation cleanup 释放。
 
 每个已经运行的 generation 固定发布一个 Workbench bucket Content，以 bounded rows 区分各 ID 的 local、remote/anonymous 与
 remote/vault，保持 definition topology 不随 config 或 bucket 数变化；只有选中的 remote/vault bucket 接受 rotation，local/anonymous 明确
 报告 `not-applicable`、拒绝 action 且不访问 Vault。一次性 password form 覆盖当前配置引用的
 Vault record。Handler 重新检查 authenticated Management principal、generation 仍在运行且 backend 仍为 remote/vault，串行
 执行 `kv.set()` + `flush()`，只返回通用成功/失败 message；旧值、新值不进入 Content plan、load、result 或日志，Vault
-namespace/key 也不进入 Content transport。新 credential 仍只在正常 restart/replacement 后生效。
+namespace/key 也不进入 Content transport。新 credential 经 watch 应用于后续请求。只读环境/文件绑定不接受 rotation，修改源后重启应用。
 
 这条路径不承担首次 provisioning：missing/invalid credential 会让 `init()` 失败，失败 generation 的 publication 会随 rollback
 撤销。为了显示 setup Content 而让 S3 capability 半启动，或另建脱离 owner lifecycle 的 provisioning registry，都会破坏既有能力与

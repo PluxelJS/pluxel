@@ -1,4 +1,5 @@
-import { f, v } from '@pluxel/runtime'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 export const FONT_MANAGER_PLUGIN_NAME = 'PluginContributionFontManager' as const
 export const FONT_KIND = 'font-set' as const

@@ -1,7 +1,9 @@
-# Core
+# Core：图、Context 与 generation
 
 `@pluxel/core` 定义 Plugin definition/node、DI graph、Plugin Context projection 和 generation lifecycle，不拥有宿主能力。
 通用 Context host kernel 由公开的 `@pluxel/context` 提供；Core 源码直接复用它，并在发布产物中完整内联。
+
+按修改对象选读：[Context kernel](#context-capability-kernel)、[identity/DI](#identity-与-di-不变量)、[record/graph 成本](#definitionnode-与-generation)、[caller facade](#生命周期与-caller-facade)、[Part/events](#内部组成与事件)。Commit 状态转换和失败证据由 [CORE_LIFECYCLE_SEMANTICS](CORE_LIFECYCLE_SEMANTICS.md) 单独维护。
 
 ## 负责
 
@@ -119,34 +121,9 @@ Core update 是 bounded top-level transaction。`prepare()` 完成 candidate/add
 prepare 前的异常可 rollback draft。prepared commit 进入 lifecycle stop/start 后已越过 point of no return，post-commit config/init/drain
 failure 只进入结构化 lifecycle report，不把旧 generation 冒充成已回滚的当前状态。
 
-## 生命周期不变量
+## 生命周期与 caller facade
 
-```text
-draft graph -> verify combined required/optional graph -> stop plan -> start plan
-            -> host publication -> CommitSummary
-```
-
-- provider 启动失败只阻塞 required dependents；optional consumer 走 absent 路径。
-- optional provider 的 running generation 出现、消失或 replacement 时，consumer 与其 required dependent closure 在同一
-  plan 中最多重启一次；consumer effects 必须在 provider 停止前 drain。
-- generation 停止时先关闭 owner invocation gate、abort generation，再 drain effects。
-- `init()` 返回的 cleanup/disposable 自动进入当前 effects；正常停止、rollback、replacement、optional restart 与 shutdown
-  不调用第二套 teardown hook。
-- host 可以在 root 创建前固定提供一个 package-private generation finalizer。它在全部 Part 与 Plugin `init()` 成功后、generation
-  进入 running 前执行；它与最终同步 publication callback 共享一个 immutable operation token。finalizer failure 使用普通 start failure、
-  dependent blocking 与 effects rollback，不成为新的 Plugin teardown contract。独立 generation 的 finalizer 可以并发，只产出自己的
-  host candidate，不能依赖异步完成顺序做跨 owner first-wins 仲裁。
-- initial 与 optional availability start wave settle 后，Core 把本 operation 的新 generation 按 provider-first、同 frontier canonical
-  node address 的稳定全序交给 package-private async settlement callback，同时提供将撤下的旧 generation Context。host 可以按 Context
-  返回 rejection；Core 把它记录为 `start-failed`、drain/delete required dependent closure，并重启 optional ordering closure。重启产生的
-  candidate 会再次 settlement，直到没有未 settle generation；普通 collision 不得推迟到最终 publication callback。
-- 全部 start outcome 确定后，Core 在 `_lastCommit`、instance watcher、commit listener 与 `CommitSummary` 可见前调用一次 package-private
-  async commit preparation，再把同一个 frozen publication fact 交给同步 publication callback。输入只包含本次 `started`、`stopped` 与
-  未进入 running 的 `failed` generation facts；preparation 构造最终 immutable host state，publication 只交换已准备好的 pointer 并返回
-  `undefined`。任一 callback throw 都是 post-point-of-no-return host invariant failure：原错误向 commit 返回，不伪装成 lifecycle issue、
-  不发布 summary，并禁止该 root 继续提交。
-- abort/timeout 后迟到的 `init()` fulfillment 不会重新发布 running；迟到返回的 cleanup 会立即执行。
-- lifecycle report 是事实源，宿主基于它制定退出、告警或降级策略。
+Commit transition、finalizer/settlement/publication、late init 与 effects 不变量由 [生命周期语义](CORE_LIFECYCLE_SEMANTICS.md)及其证据矩阵统一维护。Core 的关键边界是 prepare 可拒绝候选，旧 admission 关闭后只报告真实 lifecycle outcome，不复活旧 generation；Host publication 必须先准备完整 immutable state，再同步交换 pointer。
 
 generation construction 通过同步 construction stack 把 node Context 注入原始 implementation；default 与 fork 都以同一个
 implementation 作为 `new.target`，不创建 subclass。root constructor 只消费自己有序的 direct requirements；provider factory 按
@@ -158,6 +135,10 @@ required 与 optional dependency 共用 scoped consumer Context/provider generat
 委托 raw provider，method/getter receiver 保持 caller Context。旧 facade 的 method/getter/write 都经过 provider 与 consumer generation
 admission gate，任一侧 replacement 后不能调用旧 generation。Core internal state mutation fail-fast；Plugin inheritance 中的 ECMAScript
 `#private` 由 semantic pass 拒绝。
+
+Caller facade 在 provider construction 完成后一次编译普通 fields/prototype surface，保持 non-extensible/non-configurable shape。每次 method/getter invocation 用独立 receiver 固定 caller；字段读写委托 raw provider，不形成 shadow state。动态新增字段不能通过 dependency surface 发布。
+
+Plugin inheritance 中 instance `#private` 无法经过 facade brand check；function-valued instance fields 会固定错误 receiver；type-only `declare` field 没有 construction-time shape。三者由 semantic pass 分别以 `plugin_caller_view_private_brand_unsupported`、`plugin_caller_view_callable_field_unsupported`、`plugin_caller_view_declared_field_unsupported` 拒绝。可调用跨节点 surface 用 prototype method；accessor 只返回普通数据或具有自身 receiver/withdrawal 契约的 object handle。运行期动态 callable field/accessor result 同样 fail-fast。TypeScript 普通 `private` 与不作为 dependency facade 的 Part 不受 private-brand 限制。
 
 ## 内部组成与事件
 
@@ -192,5 +173,4 @@ module-augmented `ctx.events`，其订阅绑定 owner effects。Core lifecycle �
 - `packages/core/src/services/effects/EffectsService.ts`
 - `packages/core/src/services/config/`
 
-只验证 DI、lifecycle、optional restart、config 和 effects 时使用 core test host；需要 runtime service 时进入
-`@pluxel/runtime/test`。测试中的 Plugin 仍必须经过 semantic lowering；unsafe facts helper 只用于明确的 core/runtime 内部测试。
+普通插件测试统一使用 `@pluxel/test`，显式选择 runtime services；Core 图语义白盒回归使用 `@pluxel/core/internal/test`。测试中的 Plugin 仍必须经过 semantic lowering；unsafe facts helper 只用于明确的 core/runtime 内部测试。

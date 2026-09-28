@@ -1,11 +1,15 @@
+import { vault } from '@pluxel/services/vault'
+import { standardServices } from '@pluxel/services'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { newWebSocketRpcSession, type RpcStub } from '@pluxel/runtime/capnweb'
-import { requireRuntimeHttpService, type ElysiaApplicationCarrier } from '@pluxel/runtime/internal'
-import { createRuntimeInternalTestHost } from '@pluxel/runtime/internal/test'
-import { NodeElysiaApplicationCarrier } from '@pluxel/runtime-node'
-import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/runtime/web/session'
+import { newWebSocketRpcSession, type RpcStub } from 'capnweb'
+import { ElysiaRuntime, type ElysiaApplicationCarrier } from '@pluxel/services/internal'
+import { resolveContextCapability } from '@pluxel/core/host'
+import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
+import { NodeElysiaApplicationCarrier } from '../../../packages/services/src/elysia/node'
+import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/services/management/session'
 import NodeWebSocket from 'crossws/websocket'
 import { describe, expect, it } from 'vitest'
 import { CredentialStore } from '../src/credentials.ts'
@@ -28,66 +32,87 @@ function peerAddress() {
 
 describe('official authentication vNext Runtime integration', () => {
 	it('authenticates through a physical Runtime Session WebSocket carrier', async () => {
-		const fixture = new AuthRuntimeSessionCarrierFixture()
+		await using fixture = new AuthRuntimeSessionCarrierFixture(
+			await createServiceInternalTestHost({
+				management: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			}),
+		)
+
+		await fixture.start()
+		const connection = fixture.connect()
+		await withRuntimeSessionTimeout(waitForOpen(connection.socket), 'Auth socket open')
+
+		const challenge = await withRuntimeSessionTimeout(
+			bootstrapRuntimeSession(connection.root),
+			'Auth password challenge',
+		)
 		try {
-			await fixture.start()
-			const connection = fixture.connect()
-			await withRuntimeSessionTimeout(waitForOpen(connection.socket), 'Auth socket open')
-
-			const challenge = await withRuntimeSessionTimeout(
-				bootstrapRuntimeSession(connection.root),
-				'Auth password challenge',
-			)
-			try {
-				expect(challenge).toMatchObject({ kind: 'authentication-required', profile: 1 })
-				if (challenge.kind !== 'authentication-required') {
-					throw new Error('Expected Runtime Session authentication challenge')
-				}
-				const step = await challenge.authentication.submit({ password: PASSWORD })
-				try {
-					expect(step).toMatchObject({
-						kind: 'authenticated',
-						principal: { subject: 'local:admin', displayName: 'Admin' },
-					})
-				} finally {
-					disposeRpcValue(step)
-				}
-			} finally {
-				disposeRpcValue(challenge)
+			expect(challenge).toMatchObject({ kind: 'authentication-required', profile: 2 })
+			if (challenge.kind !== 'authentication-required') {
+				throw new Error('Expected Runtime Session authentication challenge')
 			}
-
-			const ready = await withRuntimeSessionTimeout(
-				bootstrapRuntimeSession(connection.root),
-				'Auth management bootstrap',
-			)
+			const step = await challenge.authentication.submitDto({ password: PASSWORD })
 			try {
-				expect(ready).toMatchObject({ kind: 'management', profile: 1 })
-				if (ready.kind !== 'management') {
-					throw new Error('Expected Runtime Session Management capability')
-				}
-				const management = await ready.management.describe()
-				try {
-					expect(management).toMatchObject({
-						protocol: { name: 'pluxel.management', major: 6 },
-						workbench: { enabled: false },
-					})
-				} finally {
-					disposeRpcValue(management)
-				}
+				expect(step).toMatchObject({
+					kind: 'authenticated',
+					principal: { subject: 'local:admin', displayName: 'Admin' },
+				})
 			} finally {
-				disposeRpcValue(ready)
-				connection.root[Symbol.dispose]()
-				connection.socket.close()
+				disposeRpcValue(step)
 			}
-			expect(fixture.upgradeCount).toBe(1)
 		} finally {
-			await fixture.dispose()
+			disposeRpcValue(challenge)
 		}
+
+		const ready = await withRuntimeSessionTimeout(
+			bootstrapRuntimeSession(connection.root),
+			'Auth management bootstrap',
+		)
+		try {
+			expect(ready).toMatchObject({ kind: 'management', profile: 2 })
+			if (ready.kind !== 'management') {
+				throw new Error('Expected Runtime Session Management capability')
+			}
+			const management = await ready.management.describeDto()
+			try {
+				expect(management).toMatchObject({
+					protocol: { name: 'pluxel.management', major: 7 },
+					workbench: { enabled: false },
+				})
+			} finally {
+				disposeRpcValue(management)
+			}
+
+			// The accepted operation may lose its reply when it withdraws its own authentication
+			// authority, but it must drain the provider without waiting on the session's lease.
+			const stopped = Promise.resolve(
+				ready.management.applyPluginLifecycleCommandsDto([
+					{ address: pluginNodeAddressOf(AuthPlugin), command: 'stop' },
+				]),
+			).then(
+				(result): void => {
+					disposeRpcValue(result)
+					return undefined
+				},
+				(): void => undefined,
+			)
+			await withRuntimeSessionTimeout(stopped, 'authentication provider self-stop')
+			await expect.poll(() => fixture.host.isRunning(AuthPlugin), { timeout: 3_000 }).toBe(false)
+		} finally {
+			disposeRpcValue(ready)
+			connection.root[Symbol.dispose]()
+			connection.socket.close()
+		}
+		expect(fixture.upgradeCount).toBe(1)
 	}, 15_000)
 
 	it('runs password challenge and commits its session through the narrow endpoint', async () => {
-		await using host = createRuntimeInternalTestHost(
-			{ management: true, vault: {} },
+		await using host = await createServiceInternalTestHost(
+			{
+				management: true,
+				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			},
 			{ requestAddress: peerAddress },
 		)
 		await host.start(AuthPlugin, {
@@ -155,7 +180,7 @@ describe('official authentication vNext Runtime integration', () => {
 	})
 
 	it('returns only the fixed OIDC navigation instruction', async () => {
-		await using host = createRuntimeInternalTestHost(
+		await using host = await createServiceInternalTestHost(
 			{ management: true },
 			{ requestAddress: peerAddress },
 		)
@@ -183,7 +208,6 @@ describe('official authentication vNext Runtime integration', () => {
 })
 
 class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
-	readonly host = createRuntimeInternalTestHost({ management: true, vault: {} })
 	readonly server: Server
 	readonly carrier: NodeElysiaApplicationCarrier
 	readonly trustedCarrier: ElysiaApplicationCarrier
@@ -192,8 +216,8 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 	private detachCarrier: (() => void) | undefined
 	private listening = false
 
-	constructor() {
-		const http = requireRuntimeHttpService(this.host.ctx)
+	constructor(readonly host: Awaited<ReturnType<typeof createServiceInternalTestHost>>) {
+		const http = resolveContextCapability(this.host.ctx, ElysiaRuntime)
 		this.server = createServer((_request, response) => response.writeHead(404).end('Not Found'))
 		this.carrier = new NodeElysiaApplicationCarrier({
 			fetch: (request) => this.host.http.fetch(request),
@@ -299,7 +323,7 @@ function bootstrapRuntimeSession(
 ): Promise<RuntimeSessionBootstrap> {
 	// Cap'n Web distributes a union result into a union of Promise types; the wire operation itself
 	// still has one settled bootstrap value, so normalize it before applying the test timeout.
-	return root.bootstrap(() => undefined) as Promise<RuntimeSessionBootstrap>
+	return root.bootstrap((): void => undefined) as Promise<RuntimeSessionBootstrap>
 }
 
 function waitForOpen(socket: WebSocket): Promise<void> {

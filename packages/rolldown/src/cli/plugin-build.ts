@@ -120,6 +120,10 @@ export function pluginPackage(
 			manifestField: options.packageMetadata.manifestField,
 			log: options.packageMetadata.log,
 			collectPlugins: () => semantics.snapshot(),
+			collectWorkbenchTargets: async () => {
+				const targets = await semantics.workbenchCompilations()
+				return targets.length > 0
+			},
 		}),
 	}
 }

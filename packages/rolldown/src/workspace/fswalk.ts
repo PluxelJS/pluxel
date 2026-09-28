@@ -1,6 +1,4 @@
-import { existsSync } from 'node:fs'
 import { posix, resolve } from 'pathe'
-import { fdir } from 'fdir'
 import {
 	nodeWorkspaceFs,
 	type WorkspaceDirEntryLike,
@@ -56,8 +54,8 @@ async function visitFiles(params: {
 		entries = (await params.fs.promises.readdir(params.dir, {
 			withFileTypes: true,
 		})) as unknown as WorkspaceDirEntryLike[]
-	} catch {
-		return
+	} catch (cause) {
+		throw new Error(`Cannot enumerate directory ${params.dir}`, { cause })
 	}
 
 	for (const entry of entries) {
@@ -76,8 +74,8 @@ async function visitFiles(params: {
 			try {
 				resolvedPath = toPosix(await params.fs.promises.realpath(fullPath))
 				resolvedStats = await params.fs.promises.stat(fullPath)
-			} catch {
-				continue
+			} catch (cause) {
+				throw new Error(`Cannot follow directory entry ${fullPath}`, { cause })
 			}
 			if (resolvedStats.isDirectory?.()) {
 				const baseName = resolvedPath.split('/').pop() ?? ''
@@ -100,15 +98,18 @@ export async function crawlFilesAbsWithFs(
 	opts: CrawlFilesOptions,
 	fs: WorkspaceFs = nodeWorkspaceFs,
 ): Promise<string[]> {
-	if (fs === nodeWorkspaceFs) {
-		return await crawlFilesAbsNode(opts)
-	}
-
 	const followSymlinks = opts.followSymlinks ?? true
 	const ignore = new Set<string>(opts.ignoreDirNames ?? DEFAULT_IGNORED_DIR_NAMES)
-	const roots = uniqSorted(
-		opts.roots.map((root) => toPosix(resolve(root))).filter((root) => fs.existsSync(root)),
-	)
+	const roots = uniqSorted(opts.roots.map((root) => toPosix(resolve(root))))
+	for (const root of roots) {
+		let stats: WorkspaceStatsLike
+		try {
+			stats = await fs.promises.stat(root)
+		} catch (cause) {
+			throw new Error(`Cannot inspect scan root ${root}`, { cause })
+		}
+		if (!stats.isDirectory?.()) throw new Error(`Scan root is not a directory: ${root}`)
+	}
 	const out: string[] = []
 	const seen = new Set<string>()
 
@@ -124,33 +125,6 @@ export async function crawlFilesAbsWithFs(
 			out,
 			seen,
 		})
-	}
-
-	return uniqSorted(out)
-}
-
-async function crawlFilesAbsNode(opts: CrawlFilesOptions): Promise<string[]> {
-	const followSymlinks = opts.followSymlinks ?? true
-	const ignore = new Set<string>(opts.ignoreDirNames ?? DEFAULT_IGNORED_DIR_NAMES)
-
-	const out: string[] = []
-
-	for (const root of opts.roots) {
-		const absRoot = toPosix(resolve(root))
-		if (!existsSync(absRoot)) continue
-
-		let crawler = new fdir().withFullPaths().exclude((name) => ignore.has(name))
-		if (followSymlinks) crawler = crawler.withSymlinks({ resolvePaths: true })
-
-		const files = await crawler
-			.filter((p, isDirectory) => {
-				if (isDirectory) return true
-				return opts.fileFilter ? opts.fileFilter(p) : true
-			})
-			.crawl(absRoot)
-			.withPromise()
-
-		for (const f of files) out.push(toPosix(f))
 	}
 
 	return uniqSorted(out)

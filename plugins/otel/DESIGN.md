@@ -92,7 +92,7 @@ resource 是 `defaultResource()` 与显式环境 attributes 的 merge；`service
 
 - 不提供 `measure()`、decorator、RED wrapper、固定 instruments 或 attribute registry；
 - 不自动 instrument runtime、HTTP、database 或业务 Plugin；
-- 不把 `ctx.logger` 悄悄桥接到 logs signal；RuntimeLogging 仍由 launcher 独占配置；
+- 不把 `ctx.logger` 悄悄桥接到 logs signal；`RuntimeLogging` 仍由 Host 的 Logging 安装与配置拥有；
 - 不在应用内实现 durable queue、fan-out、backend routing、dashboard 或 alerting；
 - 不支持 OTLP Profiles：协议仍是 `v1development`，OTel JS 2.10/0.221 没有 profiles API、SDK/exporter package。
 

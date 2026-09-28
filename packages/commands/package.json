@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/commands",
 	"version": "1.0.0",
-	"description": "Schema-first command kernel for agent tools, CLIs, and message adapters",
+	"description": "Typed command kernel for CLIs and transport adapters",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -29,6 +29,21 @@
 			"import": "./dist/argv.mjs",
 			"require": "./dist/argv.cjs"
 		},
+		"./capnweb": {
+			"@pluxel/source": "./src/capnweb.ts",
+			"import": "./dist/capnweb.mjs",
+			"require": "./dist/capnweb.cjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"import": "./dist/internal.mjs",
+			"require": "./dist/internal.cjs"
+		},
+		"./mcp": {
+			"@pluxel/source": "./src/mcp.ts",
+			"import": "./dist/mcp.mjs",
+			"require": "./dist/mcp.cjs"
+		},
 		"./typebox": {
 			"@pluxel/source": "./src/typebox.ts",
 			"import": "./dist/typebox.mjs",
@@ -46,6 +61,18 @@
 				"import": "./dist/argv.mjs",
 				"require": "./dist/argv.cjs"
 			},
+			"./capnweb": {
+				"import": "./dist/capnweb.mjs",
+				"require": "./dist/capnweb.cjs"
+			},
+			"./internal": {
+				"import": "./dist/internal.mjs",
+				"require": "./dist/internal.cjs"
+			},
+			"./mcp": {
+				"import": "./dist/mcp.mjs",
+				"require": "./dist/mcp.cjs"
+			},
 			"./typebox": {
 				"import": "./dist/typebox.mjs",
 				"require": "./dist/typebox.cjs"
@@ -61,12 +88,27 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@sinclair/typebox": "catalog:prod"
+		"@sinclair/typebox": "catalog:prod",
+		"better-result": "catalog:prod"
 	},
 	"devDependencies": {
+		"@modelcontextprotocol/sdk": "catalog:prod",
 		"@pluxel/test": "workspace:*",
 		"@sinclair/parsebox": "catalog:dev",
-		"@types/node": "catalog:types"
+		"@types/node": "catalog:types",
+		"capnweb": "catalog:dev"
+	},
+	"peerDependencies": {
+		"@modelcontextprotocol/sdk": "catalog:prod",
+		"capnweb": "catalog:prod"
+	},
+	"peerDependenciesMeta": {
+		"@modelcontextprotocol/sdk": {
+			"optional": true
+		},
+		"capnweb": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"

@@ -1,16 +1,15 @@
+import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
+import { standardServices } from '@pluxel/services'
+import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
-import type { PluginConstructor } from '@pluxel/runtime'
-import {
-	BasePlugin,
-	createRuntimeTestHost,
-	Plugin,
-	type RawPluginConfig,
-	type RuntimeTestHost,
-} from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { EChartsPlugin, type EChartsThemeRegistration } from '../src/index.ts'
 import { EChartsWorkbench } from '../src/workbench.ts'
+import { persistence } from '@pluxel/services/persistence'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
+import { renderChart } from './fixtures/result-consumer.ts'
 
 @Plugin()
 class EChartsTestConsumer extends BasePlugin {
@@ -27,7 +26,7 @@ class EChartsOtherConsumer extends BasePlugin {
 }
 
 async function startEChartsFixture(
-	host: RuntimeTestHost,
+	host: TestHost<boolean>,
 	options: Readonly<{ config?: RawPluginConfig; otherConsumer?: boolean }> = {},
 ): Promise<void> {
 	const plugins: readonly PluginConstructor[] = [
@@ -45,15 +44,49 @@ async function startEChartsFixture(
 }
 
 describe('EChartsPlugin', () => {
+	// This compiles and starts a real native worker; cold startup is not a 5-second SLA.
+	it('demonstrates worker admission pressure as a Result while cancellation still rejects', async () => {
+		await using host = await createTestHost({
+			services: [
+				persistence({ mode: 'memory' }),
+				nodeModules(),
+				workers({ maxThreads: 1, maxQueuedTasks: 1, maxQueuedTasksPerPlugin: 1 }),
+			],
+		})
+		await startEChartsFixture(host)
+		const charts = host.require(EChartsTestConsumer).echarts
+		const input = { option: {}, width: 32, height: 32 }
+		const [first, second, third] = await Promise.all([
+			renderChart(charts, input),
+			renderChart(charts, input),
+			renderChart(charts, input),
+		])
+		expect(first.isOk()).toBe(true)
+		expect(second.isOk()).toBe(true)
+		expect(third.isErr()).toBe(true)
+		if (third.isOk()) throw new Error('Unexpected Result branch')
+		expect(third.error._tag).toBe('ChartBusy')
+		const aborted = new Error('caller cancelled')
+		await expect(
+			renderChart(charts, { ...input, signal: AbortSignal.abort(aborted) }),
+		).rejects.toBe(aborted)
+		await host.stop(EChartsTestConsumer)
+		await expect(renderChart(charts, input)).rejects.toThrow(Error)
+	}, 30_000)
+
 	it('starts through the public Runtime host without requesting a worker artifact', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
 		await startEChartsFixture(host)
 		expect(host.require(EChartsTestConsumer).echarts.defaultFont.family.length).toBeGreaterThan(0)
 	})
 
 	it('rejects invalid theme values before they become caller-owned state', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
 		await startEChartsFixture(host, { config: { maxThemeNodes: 2 } })
 		const echarts = host.require(EChartsTestConsumer).echarts
@@ -75,7 +108,9 @@ describe('EChartsPlugin', () => {
 	})
 
 	it('bounds provider-wide retained theme count and returns capacity on dispose', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
 		await startEChartsFixture(host, {
 			config: { maxTotalThemes: 1 },
@@ -94,7 +129,9 @@ describe('EChartsPlugin', () => {
 	})
 
 	it('bounds aggregate retained theme bytes and reconciles caller cleanup', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
 		await startEChartsFixture(host, {
 			config: { maxTotalThemes: 2, maxTotalThemeBytes: 20 },
@@ -120,7 +157,9 @@ describe('EChartsPlugin', () => {
 	})
 
 	it('keeps named themes caller-owned and revokes them with the caller generation', async () => {
-		await using host = createRuntimeTestHost({ workbench: false })
+		await using host = await createTestHost({
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
 		await startEChartsFixture(host, { otherConsumer: true })
 		const capability = host.require(EChartsTestConsumer).echarts
@@ -154,7 +193,10 @@ describe('EChartsPlugin', () => {
 	})
 
 	it('places the provider-owned Fonts selection Attachment', async () => {
-		await using host = createRuntimeTestHost({ workbench: { enabled: true } })
+		await using host = await createTestHost({
+			workbench: true,
+			services: standardServices({ persistence: { mode: 'memory' } }),
+		})
 
 		await host.start([FontsPlugin, CanvasPlugin, EChartsPlugin])
 
@@ -168,7 +210,7 @@ describe('EChartsPlugin', () => {
 			params: {},
 			federatedViewRef: { expose: './views/selection' },
 		})
-		expect(await selection.provider.snapshot()).toMatchObject({
+		expect(await selection.provider.snapshotDto()).toMatchObject({
 			defaultFont: host.require(EChartsPlugin).defaultFont,
 			families: expect.any(Array),
 		})

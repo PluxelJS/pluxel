@@ -1,34 +1,27 @@
-import { constraint, issue } from './types'
-
+export { Result } from 'better-result'
 export { defineCommand } from './define'
+export { snapshotCommand } from './snapshot'
 export { createCommandRegistry } from './registry'
 export type { CommandCatalogSnapshot, CommandRegistry } from './registry'
 export { CommandError } from './types'
-
 export type {
 	ArgumentSyntaxReason,
 	AnyCommand,
 	Command,
-	CommandBehavior,
 	CommandContext,
+	CommandContextArgs,
 	CommandDescriptor,
-	CommandExample,
 	CommandErrorCode,
 	CommandErrorDetails,
 	CommandErrorKind,
+	CommandFailure,
 	CommandRegistration,
 	DefineCommandConfig,
 	DirectCommand,
 	Infer,
-	InstalledCommand,
 	ObjectSchema,
-	OutputCommandDefinition,
 	Registration,
 	Schema,
 	ValidationIssue,
-	Validator,
-	VoidCommandDefinition,
 	Wire,
 } from './types'
-
-export const validation = { issue, constraint } as const

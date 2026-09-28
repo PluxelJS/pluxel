@@ -1,297 +1,247 @@
 ---
-title: Commands 与 Agent 集成
-description: 定义一次命令契约，再复用于统一注册表、可选 Agent Plugin、CLI、HTTP 和 Workbench。
+title: Commands
+description: 定义受校验的操作，并按需发布到命令目录或载体。
 ---
 
-`@pluxel/commands` 让可携带的业务命令只定义一次输入、输出、副作用等级和执行函数，再由调用方显式发布到 Agent、CLI、HTTP、Workbench 或 carrier。只属于某个 carrier 的命令也使用同一条校验和错误管线，但可以要求该 carrier 构造的扩展 Context，不必进入 root catalog。
+`@pluxel/commands` 定义可发现、可校验的操作。普通业务复用仍可使用函数或 Plugin 方法；需要命令目录、argv 或工具入口时再定义 Command。Command 只有 `name`、`description`、`input`、`execute` 四项。输入 schema 是公共 wire 契约，handler 接收解码后的值并显式返回 Better Result。
 
-在快速开始生成的工作区根目录运行下面命令，选择定义 command 的插件包，然后安装更新后的依赖：
+在插件包安装 `@pluxel/commands`：
 
 ```sh
 pnpm catalog:add -- @pluxel/commands
 pnpm install
 ```
 
-已有、不使用 catalog 的项目可以在对应包目录运行 `npx nypm add @pluxel/commands`。
-
-只在多个入口需要复用同一个业务操作时定义 command。普通插件方法可以继续直接调用；HTTP 路由见 [插件 HTTP](./http.md)，Agent 权限配置见 [Agent tools](../plugins/agent-tools.md)。
-
-## 1. 定义一个 command
+## 定义和调用
 
 ```ts twoslash
-import { defineCommand } from '@pluxel/commands'
+import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 
-async function readJobStatus(_jobId: string): Promise<'running' | 'stopped' | 'failed'> {
-	return 'running'
-}
-
-// ---cut---
-
-export const jobStatus = defineCommand({
-	name: 'job.status.get',
-	title: 'Job status',
-	description: 'Read the current status of one job.',
-	behavior: { kind: 'query', world: 'closed' },
-	input: obj({
-		jobId: Type.String({
-			description: 'Stable job identifier.',
-			examples: ['cache-refresh'],
-		}),
-	}),
-	output: obj({
-		status: Type.Union([Type.Literal('running'), Type.Literal('stopped'), Type.Literal('failed')]),
-	}),
-	examples: [
-		{
-			title: 'Running job',
-			input: { jobId: 'cache-refresh' },
-			output: { status: 'running' },
-		},
-	],
-	async execute({ jobId }, context) {
-		context.signal?.throwIfAborted()
-		return { status: await readJobStatus(jobId) }
+const echo = defineCommand({
+	name: 'text.echo',
+	description: '返回输入的文本。',
+	input: obj({ text: Type.String() }),
+	execute({ text }) {
+		return Result.ok(text)
 	},
 })
+
+const result = await echo.execute({ text: 'hello' })
+if (result.isErr()) console.error(result.error.code, result.error.message)
+else console.log(result.value)
 ```
 
-`behavior` 描述 discovery、confirmation 和 audit policy 使用的静态最坏情况，不授予权限：
+已知 Command 的 `execute()` 检查 wire 参数类型；来自 JavaScript、`any`、argv 或远程调用的输入仍在运行时校验。它统一返回 `Promise<Result<T, CommandFailure>>`，T 从 handler 的成功分支推导。省略 context 只适用于没有额外必需 context 字段的 Command。
 
-- query 声明 `world: 'closed' | 'open'`；
-- mutation 还必须声明 `destructive` 和 `idempotent`；
-- carrier/host 仍负责 principal、permission、确认、rate limit、credential 和 audit。
+`@pluxel/commands` 再导出的 `Result` 与 `@pluxel/core/better-result` 的 `Result` 来自同一个上游包。需要组合函数等完整 API 时，从 [Better Result 共享入口](../api/better-result.md) 导入；Command 的 Result 无需另行转换。
 
-如果成功没有业务数据，省略 `output` 并让 `execute()` 返回 `void`。若调用方需要 `changed`、状态或新 ID，就显式声明 output；未声明 output 却返回值会成为 `OUTPUT_VALIDATION` fault。
+成功值可以是字符串、对象、数组或 `void`。本地执行不要求 output schema，也不编码成功值。载体负责将它投影到自己的协议，并验证该出口能否交付。
 
-## 在插件中发布并验证
+`input` 必须是 object schema。`obj()` 与嵌套的普通 `Type.Object()` 默认拒绝多余属性；协议确需开放对象时使用 `openObj()`。字段的 description/examples 写在 schema 字段上，完整输入示例写在 input 对象 schema 的 examples。需要在 TypeScript 调用中省略的字段应声明 `Type.Optional()`，不能只依赖运行时 default。
 
-在插件 `init()` 中注册上面的 definition：
+`Type.Transform()` 以 JSON wire 值进入 Command，经过一次 Decode 后交给 handler。定义时检查 refs、defaults 和 schema metadata；输入无效或 Decode 失败得到带 `issues` 的 `INPUT_VALIDATION`。跨字段或领域检查进入 handler，作为显式的业务拒绝。
+
+### 用 Parsebox 解析文本语法
+
+Command 不绑定特定语法解析器。需要自定义文本语法时，在输入字段的 `Type.Transform()` 中调用 Parsebox；argv、Cap’n Web 和直接调用仍提交同一个字符串。应用需自行安装 `@sinclair/parsebox`。
 
 ```ts no-twoslash
-this.ctx.commands.register(jobStatus)
+import { Runtime } from '@sinclair/parsebox'
+import { defineCommand, Result } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
+
+const filterGrammar = new Runtime.Module({
+	Filter: Runtime.Tuple(
+		[Runtime.Const('level'), Runtime.Const('>='), Runtime.Integer()],
+		([, , threshold]) => Number(threshold),
+	),
+})
+
+const filter = Type.Transform(Type.String())
+	.Decode((source) => {
+		const parsed = filterGrammar.Parse('Filter', source.endsWith('\n') ? source : `${source}\n`)
+		if (parsed.length !== 2 || parsed[1].trim()) throw new Error('Invalid level filter')
+		return { source, threshold: parsed[0] }
+	})
+	.Encode((value) => value.source)
+
+const search = defineCommand({
+	name: 'players.search',
+	description: '按等级筛选玩家。',
+	input: obj({ filter }),
+	execute({ filter }) {
+		return Result.ok({ minimumLevel: filter.threshold })
+	},
+})
+
+const result = await search.execute({ filter: 'level >= 3' })
+if (result.isErr()) {
+	if (result.error.code === 'INPUT_VALIDATION') console.error(result.error.issues)
+} else console.log(result.value.minimumLevel) // 3
 ```
 
-先直接执行一次，验证完整的输入校验与业务结果：
+解析失败由 Decode 抛出，Command 返回 `INPUT_VALIDATION`；语法通过后，handler 收到已解析的 `filter`。argv router 只构造输入候选，不另行调用 Parsebox。
 
-```ts no-twoslash
-const result = await jobStatus.execute({ jobId: 'cache-refresh' })
-// result.status === 'running'
-```
-
-然后在 [开发控制台](../development/dev-console.md) 读取宿主的 command catalog，确认存在 `job.status.get`。注册只让命令进入可发现清单；是否暴露给 Agent、HTTP 或消息平台是各入口独立的配置。
-
-## 2. Schema 是唯一公开输入协议
-
-command 的 `input` 必须是 object schema。可携带 command 的顶层字段是所有目标 carrier 共用的参数，不要再为 Agent、CLI 或 HTTP 维护另一套近似 schema；carrier route 只投影这些字段，不复制 schema。
+## 失败与组合
 
 ```ts twoslash
-import { Type, obj, openObj } from '@pluxel/commands/typebox'
+import { defineCommand, Result, type CommandContext } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
 
-const input = obj({
-	retryCount: Type.Optional(Type.Integer({ minimum: 0, default: 3 })),
-	labels: Type.Array(Type.String()),
-	metadata: openObj({}),
-})
-```
-
-`obj()` 以及嵌套的普通 `Type.Object()` 默认拒绝额外属性；只有额外 JSON key 本身就是协议时才使用 `openObj()`。公开 wire value 必须是严格 JSON，不能包含 function、`BigInt`、`Date` 实例、非有限数、cycle 或 class instance。
-
-需要在实现中使用领域类型时，用 JSON-backed `Type.Transform()`：wire schema 仍是字符串/数字等 JSON，Decode 后的值才进入 `validate` 和 `execute`，output 则先 Encode 再校验。可复用引用应使用自包含的 `Type.Module().Import()`；裸 `Type.Ref()` 因 descriptor 没有外部 reference registry，会以 `COMMAND_CONFIG` 拒绝。
-
-字段级 `description`/`examples` 用于解释单个值；command `examples` 表达完整、transport-neutral 的 input/output。不要把 argv 拼写或大段 JSON 塞进 command description。
-
-## 3. 执行与错误契约
-
-```ts no-twoslash
-import { CommandError } from '@pluxel/commands'
-
-try {
-	const value = await jobStatus.execute(
-		{ jobId: 'cache-refresh' },
-		{ signal, deadlineMs: Date.now() + 5_000 },
-	)
-	console.log(value.status)
-} catch (error) {
-	if (error instanceof CommandError) console.error(error.code, error.publicMessage)
+interface NoteContext extends CommandContext {
+	readonly actorId: string
+	readonly read: (id: string, actorId: string, signal?: AbortSignal) => Promise<string | null>
 }
-```
 
-raw command 的 `execute()` 是唯一 validation/codec/business pipeline：它完整执行 wire JSON 检查、schema validation、Decode、自定义 validation、handler、Encode 和 output validation，失败统一抛 `CommandError`。Carrier 可以在这个 pipeline 得到已校验 output 后执行自己的 presenter，但不能复制或绕过它。`deadlineMs` 在 pipeline 阶段之间检查；IO 取消要求实现观察 `context.signal`。
-
-需要向 carrier 暴露可预期失败时抛 `CommandError`：
-
-```ts no-twoslash
-import { CommandError, validation } from '@pluxel/commands'
-
-throw new CommandError('INPUT_VALIDATION', 'Invalid command input', {
-	details: {
-		issues: [validation.constraint('jobId', 'Job does not exist', { code: 'not_found' })],
+const readNote = defineCommand({
+	name: 'notes.read',
+	description: '读取笔记；不存在时 reason 为 not_found。',
+	input: obj({ id: Type.String() }),
+	async execute({ id }, context: NoteContext) {
+		const text = await context.read(id, context.actorId, context.signal)
+		return text === null
+			? Result.err({ code: 'REJECTED', reason: 'not_found', message: '笔记不存在' })
+			: Result.ok({ id, text })
 	},
 })
+
+const result = await readNote.execute({ id: 'one' }, { actorId: 'alice', read: async () => null })
+if (result.isErr() && result.error.code === 'REJECTED') console.log(result.error.reason)
 ```
 
-稳定 code 包括 `COMMAND_CONFIG`、`COMMAND_NOT_FOUND`、`ARGUMENT_SYNTAX`、`INPUT_VALIDATION`、`OUTPUT_VALIDATION`、`FORBIDDEN`、`ABORTED`、`TIMEOUT`、`DEPENDENCY` 和 `INTERNAL`。carrier 按 `code` 分支、向用户展示 `publicMessage`；`message`、`cause` 和 diagnostics 只进入可信日志。`kind` 将配置、输出、依赖和内部错误归为 `fault`，其余归为 `expected`。
+## 发布为 Cap'n Web 方法
 
-## 4. Root catalog 与 lifecycle-neutral registry
+`@pluxel/commands/capnweb` 的 `toCapnweb()` 从明确选择的 Command 生成原生 `RpcTarget` class。构造时传入服务端可信 context；远端只传每个方法的输入。生成的方法位于 prototype，可嵌入原生 Cap'n Web 对象树。
 
-独立 host，或确实需要 name discovery 的 provider-private catalog，使用 factory 创建 registry：
+```ts no-twoslash
+import { toCapnweb } from '@pluxel/commands/capnweb'
+
+const Notes = toCapnweb({ read: readNote })
+const notes = new Notes({ actorId: 'alice', read: async () => 'note text' })
+```
+
+方法返回 `{ ok: true, value }` 或 `{ ok: false, error }`，保留 Command 的失败 `code`、公开 `message`、输入问题和业务 `reason`，不传递本地 `cause`。`void` 成功值成为 `null`；其他成功值必须是普通 JSON 数据，无法按 Cap’n Web 编码格式表示时返回 `OUTPUT_ENCODING`。适配器拒绝以 `Object.prototype` 的属性名或 `toJSON` 命名的输入字段和输出数据键；Cap’n Web 传输会丢弃它们，动态键输入也不得依赖这些名字。会话可以施加额外的消息预算；授权、会话和传输由创建 `RpcTarget` 的应用负责。Cap’n Web HTTP batch 会话仅承载一次请求；后续调用应建立新会话，持续交互可选用宿主已有的 WebSocket 接入。
+
+`REJECTED.reason` 是稳定业务分支信号，`message` 面向人。`CommandFailure` 还区分输入错误、权限、发布撤销、取消、超时、依赖或内部故障。SDK 的已知领域拒绝可以在 handler 内映射；未知 rejection 由 Command 监督为 `INTERNAL`，原异常保留在本地 cause。配置错误和发布安装失败仍按各自生命周期契约抛出。
+
+handler 和公开 `execute()` 使用同一种 Result。组合另一个 Command 时，检查它的 Err 后可以直接返回该 Result；不要包装为 `Result.ok(result)`。`Err` 是 fulfilled value，`Promise.all()` 不会因其中一个 Err 提前失败。Command 不扫描成功值里的 `ok` 字段，也不替业务处理部分成功回执。
+
+`signal` 与 `deadlineMs` 是可信 context 的控制字段；`deadlineMs` 是绝对 Unix 毫秒时间戳，较远的截止时间也会在实际到期时触发。进入 handler 前已取消或超时会阻止执行；执行中的取消通知 handler 并等待其退出。框架 deadline 的 `TIMEOUT` 分类经信号组合和嵌套 Command 调用仍保留；普通调用方取消归为 `ABORTED`。handler 已返回的合法 Result 保留，即使写入后 signal 才变为 aborted，也不会覆盖提交回执。实际 IO 应接收 context.signal。
+
+可信 context 无法读取或展开时，执行返回 `INTERNAL` 并在本地 cause 保留原异常；owner 停止或取消信号触发时返回 `ABORTED`。
+
+## 投影为 MCP Tool
+
+`@pluxel/commands/mcp` 的 `toMcp()` 返回原生 MCP `Tool` 描述和 `call()` 函数，不创建 server 或发布工具。应用把 `tool` 放入自己的工具列表，并在 SDK 的 `tools/call` handler 中按名称选择它；每次调用由应用传入可信 context。
+
+```ts no-twoslash
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { toMcp } from '@pluxel/commands/mcp'
+
+const noteTool = toMcp(readNote)
+const server = new Server({ name: 'notes', version: '1.0.0' }, { capabilities: { tools: {} } })
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [noteTool.tool] }))
+server.setRequestHandler(CallToolRequestSchema, async ({ params }, extra) => {
+	if (params.name !== noteTool.tool.name) throw new Error('Unknown tool')
+	return noteTool.call(params.arguments ?? {}, {
+		actorId: 'alice',
+		read: async () => 'note text',
+		signal: extra.signal,
+	})
+})
+```
+
+上例由应用创建并连接 `Server`，实际 context 应从已认证的请求构造。`noteTool.call()` 返回 `CallToolResult`：成功值编码为 JSON 文本块；失败设置 `isError: true`，文本只包含公开的 `code`、`message`、输入问题或业务 `reason`，不传递本地 `cause`。无法无损编码的成功值返回 `OUTPUT_ENCODING`。应用负责工具选择、认证、权限、会话、传输及清理；如需绑定 Plugin generation，使用下文 carrier mount 的 `handle` 把调用与协议呈现放入同一次 owner 保护。单独对 mounted endpoint 调用 `toMcp()` 只保护 endpoint 的 execute，后续编码仍由外层 carrier 负责。
+
+## 名称目录和 Plugin owner
+
+只有需要按名称发现或调用时才注册：
 
 ```ts no-twoslash
 import { createCommandRegistry } from '@pluxel/commands'
 
 const commands = createCommandRegistry()
-const registration = commands.register(jobStatus)
-
-commands.list() // 冻结、按名称排序的 descriptor
-commands.snapshot() // { revision, descriptors }
-await commands.execute('job.status.get', { jobId: 'cache-refresh' })
-await registration.execute({ jobId: 'cache-refresh' }) // 保留精确 output 类型
-
-registration.dispose() // 幂等撤销后续查找与发现
+using registration = commands.register(echo)
+const known = await registration.execute({ text: 'hello' })
+const dynamic = await commands.execute('text.echo', { text: 'hello' })
 ```
 
-不要 `new CommandRegistry()` 或 subclass；需要注解时只 `import type`。`register()` 返回可执行的 typed installed command 与 `dispose()`；动态 name dispatch 无法推导具体 output，因此 `commands.execute()` 返回 `unknown`。`snapshot()` 在 catalog 未变时复用同一 immutable identity，`list()` 就是其 `descriptors`；`subscribe()` 只通知之后成功的 publication/withdrawal。Installed handle 是一个会按 name/schema 跟随 compatible replacement 的 catalog slot，不能作为 carrier route 的固定 registration identity。
+`registration` 有不可变 descriptor、typed execute、`dispose()` 和 `Symbol.dispose`。撤销后旧句柄永久失效；同名重新注册不会让它复活。动态名称执行跟随当前目录，并返回 `Result<unknown, CommandFailure>`。目录保留 revision、快照和订阅能力。
 
-Pluxel Plugin 应使用 `this.ctx.commands.register(jobStatus)`。Runtime 原样委托 registry 的 list/snapshot/subscribe/execute，只在 registration 上增加 Plugin owner gate 与 generation effects ownership。stop、replacement、rollback 和 shutdown 会撤销 publication；Core 在 owner 离开 running generation 时统一关闭新 invocation、abort call/owner 组合 signal，并等待已接纳调用退出。手动 dispose 只撤销未来 publication，不取消已经进入执行的调用，也不关闭同 owner 其他 command 的 admission。
+Host 用 `@pluxel/services/commands` 的 `commands()` 安装空 root 目录，Plugin 通过 `this.ctx.require(Commands).register(command)` 发布。注册归当前 owner generation 的 effects，停止 Plugin 会撤销发布并等待已接纳的调用退出。root 目录只接受 common `CommandContext`；需要业务扩展 context 的 Command 由对应载体构造 context 并显式发布。
 
-## 5. Carrier publication mount
+`@pluxel/services/management/commands` 的 `managementCommands()` 显式安装管理命令；`servicesPreset()` 选择它，通用 Commands 服务本身不会启动管理面。注册到 root 不会自动向 HTTP 或其他载体暴露。
 
-拥有 argv router、平台 SDK callback 或其他领域 publication surface 的 provider，可以创建一个 owner-bound mount。Mount 是 carrier 实现 primitive，不是普通 consumer 的注册 API。Carrier package 应先用自己的纯 definer 把 direct command、syntax、presenter 和静态 policy 包成领域 declaration，再只公开单参数 `registerCommand(declaration)`：
+## argv 与载体
 
 ```ts no-twoslash
-const echoOnMessage = defineMessageCommand({
-	command: echo,
-	syntax: { routes: ['echo'], positionals: ['text'] },
-	present: (output, { reply }) => reply(output.text),
-})
+import { createArgvRouter, toCli } from '@pluxel/commands/argv'
 
-class ConsumerPlugin extends BasePlugin {
-	constructor(private readonly messages: MessagePlugin) {
-		super()
-	}
-
-	override init() {
-		this.messages.registerCommand(echoOnMessage)
-	}
+const cli = toCli(echo, { routes: ['text echo'], positionals: ['text'] })
+const router = createArgvRouter()
+using binding = router.bind(cli)
+const resolved = router.resolve('text echo hello')
+if (resolved) {
+	const result = await resolved.command.execute(resolved.candidate)
+	if (result.isErr()) console.error(result.error.message)
+	else console.log(result.value)
 }
 ```
 
-Provider 内部才把 declaration 投影成包含 presenter/error rendering 的 direct command，并交给 mount；这些阶段必须在 mounted `execute()` 返回前完成：
+`toCli()` 在定义端校验 Command 的 argv 语法并生成不可变投影；`router.bind()` 只发布投影并检查路由冲突。argv 只解析 grammar 并构造 candidate，Command 才执行输入校验和 Decode。router 支持 routes、aliases、位置参数、options、默认值、`--`、tail、help 和建议；语法错误由调用它的 CLI 或消息载体呈现。Host carrier 可通过 `createMount()` 固定 provider 与发布者 owner；下面的 `handle` 在处理与回复期间保留接纳。
+
+需要把选定 Command 作为 Cap’n Web 方法时，使用显式适配入口；在线检查现有 Host 请使用[开发控制台](../development/dev-console.md)。
+
+## Carrier 的处理与生命周期
+
+Carrier 实现者用 `mount.bind(command, { install, handle? })` 发布一个确定的 Command。`install` 同步安装路由并返回 `{ name, dispose }`；调用方 generation 拥有撤销。省略 `handle` 时直接执行 Command，carrier context 必须满足其必需字段。
+
+需要授权、构造业务身份或异步回复时，在 `handle` 中完成。它接收已快照的 Command、未经校验的 `unknown` candidate 和本次 carrier context；可以构造不同的业务 context，并返回不同的成功类型。整个 callback 都处于 provider 与发布者的 invocation 内：停止会拒绝新调用、发出取消并等待 callback 退出，然后清理资源。
 
 ```ts no-twoslash
-import type { CommandContext, Registration } from '@pluxel/commands'
-import { createArgvRouter } from '@pluxel/commands/argv'
-import { BasePlugin, type CommandMount } from '@pluxel/runtime'
+import { Result, type CommandContext } from '@pluxel/commands'
+import { createArgvRouter, toCli } from '@pluxel/commands/argv'
+import { Commands } from '@pluxel/services/commands'
 
-interface MessageCommandContext extends CommandContext {
+interface ReplyContext extends CommandContext {
 	readonly reply: (text: string) => Promise<void>
 }
 
-class MessagePlugin extends BasePlugin {
-	private readonly router = createArgvRouter<MessageCommandContext>()
-	private mount!: CommandMount<MessageCommandContext>
-
-	protected override init() {
-		this.mount = this.ctx.commands.createMount<MessageCommandContext>()
-	}
-
-	registerCommand<I, O>(definition: MessageCommandDefinition<I, O>): Registration {
-		const router = this.router
-		const projected = projectMessageCommand(definition)
-		return this.mount.bind(projected, (owned) => router.bind(owned, definition.syntax))
-	}
-}
-```
-
-`defineMessageCommand()`、`MessageCommandDefinition` 与 `projectMessageCommand()` 在这里代表 carrier 自己拥有的领域 API/实现，不是 Runtime export。普通 consumer 只调用 provider 定义的 definer 与 `registerCommand()`，不直接取得 mount，也不传裸 Context。dependency facade 读取 provider 的 mount field 时，Runtime 自动固定 publication owner。每次执行同时受 provider 与 publication owner generation gate 保护，任一方 stop/replacement 都拒绝新调用，并取消、drain 已接纳调用。手动 dispose 只撤销未来 publication，不取消已经开始的调用。
-
-扩展 Context 是每次调用创建、只含 enumerable own data property 的结构化 capability record，不使用 class prototype 或 non-enumerable field。`reply` 等函数成员应使用闭包，不依赖 Context 对象作为 `this`；Runtime 会复制该 record，并在不修改调用方对象的前提下用 provider、publication owner 与 call signal 的组合结果替换 `signal`。
-
-`bind()` 只接受 `DirectCommand`：普通 `defineCommand()` 结果可以直接挂载，registry `register()` 返回的 `InstalledCommand`/`CommandRegistration` 不可以。后者会按 name 和 schema 跟随 compatible replacement，不适合作为一条 route、presenter 和 owner generation 的固定 identity。这个限制在 TypeScript 中是 misuse guard；Runtime 仍做运行时校验。
-
-Mount 在 bind 时复制、冻结 name/descriptor snapshot，并捕获当时的 `execute` 函数与原 command receiver。之后替换 `command.execute` 不会改变已挂载实现，但 hand-authored method 仍取得原 receiver；“direct”不代表 deep-freeze receiver 的其他可变状态。Direct definition 也不能带 `dispose` member，lifecycle cleanup 只属于 publication registration。
-
-Mount 的 `install` 必须同步返回一个幂等、同步、no-throw 的 `Registration`。Mount 只管理 exact command、双 owner admission 与撤销事务，不提供 list/snapshot/subscribe/name lookup，也不建立 secondary registry。Carrier 的 route syntax、admission、invocation context、success presenter 和 error renderer 留在 carrier；会触碰 invocation capability 的阶段必须在 mounted command 返回前 settle。Root catalog publication 与 carrier publication 是两个独立决定：需要同时暴露时，分别调用 `ctx.commands.register(raw)` 与 carrier 的 `registerCommand(definition)`。
-
-## 6. Agent tool 投影与 allowlist
-
-普通 host 从同一 descriptor snapshot 生成 provider 自己的 tool 描述：
-
-```ts no-twoslash
-const visible = commands.list().filter((descriptor) => policy.allows(descriptor.name))
-const tools = visible.map((descriptor) => provider.projectCommand(descriptor))
-```
-
-provider adapter 自己映射 name、title、description、input/output JSON Schema 和 `behavior`。MCP annotation、task support、provider 重命名与反向 name mapping 都是 carrier 契约，不是 command kernel 的公开概念。
-
-需要持久化 Agent allowlist 时安装可选官方 Plugin `@pluxel/agent-tools`。Toolset 与 Agent assignment 是它的普通 Plugin config：ConfigService 负责校验、持久化和通用配置页面，Runtime 不安装 Agent capability，也不维护第二套 policy store 或 Management RPC。
-
-```ts no-twoslash
-import { AgentToolsPlugin } from '@pluxel/agent-tools'
-
-const catalog = agentTools.catalog(agentId)
-const tools = catalog.list().map((descriptor) => provider.projectCommand(descriptor))
-const result = await catalog.execute(toolName, candidate, invocationContext)
-```
-
-Agent adapter 应是通过 constructor required dependency 取得 `AgentToolsPlugin` 的普通 Plugin。发布和执行必须使用同一个 bound catalog；它会在调用时再次检查 assignment，并提供包含 `catalogRevision`/`policyRevision` 的 snapshot 与订阅能力。Plugin stop/replacement 后旧 catalog 立即撤销。adapter 不应在收到 tool call 后绕过它调用裸 `ctx.commands.execute()`。
-
-Toolset 只保存稳定 command name，不复制 descriptor 或 handler。暂时不存在的 name 会保留在 config，之后同名 command 发布时自动进入投影。MCP、OpenAI、Claude 等 provider schema、tool name 映射、principal、确认与审计仍由 adapter 自己负责。完整用法见 [Agent tools Plugin](../plugins/agent-tools.md)。
-
-需要直接内置 Agent engine 时，workspace preview [`@pluxel/pi-agent`](../plugins/pi-agent.md) 会把同一个
-bound catalog 投影给 Pi，并保持 Pluxel 作为唯一 Plugin runtime 与权限边界。
-
-## 7. argv/message grammar
-
-只有确实需要人类友好的 route、alias、positionals 或 tail 时才使用自定义 router。下面是 standalone/router primitive 用法；Runtime Plugin carrier 应在 provider 内把 `CommandMount` 给出的 `owned` command 绑定到 router，而不是让普通 consumer 直接绑定 raw/installed command：
-
-```ts no-twoslash
-import { createArgvRouter } from '@pluxel/commands/argv'
-
-const argv = createArgvRouter()
-argv.bind(jobStatus, {
-	routes: ['job status', 'status'],
-	positionals: ['jobId'],
-})
-
-const resolution = argv.resolve(process.argv.slice(2))
-if (resolution) {
-	await resolution.command.execute(resolution.candidate)
-}
-```
-
-把 shell 已 tokenized 的 `string[]` 原样传入；不要先 `join(' ')`，否则会丢失 quoting 边界。raw chat/message 文本可以直接传 string，由 router tokenize 一次。
-
-`createArgvRouter().bind()` 只把已有 object fields 映射为语法：
-
-- `routes`：第一项是 canonical route，其余为 alias；最长前缀匹配；
-- `positionals`：每项消费一个 token；
-- `options`：可改 long name、aliases 和 help，未列出的标量仍生成 option；
-- `tail.text(key)`：把余下文本交给 string-backed field；
-- `tail.json(key)`：把余下文本解析成一个 JSON value。
-
-string、number、integer、boolean、string enum 和 scalar array 可自动成为 option。object、union 等复杂字段不会被猜测，必须显式设置 `{ format: 'json' }`。positionals/tail/options 不能重复占用同一字段，冲突和 unsupported schema 会在 `bind()` 时以 `COMMAND_CONFIG` 失败。
-
-```ts no-twoslash
-argv.bind(patchConfig, {
-	routes: ['settings patch'],
-	positionals: ['scope'],
-	options: { patch: { format: 'json' } },
-	tail: tail.text('reason', '[reason]'),
+// 在 carrier provider 的 init 中创建；通过 provider 方法发布时保留 caller binding。
+const mount = this.ctx.require(Commands).createMount<ReplyContext>()
+const router = createArgvRouter<ReplyContext>()
+const registration = mount.bind(echo, {
+	async handle(command, candidate, context) {
+		// 类型断言不跳过 Command 内部的运行时校验与 Decode。
+		const result = await command.execute(candidate as { text: string }, context)
+		if (result.isErr()) {
+			await context.reply(result.error.message)
+			return Result.err(result.error)
+		}
+		await context.reply(result.value)
+		return Result.ok()
+	},
+	install(endpoint) {
+		return router.bind(toCli(endpoint, { routes: ['echo'], positionals: ['text'] }))
+	},
 })
 ```
 
-`resolve()` 只负责 route match 与 candidate 构造；carrier 再完成授权、context 组装、mounted `command.execute()` 与结果呈现。`list()` 提供 frozen metadata 给 host 自己的 help/completion renderer。默认大小写不敏感、文本上限 16 KiB，unknown option 和 enum typo 会给出稳定 suggestions；unknown route 不会在 policy 过滤前泄漏其他 command。
+`handle` 必须返回 Result；未知异常和非法 Result 变为 `INTERNAL`，匹配 owner/caller 取消原因的 rejection 变为 `ABORTED`。合法回执保持原样。将 `context.signal` 与 `deadlineMs` 继续传给 Command 和实际 IO；mount 的 owner 保护不替代 Command 的 deadline 监督，也不保证客户端已经收到网络响应。
+
+`install` 得到 `MountedCommand`，它具有固定 descriptor、typed execute 和 `mounted: true` 标记。它可以交给 router 或协议投影，但不能作为新的 direct definition 再次 mount。`bind()` 返回的 registration 只负责撤销发布。手动 dispose 不取消已接纳的 callback；旧 endpoint 不会因同名重新发布而复活。
+
+需要在自定义载体定义时固定 descriptor 和 execute，可用 `snapshotCommand(command)`，不必创建临时 registry。快照验证描述结构、冻结分离的 descriptor、固定 execute 并保留原 receiver；它不重新编译 schema、不添加执行监督，也不赋予独立生命周期。已发布句柄的快照仍跟随原发布撤销，并保留禁止重新 mount 的标记。
+
+业务方法继续拥有自己的 `Result<T, E>` 与领域回执。在 Command handler 中把需要公开的拒绝映射为 `CommandFailure`，不要为了统一工具错误改写 SDK 回执或业务模型。普通领域组合直接调用业务方法。
 
 ## 公开入口
 
-| 需求                               | 入口                                  |
-| ---------------------------------- | ------------------------------------- |
-| Plugin 发布到 root catalog         | `this.ctx.commands.register(command)` |
-| Carrier provider 建 publication 面 | `this.ctx.commands.createMount()`     |
-| 独立 host 建 catalog               | `createCommandRegistry()`             |
-| Agent allowlist                    | `agentTools.catalog(agentId)`         |
-| 自定义 route/positionals/tail      | `createArgvRouter().bind()`           |
-
-carrier 负责授权、确认、principal 映射、输出格式和进程退出码；command definition 与 runtime registry 不承担这些宿主策略。
+- `@pluxel/commands`：`defineCommand`、`snapshotCommand`、`Result`、`CommandFailure`、registry 与类型。
+- `@pluxel/commands/typebox`：`Type`、`obj`、`openObj`。
+- `@pluxel/commands/argv`：`toCli()`、argv router、tail 与相关类型。
+- `@pluxel/commands/capnweb`：选定 Command 到原生 Cap’n Web 方法；需要可选 `capnweb` peer。
+- `@pluxel/commands/mcp`：选定 Command 到 MCP Tool；SDK 仅用于类型，不加载 Cap’n Web。
+- `@pluxel/services/commands`：Host 的 Commands token、服务与 carrier mount。

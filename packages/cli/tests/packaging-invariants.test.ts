@@ -48,9 +48,9 @@ describe('CLI package boundaries', () => {
 		const files = await collectSourceFiles(`${root}/packages/cli/src`)
 		const offenders: string[] = []
 		const ownerStaticValueImport =
-			/^\s*import\s+(?!type\b).*?\s+from\s+['"]@pluxel\/(?:rolldown|runtime-dynamic|market)(?:\/[^'"]*)?['"]/m
+			/^\s*import\s+(?!type\b).*?\s+from\s+['"]@pluxel\/(?:rolldown|market)(?:\/[^'"]*)?['"]/m
 		const ownerDynamicImport =
-			/import\s*\(\s*['"]@pluxel\/(?:rolldown|runtime-dynamic|market)(?:\/[^'"]*)?['"]\s*\)/g
+			/import\s*\(\s*['"]@pluxel\/(?:rolldown|market)(?:\/[^'"]*)?['"]\s*\)/g
 
 		for (const file of files) {
 			if (file.endsWith('capability-loader.ts')) continue
@@ -70,7 +70,7 @@ describe('CLI package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const code = await readFile(`${root}/packages/cli/tsdown.config.ts`, 'utf8')
 
-		for (const owner of ['@pluxel/market', '@pluxel/rolldown', '@pluxel/runtime-dynamic']) {
+		for (const owner of ['@pluxel/market', '@pluxel/rolldown']) {
 			expect(code).toContain(`'${owner}'`)
 			expect(code).toContain(`'${owner}/*'`)
 			expect(code).not.toMatch(new RegExp(`alwaysBundle:\\s*\\[[^\\]]*['"]${owner}`))

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'pathe'
 import type { Plugin, ResolvedId } from 'rolldown'
 
-const RUNTIME_PACKAGE_MANIFEST = '@pluxel/runtime/package.json'
+const SERVICES_PACKAGE_MANIFEST = '@pluxel/services/package.json'
 const ELYSIA_PACKAGE_MANIFEST = 'elysia/package.json'
 const STATIC_ELYSIA_WIRING_ID = 'pluxel:static-elysia-wiring'
 const RESOLVED_STATIC_ELYSIA_WIRING_ID = `\0${STATIC_ELYSIA_WIRING_ID}`
@@ -18,14 +18,14 @@ const STATIC_ELYSIA_RESOLVE_FILTER =
 	/^(?:pluxel:static-elysia-wiring|elysia(?:\/[^?#]+)?|typebox\/(?:compile|schema|system|type|value)|exact-mirror)$/
 
 /**
- * Resolves every public Elysia runtime entry through the copy owned by Pluxel Runtime.
+ * Resolves every public Elysia runtime entry through the copy owned by Pluxel HTTP.
  *
- * Source-linked applications can otherwise expose separate physical pnpm paths for Runtime and
+ * Source-linked applications can otherwise expose separate physical pnpm paths for Services and
  * Plugin imports even when both declare the same exact version. A static application must bundle
  * one Elysia identity for its application, adapters, schemas and WebSocket capability.
  */
 export function staticElysiaSingletonPlugin(cwd: string): Plugin {
-	let runtimeManifest = ''
+	let servicesManifest = ''
 	let elysiaManifest = ''
 	let publicSpecifiers = new Set<string>()
 	const canonicalResolutions = new Map<string, Promise<ResolvedId>>()
@@ -35,24 +35,24 @@ export function staticElysiaSingletonPlugin(cwd: string): Plugin {
 		async buildStart() {
 			canonicalResolutions.clear()
 			const applicationManifest = resolve(cwd, 'package.json')
-			const runtime = await this.resolve(RUNTIME_PACKAGE_MANIFEST, applicationManifest, {
+			const runtime = await this.resolve(SERVICES_PACKAGE_MANIFEST, applicationManifest, {
 				skipSelf: true,
 			})
-			runtimeManifest = requireAbsoluteResolution(
+			servicesManifest = requireAbsoluteResolution(
 				this,
 				runtime,
-				RUNTIME_PACKAGE_MANIFEST,
+				SERVICES_PACKAGE_MANIFEST,
 				applicationManifest,
 			)
 
-			const elysia = await this.resolve(ELYSIA_PACKAGE_MANIFEST, runtimeManifest, {
+			const elysia = await this.resolve(ELYSIA_PACKAGE_MANIFEST, servicesManifest, {
 				skipSelf: true,
 			})
 			elysiaManifest = requireAbsoluteResolution(
 				this,
 				elysia,
 				ELYSIA_PACKAGE_MANIFEST,
-				runtimeManifest,
+				servicesManifest,
 			)
 			publicSpecifiers = readPublicElysiaSpecifiers(
 				JSON.parse(await readFile(elysiaManifest, 'utf8')) as unknown,
@@ -66,7 +66,7 @@ export function staticElysiaSingletonPlugin(cwd: string): Plugin {
 			handler(id, _importer, options) {
 				if (id === STATIC_ELYSIA_WIRING_ID) return RESOLVED_STATIC_ELYSIA_WIRING_ID
 				const canonicalImporter = publicSpecifiers.has(id)
-					? runtimeManifest
+					? servicesManifest
 					: TYPEBOX_RUNTIME_SPECIFIERS.has(id) || id === EXACT_MIRROR_SPECIFIER
 						? elysiaManifest
 						: null

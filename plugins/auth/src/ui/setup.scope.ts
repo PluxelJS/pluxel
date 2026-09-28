@@ -1,4 +1,4 @@
-import { createWorkbenchRenderer } from '@pluxel/runtime/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { AuthWorkbench } from '../workbench.ts'
 import type {
 	AuthOidcSecretSetupInput,
@@ -10,29 +10,29 @@ export const setupScope = createWorkbenchRenderer(AuthWorkbench.setup)
 
 export const authSetupSnapshotQuery = setupScope.query(({ api }) => ({
 	queryKey: ['auth', 'setup', 'snapshot'] as const,
-	queryFn: () => api.snapshot(),
+	queryFn: () => api.snapshotDto(),
 }))
 
 export const setupPasswordMutation = setupScope.mutation(({ api }) => ({
-	mutationFn: (input: AuthPasswordSetupInput) => api.setupPassword(input),
+	mutationFn: (input: AuthPasswordSetupInput) => api.setupPasswordDto(input),
 	workbench: {
 		invalidates: [authSetupSnapshotQuery],
 	},
 }))
 
 export const beginTotpMutation = setupScope.mutation(({ api }) => ({
-	mutationFn: (input: AuthPasswordSetupInput) => api.beginTotp(input),
+	mutationFn: (input: AuthPasswordSetupInput) => api.beginTotpDto(input),
 }))
 
 export const confirmTotpMutation = setupScope.mutation(({ api }) => ({
-	mutationFn: (input: AuthTotpConfirmationInput) => api.confirmTotp(input),
+	mutationFn: (input: AuthTotpConfirmationInput) => api.confirmTotpDto(input),
 	workbench: {
 		invalidates: [authSetupSnapshotQuery],
 	},
 }))
 
 export const setupOidcSecretMutation = setupScope.mutation(({ api }) => ({
-	mutationFn: (input: AuthOidcSecretSetupInput) => api.setupOidcSecret(input),
+	mutationFn: (input: AuthOidcSecretSetupInput) => api.setupOidcSecretDto(input),
 	workbench: {
 		invalidates: [authSetupSnapshotQuery],
 	},

@@ -40,7 +40,7 @@ The browser-safe `@pluxel/auth/workbench` entry exports the exact `AuthWorkbench
 types. The owning Plugin publishes that View at `/auth/setup`; no Runtime setup resource, generic capability registry or second transport
 exists. Each open creates a fresh `AuthSetupTarget` and `CredentialProvisioning`, both bound to the open signal and Plugin generation.
 
-`snapshot()` is a closed union over the configured mode and `configured`, `setup-required` or `unavailable` readiness. Mutations require
+`snapshotDto()` is a closed union over the configured mode and `configured`, `setup-required` or `unavailable` readiness. Mutations require
 the Runtime-issued physical-loopback recovery principal and a current `setup-required` snapshot. Remote provider principals are denied,
 configured credentials cannot be overwritten, public OIDC accepts no secret, and unavailable Vault state fails closed. Successful mutation
 commits the Vault record before updating in-memory readiness, revokes old cookie sessions and returns the resulting snapshot.
@@ -48,6 +48,15 @@ commits the Vault record before updating in-memory readiness, revokes old cookie
 TOTP enrollment belongs to one opened target and has bounded count, attempts and lifetime. View close/abort, socket epoch invalidation,
 owner stop or replacement disposes every pending enrollment. Failures use the stable `AuthSetupFailureCode` union; raw storage/crypto
 errors do not cross the RPC boundary.
+
+Credential input validation uses direct guards and the optional Core Result entry inside
+`CredentialProvisioning`. The setup target consumes the result and returns the existing plain
+`AuthSetupFailureCode` DTO. Result instances and password records never enter the Workbench transport.
+Only `PasswordInputError` and `PasswordHashBusyError` become expected hashing failures. Unexpected crypto
+failures reject with a fixed safe message and a local diagnostic cause; they are not classified as invalid input.
+Hashing runs outside Result callbacks so its unexpected rejection is not implicitly converted to `Panic`.
+The setup target replaces unexpected mutation rejections with a fresh generic Error at the RPC boundary,
+so local diagnostic causes cannot cross the membrane. Expected setup DTOs remain unchanged.
 
 The renderer uses one descriptor-bound scope with an owned snapshot query and typed mutation invalidation. Query and mutation resources
 detach their RPC results before React observes them. The TOTP enrollment mutation is reset immediately after its detached result is
@@ -65,7 +74,8 @@ mode/readiness UI and mutation authority. The simpler password and client-secret
 Vault records remain versioned `management-account-v1` and `oidc-client-secret-v1` values. Password verification uses bounded async scrypt. TOTP verification serializes record mutation and persists `lastAcceptedCounter` before success. OIDC uses Authorization Code + PKCE with bounded discovery/token/JWKS IO.
 
 Credential provisioning remains a transport-free domain service behind the setup target, with password setup, bounded TOTP
-enrollment/confirmation and confidential client-secret mutation. A headless distribution has neither the View nor another provisioning API:
-it must use public OIDC, start with a pre-provisioned Vault record, or reuse persistence configured by a Workbench-capable deployment.
+enrollment/confirmation and confidential client-secret mutation. Without the setup View, a deployment must use public OIDC, pre-provision its Vault record, or reuse persistence configured by a deployment that exposes the View. The available services and artifacts determine this capability, not the headless build label.
+
+Vault watches reload account and OIDC credentials. A changed account identity/password/TOTP secret or OIDC secret clears cookie sessions, login failure state and OIDC pending/cache state; replay-counter-only updates preserve them.
 
 All sessions, tickets, challenges, enrollments, rate limits and OIDC pending/cache state belong to one Plugin generation. Stop, replacement or rollback withdraws the provider and clears them deterministically.

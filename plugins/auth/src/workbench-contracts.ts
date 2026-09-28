@@ -1,4 +1,4 @@
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 
 export type AuthSetupMode = 'password' | 'password-totp' | 'oidc-public' | 'oidc-confidential'
 
@@ -64,9 +64,9 @@ export type AuthTotpEnrollmentResult =
 	| AuthSetupFailure
 
 export interface AuthSetupApi extends RpcTarget {
-	snapshot(): AuthSetupSnapshot
-	setupPassword(input: AuthPasswordSetupInput): Promise<AuthSetupMutationResult>
-	beginTotp(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult>
-	confirmTotp(input: AuthTotpConfirmationInput): Promise<AuthSetupMutationResult>
-	setupOidcSecret(input: AuthOidcSecretSetupInput): Promise<AuthSetupMutationResult>
+	snapshotDto(): AuthSetupSnapshot
+	setupPasswordDto(input: AuthPasswordSetupInput): Promise<AuthSetupMutationResult>
+	beginTotpDto(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult>
+	confirmTotpDto(input: AuthTotpConfirmationInput): Promise<AuthSetupMutationResult>
+	setupOidcSecretDto(input: AuthOidcSecretSetupInput): Promise<AuthSetupMutationResult>
 }

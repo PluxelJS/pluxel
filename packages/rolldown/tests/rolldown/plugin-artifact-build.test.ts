@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
 import { describe, expect, it, vi } from 'vitest'
@@ -14,6 +15,11 @@ import { pluginArtifactBuildPlugin } from '../../src/plugin-artifact/pluginArtif
 import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
 import { readWorkbenchFederationDeploymentInventory } from '../../src/workbench/artifact.ts'
 import { readWorkbenchContentDeploymentInventory } from '../../src/workbench/content-artifact.ts'
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+	const fs = await importOriginal<typeof import('node:fs/promises')>()
+	return { ...fs, cp: vi.fn(fs.cp) }
+})
 
 describe('pluginArtifactBuildPlugin', () => {
 	it('atomically emits the host-owned deployment inventory from canonical compilations', async () => {
@@ -37,7 +43,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		).resolves.toEqual({
 			version: 1,
 			profile: 1,
-			buildContract: 2,
+			buildContract: 3,
 			producers: [],
 		})
 		await expect(
@@ -140,7 +146,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: 'database-fixture', type: 'module' }),
 			'src/index.ts':
-				"import { defineDatabase } from '@pluxel/runtime/database'\nexport const database = defineDatabase({ schema: {} })\n",
+				"import { defineDatabase } from '@pluxel/services/database'\nexport const database = defineDatabase({ schema: {} })\n",
 			'drizzle/0000_initial.sql': `${migration}\n`,
 			'drizzle/pluxel-migrations.json': JSON.stringify({
 				version: 2,
@@ -150,7 +156,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		})
 		const bundle = await rolldown({
 			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/runtime/database'],
+			external: ['@pluxel/services/database'],
 			plugins: [pluginArtifactBuildPlugin({ root: fixture.path, buildDir: 'dist' })],
 		})
 		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
@@ -173,18 +179,18 @@ describe('pluginArtifactBuildPlugin', () => {
 			JSON.stringify({ name: 'reset-database-fixture', type: 'module' }),
 			'utf8',
 		)
-		await mkdir(join(root, 'node_modules/@pluxel/runtime'), { recursive: true })
+		await mkdir(join(root, 'node_modules/@pluxel/services'), { recursive: true })
 		await writeFile(
-			join(root, 'node_modules/@pluxel/runtime/package.json'),
+			join(root, 'node_modules/@pluxel/services/package.json'),
 			JSON.stringify({
-				name: '@pluxel/runtime',
+				name: '@pluxel/services',
 				type: 'module',
 				exports: { './database': './database.js' },
 			}),
 			'utf8',
 		)
 		await writeFile(
-			join(root, 'node_modules/@pluxel/runtime/database.js'),
+			join(root, 'node_modules/@pluxel/services/database.js'),
 			'export const defineDatabase = (input) => input\n',
 			'utf8',
 		)
@@ -192,7 +198,7 @@ describe('pluginArtifactBuildPlugin', () => {
 			join(root, 'src/index.ts'),
 			[
 				"import { pgTable, text } from 'drizzle-orm/pg-core'",
-				"import { defineDatabase } from '@pluxel/runtime/database'",
+				"import { defineDatabase } from '@pluxel/services/database'",
 				"export const items = pgTable('items', { id: text('id').primaryKey() })",
 				"export const database = defineDatabase({ schema: { items }, evolution: 'reset-on-schema-change' })",
 			].join('\n'),
@@ -202,7 +208,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		try {
 			const bundle = await rolldown({
 				input: join(root, 'src/index.ts'),
-				external: ['@pluxel/runtime/database', 'drizzle-orm/pg-core'],
+				external: ['@pluxel/services/database', 'drizzle-orm/pg-core'],
 				plugins: [pluginArtifactBuildPlugin({ root, buildDir: 'dist' })],
 			})
 			await bundle.write({ dir: join(root, 'dist'), format: 'esm' })
@@ -227,19 +233,19 @@ describe('pluginArtifactBuildPlugin', () => {
 	it('injects the generated reset baseline in the Vite server source transform', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-source-test-'))
 		await mkdir(join(root, 'src'), { recursive: true })
-		await mkdir(join(root, 'node_modules/@pluxel/runtime'), { recursive: true })
+		await mkdir(join(root, 'node_modules/@pluxel/services'), { recursive: true })
 		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
 		await writeFile(
-			join(root, 'node_modules/@pluxel/runtime/package.json'),
+			join(root, 'node_modules/@pluxel/services/package.json'),
 			JSON.stringify({
-				name: '@pluxel/runtime',
+				name: '@pluxel/services',
 				type: 'module',
 				exports: { './database': './database.js' },
 			}),
 			'utf8',
 		)
 		await writeFile(
-			join(root, 'node_modules/@pluxel/runtime/database.js'),
+			join(root, 'node_modules/@pluxel/services/database.js'),
 			'export const defineDatabase = (input) => input\n',
 			'utf8',
 		)
@@ -247,7 +253,7 @@ describe('pluginArtifactBuildPlugin', () => {
 			join(root, 'src/index.ts'),
 			[
 				"import { pgTable, text } from 'drizzle-orm/pg-core'",
-				"import { defineDatabase } from '@pluxel/runtime/database'",
+				"import { defineDatabase } from '@pluxel/services/database'",
 				"export const items = pgTable('items', { id: text('id').primaryKey() })",
 				"export const database = defineDatabase({ schema: { items }, evolution: 'reset-on-schema-change' })",
 			].join('\n'),
@@ -257,7 +263,7 @@ describe('pluginArtifactBuildPlugin', () => {
 		try {
 			const bundle = await rolldown({
 				input: join(root, 'src/index.ts'),
-				external: ['@pluxel/runtime/database', 'drizzle-orm/pg-core'],
+				external: ['@pluxel/services/database', 'drizzle-orm/pg-core'],
 				plugins: [databaseSourceVitePlugin({ root })],
 			})
 			await bundle.write({ dir: join(root, 'dist'), format: 'esm' })
@@ -278,12 +284,12 @@ describe('pluginArtifactBuildPlugin', () => {
 	it('lowers a Node declaration and publishes its Node ESM artifact', async () => {
 		await using fixture = await createFixture({
 			'src/index.ts':
-				"import { defineNodeModule } from '@pluxel/runtime'\nexport const task = defineNodeModule(import.meta.url, './task.ts')\n",
+				"import { defineNodeModule } from '@pluxel/services/node'\nexport const task = defineNodeModule(import.meta.url, './task.ts')\n",
 			'src/task.ts': 'export const answer = 42\n',
 		})
 		const bundle = await rolldown({
 			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/runtime'],
+			external: ['@pluxel/services/node', '@pluxel/services/workers'],
 			plugins: [
 				pluginArtifactBuildPlugin({
 					root: fixture.path,
@@ -303,18 +309,18 @@ describe('pluginArtifactBuildPlugin', () => {
 		expect(key).toMatch(/^node-[a-f\d]{16}$/)
 		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
 		expect(artifact).toContain('answer')
-		expect(artifact).not.toContain('@pluxel/runtime')
+		expect(artifact).not.toContain('@pluxel/core')
 	})
 
 	it('lowers a worker declaration through the shared Node artifact pipeline', async () => {
 		await using fixture = await createFixture({
 			'src/index.ts':
-				"import { defineWorkerTask } from '@pluxel/runtime'\nexport const task = defineWorkerTask<number, number>(\n  import.meta.url,\n  './worker.ts',\n)\n",
+				"import { defineWorkerTask } from '@pluxel/services/workers'\nexport const task = defineWorkerTask<number, number>(\n  import.meta.url,\n  './worker.ts',\n)\n",
 			'src/worker.ts': 'export default (value: number) => value * 2\n',
 		})
 		const bundle = await rolldown({
 			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/runtime'],
+			external: ['@pluxel/services/node', '@pluxel/services/workers'],
 			plugins: [
 				pluginArtifactBuildPlugin({
 					root: fixture.path,
@@ -334,13 +340,17 @@ describe('pluginArtifactBuildPlugin', () => {
 		expect(key).toMatch(/^node-[a-f\d]{16}$/)
 		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
 		expect(artifact).toContain('value * 2')
+		const builtTask = await import(
+			pathToFileURL(`${fixture.path}/dist/artifacts/node/${key}.mjs`).href
+		)
+		expect(builtTask.default(21)).toBe(42)
 	})
 
-	it('reports controlled native worker residuals to deployment assembly', async () => {
+	it('publishes artifacts and native residuals for every concurrent deployment', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ dependencies: { 'fake-native': '1.0.0' } }),
 			'src/index.ts':
-				"import { defineWorkerTask } from '@pluxel/runtime'\nexport const task = defineWorkerTask(import.meta.url, './worker.ts')\n",
+				"import { defineWorkerTask } from '@pluxel/services/workers'\nexport const task = defineWorkerTask(import.meta.url, './worker.ts')\n",
 			'src/worker.ts': "import native from 'fake-native'\nexport default () => native\n",
 			'node_modules/fake-native/package.json': JSON.stringify({
 				name: 'fake-native',
@@ -350,29 +360,81 @@ describe('pluginArtifactBuildPlugin', () => {
 			}),
 			'node_modules/fake-native/index.js': 'module.exports = 42\n',
 		})
-		const residuals: Array<{ name: string; entry: string }> = []
-		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/runtime'],
-			plugins: [
-				pluginArtifactBuildPlugin({
-					root: fixture.path,
-					buildDir: 'dist',
-					workbench: false,
-					node: {
-						minify: false,
-						onNativeResidual(name, entry) {
-							residuals.push({ name, entry })
+		const messages: string[] = []
+		const publish = async (buildDir: string) => {
+			const residuals: Array<{ name: string; entry: string }> = []
+			const bundle = await rolldown({
+				input: `${fixture.path}/src/index.ts`,
+				external: ['@pluxel/services/node', '@pluxel/services/workers'],
+				plugins: [
+					pluginArtifactBuildPlugin({
+						root: fixture.path,
+						buildDir,
+						workbench: false,
+						log: (message) => messages.push(message),
+						node: {
+							minify: false,
+							onNativeResidual(name, entry) {
+								residuals.push({ name, entry })
+							},
 						},
-					},
+					}),
+				],
+			})
+			try {
+				await bundle.write({ dir: `${fixture.path}/${buildDir}`, format: 'esm' })
+			} finally {
+				await bundle.close()
+			}
+			expect(residuals).toEqual([
+				expect.objectContaining({
+					name: 'fake-native',
+					entry: expect.stringContaining('index.js'),
 				}),
-			],
+			])
+			const artifacts = await readdir(join(fixture.path, buildDir, 'artifacts/node'))
+			expect(artifacts).toHaveLength(1)
+			const task = await import(
+				pathToFileURL(join(fixture.path, buildDir, 'artifacts/node', artifacts[0]!)).href
+			)
+			expect(task.default()).toBe(42)
+		}
+		const { cp: copyFile } =
+			await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+		const blocked = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		vi.mocked(cp).mockImplementation(async (source, target, options) => {
+			if (
+				String(target).includes('/dist-slow/artifacts/node/') &&
+				String(source).includes('/.pluxel/plugin-artifacts/node/')
+			) {
+				blocked.resolve()
+				await release.promise
+			}
+			return copyFile(source, target, options)
 		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
-
-		expect(residuals).toEqual([
-			expect.objectContaining({ name: 'fake-native', entry: expect.stringContaining('index.js') }),
-		])
+		const slow = publish('dist-slow')
+		try {
+			await Promise.race([
+				blocked.promise,
+				slow.then(() => {
+					throw new Error('Slow publication did not reach its gate')
+				}),
+			])
+			// This same-layout consumer finishes first, but must not release the slow consumer's lease.
+			await publish('dist-fast')
+			// Exceed the cache's retained revision count while the oldest bytes are still in use.
+			for (const buildDir of ['nested/dist-c', 'one/two/dist-d', 'one/two/three/dist-e']) {
+				await publish(buildDir)
+			}
+		} finally {
+			release.resolve()
+			try {
+				await slow
+			} finally {
+				vi.mocked(cp).mockImplementation(copyFile)
+			}
+		}
+		expect(messages.filter((message) => message.startsWith('[node-module] build '))).toHaveLength(4)
 	})
 })

@@ -65,7 +65,7 @@ Runtime Context special case：Fonts 仍是正常 Plugin capability，consumer �
 `FontsWorkbench.manager` 是 FontsPlugin 自己放置的 direct View；`FontsWorkbench.selection` 是 provider-owned、
 provider-only Attachment。Canvas、ECharts、Takumi 或第三方 consumer 只调用 `selection.place(...)` 并绑定其 required
 `FontsPlugin` handle，不创建无状态 consumer target。两个 renderer 都是零 props component，并使用各自的
-descriptor-bound scope/query/mutation 取得 exact Cap'n Web root；DTO detach/dispose、远端请求关闭与 mutation 后刷新
+descriptor-bound scope/query/mutation 取得 exact Cap'n Web root；DTO 接管、原地冻结与释放、远端请求关闭与 mutation 后刷新
 由 scope owner 负责。Manager 只为 `File.arrayBuffer()` 保留本地 operation/unmount guard：该浏览器 API 不接受
 `AbortSignal`，guard 在读取完成后阻止 late RPC，但不声称能中止已开始的文件读取。
 

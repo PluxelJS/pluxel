@@ -1,4 +1,4 @@
-import { AgentToolsPlugin } from '@pluxel/agent-tools'
+import { VaultAdminPlugin } from '@pluxel/vault-admin'
 import { AuthPlugin } from '@pluxel/auth'
 import { CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'
@@ -6,7 +6,6 @@ import { EChartsPlugin } from '@pluxel/echarts'
 import { FontsPlugin } from '@pluxel/fonts'
 import { OtelPlugin } from '@pluxel/otel'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
-import { PiAgentPlugin } from '@pluxel/pi-agent'
 import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 import { S3Plugin } from '@pluxel/storage'
@@ -30,10 +29,10 @@ import {
 
 export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
-export const officialStaticPlugins = Object.freeze([
-	AgentToolsPlugin,
-	PiAgentPlugin,
+export const hostPlugins = [
+	PackageManagerPlugin,
 	AuthPlugin,
+	VaultAdminPlugin,
 	MemoryCacheBackendPlugin,
 	CachePlugin,
 	OtelPlugin,
@@ -48,33 +47,16 @@ export const officialStaticPlugins = Object.freeze([
 	CanvasPlugin,
 	EChartsPlugin,
 	TakumiPlugin,
-] as const)
-
-export const officialDynamicPlugins = Object.freeze([
-	...officialStaticPlugins,
-	PackageManagerPlugin,
-] as const)
-
-export const showcasePlugins = Object.freeze([
 	EChartsShowcaseRenderer,
 	TakumiShowcaseRenderer,
 	CanvasShowcaseRenderer,
 	ReleaseArchivePlugin,
 	ReportStudioPlugin,
-] as const)
-
-export const focusedDemoPlugins = Object.freeze([
 	PluginEventsDeclaredProducer,
 	PluginEventsDeclaredConsumer,
 	PluginOptionalIntegrationProvider,
 	PluginOptionalIntegrationConsumer,
-] as const)
-
-export const staticHostPlugins = Object.freeze([
-	...officialStaticPlugins,
-	...showcasePlugins,
-	...focusedDemoPlugins,
-] as const)
+] as const
 
 export const redisBackedPlugins = Object.freeze([
 	RedisPlugin,

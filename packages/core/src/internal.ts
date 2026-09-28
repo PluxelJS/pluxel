@@ -31,6 +31,7 @@ export {
 export { requireConfigService } from './internal/config-service'
 export { requirePluginService } from './internal/plugin-service'
 export {
+	createContextHost,
 	defineContextCapability,
 	installOwnerViewCapability,
 	installRootCapability,

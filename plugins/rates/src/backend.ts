@@ -1,4 +1,4 @@
-import { BasePlugin, type PluginNodeAddress } from '@pluxel/runtime'
+import { BasePlugin, type PluginNodeAddress } from '@pluxel/core'
 import type { RateDecision, ResolvedRatePolicy } from './types.ts'
 
 export interface RatesBackendConsumeRequest {

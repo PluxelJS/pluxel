@@ -9,7 +9,7 @@ import {
 	EvtChannel,
 	formatPluginNodeReference,
 	Plugin,
-} from '@pluxel/runtime'
+} from '@pluxel/core'
 
 export type TickPayload = {
 	from: string

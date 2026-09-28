@@ -1,33 +1,37 @@
-# Repository instructions for coding agents
+# Coding agent 工作入口
 
-Before changing files under `plugins/`, plugin-facing contracts, Pluxel host configuration, or
-`oxlint.config.ts`, start with `pnpm exec pluxel docs` and follow the canonical upstream user
-documentation. Keep product-specific notes here; do not copy or fork Pluxel API guidance locally.
+## 修改前选择入口
 
-Keep these boundaries intact:
+先运行 `pnpm exec pluxel docs development/index.md`，再按任务读取。该命令链接当前上游文档，不自动匹配已安装版本；调用前核对项目所用版本的 exports、类型与行为。本地只记录产品或包的特殊约束，不复制 Pluxel API 教程。
 
-- required plugin dependencies belong in the consuming Plugin or PluginPart constructor; optional integrations use a non-exported
-  module-level `definePluginRef<T>()` and a direct `plugins.use(ref, setup)` statement in `init()`;
-- each Plugin and PluginPart class declares at most one complete object schema with
-  `configs.use(schema)`; owner-contained resources use static field-owned `parts.use(PartClass)` composition,
-  and Part requirements are lifted to the owning Plugin without being repeated there;
-- use Part `ctx`, `host`, `parts`, `plugins`, and `configs`, plus Plugin `parts`, `plugins`, and `configs`,
-  only inside the declaring subclass; `BasePlugin.ctx` remains public;
-- keep Part fields private by default and expose explicit business methods instead of Context, root-owner, or path accessors;
-- return generation cleanup from `init()` or register resources immediately with `ctx.effects`;
-- business HTTP must work with Workbench Plane disabled;
-- the static host is the production authority; the dynamic Vite config is an alternative development
-  route over the same authoring model;
-- browser-only React/Vite code stays in `web/`; Node runtime catalog, config and route policy stay in
-  `host/`; shared neutral logic stays in `packages/`;
-- plugin tests use `@pluxel/test/vitest` and the smallest matching core/runtime test host;
-- run `pnpm verify` after changes and do not bypass Pluxel lint rules without a documented reason.
+| 任务                                 | 文档命令                                                                                                          |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| 定位 Plugin、Part、schema 与应用输入 | `pnpm exec pluxel docs development/inspection.md`                                                                 |
+| 修改依赖与生命周期                   | `pnpm exec pluxel docs getting-started/plugin-model.md`                                                           |
+| 修改 Part 或配置                     | `pnpm exec pluxel docs getting-started/plugin-parts.md`、`pnpm exec pluxel docs getting-started/configuration.md` |
+| 设计可恢复失败                       | `pnpm exec pluxel docs api/better-result.md`；同时阅读其中的官方示例                                              |
+| 验证插件行为                         | `pnpm exec pluxel docs development/testing.md`                                                                    |
 
-## Live development operations
+## 作者边界
 
-For operations on an already running Pluxel Vite host, coding agents must use `pluxel dev` and
-`@pluxel/runtime/dev`. Read `pnpm exec pluxel docs development/dev-console.md` first. Discover the
-host and keep its absolute `--root` and exact `--instance` on every run/result/cancel command.
-Use ordinary TS module exports for config edits, Plugin methods, Workbench RPC, data and logs;
-keep isolated regression tests on the test host. Enable `devConsole: true` in the host's Vite
-integration when needed; do not create another runtime or reopen its database to inspect live state.
+- required dependency 写在消费它的 Plugin/Part constructor；optional integration 使用 non-exported module-level `definePluginRef<T>()`，并在 `init()` 中直接调用 `plugins.use(ref, setup)`。
+- 每个 Plugin/Part 最多声明一个 `configs.use(schema)` 完整 object schema。Part 通过静态 field-owned `parts.use(PartClass)` 组合；其依赖自动提升到 owning Plugin，不重复声明。
+- Part 的 `ctx`、`host`、`parts`、`plugins`、`configs` 与 Plugin 的 `parts`、`plugins`、`configs` 只在 subclass 内使用；`BasePlugin.ctx` 保持 public。Part 字段默认 private，对外暴露业务方法，不暴露 Context、root owner 或路径。
+- 资源创建后立即登记 `ctx.effects`，或从 `init()` 返回 generation cleanup。Workbench 关闭时业务能力和核心生命周期仍须可用。
+- 使用原 API 名称与直接调用；只有具体命名冲突或独立行为需要时才增加 alias/wrapper。
+- 插件测试使用 `@pluxel/test/vitest` 与 `@pluxel/test` 的 `createTestHost()`，显式选择 services。
+
+## 操作现有应用
+
+必须先读 `pnpm exec pluxel docs development/dev-console.md`，通过 `pluxel dev` 与 `@pluxel/host-dev/console` 操作现有 Vite host。
+先发现实例，后续 run/result/cancel 命令固定绝对 `--root` 和准确 `--instance`。用普通 TS 导出函数操作配置、Plugin 方法、Workbench RPC、数据和日志，并检查结果、应用报告与日志。
+
+需要时在宿主 Vite 集成启用 `devConsole: true`。不要新建 runtime 或重开数据库来推断在线状态；隔离 test host 只验证回归。
+
+## 本项目位置与检查
+
+- `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog，不另建配置或 Vite 模式。
+- 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
+- inspect 选择本应用时使用 workspace-relative `application: { root: 'host', entry: 'src/app.ts' }`。
+- 修改 `plugins/`、公共契约、Host 配置或 `oxlint.config.ts` 前，按上表确认对应契约。应用装配见 `pnpm exec pluxel docs getting-started/host-setup.md`。
+- 完成后运行 `pnpm verify`；不得无理由绕过 Pluxel lint 规则。

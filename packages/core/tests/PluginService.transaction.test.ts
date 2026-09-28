@@ -1,5 +1,9 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core/test'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import {
+	BasePlugin,
+	Plugin,
+	pluginNodeAddressOf,
+	withCoreInternalTestHost,
+} from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 

@@ -1,9 +1,10 @@
 import { deserialize, serialize } from 'node:v8'
 import { CacheBackend, type CacheValue } from '@pluxel/cache'
-import { Plugin, v } from '@pluxel/runtime'
+import { Plugin } from '@pluxel/core'
+import * as v from 'valibot'
 import { Redis, type RedisConnection } from './client.ts'
 import { defineRedisScript } from './scripts.ts'
-import { isRedisConnectionId, isWellFormedUnicode } from './validation.ts'
+import { isRedisConnectionId } from './validation.ts'
 
 const REDIS_CACHE_FORMAT = 'pluxel-cache:v1:'
 
@@ -41,7 +42,10 @@ export const RedisCacheBackendConfig = v.object({
 		'default',
 	),
 	keyPrefix: v.optional(
-		v.pipe(v.string(), v.check(isWellFormedUnicode, 'keyPrefix must be well-formed Unicode')),
+		v.pipe(
+			v.string(),
+			v.check((value) => value.isWellFormed(), 'keyPrefix must be well-formed Unicode'),
+		),
 		'pluxel:cache:',
 	),
 	scanCount: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 200),

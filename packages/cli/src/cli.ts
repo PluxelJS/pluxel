@@ -8,13 +8,11 @@ import {
 	devCommandDefinition,
 	distributionCommandDefinition,
 	docsCommandDefinition,
-	hmrCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
 	sourceCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
-import { formatOfficialCapabilityError, OfficialCapabilityError } from './capability-loader'
 
 const commands = new Map<string, SubCommandable>([
 	[
@@ -61,10 +59,6 @@ const commands = new Map<string, SubCommandable>([
 		),
 	],
 	[
-		'hmr',
-		lazy(() => import('./commands/hmr').then((module) => module.hmrCommand), hmrCommandDefinition),
-	],
-	[
 		'source',
 		lazy(
 			() => import('./commands/source').then((module) => module.sourceCommand),
@@ -100,16 +94,10 @@ async function main() {
 			subCommands: commands,
 		})
 	} catch (error) {
-		const msg = formatCliError(error)
+		const msg = error instanceof Error ? error.message : String(error)
 		process.stderr.write(`${msg}\n`)
 		process.exitCode = 1
 	}
-}
-
-function formatCliError(error: unknown): string {
-	if (error instanceof OfficialCapabilityError) return formatOfficialCapabilityError(error)
-	const message = error instanceof Error ? error.message : String(error)
-	return message
 }
 
 await main()

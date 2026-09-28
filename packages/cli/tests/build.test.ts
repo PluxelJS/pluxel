@@ -1,15 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import {
 	BuildEnvKeys,
 	pluginPackage,
 	resolveBuildContext,
-	runWithTsdown,
 	type BuildRuntimeConfig,
 } from '@pluxel/rolldown/build'
+import { runWithTsdown } from '@pluxel/rolldown/internal/cli'
+
+const toolchainRequire = createRequire(
+	createRequire(import.meta.url).resolve('@pluxel/rolldown/build'),
+)
+const reactExportNames = Object.keys(toolchainRequire('react')).filter((name) => name !== 'default')
 
 const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
 	pluginPackage({
@@ -27,9 +33,12 @@ function fixturePackage(name: string, version: string, exports: readonly string[
 			name,
 			version,
 			type: 'module',
-			exports: Object.fromEntries(
-				exports.map((subpath) => [subpath, subpath === '.' ? './index.js' : `${subpath}.js`]),
-			),
+			exports: {
+				...Object.fromEntries(
+					exports.map((subpath) => [subpath, subpath === '.' ? './index.js' : `${subpath}.js`]),
+				),
+				'./package.json': './package.json',
+			},
 		}),
 		...Object.fromEntries(
 			exports.map((subpath) => [
@@ -50,16 +59,16 @@ const buildFixtures = {
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 				},
-				dependencies: {
-					'pluxel-plugin-alpha': '^1.0.0',
-				},
 				devDependencies: {
 					'pluxel-plugin-beta': '^0.5.0',
 				},
 				peerDependencies: {
+					'pluxel-plugin-alpha': '^1.0.0',
+					'pluxel-plugin-beta': '^0.5.0',
 					'pluxel-plugin-stale': '^9.0.0',
 				},
 				peerDependenciesMeta: {
+					'pluxel-plugin-beta': { optional: true },
 					'pluxel-plugin-stale': { optional: true },
 				},
 				optionalDependencies: {},
@@ -100,7 +109,7 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/core'",
 			"import { AlphaPlugin } from 'pluxel-plugin-alpha'",
 			"import type { AlphaPlugin as OptionalAlphaPlugin } from 'pluxel-plugin-alpha'",
 			"import type { BetaPlugin } from 'pluxel-plugin-beta'",
@@ -129,14 +138,15 @@ const buildFixtures = {
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 				},
-				dependencies: {
-					'acme-plugin-alpha': '1.2.3',
-				},
 				devDependencies: {
 					'acme-plugin-beta': '~1.0.0',
 				},
 				peerDependencies: {
+					'acme-plugin-alpha': '1.2.3',
 					'acme-plugin-beta': '~1.0.0',
+				},
+				peerDependenciesMeta: {
+					'acme-plugin-beta': { optional: true },
 				},
 				optionalDependencies: {},
 			},
@@ -170,7 +180,7 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'",
 			"import { AlphaPlugin } from 'acme-plugin-alpha'",
 			"import type { BetaPlugin } from 'acme-plugin-beta'",
 			'',
@@ -184,26 +194,33 @@ const buildFixtures = {
 		].join('\n'),
 	},
 	runtimeUi: {
-		...fixturePackage('react', '19.2.8', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...fixturePackage('react-dom', '19.2.8', ['.', './client']),
-		...fixturePackage('@mantine/core', '9.5.2', ['.']),
-		...fixturePackage('@mantine/hooks', '9.5.2', ['.']),
-		...fixturePackage('@pluxel/runtime', '1.0.0', [
+		...fixturePackage('react', '19.3.0', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...fixturePackage('react-dom', '19.3.0', ['.', './client']),
+		// Shared export analysis inspects the toolchain's real Bridge and its React imports.
+		'node_modules/react/index.js': reactExportNames
+			.map((name) => `export const ${name} = 'must-not-bundle-react-${name}'`)
+			.join('\n'),
+		'node_modules/react/index.d.ts': reactExportNames
+			.map((name) => `export declare const ${name}: string`)
+			.join('\n'),
+		...fixturePackage('@mantine/core', '9.6.3', ['.']),
+		...fixturePackage('@mantine/hooks', '9.6.3', ['.']),
+		...fixturePackage('@pluxel/workbench', '0.1.0', [
 			'.',
-			'./capnweb',
-			'./internal/workbench-react',
-			'./workbench',
-			'./workbench/client',
-			'./workbench/react',
+			'./client',
+			'./react',
+			'./internal/react',
 		]),
-		'node_modules/@pluxel/runtime/index.js':
+		...fixturePackage('@pluxel/core', '1.0.0', ['.']),
+		...fixturePackage('capnweb', '0.12.0', ['.']),
+		'node_modules/@pluxel/core/index.js':
 			'export class BasePlugin {}\nexport function Plugin() { return () => {} }\n',
-		'node_modules/@pluxel/runtime/index.d.ts':
+		'node_modules/@pluxel/core/index.d.ts':
 			'export declare class BasePlugin { ctx: any }\nexport declare function Plugin(input?: unknown): any\n',
-		'node_modules/@pluxel/runtime/capnweb.js': 'export class RpcTarget {}\n',
-		'node_modules/@pluxel/runtime/capnweb.d.ts':
+		'node_modules/capnweb/index.js': 'export class RpcTarget {}\n',
+		'node_modules/capnweb/index.d.ts':
 			'export declare class RpcTarget { [Symbol.dispose](): void }\n',
-		'node_modules/@pluxel/runtime/workbench.js': `
+		'node_modules/@pluxel/workbench/index.js': `
 export const workbench = Object.freeze({
 	entry: (_base, path) => ({ path }),
 	view: (value) => value,
@@ -211,7 +228,7 @@ export const workbench = Object.freeze({
 	define: (value) => Object.freeze(value),
 })
 `,
-		'node_modules/@pluxel/runtime/workbench.d.ts': `
+		'node_modules/@pluxel/workbench/index.d.ts': `
 export declare const workbench: {
 	entry(base: string, path: string): Readonly<{ path: string }>
 	view<Api>(value: Record<string, unknown>): unknown
@@ -219,12 +236,12 @@ export declare const workbench: {
 	define<const Entries extends Record<string, unknown>>(value: Entries): Readonly<Entries>
 }
 `,
-		'node_modules/@pluxel/runtime/internal/workbench-react.js': `
+		'node_modules/@pluxel/workbench/internal/react.js': `
 export function createWorkbenchBridge(identity, Renderer) {
 	return Object.freeze({ identity, Renderer })
 }
 `,
-		'node_modules/@pluxel/runtime/internal/workbench-react.d.ts':
+		'node_modules/@pluxel/workbench/internal/react.d.ts':
 			'export declare function createWorkbenchBridge(identity: unknown, Renderer: unknown): unknown\n',
 		'package.json': JSON.stringify(
 			{
@@ -232,12 +249,15 @@ export function createWorkbenchBridge(identity, Renderer) {
 				version: '1.0.0',
 				type: 'module',
 				dependencies: {
-					'@mantine/core': '9.5.2',
-					'@mantine/hooks': '9.5.2',
-					'@pluxel/runtime': '1.0.0',
-					react: '19.2.8',
-					'react-dom': '19.2.8',
+					'@mantine/core': '9.6.3',
+					'@mantine/hooks': '9.6.3',
+					'@pluxel/core': '1.0.0',
+					'@pluxel/workbench': '0.1.0',
+					react: '19.3.0',
+					'react-dom': '19.3.0',
 				},
+				peerDependencies: { capnweb: '0.12.0' },
+				devDependencies: { capnweb: '0.12.0' },
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 				},
@@ -273,9 +293,9 @@ export function createWorkbenchBridge(identity, Renderer) {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-			"import { RpcTarget } from '@pluxel/runtime/capnweb'",
-			"import { workbench } from '@pluxel/runtime/workbench'",
+			"import { BasePlugin, Plugin } from '@pluxel/core'",
+			"import { RpcTarget } from 'capnweb'",
+			"import { workbench } from '@pluxel/workbench'",
 			'',
 			"const first = workbench.entry(import.meta.url, './ui/index.ts')",
 			"const second = workbench.entry(import.meta.url, './ui/second.ts')",
@@ -353,7 +373,7 @@ export function createWorkbenchBridge(identity, Renderer) {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, Plugin } from '@pluxel/core'",
 			'declare const __FIXTURE_INPUT__: string',
 			'export const inputOverride = __FIXTURE_INPUT__',
 			'',
@@ -484,8 +504,8 @@ describe('build command', () => {
 			expect(pkg.optionalDependencies?.['pluxel-plugin-beta']).toBeUndefined()
 			expect(pkg.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
-			expect(pkg.peerDependencies?.['pluxel-plugin-stale']).toBeUndefined()
-			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-stale']).toBeUndefined()
+			expect(pkg.peerDependencies?.['pluxel-plugin-stale']).toBe('^9.0.0')
+			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-stale']?.optional).toBe(true)
 			expect(pkg.dependencies?.['pluxel-plugin-alpha']).toBeUndefined()
 			expect(pkg.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-beta']?.optional).toBe(true)
@@ -505,7 +525,7 @@ describe('build command', () => {
 			await writeFile(
 				resolve(fixtureDir, 'src/index.ts'),
 				[
-					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+					"import { BasePlugin, Plugin } from '@pluxel/core'",
 					"@Plugin({ displayName: 'FixturePlugin' })",
 					'export class FixturePlugin extends BasePlugin {}',
 				].join('\n'),
@@ -516,11 +536,37 @@ describe('build command', () => {
 				extraConfig: pluginPackageOverlay(runtime),
 			})
 			const cleaned = await readPackageJSON(runtime.packageJsonPath)
-			expect(cleaned.peerDependencies?.['pluxel-plugin-alpha']).toBeUndefined()
-			expect(cleaned.peerDependencies?.['pluxel-plugin-beta']).toBeUndefined()
-			expect(cleaned.peerDependenciesMeta?.['pluxel-plugin-beta']).toBeUndefined()
+			expect(cleaned.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
+			expect(cleaned.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
+			expect(cleaned.peerDependenciesMeta?.['pluxel-plugin-beta']?.optional).toBe(true)
 			expect(cleaned.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(cleaned.pluxel?.pluginPackages).toBeUndefined()
+		})
+	})
+
+	it('rejects an incorrect Plugin dependency role without rewriting author fields', async () => {
+		await withBuildFixture('basic', async () => {
+			const runtime = await resolveBuildContext({})
+			const original = await readFile(runtime.packageJsonPath, 'utf8')
+			const manifest = JSON.parse(original) as {
+				peerDependencies: Record<string, string>
+				dependencies?: Record<string, string>
+				peerDependenciesMeta?: Record<string, { optional?: boolean }>
+			}
+			delete manifest.peerDependencies['pluxel-plugin-alpha']
+			manifest.dependencies = { 'pluxel-plugin-alpha': '^1.0.0' }
+			await writeFile(runtime.packageJsonPath, JSON.stringify(manifest, null, 2))
+			await expect(
+				runWithTsdown({
+					context: runtime,
+					log: () => {},
+					extraConfig: pluginPackageOverlay(runtime),
+				}),
+			).rejects.toThrow(/peerDependencies\.pluxel-plugin-alpha/)
+			const after = JSON.parse(await readFile(runtime.packageJsonPath, 'utf8')) as typeof manifest
+			expect(after.peerDependencies).toEqual(manifest.peerDependencies)
+			expect(after.dependencies).toEqual(manifest.dependencies)
+			expect(after.peerDependenciesMeta).toEqual(manifest.peerDependenciesMeta)
 		})
 	})
 
@@ -575,7 +621,7 @@ describe('build command', () => {
 			})
 
 			expect(await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf8')).toMatch(
-				/from ["']@pluxel\/runtime["']/,
+				/from ["']@pluxel\/core["']/,
 			)
 		})
 	})
@@ -610,7 +656,7 @@ describe('build command', () => {
 		}
 	})
 
-	it('fills repository metadata from supported CI providers', async () => {
+	it('does not rewrite author-maintained repository metadata in CI', async () => {
 		for (const provider of [
 			{
 				env: { GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'pluxel/example' },
@@ -633,9 +679,9 @@ describe('build command', () => {
 						extraConfig: pluginPackageOverlay(runtime),
 					})
 					const pkg = await readPackageJSON(runtime.packageJsonPath)
-					expect(pkg.repository).toEqual({ type: 'git', url: `${provider.baseUrl}.git` })
-					expect(pkg.homepage).toBe(provider.baseUrl)
-					expect(pkg.bugs).toEqual({ url: `${provider.baseUrl}${provider.issues}` })
+					expect(pkg.repository).toBeUndefined()
+					expect(pkg.homepage).toBeUndefined()
+					expect(pkg.bugs).toBeUndefined()
 				})
 			} finally {
 				vi.unstubAllEnvs()
@@ -656,7 +702,7 @@ describe('build command', () => {
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
 			expect(output).toContain('this.ctx.workbench.publish')
-			expect(output).toContain('@pluxel/runtime/workbench')
+			expect(output).toContain('@pluxel/workbench')
 			expect(output).not.toContain('.bind(')
 			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')

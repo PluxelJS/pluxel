@@ -1,49 +1,19 @@
 # Workbench UI Library
 
-## Current Decision
+第一方 Shell 与仓库维护的 renderer 统一直接使用 Mantine。第三方 renderer 可以按隔离契约选择自己的附加依赖；仓库不维护平行组件系统或 UI library adapter。
 
-The first-party Workbench Shell and repository-maintained renderer UI use Mantine. We are not migrating to HeroUI v3, and we do not add a UI-library-neutral adapter, wrapper package, or parallel component system.
+## 修改约束
 
-This is a decision for first-party Workbench code. A third-party renderer may still own an additional UI dependency under the existing renderer isolation contract. That technical allowance does not justify adding another official component library to this repository.
+- 优先普通组件、props、hooks；局部例外使用调用点的 `style`、`styles`、`className` 或 CSS variables。
+- 主题由 `packages/workbench/shell/src/theme/mantine/theme.ts` 拥有；产品 semantic color tokens 不形成第二套 skin system。
+- 普通页面不引入 `factory`、`useStyles`、`useProps`、`createVarsResolver`、`polymorphicFactory` 或自定义 `StylesApiProps`。
+- 只有至少两个无关调用方需要同一 Mantine-native component，且普通组合无法清楚表达时，才采用高级扩展 API；同时明确 slots、props、样式与可访问性归属。
+- 每个 federated renderer 创建自己的 `MantineProvider`；Shell 提供 singleton module 与唯一的 Core CSS。共享实现不跨 React root 传播 Context。
 
-## Why Mantine Stays
+更换库需要具体产品、可访问性或维护问题作为证据，并覆盖 Federation shared/CSS、全部 renderer roots 与 `valibot-form` Mantine peer 的影响。不能仅为缩短 JSX 或假设未来复用引入抽象；更换时必须同时移除旧系统。
 
-- Workbench UI already uses Mantine primitives, hooks, modals, notifications, and direct component props. It does not depend on Mantine's advanced custom-component APIs such as `factory`, `useStyles`, or `createVarsResolver`.
-- Mantine is part of Workbench Federation Profile 1: `@mantine/core` and `@mantine/hooks` are exact-version singleton shared modules. The Shell provides their implementation and core CSS, while producer builds validate the contract and reject duplicate core stylesheet imports.
-- Every federated renderer is a separate React root. A renderer must create its own `MantineProvider`; it cannot inherit the Shell's private React Context or theme object.
-- The `valibot-form` Web renderer is Mantine peer-dependent. Replacing Mantine would therefore change both the Workbench and a public form-rendering integration.
+实现边界见 [FRONTEND](FRONTEND.md)；作者 Provider/CSS 规则见 [renderer resources](../docs/workbench/renderer-resources.md)；本地主题操作见 [theme README](../packages/workbench/shell/src/theme/README.md)。
 
-A HeroUI migration would be a platform and dependency migration, not a local JSX substitution. It would require a concrete current product, accessibility, or maintenance problem that Mantine cannot solve. Agent readability alone is not enough to justify that cost: the current application uses ordinary, explicit Mantine APIs and has local documentation for theme and renderer boundaries.
+## 验证
 
-## Mantine API Discipline
-
-Prefer ordinary Mantine components and props. For local exceptions, use a component's `style`, `styles`, `className`, or CSS variables at the call site. Do not make Mantine's internal styling model the default application architecture.
-
-Avoid introducing `factory`, `useStyles`, `useProps`, `createVarsResolver`, `polymorphicFactory`, or a custom `StylesApiProps` contract for ordinary Workbench screens. These APIs are valid Mantine extension points, but they add a second layer of component conventions that every later reader must understand.
-
-Use Mantine's advanced extension APIs only when all of the following are true:
-
-- a genuinely reusable, Mantine-native component is required;
-- at least two unrelated call sites need the same component contract;
-- standard Mantine composition and local styling cannot express the behavior clearly; and
-- the component's slots, props, styling ownership, and accessibility behavior can be documented in one place.
-
-Do not introduce a custom primitive to hide a single screen's layout or visual preference. Prefer deleting the abstraction when its only benefit is shorter JSX or speculative future reuse.
-
-## Working Rules
-
-- First-party Workbench UI imports Mantine directly and uses its primitives, hooks, props, and local `styles` before introducing custom CSS.
-- `packages/workbench-app/src/theme/mantine/theme.ts` is direct Mantine theme configuration. It is deliberately named as such, not as an adapter.
-- The theme directory may define product semantic color tokens for layout and neutral surfaces. It does not create a second component skin system.
-- Each federated Mantine renderer installs `MantineProvider` inside its own root. It must not import `@mantine/core/styles.css`; the Shell loads it once.
-- Do not introduce HeroUI, Tailwind, React Aria, or library-neutral UI abstractions into first-party Workbench code without an approved replacement decision.
-
-## Re-evaluation
-
-Revisit this decision only when a concrete, current requirement cannot be met with Mantine or its supported ecosystem. A proposal must identify the affected renderer roots, Federation shared-module and CSS ownership changes, `valibot-form` impact, migration owner, and removal path for the old implementation. Do not keep two first-party component systems during an open-ended trial.
-
-## Related Sources
-
-- [`FRONTEND.md`](FRONTEND.md) owns Workbench renderer and Federation behavior.
-- [`../docs/workbench/renderer-resources.md`](../docs/workbench/renderer-resources.md) owns the public renderer Provider and stylesheet rules.
-- [`../packages/workbench-app/src/theme/README.md`](../packages/workbench-app/src/theme/README.md) owns local theme editing rules.
+主题或组件变更先检查实际 Shell 与受影响 renderer；涉及 Provider、shared 或 Core CSS 时覆盖独立 React roots 和真实 Federation 加载。交互组件检查键盘、focus、窄屏和可访问名称。不要为单一样式改动引入新的组件抽象或实现镜像测试。

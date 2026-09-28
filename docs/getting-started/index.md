@@ -72,11 +72,11 @@ pnpm build
 pnpm start
 ```
 
-示例默认使用 static host：插件清单随应用构建，开发时支持热更新。首次运行无需在不同宿主模式之间做选择；需要运行期间增删插件文件时，再阅读[配置插件宿主](./host-setup.md)。
+示例使用同一个应用声明描述固定插件与可选动态来源，开发时支持热更新。配置来源与启动策略见[配置插件宿主](./host-setup.md)。
 
 ## 接下来做什么
 
 - **继续开发这个应用**：[示例项目结构与开发流程](../development/starter-monorepo.md)。
 - **编写自己的插件**：[编写第一个插件](./first-plugin.md)，再了解[插件依赖与生命周期](./plugin-model.md)。
 - **添加一个功能**：[HTTP 接口](../runtime/http.md)、[配置与默认值](./configuration.md)、[Workbench 界面](../workbench/index.md)。
-- **让 coding agent 协助开发**：先让它阅读本页和当前任务对应的指南；检查已启动的应用时使用[开发控制台](../development/dev-console.md)。
+- **定位并修改已有功能，或让 coding agent 协助开发**：从[开发工作流程](../development/index.md)选择 inspect、devconsole 和测试，再读任务对应的功能指南。

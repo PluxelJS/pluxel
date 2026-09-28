@@ -424,10 +424,7 @@ function ensureSourceTargetLink(
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
 	}
-	if (repositoryStat?.isSymbolicLink()) {
-		// Migrate the v1 whole-checkout proxy to package-granular links.
-		rmSync(repositoryRoot)
-	} else if (repositoryStat && !repositoryStat.isDirectory()) {
+	if (repositoryStat && !repositoryStat.isDirectory()) {
 		throw new Error(`Refusing to replace non-directory source path: ${repositoryRoot}`)
 	}
 	mkdirSync(repositoryRoot, { recursive: true })

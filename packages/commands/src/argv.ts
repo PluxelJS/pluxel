@@ -1,5 +1,7 @@
 export { createArgvRouter } from './argv/router'
 export type { ArgvRouter } from './argv/router'
+export { toCli } from './argv/cli'
+export type { CliCommand } from './argv/cli'
 export { tail } from './argv/tail'
 export type {
 	ArgvBinding,

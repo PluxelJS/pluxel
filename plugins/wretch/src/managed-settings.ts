@@ -1,9 +1,9 @@
 import {
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
-	type PersistenceNamespace,
 	type PluginNodeAddress,
-} from '@pluxel/runtime'
+} from '@pluxel/core'
+import { type PersistenceNamespace } from '@pluxel/services/persistence'
 import type { Dispatcher } from 'undici'
 import type { WretchManagedSettings } from './workbench.ts'
 

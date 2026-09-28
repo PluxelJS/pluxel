@@ -1,4 +1,4 @@
-import { BasePlugin } from '@pluxel/runtime'
+import { BasePlugin } from '@pluxel/core'
 import type { S3mini } from 's3mini'
 
 /**

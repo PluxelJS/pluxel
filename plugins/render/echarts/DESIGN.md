@@ -2,7 +2,7 @@
 
 `@pluxel/echarts` is the first consumer of Pluxel's shared worker-task capability. ECharts is not a
 runtime special case: the plugin declares a typed worker artifact and submits cloneable jobs through
-`ctx.workers`, while runtime owns thread admission and lifecycle.
+`ctx.require(Workers)`, while runtime owns thread admission and lifecycle.
 
 ## Execution boundary
 

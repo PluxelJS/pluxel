@@ -8,7 +8,6 @@
 
 ## Non-goals
 
-- Backward compatibility with legacy `f.*` signatures.
 - Large data optimizations (virtual list, infinite scroll).
 - Highly stylized UI themes; stick to Mantine defaults + layout guidelines.
 
@@ -53,7 +52,7 @@
 
 ## Demo Design Guidelines
 
-- Follow `LAYOUT_DESIGN_GUIDELINES.md` for spacing, grouping, and hierarchy.
+- Follow [layout rules](./LAYOUT_DESIGN_GUIDELINES.md) for spacing, grouping, and hierarchy.
 - Keep cases comprehensive but non-redundant; each case should prove a capability.
 - Favor usable defaults over exhaustive UI permutations.
 

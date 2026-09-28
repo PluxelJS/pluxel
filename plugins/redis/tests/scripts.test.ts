@@ -1,4 +1,5 @@
-import { createCoreTestHost, Plugin } from '@pluxel/core/test'
+import { createTestHost } from '@pluxel/test'
+import { Plugin } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	defineRedisScript,
@@ -60,8 +61,8 @@ class ScriptRedisPlugin extends Redis {
 
 describe('@pluxel/redis scripts', () => {
 	it('defines typed scripts and falls back from EVALSHA to EVAL on NOSCRIPT', async () => {
-		await using host = createCoreTestHost()
-		const redis = await host.add(ScriptRedisPlugin)
+		await using host = await createTestHost()
+		const redis = await host.start(ScriptRedisPlugin)
 		redis.fake.evalSha
 			.mockRejectedValueOnce(new Error('NOSCRIPT No matching script.'))
 			.mockResolvedValueOnce(7)

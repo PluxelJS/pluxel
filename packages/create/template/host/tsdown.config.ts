@@ -1,11 +1,9 @@
-import { staticApplication } from '@pluxel/rolldown/build'
+import { defineConfig } from 'tsdown'
+import { buildPreset } from '@pluxel/services/build'
 
-export default {
-	...staticApplication({
-		entry: './src/pluxel.static.ts',
-		variant: 'workbench',
-		target: 'node',
-	}),
+export default defineConfig({
+	entry: './src/app.ts',
+	plugins: [buildPreset()],
 	copy: [
 		{
 			from: './web/dist',
@@ -13,4 +11,4 @@ export default {
 			rename: 'public',
 		},
 	],
-}
+})

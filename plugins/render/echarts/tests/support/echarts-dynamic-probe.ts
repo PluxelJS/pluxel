@@ -1,5 +1,6 @@
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { CanvasPlugin } from '@pluxel/canvas'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { EChartsError, EChartsPlugin, type EChartsOption } from '../../src/index.ts'
 
 const barOption = {
@@ -20,7 +21,8 @@ export class EChartsDynamicProbePlugin extends BasePlugin {
 	}
 
 	protected override init(): void {
-		this.ctx.elysia
+		this.ctx
+			.require(ElysiaApp)
 			.get('/__pluxel-test/echarts/render', () => this.render())
 			.get('/__pluxel-test/echarts/error/remote-image', () =>
 				this.errorCode({

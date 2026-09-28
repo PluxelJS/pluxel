@@ -1,50 +1,4 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
-
-const reactDevtoolsCoreStub = fileURLToPath(
-	new URL('./src/vendor/react-devtools-core.ts', import.meta.url),
-)
-
-const inlineRuntimeDeps = [
-	'@alcalzone/ansi-tokenize',
-	'ansi-escapes',
-	'ansi-regex',
-	'ansi-styles',
-	'auto-bind',
-	'chalk',
-	'cli-boxes',
-	'cli-cursor',
-	'cli-truncate',
-	'code-excerpt',
-	'convert-to-spaces',
-	'emoji-regex',
-	'environment',
-	'es-toolkit',
-	'escape-string-regexp',
-	'get-east-asian-width',
-	'indent-string',
-	'ink',
-	'is-fullwidth-code-point',
-	'is-in-ci',
-	'mimic-fn',
-	'onetime',
-	'patch-console',
-	'react',
-	'react-reconciler',
-	'restore-cursor',
-	'scheduler',
-	'semver',
-	'signal-exit',
-	'slice-ansi',
-	'stack-utils',
-	'string-width',
-	'strip-ansi',
-	'terminal-size',
-	'widest-line',
-	'wrap-ansi',
-	'ws',
-	'yoga-layout',
-]
 
 export default defineConfig({
 	entry: {
@@ -60,19 +14,12 @@ export default defineConfig({
 			'@pluxel/market/*',
 			'@pluxel/rolldown',
 			'@pluxel/rolldown/*',
-			'@pluxel/runtime',
-			'@pluxel/runtime/*',
-			'@pluxel/runtime-dynamic',
-			'@pluxel/runtime-dynamic/*',
 			'rolldown',
 			'rolldown/*',
 		],
-		// The CLI intentionally bundles its app/UI stack; the toolchain package stays external above.
-		alwaysBundle: inlineRuntimeDeps,
-		onlyBundle: inlineRuntimeDeps,
-	},
-	alias: {
-		'react-devtools-core': reactDevtoolsCoreStub,
+		// Bundle the small version comparator while optional toolchain owners stay external.
+		alwaysBundle: ['semver'],
+		onlyBundle: ['semver'],
 	},
 	dts: {
 		sourcemap: true,

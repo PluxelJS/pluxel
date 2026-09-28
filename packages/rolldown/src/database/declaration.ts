@@ -7,7 +7,7 @@ import {
 	walkAst,
 } from '../rolldown/plugins/pluginUtils.ts'
 
-const DATABASE_IMPORT_SOURCE = '@pluxel/runtime/database'
+const DATABASE_IMPORT_SOURCE = '@pluxel/services/database'
 
 export type DatabaseDeclaration = Readonly<{
 	insertOffset: number

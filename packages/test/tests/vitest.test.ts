@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolve } from 'node:path'
-import type { ViteUserConfig } from 'vitest/config'
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 const rolldownMocks = vi.hoisted(() => {
@@ -41,112 +40,78 @@ afterEach(() => {
 })
 
 describe('@pluxel/test/vitest', () => {
-	it('builds the fixed Pluxel test pipeline', () => {
+	it('composes the pipeline while preserving user options and fixing source identity', () => {
 		const prePlugin = { name: 'author-pre' }
+		const postPlugin = { name: 'author-post' }
 		const config = definePluxelVitestConfig({
 			root: 'packages/test',
-			test: {
-				name: 'sync-config',
-				passWithNoTests: false,
-				setupFiles: ['./tests/consumer-setup.ts'],
-			},
+			plugins: [postPlugin],
+			resolve: { conditions: ['browser'], alias: { example: '/example' } },
+			ssr: { resolve: { externalConditions: ['module'] } },
+			test: { name: 'consumer', passWithNoTests: false, setupFiles: ['./setup.ts'] },
 			pluxel: { prePlugins: [prePlugin] },
-		}) as ViteUserConfig
+		})
 
-		expect(rolldownMocks.lintGuardPlugin).toHaveBeenLastCalledWith({
-			cwd: resolve(process.cwd(), 'packages/test'),
+		expect(config.plugins).toEqual([
+			prePlugin,
+			expect.objectContaining({ name: expect.stringMatching(/^database-source-/) }),
+			expect.objectContaining({ name: expect.stringMatching(/^plugin-semantics-/) }),
+			expect.objectContaining({ name: expect.stringMatching(/^lint-guard-/) }),
+			expect.objectContaining({ name: expect.stringMatching(/^config-source-/) }),
+			postPlugin,
+		])
+		const root = resolve(process.cwd(), 'packages/test')
+		expect(rolldownMocks.databaseSourceVitePlugin).toHaveBeenLastCalledWith({ root })
+		expect(rolldownMocks.lintGuardPlugin).toHaveBeenLastCalledWith({ cwd: root })
+		expect(config.test).toMatchObject({
+			name: 'consumer',
+			passWithNoTests: false,
+			setupFiles: ['./setup.ts'],
+			server: { deps: { inline: ['@pluxel/services'] } },
 		})
-		expect(config.plugins?.[0]).toBe(prePlugin)
-		expect(config.plugins?.[1]).toMatchObject({
-			name: expect.stringMatching(/^database-source-/),
-			options: { root: resolve(process.cwd(), 'packages/test') },
-		})
-		expect(config.plugins?.[2]).toMatchObject({
-			name: expect.stringMatching(/^plugin-semantics-/),
-			options: {
-				root: resolve(process.cwd(), 'packages/test'),
-				include: [
-					'**/src/**/*.ts',
-					'**/src/*.ts',
-					'**/src/**/*.tsx',
-					'**/src/*.tsx',
-					'**/tests/**/*.ts',
-					'**/tests/*.ts',
-					'**/tests/**/*.tsx',
-					'**/tests/*.tsx',
-				],
+		expect(config).not.toHaveProperty('pluxel')
+		expect(config.resolve?.alias).toEqual({ example: '/example' })
+		for (const resolution of [config.resolve, config.ssr?.resolve]) {
+			expect(resolution?.conditions?.slice(0, 3)).toEqual([
+				'@pluxel/hmr',
+				'development',
+				'@pluxel/source',
+			])
+			expect(resolution?.conditions).not.toContain('browser')
+			expect(resolution?.externalConditions).toEqual(['node', 'import', 'default'])
+		}
+		expect(config.ssr?.noExternal).toEqual(['@pluxel/services'])
+	})
+
+	it.each([
+		[
+			undefined,
+			['src', 'tests'].flatMap((dir) =>
+				['ts', 'tsx'].flatMap((ext) => [`**/${dir}/**/*.${ext}`, `**/${dir}/*.${ext}`]),
+			),
+		],
+		['src/**/*.ts', ['**/src/**/*.ts', '**/src/*.ts']],
+		[
+			['src/**/*.ts', 'src/**/*.ts'],
+			['**/src/**/*.ts', '**/src/*.ts'],
+		],
+	])(
+		'normalizes source globs and keeps type probes out of both transforms (%j)',
+		(include, expected) => {
+			definePluxelVitestConfig({ pluxel: { include } })
+			const options = {
+				include: expected,
 				exclude: [
 					'**/node_modules/**',
 					'**/*.d.ts',
-					'**/*.typecheck.ts',
-					'**/*.typecheck.tsx',
-					'**/*.typecheck.mts',
-					'**/*.typecheck.cts',
+					...['ts', 'tsx', 'mts', 'cts'].map((ext) => `**/*.typecheck.${ext}`),
 				],
-			},
-		})
-		expect(config.plugins?.[3]).toMatchObject({
-			options: {
-				cwd: resolve(process.cwd(), 'packages/test'),
-			},
-		})
-		expect(config.test?.setupFiles).toEqual(['./tests/consumer-setup.ts'])
-		expect(config).not.toHaveProperty('then')
-		expect(config).not.toHaveProperty('pluxel')
-		expect(config.test?.name).toBe('sync-config')
-		expect(config.test?.passWithNoTests).toBe(false)
-		expect(config.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
-		)
-		expect(config.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
-		expect(config.ssr?.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
-		)
-		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
-		expect(config.ssr?.noExternal).toEqual(['@pluxel/runtime'])
-		expect(config.test?.server?.deps?.inline).toEqual(['@pluxel/runtime'])
-	})
-
-	it('uses the pluxel namespace for source toolchain roots', () => {
-		definePluxelVitestConfig({
-			pluxel: { include: ['src/**/*.ts'] },
-		})
-
-		expect(rolldownMocks.configSourcePlugin).toHaveBeenLastCalledWith({
-			include: ['**/src/**/*.ts', '**/src/*.ts'],
-			exclude: [
-				'**/node_modules/**',
-				'**/*.d.ts',
-				'**/*.typecheck.ts',
-				'**/*.typecheck.tsx',
-				'**/*.typecheck.mts',
-				'**/*.typecheck.cts',
-			],
-		})
-	})
-
-	it('uses package-local source and test globs by default', () => {
-		definePluxelVitestConfig({})
-
-		expect(rolldownMocks.configSourcePlugin).toHaveBeenLastCalledWith({
-			include: [
-				'**/src/**/*.ts',
-				'**/src/*.ts',
-				'**/src/**/*.tsx',
-				'**/src/*.tsx',
-				'**/tests/**/*.ts',
-				'**/tests/*.ts',
-				'**/tests/**/*.tsx',
-				'**/tests/*.tsx',
-			],
-			exclude: [
-				'**/node_modules/**',
-				'**/*.d.ts',
-				'**/*.typecheck.ts',
-				'**/*.typecheck.tsx',
-				'**/*.typecheck.mts',
-				'**/*.typecheck.cts',
-			],
-		})
-	})
+			}
+			expect(rolldownMocks.configSourcePlugin).toHaveBeenLastCalledWith(options)
+			expect(rolldownMocks.createPluginSemanticsPlugin).toHaveBeenLastCalledWith({
+				root: process.cwd(),
+				...options,
+			})
+		},
+	)
 })

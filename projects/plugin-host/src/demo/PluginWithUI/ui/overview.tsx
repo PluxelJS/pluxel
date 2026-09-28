@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Code, Group, Stack, Text, Title } from '@mantine/core'
-import type { WorkbenchHostFacade } from '@pluxel/runtime/workbench/react'
+import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { DemoIdentity, DemoProvider, DemoSnapshot } from './shared'
 import { incrementCounter, overviewScope, overviewSnapshot, resetCounter } from './overview.scope'
 

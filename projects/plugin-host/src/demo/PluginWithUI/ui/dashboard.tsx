@@ -1,6 +1,6 @@
 import { Button, Card, Stack, Text, Title } from '@mantine/core'
 import { useEffect } from 'react'
-import type { WorkbenchHostFacade } from '@pluxel/runtime/workbench/react'
+import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { dashboardScope, dashboardSnapshot } from './dashboard.scope'
 import { DemoIdentity, DemoProvider, DemoSnapshot } from './shared'
 

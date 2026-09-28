@@ -9,7 +9,9 @@ Workbench 会自动显示配置表单；无需为普通配置另外编写 React 
 ## 先给一个字段加标题
 
 ```ts twoslash
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 @Plugin()
 export class ServicePlugin extends BasePlugin {
@@ -33,7 +35,9 @@ export class ServicePlugin extends BasePlugin {
 <ConfigurationExampleLayout>
 
 ```ts twoslash
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
 
 function startServer(_port: number, _options: { enabled: boolean }) {}
 
@@ -112,7 +116,7 @@ const Config = v.object({
 				),
 			}),
 			f.formMeta({ title: '重试策略', section: 'network' }),
-			f.objectMeta({ variant: 'card', columns: 2 }),
+			f.objectMeta({ variant: 'card' }),
 		),
 		{
 			attempts: 3,
@@ -150,7 +154,7 @@ export class ExamplePlugin extends BasePlugin {
 
 当字段既有默认值又有表单 metadata 时，让 `v.optional()` 包住完成后的 `v.pipe()`：`v.optional(v.pipe(base, constraints, metadata), default)`。这样默认值属于外层可选语义，字段 extractor 解包 optional 后仍能读取内层 metadata；不要写成 `v.pipe(v.optional(base, default), metadata)`。
 
-注意：`configs.use()` 要放在 Plugin class 的普通顶层 field；不要在 constructor 读取 config，不要使用 `#private`，每个具体 Plugin 只声明一个 object schema。
+Plugin 的声明和读取时机见[配置规则](../getting-started/configuration.md#声明规则)。
 
 ## metadata 做什么
 
@@ -219,6 +223,8 @@ npx nypm add valibot-form valibot react react-dom @mantine/core @mantine/hooks @
 ```
 
 ```tsx twoslash
+/// <reference types="vite/client" />
+// ---cut---
 import { MantineProvider } from '@mantine/core'
 import '@mantine/core/styles.css'
 import * as v from 'valibot'
@@ -306,11 +312,3 @@ Record 内无法被路径准确表示的字面量 key（如 `x.y`、`0` 或空�
 `valibot-form` 提供 schema metadata、字段提取和可选 Web adapter，不提供 Pluxel Plugin 发现、配置传输或持久化 API。自定义配置界面应直接接收 browser-safe 的 schema，并通过应用自己的服务端接口提交修改；服务端继续使用同一 schema 校验输入。
 
 Pluxel Workbench 内置的 Plugin 配置页由宿主读取 runtime config metadata。Plugin 作者只声明 `this.configs.use(Config)`，不调用 Workbench 内部的 schema projection 或配置 patch 实现。
-
-## 检查清单
-
-- schema 是 object 或 intersect，适合 `AutoForm`。
-- 默认值写在 `v.optional(v.pipe(...metadata), default)`，没有业务 fallback，也不会在解包 optional 时丢失 metadata。
-- `configs.use()` 是 class 顶层普通 field，且 Plugin 只有一个 config field。
-- server runtime 是最终校验者；browser 表单只提供编辑体验。
-- core 工具需要 schema 时只 import `valibot-form`，不把 React/Mantine 带入 server bundle。

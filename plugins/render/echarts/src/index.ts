@@ -1,12 +1,8 @@
+import { Workers, defineWorkerTask, WorkerTaskError } from '@pluxel/services/workers'
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
-import {
-	BasePlugin,
-	defineWorkerTask,
-	Plugin,
-	type Context,
-	WorkerTaskError,
-} from '@pluxel/runtime'
+import { BasePlugin, Plugin, type Context } from '@pluxel/core'
+
 import type { EChartsOption, SetOptionOpts } from 'echarts'
 import { EChartsConfig, type EChartsPluginConfig } from './config.ts'
 import { EChartsError, type EChartsErrorCode } from './errors.ts'
@@ -279,7 +275,7 @@ export class EChartsPlugin extends BasePlugin {
 	): Promise<RenderEngineResult> {
 		let response: EChartsWorkerOutput
 		try {
-			response = await this.ctx.workers.runPrepared(renderTask, prepare, {
+			response = await this.ctx.require(Workers).runPrepared(renderTask, prepare, {
 				signal,
 				inputOwnership: 'borrowed',
 			})

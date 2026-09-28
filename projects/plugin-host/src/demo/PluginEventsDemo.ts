@@ -2,7 +2,7 @@
 // - 你需要一个 Plugin 明确拥有事件 channel
 // - 你需要通过 required constructor dependency 消费另一个 Plugin 的事件
 
-import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/runtime'
+import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/core'
 
 type TickEvent = readonly [payload: { from: string; seq: number; at: number }]
 

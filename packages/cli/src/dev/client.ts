@@ -21,6 +21,7 @@ export interface DevInstance {
 	root: string
 	socketPath: string
 	startedAt: string
+	application?: Readonly<{ state: 'ready' | 'updating' | 'unavailable'; latestUpdate: unknown }>
 }
 
 export interface DevRunSnapshot {
@@ -118,22 +119,18 @@ function checkPrivate(stat: Stats) {
 }
 
 export async function readBoundedFile(file: string, limit = MAX_JSON_BYTES): Promise<Buffer> {
-	const handle = await open(file, 'r')
-	try {
-		const stat = await handle.stat()
-		if (!stat.isFile()) fail('invalid_input', 'Expected a regular file')
-		const buffer = Buffer.alloc(limit + 1)
-		let size = 0
-		while (size < buffer.length) {
-			const { bytesRead } = await handle.read(buffer, size, buffer.length - size, null)
-			if (!bytesRead) break
-			size += bytesRead
-		}
-		if (size > limit) fail('input_too_large', `File exceeds ${limit} bytes`)
-		return buffer.subarray(0, size)
-	} finally {
-		await handle.close()
+	await using handle = await open(file, 'r')
+	const stat = await handle.stat()
+	if (!stat.isFile()) fail('invalid_input', 'Expected a regular file')
+	const buffer = Buffer.alloc(limit + 1)
+	let size = 0
+	while (size < buffer.length) {
+		const { bytesRead } = await handle.read(buffer, size, buffer.length - size, null)
+		if (!bytesRead) break
+		size += bytesRead
 	}
+	if (size > limit) fail('input_too_large', `File exceeds ${limit} bytes`)
+	return buffer.subarray(0, size)
 }
 
 export function parseInput(source: string): unknown {
@@ -377,6 +374,7 @@ export function publicInstance(instance: DevInstance) {
 		pid: instance.pid,
 		root: instance.root,
 		startedAt: instance.startedAt,
+		...(instance.application ? { application: instance.application } : {}),
 	}
 }
 
@@ -390,7 +388,18 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 				const value = await requestDev(instance, { method: 'inspect' }, 500)
 				if (!record(value) || value.instanceId !== instance.instanceId || value.root !== root)
 					fail('protocol_mismatch', 'Console handshake identity does not match discovery')
-				return instance
+				if (value.application === undefined) return instance
+				if (
+					!record(value.application) ||
+					!['ready', 'updating', 'unavailable'].includes(String(value.application.state))
+				)
+					fail('protocol_mismatch', 'Console application status is invalid')
+				return Object.assign({}, instance, {
+					application: {
+						state: value.application.state as 'ready' | 'updating' | 'unavailable',
+						latestUpdate: value.application.latestUpdate ?? null,
+					},
+				})
 			}),
 		)
 		for (const result of results) {

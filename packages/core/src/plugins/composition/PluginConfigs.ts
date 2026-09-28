@@ -36,8 +36,10 @@ export type ConfigUpdateListener<T extends object> = (
 
 /** A Plugin may declare one object schema through one class-field initializer. */
 export class PluginConfigs {
-	use<TSchema extends StandardSchemaV1>(_schema: TSchema): StandardSchemaV1.InferOutput<TSchema> {
-		return SENTINEL as StandardSchemaV1.InferOutput<TSchema>
+	use<TSchema extends StandardSchemaV1>(
+		_schema: TSchema,
+	): ConfigSnapshot<StandardSchemaV1.InferOutput<TSchema>> {
+		return SENTINEL as ConfigSnapshot<StandardSchemaV1.InferOutput<TSchema>>
 	}
 
 	/** Register once during this config field owner's init() window. */

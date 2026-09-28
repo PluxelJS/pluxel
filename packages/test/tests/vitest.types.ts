@@ -7,17 +7,8 @@ const vitestConfig = {
 
 definePluxelVitestConfig(vitestConfig)
 
-type Equal<Actual, Expected> =
-	(<Value>() => Value extends Actual ? 1 : 2) extends <Value>() => Value extends Expected ? 1 : 2
-		? true
-		: false
-type Assert<Condition extends true> = Condition
-
-// The preset accepts exactly one optional Vite-compatible config object; its former second
-// toolchain options argument must not reappear as a parallel configuration path.
-type _definePluxelVitestConfigTakesOneObject = Assert<
-	Equal<Parameters<typeof definePluxelVitestConfig>, [config?: PluxelVitestConfig]>
->
+// @ts-expect-error Toolchain options belong in the same config object's pluxel namespace.
+definePluxelVitestConfig({}, { include: ['src/**/*.ts'] })
 
 definePluxelVitestConfig({
 	pluxel: {

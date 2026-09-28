@@ -11,7 +11,7 @@ description: 通过统一的 s3mini API 在本地存储、远端 S3 和平台实
 
 ```ts twoslash
 import { S3 } from '@pluxel/storage'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Assets' })
 export class AssetsPlugin extends BasePlugin {
@@ -155,7 +155,7 @@ await host.start(S3Plugin, {
 ```
 
 省略 `namespace` 时使用当前 `S3Plugin` 的 Vault namespace；default bucket 的 `key` 默认是 `s3.credentials`，其他 bucket 默认是
-`s3.<bucket-id>.credentials`。provider 在 `init()` 中为每个 remote/vault bucket 读取一次 credential snapshot。Vault 不可用、key
+`s3.<bucket-id>.credentials`。provider 在 `init()` 中为每个 remote/vault bucket 订阅 credential record，并校验初始 snapshot。Vault 不可用、key
 缺失或对象非法分别以 `S3CredentialsError.reason` 的 `unavailable`、`missing`、`invalid` 失败整个 generation。
 
 Workbench enabled 时，provider 固定发布一个 `S3 buckets` Content，以 bounded rows 显示各 ID 的 local、remote/anonymous 或
@@ -163,7 +163,7 @@ remote/vault；只有选中的 remote/vault bucket 接受一次性 password form
 不访问 Vault。Handler 将 replacement access key 写入当前配置引用的 Vault record，
 并重新检查 authenticated Management principal、当前 generation 与 backend，
 串行执行写入和 `flush()`。Content 不读取或展示旧 credential，新 credential 也不会进入 plan、load、action result 或日志。
-保存后仍需通过正常 Plugin management restart 当前 S3 generation，新的 client 才会读取 replacement。
+保存后新请求使用更新的 client；已发出的请求可继续使用旧 snapshot。record 缺失或非法时，后续 client 访问失败，不回退 anonymous。环境和文件绑定只读；修改绑定源后重启应用。
 
 这条 Content 不能用于首次 provisioning。缺失或非法 record 会让 S3Plugin 启动失败，而失败 generation 的 Workbench publication
 必然回滚；宿主必须在启动前写入 credential。不要为了显示 setup Content 让 S3 capability 半启动，也不要另建脱离 Plugin owner
@@ -216,3 +216,34 @@ provider stop/replacement 后，旧 `S3` caller facade 先由 Core generation ga
 会被 revoke 并抛 `S3NotRunningError`（code `S3_NOT_RUNNING`）；remote client 的 in-flight fetch 会收到 lifecycle abort。
 
 对象存储不是关系型事务。若数据库 metadata 与对象必须协调，先设计显式 state machine，再用 outbox、幂等 key 和补偿流程处理对象 side effect；不要假设 DB transaction 能回滚 S3 PUT。
+
+## 将对象缺失返回给调用方
+
+S3 继续提供 s3mini 原生接口；业务 consumer 才知道缺少对象是否是可恢复失败。`getObject()` 以 `null`
+表示对象不存在，空文本是成功值。下面用 default bucket 读取文本文件：
+
+```ts twoslash
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import { S3 } from '@pluxel/storage'
+
+export class DocumentNotFound extends TaggedError('DocumentNotFound')<{ id: string }> {}
+
+@Plugin()
+export class DocumentsPlugin extends BasePlugin {
+	constructor(private readonly s3: S3) {
+		super()
+	}
+
+	async read(id: string): Promise<Result<string, DocumentNotFound>> {
+		const text = await this.s3.bucket().client.getObject(`documents/${id}.txt`)
+		return text === null ? Result.err(new DocumentNotFound({ id })) : Result.ok(text)
+	}
+}
+```
+
+调用方可对 `DocumentNotFound` 提供重新上传入口，成功时使用 `value`。不要捕获所有异常并返回缺失：bucket
+未配置、认证/权限、网络/磁盘错误和 generation 撤回应继续拒绝。该示例只读取文本；流式 `Response`、multipart
+或已经开始的写入仍遵循自己的 body、取消、补偿和部分成功协议，不能靠 Result 回滚。
+
+[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/storage/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/storage/tests/s3.test.ts)。

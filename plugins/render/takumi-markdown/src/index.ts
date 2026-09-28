@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
+import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 import {
 	TakumiError,
 	TakumiPlugin,

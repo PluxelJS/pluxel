@@ -84,7 +84,7 @@ class KeyedSerialTaskQueue {
 	}
 }
 
-// MF Vite 1.21.1 isolates producer state, but its package export detector still owns a
+// MF Vite 1.22.1 isolates producer state, but its package export detector still owns a
 // process-global project root. Same-root builds may run concurrently; switching roots waits
 // until the active cohort drains so one application cannot inspect another's shared winners.
 const federationBuilds = new FederationBuildCoordinator(2)

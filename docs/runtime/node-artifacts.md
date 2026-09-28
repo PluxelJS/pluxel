@@ -13,17 +13,24 @@ Pluxel 可以把一段代码构建成独立 Node ESM，也可以把 CPU 密集�
 
 在 [快速开始](../getting-started/index.md) 创建的插件包内添加下列文件；保留 Pluxel 的 Vite/构建配置，普通 TypeScript 编译不会生成这些独立产物。声明必须位于模块顶层，入口使用静态相对路径。
 
+## 选择安装能力
+
+`standardServices()` 与 `servicesPreset()` 安装 Node modules 与 Workers。组合自己的 Host 时，显式列出 `nodeModules({ root })` 和 `workers()`；Workers 依赖 Node modules，缺少该安装项会在创建资源前失败。`root` 指向已构建的 Node artifact 目录；也可提供声明所属插件的 artifact resolver。只安装 Node modules 不创建线程池。
+
+服务入口不安装开发编译器。`@pluxel/services/vite` 的 `vitePreset()` 负责源码 artifact 更新；仅在普通 Host 声明服务不等于已接入源码编译与 HMR。
+
 ## 独立 Node module
 
 ```ts twoslash
-import { BasePlugin, defineNodeModule, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 
 const rulesModule = defineNodeModule(import.meta.url, './rules-entry.ts')
 
 @Plugin({ displayName: 'Rules' })
 export class RulesPlugin extends BasePlugin {
 	protected override async init() {
-		await this.ctx.nodeModules.use(rulesModule, async (url) => {
+		await this.ctx.require(NodeModules).use(rulesModule, async (url) => {
 			const module = await import(url.href)
 			return module.setup({ logger: this.ctx.logger })
 		})
@@ -42,7 +49,7 @@ export function setup({ logger }: { logger: { info(message: string): void } }) {
 
 启动插件后应看到 `rules module ready`；停用插件后应看到释放日志。
 
-`defineNodeModule()` 只声明 entry，不创建线程。`ctx.nodeModules.use()`：
+`defineNodeModule()` 只声明 entry，不创建线程。`ctx.require(NodeModules).use()`：
 
 - 等待 artifact 首次可用和 setup 完成；
 - setup/import 失败会让 Plugin `init()` 失败；
@@ -59,7 +66,8 @@ artifact 是自包含单文件 Node ESM。它可以使用 Node builtin 和可安
 持续占用 JavaScript event loop、thread-safe 且能用纯数据描述的 CPU/native 工作使用 worker task：
 
 ```ts twoslash
-import { BasePlugin, defineWorkerTask, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Workers, defineWorkerTask } from '@pluxel/services/workers'
 
 type SumInput = { values: number[] }
 type SumOutput = { total: number }
@@ -69,7 +77,7 @@ const sumTask = defineWorkerTask<SumInput, SumOutput>(import.meta.url, './sum-wo
 @Plugin({ displayName: 'Reports' })
 export class ReportsPlugin extends BasePlugin {
 	calculate(values: number[], signal?: AbortSignal) {
-		return this.ctx.workers.run(sumTask, { values }, { signal })
+		return this.ctx.require(Workers).run(sumTask, { values }, { signal })
 	}
 }
 ```
@@ -77,7 +85,7 @@ export class ReportsPlugin extends BasePlugin {
 把下一段保存为与插件文件同目录的 `sum-worker.ts`。它默认导出 handler，不接收 Pluxel Context：
 
 ```ts twoslash
-import type { WorkerTaskHandler } from '@pluxel/runtime'
+import type { WorkerTaskHandler } from '@pluxel/services/workers'
 
 type SumInput = { values: number[] }
 type SumOutput = { total: number }
@@ -111,7 +119,7 @@ caller Promise 可以立即结束，但 runtime 会等 worker 真正退出后才
 
 ```ts no-twoslash
 const bytes = new Uint8Array(await response.arrayBuffer())
-const result = this.ctx.workers.run(
+const result = this.ctx.require(Workers).run(
 	decodeTask,
 	{ bytes },
 	{
@@ -138,7 +146,7 @@ transfer 规则：
 排队 snapshot，只保留真正 dispatch 的 transport clone：
 
 ```ts no-twoslash
-return this.ctx.workers.run(renderTask, input, {
+return this.ctx.require(Workers).run(renderTask, input, {
 	signal,
 	inputOwnership: 'borrowed',
 })
@@ -153,7 +161,7 @@ borrowed 模式在 queue 中保留 caller graph，因此 mutation 会改变尚�
 如果 domain budget walk 或 snapshot 本身较重，先用共享 queue admission，再准备输入：
 
 ```ts no-twoslash
-return this.ctx.workers.runPrepared(
+return this.ctx.require(Workers).runPrepared(
 	renderTask,
 	async (signal) => {
 		await assertBoundedDeclarativeGraph(option, signal)
@@ -180,7 +188,7 @@ return this.ctx.workers.runPrepared(
 
 ```ts no-twoslash
 // 错误：调用方无法观察失败，业务也不知道结果是否提交。
-void this.ctx.workers.run(task, input)
+void this.ctx.require(Workers).run(task, input)
 ```
 
 后台调用需要明确捕获 error、更新有界状态，并决定重试/丢弃。请求级任务把 Promise 返回给 HTTP/command 边界。

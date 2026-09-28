@@ -7,7 +7,7 @@ import {
 	definePluginFork,
 	type CorePluginTestChange,
 	type CoreTestHost,
-} from '@pluxel/core/test'
+} from '@pluxel/core/internal/test'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 

@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core/test'
+import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 // PluginC.ts
 
 @Plugin()

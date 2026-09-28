@@ -4,7 +4,7 @@ TypstMathPlugin has exactly one business surface: createMarkdownExtension() retu
 trusted MarkdownExtension for TakumiMarkdownPlugin. It is a required consumer of Markdown,
 not a generic document compiler, font provider, renderer adapter or file/network capability.
 
-## execution path
+## Execution path
 
 ```text
 accepted Takumi reservation
@@ -20,7 +20,7 @@ independent worker pool. The Worker only receives formula text and fixed scalar 
 Takumi renderer is never dispatched into that Worker, avoiding a nested renderer and a worker
 waiting on an unrelated libuv native slot.
 
-## restricted formula contract
+## Restricted formula contract
 
 The validator accepts a small math-expression character grammar before creating a compiler. It
 rejects #, quoted strings, backslash escapes, paths and resource/dynamic identifiers including
@@ -33,7 +33,7 @@ isolation protects the host JavaScript event loop and unifies task admission; na
 resource use remain process risks. Formula count/characters/SVG bytes and Markdown asset/Takumi
 limits bound the product contract.
 
-## lifecycle and failure
+## Lifecycle and failure
 
 The generated extension is bound to its caller generation through effects. Manual/owner close,
 provider replacement and Markdown cancellation all abort pending Worker work and await its

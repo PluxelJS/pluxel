@@ -6,13 +6,9 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 
 describe('root host authorities', () => {
 	it('keeps mutable PluginService authority off the normal test host', async () => {
-		const host = createCoreInternalTestHost()
-		try {
-			expectTypeOf(host.ctx).toEqualTypeOf<RootContext>()
-			expect('registry' in host).toBe(false)
-		} finally {
-			await host.dispose()
-		}
+		await using host = createCoreInternalTestHost()
+		expectTypeOf(host.ctx).toEqualTypeOf<RootContext>()
+		expect('registry' in host).toBe(false)
 	})
 
 	it('ignores child service spoofs and keeps service ownership on the root Context', async () => {

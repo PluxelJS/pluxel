@@ -1,37 +1,15 @@
-# Logging Architecture
+# 日志：身份、策略与有界读取
 
 本文记录 Pluxel 当前日志模型、性能约束和实现入口。插件作者用法见
 [`docs/reference/plugin-best-practices.md`](../docs/reference/plugin-best-practices.md)；本文面向维护者和宿主实现。
 
+修改身份/归属读 [Category identity](#category-identity) 与 [ContextLogger](#contextlogger)；修改安装或输出读 [RuntimeLogging lifecycle](#runtimelogging-lifecycle) 与 [Routes and sinks](#routes-and-sinks)；修改在线级别读 [Dynamic plugin policy](#dynamic-plugin-policy)；修改读取/游标读 [Runtime store](#runtime-store)。
+
 ## 模型
 
-Pluxel 日志只有两个所有者层级：
+`RuntimeLogging` 拥有唯一 active rootId、LogTape installation、routes/sinks、plugin policy、debug matcher、持久化与 stores。`ContextLogger` 只固定 Context identity、properties 并委托 LogTape。
 
-```text
-RuntimeLogging                 进程级唯一 owner
-  ├─ active rootId
-  ├─ LogTape installation
-  ├─ family routes and sinks
-  ├─ plugin policy
-  ├─ debug matcher
-  ├─ policy persistence
-  └─ runtime log stores
-
-ContextLogger                  Context-owned author capability
-  ├─ immutable root/plugin identity
-  ├─ bound context properties
-  └─ LogTape method delegation
-```
-
-一个进程只允许一个 active root runtime，因此不需要 `Map<scopeId, LoggingScope>`。第二个
-`RuntimeLogging.install()` 会失败；旧 Context 或错误 rootId 产生的 record 会被 active root filter 拒绝。
-
-这个限制同时简化正确性和性能：
-
-- 没有 process-global scope registry 查询；
-- 没有多个 LogTape config 的合并、lease 或引用计数；
-- policy、debug matcher 和 store ownership 都只有一个事实源；
-- launcher shutdown 可以直接按 root 生命周期 flush 和 dispose。
+一个进程只能有一个 active logging root。第二次 install 或已有 foreign LogTape config 都失败；失败候选清理不能 reset 原 owner。旧 Context/错误 rootId 的 record 被 active-root filter 拒绝。Host 关闭负责 flush/dispose，无额外 scope registry、config merge 或引用计数。
 
 ## Category identity
 
@@ -63,13 +41,7 @@ category builders/parser 位于：
 
 ## ContextLogger
 
-插件和 runtime 代码只使用：
-
-```ts
-ctx.logger.info('started', { port })
-ctx.logger.with({ requestId }).warn('retrying')
-ctx.logger.getDebugChannel('cache:lookup').debug('cache miss', { key })
-```
+作者调用见 [日志指南](../docs/runtime/logging.md)。
 
 约束：
 
@@ -83,47 +55,25 @@ ctx.logger.getDebugChannel('cache:lookup').debug('cache miss', { key })
 
 ## RuntimeLogging lifecycle
 
-static/dynamic launcher 使用 `@pluxel/runtime/internal` 安装 manager。标准顺序是：
+Host 使用 `@pluxel/services/logging` 的 `logging(plan, { policyStore })` descriptor。声明阶段不做 IO；Core 先创建 root，service capability 使用已有 root logger identity 创建 manager。Host prepare 顺序如下：
 
 ```text
-1. resolve RuntimeLoggingInput
-2. create RuntimeLogging
-3. install LogTape config
-4. bind rootId into Context logger config
-5. create Context
-6. await config/persistence readiness
-7. initialize persisted plugin policy
-8. install control plane and start plugin graph
-9. stop plugin graph/effects
-10. flush policy、reset LogTape，并释放 LogTape 安装的 process dispose hook
+1. 安装 LogTape config，绑定已有 Context root
+2. 初始化持久化 plugin policy
+3. 后续服务准备完成，启动 plugin graph
+4. 关闭时先停止 plugin graph/effects
+5. 释放 root binding，flush policy 和 sinks，通过 LogTape reset 释放安装与其自有 process dispose hook
 ```
 
-`logging: false` 表示安装一个无 sinks/routes 的 silent root，不表示跳过 manager。这样 root identity、policy
-ownership 和 shutdown 语义不会因为输出关闭而分叉。
+Logging 的安装与关闭均归 Host service plan 所有。Core root 创建到 Logging prepare 之前的日志不承诺被此 sink 捕获。
+
+需要 silent logging 时显式安装无 sinks/routes 的 plan；省略 Logging 服务与安装 silent manager 是不同的资源选择。
 
 `RuntimeLogging` 拒绝已有 foreign LogTape config，不静默复用或重置其他 owner 的配置。
 
 ## Routes and sinks
 
-`RuntimeLoggingInput` 由一个 root、显式 sinks 和四个 family routes 组成：
-
-```ts
-type RuntimeLoggingInput = {
-	root: {
-		profile: string
-		initialPluginPolicy?: PluginLogPolicySnapshot
-		debugTopics?: readonly string[]
-		policyLoadFailure?: 'warn' | 'fail'
-	}
-	sinks: Record<string, RuntimeLoggingSinkInput>
-	routes: {
-		runtime: readonly RuntimeLoggingRouteBinding[]
-		plugins: readonly RuntimeLoggingRouteBinding[]
-		debug: readonly RuntimeLoggingRouteBinding[]
-		meta: readonly RuntimeLoggingRouteBinding[]
-	}
-}
-```
+Logging plan 显式声明 root policy、physical sinks 与 runtime/plugins/debug/meta 四个 family routes；完整配置 shape 以[日志指南](../docs/runtime/logging.md)为准。
 
 内建 sink：
 
@@ -151,37 +101,12 @@ LogTape family lowestLevel
 
 physical sink 每个 id 只创建一次；family route wrapper 不拥有第二份资源。structural config 安装后不可热修改。
 
-默认 launcher 仅在 Workbench enabled 时加入 store sink。`RuntimeLogStoreRegistry` 自身也是惰性创建；没有 store
+`servicesPreset` 默认加入有界 store sink，Management 与控制台在关闭 Workbench 时仍可查询日志。自行组合 Host 时由显式 logging plan 选择是否存储。`RuntimeLogStoreRegistry` 自身也是惰性创建；没有 store
 route、日志 API 访问或显式 `logging.stores` 访问时不分配 registry/map。
 
 ## Dynamic plugin policy
 
-policy snapshot：
-
-```ts
-type PluginLogPolicySnapshot = {
-	version: 3
-	defaultLevel: LogLevel | 'off'
-	overrides: readonly {
-		owner: PluginNodeAddress
-		level: LogLevel | 'off'
-	}[]
-}
-```
-
-热状态只有一个 encoded map：
-
-```ts
-class RuntimePluginLogPolicy {
-	private defaultRank: number
-	private ranks = new Map<string, { owner: PluginNodeAddress; rank: number }>()
-
-	allows(owner: PluginNodeAddress, level: LogLevel): boolean {
-		const rank = this.ranks.get(ownerKey(owner))?.rank ?? this.defaultRank
-		return rank !== OFF_RANK && LEVEL_RANK[level] >= rank
-	}
-}
-```
+Policy 使用 v3 structured node owner 与 default/override level（含 `off`）。热状态只有 canonical owner key 到 numeric rank 的 Map。
 
 plugin filter 在 rootId 检查后执行一次 `Map.get()` 和数值比较，不读取 properties、不生成 snapshot，也不重新
 configure LogTape。
@@ -191,7 +116,7 @@ category 第一次进入 filter 时严格解析 route segments；同一个 immut
 不会保活 logger、Plugin 或 category。
 
 route threshold 是宿主硬下限，plugin policy 是动态下限。要让 Workbench 能完整调整
-`trace/debug/info/...`，plugins route 必须配置为 `trace`；默认 launcher 使用这一设置。
+`trace/debug/info/...`，plugins route 必须配置为 `trace`；`servicesPreset` 默认使用这一设置。
 
 mutation 规则：
 
@@ -203,8 +128,7 @@ mutation 规则：
 - 最多 100,000 个 overrides；每个 owner address 都经过严格 schema validation 和 canonical key 编码；
 - `off` 使用专用 numeric rank，不在热路径使用 nullable/string comparison。
 
-policy persistence 由 active root 的 `PersistenceService.namespace('logger')` adapter 提供，不存在 module-level
-singleton。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
+policy persistence 接收显式 `PluginLogPolicyStore`；`createPluginLogPolicyStore(namespace)` 借用文档存储，不关闭后端。`servicesPreset` 组合层借用持久化 backend 的 `logger` namespace，没有 module-level singleton。Host 删除 fork 在同一 exclusive queue 中调用已安装服务的 metadata cleanup，policy flush 失败保留 fork 供重试。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
 
 ## Debug topics
 
@@ -240,74 +164,59 @@ store 是 Runtime Management API 和 Workbench log viewer 的事实源，不是 
 - range/latest/wait/Cap’n Web `follow(observer)` 使用同一 `RuntimeLogStore`。
 
 Workbench 的 bounded range/follow 固定经过页面唯一的已认证 Runtime Cap’n Web session。Plugin generation-scoped
-`ctx.elysia` 是业务 ingress，不拥有 store、Management principal 或 Runtime session epoch，不能成为日志 fallback 或第二条
+`ctx.require(ElysiaApp)` 是业务 ingress，不拥有 store、Management principal 或 Runtime session epoch，不能成为日志 fallback 或第二条
 控制通道。长期归档由 file/OTel sink 负责；当前不提供 HTTP archive/download API。
 
 `RuntimeLogLine` 是 UI/transport projection，保留 category、plugin/context identity、structured message、props 和
 error summary。它不是新的 author-facing LogRecord。
 
-## Large-cardinality budget
+## 性能验证
 
-插件数量增长时，常驻和热路径成本必须按以下规则控制：
+热路径不做 caller capture、properties 求值、snapshot、序列化或持久化；单 owner policy lookup 为 O(1)。Snapshot/reset/replace/persistence 是显式 O(N) 操作。Lazy logger、prototype methods、无 per-topic cache 与 bounded store 限制常驻成本。
 
-| 决策                               | 对大基数的影响                                              |
-| ---------------------------------- | ----------------------------------------------------------- |
-| 一个 active root                   | 不需要 `Map<scopeId, LoggingScope>` 或每条日志 scope lookup |
-| family-level LogTape config        | logger config 数量不随插件数量增长                          |
-| category plugin identity           | filter 不读取/求值 properties                               |
-| plugin-isolated lazy LoggerService | 从未记录日志的插件不创建 logger service                     |
-| prototype level methods            | 每插件不创建六个 method closure                             |
-| 无 per-plugin debug cache          | topic 数量不会乘以插件数量形成常驻 Map                      |
-| 单一 encoded policy Map            | lookup O(1)，一个 override 一个 Map entry                   |
-| compact mutation result            | 单插件调级不会复制 10 万条 overrides                        |
-| snapshot/persistence 显式 O(N)     | 线性成本只出现在控制面和持久化，不进入 log hot path         |
-| bounded store/chunks               | UI 日志内存由 retention 决定，不由历史总日志量决定          |
-| optional/lazy store registry       | headless/Workbench-disabled host 不承担 store 常驻成本      |
-
-`packages/runtime/bench/logger.bench.ts` 同时覆盖普通 override hit 和 100,000 overrides hit。基准用于检查 Map
-规模增长是否改变 lookup 复杂度，不把单机绝对 ops/s 当作跨环境承诺。
+`packages/services/bench/logger.bench.ts` 对比普通与 100,000 overrides hit，检查规模增长下的 lookup 趋势；单机绝对 ops/s 不是跨环境承诺。
 
 ## Package boundaries
 
 ```text
 @pluxel/core
-  ContextLogger, LoggerService, category identity
+  ContextLogger, LoggerService, category identity, pure Plugin labels
 
-@pluxel/runtime/logger
-  RuntimeLogging input types, policy/store/protocol stable concepts
+@pluxel/services/logging
+  HostService descriptor, RuntimeLogging manager, policy/stores/sinks
 
-@pluxel/runtime/internal
-  RuntimeLogging installation, active owner access, persistence adapter
+@pluxel/services/logging/protocol
+  Browser-safe log DTOs and filters
 
-@pluxel/runtime-static / @pluxel/runtime-dynamic
-  launcher defaults, boot ordering, shutdown ownership
+@pluxel/services/logging/internal
+  RuntimeLogging installation and active owner binding
+
+@pluxel/host + @pluxel/services
+  Host shutdown ownership and official service defaults
 ```
 
-core 不包含 formatter、sink、policy persistence、host env resolution 或 LogTape installation。
+core 不包含 log formatter、sink、policy persistence、host env resolution 或 LogTape installation。
+Logging 是 Services 包内的具体 Host 服务，通过 `/logging` 显式选择。它的 Host 依赖只用于服务声明与生命周期装配；formatter 直接使用 Core 的纯 Plugin label 投影，不读取 Host 内部实现。
+公共入口通过 `logging()` 安装、`Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于 `/logging/internal` 框架入口。
 
 关键实现入口：
 
 - `packages/core/src/logger/LoggerService.ts`
 - `packages/core/src/logger/categories.ts`
-- `packages/runtime/src/logger/logging.ts`
-- `packages/runtime/src/logger/policy.ts`
-- `packages/runtime/src/logger/sink.ts`
-- `packages/runtime/src/logger/store.ts`
-- `packages/runtime/src/services/management/RuntimeManagementTarget.ts`
-- `packages/runtime-static/src/internal/host.ts`
-- `packages/runtime-dynamic/src/hmr/host.ts`
+- `packages/services/src/logging/logging.ts`
+- `packages/services/src/logging/policy.ts`
+- `packages/services/src/logging/sink.ts`
+- `packages/services/src/logging/store.ts`
+- `packages/services/src/management/services/management/RuntimeManagementTarget.ts`
+- `packages/host/src/host.ts`
+- `packages/host-dev/src/host-vite.ts`
 
-## 不变量
+## 验证
 
-- 不新增第二个 process logging owner；
-- 不新增 module-level mutable policy/store singleton；
-- 不为每个插件生成 LogTape config；
-- 不在 filter 前 capture caller、serialize error 或求值 lazy properties；
-- 不用动态 reconfigure 实现 plugin level 修改；
-- 不引入通用 policy language、processor chain 或 LogTape config merge framework；
-- 不经 `ctx.elysia`、Plugin route 或第二条 live transport 暴露 Runtime logs；
-- 修改 category、Context service、launcher boot order或 policy hot path 时，必须同步更新本文件和对应 benchmark/tests。
+修改 category、Context service、Host prepare order 或 policy hot path 时，覆盖 active root/foreign root 拒绝、缓存 Context 归属、重复安装失败不 reset 原 owner、关闭 flush，以及过滤前不求值 properties/caller。Policy 测试验证 revision、并发写入与串行 persistence；store 测试验证 retention、gap、epoch 和 bounded follow。
+
+直接回归入口为 `packages/services/tests/logging/`；成本变化同时运行[性能验证](#性能验证)中的探针。Logging 不引入通用 policy language、processor chain 或 LogTape config merge framework。
 
 ## Trusted development scripts
 
-Vite 显式开启 devConsole 时，默认 launcher 也会配置 bounded store，不依赖 Workbench；显式 custom/silent logging 保持优先。RuntimeLogging.flushStores 刷出物理 store sink 缓冲，控制台 cursor/read 保留 stream 的配置 retention、epoch 和 gap 语义。可信本机脚本可在进程内读取并返回有界快照，不经 ctx.elysia 安装日志接口，也不增加远程 live follow 通道。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/services/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.require(ElysiaApp)` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

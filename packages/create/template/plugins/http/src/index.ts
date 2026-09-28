@@ -1,7 +1,8 @@
 import { TODO_TITLE_MAX_LENGTH } from '@example/domain'
 import { TodoPlugin } from '@example/todo-plugin'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { t } from 'elysia'
+import { ElysiaApp } from '@pluxel/services/elysia'
 
 const todoBody = t.Object({
 	title: t.String({
@@ -18,7 +19,7 @@ export class HttpPlugin extends BasePlugin {
 	}
 
 	protected override init(): void {
-		this.ctx.elysia.group('/api/example', (app) =>
+		this.ctx.require(ElysiaApp).group('/api/example', (app) =>
 			app
 				.get('/todos', () => this.todos.snapshot())
 				.post(

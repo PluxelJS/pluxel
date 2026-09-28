@@ -1036,14 +1036,10 @@ function multipartBody(paths: string[], signal: AbortSignal): ReadableStream<Uin
 }
 
 async function hashFile(path: string): Promise<string> {
-	const file = await open(path, 'r')
+	await using file = await open(path, 'r')
 	const hash = createHash('sha256')
-	try {
-		for await (const chunk of file.createReadStream({ autoClose: false })) hash.update(chunk)
-		return hash.digest('hex')
-	} finally {
-		await file.close()
-	}
+	for await (const chunk of file.createReadStream({ autoClose: false })) hash.update(chunk)
+	return hash.digest('hex')
 }
 
 async function* walkObjectFiles(directory: string, signal: AbortSignal): AsyncGenerator<string> {
@@ -1370,12 +1366,8 @@ async function isDirectory(path: string): Promise<boolean> {
 
 async function syncDirectory(path: string): Promise<void> {
 	if (process.platform === 'win32') return
-	const directory = await open(path, 'r')
-	try {
-		await directory.sync()
-	} finally {
-		await directory.close()
-	}
+	await using directory = await open(path, 'r')
+	await directory.sync()
 }
 
 async function pruneEmptyDirectories(path: string, root: string): Promise<void> {

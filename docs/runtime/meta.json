@@ -4,6 +4,7 @@
 	"pages": [
 		"---网络与自动化---",
 		"http",
+		"management",
 		"commands",
 		"node-artifacts",
 		"---可观测性---",

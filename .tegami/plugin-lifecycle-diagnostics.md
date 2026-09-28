@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/runtime':
+  '@pluxel/host':
     type: minor
 ---
 

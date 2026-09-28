@@ -67,6 +67,7 @@ export type {
 	PluginRef,
 	PluginReplacement,
 	PluginConstructor,
+	PluginToken,
 	RuntimeUpdateCommitSummary,
 } from './index'
 
@@ -422,12 +423,8 @@ export async function withCoreInternalTestHost<T>(
 	config: CoreHostConfig = {},
 	options: CoreInternalTestHostOptions = {},
 ): Promise<T> {
-	const host = createCoreInternalTestHost(config, options)
-	try {
-		return await fn(host)
-	} finally {
-		await host.dispose()
-	}
+	await using host = createCoreInternalTestHost(config, options)
+	return await fn(host)
 }
 
 export function createCoreInternalTestContext(
@@ -457,3 +454,29 @@ export async function withCoreInternalTestContext<T>(
 		await value.dispose()
 	}
 }
+
+// Internal graph harness and shared test contracts; author composition belongs to @pluxel/test.
+export {
+	createCoreTestHost,
+	definePluginFork,
+	PluginLifecycleAssertionError,
+} from './internal-test-host'
+export type {
+	CoreTestHost,
+	CoreTestHostConfig,
+	CorePluginAddOptions,
+	CorePluginTestChange,
+	DependencyOverrideInput,
+	DependencyOverrideTarget,
+	ProviderDefaultInput,
+	PluginInitialConfigOptions,
+	LifecycleFailureCommitSummary,
+	PluginForkRef,
+	PluginInstanceFor,
+	PluginInstances,
+	PluginLifecycleAssertionOperation,
+	PluginTestCommitSummary,
+	PluginTestLifecycleIssue,
+	PluginTestTarget,
+	RawPluginConfig,
+} from './internal-test-host'

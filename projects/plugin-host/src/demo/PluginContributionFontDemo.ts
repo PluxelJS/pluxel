@@ -1,5 +1,6 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { assertWorkbenchDto } from '@pluxel/workbench/server'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { RpcTarget } from 'capnweb'
 import {
 	FontConsumerWorkbench,
 	FontManagerWorkbench,
@@ -12,6 +13,7 @@ import {
 	readFontRef,
 	toFontRef,
 	type FontRef,
+	type FontSet,
 } from './PluginContributionFontDemo.shared'
 
 @Plugin()
@@ -54,7 +56,8 @@ export class PluginContributionFontConsumer extends BasePlugin {
 }
 
 class FontCatalogTarget extends RpcTarget implements FontCatalogApi {
-	list() {
+	listDto(): readonly FontSet[] {
+		assertWorkbenchDto(FONT_SETS)
 		return FONT_SETS
 	}
 }
@@ -64,11 +67,13 @@ class FontSelectionTarget extends RpcTarget implements FontSelectionApi {
 		super()
 	}
 
-	current() {
-		return this.consumer.currentFont()
+	currentDto(): FontRef | null {
+		const value = this.consumer.currentFont()
+		assertWorkbenchDto(value)
+		return value
 	}
 
-	set(ref: FontRef | null) {
+	set(ref: FontRef | null): void {
 		this.consumer.setFont(ref)
 	}
 }

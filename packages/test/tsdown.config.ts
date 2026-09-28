@@ -13,6 +13,7 @@ export default defineConfig({
 		onlyBundle: inlineRuntimeDeps,
 	},
 	entry: {
+		index: './src/index.ts',
 		fixtures: './src/fixtures.ts',
 		vitest: './src/vitest.ts',
 		unsafe: './src/unsafe.ts',

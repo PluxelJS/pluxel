@@ -48,7 +48,7 @@ await host.start(OtelPlugin, {
 
 至少要保留一个输出；`otlp: []` 与 `prometheus: false` 会在配置校验时失败。关闭的 signal 不加载对应 exporter，读取它的 getter 会立即报错，例如未启用 traces 时访问 `otel.tracer` 会抛出 `OpenTelemetry traces signal is disabled`。
 
-Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.elysia` 上声明 `GET /metrics`，由宿主现有 carrier 提供服务，不启动第二个 listener。自定义 path 必须是非根、无 trailing slash、query、hash、反斜杠或空 segment 的最终绝对 Elysia path。并发 scrape 会合并为同一次 collection；失败返回 503，成功使用 Prometheus text format。
+Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.require(ElysiaApp)` 上声明 `GET /metrics`，由宿主现有 carrier 提供服务，不启动第二个 listener。自定义 path 必须是非根、无 trailing slash、query、hash、反斜杠或空 segment 的最终绝对 Elysia path。并发 scrape 会合并为同一次 collection；失败返回 503，成功使用 Prometheus text format。
 
 ## 记录 metrics、trace 与 log
 
@@ -56,7 +56,7 @@ Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.elysia` 上声明 `G
 import type { Counter } from '@opentelemetry/api'
 import { SeverityNumber } from '@opentelemetry/api-logs'
 import { OtelPlugin } from '@pluxel/otel'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Catalog' })
 export class CatalogPlugin extends BasePlugin {
@@ -117,13 +117,9 @@ TLS/mTLS 继续使用官方 exporter 的 `CERTIFICATE`、`CLIENT_KEY`、`CLIENT_
 
 ## Workbench 运维说明
 
-Workbench 启用且 `OtelPlugin` 正常运行时，Plugin 会发布一个 host-rendered“运维说明” Content。除了 OTLP HTTP/gRPC
-endpoint 规则、限频 diagnostics、Prometheus pull 与 secret/config 边界，它还显示 metrics、traces、logs exporter 和
-Prometheus listener 的当前状态，并提供“立即导出待处理 telemetry”操作。
-
-状态由 Plugin 领域变化触发 `dataChanged()`，Framework 在既有 Workbench WebSocket 与 Cap'n Web session 上重新读取并推送
-最新完整状态；按钮同样通过这个 Content root 调用，不创建 OTel 专属 React/MF producer、SSE 或额外连接。页面不会显示
-环境变量值、credential、完整 header 或未保存的 Config draft；Plugin 未运行时仍应通过 Config、启动 diagnostics 和日志恢复。
+插件运行时提供只读输出状态和“立即导出待处理 telemetry”操作。页面显示 exporter / Prometheus 状态，
+不显示 endpoint、环境变量、header 或 credential；Plugin 未运行时从 Config、启动 diagnostics 和日志恢复。
+Workbench 关闭不影响 telemetry。
 
 ## resource、batch 与 sampling
 

@@ -1,7 +1,8 @@
+import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
 // Direct Workbench demo: one definition, fresh Cap'n Web roots, Plugin-owned watch semantics.
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { RpcTarget } from 'capnweb'
 import {
 	PluginWithUIWorkbench,
 	type DemoEvent,
@@ -112,16 +113,18 @@ class PluginWithUITarget extends RpcTarget implements PluginWithUIApi {
 		super()
 	}
 
-	snapshot() {
-		return this.plugin.snapshot()
+	snapshotDto(): PluginWithUISnapshot {
+		const snapshot = this.plugin.snapshot()
+		assertWorkbenchDto(snapshot)
+		return snapshot
 	}
 
 	watch(observer: PluginWithUIObserver): RpcTarget {
-		return new PluginWithUISubscription(
-			this.plugin,
-			observer as RpcStub<PluginWithUIObserver>,
-			this.signal,
-		)
+		return createWorkbenchWatch({
+			observer,
+			signal: this.signal,
+			subscribe: (notify) => this.plugin.subscribe(notify),
+		})
 	}
 
 	addNote(message: string) {
@@ -138,49 +141,5 @@ class PluginWithUITarget extends RpcTarget implements PluginWithUIApi {
 
 	clearEvents() {
 		this.plugin.clearEvents()
-	}
-}
-
-class PluginWithUISubscription extends RpcTarget {
-	readonly #observer: RpcStub<PluginWithUIObserver>
-	readonly #subscription: Disposable
-	readonly #onAbort: () => void
-	readonly #signal: AbortSignal
-	#active = true
-
-	constructor(plugin: PluginWithUI, observer: RpcStub<PluginWithUIObserver>, signal: AbortSignal) {
-		super()
-		if (!observer || typeof observer !== 'function' || typeof observer.dup !== 'function') {
-			throw new TypeError('watch observer must be a Cap’n Web callback')
-		}
-		this.#observer = observer.dup()
-		this.#signal = signal
-		this.#onAbort = () => this[Symbol.dispose]()
-		this.#subscription = plugin.subscribe((revision) => {
-			try {
-				const result = this.#observer(revision)
-				void (async () => {
-					try {
-						await result
-					} catch {
-						this[Symbol.dispose]()
-					} finally {
-						result[Symbol.dispose]()
-					}
-				})()
-			} catch {
-				this[Symbol.dispose]()
-			}
-		})
-		if (signal.aborted) this[Symbol.dispose]()
-		else signal.addEventListener('abort', this.#onAbort, { once: true })
-	}
-
-	[Symbol.dispose](): void {
-		if (!this.#active) return
-		this.#active = false
-		this.#signal.removeEventListener('abort', this.#onAbort)
-		this.#subscription[Symbol.dispose]()
-		this.#observer[Symbol.dispose]()
 	}
 }

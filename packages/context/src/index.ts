@@ -1,5 +1,10 @@
 export {
 	createContextHost,
+	ContextCapabilityMissingError,
+	ContextCapabilityAccessError,
+	getContextInstallationCapability,
+	type ContextCapabilityAccess,
+	type ValidateContextInstallations,
 	defineContextCapability,
 	installOwnerViewCapability,
 	installRootCapability,

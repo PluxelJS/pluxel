@@ -135,6 +135,9 @@ export interface Effects {
 	own(disposable: DisposableLike, meta?: EffectsMeta): EffectGuard
 	acquire<T>(acquire: AcquireFn<T>, release: ReleaseFn<T>, meta?: EffectsMeta): Promise<T>
 	scope(meta?: EffectsMeta): EffectsScope
+	/** Own registrations until callback settlement; nested transactions use tx, siblings reject.
+	 * Await acquired work before returning. Closed tx views reject; tx.dispose() rolls back only its resources.
+	 */
 	transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R>
 	dispose(): Promise<void>
 }
@@ -144,35 +147,45 @@ export interface EffectsScope extends Effects {
 }
 
 class EffectsTxView implements Effects {
-	constructor(private readonly impl: EffectsImpl) {}
+	constructor(
+		private readonly impl: EffectsImpl,
+		private readonly tx: TransactionState,
+	) {}
 	defer(cleanup: Cleanup, meta?: EffectsMeta): EffectGuard {
-		return this.impl.defer(cleanup, meta, { allowFrozen: true })
+		return this.impl.defer(cleanup, meta, { tx: this.tx })
 	}
 	own(disposable: DisposableLike, meta?: EffectsMeta): EffectGuard {
-		return this.impl.own(disposable, meta, { allowFrozen: true })
+		return this.impl.own(disposable, meta, { tx: this.tx })
 	}
 	acquire<T>(acquire: AcquireFn<T>, release: ReleaseFn<T>, meta?: EffectsMeta): Promise<T> {
-		return this.impl.acquire(acquire, release, meta, { allowFrozen: true })
+		return this.impl.acquire(acquire, release, meta, { tx: this.tx })
 	}
 	scope(meta?: EffectsMeta): EffectsScope {
-		return this.impl.scope(meta, { allowFrozen: true })
+		return this.impl.scope(meta, { tx: this.tx })
 	}
 	transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R> {
-		return this.impl.transaction(fn)
+		return this.impl.transaction(fn, this.tx)
 	}
 	dispose(): Promise<void> {
-		return this.impl.dispose()
+		return this.impl.disposeTransaction(this.tx)
 	}
 }
 
-type RegisterOpts = { allowFrozen?: boolean }
+type TransactionState = {
+	active: boolean
+	parent?: TransactionState
+	handles: [number[], number[], number[]]
+	rollback?: Promise<void>
+	rollingBack?: boolean
+}
+type RegisterOpts = { tx?: TransactionState }
 
 class EffectsImpl implements Effects, EffectGuardHost {
 	private state: ServiceState = ServiceState.LIVE
 	private disposePromise: Promise<void> | null = null
 	private readonly resolved: Promise<void> = Promise.resolve()
 
-	private freezeDepth = 0
+	private activeTransaction: TransactionState | undefined
 	private drainPhaseIndex: number | null = null
 
 	private readonly stacks: [number[], number[], number[]] = [[], [], []]
@@ -205,7 +218,8 @@ class EffectsImpl implements Effects, EffectGuardHost {
 
 	private assertRegisterAllowed(opts?: RegisterOpts): void {
 		if (this.state === ServiceState.DISPOSED) throw new EffectsDisposedError()
-		if (!opts?.allowFrozen && this.freezeDepth > 0) throw new EffectsFrozenError()
+		if (opts?.tx && !opts.tx.active) throw new EffectsDisposedError('Effects transaction is closed')
+		if (this.activeTransaction !== opts?.tx) throw new EffectsFrozenError()
 	}
 
 	private alloc(
@@ -213,6 +227,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		a: unknown,
 		b: unknown,
 		meta: EffectsMeta | undefined,
+		opts?: RegisterOpts,
 	): EffectGuard {
 		const id = this.freeIds.length > 0 ? (this.freeIds.pop() as number) : this.nextId++
 		if (id >= HANDLE_STRIDE) {
@@ -234,18 +249,19 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		const drainIdx = this.drainPhaseIndex
 		if (drainIdx !== null && drainIdx !== undefined && pIdx < drainIdx) pIdx = drainIdx
 		this.stacks[pIdx].push(handle)
+		for (let tx = opts?.tx; tx; tx = tx.parent) tx.handles[pIdx].push(handle)
 
 		return new EffectGuard(this, id, nextToken)
 	}
 
 	defer(cleanup: Cleanup, meta?: EffectsMeta, opts?: RegisterOpts): EffectGuard {
 		this.assertRegisterAllowed(opts)
-		return this.alloc(EntryKind.CLEANUP, cleanup, null, meta)
+		return this.alloc(EntryKind.CLEANUP, cleanup, null, meta, opts)
 	}
 
 	own(disposable: DisposableLike, meta?: EffectsMeta, opts?: RegisterOpts): EffectGuard {
 		this.assertRegisterAllowed(opts)
-		return this.alloc(EntryKind.DISPOSABLE, disposable, null, meta)
+		return this.alloc(EntryKind.DISPOSABLE, disposable, null, meta, opts)
 	}
 
 	async acquire<T>(
@@ -254,10 +270,11 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		meta?: EffectsMeta,
 		opts?: RegisterOpts,
 	): Promise<T> {
+		this.assertRegisterAllowed(opts)
 		const value = await acquire()
 		try {
 			this.assertRegisterAllowed(opts)
-			this.alloc(EntryKind.RELEASE, value, release, meta)
+			this.alloc(EntryKind.RELEASE, value, release, meta, opts)
 		} catch (error) {
 			try {
 				await release(value)
@@ -278,41 +295,71 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		return new EffectsScopeImpl(ownerCtx, { parent: this, meta, registerOpts: opts })
 	}
 
-	async transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R> {
+	async transaction<R>(fn: (tx: Effects) => R | Promise<R>, parent?: TransactionState): Promise<R> {
 		if (this.state !== ServiceState.LIVE) throw new EffectsDisposedError()
-		const checkpoints = [
-			this.stacks[0].length,
-			this.stacks[1].length,
-			this.stacks[2].length,
-		] as const
-		this.freezeDepth++
-		const tx = new EffectsTxView(this)
+		this.assertRegisterAllowed({ tx: parent })
+		const tx: TransactionState = { active: true, parent, handles: [[], [], []] }
+		this.activeTransaction = tx
 		try {
-			return await fn(tx)
+			const result = await fn(new EffectsTxView(this, tx))
+			this.assertRegisterAllowed({ tx })
+			return result
 		} catch (error) {
 			try {
-				await this.rollback(checkpoints)
+				if (tx.active || tx.rollback) await this.disposeTransaction(tx)
 			} catch (rollbackError) {
-				const aggregate = new AggregateError(
+				throw new AggregateError(
 					[error, rollbackError],
 					'Effects transaction failed (rollback errors)',
-					{ cause: rollbackError },
+					{
+						cause: rollbackError,
+					},
 				)
-				throw aggregate
 			}
 			throw error
 		} finally {
-			this.freezeDepth--
+			this.withdrawTransaction(tx)
+			this.releaseTransaction(tx)
+			tx.handles = [[], [], []]
 		}
 	}
 
-	private async rollback(checkpoints: readonly [number, number, number]): Promise<void> {
+	private withdrawTransaction(tx: TransactionState): void {
+		if (!tx.active) return
+		// An unawaited child must not outlive the callback that owns it.
+		for (let current = this.activeTransaction; current; current = current.parent) {
+			current.active = false
+			if (current === tx) break
+		}
+		tx.active = false
+	}
+
+	private releaseTransaction(tx: TransactionState): void {
+		for (let current = this.activeTransaction; current; current = current.parent) {
+			if (current !== tx) continue
+			this.activeTransaction =
+				tx.parent && (tx.parent.active || tx.parent.rollingBack) ? tx.parent : undefined
+			break
+		}
+	}
+
+	disposeTransaction(tx: TransactionState): Promise<void> {
+		if (tx.rollback) return tx.rollback
+		if (!tx.active) return Promise.reject(new EffectsDisposedError('Effects transaction is closed'))
+		this.withdrawTransaction(tx)
+		tx.rollingBack = true
+		tx.rollback = this.rollback(tx).finally(() => {
+			tx.rollingBack = false
+			this.releaseTransaction(tx)
+		})
+		return tx.rollback
+	}
+
+	private async rollback(tx: TransactionState): Promise<void> {
 		const errors: unknown[] = []
-		for (let pIdx = 0; pIdx < PHASES.length; pIdx++) {
-			this.drainPhaseIndex = pIdx
-			const stack = this.stacks[pIdx]
-			const checkpoint = checkpoints[pIdx]
-			while (stack.length > checkpoint) {
+		const retired = new Set(tx.handles.flat())
+		for (const stack of tx.handles) {
+			while (stack.length > 0) {
 				const handle = stack.pop() as number
 				try {
 					const { id, token } = decodeHandle(handle)
@@ -322,10 +369,17 @@ class EffectsImpl implements Effects, EffectGuardHost {
 				}
 			}
 		}
-		this.drainPhaseIndex = null
-		if (errors.length > 0) {
-			throw new AggregateError(errors, 'Effects transaction rollback errors')
+		// Retire stack references only after cleanup: concurrent parent disposal must still await them.
+		const retire = (stacks: readonly number[][]) => {
+			for (const stack of stacks) {
+				let write = 0
+				for (const handle of stack) if (!retired.has(handle)) stack[write++] = handle
+				stack.length = write
+			}
 		}
+		retire(this.stacks)
+		for (let ancestor = tx.parent; ancestor; ancestor = ancestor.parent) retire(ancestor.handles)
+		if (errors.length > 0) throw new AggregateError(errors, 'Effects transaction rollback errors')
 	}
 
 	cancel(id: number, token: number): void {
@@ -450,6 +504,8 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		if (this.state === ServiceState.DISPOSED) return this.resolved
 
 		this.state = ServiceState.DISPOSING
+		for (let tx = this.activeTransaction; tx; tx = tx.parent) tx.active = false
+		this.activeTransaction = undefined
 		this.disposePromise = (async () => {
 			const errors: unknown[] = []
 			try {

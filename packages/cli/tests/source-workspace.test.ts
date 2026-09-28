@@ -35,7 +35,7 @@ import {
 	sourceCheckoutInstallOverrides,
 } from '../src/source/plan'
 import { registerSourceCheckout } from '../src/source/registry'
-import { sourcePackageNeedsBuild } from '../src/source/workspace'
+import { scanSourceWorkspace, sourcePackageNeedsBuild } from '../src/source/workspace'
 
 const temporaryRoots: string[] = []
 
@@ -94,6 +94,19 @@ describe('source workspace configuration', () => {
 				'https://github.com/PluxelJS/pluxel': resolve(root, 'checkouts/pluxel'),
 			},
 		})
+	})
+})
+
+describe('source workspace membership', () => {
+	it('keeps catalog-only pnpm workspaces at the root package', async () => {
+		const root = await createTemporaryRoot()
+		await writeJson(resolve(root, 'package.json'), { name: 'root' })
+		await writeJson(resolve(root, 'packages/hidden/package.json'), { name: 'hidden' })
+		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'catalog:\n  example: 1.0.0\n')
+		const scanned = await scanSourceWorkspace(root)
+		expect(scanned.packages.map((pkg) => pkg.name)).toEqual(['root'])
+		await writeJson(resolve(root, 'package.json'), { name: 'root', workspaces: ['packages/*'] })
+		await expect(scanSourceWorkspace(root)).rejects.toThrow('pnpm-workspace.yaml')
 	})
 })
 
@@ -381,13 +394,6 @@ describe('source workspace planning', () => {
 			mkdir(consumer, { recursive: true }),
 			mkdir(childPackage, { recursive: true }),
 		])
-		const legacyProxy = resolve(
-			consumer,
-			'.pluxel/sources',
-			createHash('sha256').update(childRepository).digest('hex').slice(0, 12),
-		)
-		await mkdir(resolve(legacyProxy, '..'), { recursive: true })
-		await symlink(child, legacyProxy, process.platform === 'win32' ? 'junction' : 'dir')
 		const checkouts: ResolvedSourceCheckout[] = [
 			{
 				repository: 'https://github.com/acme/parent',
@@ -406,6 +412,19 @@ describe('source workspace planning', () => {
 				singletons: [],
 			},
 		]
+		const repositoryPath = resolve(
+			consumer,
+			'.pluxel/sources',
+			createHash('sha256').update(childRepository).digest('hex').slice(0, 12),
+		)
+		await mkdir(resolve(consumer, '.pluxel/sources'), { recursive: true })
+		await symlink(child, repositoryPath)
+		expect(() =>
+			materializeSourceOverrides(consumer, { '@acme/example': `link:${childPackage}` }, checkouts),
+		).toThrow('Refusing to replace non-directory source path')
+		expect(await readlink(repositoryPath)).toBe(child)
+		await rm(repositoryPath)
+
 		const stable = materializeSourceOverrides(
 			consumer,
 			{ '@acme/example': `link:${childPackage}` },

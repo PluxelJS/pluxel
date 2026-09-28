@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/test'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import {
+	BasePlugin,
+	Plugin,
+	definePluginRef,
+	withCoreInternalTestHost,
+} from '@pluxel/core/internal/test'
 
 @Plugin({ displayName: 'REG-B' })
 class RegistrationB extends BasePlugin {}

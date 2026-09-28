@@ -1,12 +1,17 @@
+import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
+import { ElysiaApp } from '@pluxel/services/elysia'
+import { Commands } from '@pluxel/services/commands'
 import { Cache, type CacheNamespace, type CacheStats } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'
-import { defineCommand } from '@pluxel/commands'
+import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { EChartsPlugin } from '@pluxel/echarts'
 import { OtelPlugin } from '@pluxel/otel'
 import { Rates, type RateDecision, type RateLimiter } from '@pluxel/rates'
-import { BasePlugin, f, formatPluginNodeReference, Plugin, PluginPart, v } from '@pluxel/runtime'
-import { RpcTarget, type RpcStub } from '@pluxel/runtime/capnweb'
+import { BasePlugin, formatPluginNodeReference, Plugin, PluginPart } from '@pluxel/core'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
+import { RpcTarget } from 'capnweb'
 import { S3 } from '@pluxel/storage'
 import { TakumiPlugin } from '@pluxel/takumi'
 import { WretchPlugin } from '@pluxel/wretch'
@@ -316,43 +321,31 @@ export class ReportStudioPlugin extends BasePlugin {
 		this.renderCounter = meter.createCounter('showcase.report.generated', { unit: '{report}' })
 		this.renderDuration = meter.createHistogram('showcase.report.duration', { unit: 'ms' })
 
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'showcase.report.generate',
-				title: 'Generate showcase report',
 				description: 'Render, cache and publish one Report Studio preview.',
-				behavior: { kind: 'mutation', destructive: false, idempotent: false, world: 'closed' },
 				input: obj({ title: Type.String({ minLength: 1, maxLength: MAX_TITLE_LENGTH }) }),
-				output: obj({
-					id: Type.String(),
-					engine: Type.Union([
-						Type.Literal('echarts'),
-						Type.Literal('takumi'),
-						Type.Literal('canvas'),
-					]),
-					byteLength: Type.Integer({ minimum: 1 }),
-					objectKey: Type.String(),
-					cacheHit: Type.Boolean(),
-				}),
 				execute: async ({ title }) => {
 					const artifact = await this.generate(title)
-					return pickCommandArtifact(artifact)
+					return Result.ok(pickCommandArtifact(artifact))
 				},
 			}),
 		)
-		this.ctx.commands.register(
+		this.ctx.require(Commands).register(
 			defineCommand({
 				name: 'showcase.cache.clear',
 				description: 'Clear the Report Studio caller-owned preview cache.',
-				behavior: { kind: 'mutation', destructive: true, idempotent: true, world: 'closed' },
 				input: obj({}),
 				execute: async () => {
 					await this.clearCache()
+					return Result.ok()
 				},
 			}),
 		)
 
-		this.ctx.elysia
+		this.ctx
+			.require(ElysiaApp)
 			.get('/showcase/status', () => compactSnapshot(this.snapshot()))
 			.post('/showcase/generate/:title', async ({ params }) =>
 				pickCommandArtifact(await this.generate(params.title)),
@@ -424,7 +417,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		return artifact
 	}
 
-	async probeOutbound(): Promise<ShowcaseSnapshot['lastOutbound']> {
+	async probeOutbound(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>> {
 		try {
 			const response = await this.http.client
 				.url(this.config.outboundBaseUrl, true)
@@ -480,77 +473,36 @@ class ReportStudioTarget extends RpcTarget implements ReportStudioApi {
 		super()
 	}
 
-	snapshot(): ShowcaseSnapshot {
-		return this.studio.snapshot()
+	snapshotDto(): ShowcaseSnapshot {
+		const snapshot = this.studio.snapshot()
+		assertWorkbenchDto(snapshot)
+		return snapshot
 	}
 
 	watch(observer: ShowcaseObserver): RpcTarget {
-		return new ReportStudioSubscription(
-			this.studio,
-			observer as RpcStub<ShowcaseObserver>,
-			this.signal,
-		)
+		return createWorkbenchWatch({
+			observer,
+			signal: this.signal,
+			subscribe: (notify) => this.studio.subscribe(notify),
+		})
 	}
 
-	generate(title: string): Promise<ShowcaseArtifact> {
-		return this.studio.generate(title)
+	async generateDto(title: string): Promise<ShowcaseArtifact> {
+		const result = await this.studio.generate(title)
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	probeOutbound(): Promise<ShowcaseSnapshot['lastOutbound']> {
-		return this.studio.probeOutbound()
+	async probeOutboundDto(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>> {
+		const result = await this.studio.probeOutbound()
+		assertWorkbenchDto(result)
+		return result
 	}
 
-	clearCache(): Promise<ShowcaseCacheStats> {
-		return this.studio.clearCache()
-	}
-}
-
-class ReportStudioSubscription extends RpcTarget {
-	private readonly observer: RpcStub<ShowcaseObserver>
-	private readonly subscription: Disposable
-	private readonly onAbort: () => void
-	private active = true
-
-	constructor(
-		studio: ReportStudioPlugin,
-		observer: RpcStub<ShowcaseObserver>,
-		private readonly signal: AbortSignal,
-	) {
-		super()
-		if (!observer || typeof observer !== 'function' || typeof observer.dup !== 'function') {
-			throw new TypeError('watch observer must be a Cap’n Web callback')
-		}
-		this.observer = observer.dup()
-		this.onAbort = () => this[Symbol.dispose]()
-		this.subscription = studio.subscribe((revision) => this.notify(revision))
-		if (signal.aborted) this[Symbol.dispose]()
-		else signal.addEventListener('abort', this.onAbort, { once: true })
-	}
-
-	[Symbol.dispose](): void {
-		if (!this.active) return
-		this.active = false
-		this.signal.removeEventListener('abort', this.onAbort)
-		this.subscription[Symbol.dispose]()
-		this.observer[Symbol.dispose]()
-	}
-
-	private notify(revision: number): void {
-		if (!this.active) return
-		try {
-			const result = this.observer(revision)
-			void (async () => {
-				try {
-					await result
-				} catch {
-					this[Symbol.dispose]()
-				} finally {
-					result[Symbol.dispose]()
-				}
-			})()
-		} catch {
-			this[Symbol.dispose]()
-		}
+	async clearCacheDto(): Promise<ShowcaseCacheStats> {
+		const result = await this.studio.clearCache()
+		assertWorkbenchDto(result)
+		return result
 	}
 }
 

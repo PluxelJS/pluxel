@@ -11,16 +11,7 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 本页后续命令在消费方根目录执行，要求 `pluxel --version` 可运行。可以使用全局 CLI；希望以 Pluxel 源码为准时，用该 checkout 已构建的 `packages/cli/bin/pluxel.mjs` 入口或它的全局符号链接。CLI 会从自己的真实路径发现 Pluxel，不会根据目录相邻关系猜测。
 
-从新电脑开始开发 bot-new-omni，优先使用[应用自己的 bootstrap 脚本](https://github.com/PluxelJS/bot-new-omni#develop)：用户安装 mise 后，脚本准备工具、三个 Git checkout、登记和源码依赖，布局为：
-
-```text
-pluxel/
-  local-projects/
-    chatbot/
-    bot-new-omni/
-```
-
-通用手动接入继续下面的步骤。每个仓库可自行切换 Git 分支；修改应用或 provider 分支后若依赖声明变化，再执行 `source install`。
+各 checkout 可独立切换分支；依赖声明变化后重新执行 `source install`。
 
 ## 声明源码仓库
 

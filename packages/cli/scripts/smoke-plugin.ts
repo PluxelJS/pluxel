@@ -9,13 +9,7 @@ const tarballRoot = resolve(temporaryRoot, 'tarballs')
 const installRoot = resolve(temporaryRoot, 'cli-install')
 const scaffoldRoot = resolve(temporaryRoot, 'scaffold')
 const pluginRoot = resolve(scaffoldRoot, 'orders')
-const publishRoots = [
-	'@pluxel/cli',
-	'@pluxel/core',
-	'@pluxel/rolldown',
-	'@pluxel/runtime',
-	'@pluxel/test',
-] as const
+const publishRoots = ['@pluxel/cli', '@pluxel/core', '@pluxel/rolldown', '@pluxel/test'] as const
 
 try {
 	await Promise.all([
@@ -37,7 +31,7 @@ try {
 
 	const cliTarball = overrides['@pluxel/cli']
 	if (!cliTarball) throw new Error('Local publish closure did not include @pluxel/cli')
-	await installPackedCli(installRoot, cliTarball)
+	await installPackedCli(installRoot, cliTarball, overrides)
 	await runProcess(
 		process.execPath,
 		[
@@ -126,16 +120,18 @@ async function resolveLocalPublishClosure(
 	return [...closure.values()].sort((left, right) => left.name.localeCompare(right.name))
 }
 
-async function installPackedCli(root: string, tarball: string): Promise<void> {
+async function installPackedCli(
+	root: string,
+	tarball: string,
+	overrides: Record<string, string>,
+): Promise<void> {
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
 		`${JSON.stringify({ name: 'pluxel-cli-smoke', private: true, dependencies: { '@pluxel/cli': tarball } }, null, 2)}\n`,
 	)
-	await writeFile(
-		resolve(root, 'pnpm-workspace.yaml'),
-		`packages:\n  - .\n\noverrides:\n  '@pluxel/cli': '${tarball}'\n`,
-	)
+	await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+	await appendOverrides(resolve(root, 'pnpm-workspace.yaml'), overrides)
 	await runPnpm(['install', '--frozen-lockfile=false'], root)
 }
 

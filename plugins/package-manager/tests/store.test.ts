@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import type { InstallOptions, InstallResult, ParsedBareSpecifier } from '@pnpm/napi'
@@ -31,6 +31,22 @@ function createEngine() {
 				JSON.stringify({ name, version: requested.replace(/^[^0-9]*/, '') || '1.0.0' }),
 			)
 		}
+		const dependencies = Object.fromEntries(
+			Object.entries(manifest.dependencies ?? {}).map(([name, specifier]) => [
+				name,
+				{ specifier, version: specifier.replace(/^[^0-9]*/, '') || '1.0.0' },
+			]),
+		)
+		const keys = Object.entries(dependencies).map(([name, { version }]) => `${name}@${version}`)
+		await writeFile(
+			resolve(options.dir, 'pnpm-lock.yaml'),
+			JSON.stringify({
+				lockfileVersion: '9.0',
+				importers: { '.': { dependencies } },
+				packages: Object.fromEntries(keys.map((key) => [key, { resolution: { integrity: key } }])),
+				snapshots: Object.fromEntries(keys.map((key) => [key, {}])),
+			}),
+		)
 		return { stats: { added: 1, removed: 0, linkedToRoot: 1 }, storeDir: '/store' }
 	})
 	const parseBareSpecifier = (spec: string): ParsedBareSpecifier | null => {
@@ -50,13 +66,24 @@ function createEngine() {
 				authHeaderByUri: {},
 				storeDir: '/store',
 				cacheDir: '/cache',
+				virtualStoreDirMaxLength: 120,
+				enableGlobalVirtualStore: false,
+				globalVirtualStoreDir: '/store/links',
+				virtualStoreDir: '/managed/node_modules/.pnpm',
+				effectiveVirtualStoreDir: '/managed/node_modules/.pnpm',
+				engineStrict: false,
+				packageImportMethod: 'auto',
+				shamefullyHoist: false,
+				explicitSettings: [],
 				networkConcurrency: 16,
 				fetchRetries: 2,
 				fetchRetryFactor: 10,
 				fetchRetryMintimeout: 10,
 				fetchRetryMaxtimeout: 100,
 				fetchTimeout: 1_000,
-			}) as ReturnType<PnpmEngine['readConfig']>,
+				fetchWarnTimeoutMs: 10_000,
+				fetchMinSpeedKiBps: 50,
+			}) satisfies ReturnType<PnpmEngine['readConfig']>,
 	}
 	return { engine, install }
 }
@@ -85,14 +112,112 @@ describe('ManagedPackageStore', () => {
 		const wrapper = await readFile(resolve(snapshot.entriesDir, entryFiles[0]!), 'utf8')
 		expect(wrapper).toContain('export * from')
 		expect(wrapper).toContain('export default pluginModule.default')
+		await store.install(['alpha@^1.2.0', '@scope/beta@2.0.0'])
+		expect(await readFile(resolve(snapshot.entriesDir, entryFiles[0]!), 'utf8')).toBe(wrapper)
+		const retainedPath = resolve(snapshot.entriesDir, snapshot.packages[0]!.entryFile!)
+		const beforeRestart = await stat(retainedPath)
+		await store.initialize()
+		expect(await stat(retainedPath)).toMatchObject({ ino: beforeRestart.ino })
+		expect(await store.remove(['alpha'])).toEqual({ ok: true, succeeded: ['alpha'], failed: [] })
+		expect(await stat(retainedPath)).toMatchObject({ ino: beforeRestart.ino })
 
-		const removed = await store.remove(['alpha', '@scope/beta'])
+		const published = await readFile(retainedPath, 'utf8')
+		const legacy = published.replace(/^.*\n/, '// installation old-random-uuid\n')
+		await writeFile(retainedPath, legacy)
+		const legacyPublication = await stat(retainedPath)
+		await store.initialize()
+		expect(await stat(retainedPath)).toMatchObject({ ino: legacyPublication.ino })
+		await writeFile(retainedPath, '')
+		await store.initialize()
+		expect(await readFile(retainedPath, 'utf8')).toContain('export * from "@scope/beta"')
 
-		expect(removed).toEqual({ ok: true, succeeded: ['alpha', '@scope/beta'], failed: [] })
-		expect(install).toHaveBeenCalledTimes(2)
+		const removed = await store.remove(['@scope/beta'])
+
+		expect(removed).toEqual({ ok: true, succeeded: ['@scope/beta'], failed: [] })
+		expect(install).toHaveBeenCalledTimes(4)
 		const removedSnapshot = await store.snapshot()
 		expect(removedSnapshot.packages).toEqual([])
 		expect(await readdir(resolve(rootDir, 'entries'))).toEqual([])
+	})
+
+	it('invalidates changed transitive, peer and optional snapshots while preserving unrelated entries', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const original = install.getMockImplementation()!
+		let version = '1.0.0'
+		install.mockImplementation(async (options) => {
+			const result = await original(options)
+			const path = resolve(rootDir, 'pnpm-lock.yaml')
+			const lock = JSON.parse(await readFile(path, 'utf8'))
+			const peerKey = `shared@1.0.0(peer@${version})`
+			lock.snapshots['alpha@1.0.0'] = { dependencies: { shared: `1.0.0(peer@${version})` } }
+			lock.snapshots[peerKey] = {
+				dependencies: { peer: version },
+				optionalDependencies: { optional: version },
+			}
+			for (const [name, current] of [
+				['shared', '1.0.0'],
+				['peer', version],
+				['optional', version],
+			]) {
+				lock.packages[`${name}@${current}`] = { resolution: { integrity: `${name}-${current}` } }
+				if (name !== 'shared') lock.snapshots[`${name}@${current}`] = {}
+			}
+			await writeFile(path, JSON.stringify(lock))
+			return result
+		})
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		await store.install(['alpha@1.0.0', 'beta@1.0.0'])
+		const { packages } = await store.snapshot()
+		const entry = (name: string) =>
+			resolve(store.entriesDir, packages.find((pkg) => pkg.name === name)!.entryFile!)
+		const alpha = await readFile(entry('alpha'), 'utf8')
+		const beta = await stat(entry('beta'))
+		version = '2.0.0'
+		await store.install(['alpha@1.0.0'])
+		expect(await readFile(entry('alpha'), 'utf8')).not.toBe(alpha)
+		expect(await stat(entry('beta'))).toMatchObject({ ino: beta.ino })
+	})
+
+	it('revokes publication during native work and waits for actual settlement on close', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const controller = new AbortController()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			signal: controller.signal,
+		})
+		await store.initialize()
+		const started = Promise.withResolvers<void>()
+		const finish = Promise.withResolvers<InstallResult>()
+		install.mockImplementationOnce(async () => {
+			started.resolve()
+			return finish.promise
+		})
+		const operation = store.install(['alpha@1.0.0'])
+		await started.promise
+		controller.abort(new Error('owner stopped'))
+		let closed = false
+		const closing = store.close().then((): void => {
+			closed = true
+			return undefined
+		})
+		await Promise.resolve()
+		expect(closed).toBe(false)
+		finish.resolve({ stats: { added: 1, removed: 0, linkedToRoot: 1 }, storeDir: '/store' })
+		await expect(operation).resolves.toMatchObject({ ok: false, succeeded: [] })
+		await closing
+		expect(await readdir(store.entriesDir)).toEqual([])
+		expect(() => store.install(['alpha@1.0.0'])).toThrow('closed')
 	})
 
 	it('rejects non-registry, empty, and non-canonical inputs without invoking the native engine', async () => {

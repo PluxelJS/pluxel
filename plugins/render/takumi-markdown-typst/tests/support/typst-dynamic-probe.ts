@@ -1,4 +1,5 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { ElysiaApp } from '@pluxel/services/elysia'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
 import { TypstMathError, TypstMathPlugin } from '../../src/index.ts'
 
@@ -18,7 +19,8 @@ export class TypstDynamicProbePlugin extends BasePlugin {
 		this.renderer = this.markdown.createRenderer({
 			extensions: [this.typst.createMarkdownExtension()],
 		})
-		this.ctx.elysia
+		this.ctx
+			.require(ElysiaApp)
 			.get('/__pluxel-test/typst/render', () => this.render())
 			.get('/__pluxel-test/typst/error/unsafe', () => this.unsafeFormula())
 	}

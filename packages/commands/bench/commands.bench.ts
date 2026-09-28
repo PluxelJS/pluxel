@@ -1,7 +1,7 @@
 import { afterAll, test } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
-import { createArgvRouter } from '../src/argv'
-import { createCommandRegistry, defineCommand } from '../src/index'
+import { createArgvRouter, toCli } from '../src/argv'
+import { createCommandRegistry, defineCommand, Result } from '../src/index'
 import { Type, obj } from '../src/typebox'
 
 const options = { time: 500, warmupTime: 100, iterations: 10, warmupIterations: 5 }
@@ -21,16 +21,13 @@ const inputSchema = obj({
 	verbose: Type.Optional(Type.Boolean({ default: false })),
 	tags: Type.Optional(Type.Array(Type.String())),
 })
-const outputSchema = obj({ accepted: Type.Boolean(), count: Type.Integer() })
 
 function defineUpdate(name = 'item.update') {
 	return defineCommand({
 		name,
 		description: 'Update one benchmark item.',
-		behavior: { kind: 'mutation', destructive: false, idempotent: true, world: 'closed' },
 		input: inputSchema,
-		output: outputSchema,
-		execute: ({ count }) => ({ accepted: true, count }),
+		execute: ({ count }) => Result.ok({ accepted: true, count }),
 	})
 }
 
@@ -39,7 +36,7 @@ const input = { id: 'item-42', count: 42, tags: ['stable', 'bench'] }
 const registry = createCommandRegistry()
 registry.register(update)
 const router = createArgvRouter()
-router.bind(update, { routes: ['item update'], positionals: ['id'] })
+router.bind(toCli(update, { routes: ['item update'], positionals: ['id'] }))
 const largePayload = Array.from({ length: 100 }, (_, index) => ({
 	id: `item-${index}`,
 	labels: ['stable', 'bench', `group-${index % 10}`],
@@ -49,10 +46,8 @@ const smallPayload = largePayload.slice(0, 1)
 const bulk = defineCommand({
 	name: 'item.bulk.inspect',
 	description: 'Inspect a benchmark payload.',
-	behavior: { kind: 'query', world: 'closed' },
 	input: obj({ items: Type.Array(Type.Unknown()) }),
-	output: obj({ items: Type.Array(Type.Unknown()) }),
-	execute: ({ items }) => ({ items }),
+	execute: ({ items }) => Result.ok({ items }),
 })
 
 const queryField = Runtime.Union([Runtime.Const('warnings'), Runtime.Const('playtime')])
@@ -81,13 +76,11 @@ const querySchema = Type.Transform(Type.String())
 const searchPlayers = defineCommand({
 	name: 'players.search',
 	description: 'Search benchmark players with a shared DSL.',
-	behavior: { kind: 'query', world: 'closed' },
 	input: obj({
 		query: querySchema,
 		limit: Type.Optional(Type.Integer({ default: 100 })),
 	}),
-	output: obj({ matched: Type.Boolean() }),
-	execute: ({ query }) => ({ matched: query.expression.threshold >= 0 }),
+	execute: ({ query }) => Result.ok({ matched: query.expression.threshold >= 0 }),
 })
 const catalog = Array.from({ length: 1_000 }, (_, index) => defineUpdate(`item.update.${index}`))
 const catalogRouter100 = createArgvRouter()
@@ -95,8 +88,9 @@ const catalogRouter1000 = createArgvRouter()
 for (let index = 0; index < catalog.length; index += 1) {
 	const command = catalog[index]!
 	const binding = { routes: [`item update-${index}`], positionals: ['id'] } as const
-	if (index < 100) catalogRouter100.bind(command, binding)
-	catalogRouter1000.bind(command, binding)
+	const cli = toCli(command, binding)
+	if (index < 100) catalogRouter100.bind(cli)
+	catalogRouter1000.bind(cli)
 }
 
 // oxlint-disable-next-line vitest/expect-expect -- A Vitest 5 benchmark test measures the registered work rather than asserting a result.
@@ -110,10 +104,8 @@ test('command definition', async ({ bench }) => {
 				defineCommand({
 					name: 'item.fresh',
 					description: 'Define one command with fresh schemas.',
-					behavior: { kind: 'query', world: 'closed' },
 					input: obj({ value: Type.Integer() }),
-					output: obj({ value: Type.Integer() }),
-					execute: ({ value }) => ({ value }),
+					execute: ({ value }) => Result.ok({ value }),
 				}),
 			)
 		}),
@@ -222,30 +214,36 @@ test('argv construction scaling', async ({ bench }) => {
 		bench('bind 10 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < 10; index += 1) {
-				current.bind(catalog[index]!, {
-					routes: [`item update-${index}`],
-					positionals: ['id'],
-				})
+				current.bind(
+					toCli(catalog[index]!, {
+						routes: [`item update-${index}`],
+						positionals: ['id'],
+					}),
+				)
 			}
 			consume(current)
 		}),
 		bench('bind 100 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < 100; index += 1) {
-				current.bind(catalog[index]!, {
-					routes: [`item update-${index}`],
-					positionals: ['id'],
-				})
+				current.bind(
+					toCli(catalog[index]!, {
+						routes: [`item update-${index}`],
+						positionals: ['id'],
+					}),
+				)
 			}
 			consume(current)
 		}),
 		bench('bind 1,000 argv routes transactionally', () => {
 			const current = createArgvRouter()
 			for (let index = 0; index < catalog.length; index += 1) {
-				current.bind(catalog[index]!, {
-					routes: [`item update-${index}`],
-					positionals: ['id'],
-				})
+				current.bind(
+					toCli(catalog[index]!, {
+						routes: [`item update-${index}`],
+						positionals: ['id'],
+					}),
+				)
 			}
 			consume(current)
 		}),

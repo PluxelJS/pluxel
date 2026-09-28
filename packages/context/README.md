@@ -2,7 +2,7 @@
 
 `@pluxel/context` 是同步、immutable、strict-lazy 的 Context host kernel。它让 standalone application 或 framework host 在
 创建 root 前组合固定能力，并用 root、scope 与 owner-view 表达共享和所有权；本包不依赖 `@pluxel/core` 或
-`@pluxel/runtime`。
+`@pluxel/host`。
 
 ```ts
 import {
@@ -44,12 +44,11 @@ void handler.cache
 - `overrides` 只在 host 编译前替换基础集合中的同一 descriptor，且必须保持 scope/property；
 - host 编译后没有 install/mutate API；
 - `ContextHost` 没有 `prepare()`、`dispose()` 或资源协议，启动和清理由上层 host 明确拥有；
-- Pluxel Plugin 不能借助本包修改已经创建的 Runtime Context，Plugin 业务依赖仍进入 Plugin graph。
+- Pluxel Plugin 不能借助本包修改已经创建的 Host Context，Plugin 业务依赖仍进入 Plugin graph。
 
 公开入口：
 
 - `@pluxel/context`：descriptor、scoped installation、Context host、projection types 与显式 resolve；
 - `@pluxel/context/internal`：供 Pluxel framework packages 使用的 raw plan/context construction，不是稳定第三方 API。
 
-完整用法与作用域选择见[组合 Context host](../../docs/reference/context-hosts.md)。旧 Service registry 的 mapping overlay、当前
-kernel 的重构原因与性能取舍见 [Context kernel 设计取舍](./DESIGN.md)。
+完整用法见[组合 Context host](../../docs/reference/context-hosts.md)，实现取舍与历史测量见 [DESIGN.md](./DESIGN.md)。

@@ -1,5 +1,7 @@
 import { readFile, readdir, rename, rm, mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { parse as parseYaml } from 'yaml'
 import type {
 	ManagedPackage,
 	PackageManagerSnapshot,
@@ -19,6 +21,8 @@ type StoreOptions = Readonly<{
 	ignoreScripts: boolean
 	allowBuilds: readonly string[]
 	minimumReleaseAgeMinutes: number
+	/** Revokes publication; native installation still drains before close resolves. */
+	signal?: AbortSignal
 }>
 
 type ManagedManifest = PackageManifest & {
@@ -42,6 +46,7 @@ export class ManagedPackageStore {
 	readonly entriesDir: string
 	private readonly manifestFile: string
 	private revision = 0
+	private closed = false
 	private dependenciesWithBuildScripts: readonly string[] = Object.freeze([])
 	private queue: Promise<void> = Promise.resolve()
 	private readonly options: StoreOptions
@@ -57,6 +62,7 @@ export class ManagedPackageStore {
 	}
 
 	async initialize(): Promise<void> {
+		this.assertOpen()
 		await mkdir(this.entriesDir, { recursive: true })
 		const manifest = await this.readManifest()
 		await this.writeManifest(manifest)
@@ -169,6 +175,17 @@ export class ManagedPackageStore {
 		}
 	}
 
+	/** Revokes queued work and publication, then waits for admitted native operations. */
+	async close(): Promise<void> {
+		this.closed = true
+		await this.queue
+	}
+
+	private assertOpen(): void {
+		if (this.closed) throw new Error('Package store is closed')
+		this.options.signal?.throwIfAborted()
+	}
+
 	private async installManifest(next: ManagedManifest): Promise<void> {
 		let result: Awaited<ReturnType<PnpmEngine['install']>>
 		try {
@@ -176,6 +193,7 @@ export class ManagedPackageStore {
 		} catch (error) {
 			throw new PublicMutationError('pnpm could not apply the managed dependency graph', error)
 		}
+		this.assertOpen()
 		if (result.depsRequiringBuild) {
 			this.dependenciesWithBuildScripts = Object.freeze([...result.depsRequiringBuild].sort())
 		}
@@ -223,7 +241,6 @@ export class ManagedPackageStore {
 			autoInstallPeers: true,
 			preferFrozenLockfile: true,
 			update: false,
-			ignorePackageManifest: true,
 			ignoreScripts: this.options.ignoreScripts,
 			allowBuilds: Object.fromEntries(this.options.allowBuilds.map((name) => [name, true])),
 			minimumReleaseAge: this.options.minimumReleaseAgeMinutes,
@@ -292,6 +309,12 @@ export class ManagedPackageStore {
 		requireMaterialized: boolean,
 	): Promise<ReadonlyMap<string, string>> {
 		const expected = new Map<string, string>()
+		let lockfile: unknown
+		try {
+			lockfile = parseYaml(await readFile(resolve(this.rootDir, 'pnpm-lock.yaml'), 'utf8'))
+		} catch {
+			// Missing or unrecognized lock data must not suppress a real installation update.
+		}
 		for (const name of Object.keys(manifest.dependencies).sort()) {
 			const packageManifest = resolve(
 				this.rootDir,
@@ -314,14 +337,24 @@ export class ManagedPackageStore {
 			}
 			const file = this.entryFile(name)
 			const specifier = JSON.stringify(name)
+			const body = `export * from ${specifier}\nimport * as pluginModule from ${specifier}\nexport default pluginModule.default\n`
+			if (!requireMaterialized) {
+				try {
+					const existing = await readFile(resolve(this.entriesDir, file), 'utf8')
+					if (
+						existing.startsWith('// installation ') &&
+						existing.slice(existing.indexOf('\n') + 1) === body
+					) {
+						expected.set(file, existing)
+						continue
+					}
+				} catch (error) {
+					if (readErrorCode(error) !== 'ENOENT') throw error
+				}
+			}
 			expected.set(
 				file,
-				[
-					`export * from ${specifier}`,
-					`import * as pluginModule from ${specifier}`,
-					'export default pluginModule.default',
-					'',
-				].join('\n'),
+				`// installation ${packageGraphFingerprint(lockfile, name) ?? crypto.randomUUID()}\n${body}`,
 			)
 		}
 		return expected
@@ -330,10 +363,18 @@ export class ManagedPackageStore {
 	private async publishEntries(expected: ReadonlyMap<string, string>): Promise<void> {
 		await mkdir(this.entriesDir, { recursive: true })
 		for (const [file, content] of expected) {
-			await atomicWrite(resolve(this.entriesDir, file), content)
+			this.assertOpen()
+			const path = resolve(this.entriesDir, file)
+			try {
+				if ((await readFile(path, 'utf8')) === content) continue
+			} catch (error) {
+				if (readErrorCode(error) !== 'ENOENT') throw error
+			}
+			await atomicWrite(path, content, () => this.assertOpen())
 		}
 		for (const file of await readdir(this.entriesDir)) {
 			if (!file.endsWith('.mjs') || expected.has(file)) continue
+			this.assertOpen()
 			await rm(resolve(this.entriesDir, file), { force: true })
 		}
 	}
@@ -343,7 +384,11 @@ export class ManagedPackageStore {
 	}
 
 	private serialize<T>(task: () => Promise<T>): Promise<T> {
-		const run = this.queue.then(task, task)
+		this.assertOpen()
+		const run = this.queue.then(() => {
+			this.assertOpen()
+			return task()
+		})
 		this.queue = run.then(
 			(): void => undefined,
 			(): void => undefined,
@@ -541,15 +586,22 @@ function networkOptions(config: ResolvedConfig): InstallOptions['networkConfig']
 		fetchRetryMintimeout: config.fetchRetryMintimeout,
 		fetchRetryMaxtimeout: config.fetchRetryMaxtimeout,
 		fetchTimeout: config.fetchTimeout,
+		fetchWarnTimeoutMs: config.fetchWarnTimeoutMs,
+		fetchMinSpeedKiBps: config.fetchMinSpeedKiBps,
 		userAgent: config.userAgent,
 	}
 }
 
-async function atomicWrite(file: string, content: string): Promise<void> {
+async function atomicWrite(
+	file: string,
+	content: string,
+	beforePublish?: () => void,
+): Promise<void> {
 	await mkdir(resolve(file, '..'), { recursive: true })
 	const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`
 	try {
 		await writeFile(temporary, content, 'utf8')
+		beforePublish?.()
 		await rename(temporary, file)
 	} catch (error) {
 		await rm(temporary, { force: true }).catch((): undefined => undefined)
@@ -561,4 +613,55 @@ function readErrorCode(error: unknown): string | undefined {
 	return error && typeof error === 'object' && 'code' in error
 		? String((error as { code?: unknown }).code)
 		: undefined
+}
+
+/** pnpm v9 lock snapshots include resolved peer contexts and optional dependency edges. */
+function packageGraphFingerprint(lockfile: unknown, name: string): string | undefined {
+	const record = (value: unknown): Record<string, unknown> => {
+		if (!value || typeof value !== 'object' || Array.isArray(value))
+			throw new Error('Expected record')
+		return value as Record<string, unknown>
+	}
+	const canonical = (value: unknown): unknown =>
+		Array.isArray(value)
+			? value.map(canonical)
+			: value && typeof value === 'object'
+				? Object.fromEntries(
+						Object.entries(record(value))
+							.sort(([a], [b]) => a.localeCompare(b))
+							.map(([key, item]) => [key, canonical(item)]),
+					)
+				: value
+	try {
+		const lock = record(lockfile)
+		if (String(lock.lockfileVersion) !== '9.0') return undefined
+		const importer = record(record(lock.importers)['.'])
+		const version = record(record(importer.dependencies)[name]).version
+		if (typeof version !== 'string') return undefined
+		const snapshots = record(lock.snapshots)
+		const packages = record(lock.packages)
+		const graph = new Map<string, unknown>()
+		const visit = (dependency: string, reference: unknown): void => {
+			if (typeof reference !== 'string') throw new Error('Unknown dependency reference')
+			// Aliases and non-registry snapshots require conservative invalidation.
+			if (!/^\d/.test(reference)) throw new Error('Unknown dependency version')
+			const key = `${dependency}@${reference}`
+			if (graph.has(key)) return
+			const snapshot = record(snapshots[key])
+			const metadata = record(packages[key.split('(')[0]!])
+			record(metadata.resolution)
+			graph.set(key, { snapshot, metadata })
+			for (const field of ['dependencies', 'optionalDependencies']) {
+				if (snapshot[field] === undefined) continue
+				for (const [child, childVersion] of Object.entries(record(snapshot[field])))
+					visit(child, childVersion)
+			}
+		}
+		visit(name, version)
+		return createHash('sha256')
+			.update(JSON.stringify(canonical(Object.fromEntries(graph))))
+			.digest('hex')
+	} catch {
+		return undefined
+	}
 }

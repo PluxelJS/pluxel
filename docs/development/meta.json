@@ -1,13 +1,15 @@
 {
 	"icon": "GitBranch",
-	"title": "开发与交付",
+	"title": "开发与验证",
 	"pages": [
-		"starter-monorepo",
-		"plugin-package",
-		"testing",
+		"index",
+		"inspection",
 		"dev-console",
+		"testing",
+		"starter-monorepo",
 		"tooling",
 		"source-workspaces",
+		"plugin-package",
 		"distribution"
 	]
 }

@@ -1,0 +1,4 @@
+{
+	"extends": "./packages/host-dev/tsconfig.json",
+	"include": ["packages/host-dev/src"]
+}

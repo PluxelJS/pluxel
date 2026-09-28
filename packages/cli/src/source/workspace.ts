@@ -57,6 +57,11 @@ export interface ScannedSourceWorkspace {
 export async function scanSourceWorkspace(root: string): Promise<ScannedSourceWorkspace> {
 	const absoluteRoot = resolve(root)
 	const rootManifest = await readManifest(resolve(absoluteRoot, 'package.json'))
+	if ('workspaces' in rootManifest) {
+		throw new Error(
+			`Workspace membership belongs in pnpm-workspace.yaml, not ${resolve(absoluteRoot, 'package.json')}`,
+		)
+	}
 	const patterns = await readWorkspacePatterns(absoluteRoot)
 	const packageManifestPaths = new Set<string>()
 	if (rootManifest.name) packageManifestPaths.add(resolve(absoluteRoot, 'package.json'))
@@ -130,11 +135,19 @@ async function readWorkspacePatterns(root: string): Promise<string[] | undefined
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error(`${path}: expected an object`)
 	}
-	const raw = (value as { packages?: unknown }).packages ?? ['**']
+	const raw = (value as { packages?: unknown }).packages ?? []
 	if (!Array.isArray(raw)) throw new Error(`${path}: packages must be an array`)
 	const patterns = raw.map((pattern, index) => {
 		if (typeof pattern !== 'string' || !pattern.trim()) {
 			throw new Error(`${path}: packages[${index}] must be a non-empty glob`)
+		}
+		const member = pattern.startsWith('!') ? pattern.slice(1) : pattern
+		if (
+			member.startsWith('/') ||
+			/^[A-Za-z]:/.test(member) ||
+			member.split(/[\\/]/).includes('..')
+		) {
+			throw new Error(`${path}: packages[${index}] must stay inside the workspace root`)
 		}
 		return normalizeRelative(pattern)
 	})
@@ -146,7 +159,8 @@ async function findWorkspaceManifestPaths(root: string, patterns: string[]) {
 	const negatives = patterns
 		.filter((pattern) => pattern.startsWith('!'))
 		.map((pattern) => pattern.slice(1))
-	const include = picomatch(positives.length > 0 ? positives : ['**'], { dot: true })
+	if (positives.length === 0) return []
+	const include = picomatch(positives, { dot: true })
 	const exclude = negatives.length > 0 ? picomatch(negatives, { dot: true }) : undefined
 	const found: string[] = []
 	const pending = [root]

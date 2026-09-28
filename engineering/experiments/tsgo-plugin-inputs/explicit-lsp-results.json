@@ -1,0 +1,12 @@
+{
+	"config-completion": ["mode", "payload", "transport"],
+	"payload-completion": ["raw"],
+	"vault-completion": ["credentials"],
+	"credential-completion": ["token"],
+	"diagnostics": [
+		{
+			"code": 2353,
+			"message": "Object literal may only specify known properties, and 'wrongKey' does not exist in type '{ readonly credentials?: InputMapping<{ token: string; }> | undefined; }'."
+		}
+	]
+}

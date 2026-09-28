@@ -1,9 +1,21 @@
-import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
+import { ElysiaApp } from '@pluxel/services/elysia'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import * as f from 'valibot-form'
+import * as v from 'valibot'
+import { workbench } from '@pluxel/workbench'
 import type { Wretch } from 'wretch'
 import { retry } from 'wretch/middlewares'
 import { WretchPlugin } from '../../src/index.ts'
 import { WretchWorkbench } from '../../src/workbench.ts'
+
+const CustomerSchema = v.object({ id: v.string(), name: v.string() })
+type Customer = v.InferOutput<typeof CustomerSchema>
+
+export class CustomerNotFound extends TaggedError('CustomerNotFound')<{
+	id: string
+	message: string
+}> {}
 
 const WretchExampleConfig = v.object({
 	baseUrl: v.pipe(
@@ -61,7 +73,7 @@ export class WretchExamplePlugin extends BasePlugin {
 		}
 		this.api = api
 
-		this.ctx.elysia.get('/wretch-example/inspect', () => this.inspect())
+		this.ctx.require(ElysiaApp).get('/wretch-example/inspect', () => this.inspect())
 		this.ctx.workbench?.publish(WretchExampleWorkbench, {
 			http: { provider: this.http },
 		})
@@ -69,5 +81,14 @@ export class WretchExamplePlugin extends BasePlugin {
 
 	inspect<T = unknown>(): Promise<T> {
 		return this.api.get(this.config.inspectPath).json<T>()
+	}
+
+	findCustomer(id: string): Promise<Result<Customer, CustomerNotFound>> {
+		return this.api
+			.get(`/customers/${encodeURIComponent(id)}`)
+			.notFound(() =>
+				Result.err(new CustomerNotFound({ id, message: `Customer ${id} was not found` })),
+			)
+			.json((body) => Result.ok(v.parse(CustomerSchema, body)))
 	}
 }

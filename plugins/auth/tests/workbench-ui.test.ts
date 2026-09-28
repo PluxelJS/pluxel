@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
-vi.mock('@pluxel/runtime/workbench/react', () => ({
+vi.mock('@pluxel/workbench/react', () => ({
 	createWorkbenchRenderer: () =>
 		Object.freeze({
 			render: (Component: unknown) => Component,

@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/runtime':
+  '@pluxel/workbench':
     type: patch
 ---
 

@@ -5,7 +5,6 @@ import {
 	DraftGraph,
 	factoryProvider,
 	GraphBuildError,
-	type GraphBuildError as GraphBuildErrorType,
 	type GraphDelta,
 	type GraphSnapshot,
 	Runtime,
@@ -412,7 +411,7 @@ export class PluginDefinitions {
 		const built = this.draft.build()
 		if (built.ok === false) {
 			return createErr({
-				err: this.enrichGraphBuildError(built.err as GraphBuildErrorType),
+				err: this.enrichGraphBuildError(built.err),
 				reset: () => this.resetDraft(),
 			})
 		}
@@ -611,7 +610,7 @@ export class PluginDefinitions {
 		return undefined
 	}
 
-	private enrichGraphBuildError(error: GraphBuildErrorType): GraphBuildErrorType {
+	private enrichGraphBuildError(error: GraphBuildError): GraphBuildError {
 		const diagnostics: Array<{
 			kind: 'InvalidDeclaration'
 			nodeKey: PluginNodeSlot

@@ -217,9 +217,8 @@ async function handleList(root: string, log: (...args: unknown[]) => void) {
 	log(`workspace root: ${state.root}`)
 	log(`package manager: ${state.packageManager}`)
 	const sources: string[] = []
-	if (state.manifest) sources.push(state.manifest.path)
 	if (state.pnpm) sources.push(state.pnpm.path)
-	log(`config files: ${sources.length > 0 ? sources.join(', ') : 'none (using defaults)'}`)
+	log(`membership file: ${sources.length > 0 ? sources.join(', ') : 'none (single package)'}`)
 	log('patterns:')
 	for (const p of state.effectivePatterns) {
 		log(`  - ${p}`)

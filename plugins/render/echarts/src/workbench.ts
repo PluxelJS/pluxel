@@ -1,5 +1,5 @@
 import { FontsWorkbench } from '@pluxel/fonts/workbench'
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 
 export const EChartsWorkbench = workbench.define({
 	fonts: FontsWorkbench.selection.place(

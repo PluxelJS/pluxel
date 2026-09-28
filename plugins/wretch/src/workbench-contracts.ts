@@ -1,4 +1,4 @@
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 
 export type WretchManagedSettings = Readonly<{
 	headers: Readonly<Record<string, string>>
@@ -14,7 +14,7 @@ export type WretchManagedSettingsSnapshot = Readonly<{
 }>
 
 export interface WretchSettingsApi extends RpcTarget {
-	snapshot(): WretchManagedSettingsSnapshot
-	update(settings: WretchManagedSettings): Promise<WretchManagedSettingsSnapshot>
-	reset(): Promise<WretchManagedSettingsSnapshot>
+	snapshotDto(): WretchManagedSettingsSnapshot
+	updateDto(settings: WretchManagedSettings): Promise<WretchManagedSettingsSnapshot>
+	resetDto(): Promise<WretchManagedSettingsSnapshot>
 }

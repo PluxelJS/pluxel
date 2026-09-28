@@ -159,7 +159,7 @@ describe('database migration artifact', () => {
 			await writeFile(
 				join(root, 'src/database.ts'),
 				[
-					'import { defineDatabase } from "@pluxel/runtime/database"',
+					'import { defineDatabase } from "@pluxel/services/database"',
 					'export const database = defineDatabase({ schema: {}, evolution: "reset-on-schema-change" })',
 				].join('\n'),
 				'utf8',

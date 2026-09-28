@@ -234,13 +234,11 @@ function savePlayground(value: StoredPlayground) {
 	localStorage.setItem(playgroundStorageKey, JSON.stringify(value))
 }
 
-type PlaygroundSchema = ObjectLikeSchema
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
 
-function isPlaygroundSchema(value: unknown): value is PlaygroundSchema {
+function isPlaygroundSchema(value: unknown): value is ObjectLikeSchema {
 	return isRecord(value) && (value.type === 'object' || value.type === 'intersect')
 }
 
@@ -264,7 +262,7 @@ function getTypeScriptLspOptions() {
 	}
 }
 
-function compileSchema(code: string): PlaygroundSchema {
+function compileSchema(code: string): ObjectLikeSchema {
 	const executableCode = code
 		.replace(/^\s*import \* as v from ['"]valibot['"];?\s*$/m, '')
 		.replace(/^\s*import \* as f from ['"]valibot-form['"];?\s*$/m, '')
@@ -286,7 +284,7 @@ function JsonValue({ value }: { value: unknown }) {
 	)
 }
 
-function ValueInspector({ schema }: { schema: PlaygroundSchema }) {
+function ValueInspector({ schema }: { schema: ObjectLikeSchema }) {
 	const { form } = useAutoFormCtx<any>()
 
 	return (
@@ -321,7 +319,7 @@ export function ConfigurationPlayground() {
 	const codeRef = useRef(serviceTemplate)
 	const lastRunCodeRef = useRef(serviceTemplate)
 	const selectionRef = useRef<PlaygroundSelection>('service')
-	const [schema, setSchema] = useState<PlaygroundSchema>(() => configurationSchema)
+	const [schema, setSchema] = useState<ObjectLikeSchema>(() => configurationSchema)
 	const [error, setError] = useState<string>()
 	const [status, setStatus] = useState('使用当前 schema 生成表单。')
 	const [revision, setRevision] = useState(0)

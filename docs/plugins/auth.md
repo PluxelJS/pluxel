@@ -15,33 +15,24 @@ pnpm catalog:add -- @pluxel/auth
 
 在宿主入口从 `@pluxel/auth` 导入 `AuthPlugin`，加入 `plugins` 清单和自动启动项；完整装配方式见 [添加插件](./index.md#把一个插件加入应用)。
 
-先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用 static 入口合入现有清单：
+先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用入口合入现有清单：
 
 ```ts no-twoslash
 import { AuthPlugin } from '@pluxel/auth'
-import { pluginNodeAddressOf } from '@pluxel/runtime'
-import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { defineHostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/services/preset'
 
-export default defineStaticRuntime({
-	name: 'my-app',
-	plugins: [AuthPlugin],
-	configure: () => ({
-		vault: {},
-		workbench: { enabled: true },
-		runtimeState: {
-			snapshot: { autoStart: [pluginNodeAddressOf(AuthPlugin)] },
+export default defineHostApplication(async (startup) => {
+	return {
+		name: 'my-app',
+		plugins: [AuthPlugin],
+		services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+		state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
+		configRecords: {
+			initial: [{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } }],
 		},
-		configService: {
-			snapshot: {
-				plugins: [
-					{
-						owner: pluginNodeAddressOf(AuthPlugin),
-						config: { mode: { type: 'password' } },
-					},
-				],
-			},
-		},
-	}),
+	}
 })
 ```
 
@@ -82,15 +73,15 @@ tunnel 打开 loopback Workbench 后进入该 route。View API 是：
 
 ```ts no-twoslash
 interface AuthSetupApi extends RpcTarget {
-	snapshot(): AuthSetupSnapshot
-	setupPassword(input: AuthPasswordSetupInput): Promise<AuthSetupMutationResult>
-	beginTotp(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult>
-	confirmTotp(input: AuthTotpConfirmationInput): Promise<AuthSetupMutationResult>
-	setupOidcSecret(input: AuthOidcSecretSetupInput): Promise<AuthSetupMutationResult>
+	snapshotDto(): AuthSetupSnapshot
+	setupPasswordDto(input: AuthPasswordSetupInput): Promise<AuthSetupMutationResult>
+	beginTotpDto(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult>
+	confirmTotpDto(input: AuthTotpConfirmationInput): Promise<AuthSetupMutationResult>
+	setupOidcSecretDto(input: AuthOidcSecretSetupInput): Promise<AuthSetupMutationResult>
 }
 ```
 
-`snapshot()` 只返回以下封闭状态：
+`snapshotDto()` 只返回以下封闭状态：
 
 | mode                 | state            | reason                | 含义                                 |
 | -------------------- | ---------------- | --------------------- | ------------------------------------ |
@@ -99,7 +90,7 @@ interface AuthSetupApi extends RpcTarget {
 | 其余 credential mode | `setup-required` | `missing` / `invalid` | loopback recovery 可以执行一次性配置 |
 | 其余 credential mode | `unavailable`    | `vault-unavailable`   | Vault 不可用，mutation fail closed   |
 
-Password 与 TOTP enrollment 共用 `{ username, password, passwordConfirmation }`。`beginTotp()` 返回 enrollment ID、secret、
+Password 与 TOTP enrollment 共用 `{ username, password, passwordConfirmation }`。`beginTotpDto()` 返回 enrollment ID、secret、
 provisioning URI 和过期时间，只有同一个 opened target 能用 `{ enrollmentId, code }` 确认。Confidential OIDC 只接受
 `{ secret }`。失败返回稳定 code：`forbidden`、`not_required`、`unavailable`、`invalid_input`、`busy`、
 `enrollment_expired`、`verification_failed` 或 `storage_failed`。
@@ -108,9 +99,11 @@ provisioning URI 和过期时间，只有同一个 opened target 能用 `{ enrol
 已配置 credential 不能通过这个 API 覆盖。成功保存后同一 Plugin generation 立即变为 ready，并撤销旧 cookie session。每次打开
 View 都得到 fresh target 和 provisioning session；close、abort、socket epoch 失效或 Plugin stop 会销毁未完成的 TOTP enrollment。
 
-`workbench: false` 和 production `headless` artifact 没有 setup View/API。它们使用 local credential 或 confidential OIDC 时必须预置
-同一 Vault record，或先用带 Workbench artifact、指向同一 persistence 的部署完成配置再切 headless；否则 provider 保持
-`ready: false`。Public OIDC 无 provisioning，可以仅凭配置用于 headless。
+Vault record 更新会刷新 provider 凭据；账号身份、密码、TOTP secret 或 OIDC secret 改变时撤销旧 cookie session。
+
+没有接入 Workbench setup View/API 的应用，使用 local credential 或 confidential OIDC 时必须预置同一 Vault record，
+或先用提供该配置页面、指向同一 persistence 的部署完成配置；否则 provider 保持 `ready: false`。
+Public OIDC 无 provisioning，可以仅凭配置使用。是否提供配置页面由实际服务和页面接入决定，不由 headless 构建标签决定。
 
 ## 浏览器如何认证
 
@@ -126,11 +119,34 @@ authenticated + single-use cookie commit ticket
 
 当前 socket 在 authenticated step 后立即取得 principal authority。浏览器随后用 60 秒、single-use ticket 调用固定 cookie-commit endpoint；响应只有 `204 + Set-Cookie`，cookie 用于下一 document/session。Authentication challenge 和 Management API 始终留在同一 Cap’n Web session。
 
-logout 也是 control capability：插件先撤销当前或刚签发的 server session，再返回 60 秒、single-use clear-cookie ticket，Runtime 随后关闭整个 socket epoch。浏览器使用同一个固定 cookie-commit endpoint 清理 `HttpOnly` cookie；server session 一旦撤销，遗留 cookie 也不能恢复它。
+logout 也是 control capability：插件先撤销当前或刚签发的 server session，再返回 60 秒、single-use clear-cookie ticket，Management 随后关闭整个 socket epoch。浏览器使用同一个固定 cookie-commit endpoint 清理 `HttpOnly` cookie；server session 一旦撤销，遗留 cookie 也不能恢复它。
 
 ## 安全与生命周期
 
-- 远端 control socket 与 OIDC 要求可信 physical carrier 提供 HTTPS；Runtime 不相信 forwarding headers 或 URL hostname。
+- 远端 control socket 与 OIDC 要求可信 physical carrier 提供 HTTPS；Management 不相信 forwarding headers 或 URL hostname。
 - password scrypt、登录失败、challenge、session、cookie commit、OIDC pending state 和 TOTP replay counter 都有固定上界。
 - stop、replacement 或 credential mutation 会撤销对应 generation 的 authority。
 - 业务 HTTP authorization、Bearer token 与 RBAC 由业务 Plugin 自己设计，不属于此 provider。
+
+## 本地 Result 与设置回执
+
+Auth 的 `CredentialProvisioning.prepareAccount()` 逐项校验 Vault 可用性、用户名和密码确认，失败就直接返回 `Result.err(...)`。
+这些是内部业务步骤；输入、密码 record 和 Result 实例都不作为新的插件公共 API。
+
+密码哈希使用普通 `try/catch`，只把 `PasswordInputError` / `PasswordHashBusyError` 转成 `invalid_input` / `busy`。
+未知 crypto 故障以固定的安全 message 拒绝，保留本地 cause；不会误报为密码格式错误，也不会执行保存或应用。
+简单校验使用提前返回，哈希使用普通 `await`，无需把整个流程包进 Result 组合器。
+
+领域方法显式消费 Result，再返回原有 setup 回执：
+
+```ts no-twoslash
+const base = await this.prepareAccount(input)
+if (Result.isError(base)) return base.error
+return await this.saveAccount({ version: 1, type: 'local-account', ...base.value })
+```
+
+Workbench target 对最终 `AuthSetupMutationResult` 调用 `assertWorkbenchDto()`，成功分支附上 readiness snapshot。
+未知 mutation rejection 在 target 边界重新抛出无 cause 的通用错误，避免本地诊断随 RPC 传出；它不会变成 expected DTO。
+这个稳定 DTO 已经拥有 `ok` / `code`，无需再给它套 Result 或换成 TaggedError。
+
+[实际实现](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/src/credential-provisioning.ts)、[成功与持久化验证](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/tests/credential-provisioning.test.ts)和[预期 / 未知失败验证](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/tests/credential-failures.test.ts)。

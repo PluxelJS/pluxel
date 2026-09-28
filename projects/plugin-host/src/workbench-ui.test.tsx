@@ -23,7 +23,7 @@ const viewSnapshot = Object.freeze({
 	artifacts: Object.freeze([]),
 })
 
-vi.mock('@pluxel/runtime/workbench/react', () => ({
+vi.mock('@pluxel/workbench/react', () => ({
 	createWorkbenchRenderer: (descriptor: Readonly<{ kind: string }>) => {
 		let queryIndex = 0
 		return Object.freeze({

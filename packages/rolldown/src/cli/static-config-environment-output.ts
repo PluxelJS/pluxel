@@ -18,7 +18,7 @@ const STANDARD_PLUXEL_ENVIRONMENT_EXAMPLE = `# Pluxel host environment
 # PLUXEL_HOST_PORT=3000
 `
 
-/** Compose the framework-owned host variables with optional Plugin config bootstrap variables. */
+/** Compose the framework-owned host variables with optional Plugin config and Vault environment bindings. */
 export function renderStaticApplicationEnvironmentExample(pluginContent?: string): string {
 	return pluginContent
 		? `${STANDARD_PLUXEL_ENVIRONMENT_EXAMPLE}\n${pluginContent}`

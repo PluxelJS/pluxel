@@ -1,4 +1,4 @@
-import { v } from '@pluxel/runtime'
+import * as v from 'valibot'
 
 export type OtelSignal = 'metrics' | 'traces' | 'logs'
 

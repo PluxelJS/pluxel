@@ -10,7 +10,7 @@
 
 - `PluginDefinitionSlot` 唯一识别 canonical entry + root named export；`PluginNodeSlot` 再区分 default/fork node。
 - route/storage boundary 使用结构化 entry/definition/node address；Core intern 后只按 slot object 查图。
-- `@Plugin` 是薄 marker，只携带 `displayName`、`startTimeoutMs` 和显式 abstract provider relation。
+- `@Plugin` 是薄 marker，只携带 `displayName`、`startTimeoutMs`、literal `forkable: true` 和显式 abstract provider relation。
 - constructor required dependency 和 `definePluginRef<T>()` optional dependency 都来自 toolchain lowering facts。
 - `plugins.use(Ref, callback)` 只允许在 `init()` 中直接调用；callback 同步返回的资源进入 consumer effects。
 - `configs.onUpdate(this.config, listener)` 绑定声明者 Context 与 generation；配置保存只通知，不隐式 restart。

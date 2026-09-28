@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/test'
+import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/internal/test'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖；PluginC/PluginD 只是运行期附加能力
 import { PluginB } from './PluginB'

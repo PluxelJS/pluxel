@@ -1,0 +1,95 @@
+{
+	"version": "Version 7.1.0-dev.20260922.1",
+	"installed": {
+		"version": "Version 7.0.2",
+		"ignoredConfig": {
+			"code": 0,
+			"output": ""
+		},
+		"optInFlag": {
+			"code": 1,
+			"output": "error TS5023: Unknown compiler option '--runExternalCode'.\n"
+		},
+		"declarationConsumer": {
+			"code": 0,
+			"output": ""
+		}
+	},
+	".ts": {
+		"code": 2,
+		"output": "tsconfig.reject.ts.json(21,9): error TS100021: Content mapper file extension '.ts' is a built-in extension and cannot be registered by a content mapper.\n"
+	},
+	".tsx": {
+		"code": 2,
+		"output": "tsconfig.reject.tsx.json(21,9): error TS100021: Content mapper file extension '.tsx' is a built-in extension and cannot be registered by a content mapper.\n"
+	},
+	"withoutOptIn": {
+		"code": 2,
+		"output": "error TS6054: File '<experiment>/.artifacts/plugin.pluxel' has an unsupported extension. The only supported extensions are '.ts', '.tsx', '.d.ts', '.cts', '.d.cts', '.mts', '.d.mts'.\n  The file is in the program because:\n    Part of 'files' list in tsconfig.json\ntsconfig.json(17,3): error TS100024: Content mappers require the '--runExternalCode' command line flag to be enabled.\n"
+	},
+	"valid": {
+		"code": 0,
+		"output": ""
+	},
+	"javascriptEmit": {
+		"code": 0,
+		"output": ""
+	},
+	"javascriptFiles": ["host.d.ts", "host.js", "plugin.d.pluxel.ts"],
+	"emittedFiles": ["host.d.ts", "plugin.d.pluxel.ts"],
+	"declarations": {
+		"host.d.ts": "import { DemoPlugin } from './plugin.pluxel';\ntype Inputs<P extends new (...args: never[]) => object> = InstanceType<P> extends {\n    readonly __pluxelInputs: infer I;\n} ? I : never;\nexport declare function defineBinding<P extends new (...args: never[]) => object>(plugin: P, config: {\n    [K in keyof Inputs<P>]?: string;\n}): {\n    plugin: P;\n    config: { [K in keyof Inputs<P>]?: string | undefined; };\n};\nexport declare const binding: {\n    plugin: typeof DemoPlugin;\n    config: {\n        enabled?: string | undefined;\n        endpoint?: string | undefined;\n        retries?: string;\n    };\n};\nexport type PluginInputs = Inputs<typeof DemoPlugin>;\nexport declare const configInput: PluginInputs;\nexport declare const retryInput: string | undefined;\nexport {};\n",
+		"plugin.d.pluxel.ts": "declare const Schema: {\n    input: {\n        enabled?: boolean;\n        endpoint: string;\n        retries?: string;\n    };\n    output: {\n        enabled: boolean;\n        endpoint: string;\n        retries: number;\n    };\n};\ndeclare class BasePlugin {\n    protected configs: {\n        use<S extends {\n            output: unknown;\n        }>(schema: S): S['output'];\n    };\n}\nexport declare class DemoPlugin extends BasePlugin {\n    private config;\n    get retries(): number;\n}\nexport interface DemoPlugin {\n    readonly __pluxelInputs: typeof Schema[\"input\"];\n}\nexport {};\n"
+	},
+	"invalid": {
+		"code": 2,
+		"output": "host.ts(17,29): error TS2353: Object literal may only specify known properties, and 'typo' does not exist in type '{ enabled?: string | undefined; endpoint?: string | undefined; retries?: string | undefined; }'.\n"
+	},
+	"declarationConsumer": {
+		"code": 0,
+		"output": ""
+	},
+	"invalidDeclarationConsumer": {
+		"code": 2,
+		"output": "consumer/use.ts(2,52): error TS2322: Type 'number' is not assignable to type 'string'.\n"
+	},
+	"hover": {
+		"contents": {
+			"kind": "plaintext",
+			"value": "const retryInput: string | undefined"
+		},
+		"range": {
+			"start": {
+				"line": 14,
+				"character": 13
+			},
+			"end": {
+				"line": 14,
+				"character": 23
+			}
+		}
+	},
+	"completionLabels": ["enabled?", "endpoint?"],
+	"lspDiagnostics": {
+		"kind": "full",
+		"items": [
+			{
+				"range": {
+					"start": {
+						"line": 16,
+						"character": 28
+					},
+					"end": {
+						"line": 16,
+						"character": 32
+					}
+				},
+				"severity": 1,
+				"code": 2353,
+				"source": "ts",
+				"message": "Object literal may only specify known properties, and 'typo' does not exist in type '{ enabled?: string | undefined; endpoint?: string | undefined; retries?: string | undefined; }'."
+			}
+		]
+	},
+	"lspStderr": ""
+}

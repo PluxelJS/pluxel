@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-	tsconfig: './tsconfig.json',
+	tsconfig: './tsconfig.build.json',
 	entry: {
 		index: 'src/index.ts',
 		workbench: 'src/workbench.ts',

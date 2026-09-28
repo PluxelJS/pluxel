@@ -15,11 +15,11 @@
 	},
 	"dependencies": {
 		"@example/domain": "workspace:*",
-		"@pluxel/runtime": "catalog:pluxel"
+		"@pluxel/core": "catalog:pluxel",
+		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
 		"@example/audit-plugin": "workspace:*",
-		"@pluxel/core": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:test"

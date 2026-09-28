@@ -1,3 +1,4 @@
+import type { AnyFormApi } from '@tanstack/react-form'
 import { MantineProvider } from '@mantine/core'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -60,7 +61,7 @@ afterEach(async () => {
 async function mount(
 	defaultValues: Record<string, unknown>,
 	fields?: FieldNode[],
-	onSubmit?: (formApi: ReturnType<typeof useAutoFormCtx>['form']) => void,
+	onSubmit?: (formApi: AnyFormApi) => void,
 	onChange?: () => void,
 ) {
 	const schema = v.object({
@@ -76,13 +77,7 @@ async function mount(
 					formOpts={{
 						defaultValues,
 						listeners: { onChange },
-						onSubmit: ({
-							value,
-							formApi,
-						}: {
-							value: unknown
-							formApi: ReturnType<typeof useAutoFormCtx>['form']
-						}) => {
+						onSubmit: ({ value, formApi }: { value: unknown; formApi: AnyFormApi }) => {
 							submitted(value)
 							onSubmit?.(formApi)
 						},
@@ -722,4 +717,63 @@ it('preserves structural array edits under literal record keys', async () => {
 	})
 	await clickButton('Reset')
 	expect(ctx.form.state.values).toEqual(initial)
+})
+
+it('submits draft input without applying schema transforms and awaits the callback', async () => {
+	const schema = v.object({ count: v.pipe(v.string(), v.transform(Number)) })
+	let finish!: () => void
+	const pending = new Promise<void>((resolve) => {
+		finish = resolve
+	})
+	const onSubmit = vi.fn(({ value }: { value: { count: string } }) => {
+		expect(value).toEqual({ count: '12' })
+		return pending
+	})
+	await act(() =>
+		root.render(
+			<AutoForm schema={schema} formOpts={{ defaultValues: { count: '12' }, onSubmit }}>
+				<FormObserver />
+			</AutoForm>,
+		),
+	)
+	let submission!: Promise<void>
+	await act(async () => {
+		submission = ctx.submit()
+		await Promise.resolve()
+	})
+	expect(onSubmit).toHaveBeenCalledTimes(1)
+	let settled = false
+	void submission.then((): void => {
+		settled = true
+		return undefined
+	})
+	expect(settled).toBe(false)
+	await act(async () => {
+		finish()
+		await submission
+	})
+	expect(ctx.form.state.values).toEqual({ count: '12' })
+	expect(settled).toBe(true)
+})
+
+it('returns submission rejection to imperative callers', async () => {
+	const failure = new Error('save failed')
+	await act(() =>
+		root.render(
+			<AutoForm
+				fields={[]}
+				formOpts={{
+					defaultValues: {},
+					onSubmit: async () => {
+						throw failure
+					},
+				}}
+			>
+				<FormObserver />
+			</AutoForm>,
+		),
+	)
+	await act(async () => {
+		await expect(ctx.submit()).rejects.toBe(failure)
+	})
 })

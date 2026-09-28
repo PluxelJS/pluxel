@@ -1,3 +1,4 @@
+import type { ConfigSnapshot } from '@pluxel/core'
 import type { ConfiguredMiddleware, WretchOptions } from 'wretch'
 import type { WretchPluginConfig } from './config.ts'
 
@@ -154,7 +155,7 @@ export type OutboundPolicy = {
 	dispose(): void
 }
 
-export function createOutboundPolicy(config: WretchPluginConfig): OutboundPolicy {
+export function createOutboundPolicy(config: ConfigSnapshot<WretchPluginConfig>): OutboundPolicy {
 	const scheduler = new RequestScheduler(config.maxConcurrentRequests, config.maxQueuedRequests)
 	const allowedOrigins = new Set(config.allowedOrigins.map((value) => httpUrl(value).origin))
 	const shutdown = new AbortController()

@@ -13,13 +13,23 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 pnpm catalog:add -- @pluxel/wretch
 ```
 
+宿主需安装 Persistence 服务，用于保存受管出站设置。
+
 ## 第一个 HTTP consumer
 
 ```ts twoslash
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result, TaggedError } from '@pluxel/core/better-result'
+import * as v from 'valibot'
 
-type Customer = { id: string; name: string }
+const CustomerSchema = v.object({ id: v.string(), name: v.string() })
+type Customer = v.InferOutput<typeof CustomerSchema>
+
+export class CustomerNotFound extends TaggedError('CustomerNotFound')<{
+	id: string
+	message: string
+}> {}
 
 const CustomerConfig = v.object({
 	baseUrl: v.pipe(v.string(), v.url()),
@@ -38,8 +48,13 @@ export class CustomerPlugin extends BasePlugin {
 		this.api = this.http.client.url(this.config.baseUrl, true)
 	}
 
-	find(id: string): Promise<Customer> {
-		return this.api.get(`/customers/${encodeURIComponent(id)}`).json<Customer>()
+	find(id: string): Promise<Result<Customer, CustomerNotFound>> {
+		return this.api
+			.get(`/customers/${encodeURIComponent(id)}`)
+			.notFound(() =>
+				Result.err(new CustomerNotFound({ id, message: `Customer ${id} was not found` })),
+			)
+			.json((body) => Result.ok(v.parse(CustomerSchema, body)))
 	}
 }
 ```
@@ -63,10 +78,48 @@ await host.start(CustomerPlugin, {
 })
 ```
 
-这里的 `host` 是 `createRuntimeTestHost()` fixture；`initialConfig` 只用于首次 lifecycle，后续 config 更新使用
-`host.config.patch()`。production deployment 通过自己的 ConfigService 管理相同 records。
-
 `client` 本身就是 Wretch。Wretch 的 immutable 语义保证不同 consumer 通过 `.url()`、`.options()`、`.headers()`、`.auth()`、`.addon()` 或 `.middlewares()` 派生 client 时不会互相污染。
+
+## 将可预期失败返回给调用方
+
+上面的 `CustomerPlugin.find()` 是本地插件能力：上游返回 404 时，Wretch 的 `.notFound()` catcher 把它变成
+`CustomerNotFound`，调用方用同一个 `@pluxel/core/better-result` 入口检查结果。成功响应先用 schema 验证；
+其他 HTTP 状态、网络错误、超时和 lifecycle 撤回继续抛出，不能误报为“客户不存在”。
+完整 Result 用法见 [better-result 共享入口](../api/better-result.md)。
+
+假设上面的 `CustomerPlugin` 从 `@acme/customer` 根入口导出，另一个插件可以直接依赖它并发布 HTTP route：
+
+```ts no-twoslash
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { Result } from '@pluxel/core/better-result'
+import { ElysiaApp } from '@pluxel/services/elysia'
+import { CustomerPlugin } from '@acme/customer'
+
+@Plugin()
+export class CustomerHttpPlugin extends BasePlugin {
+	constructor(private readonly customers: CustomerPlugin) {
+		super()
+	}
+
+	protected override init(): void {
+		this.ctx.require(ElysiaApp).get('/customers/:id', async ({ params }) => {
+			const result = await this.customers.find(params.id)
+			if (Result.isError(result)) {
+				return Response.json(
+					{ code: 'customer_not_found', message: result.error.message },
+					{ status: 404 },
+				)
+			}
+			return Response.json(result.value)
+		})
+	}
+}
+```
+
+把 `CustomerHttpPlugin` 加入宿主清单并启动；宿主还需安装 `ElysiaApp` 服务。
+跨插件本地调用保留 Result 实例和 `CustomerNotFound` 类型；HTTP/Workbench/Worker 边界只传普通数据，
+按传输协议选择状态码或 DTO。不要直接序列化 Result 或错误实例。发布 `CustomerPlugin` 时，
+按[插件包指南](../development/plugin-package.md)设置包含 `/better-result` 子入口的 Core peer 下限。
 
 主入口只导出 `WretchPlugin` 与 `Wretch` 类型，不重新导出裸 `wretch()` factory 或 addons。需要 query-string addon、retry middleware 等上游扩展时，由 consumer 直接安装 `wretch`：
 
@@ -148,7 +201,7 @@ managed settings 使用 runtime persistence，而不是 secret store。不要把
 placement：
 
 ```ts no-twoslash
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/workbench'
 import { WretchWorkbench } from '@pluxel/wretch/workbench'
 
 export const CustomerWorkbench = workbench.define({
@@ -174,7 +227,7 @@ protected override async init(): Promise<void> {
 View 打开时，`WretchPlugin` 根据 Workbench 提供的 exact `consumer.node` 找到已经初始化的 managed state，
 并创建 fresh `WretchSettingsApi` capability。若没有先完成 `enableManagedSettings()`，打开 View 会失败。
 provider-owned zero-props renderer 通过 descriptor-bound scope 的 query/mutation resources 取得 provider stub；
-它提供 `snapshot()`、`update(settings)` 与 `reset()`，Framework 自动 detach 返回 DTO 并在 mutation settle 后刷新 snapshot。
+它提供 `snapshotDto()`、`updateDto(settings)` 与 `resetDto()`，Framework 自动 detach 返回 DTO 并在 mutation settle 后刷新 snapshot。
 snapshot 同时包含 `hostTimeoutMs` 和最终 `effectiveTimeoutMs`。
 
 同一 caller 并发执行 `enableManagedSettings()` 会共享一次初始化。View 关闭、session 结束或

@@ -12,52 +12,67 @@ description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 ## 装配宿主
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/runtime'
+import { resolve } from 'node:path'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { defineHostApplication } from '@pluxel/host'
+import { servicesPreset } from '@pluxel/services/preset'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { dynamicSource } from '@pluxel/host/dynamic'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
-const packageManagerConfig = {
-	rootDir: '.pluxel/managed-plugins',
-	ignoreScripts: true,
-	allowBuilds: [],
-	minimumReleaseAgeMinutes: 1_440,
-}
 
-export default defineDynamicRuntimeConfig({
-	root: process.cwd(),
-	plugins: [PackageManagerPlugin],
-	sources: [
-		{
-			kind: 'directory',
-			path: '.pluxel/managed-plugins/entries',
-			include: ['*.mjs'],
+export default defineHostApplication(async (startup) => {
+	const dataRoot = resolve(
+		startup.deployment?.root ?? startup.root,
+		resolveHostEnv(startup.env).dataRoot,
+	)
+	const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
+	return {
+		name: 'managed-plugins',
+		plugins: [PackageManagerPlugin],
+		sources: [
+			dynamicSource({
+				kind: 'directory',
+				path: resolve(managedPackagesRoot, 'entries'),
+				include: ['*.mjs'],
+			}),
+		],
+		services: await servicesPreset(startup, {
+			persistence: resolve(dataRoot, 'persistence'),
+		}),
+		configRecords: {
+			initial: [
+				{
+					owner: packageManagerNode,
+					config: {
+						rootDir: managedPackagesRoot,
+						ignoreScripts: true,
+						allowBuilds: [],
+						minimumReleaseAgeMinutes: 1_440,
+					},
+				},
+			],
 		},
-	],
-	configService: {
-		snapshot: {
-			plugins: [{ owner: packageManagerNode, config: packageManagerConfig }],
-		},
-	},
-	runtimeState: {
-		snapshot: { autoStart: [packageManagerNode] },
-	},
-	workbench: { enabled: true },
+		state: { initial: { autoStart: [packageManagerNode] } },
+	}
 })
 ```
 
 四处配置缺一不可：
 
 1. `plugins` 把 Package Manager 放进 fixed catalog；
-2. `configService` 为它提供 Plugin config；
-3. `runtimeState` 显式让它随宿主自动启动；
+2. `configRecords` 为它提供 Plugin config；
+3. `state` 显式让它随宿主自动启动；
 4. `sources` 声明它被允许生产的 directory source。
 
-source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；static host 会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
+示例通过 `PLUXEL_DATA_ROOT` 统一定位存储和来源；默认是 cwd 下的 `.pluxel`。生产运行时设置 distribution root 外的绝对路径。
+
+source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；未声明动态来源的宿主会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 
 ## 配置安全默认值
 
-上例的 `packageManagerConfig` 同时展示了安全默认值。运行中的配置更新由宿主 ConfigService 负责，不通过测试 fixture API 修改
+上例的 Plugin config 同时展示了安全默认值。运行中的配置更新由宿主 ConfigService 负责，不通过测试 fixture API 修改
 production host。
 
 | 字段                       | 默认值                    | 含义                                               |
@@ -74,37 +89,45 @@ production host。
 Plugin running 后发布两个 runtime command：
 
 ```ts no-twoslash
-await ctx.root.commands.execute('package.install', {
+import { Commands } from '@pluxel/services/commands'
+
+const installed = await ctx.require(Commands).execute('package.install', {
 	specs: ['@acme/example-plugin@^2.0.0'],
 })
+if (installed.isErr()) throw new Error(installed.error.message)
+console.log(installed.value)
 
-await ctx.root.commands.execute('package.remove', {
+const removed = await ctx.require(Commands).execute('package.remove', {
 	specs: ['@acme/example-plugin'],
 })
+if (removed.isErr()) throw new Error(removed.error.message)
+console.log(removed.value)
 ```
 
-- `package.install` 是 open-world、non-destructive、idempotent mutation；
-- `package.remove` 是 open-world、destructive、non-idempotent mutation；
-- 每次接受 1–100 个 spec，返回 `{ ok, succeeded, failed }`；
-- failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`。
+- `package.install` 安装插件包，`package.remove` 删除插件包；
+- 每次接受 1–100 个 spec，成功执行返回 `Result.ok({ ok, succeeded, failed })`；
+- 部分成功和每个包的失败仍是提交回执，failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`；
+- 输入校验或命令执行故障返回 `Result.err(CommandFailure)`。
+
+初始化保留有效的既存 entry，不因包管理器重启触发 HMR。安装按 pnpm 锁定的依赖图识别变化，纯删除不会重新发布图未变化的包；传递依赖、peer 或 optional 依赖变化也会失效对应 entry。无法识别 lockfile 时，安装保守重新发布。生产环境已经加载的同路径 entry 升级仍需重启进程（`PLUGIN_SOURCE_RESTART_REQUIRED`）；初始化修复损坏 entry 也不绕过这个边界。
 
 Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
 每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound scope 声明 snapshot query 与
 install/remove mutation，Framework 自动 detach 返回 DTO、释放 transport ownership，并刷新写入后的 snapshot：
 
 ```ts no-twoslash
-import type { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { RpcTarget } from 'capnweb'
 
 interface PackageManagerApi extends RpcTarget {
-	snapshot(): Promise<PackageManagerSnapshot>
-	install(specs: readonly string[]): Promise<PackageMutationResult>
-	remove(names: readonly string[]): Promise<PackageMutationResult>
+	snapshotDto(): Promise<PackageManagerSnapshot>
+	installDto(specs: readonly string[]): Promise<PackageMutationResult>
+	removeDto(names: readonly string[]): Promise<PackageMutationResult>
 }
 ```
 
 这些调用与 layout、Management 共用当前 Workbench 的 Cap’n Web over WebSocket Runtime Session，不经过 command registry 或业务 HTTP。
 Snapshot 包含 revision、engine、managed root、entries directory、packages 和检测到的 build-script dependencies。Workbench 路由由
-catalog node address 生成，消费者不应拼接 Plugin class name URL。headless dynamic host 仍可使用 commands；Workbench disabled 时不会
+catalog node address 生成，消费者不应拼接 Plugin class name URL。关闭 Workbench 的宿主 仍可使用 commands；Workbench disabled 时不会
 创建相关 UI backend。
 
 安装后应在返回值的 `succeeded` 中找到包，并在宿主清单中看到对应插件。再从正常插件管理入口启动它，确认运行状态；仅看到安装成功不表示插件已在运行。失败时读取 `failed` 中的稳定错误分类。
@@ -118,10 +141,10 @@ package.install
   -> 确认每个 direct dependency 已 materialize
   -> 原子发布 entries/*.mjs
   -> dynamic source batch 观察变化
-  -> 正常 catalog/RuntimeState/依赖图 commit
+  -> 正常 catalog/Host state/依赖图 commit
 ```
 
-安装成功只表示 source 已发布，不会替新 Plugin 打开 RuntimeState auto-start policy，也不会创建 process session start intent。删除时先让 pnpm
+安装成功只表示 source 已发布，不会替新 Plugin 打开 Host state auto-start policy，也不会创建 process session start intent。删除时先让 pnpm
 prune managed graph，再删除 entry；source batch 随后按正常 lifecycle 卸载 module。mutation 被串行化，一批 specs 只执行一次 native install。
 
 受管目录结构是：

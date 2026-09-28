@@ -1,12 +1,13 @@
-# Database Architecture
+# 数据库：owner handle 与数据换代
 
-插件数据库是 `@pluxel/runtime` 的常驻 capability。PostgreSQL 是唯一 SQL dialect，Drizzle 是唯一作者查询界面；
-未配置宿主使用 root-scoped lazy PGlite，显式配置时使用共享的有界 `pg` pool。
+`@pluxel/services/database` 是显式安装的 capability；`standardServices()` 与 `servicesPreset()` 都不默认安装。PostgreSQL 是唯一 SQL dialect，Drizzle 是作者查询界面。用法见 [数据库指南](../docs/runtime/database.md)。
+
+修改查询 handle 读 [Author boundary](#author-boundary)，修改安装/driver 读 [Backend ownership](#backend-ownership)，修改数据换代读 [Schema evolution](#schema-evolution)，修改通知/排空读 [Invalidation and outbox](#invalidation-and-outbox) 与 [Resource control](#resource-control)。
 
 ## Author boundary
 
 插件用普通 `pgTable()` 定义一份 schema，再调用 `defineDatabase({ schema })`。definition 是不可变、可复用的 schema、
-evolution policy 与 migration 声明，不携带数据 owner；`ctx.database.use()` 在 plugin `init()` 中从 immutable Context 绑定
+evolution policy 与 migration 声明，不携带数据 owner；`ctx.require(Database).use()` 在 plugin `init()` 中从 immutable Context 绑定
 owner、完成 migration prepare，并返回只暴露 `read(callback)` 与 `transaction(callback)` 的 handle。共享 definition 只复用
 结构，不共享数据、handle 或 transaction。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
 
@@ -25,12 +26,9 @@ transaction 中确认 instance 仍 active，再设置 instance role、`search_pa
 
 ## Backend ownership
 
-- 配置省略：在 host persistence root 下 lazy 创建一个共享 PGlite；
-- `{ driver: 'pglite', dataDir }`：显式本地位置，测试可使用 `memory://`；
-- `{ driver: 'postgres', connectionString, pool, tls }`：共享远端 pool；
-- `false`：完全关闭，任何 `use()` 都使对应 plugin 启动失败。
+`database({ backend })` 要求应用提供 backend factory：本机开发/测试选择 `/database/pglite`，部署选择 `/database/postgres`。两个 factory 彼此不引用，通用入口不加载 driver。未安装 descriptor 时，`ctx.require(Database)` 报标准 capability 缺失错误。
 
-没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox backend。PGlite 是本机开发/测试默认；它的持久目录只支持正常关闭后的便利重启，不是部署存储 contract。
+没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox。PGlite 使用单个 root-scoped instance，测试可用 `memory://`；持久目录只支持正常关闭后的便利重启，不是部署存储 contract。PostgreSQL 使用共享、有界 pool。
 
 Pluxel 不计划通过 filesystem flush 或 fault-injection 验收把 PGlite 提升为 production backend。生产并发、锁、deadlock、pool exhaustion 和 connection-loss 门禁必须运行在真正 PostgreSQL。
 
@@ -85,3 +83,17 @@ PGlite 的所有 operation 经单连接 scheduler；`concurrency: 1` 反映 driv
 轮询、公平取队列，限制每 owner pending 数并使排队超时。owner stop 先拒绝新 operation，再等待已接纳的运行中和排队
 operation 排空；内部 invalidation listener 随 owner cleanup 撤销。同 lineage replacement 复用 active instance，
 新 lineage replacement 得到新 instance。archive 会占用宿主存储，但 plugin 无权删除宿主备份或绕过配额策略。
+
+## Host composition 与实现归属
+
+`@pluxel/services/database` 独占 definition、Database token、owner handles、scheduler、migration/outbox coordinator。
+`database({ backend })` 安装 owner-only capability；backend 为 Host 独占的 lazy adapter factory。
+PGlite 与 PostgreSQL 工厂分别从 `@pluxel/services/database/pglite` 和 `/postgres` 导入，彼此不引用；
+通用入口不包含 driver 选择或 driver import。应用显式安装其所选 driver，Services 仅声明 optional peers。
+acquire 与 cached handle read/transaction 都进入 Core root/owner invocation lease；Host 关闭先排空已接受的操作，再关闭 adapter。
+
+## 实现与验证
+
+实现位于 `packages/services/src/database/`；schema artifact 编译由 Rolldown 拥有，见 [TOOLCHAIN](TOOLCHAIN.md#database-migrations)。回归入口包括 `packages/services/tests/database-host.test.ts`、`services/database-service.test.ts`、`vite-database.test.ts` 和 `packages/rolldown/tests/database/artifact.test.ts`。
+
+验证 lazy/disabled 零 driver、owner/fork 隔离、cached handle 撤回、排队与 stop、migration 失败保留 active instance、lineage promotion 原子性和 rollback 无 outbox。PGlite 证明本地单连接契约；生产锁、连接丢失与 pool exhaustion 必须使用真实 PostgreSQL，不能从内存测试推断。
