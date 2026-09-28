@@ -65,7 +65,7 @@ const COMPILE_ONLY_TYPECHECK_EXCLUDES = [
 ] as const
 
 function buildPluxelResolveConditions(env = process.env.NODE_ENV): string[] {
-	const extras = env && !DEFAULT_NODE_RESOLVE_CONDITIONS.includes(env as any) ? [env] : []
+	const extras = env ? [env] : []
 	return uniqStrings([
 		...PLUXEL_BASE_RESOLVE_CONDITIONS,
 		...DEFAULT_NODE_RESOLVE_CONDITIONS,
@@ -123,15 +123,7 @@ export function definePluxelVitestConfig(config: PluxelVitestConfig = {}): ViteU
 
 	const base: ViteUserConfig = {
 		oxc: { decorator: { legacy: true } },
-		resolve: {
-			conditions: baseConditions,
-			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
-		},
 		ssr: {
-			resolve: {
-				conditions: baseConditions,
-				externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
-			},
 			// Generated metadata imports must share the same source-mode runtime instance as tests.
 			noExternal: ['@pluxel/services'],
 		},
@@ -146,40 +138,36 @@ export function definePluxelVitestConfig(config: PluxelVitestConfig = {}): ViteU
 		},
 	}
 
-	const finalize = (resolved: ViteUserConfig): ViteUserConfig => {
-		const overridePlugins = asPluginArray(resolved.plugins)
-		const { plugins: _ignored, ...rest } = resolved
-		const merged = mergeConfig(base, rest as ViteUserConfig) as ViteUserConfig
-		const projectRoot = resolve(merged.root ?? process.cwd())
-		const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
-			...asPluginArray(pluxel.prePlugins),
-			databaseSourceVitePlugin({ root: projectRoot }),
-			createPluginSemanticsPlugin({ root: projectRoot, include, exclude }).plugin,
-			lintGuardPlugin({ cwd: projectRoot }),
-			configSourcePlugin({ include, exclude }),
-		]
+	const overridePlugins = asPluginArray(overrides.plugins)
+	const { plugins: _ignored, ...rest } = overrides
+	const merged = mergeConfig(base, rest as ViteUserConfig) as ViteUserConfig
+	const projectRoot = resolve(merged.root ?? process.cwd())
+	const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
+		...asPluginArray(pluxel.prePlugins),
+		databaseSourceVitePlugin({ root: projectRoot }),
+		createPluginSemanticsPlugin({ root: projectRoot, include, exclude }).plugin,
+		lintGuardPlugin({ cwd: projectRoot }),
+		configSourcePlugin({ include, exclude }),
+	]
 
-		// Keep Pluxel resolution deterministic: internal packages use @pluxel/source,
-		// plugin packages use @pluxel/hmr. Do not let per-package config widen this.
-		merged.resolve = {
-			...merged.resolve,
-			conditions: baseConditions,
-			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
-		}
-		merged.ssr = merged.ssr ?? {}
-		merged.ssr.resolve = {
-			...merged.ssr.resolve,
-			conditions: baseConditions,
-			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
-		}
-
-		// Compose plugins with explicit order control.
-		merged.plugins = [...toolchainPlugins, ...overridePlugins]
-
-		return merged
+	// Keep Pluxel resolution deterministic: internal packages use @pluxel/source,
+	// plugin packages use @pluxel/hmr. Do not let per-package config widen this.
+	merged.resolve = {
+		...merged.resolve,
+		conditions: baseConditions,
+		externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
+	}
+	merged.ssr = merged.ssr ?? {}
+	merged.ssr.resolve = {
+		...merged.ssr.resolve,
+		conditions: baseConditions,
+		externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 	}
 
-	return finalize(overrides)
+	// Compose plugins with explicit order control.
+	merged.plugins = [...toolchainPlugins, ...overridePlugins]
+
+	return merged
 }
 
 export default definePluxelVitestConfig()

@@ -103,33 +103,23 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 `drizzle-orm`；它与 Pluxel 高度集成并不意味着能从工作区根或其他 framework 包 隐式继承。只有确实要求宿主
 共享 Drizzle 运行时身份的公开边界才改用 peer。
 
-### 治理、CI 与类型检查
+### 治理与验证
 
-`pnpm governance:check` 是 repository policy 的唯一检查入口，先验证共享 package inventory 的分类规则，
-再固化 workspace 单一来源、catalog 使用、根依赖、具体插件目录边界、工具版本、公开包 metadata、
-内部依赖范围和 Tegami 发布集合。治理检查与 Tegami 从 `scripts/repository-packages.mjs` 读取同一份 inventory；
-`private`、目录类型和发布排除列表不再分别维护。该命令是 `pnpm verify` 的前置步骤。
+`pnpm verify` 是本地与 CI 的共同入口，顺序执行治理、lint、format、Turbo typecheck/build/test，再检查构建是否把声明写入源码。CI 只提供并发数、affected filter 与 summary；构建配置不依赖未计入 Turbo hash 的环境开关。只缓存 `.turbo/cache`，本次报告 `.turbo/runs` 不跨运行复用。
 
-本地与 CI 统一执行 `scripts/verify.mjs`：governance、lint、format、Turbo typecheck/build/test，
-最后再次检查源码声明，避免构建过程生成未被前置检查发现的污染。CI 只传入 Turbo 的并发数、
-affected filter 和 summary 选项，不维护另一份验证步骤。产物配置不依赖未纳入 Turbo hash 的环境开关；
-CI 和 Release 使用同一套生产构建语义。
-两者只共享 `.turbo/cache` 任务产物；`.turbo/runs` 属于本次运行报告，不进入跨运行缓存。
+| 检查所有者                                | 负责的事实                                                                  |
+| ----------------------------------------- | --------------------------------------------------------------------------- |
+| `scripts/repository-packages.mjs`         | workspace inventory、目录分类、公开包与 Tegami 发布集合                     |
+| `scripts/check-repository-governance.mjs` | workspace/catalog、工具版本、metadata、依赖范围、实际内部 import 与模块边界 |
+| package `typecheck`                       | 本包源码、测试、配置及公开类型；上游 declaration build 不替代本包检查       |
+| package `test`                            | Vitest 行为回归；边界选择见 [TESTING](TESTING.md)                           |
+| `scripts/check-source-declarations.mjs`   | 显式登记的 ambient declarations；生成声明只进入 dist 或可清理缓存           |
 
-外部环境类型（例如 `vite/client`）由各 package 的 `tsconfig.compilerOptions.types` 加载。确有必要的
-本地手写 ambient 声明在 `scripts/check-source-declarations.mjs` 显式登记；生成声明和 declaration maps
-只能输出到 `dist` 或可清理缓存，不能混入源码目录。
+治理与 Tegami 消费同一份 inventory。迁移完成后移除一次性扫描器；不要把历史 API 黑名单、源码片段或旧提案名称变成永久架构概念。当前契约由 exports、编译器和所属边界的行为测试维护。
 
-生成的独立 workspace 先通过 `pluxel workspace doctor` 校验框架共同拥有的 pnpm major、workspace authority 与
-已激活时的 machine-local source `.pnpmfile.cjs`，再由仓库自己的 governance script 校验产品目录和依赖方向。通用 CLI 不推断产品领域规则。
+各 workspace 必须声明自己的 `typecheck`，`tsconfig` 覆盖本包源码、测试和构建配置。外部环境类型由 `compilerOptions.types` 加载。测试统一由 Vitest 编排；纯 Node fixture 可以使用 Node assert，不另设 `node --test` runner。
 
-workspace 单元测试统一由 Vitest 执行；package `test` script 不调用 `node --test`。需要验证纯 Node 边界时可以
-保留独立 fixture 或 test directory，但仍由 Vitest 的 Node environment 编排，避免不同 runner 的 hook、过滤、
-reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它不构成第二套 test runner。
-
-每个 root、package、plugin 和 project workspace 都必须声明自己的 `typecheck` script；Turbo 只负责编排，不能用
-上游 declaration build 代替当前 package 的 `tsc --noEmit`。package 级 `tsconfig` 明确拥有其源码、测试和构建配置，
-避免编辑器检查到 CI task graph 未覆盖的文件。
+生成的 workspace 由 `pluxel workspace doctor` 检查 pnpm major、workspace authority 与已激活的 source hook；产品目录和依赖方向由其自身治理脚本拥有。通用 CLI 不推断产品领域规则。
 
 ## 导出
 
@@ -160,20 +150,8 @@ Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/host/dy
 Vite、watcher、workspace scanner 或 package manager。固定 catalog 从统一应用声明的 `plugins` 进入，不提供 package、
 module、export key 或首次启用 author options。
 
-## 变更流程
+## 变更与文档
 
-1. 先读 [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) 和相关领域文档。
-2. 修改实现与测试。
-3. 更新当前事实的唯一权威文档。
-4. 审计 public exports、workspace 插件、示例和链接。
-5. 如果 proposal 已实现，删除已落地部分。
+实现、公开 exports、已知调用方与测试应表达同一契约。公开行为更新 `docs/`，内部边界更新所属工程文档；通用方法留在 `.agents/rules/`。package README 只提供入口和最短示例，不另定义插件模型或测试规则。当前文档不维护旧 API 教程，历史由 Git 保存；已落地 proposal 删除对应部分。
 
-公开包发生用户可见变化时，同一 PR 必须添加 Tegami changelog。Version Packages PR、发布前验证和 npm trusted
-publishing 的维护流程见 [`RELEASING.md`](RELEASING.md)。
-
-## 文档
-
-- `docs/` 不讲内部类名、迁移历史或 toolchain helper。
-- `engineering/` 不复制用户教程，只解释边界和实现入口。
-- package README 不重新定义仓库级插件模型。
-- 当前文档不列旧 API；需要追溯时查看 Git history。
+合并前运行 `pnpm verify` 并检查旧符号与链接。公开包的用户可见变化添加 Tegami changelog，不手改版本与 publish lock；版本 PR 和发布流程见 [RELEASING](RELEASING.md)。

@@ -66,7 +66,7 @@ describe('service test host', () => {
 		expect(() => httpOnly.commands.list()).toThrow(/commands/i)
 	})
 
-	it('creates a synchronous public fixture without root authority', async () => {
+	it('creates a public fixture without root authority', async () => {
 		await using host = await createTestHost()
 
 		expect('ctx' in host).toBe(false)
@@ -77,6 +77,7 @@ describe('service test host', () => {
 	it('keeps optional Workbench and Vault disabled by default', async () => {
 		await using host = await createServiceInternalTestHost()
 
+		expect(() => host.ctx.require(Commands)).toThrow('does not install')
 		expect(host.ctx.workbench).toBeUndefined()
 		expect(host.ctx.vault).toBeUndefined()
 		expect(host.ctx.vaultAdmin).toBeUndefined()
@@ -202,11 +203,4 @@ describe('service test host', () => {
 		await expect(host.http.fetch('/probe')).rejects.toThrow(/closing or closed/i)
 		await first
 	})
-})
-
-it('uses an explicit service list without silently installing defaults', async () => {
-	await using host = await createServiceInternalTestHost({ services: [] })
-	expect(() => host.ctx.require(Commands)).toThrow('does not install')
-	await host.start(PublicFixture)
-	expect(host.isRunning(PublicFixture)).toBe(true)
 })

@@ -45,10 +45,15 @@ Vitest/Vite 在 preset 能返回 `resolve.conditions` 之前先求值 `vitest.co
 condition 绕过这一步。该命令只交给 `@pluxel/test` 自己的 build graph 处理 bootstrap artifact 与其真实前置，不预构建整个 source
 closure。统一测试组合依赖 Services/Workbench 的发布入口，因此这两者的构建属于真实前置；这不表示测试会初始化这些服务。config 已加载后，preset 为 test module graph 设置 `@pluxel/source` / `@pluxel/hmr` conditions。
 
-## Verification ownership
+## 回归取舍与验证所有权
 
-`scripts/check-testing-v2-migration.mjs` 保护已删除 API、Vitest 5 baseline、public test boundaries、official package/template migration 和
-relative preset bootstrap。它是防回归门禁，不替代 product behavior tests。
+每个 case 保护一个当前契约、资源所有权或已观察的失败模式。合并相同前提与结果的重复断言；不同失败阶段、owner、并发和真实传输不能因表面相似而删除。
+
+- 类型签名由 package typecheck 验证，preset 行为由 `packages/test/tests/vitest.test.ts` 验证；不扫描源码字符串来推断 API。
+- exports、workspace 依赖和目录政策由 [Governance](GOVERNANCE.md) 拥有；完成的一次性迁移不保留旧符号黑名单与历史版本扫描器。
+- 模板、独立安装与真实 carrier 用各自的集成测试验证，不能用 manifest 文本匹配代替执行。
+- `start/require()` 返回 raw instance；caller attribution、admission 和 withdrawal 必须建立真实 Consumer dependency。
+- Host 使用 `await using`，RPC lease 使用 `using`。生命周期操作完成后直接断言，只有外部 eventual observation 才使用 `expect.poll()`。
 
 ## CI scheduling and cache
 
@@ -59,6 +64,4 @@ CI 按整个 PR 相对目标分支的变化选择包，在双核 runner 上并�
 Turbo task summary，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
 Core benchmark 跟踪 core、Context、基准场景与构建依赖变化；仅修改测试或 Markdown 文档不触发完整的同 runner 对比。
 
-在改变 shared test surface、package export、runner config 或 test host lifecycle 后，先运行直接 owner test，再运行
-`pnpm testing-v2:check`；稳定合并边界运行 `pnpm verify`。测试数量不是目标：每个 case 都应保护一个当前 public contract、资源所有权或
-已观察的失败模式。
+在改变 shared test surface、package export、runner config 或 test host lifecycle 后，先运行直接 owner test 与 package typecheck；合并前运行 `pnpm verify`。

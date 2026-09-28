@@ -29,7 +29,7 @@ export default defineConfig({
 						compilerOptions: {
 							allowImportingTsExtensions: true,
 							noEmit: true,
-							customConditions: ['@pluxel/source'],
+							customConditions: ['@pluxel/hmr', '@pluxel/source'],
 							jsx: 'react-jsx',
 							module: 'esnext',
 							moduleResolution: 'bundler',
