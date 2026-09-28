@@ -97,10 +97,10 @@ npm trusted publisher 绑定 `PluxelJS/pluxel` 和 `.github/workflows/release.ym
 Release workflow 按 repository visibility 开关 provenance。
 
 首次设置需要 npm package write 权限、账号已启用 2FA，以及交互式 npm 登录。使用 mise 安装的工具链：
-当前 Node 24.20.0 自带 npm 11.19.0，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧的全局 npm，
+使用 `mise exec -- npm --version` 核对 npm 版本，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧的全局 npm，
 也不要使用 bypass-2FA granular token 配置信任。
 
-首次 1.0.0 使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包；在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。
+首次整批初始化，或同时包含既有包和新包的全量发布，可使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包，允许各包版本不同；在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。
 
 ```sh
 mise install
@@ -111,7 +111,7 @@ mise exec -- node scripts/prepare-npm-publishing.mts --apply
 ```
 
 默认只预览。`--apply` 先确认 npm 登录，再通过 Tegami `npm pretrust` 为缺失的包发布
-`0.0.0-tegami-trusted-publish-setup` 空占位版本到 `temp` dist-tag；真正的 `1.0.0` 内容仍由 CI 发布。
+`0.0.0-tegami-trusted-publish-setup` 空占位版本到 `temp` dist-tag；正式版本内容仍由 CI 发布。
 随后脚本检查全部公开包，仅补齐缺少的 `PluxelJS/pluxel` / `release.yml` / 无 environment 限制 / 允许 publish
 的 trusted publisher，并重新读取结果确认。已有正确配置会跳过，其他信任配置不会被自动删除。
 
@@ -121,7 +121,7 @@ mise exec -- node scripts/prepare-npm-publishing.mts --apply
 
 Tegami 可能更新本地 publish lock，运行后检查并提交这些生成的变更，不要手改 lock。最好在合并发布准备提交前
 完成初始化；若 main 的 Release 已因缺少信任而失败，完成初始化后重跑最新 main 对应的 Release 即可，已成功发布的包会被跳过。
-该脚本面向整批首发初始化；后续单个新包可以使用 Tegami `npm pretrust` 和 npm `trust` 命令。
+该脚本要求全量公开包锁；只发布部分包时不能使用它，后续单个新包可以使用 Tegami `npm pretrust` 和 npm `trust` 命令。
 
 GitHub repository 必须允许 GitHub Actions 创建 pull request；workflow 的 `contents: write`、
 `pull-requests: write` 和 `id-token: write` 权限不得降低。

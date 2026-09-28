@@ -1,0 +1,11 @@
+---
+title: Keep successful WebSocket upgrades out of shell fallbacks
+date: 2026-09-28T12:28:46.296Z
+packages:
+  '@pluxel/services':
+    version: 1.0.0
+---
+
+## Keep successful WebSocket upgrades out of shell fallbacks
+
+Business WebSocket connections now complete their handshake when a host shell fallback is installed. A successful Elysia upgrade is treated as a handled request instead of falling through to the shell.

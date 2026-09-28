@@ -1,0 +1,23 @@
+---
+title: Share framework identities with the application
+date: 2026-09-28T12:28:46.296Z
+packages:
+  '@pluxel/host':
+    version: 1.0.0
+  '@pluxel/host-dev':
+    version: 1.0.0
+  '@pluxel/workbench':
+    version: 1.0.0
+  '@pluxel/rolldown':
+    version: 2.0.0
+  '@pluxel/services':
+    version: 1.0.0
+---
+
+## Share framework identities with the application
+
+Declare Core, Host and shared service/management contracts as peer dependencies with local
+development copies. The compiler likewise consumes the application's Core lowering ABI.
+Workbench declares React, Mantine and React Bridge as shared platform peers; owned implementation
+libraries remain normal dependencies. This prevents integrations from silently installing their own
+framework identities and makes compatible application dependencies explicit.

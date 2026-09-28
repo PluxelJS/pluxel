@@ -1,0 +1,17 @@
+---
+title: Publish Node artifacts for every concurrent build
+date: 2026-09-28T12:28:46.296Z
+packages:
+  '@pluxel/rolldown':
+    version: 2.0.0
+---
+
+## Publish Node artifacts for every concurrent build
+
+Deduplicate compilation without skipping each consumer's output directory or native dependency
+report. Concurrent builds of the same source now each receive their artifact and deployment facts.
+
+Compile native dependency bridges relative to the final artifact directory, not the disk cache.
+Include the output layout in the cache identity so nested output directories remain loadable.
+
+Keep cached bytes leased until every concurrent consumer finishes publishing, including during cache eviction.

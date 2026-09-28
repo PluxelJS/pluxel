@@ -1,0 +1,15 @@
+---
+title: Recover Workbench definition hot updates across edits, failures and file replacement
+date: 2026-09-28T12:28:46.296Z
+packages:
+  '@pluxel/rolldown':
+    version: 2.0.0
+  '@pluxel/host-dev':
+    version: 1.0.0
+---
+
+## Recover Workbench definition hot updates across edits, failures and file replacement
+
+Refresh standalone Workbench definitions and imported helpers within the same semantic generation as Plugin facts. Reject superseded transforms, discard failed parsing work, withdraw deleted publications, and preserve committed facts when a candidate is rejected. Generated Bridge and renderer projection files now use revision-specific paths.
+
+Host Vite development handles file creation and deletion through the same update queue as edits, allowing recreated definitions and their dependent plugins to recover without restarting dev.

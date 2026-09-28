@@ -57,6 +57,7 @@ function verifyBeforePublish(): TegamiPlugin {
 		enforce: 'pre',
 		async applyCliDraft() {
 			await formatChangedPackageManifests(this.cwd)
+			await formatGeneratedChangelogs(this.cwd)
 		},
 		async beforePublishAll() {
 			await run('pnpm', ['--filter', '@pluxel/create', 'test:starter'], this.cwd)
@@ -84,6 +85,25 @@ async function formatChangedPackageManifests(cwd: string): Promise<void> {
 			await writeFile(path, `${JSON.stringify(manifest, null, '\t')}\n`)
 		}),
 	)
+}
+
+async function formatGeneratedChangelogs(cwd: string): Promise<void> {
+	const results = await Promise.all([
+		execFileAsync('git', ['diff', '--name-only', '--diff-filter=ACM', '-z'], {
+			cwd,
+			encoding: 'utf8',
+		}),
+		execFileAsync('git', ['ls-files', '--others', '--exclude-standard', '-z'], {
+			cwd,
+			encoding: 'utf8',
+		}),
+	])
+	const files = [...new Set(results.flatMap(({ stdout }) => stdout.split('\0')))].filter(
+		(file) =>
+			file.endsWith('/CHANGELOG.md') ||
+			(file.startsWith('projects/docs/content/changelog/') && file.endsWith('.mdx')),
+	)
+	if (files.length > 0) await run('pnpm', ['exec', 'oxfmt', ...files], cwd)
 }
 
 function run(command: string, args: string[], cwd: string): Promise<void> {

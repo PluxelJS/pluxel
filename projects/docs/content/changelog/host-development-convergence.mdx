@@ -1,0 +1,23 @@
+---
+title: Share Host development reports and HTTP assembly
+date: 2026-09-28T12:28:46.296Z
+packages:
+  '@pluxel/host':
+    version: 1.0.0
+  '@pluxel/host-dev':
+    version: 1.0.0
+  '@pluxel/cli':
+    version: 2.0.0
+  '@pluxel/services':
+    version: 1.0.0
+---
+
+## Share Host development reports and HTTP assembly
+
+Host development publishes update history through Host status and Management, including retained
+candidates, application compensation and lifecycle issues. Update outcomes include `failed` when
+startup or compensation leaves no active Host. Failed cleanup preserves the original diagnostics
+and does not skip remaining settlement or compensation.
+
+Official application presets delegate HTTP and management ingress to their owning services. Plugin
+scaffolding consistently declares Core and validation dependencies.

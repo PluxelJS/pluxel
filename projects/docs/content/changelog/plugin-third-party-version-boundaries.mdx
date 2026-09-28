@@ -1,0 +1,31 @@
+---
+title: Add bounded third party version contracts
+date: 2026-09-28T12:28:46.296Z
+packages:
+  '@pluxel/core':
+    version: 2.0.0
+  '@pluxel/host':
+    version: 1.0.0
+  '@pluxel/rolldown':
+    version: 2.0.0
+  '@pluxel/workbench':
+    version: 1.0.0
+  '@pluxel/auth':
+    version: 2.0.0
+  '@pluxel/fonts':
+    version: 2.0.0
+  '@pluxel/wretch':
+    version: 2.0.0
+  '@pluxel/vault-admin':
+    version: 2.0.0
+---
+
+## Add bounded third party version contracts
+
+Add the optional `@pluxel/core/better-result` entry with all named exports from the shared `better-result` dependency.
+Check the exact `capnweb` peer, development and installed versions when a plugin package publishes a
+Workbench View or Attachment target. Move Vault Admin's `capnweb` to a peer and development dependency.
+Record target publication in package metadata so static builds and dynamic source loaders share the
+host `RpcTarget` constructor only for those publishers. Diagnose deployment version mismatches before
+target evaluation. Improve the Workbench identity diagnostic and use Result within Auth credential
+preparation while preserving its portable setup replies.

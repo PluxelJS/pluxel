@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/vault-admin",
-	"version": "1.0.0",
+	"version": "2.0.0",
 	"description": "Optional Vault administration Workbench plugin",
 	"license": "AGPL-3.0-only",
 	"repository": {

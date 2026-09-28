@@ -1,0 +1,11 @@
+---
+title: Vault uses only the current storage contract
+date: 2026-09-28T12:28:46.296Z
+packages:
+  '@pluxel/services':
+    version: 1.0.0
+---
+
+## Vault uses only the current storage contract
+
+Remove `legacyNamespaces` and startup namespace migration. Encrypted snapshots require version 2 with per-record revisions; unversioned documents are no longer converted.
