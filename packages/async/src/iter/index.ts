@@ -84,6 +84,8 @@ async function* valuesOf<T>(source: Source<T>): AsyncGenerator<Awaited<T>, void,
  * Lazy, bounded, item-level concurrency over standard iterables.
  * Keep dependent operations for ONE item inside the mapper: one pool, no stage barriers.
  * Early close/error aborts cooperatively and drains started work before settling.
+ * Native async-generator return() queues behind an outstanding next(); abort an
+ * external signal to interrupt a pending pull, then await its settlement and close.
  */
 export function mapConcurrent<T, R>(
 	source: Source<T>,
@@ -155,22 +157,26 @@ export function mapConcurrent<T, R>(
 						}
 						const index = nextIndex++
 						// Attach rejection handling even when close races with a promised value.
-						const job = Promise.resolve(item.value)
+						const job: Promise<void> = Promise.resolve(item.value)
 							.then((value) =>
 								stopped ? SKIP : mapper(value as Awaited<T>, { index, signal: controller.signal }),
 							)
-							.then((value) => {
-								if (!stopped) {
-									ready.set(index, value as Awaited<R> | typeof SKIP)
-									notify()
-								}
-								return undefined
-							}, fail)
+							.then(
+								(value) => {
+									active.delete(job)
+									if (!stopped) {
+										ready.set(index, value as Awaited<R> | typeof SKIP)
+										notify()
+									}
+									return undefined
+								},
+								(error: unknown) => {
+									active.delete(job)
+									fail(error)
+								},
+							)
+						// Native Promise reactions run after registration, including for synchronous inputs.
 						active.add(job)
-						void job.then(() => {
-							active.delete(job)
-							return undefined
-						})
 					}
 				} catch (error) {
 					fail(error)
@@ -266,4 +272,74 @@ export async function toArray<T>(source: Source<T>): Promise<Awaited<T>[]> {
 	const values: Awaited<T>[] = []
 	for await (const value of valuesOf(source)) values.push(value)
 	return values
+}
+
+/** Consume in delivery order without collecting results. Each callback is awaited. */
+export async function forEach<T>(
+	source: Source<T>,
+	visit: (value: Awaited<T>, index: number) => unknown,
+): Promise<void> {
+	if (typeof visit !== 'function') throw new TypeError('iter: visit must be a function')
+	let index = 0
+	for await (const value of valuesOf(source)) await visit(value, index++)
+}
+
+/**
+ * Find the first match in delivery order; close and drain upstream before returning.
+ * Returns undefined if no match. A matching undefined value has the same result.
+ */
+export async function find<T>(
+	source: Source<T>,
+	predicate: (value: Awaited<T>, index: number) => boolean | PromiseLike<boolean>,
+): Promise<Awaited<T> | undefined> {
+	if (typeof predicate !== 'function') throw new TypeError('iter: predicate must be a function')
+	let index = 0
+	for await (const value of valuesOf(source)) {
+		if (await predicate(value, index++)) return value
+	}
+	return undefined
+}
+
+/** True on the first match, including a matching undefined value. Empty source: false. */
+export async function some<T>(
+	source: Source<T>,
+	predicate: (value: Awaited<T>, index: number) => boolean | PromiseLike<boolean>,
+): Promise<boolean> {
+	if (typeof predicate !== 'function') throw new TypeError('iter: predicate must be a function')
+	let index = 0
+	for await (const value of valuesOf(source)) {
+		if (await predicate(value, index++)) return true
+	}
+	return false
+}
+
+/** False on the first non-match; close and drain upstream. Empty source: true. */
+export async function every<T>(
+	source: Source<T>,
+	predicate: (value: Awaited<T>, index: number) => boolean | PromiseLike<boolean>,
+): Promise<boolean> {
+	if (typeof predicate !== 'function') throw new TypeError('iter: predicate must be a function')
+	let index = 0
+	for await (const value of valuesOf(source)) {
+		if (!(await predicate(value, index++))) return false
+	}
+	return true
+}
+
+/** Sequential reduction in delivery order. An explicit initial value also defines the empty result. */
+export async function reduce<T, R>(
+	source: Source<T>,
+	reducer: (
+		accumulator: Awaited<R>,
+		value: Awaited<T>,
+		index: number,
+	) => Awaited<R> | PromiseLike<Awaited<R>>,
+	initial: R | PromiseLike<R>,
+): Promise<Awaited<R>> {
+	if (typeof reducer !== 'function') throw new TypeError('iter: reducer must be a function')
+	let accumulator = await initial
+	let index = 0
+	for await (const value of valuesOf(source))
+		accumulator = await reducer(accumulator, value, index++)
+	return accumulator
 }

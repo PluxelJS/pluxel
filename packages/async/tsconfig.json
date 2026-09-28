@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.workspace.json",
-	"include": ["src", "tests", "examples", "bench"],
+	"include": ["src", "tests", "examples", "bench", "*.config.ts"],
 	"compilerOptions": {
 		"target": "ES2022",
 		"lib": ["ES2022", "DOM"],

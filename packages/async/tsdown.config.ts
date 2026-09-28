@@ -4,6 +4,10 @@ export default defineConfig({
 	entry: {
 		grfn: 'src/grfn/index.ts',
 		iter: 'src/iter/index.ts',
+		limit: 'src/limit/index.ts',
+		retry: 'src/retry/index.ts',
+		singleflight: 'src/singleflight/index.ts',
+		wait: 'src/wait/index.ts',
 	},
 	platform: 'neutral',
 	target: 'es2022',

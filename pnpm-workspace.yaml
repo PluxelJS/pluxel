@@ -227,6 +227,12 @@ catalogs:
     wretch: ^3.0.9
     yaml: ^2.9.1
   test:
+    grfn: 3.0.0
+    lfi: 4.1.2
+    p-limit: 7.3.3
+    p-map: 7.0.8
+    p-memoize: 8.0.0
+    p-retry: 8.0.1
     vitest: 5.0.2
     ws: 8.21.3
   types:

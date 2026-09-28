@@ -270,3 +270,37 @@ test('numeric bounds fail at declaration; take zero never opens its source', asy
 	}
 	assert.deepEqual(await toArray(take(source, 0)), [])
 })
+
+test('return queues behind a pending next; external abort cancels the active mapper', async () => {
+	const controller = new AbortController()
+	const started = deferred<AbortSignal>()
+	const task = deferred<number>()
+	const reason = new Error('stop pending pull')
+	const iterator = mapConcurrent(
+		[1],
+		(_value, { signal }) => {
+			signal.addEventListener('abort', () => task.reject(signal.reason), { once: true })
+			started.resolve(signal)
+			return task.promise
+		},
+		{ concurrency: 1, signal: controller.signal },
+	)[Symbol.asyncIterator]()
+	const first = iterator.next()
+	const rejected = assert.rejects(first, (error) => error === reason)
+	const signal = await started.promise
+	let closed = false
+	const closing = iterator.return!().then((result) => {
+		closed = true
+		return result
+	})
+	try {
+		await tick()
+		assert.equal(signal.aborted, false)
+		assert.equal(closed, false)
+	} finally {
+		controller.abort(reason)
+	}
+	await rejected
+	assert.deepEqual(await closing, { value: undefined, done: true })
+	assert.equal(signal.aborted, true)
+})

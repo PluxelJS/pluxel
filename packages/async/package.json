@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/async",
 	"version": "0.0.0",
-	"description": "Typed async dependency graphs and bounded async iteration",
+	"description": "Small async primitives for dependency graphs, bounded iteration, concurrency, retries and shared work",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -25,12 +25,32 @@
 			"@pluxel/source": "./src/iter/index.ts",
 			"default": "./dist/iter.js"
 		},
+		"./limit": {
+			"@pluxel/source": "./src/limit/index.ts",
+			"default": "./dist/limit.js"
+		},
+		"./retry": {
+			"@pluxel/source": "./src/retry/index.ts",
+			"default": "./dist/retry.js"
+		},
+		"./singleflight": {
+			"@pluxel/source": "./src/singleflight/index.ts",
+			"default": "./dist/singleflight.js"
+		},
+		"./wait": {
+			"@pluxel/source": "./src/wait/index.ts",
+			"default": "./dist/wait.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			"./grfn": "./dist/grfn.js",
 			"./iter": "./dist/iter.js",
+			"./limit": "./dist/limit.js",
+			"./retry": "./dist/retry.js",
+			"./singleflight": "./dist/singleflight.js",
+			"./wait": "./dist/wait.js",
 			"./package.json": "./package.json"
 		},
 		"access": "public"
@@ -42,11 +62,17 @@
 		"test": "pnpm exec vitest run",
 		"test:watch": "pnpm exec vitest",
 		"test:installed": "node tests/installed-package.smoke.mjs",
-		"bench": "pnpm exec vitest bench --run --typecheck.enabled=false",
+		"bench": "pnpm build && pnpm exec vitest bench --config vitest.bench.config.ts --run",
 		"prepack": "pnpm build"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:types",
+		"grfn": "catalog:test",
+		"lfi": "catalog:test",
+		"p-limit": "catalog:test",
+		"p-map": "catalog:test",
+		"p-memoize": "catalog:test",
+		"p-retry": "catalog:test",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"

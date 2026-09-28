@@ -29,12 +29,33 @@ try {
 		join(directory, 'consumer.mts'),
 		`
 import { grfn } from '@pluxel/async/grfn';
-import { mapConcurrent, SKIP, toArray } from '@pluxel/async/iter';
+import { mapConcurrent, SKIP, toArray, reduce } from '@pluxel/async/iter';
+import { limit, keyedLimit } from '@pluxel/async/limit';
+import { retry } from '@pluxel/async/retry';
+import { singleflight } from '@pluxel/async/singleflight';
+import { sleep, until, waitFor } from '@pluxel/async/wait';
 const g = grfn<number>();
 const run = g.compile(g.task({ input: g.input }, ({ input }) => input + 1));
 const value: number = await run(2);
 const values: number[] = await toArray(mapConcurrent([1, 2, 3], n => n === 2 ? SKIP : n * 2, { concurrency: 2 }));
 if (value !== 3 || values.join(',') !== '2,6') throw new Error('Unexpected package result');
+const total: number = await reduce(values, (sum, item) => sum + item, 0);
+const limiter = limit({ concurrency: 2 });
+const keyed = keyedLimit<string>({ concurrency: 1 });
+const shared = singleflight((key: string) => limiter.run(() => key.length));
+try {
+  const lengths: number[] = await Promise.all([shared.run('abc'), shared.run('abc')]);
+  const result: number = await retry(() => keyed.run('key', () => lengths[0]!), {
+    attempts: 2, shouldRetry: () => false,
+  });
+  await sleep(0);
+  await until(() => true, { intervalMs: 0 });
+  if (await waitFor(Promise.resolve(result)) !== 3 || total !== 8) throw new Error('Unexpected primitive result');
+} finally {
+  await shared.close();
+  await Promise.all([limiter.close(), keyed.close()]);
+}
+
 `,
 	)
 	const options = { cwd: directory, stdio: 'inherit', env: { ...process.env, NODE_OPTIONS: '' } }

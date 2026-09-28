@@ -45,3 +45,62 @@ test('iteration resolves inputs, excludes SKIP, and preserves helper output type
 	// @ts-expect-error output order is a closed union, not a second scheduling API
 	mapConcurrent([1], (n) => n, { concurrency: 1, order: 'parallel' })
 })
+
+test('consumers preserve awaited element and accumulator types', async () => {
+	const { forEach, find, some, every, reduce } = await import('@pluxel/async/iter')
+	const values = [Promise.resolve(1)]
+	expectTypeOf(
+		forEach(values, (value, index) => {
+			expectTypeOf(value).toEqualTypeOf<number>()
+			expectTypeOf(index).toEqualTypeOf<number>()
+		}),
+	).toEqualTypeOf<Promise<void>>()
+	expectTypeOf(find(values, (value) => value > 0)).toEqualTypeOf<Promise<number | undefined>>()
+	expectTypeOf(some([undefined], () => true)).toEqualTypeOf<Promise<boolean>>()
+	expectTypeOf(every(values, () => true)).toEqualTypeOf<Promise<boolean>>()
+	expectTypeOf(reduce(values, async (text, value) => text + value, '')).toEqualTypeOf<
+		Promise<string>
+	>()
+	expectTypeOf(
+		reduce(
+			values,
+			(sum, value) => {
+				expectTypeOf(sum).toEqualTypeOf<number>()
+				return sum + value
+			},
+			Promise.resolve(0),
+		),
+	).toEqualTypeOf<Promise<number>>()
+	// @ts-expect-error accumulator type comes from the initial value and reducer
+	reduce(values, () => 3, '')
+	// @ts-expect-error explicit initial value required, including for empty sources
+	reduce(values, (a: number, b) => a + b)
+})
+
+test('retry and waits infer ordinary Promise results and require explicit policy', async () => {
+	const { retry } = await import('@pluxel/async/retry')
+	const { sleep, waitFor, until } = await import('@pluxel/async/wait')
+	expectTypeOf(
+		retry(
+			async ({ attempt, signal }) => {
+				expectTypeOf(attempt).toEqualTypeOf<number>()
+				expectTypeOf(signal).toEqualTypeOf<AbortSignal>()
+				return 'value'
+			},
+			{
+				attempts: 2,
+				shouldRetry: (error) => {
+					expectTypeOf(error).toEqualTypeOf<unknown>()
+					return false
+				},
+			},
+		),
+	).toEqualTypeOf<Promise<string>>()
+	expectTypeOf(waitFor(Promise.resolve(1))).toEqualTypeOf<Promise<number>>()
+	expectTypeOf(sleep(1)).toEqualTypeOf<Promise<void>>()
+	expectTypeOf(until(() => true, { intervalMs: 1 })).toEqualTypeOf<Promise<void>>()
+	// @ts-expect-error retry authorization is required
+	retry(() => 1, { attempts: 2 })
+	// @ts-expect-error polling interval is explicit
+	until(() => true, {})
+})

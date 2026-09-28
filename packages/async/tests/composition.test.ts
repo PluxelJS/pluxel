@@ -34,3 +34,45 @@ test('a drain-compiled graph keeps each mapper alive until its child work settle
 	pending.resolve(1)
 	await result
 })
+
+// The example exercises public entries together and owns the dependency-close order.
+test('shared reads survive a consumer failure and finish retrying before limiter close', async () => {
+	const { processSharedRecords } = await import('../examples/shared-requests.ts')
+	const transient = new Error('transient')
+	const saveFailure = new Error('save failed')
+	const first = deferred<string>()
+	const other = deferred<string>()
+	const seen: string[] = []
+	const attempts: string[] = []
+	let finished = false
+	const result = processSharedRecords(['a', 'a', 'b'], {
+		signal: new AbortController().signal,
+		read: (id) => {
+			attempts.push(id)
+			if (id === 'a') return first.promise
+			return attempts.filter((key) => key === 'b').length === 1
+				? other.promise
+				: Promise.resolve('b')
+		},
+		shouldRetry: (error) => error === transient,
+		save: async (value) => {
+			seen.push(value)
+			throw saveFailure
+		},
+	}).then(
+		() => assert.fail('Expected save failure'),
+		(error) => {
+			finished = true
+			assert.equal(error, saveFailure)
+		},
+	)
+	await tick()
+	assert.deepEqual(attempts, ['a', 'b'])
+	first.resolve('a')
+	await tick()
+	assert.equal(finished, false)
+	other.reject(transient)
+	await result
+	assert.deepEqual(attempts, ['a', 'b', 'b'])
+	assert.deepEqual(seen, ['a'])
+})
