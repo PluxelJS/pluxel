@@ -1,6 +1,6 @@
 # Async 使用指南
 
-安装与选型见 [README](../README.md)，完整可运行组合见 [examples](../examples/README.md)。本页拥有 API 默认值、失败与生命周期契约。
+安装与选型见 [README](../README.md)，完整可运行组合见 [examples](../examples/README.md)。本页拥有 API 默认值、失败与生命周期契约。按场景组合与第三方协作见 [实用组合](./recipes.md)。
 
 `@pluxel/async` 是独立的通用异步工具包，不依赖 Pluxel runtime。公开契约使用原生 Promise、Iterable / AsyncIterable 和 AbortSignal，没有全局调度器或私有任务协议。
 

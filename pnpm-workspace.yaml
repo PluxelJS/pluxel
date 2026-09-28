@@ -249,3 +249,5 @@ catalogs:
     option-t: ^56.1.2
     superjson: ^2.2.6
     valibot: ^1.5.0
+  workflow:
+    '@tanstack/pacer': 0.22.0

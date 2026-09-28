@@ -76,3 +76,15 @@ test('shared reads survive a consumer failure and finish retrying before limiter
 	assert.deepEqual(attempts, ['a', 'b', 'b'])
 	assert.deepEqual(seen, ['a'])
 })
+
+test('cancelling an independent wait keeps the IO slot until real completion', async () => {
+	const { cancelWaitExample } = await import('../examples/cancel-wait.ts')
+	const { whileCancelled, results } = await cancelWaitExample()
+	assert.deepEqual(whileCancelled, {
+		cancelled: true,
+		activeCount: 1,
+		pendingCount: 1,
+		secondStarted: false,
+	})
+	assert.deepEqual(results, [1, 2])
+})

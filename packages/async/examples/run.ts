@@ -1,6 +1,7 @@
 import { createProcessor } from './process-records.ts'
 import { processSharedRecords } from './shared-requests.ts'
 import { cancelSubscriber } from './cancel-subscriber.ts'
+import { cancelWaitExample } from './cancel-wait.ts'
 import { sleep } from '@pluxel/async/wait'
 
 // Deterministic local adapters: no credentials, network, Plugin or Host required.
@@ -41,6 +42,7 @@ try {
 	})
 	console.log('shared-requests:', { attempts: Object.fromEntries(attempts), saved })
 	console.log('cancel-subscriber:', await cancelSubscriber())
+	console.log('cancel-wait:', await cancelWaitExample())
 } catch (error) {
 	console.error('Example failed:', error)
 	process.exitCode = 1

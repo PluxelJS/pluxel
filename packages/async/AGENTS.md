@@ -1,6 +1,6 @@
 # Maintenance rules
 
-Read README.md for orientation and docs/guide.md for the public contract. Public types and JSDoc live beside each implementation. Keep this package usable without Pluxel runtime; the framework docs page only links here. Ship docs/ and examples/ with the package, and keep examples on public imports.
+Read README.md for orientation and docs/guide.md for the public contract. Public types and JSDoc live beside each implementation. Keep this package usable without Pluxel runtime; the framework docs page summarizes capabilities and links here for detailed contracts and recipes. Ship docs/ and examples/ with the package, and keep examples on public imports.
 
 - Six runtime-dependency-free subpaths: `grfn`, `iter`, `limit`, `retry`, `singleflight`, `wait`. No root barrel.
 - Change `tsdown.config.ts` entries, build, then commit generated exports. Source condition is `@pluxel/source`.

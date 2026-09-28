@@ -66,9 +66,11 @@
 		"test:installed": "node tests/installed-package.smoke.mjs",
 		"bench": "pnpm build && pnpm exec vitest bench --config vitest.bench.config.ts --run",
 		"prepack": "pnpm build",
-		"examples": "pnpm build && node examples/run.ts"
+		"examples": "pnpm build && node examples/run.ts",
+		"examples:pacer": "pnpm build && node examples/pacer-run.ts"
 	},
 	"devDependencies": {
+		"@tanstack/pacer": "catalog:workflow",
 		"@types/node": "catalog:types",
 		"grfn": "catalog:test",
 		"lfi": "catalog:test",

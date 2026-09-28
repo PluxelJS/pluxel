@@ -66,11 +66,15 @@ try {
 
 ## 示例
 
-[示例索引与运行说明](https://github.com/PluxelJS/pluxel/blob/main/packages/async/examples/README.md) 提供三个不依赖网络或框架的场景：
+[示例索引与运行说明](https://github.com/PluxelJS/pluxel/blob/main/packages/async/examples/README.md) 提供不依赖网络服务或 Pluxel runtime 的场景：
 
 - `process-records.ts`：复用依赖图，流式处理，批量写入。
 - `shared-requests.ts`：在途请求合并、有限重试、共享并发额度。
 - `cancel-subscriber.ts`：取消一个等待者，另一个继续取得共享结果。
+- `cancel-wait.ts`：停止等待后，真实 IO 仍持有并发额度。
+- `pacer-shared-reads.ts`：可选 Pacer 时间额度检查与在途合并，显式处理限速拒绝。
+
+按场景选择与组合顺序见 [实用组合](https://github.com/PluxelJS/pluxel/blob/main/packages/async/docs/recipes.md)。Pacer 示例单独运行，需另外安装 Pacer；本包仍无运行时依赖。
 
 示例和本地运行入口随包发布；复制到自己的项目后可直接替换 IO adapter。
 
@@ -79,7 +83,8 @@ try {
 在仓库的 `packages/async` 目录：
 
 ```sh
-pnpm examples      # 构建后运行全部本地示例
+pnpm examples      # 构建后运行不需第三方调度库的示例
+pnpm examples:pacer # 可选 Pacer 组合
 pnpm test          # 源码行为与公开类型
 pnpm typecheck     # 包括示例与基准
 pnpm build         # ESM、类型声明及无源码消费检查
