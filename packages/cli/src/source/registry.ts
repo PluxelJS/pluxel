@@ -18,18 +18,18 @@ import {
 export function resolveSourceCheckouts(registryPath: string, moduleUrl = import.meta.url) {
 	const registered = readSourceCheckoutRegistry(registryPath).checkouts
 	const implicit = discoverCliCheckout(moduleUrl)
-	const checkouts = { ...implicit, ...registered }
+	const checkouts = { ...registered, ...implicit }
 	return Object.entries(checkouts)
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([repository, root]) => ({
 			repository,
 			root,
-			origin: Object.hasOwn(registered, repository) ? ('registered' as const) : ('cli' as const),
+			origin: Object.hasOwn(implicit, repository) ? ('cli' as const) : ('registered' as const),
 		}))
 }
 
 /** Recognize only this CLI's source checkout, never the caller's enclosing repository. */
-function discoverCliCheckout(moduleUrl: string): Record<string, string> {
+export function discoverCliCheckout(moduleUrl: string): Record<string, string> {
 	let directory = dirname(realpathSync(fileURLToPath(moduleUrl)))
 	while (!existsSync(resolve(directory, 'package.json'))) {
 		const parent = dirname(directory)

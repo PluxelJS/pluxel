@@ -4,6 +4,8 @@
 
 **首要设计目标：契约可读、行为可观测、修复可审查。** 让人和 coding agent 能从代码与反馈定位权威输入并验证修改；显式维护工具可以自动修复，运行时不得暗中改写错误契约以伪装成功。具体边界见[工程原则首节](engineering/DESIGN_PRINCIPLES.md#首要目标契约可读行为可观测修复可审查)。
 
+应用/插件任务可使用 [pluxel-development skill](.agents/skills/pluxel-development/SKILL.md)，优先选择 inspect、项目静态检查、隔离插件测试与现有 dev console。根据修改风险实际执行验证；`pluxel docs` 输出当前开发来源的文档正文。完成时报告检查结果与未验证的边界。
+
 ## 按任务读取
 
 | 任务                                                       | 必读入口                                                                               | 下一步                                                                            |

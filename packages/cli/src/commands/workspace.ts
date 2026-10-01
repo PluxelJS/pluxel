@@ -1,3 +1,4 @@
+import { setupDevelopmentWorkspace } from '../workspace/setup'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { intro, isCancel, multiselect, note, outro } from '@clack/prompts'
@@ -17,6 +18,7 @@ import {
 	workspaceScanArgs,
 	workspaceScanDefinition,
 	workspaceDoctorDefinition,
+	workspaceSetupDefinition,
 } from '../command-manifest'
 import { detectPm, runPackageManager } from '../utils/pm'
 import {
@@ -124,6 +126,16 @@ export const workspaceScanCommand = define({
 		const paths = await scanWorkspaceDirs(workspaceRoot, base)
 		const updated = upsertWorkspaceCandidates(workspaceRoot, paths, existing, 'scan')
 		ctx.log(`Recorded ${paths.length} candidate(s). Total tracked: ${updated.entries.length}.`)
+	},
+})
+
+export const workspaceSetupCommand = define({
+	...workspaceSetupDefinition,
+	run(ctx) {
+		for (const link of setupDevelopmentWorkspace(
+			resolveWorkspaceRoot(ctx.values as WorkspaceRootValues),
+		))
+			ctx.log(link)
 	},
 })
 

@@ -3,7 +3,7 @@ title: 跨仓库源码开发
 description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联调本地源码。
 ---
 
-当应用需要联调尚未发布的 Pluxel 或另一个独立仓库时，可以用 `pluxel source` 管理开发期的包解析。每个源码仓库仍保留自己的 Git 历史、工作区和 lockfile；这个命令也不会接管运行时的 Plugin 安装。
+当应用需要联调尚未发布的 Pluxel 或另一个独立仓库时，可以用 `pluxel source` 管理开发期的包解析。每个源码仓库仍保留自己的 Git 历史、工作区和 lockfile。CLI 同时管理包链接、`docs/pluxel` 和 `.agents/skills/pluxel-development`；它不接管运行时 Plugin 安装。
 
 ## 准备 checkout 和 CLI
 
@@ -15,12 +15,12 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 ## 声明源码仓库
 
-在消费方根目录提交 `pluxel.sources.jsonc`。下面是同时使用 Pluxel 和 Chatbot 的示例；只联调 Pluxel 时移除 Chatbot URL 与不需要的 singleton：
+Git CLI 自身的 Pluxel checkout 自动加入，无需配置。联调其他仓库或声明 singleton 时，在消费方根目录提交 `pluxel.sources.jsonc`：
 
 ```jsonc
 {
 	"version": 1,
-	"sources": ["https://github.com/PluxelJS/pluxel", "https://github.com/PluxelJS/chatbot"],
+	"sources": ["https://github.com/PluxelJS/chatbot"],
 	"singletons": ["drizzle-orm"],
 }
 ```
@@ -41,11 +41,11 @@ pnpm dev
 
 成功时，`source list` 应显示每个 URL 对应的真实 checkout，`source doctor` 应通过；随后应用启动应读取这些 checkout 的源码。若 list 标记 `missing`，先修正路径，不要继续安装。
 
-`source` 命令族始终使用实际调用的 CLI，因此项目尚未安装依赖、安装不完整或固定了另一个 CLI 版本，都不影响源码自举。普通命令仍使用项目固定版本。使用 npm 安装的 CLI 时没有可自动识别的源码 checkout，需要另外运行 `pluxel source register /path/to/pluxel`。
+`source` 命令族始终使用实际调用的 CLI，因此项目尚未安装依赖、安装不完整或固定了另一个 CLI 版本，都不影响源码自举。Git CLI 不委托另一份项目 CLI；工具 owner 仍从消费方已安装依赖解析。源码工作区的 install/build/doctor 必须从 Pluxel Git checkout 的 CLI 执行；npm 用户使用 `workspace setup`。
 
 ## 管理登记和移动目录
 
-显式登记的同一 repository 优先于自动发现。`pluxel source list` 可在任意目录运行，显示当前可用的路径及来源（`registered` 或 `cli`），路径不存在时标记 `missing`。自动发现不写入 registry，也不从当前目录、相邻目录或父项目猜测源码位置；Git worktree 和入口符号链接同样可用。
+Git CLI 所属的 Pluxel checkout 始终优先，不受同名全局登记覆盖。首次接入将它绑定到消费工作区；用另一份 checkout 接入会报来源不匹配，不自动切换。其他仓库通过登记定位。`pluxel source list` 可在任意目录运行，显示当前可用的路径及来源（`registered` 或 `cli`），路径不存在时标记 `missing`。自动发现不写入 registry，也不从当前目录、相邻目录或父项目猜测源码位置；Git worktree 和入口符号链接同样可用。
 
 移除过期登记：
 
@@ -55,7 +55,7 @@ pluxel source unregister https://github.com/PluxelJS/chatbot
 
 `unregister` 只删除登记记录，不删除 checkout 或已有项目 overlay；移除 Pluxel 的显式登记后，CLI 自身 checkout 仍会自动出现。`register`、`list`、`unregister` 和其他 source 命令均支持 `--registry <path>`，也可用 `PLUXEL_SOURCE_REGISTRY` 环境变量选择独立 registry。
 
-移动显式登记的 checkout 后需要重新登记；移动自动发现的 Pluxel checkout 后需更新外部入口链接。修改路径或 `pluxel.sources.jsonc` 后运行 `source install`；已接入 checkout 内的普通源码修改不需要重装。
+移动其他已登记 checkout 后重新登记并运行 `source install`。Pluxel 绑定的 checkout 缺失时先恢复其位置；本流程不自动重绑到另一份源码。修改依赖声明后运行 `source install`；同一 checkout 内的普通源码与文档修改不需要重装。
 `.pnpmfile.cjs` 与 `.pluxel/` 都是 CLI 生成的机器本地 overlay，应被 Git 忽略，不是需要提交的 workspace 配置。
 新 checkout 使用 mise 准备工具后，先由独立 CLI 激活 source overlay，再安装应用依赖。
 
@@ -63,7 +63,7 @@ pluxel source unregister https://github.com/PluxelJS/chatbot
 
 源码联调不表示所有模块都由 Vite 直接执行源码。开发期浏览器可读取框架的 source export，
 但 Node 宿主和 Vite 配置使用的框架 singleton 仍加载构建产物。修改或拉取 Pluxel 框架源码后，
-先运行 `pluxel source build` 再重启宿主；应用可以把此命令加入 dev 启动脚本，复用上游构建缓存。
+dev 脚本先运行 `pluxel source doctor && pluxel source build`，再启动原有宿主；构建复用上游缓存。Vite host 对声明 CLI 或已接入的工作区也会在启动前调用 doctor，直接运行 Vite 同样检查。
 否则浏览器与服务端可能使用不同版本的 RPC 接口，出现方法不存在等错误。
 `source doctor` 检查源码映射和安装 overlay，不检查构建产物是否与当前源码一致。
 
@@ -105,3 +105,19 @@ CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被
 - source checkout 的 Plugin 仍必须经过 Pluxel Vite/Rolldown pipeline。
 - 解析冲突先看 package identity、singletons 和 dependency owner，再看 lockfile。
 - `pluxel source doctor` 同时检查 checkout identity、当前 package closure、生成的 pnpmfile 和每个稳定代理；配置正确但 overlay 未安装或已漂移也会失败。
+
+## 文档、skill 与接入状态
+
+`source install` 预检目标占用，安装依赖与构建后自动创建 `docs/pluxel`、`.agents/skills/pluxel-development` 的上游目录链接，在 `.pluxel/development.json` 记录来源与完成状态，并维护精确的 `.gitignore` 规则及 AGENTS 入口块。项目原有 AGENTS 内容保留。
+
+这些生成路径不提交；提交项目声明、lockfile、ignore 和 AGENTS。clone 到另一目录后，从准备好的 Git CLI 重新执行 `source install --root /absolute/consumer`。普通文件、未知链接和已被 Git 跟踪的目标会明确冲突；先处理占用，不自动覆盖或移除 Git 跟踪。
+
+已有依赖只需修复文档与 skill 时，可运行 `pluxel workspace setup --root /absolute/consumer`；它只物化开发资源，不安装包，也不能代替 source doctor 对包 overlay 的检查。setup 可以重复执行，失败会保留未完成状态；不会回滚已经完成的包安装。
+
+`pluxel docs` 默认直接输出当前来源的开发指南正文；`pluxel docs development/testing.md` 读取具体页面，并标明来源路径与 CLI 版本。不联网获取另一份 main 文档。skill 和 API 文档各自在上游维护一份正文。
+
+`source doctor` 检查包 overlay 以及开发资源来源、完整性与链接；缺失或漂移会失败并提示接入命令。检查本身不写文件、不联网、不修复。它不证明构建产物最新或在线应用健康。
+
+npm 用户正常安装依赖后运行 `pnpm exec pluxel workspace setup`，从 CLI 随包携带的发行文档与 skill 建立相同入口；升级后重新 setup。无需 Git checkout 或额外下载。`workspace doctor` 检查开发资源与工作区治理。
+
+Codex 从项目 `.agents/skills` 发现链接的 skill；AGENTS 同时保留显式读取要求。新链接未出现在已有会话时重新打开会话。项目不复制正文，其他自有 skill 不受 setup 影响。

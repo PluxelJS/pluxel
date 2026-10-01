@@ -12,6 +12,7 @@ description: 用 @pluxel/create 创建并启动一个带 React 页面、HTTP API
 ```sh
 pnpm create @pluxel my-app
 cd my-app
+pnpm exec pluxel workspace setup
 pnpm dev
 ```
 

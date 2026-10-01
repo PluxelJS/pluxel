@@ -53,6 +53,7 @@ try {
 		['exec', 'oxfmt', '-c', '.oxfmtrc.json', '--write', 'pnpm-workspace.yaml'],
 		pluginRoot,
 	)
+	await runPnpm(['exec', 'pluxel', 'workspace', 'setup'], pluginRoot)
 	await runPnpm(['verify'], pluginRoot, { CI: '1' })
 	await verifyStandalonePluginPack(pluginRoot)
 } finally {

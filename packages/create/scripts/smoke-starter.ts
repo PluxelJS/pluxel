@@ -53,6 +53,7 @@ try {
 	await appendOverrides(resolve(generatedRoot, 'pnpm-workspace.yaml'), overrides)
 
 	await runPnpm(['install', '--frozen-lockfile=false'], generatedRoot)
+	await runPnpm(['exec', 'pluxel', 'workspace', 'setup'], generatedRoot)
 	await runPnpm(['verify'], generatedRoot, { CI: '1' })
 	await verifyFrozenApplicationDistribution(generatedRoot)
 	await verifyViteApplication(generatedRoot)

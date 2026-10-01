@@ -1,6 +1,6 @@
 ---
 title: better-result 共享入口
-description: 在本地插件之间共享完整的 better-result API，并处理错误与传输边界。
+description: 判断何时使用 Better Result 组合可恢复步骤，保留领域契约并处理插件与传输边界。
 ---
 
 本地插件使用 Better Result 时，从 `@pluxel/core/better-result` 导入。这个子入口提供上游完整的命名 API，
@@ -10,12 +10,15 @@ Command 作者从 `@pluxel/commands` 导入同一版本的 `Result`；Commands �
 ## 选择与安装
 
 先写出调用方遇到失败后的动作：提示用户修正输入、使用缺省值、稍后重试，还是终止当前操作。
-只有调用方需要稳定分支的预期业务失败才进入 `E`。普通本地领域方法可自行选择 Result。
+只有调用方需要稳定分支的预期业务失败才进入 `E`。先确定失败契约，再决定是否使用 Better Result：
+已有清楚的判别联合或简单 `if/return` 可以保留；反复出现“检查失败、原样返回、解包后继续”的多步流程，
+才是引入组合器的典型收益。错误种类多本身不是理由，也不为凑 pipeline 给不会失败的步骤包装 Result。
+它减少控制流重复，不替代重试策略、持久状态、工作流 decision 或提交结果未知的领域建模。
 Command 是明确的受校验执行边界，统一返回 `Promise<Result<T, CommandFailure>>`；类型本身不保证框架缺陷永不 reject。
 
 | 操作                                            | 契约选择                                                            |
 | ----------------------------------------------- | ------------------------------------------------------------------- |
-| 本地插件方法有调用方需要分支处理的预期失败      | 返回 `Result<T, E>`，错误类型由提供方公开                           |
+| 本地插件方法有调用方需要分支处理的预期失败      | 可选 `Result<T, E>` 或已有判别联合；提供方公开稳定的失败契约        |
 | lookup 的正常空值、缓存 miss、限流 allow/deny   | 保留 `null` / `undefined` / 判定；业务层需要拒绝时再映射            |
 | 原生 Wretch、node-redis、s3mini 或 renderer API | 保留上游值和异常契约；在 consumer 知道业务语义时转换                |
 | Plugin 启动、generation 撤回或代码不变量失败    | 遵循现有 lifecycle 与异常契约                                       |
@@ -23,13 +26,17 @@ Command 是明确的受校验执行边界，统一返回 `Promise<Result<T, Comm
 | Workbench、Worker、HTTP 或 JSON 边界            | 按领域协议返回并校验普通 DTO；跨边界重建类型由协议拥有者决定        |
 | 批量部分成功、已保存未应用或其他有状态操作回执  | 保留领域回执中的全部状态                                            |
 
+采用范围可以只是纯函数或 adapter 内部的 pipeline，也可以是需要共享可恢复失败的同进程跨插件 API；
+插件边界本身不决定取舍。已有公共 DTO 或传输协议时，在边界一次性投影为其约定的数据；
+不要为了“局部使用”在每层来回转换 Result 与自建 envelope，也不要把内部错误 union 无选择地扩散给调用方。
+
 发布提供 `Result` API 的插件时，声明包含此子入口的 `@pluxel/core` peer 下限，并在开发依赖中使用 Core。
 这条共享路径由 Core 的正常 `better-result` 依赖提供；插件无需为这项本地契约另设 `better-result` peer。
 具体包配置见[插件包指南](../development/plugin-package.md)。
 
 ### 提供方和调用方各做什么
 
-1. 提供方在公开方法签名中写出 `Result<T, E>` 或 `Promise<Result<T, E>>`。错误用 `TaggedError` 或已有的
+1. 选择 Better Result 作为公开契约时，提供方在方法签名中写出 `Result<T, E>` 或 `Promise<Result<T, E>>`。错误用 `TaggedError` 或已有的
    稳定判别类型；已有 code 足够时不再制造一套错误层级。`message` 面向人，不能作为分支条件。
 2. 只在最小失败边界转换已知的状态或错误。404 不等于所有网络异常，限流 deny 不等于 backend unavailable，
    用户输入不合法也不等于上游 schema 或代码损坏。`cause` 留作本地诊断，不投影原始密钥、输入或 stack。
@@ -119,10 +126,13 @@ if (found.isErr()) {
 
 ## 异步组合与外部异常
 
-简单校验直接用 `if` 和 `return Result.err(...)`。已有 Result 步骤需要组合时，再使用组合器。
-异步领域方法返回 `Promise<Result<T, E>>`。多步操作可用 `Result.gen()` 和 `Result.await()`，遇到第一个
-`Err` 就停止后续步骤；短链也可用 `andThenAsync()`。并行操作按需求选 `Result.allAsync()`（全部成功）或
-`Result.partitionAsync()`（分别收集成功与失败）。
+简单校验直接用 `if` 和 `return Result.err(...)`。已有 Result 步骤反复出现
+`if (result.isErr()) return result`，后续又需要 `.value` 时，可用 `Result.gen()` 表达顺序：
+`yield*` 解包 Ok，首个 Err 短路后续步骤，各步骤的错误类型自动合并。普通 `{ ok, data, error }`
+不是可直接 `yield*` 的 Better Result 对象；不要只为缩短几行代码改写成熟的公共契约。
+
+同步步骤使用 `Result.gen(function* () { ... })`；异步步骤返回 `Promise<Result<T, E>>`，
+在 async generator 中通过 `Result.await()` 接入。下面保留一个混合同步与异步步骤的例子：
 
 ```ts twoslash
 import { Result, TaggedError } from '@pluxel/core/better-result'
@@ -148,7 +158,12 @@ const priced = await Result.gen(async function* () {
 	const checked = yield* checkTotal(order)
 	return Result.ok(checked.total)
 })
+// 推导为 Result<number, MissingOrder | InvalidTotal>
 ```
+
+生成器必须返回 Result。最后一步已返回 Result 时可直接 `return checkTotal(order)`；
+`return yield* checkTotal(order)` 返回的是裸 Order，不符合契约，会触发 `Panic`。
+短链可用 `andThenAsync()`；并行操作选 `allAsync()` 或 `partitionAsync()`，它们不提供事务或失败回滚。
 
 `Result.try()` 和 `Result.tryPromise()` 可以把抛出/拒绝转换成 Result。公开 API 若要让调用方按故障类型
 恢复，应使用其对象形式的 `catch` 映射成稳定领域错误；只传函数的形式将未知异常包装为

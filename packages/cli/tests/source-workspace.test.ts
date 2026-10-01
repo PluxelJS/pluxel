@@ -12,7 +12,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'pathe'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
 	normalizeRepositoryIdentity,
 	parseSourceProjectConfig,
@@ -36,6 +36,20 @@ import {
 } from '../src/source/plan'
 import { registerSourceCheckout } from '../src/source/registry'
 import { scanSourceWorkspace, sourcePackageNeedsBuild } from '../src/source/workspace'
+
+// These fixture repositories model a release CLI with explicitly registered sources.
+vi.mock('../src/source/registry', async (original) => {
+	const actual = await original<typeof import('../src/source/registry')>()
+	return {
+		...actual,
+		resolveSourceCheckouts: (path: string) =>
+			Object.entries(readSourceCheckoutRegistry(path).checkouts).map(([repository, root]) => ({
+				repository,
+				root,
+				origin: 'registered' as const,
+			})),
+	}
+})
 
 const temporaryRoots: string[] = []
 

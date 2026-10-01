@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,7 +57,29 @@ function runNode(
 	})
 }
 
+async function releaseBin() {
+	const root = await createProject({
+		'package.json': JSON.stringify({ name: '@pluxel/cli', type: 'module' }),
+		'bin/pluxel.mjs': await readFile(pluxelBin, 'utf8'),
+	})
+	await symlink(resolve(dirname(pluxelBin), '../dist'), resolve(root, 'dist'))
+	return resolve(root, 'bin/pluxel.mjs')
+}
+
 describe('pluxel bin launcher', () => {
+	it('keeps the Git CLI for ordinary documentation even with another local CLI', async () => {
+		const root = await createProject({
+			'package.json': JSON.stringify({ devDependencies: { '@pluxel/cli': '*' } }),
+			'node_modules/@pluxel/cli/package.json': JSON.stringify({
+				name: '@pluxel/cli',
+				bin: 'bad.mjs',
+			}),
+		})
+		const result = await runNode([pluxelBin, 'docs'], root)
+		expect(result.code).toBe(0)
+		expect(result.stdout).toContain('Source: git')
+	})
+
 	it('delegates to a directly declared project-local CLI before loading global CLI state', async () => {
 		const root = await createProject({
 			'package.json': JSON.stringify({
@@ -81,7 +103,7 @@ describe('pluxel bin launcher', () => {
 			].join('\n'),
 		})
 
-		const result = await runNode([pluxelBin, 'build'], root)
+		const result = await runNode([await releaseBin(), 'build'], root)
 		const payload = JSON.parse(result.stdout) as { argv: string[]; cwd: string; direct: boolean }
 
 		expect(result.stderr).toBe('')
@@ -101,7 +123,7 @@ describe('pluxel bin launcher', () => {
 			}),
 		})
 
-		const result = await runNode([pluxelBin, '--version'], root)
+		const result = await runNode([await releaseBin(), '--version'], root)
 
 		expect(result.code).toBe(1)
 		expect(result.stderr).toContain('declares @pluxel/cli, but it is not installed')
@@ -189,7 +211,7 @@ describe('pluxel bin launcher', () => {
 		const consumer = resolve(root, 'consumer')
 
 		const source = await runNode([pluxelBin, 'source', '--help'], consumer)
-		const ordinary = await runNode([pluxelBin, '--version'], consumer)
+		const ordinary = await runNode([await releaseBin(), '--version'], consumer)
 
 		expect(source.code).toBe(0)
 		expect(source.stdout).toContain('Use registered source checkouts')

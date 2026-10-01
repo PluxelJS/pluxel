@@ -28,7 +28,7 @@
 	},
 	"scripts": {
 		"dev": "pnpm run build && node dist/cli.mjs new --dry-run --no-install",
-		"build": "tsdown",
+		"build": "tsdown && node scripts/copy-development-resources.mjs",
 		"test": "pnpm exec vitest run",
 		"test:templates": "node scripts/smoke-plugin.ts",
 		"typecheck": "tsc --noEmit --pretty false --composite false --customConditions development"

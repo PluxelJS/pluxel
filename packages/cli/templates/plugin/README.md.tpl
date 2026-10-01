@@ -26,6 +26,7 @@ export const plugins = [{{className}}Plugin]
 
 ```sh
 pnpm install
+pnpm exec pluxel workspace setup
 pnpm verify
 ```
 

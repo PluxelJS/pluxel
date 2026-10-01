@@ -1,3 +1,8 @@
+import {
+	diagnoseDevelopmentWorkspace,
+	assertDevelopmentBinding,
+	developmentSource,
+} from '../workspace/setup'
 import { existsSync } from 'node:fs'
 import { type ArgValues, define } from 'gunshi'
 import { resolve } from 'pathe'
@@ -92,6 +97,7 @@ export const sourceDoctorCommand = define({
 	async run(ctx) {
 		const plan = await loadPlan(ctx.values as SourceWorkspaceValues)
 		const diagnostics = await diagnoseSourceWorkspacePlan(plan)
+		diagnostics.errors.push(...diagnoseDevelopmentWorkspace(plan.root))
 		printPlan(ctx.log, plan)
 		for (const warning of diagnostics.warnings) ctx.log(`warning: ${warning}`)
 		if (diagnostics.errors.length > 0) {
@@ -148,6 +154,11 @@ async function loadCheckedPlan(values: SourceWorkspaceValues) {
 }
 
 function loadPlan(values: SourceWorkspaceValues) {
+	if (developmentSource().kind !== 'git')
+		throw new Error(
+			'Source workspaces require the CLI from a Pluxel Git checkout; npm users run pluxel workspace setup',
+		)
+	assertDevelopmentBinding(resolve(process.cwd(), values.root || '.'), developmentSource())
 	return createSourceWorkspacePlan({
 		root: resolve(process.cwd(), values.root || '.'),
 		configPath: values.config,

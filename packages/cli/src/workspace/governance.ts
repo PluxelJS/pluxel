@@ -1,3 +1,4 @@
+import { diagnoseDevelopmentWorkspace } from './setup'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'pathe'
 import { intersects, validRange } from 'semver'
@@ -46,9 +47,8 @@ export function diagnoseWorkspaceGovernance(root: string): WorkspaceGovernanceDi
 		}
 	}
 
-	if (existsSync(resolve(root, 'docs/pluxel'))) {
-		warnings.push('docs/pluxel is a copied framework snapshot; link to `pluxel docs` instead')
-	}
+	errors.push(...diagnoseDevelopmentWorkspace(root))
+
 	return { errors, warnings }
 }
 

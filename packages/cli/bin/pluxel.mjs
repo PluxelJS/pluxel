@@ -21,7 +21,45 @@ const PROJECT_BOUNDARY_MARKERS = [
 
 globalThis[startupCwdSymbol] ??= startupCwd
 
-if (!globalThis[directModeSymbol] && !isSourceCommand(process.argv.slice(2))) {
+const owningCheckout = resolve(__dirname, '../../..')
+const isGitCli =
+	existsSync(resolve(owningCheckout, '.git')) &&
+	existsSync(resolve(owningCheckout, 'pnpm-workspace.yaml')) &&
+	existsSync(resolve(__dirname, '../src/cli.ts'))
+
+// A bound Git workspace must not silently execute another checkout's CLI.
+if (!process.argv.slice(2).some((arg) => ['--help', '-h', '--version', '-v'].includes(arg))) {
+	const args = process.argv.slice(2)
+	const rootIndex = args.indexOf('--root')
+	let directory = resolve(rootIndex >= 0 && args[rootIndex + 1] ? args[rootIndex + 1] : startupCwd)
+	for (;;) {
+		const bindingPath = resolve(directory, '.pluxel/development.json')
+		if (existsSync(bindingPath)) {
+			const binding = JSON.parse(await readFile(bindingPath, 'utf8'))
+			if (
+				binding.source?.kind === 'git' &&
+				isGitCli &&
+				binding.source.root !== (await realpath(owningCheckout))
+			) {
+				console.error(
+					`[pluxel] Source mismatch: workspace ${directory} is bound to ${binding.source.root}, CLI belongs to ${owningCheckout}`,
+				)
+				process.exit(1)
+			}
+			break
+		}
+		if (
+			existsSync(resolve(directory, '.git')) ||
+			existsSync(resolve(directory, 'pnpm-workspace.yaml'))
+		)
+			break
+		const parent = dirname(directory)
+		if (parent === directory) break
+		directory = parent
+	}
+}
+
+if (!isGitCli && !globalThis[directModeSymbol] && !isSourceCommand(process.argv.slice(2))) {
 	const delegated = await delegateToProjectLocalCli(startupCwd)
 	if (delegated) {
 		await import(pathToFileURL(delegated).href)

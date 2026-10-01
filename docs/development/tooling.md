@@ -14,7 +14,7 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 目标                                                     | 命令                                                          |
 | -------------------------------------------------------- | ------------------------------------------------------------- |
 | 生成固定 example workspace                               | `pnpm create @pluxel [directory]`                             |
-| 定位上游当前文档                                         | `pluxel docs [path]`                                          |
+| 读取当前来源文档                                         | `pluxel docs [path]`                                          |
 | 在 workspace 生成 Plugin package                         | `pluxel new`                                                  |
 | 构建当前 Plugin package                                  | `pluxel build`                                                |
 | 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`                       |
@@ -23,12 +23,12 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 发布 npm package 并通知 market                           | `pluxel publish`                                              |
 | 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
 | 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
-| 管理 source workspace                                    | `pluxel workspace`                                            |
+| 管理与接入 workspace                                     | `pluxel workspace setup/doctor`                               |
 
 确切参数通过 `pluxel <command> --help` 查看。CLI 状态目录默认是项目根目录下的 `.pluxel`；设置 `PLUXEL_STATE_DIR` 可指定路径。变量未设置时才使用默认值，显式设置为空字符串或空白会报错，需修改该环境变量后重试。
 
 `pluxel workspace doctor` 校验框架共同拥有的 workspace 契约：pnpm 主版本、workspace 文件，以及已激活时由 CLI
-管理的 machine-local source `.pnpmfile.cjs`。产品自己的依赖方向和目录规则仍由项目 `governance:check` 负责。
+管理的 machine-local source `.pnpmfile.cjs`，以及 docs/skill 接入状态。安装 npm 依赖后先运行 `pluxel workspace setup`。产品自己的依赖方向和目录规则仍由项目 `governance:check` 负责。
 
 ## 安装分层
 
@@ -54,7 +54,7 @@ npx nypm add -g @pluxel/cli
 
 `@pluxel/cli` 是统一 executable，但不是所有能力的安装闭包。项目 `package.json` 直接声明
 `@pluxel/cli` 时，全局 `pluxel` 会优先使用这个项目本地版本；声明了但尚未安装时会失败并提示先安装，
-不会悄悄回退到全局版本。唯一例外是 `pluxel source` 命令族：它始终使用实际调用的 CLI，以建立 source overlay 并安装项目固定版本；从源码 checkout 运行时还会自动识别 Pluxel 源码位置。CI 和 package scripts 应继续使用本地
+不会悄悄回退到全局版本。Git checkout 的 CLI 始终保持自身来源，不委托另一份项目 CLI；`source install` 统一接入源码包、文档和 skill。发行版 CLI 的 `source list/register/unregister` 仍使用调用入口，源码 install/build/doctor 需从 Git CLI 执行。CI 和 package scripts 应继续使用本地
 `pluxel` 或 `pnpm exec pluxel`。CLI 只在最近的 Git/workspace/lockfile 项目边界内寻找本地安装；嵌套在
 另一个 checkout 里的独立项目不会借用父项目的 CLI。
 

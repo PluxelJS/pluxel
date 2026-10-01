@@ -8,6 +8,7 @@ Start with the [current upstream Pluxel documentation](https://github.com/Pluxel
 or find source inspection, live operations and tests with `pnpm exec pluxel docs development/index.md`, then run:
 
 ```sh
+pnpm exec pluxel workspace setup
 pnpm dev
 ```
 

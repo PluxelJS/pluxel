@@ -71,7 +71,7 @@ describe('source checkout discovery', () => {
 		])
 	})
 
-	it('gives explicit registration priority and restores discovery after unregister', async () => {
+	it('keeps the owning Git CLI authoritative over global registration', async () => {
 		const { root, registryPath, moduleUrl } = await createCheckout()
 		const override = resolve(root, 'another-checkout')
 		registerSourceCheckout({
@@ -80,7 +80,7 @@ describe('source checkout discovery', () => {
 			checkoutRoot: override,
 		})
 		expect(resolveSourceCheckouts(registryPath, moduleUrl)).toEqual([
-			{ repository, root: override, origin: 'registered' },
+			{ repository, root, origin: 'cli' },
 		])
 		expect(unregisterSourceCheckout({ registryPath, repository: `${repository}.git` })).toBe(true)
 		expect(readSourceCheckoutRegistry(registryPath).checkouts).toEqual({})

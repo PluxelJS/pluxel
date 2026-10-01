@@ -44,8 +44,8 @@ export function parseSourceProjectConfig(contents: string, path = SOURCE_CONFIG_
 	if (value.version !== 1) {
 		throw new Error(`${path}: version must be 1`)
 	}
-	if (!Array.isArray(value.sources) || value.sources.length === 0) {
-		throw new Error(`${path}: sources must be a non-empty array`)
+	if (!Array.isArray(value.sources)) {
+		throw new Error(`${path}: sources must be an array`)
 	}
 
 	const sources = value.sources.map((source, index) => {

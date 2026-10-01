@@ -1,3 +1,8 @@
+import {
+	preflightDevelopmentSetup,
+	markDevelopmentIncomplete,
+	setupDevelopmentWorkspace,
+} from '../workspace/setup'
 import { createHash } from 'node:crypto'
 import {
 	closeSync,
@@ -73,11 +78,13 @@ export async function installSourceWorkspace(options: {
 	frozenLockfile: boolean
 	log: (...args: unknown[]) => void
 }) {
+	preflightDevelopmentSetup(options.plan.root)
 	const releaseLocks = acquireSourceInstallLocks([
 		options.plan.root,
 		...options.plan.checkouts.map((checkout) => checkout.root),
 	])
 	try {
+		markDevelopmentIncomplete(options.plan.root)
 		await Promise.all(
 			[options.plan.root, ...options.plan.checkouts.map((checkout) => checkout.root)].map(
 				ensureSourceBootstrapIgnored,
@@ -105,6 +112,7 @@ export async function installSourceWorkspace(options: {
 			options.plan.checkouts,
 			options.frozenLockfile,
 		)
+		for (const link of setupDevelopmentWorkspace(options.plan.root)) options.log(link)
 	} finally {
 		releaseLocks()
 	}

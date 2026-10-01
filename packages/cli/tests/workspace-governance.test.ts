@@ -1,3 +1,4 @@
+import { setupDevelopmentWorkspace } from '../src/workspace/setup'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -62,5 +63,6 @@ async function fixture(manifest: Record<string, unknown>): Promise<string> {
 		`${JSON.stringify({ private: true, ...manifest })}\n`,
 	)
 	await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+	setupDevelopmentWorkspace(root)
 	return root
 }

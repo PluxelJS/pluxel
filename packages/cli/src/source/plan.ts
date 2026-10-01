@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs'
 import { relative, resolve } from 'pathe'
 import {
 	normalizeRepositoryIdentity,
-	readSourceProjectConfig,
 	SOURCE_CONFIG_FILE,
 	tryReadSourceProjectConfig,
 } from './config'
@@ -41,7 +40,11 @@ export async function createSourceWorkspacePlan(options: {
 }): Promise<SourceWorkspacePlan> {
 	const root = resolve(options.root)
 	const configPath = options.configPath ?? SOURCE_CONFIG_FILE
-	const config = readSourceProjectConfig(root, configPath)
+	const config = tryReadSourceProjectConfig(root, configPath) ?? {
+		version: 1,
+		sources: [],
+		singletons: [],
+	}
 	const available = new Map(
 		resolveSourceCheckouts(options.registryPath).map((checkout) => [checkout.repository, checkout]),
 	)
@@ -79,6 +82,10 @@ export async function createSourceWorkspacePlan(options: {
 		visiting.delete(normalized)
 	}
 
+	const owning = [...available.values()].find((checkout) => checkout.origin === 'cli')
+	if (owning) await loadCheckout(owning.repository)
+	else if (config.sources.length === 0)
+		throw new Error('Source install requires a Git CLI or explicit source repositories')
 	for (const repository of config.sources) await loadCheckout(repository)
 
 	const consumer = await scanSourceWorkspace(root)

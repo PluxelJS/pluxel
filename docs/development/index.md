@@ -5,7 +5,9 @@ description: 先区分源码声明、在线状态和隔离回归，再定位改�
 
 先确认项目根目录、所用包版本、相关 scripts，以及要修改的插件或应用入口。已知目标时直接定位，不必扫描整个项目。
 
-源码 checkout 的文档随该 revision 演进；`pluxel docs` 链接当前上游文档，不自动匹配已安装版本。出现符号或行为差异时先核对版本与 exports，再判断是用法错误还是需要修改契约。
+Coding agent 可读取 [pluxel-development skill](https://github.com/PluxelJS/pluxel/blob/main/.agents/skills/pluxel-development/SKILL.md)，按任务选择查询、检查与验证流程。CLI 统一物化文档与 skill，正文只在上游维护；接入方式见[源码工作区的 skill 接入](./source-workspaces.md#coding-agent-skill)。项目 AGENTS 保留读取要求与本地约束，网页链接本身不等于已安装 skill。
+
+源码 checkout 的文档随该 revision 演进；`pluxel docs` 输出当前 CLI 来源的文档正文；Git 使用 owning checkout，npm 使用随 CLI 发布的资源。出现符号或行为差异时先核对版本与 exports，再判断是用法错误还是需要修改契约。
 
 ## 选择需要的事实
 

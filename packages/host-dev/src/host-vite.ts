@@ -1,3 +1,4 @@
+import { checkDevelopmentWorkspace } from './workspace-setup'
 import { pluginDefinitionAddressOf, type PluginConstructor } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { randomUUID } from 'node:crypto'
@@ -480,6 +481,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			return environment.name === HOST_VITE_ENVIRONMENT
 		},
 		async configureServer(value) {
+			await checkDevelopmentWorkspace(value.config.root)
 			server = value
 			entry = normalizePath(resolve(server.config.root, options.entry))
 			files.add(entry)

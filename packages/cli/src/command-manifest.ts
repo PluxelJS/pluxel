@@ -4,13 +4,13 @@ export const docsCommandArgs = {
 	path: {
 		type: 'positional',
 		description: 'Path below the upstream docs directory',
-		default: 'index.md',
+		default: 'development/index.md',
 	},
 } as const
 
 export const docsCommandDefinition = {
 	name: 'docs',
-	description: 'Print the canonical upstream Pluxel documentation URL',
+	description: 'Read Pluxel documentation from the current development source',
 	args: docsCommandArgs,
 } as const
 
@@ -490,7 +490,20 @@ export const workspaceDoctorDefinition = {
 	args: workspaceRootArgs,
 } as const
 
+export const workspaceSetupDefinition = {
+	name: 'setup',
+	description: 'Materialize development docs and skill from this CLI',
+	args: workspaceRootArgs,
+} as const
+
 export const workspaceSubCommands = new Map<string, SubCommandable>([
+	[
+		'setup',
+		lazy(
+			() => import('./commands/workspace').then((m) => m.workspaceSetupCommand),
+			workspaceSetupDefinition,
+		),
+	],
 	[
 		'prompt',
 		lazy(

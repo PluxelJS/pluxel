@@ -6,9 +6,9 @@
 
 CLI 是静态命令目录和交互 adapter，按所选命令从启动 cwd 的依赖图解析官方 owner、检查 optional peer range，再 lazy import public subpath。`--root` 是领域输入，不改变 owner 解析基准。Help/version/completion 不扫描依赖、不加载 owner、不访问 registry 或自动安装。Owner 保持 external；缺包、不兼容、缺 subpath 与加载异常分别诊断，最后一种保留 cause。
 
-全局 launcher 委托最近直接声明 `@pluxel/cli` 的项目 executable；声明但安装不完整则失败。`source` 命令族先于委托运行，允许建立包含项目 CLI 的 overlay。依赖查找止于最近 Git/workspace/lockfile 边界，不把物理父仓库当 fallback。Package scripts 与 CI 固定本地 CLI。
+发行版全局 launcher 委托最近直接声明 `@pluxel/cli` 的项目 executable；Git CLI 固定自身 checkout，不委托另一份项目 CLI，已绑定工作区拒绝不同 checkout。声明但安装不完整则失败。`source` 命令族先于委托运行，允许建立包含项目 CLI 的 overlay。依赖查找止于最近 Git/workspace/lockfile 边界，不把物理父仓库当 fallback。Package scripts 与 CI 固定本地 CLI。
 
-`@pluxel/create` 独立发布固定、无插值 starter；不加载 CLI、远程模板或 registry。目标必须不存在或为空，先 staging 再原子落盘。tsdown `exports.bin` 生成带 shebang 的 Node ESM executable，`copy` 交付 template；不使用 Node SEA `exe`。模板只链接上游文档，不复制 API 快照。
+`@pluxel/create` 独立发布固定、无插值 starter；不加载 CLI、远程模板或 registry。目标必须不存在或为空，先 staging 再原子落盘。tsdown `exports.bin` 生成带 shebang 的 Node ESM executable，`copy` 交付 template；不使用 Node SEA `exe`。模板保留开发资源 setup 指令；CLI 构建从唯一上游正文打包 docs/skill，消费方由 setup 创建忽略提交的入口。
 
 `pluxel new` 的唯一流程为 source → acquire → validate → answers → byte plan → materialize → optional install。Bare name 只解析 bundled plugin template，local source 须显式路径；无 remote fallback。`pluxel-template.jsonc` 只声明 identity、包管理器与 prompts。仅 `.tpl` 支持固定插值，其余文件按字节复制；不接受任意代码、命令、循环或 symlink。
 
@@ -38,7 +38,7 @@ overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被
 `.pluxel/` 一样由 CLI 管理并被 Git 忽略；workspace governance 只在它存在时验证 canonical 内容。
 
 首次安装由独立的全局或 `pnpm dlx` CLI 直接执行标准 `pluxel source` 命令：操作者用 `source register`
-登记其他 checkout，再在 consumer 中运行 `source install`。源码运行的 CLI 根据自身模块 realpath、最近 CLI package 与 Pluxel workspace/Git 标记自动发现核心 checkout；显式 registry 同 identity 记录优先。发现结果不落盘，`source list` 显示来源，`source unregister` 只删除显式登记。CLI 不从 cwd、目录邻接、父仓库
+登记其他 checkout，再在 consumer 中运行 `source install`。源码运行的 CLI 根据自身模块 realpath、最近 CLI package 与 Pluxel workspace/Git 标记自动发现核心 checkout；CLI owning checkout 优先于同 identity 的 registry 记录，并自动进入 Pluxel 源码闭包。发现结果不落盘，`source list` 显示来源，`source unregister` 只删除显式登记。CLI 不从 cwd、目录邻接、父仓库
 或同机其他 checkout 猜测 repository identity。不得把首次 bootstrap 放进 consumer 的 pnpm script：pnpm 可能在
 执行 script 前先做 dependency-status install，此时 source overlay 尚未生成，会把私有 source package 错误解析到
 registry。package closure、overlay、构建与 lockfile 始终由唯一的 `pluxel source` 实现拥有。
@@ -64,3 +64,11 @@ file entry publication，`pluxel source` 只发生在开发期 package resolutio
 入口位于 `packages/cli/src/`，starter 位于 `packages/create/`。CLI 测试保护命令无副作用加载、owner 解析与版本拒绝、模板 plan 的路径/bytes 校验和 source overlay 闭包；create/CLI 的 packed smoke 分别验证完整 workspace 与独立 Plugin 模板。
 
 验证跨仓库场景时覆盖独立 lockfile/packageManager、checkout 移动、package collision/cycle、首次安装无本地 CLI、精确 `--package` bootstrap 与空构建闭包。生成 manifest/exports 仍由各 package build 拥有，不在编排器中复制。
+
+## 开发资源接入
+
+CLI `src/workspace/setup.ts` 拥有开发资源来源、`.pluxel/development.json` 完成状态、docs/skill 链接、精确 ignore 与 AGENTS 标记块。Git `source install` 在安装前预检占用与来源，在安装构建后物化资源；`workspace setup` 可单独修复资源，npm 用户也使用它。原文件与未知链接冲突必须显式处理，CLI 不自动移除 Git 跟踪。
+
+`source doctor` 同时检查源码 overlay 与资源；`workspace doctor` 检查资源及工作区治理。Host-dev 在现有 Vite host configureServer 的最前面，对声明 CLI 或已有 source/setup 状态的工作区调用项目 CLI doctor，复用同一检查而不复制诊断逻辑；独立临时测试 fixture 不自动接入工作区。生产不加载此检查。开发脚本先 doctor，再缓存 build，再启动 Vite。
+
+`docs` 直接读取当前来源的正文，禁止路径逃逸。Git 来源是 owning checkout；发行版来源是构建打包的 `dist/resources`。npm 安装后的离线接入无需网络；资源升级后重新 setup。完整用法由[源码工作区](../docs/development/source-workspaces.md)维护。
