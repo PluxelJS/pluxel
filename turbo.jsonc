@@ -32,7 +32,7 @@
 			"outputs": ["dist/**"],
 		},
 		"@pluxel/core#build": {
-			"dependsOn": ["@pluxel/context#build"],
+			"dependsOn": ["@pluxel/context#build", "eventure#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",

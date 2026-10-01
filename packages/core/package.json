@@ -120,13 +120,13 @@
 		"@logtape/logtape": "catalog:prod",
 		"@standard-schema/spec": "catalog:prod",
 		"better-result": "catalog:prod",
-		"eventure": "catalog:prod",
 		"std-env": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"eventure": "workspace:*",
 		"option-t": "catalog:validation",
 		"rolldown": "catalog:build",
 		"tinybench": "catalog:dev",

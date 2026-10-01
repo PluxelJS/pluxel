@@ -1,0 +1,61 @@
+{
+	"name": "eventure",
+	"version": "0.5.0",
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist"
+	],
+	"keywords": [
+		"event",
+		"hook",
+		"emit"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/PluxelJS/Eventure.git"
+	},
+	"license": "Apache-2.0",
+	"scripts": {
+		"dev": "bun run --hot ./src/index.ts",
+		"test": "vitest run",
+		"build": "tsdown",
+		"bench:onlyEmit": "bun ./tinybench/onlyEmit.ts",
+		"bench:compare": "bun ./tinybench/onlyEmit.ts",
+		"bench:api": "bun ./tinybench/apiRegression.ts",
+		"prepublishOnly": "tsdown",
+		"lint": "oxlint -c oxlint.config.ts .",
+		"format:check": "oxfmt --check .",
+		"format": "oxfmt --write .",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "^25.6.0",
+		"oxfmt": "^0.46.0",
+		"oxlint": "^1.61.0",
+		"oxlint-tsgolint": "^0.22.0",
+		"tsdown": "0.21.10",
+		"typescript": "^6.0.3",
+		"vitest": "catalog:test"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
+			},
+			"./package.json": "./package.json"
+		}
+	}
+}

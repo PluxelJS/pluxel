@@ -1,0 +1,13 @@
+{
+	"dependencies": {
+		"eventemitter2": "^6.4.9",
+		"eventemitter3": "^5.0.4",
+		"mitt": "^3.0.1",
+		"tinybench": "^6.0.0"
+	},
+	"scripts": {
+		"bench": "bun ./onlyEmit",
+		"bench:api": "bun ./apiRegression",
+		"bench:compare": "bun ./onlyEmit"
+	}
+}

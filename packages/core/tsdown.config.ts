@@ -13,7 +13,7 @@ const transformOptions = {
 export default defineConfig({
 	deps: {
 		onlyBundle: ['option-t'],
-		alwaysBundle: ['@pluxel/context', '@pluxel/context/*'],
+		alwaysBundle: ['@pluxel/context', '@pluxel/context/*', 'eventure'],
 	},
 	exports: {
 		devExports: '@pluxel/source',

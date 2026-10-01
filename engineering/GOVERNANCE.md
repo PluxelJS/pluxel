@@ -96,6 +96,10 @@ Turbo 任务必须有可执行的顺序，不能把所有 package dependency 都
 tsdown `alwaysBundle` 内联所有 JavaScript 与 declarations。发布 tarball 不得含外部 `@pluxel/context` import，也不得把它加入
 Core 的 dependencies/peerDependencies/optionalDependencies；直接使用 standalone kernel 的应用才显式安装 `@pluxel/context`。
 
+Core 使用 [vendor Eventure](../vendor/eventure/UPSTREAM.md) 的 workspace 源码，也以 `devDependencies: workspace:*`
+声明并用 tsdown `alwaysBundle` 内联 JavaScript 与 declarations。发布的 Core 不依赖 npm `eventure`，其 JS 和
+声明不得留下外部 `eventure` import；Eventure 源码变更要同时验证 vendor 测试与 Core 的打包消费路径。
+
 Workbench fixed singleton set 由 host 直接安装并由 MF build contract 精确锁定：React/ReactDOM 及其实际
 subpaths、`@mantine/core`、`@mantine/hooks`、MF React Bridge、`@pluxel/workbench`、`/client`、`/react` 与
 `@pluxel/workbench/internal/react`。插件 UI 把自己 import 的 React 和 Mantine 声明为 peer，并在需要独立开发时声明
