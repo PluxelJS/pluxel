@@ -539,6 +539,12 @@ core:packages:
       - update-supported-dependencies.md
     id: npm:@pluxel/takumi-markdown-typst
     updated: true
+npm:mark-latest:
+  - id: npm:@pluxel/async
+  - id: npm:@pluxel/host
+  - id: npm:@pluxel/host-dev
+  - id: npm:@pluxel/services
+  - id: npm:@pluxel/workbench
 npm:packages:
   - id: npm:@pluxel/async
   - id: npm:@pluxel/cli
