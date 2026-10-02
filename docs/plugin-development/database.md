@@ -110,6 +110,7 @@ pluxel build
 提交整个 `drizzle/`，包括 SQL、`meta/` 和 `pluxel-migrations.json`。已经提交的 SQL 不可重写；schema 变化生成下一条 migration。
 
 production startup 只应用 build 时检查过的 artifact，不执行 schema push，也不根据当前 TypeScript schema 临时猜 DDL。
+普通 `pgTable()` 之间生成的外键在插件独立 schema 内解析；生成器不会把指向本插件表的引用固定到 PostgreSQL 的 `public` schema。显式声明的其他 schema 引用不会被改写。
 
 ### 明确重建 lineage
 

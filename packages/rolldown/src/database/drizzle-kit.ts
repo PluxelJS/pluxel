@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'pathe'
+import { listMigrationSqlFiles } from './artifact.ts'
 
 export type DrizzleKitPlan = Readonly<{ root: string; schema: string; out: string }>
 type DrizzleKitOutput = 'inherit' | 'capture'
@@ -13,6 +15,8 @@ export async function runDrizzleKit(
 	extra: readonly string[] = [],
 	output: DrizzleKitOutput = 'inherit',
 ): Promise<void> {
+	const existingFiles =
+		command === 'generate' ? new Set(await listMigrationSqlFiles(plan.out)) : null
 	const require = createRequire(import.meta.url)
 	let binary: string
 	try {
@@ -70,4 +74,57 @@ export async function runDrizzleKit(
 			}
 		})
 	})
+	if (existingFiles) await normalizeGeneratedOwnerReferences(plan.out, existingFiles)
+}
+
+/** Drizzle Kit sometimes qualifies a pgTable() FK target as public even though the
+ * corresponding CREATE TABLE is unqualified. Plugin migrations run in an isolated
+ * owner schema; only targets declared as unqualified tables in this snapshot may
+ * inherit that search path. Explicit public or other-schema targets stay intact. */
+export async function normalizeGeneratedOwnerReferences(
+	out: string,
+	existingFiles: ReadonlySet<string>,
+): Promise<void> {
+	const generated = (await listMigrationSqlFiles(out)).filter((file) => !existingFiles.has(file))
+	if (generated.length === 0) return
+	const snapshots = (await readdir(join(out, 'meta')))
+		.filter((file) => file.endsWith('_snapshot.json'))
+		.sort()
+	const latest = snapshots.at(-1)
+	if (!latest) throw new Error('[database] generated migration has no Drizzle schema snapshot')
+	const snapshot = JSON.parse(await readFile(join(out, 'meta', latest), 'utf8')) as {
+		tables?: Record<string, { name?: unknown; schema?: unknown }>
+	}
+	const owned = new Set(
+		Object.values(snapshot.tables ?? {})
+			.filter((table) => table.schema === '' && typeof table.name === 'string')
+			.map((table) => table.name as string),
+	)
+	const explicitPublic = new Set(
+		Object.values(snapshot.tables ?? {})
+			.filter((table) => table.schema === 'public' && typeof table.name === 'string')
+			.map((table) => table.name as string),
+	)
+	for (const file of generated) {
+		const path = join(out, file)
+		const original = await readFile(path, 'utf8')
+		const normalized = original
+			.split('--> statement-breakpoint')
+			.map((statement) =>
+				/\bFOREIGN KEY\b/u.test(statement)
+					? statement.replace(
+							/\bREFERENCES(\s+)"public"\."([^"]+)"/gu,
+							(full, spacing: string, table: string) => {
+								if (owned.has(table) && explicitPublic.has(table))
+									throw new Error(
+										`[database] ambiguous generated foreign key target public.${table}: both owner and explicit public tables exist`,
+									)
+								return owned.has(table) ? `REFERENCES${spacing}"${table}"` : full
+							},
+						)
+					: statement,
+			)
+			.join('--> statement-breakpoint')
+		if (normalized !== original) await writeFile(path, normalized, 'utf8')
+	}
 }

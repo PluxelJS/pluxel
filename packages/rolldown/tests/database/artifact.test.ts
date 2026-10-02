@@ -12,8 +12,48 @@ import {
 	rebaseDatabaseMigrations,
 } from '../../src/database/index.ts'
 import { generateResetDatabaseArtifact } from '../../src/database/reset-artifact.ts'
+import { normalizeGeneratedOwnerReferences } from '../../src/database/drizzle-kit.ts'
 
 describe('database migration artifact', () => {
+	it('keeps generated same-owner foreign keys in the isolated owner schema', async () => {
+		await using fixture = await createFixture({
+			'drizzle/meta/0000_snapshot.json': JSON.stringify({
+				tables: {
+					'public.products': { name: 'products', schema: '' },
+					'public.explicit': { name: 'explicit', schema: 'public' },
+				},
+			}),
+			'drizzle/0000_initial.sql': [
+				'ALTER TABLE "orders" ADD CONSTRAINT "local_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id");',
+				'--> statement-breakpoint',
+				'ALTER TABLE "orders" ADD CONSTRAINT "external_fk" FOREIGN KEY ("external_id") REFERENCES "public"."external"("id");',
+				'--> statement-breakpoint',
+				'ALTER TABLE "orders" ADD CONSTRAINT "explicit_fk" FOREIGN KEY ("explicit_id") REFERENCES "public"."explicit"("id");',
+			].join('\n'),
+		})
+		await normalizeGeneratedOwnerReferences(join(fixture.path, 'drizzle'), new Set())
+		const sql = await readFile(join(fixture.path, 'drizzle/0000_initial.sql'), 'utf8')
+		expect(sql).toContain('REFERENCES "products"("id")')
+		expect(sql).toContain('REFERENCES "public"."external"("id")')
+		expect(sql).toContain('REFERENCES "public"."explicit"("id")')
+	})
+
+	it('rejects an ambiguous public and owner foreign key target', async () => {
+		await using fixture = await createFixture({
+			'drizzle/meta/0000_snapshot.json': JSON.stringify({
+				tables: {
+					'public.owner_products': { name: 'products', schema: '' },
+					'public.products': { name: 'products', schema: 'public' },
+				},
+			}),
+			'drizzle/0000_initial.sql':
+				'ALTER TABLE "orders" ADD CONSTRAINT "fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id");',
+		})
+		await expect(
+			normalizeGeneratedOwnerReferences(join(fixture.path, 'drizzle'), new Set()),
+		).rejects.toThrow('ambiguous generated foreign key target')
+	})
+
 	it('locates a linked plugin package outside the application root', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-linked-package-test-'))
 		const application = join(root, 'application')
