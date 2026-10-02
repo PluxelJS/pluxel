@@ -7,7 +7,7 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 
 插件测试需要真实的装饰器、依赖和配置转换。直接 `new` 实例或模拟 Context 只能验证普通对象行为，不能验证宿主加载和生命周期。
 
-如果目标是操作眼前正在运行的 dev 实例，coding agent 必须使用 [开发控制台](./dev-console.md)。本页的 test host 用于独立的回归测试，不连接当前 dev，也不共享它的数据目录。
+如果目标是操作眼前正在运行的 dev 实例，coding agent 必须使用 [开发控制台](../development/dev-console.md)。本页的 test host 用于独立的回归测试，不连接当前 dev，也不共享它的数据目录。
 
 ## 选择测试边界
 
@@ -281,7 +281,7 @@ expect(host.require(ConsumerPlugin).connector.ctx.pluginInfo.nodeAddress).toEqua
 requirement 按 definition identity 识别；依赖修改经过 graph，重启受影响 consumer 及其 dependent closure，操作后重新 `require()` 取得实例。
 
 `change.forks.ensure(East)` 可以先建立 fork，再显式 `change.start(East)`；`change.forks.remove(East)` 移除 fork。
-fixture/catalog/replacement 与 strict assertion 是测试专属。操作在线应用时使用[开发控制台](./dev-console.md)：`dev.plugins` 和 `dev.config` 操作当前 Host，其他能力由脚本显式导入其服务 API。控制台不继承测试 host 的事务或 fixture 接口。
+fixture/catalog/replacement 与 strict assertion 是测试专属。操作在线应用时使用[开发控制台](../development/dev-console.md)：`dev.plugins` 和 `dev.config` 操作当前 Host，其他能力由脚本显式导入其服务 API。控制台不继承测试 host 的事务或 fixture 接口。
 
 ## Fork 与 replacement
 
@@ -470,7 +470,7 @@ Workbench 测试后端使用测试制品，验证发布、RPC 和资源生命周
 ## 应用与开发集成验证
 
 Plugin 行为使用统一 test host，并选择最小服务集合。完整应用的声明、启动策略、动态发现、HMR、Workbench 与浏览器图，
-通过项目唯一的 Vite 配置验证，不建立第二个测试启动器。已经运行的应用使用[开发控制台](./dev-console.md)检查。
+通过项目唯一的 Vite 配置验证，不建立第二个测试启动器。已经运行的应用使用[开发控制台](../development/dev-console.md)检查。
 
 生产目录的文件、assets、listener 和 signal ownership 通过真实 `pluxel()` 构建产物的 smoke 验证，不能以
 in-process Plugin test host 代替。`@pluxel/create` 的 packed smoke 同时验证外部安装、生成 workspace、生产 HTTP/Workbench 和 Vite 应用。

@@ -70,7 +70,7 @@ export { VaultAdminPlugin } from './plugins/vault/index.ts'
 插件入口需要 Pluxel lowering 和 Workbench 制品构建，不能只用普通 TypeScript 转译。
 服务自身的入口不导入插件入口；浏览器组件由 Workbench renderer 加载，服务器只发布页面声明。
 
-应用显式安装服务、选择插件并声明启动策略，完整示例见 [Vault 配套管理页](../runtime/vault.md#可选管理页面与服务配套插件)。
+应用显式安装服务、选择插件并声明启动策略，完整示例见 [Vault 配套管理页](../host/configuration.md#可选管理页面与服务配套插件)。
 服务通过 token 提供能力，配套插件使用公开 API 读取能力；官方配套插件也不享有专用框架入口。
 这种组织方式复用普通 Plugin 的停止、失败和页面撤回机制，不新增服务 UI 生命周期。
 
@@ -126,7 +126,7 @@ peer、可用的制品事实和实际解析版；不匹配时报告 `PLUGIN_SOUR
 第二份构造器仍会在 Workbench 打开 target 时被拒绝。
 
 希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入完整上游命名导出；
-无需另设 `better-result` peer。用法见 [better-result 共享入口](../api/better-result.md)。
+无需另设 `better-result` peer。用法见 [better-result 共享入口](../plugin-development/better-result.md)。
 发布包的 Core peer 下限须为首次发布此子入口的 Core 版本，宽泛的 `^1` 无法保证旧宿主存在该入口。
 
 ## `tsconfig.json`
@@ -234,8 +234,8 @@ Content-only package 不加载 Federation builder、不生成 remote entry，也
 
 ## 数据库与 Node artifacts
 
-- `defineDatabase()` 的 migrations/check artifact 随 package 发布，见 [数据库](../runtime/database.md)。
-- `defineNodeModule()`/`defineWorkerTask()` 生成独立 Node artifact，见 [Node module 与 worker task](../runtime/node-artifacts.md)。
+- `defineDatabase()` 的 migrations/check artifact 随 package 发布，见 [数据库](../plugin-development/database.md)。
+- `defineNodeModule()`/`defineWorkerTask()` 生成独立 Node artifact，见 [Node module 与 worker task](../plugin-development/node-artifacts.md)。
 - 这些 declaration 必须能从 package source graph 静态提取，不能藏在动态 branch 中。
 
 ## 构建与发布检查

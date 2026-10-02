@@ -31,7 +31,7 @@ The exported `Result` is the same upstream Better Result contract shared by `@pl
 
 The input must be a TypeBox object schema. Input is cloned as strict JSON, defaults are filled, validation runs, and Transform codecs decode once before the handler. Nested object schemas are closed by default. Use `openObj()` for extra fields. Optional fields must be declared with `Type.Optional()` for typed callers to omit them. `input` schema examples describe complete wire inputs; field examples belong on their fields.
 
-Custom text grammars can use Parsebox inside a `Type.Transform()` field; the [runtime guide](../../docs/runtime/commands.md#用-parsebox-解析文本语法) shows a complete example. Parsebox is an optional application dependency, not a Command parser.
+Custom text grammars can use Parsebox inside a `Type.Transform()` field; the [runtime guide](../../docs/plugin-development/commands.md#用-parsebox-解析文本语法) shows a complete example. Parsebox is an optional application dependency, not a Command parser.
 
 `CommandFailure` distinguishes `INPUT_VALIDATION` with issues, `REJECTED` with a stable reason, and boundary failures such as `ABORTED`, `TIMEOUT`, `DEPENDENCY`, and `INTERNAL`. The handler should return recoverable business failures explicitly. Thrown errors and malformed Results become `INTERNAL` with a local diagnostic cause. The kernel does not validate or encode successful business values; protocol carriers check what they can transmit.
 
@@ -56,6 +56,6 @@ if (resolved) {
 }
 ```
 
-`resolve()` returns `undefined` for an unmatched route. Malformed argv raises `CommandError` with `ARGUMENT_SYNTAX`; the CLI or chat carrier decides how to present it. The router supports generated options, positionals, and text/JSON tails. The [runtime guide](../../docs/runtime/commands.md) covers Plugin publication.
+`resolve()` returns `undefined` for an unmatched route. Malformed argv raises `CommandError` with `ARGUMENT_SYNTAX`; the CLI or chat carrier decides how to present it. The router supports generated options, positionals, and text/JSON tails. The [runtime guide](../../docs/plugin-development/commands.md) covers Plugin publication.
 
-`@pluxel/commands/capnweb` exports `toCapnweb()` and requires the optional `capnweb` peer. `@pluxel/commands/mcp` exports `toMcp()` and uses the optional `@modelcontextprotocol/sdk` peer for types only. Each entry projects explicitly selected Commands; importing the kernel or MCP entry does not load Cap’n Web. The application owns the RPC target or MCP server, trusted context, publication, and transport. See the [runtime guide](../../docs/runtime/commands.md) for complete examples.
+`@pluxel/commands/capnweb` exports `toCapnweb()` and requires the optional `capnweb` peer. `@pluxel/commands/mcp` exports `toMcp()` and uses the optional `@modelcontextprotocol/sdk` peer for types only. Each entry projects explicitly selected Commands; importing the kernel or MCP entry does not load Cap’n Web. The application owns the RPC target or MCP server, trusted context, publication, and transport. See the [runtime guide](../../docs/plugin-development/commands.md) for complete examples.

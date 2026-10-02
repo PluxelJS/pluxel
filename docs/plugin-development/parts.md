@@ -6,7 +6,7 @@ description: 用静态 Part composition 隔离配置、注册和清理，同时�
 一个 Plugin 的代码需要拆开，但拆出的缓存、连接或同步任务仍应一起启停时，使用 `PluginPart`。
 Part 可以有自己的配置和资源清理；某个 Part 启动失败，整个插件都会启动失败。
 
-资源和 `init()` 基础见[插件模型](./plugin-model.md)。下面用一个带配置与依赖的缓存说明完整路径。
+资源和 `init()` 基础见[插件模型](./model.md)。下面用一个带配置与依赖的缓存说明完整路径。
 
 ## 先判断是否应该使用 Part
 
@@ -229,4 +229,4 @@ field 会改变公开配置 path，应按配置 contract 变更处理。
 - replacement、rollback 和 partial init 是否完整 cleanup；
 - lifecycle failure 是否携带预期 `partPath`。
 
-只有业务确实需要的 projection 才值得成为 public Part method。完整测试入口见[测试 Pluxel 插件](../development/testing.md#pluginpartoptional-integration-与-cleanup)。
+只有业务确实需要的 projection 才值得成为 public Part method。完整测试入口见[测试 Pluxel 插件](./testing.md#pluginpartoptional-integration-与-cleanup)。

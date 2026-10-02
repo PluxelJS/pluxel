@@ -4,7 +4,7 @@
 
 Core token、正向 Host 安装计划、官方服务拆分、Management、Workbench、开发附件和共享应用启动已经实施。
 官方运行时、Vite 与构建组合分别使用 Services 的 `/preset`、`/vite`、`/build`；通用 Host-dev 不拥有官方服务选择策略。
-当前 API 以[组合 Host 服务](../docs/reference/runtime-services.md)、[Host 管理接入](../docs/runtime/management.md)、
+当前 API 以[组合 Host 服务](../docs/host/services.md)、[Host 管理接入](../docs/host/management.md)、
 [独立 Workbench](../docs/workbench/standalone-host.md)及[架构约束](HOST.md)为准；本文只记录下游验证及其边界。
 
 ## 保持的方向

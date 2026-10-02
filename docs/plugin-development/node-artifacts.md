@@ -97,7 +97,7 @@ const run: WorkerTaskHandler<SumInput, SumOutput> = ({ values }) => ({
 export default run
 ```
 
-调用 `calculate([1, 2, 3])` 应得到 `{ total: 6 }`。用 [测试宿主](../development/testing.md) 或现有应用的 [开发控制台](../development/dev-console.md) 调用插件方法，才能同时验证产物提取与执行路径。
+调用 `calculate([1, 2, 3])` 应得到 `{ total: 6 }`。用 [测试宿主](./testing.md) 或现有应用的 [开发控制台](../development/dev-console.md) 调用插件方法，才能同时验证产物提取与执行路径。
 
 所有插件共享宿主的线程池，线程按需创建，队列有上限，并在插件之间公平调度。host 统一配置 concurrent execution slots、全局和每
 Plugin queue limit、idle timeout；Plugin 不创建私有线程池，也不自行扩大进程预算。取消 running task 会终止对应 worker；
@@ -209,4 +209,4 @@ Plugin build 会提取 literal declaration，并输出独立 artifact。验证�
 - queue full、abort、worker error 和 Plugin stop；
 - native dependency metadata 与真正 package owner 一致。
 
-构建产物与缓存位置见 [CLI 与工具链](../development/tooling.md)，测试 host 选择见 [测试 Pluxel 插件](../development/testing.md)。
+构建产物与缓存位置见 [CLI 与工具链](../development/tooling.md)，测试 host 选择见 [测试 Pluxel 插件](./testing.md)。

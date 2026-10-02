@@ -1,6 +1,6 @@
 # Host 与服务架构
 
-本页拥有服务安装、应用启动与 Host 资源边界。整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)；应用组合用法见 [Host services](../docs/reference/runtime-services.md)。
+本页拥有服务安装、应用启动与 Host 资源边界。整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)；应用组合用法见 [Host services](../docs/host/services.md)。
 
 应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
 
@@ -49,11 +49,11 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
 - 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。持久化服务只提供借用的 document storage，不拥有运行事实。 已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
 - 动态 catalog、failed candidate 和 committed authority：Host `source-session.ts`、`coordinator.ts`，Host-dev `host-vite.ts`。细节见 [HMR](HMR.md)。
-- HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/runtime/http.md)、`packages/services/src/elysia/`。
+- HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移和 backend：[DATABASE.md](DATABASE.md)。
 - 日志 root、策略与有界 store：[LOGGING.md](LOGGING.md)。
 - Node artifacts、Workers：`packages/services/src/node/`、`workers/`；compiler 属于 Rolldown 与服务开发附件。
-- Management 与 Workbench：[WORKBENCH.md](WORKBENCH.md)、[管理接入](../docs/runtime/management.md)。
+- Management 与 Workbench：[WORKBENCH.md](WORKBENCH.md)、[管理接入](../docs/host/management.md)。
 - 隔离测试宿主：[TESTING.md](TESTING.md)；在线应用检查：[DEV_CONSOLE.md](DEV_CONSOLE.md)。
 
 代码、公开类型、文档必须描述同一所有权。不允许用测试宿主证明在线应用当前状态，或以 source-mode 测试代替独立安装和搬离工作区后的发行验证。
@@ -77,6 +77,6 @@ KV mutation 在唯一 backend lock 内 clone、检查 revision、加密并原子
 revision。删除保留 tombstone。watch/watchPrefix 在同一 lock 内读取初始 snapshot 并注册，通知在锁外、owner invocation 内运行。
 部署 env/file 整记录只读且不落盘；任何KV写入路径都检查overlay。owner namespace和其命名子空间隔离，root保持受信任管理权限。
 
-持久 snapshot 只接受 version 2 的结构化 KV 与 revision。完整加密格式、操作与恢复边界见 [Vault](../docs/runtime/vault.md)。
+持久 snapshot 只接受 version 2 的结构化 KV 与 revision。完整加密格式、操作与恢复边界见 [Vault](../docs/plugin-development/vault.md)。
 
-Persistence 的路径、只读执行与目录列举契约由[公开服务文档](../docs/reference/runtime-services.md#persistence-文件契约)维护。Node 客户端断线由 srvx 原生 `request.signal` 传播，不再另装 response close 监听器；owner 关闭仍由 invocation lease 合成取消。Host endpoint 将 root lease signal 传入 handler；carrier 的请求身份仍指向原始 ingress，不能因取消用 Request 派生而丢失地址或 upgrade 状态。
+Persistence 的路径、只读执行与目录列举契约由[公开服务文档](../docs/host/configuration.md#persistence-文件契约)维护。Node 客户端断线由 srvx 原生 `request.signal` 传播，不再另装 response close 监听器；owner 关闭仍由 invocation lease 合成取消。Host endpoint 将 root lease signal 传入 handler；carrier 的请求身份仍指向原始 ingress，不能因取消用 Request 派生而丢失地址或 upgrade 状态。

@@ -114,7 +114,7 @@ CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被
 
 已有依赖只需修复文档与 skill 时，可运行 `pluxel workspace setup --root /absolute/consumer`；它只物化开发资源，不安装包，也不能代替 source doctor 对包 overlay 的检查。setup 可以重复执行，失败会保留未完成状态；不会回滚已经完成的包安装。
 
-`pluxel docs` 默认直接输出当前来源的开发指南正文；`pluxel docs development/testing.md` 读取具体页面，并标明来源路径与 CLI 版本。不联网获取另一份 main 文档。skill 和 API 文档各自在上游维护一份正文。
+`pluxel docs` 默认直接输出当前来源的开发指南正文；`pluxel docs plugin-development/testing.md` 读取具体页面，并标明来源路径与 CLI 版本。不联网获取另一份 main 文档。skill 和 API 文档各自在上游维护一份正文。
 
 `source doctor` 检查包 overlay 以及开发资源来源、完整性与链接；缺失或漂移会失败并提示接入命令。检查本身不写文件、不联网、不修复。它不证明构建产物最新或在线应用健康。
 

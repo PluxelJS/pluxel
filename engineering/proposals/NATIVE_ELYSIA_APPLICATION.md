@@ -2,7 +2,7 @@
 
 本文只记录尚未完成的上游能力与验证工作，不定义当前作者 API。已经落地的架构以
 [Host](../HOST.md)、[Plugin 系统](../PLUGIN_SYSTEM.md) 和
-[HTTP 使用文档](../../docs/runtime/http.md) 为准。
+[HTTP 使用文档](../../docs/plugin-development/http.md) 为准。
 
 目前已验证 Node carrier 与 Vite 开发接入。Elysia singleton identity、generation 所有权、HTTP/stream/WebSocket
 回收和精确声明冲突已有实现与回归；它们并不意味着以下问题已经解决。

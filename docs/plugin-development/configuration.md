@@ -7,15 +7,15 @@ description: 用一个 Valibot object schema 统一配置类型、默认值、�
 在 Plugin 中声明一个 Valibot schema，Pluxel 会从中得到类型、默认值、校验规则和 Workbench 配置表单。
 
 开始前，你应已有一个能启动的 Plugin。先给配置加默认值，在 `init()` 中读取，再从工作台修改它。
-普通配置不保存密钥；密码、Token 等使用 [Vault](../runtime/vault.md)。
+普通配置不保存密钥；密码、Token 等使用 [Vault](./vault.md)。
 
-| 本次任务         | 阅读位置                                                             |
-| ---------------- | -------------------------------------------------------------------- |
-| 新增或调整字段   | [最小 schema](#先添加一个有默认值的字段) → [声明规则](#声明规则)     |
-| 保存后立即生效   | [在线更新](#让运行中的-plugin-接收配置更新)，检查保存和应用两个结果  |
-| 拆分局部配置     | [Part config](#嵌套相关设置与-part-config)，字段名会成为公开配置路径 |
-| 部署提供固定输入 | [env/file 绑定](#绑定部署环境与-json-文件)，与管理保存值分层         |
-| 调整编辑界面     | [配置表单](#配置表单)，继续复用同一 schema                           |
+| 本次任务         | 阅读位置                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| 新增或调整字段   | [最小 schema](#先添加一个有默认值的字段) → [声明规则](#声明规则)                     |
+| 保存后立即生效   | [在线更新](#让运行中的-plugin-接收配置更新)，检查保存和应用两个结果                  |
+| 拆分局部配置     | [Part config](#嵌套相关设置与-part-config)，字段名会成为公开配置路径                 |
+| 部署提供固定输入 | [env/file 绑定](../host/configuration.md#绑定部署环境与-json-文件)，与管理保存值分层 |
+| 调整编辑界面     | [配置表单](#配置表单)，继续复用同一 schema                                           |
 
 ## 先添加一个有默认值的字段
 
@@ -80,9 +80,9 @@ export class WorkerPlugin extends BasePlugin {
 }
 ```
 
-## 宿主如何设置配置
+## 在测试中验证配置
 
-日常手动配置使用 Workbench；以下 `host` 指 [插件测试宿主](../development/testing.md)，适合检查初始值和更新结果。
+日常手动配置使用 Workbench；以下 `host` 指 [插件测试宿主](./testing.md)，适合检查初始值和更新结果。
 正在运行的开发应用应通过 [开发控制台](../development/dev-console.md)修改配置。
 测试中，首次启动可以传入 `initialConfig`：
 
@@ -262,11 +262,11 @@ Part config 属于静态 owner schema：即使 optional provider absent、对应
 default、transform 和 validation。需要“未启用时不要求凭据”等语义时，在 schema 中使用带 `enabled` discriminator 的 object
 明确表达，不根据 runtime catalog 动态改变配置契约。
 
-Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./plugin-parts.md)。
+Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./parts.md)。
 
 ## 敏感信息
 
-普通 Plugin config 会被宿主配置系统和 Workbench 管理面读取，不应当默认承载 secret。token、私钥和长期 credential 优先由宿主 secret provider、部署环境或 [Vault](../runtime/vault.md) 管理，再在 server-side capability 中使用。
+普通 Plugin config 会被宿主配置系统和 Workbench 管理面读取，不应当默认承载 secret。token、私钥和长期 credential 优先由宿主 secret provider、部署环境或 [Vault](./vault.md) 管理，再在 server-side capability 中使用。
 
 不要把 secret 放进：
 
@@ -274,81 +274,6 @@ Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织�
 - config form metadata、description 或 option label；
 - structured log properties；
 - status snapshot、command output 或序列化错误。
-
-## 绑定部署环境与 JSON 文件
-
-大多数插件只需 `configs.use(schema)`，通过 Workbench 或 Host 配置 API 设置值。只有部署系统负责提供固定值时，才在应用入口加绑定：环境变量使用 `envBinding`，挂载的 JSON 文件使用 `fileBinding`。两者都由 Host 在启动时读取。
-
-环境绑定从本次 `startup.env` 生成覆盖层，优先于保存值；该层不写入配置存储。
-
-Plugin 需要导出传给 `configs.use()` 的同一个 schema：
-
-```ts no-twoslash
-// WorkerPlugin.ts
-import { BasePlugin, Plugin } from '@pluxel/core'
-import * as v from 'valibot'
-
-export const WorkerConfig = v.object({
-	endpoint: v.pipe(v.string(), v.url()),
-	http: v.object({
-		enabled: v.optional(v.boolean(), true),
-		timeoutMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 5_000),
-	}),
-})
-
-@Plugin()
-export class WorkerPlugin extends BasePlugin {
-	private readonly config = this.configs.use(WorkerConfig)
-}
-```
-
-Canonical static entry 直接声明部署名称；不要在配置工厂中重复解析类型或拼装 Plugin address：
-
-```ts no-twoslash
-import { defineHostApplication, envBinding } from '@pluxel/host'
-import { WorkerPlugin, WorkerConfig } from './WorkerPlugin.ts'
-
-export default defineHostApplication(() => ({
-	name: 'worker-app',
-	plugins: [WorkerPlugin],
-	envBindings: [
-		envBinding(WorkerPlugin, {
-			config: {
-				schema: WorkerConfig,
-				mapping: {
-					endpoint: 'WORKER_ENDPOINT',
-					http: { enabled: 'WORKER_HTTP_ENABLED', timeoutMs: 'WORKER_HTTP_TIMEOUT_MS' },
-				},
-			},
-		}),
-	],
-}))
-```
-
-插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 Valibot schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。`envBinding` 和 `fileBinding` 都要求 Valibot schema，普通 Standard Schema 实现不能用于这两个绑定。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineHostApplication` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
-
-Mapping 从 schema input 推导：object 可展开，也可绑定一个 JSON 变量；array、tuple 与动态 record 使用完整 JSON。环境名称匹配 `[A-Z_][A-Z0-9_]*`。string 保留原文，number 要求有限 JSON number，boolean 只接受 `true`/`false`，复合类型使用 JSON。config 环境缺失不生成覆盖，空字符串和 `null` 按 schema 校验；诊断不包含输入值。
-
-配置优先级为：
-
-```text
-configRecords.initial < fileBindings config < saved config < envBindings config
-```
-
-对象递归合并，数组整体替换。持久文件只保存管理界面或 Host API 修改的层；基础值、schema 默认值和 env 覆盖不会被复制进去。移除 env 后，下一次启动重新显示 saved 或基础值。reset 删除 saved 值，重新显示基础值。
-
-被 env 控制的路径及其祖先、后代拒绝修改和 reset，包括提交相同值。Workbench 显示来源并禁用对应字段；Host 返回的 `sources` 只有路径、来源种类、名称和只读状态，不含凭据。未绑定的兄弟字段仍可编辑。
-
-JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: WorkerConfig, path: './worker.json' } })]` 提供基础值（`fileBinding` 从 `@pluxel/host` 导入），路径相对 `startup.root`。文件只在启动时读取，不由构建读取或打包。修改文件或 env 需要重新创建 Host。
-
-部署凭据不放在普通 config。需要从环境变量或挂载文件提供凭据时，按 [Vault 部署绑定](../runtime/vault.md#部署凭据)声明只读记录；需要交互登录或刷新凭据时，使用可写 Vault。
-
-Static production build 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是静态目录中的 Plugin 标识符，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
-
-直接消费 runtime control-plane `ConfigResult` 时按 discriminant 处理返回值：query 返回 `config` 和 `defaults`，并标记
-`saved: false`；成功 mutation 返回已持久化的 `config`、`application` 与 apply report，不再重复返回 defaults。
-`validation_failed` 只有在 defaults 可以独立计算时才带可选 `defaults`。持久化失败不会发布 staged revision，也不会把未确认的值注入
-Plugin generation。
 
 ## 配置表单
 
@@ -366,3 +291,5 @@ desired config，不会单独更新 Part 或隐式 restart。
 
 测试默认值、非法输入、归一化输出，以及保存后实际 `application` 状态；schema 变化后重新构建并检查标准配置表单。
 用 [inspect](../development/inspection.md) 定位 schema 与应用绑定，用[开发控制台](../development/dev-console.md)核对当前生效值。
+
+部署绑定与来源优先级由[Host 配置](../host/configuration.md#绑定部署环境与-json-文件)维护；插件只声明 schema 并消费校验后的值。

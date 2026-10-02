@@ -11,5 +11,7 @@
 - `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog，不另建配置或 Vite 模式。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
 - inspect 选择本应用时使用 workspace-relative `application: { root: 'host', entry: 'src/app.ts' }`。
-- 修改 `plugins/`、公共契约、Host 配置或 `oxlint.config.ts` 前，按开发指南确认对应契约。应用装配见 `pnpm exec pluxel docs getting-started/host-setup.md`。
+- 修改 `plugins/`、公共契约、Host 配置或 `oxlint.config.ts` 前，按开发指南确认对应契约。应用装配见 `pnpm exec pluxel docs host/configuration.md`。
 - 完成后运行 `pnpm verify`；不得无理由绕过 Pluxel lint 规则。
+
+插件范式按需读 `docs/pluxel/plugin-development/`；Host 装配读 `docs/pluxel/host/configuration.md` 的对应章节。已知目标直接定位，不把目录当作通读清单。

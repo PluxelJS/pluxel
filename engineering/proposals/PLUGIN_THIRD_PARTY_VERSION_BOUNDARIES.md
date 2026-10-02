@@ -3,8 +3,8 @@
 状态：已实施并验证。日期：2026-09-25。
 
 本文记录版本边界的设计与验收；当前作者行为以[Plugin 系统](../PLUGIN_SYSTEM.md)、
-[HTTP](../../docs/runtime/http.md)、[Workbench](../WORKBENCH.md) 和
-[API 契约](../../docs/api/contracts.md)为准。
+[HTTP](../../docs/plugin-development/http.md)、[Workbench](../WORKBENCH.md) 和
+[API 契约](../../docs/plugin-development/contracts.md)为准。
 
 ## 1. 问题与判断原则
 
@@ -28,7 +28,7 @@
 
 ## 2. 当前事实与证据
 
-- [HTTP 作者契约](../../docs/runtime/http.md#直接使用-elysia-能力)规定 `ctx.require(ElysiaApp)` 是真实 Elysia 实例；
+- [HTTP 作者契约](../../docs/plugin-development/http.md#直接使用-elysia-能力)规定 `ctx.require(ElysiaApp)` 是真实 Elysia 实例；
   消费它的插件声明精确 Elysia peer 和同版 dev dependency，不把私有副本打入 Plugin bundle。
   [静态构建](../../packages/rolldown/src/cli/elysia-singleton.ts)把公开入口解析到宿主的实现。
   [现有后续提案](NATIVE_ELYSIA_APPLICATION.md#包版本准入)已记录：模块 identity 成立仍不能代替发布包 peer range 准入；

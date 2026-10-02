@@ -187,7 +187,7 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 ## 页面 API 与宿主边界
 
 - 纯数据 RPC 方法使用 `*Dto` 后缀和显式返回类型，返回前用 `assertWorkbenchDto()` 校验可传输性；大列表使用 cursor/limit。
-- DTO 生产、输入校验与授权规则见 [API 契约](../api/contracts.md#rpc-方法名表达返回值所有权)。
+- DTO 生产、输入校验与授权规则见 [API 契约](../plugin-development/contracts.md#rpc-方法名表达返回值所有权)。
 - mutation 只有页面需要 result 时才返回 DTO；否则返回 `void`，用 subscription 或 typed invalidation 刷新。
 - API 不返回 Plugin、Context、database handle、native object、raw socket 或 Shell service。
 - `host` 的外观、导航、文档与可选管理能力见[Host 能力](#host-能力)，不从 Shell 内部取得服务。

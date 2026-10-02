@@ -7,14 +7,14 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 源码定位、在线状态和隔离回归分别使用 [inspect、devconsole 与测试](../development/index.md)。下面按具体症状排查。
 
-| 现象             | 优先查证                                                                           |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| 安装或构建失败   | 报错 package 的直接依赖、exports、实际产物；不要先改 runtime                       |
-| 声明像普通 class | [工具链是否执行](#plugin-看起来是普通-class)                                       |
-| 节点未运行       | [目录、依赖、配置、生命周期报告](#plugin-没有启动)                                 |
-| 配置保存却未生效 | [配置更新结果](../getting-started/configuration.md#让运行中的-plugin-接收配置更新) |
-| HTTP 404         | [generation 发布与实际 carrier](#http-返回-404)                                    |
-| 停止后仍有工作   | [资源 owner 与等待清理](#停止后端口timer-或连接仍存在)                             |
+| 现象             | 优先查证                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| 安装或构建失败   | 报错 package 的直接依赖、exports、实际产物；不要先改 runtime                          |
+| 声明像普通 class | [工具链是否执行](#plugin-看起来是普通-class)                                          |
+| 节点未运行       | [目录、依赖、配置、生命周期报告](#plugin-没有启动)                                    |
+| 配置保存却未生效 | [配置更新结果](../plugin-development/configuration.md#让运行中的-plugin-接收配置更新) |
+| HTTP 404         | [generation 发布与实际 carrier](#http-返回-404)                                       |
+| 停止后仍有工作   | [资源 owner 与等待清理](#停止后端口timer-或连接仍存在)                                |
 
 记录实际命令、实例、结构化错误及报告，再进入对应小节。错误消息用于阅读；程序分支依赖稳定 code。
 
@@ -56,7 +56,7 @@ Vite/Rolldown lowering 只接受无语法错误的 AST；OXC 能生成恢复 AST
 
 **现象：** Plugin 元数据、依赖、`configs.use()` 或 HMR 行为缺失。
 
-Plugin 源码必须经过 Pluxel 的 Vite/Rolldown 转换。不要用普通 TypeScript runner 直接执行 Plugin 文件，也不要把包的构建命令替换成裸 `tsc`。构建使用 `pluxel build`，测试使用 [Pluxel 测试宿主](../development/testing.md)。
+Plugin 源码必须经过 Pluxel 的 Vite/Rolldown 转换。不要用普通 TypeScript runner 直接执行 Plugin 文件，也不要把包的构建命令替换成裸 `tsc`。构建使用 `pluxel build`，测试使用 [Pluxel 测试宿主](../plugin-development/testing.md)。
 
 若出现 `plugin_lowering_abi_unsupported`，说明已构建 Plugin 与当前 Core/Host 工具链不属于同一 lowering ABI。升级匹配版本的
 Core、Host 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payload 或把旧产物当作缺省 metadata 继续加载。
@@ -79,7 +79,7 @@ Workbench 中“期望运行”表示运行意图，不保证 `init()` 成功。
 4. 配置是否通过 schema 校验；
 5. `init()` 是否抛错，或在 signal 取消后仍继续工作。
 
-required dependency 失败会阻止消费者启动。optional provider absent、当前未运行或 start-failed 时 callback 不执行，但不会阻止消费者启动。参见 [Plugin 模型](../getting-started/plugin-model.md)。
+required dependency 失败会阻止消费者启动。optional provider absent、当前未运行或 start-failed 时 callback 不执行，但不会阻止消费者启动。参见 [Plugin 模型](../plugin-development/model.md)。
 
 Part constructor 的 required dependency 会提升到 owning Plugin graph。它缺失或启动失败时，整个 owner blocked；Part 不会被跳过，
 也没有单独的 blocked/running 状态。dependency override 同样设置在 owning Plugin requirement 上，而不是 `partPath`。
@@ -92,7 +92,7 @@ Part constructor 的 required dependency 会提升到 owning Plugin graph。它�
 - 不要在 owner constructor 重复一份 Part requirement，也不要用 `this.host` 充当未声明的 provider locator。
 
 多个 occurrence 依赖同一 provider 时，graph 与 package metadata 会自动去重；任一来源为 required 时 effective mode 为 required。
-完整标准写法见[使用 PluginPart](../getting-started/plugin-parts.md#依赖写在实际-consumer)。
+完整标准写法见[使用 PluginPart](../plugin-development/parts.md#依赖写在实际-consumer)。
 
 ## 无法从所属插件或测试读取 PluginPart 的 `ctx`、`host` 或 `plugins`
 
@@ -102,7 +102,7 @@ DSL，只能在对应 subclass 内使用。Part 不提供 root-owner accessor；
 
 业务调用为 Part 定义最小 public method/property，测试优先观察 registration、cleanup 与显式业务 projection。需要定位 lifecycle failure
 时读取 `PluginLifecycleErrorInfo.partPath`。Part occurrence Context 不提供 attribution path 或 identity；具体 Context capability type 和
-immediate host class 由作者代码直接声明。完整边界见[只暴露业务 API](../getting-started/plugin-parts.md#只暴露业务-api)。
+immediate host class 由作者代码直接声明。完整边界见[只暴露业务 API](../plugin-development/parts.md#只暴露业务-api)。
 
 ## Optional provider 不存在但 Part 仍被构造
 
@@ -119,7 +119,7 @@ initializer 无副作用，并把该 integration 的 registration、资源和 cl
 - 不要在 constructor 中读取配置；
 - 默认值放进 schema，宿主输入仍要经过同一个 schema normalization。
 
-完整规则见 [配置模型](../getting-started/configuration.md)。浏览器表单不是信任边界，提交后服务端仍需校验。
+完整规则见 [配置模型](../plugin-development/configuration.md)。浏览器表单不是信任边界，提交后服务端仍需校验。
 
 ## 停止后端口、timer 或连接仍存在
 
@@ -142,7 +142,7 @@ initializer 无副作用，并把该 integration 的 registration、资源和 cl
 当前 Node production、static Vite 与 dynamic Vite carrier 已支持并验证基础业务 WebSocket；若 `.ws()` 返回 404，除 route
 publication 外还要确认请求经过真实 Upgrade listener，而不是 `host.http.fetch()`。不要依赖仅参数名不同的 route pattern 自动获得完整冲突诊断；测试应覆盖你的实际 URL 和 Upgrade 请求。
 
-参见 [插件 HTTP](../runtime/http.md) 与 [管理工作台](../workbench/index.md)。
+参见 [插件 HTTP](../plugin-development/http.md) 与 [管理工作台](../workbench/index.md)。
 
 ## 导入路径存在于源码但 package 无法安装
 

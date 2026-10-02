@@ -4,12 +4,12 @@ Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实�
 
 ## 按任务进入
 
-| 任务                    | 入口                                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 编写 Plugin、依赖与清理 | [插件模型](../../docs/getting-started/plugin-model.md)                                                        |
-| 组合 Part 与配置        | [PluginPart](../../docs/getting-started/plugin-parts.md)、[配置](../../docs/getting-started/configuration.md) |
-| 修改内核                | [Core 约束](../../engineering/CORE.md)、[实现索引](IMPLEMENTATION_INDEX.md)                                   |
-| 验证行为                | [插件测试](../../docs/development/testing.md)、[框架测试边界](../../engineering/TESTING.md)                   |
+| 任务                    | 入口                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 编写 Plugin、依赖与清理 | [插件模型](../../docs/plugin-development/model.md)                                                           |
+| 组合 Part 与配置        | [PluginPart](../../docs/plugin-development/parts.md)、[配置](../../docs/plugin-development/configuration.md) |
+| 修改内核                | [Core 约束](../../engineering/CORE.md)、[实现索引](IMPLEMENTATION_INDEX.md)                                  |
+| 验证行为                | [插件测试](../../docs/plugin-development/testing.md)、[框架测试边界](../../engineering/TESTING.md)           |
 
 ## 入口边界
 

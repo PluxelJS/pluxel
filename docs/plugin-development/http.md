@@ -13,7 +13,7 @@ description: 在插件中添加 HTTP API、webhook 和 WebSocket，并验证路�
 | 加 WebSocket                 | [WebSocket](#websocket)与[已验证 carrier 范围](#当前-elysia-2-与-carrier-边界)      |
 | 拆分路由或动态扩展           | [所有权](#按所有权组织大型路由)，先选 generation owner                              |
 | 更新后 404、停止后请求未退出 | [发布与生命周期](#finalization-与生命周期)、[错误边界](#错误边界)                   |
-| 自己接入 listener            | [独立 Host](#独立-host)                                                             |
+| 自己接入 listener            | [独立 Host](../host/configuration.md#独立-http-host)                                |
 
 ## 最小路由
 
@@ -256,7 +256,7 @@ const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
 
 `host.http.fetch()` 不执行 HTTP Upgrade，也不证明真实 listener disconnect、WebSocket close code、backpressure 或 HMR arbitration。需要这些
 carrier 能力时必须使用 Node production、static Vite 或 dynamic Vite 对应的 ephemeral real-listener integration test；不能用普通 Fetch
-response 代替。完整 test host 配置见[测试 Pluxel 插件](../development/testing.md)。
+response 代替。完整 test host 配置见[测试 Pluxel 插件](./testing.md)。
 出站请求可以使用官方 [Wretch Plugin](../plugins/wretch.md) 或领域 HTTP client，不要与入站 Elysia application ownership 混在一起。
 
 ## 挂载已有 Fetch application
@@ -381,7 +381,7 @@ HTTP 服务当前锁定 Elysia `2.0.0-beta.19`。已经验证并作为当前 con
 compile/seal、atomic generation publication、stream lease、owner withdrawal，以及上述三条 Node listener 路线的基础业务 WebSocket。
 以下能力仍不能按“所有 runtime 上完整等同原生 Elysia server”使用：
 
-- Elysia `setup()` / `cleanup()` 尚无公开 external attach/detach runner，直接注册会 fail-fast。带隐藏 lifecycle callback 的 standalone instance 也不能通过 `.use()` 绕过；listener 所有权见[独立 Host](#独立-host)。
+- Elysia `setup()` / `cleanup()` 尚无公开 external attach/detach runner，直接注册会 fail-fast。带隐藏 lifecycle callback 的 standalone instance 也不能通过 `.use()` 绕过；listener 所有权见[独立 Host](../host/configuration.md#独立-http-host)。
 - 唯一受支持的接入是 Node srvx 与 Vite 开发接线；不承诺 Bun、Deno 或 Worker adapter。
 - crossws 的 portable socket API 尚不能实现 Elysia socket 的主动 `pong()`。不同 runtime 的 send 返回值、backpressure 和 buffered
   byte 语义也尚未完成精确对齐，不应据此编写跨 runtime 流控协议。
@@ -393,44 +393,4 @@ compile/seal、atomic generation publication、stream lease、owner withdrawal�
 
 这些限制属于 Elysia/carrier seam，不会通过增加 Pluxel Web wrapper 来掩盖。Node 已验证范围内可以使用业务 WebSocket；上述未支持的 tuning 不能作为应用依赖。
 
-## 独立 Host
-
-安装 `@pluxel/services` 与 `elysia@2.0.0-beta.19`；Elysia 是 HTTP 服务的可选 peer，不会随其他服务安装。
-
-当前 Elysia 的发布前 schema 编译需要 TypeBox 1.3.23。生成项目已包含该约束；手动组装 pnpm 宿主时，在 `pnpm-workspace.yaml` 中加入：
-
-```yaml
-overrides:
-  typebox: 1.3.23
-```
-
-TypeBox 1.3.24 起删除了 Elysia 编译器仍使用的字段；待 Elysia 适配后再移除此约束。
-
-`elysia()` 安装 generation-scoped Elysia application；生产 Node 接线统一使用 srvx。
-`listenElysia()` 使用 Host 的请求分发，并拥有 listener 和 Host 的关闭；不需要重复传 handler。
-
-```ts no-twoslash
-import { createHost } from '@pluxel/host'
-import { elysia } from '@pluxel/services/elysia'
-import { listenElysia } from '@pluxel/services/elysia/node'
-
-const host = await createHost({ plugins: [MyRoutes], services: [elysia()] })
-await host.startNode(MyRoutesAddress)
-const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 3000 })
-// 应用结束时关闭 listener 与 Host。
-await listener.close()
-```
-
-需要直接调用 Fetch 请求边界时，使用 `/elysia` 的 `createElysiaHandler(host)`；调用者负责关闭 Host。
-`ElysiaApp` 仅供 Plugin/Part 使用。底层 directory、endpoint/fallback 和 carrier 接线属于框架内部，
-不提供第二套公共 server API 或可替换 adapter。Management 与 Workbench 复用同一请求分发。
-
-宿主拥有 listener、port、process shutdown 和物理 server policy，部署 ingress、反向代理或平台拥有 TLS。Plugin 调用 application 的 `listen()` / `stop()` 会立即
-失败；`setup()` / `cleanup()` 也会立即失败，因为 Elysia 2 beta.19 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
-调用 Server view 的 `stop()`、`reload()`、`ref()` 或 `unref()`，不选择 srvx/runtime adapter。srvx 的接入属于宿主 carrier 工作，
-不是 Plugin 的第二套 Web 作者 API。
-
-handler 取得的 `server` 是 generation-scoped、carrier-backed view。`url`、`port`、`hostname` 和 `development` 反映当前宿主 listener；
-`id` 是本 generation 内稳定的 virtual-server value，不是物理 listener identity。`server.url` 每次返回独立 `URL`，修改它不会重配
-listener。Node carrier 还支持 `server.requestIP(request)` 读取该请求的远端 address、port 和 IP family；把其他来源或已经脱离当前
-owner invocation 的 `Request` 传入会明确失败。
+安装 HTTP 服务、选择 listener 和关闭 Host，见[宿主 HTTP 配置](../host/configuration.md#独立-http-host)。

@@ -1,6 +1,6 @@
 # Workbench 与 Node 制品编译
 
-修改 declaration lowering、renderer/Content/Node artifact、构建缓存或 candidate publication 时读本页。UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。作者调用见 [Workbench](../docs/workbench/index.md) 与 [Node artifacts](../docs/runtime/node-artifacts.md)；运行期所有权见 [WORKBENCH](WORKBENCH.md) 与 [HMR](HMR.md)。
+修改 declaration lowering、renderer/Content/Node artifact、构建缓存或 candidate publication 时读本页。UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。作者调用见 [Workbench](../docs/workbench/index.md) 与 [Node artifacts](../docs/plugin-development/node-artifacts.md)；运行期所有权见 [WORKBENCH](WORKBENCH.md) 与 [HMR](HMR.md)。
 
 | 任务                                     | 入口                                                          |
 | ---------------------------------------- | ------------------------------------------------------------- |
@@ -33,7 +33,7 @@ Context、database handle 或 Node API。
 
 ### Node declarations 与 native owner
 
-额外 Node entry 使用 module-level `defineNodeModule(import.meta.url, literal)`；`defineWorkerTask<Input, Output>()` 复用同一 artifact pipeline。作者操作见 [Node artifacts](../docs/runtime/node-artifacts.md)。
+额外 Node entry 使用 module-level `defineNodeModule(import.meta.url, literal)`；`defineWorkerTask<Input, Output>()` 复用同一 artifact pipeline。作者操作见 [Node artifacts](../docs/plugin-development/node-artifacts.md)。
 
 唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中收集已 lower 的 Workbench producer/Content plans 与 Node
 declarations。Node branch 输出 `dist/artifacts/node/<artifact-key>.mjs`；Workbench 和 Node 使用独立 identity、

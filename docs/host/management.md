@@ -35,4 +35,4 @@ Vite 开发入口自动使用 Host 已校验的 `PORTLESS_URL` 作为管理会�
 
 Management client 返回经过校验的不可变本地快照，调用方可直接读取或缓存，不需要复制 DTO 或释放 RPC result。客户端负责消费 transport envelope；领域 parser 负责字段、identity、集合引用等约束，并构造最终快照。配置、日志和表单中的任意数据叶子也与输入对象隔离。
 
-Portable 数据只接受有限数值、字符串、boolean、null、稠密普通数组和普通数据对象；拒绝 accessor、非枚举业务字段、symbol、循环、显式 `undefined` 和额外数组属性。TypeScript 类型不会替代这些运行时校验。订阅返回的资源仍须由订阅者释放，不能当作快照放入缓存。数据与资源的选择见 [API 契约](../api/contracts.md)。
+Portable 数据只接受有限数值、字符串、boolean、null、稠密普通数组和普通数据对象；拒绝 accessor、非枚举业务字段、symbol、循环、显式 `undefined` 和额外数组属性。TypeScript 类型不会替代这些运行时校验。订阅返回的资源仍须由订阅者释放，不能当作快照放入缓存。数据与资源的选择见 [API 契约](../plugin-development/contracts.md)。

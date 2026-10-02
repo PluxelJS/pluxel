@@ -21,7 +21,7 @@ description: 开发、修改和排查 Pluxel 应用或插件时使用，优先�
 
 ## 按需读文档
 
-使用源码 overlay 时，先用 `pluxel source` 查看本项目选择的 checkout 与包；`pluxel source list` 查看可用登记。Git CLI 所属 checkout 是 Pluxel 权威来源；先确认 setup/doctor 通过，再读 `docs/pluxel/` 并核对实际 exports、类型与调用方。也可运行：
+使用源码 overlay 时，先用 `pluxel source` 查看本项目选择的 checkout 与包；`pluxel source list` 查看可用登记。Git CLI 所属 checkout 是 Pluxel 来源；先确认 setup/doctor 通过，再读 `docs/pluxel/`。读取正文也可运行：
 
 ```sh
 pnpm exec pluxel docs development/index.md
@@ -31,18 +31,27 @@ pnpm exec pluxel docs development/index.md
 
 下表路径相对 `docs/`；可传给 `pluxel docs <path>`。直接阅读的入口是 [公开文档](https://github.com/PluxelJS/pluxel/blob/main/docs/development/index.md)。先满足项目必读约束，再只展开涉及的章节，不递归通读所有链接。
 
-| 当前任务                                    | 文档路径                                                                                                 |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 查询源码声明与应用绑定                      | `development/inspection.md`                                                                              |
-| 隔离测试、服务选择与回收                    | `development/testing.md`                                                                                 |
-| 在线配置、Plugin 方法、Workbench RPC 与日志 | `development/dev-console.md`                                                                             |
-| 依赖、Part、配置                            | `getting-started/plugin-model.md`、`getting-started/plugin-parts.md`、`getting-started/configuration.md` |
-| 应用装配与服务                              | `getting-started/host-setup.md`、`reference/runtime-services.md`                                         |
-| 可恢复失败                                  | `api/better-result.md`                                                                                   |
-| import 入口与包职责                         | `reference/package-matrix.md`                                                                            |
-| CLI、插件构建与源码联调                     | `development/tooling.md`、`development/plugin-package.md`、`development/source-workspaces.md`            |
+先按所有者选正文：Plugin/Part 业务读 `plugin-development/`；应用安装、部署输入与输出读 `host/configuration.md` 的对应章节；工具和验证读 `development/`。只改插件日志时不要读取 Host exporter 配置，只改 Host sink 时不要重读插件写法。
 
-Better Result 按需选用：重复解包与失败提前返回的多步流程适合组合器；不因错误多或跨插件就统一包装，不压缩领域回执，也不强制每层转回自建 envelope。选型、生成器返回要求和传输边界以 `api/better-result.md` 为准；Command 保留其规定的 Result 契约。
+| 当前任务                                   | 文档路径                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| 不确定插件应采用什么范式                   | `plugin-development/index.md`：按任务选一页                                                             |
+| 插件依赖 / 事件通知 / 日志                 | `plugin-development/model.md`、`plugin-development/events.md`、`plugin-development/logging.md`          |
+| 资源与清理 / 配置 / Part                   | `plugin-development/lifecycle.md`、`plugin-development/configuration.md`、`plugin-development/parts.md` |
+| API 与错误恢复                             | `plugin-development/contracts.md`、`plugin-development/better-result.md`                                |
+| 独立并发与取消工具                         | `plugin-development/async.md`                                                                           |
+| HTTP / 命令 / 数据库 / 凭据 / worker       | `plugin-development/` 下对应能力页，索引列出准确路径                                                    |
+| 应用装配、配置来源、持久化、日志输出、部署 | `host/configuration.md`：直接定位章节                                                                   |
+| 自定义服务安装器或管理入口                 | `host/services.md`、`host/management.md`                                                                |
+| 源码声明 / 隔离回归 / 在线操作             | `development/inspection.md` / `plugin-development/testing.md` / `development/dev-console.md`            |
+| CLI、源码联调与发布                        | `development/tooling.md`、`development/source-workspaces.md`、`development/plugin-package.md`           |
+| import 入口与包职责                        | `reference/package-matrix.md`                                                                           |
+
+Core 自带 events/logger/effects，依赖、配置和 Part 属于插件基础；HTTP、Vault、Database、worker、Workbench 需按项目装配，不把 preset 默认安装当作任意 Context 的保证。
+
+插件测试属于基本功；实现前选择测试边界。涉及公开方法、失败处理、并发或取消时，先读对应设计原则，不等故障出现才查。
+
+示例先区分生产应用声明、独立 `createHost()` 与 `createTestHost()`；不要把测试的 `host.start(Plugin, ...)` 放进生产入口。Better Result 的选择与传输边界只在对应指南维护。
 
 确认改动位置、权威输入、受影响调用方和验证方式后开始实现；出现契约冲突再补查。Pluxel 框架内部维护转到其仓库 `AGENTS.md` 与 `engineering/README.md`。
 

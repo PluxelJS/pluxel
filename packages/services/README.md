@@ -36,4 +36,4 @@ Plugin 基于 `@pluxel/core`，通过 `ctx.require(Vault)` 或 `ctx.require(Comm
 
 `this.ctx.logger` 由 Core 始终提供，插件无需 import 日志包；宿主的 `logging(plan)` 配置输出、过滤和日志存储。
 
-完整用法与生命周期约束见 [组合 Host 服务](https://github.com/PluxelJS/pluxel/blob/main/docs/reference/runtime-services.md)。
+完整用法与生命周期约束见 [组合 Host 服务](https://github.com/PluxelJS/pluxel/blob/main/docs/host/services.md)。

@@ -13,16 +13,16 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | ------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------- |
 | `@pluxel/create`                | 创建包含宿主、插件、前端和测试的示例项目                   | [快速开始](../getting-started/index.md)                     |
 | `@pluxel/context`               | 为独立宿主组合固定能力与惰性服务                           | [组合 Context host](./context-hosts.md)                     |
-| `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                           | [Plugin 模型](../getting-started/plugin-model.md)           |
-| `@pluxel/services`              | 官方服务、日志、管理面与应用组合                           | [组合 Host 服务](./runtime-services.md)                     |
+| `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                           | [Plugin 模型](../plugin-development/model.md)               |
+| `@pluxel/services`              | 官方服务、日志、管理面与应用组合                           | [组合 Host 服务](../host/services.md)                       |
 | `@pluxel/workbench`             | Content、View、Attachment、浏览器 SDK 与官方 Shell         | [View](../workbench/view.md)                                |
-| `@pluxel/host`                  | catalog、运行意图、图更新与动态来源                        | [配置插件宿主](../getting-started/host-setup.md)            |
+| `@pluxel/host`                  | catalog、运行意图、图更新与动态来源                        | [配置插件宿主](../host/configuration.md)                    |
 | `@pluxel/host-dev`              | 通用 Vite、HMR 与在线开发控制台                            | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、开发控制台与源码工作区命令   | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/rolldown`              | Plugin 构建集成与源码查询                                  | [开发和发布插件包](../development/plugin-package.md)        |
-| `@pluxel/test`                  | 统一插件测试 host、Vitest/Vite preset 与文件 fixture       | [测试 Plugin](../development/testing.md)                    |
-| `@pluxel/async`                 | 零依赖异步组合、并发限制、重试与等待                       | [Async 异步组合工具](./async.md)                            |
-| `@pluxel/commands`              | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../runtime/commands.md)                          |
+| `@pluxel/test`                  | 统一插件测试 host、Vitest/Vite preset 与文件 fixture       | [测试 Plugin](../plugin-development/testing.md)             |
+| `@pluxel/async`                 | 零依赖异步组合、并发限制、重试与等待                       | [Async 异步组合工具](../plugin-development/async.md)        |
+| `@pluxel/commands`              | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../plugin-development/commands.md)               |
 | `valibot-form`                  | Valibot 表单 metadata 与可选 Web adapter                   | [Valibot 配置表单](../workbench/valibot-form.mdx)           |
 | `@pluxel/auth`                  | Workbench 与 Management API 认证 provider                  | [Management 认证](../plugins/auth.md)                       |
 | `@pluxel/wretch`                | Plugin-owned HTTP client                                   | [Wretch HTTP client](../plugins/wretch.md)                  |
@@ -39,7 +39,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 `@pluxel/commands/capnweb` 与 `@pluxel/commands/mcp` 分别把选定 Command 投影为原生 Cap’n Web 方法与 MCP Tool；适配器不安装 server 或会话，协议依赖按入口隔离。
 
-宿主服务、preset 与开发附件的组合见[服务参考](./runtime-services.md)。开发脚本从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
+宿主服务、preset 与开发附件的组合见[服务参考](../host/services.md)。开发脚本从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
 
 `@pluxel/services/elysia/node` 提供标准 Host launcher 使用的 `listenElysia()`；srvx/crossws carrier 为包内实现。`createElysiaHandler()` 与 HTTP 服务共用 `@pluxel/services/elysia` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/elysia` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
 

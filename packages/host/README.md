@@ -1,6 +1,6 @@
 # @pluxel/host
 
-组合 Plugin catalog、运行意图、动态来源与显式服务。`services` 省略时只有 Core 能力；官方组合见[Host 服务](../../docs/reference/runtime-services.md)。
+组合 Plugin catalog、运行意图、动态来源与显式服务。`services` 省略时只有 Core 能力；官方组合见[Host 服务](../../docs/host/services.md)。
 
 ```ts
 import { defineHostApplication } from '@pluxel/host'
@@ -9,7 +9,7 @@ import { MyPlugin } from './plugin.js'
 export default defineHostApplication(() => ({ plugins: [MyPlugin] }))
 ```
 
-这段声明只把 Plugin 加入 catalog，不自动启动。应用 startup、启动策略、env/file bindings 与开发/生产接线见[宿主配置](../../docs/getting-started/host-setup.md)。
+这段声明只把 Plugin 加入 catalog，不自动启动。应用 startup、启动策略、env/file bindings 与开发/生产接线见[宿主配置](../../docs/host/configuration.md)。
 
 | 入口                       | 用途                                                                  |
 | -------------------------- | --------------------------------------------------------------------- |

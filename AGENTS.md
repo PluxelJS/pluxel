@@ -8,14 +8,16 @@
 
 ## 按任务读取
 
-| 任务                                                       | 必读入口                                                                               | 下一步                                                                            |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| 修改插件业务、配置声明或应用装配                           | [开发指南](docs/development/index.md)                                                  | 用 [inspect](docs/development/inspection.md) 定位 Plugin、Part、schema 和应用输入 |
-| 修改框架、Context 服务、生命周期、工具链或包边界           | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md) | 从 [工程索引](engineering/README.md) 选择涉及的领域，再读实现和测试               |
-| 创建或修改公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)                                    | 先读执行方式与硬约束，再按变更类型读取相关规则；检查 exports 和真实调用方         |
-| 设计本地 Plugin 可恢复失败                                 | [Better Result](docs/api/better-result.md)                                             | 明确调用方如何恢复；保留原生 SDK、判定、回执和生命周期失败契约                    |
-| 操作已运行的应用                                           | [开发控制台](docs/development/dev-console.md)                                          | 发现现有 Vite 实例，再固定 root 与 instance                                       |
-| 添加隔离回归                                               | [插件测试](docs/development/testing.md)                                                | 框架测试设施的边界见 [工程测试](engineering/TESTING.md)                           |
+| 任务                                                       | 必读入口                                                                               | 下一步                                                                    |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 修改插件业务、配置声明或日志                               | [插件开发范式](docs/plugin-development/index.md)                                       | 已知主题直接读目标页；验证方式见[开发指南](docs/development/index.md)     |
+| 装配应用、部署绑定或输出                                   | [Host 配置](docs/host/configuration.md)                                                | 直接读对应配置章节；服务扩展再读 host/services                            |
+| 编写或重组文档                                             | [文档职责](engineering/DOCUMENTATION.md)                                               | 分离插件、Host、验证与实现约束；检查链接和实际读取入口                    |
+| 修改框架、Context 服务、生命周期、工具链或包边界           | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md) | 从 [工程索引](engineering/README.md) 选择涉及的领域，再读实现和测试       |
+| 创建或修改公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)                                    | 先读执行方式与硬约束，再按变更类型读取相关规则；检查 exports 和真实调用方 |
+| 设计本地 Plugin 可恢复失败                                 | [Better Result](./docs/plugin-development/better-result.md)                            | 明确调用方如何恢复；保留原生 SDK、判定、回执和生命周期失败契约            |
+| 操作已运行的应用                                           | [开发控制台](docs/development/dev-console.md)                                          | 发现现有 Vite 实例，再固定 root 与 instance                               |
+| 添加隔离回归                                               | [插件测试](docs/plugin-development/testing.md)                                         | 框架测试设施的边界见 [工程测试](engineering/TESTING.md)                   |
 
 普通源码查找使用 `rg`、package exports 和领域文档的实现入口。inspect 用于确认声明与应用绑定关系；目标和相关声明已明确时直接读源码，不为执行流程重复查询。它不代替任意 import 影响分析或框架内部搜索。
 

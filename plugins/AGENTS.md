@@ -11,7 +11,7 @@
 - 包内问题优先在包内解决。只有当需求能够表达为可复用的跨插件不变量，而不是单个插件的实现捷径时，
   才提议修改 Pluxel core/runtime。
 - Pluxel 作者 API 变化时，在同一变更中更新受影响的官方插件，使它们始终代表当前推荐写法。
-- 设计失败契约时，先按 [Better Result 指南](../docs/api/better-result.md) 判断调用方如何恢复。
+- 设计失败契约时，先按 [Better Result 指南](../docs/plugin-development/better-result.md) 判断调用方如何恢复。
   调用方需要恢复分支时，可用 `@pluxel/core/better-result`；原生 SDK、miss、判定、回执和生命周期保留原契约。
   适用的官方插件须在用户指南和可执行 consumer 示例中展示错误分支与成功分支，并验证未知异常不会被误分类。
   不为演示增加平行 `tryXxx()` API，也不把 Result/Error 实例直接写入缓存或传输。

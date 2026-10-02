@@ -1,4 +1,4 @@
-import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
+import { configureSync, lazy, type LogRecord, resetSync } from '@logtape/logtape'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LoggerService } from '../src/logger/LoggerService'
 import { readPluginLogIdentity } from '../src/logger/categories'
@@ -112,6 +112,60 @@ describe('LoggerService', () => {
 			},
 			{ name: 'plugin-test', logger: { rootId: 'root-test' } },
 		))
+
+	it('preserves tagged values, named properties and lazy context through the facade', () => {
+		const logger = new LoggerService({ name: 'author-test' } as never, { rootId: 'root-test' })
+		let phase = 'starting'
+		const scoped = logger.with({ requestId: 'req-1', phase: lazy(() => phase) })
+		const value = { count: 3 }
+		scoped.debug`Snapshot ${value}`
+		const tagged = records.at(-1)!
+		expect(tagged.message).toEqual(['Snapshot ', value, ''])
+		expect(tagged.properties).toMatchObject({ requestId: 'req-1', phase: 'starting' })
+		expect(tagged.properties).not.toHaveProperty('count')
+		phase = 'ready'
+		scoped.info('Processed {count} items', { count: 3 })
+		const structured = records.at(-1)!
+		expect(structured.rawMessage).toBe('Processed {count} items')
+		expect(structured.properties).toMatchObject({ count: 3, phase: 'ready', requestId: 'req-1' })
+	})
+
+	it('defers diagnostic values and messages until an enabled record is consumed', () => {
+		resetSync()
+		configureSync({
+			sinks: { capture: (record) => records.push(record) },
+			loggers: [
+				{ category: ['pluxel'], lowestLevel: 'info', sinks: ['capture'] },
+				{ category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: [] },
+			],
+		})
+		const logger = new LoggerService({ name: 'lazy-test' } as never, { rootId: 'root-test' })
+		let calls = 0
+		const summary = () => {
+			calls++
+			return 'queue summary'
+		}
+		logger.debug('snapshot', { summary: lazy(summary) })
+		logger.debug((message) => message`Snapshot ${summary()}`)
+		expect(calls).toBe(0)
+		logger.info('snapshot', { summary: lazy(summary) })
+		expect(records.at(-1)!.properties.summary).toBe('queue summary')
+		logger.info((message) => message`Snapshot ${summary()}`)
+		expect(records.at(-1)!.message).toEqual(['Snapshot ', 'queue summary', ''])
+		expect(calls).toBe(2)
+	})
+
+	it('awaits async properties without losing identity and propagates computation failures', async () => {
+		const logger = new LoggerService({ name: 'async-test' } as never, { rootId: 'root-test' })
+		await logger.info('snapshot', async () => ({ size: 3, context: 'spoofed' }))
+		expect(records.at(-1)!.properties).toMatchObject({ size: 3, context: 'async-test' })
+		const error = new Error('diagnostic failed')
+		await expect(
+			logger.info('snapshot', async () => {
+				throw error
+			}),
+		).rejects.toBe(error)
+	})
 
 	it('does not capture caller information at the author facade', () => {
 		const logger = new LoggerService({ name: 'caller-test' } as never, { rootId: 'root-test' })

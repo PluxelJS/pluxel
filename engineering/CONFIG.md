@@ -11,7 +11,7 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
   -> Host persistence / Management transport report / Workbench section projection
 ```
 
-本页拥有配置的唯一事实链。声明与 UI schema 读[不变量](#不变量)及 [Toolchain metadata](#toolchain-metadata)；启动输入读 [Static startup config](#static-startup-config)；保存失败读[保存与应用](#保存与应用)；在线更新读 [Running generation notification](#running-generation-notification)。完整用法见[配置指南](../docs/getting-started/configuration.md)。
+本页拥有配置的唯一事实链。声明与 UI schema 读[不变量](#不变量)及 [Toolchain metadata](#toolchain-metadata)；启动输入读 [Static startup config](#static-startup-config)；保存失败读[保存与应用](#保存与应用)；在线更新读 [Running generation notification](#running-generation-notification)。完整用法见[配置指南](../docs/plugin-development/configuration.md)。
 
 ## Host 管理用例
 
@@ -52,7 +52,7 @@ logging、profile 和 Workbench policy。
 
 应用通过 `envBindings` / `fileBindings` 显式选取插件输入。`envBinding(Plugin, inputs)` / `fileBinding(Plugin, inputs)` 接收导出的 schema 引用；config schema 必须与 `configs.use()` metadata 中的同一对象一致，Vault 根 schema 声明 KV key 到记录的 shape。绑定 helper 从 schema input 推导 mapping / 文件记录 key，不从 Plugin 的静态字段推断。schema 定义只有一份，插件内部仍可使用任意普通 private 配置字段。
 
-Host 从本次不可变 `startup.env` 解析环境映射，fileBindings 的 JSON 路径相对 `startup.root`。Host 不隐式解析整个环境配置 snapshot。来源元数据只包含路径、kind/name 和 readonly，不包含值。具体 mapping 与 Vault 规则见[用户配置文档](../docs/getting-started/configuration.md)。
+Host 从本次不可变 `startup.env` 解析环境映射，fileBindings 的 JSON 路径相对 `startup.root`。Host 不隐式解析整个环境配置 snapshot。来源元数据只包含路径、kind/name 和 readonly，不包含值。具体 mapping 与 Vault 规则见[用户配置文档](../docs/plugin-development/configuration.md)。
 
 Config effective authority 为 `configRecords.initial < file base < saved < env`；plain object 递归合并、array 替换。HostConfigStore 只持久化 saved layer，reset 删除 saved path；env 缺失不产生 overlay。env 路径与其祖先/后代拒绝管理写入，Core low-level mutation 也不能绕过。validation 使用 effective record，默认值或 env normalization 不被反写为 saved。source facts 在同一 coordinator 查询中投影。
 
@@ -144,9 +144,9 @@ control-plane query 返回当前 raw `config` 与 `defaults`，并以 `saved: fa
 - `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
 - `packages/rolldown/src/rolldown/plugins/staticConfigEnvironment.ts`
 - `packages/rolldown/src/cli/static-config-environment-output.ts`
-- `docs/getting-started/configuration.md`
+- `docs/plugin-development/configuration.md`
 
-作者用法见 [`docs/getting-started/configuration.md`](../docs/getting-started/configuration.md#声明规则)。
+作者用法见 [`docs/plugin-development/configuration.md`](../docs/plugin-development/configuration.md#声明规则)。
 
 ## 验证
 

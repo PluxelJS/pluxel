@@ -127,7 +127,7 @@ Plugin package 使用 `pluxel build`，配普通 tsdown config；`--watch` 与 `
 CLI 安装标准 semantic pipeline，成功后同步 metadata；作者不重复安装转换插件。
 完整 package 配置、Part 依赖聚合与 pack 验证见[插件包](./plugin-package.md)。自定义构建工具才使用 `@pluxel/rolldown/build` 的 `pluginPackage()`。
 
-应用使用[宿主构建配置](../getting-started/host-setup.md#生产构建)：官方组合为 `buildPreset()`，底层集成为 `pluxel()`。
+应用使用[宿主构建配置](../host/configuration.md#生产构建)：官方组合为 `buildPreset()`，底层集成为 `pluxel()`。
 Plugin build 保留 provider peer 边界供多宿主使用；应用 build 冻结部署闭包，两种 preset 不混用。
 
 ## Source build boundary
@@ -193,7 +193,7 @@ symlinked root，但会拒绝通过文件 symlink 逃出 root。修改 `name`、
 连续保存时，进入提交队列的更新按顺序执行；前一次被拒绝不会堵住已经排队的修复更新。修复后的状态以当前运行状态为准，
 不要仅凭历史错误再次点击“启动”；仍未恢复时，先检查本节点的配置、启动错误和阻塞它的 required dependency。
 修改 application entry 或 host 配置会重建宿主，使用新的启动策略；这与同一宿主内保留运行意图的插件 HMR 不同，
-详见 [宿主设置](../getting-started/host-setup.md)。
+详见 [宿主设置](../host/configuration.md)。
 
 Vite 会保留失败候选的新依赖：新增 import 导致更新失败后，只修正新文件、创建缺失模块或完成依赖安装，也会自动重新求值。
 成功接纳后释放这批恢复依赖。更新被拒绝时，旧后端继续使用旧 Workbench Content 与界面产物；候选产物在目录接受时才生效。

@@ -13,13 +13,24 @@ description: 区分本地能力、RPC 数据和资源引用，让插件作者只
 | 哪一层校验和授权       | [生产者边界](#生产者负责-dto-边界)                                                    |
 | 错误如何让调用方恢复   | [本地 Result](#本地插件可选-result-契约)、[签名之外的契约](#方法签名之外还要说明什么) |
 
+## 选择调用边界
+
+| 调用方                   | 使用方式                                                      | 需要保证的边界                               |
+| ------------------------ | ------------------------------------------------------------- | -------------------------------------------- |
+| 同一 host 的其他 Plugin  | constructor dependency，调用领域方法                          | caller 归属、generation 撤回、返回对象所有权 |
+| Workbench 页面           | fresh `RpcTarget` + View/Attachment                           | 当前授权、输入校验、per-open 资源清理        |
+| 简单管理内容             | Content 的 data/action                                        | 有界展示数据、服务端表单校验                 |
+| 独立业务 Web、外部客户端 | 自己的 HTTP application；确有需要时挂载独立 Cap’n Web session | 自己的认证、授权、连接与错误契约             |
+
+Plugin 间本地调用不需要绕经 Workbench 或先序列化成 RPC DTO。业务能力应能在 Workbench 关闭时独立工作。DTO 是可传输的数据快照；capability 是允许调用某项能力的对象引用，两者的寿命不同。
+
 ## 本地插件 API 按领域设计
 
 同一 host 中，required dependency 通过 constructor 声明。方法使用领域词汇，按需要返回普通数据或具有明确撤回语义的对象，不为本地调用复制一套 RPC 方法和 DTO。
 
 只读 TypeScript 类型不会隔离共享可变对象。返回快照时，由生产者保证调用方不能通过它意外修改内部状态；返回 handle 时，说明谁拥有资源、停止或 replacement 后还能否调用。需要持续使用的对象不能只靠最初取得它时的一次可用性检查。
 
-跨 Plugin 的可调用入口使用 prototype method；不要用捕获原始实例的 function-valued field 代替。具体 caller 与生命周期规则见[插件模型](../getting-started/plugin-model.md)。
+跨 Plugin 的可调用入口使用 prototype method；不要用捕获原始实例的 function-valued field 代替。具体 caller 与生命周期规则见[插件模型](./model.md)。
 
 ## 页面 API 只公开客户端需要的能力
 
@@ -92,7 +103,7 @@ Framework raw RPC 同样遵守这项规则：`layoutDto()` 返回数据，`openE
 
 服务端 target 依次完成输入的领域校验、基于可信 principal 与当前状态的授权、领域操作，以及面向客户端的字段投影。不要直接返回数据库 row、Plugin、Context 或供应商对象。标注返回类型可以检查已知字段；运行时输入和可传输性仍要验证。
 
-`RpcTarget` 的原型方法和 getter 属于远端可访问表面，TypeScript `private` 不会在运行时隐藏它们。Target 的内部辅助方法使用 `#private` 或移到普通领域服务。此规则只针对 RPC target；Plugin 类受 caller facade 约束，不能照搬 `#private`，遵循[插件模型](../getting-started/plugin-model.md)。
+`RpcTarget` 的原型方法和 getter 属于远端可访问表面，TypeScript `private` 不会在运行时隐藏它们。Target 的内部辅助方法使用 `#private` 或移到普通领域服务。此规则只针对 RPC target；Plugin 类受 caller facade 约束，不能照搬 `#private`，遵循[插件模型](./model.md)。
 
 已经是明确 DTO 的领域快照可以直接复用；只在需要隐藏字段或转换领域表示时建立投影。返回前调用 `@pluxel/workbench/server` 的 `assertWorkbenchDto(dto)`，验证完整数据树和大小、深度预算。该函数不复制、不冻结、不释放资源，也不改变对象身份；它不替代领域 schema、授权或隐私字段选择，不会替调用方删除 capability。异步领域结果先 `await`，再校验实际 DTO。
 

@@ -16,7 +16,7 @@ class StatusPlugin extends BasePlugin {
   status() { return this.health.status() } // 直接调用必需依赖
 }`,
 		description: 'Health 缺席会阻塞 Status；Audit 缺席不阻塞，出现、消失或替换时重启 consumer。',
-		href: '/docs/getting-started/plugin-model',
+		href: '/docs/plugin-development/model',
 		label: '依赖',
 		packageName: '@acme/health + @acme/audit → src/status.ts',
 		status: '必需 + 可选 → 同一依赖图',
@@ -36,7 +36,7 @@ class SearchPlugin extends BasePlugin {
 }`,
 		description:
 			'Part 隔离 config、registration 和 cleanup，但始终跟随 owning Plugin 一起启动、失败和重启。',
-		href: '/docs/getting-started/plugin-parts',
+		href: '/docs/plugin-development/parts',
 		label: '内部组成',
 		packageName: 'src/search.ts',
 		status: 'Part → owner generation',
@@ -55,7 +55,7 @@ class SamplerPlugin extends BasePlugin {
   }
 }`,
 		description: '副作用登记到当前 generation；停止、启动回滚和 HMR replacement 都走同一套回收。',
-		href: '/docs/getting-started/plugin-model',
+		href: '/docs/plugin-development/model',
 		label: '回收',
 		packageName: 'src/sampler.ts',
 		status: 'generation → 统一回收',
@@ -76,7 +76,7 @@ class StatusPlugin extends BasePlugin {
 
 // 同一份 schema 贯穿默认值、校验与表单`,
 		description: '一份 schema 同时给出默认值、运行时校验、冻结输出和 Workbench 表单。',
-		href: '/docs/getting-started/configuration',
+		href: '/docs/plugin-development/configuration',
 		label: '配置',
 		packageName: 'src/config.ts → src/plugins.ts',
 		status: 'Schema → 全链路配置',
@@ -94,7 +94,7 @@ it('运行完整的 Plugin graph', async () => {
 
 // 当前作用域退出：停止依赖图并回收 effects`,
 		description: '测试运行同一张依赖图；作用域退出后按所有权停止 Plugin 并释放 effects。',
-		href: '/docs/development/testing',
+		href: '/docs/plugin-development/testing',
 		label: '测试',
 		packageName: 'tests/status.test.ts',
 		status: '构建语义 → 生命周期',

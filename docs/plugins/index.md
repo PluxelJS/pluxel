@@ -4,7 +4,7 @@ description: 将官方插件加入应用清单、配置和启动策略，并按�
 icon: Blocks
 ---
 
-先用 [快速开始](../getting-started/index.md) 创建并跑通应用，再按业务任务添加插件。宿主可安装 [HTTP](../runtime/http.md)、[日志](../runtime/logging.md)、[数据库](../runtime/database.md) 与 [Worker](../runtime/node-artifacts.md) 等服务；本目录提供认证、出站请求、图像生成等可选能力。
+先用 [快速开始](../getting-started/index.md) 创建并跑通应用，再按业务任务添加插件。宿主可安装 [HTTP](../plugin-development/http.md)、[日志](../plugin-development/logging.md)、[数据库](../plugin-development/database.md) 与 [Worker](../plugin-development/node-artifacts.md) 等服务；本目录提供认证、出站请求、图像生成等可选能力。
 
 ## 把一个插件加入应用
 
@@ -20,38 +20,11 @@ pnpm governance:check
 
 已有、不使用 catalog 的应用可以在对应包目录执行 `npx nypm add @pluxel/wretch`。使用哪种包管理方式不改变下面的宿主装配。
 
-安装只让代码可导入。还要在应用入口把 provider 加入 `plugins` 清单，并让需要它的业务插件自动启动：
+安装只让代码可导入。把 provider 和 consumer 加入应用的 `plugins` 清单，在 `state.initial.autoStart` 中选择业务 consumer；它的 required dependencies 会随图启动。应用入口与初始配置只按 [Host 配置教程](../host/configuration.md#应用入口)维护，不在每个插件指南重复装配宿主。
 
-```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/core'
-import { defineHostApplication } from '@pluxel/host'
-import { servicesPreset } from '@pluxel/services/preset'
-import { WretchPlugin } from '@pluxel/wretch'
-import { CustomerPlugin } from './customer-plugin.js'
+业务代码通过 constructor dependency 使用 provider，见[插件模型](../plugin-development/model.md#required-dependency)。例如 Wretch 的 consumer 实现见[HTTP client](./wretch.md#第一个-http-consumer)。
 
-export default defineHostApplication(async (startup) => {
-	return {
-		name: 'my-app',
-		plugins: [WretchPlugin, CustomerPlugin],
-		services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
-		state: { initial: { autoStart: [pluginNodeAddressOf(CustomerPlugin)] } },
-		configRecords: {
-			initial: [
-				{
-					owner: pluginNodeAddressOf(CustomerPlugin),
-					config: { baseUrl: 'https://catalog.example' },
-				},
-			],
-		},
-	}
-})
-```
-
-把 `CustomerPlugin` 保存为入口相邻的 `customer-plugin.ts`，完整实现见 [Wretch](./wretch.md#第一个-http-consumer)。它通过构造函数依赖 `WretchPlugin`，因此启动 consumer 时会一起启动 provider。把这段配置合入现有入口，保留项目已有的插件、启动项和配置记录。
-
-启动后在 Workbench 确认 consumer 与 provider 都处于运行状态，再调用业务方法验证结果。缺少依赖时先检查 `plugins` 清单；配置无效时查看该插件的启动错误。运行中的开发应用通过 [开发控制台](../development/dev-console.md) 读取实际状态；[测试宿主](../development/testing.md) 用于独立回归。
-
-本目录的 `host.start()`、`host.commit()`、`initialConfig` 示例用于 [服务测试宿主](../development/testing.md)，不要复制到生产启动文件。应用使用上面的配置记录与自动启动策略；动态宿主和持久化配置见 [宿主配置](../getting-started/host-setup.md)。
+本目录 `host.start(Plugin, { initialConfig })` 示例中的 host 是[隔离测试宿主](../plugin-development/testing.md)，不能复制到生产启动文件。运行应用用 HostApplication；在线状态用[dev console](../development/dev-console.md)确认。缺少 provider 查 catalog，启动失败查配置/依赖报告，调用失败按对应插件的领域契约处理。
 
 ## 可公开安装
 

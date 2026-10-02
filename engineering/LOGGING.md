@@ -1,7 +1,7 @@
 # 日志：身份、策略与有界读取
 
 本文记录 Pluxel 当前日志模型、性能约束和实现入口。插件作者用法见
-[`docs/reference/plugin-best-practices.md`](../docs/reference/plugin-best-practices.md)；本文面向维护者和宿主实现。
+[`docs/plugin-development/review.md`](../docs/plugin-development/review.md)；本文面向维护者和宿主实现。
 
 修改身份/归属读 [Category identity](#category-identity) 与 [ContextLogger](#contextlogger)；修改安装或输出读 [RuntimeLogging lifecycle](#runtimelogging-lifecycle) 与 [Routes and sinks](#routes-and-sinks)；修改在线级别读 [Dynamic plugin policy](#dynamic-plugin-policy)；修改读取/游标读 [Runtime store](#runtime-store)。
 
@@ -41,7 +41,7 @@ category builders/parser 位于：
 
 ## ContextLogger
 
-作者调用见 [日志指南](../docs/runtime/logging.md)。
+作者调用见 [日志指南](../docs/plugin-development/logging.md)。
 
 约束：
 
@@ -73,7 +73,7 @@ Logging 的安装与关闭均归 Host service plan 所有。Core root 创建到 
 
 ## Routes and sinks
 
-Logging plan 显式声明 root policy、physical sinks 与 runtime/plugins/debug/meta 四个 family routes；完整配置 shape 以[日志指南](../docs/runtime/logging.md)为准。
+Logging plan 显式声明 root policy、physical sinks 与 runtime/plugins/debug/meta 四个 family routes；完整配置 shape 以[Host 日志配置](../docs/host/configuration.md#host-logging-plan)为准。
 
 内建 sink：
 
@@ -100,6 +100,8 @@ LogTape family lowestLevel
 ```
 
 physical sink 每个 id 只创建一次；family route wrapper 不拥有第二份资源。structural config 安装后不可热修改。
+
+远程输出直接组合原生 LogTape sink 与 OTel SDK，官方装配见[远程输出](../docs/host/configuration.md#远程输出原生-logtape-sink)。不复制 exporter 参数或新增 pull 归档协议；OTel 依赖由选择该输出的应用安装。传入 sink 的 disposal 由 LogTape reset 调用，`RuntimeLogging.flush()` 只刷新 store/policy；原生 provider 的 `forceFlush()` 承担远程批次刷新。集成回归 `packages/services/tests/logging/otlp.test.ts` 覆盖 HTTP JSON/protobuf、插件关闭日志与 prepare rollback。
 
 `servicesPreset` 默认加入有界 store sink，Management 与控制台在关闭 Workbench 时仍可查询日志。自行组合 Host 时由显式 logging plan 选择是否存储。`RuntimeLogStoreRegistry` 自身也是惰性创建；没有 store
 route、日志 API 访问或显式 `logging.stores` 访问时不分配 registry/map。

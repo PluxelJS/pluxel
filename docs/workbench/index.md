@@ -8,23 +8,25 @@ Workbench 是应用自带的管理工作台。普通插件已经可以在这里�
 
 ## 如何选择
 
-| 你要做什么                             | 从这里开始                                                        |
-| -------------------------------------- | ----------------------------------------------------------------- |
-| 编辑普通配置，例如地址、并发数和开关   | [声明配置](../getting-started/configuration.md)，自动生成标准表单 |
-| 展示说明、状态、按钮或一次性表单       | [Content：无需 React 的操作页](./content.md)                      |
-| 自定义布局、分页、流式输出或长任务     | [View：React 管理页面](./view.md)                                 |
-| 在另一个插件中使用已有的设置页或选择器 | [Attachment：复用插件界面](./composition.md)                      |
-| 调整插件列表的分组和顺序               | [插件分组](./plugin-groups.md)                                    |
-| 排查插件启动、更新或工作台连接问题     | [使用与排查工作台](./operations.md)                               |
+| 你要做什么                             | 从这里开始                                                           |
+| -------------------------------------- | -------------------------------------------------------------------- |
+| 编辑普通配置，例如地址、并发数和开关   | [声明配置](../plugin-development/configuration.md)，自动生成标准表单 |
+| 展示说明、状态、按钮或一次性表单       | [Content：无需 React 的操作页](./content.md)                         |
+| 自定义布局、分页、流式输出或长任务     | [View：React 管理页面](./view.md)                                    |
+| 在另一个插件中使用已有的设置页或选择器 | [Attachment：复用插件界面](./composition.md)                         |
+| 调整插件列表的分组和顺序               | [插件分组](./plugin-groups.md)                                       |
+| 排查插件启动、更新或工作台连接问题     | [使用与排查工作台](./operations.md)                                  |
 
 例如连接状态和 PING 按钮用 Content；有流式输出和取消操作的 Agent 会话用 View。
-普通配置直接复用标准表单。密钥存入 [Vault](../runtime/vault.md)，配置只保存引用；
+普通配置直接复用标准表单。密钥存入 [Vault](../plugin-development/vault.md)，配置只保存引用；
 已有明确写入或轮换流程的一次性凭据表单可以用 Content，多步骤登录和恢复流程使用 View。
+
+页面作者只需确认已有 Host 提供 Workbench；服务安装、认证入口和资源托管归宿主。更改这些接线时转到[宿主配置](../host/configuration.md#选择组合)与[自定义 Workbench Host](./standalone-host.md)，不把宿主配置混入 Plugin 的页面声明。
 
 ## 先确认工作台可用
 
 从新建应用模板开始时，运行 `pnpm dev`，打开终端输出的 Workbench 地址。
-现有宿主按[宿主配置](../getting-started/host-setup.md#选择组合)启用 Workbench，
+现有宿主按[宿主配置](../host/configuration.md#选择组合)启用 Workbench，
 并安装它要求的浏览器依赖。先确认插件已经运行，再检查自定义标签是否出现。
 
 新增页面通常只需要三步：
@@ -38,9 +40,9 @@ Workbench 是应用自带的管理工作台。普通插件已经可以在这里�
 
 ## 继续实现或排错
 
-页面 API 返回有界普通数据，资源型结果声明清理责任；具体规则见 [API 契约](../api/contracts.md)。
+页面 API 返回有界普通数据，资源型结果声明清理责任；具体规则见 [API 契约](../plugin-development/contracts.md)。
 页面的 route、参数、宿主能力和布局见 [View](./view.md)，查询、写入与订阅见[页面资源](./renderer-resources.md)。
 宿主接入官方 Shell、管理连接或自定义 Vite 附件见[独立 Host](./standalone-host.md)。
 
 生产构建还需验证 Content 与 React 制品；页面能在开发环境打开，不代表发布包已经包含这些资源。
-运行中的应用通过[开发控制台](../development/dev-console.md)检查，隔离回归使用[测试宿主](../development/testing.md)。
+运行中的应用通过[开发控制台](../development/dev-console.md)检查，隔离回归使用[测试宿主](../plugin-development/testing.md)。

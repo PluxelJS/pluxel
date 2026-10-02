@@ -1,0 +1,28 @@
+{
+	"title": "插件开发范式",
+	"pages": [
+		"index",
+		"---插件基本功---",
+		"model",
+		"events",
+		"logging",
+		"lifecycle",
+		"configuration",
+		"parts",
+		"testing",
+		"---设计原则---",
+		"contracts",
+		"better-result",
+		"async",
+		"---按需扩展---",
+		"http",
+		"commands",
+		"database",
+		"vault",
+		"node-artifacts",
+		"---完成修改---",
+		"review"
+	],
+	"icon": "Code",
+	"defaultOpen": true
+}

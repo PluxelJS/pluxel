@@ -11,7 +11,7 @@ description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主
 
 默认配置启用三种 OTLP signal，关闭 Prometheus：
 
-以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
 await host.start(OtelPlugin, {
@@ -157,6 +157,8 @@ this.ctx.effects.defer(() => workers.removeCallback(observe))
 当 traces 或 logs 启用时，runtime 会安装 process-stable `AsyncLocalStorageContextManager`，以及 W3C `tracecontext` + `baggage` propagator；已有 application-owned global coordinator 优先。本包不会注册 global meter/tracer/logger provider，constructor dependency 仍是 Plugin graph authority。
 
 provider stop/replacement 时会关闭 meter、tracer 和 logger providers，flush/shutdown 对应 readers 与 processors。OTLP 后端暂时不可达时，producer 热路径不会被反压；失败按 signal 限频写入 `ctx.logger`，恢复时记录 recovery。官方 exporter 负责其标准瞬时重试。
+
+需要导出 `ctx.logger` 时，在 Host 配置[原生 LogTape OTel sink](../host/configuration.md#远程输出原生-logtape-sink)，无需安装本 Plugin。
 
 `ctx.logger` 不会自动转发到 OTel Logger：前者是 launcher-owned process logging，后者是 consumer 显式选择的 telemetry signal。业务记录 telemetry 不依赖 Workbench。
 

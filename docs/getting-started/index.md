@@ -28,7 +28,7 @@ pnpm dev
 
 打开终端打印的 **Workbench** 地址，可以查看和管理插件。它位于同一应用地址的 `/__pluxel/workbench` 路径。
 
-示例的待办数据保存在内存中，重启后会重置。需要持久化时再接入[数据库](../runtime/database.md)。
+示例的待办数据保存在内存中，重启后会重置。需要持久化时再接入[数据库](../plugin-development/database.md)。
 
 如果本机无法使用默认的命名开发地址，停止当前命令后运行：
 
@@ -73,11 +73,11 @@ pnpm build
 pnpm start
 ```
 
-示例使用同一个应用声明描述固定插件与可选动态来源，开发时支持热更新。配置来源与启动策略见[配置插件宿主](./host-setup.md)。
+示例使用同一个应用声明描述固定插件与可选动态来源，开发时支持热更新。配置来源与启动策略见[配置插件宿主](../host/configuration.md)。
 
 ## 接下来做什么
 
 - **继续开发这个应用**：[示例项目结构与开发流程](../development/starter-monorepo.md)。
-- **编写自己的插件**：[编写第一个插件](./first-plugin.md)，再了解[插件依赖与生命周期](./plugin-model.md)。
-- **添加一个功能**：[HTTP 接口](../runtime/http.md)、[配置与默认值](./configuration.md)、[Workbench 界面](../workbench/index.md)。
+- **编写自己的插件**：[编写第一个插件](./first-plugin.md)，再了解[插件依赖与生命周期](../plugin-development/model.md)。
+- **添加一个功能**：[HTTP 接口](../plugin-development/http.md)、[配置与默认值](../plugin-development/configuration.md)、[Workbench 界面](../workbench/index.md)。
 - **定位并修改已有功能，或让 coding agent 协助开发**：从[开发工作流程](../development/index.md)选择 inspect、devconsole 和测试，再读任务对应的功能指南。

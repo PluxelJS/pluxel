@@ -1,6 +1,6 @@
 # Core 实现入口
 
-公开导出以 [package.json](./package.json) 为准；作者用法见[插件模型](../../docs/getting-started/plugin-model.md)，工程约束见 [CORE.md](../../engineering/CORE.md)。
+公开导出以 [package.json](./package.json) 为准；作者用法见[插件模型](../../docs/plugin-development/model.md)，工程约束见 [CORE.md](../../engineering/CORE.md)。
 
 | 位置                                                  | 修改范围                                                                                           |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------- |

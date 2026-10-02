@@ -49,7 +49,7 @@ export const HttpWorkbench = workbench.define({
 ```
 
 这些 `*Dto` 方法由 target 完成授权、输入校验和 DTO 投影，并在返回前调用 `assertWorkbenchDto()`；
-具体边界见 [API 契约](../api/contracts.md#生产者负责-dto-边界)。
+具体边界见 [API 契约](../plugin-development/contracts.md#生产者负责-dto-边界)。
 
 然后在提供方 `init()` 中发布。下面假设业务服务 `settings` 已按使用方保存设置，`HttpSettingsTarget` 是实现该 API 的 `RpcTarget`：
 

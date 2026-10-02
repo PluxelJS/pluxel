@@ -34,7 +34,7 @@ else console.log(result.value)
 
 已知 Command 的 `execute()` 检查 wire 参数类型；来自 JavaScript、`any`、argv 或远程调用的输入仍在运行时校验。它统一返回 `Promise<Result<T, CommandFailure>>`，T 从 handler 的成功分支推导。省略 context 只适用于没有额外必需 context 字段的 Command。
 
-`@pluxel/commands` 再导出的 `Result` 与 `@pluxel/core/better-result` 的 `Result` 来自同一个上游包。需要组合函数等完整 API 时，从 [Better Result 共享入口](../api/better-result.md) 导入；Command 的 Result 无需另行转换。
+`@pluxel/commands` 再导出的 `Result` 与 `@pluxel/core/better-result` 的 `Result` 来自同一个上游包。需要组合函数等完整 API 时，从 [Better Result 共享入口](./better-result.md) 导入；Command 的 Result 无需另行转换。
 
 成功值可以是字符串、对象、数组或 `void`。本地执行不要求 output schema，也不编码成功值。载体负责将它投影到自己的协议，并验证该出口能否交付。
 

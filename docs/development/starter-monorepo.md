@@ -63,7 +63,7 @@ workspace dependency 对应 constructor required edge。Todo 对 Audit 使用 op
 
 ## 开发与部署
 
-一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../reference/runtime-services.md)。
+一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../host/services.md)。
 
 ```sh
 pnpm dev
@@ -102,7 +102,7 @@ pnpm governance:check
 
 分别用于添加、重新分组、清理和核对依赖。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
 
-插件生产代码依赖 `@pluxel/core` 与实际使用的服务、Workbench 和 validation 包。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](./testing.md)。
+插件生产代码依赖 `@pluxel/core` 与实际使用的服务、Workbench 和 validation 包。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](../plugin-development/testing.md)。
 
 ## 可选动态来源
 

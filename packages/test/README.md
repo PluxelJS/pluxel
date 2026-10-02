@@ -24,4 +24,4 @@ await host.start(MyPlugin)
 
 使用仓库要求的 Node.js 24+ 与 Vitest 5。`test.include` 选择测试文件，`pluxel.include/exclude` 选择转换源码；根入口不依赖 Vitest runtime。
 
-完整选项、错误断言及 HTTP/Workbench/Node 测试见[测试指南](../../docs/development/testing.md)。框架测试边界见 [工程测试](../../engineering/TESTING.md)。
+完整选项、错误断言及 HTTP/Workbench/Node 测试见[测试指南](../../docs/plugin-development/testing.md)。框架测试边界见 [工程测试](../../engineering/TESTING.md)。

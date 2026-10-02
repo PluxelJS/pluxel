@@ -26,7 +26,7 @@
 - Plugin 身份来自 canonical entry 与唯一 root named export；展示名称、class name、constructor identity 和物理目录不参与身份。
 - required dependency 由 constructor 声明；optional integration 观察 catalog，不暗中加载、安装或改变 provider 启动策略。普通逻辑、Part containment 与独立 Plugin graph 各有边界，见 [Plugin 作者模型](PLUGIN_SYSTEM.md#plugin-作者模型)。
 - 工具链在 TypeScript 擦除前生成声明事实，route 在 namespace 求值完成后消费 frozen candidate。缺少或不兼容的事实必须明确失败，不通过 reflection、命名约定或运行时猜测恢复。
-- 原生 SDK 的契约、decision、receipt 和 lifecycle failure 保留原义。调用者可恢复的本地领域失败显式建模，见 [Better Result](../docs/api/better-result.md)。不能把“已保存”“已提交”“已运行”混为成功。
+- 原生 SDK 的契约、decision、receipt 和 lifecycle failure 保留原义。调用者可恢复的本地领域失败显式建模，见 [Better Result](../docs/plugin-development/better-result.md)。不能把“已保存”“已提交”“已运行”混为成功。
 
 ## 所有权必须经得起缓存和并发
 

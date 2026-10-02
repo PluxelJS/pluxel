@@ -125,7 +125,7 @@ const documentQuery = overviewScope.queryFamily(({ api }, id: string) => ({
 - 获取尚未完成就发生清理时，在结果到达后立即释放，不写回组件状态。
 - 借用者不释放父级引用；Provider 只释放自己取得或 `dup()` 的资源。
 
-框架不会自动追踪插件任意手动 RPC 取得的子资源。释放父引用也不等于递归释放所有子引用；断线和 dispose 不保证服务端写入已取消或回滚。默认共享入口与 Provider 分层规则见[API 契约](../api/contracts.md#共享-rpc-能力按作用域持有)。
+框架不会自动追踪插件任意手动 RPC 取得的子资源。释放父引用也不等于递归释放所有子引用；断线和 dispose 不保证服务端写入已取消或回滚。默认共享入口与 Provider 分层规则见[API 契约](../plugin-development/contracts.md#共享-rpc-能力按作用域持有)。
 
 ## Query 与 mutation 契约
 

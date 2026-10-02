@@ -26,4 +26,4 @@ Valibot schema
 
 Playground 代码只在当前浏览器页面执行。不要粘贴 secret，也不要运行不可信代码。
 
-完整配置约束见 [配置模型](../getting-started/configuration.md)；字段 metadata 与 Web adapter 见 [Valibot 配置表单](./valibot-form.mdx)。
+完整配置约束见 [配置模型](../plugin-development/configuration.md)；字段 metadata 与 Web adapter 见 [Valibot 配置表单](./valibot-form.mdx)。

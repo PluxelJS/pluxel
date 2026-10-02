@@ -3,16 +3,12 @@
 	"pages": [
 		"index",
 		"why-pluxel",
-		"---开始使用---",
 		"getting-started",
-		"---开发与验证---",
+		"plugin-development",
+		"host",
 		"development",
-		"---功能指南---",
-		"runtime",
 		"workbench",
 		"plugins",
-		"---工程与参考---",
-		"api",
 		"reference"
 	]
 }

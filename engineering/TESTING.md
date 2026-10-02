@@ -1,7 +1,7 @@
 # Testing Architecture
 
 测试应验证最小仍承载风险的产品边界，而不是复制实现调用。Plugin 作者的选择和示例由
-[`docs/development/testing.md`](../docs/development/testing.md) 定义；本文只记录维护测试内核时需要保持的边界。
+[`docs/plugin-development/testing.md`](../docs/plugin-development/testing.md) 定义；本文只记录维护测试内核时需要保持的边界。
 
 ## Boundary selection
 

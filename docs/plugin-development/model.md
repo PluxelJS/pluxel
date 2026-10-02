@@ -1,15 +1,15 @@
 ---
-title: Plugin 模型与生命周期
-description: 理解 Plugin 的依赖关系、版本代际、可选集成、资源回收和失败传播。
+title: 插件依赖与组成
+description: 选择 required dependency、optional integration 和 Part，明确调用归属与插件身份。
 ---
 
 当一个 Plugin 需要调用另一个 Plugin，或持有需要关闭的连接、定时器时，按本页组织依赖与清理。
-先完成[第一个插件](./first-plugin.md)，再根据实际需求阅读对应部分。
+第一次写 Plugin 可从[最小示例](../getting-started/first-plugin.md)开始；已有代码直接定位下面的依赖、资源或失败章节。
 
 一个 Plugin 只有在必需依赖可用、配置校验成功且 `init()` 完成后才会运行。
 你负责声明依赖、初始化业务资源并登记清理；宿主负责启动顺序、停止和热更新。
 
-本页按“组成关系 → 调用约束 → 资源 → 失败”阅读。只做局部修改时，直接查[必需依赖](#required-dependency)、[可选集成](#optional-integration)或[资源清理](#generation-是资源所有权边界)；身份和事件协议按需查阅。
+本页先判断组成关系，再说明 required/optional dependency 与调用归属。资源清理读[生命周期](./lifecycle.md)，通知与订阅读[事件](./events.md)；这些都是基础机制，不需要安装 HTTP 或 Workbench。
 
 ## 三种组成关系
 
@@ -26,7 +26,7 @@ description: 理解 Plugin 的依赖关系、版本代际、可选集成、资�
 
 ## Required dependency
 
-必须使用的服务通过构造器声明。提供服务的插件称为 provider，调用它的插件称为 consumer。
+必须调用的其他 Plugin 通过构造器声明。提供业务能力的插件称为 provider，调用它的插件称为 consumer；这与 Host 安装的 Context 服务是不同的关系。
 使用普通值导入，框架才能识别要注入哪个类：
 
 ```ts twoslash
@@ -125,124 +125,11 @@ provider absent、当前未运行或 start-failed 时 callback 不执行，也�
 连接管理、缓存和同步任务需要各自的配置与清理，但始终跟随同一个 Plugin 启停时，使用 `PluginPart`。
 这里的 owner 就是包含这个 Part 的插件；Part 不会变成可单独启停或被其他插件注入的新节点。
 
-完整缓存示例见[使用 PluginPart](./plugin-parts.md)。没有这些资源需求时，普通函数或类即可。
+完整缓存示例见[使用 PluginPart](./parts.md)。没有这些资源需求时，普通函数或类即可。
 
-## Generation 是资源所有权边界
+## 启动、资源与事件
 
-一次插件运行称为一个 generation，表示这一次运行中的实例和资源。停止、重启、热替换或可选依赖变化都会结束旧的一次运行。
-
-创建资源后立即登记清理。这样后续初始化失败或插件停止时，框架仍能释放已创建的部分：
-
-```ts no-twoslash
-protected override async init(signal: AbortSignal) {
-	const client = createClient(this.config)
-	this.ctx.effects.defer(() => client.close(), { tag: 'client' })
-
-	await client.connect({ signal })
-}
-```
-
-### 选择 effects primitive
-
-| 需求                           | API                                 |
-| ------------------------------ | ----------------------------------- |
-| 登记一个 cleanup function      | `effects.defer(cleanup)`            |
-| 持有带 `dispose()` 的对象      | `effects.own(disposable)`           |
-| 成对 acquire/release           | `effects.acquire(acquire, release)` |
-| 给简单 helper 单独建立子作用域 | `effects.scope(meta)`               |
-| 自动派生 Context/config/scope  | `this.parts.use(CachePart)`         |
-| 一组登记要么全部提交、要么回滚 | `effects.transaction()`             |
-
-```ts no-twoslash
-protected override init() {
-	const scope = this.ctx.effects.scope({ tag: 'sync-loop' })
-	const loop = new SyncLoop(this.ctx.logger.with({ component: 'sync-loop' }))
-	scope.own(loop)
-	loop.start()
-}
-```
-
-`effects.transaction(async tx => ...)` 只回滚本事务登记的资源。事务中通过 `tx` 登记并 await acquire；嵌套使用 `tx.transaction()`，同级并发会拒绝。callback 结束后 tx 不再可用；`tx.dispose()` 只撤回本事务，不关闭父 scope。未等待的 acquire 若晚到，会释放资源并 reject；父 scope 的 dispose 不代表这些未登记 Promise 已退出。
-
-cleanup 必须幂等，并在 Promise resolve 前真正停止底层工作。只调用 `abort()` 却不等待 worker、watcher 或 queue consumer 退出，会让旧 generation 与新 generation 重叠。
-
-## `init()` 的职责
-
-校验必要上游与凭据，注册能力，启动长期资源。无法提供能力时直接抛错，不捕获后只写日志继续运行。
-`init()` 可以返回 cleanup/disposable；有多步资源获取时，在每次获取成功后立即登记，确保部分初始化失败也能清理。
-
-## 调用失败和生命周期失败
-
-两者影响范围不同：
-
-- 插件无法提供能力：让 `init()` 失败，或由宿主执行 restart/replacement；
-- 单个 HTTP/command 调用参数错误或上游超时：返回请求级错误，不改变 Plugin 状态；
-- timer、watcher、queue consumer 的单次失败：记录结构化错误，按领域规则重试、暂停或触发明确 shutdown。
-
-```ts no-twoslash
-const timer = setInterval(() => {
-	void this.syncOnce().catch((error: unknown) => {
-		this.ctx.logger.error('background sync failed', { error })
-	})
-}, 30_000)
-
-this.ctx.effects.defer(() => clearInterval(timer))
-```
-
-## 在 ambient 广播和公开协议之间选择
-
-需要在同一宿主中广播消息，而且不要求某个插件存在或先启动时，使用 `ctx.events`。这种无特定提供方的广播称为 ambient 事件。先扩展 `Events` 类型，再通过
-`ctx.events` 订阅和发布：
-
-```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
-
-declare module '@pluxel/core' {
-	interface Events {
-		'catalog:invalidated': [catalogId: string]
-	}
-}
-
-@Plugin({ displayName: 'Catalog observer' })
-export class CatalogObserverPlugin extends BasePlugin {
-	protected override init() {
-		this.ctx.events.on('catalog:invalidated', (catalogId) => {
-			this.ctx.logger.info('catalog invalidated', { catalogId })
-		})
-	}
-}
-```
-
-module augmentation 只合并 TypeScript 事件词汇，不会 import、安装、打开 auto-start policy 或连接两个 Plugin，也不提供启动顺序保证。每个 root
-共享一个 emitter backend，但每个 Plugin、Part 和 caller Context 得到固定 owner 的普通 `EventsService` view；订阅自动进入
-该 owner effects，stop、replacement 和 init rollback 都会取消订阅。事件名应使用带领域前缀的稳定字面量，避免无归属的通用名称。
-
-如果事件属于某个 provider 的公开能力，consumer 必须依赖该 provider，或者 availability 会影响 consumer lifecycle，则公开
-具名 `EvtChannel`，不要把依赖伪装成 ambient 广播：
-
-```ts twoslash
-import { BasePlugin, EvtChannel, Plugin } from '@pluxel/core'
-
-type Invoice = { id: string }
-type InvoicePaid = (invoice: Invoice, signal: AbortSignal) => void | Promise<void>
-
-@Plugin({ displayName: 'Billing' })
-export class BillingPlugin extends BasePlugin {
-	readonly events = {
-		invoicePaid: new EvtChannel<InvoicePaid>(this.ctx),
-	} as const
-}
-
-declare function projectInvoice(invoice: Invoice, options: { signal: AbortSignal }): Promise<void>
-declare const billing: BillingPlugin
-
-billing.events.invoicePaid.on(async (invoice, signal) => {
-	await projectInvoice(invoice, { signal })
-})
-```
-
-listener registration 会绑定调用方 Context effects，stop/replacement 时自动取消；仍可以使用返回的 disposer 提前移除。生产者需要等待所有异步 listener 并隔离单项失败时，使用 `emitSettled()`。
-`EvtChannel` 直接接收 `this.ctx`；不要传 `() => this.ctx`。调用方归属由 dependency caller facade 显式绑定，不通过动态 Context provider 推断。
+资源获取、失败初始化及停止清理见[生命周期与 effects](./lifecycle.md)。`ctx.events` 广播与依赖提供方的 `EvtChannel` 用法见[事件](./events.md)；事件类型声明本身不会建立依赖。
 
 ## Identity 不等于 class name
 
@@ -262,4 +149,4 @@ HTTP 路径不从 Plugin identity 派生。Plugin 在 generation-scoped `ctx.req
 
 Plugin source 必须经过 Pluxel Vite/Rolldown pipeline。raw TypeScript runner 不生成这些语义事实。
 
-下一步按任务选择：[使用 PluginPart](./plugin-parts.md)或[配置模型](./configuration.md)。HTTP、worker、Workbench 和完整测试矩阵都是按需专题，不是继续理解核心模型的前置阅读。
+下一步按任务选择：[使用 PluginPart](./parts.md)或[配置模型](./configuration.md)。HTTP、worker、Workbench 和完整测试矩阵都是按需专题，不是继续理解核心模型的前置阅读。

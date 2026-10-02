@@ -236,7 +236,12 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@logtape/otel": "catalog:dev",
 		"@mantine/core": "catalog:frontend",
+		"@opentelemetry/exporter-logs-otlp-http": "catalog:prod",
+		"@opentelemetry/exporter-logs-otlp-proto": "catalog:prod",
+		"@opentelemetry/resources": "catalog:prod",
+		"@opentelemetry/sdk-logs": "catalog:prod",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",

@@ -1,7 +1,7 @@
 # PGlite 本机测试 Backend 收敛
 
 > 本文是未实施边界的设计记录，不改变当前 API；当前事实以
-> [`../DATABASE.md`](../DATABASE.md) 和 [`../../docs/runtime/database.md`](../../docs/runtime/database.md) 为准。
+> [`../DATABASE.md`](../DATABASE.md) 和 [`../../docs/plugin-development/database.md`](../../docs/plugin-development/database.md) 为准。
 
 ## 目标
 

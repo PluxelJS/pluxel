@@ -1,43 +1,39 @@
 ---
-title: 理解与修改已有项目
-description: 先区分源码声明、在线状态和隔离回归，再定位改动与验证入口。
+title: 开发与验证
+description: 区分源码事实、静态检查、隔离行为和在线状态，按改动选择证据。
 ---
 
-先确认项目根目录、所用包版本、相关 scripts，以及要修改的插件或应用入口。已知目标时直接定位，不必扫描整个项目。
+本目录回答“如何定位和验证修改”。业务写法从[插件开发范式](../plugin-development/index.md)选择；服务安装和部署输入从[Host 配置](../host/configuration.md)选择。
 
-Coding agent 可读取 [pluxel-development skill](https://github.com/PluxelJS/pluxel/blob/main/.agents/skills/pluxel-development/SKILL.md)，按任务选择查询、检查与验证流程。CLI 统一物化文档与 skill，正文只在上游维护；接入方式见[源码工作区的 skill 接入](./source-workspaces.md#coding-agent-skill)。项目 AGENTS 保留读取要求与本地约束，网页链接本身不等于已安装 skill。
+## 先确认任务需要什么证据
 
-源码 checkout 的文档随该 revision 演进；`pluxel docs` 输出当前 CLI 来源的文档正文；Git 使用 owning checkout，npm 使用随 CLI 发布的资源。出现符号或行为差异时先核对版本与 exports，再判断是用法错误还是需要修改契约。
+| 问题                                      | 首选工具                                     | 证据边界                                      |
+| ----------------------------------------- | -------------------------------------------- | --------------------------------------------- |
+| Plugin、Part、schema 或应用输入在哪里声明 | [inspect](./inspection.md)                   | 静态声明与绑定关系；不能证明在线实例已应用    |
+| 类型、lint、包边界或构建是否正确          | 项目实际 scripts / `pluxel workspace doctor` | 静态检查；inspect 列出脚本不等于执行检查      |
+| 插件行为、错误与停止清理是否正确          | [插件测试](../plugin-development/testing.md) | 真实 lowering 的隔离 host；不代表运行实例     |
+| 当前应用的配置、方法、报告和日志          | [dev console](./dev-console.md)              | 现有 Vite 实例；固定绝对 root 和准确 instance |
+| Git overlay、文档或 skill 来源是否正确    | [源码工作区](./source-workspaces.md)         | setup、链接、所选 checkout 与产物来源         |
 
-## 选择需要的事实
-
-| 要回答的问题                                         | 工具                                                   | 结果能证明什么                                                        |
-| ---------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------- |
-| Plugin、Part、schema、依赖或应用配置输入在哪里声明？ | [inspect](./inspection.md)：`@pluxel/rolldown/inspect` | 源码声明与位置；应用输入需要显式 `application`                        |
-| 当前实例用了什么配置，调用是否生效，日志是什么？     | [devconsole](./dev-console.md)：`pluxel dev`           | 所选现有 Vite 实例的真实状态；先发现，再固定 `--root` 与 `--instance` |
-| 修改是否满足依赖、配置、请求与清理契约？             | [插件测试](./testing.md)：`@pluxel/test`               | 隔离回归结果，不代表当前在线实例                                      |
-
-普通函数、任意 import 或框架内部实现可直接搜索源码。inspect 的空结果只描述其查询范围；`partial` 或 `unavailable` 必须继续处理缺口，不能据此断言不存在。
+已知文件和符号时直接用 `rg`、exports 和源码。inspect 用于确认声明关系，不代替任意 import 分析；空结果或 partial 报告不能证明不存在。
 
 ## 完成一次修改
 
-1. **定位。** 已知文件直接读源码；需要声明关系时查询 Plugin，沿 declaration、schema、binding 位置阅读。修改应用输入时明确选择应用。
-2. **确认契约。** 检查当前导出、类型、文档和真实调用方，确定谁拥有状态、失败和清理。
-3. **实现与验证。** 运行相关 package 实际声明的检查。脚本存在不代表覆盖本次风险；根据行为选择类型、运行时或生命周期验证。
-4. **确认需要的结果。** 若修改涉及之前查询的声明，编辑后重查；需要在线效果时检查对应实例的运行结果、应用报告与日志。源码 revision 和隔离测试不能替代在线证据。
+1. 确认项目根、包版本、目标文件及实际 scripts。
+2. 读取本次契约：谁提供输入、谁拥有资源、谁消费结果、何时算生效。
+3. 修改实现和已知调用方；按风险运行静态检查、隔离测试或在线验证。
+4. 报告实际执行的检查、观察到的行为和未覆盖边界。用户用法变化同步所属指南。
 
-## 按任务继续阅读
+纯函数使用普通测试；插件依赖与生命周期使用 `@pluxel/test`；在线变更使用现有 dev console。不要为满足形式启动无关应用，或用另一宿主推断线上结果。
 
-| 改动                 | 入口                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------ |
-| 插件依赖与生命周期   | [插件模型](../getting-started/plugin-model.md)                                             |
-| 拆分插件内部组成     | [PluginPart](../getting-started/plugin-parts.md)                                           |
-| 配置声明和输入       | [配置](../getting-started/configuration.md)                                                |
-| 业务 API、可恢复失败 | [API 设计](../api/index.md)、[Better Result](../api/better-result.md)                      |
-| 应用装配与服务选择   | [宿主配置](../getting-started/host-setup.md)、[服务组合](../reference/runtime-services.md) |
-| 生成项目目录和命令   | [示例项目](./starter-monorepo.md)、[CLI](./tooling.md)                                     |
-| 跨仓库源码联调       | [源码工作区](./source-workspaces.md)                                                       |
-| 插件发布或应用部署   | [插件包](./plugin-package.md)、[应用交付](./distribution.md)                               |
-| 查公开 import 或排错 | [Package 矩阵](../reference/package-matrix.md)、[排错](../reference/troubleshooting.md)    |
+## 工程任务入口
 
-修改 Pluxel 框架内部时，转到[工程索引](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)。提案与实验不作为当前 API 依据。
+| 任务                        | 入口                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| 理解生成项目                | [示例项目](./starter-monorepo.md)                                              |
+| CLI、源码 lowering 与构建   | [工具链](./tooling.md)                                                         |
+| Git/npm setup 与 skill 安装 | [源码工作区](./source-workspaces.md)                                           |
+| 发布插件或交付应用          | [插件包](./plugin-package.md)、[应用交付](./distribution.md)                   |
+| 修改框架内部                | [工程入口](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md) |
+
+Coding agent 的工具选择与执行要求由 [pluxel-development skill](https://github.com/PluxelJS/pluxel/blob/main/.agents/skills/pluxel-development/SKILL.md)引导。CLI 负责物化 skill 和文档；正文只有上游一份，项目 AGENTS 保留本地约束。`pluxel docs` 输出当前来源正文；版本有差异时先核对 exports 与实现。

@@ -69,4 +69,4 @@ Constructor dependency facade 固定 provider generation 和 caller Context。Pa
 
 固定 imports 与动态来源共用应用声明、catalog 和运行意图。动态来源只发布/删除普通 ESM entry；Package Manager 是显式安装的普通 Plugin，自己拥有 acquisition、registry、安装状态和 UI。生产来源加载与开发 HMR 各有边界，不能从“支持动态来源”推断“支持生产热替换”。
 
-宿主拥有进程退出、部署和健康策略；插件不声明这些策略。查源码使用 [inspect](../docs/development/inspection.md)，操作现有应用使用 [devconsole](../docs/development/dev-console.md)，隔离回归使用 [Plugin tests](../docs/development/testing.md)。
+宿主拥有进程退出、部署和健康策略；插件不声明这些策略。查源码使用 [inspect](../docs/development/inspection.md)，操作现有应用使用 [devconsole](../docs/development/dev-console.md)，隔离回归使用 [Plugin tests](../docs/plugin-development/testing.md)。

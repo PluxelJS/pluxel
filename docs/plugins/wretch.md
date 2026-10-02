@@ -61,7 +61,7 @@ export class CustomerPlugin extends BasePlugin {
 
 host 安装 provider：
 
-以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
 await host.start(WretchPlugin, {
@@ -85,7 +85,7 @@ await host.start(CustomerPlugin, {
 上面的 `CustomerPlugin.find()` 是本地插件能力：上游返回 404 时，Wretch 的 `.notFound()` catcher 把它变成
 `CustomerNotFound`，调用方用同一个 `@pluxel/core/better-result` 入口检查结果。成功响应先用 schema 验证；
 其他 HTTP 状态、网络错误、超时和 lifecycle 撤回继续抛出，不能误报为“客户不存在”。
-完整 Result 用法见 [better-result 共享入口](../api/better-result.md)。
+完整 Result 用法见 [better-result 共享入口](../plugin-development/better-result.md)。
 
 假设上面的 `CustomerPlugin` 从 `@acme/customer` 根入口导出，另一个插件可以直接依赖它并发布 HTTP route：
 

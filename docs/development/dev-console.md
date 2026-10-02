@@ -5,7 +5,7 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 开发控制台让你保持 dev 运行，随时用 TypeScript 操作当前插件和数据。Coding agent 使用 CLI 提交脚本，代码在 Host 专用的 `pluxel` Vite environment 和同一个 Node 宿主中执行；不用重启 dev 或创建测试宿主。
 
-适合检查当前状态、填入测试数据、修改配置和验证真实调用。隔离的行为回归继续使用 [test host](./testing.md)。修改会作用于眼前这份应用；已经保存的配置和数据不会随脚本结束自动还原。
+适合检查当前状态、填入测试数据、修改配置和验证真实调用。隔离的行为回归继续使用 [test host](../plugin-development/testing.md)。修改会作用于眼前这份应用；已经保存的配置和数据不会随脚本结束自动还原。
 
 还不清楚插件、Part 或 config schema 在哪里声明时，先用[源码查询](./inspection.md)定位；它不需要运行 Vite，也不读取当前 Host 状态。
 
@@ -180,7 +180,7 @@ export default defineDevConsole(async (dev) => {
 
 通过 `--input '{"origin":"http://localhost:5173"}'` 指定已发现的应用监听地址；请求经过真实监听器。不要猜测端口，也不要借用内部 dispatcher 绕过实际 ingress。
 
-Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [Commands](../runtime/commands.md)、[Workbench](../workbench/index.md) 和 [结构化日志](../runtime/logging.md)。Workbench 的 principal、session 和 RPC 结果释放遵循其原有契约；控制台不会替脚本创建或回收这些资源。Plugin 公开的业务方法也可直接通过 `dev.plugins.require()` 调用。数据库访问使用业务方法或插件公开的 owner-bound handle，不重新打开应用的数据目录。
+Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [Commands](../plugin-development/commands.md)、[Workbench](../workbench/index.md) 和 [结构化日志](../plugin-development/logging.md)。Workbench 的 principal、session 和 RPC 结果释放遵循其原有契约；控制台不会替脚本创建或回收这些资源。Plugin 公开的业务方法也可直接通过 `dev.plugins.require()` 调用。数据库访问使用业务方法或插件公开的 owner-bound handle，不重新打开应用的数据目录。
 
 需要调用已发布的 Workbench View 时，使用其真实 descriptor 推导 RPC 类型，无需手写代理接口：
 
@@ -288,3 +288,9 @@ pluxel dev result run-id --root /workspace/my-host --instance instance-id
 每宿主最多跟踪 128 个脚本入口，每个最多 4096 个本地依赖文件，源码文件最多 1 MiB。优先复用少数诊断文件和 named exports。完整宿主替换会取消旧 run 并撤回其 driver；后续提交连接当前 host epoch。
 
 开发集成需要注入进程内依赖时，`host({ entry, bindings })` 与 `vitePreset({ entry, bindings })` 接受普通对象，并在创建集成时浅复制、冻结为 `startup.bindings`，供应用的 配置工厂与 `prepare` 使用。省略时是冻结的空对象；对象中的资源仍由注入方拥有，不随控制台执行释放。
+
+## 有界操作日志与等待
+
+`markLogs(logging, streamId?)` 标记已 flush 的末尾；`readLogs(logging, cursor, { limit: 100, filter })` 返回有界记录和下一 cursor。`waitForLogs(logging, cursor, { signal, limit: 100, filter })` 等待首批匹配记录或 cursor 失效，signal 必填，取消与完成都会释放订阅。三者均从 `@pluxel/services/logging` 导入，使用同一 store，不创建控制台专用日志通道。
+
+cursor 是普通 JSON，包含 rootId、streamId、bootId、epoch、nextSeq；不可把不同 Host 或重建 stream 的序号相接。读取保留 `root_mismatch`、`stream_replaced`、`store_unavailable`、`epoch_mismatch`、`from_too_old` 与 `invalid` 的失败分支。mark 可为已配置但尚无记录的 stream 创建空存储，未配置且不存在时抛错。调用示例见 [开发控制台](./dev-console.md)。

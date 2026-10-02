@@ -38,8 +38,8 @@ Coding agent 从 [AGENTS.md](./AGENTS.md) 按任务选读。公开用法维护�
 
 Plugin 通过 constructor 声明必需依赖，框架负责依赖图、启停与 generation 资源清理。配置由 schema 描述，HTTP、持久化等服务由 Host 明确选择。Workbench 可选，业务能力不依赖管理界面。
 
-- [插件模型](./docs/getting-started/plugin-model.md)：依赖、失败与生命周期。
-- [宿主配置](./docs/getting-started/host-setup.md)：应用声明与服务装配。
+- [插件模型](./docs/plugin-development/model.md)：依赖、失败与生命周期。
+- [宿主配置](./docs/host/configuration.md)：应用声明与服务装配。
 - [Workbench](./docs/workbench/index.md)：插件管理界面与可组合视图。
 - [交付应用](./docs/development/distribution.md)：构建和验证生产制品。
 

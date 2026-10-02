@@ -186,7 +186,7 @@ constructor 仍需声明 `Cache` required dependency。`@Cached` 要求 Promise-
 
 ## 检查清单
 
-在 [测试宿主](../development/testing.md) 中用计数 loader 连续读取同一个 key，两次调用应只加载一次；执行 `delete()` 后再读，应重新加载。使用不同 tenant 的 tuple key 验证隔离，用 `null` 验证负缓存。需要 Redis 共享缓存时，再在目标 backend 验证失效；单进程的请求合并不保证跨实例只运行一次 loader。
+在 [测试宿主](../plugin-development/testing.md) 中用计数 loader 连续读取同一个 key，两次调用应只加载一次；执行 `delete()` 后再读，应重新加载。使用不同 tenant 的 tuple key 验证隔离，用 `null` 验证负缓存。需要 Redis 共享缓存时，再在目标 backend 验证失效；单进程的请求合并不保证跨实例只运行一次 loader。
 
 ## 在缓存之外构造 Result
 

@@ -34,7 +34,7 @@ export class QueuePlugin extends BasePlugin {
 
 host 安装默认 provider：
 
-以下 `host` 是 [测试宿主](../development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
 import { RedisPlugin } from '@pluxel/redis'

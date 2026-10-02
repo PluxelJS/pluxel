@@ -1,7 +1,7 @@
 {
 	"icon": "PanelsTopLeft",
-	"title": "Workbench 与配置",
-	"defaultOpen": true,
+	"title": "Workbench（可选管理界面）",
+	"defaultOpen": false,
 	"pages": [
 		"index",
 		"plugin-groups",

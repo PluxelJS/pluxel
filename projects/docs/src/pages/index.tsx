@@ -6,21 +6,21 @@ const patterns = [
 	{
 		code: 'constructor(private readonly http: WretchPlugin) { super() }',
 		description: '需要另一个 Plugin 时，直接写构造函数参数。类型就是依赖声明。',
-		href: '/docs/getting-started/plugin-model',
+		href: '/docs/plugin-development/model',
 		icon: Braces,
 		title: '注入依赖',
 	},
 	{
 		code: 'private readonly config = this.configs.use(StatusConfig)',
 		description: '读取经过默认值和校验的冻结配置，不再维护平行的 TypeScript interface。',
-		href: '/docs/getting-started/configuration',
+		href: '/docs/plugin-development/configuration',
 		icon: Settings2,
 		title: '读取配置',
 	},
 	{
 		code: 'this.ctx.effects.defer(() => clearInterval(timer))',
 		description: '创建资源后立即登记释放函数；停止、替换和启动回滚都会执行。',
-		href: '/docs/getting-started/plugin-model',
+		href: '/docs/plugin-development/lifecycle',
 		icon: Boxes,
 		title: '登记清理',
 	},
@@ -172,11 +172,7 @@ export default function HomePage() {
 						{hosts.map((host) => {
 							const Icon = host.icon
 							return (
-								<Link
-									key={host.title}
-									href="/docs/getting-started/host-setup"
-									className="pluxel-doc-card"
-								>
+								<Link key={host.title} href="/docs/host/configuration" className="pluxel-doc-card">
 									<Icon aria-hidden="true" />
 									<span className="pluxel-card-meta">{host.meta}</span>
 									<h3>{host.title}</h3>
@@ -203,11 +199,7 @@ export default function HomePage() {
 					</div>
 					<div className="pluxel-host-cards">
 						{toolchain.map((item) => (
-							<Link
-								key={item.file}
-								href="/docs/getting-started/host-setup"
-								className="pluxel-doc-card"
-							>
+							<Link key={item.file} href="/docs/host/configuration" className="pluxel-doc-card">
 								<span className="pluxel-card-meta">{item.file}</span>
 								<h3>{item.title}</h3>
 								<pre className="pluxel-host-code">

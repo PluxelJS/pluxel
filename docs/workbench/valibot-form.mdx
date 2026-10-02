@@ -25,7 +25,7 @@ export class ServicePlugin extends BasePlugin {
 
 构建并运行插件，标准配置页应出现“启用服务”开关，初始值为开启。
 `f.formMeta()` 只描述显示方式；字段是否必填、默认值和有效范围仍由 Valibot 决定。
-保存与运行时应用的区别见[插件配置](../getting-started/configuration.md)。
+保存与运行时应用的区别见[插件配置](../plugin-development/configuration.md)。
 
 ## 最小配置与渲染结果
 
@@ -154,7 +154,7 @@ export class ExamplePlugin extends BasePlugin {
 
 当字段既有默认值又有表单 metadata 时，让 `v.optional()` 包住完成后的 `v.pipe()`：`v.optional(v.pipe(base, constraints, metadata), default)`。这样默认值属于外层可选语义，字段 extractor 解包 optional 后仍能读取内层 metadata；不要写成 `v.pipe(v.optional(base, default), metadata)`。
 
-Plugin 的声明和读取时机见[配置规则](../getting-started/configuration.md#声明规则)。
+Plugin 的声明和读取时机见[配置规则](../plugin-development/configuration.md#声明规则)。
 
 ## metadata 做什么
 

@@ -83,6 +83,7 @@ export type RuntimeStoreSinkInput = Omit<RuntimeLogSinkOptions, 'registry' | 'ca
 export type RuntimeCustomSinkInput = {
 	kind: 'logtape'
 	label: string
+	/** Native LogTape sink. LogTape owns disposal after installation; do not share across Hosts. */
 	sink: Sink
 	caller: boolean
 }
@@ -145,6 +146,7 @@ export type RuntimeLogging = {
 	install(): Promise<void>
 	initializePolicy(store?: PluginLogPolicyStore): Promise<void>
 	describe(): RuntimeLoggingDescription
+	/** Flush stores and policy persistence; remote sinks retain their native flush contract. */
 	flush(): Promise<void>
 	/** Flush buffered store records without waiting for unrelated policy persistence. */
 	flushStores(): void

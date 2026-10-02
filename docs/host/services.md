@@ -1,21 +1,23 @@
 ---
-title: 组合 Host 服务
+title: Host 服务组合与扩展
 description: 使用官方默认组合运行应用，或按需选择 Host 服务并管理准备与清理。
 ---
 
+只配置现有应用时先读[Host 配置教程](./configuration.md)的目标章节。本页用于逐项组合服务、编写安装器，以及核对准备、回滚和发布所有权。
+
 官方应用和 starter 使用 `defineHostApplication(factory)` 配合 `servicesPreset()`：应用声明插件、数据位置和启动策略，官方入口负责开发附件和部署制品路径。需要自定义服务集合时，使用 `@pluxel/host` 逐项组合；它默认只提供 Core 能力。
 
-| 你负责什么               | 从哪里开始                                            |
-| ------------------------ | ----------------------------------------------------- |
-| 应用装配                 | [官方组合](#官方默认组合)或[创建宿主](#创建宿主)      |
-| Plugin 使用现有服务      | [读取能力](#plugin-读取能力)；通常无需阅读安装器实现  |
-| 配置和启动策略持久化     | [保存配置和运行策略](#保存配置和运行策略)             |
-| 自定义服务               | [安装器](#编写服务安装器) → [顺序与失败](#顺序与失败) |
-| 参与 generation 原子发布 | [发布 hooks](#服务参与-plugin-发布)                   |
+| 你负责什么               | 从哪里开始                                                  |
+| ------------------------ | ----------------------------------------------------------- |
+| 应用装配                 | [官方组合](#官方默认组合)或[创建宿主](#创建宿主)            |
+| Plugin 使用现有服务      | [读取能力](#plugin-读取能力)；通常无需阅读安装器实现        |
+| 配置和启动策略持久化     | [保存配置和运行策略](./configuration.md#保存配置和运行策略) |
+| 自定义服务               | [安装器](#编写服务安装器) → [顺序与失败](#顺序与失败)       |
+| 参与 generation 原子发布 | [发布 hooks](#服务参与-plugin-发布)                         |
 
 ## 官方默认组合
 
-新应用直接采用[宿主配置](../getting-started/host-setup.md#应用入口)中的应用、Vite 与构建示例。三处声明分别决定本次运行的能力、开发附件和交付制品：
+新应用直接采用[宿主配置](./configuration.md#应用入口)中的应用、Vite 与构建示例。三处声明分别决定本次运行的能力、开发附件和交付制品：
 
 | 入口                                            | 职责                               |
 | ----------------------------------------------- | ---------------------------------- |
@@ -100,42 +102,6 @@ await host.config.reset(owner, ['endpoint'])
 写入顺序为校验一次 → 暂存标准化快照 → 等待存储完成 → 确认 revision → 通知运行中的 generation。停止的节点返回 `deferred`，通知失败返回 `saved-not-applied`，不会把已经保存的值报告为未修改。省略存储时 Host 使用内存配置；Host 拥有唯一的存储实现，管理 RPC 和开发控制台也委托同一套用例。
 
 关闭后所有配置方法拒绝新请求。Host 配置入口是受信任宿主 API，网络端点仍须通过既有认证和授权；它不会自动开放 RPC 或监听器。
-
-## Persistence 文件契约
-
-`@pluxel/services/persistence` 的内存与 Node 后端使用相同的相对分层路径：namespace 和 key 保留原字面（包括 `@pluxel/wretch`），不 trim、替换字符或猜测绝对路径。空段、`.`、`..`、反斜杠、冒号和控制字符会抛出 `TypeError`；仅 `list()` / `list('')` 的空前缀表示 namespace 根。namespace 是路径前缀，不是互相隔离的权限域，例如 `a/b` 位于 `a` 之下。
-
-`list(prefix)` 按 key 排序返回目录的直接子项，包含 `file` 与 `directory`；缺失目录返回空集合，文件不能作为列举前缀。`stat(key)` 可识别文件与目录；内存后端在写入嵌套文件时建立目录，删除最后一个文件不会删除目录。`delete()` 只删除文件，缺失文件无操作；`get()` / `getText()` 的缺失结果为 `undefined`，读取目录失败。`size` / `updatedAt` 是后端可提供的 metadata，不保证存在。
-
-Node 后端在创建时固定 root（省略时使用当时的 cwd）。路径检查限制字面路径，不承诺防御宿主在 root 下放置的符号链接；文件树由宿主控制。自定义后端需实现同一目录与完成语义。`readonly` 在实际 `put()` / `delete()` 边界拒绝操作并给出 `PersistenceError.code === 'READONLY'`，不依赖调用方先执行 `preflight()`。
-
-## 保存配置和运行策略
-
-Host 分别通过 `configRecords` 与 `state` 指定启动值及可选文档存储。两者不依赖安装 Persistence 服务，已有存储只需提供 `HostDocumentStorage` 的 `getText()`、`put()` 和 `stat()`：
-
-```ts
-import { createHost } from '@pluxel/host'
-import { createNodePersistenceBackend } from '@pluxel/services/persistence'
-
-const files = createNodePersistenceBackend({ root: './data' })
-const host = await createHost({
-	plugins: [MyPlugin],
-	configRecords: {
-		storage: files.namespace('config'),
-		initial: [{ owner, config: { endpoint: 'https://example.com' } }],
-	},
-	state: {
-		storage: files.namespace('runtime-state'),
-		initial: { autoStart: [owner] },
-	},
-})
-```
-
-省略 `storage` 时只用内存。提供 `storage` 时默认 `mode: 'writable'`；`mode: 'readonly'` 读取已有文档并拒绝写入，文档不存在时保留 `initial` 且不创建文件。已有文档优先于启动种子，Host 返回前会完成两个存储的准备。配置保留 v3、运行策略保留 v5 文档格式，不在应用重新打包时覆盖已有数据。
-
-文档存储是借用的：Host 关闭时等待自己的写入、清理定时器并报告 flush 失败；不会调用外部 backend 的 close。共享 backend 的创建和关闭由应用或对应服务拥有。`put()` 必须在完整文档提交后才 resolve，并在 `{ atomic: true }` 时提供旧文档或新文档的完整替换语义；不能用“请求已入队”冒充写入成功。
-
-Host 应用解析器从本次 `startup.env` 读取显式 `envBindings`，文件输入来自 `fileBindings`。普通配置优先级为基础对象/文件 < 管理保存值 < env，合并后由 schema 校验；env 控制的路径只读且不落盘。Vault env/file 绑定是整记录只读。底层 `createHost()` 不隐式读取进程环境。
 
 ## 宿主管理操作
 
@@ -246,7 +212,7 @@ const host = await createHost({
 })
 ```
 
-正式部署从 `@pluxel/services/database/postgres` 导入 `postgres({ connectionString })`。schema、migration 和部署选择见[数据库](../runtime/database.md)。
+正式部署从 `@pluxel/services/database/postgres` 导入 `postgres({ connectionString })`。schema、migration 和部署选择见[数据库](../plugin-development/database.md)。
 
 应用直接声明所选 driver：PGlite 使用 `@electric-sql/pglite`，PostgreSQL 使用 `pg`。服务工厂不打开数据库；第一次 Plugin 调用 `ctx.require(Database).use(definition)` 才加载 driver 并执行 owner migration。每个 Host 通过工厂创建自己的 adapter，在已接纳操作排空后关闭。省略 descriptor 不创建 capability、连接、目录或 driver 依赖，也不需要另设 driver 启用列表。
 
@@ -306,3 +272,5 @@ publish 只同步交换已准备好的状态且必须返回 `undefined`。不得
 应用显式提供使用到的 Core、Host、Services 等框架 peer，以保证能力 token、Context 和编译 ABI 使用同一实例。optional peer 仅在启用对应入口时需要，例如 Workbench、Vite 与构建工具。普通实现依赖由所属包安装。
 
 Core 拥有插件内核，Host 拥有应用与动态来源，Services 拥有官方服务及其组合，Workbench 拥有 UI 能力与 Shell。Logging、Management 和 preset 是 Services 的领域入口，不需要分别安装包。Services 的可选 Workbench 组合与 Workbench 使用的 Services 协议允许包级相互引用；具体模块不能依靠循环初始化，也不能从基础入口加载未选择的后端。插件集成测试宿主使用 `@pluxel/test`。
+
+持久化路径及保存插件配置/运行策略，见[Host 配置](./configuration.md#保存配置和运行策略)。

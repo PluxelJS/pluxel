@@ -22,9 +22,9 @@ Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和
 
 ## Managed Plugin database
 
-选择 managed database 后，正式部署使用 native PostgreSQL；本机开发和测试使用 PGlite。两者的能力与验证边界见[backend 选择](#选择-native-postgresql-或-pglite)。
+选择 managed database 后，正式部署使用 native PostgreSQL；本机开发和测试使用 PGlite。两者的能力与验证边界见[backend 选择](../host/configuration.md#选择-native-postgresql-或-pglite)。
 
-宿主通过 `database({ backend: pglite(...) })` 或 `database({ backend: postgres(...) })` 显式安装；默认服务组合不安装数据库，见 [宿主配置](../getting-started/host-setup.md)。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
+宿主通过 `database({ backend: pglite(...) })` 或 `database({ backend: postgres(...) })` 显式安装；默认服务组合不安装数据库，见 [宿主配置](../host/configuration.md)。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
 
 ## 定义 Plugin schema
 
@@ -159,107 +159,6 @@ export const SearchDatabase = defineDatabase({
 
 如果数据只是少量加密 JSON 且不需要 query/index，先评估 [Vault](./vault.md)；不要为一个 token 建完整关系表，也不要拿 Vault documents 替代需要查询的数据库。
 
-## Application-private database
-
-当 fixed catalog、schema 和部署都由同一团队维护时，把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。
-
-应用服务列表不安装 `database()`，使误用 `ctx.require(Database)` 的 Plugin 直接启动失败；production freezer 同时设置 `managedDatabaseDrivers: []`，避免把未使用的 PGlite 与 `pg` package 复制进发行物。两处配置分别约束运行时 capability 与构建闭包，必须保持一致。
-
-内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
-
-### 整个应用依赖数据库
-
-如果没有数据库，整个 static application 就没有可运行的核心功能，数据库是 host-owned root resource：static `prepare()` 必须在 Plugin graph 启动前完成连接、migration 和必要 preflight；失败直接终止本次 host startup。成功实例按 root Context 绑定，关闭登记到 root effects，不能归属任一 consumer Plugin。
-
-Application package 导出接收 Context 的 typed accessor，不把数据库投影成 `ctx.database`，也不使用进程级 module singleton：
-
-```ts no-twoslash
-// @app/database — application-private server module
-import type { Context } from '@pluxel/core'
-import { openDatabase, migrate, type AppDatabase, type DatabaseOptions } from './internal.js'
-
-const active = new WeakMap<object, AppDatabase>()
-
-export async function prepareAppDatabase(ctx: Context, options: DatabaseOptions): Promise<void> {
-	const root = ctx.root
-	if (active.has(root)) return
-	const database = await openDatabase(options)
-
-	try {
-		await migrate(database)
-		active.set(root, database)
-		root.effects.defer(
-			async () => {
-				if (active.get(root) === database) active.delete(root)
-				await database.close()
-			},
-			{ tag: 'AppDatabase', phase: 'shutdown' },
-		)
-	} catch (error) {
-		if (active.get(root) === database) active.delete(root)
-		await database.close()
-		throw error
-	}
-}
-
-export function appDatabaseFor(ctx: Context): AppDatabase {
-	const database = active.get(ctx.root)
-	if (!database) throw new Error('Application database has not been prepared')
-	return database
-}
-```
-
-`appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；static application 的泛型不能反向改变独立编译 Plugin 的 Context shape。
-
-应用入口统一决定部署路径，同时供宿主 Persistence 和 application database 使用：
-
-```ts no-twoslash
-import { resolve } from 'node:path'
-import { defineHostApplication } from '@pluxel/host'
-import { prepareAppDatabase } from '@app/database'
-import { standardServices } from '@pluxel/services'
-
-function storagePaths({ env }) {
-	// 部署时传入发行目录外的绝对路径。
-	const root = resolve(env.APP_DATA_ROOT ?? './data')
-	return {
-		hostPersistence: resolve(root, 'runtime'),
-		applicationDatabase: resolve(root, 'application.sqlite'),
-	}
-}
-
-export default defineHostApplication((startup) => {
-	return {
-		name: 'application',
-		plugins: [BillingPlugin, AuditPlugin],
-		services: standardServices({ persistence: storagePaths(startup).hostPersistence }),
-		async prepare({ host, startup }) {
-			await prepareAppDatabase(host.ctx, {
-				filename: storagePaths(startup).applicationDatabase,
-			})
-		},
-	}
-})
-```
-
-Plugin 在 `init()` 或之后同步取得已准备实例：
-
-```ts no-twoslash
-protected override init() {
-	this.database = appDatabaseFor(this.ctx)
-}
-```
-
-SQLite path、DSN、TLS 和 pool options 从 `startup.env`、`bindings` 或部署配置显式解析，不从 Context 猜测。Persistence 是 `namespace/get/put` 抽象，backend 可能是 memory、readonly 或 custom，不保证存在可打开的文件目录。
-
-`prepare()` 不是通用 service lifecycle：这里只表达“数据库是整个应用的硬 readiness 前提”。数据库 package 负责领域初始化，root effects 负责 acquisition rollback、正常 stop 和 shutdown；consumer replacement 不能关闭共享实例。
-
-### 只有部分 Plugin 依赖数据库
-
-如果数据库失败时无关 Plugin 仍应运行，把数据库建模为 application-private provider Plugin，并让 consumer 通过 constructor 声明 required dependency。provider 在 `init()` 打开和迁移数据库，并立即把关闭登记到自己的 effects；provider failure 只阻塞 dependents。不要同时保留 root `prepare()` 和 provider Plugin 两套所有权。
-
-这条路径可以使用 SQLite 或其他数据库，但应用必须自行负责 migration 并发、连接恢复、备份、durability 和 shutdown。不要把 application client 包装成 `ctx.database`，否则会让调用者误以为它具备 managed Plugin database 的 owner isolation 与 replacement 语义。
-
 ## 在 Workbench 中读取数据库状态
 
 Workbench 不提供数据库专用查询协议。Plugin 在自己的 Direct View API 中返回 bounded browser-safe snapshot，
@@ -277,22 +176,6 @@ Target 内部可以使用 owner-bound database handle，但不能把 handle、Dr
 显式转换 `Date`、`BigInt`、Buffer 等 server values，并限制 rows/bytes。Mutation commit 后由 Plugin 自己触发 invalidation；
 Workbench 不解析 table identity，也不成为 database lifecycle owner。完整用法见 [插件管理界面](../workbench/index.md)。
 
-## 选择 native PostgreSQL 或 PGlite
-
-| 部署或验证目标                                     | Backend                |
-| -------------------------------------------------- | ---------------------- |
-| 正式部署、持续用户数据或多个 Plugin 频繁访问数据库 | native PostgreSQL      |
-| 本机开发、自动化测试                               | PGlite                 |
-| row lock、deadlock、pool exhaustion、连接中断      | 必须验证 native PG     |
-| 多进程并发 migration、advisory lock 和故障恢复     | 必须验证 native PG     |
-| throughput、latency、容量规划或生产硬件性能验收    | 必须使用目标 native PG |
-
-PGlite 是执行真实 PostgreSQL 语义的本地 backend，不是 query mock；它适合快速验证 schema、migration、CRUD、owner isolation 和 Plugin lifecycle。但是 Pluxel 会把共享 PGlite 上的所有 database operation 串行调度，因此一个 host 中的 Plugin 会共同受到单连接吞吐上限影响。不要用 PGlite benchmark 推断 native PostgreSQL 性能。
-
-PGlite 的 data directory 只为本机工作流提供正常关闭后的便利重启，不是部署存储承诺。Pluxel 不以补充 filesystem flush 或 fault-injection 测试的方式把它升级为 production baseline；需要正式部署时使用 native PostgreSQL。资源受限时，应在目标设备上调低 PostgreSQL connection/pool budget 并实测，而不是把 PGlite 带入部署。
-
-连接字符串、TLS、pool 与 PGlite data directory 是 host startup policy，不是 Plugin config。Plugin schema/query 不根据 backend 分支。
-
 ## 测试与发布检查
 
 `@pluxel/test/vitest` 会对 database declaration 运行与开发/生产相同的 artifact transform：migration strategy 校验已提交 history，reset strategy 生成临时 baseline。
@@ -309,3 +192,5 @@ PGlite 的 data directory 只为本机工作流提供正常关闭后的便利重
 - package artifact 包含 `dist/database/migrations/` 的 checked SQL/manifest。
 
 不要在测试里调用 internal helper 或手工构造 migration artifact，否则测试没有覆盖作者真正发布的 schema。
+
+应用共享数据库的装配见[Application-private database](../host/configuration.md#application-private-database)；后端、连接池与部署验证见[Host backend 选择](../host/configuration.md#选择-native-postgresql-或-pglite)。

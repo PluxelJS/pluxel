@@ -1,6 +1,5 @@
 {
-	"icon": "Rocket",
-	"title": "入门",
-	"defaultOpen": true,
-	"pages": ["index", "first-plugin", "plugin-model", "plugin-parts", "configuration", "host-setup"]
+	"title": "快速开始",
+	"pages": ["index", "first-plugin"],
+	"icon": "Rocket"
 }

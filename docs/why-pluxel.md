@@ -106,7 +106,7 @@ export class BillingPlugin extends BasePlugin {
 
 构建工具在 TypeScript 擦除类型之前，记录 `AccountsPlugin` 的值导入来源及构造函数参数位置。包根入口与具名导出确定插件定义，参数声明确定依赖边；运行时根据这些 metadata 注入当前的 provider 实例。
 
-业务插件不再另写一份 `inject` 列表，也不通过扩展 Context 属性注册自己。构造函数依赖的具体规则见[插件依赖与生命周期](./getting-started/plugin-model.md)。
+业务插件不再另写一份 `inject` 列表，也不通过扩展 Context 属性注册自己。构造函数依赖的具体规则见[插件依赖与生命周期](./plugin-development/model.md)。
 
 ### 两种选择的区别
 
@@ -155,4 +155,4 @@ Vite/Rolldown 在类型擦除前提取这些事实，runtime 依此启动、替�
 
 这些限制适合需要长期维护插件组合、配置、热更新、可审计发行和资源回收的应用。它们也减少了一部分开放字符串注册和任意动态装配的自由度。是否值得采用，取决于应用是否需要这套可追溯的依赖与生命周期模型。
 
-要实际体验，可以用[快速开始](./getting-started/index.md)创建已配置好工具链的项目；要继续理解作者模型，阅读[插件依赖与生命周期](./getting-started/plugin-model.md)。框架实现和约束的索引在[工程文档](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)。
+要实际体验，可以用[快速开始](./getting-started/index.md)创建已配置好工具链的项目；要继续理解作者模型，阅读[插件依赖与生命周期](./plugin-development/model.md)。框架实现和约束的索引在[工程文档](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)。

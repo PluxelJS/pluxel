@@ -1,6 +1,6 @@
 # 数据库：owner handle 与数据换代
 
-`@pluxel/services/database` 是显式安装的 capability；`standardServices()` 与 `servicesPreset()` 都不默认安装。PostgreSQL 是唯一 SQL dialect，Drizzle 是作者查询界面。用法见 [数据库指南](../docs/runtime/database.md)。
+`@pluxel/services/database` 是显式安装的 capability；`standardServices()` 与 `servicesPreset()` 都不默认安装。PostgreSQL 是唯一 SQL dialect，Drizzle 是作者查询界面。用法见 [数据库指南](../docs/plugin-development/database.md)。
 
 修改查询 handle 读 [Author boundary](#author-boundary)，修改安装/driver 读 [Backend ownership](#backend-ownership)，修改数据换代读 [Schema evolution](#schema-evolution)，修改通知/排空读 [Invalidation and outbox](#invalidation-and-outbox) 与 [Resource control](#resource-control)。
 
