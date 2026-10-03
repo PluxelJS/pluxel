@@ -1,6 +1,6 @@
 ---
 title: 插件依赖与组成
-description: 选择 required dependency、optional integration 和 Part，明确调用归属与插件身份。
+description: 按业务契约、组合职责和生命周期选择依赖、聚合、桥接与注册模式。
 ---
 
 当一个 Plugin 需要调用另一个 Plugin，或持有需要关闭的连接、定时器时，按本页组织依赖与清理。
@@ -18,11 +18,13 @@ description: 选择 required dependency、optional integration 和 Part，明确
 | 关系             | 何时使用                               | 写法                                     |
 | ---------------- | -------------------------------------- | ---------------------------------------- |
 | 必需 Plugin      | 缺少提供方就不能工作                   | 构造器参数 + 值导入                      |
-| 可选 Plugin 集成 | 提供方只是可选增强                     | `definePluginRef<T>()` + `plugins.use()` |
+| 可选 Plugin 集成 | 允许提供方缺席，接受其变化引起的重启   | `definePluginRef<T>()` + `plugins.use()` |
 | PluginPart       | 需要局部配置和资源，但随父插件一起启停 | `this.parts.use(CachePart)`              |
 | 简单内部 helper  | 只有少量纯逻辑或显式 wiring            | 普通类或函数，按需登记清理               |
 
 需要被多个插件注入、独立启停的能力适合 Plugin；只服务当前插件的缓存、客户端和辅助逻辑，通常保留为内部代码。
+
+组合逻辑可以由消费方、聚合插件或独立桥接插件拥有，按[架构选型](#先确定组合职责与依赖方向)判断。
 
 ## Required dependency
 
@@ -84,14 +86,41 @@ dependency facade 在 provider construction 完成后固定 ordinary field/proto
 
 ## Optional integration
 
-如果最终宿主可以完全不安装 provider，使用 type-only import 和 module-level opaque ref：
+可选依赖允许 provider 缺席，consumer 仍须履行自己的业务契约，并接受 provider 变化引起的重新初始化。
+它适用于内部增强和多来源聚合；依赖数量和代码长短不是选型依据。
+
+### 先确定组合职责与依赖方向
+
+按以下顺序决定依赖模式：
+
+1. **缺失语义**：提供方不可用时，对外承诺是否仍成立？不成立就声明 required。
+2. **组合职责**：谁负责识别来源、适配协议和合并结果？由这一方声明依赖。
+3. **生命周期**：提供方变化时，消费方及其下游能否接受重启？不能接受就重新划分集成边界。
+
+**应用可以不装配某项功能，不等于该功能内部的依赖可选。** 例如桥接插件可以不装配，但一旦运行，双方都是必需依赖。
+各模式可以组合使用：
+
+| 业务关系                           | 依赖方向与模式                             | 主要取舍                                             |
+| ---------------------------------- | ------------------------------------------ | ---------------------------------------------------- |
+| 完成业务必须调用某项能力           | consumer 必需依赖 provider                 | 缺失应阻止启动；运行中的调用失败仍需业务处理         |
+| 当前插件自身的可选增强             | consumer 可选依赖 provider                 | 组合逻辑属于 consumer，允许它随 provider 变化重启    |
+| 统一查询多个已知、可缺席的数据源   | 聚合器可选依赖各来源                       | 来源无需知道聚合器；聚合器承担部分结果语义和重启影响 |
+| 两个独立能力之间的适配、同步或转发 | 桥接插件必需依赖双方                       | 将集成生命周期集中到桥接插件，应用显式装配它         |
+| 新增贡献者时不希望修改中心插件     | 贡献者或适配插件依赖中心，调用领域注册协议 | 中心无需枚举贡献者，但必须设计注册、撤销与失效语义   |
+
+不要为了减少依赖条数、省去装配或绕开依赖环而使用 optional。聚合、桥接和注册各有职责边界，没有统一优先级。
+
+### 声明可选集成
+
+使用 type-only import 和 module-level opaque ref。下面假设审计只是辅助记录，注册操作返回注销函数；
+若“没有审计就不能接单”，Orders 应声明 required，并在业务操作中处理审计失败。
 
 ```ts twoslash
 // @filename: audit.ts
 import { BasePlugin } from '@pluxel/core'
 
 export declare class AuditPlugin extends BasePlugin {
-	registerSource(source: BasePlugin): void
+	registerSource(source: BasePlugin): () => void
 }
 
 // @filename: orders.ts
@@ -116,9 +145,98 @@ export class OrdersPlugin extends BasePlugin {
 - callback 同步执行，可以返回 cleanup 或 disposable；
 - ref 不会 import、安装、注册 provider package，也不会改变其自动启动策略。
 
-provider absent、当前未运行或 start-failed 时 callback 不执行，也不阻塞 consumer。provider generation 出现、消失或 replacement 时，Core 会重启 consumer 及其 required dependent closure，使 optional integration 不会持有旧 provider。
+### 对启动图和生命周期的影响
+
+optional 允许 provider 不可用，但仍然声明了一条图上的依赖边：
+
+- provider 在图中存在时，optional edge 参与启动排序和环检测。把 required 改成 optional 不能消除依赖环；例如 A 可选依赖 B、B 必需依赖 A，双方存在时仍然成环。
+- provider absent、当前未运行或 start-failed 时 callback 不执行，也不阻塞 consumer；optional 声明本身不会启动 provider。
+- provider generation 出现、消失或 replacement 时，Core 会重启 consumer，以及直接或间接必需依赖它的下游插件，使 optional integration 不会持有旧 provider。旧 consumer 会清理资源，新实例会重新初始化；一直不可用的 provider 重试失败不会单凭这次重试触发 consumer 重启。
+- callback 在 consumer 的 `init()` 内执行，抛错会让 consumer 初始化失败。provider 可选不代表集成代码的错误会被忽略。
+
+把集成挪到 `PluginPart` 不会隔离重启影响：Part 的 optional edge 仍合并到所属 Plugin。
 
 不要用动态 `import()`、轮询 availability 或缓存裸实例模拟 optional edge。高频变化的业务对象也不适合建模为 Plugin graph edge。
+
+### 聚合多个可选数据源
+
+多个插件提供同类数据、聚合器负责统一查询时，由聚合器可选依赖来源。箭头表示“依赖于”：
+
+```text
+Consumer -> DataCatalog
+DataCatalog --optional--> SourceA
+DataCatalog --optional--> SourceB
+DataCatalog --optional--> SourceC
+```
+
+DataCatalog 在 `init()` 中为每个已知来源分别声明直接的 `plugins.use()` 调用，将可用来源接入当前实例，
+再通过自己的公开方法拉取和合并数据。每次重新初始化都从当前可用来源建立集合，不把 provider 实例或方法引用存到跨 generation 的全局缓存。
+`plugins.use()` 的同步 callback 负责接入；异步查询及其失败处理放在明确的业务调用中。
+
+这利用了 optional 的缺失容忍、启动排序和 generation 变化后的重新初始化。来源无需知道或依赖 DataCatalog。
+在没有其他依赖关系时，DataCatalog 的变化不会通过这些边重启来源；来源变化则可能重启 DataCatalog 及其必需下游。
+重点评估来源变化频率和聚合器的下游范围。
+
+聚合器必须明确以下业务契约，不能让 optional 代替这些决定：
+
+- 零个来源时，是合法空结果、显式不可用，还是初始化失败；如果某个来源始终必需，就对它声明 required，其他来源仍可 optional。
+- 来源未接入、查询失败和查询成功但没有数据如何区分；返回部分结果时，调用方如何识别缺失来源和完整性。
+- 多来源数据如何确定身份、去重、排序或处理冲突；并发查询如何处理超时、取消和单项失败。
+
+这种模式显式枚举已知来源。`definePluginRef<T>()` 不会自动发现所有实现同一 TypeScript 接口的插件，
+新增来源通常需要修改聚合器的声明；需要开放贡献时，再考虑下面的注册模式。
+
+### 开放贡献与注册模式
+
+如果中心插件需要接收未知数量的第三方贡献者，可以由贡献者调用中心公开的注册方法；若贡献者不应知道中心，
+由独立适配插件必需依赖双方，负责注册。这是应用设计的领域协议，不能把它当作 `plugins.use()` 自带的发现能力。
+
+注册方是否可选依赖中心，仍由缺失语义决定：贡献者没有中心也有独立业务时可以 optional；
+专门负责向中心贡献功能的适配插件通常应 required。不要同时让中心依赖贡献者、贡献者又依赖中心，形成依赖环。
+
+注册协议需要明确贡献标识、重复注册规则、撤销方式，以及正在执行的调用如何取消或完成。
+注册应返回可释放的登记资源，由注册方在停止或初始化回滚时清理；中心不得在来源停止后继续调用保存的实例或回调。
+这种设计让中心不必因贡献集合变化而重启，但需要显式处理集合变化和资源失效；中心自身变化仍可能重启依赖它的注册方。
+
+### 何时拆出桥接插件
+
+如果 Orders 和 Audit 各自有完整职责，而“把订单事件接入审计”是组合后的功能，可以新增 `OrdersAuditPlugin`，
+在构造器中必需依赖 `OrdersPlugin` 和 `AuditPlugin`。依赖方向如下，箭头表示“依赖于”：
+
+```text
+OrdersAuditPlugin -> OrdersPlugin
+OrdersAuditPlugin -> AuditPlugin
+```
+
+对同一个辅助审计需求，两种设计的取舍如下。这里假设没有其他依赖边连接 Orders 和 Audit：
+
+| 场景                                   | Orders 可选依赖 Audit                       | 桥接插件必需依赖双方                            |
+| -------------------------------------- | ------------------------------------------- | ----------------------------------------------- |
+| Audit 不可用                           | Orders 运行，跳过审计集成                   | Orders 运行，桥接插件不能运行                   |
+| Audit 从不可用变为运行，或替换运行实例 | Orders 重新初始化，其必需下游也受影响       | 桥接插件建立或重建集成，Orders 不因这条关系重启 |
+| 集成初始化抛错                         | Orders 初始化失败                           | 桥接插件初始化失败，双方基础插件可继续运行      |
+| 增加一种集成                           | 修改 Orders，增加 optional 声明和初始化逻辑 | 新增桥接插件，并由应用装配                      |
+
+Orders 和 Audit 无需为这项集成互相声明依赖。由应用显式装配桥接插件，桥接插件在双方成功运行后建立订阅，
+并为自己创建的订阅或其他资源登记清理，具体写法见[事件](./events.md)和[生命周期](./lifecycle.md)。
+
+桥接插件增加了一个需要装配、配置和观察状态的节点，也要求双方提供足够的公开能力；不要让基础插件反过来依赖桥接插件来完成自己的初始化。
+它隔离的是这项集成引入的生命周期影响，不保证业务操作不会互相影响。方法调用或事件处理中的失败仍按对应业务协议传播。
+尤其是事件桥接，订阅建立前或桥接停止期间的通知不会自动补发；需要补偿、重放或可靠交付时，应另行设计持久化和恢复协议，不能仅靠拆插件保证。
+
+集成需要独立配置、启停或失败处理，或基础插件开始积累不属于自身职责的第三方适配时，考虑拆出桥接插件。
+归属明确的内部增强和聚合逻辑仍可留在消费方，无需为每个 callback 新建插件。
+
+### 验证所选架构
+
+隔离回归按[插件测试](./testing.md)编写，断言业务结果和实例是否替换，不能只检查 callback 执行：
+
+| 范围               | 验证重点                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| 所有 optional 集成 | provider 缺失、首次可用、替换、停止和集成初始化失败时的运行状态、重启范围、资源清理 |
+| 聚合器             | 零来源、部分来源失败、结果完整性                                                    |
+| 注册模式           | 重复注册、撤销、中心重启后重新注册、来源停止后的旧调用失效                          |
+| 桥接插件           | 一方变化时另一方实例保持不变；需要可靠事件处理时，验证停用期间的数据恢复            |
 
 ## 用 PluginPart 拆分插件内部资源
 
