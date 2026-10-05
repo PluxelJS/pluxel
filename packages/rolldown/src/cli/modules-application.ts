@@ -263,6 +263,7 @@ export default application;`
 			external: (id) =>
 				!id.startsWith('@oxc-project/runtime/helpers/') &&
 				!id.startsWith('.') &&
+				!id.startsWith('#') &&
 				!isAbsolute(id) &&
 				!id.startsWith('\0'),
 			resolve: { conditionNames: ['node', 'import', 'module', 'production', 'default'] },

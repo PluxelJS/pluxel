@@ -1,4 +1,14 @@
-import { readFile, readdir, realpath, rename, rm, mkdir, writeFile, stat } from 'node:fs/promises'
+import {
+	readFile,
+	readdir,
+	realpath,
+	rename,
+	rm,
+	mkdir,
+	writeFile,
+	stat,
+	lstat,
+} from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
@@ -145,18 +155,19 @@ export class ManagedPackageStore {
 	}
 
 	install(specs: readonly string[]): Promise<PackageMutationResult> {
-		return this.serialize(() => this.applyInstall(specs))
+		const inputs = normalizeMutationInputs(specs)
+		return this.serialize(() => this.applyInstall(inputs))
 	}
 
 	remove(names: readonly string[]): Promise<PackageMutationResult> {
-		return this.serialize(() => this.applyRemove(names))
+		const inputs = normalizeMutationInputs(names)
+		return this.serialize(() => this.applyRemove(inputs))
 	}
 
-	private async applyInstall(specs: readonly string[]): Promise<PackageMutationResult> {
+	private async applyInstall(normalized: NormalizedMutationInputs): Promise<PackageMutationResult> {
 		const manifest = await this.readManifest()
 		const next = cloneManifest(manifest)
 		const requests = new Map<string, PackageRequest>()
-		const normalized = normalizeMutationInputs(specs)
 		if (normalized.tooLarge) return mutationBatchTooLarge(normalized.overflowInput)
 		const failed: PackageMutationFailure[] = [...normalized.failed]
 		const inputs = normalized.inputs
@@ -212,11 +223,10 @@ export class ManagedPackageStore {
 		}
 	}
 
-	private async applyRemove(names: readonly string[]): Promise<PackageMutationResult> {
+	private async applyRemove(normalized: NormalizedMutationInputs): Promise<PackageMutationResult> {
 		const manifest = await this.readManifest()
 		const next = cloneManifest(manifest)
 		const removed: string[] = []
-		const normalized = normalizeMutationInputs(names)
 		if (normalized.tooLarge) return mutationBatchTooLarge(normalized.overflowInput)
 		const failed: PackageMutationFailure[] = [...normalized.failed]
 		const inputs = normalized.inputs
@@ -226,9 +236,21 @@ export class ManagedPackageStore {
 				failed.push(failure(raw, 'INVALID_SPEC', new Error('Expected an npm package name')))
 				continue
 			}
-			if (!(name in next.dependencies)) {
-				failed.push(failure(raw, 'REMOVE_FAILED', new Error('Package is not managed')))
-				continue
+			if (!Object.hasOwn(next.dependencies, name)) {
+				// Saved selection precedes publication. A leftover owned wrapper can still
+				// require withdrawal after a failed remove, even though it left the selection.
+				try {
+					await lstat(resolve(this.entriesDir, this.entryFile(name)))
+				} catch (error) {
+					failed.push(
+						failure(
+							raw,
+							'REMOVE_FAILED',
+							readErrorCode(error) === 'ENOENT' ? new Error('Package is not managed') : error,
+						),
+					)
+					continue
+				}
 			}
 			delete next.dependencies[name]
 			removed.push(name)
@@ -236,7 +258,13 @@ export class ManagedPackageStore {
 		if (removed.length === 0) return mutationResult([], failed)
 
 		try {
-			await this.installManifest(next)
+			if (removed.some((name) => Object.hasOwn(manifest.dependencies, name))) {
+				await this.installManifest(next, removed)
+			} else {
+				// Retry publication without another dependency resolution or installation.
+				this.revision += 1
+				await this.publishInstallationEntries(removed)
+			}
 			return mutationResult(removed, failed)
 		} catch (error) {
 			if (error instanceof EntryPublicationError) {
@@ -269,7 +297,10 @@ export class ManagedPackageStore {
 		this.options.signal?.throwIfAborted()
 	}
 
-	private async installManifest(next: ManagedManifest): Promise<void> {
+	private async installManifest(
+		next: ManagedManifest,
+		withdrawn: readonly string[] = [],
+	): Promise<void> {
 		if (!this.writer) throw new Error('Package store must be initialized before mutation')
 		const directory = resolve(this.rootDir, 'revisions', crypto.randomUUID())
 		let published = false
@@ -310,25 +341,31 @@ export class ManagedPackageStore {
 			this.installation = installation
 			published = true
 			this.revision += 1
-			try {
-				await this.publishEntries(this.publishedEntries(packages))
-			} catch (cause) {
-				const unpublished: string[] = []
-				const expected = this.publishedEntries(packages)
-				for (const name of new Set([...previous, ...packages].map((pkg) => pkg.name))) {
-					try {
-						const file = this.entryFile(name)
-						const actual = await readFile(resolve(this.entriesDir, file), 'utf8')
-						if (actual !== expected.get(file)) unpublished.push(name)
-					} catch (error) {
-						if (readErrorCode(error) !== 'ENOENT' || expected.has(this.entryFile(name)))
-							unpublished.push(name)
-					}
-				}
-				throw new EntryPublicationError(unpublished, cause)
-			}
+			await this.publishInstallationEntries([...withdrawn, ...previous.map((pkg) => pkg.name)])
 		} finally {
 			if (!published) await rm(directory, { recursive: true, force: true })
+		}
+	}
+
+	private async publishInstallationEntries(previousNames: readonly string[]): Promise<void> {
+		if (!this.writer) throw new Error('Package store must be initialized before mutation')
+		const packages = this.installation?.packages ?? []
+		try {
+			await this.publishEntries(this.publishedEntries(packages))
+		} catch (cause) {
+			const unpublished: string[] = []
+			const expected = this.publishedEntries(packages)
+			for (const name of new Set([...previousNames, ...packages.map((pkg) => pkg.name)])) {
+				try {
+					const file = this.entryFile(name)
+					const actual = await readFile(resolve(this.entriesDir, file), 'utf8')
+					if (actual !== expected.get(file)) unpublished.push(name)
+				} catch (error) {
+					if (readErrorCode(error) !== 'ENOENT' || expected.has(this.entryFile(name)))
+						unpublished.push(name)
+				}
+			}
+			throw new EntryPublicationError(unpublished, cause)
 		}
 	}
 

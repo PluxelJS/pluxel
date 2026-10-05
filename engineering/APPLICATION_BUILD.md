@@ -7,7 +7,7 @@
 `pluxel({ delivery })` / `buildPreset({ delivery })` 将交付边界与 headless/workbench 资源 variant 分开。默认 standalone；modules 适合保留真实包边界及来源目录的应用。
 构建插件在创建时校验并捕获交付选项；后续修改原 options 或 residual package 数组不会改变异步构建的交付边界。
 
-modules 复用 `createPluginBuildPipeline` 的 lowering、config metadata、Node/Workbench 制品编译，不冻结 plugins 数组、不执行工厂。它编译本包相对模块，bare package imports 保持 external；明确的 public source exports 输出为对应 ESM entry，保留 package-root/subpath identity。`app.mjs` 默认导出应用工厂并保留 product/named exports，不自动启动。共享 parser 仍检查 application/bindings 声明；static catalog 限制只进入 standalone 分支。
+modules 复用 `createPluginBuildPipeline` 的 lowering、config metadata、Node/Workbench 制品编译，不冻结 plugins 数组、不执行工厂。它编译本包相对模块和 `package.json#imports` 指向的本地模块；`#imports` 由构建解析，指向外部依赖时保持真实包边界，不向产物保留失去映射的别名。bare package imports 保持 external；明确的 public source exports 输出为对应 ESM entry，保留 package-root/subpath identity。`app.mjs` 默认导出应用工厂并保留 product/named exports，不自动启动。共享 parser 仍检查 application/bindings 声明；static catalog 限制只进入 standalone 分支。
 
 `package.json` 声明真实 output artifactRoot、Node/Workbench 制品能力和 modules 版本。`pluxel-modules.json` 保存编译所有权 definition 地址与实际 chunk SHA-256，原生解析工厂时验证文件、边界和摘要，然后仅给这些本地定义登记所属输出；不会把所有 source-entry 都冒充本包。Node/Workbench 服务按已求值 definition 的实际所属 package 读取 inventory，支持 compiled local source-entry。缺失或损坏的声明 inventory 明确失败，不回到源码编译。
 

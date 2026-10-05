@@ -306,3 +306,61 @@ it('preserves public and private identities, named product, minified artifacts a
 		await rm(root, { recursive: true, force: true })
 	}
 }, 60000)
+
+it('compiles package-local imports into relocatable modules output', async () => {
+	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-modules-imports-'))
+	try {
+		await mkdir(resolve(root, 'node_modules/@pluxel'), { recursive: true })
+		for (const name of ['core', 'host'])
+			await symlink(
+				fileURLToPath(new URL(`../../${name}`, import.meta.url)),
+				resolve(root, 'node_modules/@pluxel', name),
+			)
+		await mkdir(resolve(root, 'src'))
+		await mkdir(resolve(root, 'node_modules/fixture-value'))
+		await writeFile(
+			resolve(root, 'node_modules/fixture-value/package.json'),
+			JSON.stringify({
+				name: 'fixture-value',
+				version: '1.0.0',
+				type: 'module',
+				exports: './index.js',
+			}),
+		)
+		await writeFile(resolve(root, 'node_modules/fixture-value/index.js'), 'export const extra = 1')
+		await writeFile(
+			resolve(root, 'package.json'),
+			JSON.stringify({
+				name: '@fixture/imports',
+				version: '1.0.0',
+				type: 'module',
+				imports: { '#value': './src/value.ts', '#external': 'fixture-value' },
+				dependencies: { '@pluxel/host': '^1.1.0', 'fixture-value': '1.0.0' },
+			}),
+		)
+		await writeFile(resolve(root, 'src/value.ts'), 'export const value = 42')
+		await writeFile(
+			resolve(root, 'src/app.ts'),
+			"import {defineHostApplication} from '@pluxel/host'; import {value} from '#value'; import {extra} from '#external'; export const product={title:String(value+extra)}; export default defineHostApplication(()=>({plugins:[]}))",
+		)
+		await writeFile(
+			resolve(root, 'build.mts'),
+			`import {build} from ${JSON.stringify(import.meta.resolve('tsdown'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'src/app.ts',plugins:[pluxel({delivery:'modules',variant:'headless',lint:false})],config:false});`,
+		)
+		await promisify(execFile)(
+			process.execPath,
+			['--import', import.meta.resolve('tsx'), resolve(root, 'build.mts')],
+			{ timeout: 30000 },
+		)
+		await rename(resolve(root, 'dist'), resolve(root, 'relocated'))
+		await rm(resolve(root, 'src'), { recursive: true })
+		const result = await promisify(execFile)(process.execPath, [
+			'--input-type=module',
+			'-e',
+			`const m = await import(${JSON.stringify(resolve(root, 'relocated/app.mjs'))}); console.log(m.product.title)`,
+		])
+		expect(result.stdout.trim()).toBe('43')
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+}, 40000)

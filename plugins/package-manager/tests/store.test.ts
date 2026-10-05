@@ -128,6 +128,95 @@ describe('ManagedPackageStore', () => {
 		}
 	})
 
+	it('retries failed withdrawal without reinstalling or losing the remaining published entries', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			expect(await store.install(['alpha@1.0.0', 'beta@1.0.0'])).toMatchObject({ ok: true })
+			const entry = resolve(store.entriesDir, Buffer.from('alpha').toString('base64url') + '.mjs')
+			const original = await readFile(entry, 'utf8')
+			// Inject only the filesystem publication failure; selection and receipts remain real.
+			const publication = vi.spyOn(
+				store as unknown as { publishEntries(entries: ReadonlyMap<string, string>): Promise<void> },
+				'publishEntries',
+			)
+			publication.mockRejectedValueOnce(
+				Object.assign(new Error('unlink denied'), { code: 'EACCES' }),
+			)
+			expect(await store.remove(['alpha'])).toMatchObject({
+				ok: false,
+				succeeded: [],
+				failed: [{ input: 'alpha', code: 'REMOVE_FAILED' }],
+			})
+			expect(await readFile(entry, 'utf8')).toBe(original)
+			const afterFailure = await store.snapshot()
+			expect(afterFailure.packages.map((pkg) => pkg.name)).toEqual(['beta'])
+			const attempts = install.mock.calls.length
+			publication.mockRejectedValueOnce(new Error('unlink still denied'))
+			expect(await store.remove(['alpha'])).toMatchObject({
+				ok: false,
+				failed: [{ input: 'alpha' }],
+			})
+			expect(await store.remove(['alpha'])).toEqual({ ok: true, succeeded: ['alpha'], failed: [] })
+			expect(install).toHaveBeenCalledTimes(attempts)
+			await expect(readFile(entry)).rejects.toMatchObject({ code: 'ENOENT' })
+			const afterRetry = await store.snapshot()
+			expect(afterRetry.packages).toMatchObject([{ name: 'beta', entryFile: expect.any(String) }])
+			expect(await store.remove(['alpha'])).toMatchObject({
+				ok: false,
+				failed: [{ message: 'Package is not managed' }],
+			})
+			await store.install(['alpha@1.0.0'])
+			publication.mockRejectedValueOnce(new Error('withdrawal failed'))
+			await store.remove(['alpha'])
+			publication.mockRejectedValueOnce(new Error('mixed withdrawal failed'))
+			expect(await store.remove(['alpha', 'beta'])).toMatchObject({
+				ok: false,
+				succeeded: [],
+				failed: [{ input: 'alpha' }, { input: 'beta' }],
+			})
+			expect(await store.remove(['alpha', 'beta'])).toEqual({
+				ok: true,
+				succeeded: ['alpha', 'beta'],
+				failed: [],
+			})
+			expect(await readdir(store.entriesDir)).toEqual([])
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('captures install and remove inputs before queued work starts', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			const specs = ['alpha@1.0.0']
+			const installing = store.install(specs)
+			specs[0] = 'beta@1.0.0'
+			expect(await installing).toMatchObject({ ok: true, succeeded: ['alpha'] })
+			const names = ['alpha']
+			const removing = store.remove(names)
+			names[0] = 'beta'
+			expect(await removing).toMatchObject({ ok: true, succeeded: ['alpha'] })
+		} finally {
+			await store.close()
+		}
+	})
+
 	it('publishes entry files only after install and removes them only after prune succeeds', async () => {
 		const rootDir = await fixtureRoot()
 		const { engine, install } = createEngine()
