@@ -13,7 +13,7 @@ import {
 } from 'vite'
 import { pluginSourceVitePlugins, createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 
-import { hostSingletons } from '../src/index'
+import { host, hostSingletons } from '../src/index'
 import { createHostModuleClassifier } from '../src/host-modules'
 import {
 	hostEnvironment,
@@ -54,6 +54,11 @@ function hostSourcePlugins(options: Parameters<typeof createPluginSourceVitePipe
 }
 
 describe('host-vite Vite plugin stack', () => {
+	it('rejects unknown Host options rather than silently ignoring misspelled configuration', () => {
+		const options = { entry: 'app.ts', devConsol: true }
+		expect(() => host(options)).toThrow('[host-vite] unsupported devConsol')
+	})
+
 	it('exposes source/server semantics as a dedicated plugin', () => {
 		const plugins = pluginSourceVitePlugins() as Plugin[]
 		const plugin = plugins.at(-1)!

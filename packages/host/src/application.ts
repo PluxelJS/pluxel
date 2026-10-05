@@ -1,4 +1,5 @@
 import { recordLoadedApplicationPlugins } from './loaded-modules'
+import { resolveHostStateInitial } from './state-store'
 import { isAbsolute, resolve } from 'node:path'
 import { mergeConfigRecords } from './config-records'
 import { resolveInputBindings } from './input-bindings'
@@ -8,7 +9,7 @@ import { installPluginSources, pluginSource } from './source-contract'
 import { setHostCatalogProvenance } from './catalog-provenance'
 import type { PluginCatalogProvenance } from './catalog'
 import type { PluginConstructor } from '@pluxel/core'
-import type { HostService } from './services'
+import { defineHostService } from './services'
 import { createHost, type HostApplication, type HostRuntimeOptions, type PluginHost } from './host'
 
 export type HostStartupContext<
@@ -133,8 +134,38 @@ export async function resolveHostApplication(
 	const application = await factory(startup)
 	assertHostApplication(application)
 	recordLoadedApplicationPlugins(factory, application.plugins)
-	const { envBindings: _envBindings, fileBindings: _fileBindings, ...resolved } = application
-	const inputs = await resolveInputBindings(application, startup)
+	const { envBindings, fileBindings, ...declaration } = application
+	const resolved = {
+		...declaration,
+		plugins: [...application.plugins],
+		...(application.sources
+			? { sources: Object.freeze(application.sources.map(pluginSource)) }
+			: {}),
+		...(application.services ? { services: application.services.map(defineHostService) } : {}),
+		config: { ...application.config },
+		...(application.state
+			? {
+					state: {
+						...application.state,
+						initial: resolveHostStateInitial(application.state.initial),
+					},
+				}
+			: {}),
+		configRecords: {
+			...application.configRecords,
+			initial: mergeConfigRecords(application.configRecords?.initial, []),
+			baseSources: [...(application.configRecords?.baseSources ?? [])],
+			overlays: [...(application.configRecords?.overlays ?? [])],
+		},
+	}
+	const inputs = await resolveInputBindings(
+		{
+			...resolved,
+			...(envBindings ? { envBindings: [...envBindings] } : {}),
+			...(fileBindings ? { fileBindings: [...fileBindings] } : {}),
+		},
+		startup,
+	)
 	return {
 		...resolved,
 		startup,
@@ -145,11 +176,6 @@ export async function resolveHostApplication(
 			baseSources: [...(resolved.configRecords?.baseSources ?? []), ...inputs.baseSources],
 			overlays: [...(resolved.configRecords?.overlays ?? []), ...inputs.overlays],
 		},
-		plugins: [...application.plugins],
-		...(application.sources
-			? { sources: Object.freeze(application.sources.map(pluginSource)) }
-			: {}),
-		...(resolved.services ? { services: [...resolved.services] as readonly HostService[] } : {}),
 		config: {
 			...resolved.config,
 			...(resolved.name && !resolved.config?.name ? { name: resolved.name } : {}),

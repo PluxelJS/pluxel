@@ -158,6 +158,7 @@ describe('ManagedPackageStore', () => {
 			expect(await readFile(entry, 'utf8')).toBe(original)
 			const afterFailure = await store.snapshot()
 			expect(afterFailure.packages.map((pkg) => pkg.name)).toEqual(['beta'])
+			expect(afterFailure.pendingRemovals).toEqual(['alpha'])
 			const attempts = install.mock.calls.length
 			publication.mockRejectedValueOnce(new Error('unlink still denied'))
 			expect(await store.remove(['alpha'])).toMatchObject({
@@ -169,6 +170,7 @@ describe('ManagedPackageStore', () => {
 			await expect(readFile(entry)).rejects.toMatchObject({ code: 'ENOENT' })
 			const afterRetry = await store.snapshot()
 			expect(afterRetry.packages).toMatchObject([{ name: 'beta', entryFile: expect.any(String) }])
+			expect(afterRetry.pendingRemovals).toEqual([])
 			expect(await store.remove(['alpha'])).toMatchObject({
 				ok: false,
 				failed: [{ message: 'Package is not managed' }],
@@ -191,6 +193,104 @@ describe('ManagedPackageStore', () => {
 		} finally {
 			await store.close()
 		}
+	})
+
+	it('publishes build-script diagnostics with the accepted installation only', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const nativeInstall = install.getMockImplementation()!
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			install.mockImplementationOnce(async (options) => ({
+				...(await nativeInstall(options)),
+				depsRequiringBuild: ['alpha'],
+			}))
+			expect(await store.install(['alpha@1.0.0'])).toMatchObject({ ok: true })
+			install.mockImplementationOnce(async (options) => {
+				const result = await nativeInstall(options)
+				await writeFile(resolve(options.dir, 'pnpm-lock.yaml'), '{}')
+				return { ...result, depsRequiringBuild: ['beta'] }
+			})
+			expect(await store.install(['beta@1.0.0'])).toMatchObject({ ok: false })
+			expect(await store.snapshot()).toMatchObject({
+				revision: 1,
+				dependenciesWithBuildScripts: ['alpha'],
+			})
+			expect(await store.remove(['alpha'])).toMatchObject({ ok: true })
+			expect(await store.snapshot()).toMatchObject({ dependenciesWithBuildScripts: [] })
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('reads one settled snapshot between admitted mutations', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			const installing = store.install(['alpha@1.0.0'])
+			const reading = store.snapshot()
+			const removing = store.remove(['alpha'])
+			expect(await installing).toMatchObject({ ok: true })
+			expect(await reading).toMatchObject({
+				revision: 1,
+				packages: [{ name: 'alpha', installedVersion: '1.0.0', entryFile: expect.any(String) }],
+				pendingRemovals: [],
+			})
+			expect(await removing).toMatchObject({ ok: true })
+			expect(await store.snapshot()).toMatchObject({ revision: 2, packages: [] })
+		} finally {
+			await store.close()
+		}
+		expect(() => store.snapshot()).toThrow('closed')
+	})
+
+	it('drains initialization before releasing writer ownership on repeated close', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		const entered = Promise.withResolvers<void>()
+		const finish = Promise.withResolvers<undefined>()
+		vi.spyOn(
+			store as unknown as { readInstallation(): Promise<undefined> },
+			'readInstallation',
+		).mockImplementationOnce(() => {
+			entered.resolve()
+			return finish.promise
+		})
+		const initializing = store.initialize()
+		const outcome = initializing.catch((error: unknown) => error)
+		await entered.promise
+		const closing = store.close()
+		expect(store.close()).toBe(closing)
+		let settled = false
+		void closing.then((): void => {
+			settled = true
+			return undefined
+		})
+		await Promise.resolve()
+		expect(settled).toBe(false)
+		finish.resolve(undefined)
+		await expect(outcome).resolves.toMatchObject({ message: 'Package store is closed' })
+		await closing
+		await expect(stat(resolve(rootDir, '.writer'))).rejects.toMatchObject({ code: 'ENOENT' })
 	})
 
 	it('captures install and remove inputs before queued work starts', async () => {

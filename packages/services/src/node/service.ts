@@ -95,7 +95,13 @@ export class NodeModuleService {
 			const url = await this.resolvePackagedUrl(declaration)
 			await this.requestUpdate(lease, setup, url, true)
 		} catch (error) {
-			await guard.disposeAsync()
+			const [cleanup] = await Promise.allSettled([guard.disposeAsync()])
+			if (cleanup.status === 'rejected')
+				throw new AggregateError(
+					[error, cleanup.reason],
+					'[pluxel/runtime] Node module setup and cleanup failed',
+					{ cause: error },
+				)
 			throw error
 		}
 	}
@@ -208,11 +214,27 @@ export class NodeModuleService {
 		lease.requested = undefined
 		const disposeSource = lease.sourceDispose
 		lease.sourceDispose = undefined
-		await disposeSource?.()
+		const errors: unknown[] = []
+		try {
+			await disposeSource?.()
+		} catch (error) {
+			errors.push(error)
+		}
+		// Updates already report their own failures. Their late results must still drain
+		// before releasing the currently active consumer, even if source detach failed.
 		await lease.updateTask?.catch((): undefined => undefined)
 		const cleanup = lease.activeCleanup
 		lease.activeCleanup = undefined
-		await cleanup?.()
+		try {
+			await cleanup?.()
+		} catch (error) {
+			errors.push(error)
+		}
+		if (errors.length === 1) throw errors[0]
+		if (errors.length > 1)
+			throw new AggregateError(errors, '[pluxel/runtime] Node module cleanup failed', {
+				cause: errors[0],
+			})
 	}
 
 	private reportUpdateError(error: unknown): void {

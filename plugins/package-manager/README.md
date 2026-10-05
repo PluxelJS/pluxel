@@ -1,6 +1,6 @@
 # `@pluxel/package-manager`
 
-为 dynamic host 管理 pnpm project，并原子发布插件 source entries。
+为 Native/Vite 应用管理 pnpm 安装，并逐条原子发布插件 source entries。
 
 本包为 workspace 内部预览，不是仓库外项目的安装入口。
 

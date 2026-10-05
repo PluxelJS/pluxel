@@ -7,6 +7,39 @@ import { describe, expect, it } from 'vitest'
 import { createHost, defineHostService, type HostService } from '../src/index'
 
 describe('static Host service preparation', () => {
+	it('rejects malformed service declarations when they are captured', () => {
+		expect(() => defineHostService({ name: 'broken' } as HostService)).toThrow(
+			'[host] service broken must provide capabilities',
+		)
+	})
+
+	it('captures service selection before asynchronous Host validation', async () => {
+		const events: string[] = []
+		const services: HostService[] = [
+			{
+				name: 'selected',
+				capabilities: [],
+				prepare() {
+					events.push('selected')
+				},
+			},
+		]
+		const creating = createHost({ plugins: [], services })
+		services[0] = {
+			name: 'changed',
+			capabilities: [],
+			prepare() {
+				events.push('changed')
+			},
+		}
+		const host = await creating
+		try {
+			expect(events).toEqual(['selected'])
+		} finally {
+			await host.close()
+		}
+	})
+
 	it('validates the entire plan before calling any factory or prepare callback', async () => {
 		let creations = 0
 		const Provider = defineContextCapability<number>('provider')

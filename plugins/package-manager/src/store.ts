@@ -72,6 +72,7 @@ export class ManagedPackageStore {
 	private installation?: PublishedInstallation
 	private writer = false
 	private closed = false
+	private closing?: Promise<void>
 	private dependenciesWithBuildScripts: readonly string[] = Object.freeze([])
 	private queue: Promise<void> = Promise.resolve()
 	private readonly options: StoreOptions
@@ -85,7 +86,11 @@ export class ManagedPackageStore {
 		this.entriesDir = resolve(this.rootDir, 'entries')
 	}
 
-	async initialize(): Promise<void> {
+	initialize(): Promise<void> {
+		return this.serialize(() => this.initializeStore())
+	}
+
+	private async initializeStore(): Promise<void> {
 		this.assertOpen()
 		if (this.writer) throw new Error('Package store is already initialized')
 		await mkdir(this.rootDir, { recursive: true })
@@ -131,25 +136,39 @@ export class ManagedPackageStore {
 					throw new Error(
 						'Managed entry disagrees with published installation; repair offline before startup',
 					)
+			this.assertOpen()
 		} catch (error) {
 			await this.releaseWriter()
 			throw error
 		}
 	}
 
-	async snapshot(): Promise<PackageManagerSnapshot> {
+	snapshot(): Promise<PackageManagerSnapshot> {
+		return this.serialize(() => this.readSnapshot())
+	}
+
+	private async readSnapshot(): Promise<PackageManagerSnapshot> {
 		const manifest = await this.readManifest()
 		const packages = await Promise.all(
 			Object.entries(manifest.dependencies).map(async ([name, requested]) =>
 				this.readManagedPackage(name, requested),
 			),
 		)
+		const pendingRemovals: string[] = []
+		for (const file of await readdir(this.entriesDir)) {
+			if (!file.endsWith('.mjs')) continue
+			const name = Buffer.from(file.slice(0, -4), 'base64url').toString('utf8')
+			if (!isPackageName(name) || this.entryFile(name) !== file)
+				throw new Error('Managed entries contain an invalid package filename; repair offline')
+			if (!Object.hasOwn(manifest.dependencies, name)) pendingRemovals.push(name)
+		}
 		return Object.freeze({
 			revision: this.revision,
 			engine: this.engine.engineVersion(),
 			rootDir: this.rootDir,
 			entriesDir: this.entriesDir,
 			packages: Object.freeze(packages.sort((left, right) => left.name.localeCompare(right.name))),
+			pendingRemovals: Object.freeze(pendingRemovals.sort()),
 			dependenciesWithBuildScripts: this.dependenciesWithBuildScripts,
 		})
 	}
@@ -286,10 +305,9 @@ export class ManagedPackageStore {
 	}
 
 	/** Revokes queued work and publication, then waits for admitted native operations. */
-	async close(): Promise<void> {
+	close(): Promise<void> {
 		this.closed = true
-		await this.queue
-		await this.releaseWriter()
+		return (this.closing ??= this.queue.then(() => this.releaseWriter()))
 	}
 
 	private assertOpen(): void {
@@ -323,8 +341,6 @@ export class ManagedPackageStore {
 				)
 			}
 			this.assertOpen()
-			if (result.depsRequiringBuild)
-				this.dependenciesWithBuildScripts = Object.freeze([...result.depsRequiringBuild].sort())
 			const packages = await this.prepareInstallation(next, directory)
 			const previous = this.installation?.packages ?? []
 			const installation: PublishedInstallation = Object.freeze({
@@ -339,6 +355,9 @@ export class ManagedPackageStore {
 				() => this.assertOpen(),
 			)
 			this.installation = installation
+			this.dependenciesWithBuildScripts = Object.freeze(
+				[...(result.depsRequiringBuild ?? [])].sort(),
+			)
 			published = true
 			this.revision += 1
 			await this.publishInstallationEntries([...withdrawn, ...previous.map((pkg) => pkg.name)])

@@ -50,6 +50,16 @@ export function defineHostService<
 	const TCapabilities extends readonly ContextCapabilityInstallation[],
 	const TDependencies extends HostServiceDependencies = Record<never, never>,
 >(service: HostService<TCapabilities, TDependencies>): HostService<TCapabilities, TDependencies> {
+	if (!service || typeof service.name !== 'string' || !service.name.trim())
+		throw new TypeError('[host] service declarations require a non-empty name')
+	if (!Array.isArray(service.capabilities))
+		throw new TypeError(`[host] service ${service.name} must provide capabilities`)
+	if (service.removeNodeMetadata !== undefined && typeof service.removeNodeMetadata !== 'function')
+		throw new TypeError(`[host] service ${service.name} has an invalid metadata cleanup`)
+	if (service.lifecycle !== undefined && typeof service.lifecycle !== 'function')
+		throw new TypeError(`[host] service ${service.name} has an invalid lifecycle factory`)
+	if (service.prepare !== undefined && typeof service.prepare !== 'function')
+		throw new TypeError(`[host] service ${service.name} has an invalid prepare callback`)
 	return Object.freeze({
 		...service,
 		capabilities: Object.freeze([...service.capabilities]) as unknown as TCapabilities,
@@ -73,22 +83,7 @@ export class HostServicePlanError extends Error {
 
 /** Snapshot and sort the complete declarations without creating Contexts or invoking factories. */
 export function planHostServices(services: readonly HostService[]): readonly HostService[] {
-	const fixed = services.map((service) => {
-		if (!service || typeof service.name !== 'string' || !service.name.trim())
-			throw new TypeError('[host] service declarations require a non-empty name')
-		if (!Array.isArray(service.capabilities))
-			throw new TypeError(`[host] service ${service.name} must provide capabilities`)
-		if (
-			service.removeNodeMetadata !== undefined &&
-			typeof service.removeNodeMetadata !== 'function'
-		)
-			throw new TypeError(`[host] service ${service.name} has an invalid metadata cleanup`)
-		if (service.lifecycle !== undefined && typeof service.lifecycle !== 'function')
-			throw new TypeError(`[host] service ${service.name} has an invalid lifecycle factory`)
-		if (service.prepare !== undefined && typeof service.prepare !== 'function')
-			throw new TypeError(`[host] service ${service.name} has an invalid prepare callback`)
-		return defineHostService(service)
-	})
+	const fixed = services.map(defineHostService)
 	const providers = new Map<ContextCapability<any, ContextCapabilityAccess>, HostService>()
 	for (const service of fixed) {
 		for (const installation of service.capabilities) {

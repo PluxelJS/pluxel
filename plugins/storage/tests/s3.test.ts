@@ -121,7 +121,15 @@ describe('S3Plugin remote backend', () => {
 			env: { S3_ACCESS_KEY: 'env-access', S3_SECRET_KEY: 'env-secret' },
 			bindings: {},
 		}
-		const host = await createHost(await resolveHostApplication(application, startup))
+		const resolved = await resolveHostApplication(application, startup)
+		const host = await createHost({
+			plugins: resolved.plugins,
+			services: resolved.services,
+			state: resolved.state,
+			config: resolved.config,
+			configRecords: resolved.configRecords,
+			vaultBindings: resolved.vaultBindings,
+		})
 		try {
 			await host.start()
 			const status = await host.status()
@@ -137,7 +145,9 @@ describe('S3Plugin remote backend', () => {
 			resolveHostApplication(application, {
 				...startup,
 				env: { S3_ACCESS_KEY: 'env-access' },
-			}).then(createHost),
+			}).then(({ plugins, services, state, config, configRecords, vaultBindings }) =>
+				createHost({ plugins, services, state, config, configRecords, vaultBindings }),
+			),
 		).rejects.toThrow('S3_SECRET_KEY')
 	})
 

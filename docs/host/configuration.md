@@ -182,6 +182,8 @@ process.once('SIGINT', shutdown)
 
 大多数插件只需 `configs.use(schema)`，通过 Workbench 或 Host 配置 API 设置值。只有部署系统负责提供固定值时，才在应用入口加绑定：环境变量使用 `envBinding`，挂载的 JSON 文件使用 `fileBinding`。两者都由 Host 在启动时读取。
 
+应用解析在首次异步读取前捕获绑定的文件路径、namespace 和环境 mapping；读取期间修改原声明不会改变本次输入或来源记录。schema 保留原实例，不能借修改 schema 对象改变已声明的契约。
+
 环境绑定从本次 `startup.env` 生成覆盖层，优先于保存值；该层不写入配置存储。
 
 Plugin 需要导出传给 `configs.use()` 的同一个 schema：
@@ -707,6 +709,8 @@ export default defineConfig({
 	plugins: [buildPreset({ delivery: 'modules' })],
 })
 ```
+
+默认应用入口为 `dist/app.mjs`。若用 tsdown 的 `outputOptions.entryFileNames` 自定义命名，保留 `.mjs` 扩展名，并让启动路径对应实际产物；输出的 `package.json` 的 `./app` export 与 `pluxel-deployment.json` 的 `server.entry` 会同步记录实际入口。
 
 原生启动示例：
 

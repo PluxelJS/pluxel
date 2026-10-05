@@ -127,6 +127,32 @@ export default async ({env,bindings}) => {
 		}
 	})
 
+	it('captures the evaluated declaration before resolving asynchronous bindings', async () => {
+		const original = { name: 'selected', capabilities: [] as const }
+		const changed = { name: 'changed', capabilities: [] as const }
+		const declaration = {
+			plugins: [] as [],
+			services: [original],
+			sources: [{ kind: 'directory' as const, path: 'selected', include: ['*.mjs'] }],
+			state: { mode: 'memory' as const, initial: { autoStart: [] as [] } },
+		}
+		const application = defineHostApplication(() => {
+			// Mutate after the factory result is received, while input resolution yields.
+			queueMicrotask(() =>
+				queueMicrotask(() => {
+					declaration.services[0] = changed
+					declaration.sources[0]!.path = 'changed'
+					Object.assign(declaration.state, { mode: 'readonly' })
+				}),
+			)
+			return declaration
+		})
+		const resolved = await resolveHostApplication(application, startup)
+		expect(resolved.services?.[0]?.name).toBe('selected')
+		expect(resolved.sources?.[0]?.path).toBe('selected')
+		expect(resolved.state?.mode).toBe('memory')
+	})
+
 	it('propagates factory rejection before service preparation', async () => {
 		const failure = new Error('factory failure')
 		await expect(

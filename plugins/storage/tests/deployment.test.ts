@@ -62,14 +62,20 @@ it('signs and completes an S3 write using only env-backed Vault records', async 
 				}),
 			],
 		}))
-		const host = await createHost(
-			await resolveHostApplication(application, {
-				root: process.cwd(),
-				mode: 'test',
-				bindings: {},
-				env: { ACCESS_KEY: 'deployment-access', SECRET_KEY: 'deployment-secret' },
-			}),
-		)
+		const resolved = await resolveHostApplication(application, {
+			root: process.cwd(),
+			mode: 'test',
+			bindings: {},
+			env: { ACCESS_KEY: 'deployment-access', SECRET_KEY: 'deployment-secret' },
+		})
+		const host = await createHost({
+			plugins: resolved.plugins,
+			services: resolved.services,
+			state: resolved.state,
+			config: resolved.config,
+			configRecords: resolved.configRecords,
+			vaultBindings: resolved.vaultBindings,
+		})
 		try {
 			await host.start()
 			const status = await host.status()

@@ -75,6 +75,9 @@ export type HostViteOptions = Readonly<{
 
 /** Host Vite assembly owning one runner, source evaluator and candidate protocol. */
 export function host(options: HostViteOptions): PluginOption[] {
+	for (const key of Object.keys(options))
+		if (!['entry', 'devConsole', 'bindings'].includes(key))
+			throw new TypeError(`[host-vite] unsupported ${key}`)
 	const { entry: inputEntry, devConsole: enableDevConsole, bindings: inputBindings } = options
 	if (typeof inputEntry !== 'string' || !inputEntry.trim())
 		throw new TypeError('[host-vite] entry is required')

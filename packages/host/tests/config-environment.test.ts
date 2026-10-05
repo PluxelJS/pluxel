@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { defineHostApplication, resolveHostApplication } from '../src/application'
 import { createHost } from '../src/host'
 import { createDocumentStorage } from './helpers/document-storage'
+import { resolveInputBindings } from '../src/input-bindings'
 
 const Config = v.object({
 	enabled: v.optional(v.boolean(), false),
@@ -23,6 +24,49 @@ export class Configured extends BasePlugin {
 const startup = { root: process.cwd(), mode: 'test' as const, bindings: {}, env: {} }
 const binding = envBinding(Configured, {
 	config: { schema: Config, mapping: { enabled: 'APP_ENABLED', limit: 'APP_LIMIT' } },
+})
+
+it('captures binding paths, namespaces and mappings before the first file read', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-binding-snapshot-'))
+	try {
+		await writeFile(join(root, 'config.json'), JSON.stringify({ limit: 4 }))
+		await writeFile(join(root, 'secret.json'), JSON.stringify({ token: 'file-token', expires: 42 }))
+		const file = {
+			plugin: Configured,
+			namespace: 'file-selected',
+			config: { schema: Config, path: 'config.json' },
+			vault: { schema: Credentials, paths: { credentials: 'secret.json' } },
+		}
+		const env = {
+			plugin: Configured,
+			namespace: 'env-selected',
+			config: { schema: Config, mapping: { limit: 'LIMIT' } },
+			vault: {
+				schema: Credentials,
+				mapping: { credentials: { token: 'TOKEN', expires: 'EXPIRY' } },
+			},
+		}
+		const resolving = resolveInputBindings(
+			{ plugins: [Configured], fileBindings: [file], envBindings: [env] },
+			{ ...startup, root, env: { LIMIT: '7', TOKEN: 'env-token', EXPIRY: '12' } },
+		)
+		file.config.path = 'missing-config.json'
+		file.vault.paths.credentials = 'missing-secret.json'
+		file.namespace = 'file-changed'
+		env.namespace = 'env-changed'
+		env.config.mapping.limit = 'CHANGED_LIMIT'
+		env.vault.mapping.credentials.token = 'CHANGED_TOKEN'
+		const result = await resolving
+		expect(result.baseSources[0]?.name).toBe('config.json')
+		expect(result.base[0]?.config).toEqual({ limit: 4 })
+		expect(result.overlays[0]?.config).toEqual({ limit: 7 })
+		expect(result.vaultBindings).toMatchObject([
+			{ namespace: 'file-selected', value: { token: 'file-token', expires: 42 } },
+			{ namespace: 'env-selected', value: { token: 'env-token', expires: 12 } },
+		])
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
 })
 
 it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or seed mutation', async () => {
@@ -70,14 +114,23 @@ it('keeps env out of storage and reveals the saved value after env removal', asy
 		configRecords: { storage, initial: [{ owner, config: { limit: 2 } }] },
 		envBindings: [binding],
 	}))
-	const first = await createHost(await resolveHostApplication(application, startup))
+	const firstApplication = await resolveHostApplication(application, startup)
+	const first = await createHost({
+		plugins: firstApplication.plugins,
+		configRecords: firstApplication.configRecords,
+	})
 	await first.start()
 	const patched = await first.config.patch(owner, { limit: 8 })
 	expect(patched.ok).toBe(true)
 	await first.close()
-	const second = await createHost(
-		await resolveHostApplication(application, { ...startup, env: { APP_LIMIT: '99' } }),
-	)
+	const secondApplication = await resolveHostApplication(application, {
+		...startup,
+		env: { APP_LIMIT: '99' },
+	})
+	const second = await createHost({
+		plugins: secondApplication.plugins,
+		configRecords: secondApplication.configRecords,
+	})
 	await second.start()
 	expect(requireConfigService(second.ctx).getRawConfig(owner).limit).toBe(99)
 	const denied = await second.config.patch(owner, { limit: 99 })
@@ -85,7 +138,11 @@ it('keeps env out of storage and reveals the saved value after env removal', asy
 	const reset = await second.config.reset(owner)
 	expect(reset.ok).toBe(false)
 	await second.close()
-	const third = await createHost(await resolveHostApplication(application, startup))
+	const thirdApplication = await resolveHostApplication(application, startup)
+	const third = await createHost({
+		plugins: thirdApplication.plugins,
+		configRecords: thirdApplication.configRecords,
+	})
 	await third.start()
 	try {
 		expect(requireConfigService(third.ctx).getRawConfig(owner).limit).toBe(8)
@@ -126,7 +183,9 @@ it('validates a complete Vault record, rejects partial deployment inputs, and re
 		resolveHostApplication(application, {
 			...startup,
 			env: { TOKEN: 'secret', EXPIRY: '12' },
-		}).then(createHost),
+		}).then(({ plugins, services, configRecords, vaultBindings }) =>
+			createHost({ plugins, services, configRecords, vaultBindings }),
+		),
 	).rejects.toThrow(/host.vault-bindings/)
 })
 
@@ -229,23 +288,27 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 			}),
 		],
 	})
-	const host = await createHost(
-		await resolveHostApplication(
-			defineHostApplication(() => ({
-				plugins: [Bound],
-				services: [service],
-				envBindings: [
-					envBinding(Bound, {
-						vault: {
-							schema: v.object({ credentials: tokenSchema }),
-							mapping: { credentials: { token: 'TOKEN' } },
-						},
-					}),
-				],
-			})),
-			{ ...startup, env: { TOKEN: 'one' } },
-		),
+	const resolved = await resolveHostApplication(
+		defineHostApplication(() => ({
+			plugins: [Bound],
+			services: [service],
+			envBindings: [
+				envBinding(Bound, {
+					vault: {
+						schema: v.object({ credentials: tokenSchema }),
+						mapping: { credentials: { token: 'TOKEN' } },
+					},
+				}),
+			],
+		})),
+		{ ...startup, env: { TOKEN: 'one' } },
 	)
+	const host = await createHost({
+		plugins: resolved.plugins,
+		services: resolved.services,
+		vaultBindings: resolved.vaultBindings,
+		configRecords: resolved.configRecords,
+	})
 	await host.start()
 	try {
 		expect(validations).toBe(1)
@@ -336,19 +399,21 @@ it('checks environment paths against replacement config metadata without another
 			},
 		})
 	}
-	const host = await createHost(
-		await resolveHostApplication(
-			defineHostApplication(() => ({
-				plugins: [BeforeConfigReplacement],
-				envBindings: [
-					envBinding(BeforeConfigReplacement, {
-						config: { schema: OriginalConfig, mapping: { enabled: 'ENABLED' } },
-					}),
-				],
-			})),
-			{ ...startup, env: { ENABLED: 'true' } },
-		),
+	const resolved = await resolveHostApplication(
+		defineHostApplication(() => ({
+			plugins: [BeforeConfigReplacement],
+			envBindings: [
+				envBinding(BeforeConfigReplacement, {
+					config: { schema: OriginalConfig, mapping: { enabled: 'ENABLED' } },
+				}),
+			],
+		})),
+		{ ...startup, env: { ENABLED: 'true' } },
 	)
+	const host = await createHost({
+		plugins: resolved.plugins,
+		configRecords: resolved.configRecords,
+	})
 	await host.start()
 	try {
 		await expect(host.updateCatalog([AfterConfigReplacement])).rejects.toMatchObject({

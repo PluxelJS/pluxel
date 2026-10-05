@@ -8,6 +8,7 @@ export function createHostDependencyWatch(options: {
 	onError(error: unknown): void
 }) {
 	let watcher: FSWatcher | undefined
+	let opening: FSWatcher | undefined
 	let files = new Set<string>()
 	let closed = false
 	let closing: Promise<void> | undefined
@@ -23,8 +24,8 @@ export function createHostDependencyWatch(options: {
 			if (next.size === files.size && [...next].every((file) => files.has(file))) return
 			const policy = next.size > 0 ? hostFileWatchOptions() : undefined
 			const previous = watcher
-			files = next
 			if (next.size === 0) {
+				files = next
 				watcher = undefined
 				await previous?.close()
 				return
@@ -34,7 +35,7 @@ export function createHostDependencyWatch(options: {
 				ignoreInitial: true,
 				followSymlinks: false,
 			})
-			watcher = candidate
+			opening = candidate
 			for (const [event, type] of [
 				['add', 'create'],
 				['change', 'update'],
@@ -56,11 +57,26 @@ export function createHostDependencyWatch(options: {
 					candidate.once('ready', resolve)
 					candidate.once('error', reject)
 				})
-				settleReady = undefined
-				candidate.on('error', options.onError)
+			} catch (error) {
+				// Keep the accepted observer live until its replacement is actually ready.
+				const [cleanup] = await Promise.allSettled([candidate.close()])
+				if (cleanup.status === 'rejected')
+					throw new AggregateError(
+						[error, cleanup.reason],
+						'[host-vite] dependency watcher startup and cleanup failed',
+						{ cause: error },
+					)
+				throw error
 			} finally {
-				await previous?.close()
+				opening = undefined
+				settleReady = undefined
 			}
+			// close() owns both observers if shutdown interrupted acquisition.
+			if (closed) return
+			watcher = candidate
+			files = next
+			candidate.on('error', options.onError)
+			await previous?.close()
 		},
 		close: (): Promise<void> =>
 			(closing ??= (async () => {
@@ -68,7 +84,7 @@ export function createHostDependencyWatch(options: {
 				files.clear()
 				settleReady?.()
 				const accepted = [...pending]
-				const released = Promise.allSettled([watcher?.close()])
+				const released = Promise.allSettled([watcher?.close(), opening?.close()])
 				// A callback can be awaiting Vite watchChange before entering the driver's lane.
 				// Replacement closes only its physical watcher; waiting there would await itself.
 				const callbacks = await Promise.all(accepted)

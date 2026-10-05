@@ -114,6 +114,28 @@ export function Manager() {
 					</Alert>
 				) : null}
 
+				{snapshot?.pendingRemovals.length ? (
+					<Alert color="yellow" title="Package removal needs retry">
+						<Stack gap="xs">
+							<Text size="sm">
+								These packages left the installation selection, but their source entries remain.
+							</Text>
+							{snapshot.pendingRemovals.map((name) => (
+								<Group key={name} justify="space-between">
+									<Code>{name}</Code>
+									<Button
+										variant="light"
+										disabled={busy}
+										onClick={() => void applyMutation(removePackages.mutateAsync([name]))}
+									>
+										Retry removal
+									</Button>
+								</Group>
+							))}
+						</Stack>
+					</Alert>
+				) : null}
+
 				{snapshot?.dependenciesWithBuildScripts.length ? (
 					<Alert color="yellow" title="Dependencies declare build scripts">
 						Execution follows the host&apos;s exact build policy. Reported dependencies:{' '}

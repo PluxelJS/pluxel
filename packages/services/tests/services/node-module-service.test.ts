@@ -42,6 +42,37 @@ describe('NodeModuleService', () => {
 		expect(host.isRunning(NodeModuleFailure)).toBe(false)
 	})
 
+	it('retains the setup failure when its source cleanup also fails', async () => {
+		await using host = await createServiceInternalTestHost({ workbench: false })
+		const setupFailure = new Error('consumer setup failed')
+		const cleanupFailure = new Error('source cleanup failed')
+		let caught: unknown
+		host.ctx.require(NodeModuleHost).attachSourceBinder(async () => ({
+			url: new URL('file:///cache/task.mjs'),
+			dispose() {
+				throw cleanupFailure
+			},
+		}))
+		@Plugin({ displayName: 'NodeModuleSetupAndCleanupFailure' })
+		class NodeModuleSetupAndCleanupFailure extends BasePlugin {
+			override async init() {
+				try {
+					await this.ctx.require(NodeModules).use(declaration, () => {
+						throw setupFailure
+					})
+				} catch (error) {
+					caught = error
+					throw error
+				}
+			}
+		}
+		lowerTestPlugin(NodeModuleSetupAndCleanupFailure)
+		await host.commitExpectFail((change) => change.start(NodeModuleSetupAndCleanupFailure))
+		expect(caught).toBeInstanceOf(AggregateError)
+		expect((caught as AggregateError).cause).toBe(setupFailure)
+		expect((caught as AggregateError).errors).toEqual([setupFailure, cleanupFailure])
+	})
+
 	it('stages updates, keeps the last good consumer, and cleans up with its owner', async () => {
 		await using host = await createServiceInternalTestHost({ workbench: false })
 
@@ -150,6 +181,54 @@ describe('NodeModuleService', () => {
 			'cleanup:/cache/next.mjs',
 			'cleanup:/cache/initial.mjs',
 		])
+	})
+
+	it('drains pending setup and the active consumer even when source disposal fails', async () => {
+		await using host = await createServiceInternalTestHost({ workbench: false })
+		let publish!: (url: URL) => void | Promise<void>
+		let release!: () => void
+		let started!: () => void
+		const pending = new Promise<void>((resolve) => (release = resolve))
+		const ready = new Promise<void>((resolve) => (started = resolve))
+		const events: string[] = []
+		host.ctx.require(NodeModuleHost).attachSourceBinder(async (_declaration, onUpdate) => {
+			publish = onUpdate
+			return {
+				url: new URL('file:///cache/initial.mjs'),
+				dispose() {
+					events.push('detach')
+					throw new Error('source disposal failed')
+				},
+			}
+		})
+		@Plugin({ displayName: 'FailedSourceDetach' })
+		class FailedSourceDetach extends BasePlugin {
+			override async init() {
+				await this.ctx.require(NodeModules).use(declaration, async (url) => {
+					if (url.pathname.endsWith('/next.mjs')) {
+						started()
+						await pending
+					}
+					return () => void events.push(`cleanup:${url.pathname}`)
+				})
+			}
+		}
+		lowerTestPlugin(FailedSourceDetach)
+		await host.start(FailedSourceDetach)
+		const update = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
+		await ready
+		const stopping = host.commitExpectFail((change) => change.catalog.remove(FailedSourceDetach))
+		await expect.poll(() => events.includes('detach')).toBe(true)
+		release()
+		await update
+		const failure = await stopping
+		expect(events).toEqual(['detach', 'cleanup:/cache/next.mjs', 'cleanup:/cache/initial.mjs'])
+		expect(failure.lifecycleReport.issues).toContainEqual(
+			expect.objectContaining({
+				kind: 'drain-failed',
+				message: expect.stringContaining('source disposal failed'),
+			}),
+		)
 	})
 
 	it('loads the lowered artifact from a packaged/static root', async () => {

@@ -10,6 +10,49 @@ import { createHost } from '../src/index'
 import { requireHostStateStore } from '../src/host'
 
 describe('Core-only Host', () => {
+	it('captures catalog inputs before awaiting initial startup', async () => {
+		@Plugin()
+		class Selected extends BasePlugin {}
+		__setPluginDefinition(Selected, {
+			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
+			kind: 'plugin',
+			definition: {
+				entry: { kind: 'package-root', packageName: '@test/captured-catalog' },
+				exportName: 'Selected',
+			},
+		})
+		const host = await createHost({ plugins: [] })
+		try {
+			const selection = [Selected]
+			const updating = host.updateCatalog(selection)
+			selection.length = 0
+			await updating
+			expect(host.catalog().entries).toHaveLength(1)
+		} finally {
+			await host.close()
+		}
+	})
+
+	it('rejects unknown JavaScript options before acquiring resources', async () => {
+		let prepared = false
+		await expect(
+			createHost({
+				plugins: [],
+				service: [],
+				services: [
+					{
+						name: 'probe',
+						capabilities: [],
+						prepare() {
+							prepared = true
+						},
+					},
+				],
+			} as never),
+		).rejects.toThrow('unsupported "service"')
+		expect(prepared).toBe(false)
+	})
+
 	it('owns one catalog and queue, separates admission from intent, and drains shutdown', async () => {
 		abstract class LifecycleBackend extends BasePlugin {}
 		__setPluginDefinition(LifecycleBackend, {

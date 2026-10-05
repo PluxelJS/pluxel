@@ -84,7 +84,7 @@ export async function createModulesApplicationConfig(options: {
 	if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))
 		throw new TypeError(`[pluxel:modules] ${root}/package.json pluxel must be an object`)
 	const entries = new Map<string, string>([['app', bootstrap]])
-	const exports: Record<string, string> = { './app': './app.mjs' }
+	const exportEntries = new Map<string, string>([['./app', bootstrap]])
 	const publicSources =
 		manifest.exports === undefined
 			? new Map<string, string>()
@@ -116,7 +116,7 @@ export async function createModulesApplicationConfig(options: {
 		if (isAbsolute(sourceRelative) || sourceRelative === '..' || sourceRelative.startsWith('../'))
 			throw new TypeError(`[pluxel:modules] public source export escapes its package: ${subpath}`)
 		entries.set(name, sourceFile)
-		exports[subpath] = `./${name}.mjs`
+		exportEntries.set(subpath, sourceFile)
 	}
 	let environmentExample: string | undefined
 	let ownedExample = false
@@ -158,6 +158,15 @@ export default application;`
 			const chunks = Object.values(bundle)
 				.filter((item) => item.type === 'chunk')
 				.sort((a, b) => a.fileName.localeCompare(b.fileName))
+			for (const chunk of chunks)
+				if (!chunk.fileName.endsWith('.mjs'))
+					this.error(`[pluxel:modules] compiled modules require .mjs output: ${chunk.fileName}`)
+			const exports: Record<string, string> = {}
+			for (const [subpath, source] of exportEntries) {
+				const chunk = chunks.find((item) => item.isEntry && item.facadeModuleId === source)
+				if (!chunk) this.error(`[pluxel:modules] missing output entry for public export ${subpath}`)
+				exports[subpath] = `./${chunk.fileName}`
+			}
 			this.emitFile({
 				type: 'asset',
 				fileName: 'pluxel-modules.json',
@@ -185,7 +194,11 @@ export default application;`
 							name: manifest.name ?? 'pluxel-application',
 							catalogHash: applicationCatalogHash(bundle),
 						},
-						server: { target: 'node', entry: 'app.mjs', runtimeClosure: 'packages' },
+						server: {
+							target: 'node',
+							entry: exports['./app']!.slice(2),
+							runtimeClosure: 'packages',
+						},
 						capabilities: {
 							workbench: { included: (options.variant ?? 'workbench') === 'workbench' },
 						},

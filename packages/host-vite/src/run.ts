@@ -125,6 +125,20 @@ export async function runViteApplication(
 								}
 							},
 							configResolved(config) {
+								// Config hooks run after our production defaults. Reject overrides before Vite
+								// acquires transports; silently restoring them would hide a conflicting contract.
+								for (const [field, valid] of [
+									['server.hmr', config.server.hmr === false],
+									['server.middlewareMode', config.server.middlewareMode === true],
+									[
+										'define[process.env.NODE_ENV]',
+										config.define['process.env.NODE_ENV'] === '"production"',
+									],
+								] as const)
+									if (!valid)
+										throw new TypeError(
+											`[host-vite/run] Vite config conflicts with production ${field}`,
+										)
 								if (normalizePath(realpathSync(config.root)) !== normalizePath(root))
 									throw new TypeError(
 										'[host-vite/run] Vite config conflicts with the execution root',

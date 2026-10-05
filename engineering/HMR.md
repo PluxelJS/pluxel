@@ -289,3 +289,9 @@ Workbench renderer 的 semantic candidate 被拒绝时，应用更新报告 `ret
 同次发布的包文件通知可能晚于 wrapper 已接纳新字节。仅对现有依赖 watcher 覆盖、且不是失败恢复输入的已加载文件，比较 Vite load 时记录的摘要；字节相同的迟到通知在开始事务前忽略，避免重复驱逐同一 namespace。未知、缺失与读取错误仍进入原处理路径，来源契约校验不由该去重跳过。真实发行回归用公开 `watchChange` 将包通知延后到 wrapper 结算，再验证报告序号和实例次数均不变化。
 
 锁定的 Vite 默认忽略 node_modules，生产又关闭浏览器 HMR，因此 Host-vite 另拥有只覆盖已求值普通 ESM 文件的私有 dependency watcher。来源 entry 仍由来源会话观察，事件统一进入原串行队列；accepted graph 改变即换观察集合，关闭排空后回收。它不观察 native/shared/CJS、不扫描任意依赖目录，也不对外暴露 Vite middleware。生产 config 使用 Vite 的 native config loader，避免默认 bundler 创建第二份服务 token 或在发布目录写 `.vite-temp`。构建产物的 `public/` 由既有 Elysia asset dispatcher 服务，目录来自已验证 compiled factory，不能猜测源码位置。
+
+## 观察与生产配置的接纳边界
+
+依赖 watcher 的候选 ready 后才替换已接纳的观察集合；打开失败关闭候选、保留旧观察，同集合可显式重试。会话关闭同时释放已接纳与尚在打开的 watcher，排空已接纳回调，保持同一 driver 队列。
+
+生产 `/run` 在全部 Vite config hooks 之后校验 middlewareMode、browser HMR 和 NODE_ENV define。后续插件与生产约束冲突时拒绝启动，不悄悄覆盖用户配置。`host()` 对未知顶层字段同样拒绝，避免拼写错误变成忽略配置。

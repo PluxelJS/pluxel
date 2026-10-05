@@ -157,13 +157,13 @@ function setPath(target: Record<string, unknown>, path: readonly string[], value
 }
 function decode(
 	inputSchema: InputSchema,
-	mapping: unknown,
+	mapping: ReturnType<typeof leaves>,
 	environment: HostStartupContext['env'],
 	required: boolean,
 ): { value: unknown; sources: Source[] } {
 	let value: unknown = Object.create(null)
 	const sources: Source[] = []
-	for (const leaf of leaves(mapping)) {
+	for (const leaf of mapping) {
 		const projection = projectRawInput(inputSchema as unknown as Schema, leaf.path)
 		if (!projection.ok)
 			fail(`[host] Unsupported input binding ${leaf.name} at ${leaf.path.join('.') || '<root>'}`)
@@ -275,7 +275,9 @@ export async function resolveInputBindings(
 		if (binding.config === undefined && binding.vault === undefined)
 			fail('[host] Input binding has no target')
 	}
-	for (const binding of application.fileBindings ?? []) {
+	// Capture declaration data before file IO or async schema validation can yield to its owner.
+	// Schemas keep their identity; validated mapping leaves no longer borrow the caller's tree.
+	const fileBindings = (application.fileBindings ?? []).map((binding) => {
 		if (binding.config !== undefined)
 			envelope(binding.config, ['schema', 'path'], 'Config file binding')
 		if (binding.vault !== undefined) {
@@ -284,6 +286,44 @@ export async function resolveInputBindings(
 				fail('[host] Vault file paths must enumerate at least one record')
 			schema(binding.vault.schema, 'Vault binding schema')
 		}
+		return {
+			plugin: binding.plugin,
+			namespace: binding.namespace,
+			config: binding.config && { ...binding.config },
+			vault: binding.vault && {
+				schema: binding.vault.schema,
+				paths: dataEntries(binding.vault.paths, 'Vault file paths'),
+			},
+		}
+	})
+	const envBindings = (application.envBindings ?? []).map((binding) => {
+		if (binding.config !== undefined)
+			envelope(binding.config, ['schema', 'mapping'], 'Config environment binding')
+		if (binding.vault !== undefined) {
+			envelope(binding.vault, ['schema', 'mapping'], 'Vault environment binding')
+			if (!record(binding.vault.mapping) || Reflect.ownKeys(binding.vault.mapping).length === 0)
+				fail('[host] Vault mapping must enumerate at least one record')
+			schema(binding.vault.schema, 'Vault binding schema')
+		}
+		return {
+			plugin: binding.plugin,
+			namespace: binding.namespace,
+			config: binding.config && {
+				schema: binding.config.schema,
+				mapping: leaves(binding.config.mapping),
+			},
+			vault: binding.vault && {
+				schema: binding.vault.schema,
+				mapping: dataEntries(binding.vault.mapping, 'Vault record mappings').map(
+					([key, mapping]) => {
+						if (mapping === undefined) fail('[host] Vault environment bindings must name inputs')
+						return [key, leaves(mapping)] as const
+					},
+				),
+			},
+		}
+	})
+	for (const binding of fileBindings) {
 		if (binding.config !== undefined) {
 			configSchema(binding.plugin, schema(binding.config.schema, 'Config binding schema'))
 			const owner = target(binding.plugin, 'config-file')
@@ -300,7 +340,7 @@ export async function resolveInputBindings(
 			declaredConfigBindings.add(fileSource)
 			baseSources.push(fileSource)
 		}
-		for (const [key, path] of dataEntries(binding.vault?.paths ?? {}, 'Vault file paths')) {
+		for (const [key, path] of binding.vault?.paths ?? []) {
 			const owner = target(binding.plugin, 'vault', binding.namespace, key)
 			if (typeof path !== 'string') fail('[host] Vault file bindings must name JSON files')
 			const declared = binding.vault!.schema
@@ -315,15 +355,7 @@ export async function resolveInputBindings(
 			vaultBindings.push(entry)
 		}
 	}
-	for (const binding of application.envBindings ?? []) {
-		if (binding.config !== undefined)
-			envelope(binding.config, ['schema', 'mapping'], 'Config environment binding')
-		if (binding.vault !== undefined) {
-			envelope(binding.vault, ['schema', 'mapping'], 'Vault environment binding')
-			if (!record(binding.vault.mapping) || Reflect.ownKeys(binding.vault.mapping).length === 0)
-				fail('[host] Vault mapping must enumerate at least one record')
-			schema(binding.vault.schema, 'Vault binding schema')
-		}
+	for (const binding of envBindings) {
 		if (binding.config !== undefined) {
 			const owner = target(binding.plugin, 'config-env')
 			const decoded = decode(
@@ -343,12 +375,8 @@ export async function resolveInputBindings(
 				overlays.push(overlay)
 			}
 		}
-		for (const [key, mapping] of dataEntries(
-			binding.vault?.mapping ?? {},
-			'Vault record mappings',
-		)) {
+		for (const [key, mapping] of binding.vault?.mapping ?? []) {
 			const owner = target(binding.plugin, 'vault', binding.namespace, key)
-			if (mapping === undefined) fail('[host] Vault environment bindings must name inputs')
 			const declared = binding.vault!.schema
 			const decoded = decode(vaultRecordSchema(declared, key), mapping, startup.env, true)
 			const entry: HostVaultBindingRecord = {

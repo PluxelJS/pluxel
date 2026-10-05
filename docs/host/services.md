@@ -58,6 +58,8 @@ try {
 
 `plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端明确依赖 Persistence；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不依赖 Persistence。Host 不自动补装依赖。
 
+`createHost()` 只接受 Host 配置字段，未知字段在资源获取前拒绝；应用解析结果中的 `startup/sources/prepare/name` 属于执行入口，不能整对象传给它。服务选择和配置容器在异步准备前捕获；`updateCatalog()` 同样捕获调用时的插件数组。借用的 storage、callback 与服务 handle 保留原身份。
+
 两个 Host 可以使用不同清单；同一份服务声明也可创建多个相互隔离的 Host。安装集合创建后固定，普通 Plugin 更新复用已准备的服务。修改安装清单需要创建新 Host。
 
 ## Plugin 读取能力
@@ -168,6 +170,8 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
 生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
 开发不配置该目录，使用 `vitePreset()` 接入已安装 NodeModules 的源码编译器，或在 `host()` 旁显式添加 `nodeArtifacts()`。自行组合服务时同样把生产制品配置传给 `nodeModules()`。
+
+显式配置 Node 制品的 `root` 或 `resolve` 时，Vite 保留该制品来源，不创建自动源码编译附件。显式再附加源码 compiler 会因来源冲突失败；清理时即使来源撤回失败，也会排空已接纳 setup 并清理活动 consumer，多个失败聚合报告。
 直接 `runHostApplication('./dist/app.mjs', { startup })`（`@pluxel/host`）返回普通 `PluginHost`，
 不创建监听器，也不增加 `fetch` 成员。
 

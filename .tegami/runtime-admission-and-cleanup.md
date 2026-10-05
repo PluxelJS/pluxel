@@ -1,0 +1,17 @@
+---
+packages:
+  '@pluxel/host': patch
+  '@pluxel/host-vite': patch
+  '@pluxel/rolldown': patch
+  '@pluxel/services': patch
+---
+
+# Preserve runtime admission and resource ownership
+
+Capture Host service, source, state and catalog selections before asynchronous preparation, and fix binding paths, namespaces and environment mappings before file reads. Reject unsupported Host and Vite options; generated standalone startup projects only Host configuration fields.
+
+Validate production Vite constraints after config hooks. Keep the accepted dependency watcher until its replacement is ready, and release both during shutdown.
+
+Generate modules exports and deployment entry from actual output chunks, including nested or hashed names; reject incompatible module extensions during the build.
+
+Honor explicitly configured Node artifact roots and resolvers in Vite. A source-detach failure no longer skips pending setup drain or active consumer cleanup; aggregated failures retain their original cause.

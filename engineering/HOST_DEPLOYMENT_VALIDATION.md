@@ -151,3 +151,17 @@ Native 的证据前提是 fresh Node launcher 在业务闭包首次求值前建�
 | Vite 首次叶子 lstat            | 4352     | 192    |
 
 Native 成功入口共享一份唯一 URL 序列并各自持有固定长度，关闭冻结事实；错误 owner/ABI 不标记成功。Vite 只合并 SDK 的首次观察 epoch，live 事件及每次 entries 消费继续完整校验。两者均保留最早能够可靠判定的输入错误与清理所有权。
+
+### 架构边界与失败恢复复核（2026-10-05）
+
+本轮按执行接纳、包发布、构建交付三条路径独立审查并交叉复核。保留现有 Native/Vite 执行分工、Host/Core 生命周期和文件来源协议；没有增加通用 loader、适配器层、第二套更新队列或兼容入口。
+
+修正集中在现有所有者的接纳与结算时机：Host 在异步准备前捕获声明并拒绝未知字段，应用绑定先捕获路径和映射再读取；Vite 观察器就绪后才替换旧观察器，生产入口校验最终配置；Package Manager 初始化、读取和修改复用同一队列，未撤回入口从文件事实派生并提供重试；构建清单使用实际输出 chunk；显式 Node 制品来源不被开发编译器覆盖，清理失败不跳过剩余资源。
+
+新增绑定回归曾在综合检查中先于对应实现被执行，出现 `FILE_READ_FAILED`；修复完成后的 Host 全套 149 项通过。该次综合检查是失败记录，不算作最终验证通过。
+
+最终使用 `VITEST_MAX_WORKERS=1 pnpm verify`，筛选 Host、Host-vite、Rolldown、Services、Package Manager、Storage，Turbo 并发 1、强制重跑：28/28 类型、构建与测试任务通过，零缓存，耗时 5m17.163s；仓库治理 37 项、lint、1978 文件格式及源码声明检查通过。各包测试分别为 149、121、470、344、22、17，共 1123 项通过；Package Manager 保留一个外部 npm 门控跳过，真实本地 registry 样本执行。
+
+此前双 worker 的 Rolldown 全套为 469 passed / 1 failed：standalone 双失败回归在具有原 30 秒期限的构建子进程中失败，日志不足以确认原因。该文件按原断言、原期限隔离运行 3/3 通过（6.58s），最终单 worker 全套 470/470 通过；没有修改期限或放宽断言。Node setup 与 cleanup 双失败回归另确认原实现丢失 setup 原因，现同时保留两个错误并以 setup 为 cause。
+
+本轮不重复此前独立 tarball 安装、所有下游生产部署或在线控制台验收，也不证明长期 RSS、吞吐量或外部平台连接。前述 Services 已安装声明的 Elysia 上游问题不因本轮源码检查通过而消失。

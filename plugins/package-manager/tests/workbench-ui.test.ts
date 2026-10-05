@@ -2,6 +2,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
+const { queryState } = vi.hoisted(() => ({ queryState: { data: undefined as unknown } }))
+
 vi.mock('@pluxel/workbench/react', () => ({
 	createWorkbenchRenderer: () =>
 		Object.freeze({
@@ -15,7 +17,7 @@ vi.mock('@pluxel/workbench/react', () => ({
 					useQuery: () =>
 						Object.freeze({
 							status: 'pending',
-							data: undefined,
+							data: queryState.data,
 							error: null,
 							isPending: true,
 							isFetching: true,
@@ -45,4 +47,23 @@ import ManagerWorkbench from '../src/ui/manager.tsx'
 it('owns the Mantine context for the Package Manager Workbench renderer', () => {
 	const markup = renderToStaticMarkup(createElement(ManagerWorkbench))
 	expect(markup).toContain('Managed plugin packages')
+})
+
+it('keeps failed withdrawals visible with an explicit retry action', () => {
+	queryState.data = {
+		engine: 'test',
+		rootDir: '/managed',
+		entriesDir: '/managed/entries',
+		packages: [],
+		pendingRemovals: ['alpha'],
+		dependenciesWithBuildScripts: [],
+	}
+	try {
+		const markup = renderToStaticMarkup(createElement(ManagerWorkbench))
+		expect(markup).toContain('Package removal needs retry')
+		expect(markup).toContain('alpha')
+		expect(markup).toContain('Retry removal')
+	} finally {
+		queryState.data = undefined
+	}
 })

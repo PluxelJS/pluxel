@@ -140,19 +140,51 @@ export interface PluginHost<TServices extends readonly HostService[] = readonly 
 export async function createHost<const TServices extends readonly HostService[] = readonly []>(
 	options: HostOptions<TServices>,
 ): Promise<PluginHost<TServices>> {
-	for (const key of ['sources', 'root', 'loadModule', 'onSourceError'])
-		if (Object.hasOwn(options, key))
-			throw new TypeError(
-				`[host] createHost includes unsupported "${key}"; use an application execution entry`,
-			)
+	if (!options || typeof options !== 'object' || Array.isArray(options))
+		throw new TypeError('[host] createHost options must be an object')
+	const fields = new Set([
+		'plugins',
+		'services',
+		'config',
+		'state',
+		'configRecords',
+		'vaultBindings',
+	])
+	for (const key of Object.keys(options))
+		if (!fields.has(key)) throw new TypeError(`[host] createHost includes unsupported "${key}"`)
+	if (!Array.isArray(options.plugins)) throw new TypeError('[host] plugins must be an array')
+	if (options.services !== undefined && !Array.isArray(options.services))
+		throw new TypeError('[host] services must be an array')
+	// Capture the selected option containers before validation or storage introduces an await.
+	// Borrowed storage, callbacks and capability handles retain their original identity.
+	options = {
+		...options,
+		...(options.config ? { config: { ...options.config } } : {}),
+		...(options.state ? { state: { ...options.state } } : {}),
+		...(options.configRecords
+			? {
+					configRecords: {
+						...options.configRecords,
+						...(options.configRecords.overlays
+							? { overlays: [...options.configRecords.overlays] }
+							: {}),
+						...(options.configRecords.baseSources
+							? { baseSources: [...options.configRecords.baseSources] }
+							: {}),
+					},
+				}
+			: {}),
+		...(options.vaultBindings ? { vaultBindings: [...options.vaultBindings] } : {}),
+	}
+
 	assertHostStoreStorage(options.state ?? {})
 	assertHostStoreStorage(options.configRecords ?? {})
 	const initialState = resolveHostStateInitial(options.state?.initial)
 	const initialConfig = coercePluginConfigRecords(options.configRecords?.initial ?? [])
 	const fixed = [...options.plugins]
 	catalog(1, fixed) // Admit explicit definitions before creating any root resources.
-	await validateInputBindingCandidates(fixed, options)
 	const services = planHostServices(options.services ?? [])
+	await validateInputBindingCandidates(fixed, options)
 	const shape = createCoreContextHost({
 		...options.config,
 		createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
@@ -218,9 +250,9 @@ function createPreparedHost(
 		onGraphCommitted?: () => void,
 	): Promise<PluginApplyReport> => {
 		assertOpen()
+		const next = [...plugins]
 		await startHost()
 		assertOpen()
-		const next = [...plugins]
 		const committed = () => {
 			fixedPlugins = next
 			onGraphCommitted?.()

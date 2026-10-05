@@ -22,7 +22,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 
 ## 应用、开发和部署
 
-应用每次启动执行配置工厂，取得完整 plugins/sources/services/config/state/configRecords；`prepare` 在服务与开发附件准备好后、插件启动前执行。
+应用每次启动执行配置工厂，取得完整 plugins/sources/services/config/state/configRecords；来源、服务与插件选择在异步 binding 读取前捕获，服务声明复制能力与依赖集合，借用句柄保持身份。`createHost()` 仅接收 Host 正式字段，执行入口显式投影，不依赖忽略额外应用字段。`prepare` 在服务与开发附件准备好后、插件启动前执行。
 Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings`显式选择输入；config按基础对象/文件 < 管理保存值 < env合并，env控制路径只读且不落盘。
 
 Vite、生产 launcher 共用 Host 应用解析。工厂 identity 变化时重新求值完整配置并替换 Host，固定插件 import 更新也可能使工厂失效。工厂求值失败保留旧 Host。动态来源更新若工厂未变，则复用本次配置并提交 catalog。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。

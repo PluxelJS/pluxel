@@ -307,7 +307,7 @@ it('preserves public and private identities, named product, minified artifacts a
 	}
 }, 60000)
 
-it('compiles package-local imports into relocatable modules output', async () => {
+it('compiles package-local imports and records actual entry names in relocatable modules output', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-modules-imports-'))
 	try {
 		await mkdir(resolve(root, 'node_modules/@pluxel'), { recursive: true })
@@ -345,8 +345,15 @@ it('compiles package-local imports into relocatable modules output', async () =>
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),
-			`import {build} from ${JSON.stringify(import.meta.resolve('tsdown'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'src/app.ts',plugins:[pluxel({delivery:'modules',variant:'headless',lint:false})],config:false});`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('tsdown'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'src/app.ts',outputOptions:{entryFileNames:process.argv[2]??'entries/[name]-[hash].mjs'},plugins:[pluxel({delivery:'modules',variant:'headless',lint:false})],config:false});`,
 		)
+		await expect(
+			promisify(execFile)(
+				process.execPath,
+				['--import', import.meta.resolve('tsx'), resolve(root, 'build.mts'), 'entries/[name].js'],
+				{ timeout: 30000 },
+			),
+		).rejects.toThrow(/compiled modules require \.mjs output/)
 		await promisify(execFile)(
 			process.execPath,
 			['--import', import.meta.resolve('tsx'), resolve(root, 'build.mts')],
@@ -354,10 +361,18 @@ it('compiles package-local imports into relocatable modules output', async () =>
 		)
 		await rename(resolve(root, 'dist'), resolve(root, 'relocated'))
 		await rm(resolve(root, 'src'), { recursive: true })
+		const outputPackage = JSON.parse(
+			await readFile(resolve(root, 'relocated/package.json'), 'utf8'),
+		)
+		const deployment = JSON.parse(
+			await readFile(resolve(root, 'relocated/pluxel-deployment.json'), 'utf8'),
+		)
+		expect(outputPackage.exports['./app']).toMatch(/^\.\/entries\/app-.+\.mjs$/)
+		expect(outputPackage.exports['./app']).toBe(`./${deployment.server.entry}`)
 		const result = await promisify(execFile)(process.execPath, [
 			'--input-type=module',
 			'-e',
-			`const m = await import(${JSON.stringify(resolve(root, 'relocated/app.mjs'))}); console.log(m.product.title)`,
+			`const m = await import(${JSON.stringify(resolve(root, 'relocated', deployment.server.entry))}); console.log(m.product.title)`,
 		])
 		expect(result.stdout.trim()).toBe('43')
 	} finally {

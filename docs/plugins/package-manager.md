@@ -1,13 +1,13 @@
 ---
-title: 动态宿主的包管理器
-description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
+title: 插件包管理器
+description: 为 Native 与 Vite 应用管理和发布 pnpm 插件包。
 ---
 
 > `@pluxel/package-manager` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-需要在受控开发宿主中试装 npm 插件时使用本页；它目前是仓库内部预览。已有应用的固定依赖直接写进应用清单，Git 源码协作使用 [源码开发](../development/tooling.md)，静态部署见 [发行物](../development/distribution.md)。
+需要在受控应用中安装 npm 插件时使用本页；它目前是仓库内部预览。已有应用的固定依赖直接写进应用清单，Git 源码协作使用 [源码开发](../development/tooling.md)，部署格式见 [发行物](../development/distribution.md)。
 
-包管理器为动态宿主下载 npm 包并生成可观察的 `.mjs` 入口。安装只增加可用插件，是否启动仍由应用的运行策略决定。
+包管理器下载 npm 包并发布 `.mjs` 入口。Native 在下次新进程启动时发现；Vite 在当前进程观察更新。安装只增加可用插件，是否启动仍由应用的运行策略决定。
 
 ## 装配宿主
 
@@ -130,7 +130,7 @@ interface PackageManagerApi extends RpcTarget {
 ```
 
 这些调用与 layout、Management 共用当前 Workbench 的 Cap’n Web over WebSocket Runtime Session，不经过 command registry 或业务 HTTP。
-Snapshot 包含 revision、engine、managed root、entries directory、packages 和检测到的 build-script dependencies。Workbench 路由由
+Snapshot 在同一串行队列中读取已结算状态，包含 revision、engine、managed root、entries directory、packages、pendingRemovals 和检测到的 build-script dependencies。pendingRemovals 从实际残留入口推导，表示已离开安装选择但尚未完成撤回的包，不表示 Plugin 运行状态；Workbench 保留这些包的重试撤回操作。Workbench 路由由
 catalog node address 生成，消费者不应拼接 Plugin class name URL。关闭 Workbench 的宿主 仍可使用 commands；Workbench disabled 时不会
 创建相关 UI backend。
 
@@ -161,17 +161,17 @@ package.install
   .writer/                    # 单写者 ownership，关闭后释放
 ```
 
-mutation 在进程内串行，目录同时只能有一个进程写入；冲突返回 PACKAGE_STORE_WRITER_CONFLICT，遗留 writer 只能离线确认并清理。不要由其他工具改写 entries、revision 或 slots。其他 producer 也通过普通 file/directory 数据合同接入，不直接调用运行图 internals。
+初始化、mutation 和 snapshot 在进程内串行，关闭立即拒绝新操作并等待已开始的初始化或安装结算；重复关闭等待同一次 writer 释放。目录同时只能有一个进程写入；冲突返回 PACKAGE_STORE_WRITER_CONFLICT，遗留 writer 只能离线确认并清理。不要由其他工具改写 entries、revision 或 slots。其他 producer 也通过普通 file/directory 数据合同接入，不直接调用运行图 internals。
 
 ## 输入边界与失败语义
 
 只接受小写 canonical npm registry package name 加 version、range 或 dist-tag。alias、filesystem path、URL、Git 和任意 tarball 都会被拒绝。单项失败通过结构化 mutation result 返回，错误消息会隐藏 registry credential。
 
-如果 native install 失败，旧发布记录和 entries 保持可用。wrapper 是逐项原子发布，整批不是原子事务；部分发布时 succeeded/failed 如实标出条目，受影响的其他 managed 条目也可能出现在 failed，空 input 表示批次级发布故障。已完成的 wrapper 保持发布，snapshot 的 entryFile 仅在它与当前记录一致时存在；修复 IO 后在当前会话重试原操作。卸载失败即使已从管理清单消失，只要入口仍残留，仍可再次 remove；仅重试撤回不会重新安装依赖。调用时捕获输入数组，后续修改数组不改变排队目标。重启遇到发布记录与入口不一致仍明确失败，须离线修复。不发布半个文件，也不宣称已完成的条目已回滚。Plugin stop 会撤销 commands 和 Direct View publication，并使已打开的 API root 失效；managed project 是 host-owned
+如果 native install 失败，旧发布记录和 entries 保持可用。wrapper 是逐项原子发布，整批不是原子事务；部分发布时 succeeded/failed 如实标出条目，受影响的其他 managed 条目也可能出现在 failed，空 input 表示批次级发布故障。已完成的 wrapper 保持发布，snapshot 的 entryFile 仅在它与当前记录一致时存在；修复 IO 后在当前会话重试原操作。卸载失败即使已从安装选择移除，仍通过 pendingRemovals 展示残留入口，并可再次 remove；仅重试撤回不会重新安装依赖。调用时捕获输入数组，后续修改数组不改变排队目标。重启遇到发布记录与入口不一致仍明确失败，须离线修复。不发布半个文件，也不宣称已完成的条目已回滚。Plugin stop 会撤销 commands 和 Direct View publication，并使已打开的 API root 失效；managed project 是 host-owned
 持久状态，不因一次 generation cleanup 被删除。
 
 ## 适用范围
 
-适合：受控开发 host、内部插件试装、验证 dynamic source producer 流程。
+适合：受控 Native/Vite 应用、内部插件试装、验证目录来源发布流程。
 
-不适合：production static distribution、把任意 npm package 当可信 Plugin、由 Plugin 自己执行 pnpm、或对外承诺稳定 package-manager SDK。静态离线交付请看 [Static 发行物](../development/distribution.md)。
+不适合：不保留目录来源的 standalone 发行物、把任意 npm package 当可信 Plugin、由 Plugin 自己执行 pnpm、或对外承诺稳定 package-manager SDK。离线交付请看 [发行物](../development/distribution.md)。
