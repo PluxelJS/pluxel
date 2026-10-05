@@ -8,25 +8,26 @@
 Core <- Host <- Services（基础能力、管理、日志、官方组合）
           ^         ^
           |         +-- Workbench（展示、会话、UI）
-          +-- Host Dev <- Services /vite
+          +-- Host-vite <- Services /vite
 Commands <- Services
 ```
 
 箭头从消费者指向提供者；图只画模块职责，不把 npm 包视作严格的分层单位。
 Services 的 `/preset`、`/vite`、`/build` 拥有官方组合，可以选择 Workbench；
 Workbench 只消费 Services 的管理、HTTP 等领域叶子入口，不能反向导入这三个组合入口。
-Services 的管理、日志和基础模块也不能依赖组合入口。Host Dev 只拥有 Vite 环境与开发协议，不选择官方服务。
+Services 的管理、日志和基础模块也不能依赖组合入口。Host-vite 只拥有 Vite 执行环境与更新协议，不选择官方服务。
 
 包级 `Services ↔ Workbench` 引用表示两个发布单元之间存在不同方向的模块引用，不等于模块初始化循环，
 更不等于生命周期互相拥有。判断时分别检查：具体入口是否读取尚未初始化的值、可选入口是否被无条件加载、
 资源是否由唯一 Host/owner 创建和释放。不能为消除包图中的箭头而创建没有独立职责的新包。
 
 `@pluxel/rolldown` 是 build-time tooling，消费 Core 的 lowering ABI 和 federation contract；
-CLI 按命令可选消费它，Host Dev 消费其编译实现。Core 不通过发布依赖反向引入构建工具。
+CLI 按命令可选消费它，Host-vite 消费其编译实现。Core 不通过发布依赖反向引入构建工具。
 `@pluxel/context` 的源码复用和下文的测试依赖是开发图，不是上述发布图的一层。
 
-必须保持：context 不依赖 Core/Host/IO/lifecycle、core host-free、Host 的 `/dynamic` 实现来源契约、来源接入不复制 lifecycle、config
-persistence 不进入 core。CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
+必须保持：context 不依赖 Core/Host/IO/lifecycle、core host-free；Host 的 `/sources` 提供纯声明，Native 启动扫描与
+Host-vite 持续观察消费同一来源发现契约，来源接入不复制 lifecycle；config persistence 不进入 core。
+CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
 
 ## Workspace 与目录
 
@@ -150,7 +151,7 @@ RootContext 的 require 可以读取 root token；owner Context 不能直接读�
 Browser Management 使用 `@pluxel/services/management/client`；Plugin 直接使用 capnweb 与 `@pluxel/workbench`，React 接入位于 Workbench 子入口。
 Generated Bridge ABI 属于 Workbench internal，raw server registry 和 MF Runtime 不进入默认作者 API。
 
-Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/host/dynamic/source-producer` 的声明校验；它不得导入
+Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/host/sources` 的声明校验；它不得导入
 Vite、watcher、workspace scanner 或 package manager。固定 catalog 从统一应用声明的 `plugins` 进入，不提供 package、
 module、export key 或首次启用 author options。
 

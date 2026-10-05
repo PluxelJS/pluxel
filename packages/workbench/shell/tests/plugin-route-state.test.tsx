@@ -65,9 +65,10 @@ vi.mock('../src/app/plugins/detail/context', () => ({
 		pluginLabel: 'FirstPlugin',
 		status: {
 			execution: {
-				kind: 'static-bundle',
+				kind: 'native',
+				origin: 'fixed',
 				artifact: { kind: 'application-bundle' },
-				update: { kind: 'deployment' },
+				update: { kind: 'next-start' },
 			},
 		},
 	}),

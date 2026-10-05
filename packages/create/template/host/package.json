@@ -4,9 +4,10 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --config vite.config.ts",
-		"start": "node dist/app.mjs",
+		"start": "node start.mjs",
 		"build": "vite build --config vite.config.ts && tsdown && pluxel distribution create ./dist",
-		"typecheck": "tsc --noEmit --pretty false"
+		"typecheck": "tsc --noEmit --pretty false",
+		"start:vite": "NODE_ENV=production node start-vite.mjs"
 	},
 	"dependencies": {
 		"@example/audit-plugin": "workspace:*",
@@ -17,16 +18,19 @@
 		"@pluxel/host": "catalog:pluxel",
 		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/workbench": "catalog:pluxel",
+		"@sinclair/typebox": "catalog:backend",
 		"elysia": "catalog:backend",
+		"exact-mirror": "catalog:backend",
 		"react": "catalog:frontend",
-		"react-dom": "catalog:frontend"
+		"react-dom": "catalog:frontend",
+		"typebox": "catalog:backend"
 	},
 	"devDependencies": {
 		"@example/web": "workspace:*",
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
 		"@pluxel/cli": "catalog:pluxel",
-		"@pluxel/host-dev": "catalog:pluxel",
+		"@pluxel/host-vite": "catalog:pluxel",
 		"@pluxel/rolldown": "catalog:pluxel",
 		"@tabler/icons-react": "catalog:frontend",
 		"@types/node": "catalog:tooling",

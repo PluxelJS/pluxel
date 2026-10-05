@@ -267,13 +267,13 @@ export class PluginArtifactCompiler {
 
 	private requireWorkbenchCoordinator(): PluginArtifactCompilerWorkbenchCoordinator {
 		const coordinator = this.coordinator
-		if (!coordinator) throw new Error('[host-dev] Workbench compiler is not attached')
+		if (!coordinator) throw new Error('[host-vite] Workbench compiler is not attached')
 		return coordinator
 	}
 
 	dispose(): Promise<void> {
 		if (this.closeTask) return this.closeTask
-		this.signal.abort(new Error('[host-dev] artifact compiler disposed'))
+		this.signal.abort(new Error('[host-vite] artifact compiler disposed'))
 		this.workbenchPublicationEpoch += 1
 		this.committedWorkbenchDefinitions.clear()
 		this.producerBackgroundCommits.clear()
@@ -541,25 +541,25 @@ export class PluginArtifactCompiler {
 		const digest = parseSha256(input.digest, 'Content set digest')
 		const bytes = Buffer.from(input.bytes)
 		if (sha256(bytes) !== digest) {
-			throw new TypeError('[host-dev] Workbench Content digest does not match its bytes')
+			throw new TypeError('[host-vite] Workbench Content digest does not match its bytes')
 		}
 		let serialized: string
 		try {
 			serialized = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 		} catch (cause) {
-			throw new TypeError('[host-dev] Workbench Content bytes are not valid UTF-8', { cause })
+			throw new TypeError('[host-vite] Workbench Content bytes are not valid UTF-8', { cause })
 		}
 		let contentSet: WorkbenchContentSet
 		try {
 			contentSet = parseWorkbenchContentSet(JSON.parse(serialized) as unknown)
 		} catch (cause) {
-			throw new TypeError('[host-dev] Workbench Content set is invalid', { cause })
+			throw new TypeError('[host-vite] Workbench Content set is invalid', { cause })
 		}
 		if (
 			serializeWorkbenchContentSet(contentSet) !== serialized ||
 			serializeWorkbenchContentSet(input.contentSet) !== serialized
 		) {
-			throw new TypeError('[host-dev] Workbench Content bytes are not canonically serialized')
+			throw new TypeError('[host-vite] Workbench Content bytes are not canonically serialized')
 		}
 		const definition = contentSet.definition
 		const definitionDigest = sha256(serializeWorkbenchContentDefinition(definition))
@@ -662,14 +662,14 @@ export class PluginArtifactCompiler {
 
 function resolveProducerRoot(input: unknown): string {
 	if (typeof input !== 'string' || !input || !isAbsolute(input)) {
-		throw new TypeError('[host-dev] Workbench producer root must be an absolute path')
+		throw new TypeError('[host-vite] Workbench producer root must be an absolute path')
 	}
 	return resolve(input)
 }
 
 function resolveContentRoot(input: unknown): string {
 	if (typeof input !== 'string' || !input || !isAbsolute(input)) {
-		throw new TypeError('[host-dev] Workbench Content root must be an absolute path')
+		throw new TypeError('[host-vite] Workbench Content root must be an absolute path')
 	}
 	return resolve(input)
 }
@@ -678,7 +678,7 @@ function groupWorkbenchCompilations(
 	input: WorkbenchArtifactCompilations,
 ): Map<string, WorkbenchDefinitionCompilation> {
 	if (!input || !Array.isArray(input.producers) || !Array.isArray(input.content)) {
-		throw new TypeError('[host-dev] Workbench artifact compilations must contain arrays')
+		throw new TypeError('[host-vite] Workbench artifact compilations must contain arrays')
 	}
 	const definitions = new Map<string, WorkbenchDefinitionCompilation>()
 	for (const producer of input.producers) {
@@ -686,7 +686,7 @@ function groupWorkbenchCompilations(
 		const key = pluginDefinitionIndexKey(definition)
 		const current: WorkbenchDefinitionCompilation = definitions.get(key) ?? { definition }
 		if (current.producer) {
-			throw new TypeError(`[host-dev] duplicate Workbench producer definition: ${key}`)
+			throw new TypeError(`[host-vite] duplicate Workbench producer definition: ${key}`)
 		}
 		current.producer = producer
 		definitions.set(key, current)
@@ -696,7 +696,7 @@ function groupWorkbenchCompilations(
 		const key = pluginDefinitionIndexKey(definition)
 		const current: WorkbenchDefinitionCompilation = definitions.get(key) ?? { definition }
 		if (current.content) {
-			throw new TypeError(`[host-dev] duplicate Workbench Content definition: ${key}`)
+			throw new TypeError(`[host-vite] duplicate Workbench Content definition: ${key}`)
 		}
 		current.content = content
 		definitions.set(key, current)
@@ -704,7 +704,7 @@ function groupWorkbenchCompilations(
 	for (const packaged of input.packaged ?? []) {
 		const key = pluginDefinitionIndexKey(packaged.definition)
 		if (definitions.has(key))
-			throw new TypeError(`[host-dev] conflicting source or packaged Workbench definition: ${key}`)
+			throw new TypeError(`[host-vite] conflicting source or packaged Workbench definition: ${key}`)
 		definitions.set(key, { definition: packaged.definition, packaged })
 	}
 	return definitions
@@ -732,7 +732,7 @@ async function publishImmutableContentArtifact(
 		await rm(temporaryRoot, { recursive: true, force: true })
 	}
 	if (!(await validateExistingContentArtifact(artifactPath, bytes, digest))) {
-		throw new Error(`[host-dev] immutable Workbench Content artifact collision: ${digest}`)
+		throw new Error(`[host-vite] immutable Workbench Content artifact collision: ${digest}`)
 	}
 }
 
@@ -747,14 +747,14 @@ async function validateExistingContentArtifact(
 	})
 	if (!existing) return false
 	if (sha256(existing) !== digest || !existing.equals(Buffer.from(expected))) {
-		throw new Error(`[host-dev] immutable Workbench Content artifact collision: ${digest}`)
+		throw new Error(`[host-vite] immutable Workbench Content artifact collision: ${digest}`)
 	}
 	return true
 }
 
 function parseSha256(input: unknown, label: string): string {
 	if (typeof input !== 'string' || !SHA256.test(input)) {
-		throw new TypeError(`[host-dev] ${label} must be a lowercase SHA-256 digest`)
+		throw new TypeError(`[host-vite] ${label} must be a lowercase SHA-256 digest`)
 	}
 	return input
 }
@@ -774,7 +774,7 @@ function assertSafeProducerReference(plan: WorkbenchFederationProducerPlan): voi
 		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(plan?.producer) ||
 		!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(plan?.buildRevision)
 	) {
-		throw new TypeError('[host-dev] Workbench producer plan has an unsafe reference')
+		throw new TypeError('[host-vite] Workbench producer plan has an unsafe reference')
 	}
 }
 

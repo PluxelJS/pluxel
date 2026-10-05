@@ -4,6 +4,8 @@ export interface RuleContext {
 	packageJsonPath: string
 	manifestField: string
 	pluginUsages: Map<string, PluginDependencyMode>
+	workbenchArtifacts?: boolean
+	artifactRoot?: string
 	workbenchCapnwebVersion?: string
 }
 

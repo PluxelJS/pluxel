@@ -1,5 +1,5 @@
-import { readFile, readdir, rename, rm, mkdir, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { readFile, readdir, realpath, rename, rm, mkdir, writeFile, stat } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
 import type {
@@ -38,14 +38,29 @@ type PackageRequest = Readonly<{
 	wanted: string
 }>
 
+type PublishedPackage = Readonly<{
+	name: string
+	requested: string
+	fingerprint: string
+	bytes: string
+	packageRoot: string
+	target: string
+}>
+type PublishedInstallation = Readonly<{
+	version: 1
+	directory: string
+	packages: readonly PublishedPackage[]
+}>
+
 const MAX_MUTATION_INPUTS = 100
 const MAX_PACKAGE_SPEC_LENGTH = 512
 
 export class ManagedPackageStore {
 	readonly rootDir: string
 	readonly entriesDir: string
-	private readonly manifestFile: string
 	private revision = 0
+	private installation?: PublishedInstallation
+	private writer = false
 	private closed = false
 	private dependenciesWithBuildScripts: readonly string[] = Object.freeze([])
 	private queue: Promise<void> = Promise.resolve()
@@ -58,15 +73,58 @@ export class ManagedPackageStore {
 		this.options = normalizeStoreOptions(options)
 		this.rootDir = resolve(this.options.rootDir)
 		this.entriesDir = resolve(this.rootDir, 'entries')
-		this.manifestFile = resolve(this.rootDir, 'package.json')
 	}
 
 	async initialize(): Promise<void> {
 		this.assertOpen()
-		await mkdir(this.entriesDir, { recursive: true })
-		const manifest = await this.readManifest()
-		await this.writeManifest(manifest)
-		await this.publishEntries(await this.prepareEntries(manifest, false))
+		if (this.writer) throw new Error('Package store is already initialized')
+		await mkdir(this.rootDir, { recursive: true })
+		try {
+			await mkdir(resolve(this.rootDir, '.writer'))
+			this.writer = true
+		} catch (cause) {
+			if (readErrorCode(cause) !== 'EEXIST') throw cause
+			throw Object.assign(
+				new Error(
+					'Managed package store already has a writer. Close that process; remove a stale .writer only during offline maintenance.',
+					{ cause },
+				),
+				{ code: 'PACKAGE_STORE_WRITER_CONFLICT' },
+			)
+		}
+		try {
+			await writeFile(
+				resolve(this.rootDir, '.writer/owner.json'),
+				JSON.stringify({ pid: process.pid }),
+			)
+			await mkdir(this.entriesDir, { recursive: true })
+			this.installation = await this.readInstallation()
+			if (!this.installation) {
+				try {
+					const legacy = JSON.parse(await readFile(resolve(this.rootDir, 'package.json'), 'utf8'))
+					if (Object.keys(legacy.dependencies ?? {}).length > 0)
+						throw new Error(
+							'Managed packages lack an immutable published installation. Convert the store offline before startup.',
+						)
+				} catch (error) {
+					if (readErrorCode(error) !== 'ENOENT') throw error
+				}
+			}
+			const expected = this.publishedEntries(this.installation?.packages ?? [])
+			const actual = await readdir(this.entriesDir)
+			if (actual.some((file) => file.endsWith('.mjs') && !expected.has(file)))
+				throw new Error(
+					'Managed entries disagree with published installation; repair offline before startup',
+				)
+			for (const [file, content] of expected)
+				if ((await readFile(resolve(this.entriesDir, file), 'utf8')) !== content)
+					throw new Error(
+						'Managed entry disagrees with published installation; repair offline before startup',
+					)
+		} catch (error) {
+			await this.releaseWriter()
+			throw error
+		}
 	}
 
 	async snapshot(): Promise<PackageManagerSnapshot> {
@@ -134,6 +192,19 @@ export class ManagedPackageStore {
 				failed,
 			)
 		} catch (error) {
+			if (error instanceof EntryPublicationError) {
+				const pending = new Set(error.unpublished)
+				return mutationResult(
+					valid.filter((request) => !pending.has(request.name)).map((request) => request.name),
+					[
+						...failed,
+						...error.unpublished.map((name) =>
+							failure(requests.get(name)?.input ?? name, 'INSTALL_FAILED', error),
+						),
+						...(pending.size > 0 ? [] : [failure('', 'INSTALL_FAILED', error)]),
+					],
+				)
+			}
 			return mutationResult(
 				[],
 				[...failed, ...valid.map((request) => failure(request.input, 'INSTALL_FAILED', error))],
@@ -168,6 +239,17 @@ export class ManagedPackageStore {
 			await this.installManifest(next)
 			return mutationResult(removed, failed)
 		} catch (error) {
+			if (error instanceof EntryPublicationError) {
+				const pending = new Set(error.unpublished)
+				return mutationResult(
+					removed.filter((name) => !pending.has(name)),
+					[
+						...failed,
+						...error.unpublished.map((name) => failure(name, 'REMOVE_FAILED', error)),
+						...(pending.size > 0 ? [] : [failure('', 'REMOVE_FAILED', error)]),
+					],
+				)
+			}
 			return mutationResult(
 				[],
 				[...failed, ...removed.map((name) => failure(name, 'REMOVE_FAILED', error))],
@@ -179,6 +261,7 @@ export class ManagedPackageStore {
 	async close(): Promise<void> {
 		this.closed = true
 		await this.queue
+		await this.releaseWriter()
 	}
 
 	private assertOpen(): void {
@@ -187,46 +270,195 @@ export class ManagedPackageStore {
 	}
 
 	private async installManifest(next: ManagedManifest): Promise<void> {
-		let result: Awaited<ReturnType<PnpmEngine['install']>>
+		if (!this.writer) throw new Error('Package store must be initialized before mutation')
+		const directory = resolve(this.rootDir, 'revisions', crypto.randomUUID())
+		let published = false
 		try {
-			result = await this.engine.install(this.installOptions(next))
-		} catch (error) {
-			throw new PublicMutationError('pnpm could not apply the managed dependency graph', error)
-		}
-		this.assertOpen()
-		if (result.depsRequiringBuild) {
-			this.dependenciesWithBuildScripts = Object.freeze([...result.depsRequiringBuild].sort())
-		}
-
-		let entries: ReadonlyMap<string, string>
-		try {
-			entries = await this.prepareEntries(next, true)
-		} catch (error) {
-			throw new PublicMutationError(
-				'pnpm completed without materializing every managed direct dependency',
-				error,
+			await mkdir(directory, { recursive: true })
+			await writeFile(resolve(directory, 'package.json'), JSON.stringify(next) + '\n')
+			if (this.installation) {
+				const lock = await readFile(
+					resolve(this.rootDir, this.installation.directory, 'pnpm-lock.yaml'),
+				)
+				await writeFile(resolve(directory, 'pnpm-lock.yaml'), lock)
+			}
+			let result: Awaited<ReturnType<PnpmEngine['install']>>
+			try {
+				result = await this.engine.install(this.installOptions(next, directory))
+			} catch (cause) {
+				throw new PublicMutationError(
+					'pnpm could not prepare the managed dependency graph; published installations remain available',
+					cause,
+				)
+			}
+			this.assertOpen()
+			if (result.depsRequiringBuild)
+				this.dependenciesWithBuildScripts = Object.freeze([...result.depsRequiringBuild].sort())
+			const packages = await this.prepareInstallation(next, directory)
+			const previous = this.installation?.packages ?? []
+			const installation: PublishedInstallation = Object.freeze({
+				version: 1,
+				directory: relative(this.rootDir, directory),
+				packages,
+			})
+			// The private installation is complete. Persist its authority before individually atomic wrappers.
+			await atomicWrite(
+				resolve(this.rootDir, 'published-installation.json'),
+				JSON.stringify(installation) + '\n',
+				() => this.assertOpen(),
 			)
+			this.installation = installation
+			published = true
+			this.revision += 1
+			try {
+				await this.publishEntries(this.publishedEntries(packages))
+			} catch (cause) {
+				const unpublished: string[] = []
+				const expected = this.publishedEntries(packages)
+				for (const name of new Set([...previous, ...packages].map((pkg) => pkg.name))) {
+					try {
+						const file = this.entryFile(name)
+						const actual = await readFile(resolve(this.entriesDir, file), 'utf8')
+						if (actual !== expected.get(file)) unpublished.push(name)
+					} catch (error) {
+						if (readErrorCode(error) !== 'ENOENT' || expected.has(this.entryFile(name)))
+							unpublished.push(name)
+					}
+				}
+				throw new EntryPublicationError(unpublished, cause)
+			}
+		} finally {
+			if (!published) await rm(directory, { recursive: true, force: true })
 		}
-
-		try {
-			await this.writeManifest(next)
-			await this.publishEntries(entries)
-		} catch (error) {
-			throw new PublicMutationError(
-				'the managed graph was installed but its source entries could not be published; retry the operation',
-				error,
-			)
-		}
-		this.revision += 1
 	}
 
-	private installOptions(manifest: ManagedManifest): InstallOptions {
+	private async releaseWriter(): Promise<void> {
+		if (!this.writer) return
+		this.writer = false
+		await rm(resolve(this.rootDir, '.writer'), { recursive: true })
+	}
+
+	private async readInstallation(): Promise<PublishedInstallation | undefined> {
+		let input: PublishedInstallation
+		try {
+			input = JSON.parse(
+				await readFile(resolve(this.rootDir, 'published-installation.json'), 'utf8'),
+			)
+		} catch (error) {
+			if (readErrorCode(error) === 'ENOENT') return undefined
+			throw error
+		}
+		if (
+			input.version !== 1 ||
+			typeof input.directory !== 'string' ||
+			!/^revisions\/[a-f0-9-]+$/.test(input.directory) ||
+			!Array.isArray(input.packages)
+		)
+			throw new TypeError('Invalid managed published installation')
+		await assertOwnedPath(this.rootDir, resolve(this.rootDir, input.directory))
+		const names = new Set<string>()
+		for (const pkg of input.packages) {
+			if (
+				!isPackageName(pkg.name) ||
+				typeof pkg.requested !== 'string' ||
+				!isRegistrySelector(pkg.requested) ||
+				!/^[a-f0-9]{64}$/.test(pkg.fingerprint) ||
+				!/^[a-f0-9]{64}$/.test(pkg.bytes) ||
+				typeof pkg.packageRoot !== 'string' ||
+				typeof pkg.target !== 'string' ||
+				!/^revisions\/[a-f0-9-]+\/entries\/[a-zA-Z0-9_-]+\.mjs$/.test(pkg.target)
+			)
+				throw new TypeError('Invalid managed published package')
+			if (names.has(pkg.name) || !isAbsolute(pkg.packageRoot))
+				throw new TypeError('Invalid managed package ownership')
+			await assertOwnedPath(resolve(this.rootDir, 'slots'), pkg.packageRoot)
+			await assertOwnedPath(resolve(this.rootDir, 'revisions'), resolve(this.rootDir, pkg.target))
+			if ((await readFile(resolve(this.rootDir, pkg.target), 'utf8')) !== this.innerEntry(pkg.name))
+				throw new Error(
+					`Immutable inner entry changed for ${pkg.name}; repair offline before startup`,
+				)
+			if ((await installationBytes(pkg.packageRoot)) !== pkg.bytes)
+				throw new Error(
+					`Immutable installation bytes changed for ${pkg.name}; repair offline before startup`,
+				)
+			names.add(pkg.name)
+		}
+		return input
+	}
+
+	private async prepareInstallation(
+		manifest: ManagedManifest,
+		directory: string,
+	): Promise<readonly PublishedPackage[]> {
+		const lock = parseYaml(await readFile(resolve(directory, 'pnpm-lock.yaml'), 'utf8'))
+		const packages: PublishedPackage[] = []
+		await mkdir(resolve(directory, 'entries'))
+		for (const name of Object.keys(manifest.dependencies).sort()) {
+			const fingerprint = packageGraphFingerprint(lock, name)
+			if (!fingerprint)
+				throw new PublicMutationError(
+					`Cannot verify the immutable installation closure of ${name}; expected a complete pnpm v9 registry graph`,
+					undefined,
+				)
+			const packageRoot = await realpath(resolve(directory, 'node_modules', ...name.split('/')))
+			const bytes = await installationBytes(packageRoot)
+			const previous = this.installation?.packages.find((pkg) => pkg.name === name)
+			if (previous && previous.fingerprint === fingerprint) {
+				if (previous.bytes !== bytes)
+					throw new PublicMutationError(
+						`Immutable bytes changed for unchanged ${name}; publication was rejected`,
+						undefined,
+					)
+				if (previous.packageRoot !== packageRoot)
+					throw new PublicMutationError(
+						`pnpm changed the physical path of unchanged ${name}; publication was rejected to preserve shared identity`,
+						undefined,
+					)
+				packages.push(Object.freeze({ ...previous, requested: manifest.dependencies[name]! }))
+				continue
+			}
+			const target = relative(
+				this.rootDir,
+				resolve(directory, 'entries', this.entryFile(name)),
+			).replaceAll('\\', '/')
+			await writeFile(resolve(this.rootDir, target), this.innerEntry(name))
+			packages.push(
+				Object.freeze({
+					name,
+					requested: manifest.dependencies[name]!,
+					fingerprint,
+					bytes,
+					packageRoot,
+					target,
+				}),
+			)
+		}
+		return Object.freeze(packages)
+	}
+
+	private publishedEntries(packages: readonly PublishedPackage[]): ReadonlyMap<string, string> {
+		return new Map(
+			packages.map((pkg) => {
+				const target = JSON.stringify(`../${pkg.target}`)
+				return [
+					this.entryFile(pkg.name),
+					`// installation ${pkg.fingerprint}:${pkg.bytes}\nexport * from ${target}\nimport * as pluginModule from ${target}\nexport default pluginModule.default\n`,
+				]
+			}),
+		)
+	}
+	private innerEntry(name: string): string {
+		const specifier = JSON.stringify(name)
+		return `export * from ${specifier}\nimport * as pluginModule from ${specifier}\nexport default pluginModule.default\n`
+	}
+
+	private installOptions(manifest: ManagedManifest, directory: string): InstallOptions {
 		const config = this.engine.readConfig({ dir: this.rootDir })
 		const registries = Object.fromEntries(config.registries.map((item) => [item.name, item.url]))
 		const networkConfig = networkOptions(config)
 		return {
-			dir: this.rootDir,
-			projects: [{ rootDir: this.rootDir, manifest }],
+			dir: directory,
+			projects: [{ rootDir: directory, manifest }],
 			registries,
 			authHeaderByUri: config.authHeaderByUri,
 			proxyConfig: {
@@ -238,6 +470,9 @@ export class ManagedPackageStore {
 			storeDir: config.storeDir,
 			networkConfig,
 			nodeLinker: 'isolated',
+			enableGlobalVirtualStore: true,
+			globalVirtualStoreDir: resolve(this.rootDir, 'slots'),
+			packageImportMethod: 'copy',
 			autoInstallPeers: true,
 			preferFrozenLockfile: true,
 			update: false,
@@ -265,18 +500,14 @@ export class ManagedPackageStore {
 		return Object.freeze({ input: spec, name, wanted })
 	}
 
-	private async readManifest(): Promise<ManagedManifest> {
-		try {
-			const parsed = JSON.parse(await readFile(this.manifestFile, 'utf8')) as PackageManifest
-			return normalizeManifest(parsed)
-		} catch (error) {
-			if (readErrorCode(error) !== 'ENOENT') throw error
-			return normalizeManifest({})
-		}
-	}
-
-	private writeManifest(manifest: ManagedManifest): Promise<void> {
-		return atomicWrite(this.manifestFile, `${JSON.stringify(manifest, null, 2)}\n`)
+	private readManifest(): Promise<ManagedManifest> {
+		return Promise.resolve(
+			normalizeManifest({
+				dependencies: Object.fromEntries(
+					(this.installation?.packages ?? []).map((pkg) => [pkg.name, pkg.requested]),
+				),
+			}),
+		)
 	}
 
 	private async readManagedPackage(name: string, requested: string): Promise<ManagedPackage> {
@@ -285,7 +516,11 @@ export class ManagedPackageStore {
 		try {
 			const manifest = JSON.parse(
 				await readFile(
-					resolve(this.rootDir, 'node_modules', ...name.split('/'), 'package.json'),
+					resolve(
+						this.installation?.packages.find((pkg) => pkg.name === name)?.packageRoot ??
+							resolve(this.rootDir, '__unpublished__'),
+						'package.json',
+					),
 					'utf8',
 				),
 			) as { version?: unknown }
@@ -293,8 +528,9 @@ export class ManagedPackageStore {
 		} catch {}
 		const expectedEntry = this.entryFile(name)
 		try {
-			await readFile(resolve(this.entriesDir, expectedEntry), 'utf8')
-			entryFile = expectedEntry
+			const published = await readFile(resolve(this.entriesDir, expectedEntry), 'utf8')
+			if (published === this.publishedEntries(this.installation?.packages ?? []).get(expectedEntry))
+				entryFile = expectedEntry
 		} catch {}
 		return Object.freeze({
 			name,
@@ -302,62 +538,6 @@ export class ManagedPackageStore {
 			installedVersion,
 			entryFile,
 		})
-	}
-
-	private async prepareEntries(
-		manifest: ManagedManifest,
-		requireMaterialized: boolean,
-	): Promise<ReadonlyMap<string, string>> {
-		const expected = new Map<string, string>()
-		let lockfile: unknown
-		try {
-			lockfile = parseYaml(await readFile(resolve(this.rootDir, 'pnpm-lock.yaml'), 'utf8'))
-		} catch {
-			// Missing or unrecognized lock data must not suppress a real installation update.
-		}
-		for (const name of Object.keys(manifest.dependencies).sort()) {
-			const packageManifest = resolve(
-				this.rootDir,
-				'node_modules',
-				...name.split('/'),
-				'package.json',
-			)
-			try {
-				await readFile(packageManifest, 'utf8')
-			} catch (error) {
-				if (readErrorCode(error) === 'ENOENT') {
-					if (requireMaterialized) {
-						throw new Error(`pnpm did not materialize the direct dependency ${name}`, {
-							cause: error,
-						})
-					}
-					continue
-				}
-				throw error
-			}
-			const file = this.entryFile(name)
-			const specifier = JSON.stringify(name)
-			const body = `export * from ${specifier}\nimport * as pluginModule from ${specifier}\nexport default pluginModule.default\n`
-			if (!requireMaterialized) {
-				try {
-					const existing = await readFile(resolve(this.entriesDir, file), 'utf8')
-					if (
-						existing.startsWith('// installation ') &&
-						existing.slice(existing.indexOf('\n') + 1) === body
-					) {
-						expected.set(file, existing)
-						continue
-					}
-				} catch (error) {
-					if (readErrorCode(error) !== 'ENOENT') throw error
-				}
-			}
-			expected.set(
-				file,
-				`// installation ${packageGraphFingerprint(lockfile, name) ?? crypto.randomUUID()}\n${body}`,
-			)
-		}
-		return expected
 	}
 
 	private async publishEntries(expected: ReadonlyMap<string, string>): Promise<void> {
@@ -573,6 +753,32 @@ class PublicMutationError extends Error {
 	}
 }
 
+class EntryPublicationError extends PublicMutationError {
+	constructor(
+		readonly unpublished: readonly string[],
+		cause: unknown,
+	) {
+		super(
+			'The immutable installation was saved, but entry publication partially failed. Already changed wrappers remain published; retry to finish publication.',
+			cause,
+		)
+	}
+}
+
+async function assertOwnedPath(root: string, path: string): Promise<void> {
+	const owner = await realpath(root)
+	const member = await realpath(path)
+	const within = relative(owner, member)
+	if (
+		!within ||
+		isAbsolute(within) ||
+		within === '..' ||
+		within.startsWith('../') ||
+		within.startsWith('..\\')
+	)
+		throw new TypeError('Invalid managed package ownership')
+}
+
 function networkOptions(config: ResolvedConfig): InstallOptions['networkConfig'] {
 	return {
 		ca: config.ca,
@@ -664,4 +870,50 @@ function packageGraphFingerprint(lockfile: unknown, name: string): string | unde
 	} catch {
 		return undefined
 	}
+}
+
+/** Verify actual bytes and physical dependency targets, including resource files and peer/optional links. */
+async function installationBytes(root: string): Promise<string> {
+	const files = new Map<string, string>()
+	const seen = new Set<string>()
+	const visit = async (input: string): Promise<void> => {
+		const directory = await realpath(input)
+		if (seen.has(directory)) return
+		seen.add(directory)
+		for (const entry of await readdir(directory, { withFileTypes: true })) {
+			const path = resolve(directory, entry.name)
+			if (entry.isDirectory()) await visit(path)
+			else if (entry.isSymbolicLink()) {
+				const target = await realpath(path)
+				files.set(path, `link:${target}`)
+				const targetStat = await stat(target)
+				if (targetStat.isDirectory()) await visit(dependencySlot(target))
+				else
+					files.set(
+						target,
+						createHash('sha256')
+							.update(await readFile(target))
+							.digest('hex'),
+					)
+			} else if (entry.isFile())
+				files.set(
+					path,
+					createHash('sha256')
+						.update(await readFile(path))
+						.digest('hex'),
+				)
+		}
+	}
+	await visit(dependencySlot(root))
+	return createHash('sha256')
+		.update(JSON.stringify([...files].sort(([left], [right]) => left.localeCompare(right))))
+		.digest('hex')
+}
+function dependencySlot(root: string): string {
+	let directory = dirname(root)
+	while (directory !== dirname(directory) && !directory.endsWith('/node_modules'))
+		directory = dirname(directory)
+	if (!directory.endsWith('/node_modules'))
+		throw new TypeError('Managed package lacks a physical dependency slot')
+	return directory
 }

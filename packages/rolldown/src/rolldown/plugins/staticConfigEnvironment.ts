@@ -31,6 +31,8 @@ export { renderStaticConfigEnvironmentExample } from './staticConfigEnvironmentE
 export type StaticRuntimeDeclarationFacts = Readonly<{
 	hasSources: boolean
 	name?: string
+	/** Exact constructor bindings in the validated immutable application catalog. */
+	plugins?: readonly ConfigSourceSymbol[]
 	targets: readonly StaticConfigEnvironmentTarget[]
 	environmentExample?: string
 }>
@@ -62,11 +64,12 @@ export async function parseStaticRuntimeDeclaration(
 		id,
 		error,
 	})
+	const plugins = fields.get('plugins')?.value
+	let catalog: readonly ConfigSourceSymbol[] | undefined
 	if (options.requireStaticPlugins) {
-		const plugins = fields.get('plugins')?.value
 		if (!plugins) error(`[static-application] ${id} must declare plugins`)
-		await resolveStaticCatalogPluginSymbols(plugins, module, sourceResolver, id, error)
-		assertCatalogNotMutated(factory, plugins, id, error)
+		catalog = await resolveStaticCatalogPluginSymbols(plugins!, module, sourceResolver, id, error)
+		assertCatalogNotMutated(factory, plugins!, id, error)
 	}
 	const directSources = readDirectObjectField(application, 'sources')
 	const hasSources =
@@ -83,20 +86,15 @@ export async function parseStaticRuntimeDeclaration(
 	if (directBindings === undefined)
 		return Object.freeze({
 			...(name === undefined ? {} : { name }),
+			...(catalog === undefined ? {} : { plugins: catalog }),
 			hasSources,
 			targets: Object.freeze([]),
 		})
 	if (directBindings.type !== 'ArrayExpression')
 		error(`[static-application] ${id} envBindings must be a direct array literal`)
-	const plugins = fields.get('plugins')?.value
 	if (!plugins) error(`[static-application] ${id} must declare plugins`)
-	const catalogPlugins = await resolveStaticCatalogPluginSymbols(
-		plugins,
-		module,
-		sourceResolver,
-		id,
-		error,
-	)
+	catalog ??= await resolveStaticCatalogPluginSymbols(plugins!, module, sourceResolver, id, error)
+	const catalogPlugins = new Set(catalog!.map(sourceSymbolKey))
 	const targets: StaticConfigEnvironmentTarget[] = []
 	const seenTargets = new Set<string>()
 	for (const [index, raw] of arrayOf(directBindings.elements).entries()) {
@@ -178,6 +176,7 @@ export async function parseStaticRuntimeDeclaration(
 	const frozenTargets = Object.freeze([...targets])
 	return Object.freeze({
 		...(name === undefined ? {} : { name }),
+		plugins: catalog,
 		hasSources,
 		targets: frozenTargets,
 		environmentExample: renderStaticConfigEnvironmentExample(frozenTargets),
@@ -604,14 +603,14 @@ async function resolveStaticCatalogPluginSymbols(
 	sourceResolver: ConfigSchemaSourceResolver,
 	id: string,
 	error: DeclarationError,
-): Promise<Set<string>> {
+): Promise<readonly ConfigSourceSymbol[]> {
 	const symbols = await sourceResolver.resolveArraySymbols(module, expression)
 	if (!symbols) {
 		error(
 			`[static-application] ${id} plugins catalog must statically resolve to an array of direct Plugin identifiers; conditional or computed catalogs are outside the static deployment contract`,
 		)
 	}
-	return new Set(symbols!.map(sourceSymbolKey))
+	return Object.freeze(symbols!.map((symbol) => Object.freeze({ ...symbol })))
 }
 
 export function parseDirectMapping(

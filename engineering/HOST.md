@@ -26,8 +26,10 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings`显式选择输入；config按基础对象/文件 < 管理保存值 < env合并，env控制路径只读且不落盘。
 
 Vite、生产 launcher 共用 Host 应用解析。工厂 identity 变化时重新求值完整配置并替换 Host，固定插件 import 更新也可能使工厂失效。工厂求值失败保留旧 Host。动态来源更新若工厂未变，则复用本次配置并提交 catalog。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。
-Host-dev 是唯一开发驱动；官方服务附件分别由 Services、Workbench 拥有。数据库 lowering 属于官方 Vite preset 的工具插件，不是运行时服务。
-生产 bootstrap 调用 `runHostApplication`；Fetch handler 和 Node listener 属于 HTTP 服务。构建资源 variant 不替应用安装服务。
+Host-vite 是唯一开发驱动；官方服务附件分别由 Services、Workbench 拥有。数据库 lowering 属于官方 Vite preset 的工具插件，不是运行时服务。
+modules 的 native launcher 在全新 Node 进程、业务闭包首次求值前向 `runHostApplication(entry, { startup, sharedPackages })` 提交预编译入口路径，先建立共享绑定，再求值默认工厂及固定 imports。standalone bootstrap 已内联闭包，直接组合 `resolveHostApplication/createHost/prepareHostApplication` 和 Host 启动，不再次发现模块。Fetch handler 和 Node listener 属于 HTTP 服务；构建资源 variant 不替应用安装服务。此前普通依赖的 ESM cache 闭包不能由 Node hook 证明；准确拒绝范围和调用前置条件见[Host 配置](../docs/host/configuration.md#生产构建)。
+Native loader 在本次 scope 内复用已完成 owner、exports 与 ABI 检查的求值 namespace；新加载模块继续检查，无法确认 owner 或检查失败时不记成功。共享 import 的安装版本准入仍消费实际 manifest，不使用通用或跨 Host 的 manifest cache。
+待检查 namespace 使用同一 loader 的 pending 集合。成功 entry 的累计闭包事实引用本次唯一 URL 顺序数组和当时的前缀长度；后续加载不延长较早 entry 的事实，关闭后冻结数组供 Node namespace cache 保留，不复制另一套依赖图。
 
 ## 控制台 execution
 
@@ -48,7 +50,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
 - 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。持久化服务只提供借用的 document storage，不拥有运行事实。 已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
-- 动态 catalog、failed candidate 和 committed authority：Host `source-session.ts`、`coordinator.ts`，Host-dev `host-vite.ts`。细节见 [HMR](HMR.md)。
+- Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生启动使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移和 backend：[DATABASE.md](DATABASE.md)。
 - 日志 root、策略与有界 store：[LOGGING.md](LOGGING.md)。

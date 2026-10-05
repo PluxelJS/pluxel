@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
-import { envBinding, defineHostApplication, runHostApplication } from '@pluxel/host'
+import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
 import { S3, S3VaultSchema, S3Plugin } from '../src/index.ts'
@@ -62,15 +62,16 @@ it('signs and completes an S3 write using only env-backed Vault records', async 
 				}),
 			],
 		}))
-		const host = await runHostApplication(application, {
-			startup: {
+		const host = await createHost(
+			await resolveHostApplication(application, {
 				root: process.cwd(),
 				mode: 'test',
 				bindings: {},
 				env: { ACCESS_KEY: 'deployment-access', SECRET_KEY: 'deployment-secret' },
-			},
-		})
+			}),
+		)
 		try {
+			await host.start()
 			const status = await host.status()
 			expect(status.summary.running).toBe(2)
 			expect(requests).toHaveLength(1)

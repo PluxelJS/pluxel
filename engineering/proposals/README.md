@@ -13,6 +13,8 @@
 
 研究与必要决策记录：
 
+- [`VITE_DYNAMIC_RUNTIME.md`](VITE_DYNAMIC_RUNTIME.md)：已完成 native/modules/Vite 重构的必要决策、实际证据修正与验证入口；当前用法进入正式文档。
+
 - [`STRICT_CONTRACT_REVIEW.md`](STRICT_CONTRACT_REVIEW.md)：严格契约迁移的实施证据、审查修正与剩余验收边界。
 
 - [`PUBLIC_API_DESIGN_REVIEW.md`](PUBLIC_API_DESIGN_REVIEW.md)：13 项已实施修复的必要决策和验证索引。

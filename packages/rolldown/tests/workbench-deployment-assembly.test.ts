@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { readFile, stat } from 'node:fs/promises'
 import {
 	WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE,
@@ -29,10 +30,11 @@ function createPlan(
 	packageName: string,
 	buildRevision: string,
 	bridgeEntryPath = 'generated/manager.tsx',
+	exportName = 'FixturePlugin',
 ): WorkbenchFederationProducerPlan {
 	const definition = {
 		entry: { kind: 'package-root', packageName },
-		exportName: 'FixturePlugin',
+		exportName,
 	} as const
 	return createWorkbenchFederationProducerPlan({
 		definition,
@@ -61,10 +63,10 @@ function producerTree(plan: WorkbenchFederationProducerPlan, marker = plan.produ
 	}
 }
 
-function contentArtifact(packageName: string, marker = 'Guide') {
+function contentArtifact(packageName: string, marker = 'Guide', exportName = 'FixturePlugin') {
 	const definition = {
 		entry: { kind: 'package-root', packageName },
-		exportName: 'FixturePlugin',
+		exportName,
 	} as const
 	const contentSet = createWorkbenchContentSet({
 		definition,
@@ -115,6 +117,65 @@ function contentArtifact(packageName: string, marker = 'Guide') {
 }
 
 describe('static Workbench deployment assembly', () => {
+	it('copies only catalog-owned producer and Content trees from a bundled package', async () => {
+		const selected = createPlan('@example/mixed', 'selected')
+		const unused = createPlan('@example/mixed', 'unused', 'generated/unused.tsx', 'UnusedPlugin')
+		const selectedContent = contentArtifact('@example/mixed', 'Selected')
+		const unusedContent = contentArtifact('@example/mixed', 'Unused', 'UnusedPlugin')
+		await using fixture = await createDiskFixture({
+			application: {
+				workbench: { [WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE]: inventoryFile([]) },
+			},
+			dependency: {
+				dist: {
+					workbench: {
+						...producerTree(selected),
+						...selectedContent.tree,
+						[WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE]: inventoryFile([selected, unused]),
+						[WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE]: JSON.stringify(
+							createWorkbenchContentDeploymentInventory(
+								[
+									...JSON.parse(selectedContent.inventory).entries,
+									...JSON.parse(unusedContent.inventory).entries,
+								].sort((left, right) =>
+									pluginDefinitionIndexKey(left.definition).localeCompare(
+										pluginDefinitionIndexKey(right.definition),
+									),
+								),
+							),
+						),
+					},
+				},
+			},
+		})
+		const input = {
+			destinationRoot: fixture.getPath('application/workbench'),
+			dependencyRoots: [fixture.getPath('dependency/dist/workbench')],
+			definitions: new Set([pluginDefinitionIndexKey(selected.definition)]),
+		}
+		const producers = await assembleWorkbenchDeploymentArtifacts(input)
+		const content = await assembleWorkbenchContentDeploymentArtifacts(input)
+		expect(producers.producers.map(({ plan }) => plan.definition)).toEqual([selected.definition])
+		expect(content.entries.map((entry) => entry.definition)).toEqual([selectedContent.definition])
+		await expect(
+			stat(fixture.getPath(`application/workbench/${unused.producer}`)),
+		).rejects.toMatchObject({ code: 'ENOENT' })
+		await expect(
+			stat(fixture.getPath(`application/workbench/${unusedContent.artifactRoot}`)),
+		).rejects.toMatchObject({ code: 'ENOENT' })
+		// Missing unselected trees cost no IO; selecting them must expose the original contract failure.
+		const unusedInput = {
+			...input,
+			definitions: new Set([pluginDefinitionIndexKey(unused.definition)]),
+		}
+		await expect(assembleWorkbenchDeploymentArtifacts(unusedInput)).rejects.toThrow(
+			'artifact directory is missing',
+		)
+		await expect(assembleWorkbenchContentDeploymentArtifacts(unusedInput)).rejects.toThrow(
+			'artifact directory is missing',
+		)
+	})
+
 	it('merges immutable Content inventories independently from MF producers', async () => {
 		const local = contentArtifact('@example/local-content', 'Local')
 		const dependency = contentArtifact('@example/dependency-content', 'Dependency')
@@ -125,6 +186,7 @@ describe('static Workbench deployment assembly', () => {
 		const destinationRoot = fixture.getPath('application/workbench')
 		const inventory = await assembleWorkbenchContentDeploymentArtifacts({
 			destinationRoot,
+			definitions: new Set([local.definition, dependency.definition].map(pluginDefinitionIndexKey)),
 			dependencyRoots: [fixture.getPath('dependency/dist/workbench')],
 		})
 
@@ -169,6 +231,7 @@ describe('static Workbench deployment assembly', () => {
 		await expect(
 			assembleWorkbenchContentDeploymentArtifacts({
 				destinationRoot: fixture.getPath('application/workbench'),
+				definitions: new Set([pluginDefinitionIndexKey(content.definition)]),
 				dependencyRoots: [],
 			}),
 		).rejects.toThrow('digest mismatch')
@@ -208,12 +271,14 @@ describe('static Workbench deployment assembly', () => {
 		await expect(
 			assembleWorkbenchContentDeploymentArtifacts({
 				destinationRoot: fixture.getPath('extra/workbench'),
+				definitions: new Set([pluginDefinitionIndexKey(content.definition)]),
 				dependencyRoots: [],
 			}),
 		).rejects.toThrow(`must contain only ${WORKBENCH_CONTENT_ARTIFACT_FILE}`)
 		await expect(
 			assembleWorkbenchContentDeploymentArtifacts({
 				destinationRoot: fixture.getPath('overBudget/workbench'),
+				definitions: new Set([pluginDefinitionIndexKey(content.definition)]),
 				dependencyRoots: [],
 			}),
 		).rejects.toThrow('exceeds its byte budget')
@@ -248,6 +313,7 @@ describe('static Workbench deployment assembly', () => {
 		const destinationRoot = fixture.getPath('application/workbench')
 		const inventory = await assembleWorkbenchDeploymentArtifacts({
 			destinationRoot,
+			definitions: new Set([local.definition, dependency.definition].map(pluginDefinitionIndexKey)),
 			dependencyRoots: [
 				fixture.getPath('dependency/dist/workbench'),
 				fixture.getPath('legacy/dist/workbench'),
@@ -308,6 +374,7 @@ describe('static Workbench deployment assembly', () => {
 		await expect(
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('application/workbench'),
+				definitions: new Set([pluginDefinitionIndexKey(plan.definition)]),
 				dependencyRoots: [fixture.getPath('dependency/dist/workbench')],
 			}),
 		).resolves.toMatchObject({ producers: [{ plan: { producer: plan.producer } }] })
@@ -375,18 +442,21 @@ describe('static Workbench deployment assembly', () => {
 		await expect(
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('planCollision/application/workbench'),
+				definitions: new Set([pluginDefinitionIndexKey(local.definition)]),
 				dependencyRoots: [fixture.getPath('planCollision/dependency/dist/workbench')],
 			}),
 		).rejects.toThrow('producer plan collision')
 		await expect(
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('revisionCollision/application/workbench'),
+				definitions: new Set([pluginDefinitionIndexKey(local.definition)]),
 				dependencyRoots: [fixture.getPath('revisionCollision/dependency/dist/workbench')],
 			}),
 		).rejects.toThrow('producer revision collision')
 		await expect(
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('contentCollision/application/workbench'),
+				definitions: new Set([pluginDefinitionIndexKey(local.definition)]),
 				dependencyRoots: [fixture.getPath('contentCollision/dependency/dist/workbench')],
 			}),
 		).rejects.toThrow('artifact content collision')

@@ -50,6 +50,7 @@ export default defineConfig({
 		build: './src/build.ts',
 		'internal/test': './src/internal-test.ts',
 		vite: './src/vite.ts',
+		sources: './src/sources.ts',
 
 		'elysia/vite': './src/development/elysia.ts',
 		'node/vite': './src/development/node.ts',

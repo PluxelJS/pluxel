@@ -14,8 +14,10 @@ export default defineConfig({
 		client: 'src/workbench/client.ts',
 		react: 'src/workbench/react.tsx',
 		federation: 'src/workbench/federation.ts',
+		'internal/transport': 'src/workbench/shared-transport.ts',
 		'internal/react': 'src/workbench/react-internal.tsx',
 		dev: 'src/dev.ts',
+		vite: 'src/vite.ts',
 	},
 	deps: {
 		neverBundle: [
@@ -25,8 +27,8 @@ export default defineConfig({
 			'@pluxel/services/management',
 			'@pluxel/services/management/*',
 			'@pluxel/services/*',
-			'@pluxel/host-dev',
-			'@pluxel/host-dev/*',
+			'@pluxel/host-vite',
+			'@pluxel/host-vite/*',
 			'@pluxel/rolldown',
 			'@pluxel/rolldown/*',
 			'vite',

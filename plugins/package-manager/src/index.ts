@@ -7,7 +7,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
-import { requireDynamicPluginSource } from '@pluxel/host/dynamic/source-producer'
+import { requirePluginSource } from '@pluxel/host/sources'
 import type {
 	PackageManagerApi,
 	PackageManagerSnapshot,
@@ -64,7 +64,7 @@ export class PackageManagerPlugin extends BasePlugin {
 
 	override async init(signal: AbortSignal): Promise<void> {
 		const rootDir = resolve(process.cwd(), this.config.rootDir)
-		requireDynamicPluginSource(this.ctx, {
+		requirePluginSource(this.ctx, {
 			kind: 'directory',
 			path: resolve(rootDir, 'entries'),
 			include: ['*.mjs'],

@@ -76,7 +76,7 @@ Plugin 详情默认只展示简短说明（有则显示）、状态和来源。�
 - 普通关键词：名称、定义位置、导出名、canonical reference 和 execution 词；
 - `@包名`：只匹配 definition address 中的 package name；
 - `ref:关键词`：只匹配 canonical reference；
-- `exec:关键词`：只匹配制品、更新方式和最近结果，例如 `hmr`、`entry-only`、`bundle`、`restored-previous` 或“失败”。
+- `exec:关键词`：只匹配制品、更新方式和最近结果，例如 `hmr`、`next-start`、`bundle`、`restored-previous` 或“失败”。
 
 ## 生命周期和故障
 

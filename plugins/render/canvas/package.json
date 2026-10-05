@@ -83,6 +83,9 @@
 	"pluxel": {
 		"pluginPackages": {
 			"@pluxel/fonts": "required"
-		}
+		},
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
 	}
 }

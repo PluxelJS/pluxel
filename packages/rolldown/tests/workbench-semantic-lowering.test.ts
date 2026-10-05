@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { parsePluginDefinitionAddress } from '@pluxel/core'
+import { parsePluginDefinitionAddress, pluginDefinitionIndexKey } from '@pluxel/core'
 import { workbenchFederationBuildOutDir } from '@pluxel/core/federation'
 import { createFixture } from 'fs-fixture'
 import { dirname, resolve } from 'pathe'
@@ -1235,6 +1235,65 @@ class SemanticPlugin {
 		await expect(collectModule(lowering, fixture.path, 'src/other.ts', code)).rejects.toThrow(
 			'duplicate Workbench publication ownership',
 		)
+	})
+
+	it('retains unselected imported invalidations when switching the selected catalog', async () => {
+		const otherOwner = parsePluginDefinitionAddress({
+			entry: owner.entry,
+			exportName: 'OtherPlugin',
+		})
+		const otherDefinition = (document: string) => `import { workbench } from '@pluxel/workbench'
+export const OtherWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, '${document}'), placement: workbench.tab({ label: 'Other guide' }) }) })`
+		await using fixture = await createFixture({
+			...fixtureFiles(),
+			'src/first-workbench.ts': `import { workbench } from '@pluxel/workbench'
+export const FirstWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, './first.md'), placement: workbench.tab({ label: 'First guide' }) }) })`,
+			'src/other-workbench.ts': otherDefinition('./other-before.md'),
+			'src/first.md': '# First guide\n',
+			'src/other-before.md': '# Other before\n',
+			'src/other-after.md': '# Other after\n',
+		})
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		const id = resolve(fixture.path, 'src/owners.ts')
+		const code = `import { FirstWorkbench } from './first-workbench.ts'
+import { OtherWorkbench } from './other-workbench.ts'
+class SemanticPlugin { init() { this.ctx.workbench.publish(FirstWorkbench) } }
+class OtherPlugin { init() { this.ctx.workbench.publish(OtherWorkbench) } }`
+		await writeFile(id, code)
+		await lowering.collect({
+			id,
+			code,
+			ast: parseStandaloneWithLang(code, id)!,
+			owners: [
+				{ className: 'SemanticPlugin', definition: owner },
+				{ className: 'OtherPlugin', definition: otherOwner },
+			],
+			resolve: async (source) =>
+				source.startsWith('.') ? resolve(dirname(id), source) : undefined,
+		})
+		await expect(lowering.contentCompilations()).resolves.toHaveLength(2)
+		const first = new Set([pluginDefinitionIndexKey(owner)])
+		const other = new Set([pluginDefinitionIndexKey(otherOwner)])
+		const [before] = await lowering.contentCompilations(other)
+		expect(JSON.stringify(before!.contentSet)).toContain('Other before')
+		const definitionPath = resolve(fixture.path, 'src/other-workbench.ts')
+		await writeFile(definitionPath, otherDefinition('./other-after.md'))
+		lowering.invalidate(definitionPath)
+		await expect(lowering.contentCompilations(first)).resolves.toMatchObject([
+			{ contentSet: { definition: owner } },
+		])
+		const [after] = await lowering.contentCompilations(other)
+		expect(after?.digest).not.toBe(before?.digest)
+		expect(JSON.stringify(after!.contentSet)).toContain('Other after')
+		await expect(lowering.contentCompilations(new Set())).resolves.toEqual([])
+		await expect(lowering.contentCompilations(other)).resolves.toEqual([after])
+
+		await writeFile(definitionPath, 'export const unfinished = true')
+		lowering.invalidate(definitionPath)
+		await expect(lowering.contentCompilations(first)).resolves.toHaveLength(1)
+		await expect(lowering.contentCompilations(other)).rejects.toThrow('OtherWorkbench is missing')
+		await writeFile(definitionPath, otherDefinition('./other-after.md'))
+		await expect(lowering.contentCompilations(other)).resolves.toEqual([after])
 	})
 
 	it('refreshes imported definitions, renderer choices and failed reads in the same compiler', async () => {

@@ -45,9 +45,10 @@ describe('plugin catalog search', () => {
 
 	it('searches source location, export name, reference, and execution with AND semantics', () => {
 		const execution = describePluginExecution({
-			kind: 'dynamic-entry',
+			kind: 'vite',
+			origin: 'source',
 			artifact: { kind: 'source-module' },
-			update: { kind: 'definition-hmr', scope: 'source-graph' },
+			update: { kind: 'definition-hmr' },
 		})
 		const status = {
 			name: 'Renderer',
@@ -126,7 +127,8 @@ describe('plugin catalog search', () => {
 		{
 			name: 'known static built artifact',
 			execution: {
-				kind: 'static-catalog',
+				kind: 'vite',
+				origin: 'fixed',
 				artifact: { kind: 'built-module' },
 				update: { kind: 'host-reload' },
 			},
@@ -135,9 +137,10 @@ describe('plugin catalog search', () => {
 		{
 			name: 'known dynamic route with unreported artifact',
 			execution: {
-				kind: 'dynamic-entry',
+				kind: 'vite',
+				origin: 'source',
 				artifact: { kind: 'unreported' },
-				update: { kind: 'definition-hmr', scope: 'entry-only' },
+				update: { kind: 'definition-hmr' },
 			},
 			query: 'exec:制品未报告',
 		},

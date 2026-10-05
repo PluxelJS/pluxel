@@ -114,7 +114,7 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/host-dev#build": {
+		"@pluxel/host-vite#build": {
 			"dependsOn": ["@pluxel/core#build", "@pluxel/host#build", "@pluxel/rolldown#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
@@ -139,6 +139,8 @@
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/docs/**",
+				"$TURBO_ROOT$/.agents/skills/pluxel-development/**",
 				"!bench/**",
 				"!**/bench/**",
 				"!test/**",
@@ -218,7 +220,7 @@
 		"@pluxel/create#test": {
 			"dependsOn": ["^build", "build", "@pluxel/test#build"],
 		},
-		"@pluxel/host-dev#test": {
+		"@pluxel/host-vite#test": {
 			"dependsOn": ["^build", "build", "@pluxel/host#build", "@pluxel/test#build"],
 		},
 		"@pluxel/rolldown#test": {
@@ -254,7 +256,7 @@
 			"outputLogs": "errors-only",
 		},
 		"@worksplit/react#typecheck": {
-			"dependsOn": ["^build", "@pluxel/host-dev#build"],
+			"dependsOn": ["^build", "@pluxel/host-vite#build"],
 		},
 		"@pluxel/plugins-host#typecheck": {
 			"dependsOn": ["^build"],
@@ -267,7 +269,7 @@
 			"persistent": true,
 		},
 		"@pluxel/services#build": {
-			"dependsOn": ["@pluxel/commands#build", "@pluxel/host#build", "@pluxel/host-dev#build"],
+			"dependsOn": ["@pluxel/commands#build", "@pluxel/host#build", "@pluxel/host-vite#build"],
 			"outputs": ["dist/**", "public/**"],
 		},
 		"@pluxel/workbench#build": {

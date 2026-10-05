@@ -10,6 +10,7 @@ import { parseStandaloneWithLang } from './pluginUtils.ts'
 
 export type StaticConfigEnvironmentDeclarationPluginOptions = {
 	entry: string
+	requireStaticPlugins?: boolean
 	onDeclaration?(facts: StaticRuntimeDeclarationFacts): void
 }
 
@@ -29,7 +30,7 @@ export function staticConfigEnvironmentDeclarationPlugin(
 			const ast = parseStandaloneWithLang(code, entry)
 			if (!ast) this.error(`[static-application] failed to parse entry: ${entry}`)
 			const facts = await parseStaticRuntimeDeclaration({
-				requireStaticPlugins: true,
+				requireStaticPlugins: options.requireStaticPlugins ?? true,
 				ast,
 				code,
 				id: entry,

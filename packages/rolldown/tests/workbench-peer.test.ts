@@ -3,10 +3,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { createPluginDependencyMetadataHook } from '../src/cli/plugin-metadata'
-import {
-	readWorkbenchCapnwebPackage,
-	validateWorkbenchCapnwebPeer,
-} from '../src/cli/workbench-peer'
+import { readWorkbenchCapnwebPackage } from '@pluxel/workbench/internal/transport'
+import { validateWorkbenchCapnwebPeer } from '../src/cli/workbench-peer'
 import { packageVersion } from '../src/cli/static-workbench-capnweb'
 
 const roots: string[] = []
@@ -108,12 +106,16 @@ it('does not apply the Workbench peer policy to a package with private RPC only'
 	const { packageJsonPath } = await fixture({ privateRpc: true, installed: '0.13.0' })
 	const hook = createPluginDependencyMetadataHook({
 		packageJsonPath,
+		workbenchArtifacts: true,
 		manifestField: 'pluxel',
 		log: () => undefined,
 		collectPlugins: () => new Map(),
 		collectWorkbenchTargets: async () => false,
 	})
-	await hook({} as Parameters<typeof hook>[0], new AbortController().signal)
+	await hook(
+		{ outDir: join(dirname(packageJsonPath), 'dist') } as Parameters<typeof hook>[0],
+		new AbortController().signal,
+	)
 	const manifest = JSON.parse(await readFile(packageJsonPath, 'utf8')) as {
 		peerDependencies?: Record<string, string>
 		pluxel?: { workbenchCapnweb?: string }
@@ -127,18 +129,25 @@ it('writes and withdraws the exact generated target publication fact', async () 
 	let publishes = true
 	const hook = createPluginDependencyMetadataHook({
 		packageJsonPath,
+		workbenchArtifacts: true,
 		manifestField: 'customMetadata',
 		log: () => undefined,
 		collectPlugins: () => new Map(),
 		collectWorkbenchTargets: async () => publishes,
 	})
-	await hook({} as Parameters<typeof hook>[0], new AbortController().signal)
+	await hook(
+		{ outDir: join(dirname(packageJsonPath), 'dist') } as Parameters<typeof hook>[0],
+		new AbortController().signal,
+	)
 	let manifest = JSON.parse(await readFile(packageJsonPath, 'utf8')) as {
 		pluxel?: { workbenchCapnweb?: string }
 	}
 	expect(manifest.pluxel?.workbenchCapnweb).toBe('0.12.0')
 	publishes = false
-	await hook({} as Parameters<typeof hook>[0], new AbortController().signal)
+	await hook(
+		{ outDir: join(dirname(packageJsonPath), 'dist') } as Parameters<typeof hook>[0],
+		new AbortController().signal,
+	)
 	manifest = JSON.parse(await readFile(packageJsonPath, 'utf8')) as typeof manifest
 	expect(manifest.pluxel?.workbenchCapnweb).toBeUndefined()
 })
@@ -146,23 +155,27 @@ it('writes and withdraws the exact generated target publication fact', async () 
 it('reports malformed selected publisher JSON with its path and parse cause', async () => {
 	const { packageJsonPath } = await fixture({ peer: '0.12.0', dev: '0.12.0' })
 	await writeFile(packageJsonPath, '{')
-	await expect(
+	expect(() =>
 		readWorkbenchCapnwebPackage(join(dirname(packageJsonPath), 'index.js')),
-	).rejects.toMatchObject({
-		message: expect.stringContaining(`Invalid JSON in package manifest ${packageJsonPath}`),
-		cause: expect.any(SyntaxError),
-	})
+	).toThrowError(
+		expect.objectContaining({
+			message: expect.stringContaining(`Invalid JSON in package manifest ${packageJsonPath}`),
+			cause: expect.any(SyntaxError),
+		}),
+	)
 })
 
 it('rejects an invalid selected manifest path instead of searching an ancestor', async () => {
 	const { root } = await fixture({ peer: '0.12.0', dev: '0.12.0' })
 	await writeFile(join(root, 'plugin/not-a-directory'), '')
-	await expect(
+	expect(() =>
 		readWorkbenchCapnwebPackage(join(root, 'plugin/not-a-directory/index.js')),
-	).rejects.toMatchObject({
-		message: expect.stringContaining('plugin/not-a-directory/package.json'),
-		cause: expect.objectContaining({ code: 'ENOTDIR' }),
-	})
+	).toThrowError(
+		expect.objectContaining({
+			message: expect.stringContaining('plugin/not-a-directory/package.json'),
+			cause: expect.objectContaining({ code: 'ENOTDIR' }),
+		}),
+	)
 })
 
 it('reports a malformed selected workspace catalog with its path and parse cause', async () => {

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { readSourceCondition, readSourceExportEntries } from '../../source-exports'
 import { createReadStream } from 'node:fs'
 import { readFile as readSourceFile, realpath } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
@@ -140,10 +141,13 @@ export type PluginArtifactGeneration = Readonly<{
 	rollback(): void
 }>
 
+// className is the ABI call's lexical constructor binding, never the runtime display name.
+type BuiltPluginDefinition = Pick<PluginSemanticDefinition, 'className' | 'definition'>
+
 type ArtifactGenerationState = {
 	status: 'active' | 'committed' | 'rolled-back'
 	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>
-	builtDefinitionsByModule: Map<string, ReadonlySet<string>>
+	builtDefinitionsByModule: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>
 	/** Ambient versions captured with the candidate view when the generation began. */
 	baseVersions: ReadonlyMap<string, number>
 	touchedModules: Set<string>
@@ -165,6 +169,8 @@ export type PluginSemanticsCollector = {
 	plugin: ViteCompatPlugin
 	snapshot(): Map<string, PluginDependencyMode>
 	definitions(): readonly PluginSemanticDefinition[]
+	/** Resolves a lexical constructor binding using collected source or lowering ABI facts. */
+	definitionForBinding(moduleId: string, local: string): PluginDefinitionAddress | undefined
 	/**
 	 * Classifies one definition using only exact lowering facts in the selected module closure.
 	 * Built evidence requires an explicit active module closure; conflicting or absent evidence
@@ -181,9 +187,13 @@ export type PluginSemanticsCollector = {
 	/** Final canonical Workbench producer plans for this compilation. */
 	workbenchPlans(): Promise<readonly WorkbenchFederationProducerPlan[]>
 	/** Source-only build inputs paired with those exact canonical plans. */
-	workbenchCompilations(): Promise<readonly WorkbenchSemanticProducerCompilation[]>
+	workbenchCompilations(
+		definitions?: ReadonlySet<string>,
+	): Promise<readonly WorkbenchSemanticProducerCompilation[]>
 	/** Canonical immutable Workbench Content sets for this compilation. */
-	workbenchContentCompilations(): Promise<readonly WorkbenchSemanticContentCompilation[]>
+	workbenchContentCompilations(
+		definitions?: ReadonlySet<string>,
+	): Promise<readonly WorkbenchSemanticContentCompilation[]>
 	/** Invalidates derived Workbench artifacts after a non-module source change such as Markdown. */
 	invalidateWorkbench(): void
 }
@@ -292,7 +302,7 @@ export function createPluginSemanticsPlugin(
 	const sourceRoot = resolve(options.root ?? process.cwd())
 	const workbenchLowering = createWorkbenchSemanticLowering(sourceRoot)
 	const definitionsByModule = new Map<string, ReadonlyMap<string, PluginSemanticDefinition>>()
-	const builtDefinitionsByModule = new Map<string, ReadonlySet<string>>()
+	const builtDefinitionsByModule = new Map<string, ReadonlyMap<string, BuiltPluginDefinition>>()
 	const artifactModuleVersions = new Map<string, number>()
 	const artifactGenerationContext = new AsyncLocalStorage<ArtifactGenerationState>()
 	const dependencyInventory = new Map<string, DependencyInventoryNode>()
@@ -308,7 +318,7 @@ export function createPluginSemanticsPlugin(
 		moduleId: string,
 		mutation: (
 			definitions: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
-			builtDefinitions: Map<string, ReadonlySet<string>>,
+			builtDefinitions: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 		) => void,
 	): void => {
 		const generation = artifactGenerationContext.getStore()
@@ -329,7 +339,7 @@ export function createPluginSemanticsPlugin(
 
 	const currentArtifactFacts = (): Readonly<{
 		definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>
-		builtDefinitionsByModule: ReadonlyMap<string, ReadonlySet<string>>
+		builtDefinitionsByModule: ReadonlyMap<string, ReadonlyMap<string, BuiltPluginDefinition>>
 	}> => {
 		const generation = artifactGenerationContext.getStore()
 		return generation === activeArtifactGeneration && generation?.status === 'active'
@@ -408,7 +418,7 @@ export function createPluginSemanticsPlugin(
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[pluxel:plugin-semantics] failed to parse ${id}`)
 				if (mightContainBuiltFacts) {
-					const builtDefinitions = extractPreloweredDefinitionKeys(ast)
+					const builtDefinitions = extractPreloweredDefinitions(ast)
 					if (builtDefinitions.size > 0) {
 						update.remove()
 						mutateArtifactModuleFacts(id, (definitions, currentBuiltDefinitions) =>
@@ -516,6 +526,19 @@ export function createPluginSemanticsPlugin(
 		snapshot: () =>
 			collectReachablePackageDependencies(dependencyInventory, packagePlan?.packageName),
 		definitions: () => collectedSemanticDefinitions(currentArtifactFacts().definitionsByModule),
+		definitionForBinding: (moduleId, local) => {
+			const facts = currentArtifactFacts()
+			const key = semanticModuleKey(moduleId)
+			const matches = [
+				...(facts.definitionsByModule.get(key)?.values() ?? []),
+				...(facts.builtDefinitionsByModule.get(key)?.values() ?? []),
+			].filter((definition) => definition.className === local)
+			if (matches.length > 1)
+				throw new Error(
+					`[pluxel:plugin-semantics] ambiguous Plugin definition binding: ${key}#${local}`,
+				)
+			return matches[0]?.definition
+		},
 		classifyDefinitionArtifact: (definition, activeModules) => {
 			const facts = currentArtifactFacts()
 			return classifyCollectedDefinitionArtifact(
@@ -530,7 +553,7 @@ export function createPluginSemanticsPlugin(
 			return new Map(
 				[...currentArtifactFacts().builtDefinitionsByModule]
 					.filter(([moduleId]) => active.has(moduleId))
-					.map(([moduleId, definitions]) => [moduleId, new Set(definitions)]),
+					.map(([moduleId, definitions]) => [moduleId, new Set(definitions.keys())]),
 			)
 		},
 		beginArtifactGeneration: () => {
@@ -587,15 +610,16 @@ export function createPluginSemanticsPlugin(
 			})
 		},
 		workbenchPlans: () => currentWorkbench().plans(),
-		workbenchCompilations: () => currentWorkbench().compilations(),
-		workbenchContentCompilations: () => currentWorkbench().contentCompilations(),
+		workbenchCompilations: (definitions) => currentWorkbench().compilations(definitions),
+		workbenchContentCompilations: (definitions) =>
+			currentWorkbench().contentCompilations(definitions),
 		invalidateWorkbench: () => currentWorkbench().invalidate(),
 	}
 }
 
 function replaceSourceModuleDefinitions(
 	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
-	builtDefinitionsByModule: Map<string, ReadonlySet<string>>,
+	builtDefinitionsByModule: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 	moduleId: string,
 	definitions: readonly PluginSemanticDefinition[],
 ): void {
@@ -613,18 +637,18 @@ function replaceSourceModuleDefinitions(
 
 function replaceBuiltModuleDefinitions(
 	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
-	builtDefinitionsByModule: Map<string, ReadonlySet<string>>,
+	builtDefinitionsByModule: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 	moduleId: string,
-	definitions: ReadonlySet<string>,
+	definitions: ReadonlyMap<string, BuiltPluginDefinition>,
 ): void {
 	const moduleKey = semanticModuleKey(moduleId)
 	definitionsByModule.delete(moduleKey)
-	builtDefinitionsByModule.set(moduleKey, new Set(definitions))
+	builtDefinitionsByModule.set(moduleKey, new Map(definitions))
 }
 
 function clearArtifactModuleFacts(
 	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
-	builtDefinitionsByModule: Map<string, ReadonlySet<string>>,
+	builtDefinitionsByModule: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 	moduleId: string,
 ): void {
 	const moduleKey = semanticModuleKey(moduleId)
@@ -634,9 +658,9 @@ function clearArtifactModuleFacts(
 
 function copyArtifactModuleFacts(
 	targetDefinitions: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
-	targetBuiltDefinitions: Map<string, ReadonlySet<string>>,
+	targetBuiltDefinitions: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 	sourceDefinitions: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>,
-	sourceBuiltDefinitions: ReadonlyMap<string, ReadonlySet<string>>,
+	sourceBuiltDefinitions: ReadonlyMap<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 	moduleKey: string,
 ): void {
 	targetDefinitions.delete(moduleKey)
@@ -659,7 +683,7 @@ function collectedSemanticDefinitions(
 
 function classifyCollectedDefinitionArtifact(
 	definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>,
-	builtDefinitionsByModule: ReadonlyMap<string, ReadonlySet<string>>,
+	builtDefinitionsByModule: ReadonlyMap<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 	definition: PluginDefinitionAddress,
 	activeModules: Iterable<string> | undefined,
 ): PluginDefinitionArtifactKind {
@@ -679,9 +703,9 @@ function classifyCollectedDefinitionArtifact(
 	return source ? 'source-module' : 'built-module'
 }
 
-function extractPreloweredDefinitionKeys(ast: Program): ReadonlySet<string> {
+function extractPreloweredDefinitions(ast: Program): ReadonlyMap<string, BuiltPluginDefinition> {
 	const imports = collectImports(ast)
-	const definitions = new Set<string>()
+	const definitions = new Map<string, BuiltPluginDefinition>()
 	walkAst(ast, (node) => {
 		if (
 			node.type !== 'CallExpression' ||
@@ -707,7 +731,11 @@ function extractPreloweredDefinitionKeys(ast: Program): ReadonlySet<string> {
 			return
 		}
 		try {
-			definitions.add(definitionKey(parsePluginDefinitionAddress(record.definition)))
+			const definition = parsePluginDefinitionAddress(record.definition)
+			definitions.set(definitionKey(definition), {
+				className: readIdentifier(args[0])!,
+				definition,
+			})
 		} catch {
 			// An invalid or non-static payload is not positive artifact evidence.
 		}
@@ -2127,46 +2155,6 @@ async function resolveExportOrigin(
 	} finally {
 		seen.delete(key)
 	}
-}
-
-function readSourceExportEntries(
-	value: unknown,
-	packageRoot: string,
-	error: (message: string) => never,
-): Map<string, string> {
-	const entries = new Map<string, string>()
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		error('[pluxel:plugin-package] package exports must be an explicit subpath map')
-	}
-	for (const [subpath, target] of Object.entries(value as Record<string, unknown>)) {
-		if (!subpath.startsWith('.')) continue
-		// A known Plugin package must also validate its unconditional JS exports.
-		// This does not make a plain JS root opt into automatic package inference.
-		const source = readSourceCondition(target, typeof target === 'string')
-		if (!source) continue
-		entries.set(subpath, resolve(packageRoot, source))
-	}
-	return entries
-}
-
-function readSourceCondition(value: unknown, explicitSource = false): string | undefined {
-	if (typeof value === 'string') {
-		if (/\.d\.[cm]?tsx?$/.test(value)) return undefined
-		// JS requires an explicit source condition; a built default is not a source opt-in.
-		const extension = explicitSource ? /\.(?:[cm]?[jt]s|[jt]sx)$/ : /\.(?:[cm]?ts|tsx)$/
-		return extension.test(value) ? value : undefined
-	}
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-	const record = value as Record<string, unknown>
-	for (const key of ['@pluxel/hmr', '@pluxel/source', 'development']) {
-		const nested = readSourceCondition(record[key], true)
-		if (nested) return nested
-	}
-	for (const key of ['import', 'default']) {
-		const nested = readSourceCondition(record[key], explicitSource)
-		if (nested) return nested
-	}
-	return undefined
 }
 
 async function resolveLocalFile(source: string, importer: string): Promise<string | undefined> {

@@ -2,6 +2,9 @@ import { createHost } from '@pluxel/host'
 import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { websocket } from 'elysia/websocket'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.unstubAllEnvs())
@@ -160,6 +163,40 @@ it('rejects malformed listener environment before attaching a carrier', async ()
 		await expect(listenElysia(host, {})).rejects.toThrow('PLUXEL_HOST_PORT')
 	} finally {
 		await host.close()
+	}
+})
+
+it('captures the public directory before requests and keeps reserved paths outside its SPA fallback', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-listener-options-'))
+	const publicDir = join(root, 'public')
+	const alternative = join(root, 'alternative')
+	await Promise.all([mkdir(publicDir), mkdir(alternative)])
+	await Promise.all([
+		writeFile(join(publicDir, 'index.html'), '<main>original</main>'),
+		writeFile(join(alternative, 'index.html'), '<main>changed</main>'),
+	])
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	const options = { hostname: '127.0.0.1', port: 0, publicDir }
+	try {
+		for (const invalid of ['', '\0', null, 42])
+			await expect(
+				Reflect.apply(listenElysia, undefined, [host, { publicDir: invalid }]),
+			).rejects.toThrow('publicDir must be')
+		const listener = await listenElysia(host, options)
+		options.publicDir = alternative
+		try {
+			const origin = `http://127.0.0.1:${listener.address.port}`
+			const page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })
+			expect(page.status).toBe(200)
+			expect(await page.text()).toBe('<main>original</main>')
+			const reserved = await fetch(`${origin}/@vite/client`, { headers: { accept: 'text/html' } })
+			expect(reserved.status).toBe(404)
+		} finally {
+			await listener.close()
+		}
+	} finally {
+		await host.close()
+		await rm(root, { recursive: true, force: true })
 	}
 })
 

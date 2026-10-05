@@ -1,7 +1,8 @@
+import { readLoadedNodeArtifacts } from '../node/packaged-artifacts'
 import type { Context } from '@pluxel/core'
 import { NodeModuleHost } from '../node/token'
 import type { Plugin } from 'vite'
-import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
+import type { HostVitePluginApi, HostViteCandidate } from '@pluxel/host-vite'
 import { NodeArtifactCompiler, type NodeArtifactCompilerOptions } from './node-compiler'
 
 export { NodeArtifactCompiler, type NodeArtifactCompilerOptions } from './node-compiler'
@@ -32,14 +33,35 @@ export function attachNodeArtifactCompiler(
 /** Explicit Node artifact development support for hosts assembled by host(). */
 export function nodeArtifacts(
 	options: Readonly<{ cacheDir?: string }> = {},
-): Plugin<HostDevelopmentPluginApi> {
+): Plugin<HostVitePluginApi> {
 	return {
 		name: 'pluxel:node-artifacts',
 		apply: 'serve',
 		api: {
 			pluxelHost: {
-				attach: ({ host, server }) =>
-					attachNodeArtifactCompiler(host.ctx, { ...options, viteServer: server }).dispose,
+				async attach({ host, server, catalog }) {
+					const backend = host.ctx.require(NodeModuleHost)
+					const compiler = attachNodeArtifactCompiler(host.ctx, { ...options, viteServer: server })
+					const prepareCandidate = async (
+						candidate: typeof catalog,
+					): Promise<HostViteCandidate> => {
+						const artifacts = await readLoadedNodeArtifacts(candidate.plugins)
+						return {
+							commit() {
+								backend.installLoadedArtifacts(artifacts)
+							},
+							rollback() {},
+						}
+					}
+					try {
+						const initial = await prepareCandidate(catalog)
+						initial.commit()
+					} catch (error) {
+						await compiler.dispose()
+						throw error
+					}
+					return { prepareCandidate, dispose: compiler.dispose }
+				},
 			},
 		},
 	}

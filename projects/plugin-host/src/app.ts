@@ -1,4 +1,4 @@
-import { dynamicSource } from '@pluxel/host/dynamic'
+import { pluginSource } from '@pluxel/host/sources'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
@@ -24,8 +24,10 @@ export default defineHostApplication(async (startup) => {
 	return {
 		name: 'pluxel-architecture-lab',
 		plugins: hostPlugins,
+		// Development starts compile the official Node artifacts on the same lifecycle path.
+		config: { plugins: { startTimeoutMs: 30_000 } },
 		sources: [
-			dynamicSource({
+			pluginSource({
 				kind: 'directory',
 				path: resolve(managedPackagesRoot, 'entries'),
 				include: ['*.mjs'],

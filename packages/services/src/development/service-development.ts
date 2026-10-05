@@ -1,14 +1,14 @@
 import type { Plugin, PluginOption } from 'vite'
-import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
-import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-vite/internal'
+import type { HostVitePluginApi } from '@pluxel/host-vite'
 
 /** Only attach development resources for capabilities already installed by the application. */
 export function serviceDevelopment(): PluginOption[] {
 	const attachment = (
 		property: string,
 		explicitName: string,
-		load: () => Promise<Plugin<HostDevelopmentPluginApi>>,
-	): Plugin<HostDevelopmentPluginApi> => ({
+		load: () => Promise<Plugin<HostVitePluginApi>>,
+	): Plugin<HostVitePluginApi> => ({
 		name: `${explicitName}:automatic`,
 		apply: 'serve',
 		api: {
@@ -22,14 +22,14 @@ export function serviceDevelopment(): PluginOption[] {
 			},
 		},
 	})
-	let http: Plugin<HostDevelopmentPluginApi> | undefined
+	let http: Plugin<HostVitePluginApi> | undefined
 	return [
 		attachment('nodeModules', 'pluxel:node-artifacts', async () => {
 			const { nodeArtifacts } = await import('./node')
 			return nodeArtifacts()
 		}),
 		attachment('workbench', 'pluxel:workbench-artifacts', async () => {
-			const { workbenchArtifacts } = await import('@pluxel/workbench/dev')
+			const { workbenchArtifacts } = await import('@pluxel/workbench/vite')
 			return workbenchArtifacts()
 		}),
 		attachment('elysia', 'pluxel:elysia', async () => {

@@ -1,11 +1,15 @@
 import { requestWithSignal } from '../elysia/request'
-import { installPluxelViteUrlPrinter } from '@pluxel/host-dev/internal'
+import { dirname, resolve } from 'node:path'
+import { dispatchElysiaRequest } from '../elysia/dispatch'
+import { serve } from 'srvx/node'
+import type { Server as NodeHttpServer } from 'node:http'
+import { installPluxelViteUrlPrinter } from '@pluxel/host-vite/internal'
 import { hostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { ElysiaRuntime, type ElysiaRuntimeApi } from '../elysia/runtime'
-import type { NodeElysiaApplicationCarrier } from '../elysia/node'
+import { NodeElysiaApplicationCarrier } from '../elysia/node'
 import type { Plugin } from 'vite'
-import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
+import type { HostVitePluginApi } from '@pluxel/host-vite'
 import {
 	attachSrvxViteNodeCarrier,
 	createViteNodeElysiaApplicationCarrier,
@@ -13,17 +17,85 @@ import {
 } from './vite-node-carrier'
 
 /** Borrow Vite's listener for the explicitly installed HTTP service. */
-export function elysiaDevelopment(): Plugin<HostDevelopmentPluginApi> {
-	let active: { http: ElysiaRuntimeApi; carrier: NodeElysiaApplicationCarrier } | undefined
+export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
+	let active:
+		| { http: ElysiaRuntimeApi; carrier: NodeElysiaApplicationCarrier; publicDir?: string }
+		| undefined
 	let transport: SrvxViteNodeCarrierAttachment | undefined
+	let production: ReturnType<typeof serve> | undefined
+	let productionNode: NodeHttpServer | undefined
 	return {
 		name: 'pluxel:elysia',
 		apply: 'serve',
 		api: {
 			pluxelHost: {
-				async attach({ host, server }) {
+				async attach({ host, server, profile, catalog }) {
 					if (active) throw new Error('[services/elysia/vite] HTTP attachment is already active')
 					const http = resolveContextCapability(host.ctx, ElysiaRuntime)
+					if (profile === 'production') {
+						const carrier = new NodeElysiaApplicationCarrier({
+							fetch: http.fetch,
+							matches: http.matchesWebSocketRoute,
+							metadata: () => {
+								if (!production?.url) throw new Error('[services/vite] listener is not ready')
+								const url = new URL(production.url)
+								return {
+									url,
+									hostname: url.hostname,
+									port: Number(url.port || 80),
+									development: false,
+								}
+							},
+						})
+						const detach = http.attachApplicationCarrier(carrier)
+						const current = {
+							http,
+							carrier,
+							publicDir: catalog.applicationModule
+								? resolve(dirname(catalog.applicationModule), 'public')
+								: undefined,
+						}
+						active = current
+						try {
+							if (!production) {
+								production = serve({
+									manual: true,
+									hostname: hostEnv.hostBind ?? '0.0.0.0',
+									port: hostEnv.hostPort ?? 3000,
+									silent: true,
+									gracefulShutdown: false,
+									fetch: (request) => {
+										if (!active) return new Response('Service Unavailable', { status: 503 })
+										return dispatchElysiaRequest(
+											request,
+											active.http.fetch,
+											active.carrier,
+											active.publicDir,
+										)
+									},
+								})
+								productionNode = production.node?.server as NodeHttpServer
+								productionNode.on('upgrade', (request, socket, head) => {
+									if (active?.carrier.matchesUpgrade(request))
+										active.carrier.handleUpgrade(request, socket, head)
+									else socket.destroy()
+								})
+								await production.serve()
+								await production.ready()
+							}
+						} catch (error) {
+							active = undefined
+							detach()
+							await carrier.close()
+							throw error
+						}
+						return async () => {
+							if (active === current) active = undefined
+							carrier.stopAccepting()
+							detach()
+							await carrier.close()
+						}
+					}
 					const carrier = createViteNodeElysiaApplicationCarrier(server, {
 						publicOrigin: hostEnv.portlessOrigin,
 						fetch: http.fetch,
@@ -99,6 +171,7 @@ export function elysiaDevelopment(): Plugin<HostDevelopmentPluginApi> {
 		},
 		async closeBundle() {
 			await transport?.close()
+			await production?.close(true)
 		},
 	}
 }

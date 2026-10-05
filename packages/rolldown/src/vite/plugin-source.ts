@@ -205,20 +205,17 @@ function createSourceConfigPlugin(
 	options: PluginSourceVitePluginsOptions,
 	environment?: string,
 ): Plugin {
-	const sourceConditions: readonly string[] =
-		options.packageMode === 'distribution' ? [] : PLUXEL_SOURCE_RESOLVE_CONDITIONS
 	const configPlugin: Plugin = {
 		name: options.name ?? 'pluxel:plugin-source',
 		config(config) {
+			const sourceConditions: readonly string[] =
+				options.packageMode === 'distribution' ? [] : PLUXEL_SOURCE_RESOLVE_CONDITIONS
 			const serverResolve = {
 				conditions: [...sourceConditions, ...defaultServerConditions],
 				externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
 				preserveSymlinks: false,
 			}
-			const external =
-				options.packageMode === 'distribution'
-					? { external: true as const }
-					: { noExternal: true as const, external: [] as string[] }
+			const external = { noExternal: true as const, external: [] as string[] }
 			return {
 				...(config.server?.watch === null
 					? {}

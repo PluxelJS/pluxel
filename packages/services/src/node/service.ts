@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import type { Context as CoreContext } from '@pluxel/core'
+import { pluginDefinitionIndexKey, type Context as CoreContext } from '@pluxel/core'
 import { pinOwnerContext } from '../internal/owner-view'
 import {
 	readNodeModuleDeclaration,
@@ -22,7 +22,8 @@ export type NodeModuleSourceBinder = (
 
 type RootState = {
 	sourceBinder?: NodeModuleSourceBinder
-	readonly artifacts: NodeModuleArtifactHostOptions
+	loadedArtifacts?: ReadonlyMap<string, ReadonlyMap<string, string>>
+	artifacts: NodeModuleArtifactHostOptions
 }
 
 export type NodeModuleArtifactHostOptions = Readonly<{
@@ -73,7 +74,10 @@ export class NodeModuleService {
 		})
 		try {
 			const binder = this.rootState().sourceBinder
-			if (binder) {
+			const loaded = this.shared.loadedArtifacts?.has(
+				pluginDefinitionIndexKey(this.ctx.pluginInfo!.nodeAddress.definition),
+			)
+			if (binder && !loaded) {
 				const subscription = await binder(
 					declaration,
 					(url) => this.requestUpdate(lease, setup, url, false),
@@ -114,6 +118,13 @@ export class NodeModuleService {
 		}
 	}
 
+	/** @internal Startup attaches verified inventory URLs, without a source binder or watcher. */
+	installLoadedArtifacts(artifacts: ReadonlyMap<string, ReadonlyMap<string, string>>): void {
+		if (this.ctx !== this.ctx.root)
+			throw new TypeError('[node] loaded inventories belong to the root')
+		this.shared.loadedArtifacts = artifacts
+	}
+
 	private rootState(): RootState {
 		return this.shared
 	}
@@ -128,9 +139,16 @@ export class NodeModuleService {
 		const root = this.ctx.root
 		const artifacts = this.rootState().artifacts
 		const configuredRoot = artifacts.root ?? ''
+		const loadedFile = this.shared.loadedArtifacts
+			?.get(pluginDefinitionIndexKey(this.ctx.pluginInfo!.nodeAddress.definition))
+			?.get(descriptor.artifactKey)
 		const file = configuredRoot
 			? `${configuredRoot.replace(/[\\/]$/, '')}/${descriptor.artifactKey}.mjs`
-			: await artifacts.resolve?.(root, this.ctx.pluginInfo!.nodeAddress, descriptor.artifactKey)
+			: ((await artifacts.resolve?.(
+					root,
+					this.ctx.pluginInfo!.nodeAddress,
+					descriptor.artifactKey,
+				)) ?? loadedFile)
 		if (!file) {
 			throw new Error(
 				`[pluxel/runtime] packaged Node module artifact not found: ${descriptor.artifactKey}`,

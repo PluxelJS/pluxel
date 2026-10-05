@@ -8,8 +8,8 @@
 
 `host({ entry, devConsole: true })` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 `pluxel` environment ModuleRunner 求值，并借用当前 Host root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
 
-- `@pluxel/host-dev/console`：独立脚本类型、typed targets、稳定错误与借用的 `RootContext`。
-- Host-dev：每 run 的基础插件/配置操作、执行队列、源码加载、IPC、Vite 更新 barrier、host epoch 与清理。其中宿主操作仅依赖 Core/Host；控制台不依赖官方服务或其 optional peers。
+- `@pluxel/host-vite/console`：独立脚本类型、typed targets、稳定错误与借用的 `RootContext`。
+- Host-vite：每 run 的基础插件/配置操作、执行队列、源码加载、IPC、Vite 更新 barrier、host epoch 与清理。其中宿主操作仅依赖 Core/Host；控制台不依赖官方服务或其 optional peers。
 - Services 的 `vitePreset()`：组合官方开发附件，将 `devConsole` 开关交给通用 `host()`；不实现控制台。
 - 应用脚本：显式 import 服务 token/API，通过 `dev.ctx` 访问已安装能力，并拥有直接调用的取消传递与资源释放。
 - CLI：只做 discovery/提交/结果/取消，不求值 Plugin，也不依赖开发驱动的发布产物。
@@ -84,12 +84,12 @@ queued 取消不执行；running 取消保持 cancelling，直到真实代码 se
 
 ## 实现与验证入口
 
-- `packages/host-dev/src/console.ts`、`src/dev/`：脚本契约、Host 操作与 run scope。
-- `packages/host-dev/src/console/`：队列、协议、IPC 与 Host attachment。
+- `packages/host-vite/src/console.ts`、`src/dev/`：脚本契约、Host 操作与 run scope。
+- `packages/host-vite/src/console/`：队列、协议、IPC 与 Host attachment。
 - `packages/services/src/vite.ts`：官方开发附件组合。
 - `packages/cli/src/dev/client.ts`、`src/commands/dev.ts`：实例发现与命令交互。
-- Host-dev console tests：无服务 Host 的插件/配置操作、取消、Host replacement 与公开脚本入口。
-- Host-dev console/Vite scenarios：共享执行器、源码/HMR、JSON/socket 边界及 CLI 互操作。
+- Host-vite console tests：无服务 Host 的插件/配置操作、取消、Host replacement 与公开脚本入口。
+- Host-vite console/Vite scenarios：共享执行器、源码/HMR、JSON/socket 边界及 CLI 互操作。
 - Services Vite scenarios：真实 watcher 恢复、服务 replacement、HTTP/WebSocket 与 Workbench 制品。
 
 修改 public types、loader admission 或协议时，检查实际脚本调用边界，并运行直接 owner 的测试与类型检查。服务脚本遵循相应能力原有的回归覆盖。

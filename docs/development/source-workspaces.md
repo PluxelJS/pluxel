@@ -87,15 +87,15 @@ CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被
 
 `singletons` 只用于具有 nominal/private identity 的 direct dependency，而且必须能从本次选中的 source package 中推导出唯一 owner。不要把 node_modules 绝对路径写进配置。
 
-## 与 dynamic sources 的区别
+## 与运行时来源的区别
 
-| 能力                   | 所有者        | 时机                                          |
-| ---------------------- | ------------- | --------------------------------------------- |
-| `pluxel source`        | CLI           | 开发期 package resolution、构建和 live source |
-| runtime `sources`      | dynamic route | 运行期观察已发布的 ESM plugin entry           |
-| package manager Plugin | host 显式装配 | 运行中的安装/删除操作                         |
+| 能力                   | 所有者           | 时机                                                 |
+| ---------------------- | ---------------- | ---------------------------------------------------- |
+| `pluxel source`        | CLI              | 开发期 package resolution、构建和 live source        |
+| runtime `sources`      | Native/Vite 入口 | Native 启动扫描一次；Vite 持续观察已发布的 ESM entry |
+| package manager Plugin | Host 显式装配    | 运行中的安装/删除和原子发布操作                      |
 
-三者不是同一个 lifecycle。source install 不会替 dynamic route 发布 mutable entry，dynamic route 也不会下载 source checkout。
+三者分别拥有自己的 lifecycle。`source install` 管理开发期包解析；Package Manager 发布 mutable entry；执行入口消费应用声明的来源。来源契约与更新时机见 [Host 配置](../host/configuration.md#动态来源)。
 
 ## 边界和排错
 

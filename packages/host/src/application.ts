@@ -1,6 +1,12 @@
+import { recordLoadedApplicationPlugins } from './loaded-modules'
+import { isAbsolute, resolve } from 'node:path'
 import { mergeConfigRecords } from './config-records'
 import { resolveInputBindings } from './input-bindings'
-import { createProductionSourceLoader } from './production-source-loader'
+import { createNativeSourceLoader } from './native-source-loader'
+import { discoverPluginSources } from './source-discovery'
+import { installPluginSources, pluginSource } from './source-contract'
+import { setHostCatalogProvenance } from './catalog-provenance'
+import type { PluginCatalogProvenance } from './catalog'
 import type { PluginConstructor } from '@pluxel/core'
 import type { HostService } from './services'
 import { createHost, type HostApplication, type HostRuntimeOptions, type PluginHost } from './host'
@@ -67,8 +73,11 @@ export function assertHostApplication(input: unknown): asserts input is HostAppl
 	assertFields(app, fields, '[host] Application')
 	if (!Array.isArray(app.plugins))
 		throw new TypeError('[host] Application plugins must be an array')
-	if (app.sources !== undefined && !Array.isArray(app.sources))
-		throw new TypeError('[host] Application sources must be an array')
+	if (app.sources !== undefined) {
+		if (!Array.isArray(app.sources))
+			throw new TypeError('[host] Application sources must be an array')
+		app.sources.forEach(pluginSource)
+	}
 	if (app.services !== undefined && !Array.isArray(app.services))
 		throw new TypeError('[host] Application services must be an array')
 	for (const key of ['envBindings', 'fileBindings'])
@@ -77,20 +86,53 @@ export function assertHostApplication(input: unknown): asserts input is HostAppl
 	if (app.prepare !== undefined && typeof app.prepare !== 'function')
 		throw new TypeError('[host] Application prepare must be a function')
 }
+function snapshotStartup(input: HostStartupContext): HostStartupContext {
+	const startup = record(input, '[host] startup')
+	assertFields(
+		startup,
+		new Set(['root', 'mode', 'env', 'bindings', 'deployment']),
+		'[host] startup',
+	)
+	if (typeof startup.root !== 'string' || !isAbsolute(startup.root))
+		throw new TypeError('[host] startup.root must be absolute')
+	if (!['development', 'production', 'test'].includes(startup.mode as string))
+		throw new TypeError('[host] startup.mode must be development, production or test')
+	const env = record(startup.env, '[host] startup.env')
+	for (const [key, value] of Object.entries(env))
+		if (value !== undefined && typeof value !== 'string')
+			throw new TypeError(`[host] startup.env.${key} must be a string or undefined`)
+	record(startup.bindings, '[host] startup.bindings')
+	if (startup.deployment !== undefined) {
+		const deployment = record(startup.deployment, '[host] startup.deployment')
+		assertFields(deployment, new Set(['root', 'target', 'variant']), '[host] startup.deployment')
+		if (typeof deployment.root !== 'string' || !isAbsolute(deployment.root))
+			throw new TypeError('[host] startup.deployment.root must be absolute')
+		if (
+			deployment.target !== 'node' ||
+			!['headless', 'workbench'].includes(deployment.variant as string)
+		)
+			throw new TypeError(
+				'[host] startup.deployment requires target node and variant headless or workbench',
+			)
+	}
+	return Object.freeze({
+		...input,
+		env: Object.freeze({ ...input.env }),
+		bindings: Object.freeze({ ...input.bindings }),
+		...(input.deployment ? { deployment: Object.freeze({ ...input.deployment }) } : {}),
+	})
+}
+
 /** Evaluate a fresh application against an isolated startup snapshot. */
 export async function resolveHostApplication(
 	factory: HostApplicationFactory,
 	input: HostStartupContext,
 ): Promise<ResolvedHostApplication> {
 	if (typeof factory !== 'function') throw new TypeError('[host] Application must be a factory')
-	const startup: HostStartupContext = Object.freeze({
-		...input,
-		env: Object.freeze({ ...input.env }),
-		bindings: Object.freeze({ ...input.bindings }),
-		...(input.deployment ? { deployment: Object.freeze({ ...input.deployment }) } : {}),
-	})
+	const startup = snapshotStartup(input)
 	const application = await factory(startup)
 	assertHostApplication(application)
+	recordLoadedApplicationPlugins(factory, application.plugins)
 	const { envBindings: _envBindings, fileBindings: _fileBindings, ...resolved } = application
 	const inputs = await resolveInputBindings(application, startup)
 	return {
@@ -104,7 +146,9 @@ export async function resolveHostApplication(
 			overlays: [...(resolved.configRecords?.overlays ?? []), ...inputs.overlays],
 		},
 		plugins: [...application.plugins],
-		...(application.sources ? { sources: [...application.sources] } : {}),
+		...(application.sources
+			? { sources: Object.freeze(application.sources.map(pluginSource)) }
+			: {}),
 		...(resolved.services ? { services: [...resolved.services] as readonly HostService[] } : {}),
 		config: {
 			...resolved.config,
@@ -120,52 +164,105 @@ export async function prepareHostApplication(
 	await application.prepare?.({ host, startup: application.startup })
 }
 
-/** Run the same declaration outside Vite. No transport, environment globals, or default services are installed. */
+/**
+ * Start from a fresh Node launcher before importing the application or its business dependency graph.
+ * Bind shared packages before evaluating the precompiled entry and its fixed imports. Node cannot
+ * prove the bindings of transitive modules evaluated outside this loader; that preload is unsupported.
+ */
 export async function runHostApplication(
-	application: HostApplicationFactory,
+	entry: string,
 	options: Readonly<{
-		startup: HostStartupContext
-		frameworkModules?: Readonly<Record<string, string>>
-		/** Exact Workbench transport version embedded by a production application build. */
-		workbenchCapnwebVersion?: string
+		startup: Omit<HostStartupContext, 'deployment'>
+		/** Packages whose public entries share the application's exact installation. Core/Host are always shared. */
+		sharedPackages?: readonly string[]
 	}>,
 ): Promise<PluginHost> {
-	const resolved = await resolveHostApplication(application, options.startup)
-	const loader = createProductionSourceLoader(
-		options.frameworkModules,
-		options.workbenchCapnwebVersion,
-	)
+	if (typeof entry !== 'string' || !entry.trim())
+		throw new TypeError('[host] native application entry must be a module path')
+	record(options, '[host] native application options')
+	if (Object.hasOwn(record(options.startup, '[host] startup'), 'deployment'))
+		throw new TypeError('[host] native module startup cannot declare a frozen deployment')
+	for (const key of Object.keys(options))
+		if (!['startup', 'sharedPackages'].includes(key))
+			throw new TypeError(`[host] native application unsupported ${key}`)
+	const startup = snapshotStartup(options.startup)
+	if (options.sharedPackages !== undefined && !Array.isArray(options.sharedPackages))
+		throw new TypeError('[host] sharedPackages must be an array')
+	const sharedPackages = options.sharedPackages ? [...options.sharedPackages] : undefined
+	const loader = await createNativeSourceLoader({
+		root: startup.root,
+		sharedPackages,
+	})
 	let host: PluginHost | undefined
 	try {
-		const common = {
-			plugins: resolved.plugins,
+		const application = await loader.loadApplication(resolve(startup.root, entry))
+		const resolved = await resolveHostApplication(application, startup)
+		const paths = await discoverPluginSources({
+			root: resolved.startup.root,
+			sources: resolved.sources ?? [],
+		})
+		const plugins = [...resolved.plugins]
+		const seen = new Set(plugins)
+		await loader.recordFixed(plugins)
+		const facts = new Map<PluginConstructor, PluginCatalogProvenance>(
+			plugins.map((plugin) => [
+				plugin,
+				{
+					execution: {
+						kind: 'native',
+						origin: 'fixed',
+						artifact: { kind: 'built-module' },
+						update: { kind: 'next-start' },
+					},
+				},
+			]),
+		)
+		for (const path of paths) {
+			const definitions = await loader.load(path)
+			for (const plugin of definitions)
+				if (!seen.has(plugin)) {
+					seen.add(plugin)
+					plugins.push(plugin)
+				}
+			for (const plugin of definitions)
+				if (!facts.has(plugin))
+					facts.set(plugin, {
+						moduleId: path,
+						execution: {
+							kind: 'native',
+							origin: 'source',
+							artifact: { kind: 'built-module' },
+							update: { kind: 'next-start' },
+						},
+					})
+		}
+		host = await createHost({
+			plugins,
 			config: resolved.config,
 			state: resolved.state,
 			configRecords: resolved.configRecords,
 			vaultBindings: resolved.vaultBindings,
 			services: resolved.services,
-		}
-		host = await createHost(
-			resolved.sources?.length
-				? {
-						...common,
-						root: resolved.startup.root,
-						sources: resolved.sources,
-						loadModule: loader.load,
-					}
-				: common,
-		)
-		host.ctx.effects.defer(() => loader.close(), { tag: 'ProductionSourceLoader' })
+		})
+		setHostCatalogProvenance(host.ctx, facts)
+		installPluginSources(host.ctx, {
+			root: resolved.startup.root,
+			sources: resolved.sources ?? [],
+			updates: 'next-start',
+		})
+		host.ctx.effects.defer(() => loader.close(), { tag: 'NativeSourceLoader', phase: 'shutdown' })
 		await prepareHostApplication(resolved, host)
 		await host.start()
 		return host
 	} catch (error) {
 		try {
-			await host?.close()
-		} catch (cleanup) {
-			throw new AggregateError([error, cleanup], '[host] application startup and cleanup failed', {
-				cause: cleanup,
-			})
+			const [cleanup] = await Promise.allSettled([host?.close()])
+			if (cleanup.status === 'rejected')
+				throw new AggregateError(
+					[error, cleanup.reason],
+					'[host] application startup and cleanup failed',
+					{ cause: error },
+				)
 		} finally {
 			loader.close()
 		}

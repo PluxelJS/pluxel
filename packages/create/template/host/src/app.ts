@@ -1,7 +1,7 @@
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
-import { dynamicSource } from '@pluxel/host/dynamic'
+import { pluginSource } from '@pluxel/host/sources'
 import { resolve } from 'node:path'
 import { product } from './product'
 import { exampleConfigRecords, examplePlugins, exampleHostState } from './runtime-state'
@@ -19,9 +19,9 @@ export default defineHostApplication(async (startup) => {
 		name: 'pluxel-example',
 		plugins: examplePlugins,
 		sources: [
-			dynamicSource({
+			pluginSource({
 				kind: 'directory',
-				path: resolve(dataRoot, 'managed-plugins'),
+				path: resolve(dataRoot, 'managed-plugins/entries'),
 				include: ['*.mjs'],
 			}),
 		],

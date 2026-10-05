@@ -53,15 +53,17 @@ describe('plugin execution presentation', () => {
 	}>([
 		{
 			execution: {
-				kind: 'static-bundle',
+				kind: 'native',
+				origin: 'fixed',
 				artifact: { kind: 'application-bundle' },
-				update: { kind: 'deployment' },
+				update: { kind: 'next-start' },
 			},
-			badge: '部署更新',
+			badge: '下次启动',
 		},
 		{
 			execution: {
-				kind: 'static-catalog',
+				kind: 'vite',
+				origin: 'fixed',
 				artifact: { kind: 'built-module' },
 				update: { kind: 'host-reload' },
 			},
@@ -69,15 +71,17 @@ describe('plugin execution presentation', () => {
 		},
 		{
 			execution: {
-				kind: 'static-catalog',
+				kind: 'vite',
+				origin: 'fixed',
 				artifact: { kind: 'source-module' },
-				update: { kind: 'manual' },
+				update: { kind: 'host-reload' },
 			},
-			badge: '手动重载',
+			badge: '宿主重载',
 		},
 		{
 			execution: {
-				kind: 'dynamic-fixed',
+				kind: 'vite',
+				origin: 'fixed',
 				artifact: { kind: 'built-module' },
 				update: { kind: 'host-reload' },
 			},
@@ -85,27 +89,30 @@ describe('plugin execution presentation', () => {
 		},
 		{
 			execution: {
-				kind: 'dynamic-entry',
+				kind: 'vite',
+				origin: 'source',
 				artifact: { kind: 'source-module' },
-				update: { kind: 'definition-hmr', scope: 'source-graph' },
+				update: { kind: 'definition-hmr' },
 			},
-			badge: '源码 HMR',
+			badge: '定义 HMR',
 		},
 		{
 			execution: {
-				kind: 'dynamic-entry',
+				kind: 'vite',
+				origin: 'source',
 				artifact: { kind: 'built-module' },
-				update: { kind: 'definition-hmr', scope: 'entry-only' },
+				update: { kind: 'definition-hmr' },
 			},
-			badge: '入口 HMR',
+			badge: '定义 HMR',
 		},
 		{
 			execution: {
-				kind: 'dynamic-entry',
-				artifact: { kind: 'unreported' },
-				update: { kind: 'definition-hmr', scope: 'entry-only' },
+				kind: 'vite',
+				origin: 'source',
+				artifact: { kind: 'built-module' },
+				update: { kind: 'definition-hmr' },
 			},
-			badge: '入口 HMR',
+			badge: '定义 HMR',
 		},
 		{
 			execution: {
@@ -122,16 +129,17 @@ describe('plugin execution presentation', () => {
 	it('describes fixed Vite plugins as complete Host replacements', () => {
 		expect(
 			describePluginExecution({
-				kind: 'static-catalog',
-				artifact: { kind: 'unreported' },
+				kind: 'vite',
+				origin: 'fixed',
+				artifact: { kind: 'built-module' },
 				update: { kind: 'host-reload' },
 			}),
 		).toMatchObject({
 			badgeLabel: '宿主重载',
 			badgeTone: 'orange',
-			artifactLabel: '制品未报告',
+			artifactLabel: '构建模块',
 			updateLabel: '应用及固定插件变化时重建宿主',
-			searchTerms: expect.arrayContaining(['host-reload', '宿主重载', '重建应用']),
+			searchTerms: expect.arrayContaining(['host-reload', '宿主重载', 'vite', 'fixed']),
 		})
 	})
 
@@ -198,9 +206,10 @@ describe('plugin execution presentation', () => {
 			address,
 			reference: 'forged display reference',
 			execution: {
-				kind: 'static-bundle',
+				kind: 'native',
+				origin: 'fixed',
 				artifact: { kind: 'application-bundle' },
-				update: { kind: 'deployment' },
+				update: { kind: 'next-start' },
 			},
 			recentUpdate: null,
 		})

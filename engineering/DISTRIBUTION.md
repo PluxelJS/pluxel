@@ -77,13 +77,9 @@ HTML、JavaScript、CSS、source map、native binary 或 runtime 行为。
 
 ## 动态来源的证明范围
 
-声明 `sources` 的应用仍可冻结宿主闭包。Freezer 为动态来源需要的公开框架入口生成确定路径的 facade chunks，
-它们与宿主实现来自同一次 bundle，且作为普通 server 文件进入 inventory。Bootstrap 将 specifier 到 facade URL 的映射
-传给生产来源 loader；Node resolve hook 只处理来源及其传递模块图，令安装插件复用宿主的 Core、Host、Runtime 和 Elysia 身份。
-来源关闭并等待 generation 退出后撤销 hook；这不提供原生 ESM 重新求值能力。
+standalone 是封闭 bundle，拒绝 sources；modules 编译输出保持真实 package imports 和 Node/Workbench inventory，原生启动按 runtime sharedPackages 准入共享身份，不生成 framework facade。交付边界由 [APPLICATION_BUILD](APPLICATION_BUILD.md) 维护。
 
-外部动态插件目录保持可变，必须位于 distribution root 外，不属于该宿主 artifact manifest 或 attestation 的声明范围。
-未来若要证明动态插件闭包，必须先物化出不可变完整 artifact set。
+modules finalization 同样记录整个已构建目录及其 inventory，不声称证明部署端外部 package 安装。外部来源目录保持可变，必须位于发行目录外，不属于该 artifact manifest/attestation；Package Manager 保留的 immutable revisions 由其发布记录维护，不自动进入宿主签名范围。
 
 ## 实现与验证
 

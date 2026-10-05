@@ -50,6 +50,7 @@ export const DISTRIBUTION_DSSE_PAYLOAD_TYPE = 'application/vnd.in-toto+json' as 
 export type TrustedDistributionKey = string | Buffer | KeyObject
 
 type DeploymentFacts = Readonly<{
+	kind: 'static-application' | 'modules-application'
 	name: string
 	catalogHash: string
 	variant: 'headless' | 'workbench'
@@ -66,7 +67,7 @@ export async function createDistributionManifest(rootInput: string): Promise<Plu
 		schemaVersion: 1,
 		kind: 'pluxel-artifact-set',
 		producer: {
-			kind: 'static-application',
+			kind: facts.kind,
 			target: 'node',
 			variant: facts.variant,
 		},
@@ -128,7 +129,7 @@ function parseDistributionManifest(bytes: Uint8Array): PluxelArtifactSetV1 {
 	const producer = readExactRecord(value.producer, 'distribution manifest.producer')
 	assertExactFields(producer, ['kind', 'target', 'variant'], 'distribution manifest.producer')
 	if (
-		producer.kind !== 'static-application' ||
+		(producer.kind !== 'static-application' && producer.kind !== 'modules-application') ||
 		producer.target !== 'node' ||
 		(producer.variant !== 'headless' && producer.variant !== 'workbench')
 	) {
@@ -151,7 +152,7 @@ function parseDistributionManifest(bytes: Uint8Array): PluxelArtifactSetV1 {
 		schemaVersion: 1,
 		kind: 'pluxel-artifact-set',
 		producer: {
-			kind: 'static-application',
+			kind: producer.kind,
 			target: 'node',
 			variant: producer.variant,
 		},
@@ -507,8 +508,12 @@ async function readDeploymentFacts(root: string): Promise<DeploymentFacts> {
 		parseJson(decodeUtf8(source, 'deployment manifest'), 'deployment manifest'),
 		'deployment manifest',
 	)
-	if (deployment.version !== 1 || deployment.kind !== 'pluxel-static-application') {
-		throw new TypeError('deployment manifest is not a Pluxel static application v1')
+	if (
+		deployment.version !== 1 ||
+		(deployment.kind !== 'pluxel-static-application' &&
+			deployment.kind !== 'pluxel-modules-application')
+	) {
+		throw new TypeError('deployment manifest is not a Pluxel application v1')
 	}
 	const application = readExactRecord(deployment.application, 'deployment manifest.application')
 	const name = application.name
@@ -531,6 +536,10 @@ async function readDeploymentFacts(root: string): Promise<DeploymentFacts> {
 		throw new TypeError('deployment manifest workbench.included must be a boolean')
 	}
 	return {
+		kind:
+			deployment.kind === 'pluxel-static-application'
+				? 'static-application'
+				: 'modules-application',
 		name,
 		catalogHash,
 		variant: workbench.included ? 'workbench' : 'headless',
@@ -545,6 +554,7 @@ async function assertManifestDeploymentFacts(
 	if (
 		manifest.application.name !== facts.name ||
 		manifest.application.catalogHash !== facts.catalogHash ||
+		manifest.producer.kind !== facts.kind ||
 		manifest.producer.target !== 'node' ||
 		manifest.producer.variant !== facts.variant
 	) {

@@ -2,7 +2,7 @@
 
 为 Pluxel Host 提供独立服务与官方组合。导入入口不会安装服务；资源由 Host 准备和关闭。
 
-根入口的 `standardServices()` 只组合 Elysia、Commands、Node artifacts、Workers 和 Persistence，不加载 Management、Logging 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，开发与发行使用 `@pluxel/services/vite`、`@pluxel/services/build`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 开发附件。开发控制台归 `@pluxel/host-dev/console`。
+根入口的 `standardServices()` 只组合 Elysia、Commands、Node artifacts、Workers 和 Persistence，不加载 Management、Logging 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 执行与构建使用 `@pluxel/services/vite`、`@pluxel/services/build`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。开发控制台归 `@pluxel/host-vite/console`。
 
 ```ts
 import { createHost } from '@pluxel/host'
@@ -37,3 +37,5 @@ Plugin 基于 `@pluxel/core`，通过 `ctx.require(Vault)` 或 `ctx.require(Comm
 `this.ctx.logger` 由 Core 始终提供，插件无需 import 日志包；宿主的 `logging(plan)` 配置输出、过滤和日志存储。
 
 完整用法与生命周期约束见 [组合 Host 服务](https://github.com/PluxelJS/pluxel/blob/main/docs/host/services.md)。
+
+`@pluxel/services/sources` 导出 `serviceSharedPackages`，供原生启动选择官方 token 的同一安装。Node 制品按实际 loaded owner 校验 inventory；运行用法见[Host 服务](../../docs/host/services.md)。

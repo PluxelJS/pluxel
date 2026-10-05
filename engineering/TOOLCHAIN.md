@@ -168,12 +168,13 @@ provider peers 由定义该 Part 的 package 持有，consumer package 不反射
 版本范围与依赖角色由作者维护的 `package.json` 声明；build 根据编译 facts 验证共享 provider 已声明在 `peerDependencies`、未留在普通依赖，且 optional 标记与 facts 相符，不自动从 dev/dependency 选择版本或搬移字段。同一 build 的多格式 output 读取同一 facts snapshot，下一次 `buildStart` 才重置；
 连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时只清理上一版生成的 manifest mapping；作者维护的 peer 与 optional metadata 保留，供作者按实际用途审查。metadata transaction 任何失败都会使 build 失败。
 
-两条 production route 只在输出拓扑处分叉：plugin package 保留 runtime peer boundary、dts 和 package exports；static
-application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
+同一 source pipeline 的交付拓扑由产物 owner 选择：plugin package 保留 runtime peer boundary、dts 和 package exports；
+modules application 保留外部包 imports，导出工厂与唯一编译 constructor；standalone application 追加完整 runtime closure、
+nf3 residual tracing、platform bootstrap 与 deployment assembly。具体边界见[应用构建](APPLICATION_BUILD.md)。不要把 static
 assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表。
 
 Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata，
-并由 Vite/OXC 提供 legacy decorator transform。Host-dev 自动组合该 pipeline；preprocessor 参与所有 environment，
+并由 Vite/OXC 提供 legacy decorator transform。Host-vite 自动组合该 pipeline；preprocessor 参与所有 environment，
 Plugin semantics、lint 和 config metadata 仅作用于 server environment。Workbench 单独拥有 browser compiler 与 UI singleton 策略。
 预处理插件在顶层注册 `configResolved`，使用原生 `applyToEnvironment` 布尔过滤 transform；配置钩子必须读取 Vite 解析后的 mode/env，不能放到 environment 工厂返回值中。
 源码解析添加 `@pluxel/hmr`、`@pluxel/source`，其余条件遵循 Vite 的 client/server 默认值：浏览器不启用 `node`，
@@ -181,13 +182,15 @@ Plugin semantics、lint 和 config metadata 仅作用于 server environment。Wo
 显式 `false` 保持关闭。项目无需再注册路径解析插件。浏览器直接引入 Node builtin 时，adapter 复用 Vite 解析结果：
 没有用户提供的浏览器实现而被 Vite externalize 的 builtin 立即报错，包含 import 与 importer；SSR 不受此 guard 影响。
 
-Host-dev 拥有专用 `pluxel` Vite environment、source watcher 和更新队列，应用声明、fixed imports、动态来源和
+Host-vite 拥有专用 `pluxel` Vite environment、source watcher 和更新队列，应用声明、fixed imports、动态来源和
 开发控制台都在该 environment 的单一 runner / evaluated namespace 求值。其 runner 禁用自动 HMR 求值，所有
 Host 更新由候选提交队列管理，并使用 source-aware stack mapping。Vite 自身负责 runner 与 environment 的关闭。
-Services 提供 HTTP carrier，Workbench 通过开发附件接入 artifact compiler。生产启动使用构建产物与生产来源加载器，
-不以另一个 Vite mode 充当生产 launcher。Vite 默认忽略生成态 `.pluxel`、日志与数据库目录。
+Services 提供 HTTP carrier，Workbench 通过开发附件接入 artifact compiler。Native 启动一次扫描预编译来源；
+`@pluxel/host-vite/run` 则拥有 production Vite 会话，复用同一个 runner/更新队列并读取编译 inventory，等待实际启动与排空关闭。
+仅改变普通 Vite CLI 的 mode 不建立该启动契约。用法见[Host 配置](../docs/host/configuration.md#vite-生产)。
+Vite 默认忽略生成态 `.pluxel`、日志与数据库目录。
 
-Host 的 source conditions、noExternal、singleton 与语义 collector 只作用于 `pluxel` environment。
+Host 的开发 source conditions、noExternal、singleton 与语义 collector 只作用于 `pluxel` environment。
 默认 `ssr` 和第三方 `ssrLoadModule` 保留 Vite 自己的环境工厂、解析策略和执行缓存；它们不加载 Host 的 Plugin 实例。
 第三方应提交普通数据，或使用已运行 Host 的服务 API；不能把另一 environment 求值出的 Plugin constructor 当作
 Host 同一 evaluated namespace。用户自定义 SSR factory 与 Host 专用 environment 可以共存。
@@ -203,8 +206,8 @@ CommonJS/native 与显式 singleton 交给 Node，其余交给 Vite。Singleton 
 选项均为项目级，因此保留显式 tsconfigPaths 选择和 legacy decorator 语法配置；不为声称完全隔离而引入额外解析器
 或一次额外 TypeScript/OXC parse。
 
-Host-dev 直接依赖 `@pluxel/rolldown/vite` 公共入口；workspace source conditions 选择当前源码，发布产物保留工具链外部依赖。
-Services 拥有 Node HTTP carrier，Host-dev 不复制 carrier 实现或维护另一套 source transform。
+Host-vite 直接依赖 `@pluxel/rolldown/vite` 公共入口；workspace source conditions 选择当前源码，发布产物保留工具链外部依赖。
+Services 拥有 Node HTTP carrier，Host-vite 不复制 carrier 实现或维护另一套 source transform。
 
 仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
 `@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的

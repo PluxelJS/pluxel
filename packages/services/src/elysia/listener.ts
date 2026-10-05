@@ -1,8 +1,8 @@
-import { requestWithSignal } from './request'
 import type { Server as NodeHttpServer, IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { resolve } from 'node:path'
 import { serve } from 'srvx/node'
-import { resolveApplicationAsset } from './assets'
+import { dispatchElysiaRequest } from './dispatch'
 import type { PluginHost } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
@@ -17,7 +17,7 @@ export async function listenElysia(
 		hostname?: string
 		/** Overrides PLUXEL_HOST_PORT / Portless PORT; defaults to 3000. Zero selects a free port. */
 		port?: number
-		/** Optional application public directory, served only after a non-reserved 404. */
+		/** Optional public directory, resolved against cwd at listener creation and served after a non-reserved 404. */
 		publicDir?: string
 	}> = {},
 ) {
@@ -25,6 +25,13 @@ export async function listenElysia(
 	const environment = resolveHostEnv()
 	const hostname = options.hostname ?? environment.hostBind ?? '0.0.0.0'
 	const port = options.port ?? environment.hostPort ?? 3000
+	const inputPublicDir = options.publicDir
+	if (
+		inputPublicDir !== undefined &&
+		(typeof inputPublicDir !== 'string' || !inputPublicDir.trim() || inputPublicDir.includes('\0'))
+	)
+		throw new TypeError('[host] publicDir must be a non-empty directory path')
+	const publicDir = inputPublicDir === undefined ? undefined : resolve(inputPublicDir)
 	if (!Number.isInteger(port) || port < 0 || port > 65535)
 		throw new TypeError('[host] port must be an integer from 0 to 65535')
 	let server: ReturnType<typeof serve> | undefined
@@ -80,7 +87,7 @@ export async function listenElysia(
 			port,
 			silent: true,
 			gracefulShutdown: false,
-			fetch: (request) => dispatch(request, http.fetch, carrier, options.publicDir),
+			fetch: (request) => dispatchElysiaRequest(request, http.fetch, carrier, publicDir),
 		})
 		node = server.node?.server as NodeHttpServer | undefined
 		if (!node) throw new Error('[host] HTTP listener has no Node server')
@@ -95,35 +102,11 @@ export async function listenElysia(
 			close,
 		})
 	} catch (error) {
-		try {
-			await close()
-		} catch (cleanup) {
-			throw new AggregateError([error, cleanup], '[host] HTTP startup and cleanup failed', {
-				cause: cleanup,
+		const [cleanup] = await Promise.allSettled([close()])
+		if (cleanup.status === 'rejected')
+			throw new AggregateError([error, cleanup.reason], '[host] HTTP startup and cleanup failed', {
+				cause: error,
 			})
-		}
 		throw error
 	}
-}
-
-async function dispatch(
-	request: Request,
-	fetch: (request: Request) => Response | Promise<Response>,
-	carrier: NodeElysiaApplicationCarrier,
-	publicDir?: string,
-): Promise<Response> {
-	// srvx propagates premature response closure through the ingress request signal.
-	const input = requestWithSignal(request, request.signal)
-	carrier.bindRequest(input, request)
-	const result = await fetch(input)
-	const pathname = new URL(input.url).pathname
-	if (
-		publicDir &&
-		result.status === 404 &&
-		pathname !== '/__pluxel' &&
-		!pathname.startsWith('/__pluxel/')
-	) {
-		return (await resolveApplicationAsset(input, publicDir)) ?? result
-	}
-	return result
 }

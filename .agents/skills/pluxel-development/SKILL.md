@@ -9,13 +9,13 @@ description: 开发、修改和排查 Pluxel 应用或插件时使用，优先�
 
 ## 先选能力
 
-| 要解决的问题                                | 首选入口                                  | 执行要求                                                       |
-| ------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
-| Plugin、Part、依赖、schema 或配置输入在哪里 | `@pluxel/rolldown/inspect`                | 定位声明、归属与源码位置；应用输入显式选择 `application`       |
-| 类型、lint、包声明或构建是否正确            | 项目 scripts、`pluxel workspace doctor`   | 执行实际检查；inspect 的 `checks` 只列脚本，不执行             |
-| 插件行为、配置、依赖或清理是否符合契约      | `@pluxel/test/vitest` + `@pluxel/test`    | 用真实 lowering 与隔离 host 验证相关成功、失败和清理路径       |
-| 运行中的应用是否采用修改、调用是否生效      | `pluxel dev` + `@pluxel/host-dev/console` | 发现现有实例，固定 root/instance，核对运行结果、领域报告与日志 |
-| 跨仓库源码解析或工具产物有问题              | `pluxel source`                           | 按源码工作区文档检查 overlay，按需构建精确 package             |
+| 要解决的问题                                | 首选入口                                   | 执行要求                                                       |
+| ------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| Plugin、Part、依赖、schema 或配置输入在哪里 | `@pluxel/rolldown/inspect`                 | 定位声明、归属与源码位置；应用输入显式选择 `application`       |
+| 类型、lint、包声明或构建是否正确            | 项目 scripts、`pluxel workspace doctor`    | 执行实际检查；inspect 的 `checks` 只列脚本，不执行             |
+| 插件行为、配置、依赖或清理是否符合契约      | `@pluxel/test/vitest` + `@pluxel/test`     | 用真实 lowering 与隔离 host 验证相关成功、失败和清理路径       |
+| 运行中的应用是否采用修改、调用是否生效      | `pluxel dev` + `@pluxel/host-vite/console` | 发现现有实例，固定 root/instance，核对运行结果、领域报告与日志 |
+| 跨仓库源码解析或工具产物有问题              | `pluxel source`                            | 按源码工作区文档检查 overlay，按需构建精确 package             |
 
 已知文件和声明时直接读源码；普通函数与任意 import 用 `rg`。不为局部修改扫描全仓库，也不为纯业务计算启动插件 host。
 

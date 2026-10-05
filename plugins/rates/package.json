@@ -47,5 +47,10 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^"
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
 	}
 }

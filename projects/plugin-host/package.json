@@ -5,9 +5,11 @@
 	"scripts": {
 		"dev": "pnpm exec turbo run build --filter=@pluxel/plugins-host^... --dangerously-disable-package-manager-check && pnpm exec vite --config vite.config.ts",
 		"build": "pnpm exec tsdown",
-		"start": "node dist/app.mjs",
+		"start": "node start.mjs",
 		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "pnpm exec tsc -p src/tsconfig.json --pretty false"
+		"test:runtime": "vitest run --config vitest.runtime.config.ts",
+		"typecheck": "pnpm exec tsc -p src/tsconfig.json --pretty false",
+		"start:vite": "NODE_ENV=production node start-vite.mjs"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "catalog:prod",
@@ -20,6 +22,7 @@
 		"@pluxel/echarts": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/host": "workspace:*",
+		"@pluxel/host-vite": "workspace:*",
 		"@pluxel/otel": "workspace:*",
 		"@pluxel/package-manager": "workspace:*",
 		"@pluxel/rates": "workspace:*",
@@ -29,15 +32,19 @@
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@pluxel/wretch": "workspace:*",
+		"@sinclair/typebox": "catalog:prod",
 		"capnweb": "catalog:prod",
+		"elysia": "catalog:prod",
+		"exact-mirror": "1.2.6",
+		"typebox": "catalog:dev",
 		"valibot": "catalog:validation",
-		"valibot-form": "workspace:^"
+		"valibot-form": "workspace:^",
+		"vite": "catalog:build"
 	},
 	"devDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
 		"@pluxel/cli": "workspace:*",
-		"@pluxel/host-dev": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
@@ -48,7 +55,6 @@
 		"react-dom": "catalog:frontend",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
-		"vite": "catalog:build",
 		"vitest": "catalog:test"
 	}
 }

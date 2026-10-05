@@ -47,6 +47,8 @@ export type PluginPackageOptions = PluginBuildPipelineOptions & {
 export type PluginBuildPipeline = {
 	plugins: TsdownPluginOption[]
 	inputOptions: TsdownInputOptions
+	/** Exact compiler facts used by application output ownership. */
+	semantics: ReturnType<typeof createPluginSemanticsPlugin>
 }
 
 /**
@@ -57,18 +59,21 @@ export type PluginBuildPipeline = {
  */
 export function createPluginBuildPipeline(
 	options: PluginBuildPipelineOptions,
+	selectWorkbenchDefinitions?: () => ReadonlySet<string>,
 ): PluginBuildPipeline {
 	const semantics = createPluginSemanticsPlugin({ root: options.root })
-	return createPipeline(options, semantics)
+	return createPipeline(options, semantics, selectWorkbenchDefinitions)
 }
 
 function createPipeline(
 	options: PluginBuildPipelineOptions,
 	semantics: ReturnType<typeof createPluginSemanticsPlugin>,
+	selectWorkbenchDefinitions?: () => ReadonlySet<string>,
 ): PluginBuildPipeline {
 	const workbench = options.workbench ?? {}
 	const workbenchOptions = workbench === false ? {} : workbench
 	return {
+		semantics,
 		plugins: [
 			PreprocessorDirectives(),
 			semantics.plugin,
@@ -83,8 +88,9 @@ function createPipeline(
 						? false
 						: {
 								minify: workbenchOptions.minify,
-								compilations: () => semantics.workbenchCompilations(),
-								contentCompilations: () => semantics.workbenchContentCompilations(),
+								compilations: () => semantics.workbenchCompilations(selectWorkbenchDefinitions?.()),
+								contentCompilations: () =>
+									semantics.workbenchContentCompilations(selectWorkbenchDefinitions?.()),
 							},
 				node: options.node,
 			}),
@@ -100,11 +106,12 @@ function createPipeline(
 /** Standard tsdown overlay for independently published plugin packages. */
 export function pluginPackage(
 	options: PluginPackageOptions,
-): Omit<InlineConfig, 'inputOptions' | 'plugins'> & PluginBuildPipeline {
+): Omit<InlineConfig, 'inputOptions' | 'plugins'> & Omit<PluginBuildPipeline, 'semantics'> {
 	const semantics = createPluginSemanticsPlugin({
 		root: options.root,
 		packageJsonPath: options.packageMetadata.packageJsonPath,
 	})
+	const { semantics: _collector, ...pipeline } = createPipeline(options, semantics)
 	return {
 		exports: {
 			// Keep linked development packages on the HMR source condition without exposing raw TS
@@ -114,10 +121,11 @@ export function pluginPackage(
 		deps: {
 			neverBundle: [/^@pluxel\//],
 		},
-		...createPipeline(options, semantics),
+		...pipeline,
 		onSuccess: createPluginDependencyMetadataHook({
 			packageJsonPath: options.packageMetadata.packageJsonPath,
 			manifestField: options.packageMetadata.manifestField,
+			workbenchArtifacts: options.workbench !== false,
 			log: options.packageMetadata.log,
 			collectPlugins: () => semantics.snapshot(),
 			collectWorkbenchTargets: async () => {

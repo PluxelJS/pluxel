@@ -7,62 +7,24 @@ import {
 } from '../src/execution'
 
 const validExecutions = [
+	...(['fixed', 'source'] as const).map((origin) => ({
+		kind: 'native',
+		origin,
+		artifact: { kind: 'built-module' },
+		update: { kind: 'next-start' },
+	})),
 	{
-		kind: 'static-bundle',
+		kind: 'native',
+		origin: 'fixed',
 		artifact: { kind: 'application-bundle' },
-		update: { kind: 'deployment' },
+		update: { kind: 'next-start' },
 	},
-	{
-		kind: 'static-catalog',
-		artifact: { kind: 'source-module' },
-		update: { kind: 'host-reload' },
-	},
-	{
-		kind: 'static-catalog',
-		artifact: { kind: 'built-module' },
-		update: { kind: 'manual' },
-	},
-	{
-		kind: 'static-catalog',
-		artifact: { kind: 'unreported' },
-		update: { kind: 'manual' },
-	},
-	{
-		kind: 'dynamic-fixed',
-		artifact: { kind: 'source-module' },
-		update: { kind: 'host-reload' },
-	},
-	{
-		kind: 'dynamic-fixed',
-		artifact: { kind: 'built-module' },
-		update: { kind: 'host-reload' },
-	},
-	{
-		kind: 'dynamic-fixed',
-		artifact: { kind: 'unreported' },
-		update: { kind: 'host-reload' },
-	},
-	{
-		kind: 'dynamic-entry',
-		artifact: { kind: 'source-module' },
-		update: { kind: 'definition-hmr', scope: 'source-graph' },
-	},
-	{
-		kind: 'dynamic-entry',
-		artifact: { kind: 'built-module' },
-		update: { kind: 'definition-hmr', scope: 'entry-only' },
-	},
-	{
-		kind: 'dynamic-entry',
-		artifact: { kind: 'unreported' },
-		update: { kind: 'definition-hmr', scope: 'entry-only' },
-	},
-	{
-		kind: 'unreported',
-		artifact: { kind: 'unreported' },
-		update: { kind: 'unreported' },
-	},
-] as const
+	...(['source-module', 'built-module'] as const).flatMap((kind) => [
+		{ kind: 'vite', origin: 'fixed', artifact: { kind }, update: { kind: 'host-reload' } },
+		{ kind: 'vite', origin: 'source', artifact: { kind }, update: { kind: 'definition-hmr' } },
+	]),
+	UNREPORTED_PLUGIN_EXECUTION,
+]
 
 describe('Plugin execution snapshots', () => {
 	it('accepts every closed execution branch and returns detached deep-frozen values', () => {
@@ -84,65 +46,57 @@ describe('Plugin execution snapshots', () => {
 	})
 
 	it.each([
-		[
-			'static bundle from a module',
-			{
-				kind: 'static-bundle',
-				artifact: { kind: 'built-module' },
-				update: { kind: 'deployment' },
-			},
-		],
-		[
-			'static catalog from the application bundle',
-			{
-				kind: 'static-catalog',
-				artifact: { kind: 'application-bundle' },
-				update: { kind: 'manual' },
-			},
-		],
-		[
-			'static catalog with an in-host catalog update',
-			{
-				kind: 'static-catalog',
-				artifact: { kind: 'source-module' },
-				update: { kind: 'catalog-hmr' },
-			},
-		],
-		[
-			'dynamic source with entry-only HMR',
-			{
-				kind: 'dynamic-entry',
-				artifact: { kind: 'source-module' },
-				update: { kind: 'definition-hmr', scope: 'entry-only' },
-			},
-		],
-		[
-			'dynamic build with source-graph HMR',
-			{
-				kind: 'dynamic-entry',
-				artifact: { kind: 'built-module' },
-				update: { kind: 'definition-hmr', scope: 'source-graph' },
-			},
-		],
-		[
-			'physical module id',
-			{
-				kind: 'dynamic-entry',
-				artifact: { kind: 'built-module', moduleId: 'file:///private/host/plugin.mjs' },
-				update: { kind: 'definition-hmr', scope: 'entry-only' },
-			},
-		],
-		[
-			'legacy source record',
-			{
-				kind: 'unreported',
-				artifact: { kind: 'unreported' },
-				update: { kind: 'unreported' },
-				source: '/private/host/plugin.ts',
-			},
-		],
-	] as const)('rejects dishonest or unsafe %s combinations', (_label, input) => {
-		expect(() => clonePluginExecutionSnapshot(input)).toThrow(/invalid|unsupported|must be/)
+		{
+			kind: 'native',
+			origin: 'source',
+			artifact: { kind: 'application-bundle' },
+			update: { kind: 'next-start' },
+		},
+		{
+			kind: 'native',
+			origin: 'fixed',
+			artifact: { kind: 'source-module' },
+			update: { kind: 'next-start' },
+		},
+		{
+			kind: 'native',
+			origin: 'source',
+			artifact: { kind: 'built-module' },
+			update: { kind: 'definition-hmr' },
+		},
+		{
+			kind: 'vite',
+			origin: 'fixed',
+			artifact: { kind: 'built-module' },
+			update: { kind: 'definition-hmr' },
+		},
+		{
+			kind: 'vite',
+			origin: 'source',
+			artifact: { kind: 'built-module' },
+			update: { kind: 'definition-hmr', scope: 'entry-only' },
+		},
+		{
+			kind: 'vite',
+			origin: 'source',
+			artifact: { kind: 'application-bundle' },
+			update: { kind: 'definition-hmr' },
+		},
+		{
+			kind: 'unreported',
+			origin: 'source',
+			artifact: { kind: 'unreported' },
+			update: { kind: 'unreported' },
+		},
+		{ kind: 'static-catalog', artifact: { kind: 'built-module' }, update: { kind: 'manual' } },
+		{
+			kind: 'native',
+			origin: 'source',
+			artifact: { kind: 'built-module', moduleId: '/private/file' },
+			update: { kind: 'next-start' },
+		},
+	])('rejects impossible or obsolete execution facts %#', (input) => {
+		expect(() => clonePluginExecutionSnapshot(input)).toThrow(/execution|unsupported|invalid/i)
 	})
 
 	it('accepts, detaches, and freezes every recent-update outcome', () => {

@@ -21,14 +21,16 @@ it('snapshots route execution facts only with accepted catalogs and releases the
 		})
 	const source: PluginCatalogProvenance = {
 		execution: {
-			kind: 'static-catalog',
+			kind: 'vite',
+			origin: 'fixed',
 			artifact: { kind: 'source-module' },
 			update: { kind: 'host-reload' },
 		},
 	}
 	const built: PluginCatalogProvenance = {
 		execution: {
-			kind: 'static-catalog',
+			kind: 'vite',
+			origin: 'fixed',
 			artifact: { kind: 'built-module' },
 			update: { kind: 'host-reload' },
 		},

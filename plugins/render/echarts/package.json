@@ -45,7 +45,7 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"@pluxel/host": "workspace:*",
-		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/host-vite": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -70,6 +70,9 @@
 		"pluginPackages": {
 			"@pluxel/canvas": "required",
 			"@pluxel/fonts": "required"
-		}
+		},
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
 	}
 }

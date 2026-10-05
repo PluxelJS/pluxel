@@ -1,6 +1,17 @@
-# 静态应用构建
+# 应用交付构建
 
 修改应用冻结、环境模板、Node bundle 闭包或部署装配时读本页。Plugin 声明语义由 [TOOLCHAIN](TOOLCHAIN.md) 拥有，browser/Node 独立制品由 [ARTIFACT_BUILD](ARTIFACT_BUILD.md) 拥有，最终 inventory/签名由 [DISTRIBUTION](DISTRIBUTION.md) 拥有。
+
+## 交付选择与 modules
+
+`pluxel({ delivery })` / `buildPreset({ delivery })` 将交付边界与 headless/workbench 资源 variant 分开。默认 standalone；modules 适合保留真实包边界及来源目录的应用。
+构建插件在创建时校验并捕获交付选项；后续修改原 options 或 residual package 数组不会改变异步构建的交付边界。
+
+modules 复用 `createPluginBuildPipeline` 的 lowering、config metadata、Node/Workbench 制品编译，不冻结 plugins 数组、不执行工厂。它编译本包相对模块，bare package imports 保持 external；明确的 public source exports 输出为对应 ESM entry，保留 package-root/subpath identity。`app.mjs` 默认导出应用工厂并保留 product/named exports，不自动启动。共享 parser 仍检查 application/bindings 声明；static catalog 限制只进入 standalone 分支。
+
+`package.json` 声明真实 output artifactRoot、Node/Workbench 制品能力和 modules 版本。`pluxel-modules.json` 保存编译所有权 definition 地址与实际 chunk SHA-256，原生解析工厂时验证文件、边界和摘要，然后仅给这些本地定义登记所属输出；不会把所有 source-entry 都冒充本包。Node/Workbench 服务按已求值 definition 的实际所属 package 读取 inventory，支持 compiled local source-entry。缺失或损坏的声明 inventory 明确失败，不回到源码编译。
+
+modules 的 `pluxel-deployment.json` kind 为 pluxel-modules-application，runtimeClosure 为 packages；最终文件仍通过既有 distribution finalizer。依赖由实际安装提供，运行数据放在发行目录外；产物可以搬移、删除 src 并只读运行。调用方显式 `runHostApplication` 并传 startup.root/sharedPackages；持续更新显式使用 Vite `/run`，用法见[Host 配置](../docs/host/configuration.md#生产构建)。
 
 ## Static application freezer
 
@@ -12,7 +23,7 @@ remote extraction 和 production preprocessing，然后生成以 canonical entry
 猜测 export、不静态求值 product，也不把产品字段复制进 deployment metadata。direct export、local export 与标准 re-export
 因此具有相同语义。fixed plugins、runtime 和可达的
 runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
-静态插件清单是部署合同：模块声明与导入的数组在模块求值、配置工厂执行及其 helper/callback 中都必须保持原始成员，不能通过赋值、别名、mutator 或动态 import 追加插件。检查器拒绝工厂中的明显赋值、删除、mutator、引用别名和向 helper 传递数组；允许 `map`、`slice` 等读取，但作者仍须保证 callback 没有修改原数组。该检查只覆盖有限语法，不做跨模块副作用分析，也不证明任意 JavaScript 的清单完整性。需要可变插件时使用显式 `sources` 来源合同。
+静态插件清单是部署合同：模块声明与导入的数组在模块求值、配置工厂执行及其 helper/callback 中都必须保持原始成员，不能通过赋值、别名、mutator 或动态 import 追加插件。检查器拒绝工厂中的明显赋值、删除、mutator、引用别名和向 helper 传递数组；允许 `map`、`slice` 等读取，但作者仍须保证 callback 没有修改原数组。该检查只覆盖有限语法，不做跨模块副作用分析，也不证明任意 JavaScript 的清单完整性。standalone 的 AST 分支拒绝任何 sources 声明；目录应用使用 modules。
 
 optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
 缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
@@ -60,14 +71,14 @@ Managed database driver 默认同时追踪 PGlite 与 `pg`；`managedDatabaseDri
 Production source map 可用 `sourcemapExcludeSources` 省略重复的 `sourcesContent`，仍保留 Node stack mapping 所需的
 source path、name 和 mapping；是否另存完整源码归档由 deployment/release policy 决定。
 
-Host 来源 resolver 只在真正执行 module resolution 时通过 `createRequire()` 加载 OXC native binding。普通 static
-application 虽然会从 runtime root 消费作者 API，但 tree-shake 后不得残留无调用者的 `oxc-resolver` side-effect import，
-也不得让 NF3 把其 native binding 复制进发行物。
+原生来源解析使用 Node registerHooks/createRequire，不依赖 OXC、Vite、Rolldown 或 chokidar；安装能力和运行期 artifact reader 的闭包也不包含这些编译/观察器。
 
 应用自己的 Node package 若通过 `createRequire()`、原生 binding loader 或运行时资源路径加载，可以在
 `residualDependencies.packages` 中声明；freezer 会从 application root 预解析并交给 NFT 追踪，即使它不在 ESM module graph
 中也会进入 distribution。无法由 NFT 静态发现的 package 内动态资源使用 `residualDependencies.fullTrace`，该列表自动隐含
 `packages`。显式声明但无法解析的 package 必须使构建失败；最终实际闭包仍以 `pluxel-deployment.json` 为准。
+`@pluxel/*` 名称本身不证明包属于框架：显式选择并完成 trace 的独立原生库仍可随产物保留完整包布局。
+Core/Host 的共享身份必须内联；显式把它们设为 residual，或 trace 闭包又携带它们，都使 standalone 构建失败。
 
 ### 装配、制品路径与 finalization
 
@@ -82,6 +93,8 @@ Workbench Shell、producer 和 Content plan 是 browser-facing outputs，不内�
 `workbench/public/`，producer 使用 `workbench/<producer>/<revision>/`，Content 使用
 `workbench/content/<definition-digest>/<content-set-digest>/content-plan.json`；Workbench root 分别写唯一
 `pluxel-workbench-producers.json` 与 `pluxel-workbench-content.json`。业务 SPA 可以独立输出到 `public/`，不会覆盖这些 inventory。
+standalone 只编译和收集固定 catalog 所有的 producer/Content；入图依赖包的其他 UI 不随整包复制。
+绑定事实与提前筛选的权威边界见 [制品构建](ARTIFACT_BUILD.md#production-build)。
 `variant: 'workbench'`
 表示产物具备能力；是否在某次启动安装 Workbench 仍由 application 配置工厂 返回值决定。
 headless 与 workbench 使用分离的 internal Node adapter；headless dependency graph 不解析 Workbench installer/backend，
@@ -89,7 +102,7 @@ headless 与 workbench 使用分离的 internal Node adapter；headless dependen
 
 ### URL 与磁盘目录分离
 
-开发 route 的 URL 输出由 `host-dev` 的共享 presenter 负责，static/dynamic 不各自推断 ingress。存在 Portless origin 时它显示同一
+开发 route 的 URL 输出由 `host-vite` 的共享 presenter 负责，固定与来源插件不各自推断 ingress。存在 Portless origin 时它显示同一
 origin 上的 Application `/` 与 Workbench `uiBasePath`；没有 Portless 时保留 Vite 原生 listener URL，并只追加 Workbench mount。
 Workbench-only host 若让 UI 拥有 `/`，不得虚构第二个 Application root。
 
@@ -102,4 +115,4 @@ Vite 只有在当前安装中确实存在 Workbench source entry 时才接入它
 
 实现从 `packages/rolldown/src/` 的 `pluxel()` preset、static application validator、CLI assembly 与 distribution finalizer 定位；环境投影位于 `rolldown/plugins/staticConfigEnvironment.ts` 和 `cli/static-config-environment-output.ts`。使用 [inspect](../docs/development/inspection.md) 核对实际应用输入，再沿 preset 调用定位装配阶段。
 
-验证静态清单非法 mutation、schema 无求值、环境模板不含值/secret、headless 不加载 Workbench、动态来源 facade 身份与 native residual 完整性。最终用搬离 workspace 的产物启动并检查 HTTP/所选服务；source-mode 单元测试不能替代发行验证。`.env.example` 回归见 `packages/rolldown/tests/static-config-environment-output.test.ts`，完整性回归见 `packages/rolldown/tests/distribution.test.ts`。
+验证静态清单非法 mutation、schema 无求值、环境模板不含值/secret、headless 不加载 Workbench、modules/原生来源的共享身份与 native residual 完整性。最终用搬离 workspace 的产物启动并检查 HTTP/所选服务；source-mode 单元测试不能替代发行验证。`.env.example` 回归见 `packages/rolldown/tests/static-config-environment-output.test.ts`，完整性回归见 `packages/rolldown/tests/distribution.test.ts`。

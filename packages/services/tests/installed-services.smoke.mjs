@@ -2,6 +2,7 @@ import { execFile as execFileCallback } from 'node:child_process'
 import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
@@ -71,6 +72,14 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 				'utf8',
 			),
 		).version
+		const elysiaRequire = createRequire(
+			await realpath(join(workspace, 'packages/services/node_modules/elysia/package.json')),
+		)
+		const bunTypes = JSON.parse(
+			await readFile(elysiaRequire.resolve('@types/bun/package.json'), 'utf8'),
+		).version
+		// Elysia beta.19 requires the Validator contract present in the project's pinned TypeBox.
+		const typeboxVersion = '1.3.23'
 		const elysiaVersion = JSON.parse(
 			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
 		).version
@@ -81,12 +90,17 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 				private: true,
 				type: 'module',
 				dependencies,
-				devDependencies: { '@types/node': nodeTypes, elysia: elysiaVersion },
+				devDependencies: {
+					'@types/node': nodeTypes,
+					'@types/bun': bunTypes,
+					elysia: elysiaVersion,
+					typebox: typeboxVersion,
+				},
 			}),
 		)
 		await writeFile(
 			join(root, 'pnpm-workspace.yaml'),
-			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+			JSON.stringify({ packages: ['.'], overrides: { ...dependencies, typebox: typeboxVersion } }),
 		)
 		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
 		for (const name of Object.keys(dependencies))
@@ -107,7 +121,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 					noEmit: true,
 					module: 'NodeNext',
 					target: 'ESNext',
-					types: ['node'],
+					types: ['node', 'bun'],
 				},
 				files: ['consumer.ts'],
 			}),
@@ -140,7 +154,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		).version
 
 		const viteVersion = JSON.parse(
-			await readFile(join(workspace, 'packages/host-dev/node_modules/vite/package.json'), 'utf8'),
+			await readFile(join(workspace, 'packages/host-vite/node_modules/vite/package.json'), 'utf8'),
 		).version
 		await writeFile(
 			join(root, 'package.json'),
@@ -151,6 +165,8 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 				dependencies,
 				devDependencies: {
 					'@types/node': nodeTypes,
+					'@types/bun': bunTypes,
+					typebox: typeboxVersion,
 					'@types/react': reactTypes,
 					vite: viteVersion,
 					elysia: elysiaVersion,
@@ -159,15 +175,15 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		)
 		await writeFile(
 			join(root, 'pnpm-workspace.yaml'),
-			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+			JSON.stringify({ packages: ['.'], overrides: { ...dependencies, typebox: typeboxVersion } }),
 		)
 		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
 		await writeFile(join(root, 'node-test.mjs'), nodeTestConsumer)
 		const nodeTestResult = await run(process.execPath, ['node-test.mjs'], root)
 		expect(nodeTestResult.stdout).toContain('ISOLATED_NODE_TEST_OK')
-		const hostDevTarball = join(root, 'host-dev.tgz')
-		await run('pnpm', ['pack', '--out', hostDevTarball], join(workspace, 'packages/host-dev'))
-		dependencies['@pluxel/host-dev'] = `file:${hostDevTarball}`
+		const hostViteTarball = join(root, 'host-vite.tgz')
+		await run('pnpm', ['pack', '--out', hostViteTarball], join(workspace, 'packages/host-vite'))
+		dependencies['@pluxel/host-vite'] = `file:${hostViteTarball}`
 		const consumerManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 		await writeFile(
 			join(root, 'package.json'),
@@ -175,7 +191,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		)
 		await writeFile(
 			join(root, 'pnpm-workspace.yaml'),
-			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+			JSON.stringify({ packages: ['.'], overrides: { ...dependencies, typebox: typeboxVersion } }),
 		)
 		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
 		await writeFile(join(root, 'bare-console.mjs'), bareConsoleConsumer)
@@ -296,13 +312,13 @@ import { workbenchService } from '@pluxel/workbench/service'
 import { requireWorkbench, createWorkbenchArtifactHandler } from '@pluxel/workbench/server'
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
-import type * as ConsoleContracts from '@pluxel/host-dev/console'
-import { host as viteHost } from '@pluxel/host-dev/vite'
+import type * as ConsoleContracts from '@pluxel/host-vite/console'
+import { host as viteHost } from '@pluxel/host-vite'
 import { servicesPreset } from '@pluxel/services/preset'
 import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
 import { elysiaDevelopment } from '@pluxel/services/elysia/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
-import { workbenchArtifacts } from '@pluxel/workbench/dev'
+import { workbenchArtifacts } from '@pluxel/workbench/vite'
 import { workbenchHttp } from '@pluxel/workbench/http'
 import { createWorkbenchShellHandler } from '@pluxel/workbench/shell'
 const uiHost = await createHost({ plugins: [], services: [workbenchService()] })
@@ -379,7 +395,7 @@ const hook = registerHooks({ load(url, context, next) {
  return next(url, context)
 } })
 const { createHost } = await import('@pluxel/host')
-const { createDevConsoleScope } = await import('@pluxel/host-dev/internal')
+const { createDevConsoleScope } = await import('@pluxel/host-vite/internal')
 const host = await createHost({ plugins: [] })
 const scope = createDevConsoleScope({ id: 'installed-services', ctx: host.ctx })
 try {
@@ -440,7 +456,7 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { writeFile, access } from 'node:fs/promises'
 const hook = registerHooks({ load(url, context, next) {
- if (/@pluxel[+/]host-dev/.test(url)) throw new Error('Node test compiler loaded development host: ' + url)
+ if (/@pluxel[+/]host-vite/.test(url)) throw new Error('Node test compiler loaded development host: ' + url)
  return next(url, context)
 } })
 const { createTestHost } = await import('@pluxel/test')

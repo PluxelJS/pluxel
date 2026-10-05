@@ -3,5 +3,5 @@
 	"compilerOptions": {
 		"types": ["node"]
 	},
-	"include": ["src/**/*.ts", "tsdown.config.ts", "vite.config.ts"]
+	"include": ["src/**/*.ts", "tsdown.config.ts", "vite.config.ts", "vite.runtime.config.ts"]
 }

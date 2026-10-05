@@ -46,6 +46,10 @@
 			"@pluxel/source": "./src/internal-test.ts",
 			"default": "./dist/internal/test.mjs"
 		},
+		"./internal/transport": {
+			"@pluxel/source": "./src/workbench/shared-transport.ts",
+			"default": "./dist/internal/transport.mjs"
+		},
 		"./react": {
 			"@pluxel/source": "./src/workbench/react.tsx",
 			"default": "./dist/react.mjs"
@@ -66,6 +70,10 @@
 			"@pluxel/source": "./src/test.ts",
 			"default": "./dist/test.mjs"
 		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -78,11 +86,13 @@
 			"./internal": "./dist/internal.mjs",
 			"./internal/react": "./dist/internal/react.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
+			"./internal/transport": "./dist/internal/transport.mjs",
 			"./react": "./dist/react.mjs",
 			"./server": "./dist/server.mjs",
 			"./service": "./dist/service.mjs",
 			"./shell": "./dist/shell.mjs",
 			"./test": "./dist/test.mjs",
+			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		},
 		"access": "public"
@@ -101,7 +111,8 @@
 		"@module-federation/sdk": "catalog:prod",
 		"@tanstack/query-core": "catalog:frontend",
 		"pathe": "catalog:node",
-		"valibot": "catalog:validation"
+		"valibot": "catalog:validation",
+		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
 		"@dagrejs/dagre": "catalog:prod",
@@ -117,7 +128,7 @@
 		"@module-federation/bridge-react": "catalog:frontend",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
-		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/host-vite": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -152,7 +163,7 @@
 		"@module-federation/bridge-react": "catalog:frontend",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
-		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/host-vite": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"capnweb": "catalog:prod",
@@ -161,7 +172,7 @@
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
-		"@pluxel/host-dev": {
+		"@pluxel/host-vite": {
 			"optional": true
 		},
 		"@pluxel/rolldown": {

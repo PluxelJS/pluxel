@@ -34,7 +34,7 @@ pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-h
 
 ```ts no-twoslash
 import { defineConfig } from 'vite'
-import { host } from '@pluxel/host-dev/vite'
+import { host } from '@pluxel/host-vite'
 
 export default defineConfig({
 	plugins: [
@@ -54,7 +54,7 @@ pnpm exec pluxel dev instances --root /absolute/project-root
 
 从返回结果确认 `root`、`pid` 和 `instanceId`。`application.state` 同时说明本次 Vite 进程的应用状态：`ready` 表示已有可运行 Host，`updating` 表示正在接纳候选，`unavailable` 表示尚无可运行 Host。`application.latestUpdate` 保留最近一次接纳的阶段、结果与安全诊断，首次启动失败时也可从 `instances` 查看；Vite 进程存在本身不代表应用可运行。修正源文件后同一进程可重新接纳。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
 
-控制台属于 `@pluxel/host-dev`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/services/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
+控制台属于 `@pluxel/host-vite`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/services/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
 
 省略 `devConsole` 不安装控制台。Vite integration 只在 serve 时安装。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
 
@@ -72,7 +72,7 @@ dev 命令会在连接前拒绝未知选项；例如拼错 `--instance` 会返�
 
 ```ts no-twoslash
 // dev/inspect.ts
-import { defineDevConsole } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-vite/console'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export default defineDevConsole(async (dev) => {
@@ -86,7 +86,7 @@ export default defineDevConsole(async (dev) => {
 需要写入数据时，在同一文件增加下面的 named export（合并已有 import）：
 
 ```ts no-twoslash
-import { defineDevConsole } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-vite/console'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export const add = defineDevConsole(async (dev) => {
@@ -154,10 +154,10 @@ export const increaseLimit = defineDevConsole(async (dev) => {
 
 ## 访问已安装服务
 
-脚本所在应用声明所需包依赖；`host-dev` 不引用这些包，也不提供服务代理。all/root 能力统一使用 `dev.ctx.require(Token)`。owner-only 能力仍必须通过实际插件 Context 使用，不能用 root 代替插件 owner。
+脚本所在应用声明所需包依赖；`host-vite` 不引用这些包，也不提供服务代理。all/root 能力统一使用 `dev.ctx.require(Token)`。owner-only 能力仍必须通过实际插件 Context 使用，不能用 root 代替插件 owner。
 
 ```ts no-twoslash
-import { defineDevConsole } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-vite/console'
 
 export default defineDevConsole(async (dev) => {
 	const input = dev.input
@@ -185,7 +185,7 @@ Commands、Workbench RPC 和日志查询同样调用各包现有 API，参见 [C
 需要调用已发布的 Workbench View 时，使用其真实 descriptor 推导 RPC 类型，无需手写代理接口：
 
 ```ts no-twoslash
-import { defineDevConsole } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-vite/console'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { openLocalWorkbenchEntry } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue } from '@pluxel/workbench/client'
@@ -212,7 +212,7 @@ export const inspectWorkbench = defineDevConsole(async (dev) => {
 日志可以在业务操作前标记位置，随后读取或等待相关记录：
 
 ```ts no-twoslash
-import { defineDevConsole } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-vite/console'
 import { Logging, markLogs, readLogs } from '@pluxel/services/logging'
 import { TodoPlugin } from '@example/todo-plugin'
 

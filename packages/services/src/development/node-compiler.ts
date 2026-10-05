@@ -259,7 +259,7 @@ export class NodeArtifactCompiler {
 
 	private async refreshNodeSourceFiles(entry: NodeModuleCompileEntry): Promise<void> {
 		if (!this.viteServer?.environments) return
-		const { HOST_VITE_ENVIRONMENT } = await import('@pluxel/host-dev/internal')
+		const { HOST_VITE_ENVIRONMENT } = await import('@pluxel/host-vite/internal')
 		const environment = this.viteServer?.environments?.[HOST_VITE_ENVIRONMENT]
 		if (!environment) return
 		let url = entry.entryPath

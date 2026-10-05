@@ -116,10 +116,11 @@ describe('Workbench UI HTML rendering', () => {
 		})
 		try {
 			const detach = await plugin.api!.pluxelHost.attach({
+				profile: 'development',
 				host,
 				server,
 				semantics: {} as never,
-				catalog: { modules: [], definitions: [] },
+				catalog: { modules: [], definitions: [], plugins: [] },
 			})
 			if (typeof detach !== 'function') throw new Error('source Shell did not return its cleanup')
 			const handle = createElysiaHandler(host)

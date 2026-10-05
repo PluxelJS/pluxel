@@ -1,16 +1,58 @@
+import { createModulesApplicationConfig } from './cli/modules-application'
 import type { TsdownPlugin, TsdownPluginOption, UserConfig } from 'tsdown'
 import {
 	createStaticApplicationConfig,
+	resolveResidualDependencies,
 	type StaticApplicationBuildOptions,
 } from './cli/static-application'
 
-export type PluxelApplicationBuildOptions = Pick<
-	StaticApplicationBuildOptions,
-	'variant' | 'launcher' | 'sourceFrameworks' | 'residualDependencies' | 'lint'
->
+export type PluxelApplicationBuildOptions =
+	| (Pick<StaticApplicationBuildOptions, 'variant' | 'launcher' | 'residualDependencies' | 'lint'> &
+			Readonly<{ delivery?: 'standalone' }>)
+	| Readonly<{
+			delivery: 'modules'
+			variant?: 'headless' | 'workbench'
+			lint?: boolean
+			launcher?: never
+			residualDependencies?: never
+	  }>
 
-/** Freeze one declarative application through the standard tsdown configuration and plugin list. */
+/** Build one declarative application with standalone or modules delivery. */
 export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugin {
+	if (
+		options.delivery !== undefined &&
+		options.delivery !== 'standalone' &&
+		options.delivery !== 'modules'
+	)
+		throw new TypeError('[pluxel:application] delivery must be standalone or modules')
+	for (const key of Object.keys(options))
+		if (!['delivery', 'variant', 'launcher', 'residualDependencies', 'lint'].includes(key))
+			throw new TypeError(`[pluxel:application] unsupported ${key}`)
+	if (
+		options.variant !== undefined &&
+		options.variant !== 'headless' &&
+		options.variant !== 'workbench'
+	)
+		throw new TypeError('[pluxel:application] variant must be headless or workbench')
+	if (options.lint !== undefined && typeof options.lint !== 'boolean')
+		throw new TypeError('[pluxel:application] lint must be a boolean')
+	if (options.delivery === 'modules')
+		for (const key of ['launcher', 'residualDependencies'])
+			if (Object.hasOwn(options, key))
+				throw new TypeError(`[pluxel:application] modules includes standalone-only ${key}`)
+	options =
+		options.delivery === 'modules'
+			? Object.freeze({ ...options })
+			: Object.freeze({
+					...options,
+					...(options.residualDependencies === undefined
+						? {}
+						: {
+								residualDependencies: Object.freeze(
+									resolveResidualDependencies(options.residualDependencies),
+								),
+							}),
+				})
 	const plugin: TsdownPlugin = {
 		name: 'pluxel:application',
 		async tsdownConfig(config) {
@@ -24,14 +66,24 @@ export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugi
 				!(Array.isArray(config.format) && config.format.length === 1 && config.format[0] === 'esm')
 			)
 				throw new TypeError('[pluxel:application] application deployment requires esm format')
-			const preset = createStaticApplicationConfig({
-				...options,
-				entry: applicationEntry(config.entry),
-				cwd: config.cwd,
-				outDir: config.outDir,
-				minify: config.minify === undefined ? true : Boolean(config.minify),
-				sourcemap: Boolean(config.sourcemap),
-			})
+			const preset =
+				options.delivery === 'modules'
+					? await createModulesApplicationConfig({
+							...options,
+							entry: applicationEntry(config.entry),
+							cwd: config.cwd,
+							outDir: config.outDir,
+							minify: config.minify === undefined ? true : Boolean(config.minify),
+							sourcemap: Boolean(config.sourcemap),
+						})
+					: createStaticApplicationConfig({
+							...options,
+							entry: applicationEntry(config.entry),
+							cwd: config.cwd,
+							outDir: config.outDir,
+							minify: config.minify === undefined ? true : Boolean(config.minify),
+							sourcemap: Boolean(config.sourcemap),
+						})
 			return {
 				...preset,
 				minify: config.minify ?? preset.minify,

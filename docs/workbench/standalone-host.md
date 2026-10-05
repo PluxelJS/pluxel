@@ -41,9 +41,9 @@ export class Viewer extends BasePlugin {
 
 ```ts
 import { defineConfig } from 'vite'
-import { host } from '@pluxel/host-dev/vite'
+import { host } from '@pluxel/host-vite'
 import { serviceSingletons } from '@pluxel/services/vite'
-import { workbenchArtifacts } from '@pluxel/workbench/dev'
+import { workbenchArtifacts } from '@pluxel/workbench/vite'
 
 export default defineConfig({
 	plugins: [serviceSingletons(), host({ entry: './app.ts' }), workbenchArtifacts()],

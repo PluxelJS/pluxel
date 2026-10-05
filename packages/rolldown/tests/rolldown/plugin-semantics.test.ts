@@ -149,6 +149,8 @@ describe('plugin semantic lowering', () => {
 			`${moduleId}?generation=1`,
 		)
 		const first = collector.definitions()[0]!.definition
+		expect(collector.definitionForBinding(`${moduleId}?active=1`, 'FirstPlugin')).toEqual(first)
+		expect(collector.definitionForBinding(inactiveModuleId, 'FirstPlugin')).toBeUndefined()
 		expect(collector.classifyDefinitionArtifact(first)).toBe('source-module')
 		expect(collector.classifyDefinitionArtifact(first, [`${moduleId}?active=1`])).toBe(
 			'source-module',
@@ -166,6 +168,10 @@ describe('plugin semantic lowering', () => {
 		const definitions = collector.definitions()
 		expect(definitions).toHaveLength(1)
 		expect(definitions[0]?.className).toBe('SecondPlugin')
+		expect(collector.definitionForBinding(moduleId, 'FirstPlugin')).toBeUndefined()
+		expect(collector.definitionForBinding(moduleId, 'SecondPlugin')).toEqual(
+			definitions[0]!.definition,
+		)
 		expect(collector.classifyDefinitionArtifact(first)).toBe('unreported')
 		expect(collector.classifyDefinitionArtifact(definitions[0]!.definition, [moduleId])).toBe(
 			'source-module',
@@ -186,6 +192,8 @@ describe('plugin semantic lowering', () => {
 
 		await transformWithExistingCollector(collector, source)
 		await transformWithExistingCollector(collector, preloweredDefinitionSource(definition))
+		expect(collector.definitionForBinding(import.meta.filename, 'BuiltPlugin')).toEqual(definition)
+		expect(collector.definitionForBinding(import.meta.filename, 'TrackedPlugin')).toBeUndefined()
 		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
 		expect(collector.classifyDefinitionArtifact(definition, [import.meta.filename])).toBe(
 			'built-module',
@@ -213,12 +221,14 @@ describe('plugin semantic lowering', () => {
 			lookalikeModule,
 		)
 		expect(collector.classifyDefinitionArtifact(definition, [lookalikeModule])).toBe('unreported')
+		expect(collector.definitionForBinding(lookalikeModule, 'BuiltPlugin')).toBeUndefined()
 
 		await transformWithExistingCollector(
 			collector,
 			preloweredDefinitionSource(definition, { abiVersion: 1 }),
 		)
 		expect(collector.classifyDefinitionArtifact(definition)).toBe('unreported')
+		expect(collector.definitionForBinding(import.meta.filename, 'BuiltPlugin')).toBeUndefined()
 
 		await transformWithExistingCollector(
 			collector,

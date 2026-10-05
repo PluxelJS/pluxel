@@ -10,7 +10,7 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { readHostPluginStatusOverview, readHostRecentUpdates } from '@pluxel/host/internal'
 import type { PluginHost } from '@pluxel/host'
 import { vitePreset } from '@pluxel/services/vite'
-import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-vite/internal'
 import {
 	createServer,
 	createLogger,
@@ -36,11 +36,6 @@ const plugins = vitePreset({
 		},
 	},
 })
-const routeEntry = plugins.at(-1)
-if (!routeEntry || typeof routeEntry !== 'object' || Array.isArray(routeEntry)) {
-	throw new Error('static Vite route plugin is missing')
-}
-const routePlugin = routeEntry as VitePlugin
 const errors: string[] = []
 const logger = createLogger('silent')
 logger.error = (message, options) => errors.push(`${message}: ${String(options?.error ?? '')}`)
@@ -59,6 +54,10 @@ const server = await createServer({
 	},
 })
 
+const routePlugin = server.config.plugins.find(
+	(plugin) => plugin.name === 'pluxel:host',
+) as VitePlugin
+assert.ok(routePlugin, 'Host route is missing')
 await server.listen()
 // This runner invokes the route hook directly so each write has one deterministic HMR operation.
 // A real listener is still required for the HTTP/WebSocket assertions, but its watcher must not
@@ -115,13 +114,15 @@ try {
 		pluginNodeAddressEqual(status.address, builtAddress),
 	)
 	assert.deepEqual(startupSourceStatus?.execution, {
-		kind: 'static-catalog',
+		kind: 'vite',
+		origin: 'fixed',
 		artifact: { kind: 'source-module' },
 		update: { kind: 'host-reload' },
 	})
 	assert.equal(startupSourceStatus?.recentUpdate?.batch.outcome, 'applied')
 	assert.deepEqual(startupBuiltStatus?.execution, {
-		kind: 'static-catalog',
+		kind: 'vite',
+		origin: 'fixed',
 		artifact: { kind: 'built-module' },
 		update: { kind: 'host-reload' },
 	})

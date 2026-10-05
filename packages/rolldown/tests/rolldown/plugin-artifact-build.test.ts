@@ -392,7 +392,8 @@ describe('pluginArtifactBuildPlugin', () => {
 					entry: expect.stringContaining('index.js'),
 				}),
 			])
-			const artifacts = await readdir(join(fixture.path, buildDir, 'artifacts/node'))
+			const files = await readdir(join(fixture.path, buildDir, 'artifacts/node'))
+			const artifacts = files.filter((file) => file.endsWith('.mjs'))
 			expect(artifacts).toHaveLength(1)
 			const task = await import(
 				pathToFileURL(join(fixture.path, buildDir, 'artifacts/node', artifacts[0]!)).href

@@ -19,23 +19,23 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 
 新应用直接采用[宿主配置](./configuration.md#应用入口)中的应用、Vite 与构建示例。三处声明分别决定本次运行的能力、开发附件和交付制品：
 
-| 入口                                            | 职责                               |
-| ----------------------------------------------- | ---------------------------------- |
-| `@pluxel/services/preset` 的 `servicesPreset()` | 返回运行时服务清单                 |
-| `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件           |
-| `@pluxel/services/build` 的 `buildPreset()`     | 携带 Shell、制品和动态插件共享入口 |
+| 入口                                            | 职责                            |
+| ----------------------------------------------- | ------------------------------- |
+| `@pluxel/services/preset` 的 `servicesPreset()` | 返回运行时服务清单              |
+| `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件        |
+| `@pluxel/services/build` 的 `buildPreset()`     | 选择应用交付并编译 Shell 与制品 |
 
 `servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。数据库或不同管理面组合应使用下文的显式服务安装器。
 
 `vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。`@pluxel/services/preset`、`@pluxel/services/vite`、`@pluxel/services/build` 分别拥有运行时、开发与发行的官方默认组合。`@pluxel/services` 根入口只提供 `standardServices()`，不加载 Management、Logging 或 Workbench 后端。
 
-开发控制台归 `@pluxel/host-dev`，基础 `host({ entry, devConsole: true })` 即可启用；官方 `vitePreset()` 接受同样的开关。它不要求安装服务。脚本显式 import 服务 API，通过借用的 `dev.ctx` 访问已安装能力；见[开发控制台](../development/dev-console.md)。Core 始终提供 `ctx.logger`，Logging 配置负责输出与存储，不是插件使用 logger 的前提。
+开发控制台归 `@pluxel/host-vite`，基础 `host({ entry, devConsole: true })` 即可启用；官方 `vitePreset()` 接受同样的开关。它不要求安装服务。脚本显式 import 服务 API，通过借用的 `dev.ctx` 访问已安装能力；见[开发控制台](../development/dev-console.md)。Core 始终提供 `ctx.logger`，Logging 配置负责输出与存储，不是插件使用 logger 的前提。
 
-生产 Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
+standalone Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位；modules 从已加载模块所属输出的 inventory 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
 `persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
-官方构建默认携带 Workbench shell，并维护动态插件所需的官方共享入口。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
+官方构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `buildPreset({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
 ## 创建宿主
 
@@ -119,11 +119,11 @@ await host.config.reset(owner, ['endpoint'])
 
 ```ts
 import { defineConfig } from 'vite'
-import { host } from '@pluxel/host-dev/vite'
+import { host } from '@pluxel/host-vite'
 import { serviceSingletons } from '@pluxel/services/vite'
 import { elysiaDevelopment } from '@pluxel/services/elysia/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
-import { workbenchArtifacts } from '@pluxel/workbench/dev'
+import { workbenchArtifacts } from '@pluxel/workbench/vite'
 
 export default defineConfig({
 	plugins: [
@@ -136,7 +136,7 @@ export default defineConfig({
 })
 ```
 
-`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。Workbench View 的开发源模块也共享所选 Workbench 安装中的 Cap’n Web，跨仓库链接无需应用配置额外 alias；模块接线不替代各包的依赖声明与兼容性检查。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-dev/vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
+`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。Workbench View 的开发源模块也共享所选 Workbench 安装中的 Cap’n Web，跨仓库链接无需应用配置额外 alias；模块接线不替代各包的依赖声明与兼容性检查。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
 
 ## 自定义组合的开发和生产接入
 
@@ -168,7 +168,7 @@ Vault、Database、Logging、Management、Workbench 另行加入服务数组；�
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
 生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
 开发不配置该目录，使用 `vitePreset()` 接入已安装 NodeModules 的源码编译器，或在 `host()` 旁显式添加 `nodeArtifacts()`。自行组合服务时同样把生产制品配置传给 `nodeModules()`。
-直接 `runHostApplication(application, { startup })`（`@pluxel/host`）返回普通 `PluginHost`，
+直接 `runHostApplication('./dist/app.mjs', { startup })`（`@pluxel/host`）返回普通 `PluginHost`，
 不创建监听器，也不增加 `fetch` 成员。
 
 应用 `tsdown.config.ts` 使用 `pluxel()`（`@pluxel/rolldown`）。`launcher: 'host'` 适合后台服务；
@@ -184,14 +184,9 @@ Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/stand
 
 ### 动态插件的共享入口
 
-`sourceFrameworks` 是未来动态 Plugin 可以借用的框架模块入口清单，不是前端框架选择或权限白名单。动态来源的未来 Plugin 无法从静态 import 图推导。使用底层 `@pluxel/rolldown` 时，用 `pluxel({ sourceFrameworks: [...] })`
-列出它们允许借用的选装框架作者入口，例如 `@pluxel/services/elysia`、`@pluxel/workbench` 和 `elysia/ws`。
-Core 基础作者入口固定提供；清单中的其他入口必须能从应用解析，并随部署一起打包，动态 Plugin 借用同一模块身份。
-构建时，Core、Host 与清单所选包的根入口和子路径统一从应用解析，避免依赖树中的多份物理安装生成不同的 capability token；这不额外收集未导入的子路径。部署安装 Workbench 时，target 发布包的制品事实和提供 target class 的基础库 peer 声明触发 `capnweb` 准入与宿主模块接线；私有 RPC 包保留自己的解析。
-`capnweb` 不放入 `sourceFrameworks`；最终 Host 应用直接安装它，共享边界的声明与实际解析必须兼容 Workbench。
-该清单不安装服务，也不扫描工作区发现服务；固定 Plugin 的依赖沿实际 import 图打包。
+原生固定 imports 与来源共享身份使用 `runHostApplication(..., { sharedPackages: serviceSharedPackages })`，清单来自 `@pluxel/services/sources`，包括 Services、Workbench、Commands 及其共享 token 依赖。Core/Host 始终由执行入口绑定；额外包从 startup.root 解析。需要自定义服务时追加 package name，并显式安装对应服务。
 
-官方 `@pluxel/services/build` 已包含默认服务的共享入口，Workbench variant 还包含 Workbench 作者入口；无需手写这份配套清单。需要自定义服务的动态插件时，`sourceFrameworks` 在官方清单上追加入口，例如 `buildPreset({ sourceFrameworks: ['@acme/service'] })`。应用仍须独立安装对应服务。
+该机制先验证实际安装版本与 importer 声明，再选择 canonical 安装。Workbench View/Attachment publisher 的 capnweb 使用 Workbench 所属的精确版本准入；私有 RPC 保留自身解析。`serviceSingletons()` 在 Vite 中使用同一共享包清单和版本原则。交付选择与完整启动示例见[Host 配置](./configuration.md#生产构建)。
 
 开发更新状态见 `host.status().recentUpdate` 或 Management 更新订阅，恢复语义见[HMR 失败与自动恢复](../development/tooling.md#hmr-失败与自动恢复)。
 动态 watcher 或恢复通知失败同样记录原始错误；已有 Host 仍运行时可报告 `retained-previous`，但这不保证失效 watcher 自动重建。首次应用求值失败、尚无 Host 时，先修复 Vite 日志中的错误，不能使用控制台查询。
@@ -253,7 +248,7 @@ export function clock() {
 
 创建顺序固定：验证插件目录和完整服务清单 → 编译 Context shape → 创建 root → 按依赖顺序准备服务 → 返回 Host。重复 token、属性冲突、缺失依赖和循环都在工厂调用前拒绝；不同 token 不按属性名互相替代。没有依赖关系时按当前可准备项的声明顺序执行。
 
-准备失败会清理已获取的资源，并拒绝 `createHost()`。如果清理也失败，`AggregateError` 保留原始准备异常作为 `cause`。关闭先停止新接纳和来源会话、排空图操作、停止 Plugin generation，再逆序释放服务；某项清理失败不阻止其余清理。`close()` 幂等，重复调用复用同一个 Promise。
+准备失败会清理已获取的资源，并拒绝 `createHost()`。如果清理也失败，`AggregateError` 保留原始准备异常作为 `cause`。Host 关闭先停止新接纳、排空图操作、停止 Plugin generation，再逆序释放服务；某项清理失败不阻止其余清理。`close()` 幂等，重复调用复用同一个 Promise。Vite 执行会话拥有来源 watcher，在关闭 Host 前停止并排空观察；Host replacement 复用该来源 owner，见[HMR](../../engineering/HMR.md#来源发现与资源所有权)。
 
 每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
 

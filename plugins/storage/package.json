@@ -54,5 +54,10 @@
 		"@pluxel/core": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@pluxel/workbench": "workspace:^"
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
 	}
 }

@@ -1,4 +1,5 @@
 import type { PluginDependencyMode } from '../rolldown/plugins/pluginSemanticsPlugin'
+import { relative, dirname } from 'node:path'
 import type { ResolvedConfig } from 'tsdown'
 import { runRules } from './rules'
 import { validateWorkbenchCapnwebPeer } from './workbench-peer'
@@ -11,12 +12,13 @@ export interface PluginDependencyMetadataOptions extends Pick<
 	log: BuildLogger
 	collectPlugins: () => Map<string, PluginDependencyMode>
 	collectWorkbenchTargets: () => Promise<boolean>
+	workbenchArtifacts: boolean
 }
 
 export function createPluginDependencyMetadataHook(
 	options: PluginDependencyMetadataOptions,
 ): BuildSuccessHook {
-	return async (_config: ResolvedConfig, signal: AbortSignal) => {
+	return async (config: ResolvedConfig, signal: AbortSignal) => {
 		const plugins = options.collectPlugins()
 		if (signal.aborted) return
 		let version: string | undefined
@@ -30,6 +32,9 @@ export function createPluginDependencyMetadataHook(
 			manifestField: options.manifestField,
 			pluginUsages: plugins,
 			workbenchCapnwebVersion: version,
+			workbenchArtifacts: options.workbenchArtifacts,
+			artifactRoot:
+				relative(dirname(options.packageJsonPath), config.outDir).replaceAll('\\', '/') || '.',
 		})
 		for (const message of updates ?? []) options.log(`[build] ${message}`)
 	}

@@ -27,13 +27,13 @@ describe('plugin catalog filter model', () => {
 	})
 
 	it('applies the same AND semantics across text and status filters', () => {
-		const tokens = parseSearchTokens('alpha @demo ref:plugin exec:source-graph')
+		const tokens = parseSearchTokens('alpha @demo ref:plugin exec:definition-hmr')
 		const status = {
 			name: 'Alpha Runner',
 			packageName: '@demo/plugin-alpha',
 			exportName: 'AlphaPlugin',
 			reference: 'package:@demo/plugin-alpha::AlphaPlugin',
-			executionSearchTerms: ['dynamic-entry', 'source-graph', 'source-module'],
+			executionSearchTerms: ['vite', 'definition-hmr', 'source-module'],
 			availability: 'available' as const,
 			lifecycleState: 'running' as const,
 		}
@@ -44,7 +44,7 @@ describe('plugin catalog filter model', () => {
 				'plugin-alpha',
 				{
 					...status,
-					executionSearchTerms: ['dynamic-entry', 'entry-only', 'built-module'],
+					executionSearchTerms: ['vite', 'next-start', 'built-module'],
 				},
 				tokens,
 				DEFAULT_STATUS_FILTER,

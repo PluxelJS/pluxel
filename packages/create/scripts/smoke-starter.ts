@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { request as httpRequest } from 'node:http'
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { requestDocument } from './smoke-navigation.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-create-smoke-'))
@@ -20,7 +20,7 @@ const publishRoots = [
 	'@pluxel/host',
 	'@pluxel/services',
 	'@pluxel/workbench',
-	'@pluxel/host-dev',
+	'@pluxel/host-vite',
 	'@pluxel/test',
 ] as const
 
@@ -55,7 +55,8 @@ try {
 	await runPnpm(['install', '--frozen-lockfile=false'], generatedRoot)
 	await runPnpm(['exec', 'pluxel', 'workspace', 'setup'], generatedRoot)
 	await runPnpm(['verify'], generatedRoot, { CI: '1' })
-	await verifyFrozenApplicationDistribution(generatedRoot)
+	await verifyModulesApplicationDistribution(generatedRoot)
+	await verifyProductionViteApplication(generatedRoot)
 	await verifyViteApplication(generatedRoot)
 } finally {
 	if (process.env.PLUXEL_KEEP_TEMPLATE_SMOKE) {
@@ -174,7 +175,7 @@ async function verifyDocumentationLink(generated: string): Promise<void> {
 	}
 }
 
-async function verifyFrozenApplicationDistribution(root: string): Promise<void> {
+async function verifyModulesApplicationDistribution(root: string): Promise<void> {
 	const dist = resolve(root, 'host/dist')
 	await runPnpm(['exec', 'pluxel', 'distribution', 'inspect', dist], root)
 	const deployment = JSON.parse(
@@ -184,7 +185,7 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 		capabilities?: { workbench?: { included?: boolean } }
 	}
 	if (
-		deployment.kind !== 'pluxel-static-application' ||
+		deployment.kind !== 'pluxel-modules-application' ||
 		deployment.capabilities?.workbench?.included !== true
 	) {
 		throw new Error('Created application deployment manifest is incomplete')
@@ -201,26 +202,28 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 		throw new Error(`Created application .env.example is incomplete: ${environmentExample}`)
 	}
 
-	const entry = pathToFileURL(resolve(dist, 'app.mjs')).href
+	const entry = pathToFileURL(resolve(root, 'host/start.mjs')).href
 	const smoke = [
+		"import { registerHooks } from 'node:module'",
+		'registerHooks({ resolve(id, context, next) { if (/^(?:vite|@pluxel\\/host-vite|@pluxel\\/rolldown|rolldown|oxc-parser|oxc-resolver|tsdown|tsx|typescript|chokidar)(?:$|\\/)/.test(id)) throw new Error(`Native loaded execution tools: ${id}`); return next(id, context) } })',
 		'const app = await import(process.argv[1])',
 		'try {',
 		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
 		'\tconst initial = await fetch(`${origin}/api/example/todos`)',
 		'\tconst initialTodos = await initial.json()',
-		"\tif (!initial.ok || initialTodos.items[0]?.title !== 'Trace a Todo from React to a Plugin' || initialTodos.maxItems !== 2) throw new Error(`Frozen Todo route or deployment config failed: ${initial.status}`)",
-		"\tconst created = await fetch(`${origin}/api/example/todos`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Smoke the frozen route' }) })",
-		'\tif (created.status !== 201 || (await created.json()).items.length !== 2) throw new Error(`Frozen Todo mutation returned ${created.status}`)',
+		"\tif (!initial.ok || initialTodos.items[0]?.title !== 'Trace a Todo from React to a Plugin' || initialTodos.maxItems !== 2) throw new Error(`Modules Todo route or deployment config failed: ${initial.status}`)",
+		"\tconst created = await fetch(`${origin}/api/example/todos`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Smoke the compiled route' }) })",
+		'\tif (created.status !== 201 || (await created.json()).items.length !== 2) throw new Error(`Modules Todo mutation returned ${created.status}`)',
 		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
-		'\tif (!page.ok || !(await page.text()).includes(\'<div id="root"></div>\')) throw new Error(`Frozen SPA fallback returned ${page.status}`)',
+		'\tif (!page.ok || !(await page.text()).includes(\'<div id="root"></div>\')) throw new Error(`Modules SPA fallback returned ${page.status}`)',
 		"\tconst workbench = await app.fetch(new Request(`${origin}/__pluxel/workbench/plugins`, { headers: { accept: 'text/html' } }))",
 		'\tconst workbenchHtml = await workbench.text()',
-		'\tif (!workbench.ok || !workbenchHtml.includes(\'content="/__pluxel/workbench"\')) throw new Error(`Frozen Workbench navigation returned ${workbench.status}: ${workbenchHtml.slice(0, 240)}`)',
+		'\tif (!workbench.ok || !workbenchHtml.includes(\'content="/__pluxel/workbench"\')) throw new Error(`Modules Workbench navigation returned ${workbench.status}: ${workbenchHtml.slice(0, 240)}`)',
 		'\tconst shellEntry = workbenchHtml.match(/<script[^>]* type="module"[^>]* src="([^"]+)"/)?.[1]',
-		"\tif (!shellEntry?.startsWith('/__pluxel/workbench/assets/')) throw new Error(`Frozen Workbench asset escaped the reserved namespace: ${shellEntry}`)",
+		"\tif (!shellEntry?.startsWith('/__pluxel/workbench/assets/')) throw new Error(`Modules Workbench asset escaped the reserved namespace: ${shellEntry}`)",
 		'\tconst shellAsset = await fetch(new URL(shellEntry, origin))',
 		'\tconst shellSource = await shellAsset.text()',
-		'\tif (!shellAsset.ok || !shellAsset.headers.get("content-type")?.includes("javascript") || shellSource.length === 0) throw new Error(`Frozen Workbench asset returned ${shellAsset.status}`)',
+		'\tif (!shellAsset.ok || !shellAsset.headers.get("content-type")?.includes("javascript") || shellSource.length === 0) throw new Error(`Modules Workbench asset returned ${shellAsset.status}`)',
 		'} finally {',
 		'\tawait app.stop()',
 		'}',
@@ -231,13 +234,42 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 	})
 }
 
+async function verifyProductionViteApplication(root: string): Promise<void> {
+	const port = await reservePort()
+	const entry = pathToFileURL(resolve(root, 'host/start-vite.mjs')).href
+	const smoke = [
+		`import { requestDocument } from ${JSON.stringify(new URL('./smoke-navigation.mjs', import.meta.url).href)}`,
+		'await import(process.argv[1])',
+		'const origin = `http://127.0.0.1:${process.env.PLUXEL_HOST_PORT}`',
+		'try {',
+		'\tconst todos = await fetch(`${origin}/api/example/todos`)',
+		"\tif (!todos.ok || (await todos.json()).items[0]?.title !== 'Trace a Todo from React to a Plugin') throw new Error('Production Vite Todo route failed')",
+		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
+		"\tif (!page.ok || !(await page.text()).includes('<div id=\"root\"></div>')) throw new Error('Production Vite compiled SPA failed')",
+		'\tconst workbench = await requestDocument(`${origin}/__pluxel/workbench/`)',
+		'\tconst html = workbench.text',
+		'\tconst script = html.match(/<script[^>]* type="module"[^>]* src="([^"]+)"/)?.[1]',
+		'\tconst asset = script ? await fetch(new URL(script, origin)) : undefined',
+		'\tif (workbench.status !== 200 || !html.includes(\'content="/__pluxel/workbench"\') || !script?.startsWith("/__pluxel/workbench/assets/") || !asset?.ok || !asset.headers.get("content-type")?.includes("javascript") || !(await asset.text()).length) throw new Error(`Production Vite compiled Workbench failed: HTML ${workbench.status}, script ${script ?? "<missing>"}, asset ${asset?.status ?? "<missing>"}; ${html.slice(0, 240)}`)',
+		"\tfor (const path of ['/@vite/client', '/@fs/etc/passwd', '/__pluxel/dev-console']) if ((await fetch(origin + path, { headers: { accept: 'text/html' } })).status !== 404) throw new Error(`Production exposed ${path}`)",
+		'} finally {',
+		"\tprocess.kill(process.pid, 'SIGTERM')",
+		'}',
+	].join('\n')
+	await runProcess(process.execPath, ['--input-type=module', '--eval', smoke, entry], root, {
+		NODE_ENV: 'production',
+		PLUXEL_HOST_PORT: String(port),
+		PLUXEL_DATA_ROOT: resolve(root, 'production-vite-data'),
+	})
+}
+
 async function verifyViteApplication(root: string): Promise<void> {
 	const consoleRoot = resolve(root, 'host/web')
 	const inspectionFile = resolve(consoleRoot, 'smoke-inspect.ts')
 	await writeFile(
 		inspectionFile,
 		[
-			"import { defineDevConsole } from '@pluxel/host-dev/console'",
+			"import { defineDevConsole } from '@pluxel/host-vite/console'",
 			"import { examplePlugins } from '../src/runtime-state'",
 			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
 			'export default defineDevConsole(async (dev) => ({',
@@ -373,34 +405,6 @@ async function waitForDocumentResponse(
 		await new Promise((accept) => setTimeout(accept, 250))
 	}
 	throw new Error(`Timed out waiting for document ${url}: ${String(lastError)}`)
-}
-
-function requestDocument(url: string): Promise<{ status: number; text: string }> {
-	return new Promise((resolveResponse, reject) => {
-		const request = httpRequest(
-			url,
-			{
-				headers: {
-					accept: 'text/html',
-					'sec-fetch-dest': 'document',
-					'sec-fetch-mode': 'navigate',
-				},
-			},
-			(response) => {
-				const chunks: Buffer[] = []
-				response.on('data', (chunk: Buffer) => chunks.push(chunk))
-				response.once('error', reject)
-				response.once('end', () => {
-					resolveResponse({
-						status: response.statusCode ?? 0,
-						text: Buffer.concat(chunks).toString('utf8'),
-					})
-				})
-			},
-		)
-		request.once('error', reject)
-		request.end()
-	})
 }
 
 function startVite(root: string, port: number) {

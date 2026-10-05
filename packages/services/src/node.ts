@@ -1,3 +1,4 @@
+import { readLoadedNodeArtifacts } from './node/packaged-artifacts'
 import {
 	installOwnerViewCapability,
 	installRootCapability,
@@ -34,5 +35,10 @@ export function nodeModules(options: NodeModuleArtifactHostOptions = {}) {
 				},
 			}),
 		],
+		async prepare({ ctx, plugins }) {
+			if (snapshot.root !== undefined || snapshot.resolve !== undefined) return
+			const artifacts = await readLoadedNodeArtifacts(plugins)
+			resolveContextCapability(ctx, NodeModuleHost).installLoadedArtifacts(artifacts)
+		},
 	})
 }

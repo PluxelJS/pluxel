@@ -1123,15 +1123,15 @@ importers:
       '@standard-schema/spec':
         specifier: catalog:prod
         version: 1.1.0
-      chokidar:
-        specifier: catalog:node
-        version: 5.0.0
       ohash:
         specifier: catalog:prod
         version: 2.0.12
       picomatch:
         specifier: catalog:prod
         version: 4.0.7
+      semver:
+        specifier: catalog:prod
+        version: 7.8.5
       std-env:
         specifier: catalog:prod
         version: 4.2.0
@@ -1154,11 +1154,14 @@ importers:
       '@types/picomatch':
         specifier: catalog:types
         version: 4.0.3
+      '@types/semver':
+        specifier: catalog:types
+        version: 7.8.0
       valibot:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)
 
-  packages/host-dev:
+  packages/host-vite:
     dependencies:
       '@pluxel/rolldown':
         specifier: workspace:^
@@ -1169,6 +1172,9 @@ importers:
       pathe:
         specifier: catalog:node
         version: 2.0.3
+      vite:
+        specifier: catalog:build
+        version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.0)(sass@1.105.0)(sugarss@5.0.1(postcss@8.5.28))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
     devDependencies:
       '@logtape/logtape':
         specifier: catalog:dev
@@ -1191,9 +1197,6 @@ importers:
       typescript:
         specifier: catalog:dev
         version: 7.0.2
-      vite:
-        specifier: catalog:build
-        version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.0)(sass@1.105.0)(sugarss@5.0.1(postcss@8.5.28))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
 
   packages/rolldown:
     dependencies:
@@ -1268,7 +1271,7 @@ importers:
         specifier: workspace:*
         version: link:../test
       '@pluxel/workbench':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../workbench
       '@rolldown/pluginutils':
         specifier: catalog:build
@@ -1370,9 +1373,9 @@ importers:
       '@pluxel/host':
         specifier: workspace:*
         version: link:../host
-      '@pluxel/host-dev':
+      '@pluxel/host-vite':
         specifier: workspace:*
-        version: link:../host-dev
+        version: link:../host-vite
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
@@ -1528,6 +1531,9 @@ importers:
       valibot:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)
+      yaml:
+        specifier: catalog:prod
+        version: 2.9.1
     devDependencies:
       '@dagrejs/dagre':
         specifier: catalog:prod
@@ -1568,9 +1574,9 @@ importers:
       '@pluxel/host':
         specifier: workspace:*
         version: link:../host
-      '@pluxel/host-dev':
+      '@pluxel/host-vite':
         specifier: workspace:*
-        version: link:../host-dev
+        version: link:../host-vite
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
@@ -2077,9 +2083,9 @@ importers:
       '@pluxel/host':
         specifier: workspace:*
         version: link:../../../packages/host
-      '@pluxel/host-dev':
+      '@pluxel/host-vite':
         specifier: workspace:*
-        version: link:../../../packages/host-dev
+        version: link:../../../packages/host-vite
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2291,9 +2297,9 @@ importers:
       '@pluxel/host':
         specifier: workspace:*
         version: link:../../../packages/host
-      '@pluxel/host-dev':
+      '@pluxel/host-vite':
         specifier: workspace:*
-        version: link:../../../packages/host-dev
+        version: link:../../../packages/host-vite
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2660,6 +2666,9 @@ importers:
       '@pluxel/host':
         specifier: workspace:*
         version: link:../../packages/host
+      '@pluxel/host-vite':
+        specifier: workspace:*
+        version: link:../../packages/host-vite
       '@pluxel/otel':
         specifier: workspace:*
         version: link:../../plugins/otel
@@ -2687,15 +2696,30 @@ importers:
       '@pluxel/wretch':
         specifier: workspace:*
         version: link:../../plugins/wretch
+      '@sinclair/typebox':
+        specifier: catalog:prod
+        version: 0.34.52
       capnweb:
         specifier: catalog:prod
         version: 0.12.0
+      elysia:
+        specifier: catalog:prod
+        version: 2.0.0-beta.19(@types/bun@1.3.14)(exact-mirror@1.2.6(typebox@1.3.23))(openapi-types@12.1.3)(typebox@1.3.23)(typescript@7.0.2)
+      exact-mirror:
+        specifier: 1.2.6
+        version: 1.2.6(typebox@1.3.23)
+      typebox:
+        specifier: 1.3.23
+        version: 1.3.23
       valibot:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)
       valibot-form:
         specifier: workspace:^
         version: link:../../packages/valibot-form
+      vite:
+        specifier: catalog:build
+        version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.0)(sass@1.105.0)(sugarss@5.0.1(postcss@8.5.28))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
     devDependencies:
       '@mantine/core':
         specifier: catalog:frontend
@@ -2706,9 +2730,6 @@ importers:
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../packages/cli
-      '@pluxel/host-dev':
-        specifier: workspace:*
-        version: link:../../packages/host-dev
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2739,9 +2760,6 @@ importers:
       typescript:
         specifier: catalog:dev
         version: 7.0.2
-      vite:
-        specifier: catalog:build
-        version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.0)(sass@1.105.0)(sugarss@5.0.1(postcss@8.5.28))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
         version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.0)(sass@1.105.0)(sugarss@5.0.1(postcss@8.5.28))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))

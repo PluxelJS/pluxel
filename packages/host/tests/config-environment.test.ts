@@ -7,11 +7,8 @@ import { expect, it } from 'vitest'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-	defineHostApplication,
-	resolveHostApplication,
-	runHostApplication,
-} from '../src/application'
+import { defineHostApplication, resolveHostApplication } from '../src/application'
+import { createHost } from '../src/host'
 import { createDocumentStorage } from './helpers/document-storage'
 
 const Config = v.object({
@@ -73,20 +70,23 @@ it('keeps env out of storage and reveals the saved value after env removal', asy
 		configRecords: { storage, initial: [{ owner, config: { limit: 2 } }] },
 		envBindings: [binding],
 	}))
-	const first = await runHostApplication(application, { startup })
+	const first = await createHost(await resolveHostApplication(application, startup))
+	await first.start()
 	const patched = await first.config.patch(owner, { limit: 8 })
 	expect(patched.ok).toBe(true)
 	await first.close()
-	const second = await runHostApplication(application, {
-		startup: { ...startup, env: { APP_LIMIT: '99' } },
-	})
+	const second = await createHost(
+		await resolveHostApplication(application, { ...startup, env: { APP_LIMIT: '99' } }),
+	)
+	await second.start()
 	expect(requireConfigService(second.ctx).getRawConfig(owner).limit).toBe(99)
 	const denied = await second.config.patch(owner, { limit: 99 })
 	expect(denied.ok).toBe(false)
 	const reset = await second.config.reset(owner)
 	expect(reset.ok).toBe(false)
 	await second.close()
-	const third = await runHostApplication(application, { startup })
+	const third = await createHost(await resolveHostApplication(application, startup))
+	await third.start()
 	try {
 		expect(requireConfigService(third.ctx).getRawConfig(owner).limit).toBe(8)
 	} finally {
@@ -123,9 +123,10 @@ it('validates a complete Vault record, rejects partial deployment inputs, and re
 		resolveHostApplication(application, { ...startup, env: { TOKEN: 'secret' } }),
 	).rejects.toMatchObject({ code: 'MISSING_INPUT' })
 	await expect(
-		runHostApplication(application, {
-			startup: { ...startup, env: { TOKEN: 'secret', EXPIRY: '12' } },
-		}),
+		resolveHostApplication(application, {
+			...startup,
+			env: { TOKEN: 'secret', EXPIRY: '12' },
+		}).then(createHost),
 	).rejects.toThrow(/host.vault-bindings/)
 })
 
@@ -211,7 +212,7 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 			kind: 'plugin',
 			definition: {
-				entry: { kind: 'package-root', packageName: '@test/bound-replacement' },
+				entry: { kind: 'source-entry', sourceSpace: 'test', path: 'bound.ts' },
 				exportName: 'Bound',
 			},
 		})
@@ -228,21 +229,24 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 			}),
 		],
 	})
-	const host = await runHostApplication(
-		defineHostApplication(() => ({
-			plugins: [Bound],
-			services: [service],
-			envBindings: [
-				envBinding(Bound, {
-					vault: {
-						schema: v.object({ credentials: tokenSchema }),
-						mapping: { credentials: { token: 'TOKEN' } },
-					},
-				}),
-			],
-		})),
-		{ startup: { ...startup, env: { TOKEN: 'one' } } },
+	const host = await createHost(
+		await resolveHostApplication(
+			defineHostApplication(() => ({
+				plugins: [Bound],
+				services: [service],
+				envBindings: [
+					envBinding(Bound, {
+						vault: {
+							schema: v.object({ credentials: tokenSchema }),
+							mapping: { credentials: { token: 'TOKEN' } },
+						},
+					}),
+				],
+			})),
+			{ ...startup, env: { TOKEN: 'one' } },
+		),
 	)
+	await host.start()
 	try {
 		expect(validations).toBe(1)
 		expect(installed).toEqual([expect.objectContaining({ value: { token: 'normalized:one' } })])
@@ -327,22 +331,25 @@ it('checks environment paths against replacement config metadata without another
 			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 			kind: 'plugin',
 			definition: {
-				entry: { kind: 'package-root', packageName: '@test/config-binding-replacement' },
+				entry: { kind: 'source-entry', sourceSpace: 'test', path: 'config-bound.ts' },
 				exportName: 'Bound',
 			},
 		})
 	}
-	const host = await runHostApplication(
-		defineHostApplication(() => ({
-			plugins: [BeforeConfigReplacement],
-			envBindings: [
-				envBinding(BeforeConfigReplacement, {
-					config: { schema: OriginalConfig, mapping: { enabled: 'ENABLED' } },
-				}),
-			],
-		})),
-		{ startup: { ...startup, env: { ENABLED: 'true' } } },
+	const host = await createHost(
+		await resolveHostApplication(
+			defineHostApplication(() => ({
+				plugins: [BeforeConfigReplacement],
+				envBindings: [
+					envBinding(BeforeConfigReplacement, {
+						config: { schema: OriginalConfig, mapping: { enabled: 'ENABLED' } },
+					}),
+				],
+			})),
+			{ ...startup, env: { ENABLED: 'true' } },
+		),
 	)
+	await host.start()
 	try {
 		await expect(host.updateCatalog([AfterConfigReplacement])).rejects.toMatchObject({
 			code: 'INVALID_BINDING',

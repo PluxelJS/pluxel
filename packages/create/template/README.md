@@ -12,8 +12,8 @@ pnpm exec pluxel workspace setup
 pnpm dev
 ```
 
-The host declares its fixed Plugin catalog and optional mutable sources in `host/src/app.ts`.
-Vite development and production builds consume that same `defineHostApplication(factory)` declaration.
+The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
+Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
 The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
 Logging, Vault, Management and optional Workbench. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
@@ -30,7 +30,8 @@ The starter policy already recognizes common React UI, testing, backend/data and
 extend the rules in `pncat.config.ts` when the product adopts a new dependency family.
 
 The host package build runs its one Vite config first, then [`host/tsdown.config.ts`](host/tsdown.config.ts)
-uses `pluxel()` and copies `host/web/dist` into `host/dist/public`. The host finally runs
+uses `buildPreset({ delivery: 'modules' })` from `@pluxel/services/build` and copies
+`host/web/dist` into `host/dist/public`. The host finally runs
 `pluxel distribution create` after that write so the distribution manifest covers browser assets.
 
 Workbench is enabled by default. It shares the Vite process but owns the non-root
@@ -45,12 +46,26 @@ PLUXEL_WORKBENCH=false pnpm dev
 The listener Portless allocates is an implementation detail. To bypass the named development ingress,
 run `pnpm dev:direct` or `PORTLESS=0 pnpm dev`.
 
-The application also declares `.pluxel/managed-plugins/*.mjs` as a mutable source, relative to the
-process working directory. `PLUXEL_DATA_ROOT` overrides the `.pluxel` directory for both
-mutable sources and persistence. Keep it outside the immutable `host/dist` distribution;
-use an absolute path in deployment. Publish built ESM Plugin entries there to make them available in the same
-catalog; availability does not automatically start a Plugin. Remove `sources` from `host/src/app.ts`
-when the application only needs its fixed imports. No Vite mode or second configuration is required.
+The application declares `.pluxel/managed-plugins/entries/*.mjs` as a source. `PLUXEL_DATA_ROOT`
+selects the data directory relative to the execution root; development uses `host/web`, while both
+production launchers use `host`. Set the same absolute path to share data between them, and keep it outside `host/dist`.
+Publish precompiled ESM there to make Plugins available in the catalog; availability does not start them.
+The declaration validates and freezes data. Native startup accepts one snapshot; Vite owns live observation.
+
+`pnpm build` emits modules delivery: `host/dist/app.mjs` exports the factory and product, package dependencies
+remain installed, and each example Plugin builds its public `dist/index.mjs` before the host. Local
+Plugin/Node/Workbench artifacts are compiled. `pnpm --dir host start`
+runs `host/start.mjs` in native Node and serves the compiled SPA and Workbench Shell. Publish sources before
+starting a fresh process to accept their new versions. The launcher binds before evaluating business imports;
+do not preload the application or its dependency graph. The host declares every package in the official
+shared list directly so binding does not depend on workspace hoisting.
+
+For continuous production updates, run `pnpm --dir host start:vite` after building. The independent
+`host/vite.runtime.config.ts` loads the same compiled factory; `host/start-vite.mjs` owns the production session
+and closes it on shutdown. It serves compiled assets and business HTTP/WebSocket without a development
+console or browser Vite middleware. For a deployment that omits development dependencies, first declare
+its execution tools as runtime dependencies with `pnpm --dir host add @pluxel/host-vite@catalog:pluxel vite@catalog:tooling`.
+Native deployment keeps these tools in development dependencies. Development continues to use `host/vite.config.ts` and the source factory.
 
 ## What the example demonstrates
 

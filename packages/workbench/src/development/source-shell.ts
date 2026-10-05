@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
-import type { HostDevelopmentPluginApi } from '@pluxel/host-dev/vite'
+import type { HostVitePluginApi } from '@pluxel/host-vite'
 import { attachWorkbenchSourceShell } from '../shell/mount'
 
 /** Serve an explicit Workbench browser entry through the existing Vite server. React/CSS transforms stay application-owned. */
@@ -10,7 +10,7 @@ export function workbenchSourceShell(
 		/** File path relative to Vite root, or an absolute file path. Required; no workspace guessing. */
 		entry: string
 	}>,
-): Plugin<HostDevelopmentPluginApi> {
+): Plugin<HostVitePluginApi> {
 	if (!options || typeof options.entry !== 'string' || !options.entry.trim())
 		throw new TypeError('[workbench] source Shell entry must be a non-empty file path')
 	const entry = options.entry
@@ -22,7 +22,9 @@ export function workbenchSourceShell(
 		},
 		api: {
 			pluxelHost: {
-				async attach({ host, server }) {
+				async attach({ host, server, profile }) {
+					if (profile !== 'development')
+						throw new TypeError('[workbench] source Shell is available only in development')
 					const file = resolve(server.config.root, entry)
 					const entryStat = await stat(file)
 					if (!entryStat.isFile())

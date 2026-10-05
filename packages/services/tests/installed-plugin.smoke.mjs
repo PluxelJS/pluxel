@@ -1,4 +1,4 @@
-// Built-artifact boundary: run after building Host, Host-dev and Rolldown.
+// Built-artifact boundary: run after building Host, Host-vite and Rolldown.
 import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,7 +12,7 @@ const { discoverDevInstances, runDevFile, selectDevInstance } = await import(
 		Buffer.from(stripTypeScriptTypes(clientSource, { mode: 'transform' })).toString('base64')
 )
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
-const require = createRequire(join(workspace, 'packages/host-dev/package.json'))
+const require = createRequire(join(workspace, 'packages/host-vite/package.json'))
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href)
 const { vitePreset } = await import(
 	pathToFileURL(join(workspace, 'packages/services/dist/vite.mjs')).href
@@ -23,6 +23,7 @@ const { readHostRecentUpdates } = await import(
 const root = await mkdtemp(join(tmpdir(), 'pluxel-installed-host-'))
 await mkdir(join(root, 'node_modules/@test/installed'), { recursive: true })
 await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
+await symlink(join(workspace, 'packages/core'), join(root, 'node_modules/@pluxel/core'), 'dir')
 await symlink(join(workspace, 'packages/host'), join(root, 'node_modules/@pluxel/host'), 'dir')
 await symlink(
 	join(workspace, 'packages/services'),
@@ -92,11 +93,15 @@ export const services=[elysia(),{name:'fixture.service',capabilities:[installRoo
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
-	`import {defineHostApplication} from '@pluxel/host';import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {dynamicSource} from '@pluxel/host/dynamic';export default defineHostApplication(() => ({services,plugins:[Installed],sources:[dynamicSource({kind:'directory',path:'./entries',include:['*.mjs','*.ts']}),{key:'diagnostic-probe',covers:()=>false,async open(options){globalThis.__installedHostSmokeSourceError=options.onError;return {entries:[],async close(){}}}}],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'},{definition:${JSON.stringify(typedDefinition)},variant:'default'}]}}}));`,
+	`import {defineHostApplication} from '@pluxel/host';import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {pluginSource} from '@pluxel/host/sources';export default defineHostApplication(() => ({services,plugins:[Installed],sources:[pluginSource({kind:'directory',path:'./entries',include:['*.mjs','*.ts']})],state:{initial:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'},{definition:${JSON.stringify(typedDefinition)},variant:'default'}]}}}));`,
 )
 globalThis.__installedHostSmoke = []
 globalThis.__typedHostSmoke = []
 let server
+const errors = []
+const latePackageChange = Promise.withResolvers()
+let pausePackageChange = false
+let packageChangeObserved = false
 async function until(check, label) {
 	const deadline = Date.now() + 10000
 	while (!check()) {
@@ -107,6 +112,7 @@ async function until(check, label) {
 					JSON.stringify({
 						installed: globalThis.__installedHostSmoke,
 						typed: globalThis.__typedHostSmoke,
+						errors,
 					}),
 			)
 		await delay(25)
@@ -121,14 +127,27 @@ try {
 			info() {},
 			warn() {},
 			warnOnce() {},
-			error() {},
+			error(message) {
+				errors.push(message)
+			},
 			clearScreen() {},
 			hasErrorLogged() {
 				return false
 			},
 		},
 		server: { port: 0, host: '127.0.0.1' },
-		plugins: [vitePreset({ entry: 'app.ts', devConsole: true })],
+		plugins: [
+			vitePreset({ entry: 'app.ts', devConsole: true }),
+			{
+				name: 'fixture:late-package-notification',
+				async watchChange(id) {
+					if (!pausePackageChange || id !== join(root, 'node_modules/@test/installed/index.mjs'))
+						return
+					packageChangeObserved = true
+					await latePackageChange.promise
+				},
+			},
+		],
 	})
 	await server.listen()
 	await until(() => globalThis.__installedHostSmoke.includes('fixed'), 'fixed plugin startup')
@@ -157,56 +176,56 @@ try {
 	const initial = await inspect()
 	assert.equal(initial.state, 'succeeded', JSON.stringify(initial))
 	assert.ok(initial.value.some((plugin) => plugin.address.definition.exportName === 'Installed'))
+	const latestUpdate = () =>
+		readHostRecentUpdates(globalThis.__installedHostSmokeContext)?.latestUpdate()
 	await writeFile(
 		join(root, 'entries/installed.mjs'),
 		`export {Installed} from '@test/installed'; // revision one\n`,
 	)
 	await until(() => globalThis.__installedHostSmoke.includes('one'), 'install')
+	await until(() => latestUpdate()?.state === 'settled', 'installed dependency watches ready')
+	const beforeUpgrade = latestUpdate().sequence
+	pausePackageChange = true
 	await writeFile(join(root, 'node_modules/@test/installed/index.mjs'), installed('two'))
 	await writeFile(
 		join(root, 'entries/installed.mjs'),
 		`export {Installed} from '@test/installed'; // revision two\n`,
 	)
 	await until(() => globalThis.__installedHostSmoke.includes('two'), 'upgrade')
+	await until(
+		() =>
+			latestUpdate()?.state === 'settled' &&
+			latestUpdate()?.outcome === 'applied' &&
+			latestUpdate()?.sequence > beforeUpgrade &&
+			latestUpdate()?.trigger === 'entries/installed.mjs',
+		'wrapper upgrade settled before its package notification',
+	)
+	await until(() => packageChangeObserved, 'real delayed package notification')
+	const acceptedUpgradeSequence = latestUpdate().sequence
+	pausePackageChange = false
+	latePackageChange.resolve()
+	// Console preparation drains the existing Host driver before taking this snapshot.
 	const upgraded = await inspect()
 	assert.equal(upgraded.state, 'succeeded', JSON.stringify(upgraded))
+	assert.equal(latestUpdate()?.sequence, acceptedUpgradeSequence, 'late bytes already consumed')
+	assert.equal(globalThis.__installedHostSmoke.filter((entry) => entry === 'two').length, 1)
 	const upgradedPlugin = upgraded.value.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
 	)
 	assert.equal(upgradedPlugin.recentUpdate.batch.outcome, 'applied')
 	assert.equal(upgradedPlugin.recentUpdate.batch.scope, 'definitions')
 	assert.deepEqual(upgradedPlugin.execution, {
-		kind: 'dynamic-entry',
+		kind: 'vite',
+		origin: 'source',
 		artifact: { kind: 'built-module' },
-		update: { kind: 'definition-hmr', scope: 'entry-only' },
+		update: { kind: 'definition-hmr' },
 	})
-	const latestUpdate = () =>
-		readHostRecentUpdates(globalThis.__installedHostSmokeContext)?.latestUpdate()
-	const beforeWatcherFailure = latestUpdate()
-	globalThis.__installedHostSmokeSourceError(new Error('source watcher failed'))
-	await until(
-		() => latestUpdate()?.sequence > beforeWatcherFailure.sequence,
-		'source watcher failure published',
-	)
-	assert.equal(latestUpdate().outcome, 'retained-previous')
-	assert.equal(latestUpdate().phase, 'evaluate')
-	assert.match(latestUpdate().error.message, /source watcher failed/)
-	const watcherFailure = await inspect()
-	assert.equal(watcherFailure.state, 'succeeded', JSON.stringify(watcherFailure))
-	assert.deepEqual(
-		watcherFailure.value.find(
-			(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
-		).recentUpdate,
-		upgradedPlugin.recentUpdate,
-		'watcher failure must not rewrite individual Plugin lifecycle history',
-	)
-	const watcherRetainedResponse = await fetch(new URL('/installed/two', listener))
-	assert.equal(await watcherRetainedResponse.text(), 'two')
-	const watcherSequence = latestUpdate().sequence
+	const candidateSequence = latestUpdate().sequence
 	await writeFile(join(root, 'entries/installed.mjs'), 'export const invalid = ;\n')
 	await until(
 		() =>
-			latestUpdate()?.sequence > watcherSequence && latestUpdate()?.outcome === 'retained-previous',
+			latestUpdate()?.sequence > candidateSequence &&
+			latestUpdate()?.outcome === 'retained-previous',
 		'failed candidate retained previous catalog',
 	)
 	const failedAttempt = latestUpdate()
@@ -232,6 +251,11 @@ try {
 	await until(
 		() => latestUpdate()?.outcome === 'applied' && latestUpdate().sequence > failedAttempt.sequence,
 		'failed candidate recovery',
+	)
+	assert.equal(
+		globalThis.__installedHostSmoke.filter((entry) => entry === 'two').length,
+		1,
+		'wrapper repair preserves the unchanged package definition',
 	)
 	const stoppedBeforeRemoval = globalThis.__installedHostSmoke.filter(
 		(entry) => entry === '-two',
@@ -259,9 +283,10 @@ try {
 		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
 	)
 	assert.deepEqual(typedPlugin.execution, {
-		kind: 'dynamic-entry',
+		kind: 'vite',
+		origin: 'source',
 		artifact: { kind: 'source-module' },
-		update: { kind: 'definition-hmr', scope: 'source-graph' },
+		update: { kind: 'definition-hmr' },
 	})
 	await rm(join(root, 'entries/typed.ts'))
 	await until(() => globalThis.__typedHostSmoke.includes('-ts-two'), 'TypeScript entry removal')
@@ -324,8 +349,6 @@ try {
 		'-one',
 		'two',
 		'-two',
-		'two',
-		'-two',
 		'-fixed',
 		'-service:one',
 		'service:failed',
@@ -346,6 +369,7 @@ try {
 	)
 	console.log('INSTALLED_PLUGIN_UPGRADE_SMOKE_OK', JSON.stringify(globalThis.__installedHostSmoke))
 } finally {
+	latePackageChange.resolve()
 	await server?.close()
 	await rm(root, { recursive: true, force: true })
 }

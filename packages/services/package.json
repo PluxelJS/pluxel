@@ -153,6 +153,10 @@
 			"@pluxel/source": "./src/preset.ts",
 			"default": "./dist/preset.mjs"
 		},
+		"./sources": {
+			"@pluxel/source": "./src/sources.ts",
+			"default": "./dist/sources.mjs"
+		},
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
 			"default": "./dist/vault.mjs"
@@ -205,6 +209,7 @@
 			"./persistence": "./dist/persistence.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
+			"./sources": "./dist/sources.mjs",
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
@@ -213,13 +218,13 @@
 		"access": "public"
 	},
 	"scripts": {
+		"bench:logger": "vitest bench bench/logger.bench.ts",
+		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts",
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit --pretty false",
 		"test": "pnpm exec vitest run",
 		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
-		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts",
-		"bench:logger": "vitest bench bench/logger.bench.ts",
-		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs"
+		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs",
+		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"@logtape/file": "catalog:prod",
@@ -245,7 +250,7 @@
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
-		"@pluxel/host-dev": "workspace:*",
+		"@pluxel/host-vite": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
@@ -270,7 +275,7 @@
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
-		"@pluxel/host-dev": "workspace:^",
+		"@pluxel/host-vite": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/workbench": "workspace:^",
 		"@tabler/icons-react": "catalog:icons",
@@ -294,7 +299,7 @@
 		"@pluxel/rolldown": {
 			"optional": true
 		},
-		"@pluxel/host-dev": {
+		"@pluxel/host-vite": {
 			"optional": true
 		},
 		"vite": {
@@ -320,6 +325,9 @@
 		"node": ">=24"
 	},
 	"pluxel": {
-		"workbenchCapnweb": "0.12.0"
+		"workbenchCapnweb": "0.12.0",
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
 	}
 }

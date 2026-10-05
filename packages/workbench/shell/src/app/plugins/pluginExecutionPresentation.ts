@@ -107,84 +107,56 @@ export function describePluginExecution(
 	execution: PluginExecutionSnapshot,
 ): PluginExecutionPresentation {
 	switch (execution.kind) {
-		case 'static-bundle':
+		case 'native':
 			return {
-				badgeLabel: '部署更新',
+				badgeLabel: '下次启动',
 				badgeTone: 'gray',
-				currentLabel: '应用静态构建',
-				artifactLabel: '应用 Bundle',
-				updateLabel: '部署新版本',
-				searchTerms: [
-					'static',
-					'bundle',
-					'static-bundle',
-					'application-bundle',
-					'deployment',
-					'静态构建',
-					'应用 Bundle',
-					'部署',
-				],
-			}
-		case 'static-catalog': {
-			const manual = execution.update.kind === 'manual'
-			return {
-				badgeLabel: manual ? '手动重载' : '宿主重载',
-				badgeTone: 'orange',
-				currentLabel: '静态插件目录',
+				currentLabel: execution.origin === 'fixed' ? 'Native 固定插件' : 'Native 来源插件',
 				artifactLabel: artifactLabel(execution.artifact.kind),
-				updateLabel: manual ? '手动重载插件目录' : '应用及固定插件变化时重建宿主',
+				updateLabel: '新进程启动时接纳发布',
 				searchTerms: [
-					'static',
-					'catalog',
-					'static-catalog',
+					'native',
+					execution.origin,
 					execution.artifact.kind,
-					execution.update.kind,
+					'next-start',
+					'下次启动',
+					'原生',
 					artifactLabel(execution.artifact.kind),
-					'静态目录',
-					...(manual ? ['手动重载'] : ['host-reload', '宿主重载', '重建应用']),
 				],
 			}
-		}
-		case 'dynamic-fixed':
-			return {
-				badgeLabel: '宿主重载',
-				badgeTone: 'orange',
-				currentLabel: '动态固定集合',
-				artifactLabel: artifactLabel(execution.artifact.kind),
-				updateLabel: '重载宿主后生效',
-				searchTerms: [
-					'dynamic',
-					'fixed',
-					'dynamic-fixed',
-					'host-reload',
-					execution.artifact.kind,
-					artifactLabel(execution.artifact.kind),
-					'动态固定',
-					'宿主重载',
-				],
-			}
-		case 'dynamic-entry': {
-			const sourceGraph = execution.update.scope === 'source-graph'
-			return {
-				badgeLabel: sourceGraph ? '源码 HMR' : '入口 HMR',
-				badgeTone: sourceGraph ? 'blue' : 'cyan',
-				currentLabel: '动态插件入口',
-				artifactLabel: artifactLabel(execution.artifact.kind),
-				updateLabel: sourceGraph ? '源码依赖图 HMR' : '仅监听插件入口',
-				searchTerms: [
-					'dynamic',
-					'entry',
-					'dynamic-entry',
-					'definition-hmr',
-					execution.update.scope,
-					execution.artifact.kind,
-					artifactLabel(execution.artifact.kind),
-					'hmr',
-					'动态入口',
-					sourceGraph ? '源码 HMR' : '入口 HMR',
-				],
-			}
-		}
+		case 'vite':
+			return execution.origin === 'fixed'
+				? {
+						badgeLabel: '宿主重载',
+						badgeTone: 'orange',
+						currentLabel: 'Vite 固定插件',
+						artifactLabel: artifactLabel(execution.artifact.kind),
+						updateLabel: '应用及固定插件变化时重建宿主',
+						searchTerms: [
+							'vite',
+							'fixed',
+							execution.artifact.kind,
+							'host-reload',
+							'宿主重载',
+							artifactLabel(execution.artifact.kind),
+						],
+					}
+				: {
+						badgeLabel: '定义 HMR',
+						badgeTone: 'blue',
+						currentLabel: 'Vite 来源插件',
+						artifactLabel: artifactLabel(execution.artifact.kind),
+						updateLabel: 'Vite 模块依赖图更新',
+						searchTerms: [
+							'vite',
+							'source',
+							execution.artifact.kind,
+							'definition-hmr',
+							'hmr',
+							'定义 HMR',
+							artifactLabel(execution.artifact.kind),
+						],
+					}
 		case 'unreported':
 			return {
 				badgeLabel: '更新未报告',

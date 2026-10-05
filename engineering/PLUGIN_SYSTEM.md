@@ -13,14 +13,14 @@ Plugin / PluginPart 源码声明
   → 可选 Workbench 发布业务能力的 UI 投影
 ```
 
-| 所有者              | 持有的事实与责任                                          | 边界                                   |
-| ------------------- | --------------------------------------------------------- | -------------------------------------- |
-| Context             | 同步、严格惰性、固定 shape 的 capability kernel           | 不管理 IO 或 Plugin lifecycle          |
-| Core                | identity、DI graph、generation、effects、配置事实         | 不决定来源、持久化、HTTP 或进程策略    |
-| Host                | 服务准备/关闭、catalog、运行意图、配置持久策略、协调事务  | 使用 Core 唯一的 graph/lifecycle       |
-| Services            | 显式安装 HTTP、Commands、存储、Logging、Management 等能力 | 每项能力拥有自己的资源与 owner view    |
-| Host-dev / Rolldown | Vite 开发驱动、语义编译、源码查询与发行制品               | 构建工具不成为生产业务服务             |
-| Workbench           | publication、layout、opened targets、Shell/renderer       | 投影业务能力，不持有业务状态或业务依赖 |
+| 所有者               | 持有的事实与责任                                          | 边界                                              |
+| -------------------- | --------------------------------------------------------- | ------------------------------------------------- |
+| Context              | 同步、严格惰性、固定 shape 的 capability kernel           | 不管理 IO 或 Plugin lifecycle                     |
+| Core                 | identity、DI graph、generation、effects、配置事实         | 不决定来源、持久化、HTTP 或进程策略               |
+| Host                 | 服务准备/关闭、catalog、运行意图、配置持久策略、协调事务  | 使用 Core 唯一的 graph/lifecycle                  |
+| Services             | 显式安装 HTTP、Commands、存储、Logging、Management 等能力 | 每项能力拥有自己的资源与 owner view               |
+| Host-vite / Rolldown | Vite 执行与更新、语义编译、源码查询与发行制品             | native 不加载编译工具；生产 Vite 显式持有执行工具 |
+| Workbench            | publication、layout、opened targets、Shell/renderer       | 投影业务能力，不持有业务状态或业务依赖            |
 
 Services 组合入口可选择 Workbench，Workbench 消费 Services 叶子入口；实际模块依赖和导出约束由 [GOVERNANCE](GOVERNANCE.md) 维护。
 

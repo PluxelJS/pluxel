@@ -9,6 +9,8 @@ allowBuilds:
 
 catalogs:
   backend:
+    '@sinclair/typebox': ^0.34.52
+    exact-mirror: 1.2.6
     elysia: 2.0.0-beta.19
     typebox: 1.3.23
   frontend:
@@ -29,7 +31,7 @@ catalogs:
     '@pluxel/services': ^0.1.0
     '@pluxel/workbench': ^0.1.0
     '@pluxel/rolldown': ^1.0.0
-    '@pluxel/host-dev': ^1.0.0
+    '@pluxel/host-vite': ^1.0.0
     '@pluxel/test': ^1.0.0
   validation:
     valibot: ^1.5.0

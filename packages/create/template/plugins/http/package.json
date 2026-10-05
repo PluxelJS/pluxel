@@ -6,24 +6,35 @@
 		".": {
 			"types": "./src/index.ts",
 			"@pluxel/hmr": "./src/index.ts",
-			"default": "./src/index.ts"
+			"default": "./dist/index.mjs"
 		}
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit --pretty false"
+		"typecheck": "tsc --noEmit --pretty false",
+		"build": "pluxel build"
 	},
 	"dependencies": {
 		"@example/domain": "workspace:*",
-		"@example/todo-plugin": "workspace:*",
-		"@pluxel/core": "catalog:pluxel",
-		"@pluxel/services": "catalog:pluxel",
 		"elysia": "catalog:backend"
 	},
 	"devDependencies": {
+		"@example/todo-plugin": "workspace:*",
+		"@pluxel/cli": "catalog:pluxel",
+		"@pluxel/core": "catalog:pluxel",
 		"@pluxel/host": "catalog:pluxel",
+		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@example/todo-plugin": "*",
+		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/services": "catalog:pluxel"
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true
 	}
 }

@@ -1,76 +1,31 @@
 # Package Manager 插件设计
 
-## 所有权
+## 所有权与消费
 
-```text
-PackageManagerPlugin
-  ├─ @pnpm/napi adapter + managed manifest/lockfile/node_modules
-  ├─ package.install / package.remove commands
-  ├─ owner-bound Direct View target + /packages route
-  └─ atomic entries/*.mjs publication
-                         │ file add/change/unlink
-                         ▼
-@pluxel/host/dynamic  source discovery -> shared loader -> Host graph transaction
-```
+Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、commands 和可选 Direct View。Host 只消费普通 ESM wrapper；不读取安装私有状态。init 在任何 native/文件/UI 副作用前用 requirePluginSource 校验 rootDir/entries，返回 next-start/live 事实。Native 下次新进程启动扫描；Vite 独立报告目录事务与 lifecycle。
 
-package acquisition 是可替换的产品策略；file-source lifecycle 是 dynamic route 的机制。两者只共享 ESM 文件协议。
-Host 来源层不知道 registry、market、版本选择、lockfile、安装进度或管理 UI，package plugin 不调用 loader 或直接修改 running
-plugin instance。
+## 不可变安装与发布
 
-插件只允许在声明了 `rootDir/entries` 与 `['*.mjs']` 的 dynamic host generation 中运行。`init()` 先解析目标目录并通过
-`@pluxel/host/dynamic/source-producer` 校验声明，之后才加载 `@pnpm/napi`、创建 managed project、发布 entry 或注册
-commands/Workbench publication。校验只读取 route generation 的 resolved declaration，不扫描文件系统，也不返回 loader handle。
+每次 mutation 将完整 manifest 交给一次 pnpm install，私有 revisions/<uuid> 保存 manifest/lockfile/node_modules 链接和 inner entries。global virtual store 位于 root/slots，copy 导入包字节；相同 resolution、peer context 和依赖图复用同一物理 slot，A/B 不会因安装批次得到两份共同 P。
 
-## Mutation model
+pnpm v9 graph fingerprint 包含 resolution、peer、optional 和可达依赖；实际 slot 闭包字节再做摘要。图与字节未变时必须保留同一物理路径与旧 inner entry，改变了就拒绝。图变化的包使用新 inner entry。未知图不做保守全量重发，明确拒绝。
 
-`@pnpm/napi` 暴露 full-manifest `install()`，不是 selected `add/remove`。store 因而维护一个受控 private manifest：
+published-installation.json 是当前安装选择的唯一 authority；准备失败保持原记录。保存新记录后逐项原子交换公开 entries/<encoded-name>.mjs，撤回 stale wrapper。不是 batch atomic：IO 失败后按实际 wrapper 比对给出部分成功回执；snapshot 的 entryFile 只有与当前 authority 一致时存在。下一 mutation 可以重试发布，initialize 不修复错误合同。
 
-1. parse 并去重一批输入；
-2. 在 manifest copy 上应用 dependency change；
-3. 把完整 in-memory manifest 交给一次 `install()`；adapter 使用普通 `install` 的 in-memory project manifest，失败不会先改写持久 manifest；不能设置 `ignorePackageManifest`，新版 pnpm 中它表示只 fetch lockfile 且不创建 importer 链接；
-4. install 成功后先确认全部 direct dependency 已 materialize，再原子写 manifest；
-5. 从 pnpm v9 lockfile 提取每个 direct package 的可达 resolution/snapshot 图（含 peer context 与 optional edges），生成 wrapper 指纹；仅原子发布内容变化的 wrapper 并删除 stale wrapper；
-6. dynamic watcher 把文件变化合并为自己的 graph batch。
+卸载只移除公开 wrapper。旧 revisions、slots、资源和制品一直保留到明确离线维护；close 撤回 mutation/publication 并等待已接纳 native install 真实结算，随后释放 writer。不存在启动迁移或自动 GC。
 
-同一进程内 mutation 串行，避免两个 manifest transaction 相互覆盖。pnpm failure 保持先前 manifest 且不发布新 entry；若
-engine 已完成而后续 filesystem publication 失败，持久 manifest 保留实际已安装 graph，下一次 operation/initialize 会重新
-发布 entries。插件不暴露 `reinstall`：native `update: true` 是全图更新，
-不能诚实实现 selected-package reinstall，也不能把已请求 range 静默改成 `latest`。
+## 写者与恢复
 
-初始化保留正文有效的既存 wrapper（包括旧 UUID publication），不因 Producer 重启而触发来源更新。缺失或损坏的 wrapper 会修复；若生产进程已求值该路径，修复仍服从同路径更新需要进程重启的边界。无法识别 lockfile 或缺少完整图时，实际安装保守重新发布，而不假定依赖未变。删除包不改写图未变化的其他 entry；传递依赖或 peer/optional 图改变仍更新受影响 entry。
+目录内 mkdir .writer 原子获得跨进程单写者 ownership；EEXIST 返回 PACKAGE_STORE_WRITER_CONFLICT，其余 IO 错误保持原生错误。异常退出的遗留 lock 只能由操作者离线核对并删除。启动验证 index、物理 containment、inner entries、slot bytes 和公开 wrapper；旧布局与不一致内容明确失败，不静默迁移或重新发布。
 
-wrapper re-export named exports，并把 package default export 继续作为 default。它不注入 Pluxel metadata、不决定 auto-start policy 或 session lifecycle，
-也不建立第二份 plugin inventory。可信 package source 与 catalog 由 Host 管理，lifecycle 和 status 从 Core graph 投影。
+## 能力与回执
 
-## Capability 与 UI
+package.install/remove commands、Plugin 方法和每次打开的 owner-bound Workbench target 复用同一 store。关闭 Workbench 不影响安装。停止 Plugin 撤回 commands/View、abort target 和安装 admission；持久文件不因 generation cleanup 删除。
 
-业务路径是两个 owner-bound commands；Workbench Direct View target 只服务插件自己的管理页面。Management session protocol
-不增加 package-specific method、DTO 或 navigation kind。插件停止/replacement 时 command registration 和 View publication
-随 owner effects 撤销；已打开 target 的 signal 会 abort，新的调用由 owner admission gate 拒绝。Workbench disabled 不影响
-headless commands 和 package store。
+succeeded 表示 wrapper 已发布，failed 保留 INVALID_SPEC/INSTALL_FAILED/REMOVE_FAILED，绝不表示实际 Plugin 已运行。Vite catalog、native next-start 与 auto-start/session intent 是另外的事实。public snapshot 不返回 registry/auth/proxy/raw native event；native acquisition 错误使用经过挑选的领域消息。
 
-snapshot 只返回 package name、requested/installed version、entry filename、受管目录、engine version 和 native engine 明确
-报告的 build-script dependency identifiers。不得返回 registry URL、auth header、proxy credential、pnpm raw event 或任意
-config object。
+默认忽略 scripts、空 allowBuilds 和 24 小时 minimum release age。放宽 scripts 必须同时显式配置非空 exact allow-list。只接纳 canonical registry package name 与版本/range/dist-tag；alias/path/URL/Git 属于其他 producer。
 
-## 安全与升级
+## 验证入口
 
-默认 `ignoreScripts: true`、空 `allowBuilds`、24 小时 minimum release age、isolated node linker 和 auto peer install。
-放宽 scripts 必须同时显式设置 `ignoreScripts: false` 和非空 exact package allow-list；矛盾配置在插件启动时失败。所有输入
-必须是小写规范 npm package name 加 registry version/range/dist-tag；npm alias、path、URL、Git source 属于另一个
-source producer，不借 package manager 绕过 workspace boundary。
-
-NAPI 只从 `pnpm-engine.ts` 同步加载。预发布版本 shape 改变时，adapter fail-fast，不在 store、plugin 或 UI 散布兼容分支。
-native engine callback 默认不转发日志，因为事件可能携带 registry/auth context；需要诊断时只能在 adapter 中挑选明确无敏感
-信息的字段。
-
-## 不变量
-
-- 安装、auto-start policy、session lifecycle 和 observed lifecycle 是彼此独立的事实；
-- package mutation 不直接调用 dynamic/core internals；
-- Host dynamic 来源层不依赖 package-manager package；
-- static/普通 test host 和 source 声明不匹配在任何 native/filesystem/UI 副作用前失败；
-- failed install 不发布新 entry；
-- successful source batch 由 Host 协调器统一触发 optional availability retry；
-- Workbench 页面是插件自带的可选投影，不是 Management API 的 package-manager 特例；
-- market discovery、登录、支付、审核和推荐都属于其他插件或服务。
+store.test 验证发布失败/取消/未知图与未变条目；immutable-installation.test 使用真实 registry tarballs、pnpm global slots、原生 fresh process 和固定 PackageManagerPlugin 的生产 Vite，覆盖 A/B/P 身份、wrapper/运行代/Node 制品精度、普通 ESM 更新、HTTP/WebSocket、工厂失败恢复、跨进程写者与关闭。pnpm-engine 的 local registry 用原生新进程验证发布与消费分离；隔离 plugin tests 只证明业务边界。

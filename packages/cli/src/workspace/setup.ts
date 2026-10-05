@@ -29,7 +29,7 @@ const statePath = '.pluxel/development.json'
 const skillPath = '.agents/skills/pluxel-development'
 const agentStart = '<!-- pluxel:development -->'
 const agentEnd = '<!-- /pluxel:development -->'
-const instructions = `${agentStart}\nFor Pluxel development, read .agents/skills/pluxel-development/SKILL.md and docs/pluxel/development/index.md.\nMissing generated resources: Git users run their upstream CLI's source install; npm users install dependencies then run pnpm exec pluxel workspace setup.\nKeep upstream instructions in their source; maintain only project-specific constraints here.\n${agentEnd}`
+const instructions = `${agentStart}\n\nFor Pluxel development, read .agents/skills/pluxel-development/SKILL.md and docs/pluxel/development/index.md.\nMissing generated resources: Git users run their upstream CLI's source install; npm users install dependencies then run pnpm exec pluxel workspace setup.\nKeep upstream instructions in their source; maintain only project-specific constraints here.\n${agentEnd}`
 
 export function developmentSource(moduleUrl = import.meta.url): DevelopmentSource {
 	const git = Object.values(discoverCliCheckout(moduleUrl))[0]

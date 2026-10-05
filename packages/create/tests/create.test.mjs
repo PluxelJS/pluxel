@@ -109,8 +109,19 @@ describe('create-pluxel', () => {
 			)
 			assert.deepEqual(
 				Object.keys(pluginManifest.dependencies).filter((name) => name.startsWith('@pluxel/')),
+				[],
+			)
+			const frameworkPeers = Object.keys(pluginManifest.peerDependencies).filter((name) =>
+				name.startsWith('@pluxel/'),
+			)
+			assert.deepEqual(
+				frameworkPeers,
 				plugin === 'http' ? ['@pluxel/core', '@pluxel/services'] : ['@pluxel/core'],
 			)
+			for (const name of frameworkPeers) {
+				assert.equal(pluginManifest.peerDependencies[name], 'catalog:pluxel')
+				assert.equal(pluginManifest.devDependencies[name], 'catalog:pluxel')
+			}
 			assert.equal(pluginManifest.devDependencies.oxlint, undefined)
 		}
 		const viteConfig = await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8')

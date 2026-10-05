@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import type { InstallOptions, InstallResult, ParsedBareSpecifier } from '@pnpm/napi'
@@ -24,7 +24,15 @@ function createEngine() {
 		const nodeModules = resolve(options.dir, 'node_modules')
 		await rm(nodeModules, { recursive: true, force: true })
 		for (const [name, requested] of Object.entries(manifest.dependencies ?? {})) {
-			const directory = resolve(nodeModules, ...name.split('/'))
+			const directory = resolve(
+				options.globalVirtualStoreDir!,
+				name.replace('/', '+') + '-' + requested,
+				'node_modules',
+				...name.split('/'),
+			)
+			const link = resolve(nodeModules, ...name.split('/'))
+			await mkdir(resolve(link, '..'), { recursive: true })
+			await symlink(directory, link)
 			await mkdir(directory, { recursive: true })
 			await writeFile(
 				resolve(directory, 'package.json'),
@@ -89,6 +97,37 @@ function createEngine() {
 }
 
 describe('ManagedPackageStore', () => {
+	it('reports individually published entries when a later wrapper fails', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		const blocked = resolve(store.entriesDir, Buffer.from('beta').toString('base64url') + '.mjs')
+		await mkdir(blocked)
+		try {
+			const result = await store.install(['alpha@1.0.0', 'beta@1.0.0'])
+			expect(result).toMatchObject({
+				ok: false,
+				succeeded: ['alpha'],
+				failed: [{ input: 'beta@1.0.0', code: 'INSTALL_FAILED' }],
+			})
+			const published = await store.snapshot()
+			expect(published.packages).toMatchObject([
+				{ name: 'alpha', entryFile: expect.any(String) },
+				{ name: 'beta', entryFile: null },
+			])
+			await rm(blocked, { recursive: true })
+			expect(await store.install(['beta@1.0.0'])).toMatchObject({ ok: true })
+		} finally {
+			await store.close()
+		}
+	})
+
 	it('publishes entry files only after install and removes them only after prune succeeds', async () => {
 		const rootDir = await fixtureRoot()
 		const { engine, install } = createEngine()
@@ -116,21 +155,9 @@ describe('ManagedPackageStore', () => {
 		expect(await readFile(resolve(snapshot.entriesDir, entryFiles[0]!), 'utf8')).toBe(wrapper)
 		const retainedPath = resolve(snapshot.entriesDir, snapshot.packages[0]!.entryFile!)
 		const beforeRestart = await stat(retainedPath)
-		await store.initialize()
-		expect(await stat(retainedPath)).toMatchObject({ ino: beforeRestart.ino })
+		await expect(store.initialize()).rejects.toThrow('already initialized')
 		expect(await store.remove(['alpha'])).toEqual({ ok: true, succeeded: ['alpha'], failed: [] })
 		expect(await stat(retainedPath)).toMatchObject({ ino: beforeRestart.ino })
-
-		const published = await readFile(retainedPath, 'utf8')
-		const legacy = published.replace(/^.*\n/, '// installation old-random-uuid\n')
-		await writeFile(retainedPath, legacy)
-		const legacyPublication = await stat(retainedPath)
-		await store.initialize()
-		expect(await stat(retainedPath)).toMatchObject({ ino: legacyPublication.ino })
-		await writeFile(retainedPath, '')
-		await store.initialize()
-		expect(await readFile(retainedPath, 'utf8')).toContain('export * from "@scope/beta"')
-
 		const removed = await store.remove(['@scope/beta'])
 
 		expect(removed).toEqual({ ok: true, succeeded: ['@scope/beta'], failed: [] })
@@ -147,7 +174,7 @@ describe('ManagedPackageStore', () => {
 		let version = '1.0.0'
 		install.mockImplementation(async (options) => {
 			const result = await original(options)
-			const path = resolve(rootDir, 'pnpm-lock.yaml')
+			const path = resolve(options.dir, 'pnpm-lock.yaml')
 			const lock = JSON.parse(await readFile(path, 'utf8'))
 			const peerKey = `shared@1.0.0(peer@${version})`
 			lock.snapshots['alpha@1.0.0'] = { dependencies: { shared: `1.0.0(peer@${version})` } }
@@ -274,9 +301,11 @@ describe('ManagedPackageStore', () => {
 		const result = await store.install(['alpha@1.0.0'])
 
 		expect(result).toMatchObject({ ok: false, succeeded: [] })
-		expect(result.failed[0]?.message).toBe('pnpm could not apply the managed dependency graph')
-		expect(JSON.parse(await readFile(resolve(rootDir, 'package.json'), 'utf8'))).toMatchObject({
-			dependencies: {},
+		expect(result.failed[0]?.message).toBe(
+			'pnpm could not prepare the managed dependency graph; published installations remain available',
+		)
+		await expect(readFile(resolve(rootDir, 'published-installation.json'))).rejects.toMatchObject({
+			code: 'ENOENT',
 		})
 		expect(await readdir(resolve(rootDir, 'entries'))).toEqual([])
 	})
@@ -300,15 +329,8 @@ describe('ManagedPackageStore', () => {
 			minimumReleaseAgeMinutes: 0,
 		})
 
-		await store.initialize()
-
-		const snapshot = await store.snapshot()
-		expect(snapshot.packages[0]).toMatchObject({
-			name: 'alpha',
-			installedVersion: null,
-			entryFile: null,
-		})
-		expect(await readdir(snapshot.entriesDir)).toEqual([])
+		await expect(store.initialize()).rejects.toThrow('immutable published installation')
+		expect(await readdir(store.entriesDir)).toEqual([])
 	})
 
 	it('rejects contradictory dependency-script policy', async () => {

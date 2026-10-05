@@ -10,11 +10,13 @@ CLI 是静态命令目录和交互 adapter，按所选命令从启动 cwd 的依
 
 `@pluxel/create` 独立发布固定、无插值 starter；不加载 CLI、远程模板或 registry。目标必须不存在或为空，先 staging 再原子落盘。tsdown `exports.bin` 生成带 shebang 的 Node ESM executable，`copy` 交付 template；不使用 Node SEA `exe`。模板保留开发资源 setup 指令；CLI 构建从唯一上游正文打包 docs/skill，消费方由 setup 创建忽略提交的入口。
 
+CLI build 的输入包含仓库 `docs/` 与 `pluxel-development` skill 正文；它们变化必须使缓存失效，不能发布旧资源后再由运行时修补。
+
 `pluxel new` 的唯一流程为 source → acquire → validate → answers → byte plan → materialize → optional install。Bare name 只解析 bundled plugin template，local source 须显式路径；无 remote fallback。`pluxel-template.jsonc` 只声明 identity、包管理器与 prompts。仅 `.tpl` 支持固定插值，其余文件按字节复制；不接受任意代码、命令、循环或 symlink。
 
 Byte plan 在写入前完成 UTF-8/token/path/portable collision/目标检查，持有最终 bytes。Materializer 不重读模板；`--force` 只覆盖 plan 已确认的精确 existing files，每文件 temp+rename，不承诺整个目录 rollback。Bundled template 默认 install，local template 仅显式 `--install` 才执行包管理器。
 
-Starter 的 Host package 拥有唯一 Vite/应用/freezer，独立 Web package 只拥有浏览器代码；根 Turbo 只编排。Portless 只路由现有 listener，不成为 runtime capability。Browser assets 在 freezer 后写入时，必须再次调用同一个 distribution finalizer。目录、命令和样例以 [create README](../packages/create/README.md) 为准。
+Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web package 只拥有浏览器代码；根 Turbo 只编排。Portless 只路由现有 listener，不成为 runtime capability。Browser assets 在应用构建后写入时，必须再次调用同一个 distribution finalizer。目录、命令和样例以 [create README](../packages/create/README.md) 为准。
 
 CLI packed smoke 验证独立 Plugin scaffold，create packed smoke 验证完整 workspace、Vite 与 production distribution；两者不是输出 parity。CLI 不提供第三方 command discovery/registry，capability ID 的类型映射只用 type import，不能提前加载可选 owner。
 
@@ -69,6 +71,8 @@ file entry publication，`pluxel source` 只发生在开发期 package resolutio
 
 CLI `src/workspace/setup.ts` 拥有开发资源来源、`.pluxel/development.json` 完成状态、docs/skill 链接、精确 ignore 与 AGENTS 标记块。Git `source install` 在安装前预检占用与来源，在安装构建后物化资源；`workspace setup` 可单独修复资源，npm 用户也使用它。原文件与未知链接冲突必须显式处理，CLI 不自动移除 Git 跟踪。
 
-`source doctor` 同时检查源码 overlay 与资源；`workspace doctor` 检查资源及工作区治理。Host-dev 在现有 Vite host configureServer 的最前面，对声明 CLI 或已有 source/setup 状态的工作区调用项目 CLI doctor，复用同一检查而不复制诊断逻辑；独立临时测试 fixture 不自动接入工作区。生产不加载此检查。开发脚本先 doctor，再缓存 build，再启动 Vite。
+`source doctor` 同时检查源码 overlay 与资源；`workspace doctor` 检查资源及工作区治理。Host-vite 在现有 Vite host configureServer 的最前面，对声明 CLI 或已有 source/setup 状态的工作区调用项目 CLI doctor，复用同一检查而不复制诊断逻辑；独立临时测试 fixture 不自动接入工作区。生产不加载此检查。开发脚本先 doctor，再缓存 build，再启动 Vite。
+
+Host-vite 沿 Vite root 的父链、止于最近 Git/workspace/lockfile 边界，选择最近显式 source/setup 根作为 doctor 输入；没有显式根时，CLI 声明触发对项目边界的检查。成员包声明 CLI 只选择最近安装 owner，不把成员目录变成 workspace 根。CLI 安装查找可到同一项目边界，不能跨边界借用父仓库；显式子根错误仍交由 CLI 按该根诊断，不回退到父根、不自动 setup。Host-vite 只发现输入及 executable，资源、YAML 和成员治理仍由同一个 CLI doctor 验证。
 
 `docs` 直接读取当前来源的正文，禁止路径逃逸。Git 来源是 owning checkout；发行版来源是构建打包的 `dist/resources`。npm 安装后的离线接入无需网络；资源升级后重新 setup。完整用法由[源码工作区](../docs/development/source-workspaces.md)维护。

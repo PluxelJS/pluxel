@@ -1,7 +1,7 @@
 ---
 packages:
   '@pluxel/cli': minor
-  '@pluxel/host-dev': minor
+  '@pluxel/host-vite': minor
   '@pluxel/create': patch
 ---
 

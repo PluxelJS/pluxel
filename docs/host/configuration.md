@@ -60,9 +60,9 @@ export default defineHostApplication(async (startup) => {
 `plugins` 表示代码可用，不代表自动启动。`state.initial.autoStart` 选择冷启动时运行的节点，插件自己的 required dependencies 由图统一处理。
 
 配置工厂每次创建新 Host 时执行，可以读取 `env`、`bindings`、`root` 和 `deployment`。构建不会执行它。
-Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内联工厂)`：工厂直接返回对象，或在块中以唯一、无条件的最后一条顶层 `return` 返回对象；返回对象不使用 spread。生产构建中的 `plugins` 使用直接数组或模块级 const/imported 数组，不使用条件、函数调用或 startup 计算。构建只分析静态清单，不执行工厂。没有环境绑定时，Vite 可运行条件插件数组。
+Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内联工厂)`：工厂直接返回对象，或在块中以唯一、无条件的最后一条顶层 `return` 返回对象；返回对象不使用 spread。`delivery: 'standalone'` 构建中的 `plugins` 使用直接数组或模块级 const/imported 数组，不使用条件、函数调用或 startup 计算。构建只分析静态清单，不执行工厂。没有环境绑定时，Vite 可运行条件插件数组。
 
-静态清单的数组必须始终保留声明时的成员：不要在模块、工厂、helper 或 callback 中修改、通过别名修改，或用动态 import 追加插件。构建会拒绝工厂中的明显修改、别名和向 helper 传递数组；`map`、`slice` 等只读使用可以保留，但 callback 也不得修改原数组。这是部署合同，有限语法检查不能证明任意 JavaScript 的副作用。需要可变插件时，使用显式 `sources`。
+静态清单的数组必须始终保留声明时的成员：不要在模块、工厂、helper 或 callback 中修改、通过别名修改，或用动态 import 追加插件。构建会拒绝工厂中的明显修改、别名和向 helper 传递数组；`map`、`slice` 等只读使用可以保留，但 callback 也不得修改原数组。这是部署合同，有限语法检查不能证明任意 JavaScript 的副作用。需要来源目录时使用 modules 交付和显式 `sources`；standalone 拒绝声明 sources。
 
 `prepare({ host, startup })` 在服务与开发附件准备完成后、插件启动前执行；适合应用级硬前提。资源获取成功后立即登记到明确的 owner，清理失败不会跳过其他资源。
 
@@ -81,7 +81,7 @@ export default defineConfig({
 })
 ```
 
-自定义宿主可以使用 `@pluxel/host-dev/vite` 的 `host()` 并显式组合服务开发附件。应用、动态插件和控制台共享 Host 专用的 `pluxel` Vite environment；默认 SSR 和第三方 SSR 加载保持独立。插件源码必须经过 Pluxel lowering，执行空间边界见[工具链说明](../development/tooling.md#source-build-boundary)。
+自定义宿主可以使用 `@pluxel/host-vite` 的 `host()` 并显式组合服务开发附件。应用、动态插件和控制台共享 Host 专用的 `pluxel` Vite environment；默认 SSR 和第三方 SSR 加载保持独立。插件源码必须经过 Pluxel lowering，执行空间边界见[工具链说明](../development/tooling.md#source-build-boundary)。
 React 页面由应用显式安装 React Vite plugin。
 
 配置工厂 identity 变化时重新求值完整配置并重建 Host，固定插件的 import 更新也可能触发重建。工厂求值失败保留旧 Host。动态来源更新若未使工厂失效，则复用本次配置并提交 catalog replacement。失败候选保留旧实现；已提交后的 init 失败则报告新一代的生命周期问题，不声称旧代仍然运行。
@@ -90,19 +90,82 @@ React 页面由应用显式安装 React Vite plugin。
 ## 动态来源
 
 ```ts no-twoslash
-import { dynamicSource } from '@pluxel/host/dynamic'
+import { pluginSource } from '@pluxel/host/sources'
 
 const sources = [
-	dynamicSource({
+	pluginSource({
 		kind: 'directory',
-		path: './managed-plugins',
+		path: './managed-plugins/entries',
 		include: ['*.mjs'],
 	}),
 ]
 ```
 
 将 `sources` 放在应用声明中。来源负责发现入口，包安装由应用或 Package Manager 负责；新入口进入同一个 Host catalog，是否运行仍取决于策略。
-Vite 支持动态新增、更新、删除；来源入口变化不等于监视安装包内部所有源码。生产原生 ESM 支持首次加载、新路径和删除；修改已求值入口需要重启。
+`pluginSource()` 只创建并冻结 file/directory 数据，不打开 watcher。启动时缺失 directory 为空；缺失 file、逃逸路径和坏入口明确失败。Vite 运行时删除已经观察的 file 会撤回其定义。
+声明指向的文件或目录根、以及 include 命中的入口必须是普通文件/目录，符号链接以 `TypeError`、`code: 'PLUGIN_SOURCE_SYMLINK'` 拒绝并附 `file` 位置；不遍历目录中的符号链接子目录。父级目录可以是别名，执行入口在打开来源时固定其真实路径。
+Vite 会话打开后新建父目录别名或重定向其真实路径，会以 `PLUGIN_SOURCE_PATH_CHANGED` 拒绝；恢复原路径或重启 Vite 应用会话后再接纳，普通 Host replacement 不重新绑定观察路径。
+
+原生 `runHostApplication()` 在一次启动中扫描预编译 `.js/.mjs`，与固定 imports 合并后启动。当前进程不响应后续新增、改写或删除，发布在**新进程下次启动**生效。它不编译 TS，也不启动 Vite。
+
+Vite 开发和生产均持续接纳来源发布，普通 ESM 传递依赖属于同一个 runner 图；CommonJS、原生模块及显式 singleton 保留 Node 缓存边界。入口进入 catalog 与 Plugin 启动是独立事实。
+显式设置 `CHOKIDAR_USEPOLLING` / `CHOKIDAR_INTERVAL` 时需符合固定观察策略；冲突会拒绝并给出所需值，规则见[来源观察与关闭](../../engineering/HMR.md#来源发现与资源所有权)。
+
+producer 在副作用前验证声明：
+
+```ts no-twoslash
+import { requirePluginSource } from '@pluxel/host/sources'
+
+const policy = requirePluginSource(ctx, {
+	kind: 'directory',
+	path: entriesDir,
+	include: ['*.mjs'],
+})
+// policy.updates 是 'next-start' 或 'live'；缺失/不匹配会抛 SOURCE_REQUIRED / SOURCE_NOT_DECLARED。
+```
+
+`createHost()` 只接收已求值插件与服务；扫描和持续更新分别归上述执行入口。
+
+## Vite 生产
+
+在一个新的 `NODE_ENV=production` 进程中，显式选已有配置文件；唯一应用 entry 仍写在该文件的 `host()` / `vitePreset()` 中：
+
+```ts no-twoslash
+// vite.runtime.config.ts；与启动脚本放在同一目录
+import { defineConfig } from 'vite'
+import { vitePreset } from '@pluxel/services/vite'
+
+export default defineConfig({
+	root: import.meta.dirname,
+	plugins: [vitePreset({ entry: 'dist/app.mjs' })],
+})
+```
+
+```ts no-twoslash
+// start-vite.mjs
+import { runViteApplication } from '@pluxel/host-vite/run'
+
+const session = await runViteApplication({
+	root: import.meta.dirname,
+	configFile: './vite.runtime.config.ts',
+})
+const shutdown = () => {
+	void session.close().catch((error) => {
+		process.exitCode = 1
+		console.error(error)
+	})
+}
+process.once('SIGTERM', shutdown)
+process.once('SIGINT', shutdown)
+```
+
+未设置 NODE_ENV 时入口会设置 production；development/test 进程会被拒绝。入口强制 production conditions、middleware mode 和关闭浏览器 HMR，启动 promise 等待目录、制品、Host 报告和已安装 listener。Plugin init issue 保留在启动报告中；装配或硬前提失败会关闭整个会话并抛错。
+
+`vitePreset()` 的 HTTP 服务拥有独立业务 listener；生产没有 Vite 公共中间件、dev console 或 source Shell。配置中启用 devConsole/source Shell 会拒绝启动。`close()` 或 signal abort 停止接纳、排空已接纳更新并释放 watcher/listener。清理失败仍继续释放其余资源，`close()` 拒绝并保留原始失败；重复调用返回同一关闭结果。不要将开发前端配置直接用作生产配置；create 模板提供独立示例。
+
+执行 `root` 必须是绝对路径；配置中另有 `root` 时必须指向同一目录。应用的相对来源和数据路径以 `startup.root` 为基准；开发前端 root 与生产应用 root 可能不同。需要共享已有数据时显式设置同一个绝对 `PLUXEL_DATA_ROOT`。
+
+选择 Vite 生产部署时，直接使用的 `@pluxel/host-vite`、`vite` 以及配置 imports 必须声明为应用的 `dependencies`。选择 native 部署时，这些执行工具留在 `devDependencies`，生产安装不需要它们。
 
 ## 配置环境变量
 
@@ -475,11 +538,11 @@ TypeBox 1.3.24 起删除了 Elysia 编译器仍使用的字段；待 Elysia 适�
 
 `elysia()` 安装 generation-scoped Elysia application；生产 Node 接线统一使用 srvx。
 `listenElysia()` 使用 Host 的请求分发，并拥有 listener 和 Host 的关闭；不需要重复传 handler。
+可选 `publicDir` 在创建 listener 时固定（相对路径以当时 cwd 解析），只在非保留路径的业务 404 后服务编译资源和 SPA fallback。
 
 ```ts no-twoslash
 import { createHost } from '@pluxel/host'
 import { elysia } from '@pluxel/services/elysia'
-import { listenElysia } from '@pluxel/services/elysia/node'
 
 const host = await createHost({ plugins: [MyRoutes], services: [elysia()] })
 await host.startNode(MyRoutesAddress)
@@ -632,7 +695,45 @@ export default defineConfig({
 ```
 
 自定义组合使用 `@pluxel/rolldown` 的 `pluxel()`。生产 bootstrap 通过 `@pluxel/host` 启动同一应用，HTTP handler/listener 属于 `@pluxel/services/elysia/*`。
-`launcher` 可以选择 `node`、`fetch` 或 `host`；资源 variant 与服务安装是不同决定。动态插件需要的额外 framework 入口通过 `sourceFrameworks` 明确声明。
+`delivery` 独立选择交付边界：默认 `standalone` 内联框架和固定插件，`launcher` 可选 `node`、`fetch` 或 `host`，不能声明 sources。`modules` 编译本包模块、保留真实包 imports 与公开 Plugin identity，并导出应用工厂；它不自动启动，也不接受 launcher/residualDependencies。资源 `variant` 与服务安装是独立决定。
+
+有 sources 的应用（包括 create 模板）使用：
+
+```ts no-twoslash
+export default defineConfig({
+	entry: './src/app.ts',
+	plugins: [buildPreset({ delivery: 'modules' })],
+})
+```
+
+原生启动示例：
+
+```ts no-twoslash
+import { runHostApplication } from '@pluxel/host'
+import { serviceSharedPackages } from '@pluxel/services/sources'
+
+const host = await runHostApplication('./dist/app.mjs', {
+	startup: { root: import.meta.dirname, mode: 'production', env: process.env, bindings: {} },
+	sharedPackages: serviceSharedPackages,
+})
+let listener
+try {
+	const { listenElysia } = await import('@pluxel/services/elysia/node')
+	listener = await listenElysia(host)
+} catch (error) {
+	const [cleanup] = await Promise.allSettled([host.close()])
+	if (cleanup.status === 'rejected')
+		throw new AggregateError([error, cleanup.reason], 'Listener startup and cleanup failed', {
+			cause: error,
+		})
+	throw error
+}
+export const stop = listener.close
+```
+
+必须由全新 Node 进程的 launcher 在应用及其业务依赖闭包首次求值之前调用；服务运行入口也延后 import。入口先建立共享绑定，再加载默认工厂、固定 imports 和来源。已在 scope 外求值的 entry 与受控缓存中的绑定冲突会明确拒绝；Node 没有公开的 ESM cache 查询，不能证明此前普通依赖的完整闭包。预先导入这些依赖违反启动前置条件，不能事后重新绑定 token。
+
+Core/Host 绑定启动器安装；`sharedPackages` 中的其他包相对 startup.root 解析，包括合法 exports，应用须声明所使用的共享包依赖。官方清单来自 `@pluxel/services/sources`，因此官方模板直接声明 Services、Workbench、Commands、Elysia、`@sinclair/typebox`、`typebox` 和 `exact-mirror`；不要依赖工作区 hoist 提供这些安装事实。实际安装版本及 importer 声明必须兼容，错误版本会拒绝；清单不安装服务。自定义服务可以追加包名。Workbench publisher 的 capnweb 由领域检查绑定到所选 Workbench，私有 RPC 保留自身解析。
 
 交付和搬离工作区验证见[发行物](../development/distribution.md)。Node 已有回归覆盖；其他平台需要独立验证网络与原生依赖，不能只凭 Fetch 类型兼容推定支持。
 

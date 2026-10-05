@@ -1,6 +1,6 @@
 import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { envBinding, defineHostApplication, runHostApplication } from '@pluxel/host'
+import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -121,8 +121,9 @@ describe('S3Plugin remote backend', () => {
 			env: { S3_ACCESS_KEY: 'env-access', S3_SECRET_KEY: 'env-secret' },
 			bindings: {},
 		}
-		const host = await runHostApplication(application, { startup })
+		const host = await createHost(await resolveHostApplication(application, startup))
 		try {
+			await host.start()
 			const status = await host.status()
 			expect(status.summary.running).toBe(1)
 			expect(s3Mock.configs.at(-1)).toMatchObject({
@@ -133,9 +134,10 @@ describe('S3Plugin remote backend', () => {
 			await host.close()
 		}
 		await expect(
-			runHostApplication(application, {
-				startup: { ...startup, env: { S3_ACCESS_KEY: 'env-access' } },
-			}),
+			resolveHostApplication(application, {
+				...startup,
+				env: { S3_ACCESS_KEY: 'env-access' },
+			}).then(createHost),
 		).rejects.toThrow('S3_SECRET_KEY')
 	})
 

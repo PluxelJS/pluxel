@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { createServer, type RunnableDevEnvironment } from 'vite'
-import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-dev/internal'
+import { HOST_VITE_ENVIRONMENT } from '@pluxel/host-vite/internal'
 import { expect, it } from 'vitest'
 import { vitePreset } from '@pluxel/services/vite'
 
@@ -22,6 +22,7 @@ export const database = defineDatabase({ schema: {} })`,
 		}),
 		'node_modules/@pluxel/services/package.json': JSON.stringify({
 			name: '@pluxel/services',
+			version: '1.0.0',
 			type: 'module',
 			exports: { './database': './database.js' },
 		}),

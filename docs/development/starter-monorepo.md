@@ -42,7 +42,7 @@ host/
   src/app.ts                开发与生产应用声明：固定插件 + 可选 sources
   src/runtime-state.ts      auto-start/config snapshot
   vite.config.ts            指向 web/ 的唯一 Vite config
-  tsdown.config.ts          pluxel() + Web public copy
+  tsdown.config.ts          buildPreset({ delivery: 'modules' }) + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
 pncat.config.ts             catalog 分组和迁移的唯一策略入口
 ```
@@ -57,13 +57,13 @@ one Vite origin
                                              +-- optional -> AuditPlugin
 ```
 
-`@example/domain` 不导入 Pluxel；需要 Context、config、依赖图或 lifecycle 的代码留在 Plugin。HTTP 对 Todo 的普通
-workspace dependency 对应 constructor required edge。Todo 对 Audit 使用 optional peer dependency、
+`@example/domain` 不导入 Pluxel；需要 Context、config、依赖图或 lifecycle 的代码留在 Plugin。HTTP 对 Todo 的必需
+peer dependency 与 constructor import 对应 required edge。Todo 对 Audit 使用 optional peer dependency、
 `peerDependenciesMeta.optional` 和非导出的 module-level `definePluginRef<AuditPlugin>()`，provider 不存在时仍能启动。
 
 ## 开发与部署
 
-一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 提供配套生产制品与动态共享入口；不需要逐项维护 Node、HTTP、Workbench 的开发接线。完整契约见[组合 Host 服务](../host/services.md)。
+一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 选择应用交付并编译配套制品；不需要逐项维护 Node、HTTP、Workbench 的开发接线。共享身份由 Native 启动的 `sharedPackages` 或 Vite 的 singleton 绑定；完整契约见[组合 Host 服务](../host/services.md)。
 
 ```sh
 pnpm dev
@@ -71,7 +71,7 @@ pnpm build
 pnpm start
 ```
 
-`pnpm build` 生成 `host/dist/`，`pnpm start` 从 `host/dist/app.mjs` 启动。开发与生产使用同一份 `host/src/app.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
+`pnpm build` 生成 modules 交付的 `host/dist/`，`pnpm start` 通过 fresh Node launcher 从 `host/dist/app.mjs` 启动；`pnpm --filter @example/host start:vite` 使用独立生产 Vite 配置。启动契约见[Host 配置](../host/configuration.md#生产构建)。开发与生产使用同一份 `host/src/app.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
 
 构建先生成 `host/web/dist`，再构建服务端并把页面复制到 `host/dist/public`，最后创建包含全部文件的发行清单。扩展构建时，把额外的静态文件写入安排在清单创建之前；详见[发行物](./distribution.md)。
 
@@ -102,13 +102,13 @@ pnpm governance:check
 
 分别用于添加、重新分组、清理和核对依赖。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
 
-插件生产代码依赖 `@pluxel/core` 与实际使用的服务、Workbench 和 validation 包。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](../plugin-development/testing.md)。
+插件将 Core、消费的服务或 Plugin provider 声明为 `peerDependencies`，并用 `devDependencies` 支持本包开发；validation 等实现依赖留在 `dependencies`。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](../plugin-development/testing.md)。
 
 ## 可选动态来源
 
-`host/src/app.ts` 在固定 Plugin imports 之外声明 `.pluxel/managed-plugins/*.mjs`，默认数据目录相对进程工作目录。
+`host/src/app.ts` 在固定 Plugin imports 之外声明 `.pluxel/managed-plugins/entries/*.mjs`；默认数据目录相对 `startup.deployment.root ?? startup.root`。
 `PLUXEL_DATA_ROOT` 可以统一覆盖动态来源与 persistence 的数据根目录；部署时使用 distribution root 外的绝对路径。
-向这个目录原子发布已构建 ESM 入口，就能在同一个 catalog 中增加插件；是否启动由正常运行策略决定。
+向这个目录原子发布预编译 ESM 入口，Native 在下次 fresh 进程启动时扫描接纳，Vite 会话持续观察并更新同一个 catalog；是否启动由正常运行策略决定。
 这个示例不包含 package 下载或 market 管理。只需要固定插件时删除 `sources` 即可，Vite 配置和命令都不变。
 
 ## 测试层次

@@ -8,7 +8,7 @@
 - `@pluxel/workbench/http`：`workbenchHttp({ uiBasePath?, publicDir? })`，将官方 Shell 接入 HTTP；认证管理连接与制品由显式组合的 `managementHttp()` 持有。
 - `@pluxel/workbench/shell`：已有 HTTP 宿主可复用的 `createWorkbenchShellHandler()`。
 - `@pluxel/workbench/client`、`/react`、`/federation`：浏览器 entry，保持各自依赖边界。
-- `@pluxel/workbench/dev`：`workbenchArtifacts()` 复用 Host 的 semantic candidate 与 Rolldown producer compiler；`workbenchSourceShell({ entry })` 将显式浏览器源码入口交给现有 Vite server。
+- `@pluxel/workbench/vite`：`workbenchArtifacts()` 复用 Host 的 semantic candidate 与 Rolldown producer compiler。`@pluxel/workbench/dev` 的 `workbenchSourceShell({ entry })` 仅在开发将显式浏览器源码交给现有 Vite server。
 
 ```ts
 import { createHost } from '@pluxel/host'
@@ -23,6 +23,6 @@ await host.close()
 
 Vite 应用使用 `plugins: [host({ entry: './app.ts' }), workbenchArtifacts()]`。安装运行时服务本身不会启用编译器。制品更新复用当前 Host；来源清单由已有 revision hashing 输出，未关联文件不会触发重建。新发布使旧 session 失效；构建中的 renderer 显示 building，失败显示 failed，已提交不可变 URL 仍可读取。
 
-生产环境不需要安装 `/dev` 的可选 Vite、Host-dev 和 Rolldown peers。HTTP handler 只服务库存中的不可变文件；认证与连接 ownership 由调用它的管理 endpoint 持有。
+原生生产通过 loaded owner 读取预编译制品，不加载 Vite/Rolldown；生产 Vite 使用 `/vite` 附件与已构建 Shell，拒绝 `/dev` 源码 Shell。HTTP handler 只服务库存中的不可变文件；认证与连接 ownership 由调用它的管理 endpoint 持有。
 
 完整示例见 [独立 Host 的 Workbench](../../docs/workbench/standalone-host.md)。

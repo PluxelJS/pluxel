@@ -58,9 +58,10 @@ const plugin: PluginStatusSnapshot = {
 	availability: 'available',
 	issues: [],
 	execution: {
-		kind: 'static-bundle',
+		kind: 'native',
+		origin: 'fixed',
 		artifact: { kind: 'application-bundle' },
-		update: { kind: 'deployment' },
+		update: { kind: 'next-start' },
 	},
 	recentUpdate: null,
 } as const
@@ -243,9 +244,10 @@ describe('management protocol validation', () => {
 			value: {
 				...plugin,
 				execution: {
-					kind: 'dynamic-entry',
+					kind: 'vite',
+					origin: 'source',
 					artifact: { kind: 'built-module' },
-					update: { kind: 'definition-hmr', scope: 'entry-only' },
+					update: { kind: 'definition-hmr' },
 				},
 				recentUpdate: {
 					batch: {
@@ -263,9 +265,10 @@ describe('management protocol validation', () => {
 			ok: true,
 			value: {
 				execution: {
-					kind: 'dynamic-entry',
+					kind: 'vite',
+					origin: 'source',
 					artifact: { kind: 'built-module' },
-					update: { kind: 'definition-hmr', scope: 'entry-only' },
+					update: { kind: 'definition-hmr' },
 				},
 				recentUpdate: {
 					batch: {
@@ -294,12 +297,13 @@ describe('management protocol validation', () => {
 				value: {
 					...plugin,
 					execution: {
-						kind: 'dynamic-entry',
+						kind: 'vite',
+						origin: 'source',
 						artifact: {
 							kind: 'built-module',
 							moduleId: 'file:///private/host/plugin.mjs',
 						},
-						update: { kind: 'definition-hmr', scope: 'entry-only' },
+						update: { kind: 'definition-hmr' },
 					},
 				},
 			}),
@@ -310,9 +314,10 @@ describe('management protocol validation', () => {
 				value: {
 					...plugin,
 					execution: {
-						kind: 'dynamic-entry',
+						kind: 'native',
+						origin: 'source',
 						artifact: { kind: 'source-module' },
-						update: { kind: 'definition-hmr', scope: 'entry-only' },
+						update: { kind: 'next-start' },
 					},
 				},
 			}),

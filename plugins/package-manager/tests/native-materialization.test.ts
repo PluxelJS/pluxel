@@ -87,21 +87,18 @@ it('materializes successive in-memory manifests and preserves publication on nat
 		})
 		await store.initialize()
 		expect(await store.install([`${name}@1.0.0`])).toMatchObject({ ok: true })
-		expect(
-			JSON.parse(await readFile(resolve(rootDir, 'node_modules', name, 'package.json'), 'utf8')),
-		).toMatchObject({ version: '1.0.0' })
 		const first = await store.snapshot()
+		expect(first.packages[0]).toMatchObject({ installedVersion: '1.0.0' })
 		const entry = resolve(first.entriesDir, first.packages[0]!.entryFile!)
 		const firstPublication = await readFile(entry, 'utf8')
 		expect(await store.install([`${name}@2.0.0`])).toMatchObject({ ok: true })
-		expect(
-			JSON.parse(await readFile(resolve(rootDir, 'node_modules', name, 'package.json'), 'utf8')),
-		).toMatchObject({ version: '2.0.0' })
-		const manifest = await readFile(resolve(rootDir, 'package.json'), 'utf8')
+		const second = await store.snapshot()
+		expect(second.packages[0]).toMatchObject({ installedVersion: '2.0.0' })
+		const manifest = await readFile(resolve(rootDir, 'published-installation.json'), 'utf8')
 		const publication = await readFile(entry, 'utf8')
 		expect(publication).not.toBe(firstPublication)
 		expect(await store.install([`${name}@3.0.0`])).toMatchObject({ ok: false })
-		expect(await readFile(resolve(rootDir, 'package.json'), 'utf8')).toBe(manifest)
+		expect(await readFile(resolve(rootDir, 'published-installation.json'), 'utf8')).toBe(manifest)
 		expect(await readFile(entry, 'utf8')).toBe(publication)
 		expect(await store.remove([name])).toMatchObject({ ok: true })
 		const removed = await store.snapshot()

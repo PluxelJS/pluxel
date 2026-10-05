@@ -1,3 +1,4 @@
+import { readNativeWorkbenchArtifacts } from './services/workbench/loaded-artifacts'
 import { defineHostService } from '@pluxel/host'
 import {
 	installOwnerViewCapability,
@@ -46,6 +47,13 @@ export function createWorkbenchService(
 					}),
 			}),
 		],
-		prepare: ({ ctx }) => resolveContextCapability(ctx, WorkbenchHost).prepare(),
+		async prepare({ ctx, plugins }) {
+			const backend = resolveContextCapability(ctx, WorkbenchHost)
+			await backend.prepare()
+			for (const candidate of await readNativeWorkbenchArtifacts(plugins)) {
+				const prepared = await backend.artifactCoordinator.prepareCandidate(candidate)
+				backend.artifactCoordinator.commitPrepared(prepared)
+			}
+		},
 	})
 }

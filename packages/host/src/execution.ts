@@ -13,35 +13,28 @@ export type PluginArtifactSnapshot =
  */
 export type PluginExecutionSnapshot =
 	| Readonly<{
-			kind: 'static-bundle'
-			artifact: Readonly<{ kind: 'application-bundle' }>
-			update: Readonly<{ kind: 'deployment' }>
+			kind: 'native'
+			origin: 'fixed'
+			artifact: Readonly<{ kind: 'built-module' | 'application-bundle' }>
+			update: Readonly<{ kind: 'next-start' }>
 	  }>
 	| Readonly<{
-			kind: 'static-catalog'
-			artifact:
-				| Readonly<{ kind: 'source-module' }>
-				| Readonly<{ kind: 'built-module' }>
-				| Readonly<{ kind: 'unreported' }>
-			update: Readonly<{ kind: 'host-reload' }> | Readonly<{ kind: 'manual' }>
+			kind: 'native'
+			origin: 'source'
+			artifact: Readonly<{ kind: 'built-module' }>
+			update: Readonly<{ kind: 'next-start' }>
 	  }>
 	| Readonly<{
-			kind: 'dynamic-fixed'
-			artifact:
-				| Readonly<{ kind: 'source-module' }>
-				| Readonly<{ kind: 'built-module' }>
-				| Readonly<{ kind: 'unreported' }>
+			kind: 'vite'
+			origin: 'fixed'
+			artifact: Readonly<{ kind: 'source-module' | 'built-module' }>
 			update: Readonly<{ kind: 'host-reload' }>
 	  }>
 	| Readonly<{
-			kind: 'dynamic-entry'
-			artifact: Readonly<{ kind: 'source-module' }>
-			update: Readonly<{ kind: 'definition-hmr'; scope: 'source-graph' }>
-	  }>
-	| Readonly<{
-			kind: 'dynamic-entry'
-			artifact: Readonly<{ kind: 'built-module' }> | Readonly<{ kind: 'unreported' }>
-			update: Readonly<{ kind: 'definition-hmr'; scope: 'entry-only' }>
+			kind: 'vite'
+			origin: 'source'
+			artifact: Readonly<{ kind: 'source-module' | 'built-module' }>
+			update: Readonly<{ kind: 'definition-hmr' }>
 	  }>
 	| Readonly<{
 			kind: 'unreported'
@@ -212,55 +205,33 @@ export function clonePluginExecutionSnapshot(
 	input: unknown,
 	label = 'Plugin execution',
 ): PluginExecutionSnapshot {
-	const value = exactRecord(input, ['kind', 'artifact', 'update'], label)
-	const kind = oneOf(
-		value.kind,
-		['static-bundle', 'static-catalog', 'dynamic-fixed', 'dynamic-entry', 'unreported'],
-		`${label}.kind`,
-	)
+	const value = exactRecord(input, ['kind', 'artifact', 'update'], label, ['origin'])
+	const kind = oneOf(value.kind, ['native', 'vite', 'unreported'], `${label}.kind`)
 	const artifact = artifactKind(value.artifact, `${label}.artifact`)
-	const update = exactRecord(value.update, ['kind'], `${label}.update`, ['scope'])
-
-	switch (kind) {
-		case 'static-bundle':
-			assertCombination(artifact === 'application-bundle', label)
-			assertUpdateWithoutScope(update, 'deployment', label)
-			return frozenExecution(kind, artifact, 'deployment')
-		case 'static-catalog': {
-			assertCombination(
-				artifact === 'source-module' || artifact === 'built-module' || artifact === 'unreported',
-				label,
-			)
-			const updateKind = oneOf(update.kind, ['host-reload', 'manual'], `${label}.update.kind`)
-			assertNoScope(update, label)
-			return frozenExecution(kind, artifact, updateKind)
-		}
-		case 'dynamic-fixed':
-			assertCombination(
-				artifact === 'source-module' || artifact === 'built-module' || artifact === 'unreported',
-				label,
-			)
-			assertUpdateWithoutScope(update, 'host-reload', label)
-			return frozenExecution(kind, artifact, 'host-reload')
-		case 'dynamic-entry': {
-			if (update.kind !== 'definition-hmr') invalid(`${label}.update.kind must be definition-hmr`)
-			const scope = oneOf(update.scope, ['source-graph', 'entry-only'], `${label}.update.scope`)
-			assertCombination(
-				(artifact === 'source-module' && scope === 'source-graph') ||
-					((artifact === 'built-module' || artifact === 'unreported') && scope === 'entry-only'),
-				label,
-			)
-			return Object.freeze({
-				kind,
-				artifact: Object.freeze({ kind: artifact }),
-				update: Object.freeze({ kind: 'definition-hmr' as const, scope }),
-			}) as PluginExecutionSnapshot
-		}
-		case 'unreported':
-			assertCombination(artifact === 'unreported', label)
-			assertUpdateWithoutScope(update, 'unreported', label)
-			return UNREPORTED_PLUGIN_EXECUTION
+	const update = exactRecord(value.update, ['kind'], `${label}.update`)
+	if (kind === 'unreported') {
+		assertCombination(
+			artifact === 'unreported' && update.kind === 'unreported' && !Object.hasOwn(value, 'origin'),
+			label,
+		)
+		return UNREPORTED_PLUGIN_EXECUTION
 	}
+	const origin = oneOf(value.origin, ['fixed', 'source'], `${label}.origin`)
+	assertCombination(
+		kind === 'native'
+			? artifact === 'built-module' || (artifact === 'application-bundle' && origin === 'fixed')
+			: artifact === 'source-module' || artifact === 'built-module',
+		label,
+	)
+	const expected =
+		kind === 'native' ? 'next-start' : origin === 'fixed' ? 'host-reload' : 'definition-hmr'
+	assertCombination(update.kind === expected, label)
+	return Object.freeze({
+		kind,
+		origin,
+		artifact: Object.freeze({ kind: artifact }),
+		update: Object.freeze({ kind: expected }),
+	}) as PluginExecutionSnapshot
 }
 
 /** Validate, detach, and deeply freeze a route-provided recent-update snapshot. */
@@ -366,34 +337,9 @@ function artifactKind(input: unknown, label: string): PluginArtifactSnapshot['ki
 	)
 }
 
-function assertUpdateWithoutScope(
-	update: Readonly<Record<string, unknown>>,
-	expected: 'deployment' | 'host-reload' | 'unreported',
-	label: string,
-): void {
-	if (update.kind !== expected) invalid(`${label}.update.kind must be ${expected}`)
-	assertNoScope(update, label)
-}
-
-function assertNoScope(update: Readonly<Record<string, unknown>>, label: string): void {
-	if (Object.hasOwn(update, 'scope')) invalid(`${label}.update contains unsupported field scope`)
-}
-
 function assertCombination(condition: boolean, label: string): asserts condition {
 	if (!condition)
 		invalid(`${label} contains an invalid execution, artifact, and update combination`)
-}
-
-function frozenExecution<
-	K extends 'static-bundle' | 'static-catalog' | 'dynamic-fixed',
-	A extends PluginArtifactSnapshot['kind'],
-	U extends 'deployment' | 'host-reload' | 'manual',
->(kind: K, artifact: A, update: U): PluginExecutionSnapshot {
-	return Object.freeze({
-		kind,
-		artifact: Object.freeze({ kind: artifact }),
-		update: Object.freeze({ kind: update }),
-	}) as PluginExecutionSnapshot
 }
 
 function exactRecord(

@@ -1,12 +1,13 @@
+import { serviceSharedPackages } from './sources'
 import { dirname } from 'node:path'
 import {
 	assertWorkbenchCapnwebAdmission,
 	installedWorkbenchCapnwebVersion,
 	readWorkbenchCapnwebPackage,
-} from '@pluxel/rolldown/internal/workbench-capnweb'
+} from '@pluxel/workbench/internal/transport'
 import { resolveWithOxc } from '@pluxel/rolldown/resolver/oxc'
-import { host, hostSingletons } from '@pluxel/host-dev/vite'
-import { HOST_VITE_ENVIRONMENT, registerHostSingleton } from '@pluxel/host-dev/internal'
+import { host, hostSingletons } from '@pluxel/host-vite'
+import { HOST_VITE_ENVIRONMENT, registerHostSingleton } from '@pluxel/host-vite/internal'
 import { perEnvironmentPlugin, type Plugin, type PluginOption } from 'vite'
 import { serviceDevelopment } from './development/service-development'
 
@@ -22,7 +23,7 @@ export type PresetViteOptions = Readonly<{
 /** Preserve official service token identity across the Vite and native module graphs. */
 export function serviceSingletons(): Plugin {
 	const singletons = hostSingletons({
-		packages: ['@pluxel/services', '@pluxel/workbench'],
+		packages: serviceSharedPackages,
 	})
 	const resolveSingleton = singletons.resolveId!
 	const configureSingleton = singletons.configResolved!

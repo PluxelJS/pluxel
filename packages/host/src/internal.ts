@@ -6,8 +6,8 @@ export * from './state'
 export * from './policy'
 export * from './install'
 export * from './driver'
-export { installPluginSources } from './sources'
-export { openPluginSources, type PluginSourceSession } from './source-session'
+export { installPluginSources, pluginSourceCovers, pluginSourceKey } from './source-contract'
+export { discoverPluginSources, resolvePluginSourcePath } from './source-discovery'
 export { collectPluginModuleExports } from './module'
 
 export { planHostServices, prepareHostServices, createHostServiceLifecycle } from './services'
@@ -31,8 +31,6 @@ export { ensureFork, removeFork, type ForkEnsureResult, type ForkRemoveResult } 
 
 export { requireHostStateStore } from './host'
 
-export { createProductionSourceLoader } from './production-source-loader'
-
 export * from './recent-update'
 
 export { projectPluginApplyReport } from './apply-report'
@@ -40,3 +38,17 @@ export { projectPluginApplyReport } from './apply-report'
 export { setHostCatalogProvenance } from './catalog-provenance'
 
 export { updateHostCatalog } from './host'
+
+export {
+	hostSharedPackages,
+	resolveNativeImport,
+	installedPackageFacts,
+	assertSharedPackageVersion,
+	importPackageName,
+} from './shared-packages'
+export {
+	readLoadedPluginModule,
+	recordLoadedPluginModule,
+	recordLoadedHostApplication,
+	readLoadedHostApplicationModule,
+} from './loaded-modules'

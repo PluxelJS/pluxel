@@ -97,6 +97,14 @@ types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-
 只有类型声明入口的已安装依赖（包括仅向 TypeScript 导出根入口的包）以清单参与 revision，不要求其具有 JS 根入口；若清单声明了运行时根导出，解析失败仍使构建失败。
 Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
 
+standalone 的 Workbench 制品选择只消费已验证的固定 `plugins` catalog。静态 declaration parser 沿原 import/export
+解析器保存 constructor 的 lexical binding；Plugin semantic pass 从源声明或已编译 lowering ABI 把该 binding 映射为
+canonical definition。缺失或歧义事实明确使构建失败，不求值 application factory，也不按 class display name 或整个包推断。
+同一 definition key 集在 semantic snapshot 读取 renderer/Markdown 前筛选 publication，并在 final assembly 中筛选
+应用和依赖包的 producer/Content inventory。未选中定义不构建、不读取或复制其制品树；被读取的 inventory 仍完整解析，
+所选树继续验证 digest、immutable bytes 与 collision。包里有其他 producer，或其注册副作用仍保留在 server chunk，
+都不会扩大应用 catalog 的制品集合。modules 和插件包按其公开编译定义交付，不套用 standalone 的固定 catalog 选择。
+
 Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Application root 必须解析全部 Shell-provided peers；producer 的 React/Workbench/Mantine 与 winner 精确一致。开发显式选择源码 exports，distribution 使用 built exports，不从目录或已有 dist 猜测。Production builder 按同一 build contract 生成 Shell 与 producer，并用 canonical plan/compatibility set 校验全部候选。
 
 固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 1.22.1 在真实 Mantine producer 中仍会遗漏
@@ -109,15 +117,21 @@ dynamic type artifact，只校验浏览器运行时 contract；显式 required �
 类型资产。required DTS build 使用 producer-scoped `tsBuildInfoFile` 与串行 cache transaction，避免并发 producer 共享
 MF 默认 cache 文件；production 中类型、Manifest 或 asset 缺失都使 candidate 失败。
 
-Production producer 不输出内嵌源码 sourcemap；host-dev producer 保留 sourcemap 供开发诊断。
+Production producer 不输出内嵌源码 sourcemap；host-vite producer 保留 sourcemap 供开发诊断。
 
 static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
 relative file 与 sha256；artifact builder 同时把受控 native residual 的已解析 entry 交给 NF3，因此只在 worker entry 中出现的
 binding 也会被复制进 deployment `node_modules`。variant 只改变 browser Workbench closure。
 
-`@pluxel/core/federation` 是唯一 dependency-neutral build contract。host-dev、Rolldown 和 host 直接依赖该
+`@pluxel/core/federation` 是唯一 dependency-neutral build contract。host-vite、Rolldown 和 host 直接依赖该
 contract，不通过 runtime 转手 re-export，也不引入反向 build dependency。
 
 ## 验证边界
 
 声明测试验证 exact identity、server-only schema/handler 不进入 browser assets、Content-only 零 MF、Node artifact 的 native owner chain。开发回归使用真实 Vite，覆盖双 producer、不同 application root、同 output/cache 排序、superseded build 与迟到结果拒绝。生产回归检查 Manifest/Snapshot、所有 digest inventory、dynamic types 和无 fallback shared；Node 制品还需从最终发行目录加载 native residual。
+
+## Loaded owner 的运行时读取
+
+modules 应用保留原 canonical definition，在 `pluxel-modules.json` 中列出编译定义、chunk 路径与 SHA-256。生成工厂记录实际输出 URL，Host 在服务准备前校验 inventory；包的 `pluxel.artifactRoot` 只定位已声明制品，不证明 Plugin 身份。
+
+Node 的 `pluxel-node-artifacts.json` 包含 key、文件和摘要，即使为空也输出。Workbench 沿用 producer/content inventory 和领域校验。`pluxel.nodeArtifacts`、`pluxel.workbenchArtifacts` 为 true 时，loaded owner 的 inventory 缺失、摘要错误、重复或真实路径越界均失败；运行时不修复、不编译。未启用领域能力不创建 backend/compiler/watcher。原生 Services 和 Workbench reader 不导入 Vite/Rolldown；Vite 附件也消费同一实际 owner 和 packaged readers。

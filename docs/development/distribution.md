@@ -1,9 +1,9 @@
 ---
-title: 静态应用发行物
-description: 创建、检查并签名验证可搬运的静态 Node 应用目录。
+title: 应用发行物
+description: 创建、检查并签名验证 standalone 或 modules Node 应用目录。
 ---
 
-需要把静态应用复制到另一台机器，或确认部署文件没有缺失和改动时，为最终构建目录创建发行清单。普通启动不需要读取清单，也不会因此计算哈希或发送遥测。
+需要把应用交付复制到另一台机器，或确认部署文件没有缺失和改动时，为最终构建目录创建发行清单。普通启动不读取这份发行清单；modules 启动会校验自身编译模块和制品 inventory，这不替代发行签名。
 
 已有完成构建的 `dist/` 时，在安装了 CLI 与 `@pluxel/rolldown` 的项目里运行：
 
@@ -18,7 +18,7 @@ starter 的 `pnpm build` 已在 `host/dist` 上执行 create，可直接 `pnpm e
 
 ## 输入必须是最终目录
 
-本页假设静态应用目录已经构建完成。宿主入口和 `pluxel()` 配置见[配置插件宿主](../host/configuration.md)。
+本页假设应用交付目录已经构建完成。宿主入口和 `pluxel()` 配置见[配置插件宿主](../host/configuration.md)。
 
 构建会先写入 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 与 residual `node_modules`。如果后续任务还会写 SPA、SBOM 或业务 `public/`，必须等最后一个写入者结束后再执行 `distribution create`。
 
@@ -129,4 +129,4 @@ statement 是 in-toto Statement v1，唯一 subject 是 manifest 原始 bytes �
 ## 交付验证
 
 将最终目录复制或归档后，在安全解包的副本上再次执行 `verify`。Verification report、private delivery record 与 trusted key 均留在发行目录外。
-Dynamic workspace 是可变 source graph，不生成这种 artifact manifest。公开 raw schema 位于 `@pluxel/rolldown/distribution/schema.json`。
+Vite 的可变工作区不生成这种 artifact manifest。modules 发行清单覆盖已构建本包目录，外部包安装和可变 sources 不属于该签名范围。公开 raw schema 位于 `@pluxel/rolldown/distribution/schema.json`。

@@ -3,5 +3,5 @@ import { buildPreset } from '@pluxel/services/build'
 
 export default defineConfig({
 	entry: './src/app.ts',
-	plugins: [buildPreset()],
+	plugins: [buildPreset({ delivery: 'modules' })],
 })

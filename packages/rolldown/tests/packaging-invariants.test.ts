@@ -170,7 +170,7 @@ describe('toolchain package boundaries', () => {
 		}
 		expect(coreManifest.inlinedDependencies).not.toHaveProperty(contextPackageName)
 		expect(coreBuildConfig).toContain(
-			`alwaysBundle: ['${contextPackageName}', '${contextPackageName}/*']`,
+			`alwaysBundle: ['${contextPackageName}', '${contextPackageName}/*'`,
 		)
 		expect(coreBuildConfig).toContain(
 			`conditionNames: ['@pluxel/source', 'import', 'node', 'default']`,
@@ -271,7 +271,7 @@ describe('toolchain package boundaries', () => {
 		for (const name of ['host']) {
 			const manifest = await readJson(`${root}/packages/${name}/package.json`)
 			const required = { ...manifest.dependencies, ...manifest.optionalDependencies }
-			const toolchain = ['vite', '@pluxel/host-dev', '@pluxel/rolldown']
+			const toolchain = ['vite', '@pluxel/host-vite', '@pluxel/rolldown']
 			for (const dependency of toolchain) {
 				expect(required, `${name} installs ${dependency} in production`).not.toHaveProperty(
 					dependency,
@@ -317,7 +317,7 @@ describe('toolchain package boundaries', () => {
 
 		for (const file of cliFiles) {
 			const code = await readFile(file, 'utf8')
-			if (code.includes('../host/src/') || code.includes('../host-dev/src/')) offenders.push(file)
+			if (code.includes('../host/src/') || code.includes('../host-vite/src/')) offenders.push(file)
 		}
 
 		expect(offenders).toEqual([])
@@ -325,7 +325,7 @@ describe('toolchain package boundaries', () => {
 
 	it('keeps native toolchain packages external to generated bundles', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const packageNames = ['cli', 'rolldown', 'host-dev', 'host', 'test']
+		const packageNames = ['cli', 'rolldown', 'host-vite', 'host', 'test']
 		const offenders: string[] = []
 		const nativeToolchainPackage =
 			/^(?:oxc-(?:parser|resolver)|@oxc-(?:parser|resolver)\/binding-|rolldown|@rolldown\/binding-|oxlint|@oxlint\/binding-|oxfmt|@oxfmt\/binding-)$/
@@ -364,7 +364,7 @@ describe('toolchain package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const coreManifest = await readJson(`${root}/packages/core/package.json`)
 		const coreBuildConfig = await readFile(`${root}/packages/core/tsdown.config.ts`, 'utf8')
-		const runtimePackages = ['core', 'host-dev', 'host']
+		const runtimePackages = ['core', 'host-vite', 'host']
 		const packageSourceFiles = await Promise.all(
 			runtimePackages.map((name) => collectSourceFiles(`${root}/packages/${name}/src`)),
 		)
@@ -395,7 +395,7 @@ describe('toolchain package boundaries', () => {
 		const application = await readFile(`${root}/packages/host/src/application.ts`, 'utf8')
 		const hostPackage = await readJson(`${root}/packages/host/package.json`)
 		expect(importedModuleSpecifiers('application.ts', application)).not.toEqual(
-			expect.arrayContaining(['vite', '@pluxel/host-dev', '@pluxel/rolldown']),
+			expect.arrayContaining(['vite', '@pluxel/host-vite', '@pluxel/rolldown']),
 		)
 		expect(hostPackage.exports).not.toHaveProperty('./vite')
 		expect(hostPackage.exports).not.toHaveProperty('./console')

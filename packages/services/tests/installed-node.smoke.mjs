@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 import { vitePreset } from '../dist/vite.mjs'
+import { PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const root = await mkdtemp(join(tmpdir(), 'pluxel-host-node-'))
@@ -29,7 +30,7 @@ try {
 		)
 	await writeFile(
 		join(root, 'package.json'),
-		JSON.stringify({ name: 'node-host-fixture', type: 'module' }),
+		JSON.stringify({ name: 'node-host-fixture', type: 'module', exports: { '.': './app.mjs' } }),
 	)
 	await writeFile(join(root, 'task.ts'), 'export const value = 1\n')
 	const definition = {
@@ -39,9 +40,10 @@ try {
 	await writeFile(
 		join(root, 'app.mjs'),
 		`
+ // [pluxel-plugin-semantics] Injected facts
  import { defineHostApplication } from '@pluxel/host';
  import { BasePlugin, Plugin } from '@pluxel/core';
- import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain';
+ import { __setPluginDefinition } from '@pluxel/core/toolchain';
  import { nodeModules, NodeModules, defineNodeModule } from '@pluxel/services/node';
  const task = defineNodeModule(import.meta.url, './task.ts');
  class Consumer extends BasePlugin {
@@ -54,14 +56,15 @@ try {
   }
  }
  Plugin()(Consumer);
- __setPluginDefinition(Consumer, { abiVersion: PLUGIN_LOWERING_ABI_VERSION, kind: 'plugin', definition: ${JSON.stringify(definition)} });
+ __setPluginDefinition(Consumer, { abiVersion: ${PLUGIN_LOWERING_ABI_VERSION}, kind: 'plugin', definition: ${JSON.stringify(definition)} });
+ export {Consumer};
  export default defineHostApplication(() => ({ plugins: [Consumer], services: [nodeModules()], state: { initial: { autoStart: [{ definition: ${JSON.stringify(definition)}, variant: 'default' }] } } }));
  `,
 	)
 	server = await createServer({
 		root,
 		configFile: false,
-		logLevel: 'silent',
+		logLevel: 'error',
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [vitePreset({ entry: 'app.mjs' })],
 	})

@@ -1,5 +1,5 @@
 import { pluginDefinitionIndexKey } from '@pluxel/core'
-import { readDevelopmentPackagedArtifacts } from '../src/development/packaged-artifacts'
+import { readLoadedWorkbenchArtifacts } from '../src/services/workbench/loaded-artifacts'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import {
@@ -37,11 +37,11 @@ vi.mock('@pluxel/rolldown/vite/workbench-ui', () => ({
 	buildWorkbenchFederationProducer: producerBuildMocks.buildWorkbenchFederationProducer,
 }))
 
-import { PluginArtifactCompiler, workbenchArtifacts } from '@pluxel/workbench/dev'
+import { PluginArtifactCompiler, workbenchArtifacts } from '@pluxel/workbench/vite'
 import { workbenchService } from '@pluxel/workbench/service'
 import { requireWorkbench } from '@pluxel/workbench/server'
 import { createHost } from '@pluxel/host'
-import type { HostDevelopmentCatalog, HostDevelopmentAttachment } from '@pluxel/host-dev/vite'
+import type { HostViteCatalog, HostViteAttachment } from '@pluxel/host-vite'
 
 const definition = {
 	entry: { kind: 'package-root', packageName: '@example/fonts' },
@@ -121,7 +121,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('accepts selected package subpath artifacts only from their owning package', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/services', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/services',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 			'plugin/dist/plugins.mjs': 'export const built = true',
 		})
 		const owner = {
@@ -146,21 +150,29 @@ describe('PluginArtifactCompiler', () => {
 		)
 		const selected = new Set([pluginDefinitionIndexKey(owner)])
 		const modules = new Map([[fixture.getPath('plugin/dist/plugins.mjs'), selected]])
-		const packaged = await readDevelopmentPackagedArtifacts(modules, selected)
+		const packaged = await readLoadedWorkbenchArtifacts(modules, selected)
 		expect(packaged).toHaveLength(1)
 		expect(packaged[0]!.definition).toEqual(owner)
 		await writeFile(
 			fixture.getPath('plugin/package.json'),
-			JSON.stringify({ name: '@example/other', type: 'module' }),
+			JSON.stringify({
+				name: '@example/other',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		)
-		await expect(readDevelopmentPackagedArtifacts(modules, selected)).rejects.toThrow(
+		await expect(readLoadedWorkbenchArtifacts(modules, selected)).rejects.toThrow(
 			/does not belong to @example\/other/,
 		)
 	})
 
 	it('admits selected installed artifacts atomically and preserves rejected revisions until withdrawal', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 			'plugin/dist/index.mjs': 'export const built = true',
 		})
 		await using host = createCoreInternalTestHost()
@@ -198,7 +210,7 @@ describe('PluginArtifactCompiler', () => {
 				JSON.stringify(createWorkbenchFederationDeploymentInventory([plan, unused])),
 			)
 		await writeInventory(accepted)
-		const packaged = await readDevelopmentPackagedArtifacts(modules, selected)
+		const packaged = await readLoadedWorkbenchArtifacts(modules, selected)
 		expect(packaged).toHaveLength(1) // The unselected export has no artifact directory.
 		const initial = await compiler.prepareWorkbenchArtifacts({
 			producers: [],
@@ -215,18 +227,16 @@ describe('PluginArtifactCompiler', () => {
 		const rejected = await compiler.prepareWorkbenchArtifacts({
 			producers: [],
 			content: [],
-			packaged: await readDevelopmentPackagedArtifacts(modules, selected),
+			packaged: await readLoadedWorkbenchArtifacts(modules, selected),
 		})
 		rejected.rollback()
 		rejected.commit()
 		expect(federation.getCurrent(definition)?.buildRevision).toBe('installed-accepted')
 		const invalid = createPlan('installed-missing')
 		await writeInventory(invalid)
-		await expect(readDevelopmentPackagedArtifacts(modules, selected)).rejects.toThrow(
-			'does not exist',
-		)
+		await expect(readLoadedWorkbenchArtifacts(modules, selected)).rejects.toThrow('does not exist')
 		expect(federation.getCurrent(definition)?.buildRevision).toBe('installed-accepted')
-		expect(await readDevelopmentPackagedArtifacts(modules, new Set())).toEqual([])
+		expect(await readLoadedWorkbenchArtifacts(modules, new Set())).toEqual([])
 		const removal = await compiler.prepareWorkbenchArtifacts({
 			producers: [],
 			content: [],
@@ -239,7 +249,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('restores accepted installed artifact inputs and fails if their immutable revision is gone', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 			'plugin/dist/index.mjs': 'export const built = true',
 		})
 		const root = fixture.getPath('plugin/dist/workbench')
@@ -253,7 +267,8 @@ describe('PluginArtifactCompiler', () => {
 				JSON.stringify(createWorkbenchFederationDeploymentInventory([plan])),
 			)
 		await writeInventory(accepted)
-		const catalog: HostDevelopmentCatalog = {
+		const catalog: HostViteCatalog = {
+			plugins: [],
 			modules: [fixture.getPath('plugin/dist/index.mjs')],
 			definitions: [definition],
 		}
@@ -278,6 +293,7 @@ describe('PluginArtifactCompiler', () => {
 			workbenchArtifacts({
 				cacheDir: fixture.getPath('cache'),
 			}).api!.pluxelHost.attach({
+				profile: 'development',
 				host,
 				catalog,
 				semantics: semantics as never,
@@ -286,7 +302,7 @@ describe('PluginArtifactCompiler', () => {
 					config: { root: fixture.getPath() },
 					watcher: { add() {} },
 				} as never,
-			}) as Promise<HostDevelopmentAttachment>
+			}) as Promise<HostViteAttachment>
 		const first = await createHost({ plugins: [], services: [workbenchService()] })
 		const initial = await attach(first)
 		expect(requireWorkbench(first.ctx).artifacts.getCurrent(definition)?.buildRevision).toBe(
@@ -314,7 +330,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('does not activate rejected catalog artifacts or cancel the accepted producer build', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator, producerStatus } = createWorkbenchStores(host)
@@ -374,7 +394,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('rejects a late validation result from a superseded accepted generation', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator } = createWorkbenchStores(host)
@@ -422,7 +446,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('publishes a development producer snapshot before the cold producer build finishes', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
@@ -492,7 +520,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('keeps distribution producer publication synchronous and strict', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator } = createWorkbenchStores(host)
@@ -522,7 +554,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('reports a reusable disk producer without logging the in-memory fast path', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { coordinator } = createWorkbenchStores(host)
@@ -568,7 +604,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('does not commit a failed candidate over the previous immutable revision', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
@@ -638,7 +678,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('lets a newer semantic plan supersede an older in-flight candidate', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator } = createWorkbenchStores(host)
@@ -683,7 +727,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('publishes a Content-only snapshot without invoking the federation builder', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator } = createWorkbenchStores(host)
@@ -721,7 +769,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('commits mixed Content and federation candidates once and withdraws stale tuple sides', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator } = createWorkbenchStores(host)
@@ -773,7 +825,11 @@ describe('PluginArtifactCompiler', () => {
 
 	it('keeps the prior mixed tuple when Content materialization fails', async () => {
 		await using fixture = await createDiskFixture({
-			'plugin/package.json': JSON.stringify({ name: '@example/fonts', type: 'module' }),
+			'plugin/package.json': JSON.stringify({
+				name: '@example/fonts',
+				type: 'module',
+				pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+			}),
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, content, coordinator } = createWorkbenchStores(host)
@@ -825,7 +881,12 @@ async function writeProducer(plan: WorkbenchFederationProducerPlan, outDir: stri
 				globalName: plan.producer,
 				buildInfo: { buildVersion: plan.buildRevision, buildName: plan.producer },
 				publicPath: 'auto',
-				remoteEntry: { name: 'remoteEntry.js', path: '', type: 'module' },
+				remoteEntry: {
+					name: 'remoteEntry.js',
+					path: '',
+					type: 'module',
+					pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
+				},
 				types: { path: '', name: '', api: 'types/index.d.ts', zip: '@mf-types.zip' },
 				type: 'global',
 			},

@@ -1,4 +1,4 @@
-import type { EffectsScope, RootContext, PluginNodeAddress } from '@pluxel/core'
+import type { EffectsScope, RootContext, PluginNodeAddress, PluginConstructor } from '@pluxel/core'
 import {
 	getContextInstallationCapability,
 	resolveContextCapability,
@@ -37,6 +37,8 @@ export interface HostService<
 	prepare?(
 		options: Readonly<{
 			ctx: RootContext
+			/** Complete initial definitions, already admitted before service resource acquisition. */
+			plugins: readonly PluginConstructor[]
 			dependencies: DependencyValues<TDependencies>
 			effects: EffectsScope
 		}>,
@@ -142,6 +144,7 @@ export function planHostServices(services: readonly HostService[]): readonly Hos
 export async function prepareHostServices(
 	ctx: RootContext,
 	services: readonly HostService[],
+	plugins: readonly PluginConstructor[],
 ): Promise<void> {
 	if (nodeMetadataServices.has(ctx))
 		throw new Error('[host] services are already prepared for this root')
@@ -157,7 +160,7 @@ export async function prepareHostServices(
 		for (const [name, capability] of Object.entries(service.requires ?? {}))
 			dependencies[name] = resolveContextCapability(ctx, capability)
 		const effects = ctx.effects.scope({ tag: service.name })
-		await service.prepare?.({ ctx, effects, dependencies: Object.freeze(dependencies) })
+		await service.prepare?.({ ctx, effects, plugins, dependencies: Object.freeze(dependencies) })
 	}
 }
 

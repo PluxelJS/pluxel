@@ -1,5 +1,7 @@
-import { defineDevConsole } from '@pluxel/host-dev/console'
+import { defineDevConsole } from '@pluxel/host-vite/console'
 import { Logging } from '@pluxel/services/logging'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 
 export default defineDevConsole((dev) => {
 	return dev.plugins.list()
@@ -21,16 +23,33 @@ export const health = defineDevConsole(async (dev) => {
 		throw new TypeError('health requires an HTTP(S) application URL')
 	}
 	const status = await fetch(new URL('/showcase/status', origin), { signal: dev.signal })
-	const shell = await fetch(new URL('/__pluxel/workbench', origin), {
-		signal: dev.signal,
-		headers: { accept: 'text/html' },
+	// Node fetch sends sec-fetch-mode: cors; preserve the browser navigation contract.
+	const shellStatus = await new Promise<number>((resolveStatus, reject) => {
+		const request = (origin.protocol === 'http:' ? httpRequest : httpsRequest)(
+			new URL('/__pluxel/workbench', origin),
+			{
+				signal: dev.signal,
+				headers: {
+					accept: 'text/html',
+					'sec-fetch-mode': 'navigate',
+					'sec-fetch-dest': 'document',
+				},
+			},
+			(response) => {
+				response.once('error', reject)
+				response.once('end', () => resolveStatus(response.statusCode ?? 0))
+				response.resume()
+			},
+		)
+		request.once('error', reject)
+		request.end()
 	})
 	const logging = dev.ctx.require(Logging)
 	logging.flushStores()
 	return {
 		plugins: await dev.plugins.list(),
 		showcase: { status: status.status, body: await status.text() },
-		workbench: { status: shell.status },
+		workbench: { status: shellStatus },
 		logs: logging.stores.get('default')?.tailWindow(30) ?? [],
 	}
 })

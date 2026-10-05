@@ -17,14 +17,7 @@ export type {
 	HostProviderDefaultState,
 	HostDependencyOverrideState,
 } from './policy'
-export {
-	assertPluginSource,
-	PluginSourceRequiredError,
-	type PluginSource,
-	type PluginSourceRequirement,
-	type PluginSourceChange,
-	type PluginSourceOpenOptions,
-} from './sources'
+export type { PluginSource } from './sources'
 
 export {
 	defineHostService,

@@ -17,7 +17,7 @@ export type PluxelArtifactSetV1 = Readonly<{
 	schemaVersion: 1
 	kind: 'pluxel-artifact-set'
 	producer: Readonly<{
-		kind: 'static-application'
+		kind: 'static-application' | 'modules-application'
 		target: 'node'
 		variant: 'headless' | 'workbench'
 	}>

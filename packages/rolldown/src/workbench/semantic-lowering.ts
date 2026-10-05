@@ -241,9 +241,13 @@ export type WorkbenchSemanticLowering = Readonly<{
 		commit(moduleIds: Iterable<string>): void
 	}>
 	collect(input: WorkbenchSemanticModuleInput): Promise<void>
-	plans(): Promise<readonly WorkbenchFederationProducerPlan[]>
-	compilations(): Promise<readonly WorkbenchSemanticProducerCompilation[]>
-	contentCompilations(): Promise<readonly WorkbenchSemanticContentCompilation[]>
+	plans(definitions?: ReadonlySet<string>): Promise<readonly WorkbenchFederationProducerPlan[]>
+	compilations(
+		definitions?: ReadonlySet<string>,
+	): Promise<readonly WorkbenchSemanticProducerCompilation[]>
+	contentCompilations(
+		definitions?: ReadonlySet<string>,
+	): Promise<readonly WorkbenchSemanticContentCompilation[]>
 }>
 
 /**
@@ -267,6 +271,7 @@ function createWorkbenchModuleStore(
 	const collecting = new Map<string, symbol>()
 	const dirtyModules = new Set<string>()
 	let finalized: Promise<WorkbenchSemanticCompilationSnapshot> | undefined
+	let finalizedSelection: string | undefined
 	let revision = 0
 	const invalidate = (moduleId?: string) => {
 		revision++
@@ -374,11 +379,16 @@ function createWorkbenchModuleStore(
 		})
 	}
 
-	const snapshot = async (): Promise<WorkbenchSemanticCompilationSnapshot> => {
+	const snapshot = async (
+		definitions?: ReadonlySet<string>,
+	): Promise<WorkbenchSemanticCompilationSnapshot> => {
 		const currentRevision = revision
-		if (!finalized) {
+		const selected = definitions === undefined ? undefined : new Set(definitions)
+		const selection = selected === undefined ? undefined : JSON.stringify([...selected].sort())
+		if (!finalized || finalizedSelection !== selection) {
 			const modules = currentModules()
-			finalized = compileWorkbenchSnapshot(sourceRoot, modules).then((result) => {
+			finalizedSelection = selection
+			finalized = compileWorkbenchSnapshot(sourceRoot, modules, selected).then((result) => {
 				if (revision === currentRevision) {
 					// Keep successful imported facts with their owning generation, so rollback never
 					// reconstructs the retained definition from rejected files on disk.
@@ -386,8 +396,8 @@ function createWorkbenchModuleStore(
 						const previous = collected.get(id)
 						if (previous?.facts !== facts)
 							collected.set(id, { facts, publications: modules.get(id)?.publications ?? new Map() })
+						dirtyModules.delete(id)
 					}
-					dirtyModules.clear()
 				}
 				return result
 			})
@@ -395,9 +405,9 @@ function createWorkbenchModuleStore(
 		const pending = finalized
 		try {
 			const result = await pending
-			return currentRevision === revision ? result : snapshot()
+			return currentRevision === revision ? result : snapshot(selected)
 		} catch (error) {
-			if (currentRevision !== revision) return snapshot()
+			if (currentRevision !== revision) return snapshot(selected)
 			if (finalized === pending) finalized = undefined
 			throw error
 		}
@@ -418,16 +428,16 @@ function createWorkbenchModuleStore(
 		collect: async (input: WorkbenchSemanticModuleInput) => {
 			await beginUpdate(input.id).collect(input)
 		},
-		plans: async () => {
-			const result = await snapshot()
+		plans: async (definitions) => {
+			const result = await snapshot(definitions)
 			return Object.freeze(result.producers.map(({ plan }) => plan))
 		},
-		compilations: async () => {
-			const result = await snapshot()
+		compilations: async (definitions) => {
+			const result = await snapshot(definitions)
 			return result.producers
 		},
-		contentCompilations: async () => {
-			const result = await snapshot()
+		contentCompilations: async (definitions) => {
+			const result = await snapshot(definitions)
 			return result.content
 		},
 		fork: () => {
@@ -460,12 +470,14 @@ function createWorkbenchModuleStore(
 async function compileWorkbenchSnapshot(
 	sourceRoot: string,
 	collected: ReadonlyMap<string, CollectedWorkbenchModule>,
+	definitions?: ReadonlySet<string>,
 ): Promise<WorkbenchSemanticCompilationSnapshot & { modules: ReadonlyMap<string, ModuleFacts> }> {
 	const modules = new Map<string, ModuleFacts>()
 	const publications = new Map<string, PublishFact>()
 	for (const [id, module] of collected) {
 		if (module.facts) modules.set(id, module.facts)
-		for (const [key, publication] of module.publications) publications.set(key, publication)
+		for (const [key, publication] of module.publications)
+			if (definitions === undefined || definitions.has(key)) publications.set(key, publication)
 	}
 	// In-flight reads and failures belong only to this snapshot; only successful facts may commit.
 	const loadingModules = new Map<string, Promise<ModuleFacts>>()

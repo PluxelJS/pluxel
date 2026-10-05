@@ -27,7 +27,8 @@ const catalog = {
 			availability: 'available',
 			issues: [],
 			execution: {
-				kind: 'static-catalog',
+				kind: 'vite',
+				origin: 'fixed',
 				artifact: { kind: 'built-module' },
 				update: { kind: 'host-reload' },
 			},
@@ -38,7 +39,7 @@ const catalog = {
 		{
 			sectionId: 'package:@pluxel/example',
 			name: '@pluxel/example',
-			basis: { kind: 'manual' },
+			basis: { kind: 'host-reload' },
 			nodes: [address],
 		},
 	],

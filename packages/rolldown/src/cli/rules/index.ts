@@ -9,6 +9,23 @@ const RULES = [pluginDependencyRule, workbenchCapnwebRule] as const
 export async function runRules(context: RuleContext): Promise<RuleMessages> {
 	const pkg = (await readWorkspacePackageJson(context.packageJsonPath)) as WorkspacePackageJson
 	const messages: string[] = []
+	if (context.artifactRoot !== undefined) {
+		const pluxel =
+			pkg.pluxel && typeof pkg.pluxel === 'object' ? (pkg.pluxel as Record<string, unknown>) : {}
+		if (
+			pluxel.artifactRoot !== context.artifactRoot ||
+			pluxel.nodeArtifacts !== true ||
+			pluxel.workbenchArtifacts !== context.workbenchArtifacts
+		) {
+			pkg.pluxel = {
+				...pluxel,
+				artifactRoot: context.artifactRoot,
+				nodeArtifacts: true,
+				workbenchArtifacts: context.workbenchArtifacts,
+			}
+			messages.push('pluxel.artifactRoot updated')
+		}
+	}
 
 	for (const rule of RULES) {
 		const result = await rule(pkg, context)

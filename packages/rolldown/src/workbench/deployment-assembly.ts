@@ -42,6 +42,8 @@ export type AssembleWorkbenchDeploymentInput = Readonly<{
 	destinationRoot: string
 	/** Canonical `dist/workbench` directories discovered from bundled dependency packages. */
 	dependencyRoots: readonly string[]
+	/** Canonical definition keys selected by the application's validated immutable catalog. */
+	definitions: ReadonlySet<string>
 }>
 
 type ProducerSource = Readonly<{
@@ -83,6 +85,7 @@ export async function assembleWorkbenchDeploymentArtifacts(
 	for (const source of inventories) {
 		if (!source.inventory) continue
 		for (const producer of source.inventory.producers) {
+			if (!input.definitions.has(pluginDefinitionIndexKey(producer.plan.definition))) continue
 			const artifactRoot = resolveArtifactRoot(source.root, producer)
 			const fingerprint = await fingerprintArtifactTree(artifactRoot)
 			const candidate = Object.freeze({ producer, artifactRoot, fingerprint })
@@ -143,6 +146,7 @@ export async function assembleWorkbenchContentDeploymentArtifacts(
 	for (const source of inventories) {
 		if (!source.inventory) continue
 		for (const content of source.inventory.entries) {
+			if (!input.definitions.has(pluginDefinitionIndexKey(content.definition))) continue
 			const artifactRoot = resolve(source.root, content.artifactRoot)
 			const fingerprint = await validateContentArtifact(artifactRoot, content)
 			const candidate = Object.freeze({ content, artifactRoot, fingerprint })

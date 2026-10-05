@@ -6,7 +6,7 @@ import {
 	PLUGIN_LOWERING_ABI_VERSION,
 	lowerTestReplacement,
 } from '@pluxel/test/unsafe'
-import { createHost, type PluginSourceOpenOptions } from '../src/index'
+import { createHost } from '../src/index'
 import { requireHostStateStore } from '../src/host'
 
 describe('Core-only Host', () => {
@@ -81,7 +81,7 @@ describe('Core-only Host', () => {
 		await expect(host.close()).resolves.toBeUndefined()
 		await expect(host.startNode(address)).rejects.toThrow('closed')
 	})
-	it('shares the production source path, retaining rejected candidates and closing watcher admission', async () => {
+	it('retains rejected catalogs, replaces definitions, and drains shutdown', async () => {
 		const events: string[] = []
 		@Plugin()
 		class Original extends BasePlugin {
@@ -109,53 +109,24 @@ describe('Core-only Host', () => {
 			}
 		}
 		lowerTestReplacement(Original, Replacement)
-		let callbacks!: PluginSourceOpenOptions
-		let loaded: unknown = { Original }
-		let error: unknown
-		let closed = false
 		const host = await createHost({
-			plugins: [],
-			root: '/',
+			plugins: [Original],
 			state: {
 				initial: {
 					autoStart: [{ definition: pluginDefinitionAddressOf(Original), variant: 'default' }],
 				},
 			},
-			sources: [
-				{
-					covers: () => true,
-					async open(options) {
-						callbacks = options
-						return {
-							entries: ['entry.mjs'],
-							close: async () => {
-								closed = true
-							},
-						}
-					},
-				},
-			],
-			loadModule: async () => loaded,
-			onSourceError: (cause) => {
-				error = cause
-			},
 		})
 		try {
 			await host.start()
-			loaded = null
-			callbacks.onChange({ type: 'change', path: 'entry.mjs' })
-			await host.updateCatalog([])
-			expect(error).toBeInstanceOf(TypeError)
+			await expect(host.updateCatalog([null as never])).rejects.toThrow(TypeError)
 			expect(events).toEqual(['original'])
-			loaded = { Replacement }
-			callbacks.onChange({ type: 'change', path: 'entry.mjs' })
-			await host.updateCatalog([])
+			await host.updateCatalog([Replacement])
 			expect(events).toEqual(['original', 'stop original', 'replacement'])
 		} finally {
 			await host.close()
 		}
-		expect(closed).toBe(true)
-		callbacks.onChange({ type: 'change', path: 'entry.mjs' })
+		await expect(host.updateCatalog([Replacement])).rejects.toThrow('closed')
 		expect(events).toEqual(['original', 'stop original', 'replacement', 'stop replacement'])
 	})
 })

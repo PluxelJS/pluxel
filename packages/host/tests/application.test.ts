@@ -1,11 +1,13 @@
-import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { defineHostService } from '../src/services'
 import {
 	defineHostApplication,
 	prepareHostApplication,
 	resolveHostApplication,
-	runHostApplication,
 	type HostApplicationFactory,
 	type HostStartupContext,
 } from '../src/application'
@@ -39,47 +41,38 @@ describe('shared Host application startup', () => {
 	})
 
 	it('resolves fresh services and rolls back when application preparation fails', async () => {
-		const events: string[] = []
-		const application = defineHostApplication(async ({ env }) => {
-			events.push(`factory:${env.VALUE}`)
-			await Promise.resolve()
-			return {
-				plugins: [],
-				services: [
-					defineHostService({
-						name: 'ApplicationResource',
-						capabilities: [
-							installRootCapability(defineContextCapability<string>('ApplicationResource'), {
-								create: () => env.VALUE!,
-							}),
-						],
-						prepare({ effects }) {
-							events.push(`prepare:${env.VALUE}`)
-							effects.defer(() => {
-								events.push(`close:${env.VALUE}`)
-							})
-						},
-					}),
+		const root = await mkdtemp(fileURLToPath(new URL('./.application-', import.meta.url)))
+		const entry = join(root, 'app.mjs')
+		await writeFile(
+			entry,
+			`import {defineHostService} from '@pluxel/host';
+import {defineContextCapability,installRootCapability} from '@pluxel/core/host';
+export default async ({env,bindings}) => {
+ const events=bindings.events; events.push('factory:'+env.VALUE); await Promise.resolve();
+ return {plugins:[],services:[defineHostService({name:'ApplicationResource',capabilities:[installRootCapability(defineContextCapability('ApplicationResource'),{create:()=>env.VALUE})],prepare({effects}){events.push('prepare:'+env.VALUE);effects.defer(()=>events.push('close:'+env.VALUE))}})],prepare({startup}){if(startup.env.VALUE==='fail')throw new Error('application prerequisite failed')}};
+}`,
+		)
+		try {
+			const result = await promisify(execFile)(
+				process.execPath,
+				[
+					'--input-type=module',
+					'-e',
+					`import assert from 'node:assert/strict'; const {runHostApplication}=await import(${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)}); const events=[];const startup={root:${JSON.stringify(root)},mode:'test',env:{VALUE:'one'},bindings:{events}};const host=await runHostApplication(${JSON.stringify(entry)},{startup});await host.close();await assert.rejects(runHostApplication(${JSON.stringify(entry)},{startup:{...startup,env:{VALUE:'fail'}}}),/application prerequisite failed/);console.log(JSON.stringify(events))`,
 				],
-				prepare({ startup: preparedStartup }) {
-					if (preparedStartup.env.VALUE === 'fail')
-						throw new Error('application prerequisite failed')
-				},
-			}
-		})
-		const host = await runHostApplication(application, { startup })
-		await host.close()
-		await expect(
-			runHostApplication(application, { startup: { ...startup, env: { VALUE: 'fail' } } }),
-		).rejects.toThrow('application prerequisite failed')
-		expect(events).toEqual([
-			'factory:one',
-			'prepare:one',
-			'close:one',
-			'factory:fail',
-			'prepare:fail',
-			'close:fail',
-		])
+				{ timeout: 10000 },
+			)
+			expect(JSON.parse(result.stdout)).toEqual([
+				'factory:one',
+				'prepare:one',
+				'close:one',
+				'factory:fail',
+				'prepare:fail',
+				'close:fail',
+			])
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 
 	it('isolates concurrent startup inputs and shares each frozen snapshot with prepare', async () => {
@@ -137,11 +130,11 @@ describe('shared Host application startup', () => {
 	it('propagates factory rejection before service preparation', async () => {
 		const failure = new Error('factory failure')
 		await expect(
-			runHostApplication(
+			resolveHostApplication(
 				defineHostApplication(async () => {
 					throw failure
 				}),
-				{ startup },
+				startup,
 			),
 		).rejects.toBe(failure)
 	})

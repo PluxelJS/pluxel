@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
 
@@ -71,14 +71,14 @@ export { Dynamic }
 			'app.ts',
 			`
 import { defineHostApplication } from '@pluxel/host'
-import { dynamicSource } from '@pluxel/host/dynamic'
+import { pluginSource } from '@pluxel/host/sources'
 import { workbenchService } from '@pluxel/workbench/service'
 import { WorkbenchHost } from '@pluxel/workbench/server'
 export default defineHostApplication(() => ({
  name: 'workbench-boundary',
  plugins: [],
  services: [workbenchService()],
- sources: [dynamicSource({ kind: 'directory', path: ${JSON.stringify(join(root, 'mutable/entries'))}, include: ['*.mjs'] })],
+ sources: [pluginSource({ kind: 'directory', path: ${JSON.stringify(join(root, 'mutable/entries'))}, include: ['*.mjs'] })],
  prepare: ({ host }) => {
   const session = host.ctx.require(WorkbenchHost).createSession({ provider: 'probe', subject: 'reader' }, () => {})
   globalThis.__hostRpcTarget = Object.getPrototypeOf(session.target.constructor)
@@ -94,7 +94,7 @@ export default defineHostApplication(() => ({
 			`
 import { build } from ${JSON.stringify(import.meta.resolve('tsdown'))}
 import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}
-await build({ cwd: ${JSON.stringify(root)}, entry: 'app.ts', minify: false, plugins: [pluxel({ variant: 'workbench', launcher: 'host', lint: false })], config: false })
+await build({ cwd: ${JSON.stringify(root)}, entry: 'app.ts', minify: false, plugins: [pluxel({ delivery: 'modules', variant: 'workbench', lint: false })], config: false })
 `,
 		)
 		await exec(process.execPath, ['--import', import.meta.resolve('tsx'), script], {
@@ -105,7 +105,7 @@ await build({ cwd: ${JSON.stringify(root)}, entry: 'app.ts', minify: false, plug
 		await rename(join(root, 'dist'), deployed)
 		await rm(join(root, 'app.ts'))
 		const bootstrap = await readFile(join(deployed, 'app.mjs'), 'utf8')
-		expect(bootstrap).toContain('workbenchCapnwebVersion')
+		expect(bootstrap).toContain('recordLoadedHostApplication')
 		const run = async () =>
 			await exec(
 				process.execPath,
@@ -113,8 +113,12 @@ await build({ cwd: ${JSON.stringify(root)}, entry: 'app.ts', minify: false, plug
 					'--input-type=module',
 					'-e',
 					`
-					const application = await import(${JSON.stringify(pathToFileURL(join(deployed, 'app.mjs')).href)})
-try { await application.start() } finally { await application.stop() }
+
+let runtime;
+try {
+ const { runHostApplication } = await import(${JSON.stringify(new URL('../../host/dist/index.mjs', import.meta.url).href)});
+ runtime = await runHostApplication(${JSON.stringify(join(deployed, 'app.mjs'))}, { startup: { root: ${JSON.stringify(root)}, mode: 'production', env: {}, bindings: {} }, sharedPackages: ['@pluxel/workbench'] });
+} finally { await runtime?.close() }
 `,
 				],
 				{ timeout: 30000, maxBuffer: 4 * 1024 * 1024 },

@@ -18,11 +18,6 @@ function pluginNames(config: { plugins?: unknown }): string[] {
 }
 
 describe('application', () => {
-	it('reserves the Workbench transport bridge instead of making capnweb a global framework', () => {
-		expect(() => application({ entry: './app.ts', sourceFrameworks: ['capnweb'] })).toThrow(
-			/capnweb is reserved for Workbench target publishers/,
-		)
-	})
 	it('exposes one standard plugin package preset and shared source pipeline', () => {
 		const pipeline = createPluginBuildPipeline({ root: '/tmp/pluxel-plugin-package' })
 		const config = pluginPackage({
@@ -343,7 +338,7 @@ describe('application', () => {
 		expect(source.indexOf("import 'pluxel:static-elysia-wiring'")).toBeLessThan(
 			source.indexOf('import application from'),
 		)
-		expect(source).toContain('runHostApplication(application,')
+		expect(source).toContain('resolveHostApplication(application,')
 		expect(source).not.toContain('@pluxel/runtime')
 	})
 
@@ -608,7 +603,15 @@ describe('application', () => {
 		}
 	})
 
-	it('rejects residual dependency subpaths and invalid scoped names', () => {
+	it('rejects malformed residual selections, package subpaths and invalid scoped names', () => {
+		const malformed: readonly unknown[] = [null, [], 'runtime', { package: ['runtime'] }]
+		for (const residualDependencies of malformed)
+			expect(() =>
+				application({
+					entry: './src/pluxel.static.ts',
+					residualDependencies: residualDependencies as never,
+				}),
+			).toThrow('residualDependencies')
 		for (const packageName of ['fixture-runtime/subpath', '@scope', 'node:fs']) {
 			expect(() =>
 				application({
@@ -646,6 +649,60 @@ describe('application', () => {
 				},
 			}),
 		).rejects.toThrow('residual dependency "missing-runtime-package" cannot be resolved')
+	})
+
+	it('rejects framework identities as explicit runtime residual packages', () => {
+		for (const name of ['@pluxel/core', '@pluxel/host'])
+			for (const field of ['packages', 'fullTrace'])
+				expect(() =>
+					application({ entry: 'app.ts', residualDependencies: { [field]: [name] } }),
+				).toThrow(`${name} must be bundled`)
+	})
+
+	it('rejects a traced residual closure that carries a second framework identity', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-residual-framework-'))
+		try {
+			const packageRoot = join(root, 'node_modules', 'fixture-runtime')
+			await mkdir(packageRoot, { recursive: true })
+			await writeFile(
+				join(packageRoot, 'package.json'),
+				JSON.stringify({ name: 'fixture-runtime', version: '1.0.0', main: 'index.cjs' }),
+			)
+			await writeFile(join(packageRoot, 'index.cjs'), "module.exports = require('@pluxel/core')")
+			const config = application({
+				cwd: root,
+				entry: 'app.ts',
+				variant: 'headless',
+				lint: false,
+				residualDependencies: { packages: ['fixture-runtime'] },
+			})
+			const plugins = config.plugins as Array<{
+				name?: string
+				buildStart?: () => Promise<void>
+				writeBundle?: { handler?: (options: object, bundle: object) => Promise<void> }
+			}>
+			const tracer = plugins.find((plugin) => plugin?.name === 'pluxel:nf3-externals')!
+			const assembly = plugins.find(
+				(plugin) => plugin?.name === 'pluxel-static-application-assembly',
+			)!
+			await tracer.buildStart?.call({
+				resolve: vi.fn(),
+				error(message: string) {
+					throw new Error(message)
+				},
+			})
+			vi.mocked(traceNodeModules).mockImplementationOnce(async (_input, options) => {
+				await options.hooks?.tracedPackages?.({
+					'@pluxel/core': { name: '@pluxel/core', versions: {} },
+				})
+			})
+			await tracer.writeBundle?.handler?.call({}, {}, {})
+			await expect(assembly.writeBundle?.handler?.call({}, {}, {})).rejects.toThrow(
+				'traced residual dependencies include @pluxel/core',
+			)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 
 	it('rejects unsupported platform targets instead of emitting incomplete bundles', () => {

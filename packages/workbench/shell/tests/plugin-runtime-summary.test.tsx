@@ -29,7 +29,8 @@ const status: PluginStatusEntry = {
 	availability: 'available',
 	issues: [],
 	execution: {
-		kind: 'static-catalog',
+		kind: 'vite',
+		origin: 'fixed',
 		artifact: { kind: 'built-module' },
 		update: { kind: 'host-reload' },
 	},

@@ -30,7 +30,7 @@ Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 
 - Plugin 在 `init()` 中最多 publish 一次；bindings 精确覆盖需要 binding 的 entries，纯 Markdown 不接收 binding。Part 不能直接 publish，由 owning Plugin 聚合。
 - owner 从 Context 推导，publication 进入 generation effects，仅在 owner committed/running 后可见。失败启动不留下可见 entry。
 - 每次 View/Attachment open 产生 fresh roots；interactive Content 由框架建立 per-open root。Factory 只得到已认证 principal、服务端重新匹配的 frozen params 与 lifetime signal。
-- View/Attachment target 来自与 Workbench 兼容的 `capnweb` 模块；registry 的 `instanceof RpcTarget` 是实际 identity 边界。插件包构建只在语义分析确认该类 publication 时检查精确 peer/dev 与实际安装版本，并生成 `pluxel.workbenchCapnweb` 事实。静态构建对有该事实的发布包及声明精确 peer 的 target 基础库核对实际解析版，再接入 Workbench copy；开发 Vite 同样先准入再接线。动态来源加载时核对 peer、可用的制品事实与实际版，再接入部署中的 Workbench facade。Content-only 与私有 RPC 不触发桥接；绕过标准加载器的来源仍受 registry identity 检查。
+- View/Attachment target 来自与 Workbench 兼容的 `capnweb` 模块；registry 的 `instanceof RpcTarget` 是实际 identity 边界。插件包构建只在语义分析确认该类 publication 时检查精确 peer/dev 与实际安装版本，并生成 `pluxel.workbenchCapnweb` 事实。静态构建对有该事实的发布包及声明精确 peer 的 target 基础库核对实际解析版，再接入 Workbench copy；开发 Vite 同样先准入再接线。原生来源通过 Node resolve hook，Vite 开发与生产通过 singleton 接线；都调用 Workbench 的纯 transport 准入规则核对 peer、制品事实和实际版本，再绑定选定安装的 capnweb。Content-only 与私有 RPC 不触发桥接；绕过标准加载器的来源仍受 registry identity 检查。
 - Factory 打开失败按实际边界分类；服务端记录原始异常、node/entry 与 `diagnosticId`，客户端只收到 code 和该标识。超时、owner 撤回及已导出 target 的重复使用分别报告，不自动重试。
 - Factory 不获得 raw request、consumer Context 或 service locator。Root 可借用领域服务，其 observer、任务和缓存随 signal/disposer 释放。
 - Attachment provider 只取得 exact consumer node address；可选 consumer root 保留自己的 owner、授权和 cleanup。两个 roots 不合并为万能 facade。

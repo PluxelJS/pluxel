@@ -250,6 +250,22 @@ export function pluginArtifactBuildPlugin(
 					? [copyDatabaseMigrations(databasePackages.get(root)!.migrationsDir, root, options)]
 					: []),
 			])
+			const artifactRoot = resolve(root, options.buildDir ?? 'dist', 'artifacts/node')
+			await mkdir(artifactRoot, { recursive: true })
+			const nodeInventory = await Promise.all(
+				[...nodeDeclarations.keys()].sort().map(async (key) => ({
+					key,
+					file: `${key}.mjs`,
+					sha256: createHash('sha256')
+						.update(await readFile(resolve(artifactRoot, `${key}.mjs`)))
+						.digest('hex'),
+				})),
+			)
+			await writeFile(
+				resolve(artifactRoot, 'pluxel-node-artifacts.json'),
+				JSON.stringify({ version: 1, artifacts: nodeInventory }) + '\n',
+			)
+
 			if (options.workbench !== false) {
 				await Promise.all([
 					writeWorkbenchDeploymentInventory(root, producerPlans, options),

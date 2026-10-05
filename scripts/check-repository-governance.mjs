@@ -27,7 +27,7 @@ const foundationDependencies = new Map([
 	['@pluxel/core', new Set()],
 	['@pluxel/commands', new Set()],
 	['@pluxel/host', new Set(['@pluxel/core', 'valibot-form'])],
-	['@pluxel/host-dev', new Set(['@pluxel/core', '@pluxel/host', '@pluxel/rolldown'])],
+	['@pluxel/host-vite', new Set(['@pluxel/core', '@pluxel/host', '@pluxel/rolldown'])],
 ])
 // Keep the few composition boundaries explicit; package ownership need not form a DAG.
 const serviceCompositionFiles = new Set(

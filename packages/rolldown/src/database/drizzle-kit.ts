@@ -85,11 +85,11 @@ export async function normalizeGeneratedOwnerReferences(
 	out: string,
 	existingFiles: ReadonlySet<string>,
 ): Promise<void> {
-	const generated = (await listMigrationSqlFiles(out)).filter((file) => !existingFiles.has(file))
+	const sqlFiles = await listMigrationSqlFiles(out)
+	const generated = sqlFiles.filter((file) => !existingFiles.has(file))
 	if (generated.length === 0) return
-	const snapshots = (await readdir(join(out, 'meta')))
-		.filter((file) => file.endsWith('_snapshot.json'))
-		.sort()
+	const metadataFiles = await readdir(join(out, 'meta'))
+	const snapshots = metadataFiles.filter((file) => file.endsWith('_snapshot.json')).sort()
 	const latest = snapshots.at(-1)
 	if (!latest) throw new Error('[database] generated migration has no Drizzle schema snapshot')
 	const snapshot = JSON.parse(await readFile(join(out, 'meta', latest), 'utf8')) as {
@@ -112,7 +112,7 @@ export async function normalizeGeneratedOwnerReferences(
 			.split('--> statement-breakpoint')
 			.map((statement) =>
 				/\bFOREIGN KEY\b/u.test(statement)
-					? statement.replace(
+					? statement.replaceAll(
 							/\bREFERENCES(\s+)"public"\."([^"]+)"/gu,
 							(full, spacing: string, table: string) => {
 								if (owned.has(table) && explicitPublic.has(table))

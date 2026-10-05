@@ -50,9 +50,7 @@ import { HostStateStore, resolveHostStateInitial, type HostStateStoreOptions } f
 import { assertHostStoreStorage } from './document-storage'
 import { HostConfigStore, type HostConfigStoreOptions } from './config-store'
 import { coercePluginConfigRecords } from './config-records'
-import { installPluginSources, type PluginSource, type PluginSourceChange } from './sources'
-import { openPluginSources, type PluginSourceSession } from './source-session'
-import { collectPluginModuleExports } from './module'
+import type { PluginSource } from './sources'
 
 type ServiceCapabilities<TServices extends readonly HostService[]> =
 	number extends TServices['length']
@@ -100,19 +98,7 @@ export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 	}>
 
 export type HostOptions<TServices extends readonly HostService[] = readonly HostService[]> =
-	HostBaseOptions<TServices> &
-		(
-			| Readonly<{ sources?: never; root?: never; loadModule?: never; onSourceError?: never }>
-			| Readonly<{
-					/** Application root passed to source discovery. */
-					root: string
-					sources: readonly PluginSource[]
-					/** Owns module resolution and revision identity; return fresh exports after a change. */
-					loadModule(path: string): Promise<unknown>
-					/** Failed candidates retain the committed catalog. Defaults to the root logger. */
-					onSourceError?(error: unknown): void
-			  }>
-		)
+	HostBaseOptions<TServices>
 
 export interface PluginHost<TServices extends readonly HostService[] = readonly HostService[]> {
 	readonly ctx: RootContext & RootContextProjection<ServiceCapabilities<TServices>>
@@ -154,6 +140,11 @@ export interface PluginHost<TServices extends readonly HostService[] = readonly 
 export async function createHost<const TServices extends readonly HostService[] = readonly []>(
 	options: HostOptions<TServices>,
 ): Promise<PluginHost<TServices>> {
+	for (const key of ['sources', 'root', 'loadModule', 'onSourceError'])
+		if (Object.hasOwn(options, key))
+			throw new TypeError(
+				`[host] createHost includes unsupported "${key}"; use an application execution entry`,
+			)
 	assertHostStoreStorage(options.state ?? {})
 	assertHostStoreStorage(options.configRecords ?? {})
 	const initialState = resolveHostStateInitial(options.state?.initial)
@@ -181,7 +172,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 		)
 		await Promise.all([state.ready, requireConfigService(ctx).ready])
 		installPluginHostCoordinator(ctx, { state })
-		await prepareHostServices(ctx, services)
+		await prepareHostServices(ctx, services, fixed)
 		if (options.vaultBindings?.length)
 			await ctx.require(HostVaultBindings).install(options.vaultBindings)
 		return createPreparedHost(options, fixed, ctx) as PluginHost<TServices>
@@ -209,69 +200,17 @@ function createPreparedHost(
 	let start: Promise<PluginApplyReport> | undefined
 	let closing: Promise<void> | undefined
 	let revision = 0
-	let sourceSession: PluginSourceSession | undefined
-	let modules = new Map<string, readonly PluginConstructor[]>()
 	let fixedPlugins: readonly PluginConstructor[] = fixed
-	let sourceTail = Promise.resolve()
-	const abort = new AbortController()
-	if (options.sources) installPluginSources(ctx, { root: options.root, sources: options.sources })
-	const combined = (
-		entries: ReadonlyMap<string, readonly PluginConstructor[]>,
-		explicit = fixedPlugins,
-	): readonly PluginConstructor[] => [
-		...explicit,
-		...[...entries.entries()]
-			.sort(([left], [right]) => left.localeCompare(right))
-			.flatMap(([, values]) => values),
-	]
-	const reportSourceError = (error: unknown): void => {
-		try {
-			if (options.onSourceError) options.onSourceError(error)
-			else ctx.logger.error('Plugin source candidate rejected', { error })
-		} catch (observerError) {
-			// An application's diagnostic callback cannot poison graph admission or resource cleanup.
-			try {
-				ctx.logger.error('Plugin source error observer failed', { error: observerError })
-			} catch {
-				/* Logging is diagnostic only. */
-			}
-		}
-	}
-	const applySourceChange = async (change: PluginSourceChange): Promise<void> => {
-		await start
-		if (closing) return
-		const next = new Map(modules)
-		if (change.type === 'unlink') next.delete(change.path)
-		else next.set(change.path, collectPluginModuleExports(await options.loadModule!(change.path)))
-		if (closing) return
-		await validateInputBindingCandidates(combined(next), options)
-		await coordinator.updateCatalog(catalog(++revision, combined(next), ctx))
-		modules = next
-	}
-	const enqueueSourceChange = (change: PluginSourceChange): void => {
-		if (closing) return
-		sourceTail = sourceTail.then(() => applySourceChange(change)).catch(reportSourceError)
-	}
+	let catalogTail = Promise.resolve()
 	const assertOpen = (): void => {
 		if (closing) throw new Error('[host] host is closed')
 	}
 	const startHost = (): Promise<PluginApplyReport> => {
 		assertOpen()
 		return (start ??= (async () => {
-			if (options.sources) {
-				sourceSession = await openPluginSources({
-					root: options.root,
-					sources: options.sources,
-					signal: abort.signal,
-					onChange: enqueueSourceChange,
-					onError: reportSourceError,
-				})
-				for (const path of sourceSession.entries())
-					modules.set(path, collectPluginModuleExports(await options.loadModule(path)))
-			}
 			assertOpen()
-			await validateInputBindingCandidates(combined(modules), options)
-			return coordinator.reconcileStartup(catalog(++revision, combined(modules), ctx))
+			await validateInputBindingCandidates(fixedPlugins, options)
+			return coordinator.reconcileStartup(catalog(++revision, fixedPlugins, ctx))
 		})())
 	}
 	const updateCatalog = async (
@@ -282,20 +221,22 @@ function createPreparedHost(
 		await startHost()
 		assertOpen()
 		const next = [...plugins]
-		const task = sourceTail.then(async () => {
+		const committed = () => {
+			fixedPlugins = next
+			onGraphCommitted?.()
+		}
+		const operation = async () => {
 			assertOpen()
-			await validateInputBindingCandidates(combined(modules, next), options)
+			await validateInputBindingCandidates(next, options)
 			const report = await coordinator.update({
-				catalog: catalog(++revision, combined(modules, next), ctx),
+				catalog: catalog(++revision, next, ctx),
 				reason: 'catalog-update',
-				onGraphCommitted: () => {
-					fixedPlugins = next
-					onGraphCommitted?.()
-				},
+				onGraphCommitted: committed,
 			})
 			return report
-		})
-		sourceTail = task.then(
+		}
+		const task = catalogTail.then(operation)
+		catalogTail = task.then(
 			(): void => undefined,
 			(): void => undefined,
 		)
@@ -399,7 +340,6 @@ function createPreparedHost(
 		},
 		close(): Promise<void> {
 			return (closing ??= (async () => {
-				abort.abort()
 				const rootDrain = closeOwnerInvocations(ctx)
 				const failures: unknown[] = []
 				try {
@@ -408,12 +348,7 @@ function createPreparedHost(
 					/* Startup is reported to its original caller. */
 				}
 				try {
-					await sourceSession?.close()
-				} catch (error) {
-					failures.push(error)
-				}
-				try {
-					await sourceTail
+					await catalogTail
 				} catch (error) {
 					failures.push(error)
 				}

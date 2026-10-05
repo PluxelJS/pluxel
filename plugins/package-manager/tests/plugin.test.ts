@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { dynamicSource } from '@pluxel/host/dynamic'
+import { pluginSource } from '@pluxel/host/sources'
 import { installPluginSources } from '@pluxel/host/internal'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -25,9 +25,10 @@ describe('PackageManagerPlugin', () => {
 			await using host = await createServiceInternalTestHost()
 			if (include)
 				installPluginSources(host.ctx, {
+					updates: 'live',
 					root,
 					sources: [
-						dynamicSource({
+						pluginSource({
 							kind: 'directory',
 							path: resolve(managedRoot, 'entries'),
 							include: [include],
@@ -50,7 +51,7 @@ describe('PackageManagerPlugin', () => {
 				expect.objectContaining({
 					plugin: pluginNodeAddressOf(PackageManagerPlugin),
 					kind: 'start-failed',
-					message: expect.stringContaining('Dynamic plugin source is not declared'),
+					message: expect.stringMatching(/Plugin source|Plugin sources/),
 				}),
 			)
 			expect(host.isRunning(PackageManagerPlugin)).toBe(false)
@@ -65,9 +66,10 @@ describe('PackageManagerPlugin', () => {
 		const managedRoot = resolve(root, 'managed')
 		await using host = await createServiceInternalTestHost()
 		installPluginSources(host.ctx, {
+			updates: 'live',
 			root,
 			sources: [
-				dynamicSource({
+				pluginSource({
 					kind: 'directory',
 					path: resolve(managedRoot, 'entries'),
 					include: ['*.mjs'],

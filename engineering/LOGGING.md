@@ -211,7 +211,7 @@ Logging 是 Services 包内的具体 Host 服务，通过 `/logging` 显式选�
 - `packages/services/src/logging/store.ts`
 - `packages/services/src/management/services/management/RuntimeManagementTarget.ts`
 - `packages/host/src/host.ts`
-- `packages/host-dev/src/host-vite.ts`
+- `packages/host-vite/src/host-vite.ts`
 
 ## 验证
 

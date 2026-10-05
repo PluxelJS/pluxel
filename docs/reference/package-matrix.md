@@ -16,8 +16,8 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/core`                  | 插件依赖、启动停止和资源生命周期                           | [Plugin 模型](../plugin-development/model.md)               |
 | `@pluxel/services`              | 官方服务、日志、管理面与应用组合                           | [组合 Host 服务](../host/services.md)                       |
 | `@pluxel/workbench`             | Content、View、Attachment、浏览器 SDK 与官方 Shell         | [View](../workbench/view.md)                                |
-| `@pluxel/host`                  | catalog、运行意图、图更新与动态来源                        | [配置插件宿主](../host/configuration.md)                    |
-| `@pluxel/host-dev`              | 通用 Vite、HMR 与在线开发控制台                            | [CLI 与工具链](../development/tooling.md)                   |
+| `@pluxel/host`                  | catalog、运行意图、图更新与原生来源启动                    | [配置插件宿主](../host/configuration.md)                    |
+| `@pluxel/host-vite`             | Vite 开发/生产执行、更新与开发控制台                       | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/cli`                   | 脚手架、构建、数据库、发行物、开发控制台与源码工作区命令   | [CLI 与工具链](../development/tooling.md)                   |
 | `@pluxel/rolldown`              | Plugin 构建集成与源码查询                                  | [开发和发布插件包](../development/plugin-package.md)        |
 | `@pluxel/test`                  | 统一插件测试 host、Vitest/Vite preset 与文件 fixture       | [测试 Plugin](../plugin-development/testing.md)             |
@@ -39,7 +39,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 `@pluxel/commands/capnweb` 与 `@pluxel/commands/mcp` 分别把选定 Command 投影为原生 Cap’n Web 方法与 MCP Tool；适配器不安装 server 或会话，协议依赖按入口隔离。
 
-宿主服务、preset 与开发附件的组合见[服务参考](../host/services.md)。开发脚本从 `@pluxel/host-dev/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
+宿主服务、preset 与开发附件的组合见[服务参考](../host/services.md)。开发脚本从 `@pluxel/host-vite/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
 
 `@pluxel/services/elysia/node` 提供标准 Host launcher 使用的 `listenElysia()`；srvx/crossws carrier 为包内实现。`createElysiaHandler()` 与 HTTP 服务共用 `@pluxel/services/elysia` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/elysia` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
 
@@ -48,7 +48,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 ## 同包的可选入口
 
-`@pluxel/services/logging`、`/management`、`/preset`、`/vite` 与 `/build` 都属于 `@pluxel/services`；`@pluxel/host/dynamic` 属于 Host。安装包不等于启用所有领域：基础入口不加载未选择的日志、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
+`@pluxel/services/logging`、`/management`、`/preset`、`/vite` 与 `/build` 都属于 `@pluxel/services`；`@pluxel/host/sources` 属于 Host。安装包不等于启用所有领域：基础入口不加载未选择的日志、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
 
 ## Workspace-only 能力
 

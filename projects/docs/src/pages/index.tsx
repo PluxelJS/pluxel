@@ -42,11 +42,11 @@ export default defineHostApplication(() => ({
 	},
 	{
 		code: `import { defineHostApplication } from '@pluxel/host'
-import { dynamicSource } from '@pluxel/host/dynamic'
+import { pluginSource } from '@pluxel/host/sources'
 
 export default defineHostApplication(() => ({
   plugins: [],
-  sources: [dynamicSource({
+  sources: [pluginSource({
     kind: 'directory', path: './plugins',
     include: ['*.mjs'],
   })],

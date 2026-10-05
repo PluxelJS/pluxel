@@ -1,4 +1,4 @@
-import { host } from '@pluxel/host-dev/vite'
+import { host } from '@pluxel/host-vite'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { createServer, type RunnableDevEnvironment } from 'vite'
 import { expect, it } from 'vitest'
@@ -25,6 +25,7 @@ async function runFixture(
 		'package.json': JSON.stringify({ type: 'module', dependencies: { capnweb: '0.12.0' } }),
 		'node_modules/@pluxel/workbench/package.json': JSON.stringify({
 			name: '@pluxel/workbench',
+			version: '1.0.0',
 			type: 'module',
 			exports: './index.js',
 			peerDependencies: { capnweb: '0.12.0' },

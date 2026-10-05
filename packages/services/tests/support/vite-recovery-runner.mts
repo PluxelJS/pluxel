@@ -240,15 +240,28 @@ try {
 	await eventually(() => healthy('manifest-fixed'))
 
 	// Once accepted, abandoned failed candidates cannot keep admitting unrelated updates.
+	const previousSequence = readHostRecentUpdates(host!.ctx)?.latestUpdate()?.sequence
 	await writeFile(ownerPath, ownerSource)
-	await eventually(() => healthy('initial'))
-	const settled = await readHostPluginStatusOverview(host!.ctx)
-	const sequence = settled.statuses[0]?.recentUpdate?.batch.sequence
+	let sequence: number | undefined
+	await eventually(async () => {
+		await healthy('initial')
+		// Running instances precede route settlement and retirement of the previous watches.
+		const latest = readHostRecentUpdates(host!.ctx)?.latestUpdate()
+		assert.equal(latest?.state, 'settled')
+		assert.equal(latest?.outcome, 'applied')
+		assert.notEqual(latest?.sequence, previousSequence)
+		assert.equal(latest?.trigger, relative(root, ownerPath).replaceAll('\\', '/'))
+		const settled = await readHostPluginStatusOverview(host!.ctx)
+		assert.equal(settled.statuses[0]?.recentUpdate?.batch.sequence, latest?.sequence)
+		sequence = latest?.sequence
+	})
+	assert.ok(sequence !== undefined)
 	await writeFile(resolve(root, 'src/new-helper.ts'), "throw new Error('ABANDONED_HELPER')\n")
 	await delay(400)
 	await healthy('initial')
 	const afterAbandonedUpdate = await readHostPluginStatusOverview(host!.ctx)
 	assert.equal(afterAbandonedUpdate.statuses[0]?.recentUpdate?.batch.sequence, sequence)
+	assert.equal(readHostRecentUpdates(host!.ctx)?.latestUpdate()?.sequence, sequence)
 } finally {
 	await server.close()
 }

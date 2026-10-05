@@ -18,7 +18,7 @@ import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
-import { dynamicSource } from '@pluxel/host/dynamic'
+import { pluginSource } from '@pluxel/host/sources'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
 
@@ -32,7 +32,7 @@ export default defineHostApplication(async (startup) => {
 		name: 'managed-plugins',
 		plugins: [PackageManagerPlugin],
 		sources: [
-			dynamicSource({
+			pluginSource({
 				kind: 'directory',
 				path: resolve(managedPackagesRoot, 'entries'),
 				include: ['*.mjs'],
@@ -68,7 +68,7 @@ export default defineHostApplication(async (startup) => {
 
 示例通过 `PLUXEL_DATA_ROOT` 统一定位存储和来源；默认是 cwd 下的 `.pluxel`。生产运行时设置 distribution root 外的绝对路径。
 
-source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；未声明动态来源的宿主会以 `DYNAMIC_SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
+source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engine、创建目录、注册 command 或发布 Direct View 之前验证该声明；未声明动态来源的宿主会以 `SOURCE_REQUIRED` 失败，dynamic source 不匹配会以 `SOURCE_NOT_DECLARED` 失败。
 
 ## 配置安全默认值
 
@@ -109,7 +109,11 @@ console.log(removed.value)
 - 部分成功和每个包的失败仍是提交回执，failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`；
 - 输入校验或命令执行故障返回 `Result.err(CommandFailure)`。
 
-初始化保留有效的既存 entry，不因包管理器重启触发 HMR。安装按 pnpm 锁定的依赖图识别变化，纯删除不会重新发布图未变化的包；传递依赖、peer 或 optional 依赖变化也会失效对应 entry。无法识别 lockfile 时，安装保守重新发布。生产环境已经加载的同路径 entry 升级仍需重启进程（`PLUGIN_SOURCE_RESTART_REQUIRED`）；初始化修复损坏 entry 也不绕过这个边界。
+初始化严格核对发布记录、不可变安装字节和既存 entry；缺失、损坏或旧布局明确失败，需离线修复/转换，不在运行时自动改写合同。有效 entry 不因重启而重发。
+
+每次安装先建立独立 revision，使用 pnpm global virtual store 的共享 immutable slots；完整 lockfile resolution/peer/optional 图与实际字节共同决定变化。图、字节和物理路径不变的包保留 wrapper 正文、inode/mtime 和 inner entry；未知图会拒绝发布。旧 revision/slots 保留至离线维护，升级、卸载和 Plugin close 不删除旧代的延迟 import、资源或制品。
+
+原生当前 Host 不观察发布，下一新进程扫描生效；Vite 观察实际图更新。安装回执只证明文件发布，不代表 catalog 接纳或 Plugin 激活成功。
 
 Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
 每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound scope 声明 snapshot query 与
@@ -130,41 +134,40 @@ Snapshot 包含 revision、engine、managed root、entries directory、packages 
 catalog node address 生成，消费者不应拼接 Plugin class name URL。关闭 Workbench 的宿主 仍可使用 commands；Workbench disabled 时不会
 创建相关 UI backend。
 
-安装后应在返回值的 `succeeded` 中找到包，并在宿主清单中看到对应插件。再从正常插件管理入口启动它，确认运行状态；仅看到安装成功不表示插件已在运行。失败时读取 `failed` 中的稳定错误分类。
+安装后在 `succeeded` 中确认文件发布。Vite 可进一步检查宿主 catalog；原生需在新的启动进程检查。再从正常插件管理入口启动它，确认运行状态；仅看到安装成功不表示插件已在运行。失败时读取 `failed` 中的稳定错误分类。
 
 ## 安装和运行策略不是同一动作
 
 ```text
 package.install
   -> 校验 registry spec 与 policy
-  -> pnpm 一次性更新 managed dependency graph
-  -> 确认每个 direct dependency 已 materialize
-  -> 原子发布 entries/*.mjs
-  -> dynamic source batch 观察变化
-  -> 正常 catalog/Host state/依赖图 commit
+  -> pnpm 在私有 revision 物化依赖图
+  -> 校验稳定的共享 slot 与完整图/字节
+  -> 原子保存 published-installation.json
+  -> 按条目原子发布 entries/*.mjs
+  -> Vite 事务接纳 / native 新进程扫描
 ```
 
-安装成功只表示 source 已发布，不会替新 Plugin 打开 Host state auto-start policy，也不会创建 process session start intent。删除时先让 pnpm
-prune managed graph，再删除 entry；source batch 随后按正常 lifecycle 卸载 module。mutation 被串行化，一批 specs 只执行一次 native install。
+安装不会替新 Plugin 打开 auto-start 或 session start intent。删除只撤回公开 wrapper，不删除已使用的文件；Vite 随后按正常 lifecycle 撤回定义，原生当前 Host 保持运行。
 
-受管目录结构是：
+受管目录结构：
 
 ```text
 .pluxel/managed-plugins/
-  package.json       # managed project manifest
-  pnpm-lock.yaml     # managed graph lockfile
-  node_modules/      # materialized dependencies
-  entries/*.mjs      # 唯一公开给 dynamic runtime 的文件协议
+  published-installation.json  # 当前安装/选择的唯一 authority
+  revisions/<id>/             # manifest、lockfile、依赖链接与 immutable inner entries
+  slots/                      # pnpm 共享的 immutable dependency slots
+  entries/*.mjs               # 稳定路径的公开 wrapper
+  .writer/                    # 单写者 ownership，关闭后释放
 ```
 
-不要让其他工具直接改写 `entries/`，也不要让 dynamic route 调用 Package Manager 私有 store。要实现另一种 registry、market 或审批策略，应实现另一个 source producer，并继续通过普通 file source protocol 接入 runtime。
+mutation 在进程内串行，目录同时只能有一个进程写入；冲突返回 PACKAGE_STORE_WRITER_CONFLICT，遗留 writer 只能离线确认并清理。不要由其他工具改写 entries、revision 或 slots。其他 producer 也通过普通 file/directory 数据合同接入，不直接调用运行图 internals。
 
 ## 输入边界与失败语义
 
 只接受小写 canonical npm registry package name 加 version、range 或 dist-tag。alias、filesystem path、URL、Git 和任意 tarball 都会被拒绝。单项失败通过结构化 mutation result 返回，错误消息会隐藏 registry credential。
 
-如果 native install 失败，旧 manifest 和 entries 保持可用；如果安装成功但 entry publication 失败，操作返回可重试失败，不把半个 entry
-暴露给 route。Plugin stop 会撤销 commands 和 Direct View publication，并使已打开的 API root 失效；managed project 是 host-owned
+如果 native install 失败，旧发布记录和 entries 保持可用。wrapper 是逐项原子发布，整批不是原子事务；部分发布时 succeeded/failed 如实标出条目，受影响的其他 managed 条目也可能出现在 failed，空 input 表示批次级发布故障。已完成的 wrapper 保持发布，snapshot 的 entryFile 仅在它与当前记录一致时存在；修复 IO 后重试。不发布半个文件，也不宣称已完成的条目已回滚。Plugin stop 会撤销 commands 和 Direct View publication，并使已打开的 API root 失效；managed project 是 host-owned
 持久状态，不因一次 generation cleanup 被删除。
 
 ## 适用范围
