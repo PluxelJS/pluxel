@@ -15,7 +15,7 @@ modules 的 `pluxel-deployment.json` kind 为 pluxel-modules-application，runti
 
 ## Static application freezer
 
-static application 使用 `@pluxel/rolldown` 的 `pluxel()` tsdown 插件；入口与输出归普通 tsdown 配置。用法见 [构建部署](../docs/development/distribution.md)。
+standalone 交付使用 `@pluxel/rolldown` 的 `pluxel()` tsdown 插件；入口与输出归普通 tsdown 配置。用法见 [构建部署](../docs/development/distribution.md)。
 
 freezer 接受直接默认导出的 `defineHostApplication(factory)`。工厂是同步或异步的箭头/函数表达式，直接返回对象，或在块中以唯一、无条件的顶层 `return` 返回对象。返回对象不允许 spread。`plugins` 使用直接数组或模块级 const/imported 数组，不能依赖 startup 分支或函数调用；构建不会执行工厂或静态求值任意 JavaScript。它在同一 graph 中执行 macro、config metadata、lint、Workbench
 remote extraction 和 production preprocessing，然后生成以 canonical entry 为 namespace import 的 platform bootstrap。Wrapper

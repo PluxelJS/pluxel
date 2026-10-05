@@ -9,12 +9,12 @@
 
 ## 未决工作与完成标准
 
-| 缺口                       | 当前边界                                                                                      | 完成标准                                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 等价路由冲突               | 能拒绝跨 owner 的相同 kind、method、declared path；不能证明 matcher-equivalent pattern 无冲突 | Elysia 提供公开的 compiled matcher signature，并通过参数改名、可选片段、trailing slash 等冲突测试       |
-| Plugin 包版本准入          | singleton identity 不等于 `elysia` peer range 兼容                                            | 封存包的兼容声明，static/dynamic 使用同一 admission contract，缺失、不可解析、不兼容 range 均有明确诊断 |
-| 外部 application lifecycle | 缺少公开 attach/detach epoch；直接使用 `setup()` / `cleanup()` fail-fast                      | 上游公开 epoch 可支持成功、失败回滚、请求排空与 exactly-once detach，且不访问私有 callback              |
-| 更广插件兼容性与性能       | 当前覆盖不能代表所有官方插件、server-specific capability 或平台组合                           | 建立明确的兼容矩阵，用相同 workload 测量真实场景，再决定是否优化 dispatcher                             |
+| 缺口                       | 当前边界                                                                                      | 完成标准                                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 等价路由冲突               | 能拒绝跨 owner 的相同 kind、method、declared path；不能证明 matcher-equivalent pattern 无冲突 | Elysia 提供公开的 compiled matcher signature，并通过参数改名、可选片段、trailing slash 等冲突测试    |
+| Plugin 包版本准入          | singleton identity 不等于 `elysia` peer range 兼容                                            | 封存包的兼容声明，Native/Vite 使用同一 admission contract，缺失、不可解析、不兼容 range 均有明确诊断 |
+| 外部 application lifecycle | 缺少公开 attach/detach epoch；直接使用 `setup()` / `cleanup()` fail-fast                      | 上游公开 epoch 可支持成功、失败回滚、请求排空与 exactly-once detach，且不访问私有 callback           |
+| 更广插件兼容性与性能       | 当前覆盖不能代表所有官方插件、server-specific capability 或平台组合                           | 建立明确的兼容矩阵，用相同 workload 测量真实场景，再决定是否优化 dispatcher                          |
 
 ## Carrier 验证约束
 
@@ -41,13 +41,13 @@ matcher signature 到位后，应同时验证冲突诊断的 owner、route 和�
 ## 包版本准入
 
 包构建或加载计划应读取 owning package 的 `elysia` peer range，将规范化声明封存到可信 metadata；
-static 与 dynamic 随后使用同一公开准入规则，在 lifecycle 与 publication 之前与宿主 contract 比对。
+Native 与 Vite 随后使用同一公开准入规则，在 lifecycle 与 publication 之前与宿主 contract 比对。
 Core 不扫描文件系统，也不依赖 package manager 布局。
 
 构建/freezer 可以在模块求值之前验证包 metadata；任意 constructor source 可能已经求值，不能承诺通用的
 pre-evaluation rejection。应用内源码由应用 lockfile 控制，与发布 Plugin 包的 peer contract 区分。
 
-验证必须覆盖缺失 peer、非法 range、不兼容 range、兼容 range、多份 Elysia identity 以及 static/dynamic 诊断一致性。
+验证必须覆盖缺失 peer、非法 range、不兼容 range、兼容 range、多份 Elysia identity 以及 Native/Vite 诊断一致性。
 只有这一整条链路落实后，才能声称完成包版本准入。
 
 ## 兼容矩阵与性能证据

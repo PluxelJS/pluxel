@@ -1,6 +1,6 @@
-# Static 发行物完整性与来源证明
+# 应用发行物完整性与来源证明
 
-`@pluxel/rolldown/distribution` 负责已完成 finalization 的 static Node 应用 artifact set、in-toto/DSSE 与惰性
+`@pluxel/rolldown/distribution` 负责已完成 finalization 的 Node 应用 artifact set、in-toto/DSSE 与惰性
 delivery marker 契约。Runtime 启动不会读取这些文件、遍历发行目录、计算 hash、验证签名或发送 telemetry。
 
 构建何时生成 manifest 读 [Finalization 所有权](#finalization-所有权)；目录/路径规则读 [Artifact set v1](#artifact-set-v1)；签名验证读[签名 Attestation](#签名-attestation)；delivery token 读[可选 Delivery marker](#可选-delivery-marker)。这些检查是发行工具职责，不进入应用启动热路径。
@@ -10,7 +10,7 @@ delivery marker 契约。Runtime 启动不会读取这些文件、遍历发行�
 `pluxel()` 会在 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 和 nf3 residual
 packages 全部组装完成后调用 `createDistributionManifest()`。Manifest 路径固定为 `pluxel-distribution.json`。
 
-Static application 声明 config environment bootstrap 时，assembly 会在 finalization 前生成 root `.env.example`；它与 server、
+应用声明 config environment bootstrap 时，assembly 会在 finalization 前生成 root `.env.example`；它与 server、
 public 和 artifact 文件一样进入 inventory。该文件不是 runtime input，也不授权 finalizer 读取、生成或加载真实 `.env`。
 
 如果应用任务在 freezer 返回后继续写入 `dist/`，release pipeline 必须在最后一次写入后调用

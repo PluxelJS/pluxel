@@ -11,9 +11,9 @@ evolution policy 与 migration 声明，不携带数据 owner；`ctx.require(Dat
 owner、完成 migration prepare，并返回只暴露 `read(callback)` 与 `transaction(callback)` 的 handle。共享 definition 只复用
 结构，不共享数据、handle 或 transaction。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
 
-以上边界只约束 Pluxel-managed plugin database。同一作者控制 fixed catalog、schema 与部署的 static application 可以完全绕过
+以上边界只约束 Pluxel-managed plugin database。同一作者控制 fixed catalog、schema 与部署的应用 可以完全绕过
 该 capability，用 application-private package 统一拥有 Drizzle client、pool 与 migration。数据库是整个应用的硬前提时，它是
-host-owned root resource：static `prepare()` 在 Plugin graph 前打开并迁移，实例按 root Context 绑定，关闭登记到 root effects；
+host-owned root resource：应用 `prepare()` 在 Plugin graph 前打开并迁移，实例按 root Context 绑定，关闭登记到 root effects；
 Plugin 通过接收 Context 的 typed accessor 显式取得实例。它不读取 host config、不从 PersistenceService 反推路径，也不投影为
 Runtime Context property。只有部分 Plugin 依赖时才改成 constructor-injected provider Plugin，让 graph 隔离失败和拥有 cleanup。
 runtime 不为 application-private database 提供 per-plugin role/instance、lineage、outbox 或 owner-scoped invalidation。

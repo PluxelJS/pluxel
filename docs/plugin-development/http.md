@@ -153,7 +153,7 @@ protected override init() {
 
 ## WebSocket
 
-Node production carrier、static Vite 和 dynamic Vite 已通过真实 listener 验证 Elysia 2 的基础业务 WebSocket。作者仍直接使用
+Node 生产承载与 Vite 开发承载 已通过真实 listener 验证 Elysia 2 的基础业务 WebSocket。作者仍直接使用
 Elysia，不需要 Pluxel WebSocket facade：
 
 ```ts no-twoslash
@@ -255,7 +255,7 @@ const response = await host.http.fetch(new URL('/orders/42', host.http.origin))
 - Workbench disabled 时业务 route 仍工作。
 
 `host.http.fetch()` 不执行 HTTP Upgrade，也不证明真实 listener disconnect、WebSocket close code、backpressure 或 HMR arbitration。需要这些
-carrier 能力时必须使用 Node production、static Vite 或 dynamic Vite 对应的 ephemeral real-listener integration test；不能用普通 Fetch
+carrier 能力时必须使用 Node 生产或 Vite 开发承载 对应的 ephemeral real-listener integration test；不能用普通 Fetch
 response 代替。完整 test host 配置见[测试 Pluxel 插件](./testing.md)。
 出站请求可以使用官方 [Wretch Plugin](../plugins/wretch.md) 或领域 HTTP client，不要与入站 Elysia application ownership 混在一起。
 

@@ -175,7 +175,7 @@ const testContextHost = createContextHost({
 
 - standalone application/framework 可以直接安装 `@pluxel/context` 并组合自己的 host；
 - `@pluxel/core` 源码复用这个 kernel，但发布的 Core JS 与 declarations 已完整内联，Core 消费者不需要额外安装它；
-- static、dynamic 和 test Host 都在创建 root 前通过服务清单组合固定能力；
+- Native、Vite 和 test Host 都在创建 root 前通过服务清单组合固定能力；
 - Plugin 不能向现有 Host Context 安装、替换或删除 capability；
 - Plugin 间业务依赖使用 constructor 或 optional Plugin ref，不使用 Context descriptor 模拟第二张依赖图。
 

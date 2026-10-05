@@ -7,7 +7,7 @@ Management 拥有插件目录分组；它是管理布局，不是插件能力、
 
 ## Ownership and projection
 
-- `@Plugin` 和 host route 不声明分类规则。static/dynamic 共用 Management service。
+- `@Plugin` 和 host route 不声明分类规则。Native/Vite 共用 Management service。
 - Management disabled 不创建 service、不读取或写入分组文件。
 - coordinator 的一次 pinned committed view 同时投影 statuses、summary 和 declaration facts；不读取 unpublished HMR draft。
 - 分类以 definition family 为单位，所有 default/fork node 共用位置。读取 orphan reference 不 intern slot、不创建 Context 或资源。

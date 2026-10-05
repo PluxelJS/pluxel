@@ -108,7 +108,7 @@ const result = await host.config.patch(WorkerPlugin, {
 expect(result.ok).toBe(true)
 ```
 
-`initialConfig` 不会根据当前状态偷偷变成 live update；越过 bootstrap boundary 后继续传它会明确失败。static 与 dynamic host 的持久化和
+`initialConfig` 不会根据当前状态偷偷变成 live update；越过 bootstrap boundary 后继续传它会明确失败。Native 与 Vite 应用的持久化和
 reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存与显式 restart 是两个独立操作，`host.config.patch()` 不会隐式重启；
 运行中的原地更新只通过 `configs.onUpdate()` 通知。
 

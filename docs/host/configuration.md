@@ -207,7 +207,7 @@ export class WorkerPlugin extends BasePlugin {
 }
 ```
 
-Canonical static entry 直接声明部署名称；不要在配置工厂中重复解析类型或拼装 Plugin address：
+应用入口 直接声明部署名称；不要在配置工厂中重复解析类型或拼装 Plugin address：
 
 ```ts no-twoslash
 import { defineHostApplication, envBinding } from '@pluxel/host'
@@ -248,7 +248,7 @@ JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: 
 
 部署凭据不放在普通 config。需要从环境变量或挂载文件提供凭据时，按 [Vault 部署绑定](#部署凭据)声明只读记录；需要交互登录或刷新凭据时，使用可写 Vault。
 
-Static production build 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是静态目录中的 Plugin 标识符，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
+应用生产构建 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是静态目录中的 Plugin 标识符，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
 
 直接消费 runtime control-plane `ConfigResult` 时按 discriminant 处理返回值：query 返回 `config` 和 `defaults`，并标记
 `saved: false`；成功 mutation 返回已持久化的 `config`、`application` 与 apply report，不再重复返回 defaults。
@@ -577,7 +577,7 @@ owner invocation 的 `Request` 传入会明确失败。
 
 ### 整个应用依赖数据库
 
-如果没有数据库，整个 static application 就没有可运行的核心功能，数据库是 host-owned root resource：static `prepare()` 必须在 Plugin graph 启动前完成连接、migration 和必要 preflight；失败直接终止本次 host startup。成功实例按 root Context 绑定，关闭登记到 root effects，不能归属任一 consumer Plugin。
+如果没有数据库，整个应用 就没有可运行的核心功能，数据库是 host-owned root resource：应用 `prepare()` 必须在 Plugin graph 启动前完成连接、migration 和必要 preflight；失败直接终止本次 host startup。成功实例按 root Context 绑定，关闭登记到 root effects，不能归属任一 consumer Plugin。
 
 Application package 导出接收 Context 的 typed accessor，不把数据库投影成 `ctx.database`，也不使用进程级 module singleton：
 
@@ -617,7 +617,7 @@ export function appDatabaseFor(ctx: Context): AppDatabase {
 }
 ```
 
-`appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；static application 的泛型不能反向改变独立编译 Plugin 的 Context shape。
+`appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；应用声明的泛型不能反向改变独立编译 Plugin 的 Context shape。
 
 应用入口统一决定部署路径，同时供宿主 Persistence 和 application database 使用：
 

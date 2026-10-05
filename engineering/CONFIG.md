@@ -34,7 +34,7 @@ Management 配置 RPC 与 Host-vite 开发控制台委托 Host；Management 负�
 - `getRawConfig()` 对同一 revision 复用一个深冻结普通 snapshot；revision 改变后返回新 identity，旧引用不变，不使用 live `Proxy` view。
 - 任意 Part config patch 都重新验证 composite record，并通知当前 owning Plugin generation；没有 Part config revision 或独立
   persistence/application owner。
-- static application build 固定的是 Plugin code graph 和 配置工厂代码，不是 resolver 的启动返回值。
+- 应用构建 固定的是 Plugin code graph 和 配置工厂代码，不是 resolver 的启动返回值。
 
 ## 存储与创建边界
 

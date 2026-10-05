@@ -61,7 +61,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/redis`           | Redis client、script 与 backend            | [Redis](../plugins/redis.md)                     |
 | `@pluxel/storage`         | local/remote object storage                | [对象存储](../plugins/storage.md)                |
 | `@pluxel/otel`            | traces、metrics 与 exporters               | [OpenTelemetry](../plugins/otel.md)              |
-| `@pluxel/package-manager` | dynamic host package 管理                  | [Package manager](../plugins/package-manager.md) |
+| `@pluxel/package-manager` | Native/Vite 插件包管理                     | [Package manager](../plugins/package-manager.md) |
 
 仓库外项目不得把这些 package 视为可安装的公共依赖，也不得用源码相对路径绕过 package boundary。
 

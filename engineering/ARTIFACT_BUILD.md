@@ -91,7 +91,7 @@ renderer declaration、runtime-module fallback、root override 或第二套 file
 
 生产构建输出 `dist/workbench/<producer>/<revision>/mf-manifest.json`、`remoteEntry.js`、expose chunks、CSS 和 dynamic
 types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-digest>/content-plan.json`。Root 分别写
-`dist/workbench/pluxel-workbench-producers.json` 与 `dist/workbench/pluxel-workbench-content.json`。发布包和 static application
+`dist/workbench/pluxel-workbench-producers.json` 与 `dist/workbench/pluxel-workbench-content.json`。发布包和应用产物
 都消费预编译 Content inventory，因此 distribution 不要求保留原始 `src/*.md`。Cache/build revision 包含解析后的 UI 源码图、
 实际命中的 package metadata 与 subpath、fixed shared compatibility set 和 compiler version；无关 workspace lockfile 内容不参与。
 只有类型声明入口的已安装依赖（包括仅向 TypeScript 导出根入口的包）以清单参与 revision，不要求其具有 JS 根入口；若清单声明了运行时根导出，解析失败仍使构建失败。

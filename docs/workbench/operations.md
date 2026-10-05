@@ -108,7 +108,7 @@ Plugin 启停命令的 `ok: true` 表示运行意图与 graph commit 已应用�
 
 ## Vite 与反向代理
 
-Static/dynamic Vite adapter 在 Vite 自己的 Node listener 上接入 Runtime HTTP/Upgrade，并先让 Vite HMR socket 匹配；开发者
+Vite 开发接入在 Vite 自己的 Node listener 上接入 Runtime HTTP/Upgrade，并先让 Vite HMR socket 匹配；开发者
 不需要为 Workbench 再启动或代理一个端口。
 
 生产反向代理只需保留同源路径并正确转发 WebSocket Upgrade：Workbench document、`/__pluxel/` HTTP endpoints、MF assets

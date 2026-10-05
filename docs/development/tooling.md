@@ -1,6 +1,6 @@
 ---
 title: CLI 与工具链
-description: 了解脚手架、插件构建、静态应用、HMR、源码联调和发行检查分别由谁负责。
+description: 了解脚手架、插件构建、应用执行、HMR、源码联调和发行检查分别由谁负责。
 ---
 
 按任务选择下面的命令。生成项目已固定 `@pluxel/cli`，在项目根目录用 `pnpm exec pluxel` 调用；还没有项目时，从[快速开始](../getting-started/index.md)创建。已有项目补装 CLI 的方法见安装分层。
@@ -18,7 +18,7 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 在 workspace 生成 Plugin package                         | `pluxel new`                                                  |
 | 构建当前 Plugin package                                  | `pluxel build`                                                |
 | 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`                       |
-| 创建/检查/验证 static distribution                       | `pluxel distribution create/inspect/verify`                   |
+| 创建/检查/验证应用发行物                                 | `pluxel distribution create/inspect/verify`                   |
 | 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
 | 发布 npm package 并通知 market                           | `pluxel publish`                                              |
 | 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
@@ -60,17 +60,25 @@ npx nypm add -g @pluxel/cli
 
 按命令安装可选能力：
 
-Plugin/static build 与 Vite adapter：
+Plugin/应用构建与源码转换：
 
 ```sh package-install
 npx nypm add -D @pluxel/rolldown tsdown oxlint
 ```
 
-Dynamic host：
+Native 应用执行：
 
 ```sh package-install
 npx nypm add @pluxel/host
 ```
+
+Vite 应用执行（开发或生产）：
+
+```sh package-install
+npx nypm add @pluxel/host-vite vite
+```
+
+具体装配见 [Host 配置](../host/configuration.md)。
 
 `publish --webhook`：
 
@@ -213,4 +221,4 @@ Workbench 收到 publication、运行 generation 或产物变化造成的会话�
 运行受影响 package 的实际 scripts；源码声明位置与脚本可用 [inspect](./inspection.md) 查询。
 构建失败先看报错对应的 root export、constructor、`configs.use()`、`parts.use()` 或 literal declaration，不通过关闭 lowering 绕过错误。
 当前应用的状态、最近更新和日志使用[devconsole](./dev-console.md)读取。
-跨 checkout 联调见[源码开发](./source-workspaces.md)，发行检查见[静态发行物](./distribution.md)。
+跨 checkout 联调见[源码开发](./source-workspaces.md)，发行检查见[发行物](./distribution.md)。

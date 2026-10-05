@@ -8,7 +8,7 @@
 每个方向只有同时满足以下条件，才能升级为独立 proposal：
 
 1. 明确指出删除的当前 API、状态与实现；
-2. 替代设计覆盖 package build、Vite source、HMR、static/dynamic host 和测试；
+2. 替代设计覆盖 package build、Vite source、HMR、Native/Vite 执行 和测试；
 3. 证明复杂度没有只从作者面转移到 compiler、artifact protocol 或 launcher；
 4. 提供真实 workspace Plugin/use case，而不只依赖 synthetic fixture；
 5. 给出可判定的验收与否决条件。

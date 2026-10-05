@@ -48,7 +48,7 @@ Consumer 拥有 stable item ID 的保存与 missing/unhealthy/rebind/fallback po
 - decorator/lowering/candidate forkability、Core address/slot/records/family、definition replacement；
 - Host durable forks、coordinator create/remove、provider/consumer selection、auto-start/session；
 - Config、logging、database/Vault/cache 等 owner namespace、Management RPC/catalog、Workbench、reference/route；
-- static/dynamic/Vite/test host、demo、benchmarks、public exports、用户文档与发行契约。
+- Native/Vite/test Host、demo、benchmarks、public exports、用户文档与发行契约。
 
 Default-only state 可机械收缩；存在 fork 的 profile 必须先列出 config、依赖引用、auto-start 与 logging policy。Redis/S3 需要明确一次性转换到领域 catalog/consumer selection；未知第三方 fork 无法证明等价时拒绝并要求显式迁移。新 runtime 只读新 schema，转换是离线工具，不永久保留双读/alias。未完成验证前不得改写真实持久数据。
 
@@ -56,7 +56,7 @@ Default-only state 可机械收缩；存在 fork 的 profile 必须先列出 con
 
 1. 重新审计真实 workspace/下游，不存在上述五项联合需求。
 2. Redis/S3 多 item、并发、cached handle、replacement/abort/cleanup 回归成立，没有复制通用 graph/coordinator。
-3. Optional 与 abstract selection 在 static、dynamic、Vite/HMR、test host 上保持语义。
+3. Optional 与 abstract selection 在 Native、Vite/HMR、test Host 上保持语义。
 4. 完整 identity inventory 证明可删除所有 public/persisted node/family 协议。
 5. Default-only、已知 Redis/S3 与未知第三方状态分别有可操作的迁移/拒绝路径。
 6. 完成后没有 profiles、hidden forks、legacy codec 或第二套多实例 contract。

@@ -10,7 +10,7 @@ description: 根据数据归属选择 Plugin 数据库或应用数据库，并�
 | Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin         | `defineDatabase()` + `ctx.require(Database).use()`，每个 Plugin 使用独立实例 |
 | 需要 Plugin 独立 lineage 或旧 generation handle 撤销           | `defineDatabase()` + `ctx.require(Database).use()`                           |
 | fixed catalog、schema 和部署由同一个应用团队控制               | application-private database package                                         |
-| 没有共享数据库，整个 static application 就无法成立             | host `prepare()` + root-bound typed accessor                                 |
+| 没有共享数据库，整个应用 就无法成立                            | host `prepare()` + root-bound typed accessor                                 |
 | 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行     | application-private provider Plugin + constructor dependency                 |
 | 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务 | application-private database package                                         |
 

@@ -139,7 +139,7 @@ initializer 无副作用，并把该 integration 的 registration、资源和 cl
 先查看 commit/lifecycle summary，确认 Plugin 正在 running 且 finalization 没有因 reserved path、route conflict、lazy module 或 compile
 失败。测试时直接请求最终地址，例如 `host.http.fetch(new URL('/orders/1', host.http.origin))`。
 
-当前 Node production、static Vite 与 dynamic Vite carrier 已支持并验证基础业务 WebSocket；若 `.ws()` 返回 404，除 route
+当前 Node 生产承载与 Vite 开发承载 已支持并验证基础业务 WebSocket；若 `.ws()` 返回 404，除 route
 publication 外还要确认请求经过真实 Upgrade listener，而不是 `host.http.fetch()`。不要依赖仅参数名不同的 route pattern 自动获得完整冲突诊断；测试应覆盖你的实际 URL 和 Upgrade 请求。
 
 参见 [插件 HTTP](../plugin-development/http.md) 与 [管理工作台](../workbench/index.md)。

@@ -5,14 +5,14 @@
 
 ## Boundary selection
 
-| 要证明的行为                     | 最小验证边界                            | 不能据此推断                                  |
-| -------------------------------- | --------------------------------------- | --------------------------------------------- |
-| 普通对象、纯领域规则             | 直接测试函数/对象，不创建 host          | DI 或资源生命周期                             |
-| 纯 Cap’n Web target contract     | 原生 `RpcStub` 与原生资源所有权         | 真实传输、认证或 Workbench session            |
-| Plugin DI、配置、lifecycle、服务 | `@pluxel/test`；显式选择 services       | 已运行应用的当前状态                          |
-| Core graph 内部语义              | `@pluxel/core/internal/test`            | carrier 或业务集成正确性                      |
-| 应用 wiring                      | static application 测试                 | dynamic source、Vite/HMR、物理 HTTP/WebSocket |
-| 来源、开发更新、真实 carrier     | production launcher 或项目 Vite command | 未执行的平台与部署矩阵                        |
+| 要证明的行为                     | 最小验证边界                            | 不能据此推断                            |
+| -------------------------------- | --------------------------------------- | --------------------------------------- |
+| 普通对象、纯领域规则             | 直接测试函数/对象，不创建 host          | DI 或资源生命周期                       |
+| 纯 Cap’n Web target contract     | 原生 `RpcStub` 与原生资源所有权         | 真实传输、认证或 Workbench session      |
+| Plugin DI、配置、lifecycle、服务 | `@pluxel/test`；显式选择 services       | 已运行应用的当前状态                    |
+| Core graph 内部语义              | `@pluxel/core/internal/test`            | carrier 或业务集成正确性                |
+| 应用 wiring                      | 固定 catalog 的应用装配测试             | 目录来源、Vite/HMR、物理 HTTP/WebSocket |
+| 来源、开发更新、真实 carrier     | production launcher 或项目 Vite command | 未执行的平台与部署矩阵                  |
 
 Public test host 不暴露 root Context、transaction 或 backend；纯 target 测试不借用 Workbench helper/代理；Core 内核不反向依赖作者测试组合包。
 
