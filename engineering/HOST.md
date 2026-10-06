@@ -2,7 +2,7 @@
 
 本页拥有服务安装、应用启动与 Host 资源边界。整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)；应用组合用法见 [Host services](../docs/host/services.md)。
 
-应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方默认值归 `servicesPreset()`、`vitePreset()`、`buildPreset()`；这些函数返回普通服务或工具插件，不能拥有第二套 Host。
+应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方运行时服务与 Vite 附件的默认组合归 `servicesPreset()`、`vitePreset()`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。这些函数返回普通服务声明或工具插件，不能拥有第二套 Host。
 
 服务组合与关闭读[服务与资源](#服务与资源)；应用求值与 replacement 读[应用、开发和部署](#应用开发和部署)；请求 lease 与管理接入读 [HTTP 与管理页面](#http-与管理页面)；密钥记录读 [Vault 记录](#vault-记录与宿主输入)。每项资源的实现及验证见[资源边界与验证入口](#资源边界与验证入口)。
 

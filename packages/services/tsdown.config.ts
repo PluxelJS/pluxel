@@ -47,7 +47,6 @@ export default defineConfig({
 		'logging/internal': './src/logging/internal.ts',
 		'logging/protocol': './src/logging/protocol.ts',
 		preset: './src/preset.ts',
-		build: './src/build.ts',
 		'internal/test': './src/internal-test.ts',
 		vite: './src/vite.ts',
 		sources: './src/sources.ts',

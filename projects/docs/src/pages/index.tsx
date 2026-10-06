@@ -89,11 +89,11 @@ export default defineConfig({
 		title: '生产构建',
 		file: 'tsdown.config.ts',
 		code: `import { defineConfig } from 'tsdown'
-import { buildPreset } from '@pluxel/services/build'
+import { pluxel } from '@pluxel/rolldown'
 
 export default defineConfig({
   entry: './src/app.ts',
-  plugins: [buildPreset()],
+  plugins: [pluxel()],
 })`,
 	},
 ]

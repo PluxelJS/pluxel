@@ -2,7 +2,7 @@
 
 为 Pluxel Host 提供独立服务与官方组合。导入入口不会安装服务；资源由 Host 准备和关闭。
 
-根入口的 `standardServices()` 只组合 Elysia、Commands、Node artifacts、Workers 和 Persistence，不加载 Management、Logging 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 执行与构建使用 `@pluxel/services/vite`、`@pluxel/services/build`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。开发控制台归 `@pluxel/host-vite/console`。
+根入口的 `standardServices()` 只组合 Elysia、Commands、Node artifacts、Workers 和 Persistence，不加载 Management、Logging 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 附件组合使用 `@pluxel/services/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。开发控制台归 `@pluxel/host-vite/console`。
 
 ```ts
 import { createHost } from '@pluxel/host'

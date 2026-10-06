@@ -1,10 +1,10 @@
 # 应用交付构建
 
-修改应用冻结、环境模板、Node bundle 闭包或部署装配时读本页。Plugin 声明语义由 [TOOLCHAIN](TOOLCHAIN.md) 拥有，browser/Node 独立制品由 [ARTIFACT_BUILD](ARTIFACT_BUILD.md) 拥有，最终 inventory/签名由 [DISTRIBUTION](DISTRIBUTION.md) 拥有。
+修改应用交付、环境模板、Node bundle 闭包或部署装配时读本页。Plugin 声明语义由 [TOOLCHAIN](TOOLCHAIN.md) 拥有，browser/Node 独立制品由 [ARTIFACT_BUILD](ARTIFACT_BUILD.md) 拥有，最终 inventory/签名由 [DISTRIBUTION](DISTRIBUTION.md) 拥有。
 
 ## 交付选择与 modules
 
-`pluxel({ delivery })` / `buildPreset({ delivery })` 将交付边界与 headless/workbench 资源 variant 分开。默认 standalone；modules 适合保留真实包边界及来源目录的应用。
+`@pluxel/rolldown` 的 `pluxel({ delivery })` 将交付边界与 headless/workbench 资源 variant 分开。默认 standalone；modules 适合保留真实包边界及来源目录的应用。
 构建插件在创建时校验并捕获交付选项；后续修改原 options 或 residual package 数组不会改变异步构建的交付边界。
 
 modules 复用 `createPluginBuildPipeline` 的 lowering、config metadata、Node/Workbench 制品编译，不冻结 plugins 数组、不执行工厂。它编译本包相对模块和 `package.json#imports` 指向的本地模块；`#imports` 由构建解析，指向外部依赖时保持真实包边界，不向产物保留失去映射的别名。bare package imports 保持 external；明确的 public source exports 输出为对应 ESM entry，保留 package-root/subpath identity。`app.mjs` 默认导出应用工厂并保留 product/named exports，不自动启动。自定义 `outputOptions.entryFileNames` 时须保留 `.mjs` 扩展名；package exports 与 deployment server entry 从实际输出 chunk 生成，不另维护文件名。共享 parser 仍检查 application/bindings 声明；static catalog 限制只进入 standalone 分支。

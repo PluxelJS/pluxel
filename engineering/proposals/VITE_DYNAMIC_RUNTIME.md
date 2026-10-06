@@ -47,6 +47,7 @@
 26. **服务包被内联不代表其所有 Plugin 都被选择。** Rhythm 的实际发行 catalog 没有 VaultAdmin，但旧 package-root assembly 仍复制 Services 的 VaultAdmin Workbench，产生第 12 个 producer。standalone 现在复用已验证静态 catalog 的 constructor binding 和现有语义收集器的源码/lowering ABI 事实，取得准确 canonical definition；相同选择同时约束源码 UI/Content 编译与包 inventory 组装，不执行工厂、不依据运行时类名或最终 chunk 文本猜测。未选择 renderer/Markdown 在读取前过滤；完整 inventory 仍先严格解析，所选树保留原摘要、冲突与复制校验。实际同模块双 Plugin 回归令未选 renderer/Markdown 不存在，仍只交付所选制品；Rhythm 原 11 producer 断言通过，发行清单从 629 降到 599 条。package/modules 构建继续编译各包的公开制品。
 27. **所选快照不能清掉未读取领域的失效。** 新选择回归发现，B 已失效时先编译 A，旧全局 dirty 清理会让之后选择 B 使用旧导入事实。原 Workbench snapshot 现在只在成功提交实际读取 module 时清理其失效，保留单个有界快照及明确选择身份。回归覆盖全选、A/B 切换、空选择、坏导出拒绝和原输入修复；临时恢复旧全局清理的 mutation 稳定产生旧 digest，修正实现通过，没有另建 cache 或更新队列。
 28. **源码解析成功不代表 Node 能消费原生依赖的 subpath。** Omni 搬离工作区的真实 Node 启动发现 `@node-rs/jieba/dict` 无 exports 且没有同名文件，因而在业务启动前拒绝。已安装 2.0.3 包拥有 `dict.js`；调用方直接导入该实际文件，保留第三方 loader。新增 fresh Node 分词回归覆盖真实字典和中英文计数；最终发行在缺少既有 TigerBeetle 输入时按原契约自然退出 1，运行前后清单完整，不以该负向结果宣称外部服务正向验收。
+29. **相同构建默认值不构成独立预设契约。** 后续复核发现 `buildPreset()` 仅转发 `pluxel()` 并重复已有 Workbench 默认值。应用构建统一直接使用 `@pluxel/rolldown` 的原入口；Services 的源码、source/publish exports 与构建条目全部删除该包装，官方 Host、Create 模板、站点示例和四个本地项目同步迁移。`servicesPreset()`、`vitePreset()` 仍分别承担服务组合与开发附件；`standalone`/`modules` 是同一构建入口的交付选择，用法和边界只由[应用构建](../APPLICATION_BUILD.md)与[Host 配置](../../docs/host/configuration.md#生产构建)维护。
 
 这些修正复用现有领域实现，没有新增 Executor/Backend registry、通用事务模板或第二个协调器。
 

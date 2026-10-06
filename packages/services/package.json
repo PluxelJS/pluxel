@@ -29,10 +29,6 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./build": {
-			"@pluxel/source": "./src/build.ts",
-			"default": "./dist/build.mjs"
-		},
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
@@ -178,7 +174,6 @@
 		},
 		"exports": {
 			".": "./dist/index.mjs",
-			"./build": "./dist/build.mjs",
 			"./commands": "./dist/commands.mjs",
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",

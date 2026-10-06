@@ -30,7 +30,7 @@ The starter policy already recognizes common React UI, testing, backend/data and
 extend the rules in `pncat.config.ts` when the product adopts a new dependency family.
 
 The host package build runs its one Vite config first, then [`host/tsdown.config.ts`](host/tsdown.config.ts)
-uses `buildPreset({ delivery: 'modules' })` from `@pluxel/services/build` and copies
+uses `pluxel({ delivery: 'modules' })` from `@pluxel/rolldown` and copies
 `host/web/dist` into `host/dist/public`. The host finally runs
 `pluxel distribution create` after that write so the distribution manifest covers browser assets.
 

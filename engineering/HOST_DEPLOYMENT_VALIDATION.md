@@ -3,7 +3,7 @@
 本页是历次验证记录，测试数量与结论只属于对应轮次；不是本次 checkout 的测试结果或持续支持承诺。运行当前验证见 [TESTING](TESTING.md)。
 
 Core token、正向 Host 安装计划、官方服务拆分、Management、Workbench、开发附件和共享应用启动已经实施。
-官方运行时、Vite 与构建组合分别使用 Services 的 `/preset`、`/vite`、`/build`；通用 Host-vite 不拥有官方服务选择策略。
+官方运行时与 Vite 附件组合使用 Services 的 `/preset`、`/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`；通用 Host-vite 不拥有官方服务选择策略。
 当前 API 以[组合 Host 服务](../docs/host/services.md)、[Host 管理接入](../docs/host/management.md)、
 [独立 Workbench](../docs/workbench/standalone-host.md)及[架构约束](HOST.md)为准；本文只记录下游验证及其边界。
 
@@ -162,6 +162,23 @@ Native 成功入口共享一份唯一 URL 序列并各自持有固定长度，�
 
 最终使用 `VITEST_MAX_WORKERS=1 pnpm verify`，筛选 Host、Host-vite、Rolldown、Services、Package Manager、Storage，Turbo 并发 1、强制重跑：28/28 类型、构建与测试任务通过，零缓存，耗时 5m17.163s；仓库治理 37 项、lint、1978 文件格式及源码声明检查通过。各包测试分别为 149、121、470、344、22、17，共 1123 项通过；Package Manager 保留一个外部 npm 门控跳过，真实本地 registry 样本执行。
 
-此前双 worker 的 Rolldown 全套为 469 passed / 1 failed：standalone 双失败回归在具有原 30 秒期限的构建子进程中失败，日志不足以确认原因。该文件按原断言、原期限隔离运行 3/3 通过（6.58s），最终单 worker 全套 470/470 通过；没有修改期限或放宽断言。Node setup 与 cleanup 双失败回归另确认原实现丢失 setup 原因，现同时保留两个错误并以 setup 为 cause。
+此前双 worker 的 Rolldown 全套为 469 passed / 1 failed：standalone 双失败回归在具有原 30 秒期限的构建子进程中失败，日志不足以确认原因。该文件按原断言、原期限隔离运行 3/3 通过（6.58s），最终完整复验 470/470 通过；没有修改期限或放宽断言。Node setup 与 cleanup 双失败回归另确认原实现丢失 setup 原因，现同时保留两个错误并以 setup 为 cause。
+
+2026-10-06 复核更正：Vitest 5.0.2 支持 `VITEST_MAX_WORKERS`，但当前 Turbo strict 模式未声明透传该变量，实际 test task 的 dry-run 环境清单中也不存在它。Turbo 并发 1 不约束各包内部 worker。保留实际通过数和隔离结果，撤回对该完整命令的单 worker 推断；本轮 Services 使用所属 `vitest.config.ts` 的显式 `test.maxWorkers: 1`，不改变原测试期限或断言。
 
 本轮不重复此前独立 tarball 安装、所有下游生产部署或在线控制台验收，也不证明长期 RSS、吞吐量或外部平台连接。前述 Services 已安装声明的 Elysia 上游问题不因本轮源码检查通过而消失。
+
+### 构建入口收口与调用方验证（2026-10-06）
+
+实际实现复核发现 `buildPreset()` 只有转发和重复 Workbench 默认值，没有独立构建契约。删除 Services 的该源码、source/publish export 和构建条目；应用统一直接调用 `@pluxel/rolldown` 的 `pluxel()`。保留有独立服务组合、Vite 附件和 Plugin package 契约的入口。官方 Host、Create 模板、首页示例、公开文档和四个本地项目同步迁移；修正将所有应用构建描述为冻结的旧说明，以及 Rhythm、Backend 已不存在的根 `web/` 职责指引。Tegami 记录 Services major、Create patch，不手改版本或 publish lock。
+
+初次强制验证在文档站 SSG 失败：两处 Host 用法把 `engineering/HMR.md` 当成站内页面，而站点只发布 `docs/`。改为链接仓库权威章节，保留原链接检查。第二次强制验证在 Services 为 342/344，两个用例在原 5000ms 期限超时；该次 27/32 任务成功，不能计为完整通过。原两个文件显式 `--maxWorkers=1` 隔离复验 4/4 通过，所属 Services 配置固定相同 worker 限制，原期限和断言不变。环境变量的实际边界见上段复核更正。
+
+- 最终执行 `pnpm verify --filter=@pluxel/services --filter=@pluxel/create --filter=@pluxel/plugins-host --filter=pluxel-docs --concurrency=1`：37/37 任务成功，12 项缓存，17m54.333s；治理 37 项、源码声明 6 项、lint、1978 文件格式检查通过。Services 为 64 文件、344 tests、165.91s，Create 8 项；官方 Host 5 文件、11 项包含两项 Native/生产 Vite runtime smoke，未重复相加。官方构建为 modules，实际 catalog、Workbench HTML/JS、开发路径拒绝及 SIGTERM 自然退出 0/null 通过。文档站生成 618 个文件并通过链接检查。
+- 独立 starter smoke 从 11 个真实本地 tarball 安装 SDK，执行 create、setup 和生成 workspace 的完整 verify：15/15 项任务成功、零缓存，36.101s；modules 清单 64 项完整。Fresh Native 在禁止执行工具 resolve hook 下完成 Todo、修改、SPA 与 compiled Workbench；生产 Vite 完成业务、Shell/JS 和 SIGTERM 自然关闭，开发 Vite 完成业务、模块图、Workbench 和固定 root/instance 的 dev console。临时应用与安装目录已清理。
+- 实际 Services tarball 无旧构建 export、`dist/build.mjs` 或配套声明；安装后的旧子路径解析得到 `ERR_PACKAGE_PATH_NOT_EXPORTED`，生成 Host 使用直接 `pluxel({ delivery: 'modules' })`。五篇安装后 CLI 用法与当前权威正文逐字节一致。额外一次打包探针曾误猜 Rolldown 输出名为 `application.mjs`；实际公开 export 指向 `index.mjs`，探针改为消费 package exports 后通过，未为该误判修改 SDK。
+- Chatbot 的本地 NAPI/Host 构建通过，发行清单 797 项；原严格搬移 smoke 在原 15 秒 readiness、8 秒退出期限内验证 18 节点 catalog、15 节点生产启动和其余 3 节点 stopped、issue 为空、Workbench HTTP/RPC、隔离 PGlite、无 Vite client，SIGTERM 自然退出 0/null。保留既有 MF gallery 完整 export analysis 的 10 秒 idle-timeout 警告，没有调整该配置。
+- Rhythm 的原清理、Host 构建、finalize 和生产 smoke 均通过，发行清单 599 项。原 11 个 Workbench producer、页面/API、CORS、GraphQL/RPC、env 输入不落盘及 8 秒 SIGTERM 退出 0/null 断言保留。实际清理脚本同时删除 `host/dist` 和 `host/web/dist`，因此先显式备份未改的浏览器 12 文件，执行原 clean 后逐字恢复并核对同一 fingerprint，再构建 Host；临时备份已清理，没有修改清理脚本或运行时。
+- Omni 本地 Host 构建通过，搬移发行清单 960 项；原严格缺少 TigerBeetle 输入负向 smoke 自然退出 1/null，无强杀，运行前后清单和 manifest SHA 一致。构建覆盖当时用户业务快照，未复验这些业务变更的完整测试；本轮仅提交其 Host 构建入口。
+
+Backend 的 provenance 继续使用实际 SDK Git HEAD：主仓先提交，再按新 HEAD 构建 Backend Host、执行原生产 smoke，最后提交下游。公共入口清理不构成长期 RSS、吞吐量或外部账号的性能/连接证明；前述 Services 已安装声明的 79 项 Elysia 上游诊断仍保留。

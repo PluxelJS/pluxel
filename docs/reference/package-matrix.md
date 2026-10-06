@@ -48,7 +48,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 ## 同包的可选入口
 
-`@pluxel/services/logging`、`/management`、`/preset`、`/vite` 与 `/build` 都属于 `@pluxel/services`；`@pluxel/host/sources` 属于 Host。安装包不等于启用所有领域：基础入口不加载未选择的日志、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
+`@pluxel/services/logging`、`/management`、`/preset` 与 `/vite` 都属于 `@pluxel/services`；`@pluxel/host/sources` 属于 Host。安装包不等于启用所有领域：基础入口不加载未选择的日志、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
 
 ## Workspace-only 能力
 

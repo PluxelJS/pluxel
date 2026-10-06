@@ -135,8 +135,8 @@ Plugin package 使用 `pluxel build`，配普通 tsdown config；`--watch` 与 `
 CLI 安装标准 semantic pipeline，成功后同步 metadata；作者不重复安装转换插件。
 完整 package 配置、Part 依赖聚合与 pack 验证见[插件包](./plugin-package.md)。自定义构建工具才使用 `@pluxel/rolldown/build` 的 `pluginPackage()`。
 
-应用使用[宿主构建配置](../host/configuration.md#生产构建)：官方组合为 `buildPreset()`，底层集成为 `pluxel()`。
-Plugin build 保留 provider peer 边界供多宿主使用；应用 build 冻结部署闭包，两种 preset 不混用。
+应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`，按[宿主构建配置](../host/configuration.md#生产构建)选择交付边界与资源 variant。
+Plugin build 保留 provider peer 边界供多宿主使用；应用 build 按 `delivery` 选择部署闭包。
 
 ## Source build boundary
 

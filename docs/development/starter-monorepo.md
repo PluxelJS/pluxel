@@ -42,7 +42,7 @@ host/
   src/app.ts                开发与生产应用声明：固定插件 + 可选 sources
   src/runtime-state.ts      auto-start/config snapshot
   vite.config.ts            指向 web/ 的唯一 Vite config
-  tsdown.config.ts          buildPreset({ delivery: 'modules' }) + Web public copy
+  tsdown.config.ts          pluxel({ delivery: 'modules' }) + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
 pncat.config.ts             catalog 分组和迁移的唯一策略入口
 ```
@@ -63,7 +63,7 @@ peer dependency 与 constructor import 对应 required edge。Todo 对 Audit 使
 
 ## 开发与部署
 
-一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/services/build` 的 `buildPreset()` 选择应用交付并编译配套制品；不需要逐项维护 Node、HTTP、Workbench 的开发接线。共享身份由 Native 启动的 `sharedPackages` 或 Vite 的 singleton 绑定；完整契约见[组合 Host 服务](../host/services.md)。
+一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/rolldown` 的 `pluxel()` 选择应用交付并编译配套制品；不需要逐项维护 Node、HTTP、Workbench 的开发接线。共享身份由 Native 启动的 `sharedPackages` 或 Vite 的 singleton 绑定；完整契约见[组合 Host 服务](../host/services.md)。
 
 ```sh
 pnpm dev

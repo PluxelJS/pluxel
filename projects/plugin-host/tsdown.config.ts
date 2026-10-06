@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
-import { buildPreset } from '@pluxel/services/build'
+import { pluxel } from '@pluxel/rolldown'
 
 export default defineConfig({
 	entry: './src/app.ts',
-	plugins: [buildPreset({ delivery: 'modules' })],
+	plugins: [pluxel({ delivery: 'modules' })],
 })

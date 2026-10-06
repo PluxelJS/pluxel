@@ -109,7 +109,7 @@ Vite 会话打开后新建父目录别名或重定向其真实路径，会以 `P
 原生 `runHostApplication()` 在一次启动中扫描预编译 `.js/.mjs`，与固定 imports 合并后启动。当前进程不响应后续新增、改写或删除，发布在**新进程下次启动**生效。它不编译 TS，也不启动 Vite。
 
 Vite 开发和生产均持续接纳来源发布，普通 ESM 传递依赖属于同一个 runner 图；CommonJS、原生模块及显式 singleton 保留 Node 缓存边界。入口进入 catalog 与 Plugin 启动是独立事实。
-显式设置 `CHOKIDAR_USEPOLLING` / `CHOKIDAR_INTERVAL` 时需符合固定观察策略；冲突会拒绝并给出所需值，规则见[来源观察与关闭](../../engineering/HMR.md#来源发现与资源所有权)。
+显式设置 `CHOKIDAR_USEPOLLING` / `CHOKIDAR_INTERVAL` 时需符合固定观察策略；冲突会拒绝并给出所需值，规则见[来源观察与关闭](https://github.com/PluxelJS/pluxel/blob/main/engineering/HMR.md#来源发现与资源所有权)。
 
 producer 在副作用前验证声明：
 
@@ -688,15 +688,15 @@ PGlite 的 data directory 只为本机工作流提供正常关闭后的便利重
 
 ```ts no-twoslash
 import { defineConfig } from 'tsdown'
-import { buildPreset } from '@pluxel/services/build'
+import { pluxel } from '@pluxel/rolldown'
 
 export default defineConfig({
 	entry: './src/app.ts',
-	plugins: [buildPreset()],
+	plugins: [pluxel()],
 })
 ```
 
-自定义组合使用 `@pluxel/rolldown` 的 `pluxel()`。生产 bootstrap 通过 `@pluxel/host` 启动同一应用，HTTP handler/listener 属于 `@pluxel/services/elysia/*`。
+`@pluxel/rolldown` 的 `pluxel()` 统一构建官方与自定义服务组合。生产 bootstrap 通过 `@pluxel/host` 启动同一应用，HTTP handler/listener 属于 `@pluxel/services/elysia/*`。
 `delivery` 独立选择交付边界：默认 `standalone` 内联框架和固定插件，`launcher` 可选 `node`、`fetch` 或 `host`，不能声明 sources。`modules` 编译本包模块、保留真实包 imports 与公开 Plugin identity，并导出应用工厂；它不自动启动，也不接受 launcher/residualDependencies。资源 `variant` 与服务安装是独立决定。
 
 modules 同时支持 `package.json#imports`：本包目标进入编译，外部目标保留包依赖；搬移输出后不依赖原来的源码映射。
@@ -706,7 +706,7 @@ modules 同时支持 `package.json#imports`：本包目标进入编译，外部�
 ```ts no-twoslash
 export default defineConfig({
 	entry: './src/app.ts',
-	plugins: [buildPreset({ delivery: 'modules' })],
+	plugins: [pluxel({ delivery: 'modules' })],
 })
 ```
 

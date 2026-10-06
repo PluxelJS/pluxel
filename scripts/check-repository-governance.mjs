@@ -31,7 +31,7 @@ const foundationDependencies = new Map([
 ])
 // Keep the few composition boundaries explicit; package ownership need not form a DAG.
 const serviceCompositionFiles = new Set(
-	['preset.ts', 'vite.ts', 'build.ts', 'development/service-development.ts'].map((file) =>
+	['preset.ts', 'vite.ts', 'development/service-development.ts'].map((file) =>
 		resolve(root, 'packages/services/src', file),
 	),
 )
@@ -384,7 +384,7 @@ function checkServiceCompositionBoundary(consumerPackage, importer, specifier) {
 			))
 	)
 		return
-	const publicComposition = /^@pluxel\/services\/(?:preset|vite|build)$/.test(specifier)
+	const publicComposition = /^@pluxel\/services\/(?:preset|vite)$/.test(specifier)
 	const target = specifier.startsWith('.')
 		? resolve(dirname(importer), specifier).replace(/\.[cm]?[jt]sx?$/, '')
 		: undefined
