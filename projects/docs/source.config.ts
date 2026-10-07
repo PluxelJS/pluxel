@@ -34,6 +34,7 @@ export default defineConfig({
 							module: 'esnext',
 							moduleResolution: 'bundler',
 							target: 'esnext',
+							types: ['node'],
 						},
 					},
 				}),

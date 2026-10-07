@@ -22,7 +22,7 @@ let previousTestEnvironmentOverride: string | undefined
 export type WorkbenchViteBuildOptions = Readonly<{
 	producerRoot: string
 	applicationRoot: string
-	packageMode: 'development' | 'distribution'
+	packageMode: 'development' | 'source' | 'distribution'
 	declarationRoot: string
 	outDir: string
 	producer: string
@@ -106,9 +106,13 @@ function workbenchPackageConditions(
 function workbenchCustomConditions(
 	packageMode: WorkbenchViteBuildOptions['packageMode'],
 ): string[] {
-	return packageMode === 'development'
-		? ['@pluxel/hmr', '@pluxel/source', 'development']
-		: ['production']
+	return packageMode === 'distribution'
+		? ['production']
+		: [
+				'@pluxel/hmr',
+				'@pluxel/source',
+				packageMode === 'development' ? 'development' : 'production',
+			]
 }
 
 function enableFederationInTestEnvironment(): () => void {

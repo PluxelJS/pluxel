@@ -31,20 +31,23 @@ export type BuildWorkbenchFederationProducerOptions = Readonly<{
 	root?: string
 	/** Host application root that provides the fixed shared winners. @defaultValue root */
 	applicationRoot?: string
-	/** Selects source exports for development or built package exports for distribution assembly. */
-	packageMode: 'development' | 'distribution'
+	/**
+	 * Development uses source exports and development conditions. Source compilation uses source
+	 * exports and production conditions; distribution assembly consumes built package exports.
+	 */
+	packageMode: 'development' | 'source' | 'distribution'
 	outDir?: string
 	/**
 	 * Root for Vite and declaration incremental caches.
 	 * Development defaults to `.pluxel/vite-workbench-ui-cache` under `root`.
-	 * Distribution uses an ephemeral cache unless this is provided.
+	 * Source compilation and distribution use an ephemeral cache unless this is provided.
 	 */
 	cacheDir?: string
 	minify?: boolean
 	sourcemap?: boolean
 	/**
 	 * Selects whether dynamic type artifacts are part of this producer candidate.
-	 * Development defaults to a runtime-only producer; distribution defaults to strict types.
+	 * Development defaults to a runtime-only producer; source and distribution default to strict types.
 	 */
 	typeAssets?: WorkbenchFederationTypeAssetPolicy
 	/**

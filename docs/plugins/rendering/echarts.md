@@ -16,6 +16,7 @@ pnpm catalog:add -- @pluxel/echarts @pluxel/canvas @pluxel/fonts
 host catalog 包含 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 与 consumer。业务 Plugin 只注入 ECharts：
 
 ```ts twoslash
+import type { Buffer } from 'node:buffer'
 import { EChartsPlugin } from '@pluxel/echarts'
 import { BasePlugin, Plugin } from '@pluxel/core'
 

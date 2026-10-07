@@ -60,7 +60,11 @@ closure。统一测试组合依赖 Services/Workbench 的发布入口，因此�
 根目录只声明外部编排工具；workspace 工具依赖由实际消费包声明。Turbo 会把根目录 workspace 依赖的传递源码计入所有任务的全局
 hash，把 CLI 或 test helper 放回根依赖会让一次 core 测试修改清空整个仓库的缓存。仓库根 CLI 入口使用 `pnpm pluxel`。
 
-CI 按整个 PR 相对目标分支的变化选择包，在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
+Turbo 显式使用当前 checkout 的 `.turbo/cache`。不同 worktree 不共享本地构建缓存，避免包含绝对源码路径的制品指向另一个 checkout；CI 继续按 workflow 的缓存键复用该目录。
+
+消费本包发布制品的测试任务必须显式依赖本包 `build`，不能只依赖 `^build` 或依赖暖缓存碰巧留下的文件。Package Manager 的不可变安装测试与维护者 Host 的 native/production-Vite smoke 都遵守这一顺序；测试子进程失败或超时也必须被回收。
+
+CI 按整个 PR 相对目标分支的变化选择包；CI workflow、工具链、根清单、锁文件、Turbo、TypeScript、lint/format/catalog 配置、仓库脚本，以及 CLI/Create/docs 任务读取的根 `docs/` 和 `.agents/skills/pluxel-development/` 变化时执行全量验证。Turbo 的包过滤器不会因 task inputs 引用包外文件就选中消费包，这些改动必须显式扩大范围，避免以零 package task 通过。`packages/*/package.json` 与 `plugins/**/package.json` 变化也执行全量验证，因为公开包清单决定 starter 构建中的发行依赖范围。在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
 Turbo task summary，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
 Core benchmark 跟踪 core、Context、基准场景与构建依赖变化；仅修改测试或 Markdown 文档不触发完整的同 runner 对比。
 

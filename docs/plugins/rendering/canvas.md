@@ -18,6 +18,7 @@ pnpm catalog:add -- @pluxel/canvas @pluxel/fonts
 host catalog 至少包含 `FontsPlugin`、`CanvasPlugin` 和 consumer。CanvasPlugin required-depend FontsPlugin；业务 Plugin 只需注入 Canvas：
 
 ```ts twoslash
+import type { Buffer } from 'node:buffer'
 import { CanvasPlugin, Path2D } from '@pluxel/canvas'
 import { BasePlugin, Plugin } from '@pluxel/core'
 

@@ -1,21 +1,50 @@
 import { createHash } from 'node:crypto'
 import { execFile, fork } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, stat, symlink } from 'node:fs/promises'
+import {
+	access,
+	mkdtemp,
+	mkdir,
+	readFile,
+	realpath,
+	rm,
+	writeFile,
+	stat,
+	symlink,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createServer as createPortServer } from 'node:net'
 import { once } from 'node:events'
 import { promisify } from 'node:util'
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished } from 'vitest'
 import { ManagedPackageStore } from '../src/store.ts'
 import { loadPnpmEngine } from '../src/pnpm-engine.ts'
 
 it('pnpm shares immutable dependency slots across private installations', async () => {
+	// This is a production consumer: the package's own build is a prerequisite, just like
+	// the framework artifacts imported by production-vite.smoke.mjs.
+	await access(new URL('../dist/artifacts/node/pluxel-node-artifacts.json', import.meta.url))
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-immutable-install-'))
 	const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 	let productionChild: ReturnType<typeof fork> | undefined
+	let stoppingChild: Promise<void> | undefined
+	const stopChild = () =>
+		(stoppingChild ??= (async () => {
+			const child = productionChild
+			if (!child || child.exitCode !== null || child.signalCode !== null) return
+			const exited = once(child, 'exit')
+			child.kill()
+			const force = setTimeout(() => child.kill('SIGKILL'), 5_000)
+			force.unref()
+			try {
+				await exited
+			} finally {
+				clearTimeout(force)
+			}
+		})())
+	onTestFinished(stopChild)
 	const archives = new Map<string, Buffer>()
 	const packages = [
 		{ name: 'fixture-p', version: '1.0.0', dependencies: {} },
@@ -256,10 +285,19 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 				result?: unknown
 				samples?: readonly { stage: string; durationMs: number; rssMiB: number }[]
 			}
-			const received = () =>
+			const received = (stage: string) =>
 				new Promise<Reply>((replyReady, reject) => {
-					const done = (message: Reply) => {
+					const cleanup = () => {
+						clearTimeout(timeout)
+						child.off('message', done)
 						child.off('exit', died)
+					}
+					const timeout = setTimeout(() => {
+						cleanup()
+						reject(new Error(`Production Vite timed out during ${stage}: ${stderr}`))
+					}, 30_000)
+					const done = (message: Reply) => {
+						cleanup()
 						if (message.error) {
 							reject(new Error(message.error + '\n' + stderr))
 						} else {
@@ -267,22 +305,22 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 						}
 					}
 					const died = (code: number | null) => {
-						child.off('message', done)
+						cleanup()
 						reject(new Error('Production Vite exited ' + code + ': ' + stderr))
 					}
 					child.once('message', done)
 					child.once('exit', died)
 				})
-			const ready = received()
+			const ready = received('startup')
 			await expect(ready).resolves.toMatchObject({ ready: true })
 			const publish = async (operation: 'install' | 'remove', specs: string[]) => {
-				const reply = received()
+				const reply = received(`${operation}: ${specs.join(', ')}`)
 				child.send({ operation, specs })
 				const response = await reply
 				return response.result
 			}
 			const stage = async (value: string) => {
-				const reply = received()
+				const reply = received(value)
 				child.send(value)
 				const result = await reply
 				expect(result).toMatchObject({ command: value, ok: true })
@@ -361,14 +399,7 @@ assert.equal((await a1.late()).version,'1.0.0'); assert.equal(await a1.resource(
 			await store.close()
 		}
 	} finally {
-		if (
-			productionChild &&
-			productionChild.exitCode === null &&
-			productionChild.signalCode === null
-		) {
-			productionChild.kill()
-			await once(productionChild, 'exit')
-		}
+		await stopChild()
 		registry.closeAllConnections()
 		await new Promise<void>((closed) => registry.close(() => closed()))
 		await rm(root, { recursive: true, force: true })

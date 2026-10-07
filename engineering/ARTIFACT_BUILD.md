@@ -105,10 +105,12 @@ canonical definition。缺失或歧义事实明确使构建失败，不求值 ap
 所选树继续验证 digest、immutable bytes 与 collision。包里有其他 producer，或其注册副作用仍保留在 server chunk，
 都不会扩大应用 catalog 的制品集合。modules 和插件包按其公开编译定义交付，不套用 standalone 的固定 catalog 选择。
 
-Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Application root 必须解析全部 Shell-provided peers；producer 的 React/Workbench/Mantine 与 winner 精确一致。开发显式选择源码 exports，distribution 使用 built exports，不从目录或已有 dist 猜测。Production builder 按同一 build contract 生成 Shell 与 producer，并用 canonical plan/compatibility set 校验全部候选。
+Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Application root 必须解析全部 Shell-provided peers；producer 的 React/Workbench/Mantine 与 winner 精确一致。开发显式选择源码 exports 与 development 条件；Plugin/package 和 application 的生产源码编译显式选择源码 exports 与 production 条件，包含 shared 导出分析与 DTS 解析。低层 builder 的 `packageMode: 'source'` 表达这条路径，默认仍要求完整 dynamic types；`distribution` 使用 built exports。不从目录或已有 dist 猜测，也不在缺少 built entry 时切换源码。Production builder 按同一 build contract 生成 Shell 与 producer，并用 canonical plan/compatibility set 校验全部候选。
 
-固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 1.22.1 在真实 Mantine producer 中仍会遗漏
-used-export facade 的命名导出；builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，
+Rolldown 的发布制品从声明的源码入口内联 Workbench 的纯 transport 准入规则；规则仍由 Workbench 拥有，不加载其运行时或 Services。Turbo 的 Rolldown build inputs 显式包含该源码与 Workbench 清单，规则或导出变更会使内联产物失效。包构建以 Workbench 清单定位其 capnweb 安装，校验不要求 Workbench 的 JS 制品已经生成。
+
+固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 的 used-export facade 在真实 Mantine producer 中曾遗漏
+命名导出；升级到 1.23.3 后保留此回归边界，builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，
 并在后置 transform 删除，确保完整 export surface。Marker 和 shared implementation 都不进入产物。移除此适配前必须
 验证真实 Mantine producer，不能仅凭简化 export fixture 或上游发布说明判断问题已解决。
 

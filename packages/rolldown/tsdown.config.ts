@@ -1,6 +1,13 @@
 import { defineConfig } from 'tsdown'
 
-const inlineRuntimeDeps = ['@rolldown/pluginutils', 'fdir', 'pathe']
+// The transport admission rules are a pure metadata leaf; compiling them keeps package
+// builds independent of the Workbench runtime and its downstream Services build.
+const inlineRuntimeDeps = [
+	'@rolldown/pluginutils',
+	'fdir',
+	'pathe',
+	'@pluxel/workbench/internal/transport',
+]
 
 export default defineConfig({
 	exports: {
@@ -57,6 +64,7 @@ export default defineConfig({
 	minify: true,
 	treeshake: true,
 	inputOptions: {
+		resolve: { conditionNames: ['@pluxel/source', 'import', 'node', 'default'] },
 		transform: {
 			assumptions: {
 				setPublicClassFields: true,

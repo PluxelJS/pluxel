@@ -233,8 +233,8 @@ describe('Workbench Profile 1 federation producer', () => {
 				}),
 				expect.objectContaining({
 					name: '@module-federation/bridge-react',
-					version: '2.9.1',
-					requiredVersion: '2.9.1',
+					version: '2.9.2',
+					requiredVersion: '2.9.2',
 					singleton: true,
 				}),
 				expect.objectContaining({
@@ -345,6 +345,68 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		expect(distributionJavaScript).not.toContain('selected-workbench-source-export')
 		expect(distributionFiles.some((file) => file.endsWith('.zip'))).toBe(true)
 		expect(distributionFiles.some((file) => file.endsWith('.d.ts'))).toBe(true)
+	}, 60_000)
+
+	it('compiles cold source shared packages with production conditions and required types', async () => {
+		const files = producerFixtureFiles()
+		files['node_modules/@pluxel/workbench/package.json'] = JSON.stringify({
+			name: '@pluxel/workbench',
+			version: '0.1.0',
+			type: 'module',
+			exports: Object.fromEntries(
+				['.', './client', './react', './internal/react'].map((subpath) => [
+					subpath,
+					{
+						'@pluxel/source': './source.ts',
+						default: './dist/missing.js',
+					},
+				]),
+			),
+		})
+		files['node_modules/@pluxel/workbench/source.ts'] =
+			"export const coldShared: string = 'must-not-bundle-cold-shared-source'\n"
+		files['node_modules/production-condition/package.json'] = JSON.stringify({
+			name: 'production-condition',
+			version: '0.1.0',
+			type: 'module',
+			exports: { development: './development.ts', production: './production.ts' },
+		})
+		files['node_modules/production-condition/production.ts'] =
+			"export const mode = 'production-condition-selected'\n"
+		files['node_modules/production-condition/development.ts'] =
+			"export const mode = 'must-not-select-development-condition'\n"
+		files['src/ui/manager.ts'] = `
+import { coldShared } from '@pluxel/workbench/react'
+import { mode } from 'production-condition'
+export const marker: string = coldShared + mode
+export default () => ({ marker, async render() {}, destroy() {} })
+`
+		await using fixture = await createFixture(files)
+		const outDir = join(fixture.path, 'artifact-source')
+		await buildWorkbenchFederationProducerWithMode({
+			root: fixture.path,
+			plan: createPlan('cold-source'),
+			outDir,
+			minify: false,
+			packageMode: 'source',
+		})
+		const javascript = await readJavaScriptOutput(outDir)
+		expect(javascript).toContain('production-condition-selected')
+		expect(javascript).not.toContain('must-not-select-development-condition')
+		expect(javascript).not.toContain('must-not-bundle-cold-shared-source')
+		const entries = await readdir(outDir, { recursive: true })
+		const output = entries.map(String)
+		expect(output.some((file) => file.endsWith('.zip'))).toBe(true)
+		expect(output.some((file) => file.endsWith('.d.ts'))).toBe(true)
+
+		await expect(
+			buildWorkbenchFederationProducerWithMode({
+				root: fixture.path,
+				plan: createPlan('cold-distribution'),
+				outDir: join(fixture.path, 'artifact-distribution'),
+				packageMode: 'distribution',
+			}),
+		).rejects.toThrow(/coldShared/u)
 	}, 60_000)
 
 	it('builds distinct producers concurrently without process-local state leakage', async () => {

@@ -34,14 +34,7 @@ const NODE_RUNTIME_PACKAGES: (string | RegExp)[] = ['chokidar', 'pathe', 'pkg-ty
 
 export default defineConfig({
 	// pnpm supports parent>child overrides, but catalog specifiers cannot resolve that selector.
-	exclude: [
-		'@esbuild-kit/core-utils>esbuild',
-		'dts-bundle-generator>typescript',
-		'@module-federation/vite>@module-federation/runtime',
-		'@module-federation/vite>@module-federation/sdk',
-		'@module-federation/vite>@module-federation/dts-plugin',
-		'tegami',
-	],
+	exclude: ['@esbuild-kit/core-utils>esbuild', 'dts-bundle-generator>typescript', 'tegami'],
 	catalogRules: mergeCatalogRules([
 		{
 			name: 'build',

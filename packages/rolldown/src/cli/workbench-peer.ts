@@ -12,7 +12,11 @@ export async function validateWorkbenchCapnwebPeer(packageJsonPath: string): Pro
 	const owner = await readWorkbenchCapnwebPackage(join(dirname(packageJsonPath), '__entry__.mjs'))
 	if (!owner || owner.manifestPath !== resolve(packageJsonPath))
 		throw new Error(`[pluxel:build] Cannot read Workbench publisher manifest ${packageJsonPath}`)
-	const workbench = resolveWithOxc(dirname(packageJsonPath), '@pluxel/workbench', IMPORT_CONDITIONS)
+	const workbench = resolveWithOxc(
+		dirname(packageJsonPath),
+		'@pluxel/workbench/package.json',
+		IMPORT_CONDITIONS,
+	)
 	if (!workbench)
 		throw new Error(`[pluxel:build] Cannot resolve @pluxel/workbench from ${packageJsonPath}`)
 	const canonical = resolveWithOxc(dirname(workbench.path), 'capnweb', IMPORT_CONDITIONS)

@@ -45,4 +45,5 @@ Workbench 是应用自带的管理工作台。普通插件已经可以在这里�
 宿主接入官方 Shell、管理连接或自定义 Vite 附件见[独立 Host](./standalone-host.md)。
 
 生产构建还需验证 Content 与 React 制品；页面能在开发环境打开，不代表发布包已经包含这些资源。
+插件和应用构建会按声明的源码导出编译 Workbench 页面，使用生产依赖条件，并生成必需的动态类型资产；本地源码包无需先生成 Workbench 的 dist。
 运行中的应用通过[开发控制台](../development/dev-console.md)检查，隔离回归使用[测试宿主](../plugin-development/testing.md)。

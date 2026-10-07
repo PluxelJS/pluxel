@@ -43,13 +43,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Install toolchain
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           cache: true
           install: true
@@ -60,7 +60,7 @@ jobs:
 
       - name: Restore pnpm store
         id: pnpm-store-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
@@ -71,7 +71,7 @@ jobs:
 
       - name: Restore Turbo cache
         id: turbo-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
           # Cache entries are immutable. Give every attempt its own key so a failed run can save
@@ -96,15 +96,29 @@ jobs:
           node -e 'const os = require("node:os"); console.log(`Runner: ${os.availableParallelism()} CPUs, ${Math.round(os.totalmem() / 1024 ** 3)} GiB RAM; 2 concurrent package tasks`)'
           # On the standard two-CPU runner, 50% serialized every package task. Vitest uses
           # one worker there by default, so two package tasks can share the runner.
+          verify_args=(--concurrency=2 --summarize)
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pnpm run verify --concurrency=2 --summarize "--filter=...[origin/${BASE_REF}]"
-          else
-            pnpm run verify --concurrency=2 --summarize
+            # Package filters can select only the taskless root for shared inputs outside packages.
+            # Check the whole PR and keep global verification inputs outside that filter.
+            global_changes="$(git diff --name-only "origin/${BASE_REF}...HEAD" -- \
+              .github/workflows/ci.yml mise.toml package.json pnpm-lock.yaml \
+              pnpm-workspace.yaml turbo.json turbo.jsonc 'tsconfig*.json' scripts \
+              docs .agents/skills/pluxel-development oxlint.config.ts pncat.config.ts \
+              .oxfmtrc.json .oxfmtignore \
+              ':(glob)packages/*/package.json' ':(glob)plugins/**/package.json')"
+            if [ -z "$global_changes" ]; then
+              verify_args+=("--filter=...[origin/${BASE_REF}]")
+              echo "Verifying packages affected by this pull request."
+            else
+              echo "Verifying all packages because global CI inputs changed:"
+              printf '%s\n' "$global_changes"
+            fi
           fi
+          pnpm run verify "${verify_args[@]}"
 
       - name: Upload task timings and cache results
         if: always() && steps.turbo-verify.outcome != 'skipped'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-task-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: .turbo/runs/*.json
@@ -114,14 +128,14 @@ jobs:
 
       - name: Save Turbo cache
         if: always() && steps.turbo-cache.outcome == 'success' && steps.turbo-verify.outcome != 'skipped' && steps.turbo-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
           key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
       - name: Save pnpm store
         if: always() && steps.install.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files

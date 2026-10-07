@@ -83,6 +83,12 @@ it('admits an exact catalog peer and development version matching the Workbench 
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).resolves.toBe('0.12.0')
 })
 
+it('validates the installed Workbench owner without requiring its runtime build', async () => {
+	const { root, packageJsonPath } = await fixture({ peer: 'catalog:prod', dev: 'catalog:prod' })
+	await rm(join(root, 'node_modules/@pluxel/workbench/index.js'))
+	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).resolves.toBe('0.12.0')
+})
+
 it('reports the owner, declarations, actual copy and supported version before package publication', async () => {
 	const { packageJsonPath } = await fixture({ peer: '^0.12.0', dev: '0.12.0', installed: '0.13.0' })
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).rejects.toThrow(

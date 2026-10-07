@@ -308,6 +308,9 @@ try {
 			throw error
 		}
 	}
+} catch (error) {
+	if (process.connected) process.send({ error: error.stack })
+	throw error
 } finally {
 	socket?.close()
 	await session?.close()

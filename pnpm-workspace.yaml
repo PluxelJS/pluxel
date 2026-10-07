@@ -21,10 +21,6 @@ overrides:
   fumadocs-ui: catalog:docs
   # This declaration tool still requires the classic JS Compiler API.
   'dts-bundle-generator>typescript': 6.0.3
-  # MF Vite 1.22.1 still pins 2.9.0; align its producer/runtime contract with the host.
-  '@module-federation/vite>@module-federation/runtime': 2.9.1
-  '@module-federation/vite>@module-federation/sdk': 2.9.1
-  '@module-federation/vite>@module-federation/dts-plugin': 2.9.1
   typebox: catalog:dev
 
 minimumReleaseAgeExclude:
@@ -40,6 +36,23 @@ minimumReleaseAgeExclude:
   - '@tanstack/query-core@5.104.0'
   - '@tanstack/react-query@5.104.0'
   - '@types/node@26.6.3'
+  - '@rolldown/binding-android-arm-eabi@1.2.13'
+  - '@rolldown/binding-android-arm64@1.2.13'
+  - '@rolldown/binding-darwin-arm64@1.2.13'
+  - '@rolldown/binding-darwin-x64@1.2.13'
+  - '@rolldown/binding-freebsd-x64@1.2.13'
+  - '@rolldown/binding-linux-arm-gnueabihf@1.2.13'
+  - '@rolldown/binding-linux-arm64-gnu@1.2.13'
+  - '@rolldown/binding-linux-arm64-musl@1.2.13'
+  - '@rolldown/binding-linux-ppc64-gnu@1.2.13'
+  - '@rolldown/binding-linux-s390x-gnu@1.2.13'
+  - '@rolldown/binding-linux-x64-gnu@1.2.13'
+  - '@rolldown/binding-linux-x64-musl@1.2.13'
+  - '@rolldown/binding-openharmony-arm64@1.2.13'
+  - '@rolldown/binding-win32-arm64-msvc@1.2.13'
+  - '@rolldown/binding-win32-x64-msvc@1.2.13'
+  - rolldown@1.2.13
+  - '@module-federation/vite@1.23.3'
 
 onlyBuiltDependencies:
   - esbuild
@@ -68,20 +81,20 @@ catalogs:
     pg: ^8.23.0
     redis: ^6.2.1
   build:
-    '@module-federation/vite': 1.22.1
+    '@module-federation/vite': 1.23.3
     '@rolldown/pluginutils': ^1.0.1
     '@tailwindcss/vite': 4.3.3
     '@tsdown/css': 0.23.0
-    '@vitejs/plugin-react': ^6.1.1
+    '@vitejs/plugin-react': ^6.1.2
     react-server-dom-webpack: 19.3.0
-    rolldown: ^1.2.11
+    rolldown: ^1.2.13
     tsdown: ^0.23.0
     unplugin-macros: ^0.23.2
     unplugin-preprocessor-directives: ^1.2.0
     unrun: ^0.3.1
-    vite: ^8.3.1
+    vite: ^8.3.3
   dev:
-    '@fumapress/tegami': 1.1.3
+    '@fumapress/tegami': 1.1.4
     '@logtape/logtape': ^2.3.8
     '@logtape/otel': ^2.3.10
     '@opentelemetry/api': ^1.9.1
@@ -98,8 +111,8 @@ catalogs:
     fs-fixture: ^2.16.0
     ink: ^7.1.1
     jsdom: ^30.1.1
-    oxfmt: ^0.70.0
-    oxlint: ^1.85.0
+    oxfmt: ^0.72.0
+    oxlint: ^1.87.0
     oxlint-tsgolint: ^7.0.2003
     pncat: ^0.13.4
     postcss: ^8.5.28
@@ -108,17 +121,17 @@ catalogs:
     sass-embedded: ^1.105.0
     tinybench: ^6.2.0
     tsx: ^4.23.15
-    turbo: ^2.11.4
+    turbo: ^2.11.7
     typescript: ^7.0.2
     typescript-legacy: npm:typescript@6.0.3
     wretch: ^3.0.9
     yaml: ^2.9.1
     typebox: 1.3.23
   docs:
-    fumadocs-core: 16.15.14
-    fumadocs-mdx: 15.4.5
+    fumadocs-core: 16.16.2
+    fumadocs-mdx: 15.4.6
     fumadocs-twoslash: 4.0.1
-    fumadocs-ui: npm:@fumadocs/base-ui@16.15.14
+    fumadocs-ui: npm:@fumadocs/base-ui@16.16.2
   frontend:
     '@base-ui/react': ^1.8.0
     '@dnd-kit/core': ^6.3.1
@@ -130,7 +143,7 @@ catalogs:
     '@mantine/hooks': ^9.6.3
     '@mantine/modals': ^9.6.3
     '@mantine/notifications': ^9.6.3
-    '@module-federation/bridge-react': 2.9.1
+    '@module-federation/bridge-react': 2.9.2
     '@tanstack/query-core': ^5.104.0
     '@tanstack/react-query': ^5.104.0
     '@tanstack/react-form': ^1.33.5
@@ -154,15 +167,15 @@ catalogs:
     '@opentelemetry/api': ^1.9.1
     '@opentelemetry/api-logs': ^0.222.0
     '@pluxel/market': ^0.1.0
-    oxlint: ^1.85.0
+    oxlint: ^1.87.0
   prod:
     '@chenglou/pretext': ^0.0.9
     '@clack/prompts': ^1.8.1
     '@dagrejs/dagre': ^3.1.1
     '@electric-sql/pglite': ^0.5.8
-    '@fumapress/ai': 1.1.3
-    '@fumapress/language': 1.1.2
-    '@fumapress/tegami': 1.1.3
+    '@fumapress/ai': 1.2.0
+    '@fumapress/language': 1.1.3
+    '@fumapress/tegami': 1.1.4
     '@grpc/grpc-js': ^1.14.5
     '@inlang/paraglide-js': ^2.25.4
     '@logtape/file': ^2.3.8
@@ -170,8 +183,8 @@ catalogs:
     '@logtape/pretty': ^2.3.8
     '@material/material-color-utilities': ^0.4.0
     '@modelcontextprotocol/sdk': 1.30.1
-    '@module-federation/runtime': 2.9.1
-    '@module-federation/sdk': 2.9.1
+    '@module-federation/runtime': 2.9.2
+    '@module-federation/sdk': 2.9.2
     '@napi-rs/canvas': ^1.0.9
     '@opentelemetry/api': ^1.9.1
     '@opentelemetry/api-logs': ^0.222.0
@@ -201,7 +214,7 @@ catalogs:
     crossws: 0.4.12
     echarts: ^6.1.0
     elysia: 2.0.0-beta.19
-    fumapress: 1.4.1
+    fumapress: 1.6.0
     gunshi: ^0.37.3
     jose: ^6.2.12
     jsonc-parser: ^3.3.1
@@ -214,7 +227,7 @@ catalogs:
     next-themes: ^0.4.6
     nf3: ^0.3.24
     ohash: ^2.0.12
-    oxc-parser: ^0.151.0
+    oxc-parser: ^0.153.0
     oxc-resolver: ^11.24.2
     package-manager-detector: ^1.8.0
     picomatch: ^4.0.7
@@ -234,12 +247,12 @@ catalogs:
     p-map: 7.0.8
     p-memoize: 8.0.0
     p-retry: 8.0.1
-    vitest: 5.0.2
+    vitest: 5.0.3
     ws: 8.21.3
   types:
     '@types/mdast': 4.0.4
     '@types/mdx': 2.0.14
-    '@types/node': ^26.6.3
+    '@types/node': ^26.6.4
     '@types/pg': ^8.23.1
     '@types/picomatch': ^4.0.3
     '@types/react': ^19.3.0
