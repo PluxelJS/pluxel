@@ -16,7 +16,7 @@ async function fixture(failure) {
 		`#!/usr/bin/env node
 import { appendFileSync } from 'node:fs'
 const args = process.argv.slice(2)
-appendFileSync(process.env.VERIFY_LOG, JSON.stringify({ args, cwd: process.cwd() }) + '\\n')
+appendFileSync(process.env.VERIFY_LOG, JSON.stringify({ args, cwd: process.cwd(), pmOnFail: process.env.PNPM_CONFIG_PM_ON_FAIL }) + '\\n')
 if (args.includes(process.env.VERIFY_FAIL)) process.exit(7)
 `,
 		{ mode: 0o755 },
@@ -30,11 +30,13 @@ if (args.includes(process.env.VERIFY_FAIL)) process.exit(7)
 				PATH: `${join(root, 'bin')}${delimiter}${process.env.PATH}`,
 				VERIFY_LOG: join(root, 'calls.jsonl'),
 				VERIFY_FAIL: failure ?? '',
+				PNPM_CONFIG_PM_ON_FAIL: 'download',
 			},
 		})
 		const log = await readFile(join(root, 'calls.jsonl'), 'utf8')
 		const calls = log.trim().split('\n').map(JSON.parse)
 		assert.ok(calls.every((call) => call.cwd === root))
+		assert.ok(calls.every((call) => call.pmOnFail === 'ignore'))
 		return { ...result, calls: calls.map((call) => call.args) }
 	}
 }

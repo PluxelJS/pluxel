@@ -5,7 +5,7 @@
 	"cacheDir": ".turbo/cache",
 	"cacheMaxAge": "30d",
 	"cacheMaxSize": "5GB",
-	"globalPassThroughEnv": ["CHOKIDAR_USEPOLLING"],
+	"globalPassThroughEnv": ["CHOKIDAR_USEPOLLING", "PNPM_CONFIG_PM_ON_FAIL"],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],

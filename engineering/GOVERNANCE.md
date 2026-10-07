@@ -112,6 +112,8 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 
 `pnpm verify` 是本地与 CI 的共同入口，顺序执行治理、lint、format、Turbo typecheck/build/test，再检查构建是否把声明写入源码。CI 只提供并发数、affected filter 与 summary；构建配置不依赖未计入 Turbo hash 的环境开关。只缓存 `.turbo/cache`，本次报告 `.turbo/runs` 不跨运行复用。
 
+仓库的 Node 和 pnpm 版本由 `mise.toml` 拥有。验证入口固定 `PNPM_CONFIG_PM_ON_FAIL=ignore`，CI 的其他任务同样设置此项；Turbo 在 strict 环境中显式透传它，避免 vendor 子工作区的上游 `packageManager` 字段重新下载或切换 pnpm。该变量只固定执行工具的所有权，版本仍由已计入任务 hash 的 `mise.toml` 决定。
+
 | 检查所有者                                | 负责的事实                                                                  |
 | ----------------------------------------- | --------------------------------------------------------------------------- |
 | `scripts/repository-packages.mjs`         | workspace inventory、目录分类、公开包与 Tegami 发布集合                     |

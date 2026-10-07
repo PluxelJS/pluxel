@@ -20,6 +20,8 @@ for (const args of steps) {
 	const result = spawnSync('pnpm', args, {
 		cwd: fileURLToPath(new URL('..', import.meta.url)),
 		stdio: 'inherit',
+		// mise owns the repository toolchain, including tasks inside vendor workspaces.
+		env: { ...process.env, PNPM_CONFIG_PM_ON_FAIL: 'ignore' },
 	})
 	if (process.env.GITHUB_ACTIONS) console.log('::endgroup::')
 	if (result.error) console.error(result.error.message)
