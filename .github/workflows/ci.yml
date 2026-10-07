@@ -49,7 +49,7 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@v5
         with:
           cache: true
           install: true
