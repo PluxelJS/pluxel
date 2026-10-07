@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/commands",
-	"version": "1.1.0",
+	"version": "2.0.0",
 	"description": "Typed command kernel for CLIs and transport adapters",
 	"license": "AGPL-3.0-only",
 	"repository": {

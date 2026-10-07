@@ -1,3 +1,20 @@
+## @pluxel/core@2.0.0
+
+### Build production Workbench artifacts from the source package graph
+
+Compile Plugin and application Workbench producers with explicit source exports and production conditions, including shared export inspection and required dynamic types. Cold workspace builds no longer require prebuilt Workbench artifacts. Distribution assembly continues to require built package exports without falling back to source.
+
+Update the Oxc parser dependency to 0.153 and validate the build with the refreshed Vite, Rolldown, and TypeScript toolchain.
+
+Bundle the Workbench-owned pure transport admission rules into the toolchain and locate its capnweb dependency through the package manifest. Publication metadata validation no longer loads the Workbench runtime build.
+
+Update the exact Workbench federation compatibility profile to Module Federation Vite 1.23.3 and Runtime, SDK, and React Bridge 2.9.2. Rebuild producer artifacts with the updated profile. Keep the full shared export surface adaptation for Mantine producers.
+
+### Bundle Eventure in Core
+
+Core now bundles its Eventure runtime and types from the workspace source. Installing
+Core no longer installs `eventure` as a separate dependency.
+
 ## @pluxel/core@1.1.0
 
 ### Compose explicitly installed runtime services
