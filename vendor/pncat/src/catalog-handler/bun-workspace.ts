@@ -1,0 +1,113 @@
+import type {
+  BunWorkspaceMeta,
+  CatalogOptions,
+  DepFilter,
+  PackageJson,
+  PackageMeta,
+  RawDep,
+  WorkspaceSchema,
+} from '../types'
+import { existsSync } from 'node:fs'
+import { join, resolve } from 'pathe'
+import { JsonCatalog } from './base'
+import { PACKAGE_MANAGER_CONFIG } from '../constants'
+import { detectWorkspaceRoot, loadPackageJSON, loadPackages, readJsonFile } from '../io'
+import { getCwd, isObject, parseDependency } from '../utils'
+
+export class BunCatalog extends JsonCatalog {
+  static async loadWorkspace(
+    relative: string,
+    options: CatalogOptions,
+    shouldCatalog: DepFilter,
+  ): Promise<PackageMeta[] | null> {
+    if (!relative.endsWith(PACKAGE_MANAGER_CONFIG.bun.filename))
+      return null
+
+    const cwd = getCwd(options)
+    if (!PACKAGE_MANAGER_CONFIG.bun.locks.some(lock => existsSync(join(cwd, lock))))
+      return null
+
+    const filepath = resolve(getCwd(options), relative)
+    const raw = await readJsonFile<PackageJson>(filepath)
+
+    const catalogs: BunWorkspaceMeta[] = []
+    function createBunWorkspaceEntry(name: string, map: Record<string, string>): BunWorkspaceMeta {
+      const deps: RawDep[] = Object.entries(map).map(([pkg, version]) => parseDependency(
+        pkg,
+        version,
+        'bun-workspace',
+        shouldCatalog,
+        options,
+        [],
+        name,
+      ))
+
+      return {
+        name,
+        private: true,
+        version: '',
+        type: 'bun-workspace',
+        relative,
+        filepath,
+        raw,
+        deps,
+      }
+    }
+
+    if (BunCatalog.hasWorkspaceCatalog(raw)) {
+      const workspaces = raw.workspaces as WorkspaceSchema
+
+      if (workspaces.catalog)
+        catalogs.push(createBunWorkspaceEntry('bun-catalog:default', workspaces.catalog))
+
+      if (workspaces.catalogs) {
+        for (const key of Object.keys(workspaces.catalogs))
+          catalogs.push(createBunWorkspaceEntry(`bun-catalog:${key}`, workspaces.catalogs[key]))
+      }
+    }
+
+    if (catalogs.length === 0)
+      return null
+
+    const packageJson = await loadPackageJSON(relative, options, shouldCatalog)
+    return [...catalogs, ...packageJson]
+  }
+
+  static hasWorkspaceCatalog(raw: { workspaces?: unknown }): boolean {
+    const workspaces = raw.workspaces
+    if (!isObject(workspaces))
+      return false
+
+    return !!(workspaces.catalog || workspaces.catalogs)
+  }
+
+  constructor(options: CatalogOptions) {
+    super(options, 'bun')
+  }
+
+  override async findWorkspaceFile(): Promise<string | undefined> {
+    const packages = await loadPackages({ ...this.options, agent: 'bun' })
+    const bunWorkspace = packages.find(pkg => pkg.type === 'bun-workspace')
+    return bunWorkspace?.filepath
+  }
+
+  override async ensureWorkspace(): Promise<void> {
+    const filepath = await this.findWorkspaceFile()
+    if (!filepath) {
+      const workspaceRoot = await detectWorkspaceRoot(this.agent, getCwd(this.options))
+      this.workspaceJsonPath = join(workspaceRoot, 'package.json')
+      this.workspaceJson = {}
+      return
+    }
+
+    const raw = await readJsonFile<PackageJson>(filepath)
+    const workspaces = raw.workspaces
+
+    if (isObject(workspaces))
+      this.workspaceJson = workspaces || {}
+    else
+      this.workspaceJson = {}
+
+    this.workspaceJsonPath = filepath
+  }
+}

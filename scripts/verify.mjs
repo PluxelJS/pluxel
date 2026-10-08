@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 // Local verification and CI share the same gates. Arguments only customize Turbo's
 // execution (for example concurrency, affected packages, and run summaries).
+const root = fileURLToPath(new URL('..', import.meta.url))
 const turboArgs = process.argv.slice(2)
 if (!turboArgs.some((arg) => arg === '--concurrency' || arg.startsWith('--concurrency='))) {
 	turboArgs.unshift('--concurrency=50%')
@@ -18,10 +19,10 @@ const steps = [
 for (const args of steps) {
 	console.log(`\n${process.env.GITHUB_ACTIONS ? '::group::' : ''}pnpm ${args.join(' ')}`)
 	const result = spawnSync('pnpm', args, {
-		cwd: fileURLToPath(new URL('..', import.meta.url)),
+		cwd: root,
 		stdio: 'inherit',
 		// mise owns the repository toolchain, including tasks inside vendor workspaces.
-		env: { ...process.env, PNPM_CONFIG_PM_ON_FAIL: 'ignore' },
+		env: { ...process.env, PNPM_CONFIG_PM_ON_FAIL: 'ignore', PNPM_CONFIG_WORKSPACE_DIR: root },
 	})
 	if (process.env.GITHUB_ACTIONS) console.log('::endgroup::')
 	if (result.error) console.error(result.error.message)

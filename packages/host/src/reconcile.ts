@@ -818,7 +818,8 @@ function addIssue(
 
 /** Stable semantic identity for one reconciliation issue across status projections. */
 export function pluginReconciliationIssueKey(issue: PluginReconciliationIssue): string {
-	const consumer = 'consumer' in issue ? pluginNodeIndexKey(issue.consumer) : ''
+	const consumer =
+		'consumer' in issue && issue.consumer !== undefined ? pluginNodeIndexKey(issue.consumer) : ''
 	const requirement = 'requirement' in issue ? pluginDefinitionIndexKey(issue.requirement) : ''
 	const provider = 'provider' in issue ? pluginNodeIndexKey(issue.provider) : ''
 	const node = 'node' in issue ? pluginNodeIndexKey(issue.node) : ''

@@ -16,6 +16,10 @@ import {
 
 const commands = new Map<string, SubCommandable>([
 	[
+		'pncat',
+		define({ name: 'pncat', description: 'Run the bundled pncat CLI with its native arguments' }),
+	],
+	[
 		'dev',
 		lazy(() => import('./commands/dev').then((module) => module.devCommand), devCommandDefinition),
 	],
@@ -86,6 +90,11 @@ const rootCommand = define({
 async function main() {
 	try {
 		const argv = process.argv.slice(2)
+		if (argv[0] === 'pncat') {
+			const { runPncat } = await import('./commands/pncat')
+			await runPncat(argv.slice(1))
+			return
+		}
 		const nextArgv = argv.length === 0 ? ['--help'] : argv
 		await cli(nextArgv, rootCommand, {
 			name: pkg.name ?? 'pluxel',

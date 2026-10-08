@@ -5,7 +5,11 @@
 	"cacheDir": ".turbo/cache",
 	"cacheMaxAge": "30d",
 	"cacheMaxSize": "5GB",
-	"globalPassThroughEnv": ["CHOKIDAR_USEPOLLING", "PNPM_CONFIG_PM_ON_FAIL"],
+	"globalPassThroughEnv": [
+		"CHOKIDAR_USEPOLLING",
+		"PNPM_CONFIG_PM_ON_FAIL",
+		"PNPM_CONFIG_WORKSPACE_DIR",
+	],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
@@ -144,6 +148,12 @@
 				"$TURBO_DEFAULT$",
 				"$TURBO_ROOT$/docs/**",
 				"$TURBO_ROOT$/.agents/skills/pluxel-development/**",
+				"$TURBO_ROOT$/pnpm-workspace.yaml",
+				"$TURBO_ROOT$/vendor/pncat/src/**",
+				"$TURBO_ROOT$/vendor/pncat/package.json",
+				"$TURBO_ROOT$/tsconfig.cli-build.json",
+				"$TURBO_ROOT$/vendor/pncat/LICENSE.md",
+				"$TURBO_ROOT$/vendor/pncat/UPSTREAM.md",
 				"!bench/**",
 				"!**/bench/**",
 				"!test/**",
@@ -164,6 +174,8 @@
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/pnpm-workspace.yaml",
+				"$TURBO_ROOT$/packages/cli/scripts/dependency-policy.*",
 				"$TURBO_ROOT$/packages/*/package.json",
 				"$TURBO_ROOT$/plugins/**/package.json",
 				"$TURBO_ROOT$/docs/**",

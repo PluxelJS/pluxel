@@ -1943,6 +1943,13 @@ async function hashSourceGraph(
 				const installedPackage = installedManifest
 					? await readPackageFingerprint(installedManifest, packageMetadata)
 					: undefined
+				// Optional platform packages may be absent, including leftover package-manager
+				// links whose targets were never installed on this machine. Source imports
+				// still use resolveImport below and fail if the module is actually required.
+				if (!installedManifest && dependencyPackage.optionalDependencies.has(dependency)) {
+					dependencyPackage.resolutions.add(`${dependency}-><optional-uninstalled>`)
+					continue
+				}
 				// Declared dependencies may export only subpaths or declarations. Neither has a
 				// package-root runtime import; their manifests still contribute to the revision.
 				const hit =
@@ -2028,6 +2035,7 @@ type PackageFingerprint = {
 	subpathOnly: boolean
 	declarationOnly: boolean
 	dependencies: readonly string[]
+	optionalDependencies: ReadonlySet<string>
 	resolutions: Set<string>
 }
 
@@ -2100,6 +2108,7 @@ async function readPackageFingerprint(
 		subpathOnly,
 		declarationOnly,
 		dependencies,
+		optionalDependencies: new Set(recordKeys(parsed.optionalDependencies)),
 		resolutions: new Set(),
 	}
 	packages.set(canonicalPath, fingerprint)

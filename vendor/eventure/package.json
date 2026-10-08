@@ -41,12 +41,12 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
-		"@types/node": "^25.6.0",
-		"oxfmt": "^0.46.0",
-		"oxlint": "^1.61.0",
-		"oxlint-tsgolint": "^0.22.0",
-		"tsdown": "0.21.10",
-		"typescript": "^6.0.3",
+		"@types/node": "catalog:types",
+		"oxfmt": "catalog:dev",
+		"oxlint": "catalog:dev",
+		"oxlint-tsgolint": "catalog:dev",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
 	},
 	"publishConfig": {

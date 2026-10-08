@@ -20,9 +20,11 @@ for browser-only React source and frontend dependencies; `host/` owns the Vite a
 configuration, installs the workspace Plugins and serves the page and Plugin routes on
 the stable Portless application origin printed at startup.
 
-The root installs `pncat` as the only catalog-management interface. Versions are grouped by
-`pncat.config.ts`; use `pnpm catalog:add -- <package>`, `pnpm catalog:migrate`, and
-`pnpm catalog:clean` instead of editing catalog entries or package references by hand. Packages still
+The CLI bundles pncat; use `pluxel pncat` without installing a separate `pncat` dependency.
+Configuration helpers come from `@pluxel/cli/pncat`. Versions are grouped by
+`pncat.config.ts`; use `pnpm catalog:add -- <package>` to add dependencies, `pnpm catalog:migrate`
+to migrate declarations, `pnpm catalog:sync` to align existing catalog versions, and `pnpm catalog:clean`
+to remove unused entries. Sync never changes package manifests. Packages still
 declare every dependency they directly use: the root centralizes version policy, not dependency ownership.
 The governance check rejects bare third-party version specifiers, so every external version remains visible
 in one named catalog while internal workspace and peer edges retain their package-owned contracts.

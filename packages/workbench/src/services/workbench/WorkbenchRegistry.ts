@@ -361,7 +361,7 @@ export class WorkbenchRegistry {
 					pluginNodeIndexKey(candidate.target.owner.pluginInfo.nodeAddress),
 				)
 				lease.activate([api])
-				if ('contentRef' in candidate.layoutEntry) {
+				if ('contentRef' in candidate.layoutEntry || federatedViewRef === undefined) {
 					throw new Error('Workbench View resolved a Workbench Content layout entry')
 				}
 				return Object.freeze({
@@ -423,7 +423,7 @@ export class WorkbenchRegistry {
 			const provider = roots[0]!
 			const consumer = roots[1]
 			lease.activate(roots)
-			if ('contentRef' in candidate.layoutEntry) {
+			if ('contentRef' in candidate.layoutEntry || federatedViewRef === undefined) {
 				throw new Error('Workbench Attachment resolved a Workbench Content layout entry')
 			}
 			return Object.freeze({

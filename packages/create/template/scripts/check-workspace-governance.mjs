@@ -19,14 +19,15 @@ if (rootManifest.workspaces !== undefined) {
 if (Object.keys(rootManifest.dependencies ?? {}).length > 0) {
 	errors.push('the root package must not own runtime dependencies; declare them in each consumer')
 }
-if (rootManifest.devDependencies?.pncat === undefined) {
-	errors.push('the root package must install pncat as the workspace catalog manager')
+if (rootManifest.devDependencies?.['@pluxel/cli'] === undefined) {
+	errors.push('the root package must install @pluxel/cli for bundled catalog management')
 }
 for (const [name, command] of Object.entries({
-	'catalog:add': 'pncat add',
-	'catalog:check': 'pncat detect --yes',
-	'catalog:clean': 'pncat clean --yes',
-	'catalog:migrate': 'pncat migrate --force --yes',
+	'catalog:add': 'pluxel pncat add',
+	'catalog:check': 'pluxel workspace sync --check',
+	'catalog:clean': 'pluxel pncat clean --yes',
+	'catalog:migrate': 'pluxel pncat migrate --yes --no-install',
+	'catalog:sync': 'pluxel workspace sync',
 })) {
 	if (rootManifest.scripts?.[name] !== command) {
 		errors.push(`package.json#scripts.${name} must be ${JSON.stringify(command)}`)

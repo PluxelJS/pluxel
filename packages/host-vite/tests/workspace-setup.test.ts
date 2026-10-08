@@ -12,10 +12,10 @@ const cliSource = fileURLToPath(new URL('../../cli/', import.meta.url))
 const run = promisify(execFile)
 const workspaceFiles = {
 	'package.json': JSON.stringify({ private: true, packageManager: 'pnpm@11.25.0' }),
-	'pnpm-workspace.yaml': 'packages:\n  - host\n',
+	'pnpm-workspace.yaml': 'packages:\n  - host\ncatalogs:\n  dev:\n    "@pluxel/cli": ^1.1.0\n',
 	'host/package.json': JSON.stringify({
 		name: '@fixture/host',
-		devDependencies: { '@pluxel/cli': '1.1.0' },
+		devDependencies: { '@pluxel/cli': 'catalog:dev' },
 	}),
 	'host/web/index.html': '<div id="root"></div>',
 }

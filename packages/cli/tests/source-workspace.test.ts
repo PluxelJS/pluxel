@@ -20,6 +20,7 @@ import {
 } from '../src/source/config'
 import {
 	createPnpmInvocation,
+	sourceChildEnvironment,
 	createSourceBuildArgs,
 	createSourceInstallArgs,
 	diagnoseSourceWorkspacePlan,
@@ -46,7 +47,10 @@ vi.mock('../src/source/registry', async (original) => {
 			Object.entries(readSourceCheckoutRegistry(path).checkouts).map(([repository, root]) => ({
 				repository,
 				root,
-				origin: 'registered' as const,
+				origin:
+					repository === 'https://github.com/PluxelJS/pluxel'
+						? ('cli' as const)
+						: ('registered' as const),
 			})),
 	}
 })
@@ -125,6 +129,62 @@ describe('source workspace membership', () => {
 })
 
 describe('source workspace planning', () => {
+	it('installs a nested checkout with the same implicit CLI source as a direct consumer', async () => {
+		const root = await createTemporaryRoot()
+		const upstream = resolve(root, 'pluxel')
+		const middle = resolve(root, 'chatbot')
+		const consumer = resolve(root, 'app')
+		await createWorkspace(upstream, {
+			'core/package.json': { name: '@pluxel/core', version: '1.0.0' },
+			'host-vite/package.json': { name: '@pluxel/host-vite', version: '1.0.0' },
+		})
+		await createWorkspace(
+			middle,
+			{
+				'bot/package.json': {
+					name: '@acme/bot',
+					version: '1.0.0',
+					dependencies: { '@pluxel/core': '*' },
+					devDependencies: { '@pluxel/host-vite': '*' },
+				},
+			},
+			[],
+		)
+		await createWorkspace(
+			consumer,
+			{
+				'app/package.json': { name: '@acme/app', dependencies: { '@acme/bot': '*' } },
+			},
+			['https://github.com/acme/chatbot'],
+		)
+		const registryPath = resolve(root, 'registry.json')
+		await writeJson(registryPath, {
+			version: 1,
+			checkouts: {
+				'https://github.com/PluxelJS/pluxel': upstream,
+				'https://github.com/acme/chatbot': middle,
+			},
+		})
+		const plan = await createSourceWorkspacePlan({ root: consumer, registryPath })
+		const direct = await createSourceWorkspacePlan({ root: middle, registryPath })
+		const nested = plan.checkouts.find((checkout) => checkout.root === middle)!
+		expect(sourceCheckoutInstallOverrides(nested, plan)).toEqual(direct.overrides)
+		expect(direct.overrides).toHaveProperty('@pluxel/host-vite')
+		expect(plan.overrides).not.toHaveProperty('@pluxel/host-vite')
+		expect(plan.executionLevels.map((level) => level.map((checkout) => checkout.root))).toEqual([
+			[upstream],
+			[middle],
+		])
+		await writeJson(resolve(middle, 'bot/package.json'), { name: '@acme/bot', version: '1.0.0' })
+		const standalone = await createSourceWorkspacePlan({ root: consumer, registryPath })
+		expect(
+			sourceCheckoutInstallOverrides(
+				standalone.checkouts.find((checkout) => checkout.root === middle)!,
+				standalone,
+			),
+		).toEqual({})
+	})
+
 	it('discovers transitive checkouts and derives only the consumed package closure', async () => {
 		const root = await createTemporaryRoot()
 		const upstream = resolve(root, 'upstream')
@@ -269,6 +329,19 @@ describe('source workspace planning', () => {
 		expect(bootstrap).toContain('pluxel source install')
 		expect(bootstrap).not.toContain('source-local-project.mjs')
 		expect(bootstrap).not.toContain('{ hooks: {} }')
+	})
+
+	it('resets pnpm workspace ownership for each independent checkout', () => {
+		vi.stubEnv('PNPM_CONFIG_WORKSPACE_DIR', '/consumer')
+		vi.stubEnv('COREPACK_ROOT', '/consumer/corepack')
+		try {
+			expect(sourceChildEnvironment('/provider').PNPM_CONFIG_WORKSPACE_DIR).toBe('/provider')
+			expect(sourceChildEnvironment('/core').PNPM_CONFIG_WORKSPACE_DIR).toBe('/core')
+			expect(sourceChildEnvironment('/core').COREPACK_ROOT).toBeUndefined()
+			expect(process.env.PNPM_CONFIG_WORKSPACE_DIR).toBe('/consumer')
+		} finally {
+			vi.unstubAllEnvs()
+		}
 	})
 
 	it('derives install and build commands from source artifact contracts', () => {

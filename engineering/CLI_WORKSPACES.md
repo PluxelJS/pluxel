@@ -12,6 +12,10 @@ CLI 是静态命令目录和交互 adapter，按所选命令从启动 cwd 的依
 
 CLI build 的输入包含仓库 `docs/` 与 `pluxel-development` skill 正文；它们变化必须使缓存失效，不能发布旧资源后再由运行时修补。
 
+Git launcher 加载 dist 前核对 CLI 的 src、bin、构建 scripts、manifest 与包级构建配置的内容指纹。
+构建完成后才写入 dist 指纹，Turbo 恢复或移动 checkout 不依赖 mtime；缺失或过期时拒绝执行并提示精确重建命令。
+此检查不证明其他框架产物最新，也不自动构建；npm launcher 不要求源码或指纹。
+
 `pluxel new` 的唯一流程为 source → acquire → validate → answers → byte plan → materialize → optional install。Bare name 只解析 bundled plugin template，local source 须显式路径；无 remote fallback。`pluxel-template.jsonc` 只声明 identity、包管理器与 prompts。仅 `.tpl` 支持固定插值，其余文件按字节复制；不接受任意代码、命令、循环或 symlink。
 
 Byte plan 在写入前完成 UTF-8/token/path/portable collision/目标检查，持有最终 bytes。Materializer 不重读模板；`--force` 只覆盖 plan 已确认的精确 existing files，每文件 temp+rename，不承诺整个目录 rollback。Bundled template 默认 install，local template 仅显式 `--install` 才执行包管理器。
@@ -27,6 +31,9 @@ repository identity；机器级 registry 将 identity 映射到 checkout。CLI �
 `pnpm-workspace.yaml` 和 package manifest，拒绝 package name collision 与 source dependency cycle，
 再从消费方依赖递归推导需要链接和安装的 package closure。源码 package 的 devDependency 属于其自身
 checkout，不进入消费方 closure。
+
+加载独立 provider checkout 时也加入 Git CLI 的隐式 Pluxel 来源，保持直接 install 与下游编排时的 overlay 一致。
+该边同时参与安装顺序；provider 自己的 workspace/devDependencies 决定其安装闭包，不扩张最终 consumer 的包闭包。
 
 少数外部 package 同时具有类型期 nominal/private identity 时，项目可声明 `singletons`。CLI 只接受在
 本次实际选中的源码 package 中有唯一 direct dependency owner 的名称，并在该 owner checkout 安装后
@@ -47,6 +54,8 @@ registry。package closure、overlay、构建与 lockfile 始终由唯一的 `pl
 `pluxel source build --package <name>` 可以重复传入 source closure 内确实需要 artifact 的精确 target；它只用于需要先使一个
 package export 可执行的窄 bootstrap，例如 Vitest config 的 `@pluxel/test`。不带 `--package` 才构建整个 selected artifact closure。
 上游构建优先把精确目标交给其 Turbo task graph，并默认尊重该 checkout 自己的 cache；显式 `--force` 才绕过。
+
+`source build` 与 `source install` 在操作入口按 canonical checkout 路径排序获取整个来源图的 operation lock，共享 provider 串行、独立来源图可并行。安装持有同一把 operation lock 调用内部 build，不重新获取；原 install marker 仍只表示安装未完成。每层已启动的操作必须全部 settle 后才能在失败路径释放所有权。损坏或无存活持有者的锁不自动接管，因为其子进程可能仍在写产物；明确诊断后由操作者确认并清理。直接运行上游 Turbo/verify 及 source 返回后的消费者任务不属于该协调范围。
 repository 执行层级从 selected package dependency edge 与 nested source edge 推导，同层独立 checkout 可以并行。无 Turbo 时
 回落到 pnpm recursive filter，不在消费仓库复制 package filter。`build` script 本身不代表 source
 consumer 需要产物：CLI 只选择 live manifest 引用顶层标准构建目录或暴露 executable bin 的 package，
@@ -56,6 +65,7 @@ CLI 已经为 checkout 选择并启动 pnpm，因此调用 Turbo 时关闭它重
 Turbo 把合法的 `devEngines` pnpm range 当成无效精确版本，不绕过 CLI 的 pnpm 校验或 checkout 自己的 lockfile。
 CLI 同时移除 consumer 进程的 `COREPACK_ROOT` 标记，让独立 checkout 及其 nested workspace 能按最近的精确
 `packageManager` 自行切换 pnpm，而不是错误继承 consumer 的版本。
+每次 checkout 子进程同时将 `PNPM_CONFIG_WORKSPACE_DIR` 重设为自己的根，使嵌套成员脚本仍使用所属 catalog，禁止继承 consumer 的工作区根。
 
 该能力不改变 pnpm workspace membership，也不合并独立仓库 lockfile/release。现有 `pluxel workspace`
 仍只管理一个仓库内部的 workspace patterns，成员声明只写入 `pnpm-workspace.yaml`。缺失声明的单包项目只包含根 package；添加成员前需创建 pnpm workspace 文件。发现时坏清单与目录读取错误会中止操作，`workspace scan` 记录的候选目录仍需显式加入成员清单。它同样不复用 dynamic source producer：后者拥有 runtime
@@ -76,3 +86,18 @@ CLI `src/workspace/setup.ts` 拥有开发资源来源、`.pluxel/development.jso
 Host-vite 沿 Vite root 的父链、止于最近 Git/workspace/lockfile 边界，选择最近显式 source/setup 根作为 doctor 输入；没有显式根时，CLI 声明触发对项目边界的检查。成员包声明 CLI 只选择最近安装 owner，不把成员目录变成 workspace 根。CLI 安装查找可到同一项目边界，不能跨边界借用父仓库；显式子根错误仍交由 CLI 按该根诊断，不回退到父根、不自动 setup。Host-vite 只发现输入及 executable，资源、YAML 和成员治理仍由同一个 CLI doctor 验证。
 
 `docs` 直接读取当前来源的正文，禁止路径逃逸。Git 来源是 owning checkout；发行版来源是构建打包的 `dist/resources`。npm 安装后的离线接入无需网络；资源升级后重新 setup。完整用法由[源码工作区](../docs/development/source-workspaces.md)维护。
+
+## 外部依赖政策
+
+核心 `pnpm-workspace.yaml` 拥有版本范围；CLI 的 `workspace/dependencies.ts` 只负责读取政策、报告差异和调用内联的
+`pncat/sync` plan/apply API，不另写 manifest/catalog writer。Git 读取 owning checkout，npm 使用构建生成的
+`dist/resources/dependency-policy.json`。peer catalog 不作为安装版本政策；其他同名条目冲突必须报错。
+`workspace sync` 是显式维护入口，`--check` 与两个 doctor 保持只读；`source install` 在安装锁内复用相同同步，
+重读计划后才生成 overlay 和安装。同步只写已有 catalog 的版本；裸声明迁移由原生 pncat 命令拥有。Peer-only catalog 保留，共享 peer 引用在版本变化时报告冲突，不隐式改写 manifest。
+
+CLI 指纹及 Turbo build inputs 必须包含权威 catalog 与内联 pncat 源码；政策改动不能继续执行旧构建。
+pncat 作为构建依赖内联交付，packed CLI 检验无需另装 pncat 和 Git 源码即可同步消费者。
+
+`pluxel pncat` 在 Pluxel launcher 来源校验之后把参数交给内联 pncat 的原生 CAC parser，原生命令继续拥有 writer 和选项语义；临时恢复原生 argv 布局供 upstream add/remove/revert 使用。`@pluxel/cli/pncat` 发布配置 runtime 和自包含声明，消费方不需要独立 pncat 依赖。CLI 声明构建的根配置覆盖 CLI 与 vendor 两处实际源码，不向 vendor source 目录发射产物。
+
+内联 pncat 的 init context 只提供配置 import specifier 与命令提示，生成逻辑仍由原生命令拥有。原生入口保留自己的 pncat 输出。同步回归必须断言所有 package.json 字节不变，并覆盖 migrate → sync、peer 冲突及 Git/npm 两种政策来源。

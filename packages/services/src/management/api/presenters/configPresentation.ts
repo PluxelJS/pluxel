@@ -277,7 +277,16 @@ function projectField(node: FieldNode): ConfigPresentationFieldV1 {
 				control: node.control,
 				...defined('options', node.options),
 				...defined('entries', node.entries),
-				...defined('labels', node.labels),
+				...defined(
+					'labels',
+					node.labels === undefined
+						? undefined
+						: Object.fromEntries(
+								Object.entries(node.labels).filter(
+									(entry): entry is [string, string] => entry[1] !== undefined,
+								),
+							),
+				),
 				...defined('disabled', node.disabled),
 				...defined('placeholder', node.placeholder),
 				...defined('searchable', node.searchable),

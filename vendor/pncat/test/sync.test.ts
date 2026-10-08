@@ -1,0 +1,132 @@
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, expect, it } from 'vitest'
+import { planCatalogSync, applyCatalogSync } from '../src/sync'
+
+const roots: string[] = []
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+async function fixture(manifest: object, yaml = 'packages: [packages/*]\ncatalogs:\n  prod:\n    foo: ^1.0.0\n') {
+  const root = await mkdtemp(join(tmpdir(), 'pncat-sync-'))
+  roots.push(root)
+  await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'fixture', packageManager: 'pnpm@11.25.0', ...manifest }))
+  await writeFile(join(root, 'pnpm-workspace.yaml'), yaml)
+  return root
+}
+async function manifest(root: string) { return JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) }
+it('plans without writes, preserves fields and peer contracts, then applies once', async () => {
+  const root = await fixture({ dependencies: { foo: 'catalog:prod' }, devDependencies: { foo: 'catalog:prod' }, peerDependencies: { foo: '^1.0.0', broad: '^1 || ^2' } })
+  const before = await readFile(join(root, 'package.json'), 'utf8')
+  const plan = await planCatalogSync({ root, versions: { foo: '^2.0.0' } })
+  expect(plan.conflicts).toEqual([])
+  expect(await readFile(join(root, 'package.json'), 'utf8')).toBe(before)
+  await applyCatalogSync(plan)
+  expect(await readFile(join(root, 'package.json'), 'utf8')).toBe(before)
+  const pkg = await manifest(root)
+  expect(pkg.dependencies).toEqual({ foo: 'catalog:prod' })
+  expect(pkg.devDependencies.foo).toMatch(/^catalog:/)
+  expect(pkg.peerDependencies).toEqual({ foo: '^1.0.0', broad: '^1 || ^2' })
+  expect((await planCatalogSync({ root, versions: { foo: '^2.0.0' } })).changes).toEqual([])
+})
+it('updates all catalogs and npm alias without adding unrelated packages', async () => {
+  const root = await fixture({}, 'packages: []\ncatalogs:\n  first:\n    foo: ^1.0.0\n  second:\n    foo: ^1.1.0\n  tools:\n    typescript: npm:@typescript/native-preview@7.0.0-dev.1\n')
+  const plan = await planCatalogSync({ root, versions: { foo: '^2.0.0', absent: '^9.0.0', typescript: 'npm:@typescript/native-preview@7.0.0-dev.2' } })
+  expect(plan.changes).toHaveLength(3)
+  await applyCatalogSync(plan)
+  expect(await manifest(root)).not.toHaveProperty('dependencies')
+  expect(await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8')).not.toContain('absent')
+})
+it('rejects conflicts and stale input before any writing', async () => {
+  const root = await fixture({ dependencies: { foo: '^2.0.0' } })
+  const before = await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8')
+  const plan = await planCatalogSync({ root, versions: {} })
+  expect(plan.conflicts.length).toBeGreaterThan(0)
+  await expect(applyCatalogSync(plan)).rejects.toThrow('pluxel pncat migrate --yes --no-install')
+  expect(await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8')).toBe(before)
+  await writeFile(join(root, 'package.json'), JSON.stringify({ dependencies: { foo: 'catalog:prod' } }))
+  const valid = await planCatalogSync({ root, versions: { foo: '^2.0.0' } })
+  await writeFile(join(root, 'package.json'), '{}')
+  await expect(applyCatalogSync(valid)).rejects.toThrow('changed')
+  expect(await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8')).toBe(before)
+})
+it('respects membership, includes explicit vendor, excludes unlisted nested projects and symlinks', async () => {
+  const root = await fixture({}, 'packages: [packages/*, vendor/tool]\n')
+  for (const dir of ['packages/member', 'local-projects/other', 'vendor/tool']) {
+    await mkdir(join(root, dir), { recursive: true })
+    await writeFile(join(root, dir, 'package.json'), JSON.stringify({ name: dir, dependencies: { foo: '^1.0.0' } }))
+  }
+  await writeFile(join(root, 'vendor/tool/pnpm-workspace.yaml'), 'packages: []\n')
+  await symlink(join(root, 'local-projects/other'), join(root, 'packages/link'))
+  const plan = await planCatalogSync({ root, versions: { foo: '^2.0.0' } })
+  expect(plan.changes).toEqual([])
+  expect(plan.conflicts).toHaveLength(2)
+  expect(plan.conflicts[0]).toContain('packages/member/package.json')
+  expect(plan.conflicts[1]).toContain('vendor/tool/package.json')
+})
+it('preserves peer-only catalog unless explicit authoritative update is requested', async () => {
+  const root = await fixture({ peerDependencies: { foo: 'catalog:prod' } })
+  expect((await planCatalogSync({ root, versions: { foo: '^2.0.0' } })).changes).toEqual([])
+  const plan = await planCatalogSync({ root, versions: { foo: '^2.0.0' }, preservePeerRanges: false })
+  expect(plan.changes).toHaveLength(1)
+  await applyCatalogSync(plan)
+  expect((await manifest(root)).peerDependencies.foo).toBe('catalog:prod')
+})
+it('rejects newly added members and config files after planning', async () => {
+  const root = await fixture({ dependencies: { foo: 'catalog:prod' } })
+  const plan = await planCatalogSync({ root, versions: { foo: '^2.0.0' } })
+  await mkdir(join(root, 'packages/new'), { recursive: true })
+  await writeFile(join(root, 'packages/new/package.json'), '{"name":"new"}')
+  await expect(applyCatalogSync(plan)).rejects.toThrow('members changed')
+  const next = await planCatalogSync({ root, versions: { foo: '^2.0.0' } })
+  await writeFile(join(root, 'pncat.config.ts'), 'export default {}')
+  await expect(applyCatalogSync(next)).rejects.toThrow('input changed')
+})
+it('reports missing workspace as a conflict', async () => {
+  const root = await fixture({})
+  await rm(join(root, 'pnpm-workspace.yaml'))
+  expect((await planCatalogSync({ root, versions: {} })).conflicts[0]).toContain('declare the pnpm workspace')
+})
+it('uses local catalog rules and does not inherit an independent parent config', async () => {
+  const parent = await fixture({})
+  await writeFile(join(parent, 'pncat.config.ts'), "export default { exclude: ['foo'] }")
+  const root = join(parent, 'child')
+  await mkdir(root)
+  await writeFile(join(root, 'package.json'), '{"name":"child","dependencies":{"foo":"^1.0.0"}}')
+  await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages: []\n')
+  const independent = await planCatalogSync({ root, versions: {} })
+  expect(independent.conflicts[0]).toContain('uses bare range')
+  await writeFile(join(root, 'pncat.config.ts'), "export default { exclude: ['foo'] }")
+  const local = await planCatalogSync({ root, versions: {} })
+  expect(local.conflicts).toEqual([])
+  expect(local.changes).toEqual([])
+})
+it('rejects changing a catalog shared by peer and regular dependencies', async () => {
+  const root = await fixture({ peerDependencies: { foo: 'catalog:prod' } })
+  await mkdir(join(root, 'packages/member'), { recursive: true })
+  await writeFile(join(root, 'packages/member/package.json'), '{"name":"member","dependencies":{"foo":"catalog:prod"}}')
+  const plan = await planCatalogSync({ root, versions: { foo: '^2.0.0' } })
+  expect(plan.conflicts[0]).toContain('separate peer compatibility')
+  await expect(applyCatalogSync(plan)).rejects.toThrow('Shared peer catalog')
+  expect((await manifest(root)).peerDependencies.foo).toBe('catalog:prod')
+  const authoritative = await planCatalogSync({ root, versions: { foo: '^2.0.0' }, preservePeerRanges: false })
+  await applyCatalogSync(authoritative)
+  expect((await manifest(root)).peerDependencies.foo).toBe('catalog:prod')
+})
+it('rejects changed config imports before writing', async () => {
+  const root = await fixture({ dependencies: { foo: 'catalog:prod' } })
+  await writeFile(join(root, 'pncat.config.ts'), "import { rules } from './rules'; export default { catalogRules: rules }")
+  await writeFile(join(root, 'rules.ts'), "export const rules = [{ name: 'local', match: ['foo'] }]")
+  const plan = await planCatalogSync({ root, versions: {} })
+  await writeFile(join(root, 'rules.ts'), "export const rules = [{ name: 'changed', match: ['foo'] }]")
+  await expect(applyCatalogSync(plan)).rejects.toThrow('input changed')
+})
+
+it('counts catalog references in fields excluded from migration', async () => {
+  const root = await fixture({ peerDependencies: { foo: 'catalog:prod' }, optionalDependencies: { foo: 'catalog:prod', missing: 'catalog:prod' } })
+  await writeFile(join(root, 'pncat.config.ts'), 'export default { depFields: { optionalDependencies: false, peerDependencies: false } }')
+  const plan = await planCatalogSync({ root, versions: { foo: '^2.0.0' } })
+  expect(plan.conflicts).toHaveLength(2)
+  expect(plan.conflicts.join('\n')).toContain('Shared peer catalog')
+  expect(plan.conflicts.join('\n')).toContain('unresolved missing catalog:prod')
+  await expect(applyCatalogSync(plan)).rejects.toThrow('Shared peer catalog')
+})

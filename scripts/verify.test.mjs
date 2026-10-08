@@ -16,7 +16,7 @@ async function fixture(failure) {
 		`#!/usr/bin/env node
 import { appendFileSync } from 'node:fs'
 const args = process.argv.slice(2)
-appendFileSync(process.env.VERIFY_LOG, JSON.stringify({ args, cwd: process.cwd(), pmOnFail: process.env.PNPM_CONFIG_PM_ON_FAIL }) + '\\n')
+appendFileSync(process.env.VERIFY_LOG, JSON.stringify({ args, cwd: process.cwd(), pmOnFail: process.env.PNPM_CONFIG_PM_ON_FAIL, workspaceDir: process.env.PNPM_CONFIG_WORKSPACE_DIR }) + '\\n')
 if (args.includes(process.env.VERIFY_FAIL)) process.exit(7)
 `,
 		{ mode: 0o755 },
@@ -31,12 +31,14 @@ if (args.includes(process.env.VERIFY_FAIL)) process.exit(7)
 				VERIFY_LOG: join(root, 'calls.jsonl'),
 				VERIFY_FAIL: failure ?? '',
 				PNPM_CONFIG_PM_ON_FAIL: 'download',
+				PNPM_CONFIG_WORKSPACE_DIR: '/wrong-parent-workspace',
 			},
 		})
 		const log = await readFile(join(root, 'calls.jsonl'), 'utf8')
 		const calls = log.trim().split('\n').map(JSON.parse)
 		assert.ok(calls.every((call) => call.cwd === root))
 		assert.ok(calls.every((call) => call.pmOnFail === 'ignore'))
+		assert.ok(calls.every((call) => call.workspaceDir === `${root}/`))
 		return { ...result, calls: calls.map((call) => call.args) }
 	}
 }
@@ -80,4 +82,41 @@ it('fails verification when successful package tasks leave source declaration po
 	assert.equal(result.status, 7)
 	assert.ok(result.calls.some((args) => args.includes('turbo')))
 	assert.deepEqual(result.calls.at(-1), ['run', 'source-declarations:check'])
+})
+
+it('root Turbo entry fixes workspace ownership and forwards arguments without shell expansion', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-turbo-'))
+	onTestFinished(() => rm(root, { recursive: true, force: true }))
+	await mkdir(join(root, 'scripts'))
+	await mkdir(join(root, 'bin'))
+	await copyFile(new URL('./turbo.mjs', import.meta.url), join(root, 'scripts/turbo.mjs'))
+	await writeFile(
+		join(root, 'bin/pnpm'),
+		`#!/usr/bin/env node
+import { writeFileSync } from 'node:fs'
+writeFileSync(process.env.VERIFY_LOG, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), workspaceDir: process.env.PNPM_CONFIG_WORKSPACE_DIR, pmOnFail: process.env.PNPM_CONFIG_PM_ON_FAIL }))
+process.exit(7)
+`,
+		{ mode: 0o755 },
+	)
+	const result = spawnSync(
+		process.execPath,
+		[join(root, 'scripts/turbo.mjs'), 'run', 'build', '--filter=...[origin/main]'],
+		{
+			cwd: tmpdir(),
+			env: {
+				...process.env,
+				PATH: `${join(root, 'bin')}${delimiter}${process.env.PATH}`,
+				VERIFY_LOG: join(root, 'call.json'),
+				PNPM_CONFIG_WORKSPACE_DIR: '/wrong-parent-workspace',
+			},
+		},
+	)
+	assert.equal(result.status, 7)
+	assert.deepEqual(JSON.parse(await readFile(join(root, 'call.json'), 'utf8')), {
+		args: ['exec', 'turbo', 'run', 'build', '--filter=...[origin/main]'],
+		cwd: root,
+		workspaceDir: `${root}/`,
+		pmOnFail: 'ignore',
+	})
 })

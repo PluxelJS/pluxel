@@ -91,16 +91,17 @@ PLUXEL_WORKBENCH=false pnpm dev
 
 每个 workspace package 声明自己直接使用的依赖。`host/web/` 声明纯前端依赖；`host/` 声明运行时、插件，以及宿主需要共享的 React。两者的 React 版本来自同一 catalog，不依赖隐式 hoist。
 
-根目录的 pncat 集中管理 `pluxel`、`frontend`、`backend`、`test`、`tooling` 分组版本：
+CLI 内联的 pncat 集中管理 `pluxel`、`frontend`、`backend`、`test`、`tooling` 分组版本：
 
 ```sh
 pnpm catalog:add -- <package>
 pnpm catalog:migrate
+pnpm catalog:sync
 pnpm catalog:clean
 pnpm governance:check
 ```
 
-分别用于添加、重新分组、清理和核对依赖。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
+分别用于添加、迁移声明、同步版本、清理和核对依赖。同步只改 workspace catalog；完整边界见[统一外部依赖](./source-workspaces.md#统一外部依赖)。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
 
 插件将 Core、消费的服务或 Plugin provider 声明为 `peerDependencies`，并用 `devDependencies` 支持本包开发；validation 等实现依赖留在 `dependencies`。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](../plugin-development/testing.md)。
 

@@ -1,0 +1,220 @@
+import type {
+  CatalogOptions,
+  PackageJsonMeta,
+  RawDep,
+  ResolverContext,
+  ResolverResult,
+} from '../types'
+import process from 'node:process'
+import * as p from '@clack/prompts'
+import c from 'ansis'
+import { dirname } from 'pathe'
+import { WorkspaceManager } from '../workspace-manager'
+import {
+  COMMAND_ERROR_CODES,
+  confirmWorkspaceChanges,
+  createCommandError,
+  ensureWorkspaceFile,
+  parseCommandOptions,
+  runAgentRemove,
+  selectTargetProjectPackages,
+} from './shared'
+
+export async function removeCommand(options: CatalogOptions): Promise<void> {
+  const args = process.argv.slice(3)
+  if (args.length === 0)
+    throw createCommandError(COMMAND_ERROR_CODES.INVALID_INPUT, 'no dependencies provided, aborting')
+
+  const workspace = new WorkspaceManager(options)
+  const workspaceFilepath = await workspace.catalog.findWorkspaceFile()
+  if (!workspaceFilepath) {
+    const { deps, isRecursive } = parseCommandOptions(args, options)
+    if (deps.length === 0)
+      throw createCommandError(COMMAND_ERROR_CODES.INVALID_INPUT, 'no dependencies provided, aborting')
+
+    await runAgentRemove(deps, {
+      cwd: workspace.getCwd(),
+      agent: options.agent,
+      recursive: isRecursive,
+    })
+    p.outro(c.green('remove complete'))
+    return
+  }
+
+  await ensureWorkspaceFile(workspace)
+  const { dependencies = [], updatedPackages = {} } = await resolveRemove({
+    args,
+    options,
+    workspace,
+  })
+
+  await confirmWorkspaceChanges(
+    async () => {
+      await workspace.catalog.removePackages(dependencies)
+    },
+    {
+      workspace,
+      updatedPackages,
+      yes: options.yes,
+      verbose: options.verbose,
+      bailout: false,
+      completeMessage: 'remove complete',
+    },
+  )
+}
+
+export async function resolveRemove(context: ResolverContext): Promise<ResolverResult> {
+  const { args = [], options, workspace } = context
+  await workspace.loadPackages()
+
+  const { deps, isRecursive } = parseCommandOptions(args, options)
+  if (deps.length === 0)
+    throw createCommandError(COMMAND_ERROR_CODES.INVALID_INPUT, 'no dependencies provided, aborting')
+
+  const updatedPackages = new Map<string, PackageJsonMeta>()
+  const dependencies: RawDep[] = []
+  const noncatalogDeps: string[] = []
+
+  const projectPackages = workspace.listProjectPackages()
+  const workspacePackages = workspace.listWorkspacePackages()
+  const catalogTargetPackages = workspace.listCatalogTargetPackages()
+
+  const workspaceCwd = workspace.getCwd()
+  const currentPackagePath = workspace.resolveTargetProjectPackagePath(process.cwd())
+
+  for (const depName of deps) {
+    const usedPackages = projectPackages.filter(pkg => pkg.deps.some(dep => dep.name === depName))
+    if (usedPackages.length === 0)
+      throw createCommandError(COMMAND_ERROR_CODES.INVALID_INPUT, `${depName} is not used in any package, aborting`)
+  }
+
+  const candidateTargetPackages = isRecursive
+    ? projectPackages
+    : projectPackages.filter(pkg => pkg.deps.some(dep => deps.includes(dep.name)))
+  const targetPackages = await selectTargetProjectPackages({
+    projectPackages,
+    targetPackages: candidateTargetPackages,
+    currentPackagePath,
+    promptMessage: `please select ${c.yellow('package.json')} files where dependencies will be removed`,
+    yes: options.yes,
+  })
+  const targetPackagePaths = new Set(targetPackages.map(pkg => pkg.filepath))
+
+  for (const depName of deps) {
+    const usedTargetPackages = targetPackages.filter(pkg => pkg.deps.some(dep => dep.name === depName))
+    if (usedTargetPackages.length === 0)
+      throw createCommandError(COMMAND_ERROR_CODES.INVALID_INPUT, `${depName} is not used in selected package.json files, aborting`)
+
+    const catalogDeps = workspacePackages
+      .flatMap(pkg => pkg.deps)
+      .filter(dep => dep.name === depName)
+
+    if (catalogDeps.length === 0) {
+      noncatalogDeps.push(depName)
+      continue
+    }
+
+    const selectedCatalogs = await selectCatalogs(depName, catalogDeps, options)
+    for (const catalogName of selectedCatalogs) {
+      const removed = workspace.removeCatalogDepFromPackages(
+        updatedPackages,
+        targetPackages,
+        depName,
+        catalogName,
+      )
+      if (!removed)
+        continue
+
+      const remainingCatalogTargetPackages = catalogTargetPackages.filter(
+        pkg => pkg.type !== 'package.json' || !targetPackagePaths.has(pkg.filepath),
+      )
+      const hasRemainingReference = workspace.isCatalogDepReferenced(
+        depName,
+        catalogName,
+        remainingCatalogTargetPackages,
+      )
+
+      if (!hasRemainingReference) {
+        const removable = catalogDeps.find(dep => dep.catalogName === catalogName)
+        if (removable)
+          dependencies.push(removable)
+      }
+    }
+  }
+
+  if (noncatalogDeps.length > 0) {
+    p.log.info(`${c.yellow(noncatalogDeps.join(', '))} is not used in any catalog`)
+    await removeNoncatalogDependencies(noncatalogDeps, {
+      targetPackages,
+      workspaceCwd,
+      options,
+      isRecursive,
+    })
+  }
+
+  return {
+    dependencies,
+    updatedPackages: Object.fromEntries(updatedPackages.entries()),
+  }
+}
+
+async function selectCatalogs(depName: string, catalogDeps: RawDep[], options: CatalogOptions): Promise<string[]> {
+  const catalogNames = [...new Set(catalogDeps.map(dep => dep.catalogName))]
+  if (catalogNames.length <= 1 || options.yes)
+    return catalogNames
+
+  const selected = await p.multiselect({
+    message: `${depName} found in multiple catalogs, please select the catalog to remove from`,
+    options: catalogNames.map(catalogName => ({
+      label: catalogName,
+      value: catalogName,
+    })),
+    initialValues: catalogNames,
+  })
+
+  if (!selected || p.isCancel(selected))
+    throw createCommandError(COMMAND_ERROR_CODES.ABORT)
+
+  if (selected.length === 0)
+    throw createCommandError(COMMAND_ERROR_CODES.INVALID_INPUT, 'no catalog selected, aborting')
+
+  return selected
+}
+
+async function removeNoncatalogDependencies(
+  noncatalogDeps: string[],
+  context: {
+    targetPackages: PackageJsonMeta[]
+    workspaceCwd: string
+    options: CatalogOptions
+    isRecursive: boolean
+  },
+): Promise<void> {
+  const {
+    targetPackages,
+    workspaceCwd,
+    options,
+    isRecursive,
+  } = context
+
+  if (isRecursive) {
+    await runAgentRemove(noncatalogDeps, {
+      cwd: workspaceCwd,
+      agent: options.agent,
+      recursive: true,
+    })
+    return
+  }
+
+  for (const pkg of targetPackages) {
+    const packageDeps = noncatalogDeps.filter(depName => pkg.deps.some(dep => dep.name === depName))
+    if (packageDeps.length === 0)
+      continue
+
+    await runAgentRemove(packageDeps, {
+      cwd: dirname(pkg.filepath),
+      agent: options.agent,
+      recursive: false,
+    })
+  }
+}

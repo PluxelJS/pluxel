@@ -30,8 +30,14 @@ const isGitCli =
 // A bound Git workspace must not silently execute another checkout's CLI.
 if (!process.argv.slice(2).some((arg) => ['--help', '-h', '--version', '-v'].includes(arg))) {
 	const args = process.argv.slice(2)
-	const rootIndex = args.indexOf('--root')
-	let directory = resolve(rootIndex >= 0 && args[rootIndex + 1] ? args[rootIndex + 1] : startupCwd)
+	const rootOption = args[0] === 'pncat' ? '--cwd' : '--root'
+	let requestedRoot = startupCwd
+	for (let index = 0; index < args.length; index += 1) {
+		if (args[index] === rootOption && args[index + 1]) requestedRoot = args[++index]
+		else if (args[index].startsWith(`${rootOption}=`))
+			requestedRoot = args[index].slice(rootOption.length + 1)
+	}
+	let directory = resolve(requestedRoot)
 	for (;;) {
 		const bindingPath = resolve(directory, '.pluxel/development.json')
 		if (existsSync(bindingPath)) {
@@ -72,6 +78,20 @@ if (!isGitCli && !globalThis[directModeSymbol] && !isSourceCommand(process.argv.
 
 async function runCurrentCli() {
 	if (existsSync(distCli)) {
+		if (isGitCli) {
+			const { cliSourceFingerprint } = await import('./build-state.mjs')
+			const fingerprintPath = resolve(__dirname, '../dist/source-fingerprint')
+			const built = existsSync(fingerprintPath)
+				? await readFile(fingerprintPath, 'utf8')
+				: undefined
+			if (built !== cliSourceFingerprint(resolve(__dirname, '..'))) {
+				console.error(`[pluxel] CLI build is stale for Git checkout ${owningCheckout}.`)
+				console.error(
+					`Run \`pnpm --dir "${owningCheckout}" --filter @pluxel/cli build\`, then retry.`,
+				)
+				process.exit(1)
+			}
+		}
 		await import(pathToFileURL(distCli).href)
 	} else {
 		console.error('[pluxel] CLI build is missing.')

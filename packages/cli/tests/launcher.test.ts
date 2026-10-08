@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -67,6 +67,79 @@ async function releaseBin() {
 }
 
 describe('pluxel bin launcher', () => {
+	it('checks the pncat cwd binding before forwarding native arguments', async () => {
+		const root = await createProject({
+			'package.json': '{"name":"bound-consumer"}',
+			'.pluxel/development.json': JSON.stringify({
+				source: { kind: 'git', root: '/other-pluxel-checkout' },
+			}),
+		})
+		for (const cwdArgs of [['--cwd', root], [`--cwd=${root}`]]) {
+			const result = await runNode(
+				[pluxelBin, 'pncat', 'clean', '--yes', '--no-install', ...cwdArgs],
+				dirname(root),
+			)
+			expect(result.code).toBe(1)
+			expect(result.stderr).toContain('Source mismatch')
+			expect(result.stderr).toContain('/other-pluxel-checkout')
+		}
+	})
+	it('rejects stale Git CLI code before executing the old artifact and accepts restored content', async () => {
+		const packagePath = 'packages/cli'
+		const root = await createProject({
+			'.git/HEAD': 'ref: refs/heads/main\n',
+			'vendor/pncat/src/sync.ts': 'export {}\n',
+			'vendor/pncat/package.json': '{"name":"pncat"}',
+			'tsconfig.cli-build.json': '{}',
+			'pnpm-workspace.yaml': 'packages: [packages/*]\n',
+			[`${packagePath}/package.json`]: JSON.stringify({ name: '@pluxel/cli', type: 'module' }),
+			[`${packagePath}/src/cli.ts`]: 'export const version = 1\n',
+			[`${packagePath}/scripts/build.mjs`]: '',
+			[`${packagePath}/tsconfig.json`]: '{}',
+			[`${packagePath}/tsdown.config.ts`]: 'export default {}\n',
+			[`${packagePath}/bin/pluxel.mjs`]: await readFile(pluxelBin, 'utf8'),
+			[`${packagePath}/bin/build-state.mjs`]: await readFile(
+				resolve(dirname(pluxelBin), 'build-state.mjs'),
+				'utf8',
+			),
+			[`${packagePath}/dist/cli.mjs`]: 'process.stdout.write("artifact executed")\n',
+		})
+		const packageRoot = resolve(root, packagePath)
+		const executable = resolve(packageRoot, 'bin/pluxel.mjs')
+		const run = () => runNode([executable, 'source', 'doctor'], root)
+		const missingStamp = await run()
+		expect(missingStamp.code).toBe(1)
+		expect(missingStamp.stderr).toContain('CLI build is stale')
+		expect(missingStamp.stdout).toBe('')
+		const { cliSourceFingerprint } = await import(
+			pathToFileURL(resolve(packageRoot, 'bin/build-state.mjs')).href
+		)
+		await writeFile(
+			resolve(packageRoot, 'dist/source-fingerprint'),
+			cliSourceFingerprint(packageRoot),
+		)
+		const current = await run()
+		expect(current.stdout).toBe('artifact executed')
+		await writeFile(resolve(packageRoot, 'src/cli.ts'), 'export const version = 2\n')
+		const stale = await run()
+		expect(stale.code).toBe(1)
+		expect(stale.stdout).toBe('')
+		expect(stale.stderr).toContain(`pnpm --dir "${root}" --filter @pluxel/cli build`)
+		await writeFile(resolve(packageRoot, 'src/cli.ts'), 'export const version = 1\n')
+		const restored = await run()
+		expect(restored.stdout).toBe('artifact executed')
+		await writeFile(
+			resolve(root, 'pnpm-workspace.yaml'),
+			'packages: [packages/*]\ncatalog: { yaml: ^2.0.0 }\n',
+		)
+		const stalePolicy = await run()
+		expect(stalePolicy.stderr).toContain('CLI build is stale')
+		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: [packages/*]\n')
+		await writeFile(resolve(root, 'vendor/pncat/src/sync.ts'), 'export const changed = true\n')
+		const staleVendor = await run()
+		expect(staleVendor.stderr).toContain('CLI build is stale')
+	})
+
 	it('keeps the Git CLI for ordinary documentation even with another local CLI', async () => {
 		const root = await createProject({
 			'package.json': JSON.stringify({ devDependencies: { '@pluxel/cli': '*' } }),

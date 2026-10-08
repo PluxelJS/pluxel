@@ -3,6 +3,7 @@ import { describe, it } from 'vitest'
 
 import {
 	isPublishablePackage,
+	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	tegamiIgnoredPackageNames,
 } from './repository-packages.mjs'
@@ -56,5 +57,24 @@ describe('repository package policy', () => {
 			packagesRequiringInitialMajor([packageRecord('package', '@scope/a', undefined, '1.2.0')]),
 			[],
 		)
+	})
+})
+
+describe('root workspace dependency ownership', () => {
+	it('rejects vendor workspace dependencies absent from the release inventory', () => {
+		assert.deepEqual(
+			rootWorkspaceDependencyErrors({ devDependencies: { pncat: 'workspace:*' } }, []),
+			[
+				'root devDependencies.pncat invalidates every Turbo task; declare it in its consumer package',
+			],
+		)
+	})
+	it('rejects known workspace names even with a normal range and permits registry tools', () => {
+		const errors = rootWorkspaceDependencyErrors(
+			{ devDependencies: { '@scope/tool': '^1.0.0', vitest: 'catalog:test' } },
+			[packageRecord('package', '@scope/tool')],
+		)
+		assert.equal(errors.length, 1)
+		assert.match(errors[0], /@scope\/tool/)
 	})
 })

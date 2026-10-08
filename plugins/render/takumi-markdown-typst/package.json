@@ -34,7 +34,7 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@myriaddreamin/typst-ts-node-compiler": "0.7.0",
+		"@myriaddreamin/typst-ts-node-compiler": "catalog:prod",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^"
 	},
@@ -67,6 +67,9 @@
 	"pluxel": {
 		"pluginPackages": {
 			"@pluxel/takumi-markdown": "required"
-		}
+		},
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
 	}
 }

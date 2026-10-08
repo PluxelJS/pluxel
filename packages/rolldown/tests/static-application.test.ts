@@ -576,6 +576,7 @@ describe('application', () => {
 				)
 				await traceOptions.hooks?.traceResult?.({ fileList } as never)
 				await traceOptions.hooks?.tracedPackages?.({})
+				return { packages: {}, files: {} }
 			})
 
 			await buildStart?.call({
@@ -695,6 +696,7 @@ describe('application', () => {
 				await options.hooks?.tracedPackages?.({
 					'@pluxel/core': { name: '@pluxel/core', versions: {} },
 				})
+				return { packages: {}, files: {} }
 			})
 			await tracer.writeBundle?.handler?.call({}, {}, {})
 			await expect(assembly.writeBundle?.handler?.call({}, {}, {})).rejects.toThrow(

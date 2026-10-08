@@ -55,8 +55,8 @@ function fixtureFiles(): Record<string, string> {
 			name: '@example/semantic-plugin',
 			type: 'module',
 			devDependencies: {
-				'@mantine/core': '9.6.3',
-				'@mantine/hooks': '9.6.3',
+				'@mantine/core': '9.7.1',
+				'@mantine/hooks': '9.7.1',
 				'@pluxel/workbench': '0.1.0',
 				react: '19.3.0',
 				'react-dom': '19.3.0',
@@ -89,8 +89,8 @@ function fixtureFiles(): Record<string, string> {
 		'node_modules/react/index.d.ts': reactExportNames
 			.map((name) => `export declare const ${name}: string`)
 			.join('\n'),
-		...packageFiles('@mantine/core', '9.6.3', ['.']),
-		...packageFiles('@mantine/hooks', '9.6.3', ['.']),
+		...packageFiles('@mantine/core', '9.7.1', ['.']),
+		...packageFiles('@mantine/hooks', '9.7.1', ['.']),
 		...packageFiles('@pluxel/workbench', '0.1.0', ['.', './internal/react', './client', './react']),
 		...packageFiles('capnweb', '0.4.0', ['.']),
 		'node_modules/capnweb/index.d.ts': `
@@ -1571,6 +1571,7 @@ class SemanticPlugin {
 		files['packages/sibling-ui/src/index.ts'] = "export const siblingLabel = 'sibling-v1'\n"
 		files['node_modules/@example/registry-ui/package.json'] = JSON.stringify({
 			name: '@example/registry-ui',
+			optionalDependencies: { '@example/foreign-native': '^1.0.0' },
 			version: '0.1.0',
 			type: 'module',
 			exports: './index.js',
@@ -1625,6 +1626,11 @@ export default function Settings() { return siblingLabel + registryLabel }
 `
 		await using fixture = await createFixture(files)
 		await symlink(
+			resolve(fixture.path, 'uninstalled-platform-package'),
+			resolve(fixture.path, 'node_modules/@example/foreign-native'),
+			'dir',
+		)
+		await symlink(
 			resolve(fixture.path, 'packages/sibling-ui'),
 			resolve(fixture.path, 'node_modules/@example/sibling-ui'),
 			'dir',
@@ -1650,6 +1656,17 @@ class SemanticPlugin {
 		const revision = () => revisionAt(fixture.path)
 
 		const initialRevision = await revision()
+		// Declaring an inactive optional binary is valid; actually importing it remains an error.
+		await writeFile(
+			resolve(fixture.path, 'packages/producer/src/settings.tsx'),
+			`import '@example/foreign-native'\n${files['packages/producer/src/settings.tsx']}`,
+		)
+		await expect(revision()).rejects.toThrow(/@example\/foreign-native/)
+		await writeFile(
+			resolve(fixture.path, 'packages/producer/src/settings.tsx'),
+			files['packages/producer/src/settings.tsx']!,
+		)
+
 		await using equivalentFixture = await createFixture(files)
 		await symlink(
 			resolve(equivalentFixture.path, 'packages/sibling-ui'),
@@ -1666,6 +1683,7 @@ class SemanticPlugin {
 			resolve(fixture.path, 'node_modules/@example/registry-ui/package.json'),
 			JSON.stringify({
 				name: '@example/registry-ui',
+				optionalDependencies: { '@example/foreign-native': '^1.0.0' },
 				version: '0.1.0',
 				type: 'module',
 				exports: './index.js',
@@ -1684,6 +1702,7 @@ class SemanticPlugin {
 			resolve(fixture.path, 'node_modules/@example/registry-ui/package.json'),
 			JSON.stringify({
 				name: '@example/registry-ui',
+				optionalDependencies: { '@example/foreign-native': '^1.0.0' },
 				version: '0.1.0',
 				type: 'module',
 				exports: './index.js',

@@ -95,6 +95,7 @@ types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-
 都消费预编译 Content inventory，因此 distribution 不要求保留原始 `src/*.md`。Cache/build revision 包含解析后的 UI 源码图、
 实际命中的 package metadata 与 subpath、fixed shared compatibility set 和 compiler version；无关 workspace lockfile 内容不参与。
 只有类型声明入口的已安装依赖（包括仅向 TypeScript 导出根入口的包）以清单参与 revision，不要求其具有 JS 根入口；若清单声明了运行时根导出，解析失败仍使构建失败。
+清单依赖遍历允许未安装的 `optionalDependencies`（包括包管理器遗留的断链），不为其构造运行时根 import；依赖声明仍进入 revision。实际源码 import 不享有此例外，缺失模块仍必须报错。
 Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
 
 standalone 的 Workbench 制品选择只消费已验证的固定 `plugins` catalog。静态 declaration parser 沿原 import/export

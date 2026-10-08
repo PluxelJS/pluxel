@@ -454,7 +454,7 @@ function assertOpenedMatchesLayout(
 		return
 	}
 	if (opened.kind === 'content') malformed('federated View returned a Workbench Content')
-	if (!('federatedViewRef' in entry)) {
+	if (!('federatedViewRef' in entry) || entry.federatedViewRef === undefined) {
 		malformed('unavailable federated View returned a Workbench root')
 	}
 	const expected = entry.federatedViewRef

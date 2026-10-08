@@ -1,3 +1,5 @@
+import { acquireSourceOperationLocks } from './operation-lock'
+import { syncWorkspaceDependencies } from '../workspace/dependencies'
 import {
 	preflightDevelopmentSetup,
 	markDevelopmentIncomplete,
@@ -25,6 +27,7 @@ import { runCommand } from '../utils/exec'
 import { normalizeRepositoryIdentity } from './config'
 import {
 	sourceCheckoutInstallOverrides,
+	createSourceWorkspacePlan,
 	type ResolvedSourceCheckout,
 	type SourceWorkspacePlan,
 } from './plan'
@@ -79,42 +82,56 @@ export async function installSourceWorkspace(options: {
 	log: (...args: unknown[]) => void
 }) {
 	preflightDevelopmentSetup(options.plan.root)
-	const releaseLocks = acquireSourceInstallLocks([
-		options.plan.root,
-		...options.plan.checkouts.map((checkout) => checkout.root),
-	])
+	const roots = [options.plan.root, ...options.plan.checkouts.map((checkout) => checkout.root)]
+	const releaseOperations = await acquireSourceOperationLocks(roots, 'install', options.log)
 	try {
-		markDevelopmentIncomplete(options.plan.root)
-		await Promise.all(
-			[options.plan.root, ...options.plan.checkouts.map((checkout) => checkout.root)].map(
-				ensureSourceBootstrapIgnored,
-			),
-		)
-		for (const level of options.plan.executionLevels) {
-			await Promise.all(
-				level.map(async (checkout) => {
-					const overrides = sourceCheckoutInstallOverrides(checkout, options.plan)
-					options.log(`\n→ Installing source checkout ${checkout.repository}`)
-					await runPnpmInstall(
-						checkout.root,
-						overrides,
-						options.plan.checkouts,
-						options.frozenLockfile,
-					)
-					if (options.build) await buildSourceCheckout(checkout, options.plan, options.log)
-				}),
+		const releaseLocks = acquireSourceInstallLocks(roots)
+		try {
+			for (const root of new Set([
+				...options.plan.checkouts.map((checkout) => checkout.root),
+				options.plan.root,
+			]))
+				await syncWorkspaceDependencies(root, options.log)
+			// Catalog edits must be re-read before resolving external dependencies into source overlays.
+			options.plan = await createSourceWorkspacePlan({
+				root: options.plan.root,
+				configPath: options.plan.configPath,
+				registryPath: options.plan.registryPath,
+			})
+			markDevelopmentIncomplete(options.plan.root)
+			await settleSourceOperations(
+				[options.plan.root, ...options.plan.checkouts.map((checkout) => checkout.root)].map(
+					ensureSourceBootstrapIgnored,
+				),
 			)
+			for (const level of options.plan.executionLevels) {
+				await settleSourceOperations(
+					level.map(async (checkout) => {
+						const overrides = sourceCheckoutInstallOverrides(checkout, options.plan)
+						options.log(`\n→ Installing source checkout ${checkout.repository}`)
+						await runPnpmInstall(
+							checkout.root,
+							overrides,
+							options.plan.checkouts,
+							options.frozenLockfile,
+						)
+						if (options.build) await buildSourceCheckout(checkout, options.plan, options.log)
+					}),
+				)
+			}
+			options.log('\n→ Installing consumer workspace with source overlay')
+			await runPnpmInstall(
+				options.plan.root,
+				options.plan.overrides,
+				options.plan.checkouts,
+				options.frozenLockfile,
+			)
+			for (const link of setupDevelopmentWorkspace(options.plan.root)) options.log(link)
+		} finally {
+			releaseLocks()
 		}
-		options.log('\n→ Installing consumer workspace with source overlay')
-		await runPnpmInstall(
-			options.plan.root,
-			options.plan.overrides,
-			options.plan.checkouts,
-			options.frozenLockfile,
-		)
-		for (const link of setupDevelopmentWorkspace(options.plan.root)) options.log(link)
 	} finally {
-		releaseLocks()
+		releaseOperations()
 	}
 }
 
@@ -137,28 +154,37 @@ export async function buildSourceWorkspace(options: {
 	force?: boolean
 	log: (...args: unknown[]) => void
 }) {
-	if (options.packages && options.packages.length > 0) {
-		const targets = selectSourceBuildTargets(options.plan, options.packages)
-		const targetNames = new Set(targets.map((target) => target.name))
+	const release = await acquireSourceOperationLocks(
+		[options.plan.root, ...options.plan.checkouts.map((checkout) => checkout.root)],
+		'build',
+		options.log,
+	)
+	try {
+		if (options.packages && options.packages.length > 0) {
+			const targets = selectSourceBuildTargets(options.plan, options.packages)
+			const targetNames = new Set(targets.map((target) => target.name))
+			for (const level of options.plan.executionLevels) {
+				await settleSourceOperations(
+					level.map(async (checkout) => {
+						const selected = (
+							options.plan.selectedByRepository.get(checkout.repository) ?? []
+						).filter((pkg) => targetNames.has(pkg.name))
+						if (selected.length === 0) return
+						await buildSourceCheckout(checkout, options.plan, options.log, selected, options.force)
+					}),
+				)
+			}
+			return
+		}
 		for (const level of options.plan.executionLevels) {
-			await Promise.all(
-				level.map(async (checkout) => {
-					const selected = (
-						options.plan.selectedByRepository.get(checkout.repository) ?? []
-					).filter((pkg) => targetNames.has(pkg.name))
-					if (selected.length === 0) return
-					await buildSourceCheckout(checkout, options.plan, options.log, selected, options.force)
-				}),
+			await settleSourceOperations(
+				level.map((checkout) =>
+					buildSourceCheckout(checkout, options.plan, options.log, undefined, options.force),
+				),
 			)
 		}
-		return
-	}
-	for (const level of options.plan.executionLevels) {
-		await Promise.all(
-			level.map((checkout) =>
-				buildSourceCheckout(checkout, options.plan, options.log, undefined, options.force),
-			),
-		)
+	} finally {
+		release()
 	}
 }
 
@@ -548,7 +574,7 @@ async function buildSourceCheckout(
 function acquireSourceInstallLocks(roots: string[]): () => void {
 	const locks: Array<{ descriptor: number; path: string }> = []
 	try {
-		for (const root of [...new Set(roots.map((candidate) => resolve(candidate)))].sort()) {
+		for (const root of [...new Set(roots.map((candidate) => realpathSync(candidate)))].sort()) {
 			const directory = resolve(root, '.pluxel')
 			const path = resolve(directory, 'source-install.lock')
 			mkdirSync(directory, { recursive: true })
@@ -616,7 +642,7 @@ async function runInherited(command: string, args: string[], cwd: string) {
 	await new Promise<void>((resolvePromise, reject) => {
 		const child = spawn(command, args, {
 			cwd,
-			env: sourceChildEnvironment(),
+			env: sourceChildEnvironment(cwd),
 			stdio: 'inherit',
 			shell: process.platform === 'win32',
 		})
@@ -628,11 +654,22 @@ async function runInherited(command: string, args: string[], cwd: string) {
 	})
 }
 
-function sourceChildEnvironment(): NodeJS.ProcessEnv {
+export function sourceChildEnvironment(root: string): NodeJS.ProcessEnv {
 	const env = { ...process.env }
 	// A source checkout owns package-manager selection independently from the consumer. Keeping the
 	// consumer's marker makes pnpm think Corepack already pinned it and prevents nested exact
 	// packageManager declarations from switching versions.
 	delete env.COREPACK_ROOT
+	// Nested member scripts must resolve catalogs from this checkout, never from the consumer.
+	env.PNPM_CONFIG_WORKSPACE_DIR = root
 	return env
+}
+
+async function settleSourceOperations(operations: Promise<unknown>[]): Promise<void> {
+	const results = await Promise.allSettled(operations)
+	const failures = results
+		.filter((result) => result.status === 'rejected')
+		.map((result) => result.reason)
+	if (failures.length === 1) throw failures[0]
+	if (failures.length > 1) throw new AggregateError(failures, 'Source operations failed')
 }

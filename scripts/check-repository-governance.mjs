@@ -5,6 +5,7 @@ import { parse } from 'yaml'
 
 import {
 	isPublishablePackage,
+	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	repositoryPackages,
 } from './repository-packages.mjs'
@@ -46,15 +47,7 @@ if (!rootManifest) throw new Error('repository package inventory is missing the 
 const workspaceNames = new Set(
 	packageManifests.filter(({ kind }) => kind !== 'root').map(({ manifest }) => manifest.name),
 )
-for (const field of dependencyFields) {
-	for (const name of Object.keys(rootManifest[field] ?? {})) {
-		if (workspaceNames.has(name)) {
-			errors.push(
-				`root ${field}.${name} invalidates every Turbo task; declare it in its consumer package`,
-			)
-		}
-	}
-}
+errors.push(...rootWorkspaceDependencyErrors(rootManifest, packageManifests))
 const rootLicense = await readFile(resolve(root, 'LICENSE'), 'utf8')
 const miseConfig = await readFile(resolve(root, 'mise.toml'), 'utf8')
 const pnpmLock = await readFile(resolve(root, 'pnpm-lock.yaml'), 'utf8')

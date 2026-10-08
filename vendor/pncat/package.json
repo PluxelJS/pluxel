@@ -1,0 +1,70 @@
+{
+  "name": "pncat",
+  "type": "module",
+  "version": "0.13.4",
+  "description": "A unified cli tool that enhances package managers catalogs feature.",
+  "author": "jinghaihan",
+  "license": "MIT",
+  "funding": "https://github.com/sponsors/jinghaihan",
+  "homepage": "https://github.com/jinghaihan/pncat#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jinghaihan/pncat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jinghaihan/pncat/issues"
+  },
+  "keywords": [
+    "pnpm",
+    "yarn",
+    "berry",
+    "bun",
+    "vlt",
+    "catalog",
+    "catalogs",
+    "workspace"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./sync": "./src/sync.ts",
+    "./cli": "./src/cli.ts",
+    "./rules": "./src/rules.ts",
+    "./package.json": "./package.json"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jiti": "catalog:prod",
+    "@clack/prompts": "catalog:prod",
+    "ansis": "catalog:prod",
+    "cac": "catalog:prod",
+    "find-up": "catalog:prod",
+    "package-manager-detector": "catalog:prod",
+    "pathe": "catalog:node",
+    "pnpm-workspace-yaml": "catalog:prod",
+    "tinyexec": "catalog:prod",
+    "tinyglobby": "catalog:prod",
+    "unconfig": "catalog:prod",
+    "@antfu/utils": "catalog:prod",
+    "deepmerge": "catalog:prod",
+    "detect-indent": "catalog:prod",
+    "diff": "catalog:prod",
+    "get-npm-meta": "catalog:prod",
+    "tildify": "catalog:prod",
+    "verkit": "catalog:prod",
+    "yaml": "catalog:prod",
+    "tsx": "catalog:dev"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:types",
+    "typescript": "catalog:dev",
+    "vitest": "catalog:test"
+  },
+  "private": true,
+  "bin": {
+    "pncat": "bin/pncat.mjs"
+  }
+}

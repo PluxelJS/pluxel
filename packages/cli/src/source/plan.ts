@@ -50,6 +50,7 @@ export async function createSourceWorkspacePlan(options: {
 	)
 	const checkouts = new Map<string, ResolvedSourceCheckout>()
 	const visiting = new Set<string>()
+	const owning = [...available.values()].find((checkout) => checkout.origin === 'cli')
 
 	const loadCheckout = async (repository: string): Promise<void> => {
 		const normalized = normalizeRepositoryIdentity(repository)
@@ -69,20 +70,27 @@ export async function createSourceWorkspacePlan(options: {
 		}
 		visiting.add(normalized)
 		const nested = tryReadSourceProjectConfig(checkoutRoot)
-		for (const dependency of nested?.sources ?? []) await loadCheckout(dependency)
+		// A provider is also an independent consumer when installing its workspace. Apply the
+		// same implicit Git CLI source as a direct install, including its own dev dependencies.
+		const sources = [
+			...new Set([
+				...(owning && normalized !== owning.repository ? [owning.repository] : []),
+				...(nested?.sources ?? []),
+			]),
+		]
+		for (const dependency of sources) await loadCheckout(dependency)
 		const workspace = await scanSourceWorkspace(checkoutRoot)
 		checkouts.set(normalized, {
 			repository: normalized,
 			root: checkoutRoot,
 			origin: checkout.origin,
 			workspace,
-			sources: nested?.sources ?? [],
+			sources,
 			singletons: nested?.singletons ?? [],
 		})
 		visiting.delete(normalized)
 	}
 
-	const owning = [...available.values()].find((checkout) => checkout.origin === 'cli')
 	if (owning) await loadCheckout(owning.repository)
 	else if (config.sources.length === 0)
 		throw new Error('Source install requires a Git CLI or explicit source repositories')
@@ -91,6 +99,11 @@ export async function createSourceWorkspacePlan(options: {
 	const consumer = await scanSourceWorkspace(root)
 	const resolvedCheckouts = [...checkouts.values()]
 	const { owners: packageOwners, selected } = selectSourcePackages(consumer, resolvedCheckouts)
+	if (selected.size === 0) {
+		throw new Error(
+			`Source workspace ${consumer.root} does not depend on any package provided by its declared sources`,
+		)
+	}
 
 	const selectedByRepository = new Map<string, SourceWorkspacePackage[]>()
 	for (const pkg of selected.values()) {
@@ -295,11 +308,6 @@ function selectSourcePackages(
 		})) {
 			queue.push(dependency)
 		}
-	}
-	if (selected.size === 0) {
-		throw new Error(
-			`Source workspace ${consumer.root} does not depend on any package provided by its declared sources`,
-		)
 	}
 	return { owners, selected }
 }

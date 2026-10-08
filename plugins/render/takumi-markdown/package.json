@@ -34,8 +34,8 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"rangi": "2.2.0",
-		"satteri": "0.10.5",
+		"rangi": "catalog:prod",
+		"satteri": "catalog:prod",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^"
 	},
@@ -61,6 +61,9 @@
 	"pluxel": {
 		"pluginPackages": {
 			"@pluxel/takumi": "required"
-		}
+		},
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
 	}
 }

@@ -18,10 +18,18 @@
 	],
 	"type": "module",
 	"exports": {
+		"./pncat": {
+			"types": "./dist/pncat-config.d.mts",
+			"default": "./dist/pncat-config.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
+			"./pncat": {
+				"types": "./dist/pncat-config.d.mts",
+				"default": "./dist/pncat-config.mjs"
+			},
 			"./package.json": "./package.json"
 		},
 		"access": "public"
@@ -50,6 +58,7 @@
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
+		"pncat": "workspace:*",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev"
 	},

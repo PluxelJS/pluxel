@@ -3,6 +3,29 @@ import { relative, resolve, sep } from 'node:path'
 
 export const repositoryRoot = resolve(import.meta.dirname, '..')
 
+// Explicit workspace protocols also cover vendor packages outside the release inventory.
+export function rootWorkspaceDependencyErrors(manifest, packages) {
+	const names = new Set(
+		packages.filter(({ kind }) => kind !== 'root').map(({ manifest: entry }) => entry.name),
+	)
+	const errors = []
+	for (const field of [
+		'dependencies',
+		'devDependencies',
+		'optionalDependencies',
+		'peerDependencies',
+	]) {
+		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
+			if (names.has(name) || specifier.startsWith('workspace:')) {
+				errors.push(
+					`root ${field}.${name} invalidates every Turbo task; declare it in its consumer package`,
+				)
+			}
+		}
+	}
+	return errors
+}
+
 export function isPublishablePackage({ kind, manifest }) {
 	return (kind === 'package' || kind === 'plugin') && manifest.private !== true
 }

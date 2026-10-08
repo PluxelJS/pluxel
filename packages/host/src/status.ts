@@ -103,7 +103,7 @@ function createHostPluginStatusProjectionFromView(view: HostPluginStatusProjecti
 		})
 		const touched = new Set<string>()
 		const addresses: PluginNodeAddress[] = []
-		if ('consumer' in issue) addresses.push(issue.consumer)
+		if ('consumer' in issue && issue.consumer !== undefined) addresses.push(issue.consumer)
 		if ('provider' in issue) addresses.push(issue.provider)
 		if ('node' in issue) addresses.push(issue.node)
 		for (const address of addresses) {

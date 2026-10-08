@@ -13,6 +13,10 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 各 checkout 可独立切换分支；依赖声明变化后重新执行 `source install`。
 
+拉取或修改 CLI 源码后，先在 Pluxel checkout 执行 `pnpm --filter @pluxel/cli build`。
+Git launcher 在加载命令前核对 CLI 源码内容与构建指纹；缺失或不匹配时明确提示重建，不执行旧命令或自动安装。
+重建后再从消费方运行 `source install`，更新包改名、移动或依赖变化后的 overlay。
+
 ## 声明源码仓库
 
 Git CLI 自身的 Pluxel checkout 自动加入，无需配置。联调其他仓库或声明 singleton 时，在消费方根目录提交 `pluxel.sources.jsonc`：
@@ -68,6 +72,7 @@ dev 脚本先运行 `pluxel source doctor && pluxel source build`，再启动原
 `source doctor` 检查源码映射和安装 overlay，不检查构建产物是否与当前源码一致。
 
 CLI 扫描每个 checkout 自己的 workspace 和 manifest，按实际依赖闭包创建代理。source package 的 devDependencies 仍属于它自己的 checkout，不进入消费方 closure。
+作为上游安装的 checkout 同样隐式使用当前 Git CLI 的 Pluxel 来源，即使其 `sources` 为空；它自己的开发依赖也在该 checkout 的 overlay 中解析。
 安装和构建顺序从实际 package dependency graph 推导；provider repository 先完成，互不依赖的 repository 可并行。
 `--frozen-lockfile` 只在显式传入时生效。
 
@@ -79,6 +84,10 @@ pluxel source build --package @pluxel/test
 ```
 
 默认尊重 source checkout 自己的 Turbo 缓存；只有明确需要重新执行时才使用 `pluxel source build --force`。
+
+多个消费方可同时执行 `source build` / `source install`。CLI 按 checkout 的真实路径排序获取整个来源图的 `.pluxel/source-operation.lock`；共享来源的命令会显示持有者 PID 与等待路径，并在前一操作结束后继续。安装内部的构建复用同一次所有权，失败时等待已经启动的同层任务全部退出后再释放锁。
+
+锁只协调这些 source 命令，不覆盖直接运行的上游 `pnpm build`、Turbo、`pnpm verify`，也不覆盖 source 命令返回后消费者自己的构建或运行。不要让这些操作与会重写相同产物的构建（尤其 `--force`）重叠。进程异常终止后若留下锁，CLI 不会自动删除：先确认原命令及其子进程均已停止，再按错误中给出的准确路径清理锁并重试。
 具有非标准 artifact 目录的 package 可以在 manifest 中声明 `"pluxel": { "sourceBuild": true }`；纯源码 package
 也可显式声明 `false`。省略时 CLI 继续根据标准 package entry 推断。
 
@@ -121,3 +130,54 @@ CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被
 npm 用户正常安装依赖后运行 `pnpm exec pluxel workspace setup`，从 CLI 随包携带的发行文档与 skill 建立相同入口；升级后重新 setup。无需 Git checkout 或额外下载。`workspace doctor` 检查开发资源与工作区治理。
 
 Codex 从项目 `.agents/skills` 发现链接的 skill；AGENTS 同时保留显式读取要求。新链接未出现在已有会话时重新打开会话。项目不复制正文，其他自有 skill 不受 setup 影响。
+
+## 统一外部依赖
+
+每个工作区在自己的 `pnpm-workspace.yaml` 中集中声明版本，各包通过 `catalog:` 引用。核心 catalog 是 Pluxel 共用外部版本政策的唯一来源：Git CLI 读取所属 checkout，npm CLI 使用构建时生成的同一政策快照。项目仍保留自己的成员、依赖声明和 lockfile。
+
+| 操作                                                          | 职责                                            | 写入范围                 |
+| ------------------------------------------------------------- | ----------------------------------------------- | ------------------------ |
+| `pluxel pncat add/remove/migrate`                             | 使用原生 pncat 添加、删除或迁移依赖声明         | 包清单与 catalog         |
+| `pluxel pncat clean`                                          | 清理没有任何声明引用的 catalog 项               | catalog                  |
+| `pluxel workspace sync`                                       | 用本 CLI 的政策对齐已有 catalog 版本            | 仅 `pnpm-workspace.yaml` |
+| `workspace sync --check`、`workspace doctor`、`source doctor` | 检查声明、引用和版本差异                        | 只读                     |
+| `pnpm install` 或 `pluxel source install`                     | 安装并更新锁文件；source install 先同步版本政策 | 安装产物与 lockfile      |
+
+工作区必须已有 `pnpm-workspace.yaml`（单包项目可使用 `packages: []`）。已有裸版本时先显式迁移，再同步：
+
+```sh
+cd /absolute/path/to/project
+pluxel pncat migrate --yes --no-install
+pluxel workspace sync
+pnpm install
+pluxel workspace sync --check
+```
+
+Git 源码工作区将上面的 `pnpm install` 替换为 `pluxel source install`。该命令在安装锁内对 consumer 和相关 checkout 执行相同版本同步，再生成 overlay 并安装；不会替你迁移清单。使用 `--frozen-lockfile` 时，政策更新若使锁文件过期，pnpm 会如实拒绝，先普通安装并审查变更。
+
+`workspace sync` 不添加新依赖，不更改任何 `package.json`，也不联网查询 latest。政策之外的已有 catalog 条目保持原值。升级共享版本先更新核心 catalog 或升级 CLI；`pncat.config.ts` 只拥有分类与迁移规则。未迁移的可治理裸版本、缺失 catalog 引用和政策冲突会明确报错，修复后再同步。
+
+Peer 兼容范围与实际安装版本分别维护。只有 peer 引用的 catalog 保持原兼容范围；若普通依赖与 peer 共用同一个即将更新的条目，sync 拒绝变更，先显式将 peer 分到独立 catalog 或保留为包自己的兼容范围。同步不会为了更新安装版本而隐式收窄、扩大或改写 peer 声明。`workspace:`、`file:`、`link:` 及受配置排除的范围保持各自契约。
+
+工作区无需额外安装 pncat，原生命令与选项由 `pluxel pncat` 直接交给内联实现：
+
+```sh
+pluxel pncat init --yes
+pluxel pncat add yaml@^2.9.1 --yes --no-install
+pluxel pncat clean --yes --no-install
+pluxel pncat --help
+```
+
+`--no-install` 将声明维护与安装分开，适合随后运行 `source install` 的 Git 工作区；原生 pncat 默认会在变更后安装，安装失败会以失败状态退出。`clean` 即使排除了某字段的迁移，也会保留该字段仍引用的 catalog 项。
+
+内联 `init` 生成随 CLI 发布的配置入口，运行时和类型均不依赖另装 pncat：
+
+```ts
+import { defineConfig, mergeCatalogRules } from '@pluxel/cli/pncat'
+
+export default defineConfig({
+	catalogRules: mergeCatalogRules([{ name: 'runtime', match: ['yaml'] }]),
+})
+```
+
+嵌入的独立 Git 仓库仍需拥有可独立安装的 catalog 和 lockfile。父工作区将其包列为成员时，也必须具备这些声明所引用的 catalog 名称；不能把依赖改成只有父工作区才能解析的形式。中性上游仓库可以使用独立 pncat 工具，不需要为了维护依赖而依赖 Pluxel。

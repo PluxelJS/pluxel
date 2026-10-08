@@ -3,6 +3,7 @@ packages:
   - plugins/*
   - plugins/*/*
   - vendor/eventure
+  - vendor/pncat
   - vendor/split-like-vscode/packages/core
   - vendor/split-like-vscode/packages/react
   - projects/*
@@ -53,6 +54,8 @@ minimumReleaseAgeExclude:
   - '@rolldown/binding-win32-x64-msvc@1.2.13'
   - rolldown@1.2.13
   - '@module-federation/vite@1.23.3'
+  - elysia@2.0.0-beta.26
+  - nf3@0.4.2
 
 onlyBuiltDependencies:
   - esbuild
@@ -70,23 +73,23 @@ publicHoistPattern:
 
 trustPolicy: no-downgrade
 trustPolicyExclude:
-  # Elysia 2 beta.19 uses the same npm publisher as beta.7 and is signed by npm but was not published through the trusted-publisher path.
+  # Elysia 2 beta.26 uses the same npm publisher as beta.7 and beta.19 and is signed by npm but was not published through the trusted-publisher path.
   # Keep this exact and remove it once the Elysia 2 release line restores publisher evidence.
-  - 'elysia@2.0.0-beta.19'
+  - 'elysia@2.0.0-beta.26'
 trustPolicyIgnoreAfter: 43200
 catalogs:
   backend:
     drizzle-kit: ^0.31.11
     drizzle-orm: ^0.45.3
-    pg: ^8.23.0
-    redis: ^6.2.1
+    pg: ^8.23.1
+    redis: ^6.3.0
   build:
     '@module-federation/vite': 1.23.3
     '@rolldown/pluginutils': ^1.0.1
-    '@tailwindcss/vite': 4.3.3
-    '@tsdown/css': 0.23.0
+    '@tailwindcss/vite': ^4.3.3
+    '@tsdown/css': ^0.23.0
     '@vitejs/plugin-react': ^6.1.2
-    react-server-dom-webpack: 19.3.0
+    react-server-dom-webpack: ^19.3.0
     rolldown: ^1.2.13
     tsdown: ^0.23.0
     unplugin-macros: ^0.23.2
@@ -94,174 +97,196 @@ catalogs:
     unrun: ^0.3.1
     vite: ^8.3.3
   dev:
-    '@fumapress/tegami': 1.1.4
-    '@logtape/logtape': ^2.3.8
-    '@logtape/otel': ^2.3.10
+    '@fumapress/tegami': ^1.1.4
+    '@logtape/logtape': ^2.4.0
+    '@logtape/otel': ^2.4.0
     '@opentelemetry/api': ^1.9.1
-    '@opentelemetry/api-logs': ^0.222.0
+    '@opentelemetry/api-logs': ^0.223.0
     '@platformatic/vfs': ^0.4.0
     '@pluxel/market': ^0.1.0
     '@sinclair/parsebox': ^0.11.6
-    '@tanstack/router-plugin': ^1.168.40
-    capnweb: ^0.12.0
+    '@tanstack/router-plugin': ^1.168.42
+    capnweb: 0.12.0
     cross-env: ^10.1.0
     dts-bundle-generator: ^9.5.1
-    elysia: 2.0.0-beta.19
+    elysia: 2.0.0-beta.26
     fdir: ^6.5.0
     fs-fixture: ^2.16.0
-    ink: ^7.1.1
-    jsdom: ^30.1.1
+    ink: ^8.0.0
+    jsdom: ^30.1.2
     oxfmt: ^0.72.0
     oxlint: ^1.87.0
     oxlint-tsgolint: ^7.0.2003
     pncat: ^0.13.4
-    postcss: ^8.5.28
+    postcss: ^8.5.29
     postcss-preset-mantine: ^1.18.0
     postcss-simple-vars: ^7.0.1
-    sass-embedded: ^1.105.0
-    tinybench: ^6.2.0
+    sass-embedded: ^1.105.1
+    tinybench: ^6.2.1
     tsx: ^4.23.15
     turbo: ^2.11.7
     typescript: ^7.0.2
-    typescript-legacy: npm:typescript@6.0.3
+    typescript-legacy: npm:typescript@^6.0.3
     wretch: ^3.0.9
     yaml: ^2.9.1
-    typebox: 1.3.23
+    typebox: ^1.3.36
   docs:
-    fumadocs-core: 16.16.2
-    fumadocs-mdx: 15.4.6
-    fumadocs-twoslash: 4.0.1
-    fumadocs-ui: npm:@fumadocs/base-ui@16.16.2
+    fumadocs-core: ^16.16.2
+    fumadocs-mdx: ^15.4.6
+    fumadocs-twoslash: ^4.0.1
+    fumadocs-ui: npm:@fumadocs/base-ui@^16.16.2
   frontend:
     '@base-ui/react': ^1.8.0
     '@dnd-kit/core': ^6.3.1
     '@dnd-kit/modifiers': ^9.0.0
     '@dnd-kit/sortable': ^10.0.0
     '@dnd-kit/utilities': ^3.2.2
-    '@mantine/core': ^9.6.3
-    '@mantine/dates': ^9.6.3
-    '@mantine/hooks': ^9.6.3
-    '@mantine/modals': ^9.6.3
-    '@mantine/notifications': ^9.6.3
+    '@mantine/core': 9.7.1
+    '@mantine/dates': ^9.7.1
+    '@mantine/hooks': 9.7.1
+    '@mantine/modals': ^9.7.1
+    '@mantine/notifications': ^9.7.1
     '@module-federation/bridge-react': 2.9.2
-    '@tanstack/query-core': ^5.104.0
-    '@tanstack/react-query': ^5.104.0
+    '@tanstack/query-core': ^5.104.1
+    '@tanstack/react-query': ^5.104.1
     '@tanstack/react-form': ^1.33.5
-    '@tanstack/react-hotkeys': ^0.12.0
-    '@tanstack/react-router': ^1.170.39
-    '@tanstack/react-store': ^0.11.1
+    '@tanstack/react-hotkeys': ^0.13.0
+    '@tanstack/react-router': ^1.170.41
+    '@tanstack/react-store': ^0.11.2
     '@tanstack/react-virtual': ^3.14.13
+    '@types/react': ^19.3.0
+    '@types/react-dom': ^19.3.0
     react: ^19.3.0
     react-dom: ^19.3.0
-    tailwindcss: 4.3.3
+    tailwindcss: ^4.3.3
   icons:
-    '@tabler/icons-react': ^3.48.0
-    lucide-react: ^1.48.0
+    '@tabler/icons-react': ^3.49.0
+    lucide-react: ^1.52.0
   node:
     chokidar: ^5.0.0
     pathe: ^2.0.3
     pkg-types: ^2.3.3
   override:
-    tegami: 1.5.0
+    tegami: ^1.5.0
   peer:
     '@opentelemetry/api': ^1.9.1
-    '@opentelemetry/api-logs': ^0.222.0
+    '@opentelemetry/api-logs': ^0.223.0
     '@pluxel/market': ^0.1.0
     oxlint: ^1.87.0
   prod:
+    '@antfu/utils': ^9.3.0
     '@chenglou/pretext': ^0.0.9
     '@clack/prompts': ^1.8.1
     '@dagrejs/dagre': ^3.1.1
     '@electric-sql/pglite': ^0.5.8
-    '@fumapress/ai': 1.2.0
-    '@fumapress/language': 1.1.3
-    '@fumapress/tegami': 1.1.4
+    '@fumapress/ai': ^1.2.0
+    '@fumapress/language': ^1.1.3
+    '@fumapress/tegami': ^1.1.4
     '@grpc/grpc-js': ^1.14.5
-    '@inlang/paraglide-js': ^2.25.4
-    '@logtape/file': ^2.3.8
-    '@logtape/logtape': ^2.3.8
-    '@logtape/pretty': ^2.3.8
+    '@inlang/paraglide-js': ^2.26.0
+    '@logtape/file': ^2.4.0
+    '@logtape/logtape': ^2.4.0
+    '@logtape/pretty': ^2.4.0
     '@material/material-color-utilities': ^0.4.0
-    '@modelcontextprotocol/sdk': 1.30.1
+    '@modelcontextprotocol/sdk': ^1.32.1
     '@module-federation/runtime': 2.9.2
     '@module-federation/sdk': 2.9.2
-    '@napi-rs/canvas': ^1.0.9
+    '@myriaddreamin/typst-ts-node-compiler': ^0.7.0
+    '@napi-rs/canvas': ^1.0.10
     '@opentelemetry/api': ^1.9.1
-    '@opentelemetry/api-logs': ^0.222.0
-    '@opentelemetry/context-async-hooks': ^2.11.0
-    '@opentelemetry/core': ^2.11.0
-    '@opentelemetry/exporter-logs-otlp-grpc': ^0.222.0
-    '@opentelemetry/exporter-logs-otlp-http': ^0.222.0
-    '@opentelemetry/exporter-logs-otlp-proto': ^0.222.0
-    '@opentelemetry/exporter-metrics-otlp-grpc': ^0.222.0
-    '@opentelemetry/exporter-metrics-otlp-http': ^0.222.0
-    '@opentelemetry/exporter-metrics-otlp-proto': ^0.222.0
-    '@opentelemetry/exporter-prometheus': ^0.222.0
-    '@opentelemetry/exporter-trace-otlp-grpc': ^0.222.0
-    '@opentelemetry/exporter-trace-otlp-http': ^0.222.0
-    '@opentelemetry/exporter-trace-otlp-proto': ^0.222.0
-    '@opentelemetry/resources': ^2.11.0
-    '@opentelemetry/sdk-logs': ^0.222.0
-    '@opentelemetry/sdk-metrics': ^2.11.0
-    '@opentelemetry/sdk-trace-base': ^2.11.0
-    '@pnpm/napi': 12.7.0
+    '@opentelemetry/api-logs': ^0.223.0
+    '@opentelemetry/context-async-hooks': ^2.12.0
+    '@opentelemetry/core': ^2.12.0
+    '@opentelemetry/exporter-logs-otlp-grpc': ^0.223.0
+    '@opentelemetry/exporter-logs-otlp-http': ^0.223.0
+    '@opentelemetry/exporter-logs-otlp-proto': ^0.223.0
+    '@opentelemetry/exporter-metrics-otlp-grpc': ^0.223.0
+    '@opentelemetry/exporter-metrics-otlp-http': ^0.223.0
+    '@opentelemetry/exporter-metrics-otlp-proto': ^0.223.0
+    '@opentelemetry/exporter-prometheus': ^0.223.0
+    '@opentelemetry/exporter-trace-otlp-grpc': ^0.223.0
+    '@opentelemetry/exporter-trace-otlp-http': ^0.223.0
+    '@opentelemetry/exporter-trace-otlp-proto': ^0.223.0
+    '@opentelemetry/resources': ^2.12.0
+    '@opentelemetry/sdk-logs': ^0.223.0
+    '@opentelemetry/sdk-metrics': ^2.12.0
+    '@opentelemetry/sdk-trace-base': ^2.12.0
+    '@pnpm/napi': ^12.10.1
     '@sinclair/typebox': ^0.34.52
     '@standard-schema/spec': ^1.1.0
     age-encryption: ^0.3.1
-    better-result: 3.0.1
+    ansis: ^4.4.0
+    better-result: ^3.0.1
+    cac: ^7.0.0
     capnweb: 0.12.0
     cnfast: ^0.2.0
-    crossws: 0.4.12
+    crossws: ^0.4.15
+    deepmerge: ^4.3.1
+    detect-indent: ^7.0.2
+    diff: ^9.0.0
     echarts: ^6.1.0
-    elysia: 2.0.0-beta.19
-    fumapress: 1.6.0
+    elysia: 2.0.0-beta.26
+    exact-mirror: ^1.2.6
+    find-up: ^8.0.0
+    fumapress: ^1.6.0
+    get-npm-meta: ^0.3.0
     gunshi: ^0.37.3
+    jiti: ^2.7.0
     jose: ^6.2.12
     jsonc-parser: ^3.3.1
-    mdast-util-directive: 3.1.0
-    mdast-util-from-markdown: 2.0.3
-    mdast-util-gfm: 3.1.0
-    micromark-extension-directive: 4.0.0
-    micromark-extension-gfm: 3.0.0
-    modern-monaco: 0.4.2
+    mdast-util-directive: ^3.1.1
+    mdast-util-from-markdown: ^2.1.0
+    mdast-util-gfm: ^3.1.0
+    micromark-extension-directive: ^4.0.0
+    micromark-extension-gfm: ^3.0.0
+    modern-monaco: ^0.4.2
     next-themes: ^0.4.6
-    nf3: ^0.3.24
+    nf3: ^0.4.2
     ohash: ^2.0.12
     oxc-parser: ^0.153.0
     oxc-resolver: ^11.24.2
-    package-manager-detector: ^1.8.0
+    package-manager-detector: ^1.9.0
     picomatch: ^4.0.7
+    pnpm-workspace-yaml: ^1.9.1
+    rangi: ^2.2.0
     s3mini: ^1.0.2
+    satteri: ^0.10.5
     semver: ^7.8.5
-    srvx: 1.0.5
-    std-env: ^4.2.0
+    srvx: ^1.0.5
+    std-env: ^4.3.0
     takumi-js: ^2.14.0
+    tildify: ^3.0.0
+    tinyexec: ^1.3.1
+    tinyglobby: ^0.2.17
     typescript: ^7.0.2
+    unconfig: ^7.5.0
     undici: ^8.11.2
+    verkit: ^0.5.0
     wretch: ^3.0.9
     yaml: ^2.9.1
   test:
-    grfn: 3.0.0
-    lfi: 4.1.2
-    p-limit: 7.3.3
-    p-map: 7.0.8
-    p-memoize: 8.0.0
-    p-retry: 8.0.1
-    vitest: 5.0.3
-    ws: 8.21.3
+    '@testing-library/react': ^16.3.3
+    grfn: ^3.0.0
+    lfi: ^4.1.2
+    p-limit: ^7.3.3
+    p-map: ^7.0.8
+    p-memoize: ^8.0.0
+    p-retry: ^8.0.1
+    vitest: ^5.0.3
+    ws: ^8.22.0
   types:
-    '@types/mdast': 4.0.4
-    '@types/mdx': 2.0.14
+    '@types/mdast': ^4.0.4
+    '@types/mdx': ^2.0.14
     '@types/node': ^26.6.4
     '@types/pg': ^8.23.1
     '@types/picomatch': ^4.0.3
     '@types/react': ^19.3.0
     '@types/react-dom': ^19.3.0
     '@types/semver': ^7.8.0
-    '@types/ws': 8.18.1
+    '@types/ws': ^8.18.2
   validation:
     option-t: ^56.1.2
     superjson: ^2.2.6
     valibot: ^1.5.0
   workflow:
-    '@tanstack/pacer': 0.22.0
+    '@tanstack/pacer': ^0.23.1

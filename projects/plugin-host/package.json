@@ -35,7 +35,7 @@
 		"@sinclair/typebox": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
-		"exact-mirror": "1.2.6",
+		"exact-mirror": "catalog:prod",
 		"typebox": "catalog:dev",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^",

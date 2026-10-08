@@ -1,0 +1,5 @@
+{
+	"extends": "./tsconfig.src.json",
+	"compilerOptions": { "composite": false },
+	"include": ["packages/cli/src", "vendor/pncat/src"]
+}

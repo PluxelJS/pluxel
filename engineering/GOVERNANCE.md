@@ -52,14 +52,21 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 
 ## 依赖与版本
 
-根 package 只负责编排和共享质量工具，不声明 `dependencies`。pnpm catalog 统一重复外部依赖的版本
-政策；每个 workspace 仍必须在自己的 `dependencies`、`devDependencies` 或 `peerDependencies` 中声明
+根 package 只负责编排和共享质量工具，不声明 `dependencies`，也不直接依赖任何 workspace package（包括 vendor），
+避免 Turbo 将工具源码及其传递依赖纳入所有任务的全局缓存输入。根工具通过 package script 运行其 owner 的入口。
+pnpm catalog 统一外部依赖的版本政策；每个 workspace 仍必须在自己的 `dependencies`、`devDependencies` 或 `peerDependencies` 中声明
 实际使用的包。hoist 只用于工具兼容和实例去重，不构成依赖声明。
 
 - semver-compatible 的第一方实现依赖使用 `workspace:^`，确保开发时链接当前源码，发布后允许同 major
   的修复和功能版本；只有必须锁定同版本的 wrapper 使用 `workspace:*`。
-- catalog 管理的外部依赖使用 `catalog:` 或 `catalog:<name>`。仓库已有 `pncat.config.ts` 时，pncat 是新增、
-  迁移、重新分组和清理 catalog 的唯一修改入口；不得分别手改 workspace catalog 与 package 引用。
+- 外部实现依赖使用 `catalog:` 或 `catalog:<name>`，普通发布版本优先 `^`；lockfile 固定实际解析版本。
+  pncat 是新增、更新、迁移、重新分组和清理 catalog 的唯一修改入口；不得分别手改 workspace catalog 与 package 引用。
+  Peer 宽范围表达兼容承诺，不能为统一安装版本而收窄；npm alias 在目标版本范围中使用 `^`。预发布、供应链
+  pin 和确有兼容约束的 selector override 可以保留精确值，理由由所属配置或治理规则维护。
+  Workbench Profile 的 MF Vite/runtime/SDK/React bridge 与 Mantine core/hooks 是精确兼容矩阵，
+  catalog 必须匹配 `packages/core/src/federation.ts`；升级时同步更新矩阵并重建所有 producer。
+  Cap’n Web 的 peer/dev 声明与 Host transport admission 同样要求精确版本，不能替换成兼容范围。
+  `@platformatic/vfs` 暂用 `^0.4.0`：0.5.0 被现有 no-downgrade 发布信任检查拦截，不为升级关闭检查。
 - CLI 生成的独立应用把发布版 `@pluxel/*`、React、工具链等范围放进自己的 catalog；生成的
   workspace 之间仍逐包声明直接依赖。
 - standalone plugin 模板使用最小单 package pnpm workspace，让 catalog 与 `allowBuilds` 安全政策有明确
@@ -78,6 +85,29 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 - 真正隔离在可选入口或条件加载后的集成可以标记 optional peer。optional 只影响安装要求，既不消除架构边，
   也不允许无条件入口加载缺失的包。`devDependencies` 只承载开发工具、测试夹具和已明确内联的源码；
   不能用它隐藏发布 JavaScript 或 declarations 仍引用的包。
+
+### pncat 的版本维护边界
+
+[vendored pncat](../vendor/pncat/UPSTREAM.md) 拥有依赖解析、catalog 和 manifest 写入。根仓库使用
+`pnpm pncat`（根 script）运行其源码 CLI；不在根 devDependencies 链接这个 workspace。
+`pnpm catalog:check` 使用非交互只读计划，漂移时非零退出；`pnpm catalog:migrate` 调用原生 pncat 显式迁移声明。
+原 pncat add/clean 等能力保留，批量版本政策通过 `pncat/sync` 的 plan/apply API 更新，不借用 add
+制造额外依赖，不复制另一套 YAML 或 manifest writer。
+
+核心 `pnpm-workspace.yaml` 是共用外部版本政策的唯一手维护来源。Pluxel CLI 在 Git 模式读取所属 checkout，
+发行版在构建时交付这份政策的快照；消费仓库同步后仍拥有自己的 catalog、lockfile 和实际直接依赖声明。
+只有已存在的依赖被同步，不把核心的完整依赖表安装进消费项目，也不合并独立仓库成员或 lockfile。
+同名 peer catalog 不作为普通实现版本的权威；多个普通 catalog 对同名包给出不同范围时，先明确统一政策，
+不按顺序或最高版本猜测。
+
+同步只更新已有 catalog，永不写 package.json；未迁移的可治理裸版本要求先执行原生 migrate。Peer-only catalog 保留兼容范围；
+共享 catalog 更新会改变 peer 契约时直接报告冲突，要求显式分离引用。核心维护者显式升级自身兼容承诺时可以关闭这项
+peer 保护。workspace/file/link 等协议不转换成外部 registry 范围。catalog 统一的是声明范围，nominal/private
+类型需要同一物理实例时仍由 source singleton 契约处理；不能用全量传递依赖 override 取代兼容性判断。
+
+只读检查不访问 registry、不安装、不改写文件；显式同步先报告冲突，应用前核对计划输入与成员是否变化。
+同步只写目标 YAML；原生迁移等多文件操作不承诺工作区事务，安装仍是后续步骤。CLI 的 Git/npm 资源与 source 编排归属见
+[CLI 与源码工作区](CLI_WORKSPACES.md)，消费者命令见[源码工作区指南](../docs/development/source-workspaces.md)。
 
 ### 发布图、构建图与共享身份
 
@@ -113,6 +143,9 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 `pnpm verify` 是本地与 CI 的共同入口，顺序执行治理、lint、format、Turbo typecheck/build/test，再检查构建是否把声明写入源码。CI 只提供并发数、affected filter 与 summary；构建配置不依赖未计入 Turbo hash 的环境开关。只缓存 `.turbo/cache`，本次报告 `.turbo/runs` 不跨运行复用。
 
 仓库的 Node 和 pnpm 版本由 `mise.toml` 拥有。验证入口固定 `PNPM_CONFIG_PM_ON_FAIL=ignore`，CI 的其他任务同样设置此项；Turbo 在 strict 环境中显式透传它，避免 vendor 子工作区的上游 `packageManager` 字段重新下载或切换 pnpm。该变量只固定执行工具的所有权，版本仍由已计入任务 hash 的 `mise.toml` 决定。
+根 Turbo scripts 通过 `scripts/turbo.mjs`，verify 通过自身执行器，按仓库位置设置
+`PNPM_CONFIG_WORKSPACE_DIR`；Turbo 显式透传，使实际成员中的上游 vendor workspace 文件不改变本次安装图。
+这不禁用 pnpm 依赖检查。跨仓库 source 执行重新绑定到当前 checkout，不能继承消费方的 workspace root。
 
 | 检查所有者                                | 负责的事实                                                                  |
 | ----------------------------------------- | --------------------------------------------------------------------------- |

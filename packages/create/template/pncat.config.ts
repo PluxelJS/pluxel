@@ -1,4 +1,4 @@
-import { defineConfig } from 'pncat'
+import { defineConfig } from '@pluxel/cli/pncat'
 
 export default defineConfig({
 	catalogRules: [
@@ -61,7 +61,6 @@ export default defineConfig({
 				'electron-builder',
 				'oxfmt',
 				'oxlint',
-				'pncat',
 				'portless',
 				'sass-embedded',
 				'tsdown',

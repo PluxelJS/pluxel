@@ -63,6 +63,8 @@ describe('create-pluxel', () => {
 		assert.equal(result.code, 0, result.stderr)
 
 		const generated = resolve(temporaryRoot, 'starter')
+		const governance = await run(['scripts/check-workspace-governance.mjs'], generated)
+		assert.equal(governance.code, 0, governance.stderr)
 		assert.match(await readFile(resolve(generated, '.gitignore'), 'utf8'), /node_modules\//)
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
 		assert.equal(manifest.name, undefined)
@@ -81,8 +83,15 @@ describe('create-pluxel', () => {
 			react: 'catalog:frontend',
 			'react-dom': 'catalog:frontend',
 		})
-		assert.equal(manifest.devDependencies.pncat, 'catalog:tooling')
-		assert.equal(manifest.scripts['catalog:add'], 'pncat add')
+		assert.equal(manifest.devDependencies.pncat, undefined)
+		assert.equal(manifest.scripts['catalog:add'], 'pluxel pncat add')
+		assert.equal(manifest.scripts['catalog:clean'], 'pluxel pncat clean --yes')
+		assert.equal(manifest.scripts['catalog:migrate'], 'pluxel pncat migrate --yes --no-install')
+		assert.equal(manifest.scripts['catalog:sync'], 'pluxel workspace sync')
+		assert.match(
+			await readFile(resolve(generated, 'pncat.config.ts'), 'utf8'),
+			/from '@pluxel\/cli\/pncat'/,
+		)
 		assert.match(await readFile(resolve(generated, 'pncat.config.ts'), 'utf8'), /name: 'pluxel'/)
 		assert.doesNotMatch(
 			await readFile(resolve(generated, 'host/web/src/client/main.tsx'), 'utf8'),

@@ -1,3 +1,4 @@
+import { diagnoseWorkspaceDependencies } from '../workspace/dependencies'
 import {
 	diagnoseDevelopmentWorkspace,
 	assertDevelopmentBinding,
@@ -98,6 +99,8 @@ export const sourceDoctorCommand = define({
 		const plan = await loadPlan(ctx.values as SourceWorkspaceValues)
 		const diagnostics = await diagnoseSourceWorkspacePlan(plan)
 		diagnostics.errors.push(...diagnoseDevelopmentWorkspace(plan.root))
+		for (const root of new Set([plan.root, ...plan.checkouts.map((checkout) => checkout.root)]))
+			diagnostics.errors.push(...(await diagnoseWorkspaceDependencies(root)))
 		printPlan(ctx.log, plan)
 		for (const warning of diagnostics.warnings) ctx.log(`warning: ${warning}`)
 		if (diagnostics.errors.length > 0) {

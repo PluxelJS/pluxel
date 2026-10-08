@@ -1,3 +1,4 @@
+import { diagnoseWorkspaceDependencies, syncWorkspaceDependencies } from '../workspace/dependencies'
 import { setupDevelopmentWorkspace } from '../workspace/setup'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -19,6 +20,7 @@ import {
 	workspaceScanDefinition,
 	workspaceDoctorDefinition,
 	workspaceSetupDefinition,
+	workspaceSyncDefinition,
 } from '../command-manifest'
 import { detectPm, runPackageManager } from '../utils/pm'
 import {
@@ -139,11 +141,31 @@ export const workspaceSetupCommand = define({
 	},
 })
 
+export const workspaceSyncCommand = define({
+	...workspaceSyncDefinition,
+	async run(ctx) {
+		const root = resolveWorkspaceRoot(ctx.values)
+		if (ctx.values.check) {
+			const errors = await diagnoseWorkspaceDependencies(root)
+			if (errors.length > 0) throw new Error(errors.join('\n'))
+			ctx.log(`Workspace dependencies match this CLI policy: ${root}`)
+		} else {
+			const count = await syncWorkspaceDependencies(root, ctx.log)
+			ctx.log(
+				count
+					? 'Dependency declarations synchronized. Run pnpm install (Git source users: pluxel source install).'
+					: 'Dependency declarations already synchronized.',
+			)
+		}
+	},
+})
+
 export const workspaceDoctorCommand = define({
 	...workspaceDoctorDefinition,
-	run(ctx) {
+	async run(ctx) {
 		const root = resolveWorkspaceRoot(ctx.values as WorkspaceRootValues)
 		const diagnostics = diagnoseWorkspaceGovernance(root)
+		diagnostics.errors.push(...(await diagnoseWorkspaceDependencies(root)))
 		for (const warning of diagnostics.warnings) ctx.log(`warning: ${warning}`)
 		if (diagnostics.errors.length > 0) throw new Error(diagnostics.errors.join('\n'))
 		ctx.log(`Workspace governance is valid: ${root}`)

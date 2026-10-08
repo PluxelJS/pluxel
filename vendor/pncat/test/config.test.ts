@@ -1,0 +1,127 @@
+import type { CatalogOptions } from '@/types'
+import { realpath } from 'node:fs/promises'
+import process from 'node:process'
+import { resolve } from 'pathe'
+import { describe, expect, it } from 'vitest'
+import { readConfig, resolveConfig } from '@/config'
+import { getFixtureCwd, getFixturePath, getFixtureScenarioPath } from './_shared'
+
+describe('resolveConfig', () => {
+  it('loads config from pncat.config.ts default export', async () => {
+    const config = await readConfig({
+      cwd: getFixtureScenarioPath('config-file'),
+    })
+
+    expect(config.agent).toBe('yarn')
+    expect(config.recursive).toBe(false)
+  })
+
+  it('supports interop default config shape', async () => {
+    const input: Partial<CatalogOptions> & { default: Partial<CatalogOptions> } = {
+      default: {
+        cwd: getFixtureCwd('pnpm'),
+      },
+    }
+
+    const config = await resolveConfig(input)
+    expect(config.agent).toBe('pnpm')
+    expect(resolve(config.cwd || '')).toBe(resolve(getFixtureCwd('pnpm')))
+  })
+
+  it('uses provided cwd to infer agent', async () => {
+    const nested = getFixturePath('bun', 'packages', 'app')
+
+    const config = await resolveConfig({ cwd: nested })
+    expect(config.agent).toBe('bun')
+    expect(resolve(config.cwd || '')).toBe(resolve(nested))
+  })
+
+  it('uses agent from config file', async () => {
+    const config = await resolveConfig({
+      cwd: getFixtureScenarioPath('config-file'),
+    })
+
+    expect(config.agent).toBe('yarn')
+  })
+
+  it('resolves workspace root from process cwd when cwd is not provided', async () => {
+    const nested = getFixturePath('yarn', 'packages', 'app')
+    const previous = process.cwd()
+
+    try {
+      process.chdir(nested)
+      const config = await resolveConfig({})
+      expect(config.agent).toBe('yarn')
+      expect(await realpath(resolve(config.cwd || ''))).toBe(await realpath(resolve(getFixtureCwd('yarn'))))
+    }
+    finally {
+      process.chdir(previous)
+    }
+  })
+
+  it('removes boolean catalog option during sanitize', async () => {
+    // @ts-expect-error legacy boolean catalog value is sanitized at runtime
+    const input: Partial<CatalogOptions> = { cwd: getFixtureCwd('pnpm'), catalog: true }
+    const config = await resolveConfig(input)
+    expect('catalog' in config).toBe(false)
+  })
+
+  it('resolves cli dep field aliases into depFields', async () => {
+    const config = await resolveConfig({
+      cwd: getFixtureCwd('pnpm'),
+      depFields: 'prod,dev,resolutions,overrides,pnpm-overrides',
+    })
+
+    expect(config.depFields).toMatchObject({
+      'dependencies': true,
+      'devDependencies': true,
+      'peerDependencies': false,
+      'optionalDependencies': false,
+      'resolutions': true,
+      'overrides': true,
+      'pnpm.overrides': true,
+    })
+  })
+
+  it('excludes cli dep fields from the resolved selection', async () => {
+    const config = await resolveConfig({
+      cwd: getFixtureCwd('pnpm'),
+      excludeDepFields: 'peer,optional,resolutions,overrides,pnpm-overrides',
+    })
+
+    expect(config.depFields).toMatchObject({
+      'dependencies': true,
+      'devDependencies': true,
+      'peerDependencies': false,
+      'optionalDependencies': false,
+      'resolutions': false,
+      'overrides': false,
+      'pnpm.overrides': false,
+    })
+  })
+
+  it('applies excludeDepFields after depFields selection', async () => {
+    const config = await resolveConfig({
+      cwd: getFixtureCwd('pnpm'),
+      depFields: 'resolutions,overrides,pnpm-overrides',
+      excludeDepFields: 'pnpm-overrides',
+    })
+
+    expect(config.depFields).toMatchObject({
+      'dependencies': false,
+      'devDependencies': false,
+      'peerDependencies': false,
+      'optionalDependencies': false,
+      'resolutions': true,
+      'overrides': true,
+      'pnpm.overrides': false,
+    })
+  })
+
+  it('throws on invalid cli dep field values', async () => {
+    await expect(resolveConfig({
+      cwd: getFixtureCwd('pnpm'),
+      depFields: 'prod,wat',
+    })).rejects.toThrowError('invalid dep fields: wat')
+  })
+})

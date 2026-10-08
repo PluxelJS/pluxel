@@ -490,6 +490,19 @@ export const workspaceDoctorDefinition = {
 	args: workspaceRootArgs,
 } as const
 
+export const workspaceSyncDefinition = {
+	name: 'sync',
+	description: 'Sync external dependencies through pncat using this CLI dependency policy',
+	args: {
+		...workspaceRootArgs,
+		check: {
+			type: 'boolean',
+			default: false,
+			description: 'Report dependency drift without writing files',
+		},
+	},
+} as const
+
 export const workspaceSetupDefinition = {
 	name: 'setup',
 	description: 'Materialize development docs and skill from this CLI',
@@ -497,6 +510,13 @@ export const workspaceSetupDefinition = {
 } as const
 
 export const workspaceSubCommands = new Map<string, SubCommandable>([
+	[
+		'sync',
+		lazy(
+			() => import('./commands/workspace').then((m) => m.workspaceSyncCommand),
+			workspaceSyncDefinition,
+		),
+	],
 	[
 		'setup',
 		lazy(

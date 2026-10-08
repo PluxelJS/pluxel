@@ -113,6 +113,8 @@ console.log(removed.value)
 
 每次安装先建立独立 revision，使用 pnpm global virtual store 的共享 immutable slots；完整 lockfile resolution/peer/optional 图与实际字节共同决定变化。图、字节和物理路径不变的包保留 wrapper 正文、inode/mtime 和 inner entry；未知图会拒绝发布。旧 revision/slots 保留至离线维护，升级、卸载和 Plugin close 不删除旧代的延迟 import、资源或制品。
 
+Host 不应继承用于构建调度的 `PNPM_CONFIG_WORKSPACE_DIR`（以及 pnpm/npm 的大小写变体）。pnpm 原生引擎会让首个非空环境值覆盖显式安装目录；两者不一致时，Package Manager 在读取原生配置或安装前明确拒绝，并指出来源变量与目标目录。清除该调度环境后重启 Host；运行时不会临时修改进程环境或将安装重定向到另一个工作区。
+
 原生当前 Host 不观察发布，下一新进程扫描生效；Vite 观察实际图更新。安装回执只证明文件发布，不代表 catalog 接纳或 Plugin 激活成功。
 
 Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。

@@ -16,6 +16,8 @@ published-installation.json 是当前安装选择的唯一 authority；准备失
 
 ## 写者与恢复
 
+原生引擎调用前校验首个非空 pnpm/npm workspace-dir 环境覆盖与显式 dir 一致；冲突直接拒绝，不允许调度环境把私有 revision 安装指向 Host 工作区，也不全局修改进程环境。原生集成测试在独立 worker 中清除调度覆盖，另用子进程与临时旁工作区回归四种拼写、空值与优先级、匹配目录及旁工作区字节不变。
+
 目录内 mkdir .writer 原子获得跨进程单写者 ownership；EEXIST 返回 PACKAGE_STORE_WRITER_CONFLICT，其余 IO 错误保持原生错误。异常退出的遗留 lock 只能由操作者离线核对并删除。启动验证 index、物理 containment、inner entries、slot bytes 和公开 wrapper；旧布局与不一致内容明确失败，不静默迁移或重新发布。
 
 ## 能力与回执
