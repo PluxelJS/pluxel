@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it } from 'vitest'
 
 import {
@@ -6,6 +9,7 @@ import {
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	tegamiIgnoredPackageNames,
+	readRepositoryPackages,
 } from './repository-packages.mjs'
 
 const packageRecord = (kind, name, isPrivate, version) => ({
@@ -18,6 +22,30 @@ const packageRecord = (kind, name, isPrivate, version) => ({
 })
 
 describe('repository package policy', () => {
+	it('includes the embedded launcher SDK without discovering arbitrary nested projects', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-inventory-'))
+		try {
+			for (const directory of [
+				'projects/embedded-launcher',
+				'projects/embedded-launcher/sdk',
+				'projects/embedded-launcher/unrelated',
+			]) {
+				await mkdir(join(root, directory), { recursive: true })
+				await writeFile(
+					join(root, directory, 'package.json'),
+					JSON.stringify({ name: directory, private: true }),
+				)
+			}
+			const packages = await readRepositoryPackages(root)
+			assert.deepEqual(packages.map(({ directory }) => directory).sort(), [
+				'projects/embedded-launcher',
+				'projects/embedded-launcher/sdk',
+			])
+			assert.ok(packages.every(({ kind }) => kind === 'project'))
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
 	it('publishes only non-private packages and plugins', () => {
 		assert.equal(isPublishablePackage(packageRecord('package', '@scope/library')), true)
 		assert.equal(isPublishablePackage(packageRecord('plugin', '@scope/plugin', false)), true)

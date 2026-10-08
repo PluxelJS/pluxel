@@ -181,6 +181,8 @@ execution lane 的 direct call 必须以 `HmrClosedError` 失败，不能触碰 
 
 生产 `/run` 的 owner 先关闭 Host，再执行既有 Vite 插件清理和 runner/server 清理。关闭链继续执行后续步骤并聚合原始错误；它不依赖 Vite 自己吞掉的 `closeBundle` rejection。重复关闭共享同一个结果，startup/abort 同样经过此边界。
 
+自有开发 bootstrap 通过根导出的 `closeHostViteSession(server)` 使用同一关闭 owner，然后关闭 Vite，最后释放借用 bindings。未取得会话时返回 `undefined`；该入口不重复创建 Host 或改变生产 `/run` 的关闭顺序。
+
 原生执行只在 `runHostApplication` 的一次启动中扫描预编译来源，不创建 watcher；后续新增、改写和删除在下一次启动接纳。源声明的 consumption policy 为 next-start。
 
 Vite `/run` 拥有 production profile，policy 为 live，强制发布包 conditions，ordinary ESM 保留 runner 图。浏览器 HMR 关闭后仍由专用依赖 watcher 观察已求值文件；开发 profile 仅补充 Vite 忽略的 node_modules 文件。watcher 不扫描未知插件、不改变来源集合，变化进入同一 watchChange/失效/串行事务。生产 HTTP listener 由 Services 持有，不公开 Vite middleware；dev console/source Shell 显式拒绝。

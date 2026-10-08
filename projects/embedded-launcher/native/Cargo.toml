@@ -1,0 +1,31 @@
+[package]
+name = "embedded-launcher"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+llrt_core = { path = "vendor/llrt/llrt_core", features = ["no-sdk", "uncompressed"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "net", "io-util", "macros", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+iced = { version = "=0.14.0", default-features = false, features = ["tiny-skia", "tokio", "advanced", "x11", "wayland"] }
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+fs2 = "0.4"
+tempfile = "3"
+png = "0.18"
+zip = { version = "=6.0.0", default-features = false, features = ["deflate"] }
+sha2 = "0.10"
+semver = "1"
+rfd = { version = "0.15", default-features = false, features = ["tokio", "xdg-portal"] }
+
+[dev-dependencies]
+iced_test = "=0.14.0"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false

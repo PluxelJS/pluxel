@@ -7,6 +7,7 @@ packages:
   - vendor/split-like-vscode/packages/core
   - vendor/split-like-vscode/packages/react
   - projects/*
+  - projects/embedded-launcher/sdk
 
 allowBuilds:
   '@google/genai': false
@@ -89,7 +90,9 @@ catalogs:
     '@tailwindcss/vite': ^4.3.3
     '@tsdown/css': ^0.23.0
     '@vitejs/plugin-react': ^6.1.2
+    esbuild: 0.28.2
     react-server-dom-webpack: ^19.3.0
+    readable-stream: 4.7.0
     rolldown: ^1.2.13
     tsdown: ^0.23.0
     unplugin-macros: ^0.23.2
@@ -113,6 +116,7 @@ catalogs:
     fdir: ^6.5.0
     fs-fixture: ^2.16.0
     ink: ^8.0.0
+    jose: ^6.2.12
     jsdom: ^30.1.2
     oxfmt: ^0.72.0
     oxlint: ^1.87.0
@@ -122,6 +126,7 @@ catalogs:
     postcss-preset-mantine: ^1.18.0
     postcss-simple-vars: ^7.0.1
     sass-embedded: ^1.105.1
+    semver: ^7.8.5
     tinybench: ^6.2.1
     tsx: ^4.23.15
     turbo: ^2.11.7
@@ -234,6 +239,7 @@ catalogs:
     jiti: ^2.7.0
     jose: ^6.2.12
     jsonc-parser: ^3.3.1
+    mathjs: 15.1.1
     mdast-util-directive: ^3.1.1
     mdast-util-from-markdown: ^2.1.0
     mdast-util-gfm: ^3.1.0
@@ -265,7 +271,10 @@ catalogs:
     wretch: ^3.0.9
     yaml: ^2.9.1
   test:
+    '@noble/ciphers': 2.4.0
+    '@noble/hashes': 2.4.0
     '@testing-library/react': ^16.3.3
+    axios: 1.20.0
     grfn: ^3.0.0
     lfi: ^4.1.2
     p-limit: ^7.3.3
@@ -274,6 +283,7 @@ catalogs:
     p-retry: ^8.0.1
     vitest: ^5.0.3
     ws: ^8.22.0
+    zod: 4.6.5
   types:
     '@types/mdast': ^4.0.4
     '@types/mdx': ^2.0.14

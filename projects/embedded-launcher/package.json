@@ -1,0 +1,46 @@
+{
+	"name": "@embedded-launcher/app",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/app.ts",
+		"./plugins": "./src/plugins/index.ts"
+	},
+	"scripts": {
+		"build:plugins": "node build/plugins.mjs",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"build:sdk": "node build/plugins.mjs --sdk-only"
+	},
+	"dependencies": {
+		"@embedded-launcher/sdk": "workspace:*",
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/services": "workspace:*",
+		"mathjs": "catalog:prod",
+		"valibot": "catalog:validation",
+		"wretch": "catalog:prod"
+	},
+	"devDependencies": {
+		"@noble/ciphers": "catalog:test",
+		"@noble/hashes": "catalog:test",
+		"@pluxel/host-vite": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@types/node": "catalog:types",
+		"@types/semver": "catalog:types",
+		"axios": "catalog:test",
+		"esbuild": "catalog:build",
+		"jose": "catalog:dev",
+		"readable-stream": "catalog:build",
+		"rolldown": "catalog:build",
+		"semver": "catalog:dev",
+		"typescript": "catalog:prod",
+		"vite": "catalog:build",
+		"vitest": "catalog:test",
+		"yaml": "catalog:dev",
+		"zod": "catalog:test"
+	}
+}

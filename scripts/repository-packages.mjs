@@ -62,6 +62,7 @@ export async function readRepositoryPackages(root = repositoryRoot) {
 		root,
 		resolve(root, 'web'),
 		...projectRoots,
+		resolve(root, 'projects/embedded-launcher/sdk'),
 		...packageRoots,
 		...pluginRoots,
 	]

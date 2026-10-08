@@ -87,6 +87,12 @@ React 页面由应用显式安装 React Vite plugin。
 配置工厂 identity 变化时重新求值完整配置并重建 Host，固定插件的 import 更新也可能触发重建。工厂求值失败保留旧 Host。动态来源更新若未使工厂失效，则复用本次配置并提交 catalog replacement。失败候选保留旧实现；已提交后的 init 失败则报告新一代的生命周期问题，不声称旧代仍然运行。
 在线检查与修改见[开发控制台](../development/dev-console.md)。
 
+自行通过 Vite `createServer()` 持有开发会话、并向 `bindings` 借出连接或存储时，关闭顺序为：
+先 `await closeHostViteSession(server)`（从 `@pluxel/host-vite` 导入），然后在 `finally` 中
+`await server.close()`，最后释放借出的资源。首项停止 Host 更新接纳并排空已有工作，保留原始清理失败；
+仅调用 Vite `server.close()` 会丢失部分插件关闭错误。未取得 Host 会话的 server 返回 `undefined`；
+已取得会话的重复关闭复用同一个结果。这个函数不关闭 Vite server，也不接管调用者提供的连接。
+
 ## 动态来源
 
 ```ts no-twoslash

@@ -1,0 +1,19 @@
+{
+	"name": "@embedded-launcher/sdk",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*"
+	}
+}

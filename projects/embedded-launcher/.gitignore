@@ -1,0 +1,6 @@
+!build/
+!build/**
+native/target/
+.runtime/
+artifacts/
+release/

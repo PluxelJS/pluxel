@@ -8,12 +8,12 @@
 
 ```text
 开发
-  Qt 原生应用 <-- 本地 socket --> Node 执行会话
+  Rust 原生应用 <-- 本地 socket --> Node 执行会话
                                      Vite 的唯一 Pluxel ModuleRunner
                                      Host + Services + 插件 (HMR)
 
 发布
-  Qt 原生应用 <-- 异步队列 --> 专用线程中的 QuickJS-NG JSRuntime
+  Rust 原生应用 <-- 异步队列 --> 专用线程中的 LLRT / QuickJS JSRuntime
                                 Host + 同一 Services + 预编译插件
 
 CLI 客户端 --> 原生应用本地入口 --> 当前唯一活动 Host 的 CLI carrier
@@ -30,15 +30,15 @@ CLI 客户端 --> 原生应用本地入口 --> 当前唯一活动 Host 的 CLI c
 | Plugin generation | 业务实例、命令、订阅、查询 provider                 | 共享连接、原生应用和文件存储 |
 | 原生 UI           | 当前贡献与状态的投影                                | 第二份可写配置或启停策略     |
 
-原生应用能力先于插件存在；不把核心应用包装成一个必须随插件一起重启的 Plugin。应用服务不暴露完整 `app` 对象，也不向插件传递 QObject、指针或任意原生调用入口。
+原生应用能力先于插件存在；不把核心应用包装成一个必须随插件一起重启的 Plugin。应用服务不暴露完整 `app` 对象，也不向插件传递原生 UI 对象、指针或任意原生调用入口。
 
 ## 2. 同一业务契约，两种连接实现
 
-项目内分出 portable 的应用能力契约、Service 实现和插件，以及 Node/QuickJS 两个执行适配器。插件和 Service 的业务部分不判断 `isNode`、不访问 socket，也不解析原生句柄。
+项目内分出 portable 的应用能力契约、Service 实现和插件，以及 Node/LLRT 两个执行适配器。插件和 Service 的业务部分不判断 `isNode`、不访问 socket，也不解析原生句柄。
 
-两端使用相同的异步请求、响应、取消和事件语义。开发侧采用 Qt local socket 与 Node `net`，发布侧用 C API 加异步线程队列；原生领域 handler 共用。发布不绕回本地 socket，也不为模拟同步原生 API 让开发侧阻塞等待。
+两端使用相同的异步请求、响应、取消和事件语义。开发侧采用 Rust Unix socket 与 Node `net`，发布侧用 rquickjs 原生模块加异步线程队列；原生领域 handler 共用。发布不绕回本地 socket，也不为模拟同步原生 API 让开发侧阻塞等待。
 
-首版消息使用受限 JSON 数据；socket 使用有长度上限的帧，复用 JSON-RPC 2.0 的请求/响应结构，取消和快照事件作为明确的方法扩展。优先选已有解析/编码设施；不实现远程对象代理、引用传输或另一套 Command 系统。冻结协议前需完成真实 C++/JS 往返。
+首版消息使用受限 JSON 数据；socket 使用有长度上限的帧，复用 JSON-RPC 2.0 的请求/响应结构，取消和快照事件作为明确的方法扩展。优先选已有解析/编码设施；不实现远程对象代理、引用传输或另一套 Command 系统。冻结协议前需完成真实 Rust/JS 往返。
 
 - 协议版本、应用实例、profile 和角色在握手中核对。原生端发行会话 ID，旧连接不能自行恢复旧身份。
 - 本地端点限制同用户访问；开发后端使用本次启动的连接凭据，并绑定准确实例。CLI 角色只能调用选定管理和命令入口，不能注册插件贡献或读写任意存储路径。
@@ -130,13 +130,13 @@ Host replacement 后，原生端清除旧 lease 的贡献并暂时显示未就�
 
 ## 6. 发布运行时与 portable 制品
 
-QuickJS-NG JSRuntime 及其 JSValue 全部由专用执行线程拥有；UI 线程只处理原生 UI 操作。线程间投递 DTO，不传 JSValue。Promise jobs 和定时器进入该执行线程事件循环，按有界工作批次运行并让出控制权；原生异步完成后投递回该线程 resolve/reject，再推进 jobs。
+确定内嵌 LLRT，复用标准库和运行时装配，证据、已知缺陷与嵌入门槛见 [运行时研究](RUNTIME.md)。由薄 embedder 适配接管退出、加载和关闭策略。JSRuntime 及 JS 引用全部由专用线程拥有，UI 不执行 JS；异步完成通过有界队列进入 executor，使用 LLRT/rquickjs 的 jobs/timer 机制，不另写忙轮询 pump。
 
-实施时锁定引擎版本，审计 Core、Host、Commands、应用 Services 与传递依赖的完整产物闭包。已发现需要核对的能力包括 TextEncoder、AbortController/AbortSignal.any、定时器、structuredClone 和 dispose symbols；这是审计起点，不是完整支持清单。按实际使用补齐语义，不能放置不工作的 stub。CPU 执行预算用引擎 interrupt 机制验证；它不等于 Promise/原生 IO 的取消。
+实施时锁定引擎版本，审计 Core、Host、Commands、应用 Services 与传递依赖的完整产物闭包。已发现需要核对的能力包括 TextEncoder、AbortController/AbortSignal.any、定时器、structuredClone 和 dispose symbols；这是审计起点，不是完整支持清单。由所选成熟运行时或有明确测试的上游实现提供这些语义，不自行编写简化替代品，也不放置 stub。CPU 执行预算用引擎 interrupt 机制验证；它不等于 Promise/原生 IO 的取消。
 
-生产编译复用现有 Plugin lowering ABI，输出 ESM JS 与准确的 canonical definition 映射。普通依赖随包内联，残留 import 只能是清单允许的宿主共享模块或包内明确模块。Core、toolchain helpers、应用 service tokens 等由同一 realm 的模块映射提供，禁止每包私带一份 Core。首次采用一个 runtime/realm 承载整个插件 graph；不承诺每插件独立沙箱。
+生产编译复用现有 Plugin lowering ABI，输出 ESM JS 与准确的 canonical definition 映射。普通依赖随包内联，残留 import 只能是清单允许的宿主共享模块、已验证 LLRT 内建模块或包内明确模块。Core、toolchain helpers、应用 service tokens 等由同一 realm 的模块映射提供，禁止每包私带一份 Core。首次采用一个 runtime/realm 承载整个插件 graph；不承诺每插件独立沙箱。
 
-运行时 loader 只读取本次激活包集合中的 immutable 文件，不进行 npm 解析、下载安装、TS 编译或补猜模块入口。插件包保留稳定 canonical identity，物理 revision 变化不改变节点配置地址。当前 Node modules/standalone launcher 不能直接当作 QuickJS 入口；需要经验证的独立嵌入入口和项目构建适配。
+运行时 loader 只读取本次激活包集合中的 immutable 文件，不进行 npm 解析、下载安装、TS 编译或补猜模块入口。插件包保留稳定 canonical identity，物理 revision 变化不改变节点配置地址。当前 Node modules/standalone launcher 不能直接当作 LLRT 嵌入入口；需要经验证的独立嵌入入口和项目构建适配。
 
 首版发布 JS，不发布 QuickJS 字节码。字节码绑定引擎版本且不适合作为未经信任来源的输入；JS 交付也不自动构成安全沙箱。演示仅安装受控示例包，恶意插件隔离、多租户和应用权限系统不在首版支持声明内。
 
@@ -172,6 +172,8 @@ QuickJS-NG JSRuntime 及其 JSValue 全部由专用执行线程拥有；UI 线�
 开发 profile 中 workspace 源码定义由 Vite 唯一管理；安装同 canonical identity 的制品须拒绝并报告冲突。首版包管理演示在生产 profile 验收；开发模式不提供另一条偷偷绕过 HMR 的即时包加载通道。
 
 ## 8. 效率与可观察性
+
+出站联网使用 owner-bound Network Service，开发使用 Node、发布使用所选嵌入运行时的网络实现，并核对同一业务契约；Fetch/Wretch 的兼容范围、RemoteLookup 示例和能力使用投影统一见 [联网与能力观察](NETWORK.md)。能力观察不是自动完备的权限扫描。
 
 查询热路径只跨桥传输入和结果批次，不逐项 RPC 排序或读取标题。原生应用执行 IO，插件按需使用；不复制全量原生目录到每个 generation。没有新输入或状态变化时无需 UI 轮询。日志有界并批量投递，包含来源 owner，日志 transport 失效不能递归生成日志。
 

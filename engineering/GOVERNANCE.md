@@ -39,6 +39,7 @@ packages/*              框架库、contract、adapter 与可含配套 /plugins 
 plugins/*               可独立装配的具体插件 package
 plugins/<domain>/*      共享明确能力链的具体插件 package
 projects/*              必须随框架一起演进的可运行维护者宿主
+projects/embedded-launcher/sdk  原生嵌入演示的 private 服务身份包
 vendor/*                明确纳入的上游源码；不套用第一方目录语义
 ```
 

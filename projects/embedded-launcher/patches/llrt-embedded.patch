@@ -1,0 +1,207 @@
+diff --git a/libs/llrt_context/src/lib.rs b/libs/llrt_context/src/lib.rs
+index 5f7250a..297c1da 100644
+--- a/libs/llrt_context/src/lib.rs
++++ b/libs/llrt_context/src/lib.rs
+@@ -90,3 +90,8 @@ where
+ {
+     _ = ERROR_HANDLER.set(Box::new(handler));
+ }
++
++/// Report a caught callback failure through the embedding application's policy.
++pub fn report_error<'js>(ctx: &Ctx<'js>, error: CaughtError<'js>) {
++    handle_spawn_error(ctx, error, None);
++}
+diff --git a/llrt_core/build.rs b/llrt_core/build.rs
+index 17deb3c..554b906 100644
+--- a/llrt_core/build.rs
++++ b/llrt_core/build.rs
+@@ -208,7 +208,7 @@ fn generate_bytecode_cache(out_dir: &str) -> StdResult<(), Box<dyn Error>> {
+         .to_string();
+ 
+     if cfg!(feature = "uncompressed") {
+-        generate_compression_dictionary(&compression_dictionary_path, &lrt_filenames)?;
++        fs::write(&compression_dictionary_path, [])?;
+     } else {
+         total_bytes = compress_bytecode(compression_dictionary_path, lrt_filenames)?;
+ 
+diff --git a/llrt_core/src/lib.rs b/llrt_core/src/lib.rs
+index 0ba06d4..8f25ac5 100644
+--- a/llrt_core/src/lib.rs
++++ b/llrt_core/src/lib.rs
+@@ -20,3 +20,11 @@ pub mod vm;
+ pub use llrt_modules::VERSION;
+ 
+ pub use rquickjs::*;
++
++/// Host-controlled initialization: call once before constructing embedded runtimes.
++pub fn init_embedded() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
++    libs::utils::time::init();
++    http::init()?;
++    security::init()?;
++    Ok(())
++}
+diff --git a/llrt_core/src/vm.rs b/llrt_core/src/vm.rs
+index f531207..6ff1f83 100644
+--- a/llrt_core/src/vm.rs
++++ b/llrt_core/src/vm.rs
+@@ -202,6 +202,11 @@ fn init(ctx: &Ctx<'_>) -> Result<()> {
+         print_error_and_exit(ctx, err);
+     });
+ 
++    init_embedded_globals(ctx)
++}
++
++/// Install VM globals without installing the CLI process-exit handler.
++pub fn init_embedded_globals(ctx: &Ctx<'_>) -> Result<()> {
+     let globals = ctx.globals();
+ 
+     globals.set("__gc", Func::from(|ctx: Ctx| ctx.run_gc()))?;
+diff --git a/modules/llrt_buffer/src/file.rs b/modules/llrt_buffer/src/file.rs
+index e4539e3..9d294fb 100644
+--- a/modules/llrt_buffer/src/file.rs
++++ b/modules/llrt_buffer/src/file.rs
+@@ -3,7 +3,7 @@
+ use llrt_utils::time;
+ use rquickjs::{
+     atom::PredefinedAtom, class::Trace, function::Opt, ArrayBuffer, Coerced, Ctx, Exception,
+-    IntoJs, Object, Result, Value,
++    Result, Value,
+ };
+ 
+ use super::blob::Blob;
+@@ -104,12 +104,7 @@ impl<'js> File<'js> {
+         filename: String,
+         mime_type: Option<String>,
+     ) -> Result<Self> {
+-        let options = Opt(Some({
+-            let obj = Object::new(ctx.clone())?;
+-            obj.set("type", mime_type.clone().unwrap_or("".into()).into_js(ctx)?)?;
+-            obj.into_js(ctx)?
+-        }));
+-        let blob = Blob::from_parts(ctx.clone(), Opt(Some(data.into_js(ctx)?)), options)?;
++        let blob = Blob::from_bytes(ctx, data, mime_type)?;
+ 
+         Ok(Self {
+             blob,
+diff --git a/modules/llrt_fetch/src/fetch.rs b/modules/llrt_fetch/src/fetch.rs
+index 0d69014..f40cbf7 100644
+--- a/modules/llrt_fetch/src/fetch.rs
++++ b/modules/llrt_fetch/src/fetch.rs
+@@ -6,7 +6,7 @@ use hyper::{
+     header::{
+         ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONTENT_ENCODING,
+         CONTENT_LANGUAGE, CONTENT_LENGTH, CONTENT_LOCATION, CONTENT_TYPE, IF_MODIFIED_SINCE,
+-        IF_NONE_MATCH, LOCATION, ORIGIN, TRANSFER_ENCODING, USER_AGENT,
++        IF_NONE_MATCH, LOCATION, TRANSFER_ENCODING, USER_AGENT,
+     },
+     HeaderMap, Method, Request, Uri, Version,
+ };
+@@ -574,7 +574,6 @@ fn build_request<'js>(
+     } else {
+         (method.clone(), body)
+     };
+-    let is_get_or_head = matches!(method_to_use, Method::GET | Method::HEAD);
+ 
+     let mut req = Request::builder().method(method_to_use).uri(uri.clone());
+ 
+@@ -595,15 +594,6 @@ fn build_request<'js>(
+ 
+     apply_default_headers(&mut req, &detected_headers);
+ 
+-    // Per spec, the Origin header is included for non-CORS-safelisted methods
+-    // (anything other than GET/HEAD). Browsers compute origin from the caller;
+-    // here we approximate with the initial request URI's origin.
+-    if !is_get_or_head && !detected_headers.contains(ORIGIN.as_str()) {
+-        if let Some(origin) = uri_origin(initial_uri) {
+-            req = req.header(ORIGIN, origin);
+-        }
+-    }
+-
+     // `Content-Length: 0` is sent for POST/PUT/PATCH requests with no body.
+     if body.is_none()
+         && matches!(*method, Method::POST | Method::PUT | Method::PATCH)
+@@ -656,23 +646,6 @@ fn is_same_origin(uri: &Uri, initial_uri: &Uri) -> bool {
+         && is_same_port(uri, initial_uri)
+ }
+ 
+-fn uri_origin(uri: &Uri) -> Option<String> {
+-    let scheme = uri.scheme_str()?;
+-    let authority = uri.authority()?;
+-    let host = authority.host();
+-    let default_port = matches!(
+-        (scheme, authority.port_u16()),
+-        (_, None) | ("http", Some(80)) | ("https", Some(443))
+-    );
+-    if default_port {
+-        Some([scheme, "://", host].concat())
+-    } else {
+-        let mut buf = itoa::Buffer::new();
+-        let port_str = buf.format(authority.port_u16().unwrap());
+-        Some([scheme, "://", host, ":", port_str].concat())
+-    }
+-}
+-
+ fn is_same_scheme(uri: &Uri, initial_uri: &Uri) -> bool {
+     uri.scheme() == initial_uri.scheme()
+ }
+diff --git a/modules/llrt_process/src/lib.rs b/modules/llrt_process/src/lib.rs
+index 7873f4a..a967efd 100644
+--- a/modules/llrt_process/src/lib.rs
++++ b/modules/llrt_process/src/lib.rs
+@@ -87,7 +87,7 @@ fn exit(ctx: Ctx<'_>, code: Value<'_>) -> Result<()> {
+         Some(code) => code,
+         None => EXIT_CODE.load(Ordering::Relaxed),
+     };
+-    std::process::exit(code.into())
++    Err(Exception::throw_message(&ctx, &format!("process.exit({code}) is disabled by the embedded host")))
+ }
+ 
+ fn env_proxy_setter<'js>(
+diff --git a/modules/llrt_timers/src/lib.rs b/modules/llrt_timers/src/lib.rs
+index a82d73a..08976cc 100644
+--- a/modules/llrt_timers/src/lib.rs
++++ b/modules/llrt_timers/src/lib.rs
+@@ -21,7 +21,7 @@ use once_cell::sync::Lazy;
+ use rquickjs::{
+     module::{Declarations, Exports, ModuleDef},
+     prelude::{Func, Opt},
+-    qjs, Ctx, Exception, Function, Persistent, Result, Value,
++    qjs, CatchResultExt, Ctx, Exception, Function, Persistent, Result, Value,
+ };
+ use tokio::{
+     select,
+@@ -376,7 +376,9 @@ pub fn poll_timers(
+ 
+                 invoke_async_hook(&ctx2, HookType::Before, ProviderType::None, uid)?;
+ 
+-                timeout.call::<_, ()>(())?;
++                if let Err(error) = timeout.call::<_, ()>(()).catch(&ctx2) {
++                    llrt_context::report_error(&ctx2, error);
++                }
+ 
+                 invoke_async_hook(&ctx2, HookType::After, ProviderType::None, uid)?;
+             }
+@@ -554,3 +556,23 @@ mod tests {
+         .await;
+     }
+ }
++
++/// Cancel remaining timers while the owning executor is still running.
++pub fn cancel_runtime_timers(ctx: &Ctx<'_>) {
++    let rt = unsafe { qjs::JS_GetRuntime(ctx.as_raw().as_ptr()) };
++    let mut states = RT_TIMER_STATE.lock().unwrap();
++    if let Some(state) = states.iter_mut().find(|state| state.rt == rt) {
++        state.timers.clear();
++        state.notify.notify_one();
++    }
++}
++
++/// Release the process registry slot after timer futures have drained.
++pub fn dispose_runtime_timers(ctx: &Ctx<'_>) {
++    let rt = unsafe { qjs::JS_GetRuntime(ctx.as_raw().as_ptr()) };
++    RT_TIMER_STATE.lock().unwrap().retain(|state| state.rt != rt);
++}
++
++pub fn runtime_timer_state_count() -> usize {
++    RT_TIMER_STATE.lock().unwrap().len()
++}
