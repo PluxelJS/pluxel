@@ -170,11 +170,19 @@ describe('runAgentRemove', () => {
     })
 
     expect(xMock).toHaveBeenCalledWith('pnpm', ['remove', 'react', '--recursive'], {
+      throwOnError: true,
       nodeOptions: {
         cwd: '/repo',
         stdio: 'inherit',
       },
     })
+  })
+
+  it('propagates removal failure without retrying', async () => {
+    resolveCommandMock.mockReturnValue({ command: 'pnpm', args: ['remove', 'react'] })
+    xMock.mockRejectedValueOnce(new Error('remove failed'))
+    await expect(runAgentRemove(['react'])).rejects.toThrow('remove failed')
+    expect(xMock).toHaveBeenCalledTimes(1)
   })
 
   it('does nothing when no dependencies are provided', async () => {
@@ -196,6 +204,7 @@ describe('runAgentRemove', () => {
     })
 
     expect(xMock).toHaveBeenCalledWith('pnpm', ['remove', 'react'], {
+      throwOnError: true,
       nodeOptions: {
         cwd: '/repo',
         stdio: 'inherit',
@@ -215,6 +224,7 @@ describe('runAgentRemove', () => {
     })
 
     expect(xMock).toHaveBeenCalledWith('pnpm', ['remove', 'react', '--recursive'], {
+      throwOnError: true,
       nodeOptions: {
         cwd: '/repo',
         stdio: 'inherit',
@@ -232,6 +242,7 @@ describe('runHooks', () => {
     await runHooks('eslint --fix', { cwd: '/repo' })
 
     expect(xMock).toHaveBeenCalledWith('eslint --fix', [], {
+      throwOnError: true,
       nodeOptions: {
         cwd: '/repo',
         stdio: 'inherit',

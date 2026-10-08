@@ -180,4 +180,6 @@ export default defineConfig({
 })
 ```
 
-嵌入的独立 Git 仓库仍需拥有可独立安装的 catalog 和 lockfile。父工作区将其包列为成员时，也必须具备这些声明所引用的 catalog 名称；不能把依赖改成只有父工作区才能解析的形式。中性上游仓库可以使用独立 pncat 工具，不需要为了维护依赖而依赖 Pluxel。
+嵌入的独立 Git 仓库仍需拥有可独立安装的 catalog 和 lockfile。父工作区将其包列为成员时，也必须具备这些声明所引用的 catalog 名称；不能把依赖改成只有父工作区才能解析的形式。中性上游仓库自行依赖原生 `pncat`，配置从 `pncat` 导入，维护命令不使用 `pluxel pncat`。
+
+原生 `pncat detect` 只报告待迁移声明，即使有差异也可能成功退出；可命名为 `catalog:detect`，不能把它当作阻断式检查。Pluxel 应用的 `workspace sync --check` 则会在声明或版本冲突时非零退出。

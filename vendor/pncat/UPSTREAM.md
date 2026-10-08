@@ -21,6 +21,6 @@ Peer-only catalogs retain compatibility ranges. Changing a catalog also referenc
 
 Plans report changes and conflicts. Apply rejects conflicts, changed input bytes, and changed membership before writing the workspace YAML through the upstream catalog writer. A plan is process-local and single use. Installation remains the caller's next explicit step.
 
-Embedded `runCli` accepts an initialization context for the config import specifier and suggested command. Pluxel uses `@pluxel/cli/pncat` and `pluxel pncat`; standalone pncat keeps its original defaults. Native install subprocess failures propagate as command failures; install-command resolver fallback does not hide a subprocess failure.
+Embedded `runCli` accepts an embedding context for the init config import specifier and init/detect command guidance. Pluxel uses `@pluxel/cli/pncat` and `pluxel pncat`; standalone pncat keeps its original defaults. Catalog sync also accepts `command` for migration guidance, defaulting to `pncat`. Native install/remove subprocess failures propagate as command failures without retrying them as resolver fallbacks. String hooks report failed subprocesses through the existing best-effort warning contract.
 
 Validation: `pnpm --dir vendor/pncat test` and `pnpm --dir vendor/pncat typecheck`.

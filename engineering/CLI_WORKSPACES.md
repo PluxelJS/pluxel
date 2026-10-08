@@ -100,4 +100,4 @@ pncat 作为构建依赖内联交付，packed CLI 检验无需另装 pncat 和 G
 
 `pluxel pncat` 在 Pluxel launcher 来源校验之后把参数交给内联 pncat 的原生 CAC parser，原生命令继续拥有 writer 和选项语义；临时恢复原生 argv 布局供 upstream add/remove/revert 使用。`@pluxel/cli/pncat` 发布配置 runtime 和自包含声明，消费方不需要独立 pncat 依赖。CLI 声明构建的根配置覆盖 CLI 与 vendor 两处实际源码，不向 vendor source 目录发射产物。
 
-内联 pncat 的 init context 只提供配置 import specifier 与命令提示，生成逻辑仍由原生命令拥有。原生入口保留自己的 pncat 输出。同步回归必须断言所有 package.json 字节不变，并覆盖 migrate → sync、peer 冲突及 Git/npm 两种政策来源。
+内联 pncat 的 embedding context 只提供 init 配置 import specifier 与 init/detect 命令提示；sync 的 command 参数同样由调用入口提供，原生默认 pncat。生成逻辑仍由原生命令拥有。原生入口保留自己的 pncat 输出。同步回归必须断言所有 package.json 字节不变，并覆盖 migrate → sync、peer 冲突及 Git/npm 两种政策来源。

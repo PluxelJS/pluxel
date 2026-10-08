@@ -276,9 +276,6 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"@worksplit/react#typecheck": {
-			"dependsOn": ["^build", "@pluxel/host-vite#build"],
-		},
 		"@pluxel/plugins-host#typecheck": {
 			"dependsOn": ["^build"],
 			"outputs": [],

@@ -25,6 +25,7 @@ export async function planWorkspaceDependencies(root: string, source = developme
 	assertDevelopmentBinding(root, source)
 	return planCatalogSync({
 		root,
+		command: 'pluxel pncat',
 		versions: readDependencyPolicy(source),
 		configModule: resolve(
 			source.root,

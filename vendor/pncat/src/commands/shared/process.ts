@@ -73,18 +73,17 @@ export async function runAgentRemove(dependencies: string[], options: AgentComma
       stdio,
     },
   }
-  const fallbackRemove = async () => await x(agent, ['remove', ...args], execOptions)
-
+  let resolved: ReturnType<typeof resolveCommand>
   try {
-    const resolved = resolveCommand(agent as Agent, 'uninstall', args)
-    if (resolved)
-      await x(resolved.command, resolved.args, execOptions)
-    else
-      await fallbackRemove()
+    resolved = resolveCommand(agent as Agent, 'uninstall', args)
   }
   catch {
-    await fallbackRemove()
+    resolved = null
   }
+  await x(resolved?.command ?? agent, resolved?.args ?? ['remove', ...args], {
+    ...execOptions,
+    throwOnError: true,
+  })
 }
 
 export async function runHooks(
@@ -98,6 +97,7 @@ export async function runHooks(
       if (typeof hook === 'string') {
         p.log.info(`running hook: ${hook}`)
         await x(hook, [], {
+          throwOnError: true,
           nodeOptions: {
             cwd,
             stdio: 'inherit',

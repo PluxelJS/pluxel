@@ -13,6 +13,8 @@ export interface CatalogSyncOptions {
   versions: Record<string, string>
   /** Bundled pncat public entry used by config imports instead of a consumer installation. */
   configModule?: string
+  /** Executable used in migration guidance; independent callers retain pncat. */
+  command?: string
   /** Preserve published peer compatibility; explicit core upgrades may disable. */
   preservePeerRanges?: boolean
 }
@@ -111,7 +113,7 @@ export async function planCatalogSync(input: CatalogSyncOptions): Promise<Catalo
       if (!['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].includes(dep.source)) continue
       if (isCatalogSpecifier(dep.specifier)) continue
       if (dep.source !== 'peerDependencies' && dep.catalogable && simpleRange.test(dep.specifier))
-        plan.conflicts.push(`${pkg.filepath}: ${dep.source}.${dep.name} uses bare range ${dep.specifier}; run pluxel pncat migrate --yes --no-install before catalog synchronization`)
+        plan.conflicts.push(`${pkg.filepath}: ${dep.source}.${dep.name} uses bare range ${dep.specifier}; run ${input.command ?? 'pncat'} migrate --yes --no-install before catalog synchronization`)
     }
   }
 

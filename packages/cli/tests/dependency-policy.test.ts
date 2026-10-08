@@ -130,6 +130,10 @@ describe('workspace dependency policy', () => {
 		const rejected = run()
 		expect(rejected.status).toBe(1)
 		expect(await readFile(resolve(consumer, 'package.json'), 'utf8')).toBe(before)
+		const detected = native('detect', '--yes')
+		expect(detected.status).toBe(0) // Upstream detect reports drift; it is not a CI gate.
+		expect(detected.stdout).toContain('pluxel pncat migrate')
+		expect(await readFile(resolve(consumer, 'package.json'), 'utf8')).toBe(before)
 		const migrated = native('migrate', '--yes', '--no-install')
 		expect({ status: migrated.status, stderr: migrated.stderr }).toEqual({ status: 0, stderr: '' })
 		const manifestPaths = ['package.json', 'packages/member/package.json']
@@ -224,6 +228,26 @@ describe('workspace dependency policy', () => {
 		)
 		expect(failedInstall.status).toBe(1)
 		expect(failedInstall.stderr).toContain('install-fixture-failed')
+		const standalone = await fixture({
+			'package.json':
+				'{"name":"standalone","packageManager":"pnpm@11.25.0","dependencies":{"yaml":"^2.9.1"}}',
+		})
+		const failedRemove = spawnSync(
+			process.execPath,
+			[resolve(release, 'bin/pluxel.mjs'), 'pncat', 'remove', 'yaml', '--yes'],
+			{
+				cwd: standalone,
+				encoding: 'utf8',
+				env: {
+					...process.env,
+					PATH: `${fakeBin}:${process.env.PATH}`,
+					NODE_OPTIONS: '',
+					NODE_PATH: '',
+				},
+			},
+		)
+		expect(failedRemove.status).toBe(1)
+		expect(failedRemove.stderr).toContain('install-fixture-failed')
 		await rm(resolve(consumer, 'pncat.config.ts'))
 		const initialized = native('init', '--yes', '--no-install')
 		expect({ status: initialized.status, stderr: initialized.stderr }).toEqual({

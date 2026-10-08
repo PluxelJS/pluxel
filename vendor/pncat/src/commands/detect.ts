@@ -6,7 +6,7 @@ import { WorkspaceManager } from '../workspace-manager'
 import { resolveMigrate } from './migrate'
 import { renderChanges } from './shared'
 
-export async function detectCommand(options: CatalogOptions): Promise<void> {
+export async function detectCommand(options: CatalogOptions, command = 'pncat'): Promise<void> {
   const workspace = new WorkspaceManager(options)
   const workspaceFilepath = await workspace.catalog.findWorkspaceFile()
   if (!workspaceFilepath) {
@@ -42,7 +42,7 @@ export async function detectCommand(options: CatalogOptions): Promise<void> {
 
   let result = renderChanges(changedDeps, displayPackages)
   if (result) {
-    result += `\nrun ${c.green('pncat migrate')}${options.force ? c.green(' -f') : ''} to apply changes`
+    result += `\nrun ${c.green(`${command} migrate`)}${options.force ? c.green(' -f') : ''} to apply changes`
     p.note(c.reset(result))
   }
 

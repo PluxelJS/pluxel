@@ -80,7 +80,7 @@ async function runCliAction(mode: RangeMode, options: Partial<CommandOptions>, c
       await initCommand(config, initContext)
       break
     case 'detect':
-      await detectCommand(config)
+      await detectCommand(config, initContext?.command)
       break
     case 'migrate':
       await migrateCommand(config)

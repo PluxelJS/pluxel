@@ -62,6 +62,13 @@ describe('detectCommand', () => {
     expect(p.outro).toHaveBeenCalledWith(expect.stringContaining('detect complete'))
   })
 
+  it('uses the embedded command in migration guidance', async () => {
+    await detectCommand(createFixtureScenarioOptions('command-detect', {
+      install: false,
+    }), 'pluxel pncat')
+    expect(c.strip(vi.mocked(p.note).mock.calls[0]?.[0] as string)).toContain('pluxel pncat migrate')
+  })
+
   it('prints no-op message when no dependencies need migration', async () => {
     await detectCommand(createFixtureScenarioOptions('command-detect-noop', {
       install: false,
