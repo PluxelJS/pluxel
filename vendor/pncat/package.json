@@ -1,5 +1,5 @@
 {
-  "name": "pncat",
+  "name": "@pluxel-internal/pncat",
   "type": "module",
   "version": "0.13.4",
   "description": "A unified cli tool that enhances package managers catalogs feature.",

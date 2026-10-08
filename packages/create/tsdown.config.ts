@@ -1,7 +1,7 @@
 import { glob, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { defineConfig } from 'tsdown'
-import { applyCatalogSync, planCatalogSync } from 'pncat/sync'
+import { applyCatalogSync, planCatalogSync } from '@pluxel-internal/pncat/sync'
 import { dependencyPolicy } from '../cli/scripts/dependency-policy.mjs'
 
 export default defineConfig({

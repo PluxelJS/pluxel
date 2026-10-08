@@ -1,5 +1,5 @@
 import { resolve } from 'pathe'
-import { runCli } from 'pncat/cli'
+import { runCli } from '@pluxel-internal/pncat/cli'
 import { developmentSource } from '../workspace/setup'
 
 /** pncat remains the sole parser and writer for its native commands. */

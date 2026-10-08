@@ -185,6 +185,33 @@ describe('source workspace planning', () => {
 		).toEqual({})
 	})
 
+	it('does not replace independent npm pncat with the CLI build dependency', async () => {
+		const root = await createTemporaryRoot()
+		const upstream = resolve(root, 'upstream')
+		const consumer = resolve(root, 'consumer')
+		// Use the actual package identities so accidentally naming the private fork
+		// "pncat" reproduces the source overlay collision.
+		const cli = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+		const pncat = JSON.parse(
+			await readFile(new URL('../../../vendor/pncat/package.json', import.meta.url), 'utf8'),
+		)
+		await createWorkspace(upstream, { 'cli/package.json': cli, 'tool/package.json': pncat })
+		await createWorkspace(consumer, {
+			'app/package.json': {
+				name: 'app',
+				devDependencies: { '@pluxel/cli': '^1.0.0', pncat: '^0.13.4' },
+			},
+		})
+		const registryPath = resolve(root, 'registry.json')
+		await writeJson(registryPath, {
+			version: 1,
+			checkouts: { 'https://github.com/PluxelJS/pluxel': upstream },
+		})
+		const plan = await createSourceWorkspacePlan({ root: consumer, registryPath })
+		expect(plan.selectedPackages.map((pkg) => pkg.name)).toEqual(['@pluxel/cli'])
+		expect(plan.overrides).not.toHaveProperty('pncat')
+	})
+
 	it('discovers transitive checkouts and derives only the consumed package closure', async () => {
 		const root = await createTemporaryRoot()
 		const upstream = resolve(root, 'upstream')

@@ -1064,6 +1064,9 @@ importers:
         specifier: catalog:prod
         version: 2.9.1
     devDependencies:
+      '@pluxel-internal/pncat':
+        specifier: workspace:*
+        version: link:../../vendor/pncat
       '@pluxel/market':
         specifier: catalog:dev
         version: 0.1.0(ramda@0.32.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -1079,9 +1082,6 @@ importers:
       '@types/semver':
         specifier: catalog:types
         version: 7.8.0
-      pncat:
-        specifier: workspace:*
-        version: link:../../vendor/pncat
       tsdown:
         specifier: catalog:build
         version: 0.23.0(@tsdown/css@0.23.0)(oxc-resolver@11.24.2)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)
@@ -1165,15 +1165,15 @@ importers:
 
   packages/create:
     devDependencies:
+      '@pluxel-internal/pncat':
+        specifier: workspace:*
+        version: link:../../vendor/pncat
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../cli
       '@types/node':
         specifier: catalog:types
         version: 26.6.4
-      pncat:
-        specifier: workspace:*
-        version: link:../../vendor/pncat
       tsdown:
         specifier: catalog:build
         version: 0.23.0(@tsdown/css@0.23.0)(oxc-resolver@11.24.2)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)

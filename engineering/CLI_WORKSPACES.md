@@ -90,7 +90,7 @@ Host-vite 沿 Vite root 的父链、止于最近 Git/workspace/lockfile 边界�
 ## 外部依赖政策
 
 核心 `pnpm-workspace.yaml` 拥有版本范围；CLI 的 `workspace/dependencies.ts` 只负责读取政策、报告差异和调用内联的
-`pncat/sync` plan/apply API，不另写 manifest/catalog writer。Git 读取 owning checkout，npm 使用构建生成的
+`@pluxel-internal/pncat/sync` plan/apply API，不另写 manifest/catalog writer。Git 读取 owning checkout，npm 使用构建生成的
 `dist/resources/dependency-policy.json`。peer catalog 不作为安装版本政策；其他同名条目冲突必须报错。
 `workspace sync` 是显式维护入口，`--check` 与两个 doctor 保持只读；`source install` 在安装锁内复用相同同步，
 重读计划后才生成 overlay 和安装。同步只写已有 catalog 的版本；裸声明迁移由原生 pncat 命令拥有。Peer-only catalog 保留，共享 peer 引用在版本变化时报告冲突，不隐式改写 manifest。

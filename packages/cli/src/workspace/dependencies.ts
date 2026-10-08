@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'pathe'
-import { applyCatalogSync, planCatalogSync } from 'pncat/sync'
+import { applyCatalogSync, planCatalogSync } from '@pluxel-internal/pncat/sync'
 import { dependencyPolicy } from '../../scripts/dependency-policy.mjs'
 import { assertDevelopmentBinding, developmentSource, type DevelopmentSource } from './setup'
 

@@ -29,9 +29,9 @@
 		"prepack": "pnpm run build"
 	},
 	"devDependencies": {
+		"@pluxel-internal/pncat": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@types/node": "catalog:types",
-		"pncat": "workspace:*",
 		"tsdown": "catalog:build",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",

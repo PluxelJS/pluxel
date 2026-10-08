@@ -20,7 +20,7 @@ export default defineConfig({
 		],
 		// pncat owns catalog mutation and ships inside both Git and npm CLIs.
 		// Its transitive implementation is bundled; optional Pluxel owners stay external.
-		alwaysBundle: ['semver', /^pncat(?:\/|$)/],
+		alwaysBundle: ['semver', /^@pluxel-internal\/pncat(?:\/|$)/],
 		onlyBundle: false,
 	},
 	dts: {

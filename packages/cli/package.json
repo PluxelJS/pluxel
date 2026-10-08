@@ -53,12 +53,12 @@
 		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
+		"@pluxel-internal/pncat": "workspace:*",
 		"@pluxel/market": "catalog:dev",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
-		"pncat": "workspace:*",
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev"
 	},

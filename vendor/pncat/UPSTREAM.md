@@ -4,9 +4,9 @@ Source: https://github.com/jinghaihan/pncat
 
 Revision: `97609c549a2c00f961c24a6e2e86e717f1710341` (0.13.4), MIT; see LICENSE.md.
 
-This private workspace retains upstream `src/` and `test/`. Local changes:
+This private workspace retains upstream `src/` and `test/`. Its package identity is `@pluxel-internal/pncat`, preventing source overlays from replacing consumers of the independent npm `pncat` package. The native executable and config import contract remain `pncat`. Local changes:
 
-- Source exports and relative internal imports support CLI bundling without a separate pncat build. The development `bin/pncat.mjs` uses tsx to run upstream's CLI; published Pluxel bundles `pncat/sync` and does not need this executable or loader.
+- Source exports and relative internal imports support CLI bundling without a separate pncat build. The development `bin/pncat.mjs` uses tsx to run upstream's CLI; published Pluxel bundles `@pluxel-internal/pncat/sync` and does not need this executable or loader.
 - `src/sync.ts` provides noninteractive `planCatalogSync` / `applyCatalogSync`, reusing upstream WorkspaceManager, catalog handlers and YAML writer. Pluxel supplies version policy; pncat owns dependency parsing and writing.
 - Bundled callers may supply `configModule` to resolve `pncat` config helper imports from the shipped implementation instead of a consumer installation.
 - Sync loads only the target root's config and follows declared pnpm members, including explicit vendor members. Workspace globbing never follows symbolic links. Unlisted nested projects are not members.

@@ -89,9 +89,9 @@ pnpm catalog 统一外部依赖的版本政策；每个 workspace 仍必须在�
 ### pncat 的版本维护边界
 
 [vendored pncat](../vendor/pncat/UPSTREAM.md) 拥有依赖解析、catalog 和 manifest 写入。根仓库使用
-`pnpm pncat`（根 script）运行其源码 CLI；不在根 devDependencies 链接这个 workspace。
+`pnpm pncat`（根 script）运行其源码 CLI；不在根 devDependencies 链接这个 workspace。私有包身份为 `@pluxel-internal/pncat`，避免 source 按包名匹配时覆盖独立仓库的 npm `pncat`。
 `pnpm catalog:check` 使用非交互只读计划，漂移时非零退出；`pnpm catalog:migrate` 调用原生 pncat 显式迁移声明。
-原 pncat add/clean 等能力保留，批量版本政策通过 `pncat/sync` 的 plan/apply API 更新，不借用 add
+原 pncat add/clean 等能力保留，批量版本政策通过 `@pluxel-internal/pncat/sync` 的 plan/apply API 更新，不借用 add
 制造额外依赖，不复制另一套 YAML 或 manifest writer。
 
 核心 `pnpm-workspace.yaml` 是共用外部版本政策的唯一手维护来源。Pluxel CLI 在 Git 模式读取所属 checkout，
