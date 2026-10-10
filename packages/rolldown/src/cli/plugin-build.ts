@@ -22,6 +22,8 @@ export type PluginBuildPipelineOptions = {
 	artifactBuildDir?: string
 	node?: {
 		minify?: boolean
+		/** @internal Standalone deployment root owning traced native dependencies. */
+		nativeDependencyRoot?: string
 		/** @internal Static applications use this to trace native worker artifacts. */
 		onNativeResidual?: (name: string, resolvedEntry: string) => void
 		/** @internal Static applications clear native worker facts between generations. */

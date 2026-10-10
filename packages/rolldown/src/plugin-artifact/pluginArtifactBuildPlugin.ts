@@ -101,6 +101,8 @@ export type PluginArtifactBuildPluginOptions = {
 		minify?: boolean
 		/** @internal Reports controlled native imports to the static deployment tracer. */
 		onNativeResidual?: (name: string, resolvedEntry: string) => void
+		/** @internal Standalone deployment root owning traced native dependencies. */
+		nativeDependencyRoot?: string
 		/** @internal Clears native residual facts at the next build generation. */
 		onNativeResidualReset?: () => void
 	}
@@ -363,7 +365,10 @@ async function buildProductionNodeModule(
 	)
 	// Native bridges encode a package-owner path relative to the published artifact.
 	// Equal directory layouts can share bytes; different depths require a different build.
-	const buildSignature = `${resolveNodeModuleBuildSignature({ minify: target.minify })}\0${relative(dirname(outFile), root)}`
+	const nativeOwnerSignature = target.nativeDependencyRoot
+		? `standalone:${relative(dirname(outFile), resolve(target.nativeDependencyRoot))}`
+		: 'package'
+	const buildSignature = `${resolveNodeModuleBuildSignature({ minify: target.minify })}\0${relative(dirname(outFile), root)}\0${nativeOwnerSignature}`
 	const sourceHash = await hashNodeModuleGraph(root, declaration, buildSignature)
 	const cacheRoot = resolve(root, '.pluxel/plugin-artifacts', 'node', declaration.artifactKey)
 	const cachedFile = join(cacheRoot, `${sourceHash}.mjs`)
@@ -396,6 +401,7 @@ async function buildProductionNodeModule(
 						entryPath: declaration.entryPath,
 						outFile: buildFile,
 						minify: target.minify ?? true,
+						nativeDependencyRoot: target.nativeDependencyRoot,
 					})
 					await publishCachedFile(buildFile, cachedFile)
 				} finally {

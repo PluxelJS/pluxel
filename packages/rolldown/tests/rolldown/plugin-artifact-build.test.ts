@@ -346,6 +346,67 @@ describe('pluginArtifactBuildPlugin', () => {
 		expect(builtTask.default(21)).toBe(42)
 	})
 
+	it('rebuilds native ownership for standalone and loads after relocation without the source package', async () => {
+		const nativeManifest = JSON.stringify({
+			name: 'fake-native',
+			version: '1.0.0',
+			main: 'index.js',
+			napi: { binaryName: 'fake' },
+		})
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'source-plugin', dependencies: { wrapper: '1.0.0' } }),
+			'src/index.ts':
+				"import { defineWorkerTask } from '@pluxel/services/workers'\nexport const task = defineWorkerTask(import.meta.url, './worker.ts')\n",
+			'src/worker.ts': "import value from 'wrapper'\nexport default () => value\n",
+			'node_modules/wrapper/package.json': JSON.stringify({
+				name: 'wrapper',
+				main: 'index.js',
+				dependencies: { 'fake-native': '1.0.0' },
+			}),
+			'node_modules/wrapper/index.js': "import native from 'fake-native'; export default native\n",
+			'node_modules/wrapper/node_modules/fake-native/package.json': nativeManifest,
+			'node_modules/wrapper/node_modules/fake-native/index.js': 'module.exports = 7\n',
+		})
+		await using relocated = await createFixture({
+			'package.json': JSON.stringify({ name: 'standalone-app' }),
+			'node_modules/fake-native/package.json': nativeManifest,
+			'node_modules/fake-native/index.js': 'module.exports = 42\n',
+		})
+		const messages: string[] = []
+		const publish = async (nativeDependencyRoot?: string) => {
+			const bundle = await rolldown({
+				input: `${fixture.path}/src/index.ts`,
+				external: ['@pluxel/services/workers'],
+				plugins: [
+					pluginArtifactBuildPlugin({
+						root: fixture.path,
+						buildDir: 'dist',
+						workbench: false,
+						log: (message) => messages.push(message),
+						node: { minify: false, nativeDependencyRoot },
+					}),
+				],
+			})
+			try {
+				await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
+			} finally {
+				await bundle.close()
+			}
+		}
+		await publish()
+		await publish(`${fixture.path}/dist`)
+		expect(messages.filter((message) => message.includes('[node-module] build '))).toHaveLength(2)
+		const artifact = (await readdir(`${fixture.path}/dist/artifacts/node`)).find((name) =>
+			name.endsWith('.mjs'),
+		)!
+		await cp(`${fixture.path}/dist/artifacts`, `${relocated.path}/artifacts`, { recursive: true })
+		await rm(`${fixture.path}/node_modules`, { recursive: true })
+		const output = await readFile(`${relocated.path}/artifacts/node/${artifact}`, 'utf8')
+		expect(output).not.toContain(fixture.path)
+		const task = await import(pathToFileURL(`${relocated.path}/artifacts/node/${artifact}`).href)
+		expect(task.default()).toBe(42)
+	})
+
 	it('publishes artifacts and native residuals for every concurrent deployment', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ dependencies: { 'fake-native': '1.0.0' } }),

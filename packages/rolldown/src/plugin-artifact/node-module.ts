@@ -14,6 +14,8 @@ export type BuildNodeModuleOptions = Readonly<{
 	outFile: string
 	/** Minifies the generated single-file ESM artifact. @defaultValue false */
 	minify?: boolean
+	/** @internal Standalone deployment root owning traced native dependencies. */
+	nativeDependencyRoot?: string
 }>
 
 export type ValidateNodeModuleArtifactOptions = Readonly<{
@@ -73,7 +75,10 @@ export async function buildNodeModule(options: BuildNodeModuleOptions): Promise<
 			configFile: false,
 			root,
 			logLevel: 'silent',
-			plugins: [nativeImportBridgePlugin(analysis, outFile), PreprocessorDirectives()],
+			plugins: [
+				nativeImportBridgePlugin(analysis, outFile, options.nativeDependencyRoot),
+				PreprocessorDirectives(),
+			],
 			resolve: {
 				conditions: nodeArtifactConditions,
 			},
@@ -291,7 +296,11 @@ async function analyzeNodeModuleSourceGraph(
 	})
 }
 
-function nativeImportBridgePlugin(analysis: NodeModuleSourceAnalysis, outFile: string): Plugin {
+function nativeImportBridgePlugin(
+	analysis: NodeModuleSourceAnalysis,
+	outFile: string,
+	nativeDependencyRoot?: string,
+): Plugin {
 	type BridgeGroup = {
 		readonly id: string
 		readonly name: string
@@ -316,7 +325,7 @@ function nativeImportBridgePlugin(analysis: NodeModuleSourceAnalysis, outFile: s
 		groupIdsByImportId.set(bridge.id, group.id)
 	}
 	const bridgesById = new Map([...groupsByKey.values()].map((bridge) => [bridge.id, bridge]))
-	const entryManifest = resolve(analysis.entryPackageRoot, 'package.json')
+	const entryManifest = resolve(nativeDependencyRoot ?? analysis.entryPackageRoot, 'package.json')
 	const fallbackUrl = relativeModuleUrl(outFile, entryManifest)
 	return {
 		name: 'pluxel-native-import-bridge',
@@ -331,10 +340,11 @@ function nativeImportBridgePlugin(analysis: NodeModuleSourceAnalysis, outFile: s
 		load(id) {
 			const bridge = bridgesById.get(id)
 			if (!bridge) return null
-			const entryLookup = analysis.entryPackageName
-				? `__existsSync(__fallback) ? __fallback : (() => { try { return __findPackageJSON(${JSON.stringify(analysis.entryPackageName)}, import.meta.url) ?? __fallback } catch { return __fallback } })()`
-				: '__fallback'
-			const chain = bridge.packageChain
+			const entryLookup =
+				!nativeDependencyRoot && analysis.entryPackageName
+					? `__existsSync(__fallback) ? __fallback : (() => { try { return __findPackageJSON(${JSON.stringify(analysis.entryPackageName)}, import.meta.url) ?? __fallback } catch { return __fallback } })()`
+					: '__fallback'
+			const chain = (nativeDependencyRoot ? [] : bridge.packageChain)
 				.map((name) => `__owner = __findPackage(${JSON.stringify(name)}, __owner);`)
 				.join('\n')
 			const names = [...bridge.namedExports].sort()

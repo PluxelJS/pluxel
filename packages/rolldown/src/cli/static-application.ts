@@ -140,6 +140,7 @@ export function createStaticApplicationConfig(
 			workbench: variant === 'workbench' ? { buildDir, minify: options.minify ?? true } : false,
 			node: {
 				minify: options.minify,
+				nativeDependencyRoot: outDir,
 				onNativeResidualReset() {
 					artifactNativeResiduals.clear()
 				},
