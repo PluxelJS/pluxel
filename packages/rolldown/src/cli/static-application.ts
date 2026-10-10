@@ -233,7 +233,17 @@ export function createStaticApplicationConfig(
 		inputOptions: {
 			...sourcePipeline.inputOptions,
 			resolve: {
-				conditionNames: ['@pluxel/source', 'node', 'import', 'module', 'production', 'default'],
+				// Plugin packages expose source through @pluxel/hmr; this pipeline still performs
+				// production semantic lowering, without enabling development runtime conditions.
+				conditionNames: [
+					'@pluxel/hmr',
+					'@pluxel/source',
+					'node',
+					'import',
+					'module',
+					'production',
+					'default',
+				],
 			},
 		},
 	}

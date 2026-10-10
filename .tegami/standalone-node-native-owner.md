@@ -6,3 +6,5 @@ packages:
 # Preserve native worker imports when relocating standalone applications
 
 Standalone source-built Node artifacts resolve traced native dependencies from the deployment root. Their cache signature distinguishes deployment ownership from plugin-package ownership, so copied applications do not require the original source package to remain installed.
+
+Standalone source resolution also accepts the standard generated `@pluxel/hmr` plugin export condition, so rebuilding a plugin package does not switch its worker back to a precompiled package artifact. Production lowering remains enabled.

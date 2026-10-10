@@ -77,6 +77,7 @@ Node module 继续拥有独立 watcher、content-addressed build、staged setup 
 
 Node 制品并发构建只共享编译任务；每个消费构建仍独立发布到自己的输出目录并接收 native residual 部署事实，不能因缓存命中跳过。
 原生依赖桥接的相对路径按最终制品目录计算，缓存身份包含该目录到 package root 的相对布局，不能把缓存目录的位置烘焙进发行文件。
+standalone 的生产源码解析接受插件包生成的 `@pluxel/hmr` 出口条件；这里只选择源码入口，仍执行生产 semantic lowering，不启用 `development` 运行条件。
 standalone 源码构建由部署根拥有已追踪的 native residual，bridge 从发行根 `package.json` 解析 binding，不再依赖被内联的源码 package 或其 package chain。该 owner 模式与相对布局进入缓存签名；普通插件包与开发构建仍保留原 package owner chain。
 
 ### 解析根与缓存身份

@@ -99,6 +99,9 @@ describe('application', () => {
 			lint: false,
 		})
 
+		expect(config.inputOptions?.resolve?.conditionNames).toContain('@pluxel/hmr')
+		expect(config.inputOptions?.resolve?.conditionNames).toContain('production')
+		expect(config.inputOptions?.resolve?.conditionNames).not.toContain('development')
 		expect(config.platform).toBe('node')
 		expect(config.target).toBe('node24')
 		expect(pluginNames(config)).toContain('pluxel:nf3-externals')
