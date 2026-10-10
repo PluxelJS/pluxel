@@ -63,6 +63,18 @@ await host.commit((change) => {
 
 `RedisConnection.client` 的公开类型是 node-redis 的 standalone、Cluster 或 Sentinel client union。这个 capability 是 raw server access，不自动添加 caller prefix；key、channel、consumer group 和 stream 的 namespace 都是 consumer 自己定义的业务 contract。
 
+## 部署配置入口
+
+以下 schema 均从 `@pluxel/redis` 根入口导出，可直接交给 `envBinding` 或 `fileBinding`，无需 Workbench：
+
+| Plugin                    | 配置 schema               | 部署字段                                                    |
+| ------------------------- | ------------------------- | ----------------------------------------------------------- |
+| `RedisPlugin`             | `RedisConfig`             | `connections`，完整 JSON 数组                               |
+| `RedisCacheBackendPlugin` | `RedisCacheBackendConfig` | `connectionId`、`keyPrefix`、`scanCount`、`deleteBatchSize` |
+| `RedisRatesBackendPlugin` | `RedisRatesBackendConfig` | `connectionId`、`keyPrefix`                                 |
+
+例如 `envBinding(RedisPlugin, { config: { schema: RedisConfig, mapping: { connections: 'REDIS_CONNECTIONS' } } })`。普通配置的优先级与锁定遵循 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)；Redis 中的缓存/限流数据不覆盖部署配置。Workbench PING 只做诊断，不是连接设置入口。凭据不能通过 URL 或普通环境配置绕过下面的限制。
+
 ## 默认 provider 的边界
 
 默认 `RedisPlugin` 只创建 credential-free standalone 连接：

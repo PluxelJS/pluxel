@@ -103,6 +103,11 @@ export default run
 Plugin queue limit、idle timeout；Plugin 不创建私有线程池，也不自行扩大进程预算。取消 running task 会终止对应 worker；
 caller Promise 可以立即结束，但 runtime 会等 worker 真正退出后才归还 active slot，避免 replacement task 穿透执行上限。
 
+任务持有调用方的临时文件等外部资源时，给 `run()` / `runPrepared()` 传入
+`{ settlement: 'execution' }`。此模式在结果、取消及 owner 停止时均等待线程完成工作或确认退出后才
+settle，调用方可随后释放这些资源；队列取消仍立即结束。默认 `'result'` 保留取消后立即结束等待的行为。
+此模式下线程终止本身失败会报告 `EXECUTION_UNSETTLED` 并保留 cause；调用方必须保留仍可能被使用的资源，不能把该失败当作已经确认退出。
+
 ## 什么可以跨线程
 
 输入输出必须满足 structured clone：

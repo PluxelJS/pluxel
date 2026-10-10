@@ -13,7 +13,7 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 pnpm catalog:add -- @pluxel/wretch
 ```
 
-宿主需安装 Persistence 服务，用于保存受管出站设置。
+普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 Persistence 服务；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
 
 ## 第一个 HTTP consumer
 
@@ -121,13 +121,33 @@ export class CustomerHttpPlugin extends BasePlugin {
 按传输协议选择状态码或 DTO。不要直接序列化 Result 或错误实例。发布 `CustomerPlugin` 时，
 按[插件包指南](../development/plugin-package.md)设置包含 `/better-result` 子入口的 Core peer 下限。
 
-主入口只导出 `WretchPlugin` 与 `Wretch` 类型，不重新导出裸 `wretch()` factory 或 addons。需要 query-string addon、retry middleware 等上游扩展时，由 consumer 直接安装 `wretch`：
+主入口导出 `WretchPlugin`、`WretchConfig` 及相关类型，不重新导出裸 `wretch()` factory 或 addons。需要 query-string addon、retry middleware 等上游扩展时，由 consumer 直接安装 `wretch`：
 
 ```sh
 pnpm catalog:add -- wretch
 ```
 
 ## 宿主 outbound policy
+
+`WretchConfig` 是 `configs.use()` 使用的同一 schema。部署时可直接绑定，无需启用 Workbench：
+
+```ts no-twoslash
+import { envBinding } from '@pluxel/host'
+import { WretchPlugin, WretchConfig } from '@pluxel/wretch'
+
+// 放入应用的 envBindings 数组；HTTP_ORIGINS 使用 JSON 数组。
+envBinding(WretchPlugin, {
+	config: {
+		schema: WretchConfig,
+		mapping: {
+			timeoutMs: 'HTTP_TIMEOUT_MS',
+			allowedOrigins: 'HTTP_ORIGINS',
+		},
+	},
+})
+```
+
+配置来源和只读规则遵循 [Host 配置优先级](../host/configuration.md#绑定部署环境与-json-文件)。provider 的 origin、容量与 timeout 始终由这份配置控制；consumer 保存值不能放宽这些限制。
 
 `WretchPlugin` 只有四个 Plugin config 字段：
 
@@ -176,6 +196,20 @@ protected override async init(): Promise<void> {
 ```
 
 managed settings 按 caller 的完整 Plugin node address 隔离并持久化。`client` 每次发送请求前读取最新状态，所以设置保存后，已缓存的 immutable client 也会自动生效。
+
+无管理界面时，consumer 在启用后通过同一依赖读取、保存或重置；失败继续抛出，调用方决定是否重试：
+
+```ts no-twoslash
+await this.http.enableManagedSettings()
+const saved = await this.http.updateManagedSettings({
+	headers: { 'X-Region': 'hk' },
+	timeoutMs: 5_000,
+})
+const current = this.http.managedSettings
+await this.http.resetManagedSettings()
+```
+
+保存是显式操作，不在每次启动时自动覆盖旧值。reset 删除 caller 保存值，恢复原生 client 的 headers/proxy 和 provider timeout。应用 endpoint、鉴权与重试仍属于 consumer 自身配置或 Vault；此文件不是第二份 provider 部署配置。后续启动若降低 provider timeout，已有 caller timeout 会按新上限截断。
 
 `WretchManagedSettings` 的真实形状是：
 

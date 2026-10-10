@@ -72,6 +72,27 @@ source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engi
 
 ## 配置安全默认值
 
+根入口导出的 `PackageManagerConfig` 可直接用于应用 `envBindings`，不依赖 Workbench：
+
+```ts no-twoslash
+import { envBinding } from '@pluxel/host'
+import { PackageManagerPlugin, PackageManagerConfig } from '@pluxel/package-manager'
+
+envBinding(PackageManagerPlugin, {
+	config: {
+		schema: PackageManagerConfig,
+		mapping: {
+			minimumReleaseAgeMinutes: 'PLUGIN_MINIMUM_RELEASE_AGE',
+			ignoreScripts: 'PLUGIN_IGNORE_SCRIPTS',
+		},
+	},
+})
+```
+
+若绑定 `rootDir`，应用的 `sources` 必须使用同一个最终路径。来源优先级由 [Host 输入绑定](../host/configuration.md#绑定部署环境与-json-文件) 维护。
+保存的安装清单、revision 和 pnpm lock 是安装状态，不覆盖 Plugin config；pnpm registry/auth/proxy 仍使用 pnpm 自身配置。
+无 Workbench 时，通过 required dependency 的 `snapshot()`、`install()`、`remove()` 或已注册 Commands 完成相同业务操作，安装回执不等于插件已运行。
+
 上例的 Plugin config 同时展示了安全默认值。运行中的配置更新由宿主 ConfigService 负责，不通过测试 fixture API 修改
 production host。
 

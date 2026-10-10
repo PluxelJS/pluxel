@@ -197,6 +197,8 @@ catalogs:
     '@module-federation/runtime': 2.9.2
     '@module-federation/sdk': 2.9.2
     '@myriaddreamin/typst-ts-node-compiler': ^0.7.0
+    '@myriaddreamin/typst-ts-renderer': ^0.7.0
+    '@myriaddreamin/typst.ts': ^0.7.0
     '@napi-rs/canvas': ^1.0.10
     '@opentelemetry/api': ^1.9.1
     '@opentelemetry/api-logs': ^0.223.0

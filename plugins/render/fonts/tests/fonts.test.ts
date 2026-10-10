@@ -93,7 +93,7 @@ describe('FontsPlugin', () => {
 	})
 
 	it.skipIf(!discoveredFamily)(
-		'persists a provider preference and resets to the host-configured family',
+		'persists a provider preference while explicit host config takes priority',
 		async () => {
 			const backend = createMemoryPersistenceBackend()
 			{
@@ -101,9 +101,7 @@ describe('FontsPlugin', () => {
 					services: standardServices({ persistence: { mode: 'custom', backend } }),
 				})
 
-				await host.start(FontsPlugin, {
-					initialConfig: { defaultFamily: 'serif' },
-				})
+				await host.start(FontsPlugin)
 				await host.start(FontsTestConsumer)
 
 				let fonts = host.require(FontsTestConsumer).fonts
@@ -111,7 +109,6 @@ describe('FontsPlugin', () => {
 				expect(selected).toMatchObject({
 					family: discoveredFamily,
 					preferredFamily: discoveredFamily,
-					configuredFamily: 'serif',
 					source: 'preference',
 				})
 
@@ -123,6 +120,16 @@ describe('FontsPlugin', () => {
 					source: 'preference',
 				})
 
+				const patched = await host.config.patch(FontsPlugin, { defaultFamily: 'serif' })
+				expect(patched.ok).toBe(true)
+				await host.restart(FontsPlugin)
+				fonts = host.require(FontsTestConsumer).fonts
+				expect(fonts.defaultFont).toMatchObject({
+					family: 'serif',
+					source: 'config',
+					preferredFamily: discoveredFamily,
+					configuredFamily: 'serif',
+				})
 				const reset = await fonts.setPreferredFamily(null)
 				expect(reset).toMatchObject({
 					family: 'serif',

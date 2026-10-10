@@ -669,6 +669,12 @@ catalogs:
     '@myriaddreamin/typst-ts-node-compiler':
       specifier: ^0.7.0
       version: 0.7.0
+    '@myriaddreamin/typst-ts-renderer':
+      specifier: ^0.7.0
+      version: 0.7.0
+    '@myriaddreamin/typst.ts':
+      specifier: ^0.7.0
+      version: 0.7.0
     '@napi-rs/canvas':
       specifier: ^1.0.10
       version: 1.0.10
@@ -1776,6 +1782,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -1928,6 +1937,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2231,6 +2243,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
@@ -2430,6 +2445,61 @@ importers:
         specifier: catalog:test
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.4)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.105.1)(sugarss@5.0.1(postcss@8.5.29))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
 
+  plugins/render/typst:
+    dependencies:
+      '@myriaddreamin/typst-ts-node-compiler':
+        specifier: catalog:prod
+        version: 0.7.0
+      '@myriaddreamin/typst.ts':
+        specifier: catalog:prod
+        version: 0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)
+      valibot:
+        specifier: catalog:validation
+        version: 1.5.0(typescript@7.0.2)
+    devDependencies:
+      '@myriaddreamin/typst-ts-renderer':
+        specifier: catalog:prod
+        version: 0.7.0
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@pluxel/fonts':
+        specifier: workspace:*
+        version: link:../fonts
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
+      '@pluxel/host-vite':
+        specifier: workspace:*
+        version: link:../../../packages/host-vite
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../../packages/test
+      tsdown:
+        specifier: catalog:build
+        version: 0.23.0(@tsdown/css@0.23.0)(oxc-resolver@11.24.2)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.15
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vite:
+        specifier: catalog:build
+        version: 8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.105.1)(sugarss@5.0.1(postcss@8.5.29))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
+      vitest:
+        specifier: catalog:test
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.4)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.105.1)(sugarss@5.0.1(postcss@8.5.29))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
+
   plugins/storage:
     dependencies:
       s3mini:
@@ -2500,6 +2570,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -4401,6 +4474,20 @@ packages:
   '@myriaddreamin/typst-ts-node-compiler@0.7.0':
     resolution: {integrity: sha512-snM2byzDcqqQbT6FiGeCgkbviJkxsuaUS/x2RiLoMngFC3UEiciM4LcUKDcIygsH70TroRLPzPIevF0LNGBJNA==}
     engines: {node: '>= 10'}
+
+  '@myriaddreamin/typst-ts-renderer@0.7.0':
+    resolution: {integrity: sha512-3sXIGxZn9MufPrPn6251DeuLf2FIEILYNzY5lX0XOJmaIYqgvQ3qpfqkCjgQD+splBvt5R1N3BuuNFrZKsHhMw==}
+
+  '@myriaddreamin/typst.ts@0.7.0':
+    resolution: {integrity: sha512-JtO5Td/1QesH1IBKAZtbayFNK8u2sl3iz18Y67uYqBEdcXiu3z+wpZcDDKlmVJvAcCgSjHTnuk6ZLfkYclrGGQ==}
+    peerDependencies:
+      '@myriaddreamin/typst-ts-renderer': ^0.7.0
+      '@myriaddreamin/typst-ts-web-compiler': ^0.7.0
+    peerDependenciesMeta:
+      '@myriaddreamin/typst-ts-renderer':
+        optional: true
+      '@myriaddreamin/typst-ts-web-compiler':
+        optional: true
 
   '@napi-rs/canvas-android-arm64@1.0.10':
     resolution: {integrity: sha512-0sDMvme+7fj6bHERUaBs5SvEyWaORc91VUkaB4RrtG7p6dBrBNGy1of8cyEKDxygd1FlHtW+Thunj8lSixzY7A==}
@@ -7962,6 +8049,9 @@ packages:
     resolution: {integrity: sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==}
     engines: {node: '>=0.10.0'}
 
+  idb@7.1.1:
+    resolution: {integrity: sha512-gchesWBzyvGHRO9W8tzUWFDycow5gwjvFKfyV9FF32Y7F50yZMp7mP+T2mJIWFx49zicqyC4uefHM17o6xKIVQ==}
+
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
 
@@ -11360,6 +11450,14 @@ snapshots:
       '@myriaddreamin/typst-ts-node-compiler-win32-arm64-msvc': 0.7.0
       '@myriaddreamin/typst-ts-node-compiler-win32-x64-msvc': 0.7.0
 
+  '@myriaddreamin/typst-ts-renderer@0.7.0': {}
+
+  '@myriaddreamin/typst.ts@0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)':
+    dependencies:
+      idb: 7.1.1
+    optionalDependencies:
+      '@myriaddreamin/typst-ts-renderer': 0.7.0
+
   '@napi-rs/canvas-android-arm64@1.0.10':
     optional: true
 
@@ -14165,6 +14263,8 @@ snapshots:
   iconv-lite@0.7.3:
     dependencies:
       safer-buffer: 2.1.2
+
+  idb@7.1.1: {}
 
   ieee754@1.2.1: {}
 

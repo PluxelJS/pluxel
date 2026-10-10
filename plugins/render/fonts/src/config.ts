@@ -1,15 +1,30 @@
 import * as f from 'valibot-form'
 import * as v from 'valibot'
+import { isAbsolute } from 'node:path'
 
 const MIB = 1024 * 1024
 
 export const FontsConfig = v.object({
+	files: v.pipe(
+		v.optional(
+			v.pipe(
+				v.array(v.pipe(v.string(), v.check(isAbsolute, 'Font files require absolute paths'))),
+				v.maxLength(4_096),
+			),
+			[],
+		),
+		f.formMeta({
+			title: 'Font files',
+			description:
+				'Absolute deployment font paths loaded for this provider generation. No family aliases.',
+		}),
+	),
 	defaultFamily: v.pipe(
 		v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(128))),
 		f.formMeta({
 			title: 'Default font family',
 			description:
-				'Host preference used when no managed preference is set. Omit to select an installed platform default automatically.',
+				'Explicit deployment default, ahead of the saved preference. Omit to use the saved preference or platform default.',
 		}),
 	),
 	maxRegistrationsPerConsumer: v.pipe(

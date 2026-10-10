@@ -54,14 +54,15 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 以下 package 标记为 `private: true`，不能作为普通 npm 安装依赖。只有在支持这些包的源码 workspace 中才能集成；跨仓库联调先看[源码开发](../development/source-workspaces.md)：
 
-| Package                   | 能力                                       | 文档                                             |
-| ------------------------- | ------------------------------------------ | ------------------------------------------------ |
-| `@pluxel/cache`           | owner-scoped cache、single-flight、backend | [缓存](../plugins/cache.md)                      |
-| `@pluxel/rates`           | 按 identity 计费的频率限制                 | [请求频率控制](../plugins/rates.md)              |
-| `@pluxel/redis`           | Redis client、script 与 backend            | [Redis](../plugins/redis.md)                     |
-| `@pluxel/storage`         | local/remote object storage                | [对象存储](../plugins/storage.md)                |
-| `@pluxel/otel`            | traces、metrics 与 exporters               | [OpenTelemetry](../plugins/otel.md)              |
-| `@pluxel/package-manager` | Native/Vite 插件包管理                     | [Package manager](../plugins/package-manager.md) |
+| Package                   | 能力                                               | 文档                                             |
+| ------------------------- | -------------------------------------------------- | ------------------------------------------------ |
+| `@pluxel/typst`           | 文档会话与 Vector/PDF；根入口服务端，/browser 预览 | [Typst](../plugins/rendering/typst.md)           |
+| `@pluxel/cache`           | owner-scoped cache、single-flight、backend         | [缓存](../plugins/cache.md)                      |
+| `@pluxel/rates`           | 按 identity 计费的频率限制                         | [请求频率控制](../plugins/rates.md)              |
+| `@pluxel/redis`           | Redis client、script 与 backend                    | [Redis](../plugins/redis.md)                     |
+| `@pluxel/storage`         | local/remote object storage                        | [对象存储](../plugins/storage.md)                |
+| `@pluxel/otel`            | traces、metrics 与 exporters                       | [OpenTelemetry](../plugins/otel.md)              |
+| `@pluxel/package-manager` | Native/Vite 插件包管理                             | [Package manager](../plugins/package-manager.md) |
 
 仓库外项目不得把这些 package 视为可安装的公共依赖，也不得用源码相对路径绕过 package boundary。
 

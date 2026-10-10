@@ -1,5 +1,5 @@
 {
 	"icon": "PanelsTopLeft",
-	"title": "服务端渲染",
-	"pages": ["index", "fonts", "canvas", "echarts", "takumi", "takumi-markdown"]
+	"title": "\u670d\u52a1\u7aef\u6e32\u67d3",
+	"pages": ["index", "fonts", "canvas", "echarts", "takumi", "takumi-markdown", "typst"]
 }

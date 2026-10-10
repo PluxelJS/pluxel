@@ -234,6 +234,8 @@ const prepared = text.prepareText({ text: 'Hello', fontSize: 24 })
 
 ## 配置与职责
 
+`@pluxel/canvas` 导出的 `CanvasConfig` 与 Plugin 的 `configs.use()` 使用同一 schema，配置画布、图片、文字与解码容量。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)传入该 schema 即可部署，无需 Workbench；不直接读取环境变量。配置变更后重启插件，env/file 变更后重建 Host。字体文件及默认 family 由 [FontsPlugin](./fonts.md) 配置，渲染内容保留为方法输入。
+
 在应用的 Plugin config 中按需覆盖以下默认值：
 
 | 字段                                   |       默认值 | 检查对象                                      |

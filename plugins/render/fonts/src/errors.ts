@@ -7,6 +7,7 @@ export type FontsErrorCode =
 	| 'FONT_BUSY'
 	| 'FONT_NOT_FOUND'
 	| 'CORRUPT_FONT_STORAGE'
+	| 'PERSISTENCE_REQUIRED'
 
 export class FontsError extends Error {
 	override readonly name = 'FontsError'

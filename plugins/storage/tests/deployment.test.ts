@@ -3,7 +3,7 @@ import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
-import { S3, S3VaultSchema, S3Plugin } from '../src/index.ts'
+import { S3, S3Config, S3VaultSchema, S3Plugin } from '../src/index.ts'
 
 @Plugin()
 class DeploymentWriter extends BasePlugin {
@@ -15,7 +15,7 @@ class DeploymentWriter extends BasePlugin {
 	}
 }
 
-it('signs and completes an S3 write using only env-backed Vault records', async () => {
+it('signs an S3 write without Workbench using env-backed configuration and Vault records', async () => {
 	const requests: { authorization: string | undefined; url: string | undefined; body: string }[] =
 		[]
 	const server = createServer(async (request, response) => {
@@ -33,28 +33,9 @@ it('signs and completes an S3 write using only env-backed Vault records', async 
 			plugins: [S3Plugin, DeploymentWriter],
 			services: [vault({ backend: 'bindings' })],
 			state: { initial: { autoStart: [pluginNodeAddressOf(DeploymentWriter)] } },
-			configRecords: {
-				initial: [
-					{
-						owner: pluginNodeAddressOf(S3Plugin),
-						config: {
-							buckets: [
-								{
-									id: 'test',
-									backend: {
-										type: 'remote',
-										endpoint: `http://127.0.0.1:${address.port}`,
-										region: 'auto',
-										credentials: { type: 'vault', key: 'primary' },
-									},
-								},
-							],
-						},
-					},
-				],
-			},
 			envBindings: [
 				envBinding(S3Plugin, {
+					config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } },
 					vault: {
 						schema: S3VaultSchema,
 						mapping: { primary: { accessKeyId: 'ACCESS_KEY', secretAccessKey: 'SECRET_KEY' } },
@@ -66,7 +47,21 @@ it('signs and completes an S3 write using only env-backed Vault records', async 
 			root: process.cwd(),
 			mode: 'test',
 			bindings: {},
-			env: { ACCESS_KEY: 'deployment-access', SECRET_KEY: 'deployment-secret' },
+			env: {
+				ACCESS_KEY: 'deployment-access',
+				SECRET_KEY: 'deployment-secret',
+				S3_BUCKETS: JSON.stringify([
+					{
+						id: 'test',
+						backend: {
+							type: 'remote',
+							endpoint: `http://127.0.0.1:${address.port}`,
+							region: 'auto',
+							credentials: { type: 'vault', key: 'primary' },
+						},
+					},
+				]),
+			},
 		})
 		const host = await createHost({
 			plugins: resolved.plugins,
@@ -78,6 +73,7 @@ it('signs and completes an S3 write using only env-backed Vault records', async 
 		})
 		try {
 			await host.start()
+			expect(host.ctx.workbench).toBeUndefined()
 			const status = await host.status()
 			expect(status.summary.running).toBe(2)
 			expect(requests).toHaveLength(1)

@@ -49,7 +49,7 @@ async function startMarkdownFixture(
 describe('TakumiMarkdownPlugin', () => {
 	it('demonstrates source limits as a Result without hiding extension defects or closed handles', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: [],
 		})
 		await startMarkdownFixture(host, { markdown: { maxSourceBytes: 32 } })
 		const markdown = host.require(MarkdownTestConsumer).markdown

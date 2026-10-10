@@ -74,7 +74,7 @@ mode/readiness UI and mutation authority. The simpler password and client-secret
 Vault records remain versioned `management-account-v1` and `oidc-client-secret-v1` values. Password verification uses bounded async scrypt. TOTP verification serializes record mutation and persists `lastAcceptedCounter` before success. OIDC uses Authorization Code + PKCE with bounded discovery/token/JWKS IO.
 
 Credential provisioning remains a transport-free domain service behind the setup target, with password setup, bounded TOTP
-enrollment/confirmation and confidential client-secret mutation. Without the setup View, a deployment must use public OIDC, pre-provision its Vault record, or reuse persistence configured by a deployment that exposes the View. The available services and artifacts determine this capability, not the headless build label.
+enrollment/confirmation and confidential client-secret mutation. Without the setup View, deployments use public OIDC, bind credentials with the root-exported `AuthVaultSchema`, or reuse a provisioned writable Vault. `AuthConfig` remains the non-secret configuration authority. Bound records replace complete Vault records and are read-only; TOTP accounts require a writable store because verification commits the replay counter. The available services and artifacts determine this capability, not the headless build label.
 
 Vault watches reload account and OIDC credentials. A changed account identity/password/TOTP secret or OIDC secret clears cookie sessions, login failure state and OIDC pending/cache state; replay-counter-only updates preserve them.
 

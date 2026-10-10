@@ -62,6 +62,41 @@ OIDC challenge 返回固定 same-origin navigation path。Authorization redirect
 
 插件验证 Authorization Code + PKCE、state、nonce、issuer/audience/`azp`、required claims 和 JWKS signature。成功 callback 只提交 `HttpOnly` cookie 并回到新 document；不保存 access/refresh token，也不把 bearer token、raw claims 或 principal 放入 URL/browser storage。
 
+## 无 Workbench 部署
+
+`AuthConfig` 与 `AuthVaultSchema` 均从 `@pluxel/auth` 根入口导出。前者只描述登录模式和 OIDC 的非敏感参数，后者校验版本化凭据记录。部署不需要调用 setup RPC：
+
+```ts no-twoslash
+import { AuthPlugin, AuthConfig, AuthVaultSchema } from '@pluxel/auth'
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { defineHostApplication, envBinding } from '@pluxel/host'
+import { managementAccess } from '@pluxel/services/management/access'
+import { vault } from '@pluxel/services/vault'
+
+export default defineHostApplication(() => ({
+	plugins: [AuthPlugin],
+	services: [managementAccess(), vault({ backend: 'bindings' })],
+	state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
+	envBindings: [
+		envBinding(AuthPlugin, {
+			config: { schema: AuthConfig, mapping: { mode: 'AUTH_MODE' } },
+			vault: {
+				schema: AuthVaultSchema,
+				mapping: { 'oidc-client-secret-v1': 'AUTH_OIDC_CREDENTIAL' },
+			},
+		}),
+	],
+}))
+```
+
+`AUTH_MODE` 是完整 mode JSON，例如 `{"type":"oidc","issuer":"https://id.example.com","clientId":"admin","publicOrigin":"https://admin.example.com","clientKind":"confidential"}`。
+`AUTH_OIDC_CREDENTIAL` 是 `{"version":1,"type":"oidc-client-secret","secret":"…"}` 的完整 JSON 记录。上述服务只安装认证能力；需要控制端点时再接入 [Management](../host/management.md)。Public OIDC 不需要 Vault 绑定。
+
+挂载凭据文件使用同一 `AuthVaultSchema` 和 [fileBinding](../host/configuration.md#部署凭据)，不把 secret 放入普通 config。
+Password 模式可绑定已有的 `management-account-v1` 完整记录，其中包含 scrypt hash 而不是明文密码；记录结构由 schema 校验。Password + TOTP 每次成功验证都要持久提交防重放计数，须使用可写 Vault，不能把该账号整条绑定为只读 env/file 记录。
+
+普通配置的 env/file/saved 优先级遵循 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)。凭据绑定是整条只读记录，不与已有 Vault KV 合并；映射环境缺失即失败，移除绑定后才重新使用保存记录。更新部署输入需要重建 Host。
+
 ## Credential readiness 与首次配置
 
 Public OIDC 只依赖配置，始终进入 `configured`。Password、password + TOTP 和 confidential OIDC 还要求 Vault 中存在有效
@@ -101,8 +136,7 @@ View 都得到 fresh target 和 provisioning session；close、abort、socket ep
 
 Vault record 更新会刷新 provider 凭据；账号身份、密码、TOTP secret 或 OIDC secret 改变时撤销旧 cookie session。
 
-没有接入 Workbench setup View/API 的应用，使用 local credential 或 confidential OIDC 时必须预置同一 Vault record，
-或先用提供该配置页面、指向同一 persistence 的部署完成配置；否则 provider 保持 `ready: false`。
+没有接入 Workbench setup View/API 的应用，使用 local credential 或 confidential OIDC 时可通过上面的 Vault 部署绑定提供记录，或使用已配置的可写 Vault；否则 provider 保持 `ready: false`。
 Public OIDC 无 provisioning，可以仅凭配置使用。是否提供配置页面由实际服务和页面接入决定，不由 headless 构建标签决定。
 
 ## 浏览器如何认证

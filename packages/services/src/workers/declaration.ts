@@ -17,6 +17,7 @@ export type WorkerTaskErrorCode =
 	| 'INVALID_INPUT'
 	| 'TASK_UNAVAILABLE'
 	| 'TASK_FAILED'
+	| 'EXECUTION_UNSETTLED'
 
 /** Stable failure raised by shared worker admission, artifact resolution, or execution. */
 export class WorkerTaskError extends Error {
@@ -31,36 +32,44 @@ export class WorkerTaskError extends Error {
 	}
 }
 
-export type WorkerRunOptions =
-	| Readonly<{
-			/** Cancels queued work or terminates the worker executing this task. */
-			signal?: AbortSignal
-			/** Snapshots the complete input after capacity preflight and before task submission. @defaultValue 'snapshot' */
-			inputOwnership?: 'snapshot'
-			/**
-			 * Moves these input `ArrayBuffer`s into the task snapshot instead of copying their bytes.
-			 * Accepted buffers are detached synchronously and ownership is not restored when later work fails.
-			 */
-			transfer?: readonly ArrayBuffer[]
-	  }>
-	| Readonly<{
-			/** Cancels queued work or terminates the worker executing this task. */
-			signal?: AbortSignal
-			/**
-			 * Retains the caller input until dispatch and performs only the worker transport clone. The
-			 * caller must not mutate the complete input graph until the returned promise settles.
-			 */
-			inputOwnership: 'borrowed'
-			transfer?: never
-	  }>
+type WorkerSettlementOptions = Readonly<{
+	/** Wait for worker exit/reuse before settling; EXECUTION_UNSETTLED means exit could not be confirmed. @defaultValue 'result' */
+	settlement?: 'result' | 'execution'
+}>
+
+export type WorkerRunOptions = WorkerSettlementOptions &
+	(
+		| Readonly<{
+				/** Cancels queued work or terminates the worker executing this task. */
+				signal?: AbortSignal
+				/** Snapshots the complete input after capacity preflight and before task submission. @defaultValue 'snapshot' */
+				inputOwnership?: 'snapshot'
+				/**
+				 * Moves these input `ArrayBuffer`s into the task snapshot instead of copying their bytes.
+				 * Accepted buffers are detached synchronously and ownership is not restored when later work fails.
+				 */
+				transfer?: readonly ArrayBuffer[]
+		  }>
+		| Readonly<{
+				/** Cancels queued work or terminates the worker executing this task. */
+				signal?: AbortSignal
+				/**
+				 * Retains the caller input until dispatch and performs only the worker transport clone. The
+				 * caller must not mutate the complete input graph until the returned promise settles.
+				 */
+				inputOwnership: 'borrowed'
+				transfer?: never
+		  }>
+	)
 
 /** Options for host-side input preparation that begins only after a worker execution slot is reserved. */
-export type WorkerPreparedRunOptions = Readonly<{
-	/** Cancels queue waiting, host preparation, or worker execution. */
-	signal?: AbortSignal
-	/** Snapshots the prepared value before transport; borrowed skips that extra clone. @defaultValue 'snapshot' */
-	inputOwnership?: 'snapshot' | 'borrowed'
-}>
+export type WorkerPreparedRunOptions = WorkerSettlementOptions &
+	Readonly<{
+		/** Cancels queue waiting, host preparation, or worker execution. */
+		signal?: AbortSignal
+		/** Snapshots the prepared value before transport; borrowed skips that extra clone. @defaultValue 'snapshot' */
+		inputOwnership?: 'snapshot' | 'borrowed'
+	}>
 
 /** Creates one task input after bounded worker admission. Errors remain in the caller domain. */
 export type WorkerInputPreparation<Input> = (signal: AbortSignal) => Input | Promise<Input>

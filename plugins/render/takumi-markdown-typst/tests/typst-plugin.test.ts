@@ -1,5 +1,6 @@
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { FontsPlugin } from '@pluxel/fonts'
 import { TakumiPlugin } from '@pluxel/takumi'
@@ -35,7 +36,7 @@ async function startTypstFixture(host: TestHost<boolean>): Promise<void> {
 describe('TypstMathPlugin', () => {
 	it('demonstrates a rejected formula as a Result and preserves closed-renderer failure', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: [nodeModules(), workers()],
 		})
 		await startTypstFixture(host)
 		const consumer = host.require(TypstMathTestConsumer)
@@ -67,7 +68,7 @@ describe('TypstMathPlugin', () => {
 
 	it('preserves rejected unsafe math as a TypstMathError through the Markdown renderer', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: [nodeModules(), workers()],
 		})
 		await startTypstFixture(host)
 		const consumer = host.require(TypstMathTestConsumer)

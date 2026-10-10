@@ -16,3 +16,5 @@ icon: Image
 | [Takumi](./takumi.md)                                | 使用 Fonts 可移植字体从 HTML/node tree 生成图片或 SVG |
 | [Markdown](./takumi-markdown.md)                     | 将 GFM Markdown、表格和固定代码高亮渲染为 Takumi 图片 |
 | [Typst 数学](./takumi-markdown.md#可选的-typst-数学) | 可选地把受限数学公式编译为 Markdown 中的 SVG 数学资产 |
+
+文档排版与 PDF 使用 workspace 预览能力 [Typst 文档](./typst.md)。

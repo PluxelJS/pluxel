@@ -50,6 +50,7 @@ type ScheduledTask = {
 	prepare?: WorkerInputPreparation<unknown>
 	inputOwnership?: 'snapshot' | 'borrowed'
 	readonly signal: AbortSignal
+	readonly settlement: 'result' | 'execution'
 	readonly disposeSignal: () => void
 	readonly resolve: (value: unknown) => void
 	readonly reject: (reason: unknown) => void
@@ -127,6 +128,15 @@ export class WorkerTaskService {
 			)
 		}
 		if (
+			options.settlement !== undefined &&
+			options.settlement !== 'result' &&
+			options.settlement !== 'execution'
+		) {
+			return Promise.reject(
+				new WorkerTaskError('INVALID_INPUT', 'Worker settlement must be result or execution'),
+			)
+		}
+		if (
 			options.inputOwnership !== undefined &&
 			options.inputOwnership !== 'snapshot' &&
 			options.inputOwnership !== 'borrowed'
@@ -167,7 +177,14 @@ export class WorkerTaskService {
 		} catch (cause) {
 			return Promise.reject(invalidWorkerInput(cause))
 		}
-		const task = this.submit(state, lease, route, snapshot, options.signal)
+		const task = this.submit(
+			state,
+			lease,
+			route,
+			snapshot,
+			options.signal,
+			options.settlement ?? 'result',
+		)
 		lease.accepted.add(task)
 		void task.then(
 			() => lease.accepted.delete(task),
@@ -201,6 +218,15 @@ export class WorkerTaskService {
 		if (!options || typeof options !== 'object') {
 			return Promise.reject(
 				new WorkerTaskError('INVALID_INPUT', 'workers.runPrepared() options must be an object'),
+			)
+		}
+		if (
+			options.settlement !== undefined &&
+			options.settlement !== 'result' &&
+			options.settlement !== 'execution'
+		) {
+			return Promise.reject(
+				new WorkerTaskError('INVALID_INPUT', 'Worker settlement must be result or execution'),
 			)
 		}
 		if (
@@ -243,7 +269,14 @@ export class WorkerTaskService {
 			prepare: prepare as WorkerInputPreparation<unknown>,
 			inputOwnership: options.inputOwnership ?? 'snapshot',
 		})
-		const task = this.submit(state, lease, route, source, options.signal)
+		const task = this.submit(
+			state,
+			lease,
+			route,
+			source,
+			options.signal,
+			options.settlement ?? 'result',
+		)
 		lease.accepted.add(task)
 		void task.then(
 			() => lease.accepted.delete(task),
@@ -326,6 +359,7 @@ export class WorkerTaskService {
 		route: TaskRoute,
 		source: WorkerInputSnapshot | PreparedWorkerInput,
 		signal: AbortSignal | undefined,
+		settlement: 'result' | 'execution',
 	): Promise<unknown> {
 		if (!owner.active || state.shuttingDown) {
 			return Promise.reject(new WorkerTaskError('NOT_RUNNING', 'Worker task owner has stopped'))
@@ -346,6 +380,7 @@ export class WorkerTaskService {
 							...(source.transferList === undefined ? {} : { transferList: source.transferList }),
 						}),
 				signal: linked.signal,
+				settlement,
 				disposeSignal: linked.dispose,
 				resolve,
 				reject,
@@ -488,23 +523,33 @@ export class WorkerTaskService {
 			this.drain(state)
 			return
 		}
-		void execution.result.then(
-			(value): undefined => {
-				this.settle(task, undefined, value)
+		// Attach both handlers immediately: abort can reject the result before resource exit.
+		const outcome = execution.result.then(
+			(value) => ({ ok: true as const, value }),
+			(cause: unknown) => ({ ok: false as const, cause }),
+		)
+		const publication =
+			task.settlement === 'execution'
+				? Promise.all([outcome, execution.settled]).then(([result]) => result)
+				: outcome
+		void publication.then(
+			(result): undefined => {
+				if (result.ok === true) this.settle(task, undefined, result.value)
+				else
+					this.settle(
+						task,
+						task.signal.aborted ? abortReason(task.signal) : workerExecutionError(result.cause),
+					)
 				return undefined
 			},
-			(cause): undefined => {
-				const error = task.signal.aborted ? abortReason(task.signal) : workerExecutionError(cause)
-				this.settle(task, error)
-				return undefined
-			},
+			(cause: unknown): void => this.settle(task, workerSettlementError(task, cause)),
 		)
 		let resourceSettlement!: Promise<void>
 		resourceSettlement = execution.settled
 			.then(
 				(): void => undefined,
 				(cause: unknown): never => {
-					this.settle(task, workerExecutionError(cause))
+					this.settle(task, workerSettlementError(task, cause))
 					throw cause
 				},
 			)
@@ -659,6 +704,16 @@ function taskUnavailable(cause: unknown): WorkerTaskError {
 	return cause instanceof WorkerTaskError
 		? cause
 		: new WorkerTaskError('TASK_UNAVAILABLE', 'Worker task artifact is unavailable', { cause })
+}
+
+function workerSettlementError(task: ScheduledTask, cause: unknown): WorkerTaskError {
+	return task.settlement === 'execution'
+		? new WorkerTaskError(
+				'EXECUTION_UNSETTLED',
+				'Worker exit could not be confirmed; retain resources used by this execution',
+				{ cause },
+			)
+		: workerExecutionError(cause)
 }
 
 function workerExecutionError(cause: unknown): WorkerTaskError {

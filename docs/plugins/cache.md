@@ -38,6 +38,12 @@ consumer 只依赖 `Cache` 抽象；host catalog 选择：
 快照只恢复异步 backend，停机时间计入 TTL；可写快照要求 value 能被 Node structured-clone codec 序列化。
 这是重启预热，不是数据库 durability。
 
+## 部署配置入口
+
+`@pluxel/cache` 根入口导出 `CacheConfig` 和 `MemoryCacheBackendConfig`，分别用于对应 Plugin 的 env/file 绑定。比如 `envBinding(CachePlugin, { config: { schema: CacheConfig, mapping: { maxEntries: 'CACHE_MAX_ENTRIES' } } })`。完整绑定与来源优先级见 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)。Workbench 不参与配置生效。
+
+Cache 配置提供默认策略；consumer 的 `scope()` 显式字段覆盖默认值。Memory backend 的持久快照只恢复缓存条目，不恢复旧配置；当前容量、TTL 过期判定和持久化策略仍由本次部署决定。
+
 ## 显式绑定稳定 scope
 
 复杂缓存应在 Plugin generation 启动时创建一次：

@@ -5,6 +5,10 @@ description: 通过 Fonts、Canvas 和共享 Worker 在服务端渲染 Apache EC
 
 `@pluxel/echarts` 使用 Apache ECharts 6 在服务端生成 PNG、JPEG 或 WebP 图片，适合报表、分享图、邮件附件和预生成图表。它依赖 `CanvasPlugin` 与 `FontsPlugin`，只在线程池中完成布局、文字测量、ZRender 刷新和图片编码，避免把同步 ECharts 渲染放到主线程。
 
+## 部署配置
+
+`@pluxel/echarts` 导出的 `EChartsConfig` 与 Plugin 的 `configs.use()` 使用同一 schema，配置 DPR、主题与输入容量；画布尺寸上限由 CanvasConfig 管理。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)传入该 schema 即可部署，无需 Workbench；不直接读取环境变量。配置变更后重启插件，env/file 变更后重建 Host。字体文件及默认 family 由 [FontsPlugin](./fonts.md) 配置，渲染内容保留为方法输入。
+
 ## 安装与 catalog
 
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。

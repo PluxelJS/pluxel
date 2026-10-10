@@ -51,20 +51,18 @@ export class WretchPlugin extends BasePlugin {
 	private readonly managedInitializations = new WeakMap<Context, Promise<ManagedSettingsState>>()
 	private readonly clients = new WeakMap<Context, ClientLease>()
 	private policy?: OutboundPolicy
-	private storage?: PersistenceNamespace
+	private readonly storageState: { namespace?: PersistenceNamespace } = {}
 
 	override init(): void {
-		const persistence = this.ctx.root.persistence
-		if (!persistence) throw new Error('WretchPlugin requires the Persistence service')
 		const policy = createOutboundPolicy(this.config)
-		const storage = persistence.namespace(SETTINGS_NAMESPACE)
 		this.policy = policy
-		this.storage = storage
 		this.ctx.effects.defer(
 			async () => {
 				policy.dispose()
-				if (this.policy === policy) this.policy = undefined
-				if (this.storage === storage) this.storage = undefined
+				if (this.policy === policy) {
+					this.policy = undefined
+					this.storageState.namespace = undefined
+				}
 				const states = [...this.managed.values()]
 				this.managed.clear()
 				this.managedByNode.clear()
@@ -138,6 +136,41 @@ export class WretchPlugin extends BasePlugin {
 		}
 	}
 
+	/** Persisted, non-secret settings for the enabled caller; independent of Workbench. */
+	get managedSettings(): WretchManagedSettingsSnapshot {
+		return settingsSnapshot(this.requireManagedSettings(), this.config.timeoutMs)
+	}
+
+	/** Replaces the caller's saved settings. Host origin, capacity and timeout limits still apply. */
+	async updateManagedSettings(
+		settings: WretchManagedSettings,
+	): Promise<WretchManagedSettingsSnapshot> {
+		const state = this.requireManagedSettings()
+		await replaceManagedSettings(
+			state,
+			this.requireStorage(),
+			settingsKey(state.owner),
+			settings,
+			this.config.timeoutMs,
+		)
+		return this.managedSettings
+	}
+
+	/** Deletes the caller's saved settings and restores its native client options. */
+	async resetManagedSettings(): Promise<WretchManagedSettingsSnapshot> {
+		const state = this.requireManagedSettings()
+		await resetManagedSettings(state, this.requireStorage(), settingsKey(state.owner))
+		return this.managedSettings
+	}
+
+	private requireManagedSettings(): ManagedSettingsState {
+		this.requireStorage()
+		const state = this.managed.get(this.requireCaller())
+		if (!state)
+			throw new Error('Call enableManagedSettings() before accessing managed Wretch settings')
+		return state
+	}
+
 	private clientLease(owner: Context): ClientLease {
 		const clients = this.clients
 		const existing = clients.get(owner)
@@ -175,7 +208,7 @@ export class WretchPlugin extends BasePlugin {
 			settingsKey(owner.pluginInfo.nodeAddress),
 			owner.pluginInfo.nodeAddress,
 		)
-		if (this.policy !== policy || this.storage !== storage) {
+		if (this.policy !== policy || this.storageState.namespace !== storage) {
 			await disposeManagedSettings(state)
 			throw stoppedClientError()
 		}
@@ -214,8 +247,13 @@ export class WretchPlugin extends BasePlugin {
 	}
 
 	private requireStorage(): PersistenceNamespace {
-		if (!this.storage) throw new Error('WretchPlugin is not running')
-		return this.storage
+		this.requirePolicy()
+		if (!this.storageState.namespace) {
+			const persistence = this.ctx.root.persistence
+			if (!persistence) throw new Error('Managed Wretch settings require the Persistence service')
+			this.storageState.namespace = persistence.namespace(SETTINGS_NAMESPACE)
+		}
+		return this.storageState.namespace
 	}
 }
 
@@ -223,6 +261,17 @@ function effectiveTimeout(hostTimeoutMs: number, consumerTimeout?: number): numb
 	if (!consumerTimeout) return hostTimeoutMs
 	if (hostTimeoutMs <= 0) return consumerTimeout
 	return Math.min(hostTimeoutMs, consumerTimeout)
+}
+
+function settingsSnapshot(
+	state: ManagedSettingsState,
+	hostTimeoutMs: number,
+): WretchManagedSettingsSnapshot {
+	return Object.freeze({
+		settings: state.current,
+		hostTimeoutMs,
+		effectiveTimeoutMs: effectiveTimeout(hostTimeoutMs, state.current.timeoutMs),
+	})
 }
 
 function settingsKey(owner: PluginNodeAddress): string {
@@ -285,11 +334,7 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 
 	snapshotDto(): WretchManagedSettingsSnapshot {
 		this.#assertActive()
-		const snapshot: WretchManagedSettingsSnapshot = Object.freeze({
-			settings: this.#state.current,
-			hostTimeoutMs: this.#hostTimeoutMs,
-			effectiveTimeoutMs: effectiveTimeout(this.#hostTimeoutMs, this.#state.current.timeoutMs),
-		})
+		const snapshot = settingsSnapshot(this.#state, this.#hostTimeoutMs)
 		assertWorkbenchDto(snapshot)
 		return snapshot
 	}
@@ -320,3 +365,6 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 }
 
 export type { Wretch } from 'wretch'
+export { WretchConfig } from './config.ts'
+export type { WretchPluginConfig } from './config.ts'
+export type { WretchManagedSettings, WretchManagedSettingsSnapshot } from './workbench-contracts.ts'

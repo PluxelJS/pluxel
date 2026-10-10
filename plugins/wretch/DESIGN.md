@@ -12,6 +12,9 @@
 consumer endpoint、headers、auth、retry、dedupe、addon 和 response resolver 都不是 provider 所有。它们由
 consumer 从 immutable base 派生，不注册 profile，也不复制 Wretch request/response API。
 
+普通 client 与宿主策略不需要 Persistence，`services: []` 仍可运行。受管设置是显式 opt-in；首次访问时才取得真实 Persistence namespace，
+缺少服务时明确拒绝启用、读取、保存、重置或打开设置 View，不回退到临时内存存储。namespace 与受管 dispatcher 共属 provider generation。
+
 ## Wretch 组合顺序
 
 `client` getter 为 caller 创建原生 base，并在请求发送前解析当前 caller settings：
@@ -38,6 +41,11 @@ provider stop/replacement 后，缓存的旧 client 不再接受新 attempt；�
 标准 `AbortSignal`。policy cleanup 通过 provider effects 登记，和正常 stop、replacement、rollback 共用一条路径。
 
 ## Workbench
+
+`WretchConfig` 从根入口导出，供 Host `envBinding`/`fileBinding` 复用同一声明；普通配置来源优先级由 Host 拥有。
+caller 启用受管设置后，通过 `managedSettings`、`updateManagedSettings()` 和 `resetManagedSettings()` 完成无界面的读写；
+Workbench target 只投影相同的快照、校验与持久化操作。保存 headers/proxy 属于 caller 状态，不能覆盖 provider 的 origin 或容量规则；
+timeout 保存值在请求时始终取 host 上限与 caller 上限的较小值，旧保存值也不能放宽新的部署限制。
 
 provider config 使用 Pluxel 标准 Config UI。consumer 可显式调用 `enableManagedSettings()`，再把
 provider-owned `WretchWorkbench.settings` Attachment 放到自己的 placement。consumer 只绑定 direct

@@ -131,7 +131,7 @@ export function FontManagerContent({
 						label="Managed preference"
 						description={
 							snapshot
-								? `当前解析为 ${snapshot.defaultFont.family}；清空后恢复 host 配置或系统自动选择。`
+								? `当前解析为 ${snapshot.defaultFont.family}；部署 defaultFamily 优先于此偏好，清空偏好后使用配置或系统默认。`
 								: '正在读取系统字体…'
 						}
 						placeholder="使用 host / system 默认值"
@@ -310,7 +310,7 @@ export function FontSelectionContent({
 					label="Pluxel 默认字体"
 					description={
 						snapshot
-							? `当前解析为 ${snapshot.defaultFont.family}；清空后恢复 host 配置或系统自动选择。`
+							? `当前解析为 ${snapshot.defaultFont.family}；部署 defaultFamily 优先于此偏好，清空偏好后使用配置或系统默认。`
 							: '正在读取 FontsPlugin 字体候选…'
 					}
 					placeholder="使用 host / system 默认值"

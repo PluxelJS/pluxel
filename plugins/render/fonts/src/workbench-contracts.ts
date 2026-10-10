@@ -21,7 +21,7 @@ export type DefaultFontSnapshot = Readonly<{
 	source: 'preference' | 'config' | 'system' | 'generic'
 	/** Persisted provider-wide preference. It may be temporarily unavailable. */
 	preferredFamily?: string
-	/** Host-configured preference used after clearing the managed preference. */
+	/** Explicit host default, taking priority over the managed preference when available. */
 	configuredFamily?: string
 }>
 

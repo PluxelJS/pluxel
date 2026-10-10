@@ -13,4 +13,4 @@ pnpm add @pluxel/wretch
 - [用法、配置与验证](../../docs/plugins/wretch.md)
 - [维护约束](DESIGN.md)
 
-宿主需安装 Persistence 服务。
+普通 HTTP client 无需 Persistence 或 Workbench 服务；只有显式启用受管设置时才需要 Persistence。

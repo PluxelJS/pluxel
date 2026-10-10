@@ -73,7 +73,7 @@ describe('TakumiPlugin', () => {
 	it('renders bounded HTML to raster bytes and SVG without Workbench', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: [],
 			})
 
 			await startTakumiFixture(host)

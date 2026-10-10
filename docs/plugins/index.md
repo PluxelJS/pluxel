@@ -26,6 +26,46 @@ pnpm governance:check
 
 本目录 `host.start(Plugin, { initialConfig })` 示例中的 host 是[隔离测试宿主](../plugin-development/testing.md)，不能复制到生产启动文件。运行应用用 HostApplication；在线状态用[dev console](../development/dev-console.md)确认。缺少 provider 查 catalog，启动失败查配置/依赖报告，调用失败按对应插件的领域契约处理。
 
+## 同一配置用于独立部署与 Workbench
+
+官方插件导出传给 `configs.use()` 的同一个配置 schema。应用通过 Host 初始配置、`envBinding` 或 `fileBinding` 提供部署输入，Workbench 编辑保存层；校验、默认值和插件消费的配置始终由该 schema 定义。环境名称由应用显式选择，插件不另外实现自己的环境变量配置系统。字段绑定与来源优先级见 [Host 配置](../host/configuration.md#绑定部署环境与-json-文件)，secret 使用同页的 Vault 部署绑定。
+
+例如，以下是无 Workbench 的生产应用入口，出站 HTTP 策略全部由环境提供，基础 client 无需附加服务：
+
+```ts no-twoslash
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { defineHostApplication, envBinding } from '@pluxel/host'
+import { WretchPlugin, WretchConfig } from '@pluxel/wretch'
+
+export default defineHostApplication(() => ({
+	plugins: [WretchPlugin],
+	services: [],
+	state: { initial: { autoStart: [pluginNodeAddressOf(WretchPlugin)] } },
+	envBindings: [
+		envBinding(WretchPlugin, {
+			config: {
+				schema: WretchConfig,
+				mapping: { timeoutMs: 'HTTP_TIMEOUT_MS', allowedOrigins: 'HTTP_ORIGINS' },
+			},
+		}),
+	],
+}))
+```
+
+`HTTP_TIMEOUT_MS=30000`、`HTTP_ORIGINS='["https://api.example.com"]'` 分别提供数字和 JSON 数组。业务 consumer 加入清单并通过 constructor 注入 WretchPlugin。改动 env/file 后重新创建 Host；Host API 保存配置后的应用状态与是否需要 restart 按[插件配置](../plugin-development/configuration.md)维护。
+
+Workbench 服务是否安装不决定业务配置是否可用。按实际能力选择 Host 服务：
+
+| 能力                                            | 服务前提                                                       |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| Fonts 核心、Canvas、Takumi、Markdown            | 不要求 Workbench 或 Persistence；字体文件可由 FontsConfig 提供 |
+| ECharts、Typst 文档及 Typst 数学编译            | NodeModules 与 Workers，并正确定位构建制品或开发编译器         |
+| Fonts 保存偏好/上传集合、Wretch opt-in 受管设置 | Persistence；程序化 API 同样可在无 Workbench 时使用            |
+| S3 与 Auth 部署凭据                             | Vault；Auth 另需管理访问能力，TOTP 等可变凭据需要可写 backend  |
+| Redis、Cache、Rates、Otel、Package Manager      | 按所属指南选择后端、来源和服务；没有 Workbench 前置条件        |
+
+插件指南区分部署配置、业务保存状态和调用参数。上传字体、已安装 package、缓存条目、consumer 请求设置等仍属于各自领域状态，不因提供环境变量就变成第二套配置。Otel 的 `OTEL_*` 保留上游 SDK 的进程环境契约。
+
 ## 可公开安装
 
 | Plugin                          | 用途                                     | 文档                                               |
@@ -47,6 +87,7 @@ pnpm governance:check
 
 | Plugin                    | 用途                               | 文档                                    |
 | ------------------------- | ---------------------------------- | --------------------------------------- |
+| `@pluxel/typst`           | Typst 文档会话、Vector 预览与 PDF  | [Typst 文档](./rendering/typst.md)      |
 | `@pluxel/cache`           | Plugin 隔离的缓存与后端抽象        | [缓存](./cache.md)                      |
 | `@pluxel/rates`           | 按调用方和成本执行频率限制         | [请求频率控制](./rates.md)              |
 | `@pluxel/redis`           | Redis client、Lua script 和后端    | [Redis](./redis.md)                     |

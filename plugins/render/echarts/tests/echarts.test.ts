@@ -76,7 +76,7 @@ describe('EChartsPlugin', () => {
 
 	it('starts through the public Runtime host without requesting a worker artifact', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: [],
 		})
 
 		await startEChartsFixture(host)

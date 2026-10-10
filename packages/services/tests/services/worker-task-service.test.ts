@@ -543,6 +543,129 @@ describe('WorkerTaskService', () => {
 		}
 	})
 
+	it.each(['run', 'runPrepared'] as const)(
+		'fences %s cancellation until worker exit when execution settlement is requested',
+		async (method) => {
+			const host = workerHost
+			let releaseTermination = (): void => undefined
+			try {
+				host.add(WorkerTaskConsumerA)
+				host.start(WorkerTaskConsumerA)
+				await host.commit()
+				const view = host.require(WorkerTaskConsumerA).workerView()
+				await view.run(declaration, { label: 'warm', delay: 0 })
+				const held = holdCurrentWorkerTermination(host)
+				releaseTermination = held.release
+				const controller = new AbortController()
+				const reason = new Error('cancel resource owner')
+				let settled = false
+				const options = { signal: controller.signal, settlement: 'execution' as const }
+				const input = { label: 'resource', delay: 10_000 }
+				const operation =
+					method === 'run'
+						? view.run(declaration, input, options)
+						: view.runPrepared(declaration, () => input, options)
+				const observed = operation.then(
+					(value) => {
+						settled = true
+						return value
+					},
+					(error: unknown) => {
+						settled = true
+						return error
+					},
+				)
+				// runPrepared dispatches after its preparation promise resolves.
+				await new Promise((resolve) => setImmediate(resolve))
+				controller.abort(reason)
+				await new Promise((resolve) => setImmediate(resolve))
+				expect(settled).toBe(false)
+				expect(held.state.activeTasks).toBe(1)
+				releaseTermination()
+				expect(await observed).toBe(reason)
+			} finally {
+				releaseTermination()
+				await resetWorkerHost(host)
+			}
+		},
+	)
+
+	it('fences owner-stop rejection until worker exit with execution settlement', async () => {
+		const host = workerHost
+		let releaseTermination = (): void => undefined
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.start(WorkerTaskConsumerA)
+			await host.commit()
+			const view = host.require(WorkerTaskConsumerA).workerView()
+			await view.run(declaration, { label: 'warm', delay: 0 })
+			const held = holdCurrentWorkerTermination(host)
+			releaseTermination = held.release
+			let settled = false
+			const observed = view
+				.run(declaration, { label: 'long', delay: 10_000 }, { settlement: 'execution' })
+				.then(
+					(value) => {
+						settled = true
+						return value
+					},
+					(error: unknown) => {
+						settled = true
+						return error
+					},
+				)
+			host.remove(WorkerTaskConsumerA)
+			const committing = host.commit()
+			await new Promise((resolve) => setTimeout(resolve, 20))
+			expect(settled).toBe(false)
+			releaseTermination()
+			expect(await observed).toMatchObject({ code: 'NOT_RUNNING' })
+			await committing
+		} finally {
+			releaseTermination()
+			await resetWorkerHost(host)
+		}
+	})
+
+	it('distinguishes an unconfirmed execution from ordinary task failure', async () => {
+		const host = workerHost
+		let restore = (): void => undefined
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.start(WorkerTaskConsumerA)
+			await host.commit()
+			const view = host.require(WorkerTaskConsumerA).workerView()
+			await view.run(declaration, { label: 'warm', delay: 0 })
+			const state = (
+				host.ctx.require(Workers) as unknown as {
+					state: {
+						pool: {
+							run: (...args: unknown[]) => { result: Promise<unknown>; settled: Promise<void> }
+						}
+					}
+				}
+			).state
+			const original = state.pool.run
+			restore = () => {
+				state.pool.run = original
+			}
+			const cause = new Error('termination failed')
+			state.pool.run = () => ({
+				result: Promise.reject(new Error('cancelled')),
+				settled: Promise.reject(cause),
+			})
+			await expect(
+				view.run(declaration, { label: 'unsafe', delay: 0 }, { settlement: 'execution' }),
+			).rejects.toMatchObject({ code: 'EXECUTION_UNSETTLED', cause })
+			await expect(view.run(declaration, { label: 'ordinary', delay: 0 })).rejects.toMatchObject({
+				code: 'TASK_FAILED',
+			})
+		} finally {
+			restore()
+			await resetWorkerHost(host)
+		}
+	})
+
 	it('aborts accepted work and waits for it when its plugin owner stops', async () => {
 		const host = workerHost
 		let releaseTermination = (): void => undefined

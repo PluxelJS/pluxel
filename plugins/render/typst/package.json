@@ -1,0 +1,77 @@
+{
+	"name": "@pluxel/typst",
+	"private": true,
+	"description": "Typst document sessions with isolated compilation and file resources",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/render/typst"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./browser": {
+			"@pluxel/hmr": "./src/browser/preview.ts",
+			"default": "./dist/browser.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./browser": "./dist/browser.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@myriaddreamin/typst-ts-node-compiler": "catalog:prod",
+		"@myriaddreamin/typst.ts": "catalog:prod",
+		"valibot": "catalog:validation"
+	},
+	"devDependencies": {
+		"@myriaddreamin/typst-ts-renderer": "catalog:prod",
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/fonts": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-vite": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/services": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"tsdown": "catalog:build",
+		"tsx": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/fonts": "workspace:^",
+		"@pluxel/services": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/fonts": "required"
+		},
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
+	}
+}

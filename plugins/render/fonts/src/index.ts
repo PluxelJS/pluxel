@@ -189,7 +189,6 @@ type FontsOwnerLease = Readonly<{
 
 type ManagedState = {
 	readonly owner: Context
-	readonly storage: PersistenceNamespace
 	readonly prefix: string
 	readonly fonts: Map<string, ManagedRuntimeFont>
 	active: boolean
@@ -230,7 +229,6 @@ export class FontsPlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		const persistence = this.ctx.root.persistence
-		if (!persistence) throw new Error('FontsPlugin requires the Persistence service')
 		if (this.config.maxQueuedFontTasksPerConsumer > this.config.maxQueuedFontTasks) {
 			throw new FontsError(
 				'INVALID_INPUT',
@@ -238,13 +236,13 @@ export class FontsPlugin extends BasePlugin {
 			)
 		}
 		this.lifecycleRevision += 1
-		const storage = persistence.namespace(STORAGE_NAMESPACE)
+		const storage = persistence?.namespace(STORAGE_NAMESPACE)
 		const systemFamilies = new Set(GlobalFonts.families.map(({ family }) => family))
 		const configuredDefaultFamily =
 			this.config.defaultFamily === undefined
 				? undefined
 				: normalizeFamily(this.config.defaultFamily)
-		const preferredFamily = await loadDefaultFamily(storage)
+		const preferredFamily = storage ? await loadDefaultFamily(storage) : undefined
 		this.defaults.systemFamilies.clear()
 		for (const family of systemFamilies) this.defaults.systemFamilies.add(family)
 		this.defaults.configuredFamily = configuredDefaultFamily
@@ -312,6 +310,21 @@ export class FontsPlugin extends BasePlugin {
 			},
 			{ tag: 'fonts-registry' },
 		)
+		for (const path of new Set(this.config.files)) {
+			const lease = this.requireOwnerLease()
+			let data: Buffer
+			try {
+				data = await readBoundedFontFile(path, this.config.maxFontBytes, lease.controller.signal)
+			} catch (cause) {
+				if (cause instanceof FontsError) throw cause
+				throw new FontsError('INVALID_INPUT', `Cannot read configured font file at ${path}`, {
+					cause,
+				})
+			}
+			const id = await managedFontId(data, undefined, lease.controller.signal)
+			this.assertOwnerLease(lease)
+			this.registerBytes(this.ctx, data, id, undefined, false)
+		}
 		this.managed = await this.initializeManagedFonts(storage)
 		this.ctx.workbench?.publish(FontsWorkbench, {
 			manager: () => this.createWorkbenchManager(),
@@ -387,7 +400,7 @@ export class FontsPlugin extends BasePlugin {
 		return this.resolveFamilies()
 	}
 
-	/** Provider-wide default resolved from Workbench, config, system discovery, then generic CSS. */
+	/** Provider-wide default resolved from config, saved preference, system, then generic CSS. */
 	get defaultFont(): DefaultFontSnapshot {
 		this.assertRunning()
 		return this.resolveDefaultFont()
@@ -493,18 +506,18 @@ export class FontsPlugin extends BasePlugin {
 		return state
 	}
 
-	private async initializeManagedFonts(storage: PersistenceNamespace): Promise<ManagedState> {
+	private async initializeManagedFonts(storage?: PersistenceNamespace): Promise<ManagedState> {
 		const state: ManagedState = {
 			owner: this.ctx,
-			storage,
 			prefix: 'managed',
 			fonts: new Map(),
 			active: true,
 			pendingTasks: 0,
 			tail: Promise.resolve(),
 		}
+		if (!storage) return state
 		try {
-			for await (const entry of state.storage.list(state.prefix)) {
+			for await (const entry of storage.list(state.prefix)) {
 				if (entry.kind !== 'file' || !entry.key.endsWith('.font')) continue
 				if (state.fonts.size >= this.config.maxManagedFonts) {
 					throw new FontsError(
@@ -516,7 +529,7 @@ export class FontsPlugin extends BasePlugin {
 				if (!MANAGED_ID.test(id)) {
 					throw new FontsError('CORRUPT_FONT_STORAGE', `Managed font key is invalid: ${entry.key}`)
 				}
-				const value = await state.storage.get(entry.key)
+				const value = await storage.get(entry.key)
 				if (!value) {
 					throw new FontsError('CORRUPT_FONT_STORAGE', `Managed font disappeared: ${entry.key}`)
 				}
@@ -594,6 +607,7 @@ export class FontsPlugin extends BasePlugin {
 
 	private installManagedFont(state: ManagedState, input: InstallManagedFontInput): Promise<void> {
 		return this.enqueueManaged(state, async () => {
+			const storage = this.requireDefaultStorage()
 			const borrowed = normalizeManagedInput(input)
 			const normalized = Object.freeze({
 				...borrowed,
@@ -622,7 +636,7 @@ export class FontsPlugin extends BasePlugin {
 			try {
 				const encoded = await encodeManagedFont(stored)
 				this.assertManagedStateActive(state)
-				await state.storage.put(managedFontKey(state.prefix, id), encoded, {
+				await storage.put(managedFontKey(state.prefix, id), encoded, {
 					atomic: true,
 				})
 				this.assertManagedStateActive(state)
@@ -631,7 +645,7 @@ export class FontsPlugin extends BasePlugin {
 			} catch (error) {
 				this.releaseRegistration(registration)
 				if (!state.active) {
-					await state.storage.delete(managedFontKey(state.prefix, id)).catch((): void => undefined)
+					await storage.delete(managedFontKey(state.prefix, id)).catch((): void => undefined)
 				}
 				throw error
 			}
@@ -640,10 +654,11 @@ export class FontsPlugin extends BasePlugin {
 
 	private removeManagedFont(state: ManagedState, id: string): Promise<void> {
 		return this.enqueueManaged(state, async () => {
+			const storage = this.requireDefaultStorage()
 			if (!MANAGED_ID.test(id)) throw new FontsError('INVALID_INPUT', 'Managed font ID is invalid')
 			const font = state.fonts.get(id)
 			if (!font) throw new FontsError('FONT_NOT_FOUND', `Managed font ${id} does not exist`)
-			await state.storage.delete(managedFontKey(state.prefix, id))
+			await storage.delete(managedFontKey(state.prefix, id))
 			this.assertManagedStateActive(state)
 			state.fonts.delete(id)
 			this.releaseRegistration(font.registration)
@@ -721,10 +736,10 @@ export class FontsPlugin extends BasePlugin {
 			selectedPreferredFamily || selectedConfiguredFamily
 				? undefined
 				: findAutomaticSystemFamily(this.defaults.systemFamilies)
-		const resolved = selectedPreferredFamily
-			? { family: selectedPreferredFamily, source: 'preference' as const }
-			: selectedConfiguredFamily
-				? { family: selectedConfiguredFamily, source: 'config' as const }
+		const resolved = selectedConfiguredFamily
+			? { family: selectedConfiguredFamily, source: 'config' as const }
+			: selectedPreferredFamily
+				? { family: selectedPreferredFamily, source: 'preference' as const }
 				: automaticFamily
 					? { family: automaticFamily, source: 'system' as const }
 					: { family: 'sans-serif', source: 'generic' as const }
@@ -957,7 +972,10 @@ export class FontsPlugin extends BasePlugin {
 
 	private requireDefaultStorage(): PersistenceNamespace {
 		if (!this.defaults.storage) {
-			throw new FontsError('NOT_RUNNING', 'FontsPlugin default font storage is not available')
+			throw new FontsError(
+				'PERSISTENCE_REQUIRED',
+				'Install the Persistence service to save font preferences or managed uploads',
+			)
 		}
 		return this.defaults.storage
 	}

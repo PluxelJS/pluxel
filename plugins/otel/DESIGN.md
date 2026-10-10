@@ -79,6 +79,9 @@ provider 生命周期，不增加 exporter、timer、listener 或 transport，Wo
 
 ## 环境与安全
 
+`OtelConfig` 的导出值与 `configs.use()` 声明相同，Host 可用 env/file binding 选择 signal 和 Prometheus；Workbench 不提供另一份配置 authority。
+OTel 标准 `OTEL_*` 继续使用 SDK 的进程环境契约，不声称它们由 Host `startup.env` 自动接管；二者不能混作同一个配置来源。
+
 signal-specific OTLP 设置覆盖 generic 设置。HTTP generic endpoint 追加标准 `/v1/{signal}`，specific endpoint 视为完整 URL；gRPC
 endpoint 永不追加 path。headers 先合并 generic，再由 signal-specific 覆盖。URL userinfo 被拒绝，认证必须走 headers/mTLS。
 

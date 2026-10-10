@@ -61,6 +61,12 @@ export class MessagingPlugin extends BasePlugin {
 
 `use()` 会同步复制、校验、归一化并冻结 policy。相同 caller、name 和归一化 policy 会返回同一个 handle；同名但 policy 不同会同步抛出 `RatesPolicyConflictError`。因此 name 应是静态业务标识，不能由 request、tenant 或用户输入生成。
 
+## 部署配置入口
+
+`RatesPlugin` 没有运行配置，限流 policy 由 consumer 的 `use()` 调用声明。`MemoryRatesBackendPlugin` 使用根入口导出的 `MemoryRatesBackendConfig`：例如 `envBinding(MemoryRatesBackendPlugin, { config: { schema: MemoryRatesBackendConfig, mapping: { maxIdentities: 'RATES_MAX_IDENTITIES' } } })`。Redis adapter 的 schema 见 [Redis 配置入口](./redis.md#部署配置入口)。
+
+这些入口均无需 Workbench；env/file/saved 的优先级遵循 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)。运行中的额度状态不修改部署容量或业务 policy；Redis 中旧 state 与新 policy 冲突时按已有冲突契约失败，不静默重置额度。
+
 ## host 选择 backend
 
 单进程 host 可使用内存 backend：

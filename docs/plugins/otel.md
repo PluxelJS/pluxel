@@ -9,6 +9,28 @@ description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主
 
 ## 先选择输出
 
+`OtelConfig` 从根入口导出，部署环境可绑定输出选择；Workbench 只是可选状态与手动 flush 面板：
+
+```ts no-twoslash
+import { envBinding } from '@pluxel/host'
+import { OtelPlugin, OtelConfig } from '@pluxel/otel'
+
+// 应用 envBindings 数组的一项；两项都使用 JSON 值。
+envBinding(OtelPlugin, {
+	config: {
+		schema: OtelConfig,
+		mapping: {
+			otlp: 'TELEMETRY_SIGNALS',
+			prometheus: 'TELEMETRY_PROMETHEUS',
+		},
+	},
+})
+// TELEMETRY_SIGNALS=[]
+// TELEMETRY_PROMETHEUS={"path":"/metrics"}
+```
+
+Plugin config 遵循 [Host 输入绑定](../host/configuration.md#绑定部署环境与-json-文件) 的来源优先级。没有独立的持久化 telemetry profile 覆盖该配置。
+
 默认配置启用三种 OTLP signal，关闭 Prometheus：
 
 以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
@@ -96,6 +118,8 @@ span、event、link、status、baggage、log body、severity、`eventName` 和 a
 ## 配置 OTLP endpoint
 
 exporter 配置来自标准 OTel 环境变量，而不是 Plugin config：
+
+这些 `OTEL_*` 由 SDK/插件从进程 `process.env` 读取；它们不是 Host `startup.env` 的自动映射。嵌入式宿主只传入自定义 `startup.env` 不会替换 SDK 的进程环境。部署应在启动 Node 前设置它们，认证仍使用标准 OTel headers/mTLS，不复制到普通 Plugin 配置或 Workbench。
 
 ```text
 OTEL_SERVICE_NAME=catalog

@@ -3,15 +3,17 @@
 `@pluxel/fonts` 是服务端渲染进程中字体事实与管理状态的唯一 owner。Canvas native backend 是
 `@napi-rs/canvas` 的进程级 `GlobalFonts`；managed/caller sources 另外投影成 renderer-neutral portable bytes。
 
-## 两类资源所有权
+## 资源所有权与部署
+
+- provider-owned configured files：`FontsConfig.files` 是绝对路径列表，启动有界读取、按路径去重、保留字体内嵌 family；不写入托管上传集合，不占 caller registration 配额。非法来源让启动失败并清理此前注册。Host config/env/file 与 Workbench 使用同一 schema，无插件自行读取环境变量的配置层。
 
 - provider-owned managed collection：字体、统一 preference 和持久化全部属于 FontsPlugin。provider
-  启动自动恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
+  安装 Persistence 时启动自动恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
   graph 语义被阻塞。
 - caller-owned programmatic registration：业务包随代码携带的字体可调用 `register()` / `registerFromPath()`，但
   native key 仍封装在 FontsPlugin 内。caller stop/replacement 自动删除，handle 只提供幂等提前 `dispose()`。
 
-两类资源分别使用 `maxManagedFonts` 和 `maxRegistrationsPerConsumer`，并共同受 provider node 的
+managed/caller 资源分别使用 `maxManagedFonts` 和 `maxRegistrationsPerConsumer`，三类资源共同受 provider node 的
 `maxNativeRegistrations` 与 `maxTotalFontBytes` 约束；某个 renderer 的代码字体不会挤占统一上传集合，也不会因 Canvas/ECharts stop 卸载
 其他 renderer 正在使用的 managed font。
 
@@ -37,9 +39,11 @@ provider restart、rollback 或 shutdown 会批量移除仍存活的 key，但�
 provider generation 启动时捕获 baseline，并在 `families[].source` 中区分后续 registration。不建立第二套目录
 scanner/watcher；进程中后来安装的系统字体在 provider/process restart 后出现。
 
-默认 family 解析顺序为：持久化 provider preference、host `defaultFamily`、操作系统已安装字体优先表、
+默认 family 解析顺序为：显式 host `defaultFamily`、持久化 provider preference、操作系统已安装字体优先表、
 `sans-serif` generic。`defaultFont` 同时给出 raw family 与 CSS-safe family。选择 mutation 在 provider queue 中串行并
 原子持久化；选择暂时不可用时保留 preference、运行期降级，family 重现后自动恢复。
+
+Persistence 只支撑上传与偏好保存。未安装时基础字体能力正常启动，持久化 mutation 明确报 `PERSISTENCE_REQUIRED`，不创建隐式存储。配置文件注册跟随 provider cleanup，预算等配置在 restart 应用。
 
 默认选择放在 constructor 创建的稳定 state object，避免 caller-bound prototype view 的顶层 scalar assignment 变成
 caller-local shadow。`revision` 跟随 FontsPlugin 管理的 native registration/default selection 变化，并由包模块共享以
@@ -52,7 +56,7 @@ registration/selection 变化仍会在下一次读取时原子生成新 snapshot
 managed record 和 caller registration 保存内容寻址 source；同一 bytes + family alias 共享 portable ID/refcount。持久化恢复先按
 `maxFontBytes + envelope overhead` 拒绝过大 record，decoder 再在分配/copy/hash payload 前验证 key ID、声明长度与
 `installedAt`，使损坏数据快速失败。
-`portableFonts` 只返回按 resource revision 缓存的 frozen metadata，`readPortableFont(id)` 才复制 bytes，避免 renderer
+部署 files、managed records 与 caller registration 共同投影为 portable sources。`portableFonts` 只返回按 resource revision 缓存的 frozen metadata，`readPortableFont(id)` 才复制 bytes，避免 renderer
 轮询 revision 时复制整个 collection。最后一个 registration 释放时撤销 source；provider stop 清除当前 generation
 全部 source。System discovery 不暴露可信 file path/bytes，因此 system-only family 不进入 portable snapshot。
 

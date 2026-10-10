@@ -12,6 +12,10 @@ Open Graph 图片、社交卡片、邮件插图与服务端模板。它直接依
                   └─> @pluxel/takumi
 ```
 
+## 部署配置
+
+`@pluxel/takumi` 导出的 `TakumiConfig` 与 Plugin 的 `configs.use()` 使用同一 schema，配置渲染尺寸、DPR、并发、图片和字体容量。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)传入该 schema 即可部署，无需 Workbench；不直接读取环境变量。配置变更后重启插件，env/file 变更后重建 Host。字体文件及默认 family 由 [FontsPlugin](./fonts.md) 配置，渲染内容保留为方法输入。
+
 ## 安装和装配
 
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。

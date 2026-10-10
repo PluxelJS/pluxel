@@ -17,6 +17,12 @@ release note、说明文档、报告、社交卡片或需要稳定静态快照�
 
 Markdown table 由 Takumi 的 HTML/CSS layout 排版，不重复调用 Canvas table；图表仍交给 ECharts。
 
+## 部署配置
+
+`@pluxel/takumi-markdown` 导出 `TakumiMarkdownConfig`；公式扩展包导出 `TypstMathConfig`。两者均是各自 `configs.use()` 的同一 schema，可直接用于 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)，无需 Workbench。前者配置源文本、AST、生成 HTML 与扩展容量，后者配置公式数量、长度与 SVG 输出容量；底层绘制预算由 `TakumiConfig`、字体由 [FontsConfig](./fonts.md)、共享线程池由 Host Workers 配置。
+
+配置变更后重启对应插件，env/file 变更后重建 Host。Markdown、主题与受信任扩展仍通过业务方法提供，不把可执行扩展或模板内容塞入部署配置。
+
 ## 安装与最小装配
 
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。

@@ -78,7 +78,7 @@ describe('CanvasPlugin', () => {
 	it('creates native raster and SVG canvases in a headless host', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: [],
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])

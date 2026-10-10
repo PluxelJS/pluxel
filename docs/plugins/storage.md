@@ -117,6 +117,12 @@ endpoint 必须是没有 userinfo、query 或 hash 的 HTTP(S) URL。`minPartSiz
 
 anonymous 是显式选择，不是 credential 查找失败后的隐式 fallback。
 
+## 部署配置入口
+
+根入口的 `S3Config` 就是 `S3Plugin` 的配置声明，可直接用于 `envBinding(S3Plugin, { config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } } })`；`S3_BUCKETS` 是完整 bucket 数组 JSON。文件部署复用同一 schema。配置层优先级、数组替换和 env 锁定规则由 [Host](../host/configuration.md#绑定部署环境与-json-文件) 统一维护。
+
+无 Workbench 时 local/anonymous 直接启动，remote/vault 使用根入口的 `S3VaultSchema` 声明 [部署凭据](../host/configuration.md#部署凭据)。Workbench rotation 只是可写 Vault 的可选管理入口；只读绑定的 credential 更新由部署输入负责。bucket 对象内容是业务存储，不作为 Plugin 配置恢复或覆盖。
+
 ## 远端 S3：Vault credential
 
 access key 不进入普通 Plugin config。先把以下对象写入 Vault：

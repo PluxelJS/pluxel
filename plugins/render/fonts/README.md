@@ -13,6 +13,6 @@ pnpm add @pluxel/fonts
 - [用法、配置与验证](../../../docs/plugins/rendering/fonts.md)
 - [维护约束](DESIGN.md)
 
-宿主需安装 Persistence 服务。
+核心字体发现、`FontsConfig.files` 部署文件与程序化注册无需 Workbench 或 Persistence。配置可用同一导出的 `FontsConfig` 绑定环境变量和 JSON 文件；保存偏好、上传集合才需要安装 Persistence。
 
 跨 renderer 的调度、输入所有权与取消规则见 [执行架构](../ARCHITECTURE.md)。

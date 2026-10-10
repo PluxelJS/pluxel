@@ -54,7 +54,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移和 backend：[DATABASE.md](DATABASE.md)。
 - 日志 root、策略与有界 store：[LOGGING.md](LOGGING.md)。
-- Node artifacts、Workers：`packages/services/src/node/`、`workers/`；compiler 属于 Rolldown 与服务开发附件。
+- Node artifacts、Workers：`packages/services/src/node/`、`workers/`；compiler 属于 Rolldown 与服务开发附件。 Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 把公开结果发布推迟到线程可复用或已退出，为调用方持有的文件等资源提供清理边界。
 - Management 与 Workbench：[WORKBENCH.md](WORKBENCH.md)、[管理接入](../docs/host/management.md)。
 - 隔离测试宿主：[TESTING.md](TESTING.md)；在线应用检查：[DEV_CONSOLE.md](DEV_CONSOLE.md)。
 
