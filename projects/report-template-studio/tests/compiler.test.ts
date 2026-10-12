@@ -30,7 +30,7 @@ function template(id = 'one'): WorkspaceSnapshot {
 	}
 }
 function evaluate(compiler: TemplateCompiler, doc: WorkspaceSnapshot) {
-	return compiler.evaluate(doc, 'report/report.ts')
+	return compiler.evaluate(doc, 'report/report.ts', {})
 }
 it('runs a Vite module runner inside QuickJS without a listener and closes it', async () => {
 	const listen = vi.spyOn(Server.prototype, 'listen').mockImplementation(() => {
@@ -70,26 +70,28 @@ it('applies indirect module HMR updates and template raw updates without replaci
 })
 it('keeps module state separate between two active templates', async () => {
 	const compiler = new TemplateCompiler()
+	const other = new TemplateCompiler()
 	const first = template('one')
 	const second = template('two')
 	try {
 		await evaluate(compiler, first)
-		await evaluate(compiler, second)
+		await evaluate(other, second)
 		const next = {
 			...first,
 			files: { ...first.files, 'report/value.ts': 'export const value = 3' },
 		}
 		const updated = await evaluate(compiler, next)
 		expect(updated.files['/inputs/data.json']).toEqual({ kind: 'json', value: 3 })
-		const untouched = await evaluate(compiler, second)
+		const untouched = await evaluate(other, second)
 		expect(untouched.files['/inputs/data.json']).toEqual({ kind: 'json', value: 1 })
 	} finally {
 		await compiler.close()
+		await other.close()
 	}
 })
 
 it('preserves official hot.data/dispose through indirect dependency and shared Typst updates', async () => {
-	const compiler = new TemplateCompiler()
+	let compiler = new TemplateCompiler()
 	const doc = template()
 	doc.files['report/shared/theme.typ'] = 'Theme one'
 	doc.files['report/report.ts'] = `import * as v from 'valibot';
@@ -121,7 +123,8 @@ export default defineTypstDocument({ template, schema, createFiles() { return { 
 			kind: 'json',
 			value: { value: 2, theme: 'Theme two', updates: 2 },
 		})
-		await compiler.remove(doc.project.id)
+		await compiler.close()
+		compiler = new TemplateCompiler()
 		const reopened = await evaluate(compiler, next)
 		expect(reopened.files['/inputs/data.json']).toEqual({
 			kind: 'json',
@@ -177,7 +180,7 @@ it('times out a pending top-level await and can compile a corrected template', a
 	}
 }, 20_000)
 
-it('returns the new schema fields when an added required input has no value yet', async () => {
+it('describes required fields independently of invalid input and preserves structured schema issues', async () => {
 	const compiler = new TemplateCompiler()
 	const doc = template()
 	try {
@@ -190,12 +193,27 @@ it('returns the new schema fields when an added required input has no value yet'
 			},
 		}
 		await expect(evaluate(compiler, next)).rejects.toMatchObject({
-			fields: expect.arrayContaining([expect.objectContaining({ name: 'required' })]),
+			code: 'INVALID_INPUT',
+			issues: expect.arrayContaining([
+				expect.objectContaining({ path: ['required'], rule: 'object' }),
+			]),
 		})
-		const recovered = await compiler.evaluate(next, 'report/report.ts', { required: 'provided' })
-		expect(recovered.fields).toEqual(
+		await expect(
+			compiler.evaluate(next, 'report/report.ts', { required: 0 }),
+		).rejects.toMatchObject({
+			code: 'INVALID_INPUT',
+			issues: expect.arrayContaining([
+				expect.objectContaining({ path: ['required'], rule: 'string' }),
+			]),
+		})
+		const described = await compiler.describe(next, 'report/report.ts')
+		expect(described.defaults).toEqual({})
+		expect(described.fields).toEqual(
 			expect.arrayContaining([expect.objectContaining({ name: 'required' })]),
 		)
+		const recovered = await compiler.evaluate(next, 'report/report.ts', { required: 'provided' })
+		expect(recovered.data).toEqual({ required: 'provided' })
+		expect(recovered).not.toHaveProperty('fields')
 	} finally {
 		await compiler.close()
 	}
@@ -203,6 +221,7 @@ it('returns the new schema fields when an added required input has no value yet'
 
 it('merges recursive defaults and isolates report input within one workspace', async () => {
 	const compiler = new TemplateCompiler()
+	const other = new TemplateCompiler()
 	const doc = template()
 	doc.files['shared/schema.ts'] = `import * as v from 'valibot';
 export const schema = v.object({ nested: v.object({ title: v.optional(v.string(), 'Default'), amount: v.optional(v.number(), 1) }) });`
@@ -215,19 +234,20 @@ export const schema = v.object({ nested: v.object({ title: v.optional(v.string()
 		expect(first.data).toEqual({ nested: { title: 'User', amount: 1 } })
 		expect(first.template).toBe('report/main.typ')
 		expect(first.name).toBe('report')
-		const second = await compiler.evaluate(doc, 'second/second.ts')
+		const second = await other.evaluate(doc, 'second/second.ts', {})
 		expect(second.data).toEqual({ nested: { title: 'Default', amount: 1 } })
 		expect(second.name).toBe('second')
 		expect(second.files['/inputs/data.json']).toEqual({ kind: 'json', value: second.data })
 	} finally {
 		await compiler.close()
+		await other.close()
 	}
 })
 it('rejects ordinary files, missing exports and escaped template paths, then recovers', async () => {
 	const compiler = new TemplateCompiler()
 	const doc = template()
 	try {
-		await expect(compiler.evaluate(doc, 'report/main.typ')).rejects.toThrow('folder/folder.ts')
+		await expect(compiler.evaluate(doc, 'report/main.typ', {})).rejects.toThrow('folder/folder.ts')
 		for (const code of [
 			"export const template = './main.typ'",
 			"import * as v from 'valibot'; export const schema = v.object({}); export const template = './main.typ'",
@@ -240,10 +260,11 @@ it('rejects ordinary files, missing exports and escaped template paths, then rec
 				compiler.evaluate(
 					{ ...doc, files: { ...doc.files, 'report/report.ts': code } },
 					'report/report.ts',
+					{},
 				),
-			).rejects.toThrow('模板执行失败')
+			).rejects.toThrow(/报表|createFiles|Invalid workspace path/)
 		}
-		const result = await compiler.evaluate(doc, 'report/report.ts')
+		const result = await compiler.evaluate(doc, 'report/report.ts', {})
 		expect(result.template).toBe('report/main.typ')
 		const changed = await compiler.evaluate(
 			{
@@ -255,6 +276,7 @@ it('rejects ordinary files, missing exports and escaped template paths, then rec
 				},
 			},
 			'report/report.ts',
+			{},
 		)
 		expect(changed.template).toBe('report/second.typ')
 	} finally {
@@ -274,25 +296,131 @@ it('evaluates the starter defaults and native Valibot labels without form-specif
 			.map(([path, value]) => [path, new TextDecoder().decode(value)]),
 	)
 	const compiler = new TemplateCompiler()
+	const other = new TemplateCompiler()
 	try {
-		const letter = await compiler.evaluate(doc, '报表/银行询证函/银行询证函.ts')
+		const letter = await compiler.evaluate(doc, '报表/银行询证函/银行询证函.ts', {})
 		expect(letter.files['/inputs/data.json']).toMatchObject({
 			kind: 'json',
 			value: { header: { companyName: '示例有限公司' }, accounts: [{ name: '银行存款' }] },
 		})
-		expect(letter.fields).toEqual(
+		const letterDescription = await compiler.describe(doc, '报表/银行询证函/银行询证函.ts')
+		expect(letterDescription.fields).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ name: 'body', meta: expect.objectContaining({ label: '正文' }) }),
 			]),
 		)
-		const summary = await compiler.evaluate(doc, '报表/银行账户余额汇总表/银行账户余额汇总表.ts', {
+		const summary = await other.evaluate(doc, '报表/银行账户余额汇总表/银行账户余额汇总表.ts', {
 			header: { companyName: '外部业务数据' },
 		})
 		expect(summary.files['/inputs/data.json']).toMatchObject({
 			kind: 'json',
 			value: { header: { companyName: '外部业务数据', currency: '人民币' } },
 		})
-		expect(summary.fields.some((field) => field.name === 'body')).toBe(false)
+		const summaryDescription = await other.describe(
+			doc,
+			'报表/银行账户余额汇总表/银行账户余额汇总表.ts',
+		)
+		expect(summaryDescription.fields.some((field) => field.name === 'body')).toBe(false)
+	} finally {
+		await compiler.close()
+		await other.close()
+	}
+})
+
+it('describes defaults and fields without evaluating createFiles', async () => {
+	const compiler = new TemplateCompiler()
+	const doc = template()
+	doc.files['report/report.ts'] = `import * as v from 'valibot';
+export default { template: './main.typ', schema: v.object({ required: v.string(), count: v.optional(v.number(), 4) }), createFiles() { throw new Error('createFiles was invoked'); } }`
+	try {
+		const description = await compiler.describe(doc, 'report/report.ts')
+		expect(description.defaults).toEqual({ count: 4 })
+		expect(description.fields.map((field) => field.name)).toEqual(['required', 'count'])
+		await expect(compiler.evaluate(doc, 'report/report.ts', { required: 'valid' })).rejects.toThrow(
+			'createFiles was invoked',
+		)
+	} finally {
+		await compiler.close()
+	}
+})
+
+it('preserves provided array lengths, same-index defaults, empty arrays and explicit falsy values', async () => {
+	const compiler = new TemplateCompiler()
+	const doc = template()
+	doc.files['report/report.ts'] = `import * as v from 'valibot';
+export default { template: './main.typ', schema: v.object({
+  title: v.optional(v.string(), 'default'), count: v.optional(v.number(), 7), flag: v.optional(v.boolean(), true), nullable: v.optional(v.nullable(v.string()), 'default'),
+  rows: v.optional(v.array(v.object({ label: v.string(), count: v.number() })), [{ label: 'first', count: 1 }, { label: 'second', count: 2 }])
+}) }`
+	try {
+		const result = await compiler.evaluate(doc, 'report/report.ts', {
+			title: '',
+			count: 0,
+			flag: false,
+			nullable: null,
+			rows: [{ label: 'provided' }],
+		})
+		expect(result.data).toEqual({
+			title: '',
+			count: 0,
+			flag: false,
+			nullable: null,
+			rows: [{ label: 'provided', count: 1 }],
+		})
+		const empty = await compiler.evaluate(doc, 'report/report.ts', { rows: [] })
+		expect(empty.data.rows).toEqual([])
+		const defaults = await compiler.evaluate(doc, 'report/report.ts', {})
+		expect(defaults.data.rows).toEqual([
+			{ label: 'first', count: 1 },
+			{ label: 'second', count: 2 },
+		])
+	} finally {
+		await compiler.close()
+	}
+})
+
+it('retains the TypeScript module path and source range in syntax diagnostics', async () => {
+	const compiler = new TemplateCompiler()
+	const doc = template()
+	doc.files['report/value.ts'] = 'export const value = ;'
+	try {
+		await expect(evaluate(compiler, doc)).rejects.toMatchObject({
+			code: 'COMPILE_FAILED',
+			diagnostics: expect.arrayContaining([
+				expect.objectContaining({
+					path: 'report/value.ts',
+					severity: 'error',
+					range: expect.any(Object),
+				}),
+			]),
+		})
+	} finally {
+		await compiler.close()
+	}
+})
+
+it('rejects non-JSON transformed output before JSON serialization can discard values', async () => {
+	const compiler = new TemplateCompiler()
+	const doc = template()
+	doc.files['report/report.ts'] = `import * as v from 'valibot';
+export default { template: './main.typ', schema: v.pipe(v.object({}), v.transform(() => ({ omitted: undefined }))) }`
+	try {
+		await expect(evaluate(compiler, doc)).rejects.toThrow('finite JSON value')
+	} finally {
+		await compiler.close()
+	}
+})
+
+it('omits absent optional defaults instead of introducing undefined business data', async () => {
+	const compiler = new TemplateCompiler()
+	const doc = template()
+	doc.files['report/report.ts'] = `import * as v from 'valibot';
+export default { template: './main.typ', schema: v.object({ omitted: v.optional(v.string()), nested: v.object({ omitted: v.optional(v.string()) }) }) }`
+	try {
+		const result = await compiler.evaluate(doc, 'report/report.ts', {})
+		expect(result.data).toEqual({ nested: {} })
+		const description = await compiler.describe(doc, 'report/report.ts')
+		expect(description.defaults).toEqual({ nested: {} })
 	} finally {
 		await compiler.close()
 	}

@@ -1,12 +1,21 @@
 import { useSyncExternalStore } from 'react'
-import type { CompileResult, ProjectSummary, TextFile, WorkspaceTree } from '../shared/contracts'
-import { api, ApiError } from './api'
+import {
+	isStudioError,
+	type CompileResult,
+	type DocumentDescription,
+	type JsonObject,
+	type PreviewResult,
+	type ProjectSummary,
+	type TextFile,
+	type WorkspaceTree,
+} from '../shared/contracts'
+import { api } from './api'
 import { isPaneVisible, type PreviewPoint, type SourcePosition } from './source-navigation'
 
 interface PreviewRegistration {
 	entry: string
 	element: HTMLElement
-	result(): CompileResult | null
+	result(): PreviewResult | null
 	reveal(position: SourcePosition): boolean
 }
 
@@ -22,8 +31,11 @@ export interface FileState extends TextFile {
 export interface DocumentState {
 	entry: string
 	result?: CompileResult
-	fields: CompileResult['fields']
-	data: Record<string, unknown>
+	preview?: PreviewResult
+	description?: DocumentDescription
+	fields: DocumentDescription['fields']
+	data: JsonObject
+	inputLoaded?: boolean
 	busy: boolean
 	error?: string
 	diagnostics: CompileResult['diagnostics']
@@ -76,9 +88,6 @@ export class WorkspaceController {
 			for (const listener of this.listeners) listener()
 		}
 	}
-	path(suffix = '') {
-		return `/api/projects/${encodeURIComponent(this.project.id)}${suffix}`
-	}
 	start() {
 		void this.refresh()
 		this.polling = setInterval(() => {
@@ -111,11 +120,11 @@ export class WorkspaceController {
 			this.previews.delete(preview)
 		}
 	}
-	isNavigationCurrent(result: CompileResult): boolean {
+	isNavigationCurrent(result: PreviewResult): boolean {
 		const document = this.documents.get(result.entry)
 		if (
 			this.closed ||
-			document?.result !== result ||
+			document?.preview !== result ||
 			document.busy ||
 			document.error ||
 			document.inputDirty ||
@@ -150,7 +159,7 @@ export class WorkspaceController {
 			matching.length === 1 ? matching[0] : candidates.length === 1 ? candidates[0] : undefined
 		if (preview?.reveal(position)) this.preferredPreview = preview.entry
 	}
-	async revealSource(result: CompileResult, point: PreviewPoint) {
+	async revealSource(result: PreviewResult, point: PreviewPoint) {
 		if (!this.isNavigationCurrent(result) || !point.path.endsWith('.typ') || !this.openSource)
 			return
 		const serial = ++this.navigationSerial
@@ -177,7 +186,7 @@ export class WorkspaceController {
 		if (this.refreshing) return this.refreshing
 		this.refreshing = (async () => {
 			try {
-				const tree = await api<WorkspaceTree>(this.path('/tree'))
+				const tree = await api.getTree({ projectId: this.project.id })
 				if (this.closed) return
 				const changed = tree.revision !== this.tree?.revision
 				if (!changed) {
@@ -199,9 +208,7 @@ export class WorkspaceController {
 								}
 								return
 							}
-							const next = await api<TextFile>(
-								this.path(`/file?path=${encodeURIComponent(entry.path)}`),
-							)
+							const next = await api.readFile({ projectId: this.project.id, path: entry.path })
 							if (this.closed || this.files.get(entry.path) !== previous) return
 							this.files.set(entry.path, {
 								...next,
@@ -273,9 +280,11 @@ export class WorkspaceController {
 		this.emit()
 		const work = (async () => {
 			try {
-				const next = await api<TextFile>(this.path('/file'), {
-					method: 'PUT',
-					body: { path, content, expectedVersion: file.version },
+				const next = await api.writeFile({
+					projectId: this.project.id,
+					path,
+					content,
+					expectedVersion: file.version,
 				})
 				const current = this.files.get(path)!
 				this.files.set(path, {
@@ -293,7 +302,7 @@ export class WorkspaceController {
 					...current,
 					saving: false,
 					error:
-						cause instanceof ApiError && cause.status === 409
+						isStudioError(cause) && cause.code === 'REVISION_CONFLICT'
 							? '磁盘文件已修改，保存冲突。草稿已保留；复制所需内容后重新载入。'
 							: String(cause),
 				})
@@ -313,7 +322,7 @@ export class WorkspaceController {
 	async reload(path: string) {
 		clearTimeout(this.timers.get(path))
 		await this.saves.get(path)
-		const next = await api<TextFile>(this.path(`/file?path=${encodeURIComponent(path)}`))
+		const next = await api.readFile({ projectId: this.project.id, path })
 		const token = (this.files.get(path)?.token ?? 0) + 1
 		this.files.set(path, {
 			...next,
@@ -345,41 +354,63 @@ export class WorkspaceController {
 		this.documents.set(entry, { ...previous, busy: true, generation })
 		this.emit()
 		try {
-			const result = await api<CompileResult>(this.path('/compile'), {
-				method: 'POST',
-				body: { entry },
-			})
+			const target = { projectId: this.project.id, entry }
+			const description = await api.describeDocument(target)
 			if (this.closed || this.documents.get(entry)?.generation !== generation) return
+			let current = this.documents.get(entry)!
+			this.documents.set(entry, { ...current, fields: description.fields, description })
+			this.emit()
+			if (!current.inputLoaded) {
+				const stored = await api.getInput(target)
+				if (this.closed || this.documents.get(entry)?.generation !== generation) return
+				current = this.documents.get(entry)!
+				this.documents.set(entry, { ...current, data: stored.data, inputLoaded: true })
+				this.emit()
+			}
+			// Compile this UI's explicit input snapshot; another consumer's stored input
+			// or compile never becomes an implicit form edit.
+			const data = structuredClone(this.documents.get(entry)!.data)
+			const result = await api.compile({ ...target, data })
+			if (this.closed || this.documents.get(entry)?.generation !== generation) return
+			const preview = await api.getPreview({ ...target, revision: result.revision })
+			if (this.closed || this.documents.get(entry)?.generation !== generation) return
+			if (description.sourceRevision !== result.sourceRevision)
+				throw Object.assign(new Error('源码在读取表单后已改变，请刷新预览。'), {
+					code: 'REVISION_CONFLICT',
+				})
 			this.documents.set(entry, {
-				entry,
+				...this.documents.get(entry)!,
 				result,
-				fields: result.fields,
+				preview,
 				data: result.data,
 				diagnostics: result.diagnostics,
 				busy: false,
+				error: undefined,
 				generation,
 			})
 		} catch (cause) {
 			if (this.closed || this.documents.get(entry)?.generation !== generation) return
 			const current = this.documents.get(entry)!
-			const detail = cause instanceof ApiError ? cause.detail : undefined
+			const detail = isStudioError(cause) ? cause : undefined
 			this.documents.set(entry, {
 				...current,
 				busy: false,
-				fields: detail?.fields ?? current.fields,
-				data: detail?.data ?? current.data,
 				diagnostics: detail?.diagnostics ?? [],
-				error: detail?.error ?? String(cause),
+				error:
+					detail?.code === 'REVISION_CONFLICT'
+						? '预览版本已改变，仍显示上次成功画面。请刷新预览。'
+						: (detail?.message ?? String(cause)),
 			})
 		}
 		this.emit()
 	}
-	async writeData(entry: string, data: Record<string, unknown>) {
+	async writeData(entry: string, data: JsonObject) {
 		const current = this.documents.get(entry)
 		if (!current) return
 		this.documents.set(entry, {
 			...current,
 			data,
+			inputLoaded: true,
 			inputDirty: true,
 			inputError: undefined,
 			inputToken: (current.inputToken ?? 0) + 1,
@@ -411,10 +442,7 @@ export class WorkspaceController {
 		this.emit()
 		const work = (async () => {
 			try {
-				await api(this.path(`/input?entry=${encodeURIComponent(entry)}`), {
-					method: 'PUT',
-					body: { data: current.data },
-				})
+				await api.setInput({ projectId: this.project.id, entry, data: current.data })
 				const next = this.documents.get(entry)!
 				this.documents.set(entry, {
 					...next,

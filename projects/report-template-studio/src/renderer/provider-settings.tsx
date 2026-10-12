@@ -68,7 +68,8 @@ export function ProviderSettings({
 			return
 		}
 		let active = true
-		void api<{ providers: AiProvider[]; apis: string[] }>('/api/ai/providers')
+		void api
+			.providers()
 			.then((result) => {
 				if (!active) return
 				setProviders(result.providers)
@@ -96,10 +97,7 @@ export function ProviderSettings({
 				...(imageInputChanged ? { imageInput } : {}),
 				...(clearKey ? { apiKey: null } : key ? { apiKey: key } : {}),
 			}
-			const saved = await api<AiProvider>(`/api/ai/providers/${encodeURIComponent(id)}`, {
-				method: 'PUT',
-				body,
-			})
+			const saved = await api.configureProvider({ id, config: body })
 			setKey('')
 			setImageInput(saved.imageInput)
 			setImageInputChanged(false)
@@ -113,9 +111,7 @@ export function ProviderSettings({
 				imageInput: saved.imageInput,
 			})
 			if (discover) {
-				const found = await api<AiModel[]>(`/api/ai/providers/${encodeURIComponent(id)}/models`, {
-					method: 'POST',
-				})
+				const found = await api.discoverModels({ id })
 				setModels(found)
 				setNotice(`读取到 ${found.length} 个模型。请选择模型后保存；列表不代表端点支持所选协议。`)
 			} else

@@ -38,7 +38,7 @@ import {
 	IconLayoutSidebarRight,
 } from '@tabler/icons-react'
 import type { ProjectSummary } from '../shared/contracts'
-import { api, request } from './api'
+import { api } from './api'
 import { FilePane, FormPane, PreviewPane } from './panes'
 import { WorkspaceContext } from './workspace-context'
 import { WorkspaceController, useWorkspaceState } from './workspace'
@@ -307,7 +307,7 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 			[...workspace.documents.values()].some((document) => document.inputDirty)
 		)
 			throw new Error('请先解决未保存的修改再导出')
-		const bytes = await request(workspace.path('/export'))
+		const bytes = await api.exportWorkspace({ projectId: project.id })
 		await window.studio.saveFile({ suggestedName: `${project.name}.zip`, bytes })
 	}
 	const mutate = async (
@@ -601,7 +601,7 @@ export function App() {
 	const [name, setName] = useState('新的报表项目')
 	const [error, setError] = useState('')
 	const [busy, setBusy] = useState(false)
-	const refresh = async () => setProjects(await api<ProjectSummary[]>('/api/projects'))
+	const refresh = async () => setProjects(await api.listProjects())
 	useEffect(() => {
 		void refresh().catch((cause) => setError(String(cause)))
 	}, [])
@@ -664,10 +664,7 @@ export function App() {
 								disabled={busy || !name.trim()}
 								onClick={() =>
 									run(async () => {
-										const created = await api<ProjectSummary>('/api/projects', {
-											method: 'POST',
-											body: { name },
-										})
+										const created = await api.createProject({ name })
 										await refresh()
 										setProject(created)
 									})
@@ -705,8 +702,7 @@ export function App() {
 							run(async () => {
 								const input = await window.studio.importFile({ kind: 'workspace' })
 								if (!input) return
-								const bytes = await request('/api/import', { method: 'POST', bytes: input.bytes })
-								const imported = JSON.parse(new TextDecoder().decode(bytes)) as ProjectSummary
+								const imported = await api.importWorkspace({ bytes: input.bytes })
 								await refresh()
 								setProject(imported)
 							})
@@ -759,9 +755,7 @@ export function App() {
 									disabled={busy}
 									onClick={() =>
 										run(async () => {
-											await api(`/api/projects/${encodeURIComponent(item.id)}`, {
-												method: 'DELETE',
-											})
+											await api.forgetProject({ projectId: item.id })
 											await refresh()
 										})
 									}

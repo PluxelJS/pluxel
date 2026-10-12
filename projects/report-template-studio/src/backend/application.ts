@@ -1,15 +1,15 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { defineHostApplication } from '@pluxel/host'
+import { defineHostApplication, type HostApplication } from '@pluxel/host'
 import { FontsPlugin } from '@pluxel/fonts'
 import { TypstPlugin } from '@pluxel/typst'
-import { elysia } from '@pluxel/services/elysia'
 import { nodeModules } from '@pluxel/services/node'
 import { StudioPlugin } from '@report-template-studio/app/plugin'
+import { DOCUMENT_POLICY } from './documents.js'
 
 /** One application contract for the source development host and packaged Electron host. */
-export default defineHostApplication((startup) => {
+export default defineHostApplication((startup): HostApplication => {
 	const { root, assetsRoot } = startup.bindings
 	if (typeof root !== 'string' || typeof assetsRoot !== 'string')
 		throw new TypeError('Studio requires data and asset roots')
@@ -18,7 +18,6 @@ export default defineHostApplication((startup) => {
 		name: 'report-template-studio',
 		plugins: [FontsPlugin, TypstPlugin, StudioPlugin],
 		services: [
-			elysia(),
 			nodeModules(
 				startup.mode === 'production'
 					? {
@@ -36,7 +35,12 @@ export default defineHostApplication((startup) => {
 				{ owner: pluginNodeAddressOf(FontsPlugin), config: { maxFontBytes: 32 * 1024 * 1024 } },
 				{
 					owner: pluginNodeAddressOf(TypstPlugin),
-					config: { maxTemplateBytes: 128 * 1024 * 1024, maxFontBytes: 96 * 1024 * 1024 },
+					config: {
+						maxTemplateBytes: 128 * 1024 * 1024,
+						maxFontBytes: 96 * 1024 * 1024,
+						maxSessions: DOCUMENT_POLICY.maxSessions,
+						maxQueuedUpdates: DOCUMENT_POLICY.maxQueuedUpdates,
+					},
 				},
 			],
 		},

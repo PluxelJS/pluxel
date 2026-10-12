@@ -36,12 +36,8 @@ export function WorkspaceSearch({
 		setLoading(!!query.trim())
 		const timer = setTimeout(() => {
 			if (!query.trim()) return
-			const params = new URLSearchParams({
-				q: query,
-				mode: 'content',
-				caseSensitive: String(caseSensitive),
-			})
-			void api<SearchResult>(workspace.path(`/search?${params}`))
+			void api
+				.search({ projectId: workspace.project.id, query, mode: 'content', caseSensitive })
 				.then((value) => {
 					if (current) setResult(value)
 					return undefined

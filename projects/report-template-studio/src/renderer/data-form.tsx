@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react'
 import { Button, Checkbox, Group, NumberInput, Select, Table, Text, TextInput } from '@mantine/core'
 import { AutoForm, type AutoFormOptions } from 'valibot-form/web'
 import type { FieldNode } from 'valibot-form'
+import type { JsonObject, JsonValue } from '../shared/contracts'
 
 export function DataForm({
 	fields,
@@ -9,8 +10,8 @@ export function DataForm({
 	onChange,
 }: {
 	fields: FieldNode[]
-	data: Record<string, unknown>
-	onChange(data: Record<string, unknown>): void
+	data: JsonObject
+	onChange(data: JsonObject): void
 }) {
 	const tableFields = fields.filter(
 		(field) => field.kind === 'array' && field.item?.kind === 'object',
@@ -34,7 +35,7 @@ export function DataForm({
 							),
 						}),
 				},
-			}) satisfies AutoFormOptions<Record<string, unknown>>,
+			}) satisfies AutoFormOptions<JsonObject>,
 		[data, onChange],
 	)
 	return (
@@ -45,9 +46,9 @@ export function DataForm({
 			{tableFields.map((field) => {
 				if (field.kind !== 'array' || field.item?.kind !== 'object') return null
 				const key = field.name ?? field.path
-				const rows = (Array.isArray(data[key]) ? data[key] : []) as Record<string, unknown>[]
+				const rows = (Array.isArray(data[key]) ? data[key] : []) as JsonObject[]
 				const columns = field.item.fields
-				const update = (next: Record<string, unknown>[]) => onChange({ ...data, [key]: next })
+				const update = (next: JsonObject[]) => onChange({ ...data, [key]: next })
 				return (
 					<section key={key} className="line-items">
 						<Group justify="space-between" mb="sm">
@@ -76,7 +77,7 @@ export function DataForm({
 											{columns.map((column) => {
 												const name = column.name ?? column.path.split('.').at(-1)!
 												const value = row[name]
-												const change = (next: unknown) =>
+												const change = (next: JsonValue) =>
 													update(
 														rows.map((item, i) => (i === index ? { ...item, [name]: next } : item)),
 													)

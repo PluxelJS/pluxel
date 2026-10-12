@@ -6,32 +6,33 @@ import {
 	createLsToolDefinition,
 	createFindToolDefinition,
 	defineTool,
+	type ToolDefinition,
 } from '@mariozechner/pi-coding-agent'
 import { Type } from 'typebox'
-import type { TypstPageImage, TypstRegion, TypstNavigation } from '@pluxel/typst'
 import { runWorkspaceBash, type WorkspaceBashStore } from './workspace-bash.js'
-import type { CompileResult, ProjectSummary } from '../shared/contracts.js'
+import type {
+	CompileRequest,
+	CompileResult,
+	ProjectSummary,
+	DocumentTarget,
+	RevisionTarget,
+	RenderPageRequest,
+	PreviewResult,
+	PageArtifact,
+	PdfArtifact,
+	JsonObject,
+} from '../shared/contracts.js'
 
-export interface PreviewPagesRequest {
-	entry: string
-	revision: string
-	pages: number[]
-	region?: TypstRegion
-	maxDimensionPx?: number
-}
-export interface PreviewPage extends TypstPageImage {
-	headings: TypstNavigation['outline']
-	sources: { path: string; fromLine: number; toLine: number }[]
-}
 export interface WorkspaceAIOptions extends WorkspaceBashStore {
 	root: string
 	getProject(id: string): Promise<ProjectSummary>
-	compile(id: string, entry: string): Promise<CompileResult>
-	readPreviewPages(
-		id: string,
-		input: PreviewPagesRequest,
-		signal?: AbortSignal,
-	): Promise<readonly PreviewPage[]>
+	compile(input: CompileRequest): Promise<CompileResult>
+	getInput(input: DocumentTarget): Promise<{ data: JsonObject }>
+	getPreview(input: RevisionTarget): Promise<PreviewResult>
+	renderPage(input: RenderPageRequest): Promise<PageArtifact>
+	exportPdf(input: RevisionTarget): Promise<PdfArtifact>
+	/** Trusted adapter permission, absent from all model-callable file tools. */
+	readArtifact(id: string): Promise<Uint8Array>
 }
 
 /** Pi's ordinary file tools use the same file/conflict boundary as Studio's editor. */
@@ -40,7 +41,7 @@ export function createWorkspaceTools(
 	project: ProjectSummary,
 	check: () => void,
 	imageInput = false,
-) {
+): ToolDefinition[] {
 	const versions = new Map<string, string>()
 	function path(absolute: string) {
 		check()
@@ -193,18 +194,30 @@ export function createWorkspaceTools(
 			name: 'compile_preview',
 			label: 'Compile document',
 			description:
-				'Compile a workspace same-name TypeScript report entry (folder/folder.ts) through Studio. Returns actual schema defaults/data, diagnostics, revision, page count, point-unit page sizes, and outline. Read relevant pages with read_preview_pages to verify visual quality; a successful compile alone does not establish it.',
-			parameters: Type.Object({ entry: Type.String() }),
+				'Select input explicitly: {kind:stored} reads saved UI input, {kind:data,data:{}} uses schema defaults or supplied data. Compile a workspace same-name TypeScript report entry (folder/folder.ts) through Studio. Returns actual schema defaults/data, diagnostics, revision, page count, point-unit page sizes, and outline. Read relevant pages with read_preview_pages to verify visual quality; a successful compile alone does not establish it.',
+			parameters: Type.Object({
+				entry: Type.String(),
+				input: Type.Union([
+					Type.Object({ kind: Type.Literal('stored') }),
+					Type.Object({ kind: Type.Literal('data'), data: Type.Record(Type.String(), Type.Any()) }),
+				]),
+			}),
 			execute: async (_id, input) => {
 				check()
 				let result
 				try {
-					result = await options.compile(project.id, path(input.entry))
+					const target = { projectId: project.id, entry: path(input.entry) }
+					let data: JsonObject
+					if (input.input.kind === 'stored') {
+						const stored = await options.getInput(target)
+						data = stored.data
+					} else data = input.input.data as JsonObject
+					result = await options.compile({ ...target, data })
 				} catch (error) {
 					check()
 					// Pi serializes thrown tool errors by message. Preserve actual source
 					// diagnostics and schema feedback at that model-facing boundary.
-					if (error instanceof Error && ('diagnostics' in error || 'fields' in error))
+					if (error instanceof Error && ('diagnostics' in error || 'issues' in error))
 						throw new Error(
 							JSON.stringify({
 								ok: false,
@@ -212,15 +225,14 @@ export function createWorkspaceTools(
 								error: error.message,
 								code: 'code' in error ? error.code : undefined,
 								diagnostics: 'diagnostics' in error ? error.diagnostics : undefined,
-								fields: 'fields' in error ? error.fields : undefined,
-								data: 'data' in error ? error.data : undefined,
+								issues: 'issues' in error ? error.issues : undefined,
 							}),
 							{ cause: error },
 						)
 					throw error
 				}
 				check()
-				const navigation = result.preview.navigation
+				const navigation = { pages: result.pages, outline: result.outline }
 				const pageSizes: { fromPage: number; toPage: number; widthPt: number; heightPt: number }[] =
 					[]
 				for (const page of navigation.pages) {
@@ -239,8 +251,10 @@ export function createWorkspaceTools(
 					ok: true,
 					entry: result.entry,
 					revision: result.revision,
-					fields: result.fields,
-					data: result.data,
+
+					...(Buffer.byteLength(JSON.stringify(result.data)) <= 64 * 1024
+						? { data: result.data }
+						: { dataOmitted: true, dataBytes: Buffer.byteLength(JSON.stringify(result.data)) }),
 					diagnostics: result.diagnostics,
 					elapsedMs: result.elapsedMs,
 					pageCount: navigation.pages.length,
@@ -256,7 +270,7 @@ export function createWorkspaceTools(
 			name: 'read_preview_pages',
 			label: 'Inspect rendered pages',
 			description:
-				'Read actual PNG images from the last compiled preview without recompiling. Supply the entry and revision returned by compile_preview and 1–3 one-based page numbers. Optionally crop a region in page-local points (1 pt = 1/72 inch), using outline coordinates or page dimensions. maxDimensionPx defaults to 1600 (256–2048). Returns image blocks plus headings and source line ranges. After source or input changes compile again; stale revisions are rejected. For multipage documents inspect opening, continuation and final pages, then zoom into suspect formulas, tables or images. Requires a model with image input.',
+				'Read actual PNG images from the last compiled preview without recompiling. Supply the entry and revision returned by compile_preview and 1–3 one-based page numbers. Optionally crop a region in page-local points (1 pt = 1/72 inch), using outline coordinates or page dimensions. maxDimensionPx defaults to 1600 (256–2048). Returns image blocks plus headings and source line ranges. After source changes or a newer compile, compile again; stale revisions are rejected. For multipage documents inspect opening, continuation and final pages, then zoom into suspect formulas, tables or images. Requires a model with image input.',
 			parameters: Type.Object({
 				entry: Type.String(),
 				revision: Type.String(),
@@ -281,14 +295,51 @@ export function createWorkspaceTools(
 					throw new Error(
 						'所选模型未启用图片输入。请选择视觉模型或在供应商设置中启用该模型的图片能力。',
 					)
-				const images = await options.readPreviewPages(
-					project.id,
-					{ ...input, entry: path(input.entry) },
-					signal,
-				)
+				const target = { projectId: project.id, entry: path(input.entry), revision: input.revision }
+				const preview = await options.getPreview(target)
+				check()
+				signal?.throwIfAborted()
+				const images: { artifact: PageArtifact; data: Uint8Array }[] = []
+				let bytes = 0
+				if (new Set(input.pages).size !== input.pages.length)
+					throw new Error('Preview pages must be distinct')
+				const maxDimension = input.maxDimensionPx ?? 1600
+				if (!Number.isInteger(maxDimension) || maxDimension < 256 || maxDimension > 2048)
+					throw new Error('maxDimensionPx must be 256–2048')
+				for (const number of input.pages) {
+					check()
+					signal?.throwIfAborted()
+					const page = preview.preview.navigation.pages.find((item) => item.page === number)
+					if (!page)
+						throw Object.assign(new Error('Page is outside the compiled document'), {
+							code: 'INVALID_INPUT',
+						})
+					const region = input.region ?? { x: 0, y: 0, width: page.width, height: page.height }
+					const scale = Math.min(
+						4,
+						maxDimension / Math.max(region.width, region.height),
+						8191 / Math.max(page.width, page.height),
+						Math.sqrt(15_999_000 / (page.width * page.height)),
+					)
+					const artifact = await options.renderPage({
+						...target,
+						page: number,
+						scale,
+						...(input.region ? { region: input.region } : {}),
+					})
+					check()
+					signal?.throwIfAborted()
+					bytes += artifact.byteLength
+					if (bytes > 12 * 1024 * 1024)
+						throw Object.assign(
+							new Error('Preview images exceed 12 MiB; request fewer pages or smaller dimensions'),
+							{ code: 'LIMIT_EXCEEDED' },
+						)
+					images.push({ artifact, data: await options.readArtifact(artifact.id) })
+				}
 				check()
 				return {
-					content: images.flatMap((image) => [
+					content: images.flatMap(({ artifact: image, data }) => [
 						{
 							type: 'text' as const,
 							text: JSON.stringify({
@@ -304,19 +355,42 @@ export function createWorkspaceTools(
 						},
 						{
 							type: 'image' as const,
-							data: Buffer.from(image.data).toString('base64'),
+							data: Buffer.from(data).toString('base64'),
 							mimeType: 'image/png',
 						},
 					]),
 					details: {
-						pages: images.map(({ page, width, height, region }) => ({
-							page,
-							width,
-							height,
-							region,
-						})),
+						pages: images.map(
+							({ artifact: { id, path: artifactPath, page, width, height, region } }) => ({
+								id,
+								path: artifactPath,
+								page,
+								width,
+								height,
+								region,
+							}),
+						),
 					},
 				}
+			},
+		}),
+		defineTool({
+			name: 'export_pdf',
+			label: 'Export document PDF',
+			description:
+				'Export the exact compiled entry/revision to an immutable local PDF artifact. Does not compile. Copy the returned file to retain it beyond expiresAt.',
+			parameters: Type.Object({ entry: Type.String(), revision: Type.String() }),
+			execute: async (_id, input, signal) => {
+				check()
+				signal?.throwIfAborted()
+				const artifact = await options.exportPdf({
+					projectId: project.id,
+					entry: path(input.entry),
+					revision: input.revision,
+				})
+				check()
+				signal?.throwIfAborted()
+				return content(artifact)
 			},
 		}),
 	]

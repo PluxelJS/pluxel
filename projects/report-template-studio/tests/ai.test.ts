@@ -2,8 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { CompileResult } from '../src/shared/contracts'
-import type { PreviewPage, PreviewPagesRequest } from '../src/backend/ai-tools'
+import type { CompileRequest, CompileResult } from '../src/shared/contracts'
 
 const fake = vi.hoisted(() => ({
 	available: [] as { provider: string; id: string; name: string; input: ('text' | 'image')[] }[],
@@ -71,25 +70,19 @@ async function fixture() {
 	const store = new WorkspaceStore(join(root, 'state'), '')
 	await store.initialize()
 	const project = await store.open(workspace)
-	const compile = vi.fn(async (_id: string, entry: string): Promise<CompileResult> => ({
+	const compile = vi.fn(async ({ entry }: CompileRequest): Promise<CompileResult> => ({
 		projectId: project.id,
 		entry,
 		name: 'reports',
 		template: 'reports/main.typ',
 		revision: 'revision',
-		fields: [],
+		sourceRevision: 'source',
+		pageCount: 1,
+		pages: [{ page: 1, width: 595, height: 842 }],
+		outline: [],
 		data: {},
 		diagnostics: [],
 		elapsedMs: 1,
-		sourceVersions: {},
-		preview: {
-			sessionId: 'test',
-			revision: 1,
-			format: 'vector',
-			compilerVersion: '0.7.0',
-			data: [],
-			navigation: { pages: [{ page: 1, width: 595, height: 842 }], points: [], outline: [] },
-		},
 	}))
 	const options = {
 		root: join(root, 'ai'),
@@ -101,9 +94,46 @@ async function fixture() {
 		rename: (id, input) => store.rename(id, input),
 		remove: (id, input) => store.remove(id, input),
 		compile,
-		readPreviewPages: vi.fn(
-			async (_id: string, _input: PreviewPagesRequest): Promise<readonly PreviewPage[]> => [],
-		),
+		getInput: vi.fn(async () => ({ data: {} })),
+		getPreview: vi.fn(async (input) => ({
+			...input,
+			sourceRevision: 'source',
+			sourceVersions: {},
+			preview: {
+				sessionId: 'test',
+				revision: 1,
+				format: 'vector' as const,
+				compilerVersion: '0.7.0' as const,
+				data: new Uint8Array(),
+				navigation: { pages: [{ page: 1, width: 595, height: 842 }], points: [], outline: [] },
+			},
+		})),
+		renderPage: vi.fn(async (input) => ({
+			...input,
+			id: 'artifact',
+			path: '/artifact/page.png',
+			byteLength: 8,
+			createdAt: new Date().toISOString(),
+			expiresAt: new Date(Date.now() + 86400000).toISOString(),
+			kind: 'png' as const,
+			mimeType: 'image/png' as const,
+			width: 10,
+			height: 20,
+			region: { x: 0, y: 0, width: 5, height: 10 },
+			headings: [],
+			sources: [{ path: 'reports/main.typ', fromLine: 1, toLine: 2 }],
+		})),
+		readArtifact: vi.fn(async () => Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])),
+		exportPdf: vi.fn(async (input) => ({
+			...input,
+			id: 'pdf',
+			path: '/artifact/document.pdf',
+			byteLength: 5,
+			createdAt: new Date().toISOString(),
+			expiresAt: new Date(Date.now() + 86400000).toISOString(),
+			kind: 'pdf' as const,
+			mimeType: 'application/pdf' as const,
+		})),
 	} satisfies ConstructorParameters<typeof StudioAI>[0]
 	const ai = new StudioAI(options)
 	instances.push(ai)
@@ -169,6 +199,7 @@ it('uses official Pi file tools against real workspace files, references and ski
 					'search_files',
 					'compile_preview',
 					'read_preview_pages',
+					'export_pdf',
 				])
 				expect(options.resourceLoader.getSkills().skills).toEqual(
 					expect.arrayContaining([
@@ -224,7 +255,7 @@ it('uses official Pi file tools against real workspace files, references and ski
 						edits: [{ oldText: 'not present', newText: 'oops' }],
 					}),
 				).rejects.toThrow('Could not find the exact text')
-				await call('compile_preview', { entry: 'reports/reports.ts' })
+				await call('compile_preview', { entry: 'reports/reports.ts', input: { kind: 'stored' } })
 				await expect(
 					call('read_preview_pages', {
 						entry: 'reports/reports.ts',
@@ -245,7 +276,11 @@ it('uses official Pi file tools against real workspace files, references and ski
 	const state = await ai.snapshot(project.id, threadId)
 	expect(state.error).toBeUndefined()
 	expect(requested).toContain('@shared/theme.typ\n@reports')
-	expect(compile).toHaveBeenCalledWith(project.id, 'reports/reports.ts')
+	expect(compile).toHaveBeenCalledWith({
+		projectId: project.id,
+		entry: 'reports/reports.ts',
+		data: {},
+	})
 	expect(dispose).toHaveBeenCalledOnce()
 })
 it('delivers page images to Pi for a known model on a custom provider and keeps diagnostics actionable', async () => {
@@ -255,19 +290,7 @@ it('delivers page images to Pi for a known model on a custom provider and keeps 
 	// reach both the actual Pi model input contract and the image tool.
 	fake.available = [visual]
 	const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])
-	options.readPreviewPages.mockResolvedValue([
-		{
-			revision: 1,
-			page: 1,
-			format: 'png',
-			data: png,
-			width: 10,
-			height: 20,
-			region: { x: 0, y: 0, width: 5, height: 10 },
-			headings: [],
-			sources: [{ path: 'reports/main.typ', fromLine: 1, toLine: 2 }],
-		},
-	])
+
 	fake.create.mockImplementation(async (sessionOptions) => ({
 		session: {
 			messages: [],
@@ -281,7 +304,7 @@ it('delivers page images to Pi for a known model on a custom provider and keeps 
 				)
 				const compiled = await tools
 					.get('compile_preview')
-					.execute('compile', { entry: 'reports/reports.ts' })
+					.execute('compile', { entry: 'reports/reports.ts', input: { kind: 'stored' } })
 				expect(JSON.parse(compiled.content[0].text)).toMatchObject({
 					ok: true,
 					pageCount: 1,
@@ -316,7 +339,7 @@ it('delivers page images to Pi for a known model on a custom provider and keeps 
 				)
 				const failure = await tools
 					.get('compile_preview')
-					.execute('broken', { entry: 'reports/reports.ts' })
+					.execute('broken', { entry: 'reports/reports.ts', input: { kind: 'stored' } })
 					.catch((error: Error) => error)
 				expect(failure).toBeInstanceOf(Error)
 				expect(JSON.parse(failure.message)).toMatchObject({
@@ -335,7 +358,8 @@ it('delivers page images to Pi for a known model on a custom provider and keeps 
 	await finished(ai, project.id, threadId)
 	const snapshot = await ai.snapshot(project.id, threadId)
 	expect(snapshot.error).toBeUndefined()
-	expect(options.readPreviewPages).toHaveBeenCalledTimes(2)
+	expect(options.renderPage).toHaveBeenCalledTimes(2)
+	expect(options.readArtifact).toHaveBeenCalledTimes(2)
 })
 it('rejects unknown references before starting the model', async () => {
 	const { ai, project, threadId } = await fixture()

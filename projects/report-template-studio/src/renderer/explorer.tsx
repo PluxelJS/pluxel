@@ -27,7 +27,7 @@ import {
 	IconX,
 } from '@tabler/icons-react'
 import type { FileEntry } from '../shared/contracts'
-import { api, request } from './api'
+import { api } from './api'
 import { WorkspaceController, useWorkspaceState } from './workspace'
 
 const parentPath = (path: string) => path.split('/').slice(0, -1).join('/')
@@ -159,10 +159,7 @@ export function Explorer({
 			if (!asset) return
 			const directory = byPath.get(path)?.kind === 'directory' ? path : parentPath(path)
 			const destination = directory ? `${directory}/${asset.name}` : asset.name
-			await request(workspace.path(`/assets?path=${encodeURIComponent(destination)}`), {
-				method: 'POST',
-				bytes: asset.bytes,
-			})
+			await api.putAsset({ projectId: workspace.project.id, path: destination, bytes: asset.bytes })
 			await workspace.refresh()
 			reveal(destination)
 		})
@@ -174,34 +171,35 @@ export function Explorer({
 		await run(async () => {
 			if (kind === 'delete')
 				await mutate(path, undefined, (version) =>
-					api(workspace.path('/file'), {
-						method: 'DELETE',
-						body: { path, expectedVersion: version },
-					}),
+					api.remove({ projectId: workspace.project.id, path, expectedVersion: version }),
 				)
 			else if (kind === 'rename')
 				await mutate(path, destination, (version) =>
-					api(workspace.path('/rename'), {
-						method: 'POST',
-						body: { path, to: destination, expectedVersion: version },
+					api.rename({
+						projectId: workspace.project.id,
+						path,
+						to: destination,
+						expectedVersion: version,
 					}),
 				)
 			else if (kind === 'report') {
-				const report = await api<{ entry: string }>(workspace.path('/report'), {
-					method: 'POST',
-					body: { path: destination },
+				const report = await api.createReport({
+					projectId: workspace.project.id,
+					path: destination,
 				})
 				await workspace.refresh()
 				reveal(report.entry)
 				await openReport(report.entry)
 			} else {
-				await api(workspace.path(kind === 'directory' ? '/directory' : '/file'), {
-					method: kind === 'directory' ? 'POST' : 'PUT',
-					body:
-						kind === 'directory'
-							? { path: destination }
-							: { path: destination, content: '', expectedVersion: null },
-				})
+				if (kind === 'directory')
+					await api.mkdir({ projectId: workspace.project.id, path: destination })
+				else
+					await api.writeFile({
+						projectId: workspace.project.id,
+						path: destination,
+						content: '',
+						expectedVersion: null,
+					})
 			}
 			await workspace.refresh()
 			if (kind === 'file') await openFile(destination)

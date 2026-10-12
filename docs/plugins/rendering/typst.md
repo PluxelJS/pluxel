@@ -141,6 +141,8 @@ const image = await session.renderPage({
 
 PNG 直接使用保留的成功文档；源码或输入发生变更后，应用须提交 update，并检查自己的工作区/输入版本，不能把旧修订图片称为最新结果。排队的 `renderPage` 在执行时校验修订：如果前面的 update 已成功推进 revision，则报 `STALE_REVISION`。普通渲染参数、配额或过期错误保留会话，可修正参数重试。
 
+[Report Template Studio 的程序接入](../../../projects/report-template-studio/README.md#程序接入)在应用层持有这些 session。外部 Node 消费者通过其公开 client 连接常驻应用，使用应用编译 revision 获取 PNG/PDF 文件产物；session 的创建、字体更新和释放由应用管理。
+
 区域裁剪在整页原生栅格化后进行，因此保留原页面渐变、背景与裁切语义。**即使只请求局部，整页栅格仍须满足单边不超过 8192 px、总计不超过 16,000,000 像素**；超限请降低 scale，返回 `LIMIT_EXCEEDED`。PNG 同时受 `maxOutputBytes` 限制。区域向外对齐到像素边界，返回的 region 表达实际采样范围。不要一次性把长文档所有页转换为图片塞入模型上下文；调用方可按目录选择少量页并按需查看局部。
 
 ## 浏览器预览

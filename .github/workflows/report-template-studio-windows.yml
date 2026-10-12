@@ -94,13 +94,13 @@ jobs:
 
       - name: Check and build Studio
         run: |
-          pnpm --filter @report-template-studio/app typecheck
           pnpm --filter @report-template-studio/app build
+          pnpm --filter @report-template-studio/app typecheck
 
       - name: Package current Windows architecture
         run: pnpm --filter @report-template-studio/app package
 
-      - name: Verify packaged runtime without a listener
+      - name: Verify packaged runtime with named pipe and no TCP/HTTP listener
         run: pnpm --filter @report-template-studio/app test:runtime
         env:
           STUDIO_APP_ROOT: ${{ github.workspace }}/projects/report-template-studio/release/PluxelTypstStudio-win32-x64/resources/app

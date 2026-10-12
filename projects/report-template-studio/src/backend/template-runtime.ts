@@ -12,9 +12,25 @@ import {
 } from 'vite'
 import { rolldown } from 'rolldown'
 import { newQuickJSWASMModule, type QuickJSContext } from 'quickjs-emscripten'
+import type { TypstDiagnostic } from '@pluxel/typst'
+import type { JsonObject } from '../shared/contracts.js'
 export interface RuntimeSource {
 	files: Record<string, string>
 	entry: string
+}
+export interface RuntimeOperation {
+	signal?: AbortSignal
+	/** Absolute operation deadline, including time spent waiting for the document. */
+	deadline?: number
+}
+
+function sandboxFailure(value: unknown): Error {
+	const object = value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
+	const message = typeof object?.message === 'string' ? object.message : JSON.stringify(value)
+	return Object.assign(new Error(message), {
+		...(typeof object?.code === 'string' ? { code: object.code } : {}),
+		...(Array.isArray(object?.diagnostics) ? { diagnostics: object.diagnostics } : {}),
+	})
 }
 
 const libraryNames = ['valibot', 'valibot-form', '@pluxel/typst/template'] as const
@@ -115,10 +131,18 @@ class Sandbox {
 		vm.setProp(vm.global, 'atob', base64)
 		base64.dispose()
 	}
-	async evaluate(expression: string): Promise<unknown> {
+	async evaluate(expression: string, options: RuntimeOperation = {}): Promise<unknown> {
 		if (this.closed) throw new Error('Template sandbox is closed')
-		this.deadline = Date.now() + 1500
-		using handle = this.vm.unwrapResult(this.vm.evalCode(expression))
+		options.signal?.throwIfAborted()
+		const end = Math.min(Date.now() + 10_000, options.deadline ?? Infinity)
+		this.deadline = Math.min(Date.now() + 1500, end)
+		const evaluated = this.vm.evalCode(expression)
+		if (evaluated.error) {
+			const error = this.vm.dump(evaluated.error)
+			evaluated.error.dispose()
+			throw sandboxFailure(error)
+		}
+		using handle = evaluated.value
 		let settled = false
 		let abandoned = false
 		let resolved: Awaited<ReturnType<QuickJSContext['resolvePromise']>> | undefined
@@ -128,21 +152,23 @@ class Sandbox {
 			settled = true
 			return undefined
 		})
-		const end = Date.now() + 10_000
 		try {
 			while (!settled) {
-				this.deadline = Date.now() + 1500
+				options.signal?.throwIfAborted()
+				this.deadline = Math.min(Date.now() + 1500, end)
 				const result = this.vm.runtime.executePendingJobs()
 				if (result.error) {
 					const failure = this.vm.dump(result.error)
 					result.error.dispose()
-					throw new Error(`模板执行失败：${JSON.stringify(failure)}`)
+					throw sandboxFailure(failure)
 				}
 				if (Date.now() > end) throw new Error('Template module evaluation timed out')
 				await nextTurn()
 			}
 			await promise
-			using value = this.vm.unwrapResult(resolved!)
+			options.signal?.throwIfAborted()
+			if (resolved!.error) throw sandboxFailure(this.vm.dump(resolved!.error))
+			using value = resolved!.value!
 			return this.vm.dump(value)
 		} finally {
 			abandoned = true
@@ -166,6 +192,7 @@ export class TemplateRuntime {
 	private files: Record<string, string>
 	private documentEntry: string
 	private readonly messages: HMRPayload[] = []
+	private diagnostics?: readonly TypstDiagnostic[]
 	private closed = false
 	private constructor(
 		private readonly root: string,
@@ -174,15 +201,15 @@ export class TemplateRuntime {
 		this.files = document.files
 		this.documentEntry = document.entry
 	}
-	static async open(document: RuntimeSource) {
+	static async open(document: RuntimeSource, options: RuntimeOperation = {}) {
 		const root = await mkdtemp(join(tmpdir(), 'studio-vite-'))
 		const runtime = new TemplateRuntime(root, document)
 		try {
-			await runtime.initialize()
+			await runtime.initialize(options)
 			return runtime
 		} catch (error) {
 			await runtime.close()
-			throw error
+			throw runtime.withDiagnostics(error)
 		}
 	}
 	private entry() {
@@ -194,39 +221,86 @@ export class TemplateRuntime {
 		return `${rawImports}
 import * as initial from ${JSON.stringify('./' + this.documentEntry)};
 import { safeParse, getDefaults } from 'valibot';
-import { extractFormFields } from 'valibot-form';
 let template = initial;
 if (import.meta.hot) {
   import.meta.hot.accept(${JSON.stringify('./' + this.documentEntry)}, next => { if (next) template = next; });
   import.meta.hot.accept();
 }
 function merge(defaults, input) {
+  if (input === undefined) {
+    if (Array.isArray(defaults)) return defaults.map(value => merge(value, undefined));
+    if (defaults && typeof defaults === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(defaults))) {
+      const result = {};
+      for (const [key, value] of Object.entries(defaults)) if (value !== undefined) Object.defineProperty(result, key, { value: merge(value, undefined), enumerable: true, configurable: true, writable: true });
+      return result;
+    }
+    return defaults;
+  }
   if (Array.isArray(input)) return input.map((value, index) => merge(defaults?.[index], value));
   if (input && typeof input === 'object') {
-    const result = defaults && typeof defaults === 'object' && !Array.isArray(defaults) ? { ...defaults } : {};
-    for (const [key, value] of Object.entries(input)) result[key] = merge(defaults?.[key], value);
+    const result = defaults && typeof defaults === 'object' && !Array.isArray(defaults) ? merge(defaults, undefined) : {};
+    for (const [key, value] of Object.entries(input)) Object.defineProperty(result, key, { value: merge(defaults?.[key], value), enumerable: true, configurable: true, writable: true });
     return result;
   }
-  return input === undefined ? defaults : input;
+  return input;
 }
-export function run(input) {
+function documentDefinition() {
   if (!Object.hasOwn(template, 'default')) throw new Error('报表入口必须 default export 文档定义；使用 defineTypstDocument({ template, schema, createFiles? })');
   const definition = template.default;
   if (!definition || typeof definition !== 'object' || Array.isArray(definition)) throw new Error('报表入口 default 必须是文档定义对象');
   if (Object.keys(definition).some(key => !['template', 'schema', 'createFiles'].includes(key))) throw new Error('报表定义仅允许 template、schema 和 createFiles；名称来自入口文件名');
   if (definition.createFiles !== undefined && typeof definition.createFiles !== 'function') throw new Error('createFiles 必须是同步函数');
   if (!definition.schema || definition.schema.async || !['object', 'strict_object', 'loose_object', 'object_with_rest'].includes(definition.schema.type)) throw new Error('报表定义 schema 必须是同步 Valibot object schema');
+  return definition;
+}
+function assertJson(value, path = [], ancestors = new Set(), depth = 0) {
+  if (depth > 64) throw new Error('Schema output JSON exceeds maximum depth');
+  if (value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return;
+  if (!value || typeof value !== 'object') throw new Error('Schema output must be a finite JSON value at ' + path.join('.'));
+  if (ancestors.has(value)) throw new Error('Schema output cannot contain cycles');
+  if (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error('Schema output must contain plain objects');
+  if (Object.getOwnPropertySymbols(value).length) throw new Error('Schema output cannot contain symbols');
+  ancestors.add(value);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (Array.isArray(value)) {
+    if (Object.keys(value).length !== value.length) throw new Error('Schema output arrays must be dense');
+    for (let index = 0; index < value.length; index++) {
+      const property = descriptors[index];
+      if (!property || !('value' in property)) throw new Error('Schema output cannot contain accessors');
+      assertJson(property.value, [...path, index], ancestors, depth + 1);
+    }
+  } else for (const [key, property] of Object.entries(descriptors)) {
+    if (!property.enumerable || !('value' in property)) throw new Error('Schema output cannot contain accessors or hidden properties');
+    assertJson(property.value, [...path, key], ancestors, depth + 1);
+  }
+  ancestors.delete(value);
+}
+export function run(input) {
+  const definition = documentDefinition();
   const metadata = { template: definition.template };
-  const fields = extractFormFields(definition.schema);
   const data = merge(getDefaults(definition.schema), input);
   const parsed = safeParse(definition.schema, data);
-  if (!parsed.success) return { ...metadata, fields, data, inputError: parsed.issues.map(i => (i.path?.map(p => p.key).join('.') || 'data') + ': ' + i.message).join('\\n') };
+  if (!parsed.success) return { ...metadata, issues: parsed.issues.map(issue => ({
+    path: issue.path?.map(part => part.key).filter(key => typeof key === 'string' || typeof key === 'number') ?? [],
+    rule: issue.type,
+    message: issue.message,
+  })) };
+  assertJson(parsed.output);
   const files = definition.createFiles ? definition.createFiles(parsed.output) : { '/inputs/data.json': { kind: 'json', value: parsed.output } };
   if (files?.then) throw new Error('createFiles 必须是同步函数');
-  return { ...metadata, fields, data: parsed.output, files };
+  assertJson(files);
+  return { ...metadata, data: parsed.output, files };
+}
+export async function describe() {
+  const definition = documentDefinition();
+  const { extractFormFields } = await import('valibot-form');
+  // Missing defaults are absent keys; no schema parse or createFiles runs here.
+  const defaults = merge(getDefaults(definition.schema), undefined);
+  assertJson(defaults);
+  return { template: definition.template, fields: extractFormFields(definition.schema), defaults };
 }`
 	}
-	private async initialize() {
+	private async initialize(options: RuntimeOperation) {
 		const channel = createServerHotChannel()
 		channel.api!.outsideEmitter.on('send', (payload: HMRPayload) => this.messages.push(payload))
 		const root = this.root.replaceAll('\\', '/')
@@ -344,7 +418,14 @@ export function run(input) {
 						`Template module transport cannot leave its own source tree: ${JSON.stringify([id, importer])}`,
 					)
 				if (request.data[1] === null) request.data[1] = undefined
-				const result = await this.environment.hot.handleInvoke(payload)
+				let result
+				try {
+					result = await this.environment.hot.handleInvoke(payload)
+					if ('error' in result) this.captureDiagnostics(result.error)
+				} catch (error) {
+					this.captureDiagnostics(error)
+					throw error
+				}
 				if (
 					'result' in result &&
 					result.result &&
@@ -362,8 +443,8 @@ export function run(input) {
 			},
 		)
 		const runner = await bundleLibrary('vite/module-runner')
-		await this.sandbox
-			.evaluate(`class TextDecoder { decode(bytes) { return __studioDecode(JSON.stringify(Array.from(bytes))); } }
+		await this.sandbox.evaluate(
+			`class TextDecoder { decode(bytes) { return __studioDecode(JSON.stringify(Array.from(bytes))); } }
 ${runner}
 class URL { constructor(input) { this.href = __studioUrl(input); } }
 globalThis.__studioHmrErrors = [];
@@ -383,12 +464,61 @@ const __studioRunner = new __viteRunner.ModuleRunner({
 }, new IsolatedEvaluator());
 globalThis.__studioHmr = payload => __studioOnMessage(payload);
 globalThis.__studioRun = async data => { const module = await __studioRunner.import(${JSON.stringify(entry)}); return JSON.stringify(module.run(data)); };
+globalThis.__studioDescribe = async () => { const module = await __studioRunner.import(${JSON.stringify(entry)}); return JSON.stringify(await module.describe()); };
 globalThis.__studioClose = () => __studioRunner.close();
 __studioRunner.import(${JSON.stringify(entry)}).then(() => true)
-`)
+`,
+			options,
+		)
 	}
-	async update(document: RuntimeSource) {
+	private captureDiagnostics(cause: unknown) {
+		if (!cause || typeof cause !== 'object') return
+		type ModuleError = {
+			message?: string
+			id?: string
+			loc?: { file?: string; line?: number; column?: number }
+			errors?: ModuleError[]
+		}
+		const error = cause as ModuleError
+		this.diagnostics = (Array.isArray(error.errors) ? error.errors : [error]).map((item) => {
+			const location = item.loc
+			const absolute = location?.file ?? item.id ?? error.id
+			const path = absolute
+				?.replaceAll('\\', '/')
+				.replace(this.root.replaceAll('\\', '/') + '/', '')
+				.split('?')[0]
+			return {
+				severity: 'error',
+				message: item.message ?? error.message ?? String(cause),
+				path: path && Object.hasOwn(this.files, path) ? path : this.documentEntry,
+				range:
+					typeof location?.line === 'number'
+						? {
+								start: { line: Math.max(0, location.line - 1), character: location.column ?? 0 },
+								end: {
+									line: Math.max(0, location.line - 1),
+									character: (location.column ?? 0) + 1,
+								},
+							}
+						: undefined,
+			}
+		})
+	}
+	private withDiagnostics(cause: unknown) {
+		const error = cause instanceof Error ? cause : sandboxFailure(cause)
+		return this.diagnostics ? Object.assign(error, { diagnostics: this.diagnostics }) : error
+	}
+	async update(document: RuntimeSource, options: RuntimeOperation = {}) {
+		try {
+			await this.updateSources(document, options)
+		} catch (error) {
+			throw this.withDiagnostics(error)
+		}
+	}
+	private async updateSources(document: RuntimeSource, options: RuntimeOperation) {
 		if (this.closed) throw new Error('Template runtime is closed')
+		options.signal?.throwIfAborted()
+		this.diagnostics = undefined
 		const previousEntry = this.entry()
 		const changed = new Set(
 			[...Object.keys(this.files), ...Object.keys(document.files)].filter(
@@ -397,7 +527,7 @@ __studioRunner.import(${JSON.stringify(entry)}).then(() => true)
 		)
 		this.files = document.files
 		this.documentEntry = document.entry
-		await this.sandbox.evaluate('__studioHmrErrors.length = 0')
+		await this.sandbox.evaluate('__studioHmrErrors.length = 0', options)
 		// The sources are store-backed, so use Vite's public HMR entry rather than a
 		// second filesystem watcher. reloadModule propagates through Vite's graph.
 		const modules = new Set<import('vite').EnvironmentModuleNode>()
@@ -415,18 +545,29 @@ __studioRunner.import(${JSON.stringify(entry)}).then(() => true)
 		}
 		for (const module of modules) await this.environment.reloadModule(module)
 		let processed = 0
-		const expires = Date.now() + 10_000
+		const expires = Math.min(Date.now() + 10_000, options.deadline ?? Infinity)
 		while (this.messages.length > 0) {
 			if (++processed > 128 || Date.now() > expires)
 				throw new Error('Template HMR update budget exceeded')
 			const message = this.messages.shift()!
-			await this.sandbox.evaluate(`__studioHmr(${JSON.stringify(message)})`)
+			await this.sandbox.evaluate(`__studioHmr(${JSON.stringify(message)})`, options)
 		}
-		const errors = await this.sandbox.evaluate('JSON.stringify(__studioHmrErrors)')
+		const errors = await this.sandbox.evaluate('JSON.stringify(__studioHmrErrors)', options)
 		if (errors !== '[]') throw new Error(`模板热更新失败：${errors}`)
 	}
-	async run(data: Record<string, unknown>) {
-		return this.sandbox.evaluate(`__studioRun(${JSON.stringify(data)})`)
+	async run(data: JsonObject, options: RuntimeOperation = {}) {
+		try {
+			return await this.sandbox.evaluate(`__studioRun(${JSON.stringify(data)})`, options)
+		} catch (error) {
+			throw this.withDiagnostics(error)
+		}
+	}
+	async describe(options: RuntimeOperation = {}) {
+		try {
+			return await this.sandbox.evaluate('__studioDescribe()', options)
+		} catch (error) {
+			throw this.withDiagnostics(error)
+		}
 	}
 	async close() {
 		if (this.closed) return

@@ -17,7 +17,16 @@ export function pathName(name: string) {
 		/[\\\x00-\x1f:]/.test(name) ||
 		name.split('/').some((part) => !part || part === '.' || part === '..')
 	)
-		throw new Error('Invalid workspace path')
+		throw Object.assign(new Error('Invalid workspace path'), {
+			code: 'INVALID_INPUT',
+			issues: [
+				{
+					path: ['path'],
+					rule: 'workspace_path',
+					message: 'Expected a relative POSIX path without parent traversal',
+				},
+			],
+		})
 	return name
 }
 export async function safePath(path: string) {
@@ -26,7 +35,10 @@ export async function safePath(path: string) {
 	while (true) {
 		try {
 			const stat = await lstat(current)
-			if (stat.isSymbolicLink()) throw new Error('Symbolic links are not allowed in workspaces')
+			if (stat.isSymbolicLink())
+				throw Object.assign(new Error('Symbolic links are not allowed in workspaces'), {
+					code: 'INVALID_INPUT',
+				})
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
 		}
@@ -45,11 +57,15 @@ export function workspaceConfig(value: unknown, fallbackName: string): Workspace
 		Object.hasOwn(value, 'documents') ||
 		!Array.isArray(value.fonts)
 	)
-		throw new Error(
-			'Invalid studio.json: expected name and fonts; reports are discovered from folder/folder.ts',
+		throw Object.assign(
+			new Error(
+				'Invalid studio.json: expected name and fonts; reports are discovered from folder/folder.ts',
+			),
+			{ code: 'INVALID_INPUT' },
 		)
 	const fonts = value.fonts.map((item) => {
-		if (typeof item !== 'string') throw new Error('Invalid studio.json font')
+		if (typeof item !== 'string')
+			throw Object.assign(new Error('Invalid studio.json font'), { code: 'INVALID_INPUT' })
 		return pathName(item)
 	})
 	return { name: value.name, fonts }

@@ -1,330 +1,386 @@
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
 import { resolve, join } from 'node:path'
 import { createTestHost } from '@pluxel/test'
 import { FontsPlugin } from '@pluxel/fonts'
 import { TypstPlugin } from '@pluxel/typst'
-import { elysia } from '@pluxel/services/elysia'
 import { nodeModules } from '@pluxel/services/node'
 import { expect, it, vi } from 'vitest'
+import { NativeCompilerClient } from '../../../plugins/render/typst/src/native-client.ts'
 import { WorkspaceStore } from '../src/backend/store.js'
-import { InputStore } from '../src/backend/inputs.js'
 import { StudioPlugin } from '../src/backend/plugin.js'
-import type { CompileResult, WorkspaceTree, TextFile } from '../src/shared/contracts.js'
+import { createWorkspaceTools } from '../src/backend/ai-tools.js'
+import { inputData } from '../src/backend/inputs.js'
 
-async function status(response: Promise<Response>) {
-	const result = await response
-	return result.status
-}
-async function body(response: Promise<Response>) {
-	const result = await response
-	return result.json()
-}
-
-it('serves filesystem workspaces, schema defaults and document-bound PDF through official plugins', async () => {
+it('preserves all workspace/document behaviors through the shared service and real native worker', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'studio-test-'))
 	const materialize = vi.spyOn(WorkspaceStore.prototype, 'materialize')
+	const originalRun = NativeCompilerClient.prototype.run
+	const clients = new Set<NativeCompilerClient>(),
+		workers = new Set<object>()
+	const native = vi.spyOn(NativeCompilerClient.prototype, 'run').mockImplementation(async function (
+		this: NativeCompilerClient,
+		input,
+		signal,
+	) {
+		clients.add(this)
+		const result = await originalRun.call(this, input, signal)
+		workers.add(Reflect.get(this, 'worker'))
+		return result
+	})
 	try {
-		await using host = await createTestHost({
-			services: [elysia(), nodeModules()],
-		})
+		await using host = await createTestHost({ services: [nodeModules()] })
 		await host.commit((change) => {
 			change.catalog.add([FontsPlugin, TypstPlugin, StudioPlugin])
 			change.start(FontsPlugin, { initialConfig: { maxFontBytes: 32 * 1024 * 1024 } })
+			change.start(TypstPlugin, {
+				initialConfig: {
+					maxTemplateBytes: 128 * 1024 * 1024,
+					maxFontBytes: 96 * 1024 * 1024,
+					maxSessions: 4,
+					maxQueuedUpdates: 8,
+				},
+			})
 			change.start(StudioPlugin, {
 				initialConfig: { root, assetsRoot: resolve('financial-document-assets') },
 			})
 		})
-		const fetch = (path: string, init?: RequestInit) =>
-			host.http.fetch(new URL(path, host.http.origin), init)
-		const json = (method: string, value: unknown): RequestInit => ({
-			method,
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(value),
-		})
-		const created = await fetch('/api/projects', json('POST', { name: 'Financial workspace' }))
-		expect(created.status).toBe(200)
-		const list = await body(fetch('/api/projects'))
-		expect(list.length).toBeGreaterThan(0)
-		const project = list[0]
-		const path = `/api/projects/${project.id}`
-		const tree: WorkspaceTree = await body(fetch(`${path}/tree`))
-		expect(tree.documents.length).toBeGreaterThan(1)
-		const searched = await body(
-			fetch(`${path}/search?${new URLSearchParams({ q: '毛利率', mode: 'content' })}`),
-		)
-		expect(searched.matches).toEqual(
+		const studio = host.require(StudioPlugin)
+		const project = await studio.createProject({ name: 'Financial workspace' })
+		expect(await studio.listProjects()).toEqual(expect.arrayContaining([project]))
+		const tree = await studio.getTree({ projectId: project.id })
+		expect(tree.documents).toHaveLength(3)
+		const search = await studio.search({ projectId: project.id, query: '毛利率', mode: 'content' })
+		expect(search.matches).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({
-					path: '报表/季度经营分析/排版.typ',
-					line: expect.any(Number),
-					text: expect.stringContaining('毛利率'),
-				}),
+				expect.objectContaining({ path: '报表/季度经营分析/排版.typ', line: expect.any(Number) }),
 			]),
 		)
-		const conversation = await body(fetch(`${path}/ai/threads`, { method: 'POST' }))
-		const conversationPath = `${path}/ai/threads/${conversation.threadId}`
-		expect(await body(fetch(conversationPath, json('PATCH', { title: '版式讨论' })))).toMatchObject(
-			{ title: '版式讨论' },
-		)
-		expect(await body(fetch(conversationPath))).toMatchObject({ title: '版式讨论', messages: [] })
-		const deletedConversation = await fetch(conversationPath, { method: 'DELETE' })
-		expect(deletedConversation.status).toBe(200)
-		const first = tree.documents.find((document) => document.name === '银行询证函')!
-		const compile = (entry: string) => fetch(`${path}/compile`, json('POST', { entry }))
-		const response = await compile(first.entry)
-		const compiled: CompileResult = await response.json()
-		if (!response.ok) throw new Error(JSON.stringify(compiled))
-		expect(compiled.projectId).toBe(project.id)
-		expect(compiled.entry).toBe(first.entry)
-		expect(compiled.fields.length).toBeGreaterThan(0)
-		expect(compiled.preview.data.length).toBeGreaterThan(100)
-		const pdf = await fetch(
-			`${path}/pdf?entry=${encodeURIComponent(first.entry)}&revision=${compiled.revision}`,
-		)
-		expect(
-			Buffer.from(await pdf.arrayBuffer())
-				.subarray(0, 5)
-				.toString(),
-		).toBe('%PDF-')
-		expect(await status(fetch(`${path}/pdf?entry=other.typ&revision=${compiled.revision}`))).toBe(
-			409,
-		)
-		const repeatedResponse = await compile(first.entry)
-		const repeated: CompileResult = await repeatedResponse.json()
-		expect(repeated.preview.sessionId).toBe(compiled.preview.sessionId)
-		expect(repeated.preview.revision).toBeGreaterThan(compiled.preview.revision)
-		const savedInput = await fetch(
-			`${path}/input?entry=${encodeURIComponent(first.entry)}`,
-			json('PUT', { data: { header: { companyName: 'External Studio input' } } }),
-		)
-		expect(savedInput.status).toBe(200)
-		const storedInput = await body(fetch(`${path}/input?entry=${encodeURIComponent(first.entry)}`))
-		expect(storedInput.data.header.companyName).toBe('External Studio input')
-		const inputResponse = await compile(first.entry)
-		const withInput: CompileResult = await inputResponse.json()
-		expect(withInput.preview.sessionId).toBe(compiled.preview.sessionId)
-		expect(withInput.revision).not.toBe(compiled.revision)
-		expect(withInput.data.header).toMatchObject({ companyName: 'External Studio input' })
-		expect(tree.entries.some((file) => file.path.endsWith('/data.json'))).toBe(false)
-		const explicitResponse = await fetch(
-			`${path}/compile`,
-			json('POST', { entry: first.entry, data: { header: { companyName: 'One-time request' } } }),
-		)
-		const explicit = await explicitResponse.json()
-		expect(explicit.data.header.companyName).toBe('One-time request')
-		const unchangedInput = await body(
-			fetch(`${path}/input?entry=${encodeURIComponent(first.entry)}`),
-		)
-		expect(unchangedInput.data).toEqual(storedInput.data)
-		expect(materialize).toHaveBeenCalledTimes(1)
-		expect(await new InputStore(join(root, 'inputs')).get(project.id, first.entry)).toEqual(
-			storedInput.data,
-		)
-		compiled.revision = explicit.revision
-		const second = tree.documents.find((document) => document.name === '银行账户余额汇总表')!
-		const secondResponse = await compile(second.entry)
-		expect(secondResponse.status).toBe(200)
-		const analysisEntry = '报表/季度经营分析/季度经营分析.ts'
-		const analysisResponse = await compile(analysisEntry)
-		const analysis: CompileResult = await analysisResponse.json()
-		if (!analysisResponse.ok) throw new Error(JSON.stringify(analysis))
-		expect(analysis.preview.data.length).toBeGreaterThan(100)
-		expect(analysis.data.projects).toHaveLength(36)
-		const analysisPdf = await fetch(
-			`${path}/pdf?entry=${encodeURIComponent(analysisEntry)}&revision=${analysis.revision}`,
-		)
-		expect(analysisPdf.status).toBe(200)
-		const analysisBytes = Buffer.from(await analysisPdf.arrayBuffer())
-		expect(analysisBytes.subarray(0, 5).toString()).toBe('%PDF-')
-		expect(
-			(analysisBytes.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length,
-		).toBeGreaterThan(1)
-		expect(analysis.diagnostics).toEqual([])
-		const studio = host.require(StudioPlugin)
-		const pages = analysis.preview.navigation.pages
-		expect(pages.length).toBeGreaterThan(1)
-		const pageImages = await studio.readPreviewPages(project.id, {
-			entry: analysisEntry,
-			revision: analysis.revision,
-			pages: [1, pages.length],
+		const conversation = await studio.createThread({ projectId: project.id })
+		await studio.renameThread({
+			projectId: project.id,
+			threadId: conversation.threadId,
+			title: '版式讨论',
 		})
-		expect(pageImages.map((image) => image.page)).toEqual([1, pages.length])
-		for (const image of pageImages) {
-			const bytes = Buffer.from(image.data)
-			expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
-			expect(bytes.readUInt32BE(16)).toBe(image.width)
-			expect(bytes.readUInt32BE(20)).toBe(image.height)
-			expect(Math.max(image.width, image.height)).toBeLessThanOrEqual(1601)
-			expect(image.revision).toBe(analysis.preview.revision)
-			expect(image.sources).toEqual(
-				expect.arrayContaining([expect.objectContaining({ path: '报表/季度经营分析/排版.typ' })]),
+		expect(
+			await studio.snapshot({ projectId: project.id, threadId: conversation.threadId }),
+		).toMatchObject({ title: '版式讨论', messages: [] })
+		await studio.deleteThread({ projectId: project.id, threadId: conversation.threadId })
+		const entry = tree.documents.find((document) => document.name === '银行询证函')!.entry
+		const target = { projectId: project.id, entry }
+		const description = await studio.describeDocument(target)
+		expect(description.fields.length).toBeGreaterThan(0)
+		const first = await studio.compile({ ...target, data: {} })
+		expect(first).not.toHaveProperty('fields')
+		expect(first).not.toHaveProperty('preview')
+		const vector = await studio.getPreview({ ...target, revision: first.revision })
+		expect(vector.preview.data).toBeInstanceOf(Uint8Array)
+		expect(vector.preview.data.byteLength).toBeGreaterThan(100)
+		expect(first.sourceRevision).toBe(tree.revision)
+		await studio.setInput({ ...target, data: { header: { companyName: 'Saved input' } } })
+		const next = await studio.compile({
+			...target,
+			data: { header: { companyName: 'Explicit input' } },
+		})
+		expect(next.data.header).toMatchObject({ companyName: 'Explicit input' })
+		const savedInput = await studio.getInput(target)
+		expect(savedInput.data).toEqual({ header: { companyName: 'Saved input' } })
+		expect(next.revision).not.toBe(first.revision)
+		const nextVector = await studio.getPreview({ ...target, revision: next.revision })
+		expect(nextVector.preview.sessionId).toBe(vector.preview.sessionId)
+		expect(materialize).toHaveBeenCalledTimes(1)
+		// Direct external file edits must preserve the same worker for both Typst and TS/shared HMR.
+		const layoutPath = '报表/银行询证函/排版.typ'
+		const layout = await studio.readFile({ projectId: project.id, path: layoutPath })
+		await writeFile(join(project.root, layoutPath), layout.content + '\n// External layout edit\n')
+		const typstUpdated = await studio.compile({ ...target, data: {} })
+		const module = await studio.readFile({ projectId: project.id, path: entry })
+		await writeFile(join(project.root, entry), module.content + '\n// External TS edit\n')
+		const tsUpdated = await studio.compile({ ...target, data: {} })
+		const themePath = '共享/主题/财务函件.typ'
+		const theme = await studio.readFile({ projectId: project.id, path: themePath })
+		await writeFile(join(project.root, themePath), theme.content + '\n// Shared import edit\n')
+		const sharedUpdated = await studio.compile({ ...target, data: {} })
+		const latestVector = await studio.getPreview({ ...target, revision: sharedUpdated.revision })
+		expect(latestVector.preview.sessionId).toBe(vector.preview.sessionId)
+		expect(clients.size).toBe(1)
+		expect(workers.size).toBe(1)
+		await mkdir(resolve('test-results/refactor'), { recursive: true })
+		await writeFile(
+			resolve('test-results/refactor/native-reuse.json'),
+			JSON.stringify(
+				{
+					evidence: 'native-reuse',
+					nativeClients: clients.size,
+					workers: workers.size,
+					sessionId: vector.preview.sessionId,
+					compileRevisions: [
+						first.revision,
+						next.revision,
+						typstUpdated.revision,
+						tsUpdated.revision,
+						sharedUpdated.revision,
+					],
+					coldMs: first.elapsedMs,
+					hotMs: next.elapsedMs,
+					vectorBytes: latestVector.preview.data.byteLength,
+				},
+				null,
+				2,
+			),
+		)
+		const pdf = await studio.exportPdf({ ...target, revision: sharedUpdated.revision })
+		const pdfBytes = await readFile(pdf.path)
+		expect(pdfBytes.subarray(0, 5).toString()).toBe('%PDF-')
+		await studio.setInput({ ...target, data: { header: { companyName: 'Changed stored input' } } })
+		const savedIndependent = await studio.renderPage({
+			...target,
+			revision: sharedUpdated.revision,
+			page: 1,
+			scale: 1,
+		})
+		const independentBytes = await readFile(savedIndependent.path)
+		expect(independentBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+		await expect(studio.getPreview({ ...target, revision: first.revision })).rejects.toMatchObject({
+			code: 'REVISION_CONFLICT',
+		})
+		const analysis = { projectId: project.id, entry: '报表/季度经营分析/季度经营分析.ts' }
+		const compiled = await studio.compile({ ...analysis, data: {} })
+		expect(compiled.data.projects).toHaveLength(36)
+		expect(compiled.pageCount).toBeGreaterThan(2)
+		expect(compiled.outline).toEqual(
+			expect.arrayContaining([expect.objectContaining({ title: '经营概况' })]),
+		)
+		const pageArtifacts = []
+		for (const page of [1, 2, compiled.pageCount])
+			pageArtifacts.push(
+				await studio.renderPage({ ...analysis, revision: compiled.revision, page, scale: 1 }),
 			)
-		}
-		const cropped = await studio.readPreviewPages(project.id, {
-			entry: analysisEntry,
-			revision: analysis.revision,
-			pages: [1],
+		const crop = await studio.renderPage({
+			...analysis,
+			revision: compiled.revision,
+			page: 1,
+			scale: 2,
 			region: { x: 50, y: 50, width: 200, height: 150 },
 		})
-		expect(cropped[0]?.width).toBeLessThan(pageImages[0]!.width)
-		expect(cropped[0]?.region.x).toBeCloseTo(50)
+		expect(crop.width).toBe(400)
+		expect(crop.height).toBe(300)
 		await expect(
-			studio.readPreviewPages(project.id, {
-				entry: analysisEntry,
-				revision: 'stale',
-				pages: [1],
-			}),
-		).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
-		await fetch(
-			`${path}/input?entry=${encodeURIComponent(analysisEntry)}`,
-			json('PUT', { data: { revenue: 1400000 } }),
-		)
+			studio.renderPage({ ...analysis, revision: compiled.revision, page: 0 }),
+		).rejects.toMatchObject({ code: 'INVALID_INPUT' })
 		await expect(
-			studio.readPreviewPages(project.id, {
-				entry: analysisEntry,
-				revision: analysis.revision,
-				pages: [1],
+			studio.renderPage({
+				...analysis,
+				revision: compiled.revision,
+				page: 1,
+				region: { x: 0, y: 0, width: 10000, height: 10 },
 			}),
-		).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
-		const updatedAnalysis = (await body(compile(analysisEntry))) as CompileResult
-		const analysisSource: TextFile = await body(
-			fetch(`${path}/file?path=${encodeURIComponent('报表/季度经营分析/排版.typ')}`),
+		).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+		const options = {
+			root: join(root, 'ai'),
+			getProject: (id: string) => studio.getProject({ projectId: id }),
+			tree: (id: string) => studio.getTree({ projectId: id }),
+			readFile: (id: string, path: string) => studio.readFile({ projectId: id, path }),
+			writeFile: (id: string, input: Parameters<WorkspaceStore['writeFile']>[1]) =>
+				studio.writeFile({ projectId: id, ...input }),
+			mkdir: (id: string, path: string) => studio.mkdir({ projectId: id, path }),
+			rename: (id: string, input: Parameters<WorkspaceStore['rename']>[1]) =>
+				studio.rename({ projectId: id, ...input }),
+			remove: (id: string, input: Parameters<WorkspaceStore['remove']>[1]) =>
+				studio.remove({ projectId: id, ...input }),
+			compile: studio.compile.bind(studio),
+			getInput: studio.getInput.bind(studio),
+			getPreview: studio.getPreview.bind(studio),
+			renderPage: studio.renderPage.bind(studio),
+			exportPdf: studio.exportPdf.bind(studio),
+			readArtifact: async (id: string) => {
+				const artifact = await studio.resolveArtifact({ id })
+				return readFile(artifact.path)
+			},
+		}
+		const tools = createWorkspaceTools(options, project, () => {}, true)
+		const imageTool = tools.find((tool) => tool.name === 'read_preview_pages')!
+		const images = await imageTool.execute(
+			'real-image',
+			{ entry: analysis.entry, revision: compiled.revision, pages: [1, 2, compiled.pageCount] },
+			undefined,
+			undefined,
+			undefined as never,
 		)
-		await fetch(
-			`${path}/file`,
-			json('PUT', {
-				path: analysisSource.path,
-				expectedVersion: analysisSource.version,
-				content: analysisSource.content + '\n// External layout edit\n',
-			}),
+		await writeFile(
+			resolve('test-results/refactor/pi-image-content.json'),
+			JSON.stringify(
+				{
+					imageBlocks: images.content.filter((block) => block.type === 'image').length,
+					artifacts: images.details,
+					contentHashes: images.content
+						.filter((block) => block.type === 'image')
+						.map((block) =>
+							block.type === 'image'
+								? {
+										mimeType: block.mimeType,
+										byteLength: Buffer.from(block.data, 'base64').byteLength,
+										sha256: createHash('sha256')
+											.update(Buffer.from(block.data, 'base64'))
+											.digest('hex'),
+									}
+								: null,
+						),
+				},
+				null,
+				2,
+			),
 		)
+		const imageBlocks = images.content.filter((block) => block.type === 'image')
+		expect(imageBlocks).toHaveLength(3)
+		const details = images.details as { pages: { id: string }[] }
+		for (const [index, block] of imageBlocks.entries()) {
+			const imageBytes = Buffer.from(block.data, 'base64')
+			expect(imageBytes).toEqual(await options.readArtifact(details.pages[index]!.id))
+			await writeFile(resolve(`test-results/refactor/pi-page-${index + 1}.png`), imageBytes)
+		}
+		const noVision = createWorkspaceTools(options, project, () => {}, false).find(
+			(tool) => tool.name === 'read_preview_pages',
+		)!
 		await expect(
-			studio.readPreviewPages(project.id, {
-				entry: analysisEntry,
-				revision: updatedAnalysis.revision,
-				pages: [1],
-			}),
-		).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
-		const read = async (file: string): Promise<TextFile> =>
-			await body(fetch(`${path}/file?path=${encodeURIComponent(file)}`))
-		const schema = await read(first.entry)
-		const changed = await fetch(
-			`${path}/file`,
-			json('PUT', {
-				path: schema.path,
-				expectedVersion: schema.version,
-				content: schema.content.replace(
-					'schema: v.object({',
-					'schema: v.object({ required: v.string(),',
+			noVision.execute(
+				'denied',
+				{ entry: analysis.entry, revision: compiled.revision, pages: [1] },
+				undefined,
+				undefined,
+				undefined as never,
+			),
+		).rejects.toThrow('未启用图片输入')
+		const readTool = tools.find((tool) => tool.name === 'read')!
+		await expect(
+			readTool.execute(
+				'denied',
+				{ path: pageArtifacts[0]!.path },
+				undefined,
+				undefined,
+				undefined as never,
+			),
+		).rejects.toThrow('outside')
+		const pdfTool = tools.find((tool) => tool.name === 'export_pdf')!
+		expect(
+			JSON.stringify(
+				await pdfTool.execute(
+					'pdf',
+					{ entry: analysis.entry, revision: compiled.revision },
+					undefined,
+					undefined,
+					undefined as never,
 				),
-			}),
-		)
-		expect(changed.status).toBe(200)
-		const invalid = await compile(first.entry)
-		const failure = await invalid.json()
-		expect(invalid.status).toBe(400)
-		expect(failure.fields).toEqual(
+			),
+		).toContain('application/pdf')
+		// Explicit input does not mutate persistence; invalid entry/schema remains editable.
+		await expect(studio.compile({ ...target } as never)).rejects.toMatchObject({
+			code: 'INVALID_INPUT',
+		})
+		const currentModule = await studio.readFile({ projectId: project.id, path: entry })
+		await studio.writeFile({
+			projectId: project.id,
+			...module,
+			expectedVersion: currentModule.version,
+			content: module.content.replace(
+				'schema: v.object({',
+				'schema: v.object({ required: v.string(),',
+			),
+		})
+		await expect(studio.compile({ ...target, data: {} })).rejects.toMatchObject({
+			code: 'INVALID_INPUT',
+			issues: expect.arrayContaining([expect.objectContaining({ path: ['required'] })]),
+		})
+		const invalidDescription = await studio.describeDocument(target)
+		expect(invalidDescription.fields).toEqual(
 			expect.arrayContaining([expect.objectContaining({ name: 'required' })]),
 		)
-		expect(failure.data).toBeDefined()
-		expect(
-			await status(
-				fetch(`${path}/pdf?entry=${encodeURIComponent(first.entry)}&revision=${compiled.revision}`),
-			),
-		).toBe(200)
-		expect(
-			await status(
-				fetch(
-					`${path}/file`,
-					json('PUT', {
-						path: schema.path,
-						expectedVersion: schema.version,
-						content: schema.content,
-					}),
-				),
-			),
-		).toBe(409)
-		expect(await status(fetch(`${path}/report`, json('POST', { path: 'plain' })))).toBe(200)
-		const plain = await compile('plain/plain.ts')
-		expect(plain.status).toBe(200)
-		const plainResult = await plain.json()
-		expect(plainResult.fields).toHaveLength(2)
-		const originalPlain = await read('plain/排版.typ')
-		const brokenWrite = await fetch(
-			`${path}/file`,
-			json('PUT', {
-				path: originalPlain.path,
-				expectedVersion: originalPlain.version,
-				content: '#let broken = (',
-			}),
-		)
-		expect(brokenWrite.status).toBe(200)
-		const brokenCompile = await compile('plain/plain.ts')
-		expect(brokenCompile.status).toBe(400)
-		const brokenResult = await brokenCompile.json()
-		expect(brokenResult.code).toBe('COMPILE_FAILED')
-		const brokenPlain = await read('plain/排版.typ')
-		const repairedWrite = await fetch(
-			`${path}/file`,
-			json('PUT', {
-				path: originalPlain.path,
-				expectedVersion: brokenPlain.version,
-				content: originalPlain.content,
-			}),
-		)
-		expect(repairedWrite.status).toBe(200)
-		const repairedCompile = await compile('plain/plain.ts')
-		expect(repairedCompile.status).toBe(200)
-		const repaired = await repairedCompile.json()
-		expect(repaired.revision).toBe(plainResult.revision)
-		expect(repaired.preview.sessionId).toBe(plainResult.preview.sessionId)
-		expect(repaired.preview.revision).toBeGreaterThan(plainResult.preview.revision)
-		const configFile = await read('studio.json')
-		const configWithoutFonts = JSON.parse(configFile.content)
-		configWithoutFonts.fonts = []
-		await fetch(
-			`${path}/file`,
-			json('PUT', {
-				path: 'studio.json',
-				expectedVersion: configFile.version,
-				content: JSON.stringify(configWithoutFonts),
-			}),
-		)
-		const noFontsResponse = await compile('plain/plain.ts')
-		const noFonts = await noFontsResponse.json()
-		expect(noFonts.preview.sessionId).not.toBe(plainResult.preview.sessionId)
+		await expect(
+			studio.writeFile({ projectId: project.id, ...module, expectedVersion: module.version }),
+		).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
+		await studio.createReport({ projectId: project.id, path: 'plain' })
+		const plain = { projectId: project.id, entry: 'plain/plain.ts' }
+		const clean = await studio.compile({ ...plain, data: {} })
+		const cleanVector = await studio.getPreview({ ...plain, revision: clean.revision })
+		const original = await studio.readFile({ projectId: project.id, path: 'plain/排版.typ' })
+		const broken = await studio.writeFile({
+			projectId: project.id,
+			...original,
+			expectedVersion: original.version,
+			content: '#let broken = (',
+		})
+		await expect(studio.compile({ ...plain, data: {} })).rejects.toMatchObject({
+			code: 'COMPILE_FAILED',
+			diagnostics: expect.arrayContaining([expect.objectContaining({ path: 'plain/排版.typ' })]),
+		})
+		await studio.writeFile({ projectId: project.id, ...original, expectedVersion: broken.version })
+		const repaired = await studio.compile({ ...plain, data: {} })
+		expect(repaired.revision).not.toBe(clean.revision)
+		const repairedPreview = await studio.getPreview({ ...plain, revision: repaired.revision })
+		expect(repairedPreview.preview.sessionId).toBe(cleanVector.preview.sessionId)
+		const config = await studio.readFile({ projectId: project.id, path: 'studio.json' })
+		await studio.writeFile({
+			projectId: project.id,
+			...config,
+			expectedVersion: config.version,
+			content: JSON.stringify({ ...JSON.parse(config.content), fonts: [] }),
+		})
+		const noFonts = await studio.compile({ ...plain, data: {} })
+		const noFontsVector = await studio.getPreview({ ...plain, revision: noFonts.revision })
+		expect(noFontsVector.preview.sessionId).not.toBe(cleanVector.preview.sessionId)
 		for (let index = 0; index < 4; index++) {
 			const folder = `extra-${index}`
-			const entry = `${folder}/${folder}.ts`
-			await fetch(`${path}/report`, json('POST', { path: folder }))
-			const result = await compile(entry)
-			expect(result.status).toBe(200)
+			await studio.createReport({ projectId: project.id, path: folder })
+			await studio.compile({ projectId: project.id, entry: `${folder}/${folder}.ts`, data: {} })
 		}
-		const reopenedResponse = await compile('plain/plain.ts')
-		const reopened = await reopenedResponse.json()
-		expect(reopened.preview.sessionId).not.toBe(noFonts.preview.sessionId)
-		const exported = await fetch(`${path}/export`)
-		expect(exported.headers.get('content-type')).toContain('application/zip')
-		const imported = await fetch('/api/import', {
-			method: 'POST',
-			body: await exported.arrayBuffer(),
-		})
-		expect(imported.status).toBe(200)
-		const copy = await imported.json()
+		const reopened = await studio.compile({ ...plain, data: {} })
+		const reopenedPreview = await studio.getPreview({ ...plain, revision: reopened.revision })
+		expect(reopenedPreview.preview.sessionId).not.toBe(noFontsVector.preview.sessionId)
+		const zip = await studio.exportWorkspace({ projectId: project.id })
+		expect(Buffer.from(zip).subarray(0, 4).toString('hex')).toBe('504b0304')
+		const copy = await studio.importWorkspace({ bytes: zip })
 		expect(copy.id).not.toBe(project.id)
-		expect(await status(fetch(`${path}/file?path=../outside.txt`))).toBe(400)
-		const compiling = compile('plain/plain.ts')
-		const forgetting = fetch(path, { method: 'DELETE' })
-		const [compiledDuringForget, forgotten] = await Promise.all([compiling, forgetting])
-		// HTTP body parsing may admit either request first; both legal orders must settle.
-		expect([200, 404]).toContain(compiledDuringForget.status)
-		expect(forgotten.status).toBe(200)
-		expect(await status(compile('plain/plain.ts'))).toBe(404)
-		expect(await readFile(join(project.root, 'plain/排版.typ'), 'utf8')).toBe(originalPlain.content)
-		expect(await status(fetch(path))).toBe(404)
+		await expect(
+			studio.readFile({ projectId: project.id, path: '../outside.txt' }),
+		).rejects.toThrow('Invalid workspace path')
+		const compiling = studio.compile({ ...plain, data: {} }),
+			forgetting = studio.forgetProject({ projectId: project.id })
+		await Promise.allSettled([compiling, forgetting])
+		await forgetting
+		await expect(studio.getProject({ projectId: project.id })).rejects.toThrow('Unknown workspace')
+		expect(await readFile(join(project.root, 'plain/排版.typ'), 'utf8')).toBe(original.content)
+		const retainedPdf = await readFile(pdf.path)
+		expect(retainedPdf.subarray(0, 5).toString()).toBe('%PDF-')
+		for (const artifact of pageArtifacts) {
+			const bytes = await readFile(artifact.path)
+			expect(bytes.byteLength).toBe(artifact.byteLength)
+		}
 	} finally {
 		materialize.mockRestore()
+		native.mockRestore()
 		await rm(root, { recursive: true, force: true })
 	}
+}, 120_000)
+
+it('strict JSON validation preserves explicit values and rejects lossy encodings', () => {
+	expect(inputData({ empty: '', zero: 0, no: false, null: null, array: [] })).toEqual({
+		empty: '',
+		zero: 0,
+		no: false,
+		null: null,
+		array: [],
+	})
+	const cycle: Record<string, unknown> = {}
+	cycle.self = cycle
+	for (const value of [
+		{ n: NaN },
+		{ n: Infinity },
+		{ u: undefined },
+		{ b: 1n },
+		{ d: new Date() },
+		{ a: Array(2) },
+		cycle,
+	])
+		expect(() => inputData(value)).toThrow(/JSON/)
 })

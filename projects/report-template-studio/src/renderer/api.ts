@@ -1,42 +1,31 @@
-import type { StudioError } from '../shared/contracts'
+import type { DesktopApi } from '../shared/contracts'
+import { createDesktopClient } from '../rpc/message-port'
 
-export class ApiError extends Error {
-	constructor(
-		readonly status: number,
-		readonly detail: StudioError,
-	) {
-		super(detail.error)
-	}
-}
+/** The renderer owns one dedicated MessagePort RPC session. */
+export let api: DesktopApi
 
-/** The entire business transport is Electron IPC -> Elysia.fetch; no HTTP listener. */
-export async function request(
-	path: string,
-	init: { method?: string; body?: unknown; bytes?: Uint8Array } = {},
-): Promise<Uint8Array> {
-	const result = await window.studio.fetch({
-		path,
-		method: init.method ?? 'GET',
-		headers: init.body === undefined ? [] : [['content-type', 'application/json']],
-		...(init.bytes
-			? { body: init.bytes }
-			: init.body === undefined
-				? {}
-				: { body: new TextEncoder().encode(JSON.stringify(init.body)) }),
-	})
-	if (result.status < 200 || result.status >= 300) {
-		let detail: StudioError
-		try {
-			detail = JSON.parse(new TextDecoder().decode(result.body)) as StudioError
-		} catch {
-			detail = { error: `请求失败 (${result.status})` }
-		}
-		throw new ApiError(result.status, detail)
-	}
-	return result.body
-}
-
-export async function api<T>(path: string, init?: Parameters<typeof request>[1]): Promise<T> {
-	const bytes = await request(path, init)
-	return bytes.byteLength ? (JSON.parse(new TextDecoder().decode(bytes)) as T) : (undefined as T)
+export async function connectDesktop(): Promise<void> {
+	const connection = await new Promise<ReturnType<typeof createDesktopClient>>(
+		(resolve, reject) => {
+			const timer = setTimeout(() => {
+				window.removeEventListener('message', receive)
+				reject(new Error('Studio backend connection timed out'))
+			}, 30_000)
+			function receive(event: MessageEvent) {
+				if (
+					event.source !== window ||
+					event.data?.type !== 'studio:port' ||
+					event.ports.length !== 1
+				)
+					return
+				clearTimeout(timer)
+				window.removeEventListener('message', receive)
+				resolve(createDesktopClient(event.ports[0]!))
+			}
+			window.addEventListener('message', receive)
+			window.studio.connect()
+		},
+	)
+	api = connection.api
+	window.addEventListener('pagehide', () => connection.disconnect(), { once: true })
 }

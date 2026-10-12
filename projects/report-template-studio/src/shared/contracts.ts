@@ -1,5 +1,66 @@
 import type { FieldNode } from 'valibot-form'
 import type { TypstPreview } from '@pluxel/typst/browser'
+import type { TypstDiagnostic, TypstPage, TypstOutlineItem, TypstRegion } from '@pluxel/typst'
+import type { SearchOptions, SearchResult } from './search.js'
+import type { AiProviders, AiProviderWrite, AiProvider } from './ai-providers.js'
+
+export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject
+export interface JsonObject {
+	[key: string]: JsonValue
+}
+export interface DocumentTarget {
+	projectId: string
+	entry: string
+}
+export interface CompileRequest extends DocumentTarget {
+	data: JsonObject
+}
+export interface RevisionTarget extends DocumentTarget {
+	revision: string
+}
+export interface RenderPageRequest extends RevisionTarget {
+	page: number
+	scale?: number
+	region?: TypstRegion
+}
+export interface DocumentDescription extends DocumentTarget {
+	name: string
+	template: string
+	sourceRevision: string
+	fields: FieldNode[]
+	defaults: JsonObject
+}
+export interface PreviewResult extends RevisionTarget {
+	sourceRevision: string
+	sourceVersions: Readonly<Record<string, string>>
+	preview: TypstPreview
+}
+export interface Artifact extends RevisionTarget {
+	id: string
+	path: string
+	byteLength: number
+	createdAt: string
+	expiresAt: string
+}
+export interface PdfArtifact extends Artifact {
+	kind: 'pdf'
+	mimeType: 'application/pdf'
+}
+export interface WorkspaceArtifact extends Artifact {
+	kind: 'zip'
+	mimeType: 'application/zip'
+}
+export interface PageArtifact extends Artifact {
+	kind: 'png'
+	mimeType: 'image/png'
+	page: number
+	width: number
+	height: number
+	region: TypstRegion
+	headings: readonly TypstOutlineItem[]
+	sources: readonly { path: string; fromLine: number; toLine: number }[]
+}
+export type ArtifactUnion = PdfArtifact | PageArtifact | WorkspaceArtifact
 
 export interface ProjectSummary {
 	id: string
@@ -46,45 +107,102 @@ export interface WorkspaceSnapshot {
 	files: Record<string, string>
 	assets: { path: string; size: number }[]
 }
-export interface CompileResult {
+export interface CompileResult extends DocumentTarget {
 	name: string
 	template: string
-	projectId: string
-	entry: string
 	revision: string
-	fields: FieldNode[]
-	data: Record<string, unknown>
-	/** Saved workspace content versions used by this exact compilation. */
-	sourceVersions: Record<string, string>
-	preview: Omit<TypstPreview, 'data'> & { data: number[] }
-	diagnostics: {
-		severity: string
-		message: string
-		path?: string
-		range?: { start: { line: number; character: number }; end: { line: number; character: number } }
-	}[]
+	sourceRevision: string
+	data: JsonObject
+	pageCount: number
+	pages: readonly TypstPage[]
+	outline: readonly TypstOutlineItem[]
+	diagnostics: readonly TypstDiagnostic[]
 	elapsedMs: number
 }
 export interface StudioError {
-	error: string
-	code?: string
+	message: string
+	code: string
 	diagnostics?: CompileResult['diagnostics']
-	fields?: FieldNode[]
-	data?: Record<string, unknown>
+	issues?: readonly { path: readonly (string | number)[]; rule: string; message: string }[]
+	projectId?: string
+	entry?: string
+	revision?: string
 }
-export interface FetchRequest {
-	path: string
-	method: string
-	headers?: [string, string][]
-	body?: Uint8Array
+/** Errors remain rejects; inspect serializable fields instead of class identity. */
+export function isStudioError(value: unknown): value is StudioError {
+	return (
+		!!value &&
+		typeof value === 'object' &&
+		'code' in value &&
+		typeof value.code === 'string' &&
+		'message' in value &&
+		typeof value.message === 'string'
+	)
 }
-export interface FetchResponse {
-	status: number
-	headers: [string, string][]
-	body: Uint8Array
+
+export interface StudioApi {
+	listProjects(): Promise<ProjectSummary[]>
+	getProject(input: { projectId: string }): Promise<ProjectSummary>
+	createProject(input: { name: string }): Promise<ProjectSummary>
+	openProject(input: { root: string }): Promise<ProjectSummary>
+	forgetProject(input: { projectId: string }): Promise<{ ok: true }>
+	getTree(input: { projectId: string }): Promise<WorkspaceTree>
+	readFile(input: { projectId: string; path: string }): Promise<TextFile>
+	writeFile(input: FileWrite & { projectId: string }): Promise<TextFile>
+	mkdir(input: { projectId: string; path: string }): Promise<WorkspaceTree>
+	createReport(input: { projectId: string; path: string }): Promise<{ entry: string }>
+	rename(input: {
+		projectId: string
+		path: string
+		to: string
+		expectedVersion: string
+	}): Promise<WorkspaceTree>
+	remove(input: {
+		projectId: string
+		path: string
+		expectedVersion: string
+	}): Promise<WorkspaceTree>
+	search(input: SearchOptions & { projectId: string }): Promise<SearchResult>
+	getInput(input: DocumentTarget): Promise<{ data: JsonObject }>
+	setInput(input: DocumentTarget & { data: JsonObject }): Promise<{ data: JsonObject }>
+	describeDocument(input: DocumentTarget): Promise<DocumentDescription>
+	compile(input: CompileRequest): Promise<CompileResult>
+	renderPage(input: RenderPageRequest): Promise<PageArtifact>
+	exportPdf(input: RevisionTarget): Promise<PdfArtifact>
+	importWorkspaceFile(input: { path: string; name?: string }): Promise<ProjectSummary>
+	importAssetFile(input: {
+		projectId: string
+		path: string
+		sourcePath: string
+		expectedVersion?: string
+	}): Promise<WorkspaceTree>
+	exportWorkspaceFile(input: { projectId: string }): Promise<WorkspaceArtifact>
+}
+export interface DesktopApi extends StudioApi {
+	getPreview(input: RevisionTarget): Promise<PreviewResult>
+	importWorkspace(input: { bytes: Uint8Array; name?: string }): Promise<ProjectSummary>
+	putAsset(input: {
+		projectId: string
+		path: string
+		bytes: Uint8Array
+		expectedVersion?: string
+	}): Promise<WorkspaceTree>
+	exportWorkspace(input: { projectId: string }): Promise<Uint8Array>
+	models(): Promise<AiModel[]>
+	providers(): Promise<AiProviders>
+	configureProvider(input: { id: string; config: AiProviderWrite }): Promise<AiProvider>
+	discoverModels(input: { id: string }): Promise<AiModel[]>
+	threads(input: { projectId: string }): Promise<AiThread[]>
+	createThread(input: { projectId: string }): Promise<AiSnapshot>
+	snapshot(input: { projectId: string; threadId: string }): Promise<AiSnapshot>
+	renameThread(input: { projectId: string; threadId: string; title: string }): Promise<AiThread>
+	deleteThread(input: { projectId: string; threadId: string }): Promise<{ ok: true }>
+	prompt(input: AiPrompt & { projectId: string; threadId: string }): Promise<AiSnapshot>
+	abort(input: { projectId: string; threadId: string }): Promise<AiSnapshot>
 }
 export interface StudioBridge {
-	fetch(request: FetchRequest): Promise<FetchResponse>
+	connect(): void
+	saveArtifact(input: { artifactId: string; suggestedName: string }): Promise<boolean>
 	saveFile(input: { suggestedName: string; bytes: Uint8Array }): Promise<boolean>
 	importFile(input: {
 		kind: 'asset' | 'workspace'

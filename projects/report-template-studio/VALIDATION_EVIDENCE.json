@@ -1,0 +1,1299 @@
+{
+	"capturedAt": "2026-10-12T10:16:39.058Z",
+	"repositoryBase": "a6421386f036fac836f97335cd56c307cc16efad",
+	"scope": "Observed Linux refactor validation before commit; original test-results paths identify locally retained evidence. No Windows/macOS/default OS sandbox/paid model run is claimed.",
+	"environment": {
+		"platform": "linux",
+		"architecture": "x64",
+		"nodeDriver": "v24.16.0",
+		"nodePnpmScripts": "v24.21.0",
+		"pnpm": "11.28.2",
+		"electron": "44.7.0",
+		"capnweb": "0.12.0",
+		"typstNative": "0.7.0"
+	},
+	"validation": {
+		"appTests": {
+			"files": 19,
+			"passed": 112
+		},
+		"typstTests": {
+			"files": 7,
+			"passed": 56
+		},
+		"linuxExternalProcesses": true,
+		"linuxElectronWorkspace": true,
+		"linuxElectronMovedPackage": true,
+		"officialHostViteGenerationReplacement": true,
+		"piActualImageContent": true,
+		"publicPackagedExampleIndependentProcess": true,
+		"windowsActualRuntime": false,
+		"macosActualRuntime": false,
+		"defaultOsSandbox": false,
+		"paidModel": false,
+		"relativeDocumentationLinks": 142
+	},
+	"nativeReuse": {
+		"evidence": "native-reuse",
+		"nativeClients": 1,
+		"workers": 1,
+		"sessionId": "91440e4a-7559-4166-967f-c853393e2211",
+		"compileRevisions": [
+			"8c4ec133-fa27-4603-9f76-777cd0695552",
+			"7a54e784-defa-466a-81fe-66387839062b",
+			"0ebc7075-671f-45ff-9851-80df4967cee2",
+			"98108d2f-771b-42a7-bfdb-8c759f51d5ce",
+			"91f18cf2-8a72-4149-a265-56e4303082f4"
+		],
+		"coldMs": 296.31862500000034,
+		"hotMs": 30.775396999999884,
+		"vectorBytes": 145472
+	},
+	"runtime": {
+		"applicationRoot": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio",
+		"clientEntry": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/dist/client.mjs",
+		"platform": "linux",
+		"externalProcesses": 2,
+		"projects": 1,
+		"documents": 3,
+		"sessionId": "4c6e5ebd-9aed-4818-99f6-412372146f49",
+		"nativeRevisions": [2, 4],
+		"navigationPoints": 406,
+		"pages": 3,
+		"externalPngReads": 8,
+		"pdfBytes": 110623,
+		"vectorBytes": 218912,
+		"coldMs": 494.06626299999994,
+		"hotMs": 137.2689809999997,
+		"tcpListeners": 0,
+		"ipcListeners": 2,
+		"rootOwnershipEnforced": true,
+		"restartArtifactsRetained": true,
+		"forgetUserFilesRetained": true,
+		"discoveryCleaned": true,
+		"nativePageProbe": true,
+		"clientImportIsolation": true,
+		"remainingResources": ["FSReqPromise"]
+	},
+	"movedRuntime": {
+		"applicationRoot": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-moved-production-jbjuqB/PluxelTypstStudio-linux-x64/resources/app",
+		"clientEntry": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-moved-production-jbjuqB/PluxelTypstStudio-linux-x64/resources/app/dist/client.mjs",
+		"platform": "linux",
+		"externalProcesses": 2,
+		"projects": 1,
+		"documents": 3,
+		"sessionId": "29a631ab-4a61-43ea-bce2-bc179488928d",
+		"nativeRevisions": [2, 4],
+		"navigationPoints": 406,
+		"pages": 3,
+		"externalPngReads": 8,
+		"pdfBytes": 110623,
+		"vectorBytes": 218952,
+		"coldMs": 534.852852,
+		"hotMs": 423.9510889999997,
+		"tcpListeners": 0,
+		"ipcListeners": 2,
+		"rootOwnershipEnforced": true,
+		"restartArtifactsRetained": true,
+		"forgetUserFilesRetained": true,
+		"discoveryCleaned": true,
+		"nativePageProbe": true,
+		"clientImportIsolation": true,
+		"remainingResources": ["FSReqPromise", "PipeWrap", "PipeWrap"]
+	},
+	"desktop": {
+		"executablePath": "/home/ahdg/code/pluxel-code/pluxel/node_modules/.pnpm/electron@44.7.0_supports-color@8.1.1/node_modules/electron/dist/electron",
+		"passed": [
+			"native sender validation, trusted artifact ids, save cancellation and narrow renderer capability",
+			"real Electron MessagePort Uint8Array and cached buffer preservation",
+			"structured input/schema/Typst/TypeScript/page/crop/revision errors over the real port",
+			"multi-page SVG, last-page navigation, outline, and two-way source navigation",
+			"project creation and recent persistence",
+			"real filesystem explorer CRUD",
+			"Valibot defaults and schema recovery",
+			"separate tabs and persisted external input excluded from ZIP",
+			"Pi provider settings and company Responses preset",
+			"native assistant folder mentions",
+			"TypeScript completion and hover",
+			"Typst diagnostics",
+			"filesystem polling and external edits",
+			"invalid workspace config editing and recovery",
+			"PDF and workspace ZIP native transport",
+			"native open directory reuses existing project"
+		],
+		"portEvidence": {
+			"binary": {
+				"revision": "df9f4cc0-cca8-46d5-aa39-1ab9a47d3401",
+				"byteLength": 218912,
+				"firstWasBinary": true,
+				"secondMatches": true,
+				"thirdMatches": true,
+				"sessionId": "9acff63e-8f78-47df-9980-d661a63ec9b7",
+				"nativeRevision": 2,
+				"compilerVersion": "0.7.0",
+				"pageCount": 3,
+				"outline": [
+					{
+						"level": 1,
+						"page": 2,
+						"title": "经营概况",
+						"x": 70.86614173228347,
+						"y": 68.03149606299213
+					},
+					{
+						"level": 1,
+						"page": 2,
+						"title": "盈利测算",
+						"x": 70.86614173228347,
+						"y": 169.57149606299214
+					},
+					{
+						"level": 1,
+						"page": 2,
+						"title": "收入结构示意",
+						"x": 70.86614173228347,
+						"y": 296.4214960629921
+					},
+					{
+						"level": 1,
+						"page": 3,
+						"title": "项目执行明细",
+						"x": 70.86614173228347,
+						"y": 68.03149606299213
+					},
+					{
+						"level": 1,
+						"page": 3,
+						"title": "管理建议",
+						"x": 70.86614173228347,
+						"y": 695.1129960629922
+					}
+				],
+				"point": {
+					"column": 3,
+					"endColumn": 4,
+					"endLine": 8,
+					"height": 11,
+					"line": 8,
+					"page": 2,
+					"path": "报表/季度经营分析/排版.typ",
+					"width": 11,
+					"x": 70.86614173228347,
+					"y": 65.05049606299212
+				}
+			},
+			"errors": {
+				"invalidJson": {
+					"code": "INVALID_INPUT",
+					"message": "Input data must be a JSON object",
+					"issues": [
+						{
+							"path": ["data"],
+							"rule": "json",
+							"message": "Input data must be a JSON object"
+						}
+					]
+				},
+				"schema": {
+					"code": "INVALID_INPUT",
+					"message": "模板输入未通过 schema 校验",
+					"issues": [
+						{
+							"path": ["company"],
+							"rule": "string",
+							"message": "Invalid type: Expected string but received 42"
+						}
+					]
+				},
+				"pageError": {
+					"code": "INVALID_INPUT",
+					"message": "revision and page must be positive safe integers",
+					"diagnostics": []
+				},
+				"cropError": {
+					"code": "INVALID_INPUT",
+					"message": "region must be a finite positive rectangle",
+					"diagnostics": []
+				},
+				"conflict": {
+					"code": "REVISION_CONFLICT",
+					"message": "Document revision is no longer retained; compile explicitly again"
+				},
+				"typst": {
+					"code": "COMPILE_FAILED",
+					"message": "Typst compilation failed",
+					"diagnostics": [
+						{
+							"severity": "error",
+							"message": "unclosed delimiter",
+							"path": "报表/季度经营分析/排版.typ",
+							"range": {
+								"end": {
+									"character": 15,
+									"line": 0
+								},
+								"start": {
+									"character": 14,
+									"line": 0
+								}
+							}
+						}
+					]
+				},
+				"typescript": {
+					"code": "COMPILE_FAILED",
+					"message": "模板执行失败：模板热更新失败：[\"Error: Transform failed with 1 error:\\n\\n\\u001b[31m[PARSE_ERROR] \\u001b[0mUnexpected token\\n   \\u001b[38;5;246m╭\\u001b[0m\\u001b[38;5;246m─\\u001b[0m\\u001b[38;5;246m[\\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-8WdIw1/报表/季度经营分析/季度经营分析.ts:1:25 \\u001b[38;5;246m]\\u001b[0m\\n   \\u001b[38;5;246m│\\u001b[0m\\n \\u001b[38;5;246m1 │\\u001b[0m \\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mx\\u001b[0m\\u001b[38;5;249mp\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249md\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mf\\u001b[0m\\u001b[38;5;249ma\\u001b[0m\\u001b[38;5;249mu\\u001b[0m\\u001b[38;5;249ml\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249m{\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249mb\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mk\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mn\\u001b[0m\\u001b[38;5;249m:\\u001b[0m\\n \\u001b[38;5;240m  │\\u001b[0m                         │ \\n \\u001b[38;5;240m  │\\u001b[0m                         ╰─ \\n\\u001b[38;5;246m───╯\\u001b[0m\\n\",\"Failed to reload /报表/季度经营分析/季度经营分析.ts. This could be due to syntax errors or importing non-existent modules. (see errors above)\",\"Error: Transform failed with 1 error:\\n\\n\\u001b[31m[PARSE_ERROR] \\u001b[0mUnexpected token\\n   \\u001b[38;5;246m╭\\u001b[0m\\u001b[38;5;246m─\\u001b[0m\\u001b[38;5;246m[\\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-8WdIw1/报表/季度经营分析/季度经营分析.ts:1:25 \\u001b[38;5;246m]\\u001b[0m\\n   \\u001b[38;5;246m│\\u001b[0m\\n \\u001b[38;5;246m1 │\\u001b[0m \\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mx\\u001b[0m\\u001b[38;5;249mp\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249md\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mf\\u001b[0m\\u001b[38;5;249ma\\u001b[0m\\u001b[38;5;249mu\\u001b[0m\\u001b[38;5;249ml\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249m{\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249mb\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mk\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mn\\u001b[0m\\u001b[38;5;249m:\\u001b[0m\\n \\u001b[38;5;240m  │\\u001b[0m                         │ \\n \\u001b[38;5;240m  │\\u001b[0m                         ╰─ \\n\\u001b[38;5;246m───╯\\u001b[0m\\n\",\"Failed to reload /home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-8WdIw1/.studio-entry.ts. This could be due to syntax errors or importing non-existent modules. (see errors above)\"]",
+					"diagnostics": [
+						{
+							"severity": "error",
+							"message": "\u001b[31m[PARSE_ERROR] \u001b[0mUnexpected token\n   \u001b[38;5;246m╭\u001b[0m\u001b[38;5;246m─\u001b[0m\u001b[38;5;246m[\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-8WdIw1/报表/季度经营分析/季度经营分析.ts:1:25 \u001b[38;5;246m]\u001b[0m\n   \u001b[38;5;246m│\u001b[0m\n \u001b[38;5;246m1 │\u001b[0m \u001b[38;5;249me\u001b[0m\u001b[38;5;249mx\u001b[0m\u001b[38;5;249mp\u001b[0m\u001b[38;5;249mo\u001b[0m\u001b[38;5;249mr\u001b[0m\u001b[38;5;249mt\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249md\u001b[0m\u001b[38;5;249me\u001b[0m\u001b[38;5;249mf\u001b[0m\u001b[38;5;249ma\u001b[0m\u001b[38;5;249mu\u001b[0m\u001b[38;5;249ml\u001b[0m\u001b[38;5;249mt\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249m{\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249mb\u001b[0m\u001b[38;5;249mr\u001b[0m\u001b[38;5;249mo\u001b[0m\u001b[38;5;249mk\u001b[0m\u001b[38;5;249me\u001b[0m\u001b[38;5;249mn\u001b[0m\u001b[38;5;249m:\u001b[0m\n \u001b[38;5;240m  │\u001b[0m                         │ \n \u001b[38;5;240m  │\u001b[0m                         ╰─ \n\u001b[38;5;246m───╯\u001b[0m\n",
+							"path": "报表/季度经营分析/季度经营分析.ts",
+							"range": {
+								"start": {
+									"line": 0,
+									"character": 24
+								},
+								"end": {
+									"line": 0,
+									"character": 25
+								}
+							}
+						}
+					]
+				}
+			}
+		},
+		"viewport": {
+			"width": 1050,
+			"height": 994
+		}
+	},
+	"movedDesktop": {
+		"executablePath": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-moved-gui-uCQkV9/PluxelTypstStudio-linux-x64/pluxel-typst-studio",
+		"applicationRoot": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-moved-gui-uCQkV9/PluxelTypstStudio-linux-x64/resources/app",
+		"clientEntry": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-moved-gui-uCQkV9/PluxelTypstStudio-linux-x64/resources/app/dist/client.mjs",
+		"passed": [
+			"native sender validation, trusted artifact ids, save cancellation and narrow renderer capability",
+			"real Electron MessagePort Uint8Array and cached buffer preservation",
+			"structured input/schema/Typst/TypeScript/page/crop/revision errors over the real port",
+			"multi-page SVG, last-page navigation, outline, and two-way source navigation",
+			"project creation and recent persistence",
+			"real filesystem explorer CRUD",
+			"Valibot defaults and schema recovery",
+			"separate tabs and persisted external input excluded from ZIP",
+			"Pi provider settings and company Responses preset",
+			"native assistant folder mentions",
+			"TypeScript completion and hover",
+			"Typst diagnostics",
+			"filesystem polling and external edits",
+			"invalid workspace config editing and recovery",
+			"PDF and workspace ZIP native transport",
+			"native open directory reuses existing project"
+		],
+		"portEvidence": {
+			"binary": {
+				"revision": "50b3f9b7-a119-45e4-9010-9731dd3cb17c",
+				"byteLength": 218912,
+				"firstWasBinary": true,
+				"secondMatches": true,
+				"thirdMatches": true,
+				"sessionId": "20eeb9b9-1c11-43e6-8fdc-58a8a9a38088",
+				"nativeRevision": 2,
+				"compilerVersion": "0.7.0",
+				"pageCount": 3,
+				"outline": [
+					{
+						"level": 1,
+						"page": 2,
+						"title": "经营概况",
+						"x": 70.86614173228347,
+						"y": 68.03149606299213
+					},
+					{
+						"level": 1,
+						"page": 2,
+						"title": "盈利测算",
+						"x": 70.86614173228347,
+						"y": 169.57149606299214
+					},
+					{
+						"level": 1,
+						"page": 2,
+						"title": "收入结构示意",
+						"x": 70.86614173228347,
+						"y": 296.4214960629921
+					},
+					{
+						"level": 1,
+						"page": 3,
+						"title": "项目执行明细",
+						"x": 70.86614173228347,
+						"y": 68.03149606299213
+					},
+					{
+						"level": 1,
+						"page": 3,
+						"title": "管理建议",
+						"x": 70.86614173228347,
+						"y": 695.1129960629922
+					}
+				],
+				"point": {
+					"column": 3,
+					"endColumn": 4,
+					"endLine": 8,
+					"height": 11,
+					"line": 8,
+					"page": 2,
+					"path": "报表/季度经营分析/排版.typ",
+					"width": 11,
+					"x": 70.86614173228347,
+					"y": 65.05049606299212
+				}
+			},
+			"errors": {
+				"invalidJson": {
+					"code": "INVALID_INPUT",
+					"message": "Input data must be a JSON object",
+					"issues": [
+						{
+							"path": ["data"],
+							"rule": "json",
+							"message": "Input data must be a JSON object"
+						}
+					]
+				},
+				"schema": {
+					"code": "INVALID_INPUT",
+					"message": "模板输入未通过 schema 校验",
+					"issues": [
+						{
+							"path": ["company"],
+							"rule": "string",
+							"message": "Invalid type: Expected string but received 42"
+						}
+					]
+				},
+				"pageError": {
+					"code": "INVALID_INPUT",
+					"message": "revision and page must be positive safe integers",
+					"diagnostics": []
+				},
+				"cropError": {
+					"code": "INVALID_INPUT",
+					"message": "region must be a finite positive rectangle",
+					"diagnostics": []
+				},
+				"conflict": {
+					"code": "REVISION_CONFLICT",
+					"message": "Document revision is no longer retained; compile explicitly again"
+				},
+				"typst": {
+					"code": "COMPILE_FAILED",
+					"message": "Typst compilation failed",
+					"diagnostics": [
+						{
+							"severity": "error",
+							"message": "unclosed delimiter",
+							"path": "报表/季度经营分析/排版.typ",
+							"range": {
+								"end": {
+									"character": 15,
+									"line": 0
+								},
+								"start": {
+									"character": 14,
+									"line": 0
+								}
+							}
+						}
+					]
+				},
+				"typescript": {
+					"code": "COMPILE_FAILED",
+					"message": "模板执行失败：模板热更新失败：[\"Error: Transform failed with 1 error:\\n\\n\\u001b[31m[PARSE_ERROR] \\u001b[0mUnexpected token\\n   \\u001b[38;5;246m╭\\u001b[0m\\u001b[38;5;246m─\\u001b[0m\\u001b[38;5;246m[\\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-u8K6et/报表/季度经营分析/季度经营分析.ts:1:25 \\u001b[38;5;246m]\\u001b[0m\\n   \\u001b[38;5;246m│\\u001b[0m\\n \\u001b[38;5;246m1 │\\u001b[0m \\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mx\\u001b[0m\\u001b[38;5;249mp\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249md\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mf\\u001b[0m\\u001b[38;5;249ma\\u001b[0m\\u001b[38;5;249mu\\u001b[0m\\u001b[38;5;249ml\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249m{\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249mb\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mk\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mn\\u001b[0m\\u001b[38;5;249m:\\u001b[0m\\n \\u001b[38;5;240m  │\\u001b[0m                         │ \\n \\u001b[38;5;240m  │\\u001b[0m                         ╰─ \\n\\u001b[38;5;246m───╯\\u001b[0m\\n\",\"Failed to reload /报表/季度经营分析/季度经营分析.ts. This could be due to syntax errors or importing non-existent modules. (see errors above)\",\"Error: Transform failed with 1 error:\\n\\n\\u001b[31m[PARSE_ERROR] \\u001b[0mUnexpected token\\n   \\u001b[38;5;246m╭\\u001b[0m\\u001b[38;5;246m─\\u001b[0m\\u001b[38;5;246m[\\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-u8K6et/报表/季度经营分析/季度经营分析.ts:1:25 \\u001b[38;5;246m]\\u001b[0m\\n   \\u001b[38;5;246m│\\u001b[0m\\n \\u001b[38;5;246m1 │\\u001b[0m \\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mx\\u001b[0m\\u001b[38;5;249mp\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249md\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mf\\u001b[0m\\u001b[38;5;249ma\\u001b[0m\\u001b[38;5;249mu\\u001b[0m\\u001b[38;5;249ml\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249m{\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249mb\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mk\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mn\\u001b[0m\\u001b[38;5;249m:\\u001b[0m\\n \\u001b[38;5;240m  │\\u001b[0m                         │ \\n \\u001b[38;5;240m  │\\u001b[0m                         ╰─ \\n\\u001b[38;5;246m───╯\\u001b[0m\\n\",\"Failed to reload /home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-u8K6et/.studio-entry.ts. This could be due to syntax errors or importing non-existent modules. (see errors above)\"]",
+					"diagnostics": [
+						{
+							"severity": "error",
+							"message": "\u001b[31m[PARSE_ERROR] \u001b[0mUnexpected token\n   \u001b[38;5;246m╭\u001b[0m\u001b[38;5;246m─\u001b[0m\u001b[38;5;246m[\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-u8K6et/报表/季度经营分析/季度经营分析.ts:1:25 \u001b[38;5;246m]\u001b[0m\n   \u001b[38;5;246m│\u001b[0m\n \u001b[38;5;246m1 │\u001b[0m \u001b[38;5;249me\u001b[0m\u001b[38;5;249mx\u001b[0m\u001b[38;5;249mp\u001b[0m\u001b[38;5;249mo\u001b[0m\u001b[38;5;249mr\u001b[0m\u001b[38;5;249mt\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249md\u001b[0m\u001b[38;5;249me\u001b[0m\u001b[38;5;249mf\u001b[0m\u001b[38;5;249ma\u001b[0m\u001b[38;5;249mu\u001b[0m\u001b[38;5;249ml\u001b[0m\u001b[38;5;249mt\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249m{\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249mb\u001b[0m\u001b[38;5;249mr\u001b[0m\u001b[38;5;249mo\u001b[0m\u001b[38;5;249mk\u001b[0m\u001b[38;5;249me\u001b[0m\u001b[38;5;249mn\u001b[0m\u001b[38;5;249m:\u001b[0m\n \u001b[38;5;240m  │\u001b[0m                         │ \n \u001b[38;5;240m  │\u001b[0m                         ╰─ \n\u001b[38;5;246m───╯\u001b[0m\n",
+							"path": "报表/季度经营分析/季度经营分析.ts",
+							"range": {
+								"start": {
+									"line": 0,
+									"character": 24
+								},
+								"end": {
+									"line": 0,
+									"character": 25
+								}
+							}
+						}
+					]
+				}
+			}
+		},
+		"viewport": {
+			"width": 1050,
+			"height": 994
+		}
+	},
+	"hostViteGeneration": {
+		"generatedAt": "2026-10-12T09:58:10.452Z",
+		"trigger": "Official host-vite application.name source edit",
+		"transport": "Authenticated AF_UNIX socket plus dedicated trusted Node MessagePort for artifact metadata recovery",
+		"before": {
+			"instanceId": "a442d242-48a2-4bfa-b8b6-cfaeae49a5d8",
+			"root": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile",
+			"project": {
+				"id": "d564782b-ed39-46e6-b5b9-683084b073f2",
+				"root": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile/workspaces/projects/d564782b-ed39-46e6-b5b9-683084b073f2",
+				"name": "Generation continuity"
+			},
+			"input": {
+				"data": {
+					"revenue": 1300000
+				}
+			},
+			"compilation": {
+				"revision": "3f5df2d0-17c1-433d-9cf2-d9e7346f0166",
+				"sourceRevision": "d9af386c6cb0c7a37733a269150183f04690fe812196d4a0ecdaf8eb4baf95eb",
+				"pageCount": 3,
+				"revenue": 1400000
+			},
+			"artifacts": [
+				{
+					"metadata": {
+						"projectId": "d564782b-ed39-46e6-b5b9-683084b073f2",
+						"entry": "报表/季度经营分析/季度经营分析.ts",
+						"revision": "3f5df2d0-17c1-433d-9cf2-d9e7346f0166",
+						"kind": "png",
+						"mimeType": "image/png",
+						"page": 2,
+						"width": 595,
+						"height": 842,
+						"region": {
+							"x": 0,
+							"y": 0,
+							"width": 595,
+							"height": 842
+						},
+						"headings": [
+							{
+								"level": 1,
+								"page": 2,
+								"title": "经营概况",
+								"x": 70.86614173228347,
+								"y": 68.03149606299213
+							},
+							{
+								"level": 1,
+								"page": 2,
+								"title": "盈利测算",
+								"x": 70.86614173228347,
+								"y": 169.57149606299214
+							},
+							{
+								"level": 1,
+								"page": 2,
+								"title": "收入结构示意",
+								"x": 70.86614173228347,
+								"y": 296.4214960629921
+							}
+						],
+						"sources": [
+							{
+								"path": "报表/季度经营分析/排版.typ",
+								"fromLine": 4,
+								"toLine": 26
+							},
+							{
+								"path": "共享/主题/财务函件.typ",
+								"fromLine": 77,
+								"toLine": 89
+							}
+						],
+						"id": "f819cacc-8ab5-4e6c-b374-8d7e22c36423",
+						"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile/artifacts/f819cacc-8ab5-4e6c-b374-8d7e22c36423/page.png",
+						"byteLength": 108752,
+						"createdAt": "2026-10-12T09:58:09.900Z",
+						"expiresAt": "2026-10-13T09:58:09.900Z"
+					},
+					"sha256": "22d395f69976f945f5e8b74401c4b33a731368a4c651e981970661d93df79df4",
+					"evidencePath": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/test-results/refactor/hmr-before.png"
+				},
+				{
+					"metadata": {
+						"projectId": "d564782b-ed39-46e6-b5b9-683084b073f2",
+						"entry": "报表/季度经营分析/季度经营分析.ts",
+						"revision": "3f5df2d0-17c1-433d-9cf2-d9e7346f0166",
+						"kind": "pdf",
+						"mimeType": "application/pdf",
+						"id": "e629244f-220f-4106-a4e3-5905550679fa",
+						"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile/artifacts/e629244f-220f-4106-a4e3-5905550679fa/document.pdf",
+						"byteLength": 110623,
+						"createdAt": "2026-10-12T09:58:09.917Z",
+						"expiresAt": "2026-10-13T09:58:09.917Z"
+					},
+					"sha256": "a2987849e90f701b20cee8d2e75ada45b4c639288b0932af1a3706772ad1af2a",
+					"evidencePath": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/test-results/refactor/hmr-before.pdf"
+				}
+			]
+		},
+		"after": {
+			"instanceId": "a442d242-48a2-4bfa-b8b6-cfaeae49a5d8",
+			"root": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile",
+			"project": {
+				"id": "d564782b-ed39-46e6-b5b9-683084b073f2",
+				"root": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile/workspaces/projects/d564782b-ed39-46e6-b5b9-683084b073f2",
+				"name": "Generation continuity"
+			},
+			"input": {
+				"data": {
+					"revenue": 1300000
+				}
+			},
+			"compilation": {
+				"revision": "ba657df2-cd6a-45be-bdd2-21c3324c73b4",
+				"sourceRevision": "d9af386c6cb0c7a37733a269150183f04690fe812196d4a0ecdaf8eb4baf95eb",
+				"pageCount": 3,
+				"revenue": 1400000
+			},
+			"artifacts": [
+				{
+					"metadata": {
+						"projectId": "d564782b-ed39-46e6-b5b9-683084b073f2",
+						"entry": "报表/季度经营分析/季度经营分析.ts",
+						"revision": "3f5df2d0-17c1-433d-9cf2-d9e7346f0166",
+						"kind": "png",
+						"mimeType": "image/png",
+						"page": 2,
+						"width": 595,
+						"height": 842,
+						"region": {
+							"x": 0,
+							"y": 0,
+							"width": 595,
+							"height": 842
+						},
+						"headings": [
+							{
+								"level": 1,
+								"page": 2,
+								"title": "经营概况",
+								"x": 70.86614173228347,
+								"y": 68.03149606299213
+							},
+							{
+								"level": 1,
+								"page": 2,
+								"title": "盈利测算",
+								"x": 70.86614173228347,
+								"y": 169.57149606299214
+							},
+							{
+								"level": 1,
+								"page": 2,
+								"title": "收入结构示意",
+								"x": 70.86614173228347,
+								"y": 296.4214960629921
+							}
+						],
+						"sources": [
+							{
+								"path": "报表/季度经营分析/排版.typ",
+								"fromLine": 4,
+								"toLine": 26
+							},
+							{
+								"path": "共享/主题/财务函件.typ",
+								"fromLine": 77,
+								"toLine": 89
+							}
+						],
+						"id": "f819cacc-8ab5-4e6c-b374-8d7e22c36423",
+						"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile/artifacts/f819cacc-8ab5-4e6c-b374-8d7e22c36423/page.png",
+						"byteLength": 108752,
+						"createdAt": "2026-10-12T09:58:09.900Z",
+						"expiresAt": "2026-10-13T09:58:09.900Z"
+					},
+					"sha256": "22d395f69976f945f5e8b74401c4b33a731368a4c651e981970661d93df79df4",
+					"evidencePath": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/test-results/refactor/hmr-after.png"
+				},
+				{
+					"metadata": {
+						"projectId": "d564782b-ed39-46e6-b5b9-683084b073f2",
+						"entry": "报表/季度经营分析/季度经营分析.ts",
+						"revision": "3f5df2d0-17c1-433d-9cf2-d9e7346f0166",
+						"kind": "pdf",
+						"mimeType": "application/pdf",
+						"id": "e629244f-220f-4106-a4e3-5905550679fa",
+						"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-rpc-dev-S55aDL/profile/artifacts/e629244f-220f-4106-a4e3-5905550679fa/document.pdf",
+						"byteLength": 110623,
+						"createdAt": "2026-10-12T09:58:09.917Z",
+						"expiresAt": "2026-10-13T09:58:09.917Z"
+					},
+					"sha256": "a2987849e90f701b20cee8d2e75ada45b4c639288b0932af1a3706772ad1af2a",
+					"evidencePath": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/test-results/refactor/hmr-after.pdf"
+				}
+			]
+		},
+		"checks": {
+			"generationWithdrawn": true,
+			"projectDataPreserved": true,
+			"storedInputPreserved": true,
+			"artifactMetadataRecovered": true,
+			"artifactBytesPreserved": true,
+			"oldDocumentRevisionRejected": true,
+			"newDocumentCompiled": true
+		}
+	},
+	"piImageContent": {
+		"imageBlocks": 3,
+		"artifacts": {
+			"pages": [
+				{
+					"id": "ff2c20c2-e11b-41f0-b466-11896faf63ec",
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-test-uCdGvA/artifacts/ff2c20c2-e11b-41f0-b466-11896faf63ec/page.png",
+					"page": 1,
+					"width": 1131,
+					"height": 1600,
+					"region": {
+						"x": 0,
+						"y": 0,
+						"width": 595.1108251656664,
+						"height": 841.889761507574
+					}
+				},
+				{
+					"id": "c24ef697-5835-4557-ab18-5567b26c5e83",
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-test-uCdGvA/artifacts/c24ef697-5835-4557-ab18-5567b26c5e83/page.png",
+					"page": 2,
+					"width": 1131,
+					"height": 1600,
+					"region": {
+						"x": 0,
+						"y": 0,
+						"width": 595.1108251656664,
+						"height": 841.889761507574
+					}
+				},
+				{
+					"id": "6423805e-d711-47a8-95dc-9cbbe9303b78",
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-test-uCdGvA/artifacts/6423805e-d711-47a8-95dc-9cbbe9303b78/page.png",
+					"page": 3,
+					"width": 1131,
+					"height": 1600,
+					"region": {
+						"x": 0,
+						"y": 0,
+						"width": 595.1108251656664,
+						"height": 841.889761507574
+					}
+				}
+			]
+		},
+		"contentHashes": [
+			{
+				"mimeType": "image/png",
+				"byteLength": 57264,
+				"sha256": "d2070a953efcd9caa8703a258295aff05dba5ae5769ec5bcc966cccb17c0d1a0"
+			},
+			{
+				"mimeType": "image/png",
+				"byteLength": 279515,
+				"sha256": "f53489d555ced9e3798b63e7f0fd1bb31c5c00eb0a8abb642de29227a7324429"
+			},
+			{
+				"mimeType": "image/png",
+				"byteLength": 435184,
+				"sha256": "a6d667f1c33f0da7ee33a76a8af5b81e3a6b9c486e50467b7f7e8361e71f4d53"
+			}
+		]
+	},
+	"publicPackagedExample": {
+		"generatedAt": "2026-10-12T10:14:15.260Z",
+		"applicationRoot": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/release/PluxelTypstStudio-linux-x64/resources/app",
+		"exampleEntry": "file:///home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/release/PluxelTypstStudio-linux-x64/resources/app/examples/inspect-report.ts",
+		"externalProcess": true,
+		"publicPackageExportsOnly": true,
+		"result": {
+			"revision": "5520ae0d-2c1c-456b-b7d8-9b271543f626",
+			"page": {
+				"projectId": "4750334e-d523-459c-8c86-312902142d1d",
+				"entry": "报表/季度经营分析/季度经营分析.ts",
+				"revision": "5520ae0d-2c1c-456b-b7d8-9b271543f626",
+				"kind": "png",
+				"mimeType": "image/png",
+				"page": 3,
+				"width": 1191,
+				"height": 1684,
+				"region": {
+					"x": 0,
+					"y": 0,
+					"width": 595.5,
+					"height": 842
+				},
+				"headings": [
+					{
+						"level": 1,
+						"page": 3,
+						"title": "项目执行明细",
+						"x": 70.86614173228347,
+						"y": 68.03149606299213
+					},
+					{
+						"level": 1,
+						"page": 3,
+						"title": "管理建议",
+						"x": 70.86614173228347,
+						"y": 695.1129960629922
+					}
+				],
+				"sources": [
+					{
+						"path": "报表/季度经营分析/排版.typ",
+						"fromLine": 4,
+						"toLine": 37
+					},
+					{
+						"path": "共享/主题/财务函件.typ",
+						"fromLine": 77,
+						"toLine": 89
+					}
+				],
+				"id": "deb9e089-e289-461e-9480-36f3964a2249",
+				"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-public-example-lgvrqU/profile/artifacts/deb9e089-e289-461e-9480-36f3964a2249/page.png",
+				"byteLength": 471388,
+				"createdAt": "2026-10-12T10:14:15.199Z",
+				"expiresAt": "2026-10-13T10:14:15.199Z"
+			},
+			"pdf": {
+				"projectId": "4750334e-d523-459c-8c86-312902142d1d",
+				"entry": "报表/季度经营分析/季度经营分析.ts",
+				"revision": "5520ae0d-2c1c-456b-b7d8-9b271543f626",
+				"kind": "pdf",
+				"mimeType": "application/pdf",
+				"id": "38b16c06-273e-4a16-910a-174bff9ed25a",
+				"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-public-example-lgvrqU/profile/artifacts/38b16c06-273e-4a16-910a-174bff9ed25a/document.pdf",
+				"byteLength": 110623,
+				"createdAt": "2026-10-12T10:14:15.243Z",
+				"expiresAt": "2026-10-13T10:14:15.243Z"
+			}
+		},
+		"readablePageBytes": 471388,
+		"readablePdfBytes": 110623,
+		"stderr": ""
+	},
+	"cleanBuild": {
+		"builtFromAbsentDist": true,
+		"success": true,
+		"checkedFiles": 11,
+		"identicalToValidatedBuild": true,
+		"before": {
+			"client.mjs": "2613940c6172cbc12d1d1877790f3a578ce3058b9832160efdc522fc05f4372d",
+			"client.d.mts": "4d9d405d212b947d7bccf0f622bd3e6d5c854155fb83e44e58b14fa3493a0409",
+			"contracts.mjs": "a94f65673717a24639e5bbd8da229bfea586c6630d30d2b81eb6285238a72289",
+			"contracts.d.mts": "d385894e4f212ea722a5b2b359ae210bf23f3e68d553f937e93350ed99f46b63",
+			"runtime.mjs": "3e502c498e42dd9f39eb7a18668fd0a83aec376acb5c6785cc4402c68481ae98",
+			"runtime.d.mts": "a5e66168a71f6ca5566e4a9d0d8b2d7de33e7bb553fe4ccde4b41ef0b9b571f8",
+			"plugin.mjs": "ae48f40501ed2f1e2611fba067fbeab6ab0a91f7fb883819547eba729b783b53",
+			"plugin.d.mts": "f250f576e7f9904394fce1265ae80dbe74dcedfc590bf2270d994e49951efa1a",
+			"electron/main.mjs": "f3f30eac6d18d700ecef995f2aabe465b5d92777f110c424321dfe27032e441a",
+			"electron/backend.mjs": "f172c7586f358dc132ba4fefd8bbc18edbbc2196489682c3e097b05be9e90424",
+			"electron/preload.cjs": "3ee55a0131f8a3d06b9decb14f3abe061995a8369b3c31ff3aa50ae436cc5cc2"
+		},
+		"after": {
+			"client.mjs": "2613940c6172cbc12d1d1877790f3a578ce3058b9832160efdc522fc05f4372d",
+			"client.d.mts": "4d9d405d212b947d7bccf0f622bd3e6d5c854155fb83e44e58b14fa3493a0409",
+			"contracts.mjs": "a94f65673717a24639e5bbd8da229bfea586c6630d30d2b81eb6285238a72289",
+			"contracts.d.mts": "d385894e4f212ea722a5b2b359ae210bf23f3e68d553f937e93350ed99f46b63",
+			"runtime.mjs": "3e502c498e42dd9f39eb7a18668fd0a83aec376acb5c6785cc4402c68481ae98",
+			"runtime.d.mts": "a5e66168a71f6ca5566e4a9d0d8b2d7de33e7bb553fe4ccde4b41ef0b9b571f8",
+			"plugin.mjs": "ae48f40501ed2f1e2611fba067fbeab6ab0a91f7fb883819547eba729b783b53",
+			"plugin.d.mts": "f250f576e7f9904394fce1265ae80dbe74dcedfc590bf2270d994e49951efa1a",
+			"electron/main.mjs": "f3f30eac6d18d700ecef995f2aabe465b5d92777f110c424321dfe27032e441a",
+			"electron/backend.mjs": "f172c7586f358dc132ba4fefd8bbc18edbbc2196489682c3e097b05be9e90424",
+			"electron/preload.cjs": "3ee55a0131f8a3d06b9decb14f3abe061995a8369b3c31ff3aa50ae436cc5cc2"
+		},
+		"completeDistComparison": {
+			"beforeFiles": 452,
+			"afterFiles": 452,
+			"identical": true,
+			"differences": []
+		},
+		"afterSourceFormattingComparison": {
+			"beforeFiles": 452,
+			"afterFiles": 452,
+			"differences": [
+				"carrier-DmD82KSk.mjs.map",
+				"client.mjs.map",
+				"dev-NfJwsPkC.mjs.map",
+				"message-port-CtMBiR2g.mjs.map",
+				"runtime.mjs.map",
+				"socket-BI2oTZiK.mjs.map"
+			],
+			"executableAndTypeBytesIdentical": true
+		}
+	},
+	"originalValidatedSnapshotSourceHashes": {
+		".tegami/studio-resident-rpc.md": "d473e209a15f912bf2578cebb8af0dd49e22c239996686728cdf763a4f85c849",
+		"projects/report-template-studio/IMPLEMENTATION_REPORT.md": "54825eaec73f922b5e96b7d4ec686252c3b3b728447c43afff6d978187fdeffb",
+		"projects/report-template-studio/REFACTOR_DESIGN.md": "b0022040c0f20764f8e6775c739c0983dc411397d7019a3d0630f32c75cb4ad7",
+		"projects/report-template-studio/examples/inspect-report.ts": "a5e01f470b9c14093b371dc279dc8ea5251e7d10741edee9b3bd2b4f3750b7e1",
+		"projects/report-template-studio/src/backend/artifacts.ts": "cf66c3fca552f18b482d57ff91d506060bf6f4d3dbe28163d3b4916016179bcf",
+		"projects/report-template-studio/src/backend/documents.ts": "f676e74a58e6615b08df44e2c221bd77f25bd6f78095e318015af47400cbbd83",
+		"projects/report-template-studio/src/client/index.ts": "0330b3aaff399c071e5dde7559aba28c2bfff52973e1bbceae960993cbde4eff",
+		"projects/report-template-studio/src/client/protocol.ts": "5bc5874d87ce5d3ea7e928df03a14d2ee1473f52180d42f387bf6ca6332620b4",
+		"projects/report-template-studio/src/rpc/carrier.ts": "b4c2c1d1afd5da9dbc6bae587c14a5aad4688e7ddc2b84ec409cf8f2fd40ded3",
+		"projects/report-template-studio/src/rpc/errors.ts": "70e1b5913f79ad35da0d6f01b10d2e4e83727ed0dda917211cb82254bcd76ec7",
+		"projects/report-template-studio/src/rpc/message-port.ts": "111b56397fee49d347e0cb0bce12f53f398b9dcb24f83624f1de462b841e38c0",
+		"projects/report-template-studio/src/rpc/root-lock.ts": "a33caf3c5a042fbe2a34c7517295a74c3bbdd7f91f02ccd68e737efbd3754ee6",
+		"projects/report-template-studio/src/rpc/socket.ts": "ea44b51fb3e195a564b3311f8e5eec5461096d664392a3505a196e491e65ffe9",
+		"projects/report-template-studio/src/rpc/targets.ts": "c7efe0646b41c8f55c54ccd893d3135419cf43bf38e1615b6004a6bdf1f4d7d1",
+		"projects/report-template-studio/tests/artifacts.test.ts": "821801ac9336c1eb1692d5ec0d78fc62548223671ef3a37371c45a9946db4e98",
+		"projects/report-template-studio/tests/documents.test.ts": "c4f16c29127f8529592ec46d8a8794b20ca9186bb2fcc08f7bd126d0f1126de0",
+		"projects/report-template-studio/tests/rpc-dev.test.ts": "fe4708688f37b1748df502097baf0f960534a1202cfe0fcfcb816546d7d87bbc",
+		"projects/report-template-studio/tests/rpc-imports.test.ts": "028895797c5ae7144961bde807c5108633462aa8ec48a940487d9748e2e1cc24",
+		"projects/report-template-studio/tests/rpc.test.ts": "5ab97406d457a03382078cdfdaff76bfe85a68913d79082088abca55980022db",
+		"projects/report-template-studio/tests/runtime-client.mjs": "99ec21de89f628e2707b9e91c3f8790ec519cf33b6fceb9e5af4d91489d3e361",
+		"projects/report-template-studio/tsconfig.build.json": "eea4d9f52450a3bdd5b31e3c948f306961a26fba2a2b9a412736314fedba4615",
+		".github/workflows/report-template-studio-windows.yml": "d1c07e355a70ffb830b42e453d92acbe673649ff3dad18ea27958eb6579af8f6",
+		"docs/plugins/rendering/typst.md": "53ec1d3cc22d1f1e9b8266abba491dbb3494ee59a618e7fcf1f1a1b6527144c5",
+		"pnpm-lock.yaml": "7f29029e21924d663d0820c34bb0da05e20712537ed0607e5acf037e40dda9c7",
+		"projects/report-template-studio/README.md": "6265a164593459676b30c8520ad3388de36296ea27820d55deca2afbba10e1c2",
+		"projects/report-template-studio/package.json": "82900db0a967e543be6e7fd5028b2c8cde4b3411ebc1176528bf7090c7794812",
+		"projects/report-template-studio/scripts/dev.mjs": "7a44041b39fac815d4a12dacab64eea4e0be7c9ff8373f743c165843a78ab309",
+		"projects/report-template-studio/scripts/package.mjs": "90f922d3c9458b7ce5555d93a67c1857c5873b1efedfcbced3762d7fa029f9f0",
+		"projects/report-template-studio/src/backend/ai-tools.ts": "33c37c5b969cb20e311849b20442fd6e7e6a0fc8418cf0475c001459b221ffa8",
+		"projects/report-template-studio/src/backend/ai.ts": "e6fadea0a6d410edd736a227e38dc3910aef5eba45ab76113a1cb8877b534ac8",
+		"projects/report-template-studio/src/backend/application.ts": "37547c8117bae54dc0c69b5453b9a312dc7f4560f3d8ad4403008fa6628cbd97",
+		"projects/report-template-studio/src/backend/compiler.ts": "3d97f15991dbad2013c85973c62bb497b057a0dc8269d3553edca6004e9383aa",
+		"projects/report-template-studio/src/backend/dev.ts": "66295ed1bd29f02021ab8c5706b3c778c9211b65de2ba9a589261e9ec9d85543",
+		"projects/report-template-studio/src/backend/inputs.ts": "ef628077749026c79bd7118f45869ddf9d8f65da42edf42438231675af389675",
+		"projects/report-template-studio/src/backend/plugin.ts": "162b4e019bbe99f2431c02b9d61330e64c76e8d83a2f565b4ed867fb6d679ed2",
+		"projects/report-template-studio/src/backend/runtime.ts": "0a01d7b2492174ac1158f8d59dbab4f6777743829e535b9b481dc84998de88c6",
+		"projects/report-template-studio/src/backend/storage-validation.ts": "67be46e1d4ad05e710b0d3754f6555af54143d1f07df788c3790b652915be04e",
+		"projects/report-template-studio/src/backend/store.ts": "f4df97e82806e34fe7725952cfa2e9e8b276a82dc679b110fdb9c734976b46ce",
+		"projects/report-template-studio/src/backend/template-runtime.ts": "1949c93a99c16c42342852d50f0eae99b186c89c52e76edb4cb5a648f5fe334c",
+		"projects/report-template-studio/src/electron/backend.ts": "0448aa3366ef325017d22e5ab72109ec8a555e5585574f6d30db4765ec6d9e11",
+		"projects/report-template-studio/src/electron/main.ts": "423a021873661c3bd57d3dece2f97a756234654231002f639a963a3c13416737",
+		"projects/report-template-studio/src/electron/preload.ts": "6a84f9b995ee5e018572a48eeb378231ea1e7d015862826ff865b800c6b238f2",
+		"projects/report-template-studio/src/renderer/api.ts": "7f0423bc37b9ac3f4f8273565ef8fa0688a2d6a36008f532a92bc615a959b529",
+		"projects/report-template-studio/src/renderer/app.tsx": "93b4ef5cc4620d1ffb351940668e97ffb939ee2201b7a4211f23dee5d5176e05",
+		"projects/report-template-studio/src/renderer/assistant.tsx": "c9b94376eb3afc7398efc8ebf20bc0fe4745bd8df9789897e869a02c1b106bb9",
+		"projects/report-template-studio/src/renderer/data-form.tsx": "fb87140b780a1d68904f60cf51015655845c959f2e3f969deba7797efbaaa2c2",
+		"projects/report-template-studio/src/renderer/explorer.tsx": "ee7b8c70c00cf98b3a1a9e3bee27356a16ae328206dd0adedc6701c817f7aa91",
+		"projects/report-template-studio/src/renderer/main.tsx": "330ff9899fad8b11bb5afae8bc01f484f59c9e4679ffde8ee2d05e1a57cc396a",
+		"projects/report-template-studio/src/renderer/panes.tsx": "d2b2539366dfe2c1de35f840ecd7dd9e6ef527af3e5b11743cc45c2fb8aaf21c",
+		"projects/report-template-studio/src/renderer/preview.tsx": "f03e86ac6a031f774aae12c7732ed20a8b418710ed62f9f199d6e2b2f36c732a",
+		"projects/report-template-studio/src/renderer/provider-settings.tsx": "4ffaa4497655fdfa981c8e09961ad9b2ee635414e69ee800f263d09b9ebe187f",
+		"projects/report-template-studio/src/renderer/source-navigation.ts": "30b0a9b58c91839e959793fb848170c1f26610ec6fda019bedd3b1236d26c0c7",
+		"projects/report-template-studio/src/renderer/workspace-search.tsx": "1a0259b24068e34344f546318f8709352382be52e400b5d34f40edf04a221724",
+		"projects/report-template-studio/src/renderer/workspace.ts": "3bceadd8a927d656500634178998d2c61dcc845a1213088efcb3de32b1d6652f",
+		"projects/report-template-studio/src/shared/contracts.ts": "ebaa842615d15e180c2d0a1530defa8f16c05346b2c73bdaf8e7f08996ccf4f0",
+		"projects/report-template-studio/tests/ai.test.ts": "a783f9ced1fbbbf80104ece426efacf02c887618262bcd6b5c472ac24ddcaeeb",
+		"projects/report-template-studio/tests/backend.test.ts": "d6a7989de41d7680e8206080edb31fe600851f7f23d828162a6bf4bb9bd8921a",
+		"projects/report-template-studio/tests/compiler.test.ts": "33a5765a9d34b5922a909b45c81b574b74c5f00b6298021e0cd67ab316533cd1",
+		"projects/report-template-studio/tests/desktop.mjs": "f7ebac5c4f306e945f170acbf3c20fb5508efb0149f94dbcf4f48851371375d0",
+		"projects/report-template-studio/tests/runtime.mjs": "1095851615dc407f921b137dc01f5ac0ef8082fbca0cd4977c67c8f1b98561bd",
+		"projects/report-template-studio/tests/workspace-ui.test.ts": "d22153110463e8bdda15970698794afdb3b864277a0491c3bbf2ebfc92498799",
+		"projects/report-template-studio/tsconfig.json": "11c93bebc22580e585966597d516f933a675f3f79e8fb4b0f99eab8d764c865f",
+		"projects/report-template-studio/tsdown.config.ts": "7608a1bb4a31ab09a0e79573fce3ba86f3526cca8a6dc60c145a9e2a52874f6b",
+		"projects/report-template-studio/workspace-assets/.agents/skills/typst-authoring/SKILL.md": "5b2c30415f7b29b6be126577daa329ae5821e8732397b8385b48c7d0da4091fa",
+		"projects/report-template-studio/workspace-assets/AGENTS.md": "b757fb0c3e6db9d42efd0dc10cdea8b2bddeb52d830fc047fc181cbad45b6b54"
+	},
+	"localEvidenceHashes": {
+		"test-results/refactor/checks/build.log": {
+			"byteLength": 43501,
+			"sha256": "e28656de7635c408f94e894582e96d75e1593c1f1c60ec91e9e76df7f7c46de7"
+		},
+		"test-results/refactor/checks/clean-build.log": {
+			"byteLength": 43478,
+			"sha256": "b5cf01d22b313db739a4ef8089258d79fcec41cdccf33264decf7507e4b40a4b"
+		},
+		"test-results/refactor/checks/diff-check.log": {
+			"byteLength": 26,
+			"sha256": "f60c6598443dc839f82abf6314275242dd93670e12326097e2fe1dccac837615"
+		},
+		"test-results/refactor/checks/example-harness-flags.log": {
+			"byteLength": 4664,
+			"sha256": "05629734fdf81082248e5d547208c4eef58a3b03b0c3de6aee3d55fbda8a9db9"
+		},
+		"test-results/refactor/checks/example.log": {
+			"byteLength": 117,
+			"sha256": "859e1cf459736ca4423541e763a2e8333028038783ede5c394f09d7ad1007bf5"
+		},
+		"test-results/refactor/checks/format.log": {
+			"byteLength": 114,
+			"sha256": "92e54cafd447681aa61750c1f7a1ab2e9dde62bdfcde266f3d70165951c64490"
+		},
+		"test-results/refactor/checks/legacy-search.log": {
+			"byteLength": 1839,
+			"sha256": "899e110461f1890f3cc9fabd797b9f0a3bd4a6e259a12e2fc479f3fb3697c58b"
+		},
+		"test-results/refactor/checks/lint.log": {
+			"byteLength": 0,
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		},
+		"test-results/refactor/checks/moved-runtime.log": {
+			"byteLength": 850,
+			"sha256": "57337b1e2877ec34b438f49f7c230164af998a8bb925eb29871ef6dc66bf29d5"
+		},
+		"test-results/refactor/checks/package.log": {
+			"byteLength": 3239,
+			"sha256": "1e38a1788e616879a5556ccbcf6acc2be87ef332aceaaed45c2605923f8d996d"
+		},
+		"test-results/refactor/checks/public-example-driver.mjs": {
+			"byteLength": 3056,
+			"sha256": "75a363efe9e2a2a86beb83fab936694c989f77cf6bd3cc5b7c06b6720160f1f9"
+		},
+		"test-results/refactor/checks/runtime.log": {
+			"byteLength": 743,
+			"sha256": "d444addbbae7038b013c6726eda20b10216847e96281ff6fc1b8b8f6b4e53f83"
+		},
+		"test-results/refactor/checks/source-declarations.log": {
+			"byteLength": 109,
+			"sha256": "426610f979368ab922bc10ee7e4ba6930acc94174684d7fe0542e597b9d5d30c"
+		},
+		"test-results/refactor/checks/tests.log": {
+			"byteLength": 235,
+			"sha256": "518378a8188c6c37bf52e13fa4db80ec557f879e19d4b7aeb28cfa306998c19f"
+		},
+		"test-results/refactor/checks/typecheck.log": {
+			"byteLength": 15,
+			"sha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92"
+		},
+		"test-results/refactor/checks/typst-tests.log": {
+			"byteLength": 304,
+			"sha256": "98c7d167696a9e120fa89b1c48478d91a184afd1dbc3f75182ec928b38cb248d"
+		},
+		"test-results/refactor/checks/typst-typecheck.log": {
+			"byteLength": 30,
+			"sha256": "072d84b3aeca2c2388fda023ba92238e18e00efb6d1f62e7e4fbf59670d88821"
+		},
+		"test-results/refactor/clean-build.json": {
+			"byteLength": 2599,
+			"sha256": "128055f9ff3a3f79d79ffda0c93d6ba7b7832702c8cebb7e29149d7bc70f7764"
+		},
+		"test-results/refactor/hmr-after.pdf": {
+			"byteLength": 110623,
+			"sha256": "a2987849e90f701b20cee8d2e75ada45b4c639288b0932af1a3706772ad1af2a"
+		},
+		"test-results/refactor/hmr-after.png": {
+			"byteLength": 108752,
+			"sha256": "22d395f69976f945f5e8b74401c4b33a731368a4c651e981970661d93df79df4"
+		},
+		"test-results/refactor/hmr-before.pdf": {
+			"byteLength": 110623,
+			"sha256": "a2987849e90f701b20cee8d2e75ada45b4c639288b0932af1a3706772ad1af2a"
+		},
+		"test-results/refactor/hmr-before.png": {
+			"byteLength": 108752,
+			"sha256": "22d395f69976f945f5e8b74401c4b33a731368a4c651e981970661d93df79df4"
+		},
+		"test-results/refactor/hmr-generation.json": {
+			"byteLength": 17701,
+			"sha256": "865ead8664baeee1ae562cfeba55be68cb8d28207fafddfbbaa70c2d6e664be4"
+		},
+		"test-results/refactor/moved-runtime/phase-1-crop.png": {
+			"byteLength": 56113,
+			"sha256": "cfb4a27ccb441ad14fa144ea3a59f2ada28554358ad52c7d2ceb6bb1fd2baec9"
+		},
+		"test-results/refactor/moved-runtime/phase-1-page-1.png": {
+			"byteLength": 20451,
+			"sha256": "9c78836a76f3245c0fd2593077dc527eae95b180d00605959dc3fa9cc5e187ef"
+		},
+		"test-results/refactor/moved-runtime/phase-1-page-2.png": {
+			"byteLength": 108777,
+			"sha256": "81c02677a84138d9641bd48bd8cc054a9f7265c464dc148faf88f2e46a8ce71c"
+		},
+		"test-results/refactor/moved-runtime/phase-1-page-3.png": {
+			"byteLength": 172177,
+			"sha256": "ce856bce53e889ae25c0a92c45d447e0bc83e291fc588aee801b17f6ad634567"
+		},
+		"test-results/refactor/moved-runtime/phase-1-stderr.log": {
+			"byteLength": 0,
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		},
+		"test-results/refactor/moved-runtime/phase-1.json": {
+			"byteLength": 24292,
+			"sha256": "859575d65cb7b2cf0b19c9be0edceea9120a9455aaf461ccf26443ae00ca00c2"
+		},
+		"test-results/refactor/moved-runtime/phase-1.pdf": {
+			"byteLength": 110612,
+			"sha256": "2811af138502e00d707b0807a74815d4463a779279bfaab09b3de108207b8dcf"
+		},
+		"test-results/refactor/moved-runtime/phase-2-crop.png": {
+			"byteLength": 56113,
+			"sha256": "cfb4a27ccb441ad14fa144ea3a59f2ada28554358ad52c7d2ceb6bb1fd2baec9"
+		},
+		"test-results/refactor/moved-runtime/phase-2-page-1.png": {
+			"byteLength": 20451,
+			"sha256": "9c78836a76f3245c0fd2593077dc527eae95b180d00605959dc3fa9cc5e187ef"
+		},
+		"test-results/refactor/moved-runtime/phase-2-page-2.png": {
+			"byteLength": 108752,
+			"sha256": "22d395f69976f945f5e8b74401c4b33a731368a4c651e981970661d93df79df4"
+		},
+		"test-results/refactor/moved-runtime/phase-2-page-3.png": {
+			"byteLength": 172177,
+			"sha256": "ce856bce53e889ae25c0a92c45d447e0bc83e291fc588aee801b17f6ad634567"
+		},
+		"test-results/refactor/moved-runtime/phase-2-stderr.log": {
+			"byteLength": 0,
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		},
+		"test-results/refactor/moved-runtime/phase-2.json": {
+			"byteLength": 21010,
+			"sha256": "483a367af3c3d1f62f4dad0b026deabe11f0b6bba5adfe86a8b7eff26199e7f6"
+		},
+		"test-results/refactor/moved-runtime/phase-2.pdf": {
+			"byteLength": 110623,
+			"sha256": "e7c419fde9d03f39550a11fdf6feb9cf09d84f5ae09abefc956f1a5917ebd8b2"
+		},
+		"test-results/refactor/moved-runtime/summary.json": {
+			"byteLength": 977,
+			"sha256": "d7190e215fa90ac6afbba14646dc87c261cfe87374cbd03a56e103d22ae97f4a"
+		},
+		"test-results/refactor/native-reuse.json": {
+			"byteLength": 461,
+			"sha256": "bebfac0418557d88106ece0d0e023b7437d61d7dea4a864bf62a6a8d8613a1a2"
+		},
+		"test-results/refactor/pi-image-content.json": {
+			"byteLength": 1828,
+			"sha256": "eb100bd33c89715da3d7dfbf63a3d26d3996d34bfeac8bab31a5ad8d34c02ef2"
+		},
+		"test-results/refactor/pi-page-1.png": {
+			"byteLength": 57264,
+			"sha256": "d2070a953efcd9caa8703a258295aff05dba5ae5769ec5bcc966cccb17c0d1a0"
+		},
+		"test-results/refactor/pi-page-2.png": {
+			"byteLength": 279515,
+			"sha256": "f53489d555ced9e3798b63e7f0fd1bb31c5c00eb0a8abb642de29227a7324429"
+		},
+		"test-results/refactor/pi-page-3.png": {
+			"byteLength": 435184,
+			"sha256": "a6d667f1c33f0da7ee33a76a8af5b81e3a6b9c486e50467b7f7e8361e71f4d53"
+		},
+		"test-results/refactor/public-example.json": {
+			"byteLength": 2575,
+			"sha256": "2ecb5e6c3df7023da30acd266344a8e06bb2ed8dca49d589b0816f20be371a2e"
+		},
+		"test-results/refactor/public-example.pdf": {
+			"byteLength": 110623,
+			"sha256": "ba5b910208bf74dc7da53257069d9107f95d336b82a4c7d5a23111eb59af7578"
+		},
+		"test-results/refactor/public-example.png": {
+			"byteLength": 471388,
+			"sha256": "a5977cfc479a72dff717764e1dc311af670205297a4b01ee55078783da8bcd3a"
+		},
+		"test-results/refactor/runtime/phase-1-crop.png": {
+			"byteLength": 56113,
+			"sha256": "cfb4a27ccb441ad14fa144ea3a59f2ada28554358ad52c7d2ceb6bb1fd2baec9"
+		},
+		"test-results/refactor/runtime/phase-1-page-1.png": {
+			"byteLength": 20451,
+			"sha256": "9c78836a76f3245c0fd2593077dc527eae95b180d00605959dc3fa9cc5e187ef"
+		},
+		"test-results/refactor/runtime/phase-1-page-2.png": {
+			"byteLength": 108777,
+			"sha256": "81c02677a84138d9641bd48bd8cc054a9f7265c464dc148faf88f2e46a8ce71c"
+		},
+		"test-results/refactor/runtime/phase-1-page-3.png": {
+			"byteLength": 172177,
+			"sha256": "ce856bce53e889ae25c0a92c45d447e0bc83e291fc588aee801b17f6ad634567"
+		},
+		"test-results/refactor/runtime/phase-1-stderr.log": {
+			"byteLength": 0,
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		},
+		"test-results/refactor/runtime/phase-1.json": {
+			"byteLength": 24332,
+			"sha256": "4c2ba081e1c0c98025f2c62c2e52215c39aac1c64d3070ed6a660b1b96a74901"
+		},
+		"test-results/refactor/runtime/phase-1.pdf": {
+			"byteLength": 110612,
+			"sha256": "2f6afa13f807df62fac02e8fc61201acfccb514b98c4ce60b709c5d911194021"
+		},
+		"test-results/refactor/runtime/phase-2-crop.png": {
+			"byteLength": 56113,
+			"sha256": "cfb4a27ccb441ad14fa144ea3a59f2ada28554358ad52c7d2ceb6bb1fd2baec9"
+		},
+		"test-results/refactor/runtime/phase-2-page-1.png": {
+			"byteLength": 20451,
+			"sha256": "9c78836a76f3245c0fd2593077dc527eae95b180d00605959dc3fa9cc5e187ef"
+		},
+		"test-results/refactor/runtime/phase-2-page-2.png": {
+			"byteLength": 108752,
+			"sha256": "22d395f69976f945f5e8b74401c4b33a731368a4c651e981970661d93df79df4"
+		},
+		"test-results/refactor/runtime/phase-2-page-3.png": {
+			"byteLength": 172177,
+			"sha256": "ce856bce53e889ae25c0a92c45d447e0bc83e291fc588aee801b17f6ad634567"
+		},
+		"test-results/refactor/runtime/phase-2-stderr.log": {
+			"byteLength": 0,
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		},
+		"test-results/refactor/runtime/phase-2.json": {
+			"byteLength": 20933,
+			"sha256": "14bb280bc2baa14c6dbe780359422a8409db789de1a0bc926cfae03206de112c"
+		},
+		"test-results/refactor/runtime/phase-2.pdf": {
+			"byteLength": 110623,
+			"sha256": "25b3f9b0486eb040a482068ee6c7356642d0841f070191c7013d33b66a61f30f"
+		},
+		"test-results/refactor/runtime/summary.json": {
+			"byteLength": 835,
+			"sha256": "eac7b9ac9bc75ea19e04edaef252ba55fff7628c41455385c6481492b2954525"
+		},
+		"test-results/refactor-desktop-10/00-folder-mention.png": {
+			"byteLength": 311106,
+			"sha256": "fb1160a4b5d82b83fde455606f0790dd90e840e11682a46f012ff072e28a6498"
+		},
+		"test-results/refactor-desktop-10/01-form-preview.png": {
+			"byteLength": 319072,
+			"sha256": "be33590e8a5f072a2226338614ce5961b728e8e1ca417c8992b44889dbc39f1a"
+		},
+		"test-results/refactor-desktop-10/01-quarterly-last-page.png": {
+			"byteLength": 317744,
+			"sha256": "9b1f054bb81a207dcf24a6c9ef0840ddeb484dd9feec65d8abfcb3542401701a"
+		},
+		"test-results/refactor-desktop-10/01-quarterly-outline.png": {
+			"byteLength": 316016,
+			"sha256": "9057b88d5abc9e504fdceb02828487de26dc24ffab69f13cee531dd842c43e0d"
+		},
+		"test-results/refactor-desktop-10/01-quarterly-source-navigation.png": {
+			"byteLength": 503311,
+			"sha256": "d35f2915b01461f9465569542b4852428f739e978a2b35c48d005a0b17a83401"
+		},
+		"test-results/refactor-desktop-10/02-completion.png": {
+			"byteLength": 559334,
+			"sha256": "aa2d5166478ae9e2decec0c661a4a74a0627858e7c6d1563d2670fe1612f7fda"
+		},
+		"test-results/refactor-desktop-10/03-hover.png": {
+			"byteLength": 508898,
+			"sha256": "c075557ea18dd4f2688409ac610b8d38f6429741cc03ab66fd2a5b7f7953198b"
+		},
+		"test-results/refactor-desktop-10/04-typst-diagnostic.png": {
+			"byteLength": 291584,
+			"sha256": "ad8c266981f76d557e4c01464d305971f441f7e0f33531b3ad452d4d7ee8b139"
+		},
+		"test-results/refactor-desktop-10/05-provider-settings.png": {
+			"byteLength": 290523,
+			"sha256": "b9208db02483209b47a0a271337425ef2b7dcf19aef8e9fbdf81d573e54d0d94"
+		},
+		"test-results/refactor-desktop-10/05-schema-recovery.png": {
+			"byteLength": 315722,
+			"sha256": "80a9f1f1f67f6839a6c22eb18316db7c710caf320502810b5527deb9e6e8441a"
+		},
+		"test-results/refactor-desktop-10/06-imported-workspace.png": {
+			"byteLength": 301240,
+			"sha256": "e0b40af72430528f8a3827eaf2204355c925c9c94a11e992089249a7fefead91"
+		},
+		"test-results/refactor-desktop-10/electron-stderr.log": {
+			"byteLength": 17289,
+			"sha256": "ee3367b2c603e13d7719c9a8ef3450d0394e660cbca964b1cf69f783e02721d4"
+		},
+		"test-results/refactor-desktop-10/foreign-file.txt": {
+			"byteLength": 40,
+			"sha256": "6bbd33fc2b413655339574d21c61a4b01077d81d816a01c3f6ae6853c172d703"
+		},
+		"test-results/refactor-desktop-10/port-evidence.json": {
+			"byteLength": 7514,
+			"sha256": "759e085ed5783804bcb2a361119f1b5e6812bb6ae0d8f952c15b4ad62e3babf1"
+		},
+		"test-results/refactor-desktop-10/result.json": {
+			"byteLength": 8962,
+			"sha256": "13c589e01ecb3af14d5bd834932bea3680736f06c825d0da56e6381e6d5eb211"
+		},
+		"test-results/refactor-desktop-10/scroll-layout.json": {
+			"byteLength": 24800,
+			"sha256": "8fcf3d7dd80c6b5491bdbbe80355f1b312cb772a9c4f3c602cdd33621e45728d"
+		},
+		"test-results/refactor-desktop-10/workspace.pdf": {
+			"byteLength": 59154,
+			"sha256": "c16c434da08ef32a0cf90dc26783669ffd1829d2e8e1f6d23e86b5be530a71d1"
+		},
+		"test-results/refactor-desktop-10/workspace.zip": {
+			"byteLength": 41494864,
+			"sha256": "e81fccdca3e1bee62ea03c02c92df35326dde773e932e8dc270e302a0dd17774"
+		},
+		"test-results/refactor-packaged-desktop-01/00-folder-mention.png": {
+			"byteLength": 311106,
+			"sha256": "fb1160a4b5d82b83fde455606f0790dd90e840e11682a46f012ff072e28a6498"
+		},
+		"test-results/refactor-packaged-desktop-01/01-form-preview.png": {
+			"byteLength": 319072,
+			"sha256": "be33590e8a5f072a2226338614ce5961b728e8e1ca417c8992b44889dbc39f1a"
+		},
+		"test-results/refactor-packaged-desktop-01/01-quarterly-last-page.png": {
+			"byteLength": 317744,
+			"sha256": "9b1f054bb81a207dcf24a6c9ef0840ddeb484dd9feec65d8abfcb3542401701a"
+		},
+		"test-results/refactor-packaged-desktop-01/01-quarterly-outline.png": {
+			"byteLength": 316016,
+			"sha256": "9057b88d5abc9e504fdceb02828487de26dc24ffab69f13cee531dd842c43e0d"
+		},
+		"test-results/refactor-packaged-desktop-01/01-quarterly-source-navigation.png": {
+			"byteLength": 503311,
+			"sha256": "d35f2915b01461f9465569542b4852428f739e978a2b35c48d005a0b17a83401"
+		},
+		"test-results/refactor-packaged-desktop-01/02-completion.png": {
+			"byteLength": 559334,
+			"sha256": "aa2d5166478ae9e2decec0c661a4a74a0627858e7c6d1563d2670fe1612f7fda"
+		},
+		"test-results/refactor-packaged-desktop-01/03-hover.png": {
+			"byteLength": 508898,
+			"sha256": "c075557ea18dd4f2688409ac610b8d38f6429741cc03ab66fd2a5b7f7953198b"
+		},
+		"test-results/refactor-packaged-desktop-01/04-typst-diagnostic.png": {
+			"byteLength": 291548,
+			"sha256": "a6d6251925f1bb3678efe01e2e04b18a467203ec98b63ea56fcd97e3d31077af"
+		},
+		"test-results/refactor-packaged-desktop-01/05-provider-settings.png": {
+			"byteLength": 290523,
+			"sha256": "b9208db02483209b47a0a271337425ef2b7dcf19aef8e9fbdf81d573e54d0d94"
+		},
+		"test-results/refactor-packaged-desktop-01/05-schema-recovery.png": {
+			"byteLength": 315722,
+			"sha256": "80a9f1f1f67f6839a6c22eb18316db7c710caf320502810b5527deb9e6e8441a"
+		},
+		"test-results/refactor-packaged-desktop-01/06-imported-workspace.png": {
+			"byteLength": 301240,
+			"sha256": "e0b40af72430528f8a3827eaf2204355c925c9c94a11e992089249a7fefead91"
+		},
+		"test-results/refactor-packaged-desktop-01/electron-stderr.log": {
+			"byteLength": 17528,
+			"sha256": "53756a3b1988e31d89c426789363a68746ae8200882283c08827ea7f7577b02a"
+		},
+		"test-results/refactor-packaged-desktop-01/foreign-file.txt": {
+			"byteLength": 40,
+			"sha256": "6bbd33fc2b413655339574d21c61a4b01077d81d816a01c3f6ae6853c172d703"
+		},
+		"test-results/refactor-packaged-desktop-01/port-evidence.json": {
+			"byteLength": 7514,
+			"sha256": "fa6aea3a74ff9258d8a2d1d631c27bfaf54ea30e50ce0c4582dfe1cdba9404fe"
+		},
+		"test-results/refactor-packaged-desktop-01/result.json": {
+			"byteLength": 9258,
+			"sha256": "55ec33d2f7c85caf822a254aa700194cea93265029237f35682e2f43973ae373"
+		},
+		"test-results/refactor-packaged-desktop-01/scroll-layout.json": {
+			"byteLength": 24800,
+			"sha256": "8fcf3d7dd80c6b5491bdbbe80355f1b312cb772a9c4f3c602cdd33621e45728d"
+		},
+		"test-results/refactor-packaged-desktop-01/workspace.pdf": {
+			"byteLength": 59154,
+			"sha256": "8cdb7a3cf80211e895ade49fb22551580361c23fa8ba975c2dca5ba32cf367f6"
+		},
+		"test-results/refactor-packaged-desktop-01/workspace.zip": {
+			"byteLength": 41494864,
+			"sha256": "deac2bb43271b5c942485f21f9955b2f222c9a375039732b99002d429a6606d2"
+		},
+		"test-results/refactor/checks/documentation-links.json": {
+			"byteLength": 28171,
+			"sha256": "59c3fa03b21505cbc8b5a98e8363ba40f8ca81e4879e881c888924a455f1aa96"
+		}
+	}
+}

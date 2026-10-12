@@ -1,46 +1,71 @@
 import { resolve } from 'node:path'
 import { createServer, type Plugin, type ViteDevServer } from 'vite'
+import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import { host, closeHostViteSession, type HostVitePluginApi } from '@pluxel/host-vite'
 import { serviceSingletons } from '@pluxel/services/vite'
 import { nodeArtifacts } from '@pluxel/services/node/vite'
-import { createElysiaHandler } from '@pluxel/services/elysia'
+import { StudioRpcCarrier } from '../rpc/carrier.js'
+import type { NativeDesktopApi } from '../rpc/targets.js'
+import type { BackendConfig, StudioBackend } from './runtime.js'
 
-/** Vite owns backend source updates; Electron only carries Fetch messages. */
+/** Official host-vite owns Plugin activation and replacement; the carrier owns RPC admission. */
 export async function startDevBackend(
-	config: { root: string; assetsRoot: string },
+	config: BackendConfig,
 	projectRoot: string,
-) {
-	let handler: ReturnType<typeof createElysiaHandler> | undefined
+): Promise<StudioBackend> {
+	const rpc = await StudioRpcCarrier.create(config)
 	let server: ViteDevServer | undefined
-	let closing: Promise<void> | undefined
+	let activeAttachment: object | undefined
 	const carrier: Plugin<HostVitePluginApi> = {
-		name: 'studio:electron-fetch',
+		name: 'studio:rpc',
 		api: {
 			pluxelHost: {
 				attach(input) {
-					const current = createElysiaHandler(input.host)
-					handler = current
+					const attachment = {}
+					activeAttachment = attachment
+					const declaration = input.catalog.plugins.find((plugin) => {
+						const definition = pluginDefinitionAddressOf(plugin)
+						return (
+							definition.exportName === 'StudioPlugin' &&
+							definition.entry.kind === 'package-subpath' &&
+							definition.entry.packageName === '@report-template-studio/app' &&
+							definition.entry.subpath === './plugin'
+						)
+					})
+					if (!declaration)
+						throw new Error('StudioPlugin is missing from the current application catalog')
+					const address = pluginNodeAddressOf(declaration)
+					const registry = requirePluginService(input.host.ctx)
+					const current = () => registry.getInstance(address) as NativeDesktopApi | undefined
+					// Attach precedes activation. The committed-instance watcher publishes readiness.
+					const unsubscribe = registry.watchInstance(address, () => {
+						if (activeAttachment === attachment) rpc.setApi(current(), current)
+					})
 					return () => {
-						if (handler === current) handler = undefined
+						unsubscribe()
+						if (activeAttachment === attachment) {
+							activeAttachment = undefined
+							rpc.setApi(undefined)
+						}
 					}
 				},
 			},
 		},
 	}
 	const close = () =>
-		(closing ??= (async () => {
-			handler = undefined
+		rpc.close(async () => {
+			activeAttachment = undefined
 			if (!server) return
 			try {
 				await closeHostViteSession(server)
 			} finally {
 				await server.close()
 			}
-		})())
+		})
 	try {
 		server = await createServer({
 			root: resolve(projectRoot),
-			// The renderer owns a separate Vite config and dependency graph.
 			cacheDir: resolve(projectRoot, '.studio-dev/vite-backend'),
 			optimizeDeps: { noDiscovery: true, include: [] },
 			configFile: false,
@@ -52,18 +77,17 @@ export async function startDevBackend(
 				carrier,
 				host({
 					entry: './src/backend/application.ts',
-					bindings: config,
+					bindings: { ...config, root: rpc.root },
 					devConsole: process.platform !== 'win32',
 				}),
 			],
 		})
+		await rpc.publish()
 		return {
-			fetch: (request: Request) =>
-				handler
-					? handler(request)
-					: Promise.resolve(
-							new Response('Studio backend is updating or unavailable', { status: 503 }),
-						),
+			get api() {
+				return rpc.api
+			},
+			connectDesktopPort: (port, options) => rpc.connectDesktopPort(port, options),
 			close,
 		}
 	} catch (error) {

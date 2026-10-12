@@ -8,6 +8,14 @@ const release = resolve(root, 'release')
 const staged = resolve(release, 'app')
 // Fail before deployment if production assets have not been built.
 for (const file of [
+	'dist/client.mjs',
+	'dist/client.d.mts',
+	'dist/contracts.mjs',
+	'dist/contracts.d.mts',
+	'dist/runtime.mjs',
+	'dist/runtime.d.mts',
+	'dist/plugin.mjs',
+	'dist/plugin.d.mts',
 	'dist/electron/main.mjs',
 	'dist/electron/preload.cjs',
 	'dist/renderer/index.html',

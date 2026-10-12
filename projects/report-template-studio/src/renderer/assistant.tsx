@@ -125,7 +125,6 @@ function WorkspaceAssistant({
 	uiState: AssistantUiState
 	onChanged(): void
 }) {
-	const path = `/api/projects/${encodeURIComponent(projectId)}/ai/threads`
 	const [threads, setThreads] = useState<AiThread[]>([])
 	const [active, setActive] = useState<string | null>(uiState.activeThreadId)
 	const [models, setModels] = useState<AiModel[]>([])
@@ -150,7 +149,7 @@ function WorkspaceAssistant({
 	const reportError = (cause: unknown) =>
 		setError(cause instanceof Error ? cause.message : String(cause))
 	async function refreshModels() {
-		setModels(await api<AiModel[]>('/api/ai/models'))
+		setModels(await api.models())
 	}
 	useEffect(() => {
 		uiState.activeThreadId = active
@@ -160,7 +159,7 @@ function WorkspaceAssistant({
 		let timer: ReturnType<typeof setTimeout>
 		async function loadModels() {
 			try {
-				const next = await api<AiModel[]>('/api/ai/models')
+				const next = await api.models()
 				if (!disposed) setModels(next)
 			} catch (cause) {
 				if (!disposed) reportError(cause)
@@ -170,7 +169,7 @@ function WorkspaceAssistant({
 		async function poll() {
 			try {
 				const version = listVersion.current
-				const next = await api<AiThread[]>(path)
+				const next = await api.threads({ projectId })
 				if (disposed) return
 				if (version !== listVersion.current) {
 					timer = setTimeout(poll, 1000)
@@ -199,14 +198,14 @@ function WorkspaceAssistant({
 			disposed = true
 			clearTimeout(timer)
 		}
-	}, [path])
+	}, [projectId])
 	async function createThread() {
 		listVersion.current++
 		setBusy(true)
 		setError(undefined)
 		try {
-			const next = await api<AiSnapshot>(path, { method: 'POST' })
-			setThreads(await api<AiThread[]>(path))
+			const next = await api.createThread({ projectId })
+			setThreads(await api.threads({ projectId }))
 			setActive(next.threadId)
 			setConfiguredModel(null)
 			setHistoryOpened(false)
@@ -223,13 +222,9 @@ function WorkspaceAssistant({
 		setBusy(true)
 		setError(undefined)
 		try {
-			await api(
-				`${path}/${encodeURIComponent(selected.id)}`,
-				dialog === 'delete'
-					? { method: 'DELETE' }
-					: { method: 'PATCH', body: { title: title.trim() } },
-			)
-			const next = await api<AiThread[]>(path)
+			if (dialog === 'delete') await api.deleteThread({ projectId, threadId: selected.id })
+			else await api.renameThread({ projectId, threadId: selected.id, title: title.trim() })
+			const next = await api.threads({ projectId })
 			setThreads(next)
 			if (dialog === 'delete') {
 				uiState.drafts.delete(selected.id)
@@ -414,7 +409,7 @@ function WorkspaceAssistant({
 				<Conversation
 					key={active}
 					threadId={active}
-					path={`${path}/${encodeURIComponent(active)}`}
+					projectId={projectId}
 					entries={entries}
 					models={models}
 					configuredModel={configuredModel}
@@ -447,7 +442,7 @@ function WorkspaceAssistant({
 
 function Conversation({
 	threadId,
-	path,
+	projectId,
 	entries,
 	models,
 	draft,
@@ -460,7 +455,7 @@ function Conversation({
 	configuredModel,
 }: {
 	threadId: string
-	path: string
+	projectId: string
 	entries: FileEntry[]
 	models: AiModel[]
 	draft: AssistantDraft
@@ -514,7 +509,7 @@ function Conversation({
 		let timer: ReturnType<typeof setTimeout>
 		async function poll() {
 			try {
-				const next = await api<AiSnapshot>(path)
+				const next = await api.snapshot({ projectId, threadId })
 				if (!disposed) accept(next)
 			} catch (cause) {
 				if (!disposed) reportError(cause)
@@ -527,7 +522,7 @@ function Conversation({
 			alive.current = false
 			clearTimeout(timer)
 		}
-	}, [path])
+	}, [projectId, threadId])
 	useEffect(() => {
 		if (!loading && !modelKey && selectedModel.current === undefined && models[0])
 			selectModel(JSON.stringify([models[0].provider, models[0].id]))
@@ -557,9 +552,13 @@ function Conversation({
 							? [segment.id]
 							: [],
 					)
-				const next = await api<AiSnapshot>(path, {
-					method: 'POST',
-					body: { message: readableMessage(text), provider, model, references },
+				const next = await api.prompt({
+					projectId,
+					threadId,
+					message: readableMessage(text),
+					provider,
+					model,
+					references,
 				})
 				accept(next)
 			} catch (cause) {
@@ -572,7 +571,7 @@ function Conversation({
 		},
 		onCancel: async () => {
 			try {
-				accept(await api<AiSnapshot>(`${path}/abort`, { method: 'POST' }))
+				accept(await api.abort({ projectId, threadId }))
 			} catch (cause) {
 				reportError(cause)
 			}

@@ -327,7 +327,8 @@ export class WorkspaceStore {
 	}
 	async open(root: string) {
 		return this.serial(async () => {
-			if (!isAbsolute(root)) throw new Error('Workspace path must be absolute')
+			if (!isAbsolute(root))
+				throw Object.assign(new Error('Workspace path must be absolute'), { code: 'INVALID_INPUT' })
 			root = await safePath(resolve(root))
 			const existing = [...this.projects.values()].find((project) => project.root === root)
 			if (existing) return this.currentProject(existing.id)

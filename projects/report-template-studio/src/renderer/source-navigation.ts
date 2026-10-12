@@ -1,6 +1,6 @@
-import type { CompileResult } from '../shared/contracts'
+import type { PreviewResult } from '../shared/contracts'
 
-export type PreviewNavigation = NonNullable<CompileResult['preview']['navigation']>
+export type PreviewNavigation = NonNullable<PreviewResult['preview']['navigation']>
 export type PreviewPoint = PreviewNavigation['points'][number]
 export type SourcePosition = { path: string; line: number; column: number }
 

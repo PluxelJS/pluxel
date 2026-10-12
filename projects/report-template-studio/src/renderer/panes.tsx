@@ -14,7 +14,7 @@ import { useWorkbenchContentLifecycle } from '@worksplit/react'
 import { CodeEditor } from './code-editor'
 import { DataForm } from './data-form'
 import { Preview } from './preview'
-import { request } from './api'
+import { api } from './api'
 import { useWorkspace } from './workspace-context'
 
 function SaveStatus({
@@ -281,19 +281,19 @@ export function PreviewPane({ entry }: { entry: string }) {
 	const dirty = [...workspace.files.values()].some((file) => file.dirty)
 	const exportPdf = async () => {
 		if (!document?.result) return
-		const bytes = await request(
-			workspace.path(
-				`/pdf?entry=${encodeURIComponent(entry)}&revision=${encodeURIComponent(document.result.revision)}`,
-			),
-		)
-		await window.studio.saveFile({
+		const artifact = await api.exportPdf({
+			projectId: workspace.project.id,
+			entry,
+			revision: document.result.revision,
+		})
+		await window.studio.saveArtifact({
 			suggestedName: `${
 				entry
 					.split('/')
 					.at(-1)
 					?.replace(/\.[^.]+$/, '') ?? 'document'
 			}.pdf`,
-			bytes,
+			artifactId: artifact.id,
 		})
 	}
 	return (
@@ -346,7 +346,7 @@ export function PreviewPane({ entry }: { entry: string }) {
 					{document.error}
 				</Alert>
 			)}
-			<Preview workspace={workspace} entry={entry} result={document?.result ?? null} />
+			<Preview workspace={workspace} entry={entry} result={document?.preview ?? null} />
 		</section>
 	)
 }

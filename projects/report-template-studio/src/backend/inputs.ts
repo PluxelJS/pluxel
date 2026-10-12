@@ -2,22 +2,63 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { safePath } from './storage-validation.js'
+import type { JsonObject, JsonValue } from '../shared/contracts.js'
 
-export function inputData(value: unknown): Record<string, unknown> {
+/** Validate before cloning: JSON encoding must never silently drop caller values. */
+export function inputData(value: unknown): JsonObject {
+	const invalid = (path: (string | number)[], message: string): never => {
+		throw Object.assign(new Error(message), {
+			code: 'INVALID_INPUT',
+			issues: [{ path, rule: 'json', message }],
+		})
+	}
 	if (!value || typeof value !== 'object' || Array.isArray(value))
-		throw new Error('Input data must be a JSON object')
-	const encoded = JSON.stringify(value)
-	if (Buffer.byteLength(encoded) > 4 * 1024 * 1024) throw new Error('Input data exceeds 4 MiB')
-	return JSON.parse(encoded)
-}
-export function inputRevision(
-	workspaceRevision: string,
-	entry: string,
-	data: Record<string, unknown>,
-): string {
-	return createHash('sha256')
-		.update(JSON.stringify([workspaceRevision, entry, data]))
-		.digest('hex')
+		invalid(['data'], 'Input data must be a JSON object')
+	const ancestors = new Set<object>()
+	let count = 0
+	function clone(item: unknown, path: (string | number)[], depth: number): JsonValue {
+		if (++count > 1_000_000 || depth > 64) invalid(path, 'Input JSON exceeds complexity limits')
+		if (item === null || typeof item === 'string' || typeof item === 'boolean') return item
+		if (typeof item === 'number' && Number.isFinite(item)) return item
+		if (!item || typeof item !== 'object') invalid(path, 'Expected a finite JSON value')
+		const object = item as object
+		if (ancestors.has(object)) invalid(path, 'Input JSON cannot contain cycles')
+		if (!Array.isArray(item) && ![Object.prototype, null].includes(Object.getPrototypeOf(item)))
+			invalid(path, 'Input JSON objects must have ordinary or null prototypes')
+		if (Object.getOwnPropertySymbols(item).length > 0)
+			invalid(path, 'Input JSON cannot contain symbol keys')
+		ancestors.add(object)
+		try {
+			if (Array.isArray(item)) {
+				if (Object.keys(item).length !== item.length)
+					invalid(path, 'Input JSON arrays must be dense and have no extra properties')
+				return Array.from({ length: item.length }, (_, index) => {
+					const property = Object.getOwnPropertyDescriptor(item, String(index))
+					if (!property || !('value' in property))
+						invalid([...path, index], 'Input JSON cannot contain accessors')
+					return clone(property!.value, [...path, index], depth + 1)
+				})
+			}
+			const output: JsonObject = {}
+			for (const [key, property] of Object.entries(Object.getOwnPropertyDescriptors(item))) {
+				if (!property.enumerable || !('value' in property))
+					invalid([...path, key], 'Input JSON must contain enumerable data properties')
+				Object.defineProperty(output, key, {
+					value: clone(property.value, [...path, key], depth + 1),
+					enumerable: true,
+					writable: true,
+					configurable: true,
+				})
+			}
+			return output
+		} finally {
+			ancestors.delete(object)
+		}
+	}
+	const result = clone(value, ['data'], 0) as JsonObject
+	if (Buffer.byteLength(JSON.stringify(result)) > 4 * 1024 * 1024)
+		throw Object.assign(new Error('Input data exceeds 4 MiB'), { code: 'LIMIT_EXCEEDED' })
+	return result
 }
 /** Studio state lives outside workspace sources and therefore outside exported ZIPs. */
 export class InputStore {
@@ -36,7 +77,7 @@ export class InputStore {
 		this.queue = task.catch(() => {})
 		return task
 	}
-	get(id: string, entry: string): Promise<Record<string, unknown>> {
+	get(id: string, entry: string): Promise<JsonObject> {
 		return this.serial(async () => {
 			try {
 				return inputData(JSON.parse(await readFile(await safePath(this.path(id, entry)), 'utf8')))

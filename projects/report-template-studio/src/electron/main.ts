@@ -3,18 +3,20 @@ import {
 	BrowserWindow,
 	dialog,
 	ipcMain,
+	MessageChannelMain,
 	net,
 	protocol,
 	shell,
 	utilityProcess,
 	type IpcMainInvokeEvent,
+	type IpcMainEvent,
 	type UtilityProcess,
 } from 'electron'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { pathName, safePath } from '../backend/storage-validation.ts'
-import type { FetchRequest, FetchResponse, ProjectSummary } from '../shared/contracts.ts'
+import { createNativeDesktopClient } from '../rpc/message-port.ts'
 
 protocol.registerSchemesAsPrivileged([
 	{ scheme: 'studio', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -35,23 +37,24 @@ const rendererOrigin = development ? developmentRenderer() : 'studio://app'
 const rendererUrl = development ? rendererOrigin + '/' : 'studio://app/index.html'
 let restarting = false
 function allowedRenderer(url: string) {
-	const parsed = new URL(url)
-	return development
-		? parsed.origin === rendererOrigin
-		: parsed.protocol === 'studio:' && parsed.hostname === 'app'
+	try {
+		const parsed = new URL(url)
+		if (parsed.username || parsed.password) return false
+		return development
+			? parsed.origin === rendererOrigin
+			: parsed.protocol === 'studio:' && parsed.host === 'app'
+	} catch {
+		return false
+	}
 }
 const rendererRoot = join(applicationRoot, 'dist/renderer')
 const MAX_BYTES = 128 * 1024 * 1024
 let window: BrowserWindow | undefined
 let backend: UtilityProcess | undefined
-let sequence = 0
 let closed = false
-const pending = new Map<
-	number,
-	{ resolve(value: FetchResponse | undefined): void; reject(error: Error): void }
->()
+let nativeClient: ReturnType<typeof createNativeDesktopClient> | undefined
 
-function sender(event: IpcMainInvokeEvent) {
+function sender(event: IpcMainInvokeEvent | IpcMainEvent) {
 	if (
 		!window ||
 		event.sender !== window.webContents ||
@@ -60,45 +63,9 @@ function sender(event: IpcMainInvokeEvent) {
 	)
 		throw new Error('Unknown Studio sender')
 }
-function dispatchRequest(input: FetchRequest): Promise<FetchResponse> {
-	if (
-		!input ||
-		typeof input.path !== 'string' ||
-		!input.path.startsWith('/api/') ||
-		input.path.includes('\\') ||
-		input.path.includes('#') ||
-		!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(input.method)
-	)
-		throw new Error('Invalid Studio request')
-	const url = new URL(input.path, 'http://studio.local')
-	if (url.origin !== 'http://studio.local' || !url.pathname.startsWith('/api/'))
-		throw new Error('Invalid Studio route')
-	if (input.body && (!(input.body instanceof Uint8Array) || input.body.byteLength > MAX_BYTES))
-		throw new Error('Request exceeds 128 MiB')
-	if (!backend || closed) throw new Error('Studio backend is unavailable')
-	const id = ++sequence
-	return new Promise((accept, reject) => {
-		pending.set(id, {
-			resolve: (value) => (value ? accept(value) : reject(new Error('Missing backend response'))),
-			reject,
-		})
-		backend!.postMessage(
-			{
-				id,
-				request: {
-					path: url.pathname + url.search,
-					method: input.method,
-					body: input.body,
-					headers: input.headers?.filter(([name]) => name.toLowerCase() === 'content-type'),
-				},
-			},
-			[],
-		)
-	})
-}
-function failPending(error: Error) {
-	for (const task of pending.values()) task.reject(error)
-	pending.clear()
+function nativeApi() {
+	if (!nativeClient || !backend || closed) throw new Error('Studio backend is unavailable')
+	return nativeClient.api
 }
 
 async function startWindow() {
@@ -144,27 +111,50 @@ async function startWindow() {
 				},
 			)
 			backend.on('message', (message) => {
-				if (message.ready) {
-					accept()
-					return
-				}
-				const task = pending.get(message.id)
-				if (!task) return
-				pending.delete(message.id)
-				if (message.error) task.reject(new Error(message.error))
-				else task.resolve(message.result)
+				if (message.type === 'ready') accept()
 			})
 			backend.once('exit', (code) => {
 				const error = new Error(`Studio backend exited (${code})`)
 				reject(error)
-				failPending(error)
+				nativeClient?.disconnect()
+				nativeClient = undefined
 				backend = undefined
 			})
 		})
-		ipcMain.handle('studio:fetch', (event, input: FetchRequest) => {
-			sender(event)
-			return dispatchRequest(input)
+		const nativeChannel = new MessageChannelMain()
+		backend!.postMessage({ type: 'native-port' }, [nativeChannel.port2])
+		nativeClient = createNativeDesktopClient(nativeChannel.port1)
+		ipcMain.on('studio:connect', (event) => {
+			try {
+				sender(event)
+				if (!backend || closed) return
+				const channel = new MessageChannelMain()
+				backend.postMessage({ type: 'desktop-port' }, [channel.port2])
+				event.senderFrame!.postMessage('studio:port', null, [channel.port1])
+			} catch (error) {
+				console.error('Studio renderer connection rejected', error)
+			}
 		})
+		ipcMain.handle(
+			'studio:save-artifact',
+			async (event, input: { artifactId: string; suggestedName: string }) => {
+				sender(event)
+				if (
+					!input ||
+					typeof input.artifactId !== 'string' ||
+					typeof input.suggestedName !== 'string'
+				)
+					throw new Error('Invalid artifact export')
+				// Resolve only an application-owned artifact id over the trusted utility port.
+				const artifact = await nativeApi().resolveArtifact({ id: input.artifactId })
+				const result = await dialog.showSaveDialog(window!, {
+					defaultPath: basename(input.suggestedName),
+				})
+				if (result.canceled || !result.filePath) return false
+				await copyFile(artifact.path, result.filePath)
+				return true
+			},
+		)
 		ipcMain.handle(
 			'studio:save-file',
 			async (event, input: { suggestedName: string; bytes: Uint8Array }) => {
@@ -188,15 +178,7 @@ async function startWindow() {
 			sender(event)
 			const result = await dialog.showOpenDialog(window!, { properties: ['openDirectory'] })
 			if (result.canceled || !result.filePaths[0]) return null
-			const response = await dispatchRequest({
-				path: '/api/projects/open',
-				method: 'POST',
-				headers: [['content-type', 'application/json']],
-				body: new TextEncoder().encode(JSON.stringify({ root: result.filePaths[0] })),
-			})
-			const value = JSON.parse(new TextDecoder().decode(response.body))
-			if (response.status >= 400) throw new Error(value.error ?? 'Cannot open project')
-			return value
+			return nativeApi().openProject({ root: result.filePaths[0] })
 		})
 		ipcMain.handle(
 			'studio:reveal-in-file-manager',
@@ -210,13 +192,7 @@ async function startWindow() {
 				)
 					throw new Error('Invalid project file location')
 				const workspacePath = input.path === '' ? '' : pathName(input.path)
-				const response = await dispatchRequest({
-					path: `/api/projects/${encodeURIComponent(input.projectId)}`,
-					method: 'GET',
-				})
-				const value = JSON.parse(new TextDecoder().decode(response.body))
-				if (response.status >= 400) throw new Error(value.error ?? 'Cannot locate project')
-				const project = value as ProjectSummary
+				const project = await nativeApi().getProject({ projectId: input.projectId })
 				if (typeof project.root !== 'string' || !isAbsolute(project.root))
 					throw new Error('Invalid project root')
 				const path = await safePath(
@@ -316,18 +292,39 @@ app.on('will-quit', (event) => {
 	void (async () => {
 		try {
 			if (backend) {
-				const id = ++sequence
-				const draining = new Promise<void>((accept, reject) => {
-					pending.set(id, { resolve: () => accept(), reject })
+				const activeBackend = backend
+				await new Promise<void>((accept, reject) => {
+					const timeout = setTimeout(() => {
+						settle(new Error('Studio backend close timed out'))
+					}, 30_000)
+					function settle(error?: Error) {
+						clearTimeout(timeout)
+						activeBackend.removeListener('message', finished)
+						activeBackend.removeListener('exit', exited)
+						if (error) reject(error)
+						else accept()
+					}
+					function exited(code: number) {
+						settle(new Error(`Studio backend exited while closing (${code})`))
+					}
+					function finished(message: { type?: string; error?: string }) {
+						if (message.type !== 'closed') return
+						settle(message.error ? new Error(message.error) : undefined)
+					}
+					activeBackend.on('message', finished)
+					activeBackend.on('exit', exited)
+					try {
+						activeBackend.postMessage({ type: 'close' }, [])
+					} catch (error) {
+						settle(error instanceof Error ? error : new Error(String(error)))
+					}
 				})
-				backend.postMessage({ id, close: true }, [])
-				await draining
-				backend.kill()
 			}
 		} catch (error) {
 			console.error('Studio shutdown failed', error)
 		} finally {
-			failPending(new Error('Studio closed'))
+			nativeClient?.disconnect()
+			backend?.kill()
 			app.quit()
 		}
 	})()

@@ -4,7 +4,7 @@ import { IconChevronLeft, IconChevronRight, IconList } from '@tabler/icons-react
 import { createTypstRenderer } from '@myriaddreamin/typst.ts'
 import wasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
 import { TypstPreviewView } from '@pluxel/typst/browser'
-import type { CompileResult } from '../shared/contracts'
+import type { PreviewResult } from '../shared/contracts'
 import type { WorkspaceController } from './workspace'
 import { pointAtPreview, pointAtSource, type SourcePosition } from './source-navigation'
 
@@ -20,7 +20,7 @@ export function Preview({
 	workspace,
 	entry,
 }: {
-	result: CompileResult | null
+	result: PreviewResult | null
 	workspace: WorkspaceController
 	entry: string
 }) {
@@ -28,8 +28,8 @@ export function Preview({
 	const container = useRef<HTMLDivElement>(null)
 	const scroll = useRef<HTMLDivElement>(null)
 	const pages = useRef<SVGGraphicsElement[]>([])
-	const displayedResult = useRef<CompileResult | null>(null)
-	const [navigation, setNavigation] = useState<CompileResult['preview']['navigation']>()
+	const displayedResult = useRef<PreviewResult | null>(null)
+	const [navigation, setNavigation] = useState<PreviewResult['preview']['navigation']>()
 	const [currentHeading, setCurrentHeading] = useState(-1)
 	const mouseDown = useRef<
 		{ x: number; y: number; pointerId: number; dragged: boolean } | undefined
@@ -51,6 +51,12 @@ export function Preview({
 		for (const [index, page] of pages.current.entries()) {
 			if (pageTop(page) <= threshold) active = index + 1
 		}
+		// A short final page may fit below the tracking threshold at maximum scroll.
+		if (
+			scroll.current.scrollHeight > scroll.current.clientHeight &&
+			scroll.current.scrollHeight - scroll.current.scrollTop - scroll.current.clientHeight <= 2
+		)
+			active = pages.current.length
 		setCurrentPage(active)
 		setPageInput(active)
 		let heading = -1
@@ -74,7 +80,7 @@ export function Preview({
 				viewport.scrollTop +
 				position.y -
 				viewport.getBoundingClientRect().top -
-				viewport.clientHeight / 3,
+				Math.min(120, viewport.clientHeight / 3),
 		})
 		setCurrentPage(pageNumber)
 		setPageInput(pageNumber)
@@ -161,11 +167,7 @@ export function Preview({
 				sessionId: result.preview.sessionId,
 			})
 			if (result.preview.compilerVersion !== '0.7.0') throw new Error('预览编译器版本不匹配')
-			await view.show({
-				...result.preview,
-				compilerVersion: '0.7.0',
-				data: new Uint8Array(result.preview.data),
-			})
+			await view.show(result.preview)
 			if (!canceled) {
 				const previous = displayed.current
 				destination.replaceChildren(candidate)

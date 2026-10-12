@@ -1,4 +1,4 @@
-import type { FetchRequest, FetchResponse } from '../shared/contracts.ts'
+export {}
 
 const port = process.parentPort
 if (!port) throw new Error('Studio backend must run in an Electron utility process')
@@ -15,41 +15,20 @@ if (process.env.STUDIO_DEV === '1') {
 	backend = await startBackend({ root, assetsRoot })
 }
 let closing = false
-port.on(
-	'message',
-	async ({ data }: { data: { id: number; request?: FetchRequest; close?: boolean } }) => {
-		if (data.close) {
-			closing = true
-			try {
-				await backend.close()
-				port.postMessage({ id: data.id, closed: true })
-			} catch (error) {
-				port.postMessage({ id: data.id, error: String(error) })
-			}
-			return
-		}
-		try {
-			if (closing || !data.request) throw new Error('Studio backend is closing')
-			const input = data.request
-			const response = await backend.fetch(
-				new Request(`http://studio.local${input.path}`, {
-					method: input.method,
-					headers: input.headers,
-					...(input.body && { body: new Uint8Array(input.body) }),
-				}),
-			)
-			const result: FetchResponse = {
-				status: response.status,
-				headers: [...response.headers],
-				body: new Uint8Array(await response.arrayBuffer()),
-			}
-			port.postMessage({ id: data.id, result })
-		} catch (error) {
-			port.postMessage({
-				id: data.id,
-				error: error instanceof Error ? error.message : String(error),
-			})
-		}
-	},
-)
-port.postMessage({ ready: true })
+port.on('message', ({ data, ports }) => {
+	if (data?.type === 'close') {
+		if (closing) return
+		closing = true
+		void backend.close().then(
+			() => port.postMessage({ type: 'closed' }),
+			(error) => port.postMessage({ type: 'closed', error: String(error) }),
+		)
+		return
+	}
+	if (closing || !['desktop-port', 'native-port'].includes(data?.type) || ports.length !== 1) {
+		for (const connection of ports) connection.close()
+		return
+	}
+	backend.connectDesktopPort(ports[0]!, { native: data.type === 'native-port' })
+})
+port.postMessage({ type: 'ready' })

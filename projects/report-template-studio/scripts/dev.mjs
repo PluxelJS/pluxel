@@ -171,7 +171,7 @@ async function start() {
 	if (!env.STUDIO_RENDERER_URL) throw new Error('Missing renderer server address')
 	console.info(`[studio:dev] Renderer: ${env.STUDIO_RENDERER_URL} (React Fast Refresh)`)
 	console.info(
-		'[studio:dev] Business requests use Electron IPC → Elysia fetch; backend HMR uses host-vite.',
+		'[studio:dev] Business calls use Cap’n Web MessagePort/local IPC; backend HMR uses host-vite.',
 	)
 	launch()
 }

@@ -2,21 +2,28 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { _electron as electron } from 'playwright'
 import electronExecutable from 'electron'
+import { rolldown } from 'rolldown'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const applicationRoot = resolve(process.env.STUDIO_APP_ROOT ?? root)
+const clientEntry = createRequire(join(applicationRoot, 'package.json')).resolve(
+	'@report-template-studio/app/client',
+)
+const { connectStudio, discoverStudio } = await import(pathToFileURL(clientEntry).href)
 const output = resolve(process.env.STUDIO_SCREENSHOTS ?? join(root, 'test-results/desktop'))
 const profile = await mkdtemp(join(tmpdir(), 'pluxel-workspace-desktop-'))
 const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 const errors = [],
 	logs = []
-let instance, page, project, documentConfig
+let instance, page, project, documentConfig, connection, studio, portEvidence
 const executablePath = process.env.STUDIO_EXECUTABLE ?? electronExecutable
 const args = [
-	...(process.env.STUDIO_EXECUTABLE ? [] : [root]),
+	...(process.env.STUDIO_EXECUTABLE ? [] : [applicationRoot]),
 	`--user-data-dir=${profile}`,
 	'--disable-gpu',
 	...(process.platform === 'linux' && process.env.WAYLAND_DISPLAY
@@ -25,9 +32,24 @@ const args = [
 	...(process.env.STUDIO_DISABLE_SANDBOX === '1' ? ['--no-sandbox'] : []),
 ]
 await mkdir(output, { recursive: true })
+// A test-owned browser bundle loads the actual MessagePort adapter. The production
+// renderer and utility process still use their ordinary port setup and RPC target.
+const probeBuild = await rolldown({
+	input: join(root, 'src/rpc/message-port.ts'),
+	platform: 'browser',
+})
+const { output: probeChunks } = await probeBuild.generate({
+	format: 'iife',
+	name: 'StudioRpcProbe',
+})
+await probeBuild.close()
+const probeBundle = probeChunks.find((chunk) => chunk.type === 'chunk' && chunk.isEntry)?.code
+assert.ok(probeBundle)
+
 async function start() {
 	instance = await electron.launch({ executablePath, args, env, timeout: 90_000 })
 	instance.process().stderr?.on('data', (bytes) => logs.push(bytes.toString()))
+	instance.process().stdout?.on('data', (bytes) => logs.push(bytes.toString()))
 	page = await instance.firstWindow({ timeout: 90_000 })
 	page.setDefaultTimeout(60_000)
 	page.on('pageerror', (error) => {
@@ -66,19 +88,34 @@ async function start() {
 	})
 	await page.getByRole('button', { name: '新建项目', exact: true }).waitFor()
 	await page.getByText('财务报表 Starter', { exact: true }).waitFor()
+	await until(async () => {
+		const discovered = await discoverStudio()
+		const descriptor = discovered.find((item) => item.root === join(profile, 'studio'))
+		if (!descriptor) return false
+		connection = await connectStudio(descriptor)
+		studio = connection.api
+		return true
+	}, 'The isolated desktop profile did not publish its public RPC instance')
+	await page.evaluate(probeBundle)
+	await page.evaluate(async () => {
+		const port = await new Promise((accept) => {
+			function receive(event) {
+				if (
+					event.source !== window ||
+					event.data?.type !== 'studio:port' ||
+					event.ports.length !== 1
+				)
+					return
+				window.removeEventListener('message', receive)
+				accept(event.ports[0])
+			}
+			window.addEventListener('message', receive)
+			window.studio.connect()
+		})
+		window.studioProbe = window.StudioRpcProbe.createDesktopClient(port)
+	})
 }
-async function api(path) {
-	return page.evaluate(async (requestedPath) => {
-		const response = await window.studio.fetch({ path: requestedPath, method: 'GET' })
-		if (response.status !== 200)
-			throw new Error(
-				`${response.status} ${requestedPath}: ${new TextDecoder().decode(response.body)}`,
-			)
-		return JSON.parse(new TextDecoder().decode(response.body))
-	}, path)
-}
-const projectPath = (suffix) => `/api/projects/${project.id}${suffix}`
-const readText = (path) => api(projectPath(`/file?path=${encodeURIComponent(path)}`))
+const readText = (path) => studio.readFile({ projectId: project.id, path })
 async function until(check, reason) {
 	const deadline = Date.now() + 60_000
 	while (Date.now() < deadline) {
@@ -153,15 +190,26 @@ async function fileMenu(action, path) {
 		await revealFile(path)
 		await treeItem(path).click({ button: 'right' })
 	} else await page.getByRole('button', { name: '文件操作', exact: true }).click()
-	await page.getByRole('menuitem', { name: action, exact: true }).click()
+	await page
+		.getByRole('menuitem')
+		.filter({ has: page.getByText(action, { exact: true }) })
+		.click()
 }
 async function projectMenu(action) {
 	await page.getByRole('button', { name: '项目', exact: true }).click()
 	await page.getByRole('menuitem', { name: action, exact: true }).click()
 }
 async function openAssistant() {
-	if (!(await page.getByRole('textbox', { name: '发送给 AI 的消息', exact: true }).isVisible()))
-		await page.locator('.flexlayout__border_button').filter({ hasText: 'AI 助手' }).click()
+	await page.getByRole('button', { name: '显示 AI 助手', exact: true }).click()
+	const composer = page.getByRole('textbox', { name: '发送给 AI 的消息', exact: true })
+	const empty = page.getByText('新建会话，开始完善项目', { exact: true })
+	await until(
+		async () => (await composer.isVisible()) || (await empty.isVisible()),
+		'Assistant did not display its composer or new-session state',
+	)
+	if (await empty.isVisible())
+		await page.getByRole('button', { name: '新建 AI 会话', exact: true }).click()
+	await composer.waitFor()
 }
 
 async function replaceCode(text) {
@@ -223,20 +271,263 @@ async function selectDocument(wait = true) {
 	if (wait) await ready()
 }
 
+async function portError(methodName, inputValue) {
+	return page.evaluate(
+		async ({ method, input }) => {
+			try {
+				await window.studioProbe.api[method](input)
+				return { unexpectedSuccess: true }
+			} catch (error) {
+				return {
+					code: error.code,
+					message: error.message,
+					diagnostics: error.diagnostics,
+					issues: error.issues,
+				}
+			}
+		},
+		{ method: methodName, input: inputValue },
+	)
+}
+async function verifyPortBoundary(entry) {
+	const requestedTarget = { projectId: project.id, entry }
+	const before = await studio.getInput(requestedTarget)
+	const binary = await page.evaluate(async (target) => {
+		const api = window.studioProbe.api
+		const compiled = await api.compile({ ...target, data: {} })
+		const first = await api.getPreview({ ...target, revision: compiled.revision })
+		const original = new Uint8Array(first.preview.data)
+		const firstWasBinary = first.preview.data instanceof Uint8Array
+		first.preview.data[0] ^= 1
+		const second = await api.getPreview({ ...target, revision: compiled.revision })
+		const third = await api.getPreview({ ...target, revision: compiled.revision })
+		const same = (bytes) =>
+			bytes instanceof Uint8Array &&
+			bytes.byteLength === original.byteLength &&
+			bytes.every((value, index) => value === original[index])
+		return {
+			revision: compiled.revision,
+			byteLength: original.byteLength,
+			firstWasBinary,
+			secondMatches: same(second.preview.data),
+			thirdMatches: same(third.preview.data),
+			sessionId: second.preview.sessionId,
+			nativeRevision: second.preview.revision,
+			compilerVersion: second.preview.compilerVersion,
+			pageCount: compiled.pageCount,
+			outline: compiled.outline,
+			point: second.preview.navigation?.points.find(
+				(point) => point.path === compiled.template && point.line === 8,
+			),
+		}
+	}, requestedTarget)
+	assert.ok(
+		binary.firstWasBinary && binary.secondMatches && binary.thirdMatches,
+		'Real renderer → utility MessagePort preserves Uint8Array and the cached backend bytes',
+	)
+	assert.ok(binary.byteLength > 0)
+	assert.ok(binary.sessionId && Number.isSafeInteger(binary.nativeRevision))
+	assert.equal(binary.compilerVersion, '0.7.0')
+	assert.ok(binary.pageCount > 1, 'The genuine renderer compiles the multi-page quarterly report')
+	assert.ok(binary.outline.length > 1)
+	assert.deepEqual(
+		await studio.getInput(requestedTarget),
+		before,
+		'Explicit compile does not write stored form input',
+	)
+	const invalidJson = await portError('compile', requestedTarget)
+	assert.equal(invalidJson.code, 'INVALID_INPUT')
+	assert.ok(invalidJson.issues?.length)
+	const schema = await portError('compile', { ...requestedTarget, data: { company: 42 } })
+	assert.equal(schema.code, 'INVALID_INPUT')
+	assert.ok(schema.issues?.some((issue) => issue.path.includes('company')))
+	const pageError = await portError('renderPage', {
+		...requestedTarget,
+		revision: binary.revision,
+		page: 0,
+	})
+	assert.equal(pageError.code, 'INVALID_INPUT')
+	const cropError = await portError('renderPage', {
+		...requestedTarget,
+		revision: binary.revision,
+		page: 1,
+		region: { x: 0, y: 0, width: -1, height: 10 },
+	})
+	assert.equal(cropError.code, 'INVALID_INPUT')
+	const newer = await page.evaluate(async (target) => {
+		const compiled = await window.studioProbe.api.compile({ ...target, data: {} })
+		return { revision: compiled.revision }
+	}, requestedTarget)
+	assert.notEqual(
+		newer.revision,
+		binary.revision,
+		'Identical input still receives a new public revision',
+	)
+	const conflict = await portError('getPreview', { ...requestedTarget, revision: binary.revision })
+	assert.equal(conflict.code, 'REVISION_CONFLICT')
+	const template = `${entry.slice(0, entry.lastIndexOf('/'))}/排版.typ`
+	const originalTyp = await readText(template)
+	let typst, typescript
+	try {
+		await studio.writeFile({
+			projectId: project.id,
+			path: template,
+			content: '#let broken = (',
+			expectedVersion: originalTyp.version,
+		})
+		typst = await portError('compile', { ...requestedTarget, data: {} })
+		assert.equal(typst.code, 'COMPILE_FAILED')
+		assert.ok(
+			typst.diagnostics?.some((diagnostic) => diagnostic.path === template),
+			'Native Typst diagnostics survive the actual port',
+		)
+	} finally {
+		const changed = await readText(template)
+		await studio.writeFile({
+			projectId: project.id,
+			path: template,
+			content: originalTyp.content,
+			expectedVersion: changed.version,
+		})
+	}
+	const originalTs = await readText(entry)
+	try {
+		await studio.writeFile({
+			projectId: project.id,
+			path: entry,
+			content: 'export default { broken:',
+			expectedVersion: originalTs.version,
+		})
+		typescript = await portError('compile', { ...requestedTarget, data: {} })
+		assert.equal(typescript.code, 'COMPILE_FAILED')
+		assert.ok(
+			typescript.diagnostics?.some((diagnostic) => diagnostic.path === entry),
+			'TypeScript source diagnostics survive the actual port',
+		)
+	} finally {
+		const changed = await readText(entry)
+		await studio.writeFile({
+			projectId: project.id,
+			path: entry,
+			content: originalTs.content,
+			expectedVersion: changed.version,
+		})
+	}
+	return {
+		binary,
+		errors: { invalidJson, schema, pageError, cropError, conflict, typst, typescript },
+	}
+}
+
+async function verifyMultiPageUi(entry, binary) {
+	await revealFile(entry)
+	await treeItem(entry).click()
+	await page.getByRole('button', { name: '刷新预览', exact: true }).click()
+	await ready()
+	const svgPages = page.locator('.typst-pages:visible .typst-page')
+	assert.equal(await svgPages.count(), binary.pageCount)
+	await page.getByRole('button', { name: '目录与页面', exact: true }).click()
+	const navigation = page.getByRole('navigation', { name: '文档目录与页面', exact: true })
+	await navigation.getByRole('button', { name: `第 ${binary.pageCount} 页`, exact: true }).click()
+	assert.equal(
+		await page.getByLabel('跳转到页', { exact: true }).inputValue(),
+		String(binary.pageCount),
+	)
+	await screenshot('01-quarterly-last-page')
+	await navigation.getByRole('button').filter({ hasText: '经营概况' }).click()
+	assert.equal(
+		await page.getByLabel('跳转到页', { exact: true }).inputValue(),
+		String(binary.outline.find((heading) => heading.title === '经营概况').page),
+	)
+	await screenshot('01-quarterly-outline')
+	assert.ok(binary.point, 'A real Typst source span is available for two-way navigation')
+	const click = await svgPages.nth(binary.point.page - 1).evaluate((element, point) => {
+		const matrix = element.getScreenCTM()
+		const position = new DOMPoint(
+			point.x + point.width / 2,
+			point.y + point.height / 2,
+		).matrixTransform(matrix)
+		return { x: position.x, y: position.y }
+	}, binary.point)
+	await page.mouse.click(click.x, click.y)
+	await page.locator('.monaco-editor:visible textarea.inputarea').waitFor()
+	const sourceLine = page
+		.locator('.monaco-editor:visible .view-line')
+		.filter({ hasText: '= 经营概况' })
+	await sourceLine.waitFor()
+	await sourceLine.click({ position: { x: 42, y: 5 } })
+	await page.locator('.preview-source-highlight:visible').waitFor()
+	await screenshot('01-quarterly-source-navigation')
+}
+
 try {
 	await start()
+	const installedPreload = join(
+		await instance.evaluate(({ app }) => app.getAppPath()),
+		'dist/electron/preload.cjs',
+	)
+	const unknownWindow = await instance.evaluate(async ({ BrowserWindow }, preload) => {
+		const other = new BrowserWindow({
+			show: false,
+			webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false },
+		})
+		try {
+			await other.loadURL('data:text/html,<html>Unrelated Studio window</html>')
+			return await other.webContents.executeJavaScript(
+				"window.studio.saveFile({suggestedName:'denied.txt',bytes:new Uint8Array([1])}).then(()=>({accepted:true}),error=>({accepted:false,message:error.message}))",
+			)
+		} finally {
+			other.destroy()
+		}
+	}, installedPreload)
+	assert.equal(unknownWindow.accepted, false)
+	assert.match(unknownWindow.message, /Unknown Studio sender/)
 	await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('桌面工作区验收')
 	await page.getByRole('button', { name: '新建项目', exact: true }).click()
 	await page.getByRole('button', { name: '项目', exact: true }).waitFor()
-	const projects = await api('/api/projects')
+	const projects = await studio.listProjects()
 	project = projects.find((item) => item.name === '桌面工作区验收')
 	assert.ok(project)
-	const tree = await api(projectPath('/tree'))
+	const tree = await studio.getTree({ projectId: project.id })
 	documentConfig = tree.documents.find((document) => document.name === '银行询证函')
 	assert.ok(documentConfig?.entry.endsWith('.ts'))
 	assert.equal(tree.config.documents, undefined)
 	assert.ok(!tree.entries.some((entry) => entry.path.endsWith('/data.json')))
+	const foreignPath = join(output, 'foreign-file.txt')
+	await writeFile(foreignPath, 'This file is outside the artifact store.')
+	await savePicker(join(output, 'denied-copy.txt'))
+	const foreignArtifact = await page.evaluate(async (artifactId) => {
+		try {
+			await window.studio.saveArtifact({ artifactId, suggestedName: 'denied-copy.txt' })
+			return { accepted: true }
+		} catch (error) {
+			return { accepted: false, message: error.message }
+		}
+	}, foreignPath)
+	assert.equal(foreignArtifact.accepted, false, 'A renderer path cannot be used as an artifact id')
+	const workspaceArtifact = await studio.exportWorkspaceFile({ projectId: project.id })
+	await instance.evaluate(({ dialog }) => {
+		dialog.showSaveDialog = async () => ({ canceled: true })
+	})
+	assert.equal(
+		await page.evaluate(
+			(artifactId) => window.studio.saveArtifact({ artifactId, suggestedName: 'cancelled.zip' }),
+			workspaceArtifact.id,
+		),
+		false,
+		'Native save cancellation is an ordinary result',
+	)
+	const narrowCapability = await portError('resolveArtifact', { id: workspaceArtifact.id })
+	assert.ok(
+		!narrowCapability.unexpectedSuccess && narrowCapability.message,
+		'Renderer capability cannot call the trusted main-process resolver',
+	)
 	await ready() // Starter opens the form and preview without a second click.
+	const quarterly = tree.documents.find((document) => document.name === '季度经营分析')
+	assert.ok(quarterly)
+	portEvidence = await verifyPortBoundary(quarterly.entry)
+	await writeFile(join(output, 'port-evidence.json'), JSON.stringify(portEvidence, null, 2))
+	await verifyMultiPageUi(quarterly.entry, portEvidence.binary)
 	await selectDocument()
 	await openAssistant()
 	const composer = page.getByRole('textbox', { name: '发送给 AI 的消息', exact: true })
@@ -255,7 +546,7 @@ try {
 	assert.equal(await bank().inputValue(), '示例银行', 'Valibot defaults populate a new form')
 	await bank().fill('桌面验证银行')
 	await until(async () => {
-		const input = await api(projectPath(`/input?entry=${encodeURIComponent(documentConfig.entry)}`))
+		const input = await studio.getInput({ projectId: project.id, entry: documentConfig.entry })
 		return input.data.header?.bankName === '桌面验证银行'
 	}, 'Form did not persist external input')
 	await ready()
@@ -270,6 +561,8 @@ try {
 			bytes.subarray(-64).toString().includes('%%EOF'),
 	)
 
+	connection.disconnect()
+	connection = undefined
 	await instance.close()
 	instance = undefined
 	await start()
@@ -282,10 +575,11 @@ try {
 	await completion('object')
 	await screenshot('02-completion')
 	await page.keyboard.press('Escape')
-	await replaceCode(`${schema.content}\nconst probe = formM`)
+	const formMetaSource = `import { formMeta } from 'valibot-form'\n${schema.content}`
+	await replaceCode(`${formMetaSource}\nconst probe = formM`)
 	await completion('formMeta')
 	await page.keyboard.press('Escape')
-	const hoverSource = `${schema.content}\nconst probe = formMeta`
+	const hoverSource = `${formMetaSource}\nconst probe = formMeta`
 	await replaceCode(hoverSource)
 	await until(async () => {
 		const saved = await readText(documentConfig.entry)
@@ -320,8 +614,15 @@ try {
 	const templatePath = `${documentConfig.entry.slice(0, documentConfig.entry.lastIndexOf('/'))}/排版.typ`
 	const originalTyp = await readText(templatePath)
 	await openFile(templatePath)
+	const previousPages = await page.locator('.typst-pages:visible .typst-page').count()
 	await replaceCode('#let broken = (')
 	await page.locator('.monaco-editor:visible .squiggly-error').first().waitFor({ timeout: 90_000 })
+	assert.equal(
+		await page.locator('.typst-pages:visible .typst-page').count(),
+		previousPages,
+		'Typst failure keeps the last successfully rendered pages',
+	)
+	assert.equal(await page.getByRole('button', { name: '导出 PDF', exact: true }).isDisabled(), true)
 	await screenshot('04-typst-diagnostic')
 	await replaceCode(originalTyp.content)
 	await ready()
@@ -406,14 +707,14 @@ try {
 		.click()
 	await page.getByRole('dialog', { name: '删除文件', exact: true }).waitFor({ state: 'hidden' })
 	await until(async () => {
-		const next = await api(projectPath('/tree'))
+		const next = await studio.getTree({ projectId: project.id })
 		return !next.entries.some((item) => item.path === 'scratch/renamed.typ')
 	}, 'Delete did not remove actual file')
 
 	const workspaceConfig = await readText('studio.json')
 	await writeFile(join(project.root, 'studio.json'), '{')
 	await until(async () => {
-		const state = await api(projectPath('/tree'))
+		const state = await studio.getTree({ projectId: project.id })
 		return Boolean(state.configError)
 	}, 'Invalid studio.json did not surface an explicit config error')
 	await page
@@ -427,7 +728,7 @@ try {
 	}, 'External invalid JSON did not reach editor')
 	await replaceCode(workspaceConfig.content)
 	await until(async () => {
-		const state = await api(projectPath('/tree'))
+		const state = await studio.getTree({ projectId: project.id })
 		return !state.configError && state.documents.length > 0
 	}, 'Fixing studio.json did not recover workspace configuration')
 	await selectDocument()
@@ -451,7 +752,7 @@ try {
 		'桌面验证银行',
 		'Reopening the same project retains private form input',
 	)
-	const reopened = await api('/api/projects')
+	const reopened = await studio.listProjects()
 	assert.equal(reopened.filter((item) => item.root === project.root).length, 1)
 	assert.equal(reopened.find((item) => item.root === project.root).id, project.id)
 	await projectMenu('切换项目')
@@ -471,7 +772,13 @@ try {
 		JSON.stringify(
 			{
 				executablePath,
+				applicationRoot,
+				clientEntry,
 				passed: [
+					'native sender validation, trusted artifact ids, save cancellation and narrow renderer capability',
+					'real Electron MessagePort Uint8Array and cached buffer preservation',
+					'structured input/schema/Typst/TypeScript/page/crop/revision errors over the real port',
+					'multi-page SVG, last-page navigation, outline, and two-way source navigation',
 					'project creation and recent persistence',
 					'real filesystem explorer CRUD',
 					'Valibot defaults and schema recovery',
@@ -485,6 +792,7 @@ try {
 					'PDF and workspace ZIP native transport',
 					'native open directory reuses existing project',
 				],
+				portEvidence,
 				viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
 			},
 			null,
@@ -497,6 +805,7 @@ try {
 	throw error
 } finally {
 	await writeFile(join(output, 'electron-stderr.log'), logs.join(''))
+	connection?.disconnect()
 	if (instance) {
 		await instance
 			.evaluate(({ BrowserWindow }) => {

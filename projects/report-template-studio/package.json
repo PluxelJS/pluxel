@@ -6,15 +6,28 @@
 		"financial-document-assets",
 		"package.json",
 		"README.md",
+		"examples",
 		"workspace-assets"
 	],
 	"type": "module",
 	"main": "dist/electron/main.mjs",
 	"exports": {
 		"./plugin": {
-			"types": "./src/backend/plugin.ts",
+			"types": "./dist/plugin.d.mts",
 			"@pluxel/hmr": "./src/backend/plugin.ts",
 			"default": "./dist/plugin.mjs"
+		},
+		"./client": {
+			"types": "./dist/client.d.mts",
+			"default": "./dist/client.mjs"
+		},
+		"./contracts": {
+			"types": "./dist/contracts.d.mts",
+			"default": "./dist/contracts.mjs"
+		},
+		"./runtime": {
+			"types": "./dist/runtime.d.mts",
+			"default": "./dist/runtime.mjs"
 		}
 	},
 	"scripts": {
@@ -55,7 +68,6 @@
 		"@worksplit/core": "file:vendor/worksplit-core.tgz",
 		"@worksplit/react": "file:vendor/worksplit-react.tgz",
 		"capnweb": "catalog:prod",
-		"elysia": "catalog:prod",
 		"fflate": "catalog:prod",
 		"flexlayout-react": "catalog:frontend",
 		"just-bash": "catalog:prod",
