@@ -2,6 +2,8 @@
 
 本页记录 2026-10-13 本地迁移 checkout 的实施证据，不替代当前 API 或持续支持承诺。架构约束见 [Frontend](FRONTEND.md#原生工作区与文档路由) 与 [Workbench](WORKBENCH.md)，用户操作见[工作台使用与排查](../docs/workbench/operations.md)。
 
+[原执行提案](https://github.com/PluxelJS/pluxel/blob/b85a92b44a6852b08b1c0bf1cc01e1f7171820aa/engineering/proposals/WORKBENCH_FLEXLAYOUT_MIGRATION.md)已原样存入 Git 历史；已实施的目标由本页和正式文档承接，不再保留“待实施”的提案。后续 Workbench 深度重构以现行源码、exports、正式契约和这些回归作为基线，按实际改动重新验证。
+
 静态、集成、制品和公开文档构建已通过；最终主浏览器 20 项检查全部通过，回执为 `ok: true`、`errors: []`、`resourceFailures: []`。真实配置草稿的单独浏览器检查另有 6 项通过，浏览器错误与资源请求失败均为空。在线 Plugin 停止、启动各触发一次完整 document reload，旧 MF 输入脱离，重新打开取得 fresh roots。证据覆盖范围与未验证边界见下文。
 
 ## 检查来源与结果
@@ -20,7 +22,7 @@
 
 当时的命令与回执保存在 `/tmp/pluxel-flexlayout-complete-tests.log`、`/tmp/pluxel-flexlayout-complete-types.log`、`/tmp/pluxel-flexlayout-complete-lint.log`、`/tmp/pluxel-flexlayout-complete-build.log`、`/tmp/pluxel-flexlayout-complete-installed.log`、`/tmp/pluxel-flexlayout-governance-complete.log` 与 `/tmp/worksplit-pluxel-target-final-tests.log`。这些是本机临时证据；重新验证以 package scripts 和对应测试为准，不依赖临时路径永久存在。Workbench 测试共 514 项；根 ordinary/type-aware lint 与 97 个变更文件的 format 检查通过。
 
-当前 Worksplit commit 的 `test:package` 已通过 pack、npm install 和公开 JS/types/CSS 消费，记录于 `/tmp/worksplit-pluxel-complete-package.log`。该证据与 Workbench 独立目录 Vite smoke 分开；两者均不表示已发布到远端 registry。公开文档构建记录位于 `/tmp/pluxel-flexlayout-complete-docs.log`。
+Worksplit 库实现 commit `7726da79a8a102c69846d0e50edcbe7bca102ee5` 的 `test:package` 已通过 pack、npm install 和公开 JS/types/CSS 消费，记录于 `/tmp/worksplit-pluxel-complete-package.log`。其后的提交只整理原有菜单示例、回归与文档，没有修改库实现。该证据与 Workbench 独立目录 Vite smoke 分开；两者均不表示已发布到远端 registry。公开文档构建记录位于 `/tmp/pluxel-flexlayout-complete-docs.log`。
 
 实际公开读取入口 `pnpm pluxel docs workbench/operations.md` 成功输出当前原生布局、publication 默认名称、F2 刷新保持与副本行为；9 个相关文档及生成 AGENTS 的 99 条本地链接检查没有缺失目标。
 
@@ -108,7 +110,7 @@ Shell 测试位于 `packages/workbench/shell/tests/`，以下文件使用实际 
 
 全 `packages/`、`plugins/`、`projects/`、公开/工程文档与生成项目 AGENTS 搜索后，旧契约没有实际消费者。Studio 的 `WorkspaceController` 持有业务文件/draft/save，vendor 的独立公开 `SplitView` 属于另一个库能力；两者保留。dnd-kit 三包仍服务插件 catalog Organizer，react-store 仍服务配置表单。无消费者的 Workbench `@mantine/dates` 依赖已移除，新增的 `flexlayout-react` 是直接消费原生 Actions、菜单和 Node 的真实依赖。
 
-Worksplit 采用官方 origin 的同源本地 commit `7726da79a8a102c69846d0e50edcbe7bca102ee5`，依赖保持相对 vendor workspace 路径。目标 `refactor/flexlayout-tanstack` 已安全 fast-forward 这些修复；原有三个示例/测试文件的字节与 README 新增示例行均保留，原有四个脏文件没有进入修复提交。迁移 checkout 的 vendor 干净，原 Pluxel vendor 脏改动未触碰。没有声称已远端发布。具体阻塞与回归为：
+Worksplit 固定官方仓库 `refactor/flexlayout-tanstack` 的 commit `96580355a1290cd6a8ed54a6c5e6aceb97ed0a7f`，依赖保持相对 vendor workspace 路径。目标分支包含原有五个具体阻塞修复，以及单独提交的声明式菜单示例、README 和回归；原有四个脏文件没有混入库修复。整理提交前再次运行完整测试、类型检查、lint、四个文件的格式检查，以及菜单焦点恢复和目标关闭后的真实浏览器回归，均通过；日志位于 `/tmp/worksplit-flexlayout-publish-{tests,types,lint,format,browser}.log`。Git 分支已推送，npm registry 尚未发布。迁移 checkout 的 vendor 干净，原 Pluxel vendor 脏改动未触碰。具体阻塞与回归为：
 
 | 实际调用方与失败                                                                  | 最小修复与回归                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -13,7 +13,7 @@
 
 研究与必要决策记录：
 
-- [`WORKBENCH_FLEXLAYOUT_MIGRATION.md`](WORKBENCH_FLEXLAYOUT_MIGRATION.md)：保留 Mantine、采用 FlexLayout 原生工作区的本体迁移执行提案，包含菜单与分组交互、路由/资源边界、旧布局删除范围和验收矩阵。
+- [`../WORKBENCH_FLEXLAYOUT_VALIDATION.md`](../WORKBENCH_FLEXLAYOUT_VALIDATION.md)：原生 FlexLayout 工作区迁移的实施、回归基线与未验证边界；原执行提案已原样保存到 Git 历史，当前架构与用法由正式工程文档和公开文档维护。
 
 - [`VITE_DYNAMIC_RUNTIME.md`](VITE_DYNAMIC_RUNTIME.md)：已完成 native/modules/Vite 重构的必要决策、实际证据修正与验证入口；当前用法进入正式文档。
 
