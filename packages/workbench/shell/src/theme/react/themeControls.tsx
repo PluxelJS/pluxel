@@ -59,8 +59,7 @@ export interface ThemeCustomizerProps {
 }
 
 export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
-	const computed = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const { setColorScheme } = useMantineColorScheme()
+	const { colorScheme, setColorScheme } = useMantineColorScheme()
 	const [expanded, setExpanded] = useState(false)
 	const [opened, setOpened] = useState(false)
 	const { accentKey, setAccentTheme, presets } = useAccentTheme()
@@ -85,11 +84,12 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 			<SegmentedControl
 				fullWidth
 				size="xs"
-				value={computed}
-				onChange={(value) => setColorScheme(value as 'light' | 'dark')}
+				value={colorScheme}
+				onChange={(value) => setColorScheme(value as 'light' | 'dark' | 'auto')}
 				data={[
 					{ value: 'light', label: '浅色' },
 					{ value: 'dark', label: '深色' },
+					{ value: 'auto', label: '系统' },
 				]}
 			/>
 		</Box>
@@ -106,6 +106,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 					{presets.map((preset) => (
 						<Tooltip key={preset.key} label={preset.name}>
 							<ActionIcon
+								aria-label={`主题色：${preset.name}`}
 								variant="light"
 								size="md"
 								radius="md"

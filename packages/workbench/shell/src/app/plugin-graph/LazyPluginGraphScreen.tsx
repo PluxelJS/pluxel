@@ -1,12 +1,12 @@
 import { lazy, Suspense } from 'react'
-import { useWorkbenchDocumentPathname } from '../workbench/context'
+import { useCurrentPathname } from '../router/useCurrentRoute'
 
 const PluginGraphScreen = lazy(() =>
 	import('./PluginGraphScreen').then((module) => ({ default: module.PluginGraphScreen })),
 )
 
 export function PluginGraphRouteScreen() {
-	const pathname = useWorkbenchDocumentPathname()
+	const pathname = useCurrentPathname()
 	return <LazyPluginGraphScreen pathname={pathname} />
 }
 

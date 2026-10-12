@@ -46,16 +46,6 @@ import type {
 	WorkbenchNavigation,
 	WorkbenchNotificationInput,
 } from './react-context.tsx'
-import type { WorkbenchPaneLayoutRenderer } from './ui-pane.tsx'
-
-export { WorkbenchPaneLayoutControlsProvider } from './ui-pane.tsx'
-export type {
-	WorkbenchPaneDescriptor,
-	WorkbenchPaneLayoutControls,
-	WorkbenchPaneLayoutMode,
-	WorkbenchPaneLayoutRenderer,
-	WorkbenchPaneLayoutRendererProps,
-} from './ui-pane.tsx'
 export type {
 	WorkbenchConfirmInput,
 	WorkbenchDocumentTitle,
@@ -127,8 +117,12 @@ export class WorkbenchViewHostHandle implements Disposable {
 		workbenchViewHostOwnerSignals.set(this, this.#scope.signal)
 		const navigation = input.navigation
 			? Object.freeze({
-					navigate: (path: string) => input.navigation!.navigate(readRelativePath(path)),
-					openDocument: (value: { path: string; title: string; meta?: string }) =>
+					navigate: (path: string) => {
+						this.#assertActive()
+						input.navigation!.navigate(readRelativePath(path))
+					},
+					openDocument: (value: { path: string; title: string; meta?: string }) => {
+						this.#assertActive()
 						input.navigation!.openDocument(
 							Object.freeze({
 								path: readRelativePath(value.path),
@@ -137,7 +131,8 @@ export class WorkbenchViewHostHandle implements Disposable {
 									? {}
 									: { meta: readRequiredText(value.meta, 'document meta', 256) }),
 							}),
-						),
+						)
+					},
 				})
 			: null
 		const document = input.document
@@ -234,7 +229,6 @@ export type OpenFederatedWorkbenchViewInput = Readonly<{
 	location?: string
 	dom: HTMLElement
 	host: WorkbenchViewHostHandle
-	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 }>
 
 export type OpenFederatedWorkbenchViewResult =
@@ -248,7 +242,6 @@ export class FederatedWorkbenchView implements Disposable {
 	readonly #moduleName: string
 	readonly #opened: WorkbenchOpenedViewHandle
 	readonly #host: WorkbenchViewHostHandle
-	readonly #paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 	#active = true
 
 	/** @internal Created only after the first Bridge render succeeds. */
@@ -258,14 +251,12 @@ export class FederatedWorkbenchView implements Disposable {
 		moduleName: string
 		opened: WorkbenchOpenedViewHandle
 		host: WorkbenchViewHostHandle
-		paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 	}) {
 		this.#application = input.application
 		this.#dom = input.dom
 		this.#moduleName = input.moduleName
 		this.#opened = input.opened
 		this.#host = input.host
-		this.#paneLayoutRenderer = input.paneLayoutRenderer
 	}
 
 	get active(): boolean {
@@ -303,7 +294,7 @@ export class FederatedWorkbenchView implements Disposable {
 		return {
 			dom: this.#dom,
 			moduleName: this.#moduleName,
-			[BRIDGE_PAYLOAD_FIELD]: bridgePayload(this.#opened, this.#host, this.#paneLayoutRenderer),
+			[BRIDGE_PAYLOAD_FIELD]: bridgePayload(this.#opened, this.#host),
 		}
 	}
 
@@ -354,7 +345,10 @@ export async function openFederatedWorkbenchView(
 	const handle = opened.handle
 	if (!input.host.active) {
 		handle[Symbol.dispose]()
-		throw new Error('[workbench/federation] View host closed during activation')
+		throw new WorkbenchReact.WorkbenchRendererError(
+			'WORKBENCH_RENDERER_CLOSED',
+			'[workbench/federation] View host closed during activation',
+		)
 	}
 	let application: WorkbenchBridgeApplication | undefined
 	let moduleName = ''
@@ -362,7 +356,10 @@ export async function openFederatedWorkbenchView(
 		assertDocumentParams(input.host.facade, handle)
 		const provider = await loadBridgeProvider(handle)
 		if (!input.host.active) {
-			throw new Error('[workbench/federation] View host closed during activation')
+			throw new WorkbenchReact.WorkbenchRendererError(
+				'WORKBENCH_RENDERER_CLOSED',
+				'[workbench/federation] View host closed during activation',
+			)
 		}
 		application = provider()
 		if (
@@ -376,10 +373,13 @@ export async function openFederatedWorkbenchView(
 		await application.render({
 			dom: input.dom,
 			moduleName,
-			[BRIDGE_PAYLOAD_FIELD]: bridgePayload(handle, input.host, input.paneLayoutRenderer),
+			[BRIDGE_PAYLOAD_FIELD]: bridgePayload(handle, input.host),
 		})
 		if (!input.host.active) {
-			throw new Error('[workbench/federation] View host closed during activation')
+			throw new WorkbenchReact.WorkbenchRendererError(
+				'WORKBENCH_RENDERER_CLOSED',
+				'[workbench/federation] View host closed during activation',
+			)
 		}
 		return Object.freeze({
 			ok: true as const,
@@ -389,22 +389,26 @@ export async function openFederatedWorkbenchView(
 				moduleName,
 				opened: handle,
 				host: input.host,
-				...(input.paneLayoutRenderer === undefined
-					? {}
-					: { paneLayoutRenderer: input.paneLayoutRenderer }),
 			}),
 		})
 	} catch (error) {
+		let failure: unknown = error
 		try {
 			application?.destroy({ dom: input.dom, moduleName })
-		} finally {
-			try {
-				input.host[Symbol.dispose]()
-			} finally {
-				handle[Symbol.dispose]()
-			}
+		} catch (cause) {
+			failure = combineFailures(failure, cause)
 		}
-		throw error
+		try {
+			input.host[Symbol.dispose]()
+		} catch (cause) {
+			failure = combineFailures(failure, cause)
+		}
+		try {
+			handle[Symbol.dispose]()
+		} catch (cause) {
+			failure = combineFailures(failure, cause)
+		}
+		throw failure
 	}
 }
 
@@ -508,7 +512,6 @@ function resolveSameOriginUrl(input: string): string {
 function bridgePayload(
 	handle: WorkbenchOpenedViewHandle,
 	host: WorkbenchViewHostHandle,
-	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer,
 ): WorkbenchBridgePayload {
 	const ownerSignal = workbenchViewHostOwnerSignals.get(host)
 	if (!ownerSignal) {
@@ -519,7 +522,6 @@ function bridgePayload(
 		handle,
 		host: host.facade,
 		ownerSignal,
-		...(paneLayoutRenderer === undefined ? {} : { paneLayoutRenderer }),
 	})
 }
 

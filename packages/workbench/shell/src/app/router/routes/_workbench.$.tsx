@@ -1,4 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-
-// WorkbenchShell renders each workspace document independently of the router outlet.
-export const Route = createFileRoute('/_workbench/$')({ component: () => null })
+import { WorkbenchDeclaredRouteScreen } from '../workbench/WorkbenchDeclaredRouteScreen'
+import { useCurrentPathname } from '../useCurrentRoute'
+export const Route = createFileRoute('/_workbench/$')({ component: DeclaredRoute })
+function DeclaredRoute() {
+	return <WorkbenchDeclaredRouteScreen pathname={useCurrentPathname()} />
+}

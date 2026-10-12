@@ -20,8 +20,8 @@ export function buildOutlineTree(anchors: OutlineAnchor[]): OutlineNode[] {
 			children: [],
 		}
 
-		while (stack.length > 0 && stack.at(-1).depth >= node.depth) stack.pop()
-		if (stack.length > 0) stack.at(-1).children.push(node)
+		while (stack.length > 0 && stack.at(-1)!.depth >= node.depth) stack.pop()
+		if (stack.length > 0) stack.at(-1)!.children.push(node)
 		else roots.push(node)
 		stack.push(node)
 	}

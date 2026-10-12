@@ -3,31 +3,32 @@ import {
 	getWorkbenchDirectoryConflicts,
 	resolveWorkbenchDirectoryRoute,
 } from '../../../workbench/route-directory'
-import { useWorkbenchTargetSnapshot, WorkbenchTargetProvider } from '../../../workbench/runtime'
+import { useWorkbenchTargetSnapshot } from '../../../workbench/runtime'
 import { WorkbenchRouteConflictList } from '../../workbench/shell/WorkbenchRouteConflicts'
 import { NotFoundScreen } from '../screens/NotFoundScreen'
 import { WorkbenchRouteStateFallback } from './WorkbenchRouteStatus'
 import { WorkbenchRouteRenderer } from './WorkbenchRouteRenderer'
+import { useMemo } from 'react'
 
 /** A declared URL is resolved only after the complete route directory is available. */
 export function WorkbenchDeclaredRouteScreen({ pathname }: { pathname: string }) {
 	const snapshot = useWorkbenchTargetSnapshot(null)
+	const route = useMemo(
+		() => resolveWorkbenchDirectoryRoute(snapshot.directory, pathname),
+		[snapshot.directory, pathname],
+	)
 	if (!snapshot.layout) {
 		return <WorkbenchRouteStateFallback displayName="Workbench 路由" snapshot={snapshot} />
 	}
-	const route = resolveWorkbenchDirectoryRoute(snapshot.directory, pathname)
 	if (route) {
 		return (
-			<WorkbenchTargetProvider target={route.entry.target.node} pathname={pathname}>
-				<WorkbenchRouteRenderer
-					target={route.entry.target.node}
-					displayName={route.entry.target.displayName}
-					displayPath={pathname}
-					pathname={pathname}
-					route={route}
-					snapshot={snapshot}
-				/>
-			</WorkbenchTargetProvider>
+			<WorkbenchRouteRenderer
+				target={route.entry.target.node}
+				displayName={route.entry.target.displayName}
+				displayPath={pathname}
+				route={route}
+				snapshot={snapshot}
+			/>
 		)
 	}
 	const conflicts = getWorkbenchDirectoryConflicts(snapshot.directory, pathname)

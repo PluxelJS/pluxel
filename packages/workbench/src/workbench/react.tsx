@@ -78,7 +78,6 @@ export function useRemoteValue<Value>(
 	return useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot)
 }
 
-export { WorkbenchPane, WorkbenchPaneLayout, useWorkbenchPaneLayout } from './ui-pane.tsx'
 export { createWorkbenchRenderer, WorkbenchRendererError } from './renderer-scope.tsx'
 export type {
 	WorkbenchMutationExecutionContext,
@@ -99,15 +98,6 @@ export type {
 	WorkbenchResourceKey,
 	WorkbenchZeroProps,
 } from './renderer-scope.tsx'
-export type {
-	WorkbenchPaneCollapseAt,
-	WorkbenchPaneLayoutControls,
-	WorkbenchPaneLayoutMode,
-	WorkbenchPaneLayoutProps,
-	WorkbenchPaneProps,
-	WorkbenchPaneRole,
-	WorkbenchPaneSize,
-} from './ui-pane.tsx'
 export type {
 	WorkbenchConfirmInput,
 	WorkbenchDocument,

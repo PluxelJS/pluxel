@@ -1,31 +1,37 @@
 // @vitest-environment jsdom
 
 import { formatPluginNodeRoute } from '@pluxel/core'
-import { MantineProvider } from '@mantine/core'
-import { act } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { WorkbenchDocumentRenderer } from '../src/app/workbench/shell/WorkbenchDocumentRenderer'
-import { RightPane } from '../src/app/plugins/detail/RightPane'
-import { WorkspaceControllerProvider } from '../src/app/workbench/context'
-import { WorkspaceController } from '../src/app/workbench/store'
-import { createPersistedWorkbenchState, WORKBENCH_STORAGE_KEY } from '../src/app/workbench/state'
+import { act, useEffect, useState } from 'react'
+import type { Root } from 'react-dom/client'
+import { useRouter, type AnyRouter } from '@tanstack/react-router'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
+import { RightPane } from '../src/app/plugins/detail/RightPane'
+import {
+	PluginScopeProvider,
+	type PluginScopeContextValue,
+} from '../src/app/plugins/detail/context'
+import { useOptionalWorkbenchDocument } from '../src/app/workbench/document'
+import { WorkspaceSession } from '../src/app/workbench/session'
+import { parsePluginDetailHref, buildPluginDetailHref } from '../src/workbench/paths'
+import {
+	openDocument,
+	prepareNativeWorkbenchDom,
+	renderWorkspace,
+} from './helpers/native-workbench'
 
 const state = vi.hoisted(() => ({
-	pathname: '',
-	pluginRoute: 'v1/package/FirstPlugin/@fixture/first',
 	crashedRoute: '',
+	details: false,
 	entries: [] as WorkbenchLayoutEntry[],
+	pages: new Map<string, { router: AnyRouter; refresh: () => void }>(),
+	dependencies: vi.fn(),
+	logs: vi.fn(),
 }))
 const mounted: Root[] = []
+const workspaces: WorkspaceSession[] = []
 
-vi.mock('../src/app/plugins/detail/PluginScreen', () => ({
-	PluginScreen: ({ pluginRoute }: { pluginRoute: string }) => {
-		if (pluginRoute === state.crashedRoute) throw new Error('fixture plugin page failed')
-		return <input aria-label="插件表单" defaultValue={pluginRoute} />
-	},
-}))
+vi.mock('../src/app/plugins/detail/PluginScreen', () => ({ PluginScreen: PluginPage }))
 vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 	RouteErrorScreen: ({ onRetry }: { onRetry?: () => void }) => (
 		<div role="alert">
@@ -36,33 +42,67 @@ vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 		</div>
 	),
 }))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: () => null }))
-vi.mock('../src/app/plugins/catalog/PluginCatalog', () => ({ PluginCatalog: () => null }))
-vi.mock('../src/app/plugin-graph/LazyPluginGraphScreen', () => ({
-	LazyPluginGraphScreen: () => null,
+vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => null }))
+vi.mock('../src/app/log_viewer/LiveLog', () => ({
+	LiveLog: () => {
+		state.logs()
+		return <p>Runtime logs</p>
+	},
 }))
-vi.mock('../src/app/router/screens/NotFoundScreen', () => ({ NotFoundScreen: () => null }))
-vi.mock('../src/app/router/screens/HomeScreen', () => ({ HomeScreen: () => null }))
-vi.mock('../src/app/router/workbench/WorkbenchRouteScreen', () => ({
-	WorkbenchRouteScreen: () => null,
-}))
-vi.mock('../src/app/security/SecurityAuditScreen', () => ({ SecurityAuditScreen: () => null }))
-vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: () => null }))
-vi.mock('../src/app/workbench/context', async (importOriginal) => ({
-	...(await importOriginal<typeof import('../src/app/workbench/context')>()),
-	useWorkbenchDocumentPathname: () => state.pathname,
-}))
-vi.mock('../src/workbench/runtime', () => ({
-	useWorkbenchTabs: () => ({
-		nodes: state.entries.map((entry) => <p key={entry.descriptor.key}>Version Content</p>),
-		entries: state.entries,
-	}),
+vi.mock('../src/workbench/runtime', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../src/workbench/runtime')>()),
+	useWorkbenchTabs: () => ({ entries: state.entries, snapshot: { layout: { revision: 1 } } }),
 	useResolvedWorkbenchRoute: () => ({ route: null, snapshot: null }),
+	WorkbenchEntryView: () => <input aria-label="独立插件页面" defaultValue="entry draft" />,
 }))
-vi.mock('../src/app/plugins/detail/context', () => ({
-	usePluginMeta: () => ({
-		pluginRoute: state.pluginRoute,
-		pluginLabel: 'FirstPlugin',
+vi.mock('../src/app/plugins/detail/controls/ActionBar', () => ({ ActionBar: () => null }))
+vi.mock('../src/app/plugins/detail/cards/LogLevelsCard', () => ({
+	LogLevelsCard: () => <p>日志级别</p>,
+}))
+vi.mock('../src/app/plugins/detail/cards/PluginRuntimeSummaryCard', () => ({
+	PluginRuntimeSummaryCard: () => <p>运行概览</p>,
+}))
+vi.mock('../src/app/plugins/detail/cards/PluginDependencyDetailCard', () => ({
+	PluginDependencyDetailCard: () => {
+		state.dependencies()
+		return <p>依赖管理</p>
+	},
+}))
+vi.mock('../src/app/router/workbench/WorkbenchRouteRenderer', () => ({
+	WorkbenchRouteRenderer: () => <p>插件页面</p>,
+}))
+vi.mock('../src/components', () => ({
+	EmptyState: ({ title, description }: { title: string; description: string }) =>
+		title === '暂无可配置项' ? (
+			<input aria-label="配置状态" defaultValue="config draft" />
+		) : (
+			<p>
+				{title} {description}
+			</p>
+		),
+	ErrorState: () => null,
+}))
+
+function PluginPage({ pluginRoute }: { pluginRoute: string }) {
+	const router = useRouter()
+	const document = useOptionalWorkbenchDocument()!
+	const [, refresh] = useState(0)
+	useEffect(() => {
+		state.pages.set(document.id, { router, refresh: () => refresh((value) => value + 1) })
+		return () => {
+			state.pages.delete(document.id)
+		}
+	}, [document.id, router])
+	if (pluginRoute === state.crashedRoute) throw new Error('fixture plugin page failed')
+	if (!state.details)
+		return <input aria-label="插件表单" data-owner={pluginRoute} defaultValue={pluginRoute} />
+	const owner = parsePluginDetailHref(`/plugins/${pluginRoute}`)!.target
+	const value: PluginScopeContextValue = {
+		owner,
+		pluginRoute,
+		pluginLabel: owner.definition.exportName,
+		description: '',
+		dependencyGraph: { detail: null, isLoading: false, isStale: false },
 		status: {
 			execution: {
 				kind: 'native',
@@ -70,115 +110,90 @@ vi.mock('../src/app/plugins/detail/context', () => ({
 				artifact: { kind: 'application-bundle' },
 				update: { kind: 'next-start' },
 			},
-		},
-	}),
-}))
-vi.mock('../src/app/plugins/detail/controls/ActionBar', () => ({ ActionBar: () => null }))
-vi.mock('../src/app/plugins/detail/cards/LogLevelsCard', () => ({
-	LogLevelsCard: () => <p>日志级别</p>,
-}))
-vi.mock('../src/app/plugins/config/ConfigForm', () => ({ ConfigForm: () => null }))
-vi.mock('../src/app/router/workbench/WorkbenchRouteRenderer', () => ({
-	WorkbenchRouteRenderer: () => <p>插件页面</p>,
-}))
-vi.mock('../src/components', () => ({
-	EmptyState: () => <input aria-label="配置状态" />,
-	ErrorState: () => null,
-}))
+		} as PluginScopeContextValue['status'],
+		refetch: async () => {},
+	}
+	return (
+		<PluginScopeProvider value={value}>
+			<RightPane config={{ loading: false, refetch: vi.fn() }} />
+		</PluginScopeProvider>
+	)
+}
 
-beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
-	window.matchMedia = vi.fn().mockImplementation((media: string) => ({
-		media,
-		matches: false,
-		onchange: null,
-		addListener: vi.fn(),
-		removeListener: vi.fn(),
-		addEventListener: vi.fn(),
-		removeEventListener: vi.fn(),
-		dispatchEvent: vi.fn(),
-	}))
-})
-
+const firstRoute = 'v1/package/FirstPlugin/@fixture/first'
+const secondRoute = 'v1/package/SecondPlugin/@fixture/second'
+beforeEach(prepareNativeWorkbenchDom)
 afterEach(async () => {
 	await act(async () => {
 		for (const root of mounted.splice(0)) root.unmount()
+		for (const workspace of workspaces.splice(0)) await workspace.dispose()
 	})
 	document.body.replaceChildren()
+	window.localStorage.clear()
 	state.crashedRoute = ''
 	state.entries = []
-	window.localStorage.clear()
+	state.details = false
+	state.pages.clear()
+	state.dependencies.mockClear()
+	state.logs.mockClear()
+	vi.restoreAllMocks()
+	vi.unstubAllGlobals()
 })
-
-function mountRoot() {
-	const container = document.body.appendChild(document.createElement('div'))
-	const root = createRoot(container, { onCaughtError: () => undefined })
+async function mount() {
+	const workspace = new WorkspaceSession({ basepath: '/' })
+	workspaces.push(workspace)
+	const { container, root } = await renderWorkspace(workspace)
 	mounted.push(root)
-	return { container, root }
+	const content = (id: string) =>
+		container.querySelector<HTMLElement>(`[data-worksplit-content="${id}"]`)!
+	return { workspace, container, content }
+}
+const selected = (element: HTMLElement) =>
+	element.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+async function choose(element: HTMLElement, label: string) {
+	const button = [...element.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+		(tab) => tab.textContent === label,
+	)!
+	expect(button).toBeDefined()
+	await act(async () => button.click())
 }
 
-describe('plugin route-local state', () => {
+describe('plugin state within native documents', () => {
 	it('isolates a failed document and retries or navigates without disturbing another editor', async () => {
-		const { container, root } = mountRoot()
-		const firstPath = `/plugins/${state.pluginRoute}`
-		const secondRoute = 'v1/package/SecondPlugin/@fixture/second'
-		const render = async (secondPath: string) => {
-			await act(async () => {
-				root.render(
-					<div data-shell>
-						<WorkbenchDocumentRenderer pathname={firstPath} />
-						<WorkbenchDocumentRenderer pathname={secondPath} />
-					</div>,
-				)
-			})
-		}
-		const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-		try {
-			await render(`/plugins/${secondRoute}`)
-			const shell = container.querySelector('[data-shell]')
-			const first = container.querySelector('input')!
-			first.value = 'unsaved healthy editor'
-			state.crashedRoute = secondRoute
-			await render(`/plugins/${secondRoute}`)
-			expect(container.querySelector('[role="alert"]')).not.toBeNull()
-			expect(container.querySelector('[data-shell]')).toBe(shell)
-			expect(container.querySelector('input')).toBe(first)
-			expect(first.value).toBe('unsaved healthy editor')
-			state.crashedRoute = ''
-			await act(async () => {
-				container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click()
-			})
-			expect(container.querySelector('[role="alert"]')).toBeNull()
-			expect(container.querySelectorAll('input')).toHaveLength(2)
-			expect(container.querySelector('input')).toBe(first)
-			state.crashedRoute = secondRoute
-			await render(`/plugins/${secondRoute}`)
-			expect(container.querySelector('[role="alert"]')).not.toBeNull()
-			await render('/logs')
-			expect(container.querySelector('[role="alert"]')).toBeNull()
-			expect(container.querySelector('input')).toBe(first)
-			expect(first.value).toBe('unsaved healthy editor')
-		} finally {
-			report.mockRestore()
-		}
+		const { workspace, content } = await mount()
+		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
+		const input = content(first).querySelector('input')!
+		input.value = 'unsaved healthy editor'
+		const second = await openDocument(workspace, `/plugins/${secondRoute}`)
+		const router = state.pages.get(second)!.router
+		const report = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+		state.crashedRoute = secondRoute
+		await act(async () => state.pages.get(second)!.refresh())
+		expect(content(second).querySelector('[role="alert"]')).not.toBeNull()
+		expect(content(first).querySelector('input')).toBe(input)
+		expect(input.value).toBe('unsaved healthy editor')
+		state.crashedRoute = ''
+		await act(async () =>
+			content(second).querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
+		)
+		expect(content(second).querySelector('[role="alert"]')).toBeNull()
+		expect(content(first).querySelector('input')).toBe(input)
+		state.crashedRoute = secondRoute
+		await act(async () => state.pages.get(second)!.refresh())
+		await act(async () => {
+			await router.navigate({ to: '/logs' })
+		})
+		expect(content(second).querySelector('[role="alert"]')).toBeNull()
+		expect(content(first).querySelector('input')).toBe(input)
+		expect(input.value).toBe('unsaved healthy editor')
+		expect(report).toHaveBeenCalled()
 	})
 
-	it('retains the same node across child routes but isolates different plugins and forks', async () => {
-		const { container, root } = mountRoot()
-		const render = async (path: string) => {
-			await act(async () => {
-				root.render(<WorkbenchDocumentRenderer pathname={path} />)
-			})
-		}
-		const base = `/plugins/${state.pluginRoute}`
-		await render(base)
-		const first = container.querySelector('input')!
-		first.value = 'unsaved first plugin state'
-		for (const path of [`${base}/orders`, `${base}/config`, base]) {
-			await render(path)
-			expect(container.querySelector('input')).toBe(first)
-			expect(first.value).toBe('unsaved first plugin state')
-		}
+	it('keeps canonical plugins and forks in separate document owners', async () => {
+		const { workspace, content } = await mount()
+		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
+		const firstInput = content(first).querySelector('input')!
+		firstInput.value = 'first draft'
 		const forkRoute = formatPluginNodeRoute({
 			definition: {
 				entry: { kind: 'package-root', packageName: '@fixture/first' },
@@ -187,152 +202,103 @@ describe('plugin route-local state', () => {
 			variant: 'fork',
 			forkId: 'secondary',
 		})
-		await render(`/plugins/${forkRoute}`)
-		const fork = container.querySelector('input')!
-		expect(fork).not.toBe(first)
-		expect(fork.value).toBe(forkRoute)
-		await render('/plugins/v1/package/SecondPlugin/@fixture/second')
-		expect(container.querySelector('input')).not.toBe(fork)
-		expect(container.querySelector('input')?.value).toBe('v1/package/SecondPlugin/@fixture/second')
+		const fork = await openDocument(workspace, `/plugins/${forkRoute}`)
+		const second = await openDocument(workspace, `/plugins/${secondRoute}`)
+		expect(new Set([first, fork, second]).size).toBe(3)
+		expect(content(fork).querySelector('input')?.value).toBe(forkRoute)
+		expect(content(second).querySelector('input')?.value).toBe(secondRoute)
+		expect(await openDocument(workspace, `/plugins/${firstRoute}`)).toBe(first)
+		expect(content(first).querySelector('input')).toBe(firstInput)
+		expect(firstInput.value).toBe('first draft')
 	})
 
-	it('returns to configuration from a plugin page without discarding local config state', async () => {
-		const { container, root } = mountRoot()
-		const workspace = new WorkspaceController(`/plugins/${state.pluginRoute}`)
-		const config = { loading: false, refetch: vi.fn() }
-		const render = async (restPath: string) => {
-			state.pathname = `/plugins/${state.pluginRoute}${restPath}`
-			await act(async () => {
-				root.render(
-					<MantineProvider env="test">
-						<WorkspaceControllerProvider controller={workspace}>
-							<RightPane config={config} showLevelsTab />
-						</WorkspaceControllerProvider>
-					</MantineProvider>,
-				)
-			})
-		}
-		const selectedTab = () =>
-			container.querySelector('[role="tab"][aria-selected="true"]')?.textContent
-		await render('/config')
-		const input = container.querySelector<HTMLInputElement>('[aria-label="配置状态"]')!
+	it('retains configuration draft across local business panels and isolates an explicit copy', async () => {
+		state.details = true
+		const { workspace, content } = await mount()
+		const first = await openDocument(workspace, `/plugins/${firstRoute}/config`)
+		const input = content(first).querySelector<HTMLInputElement>('[aria-label="配置状态"]')!
 		input.value = 'unsaved config state'
-		await render('/orders')
-		expect(selectedTab()).toBe('页面')
-		await render('/config')
-		expect(selectedTab()).toBe('配置')
-		expect(container.querySelector('[aria-label="配置状态"]')).toBe(input)
+		await choose(content(first), '概览')
+		expect(selected(content(first))).toBe('概览')
+		await choose(content(first), '日志')
+		expect(selected(content(first))).toBe('日志')
+		await choose(content(first), '配置')
+		expect(content(first).querySelector('[aria-label="配置状态"]')).toBe(input)
 		expect(input.value).toBe('unsaved config state')
-		const logging = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-			(tab) => tab.textContent === '级别',
-		)!
-		await act(async () => {
-			logging.click()
-		})
-		await render('')
-		expect(selectedTab()).toBe('级别')
-		await render('/config')
-		expect(selectedTab()).toBe('配置')
-		expect(container.querySelector('[aria-label="配置状态"]')).toBe(input)
-	})
-
-	it('restores the selected Workbench tab after document replacement and waits for the new layout', async () => {
-		const { container, root } = mountRoot()
-		state.pathname = `/plugins/${state.pluginRoute}`
-		const entries = [
-			{
-				placement: { kind: 'tab', label: 'Version', order: 0 },
-				descriptor: { key: 'page' },
-				target: { displayName: 'FirstPlugin' },
-			},
-		] as unknown as WorkbenchLayoutEntry[]
-		state.entries = entries
-		const first = new WorkspaceController(state.pathname)
-		const render = async (workspace: WorkspaceController) => {
-			await act(async () => {
-				root.render(
-					<MantineProvider env="test">
-						<WorkspaceControllerProvider controller={workspace}>
-							<RightPane config={{ loading: false, refetch: vi.fn() }} />
-						</WorkspaceControllerProvider>
-					</MantineProvider>,
-				)
-			})
-		}
-		const selected = () =>
-			container.querySelector('[role="tab"][aria-selected="true"]')?.textContent
-		await render(first)
-		await act(async () => {
-			Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
-				.find((tab) => tab.textContent === 'Version')!
-				.click()
-		})
-		expect(selected()).toBe('Version')
-		window.localStorage.setItem(
-			WORKBENCH_STORAGE_KEY,
-			JSON.stringify(createPersistedWorkbenchState(first.state.uiState)),
+		const copy = await openDocument(workspace, `/plugins/${firstRoute}/config`, true)
+		expect(content(copy).querySelector('[aria-label="配置状态"]')).not.toBe(input)
+		expect(content(copy).querySelector<HTMLInputElement>('[aria-label="配置状态"]')?.value).toBe(
+			'config draft',
 		)
-		await act(async () => {
-			root.render(null)
-		})
-		state.entries = []
-		const restored = new WorkspaceController(state.pathname)
-		await render(restored)
-		expect(selected()).toBe('配置')
-		state.entries = entries
-		await render(restored)
-		expect(selected()).toBe('Version')
 	})
 
-	it('lets a manual Workbench tab choice override the current route until the route changes', async () => {
-		const { container, root } = mountRoot()
-		state.pathname = `/plugins/${state.pluginRoute}/config`
+	it('accepts explicit inspection deep links without copying the document and keeps its config input', async () => {
+		state.details = true
+		const { workspace, content } = await mount()
+		const id = await openDocument(workspace, `/plugins/${firstRoute}/config`)
+		const input = content(id).querySelector<HTMLInputElement>('[aria-label="配置状态"]')!
+		input.value = 'retained config'
+		const router = state.pages.get(id)!.router
+		await act(async () => {
+			await router.navigate({ to: `/plugins/${firstRoute}/config`, search: { tab: 'overview' } })
+		})
+		expect(selected(content(id))).toBe('概览')
+		await act(async () => {
+			await router.navigate({ to: `/plugins/${firstRoute}/config`, search: { tab: 'logs' } })
+		})
+		expect(selected(content(id))).toBe('日志')
+		await choose(content(id), '配置')
+		expect(selected(content(id))).toBe('配置')
+		expect(workspace.workbench.getDocuments()).toHaveLength(1)
+		expect(content(id).querySelector('[aria-label="配置状态"]')).toBe(input)
+		expect(input.value).toBe('retained config')
+	})
+
+	it('opens a published entry as its own URL document and reports a removed entry explicitly', async () => {
+		state.details = true
+		const owner = parsePluginDetailHref(`/plugins/${firstRoute}`)!.target
 		state.entries = [
 			{
+				descriptor: { kind: 'view', owner: owner.definition, key: 'version' },
+				target: { node: owner, displayName: 'FirstPlugin' },
+				renderer: owner,
+				definitionRevisions: { target: 1, renderer: 1 },
 				placement: { kind: 'tab', label: 'Version', order: 0 },
-				descriptor: { key: 'page' },
-				target: { displayName: 'FirstPlugin' },
 			},
-		] as unknown as WorkbenchLayoutEntry[]
-		const workspace = new WorkspaceController(state.pathname)
-		const render = async () => {
-			await act(async () => {
-				root.render(
-					<MantineProvider env="test">
-						<WorkspaceControllerProvider controller={workspace}>
-							<RightPane config={{ loading: false, refetch: vi.fn() }} />
-						</WorkspaceControllerProvider>
-					</MantineProvider>,
-				)
-			})
-		}
-		const selected = () =>
-			container.querySelector('[role="tab"][aria-selected="true"]')?.textContent
-		const chooseVersion = async () => {
-			await act(async () => {
-				Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
-					.find((tab) => tab.textContent === 'Version')!
-					.click()
-			})
-		}
-		await render()
-		expect(selected()).toBe('配置')
-		await chooseVersion()
-		expect(selected()).toBe('Version')
+		]
+		const { workspace, content } = await mount()
+		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
+		const input = content(first).querySelector<HTMLInputElement>('[aria-label="配置状态"]')!
+		input.value = 'configuration draft'
+		const button = content(first).querySelector<HTMLButtonElement>(
+			'[aria-label="插件页面入口"] button',
+		)!
 		await act(async () => {
-			workspace.toggleNavigationCollapsed()
+			button.click()
+			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(2))
 		})
-		state.entries = [...state.entries]
-		await render()
-		expect(selected()).toBe('Version')
-		state.pathname = `/plugins/${state.pluginRoute}/orders`
-		await render()
-		expect(selected()).toBe('页面')
-		await chooseVersion()
-		await render()
-		expect(selected()).toBe('Version')
-		state.pathname = `/plugins/${state.pluginRoute}/config`
-		await render()
-		expect(selected()).toBe('配置')
+		const entry = workspace.workbench.getActiveDocument()!
+		expect(entry.id).not.toBe(first)
+		expect(entry.href).toBe(`${buildPluginDetailHref(owner)}?entry=version`)
+		expect(content(entry.id).querySelector('[aria-label="独立插件页面"]')).not.toBeNull()
+		expect(content(first).querySelector('[aria-label="配置状态"]')).toBe(input)
+		expect(input.value).toBe('configuration draft')
+		state.entries = []
+		await act(async () => state.pages.get(entry.id)!.refresh())
+		expect(content(entry.id).textContent).toContain('入口不可用')
+		expect(content(entry.id).textContent).toContain('version')
+	})
+
+	it('defers dependency and log resources until their business panel is selected', async () => {
+		state.details = true
+		const { workspace, content } = await mount()
+		const id = await openDocument(workspace, `/plugins/${firstRoute}/config`)
+		expect(state.dependencies).not.toHaveBeenCalled()
+		expect(state.logs).not.toHaveBeenCalled()
+		await choose(content(id), '依赖')
+		expect(state.dependencies).toHaveBeenCalled()
+		expect(state.logs).not.toHaveBeenCalled()
+		await choose(content(id), '日志')
+		expect(state.logs).toHaveBeenCalled()
 	})
 })

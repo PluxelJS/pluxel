@@ -1,176 +1,154 @@
-import { Badge, Box, Center, Loader, Stack, Tabs, Text, Tooltip } from '@mantine/core'
+import { Button, Center, Group, Loader, Stack, Tabs, Text } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
-import { Fragment, useCallback, useEffect, useMemo, type ReactNode } from 'react'
-
+import { useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { EmptyState, ErrorState } from '../../../components'
-import { useResolvedWorkbenchRoute, useWorkbenchTabs } from '../../../workbench/runtime'
 import {
-	useActiveWorkbenchTabId,
-	useWorkbenchDocumentPathname,
-	useWorkspaceController,
-} from '../../workbench/context'
-import { useResolvedWorkbenchTabState } from '../../workbench/split'
+	useResolvedWorkbenchRoute,
+	useWorkbenchTabs,
+	WorkbenchEntryView,
+} from '../../../workbench/runtime'
+import { useWorkbenchNavigation } from '../../workbench/context'
+import { useOptionalWorkbenchDocument } from '../../workbench/document'
+import { useCurrentPathname } from '../../router/useCurrentRoute'
+import { parsePluginDetailHref, buildPluginDetailHref } from '../../../workbench/paths'
 import { WorkbenchRouteRenderer } from '../../router/workbench/WorkbenchRouteRenderer'
-import { PANE_TABS_PROPS, PaneTabLabel, getPaneTabsRootClassName } from '../../workbench/PaneTabs'
 import type { PluginConfigState } from '../config/usePluginConfig'
 import { ConfigForm } from '../config/ConfigForm'
 import { LogLevelsCard } from './cards/LogLevelsCard'
-import { PluginPanel } from './cards/PluginPanel'
+import { PluginDependencyDetailCard } from './cards/PluginDependencyDetailCard'
+import { PluginRuntimeSummaryCard } from './cards/PluginRuntimeSummaryCard'
+import { LiveLog } from '../../log_viewer/LiveLog'
 import { ActionBar } from './controls/ActionBar'
 import { usePluginMeta } from './context'
-import { describePluginExecution } from '../pluginExecutionPresentation'
-import { buildRightPaneTabGroups, normalizeRestPath } from './rightPaneState'
-import { PluginWorkbenchTabActivityProvider } from './workbench/tabActivity'
+import { usePluginDetailSearch } from './pluginDetailSearchState'
+import { useWorkspaceSession } from '../../workbench/workspaceContext'
+import { useWorkbenchState } from '@worksplit/react'
 
-interface RightPaneProps {
-	config: PluginConfigState
-	showLevelsTab?: boolean
-}
+const EMPTY_PARAMS = Object.freeze({})
 
-const COLUMN_STYLE = {
-	flex: 1,
-	minHeight: 0,
-	display: 'flex',
-	flexDirection: 'column' as const,
-}
-
-function PaneTabPanel({ children, value }: { children: ReactNode; value: string }) {
-	return (
-		<Tabs.Panel value={value} className="plx-paneTabs__panel" style={COLUMN_STYLE}>
-			{children}
-		</Tabs.Panel>
-	)
-}
-
-export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
-	const { owner, pluginRoute, pluginLabel, status } = usePluginMeta()
-	const { nodes: tabNodes, entries: tabEntries } = useWorkbenchTabs()
-	const tabGroups = useMemo(
-		() => buildRightPaneTabGroups(pluginLabel, tabEntries, tabNodes as ReactNode[]),
-		[pluginLabel, tabEntries, tabNodes],
-	)
-	const pathname = useWorkbenchDocumentPathname()
-	const restPath = useMemo(() => {
-		const prefix = `/plugins/${pluginRoute}`
-		if (!pathname.startsWith(prefix)) return ''
-		return normalizeRestPath(pathname.slice(prefix.length))
-	}, [pathname, pluginRoute])
-	const showRouteTab = Boolean(restPath && restPath !== '/config')
-	const workspace = useWorkspaceController()
-	const editorTabId = useActiveWorkbenchTabId()
-	const selectionScope = `plugin-content:${pluginRoute}`
-	const storedTab = useResolvedWorkbenchTabState(selectionScope, (value) =>
-		typeof value === 'string' ? value : undefined,
-	)
-	const setActiveTab = useCallback(
-		(value: string) => {
-			workspace.setActiveTabState(editorTabId, selectionScope, value)
-		},
-		[editorTabId, selectionScope, workspace],
-	)
-	// Keep the stored choice while the fresh session is still loading its layout. An absent
-	// entry is a display fallback, not a user decision to replace the persisted selection.
-	const activeTab =
-		storedTab === 'route' && showRouteTab
-			? 'route'
-			: storedTab === 'logging' && showLevelsTab
-				? 'logging'
-				: tabGroups.some((tab) => tab.id === storedTab)
-					? storedTab!
-					: 'config'
+export function RightPane({ config }: { config: PluginConfigState }) {
+	const { owner, pluginLabel, status, description } = usePluginMeta()
+	const { entries, snapshot } = useWorkbenchTabs(owner)
+	const pathname = useCurrentPathname()
+	const restPath = parsePluginDetailHref(pathname)?.path ?? ''
+	const search = usePluginDetailSearch()
+	const navigation = useWorkbenchNavigation()
+	const navigate = useNavigate()
+	const session = useWorkspaceSession()
+	const id = useOptionalWorkbenchDocument()?.id ?? null
+	const active = useWorkbenchState(session.workbench, (state) => state.activeDocumentId === id)
+	const view = ['config', 'overview', 'dependencies', 'logs', 'levels'].includes(search.tab ?? '')
+		? search.tab!
+		: 'config'
+	const [visited, setVisited] = useState(() => new Set([view]))
 	useEffect(() => {
-		const current = editorTabId
-			? workspace.state.uiState.tabState[editorTabId]?.[selectionScope]
-			: undefined
-		if (showRouteTab) setActiveTab('route')
-		else if (restPath === '/config' || current === 'route') setActiveTab('config')
-	}, [editorTabId, restPath, selectionScope, setActiveTab, showRouteTab, workspace])
-	const execution = useMemo(() => describePluginExecution(status.execution), [status.execution])
-
+		setVisited((previous) => (previous.has(view) ? previous : new Set([...previous, view])))
+	}, [view])
+	const selectedEntry = search.entry
+		? entries.find((candidate) => candidate.descriptor.key === search.entry)
+		: undefined
+	const choose = (nextView: string | null) => {
+		if (!nextView) return
+		setVisited((previous) => new Set([...previous, nextView]))
+		void navigate({ to: pathname, search: (previous) => ({ ...previous, tab: nextView }) })
+	}
+	if (search.entry)
+		return selectedEntry ? (
+			<WorkbenchEntryView
+				entry={selectedEntry}
+				frame="shell"
+				layoutRevision={snapshot.layout?.revision ?? 0}
+				params={EMPTY_PARAMS}
+			/>
+		) : (
+			<EmptyState
+				title="入口不可用"
+				description={`未找到入口：${search.entry}。请检查插件权限和发布状态。`}
+			/>
+		)
+	if (restPath && restPath !== '/config')
+		return (
+			<RouteContent
+				target={owner}
+				displayName={pluginLabel}
+				displayPath={pathname}
+				restPath={restPath}
+			/>
+		)
 	return (
-		<PluginPanel className="plx-pluginWorkbench__contentPanel" padding={4} gap={4}>
-			<Box style={COLUMN_STYLE}>
-				<Tabs
-					{...PANE_TABS_PROPS}
-					value={activeTab}
-					onChange={(value) => setActiveTab(value ?? 'config')}
-					keepMounted
-					style={COLUMN_STYLE}
-					className={getPaneTabsRootClassName('toolbar')}
-				>
-					<div className="plx-pluginWorkbench__toolbar">
-						<div className="plx-pluginWorkbench__commandBar">
-							<div className="plx-pluginWorkbench__commandTitle">
-								<span className="plx-pluginWorkbench__commandName">{pluginLabel}</span>
-								<Tooltip label={execution.updateLabel} withArrow>
-									<Badge size="sm" variant="light" color={execution.badgeTone}>
-										{execution.badgeLabel}
-									</Badge>
-								</Tooltip>
-							</div>
-							<ActionBar />
-						</div>
-						<Tabs.List className="plx-paneTabs__list" aria-label="插件工作台标签页">
-							{showRouteTab ? (
-								<Tabs.Tab value="route">
-									<PaneTabLabel label="页面" />
-								</Tabs.Tab>
-							) : null}
-							<Tabs.Tab value="config">
-								<PaneTabLabel label="配置" />
-							</Tabs.Tab>
-							{showLevelsTab ? (
-								<Tabs.Tab value="logging">
-									<PaneTabLabel label="级别" />
-								</Tabs.Tab>
-							) : null}
-							{tabGroups.map((tab) => (
-								<Tabs.Tab key={tab.id} value={tab.id}>
-									<PaneTabLabel label={tab.label} />
-								</Tabs.Tab>
-							))}
-						</Tabs.List>
-					</div>
-
-					{showRouteTab ? (
-						<PaneTabPanel value="route">
-							<PluginWorkbenchTabActivityProvider active={activeTab === 'route'}>
-								<RouteContent
-									target={owner}
-									displayName={pluginLabel}
-									displayPath={pathname}
-									restPath={restPath}
-								/>
-							</PluginWorkbenchTabActivityProvider>
-						</PaneTabPanel>
-					) : null}
-					<PaneTabPanel value="config">
+		<Stack gap="sm" h="100%" p="sm" style={{ minHeight: 0 }}>
+			<Group justify="space-between">
+				<Text fw={600}>{pluginLabel}</Text>
+				<ActionBar active={active} />
+			</Group>
+			{entries.length > 0 && (
+				<Group gap="xs" aria-label="插件页面入口">
+					{entries.map((entry) => (
+						<Button
+							key={entry.descriptor.key}
+							size="compact-sm"
+							variant="light"
+							onClick={() =>
+								navigation.navigate(
+									`${buildPluginDetailHref(owner)}?entry=${encodeURIComponent(entry.descriptor.key)}`,
+								)
+							}
+						>
+							{entry.placement.kind === 'tab'
+								? (entry.placement.label ?? entry.descriptor.key)
+								: entry.descriptor.key}
+						</Button>
+					))}
+				</Group>
+			)}
+			<Tabs
+				value={view}
+				onChange={choose}
+				keepMounted
+				style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+			>
+				<Tabs.List aria-label="插件详情">
+					{[
+						['config', '配置'],
+						['overview', '概览'],
+						['dependencies', '依赖'],
+						['logs', '日志'],
+						['levels', '日志级别'],
+					].map(([tab, label]) => (
+						<Tabs.Tab key={tab} value={tab}>
+							{label}
+						</Tabs.Tab>
+					))}
+				</Tabs.List>
+				<Tabs.Panel value="config" className="plx-pluginDocument__panel">
+					{(visited.has('config') || view === 'config') && (
 						<ConfigContent
 							config={config}
 							owner={owner}
 							displayName={pluginLabel}
-							active={activeTab === 'config'}
+							active={active && view === 'config'}
 						/>
-					</PaneTabPanel>
-					{showLevelsTab ? (
-						<PaneTabPanel value="logging">
-							<LogLevelsCard owner={owner} compact />
-						</PaneTabPanel>
-					) : null}
-					{tabGroups.map((tab) => (
-						<PaneTabPanel key={tab.id} value={tab.id}>
-							<PluginWorkbenchTabActivityProvider active={activeTab === tab.id}>
-								<Stack gap="sm" className="plx-pluginWorkbench__entryStack">
-									{tab.nodes.map(({ key, node }) => (
-										<Fragment key={key}>{node}</Fragment>
-									))}
-								</Stack>
-							</PluginWorkbenchTabActivityProvider>
-						</PaneTabPanel>
-					))}
-				</Tabs>
-			</Box>
-		</PluginPanel>
+					)}
+				</Tabs.Panel>
+				<Tabs.Panel value="overview" className="plx-pluginDocument__panel">
+					{(visited.has('overview') || view === 'overview') && (
+						<PluginRuntimeSummaryCard status={status} description={description} />
+					)}
+				</Tabs.Panel>
+				<Tabs.Panel value="dependencies" className="plx-pluginDocument__panel">
+					{(visited.has('dependencies') || view === 'dependencies') && (
+						<PluginDependencyDetailCard />
+					)}
+				</Tabs.Panel>
+				<Tabs.Panel value="logs" className="plx-pluginDocument__panel">
+					{view === 'logs' && <LiveLog owner={owner} variant="embedded" />}
+				</Tabs.Panel>
+				<Tabs.Panel value="levels" className="plx-pluginDocument__panel">
+					{(visited.has('levels') || view === 'levels') && <LogLevelsCard owner={owner} compact />}
+				</Tabs.Panel>
+			</Tabs>
+		</Stack>
 	)
 }
 
@@ -240,7 +218,6 @@ function RouteContent({
 			target={target}
 			displayName={displayName}
 			displayPath={displayPath}
-			pathname={displayPath}
 			route={route}
 			snapshot={snapshot}
 		/>

@@ -1,9 +1,6 @@
-@use './styles/shell';
+@use './styles/native-workspace';
 @use './styles/plugin-catalog';
-@use './styles/plugin-skeleton';
 @use './styles/home';
-@use './styles/plugin-layout';
 @use './styles/plugin-panels';
 @use './styles/plugin-graph';
-@use './styles/remote-pane-layout';
 @use './styles/workbench-content';

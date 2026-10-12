@@ -1,5 +1,5 @@
 import { Box } from '@mantine/core'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { FieldNode } from 'valibot-form'
 import { AutoForm, type AutoFormOptions, useAutoFormCtx } from 'valibot-form/web'
 
@@ -42,8 +42,9 @@ export function ConfigTabContent({
 	const [baseline, setBaseline] = useState(initialValue)
 	useEffect(() => setBaseline(initialValue), [initialValue])
 	const tabKey = path.join('.') || 'config'
-	const sectionIdPrefix = makeSectionAnchorPrefix(displayName, tabKey)
-	const fieldIdPrefix = makeFieldAnchorPrefix(displayName, tabKey)
+	const anchorScope = useId()
+	const sectionIdPrefix = `${anchorScope}-${makeSectionAnchorPrefix(displayName, tabKey)}`
+	const fieldIdPrefix = `${anchorScope}-${makeFieldAnchorPrefix(displayName, tabKey)}`
 	const opts = useMemo(
 		() =>
 			({

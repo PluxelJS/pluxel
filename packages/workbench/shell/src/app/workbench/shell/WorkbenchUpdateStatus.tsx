@@ -56,7 +56,7 @@ export function WorkbenchUpdateStatus() {
 		<Popover width={360} position="bottom-end" withArrow shadow="md">
 			<Popover.Target>
 				<Button
-					className="plx-workbench__updateStatus"
+					className="plx-workspace__update-status"
 					variant="subtle"
 					color={color}
 					size="compact-xs"

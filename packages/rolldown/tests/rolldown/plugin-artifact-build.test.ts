@@ -396,9 +396,8 @@ describe('pluginArtifactBuildPlugin', () => {
 		await publish()
 		await publish(`${fixture.path}/dist`)
 		expect(messages.filter((message) => message.includes('[node-module] build '))).toHaveLength(2)
-		const artifact = (await readdir(`${fixture.path}/dist/artifacts/node`)).find((name) =>
-			name.endsWith('.mjs'),
-		)!
+		const artifacts = await readdir(`${fixture.path}/dist/artifacts/node`)
+		const artifact = artifacts.find((name) => name.endsWith('.mjs'))!
 		await cp(`${fixture.path}/dist/artifacts`, `${relocated.path}/artifacts`, { recursive: true })
 		await rm(`${fixture.path}/node_modules`, { recursive: true })
 		const output = await readFile(`${relocated.path}/artifacts/node/${artifact}`, 'utf8')

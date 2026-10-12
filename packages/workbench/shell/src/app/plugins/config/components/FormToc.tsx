@@ -1,13 +1,7 @@
 import { Badge, Group, Text } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useAutoFormCtx } from 'valibot-form/web'
-import { findScrollableParent } from '../configAnchors'
 import { OutlineNavigator } from '../../detail/workbench/OutlineNavigator'
-import {
-	usePluginWorkbenchAside,
-	usePluginWorkbenchAssistVisibility,
-} from '../../detail/workbench/context'
 
 export function FormToc({
 	sectionIdPrefix,
@@ -24,10 +18,15 @@ export function FormToc({
 	const [anchors, setAnchors] = useState<{ id: string; label: string; depth: number }[]>([])
 	const anchorsRef = useRef<typeof anchors>([])
 	const [activeId, setActiveId] = useState<string | null>(null)
-	const { assistHost, asideAvailable } = usePluginWorkbenchAside()
 
 	useEffect(() => {
-		const host = scrollHost ?? document
+		const host = scrollHost
+		if (!host) {
+			anchorsRef.current = []
+			setAnchors([])
+			setActiveId(null)
+			return undefined
+		}
 		let frame = 0
 		let scanFrame = 0
 		let observer: MutationObserver | null = null
@@ -53,12 +52,12 @@ export function FormToc({
 		}
 
 		scan()
-		if (scrollHost && typeof MutationObserver !== 'undefined') {
+		if (typeof MutationObserver !== 'undefined') {
 			observer = new MutationObserver(() => {
 				if (scanFrame) cancelAnimationFrame(scanFrame)
 				scanFrame = requestAnimationFrame(scan)
 			})
-			observer.observe(scrollHost, {
+			observer.observe(host, {
 				childList: true,
 				subtree: true,
 				attributes: true,
@@ -71,30 +70,21 @@ export function FormToc({
 			})
 		}
 
-		const root = scrollHost ?? window
 		const onScroll = () => {
 			if (frame) cancelAnimationFrame(frame)
 			frame = requestAnimationFrame(() => {
-				const scrollTop = scrollHost ? scrollHost.scrollTop : window.scrollY
-				const viewport = scrollHost ? scrollHost.clientHeight : window.innerHeight
+				const scrollTop = host.scrollTop
+				const viewport = host.clientHeight
 				const anchorOffset = 72
 				let current: { id: string; score: number } | null = null
 
 				for (const anchor of anchorsRef.current) {
-					const el = document.getElementById(anchor.id)
+					const el = Array.from(host.querySelectorAll<HTMLElement>('[data-config-anchor]')).find(
+						(candidate) => candidate.id === anchor.id,
+					)
 					if (!el) continue
-					const container =
-						(scrollHost && scrollHost.contains(el) ? scrollHost : null) ??
-						el.closest<HTMLElement>('[data-config-scroll-root]') ??
-						findScrollableParent(el)
 					const pos =
-						container &&
-						container !== document.scrollingElement &&
-						container !== document.documentElement
-							? el.getBoundingClientRect().top -
-								container.getBoundingClientRect().top +
-								container.scrollTop
-							: el.getBoundingClientRect().top + window.scrollY
+						el.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop
 					const delta = Math.abs(pos - scrollTop - anchorOffset)
 					const inView = pos >= scrollTop - 20 && pos < scrollTop + viewport - 120
 					const score = inView ? delta * 0.5 : delta
@@ -105,11 +95,11 @@ export function FormToc({
 				if (current?.id) setActiveId(current.id)
 			})
 		}
-		root.addEventListener('scroll', onScroll, { passive: true })
+		host.addEventListener('scroll', onScroll, { passive: true })
 		onScroll()
 
 		return () => {
-			root.removeEventListener('scroll', onScroll)
+			host.removeEventListener('scroll', onScroll)
 			if (observer) observer.disconnect()
 			if (scanFrame) cancelAnimationFrame(scanFrame)
 			if (frame) cancelAnimationFrame(frame)
@@ -118,42 +108,27 @@ export function FormToc({
 
 	const scrollToSection = useCallback(
 		(id: string) => {
-			if (!id) return
-			const target = document.getElementById(id)
+			if (!id || !scrollHost) return
+			const target = Array.from(
+				scrollHost.querySelectorAll<HTMLElement>('[data-config-anchor]'),
+			).find((candidate) => candidate.id === id)
 			if (!target) return
 			const scrollMarginTop =
 				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
-			const container =
-				(scrollHost && scrollHost.contains(target) ? scrollHost : null) ??
-				target.closest<HTMLElement>('[data-config-scroll-root]') ??
-				findScrollableParent(target as HTMLElement)
-
-			if (
-				container &&
-				container !== document.scrollingElement &&
-				container !== document.documentElement
-			) {
-				const targetBox = target.getBoundingClientRect()
-				const hostBox = container.getBoundingClientRect()
-				const top = targetBox.top - hostBox.top + container.scrollTop - scrollMarginTop
-				container.scrollTo({ top, behavior: 'smooth' })
-			} else {
-				const top = target.getBoundingClientRect().top + window.scrollY - scrollMarginTop
-				window.scrollTo({ top, behavior: 'smooth' })
-			}
+			const targetBox = target.getBoundingClientRect()
+			const hostBox = scrollHost.getBoundingClientRect()
+			const top = targetBox.top - hostBox.top + scrollHost.scrollTop - scrollMarginTop
+			scrollHost.scrollTo({ top, behavior: 'smooth' })
 		},
 		[scrollHost],
 	)
 
 	const assistVisible = anchors.length > 0
-	usePluginWorkbenchAssistVisibility(assistVisible)
 
 	if (!assistVisible) return null
-	if (asideAvailable && !assistHost) return null
-	if (!assistHost) return null
 
-	return createPortal(
-		<div className="plx-pluginWorkbench__assistSection">
+	return (
+		<div className="plx-documentOutline">
 			<OutlineNavigator
 				anchors={anchors}
 				activeId={activeId}
@@ -174,7 +149,6 @@ export function FormToc({
 					</Group>
 				)}
 			/>
-		</div>,
-		assistHost,
+		</div>
 	)
 }

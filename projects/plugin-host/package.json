@@ -8,6 +8,7 @@
 		"start": "node start.mjs",
 		"test": "vitest run --config vitest.config.ts",
 		"test:runtime": "vitest run --config vitest.runtime.config.ts",
+		"test:workbench-browser": "node dev/workbench.browser.mjs",
 		"typecheck": "pnpm exec tsc -p src/tsconfig.json --pretty false",
 		"start:vite": "NODE_ENV=production node start-vite.mjs"
 	},
@@ -51,6 +52,7 @@
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
 		"pathe": "catalog:node",
+		"playwright": "catalog:dev",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"tsdown": "catalog:build",

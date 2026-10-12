@@ -290,6 +290,7 @@ describe('Workbench Federation activation', () => {
 		})
 
 		await expect(opening).rejects.toThrow('host closed during activation')
+		await expect(opening).rejects.toMatchObject({ code: 'WORKBENCH_RENDERER_CLOSED' })
 		expect(disposeResult).toHaveBeenCalledTimes(1)
 		expect(mf.loadRemote).not.toHaveBeenCalled()
 	})

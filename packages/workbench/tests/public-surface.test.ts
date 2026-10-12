@@ -16,13 +16,10 @@ describe('Workbench public author surface', () => {
 			'readWorkbenchLayout',
 		])
 		expect(Object.keys(WorkbenchReact).sort()).toEqual([
-			'WorkbenchPane',
-			'WorkbenchPaneLayout',
 			'WorkbenchRendererError',
 			'createWorkbenchRenderer',
 			'useRemoteValue',
 			'useWorkbench',
-			'useWorkbenchPaneLayout',
 		])
 	})
 })

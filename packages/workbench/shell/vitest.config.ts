@@ -13,12 +13,12 @@ export default defineConfig({
 		resolve: {
 			conditions: pluxelConditions,
 		},
-		noExternal: ['@pluxel/workbench'],
+		noExternal: ['@pluxel/workbench', '@material/material-color-utilities'],
 	},
 	test: {
 		include: ['tests/**/*.test.{ts,tsx}'],
 		server: {
-			deps: { inline: ['@pluxel/workbench'] },
+			deps: { inline: ['@pluxel/workbench', '@material/material-color-utilities'] },
 		},
 	},
 })

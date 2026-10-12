@@ -8,15 +8,10 @@ export type PlxNeutralFoundation = {
 	surface: string
 	surfaceStrong: string
 	surfaceMuted: string
-	shellBg: string
-	shellBgAlt: string
 	text: string
 	textMuted: string
 	border: string
 	borderStrong: string
-	tabbarBg: string
-	topbarBg: string
-	activityBg: string
 }
 
 export type PlxFixedLevels = {
@@ -71,15 +66,10 @@ export const PLX_NEUTRAL_FOUNDATIONS: Record<PlxThemeMode, PlxNeutralFoundation>
 		surface: '#181b1e',
 		surfaceStrong: '#1c2024',
 		surfaceMuted: '#151a1e',
-		shellBg: '#0d0f11',
-		shellBgAlt: '#121518',
 		text: '#e6eaee',
 		textMuted: '#adb6c0',
 		border: 'rgba(150, 162, 173, 0.14)',
 		borderStrong: 'rgba(164, 176, 188, 0.24)',
-		tabbarBg: 'rgba(19, 23, 26, 0.97)',
-		topbarBg: 'rgba(23, 27, 30, 0.95)',
-		activityBg: 'rgba(16, 19, 22, 0.98)',
 	},
 	light: {
 		bg: '#f3f5f7',
@@ -87,15 +77,10 @@ export const PLX_NEUTRAL_FOUNDATIONS: Record<PlxThemeMode, PlxNeutralFoundation>
 		surface: '#fbfcfd',
 		surfaceStrong: '#ffffff',
 		surfaceMuted: '#edf1f4',
-		shellBg: '#eef2f4',
-		shellBgAlt: '#f7f9fb',
 		text: '#1a2027',
 		textMuted: '#5d6975',
 		border: 'rgba(109, 121, 132, 0.14)',
 		borderStrong: 'rgba(109, 121, 132, 0.22)',
-		tabbarBg: 'rgba(239, 243, 246, 0.97)',
-		topbarBg: 'rgba(248, 250, 252, 0.95)',
-		activityBg: 'rgba(243, 247, 250, 0.98)',
 	},
 }
 

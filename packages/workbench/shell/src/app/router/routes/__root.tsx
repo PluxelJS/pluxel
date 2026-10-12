@@ -1,17 +1,14 @@
-import { createRootRoute } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 import { RouteErrorBoundary } from '../RouteErrorBoundary'
 import { useCurrentPathname } from '../useCurrentRoute'
-import { AppProviders } from '../../frames/AppProviders'
 
-export const Route = createRootRoute({
-	component: RootRoute,
-})
+export const Route = createRootRoute({ component: DocumentRoot })
 
-function RootRoute() {
+function DocumentRoot() {
 	const pathname = useCurrentPathname()
 	return (
 		<RouteErrorBoundary pathname={pathname}>
-			<AppProviders />
+			<Outlet />
 		</RouteErrorBoundary>
 	)
 }

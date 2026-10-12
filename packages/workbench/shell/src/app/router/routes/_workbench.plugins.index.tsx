@@ -10,5 +10,6 @@ function PluginsIndexRoute() {
 }
 
 export const Route = createFileRoute('/_workbench/plugins/')({
+	staticData: { worksplit: { title: '插件' } },
 	component: PluginsIndexRoute,
 })

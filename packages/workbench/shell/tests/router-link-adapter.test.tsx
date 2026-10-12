@@ -11,7 +11,7 @@ import { act, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { RouterLinkAdapter } from '../src/app/router/RouterLinkAdapter'
-import { WorkbenchDocumentScope, WorkbenchNavigationProvider } from '../src/app/workbench/context'
+import { WorkbenchNavigationProvider } from '../src/app/workbench/context'
 
 const mounted: Root[] = []
 
@@ -35,9 +35,7 @@ async function mount(
 	const route = createRootRoute({
 		component: () => (
 			<WorkbenchNavigationProvider value={navigation}>
-				<WorkbenchDocumentScope pathname="/logs" tabId="inactive-editor">
-					<RouterLinkAdapter {...props}>目的地</RouterLinkAdapter>
-				</WorkbenchDocumentScope>
+				<RouterLinkAdapter {...props}>目的地</RouterLinkAdapter>
 			</WorkbenchNavigationProvider>
 		),
 	})

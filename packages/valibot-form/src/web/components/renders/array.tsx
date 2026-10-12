@@ -205,7 +205,7 @@ function ArrayFieldPicklist(props: ArrayFieldPicklistProps) {
 			})}
 		>
 			<PicklistControl
-				error={joinErrorMessages(normalizeErrorMessages(baseErrors))}
+				error={joinErrorMessages(normalizeErrorMessages(baseErrors)) ?? undefined}
 				id={inputProps.id}
 				name={inputProps.name}
 				aria-invalid={inputProps['aria-invalid']}

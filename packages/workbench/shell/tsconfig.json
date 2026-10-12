@@ -6,7 +6,8 @@
 		"noEmit": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
-		"composite": false
+		"composite": false,
+		"strictNullChecks": true
 	},
 	"include": ["src", "vite.config.ts", "vitest.config.ts"]
 }

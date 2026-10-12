@@ -1,7 +1,7 @@
 import { getRouteApi } from '@tanstack/react-router'
 import type { PluginDetailSearch } from '../../router/pluginDetailSearch'
 
-const pluginDetailRouteApi = getRouteApi('/_workbench/plugins/$name')
+const pluginDetailRouteApi = getRouteApi('/_workbench/plugins/$')
 const EMPTY_PLUGIN_DETAIL_SEARCH: PluginDetailSearch = {}
 
 export function usePluginDetailSearch() {
@@ -10,16 +10,4 @@ export function usePluginDetailSearch() {
 	} catch {
 		return EMPTY_PLUGIN_DETAIL_SEARCH
 	}
-}
-
-export function replacePluginDetailSearchParams(patch: Partial<PluginDetailSearch>) {
-	if (typeof window === 'undefined') return
-	const url = new URL(window.location.href)
-	for (const [key, value] of Object.entries(patch) as Array<
-		[keyof PluginDetailSearch, string | undefined]
-	>) {
-		if (value) url.searchParams.set(key, value)
-		else url.searchParams.delete(key)
-	}
-	window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
 }

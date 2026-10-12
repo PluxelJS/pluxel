@@ -7,7 +7,7 @@ This folder contains the Pluxel runtime UI application shell.
 - `router/`
   Route creation, link adaptation, recoverable route error boundaries, and thin file-route entries.
 - `workbench/`
-  Workspace state and layout; `shell/` owns chrome, document rendering, editor groups, and persistence.
+  The native workspace session, per-document Router lifecycle, menus and snapshot persistence; `shell/` contains update status and route conflict feedback. Plugin activation and opened resource ownership live in the package-level `workbench/runtime.tsx`.
 - `plugins/`
   Plugin list, organizer, detail workbench, and config UI.
 - `plugin-graph/`, `home/`, `security/`, `log_viewer/`

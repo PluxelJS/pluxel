@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import { MantineProvider } from '@mantine/core'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from 'capnweb'
 import type {
@@ -8,74 +7,54 @@ import type {
 	WorkbenchLayoutEntry,
 	WorkbenchSessionApi,
 } from '@pluxel/workbench/client'
-import { createMemoryHistory, Outlet, RouterProvider } from '@tanstack/react-router'
+import {
+	createMemoryHistory,
+	RouterProvider,
+	useRouter,
+	type AnyRouter,
+} from '@tanstack/react-router'
+import { Workbench } from '@worksplit/react'
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
-import { afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createAppRouter } from '../src/app/router'
-import { WorkspaceControllerProvider } from '../src/app/workbench/context'
-import { WorkspaceController } from '../src/app/workbench/store'
+import { WorkspaceSession } from '../src/app/workbench/session'
 import { buildWorkbenchHref } from '../src/workbench/paths'
 import { WorkbenchRuntimeProvider, WorkbenchSessionProvider } from '../src/workbench/runtime'
+import { prepareNativeWorkbenchDom, WorkspaceProviders } from './helpers/native-workbench'
 
-// Supply the already-authenticated session at the transport boundary. Route
-// matching, layout validation, directory compilation, Shell and document routing
-// all use their production implementations.
-vi.mock('../src/app/frames/AppProviders', () => ({ AppProviders: () => <Outlet /> }))
-vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
-	WorkbenchUpdateStatus: () => null,
-}))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: () => <p>Runtime logs</p> }))
-vi.mock('../src/app/workbench/shell/WorkbenchShellViews', () => ({
-	ActivityRail: () => null,
-	PluginNavigationRail: () => null,
-	RouteGroupRail: () => null,
-	PluginQuickOpenAction: () => null,
-	WorkbenchTopbarTools: () => null,
-	WorkbenchHotkeys: () => null,
-}))
-vi.mock('../src/app/workbench/shell/WorkspaceEditorGrid', async () => {
-	const { WorkbenchDocumentRenderer } =
-		await import('../src/app/workbench/shell/WorkbenchDocumentRenderer')
+// Authentication is supplied at the transport boundary; the real directory,
+// content routes and per-document memory Router decide which page is shown.
+const observed = vi.hoisted(() => ({ routers: [] as AnyRouter[] }))
+vi.mock('../src/app/router/workbench/WorkbenchDeclaredRouteScreen', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('../src/app/router/workbench/WorkbenchDeclaredRouteScreen')
+		>()
 	return {
-		WorkspaceEditorGrid: ({ pathname }: { pathname: string }) => (
-			<WorkbenchDocumentRenderer pathname={pathname} />
-		),
+		WorkbenchDeclaredRouteScreen: (props: { pathname: string }) => {
+			const router = useRouter()
+			if (!observed.routers.includes(router)) observed.routers.push(router)
+			return <actual.WorkbenchDeclaredRouteScreen {...props} />
+		},
 	}
 })
+vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: () => <p>Runtime logs</p> }))
+vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => null }))
 
-const roots: ReturnType<typeof createRoot>[] = []
-beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
-	window.scrollTo = vi.fn()
-	window.matchMedia = vi.fn((query: string) => ({
-		matches: false,
-		media: query,
-		onchange: null,
-		addListener: vi.fn(),
-		removeListener: vi.fn(),
-		addEventListener: vi.fn(),
-		removeEventListener: vi.fn(),
-		dispatchEvent: vi.fn(),
-	}))
-	globalThis.ResizeObserver = class {
-		constructor(private readonly callback: ResizeObserverCallback) {}
-		observe(target: Element) {
-			this.callback(
-				[{ target, contentRect: { width: 1440, height: 900 } } as ResizeObserverEntry],
-				this,
-			)
-		}
-		unobserve() {}
-		disconnect() {}
-	}
-})
+const roots: Root[] = []
+const workspaces: WorkspaceSession[] = []
+beforeEach(prepareNativeWorkbenchDom)
 afterEach(async () => {
 	await act(async () => {
 		for (const root of roots.splice(0)) root.unmount()
+		for (const workspace of workspaces.splice(0)) await workspace.dispose()
 	})
 	document.body.replaceChildren()
 	window.localStorage.clear()
+	observed.routers.length = 0
+	vi.restoreAllMocks()
+	vi.unstubAllGlobals()
 })
 
 function entry(
@@ -103,15 +82,11 @@ function entry(
 async function mount(
 	path: string,
 	entries: WorkbenchLayoutEntry[],
-	options: { basepath?: string; pending?: Promise<void> } = {},
+	options: { basepath?: string; pending?: Promise<void>; standalone?: boolean } = {},
 ) {
 	const basepath = options.basepath ?? '/'
-	const router = createAppRouter({
-		history: createMemoryHistory({
-			initialEntries: [`${basepath === '/' ? '' : basepath}${path}`],
-		}),
-		uiBasePath: basepath,
-	})
+	const workspace = new WorkspaceSession({ basepath })
+	workspaces.push(workspace)
 	const layout = vi.fn(
 		async ({ target }: { target: PluginNodeAddress | null }): Promise<WorkbenchLayout> => {
 			await options.pending
@@ -132,12 +107,20 @@ async function mount(
 		},
 	)
 	const session = { layoutDto: layout } as unknown as RpcStub<WorkbenchSessionApi>
+	const standalone = options.standalone
+		? createAppRouter({
+				history: createMemoryHistory({
+					initialEntries: [`${basepath === '/' ? '' : basepath}${path}`],
+				}),
+				uiBasePath: basepath,
+			})
+		: undefined
 	const container = document.body.appendChild(document.createElement('div'))
 	const root = createRoot(container)
 	roots.push(root)
 	await act(async () => {
 		root.render(
-			<MantineProvider env="test">
+			<WorkspaceProviders session={workspace}>
 				<WorkbenchSessionProvider session={session}>
 					<WorkbenchRuntimeProvider
 						host={{
@@ -151,96 +134,97 @@ async function mount(
 							),
 						}}
 					>
-						<WorkspaceControllerProvider controller={new WorkspaceController(path)}>
-							<RouterProvider router={router} />
-						</WorkspaceControllerProvider>
+						{standalone ? (
+							<RouterProvider router={standalone} />
+						) : (
+							<Workbench workbench={workspace.workbench} />
+						)}
 					</WorkbenchRuntimeProvider>
 				</WorkbenchSessionProvider>
-			</MantineProvider>,
+			</WorkspaceProviders>,
 		)
-		await router.load()
+		if (standalone) await standalone.load()
+		else await workspace.start(`${basepath === '/' ? '' : basepath}${path}`, false)
 	})
-	return { router, container, layout }
+	const router = standalone ?? observed.routers.at(-1)!
+	const active = () =>
+		container.querySelector(
+			`[data-worksplit-content="${workspace.workbench.getActiveDocument()?.id}"]`,
+		)!
+	return { workspace, router, container, layout, active }
 }
 
 it.each(['/', '/__pluxel/workbench'])(
-	'matches declared nested paths through the real route tree under %s and keeps Shell on builtin navigation',
+	'matches declared nested paths through each document Router under %s and keeps the native workspace on builtin navigation',
 	async (basepath) => {
-		const { router, container } = await mount(
+		const { workspace, router, container, active } = await mount(
 			'/accounts/a%20b/history',
 			[entry('Accounts', '/accounts/:id/history')],
 			{ basepath },
 		)
 		expect(router.state.matches.at(-1)?.routeId).toBe('/_workbench/$')
 		expect(router.state.matches.at(-1)?.params).toMatchObject({ _splat: 'accounts/a b/history' })
-		expect(container.textContent).toContain('Selected renderer: Accounts')
-		const shell = container.querySelector('.plx-workbench')
-		expect(shell).not.toBeNull()
+		expect(active().textContent).toContain('Selected renderer: Accounts')
+		const native = container.querySelector('.worksplit-workbench')
 		await act(async () => {
-			await router.navigate({ to: '/logs' })
+			const result = await workspace.workbench.open({ to: '/logs' })
+			expect(result.status).toBe('committed')
 		})
-		expect(container.textContent).toContain('Runtime logs')
-		expect(container.querySelector('.plx-workbench')).toBe(shell)
+		expect(active().textContent).toContain('Runtime logs')
+		expect(container.querySelector('.worksplit-workbench')).toBe(native)
 		await act(async () => {
-			await router.navigate({ to: '/accounts/other/history' })
+			await workspace.workbench.open({ to: '/accounts/other/history' })
 		})
-		expect(container.textContent).toContain('Selected renderer: Accounts')
-		expect(container.querySelector('.plx-workbench')).toBe(shell)
+		expect(active().textContent).toContain('Selected renderer: Accounts')
+		expect(container.querySelector('.worksplit-workbench')).toBe(native)
 	},
 )
 
-it('selects standalone presentation from the complete route directory', async () => {
-	const { container, router } = await mount('/preview/a', [
-		entry('Preview', '/preview/:id', 'standalone'),
-	])
+it('renders a standalone declared route through the complete directory without a native Shell', async () => {
+	const { container, router } = await mount(
+		'/preview/a',
+		[entry('Preview', '/preview/:id', 'standalone')],
+		{ standalone: true },
+	)
 	expect(router.state.matches.at(-1)?.routeId).toBe('/_workbench/$')
 	expect(container.textContent).toContain('Selected renderer: Preview')
-	expect(container.querySelector('.plx-workbench')).toBeNull()
+	expect(container.querySelector('.worksplit-workbench')).toBeNull()
 })
 
-it('shows conflicts in the header and follows a concrete canonical fallback to its exact owner', async () => {
+it('shows short-path conflicts and uses a concrete canonical fallback for its exact owner', async () => {
 	const entries = [entry('Accounts', '/accounts/:id'), entry('Billing', '/accounts/:accountId')]
-	const { container, router } = await mount('/accounts/42', entries)
-	expect(container.textContent).toContain('这个路径有多个注册来源')
-	expect(container.querySelector('header')?.textContent).toContain('路由冲突 2')
-	const headerNotice = [...container.querySelectorAll<HTMLButtonElement>('header button')].find(
-		(button) => button.textContent === '路由冲突 2',
-	)!
-	await act(async () => headerNotice.click())
-	expect(document.body.textContent).toContain('以下页面使用完整路径')
-	expect(document.body.textContent).toContain('修改插件声明的路径即可消除冲突')
-	expect(
-		[...document.body.querySelectorAll('a')].some((link) => /:id|:accountId/.test(link.href)),
-	).toBe(false)
+	const { workspace, active } = await mount('/accounts/42', entries)
+	expect(active().textContent).toContain('这个路径有多个注册来源')
+	expect([...active().querySelectorAll('a')].some((link) => /:id|:accountId/.test(link.href))).toBe(
+		false,
+	)
 	const canonical = buildWorkbenchHref(entries[1]!.target.node, '/accounts/42', 'shell')
-	const link = [...container.querySelectorAll<HTMLAnchorElement>('a')].find(
+	const link = [...active().querySelectorAll<HTMLAnchorElement>('a')].find(
 		(item) => item.getAttribute('href') === canonical,
 	)
 	expect(link).toBeDefined()
 	const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
 	await act(async () => {
 		link!.dispatchEvent(click)
-		await vi.waitFor(() => expect(router.state.location.pathname).toBe(canonical))
+		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe(canonical))
 	})
 	expect(click.defaultPrevented).toBe(true)
-	expect(container.textContent).toContain('Selected renderer: Billing')
-	expect(container.textContent).not.toContain('Selected renderer: Accounts')
+	expect(active().textContent).toContain('Selected renderer: Billing')
+	expect(active().textContent).not.toContain('Selected renderer: Accounts')
 })
 
-it('waits for the full directory before deciding that a short path is missing', async () => {
+it('waits for the full directory before deciding a short path is missing', async () => {
 	let release!: () => void
 	const pending = new Promise<void>((resolve) => {
 		release = resolve
 	})
-	const { container } = await mount('/accounts/42', [entry('Accounts', '/accounts/:id')], {
-		pending,
-	})
-	expect(container.textContent).toContain('管理界面加载中')
-	expect(container.textContent).not.toContain('页面不存在')
+	const { active } = await mount('/accounts/42', [entry('Accounts', '/accounts/:id')], { pending })
+	expect(active().textContent).toContain('管理界面加载中')
+	expect(active().textContent).not.toContain('页面不存在')
 	await act(async () => {
 		release()
 		await pending
 	})
-	expect(container.textContent).toContain('Selected renderer: Accounts')
-	expect(container.textContent).not.toContain('页面不存在')
+	expect(active().textContent).toContain('Selected renderer: Accounts')
+	expect(active().textContent).not.toContain('页面不存在')
 })

@@ -16,7 +16,7 @@ import { usePluginScope } from '../context'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 import { describePluginControl, describePluginLifecycleOutcome } from './pluginControlModel'
 
-export function ActionBar() {
+export function ActionBar({ active = true }: { active?: boolean }) {
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
 	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
@@ -143,16 +143,20 @@ export function ActionBar() {
 		})
 	}
 
-	useHotkeys([
-		[
-			PLUGIN_DETAIL_HOTKEYS.restartPlugin,
-			(event: KeyboardEvent) => {
-				event.preventDefault()
-				if (!presentation.canStartOrRestart || status.lifecycleState !== 'running') return
-				handleLifecycleCommand('restart')
-			},
-		],
-	])
+	useHotkeys(
+		active
+			? [
+					[
+						PLUGIN_DETAIL_HOTKEYS.restartPlugin,
+						(event: KeyboardEvent) => {
+							event.preventDefault()
+							if (!presentation.canStartOrRestart || status.lifecycleState !== 'running') return
+							handleLifecycleCommand('restart')
+						},
+					],
+				]
+			: [],
+	)
 
 	const primaryIcon =
 		presentation.primaryCommand === 'restart' ? (

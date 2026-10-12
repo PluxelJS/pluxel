@@ -60,15 +60,6 @@ export type PlxThemeModel = {
 		selectedBg: string
 		selectedBorder: string
 	}
-	workbench: {
-		shellBg: string
-		shellBgAlt: string
-		activityBg: string
-		activityItemActive: string
-		topbarBg: string
-		tabbarBg: string
-		surfaceCanvas: string
-	}
 	log: PlxLogTheme
 }
 
@@ -192,31 +183,10 @@ function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
 		selectedBorder: isDark ? alpha(app.accentStrong, 0.26) : alpha(app.accent, 0.22),
 	}
 
-	const workbench = isDark
-		? {
-				shellBg: neutral.shellBg,
-				shellBgAlt: neutral.shellBgAlt,
-				activityBg: neutral.activityBg,
-				activityItemActive: alpha(app.accent, 0.12),
-				topbarBg: neutral.topbarBg,
-				tabbarBg: neutral.tabbarBg,
-				surfaceCanvas: neutral.surface,
-			}
-		: {
-				shellBg: neutral.shellBg,
-				shellBgAlt: neutral.shellBgAlt,
-				activityBg: neutral.activityBg,
-				activityItemActive: alpha(app.accent, 0.08),
-				topbarBg: neutral.topbarBg,
-				tabbarBg: neutral.tabbarBg,
-				surfaceCanvas: neutral.surface,
-			}
-
 	const tokens: PlxThemeModel = {
 		mode,
 		app,
 		controls,
-		workbench,
 		log: {} as PlxLogTheme,
 	}
 
@@ -271,13 +241,7 @@ function toCssVariables(tokens: PlxThemeModel, theme: MantineTheme) {
 		'--plx-selected-bg': tokens.controls.selectedBg,
 		'--plx-selected-border': tokens.controls.selectedBorder,
 		'--plx-shadow': tokens.app.shadow,
-		'--plx-workbench-shell-bg': tokens.workbench.shellBg,
-		'--plx-workbench-shell-bg-alt': tokens.workbench.shellBgAlt,
-		'--plx-workbench-activity-bg': tokens.workbench.activityBg,
-		'--plx-workbench-activity-item-active': tokens.workbench.activityItemActive,
-		'--plx-workbench-topbar-bg': tokens.workbench.topbarBg,
-		'--plx-workbench-tabbar-bg': tokens.workbench.tabbarBg,
-		'--plx-workbench-surface-canvas': tokens.workbench.surfaceCanvas,
+		'--plx-surface-canvas': tokens.app.surface,
 		'--plx-brand-1': brand[1] ?? tokens.app.surface,
 		'--plx-brand-2': brand[2] ?? tokens.app.surfaceStrong,
 		'--plx-brand-5': brand[5] ?? tokens.app.accent,

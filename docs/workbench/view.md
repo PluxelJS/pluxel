@@ -7,7 +7,7 @@ description: 从一个可读取、可刷新的页面开始，再按需添加分�
 如果只有状态和几个按钮，先用更短的 [Content](./content.md)。
 
 Workbench 为 View 提供占满当前编辑窗格的挂载容器。页面可使用 `height: 100%` 填满可用高度，
-并自行管理内容滚动；Pane Kit 根据该窗格的实际宽度调整分栏。
+并自行管理内容滚动、CSS Flex/Grid 和业务选项卡。可独立打开、停靠或关闭的页面通过 publication 声明，由工作区管理。
 
 开始前，宿主应已启用 Workbench，Plugin 能正常启动。下面分为五份文件：页面声明、服务端实现、查询声明、React 入口和页面组件。
 `RpcTarget` 是可以由页面调用的服务端对象；`scope` 将 React 组件与它对应的页面 API 关联。
@@ -200,13 +200,13 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 - 按 input 读取：使用 `queryFamily()`，为每个 input 返回有界、可移植且领域可读的 `queryKey`；失效时明确选 `target(input)` 或 `all()`。
 - callback/progress/cancel/lossless stream：由领域 API 返回具有自己 disposer 语义的 child `RpcTarget`。只有 server-side custom callback
   target 需要 `dup()` observer、释放每次 callback result，并在 open signal abort 时 unsubscribe。
-- 复杂三栏布局：使用 `WorkbenchPaneLayout`/`WorkbenchPane`；不要读取 Shell router、store 或 raw socket。
+- 内容需要分栏：使用普通 CSS Flex/Grid 和 Mantine 组件，根据当前容器宽度响应；不要读取 Shell router、store 或 raw socket。
 
 普通 `scope.query()` 负责 browser-side subscription 的 retain、abort 和 dispose。不要为了普通 latest snapshot 手写 observer target。
 
 ## Placement 与参数化 route
 
-Tab 适合 Plugin 详情中的固定页面：
+Tab 适合从 Plugin 详情打开的固定页面；每个入口打开为独立工作区文档，可以停靠、分组和关闭：
 
 ```ts
 workbench.tab({
@@ -246,6 +246,7 @@ Shell 保留首页以及 `plugins`、`plugin-graph`、`security`、`logs`、`wor
 
 Server 会重新匹配 route，再把 frozen params 交给 factory。Browser 不能提交 principal 或 authority object。
 Document renderer 可以用 `host.document?.params`、`setTitle()` 和 `setDirty()` 管理当前文档 chrome。
+`title` 显示为原生标签名称，`meta` 显示为标签悬停说明；`setTitle()` 的覆盖随本次 View 释放，已替换的页面标签不会被旧 View 重置。
 
 ## Host 能力
 
@@ -256,13 +257,13 @@ Document renderer 可以用 `host.document?.params`、`setTitle()` 和 `setDirty
 - 可空的 relative `navigation`；
 - 可空的 parameterized `document`；
 
-Renderer 不取得 generic HTTP client、任意 URL navigation、Shell router/store 或 raw WebSocket。需要三栏任务布局时，
-从 `@pluxel/workbench/react` 使用 `WorkbenchPaneLayout` 和 `WorkbenchPane`；宿主负责 responsive drawer、
-resize、focus 和 workspace persistence。
+`navigation` 的路径必须以 `/` 开头，且是规范的 Plugin route 路径；不接受 query、hash 或站外 URL。
+`navigate()` 在当前文档内切换 shell 页面，`openDocument()` 创建独立文档并采用传入的标题与说明。
+目标声明为 `standalone` 时，两者都通过工作区的离开守卫执行完整页面导航；冲突路径使用包含 Plugin 实例身份的完整地址。
 
-Pane Kit 的三段语义固定为 `navigation | primary | inspector`：两侧可由当前标签页头部的标准控件显示、隐藏或在窄屏
-打开为 drawer；中间控件用于聚焦 primary 并恢复先前两侧。`primary` 始终可见，不能被隐藏。官方插件详情页中的
-plugin rail、辅助栏和底部 dock 属于另一套宿主私有布局，不应被 View 当作 Pane Kit role 或自行复制其 chrome。
+Renderer 不取得 generic HTTP client、任意 URL navigation、Shell router/store 或 raw WebSocket。
+页面负责自己的内容布局和滚动，宿主负责原生标签、容器、分组、拖拽、分隔线和最大化。
+移动、固定或折叠标签不会重新打开页面 API；关闭文档才释放它的 Bridge、订阅和 opened handle。
 
 ### 借用宿主管理操作
 

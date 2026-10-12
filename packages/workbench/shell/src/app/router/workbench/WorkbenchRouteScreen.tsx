@@ -7,7 +7,7 @@ import {
 	type WorkbenchRoutePrefix,
 } from '../../../workbench/paths'
 import type { PluginNodeAddress } from '@pluxel/core'
-import { WorkbenchTargetProvider, useResolvedWorkbenchRoute } from '../../../workbench/runtime'
+import { useResolvedWorkbenchRoute } from '../../../workbench/runtime'
 import { useCurrentPathname } from '../useCurrentRoute'
 import { WorkbenchRouteRenderer } from './WorkbenchRouteRenderer'
 
@@ -29,30 +29,17 @@ export function WorkbenchRouteScreen({
 	const target = parsed.target
 	const restPath = parsed.path
 	const displayPath = buildWorkbenchHref(target, restPath, getWorkbenchFrame(prefix))
-	const ctxPathname =
-		locationPath && locationPath.startsWith(`${prefix}/`) ? locationPath : displayPath
 
-	return (
-		<WorkbenchTargetProvider target={target} pathname={ctxPathname}>
-			<ResolvedRoute
-				displayPath={displayPath}
-				pathname={ctxPathname}
-				target={target}
-				restPath={restPath}
-			/>
-		</WorkbenchTargetProvider>
-	)
+	return <ResolvedRoute displayPath={displayPath} target={target} restPath={restPath} />
 }
 
 function ResolvedRoute({
 	target,
 	displayPath,
-	pathname,
 	restPath,
 }: {
 	target: PluginNodeAddress
 	displayPath: string
-	pathname: string
 	restPath: string
 }) {
 	const { route, snapshot } = useResolvedWorkbenchRoute(target, restPath)
@@ -62,7 +49,6 @@ function ResolvedRoute({
 			target={target}
 			displayName={displayName}
 			displayPath={displayPath}
-			pathname={pathname}
 			route={route}
 			snapshot={snapshot}
 			wrapContent={(content) => (

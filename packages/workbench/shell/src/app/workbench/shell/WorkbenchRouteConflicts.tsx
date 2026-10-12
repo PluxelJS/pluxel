@@ -1,9 +1,7 @@
-import { Button, Code, Popover, Stack, Text } from '@mantine/core'
-import { IconAlertTriangle } from '@tabler/icons-react'
+import { Code, Stack, Text } from '@mantine/core'
 import { Link, useRouter } from '@tanstack/react-router'
 import type { WorkbenchRouteDirectory } from '../../../workbench/route-directory'
 import { buildWorkbenchHref } from '../../../workbench/paths'
-import { useWorkbenchRouteDirectory } from '../../../workbench/runtime'
 
 export function WorkbenchRouteConflictList({
 	routes,
@@ -44,37 +42,5 @@ export function WorkbenchRouteConflictList({
 				)
 			})}
 		</Stack>
-	)
-}
-
-export function WorkbenchRouteConflicts() {
-	const directory = useWorkbenchRouteDirectory()
-	if (directory.conflicts.length === 0) return null
-	return (
-		<Popover width={420} position="bottom-end" withArrow shadow="md">
-			<Popover.Target>
-				<Button
-					variant="subtle"
-					color="orange"
-					size="compact-xs"
-					leftSection={<IconAlertTriangle size={15} />}
-				>
-					路由冲突 {directory.conflicts.length}
-				</Button>
-			</Popover.Target>
-			<Popover.Dropdown
-				style={{ maxWidth: 'calc(100vw - 24px)', maxHeight: '70vh', overflowY: 'auto' }}
-			>
-				<Stack gap="sm">
-					<Text fw={600} size="sm">
-						以下页面使用完整路径
-					</Text>
-					<Text size="sm" c="dimmed">
-						修改插件声明的路径即可消除冲突。完整链接始终可用。
-					</Text>
-					<WorkbenchRouteConflictList routes={directory.conflicts} />
-				</Stack>
-			</Popover.Dropdown>
-		</Popover>
 	)
 }

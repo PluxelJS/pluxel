@@ -3,7 +3,7 @@
 Workbench frontend 是一个固定 Shell，既能直接渲染 Content，也能按需加载完整 Plugin applications。业务 HTTP 与 Workbench 正交；
 Workbench 不得成为 Plugin 核心能力的启动前提。
 
-修改连接读[一个 document，一条 session](#一个-document一条-session)；修改缓存读[三类前端状态](#三类前端状态)；修改打开/关闭读 [Layout 和 entry activation](#layout-和-entry-activation)；修改布局读 [Pane Kit 与 Workspace](#pane-kit-与-workspace)。异步和 StrictMode 变更都需核对 [React state correctness](#react-state-correctness)。
+修改连接读[一个 document，一条 session](#一个-document一条-session)；修改缓存读[三类前端状态](#三类前端状态)；修改打开/关闭读 [Layout 和 entry activation](#layout-和-entry-activation)；修改布局与路由读[原生工作区与文档路由](#原生工作区与文档路由)。异步和 StrictMode 变更都需核对 [React state correctness](#react-state-correctness)。
 
 ## 固定边界
 
@@ -34,7 +34,7 @@ Management 或 Plugin RPC。
 
 | 状态                      | 生命周期                       | 实现                                                                         | 不负责                                              |
 | ------------------------- | ------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------- |
-| Shell local UI            | document / workspace           | React state、TanStack Store、专用 controller                                 | RPC cache、capability ownership                     |
+| Shell local UI            | document / workspace           | FlexLayout Model、Worksplit 文档协调、React 局部状态                         | RPC cache、capability ownership                     |
 | Shell Management snapshot | authenticated document session | Shell 私有 `@tanstack/react-query` `QueryClient` + `RuntimeManagementClient` | descriptor/scope provenance、per-open root disposal |
 | Plugin renderer resource  | 单次 `openEntry()` / Bridge    | `createWorkbenchRenderer()` 创建的 per-open owner，内部使用 Query Core       | Shell workspace、跨 open cache                      |
 
@@ -98,31 +98,51 @@ Renderer 每次 Bridge mount 都有独立 owner 与 cache；Shell 不共享其 Q
 
 ## Host facade
 
-Remote 只得到固定 appearance、feedback、受限 relative navigation、document 状态与显式借用的 unary Management 操作。Navigation/document 不适用时为 null；路径重新规范化，dirty/title registration 随 per-open handle 撤销。它不取得 raw socket、MF Runtime、Shell store 或私有 Provider。
+Remote 只得到固定 appearance、feedback、受限 relative navigation、document 状态与显式借用的 unary Management 操作。Navigation/document 不适用时为 null；路径必须通过规范形式校验，dirty/title registration 随 per-open handle 撤销。它不取得 raw socket、MF Runtime、Shell store 或私有 Provider。
 
-## Pane Kit 与 Workspace
+公开 navigation facade 校验规范路径，不接受 query/hash。目标 frame 由当前完整 committed directory 和 canonical URL 决定，
+不能只检测 `workbench-standalone` 前缀，也不能由 `openDocument()` 强制覆盖成 shell。文档标题和 `meta` 直接写入原生 Model 的
+`name` / `helpText`，检查 Action 回执；View 只在自己首次覆盖时借用当前原生值用于撤销，不能把打开前的过期标题写回新页面。
 
-Remote 需要 navigation/primary/inspector 三栏时，使用 `WorkbenchPaneLayout` / `WorkbenchPane`。Plugin 只声明
-稳定 ID、role、尺寸约束和内容；Shell 拥有 split driver、responsive drawer、keyboard、focus 和 workspace persistence。
-每种 role 最多一个，并且恰好有一个 primary。容器宽度变化不卸载 pane children。
+## 原生工作区与文档路由
 
-官方 Shell 将当前标签页的 Pane Kit 控件放入头部：navigation 与 inspector 各自切换，中央控件聚焦 primary 或恢复
-先前的周边 pane。primary 永远可见，不能被这个或任何其他控件隐藏；窄屏仍使用同一状态的 responsive drawer。
-Plugin 不复制这组 chrome，也不把宿主私有的 plugin rail、assist 或 bottom dock 误当作 Pane Kit role。
+已认证 browser document 持有一个 `WorkspaceSession`，Shell 借用其中的 Worksplit 实例。一个 FlexLayout Model 是标签、TabSet、
+TabGroup、Border、顺序、pin、分隔线和最大化的唯一事实来源；Worksplit 拥有文档身份、独立 Router/history、复用、MRU 和关闭协调。
+业务 dirty、revision、draft 和保存结果属于具体文档。没有另一个 tabs/grid store，也不把只读投影反向同步到 Model。
 
-`split-like-vscode` 是独立 UI library，不知道 Plugin、View、route 或 persistence。Pluxel adapter 收敛在
-`packages/workbench/shell/src/app/workbench/split/`。Remote bundle 不 import Worksplit、宿主 router、split adapter 或
-workspace store。
+每个文档通过 `createAppRouter({ history })` 消费同一份生成的 route tree，history 由 Worksplit 提供且仅在内存中记录。
+route tree 只渲染内容，不创建递归 Shell；Management、Product、Mantine 和 session providers 位于文档 Router 之外。
+工作区浏览器地址只由 Worksplit 的 `connectBrowser()` 写入，固定工具获得焦点时保留活动文档 URL。
+文档地址取自 TanStack 的 `publicHref`，包含实际 UI basepath；路由匹配仍使用 Router 的内部路径。
+Shell 导航把内部路径、解析后的 search 与 hash 交给 Worksplit 的 TanStack `open()`；公开 href 留给浏览器导航，不能再作为 `to` 重复添加 basepath。
+恢复后的惰性文档也用同一 Router parser 识别身份，不能按公开 URL 手工剥离 basepath 或拼接第二份路径。
+`frame: standalone` 从页面入口分流，用完整页面导航跨越工作区边界；它的 browser Router 不与工作区 history 同时运行。
 
-Workspace controller 独立拥有 tabs、editor groups、focus 和递归 grid。URL 只镜像 focused document；打开同一完整
-document path 会聚焦已有 tab。Plugin 不感知 tab group、drag/drop 或 split topology。
+普通打开按 Worksplit 身份规则复用已有文档，显式新实例产生独立 Router 和 opened owner。插件的 `tab()` publication 从详情页打开为
+独立文档，URL 用 canonical descriptor key 标识入口；publication group 是业务导航分类，与原生 TabGroup 不共享状态。
+新文档的默认名称只从完整 committed publication 读取 tab label/key、相同 canonical owner 的 displayName 或 compiled route title，
+不能借用其他 fork 或未发布 owner 的名称。首次 start 和普通打开使用同一只读选择；复用、恢复和已提交的 Host/F2 名称以原生 Model 为准，不重新投影覆盖。
+跨 TabSet/Border 移动、pin、分组、折叠和最大化保留内容实例；真正关闭或 route 替换才进入原有 activation cleanup。
 
-Shell 的路由适配与错误边界集中在 `app/router/`。链接由 workspace navigation 统一处理去重和编辑组聚焦；站外链接、下载、
-修饰键和新窗口行为交给浏览器。单个 document 的渲染错误由自己的边界显示并允许重试，不卸载其他编辑区或全局 Shell。
+原生 `onContextMenu` 和 `onShowOverflowMenu` 由 Shell 呈现，菜单保留 React Provider ancestry，并通过 `workbench.dispatch()`
+提交原生 Actions、检查实际回执。Native builder 的批量可见标签操作不包含折叠组的隐藏成员；文案明确范围。
+完整容器关闭和纯删除 Action group 由 Worksplit 一次预检内容守卫，守卫拒绝时不逐个删除。输入、菜单状态和主题属于 Shell 局部状态。
 
-Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写盘或触发 React 重渲染。连续变化合并为一次 idle/timeout
-写入，写入时读取最新且经过持久化清洗的状态；`pagehide`、页面隐藏与 teardown 会补写尚未保存的变化。序列化结果相同时不重复写盘，
-存储不可用不阻塞工作台；这不是对浏览器强制终止或存储故障的数据持久性保证。
+布局持久化保存 Worksplit snapshot，包括原生 Model 和文档恢复信息，不保存 RPC handle、Router、业务 draft 或服务对象。
+恢复仍需验证 workspace、结构与实际 publication/权限；坏快照保留现场，修复或重置必须显式执行。
+已保存的原生节点必须包含明确的 `type` 和容器 `children`，不能把缺损快照交给 Model 补齐为默认布局；
+只有代码中的初始 `layout` 可以采用原生可选字段的缺省值。
+使用新的存储 key，旧 workspace 格式不恢复；没有兼容 reader、启动迁移或两种格式双写。
+存储不可用不阻塞打开和编辑，但须提供可发现的错误反馈。恢复后台标签不会立即为所有插件发起 open RPC。
+
+`WorkspaceSnapshotStorage` 使用 `pluxel:worksplit:1:${uiBasePath}` key，按当前浏览器 origin 与 UI basepath 隔离布局。
+连续变化合并写入，`pagehide`、页面隐藏与 teardown 补写待保存快照；序列化结果相同不重复写盘。
+快照读取/结构校验失败不会写回默认值；显式恢复默认布局先请求关闭文档，解除固定与关闭保护后才写入默认快照并完整导航。
+这些行为不保证强制终止浏览器或存储故障时的数据持久性。
+
+Remote 不 import Worksplit、Shell router 或布局 store。Renderer 内容使用普通 CSS Flex/Grid、Mantine 组件和容器响应式布局；
+独立停靠页面通过 publication 声明。公开 Bridge 不传入宿主布局 renderer，内容局部布局不再建立独立宿主分区协议。
+站外链接、下载、修饰键和新窗口行为交给浏览器。单个文档错误由其 Router 边界显示并允许重试，不卸载其他文档或全局 Shell。
 
 ## Module Federation policy
 
@@ -130,16 +150,18 @@ Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写�
 
 ## 内置编辑器滚动与目录
 
-中部、概览和底部各自拥有受限高度的滚动容器，页签栏不参与滚动。概览与目录是右侧独立视图；目录搜索框固定，列表滚轮不向外传播。
-
-目录是否可用由当前编辑器的 config anchors / Markdown headings 决定，不靠 scrollHeight。非活动编辑器撤回目录 claim，portal 只属于当前 Plugin Workbench。FormToc 与 ContentOutline 只读取自己的文档，不扫描其他编辑器或 federated renderer DOM。
+插件详情用普通 Mantine Tabs 组织配置、概览、依赖、日志和日志级别；每个内容区域有受限高度的滚动容器。
+本地业务选项卡不创建新的 editor group 或宿主分区，publication 页面从入口按钮进入独立工作区文档。
+FormToc 与 ContentOutline 只读取对应文档内的 config anchors / Markdown headings，不扫描其他编辑器或 federated renderer DOM。
+目录是否可用由实际 anchors 决定，不靠 scrollHeight，也没有跨文档目录 claim 或右侧 portal registry。
 
 ## React state correctness
 
 - module-scoped session 和 bootstrap promise 保证 StrictMode 不重复连接；
-- 正常路由切换保留根错误边界、Shell 与 session providers；错误恢复按 pathname 清空 error，不能用 pathname key 重建整棵应用；
-- Plugin detail 只按 canonical node route 重置 owner-local 表单与视图，同一 Plugin 的子路由不重置整个 Plugin 工作台；
-- layout runtime、Content/View activation 和 handle/Bridge cleanup 用 mount count + microtask cleanup 吸收 effect replay；
+- Shell 与共享 session providers 在工作区导航时保留；每个文档独立 Router/error boundary，不能用活动 pathname key 重建整棵应用；
+- Plugin detail 表单与视图属于具体文档和 canonical node，相同插件的并行文档不共享 draft；
+- WorkspaceSession 在已认证入口创建，Shell effect replay 不新建实例；最终 teardown dispose Worksplit，再释放其中的内容 owner；
+- Content/View activation 和 handle/Bridge cleanup 用 mount count + microtask cleanup 吸收 effect replay；
 - `useRemoteValue` render 只构造本地 store，commit 才订阅/读取；依赖切换隔离 owner，effect replay 复用资源，晚到订阅仍需释放；
 - 跨组件共享事实使用 `subscribe/getSnapshot` store；
 - 空 array/object 和 Context value 保持稳定 identity；
@@ -157,6 +179,10 @@ Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写�
 - `packages/workbench/shell/src/workbench/client.ts`
 - `packages/workbench/shell/src/workbench/runtime.tsx`
 - `packages/workbench/shell/src/app/workbench/`
+- `packages/workbench/shell/src/app/workbench/session.tsx`
+- `packages/workbench/shell/src/app/workbench/document.tsx`
+- `packages/workbench/shell/src/app/workbench/snapshot.ts`
+- `packages/workbench/shell/src/app/router/`
 - `packages/services/src/management/web/session/`
 - `packages/workbench/src/workbench/client.ts`
 - `packages/workbench/src/workbench/portable-value.ts`
@@ -170,4 +196,6 @@ Workspace persistence 只订阅 `uiState`，不因 transient dirty markers 写�
 
 Shell 测试位于 `packages/workbench/shell/`，client/resource 测试位于 `packages/workbench/tests/`。覆盖 StrictMode 单连接、query cache 不持有 capability、旧请求不覆盖 mutation 后权威快照、每次 open 独立资源、late result 只释放不提交，以及 Bridge → facade → handle 关闭顺序。
 
-浏览器回归验证真实 session epoch/full reload、MF/React root 隔离、布局持久化、键盘焦点与窄屏 Pane 行为。只改纯状态算法时用所属 store/controller 测试；真实连接、Bridge/CSS 或资源泄漏不能以纯状态测试代替。
+浏览器回归验证真实 session epoch/full reload、MF/React root 隔离、单一 browser history 所有者、多个独立文档 Router、布局持久化、原生菜单/拖拽/分组/焦点与窄窗口可达性。只改纯状态算法时用所属状态模块测试；真实连接、Bridge/CSS 或资源泄漏不能以纯状态测试代替。
+
+本次原生工作区迁移的测试映射、真实浏览器与在线回执、库阻塞修复和未验证范围见 [FlexLayout 验收记录](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。该记录描述对应轮次的证据，不另定义当前 API。

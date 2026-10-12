@@ -9,13 +9,11 @@ export function WorkbenchRouteRenderer(props: {
 	target: PluginNodeAddress
 	displayName: string
 	displayPath: string
-	pathname: string
 	route: WorkbenchResolvedRoute | undefined
 	snapshot: WorkbenchTargetSnapshot
-	backContent?: ReactNode
 	wrapContent?: (content: ReactNode) => ReactNode
 }) {
-	const { target, displayName, displayPath, route, snapshot, backContent, wrapContent } = props
+	const { target, displayName, displayPath, route, snapshot, wrapContent } = props
 	const host = useWorkbenchRuntime()
 	const pluginRunning = host.runningPluginKeys.has(pluginNodeIndexKey(target))
 
@@ -27,7 +25,6 @@ export function WorkbenchRouteRenderer(props: {
 					<Text c="dimmed" size="sm" ta="center">
 						请先启动插件 {displayName}，才能访问 {displayPath}
 					</Text>
-					{backContent ?? null}
 				</Stack>
 			</Center>
 		)
@@ -45,7 +42,6 @@ export function WorkbenchRouteRenderer(props: {
 					<Text c="dimmed" size="sm" ta="center">
 						该插件尚未注册页面：{displayPath}
 					</Text>
-					{backContent ?? null}
 				</Stack>
 			</Center>
 		)

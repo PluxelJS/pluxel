@@ -53,11 +53,8 @@ export function createWorkbenchBridge(
 					opened,
 					host: payload.host,
 					ownerSignal: payload.ownerSignal,
-					...(payload.paneLayoutRenderer === undefined
-						? {}
-						: { paneLayoutRenderer: payload.paneLayoutRenderer }),
 				}),
-			[opened, payload.host, payload.ownerSignal, payload.paneLayoutRenderer],
+			[opened, payload.host, payload.ownerSignal],
 		)
 		return (
 			<WorkbenchReactContextProvider value={value}>
@@ -98,27 +95,18 @@ function readBridgePayload(input: unknown): WorkbenchBridgePayload {
 	}
 	const record = input as Record<string, unknown>
 	for (const key of Object.keys(record)) {
-		if (!['profile', 'handle', 'host', 'ownerSignal', 'paneLayoutRenderer'].includes(key)) {
+		if (!['profile', 'handle', 'host', 'ownerSignal'].includes(key)) {
 			throw new TypeError(`[workbench/react] unsupported Bridge payload field ${key}`)
 		}
 	}
 	if (record.profile !== 1) throw new TypeError('[workbench/react] unsupported Bridge profile')
 	const host = readHostFacade(record.host)
 	const ownerSignal = readOwnerSignal(record.ownerSignal)
-	if (record.paneLayoutRenderer !== undefined && typeof record.paneLayoutRenderer !== 'function') {
-		throw new TypeError('[workbench/react] invalid Pane Kit renderer')
-	}
 	return Object.freeze({
 		profile: 1,
 		handle: record.handle as WorkbenchBridgePayload['handle'],
 		host,
 		ownerSignal,
-		...(record.paneLayoutRenderer === undefined
-			? {}
-			: {
-					paneLayoutRenderer:
-						record.paneLayoutRenderer as WorkbenchBridgePayload['paneLayoutRenderer'],
-				}),
 	})
 }
 

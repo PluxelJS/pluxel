@@ -24,7 +24,7 @@ const OPTIONAL_ACTION_WIDTH = ACTION_SIZE + ACTION_GAP
 type Props = {
 	value: string
 	onChange: (value: string) => void
-	inputRef: React.RefObject<HTMLInputElement>
+	inputRef: React.RefObject<HTMLInputElement | null>
 	statusFilter: StatusFilterState
 	statusCounts: StatusCounts
 	onToggleStatus: (key: keyof StatusFilterState) => void

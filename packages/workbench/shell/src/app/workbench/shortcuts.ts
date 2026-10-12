@@ -1,43 +1,35 @@
-import { formatForDisplay, type Hotkey } from '@tanstack/react-hotkeys'
+import { formatForDisplay } from '@tanstack/react-hotkeys'
 
 export const WORKBENCH_HOTKEYS = {
-	togglePluginRail: 'Mod+B',
-	toggleDock: 'Mod+J',
-	toggleRightPane: 'Mod+Alt+B',
+	showNavigation: 'Mod+B',
 	focusSearch: 'Mod+P',
 	closeActiveTab: 'Mod+W',
-	prevTab: 'Mod+Shift+BracketLeft',
-	nextTab: 'Mod+Shift+BracketRight',
-} as const
-
-const TOGGLE_FOCUS_MODE_SEQUENCE: [Hotkey, Hotkey] = ['Mod+K', 'Z']
-
-export const WORKBENCH_HOTKEY_SEQUENCES = {
-	toggleFocusMode: TOGGLE_FOCUS_MODE_SEQUENCE,
+	prevTab: 'Mod+Shift+[BracketLeft]',
+	nextTab: 'Mod+Shift+[BracketRight]',
+	maximize: 'Mod+Shift+M',
 } as const
 
 export const WORKBENCH_HOTKEY_LABELS = {
-	togglePluginRail: formatForDisplay(WORKBENCH_HOTKEYS.togglePluginRail),
-	toggleDock: formatForDisplay(WORKBENCH_HOTKEYS.toggleDock),
-	toggleRightPane: formatForDisplay(WORKBENCH_HOTKEYS.toggleRightPane),
-	toggleFocusMode: WORKBENCH_HOTKEY_SEQUENCES.toggleFocusMode
-		.map((hotkey) => formatForDisplay(hotkey))
-		.join(' '),
+	showNavigation: formatForDisplay(WORKBENCH_HOTKEYS.showNavigation),
 	focusSearch: formatForDisplay(WORKBENCH_HOTKEYS.focusSearch),
 	closeActiveTab: formatForDisplay(WORKBENCH_HOTKEYS.closeActiveTab),
 	prevTab: formatForDisplay(WORKBENCH_HOTKEYS.prevTab),
 	nextTab: formatForDisplay(WORKBENCH_HOTKEYS.nextTab),
+	maximize: formatForDisplay(WORKBENCH_HOTKEYS.maximize),
 }
 
 export const WORKBENCH_SHORTCUT_ITEMS = [
-	['Ctrl/⌘ + P', '打开插件搜索'],
-	['Ctrl/⌘ + B', '显示或隐藏插件列表'],
-	['Ctrl/⌘ + Alt + B', '显示或隐藏辅助侧栏'],
-	['Ctrl/⌘ + J', '显示或隐藏底部面板'],
-	['Ctrl/⌘ + K → Z', '进入或退出聚焦工作区'],
-	['Ctrl/⌘ + W', '关闭当前工作标签'],
-	['Ctrl/⌘ + Shift + [', '切到上一个工作标签'],
-	['Ctrl/⌘ + Shift + ]', '切到下一个工作标签'],
+	[WORKBENCH_HOTKEY_LABELS.focusSearch, '查找所有页面与插件入口'],
+	[WORKBENCH_HOTKEY_LABELS.showNavigation, '显示或重新打开入口导航'],
+	[WORKBENCH_HOTKEY_LABELS.closeActiveTab, '关闭活动文档（遵守固定与未保存保护）'],
+	[WORKBENCH_HOTKEY_LABELS.prevTab, '按原生布局顺序激活上一个文档'],
+	[WORKBENCH_HOTKEY_LABELS.nextTab, '按原生布局顺序激活下一个文档'],
+	[WORKBENCH_HOTKEY_LABELS.maximize, '最大化或还原活动文档所在容器'],
+	['Shift + F10 / 菜单键', '打开所聚焦标签、分组或容器的菜单'],
+	['F2', '重命名所聚焦标签'],
+	['Ctrl + Delete', '关闭所聚焦标签'],
+	['F6', '在所选标签和内容间切换焦点'],
+	['Ctrl + F6 / Ctrl + Shift + F6', '聚焦下一个或上一个标签容器'],
 ] as const
 
 export const CATALOG_SHORTCUT_ITEMS = [

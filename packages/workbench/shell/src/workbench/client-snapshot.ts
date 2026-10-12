@@ -31,7 +31,6 @@ export type WorkbenchTargetSnapshot = Readonly<{
 	layout: WorkbenchLayout | null
 	error: Error | null
 	tabs: readonly WorkbenchLayoutEntry[]
-	navigationRoutes: readonly WorkbenchLayoutEntry[]
 	routes: readonly RegisteredWorkbenchRoute[]
 }>
 
@@ -43,7 +42,6 @@ export function createInitialWorkbenchSnapshot(target: WorkbenchTargetId): Workb
 		layout: null,
 		error: null,
 		tabs: Object.freeze([]),
-		navigationRoutes: Object.freeze([]),
 		routes: Object.freeze([]),
 	})
 }
@@ -53,7 +51,6 @@ export function compileWorkbenchSnapshot(
 	layout: WorkbenchLayout,
 ): WorkbenchTargetSnapshot {
 	const tabs: WorkbenchLayoutEntry[] = []
-	const navigationRoutes: WorkbenchLayoutEntry[] = []
 	const routes: RegisteredWorkbenchRoute[] = []
 
 	for (const entry of layout.entries) {
@@ -62,10 +59,7 @@ export function compileWorkbenchSnapshot(
 			if (target !== null) tabs.push(entry)
 			continue
 		}
-		if (target === null) {
-			if (placement.navigation) navigationRoutes.push(entry)
-			continue
-		}
+		if (target === null) continue
 
 		const compiled = compileWorkbenchRoute(placement.path)
 		const conflict = routes.find(
@@ -94,7 +88,6 @@ export function compileWorkbenchSnapshot(
 		layout,
 		error: null,
 		tabs: Object.freeze(tabs),
-		navigationRoutes: Object.freeze(navigationRoutes),
 		routes: Object.freeze(routes),
 	})
 }

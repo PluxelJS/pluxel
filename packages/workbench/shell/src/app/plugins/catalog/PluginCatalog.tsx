@@ -3,7 +3,6 @@
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
 import { pluginNodeIndexKey } from '@pluxel/core'
 import {
-	IconChevronLeft,
 	IconCornerUpLeft,
 	IconKeyboard,
 	IconPlugConnected,
@@ -42,16 +41,11 @@ import { BulkActionsBar, type BulkAction } from './components/BulkActionsBar'
 import { CatalogHelpModal } from './components/CatalogHelpModal'
 import { SearchBar } from './components/SearchBar'
 
-interface PluginCatalogProps {
-	onCollapse?: () => void
-	pluginRoute?: string
-}
-
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
 
 class PluginCatalogLayoutPersistenceUnknownError extends Error {}
 
-export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginRoute }) => {
+export function PluginCatalog() {
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
@@ -504,7 +498,6 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				key={organizerResetToken}
 				statuses={overview.statuses}
 				initialGroups={groupsForView}
-				activeId={pluginRoute}
 				onGroupsChange={handleGroupsChange}
 				onResetGroups={() => {
 					void resetGroups()
@@ -524,8 +517,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		<Stack className="plx-pluginCatalog" w="100%">
 			<div className="plx-pluginCatalog__header">
 				<div className="plx-pluginCatalog__titleLine">
-					<span className="plx-workbench__eyebrow">Plugins</span>
-					<span className="plx-workbench__title">插件导览</span>
+					<span className="plx-pluginCatalog__eyebrow">Plugins</span>
+					<span className="plx-pluginCatalog__title">插件导览</span>
 					{overview.total > 0 ? (
 						<span
 							className="plx-pluginCatalog__titleCount"
@@ -547,16 +540,6 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 						<IconKeyboard size={13} stroke={1.8} />
 						<span>F1</span>
 					</button>
-					{onCollapse ? (
-						<button
-							type="button"
-							className="plx-workbench__iconButton"
-							aria-label="收起插件列表"
-							onClick={onCollapse}
-						>
-							<IconChevronLeft size={16} stroke={1.8} />
-						</button>
-					) : null}
 				</div>
 			</div>
 			<div className="plx-pluginCatalog__toolbar">

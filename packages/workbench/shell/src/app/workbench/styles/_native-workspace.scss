@@ -1,0 +1,160 @@
+/* FlexLayout 0.11.1 owns all workspace geometry; Mantine supplies its appearance. */
+.plx-workspace {
+	--flexlayout-color-text: var(--mantine-color-text);
+	--flexlayout-color-background: var(--mantine-color-body);
+	--flexlayout-color-base: var(--plx-surface-strong);
+	--flexlayout-color-1: var(--plx-surface-muted);
+	--flexlayout-color-2: var(--plx-surface-muted);
+	--flexlayout-color-3: var(--mantine-color-default-hover);
+	--flexlayout-color-4: var(--plx-border);
+	--flexlayout-color-5: var(--plx-border-strong);
+	--flexlayout-color-6: var(--mantine-color-default-hover);
+	--flexlayout-font-family: var(--mantine-font-family);
+	--flexlayout-font-size: var(--mantine-font-size-xs);
+	--flexlayout-font-weight: 500;
+	--flexlayout-splitter-size: 5px;
+	--flexlayout-splitter-active-size: 7px;
+	--flexlayout-color-focus: var(--mantine-primary-color-filled);
+	--flexlayout-color-icon: var(--mantine-color-dimmed);
+	--flexlayout-color-overflow: var(--mantine-color-dimmed);
+	--flexlayout-color-tabset-background: var(--plx-surface-muted);
+	--flexlayout-color-tabset-background-selected: var(--plx-surface-muted);
+	--flexlayout-color-tabset-background-maximized: var(--plx-surface-muted);
+	--flexlayout-color-tabset-divider-line: var(--mantine-color-default-border);
+	--flexlayout-color-tab-content: var(--mantine-color-body);
+	--flexlayout-color-tab-selected: var(--mantine-color-text);
+	--flexlayout-color-tab-selected-background: var(--plx-selected-bg);
+	--flexlayout-color-tab-unselected: var(--mantine-color-dimmed);
+	--flexlayout-color-tab-unselected-background: transparent;
+	--flexlayout-color-tab-textbox: var(--mantine-color-text);
+	--flexlayout-color-tab-textbox-background: var(--mantine-color-default);
+	--flexlayout-color-border-background: var(--plx-surface-muted);
+	--flexlayout-color-border-tab-content: var(--mantine-color-body);
+	--flexlayout-color-border-divider-line: var(--mantine-color-default-border);
+	--flexlayout-color-border-tab-selected: var(--mantine-color-text);
+	--flexlayout-color-border-tab-selected-background: var(--plx-selected-bg);
+	--flexlayout-color-border-tab-unselected: var(--mantine-color-dimmed);
+	--flexlayout-color-border-tab-unselected-background: transparent;
+	--flexlayout-color-splitter: var(--mantine-color-default-border);
+	--flexlayout-color-splitter-hover: var(--mantine-primary-color-light-hover);
+	--flexlayout-color-splitter-drag: var(--mantine-primary-color-filled);
+	--flexlayout-color-drag1: var(--mantine-primary-color-filled);
+	--flexlayout-color-drag1-background: var(--mantine-primary-color-light);
+	--flexlayout-color-drag2: var(--mantine-color-teal-6);
+	--flexlayout-color-drag2-background: var(--mantine-color-teal-light);
+	--flexlayout-color-drag-rect-border: var(--mantine-primary-color-filled);
+	--flexlayout-color-drag-rect-background: var(--mantine-color-body);
+	--flexlayout-color-drag-rect: var(--mantine-color-text);
+	--flexlayout-color-popup-border: var(--mantine-color-default-border);
+	--flexlayout-color-popup-unselected: var(--mantine-color-text);
+	--flexlayout-color-popup-unselected-background: var(--mantine-color-body);
+	--flexlayout-color-popup-selected: var(--mantine-primary-color-light-color);
+	--flexlayout-color-popup-selected-background: var(--mantine-primary-color-light);
+	--flexlayout-color-toolbar-button-hover: var(--mantine-color-default-hover);
+	--flexlayout-color-tabgroup-pill-text: var(--mantine-color-black);
+	--flexlayout-color-tabgroup-default: var(--mantine-color-blue-4);
+	--flexlayout-color-tabgroup-menu-palette: var(--mantine-color-red-4), var(--mantine-color-orange-4), var(--mantine-color-yellow-4), var(--mantine-color-lime-4), var(--mantine-color-teal-4), var(--mantine-color-cyan-4), var(--mantine-color-blue-4), var(--mantine-color-violet-4), var(--mantine-color-pink-4), var(--mantine-color-gray-4);
+	--flexlayout-tabgroup-pill-radius: var(--mantine-radius-sm);
+	background: var(--mantine-color-body);
+	color: var(--mantine-color-text);
+	display: flex;
+	flex-direction: column;
+	height: 100dvh;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	width: 100%;
+}
+
+.plx-workspace__toolbar {
+	border-bottom: 1px solid var(--mantine-color-default-border);
+	background: var(--plx-surface-strong);
+	min-height: 40px;
+	flex: 0 0 auto;
+}
+
+.plx-workspace__brand { max-width: 220px; padding-inline: 3px 8px; }
+.plx-workspace__toolbar kbd { color: var(--mantine-color-dimmed); font: inherit; margin-inline-start: 6px; }
+.plx-workspace__layout { flex: 1; min-height: 0; min-width: 0; }
+.plx-workspace__storage-error { flex: 0 0 auto; padding: 8px 12px; border-radius: 0; }
+.plx-workspace__search { height: min(60dvh, 520px); min-height: 240px; }
+.plx-workspace__notification { border-bottom: 1px solid var(--mantine-color-default-border); padding-bottom: 8px; }
+
+.plx-workspace__tab-label { display: inline-flex; gap: 5px; align-items: center; min-width: 0; }
+.plx-workspace__tab-label > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plx-workspace__tab-dirty { color: var(--plx-dirty-dot); font-size: 10px; flex: 0 0 auto; }
+.plx-workspace__tab-preview { color: var(--mantine-color-dimmed); font-size: 10px; font-style: italic; }
+
+.plx-workspace .flexlayout__tabset_tabbar_outer { min-height: 34px; }
+.plx-workspace .flexlayout__tab_button { border-radius: var(--mantine-radius-sm) var(--mantine-radius-sm) 0 0; padding-block: 7px; }
+.plx-workspace .flexlayout__tab_button--selected { box-shadow: inset 0 -2px 0 var(--mantine-primary-color-filled); }
+.plx-workspace .flexlayout__tab_toolbar_button { width: 25px; height: 25px; border-radius: var(--mantine-radius-sm); }
+.plx-workspace .flexlayout__tab_button_leading { display: inline-flex; align-items: center; }
+.plx-workspace .flexlayout__border_button { padding: 7px; }
+.plx-workspace .flexlayout__popup_menu_container {
+	border-radius: var(--mantine-radius-sm);
+	box-shadow: var(--mantine-shadow-md);
+	max-height: min(70%, 560px);
+	max-width: min(420px, calc(100% - 12px));
+	min-width: min(230px, calc(100% - 12px));
+	padding: 4px;
+}
+.plx-workspace .flexlayout__popup_menu_item {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+	min-height: 30px;
+	padding: 6px 9px;
+	border-radius: var(--mantine-radius-sm);
+	white-space: normal;
+}
+.plx-workspace .flexlayout__popup_menu_item[data-danger='true'] { color: var(--mantine-color-red-light-color); }
+.plx-workspace .flexlayout__popup_menu_item.plx-native-menu-control { display: block; cursor: default; }
+.plx-workspace .plx-native-menu-control__label { display: block; color: var(--mantine-color-dimmed); font-size: 11px; margin-bottom: 5px; }
+.plx-workspace .plx-native-menu-control:has(input:focus) { background: transparent; }
+.plx-workspace .flexlayout__group_rename { gap: 8px; }
+.plx-workspace .flexlayout__group_rename_input {
+	background: var(--mantine-color-default);
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: var(--mantine-radius-sm);
+	color: var(--mantine-color-text);
+	font: inherit;
+	min-height: 28px;
+	min-width: 0;
+	padding: 4px 7px;
+}
+.plx-workspace .flexlayout__group_picker { flex-wrap: wrap; gap: 6px; }
+.plx-workspace .flexlayout__group_picker_item { color: var(--mantine-color-black); font: inherit; padding: 4px 8px; }
+.plx-workspace .flexlayout__group_color_picker { gap: 5px; padding-block: 3px; flex-wrap: wrap; }
+.plx-workspace .flexlayout__group_color_picker_swatch { height: 21px; width: 21px; }
+.plx-workspace .flexlayout__group_color_picker_swatch:focus-visible,
+.plx-workspace .flexlayout__group_picker_item:focus-visible,
+.plx-workspace .flexlayout__group_rename_input:focus-visible { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: 2px; }
+
+.plx-workspace-navigation { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; min-width: 0; padding: 12px; }
+.plx-workspace-navigation__scroll { flex: 1; min-height: 0; }
+.plx-workspace-navigation__scroll .mantine-ScrollArea-viewport { height: 100%; }
+.plx-workspace-navigation__item { min-width: 0; }
+.plx-workspace-navigation .plx-workspace-navigation__link { flex: 1; height: auto; min-width: 0; padding: 6px 8px; text-align: start; }
+.plx-workspace-navigation__link .mantine-Button-label,
+.plx-workspace-navigation__link .mantine-Button-label > span { display: block; min-width: 0; width: 100%; }
+
+/* Content-local layout has no docking state or pane protocol. */
+.plx-pluginDocument { display: flex; flex: 1; min-height: 0; min-width: 0; height: 100%; }
+/* Remote Mantine CSS can arrive later. Scope the panel sizing above its core rules;
+   Mantine's inline display:none still hides inactive panels. */
+.plx-pluginDocument .plx-pluginDocument__panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: auto; padding-block: 10px; }
+.plx-documentOutline { min-height: 0; min-width: 0; }
+
+@media (max-width: 680px) {
+	.plx-workspace__brand { max-width: 120px; padding-inline-end: 0; }
+	.plx-workspace__search-button kbd { display: none; }
+	.plx-workspace__utilities .plx-workspace__update-status { max-width: 28px; overflow: hidden; padding-inline: 4px; }
+	.plx-workspace__utilities .plx-workspace__update-status .mantine-Button-label { display: none; }
+}
+
+@media (max-width: 450px) {
+	.plx-workspace__brand { max-width: 70px; }
+	.plx-workspace__utilities { gap: 0; }
+	.plx-workspace__search-button { padding-inline: 4px; }
+}

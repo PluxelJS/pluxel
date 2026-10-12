@@ -105,7 +105,7 @@ Watch 先订阅后读，single-flight 并合并读取中的通知。Mutation 每
 
 Owner withdrawal 关闭 invocation admission、abort open signal，等待已接纳 calls 后 drain。Bridge teardown 同时停用 Hook controls、QueryClient 与 subscription；不可取消 RPC 的晚到 DTO 仍 consume/dispose，但不得更新 React。领域错误保持原样，框架 portable/scope/key/limit/closed 等错误使用稳定 code。
 
-Host facade 只提供 appearance、feedback、受限 relative navigation、document 状态及 Shell 显式借用的 unary Management 操作。Detached/cached management methods 同样绑定 View lifetime；它们不获得 session/socket/subscription ownership。Pane Kit 与 Shell chrome 由 [FRONTEND](FRONTEND.md)拥有。
+Host facade 只提供 appearance、feedback、受限 relative navigation、document 状态及 Shell 显式借用的 unary Management 操作。Detached/cached management methods 同样绑定 View lifetime；它们不获得 session/socket/subscription ownership。Bridge payload 不传布局 renderer 或 Shell 私有 Provider；内容使用普通 CSS/Mantine，工作区布局与菜单由 [FRONTEND](FRONTEND.md#原生工作区与文档路由)拥有。
 
 ## 实现与验证入口
 

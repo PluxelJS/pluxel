@@ -1,113 +1,97 @@
 // @vitest-environment jsdom
 
-import { act, useEffect, type ReactNode } from 'react'
-import { createRoot } from 'react-dom/client'
+import { act, StrictMode, useEffect, type ReactNode } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
 import {
 	createMemoryHistory,
 	createRootRoute,
 	createRoute,
 	createRouter,
 	RouterProvider,
+	useRouter,
+	type AnyRouter,
 } from '@tanstack/react-router'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { WorkbenchShell } from '../src/app/workbench/WorkbenchShell'
+import { Actions, DockLocation, Model } from 'flexlayout-react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Workbench } from '@worksplit/react'
+import { WorkspaceSession } from '../src/app/workbench/session'
+import { useOptionalWorkbenchDocument } from '../src/app/workbench/document'
 import { RouteErrorBoundary } from '../src/app/router/RouteErrorBoundary'
-import { WorkspaceController } from '../src/app/workbench/store'
-import { WorkspaceControllerProvider } from '../src/app/workbench/context'
-import { RouterLinkAdapter } from '../src/app/router/RouterLinkAdapter'
 import { useCurrentPathname } from '../src/app/router/useCurrentRoute'
+import { RouterLinkAdapter } from '../src/app/router/RouterLinkAdapter'
+import {
+	openDocument,
+	prepareNativeWorkbenchDom,
+	renderWorkspace,
+	WorkspaceProviders,
+} from './helpers/native-workbench'
 
-const probes = vi.hoisted(() => ({ mount: vi.fn(), unmount: vi.fn() }))
-const paths = [
-	'/plugins/v1/package/FirstPlugin/@fixture/first',
-	'/plugins/v1/package/SecondPlugin/@fixture/second',
-	'/plugins/v1/package/SecondPlugin/@fixture/second/config',
-	'/logs',
-	'/security',
-	'/',
-]
-const mounted: Array<ReturnType<typeof createRoot>> = []
+const probes = vi.hoisted(() => ({
+	mount: vi.fn(),
+	unmount: vi.fn(),
+	routers: new Map<string, AnyRouter>(),
+}))
+const mounted: Root[] = []
+const sessions: WorkspaceSession[] = []
 
-vi.mock('@mantine/hooks', () => ({ useMediaQuery: () => false }))
-vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
-	WorkbenchUpdateStatus: () => <span>HMR 就绪</span>,
+vi.mock('../src/app/router/screens/HomeScreen', () => ({ HomeScreen: Page }))
+vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: Page }))
+vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: Page }))
+vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
+	WorkspaceNavigation: () => <input aria-label="入口搜索" />,
 }))
 vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 	RouteErrorScreen: () => <p role="alert">页面错误</p>,
 }))
-vi.mock('../src/workbench/runtime', async () => {
-	const { createWorkbenchRouteDirectory } = await import('../src/workbench/route-directory')
-	const directory = createWorkbenchRouteDirectory([])
-	return {
-		useWorkbenchNavigationRoutes: () => [],
-		useWorkbenchRouteDirectory: () => directory,
-	}
-})
-vi.mock('../src/app/workbench/shell/WorkbenchShellViews', () => ({
-	ActivityRail: () => (
-		<nav>
-			{paths.map((path) => (
-				<RouterLinkAdapter key={path} to={path}>
-					{path}
-				</RouterLinkAdapter>
-			))}
-		</nav>
-	),
-	PluginNavigationRail: () => <input aria-label="插件搜索" />,
-	RouteGroupRail: () => null,
-	PluginQuickOpenAction: () => null,
-	WorkbenchTopbarTools: () => null,
-	WorkbenchHotkeys: () => null,
-}))
-vi.mock('../src/app/workbench/shell/WorkbenchDocumentRenderer', () => ({
-	WorkbenchDocumentRenderer: ({ pathname }: { pathname: string }) => {
-		useEffect(() => {
-			probes.mount()
-			return () => {
-				probes.unmount()
-			}
-		}, [])
-		return (
-			<main data-document-path={pathname}>
-				<input aria-label="文档状态" />
-			</main>
-		)
-	},
-}))
 
-beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
-	window.scrollTo = vi.fn()
-	globalThis.ResizeObserver = class {
-		constructor(private readonly callback: ResizeObserverCallback) {}
-		observe(target: Element) {
-			this.callback(
-				[{ target, contentRect: { width: 1440, height: 900 } } as ResizeObserverEntry],
-				this as unknown as ResizeObserver,
-			)
+function Page() {
+	const pathname = useCurrentPathname()
+	const router = useRouter()
+	const document = useOptionalWorkbenchDocument()
+	useEffect(() => {
+		probes.mount(document?.id)
+		if (document) probes.routers.set(document.id, router)
+		return () => {
+			probes.unmount(document?.id)
+			if (document) probes.routers.delete(document.id)
 		}
-		unobserve() {}
-		disconnect() {}
-	} as unknown as typeof ResizeObserver
-})
+	}, [document, router])
+	return (
+		<main data-document-id={document?.id} data-document-path={pathname}>
+			<input aria-label="文档状态" defaultValue="draft" />
+			<RouterLinkAdapter to="/security?view=detail#guide">安全设置</RouterLinkAdapter>
+		</main>
+	)
+}
 
+beforeEach(prepareNativeWorkbenchDom)
 afterEach(async () => {
 	await act(async () => {
 		for (const root of mounted.splice(0)) root.unmount()
+		for (const workspace of sessions.splice(0)) await workspace.dispose()
 	})
 	document.body.replaceChildren()
+	window.localStorage.clear()
+	window.history.replaceState(null, '', '/')
 	probes.mount.mockClear()
 	probes.unmount.mockClear()
+	probes.routers.clear()
+	vi.restoreAllMocks()
+	vi.unstubAllGlobals()
 })
 
+function session(basepath = '/') {
+	const result = new WorkspaceSession({ basepath })
+	sessions.push(result)
+	return result
+}
 function BrowserRouteBoundary({ children }: { children: ReactNode }) {
-	const pathname = useCurrentPathname()
-	return <RouteErrorBoundary pathname={pathname}>{children}</RouteErrorBoundary>
+	return <RouteErrorBoundary pathname={useCurrentPathname()}>{children}</RouteErrorBoundary>
 }
 
-describe('Workbench route continuity', () => {
-	it('recovers from a render error on the next route without remounting healthy routes', async () => {
-		function Page() {
+describe('native Workbench route continuity', () => {
+	it('recovers a route error through the actual Router without remounting healthy renders', async () => {
+		function TestPage() {
 			const pathname = useCurrentPathname()
 			if (pathname === '/broken') throw new Error('fixture route failed')
 			return <input aria-label="页面状态" data-path={pathname} />
@@ -115,7 +99,7 @@ describe('Workbench route continuity', () => {
 		const route = createRootRoute({
 			component: () => (
 				<BrowserRouteBoundary>
-					<Page />
+					<TestPage />
 				</BrowserRouteBoundary>
 			),
 		})
@@ -128,90 +112,164 @@ describe('Workbench route continuity', () => {
 		const root = createRoot(container, { onCaughtError: () => undefined })
 		mounted.push(root)
 		const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-		try {
-			await act(async () => {
-				root.render(<RouterProvider router={router} />)
-				await router.load()
-			})
-			const initial = container.querySelector('input')
-			expect(initial).not.toBeNull()
-			await act(async () => {
-				await router.navigate({ to: '/another' })
-			})
-			expect(container.querySelector('input')).toBe(initial)
-			await act(async () => {
-				await router.navigate({ to: '/broken' })
-			})
-			expect(container.querySelector('[role="alert"]')?.textContent).toBe('页面错误')
-			expect(report).toHaveBeenCalledWith(
-				'[RouteErrorBoundary] route error',
-				expect.objectContaining({ path: '/broken' }),
-			)
-			await act(async () => {
-				await router.navigate({ to: '/recovered' })
-			})
-			expect(container.querySelector('[role="alert"]')).toBeNull()
-			const recovered = container.querySelector('input')
-			expect(recovered?.dataset.path).toBe('/recovered')
-			await act(async () => {
-				await router.navigate({ to: '/healthy' })
-			})
-			expect(container.querySelector('input')).toBe(recovered)
-		} finally {
-			report.mockRestore()
-		}
+		await act(async () => {
+			root.render(<RouterProvider router={router} />)
+			await router.load()
+		})
+		const initial = container.querySelector('input')
+		await act(async () => {
+			await router.navigate({ to: '/another' })
+		})
+		expect(container.querySelector('input')).toBe(initial)
+		await act(async () => {
+			await router.navigate({ to: '/broken' })
+		})
+		expect(container.querySelector('[role="alert"]')?.textContent).toBe('页面错误')
+		expect(report).toHaveBeenCalledWith(
+			'[RouteErrorBoundary] route error',
+			expect.objectContaining({ path: '/broken' }),
+		)
+		await act(async () => {
+			await router.navigate({ to: '/recovered' })
+		})
+		expect(container.querySelector('[role="alert"]')).toBeNull()
+		expect(container.querySelector<HTMLInputElement>('input')?.dataset.path).toBe('/recovered')
 	})
 
 	it.each(['/', '/__pluxel/workbench'])(
-		'keeps the shell and editor mounted during navigation below %s',
+		'uses distinct memory Routers and preserves document DOM while docking under %s',
 		async (basepath) => {
-			const publicPath = (path: string) => `${basepath === '/' ? '' : basepath}${path}`
-			const history = createMemoryHistory({ initialEntries: [publicPath(paths[0]!)] })
-			const route = createRootRoute({
-				component: () => (
-					<BrowserRouteBoundary>
-						<WorkbenchShell />
-					</BrowserRouteBoundary>
-				),
-			})
-			const catchAll = createRoute({
-				getParentRoute: () => route,
-				path: '$',
-				component: () => null,
-			})
-			const router = createRouter({ routeTree: route.addChildren([catchAll]), history, basepath })
-			const workspace = new WorkspaceController(paths[0])
-			const container = document.body.appendChild(document.createElement('div'))
-			const root = createRoot(container)
+			const workspace = session(basepath)
+			const { container, root } = await renderWorkspace(workspace)
 			mounted.push(root)
+			const logs = await openDocument(workspace, '/logs?filter=error#tail')
+			const logsPage = container.querySelector<HTMLElement>(`main[data-document-id="${logs}"]`)!
+			const input = logsPage.querySelector('input')!
+			input.value = 'unsaved log filter'
+			logsPage.scrollTop = 153
+			const logsRouter = probes.routers.get(logs)!
+			const security = await openDocument(workspace, '/security')
+			const securityRouter = probes.routers.get(security)!
+			expect(securityRouter).not.toBe(logsRouter)
+			expect(logsRouter.history).not.toBe(securityRouter.history)
+			expect(logsRouter.state.location.search).toEqual({ filter: 'error' })
+			expect(logsRouter.state.location.hash).toBe('tail')
 			await act(async () => {
-				root.render(
-					<WorkspaceControllerProvider controller={workspace}>
-						<RouterProvider router={router} />
-					</WorkspaceControllerProvider>,
-				)
-				await router.load()
-			})
-			const shell = container.querySelector('.plx-workbench')
-			const editor = container.querySelector('main')
-			expect(editor).not.toBeNull()
-			const initialMounts = probes.mount.mock.calls.length
-			for (const path of paths.slice(1)) {
-				const link = [...container.querySelectorAll<HTMLAnchorElement>('nav a')].find(
-					(element) => element.textContent === path,
-				)!
-				expect(link.getAttribute('href')).toBe(publicPath(path))
-				const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
-				await act(async () => {
-					link.dispatchEvent(click)
-					await vi.waitFor(() => expect(router.state.location.pathname).toBe(path))
+				await securityRouter.navigate({
+					to: '/security',
+					search: { view: 'audit' },
+					hash: 'record',
 				})
-				expect(click.defaultPrevented).toBe(true)
-				expect(container.querySelector('.plx-workbench')).toBe(shell)
-				expect(container.querySelector('main')).toBe(editor)
-				expect(editor?.getAttribute('data-document-path')).toBe(path)
-				expect(probes.mount).toHaveBeenCalledTimes(initialMounts)
-			}
+			})
+			expect(logsRouter.state.location.search).toEqual({ filter: 'error' })
+			expect(logsRouter.state.location.hash).toBe('tail')
+			const original = workspace.workbench.getDocument(logs)!
+			await act(async () => {
+				await workspace.workbench.dispatch(
+					Actions.moveNode(logs, original.containerId, DockLocation.RIGHT, -1),
+				)
+			})
+			expect(container.querySelector(`main[data-document-id="${logs}"]`)).toBe(logsPage)
+			expect(input.value).toBe('unsaved log filter')
+			expect(logsPage.scrollTop).toBe(153)
+			const model = Model.fromJson(workspace.workbench.getLayout())
+			expect(model.getNodeById(logs)?.getParent()?.getId()).not.toBe(original.containerId)
+			await act(async () => {
+				await workspace.workbench.dispatch(Actions.addTabToNewGroup(logs, 'Diagnostics', '#3366cc'))
+				await workspace.workbench.dispatch(Actions.setTabPinned(logs, true))
+			})
+			expect(container.querySelector(`main[data-document-id="${logs}"]`)).toBe(logsPage)
+			expect(input.value).toBe('unsaved log filter')
+			await act(async () => workspace.workbench.activate(logs))
+			expect(workspace.workbench.getActiveDocument()?.href).toBe(
+				`${basepath === '/' ? '' : basepath}/logs?filter=error#tail`,
+			)
+			expect(probes.mount.mock.calls.filter(([id]) => id === logs)).toHaveLength(1)
+			expect(probes.unmount.mock.calls.filter(([id]) => id === logs)).toHaveLength(0)
 		},
 	)
+
+	it('reuses an ordinary URL, creates a distinct explicit copy, and closes only that copy', async () => {
+		const workspace = session()
+		const { container, root } = await renderWorkspace(workspace)
+		mounted.push(root)
+		const first = await openDocument(workspace, '/logs')
+		const input = container.querySelector<HTMLInputElement>(
+			`main[data-document-id="${first}"] input`,
+		)!
+		input.value = 'first draft'
+		expect(await openDocument(workspace, '/logs')).toBe(first)
+		const copy = await openDocument(workspace, '/logs', true)
+		expect(copy).not.toBe(first)
+		const copyInput = container.querySelector<HTMLInputElement>(
+			`main[data-document-id="${copy}"] input`,
+		)!
+		expect(copyInput).not.toBe(input)
+		expect(copyInput.value).toBe('draft')
+		expect(probes.routers.get(copy)).not.toBe(probes.routers.get(first))
+		await act(async () => {
+			const result = await workspace.workbench.close(copy)
+			expect(result.status).toBe('closed')
+		})
+		expect(workspace.workbench.getDocuments()).toHaveLength(1)
+		expect(input.value).toBe('first draft')
+		expect(probes.unmount.mock.calls.filter(([id]) => id === copy)).toHaveLength(1)
+		expect(probes.unmount.mock.calls.filter(([id]) => id === first)).toHaveLength(0)
+	})
+
+	it('lets only Worksplit write browser history and keeps the document URL when a Border tool is focused', async () => {
+		const workspace = session('/__pluxel/workbench')
+		window.history.replaceState(null, '', '/__pluxel/workbench/logs')
+		const push = vi.spyOn(window.history, 'pushState')
+		const { container, root } = await renderWorkspace(workspace)
+		mounted.push(root)
+		await act(async () => {
+			await workspace.start('/__pluxel/workbench/logs')
+		})
+		const first = workspace.workbench.getActiveDocument()!
+		const logsRouter = probes.routers.get(first.id)!
+		expect(logsRouter.history.location.href).toBe('/__pluxel/workbench/logs')
+		await act(async () => {
+			await logsRouter.navigate({ to: '/logs', search: { filter: 'warn' }, hash: 'tail' })
+		})
+		expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+			'/__pluxel/workbench/logs?filter=warn#tail',
+		)
+		expect(push).toHaveBeenCalledTimes(1)
+		await act(async () => workspace.workbench.activate('navigation'))
+		const toolInput = container.querySelector<HTMLInputElement>('[aria-label="入口搜索"]')!
+		await act(async () => toolInput.focus())
+		expect(workspace.workbench.getEditingContext().focusedArea).toBe('tool')
+		expect(workspace.workbench.getActiveDocument()?.id).toBe(first.id)
+		expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+			'/__pluxel/workbench/logs?filter=warn#tail',
+		)
+		expect(push).toHaveBeenCalledTimes(1)
+	})
+
+	it('retains session and content across StrictMode replay, rerenders and theme changes', async () => {
+		const workspace = session()
+		const id = await openDocument(workspace, '/logs')
+		const container = document.body.appendChild(document.createElement('div'))
+		const root = createRoot(container)
+		mounted.push(root)
+		const view = (colorScheme: 'light' | 'dark') => (
+			<StrictMode>
+				<WorkspaceProviders session={workspace} colorScheme={colorScheme}>
+					<Workbench workbench={workspace.workbench} />
+				</WorkspaceProviders>
+			</StrictMode>
+		)
+		await act(async () => root.render(view('light')))
+		const input = container.querySelector<HTMLInputElement>(`main[data-document-id="${id}"] input`)!
+		input.value = 'retained draft'
+		const initialMounts = probes.mount.mock.calls.length
+		const router = probes.routers.get(id)
+		await act(async () => root.render(view('dark')))
+		expect(container.querySelector(`main[data-document-id="${id}"] input`)).toBe(input)
+		expect(input.value).toBe('retained draft')
+		expect(probes.routers.get(id)).toBe(router)
+		expect(probes.mount).toHaveBeenCalledTimes(initialMounts)
+		expect(workspace.workbench.getDocuments()).toHaveLength(1)
+	})
 })

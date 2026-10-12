@@ -1,70 +1,19 @@
-import { Skeleton, useMantineTheme } from '@mantine/core'
-import { useMediaQuery } from '@mantine/hooks'
+import { Skeleton, Stack } from '@mantine/core'
 import { IconPuzzle } from '@tabler/icons-react'
 import { memo, useCallback, useMemo } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import { usePluginConfig } from '../config/usePluginConfig'
-import { useWorkbenchDocumentPathname } from '../../workbench/context'
 import { PluginScopeProvider } from './context'
-import { PluginWorkbench } from './workbench/PluginWorkbench'
-import { WorkbenchTargetProvider } from '../../../workbench/runtime'
+import { RightPane } from './RightPane'
 import { usePluginDetail } from './usePluginDetail'
 
-function PluginSkeleton({ stacked }: { stacked: boolean }) {
+function PluginSkeleton() {
 	return (
-		<div className="plx-pluginSkeleton" data-stacked={stacked ? 'true' : 'false'}>
-			<div className="plx-pluginSkeleton__header">
-				<div className="plx-pluginSkeleton__title">
-					<Skeleton height={20} width={180} radius="sm" />
-					<div className="plx-pluginSkeleton__chips">
-						<Skeleton height={22} width={72} radius="xl" />
-						<Skeleton height={22} width={92} radius="xl" />
-						<Skeleton height={22} width={108} radius="xl" />
-					</div>
-					<Skeleton height={12} width="44%" />
-				</div>
-				<div className="plx-pluginSkeleton__actions">
-					<Skeleton height={28} width={96} radius="sm" />
-					<Skeleton height={28} width={84} radius="sm" />
-					<Skeleton height={28} width={116} radius="sm" />
-				</div>
-			</div>
-
-			<div className="plx-pluginSkeleton__tabs">
-				<Skeleton height={28} width={72} radius="sm" />
-				<Skeleton height={28} width={88} radius="sm" />
-				<Skeleton height={28} width={76} radius="sm" />
-				<Skeleton height={28} width={98} radius="sm" />
-			</div>
-
-			<div className="plx-pluginSkeleton__body">
-				<div className="plx-pluginSkeleton__workspace">
-					<div className="plx-pluginSkeleton__workspaceHead">
-						<Skeleton height={14} width="28%" />
-						<Skeleton height={14} width="18%" />
-					</div>
-					<Skeleton height="100%" radius="lg" />
-				</div>
-
-				<div className="plx-pluginSkeleton__aside">
-					<div className="plx-pluginSkeleton__asideHead">
-						<Skeleton height={20} width={92} radius="sm" />
-						<Skeleton height={20} width={56} radius="xl" />
-					</div>
-					<Skeleton height={96} radius="sm" />
-					<Skeleton height={132} radius="sm" />
-					<Skeleton height="100%" radius="sm" />
-				</div>
-			</div>
-
-			<div className="plx-pluginSkeleton__dock">
-				<div className="plx-pluginSkeleton__dockTabs">
-					<Skeleton height={24} width={78} radius="sm" />
-					<Skeleton height={24} width={66} radius="sm" />
-				</div>
-				<Skeleton height="100%" radius="lg" />
-			</div>
-		</div>
+		<Stack p="md">
+			<Skeleton h={24} w="40%" />
+			<Skeleton h={120} />
+			<Skeleton h={240} />
+		</Stack>
 	)
 }
 
@@ -73,24 +22,6 @@ export interface PluginScreenProps {
 }
 
 export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginScreenProps) {
-	const theme = useMantineTheme()
-	// 更早进入纵向堆叠，确保右侧配置区域在窄屏下可读
-	const isStackedWide = useMediaQuery('(max-width: 1500px)', false, {
-		getInitialValueInEffect: true,
-	})
-	const isStackedBreak = useMediaQuery(
-		`(max-width: ${
-			typeof theme.breakpoints?.lg === 'number'
-				? `${theme.breakpoints.lg}px`
-				: (theme.breakpoints?.lg ?? '62em')
-		})`,
-		false,
-		{
-			getInitialValueInEffect: true,
-		},
-	)
-	const isStacked = isStackedWide || isStackedBreak
-
 	const {
 		detail,
 		ready,
@@ -102,7 +33,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 		loading,
 		refetch,
 	} = usePluginDetail(pluginRoute)
-	const pathname = useWorkbenchDocumentPathname()
 	const pluginLabel = detail?.label ?? pluginRoute
 	const description = detail?.desc ?? ''
 
@@ -168,14 +98,14 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 		)
 	}
 
-	if (!ready) return <PluginSkeleton stacked={Boolean(isStacked)} />
+	if (!ready) return <PluginSkeleton />
 	if (!contextValue) return null
 
 	return (
-		<WorkbenchTargetProvider target={contextValue.owner} pathname={pathname}>
-			<PluginScopeProvider value={contextValue}>
-				<PluginWorkbench config={configState} />
-			</PluginScopeProvider>
-		</WorkbenchTargetProvider>
+		<PluginScopeProvider value={contextValue}>
+			<div className="plx-pluginDocument">
+				<RightPane config={configState} />
+			</div>
+		</PluginScopeProvider>
 	)
 })

@@ -184,6 +184,10 @@ Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/stand
 `createRuntimeSessionClient<WorkbenchSessionApi>()`，分别从 `@pluxel/services/management/session` 与
 `@pluxel/workbench/client` 导入工厂和 API 类型；普通管理客户端无需指定泛型。
 
+客户端拥有 bootstrap 的 RPC graph。收到 epoch 失效通知时，它先终止原生 RPC session 并清空 `current`，
+再调用 observer；调用方可在 observer 中释放自己持有的子句柄。关闭后的客户端拒绝新的或仍在等待的 bootstrap，
+不重新连接，也不接纳迟到结果。
+
 开发附件同时接入源码 Plugin 的 Workbench 声明和已安装包的 `dist/workbench` inventory。对于预编译包，它依据本次实际求值模块的 Core ABI 识别所属包，只接纳 catalog 选中的 Plugin definition，并校验产物；不会重新编译发布包。因此 npm 安装的 `@pluxel/services/plugins` 也可在开发环境启动。源码与包产物共享候选提交、拒绝保留和移除撤回流程；仍应通过插件状态确认启动结果，Workbench shell 可访问不代表所有 Plugin 已就绪。
 
 ### 动态插件的共享入口

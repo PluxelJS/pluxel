@@ -40,6 +40,7 @@
 | 内容                                                                                                                           | 用途与限制                                         |
 | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
 | [Host 部署验证](HOST_DEPLOYMENT_VALIDATION.md)                                                                                 | 已验证环境和待验证平台；不能从一个平台推断全部平台 |
+| [Workbench FlexLayout 验收](WORKBENCH_FLEXLAYOUT_VALIDATION.md)                                                                | 原生工作区、真实 MF/浏览器、清理证据与未验证边界   |
 | [服务撤回审计](PROVIDER_WITHDRAWAL_AUDIT.md)                                                                                   | 生命周期与句柄行为的证据，不另定义作者 API         |
 | [时空组合记录](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)                                                                          | 设计动机与 Cordis 对照                             |
 | [显式 schema 实验](experiments/tsgo-plugin-inputs/README.md)、[Content Mapper 实验](experiments/tsgo-content-mapper/README.md) | 固定版本的实验结果                                 |

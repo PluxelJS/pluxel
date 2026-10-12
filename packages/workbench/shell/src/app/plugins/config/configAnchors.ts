@@ -7,19 +7,6 @@ export function toDomSlug(value: string) {
 	)
 }
 
-export function findScrollableParent(node: HTMLElement | null): HTMLElement | null {
-	let current: HTMLElement | null = node
-	while (current && current !== document.body) {
-		const style = getComputedStyle(current)
-		const overflowY = style.overflowY
-		if (overflowY === 'auto' || overflowY === 'scroll') {
-			return current
-		}
-		current = current.parentElement
-	}
-	return document.scrollingElement as HTMLElement | null
-}
-
 export function makeSectionAnchorPrefix(pluginName: string, tabKey: string) {
 	return `config-${toDomSlug(pluginName)}-${toDomSlug(tabKey)}-section-`
 }

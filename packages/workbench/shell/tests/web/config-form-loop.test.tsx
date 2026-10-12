@@ -10,11 +10,6 @@ import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { ConfigForm } from '../../src/app/plugins/config/ConfigForm'
 import { ManagementQueryProvider } from '../../src/app/managementQuery'
-import {
-	PluginWorkbenchAsideProvider,
-	usePluginWorkbenchAssistVisibility,
-} from '../../src/app/plugins/detail/workbench/context'
-import { resolvePluginWorkbenchPanelsState } from '../../src/app/workbench/split'
 
 const OWNER: PluginNodeAddress = {
 	definition: {
@@ -82,46 +77,6 @@ function ConfigHarness({
 	)
 }
 
-function AssistVisibilityClaim({ visible }: { visible: boolean }) {
-	usePluginWorkbenchAssistVisibility(visible)
-	return null
-}
-
-function AssistClaimHarness({
-	firstVisible,
-	secondVisible,
-}: {
-	firstVisible: boolean
-	secondVisible: boolean
-}) {
-	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistVisible] = useState(false)
-	const claims = useMemo(() => new Map<symbol, true>(), [])
-	const asideValue = useMemo(
-		() => ({
-			asideAvailable: true,
-			assistHost,
-			setAssistHost,
-			assistVisible,
-			setAssistClaim(owner: symbol, visible: boolean) {
-				if (visible) claims.set(owner, true)
-				else claims.delete(owner)
-				setAssistVisible(claims.size > 0)
-			},
-		}),
-		[assistHost, assistVisible, claims],
-	)
-	return (
-		<MantineProvider>
-			<PluginWorkbenchAsideProvider value={asideValue}>
-				<AssistVisibilityClaim visible={firstVisible} />
-				<AssistVisibilityClaim visible={secondVisible} />
-				<div data-assist-visible={assistVisible ? 'true' : 'false'} ref={setAssistHost} />
-			</PluginWorkbenchAsideProvider>
-		</MantineProvider>
-	)
-}
-
 class ResizeObserverMock {
 	disconnect() {}
 	observe() {}
@@ -172,19 +127,6 @@ afterEach(() => {
 })
 
 describe('single-schema ConfigForm safety', () => {
-	it('keeps plugin panels visible by default without overriding explicit choices', () => {
-		expect(resolvePluginWorkbenchPanelsState(undefined)).toEqual({
-			rightPaneVisible: true,
-			dockVisible: true,
-		})
-		expect(
-			resolvePluginWorkbenchPanelsState({ rightPaneVisible: false, dockVisible: false }),
-		).toEqual({
-			rightPaneVisible: false,
-			dockVisible: false,
-		})
-	})
-
 	it('submits one schema against the structured owner address', async () => {
 		const patchPluginConfig = vi.fn(async () => ({
 			ok: true as const,
@@ -236,25 +178,6 @@ describe('single-schema ConfigForm safety', () => {
 			)
 			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
 			expect(error.mock.calls.flat().join('\n')).not.toContain('Maximum update depth exceeded')
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it('keeps the assist area visible while another claim remains active', async () => {
-		const { container, root } = await mount(<AssistClaimHarness firstVisible secondVisible />)
-		try {
-			expect(container.querySelector('[data-assist-visible="true"]')).toBeTruthy()
-			await act(async () => {
-				root.render(<AssistClaimHarness firstVisible={false} secondVisible />)
-				await Promise.resolve()
-			})
-			expect(container.querySelector('[data-assist-visible="true"]')).toBeTruthy()
-			await act(async () => {
-				root.render(<AssistClaimHarness firstVisible={false} secondVisible={false} />)
-				await Promise.resolve()
-			})
-			expect(container.querySelector('[data-assist-visible="false"]')).toBeTruthy()
 		} finally {
 			await act(async () => root.unmount())
 		}

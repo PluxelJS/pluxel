@@ -36,6 +36,7 @@ export type RuntimeSessionClientOptions = Readonly<{
 }>
 
 export interface RuntimeSessionClient<TWorkbench extends RpcTarget = RpcTarget> extends Disposable {
+	/** Epoch invalidation closes the native RPC graph before notifying this observer. */
 	bootstrap(observer: RuntimeSessionObserver): Promise<RuntimeClientBootstrap<TWorkbench>>
 	logout(): Promise<RuntimeLogoutResult>
 	commitCookie(ticket: string): Promise<void>
@@ -68,7 +69,16 @@ class RuntimeSessionClientImpl<
 
 	async bootstrap(observer: RuntimeSessionObserver): Promise<RuntimeClientBootstrap<TWorkbench>> {
 		if (this.disposed) throw new Error('Runtime session client is disposed')
-		const result = (await this.root.bootstrap(observer)) as OwnedRuntimeBootstrap<TWorkbench>
+		const result = (await this.root.bootstrap((event) => {
+			// Child resource owners can release their stubs while reacting to this event.
+			// Shut down Capnweb first so those releases cannot use a closing WebSocket.
+			if (event.kind === 'epoch-invalidated') this[Symbol.dispose]()
+			return observer(event)
+		})) as OwnedRuntimeBootstrap<TWorkbench>
+		if (this.disposed) {
+			result[Symbol.dispose]()
+			throw new Error('Runtime session client is disposed')
+		}
 		try {
 			validateBootstrap(result)
 		} catch (error) {
@@ -113,9 +123,13 @@ class RuntimeSessionClientImpl<
 	[Symbol.dispose](): void {
 		if (this.disposed) return
 		this.disposed = true
-		this.owned?.[Symbol.dispose]()
+		const owned = this.owned
 		this.owned = undefined
-		this.root[Symbol.dispose]()
+		try {
+			this.root[Symbol.dispose]()
+		} finally {
+			owned?.[Symbol.dispose]()
+		}
 	}
 }
 

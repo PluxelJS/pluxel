@@ -1,20 +1,15 @@
 import { useEffect, useState, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
 import { OutlineNavigator } from './OutlineNavigator'
-import { usePluginWorkbenchAside, usePluginWorkbenchAssistVisibility } from './context'
-import { usePluginWorkbenchTabActivity } from './tabActivity'
 import type { OutlineAnchor } from './outline'
 
 /** Read rendered heading text, including inline formatting, within this document only. */
 export function ContentOutline({ hostRef }: { hostRef: RefObject<HTMLDivElement | null> }) {
-	const active = usePluginWorkbenchTabActivity()
-	const { assistHost } = usePluginWorkbenchAside()
 	const [anchors, setAnchors] = useState<OutlineAnchor[]>([])
 	const [activeId, setActiveId] = useState<string | null>(null)
 
 	useEffect((): (() => void) | undefined => {
 		const host = hostRef.current
-		if (!host || !active) return undefined
+		if (!host) return undefined
 		let frame = 0
 		const updateActive = () => {
 			const top = host.getBoundingClientRect().top + 32
@@ -54,12 +49,11 @@ export function ContentOutline({ hostRef }: { hostRef: RefObject<HTMLDivElement 
 			host.removeEventListener('scroll', onScroll)
 			cancelAnimationFrame(frame)
 		}
-	}, [active, hostRef])
+	}, [hostRef])
 
-	usePluginWorkbenchAssistVisibility(active && anchors.length > 0)
-	if (!active || !assistHost || anchors.length === 0) return null
-	return createPortal(
-		<div className="plx-pluginWorkbench__assistSection">
+	if (anchors.length === 0) return null
+	return (
+		<div className="plx-documentOutline">
 			<OutlineNavigator
 				anchors={anchors}
 				activeId={activeId}
@@ -67,8 +61,10 @@ export function ContentOutline({ hostRef }: { hostRef: RefObject<HTMLDivElement 
 				emptyLabel="暂无匹配标题"
 				onSelect={(id) => {
 					const host = hostRef.current
-					const heading = host?.ownerDocument.getElementById(id)
-					if (!host || !heading || !host.contains(heading)) return
+					const heading = Array.from(
+						host?.querySelectorAll<HTMLElement>('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]') ?? [],
+					).find((candidate) => candidate.id === id)
+					if (!host || !heading) return
 					host.scrollTo({
 						top:
 							host.scrollTop +
@@ -80,7 +76,6 @@ export function ContentOutline({ hostRef }: { hostRef: RefObject<HTMLDivElement 
 					setActiveId(id)
 				}}
 			/>
-		</div>,
-		assistHost,
+		</div>
 	)
 }

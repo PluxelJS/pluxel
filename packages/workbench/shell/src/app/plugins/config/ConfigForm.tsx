@@ -14,6 +14,8 @@ import { buildEditableConfigPatch } from './presentationAdapter'
 import { type PluginConfigSection } from './usePluginConfig'
 import { useConfigSave } from './useConfigSave'
 import { mapConfigValidationErrors, mountedFieldNames } from '../../forms/serverValidation'
+import { useOptionalWorkbenchDocument } from '../../workbench/document'
+import { useOptionalWorkspaceSession } from '../../workbench/workspaceContext'
 
 const EMPTY_CONFIG_SECTIONS: readonly PluginConfigSection[] = []
 const EMPTY_FORM_STATE: ConfigFormState = {
@@ -65,6 +67,8 @@ function ConfigFormInstance({
 	sections,
 }: ConfigFormProps & { sections: readonly PluginConfigSection[] }) {
 	const management = useRuntimeManagementClient()
+	const document = useOptionalWorkbenchDocument()
+	const workspace = useOptionalWorkspaceSession()
 	const { mutateAsync: saveConfig, isPending: saving, variables } = useConfigSave({ owner })
 	const savingRef = useRef(false)
 	const visibleSections = useMemo<readonly PluginConfigSection[]>(
@@ -202,6 +206,45 @@ function ConfigFormInstance({
 		[forms, management, owner, saveConfig, sectionItems],
 	)
 	const saveAll = useCallback(() => save(), [save])
+	const saveRef = useRef(saveAll)
+	saveRef.current = saveAll
+	const lifecycle = useMemo(() => {
+		let facts: readonly unknown[] = []
+		let revision = 0
+		return {
+			isDirty: () => Object.values(forms.get()).some(({ form }) => form.state.isDirty),
+			getCloseRevision: () => {
+				// Immutable form values and registered form identities are the editing
+				// facts; keep a stable aggregate only while every actual fact is equal.
+				const current = Object.entries(forms.get()).flatMap(([key, { form }]) => [
+					key,
+					form,
+					form.state.values,
+				])
+				if (
+					current.length !== facts.length ||
+					current.some((value, index) => value !== facts[index])
+				) {
+					facts = current
+					revision++
+				}
+				return revision
+			},
+			save: () => saveRef.current(),
+		}
+	}, [forms])
+	useEffect(() => {
+		if (!document) return
+		document.state.editor = lifecycle
+		workspace?.notifyContentState()
+		return () => {
+			if (document.state.editor === lifecycle) document.state.editor = undefined
+			workspace?.notifyContentState()
+		}
+	}, [document, lifecycle, workspace])
+	useEffect(() => {
+		workspace?.notifyContentState()
+	}, [dirtySections.length, workspace])
 
 	useHotkeys(
 		active

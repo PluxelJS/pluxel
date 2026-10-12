@@ -9,7 +9,6 @@ import {
 	type WorkbenchDescriptorConsumerApi,
 	type WorkbenchRenderableDescriptor,
 } from './definition.ts'
-import type { WorkbenchPaneLayoutRenderer } from './ui-pane.tsx'
 
 export type { WorkbenchRenderableDescriptor } from './definition.ts'
 
@@ -86,7 +85,6 @@ export type WorkbenchReactRuntime = Readonly<{
 	host: WorkbenchHostFacade
 	/** @internal Synchronously closes renderer-owned resources before the opened RPC root is released. */
 	ownerSignal: AbortSignal
-	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 }>
 
 /** @internal Host-to-generated-wrapper ABI. Never pass this object to the Plugin component. */
@@ -95,7 +93,6 @@ export type WorkbenchBridgePayload = Readonly<{
 	handle: WorkbenchOpenedViewHandle
 	host: WorkbenchHostFacade
 	ownerSignal: AbortSignal
-	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 }>
 
 const WorkbenchReactContext = createContext<WorkbenchReactRuntime | null>(null)
@@ -108,7 +105,7 @@ export function WorkbenchReactContextProvider({
 	return <WorkbenchReactContext.Provider value={value}>{children}</WorkbenchReactContext.Provider>
 }
 
-/** @internal Used by descriptor hooks and Pane Kit only. */
+/** @internal Used by descriptor hooks only. */
 export function useWorkbenchReactRuntime(): WorkbenchReactRuntime {
 	const value = useContext(WorkbenchReactContext)
 	if (!value) throw new Error('Workbench renderer is outside its generated Bridge')

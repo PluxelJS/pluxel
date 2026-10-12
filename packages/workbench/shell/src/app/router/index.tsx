@@ -4,6 +4,7 @@ import {
 	createRouter,
 	type RouterHistory,
 } from '@tanstack/react-router'
+import type { ReactNode, ReactElement } from 'react'
 import { NotFoundScreen } from './screens/NotFoundScreen'
 import { RouteErrorScreen } from './screens/RouteErrorScreen'
 import { routeTree } from './routeTree.gen'
@@ -11,6 +12,7 @@ import { routeTree } from './routeTree.gen'
 export interface CreateRouterOptions {
 	history?: RouterHistory
 	uiBasePath?: string
+	Wrap?: (props: { children: ReactNode }) => ReactElement
 }
 
 export function createAppRouter(options: CreateRouterOptions = {}) {
@@ -29,17 +31,18 @@ export function createAppRouter(options: CreateRouterOptions = {}) {
 		history,
 		basepath: options.uiBasePath ?? readWorkbenchUiBasePath(),
 		defaultPreload: enableIntentPreload ? 'intent' : false,
-		defaultNotFoundComponent: NotFoundScreen,
-		defaultErrorComponent: RouteErrorScreen,
-	} as never)
+		defaultNotFoundComponent: () => <NotFoundScreen />,
+		defaultErrorComponent: ({ error, reset }) => <RouteErrorScreen error={error} onRetry={reset} />,
+		Wrap: options.Wrap,
+	})
 }
 
-function readWorkbenchUiBasePath(): string {
+export function readWorkbenchUiBasePath(): string {
 	if (typeof document === 'undefined') return '/'
-	return (
+	const path =
 		document.querySelector('meta[name="pluxel-workbench-ui-base-path"]')?.getAttribute('content') ||
 		'/'
-	)
+	return path === '/' ? '/' : `/${path.split('/').filter(Boolean).join('/')}`
 }
 
 declare module '@tanstack/react-router' {

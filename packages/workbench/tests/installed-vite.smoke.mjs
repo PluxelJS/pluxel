@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, symlink, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,6 +9,9 @@ import { createServer } from 'vite'
 import { request as httpRequest } from 'node:http'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
+const capnwebPackage = JSON.parse(
+	await readFile(join(workspace, 'packages/workbench/node_modules/capnweb/package.json'), 'utf8'),
+)
 const root = await mkdtemp(join(tmpdir(), 'pluxel-independent-workbench-'))
 const loaded = []
 const hook = registerHooks({
@@ -18,7 +21,7 @@ const hook = registerHooks({
 	},
 })
 const { vitePreset } = await import('@pluxel/services/vite')
-const { workbenchArtifacts } = await import('../dist/dev.mjs')
+const { workbenchArtifacts } = await import('../dist/vite.mjs')
 const { requireWorkbench, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
 const { readHostRecentUpdates } = await import('@pluxel/host/internal')
 const diagnostics = []
@@ -38,7 +41,12 @@ const until = async (predicate) => {
 										variant: 'default',
 									}),
 								}
-							: null,
+							: {
+									diagnostics: diagnostics.slice(-10).map((record) => ({
+										message: record.message,
+										error: record.properties.error?.message,
+									})),
+								},
 					),
 			)
 		await delay(40)
@@ -72,6 +80,8 @@ try {
 			name: '@test/independent-workbench',
 			type: 'module',
 			exports: { '.': './plugin.ts' },
+			peerDependencies: { capnweb: capnwebPackage.version },
+			devDependencies: { capnweb: capnwebPackage.version },
 		}),
 	)
 	await write('guide.md', '# First guide\n')
@@ -110,7 +120,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services
 	server = await createServer({
 		root,
 		configFile: false,
-		logLevel: 'silent',
+		logLevel: 'error',
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
 			vitePreset({

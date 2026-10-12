@@ -2,14 +2,13 @@ import { useComputedColorScheme } from '@mantine/core'
 import { pluginNodeIndexKey } from '@pluxel/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
-import { Outlet } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { WorkbenchRuntimeProvider, type WorkbenchBrowserHost } from '../../workbench/runtime'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { usePluginOverview } from '../plugins/pluginOverview'
 
-export function AppProviders() {
+export function AppProviders({ children }: { children: ReactNode }) {
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const pluginOverview = usePluginOverview()
 	const runningPluginSignature = (pluginOverview.overview?.status.statuses ?? [])
@@ -68,7 +67,7 @@ export function AppProviders() {
 			<NotificationCenterProvider>
 				<ModalsProvider>
 					<Notifications position="top-center" />
-					<Outlet />
+					{children}
 				</ModalsProvider>
 			</NotificationCenterProvider>
 		</WorkbenchRuntimeProvider>
