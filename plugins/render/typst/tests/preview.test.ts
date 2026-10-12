@@ -8,6 +8,7 @@ const packet = (revision: number, sessionId = 'session'): TypstPreview => ({
 	format: 'vector',
 	compilerVersion: '0.7.0',
 	data: new Uint8Array([revision]),
+	navigation: { points: [], outline: [], pages: [] },
 })
 
 function fixture() {

@@ -1,0 +1,24 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index b20fadc..3c7b425 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -5579,0 +5580 @@ dependencies = [
++ "tiny-skia",
+@@ -5580,0 +5582,2 @@ dependencies = [
++ "typst",
++ "typst-render",
+diff --git a/packages/typst.node/Cargo.toml b/packages/typst.node/Cargo.toml
+index 006834d..6857ee8 100644
+--- a/packages/typst.node/Cargo.toml
++++ b/packages/typst.node/Cargo.toml
+@@ -29,0 +30,3 @@ typst-svg.workspace = true
++typst.workspace = true
++typst-render.workspace = true
++tiny-skia.workspace = true
+diff --git a/packages/typst.node/src/lib.rs b/packages/typst.node/src/lib.rs
+index a1c1f91..08a1777 100644
+--- a/packages/typst.node/src/lib.rs
++++ b/packages/typst.node/src/lib.rs
+@@ -5,0 +6,2 @@ pub mod error;
++mod source_map;
++mod page_render;

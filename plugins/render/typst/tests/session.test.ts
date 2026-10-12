@@ -24,6 +24,7 @@ const sessions: DocumentSession[] = []
 const output = (): TypstWorkerOutput => ({
 	ok: true,
 	vector: new Uint8Array([1]),
+	navigation: { points: [], outline: [], pages: [] },
 	pdf: new Uint8Array([2, 3]),
 	diagnostics: [],
 })
@@ -257,4 +258,84 @@ describe('document session ownership', () => {
 			if (root) await rm(dirname(root), { recursive: true, force: true })
 		}
 	})
+})
+
+it('serializes page reads with updates and checks revision when each queued read starts', async () => {
+	const entered = deferred<void>(),
+		resume = deferred<void>()
+	let renders = 0,
+		updates = 0
+	const instance = new DocumentSession(
+		config,
+		async (prepare, signal) => {
+			await prepare(signal)
+			updates++
+			return output()
+		},
+		() => {},
+		async () => {},
+		async (input) => {
+			renders++
+			entered.resolve()
+			await resume.promise
+			return {
+				revision: input.revision,
+				page: input.page,
+				format: 'png',
+				data: new Uint8Array([1]),
+				width: 1,
+				height: 1,
+				region: { x: 0, y: 0, width: 1, height: 1 },
+			}
+		},
+	)
+	sessions.push(instance)
+	await instance.initialize(await template(), async () => [], {})
+	const first = await instance.update({ files: {} })
+	const image = instance.renderPage({ revision: first.revision, page: 1 })
+	await entered.promise
+	const update = instance.update({ files: {} })
+	const stale = instance
+		.renderPage({ revision: first.revision, page: 1 })
+		.catch((error: unknown) => error)
+	expect(updates).toBe(1)
+	resume.resolve()
+	const firstImage = await image
+	expect(firstImage.revision).toBe(first.revision)
+	const next = await update
+	expect(await stale).toMatchObject({ code: 'STALE_REVISION' })
+	const nextImage = await instance.renderPage({ revision: next.revision, page: 1 })
+	expect(nextImage.revision).toBe(next.revision)
+	expect(renders).toBe(2)
+})
+
+it('cancels an active page render with the same terminal session semantics as update', async () => {
+	const entered = deferred<void>()
+	const instance = new DocumentSession(
+		config,
+		async (prepare, signal) => {
+			await prepare(signal)
+			return output()
+		},
+		() => {},
+		async () => {},
+		async (_input, signal) => {
+			entered.resolve()
+			await new Promise<void>((_resolve, reject) =>
+				signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+			)
+			throw new Error('Unreachable')
+		},
+	)
+	sessions.push(instance)
+	await instance.initialize(await template(), async () => [], {})
+	const first = await instance.update({ files: {} })
+	const controller = new AbortController()
+	const rendering = instance
+		.renderPage({ revision: first.revision, page: 1, signal: controller.signal })
+		.catch((error: unknown) => error)
+	await entered.promise
+	controller.abort(new Error('stop rendering'))
+	expect(await rendering).toMatchObject({ message: 'stop rendering' })
+	await expect(instance.update({ files: {} })).rejects.toMatchObject({ code: 'CLOSED' })
 })

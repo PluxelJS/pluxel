@@ -2,7 +2,7 @@ import { defineConfig } from 'tsdown'
 
 export default defineConfig({
 	tsconfig: './tsconfig.json',
-	entry: { index: 'src/index.ts', browser: 'src/browser/preview.ts' },
+	entry: { index: 'src/index.ts', browser: 'src/browser/preview.ts', template: 'src/template.ts' },
 	dts: { eager: true },
 	format: ['esm'],
 	sourcemap: true,

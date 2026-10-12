@@ -36,6 +36,12 @@
 			"dependsOn": [],
 			"outputs": ["dist/**"],
 		},
+		"@pluxel/typst#build": {
+			"dependsOn": ["^build"],
+			// The NAPI artifact is platform-specific; its builder owns the local cache.
+			"cache": false,
+			"outputs": ["dist/**", "native/compiler.node", "native/compiler.stamp.json"],
+		},
 		"@pluxel/core#build": {
 			"dependsOn": ["@pluxel/context#build", "eventure#build"],
 			"outputs": ["dist/**"],

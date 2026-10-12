@@ -29,12 +29,17 @@ it('accepts a clean checkout without build output or pre-existing declarations',
 it('accepts registered ambient inputs and keeps build/cache output outside the source boundary', async () => {
 	const check = await fixture({
 		'projects/docs/src/styles.d.ts': "declare module '*.css'\n",
+		'projects/report-template-studio/src/renderer/modern-monaco.d.ts':
+			"declare module 'modern-monaco/lsp/typescript/setup'\n",
+		'projects/embedded-launcher/src/execution/native.d.ts': "declare module 'launcher:bridge'\n",
+		'plugins/render/typst/native/.build/source/packages/compiler/src/global.d.ts': 'export {}\n',
+		'projects/embedded-launcher/native/vendor/llrt/src/global.d.ts': 'export {}\n',
 		'packages/example/dist/index.d.ts': 'export declare const value = 1\n',
 		'packages/example/dist/index.d.ts.map': '{}',
 		'packages/example/.pluxel/types/index.d.mts': 'export {}\n',
 		'packages/example/node_modules/dependency/index.d.ts.map': '{}',
 	})
-	assert.match(check(), /passed \(1 explicit declarations found\)/)
+	assert.match(check(), /passed \(3 explicit declarations found\)/)
 })
 
 it('rejects unregistered source declarations and leaked declaration maps in every module format', async () => {
@@ -42,6 +47,8 @@ it('rejects unregistered source declarations and leaked declaration maps in ever
 		'packages/example/src/index.d.ts',
 		'plugins/example/src/index.d.mts',
 		'projects/example/src/index.d.cts',
+		'plugins/render/typst/src/.build/generated.d.ts',
+		'projects/embedded-launcher/src/vendor/generated.d.ts',
 		'packages/example/index.d.ts.map',
 		'plugins/example/src/index.d.mts.map',
 		'projects/docs/src/styles.d.ts.map',

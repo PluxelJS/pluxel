@@ -1,4 +1,4 @@
-/** Trusted template tree. Keep its contents stable until open settles. */
+/** Trusted template tree. Keep its contents stable until the borrowing open/update operation settles. */
 export interface TypstTemplate {
 	readonly root: string
 	readonly entry: string

@@ -30,6 +30,8 @@ Worker 是 event-loop isolation 和统一 thread admission，不是安全边界�
 必须单独审计。Takumi 的静态 raster/SVG 核心计算确实位于 N-API `AsyncTask.compute()`，每个任务占一个进程共享的
 libuv worker slot；上游另有 lazy owned Rayon pool，但只供本 Plugin 未暴露的 animation 帧并行，不是静态 render 的执行池。
 
+Typst 文档会话是有状态例外：通过正式 NodeModules artifact 创建会话专用 Worker，maxSessions 限制线程数，session 队列限制更新；native compiler/VFS 保留增量状态。输入及可选模板快照在 session 接纳后准备，关闭或取消等待专用线程退出。详见 [Typst 设计](typst/DESIGN.md)。
+
 ## 输入所有权
 
 - Runtime worker task 默认在 admission 时 `structuredClone`，适合调用方在返回 Promise 后立即复用或修改输入。

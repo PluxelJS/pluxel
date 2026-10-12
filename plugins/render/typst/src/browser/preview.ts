@@ -1,7 +1,12 @@
 import type { TypstRenderer } from '@myriaddreamin/typst.ts'
 import type { TypstPreview } from '../preview-contract.js'
 
-export type { TypstPreview } from '../preview-contract.js'
+export type {
+	TypstPreview,
+	TypstNavigation,
+	TypstNavigationPoint,
+	TypstOutlineItem,
+} from '../preview-contract.js'
 
 /** Owns a container; the initialized upstream renderer remains caller-owned. */
 export class TypstPreviewView implements AsyncDisposable {

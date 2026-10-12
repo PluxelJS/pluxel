@@ -1,10 +1,19 @@
-import { isAbsolute, relative, resolve } from 'node:path'
-import { NodeCompiler } from '@myriaddreamin/typst-ts-node-compiler'
+import { parentPort, isMainThread } from 'node:worker_threads'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { isAbsolute, relative, resolve, join } from 'node:path'
+import { NodeCompiler, type NavigationDocument } from './native-binding.ts'
 
-import type { TypstDiagnostic } from './errors.ts'
+import { TypstError, type TypstDiagnostic } from './errors.ts'
+import {
+	validateRenderPage,
+	type TypstRenderPageOptions,
+	type TypstPageImage,
+} from './page-render.ts'
+import type { TypstNavigation } from './preview-contract.ts'
 
 export type TypstWorkerInput = Readonly<{
 	root: string
+	revision: number
 	entry: string
 	fontPaths?: readonly string[]
 	maxOutputBytes: number
@@ -15,6 +24,7 @@ export type TypstWorkerOutput =
 			ok: true
 			vector: Uint8Array
 			pdf: Uint8Array
+			navigation: TypstNavigation
 			diagnostics: readonly TypstDiagnostic[]
 	  }>
 	| Readonly<{
@@ -23,8 +33,93 @@ export type TypstWorkerOutput =
 			diagnostics: readonly TypstDiagnostic[]
 	  }>
 
-/** One native document supplies both outputs; no native state survives this task. */
+export type TypstRenderWorkerInput = TypstRenderPageOptions & {
+	readonly kind: 'render'
+	readonly maxOutputBytes: number
+}
+let compiled:
+	| { document: NavigationDocument; revision: number; navigation: TypstNavigation }
+	| undefined
+export function renderTypstPage(input: TypstRenderWorkerInput): TypstPageImage {
+	validateRenderPage(input)
+	if (!compiled || input.revision !== compiled.revision)
+		throw new TypstError('STALE_REVISION', 'Requested Typst revision is no longer available')
+	validateRenderPage(input, compiled.navigation.pages)
+	if (!Number.isSafeInteger(input.maxOutputBytes) || input.maxOutputBytes <= 0)
+		throw new TypstError('INVALID_INPUT', 'maxOutputBytes must be a positive safe integer')
+	let rendered
+	try {
+		rendered = compiled.document.renderPage(
+			input.page,
+			input.scale ?? 2,
+			input.region,
+			input.maxOutputBytes,
+		)
+	} catch (cause) {
+		if (cause instanceof Error && cause.message === 'PNG exceeds configured output byte limit')
+			throw new TypstError('LIMIT_EXCEEDED', cause.message, { cause })
+		throw cause
+	}
+	if (rendered.data.byteLength > input.maxOutputBytes)
+		throw new TypstError('LIMIT_EXCEEDED', 'PNG exceeds configured output byte limit')
+	return { ...rendered, revision: input.revision, page: input.page, format: 'png' }
+}
+
+/** Native compiler and shadow VFS survive updates in the document's dedicated thread. */
+let retained:
+	| {
+			root: string
+			fonts: string
+			compiler: NodeCompiler
+			sources: Map<string, { bytes: Buffer; mtime: number; ino: number; size: number }>
+	  }
+	| undefined
+function nativeCompiler(input: TypstWorkerInput) {
+	const fonts = JSON.stringify(input.fontPaths)
+	if (!retained || retained.root !== input.root || retained.fonts !== fonts) {
+		compiled = undefined
+		retained = {
+			root: input.root,
+			fonts,
+			compiler: NodeCompiler.create({
+				workspace: input.root,
+				fontArgs: input.fontPaths?.length ? [{ fontPaths: [...input.fontPaths] }] : undefined,
+			}),
+			sources: new Map(),
+		}
+	}
+	const state = retained
+	const next = new Map<string, { bytes: Buffer; mtime: number; ino: number; size: number }>()
+	function visit(root: string) {
+		for (const item of readdirSync(root, { withFileTypes: true })) {
+			const path = join(root, item.name)
+			if (item.isDirectory()) visit(path)
+			else {
+				const stat = statSync(path)
+				const previous = state.sources.get(path)
+				if (
+					previous &&
+					previous.mtime === stat.mtimeMs &&
+					previous.ino === stat.ino &&
+					previous.size === stat.size
+				) {
+					next.set(path, previous)
+					continue
+				}
+				const bytes = readFileSync(path)
+				next.set(path, { bytes, mtime: stat.mtimeMs, ino: stat.ino, size: stat.size })
+				if (!previous?.bytes.equals(bytes)) state.compiler.mapShadow(path, bytes)
+			}
+		}
+	}
+	visit(input.root)
+	for (const path of state.sources.keys()) if (!next.has(path)) state.compiler.unmapShadow(path)
+	state.sources = next
+	return state.compiler
+}
 export default function compileTypst(input: TypstWorkerInput): TypstWorkerOutput {
+	if (!Number.isSafeInteger(input.revision) || input.revision <= 0)
+		throw new TypeError('Invalid compile revision')
 	if (!Number.isSafeInteger(input.maxOutputBytes) || input.maxOutputBytes <= 0) {
 		throw new RangeError('Typst maxOutputBytes must be a positive safe integer')
 	}
@@ -34,31 +129,19 @@ export default function compileTypst(input: TypstWorkerInput): TypstWorkerOutput
 	if (entryRelative === '..' || entryRelative.startsWith('../') || isAbsolute(entryRelative)) {
 		throw new TypeError('Typst worker entry must stay inside its workspace')
 	}
-	const compiler = NodeCompiler.create({
-		workspace: input.root,
-		fontArgs: input.fontPaths?.length ? [{ fontPaths: [...input.fontPaths] }] : undefined,
-	})
+	const compiler = nativeCompiler(input)
 	try {
-		const result = compiler.compile({ mainFilePath: entry })
+		const result = compiler.compile({ mainFilePath: entry, resetRead: true })
 		const nativeDiagnostics = result.takeDiagnostics()
 		const diagnostics = nativeDiagnostics
 			? normalizeDiagnostics(compiler.fetchDiagnostics(nativeDiagnostics), input.root)
 			: []
 		const document = result.result
 		if (!document) return { ok: false, code: 'COMPILE_FAILED', diagnostics }
+		const navigation = (document as NavigationDocument).navigation()
+		const navigationBytes = Buffer.byteLength(JSON.stringify(navigation))
 		const vector = compiler.vector(document)
-		if (vector.byteLength > input.maxOutputBytes) {
-			return {
-				ok: false,
-				code: 'LIMIT_EXCEEDED',
-				diagnostics: [
-					...diagnostics,
-					{ severity: 'error', message: 'Typst Vector exceeds the output byte limit' },
-				],
-			}
-		}
-		const pdf = compiler.pdf(document)
-		if (pdf.byteLength > input.maxOutputBytes - vector.byteLength) {
+		if (vector.byteLength + navigationBytes > input.maxOutputBytes) {
 			return {
 				ok: false,
 				code: 'LIMIT_EXCEEDED',
@@ -66,15 +149,29 @@ export default function compileTypst(input: TypstWorkerInput): TypstWorkerOutput
 					...diagnostics,
 					{
 						severity: 'error',
-						message: 'Typst Vector and PDF exceed the combined output byte limit',
+						message: 'Typst Vector and navigation exceed the output byte limit',
 					},
 				],
 			}
 		}
-		return { ok: true, vector, pdf, diagnostics }
+		const pdf = compiler.pdf(document)
+		if (pdf.byteLength > input.maxOutputBytes - vector.byteLength - navigationBytes) {
+			return {
+				ok: false,
+				code: 'LIMIT_EXCEEDED',
+				diagnostics: [
+					...diagnostics,
+					{
+						severity: 'error',
+						message: 'Typst Vector, PDF and navigation exceed the combined output byte limit',
+					},
+				],
+			}
+		}
+		compiled = { document: document as NavigationDocument, revision: input.revision, navigation }
+		return { ok: true, vector, pdf, navigation, diagnostics }
 	} finally {
-		// Typst memoization is process-global. Age eviction preserves recent work from
-		// other tasks; it is not session disposal or a hard native heap cap.
+		// Age out unused native memoized results while preserving recent incremental work.
 		compiler.evictCache(10)
 	}
 }
@@ -120,4 +217,20 @@ function isPosition(value: unknown): value is { line: number; character: number 
 		Number.isSafeInteger(position.character) &&
 		(position.character as number) >= 0
 	)
+}
+
+if (!isMainThread && parentPort) {
+	parentPort.on('message', (input: TypstWorkerInput | TypstRenderWorkerInput) => {
+		try {
+			parentPort!.postMessage(
+				{ ok: true, value: 'kind' in input ? renderTypstPage(input) : compileTypst(input) },
+				[],
+			)
+		} catch (error) {
+			parentPort!.postMessage(
+				{ ok: false, error, code: error instanceof TypstError ? error.code : undefined },
+				[],
+			)
+		}
+	})
 }

@@ -162,6 +162,8 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 
 生成的 workspace 由 `pluxel workspace doctor` 检查 pnpm major、workspace authority 与已激活的 source hook；产品目录和依赖方向由其自身治理脚本拥有。通用 CLI 不推断产品领域规则。
 
+声明检查显式排除原生构建的依赖 checkout（Typst 的 `native/.build/` 和 Embedded Launcher 的 `native/vendor/`），不排除源码内其他同名目录；应用自己手写的 ambient declarations 仍逐文件登记。
+
 ## 导出
 
 - public export 必须对应稳定用户概念；

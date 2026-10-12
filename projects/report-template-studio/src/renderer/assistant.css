@@ -1,0 +1,443 @@
+/* Supply the default assistant-ui theme tokens within the Mantine application.
+   The packaged styles reference Tailwind tokens but do not include a global theme. */
+.studio-assistant-thread {
+	--spacing: 0.25rem;
+	--thread-max-width: 100%;
+	--radius-lg: 0.5rem;
+	--radius-xl: 0.75rem;
+	--radius-2xl: 1rem;
+	--radius-3xl: 1.5rem;
+	--text-sm: 0.875rem;
+	--text-sm--line-height: 1.25rem;
+	--text-base: 1rem;
+	--text-base--line-height: 1.5rem;
+	--text-lg: 1.125rem;
+	--text-xl: 1.25rem;
+	--text-2xl: 1.5rem;
+	--font-weight-medium: 500;
+	--font-weight-semibold: 600;
+	--color-background: #fff;
+	--color-foreground: #18181b;
+	--color-muted: #f4f4f5;
+	--color-muted-foreground: #71717a;
+	--color-border: #e4e4e7;
+	--color-ring: #a1a1aa;
+	--color-primary: #18181b;
+	--color-primary-foreground: #fafafa;
+	--tw-border-style: solid;
+	width: 100%;
+	min-width: 0;
+	container-type: inline-size;
+	color: var(--color-foreground);
+}
+.studio-assistant-thread .aui-thread-welcome-root {
+	flex-grow: 0;
+	justify-content: flex-start;
+	margin-block: 0;
+	padding: 0.25rem 0.5rem;
+}
+.studio-assistant-thread .aui-thread-viewport-footer {
+	flex-shrink: 0;
+	min-width: 0;
+	gap: 0.25rem;
+	padding-bottom: 0.125rem;
+	background: var(--color-background);
+}
+.studio-assistant-thread .aui-composer-attachment-dropzone {
+	border-radius: 0.625rem;
+	padding: 0.25rem 0.375rem;
+}
+.studio-assistant-thread .aui-composer-action-wrapper {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.25rem;
+	margin: 0;
+	padding: 0 0.125rem;
+}
+.studio-assistant-thread
+	:is(.aui-composer-send, .aui-composer-cancel, .aui-button-icon, .aui-thread-scroll-to-bottom) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+.studio-assistant-thread :is(.aui-composer-send, .aui-composer-cancel) {
+	flex-shrink: 0;
+	width: 1.625rem;
+	height: 1.625rem;
+	background: var(--color-primary);
+	color: var(--color-primary-foreground);
+}
+.studio-assistant-thread button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.studio-mention-menu {
+	max-height: 220px;
+	overflow: auto;
+	padding: 6px;
+	border: 1px solid var(--mantine-color-gray-3);
+	border-radius: 8px;
+	background: var(--mantine-color-body);
+	box-shadow: var(--mantine-shadow-sm);
+}
+.studio-mention-menu button {
+	display: block;
+	width: 100%;
+	text-align: left;
+	border: 0;
+	border-radius: 4px;
+	padding: 7px 9px;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	overflow-wrap: anywhere;
+}
+.studio-mention-menu button:hover,
+.studio-mention-menu button[data-highlighted] {
+	background: var(--mantine-color-teal-0);
+}
+
+.studio-thread-toolbar {
+	flex-shrink: 0;
+	min-width: 0;
+	justify-content: flex-start;
+	align-items: center;
+	padding-bottom: 0.25rem;
+	border-bottom: 1px solid var(--mantine-color-default-border);
+}
+.studio-thread-toolbar .mantine-Button-root {
+	flex-shrink: 0;
+	height: 1.625rem;
+	padding-inline: 0.375rem;
+}
+.studio-thread-toolbar .studio-thread-selector {
+	flex: 0 1 auto;
+	min-width: 0;
+	max-width: 26rem;
+}
+.studio-thread-selector .mantine-Button-label {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.studio-thread-selector .mantine-Button-section {
+	flex-shrink: 0;
+}
+.studio-assistant-thread .aui-thread-viewport {
+	padding-top: 0;
+	padding-inline: 0;
+	overflow-x: hidden;
+}
+.studio-assistant-thread :is(.aui-assistant-message-root, .aui-user-message-root) {
+	min-width: 0;
+	padding-block: 0.375rem;
+}
+.studio-assistant-thread .aui-assistant-message-content {
+	min-width: 0;
+	padding-inline: 0.125rem;
+}
+.studio-assistant-thread .aui-user-message-root {
+	display: flex;
+	justify-content: flex-end;
+	padding-inline: 0.125rem;
+}
+.studio-assistant-thread .aui-user-message-content {
+	min-width: 0;
+	max-width: 90%;
+	padding: 0.375rem 0.625rem;
+}
+.studio-user-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.studio-assistant-thread .aui-thread-viewport:has(.aui-thread-welcome-root) {
+	justify-content: flex-end;
+}
+.studio-assistant-thread
+	.aui-thread-viewport:has(.aui-thread-welcome-root)
+	.aui-thread-viewport-footer {
+	margin-top: 0;
+}
+.studio-assistant-thread .aui-composer-input {
+	min-height: 1.625rem;
+	max-height: 6rem;
+	margin-bottom: 0;
+	padding: 0.1875rem 0.5rem;
+	line-height: 1.25rem;
+}
+.studio-assistant-thread .aui-thread-scroll-to-bottom {
+	top: -2.125rem;
+	padding: 0.375rem;
+}
+.studio-thread-item {
+	display: block;
+	width: 100%;
+	padding: 7px 9px;
+	border-radius: 5px;
+}
+.studio-thread-item:hover,
+.studio-thread-item[data-active] {
+	background: var(--mantine-color-teal-0);
+}
+.studio-composer-model {
+	min-width: 0;
+	max-width: min(20rem, calc(100% - 2rem));
+}
+.studio-composer-model .mantine-Select-root {
+	flex: 1;
+	width: 13rem;
+	min-width: 0;
+}
+.studio-composer-model .mantine-Select-input {
+	height: 1.5rem;
+	min-height: 1.5rem;
+	line-height: 1.5rem;
+	padding-left: 0.25rem;
+	text-overflow: ellipsis;
+	cursor: pointer;
+}
+.studio-composer-model .mantine-ActionIcon-root {
+	flex-shrink: 0;
+}
+.studio-assistant-disclosure {
+	margin-block: 0.35rem;
+	min-width: 0;
+}
+.studio-assistant-disclosure-trigger {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	width: 100%;
+	padding: 0.45rem 0;
+	border-radius: 4px;
+	color: var(--color-muted-foreground);
+	font-size: 0.8125rem;
+	text-align: left;
+}
+.studio-assistant-disclosure-trigger:hover {
+	color: var(--color-foreground);
+}
+.studio-assistant-disclosure-trigger:focus-visible {
+	outline: 2px solid var(--mantine-color-teal-5);
+	outline-offset: 2px;
+}
+.studio-disclosure-chevron {
+	flex-shrink: 0;
+	transform: rotate(-90deg);
+	transition: transform 200ms ease;
+}
+.studio-disclosure-chevron[data-open] {
+	transform: rotate(0);
+}
+.studio-disclosure-label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+	flex: 1;
+}
+.studio-assistant-disclosure-body {
+	padding: 0.15rem 0 0.4rem 1.3rem;
+	min-width: 0;
+}
+.studio-assistant-tool .studio-assistant-disclosure-body {
+	border-left: 1px solid var(--color-border);
+	margin-left: 0.45rem;
+	padding-left: 0.85rem;
+}
+.studio-assistant-reasoning {
+	color: var(--color-muted-foreground);
+}
+.studio-reasoning-scroll {
+	max-height: 14rem;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	font-size: 0.8125rem;
+}
+.studio-tool-detail {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex: 1;
+	min-width: 0;
+}
+.studio-tool-status {
+	margin-left: auto;
+	font-size: 0.75rem;
+	flex-shrink: 0;
+}
+.studio-assistant-disclosure[data-error] > .studio-assistant-disclosure-trigger {
+	color: var(--mantine-color-red-7);
+}
+.studio-assistant-generating {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding-block: 0.5rem;
+	color: var(--color-muted-foreground);
+	font-size: 0.8125rem;
+}
+
+/* Streamdown's semantic slots retain its parsing, highlighting and copy controls
+   without requiring a second utility CSS framework in the Mantine application. */
+.studio-assistant-markdown,
+.studio-tool-code {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.studio-assistant-markdown > :first-child {
+	margin-top: 0;
+}
+.studio-assistant-markdown > :last-child {
+	margin-bottom: 0;
+}
+.studio-assistant-markdown p {
+	margin-block: 0.65rem;
+	line-height: 1.65;
+}
+.studio-assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
+	margin-block: 1rem 0.4rem;
+	font-weight: 600;
+	line-height: 1.35;
+}
+.studio-assistant-markdown h1 {
+	font-size: 1.35rem;
+}
+.studio-assistant-markdown h2 {
+	font-size: 1.2rem;
+}
+.studio-assistant-markdown h3 {
+	font-size: 1.05rem;
+}
+.studio-assistant-markdown :is(ul, ol) {
+	margin-block: 0.5rem;
+	padding-left: 1.5rem;
+}
+.studio-assistant-markdown ul {
+	list-style: disc;
+}
+.studio-assistant-markdown ol {
+	list-style: decimal;
+}
+.studio-assistant-markdown li {
+	padding-left: 0.1rem;
+	margin-block: 0.25rem;
+}
+.studio-assistant-markdown blockquote {
+	margin-block: 0.75rem;
+	padding-left: 0.75rem;
+	border-left: 3px solid var(--color-border);
+	color: var(--color-muted-foreground);
+}
+.studio-assistant-markdown a {
+	color: var(--mantine-color-teal-7);
+	text-decoration: underline;
+}
+.studio-assistant-markdown hr {
+	border: 0;
+	border-top: 1px solid var(--color-border);
+	margin-block: 1rem;
+}
+.studio-assistant-markdown :is(strong, [data-streamdown='strong']) {
+	font-weight: 600;
+}
+.studio-assistant-markdown :not(pre) > code {
+	padding: 0.1rem 0.3rem;
+	border-radius: 4px;
+	background: var(--color-muted);
+	font-size: 0.85em;
+}
+.studio-assistant-markdown img {
+	max-width: 100%;
+	border-radius: 6px;
+}
+.studio-assistant-thread [data-streamdown='code-block'] {
+	position: relative;
+	margin-block: 0.5rem;
+	padding: 0.5rem;
+	border: 1px solid var(--color-border);
+	border-radius: 8px;
+	background: var(--color-muted);
+}
+.studio-assistant-thread [data-streamdown='code-block-header'] {
+	display: flex;
+	align-items: center;
+	min-height: 1.6rem;
+	padding: 0 0.25rem 0.25rem;
+	font-size: 0.75rem;
+	color: var(--color-muted-foreground);
+}
+.studio-assistant-thread [data-streamdown='code-block-actions'] {
+	position: absolute;
+	top: 0.35rem;
+	right: 0.5rem;
+	display: flex;
+	gap: 0.25rem;
+	background: var(--color-muted);
+}
+.studio-assistant-thread [data-streamdown='code-block-body'] {
+	overflow: auto;
+	padding: 0.65rem;
+	border: 1px solid var(--color-border);
+	border-radius: 5px;
+	background: var(--color-background);
+	font-size: 0.75rem;
+}
+.studio-assistant-thread [data-streamdown='code-block-body'] pre {
+	margin: 0;
+	font-size: inherit;
+	line-height: 1.5;
+	white-space: pre;
+	background: var(--sdm-bg, inherit);
+}
+.studio-assistant-thread [data-streamdown='code-block-body'] code {
+	font-family: var(--mantine-font-family-monospace);
+}
+.studio-assistant-thread [data-streamdown='code-block-body'] code > span {
+	display: block;
+	min-height: 1.5em;
+}
+.studio-assistant-thread [data-streamdown='code-block-copy-button'] {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.25rem;
+	border: 0;
+	border-radius: 4px;
+	color: var(--color-muted-foreground);
+	background: transparent;
+	cursor: pointer;
+}
+.studio-assistant-thread [data-streamdown='code-block-copy-button']:hover {
+	background: var(--color-border);
+	color: var(--color-foreground);
+}
+.studio-assistant-thread [data-streamdown='table-wrapper'] {
+	position: relative;
+	margin-block: 0.75rem;
+	overflow: auto;
+	max-height: 20rem;
+}
+.studio-assistant-thread [data-streamdown='table'] {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.8125rem;
+}
+.studio-assistant-thread [data-streamdown='table'] :is(th, td) {
+	padding: 0.4rem 0.6rem;
+	border: 1px solid var(--color-border);
+	text-align: left;
+}
+.studio-assistant-thread [data-streamdown='table'] th {
+	font-weight: 600;
+	background: var(--color-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+	.studio-disclosure-chevron {
+		transition: none;
+	}
+}

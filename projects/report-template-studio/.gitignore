@@ -1,0 +1,11 @@
+dist/
+release/
+.pluxel/
+.worksplit/
+node_modules/
+test-results/
+!vendor/*.tgz
+
+.editor-generated/
+
+.studio-dev/

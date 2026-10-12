@@ -10,6 +10,11 @@ packages:
   - projects/embedded-launcher/sdk
 
 allowBuilds:
+  electron: true
+  koffi: true
+  # Studio excludes just-bash archive commands; optional native codecs are unused.
+  '@mongodb-js/zstd': false
+  node-liblzma: false
   '@google/genai': false
   '@parcel/watcher': false
   better-sqlite3: false
@@ -23,6 +28,7 @@ overrides:
   fumadocs-ui: catalog:docs
   # This declaration tool still requires the classic JS Compiler API.
   'dts-bundle-generator>typescript': 6.0.3
+  '@assistant-ui/react-streamdown>@streamdown/code': 2.0.0
   typebox: catalog:dev
 
 minimumReleaseAgeExclude:
@@ -57,6 +63,13 @@ minimumReleaseAgeExclude:
   - '@module-federation/vite@1.23.3'
   - elysia@2.0.0-beta.26
   - nf3@0.4.2
+  - '@assistant-ui/core@0.3.27'
+  - '@assistant-ui/react@0.15.28'
+  - '@assistant-ui/tap@0.9.23'
+  - assistant-stream@0.3.50
+  - safe-content-frame@0.0.34
+  # Transitive dependency of the Streamdown adapter.
+  - '@assistant-ui/react-markdown@0.14.21'
 
 onlyBuiltDependencies:
   - esbuild
@@ -135,6 +148,11 @@ catalogs:
     wretch: ^3.0.9
     yaml: ^2.9.1
     typebox: ^1.3.36
+    '@electron/packager': 19.0.1
+    electron: 44.7.0
+    playwright: 1.58.2
+    tm-grammars: 1.31.15
+    tm-themes: 1.12.2
   docs:
     fumadocs-core: ^16.16.2
     fumadocs-mdx: ^15.4.6
@@ -164,6 +182,13 @@ catalogs:
     react: ^19.3.0
     react-dom: ^19.3.0
     tailwindcss: ^4.3.3
+    '@assistant-ui/react': 0.15.28
+    '@assistant-ui/react-streamdown': 0.3.18
+    '@streamdown/code': 2.0.0
+    '@streamdown/cjk': ^1.0.4
+    streamdown: ^2.7.0
+    '@assistant-ui/styles': 0.3.7
+    flexlayout-react: 0.11.1
   icons:
     '@tabler/icons-react': ^3.49.0
     lucide-react: ^1.52.0
@@ -179,6 +204,8 @@ catalogs:
     '@pluxel/market': ^0.1.0
     oxlint: ^1.87.0
   prod:
+    yauzl: 2.10.0
+    fflate: 0.8.3
     '@antfu/utils': ^9.3.0
     '@chenglou/pretext': ^0.0.9
     '@clack/prompts': ^1.8.1
@@ -272,6 +299,9 @@ catalogs:
     verkit: ^0.5.0
     wretch: ^3.0.9
     yaml: ^2.9.1
+    just-bash: 3.6.0
+    '@mariozechner/pi-coding-agent': 0.73.1
+    quickjs-emscripten: 0.32.0
   test:
     '@noble/ciphers': 2.4.0
     '@noble/hashes': 2.4.0
@@ -287,6 +317,7 @@ catalogs:
     ws: ^8.22.0
     zod: 4.6.5
   types:
+    '@types/yauzl': 2.10.3
     '@types/mdast': ^4.0.4
     '@types/mdx': ^2.0.14
     '@types/node': ^26.6.4

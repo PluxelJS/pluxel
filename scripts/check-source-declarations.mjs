@@ -4,6 +4,11 @@ import { relative, resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
 const sourceRoots = ['packages', 'plugins', 'projects']
 const ignoredDirectories = new Set(['.git', '.pluxel', '.vercel', 'dist', 'node_modules', 'public'])
+// Native dependency checkouts are disposable inputs, not repository source declarations.
+const nativeDependencyTrees = new Set([
+	'plugins/render/typst/native/.build',
+	'projects/embedded-launcher/native/vendor',
+])
 const declarationPattern = /\.d\.[cm]?ts$/
 const declarationMapPattern = /\.d\.[cm]?ts\.map$/
 // Handwritten ambient declarations and module augmentations are source inputs.
@@ -16,6 +21,8 @@ const allowedDeclarations = new Set([
 	'packages/workbench/shell/src/types/worksplit-react.d.ts',
 	'packages/workbench/shell/src/vite-env.d.ts',
 	'projects/docs/src/styles.d.ts',
+	'projects/embedded-launcher/src/execution/native.d.ts',
+	'projects/report-template-studio/src/renderer/modern-monaco.d.ts',
 ])
 
 const declarationGroups = await Promise.all(
@@ -55,7 +62,10 @@ async function declarationFiles(directory, insideSource) {
 		entries.map((entry) => {
 			const path = resolve(directory, entry.name)
 			if (entry.isDirectory()) {
-				if (ignoredDirectories.has(entry.name)) {
+				if (
+					ignoredDirectories.has(entry.name) ||
+					nativeDependencyTrees.has(relative(root, path).replaceAll('\\', '/'))
+				) {
 					return []
 				}
 				return declarationFiles(path, insideSource || entry.name === 'src')

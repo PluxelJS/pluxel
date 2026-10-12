@@ -12,7 +12,6 @@ import {
 	resolveHostApplication,
 } from '@pluxel/host'
 import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { afterEach, describe, expect, it } from 'vitest'
 import { TypstConfig, TypstPlugin, type TypstFiles, type TypstSession } from '../src/index.ts'
 
@@ -46,7 +45,7 @@ const files = {
 
 async function fixture() {
 	const host = await createTestHost({
-		services: [nodeModules(), workers({ maxThreads: 1 })],
+		services: [nodeModules()],
 	})
 	try {
 		await host.commit((change) => {
@@ -96,7 +95,7 @@ describe('TypstPlugin real host and worker', () => {
 				bindings: {},
 			})
 			await using host = await createTestHost({
-				services: [nodeModules(), workers({ maxThreads: 1 })],
+				services: [nodeModules()],
 				configRecords: resolved.configRecords,
 			})
 			await host.commit((change) => {
@@ -137,12 +136,22 @@ describe('TypstPlugin real host and worker', () => {
 			files: { ...files, '/inputs/b.json': { kind: 'file', path: disk } },
 		})
 		expect(first.preview.data.byteLength).toBeGreaterThan(0)
+		expect(first.preview.navigation.points.some((point) => point.path === 'main.typ')).toBe(true)
+		const image = await session.renderPage({ revision: first.revision, page: 1, scale: 1 })
+		expect(Buffer.from(image.data).subarray(0, 8)).toEqual(
+			Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+		)
+		await expect(session.renderPage({ revision: first.revision, page: 999 })).rejects.toMatchObject(
+			{ code: 'INVALID_INPUT' },
+		)
 		const originalPdf = await session.exportPdf(first.revision)
 		expect(Buffer.from(originalPdf).subarray(0, 5).toString()).toBe('%PDF-')
 		await expect(
 			session.update({ files: { '/inputs/a.json': files['/inputs/a.json'] } }),
 		).rejects.toMatchObject({ code: 'COMPILE_FAILED' })
 		expect(await session.exportPdf(first.revision)).toEqual(originalPdf)
+		const recoveredImage = await session.renderPage({ revision: first.revision, page: 1, scale: 1 })
+		expect(recoveredImage.data).toEqual(image.data)
 		const second = await session.update({ files })
 		expect(second.revision).toBe(first.revision + 1)
 		await expect(session.exportPdf(first.revision)).rejects.toMatchObject({
@@ -273,4 +282,37 @@ describe('TypstPlugin real host and worker', () => {
 			}),
 		)
 	}, 60_000)
+})
+
+it('replaces template sources and removes deleted imports in the same native session', async () => {
+	await using host = await fixture()
+	const source = await template('#include "shared.typ"')
+	await writeFile(join(source.root, 'shared.typ'), 'Before')
+	await using session = await host.require(TypstConsumer).typst.open(source)
+	const first = await session.update({ files: {} })
+	await writeFile(join(source.root, 'shared.typ'), 'After shared theme edit')
+	const changed = await session.update({ template: source, files: {} })
+	expect(changed.preview.sessionId).toBe(first.preview.sessionId)
+	expect(changed.revision).toBe(first.revision + 1)
+	expect(changed.preview.data).not.toEqual(first.preview.data)
+	await rm(join(source.root, 'shared.typ'))
+	await expect(session.update({ template: source, files: {} })).rejects.toMatchObject({
+		code: 'COMPILE_FAILED',
+	})
+	await writeFile(join(source.root, 'shared.typ'), 'Repaired')
+	expect(await session.update({ template: source, files: {} })).toMatchObject({
+		revision: changed.revision + 1,
+	})
+})
+
+it('preserves timeout reason, closes the interrupted native session and can reopen', async () => {
+	await using host = await fixture()
+	const typst = host.require(TypstConsumer).typst
+	await using interrupted = await typst.open(await template('#for i in range(100000) { [x] }'))
+	await expect(interrupted.update({ files: {}, timeoutMs: 50 })).rejects.toMatchObject({
+		name: 'TimeoutError',
+	})
+	await expect(interrupted.update({ files: {} })).rejects.toMatchObject({ code: 'CLOSED' })
+	await using recovered = await typst.open(await template('Recovered'))
+	expect(await recovered.update({ files: {} })).toHaveProperty('preview')
 })

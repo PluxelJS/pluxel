@@ -1,16 +1,13 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { FontsPlugin } from '@pluxel/fonts'
-import { Workers, defineWorkerTask } from '@pluxel/services/workers'
+import { NodeModules, defineNodeModule } from '@pluxel/services/node'
+import { NativeCompilerClient } from './native-client.js'
 import { TypstConfig } from './config.ts'
 import type { TypstTemplate } from './contracts.ts'
 import { TypstError } from './errors.ts'
 import { DocumentSession, type TypstOperationOptions, type TypstSession } from './session.ts'
-import type { TypstWorkerInput, TypstWorkerOutput } from './worker.ts'
 
-const compileTask = defineWorkerTask<TypstWorkerInput, TypstWorkerOutput>(
-	import.meta.url,
-	'./worker.ts',
-)
+const compilerModule = defineNodeModule(import.meta.url, './worker.ts')
 
 type Generation = { active: boolean; sessions: Set<DocumentSession> }
 
@@ -18,12 +15,13 @@ type Generation = { active: boolean; sessions: Set<DocumentSession> }
 export class TypstPlugin extends BasePlugin {
 	private readonly config = this.configs.use(TypstConfig)
 	private generation?: Generation
+	private workerUrl?: URL
 
 	constructor(private readonly fonts: FontsPlugin) {
 		super()
 	}
 
-	override init(): void {
+	override async init(): Promise<void> {
 		const generation: Generation = { active: true, sessions: new Set() }
 		this.generation = generation
 		this.ctx.effects.defer(
@@ -42,9 +40,15 @@ export class TypstPlugin extends BasePlugin {
 			},
 			{ tag: 'typst-generation' },
 		)
+		await this.ctx.require(NodeModules).use(compilerModule, (url) => {
+			this.workerUrl = url
+			return async () => {
+				await Promise.all([...generation.sessions].map((session) => session.dispose()))
+			}
+		})
 	}
 
-	/** Fixed template and fonts; caller keeps source files stable until this settles. */
+	/** Initial template and fixed fonts; caller keeps source files stable until this settles. */
 	async open(template: TypstTemplate, options: TypstOperationOptions = {}): Promise<TypstSession> {
 		const generation = this.generation
 		if (!generation?.active) throw new TypstError('CLOSED', 'TypstPlugin is not running')
@@ -52,21 +56,19 @@ export class TypstPlugin extends BasePlugin {
 			throw new TypstError('INVALID_INPUT', 'open requires a template and operation options')
 		if (generation.sessions.size >= this.config.maxSessions)
 			throw new TypstError('BUSY', 'Typst session capacity is full')
-		const workers = this.ctx.require(Workers)
+		if (!this.workerUrl) throw new TypstError('CLOSED', 'Typst compiler module is unavailable')
+		const client = new NativeCompilerClient(this.workerUrl)
 		const owner = this.ctx.caller ?? this.ctx
 		let ownerCleanup: { cancel(): void } | undefined
 		const session = new DocumentSession(
 			Object.freeze({ ...this.config }),
-			(prepare, signal) =>
-				workers.runPrepared(compileTask, prepare, {
-					signal,
-					settlement: 'execution',
-					inputOwnership: 'borrowed',
-				}),
+			async (prepare, signal) => client.run(await prepare(signal), signal),
 			() => {
 				generation.sessions.delete(session)
 				ownerCleanup?.cancel()
 			},
+			() => client.close(),
+			(input, signal) => client.render(input, signal),
 		)
 		generation.sessions.add(session)
 		try {
@@ -112,4 +114,12 @@ export type { TypstPluginConfig } from './config.ts'
 export type { ResourceSource, TypstFiles, TypstTemplate } from './contracts.ts'
 export type { TypstDiagnostic, TypstErrorCode } from './errors.ts'
 export type { TypstSession, TypstCompiled, TypstOperationOptions } from './session.ts'
-export type { TypstPreview } from './preview-contract.ts'
+export type {
+	TypstPreview,
+	TypstNavigation,
+	TypstNavigationPoint,
+	TypstOutlineItem,
+	TypstPage,
+} from './preview-contract.ts'
+
+export type { TypstRegion, TypstRenderPageOptions, TypstPageImage } from './page-render.ts'
