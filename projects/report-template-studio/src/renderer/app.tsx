@@ -13,15 +13,7 @@ import {
 	TextInput,
 	UnstyledButton,
 } from '@mantine/core'
-import {
-	createRootRoute,
-	createRoute,
-	createRouter,
-	defaultParseSearch,
-	Outlet,
-} from '@tanstack/react-router'
-import { createWorkbench, Workbench } from '@worksplit/react'
-import { Actions, DockLocation } from 'flexlayout-react'
+import { Workbench } from '@worksplit/react'
 import {
 	IconFileText,
 	IconFolder,
@@ -39,93 +31,23 @@ import {
 } from '@tabler/icons-react'
 import type { ProjectSummary } from '../shared/contracts'
 import { api } from './api'
-import { FilePane, FormPane, PreviewPane } from './panes'
 import { WorkspaceContext } from './workspace-context'
-import { WorkspaceController, useWorkspaceState } from './workspace'
-import { AssistantPanel } from './assistant'
+import { useWorkspaceState } from './workspace'
+import { StudioSession } from './workbench-session'
 import { Explorer } from './explorer'
 import { WorkspaceSearch } from './workspace-search'
-import {
-	assistantTab,
-	createStudioLayout,
-	documentTarget,
-	editorGroups,
-	findTool,
-	studioLayoutGlobal,
-} from './workbench-layout'
-
-const rootRoute = createRootRoute({ component: Outlet })
-const fileRoute = createRoute({
-	getParentRoute: () => rootRoute,
-	path: '/file',
-	validateSearch: (search: Record<string, unknown>) => ({ path: String(search.path ?? '') }),
-	staticData: { worksplit: { title: '文件', identitySearch: ['path'] } },
-	component: function FileRoute() {
-		return <FilePane path={fileRoute.useSearch().path} />
-	},
-})
-const formRoute = createRoute({
-	getParentRoute: () => rootRoute,
-	path: '/form',
-	validateSearch: (search: Record<string, unknown>) => ({ entry: String(search.entry ?? '') }),
-	staticData: { worksplit: { title: '表单', identitySearch: ['entry'] } },
-	component: function FormRoute() {
-		return <FormPane entry={formRoute.useSearch().entry} />
-	},
-})
-const previewRoute = createRoute({
-	getParentRoute: () => rootRoute,
-	path: '/preview',
-	validateSearch: (search: Record<string, unknown>) => ({ entry: String(search.entry ?? '') }),
-	staticData: { worksplit: { title: '预览', identitySearch: ['entry'] } },
-	component: function PreviewRoute() {
-		return <PreviewPane entry={previewRoute.useSearch().entry} />
-	},
-})
-const routeTree = rootRoute.addChildren([fileRoute, formRoute, previewRoute])
-function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSwitch(): void }) {
-	const [workspace] = useState(() => new WorkspaceController(project))
+function ProjectWorkspace({
+	session,
+	onSwitch,
+}: {
+	session: StudioSession
+	onSwitch(error?: unknown): void
+}) {
+	const { workspace, workbench, project } = session
 	useWorkspaceState(workspace)
 	const [explorerVisible, setExplorerVisible] = useState(true)
 	const [sidebar, setSidebar] = useState<'explorer' | 'search'>('explorer')
 	const [busy, setBusy] = useState(false)
-	const [workbench] = useState(() =>
-		createWorkbench({
-			workspaceId: project.id,
-			home: '/',
-			homeMode: 'empty',
-			createRouter: (history) => createRouter({ routeTree, history }),
-			layout: createStudioLayout(),
-			tools: [{ id: 'assistant', render: () => <AssistantTool workspace={workspace} /> }],
-			onIssue: ({ error }) => {
-				workspace.error = String(error)
-				workspace.emit()
-			},
-		}),
-	)
-	useEffect(() => {
-		// Fast Refresh retains the actual Worksplit instance. Apply current native
-		// defaults through its coordinator and reclaim existing empty split groups.
-		void (async () => {
-			await workbench.dispatch(Actions.updateModelAttributes(studioLayoutGlobal))
-			if (findTool(workbench.getLayout(), 'assistant'))
-				await workbench.dispatch(
-					Actions.updateNodeAttributes('assistant', {
-						enableClose: true,
-						enableDrag: true,
-						enableScrollbars: false,
-					}),
-				)
-			const groups = editorGroups(workbench.getLayout().layout)
-			if (groups.length > 1)
-				for (const group of groups)
-					if (group.id && !group.children?.length)
-						await workbench.dispatch(Actions.deleteTabset(group.id))
-		})().catch((cause) => {
-			workspace.error = String(cause)
-			workspace.emit()
-		})
-	}, [workspace, workbench])
 	const showSidebar = (view: 'explorer' | 'search') => {
 		setSidebar(view)
 		setExplorerVisible(true)
@@ -164,33 +86,15 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 	}, [])
 	// Fast Refresh replays effects while retaining state. Keep imperative resources
 	// alive through that replay, but release them after a real project unmount.
-	const lifecycle = useRef({ active: false, started: false })
+	const lifecycle = useRef({ active: false })
 	useEffect(() => {
 		const current = lifecycle.current
 		current.active = true
-		if (!current.started) {
-			current.started = true
-			workspace.start()
-			void (async () => {
-				await workbench.start('/')
-				await workspace.refresh()
-				if (!current.active) return
-				const first = workspace.tree?.documents[0]
-				if (!first) return
-				await open('form', first.entry)
-				if (current.active) await open('preview', first.entry)
-			})().catch((cause) => {
-				if (current.active) {
-					workspace.error = String(cause)
-					workspace.emit()
-				}
-			})
-		}
+		void session.start().catch((cause) => {
+			if (current.active) session.report(cause)
+		})
 		const unload = (event: BeforeUnloadEvent) => {
-			if (
-				[...workspace.files.values()].some((file) => file.dirty) ||
-				[...workspace.documents.values()].some((document) => document.inputDirty)
-			) {
+			if (workspace.isDirty()) {
 				event.preventDefault()
 				event.returnValue = ''
 			}
@@ -200,12 +104,13 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 			current.active = false
 			window.removeEventListener('beforeunload', unload)
 			queueMicrotask(() => {
-				if (current.active) return
-				workspace.dispose()
-				void workbench.dispose()
+				if (!current.active)
+					void session
+						.dispose()
+						.catch((cause) => console.error('Studio project cleanup failed', cause))
 			})
 		}
-	}, [workspace, workbench])
+	}, [session, workspace])
 	const run = (task: () => Promise<unknown>) => {
 		setBusy(true)
 		workspace.error = ''
@@ -216,160 +121,15 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 			})
 			.finally(() => setBusy(false))
 	}
-	const open = async (kind: 'file' | 'form' | 'preview', path: string) => {
-		const target = documentTarget(
-			kind,
-			workbench.getLayout(),
-			workbench.getDocuments(),
-			workbench.getEditingContext().activeGroupId,
-		)
-		const active = workbench.getActiveDocument()
-		const preserveFocus = Boolean(
-			active && (target.location !== undefined || target.target !== active.containerId),
-		)
-		const result =
-			kind === 'file'
-				? await workbench.open({ to: '/file', search: { path } }, target)
-				: kind === 'form'
-					? await workbench.open({ to: '/form', search: { entry: path } }, target)
-					: await workbench.open(
-							{ to: '/preview', search: { entry: path } },
-							{ ...target, preserveFocus },
-						)
-		if (result.status === 'failed') throw result.error
-		if (result.status === 'committed')
-			await workbench.dispatch(
-				Actions.renameTab(
-					result.document.id,
-					`${kind === 'preview' ? '预览 · ' : ''}${kind === 'file' ? path.split('/').at(-1) : (workspace.documents.get(path)?.result?.name ?? path.split('/').at(-1)?.replace(/\.ts$/, ''))}`,
-				),
-			)
-	}
-	const showAssistant = async (dock?: 'bottom' | 'right') => {
-		const layout = workbench.getLayout()
-		let tool = findTool(layout, 'assistant')
-		const destination = dock ?? 'bottom'
-		if (dock || !tool) {
-			if (!layout.borders?.some((border) => border.location === destination))
-				throw new Error('请重新打开项目以启用右侧停靠布局')
-			const action = tool
-				? Actions.moveNode('assistant', `border_${destination}`, DockLocation.CENTER, -1, true)
-				: Actions.addTab(
-						{ ...assistantTab },
-						`border_${destination}`,
-						DockLocation.CENTER,
-						-1,
-						true,
-					)
-			const result = await workbench.dispatch(action)
-			if (result.status === 'failed') throw result.error
-			if (result.status !== 'applied') return
-			tool = findTool(workbench.getLayout(), 'assistant')
-		}
-		if (!tool) return
-		if (tool.group?.opened === false && tool.group.id) {
-			await workbench.dispatch(Actions.updateNodeAttributes(tool.group.id, { opened: true }))
-			tool = findTool(workbench.getLayout(), 'assistant')
-		}
-		if (!tool) return
-		if ('location' in tool.container && tool.container.show === false)
-			await workbench.dispatch(
-				Actions.updateNodeAttributes(`border_${tool.container.location}`, { show: true }),
-			)
-		const maximized = editorGroups(workbench.getLayout().layout).find((group) => group.maximized)
-		const containerId =
-			'location' in tool.container ? `border_${tool.container.location}` : tool.container.id
-		if (maximized?.id && maximized.id !== containerId)
-			await workbench.dispatch(Actions.maximizeToggle(maximized.id))
-		if (!tool.selected) await workbench.dispatch(Actions.selectTab('assistant'))
-	}
 	const switchProject = async () => {
-		for (const document of workbench.getDocuments()) {
-			const result = await workbench.close(document.id)
-			if (result.status !== 'closed') return
-		}
-		onSwitch()
-	}
-	const openReport = async (path: string) => {
-		workspace.preferPreview(path)
-		await open('form', path)
-		await open('preview', path)
-	}
-	useEffect(
-		() => workspace.connectSourceNavigation((path) => open('file', path)),
-		[workspace, workbench],
-	)
-	const exportProject = async () => {
-		for (const path of workspace.files.keys()) await workspace.save(path)
-		for (const entry of workspace.documents.keys()) await workspace.saveInput(entry)
-		if (
-			[...workspace.files.values()].some((file) => file.dirty) ||
-			[...workspace.documents.values()].some((document) => document.inputDirty)
-		)
-			throw new Error('请先解决未保存的修改再导出')
-		const bytes = await api.exportWorkspace({ projectId: project.id })
-		await window.studio.saveFile({ suggestedName: `${project.name}.zip`, bytes })
-	}
-	const mutate = async (
-		path: string,
-		to: string | undefined,
-		action: (version: string) => Promise<unknown>,
-	) => {
-		const report = workspace.tree?.documents.find(
-			(document) => document.entry === `${path}/${path.split('/').at(-1)}.ts`,
-		)
-		const affected = (candidate: string) => candidate === path || candidate.startsWith(path + '/')
-		for (const file of workspace.files.keys()) if (affected(file)) await workspace.save(file)
-		for (const entry of workspace.documents.keys())
-			if (affected(entry)) await workspace.saveInput(entry)
-		if (
-			[...workspace.files].some(([key, file]) => affected(key) && file.dirty) ||
-			[...workspace.documents].some(([key, document]) => affected(key) && document.inputDirty)
-		)
-			throw new Error('请先解决此路径内未保存的修改')
-		const tabs = workbench.getDocuments().flatMap((document) => {
-			const url = new URL(document.href, window.location.href)
-			const search = defaultParseSearch(url.search) as Record<string, unknown>
-			const value = typeof search.path === 'string' ? search.path : search.entry
-			return typeof value === 'string' && affected(value)
-				? [
-						{
-							id: document.id,
-							kind: (url.pathname === '/file'
-								? 'file'
-								: url.pathname === '/form'
-									? 'form'
-									: 'preview') as 'file' | 'form' | 'preview',
-							path: value,
-						},
-					]
-				: []
-		})
-		for (const tab of tabs) {
-			const closed = await workbench.close(tab.id)
-			if (closed.status !== 'closed') throw new Error('仍有标签未关闭，操作已取消')
-		}
+		if (!(await session.closeDocuments())) return
 		try {
-			await workspace.refresh()
-			const item = workspace.tree?.entries.find((candidate) => candidate.path === path)
-			if (!item) throw new Error('路径已不存在，请刷新文件树')
-			await action(item.version)
+			await session.dispose()
+			onSwitch()
 		} catch (error) {
-			for (const tab of tabs) await open(tab.kind, tab.path)
-			throw error
+			// The project has already shut down; report cleanup failure on the home screen.
+			onSwitch(error)
 		}
-
-		for (const entry of workspace.documents.keys())
-			if (affected(entry)) workspace.documents.delete(entry)
-		await workspace.refresh()
-		if (to)
-			for (const tab of tabs) {
-				const next =
-					report?.entry === tab.path
-						? `${to}/${to.split('/').at(-1)}.ts`
-						: to + tab.path.slice(path.length)
-				await open(tab.kind, next)
-			}
 	}
 	return (
 		<WorkspaceContext.Provider value={workspace}>
@@ -420,36 +180,34 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 							</Menu.Item>
 							<Menu.Item
 								leftSection={<IconDownload size={16} />}
-								onClick={() => run(exportProject)}
+								onClick={() => run(() => session.exportProject())}
 							>
 								导出工作区 ZIP
 							</Menu.Item>
 							<Menu.Divider />
 							<Menu.Label>AI 助手</Menu.Label>
-							<Menu.Item leftSection={<IconRobot size={16} />} onClick={() => run(showAssistant)}>
+							<Menu.Item
+								leftSection={<IconRobot size={16} />}
+								onClick={() => run(() => session.showAssistant())}
+							>
 								显示 AI 助手
 							</Menu.Item>
 							<Menu.Item
 								leftSection={<IconLayoutBottombar size={16} />}
-								onClick={() => run(() => showAssistant('bottom'))}
+								onClick={() => run(() => session.showAssistant('bottom'))}
 							>
 								AI 助手停靠到底部
 							</Menu.Item>
 							<Menu.Item
 								leftSection={<IconLayoutSidebarRight size={16} />}
-								onClick={() => run(() => showAssistant('right'))}
+								onClick={() => run(() => session.showAssistant('right'))}
 							>
 								AI 助手停靠到右侧
 							</Menu.Item>
 							<Menu.Divider />
 							<Menu.Item
 								leftSection={<IconX size={16} />}
-								onClick={() =>
-									run(async () => {
-										const result = await workbench.close('assistant')
-										if (result.status === 'failed') throw result.error
-									})
-								}
+								onClick={() => run(() => session.closeAssistant())}
 							>
 								关闭 AI 助手
 							</Menu.Item>
@@ -490,7 +248,7 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 								variant="subtle"
 								color="gray"
 								aria-label="显示 AI 助手"
-								onClick={() => run(showAssistant)}
+								onClick={() => run(() => session.showAssistant())}
 							>
 								<IconRobot size={21} />
 							</ActionIcon>
@@ -498,9 +256,9 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 					</nav>
 					<Explorer
 						workspace={workspace}
-						openFile={(path) => open('file', path)}
-						openReport={openReport}
-						mutate={mutate}
+						openFile={(path) => session.open('file', path)}
+						openReport={(path) => session.openReport(path)}
+						mutate={(path, to, action) => session.mutate(path, to, action)}
 						hidden={!explorerVisible || sidebar !== 'explorer'}
 					/>
 					<aside
@@ -534,13 +292,13 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 										}
 										workspace.emit()
 									}
-									await open('file', match.path)
+									await session.open('file', match.path)
 								})
 							}
 						/>
 					</aside>
 					<div className="workbench-column">
-						{workspace.error && (
+						{(workspace.error || workspace.tree?.configError) && (
 							<Alert
 								color="red"
 								withCloseButton
@@ -549,7 +307,7 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 									workspace.emit()
 								}}
 							>
-								{workspace.error}
+								{workspace.error || workspace.tree?.configError}
 							</Alert>
 						)}
 						<Workbench
@@ -583,21 +341,11 @@ function ProjectWorkspace({ project, onSwitch }: { project: ProjectSummary; onSw
 		</WorkspaceContext.Provider>
 	)
 }
-function AssistantTool({ workspace }: { workspace: WorkspaceController }) {
-	useWorkspaceState(workspace)
-	return (
-		<AssistantPanel
-			projectId={workspace.project.id}
-			uiState={workspace.assistantState}
-			entries={workspace.tree?.entries ?? []}
-			onChanged={() => void workspace.refresh()}
-		/>
-	)
-}
 export function App() {
 	const [projects, setProjects] = useState<ProjectSummary[]>([])
 	const [recentMenu, setRecentMenu] = useState<string | null>(null)
-	const [project, setProject] = useState<ProjectSummary | null>(null)
+	const [session, setSession] = useState<StudioSession | null>(null)
+	const openProject = (project: ProjectSummary) => setSession(new StudioSession(project))
 	const [name, setName] = useState('新的报表项目')
 	const [error, setError] = useState('')
 	const [busy, setBusy] = useState(false)
@@ -612,14 +360,15 @@ export function App() {
 			.catch((cause) => setError(String(cause)))
 			.finally(() => setBusy(false))
 	}
-	if (project)
+	if (session)
 		return (
 			<ProjectWorkspace
-				key={project.id}
-				project={project}
-				onSwitch={() => {
-					setProject(null)
-					void refresh()
+				key={session.project.id}
+				session={session}
+				onSwitch={(cause) => {
+					setSession(null)
+					setError(cause ? String(cause) : '')
+					void refresh().catch((refreshError) => setError(String(refreshError)))
 				}}
 			/>
 		)
@@ -666,7 +415,7 @@ export function App() {
 									run(async () => {
 										const created = await api.createProject({ name })
 										await refresh()
-										setProject(created)
+										openProject(created)
 									})
 								}
 							>
@@ -688,7 +437,7 @@ export function App() {
 								const selected = await window.studio.openProject()
 								if (selected) {
 									await refresh()
-									setProject(selected)
+									openProject(selected)
 								}
 							})
 						}
@@ -704,7 +453,7 @@ export function App() {
 								if (!input) return
 								const imported = await api.importWorkspace({ bytes: input.bytes })
 								await refresh()
-								setProject(imported)
+								openProject(imported)
 							})
 						}
 					>
@@ -729,7 +478,7 @@ export function App() {
 					>
 						<UnstyledButton
 							disabled={busy}
-							onClick={() => setProject(item)}
+							onClick={() => openProject(item)}
 							style={{ flex: 1, minWidth: 0 }}
 						>
 							<Text fw={550}>{item.name}</Text>

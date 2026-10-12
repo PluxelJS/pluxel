@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	ActionIcon,
 	Alert,
@@ -16,6 +16,7 @@ import { DataForm } from './data-form'
 import { Preview } from './preview'
 import { api } from './api'
 import { useWorkspace } from './workspace-context'
+import { editorLifecycle } from './editor-lifecycle'
 
 function SaveStatus({
 	saving,
@@ -59,7 +60,10 @@ function FileActions({ path }: { path: string }) {
 				<Menu.Item
 					leftSection={<IconRefresh size={16} />}
 					onClick={() => {
-						if (!file?.dirty || window.confirm('重新载入将放弃当前草稿，是否继续？'))
+						if (
+							!file?.dirty ||
+							window.confirm('重新载入将放弃此文件在所有视图中的共享草稿，是否继续？')
+						)
 							void workspace.reload(path).catch((cause) => {
 								workspace.error = String(cause)
 								workspace.emit()
@@ -67,6 +71,18 @@ function FileActions({ path }: { path: string }) {
 					}}
 				>
 					从磁盘重新载入
+				</Menu.Item>
+				<Menu.Item
+					disabled={!file?.dirty}
+					onClick={() => {
+						if (window.confirm('放弃此文件在所有视图中的共享草稿？'))
+							void workspace.discard(path).catch((cause) => {
+								workspace.error = String(cause)
+								workspace.emit()
+							})
+					}}
+				>
+					放弃草稿
 				</Menu.Item>
 			</Menu.Dropdown>
 		</Menu>
@@ -104,24 +120,8 @@ function FileEditorContent({ path, scope = 'file' }: { path: string; scope?: str
 export function FilePane({ path }: { path: string }) {
 	const workspace = useWorkspace()
 	const file = workspace.files.get(path)
-	const discard = useRef(false)
 	useWorkbenchContentLifecycle(
-		useMemo(
-			() => ({
-				isDirty: () => Boolean(workspace.files.get(path)?.dirty),
-				getCloseRevision: () => workspace.files.get(path)?.token ?? 0,
-				beforeLeave: async () => {
-					await workspace.save(path)
-					discard.current =
-						Boolean(workspace.files.get(path)?.dirty) &&
-						window.confirm(`关闭 ${path} 会放弃尚未保存的草稿，是否继续？`)
-					return !workspace.files.get(path)?.dirty || discard.current
-				},
-				dispose: () => (discard.current ? workspace.discard(path) : undefined),
-				save: () => workspace.save(path),
-			}),
-			[workspace, path],
-		),
+		useMemo(() => editorLifecycle(workspace, path, 'file'), [workspace, path]),
 	)
 	return (
 		<section
@@ -152,34 +152,11 @@ export function FormPane({ entry }: { entry: string }) {
 	const workspace = useWorkspace()
 	const [mode, setMode] = useState('form')
 	const [codeOpened, setCodeOpened] = useState(false)
-	const discard = useRef(false)
-	useEffect(() => {
-		workspace.ensureDocument(entry)
-	}, [workspace, entry])
+	useEffect(() => workspace.retainDocument(entry), [workspace, entry])
 	const document = workspace.documents.get(entry)
 	const file = workspace.files.get(entry)
 	useWorkbenchContentLifecycle(
-		useMemo(
-			() => ({
-				isDirty: () =>
-					Boolean(workspace.documents.get(entry)?.inputDirty || workspace.files.get(entry)?.dirty),
-				getCloseRevision: () =>
-					`${workspace.documents.get(entry)?.inputToken ?? 0}:${workspace.files.get(entry)?.token ?? 0}`,
-				beforeLeave: async () => {
-					await Promise.all([workspace.saveInput(entry), workspace.save(entry)])
-					if (workspace.documents.get(entry)?.inputDirty) return false
-					discard.current =
-						Boolean(workspace.files.get(entry)?.dirty) &&
-						window.confirm(`关闭 ${entry} 会放弃尚未保存的代码草稿，是否继续？`)
-					return !workspace.files.get(entry)?.dirty || discard.current
-				},
-				dispose: () => (discard.current ? workspace.discard(entry) : undefined),
-				save: async () => {
-					await Promise.all([workspace.saveInput(entry), workspace.save(entry)])
-				},
-			}),
-			[workspace, entry],
-		),
+		useMemo(() => editorLifecycle(workspace, entry, 'form'), [workspace, entry]),
 	)
 	return (
 		<section
@@ -269,9 +246,7 @@ export function FormPane({ entry }: { entry: string }) {
 
 export function PreviewPane({ entry }: { entry: string }) {
 	const workspace = useWorkspace()
-	useEffect(() => {
-		workspace.ensureDocument(entry)
-	}, [workspace, entry])
+	useEffect(() => workspace.retainDocument(entry), [workspace, entry])
 	const document = workspace.documents.get(entry)
 	const name =
 		document?.result?.name ??

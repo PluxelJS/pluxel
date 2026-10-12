@@ -541,6 +541,23 @@ try {
 		'Native assistant mention inserts workspace folder',
 	)
 	await screenshot('00-folder-mention')
+	const retainedDraft = await composer.inputValue()
+	await projectMenu('AI 助手停靠到右侧')
+	await composer.waitFor()
+	assert.equal(
+		await composer.inputValue(),
+		retainedDraft,
+		'Moving the assistant retains its shared draft',
+	)
+	await projectMenu('关闭 AI 助手')
+	await openAssistant()
+	assert.equal(
+		await composer.inputValue(),
+		retainedDraft,
+		'Reopening the assistant retains its project-owned draft',
+	)
+	await projectMenu('AI 助手停靠到底部')
+	await composer.waitFor()
 	await composer.fill('')
 	const bank = () => page.getByRole('textbox', { name: '银行名称', exact: false })
 	assert.equal(await bank().inputValue(), '示例银行', 'Valibot defaults populate a new form')
@@ -785,6 +802,7 @@ try {
 					'separate tabs and persisted external input excluded from ZIP',
 					'Pi provider settings and company Responses preset',
 					'native assistant folder mentions',
+					'assistant draft survives native docking and close/reopen',
 					'TypeScript completion and hover',
 					'Typst diagnostics',
 					'filesystem polling and external edits',

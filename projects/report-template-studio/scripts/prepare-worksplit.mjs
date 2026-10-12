@@ -3,10 +3,15 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseArgs } from 'node:util'
 import { runPnpm } from './run-pnpm.mjs'
 
 // Keep the existing Pluxel workbench's checkout and dependencies untouched.
-const revision = '7768656250cea1e6c32d04373e3eccd5ad49f4fa'
+const revision = 'eff5b57e593ed9c8df3edefcc2886775b9886b45'
+const { values } = parseArgs({ options: { source: { type: 'string' } } })
+const source = values.source
+	? resolve(values.source)
+	: 'https://github.com/PluxelJS/split-like-vscode.git'
 const destination = fileURLToPath(new URL('../vendor/', import.meta.url))
 const checkout = mkdtempSync(resolve(tmpdir(), 'studio-worksplit-'))
 const run = (command, args) =>
@@ -15,7 +20,7 @@ const run = (command, args) =>
 		: execFileSync(command, args, { cwd: checkout, stdio: 'inherit' })
 try {
 	run('git', ['init'])
-	run('git', ['remote', 'add', 'origin', 'https://github.com/PluxelJS/split-like-vscode.git'])
+	run('git', ['remote', 'add', 'origin', source])
 	run('git', ['fetch', '--depth', '1', 'origin', revision])
 	run('git', ['checkout', '--detach', 'FETCH_HEAD'])
 	run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts'])

@@ -42,7 +42,7 @@ export function Explorer({
 	hidden = false,
 }: {
 	workspace: WorkspaceController
-	openFile(path: string): Promise<void>
+	openFile(path: string): Promise<unknown>
 	openReport(path: string): Promise<void>
 	mutate(
 		path: string,

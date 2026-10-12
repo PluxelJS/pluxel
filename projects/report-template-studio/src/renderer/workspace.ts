@@ -64,7 +64,9 @@ export class WorkspaceController {
 	location?: SourcePosition & { endLine?: number; endColumn?: number }
 	private previews = new Set<PreviewRegistration>()
 	private preferredPreview?: string
-	private openSource?: (path: string) => Promise<void>
+	private openSource?: (path: string) => Promise<boolean>
+	private documentUsers = new Map<string, number>()
+	private documentGeneration = 0
 	private navigationSerial = 0
 	private serial = 0
 	private listeners = new Set<() => void>()
@@ -72,7 +74,7 @@ export class WorkspaceController {
 	private timers = new Map<string, ReturnType<typeof setTimeout>>()
 	private inputSaves = new Map<string, Promise<void>>()
 	private polling?: ReturnType<typeof setInterval>
-	private refreshing?: Promise<void>
+	private refreshing?: Promise<boolean>
 	private closed = false
 	constructor(readonly project: ProjectSummary) {}
 	subscribe = (listener: () => void) => {
@@ -89,6 +91,7 @@ export class WorkspaceController {
 		}
 	}
 	start() {
+		if (this.closed || this.polling) return
 		void this.refresh()
 		this.polling = setInterval(() => {
 			void this.refresh()
@@ -100,12 +103,13 @@ export class WorkspaceController {
 		for (const timer of this.timers.values()) clearTimeout(timer)
 		this.listeners.clear()
 		this.previews.clear()
+		this.documentUsers.clear()
 		this.assistantState.drafts.clear()
 		this.assistantState.activeThreadId = null
 		this.openSource = undefined
 		++this.navigationSerial
 	}
-	connectSourceNavigation(open: (path: string) => Promise<void>) {
+	connectSourceNavigation(open: (path: string) => Promise<boolean>) {
 		this.openSource = open
 		return () => {
 			if (this.openSource === open) this.openSource = undefined
@@ -165,7 +169,7 @@ export class WorkspaceController {
 		const serial = ++this.navigationSerial
 		this.preferredPreview = result.entry
 		try {
-			await this.openSource(point.path)
+			if (!(await this.openSource(point.path))) return
 			if (serial !== this.navigationSerial || !this.isNavigationCurrent(result)) return
 			this.location = {
 				path: point.path,
@@ -181,20 +185,21 @@ export class WorkspaceController {
 			this.emit()
 		}
 	}
-	async refresh() {
-		if (this.closed) return
+	/** False means the tree was not refreshed; dependent filesystem operations must stop. */
+	async refresh(): Promise<boolean> {
+		if (this.closed) return false
 		if (this.refreshing) return this.refreshing
 		this.refreshing = (async () => {
 			try {
 				const tree = await api.getTree({ projectId: this.project.id })
-				if (this.closed) return
+				if (this.closed) return false
 				const changed = tree.revision !== this.tree?.revision
 				if (!changed) {
-					if (this.error !== (tree.configError ?? '')) {
-						this.error = tree.configError ?? ''
+					if (this.tree?.configError !== tree.configError) {
+						this.tree = tree
 						this.emit()
 					}
-					return
+					return true
 				}
 				await Promise.all(
 					tree.entries
@@ -220,7 +225,7 @@ export class WorkspaceController {
 							})
 						}),
 				)
-				if (this.closed) return
+				if (this.closed) return false
 				for (const [path, file] of this.files)
 					if (!tree.entries.some((entry) => entry.path === path))
 						this.files.set(path, {
@@ -229,12 +234,13 @@ export class WorkspaceController {
 							error: '文件已在外部删除或移动。草稿仍保留，可复制后关闭标签。',
 						})
 				this.tree = tree
-				this.error = tree.configError ?? ''
 				this.emit()
-				for (const entry of this.documents.keys()) void this.compile(entry)
+				for (const entry of this.documentUsers.keys()) void this.compile(entry)
+				return true
 			} catch (cause) {
 				this.error = cause instanceof Error ? cause.message : String(cause)
 				this.emit()
+				return false
 			} finally {
 				this.refreshing = undefined
 			}
@@ -314,10 +320,15 @@ export class WorkspaceController {
 		this.saves.set(path, work)
 		await work
 	}
+	/** Explicitly discard this resource's shared draft, including an externally removed file. */
 	async discard(path: string) {
 		clearTimeout(this.timers.get(path))
 		await this.saves.get(path)
-		if (!this.closed && this.files.get(path)?.dirty) await this.reload(path)
+		const file = this.files.get(path)
+		if (!file?.dirty || this.closed) return
+		if (!file.missing) return this.reload(path)
+		this.files.set(path, { ...file, content: file.saved, dirty: false, token: file.token + 1 })
+		this.emit()
 	}
 	async reload(path: string) {
 		clearTimeout(this.timers.get(path))
@@ -334,23 +345,50 @@ export class WorkspaceController {
 		})
 		this.emit()
 	}
-	ensureDocument(entry: string) {
-		if (this.documents.has(entry)) return
-		this.documents.set(entry, {
-			entry,
-			fields: [],
-			data: {},
-			diagnostics: [],
-			busy: false,
-			generation: 0,
-		})
-		this.emit()
-		void this.compile(entry)
+	/** Mounted views share input and compilation. The last view releases clean cached output. */
+	retainDocument(entry: string): () => void {
+		if (this.closed) throw new Error('Cannot retain a document in a closed workspace')
+		this.documentUsers.set(entry, (this.documentUsers.get(entry) ?? 0) + 1)
+		if (!this.documents.has(entry)) {
+			this.documents.set(entry, {
+				entry,
+				fields: [],
+				data: {},
+				diagnostics: [],
+				busy: false,
+				generation: 0,
+			})
+			this.emit()
+			void this.compile(entry)
+		}
+		let released = false
+		return () => {
+			if (released) return
+			released = true
+			const users = (this.documentUsers.get(entry) ?? 1) - 1
+			if (users) this.documentUsers.set(entry, users)
+			else {
+				this.documentUsers.delete(entry)
+				// React effect replay reconnects before this task; preserve the same resource.
+				queueMicrotask(() => this.releaseUnusedDocument(entry))
+			}
+		}
+	}
+	private releaseUnusedDocument(entry: string) {
+		const document = this.documents.get(entry)
+		if (this.documentUsers.has(entry) || document?.inputDirty || document?.inputSaving) return
+		if (this.documents.delete(entry)) this.emit()
+	}
+	isDirty() {
+		return (
+			[...this.files.values()].some((file) => file.dirty) ||
+			[...this.documents.values()].some((document) => document.inputDirty)
+		)
 	}
 	async compile(entry: string) {
 		const previous = this.documents.get(entry)
 		if (!previous || this.closed || previous.inputDirty || previous.inputSaving) return
-		const generation = previous.generation + 1
+		const generation = ++this.documentGeneration
 		this.documents.set(entry, { ...previous, busy: true, generation })
 		this.emit()
 		try {
@@ -414,7 +452,7 @@ export class WorkspaceController {
 			inputDirty: true,
 			inputError: undefined,
 			inputToken: (current.inputToken ?? 0) + 1,
-			generation: current.generation + 1,
+			generation: ++this.documentGeneration,
 			busy: false,
 		})
 		this.emit()
@@ -459,7 +497,9 @@ export class WorkspaceController {
 		})()
 		this.inputSaves.set(entry, work)
 		await work
-		if (!this.documents.get(entry)?.inputDirty) await this.compile(entry)
+		this.releaseUnusedDocument(entry)
+		if (this.documentUsers.has(entry) && !this.documents.get(entry)?.inputDirty)
+			await this.compile(entry)
 	}
 }
 export function useWorkspaceState(workspace: WorkspaceController) {

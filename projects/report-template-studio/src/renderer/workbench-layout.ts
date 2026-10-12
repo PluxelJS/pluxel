@@ -91,34 +91,19 @@ export function documentTarget(
 	}
 }
 
-function isTabGroup(node: IJsonTabNode | IJsonTabGroupNode): node is IJsonTabGroupNode {
-	return node.type === 'tabgroup'
-}
-
-export function findTool(layout: IJsonModel, id: string) {
-	const containers: (IJsonTabSetNode | IJsonBorderNode)[] = [
-		...editorGroups(layout.layout),
-		...(layout.borders ?? []),
-	]
-	for (const container of containers) {
-		const children = container.children ?? []
-		const tabs = children.flatMap((child) =>
-			isTabGroup(child) ? (child.opened === false ? [] : (child.children ?? [])) : [child],
-		)
-		for (const child of children) {
-			const group = isTabGroup(child) ? child : undefined
-			const tab = isTabGroup(child)
-				? child.children?.find((candidate) => candidate.id === id)
-				: child
-			if (tab?.id === id)
-				return {
-					tab,
-					container,
-					group,
-					selected:
-						tabs.indexOf(tab) === (container.selected ?? (container.type === 'border' ? -1 : 0)),
-				}
+/** Presence lookup only; Worksplit owns expansion, selection and focus. */
+export function findTool(layout: IJsonModel, id: string): IJsonTabNode | undefined {
+	const find = (
+		node: IJsonRowNode | IJsonTabSetNode | IJsonBorderNode | IJsonTabGroupNode | IJsonTabNode,
+	): IJsonTabNode | undefined => {
+		if (node.type === 'tab') {
+			const tab = node as IJsonTabNode
+			return tab.id === id ? tab : undefined
+		}
+		for (const child of ('children' in node ? node.children : []) ?? []) {
+			const found = find(child)
+			if (found) return found
 		}
 	}
-	return undefined
+	return find(layout.layout) ?? (layout.borders ?? []).map(find).find(Boolean)
 }

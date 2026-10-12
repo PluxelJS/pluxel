@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 import { createWorkbench } from '@worksplit/react'
-import { Actions, DockLocation } from 'flexlayout-react'
+import { Actions, DockLocation, Model, TabNode } from 'flexlayout-react'
 import {
 	assistantTab,
 	createStudioLayout,
@@ -116,7 +116,9 @@ describe('Studio native docking lifecycle', () => {
 					Actions.moveNode('assistant', target, DockLocation.CENTER, -1, true),
 				)
 				expect(moved.status).toBe('applied')
-				expect(findTool(workbench.getLayout(), 'assistant')?.selected).toBe(true)
+				expect(
+					(Model.fromJson(workbench.getLayout()).getNodeById('assistant') as TabNode).isSelected(),
+				).toBe(true)
 			}
 			const closed = await workbench.close('assistant')
 			expect(closed.status).toBe('closed')
@@ -125,7 +127,9 @@ describe('Studio native docking lifecycle', () => {
 				Actions.addTab({ ...assistantTab }, 'border_bottom', DockLocation.CENTER, -1, true),
 			)
 			expect(reopened.status).toBe('applied')
-			expect(findTool(workbench.getLayout(), 'assistant')?.selected).toBe(true)
+			expect(
+				(Model.fromJson(workbench.getLayout()).getNodeById('assistant') as TabNode).isSelected(),
+			).toBe(true)
 			expect(editorGroups(workbench.getLayout().layout)).toHaveLength(1)
 		} finally {
 			await workbench.dispose()

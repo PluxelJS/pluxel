@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CompileResult, DocumentDescription, PreviewResult } from '../src/shared/contracts'
 import { WorkspaceController } from '../src/renderer/workspace'
 import { api } from '../src/renderer/api'
+import { editorLifecycle } from '../src/renderer/editor-lifecycle'
 
 vi.mock('../src/renderer/api', () => ({
 	api: {
@@ -11,6 +12,7 @@ vi.mock('../src/renderer/api', () => ({
 		compile: vi.fn(),
 		getPreview: vi.fn(),
 		writeFile: vi.fn(),
+		getTree: vi.fn(),
 	},
 }))
 const target = { projectId: 'project', entry: 'main/main.ts' }
@@ -78,6 +80,108 @@ afterEach(() => {
 	vi.resetAllMocks()
 })
 describe('workspace explicit form input and preview ownership', () => {
+	it('shares a report across views, survives effect replay and releases the last clean output', async () => {
+		const workspace = createWorkspace()
+		const releaseForm = workspace.retainDocument(target.entry)
+		const releasePreview = workspace.retainDocument(target.entry)
+		await settle()
+		const document = workspace.documents.get(target.entry)
+		releaseForm()
+		releasePreview()
+		const reconnect = workspace.retainDocument(target.entry)
+		await settle()
+		expect(workspace.documents.get(target.entry)).toBe(document)
+		expect(api.compile).toHaveBeenCalledTimes(1)
+		reconnect()
+		reconnect()
+		await settle()
+		expect(workspace.documents.has(target.entry)).toBe(false)
+		workspace.dispose()
+	})
+	it('does not let a released compilation replace a reopened report', async () => {
+		let complete!: (value: CompileResult) => void
+		vi.mocked(api.compile).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					complete = resolve
+				}),
+		)
+		const workspace = createWorkspace()
+		const release = workspace.retainDocument(target.entry)
+		await settle()
+		release()
+		await settle()
+		workspace.retainDocument(target.entry)
+		await settle()
+		const current = workspace.documents.get(target.entry)
+		complete(result('stale'))
+		await settle()
+		expect(workspace.documents.get(target.entry)).toBe(current)
+		expect(current?.result?.revision).toBe('default')
+		workspace.dispose()
+	})
+	it('keeps dirty unmounted input until a successful explicit retry without compiling unused output', async () => {
+		vi.useFakeTimers()
+		const workspace = createWorkspace()
+		const release = workspace.retainDocument(target.entry)
+		await settle()
+		await workspace.writeData(target.entry, { title: 'unsaved' })
+		release()
+		vi.mocked(api.setInput).mockRejectedValueOnce(new Error('disk full'))
+		await vi.advanceTimersByTimeAsync(400)
+		expect(workspace.isDirty()).toBe(true)
+		expect(workspace.documents.get(target.entry)?.data).toEqual({ title: 'unsaved' })
+		await workspace.saveInput(target.entry)
+		expect(workspace.isDirty()).toBe(false)
+		expect(workspace.documents.size).toBe(0)
+		expect(api.compile).toHaveBeenCalledTimes(1)
+		workspace.dispose()
+	})
+	it('polls only retained reports and preserves an operation error after a successful refresh', async () => {
+		const workspace = createWorkspace()
+		const release = workspace.retainDocument(target.entry)
+		await settle()
+		release()
+		await settle()
+		vi.mocked(api.getTree).mockResolvedValue({
+			project: { id: 'project', name: 'Project', root: '/project' },
+			revision: 'changed',
+			entries: [],
+			documents: [],
+			config: { name: 'Project', fonts: [] },
+		})
+		workspace.error = 'File operation failed'
+		await workspace.refresh()
+		expect(workspace.error).toBe('File operation failed')
+		expect(api.compile).toHaveBeenCalledTimes(1)
+		workspace.dispose()
+	})
+	it('refuses closing shared unsaved source and only discards through an explicit resource action', async () => {
+		const workspace = createWorkspace()
+		workspace.files.set(target.entry, {
+			path: target.entry,
+			content: 'draft',
+			saved: 'saved',
+			version: 'old',
+			dirty: true,
+			saving: false,
+			token: 1,
+			external: 0,
+			missing: true,
+		})
+		const form = editorLifecycle(workspace, target.entry, 'form')
+		const file = editorLifecycle(workspace, target.entry, 'file')
+		expect(await form.beforeLeave!('close', { id: 'form', from: '/form' })).toBe(false)
+		expect(file.isDirty!()).toBe(true)
+		expect(workspace.files.get(target.entry)?.content).toBe('draft')
+		expect(form.dispose).toBeUndefined()
+		const revision = file.getCloseRevision!()
+		await workspace.discard(target.entry)
+		expect(file.getCloseRevision!()).not.toBe(revision)
+		expect(await file.beforeLeave!('close', { id: 'file', from: '/file' })).toBe(true)
+		expect(workspace.files.get(target.entry)?.content).toBe('saved')
+		workspace.dispose()
+	})
 	it('saves outside files, serializes edits and ignores stale compile data', async () => {
 		vi.useFakeTimers()
 		let release: ((value: CompileResult) => void) | undefined
@@ -88,7 +192,7 @@ describe('workspace explicit form input and preview ownership', () => {
 				}),
 		)
 		const workspace = createWorkspace()
-		workspace.ensureDocument(target.entry)
+		workspace.retainDocument(target.entry)
 		await settle()
 		expect(api.compile).toHaveBeenCalledWith({ ...target, data: {} })
 		await workspace.writeData(target.entry, { title: 'first' })
@@ -113,7 +217,7 @@ describe('workspace explicit form input and preview ownership', () => {
 		vi.useFakeTimers()
 		vi.mocked(api.setInput).mockRejectedValue(new Error('disk full'))
 		const workspace = createWorkspace()
-		workspace.ensureDocument(target.entry)
+		workspace.retainDocument(target.entry)
 		await settle()
 		await workspace.writeData(target.entry, { title: 'unsaved' })
 		await vi.advanceTimersByTimeAsync(400)
@@ -127,7 +231,7 @@ describe('workspace explicit form input and preview ownership', () => {
 	})
 	it('keeps the last preview after a competing revision without retrying the compile', async () => {
 		const workspace = createWorkspace()
-		workspace.ensureDocument(target.entry)
+		workspace.retainDocument(target.entry)
 		await settle()
 		const previous = workspace.documents.get(target.entry)!
 		expect(previous.preview?.preview.data).toBeInstanceOf(Uint8Array)
@@ -155,7 +259,7 @@ describe('workspace explicit form input and preview ownership', () => {
 			issues,
 		})
 		const workspace = createWorkspace()
-		workspace.ensureDocument(target.entry)
+		workspace.retainDocument(target.entry)
 		await settle()
 		expect(workspace.documents.get(target.entry)).toMatchObject({
 			fields: description.fields,
