@@ -1,6 +1,6 @@
 import { defaultParseSearch, type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { pluginNodeAddressEqual } from '@pluxel/core'
-import { Actions } from 'flexlayout-react'
+import { Actions, DockLocation, Model, TabGroupNode, TabNode } from 'flexlayout-react'
 import { Button, Text } from '@mantine/core'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
@@ -143,7 +143,7 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 		const open = (
 			to: string,
 			newInstance = false,
-			presentation?: { title: string; meta?: string },
+			presentation?: { title: string; meta?: string; afterDocumentId?: string },
 		) => {
 			const url = new URL(to, location.origin)
 			const basepath = entry.basepath
@@ -161,14 +161,42 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 				else location.assign(href)
 				return
 			}
+			const activeGroup = Model.fromJson(workspace.workbench.getLayout()).getActiveTabset()
+			const anchor = presentation?.afterDocumentId
+				? workspace.workbench.getDocument(presentation.afterDocumentId)
+				: undefined
+			// Log focus retains the document owner; opening a page continues in that document's group.
+			const target =
+				anchor?.containerId ??
+				(activeGroup?.getSelectedNode()?.getId() === 'plugin-logs'
+					? workspace.workbench.getActiveDocument()?.containerId
+					: undefined)
 			void workspace.workbench
 				.open(
 					{ to: path, search: defaultParseSearch(url.search), hash: url.hash.slice(1) },
-					{ newInstance },
+					{ newInstance, target },
 				)
 				.then(async (result) => {
 					workspace.check(result)
 					if (result.status !== 'committed') return undefined
+					if (anchor) {
+						const model = Model.fromJson(workspace.workbench.getLayout())
+						const node = model.getNodeById(anchor.id)
+						const sibling = node?.getParent() instanceof TabGroupNode ? node.getParent() : node
+						const parent = sibling?.getParent()
+						if (node instanceof TabNode && parent && parent.getId() === anchor.containerId) {
+							workspace.check(
+								await workspace.workbench.dispatch(
+									Actions.moveNode(
+										result.document.id,
+										parent.getId(),
+										DockLocation.CENTER,
+										parent.getChildren().indexOf(sibling!) + 1,
+									),
+								),
+							)
+						}
+					}
 					const current = workspace.workbench.getDocument(result.document.id)
 					if (current?.href !== result.document.href) return undefined
 					const title =
@@ -194,7 +222,7 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 		}
 		return {
 			navigate: (path: string) => open(path),
-			openTab: (input: { path: string; title: string; meta?: string }) =>
+			openTab: (input: { path: string; title: string; meta?: string; afterDocumentId?: string }) =>
 				open(input.path, true, input),
 		}
 	}, [entry.basepath, workspace])

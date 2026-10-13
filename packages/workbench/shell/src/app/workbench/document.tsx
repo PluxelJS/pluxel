@@ -1,14 +1,26 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useState,
+	type ReactNode,
+} from 'react'
+import { type PluginNodeAddress } from '@pluxel/core'
 import {
 	useWorkbenchContent,
 	useWorkbenchContentLifecycle,
 	type WorkbenchContentLifecycle,
 } from '@worksplit/react'
 import { openConfirmModal } from '@mantine/modals'
-import { useWorkspaceSession } from './workspaceContext'
+import { useWorkspaceSession, useOptionalWorkspaceSession } from './workspaceContext'
 
 /** Business facts belong to this content instance, independent of its native docking location. */
 export class WorkbenchDocumentState {
+	workspace?: 'plugins' | 'apps'
+	plugin?: PluginNodeAddress
+	pluginEntry?: string
 	editor?: WorkbenchContentLifecycle
 	remoteDirty = false
 	private revisionOwner?: WorkbenchContentLifecycle
@@ -110,10 +122,49 @@ export function WorkbenchDocumentRoot({ children }: { children: ReactNode }) {
 	useWorkbenchContentLifecycle(lifecycle)
 	useEffect(() => {
 		session.documents.set(content.id, state)
+		session.notifyContentState()
 		return () => {
 			session.documents.delete(content.id)
+			session.notifyContentState()
 		}
 	}, [content.id, session, state])
 	const value = useMemo(() => ({ id: content.id, state }), [content.id, state])
 	return <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
+}
+
+/** Built-in catalogs can own a workspace before an individual plugin is selected or loaded. */
+export function useDocumentWorkspace(workspace: 'plugins' | 'apps') {
+	const document = useOptionalWorkbenchDocument()
+	const session = useOptionalWorkspaceSession()
+	useLayoutEffect(() => {
+		if (!document || !session) return
+		const previous = document.state.workspace
+		document.state.workspace = workspace
+		session.notifyContentState()
+		return () => {
+			if (document.state.workspace === workspace) document.state.workspace = previous
+			session.notifyContentState()
+		}
+	}, [document, workspace, session])
+}
+
+/** The rendered route supplies its canonical owner; tools follow the active document. */
+export function useDocumentPlugin(owner: PluginNodeAddress | undefined, entry?: string) {
+	const document = useOptionalWorkbenchDocument()
+	const session = useOptionalWorkspaceSession()
+	useLayoutEffect(() => {
+		if (!document || !owner || !session) return
+		const previous = document.state.plugin
+		const previousEntry = document.state.pluginEntry
+		document.state.plugin = owner
+		document.state.pluginEntry = entry
+		session.notifyContentState()
+		return () => {
+			if (document.state.plugin === owner && document.state.pluginEntry === entry) {
+				document.state.plugin = previous
+				document.state.pluginEntry = previousEntry
+			}
+			session.notifyContentState()
+		}
+	}, [document, owner, entry, session])
 }

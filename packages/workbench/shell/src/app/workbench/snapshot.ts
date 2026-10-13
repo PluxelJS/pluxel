@@ -3,7 +3,7 @@ import { useWorkbenchState, type WorkbenchSnapshot } from '@worksplit/react'
 import { useWorkspaceSession } from './workspaceContext'
 
 export function workspaceStorageKey(basepath: string) {
-	return `pluxel:worksplit:1:${basepath}`
+	return `pluxel:worksplit:4:${basepath}`
 }
 
 export class WorkspaceRestoreError extends Error {

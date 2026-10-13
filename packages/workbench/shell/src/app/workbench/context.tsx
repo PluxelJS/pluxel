@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react'
 
 export type WorkbenchNavigationContextValue = {
 	navigate: (path: string) => void
-	openTab: (input: { path: string; title: string; meta?: string }) => void
+	openTab: (input: { path: string; title: string; meta?: string; afterDocumentId?: string }) => void
 }
 const NavigationContext = createContext<WorkbenchNavigationContextValue | null>(null)
 export function WorkbenchNavigationProvider({

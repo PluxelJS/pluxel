@@ -81,6 +81,18 @@ const ConsumerWorkbench = workbench.define({
 	fonts: ProviderWorkbench.picker.place(workbench.tab({ label: 'Fonts' })),
 })
 
+const PanelWorkbench = workbench.define({
+	inspector: workbench.view<SettingsApi>({
+		renderer,
+		placement: workbench.panel('right', { label: 'Inspector' }),
+	}),
+	guide: workbench.content({
+		document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
+		placement: workbench.panel('left', { label: 'Guide' }),
+	}),
+	fonts: ProviderWorkbench.picker.place(workbench.panel('bottom', { label: 'Fonts' })),
+})
+
 const disposedTargets: SettingsTarget[] = []
 let localFactoryCalls = 0
 
@@ -281,7 +293,74 @@ class ConsumerPlugin extends BasePlugin {
 	}
 }
 
+@Plugin({ displayName: 'Panel owner' })
+class PanelPlugin extends BasePlugin {
+	constructor(private readonly provider: ProviderPlugin) {
+		super()
+	}
+
+	protected override init() {
+		this.ctx.workbench?.publish(PanelWorkbench, {
+			inspector: ({ signal }) => new SettingsTarget(signal),
+			fonts: { provider: this.provider, consumer: () => new SelectionTarget() },
+		})
+	}
+}
+
 describe('Workbench vNext publication', () => {
+	it('opens owner-scoped panel Views, Content and Attachments without route locations', async () => {
+		await using host = await createServiceInternalTestHarness({ workbench: true })
+		host.add([ProviderPlugin, PanelPlugin, LocalPlugin])
+		host.start(ProviderPlugin)
+		host.start(PanelPlugin)
+		host.start(LocalPlugin)
+		await host.commit()
+		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const target = pluginNodeAddressOf(PanelPlugin)
+		const layout = session.target.layoutDto({ target })
+		expect(layout.entries).toHaveLength(3)
+		expect(layout.entries.every((entry) => entry.placement.kind === 'panel')).toBe(true)
+		expect(
+			session.target
+				.layoutDto({ target: pluginNodeAddressOf(LocalPlugin) })
+				.entries.every((entry) => entry.placement.kind !== 'panel'),
+		).toBe(true)
+		let inspector: SettingsTarget | undefined
+		for (const entry of layout.entries) {
+			expect(entry.target.node).toEqual(target)
+			const input = { layoutRevision: layout.revision, target, descriptor: entry.descriptor }
+			await expect(
+				session.target.openEntry({ ...input, location: '/not-a-route' }),
+			).resolves.toEqual({
+				ok: false,
+				code: 'target_unavailable',
+			})
+			await expect(
+				session.target.openEntry({ ...input, target: pluginNodeAddressOf(LocalPlugin) }),
+			).resolves.toEqual({
+				ok: false,
+				code: 'target_unavailable',
+			})
+			const opened = await session.target.openEntry(input)
+			expect(opened.ok).toBe(true)
+			if (!opened.ok) throw new Error('Panel open failed')
+			if (entry.descriptor.key === 'inspector') {
+				expect(opened.value.kind).toBe('local')
+				if (opened.value.kind === 'local') inspector = opened.value.api as SettingsTarget
+			} else if (entry.descriptor.key === 'fonts') {
+				expect(opened.value.kind).toBe('attachment')
+				expect(attachmentConsumerNode).toEqual(target)
+			} else expect(opened.value.kind).toBe('content')
+		}
+		expect(inspector?.disposed).toBe(false)
+		host.stop(PanelPlugin)
+		await host.commit()
+		expect(inspector?.signal.aborted).toBe(true)
+		expect(inspector?.disposed).toBe(true)
+		expect(session.signal.aborted).toBe(true)
+		session.dispose()
+	})
+
 	it('rejects an explicit undefined binding for a binding-free Content definition', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add(NoPublicationPlugin)

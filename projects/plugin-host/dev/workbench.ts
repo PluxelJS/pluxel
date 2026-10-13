@@ -18,6 +18,7 @@ export default defineDevConsole(async (dev) => {
 	try {
 		using target = new RpcStub(session.target)
 		const layout = await readWorkbenchLayout(target, { target: null })
+		const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
 		using opened = await openLocalWorkbenchEntry(dev.ctx, {
 			target: studio.address,
 			entry: ReportStudioWorkbench.studio,
@@ -31,6 +32,14 @@ export default defineDevConsole(async (dev) => {
 			layout: {
 				revision: layout.revision,
 				entries: layout.entries.map((entry) => ({
+					descriptor: entry.descriptor,
+					target: entry.target,
+					placement: entry.placement,
+				})),
+			},
+			targetLayout: {
+				revision: targetLayout.revision,
+				entries: targetLayout.entries.map((entry) => ({
 					descriptor: entry.descriptor,
 					target: entry.target,
 					placement: entry.placement,

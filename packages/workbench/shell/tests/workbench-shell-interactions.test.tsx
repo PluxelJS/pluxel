@@ -15,6 +15,11 @@ import { WorkbenchShell } from '../src/app/workbench/WorkbenchShell'
 import { ACCENT_STORAGE_KEY } from '../src/theme/accent/accentPresets'
 import { openDocument, prepareNativeWorkbenchDom } from './helpers/native-workbench'
 
+vi.mock('../src/workbench/runtime', () => ({
+	useWorkbenchTargetSnapshot: () => ({ layout: { entries: [], revision: 1 } }),
+	useWorkbenchRuntime: () => ({ runningPluginsReady: false, runningPluginKeys: new Set() }),
+}))
+
 vi.mock('../src/app/product', () => ({ useProduct: () => ({ displayName: 'Fixture Workbench' }) }))
 vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
 	WorkbenchUpdateStatus: () => <span>运行更新</span>,
@@ -25,12 +30,26 @@ vi.mock('../src/app/router/screens/HomeScreen', () => ({
 vi.mock('../src/app/log_viewer/LiveLog', () => ({
 	LiveLog: () => <input aria-label="日志输入" defaultValue="draft" />,
 }))
+vi.mock('../src/app/plugins/catalog/PluginCatalog', () => ({
+	PluginCatalog: () => <input aria-label="插件输入" defaultValue="draft" />,
+}))
 vi.mock('../src/app/security/SecurityScreen', () => ({
 	SecurityScreen: () => <input aria-label="安全输入" defaultValue="draft" />,
 }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
-	WorkspaceNavigation: ({ autofocus = false }: { autofocus?: boolean }) => (
-		<input autoFocus={autofocus} data-autofocus={autofocus || undefined} aria-label="入口搜索" />
+	WorkspaceNavigation: ({
+		autofocus = false,
+		openMode,
+	}: {
+		autofocus?: boolean
+		openMode?: string
+	}) => (
+		<input
+			data-open-mode={openMode}
+			autoFocus={autofocus}
+			data-autofocus={autofocus || undefined}
+			aria-label="入口搜索"
+		/>
 	),
 }))
 
@@ -97,13 +116,81 @@ async function pressKey(element: HTMLElement, key: string, options: KeyboardEven
 }
 
 describe('native Shell interaction contracts', () => {
+	it('offers one native new-tab button on the active document and separates new from reuse search', async () => {
+		const { session, container } = await workspace()
+		const first = await openDocument(session, '/logs')
+		const second = await openDocument(session, '/security')
+		await act(async () => {
+			await session.workbench.dispatch(
+				Actions.moveNode(
+					second,
+					session.workbench.getDocument(first)!.containerId,
+					DockLocation.RIGHT,
+					-1,
+				),
+			)
+			session.workbench.activate(first)
+		})
+		expect(container.querySelectorAll('[aria-label="新建标签页"]')).toHaveLength(1)
+		expect(tab(container, first).querySelector('[aria-label="新建标签页"]')).not.toBeNull()
+		expect(tab(container, second).querySelector('[aria-label="新建标签页"]')).toBeNull()
+		await click(container.querySelector('[aria-label="新建标签页"]')!)
+		await appear('[role="dialog"]')
+		expect(document.querySelector('[aria-label="入口搜索"]')?.getAttribute('data-open-mode')).toBe(
+			'new',
+		)
+		expect(session.workbench.getDocuments()).toHaveLength(2)
+		await pressKey(document.querySelector('[aria-label="入口搜索"]')!, 'Escape', { code: 'Escape' })
+		await click(container.querySelector('[aria-label="查找所有工作区入口"]')!)
+		expect(document.querySelector('[aria-label="入口搜索"]')?.getAttribute('data-open-mode')).toBe(
+			'reuse',
+		)
+	})
+
+	it('keeps official shortcuts separate and persists icon/label mode without touching documents', async () => {
+		const { session, container } = await workspace()
+		const id = await openDocument(session, '/plugins')
+		const input = container.querySelector<HTMLInputElement>('[aria-label="插件输入"]')!
+		input.value = 'independent draft'
+		const rail = container.querySelector('[aria-label="官方入口"]')!
+		expect(rail.getAttribute('data-mode')).toBe('icons')
+		expect(
+			[...rail.querySelectorAll('.plx-activity__items button')].map((item) =>
+				item.getAttribute('aria-label'),
+			),
+		).toEqual(['首页', '应用', '插件管理', '日志', '认证与安全', '安全审计', '依赖图'])
+		await click(container.querySelector('[aria-label="显示图标与文字"]')!)
+		expect(rail.getAttribute('data-mode')).toBe('labels')
+		await act(async () => {
+			await session.setNavigationView('panel:fixture:navigation')
+			session.workbench.activate('navigation')
+		})
+		const restored = new WorkspaceSession({ snapshot: session.workbench.snapshot() })
+		sessions.push(restored)
+		expect(restored.navigationMode()).toBe('labels')
+		expect(restored.navigationView()).toBe('panel:fixture:navigation')
+		expect(session.workbench.getActiveDocument()?.id).toBe(id)
+		await click(container.querySelector('[aria-label="左侧导航"]')!)
+		await click(container.querySelector('[aria-label="左侧导航"]')!)
+		expect(session.navigationView()).toBe('panel:fixture:navigation')
+		expect(
+			session.workbench.getLayout().borders?.find((border) => border.location === 'left')?.children,
+		).toHaveLength(1)
+		await click(container.querySelector('[aria-label="仅显示图标"]')!)
+		expect(rail.getAttribute('data-mode')).toBe('icons')
+		expect(session.navigationView()).toBe('panel:fixture:navigation')
+		expect(input.value).toBe('independent draft')
+		expect(session.workbench.getDocument(id)).not.toBeNull()
+	})
+
 	it('reopens the closed tool and isolates document keyboard commands from text inputs', async () => {
 		const { session, container } = await workspace()
+		await openDocument(session, '/plugins')
 		await act(async () => {
 			await session.workbench.dispatch(Actions.deleteTab('navigation'))
 		})
 		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeUndefined()
-		await click(container.querySelector('[aria-label="显示或重新打开入口导航"]')!)
+		await click(container.querySelector('.plx-activity [aria-label="插件管理"]')!)
 		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeInstanceOf(
 			TabNode,
 		)

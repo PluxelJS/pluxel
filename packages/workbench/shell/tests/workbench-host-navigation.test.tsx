@@ -63,10 +63,10 @@ vi.mock('../src/app/plugins/pluginOverview', () => ({
 	}),
 }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
-	WorkspaceNavigation: NavigationProbe,
+	WorkspaceNavigation: () => null,
 }))
 vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
-	WorkbenchUpdateStatus: () => null,
+	WorkbenchUpdateStatus: NavigationProbe,
 }))
 
 const owner: PluginNodeAddress = {

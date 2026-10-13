@@ -14,6 +14,7 @@ Workbench 是应用自带的管理工作台。普通插件已经可以在这里�
 | 展示说明、状态、按钮或一次性表单       | [Content：无需 React 的操作页](./content.md)                         |
 | 自定义布局、分页、流式输出或长任务     | [View：React 管理页面](./view.md)                                    |
 | 在另一个插件中使用已有的设置页或选择器 | [Attachment：复用插件界面](./composition.md)                         |
+| 为当前插件扩展左右侧栏或底部工具       | [上下文面板](./panels.md)                                            |
 | 调整插件列表的分组和顺序               | [插件分组](./plugin-groups.md)                                       |
 | 排查插件启动、更新或工作台连接问题     | [使用与排查工作台](./operations.md)                                  |
 

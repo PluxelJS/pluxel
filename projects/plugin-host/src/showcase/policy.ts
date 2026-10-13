@@ -70,6 +70,10 @@ export function createHostRuntimeState(): Partial<HostStateSnapshot> {
 	return {
 		autoStart: [
 			...bootSafeOfficialPlugins,
+			sourceNode('src/bot-lab/BotWorkspacePlugin.ts', 'BotWorkspacePlugin'),
+			sourceNode('src/bot-lab/BotSources.ts', 'TelegramBotPlugin'),
+			sourceNode('src/bot-lab/BotSources.ts', 'DiscordBotPlugin'),
+			sourceNode('src/bot-lab/BotSources.ts', 'WeComBotPlugin'),
 			packageManagerNode,
 			reportStudioPlugin,
 			eventConsumer,

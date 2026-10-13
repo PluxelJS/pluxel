@@ -11,7 +11,7 @@ import type {
 	WorkbenchSessionApi,
 } from '@pluxel/workbench/client'
 import type { RpcStub } from 'capnweb'
-import { Actions } from 'flexlayout-react'
+import { Actions, DockLocation, Model, TabNode } from 'flexlayout-react'
 import { StrictMode, act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,7 +23,7 @@ import {
 	useWorkbenchNavigation,
 	type WorkbenchNavigationContextValue,
 } from '../src/app/workbench/context'
-import type { WorkspaceSession } from '../src/app/workbench/session'
+import { type WorkspaceSession } from '../src/app/workbench/session'
 import { buildPluginDetailHref, buildWorkbenchHref } from '../src/workbench/paths'
 import { workspaceStorageKey } from '../src/app/workbench/snapshot'
 import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
@@ -204,13 +204,16 @@ describe('authenticated App surface ownership', () => {
 				placement: { kind: 'tab' as const, order: 1 },
 			}
 			const prefix = basepath === '/' ? '' : basepath
-			const { container, root } = await mount(`${prefix}/logs`, [labeled, fallback])
+			const { container, root } = await mount(`${prefix}/plugins`, [labeled, fallback])
 			await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
 			const probe = [...fixture.probes.values()][0]!
 			const workspace = probe.workspace!
+			await act(async () => {
+				container.querySelector<HTMLButtonElement>('[aria-label="查找所有工作区入口"]')!.click()
+			})
 			const href = `${buildPluginDetailHref(labeled.target.node)}?entry=preview`
 			const button = [
-				...container.querySelectorAll<HTMLButtonElement>('.plx-workspace-navigation__link'),
+				...document.querySelectorAll<HTMLButtonElement>('.plx-workspace-navigation__link'),
 			].find((candidate) => candidate.textContent?.includes('Accounts'))!
 			await act(async () => button.click())
 			await vi.waitFor(() =>
@@ -455,6 +458,224 @@ describe('authenticated App surface ownership', () => {
 		},
 	)
 
+	it('enters applications from the home menu and treats an explicit plugin shortcut as an expansion request', async () => {
+		const { container } = await mount('/')
+		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
+		const workspace = [...fixture.probes.values()][0]!.workspace!
+		const menu = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+			(button) => button.textContent?.trim() === '工作区',
+		)!
+		await act(async () => menu.click())
+		let pages: HTMLElement | undefined
+		await vi.waitFor(() => {
+			pages = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+				item.textContent?.includes('显示应用目录'),
+			)
+			expect(pages).toBeDefined()
+		})
+		await act(async () => pages!.click())
+		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/apps'))
+		expect(workspace.isToolVisible('navigation')).toBe(false)
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="首页"]')!.click(),
+		)
+		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/'))
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="插件管理"]')!.click(),
+		)
+		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/plugins'))
+		expect(workspace.isToolVisible('navigation')).toBe(true)
+		expect(workspace.navigationView()).toBe('plugins')
+	})
+
+	it('shows plugin panels only in the declared workspace and restores each manual preference', async () => {
+		const { container } = await mount('/')
+		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
+		const workspace = [...fixture.probes.values()][0]!.workspace!
+		const visible = () =>
+			['navigation', 'plugin-inspector', 'plugin-logs'].map((id) => workspace.isToolVisible(id))
+		expect(visible()).toEqual([false, false, false])
+		expect(container.querySelector<HTMLButtonElement>('[aria-label="右侧面板"]')?.disabled).toBe(
+			true,
+		)
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="插件管理"]')!.click(),
+		)
+		await vi.waitFor(() => expect(workspace.activeWorkspace()).toBe('plugins'))
+		const pluginDocument = workspace.workbench.getActiveDocument()!
+		expect(pluginDocument.href).toBe('/plugins')
+		expect(visible()).toEqual([true, false, false])
+		await act(async () => {
+			await workspace.toggleBorder('right')
+			await workspace.toggleLogs()
+		})
+		expect(visible()).toEqual([true, true, true])
+		await act(async () => {
+			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId))
+		})
+		await act(async () =>
+			container
+				.querySelector<HTMLButtonElement>('.plx-activity [aria-label="认证与安全"]')!
+				.click(),
+		)
+		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/security'))
+		expect(visible()).toEqual([false, false, false])
+		expect(
+			(Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-logs') as TabNode)
+				.getParent()
+				?.getId(),
+		).toBe('border_bottom')
+		await act(async () => {
+			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId))
+		})
+		await act(async () => workspace.workbench.activate(pluginDocument.id))
+		expect(visible()).toEqual([true, true, true])
+		await act(async () => {
+			await workspace.toggleBorder('left')
+			await workspace.toggleBorder('right')
+			await workspace.toggleLogs()
+		})
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="日志"]')!.click(),
+		)
+		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/logs'))
+		await act(async () => workspace.workbench.activate(pluginDocument.id))
+		expect(visible()).toEqual([false, false, false])
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="插件管理"]')!.click(),
+		)
+		expect(visible()).toEqual([true, false, false])
+	})
+
+	it('declares custom publication routes as application workspaces and preserves a document docked in the navigation border', async () => {
+		const publication = entry('/preview/:id', 'shell')
+		const { container } = await mount('/security', [publication])
+		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
+		const probe = [...fixture.probes.values()][0]!
+		const workspace = probe.workspace!
+		const security = workspace.workbench.getActiveDocument()!
+		await act(async () => probe.navigation.navigate('/preview/one'))
+		await vi.waitFor(() => expect(workspace.activeWorkspace()).toBe('apps'))
+		expect(workspace.isToolVisible('navigation')).toBe(false)
+		await act(async () => {
+			await workspace.workbench.dispatch(
+				Actions.moveNode(security.id, 'border_left', DockLocation.CENTER, -1),
+			)
+			workspace.workbench.activate(security.id)
+		})
+		expect(workspace.activeWorkspace()).toBeUndefined()
+		expect(
+			workspace.workbench.getLayout().borders?.find((border) => border.location === 'left')?.show,
+		).not.toBe(false)
+		expect(container.querySelector('[aria-label="Page /security"]')).not.toBeNull()
+		expect(workspace.workbench.getActiveDocument()?.id).toBe(security.id)
+	})
+
+	it('opens official pages beside the retained document after tool focus and respects documents moved into the log group', async () => {
+		const { container } = await mount('/plugins')
+		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
+		const workspace = [...fixture.probes.values()][0]!.workspace!
+		const original = workspace.workbench.getActiveDocument()!
+		await act(async () => workspace.toggleLogs())
+		const logs = Model.fromJson(workspace.workbench.getLayout()).getNodeById(
+			'plugin-logs',
+		) as TabNode
+		const logGroup = logs.getTabContainer().getId()
+		const focusLogs = async () => {
+			const tab = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((node) =>
+				node.getAttribute('aria-controls')?.endsWith('plugin-logs'),
+			)!
+			await act(async () => {
+				tab.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+				tab.click()
+			})
+		}
+		await focusLogs()
+		expect(Model.fromJson(workspace.workbench.getLayout()).getActiveTabset()?.getId()).toBe(
+			logGroup,
+		)
+		await act(async () =>
+			container
+				.querySelector<HTMLButtonElement>('.plx-activity [aria-label="认证与安全"]')!
+				.click(),
+		)
+		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/security'))
+		const security = workspace.workbench.getActiveDocument()!
+		expect(security.containerId).toBe(original.containerId)
+		expect(workspace.isToolVisible('plugin-logs')).toBe(false)
+		await act(async () => {
+			workspace.workbench.activate(original.id)
+		})
+		const restoredLogGroup = (
+			Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-logs') as TabNode
+		)
+			.getTabContainer()
+			.getId()
+		await act(async () => {
+			await workspace.workbench.dispatch(
+				Actions.moveNode(original.id, restoredLogGroup, DockLocation.CENTER, -1),
+			)
+			workspace.workbench.activate(original.id)
+		})
+		await focusLogs()
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="安全审计"]')!.click(),
+		)
+		await vi.waitFor(() =>
+			expect(workspace.workbench.getActiveDocument()?.href).toBe('/security/audit'),
+		)
+		expect(workspace.workbench.getActiveDocument()?.containerId).toBe(restoredLogGroup)
+	})
+
+	it.each(['ordinary', 'grouped', 'pinned'] as const)(
+		'opens an independent document after its captured %s anchor in the same native container',
+		async (kind) => {
+			await mount('/logs')
+			await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
+			const probe = [...fixture.probes.values()][0]!
+			const workspace = probe.workspace!
+			const original = workspace.workbench.getActiveDocument()!
+			await act(async () => probe.navigation.navigate('/security'))
+			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(2))
+			const security = workspace.workbench.getActiveDocument()!
+			await act(async () => {
+				if (kind === 'grouped')
+					await workspace.workbench.dispatch(Actions.addTabToNewGroup(original.id, 'Reports'))
+				if (kind === 'pinned') {
+					await workspace.workbench.dispatch(Actions.setTabPinned(original.id, true))
+					await workspace.workbench.dispatch(Actions.setTabPinned(security.id, true))
+				}
+			})
+			await act(async () =>
+				probe.navigation.openTab({
+					path: '/logs',
+					title: 'New logs',
+					afterDocumentId: original.id,
+				}),
+			)
+			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(3))
+			const copy = workspace.workbench.getActiveDocument()!
+			expect(copy.id).not.toBe(original.id)
+			expect(copy.containerId).toBe(original.containerId)
+			const node = Model.fromJson(workspace.workbench.getLayout()).getNodeById(
+				original.id,
+			) as TabNode
+			expect(
+				node
+					.getTabContainer()
+					.getChildren()
+					.map((child) => child.getId()),
+			).toEqual(
+				kind === 'pinned'
+					? [original.id, security.id, copy.id]
+					: [kind === 'grouped' ? node.getParent()!.getId() : original.id, copy.id, security.id],
+			)
+			await act(async () => probe.navigation.navigate('/security'))
+			await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.id).toBe(security.id))
+			expect(workspace.workbench.getDocuments()).toHaveLength(3)
+		},
+	)
+
 	it('shares service Providers across documents and keeps their owners across a theme rerender', async () => {
 		const connect = vi.spyOn(WorkbenchInstance.prototype, 'connectBrowser')
 		const { container, root, view } = await mount('/logs')
@@ -464,9 +685,9 @@ describe('authenticated App surface ownership', () => {
 		const input = container.querySelector<HTMLInputElement>('[aria-label="Page /logs"]')!
 		input.value = 'retained log draft'
 		const log = [...fixture.probes.values()][0]!
-		const securityButton = [
-			...container.querySelectorAll<HTMLButtonElement>('.plx-workspace-navigation__link'),
-		].find((button) => button.textContent?.includes('认证与安全'))!
+		const securityButton = container.querySelector<HTMLButtonElement>(
+			'.plx-activity [aria-label="认证与安全"]',
+		)!
 		await act(async () => securityButton.click())
 		await vi.waitFor(() =>
 			expect(container.querySelector('[aria-label="Page /security"]')).not.toBeNull(),

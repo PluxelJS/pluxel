@@ -5,6 +5,8 @@ Workbench publication 和构建产物必须按一个确定边界切换。
 
 按问题选读：[replacement 与提交边界](#definition-replacement)、[Vite namespace](#canonical-vite-module-graph)、[固定/动态来源](#固定-catalog-与可选动态来源)、[制品候选](#workbench-candidate-inputs)、[producer 构建](#workbench-producer-build)、[来源失败恢复](#来源观察失败)。[验证](#验证)区分 graph、真实 Vite、browser 与 Node 资源边界。
 
+首次启动的源码求值失败保留 watcher 恢复与开发控制台诊断；Host 创建、服务准备或应用准备的致命失败则拒绝 `configureServer`，排空 Host/update/watch 资源后向 Vite 传播原始异常，CLI 不得进入监听并打印 ready。已启动应用的更新仍执行下面的保留／补偿规则。
+
 ## Definition replacement
 
 Source/module 变化以 `PluginDefinitionSlot` 为 invalidation unit。同一 definition 的 default 与已创建 forks 在同一个

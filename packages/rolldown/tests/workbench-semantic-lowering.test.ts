@@ -106,6 +106,7 @@ export const workbench = Object.freeze({
 	data: (schema) => ({ schema }),
 	action: (value) => value,
 	tab: (value) => value,
+	panel: (region, value) => ({ kind: 'panel', region, ...value }),
 	define: (value) => Object.freeze(value),
 })
 `,
@@ -138,6 +139,7 @@ export declare const workbench: {
 	data(schema: unknown): unknown
 	action(value: Record<string, unknown>): unknown
 	tab(value: Record<string, unknown>): unknown
+	panel(region: 'left' | 'right' | 'bottom', value: Record<string, unknown>): unknown
 	define<const Entries extends Record<string, unknown>>(value: Entries): Readonly<Entries>
 }
 `,
@@ -206,6 +208,87 @@ async function collectModule(
 }
 
 describe('Workbench semantic lowering', () => {
+	it.each(['left', 'right', 'bottom'] as const)(
+		'lowers %s panels and preserves View placement in the browser projection',
+		async (region) => {
+			const files = fixtureFiles()
+			files['src/guide.md'] = '# Plugin panel guide\n'
+			files['src/settings.tsx'] = `
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
+import { SemanticWorkbench } from './plugin.ts'
+const renderer = createWorkbenchRenderer(SemanticWorkbench.settings)
+export default renderer.render(function Settings() { return null })
+`
+			files['src/provider.ts'] = `
+import { workbench } from '@pluxel/workbench'
+export const ProviderWorkbench = workbench.define({
+	picker: workbench.attachment({ renderer: workbench.entry(import.meta.url, './picker.tsx') }),
+})
+`
+			await using fixture = await createFixture(files)
+			const code = `
+import { workbench } from '@pluxel/workbench'
+import { ProviderWorkbench } from './provider.ts'
+const region = ${JSON.stringify(region)}
+const options = { label: 'Plugin status', icon: workbench.icons.Settings, order: 12 }
+function placement(region, options) { return workbench.panel(region, options) }
+export const SemanticWorkbench = workbench.define({
+	settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx'), placement: placement(region, options) }),
+	guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.panel('left', { label: 'Guide' }) }),
+	fonts: ProviderWorkbench.picker.place(workbench.panel('bottom', { label: 'Fonts' })),
+})
+class SemanticPlugin {
+	init() { this.ctx.workbench.publish(SemanticWorkbench, { settings: () => ({}), fonts: { provider: this.provider } }) }
+}
+`
+			const lowering = createWorkbenchSemanticLowering(fixture.path)
+			await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+			const plans = await lowering.plans()
+			expect(plans).toHaveLength(1)
+			expect(plans[0]!.entries.map((entry) => entry.descriptor.key)).toEqual(['settings'])
+			const generatedDir = dirname(resolve(fixture.path, plans[0]!.entries[0]!.bridgeEntryPath))
+			const projection = await readFile(resolve(generatedDir, 'settings.definition.ts'), 'utf-8')
+			expect(projection).toContain(
+				`workbench.panel(${JSON.stringify(region)}, {"label":"Plugin status","icon":"settings","order":12})`,
+			)
+			expect(projection).not.toContain('workbench.tab(')
+			expect(projection).not.toContain('workbench.icons.')
+			expect(await lowering.contentCompilations()).toHaveLength(1)
+		},
+	)
+
+	it.each([
+		["workbench.panel('center', { label: 'Tool' })", 'region must be left, right, or bottom'],
+		["workbench.panel('left', { label: '' })", 'label'],
+		["workbench.panel('right', { label: ' Tool ' })", 'label'],
+		["workbench.panel('left', {})", 'label'],
+		["workbench.panel('right', { label: 'Tool', order: 'first' })", 'order'],
+		[
+			"workbench.panel('right', { label: 'Tool', icon: 'arbitrary-icon' })",
+			'fixed Workbench icon set',
+		],
+		["workbench.panel('bottom', { label: 'Tool', scope: 'global' })", 'unsupported option'],
+		["workbench.panel('bottom', { label: 'Tool', path: '/tool' })", 'unsupported option'],
+		["workbench.panel('bottom')", 'requires a region'],
+		["workbench.panel('bottom', { label: 'Tool' }, {})", 'requires a region'],
+		["workbench.pannel('bottom', { label: 'Tool' })", 'unsupported static member access'],
+	])('rejects invalid static panel declaration %s', async (placement, error) => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: '@example/panel-validation', type: 'module' }),
+			'src/guide.md': '# Guide\n',
+		})
+		const code = `
+import { workbench } from '@pluxel/workbench'
+export const SemanticWorkbench = workbench.define({
+	guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: ${placement} }),
+})
+class SemanticPlugin { init() { this.ctx.workbench.publish(SemanticWorkbench) } }
+`
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+		await expect(lowering.contentCompilations()).rejects.toThrow(error)
+	})
+
 	it('compiles Markdown-only Content without creating or resolving an MF producer', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: '@example/content-only', type: 'module' }),

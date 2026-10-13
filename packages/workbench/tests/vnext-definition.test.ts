@@ -18,6 +18,43 @@ interface CatalogApi extends RpcTarget {
 }
 
 describe('Workbench vNext definitions', () => {
+	it('declares bounded owner-scoped panels for Views, Content, and Attachments', () => {
+		const renderer = workbench.entry(import.meta.url, './fixtures/settings.tsx')
+		const provider = workbench.define({ picker: workbench.attachment<CatalogApi>({ renderer }) })
+		const definition = workbench.define({
+			inspector: workbench.view<SettingsApi>({
+				renderer,
+				placement: workbench.panel('right', { label: 'Inspector', icon: workbench.icons.Settings }),
+			}),
+			guide: workbench.content({
+				document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
+				placement: workbench.panel('left', { label: 'Guide', order: 10 }),
+			}),
+			picker: provider.picker.place(workbench.panel('bottom', { label: 'Picker', order: 20 })),
+		})
+		expect(
+			readWorkbenchDefinition(definition).entries.map((entry) =>
+				'placement' in entry ? entry.placement : undefined,
+			),
+		).toEqual([
+			{ kind: 'panel', region: 'right', label: 'Inspector', icon: 'settings', order: 0 },
+			{ kind: 'panel', region: 'left', label: 'Guide', order: 10 },
+			{ kind: 'panel', region: 'bottom', label: 'Picker', order: 20 },
+		])
+		for (const region of ['left', 'right', 'bottom'] as const)
+			expect(Object.isFrozen(workbench.panel(region, { label: 'Tool' }))).toBe(true)
+		expect(() => workbench.panel('center' as never, { label: 'Invalid' })).toThrow('region')
+		expect(() => workbench.panel('left', { label: '' })).toThrow('label')
+		expect(() => workbench.panel('left', { label: 'x'.repeat(257) })).toThrow('label')
+		expect(() => workbench.panel('left', { label: 'Tool', order: Infinity })).toThrow('order')
+		expect(() => workbench.panel('left', { label: 'Tool', icon: 'remote-icon' as never })).toThrow(
+			'icon',
+		)
+		expect(() => workbench.panel('left', { label: 'Tool', target: 'global' } as never)).toThrow(
+			'unsupported option',
+		)
+	})
+
 	it('declares a frozen host-rendered Markdown Content with no renderer', () => {
 		const document = workbench.markdown(import.meta.url, './fixtures/guide.md')
 		const definition = workbench.define({

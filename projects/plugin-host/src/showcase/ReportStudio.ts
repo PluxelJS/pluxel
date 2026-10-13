@@ -366,6 +366,44 @@ export class ReportStudioPlugin extends BasePlugin {
 
 		this.ctx.workbench?.publish(ReportStudioWorkbench, {
 			studio: ({ signal }) => new ReportStudioTarget(this, signal),
+			studioStatus: ({ signal, dataChanged }) => {
+				const subscription = this.subscribe(dataChanged)
+				const release = () => subscription[Symbol.dispose]()
+				signal.addEventListener('abort', release, { once: true })
+				if (signal.aborted) release()
+				return {
+					load: () => {
+						const snapshot = this.snapshot()
+						return {
+							status: {
+								renderer: snapshot.rendererProvider,
+								storage: snapshot.storageProvider,
+								cacheHits: snapshot.cache.localHits + snapshot.cache.backendHits,
+								cacheMisses: snapshot.cache.misses,
+								cacheEntries: snapshot.cache.entries,
+							},
+						}
+					},
+				}
+			},
+			studioArtifacts: ({ signal, dataChanged }) => {
+				const subscription = this.subscribe(dataChanged)
+				const release = () => subscription[Symbol.dispose]()
+				signal.addEventListener('abort', release, { once: true })
+				if (signal.aborted) release()
+				return {
+					load: () => ({
+						artifacts: this.snapshot()
+							.artifacts.toReversed()
+							.map((artifact) => ({
+								title: artifact.title,
+								engine: artifact.engine,
+								bytes: artifact.byteLength,
+								cacheHit: artifact.cacheHit,
+							})),
+					}),
+				}
+			},
 			httpSettings: { provider: this.http },
 		})
 	}

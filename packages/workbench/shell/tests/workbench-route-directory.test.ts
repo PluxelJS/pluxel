@@ -108,6 +108,8 @@ describe('Workbench route directory', () => {
 		'/',
 		'/logs',
 		'/logs/detail',
+		'/apps',
+		'/apps/detail',
 		'/plugins/:id',
 		'/plugin-graph',
 		'/security/audit',

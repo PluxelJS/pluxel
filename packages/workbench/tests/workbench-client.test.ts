@@ -79,6 +79,54 @@ const unavailableEntry: WorkbenchUnavailableFederatedLayoutEntry = Object.freeze
 })
 
 describe('Workbench opened View client', () => {
+	it.each(['left', 'right', 'bottom'] as const)(
+		'reads a %s panel with its exact target owner',
+		async (region) => {
+			const disposeResult = vi.fn()
+			const placement = { kind: 'panel', region, label: 'Plugin tool', order: 2 }
+			const session = {
+				layoutDto: vi.fn().mockResolvedValue({
+					profile: 1,
+					revision: 1,
+					target: entry.target,
+					entries: [
+						{ ...entry, placement },
+						{ ...contentEntry, placement },
+					],
+					[Symbol.dispose]: disposeResult,
+				}),
+			} as unknown as RpcStub<WorkbenchSessionApi>
+			const layout = await readWorkbenchLayout(session, { target: node })
+			expect(layout.entries).toHaveLength(2)
+			for (const item of layout.entries) {
+				expect(item.placement).toEqual(placement)
+				expect(item.target.node).toEqual(node)
+				expect(Object.isFrozen(item.placement)).toBe(true)
+			}
+			expect(disposeResult).toHaveBeenCalledTimes(1)
+		},
+	)
+
+	it.each([
+		{ kind: 'panel', region: 'center', label: 'Tool', order: 0 },
+		{ kind: 'panel', region: 'left', order: 0 },
+		{ kind: 'panel', region: 'left', label: 'Tool', order: 0, path: '/tool' },
+		{ kind: 'panel', region: 'left', label: 'Tool', order: 0, scope: 'global' },
+	])('rejects malformed panel placement %# and releases the DTO', async (placement) => {
+		const disposeResult = vi.fn()
+		const session = {
+			layoutDto: vi.fn().mockResolvedValue({
+				profile: 1,
+				revision: 1,
+				target: entry.target,
+				entries: [{ ...entry, placement }],
+				[Symbol.dispose]: disposeResult,
+			}),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+		await expect(readWorkbenchLayout(session, { target: node })).rejects.toThrow('placement')
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
 	it('owns and validates a capability-free Workbench Content result', async () => {
 		const disposeResult = vi.fn()
 		const session = {

@@ -118,7 +118,7 @@ Shell 导航把内部路径、解析后的 search 与 hash 交给 Worksplit 的 
 恢复后的惰性文档也用同一 Router parser 识别身份，不能按公开 URL 手工剥离 basepath 或拼接第二份路径。
 `frame: standalone` 从页面入口分流，用完整页面导航跨越工作区边界；它的 browser Router 不与工作区 history 同时运行。
 
-普通打开按 Worksplit 身份规则复用已有文档，显式新实例产生独立 Router 和 opened owner。插件的 `tab()` publication 从详情页打开为
+普通入口按 Worksplit 身份规则复用已有文档；容器标签栏的“+”打开统一入口选择器，在发起容器中创建新文档，产生独立 Router 和 opened owner。入口列表不提供逐项副本按钮。插件的 `tab()` publication 从详情页打开为
 独立文档，URL 用 canonical descriptor key 标识入口；publication group 是业务导航分类，与原生 TabGroup 不共享状态。
 新文档的默认名称只从完整 committed publication 读取 tab label/key、相同 canonical owner 的 displayName 或 compiled route title，
 不能借用其他 fork 或未发布 owner 的名称。首次 start 和普通打开使用同一只读选择；复用、恢复和已提交的 Host/F2 名称以原生 Model 为准，不重新投影覆盖。
@@ -132,10 +132,11 @@ Shell 导航把内部路径、解析后的 search 与 hash 交给 Worksplit 的 
 恢复仍需验证 workspace、结构与实际 publication/权限；坏快照保留现场，修复或重置必须显式执行。
 已保存的原生节点必须包含明确的 `type` 和容器 `children`，不能把缺损快照交给 Model 补齐为默认布局；
 只有代码中的初始 `layout` 可以采用原生可选字段的缺省值。
-使用新的存储 key，旧 workspace 格式不恢复；没有兼容 reader、启动迁移或两种格式双写。
+本次导航与工具布局改版使用版本 4 存储 key，旧布局不读取，首次进入使用当前默认布局；未提交草稿从未进入快照，也不迁移。
+没有兼容 reader、启动补齐工具节点、双读或两种格式双写；当前版本快照仍按原结构校验，不能借版本升级掩盖损坏输入。
 存储不可用不阻塞打开和编辑，但须提供可发现的错误反馈。恢复后台标签不会立即为所有插件发起 open RPC。
 
-`WorkspaceSnapshotStorage` 使用 `pluxel:worksplit:1:${uiBasePath}` key，按当前浏览器 origin 与 UI basepath 隔离布局。
+`WorkspaceSnapshotStorage` 使用 `pluxel:worksplit:4:${uiBasePath}` key，按当前浏览器 origin 与 UI basepath 隔离布局。
 连续变化合并写入，`pagehide`、页面隐藏与 teardown 补写待保存快照；序列化结果相同不重复写盘。
 快照读取/结构校验失败不会写回默认值；显式恢复默认布局先请求关闭文档，解除固定与关闭保护后才写入默认快照并完整导航。
 这些行为不保证强制终止浏览器或存储故障时的数据持久性。
@@ -150,8 +151,30 @@ Remote 不 import Worksplit、Shell router 或布局 store。Renderer 内容使�
 
 ## 内置编辑器滚动与目录
 
-插件详情用普通 Mantine Tabs 组织配置、概览、依赖、日志和日志级别；每个内容区域有受限高度的滚动容器。
-本地业务选项卡不创建新的 editor group 或宿主分区，publication 页面从入口按钮进入独立工作区文档。
+插件详情文档拥有配置编辑器，publication 页面从入口按钮进入独立工作区文档。
+官方 ActivityRail 独立于可收起的工具边栏，只展示官方入口；“应用”打开 `/apps` 聚合页，“插件管理”打开 `/plugins` 并显示插件目录。应用与插件管理分别使用 `apps`、`plugins` workspace，高亮不按 owner 混为同一类。`/apps` 聚合页本身不注册插件 workspace。官方项目表由
+`navigationItems.ts` 维护，ActivityRail 和全局查找共享。图标／文字模式保存在 `border_left.config.navigationMode`，
+默认 `icons`，另一取值是 `labels`；通过原生 Action 更新并随 Model 持久化，不创建独立导航 store。
+左 Border 只注册一个 `navigation` 工具；插件管理提供插件目录，业务应用只显示当前 owner 的左侧扩展，没有扩展时不占位。
+所选内置工具或面板存放在 `border_left.config.navigationView`，通过区域横向标签切换；不把全局应用目录塞进每个业务应用的侧栏。
+左 Border 仅含 navigation 时隐藏冗余原生标签条；文档迁入后恢复显示原生标签条，不影响原生选择或停靠。
+右 Border 为默认隐藏的插件信息。默认 Model 没有插件日志节点；底部 Border 为空且隐藏，仅供收起日志时暂存节点。
+首次点击日志按钮时将 `plugin-logs` 作为原生 TabSet 添加到中央根 Row 底部，宽度限于中央文档区。
+顶部日志按钮收起时将同一节点移入隐藏 Border，原位置和必要的布局恢复信息存于节点 config，随 Model 持久化；
+再次显示时恢复原可用容器；原容器被原生 tidy 移除时依据仍存在的邻区重建分割，原位置及邻区均失效才回到中央根 Row 底部。原生关闭标签才删除工具节点，不能删除同容器中的其他文档。
+`WorkspaceNavigation` 的 `plugins`、`publications`、`all` 分别承担目录、常用发布入口和全量查找；
+应用目录使用全局 route layout，只列出带显式 navigation 的 route，并使用 navigation.label、publication group 与 canonical owner 组织；target layout 的 tab placement 仍是所属插件的文档入口，不能假定全局 layout 包含它们。
+目录高亮匹配 canonical plugin route；页面高亮同时匹配 owner 与精确 entry key，不能将同一插件的全部页面标记为当前页。
+左右侧栏、中央日志 TabSet 与文档使用同一原生 Model；顶部居中按钮通过原生 Action 操作，左右侧栏恢复收起前的 selected 标签，不另存布局状态。
+已渲染的插件详情／声明路由将 canonical owner 登记在所属 `WorkbenchDocumentState`；插件信息和日志工具只读取 Worksplit 活动文档的 owner，
+不从浏览器地址猜测、不引入全局可写的“当前插件”。非插件文档没有 owner 时显示选择提示。
+工具可见性从原生 Model 的选中状态、Border 显示状态与 TabSet 最大化状态派生；停靠在另一最大化容器之外也视为隐藏。
+隐藏时卸载工具的读取和日志订阅，文档草稿保留。
+插件通过 `workbench.panel()` 发布区域扩展，各区域在同一工具容器内使用横向标签选择内置工具或 publication。
+可见 panel entries 由当前活动文档的 canonical owner 与 placement.region 派生，Attachment 匹配 consumer target.node，不能按 provider、displayName 或浏览器 URL 猜测。
+面板打开沿用 `WorkbenchEntryView` 的 Content/MF activation；不改变文档 Router/history，也不把 panel 注册成独立文档。面板只有 owner 上下文，不接受活动文档的实体或路由参数；同 owner 的机器人／会话切换不代表面板实体上下文切换，实体编辑与草稿仍归中心文档。
+区域隐藏、选择另一面板或 owner 变化时卸载原 activation，释放 opened handle/Bridge/observer；再次显示 fresh open，不承诺面板草稿保存。
+面板选择按 owner 与 descriptor key 标识；左侧使用 Border config.navigationView，右侧与底部使用工具节点 config.panelView 随 Model 保存。每区域只存当前选择，owner 不匹配时回到该区域可用的默认工具或面板，不维护每插件的独立偏好表，也不创建第二布局树；公开作者契约见 [上下文面板](../docs/workbench/panels.md)。
 FormToc 与 ContentOutline 只读取对应文档内的 config anchors / Markdown headings，不扫描其他编辑器或 federated renderer DOM。
 目录是否可用由实际 anchors 决定，不靠 scrollHeight，也没有跨文档目录 claim 或右侧 portal registry。
 

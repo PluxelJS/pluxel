@@ -587,6 +587,19 @@ function parseLayoutTarget(input: unknown, label: string) {
 
 function parsePlacement(input: unknown, label: string): WorkbenchPlacement {
 	const record = readRecord(input, label)
+	if (record.kind === 'panel') {
+		assertExactKeys(record, label, ['kind', 'region', 'label', 'icon', 'order'])
+		if (record.region !== 'left' && record.region !== 'right' && record.region !== 'bottom') {
+			malformed(`${label}.region is invalid`)
+		}
+		return Object.freeze({
+			kind: 'panel',
+			region: record.region,
+			label: readBoundedText(record.label, `${label}.label`, 256),
+			...(record.icon === undefined ? {} : { icon: readWorkbenchIcon(record.icon) }),
+			order: readFiniteNumber(record.order, `${label}.order`),
+		})
+	}
 	if (record.kind === 'tab') {
 		assertExactKeys(record, label, ['kind', 'label', 'icon', 'group', 'order'])
 		return Object.freeze({

@@ -3,7 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { PluginNodeAddress } from '@pluxel/core'
+import { formatPluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkbenchNavigationProvider } from '../src/app/workbench/context'
@@ -17,6 +17,34 @@ import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
 
 const source = vi.hoisted(() => ({ snapshot: undefined as WorkbenchTargetSnapshot | undefined }))
 vi.mock('../src/workbench/runtime', () => ({ useWorkbenchTargetSnapshot: () => source.snapshot }))
+vi.mock('../src/app/plugins/pluginOverview', () => ({
+	usePluginOverview: () => ({
+		overview: {
+			status: {
+				statuses: [
+					{
+						address: owner,
+						route: formatPluginNodeRoute(owner),
+						label: 'Accounts East config',
+						lifecycleState: 'running',
+					},
+					{
+						address: { ...owner, forkId: 'west' },
+						route: formatPluginNodeRoute({ ...owner, forkId: 'west' }),
+						label: 'Accounts West config',
+						lifecycleState: 'stopped',
+					},
+					{
+						address: { ...owner, forkId: 'north' },
+						route: formatPluginNodeRoute({ ...owner, forkId: 'north' }),
+						label: 'Accounts North config',
+						lifecycleState: 'running',
+					},
+				],
+			},
+		},
+	}),
+}))
 
 const owner: PluginNodeAddress = {
 	definition: {
@@ -48,7 +76,7 @@ const entries = [
 	entry('tab reports', {
 		kind: 'tab',
 		label: '报表',
-		group: { key: 'tools', label: '业务工具' },
+		group: { id: 'tools', label: '业务工具' },
 		order: 0,
 	}),
 	entry('accounts', {
@@ -92,7 +120,12 @@ afterEach(async () => {
 	vi.restoreAllMocks()
 	vi.unstubAllGlobals()
 })
-async function renderNavigation() {
+async function renderNavigation(
+	mode?: 'plugins' | 'publications' | 'all',
+	activePluginRoute?: string,
+	activeEntryKey?: string,
+	openMode: 'reuse' | 'new' = 'reuse',
+) {
 	const navigate = vi.fn()
 	const openTab = vi.fn()
 	const showNavigation = vi.fn()
@@ -103,7 +136,13 @@ async function renderNavigation() {
 		root.render(
 			<MantineProvider env="test">
 				<WorkbenchNavigationProvider value={{ navigate, openTab }}>
-					<WorkspaceNavigation onShowNavigation={showNavigation} />
+					<WorkspaceNavigation
+						mode={mode}
+						openMode={openMode}
+						activePluginRoute={activePluginRoute}
+						activeEntryKey={activeEntryKey}
+						onShowNavigation={showNavigation}
+					/>
 				</WorkbenchNavigationProvider>
 			</MantineProvider>,
 		),
@@ -128,35 +167,147 @@ async function input(element: HTMLInputElement, value: string) {
 }
 
 describe('workspace entry discovery', () => {
-	it('discovers all built-ins and every publication entry, preserving fork identity, copies, and standalone navigation', async () => {
-		const { container, navigate, openTab } = await renderNavigation()
-		for (const name of ['首页', '插件', '日志', '认证与安全', '安全审计', '依赖图'])
-			expect(button(name)).toBeDefined()
-		for (const name of ['报表', '账户目录', '账户详情', '登录窗口', '插件日志'])
-			expect(button(name)).toBeDefined()
-		await click(container.querySelector('[aria-label="首页：在新标签打开副本"]')!)
-		expect(openTab).toHaveBeenLastCalledWith({ path: '/', title: '首页' })
-		await click(button('报表'))
-		expect(navigate).toHaveBeenLastCalledWith(`${buildPluginDetailHref(owner)}?entry=tab%20reports`)
-		await click(container.querySelector('[aria-label="报表：在新标签打开副本"]')!)
-		expect(openTab).toHaveBeenLastCalledWith({
-			path: `${buildPluginDetailHref(owner)}?entry=tab%20reports`,
-			title: '报表',
+	it.each(['reuse', 'new'] as const)(
+		'opens entries through one choice in %s mode without row copy buttons',
+		async (mode) => {
+			const { container, navigate, openTab } = await renderNavigation(
+				undefined,
+				undefined,
+				undefined,
+				mode,
+			)
+			for (const name of ['首页', '应用', '插件管理', '日志', '认证与安全', '安全审计', '依赖图'])
+				expect(button(name)).toBeDefined()
+			expect(container.querySelector('[aria-label*="副本"]')).toBeNull()
+			for (const [label, path, title] of [
+				['首页', '/', '首页'],
+				['报表', `${buildPluginDetailHref(owner)}?entry=tab%20reports`, '报表'],
+				['账户目录', '/accounts', '账户目录'],
+			]) {
+				await click(button(label))
+				if (mode === 'new') expect(openTab).toHaveBeenLastCalledWith({ path, title })
+				else expect(navigate).toHaveBeenLastCalledWith(path)
+			}
+			await click(button('登录窗口'))
+			expect(navigate).toHaveBeenLastCalledWith('/signin')
+		},
+	)
+
+	it('keeps the plugin directory separate, orders status groups, highlights the active plugin, and opens management', async () => {
+		const { container, navigate } = await renderNavigation('plugins', formatPluginNodeRoute(owner))
+		expect(button('插件管理')).toBeDefined()
+		expect(button('Accounts East config').getAttribute('aria-current')).toBe('page')
+		expect(button('Accounts West config').hasAttribute('aria-current')).toBe(false)
+		const running = container.querySelector('[role="group"][aria-label="运行中"]')!
+		expect(
+			[...running.querySelectorAll('.plx-workspace-navigation__link')].map(
+				(item) => item.textContent,
+			),
+		).toEqual(['Accounts East config', 'Accounts North config'])
+		expect(container.querySelector('[role="group"][aria-label="已停止"]')?.textContent).toContain(
+			'Accounts West config',
+		)
+		for (const name of [
+			'首页',
+			'认证与安全',
+			'报表',
+			'账户目录',
+			'账户详情',
+			'登录窗口',
+			'插件目录',
+		])
+			expect(container.textContent).not.toContain(name)
+		await click(button('插件管理'))
+		expect(navigate).toHaveBeenLastCalledWith('/plugins')
+		await click(button('Accounts East config'))
+		expect(navigate).toHaveBeenLastCalledWith(buildPluginDetailHref(owner))
+		await input(container.querySelector<HTMLInputElement>('[aria-label="查找工作区入口"]')!, 'West')
+		expect(container.textContent).not.toContain('Accounts East config')
+		expect(button('Accounts West config')).toBeDefined()
+	})
+
+	it('groups published pages by owner and category, honors navigation labels, and excludes unlisted routes', async () => {
+		const published = entry('accounts-navigation', {
+			kind: 'route',
+			path: '/accounts-index',
+			title: '账户目录文档',
+			navigation: { label: '账户入口', group: { id: 'tools', label: '业务工具' } },
+			frame: 'shell',
+			order: 1,
 		})
-		await click(button('账户目录'))
-		expect(navigate).toHaveBeenLastCalledWith('/accounts')
-		await click(container.querySelector('[aria-label="账户目录：在新标签打开副本"]')!)
-		expect(openTab).toHaveBeenLastCalledWith({ path: '/accounts', title: '账户目录' })
-		await click(button('登录窗口'))
-		expect(navigate).toHaveBeenLastCalledWith('/signin')
-		expect(container.querySelector('[aria-label="登录窗口：在新标签打开副本"]')).toBeNull()
-		await click(button('插件日志'))
-		expect(navigate).toHaveBeenLastCalledWith(buildWorkbenchHref(owner, '/logs'))
+		const secondOwner = { ...owner, forkId: 'west' }
+		const secondEntry = {
+			...entry('west-tab', { kind: 'tab', label: '西区账户', order: 3 }),
+			target: { node: secondOwner, displayName: 'Accounts West' },
+		}
+		source.snapshot = compileWorkbenchSnapshot(null, {
+			profile: 1,
+			revision: 2,
+			target: null,
+			entries: [...entries, published, secondEntry],
+		})
+		const { container, navigate, openTab } = await renderNavigation(
+			'publications',
+			formatPluginNodeRoute(owner),
+			'tab reports',
+		)
+		const east = container.querySelector('[role="group"][aria-label="Accounts East · 业务工具"]')!
+		expect(east.textContent).toContain('报表')
+		expect(east.textContent).toContain('账户入口')
+		const west = container.querySelector('[role="group"][aria-label="Accounts West"]')!
+		expect(west.textContent).toContain('西区账户')
+		expect(west.textContent).not.toContain('报表')
+		expect(button('报表').getAttribute('aria-current')).toBe('page')
+		expect(button('账户入口').hasAttribute('aria-current')).toBe(false)
+		expect(button('西区账户').hasAttribute('aria-current')).toBe(false)
+		for (const name of [
+			'首页',
+			'认证与安全',
+			'账户详情',
+			'登录窗口',
+			'Accounts East config',
+			'插件目录',
+		])
+			expect(container.textContent).not.toContain(name)
+		expect(container.querySelector('[aria-label="账户目录：在新标签打开副本"]')).toBeNull()
+		await click(button('账户入口'))
+		expect(navigate).toHaveBeenLastCalledWith('/accounts-index')
+		expect(openTab).not.toHaveBeenCalled()
+		await click(button('西区账户'))
+		expect(navigate).toHaveBeenLastCalledWith(
+			`${buildPluginDetailHref(secondOwner)}?entry=west-tab`,
+		)
+		const query = container.querySelector<HTMLInputElement>('[aria-label="查找工作区入口"]')!
+		await input(query, '账户入口')
+		expect(button('账户入口')).toBeDefined()
+		expect(container.textContent).not.toContain('西区账户')
+		await act(async () =>
+			query.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })),
+		)
+		expect(navigate).toHaveBeenLastCalledWith('/accounts-index')
+	})
+
+	it('temporarily expands matching groups during search and keeps the manual collapsed preference', async () => {
+		const { container } = await renderNavigation('plugins')
+		const group = container.querySelector('[role="group"][aria-label="运行中"]')!
+		const heading = group.querySelector<HTMLButtonElement>('[aria-expanded]')!
+		await click(heading)
+		expect(heading.getAttribute('aria-expanded')).toBe('false')
+		expect(group.querySelector<HTMLElement>('.plx-workspace-navigation__rows')!.hidden).toBe(true)
+		const query = container.querySelector<HTMLInputElement>('[aria-label="查找工作区入口"]')!
+		await input(query, 'East')
+		expect(heading.getAttribute('aria-expanded')).toBe('true')
+		expect(group.querySelector<HTMLElement>('.plx-workspace-navigation__rows')!.hidden).toBe(false)
+		const current = button('Accounts East config')
+		expect(current.getAttribute('title')).toContain(formatPluginNodeRoute(owner))
+		expect(current.getAttribute('aria-label')).toBe('Accounts East config · 运行中')
+		await input(query, '')
+		expect(heading.getAttribute('aria-expanded')).toBe('false')
 	})
 
 	it('requires concrete local route parameters and keeps search/hash when opening a separate document', async () => {
-		const { container, navigate, openTab } = await renderNavigation()
-		await click(container.querySelector('[aria-label="账户详情：在新标签打开副本"]')!)
+		const { navigate, openTab } = await renderNavigation(undefined, undefined, undefined, 'new')
+		await click(button('账户详情'))
 		const path = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
 		const open = button('打开页面', true)
 		expect(open.disabled).toBe(true)

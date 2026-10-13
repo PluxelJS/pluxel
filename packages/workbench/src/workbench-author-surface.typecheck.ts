@@ -53,6 +53,8 @@ type RendererEntry = import('@pluxel/workbench').WorkbenchRendererEntry
 type RoutePlacement = import('@pluxel/workbench').WorkbenchRoutePlacement
 // @ts-expect-error Tab placements are inferred by workbench.tab().
 type TabPlacement = import('@pluxel/workbench').WorkbenchTabPlacement
+// @ts-expect-error Panel placements are inferred by workbench.panel().
+type PanelPlacement = import('@pluxel/workbench').WorkbenchPanelPlacement
 // @ts-expect-error Target factories are supplied contextually by ctx.workbench.publish().
 type TargetFactory = import('@pluxel/workbench').WorkbenchTargetFactory
 // @ts-expect-error View open contexts are supplied contextually by ctx.workbench.publish().
@@ -88,5 +90,6 @@ void (null as unknown as Placement)
 void (null as unknown as RendererEntry)
 void (null as unknown as RoutePlacement)
 void (null as unknown as TabPlacement)
+void (null as unknown as PanelPlacement)
 void (null as unknown as TargetFactory)
 void (null as unknown as ViewOpenContext)

@@ -21,6 +21,19 @@ Memory is the explicit default for both backend tokens.
 pnpm --filter @pluxel/plugins-host dev
 ```
 
+The dev command builds workspace dependencies one Turbo task at a time before starting Vite.
+Each task can still build Workbench bundles and generate declarations using its own workers, so
+`--concurrency=1` limits overlapping package tasks, not peak memory inside a build. Turbo reuses unchanged outputs.
+
+When workspace dependencies are already built, start Vite directly for UI development without repeating
+the production dependency build:
+
+```sh
+pnpm --filter @pluxel/plugins-host exec vite --config vite.config.ts
+```
+
+Use the full `dev` command when dependency build outputs need preparation.
+
 For production, run `pnpm --filter @pluxel/plugins-host build`, then
 `pnpm --filter @pluxel/plugins-host start` for native startup in a fresh Node process.
 The launcher binds before evaluating business imports; do not preload the application or its dependency graph.
@@ -128,3 +141,25 @@ The tests cover safe provider defaults, stopped Redis/Pi policy,
 the S3 named-bucket catalog, real render/cache behavior and isolated draft/release storage.
 The runtime smoke uses fresh Node processes and temporary data for both launchers. It blocks Vite/compiler/watcher
 imports in Native, checks the compiled showcase and Workbench assets over HTTP, and requires natural exit after SIGTERM.
+
+### 机器人工作区：真实插件 API、模拟业务数据
+
+运行 dev 后，从“应用”打开“机器人工作区（模拟）”，或访问
+`/__pluxel/workbench/bot-lab`。无需平台凭据，不会连接 Telegram、Discord 或企业微信。
+
+`src/bot-lab/` 用四个真实 Plugin 验证多个插件共用一个业务列表：
+
+- 三个来源插件各自拥有内存 `BotStore`，通过 constructor 依赖工作区插件，在 `init()` 注册来源并返回撤销函数。
+- `BotWorkspacePlugin` 统一发布首页、左侧 View 列表、参数化机器人文档、右侧来源状态和底部工作区事件。
+- 列表和文档通过 Workbench RPC 与 `watch()` 读取数据；保存调用绑定 `source + bot` 的独立 target，并检查版本。
+- 不同来源都包含名为“客服助手”、ID 为 `support` 的机器人。搜索、业务分组、标签切换和独立草稿可用来验证身份隔离。
+
+在“插件管理”停止 Discord 模拟来源后，列表保留其最后已知条目并标为不可用；其他来源仍可使用。来源没有单独发布页面，
+且依赖方向为来源 → 工作区，因此停止来源不会撤回工作区 publication。停止工作区本身仍遵循正常的 publication 失效与页面刷新规则。
+来源重启会重新创建它的模拟数据；工作区和来源重启不提供业务持久化。过期草稿不能覆盖新版本，须显式核对并重新读取。
+
+右侧、底部扩展是**整个工作区**的状态与事件，不会假装拥有活动机器人的实体上下文。当前 API 下，单个机器人的详情、事件和草稿放在它的文档中；
+左侧列表使用 `host.navigation.navigate()` 按 URL 复用文档，不读取 Shell store 或建立全局“当前机器人”。
+
+`dev/bot-lab.ts` 提供当前 Vite 实例的只读检查、真实 Workbench API 保存以及 Discord 来源停止/启动操作。
+调用前使用 `pluxel dev instances --root <absolute-root>` 发现实例，并为后续命令固定 root 和 instance。

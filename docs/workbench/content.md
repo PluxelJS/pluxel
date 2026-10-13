@@ -65,6 +65,8 @@ override init() {
 这就是默认完整路径：不创建 `RpcTarget`、不管理 query cache，也不手动 reload。含 data 的 Content action settle 后，Framework 会
 重新执行 `load()`。
 
+需要把同一 Content 放在当前插件的侧栏或底部时，使用 [`workbench.panel()`](./panels.md) 作为 placement；Markdown、data/action 与 bindings 保持相同。
+
 ## 加入一次性表单
 
 在 action 上声明 `input`，Workbench 就会显示并校验表单。默认点击按钮打开对话框；需要直接展开时加 `form: 'embedded'`。

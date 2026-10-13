@@ -2,6 +2,9 @@ import { lstatSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 
+// Static compilation consumes the same pure panel admission as author definitions.
+export { panel, WORKBENCH_ICONS, type WorkbenchPanelPlacement } from './definition.ts'
+
 export interface WorkbenchCapnwebPackage {
 	manifestPath: string
 	owner: string

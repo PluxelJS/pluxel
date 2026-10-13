@@ -40,6 +40,11 @@ vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: Page }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
 	WorkspaceNavigation: () => <input aria-label="入口搜索" />,
 }))
+vi.mock('../src/workbench/runtime', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../src/workbench/runtime')>()),
+	useWorkbenchTargetSnapshot: () => ({ layout: { entries: [], revision: 1 } }),
+	useWorkbenchRuntime: () => ({ runningPluginsReady: false, runningPluginKeys: new Set() }),
+}))
 vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 	RouteErrorScreen: () => <p role="alert">页面错误</p>,
 }))
@@ -236,7 +241,13 @@ describe('native Workbench route continuity', () => {
 			'/__pluxel/workbench/logs?filter=warn#tail',
 		)
 		expect(push).toHaveBeenCalledTimes(1)
-		await act(async () => workspace.workbench.activate('navigation'))
+		await act(async () => {
+			// This fixture explicitly owns a management workspace so its native Border tool is available.
+			workspace.documents.get(first.id)!.workspace = 'plugins'
+			workspace.notifyContentState()
+			await workspace.syncWorkspacePanels()
+			workspace.workbench.activate('navigation')
+		})
 		const toolInput = container.querySelector<HTMLInputElement>('[aria-label="入口搜索"]')!
 		await act(async () => toolInput.focus())
 		expect(workspace.workbench.getEditingContext().focusedArea).toBe('tool')

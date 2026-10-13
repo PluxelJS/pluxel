@@ -20,7 +20,7 @@ declare const apiType: unique symbol
 declare const consumerApiType: unique symbol
 declare const definitionEntries: unique symbol
 
-const WORKBENCH_ICONS = Object.freeze({
+export const WORKBENCH_ICONS = Object.freeze({
 	Api: 'api',
 	BrandDiscord: 'brand-discord',
 	BrandTelegram: 'brand-telegram',
@@ -73,7 +73,18 @@ export type WorkbenchRoutePlacement = Readonly<{
 	order: number
 }>
 
-export type WorkbenchPlacement = WorkbenchTabPlacement | WorkbenchRoutePlacement
+export type WorkbenchPanelPlacement = Readonly<{
+	kind: 'panel'
+	region: 'left' | 'right' | 'bottom'
+	label: string
+	icon?: WorkbenchIcon
+	order: number
+}>
+
+export type WorkbenchPlacement =
+	| WorkbenchTabPlacement
+	| WorkbenchRoutePlacement
+	| WorkbenchPanelPlacement
 
 export type WorkbenchRendererEntry = Readonly<{
 	readonly [RENDERER_ENTRY]: WorkbenchRendererEntryMetadata
@@ -656,6 +667,23 @@ function tab(
 	})
 }
 
+export function panel(
+	region: WorkbenchPanelPlacement['region'],
+	input: Readonly<{ label: string; icon?: WorkbenchIcon; order?: number }>,
+): WorkbenchPanelPlacement {
+	if (region !== 'left' && region !== 'right' && region !== 'bottom') {
+		throw new TypeError('[workbench] panel(): region must be left, right, or bottom')
+	}
+	assertExactKeys('panel', input, ['label', 'icon', 'order'])
+	return Object.freeze({
+		kind: 'panel',
+		region,
+		label: requiredText('panel', 'label', input.label, 256),
+		...(input.icon === undefined ? {} : { icon: readWorkbenchIcon(input.icon) }),
+		order: finiteOrder('panel', input.order),
+	})
+}
+
 function route(
 	path: string,
 	input: Readonly<{
@@ -824,11 +852,15 @@ function assertValibotSchema(
 
 function assertPlacement(value: unknown): asserts value is WorkbenchPlacement {
 	if (!value || typeof value !== 'object') {
-		throw new TypeError('[workbench] placement must be created by workbench.tab() or route()')
+		throw new TypeError(
+			'[workbench] placement must be created by workbench.tab(), route(), or panel()',
+		)
 	}
 	const kind = (value as { kind?: unknown }).kind
-	if ((kind !== 'tab' && kind !== 'route') || !Object.isFrozen(value)) {
-		throw new TypeError('[workbench] placement must be created by workbench.tab() or route()')
+	if ((kind !== 'tab' && kind !== 'route' && kind !== 'panel') || !Object.isFrozen(value)) {
+		throw new TypeError(
+			'[workbench] placement must be created by workbench.tab(), route(), or panel()',
+		)
 	}
 }
 
@@ -1028,5 +1060,6 @@ export const workbench = Object.freeze({
 	action,
 	tab,
 	route,
+	panel,
 	icons: WORKBENCH_ICONS,
 })

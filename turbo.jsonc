@@ -92,6 +92,7 @@
 				"$TURBO_ROOT$/tsconfig*.json",
 				"$TURBO_ROOT$/packages/workbench/package.json",
 				"$TURBO_ROOT$/packages/workbench/src/workbench/shared-transport.ts",
+				"$TURBO_ROOT$/packages/workbench/src/workbench/definition.ts",
 				"!README.md",
 				"!**/*.md",
 				"!docs/**",

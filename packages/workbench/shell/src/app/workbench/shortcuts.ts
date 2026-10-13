@@ -20,7 +20,7 @@ export const WORKBENCH_HOTKEY_LABELS = {
 
 export const WORKBENCH_SHORTCUT_ITEMS = [
 	[WORKBENCH_HOTKEY_LABELS.focusSearch, '查找所有页面与插件入口'],
-	[WORKBENCH_HOTKEY_LABELS.showNavigation, '显示或重新打开入口导航'],
+	[WORKBENCH_HOTKEY_LABELS.showNavigation, '显示或收起左侧导航'],
 	[WORKBENCH_HOTKEY_LABELS.closeActiveTab, '关闭活动文档（遵守固定与未保存保护）'],
 	[WORKBENCH_HOTKEY_LABELS.prevTab, '按原生布局顺序激活上一个文档'],
 	[WORKBENCH_HOTKEY_LABELS.nextTab, '按原生布局顺序激活下一个文档'],

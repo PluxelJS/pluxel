@@ -206,6 +206,8 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 ## Placement 与参数化 route
 
+为当前插件提供左右侧栏或底部工具时，使用 [`workbench.panel()`](./panels.md)。它复用相同 View renderer/API，切换或隐藏时卸载；需要长期编辑与独立草稿的功能继续使用下面的文档 placement。
+
 Tab 适合从 Plugin 详情打开的固定页面；每个入口打开为独立工作区文档，可以停靠、分组和关闭：
 
 ```ts

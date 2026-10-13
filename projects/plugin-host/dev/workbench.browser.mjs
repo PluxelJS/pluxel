@@ -30,7 +30,7 @@ assert.equal(
 )
 const origin = new URL(values.origin).origin
 const basepath = '/__pluxel/workbench'
-const storageKey = `pluxel:worksplit:1:${basepath}`
+const storageKey = `pluxel:worksplit:4:${basepath}`
 const artifacts = resolve(values.artifacts)
 await mkdir(artifacts, { recursive: true })
 const receipt = {
@@ -80,7 +80,7 @@ async function check(name, run) {
 }
 const flatten = (node) => [node, ...(node.children ?? []).flatMap(flatten)]
 const nodes = (snapshot) =>
-	[snapshot.layout.layout, ...(snapshot.layout.borders ?? [])].flatMap(flatten)
+	snapshot ? [snapshot.layout.layout, ...(snapshot.layout.borders ?? [])].flatMap(flatten) : []
 const browser = await chromium.launch({
 	headless: true,
 	...(values.executable ? { executablePath: values.executable } : {}),
@@ -105,7 +105,7 @@ page.on('response', (response) => {
 		receipt.resourceFailures.push({ url: response.url(), status: response.status() })
 })
 const tabs = page.locator('.flexlayout__tab_button')
-const navigation = page.locator('.plx-workspace-navigation')
+const navigation = page.locator('.plx-workspace-navigation:visible')
 const entry = (label) =>
 	navigation.locator('.plx-workspace-navigation__link').filter({ hasText: label })
 const tab = (name) =>
@@ -118,6 +118,19 @@ const reportInput = (name) =>
 		.getByRole('textbox', { name: 'Report title', exact: true })
 const menu = () => page.getByRole('menu')
 const snapshot = () => page.evaluate((key) => JSON.parse(localStorage.getItem(key)), storageKey)
+async function showApps() {
+	await page.locator('.plx-activity [aria-label="应用"]').click()
+	await expect(page).toHaveURL(origin + basepath + '/apps')
+	await expect(navigation).toHaveCount(1)
+	await expect(navigation).toBeVisible()
+}
+async function newDocument(label) {
+	await page.getByRole('button', { name: '新建标签页', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: '新建标签页', exact: true })
+	await expect(dialog).toBeVisible()
+	await dialog.locator('.plx-workspace-navigation__link').filter({ hasText: label }).click()
+	await expect(dialog).toHaveCount(0)
+}
 async function openMenu(target) {
 	await target.click({ button: 'right' })
 	await expect(menu()).toBeVisible()
@@ -153,12 +166,13 @@ try {
 	await check('two built-ins, same URL reuse, browser back/forward and basepath', async () => {
 		await page.goto(origin + basepath)
 		await expect(tab('首页')).toBeVisible()
-		await entry('日志实时日志').click()
+		await page.locator('.plx-activity [aria-label="日志"]').click()
 		await expect(tab('日志')).toBeVisible()
 		await expect(page).toHaveURL(origin + basepath + '/logs')
-		await entry('日志实时日志').click()
+		await page.locator('.plx-activity [aria-label="日志"]').click()
 		await expect(tabs).toHaveCount(2)
-		await entry('插件插件目录与配置').click()
+		await page.locator('.plx-activity [aria-label="插件管理"]').click()
+		await navigation.getByRole('button', { name: '插件管理', exact: true }).click()
 		await expect(tab('插件')).toBeVisible()
 		await expect(page).toHaveURL(origin + basepath + '/plugins')
 		await page.goBack()
@@ -168,7 +182,8 @@ try {
 	})
 	let inputA, inputB
 	await check('real MF page, two independent instances and native rename', async () => {
-		await entry('Pluxel Architecture Lab').click()
+		await showApps()
+		await entry('Architecture Lab').click()
 		const input = page.getByRole('textbox', { name: 'Report title', exact: true })
 		await expect(input).toBeVisible()
 		await expect(page).toHaveURL(origin + basepath + '/architecture-lab')
@@ -183,8 +198,9 @@ try {
 		await rename(tab('Studio A（副本）'), 'Studio B')
 		await tab('Studio A').click()
 		await expect(input).toHaveValue('Draft A survives native layout')
-		await entry('Pluxel Architecture Lab').click()
-		await expect(tabs).toHaveCount(5)
+		await showApps()
+		await entry('Architecture Lab').click()
+		await expect(tabs).toHaveCount(6)
 		assert.equal(await inputA.evaluate((element) => element.isConnected), true)
 		assert.equal(await inputB.evaluate((element) => element.isConnected), true)
 	})
@@ -206,9 +222,7 @@ try {
 			const roots = page.locator('[data-worksplit-role="document"] input[maxlength="80"]')
 			await expect(roots).toHaveCount(2)
 			for (let cycle = 0; cycle < 8; cycle++) {
-				await navigation
-					.getByRole('button', { name: 'Pluxel Architecture Lab：在新标签打开副本', exact: true })
-					.click()
+				await newDocument('Architecture Lab')
 				await expect(tab('Pluxel Architecture Lab')).toBeVisible()
 				await expect(roots).toHaveCount(3)
 				const transient = await page
@@ -217,7 +231,7 @@ try {
 				assert.ok(transient)
 				await openMenu(tab('Pluxel Architecture Lab'))
 				await menu().getByRole('menuitem', { name: '关闭标签', exact: true }).click()
-				await expect(tabs).toHaveCount(5)
+				await expect(tabs).toHaveCount(6)
 				await expect(content).toHaveCount(count)
 				await expect(roots).toHaveCount(2)
 				assert.equal(await transient.evaluate((element) => element.isConnected), false)
@@ -273,6 +287,7 @@ try {
 		await menu().getByRole('menuitem', { name: '关闭可见且可关闭标签', exact: true }).click()
 		await expect(tab('日志')).toHaveCount(0)
 		await expect(tab('插件')).toHaveCount(0)
+		await expect(tab('应用')).toHaveCount(0)
 		await expect(pill).toHaveCount(1)
 		await expect(tab('首页')).toBeVisible()
 		await retained()
@@ -336,11 +351,12 @@ try {
 			await menu().getByRole('menuitem', { name: '移动标签到：左边栏', exact: true }).click()
 			await tab('Studio A').click()
 			const accepted = page.url()
-			await tab('入口').click()
+			await page.getByRole('tab', { name: '插件目录', exact: true }).click()
 			await expect(page).toHaveURL(accepted)
-			await expect(navigation).toBeVisible()
+			await expect(page.getByRole('heading', { name: '报表工作流', exact: true })).toBeVisible()
 			await retained()
-			await entry('Pluxel Architecture Lab').click()
+			await showApps()
+			await entry('Architecture Lab').click()
 			await expect(reportInput('Studio A')).toHaveValue('Draft A survives native layout')
 			await retained()
 		},
@@ -412,6 +428,8 @@ try {
 	await check(
 		'full TabSet close includes collapsed groups and retains pinned tabs elsewhere',
 		async () => {
+			if ((await pill.getAttribute('aria-expanded')) !== 'true') await pill.click()
+			await tab('Studio B').click()
 			const restoredInput = await reportInput('Studio B').elementHandle()
 			assert.ok(restoredInput)
 			if ((await pill.getAttribute('aria-expanded')) === 'true') await pill.click()
@@ -432,14 +450,20 @@ try {
 	await check(
 		'many documents and narrow viewport expose native overflow without body scroll',
 		async () => {
-			await tab('入口').click()
+			await page.locator('.plx-activity [aria-label="插件管理"]').click()
+			await expect(tab('插件')).toBeVisible()
+			await expect
+				.poll(async () =>
+					nodes(await snapshot()).some(
+						(node) => node.component === 'worksplit.document' && node.name === '插件',
+					),
+				)
+				.toBe(true)
 			const initialDocuments = nodes(await snapshot()).filter(
 				(node) => node.component === 'worksplit.document',
 			).length
 			for (let index = 0; index < 12; index++) {
-				await navigation
-					.getByRole('button', { name: '首页：在新标签打开副本', exact: true })
-					.click()
+				await newDocument('首页')
 				await expect
 					.poll(
 						async () =>
@@ -449,6 +473,11 @@ try {
 					.toBe(initialDocuments + 1 + index)
 			}
 			await page.setViewportSize({ width: 640, height: 480 })
+			for (const name of ['左侧导航', '右侧面板', '底部面板']) {
+				const control = page.getByRole('button', { name, exact: true })
+				if ((await control.isEnabled()) && (await control.getAttribute('aria-pressed')) === 'true')
+					await control.click()
+			}
 			const overflow = page.getByRole('button', { name: '查看溢出标签', exact: true }).first()
 			await expect(overflow).toBeVisible()
 			await overflow.click()
@@ -507,6 +536,7 @@ try {
 			assert.equal(publication.placement.path, '/packages')
 			const title = publication.placement.title
 			const before = await consoleRun('packageManagerSnapshot')
+			await showApps()
 			await entry(title).click()
 			await expect(page).toHaveURL(origin + basepath + '/packages')
 			const pane = page.getByRole('tabpanel', { name: title, exact: true })
@@ -521,8 +551,9 @@ try {
 			const packageInputA = await input.elementHandle()
 			const draftA = '@pluxel/browser-draft-a@0.0.0'
 			await input.fill(draftA)
+			await showApps()
 			await entry(title).click()
-			await expect(tabs).toHaveCount(2)
+			await expect(tabs).toHaveCount(3)
 			await expect(input).toHaveValue(draftA)
 			const reused = await input.elementHandle()
 			assert.ok(await packageInputA.evaluate((element, other) => element === other, reused))
@@ -566,6 +597,8 @@ try {
 			await tab(title).locator('[title="关闭标签"]').click()
 			await expect(tab(title)).toHaveCount(0)
 			assert.equal(await packageInputA.evaluate((element) => element.isConnected), false)
+			await expect(tabs).toHaveCount(2)
+			await tab('应用').locator('[title="关闭标签"]').click()
 			await expect(tab('首页')).toBeVisible()
 			await expect(tabs).toHaveCount(1)
 			assert.equal(new URL(page.url()).pathname.replace(/\/$/, ''), basepath)
@@ -575,7 +608,8 @@ try {
 		await check(
 			'real plugin stop withdraws epoch, destroys old MF roots and permits fresh activation',
 			async () => {
-				await entry('Pluxel Architecture Lab').click()
+				await showApps()
+				await entry('Architecture Lab').click()
 				const input = await page
 					.getByRole('textbox', { name: 'Report title', exact: true })
 					.elementHandle()
@@ -614,7 +648,10 @@ try {
 	await consoleRun('health', 'inspect.ts', { origin })
 	const restored = await consoleRun('default')
 	assert.equal(restored.studio.lifecycleState, 'running')
-	assert.equal(restored.layout.entries.length, 5)
+	assert.deepEqual(
+		restored.layout.entries.map(({ descriptor }) => descriptor.key).sort(),
+		online.layout.entries.map(({ descriptor }) => descriptor.key).sort(),
+	)
 	receipt.publications = restored.layout.entries.map(({ descriptor, placement }) => ({
 		key: descriptor.key,
 		placement,

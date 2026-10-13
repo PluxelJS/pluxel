@@ -138,9 +138,10 @@ try {
 		async () => {
 			await page.goto(origin + basepath + studioEntry.placement.path)
 			await expect(page.getByRole('textbox', { name: 'Report title', exact: true })).toBeVisible()
+			await page.locator('.plx-activity [aria-label="插件管理"]').click()
 			await page
-				.locator('.plx-workspace-navigation__link')
-				.filter({ hasText: '插件目录与配置' })
+				.locator('.plx-workspace-navigation:visible')
+				.getByRole('button', { name: '插件管理', exact: true })
 				.click()
 			await page.getByRole('textbox', { name: '搜索插件', exact: true }).fill('Report')
 			const href = `${basepath}/plugins/${online.studioRoute}`
@@ -179,21 +180,40 @@ try {
 		},
 	)
 	await check(
-		'MF/native document and local detail query tab switches retain real form',
+		'MF/native document switches and plugin tool hide/show retain real form',
 		async () => {
 			await page.getByRole('tab', { name: studioEntry.placement.title, exact: true }).click()
 			await expect(page.getByRole('textbox', { name: 'Report title', exact: true })).toBeVisible()
 			assert.ok(await originalHandle.evaluate((node) => node.isConnected))
 			await detailTab.click()
 			await assertInputIdentity(originalHandle, pathInput(panel), draft)
-			await panel.getByRole('tab', { name: '概览', exact: true }).click()
-			await panel.getByRole('tab', { name: '配置', exact: true }).click()
-			await assertInputIdentity(originalHandle, pathInput(panel), draft)
+			for (const [controlName, toolName] of [
+				['右侧面板', '当前插件信息'],
+				['底部面板', '当前插件日志'],
+			]) {
+				const control = page.getByRole('button', { name: controlName, exact: true })
+				const tool = page.locator(`section[aria-label="${toolName}"]`)
+				await expect(control).toHaveAttribute('aria-pressed', 'false')
+				await expect(tool).toBeHidden()
+				await control.click()
+				await expect(control).toHaveAttribute('aria-pressed', 'true')
+				await expect(tool).toBeVisible()
+				await control.click()
+				await expect(control).toHaveAttribute('aria-pressed', 'false')
+				await expect(tool).toBeHidden()
+				await assertInputIdentity(originalHandle, pathInput(panel), draft)
+				await control.click()
+				await expect(control).toHaveAttribute('aria-pressed', 'true')
+				await expect(tool).toBeVisible()
+				await assertInputIdentity(originalHandle, pathInput(panel), draft)
+			}
+			await expect(page).toHaveURL(detailUrl)
 			await expect(detailTab.locator('[aria-label="未保存的更改"]')).toHaveCount(1)
 			return {
 				draft,
 				sameNode: true,
-				query: new URL(page.url()).search,
+				toolsRestored: ['inspector', 'logs'],
+				url: page.url(),
 				panels: await assertPanels(panel),
 			}
 		},
@@ -233,7 +253,11 @@ try {
 	await check(
 		'short split documents retain bounded viewports and each TOC scrolls its own form',
 		async () => {
-			await page.setViewportSize({ width: 1280, height: 420 })
+			await page.setViewportSize({ width: 1280, height: 330 })
+			for (const name of ['左侧导航', '右侧面板', '底部面板']) {
+				const control = page.getByRole('button', { name, exact: true })
+				if ((await control.getAttribute('aria-pressed')) === 'true') await control.click()
+			}
 			const firstScroll = await panel.locator('[data-config-scroll-root]').first().elementHandle()
 			const copyScroll = await copyPanel
 				.locator('[data-config-scroll-root]')

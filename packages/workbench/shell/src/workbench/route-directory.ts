@@ -27,6 +27,7 @@ export type WorkbenchRouteDirectory = Readonly<{
 
 // These roots belong to the Shell, including descendants and canonical Plugin URLs.
 const reservedRoots = new Set([
+	'apps',
 	'plugins',
 	'plugin-graph',
 	'security',

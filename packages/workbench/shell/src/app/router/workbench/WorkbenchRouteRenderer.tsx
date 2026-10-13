@@ -1,3 +1,4 @@
+import { useDocumentPlugin, useDocumentWorkspace } from '../../workbench/document'
 import { Center, Stack, Text } from '@mantine/core'
 import { type ReactNode } from 'react'
 import type { WorkbenchResolvedRoute, WorkbenchTargetSnapshot } from '../../../workbench/client'
@@ -14,6 +15,8 @@ export function WorkbenchRouteRenderer(props: {
 	wrapContent?: (content: ReactNode) => ReactNode
 }) {
 	const { target, displayName, displayPath, route, snapshot, wrapContent } = props
+	useDocumentWorkspace('apps')
+	useDocumentPlugin(target, route?.entry.descriptor.key)
 	const host = useWorkbenchRuntime()
 	const pluginRunning = host.runningPluginKeys.has(pluginNodeIndexKey(target))
 

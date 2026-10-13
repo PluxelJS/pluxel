@@ -374,6 +374,7 @@ describe('native document activation resource ownership', () => {
 		}
 		const { workspace, session, container, root, render } = await mount(async () => result)
 		const id = await openDocument(workspace, '/native-content')
+		expect(workspace.documents.get(id)?.plugin).toEqual(node)
 		expect(container.textContent).toContain('Status: connected')
 		expect(subscribe).toHaveBeenCalledOnce()
 		await act(async () => {
@@ -442,6 +443,7 @@ describe('native document activation resource ownership', () => {
 			ownedView(dispose),
 		)
 		const id = await openDocument(workspace, '/native-view')
+		expect(workspace.documents.get(id)?.plugin).toEqual(node)
 		const input = container.querySelector<HTMLInputElement>('[aria-label="Bridge draft"]')!
 		expect(input).not.toBeNull()
 		input.value = 'edited remote draft'

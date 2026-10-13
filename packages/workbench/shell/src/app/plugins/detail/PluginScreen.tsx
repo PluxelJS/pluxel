@@ -5,6 +5,10 @@ import { EmptyState, ErrorState } from '../../../components'
 import { usePluginConfig } from '../config/usePluginConfig'
 import { PluginScopeProvider } from './context'
 import { RightPane } from './RightPane'
+import { useCurrentPathname } from '../../router/useCurrentRoute'
+import { parsePluginDetailHref } from '../../../workbench/paths'
+import { usePluginDetailSearch } from './pluginDetailSearchState'
+import { useDocumentWorkspace } from '../../workbench/document'
 import { usePluginDetail } from './usePluginDetail'
 
 function PluginSkeleton() {
@@ -22,6 +26,10 @@ export interface PluginScreenProps {
 }
 
 export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginScreenProps) {
+	const pathname = useCurrentPathname()
+	const search = usePluginDetailSearch()
+	const restPath = parsePluginDetailHref(pathname)?.path ?? ''
+	useDocumentWorkspace(search.entry || (restPath && restPath !== '/config') ? 'apps' : 'plugins')
 	const {
 		detail,
 		ready,

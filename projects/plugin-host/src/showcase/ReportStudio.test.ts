@@ -10,7 +10,8 @@ import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@plu
 import { createTestHost } from '@pluxel/test'
 import { S3, S3Plugin } from '@pluxel/storage'
 import { WretchPlugin } from '@pluxel/wretch'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ReportStudioWorkbench } from './ReportStudio.workbench'
 import {
 	CanvasShowcaseRenderer,
 	ReleaseArchivePlugin,
@@ -31,6 +32,7 @@ describe('ReportStudioPlugin', () => {
 		const storageRoot = await mkdtemp(join(tmpdir(), 'pluxel-report-studio-'))
 		temporaryRoots.push(storageRoot)
 		await using host = await createTestHost({
+			workbench: true,
 			services: standardServices({ persistence: { mode: 'memory' } }),
 		})
 		await host.commit((change) => {
@@ -97,6 +99,38 @@ describe('ReportStudioPlugin', () => {
 		})
 
 		const studio = host.require(ReportStudioPlugin)
+		const subscribe = studio.subscribe.bind(studio)
+		const releasePanelSubscriptions = vi.fn()
+		const subscriptionSpy = vi.spyOn(studio, 'subscribe').mockImplementation((listener) => {
+			const subscription = subscribe(listener)
+			return {
+				[Symbol.dispose]: () => {
+					releasePanelSubscriptions()
+					subscription[Symbol.dispose]()
+				},
+			}
+		})
+		const principal = { provider: 'test', subject: 'report-panels' }
+		using statusPanel = await host.workbench.open({
+			target: ReportStudioPlugin,
+			entry: ReportStudioWorkbench.studioStatus,
+			principal,
+		})
+		using artifactsPanel = await host.workbench.open({
+			target: ReportStudioPlugin,
+			entry: ReportStudioWorkbench.studioArtifacts,
+			principal,
+		})
+		const statusObserver = vi.fn(() => undefined)
+		const artifactsObserver = vi.fn(() => undefined)
+		await expect(statusPanel.root.subscribeDto(statusObserver)).resolves.toMatchObject({
+			ok: true,
+			data: { status: { cacheHits: 0, cacheMisses: 0 } },
+		})
+		await expect(artifactsPanel.root.subscribeDto(artifactsObserver)).resolves.toMatchObject({
+			ok: true,
+			data: { artifacts: [] },
+		})
 		const first = await studio.generate('Runtime graph')
 		const second = await studio.generate('Runtime graph')
 		expect(first.engine).toBe('canvas')
@@ -104,6 +138,23 @@ describe('ReportStudioPlugin', () => {
 		expect(first).not.toHaveProperty('dataUrl')
 		expect(first.cacheHit).toBe(false)
 		expect(second.cacheHit).toBe(true)
+		await expect(statusPanel.root.loadDto()).resolves.toMatchObject({
+			ok: true,
+			data: { status: { cacheHits: 1, cacheMisses: 1 } },
+		})
+		await expect(artifactsPanel.root.loadDto()).resolves.toMatchObject({
+			ok: true,
+			data: {
+				artifacts: [
+					{ title: 'Runtime graph', cacheHit: true },
+					{ title: 'Runtime graph', cacheHit: false },
+				],
+			},
+		})
+		statusPanel[Symbol.dispose]()
+		artifactsPanel[Symbol.dispose]()
+		expect(releasePanelSubscriptions).toHaveBeenCalledTimes(2)
+		subscriptionSpy.mockRestore()
 		const storage = host.require(S3Plugin)
 		expect(await storage.bucket('drafts').client.getObject(first.objectKey)).not.toBeNull()
 		expect(

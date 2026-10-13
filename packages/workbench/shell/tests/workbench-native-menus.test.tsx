@@ -366,13 +366,16 @@ describe('Pluxel native workspace menus', () => {
 
 	it('keeps native custom Border controls under the Mantine Provider and removes portals on unmount', async () => {
 		const { session, container, root } = await workspace()
+		await act(async () => {
+			await session.workbench.dispatch(Actions.updateNodeAttributes('border_left', { show: true }))
+		})
 		const trigger = [...container.querySelectorAll<HTMLElement>('.plx-native-container-menu')].find(
 			(element) => element.getAttribute('aria-label') === '边栏操作',
 		)!
 		await click(trigger)
 		const size = container.querySelector<HTMLInputElement>('.mantine-NumberInput-input')!
 		expect(size).not.toBeNull()
-		expect(size.value).toBe('260')
+		expect(size.value).toBe('280')
 		const left = await pressKey(size, 'ArrowLeft')
 		expect(left.defaultPrevented).toBe(false)
 		await click(menuItem('边栏悬浮显示'))

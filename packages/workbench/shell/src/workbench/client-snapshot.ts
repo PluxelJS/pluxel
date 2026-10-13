@@ -59,7 +59,7 @@ export function compileWorkbenchSnapshot(
 			if (target !== null) tabs.push(entry)
 			continue
 		}
-		if (target === null) continue
+		if (target === null || placement.kind !== 'route') continue
 
 		const compiled = compileWorkbenchRoute(placement.path)
 		const conflict = routes.find(

@@ -15,6 +15,9 @@ Declaration 用法见 [Workbench](../docs/workbench/index.md)。
 Semantic pass 在 TypeScript 擦除前解析 `workbench.define()`、entry key、Content/View/Attachment kind，以及 literal
 `workbench.markdown(import.meta.url, relativePath, slots?)` / `workbench.entry(import.meta.url, relativePath)`，再与 owning
 canonical `PluginDefinitionAddress` 合成 declaration identity。
+`workbench.panel(region, options)` 静态解析 region 与展示选项，复用 Workbench author 的纯准入规则，只支持
+`left`、`right`、`bottom`，不执行用户模块。View 的 browser descriptor projection 保留 panel 的区域、标签、图标和排序；
+Content 与 Attachment placement 仍走各自既有声明和生命周期路径。
 Markdown 由 build-time CommonMark/GFM + directive compiler 降为有界 portable AST；HTML、图片、相对/不安全链接、task list、
 frontmatter、错误 slot topology 和不支持的语法 fail-fast。`data()`/`action()` 的静态 declaration 被 lower 为 slot metadata；真实
 schema 只保留在 server module，不求值、不序列化。Markdown source 进入 watch graph，但不进入 server bundle 或 browser parser。

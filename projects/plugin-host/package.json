@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "pnpm exec turbo run build --filter=@pluxel/plugins-host^... --dangerously-disable-package-manager-check && pnpm exec vite --config vite.config.ts",
+		"dev": "pnpm exec turbo run build --filter=@pluxel/plugins-host^... --concurrency=1 --dangerously-disable-package-manager-check && pnpm exec vite --config vite.config.ts",
 		"build": "pnpm exec tsdown",
 		"start": "node start.mjs",
 		"test": "vitest run --config vitest.config.ts",
@@ -51,6 +51,7 @@
 		"@tabler/icons-react": "catalog:icons",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"capnweb": "catalog:prod",
 		"pathe": "catalog:node",
 		"playwright": "catalog:dev",
 		"react": "catalog:frontend",
@@ -58,5 +59,8 @@
 		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"capnweb": "catalog:prod"
 	}
 }

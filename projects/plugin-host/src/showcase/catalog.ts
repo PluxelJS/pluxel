@@ -1,3 +1,5 @@
+import { BotWorkspacePlugin } from '../bot-lab/BotWorkspacePlugin'
+import { TelegramBotPlugin, DiscordBotPlugin, WeComBotPlugin } from '../bot-lab/BotSources'
 import { VaultAdminPlugin } from '@pluxel/services/plugins'
 import { AuthPlugin } from '@pluxel/auth'
 import { CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
@@ -30,6 +32,10 @@ import {
 export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
 export const hostPlugins = [
+	BotWorkspacePlugin,
+	TelegramBotPlugin,
+	DiscordBotPlugin,
+	WeComBotPlugin,
 	PackageManagerPlugin,
 	AuthPlugin,
 	VaultAdminPlugin,

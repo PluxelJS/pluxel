@@ -17,7 +17,7 @@ Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 
 | Content    | Shell 渲染 build-time portable Markdown plan、bounded latest state、短 action 与一次性表单             |
 | View       | Plugin 提供 fresh `RpcTarget` 与完整 React renderer                                                    |
 | Attachment | provider 拥有 renderer/API，consumer 经 constructor dependency 决定 placement，可另提供自己的 API root |
-| Placement  | 固定 `tab()` / `route()` topology；动态领域 rows 不创建 entries、producer 或 socket                    |
+| Placement  | 固定 `tab()` / `route()` / `panel()` topology；动态领域 rows 不创建 entries、producer 或 socket        |
 
 普通 Plugin 配置由 ConfigService/标准 UI 投影，不复制成 Content。复杂交互、lossless stream、分页、progress/cancel 使用 View，由领域 API 拥有协议。Workbench 不引入数据库查询模型、通用 collection registry 或无领域 schema 的 Vault editor。
 
@@ -28,6 +28,7 @@ Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 
 - Definition 是 flat、frozen、固定键集合；entry key 与 canonical Plugin definition address 决定 identity。Attachment placement 另固定 consumer definition 与 provider descriptor。
 - `workbench.entry()` / `markdown()` 使用 module-relative literal；它们是工具链 provenance，不是运行期 import/read。
 - Plugin 在 `init()` 中最多 publish 一次；bindings 精确覆盖需要 binding 的 entries，纯 Markdown 不接收 binding。Part 不能直接 publish，由 owning Plugin 聚合。
+- `panel(region, { label, icon?, order? })` 生成封闭 `kind: panel` placement，region 仅 left/right/bottom。Content、View 与 placed Attachment 共用原有 publication/openEntry 路径，不建立面板专属 RPC、renderer 或身份。Panel 不参与 route directory，也不按 URL 选择；服务端按 target node、entry key 和当前 layout revision 接纳。
 - owner 从 Context 推导，publication 进入 generation effects，仅在 owner committed/running 后可见。失败启动不留下可见 entry。
 - 每次 View/Attachment open 产生 fresh roots；interactive Content 由框架建立 per-open root。Factory 只得到已认证 principal、服务端重新匹配的 frozen params 与 lifetime signal。
 - View/Attachment target 来自与 Workbench 兼容的 `capnweb` 模块；registry 的 `instanceof RpcTarget` 是实际 identity 边界。插件包构建只在语义分析确认该类 publication 时检查精确 peer/dev 与实际安装版本，并生成 `pluxel.workbenchCapnweb` 事实。静态构建对有该事实的发布包及声明精确 peer 的 target 基础库核对实际解析版，再接入 Workbench copy；开发 Vite 同样先准入再接线。原生来源通过 Node resolve hook，Vite 开发与生产通过 singleton 接线；都调用 Workbench 的纯 transport 准入规则核对 peer、制品事实和实际版本，再绑定选定安装的 capnweb。Content-only 与私有 RPC 不触发桥接；绕过标准加载器的来源仍受 registry identity 检查。

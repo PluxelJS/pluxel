@@ -40,6 +40,7 @@ function renderUiHtmlDocument(
 <html lang="zh">
   <head>
     <meta charset="utf-8" />
+    <link rel="icon" href="data:," />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
 	<meta name="pluxel-workbench-ui-base-path" content="${uiBasePath}" />
     <title>${title}</title>

@@ -18,19 +18,27 @@ import { openConfirmModal } from '@mantine/modals'
 import { useHotkeys } from '@tanstack/react-hotkeys'
 import {
 	IconBell,
+	IconPlus,
 	IconDots,
 	IconFile,
+	IconInfoCircle,
+	IconTerminal2,
 	IconLayoutSidebarLeftExpand,
+	IconLayoutSidebarRight,
+	IconLayoutBottombar,
 	IconSearch,
 	IconShieldLock,
 	IconX,
 } from '@tabler/icons-react'
-import { Actions, DockLocation, type IJsonModel, type ILayoutApi } from 'flexlayout-react'
+import { Actions, type IJsonModel, type ILayoutApi } from 'flexlayout-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ThemeCustomizer } from '../../theme'
 import { useNotificationCenter } from '../notifications/NotificationCenterProvider'
 import { useProduct } from '../product'
-import { useWorkbenchNavigation } from './context'
+import { WorkbenchNavigationProvider, useWorkbenchNavigation } from './context'
+import { ActivityRail } from './ActivityRail'
+import { pluginNodeAddressEqual } from '@pluxel/core'
+import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
 import { navigationTab } from './session'
 import { useWorkspaceSession } from './workspaceContext'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
@@ -48,18 +56,63 @@ export function WorkbenchShell() {
 	const root = useRef<HTMLDivElement>(null)
 	const layoutRef = useRef<ILayoutApi>(null)
 	const [searchOpen, setSearchOpen] = useState(false)
+	const [newTabAnchor, setNewTabAnchor] = useState<string>()
+	const showSearch = useCallback(() => {
+		setNewTabAnchor(undefined)
+		setSearchOpen(true)
+	}, [])
 	const [helpOpen, setHelpOpen] = useState(false)
 	const [pending, setPending] = useState(false)
 	const menu = useNativeMenus(session, root)
 	const count = useWorkbenchState(session.workbench, () => session.workbench.getDocuments().length)
+	const activeDocumentId = useWorkbenchState(session.workbench, (state) => state.activeDocumentId)
 	const activeGroup = useWorkbenchState(
 		session.workbench,
 		() => session.workbench.getEditingContext().activeGroupId,
+	)
+	const borders = useWorkbenchState(session.workbench, () => session.workbench.getLayout().borders)
+	const logsVisible = useWorkbenchState(session.workbench, () =>
+		session.isToolVisible('plugin-logs'),
+	)
+	const unifiedNavigation =
+		borders
+			?.find((border) => border.location === 'left')
+			?.children?.every(function onlyNavigation(node): boolean {
+				return 'children' in node && node.children
+					? node.children.every(onlyNavigation)
+					: node.id === 'navigation'
+			}) ?? false
+	const borderVisible = (side: string) => {
+		if (side === 'bottom') return logsVisible
+		const border = borders?.find((item) => item.location === side)
+		return !!border && border.show !== false && (border.selected ?? -1) >= 0
+	}
+	const toggleBorder = useCallback(
+		(side: 'left' | 'right' | 'bottom') => {
+			void (side === 'bottom' ? session.toggleLogs() : session.toggleBorder(side)).catch(
+				(error: unknown) => session.report(error),
+			)
+		},
+		[session],
 	)
 	const contentRevision = useSyncExternalStore(
 		session.subscribeContentState,
 		session.getContentRevision,
 	)
+	const activeWorkspace = session.activeWorkspace()
+	const owner = activeDocumentId ? session.documents.get(activeDocumentId)?.plugin : undefined
+	const ownerSnapshot = useWorkbenchTargetSnapshot(owner ?? null)
+	const hasLeftPanels =
+		!!owner &&
+		(ownerSnapshot.layout?.entries ?? []).some(
+			(entry) =>
+				entry.placement.kind === 'panel' &&
+				entry.placement.region === 'left' &&
+				pluginNodeAddressEqual(entry.target.node, owner),
+		)
+	useEffect(() => {
+		void session.syncWorkspacePanels(hasLeftPanels).catch((error: unknown) => session.report(error))
+	}, [activeDocumentId, contentRevision, hasLeftPanels, session])
 	const storageError = useSyncExternalStore(session.storage.subscribe, session.storage.getSnapshot)
 	useEffect(() => {
 		layoutRef.current?.redraw()
@@ -78,16 +131,14 @@ export function WorkbenchShell() {
 		})
 	}, [])
 	const showNavigation = useCallback(() => {
-		if (session.workbench.activate('navigation')) return
-		void session.workbench
-			.dispatch(Actions.addTab({ ...navigationTab }, 'border_left', DockLocation.CENTER, -1, true))
-			.then((result) => {
-				session.check(result)
-				if (result.status === 'applied') session.workbench.activate('navigation')
-				return result
+		void session
+			.showTool(navigationTab)
+			.then(() => {
+				if (session.activeWorkspace() !== 'plugins') navigation.navigate('/plugins')
+				return undefined
 			})
 			.catch((error: unknown) => session.report(error))
-	}, [session])
+	}, [navigation, session])
 	const closeActive = useCallback(() => {
 		const id = session.workbench.getActiveDocument()?.id
 		if (id)
@@ -133,10 +184,10 @@ export function WorkbenchShell() {
 		[
 			{
 				hotkey: WORKBENCH_HOTKEYS.focusSearch,
-				callback: () => setSearchOpen(true),
+				callback: showSearch,
 				options: { target: document, ignoreInputs: false },
 			},
-			{ hotkey: WORKBENCH_HOTKEYS.showNavigation, callback: showNavigation },
+			{ hotkey: WORKBENCH_HOTKEYS.showNavigation, callback: () => toggleBorder('left') },
 			{ hotkey: WORKBENCH_HOTKEYS.closeActiveTab, callback: closeActive },
 			{ hotkey: WORKBENCH_HOTKEYS.prevTab, callback: () => cycle(-1) },
 			{ hotkey: WORKBENCH_HOTKEYS.nextTab, callback: () => cycle(1) },
@@ -160,8 +211,31 @@ export function WorkbenchShell() {
 				values.leading =
 					node.getId() === 'navigation' ? (
 						<IconLayoutSidebarLeftExpand size={14} />
+					) : node.getId() === 'plugin-logs' ? (
+						<IconTerminal2 size={14} />
+					) : node.getId() === 'plugin-inspector' ? (
+						<IconInfoCircle size={14} />
 					) : (
 						<IconFile size={14} />
+					)
+				if (document && node.getId() === activeDocumentId)
+					values.buttons.push(
+						<ActionIcon
+							key="new-document"
+							size="xs"
+							variant="subtle"
+							aria-label="新建标签页"
+							title="新建标签页"
+							onPointerDown={(event) => event.stopPropagation()}
+							onMouseDown={(event) => event.stopPropagation()}
+							onClick={(event) => {
+								event.stopPropagation()
+								setNewTabAnchor(node.getId())
+								setSearchOpen(true)
+							}}
+						>
+							<IconPlus size={14} />
+						</ActionIcon>,
 					)
 				const dirty = session.documents.get(node.getId())?.isDirty()
 				values.content = (
@@ -182,7 +256,7 @@ export function WorkbenchShell() {
 				)
 			},
 		}),
-		[menu.native, session],
+		[menu.native, session, activeDocumentId],
 	)
 	const closeDocuments = () =>
 		openConfirmModal({
@@ -200,76 +274,115 @@ export function WorkbenchShell() {
 			},
 		})
 	return (
-		<div className="plx-workspace" ref={root} tabIndex={-1} onKeyDownCapture={menu.onKeyDown}>
-			<Group component="header" className="plx-workspace__toolbar" px="xs" gap={4} wrap="nowrap">
-				<Text fw={650} size="sm" className="plx-workspace__brand" truncate="end">
-					{product?.displayName ?? 'Pluxel'}
-				</Text>
-				<Tooltip label={`显示或重新打开入口导航 (${WORKBENCH_HOTKEY_LABELS.showNavigation})`}>
-					<ActionIcon
+		<div
+			className={`plx-workspace${unifiedNavigation ? ' plx-workspace--unified-navigation' : ''}`}
+			ref={root}
+			tabIndex={-1}
+			onKeyDownCapture={menu.onKeyDown}
+		>
+			<header className="plx-workspace__toolbar">
+				<Group gap={4} wrap="nowrap" className="plx-workspace__primary">
+					<Text fw={650} size="sm" className="plx-workspace__brand" truncate="end">
+						{product?.displayName ?? 'Pluxel'}
+					</Text>
+					<Button
 						variant="subtle"
-						size="sm"
-						aria-label="显示或重新打开入口导航"
-						onClick={showNavigation}
+						size="compact-xs"
+						leftSection={<IconSearch size={14} />}
+						onClick={showSearch}
+						aria-label="查找所有工作区入口"
+						className="plx-workspace__search-button"
 					>
-						<IconLayoutSidebarLeftExpand size={17} />
-					</ActionIcon>
-				</Tooltip>
-				<Button
-					variant="subtle"
-					size="compact-xs"
-					leftSection={<IconSearch size={14} />}
-					onClick={() => setSearchOpen(true)}
-					aria-label="查找所有工作区入口"
-					className="plx-workspace__search-button"
+						<span className="plx-workspace__search-label">
+							查找入口 <kbd>{WORKBENCH_HOTKEY_LABELS.focusSearch}</kbd>
+						</span>
+					</Button>
+					<Menu position="bottom-start" shadow="md" width={265}>
+						<Menu.Target>
+							<Button
+								size="compact-xs"
+								variant="subtle"
+								rightSection={<IconDots size={14} />}
+								disabled={pending}
+							>
+								工作区
+							</Button>
+						</Menu.Target>
+						<Menu.Dropdown>
+							<Menu.Label>{count} 个文档 · 原生停靠工作区</Menu.Label>
+							<Menu.Item
+								onClick={() => {
+									void session
+										.setNavigationView('plugins')
+										.then(showNavigation)
+										.catch((error: unknown) => session.report(error))
+								}}
+							>
+								显示插件目录
+							</Menu.Item>
+							<Menu.Item onClick={() => navigation.navigate('/apps')}>显示应用目录</Menu.Item>
+							<Menu.Item
+								disabled={!count}
+								onClick={closeActive}
+								rightSection={<kbd>{WORKBENCH_HOTKEY_LABELS.closeActiveTab}</kbd>}
+							>
+								关闭活动文档
+							</Menu.Item>
+							<Menu.Item
+								disabled={!activeGroup || activeGroup.startsWith('border_')}
+								onClick={maximize}
+							>
+								最大化或还原活动容器
+							</Menu.Item>
+							<Menu.Item onClick={() => setHelpOpen(true)}>键盘操作</Menu.Item>
+							<Menu.Divider />
+							<Menu.Item color="red" disabled={!count} onClick={closeDocuments}>
+								关闭所有文档（保留布局）
+							</Menu.Item>
+							<Menu.Item
+								onClick={() => {
+									setPending(true)
+									void session
+										.resetLayout()
+										.catch((error: unknown) => session.report(error))
+										.finally(() => setPending(false))
+								}}
+							>
+								恢复默认布局（关闭文档并重新载入）
+							</Menu.Item>
+						</Menu.Dropdown>
+					</Menu>
+				</Group>
+				<Group
+					gap={4}
+					wrap="nowrap"
+					className="plx-workspace__layout-controls"
+					aria-label="布局控制"
 				>
-					查找入口 <kbd>{WORKBENCH_HOTKEY_LABELS.focusSearch}</kbd>
-				</Button>
-				<Menu position="bottom-start" shadow="md" width={265}>
-					<Menu.Target>
-						<Button
-							size="compact-xs"
-							variant="subtle"
-							rightSection={<IconDots size={14} />}
-							disabled={pending}
-						>
-							工作区
-						</Button>
-					</Menu.Target>
-					<Menu.Dropdown>
-						<Menu.Label>{count} 个文档 · 原生停靠工作区</Menu.Label>
-						<Menu.Item onClick={showNavigation}>重新打开入口工具</Menu.Item>
-						<Menu.Item
-							disabled={!count}
-							onClick={closeActive}
-							rightSection={<kbd>{WORKBENCH_HOTKEY_LABELS.closeActiveTab}</kbd>}
-						>
-							关闭活动文档
-						</Menu.Item>
-						<Menu.Item
-							disabled={!activeGroup || activeGroup.startsWith('border_')}
-							onClick={maximize}
-						>
-							最大化或还原活动容器
-						</Menu.Item>
-						<Menu.Item onClick={() => setHelpOpen(true)}>键盘操作</Menu.Item>
-						<Menu.Divider />
-						<Menu.Item color="red" disabled={!count} onClick={closeDocuments}>
-							关闭所有文档（保留布局）
-						</Menu.Item>
-						<Menu.Item
-							onClick={() => {
-								setPending(true)
-								void session
-									.resetLayout()
-									.catch((error: unknown) => session.report(error))
-									.finally(() => setPending(false))
-							}}
-						>
-							恢复默认布局（关闭文档并重新载入）
-						</Menu.Item>
-					</Menu.Dropdown>
-				</Menu>
+					{(
+						[
+							['left', '左侧导航', IconLayoutSidebarLeftExpand],
+							['right', '右侧面板', IconLayoutSidebarRight],
+							['bottom', '底部面板', IconLayoutBottombar],
+						] as const
+					).map(([side, label, Icon]) => (
+						<Tooltip key={side} label={`${borderVisible(side) ? '收起' : '显示'}${label}`}>
+							<ActionIcon
+								size="sm"
+								variant={borderVisible(side) ? 'light' : 'subtle'}
+								aria-label={label}
+								aria-pressed={borderVisible(side)}
+								disabled={
+									!activeWorkspace ||
+									(side === 'left' && activeWorkspace === 'apps' && !hasLeftPanels)
+								}
+								onClick={() => toggleBorder(side)}
+							>
+								<Icon size={17} />
+							</ActionIcon>
+						</Tooltip>
+					))}
+				</Group>
 				<Group gap={4} wrap="nowrap" ml="auto" className="plx-workspace__utilities">
 					<WorkbenchUpdateStatus />
 					<NotificationHistory />
@@ -285,7 +398,7 @@ export function WorkbenchShell() {
 					</Tooltip>
 					<ThemeCustomizer compact />
 				</Group>
-			</Group>
+			</header>
 			{storageError && (
 				<Alert color="yellow" title="布局尚未保存" className="plx-workspace__storage-error">
 					<Group gap="sm" align="start">
@@ -303,36 +416,47 @@ export function WorkbenchShell() {
 					</Group>
 				</Alert>
 			)}
-			<Workbench
-				className="plx-workspace__layout"
-				workbench={session.workbench}
-				native={native}
-				layoutRef={layoutRef}
-				empty={
-					<Stack gap="xs" align="center">
-						<Text c="dimmed" size="sm">
-							工作区没有打开的文档
-						</Text>
-						<Button variant="light" size="xs" onClick={() => setSearchOpen(true)}>
-							查找页面或插件入口
-						</Button>
-					</Stack>
-				}
-			/>
+			<div className="plx-workspace__body">
+				<ActivityRail onShowPlugins={showNavigation} />
+				<Workbench
+					className="plx-workspace__layout"
+					workbench={session.workbench}
+					native={native}
+					layoutRef={layoutRef}
+					empty={
+						<Stack gap="xs" align="center">
+							<Text c="dimmed" size="sm">
+								工作区没有打开的文档
+							</Text>
+							<Button variant="light" size="xs" onClick={showSearch}>
+								查找页面或插件入口
+							</Button>
+						</Stack>
+					}
+				/>
+			</div>
 			{menu.popup}
 			<Modal
 				opened={searchOpen}
 				onClose={() => setSearchOpen(false)}
-				title="查找工作区入口"
+				title={newTabAnchor ? '新建标签页' : '查找工作区入口'}
 				size="lg"
 				centered
 			>
 				<div className="plx-workspace__search">
-					<WorkspaceNavigation
-						autofocus
-						onChosen={() => setSearchOpen(false)}
-						onShowNavigation={showNavigation}
-					/>
+					<WorkbenchNavigationProvider
+						value={{
+							...navigation,
+							openTab: (input) => navigation.openTab({ ...input, afterDocumentId: newTabAnchor }),
+						}}
+					>
+						<WorkspaceNavigation
+							openMode={newTabAnchor ? 'new' : 'reuse'}
+							autofocus
+							onChosen={() => setSearchOpen(false)}
+							onShowNavigation={showNavigation}
+						/>
+					</WorkbenchNavigationProvider>
 				</div>
 			</Modal>
 			<Modal

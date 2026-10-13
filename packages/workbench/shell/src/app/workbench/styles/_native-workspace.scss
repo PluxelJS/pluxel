@@ -53,7 +53,11 @@
 	--flexlayout-color-toolbar-button-hover: var(--mantine-color-default-hover);
 	--flexlayout-color-tabgroup-pill-text: var(--mantine-color-black);
 	--flexlayout-color-tabgroup-default: var(--mantine-color-blue-4);
-	--flexlayout-color-tabgroup-menu-palette: var(--mantine-color-red-4), var(--mantine-color-orange-4), var(--mantine-color-yellow-4), var(--mantine-color-lime-4), var(--mantine-color-teal-4), var(--mantine-color-cyan-4), var(--mantine-color-blue-4), var(--mantine-color-violet-4), var(--mantine-color-pink-4), var(--mantine-color-gray-4);
+	--flexlayout-color-tabgroup-menu-palette:
+		var(--mantine-color-red-4), var(--mantine-color-orange-4), var(--mantine-color-yellow-4),
+		var(--mantine-color-lime-4), var(--mantine-color-teal-4), var(--mantine-color-cyan-4),
+		var(--mantine-color-blue-4), var(--mantine-color-violet-4), var(--mantine-color-pink-4),
+		var(--mantine-color-gray-4);
 	--flexlayout-tabgroup-pill-radius: var(--mantine-radius-sm);
 	background: var(--mantine-color-body);
 	color: var(--mantine-color-text);
@@ -69,28 +73,87 @@
 .plx-workspace__toolbar {
 	border-bottom: 1px solid var(--mantine-color-default-border);
 	background: var(--plx-surface-strong);
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	align-items: center;
+	gap: 4px;
+	padding-inline: 8px;
 	min-height: 40px;
 	flex: 0 0 auto;
 }
 
-.plx-workspace__brand { max-width: 220px; padding-inline: 3px 8px; }
-.plx-workspace__toolbar kbd { color: var(--mantine-color-dimmed); font: inherit; margin-inline-start: 6px; }
-.plx-workspace__layout { flex: 1; min-height: 0; min-width: 0; }
-.plx-workspace__storage-error { flex: 0 0 auto; padding: 8px 12px; border-radius: 0; }
-.plx-workspace__search { height: min(60dvh, 520px); min-height: 240px; }
-.plx-workspace__notification { border-bottom: 1px solid var(--mantine-color-default-border); padding-bottom: 8px; }
+.plx-workspace__brand {
+	max-width: 220px;
+	padding-inline: 3px 8px;
+}
+.plx-workspace__toolbar kbd {
+	color: var(--mantine-color-dimmed);
+	font: inherit;
+	margin-inline-start: 6px;
+}
+.plx-workspace__layout {
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+.plx-workspace__storage-error {
+	flex: 0 0 auto;
+	padding: 8px 12px;
+	border-radius: 0;
+}
+.plx-workspace__search {
+	height: min(60dvh, 520px);
+	min-height: 240px;
+}
+.plx-workspace__notification {
+	border-bottom: 1px solid var(--mantine-color-default-border);
+	padding-bottom: 8px;
+}
 
-.plx-workspace__tab-label { display: inline-flex; gap: 5px; align-items: center; min-width: 0; }
-.plx-workspace__tab-label > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plx-workspace__tab-dirty { color: var(--plx-dirty-dot); font-size: 10px; flex: 0 0 auto; }
-.plx-workspace__tab-preview { color: var(--mantine-color-dimmed); font-size: 10px; font-style: italic; }
+.plx-workspace__tab-label {
+	display: inline-flex;
+	gap: 5px;
+	align-items: center;
+	min-width: 0;
+}
+.plx-workspace__tab-label > span:first-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.plx-workspace__tab-dirty {
+	color: var(--plx-dirty-dot);
+	font-size: 10px;
+	flex: 0 0 auto;
+}
+.plx-workspace__tab-preview {
+	color: var(--mantine-color-dimmed);
+	font-size: 10px;
+	font-style: italic;
+}
 
-.plx-workspace .flexlayout__tabset_tabbar_outer { min-height: 34px; }
-.plx-workspace .flexlayout__tab_button { border-radius: var(--mantine-radius-sm) var(--mantine-radius-sm) 0 0; padding-block: 7px; }
-.plx-workspace .flexlayout__tab_button--selected { box-shadow: inset 0 -2px 0 var(--mantine-primary-color-filled); }
-.plx-workspace .flexlayout__tab_toolbar_button { width: 25px; height: 25px; border-radius: var(--mantine-radius-sm); }
-.plx-workspace .flexlayout__tab_button_leading { display: inline-flex; align-items: center; }
-.plx-workspace .flexlayout__border_button { padding: 7px; }
+.plx-workspace .flexlayout__tabset_tabbar_outer {
+	min-height: 34px;
+}
+.plx-workspace .flexlayout__tab_button {
+	border-radius: var(--mantine-radius-sm) var(--mantine-radius-sm) 0 0;
+	padding-block: 7px;
+}
+.plx-workspace .flexlayout__tab_button--selected {
+	box-shadow: inset 0 -2px 0 var(--mantine-primary-color-filled);
+}
+.plx-workspace .flexlayout__tab_toolbar_button {
+	width: 25px;
+	height: 25px;
+	border-radius: var(--mantine-radius-sm);
+}
+.plx-workspace .flexlayout__tab_button_leading {
+	display: inline-flex;
+	align-items: center;
+}
+.plx-workspace .flexlayout__border_button {
+	padding: 7px;
+}
 .plx-workspace .flexlayout__popup_menu_container {
 	border-radius: var(--mantine-radius-sm);
 	box-shadow: var(--mantine-shadow-md);
@@ -108,11 +171,25 @@
 	border-radius: var(--mantine-radius-sm);
 	white-space: normal;
 }
-.plx-workspace .flexlayout__popup_menu_item[data-danger='true'] { color: var(--mantine-color-red-light-color); }
-.plx-workspace .flexlayout__popup_menu_item.plx-native-menu-control { display: block; cursor: default; }
-.plx-workspace .plx-native-menu-control__label { display: block; color: var(--mantine-color-dimmed); font-size: 11px; margin-bottom: 5px; }
-.plx-workspace .plx-native-menu-control:has(input:focus) { background: transparent; }
-.plx-workspace .flexlayout__group_rename { gap: 8px; }
+.plx-workspace .flexlayout__popup_menu_item[data-danger='true'] {
+	color: var(--mantine-color-red-light-color);
+}
+.plx-workspace .flexlayout__popup_menu_item.plx-native-menu-control {
+	display: block;
+	cursor: default;
+}
+.plx-workspace .plx-native-menu-control__label {
+	display: block;
+	color: var(--mantine-color-dimmed);
+	font-size: 11px;
+	margin-bottom: 5px;
+}
+.plx-workspace .plx-native-menu-control:has(input:focus) {
+	background: transparent;
+}
+.plx-workspace .flexlayout__group_rename {
+	gap: 8px;
+}
 .plx-workspace .flexlayout__group_rename_input {
 	background: var(--mantine-color-default);
 	border: 1px solid var(--mantine-color-default-border);
@@ -123,38 +200,241 @@
 	min-width: 0;
 	padding: 4px 7px;
 }
-.plx-workspace .flexlayout__group_picker { flex-wrap: wrap; gap: 6px; }
-.plx-workspace .flexlayout__group_picker_item { color: var(--mantine-color-black); font: inherit; padding: 4px 8px; }
-.plx-workspace .flexlayout__group_color_picker { gap: 5px; padding-block: 3px; flex-wrap: wrap; }
-.plx-workspace .flexlayout__group_color_picker_swatch { height: 21px; width: 21px; }
+.plx-workspace .flexlayout__group_picker {
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.plx-workspace .flexlayout__group_picker_item {
+	color: var(--mantine-color-black);
+	font: inherit;
+	padding: 4px 8px;
+}
+.plx-workspace .flexlayout__group_color_picker {
+	gap: 5px;
+	padding-block: 3px;
+	flex-wrap: wrap;
+}
+.plx-workspace .flexlayout__group_color_picker_swatch {
+	height: 21px;
+	width: 21px;
+}
 .plx-workspace .flexlayout__group_color_picker_swatch:focus-visible,
 .plx-workspace .flexlayout__group_picker_item:focus-visible,
-.plx-workspace .flexlayout__group_rename_input:focus-visible { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: 2px; }
+.plx-workspace .flexlayout__group_rename_input:focus-visible {
+	outline: 2px solid var(--mantine-primary-color-filled);
+	outline-offset: 2px;
+}
 
-.plx-workspace-navigation { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; min-width: 0; padding: 12px; }
-.plx-workspace-navigation__scroll { flex: 1; min-height: 0; }
-.plx-workspace-navigation__scroll .mantine-ScrollArea-viewport { height: 100%; }
-.plx-workspace-navigation__item { min-width: 0; }
-.plx-workspace-navigation .plx-workspace-navigation__link { flex: 1; height: auto; min-width: 0; padding: 6px 8px; text-align: start; }
+.plx-workspace-navigation {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	padding: 12px;
+}
+.plx-workspace-navigation__scroll {
+	flex: 1;
+	min-height: 0;
+}
+.plx-workspace-navigation__scroll .mantine-ScrollArea-viewport {
+	height: 100%;
+}
+.plx-workspace-navigation__item {
+	min-width: 0;
+}
+.plx-workspace-navigation .plx-workspace-navigation__link {
+	flex: 1;
+	height: auto;
+	min-width: 0;
+	padding: 6px 8px;
+	text-align: start;
+}
 .plx-workspace-navigation__link .mantine-Button-label,
-.plx-workspace-navigation__link .mantine-Button-label > span { display: block; min-width: 0; width: 100%; }
+.plx-workspace-navigation__link .mantine-Button-label > span {
+	display: block;
+	min-width: 0;
+	width: 100%;
+}
 
 /* Content-local layout has no docking state or pane protocol. */
-.plx-pluginDocument { display: flex; flex: 1; min-height: 0; min-width: 0; height: 100%; }
+.plx-pluginDocument {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	height: 100%;
+}
 /* Remote Mantine CSS can arrive later. Scope the panel sizing above its core rules;
    Mantine's inline display:none still hides inactive panels. */
-.plx-pluginDocument .plx-pluginDocument__panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: auto; padding-block: 10px; }
-.plx-documentOutline { min-height: 0; min-width: 0; }
+.plx-pluginDocument .plx-pluginDocument__panel {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: auto;
+	padding-block: 10px;
+}
+.plx-documentOutline {
+	min-height: 0;
+	min-width: 0;
+}
 
 @media (max-width: 680px) {
-	.plx-workspace__brand { max-width: 120px; padding-inline-end: 0; }
-	.plx-workspace__search-button kbd { display: none; }
-	.plx-workspace__utilities .plx-workspace__update-status { max-width: 28px; overflow: hidden; padding-inline: 4px; }
-	.plx-workspace__utilities .plx-workspace__update-status .mantine-Button-label { display: none; }
+	.plx-workspace__brand {
+		max-width: 120px;
+		padding-inline-end: 0;
+	}
+	.plx-workspace__search-button kbd {
+		display: none;
+	}
+	.plx-workspace__utilities .plx-workspace__update-status {
+		max-width: 28px;
+		overflow: hidden;
+		padding-inline: 4px;
+	}
+	.plx-workspace__utilities .plx-workspace__update-status .mantine-Button-label {
+		display: none;
+	}
 }
 
 @media (max-width: 450px) {
-	.plx-workspace__brand { max-width: 70px; }
-	.plx-workspace__utilities { gap: 0; }
-	.plx-workspace__search-button { padding-inline: 4px; }
+	.plx-workspace__brand {
+		max-width: 70px;
+	}
+	.plx-workspace__utilities {
+		gap: 0;
+	}
+	.plx-workspace__search-button {
+		padding-inline: 4px;
+	}
+}
+
+.plx-workspace__primary {
+	min-width: 0;
+	overflow: hidden;
+}
+.plx-workspace__layout-controls {
+	justify-self: center;
+}
+.plx-workspace__utilities {
+	justify-self: end;
+	min-width: 0;
+}
+.plx-plugin-tool {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+.plx-plugin-tool .plx-plugin-tool__heading {
+	flex: 0 0 auto;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--plx-border);
+}
+.plx-plugin-tool .plx-plugin-tool__scroll {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
+@media (max-width: 900px) {
+	.plx-workspace__search-button kbd {
+		display: none;
+	}
+	.plx-workspace__brand {
+		max-width: 100px;
+	}
+}
+@media (max-width: 680px) {
+	.plx-workspace__brand {
+		display: none;
+	}
+	.plx-workspace__search-label {
+		display: none;
+	}
+	.plx-workspace__search-button .mantine-Button-section {
+		margin: 0;
+	}
+	.plx-workspace__primary {
+		gap: 0;
+	}
+}
+
+.plx-workspace__body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+.plx-activity {
+	display: flex;
+	flex-direction: column;
+	flex: 0 0 48px;
+	gap: 4px;
+	padding: 6px 4px;
+	border-right: 1px solid var(--plx-border);
+	background: var(--plx-surface-strong);
+}
+.plx-activity[data-mode='labels'] {
+	flex-basis: 156px;
+}
+.plx-activity__items {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+.plx-activity__item {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	flex-shrink: 0;
+	min-height: 40px;
+	padding: 8px;
+	border: 0;
+	border-radius: var(--mantine-radius-sm);
+	background: transparent;
+	color: var(--mantine-color-dimmed);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+.plx-activity[data-mode='labels'] .plx-activity__item {
+	justify-content: flex-start;
+}
+.plx-activity__item svg {
+	flex-shrink: 0;
+}
+.plx-activity__item:hover {
+	background: var(--mantine-color-default-hover);
+	color: var(--mantine-color-text);
+}
+.plx-activity__item[aria-current='page'] {
+	background: var(--plx-selected-bg);
+	color: var(--mantine-primary-color-filled);
+	box-shadow: inset 3px 0 var(--mantine-primary-color-filled);
+}
+.plx-activity__item:focus-visible {
+	outline: 2px solid var(--mantine-primary-color-filled);
+	outline-offset: -2px;
+}
+.plx-activity__mode {
+	margin-top: auto;
+}
+
+// Hide only the redundant navigation strip; native content and splitter keep their geometry.
+.plx-workspace--unified-navigation .flexlayout__border.plx-navigation-border {
+	width: 0;
+	min-width: 0;
+	flex: 0 0 0;
+	border: 0;
+	overflow: hidden;
+	visibility: hidden;
 }

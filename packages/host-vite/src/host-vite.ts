@@ -73,6 +73,12 @@ export type HostViteOptions = Readonly<{
 	bindings?: Readonly<Record<string, unknown>>
 }>
 
+class HostInitializationError extends Error {
+	constructor(cause: unknown) {
+		super('[host-vite] Host initialization failed', { cause })
+	}
+}
+
 /** Host Vite assembly owning one runner, source evaluator and candidate protocol. */
 export function host(options: HostViteOptions): PluginOption[] {
 	for (const key of Object.keys(options))
@@ -331,7 +337,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 						lifecycle = await nextHost.start()
 					} catch (error) {
 						const failure = await closeFailedHost(nextHost, error)
-						throw failure
+						throw previousHost ? failure : new HostInitializationError(failure)
 					}
 					active = nextHost
 					accepted = true
@@ -635,8 +641,26 @@ export function host(options: HostViteOptions): PluginOption[] {
 					).catch(report)
 				},
 			})
-			if (profile === 'production') await driver.enqueue(() => apply())
-			else await driver.enqueue(() => apply()).catch(report)
+			try {
+				await driver.enqueue(() => apply())
+			} catch (error) {
+				// Source failures can recover through watchers. A Host that cannot initialize
+				// must not let Vite announce a successful first startup.
+				if (profile === 'production' || error instanceof HostInitializationError) {
+					const failure = error instanceof HostInitializationError ? error.cause : error
+					try {
+						await close()
+					} catch (cleanupError) {
+						throw new AggregateError(
+							[failure, cleanupError],
+							'[host-vite] startup and cleanup failed',
+							{ cause: cleanupError },
+						)
+					}
+					throw failure
+				}
+				report(error)
+			}
 			if (enableDevConsole) {
 				const { attachDevConsole } = await import('./console/attachment')
 				devConsole = await attachDevConsole({

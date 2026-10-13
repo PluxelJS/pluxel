@@ -1131,7 +1131,7 @@ function matchPlacement(
 	placement: WorkbenchPlacement,
 	location: string | undefined,
 ): Readonly<Record<string, string>> | null {
-	if (placement.kind === 'tab') return location === undefined ? Object.freeze({}) : null
+	if (placement.kind !== 'route') return location === undefined ? Object.freeze({}) : null
 	if (typeof location !== 'string' || !location.startsWith('/') || location.includes('?'))
 		return null
 	const expected = placement.path.split('/').slice(1)

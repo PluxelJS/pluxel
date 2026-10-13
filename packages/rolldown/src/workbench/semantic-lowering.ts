@@ -10,6 +10,11 @@ import {
 } from '@pluxel/core/federation'
 import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/core'
 import type { WorkbenchContentSet } from '@pluxel/core/internal'
+import {
+	panel,
+	WORKBENCH_ICONS,
+	type WorkbenchPanelPlacement,
+} from '@pluxel/workbench/internal/transport'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, relative, resolve } from 'pathe'
 import { resolvePackageJsonPathWithOxc, resolveWithOxc } from '../resolver/oxc.ts'
@@ -93,10 +98,10 @@ type MarkdownDocument = Readonly<{
 	slots: ReadonlyMap<string, WorkbenchSemanticContentSlot>
 }>
 
-type Placement = Readonly<{ kind: 'placement' }>
+type Placement = Readonly<{ kind: 'placement'; panel?: WorkbenchPanelPlacement }>
 
 type Descriptor =
-	| Readonly<{ kind: 'view'; renderer: Renderer }>
+	| Readonly<{ kind: 'view'; renderer: Renderer; placement?: Placement }>
 	| Readonly<{ kind: 'attachment'; renderer: Renderer }>
 	| Readonly<{ kind: 'content'; document: MarkdownDocument; placement: Placement }>
 	| Readonly<{
@@ -150,7 +155,7 @@ const WORKBENCH_REACT_IMPORTS = new Set(['@pluxel/workbench/react'])
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'prototype', 'constructor', 'then'])
 const GENERATED_ABI_VERSION = 3
-const BUILD_REVISION_VERSION = 4
+const BUILD_REVISION_VERSION = 5
 const FIXED_SHARED_PACKAGES = new Set(
 	WORKBENCH_FEDERATION_SHARED_MODULES.map(packageNameFromSpecifier),
 )
@@ -828,6 +833,8 @@ async function compileWorkbenchSnapshot(
 				const base = await evaluateExpression(moduleId, object(node.object)!, environment, stack)
 				const key = memberName(node)
 				if (!key) throw semanticError(moduleId, 'computed Workbench member is not static')
+				if (base === WORKBENCH_NAMESPACE && key === 'icons')
+					return new Map(Object.entries(WORKBENCH_ICONS))
 				if (isDefinition(base)) {
 					const descriptor = base.entries.get(key)
 					if (!descriptor) throw semanticError(moduleId, `definition has no entry ${key}`)
@@ -1159,7 +1166,12 @@ async function compileWorkbenchSnapshot(
 						if (!(options instanceof Map) || !isRenderer(options.get('renderer'))) {
 							throw semanticError(moduleId, `workbench.${method}() requires a static renderer`)
 						}
-						return Object.freeze({ kind: method, renderer: options.get('renderer')! })
+						const placement = options.get('placement')
+						return Object.freeze({
+							kind: method,
+							renderer: options.get('renderer')!,
+							...(method === 'view' && isPlacement(placement) ? { placement } : {}),
+						})
 					}
 					case 'content': {
 						if (args.length !== 1) {
@@ -1189,6 +1201,28 @@ async function compileWorkbenchSnapshot(
 					case 'tab':
 					case 'route':
 						return Object.freeze({ kind: 'placement' })
+					case 'panel': {
+						if (args.length !== 2)
+							throw semanticError(
+								moduleId,
+								'workbench.panel() requires a region and one static options record',
+							)
+						const region = await evaluateExpression(moduleId, args[0]!, environment, stack)
+						const options = await evaluateExpression(moduleId, args[1]!, environment, stack)
+						if (!(options instanceof Map))
+							throw semanticError(moduleId, 'workbench.panel() requires one static options record')
+						try {
+							return Object.freeze({
+								kind: 'placement',
+								panel: panel(
+									region as WorkbenchPanelPlacement['region'],
+									Object.fromEntries(options) as Parameters<typeof panel>[1],
+								),
+							})
+						} catch (cause) {
+							throw semanticError(moduleId, cause instanceof Error ? cause.message : String(cause))
+						}
+					}
 					case 'icons':
 						return new Map()
 					case 'define':
@@ -1534,9 +1568,18 @@ async function writeProjectedRenderer(input: {
 		.replace(/\.mts$/i, '.mjs')
 		.replace(/\.cts$/i, '.cjs')
 	const sourceDescriptor = `(typeof import(${JSON.stringify(sourceDefinitionImport)}))[${JSON.stringify(input.definition.exportName)}][${JSON.stringify(input.identity.key)}]`
+	const sourceEntry = input.definition.entries.get(input.identity.key)
+	const panelPlacement = sourceEntry?.kind === 'view' ? sourceEntry.placement?.panel : undefined
+	const projectedPlacement = panelPlacement
+		? `workbench.panel(${JSON.stringify(panelPlacement.region)}, ${JSON.stringify({
+				label: panelPlacement.label,
+				...(panelPlacement.icon === undefined ? {} : { icon: panelPlacement.icon }),
+				order: panelPlacement.order,
+			})})`
+		: `workbench.tab({ label: ${JSON.stringify(input.identity.key)} })`
 	const descriptor =
 		input.identity.kind === 'view'
-			? `workbench.view({ renderer: ProjectedRenderer, placement: workbench.tab({ label: ${JSON.stringify(input.identity.key)} }) }) as unknown as SourceDescriptor`
+			? `workbench.view({ renderer: ProjectedRenderer, placement: ${projectedPlacement} }) as unknown as SourceDescriptor`
 			: 'workbench.attachment({ renderer: ProjectedRenderer }) as unknown as SourceDescriptor'
 	const projection = [
 		'// Generated browser-only Workbench descriptor projection. Do not edit.',
