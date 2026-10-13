@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CompileResult, DocumentDescription, PreviewResult } from '../src/shared/contracts'
 import { WorkspaceController } from '../src/renderer/workspace'
-import { api } from '../src/renderer/api'
+import { api, onDesktopConnectionChange } from '../src/renderer/api'
 import { editorLifecycle } from '../src/renderer/editor-lifecycle'
 
 vi.mock('../src/renderer/api', () => ({
+	onDesktopConnectionChange: vi.fn(),
 	api: {
 		describeDocument: vi.fn(),
 		getInput: vi.fn(),
@@ -80,6 +81,65 @@ afterEach(() => {
 	vi.resetAllMocks()
 })
 describe('workspace explicit form input and preview ownership', () => {
+	it('recompiles after replacement without replaying failed writes or discarding drafts', async () => {
+		vi.useFakeTimers()
+		let connectionChanged!: (connected: boolean) => void
+		const unsubscribe = vi.fn()
+		vi.mocked(onDesktopConnectionChange).mockImplementation((listener) => {
+			connectionChanged = listener
+			return unsubscribe
+		})
+		const workspace = createWorkspace()
+		vi.mocked(api.getTree).mockResolvedValue({
+			project: workspace.project,
+			revision: 'tree',
+			entries: [],
+			documents: [],
+			config: { name: 'Project', fonts: [] },
+		})
+		workspace.start()
+		workspace.start()
+		expect(onDesktopConnectionChange).toHaveBeenCalledTimes(1)
+		await settle()
+		const release = workspace.retainDocument(target.entry)
+		await settle()
+		const previousPreview = workspace.documents.get(target.entry)!.preview
+		connectionChanged(false)
+		expect(workspace.documents.get(target.entry)?.result).toBeUndefined()
+		expect(workspace.documents.get(target.entry)?.preview).toBe(previousPreview)
+		vi.mocked(api.compile).mockResolvedValueOnce(result('replacement'))
+		connectionChanged(true)
+		await settle()
+		expect(workspace.documents.get(target.entry)?.result?.revision).toBe('replacement')
+		expect(api.setInput).not.toHaveBeenCalled()
+		vi.mocked(api.setInput).mockRejectedValueOnce(new Error('connection lost'))
+		await workspace.writeData(target.entry, { title: 'unsaved draft' })
+		await vi.advanceTimersByTimeAsync(400)
+		const calls = vi.mocked(api.compile).mock.calls.length
+		connectionChanged(false)
+		connectionChanged(true)
+		await settle()
+		expect(workspace.documents.get(target.entry)).toMatchObject({
+			data: { title: 'unsaved draft' },
+			inputDirty: true,
+		})
+		expect(api.compile).toHaveBeenCalledTimes(calls)
+		expect(api.setInput).toHaveBeenCalledTimes(1)
+		// The last view can close while failed input remains owned by the workspace.
+		release()
+		await settle()
+		connectionChanged(true)
+		await settle()
+		expect(api.compile).toHaveBeenCalledTimes(calls)
+		await workspace.saveInput(target.entry)
+		expect(workspace.documents.has(target.entry)).toBe(false)
+		connectionChanged(true)
+		await settle()
+		expect(workspace.documents.has(target.entry)).toBe(false)
+		expect(api.compile).toHaveBeenCalledTimes(calls)
+		workspace.dispose()
+		expect(unsubscribe).toHaveBeenCalledOnce()
+	})
 	it('shares a report across views, survives effect replay and releases the last clean output', async () => {
 		const workspace = createWorkspace()
 		const releaseForm = workspace.retainDocument(target.entry)

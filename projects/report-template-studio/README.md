@@ -24,6 +24,8 @@ pnpm --filter @report-template-studio/app dev
 
 主进程重启遵守窗口的未保存内容关闭保护。取消关闭就取消这次自动重启，现有窗口与开发服务器继续运行；保存后再次修改壳源码即可重试。构建错误会留在终端，修正文件后自动重试。React Fast Refresh 尽量保留可兼容的组件状态，不承诺跨页面刷新或主进程重启保留尚未保存的草稿。
 
+后端 HMR 撤回旧 RPC 连接，新服务就绪后自动替换 renderer 和主进程的 MessagePort。窗口、表单及源码草稿保留，已打开文档重新编译以取得新 revision；旧画面可继续显示，恢复前禁用导出和源码定位。连接恢复不重放失败的写操作，未保存输入保留原有错误与显式重试入口。嵌入式 runtime 的 `onReady(listener)` 会立即报告当前就绪状态，并在每次替换服务后再次通知；返回的函数取消订阅。
+
 开发壳输出到 `.studio-dev/`，生产构建输出到 `dist/`，互不覆盖。开发时只有 renderer 在 `127.0.0.1` 动态端口提供 HTTP / WebSocket，用于页面资源和 HMR；业务使用 Cap’n Web：renderer 通过 MessagePort 读取二进制预览，外部程序通过本机 Unix socket / Windows named pipe 调用同一服务；后端没有 TCP/HTTP 业务 listener。退出应用会关闭该开发会话的 Vite 服务器。前端和后端分别使用 `.studio-dev/vite-renderer` 与 `.studio-dev/vite-backend` 缓存，避免不同 Vite 配置互相使依赖预构建失效。
 
 启动参数可继续传给 Electron。例如本机 Linux Wayland 遇到 SUID sandbox helper 配置错误时，可以显式使用以下开发启动方式；这些参数不会成为应用默认配置：
@@ -283,5 +285,7 @@ pnpm --filter @report-template-studio/app test:desktop
 测试覆盖真实目录、外部改动与并发冲突、ZIP 往返和失败清理、默认值合并、跨目录 Vite HMR、运行器限制、官方 Typst/PDF、Pi 真实文件工具与会话生命周期。生产 `test:runtime` 在导入运行入口前禁止 TCP/HTTP `net.Server.listen`，仅允许本机 IPC。它从构建后的公开 client export 在另一个 Node 进程发现、认证、编译并读取 PNG/PDF，验证重连、原生源码定位及真实多页标题目录。默认使用当前项目 `dist/`；设置 `STUDIO_APP_ROOT` 为发布目录中的 `resources/app` 可执行同一检查，使用发布包自己的依赖、字体、原生库和 QuickJS。Windows Action 只在打包后执行这一生产检查。
 
 桌面验收使用隔离 profile 和真实 Electron preload/IPC，只将系统文件选择器替换为指定临时路径；需要桌面显示环境，结果在 `test-results/`。`STUDIO_EXECUTABLE` 可指向独立包执行同一套验收。受限容器中若 Electron 系统沙箱无法启动，可显式设置 `STUDIO_DISABLE_SANDBOX=1`；该变量仅由测试脚本读取，不改变产品 renderer sandbox 配置。
+
+Linux / macOS 可另运行 `pnpm --filter @report-template-studio/app test:desktop-recovery`：复制临时后端源码，通过官方开发控制台检查当前服务，在同一 Electron 页面内连续替换两次后端，验证可选明细表缺省、表单保存、预览恢复及主进程 PDF 保存。脚本自行构建开发壳，使用隔离 profile，关闭自己启动的应用与 Vite，截图和结果保存在 `test-results/desktop-recovery/`。
 
 未使用付费模型执行真实供应商生成；已有 AI 工具、技能、引用与无凭据状态测试不能代替该边界的验证。

@@ -9,7 +9,7 @@ import {
 	type TextFile,
 	type WorkspaceTree,
 } from '../shared/contracts'
-import { api } from './api'
+import { api, onDesktopConnectionChange } from './api'
 import { isPaneVisible, type PreviewPoint, type SourcePosition } from './source-navigation'
 
 interface PreviewRegistration {
@@ -74,6 +74,7 @@ export class WorkspaceController {
 	private timers = new Map<string, ReturnType<typeof setTimeout>>()
 	private inputSaves = new Map<string, Promise<void>>()
 	private polling?: ReturnType<typeof setInterval>
+	private disconnectListener?: () => void
 	private refreshing?: Promise<boolean>
 	private closed = false
 	constructor(readonly project: ProjectSummary) {}
@@ -92,6 +93,24 @@ export class WorkspaceController {
 	}
 	start() {
 		if (this.closed || this.polling) return
+		this.disconnectListener = onDesktopConnectionChange((connected) => {
+			// Retain visible pages and drafts, but never export or navigate an old generation.
+			for (const [entry, document] of this.documents) {
+				this.documents.set(entry, {
+					...document,
+					result: undefined,
+					busy: false,
+					generation: ++this.documentGeneration,
+					error: !connected
+						? '后端连接已中断，等待恢复。'
+						: document.inputDirty || document.inputSaving
+							? '后端已恢复，请先保存输入以更新预览。'
+							: '后端已更新，正在恢复预览。',
+				})
+			}
+			this.emit()
+			if (connected) for (const entry of this.documentUsers.keys()) void this.compile(entry)
+		})
 		void this.refresh()
 		this.polling = setInterval(() => {
 			void this.refresh()
@@ -99,6 +118,7 @@ export class WorkspaceController {
 	}
 	dispose() {
 		this.closed = true
+		this.disconnectListener?.()
 		clearInterval(this.polling)
 		for (const timer of this.timers.values()) clearTimeout(timer)
 		this.listeners.clear()

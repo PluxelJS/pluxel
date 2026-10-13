@@ -72,6 +72,7 @@ export class StudioRpcCarrier {
 	#generation?: ApiGeneration
 	#retired = new Set<ApiGeneration>()
 	#connections = new Set<(reason: Error) => void>()
+	#readyListeners = new Set<() => void>()
 	#closing?: Promise<void>
 	#closed = false
 
@@ -194,7 +195,20 @@ export class StudioRpcCarrier {
 			rpcError('BACKEND_UNAVAILABLE', 'Studio backend generation was replaced; reconnect'),
 		)
 		this.#api = api
-		if (api) this.#generation = new ApiGeneration(api, resolve)
+		if (api) {
+			this.#generation = new ApiGeneration(api, resolve)
+			for (const listener of this.#readyListeners) listener()
+		}
+	}
+
+	/** Subscribe after startup; a ready generation is reported immediately. */
+	onReady(listener: () => void): () => void {
+		if (this.#closed) throw rpcError('CLOSED', 'Studio host is closed')
+		this.#readyListeners.add(listener)
+		if (this.#generation) listener()
+		return () => {
+			this.#readyListeners.delete(listener)
+		}
 	}
 
 	withdraw(
@@ -253,6 +267,7 @@ export class StudioRpcCarrier {
 	close(closeHost: () => Promise<void> = async () => {}): Promise<void> {
 		return (this.#closing ??= (async () => {
 			this.#closed = true
+			this.#readyListeners.clear()
 			const listenerClosed = this.#server.listening
 				? new Promise<void>((resolve, reject) =>
 						this.#server.close((error) => (error ? reject(error) : resolve())),

@@ -88,6 +88,7 @@ export async function startDevBackend(
 				return rpc.api
 			},
 			connectDesktopPort: (port, options) => rpc.connectDesktopPort(port, options),
+			onReady: (listener) => rpc.onReady(listener),
 			close,
 		}
 	} catch (error) {
