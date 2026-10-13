@@ -28,9 +28,9 @@ export function DataForm({
 						onChange({
 							...formApi.state.values,
 							...Object.fromEntries(
-								tableFields.map((field) => {
+								tableFields.flatMap((field) => {
 									const key = field.name ?? field.path
-									return [key, current.current[key]]
+									return Object.hasOwn(current.current, key) ? [[key, current.current[key]]] : []
 								}),
 							),
 						}),

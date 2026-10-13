@@ -111,7 +111,19 @@ async function startWindow() {
 				},
 			)
 			backend.on('message', (message) => {
-				if (message.type === 'ready') accept()
+				if (message.type !== 'ready' || closed) return
+				nativeClient?.disconnect()
+				const nativeChannel = new MessageChannelMain()
+				backend!.postMessage({ type: 'native-port' }, [nativeChannel.port2])
+				nativeClient = createNativeDesktopClient(nativeChannel.port1)
+				if (window && !window.isDestroyed() && allowedRenderer(window.webContents.getURL())) {
+					const channel = new MessageChannelMain()
+					backend!.postMessage({ type: 'desktop-port' }, [channel.port2])
+					window.webContents.mainFrame.postMessage('studio:port', { replacement: true }, [
+						channel.port1,
+					])
+				}
+				accept()
 			})
 			backend.once('exit', (code) => {
 				const error = new Error(`Studio backend exited (${code})`)
@@ -121,9 +133,6 @@ async function startWindow() {
 				backend = undefined
 			})
 		})
-		const nativeChannel = new MessageChannelMain()
-		backend!.postMessage({ type: 'native-port' }, [nativeChannel.port2])
-		nativeClient = createNativeDesktopClient(nativeChannel.port1)
 		ipcMain.on('studio:connect', (event) => {
 			try {
 				sender(event)

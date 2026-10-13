@@ -17,6 +17,8 @@ export interface BackendConfig {
 }
 export interface StudioBackend {
 	readonly api: DesktopApi
+	/** Reports current readiness immediately and each replacement generation. Unsubscribe to stop. */
+	onReady(listener: () => void): () => void
 	connectDesktopPort(port: StudioMessagePort, options?: { native?: boolean }): () => void
 	close(): Promise<void>
 }
@@ -57,6 +59,7 @@ export async function startBackend(config: BackendConfig): Promise<StudioBackend
 				return carrier.api
 			},
 			connectDesktopPort: (port, options) => carrier.connectDesktopPort(port, options),
+			onReady: (listener) => carrier.onReady(listener),
 			close: () => carrier.close(() => host!.close()),
 		}
 	} catch (error) {

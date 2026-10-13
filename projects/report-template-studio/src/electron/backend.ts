@@ -29,6 +29,12 @@ port.on('message', ({ data, ports }) => {
 		for (const connection of ports) connection.close()
 		return
 	}
-	backend.connectDesktopPort(ports[0]!, { native: data.type === 'native-port' })
+	try {
+		backend.connectDesktopPort(ports[0]!, { native: data.type === 'native-port' })
+	} catch (error) {
+		// A request can arrive while HMR has withdrawn the old generation.
+		// The carrier closes rejected ports; the next ready event supplies fresh ones.
+		console.error('Studio desktop connection rejected', error)
+	}
 })
-port.postMessage({ type: 'ready' })
+backend.onReady(() => port.postMessage({ type: 'ready' }))

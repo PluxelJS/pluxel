@@ -10,7 +10,10 @@ import { WorkspaceContext, useWorkspace } from '../src/renderer/workspace-contex
 import { StudioSession } from '../src/renderer/workbench-session'
 import { studioDocument } from '../src/renderer/workbench-routes'
 
-vi.mock('../src/renderer/api', () => ({ api: { getTree: vi.fn(), writeFile: vi.fn() } }))
+vi.mock('../src/renderer/api', () => ({
+	onDesktopConnectionChange: vi.fn(),
+	api: { getTree: vi.fn(), writeFile: vi.fn() },
+}))
 vi.mock('../src/renderer/assistant', () => ({ AssistantPanel: () => <div>Assistant</div> }))
 vi.mock('../src/renderer/panes', () => ({
 	FilePane: ({ path }: { path: string }) => <Editor path={path} />,

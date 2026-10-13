@@ -39,6 +39,7 @@
 		"typecheck": "tsc --noEmit",
 		"package": "node scripts/package.mjs",
 		"test:desktop": "node tests/desktop.mjs",
+		"test:desktop-recovery": "node tests/desktop-recovery.mjs",
 		"test:runtime": "node tests/runtime.mjs"
 	},
 	"dependencies": {

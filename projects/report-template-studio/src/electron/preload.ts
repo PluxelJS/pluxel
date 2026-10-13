@@ -10,7 +10,11 @@ const bridge: StudioBridge = {
 	importFile: (input) => ipcRenderer.invoke('studio:import-file', input),
 }
 // Transfer the actual port into the main world. RPC proxies never cross contextBridge.
-ipcRenderer.on('studio:port', (event) => {
-	window.postMessage({ type: 'studio:port' }, '*', event.ports)
+ipcRenderer.on('studio:port', (event, data) => {
+	window.postMessage(
+		{ type: 'studio:port', replacement: data?.replacement === true },
+		'*',
+		event.ports,
+	)
 })
 contextBridge.exposeInMainWorld('studio', bridge)
