@@ -1,3 +1,13 @@
+import { formatPluginNodeReference, parsePluginNodeReference } from '@pluxel/core'
+import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
+import {
+	panelIdentity,
+	panelTab,
+	panelTabId,
+	readPanelIdentity,
+	resolvePanelTool,
+	type PanelRegion,
+} from './panelTabs'
 import {
 	createWorkbench,
 	type StartResult,
@@ -12,10 +22,10 @@ import {
 	BorderNode,
 	TabSetNode,
 	TabGroupNode,
-	RowNode,
-	Orientation,
 	type Node,
 	type IJsonModel,
+	type IJsonTabNode,
+	type Action,
 } from 'flexlayout-react'
 import { openConfirmModal } from '@mantine/modals'
 import { createAppRouter, readWorkbenchUiBasePath } from '../router'
@@ -30,22 +40,121 @@ export const navigationTab = {
 	id: 'navigation',
 	name: '插件目录',
 	component: 'worksplit.tool',
-	enableClose: true,
+	enableClose: false,
+	enableDrag: false,
+	enableRename: false,
+	enablePin: false,
+	minHeight: 0,
 }
 export const pluginInspectorTab = { ...navigationTab, id: 'plugin-inspector', name: '插件面板' }
-export const pluginLogsTab = { ...navigationTab, id: 'plugin-logs', name: '插件工具' }
-type LogReturnLocation = {
-	containerId: string
-	groupId?: string
-	index: number
-	anchorIds?: string[]
-	anchorId?: string
-	side?: 'left' | 'right' | 'top' | 'bottom'
-	weights?: Record<string, number>
+
+/** Documents stay in the center; auxiliary tools belong to their declared region. */
+function allowWorkspaceDrop(tabs: readonly TabNode[], target: Node, location: DockLocation) {
+	const regions: Record<string, string> = {
+		navigation: 'border_left',
+		'plugin-inspector': 'border_right',
+	}
+	return tabs.every((tab) => {
+		const panel = readPanelIdentity(tab.toJson())
+		const region = panel ? `border_${panel.region}` : regions[tab.getId()]
+		if (region) return target.getId() === region && location === DockLocation.CENTER
+		let node: Node | undefined = target
+		while (node) {
+			if (node instanceof BorderNode) return false
+			node = node.getParent()
+		}
+		// Documents split within the central editing area.
+		return target instanceof TabSetNode || target instanceof TabGroupNode
+	})
 }
 
-function tabsetIds(node: Node): string[] {
-	return node instanceof TabSetNode ? [node.getId()] : node.getChildren().flatMap(tabsetIds)
+function validPanelLayout(model: Model) {
+	try {
+		for (const [side, id] of [
+			['left', 'navigation'],
+			['right', 'plugin-inspector'],
+		] as const) {
+			const border = model.getNodeById(`border_${side}`)
+			if (!(border instanceof BorderNode) || border.getChildren()[0]?.getId() !== id) return false
+		}
+		let valid = true
+		model.visitNodes((node) => {
+			if (!(node instanceof TabNode)) return
+			const identity = readPanelIdentity(node.toJson())
+			if (
+				identity &&
+				(!(node.getParent() instanceof BorderNode) ||
+					node.getParent()?.getId() !== `border_${identity.region}`)
+			)
+				valid = false
+		})
+		for (const side of ['left', 'right', 'bottom'] as const) {
+			const border = model.getNodeById(`border_${side}`)
+			if (!(border instanceof BorderNode)) return false
+			const config = border.getConfig() ?? {}
+			if (
+				config.panelOwner !== undefined &&
+				(typeof config.panelOwner !== 'string' ||
+					formatPluginNodeReference(parsePluginNodeReference(config.panelOwner)) !==
+						config.panelOwner)
+			)
+				return false
+			const archives = config.panelArchives
+			if (archives === undefined) continue
+			if (!archives || typeof archives !== 'object' || Array.isArray(archives)) return false
+			for (const [owner, archive] of Object.entries(archives)) {
+				if (
+					formatPluginNodeReference(parsePluginNodeReference(owner)) !== owner ||
+					!archive ||
+					typeof archive !== 'object' ||
+					Array.isArray(archive)
+				)
+					return false
+				const { tabs, selected } = archive as { tabs?: unknown; selected?: unknown }
+				if (!Array.isArray(tabs) || (selected !== undefined && typeof selected !== 'string'))
+					return false
+				const ids = new Set<string>()
+				for (const tab of tabs) {
+					if (
+						!tab ||
+						typeof tab !== 'object' ||
+						tab.type !== 'tab' ||
+						tab.component !== 'worksplit.tool'
+					)
+						return false
+					const identity = readPanelIdentity(tab)
+					if (!identity || identity.owner !== owner || identity.region !== side || ids.has(tab.id))
+						return false
+					ids.add(tab.id)
+				}
+				if (
+					selected !== undefined &&
+					!ids.has(selected) &&
+					selected !==
+						(side === 'left' ? 'navigation' : side === 'right' ? 'plugin-inspector' : undefined)
+				)
+					return false
+			}
+		}
+		return valid
+	} catch {
+		return false
+	}
+}
+const panelLayoutPolicy = {
+	allows: validPanelLayout,
+	allowsAction(model: Model, action: Action) {
+		try {
+			const candidate = Model.fromJson(model.toJson())
+			candidate.doAction(action)
+			return validPanelLayout(candidate)
+		} catch {
+			return false
+		}
+	},
+	allowsDrop(_model: Model, _drag: Node, target: Node, _location: DockLocation, index?: number) {
+		return !(['border_left', 'border_right'].includes(target.getId()) && index === 0)
+	},
 }
 
 export function defaultWorkspaceLayout(compact = window.innerWidth <= 680): IJsonModel {
@@ -67,30 +176,36 @@ export function defaultWorkspaceLayout(compact = window.innerWidth <= 680): IJso
 				show: false,
 				size: 280,
 				className: 'plx-navigation-border',
-				config: { navigationMode: 'icons', navigationView: 'plugins', expanded: !compact },
-				selected: 0,
+				config: { navigationMode: 'icons' },
+				selected: compact ? -1 : 0,
+				enableDrop: true,
 				children: [{ ...navigationTab }],
 			},
 			{
 				type: 'border',
 				location: 'right',
 				show: false,
-				config: { expanded: false },
 				size: 320,
-				selected: 0,
+				selected: -1,
+				enableDrop: true,
 				children: [{ ...pluginInspectorTab }],
 			},
 			{
 				type: 'border',
 				location: 'bottom',
 				show: false,
-				config: { expanded: false },
-				enableAutoHide: true,
+				size: 240,
 				selected: -1,
+				enableDrop: true,
 				children: [],
 			},
 		],
-		layout: { type: 'row', children: [{ type: 'tabset', id: 'main', children: [] }] },
+		layout: {
+			type: 'row',
+			children: [
+				{ type: 'tabset', id: 'main', active: true, enableDeleteWhenEmpty: false, children: [] },
+			],
+		},
 	}
 }
 
@@ -134,10 +249,12 @@ export class WorkspaceSession {
 					createAppRouter({ history, uiBasePath: this.basepath, Wrap: WorkbenchDocumentRoot }),
 				layout: defaultWorkspaceLayout(),
 				snapshot,
+				allowDrop: allowWorkspaceDrop,
+				resolveTool: resolvePanelTool,
+				layoutPolicy: panelLayoutPolicy,
 				tools: [
 					{ id: 'navigation', render: () => <PluginNavigation /> },
-					{ id: 'plugin-inspector', render: () => <PluginTool kind="inspector" /> },
-					{ id: 'plugin-logs', render: () => <PluginTool kind="logs" /> },
+					{ id: 'plugin-inspector', render: () => <PluginTool /> },
 				],
 				onIssue: ({ code, error }) => {
 					if (code === 'history-outside-scope') {
@@ -157,86 +274,156 @@ export class WorkspaceSession {
 		const document = active ? this.documents.get(active.id) : undefined
 		return document?.workspace ?? (document?.plugin ? 'apps' : undefined)
 	}
-	private panelExpanded(side: 'left' | 'right' | 'bottom'): boolean {
-		return (
-			this.workbench.getLayout().borders?.find((border) => border.location === side)?.config
-				?.expanded === true
-		)
-	}
-	private async setPanelExpanded(side: 'left' | 'right' | 'bottom', expanded: boolean) {
-		const border = this.workbench
-			.getLayout()
-			.borders?.find((candidate) => candidate.location === side)
-		if (!border || border.config?.expanded === expanded) return
-		this.check(
-			await this.workbench.dispatch(
-				Actions.updateNodeAttributes(`border_${side}`, {
-					config: { ...border.config, expanded },
-				}),
-			),
-		)
-	}
-	/** Project document context onto auxiliary-only containers without replacing manual preferences. */
-	private appLeftPanelsAvailable = false
-	private appLeftPanelsOwner?: WorkbenchDocumentState['plugin']
-	private hasAppLeftPanels(): boolean {
+	private panelEntries: readonly WorkbenchLayoutEntry[] = []
+	private panelEntriesOwner?: string
+	private currentPanelOwner() {
 		const id = this.workbench.getActiveDocument()?.id
-		return (
-			this.appLeftPanelsAvailable &&
-			!!id &&
-			this.documents.get(id)?.plugin === this.appLeftPanelsOwner
-		)
+		const owner = id ? this.documents.get(id)?.plugin : undefined
+		return owner ? formatPluginNodeReference(owner) : undefined
 	}
-	syncWorkspacePanels(appLeftPanelsAvailable = this.hasAppLeftPanels()): Promise<void> {
-		this.appLeftPanelsAvailable = appLeftPanelsAvailable
-		const activeId = this.workbench.getActiveDocument()?.id
-		this.appLeftPanelsOwner = activeId ? this.documents.get(activeId)?.plugin : undefined
+	isPanelOpen(entry: WorkbenchLayoutEntry): boolean {
+		const identity = panelIdentity(entry)
+		const node = Model.fromJson(this.workbench.getLayout()).getNodeById(
+			panelTabId(identity.owner, identity.key),
+		)
+		return node instanceof TabNode && readPanelIdentity(node.toJson())?.region === identity.region
+	}
+	async openPanel(entry: WorkbenchLayoutEntry): Promise<void> {
+		const identity = panelIdentity(entry)
+		const currentEntry = () => {
+			if (identity.owner !== this.currentPanelOwner())
+				throw new Error('当前插件已改变，请切回该插件页面后重新打开面板')
+			const current =
+				this.panelEntriesOwner === identity.owner &&
+				this.panelEntries.find(
+					(item) =>
+						item.descriptor.key === identity.key &&
+						item.placement.kind === 'panel' &&
+						item.placement.region === identity.region,
+				)
+			if (!current) throw new Error('该面板已不在当前插件发布的扩展中，请刷新扩展列表')
+			return current
+		}
+		currentEntry()
+		await this.syncWorkspacePanels()
+		const current = currentEntry()
+		const tab = panelTab(current)
+		const existing = Model.fromJson(this.workbench.getLayout()).getNodeById(tab.id!)
+		if (
+			existing instanceof TabNode &&
+			readPanelIdentity(existing.toJson())?.region !== identity.region
+		) {
+			const result = await this.workbench.close(tab.id!)
+			if (result.status !== 'closed') throw new Error('面板区域已改变，但旧面板无法关闭')
+			this.check(result)
+		} else if (existing instanceof TabNode && existing.getName() !== tab.name) {
+			this.check(
+				await this.workbench.dispatch(Actions.updateNodeAttributes(tab.id!, { name: tab.name })),
+			)
+		}
+		currentEntry()
+		if (!Model.fromJson(this.workbench.getLayout()).getNodeById(tab.id!)) {
+			const result = await this.workbench.dispatch(
+				Actions.addNode(tab, `border_${identity.region}`, DockLocation.CENTER, -1, false),
+			)
+			if (result.status !== 'applied') throw new Error('无法打开插件扩展面板')
+		}
+		currentEntry()
+		const border = Model.fromJson(this.workbench.getLayout()).getNodeById(
+			`border_${identity.region}`,
+		) as BorderNode
+		// SELECT_TAB toggles a selected Border tab; setting its index is idempotent.
+		await this.workbench.dispatch(
+			Actions.updateNodeAttributes(border.getId(), {
+				show: true,
+				selected: border.getChildren().findIndex((node) => node.getId() === tab.id),
+			}),
+		)
+		await this.syncWorkspacePanels()
+	}
+	/** Native layout owns active tabs. Inactive owner layouts are UI-only archives in Border config. */
+	syncWorkspacePanels(entries?: readonly WorkbenchLayoutEntry[]): Promise<void> {
+		if (entries) {
+			const owner = this.currentPanelOwner()
+			this.panelEntriesOwner = owner
+			this.panelEntries = entries.filter(
+				(entry) =>
+					entry.placement.kind === 'panel' &&
+					formatPluginNodeReference(entry.target.node) === owner,
+			)
+		}
 		this.panelsPending = true
 		return (this.synchronizingPanels ??= Promise.resolve().then(async () => {
 			try {
 				while (this.panelsPending && !this.disposing) {
 					this.panelsPending = false
-					const plugins = !!this.activeWorkspace()
-					const model = Model.fromJson(this.workbench.getLayout())
-					const auxiliary = (node: Node): boolean =>
-						node instanceof TabNode
-							? [navigationTab.id, pluginInspectorTab.id, pluginLogsTab.id].includes(node.getId())
-							: node.getChildren().every(auxiliary)
-					for (const side of ['left', 'right'] as const) {
-						const border = model.getNodeById(`border_${side}`)
-						if (!(border instanceof BorderNode) || !auxiliary(border)) continue
-						const available =
-							side !== 'left' || this.activeWorkspace() === 'plugins' || this.hasAppLeftPanels()
-						const show =
-							plugins && available && this.panelExpanded(side) && border.getTabNodes().length > 0
-						if (border.isShowing() !== show)
+					const owner = this.currentPanelOwner()
+					for (const side of ['left', 'right', 'bottom'] as const) {
+						let border = Model.fromJson(this.workbench.getLayout()).getNodeById(`border_${side}`)
+						if (!(border instanceof BorderNode)) continue
+						const config = border.getConfig() ?? {}
+						if (config.panelOwner !== owner) {
+							const archives: Record<string, { tabs: IJsonTabNode[]; selected?: string }> = {
+								...config.panelArchives,
+							}
+							const tabs = border
+								.getChildren()
+								.filter((node) => node instanceof TabNode && readPanelIdentity(node.toJson()))
+								.map((node) => (node as TabNode).toJson())
+							if (config.panelOwner)
+								archives[config.panelOwner] = { tabs, selected: border.getSelectedNode()?.getId() }
+							const restore = owner ? archives[owner] : undefined
+							if (owner) delete archives[owner]
+							for (const tab of tabs) {
+								const result = await this.workbench.close(tab.id!)
+								if (result.status !== 'closed') throw new Error('插件上下文切换时无法释放旧面板')
+								this.check(result)
+							}
+							for (const tab of restore?.tabs ?? []) {
+								const identity = readPanelIdentity(tab)
+								if (!identity || identity.owner !== owner || identity.region !== side)
+									throw new Error('保存的插件面板不属于当前区域或插件')
+								const result = await this.workbench.dispatch(
+									Actions.addNode(tab, `border_${side}`, DockLocation.CENTER, -1, false),
+								)
+								if (result.status !== 'applied') throw new Error('无法恢复插件面板布局')
+							}
+							const expanded = border.getSelected() >= 0
+							border = Model.fromJson(this.workbench.getLayout()).getNodeById(
+								`border_${side}`,
+							) as BorderNode
+							const selectedId = restore
+								? restore.selected
+								: expanded
+									? side === 'right'
+										? 'plugin-inspector'
+										: side === 'left'
+											? 'navigation'
+											: undefined
+									: undefined
 							this.check(
 								await this.workbench.dispatch(
-									Actions.updateNodeAttributes(border.getId(), { show }),
+									Actions.updateNodeAttributes(border.getId(), {
+										config: { ...config, panelOwner: owner, panelArchives: archives },
+										selected: selectedId
+											? border.getChildren().findIndex((node) => node.getId() === selectedId)
+											: -1,
+									}),
+								),
+							)
+						}
+						const show = this.panelAvailable(side)
+						const current = Model.fromJson(this.workbench.getLayout()).getNodeById(
+							`border_${side}`,
+						) as BorderNode
+						if (current.isShowing() !== show)
+							this.check(
+								await this.workbench.dispatch(
+									Actions.updateNodeAttributes(current.getId(), { show }),
 								),
 							)
 					}
-					const log = model.getNodeById(pluginLogsTab.id)
-					const logParent = log?.getParent()
-					const logContainer = logParent instanceof TabGroupNode ? logParent.getParent() : logParent
-					if (
-						!plugins &&
-						log instanceof TabNode &&
-						logContainer &&
-						auxiliary(logContainer) &&
-						(logContainer.getId() !== 'border_bottom' || this.isToolVisible(log.getId()))
-					)
-						await this.toggleLogVisibility(true)
-					else if (
-						plugins &&
-						this.panelExpanded('bottom') &&
-						log instanceof TabNode &&
-						logContainer?.getId() === 'border_bottom' &&
-						!this.isToolVisible(log.getId())
-					)
-						await this.toggleLogVisibility()
 				}
-				return undefined
 			} finally {
 				this.synchronizingPanels = undefined
 			}
@@ -268,214 +455,69 @@ export class WorkspaceSession {
 			.borders?.find((border) => border.location === 'left')?.config
 		return config && typeof config === 'object' ? (config as Record<string, unknown>) : {}
 	}
-	navigationView(): 'plugins' | `panel:${string}` {
-		const view = this.navigationConfig().navigationView
-		return typeof view === 'string' && view.startsWith('panel:')
-			? (view as `panel:${string}`)
-			: 'plugins'
-	}
-	async setNavigationView(navigationView: 'plugins' | `panel:${string}`) {
-		this.check(
-			await this.workbench.dispatch(
-				Actions.updateNodeAttributes('border_left', {
-					config: { ...this.navigationConfig(), navigationView },
-				}),
-			),
-		)
-	}
 	isToolVisible(id: string): boolean {
 		const model = Model.fromJson(this.workbench.getLayout())
 		const node = model.getNodeById(id)
 		if (!(node instanceof TabNode)) return false
-		let parent = node.getParent()
-		if (parent instanceof TabGroupNode) {
-			if (!parent.isOpened()) return false
-			parent = parent.getParent()
-		}
-		if (!(parent instanceof BorderNode || parent instanceof TabSetNode)) return false
-		if (parent instanceof BorderNode && !parent.isShowing()) return false
-		const maximized = model.getMaximizedTabset()
-		if (parent instanceof TabSetNode && maximized && maximized !== parent) return false
+		const parent = node.getParent()
+		if (!(parent instanceof BorderNode)) return false
+		const side = parent.getLocation().getName() as PanelRegion
+		if (!this.panelAvailable(side)) return false
+		if (!parent.isShowing()) return false
 		return parent.getSelectedNode()?.getId() === id
 	}
-	async toggleLogs() {
-		if (!this.activeWorkspace()) return
-		await this.setPanelExpanded('bottom', !this.isToolVisible(pluginLogsTab.id))
-		await this.toggleLogVisibility()
+	panelAvailable(side: PanelRegion): boolean {
+		const owner = this.currentPanelOwner()
+		if (side === 'right') return !!owner
+		if (side === 'left' && this.activeWorkspace() === 'plugins') return true
+		const border = Model.fromJson(this.workbench.getLayout()).getNodeById(`border_${side}`)
+		return (
+			!!owner &&
+			border instanceof BorderNode &&
+			border
+				.getChildren()
+				.some(
+					(node) => node instanceof TabNode && readPanelIdentity(node.toJson())?.owner === owner,
+				)
+		)
 	}
-	private async toggleLogVisibility(hide = this.isToolVisible(pluginLogsTab.id)) {
-		const activeDocument = this.workbench.getActiveDocument()
-		let model = Model.fromJson(this.workbench.getLayout())
-		const log = model.getNodeById(pluginLogsTab.id)
-		if (hide) {
-			if (!(log instanceof TabNode)) return
-			const parent = log.getParent()!
-			const container = parent instanceof TabGroupNode ? parent.getParent()! : parent
-			const returnTo: LogReturnLocation = {
-				containerId: container.getId(),
-				groupId: parent instanceof TabGroupNode ? parent.getId() : undefined,
-				index: parent.getChildren().indexOf(log),
-			}
-			const row = container?.getParent()
-			if (container instanceof TabSetNode && row instanceof RowNode) {
-				const siblings = row.getChildren()
-				const index = siblings.indexOf(container)
-				const anchor = siblings[index - 1] ?? siblings[index + 1]
-				if (anchor) {
-					returnTo.anchorId = anchor.getId()
-					returnTo.anchorIds = tabsetIds(anchor)
-					returnTo.side =
-						row.getOrientation() === Orientation.HORZ
-							? index > 0
-								? 'right'
-								: 'left'
-							: index > 0
-								? 'bottom'
-								: 'top'
-					returnTo.weights = Object.fromEntries(
-						siblings.map((node) => [node.getId(), (node as RowNode | TabSetNode).getWeight()]),
-					)
-				}
-			}
-			const result = await this.workbench.dispatch(
-				Actions.group([
-					Actions.updateNodeAttributes(log.getId(), {
-						config: { ...log.getConfig(), logReturnLocation: returnTo },
-					}),
-					...(parent.getId() === 'border_bottom'
-						? []
-						: [Actions.moveNode(log.getId(), 'border_bottom', DockLocation.CENTER, -1, true)]),
-					Actions.updateNodeAttributes('border_bottom', { show: false }),
-				]),
-			)
-			this.check(result)
-			if (result.status === 'applied' && activeDocument) this.workbench.activate(activeDocument.id)
-			return
-		}
-		const returnTo: LogReturnLocation | undefined =
-			log instanceof TabNode ? log.getConfig()?.logReturnLocation : undefined
-		if (log instanceof TabNode && log.getParent()?.getId() === 'border_bottom' && returnTo) {
-			let target = returnTo.groupId ? model.getNodeById(returnTo.groupId) : undefined
-			target ??= model.getNodeById(returnTo.containerId)
-			let side = DockLocation.CENTER
-			if (!target && returnTo.anchorIds?.length) {
-				const anchors = returnTo.anchorIds
-					.map((id) => model.getNodeById(id))
-					.filter((node): node is Node => !!node)
-				target = anchors[0]
-				// Native tidy may absorb a sibling row. Its surviving tabsets identify the same region.
-				while (
-					target &&
-					!anchors.every((anchor) => {
-						let node: Node | undefined = anchor
-						while (node && node !== target) node = node.getParent()
-						return node === target
-					})
-				)
-					target = target.getParent()
-				side = DockLocation.values.get(returnTo.side ?? 'bottom') ?? DockLocation.BOTTOM
-			}
-			if (!target) {
-				target = model.getRootRow()
-				side = DockLocation.BOTTOM
-			}
-			if (!target) throw new Error('工作区缺少中心布局，请恢复默认布局。')
-			const result = await this.workbench.dispatch(
-				Actions.moveNode(log.getId(), target.getId(), side, returnTo.index, true),
-			)
-			this.check(result)
-			if (result.status !== 'applied') return
-			model = Model.fromJson(this.workbench.getLayout())
-			let restored = model.getNodeById(log.getId())?.getParent()
-			if (restored instanceof TabGroupNode) restored = restored.getParent()
-			if (restored instanceof BorderNode) {
-				this.check(
-					await this.workbench.dispatch(
-						Actions.updateNodeAttributes(restored.getId(), { show: true }),
-					),
-				)
-			} else if (
-				restored instanceof TabSetNode &&
-				side !== DockLocation.CENTER &&
-				returnTo.weights
-			) {
-				const row = restored.getParent()
-				if (row instanceof RowNode) {
-					const weights = row.getChildren().map((node) => {
-						const originalId =
-							node === restored
-								? returnTo.containerId
-								: returnTo.anchorId &&
-									  tabsetIds(node).some((id) => returnTo.anchorIds?.includes(id))
-									? returnTo.anchorId
-									: node.getId()
-						return returnTo.weights![originalId] ?? (node as RowNode | TabSetNode).getWeight()
-					})
-					this.check(await this.workbench.dispatch(Actions.adjustWeights(row.getId(), weights)))
-				}
-			}
-			this.workbench.activate(log.getId())
-			if (activeDocument && activeDocument.containerId !== restored?.getId())
-				this.workbench.activate(activeDocument.id)
-			return
-		}
-		if (this.workbench.activate(pluginLogsTab.id)) return
-		const root = model.getRootRow()
-		if (!root) throw new Error('工作区缺少中心布局，请恢复默认布局。')
+	async showTool() {
+		if (!this.panelAvailable('left')) return
 		this.check(
-			await this.workbench.dispatch(
-				Actions.addTab({ ...pluginLogsTab }, root.getId(), DockLocation.BOTTOM, -1, true),
-			),
+			await this.workbench.dispatch(Actions.updateNodeAttributes('border_left', { selected: 0 })),
 		)
-		if (activeDocument) this.workbench.activate(activeDocument.id)
+		await this.syncWorkspacePanels()
 	}
-
-	async showTool(tab: typeof navigationTab) {
-		await this.setPanelExpanded('left', true)
-		if (!this.activeWorkspace()) return
-		if (this.activeWorkspace() === 'apps' && !this.hasAppLeftPanels()) return
-		if (this.workbench.activate(tab.id)) return
-		const result = await this.workbench.dispatch(
-			Actions.addTab({ ...tab }, 'border_left', DockLocation.CENTER, -1, true),
-		)
-		this.check(result)
-		if (result.status === 'applied') this.workbench.activate(tab.id)
-	}
-	async toggleBorder(side: 'left' | 'right') {
-		if (!this.activeWorkspace()) return
-		if (side === 'left' && this.activeWorkspace() === 'apps' && !this.hasAppLeftPanels()) return
-		const border = this.workbench.getLayout().borders?.find((item) => item.location === side)
-		if (!border) {
-			this.report(new Error('保存的布局不包含此侧栏，请从工作区菜单恢复默认布局。'))
-			return
-		}
-		const id = `border_${side}`
-		if (border.show !== false && (border.selected ?? -1) >= 0) {
-			await this.setPanelExpanded(side, false)
-			this.check(await this.workbench.dispatch(Actions.updateNodeAttributes(id, { show: false })))
-			return
-		}
-		await this.setPanelExpanded(side, true)
-		const tab = side === 'left' ? navigationTab : pluginInspectorTab
+	async toggleTool(id: string) {
 		const model = Model.fromJson(this.workbench.getLayout())
-		if (!border.children?.length) {
-			const node = model.getNodeById(tab.id)
-			const result = await this.workbench.dispatch(
-				node instanceof TabNode
-					? Actions.moveNode(tab.id, id, DockLocation.CENTER, -1)
-					: Actions.addTab({ ...tab }, id, DockLocation.CENTER, -1, true),
-			)
-			this.check(result)
-			if (result.status !== 'applied') return
-		}
+		const node = model.getNodeById(id)
+		const border = node?.getParent()
+		if (!(node instanceof TabNode) || !(border instanceof BorderNode)) return
+		const index = border.getChildren().findIndex((child) => child.getId() === id)
 		this.check(
 			await this.workbench.dispatch(
-				Actions.updateNodeAttributes(id, {
+				Actions.updateNodeAttributes(border.getId(), {
 					show: true,
-					selected: Math.max(0, border.selected ?? -1),
+					selected: this.isToolVisible(id) ? -1 : index,
 				}),
 			),
 		)
+	}
+	async toggleBorder(side: 'left' | 'right' | 'bottom') {
+		if (!this.panelAvailable(side)) return
+		const id = `border_${side}`
+		const model = Model.fromJson(this.workbench.getLayout())
+		const container = model.getNodeById(id)
+		if (!(container instanceof BorderNode))
+			throw new Error('保存的布局缺少工具区域，请恢复默认布局。')
+		this.check(
+			await this.workbench.dispatch(
+				Actions.updateNodeAttributes(id, {
+					selected: container.getSelected() >= 0 ? -1 : 0,
+				}),
+			),
+		)
+		await this.syncWorkspacePanels()
 	}
 	start(
 		href = location.pathname + location.search + location.hash,

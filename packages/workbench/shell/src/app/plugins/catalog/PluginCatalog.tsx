@@ -40,12 +40,13 @@ import { parseSearchTokens } from './searchTokens'
 import { BulkActionsBar, type BulkAction } from './components/BulkActionsBar'
 import { CatalogHelpModal } from './components/CatalogHelpModal'
 import { SearchBar } from './components/SearchBar'
+import { CatalogHints } from './components/CatalogTooltip'
 
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
 
 class PluginCatalogLayoutPersistenceUnknownError extends Error {}
 
-export function PluginCatalog() {
+export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
@@ -109,6 +110,7 @@ export function PluginCatalog() {
 	}, [])
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
+			if (!inputRef.current?.getClientRects().length) return
 			const editableTarget = isEditableTarget(e.target)
 			const mod = e.ctrlKey || e.metaKey
 			if ((mod && e.key.toLowerCase() === 'f') || (!editableTarget && e.key === '/')) {
@@ -496,6 +498,7 @@ export function PluginCatalog() {
 		content = (
 			<PluginOrganizer
 				key={organizerResetToken}
+				activeId={activeId}
 				statuses={overview.statuses}
 				initialGroups={groupsForView}
 				onGroupsChange={handleGroupsChange}
@@ -514,66 +517,67 @@ export function PluginCatalog() {
 	}
 
 	return (
-		<Stack className="plx-pluginCatalog" w="100%">
-			<div className="plx-pluginCatalog__header">
-				<div className="plx-pluginCatalog__titleLine">
-					<span className="plx-pluginCatalog__eyebrow">Plugins</span>
-					<span className="plx-pluginCatalog__title">插件导览</span>
-					{overview.total > 0 ? (
-						<span
-							className="plx-pluginCatalog__titleCount"
-							title={`共 ${overview.total} 个插件`}
-							aria-label={`共 ${overview.total} 个插件`}
-							aria-live="polite"
+		<CatalogHints>
+			<Stack className="plx-pluginCatalog" w="100%">
+				<div className="plx-pluginCatalog__header">
+					<div className="plx-pluginCatalog__titleLine">
+						<span className="plx-pluginCatalog__title">插件目录</span>
+						{overview.total > 0 ? (
+							<span
+								className="plx-pluginCatalog__titleCount"
+								title={`共 ${overview.total} 个插件`}
+								aria-label={`共 ${overview.total} 个插件`}
+								aria-live="polite"
+							>
+								{overview.total}
+							</span>
+						) : null}
+					</div>
+					<div className="plx-pluginCatalog__headerActions">
+						<button
+							type="button"
+							className="plx-pluginCatalog__helpButton"
+							onClick={() => setHelpOpened(true)}
+							title="F1 / ? 打开快捷键和搜索语法"
 						>
-							{overview.total}
-						</span>
-					) : null}
+							<IconKeyboard size={13} stroke={1.8} />
+							<span>F1</span>
+						</button>
+					</div>
 				</div>
-				<div className="plx-pluginCatalog__headerActions">
-					<button
-						type="button"
-						className="plx-pluginCatalog__helpButton"
-						onClick={() => setHelpOpened(true)}
-						title="F1 / ? 打开快捷键和搜索语法"
+				<div className="plx-pluginCatalog__toolbar">
+					<SearchBar
+						value={search}
+						onChange={handleSearchChange}
+						inputRef={inputRef}
+						statusFilter={statusFilter}
+						statusCounts={overview.statusCounts}
+						onToggleStatus={toggleStatusFilter}
+						onResetStatusFilter={resetStatusFilter}
+						hasActiveStatusFilter={hasStatusFilter}
+					/>
+				</div>
+
+				{selectedIds.length > 0 ? (
+					<BulkActionsBar count={selectedIds.length} busy={bulkBusy} onAction={handleBulkAction} />
+				) : null}
+
+				<Box className="plx-pluginCatalog__body">
+					{/* 内容容器：使用 opacity 过渡避免闪烁 */}
+					<Box
+						style={{
+							flex: 1,
+							minHeight: 0,
+							opacity: isTransitioning ? 0.7 : 1,
+							transition: 'opacity 100ms ease-out',
+						}}
 					>
-						<IconKeyboard size={13} stroke={1.8} />
-						<span>F1</span>
-					</button>
-				</div>
-			</div>
-			<div className="plx-pluginCatalog__toolbar">
-				<SearchBar
-					value={search}
-					onChange={handleSearchChange}
-					inputRef={inputRef}
-					statusFilter={statusFilter}
-					statusCounts={overview.statusCounts}
-					onToggleStatus={toggleStatusFilter}
-					onResetStatusFilter={resetStatusFilter}
-					hasActiveStatusFilter={hasStatusFilter}
-				/>
-			</div>
-
-			{selectedIds.length > 0 ? (
-				<BulkActionsBar count={selectedIds.length} busy={bulkBusy} onAction={handleBulkAction} />
-			) : null}
-
-			<Box className="plx-pluginCatalog__body">
-				{/* 内容容器：使用 opacity 过渡避免闪烁 */}
-				<Box
-					style={{
-						flex: 1,
-						minHeight: 0,
-						opacity: isTransitioning ? 0.7 : 1,
-						transition: 'opacity 100ms ease-out',
-					}}
-				>
-					{content}
+						{content}
+					</Box>
 				</Box>
-			</Box>
 
-			<CatalogHelpModal opened={helpOpened} onClose={() => setHelpOpened(false)} />
-		</Stack>
+				<CatalogHelpModal opened={helpOpened} onClose={() => setHelpOpened(false)} />
+			</Stack>
+		</CatalogHints>
 	)
 }

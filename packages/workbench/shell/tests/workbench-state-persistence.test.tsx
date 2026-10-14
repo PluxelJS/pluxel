@@ -18,8 +18,9 @@ import {
 	openDocument,
 } from './helpers/native-workbench'
 
-vi.mock('../src/app/log_viewer/LiveLog', () => ({
-	LiveLog: () => <input aria-label="日志过滤" defaultValue="error" />,
+vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
+vi.mock('../src/app/log_viewer/LogsPage', () => ({
+	LogsPage: () => <input aria-label="日志过滤" defaultValue="error" />,
 }))
 vi.mock('../src/app/security/SecurityScreen', () => ({
 	SecurityScreen: () => <input aria-label="安全配置" />,

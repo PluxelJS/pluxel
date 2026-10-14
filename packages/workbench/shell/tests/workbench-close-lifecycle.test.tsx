@@ -24,13 +24,14 @@ const fixtures = vi.hoisted(() => ({
 	models: new Map<string, EditingModel>(),
 	decisions: [] as { onConfirm?: () => void; onCancel?: () => void; title?: unknown }[],
 }))
+vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
 vi.mock('@mantine/modals', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@mantine/modals')>()),
 	openConfirmModal: (options: (typeof fixtures.decisions)[number]) => {
 		fixtures.decisions.push(options)
 	},
 }))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: Editor }))
+vi.mock('../src/app/log_viewer/LogsPage', () => ({ LogsPage: Editor }))
 vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: Editor }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => null }))
 

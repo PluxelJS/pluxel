@@ -115,19 +115,14 @@ describe('compact plugin catalog rows', () => {
 		)
 	})
 
-	it('lays out the full name, source, export, status, update mode, and reference on focus', async () => {
+	it('shows only the complete plugin name on focus without a large diagnostic card', async () => {
 		const container = await mount(<SortableRow {...props} />)
 		await act(async () => {
 			container.querySelector<HTMLElement>('[data-plugin-link]')!.focus()
 		})
 		const tooltip = document.querySelector('[role="tooltip"]')!
-		expect(tooltip.querySelector('.plx-pluginCatalog__hoverTitle')?.textContent).toBe(name)
-		expect(tooltip.querySelector('.plx-pluginCatalog__hoverFacts')?.textContent).toContain(
-			`来源${meta.definition}导出${meta.exportName}状态运行中更新${meta.executionLabel}`,
-		)
-		expect(tooltip.querySelector('.plx-pluginCatalog__hoverReference')?.textContent).toBe(
-			meta.reference,
-		)
+		expect(tooltip.textContent).toBe(name)
+		expect(tooltip.textContent).not.toContain(meta.reference)
 	})
 
 	it('keeps update warnings discoverable as an icon without adding another text badge', async () => {

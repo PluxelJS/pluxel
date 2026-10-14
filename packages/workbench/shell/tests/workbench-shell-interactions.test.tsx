@@ -15,6 +15,7 @@ import { WorkbenchShell } from '../src/app/workbench/WorkbenchShell'
 import { ACCENT_STORAGE_KEY } from '../src/theme/accent/accentPresets'
 import { openDocument, prepareNativeWorkbenchDom } from './helpers/native-workbench'
 
+vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
 vi.mock('../src/workbench/runtime', () => ({
 	useWorkbenchTargetSnapshot: () => ({ layout: { entries: [], revision: 1 } }),
 	useWorkbenchRuntime: () => ({ runningPluginsReady: false, runningPluginKeys: new Set() }),
@@ -27,8 +28,8 @@ vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
 vi.mock('../src/app/router/screens/HomeScreen', () => ({
 	HomeScreen: () => <input aria-label="文档输入" defaultValue="draft" />,
 }))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({
-	LiveLog: () => <input aria-label="日志输入" defaultValue="draft" />,
+vi.mock('../src/app/log_viewer/LogsPage', () => ({
+	LogsPage: () => <input aria-label="日志输入" defaultValue="draft" />,
 }))
 vi.mock('../src/app/plugins/catalog/PluginCatalog', () => ({
 	PluginCatalog: () => <input aria-label="插件输入" defaultValue="draft" />,
@@ -37,23 +38,13 @@ vi.mock('../src/app/security/SecurityScreen', () => ({
 	SecurityScreen: () => <input aria-label="安全输入" defaultValue="draft" />,
 }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
-	WorkspaceNavigation: ({
-		autofocus = false,
-		openMode,
-	}: {
-		autofocus?: boolean
-		openMode?: string
-	}) => (
-		<input
-			data-open-mode={openMode}
-			autoFocus={autofocus}
-			data-autofocus={autofocus || undefined}
-			aria-label="入口搜索"
-		/>
+	WorkspaceNavigation: ({ autofocus = false }: { autofocus?: boolean }) => (
+		<input autoFocus={autofocus} data-autofocus={autofocus || undefined} aria-label="入口搜索" />
 	),
 }))
 
 const roots: Root[] = []
+const openTab = vi.fn()
 const sessions: WorkspaceSession[] = []
 beforeEach(prepareNativeWorkbenchDom)
 afterEach(async () => {
@@ -78,9 +69,7 @@ async function workspace() {
 				<ModalsProvider>
 					<NotificationCenterProvider>
 						<WorkspaceSessionProvider value={session}>
-							<WorkbenchNavigationProvider
-								value={{ navigate: () => undefined, openTab: () => undefined }}
-							>
+							<WorkbenchNavigationProvider value={{ navigate: () => undefined, openTab }}>
 								<WorkbenchShell />
 							</WorkbenchNavigationProvider>
 						</WorkspaceSessionProvider>
@@ -116,7 +105,7 @@ async function pressKey(element: HTMLElement, key: string, options: KeyboardEven
 }
 
 describe('native Shell interaction contracts', () => {
-	it('offers one native new-tab button on the active document and separates new from reuse search', async () => {
+	it('duplicates the active document with the plus button and leaves search separate', async () => {
 		const { session, container } = await workspace()
 		const first = await openDocument(session, '/logs')
 		const second = await openDocument(session, '/security')
@@ -131,20 +120,18 @@ describe('native Shell interaction contracts', () => {
 			)
 			session.workbench.activate(first)
 		})
-		expect(container.querySelectorAll('[aria-label="新建标签页"]')).toHaveLength(1)
-		expect(tab(container, first).querySelector('[aria-label="新建标签页"]')).not.toBeNull()
-		expect(tab(container, second).querySelector('[aria-label="新建标签页"]')).toBeNull()
-		await click(container.querySelector('[aria-label="新建标签页"]')!)
-		await appear('[role="dialog"]')
-		expect(document.querySelector('[aria-label="入口搜索"]')?.getAttribute('data-open-mode')).toBe(
-			'new',
-		)
-		expect(session.workbench.getDocuments()).toHaveLength(2)
-		await pressKey(document.querySelector('[aria-label="入口搜索"]')!, 'Escape', { code: 'Escape' })
+		expect(container.querySelectorAll('[aria-label="复制当前标签页"]')).toHaveLength(1)
+		expect(tab(container, first).querySelector('[aria-label="复制当前标签页"]')).not.toBeNull()
+		expect(tab(container, second).querySelector('[aria-label="复制当前标签页"]')).toBeNull()
+		await click(container.querySelector('[aria-label="复制当前标签页"]')!)
+		expect(openTab).toHaveBeenCalledWith({
+			path: session.workbench.getDocument(first)!.href,
+			title: session.workbench.getDocument(first)!.title,
+			afterDocumentId: first,
+		})
+		expect(document.querySelector('[role="dialog"]')).toBeNull()
 		await click(container.querySelector('[aria-label="查找所有工作区入口"]')!)
-		expect(document.querySelector('[aria-label="入口搜索"]')?.getAttribute('data-open-mode')).toBe(
-			'reuse',
-		)
+		expect(document.querySelector('[aria-label="入口搜索"]')).not.toBeNull()
 	})
 
 	it('keeps official shortcuts separate and persists icon/label mode without touching documents', async () => {
@@ -162,34 +149,40 @@ describe('native Shell interaction contracts', () => {
 		await click(container.querySelector('[aria-label="显示图标与文字"]')!)
 		expect(rail.getAttribute('data-mode')).toBe('labels')
 		await act(async () => {
-			await session.setNavigationView('panel:fixture:navigation')
 			session.workbench.activate('navigation')
 		})
 		const restored = new WorkspaceSession({ snapshot: session.workbench.snapshot() })
 		sessions.push(restored)
 		expect(restored.navigationMode()).toBe('labels')
-		expect(restored.navigationView()).toBe('panel:fixture:navigation')
+		expect(
+			restored.workbench
+				.getLayout()
+				.borders?.find((border) => border.location === 'left')
+				?.children.map((node) => node.id),
+		).toEqual(['navigation'])
 		expect(session.workbench.getActiveDocument()?.id).toBe(id)
 		await click(container.querySelector('[aria-label="左侧导航"]')!)
 		await click(container.querySelector('[aria-label="左侧导航"]')!)
-		expect(session.navigationView()).toBe('panel:fixture:navigation')
 		expect(
 			session.workbench.getLayout().borders?.find((border) => border.location === 'left')?.children,
 		).toHaveLength(1)
 		await click(container.querySelector('[aria-label="仅显示图标"]')!)
 		expect(rail.getAttribute('data-mode')).toBe('icons')
-		expect(session.navigationView()).toBe('panel:fixture:navigation')
 		expect(input.value).toBe('independent draft')
 		expect(session.workbench.getDocument(id)).not.toBeNull()
 	})
 
-	it('reopens the closed tool and isolates document keyboard commands from text inputs', async () => {
+	it('preserves the fixed navigation tool and isolates document keyboard commands from text inputs', async () => {
 		const { session, container } = await workspace()
 		await openDocument(session, '/plugins')
 		await act(async () => {
-			await session.workbench.dispatch(Actions.deleteTab('navigation'))
+			expect((await session.workbench.dispatch(Actions.deleteTab('navigation'))).status).toBe(
+				'rejected',
+			)
 		})
-		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeUndefined()
+		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeInstanceOf(
+			TabNode,
+		)
 		await click(container.querySelector('.plx-activity [aria-label="插件管理"]')!)
 		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeInstanceOf(
 			TabNode,

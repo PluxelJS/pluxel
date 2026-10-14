@@ -1,4 +1,4 @@
-import { Box } from '@mantine/core'
+import { Accordion, Box } from '@mantine/core'
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { FieldNode } from 'valibot-form'
 import { AutoForm, type AutoFormOptions, useAutoFormCtx } from 'valibot-form/web'
@@ -64,18 +64,25 @@ export function ConfigTabContent({
 	return (
 		<AutoForm fields={fields} formOpts={opts}>
 			<RegisterForm tabKey={tabKey} registerForm={registerForm} setBaseline={setBaseline} />
-			<Box px="xs" pt="xs" pb={24}>
+			{showToc ? (
+				<Accordion mb="md">
+					<Accordion.Item value="outline">
+						<Accordion.Control>配置目录</Accordion.Control>
+						<Accordion.Panel>
+							<FormToc
+								sectionIdPrefix={sectionIdPrefix}
+								fieldIdPrefix={fieldIdPrefix}
+								scrollHost={scrollHost}
+								scrollHostVersion={scrollHostVersion}
+							/>
+						</Accordion.Panel>
+					</Accordion.Item>
+				</Accordion>
+			) : null}
+			<Box>
 				<AutoForm.Fields sectionIdPrefix={sectionIdPrefix} fieldIdPrefix={fieldIdPrefix} />
 				<ServerValidationSummary />
 			</Box>
-			{showToc ? (
-				<FormToc
-					sectionIdPrefix={sectionIdPrefix}
-					fieldIdPrefix={fieldIdPrefix}
-					scrollHost={scrollHost}
-					scrollHostVersion={scrollHostVersion}
-				/>
-			) : null}
 		</AutoForm>
 	)
 }

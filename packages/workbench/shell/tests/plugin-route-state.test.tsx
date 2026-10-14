@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { Actions, DockLocation, Model, TabNode, TabSetNode } from 'flexlayout-react'
+import { Actions, BorderNode, DockLocation, Model, TabNode } from 'flexlayout-react'
 import { formatPluginNodeRoute } from '@pluxel/core'
 import { act, useEffect, useState, useMemo } from 'react'
 import type { Root } from 'react-dom/client'
@@ -32,6 +32,8 @@ const state = vi.hoisted(() => ({
 const mounted: Root[] = []
 const workspaces: WorkspaceSession[] = []
 
+vi.mock('../src/app/workbench/PluginPanelDirectory', () => ({ PluginPanelDirectory: () => null }))
+vi.mock('../src/app/log_viewer/LogsPage', () => ({ LogsPage: () => <p>全局日志</p> }))
 vi.mock('../src/app/plugins/detail/PluginScreen', () => ({ PluginScreen: PluginPage }))
 vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 	RouteErrorScreen: ({ onRetry }: { onRetry?: () => void }) => (
@@ -44,8 +46,8 @@ vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({
 	),
 }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => null }))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({
-	LiveLog: ({ owner }: { owner?: Parameters<typeof formatPluginNodeRoute>[0] }) => {
+vi.mock('../src/app/log_viewer/LogPreview', () => ({
+	LogPreview: ({ owner }: { owner?: Parameters<typeof formatPluginNodeRoute>[0] }) => {
 		state.logs()
 		return <p data-testid="scoped-log">{owner ? formatPluginNodeRoute(owner) : '全局日志'}</p>
 	},
@@ -59,8 +61,8 @@ vi.mock('../src/workbench/runtime', async (importOriginal) => ({
 	WorkbenchEntryView: () => <input aria-label="独立插件页面" defaultValue="entry draft" />,
 }))
 vi.mock('../src/app/plugins/detail/controls/ActionBar', () => ({ ActionBar: () => null }))
-vi.mock('../src/app/plugins/detail/cards/LogLevelsCard', () => ({
-	LogLevelsCard: () => <p>日志级别</p>,
+vi.mock('../src/app/log_viewer/LogPolicyPopover', () => ({
+	LogPolicyPopover: () => <p>日志级别</p>,
 }))
 vi.mock('../src/app/plugins/detail/cards/PluginRuntimeSummaryCard', () => ({
 	PluginRuntimeSummaryCard: ({ status }: { status: { route: string } }) => (
@@ -227,9 +229,7 @@ describe('plugin state within native documents', () => {
 		input.value = 'unsaved config state'
 		await act(async () => {
 			await workspace.toggleBorder('right')
-			await workspace.toggleLogs()
 			await workspace.toggleBorder('right')
-			await workspace.toggleLogs()
 		})
 		expect(content(first).querySelector('[aria-label="配置状态"]')).toBe(input)
 		expect(input.value).toBe('unsaved config state')
@@ -275,127 +275,121 @@ describe('plugin state within native documents', () => {
 		expect(content(entry.id).textContent).toContain('version')
 	})
 
-	it('opens logs below documents without redirecting new documents, and hides only logs in a shared group', async () => {
-		const { workspace, container, content } = await mount()
+	it('keeps fixed native tool nodes and rejects closing or moving them into documents', async () => {
+		const { workspace } = await mount()
+		const initial = Model.fromJson(workspace.workbench.getLayout())
+		const inspector = initial.getNodeById('plugin-inspector') as TabNode
+		expect(inspector.getTabContainer().getId()).toBe('border_right')
+		expect(inspector.isEnableClose()).toBe(false)
+		expect(inspector.isEnableDrag()).toBe(false)
+		expect((initial.getNodeById('border_bottom') as BorderNode).getChildren()).toHaveLength(0)
 		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
-		const originalContainer = workspace.workbench.getDocument(first)!.containerId
+		const documentContainer = workspace.workbench.getDocument(first)!.containerId
+		for (const id of ['navigation', 'plugin-inspector']) {
+			await act(async () => {
+				expect(await workspace.workbench.dispatch(Actions.deleteTab(id))).toMatchObject({
+					status: 'rejected',
+				})
+				expect(
+					await workspace.workbench.dispatch(
+						Actions.moveNode(id, documentContainer, DockLocation.CENTER, -1),
+					),
+				).toMatchObject({ status: 'rejected' })
+			})
+		}
+		for (const target of ['border_bottom', 'border_left', 'border_right']) {
+			await act(async () => {
+				expect(
+					await workspace.workbench.dispatch(
+						Actions.moveNode(first, target, DockLocation.CENTER, -1),
+					),
+				).toMatchObject({ status: 'rejected' })
+			})
+		}
+		expect(workspace.workbench.getDocument(first)?.containerId).toBe(documentContainer)
 		expect(
-			Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-logs'),
-		).toBeUndefined()
-		await act(async () => workspace.toggleLogs())
-		const model = Model.fromJson(workspace.workbench.getLayout())
-		const logsNode = model.getNodeById('plugin-logs')
-		expect(logsNode).toBeInstanceOf(TabNode)
-		const logsContainer = (logsNode as TabNode).getTabContainer()
-		expect(logsContainer).toBeInstanceOf(TabSetNode)
-		expect(logsContainer.getId()).not.toBe(originalContainer)
-		expect(
-			workspace.workbench.getLayout().borders?.find((border) => border.location === 'bottom')?.show,
-		).toBe(false)
-		const second = await openDocument(workspace, `/plugins/${secondRoute}`)
-		expect(workspace.workbench.getDocument(second)?.containerId).toBe(originalContainer)
-		expect(workspace.isToolVisible('plugin-logs')).toBe(true)
-		const input = content(second).querySelector<HTMLInputElement>('input')!
-		input.value = 'document sharing the log group'
-		await act(async () => {
-			await workspace.workbench.dispatch(
-				Actions.moveNode(second, logsContainer.getId(), DockLocation.CENTER, -1),
-			)
-			workspace.workbench.activate('plugin-logs')
-		})
-		expect(workspace.workbench.getDocument(second)?.containerId).toBe(logsContainer.getId())
-		await act(async () => workspace.toggleLogs())
-		expect(
-			Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-logs'),
-		).toBeInstanceOf(TabNode)
-		expect(workspace.isToolVisible('plugin-logs')).toBe(false)
-		expect(container.querySelector('[data-testid="scoped-log"]')).toBeNull()
-		expect(workspace.workbench.getDocuments().map((document) => document.id)).toEqual(
-			expect.arrayContaining([first, second]),
-		)
-		expect(content(second).querySelector('input')).toBe(input)
-		expect(input.value).toBe('document sharing the log group')
-		await act(async () => workspace.toggleLogs())
-		expect(workspace.isToolVisible('plugin-logs')).toBe(true)
-		expect(
-			(Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-logs') as TabNode)
+			(Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-inspector') as TabNode)
 				.getTabContainer()
 				.getId(),
-		).toBe(logsContainer.getId())
-		expect(content(second).querySelector('input')).toBe(input)
-		expect(input.value).toBe('document sharing the log group')
+		).toBe('border_right')
 	})
 
-	it('preserves pinned logs and resized panel weights through hide and restore', async () => {
-		const { workspace } = await mount()
-		await openDocument(workspace, `/plugins/${firstRoute}`)
-		await act(async () => workspace.toggleLogs())
-		const model = Model.fromJson(workspace.workbench.getLayout())
-		const logs = model.getNodeById('plugin-logs') as TabNode
-		const group = logs.getTabContainer() as TabSetNode
-		expect(group.getWeight()).toBe(25)
-		const row = group.getParent()!
-		const sibling = row.getChildren().find((node) => node !== group) as TabSetNode
+	it('releases the right log preview when collapsed, retaining size and document drafts', async () => {
+		const { workspace, container, content } = await mount()
+		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
+		const input = content(first).querySelector<HTMLInputElement>('input')!
+		input.value = 'kept draft'
+		await act(async () => workspace.toggleBorder('right'))
 		await act(async () => {
-			await workspace.workbench.dispatch(
-				Actions.adjustWeights(
-					row.getId(),
-					row.getChildren().map((node) => (node === group ? 40 : 60)),
-				),
-			)
-			await workspace.workbench.dispatch(
-				Actions.updateNodeAttributes('plugin-logs', { pinned: true }),
-			)
+			;[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+				.find((tab) => tab.textContent === '最近日志')!
+				.click()
 		})
-		await act(async () => workspace.toggleLogs())
-		const hidden = Model.fromJson(workspace.workbench.getLayout()).getNodeById(
-			'plugin-logs',
-		) as TabNode
-		expect(hidden.isPinned()).toBe(true)
-		expect(workspace.isToolVisible('plugin-logs')).toBe(false)
-		await act(async () => workspace.toggleLogs())
-		const restored = Model.fromJson(workspace.workbench.getLayout())
-		const restoredLog = restored.getNodeById('plugin-logs') as TabNode
-		expect(restoredLog.isPinned()).toBe(true)
-		expect(workspace.isToolVisible('plugin-logs')).toBe(true)
-		expect((restoredLog.getTabContainer() as TabSetNode).getWeight()).toBe(40)
-		expect((restored.getNodeById(sibling.getId()) as TabSetNode).getWeight()).toBe(60)
-	})
-
-	it('keeps natively closed logs absent when another plugin document becomes active', async () => {
-		const { workspace, container } = await mount()
-		await openDocument(workspace, `/plugins/${firstRoute}`)
-		await act(async () => workspace.toggleLogs())
-		expect(workspace.isToolVisible('plugin-logs')).toBe(true)
+		expect(container.querySelector('[data-testid="scoped-log"]')?.textContent).toBe(firstRoute)
 		await act(async () => {
-			expect(await workspace.workbench.dispatch(Actions.deleteTab('plugin-logs'))).toEqual({
-				status: 'closed',
-				id: 'plugin-logs',
-				cleanupErrors: [],
-			})
+			await workspace.workbench.dispatch(Actions.adjustBorderSplit('border_right', 400))
+			await workspace.toggleBorder('right')
 		})
-		await openDocument(workspace, `/plugins/${secondRoute}`)
-		await act(async () => workspace.syncWorkspacePanels())
-		expect(
-			Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-logs'),
-		).toBeUndefined()
+		const right = () =>
+			Model.fromJson(workspace.workbench.getLayout()).getNodeById('border_right') as BorderNode
+		expect(right().isShowing()).toBe(true)
+		expect(right().getSelected()).toBe(-1)
+		expect(right().getSize()).toBe(400)
 		expect(container.querySelector('[data-testid="scoped-log"]')).toBeNull()
-		await act(async () => workspace.toggleLogs())
+		await openDocument(workspace, `/plugins/${secondRoute}`)
+		await act(async () => workspace.toggleBorder('right'))
+		expect(right().getSize()).toBe(400)
 		expect(container.querySelector('[data-testid="scoped-log"]')?.textContent).toBe(secondRoute)
+		expect(content(first).querySelector('input')).toBe(input)
+		expect(input.value).toBe('kept draft')
 	})
 
-	it('suspends centrally docked logs while a sibling document is maximized and resumes on restore', async () => {
+	it('retains the right strip when collapsed and hides owner tools only when no plugin is active', async () => {
+		const { workspace, container } = await mount()
+		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
+		await act(async () => workspace.syncWorkspacePanels())
+		const right = () =>
+			Model.fromJson(workspace.workbench.getLayout()).getNodeById('border_right') as BorderNode
+		expect(right().isShowing()).toBe(true)
+		expect(right().getSelected()).toBe(-1)
+		await act(async () => workspace.toggleBorder('right'))
+		expect(container.querySelector('[data-testid="scoped-info"]')?.textContent).toBe(firstRoute)
+		await act(async () => workspace.toggleBorder('right'))
+		expect(right().isShowing()).toBe(true)
+		expect(right().getSelected()).toBe(-1)
+		expect(container.querySelector('[data-testid="scoped-info"]')).toBeNull()
+		await openDocument(workspace, '/logs')
+		await act(async () => workspace.syncWorkspacePanels())
+		expect(workspace.panelAvailable('right')).toBe(false)
+		expect(workspace.panelAvailable('bottom')).toBe(false)
+		expect(right().isShowing()).toBe(false)
+		expect(
+			(
+				Model.fromJson(workspace.workbench.getLayout()).getNodeById('border_bottom') as BorderNode
+			).isShowing(),
+		).toBe(false)
+		await act(async () => {
+			await workspace.toggleBorder('right')
+		})
+		expect(workspace.panelAvailable('bottom')).toBe(false)
+		await act(async () => {
+			workspace.workbench.activate(first)
+			await workspace.syncWorkspacePanels()
+		})
+		expect(right().isShowing()).toBe(true)
+		expect(right().getSelected()).toBe(-1)
+	})
+
+	it('keeps the right log preview while central documents are maximized', async () => {
 		const { workspace, container } = await mount()
 		await openDocument(workspace, `/plugins/${firstRoute}`)
 		const documentContainer = workspace.workbench.getActiveDocument()!.containerId
 		const logs = () => container.querySelector('[data-testid="scoped-log"]')?.textContent
-		await act(async () => workspace.toggleLogs())
+		await act(async () => workspace.toggleBorder('right'))
 		await act(async () => {
-			expect(
-				await workspace.workbench.dispatch(
-					Actions.moveNode('plugin-logs', documentContainer, DockLocation.RIGHT, -1),
-				),
-			).toEqual({ status: 'applied' })
+			;[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+				.find((tab) => tab.textContent === '最近日志')!
+				.click()
 		})
 		expect(logs()).toBe(firstRoute)
 		await act(async () => {
@@ -403,14 +397,14 @@ describe('plugin state within native documents', () => {
 				{ status: 'applied' },
 			)
 		})
-		expect(logs()).toBeUndefined()
+		expect(logs()).toBe(firstRoute)
 		await act(async () => {
 			await workspace.workbench.dispatch(Actions.maximizeToggle(documentContainer))
 		})
 		expect(logs()).toBe(firstRoute)
 	})
 
-	it('follows the active plugin and fork, preserves context on tool focus, and suspends hidden logs', async () => {
+	it('follows the active plugin and fork, preserves context on tool focus, and suspends hidden previews', async () => {
 		const { workspace, container, content } = await mount()
 		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
 		const firstInput = content(first).querySelector<HTMLInputElement>('input')!
@@ -419,32 +413,47 @@ describe('plugin state within native documents', () => {
 		const info = () => container.querySelector('[data-testid="scoped-info"]')?.textContent
 		expect(logs()).toBeUndefined()
 		expect(info()).toBeUndefined()
+		await act(async () => workspace.toggleBorder('right'))
+		expect(info()).toBe(firstRoute)
+		expect(logs()).toBeUndefined()
 		await act(async () => {
-			await workspace.toggleBorder('right')
-			await workspace.toggleLogs()
+			;[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+				.find((tab) => tab.textContent === '最近日志')!
+				.click()
 		})
 		expect(logs()).toBe(firstRoute)
+		expect(info()).toBeUndefined()
+		await act(async () => {
+			;[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+				.find((tab) => tab.textContent === '插件信息')!
+				.click()
+		})
+		expect(logs()).toBeUndefined()
 		expect(info()).toBe(firstRoute)
+		await act(async () => {
+			;[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+				.find((tab) => tab.textContent === '最近日志')!
+				.click()
+		})
 		const other = await openDocument(workspace, `/plugins/${secondRoute}`)
 		expect(logs()).toBe(secondRoute)
-		expect(info()).toBe(secondRoute)
+		expect(info()).toBeUndefined()
 		await act(async () => {
-			workspace.workbench.activate('plugin-logs')
+			workspace.workbench.activate('plugin-inspector')
 		})
 		expect(workspace.workbench.getActiveDocument()?.id).toBe(other)
 		expect(logs()).toBe(secondRoute)
-		await act(async () => {
-			await workspace.toggleLogs()
-		})
+		await act(async () => workspace.toggleBorder('right'))
 		expect(logs()).toBeUndefined()
+		expect(info()).toBeUndefined()
 		await act(async () => {
 			workspace.workbench.activate(first)
+			await workspace.syncWorkspacePanels()
 		})
-		expect(info()).toBe(firstRoute)
-		await act(async () => {
-			await workspace.toggleLogs()
-		})
+		expect(logs()).toBeUndefined()
+		await act(async () => workspace.toggleBorder('right'))
 		expect(logs()).toBe(firstRoute)
+		expect(info()).toBeUndefined()
 		expect(firstInput.value).toBe('kept draft')
 		const forkOwner = {
 			...parsePluginDetailHref(`/plugins/${firstRoute}`)!.target,
@@ -454,13 +463,10 @@ describe('plugin state within native documents', () => {
 		const forkRoute = formatPluginNodeRoute(forkOwner)
 		await openDocument(workspace, `/plugins/${forkRoute}`)
 		expect(logs()).toBe(forkRoute)
-		expect(info()).toBe(forkRoute)
-		await act(async () => {
-			await workspace.workbench.dispatch(Actions.deleteTab('plugin-logs'))
-		})
-		await act(async () => {
-			await workspace.toggleLogs()
-		})
+		expect(info()).toBeUndefined()
+		await act(async () => workspace.toggleBorder('right'))
+		expect(logs()).toBeUndefined()
+		await act(async () => workspace.toggleBorder('right'))
 		expect(logs()).toBe(forkRoute)
 	})
 })

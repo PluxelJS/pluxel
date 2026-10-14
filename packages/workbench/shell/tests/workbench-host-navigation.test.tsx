@@ -24,7 +24,7 @@ import {
 	type WorkbenchNavigationContextValue,
 } from '../src/app/workbench/context'
 import type { RuntimeClientBootstrap } from '../src/runtime'
-import { buildWorkbenchHref } from '../src/workbench/paths'
+import { buildPluginLogsHref, buildWorkbenchHref } from '../src/workbench/paths'
 import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
 
 const fixture = vi.hoisted(() => ({
@@ -62,6 +62,23 @@ vi.mock('../src/app/plugins/pluginOverview', () => ({
 		},
 	}),
 }))
+vi.mock('../src/app/log_viewer/useLogStream', async () => {
+	const { createLogStreamStore } = await import('../src/app/log_viewer/logStreamStore')
+	const store = createLogStreamStore(10)
+	return {
+		useLogStream: () => ({
+			store,
+			status: 'live',
+			error: null,
+			meta: null,
+			clear: vi.fn(),
+			retry: vi.fn(),
+		}),
+	}
+})
+vi.mock('../src/app/log_viewer/LogList', () => ({ LogList: () => <div>日志内容</div> }))
+vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
+vi.mock('../src/app/log_viewer/LogPolicyPopover', () => ({ LogPolicyPopover: () => null }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
 	WorkspaceNavigation: () => null,
 }))
@@ -246,6 +263,26 @@ async function mount(basepath: string, conflict = false) {
 }
 
 describe('Plugin host navigation through the authenticated native App', () => {
+	it('publishes clearing the plugin log URL when focus changes within the active document', async () => {
+		const { workspace, container, prefix } = await mount('/__pluxel/workbench')
+		await act(async () =>
+			fixture.navigation!.openTab({ path: buildPluginLogsHref(owner), title: '日志 · East' }),
+		)
+		await vi.waitFor(() => expect(container.textContent).toContain('清除插件筛选'))
+		expect(location.search).toContain('plugin=')
+		await act(async () => {
+			const button = [...container.querySelectorAll('button')].find(
+				(button) => button.textContent === '清除插件筛选',
+			)!
+			button.focus()
+			button.click()
+			button.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+		})
+		await vi.waitFor(() => expect(container.textContent).not.toContain('清除插件筛选'))
+		expect(workspace.workbench.getActiveDocument()!.href).toBe(`${prefix}/logs`)
+		expect(location.pathname + location.search).toBe(`${prefix}/logs`)
+	})
+
 	it.each(['navigate', 'openDocument'] as const)(
 		'delegates %s for declared and conflicting standalone routes to the workspace leave owner',
 		async (operation) => {
@@ -344,10 +381,8 @@ describe('Plugin host navigation through the authenticated native App', () => {
 		})
 		expect(workspace.workbench.getDocument(target.id)!.title).toBe('Editing East')
 		expect(container.querySelector('.flexlayout__tab_button[title="Pending save"]')).not.toBeNull()
-		const open = vi.spyOn(workspace.workbench, 'open')
 		await act(async () => {
 			fixture.navigation!.navigate(target.href)
-			await open.mock.results.at(-1)!.value
 		})
 		expect(workspace.workbench.getActiveDocument()).toMatchObject({
 			id: target.id,
@@ -412,7 +447,7 @@ describe('Plugin host navigation through the authenticated native App', () => {
 					meta: 'Copy conditions',
 				})
 			})
-			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(3))
+			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(2))
 			const copy = workspace.workbench.getActiveDocument()!
 			expect(copy.id).not.toBe(selected.id)
 			expect(copy.href).toBe(selected.href)

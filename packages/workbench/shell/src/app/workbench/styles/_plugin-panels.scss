@@ -277,13 +277,13 @@
 	border-bottom: 1px solid color-mix(in srgb, var(--plx-border) 82%, transparent);
 	display: flex;
 	flex: 0 0 auto;
-	min-height: 42px;
-	padding: 6px 8px;
+	padding-block: var(--mantine-spacing-xs);
 	position: relative;
 	z-index: 2;
 }
 
 .plx-pluginWorkbench__configScrollArea {
+	padding-top: var(--mantine-spacing-sm);
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
@@ -321,16 +321,6 @@
 	width: 152px;
 }
 
-.plx-pluginWorkbench__configActionSelect .mantine-Input-input {
-	border-radius: 8px;
-	font-weight: 600;
-	min-height: 28px;
-	overflow: hidden;
-	padding-right: 28px;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 .plx-pluginWorkbench__configActionSelect .mantine-Select-section {
 	color: var(--plx-text-muted);
 }
@@ -349,17 +339,6 @@
 
 .plx-pluginWorkbench__configActionDock .mantine-Badge-root {
 	flex: 0 0 auto;
-}
-
-.plx-pluginWorkbench__configActionDock .mantine-Badge-root,
-.plx-pluginWorkbench__configActionDock .mantine-Button-root {
-	height: auto;
-	min-height: 28px;
-}
-
-.plx-pluginWorkbench__configActionButtons .mantine-Button-root {
-	border-radius: 8px;
-	padding-inline: 10px;
 }
 
 /* Document outline */

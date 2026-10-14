@@ -57,6 +57,8 @@ export type PlxThemeModel = {
 		shadow: string
 	}
 	controls: {
+		hoverBg: string
+		inactiveSelectedBg: string
 		selectedBg: string
 		selectedBorder: string
 	}
@@ -93,7 +95,7 @@ function createLogTheme(tokens: PlxThemeModel, seedHex: string): PlxLogTheme {
 			buttonText: tokens.app.text,
 			inputBg: surfaces.inputBg,
 			inputText: tokens.app.text,
-			rowSelectedBg: alpha(tokens.app.accent, 0.16),
+			rowSelectedBg: tokens.controls.selectedBg,
 			errorText: errorTone,
 			levels: {
 				trace: surfaces.trace,
@@ -123,7 +125,7 @@ function createLogTheme(tokens: PlxThemeModel, seedHex: string): PlxLogTheme {
 		buttonText: tokens.app.text,
 		inputBg: surfaces.inputBg,
 		inputText: tokens.app.text,
-		rowSelectedBg: alpha(tokens.app.accent, 0.1),
+		rowSelectedBg: tokens.controls.selectedBg,
 		errorText: errorTone,
 		levels: {
 			trace: surfaces.trace,
@@ -177,10 +179,12 @@ function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
 			}
 
 	const controls = {
+		hoverBg: mix(app.surface, app.text, isDark ? 0.07 : 0.05),
+		inactiveSelectedBg: mix(app.surfaceStrong, app.text, isDark ? 0.09 : 0.1),
 		selectedBg: isDark
-			? mix(neutral.surfaceStrong, toneHex(a1, 76), 0.08)
-			: mix(neutral.surfaceStrong, toneHex(a1, 92), 0.14),
-		selectedBorder: isDark ? alpha(app.accentStrong, 0.26) : alpha(app.accent, 0.22),
+			? mix(neutral.surfaceStrong, toneHex(a1, 76), 0.26)
+			: mix(neutral.surfaceStrong, toneHex(a1, 86), 0.7),
+		selectedBorder: isDark ? alpha(app.accentStrong, 0.5) : alpha(app.accent, 0.4),
 	}
 
 	const tokens: PlxThemeModel = {
@@ -238,6 +242,8 @@ function toCssVariables(tokens: PlxThemeModel, theme: MantineTheme) {
 		'--plx-accent': tokens.app.accent,
 		'--plx-accent-strong': tokens.app.accentStrong,
 		'--plx-accent-soft': tokens.app.accentSoft,
+		'--plx-hover-bg': tokens.controls.hoverBg,
+		'--plx-selected-inactive-bg': tokens.controls.inactiveSelectedBg,
 		'--plx-selected-bg': tokens.controls.selectedBg,
 		'--plx-selected-border': tokens.controls.selectedBorder,
 		'--plx-shadow': tokens.app.shadow,

@@ -1,3 +1,4 @@
+import { type AnyRouter } from '@tanstack/react-router'
 import {
 	createContext,
 	useContext,
@@ -18,6 +19,7 @@ import { useWorkspaceSession, useOptionalWorkspaceSession } from './workspaceCon
 
 /** Business facts belong to this content instance, independent of its native docking location. */
 export class WorkbenchDocumentState {
+	navigate?: AnyRouter['navigate']
 	workspace?: 'plugins' | 'apps'
 	plugin?: PluginNodeAddress
 	pluginEntry?: string

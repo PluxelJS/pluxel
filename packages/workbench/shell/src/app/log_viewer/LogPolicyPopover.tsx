@@ -1,4 +1,4 @@
-import { Badge, Button, Code, Group, ScrollArea, Select, Stack, Text, Title } from '@mantine/core'
+import { Badge, Button, Code, Group, Popover, ScrollArea, Select, Stack, Text } from '@mantine/core'
 import {
 	formatPluginNodeReference,
 	pluginNodeAddressEqual,
@@ -13,8 +13,8 @@ import {
 	type LogLevel,
 	type RuntimePluginLogLevel,
 	type VersionedPluginLogPolicySnapshot,
-} from '../../../../runtime'
-import { managementQueryKeys } from '../../../managementQuery'
+} from '../../runtime'
+import { managementQueryKeys, refetchManagementQuery } from '../managementQuery'
 
 type Mutation = Pick<VersionedPluginLogPolicySnapshot, 'revision' | 'persistence'>
 type PolicyCommand =
@@ -39,13 +39,7 @@ function isLogLevel(value: string): value is LogLevel {
 	return LEVEL_SET.has(value)
 }
 
-export function LogLevelsCard({
-	owner,
-	compact = false,
-}: {
-	owner: PluginNodeAddress
-	compact?: boolean
-}) {
+export function LogPolicyPopover({ owner }: { owner: PluginNodeAddress }) {
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
 	const policyQuery = useQuery({
@@ -59,6 +53,10 @@ export function LogLevelsCard({
 		// lets a queued write observe the cache committed by the preceding one.
 		scope: { id: 'management:logging-policy' },
 		mutationFn: async (command: PolicyCommand): Promise<VersionedPluginLogPolicySnapshot> => {
+			await queryClient.cancelQueries({
+				queryKey: managementQueryKeys.loggingPolicy(),
+				exact: true,
+			})
 			const current = queryClient.getQueryData<VersionedPluginLogPolicySnapshot>(
 				managementQueryKeys.loggingPolicy(),
 			)
@@ -78,15 +76,16 @@ export function LogLevelsCard({
 			if (command.level) overrides.push({ owner: command.owner, level: command.level })
 			return { ...current, ...updated, overrides }
 		},
-		onSuccess: (next) => {
+		onSuccess: async (next) => {
+			// A focus refresh may have started during the write. Fence its late cache commit too.
+			await queryClient.cancelQueries({
+				queryKey: managementQueryKeys.loggingPolicy(),
+				exact: true,
+			})
 			queryClient.setQueryData(managementQueryKeys.loggingPolicy(), next)
 		},
 		onError: async () => {
-			await queryClient.invalidateQueries({
-				queryKey: managementQueryKeys.loggingPolicy(),
-				exact: true,
-				refetchType: 'all',
-			})
+			await refetchManagementQuery(queryClient, managementQueryKeys.loggingPolicy())
 		},
 	})
 	const loading = policyQuery.isFetching
@@ -99,8 +98,13 @@ export function LogLevelsCard({
 		pluginNodeAddressEqual(entry.owner, owner),
 	)?.level
 
-	const pluginSelectValue = currentPlugin === undefined ? '__inherit__' : currentPlugin
-	const defaultSelectValue = currentDefault
+	const pluginSelectValue =
+		currentPlugin === undefined
+			? '__inherit__'
+			: currentPlugin === 'off'
+				? '__off__'
+				: currentPlugin
+	const defaultSelectValue = currentDefault === 'off' ? '__off__' : currentDefault
 
 	const setPluginLevel = (next: string | null) => {
 		if (next === '__inherit__') {
@@ -146,16 +150,12 @@ export function LogLevelsCard({
 
 	const clearAll = () => policyMutation.mutate({ kind: 'reset' })
 
-	return (
-		<Stack gap={compact ? 'xs' : 'sm'} style={compact ? { minHeight: 0 } : undefined}>
-			<Group gap="xs" justify="space-between" wrap="nowrap">
-				{compact ? (
-					<Text size="xs" c="dimmed">
-						调整默认级别或当前插件覆盖，便于临时排查。
-					</Text>
-				) : (
-					<Title order={5}>日志级别</Title>
-				)}
+	const content = (
+		<Stack gap="xs" style={{ minHeight: 0 }}>
+			<Group gap="xs" justify="space-between">
+				<Text size="xs" c="dimmed">
+					当前插件可单独设置级别；默认级别影响所有继承它的插件。
+				</Text>
 				<Group gap="xs" wrap="nowrap">
 					<Button
 						size="xs"
@@ -170,20 +170,13 @@ export function LogLevelsCard({
 						size="xs"
 						color="red"
 						variant="light"
-						disabled={saving}
+						disabled={saving || !snapshot}
 						onClick={() => void clearAll()}
 					>
-						重置策略
+						重置全部策略
 					</Button>
 				</Group>
 			</Group>
-
-			{compact ? null : (
-				<Text size="sm" c="dimmed">
-					per-plugin level 由 HMR 面板管理并持久化；不会为每个插件创建 category/logger config（只做
-					插件节点地址查表过滤）。
-				</Text>
-			)}
 
 			{error ? (
 				<Text size="sm" c="red">
@@ -191,15 +184,16 @@ export function LogLevelsCard({
 				</Text>
 			) : null}
 
-			<Group align="flex-start" grow gap="sm" wrap="wrap">
+			<Stack gap="sm">
 				<Stack gap="xs">
 					<Text size="sm" fw={600}>
 						默认（所有插件）
 					</Text>
 					<Select
 						size="sm"
+						aria-label="所有插件默认日志级别"
 						value={defaultSelectValue}
-						disabled={saving}
+						disabled={saving || !snapshot}
 						onChange={(v) => void setDefaultLevel(v)}
 						data={[{ value: '__off__', label: '关闭 (off)' }, ...LEVEL_OPTIONS]}
 					/>
@@ -210,14 +204,12 @@ export function LogLevelsCard({
 						<Text size="sm" fw={600}>
 							当前插件
 						</Text>
-						<Badge variant="light" color="gray">
-							<Code>{formatPluginNodeReference(owner)}</Code>
-						</Badge>
 					</Group>
 					<Select
 						size="sm"
+						aria-label="当前插件日志级别"
 						value={pluginSelectValue}
-						disabled={saving}
+						disabled={saving || !snapshot}
 						onChange={(v) => void setPluginLevel(v)}
 						data={[
 							{ value: '__inherit__', label: '继承默认' },
@@ -226,10 +218,10 @@ export function LogLevelsCard({
 						]}
 					/>
 				</Stack>
-			</Group>
+			</Stack>
 
 			{overrides.length > 0 ? (
-				<Stack gap="xs" style={compact ? { minHeight: 0 } : undefined}>
+				<Stack gap="xs" style={{ minHeight: 0 }}>
 					<Group gap="xs" justify="space-between" wrap="nowrap">
 						<Text size="sm" fw={600}>
 							已有规则
@@ -239,11 +231,11 @@ export function LogLevelsCard({
 						</Badge>
 					</Group>
 					<ScrollArea
-						h={compact ? 132 : 160}
+						h={132}
 						type="auto"
 						scrollbarSize={10}
 						offsetScrollbars
-						style={compact ? { minHeight: 0 } : undefined}
+						style={{ minHeight: 0 }}
 					>
 						<Stack gap={4} p={2}>
 							{overrides.map((r) => (
@@ -266,7 +258,7 @@ export function LogLevelsCard({
 											size="xs"
 											variant="subtle"
 											color="gray"
-											disabled={saving}
+											disabled={saving || !snapshot}
 											onClick={() => void deleteRule(r.owner)}
 										>
 											移除
@@ -279,5 +271,30 @@ export function LogLevelsCard({
 				</Stack>
 			) : null}
 		</Stack>
+	)
+	const effectiveLevel = currentPlugin ?? currentDefault
+	return (
+		<Popover width={360} position="bottom-start" shadow="md" withinPortal>
+			<Popover.Target>
+				<Button
+					size="compact-xs"
+					variant="subtle"
+					color={error ? 'red' : 'gray'}
+					aria-label="日志策略"
+					title="设置当前插件和默认日志级别"
+				>
+					{error
+						? '日志策略读取失败'
+						: !snapshot
+							? '日志策略加载中…'
+							: `日志级别 ${effectiveLevel}${currentPlugin === undefined ? ' · 默认' : ''}`}
+				</Button>
+			</Popover.Target>
+			<Popover.Dropdown style={{ maxWidth: 'calc(100vw - 24px)' }}>
+				<ScrollArea.Autosize mah="60dvh" type="auto">
+					{content}
+				</ScrollArea.Autosize>
+			</Popover.Dropdown>
+		</Popover>
 	)
 }

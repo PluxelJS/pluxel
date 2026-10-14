@@ -19,6 +19,7 @@ export const managementQueryKeys = {
 		[...managementQueryKeys.pluginSavedConfigs(), pluginNodeIndexKey(owner)] as const,
 	securityOverview: () => [...managementQueryKeys.all, 'security', 'overview'] as const,
 	securityEvents: () => [...managementQueryKeys.all, 'security', 'events'] as const,
+	logStreams: () => [...managementQueryKeys.all, 'logging', 'streams'] as const,
 	loggingPolicy: () => [...managementQueryKeys.all, 'logging', 'policy'] as const,
 	dependencies: () => [...managementQueryKeys.all, 'dependencies'] as const,
 	providerPolicy: (owner: PluginNodeAddress) =>

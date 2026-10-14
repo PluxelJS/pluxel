@@ -61,26 +61,26 @@ export const PLX_MANTINE_COLORS = {
 
 export const PLX_NEUTRAL_FOUNDATIONS: Record<PlxThemeMode, PlxNeutralFoundation> = {
 	dark: {
-		bg: '#111315',
-		bgAlt: '#15181a',
-		surface: '#181b1e',
-		surfaceStrong: '#1c2024',
-		surfaceMuted: '#151a1e',
+		bg: '#111519',
+		bgAlt: '#171c21',
+		surface: '#1e242a',
+		surfaceStrong: '#272e35',
+		surfaceMuted: '#1b2127',
 		text: '#e6eaee',
 		textMuted: '#adb6c0',
-		border: 'rgba(150, 162, 173, 0.14)',
-		borderStrong: 'rgba(164, 176, 188, 0.24)',
+		border: 'rgba(164, 176, 188, 0.22)',
+		borderStrong: 'rgba(164, 176, 188, 0.34)',
 	},
 	light: {
-		bg: '#f3f5f7',
-		bgAlt: '#f7f8fa',
-		surface: '#fbfcfd',
+		bg: '#e9eef3',
+		bgAlt: '#f1f4f7',
+		surface: '#ffffff',
 		surfaceStrong: '#ffffff',
 		surfaceMuted: '#edf1f4',
 		text: '#1a2027',
 		textMuted: '#5d6975',
-		border: 'rgba(109, 121, 132, 0.14)',
-		borderStrong: 'rgba(109, 121, 132, 0.22)',
+		border: 'rgba(85, 103, 122, 0.22)',
+		borderStrong: 'rgba(85, 103, 122, 0.32)',
 	},
 }
 

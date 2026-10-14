@@ -12,6 +12,7 @@
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | 修改插件业务、配置声明或日志                               | [插件开发范式](docs/plugin-development/index.md)                                       | 已知主题直接读目标页；验证方式见[开发指南](docs/development/index.md)     |
 | 装配应用、部署绑定或输出                                   | [Host 配置](docs/host/configuration.md)                                                | 直接读对应配置章节；服务扩展再读 host/services                            |
+| 修改 Workbench 导航、布局、目录或视觉                      | [Workbench 交互设计](engineering/WORKBENCH_DESIGN.md)                                  | 再按 [Frontend](engineering/FRONTEND.md) 定位状态所有者和验收入口         |
 | 编写或重组文档                                             | [文档职责](engineering/DOCUMENTATION.md)                                               | 分离插件、Host、验证与实现约束；检查链接和实际读取入口                    |
 | 修改框架、Context 服务、生命周期、工具链或包边界           | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md) | 从 [工程索引](engineering/README.md) 选择涉及的领域，再读实现和测试       |
 | 创建或修改公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)                                    | 先读执行方式与硬约束，再按变更类型读取相关规则；检查 exports 和真实调用方 |

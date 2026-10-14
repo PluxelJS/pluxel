@@ -161,7 +161,7 @@ export function OrdersPage() {
 
 ## 检查结果
 
-运行应用，打开 Plugin 的 Orders 标签，应看到订单数量和 Refresh 按钮。点击后按钮在请求期间禁用，成功后重新读取并看到 revision 增加。
+运行应用，从“应用”目录打开 Plugin 的 Orders 入口，应看到订单数量和 Refresh 按钮。点击后按钮在请求期间禁用，成功后重新读取并看到 revision 增加。
 关闭再打开应重新读取；两个同时打开的页面不应共用操作状态。
 
 查询选项、分页输入、错误代码和 Mantine Provider 见 [查询、写入与页面资源](./renderer-resources.md)。
@@ -208,7 +208,8 @@ export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
 
 为当前插件提供左右侧栏或底部工具时，使用 [`workbench.panel()`](./panels.md)。它复用相同 View renderer/API，切换或隐藏时卸载；需要长期编辑与独立草稿的功能继续使用下面的文档 placement。
 
-Tab 适合从 Plugin 详情打开的固定页面；每个入口打开为独立工作区文档，可以停靠、分组和关闭：
+Tab 适合插件提供的固定页面，入口也会出现在“应用”目录中。入口默认在当前工作区文档中导航；
+需要并行操作时由用户点击活动标签后的“+”，或由业务显式调用 `openDocument()` 创建文档：
 
 ```ts
 workbench.tab({
@@ -219,7 +220,16 @@ workbench.tab({
 })
 ```
 
-Route 适合全局导航或独立 document：
+Route 适合业务应用和带参数的实体页面。固定集合页可声明 `navigation`，进入“应用”目录：
+
+```ts
+workbench.route('/accounts', {
+	title: 'Accounts',
+	navigation: { label: '账号管理' },
+})
+```
+
+实体页使用参数路径：
 
 ```ts
 account: workbench.view<AccountApi>({
@@ -231,7 +241,8 @@ account: workbench.view<AccountApi>({
 })
 ```
 
-Parameterized route 不进入固定 navigation。Manager 使用：
+Parameterized route 不进入固定 navigation。集合中的普通选择应使用 `host.navigation?.navigate(path)`；
+只有明确需要并行打开时，才使用：
 
 ```ts
 host.navigation?.openDocument({
@@ -243,7 +254,7 @@ host.navigation?.openDocument({
 
 浏览器地址跟随 `uiBasePath`：`/accounts` 在 `'/__pluxel/workbench'` 下对应 `/__pluxel/workbench/accounts`，不要求设置 `navigation`。
 不同 Plugin/fork 路径重叠时，冲突入口改用带实例身份的完整地址；歧义短地址显示入口选择页。同一 Plugin 内静态路径优先于参数路径。
-Shell 保留首页以及 `plugins`、`plugin-graph`、`security`、`logs`、`workbench`、`workbench-standalone` 及其子路径。
+Shell 保留首页及内置管理路径；业务路由不要占用 `apps`、`plugins`、`plugin-graph`、`security`、`logs`、`workbench`、`workbench-standalone` 等路径及其子路径。
 完整地址始终有效；publication 更新后重算短地址，冲突消失时恢复。固定跨插件链接应选择有业务辨识度的路径。
 
 Server 会重新匹配 route，再把 frozen params 交给 factory。Browser 不能提交 principal 或 authority object。
@@ -265,7 +276,8 @@ Document renderer 可以用 `host.document?.params`、`setTitle()` 和 `setDirty
 
 Renderer 不取得 generic HTTP client、任意 URL navigation、Shell router/store 或 raw WebSocket。
 页面负责自己的内容布局和滚动，宿主负责原生标签、容器、分组、拖拽、分隔线和最大化。
-移动、固定或折叠标签不会重新打开页面 API；关闭文档才释放它的 Bridge、订阅和 opened handle。
+移动文档或切换活动标签不会重新打开页面 API。当前文档导航到其他页面、关闭文档或原页面失效时，
+旧页面的 Bridge、订阅和 opened handle 按其生命周期释放。面板的隐藏与释放规则见[上下文面板](./panels.md#数据与清理)。
 
 ### 借用宿主管理操作
 

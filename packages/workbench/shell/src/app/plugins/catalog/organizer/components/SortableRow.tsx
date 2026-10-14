@@ -1,19 +1,18 @@
+import { CatalogTooltip } from '../../components/CatalogTooltip'
 import { useSortable } from '@dnd-kit/sortable'
 import {
 	ActionIcon,
 	Anchor,
 	Box,
 	Text,
-	Tooltip,
 	useComputedColorScheme,
 	useMantineTheme,
 	rgba,
 } from '@mantine/core'
-import { IconAlertTriangle, IconCheck, IconGripVertical } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCheck, IconSquare, IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
 	memo,
-	useMemo,
 	type ComponentPropsWithoutRef,
 	type ComponentType,
 	type MouseEvent,
@@ -81,9 +80,11 @@ const SortableRowComponent = ({
 	const handleSize = dh.rowH <= 26 ? 16 : 20
 	const handleIconSize = dh.rowH <= 26 ? 14 : 16
 
-	const activeBg = active ? (isDark ? rgba(brand[6], 0.2) : rgba(brand[1], 0.9)) : undefined
-	const selectedBg = selected ? (isDark ? rgba(brand[5], 0.12) : rgba(brand[0], 0.92)) : undefined
-	const rowBackground = active ? activeBg : selected ? selectedBg : undefined
+	const rowBackground = active
+		? 'var(--plx-selected-bg)'
+		: selected
+			? 'var(--plx-selected-inactive-bg)'
+			: undefined
 	const rowColorValue = 'var(--plx-text)'
 	const separatorColor = 'color-mix(in srgb, var(--plx-panel-border) 84%, transparent)'
 	const statusLabel =
@@ -107,33 +108,15 @@ const SortableRowComponent = ({
 		animateLayoutChanges: () => false,
 	})
 
-	const metaLabel = useMemo(() => {
-		return meta?.definition?.trim() ?? ''
-	}, [meta?.definition])
 	const executionLabel = meta?.executionLabel?.trim() ?? ''
 	const recentUpdateWarningLabel = meta?.recentUpdateWarningLabel?.trim() ?? ''
-	const nameDescription = (
-		<PluginRowHoverCard
-			name={name}
-			definition={metaLabel}
-			exportName={meta?.exportName}
-			reference={meta?.reference}
-			executionLabel={executionLabel}
-			statusLabel={statusLabel}
-		/>
-	)
+	const nameDescription = name
 
 	const href = `/plugins/${pid}`
 
 	return (
 		<Box
 			ref={setNodeRef}
-			onDoubleClick={(e) => {
-				const link = (e.currentTarget as HTMLElement).querySelector(
-					'[data-plugin-link]',
-				) as HTMLElement | null
-				link?.click?.()
-			}}
 			onClick={(e) => {
 				const isModified = e.shiftKey || e.metaKey || e.ctrlKey
 				if (isModified) {
@@ -218,6 +201,7 @@ const SortableRowComponent = ({
 				aria-label={selected ? `取消选择 ${name}` : `选择 ${name}`}
 				className="plx-pluginCatalog__rowSelector"
 				data-row-selector="true"
+				aria-pressed={selected}
 				data-selected={selected || undefined}
 				onClick={(event) => {
 					event.preventDefault()
@@ -225,7 +209,7 @@ const SortableRowComponent = ({
 					onSelect(event, pid, 'toggle')
 				}}
 			>
-				<IconCheck size={11} stroke={2.2} />
+				{selected ? <IconCheck size={11} stroke={2.2} /> : <IconSquare size={11} />}
 			</ActionIcon>
 
 			<Box style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -248,14 +232,13 @@ const SortableRowComponent = ({
 							}
 						}}
 					>
-						<Tooltip
+						<CatalogTooltip
 							label={nameDescription}
 							multiline
 							maw={440}
 							events={{ hover: true, focus: true, touch: false }}
 							withinPortal
 							withArrow
-							openDelay={200}
 						>
 							<Text
 								size={dh.font}
@@ -269,17 +252,16 @@ const SortableRowComponent = ({
 							>
 								{name}
 							</Text>
-						</Tooltip>
+						</CatalogTooltip>
 					</LinkComp>
 				) : (
-					<Tooltip
+					<CatalogTooltip
 						label={nameDescription}
 						multiline
 						maw={440}
 						events={{ hover: true, focus: true, touch: false }}
 						withinPortal
 						withArrow
-						openDelay={200}
 					>
 						<Anchor
 							size={dh.font}
@@ -305,16 +287,15 @@ const SortableRowComponent = ({
 						>
 							{name}
 						</Anchor>
-					</Tooltip>
+					</CatalogTooltip>
 				)}
 			</Box>
 
 			{recentUpdateWarningLabel ? (
-				<Tooltip
+				<CatalogTooltip
 					label={meta?.recentUpdateWarningDescription ?? recentUpdateWarningLabel}
 					withinPortal
 					withArrow
-					openDelay={200}
 				>
 					<Text
 						component="span"
@@ -324,18 +305,17 @@ const SortableRowComponent = ({
 					>
 						<IconAlertTriangle size={12} stroke={2.2} aria-hidden="true" />
 					</Text>
-				</Tooltip>
+				</CatalogTooltip>
 			) : null}
 
 			{executionLabel ? (
-				<Tooltip
+				<CatalogTooltip
 					label={`${executionLabel}${meta?.executionDescription ? ` · ${meta.executionDescription}` : ''}`}
 					multiline
 					maw={360}
 					events={{ hover: true, focus: true, touch: false }}
 					withinPortal
 					withArrow
-					openDelay={200}
 				>
 					<Text
 						component="span"
@@ -347,17 +327,17 @@ const SortableRowComponent = ({
 					>
 						<span aria-hidden="true" />
 					</Text>
-				</Tooltip>
+				</CatalogTooltip>
 			) : null}
 
 			{typeof running === 'boolean' && (
-				<Tooltip
+				<CatalogTooltip
 					label={
 						meta?.failureDescription ? `${statusLabel} · ${meta.failureDescription}` : statusLabel
 					}
 					withinPortal
 					withArrow
-					openDelay={200}
+
 					events={{ hover: true, focus: true, touch: false }}
 				>
 					<Box
@@ -370,7 +350,7 @@ const SortableRowComponent = ({
 					>
 						<span aria-hidden="true" />
 					</Box>
-				</Tooltip>
+				</CatalogTooltip>
 			)}
 		</Box>
 	)
@@ -410,44 +390,6 @@ const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
 		return false
 	}
 	return true
-}
-
-function PluginRowHoverCard({
-	name,
-	definition,
-	exportName,
-	reference,
-	executionLabel,
-	statusLabel,
-}: {
-	name: string
-	definition: string
-	exportName?: string
-	reference?: string
-	executionLabel: string
-	statusLabel: string
-}) {
-	return (
-		<div className="plx-pluginCatalog__hoverCard">
-			<strong className="plx-pluginCatalog__hoverTitle">{name}</strong>
-			<div className="plx-pluginCatalog__hoverFacts">
-				{definition ? <HoverFact label="来源" value={definition} /> : null}
-				{exportName ? <HoverFact label="导出" value={exportName} /> : null}
-				<HoverFact label="状态" value={statusLabel} />
-				{executionLabel ? <HoverFact label="更新" value={executionLabel} /> : null}
-			</div>
-			{reference ? <code className="plx-pluginCatalog__hoverReference">{reference}</code> : null}
-		</div>
-	)
-}
-
-function HoverFact({ label, value }: { label: string; value: string }) {
-	return (
-		<>
-			<span>{label}</span>
-			<b>{value}</b>
-		</>
-	)
 }
 
 export const SortableRow = memo(SortableRowComponent, areRowPropsEqual)

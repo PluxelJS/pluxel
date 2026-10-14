@@ -121,10 +121,9 @@ afterEach(async () => {
 	vi.unstubAllGlobals()
 })
 async function renderNavigation(
-	mode?: 'plugins' | 'publications' | 'all',
+	mode?: 'publications' | 'all',
 	activePluginRoute?: string,
 	activeEntryKey?: string,
-	openMode: 'reuse' | 'new' = 'reuse',
 ) {
 	const navigate = vi.fn()
 	const openTab = vi.fn()
@@ -138,7 +137,6 @@ async function renderNavigation(
 				<WorkbenchNavigationProvider value={{ navigate, openTab }}>
 					<WorkspaceNavigation
 						mode={mode}
-						openMode={openMode}
 						activePluginRoute={activePluginRoute}
 						activeEntryKey={activeEntryKey}
 						onShowNavigation={showNavigation}
@@ -167,35 +165,28 @@ async function input(element: HTMLInputElement, value: string) {
 }
 
 describe('workspace entry discovery', () => {
-	it.each(['reuse', 'new'] as const)(
-		'opens entries through one choice in %s mode without row copy buttons',
-		async (mode) => {
-			const { container, navigate, openTab } = await renderNavigation(
-				undefined,
-				undefined,
-				undefined,
-				mode,
-			)
-			for (const name of ['首页', '应用', '插件管理', '日志', '认证与安全', '安全审计', '依赖图'])
-				expect(button(name)).toBeDefined()
-			expect(container.querySelector('[aria-label*="副本"]')).toBeNull()
-			for (const [label, path, title] of [
-				['首页', '/', '首页'],
-				['报表', `${buildPluginDetailHref(owner)}?entry=tab%20reports`, '报表'],
-				['账户目录', '/accounts', '账户目录'],
-			]) {
-				await click(button(label))
-				if (mode === 'new') expect(openTab).toHaveBeenLastCalledWith({ path, title })
-				else expect(navigate).toHaveBeenLastCalledWith(path)
-			}
-			await click(button('登录窗口'))
-			expect(navigate).toHaveBeenLastCalledWith('/signin')
-		},
-	)
+	it('navigates official and published entries in the current document without copy controls', async () => {
+		const { container, navigate, openTab } = await renderNavigation()
+		for (const name of ['首页', '应用', '插件管理', '日志', '认证与安全', '安全审计', '依赖图'])
+			expect(button(name)).toBeDefined()
+		expect(container.querySelector('[aria-label*="副本"]')).toBeNull()
+		for (const [label, path] of [
+			['首页', '/'],
+			['报表', `${buildPluginDetailHref(owner)}?entry=tab%20reports`],
+			['账户目录', '/accounts'],
+			['登录窗口', '/signin'],
+		]) {
+			await click(button(label))
+			expect(navigate).toHaveBeenLastCalledWith(path)
+		}
+		expect(openTab).not.toHaveBeenCalled()
+	})
 
-	it('keeps the plugin directory separate, orders status groups, highlights the active plugin, and opens management', async () => {
-		const { container, navigate } = await renderNavigation('plugins', formatPluginNodeRoute(owner))
-		expect(button('插件管理')).toBeDefined()
+	it('includes status-grouped plugin results in global search and opens the current document', async () => {
+		const { container, navigate, openTab } = await renderNavigation(
+			'all',
+			formatPluginNodeRoute(owner),
+		)
 		expect(button('Accounts East config').getAttribute('aria-current')).toBe('page')
 		expect(button('Accounts West config').hasAttribute('aria-current')).toBe(false)
 		const running = container.querySelector('[role="group"][aria-label="运行中"]')!
@@ -203,27 +194,13 @@ describe('workspace entry discovery', () => {
 			[...running.querySelectorAll('.plx-workspace-navigation__link')].map(
 				(item) => item.textContent,
 			),
-		).toEqual(['Accounts East config', 'Accounts North config'])
-		expect(container.querySelector('[role="group"][aria-label="已停止"]')?.textContent).toContain(
-			'Accounts West config',
-		)
-		for (const name of [
-			'首页',
-			'认证与安全',
-			'报表',
-			'账户目录',
-			'账户详情',
-			'登录窗口',
-			'插件目录',
-		])
-			expect(container.textContent).not.toContain(name)
-		await click(button('插件管理'))
-		expect(navigate).toHaveBeenLastCalledWith('/plugins')
+		).toEqual(['Accounts East config运行中', 'Accounts North config运行中'])
 		await click(button('Accounts East config'))
 		expect(navigate).toHaveBeenLastCalledWith(buildPluginDetailHref(owner))
 		await input(container.querySelector<HTMLInputElement>('[aria-label="查找工作区入口"]')!, 'West')
 		expect(container.textContent).not.toContain('Accounts East config')
 		expect(button('Accounts West config')).toBeDefined()
+		expect(openTab).not.toHaveBeenCalled()
 	})
 
 	it('groups published pages by owner and category, honors navigation labels, and excludes unlisted routes', async () => {
@@ -288,8 +265,8 @@ describe('workspace entry discovery', () => {
 	})
 
 	it('temporarily expands matching groups during search and keeps the manual collapsed preference', async () => {
-		const { container } = await renderNavigation('plugins')
-		const group = container.querySelector('[role="group"][aria-label="运行中"]')!
+		const { container } = await renderNavigation('publications')
+		const group = container.querySelector('[role="group"][aria-label="Accounts East · 业务工具"]')!
 		const heading = group.querySelector<HTMLButtonElement>('[aria-expanded]')!
 		await click(heading)
 		expect(heading.getAttribute('aria-expanded')).toBe('false')
@@ -298,15 +275,15 @@ describe('workspace entry discovery', () => {
 		await input(query, 'East')
 		expect(heading.getAttribute('aria-expanded')).toBe('true')
 		expect(group.querySelector<HTMLElement>('.plx-workspace-navigation__rows')!.hidden).toBe(false)
-		const current = button('Accounts East config')
-		expect(current.getAttribute('title')).toContain(formatPluginNodeRoute(owner))
-		expect(current.getAttribute('aria-label')).toBe('Accounts East config · 运行中')
+		const current = button('报表')
+		expect(current.getAttribute('title')).toContain('Accounts East · 业务工具')
+		expect(current.getAttribute('aria-label')).toBe('报表')
 		await input(query, '')
 		expect(heading.getAttribute('aria-expanded')).toBe('false')
 	})
 
-	it('requires concrete local route parameters and keeps search/hash when opening a separate document', async () => {
-		const { navigate, openTab } = await renderNavigation(undefined, undefined, undefined, 'new')
+	it('requires concrete local route parameters and keeps search/hash when navigating the current document', async () => {
+		const { navigate, openTab } = await renderNavigation()
 		await click(button('账户详情'))
 		const path = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
 		const open = button('打开页面', true)
@@ -322,11 +299,8 @@ describe('workspace entry discovery', () => {
 		await input(path, '/accounts/a%20b?view=grid#history')
 		expect(open.disabled).toBe(false)
 		await click(open)
-		expect(openTab).toHaveBeenCalledExactlyOnceWith({
-			path: '/accounts/a%20b?view=grid#history',
-			title: '账户详情',
-		})
-		expect(navigate).not.toHaveBeenCalled()
+		expect(navigate).toHaveBeenCalledExactlyOnceWith('/accounts/a%20b?view=grid#history')
+		expect(openTab).not.toHaveBeenCalled()
 	})
 
 	it('lets search find publication groups and the closed navigation tool; Escape clears the query before closing a dialog', async () => {

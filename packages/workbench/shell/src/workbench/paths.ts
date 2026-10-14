@@ -1,4 +1,9 @@
-import { formatPluginNodeRoute, parsePluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
+import {
+	formatPluginNodeReference,
+	formatPluginNodeRoute,
+	parsePluginNodeRoute,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 export const WORKBENCH_ROUTE_PREFIX = '/workbench' as const
 export const WORKBENCH_STANDALONE_ROUTE_PREFIX = '/workbench-standalone' as const
 export const PLUGIN_DETAIL_ROUTE_PREFIX = '/plugins' as const
@@ -47,6 +52,10 @@ export function buildWorkbenchHref(
 
 export function buildPluginDetailHref(target: PluginNodeAddress, path = ''): string {
 	return `${PLUGIN_DETAIL_ROUTE_PREFIX}/${formatPluginNodeRoute(target)}${normalizeWorkbenchPath(path)}`
+}
+
+export function buildPluginLogsHref(target: PluginNodeAddress): string {
+	return `/logs?plugin=${encodeURIComponent(formatPluginNodeReference(target))}`
 }
 
 export function parsePluginDetailHref(

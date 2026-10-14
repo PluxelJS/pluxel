@@ -26,6 +26,7 @@ import { prepareNativeWorkbenchDom, WorkspaceProviders } from './helpers/native-
 // Authentication is supplied at the transport boundary; the real directory,
 // content routes and per-document memory Router decide which page is shown.
 const observed = vi.hoisted(() => ({ routers: [] as AnyRouter[] }))
+vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
 vi.mock('../src/app/router/workbench/WorkbenchDeclaredRouteScreen', async (importOriginal) => {
 	const actual =
 		await importOriginal<
@@ -39,7 +40,7 @@ vi.mock('../src/app/router/workbench/WorkbenchDeclaredRouteScreen', async (impor
 		},
 	}
 })
-vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: () => <p>Runtime logs</p> }))
+vi.mock('../src/app/log_viewer/LogsPage', () => ({ LogsPage: () => <p>Runtime logs</p> }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => null }))
 
 const roots: Root[] = []

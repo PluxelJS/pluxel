@@ -4,10 +4,9 @@ import { act, useEffect } from 'react'
 import type { Root } from 'react-dom/client'
 import { formatPluginNodeRoute, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
-import { Model, TabNode } from 'flexlayout-react'
+import { Actions, BorderNode, DockLocation, Model } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PluginNavigation } from '../src/app/workbench/PluginNavigation'
-import { PluginRegionTabs } from '../src/app/workbench/PluginPanels'
+import { panelTab, panelTabId, panelIdentity } from '../src/app/workbench/panelTabs'
 import { WorkbenchDocumentState } from '../src/app/workbench/document'
 import { WorkspaceSession } from '../src/app/workbench/session'
 import {
@@ -20,46 +19,38 @@ import {
 	renderWorkspace,
 } from './helpers/native-workbench'
 
-vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
-	WorkspaceNavigation: ({ mode }: { mode: string }) => (
-		<div data-navigation-mode={mode}>Catalog</div>
-	),
+vi.mock('../src/app/workbench/PluginTools', () => ({
+	PluginTool: () => <div>Official inspector</div>,
+}))
+vi.mock('../src/app/log_viewer/LogsPage', () => ({ LogsPage: () => <div>Document</div> }))
+
+vi.mock('@mantine/modals', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@mantine/modals')>()),
+	openConfirmModal: ({ onConfirm }: { onConfirm: () => void }) => onConfirm(),
 }))
 
 const source = vi.hoisted(() => ({
 	snapshot: undefined as WorkbenchTargetSnapshot | undefined,
 	runningPluginsReady: true,
 	runningPluginKeys: new Set<string>(),
-	mount: vi.fn(),
 	unmount: vi.fn(),
-	requestedOwner: vi.fn(),
 }))
 vi.mock('../src/workbench/runtime', () => ({
 	useWorkbenchRuntime: () => source,
-	useWorkbenchTargetSnapshot: (owner: PluginNodeAddress | null) => {
-		source.requestedOwner(owner)
-		return source.snapshot
-	},
-	WorkbenchEntryView: ({
-		entry,
-		frame,
-		layoutRevision,
-		params,
-	}: {
-		entry: WorkbenchLayoutEntry
-		frame: string
-		layoutRevision: number
-		params: Record<string, string>
-	}) => {
+	useWorkbenchTargetSnapshot: () => source.snapshot,
+	WorkbenchEntryView: ({ entry }: { entry: WorkbenchLayoutEntry }) => {
 		const key = `${formatPluginNodeRoute(entry.target.node)}:${entry.descriptor.key}`
 		useEffect(() => {
-			source.mount(key, { frame, layoutRevision, params })
 			return () => {
 				source.unmount(key)
 			}
-		}, [key, frame, layoutRevision, params])
+		}, [key])
 		return <div data-panel-key={key}>Panel {entry.descriptor.key}</div>
 	},
+}))
+
+vi.mock('../src/app/plugins/catalog/PluginCatalog', () => ({
+	PluginCatalog: () => <div>插件目录</div>,
 }))
 
 type Region = 'left' | 'right' | 'bottom'
@@ -77,7 +68,6 @@ const other: PluginNodeAddress = {
 	variant: 'default',
 }
 const regions = ['left', 'right', 'bottom'] as const
-const toolIds = { left: 'navigation', right: 'plugin-inspector', bottom: 'plugin-logs' }
 function panel(
 	key: string,
 	region: Region,
@@ -102,16 +92,13 @@ function panel(
 		},
 	}
 }
-const builtin = { value: 'plugins', label: '内置视图', content: <div data-builtin>Built in</div> }
 const roots: Root[] = []
 const sessions: WorkspaceSession[] = []
 
 beforeEach(() => {
 	prepareNativeWorkbenchDom()
 	window.localStorage.clear()
-	source.mount.mockReset()
 	source.unmount.mockReset()
-	source.requestedOwner.mockReset()
 	source.runningPluginsReady = true
 	source.runningPluginKeys = new Set([east, west, other].map(pluginNodeIndexKey))
 	source.snapshot = compileWorkbenchSnapshot(null, {
@@ -142,201 +129,272 @@ afterEach(async () => {
 
 async function setOwner(session: WorkspaceSession, id: string, owner?: PluginNodeAddress) {
 	await act(async () => {
-		const state = new WorkbenchDocumentState()
+		const state = session.documents.get(id) ?? new WorkbenchDocumentState()
 		state.plugin = owner
 		state.workspace = owner ? 'plugins' : undefined
 		session.documents.set(id, state)
 		session.workbench.activate(id)
 		session.notifyContentState()
-		await session.syncWorkspacePanels()
+		await session.syncWorkspacePanels(source.snapshot?.layout?.entries ?? [])
 	})
 }
-async function renderRegion(session: WorkspaceSession, region: Region) {
-	const rendered = await renderWorkspace(
-		session,
-		<PluginRegionTabs region={region} builtins={[builtin]} keepBuiltinMounted />,
-	)
-	roots.push(rendered.root)
-	return rendered.container
+function panelId(entry: WorkbenchLayoutEntry) {
+	const identity = panelIdentity(entry)
+	return panelTabId(identity.owner, identity.key)
 }
-async function fixture(region: Region) {
-	const session = new WorkspaceSession()
-	sessions.push(session)
-	const id = await openDocument(session, '/plugins')
-	await setOwner(session, id, east)
-	await act(async () => {
-		if (region === 'right') await session.toggleBorder('right')
-		if (region === 'bottom') await session.toggleLogs()
-	})
-	return { session, id, container: await renderRegion(session, region) }
-}
-function tab(container: HTMLElement, label: string) {
-	const result = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find(
-		(node) => node.textContent === label,
-	)
-	if (!result) throw new Error(`Missing panel tab: ${label}`)
-	return result
-}
-async function choose(container: HTMLElement, label: string) {
-	await act(async () => tab(container, label).click())
+function border(session: WorkspaceSession, region: Region) {
+	return Model.fromJson(session.workbench.getLayout()).getNodeById(`border_${region}`) as BorderNode
 }
 function renderedKeys(container: HTMLElement) {
 	return [...container.querySelectorAll('[data-panel-key]')].map((node) =>
 		node.getAttribute('data-panel-key'),
 	)
 }
-function selectedPanel(session: WorkspaceSession, region: Region) {
-	if (region === 'left') return session.navigationView()
-	const node = Model.fromJson(session.workbench.getLayout()).getNodeById(toolIds[region])
-	return node instanceof TabNode ? node.getConfig()?.panelView : undefined
+async function fixture() {
+	const session = new WorkspaceSession()
+	sessions.push(session)
+	const id = await openDocument(session, '/logs')
+	const rendered = await renderWorkspace(session)
+	roots.push(rendered.root)
+	await setOwner(session, id, east)
+	return { session, id, container: rendered.container }
+}
+async function open(session: WorkspaceSession, entry: WorkbenchLayoutEntry) {
+	await act(async () => session.openPanel(entry))
+}
+async function close(session: WorkspaceSession, entry: WorkbenchLayoutEntry) {
+	await act(async () => {
+		expect((await session.workbench.close(panelId(entry))).status).toBe('closed')
+		await session.syncWorkspacePanels()
+	})
 }
 
-describe('owner-scoped plugin region panels', () => {
-	it('uses only owner extensions in application navigation and preserves manual expansion across contexts', async () => {
-		const { session, id } = await fixture('left')
-		await act(async () => {
-			session.documents.get(id)!.workspace = undefined
-			session.notifyContentState()
-			await session.syncWorkspacePanels(true)
-		})
-		expect(session.activeWorkspace()).toBe('apps')
-		const rendered = await renderWorkspace(session, <PluginNavigation />)
-		roots.push(rendered.root)
-		expect(rendered.container.querySelector('[data-navigation-mode]')).toBeNull()
-		expect(renderedKeys(rendered.container)).toEqual([`${formatPluginNodeRoute(east)}:left_one`])
-		await act(async () => session.toggleBorder('left'))
-		await act(async () => session.syncWorkspacePanels(false))
-		await act(async () => session.syncWorkspacePanels(true))
-		expect(session.isToolVisible('navigation')).toBe(false)
-		await act(async () => session.toggleBorder('left'))
-		expect(session.isToolVisible('navigation')).toBe(true)
-		await act(async () => {
-			source.snapshot = compileWorkbenchSnapshot(null, {
-				profile: 1,
-				revision: 8,
-				target: null,
-				entries: [],
-			})
-			session.notifyContentState()
-			await session.syncWorkspacePanels(false)
-		})
-		expect(session.isToolVisible('navigation')).toBe(false)
-		expect(renderedKeys(rendered.container)).toEqual([])
-		await act(async () => {
-			session.documents.get(id)!.workspace = 'plugins'
-			session.notifyContentState()
-			await session.syncWorkspacePanels(false)
-		})
-		expect(session.isToolVisible('navigation')).toBe(true)
-		expect(
-			rendered.container
-				.querySelector('[data-navigation-mode]')
-				?.getAttribute('data-navigation-mode'),
-		).toBe('plugins')
-		expect(rendered.container.textContent).not.toContain('插件页面')
-	})
-
+describe('independent native plugin panel tabs', () => {
 	it.each(regions)(
-		'filters %s panels by exact fork and region and mounts only the selected extension',
+		'opens %s extensions explicitly, deduplicates and closes without navigating',
 		async (region) => {
-			const { session, container } = await fixture(region)
-			expect(
-				[...container.querySelectorAll('[role="tab"]')].map((node) => node.textContent),
-			).toEqual(['内置视图', `${region} first`, `${region} second`])
-			expect(source.requestedOwner).toHaveBeenLastCalledWith(east)
-			expect(source.mount).not.toHaveBeenCalled()
+			const { session, container } = await fixture()
+			const one = panel('one', region),
+				two = panel('two', region)
+			expect(session.isPanelOpen(one)).toBe(false)
+			expect(renderedKeys(container)).toEqual([])
 			const documents = session.workbench.getDocuments()
 			const href = session.workbench.getActiveDocument()?.href
 			const url = window.location.href
-			const open = vi.spyOn(session.workbench, 'open')
-			await choose(container, `${region} first`)
+			await open(session, one)
+			await open(session, one)
+			expect(
+				border(session, region)
+					.getChildren()
+					.filter((node) => node.getId() === panelId(one)),
+			).toHaveLength(1)
 			expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:${region}_one`])
-			expect(source.mount).toHaveBeenLastCalledWith(
-				`${formatPluginNodeRoute(east)}:${region}_one`,
-				{
-					frame: 'shell',
-					layoutRevision: 7,
-					params: {},
-				},
-			)
-			await choose(container, `${region} second`)
+			await open(session, two)
 			expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:${region}_two`])
 			expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(east)}:${region}_one`)
-			await choose(container, '内置视图')
-			expect(renderedKeys(container)).toEqual([])
-			expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(east)}:${region}_two`)
-			expect(open).not.toHaveBeenCalled()
+			await close(session, two)
+			expect(session.isPanelOpen(two)).toBe(false)
+			await open(session, two)
+			expect(session.isPanelOpen(two)).toBe(true)
 			expect(session.workbench.getDocuments()).toEqual(documents)
 			expect(session.workbench.getActiveDocument()?.href).toBe(href)
 			expect(window.location.href).toBe(url)
 		},
 	)
-
 	it.each(regions)(
-		'persists the selected %s panel in the native layout and reopens it after hiding',
+		'releases collapsed %s content while retaining the native strip and open tab',
 		async (region) => {
-			const { session, container } = await fixture(region)
-			await choose(container, `${region} second`)
-			const selected = `panel:${formatPluginNodeRoute(east)}:${region}_two`
-			expect(selectedPanel(session, region)).toBe(selected)
-			await act(async () => {
-				if (region === 'bottom') await session.toggleLogs()
-				else await session.toggleBorder(region)
-			})
+			const { session, container } = await fixture()
+			const entry = panel('one', region)
+			await open(session, entry)
+			await act(async () => session.toggleBorder(region))
 			expect(renderedKeys(container)).toEqual([])
-			expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(east)}:${region}_two`)
-			expect(selectedPanel(session, region)).toBe(selected)
-			await act(async () => {
-				if (region === 'bottom') await session.toggleLogs()
-				else await session.toggleBorder(region)
-			})
-			expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:${region}_two`])
-			const restored = new WorkspaceSession({ snapshot: session.workbench.snapshot() })
-			sessions.push(restored)
-			expect(selectedPanel(restored, region)).toBe(selected)
-			const id = await openDocument(restored, '/plugins')
-			await setOwner(restored, id, east)
-			const restoredContainer = await renderRegion(restored, region)
-			expect(renderedKeys(restoredContainer)).toEqual([
-				`${formatPluginNodeRoute(east)}:${region}_two`,
-			])
+			expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(east)}:${region}_one`)
+			expect(session.isPanelOpen(entry)).toBe(true)
+			expect(border(session, region).isShowing()).toBe(true)
+			expect(border(session, region).getSelected()).toBe(-1)
+			await open(session, entry)
+			expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:${region}_one`])
 		},
 	)
-
-	it('unmounts the old fork and uses builtin fallback until a new owner panel is selected', async () => {
-		const { session, id, container } = await fixture('right')
-		await choose(container, 'right first')
-		const otherId = await openDocument(session, '/plugins', true)
-		await setOwner(session, otherId, west)
+	it('toggles the requested native tool rather than whichever border tab is selected', async () => {
+		const { session, container } = await fixture()
+		const entry = panel('one', 'right')
+		await open(session, entry)
+		await act(async () => session.toggleTool('plugin-inspector'))
+		expect(border(session, 'right').getSelectedNode()?.getId()).toBe('plugin-inspector')
 		expect(renderedKeys(container)).toEqual([])
-		expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(east)}:right_one`)
-		expect([...container.querySelectorAll('[role="tab"]')].map((node) => node.textContent)).toEqual(
-			['内置视图', 'right west'],
-		)
-		await choose(container, 'right west')
-		expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(west)}:right_one`])
+		await act(async () => session.toggleTool(panelId(entry)))
+		expect(border(session, 'right').getSelectedNode()?.getId()).toBe(panelId(entry))
+		expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:right_one`])
+		await act(async () => session.toggleTool(panelId(entry)))
+		expect(border(session, 'right').getSelected()).toBe(-1)
+		expect(renderedKeys(container)).toEqual([])
+		await act(async () => session.toggleTool(panelId(entry)))
+		expect(border(session, 'right').getSelectedNode()?.getId()).toBe(panelId(entry))
+		expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:right_one`])
+	})
+	it('archives native open tabs per exact owner and restores selection without reopening closed tabs', async () => {
+		const { session, id, container } = await fixture()
+		const first = panel('one', 'bottom'),
+			closed = panel('two', 'bottom'),
+			westPanel = panel('one', 'bottom', west)
+		await open(session, first)
+		await open(session, closed)
+		await close(session, closed)
+		await open(session, first)
+		await setOwner(session, id, west)
+		expect(renderedKeys(container)).toEqual([])
+		expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(east)}:bottom_one`)
+		expect(session.isPanelOpen(first)).toBe(false)
+		await open(session, westPanel)
+		await setOwner(session, id, east)
+		expect(session.isPanelOpen(first)).toBe(true)
+		expect(session.isPanelOpen(closed)).toBe(false)
+		expect(session.isPanelOpen(westPanel)).toBe(false)
+		expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:bottom_one`])
 		await setOwner(session, id)
 		expect(renderedKeys(container)).toEqual([])
-		expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(west)}:right_one`)
-		expect(source.requestedOwner).toHaveBeenLastCalledWith(null)
+		expect(border(session, 'bottom').isShowing()).toBe(false)
 	})
-
-	it('does not open a stopped owner and releases a mounted panel when that owner stops', async () => {
-		const { session, container } = await fixture('right')
-		source.runningPluginKeys.delete(pluginNodeIndexKey(east))
-		await choose(container, 'right first')
-		expect(source.mount).not.toHaveBeenCalled()
-		expect(container.textContent).toContain('插件未运行')
+	it('restores open native tabs from snapshots but never invents closed tabs', async () => {
+		const { session } = await fixture()
+		const kept = panel('one', 'bottom'),
+			closed = panel('two', 'bottom')
+		await open(session, kept)
+		await open(session, closed)
+		await close(session, closed)
+		await open(session, kept)
+		const restored = new WorkspaceSession({ snapshot: session.workbench.snapshot() })
+		sessions.push(restored)
+		const id = restored.workbench.getDocuments()[0]!.id
+		await setOwner(restored, id, east)
+		expect(restored.isPanelOpen(kept)).toBe(true)
+		expect(restored.isPanelOpen(closed)).toBe(false)
+		expect(border(restored, 'bottom').getSelectedNode()?.getId()).toBe(panelId(kept))
+		const fresh = new WorkspaceSession()
+		sessions.push(fresh)
+		const freshId = await openDocument(fresh, '/logs')
+		await setOwner(fresh, freshId, east)
+		expect(fresh.isPanelOpen(kept)).toBe(false)
+		expect(border(fresh, 'bottom').isShowing()).toBe(false)
+	})
+	it('explicitly reopens a changed declaration in its new region and refreshes its title', async () => {
+		const { session, container } = await fixture()
+		const original = panel('one', 'bottom')
+		await open(session, original)
+		const changed: WorkbenchLayoutEntry = {
+			...original,
+			placement: { kind: 'panel', region: 'right', label: 'New placement', order: 0 },
+		}
 		await act(async () => {
-			source.runningPluginKeys.add(pluginNodeIndexKey(east))
+			source.snapshot = compileWorkbenchSnapshot(null, {
+				profile: 1,
+				revision: 8,
+				target: null,
+				entries: [changed],
+			})
+			await session.syncWorkspacePanels([changed])
 			session.notifyContentState()
 		})
-		expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:right_one`])
+		expect(session.isPanelOpen(changed)).toBe(false)
+		await open(session, changed)
+		expect(session.isPanelOpen(changed)).toBe(true)
+		expect(border(session, 'bottom').getChildren()).toHaveLength(0)
+		expect(border(session, 'right').getSelectedNode()?.getId()).toBe(panelId(changed))
+		expect(border(session, 'right').getSelectedNode()?.getName()).toBe('New placement')
+		expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:bottom_one`])
+		const renamed = { ...changed, placement: { ...changed.placement, label: 'Renamed panel' } }
+		await act(async () => session.syncWorkspacePanels([renamed]))
+		await open(session, renamed)
+		expect(border(session, 'right').getSelectedNode()?.getName()).toBe('Renamed panel')
+	})
+	it.each(['live-region', 'archive-region', 'archive-shape'] as const)(
+		'rejects invalid %s snapshot before mounting or modifying it',
+		async (corruption) => {
+			const { session, id } = await fixture()
+			const entry = panel('one', 'bottom')
+			await open(session, entry)
+			if (corruption !== 'live-region') await setOwner(session, id, west)
+			const snapshot = structuredClone(session.workbench.snapshot())
+			const bottom = snapshot.layout.borders!.find((item) => item.location === 'bottom')!
+			if (corruption === 'live-region') {
+				const misplaced = bottom.children!.pop()!
+				snapshot.layout
+					.borders!.find((item) => item.location === 'right')!
+					.children!.push(misplaced)
+			} else {
+				const archives = bottom.config.panelArchives
+				const key = panelIdentity(entry).owner
+				if (corruption === 'archive-shape') archives[key].tabs = 'invalid'
+				else archives[key].tabs[0].config.pluginPanel.region = 'right'
+			}
+			const before = JSON.stringify(snapshot)
+			expect(() => new WorkspaceSession({ snapshot })).toThrow('工作区布局无法恢复')
+			expect(JSON.stringify(snapshot)).toBe(before)
+		},
+	)
+	it('reset writes an empty default layout with no archived owner panels', async () => {
+		const { session, id } = await fixture()
+		await open(session, panel('one', 'bottom'))
+		await setOwner(session, id, west)
+		await open(session, panel('one', 'right', west))
+		const assign = vi.fn()
+		vi.stubGlobal('location', { assign })
+		await act(async () => {
+			expect(await session.resetLayout()).toBe(true)
+		})
+		expect(assign).toHaveBeenCalledWith(session.basepath)
+		const snapshot = session.storage.readSnapshot()
+		expect(JSON.stringify(snapshot)).not.toContain('plugin-panel:')
+		expect(JSON.stringify(snapshot)).not.toContain('panelArchives')
+		const restored = new WorkspaceSession({ snapshot })
+		sessions.push(restored)
+		expect(restored.workbench.getDocuments()).toHaveLength(0)
+		expect(border(restored, 'bottom').getChildren()).toHaveLength(0)
+	})
+	it('permits panel reordering only in its declared border and rejects stale or foreign entries', async () => {
+		const { session } = await fixture()
+		const entry = panel('one', 'bottom')
+		await open(session, entry)
+		expect(
+			session.workbench.canDispatch(
+				Actions.moveNode(panelId(entry), 'border_bottom', DockLocation.CENTER, 0),
+			),
+		).toBe(true)
+		expect(
+			session.workbench.canDispatch(
+				Actions.moveNode(panelId(entry), 'border_right', DockLocation.CENTER, 0),
+			),
+		).toBe(false)
+		expect(
+			session.workbench.canDispatch(
+				Actions.moveNode(panelId(entry), 'main', DockLocation.CENTER, 0),
+			),
+		).toBe(false)
+		expect(
+			session.workbench.canDispatch(
+				Actions.addTab(panelTab(panel('one', 'left')), 'border_bottom', DockLocation.CENTER, -1),
+			),
+		).toBe(false)
+		await expect(session.openPanel(panel('one', 'bottom', west))).rejects.toThrow('切回')
+		await expect(session.openPanel(panel('missing', 'bottom'))).rejects.toThrow('扩展')
+	})
+	it('releases stopped owner resources and resumes only the explicitly open panel', async () => {
+		const { session, container } = await fixture()
+		const entry = panel('one', 'right')
+		await open(session, entry)
 		await act(async () => {
 			source.runningPluginKeys.delete(pluginNodeIndexKey(east))
 			session.notifyContentState()
 		})
 		expect(renderedKeys(container)).toEqual([])
+		expect(container.textContent).toContain('插件未运行')
 		expect(source.unmount).toHaveBeenCalledWith(`${formatPluginNodeRoute(east)}:right_one`)
+		await act(async () => {
+			source.runningPluginKeys.add(pluginNodeIndexKey(east))
+			session.notifyContentState()
+		})
+		expect(renderedKeys(container)).toEqual([`${formatPluginNodeRoute(east)}:right_one`])
 	})
 })

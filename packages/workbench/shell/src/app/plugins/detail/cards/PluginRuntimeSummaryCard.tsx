@@ -54,7 +54,7 @@ export function PluginRuntimeSummaryCard({
 	)
 
 	return (
-		<Paper withBorder radius="sm" p="sm" shadow="none">
+		<Paper withBorder radius="sm" p="sm" shadow="none" bg="var(--plx-surface-strong)">
 			<Stack gap={8}>
 				{description ? (
 					<Text size="xs" c="dimmed">

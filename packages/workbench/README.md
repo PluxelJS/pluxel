@@ -26,3 +26,5 @@ Vite 应用使用 `plugins: [host({ entry: './app.ts' }), workbenchArtifacts()]`
 原生生产通过 loaded owner 读取预编译制品，不加载 Vite/Rolldown；生产 Vite 使用 `/vite` 附件与已构建 Shell，拒绝 `/dev` 源码 Shell。HTTP handler 只服务库存中的不可变文件；认证与连接 ownership 由调用它的管理 endpoint 持有。
 
 完整示例见 [独立 Host 的 Workbench](../../docs/workbench/standalone-host.md)。
+
+维护 Shell 交互先读 [设计决策](../../engineering/WORKBENCH_DESIGN.md)，再按 [Frontend](../../engineering/FRONTEND.md) 定位状态所有者；使用说明见 [工作台操作](../../docs/workbench/operations.md)。

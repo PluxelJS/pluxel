@@ -1,6 +1,7 @@
+import { useWorkbenchState } from '@worksplit/react'
 import { Skeleton, Stack } from '@mantine/core'
 import { IconPuzzle } from '@tabler/icons-react'
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useCallback, useMemo, useEffect, useRef } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import { usePluginConfig } from '../config/usePluginConfig'
 import { PluginScopeProvider } from './context'
@@ -8,7 +9,9 @@ import { RightPane } from './RightPane'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { parsePluginDetailHref } from '../../../workbench/paths'
 import { usePluginDetailSearch } from './pluginDetailSearchState'
-import { useDocumentWorkspace } from '../../workbench/document'
+import { useDocumentWorkspace, useOptionalWorkbenchDocument } from '../../workbench/document'
+import { useOptionalWorkspaceSession } from '../../workbench/workspaceContext'
+import { Actions } from 'flexlayout-react'
 import { usePluginDetail } from './usePluginDetail'
 
 function PluginSkeleton() {
@@ -43,6 +46,17 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 	} = usePluginDetail(pluginRoute)
 	const pluginLabel = detail?.label ?? pluginRoute
 	const description = detail?.desc ?? ''
+	const document = useOptionalWorkbenchDocument()
+	const session = useOptionalWorkspaceSession()
+	const titleSync =
+		document && session && detail && !search.entry && (!restPath || restPath === '/config') ? (
+			<PluginDocumentTitle
+				session={session}
+				documentId={document.id}
+				pluginRoute={pluginRoute}
+				pluginLabel={pluginLabel}
+			/>
+		) : null
 
 	const owner = detail?.address
 	const configState = usePluginConfig(ready ? owner : undefined)
@@ -106,14 +120,65 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 		)
 	}
 
-	if (!ready) return <PluginSkeleton />
-	if (!contextValue) return null
+	if (!ready)
+		return (
+			<>
+				{titleSync}
+				<PluginSkeleton />
+			</>
+		)
+	if (!contextValue) return titleSync
 
 	return (
 		<PluginScopeProvider value={contextValue}>
+			{titleSync}
 			<div className="plx-pluginDocument">
 				<RightPane config={configState} />
 			</div>
 		</PluginScopeProvider>
 	)
 })
+
+function PluginDocumentTitle({
+	session,
+	documentId,
+	pluginRoute,
+	pluginLabel,
+}: {
+	session: NonNullable<ReturnType<typeof useOptionalWorkspaceSession>>
+	documentId: string
+	pluginRoute: string
+	pluginLabel: string
+}) {
+	const title = useWorkbenchState(
+		session.workbench,
+		() => session.workbench.getDocument(documentId)?.title,
+	)
+	const automaticTitle = useRef<{ route: string; label: string } | undefined>(undefined)
+	useEffect(() => {
+		const previous = automaticTitle.current
+		automaticTitle.current = { route: pluginRoute, label: pluginLabel }
+		// Native route acceptance may assign its default title after this view mounts.
+		// Observe that change, but retain copied/restored or explicitly renamed titles.
+		if (
+			!title ||
+			title === pluginLabel ||
+			!(
+				title === '插件详情' ||
+				title === pluginRoute ||
+				(previous?.route === pluginRoute && title === previous.label)
+			)
+		)
+			return
+		void session.workbench
+			.dispatch(
+				Actions.updateNodeAttributes(documentId, {
+					name: pluginLabel,
+					helpText: pluginRoute,
+				}),
+			)
+			.then((result) => session.check(result))
+			.catch((error: unknown) => session.report(error))
+	}, [session, documentId, title, pluginRoute, pluginLabel])
+	return null
+}

@@ -1,5 +1,7 @@
 # Workbench 架构
 
+交互与布局设计先读 [Workbench 交互设计决策](WORKBENCH_DESIGN.md)。
+
 本页拥有 publication、session、Content 与 MF/Bridge 的内部约束。作者用法见 [Workbench](../docs/workbench/index.md)，renderer resource 用法见 [renderer resources](../docs/workbench/renderer-resources.md)；Shell 状态与 workspace 实现见 [FRONTEND](FRONTEND.md)。
 
 声明与身份读 [Definition 与 publication](#definition-与-publication)；会话/lease 读 [Session 与打开流程](#session-与打开流程)；Markdown/表单读 [Content trust boundary](#content-trust-boundary)；renderer 读 [MF2 与 React Bridge](#mf2-与-react-bridge) 及 [Renderer resource 与撤回](#renderer-resource-与撤回)。构建实现集中在 [ARTIFACT_BUILD](ARTIFACT_BUILD.md)。

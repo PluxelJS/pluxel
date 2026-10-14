@@ -1,9 +1,10 @@
 {
 	"icon": "PanelsTopLeft",
-	"title": "Workbench（可选管理界面）",
+	"title": "Workbench",
 	"defaultOpen": false,
 	"pages": [
 		"index",
+		"operations",
 		"plugin-groups",
 		"---标准配方---",
 		"content",
@@ -12,7 +13,6 @@
 		"panels",
 		"---按需参考---",
 		"renderer-resources",
-		"operations",
 		"standalone-host",
 		"---配置表单---",
 		"configuration-playground",

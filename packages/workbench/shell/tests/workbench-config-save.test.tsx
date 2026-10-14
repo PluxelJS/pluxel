@@ -25,7 +25,7 @@ vi.mock('@mantine/modals', async (importOriginal) => ({
 		decisions.push(options)
 	},
 }))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: Configuration }))
+vi.mock('../src/app/log_viewer/LogsPage', () => ({ LogsPage: Configuration }))
 vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: Configuration }))
 vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => null }))
 
@@ -143,6 +143,19 @@ describe('business configuration save in native documents', () => {
 			expect(ownAnchor.contains(control)).toBe(true)
 			const scrollHost = scope.querySelector<HTMLElement>('[data-config-scroll-root]')!
 			scrollHost.scrollTo = vi.fn()
+			const outline = [...scope.querySelectorAll<HTMLButtonElement>('button')].find(
+				(item) => item.textContent === '配置目录',
+			)!
+			await act(async () => {
+				outline.click()
+			})
+			await act(async () => {
+				await vi.waitFor(() =>
+					expect(
+						scope.querySelector('.plx-documentOutline [role="navigation"] button'),
+					).not.toBeNull(),
+				)
+			})
 			const button = scope.querySelector<HTMLButtonElement>(
 				'.plx-documentOutline [role="navigation"] button',
 			)!

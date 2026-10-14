@@ -21,35 +21,59 @@ import { usePluginOverview } from '../plugins/pluginOverview'
 import { useWorkbenchNavigation } from './context'
 
 import { builtinPages } from './navigationItems'
+import { useOptionalWorkspaceSession } from './workspaceContext'
+import type { WorkspaceSession } from './session'
+import {
+	panelRegionLabels,
+	panelUnavailable,
+	usePluginPanelDirectory,
+	type PluginPanelDirectoryState,
+} from './PluginPanelDirectory'
 
 type PageEntry = WorkbenchLayoutEntry & {
 	placement: Exclude<WorkbenchLayoutEntry['placement'], { kind: 'panel' }>
 }
 
-/** Publication categories organize discovery; native TabGroups remain user-owned layout. */
-export function WorkspaceNavigation({
-	onChosen,
-	autofocus = false,
-	onShowNavigation,
-	mode = 'all',
-	openMode = 'reuse',
-	activePluginRoute,
-	activeEntryKey,
-}: {
-	mode?: 'plugins' | 'publications' | 'all'
-	openMode?: 'reuse' | 'new'
+type WorkspaceNavigationProps = {
+	mode?: 'publications' | 'all'
 	activePluginRoute?: string | null
 	activeEntryKey?: string
 	onChosen?: () => void
 	autofocus?: boolean
 	onShowNavigation?: () => void
-}) {
+}
+
+/** Publication categories organize discovery; native TabGroups remain user-owned layout. */
+export function WorkspaceNavigation(props: WorkspaceNavigationProps) {
+	const session = useOptionalWorkspaceSession()
+	return session && props.mode !== 'publications' ? (
+		<ConnectedNavigation {...props} session={session} />
+	) : (
+		<NavigationContent {...props} />
+	)
+}
+function ConnectedNavigation({
+	session,
+	...props
+}: WorkspaceNavigationProps & { session: WorkspaceSession }) {
+	const panels = usePluginPanelDirectory(session)
+	return <NavigationContent {...props} panels={panels} />
+}
+function NavigationContent({
+	onChosen,
+	autofocus = false,
+	onShowNavigation,
+	mode = 'all',
+	activePluginRoute,
+	activeEntryKey,
+	panels,
+}: WorkspaceNavigationProps & { panels?: PluginPanelDirectoryState }) {
 	const navigation = useWorkbenchNavigation()
 	const snapshot = useWorkbenchTargetSnapshot(null)
 	const plugins = usePluginOverview()
 	const [query, setQuery] = useState('')
 	const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
-	const compact = mode !== 'all' || openMode === 'new'
+	const compact = mode === 'publications'
 	const toggleGroup = (key: string) =>
 		setCollapsed((previous) => {
 			const next = new Set(previous)
@@ -59,7 +83,6 @@ export function WorkspaceNavigation({
 		})
 	const [routeEntry, setRouteEntry] = useState<PageEntry>()
 	const [routePath, setRoutePath] = useState('')
-	const [newInstance, setNewInstance] = useState(false)
 	const needle = query.trim().toLocaleLowerCase()
 	const matches = (text: string) => !needle || text.toLocaleLowerCase().includes(needle)
 	const entries = useMemo(
@@ -76,18 +99,14 @@ export function WorkspaceNavigation({
 				}),
 		[snapshot.layout],
 	)
-	const open = (href: string, copy = openMode === 'new', title?: string) => {
-		if (copy) navigation.openTab({ path: href, title: title ?? href })
-		else navigation.navigate(href)
+	const open = (href: string) => {
+		navigation.navigate(href)
 		onChosen?.()
 	}
-	const openEntry = (entry: PageEntry, copy = openMode === 'new') => {
-		if (entry.placement.kind === 'route' && entry.placement.frame === 'standalone') copy = false
+	const openEntry = (entry: PageEntry) => {
 		if (entry.placement.kind === 'tab') {
 			open(
 				`${buildPluginDetailHref(entry.target.node)}?entry=${encodeURIComponent(entry.descriptor.key)}`,
-				copy,
-				entry.placement.label ?? entry.descriptor.key,
 			)
 			return
 		}
@@ -95,18 +114,13 @@ export function WorkspaceNavigation({
 		if (route?.compiled.segments.some((segment) => segment.parameter)) {
 			setRouteEntry(entry)
 			setRoutePath(entry.placement.path)
-			setNewInstance(copy)
 			return
 		}
-		open(
-			getWorkbenchDirectoryHref(snapshot.directory, entry.target.node, entry.placement.path),
-			copy,
-			entry.placement.title,
-		)
+		open(getWorkbenchDirectoryHref(snapshot.directory, entry.target.node, entry.placement.path))
 	}
-	const visiblePlugins = (
-		mode !== 'publications' && openMode !== 'new' ? (plugins.overview?.status.statuses ?? []) : []
-	).filter((plugin) => matches(`${plugin.label} ${plugin.route}`))
+	const visiblePlugins = (mode === 'all' ? (plugins.overview?.status.statuses ?? []) : []).filter(
+		(plugin) => matches(`${plugin.label} ${plugin.route}`),
+	)
 	const pluginGroups = [
 		{ key: 'running', label: '运行中' },
 		{ key: 'stopped', label: '已停止' },
@@ -132,17 +146,25 @@ export function WorkspaceNavigation({
 	)
 	const visibleEntries = entries.filter(
 		(entry) =>
-			mode !== 'plugins' &&
 			(mode === 'all' || entry.placement.kind === 'tab' || Boolean(entry.placement.navigation)) &&
 			matches(
 				`${entry.target.displayName} ${entry.descriptor.key} ${entry.placement.kind === 'tab' ? `${entry.placement.group?.label ?? ''} ${entry.placement.label ?? ''}` : `${entry.placement.navigation?.group?.label ?? ''} ${entry.placement.navigation?.label ?? ''} ${entry.placement.title} ${entry.placement.path}`}`,
 			),
 	)
+	const visiblePanels = (panels?.entries ?? []).filter((entry) =>
+		matches(
+			`${entry.placement.label} ${entry.descriptor.key} ${entry.target.displayName} ${panelRegionLabels[entry.placement.region]} 插件扩展`,
+		),
+	)
+	const openPanel = (entry: (typeof visiblePanels)[number]) => {
+		if (!panels || panelUnavailable(entry, panels.running)) return
+		void panels.session
+			.openPanel(entry)
+			.then(() => onChosen?.())
+			.catch((error) => panels.session.report(error))
+	}
 	const showTool = Boolean(
-		mode === 'all' &&
-		openMode === 'reuse' &&
-		onShowNavigation &&
-		matches('插件目录 固定工具 navigation'),
+		mode === 'all' && onShowNavigation && matches('插件目录 固定工具 navigation'),
 	)
 	const publicationGroups = new Map<
 		string,
@@ -191,13 +213,7 @@ export function WorkspaceNavigation({
 			<div className="plx-workspace-navigation__search">
 				<TextInput
 					aria-label="查找工作区入口"
-					placeholder={
-						mode === 'plugins'
-							? '查找插件'
-							: mode === 'publications'
-								? '查找应用'
-								: '查找页面或插件入口'
-					}
+					placeholder={mode === 'publications' ? '查找应用' : '查找页面或插件入口'}
 					leftSection={<IconSearch size={15} />}
 					value={query}
 					onChange={(event) => setQuery(event.currentTarget.value)}
@@ -207,11 +223,16 @@ export function WorkspaceNavigation({
 					onKeyDown={(event) => {
 						if (event.key === 'Enter') {
 							if (showTool) openTool()
-							else if (visibleBuiltins[0])
-								open(visibleBuiltins[0].href, openMode === 'new', visibleBuiltins[0].label)
+							else if (visibleBuiltins[0]) open(visibleBuiltins[0].href)
 							else if (pluginGroups[0]?.entries[0])
 								open(buildPluginDetailHref(pluginGroups[0].entries[0].address))
 							else if (visibleEntries[0]) openEntry(visibleEntries[0])
+							else {
+								const panel = visiblePanels.find(
+									(entry) => !panelUnavailable(entry, panels?.running ?? false),
+								)
+								if (panel) openPanel(panel)
+							}
 						} else if (event.key === 'Escape' && query) {
 							event.preventDefault()
 							event.stopPropagation()
@@ -219,16 +240,6 @@ export function WorkspaceNavigation({
 						}
 					}}
 				/>
-				{mode === 'plugins' && (
-					<Button
-						size="compact-xs"
-						variant="subtle"
-						className="plx-workspace-navigation__manage"
-						onClick={() => open('/plugins')}
-					>
-						插件管理
-					</Button>
-				)}
 			</div>
 			<ScrollArea className="plx-workspace-navigation__scroll" type="auto" offsetScrollbars>
 				<Stack gap={compact ? 4 : 'md'} pr={0}>
@@ -244,6 +255,29 @@ export function WorkspaceNavigation({
 							/>
 						</Stack>
 					)}
+					{panels?.owner && visiblePanels.length > 0 && (
+						<Stack gap={3} component="section" aria-label="当前插件扩展">
+							<Text size="xs" c="dimmed" fw={600}>
+								当前插件扩展
+							</Text>
+							{visiblePanels.map((entry) => {
+								const unavailable = panelUnavailable(entry, panels.running)
+								const opened = panels.session.isPanelOpen(entry)
+								return (
+									<Button
+										key={entry.descriptor.key}
+										variant="subtle"
+										justify="start"
+										disabled={!!unavailable}
+										onClick={() => openPanel(entry)}
+									>
+										{entry.placement.label} · {panelRegionLabels[entry.placement.region]} ·{' '}
+										{unavailable ?? (opened ? '已打开' : '打开')}
+									</Button>
+								)
+							})}
+						</Stack>
+					)}
 					{visibleBuiltins.length > 0 && (
 						<Stack gap={3}>
 							<Text size="xs" c="dimmed" fw={600}>
@@ -254,17 +288,17 @@ export function WorkspaceNavigation({
 									key={page.href}
 									label={page.label}
 									description={page.description}
-									onOpen={() => open(page.href, openMode === 'new', page.label)}
+									onOpen={() => open(page.href)}
 								/>
 							))}
 						</Stack>
 					)}
-					{mode !== 'publications' && openMode !== 'new' && plugins.error && (
+					{mode === 'all' && plugins.error && (
 						<Alert color="red" title="插件列表读取失败">
 							{plugins.error}
 						</Alert>
 					)}
-					{mode !== 'publications' && openMode !== 'new' && plugins.isLoading && (
+					{mode === 'all' && plugins.isLoading && (
 						<Text size="xs" role="status" c="dimmed">
 							正在读取插件目录…
 						</Text>
@@ -328,12 +362,12 @@ ${status}${failure ? ` · ${failure.message}` : ''}`}
 							})}
 						</NavigationGroup>
 					))}
-					{mode !== 'plugins' && snapshot.state === 'loading' && (
+					{snapshot.state === 'loading' && (
 						<Text size="xs" role="status" c="dimmed">
 							正在读取应用入口…
 						</Text>
 					)}
-					{mode !== 'plugins' && snapshot.error && (
+					{snapshot.error && (
 						<Alert color="red" title="应用入口读取失败">
 							{snapshot.error.message}
 						</Alert>
@@ -341,11 +375,7 @@ ${status}${failure ? ` · ${failure.message}` : ''}`}
 					{[...publicationGroups].map(([key, group]) => (
 						<NavigationGroup
 							key={key}
-							hideHeading={
-								(mode === 'publications' || openMode === 'new') &&
-								!group.explicit &&
-								group.entries.length === 1
-							}
+							hideHeading={mode === 'publications' && !group.explicit && group.entries.length === 1}
 							label={group.label}
 							count={group.entries.length}
 							compact={compact}
@@ -388,6 +418,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 					{visibleBuiltins.length === 0 &&
 						visiblePlugins.length === 0 &&
 						visibleEntries.length === 0 &&
+						visiblePanels.length === 0 &&
 						!showTool && (
 							<Text c="dimmed" size="sm">
 								没有匹配的入口
@@ -397,7 +428,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 			</ScrollArea>
 			{!compact && (
 				<Text size="xs" c="dimmed">
-					选择入口，打开或切换到已有页面。
+					选择入口，在当前标签页中浏览。
 				</Text>
 			)}
 			<Modal
@@ -428,11 +459,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 								concreteLocation.pathname,
 								routeEntry.placement.frame,
 							)
-							open(
-								href + concreteLocation.search + concreteLocation.hash,
-								newInstance,
-								routeEntry.placement.title,
-							)
+							open(href + concreteLocation.search + concreteLocation.hash)
 							setRouteEntry(undefined)
 						}}
 					>

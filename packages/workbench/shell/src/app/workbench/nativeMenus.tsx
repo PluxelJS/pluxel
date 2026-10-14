@@ -1,3 +1,4 @@
+import { readPanelIdentity } from './panelTabs'
 import { NumberInput } from '@mantine/core'
 import {
 	IconCheck,
@@ -87,12 +88,6 @@ const labels: Partial<Record<I18nLabel, string>> = {
 	[I18nLabel.Group_Name_Placeholder]: '输入分组名称',
 	[I18nLabel.Group_Color_N]: '分组颜色 ?',
 	[I18nLabel.Group_Default_Name]: '新分组',
-}
-const borderDirections: Record<string, string> = {
-	left: '左',
-	right: '右',
-	top: '上',
-	bottom: '下',
 }
 export function nativeLabel(key: string): string {
 	return labels[key as I18nLabel] ?? I18nLabelDefaults[key] ?? key
@@ -192,17 +187,27 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 					disabled: !session.workbench.canDispatch(action),
 					onSelect: () => dispatch(action),
 				})
-			if (node instanceof TabGroupNode) {
+			const pluginPanel = node instanceof TabNode ? readPanelIdentity(node.toJson()) : undefined
+			const toolRegion =
+				pluginPanel?.region ??
+				(node.getId() === 'navigation'
+					? 'left'
+					: node.getId() === 'plugin-inspector'
+						? 'right'
+						: undefined)
+
+			if (toolRegion) {
+				if (pluginPanel) builder.add('close').addDivider()
+				builder.addCustom({
+					key: 'toggle-tool',
+					label: session.isToolVisible(node.getId()) ? '收起面板' : '展开面板',
+					onSelect: () => {
+						if (isLive(node))
+							void session.toggleTool(node.getId()).catch((error: unknown) => session.report(error))
+					},
+				})
+			} else if (node instanceof TabGroupNode) {
 				builder.addStandard()
-				// Native builders omit these commands for Border groups, although the Model supports them.
-				if (node.getParent() instanceof BorderNode) {
-					addAction(
-						'toggleOpen',
-						node.isOpened() ? '折叠分组' : '展开分组',
-						Actions.updateNodeAttributes(node.getId(), { opened: !node.isOpened() }),
-					)
-					addAction('ungroup', '解除分组', Actions.ungroup(node.getId()))
-				}
 			} else if (node instanceof TabNode) {
 				builder
 					.add('pin')
@@ -217,7 +222,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 						label: '在新标签打开副本',
 						onSelect: () => {
 							if (isLive(node)) {
-								const title = `${node.getName()}（副本）`
+								const title = node.getName()
 								// The native popup restores its source focus on unmount. Open after that
 								// cleanup so a newly selected copy keeps the accepted focus and URL.
 								requestAnimationFrame(() => {
@@ -232,7 +237,6 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 														Actions.renameTab(result.document.id, title),
 													),
 												)
-											return undefined
 										})
 										.catch((error: unknown) => session.report(error))
 								})
@@ -246,7 +250,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 							label: '在右侧打开副本',
 							onSelect: () => {
 								if (isLive(node) && isLive(container)) {
-									const title = `${node.getName()}（副本）`
+									const title = node.getName()
 									requestAnimationFrame(() => {
 										if (!isLive(node) || !isLive(container)) return
 										void session.workbench
@@ -262,7 +266,6 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 															Actions.renameTab(result.document.id, title),
 														),
 													)
-												return undefined
 											})
 											.catch((error: unknown) => session.report(error))
 									})
@@ -301,7 +304,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 					),
 				})
 			}
-			if (!(node instanceof BorderNode)) {
+			if (!toolRegion && !(node instanceof BorderNode)) {
 				const container =
 					node instanceof TabNode
 						? tabContainer(node)
@@ -321,23 +324,14 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 						Actions.moveNode(node.getId(), container.getId(), DockLocation.BOTTOM, -1),
 					)
 				}
-				const destinations: (TabSetNode | BorderNode)[] = []
+				const destinations: TabSetNode[] = []
 				model.visitNodes((candidate) => {
-					if (
-						(candidate instanceof TabSetNode || candidate instanceof BorderNode) &&
-						candidate !== container &&
-						candidate !== node
-					)
+					if (candidate instanceof TabSetNode && candidate !== container && candidate !== node)
 						destinations.push(candidate)
 				})
 				if (destinations.length > 0) builder.addDivider()
 				for (const [index, destination] of destinations.entries()) {
-					// Whole TabSets may merge only with central TabSets, not with Borders.
-					if (node instanceof TabSetNode && destination instanceof BorderNode) continue
-					const label =
-						destination instanceof BorderNode
-							? `${borderDirections[destination.getLocation().getName()]}边栏`
-							: destination.getName() || `标签容器 ${index + 1}`
+					const label = destination.getName() || `标签容器 ${index + 1}`
 					addAction(
 						`move-${destination.getId()}`,
 						`${node instanceof TabGroupNode ? '移动整个分组' : node instanceof TabSetNode ? '合并标签容器' : '移动标签'}到：${label}`,
@@ -345,7 +339,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 					)
 				}
 			}
-			if (node instanceof TabGroupNode) {
+			if (!toolRegion && node instanceof TabGroupNode) {
 				builder.addDivider()
 				builder.addCustom({
 					key: 'close-group',
@@ -358,7 +352,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 							Actions.group(node.getChildren().map((tab) => Actions.deleteTab(tab.getId()))),
 						),
 				})
-			} else if (node instanceof TabNode)
+			} else if (!toolRegion && node instanceof TabNode)
 				builder
 					.addDivider()
 					.add('closeOthers')
@@ -366,7 +360,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 					.add('closeAll')
 					.addDivider()
 					.add('close')
-			else if (node instanceof TabSetNode) builder.addDivider().add('close')
+			else if (!toolRegion && node instanceof TabSetNode) builder.addDivider().add('close')
 			const items = builder.build()
 			if (items.length > 0)
 				setMenu({

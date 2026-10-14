@@ -21,6 +21,7 @@ type UsePluginSelectionControllerArgs = {
 	controlledSelectedIds?: string[]
 	onSelectedIdsChange?: (ids: string[]) => void
 	visibleGroups: GroupConfig[]
+	collapsedGroups?: Record<string, boolean>
 	ungroupedDisplayOrder: string[]
 	onMoveSelection: () => void
 	onMoveToUngrouped: () => void
@@ -34,6 +35,7 @@ export function usePluginSelectionController({
 	controlledSelectedIds,
 	onSelectedIdsChange,
 	visibleGroups,
+	collapsedGroups,
 	ungroupedDisplayOrder,
 	onMoveSelection,
 	onMoveToUngrouped,
@@ -75,15 +77,19 @@ export function usePluginSelectionController({
 		return new Set<string>()
 	}, [activeId, activeIds])
 
+	const expandedGroups = useMemo(
+		() => visibleGroups.filter((group) => !collapsedGroups?.[group.groupId]),
+		[visibleGroups, collapsedGroups],
+	)
 	const visibleLinearIds = useMemo(() => {
 		const next = [...ungroupedDisplayOrder]
-		for (const group of visibleGroups) next.push(...group.pluginIds)
+		for (const group of expandedGroups) next.push(...group.pluginIds)
 		return next
-	}, [ungroupedDisplayOrder, visibleGroups])
+	}, [ungroupedDisplayOrder, expandedGroups])
 
 	const selectionContainers = useMemo(
-		() => buildContainers(visibleGroups, ungroupedDisplayOrder),
-		[ungroupedDisplayOrder, visibleGroups],
+		() => buildContainers(expandedGroups, ungroupedDisplayOrder),
+		[ungroupedDisplayOrder, expandedGroups],
 	)
 
 	useEffect(() => {
@@ -139,7 +145,7 @@ export function usePluginSelectionController({
 					const range = event.shiftKey && lastSelectedRef.current
 					let next = prev
 
-					if (mode === 'toggle') {
+					if (mode === 'toggle' && !range) {
 						next = prev.includes(pluginId)
 							? prev.filter((id) => id !== pluginId)
 							: [...prev, pluginId]

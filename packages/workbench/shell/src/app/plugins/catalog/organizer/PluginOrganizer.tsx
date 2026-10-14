@@ -1,10 +1,11 @@
+import { CatalogTooltip } from '../components/CatalogTooltip'
 /** Plugin catalog layout, selection, filtering and drag-and-drop organization. */
 
 import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { closestCorners, DndContext, DragOverlay, MeasuringStrategy } from '@dnd-kit/core'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ActionIcon, Badge, Box, Card, ScrollArea, Stack, Text, Tooltip } from '@mantine/core'
+import { ActionIcon, Badge, Box, Card, ScrollArea, Stack, Text } from '@mantine/core'
 import { IconArrowsShuffle, IconFolderMinus, IconFolders } from '@tabler/icons-react'
 import {
 	useCallback,
@@ -374,6 +375,7 @@ export function PluginOrganizer({
 		controlledSelectedIds,
 		onSelectedIdsChange,
 		visibleGroups: showFlatResults ? [] : visibleGroups,
+		collapsedGroups: collapsed,
 		ungroupedDisplayOrder: showFlatResults ? flatVisibleIds : ungroupedDisplayOrder,
 		onMoveSelection: () => setPlacementModalOpen(true),
 		onMoveToUngrouped: () => moveSelectedPlugins('ROOT_UNGROUPED'),
@@ -472,11 +474,10 @@ export function PluginOrganizer({
 			>
 				{/* 默认显示未分组；无分组时即为完整插件列表。 */}
 				<Card
-					className="plx-theme-panel plx-pluginCatalog__sectionCard"
-					withBorder
+					className="plx-pluginCatalog__sectionCard"
 					shadow="none"
 					radius="sm"
-					p={4}
+					p={0}
 					style={{
 						minWidth: 0,
 						minHeight: 0,
@@ -504,7 +505,7 @@ export function PluginOrganizer({
 							</Text>
 						</div>
 						<Box className="plx-pluginCatalog__sectionActions">
-							<Tooltip label="编辑分组" withinPortal>
+							<CatalogTooltip label="编辑分组" withinPortal>
 								<ActionIcon
 									aria-label="编辑分组"
 									size="sm"
@@ -514,10 +515,10 @@ export function PluginOrganizer({
 								>
 									<IconFolders size={14} />
 								</ActionIcon>
-							</Tooltip>
+							</CatalogTooltip>
 							{selectedCount > 0 ? (
 								<>
-									<Tooltip label="移动到其他分组" withinPortal withArrow openDelay={200}>
+									<CatalogTooltip label="移动到其他分组" withinPortal withArrow>
 										<ActionIcon
 											size="sm"
 											variant="light"
@@ -527,8 +528,8 @@ export function PluginOrganizer({
 										>
 											<IconArrowsShuffle size={14} />
 										</ActionIcon>
-									</Tooltip>
-									<Tooltip label="移回未分组" withinPortal withArrow openDelay={200}>
+									</CatalogTooltip>
+									<CatalogTooltip label="移回未分组" withinPortal withArrow>
 										<ActionIcon
 											size="sm"
 											variant="light"
@@ -538,7 +539,7 @@ export function PluginOrganizer({
 										>
 											<IconFolderMinus size={14} />
 										</ActionIcon>
-									</Tooltip>
+									</CatalogTooltip>
 								</>
 							) : null}
 						</Box>
@@ -613,11 +614,10 @@ export function PluginOrganizer({
 				{/* 分类只在可编辑且实际存在时占用空间。 */}
 				{groups.length > 0 && !showFlatResults ? (
 					<Card
-						className="plx-theme-panel plx-pluginCatalog__sectionCard"
-						withBorder
+						className="plx-pluginCatalog__sectionCard"
 						shadow="none"
 						radius="sm"
-						p={4}
+						p={0}
 						style={{
 							minHeight: 0,
 							minWidth: 0,

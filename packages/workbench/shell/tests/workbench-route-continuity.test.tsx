@@ -34,11 +34,12 @@ const probes = vi.hoisted(() => ({
 const mounted: Root[] = []
 const sessions: WorkspaceSession[] = []
 
+vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
 vi.mock('../src/app/router/screens/HomeScreen', () => ({ HomeScreen: Page }))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({ LiveLog: Page }))
+vi.mock('../src/app/log_viewer/LogsPage', () => ({ LogsPage: Page }))
 vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: Page }))
-vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({
-	WorkspaceNavigation: () => <input aria-label="入口搜索" />,
+vi.mock('../src/app/plugins/catalog/PluginCatalog', () => ({
+	PluginCatalog: () => <input aria-label="入口搜索" />,
 }))
 vi.mock('../src/workbench/runtime', async (importOriginal) => ({
 	...(await importOriginal<typeof import('../src/workbench/runtime')>()),

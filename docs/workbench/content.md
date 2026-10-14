@@ -137,6 +137,6 @@ undefined-producing wrapper 或 password；action input 必须是 host form 支�
 
 ## 检查结果
 
-运行应用，打开插件详情的 Overview 标签。应看到状态和 Refresh 按钮；点击后状态会重新读取。
-如果标签缺失，检查宿主已开启 Workbench、Plugin 已运行，并且 `publish()` 的 key 与声明一致。
+运行应用，从“应用”目录打开插件的 Overview 入口。应看到状态和 Refresh 按钮；点击后状态会重新读取。
+如果入口缺失，检查宿主已开启 Workbench、Plugin 已运行，并且 `publish()` 的 key 与声明一致。
 Markdown 的错误 slot、重复 slot 或不支持的内容应在构建时修正。

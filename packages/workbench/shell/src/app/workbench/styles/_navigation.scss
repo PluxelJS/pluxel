@@ -8,10 +8,6 @@
 	flex: 1;
 	min-width: 0;
 }
-.plx-workspace-navigation__manage {
-	flex: 0 0 auto;
-	padding-inline: 4px;
-}
 .plx-workspace-navigation__group {
 	min-width: 0;
 }
@@ -38,7 +34,7 @@
 	cursor: pointer;
 }
 .plx-workspace-navigation__group-heading:hover {
-	background: var(--mantine-color-default-hover);
+	background: var(--plx-hover-bg);
 }
 .plx-workspace-navigation__group-heading:focus-visible {
 	outline: 2px solid var(--mantine-primary-color-filled);
@@ -106,7 +102,7 @@
 	gap: 0;
 }
 
-.plx-plugin-region {
+.plx-workspace .plx-plugin-region {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
@@ -123,15 +119,13 @@
 	padding: 8px 10px;
 	font-size: 12px;
 }
-.plx-plugin-region__content {
+.plx-plugin-region > .plx-plugin-region__content {
 	flex: 1;
 	min-height: 0;
 	overflow: hidden;
 }
 .plx-plugin-region__extension {
 	overflow: auto;
-}
-.plx-plugin-region__extension {
 	container-type: inline-size;
 
 	.plx-workbenchContent > .plx-documentOutline {

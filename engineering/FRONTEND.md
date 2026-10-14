@@ -3,7 +3,15 @@
 Workbench frontend 是一个固定 Shell，既能直接渲染 Content，也能按需加载完整 Plugin applications。业务 HTTP 与 Workbench 正交；
 Workbench 不得成为 Plugin 核心能力的启动前提。
 
-修改连接读[一个 document，一条 session](#一个-document一条-session)；修改缓存读[三类前端状态](#三类前端状态)；修改打开/关闭读 [Layout 和 entry activation](#layout-和-entry-activation)；修改布局与路由读[原生工作区与文档路由](#原生工作区与文档路由)。异步和 StrictMode 变更都需核对 [React state correctness](#react-state-correctness)。
+本页维护 Shell 状态、文档身份和资源所有权。交互取舍先读 [Workbench 设计规则](WORKBENCH_DESIGN.md)，操作说明见[工作台使用与排查](../docs/workbench/operations.md)，按风险选择回归见[验收指南](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。
+
+| 本次修改                       | 先定位                                                                                 |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| 登录、连接、session 撤回       | [一个 document，一条 session](#一个-document一条-session)                              |
+| 缓存、mutation、订阅           | [三类前端状态](#三类前端状态)、[React state correctness](#react-state-correctness)     |
+| Content/MF 打开与清理          | [Layout 和 entry activation](#layout-和-entry-activation)、[Host facade](#host-facade) |
+| 标签、导航、布局恢复           | [原生工作区与文档路由](#原生工作区与文档路由)                                          |
+| 插件目录、侧栏、日志、配置目录 | [内置编辑器滚动与目录](#内置编辑器滚动与目录)                                          |
 
 ## 固定边界
 
@@ -106,44 +114,37 @@ Remote 只得到固定 appearance、feedback、受限 relative navigation、docu
 
 ## 原生工作区与文档路由
 
-已认证 browser document 持有一个 `WorkspaceSession`，Shell 借用其中的 Worksplit 实例。一个 FlexLayout Model 是标签、TabSet、
-TabGroup、Border、顺序、pin、分隔线和最大化的唯一事实来源；Worksplit 拥有文档身份、独立 Router/history、复用、MRU 和关闭协调。
-业务 dirty、revision、draft 和保存结果属于具体文档。没有另一个 tabs/grid store，也不把只读投影反向同步到 Model。
+### 一个布局所有者
 
-每个文档通过 `createAppRouter({ history })` 消费同一份生成的 route tree，history 由 Worksplit 提供且仅在内存中记录。
-route tree 只渲染内容，不创建递归 Shell；Management、Product、Mantine 和 session providers 位于文档 Router 之外。
-工作区浏览器地址只由 Worksplit 的 `connectBrowser()` 写入，固定工具获得焦点时保留活动文档 URL。
-文档地址取自 TanStack 的 `publicHref`，包含实际 UI basepath；路由匹配仍使用 Router 的内部路径。
-Shell 导航把内部路径、解析后的 search 与 hash 交给 Worksplit 的 TanStack `open()`；公开 href 留给浏览器导航，不能再作为 `to` 重复添加 basepath。
-恢复后的惰性文档也用同一 Router parser 识别身份，不能按公开 URL 手工剥离 basepath 或拼接第二份路径。
-`frame: standalone` 从页面入口分流，用完整页面导航跨越工作区边界；它的 browser Router 不与工作区 history 同时运行。
+已认证 browser document 持有一个 `WorkspaceSession`；这里的 browser document 不等于工作区标签。Shell 借用 session 中的 Worksplit 实例。FlexLayout Model 是标签、TabSet、TabGroup、Border、顺序、pin、尺寸和最大化的唯一事实来源；Worksplit 拥有文档身份、独立 Router/history、MRU、复用和关闭协调。业务 dirty、revision、draft 和保存结果属于具体文档。禁止第二套 tabs/grid store 或将只读投影反向同步回 Model。
 
-普通入口按 Worksplit 身份规则复用已有文档；容器标签栏的“+”打开统一入口选择器，在发起容器中创建新文档，产生独立 Router 和 opened owner。入口列表不提供逐项副本按钮。插件的 `tab()` publication 从详情页打开为
-独立文档，URL 用 canonical descriptor key 标识入口；publication group 是业务导航分类，与原生 TabGroup 不共享状态。
-新文档的默认名称只从完整 committed publication 读取 tab label/key、相同 canonical owner 的 displayName 或 compiled route title，
-不能借用其他 fork 或未发布 owner 的名称。首次 start 和普通打开使用同一只读选择；复用、恢复和已提交的 Host/F2 名称以原生 Model 为准，不重新投影覆盖。
-跨 TabSet/Border 移动、pin、分组、折叠和最大化保留内容实例；真正关闭或 route 替换才进入原有 activation cleanup。
+每个文档用 `createAppRouter({ history })` 消费同一生成 route tree，history 由 Worksplit 提供并在内存中保存。路由只渲染内容，不递归创建 Shell；Management、Product、Mantine 和 session providers 位于文档 Router 之外。`connectBrowser()` 是工作区浏览器地址的唯一写入者，固定工具取得焦点不改变活动文档 URL。
 
-原生 `onContextMenu` 和 `onShowOverflowMenu` 由 Shell 呈现，菜单保留 React Provider ancestry，并通过 `workbench.dispatch()`
-提交原生 Actions、检查实际回执。Native builder 的批量可见标签操作不包含折叠组的隐藏成员；文案明确范围。
-完整容器关闭和纯删除 Action group 由 Worksplit 一次预检内容守卫，守卫拒绝时不逐个删除。输入、菜单状态和主题属于 Shell 局部状态。
+### 导航与身份
 
-布局持久化保存 Worksplit snapshot，包括原生 Model 和文档恢复信息，不保存 RPC handle、Router、业务 draft 或服务对象。
-恢复仍需验证 workspace、结构与实际 publication/权限；坏快照保留现场，修复或重置必须显式执行。
-已保存的原生节点必须包含明确的 `type` 和容器 `children`，不能把缺损快照交给 Model 补齐为默认布局；
-只有代码中的初始 `layout` 可以采用原生可选字段的缺省值。
-本次导航与工具布局改版使用版本 4 存储 key，旧布局不读取，首次进入使用当前默认布局；未提交草稿从未进入快照，也不迁移。
-没有兼容 reader、启动补齐工具节点、双读或两种格式双写；当前版本快照仍按原结构校验，不能借版本升级掩盖损坏输入。
-存储不可用不阻塞打开和编辑，但须提供可发现的错误反馈。恢复后台标签不会立即为所有插件发起 open RPC。
+- 普通 Shell 入口交给活动文档注册的 Router 导航，经过离开确认；没有活动文档才创建文档。标签外的“+”复制当前已提交地址，在源标签后创建独立 Router 和 opened owner，不复制草稿。
+- 内部 `to`、解析后的 search/hash 与浏览器公开 href 分开。文档地址取 TanStack `publicHref`；不能把带 basepath 的 href 再作为 `to`。恢复的惰性文档也使用同一 Router parser。
+- `frame: standalone` 使用完整页面导航跨越工作区边界；它的 browser Router 与工作区 history 不同时运行。站外链接、下载、修饰键和新窗口行为交给浏览器。
+- Publication 文档身份使用 canonical descriptor key，publication group 仅组织业务入口，与原生 TabGroup 无关。标题来源是 committed publication、相同 canonical owner 的 displayName 或 compiled route title；不得借用其他 fork 或未发布 owner 的名称。插件配置页完成详情读取后更新为实际插件名。
+- 原生 Model 拥有已提交的名称，复用和恢复不重新投影默认名称。Host/F2 标题更新检查 Action 回执，撤销遵守 [Host facade](#host-facade) 的借用边界。
 
-`WorkspaceSnapshotStorage` 使用 `pluxel:worksplit:4:${uiBasePath}` key，按当前浏览器 origin 与 UI basepath 隔离布局。
-连续变化合并写入，`pagehide`、页面隐藏与 teardown 补写待保存快照；序列化结果相同不重复写盘。
-快照读取/结构校验失败不会写回默认值；显式恢复默认布局先请求关闭文档，解除固定与关闭保护后才写入默认快照并完整导航。
-这些行为不保证强制终止浏览器或存储故障时的数据持久性。
+中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例；真正关闭或替换路由才清理原 activation。单文档 Router 错误只影响该文档，允许重试，不卸载全局 Shell。
 
-Remote 不 import Worksplit、Shell router 或布局 store。Renderer 内容使用普通 CSS Flex/Grid、Mantine 组件和容器响应式布局；
-独立停靠页面通过 publication 声明。公开 Bridge 不传入宿主布局 renderer，内容局部布局不再建立独立宿主分区协议。
-站外链接、下载、修饰键和新窗口行为交给浏览器。单个文档错误由其 Router 边界显示并允许重试，不卸载其他文档或全局 Shell。
+### 动作与关闭
+
+Shell 呈现原生 `onContextMenu` / `onShowOverflowMenu`，保留 React Provider ancestry，通过 `workbench.dispatch()` 提交 Actions 并检查实际回执。可见标签的批量操作不包含折叠组隐藏成员，文案必须准确表达范围。完整容器关闭与纯删除 Action group 由 Worksplit 一次预检全部内容守卫；拒绝时不逐个删除。已成功的业务保存不因后续拒绝而回滚。
+
+工具区域的位置和可达性由 `session.tsx` 约束，见下一节；文档不得移动到工具 Border，菜单和分组操作也不能绕过限制。
+
+### 持久化与恢复
+
+`WorkspaceSnapshotStorage` 保存 Worksplit snapshot：原生 Model 和文档恢复信息。RPC handle、Router、业务 draft、dirty 和服务对象不进入快照。存储 key 的版本由 `snapshot.ts` 的 `workspaceStorageKey()` 定义，并由浏览器 origin 与 UI basepath 隔离；只读当前版本，不双读、双写或运行时迁移旧布局。
+
+恢复验证 workspace、结构与实际 publication/权限。已保存节点要求明确 `type` 和容器 `children`；不能让 Model 将损坏数据补齐为默认布局。只有源码初始 layout 可以使用原生缺省字段。坏快照保留现场，由用户显式修复或重置；后台恢复的文档惰性打开，不同时发起所有插件的 open RPC。
+
+连续变化合并写入，`pagehide`、页面隐藏和 teardown 补写；相同序列化结果不重复写盘。读取或结构校验失败不写回默认值。显式恢复默认布局先协调文档关闭与 pin/关闭保护，再写默认快照并完整导航。存储失败需可发现地报告，但不能阻塞普通打开和编辑；不保证浏览器强制终止或存储故障时的持久性。
+
+Remote 不 import Worksplit、Shell router、布局 store 或宿主私有 Provider。内容使用 CSS Flex/Grid、Mantine 和容器响应式布局，独立页面通过 publication 声明，不再建立第二套宿主分区协议。
 
 ## Module Federation policy
 
@@ -151,32 +152,57 @@ Remote 不 import Worksplit、Shell router 或布局 store。Renderer 内容使�
 
 ## 内置编辑器滚动与目录
 
-插件详情文档拥有配置编辑器，publication 页面从入口按钮进入独立工作区文档。
-官方 ActivityRail 独立于可收起的工具边栏，只展示官方入口；“应用”打开 `/apps` 聚合页，“插件管理”打开 `/plugins` 并显示插件目录。应用与插件管理分别使用 `apps`、`plugins` workspace，高亮不按 owner 混为同一类。`/apps` 聚合页本身不注册插件 workspace。官方项目表由
-`navigationItems.ts` 维护，ActivityRail 和全局查找共享。图标／文字模式保存在 `border_left.config.navigationMode`，
-默认 `icons`，另一取值是 `labels`；通过原生 Action 更新并随 Model 持久化，不创建独立导航 store。
-左 Border 只注册一个 `navigation` 工具；插件管理提供插件目录，业务应用只显示当前 owner 的左侧扩展，没有扩展时不占位。
-所选内置工具或面板存放在 `border_left.config.navigationView`，通过区域横向标签切换；不把全局应用目录塞进每个业务应用的侧栏。
-左 Border 仅含 navigation 时隐藏冗余原生标签条；文档迁入后恢复显示原生标签条，不影响原生选择或停靠。
-右 Border 为默认隐藏的插件信息。默认 Model 没有插件日志节点；底部 Border 为空且隐藏，仅供收起日志时暂存节点。
-首次点击日志按钮时将 `plugin-logs` 作为原生 TabSet 添加到中央根 Row 底部，宽度限于中央文档区。
-顶部日志按钮收起时将同一节点移入隐藏 Border，原位置和必要的布局恢复信息存于节点 config，随 Model 持久化；
-再次显示时恢复原可用容器；原容器被原生 tidy 移除时依据仍存在的邻区重建分割，原位置及邻区均失效才回到中央根 Row 底部。原生关闭标签才删除工具节点，不能删除同容器中的其他文档。
-`WorkspaceNavigation` 的 `plugins`、`publications`、`all` 分别承担目录、常用发布入口和全量查找；
-应用目录使用全局 route layout，只列出带显式 navigation 的 route，并使用 navigation.label、publication group 与 canonical owner 组织；target layout 的 tab placement 仍是所属插件的文档入口，不能假定全局 layout 包含它们。
-目录高亮匹配 canonical plugin route；页面高亮同时匹配 owner 与精确 entry key，不能将同一插件的全部页面标记为当前页。
-左右侧栏、中央日志 TabSet 与文档使用同一原生 Model；顶部居中按钮通过原生 Action 操作，左右侧栏恢复收起前的 selected 标签，不另存布局状态。
-已渲染的插件详情／声明路由将 canonical owner 登记在所属 `WorkbenchDocumentState`；插件信息和日志工具只读取 Worksplit 活动文档的 owner，
-不从浏览器地址猜测、不引入全局可写的“当前插件”。非插件文档没有 owner 时显示选择提示。
-工具可见性从原生 Model 的选中状态、Border 显示状态与 TabSet 最大化状态派生；停靠在另一最大化容器之外也视为隐藏。
-隐藏时卸载工具的读取和日志订阅，文档草稿保留。
-插件通过 `workbench.panel()` 发布区域扩展，各区域在同一工具容器内使用横向标签选择内置工具或 publication。
-可见 panel entries 由当前活动文档的 canonical owner 与 placement.region 派生，Attachment 匹配 consumer target.node，不能按 provider、displayName 或浏览器 URL 猜测。
-面板打开沿用 `WorkbenchEntryView` 的 Content/MF activation；不改变文档 Router/history，也不把 panel 注册成独立文档。面板只有 owner 上下文，不接受活动文档的实体或路由参数；同 owner 的机器人／会话切换不代表面板实体上下文切换，实体编辑与草稿仍归中心文档。
-区域隐藏、选择另一面板或 owner 变化时卸载原 activation，释放 opened handle/Bridge/observer；再次显示 fresh open，不承诺面板草稿保存。
-面板选择按 owner 与 descriptor key 标识；左侧使用 Border config.navigationView，右侧与底部使用工具节点 config.panelView 随 Model 保存。每区域只存当前选择，owner 不匹配时回到该区域可用的默认工具或面板，不维护每插件的独立偏好表，也不创建第二布局树；公开作者契约见 [上下文面板](../docs/workbench/panels.md)。
-FormToc 与 ContentOutline 只读取对应文档内的 config anchors / Markdown headings，不扫描其他编辑器或 federated renderer DOM。
-目录是否可用由实际 anchors 决定，不靠 scrollHeight，也没有跨文档目录 claim 或右侧 portal registry。
+### 导航和目录
+
+官方 ActivityRail 始终独立于可收起工具区，只展示 `navigationItems.ts` 中的官方入口，并与全局查找共享入口来源。`/apps` 聚合显式 navigation 的业务 route，使用 navigation label、publication group 和 canonical owner 组织；`/plugins` 进入管理工作区。业务入口与插件管理不按 owner 混为一类，`/apps` 聚合页本身不登记插件 owner。
+
+`PluginNavigation` 在管理工作区呈现唯一 `PluginCatalog`，沿用分组、DnD、多选和管理持久化；中央索引只提供选择提示，不再渲染第二个目录。全局 `WorkspaceNavigation` 是入口查找投影，不拥有管理目录状态。目录高亮比较 canonical plugin route；业务页面高亮同时比较 owner 和精确 entry key。
+
+### 区域与可见性
+
+| 区域            | 官方工具                                          | 插件扩展                                                 |
+| --------------- | ------------------------------------------------- | -------------------------------------------------------- |
+| `border_left`   | `navigation` 提供目录，默认仅在插件管理展开       | 当前 owner 已打开的 left 面板，独立原生标签              |
+| `border_right`  | `plugin-inspector` 内部只含“插件信息”与“最近日志” | 当前 owner 已打开的 right 面板，与官方工具分开的原生标签 |
+| `border_bottom` | 无                                                | 当前 owner 已打开的 bottom 面板                          |
+
+中央 TabSet 仅承载文档。官方工具固定且不能关闭或拖动；插件面板可关闭并在声明 region 内排序，不跨 Border、不进入中央。`session.tsx` 的放置策略校验所有动作入口，菜单和分组也不能绕过。左边只有官方目录时隐藏冗余原生标签条，有插件面板时保留原生标签条。
+
+`show` 表达区域是否有适用内容，`selected: -1` 表达用户收起偏好。收起仍保留已打开标签，关闭才移除插件面板节点；不能根据声明同步时把用户关闭的面板重新添加。图标/文字模式由左 Border config 保存，官方工具内部选择与插件原生标签选择分开。
+
+### 插件上下文与面板资源
+
+已渲染的详情/声明路由将 canonical owner 登记到所属 `WorkbenchDocumentState`。面板上下文只读取 Worksplit 活动文档 owner，不从浏览器 URL、displayName 或 provider 猜测。Attachment 匹配 consumer `target.node`；作者声明仍使用原有 `workbench.panel()`，见[上下文面板](../docs/workbench/panels.md)。
+
+`PluginPanelDirectory.tsx` 拥有当前 owner 的面板发现与可用性投影，官方信息扩展列表和 `WorkspaceNavigation` 共用它，并通过 `WorkspaceSession.openPanel(entry)` 打开；声明解析、排序、可用性与打开路径不能各写一套。面板默认按需打开，identity 使用 canonical owner 与 descriptor key，重复打开揭示已有原生节点而不创建副本。停止插件的入口不能标成可打开；已保存但声明撤回的节点显示不可用并允许关闭。
+
+`panelTabs.tsx` 定义面板 identity、原生节点与当前声明 activation；`session.tsx` 协调打开、区域策略和 owner 切换。每个 owner 保留其未关闭原生面板的布局。活动节点由 Model 拥有，非活动 owner 布局存于 Border config 的 UI archive。切换 owner 时卸载旧 activation，保存旧 owner 布局并恢复新 owner 的未关闭标签；用户关闭从该布局移除，切回或刷新不能再次自动出现。snapshot 只保存 canonical owner、entry key、region 与 UI 属性，不保存 LayoutEntry、renderer、RPC handle 或旧 producer。恢复 activation 必须重新匹配当前 committed declaration，不能把保存节点当作权限或 publication authority。
+
+面板沿用 `WorkbenchEntryView` 的 Content/MF activation，不创建文档 Router/history。上下文只有 Plugin owner，不自动传入当前 bot/会话等实体参数，也不获得中心文档的 `host.document`；实体编辑与草稿归中央文档。原生 Border 的 show、selected 和 owner 决定可见性；隐藏、切换面板、关闭或 owner 变化时释放 opened handle、Bridge 与 observer，再次显示 fresh open。布局恢复不承诺面板草稿保留。
+
+### 日志读取与展示
+
+右侧官方“插件面板”内部的“最近日志”与“插件信息”切换，插件扩展不进入这组内部标签。它拥有当前 owner 的最近 10 条日志；标题、策略和完整页入口固定，仅记录区域滚动。切换标签、收起右侧或 owner 变化时释放订阅。完整日志使用独立 `/logs?plugin=…` 文档，`plugin` 是 canonical reference，保留 fork 身份；显式打开不替换原配置文档。日志文档筛选由其路由拥有，不跟随后来激活的其他插件；`router/logsSearch.ts` 拒绝非法引用，不能静默退回全局日志。
+
+日志实现位于 `app/log_viewer/`，按资源、展示和页面组合分层：
+
+| 所有者                              | 责任                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `useLogStream` / `logStreamStore`   | 每个读取实例独立订阅与有界缓存；先订阅后读取、epoch 切换隔离、seq 排序去重与缺口恢复；清理后晚到结果不能回写 |
+| `LogRow` / `LogList` / `LogDetails` | 行格式、虚拟化列表和详情/复制；只消费记录和回调，不创建订阅、定义路由或强制停靠宽度                          |
+| `LogPreview`                        | 组合当前插件最近 10 条的读取与紧凑呈现，不携带完整页筛选和详情布局                                           |
+| `LogsPage` / `LogFilters`           | 组合完整阅读、筛选、跟随与按需详情；筛选表单只拥有未应用草稿，路由拥有已应用条件                             |
+| `LogPolicyPopover`                  | 右侧最近日志标题后、完整插件日志页标题后共用的策略入口；消费共享 Management Query cache                      |
+
+缓存和等待绘制的增量都必须有界，不能只有可见列表有限。reset/clear、筛选变化和卸载分别撤销旧读取的提交资格；同一 seq 只能在所属 epoch 中解释。界面区分初次读取、实时接收、空结果与错误，重试重新打开当前读取，不新建 transport。清空仅清理当前读取实例的显示缓存，不删除服务端日志。
+
+策略写入与日志订阅使用各自的管理协议。策略 mutation 按 session 串行，执行时读取共享 revision；写入前与成功提交 cache 前取消旧查询，避免不可取消 RPC 的晚到 GET 覆盖新策略。失败先取消旧读取，再执行权威 readback，不用本地乐观值伪装写入成功。
+
+### 文档内编辑和滚动
+
+配置编辑器由插件详情文档拥有。`FormToc` 与 `ContentOutline` 只读取本实例 config anchors / Markdown headings，不扫描其他编辑器或 federated DOM。目录可用性依据实际 anchors，不依据 scrollHeight；没有跨文档目录 claim 或右侧 portal registry。配置目录在编辑器内按需展开，滚动容器必须受所属文档尺寸约束。
+
+配置提交、baseline 和晚到结果约束见[配置实现入口](../packages/workbench/shell/src/app/plugins/config/README.md)。交互取舍见 [Workbench 设计](WORKBENCH_DESIGN.md)，视觉状态与密度见[视觉规则](../packages/workbench/shell/color-design.md)。
 
 ## React state correctness
 
@@ -221,4 +247,4 @@ Shell 测试位于 `packages/workbench/shell/`，client/resource 测试位于 `p
 
 浏览器回归验证真实 session epoch/full reload、MF/React root 隔离、单一 browser history 所有者、多个独立文档 Router、布局持久化、原生菜单/拖拽/分组/焦点与窄窗口可达性。只改纯状态算法时用所属状态模块测试；真实连接、Bridge/CSS 或资源泄漏不能以纯状态测试代替。
 
-本次原生工作区迁移的测试映射、真实浏览器与在线回执、库阻塞修复和未验证范围见 [FlexLayout 验收记录](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。该记录描述对应轮次的证据，不另定义当前 API。
+按改动选择测试与真实浏览器场景见 [Workbench 验收指南](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。测试入口描述保护范围，既往通过结果不能代替本次变更验证。

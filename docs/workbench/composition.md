@@ -63,7 +63,7 @@ this.ctx.workbench?.publish(HttpWorkbench, {
 `consumer.node` 只是 server-issued identity。Provider 可以用它查找自己已经拥有的 per-consumer state，但不能
 取得 consumer instance、Context、config 或任意 dependency facade。
 
-最后在使用方通过 `place()` 选择标签页位置，并传入构造器注入的 provider。下面是使用方的关键代码；`HttpPlugin` 从提供方包根入口导入：
+最后在使用方通过 `place()` 声明页面入口，并传入构造器注入的 provider。下面是使用方的关键代码；`HttpPlugin` 从提供方包根入口导入：
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -115,9 +115,9 @@ export default settingsScope.render(HttpSettingsPanel)
 这条路径只有一个 renderer 和一个 provider API。Consumer 不实现转发 target，不复制 provider 的 UI，也不把
 设置 state 搬到 Workbench。
 
-打开使用方插件的详情，应出现 HTTP 标签，内容来自提供方的 renderer。停止使用方会移除这个位置，
+从“应用”目录打开使用方的 HTTP 入口，内容应来自提供方的 renderer。停止使用方会移除这个位置，
 但不删除提供方的设置；关闭 Workbench 后，服务端构造器依赖仍应可用。
-如果标签缺失，检查双方已经运行、提供方已发布 Attachment、使用方的 binding key 与 `.place()` 声明相符。
+如果入口缺失，检查双方已经运行、提供方已发布 Attachment、使用方的 binding key 与 `.place()` 声明相符。
 
 ## 官方 FontsPlugin：先用 provider-only
 
@@ -220,6 +220,23 @@ export default collectionPickerScope.render(FontCollectionPicker)
 
 Provider root 不代理 consumer selection，consumer root 也不转发 catalog。两个 target 各自保留 owner admission 与
 cleanup；任一 owner withdrawal 都会使当前 opened Attachment 和 socket epoch 失效，但错误来源和清理责任仍保持清楚。
+
+## 多个插件共用一个业务列表
+
+多个来源共同提供机器人、连接或账号时，先由一个业务插件拥有集合与查询 API，再由来源插件注册领域数据与操作。
+工作台只打开聚合插件的一套页面。这样用户按业务对象工作，不需要在每个来源插件的管理页之间切换。
+
+这与 Attachment 是两个问题：聚合集合由领域 API 完成；确有 provider 自有设置或选择器需要复用时，再使用 Attachment。
+不要让浏览器枚举任意插件 API、拼接不同页面的缓存，或把每条记录发布为一个入口。
+
+工作区的 `projects/plugin-host/src/bot-lab/` 是使用真实 Workbench API 的模拟示例：
+
+- `BotWorkspacePlugin` 发布一个业务入口、参数化机器人文档和三个上下文面板。
+- Telegram、Discord、企业微信来源插件通过构造器依赖注册各自数据；停止时释放注册。
+- 列表使用来源与实体 ID 区分对象；修改通过聚合 API 返回冲突、来源不可用等领域结果。
+- 来源停止时，业务工作区仍存在，保留最后已知数据并显示不可用；不把来源停止当作整个页面 owner 撤回。
+
+示例没有外部平台连接。它演示页面、来源和数据的所有权，实际产品仍需自己的权限、持久化和输入校验。
 
 ## 动态数据与生命周期
 

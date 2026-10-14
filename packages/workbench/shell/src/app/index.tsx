@@ -161,16 +161,41 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 				else location.assign(href)
 				return
 			}
-			const activeGroup = Model.fromJson(workspace.workbench.getLayout()).getActiveTabset()
+			const active = workspace.workbench.getActiveDocument()
+			if (!newInstance && active) {
+				const navigate = workspace.documents.get(active.id)?.navigate
+				if (!navigate) {
+					workspace.report(new Error('当前标签页正在准备，请稍后重试'))
+					return
+				}
+				const previous = new URL(active.href, location.origin)
+				const destination = new URL(publicHref, location.origin)
+				const changedPage =
+					previous.pathname !== destination.pathname ||
+					previous.searchParams.get('entry') !== destination.searchParams.get('entry')
+				void navigate({
+					to: path,
+					search: defaultParseSearch(url.search),
+					hash: url.hash.slice(1),
+				})
+					.then(async () => {
+						const current = workspace.workbench.getDocument(active.id)
+						if (!changedPage || current?.href !== publicHref) return
+						const title = defaultDocumentTitle(publication.current, destination, basepath)
+						if (title)
+							workspace.check(
+								await workspace.workbench.dispatch(
+									Actions.updateNodeAttributes(active.id, { name: title }),
+								),
+							)
+					})
+					.catch((cause: unknown) => workspace.report(cause))
+				return
+			}
 			const anchor = presentation?.afterDocumentId
 				? workspace.workbench.getDocument(presentation.afterDocumentId)
 				: undefined
-			// Log focus retains the document owner; opening a page continues in that document's group.
-			const target =
-				anchor?.containerId ??
-				(activeGroup?.getSelectedNode()?.getId() === 'plugin-logs'
-					? workspace.workbench.getActiveDocument()?.containerId
-					: undefined)
+			const target = anchor?.containerId
 			void workspace.workbench
 				.open(
 					{ to: path, search: defaultParseSearch(url.search), hash: url.hash.slice(1) },

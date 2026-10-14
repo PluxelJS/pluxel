@@ -13,11 +13,12 @@ import {
 	renderWorkspace,
 } from './helpers/native-workbench'
 
+vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
 vi.mock('../src/app/router/screens/HomeScreen', () => ({
 	HomeScreen: () => <input aria-label="文档输入" defaultValue="draft" />,
 }))
-vi.mock('../src/app/log_viewer/LiveLog', () => ({
-	LiveLog: () => <input aria-label="日志输入" defaultValue="draft" />,
+vi.mock('../src/app/log_viewer/LogsPage', () => ({
+	LogsPage: () => <input aria-label="日志输入" defaultValue="draft" />,
 }))
 vi.mock('../src/app/security/SecurityScreen', () => ({
 	SecurityScreen: () => <input aria-label="安全输入" defaultValue="draft" />,
@@ -145,7 +146,7 @@ describe('Pluxel native workspace menus', () => {
 					expect(session.workbench.getActiveDocument()).toMatchObject({
 						id: result.document.id,
 						href: '/logs?filter=error#tail',
-						title: '用户诊断名称（副本）',
+						title: '用户诊断名称',
 						preview: false,
 					}),
 				)
@@ -159,7 +160,7 @@ describe('Pluxel native workspace menus', () => {
 			const sourceNode = model.getNodeById(source) as TabNode
 			const copyNode = model.getNodeById(copy.id) as TabNode
 			expect(copyNode).toBeInstanceOf(TabNode)
-			expect(copyNode.getName()).toBe('用户诊断名称（副本）')
+			expect(copyNode.getName()).toBe('用户诊断名称')
 			expect(copyNode.getComponent()).toBe(sourceNode.getComponent())
 			expect(copyNode.isPinned()).toBe(false)
 			expect(copyNode.getParent()?.getId() === sourceNode.getParent()?.getId()).toBe(!split)

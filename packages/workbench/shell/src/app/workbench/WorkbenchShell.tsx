@@ -22,7 +22,6 @@ import {
 	IconDots,
 	IconFile,
 	IconInfoCircle,
-	IconTerminal2,
 	IconLayoutSidebarLeftExpand,
 	IconLayoutSidebarRight,
 	IconLayoutBottombar,
@@ -35,11 +34,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { ThemeCustomizer } from '../../theme'
 import { useNotificationCenter } from '../notifications/NotificationCenterProvider'
 import { useProduct } from '../product'
-import { WorkbenchNavigationProvider, useWorkbenchNavigation } from './context'
+import { useWorkbenchNavigation } from './context'
 import { ActivityRail } from './ActivityRail'
-import { pluginNodeAddressEqual } from '@pluxel/core'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
-import { navigationTab } from './session'
 import { useWorkspaceSession } from './workspaceContext'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 import { useNativeMenus } from './nativeMenus'
@@ -56,9 +53,7 @@ export function WorkbenchShell() {
 	const root = useRef<HTMLDivElement>(null)
 	const layoutRef = useRef<ILayoutApi>(null)
 	const [searchOpen, setSearchOpen] = useState(false)
-	const [newTabAnchor, setNewTabAnchor] = useState<string>()
 	const showSearch = useCallback(() => {
-		setNewTabAnchor(undefined)
 		setSearchOpen(true)
 	}, [])
 	const [helpOpen, setHelpOpen] = useState(false)
@@ -70,28 +65,19 @@ export function WorkbenchShell() {
 		session.workbench,
 		() => session.workbench.getEditingContext().activeGroupId,
 	)
+	const layoutRevision = useWorkbenchState(session.workbench, (state) => state.revision)
 	const borders = useWorkbenchState(session.workbench, () => session.workbench.getLayout().borders)
-	const logsVisible = useWorkbenchState(session.workbench, () =>
-		session.isToolVisible('plugin-logs'),
-	)
 	const unifiedNavigation =
-		borders
-			?.find((border) => border.location === 'left')
-			?.children?.every(function onlyNavigation(node): boolean {
-				return 'children' in node && node.children
-					? node.children.every(onlyNavigation)
-					: node.id === 'navigation'
-			}) ?? false
+		(session.workbench.getLayout().borders?.find((border) => border.location === 'left')?.children
+			?.length ?? 0) <= 1
+
 	const borderVisible = (side: string) => {
-		if (side === 'bottom') return logsVisible
 		const border = borders?.find((item) => item.location === side)
 		return !!border && border.show !== false && (border.selected ?? -1) >= 0
 	}
 	const toggleBorder = useCallback(
 		(side: 'left' | 'right' | 'bottom') => {
-			void (side === 'bottom' ? session.toggleLogs() : session.toggleBorder(side)).catch(
-				(error: unknown) => session.report(error),
-			)
+			void session.toggleBorder(side).catch((error: unknown) => session.report(error))
 		},
 		[session],
 	)
@@ -99,20 +85,13 @@ export function WorkbenchShell() {
 		session.subscribeContentState,
 		session.getContentRevision,
 	)
-	const activeWorkspace = session.activeWorkspace()
 	const owner = activeDocumentId ? session.documents.get(activeDocumentId)?.plugin : undefined
 	const ownerSnapshot = useWorkbenchTargetSnapshot(owner ?? null)
-	const hasLeftPanels =
-		!!owner &&
-		(ownerSnapshot.layout?.entries ?? []).some(
-			(entry) =>
-				entry.placement.kind === 'panel' &&
-				entry.placement.region === 'left' &&
-				pluginNodeAddressEqual(entry.target.node, owner),
-		)
 	useEffect(() => {
-		void session.syncWorkspacePanels(hasLeftPanels).catch((error: unknown) => session.report(error))
-	}, [activeDocumentId, contentRevision, hasLeftPanels, session])
+		void session
+			.syncWorkspacePanels(ownerSnapshot.layout?.entries ?? [])
+			.catch((error) => session.report(error))
+	}, [activeDocumentId, contentRevision, ownerSnapshot.layout, layoutRevision, session])
 	const storageError = useSyncExternalStore(session.storage.subscribe, session.storage.getSnapshot)
 	useEffect(() => {
 		layoutRef.current?.redraw()
@@ -132,7 +111,7 @@ export function WorkbenchShell() {
 	}, [])
 	const showNavigation = useCallback(() => {
 		void session
-			.showTool(navigationTab)
+			.showTool()
 			.then(() => {
 				if (session.activeWorkspace() !== 'plugins') navigation.navigate('/plugins')
 				return undefined
@@ -211,8 +190,6 @@ export function WorkbenchShell() {
 				values.leading =
 					node.getId() === 'navigation' ? (
 						<IconLayoutSidebarLeftExpand size={14} />
-					) : node.getId() === 'plugin-logs' ? (
-						<IconTerminal2 size={14} />
 					) : node.getId() === 'plugin-inspector' ? (
 						<IconInfoCircle size={14} />
 					) : (
@@ -222,16 +199,20 @@ export function WorkbenchShell() {
 					values.buttons.push(
 						<ActionIcon
 							key="new-document"
+							className="plx-workspace__after-tab"
 							size="xs"
 							variant="subtle"
-							aria-label="新建标签页"
-							title="新建标签页"
+							aria-label="复制当前标签页"
+							title="复制当前标签页"
 							onPointerDown={(event) => event.stopPropagation()}
 							onMouseDown={(event) => event.stopPropagation()}
 							onClick={(event) => {
 								event.stopPropagation()
-								setNewTabAnchor(node.getId())
-								setSearchOpen(true)
+								navigation.openTab({
+									path: document.href,
+									title: document.title,
+									afterDocumentId: document.id,
+								})
 							}}
 						>
 							<IconPlus size={14} />
@@ -262,7 +243,7 @@ export function WorkbenchShell() {
 		openConfirmModal({
 			title: '关闭所有文档',
 			children:
-				'将关闭全部文档，包括边栏与折叠分组中的文档；入口工具保持打开。固定或受保护文档会拒绝整批关闭，未保存更改仍需逐项决定。',
+				'将关闭全部文档，包括折叠分组中的文档。固定或受保护文档会阻止关闭；未保存更改仍需确认。',
 			labels: { confirm: '关闭所有文档', cancel: '保留工作区' },
 			confirmProps: { color: 'red' },
 			onConfirm: () => {
@@ -309,17 +290,8 @@ export function WorkbenchShell() {
 							</Button>
 						</Menu.Target>
 						<Menu.Dropdown>
-							<Menu.Label>{count} 个文档 · 原生停靠工作区</Menu.Label>
-							<Menu.Item
-								onClick={() => {
-									void session
-										.setNavigationView('plugins')
-										.then(showNavigation)
-										.catch((error: unknown) => session.report(error))
-								}}
-							>
-								显示插件目录
-							</Menu.Item>
+							<Menu.Label>{count} 个文档</Menu.Label>
+							<Menu.Item onClick={showNavigation}>显示插件目录</Menu.Item>
 							<Menu.Item onClick={() => navigation.navigate('/apps')}>显示应用目录</Menu.Item>
 							<Menu.Item
 								disabled={!count}
@@ -372,10 +344,7 @@ export function WorkbenchShell() {
 								variant={borderVisible(side) ? 'light' : 'subtle'}
 								aria-label={label}
 								aria-pressed={borderVisible(side)}
-								disabled={
-									!activeWorkspace ||
-									(side === 'left' && activeWorkspace === 'apps' && !hasLeftPanels)
-								}
+								disabled={!session.panelAvailable(side)}
 								onClick={() => toggleBorder(side)}
 							>
 								<Icon size={17} />
@@ -439,24 +408,16 @@ export function WorkbenchShell() {
 			<Modal
 				opened={searchOpen}
 				onClose={() => setSearchOpen(false)}
-				title={newTabAnchor ? '新建标签页' : '查找工作区入口'}
+				title="查找工作区入口"
 				size="lg"
 				centered
 			>
 				<div className="plx-workspace__search">
-					<WorkbenchNavigationProvider
-						value={{
-							...navigation,
-							openTab: (input) => navigation.openTab({ ...input, afterDocumentId: newTabAnchor }),
-						}}
-					>
-						<WorkspaceNavigation
-							openMode={newTabAnchor ? 'new' : 'reuse'}
-							autofocus
-							onChosen={() => setSearchOpen(false)}
-							onShowNavigation={showNavigation}
-						/>
-					</WorkbenchNavigationProvider>
+					<WorkspaceNavigation
+						autofocus
+						onChosen={() => setSearchOpen(false)}
+						onShowNavigation={showNavigation}
+					/>
 				</div>
 			</Modal>
 			<Modal

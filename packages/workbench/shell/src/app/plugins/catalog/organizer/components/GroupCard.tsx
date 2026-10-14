@@ -1,5 +1,6 @@
+import { CatalogTooltip } from '../../components/CatalogTooltip'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ActionIcon, Box, Collapse, Flex, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { ActionIcon, Box, Collapse, Flex, Group, Stack, Text } from '@mantine/core'
 import { IconChevronDown, IconChevronRight, IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
@@ -85,13 +86,12 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 	return (
 		<Box
 			ref={setNodeRef}
-			className="plx-theme-panel"
+			className="plx-pluginCatalog__group"
 			style={{
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition: transition ?? 'opacity 120ms ease-out',
 				minWidth: 0,
-				padding: 6,
-				borderRadius: 10,
+				padding: 0,
 			}}
 			role="group"
 			aria-label={`分组 ${g.name || '未命名'}`}
@@ -99,7 +99,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 			<Flex align="center" gap={2} justify="space-between" style={{ minWidth: 0 }}>
 				<Group gap={4} align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
 					<Box style={{ minWidth: 0, flex: 1 }}>
-						<Tooltip label={g.name || '未命名分组'} withinPortal withArrow>
+						<CatalogTooltip label={g.name || '未命名分组'} withinPortal withArrow>
 							<Text
 								fw={600}
 								size="xs"
@@ -112,9 +112,9 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 							>
 								{g.name || '未命名分组'}
 							</Text>
-						</Tooltip>
+						</CatalogTooltip>
 					</Box>
-					<Tooltip
+					<CatalogTooltip
 						label={`运行中 ${stat.running} / 共 ${stat.total} 个插件`}
 						withinPortal
 						withArrow
@@ -128,11 +128,11 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 						>
 							{stat.total}
 						</Text>
-					</Tooltip>
+					</CatalogTooltip>
 				</Group>
 
 				<Group gap={2} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
-					<Tooltip label={collapseLabel} withinPortal openDelay={200} withArrow>
+					<CatalogTooltip label={collapseLabel} withinPortal withArrow>
 						<ActionIcon
 							size="xs"
 							variant="subtle"
@@ -142,12 +142,12 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 						>
 							{isCollapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
 						</ActionIcon>
-					</Tooltip>
+					</CatalogTooltip>
 
-					<Tooltip
+					<CatalogTooltip
 						label={locked ? '云端同步中' : '拖拽分组'}
 						withinPortal
-						openDelay={200}
+
 						withArrow
 					>
 						<ActionIcon
@@ -168,7 +168,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 						>
 							<IconGripVertical size={16} />
 						</ActionIcon>
-					</Tooltip>
+					</CatalogTooltip>
 				</Group>
 			</Flex>
 
