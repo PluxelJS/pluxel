@@ -1,20 +1,20 @@
+import { cents } from './values.ts'
+import { normalizeDetails } from './details.ts'
+import { readPortalRecords } from './portal-snapshot.ts'
+import { abortable } from './operation.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Page } from 'playwright-core'
-import type {
-	FiscalTicketInput,
-	FiscalTicketResult,
-	FiscalTicketVerifyOptions,
-} from './contracts.ts'
+import type { FiscalTicketInput, InvoiceVerification, InvoiceOptions } from './contracts.ts'
 
-export const PORTAL_URL = 'https://pjcy.mof.gov.cn/html/index.html#/home'
+const PORTAL_URL = 'https://pjcy.mof.gov.cn/html/index.html#/home'
 
 /** Public site DOM observed in app.7fd3f2ee.js, 2026-10-14. See DESIGN.md. */
-export async function queryPortal(
+export async function queryFiscalPortal(
 	page: Page,
 	input: FiscalTicketInput,
 	signal: AbortSignal,
-	onChallenge: FiscalTicketVerifyOptions['onChallenge'],
-): Promise<FiscalTicketResult> {
+	onChallenge: InvoiceOptions['onChallenge'],
+): Promise<InvoiceVerification> {
 	await page.goto(PORTAL_URL, { waitUntil: 'domcontentloaded' })
 	const form = page.locator('form#idform')
 	await form.locator('input[maxlength="8"]').fill(input.code)
@@ -33,28 +33,25 @@ export async function queryPortal(
 			// hides populated source markup after converting it to a canvas image.
 			const candidates = await page
 				.locator('.wrapper_billshow .bill-content')
-				.evaluateAll((elements) =>
-					elements.map((element) => {
-						const text = (selector: string) =>
-							element.querySelector(selector)?.textContent?.trim() ?? ''
-						const amounts = element.querySelectorAll('td.nobd-l.td2 > span.font-val')
-						return {
-							code: text('#EInvoiceCode'),
-							number: text('#EInvoiceNumber'),
-							checkCode: text('#RandomNumber'),
-							issueDate: text('#IssueDate'),
-							amount: amounts.length === 1 ? (amounts[0].textContent?.trim() ?? '') : '',
-						}
-					}),
-				)
-			const populated = candidates.filter(
-				(ticket) => ticket.code || ticket.number || ticket.checkCode,
+				.evaluateAll(readPortalRecords, 'fiscal' as const)
+			const populated = candidates.filter(({ identity }) =>
+				[...identity.code, ...identity.number, ...identity.checkCode].some(
+					(value) => value.length > 0,
+				),
 			)
 			if (populated.length > 0) {
-				if (populated.length !== 1 || !readable(populated[0])) {
+				if (populated.length !== 1) return { status: 'unconfirmed', reason: 'unsupported_result' }
+				const { identity, evidence } = populated[0]
+				if (Object.values(identity).some((values) => values.length !== 1))
 					return { status: 'unconfirmed', reason: 'unsupported_result' }
+				const ticket: FiscalTicketInput = {
+					code: identity.code[0],
+					number: identity.number[0],
+					checkCode: identity.checkCode[0],
+					issueDate: identity.issueDate[0],
+					amount: identity.amount[0],
 				}
-				const ticket = populated[0]
+				if (!readable(ticket)) return { status: 'unconfirmed', reason: 'unsupported_result' }
 				if (
 					ticket.code !== input.code ||
 					ticket.number !== input.number ||
@@ -63,7 +60,13 @@ export async function queryPortal(
 					cents(ticket.amount) !== cents(input.amount)
 				)
 					return { status: 'unconfirmed', reason: 'identity_mismatch' }
-				return { status: 'matched', ticket: { ...ticket }, checkedAt: new Date().toISOString() }
+				return {
+					status: 'matched',
+					...normalizeDetails({ kind: 'fiscal', ticket }, evidence),
+					evidence,
+					checkedAt: new Date().toISOString(),
+					redLetterStatus: 'not_observed',
+				}
 			}
 			if ((await page.locator('#Ateon-SetParent-iframe').count()) > 0) {
 				return { status: 'unconfirmed', reason: 'unsupported_result' }
@@ -103,25 +106,4 @@ function readable(ticket: FiscalTicketInput): boolean {
 		/^\d{4}-\d{2}-\d{2}$/.test(ticket.issueDate) &&
 		/^-?\d{1,16}(?:\.\d{1,2})?$/.test(ticket.amount)
 	)
-}
-
-function cents(amount: string): bigint {
-	const negative = amount.startsWith('-')
-	const [whole, fraction = ''] = (negative ? amount.slice(1) : amount).split('.')
-	return (BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'))) * (negative ? -1n : 1n)
-}
-
-/** Stops waiting, while observing late rejection. The callback must stop its own external IO. */
-export async function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-	let abort: () => void = () => {}
-	const stopped = new Promise<never>((_resolve, reject) => {
-		abort = () => reject(signal.reason)
-		if (signal.aborted) abort()
-		else signal.addEventListener('abort', abort, { once: true })
-	})
-	try {
-		return await Promise.race([work, stopped])
-	} finally {
-		signal.removeEventListener('abort', abort)
-	}
 }

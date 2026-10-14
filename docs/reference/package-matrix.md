@@ -26,8 +26,8 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `valibot-form`                  | Valibot 表单 metadata 与可选 Web adapter                   | [Valibot 配置表单](../workbench/valibot-form.mdx)           |
 | `@pluxel/auth`                  | Workbench 与 Management API 认证 provider                  | [Management 认证](../plugins/auth.md)                       |
 | `@pluxel/wretch`                | Plugin-owned HTTP client                                   | [Wretch HTTP client](../plugins/wretch.md)                  |
-| `@pluxel/playwright`            | 外部 CDP / Playwright 浏览器连接与原生 BrowserContext      | [浏览器与财政票据](../plugins/browser.md)                   |
-| `@pluxel/fiscal-ticket`         | 实验性财政电子票据浏览器查验                               | [浏览器与财政票据](../plugins/browser.md)                   |
+| `@pluxel/playwright`            | 外部 CDP / Playwright 浏览器连接与原生 BrowserContext      | [浏览器连接](../plugins/browser.md)                         |
+| `@pluxel/invoice`               | 财政票据与数电发票的图片提取、网站适配和统一查验           | [图片票据提取与查验](../plugins/invoice.md)                 |
 | `@pluxel/fonts`                 | 服务端字体注册与 provider                                  | [字体](../plugins/rendering/fonts.md)                       |
 | `@pluxel/canvas`                | 有预算约束的服务端 Canvas、Pretext 文字准备与静态表格工具  | [Canvas](../plugins/rendering/canvas.md)                    |
 | `@pluxel/echarts`               | 服务端 ECharts 渲染                                        | [ECharts](../plugins/rendering/echarts.md)                  |

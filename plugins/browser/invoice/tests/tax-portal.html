@@ -1,0 +1,100 @@
+<!doctype html><meta charset="utf-8" /><title>Synthetic tax portal contract fixture</title>
+<form>
+	<div class="t-form-item__fphm"><label>发票号码</label><input /></div>
+	<div class="t-form-item__kprq"><label>开票日期</label><input readonly /></div>
+	<div class="t-form-item__kpje"><label>开具金额(不含税)</label><input /></div>
+	<div class="t-form-item__yzm"><label>验证码</label><input /></div>
+	<div>
+		<a><img width="120" height="50" src="/assets_res/img/code.fixture.png" /></a
+		><span class="form-box-tip__yzm">请输入全部字符</span>
+	</div>
+	<button type="submit">查 验</button>
+</form>
+<div class="t-date-picker__panel" hidden>
+	<div class="t-date-picker__header-controller-year"><input value="2026" readonly /></div>
+	<div class="t-date-picker__header-controller-month"><input value="10 月" readonly /></div>
+	<button title="上个月" type="button">previous</button
+	><button title="下个月" type="button">next</button>
+	<table>
+		<tr>
+			<td class="t-date-picker__cell">17</td>
+		</tr>
+	</table>
+</div>
+<div class="t-message" hidden></div>
+<section id="result"></section>
+<script>
+	const $ = (s) => document.querySelector(s)
+	let month = 10,
+		year = 2026,
+		attempts = 0,
+		refreshes = 0
+	$('.t-form-item__fphm input').addEventListener(
+		'blur',
+		() => ($('.t-form-item__kpje label').textContent = '价税合计'),
+	)
+	$('.t-form-item__kprq input').onclick = () => ($('.t-date-picker__panel').hidden = false)
+	const move = (step) => {
+		month += step
+		if (month === 0) {
+			month = 12
+			year--
+		} else if (month === 13) {
+			month = 1
+			year++
+		}
+		$('.t-date-picker__header-controller-year input').value = year
+		$('.t-date-picker__header-controller-month input').value = month + ' 月'
+	}
+	$('[title="上个月"]').onclick = () => move(-1)
+	$('[title="下个月"]').onclick = () => move(1)
+	$('.t-date-picker__cell').onclick = () => {
+		$('.t-form-item__kprq input').value = year + String(month).padStart(2, '0') + '17'
+		$('.t-date-picker__panel').hidden = true
+	}
+	const notice = (text) => {
+		$('.t-message').textContent = text
+		$('.t-message').hidden = false
+	}
+	if (window.scenario === 'refresh') $('img').src = '/captcha.svg?old'
+	$('img').onclick = () => {
+		if (window.scenario === 'server') return notice('服务器异常')
+		const update = () => {
+			$('img').src = '/captcha.svg?refresh=' + ++refreshes
+		}
+		if (window.scenario === 'refresh') setTimeout(update, 250)
+		else update()
+	}
+	$('form').onsubmit = (e) => {
+		e.preventDefault()
+		attempts++
+		document.body.dataset.submissions = attempts
+		if (window.scenario === 'reject' || (window.scenario === 'retry' && attempts === 1)) {
+			notice('验证码错误')
+			setTimeout(() => ($('.t-message').hidden = true), 600)
+			return
+		}
+		if (window.scenario === 'unknown') return notice('查验服务暂不可用')
+		if (window.scenario === 'wait') return
+		const number =
+			window.scenario === 'mismatch' ? '99999999999999999999' : $('.t-form-item__fphm input').value
+		$('#result').innerHTML =
+			`<div class="invoice-dialog"><div id="invoice-elm"><div class="invoice-info-header__content"><p>发票号码：${number}</p><p>开票日期：2026年07月17日</p></div><span class="invoice-main__table--price-position">（小写）¥113.00</span>${window.scenario === 'reversed' ? '<img src="/fpcygzfw/assets_res/img/icon_qehc_new.fixture.png" width="120" height="50">' : ''}</div></div>`
+		$('#invoice-elm').insertAdjacentHTML(
+			'beforeend',
+			`
+		<div class="invoice-info-header__title">电子发票（普通发票）</div>
+		<div class="invoice-main__header">
+		 <div><span class="invoice-main__header--label">购买方信息</span><p><label>名称：</label>测试购买方</p><p><label>统一社会信用代码/纳税人识别号：</label>001234567890123456</p></div>
+		 <div><span class="invoice-main__header--label">销售方信息</span><p><label>名称：</label>测试销售方</p><p><label>统一社会信用代码/纳税人识别号：</label>009876543210987654</p></div>
+		</div>
+		<table><thead><tr><th>项目名称</th><th>数量</th><th>金额</th><th>税率/征收率</th><th>税额</th></tr></thead><tbody><tr><td>测试服务</td><td>1</td><td>100.00</td><td>13%</td><td>13.00</td></tr><tr><td colspan="5">其他附加项目</td></tr></tbody></table>
+		<div class="invoice-main__table--footer"><span>合计</span><span>¥100.00</span><span>¥13.00</span></div>
+		<div class="invoice-info-footer__remark--content">测试备注</div><p class="invoice-info__people"><label>开票人：</label>测试员</p>
+		<div>未知附加字段：保留此文字</div><button>不要返回按钮文字</button>
+		`,
+		)
+		if (window.scenario !== 'merged') $('#invoice-elm table tbody tr:last-child').remove()
+		if (window.scenario === 'large') $('#invoice-elm').append('X'.repeat(70000))
+	}
+</script>

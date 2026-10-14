@@ -1,0 +1,17 @@
+{
+	"extends": "../../../tsconfig.plugin.json",
+	"include": [
+		"src",
+		"tests",
+		"examples",
+		"tsdown.config.ts",
+		"vitest.config.ts",
+		"vitest.browser.config.ts",
+		"vitest.live.config.ts"
+	],
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"strictNullChecks": true,
+		"lib": ["ES2024", "DOM", "DOM.Iterable"]
+	}
+}

@@ -3,12 +3,7 @@ import { PlaywrightPlugin } from '@pluxel/playwright'
 import { createTestHost } from '@pluxel/test'
 import { chromium } from 'playwright-core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-	FiscalTicketPlugin,
-	type FiscalTicketInput,
-	type FiscalTicketVerifyOptions,
-} from '../src/index.ts'
-import { FiscalTicketConsumer } from '../examples/consumer.ts'
+import { InvoicePlugin, type FiscalTicketInput, type InvoiceOptions } from '../src/index.ts'
 import { BrowserFixture } from './fixtures/browser.ts'
 
 const ticket: FiscalTicketInput = {
@@ -21,11 +16,11 @@ const ticket: FiscalTicketInput = {
 
 @Plugin()
 class Consumer extends BasePlugin {
-	constructor(private readonly fiscal: FiscalTicketPlugin) {
+	constructor(private readonly fiscal: InvoicePlugin) {
 		super()
 	}
-	verify(input: FiscalTicketInput = ticket, options: FiscalTicketVerifyOptions = {}) {
-		return this.fiscal.verify(input, options)
+	verify(input: FiscalTicketInput = ticket, options: InvoiceOptions = {}) {
+		return this.fiscal.verify({ kind: 'fiscal', ticket: input }, options)
 	}
 }
 
@@ -35,10 +30,10 @@ async function setup(initialConfig: { timeoutMs?: number; maxConcurrent?: number
 	const host = await createTestHost()
 	try {
 		await host.commit((change) => {
-			change.catalog.add([PlaywrightPlugin, FiscalTicketPlugin, Consumer, FiscalTicketConsumer])
+			change.catalog.add([PlaywrightPlugin, InvoicePlugin, Consumer])
 			change.start(PlaywrightPlugin, { initialConfig: { endpoint: 'http://127.0.0.1:9222' } })
-			change.start(FiscalTicketPlugin, { initialConfig })
-			change.start([Consumer, FiscalTicketConsumer])
+			change.start(InvoicePlugin, { initialConfig })
+			change.start(Consumer)
 		})
 		return { host, browser, consumer: host.require(Consumer) }
 	} catch (error) {
@@ -51,15 +46,36 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-describe('FiscalTicketPlugin through real host and DOM-backed external browser fixture', () => {
+describe('InvoicePlugin through real host and DOM-backed external browser fixture', () => {
 	it.each([0, 1, 2])(
 		'fills the observed desktop form and reads hidden duplicate-ID template %i',
 		async (template) => {
 			const { host, browser, consumer } = await setup()
 			await using _owned = host
-			browser.onSubmit = (context) => context.result({ ...ticket, amount: '0100.5' }, template)
+			browser.onSubmit = (context) => {
+				context.result({ ...ticket, amount: '0100.5' }, template)
+				const target = context.document.querySelectorAll('.bill-content')[template]
+				target.insertAdjacentHTML(
+					'beforeend',
+					'<p><label>交款人：</label>测试单位</p><div>财政附加信息</div>',
+				)
+			}
 			const result = await consumer.verify()
-			expect(result).toMatchObject({ status: 'matched', ticket: { ...ticket, amount: '0100.5' } })
+			expect(result).toMatchObject({
+				status: 'matched',
+				details: {
+					kind: 'fiscal',
+					...ticket,
+					amount: '0100.5',
+					payer: { name: '测试单位', taxId: null },
+				},
+				evidence: {
+					source: 'official-portal',
+					truncated: false,
+					fields: expect.arrayContaining([{ section: '', label: '交款人：', value: '测试单位' }]),
+					text: expect.stringContaining('财政附加信息'),
+				},
+			})
 			const context = browser.contexts[0]
 			expect(context.page.goto).toHaveBeenCalledWith(
 				'https://pjcy.mof.gov.cn/html/index.html#/home',
@@ -231,6 +247,14 @@ describe('FiscalTicketPlugin through real host and DOM-backed external browser f
 		})
 		await entered.promise
 		await expect(consumer.verify()).rejects.toMatchObject({ code: 'BUSY' })
+		await expect(
+			host.require(InvoicePlugin).verify({
+				kind: 'digital-tax',
+				number: '12345678901234567890',
+				issueDate: '2026-10-14',
+				totalIncludingTax: '100.50',
+			}),
+		).rejects.toMatchObject({ code: 'BUSY' })
 		const reason = new Error('Requested cancellation')
 		// Attach the expected rejection before triggering cancellation.
 		const outcome = pending.then(
@@ -258,7 +282,7 @@ describe('FiscalTicketPlugin through real host and DOM-backed external browser f
 		expect(browser.contexts[0].closed).toBe(true)
 	})
 
-	it.each([Consumer, FiscalTicketPlugin])(
+	it.each([Consumer, InvoicePlugin])(
 		'drains an accepted call when its owner/provider stops',
 		async (stopped) => {
 			const { host, browser, consumer } = await setup()
@@ -281,23 +305,15 @@ describe('FiscalTicketPlugin through real host and DOM-backed external browser f
 			expect(browser.contexts[0].closed).toBe(true)
 		},
 	)
+})
 
-	it('executes the public consumer example success and human-action branches', async () => {
-		const { host, browser } = await setup()
-		await using _owned = host
-		browser.onSubmit = (context) => context.result(ticket)
-		expect(await host.require(FiscalTicketConsumer).check(ticket)).toMatchObject({
-			state: 'observed',
-		})
-		browser.onSubmit = (context) => context.challenge()
-		expect(await host.require(FiscalTicketConsumer).check(ticket)).toEqual({
-			state: 'needs-human',
-			challenge: 'security_verification',
-		})
-		browser.onSubmit = (context) => context.message('Unavailable')
-		expect(await host.require(FiscalTicketConsumer).check(ticket)).toMatchObject({
-			state: 'review',
-			reason: 'site_message',
-		})
-	})
+it('rejects duplicate identity fields inside a populated fiscal record', async () => {
+	const { host, browser, consumer } = await setup()
+	await using _owned = host
+	browser.onSubmit = (context) => {
+		context.result(ticket)
+		const target = context.document.querySelectorAll('.bill-content')[1]
+		target.insertAdjacentHTML('beforeend', '<span id="EInvoiceCode">12345678</span>')
+	}
+	expect(await consumer.verify()).toEqual({ status: 'unconfirmed', reason: 'unsupported_result' })
 })

@@ -117,8 +117,8 @@ class LocatorFixture {
 	async count() {
 		return this.elements().length
 	}
-	async evaluateAll<T>(fn: (elements: Element[]) => T) {
-		return fn(this.elements())
+	async evaluateAll<T, A>(fn: (elements: Element[], argument: A) => T, argument: A) {
+		return fn(this.elements(), argument)
 	}
 	async allTextContents() {
 		return this.elements().map((element) => element.textContent ?? '')

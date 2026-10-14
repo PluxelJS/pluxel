@@ -1,12 +1,12 @@
 {
-	"name": "@pluxel/fiscal-ticket",
+	"name": "@pluxel/invoice",
 	"version": "0.1.0",
-	"description": "Experimental browser-assisted verification of Chinese fiscal electronic tickets",
+	"description": "VLM-assisted fiscal ticket and digital tax invoice extraction and browser verification",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
-		"directory": "plugins/browser/fiscal-ticket"
+		"directory": "plugins/browser/invoice"
 	},
 	"files": [
 		"dist",
@@ -31,7 +31,9 @@
 	"scripts": {
 		"build": "pluxel build",
 		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false"
+		"typecheck": "tsc --noEmit --pretty false",
+		"test:browser": "vitest run --config vitest.browser.config.ts",
+		"test:live": "vitest run --config vitest.live.config.ts"
 	},
 	"dependencies": {
 		"playwright-core": "catalog:prod",
@@ -40,7 +42,9 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/playwright": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/jsdom": "catalog:types",
 		"jsdom": "catalog:dev",
@@ -50,7 +54,8 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/playwright": "workspace:^"
+		"@pluxel/playwright": "workspace:^",
+		"@pluxel/services": "workspace:^"
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

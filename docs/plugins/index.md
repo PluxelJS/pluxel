@@ -72,8 +72,8 @@ Workbench 服务是否安装不决定业务配置是否可用。按实际能力�
 | ------------------------------- | -------------------------------------------- | -------------------------------------------------- |
 | `@pluxel/auth`                  | Workbench 与 Management API 认证             | [Management 认证](./auth.md)                       |
 | `@pluxel/wretch`                | 带宿主出站策略的 HTTP client                 | [Wretch HTTP client](./wretch.md)                  |
-| `@pluxel/playwright`            | 外部 CDP / Playwright 浏览器连接与调用方会话 | [浏览器与财政票据](./browser.md)                   |
-| `@pluxel/fiscal-ticket`         | 实验性财政电子票据网页查验                   | [浏览器与财政票据](./browser.md)                   |
+| `@pluxel/playwright`            | 外部 CDP / Playwright 浏览器连接与调用方会话 | [浏览器连接](./browser.md)                         |
+| `@pluxel/invoice`               | VLM 图片提取与财政/数电发票查验编排          | [图片票据提取与查验](./invoice.md)                 |
 | `@pluxel/fonts`                 | 服务端字体发现与管理                         | [服务端字体](./rendering/fonts.md)                 |
 | `@pluxel/canvas`                | 服务端 Canvas、图片处理与静态表格            | [服务端 Canvas](./rendering/canvas.md)             |
 | `@pluxel/echarts`               | 服务端 ECharts 渲染                          | [服务端 ECharts](./rendering/echarts.md)           |
