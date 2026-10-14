@@ -204,6 +204,7 @@ catalogs:
     '@pluxel/market': ^0.1.0
     oxlint: ^1.87.0
   prod:
+    playwright-core: 1.64.0
     yauzl: 2.10.0
     fflate: 0.8.3
     '@antfu/utils': ^9.3.0
@@ -317,6 +318,7 @@ catalogs:
     ws: ^8.22.0
     zod: 4.6.5
   types:
+    '@types/jsdom': 30.0.0
     '@types/yauzl': 2.10.3
     '@types/mdast': ^4.0.4
     '@types/mdx': ^2.0.14

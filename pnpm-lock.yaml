@@ -885,6 +885,9 @@ catalogs:
     picomatch:
       specifier: ^4.0.7
       version: 4.0.7
+    playwright-core:
+      specifier: 1.64.0
+      version: 1.64.0
     pnpm-workspace-yaml:
       specifier: ^1.9.1
       version: 1.9.1
@@ -983,6 +986,9 @@ catalogs:
       specifier: 4.6.5
       version: 4.6.5
   types:
+    '@types/jsdom':
+      specifier: 30.0.0
+      version: 30.0.0
     '@types/mdast':
       specifier: ^4.0.4
       version: 4.0.4
@@ -1879,6 +1885,80 @@ importers:
       vite:
         specifier: catalog:build
         version: 8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.105.1)(sugarss@5.0.1(postcss@8.5.29))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
+      vitest:
+        specifier: catalog:test
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.4)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.105.1)(sugarss@5.0.1(postcss@8.5.29))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  plugins/browser/fiscal-ticket:
+    dependencies:
+      playwright-core:
+        specifier: catalog:prod
+        version: 1.64.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.5.0(typescript@7.0.2)
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@pluxel/playwright':
+        specifier: workspace:*
+        version: link:../playwright
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../../packages/test
+      '@types/jsdom':
+        specifier: catalog:types
+        version: 30.0.0
+      jsdom:
+        specifier: catalog:dev
+        version: 30.1.2(@noble/hashes@2.4.0)
+      tsdown:
+        specifier: catalog:build
+        version: 0.23.0(@tsdown/css@0.23.0)(oxc-resolver@11.24.2)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vitest:
+        specifier: catalog:test
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.4)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.105.1)(sugarss@5.0.1(postcss@8.5.29))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  plugins/browser/playwright:
+    dependencies:
+      playwright-core:
+        specifier: catalog:prod
+        version: 1.64.0
+      valibot:
+        specifier: catalog:validation
+        version: 1.5.0(typescript@7.0.2)
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../../packages/services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../../packages/test
+      tsdown:
+        specifier: catalog:build
+        version: 0.23.0(@tsdown/css@0.23.0)(oxc-resolver@11.24.2)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
       vitest:
         specifier: catalog:test
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.4)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.3(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.105.1)(sugarss@5.0.1(postcss@8.5.29))(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -7645,6 +7725,9 @@ packages:
   '@types/http-cache-semantics@4.2.0':
     resolution: {integrity: sha512-L3LgimLHXtGkWikKnsPg0/VFx9OGZaC+eN1u4r+OB1XRqH3meBIAVC2zr1WdMH+RHmnRkqliQAOHNJ/E0j/e0Q==}
 
+  '@types/jsdom@30.0.0':
+    resolution: {integrity: sha512-uAHGxujGE0cDaKGdK28zgDotFtNA7MKq5DXl8LrfdxdCI8VHcg15oJz+amHTChPNI5JpgEPQWc2xFdrw3em/nQ==}
+
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
@@ -7688,6 +7771,9 @@ packages:
 
   '@types/sql.js@1.4.11':
     resolution: {integrity: sha512-QXIx38p2ZThJaK9vP5ZdqdlRe1FG9I8SmCZOS7FHfB/2qPAjZwkL7/vlfPg6N/oWHuuOaGg/P/IRwfP2W0kWVQ==}
+
+  '@types/tough-cookie@4.0.5':
+    resolution: {integrity: sha512-/Ad8+nIOV7Rl++6f1BdKxFSMgmoqEoYbHRpPcx3JEfv8VRsQe9Z4mCXeJBzxs7mbHY/XOZZuXlRNfhpVPbs6ZA==}
 
   '@types/unist@2.0.11':
     resolution: {integrity: sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA==}
@@ -10982,6 +11068,11 @@ packages:
   playwright-core@1.58.2:
     resolution: {integrity: sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==}
     engines: {node: '>=18'}
+    hasBin: true
+
+  playwright-core@1.64.0:
+    resolution: {integrity: sha512-T9r+MZkTECl2+oUcZ26YgZzTrYidTsIhYYkJix+6iDOymOb1FB2RLLSOxRGnZGv5DStt+aduIVbt+E8WygXYpg==}
+    engines: {node: '>=20'}
     hasBin: true
 
   playwright@1.58.2:
@@ -16546,6 +16637,13 @@ snapshots:
 
   '@types/http-cache-semantics@4.2.0': {}
 
+  '@types/jsdom@30.0.0':
+    dependencies:
+      '@types/node': 26.6.4
+      '@types/tough-cookie': 4.0.5
+      parse5: 8.0.1
+      undici-types: 8.9.0
+
   '@types/json-schema@7.0.15': {}
 
   '@types/mdast@4.0.4':
@@ -16591,6 +16689,8 @@ snapshots:
       '@types/emscripten': 1.41.5
       '@types/node': 26.6.4
     optional: true
+
+  '@types/tough-cookie@4.0.5': {}
 
   '@types/unist@2.0.11': {}
 
@@ -19892,6 +19992,8 @@ snapshots:
       pathe: 2.0.3
 
   playwright-core@1.58.2: {}
+
+  playwright-core@1.64.0: {}
 
   playwright@1.58.2:
     dependencies:

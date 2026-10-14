@@ -68,16 +68,18 @@ Workbench 服务是否安装不决定业务配置是否可用。按实际能力�
 
 ## 可公开安装
 
-| Plugin                          | 用途                                     | 文档                                               |
-| ------------------------------- | ---------------------------------------- | -------------------------------------------------- |
-| `@pluxel/auth`                  | Workbench 与 Management API 认证         | [Management 认证](./auth.md)                       |
-| `@pluxel/wretch`                | 带宿主出站策略的 HTTP client             | [Wretch HTTP client](./wretch.md)                  |
-| `@pluxel/fonts`                 | 服务端字体发现与管理                     | [服务端字体](./rendering/fonts.md)                 |
-| `@pluxel/canvas`                | 服务端 Canvas、图片处理与静态表格        | [服务端 Canvas](./rendering/canvas.md)             |
-| `@pluxel/echarts`               | 服务端 ECharts 渲染                      | [服务端 ECharts](./rendering/echarts.md)           |
-| `@pluxel/takumi`                | HTML/node-tree 图片渲染                  | [Takumi](./rendering/takumi.md)                    |
-| `@pluxel/takumi-markdown`       | GFM Markdown、表格与固定代码高亮图片渲染 | [Markdown / Typst](./rendering/takumi-markdown.md) |
-| `@pluxel/takumi-markdown-typst` | 可选受限 Typst 数学 SVG 扩展             | [Markdown / Typst](./rendering/takumi-markdown.md) |
+| Plugin                          | 用途                                         | 文档                                               |
+| ------------------------------- | -------------------------------------------- | -------------------------------------------------- |
+| `@pluxel/auth`                  | Workbench 与 Management API 认证             | [Management 认证](./auth.md)                       |
+| `@pluxel/wretch`                | 带宿主出站策略的 HTTP client                 | [Wretch HTTP client](./wretch.md)                  |
+| `@pluxel/playwright`            | 外部 CDP / Playwright 浏览器连接与调用方会话 | [浏览器与财政票据](./browser.md)                   |
+| `@pluxel/fiscal-ticket`         | 实验性财政电子票据网页查验                   | [浏览器与财政票据](./browser.md)                   |
+| `@pluxel/fonts`                 | 服务端字体发现与管理                         | [服务端字体](./rendering/fonts.md)                 |
+| `@pluxel/canvas`                | 服务端 Canvas、图片处理与静态表格            | [服务端 Canvas](./rendering/canvas.md)             |
+| `@pluxel/echarts`               | 服务端 ECharts 渲染                          | [服务端 ECharts](./rendering/echarts.md)           |
+| `@pluxel/takumi`                | HTML/node-tree 图片渲染                      | [Takumi](./rendering/takumi.md)                    |
+| `@pluxel/takumi-markdown`       | GFM Markdown、表格与固定代码高亮图片渲染     | [Markdown / Typst](./rendering/takumi-markdown.md) |
+| `@pluxel/takumi-markdown-typst` | 可选受限 Typst 数学 SVG 扩展                 | [Markdown / Typst](./rendering/takumi-markdown.md) |
 
 这些 package 已声明公共入口。具体可安装版本以 npm registry 和发布记录为准。
 

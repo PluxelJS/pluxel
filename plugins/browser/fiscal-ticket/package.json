@@ -1,0 +1,63 @@
+{
+	"name": "@pluxel/fiscal-ticket",
+	"version": "0.1.0",
+	"description": "Experimental browser-assisted verification of Chinese fiscal electronic tickets",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/browser/fiscal-ticket"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"playwright-core": "catalog:prod",
+		"valibot": "catalog:validation"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/playwright": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@types/jsdom": "catalog:types",
+		"jsdom": "catalog:dev",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/playwright": "workspace:^"
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true,
+		"pluginPackages": {
+			"@pluxel/playwright": "required"
+		}
+	}
+}

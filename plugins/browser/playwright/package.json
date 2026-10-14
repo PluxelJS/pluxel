@@ -1,0 +1,64 @@
+{
+	"name": "@pluxel/playwright",
+	"version": "0.1.0",
+	"description": "Official external CDP and Playwright browser connector for Pluxel plugins",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/browser/playwright"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"test:external": "vitest run --config vitest.external.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"playwright-core": "catalog:prod",
+		"valibot": "catalog:validation"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/services": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"tsdown": "catalog:build",
+		"typescript": "catalog:dev",
+		"vitest": "catalog:test"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/services": "workspace:^"
+	},
+	"engines": {
+		"node": ">=24"
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
+	}
+}
