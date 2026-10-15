@@ -50,12 +50,12 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
       - name: Install workspace toolchain
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@v5
         with:
           cache: true
           install: true
@@ -68,7 +68,7 @@ jobs:
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Restore pnpm store
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
@@ -78,7 +78,7 @@ jobs:
             ${{ runner.os }}-pnpm-files-v3-
 
       - name: Restore native compiler build cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6
         with:
           path: plugins/render/typst/native/.build
           key: ${{ runner.os }}-x64-studio-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
@@ -112,7 +112,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Studio archive failed' }
 
       - name: Upload Windows application
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7
         with:
           name: PluxelTypstStudio-win32-x64-${{ github.sha }}
           path: projects/report-template-studio/release/PluxelTypstStudio-win32-x64.zip

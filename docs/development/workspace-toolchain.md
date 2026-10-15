@@ -97,6 +97,14 @@ mise exec -- vp run verify
 
 `hk check --all` 执行 hk 声明的全量检查；`vp run verify` 是完整交付门禁，包含仓库实际定义的治理、类型、测试和构建。提交前的增量检查不能替代完整门禁。需要自动修复时显式运行 `hk fix` 并审阅 diff。[hk CLI](https://hk.jdx.dev/cli/)说明文件选择和各命令参数。
 
+## GitHub Actions
+
+本仓库通过 [mise-action](https://github.com/jdx/mise-action) 读取同一份 `mise.toml`，安装 Node、pnpm、Vite+、hk 和 Pitchfork。Action 使用上游持续维护的大版本标签，自动接收该大版本内的更新；`.github/dependabot.yml` 每周检查并分组提出跨大版本升级。Action 的版本与 `mise.toml` 中固定的工具版本是两层配置，更新 Action 不会自动升级项目工具。
+
+[Vite+ 官方 setup-vp](https://github.com/voidzero-dev/setup-vp) 可负责 Vite+、Node、包管理器、依赖安装与依赖缓存，适合采用它统一初始化的 CI。本仓库已由 mise 管理这些工具，保留一个安装入口；Vite Task 结果缓存仍需单独持久化。若下游选择 setup-vp，按其官方要求使用精确发布版本并由 Dependabot 更新：它的 `@v1` 标签已冻结，不会跟随新版本。
+
+[hk 官方 CI 指南](https://hk.jdx.dev/ci.html) 使用 mise 安装工具后直接运行 `hk validate` 和 `hk check --all`，无需安装 Git hooks。本仓库的完整门禁由 Vite Task 执行 `vp check`、类型检查、测试与构建，hk 复用相同检查器处理本地提交文件，避免 CI 重复执行全量检查。
+
 ## 管理开发服务
 
 先读 `pitchfork.toml`，再检查 `pitchfork list`，确认当前目录、namespace 与已有进程。生成应用的 daemon 名为 `app`；框架仓库的示例宿主名为 `plugin-host`，文档站名为 `docs`。`mise run dev` 选择对应工作区的默认服务，框架仓库另有 `mise run docs`。以下以生成应用为例，在框架仓库将 `app` 替换为对应名称：

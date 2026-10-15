@@ -43,13 +43,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Install toolchain
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@v5
         with:
           cache: true
           install: true
@@ -65,7 +65,7 @@ jobs:
 
       - name: Restore pnpm store
         id: pnpm-store-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
@@ -80,7 +80,7 @@ jobs:
 
       - name: Restore Vite task cache
         id: task-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6
         with:
           path: node_modules/.vite/task-cache
           # Cache entries are immutable. Give every attempt its own key so a failed run can save
@@ -95,7 +95,7 @@ jobs:
         run: rustup toolchain install 1.97.1 --profile minimal
 
       - name: Restore Typst native build cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6
         with:
           path: plugins/render/typst/native/.build
           key: ${{ runner.os }}-x64-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload task timings and cache results
         if: always() && steps.task-verify.outcome != 'skipped'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7
         with:
           name: ci-task-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: .pluxel/ci-task-details.txt
@@ -128,14 +128,14 @@ jobs:
 
       - name: Save Vite task cache
         if: always() && steps.task-cache.outcome == 'success' && steps.task-verify.outcome != 'skipped' && steps.task-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6
         with:
           path: node_modules/.vite/task-cache
           key: ${{ steps.task-cache.outputs.cache-primary-key }}
 
       - name: Save pnpm store
         if: always() && steps.install.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
