@@ -124,11 +124,11 @@ describe('native Workbench route continuity', () => {
 		})
 		const initial = container.querySelector('input')
 		await act(async () => {
-			await router.navigate({ to: '/another' })
+			await router.navigate({ to: '/$', params: { _splat: 'another' } })
 		})
 		expect(container.querySelector('input')).toBe(initial)
 		await act(async () => {
-			await router.navigate({ to: '/broken' })
+			await router.navigate({ to: '/$', params: { _splat: 'broken' } })
 		})
 		expect(container.querySelector('[role="alert"]')?.textContent).toBe('页面错误')
 		expect(report).toHaveBeenCalledWith(
@@ -136,7 +136,7 @@ describe('native Workbench route continuity', () => {
 			expect.objectContaining({ path: '/broken' }),
 		)
 		await act(async () => {
-			await router.navigate({ to: '/recovered' })
+			await router.navigate({ to: '/$', params: { _splat: 'recovered' } })
 		})
 		expect(container.querySelector('[role="alert"]')).toBeNull()
 		expect(container.querySelector<HTMLInputElement>('input')?.dataset.path).toBe('/recovered')
@@ -236,7 +236,7 @@ describe('native Workbench route continuity', () => {
 		const logsRouter = probes.routers.get(first.id)!
 		expect(logsRouter.history.location.href).toBe('/__pluxel/workbench/logs')
 		await act(async () => {
-			await logsRouter.navigate({ to: '/logs', search: { filter: 'warn' }, hash: 'tail' })
+			await logsRouter.navigate({ href: '/logs?filter=warn#tail' })
 		})
 		expect(window.location.pathname + window.location.search + window.location.hash).toBe(
 			'/__pluxel/workbench/logs?filter=warn#tail',

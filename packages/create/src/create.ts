@@ -52,16 +52,19 @@ try {
 	const destination = resolve(process.cwd(), options.directory)
 	await createProject(assets, destination)
 	console.info(`\nCreated the Pluxel example workspace at ${destination}`)
-	console.info('Current Pluxel documentation: pnpm exec pluxel docs')
+	console.info('Current Pluxel documentation: vp exec pluxel docs')
 
 	if (options.install) {
-		console.info('\nInstalling dependencies with pnpm…')
-		await run('pnpm', ['install'], destination)
+		console.info('\nInstalling dependencies with Vite+…')
+		await run('vp', ['install'], destination)
 	}
 
 	console.info(`\nNext: cd ${relative(process.cwd(), destination) || '.'}`)
-	if (!options.install) console.info('      pnpm install')
-	console.info('      pnpm dev')
+	console.info('      mise trust')
+	console.info('      mise install')
+	console.info('      mise run setup')
+	console.info('      mise run dev')
+	console.info('      # In a Git repository: mise run hooks:install')
 } catch (error) {
 	console.error(`[create-pluxel] ${error instanceof Error ? error.message : String(error)}`)
 	process.exitCode = 1
@@ -103,7 +106,7 @@ function printHelp(): void {
 Create the fixed Pluxel example monorepo with upstream documentation links.
 
 Options:
-  --install       Install dependencies with pnpm (default)
+  --install       Install dependencies with Vite+ (default)
   --no-install    Copy the project without installing dependencies
   -h, --help      Show this help
   -v, --version   Show the package version`)

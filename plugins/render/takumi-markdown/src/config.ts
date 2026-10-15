@@ -74,6 +74,27 @@ export const TakumiMarkdownConfig = v.object({
 			description: 'Maximum combined UTF-8 bytes passed to the built-in highlighter.',
 		}),
 	),
+	math: v.optional(
+		v.object({
+			maxFormulas: v.pipe(
+				v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(256)), 32),
+				f.formMeta({ title: 'Maximum formulas per Markdown render' }),
+			),
+			maxFormulaCharacters: v.pipe(
+				v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(32_768)), 4_096),
+				f.formMeta({ title: 'Maximum characters per restricted math formula' }),
+			),
+			maxSvgBytes: v.pipe(
+				v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(8 * MIB)), MIB),
+				f.formMeta({ title: 'Maximum bytes per formula SVG' }),
+			),
+			maxTotalSvgBytes: v.pipe(
+				v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(32 * MIB)), 4 * MIB),
+				f.formMeta({ title: 'Maximum formula SVG bytes per Markdown render' }),
+			),
+		}),
+		{},
+	),
 })
 
 export type TakumiMarkdownPluginConfig = v.InferOutput<typeof TakumiMarkdownConfig>

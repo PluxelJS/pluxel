@@ -5,7 +5,7 @@
 From the repository root, after preparing LLRT and installing dependencies, build and run the real embedded check:
 
 ```sh
-pnpm --filter @embedded-launcher/app build:plugins
+vp run @embedded-launcher/app#build:plugins
 cargo run --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --bin compatibility-check -- projects/embedded-launcher/dist
 ```
 

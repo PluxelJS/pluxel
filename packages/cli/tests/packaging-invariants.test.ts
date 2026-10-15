@@ -38,7 +38,7 @@ describe('CLI package boundaries', () => {
 		expect(createPkg.bin).toEqual({ 'create-pluxel': './dist/create.mjs' })
 		expect(createPkg.files).toContain('dist')
 		expect(createBin).not.toContain("'docs/pluxel'")
-		expect(createBin).toContain('pnpm exec pluxel docs')
+		expect(createBin).toContain('vp exec pluxel docs')
 		expect(createBin).not.toContain('@pluxel/cli')
 		expect(createBin).not.toContain("Symbol.for('pluxel.cli.direct')")
 	})

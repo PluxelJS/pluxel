@@ -7,13 +7,17 @@ import type {
 import type { TypstRegion } from './page-render.ts'
 import type { TypstNavigation } from './preview-contract.ts'
 
-const require = createRequire(import.meta.url)
-const root = dirname(require.resolve('@pluxel/typst/package.json'))
+/** Resolve from the Plugin package, before its worker source is extracted into a cache. */
+export function resolveNativeBinding(moduleUrl: string): string {
+	const root = dirname(createRequire(moduleUrl).resolve('@pluxel/typst/package.json'))
+	return join(root, 'native/compiler.node')
+}
 
-/** The pinned upstream NAPI binding, extended with navigation on its compiled document. */
-export const NodeCompiler = (
-	require(join(root, 'native/compiler.node')) as { NodeCompiler: typeof UpstreamCompiler }
-).NodeCompiler
+/** Native code is loaded inside the executing worker, using its owner's explicit package path. */
+export function loadNativeCompiler(path: string): typeof UpstreamCompiler {
+	return (createRequire(import.meta.url)(path) as { NodeCompiler: typeof UpstreamCompiler })
+		.NodeCompiler
+}
 export type NodeCompiler = UpstreamCompiler
 export type NavigationDocument = NodeTypstDocument & {
 	navigation(): TypstNavigation

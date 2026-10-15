@@ -46,16 +46,17 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "pnpm exec vitest run",
+		"test": "vp run check-tests",
 		"bench": "node --experimental-transform-types bench/context.bench.ts",
 		"bench:compare-legacy": "node --experimental-transform-types bench/legacy-comparison.bench.ts",
-		"bench:legacy-snapshot": "pnpm exec vitest bench --testTimeout 600000 legacy/bench/context-getter.bench.ts",
-		"build": "tsdown",
-		"typecheck": "tsc --noEmit --pretty false"
+		"bench:legacy-snapshot": "vp test bench --testTimeout 600000 legacy/bench/context-getter.bench.ts",
+		"build": "vp run compile",
+		"typecheck": "vp run check-types"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:types",
-		"tinybench": "catalog:dev"
+		"tinybench": "catalog:dev",
+		"vite-plus": "catalog:build"
 	},
 	"engines": {
 		"node": ">=24"

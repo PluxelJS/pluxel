@@ -122,6 +122,23 @@ function* strings(value: string): Generator<string> {
 	}
 }
 
+/** Bound a source before worker transport, after shared task admission. */
+export async function assertSourceBytes(
+	source: string,
+	maxBytes: number,
+	signal: AbortSignal,
+): Promise<void> {
+	let bytes = 0
+	for (const chunk of strings(source)) {
+		signal.throwIfAborted()
+		bytes += Buffer.byteLength(chunk, 'utf8')
+		if (bytes > maxBytes)
+			throw new TypstError('LIMIT_EXCEEDED', 'Typst source exceeds the input byte limit')
+		if (source.length > CHUNK) await setImmediate()
+	}
+	signal.throwIfAborted()
+}
+
 async function writeResource(
 	source: ResourceSource,
 	path: string,

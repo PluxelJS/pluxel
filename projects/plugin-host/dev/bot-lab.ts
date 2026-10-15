@@ -43,9 +43,8 @@ export const saveInstructions = defineDevConsole(async (dev) => {
 	const record = input as Record<string, unknown>
 	if (typeof record.instructions !== 'string') throw new TypeError('Expected instructions string')
 	const identity = dev.plugins.require(BotWorkspacePlugin).identity(record.source, record.id)
-	const owner = (await dev.plugins.list()).find(
-		(plugin) => plugin.rootExportName === 'BotWorkspacePlugin',
-	)
+	const plugins = await dev.plugins.list()
+	const owner = plugins.find((plugin) => plugin.rootExportName === 'BotWorkspacePlugin')
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
 	using opened = await openLocalWorkbenchEntry(dev.ctx, {
 		target: owner.address,

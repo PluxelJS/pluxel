@@ -10,9 +10,9 @@
 		}
 	},
 	"scripts": {
-		"test": "vitest run",
-		"typecheck": "tsc --noEmit --pretty false",
-		"build": "pluxel build"
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"test": "vp run check-tests"
 	},
 	"dependencies": {},
 	"devDependencies": {
@@ -20,6 +20,7 @@
 		"@pluxel/core": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
 		"typescript": "catalog:tooling",
+		"vite-plus": "catalog:tooling",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

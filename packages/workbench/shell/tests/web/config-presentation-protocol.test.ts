@@ -302,7 +302,7 @@ it('explains env locks on nested fields while preserving editable siblings in th
 				name: 'nested',
 				path: 'nested',
 				depth: 0,
-				meta: {},
+				meta: { label: 'Value' },
 				required: true,
 				fields: [
 					{ ...baseField('nested.locked'), name: 'locked', depth: 1 },

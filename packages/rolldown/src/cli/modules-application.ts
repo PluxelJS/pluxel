@@ -7,8 +7,9 @@ import { resolveWithOxc } from '../resolver/oxc'
 import { cp, mkdir } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import type { Plugin } from 'rolldown'
-import type { UserConfig } from 'tsdown'
+import type { UserConfig } from 'vite-plus/pack'
 import { createPluginBuildPipeline } from './plugin-build'
+import { validateWorkbenchCapnwebPeer } from './workbench-peer'
 import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/staticConfigEnvironmentPlugin'
 import {
 	renderStaticApplicationEnvironmentExample,
@@ -136,7 +137,7 @@ import { recordLoadedHostApplication } from '@pluxel/host/internal';
 recordLoadedHostApplication(application, import.meta.url);
 export default application;`
 		},
-		generateBundle(_output, bundle) {
+		async generateBundle(_output, bundle) {
 			const modules = Object.values(bundle)
 				.filter((item) => item.type === 'chunk')
 				.flatMap((item) => (item.type === 'chunk' ? item.moduleIds : []))
@@ -167,6 +168,12 @@ export default application;`
 				if (!chunk) this.error(`[pluxel:modules] missing output entry for public export ${subpath}`)
 				exports[subpath] = `./${chunk.fileName}`
 			}
+			const workbenchTargets =
+				options.variant === 'headless' ? [] : await pipeline.semantics.workbenchCompilations()
+			const workbenchCapnweb =
+				workbenchTargets.length > 0
+					? await validateWorkbenchCapnwebPeer(resolve(root, 'package.json'))
+					: undefined
 			this.emitFile({
 				type: 'asset',
 				fileName: 'pluxel-modules.json',
@@ -223,6 +230,7 @@ export default application;`
 								artifactRoot: '.',
 								nodeArtifacts: true,
 								workbenchArtifacts: (options.variant ?? 'workbench') === 'workbench',
+								workbenchCapnweb,
 								modules: { version: 1 },
 							},
 						},

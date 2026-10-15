@@ -67,6 +67,7 @@ function createPlan(buildRevision: string): WorkbenchFederationProducerPlan {
 }
 
 function createContentCompilation(root: string, heading: string) {
+	const sources: never[] = []
 	const contentSet = createWorkbenchContentSet({
 		definition,
 		entries: [
@@ -97,7 +98,7 @@ function createContentCompilation(root: string, heading: string) {
 		digest: createHash('sha256').update(bytes).digest('hex'),
 		bytes,
 		root,
-		sources: [],
+		sources,
 	}
 }
 
@@ -274,10 +275,10 @@ describe('PluginArtifactCompiler', () => {
 		}
 		const semantics = {
 			invalidateWorkbench() {},
-			async workbenchCompilations() {
+			async workbenchCompilations(): Promise<never[]> {
 				return []
 			},
-			async workbenchContentCompilations() {
+			async workbenchContentCompilations(): Promise<never[]> {
 				return []
 			},
 			builtDefinitionModules() {
@@ -890,7 +891,7 @@ async function writeProducer(plan: WorkbenchFederationProducerPlan, outDir: stri
 				types: { path: '', name: '', api: 'types/index.d.ts', zip: '@mf-types.zip' },
 				type: 'global',
 			},
-			remotes: [],
+			remotes: [] satisfies unknown[],
 			shared: Object.entries(compatibility.shared).map(([name, version]) => ({
 				name,
 				version,
@@ -907,7 +908,10 @@ async function writeProducer(plan: WorkbenchFederationProducerPlan, outDir: stri
 	)
 }
 
-function assetGroup(js: string[]) {
+function assetGroup(js: string[]): {
+	js: { sync: string[]; async: string[] }
+	css: { sync: string[]; async: string[] }
+} {
 	return {
 		js: { sync: js, async: [] },
 		css: { sync: [], async: [] },

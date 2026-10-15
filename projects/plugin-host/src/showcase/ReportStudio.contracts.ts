@@ -1,12 +1,21 @@
 import type { RpcTarget } from 'capnweb'
 
-export type ShowcaseRendererKind = 'echarts' | 'takumi' | 'canvas'
+export const SHOWCASE_ENGINES = [
+	'echarts',
+	'canvas',
+	'takumi',
+	'heroui',
+	'markdown',
+	'typst',
+] as const
+export type ShowcaseRendererKind = (typeof SHOWCASE_ENGINES)[number]
+export type ShowcaseRenderRequest = Readonly<{ title: string; engine: ShowcaseRendererKind }>
 
 export type ShowcaseArtifact = Readonly<{
 	id: string
 	title: string
 	engine: ShowcaseRendererKind
-	mediaType: 'image/png'
+	mediaType: 'image/png' | 'image/svg+xml'
 	byteLength: number
 	objectKey: string
 	createdAt: number
@@ -24,7 +33,8 @@ export type ShowcaseCacheStats = Readonly<{
 
 export type ShowcaseSnapshot = Readonly<{
 	revision: number
-	rendererProvider: string
+	engines: readonly ShowcaseRendererKind[]
+	renderingProviders: Readonly<Record<ShowcaseRendererKind, string>>
 	storageProvider: string
 	cacheProvider: string
 	ratesProvider: string
@@ -49,7 +59,7 @@ export type ShowcaseObserver = (revision: number) => void | Promise<void>
 export interface ReportStudioApi extends RpcTarget {
 	snapshotDto(): ShowcaseSnapshot
 	watch(observer: ShowcaseObserver): RpcTarget
-	generateDto(title: string): Promise<ShowcaseArtifact>
+	generateDto(request: ShowcaseRenderRequest): Promise<ShowcaseArtifact>
 	probeOutboundDto(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>>
 	clearCacheDto(): Promise<ShowcaseCacheStats>
 }

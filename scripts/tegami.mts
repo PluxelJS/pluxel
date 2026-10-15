@@ -66,11 +66,11 @@ function verifyBeforePublish(): TegamiPlugin {
 			await formatGeneratedChangelogs(this.cwd)
 		},
 		async beforePublishAll() {
-			await run('pnpm', ['--filter', '@pluxel/create', 'test:starter'], this.cwd)
-			await run('pnpm', ['--filter', '@pluxel/cli', 'test:templates'], this.cwd)
+			await run('vp', ['run', '@pluxel/create#test:starter'], this.cwd)
+			await run('vp', ['run', '@pluxel/cli#test:templates'], this.cwd)
 		},
 		async willPublish({ pkg }) {
-			await run('pnpm', ['exec', 'turbo', 'run', 'build', `--filter=${pkg.name}`], this.cwd)
+			await run('vp', ['run', `${pkg.name}#compile`], this.cwd)
 		},
 	}
 }
@@ -109,7 +109,7 @@ async function formatGeneratedChangelogs(cwd: string): Promise<void> {
 			file.endsWith('/CHANGELOG.md') ||
 			(file.startsWith('projects/docs/content/changelog/') && file.endsWith('.mdx')),
 	)
-	if (files.length > 0) await run('pnpm', ['exec', 'oxfmt', ...files], cwd)
+	if (files.length > 0) await run('vp', ['fmt', ...files], cwd)
 }
 
 function run(command: string, args: string[], cwd: string): Promise<void> {

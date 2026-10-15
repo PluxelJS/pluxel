@@ -7,10 +7,10 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 
 `@pluxel/wretch` 提供一个原生、不可变的 Wretch 基础实例，并在请求真正发出前应用宿主级出站策略。URL 构造、addon、middleware、catcher 和响应链仍使用原生 Wretch API。
 
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-pnpm catalog:add -- @pluxel/wretch
+vp exec pluxel pncat add @pluxel/wretch
 ```
 
 普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 Persistence 服务；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
@@ -124,7 +124,7 @@ export class CustomerHttpPlugin extends BasePlugin {
 主入口导出 `WretchPlugin`、`WretchConfig` 及相关类型，不重新导出裸 `wretch()` factory 或 addons。需要 query-string addon、retry middleware 等上游扩展时，由 consumer 直接安装 `wretch`：
 
 ```sh
-pnpm catalog:add -- wretch
+vp exec pluxel pncat add wretch
 ```
 
 ## 宿主 outbound policy

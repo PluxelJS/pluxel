@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"typecheck": "tsc --noEmit --pretty false"
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"react": "catalog:frontend",
@@ -13,6 +13,7 @@
 		"@types/react": "catalog:frontend",
 		"@types/react-dom": "catalog:frontend",
 		"typescript": "catalog:tooling",
-		"vite": "catalog:tooling"
+		"vite": "catalog:tooling",
+		"vite-plus": "catalog:tooling"
 	}
 }

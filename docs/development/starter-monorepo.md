@@ -7,14 +7,14 @@ description: 快速开始之后，定位业务代码、添加依赖、配置动�
 
 ## 创建和首次验证
 
-以下命令都在生成项目的根目录运行，需要 Node.js 24+ 和 pnpm 11：
+以下命令都在生成项目的根目录运行，先完成[工作区工具链](./workspace-toolchain.md)的 mise 安装和 setup：
 
 ```sh
-pnpm verify
-pnpm dev
+vp run verify
+mise run dev
 ```
 
-`verify` 成功后，打开终端打印的 `Application` 地址。创建一条 Todo，再完成或删除它；这些操作经过真实 Plugin HTTP 路由。管理界面使用同一地址下的 `/__pluxel/workbench`。
+`verify` 成功后，通过 `pitchfork logs app` 查看 `Application` 地址并打开。创建一条 Todo，再完成或删除它；这些操作经过真实 Plugin HTTP 路由。管理界面使用同一地址下的 `/__pluxel/workbench`。
 
 生成项目暂时保留 `@example/*` 包名，根 `package.json` 没有 `name`。先保持示例可运行，确定自己的业务划分后再一起修改包名、依赖引用和导入。
 
@@ -29,7 +29,7 @@ pnpm dev
 | 改启动插件或初始配置     | `host/src/app.ts`、`host/src/runtime-state.ts`   | 检查启动结果和 Workbench 中的当前状态 |
 | 新增独立插件             | [第一个插件](../getting-started/first-plugin.md) | 接入宿主后验证业务结果                |
 
-框架文档可用 `pnpm exec pluxel docs [path]` 定位；项目自己的 `docs/` 留给业务说明。
+框架文档可用 `vp exec pluxel docs [path]` 定位；项目自己的 `docs/` 留给业务说明。
 
 ## 目录与依赖方向
 
@@ -44,6 +44,9 @@ host/
   vite.config.ts            指向 web/ 的唯一 Vite config
   tsdown.config.ts          pluxel({ delivery: 'modules' }) + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
+mise.toml                   工具版本和工作区任务
+pitchfork.toml              app 开发服务、端口与就绪检查
+hk.pkl                      提交检查与修复规则
 pncat.config.ts             catalog 分组和迁移的唯一策略入口
 ```
 
@@ -66,26 +69,27 @@ peer dependency 与 constructor import 对应 required edge。Todo 对 Audit 使
 一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/rolldown` 的 `pluxel()` 选择应用交付并编译配套制品；不需要逐项维护 Node、HTTP、Workbench 的开发接线。共享身份由 Native 启动的 `sharedPackages` 或 Vite 的 singleton 绑定；完整契约见[组合 Host 服务](../host/services.md)。
 
 ```sh
-pnpm dev
-pnpm build
-pnpm start
+mise run dev
+vp run build
+vp run @example/host#start
 ```
 
-`pnpm build` 生成 modules 交付的 `host/dist/`，`pnpm start` 通过 fresh Node launcher 从 `host/dist/app.mjs` 启动；`pnpm --filter @example/host start:vite` 使用独立生产 Vite 配置。启动契约见[Host 配置](../host/configuration.md#生产构建)。开发与生产使用同一份 `host/src/app.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
+`vp run build` 生成 modules 交付的 `host/dist/`，`vp run @example/host#start` 通过 fresh Node launcher 从 `host/dist/app.mjs` 启动；`vp run @example/host#start:vite` 使用独立生产 Vite 配置。启动契约见[Host 配置](../host/configuration.md#生产构建)。开发与生产使用同一份 `host/src/app.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
 
 构建先生成 `host/web/dist`，再构建服务端并把页面复制到 `host/dist/public`，最后创建包含全部文件的发行清单。扩展构建时，把额外的静态文件写入安排在清单创建之前；详见[发行物](./distribution.md)。
 
-Workbench 默认包含在构建结果中；无需管理界面时可以关闭：
+Workbench 默认包含在构建结果中；需要临时关闭开发管理界面时，先停止托管服务，再直接启动：
 
 ```sh
-PLUXEL_WORKBENCH=false pnpm dev
+pitchfork stop app
+PLUXEL_WORKBENCH=false vp run @example/host#dev
 ```
 
 ### 打开页面与直接运行 Vite
 
-`pnpm dev` 用项目固定的 Portless 提供稳定地址，打开终端打印的 `Application` URL 即可。Workbench 在同一地址的 `/__pluxel/workbench`。不要把内部随机 listener port 保存为应用入口。
+`mise run dev` 通过 Pitchfork 启动 `app` 服务，使用 `pitchfork logs app` 查看 `Application` 与 `Workbench` 地址。命令结束后服务继续运行；用 `pitchfork stop app` 停止。稳定公开地址、端口分配和换用其他反代的输入契约见[工作区工具链](./workspace-toolchain.md#端口与公开地址)。
 
-需要直接调试 Vite 时用 `pnpm dev:direct`，也可临时设置 `PORTLESS=0 pnpm dev`。Vite root 为 `host/web/`：Todo API `/api/example/todos` 由插件处理，页面、模块和静态文件由同一 Vite 进程提供。生产应用同样从一个 origin 提供 API 与 `public/` 页面。
+需要直接调试 Vite 时先停止 `app`，再运行 `vp run @example/host#dev`。Vite root 为 `host/web/`：Todo API `/api/example/todos` 由插件处理，页面、模块和静态文件由同一 Vite 进程提供。生产应用同样从一个 origin 提供 API 与 `public/` 页面。
 
 ### 添加依赖
 
@@ -94,11 +98,11 @@ PLUXEL_WORKBENCH=false pnpm dev
 CLI 内联的 pncat 集中管理 `pluxel`、`frontend`、`backend`、`test`、`tooling` 分组版本：
 
 ```sh
-pnpm catalog:add -- <package>
-pnpm catalog:migrate
-pnpm catalog:sync
-pnpm catalog:clean
-pnpm governance:check
+vp exec pluxel pncat add <package>
+vp exec pluxel pncat migrate
+vp exec pluxel workspace sync
+vp exec pluxel pncat clean
+vp run governance:check
 ```
 
 分别用于添加、迁移声明、同步版本、清理和核对依赖。同步只改 workspace catalog；完整边界见[统一外部依赖](./source-workspaces.md#统一外部依赖)。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
@@ -128,18 +132,18 @@ pnpm governance:check
 ## 常用命令
 
 ```sh
-pnpm dev
-pnpm build
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm format:check
-pnpm catalog:check
-pnpm governance:check
-pnpm verify
+mise run dev
+vp run build
+vp run test
+vp check --no-fmt --no-lint
+vp lint
+vp fmt --check
+vp exec pluxel workspace sync --check
+vp run governance:check
+vp run verify
 ```
 
-`verify` 是 CI 的 canonical 门禁，覆盖 governance、format、lint，以及 Turbo task graph 中的 typecheck、test 和 build。
+`verify` 是 CI 的 canonical 门禁，覆盖 governance、format、lint，以及 Vite Task 任务图 中的 typecheck、test 和 build。
 
 ## 创建自己的 Plugin package
 
@@ -147,7 +151,7 @@ starter root 安装 `@pluxel/cli` 是为了后续工具命令，不代表 create
 发布的 Plugin：
 
 ```sh
-pnpm exec pluxel new --name @your-scope/your-plugin plugins
+vp exec pluxel new --name @your-scope/your-plugin plugins
 ```
 
 CLI 会在 `plugins/` 下生成新包。Plugin package 的发布形状见

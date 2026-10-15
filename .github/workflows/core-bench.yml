@@ -20,7 +20,7 @@ on:
       - 'scripts/core-bench-node-runner.mjs'
       - 'mise.toml'
       - 'pnpm-lock.yaml'
-      - 'turbo.jsonc'
+      - 'vite.config.ts'
       - '.github/workflows/core-bench.yml'
   pull_request:
     paths:
@@ -40,7 +40,7 @@ on:
       - 'scripts/core-bench-node-runner.mjs'
       - 'mise.toml'
       - 'pnpm-lock.yaml'
-      - 'turbo.jsonc'
+      - 'vite.config.ts'
       - '.github/workflows/core-bench.yml'
   workflow_dispatch:
     inputs:
@@ -118,7 +118,7 @@ jobs:
           PLUXEL_BENCH_DEFAULT_BRANCH: ${{ env.DEFAULT_BRANCH }}
           PLUXEL_BENCH_TOLERANCE: ${{ env.BENCH_TOLERANCE }}
           PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
-        run: pnpm bench:core:compare
+        run: vp run bench:core:compare
 
       - name: Save dependency cache
         if: always() && steps.benchmark.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'

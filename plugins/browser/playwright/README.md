@@ -49,7 +49,7 @@ Playwright 的 `newContext()` 和 `context.close()` 没有 AbortSignal；取消�
 
 ## 外部端点验证
 
-提供 `PLUXEL_BROWSER_ENDPOINT` 后运行 `pnpm --filter @pluxel/playwright test:external`。
+提供 `PLUXEL_BROWSER_ENDPOINT` 后运行 `vp run @pluxel/playwright#test:external`。
 `PLUXEL_BROWSER_PROTOCOL` 选择 `cdp`（默认）或 `playwright`；`PLUXEL_BROWSER_HEADERS` 可提供 JSON 格式的连接 headers。
 测试通过 Vault 绑定读取连接，连续建立两个真实 Host generation，在隔离 context 中读取静态页面并清理；第二次连接同时验证前一代未停止外部浏览器。
 此命令不启动浏览器，也不访问财政网站。

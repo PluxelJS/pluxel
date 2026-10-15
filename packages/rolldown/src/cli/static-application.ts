@@ -9,7 +9,7 @@ import { FullTracePackages, NodeNativePackages, NonBundleablePackages } from 'nf
 import type { ExternalsTraceOptions } from 'nf3'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import type { OutputBundle, OutputChunk, Plugin } from 'rolldown'
-import type { UserConfig } from 'tsdown'
+import type { UserConfig } from 'vite-plus/pack'
 import { createDistributionManifest } from '../distribution'
 import { staticConfigEnvironmentDeclarationPlugin } from '../rolldown/plugins/staticConfigEnvironmentPlugin'
 import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler'

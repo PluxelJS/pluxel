@@ -1,5 +1,6 @@
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { ReportStudioWorkbench } from '../ReportStudio.workbench'
+import type { ShowcaseRenderRequest } from '../ReportStudio.contracts'
 
 export const studioScope = createWorkbenchRenderer(ReportStudioWorkbench.studio)
 
@@ -12,7 +13,7 @@ export const reportStudioSnapshot = studioScope.query(({ api }) => ({
 }))
 
 export const generateReport = studioScope.mutation(({ api }) => ({
-	mutationFn: (title: string) => api.generateDto(title),
+	mutationFn: (request: ShowcaseRenderRequest) => api.generateDto(request),
 }))
 
 export const probeOutbound = studioScope.mutation(({ api }) => ({

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
 import { describe, expect, it, vi } from 'vitest'
@@ -174,6 +174,12 @@ describe('pluginArtifactBuildPlugin', () => {
 	it('builds reset-on-schema-change without a checked-in migration directory', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-build-test-'))
 		await mkdir(join(root, 'src'), { recursive: true })
+		await mkdir(join(root, 'node_modules'), { recursive: true })
+		await symlink(
+			fileURLToPath(new URL('../../../services/node_modules/drizzle-orm/', import.meta.url)),
+			join(root, 'node_modules/drizzle-orm'),
+			'dir',
+		)
 		await writeFile(
 			join(root, 'package.json'),
 			JSON.stringify({ name: 'reset-database-fixture', type: 'module' }),
@@ -233,6 +239,12 @@ describe('pluginArtifactBuildPlugin', () => {
 	it('injects the generated reset baseline in the Vite server source transform', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-source-test-'))
 		await mkdir(join(root, 'src'), { recursive: true })
+		await mkdir(join(root, 'node_modules'), { recursive: true })
+		await symlink(
+			fileURLToPath(new URL('../../../services/node_modules/drizzle-orm/', import.meta.url)),
+			join(root, 'node_modules/drizzle-orm'),
+			'dir',
+		)
 		await mkdir(join(root, 'node_modules/@pluxel/services'), { recursive: true })
 		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
 		await writeFile(

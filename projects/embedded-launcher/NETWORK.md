@@ -51,14 +51,14 @@ consumer 决定业务重试/缓存/去重。每次 retry 经过 owner-bound Serv
 
 管理页必须区分事实来源，不能把一个模糊的“权限列表”同时用于声明、使用和授权：
 
-| 事实 | 可从哪里取得 | 能证明什么 |
-| --- | --- | --- |
-| 已安装的 Host 能力 | 应用装配与 capability descriptors | Host 提供哪些 Services，不证明某插件使用过 |
-| Plugin required/optional 依赖 | 现有 lowering 与 inspect dependencies | 对其他 Plugin 的声明关系，不是完整 Service/IO 清单 |
-| 显式能力需求 | 拟议包内声明，经构建校验 | 作者声明需要哪些应用能力，不证明实际调用 |
-| 静态发现的调用 | 对直接 token import、ctx.require 和已知方法的分析 | 有来源位置的已知引用；动态调用、封装和间接依赖可能未知 |
-| 已取得能力句柄 | owner Service 创建/发放处 | 此 owner 曾取得句柄，不代表执行过副作用 |
-| 实际调用/活动资源 | Service 接纳与 native backend 回执 | 受观测入口中的调用、完成、失败、取消和活跃资源 |
+| 事实                          | 可从哪里取得                                      | 能证明什么                                             |
+| ----------------------------- | ------------------------------------------------- | ------------------------------------------------------ |
+| 已安装的 Host 能力            | 应用装配与 capability descriptors                 | Host 提供哪些 Services，不证明某插件使用过             |
+| Plugin required/optional 依赖 | 现有 lowering 与 inspect dependencies             | 对其他 Plugin 的声明关系，不是完整 Service/IO 清单     |
+| 显式能力需求                  | 拟议包内声明，经构建校验                          | 作者声明需要哪些应用能力，不证明实际调用               |
+| 静态发现的调用                | 对直接 token import、ctx.require 和已知方法的分析 | 有来源位置的已知引用；动态调用、封装和间接依赖可能未知 |
+| 已取得能力句柄                | owner Service 创建/发放处                         | 此 owner 曾取得句柄，不代表执行过副作用                |
+| 实际调用/活动资源             | Service 接纳与 native backend 回执                | 受观测入口中的调用、完成、失败、取消和活跃资源         |
 
 当前 [inspect](../../docs/development/inspection.md) 没有完整的“插件所有能力使用扫描”契约。首版直接做 Service 运行时观察，显示“本 session 已观察”，不实现通用静态分析器，也不扩展全局 Plugin ABI。未来显式需求声明如果用于权限接纳，需要独立定义其 owner 和授权语义，不能把猜测的 import 清单当授权依据。
 
@@ -70,13 +70,13 @@ consumer 决定业务重试/缓存/去重。每次 retry 经过 owner-bound Serv
 
 ## 5. 其他范式与最小演示增量
 
-| 范式 | 代表路径 | 演示价值 |
-| --- | --- | --- |
-| 纯计算与多入口 | Calculator -> Launcher/CLI | DI、共享业务、配置 |
-| 原生短副作用 | Clipboard/Desktop | 原生调用回执，取消不回滚 |
-| 订阅与贡献 | 查询 provider/动作 | 注册撤回、HMR 和晚到消息 |
-| 出站异步 IO | RemoteLookup -> Wretch -> Network | 超时、取消、错误转换、能力观察 |
-| 持久设置 | Host storage + config | 保存/应用分离，跨 runtime 保留 |
+| 范式           | 代表路径                          | 演示价值                       |
+| -------------- | --------------------------------- | ------------------------------ |
+| 纯计算与多入口 | Calculator -> Launcher/CLI        | DI、共享业务、配置             |
+| 原生短副作用   | Clipboard/Desktop                 | 原生调用回执，取消不回滚       |
+| 订阅与贡献     | 查询 provider/动作                | 注册撤回、HMR 和晚到消息       |
+| 出站异步 IO    | RemoteLookup -> Wretch -> Network | 超时、取消、错误转换、能力观察 |
+| 持久设置       | Host storage + config             | 保存/应用分离，跨 runtime 保留 |
 
 新增一个 RemoteLookup 插件即可：向配置的 HTTP(S) JSON endpoint 查询少量匹配项，通过 schema 验证后显示原生结果。它不自动查询用户每次输入，使用明确前缀或动作触发，避免无意把所有输入发送到网络。配置只包含 endpoint 和展示所需参数，初版使用无需凭据的服务。
 

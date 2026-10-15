@@ -7,36 +7,39 @@ description: 用 @pluxel/create 创建并启动一个带 React 页面、HTTP API
 
 ## 创建并启动
 
-准备 **Node.js 24 或更新版本**和 **pnpm 11**，在你存放项目的目录执行：
+先按 [mise 入门](https://mise.jdx.dev/getting-started.html)安装并激活 mise。使用 Node.js 24、pnpm 11 和 Vite+ 创建项目，进入生成目录后安装项目固定的工具链：
 
 ```sh
-pnpm create @pluxel my-app
+mise exec node@24 pnpm@11 viteplus@1.2.0 -- vp create @pluxel my-app --no-install
 cd my-app
-pnpm exec pluxel workspace setup
-pnpm dev
+mise trust
+mise install
+mise run setup
+mise run dev
 ```
 
-`pnpm create @pluxel` 调用 `@pluxel/create`，默认安装依赖。目标目录需要不存在或为空；不需要克隆 Pluxel 源码，也不需要全局安装 CLI。
+`vp create @pluxel` 调用 `@pluxel/create`。这里用 `--no-install` 先生成文件，再由 `mise run setup` 安装依赖并准备 Pluxel 工作区。目标目录需要不存在或为空；不需要克隆 Pluxel 源码或全局安装 CLI。
 
-只想先生成文件时，使用 `pnpm create @pluxel my-app --no-install`，随后在生成目录运行 `pnpm install`。
+项目初始化 Git 后运行 `mise run hooks:install` 安装 hk 提交检查。工具职责、常用命令和代理设置见[工作区工具链](../development/workspace-toolchain.md)。
 
 ## 确认应用已运行
 
-打开终端打印的 **Application** 地址。页面标题是 **Todo route lab**：输入一条待办并点击 **Add**，再试着勾选完成或删除。
+`mise run dev` 通过 Pitchfork 启动 `app` 服务，命令结束后服务继续运行。用 `pitchfork logs app` 查看 Vite 打印的 **Application** 地址并打开。页面标题是 **Todo route lab**：输入一条待办并点击 **Add**，再试着勾选完成或删除。
 
 这条操作已经经过完整的应用链路：React 页面请求同一站点的 `/api/example/todos`，HTTP 插件调用 Todo 插件处理状态。
 
-打开终端打印的 **Workbench** 地址，可以查看和管理插件。它位于同一应用地址的 `/__pluxel/workbench` 路径。
+打开同一日志中打印的 **Workbench** 地址，可以查看和管理插件。它位于同一应用地址的 `/__pluxel/workbench` 路径。
 
 示例的待办数据保存在内存中，重启后会重置。需要持久化时再接入[数据库](../plugin-development/database.md)。
 
-如果本机无法使用默认的命名开发地址，停止当前命令后运行：
+项目默认启用固定 `8088` 端口的 HTTP 代理，无需项目外配置。已有 supervisor 的迁移和代理诊断见[工作区指南](../development/workspace-toolchain.md#端口与公开地址)。需要直接调试 Vite 时运行：
 
 ```sh
-pnpm dev:direct
+pitchfork stop app
+vp run @example/host#dev
 ```
 
-打开这次 Vite 输出的本地地址即可，应用和 API 仍在同一个服务中。
+打开这次 Vite 输出的本地地址即可，应用和 API 仍在同一个服务中。结束托管开发会话时使用 `pitchfork stop app`。
 
 ## 做第一处修改
 
@@ -63,14 +66,14 @@ pnpm dev:direct
 在项目根目录运行完整检查：
 
 ```sh
-pnpm verify
+vp run verify
 ```
 
 它会执行格式、lint、类型检查、测试和构建。只需要构建并启动生产版本时：
 
 ```sh
-pnpm build
-pnpm start
+vp run build
+vp run @example/host#start
 ```
 
 示例使用同一个应用声明描述固定插件与可选动态来源，开发时支持热更新。配置来源与启动策略见[配置插件宿主](../host/configuration.md)。

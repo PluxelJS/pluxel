@@ -43,7 +43,7 @@ it('relocates a traced native library in the Pluxel namespace without external f
 		const buildScript = join(root, 'build.mts')
 		await writeFile(
 			buildScript,
-			`import {build} from ${JSON.stringify(import.meta.resolve('tsdown'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',launcher:'host',lint:false,residualDependencies:{packages:['@pluxel/native-fixture']}})],config:false})`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',launcher:'host',lint:false,residualDependencies:{packages:['@pluxel/native-fixture']}})],config:false})`,
 		)
 		await promisify(execFile)(
 			process.execPath,
@@ -166,7 +166,7 @@ export default defineHostApplication(() => ({name:'production-bridge', plugins:[
 		await writeFile(
 			buildScript,
 			`
-import { build } from ${JSON.stringify(import.meta.resolve('tsdown'))};
+import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))};
 import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)};
 await build({cwd:${JSON.stringify(root)},entry:'app.ts',minify:false,plugins:[pluxel({delivery:'modules',variant:'headless',lint:false})],config:false});
 `,
@@ -233,7 +233,7 @@ it('preserves standalone handler and listener startup failures when Host cleanup
 		const buildScript = join(root, 'build.mts')
 		await writeFile(
 			buildScript,
-			`import {build} from ${JSON.stringify(import.meta.resolve('tsdown'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({variant:'headless',lint:false})],config:false})`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({variant:'headless',lint:false})],config:false})`,
 		)
 		await promisify(execFile)(
 			process.execPath,

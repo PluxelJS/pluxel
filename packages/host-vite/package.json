@@ -44,9 +44,9 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "pnpm exec vitest run",
-		"build": "tsdown",
-		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
+		"test": "vp run check-tests",
+		"build": "vp run compile",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@pluxel/rolldown": "workspace:^",
@@ -61,7 +61,8 @@
 		"@pluxel/test": "workspace:*",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"typescript": "catalog:dev"
+		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",

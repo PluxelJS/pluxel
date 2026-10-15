@@ -9,6 +9,7 @@ import {
 	Loader,
 	MantineProvider,
 	Paper,
+	Select,
 	SimpleGrid,
 	Stack,
 	Table,
@@ -18,7 +19,11 @@ import {
 } from '@mantine/core'
 import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { useMemo, useState } from 'react'
-import type { ShowcaseArtifact } from '../ReportStudio.contracts'
+import {
+	SHOWCASE_ENGINES,
+	type ShowcaseArtifact,
+	type ShowcaseRendererKind,
+} from '../ReportStudio.contracts'
 import {
 	clearPreviewCache,
 	generateReport,
@@ -30,13 +35,22 @@ import {
 const INSPECTION_SURFACES = Object.freeze([
 	['Catalog + lifecycle', 'Plugins'],
 	['Providers + S3 buckets', 'Dependencies'],
-	['PluginPart settings', 'Config'],
+	['Report settings', 'Config'],
 	['Commands + telemetry', 'Commands · Logs'],
 ] as const)
 
+const ENGINE_LABELS: Record<ShowcaseRendererKind, string> = {
+	echarts: 'ECharts · chart',
+	canvas: 'Canvas · native drawing',
+	takumi: 'Takumi · Worker JSX',
+	heroui: 'HeroUI v3 · Worker card',
+	markdown: 'Markdown · Typst math',
+	typst: 'Typst · typeset document',
+}
+
 const SHOWCASE_ROUTES = Object.freeze([
 	'GET /showcase/status',
-	'POST /showcase/generate/:title',
+	'POST /showcase/generate/:engine/:title',
 	'GET /showcase/artifacts/:id',
 	'GET /showcase/metrics',
 ] as const)
@@ -52,6 +66,7 @@ function ReportStudio() {
 
 function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) {
 	const [title, setTitle] = useState('Pluxel architecture in practice')
+	const [engine, setEngine] = useState<ShowcaseRendererKind>('echarts')
 	const [error, setError] = useState<string>()
 	const [preview, setPreview] = useState<ShowcaseArtifact>()
 	const snapshotQuery = reportStudioSnapshot.useQuery()
@@ -73,7 +88,9 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 		() =>
 			snapshot
 				? ([
-						['Renderer', snapshot.rendererProvider],
+						...Object.entries(snapshot.renderingProviders).map(
+							([key, value]) => [ENGINE_LABELS[key as ShowcaseRendererKind], value] as const,
+						),
 						['Cache', snapshot.cacheProvider],
 						['Rates owner', snapshot.ratesProvider],
 						['S3 provider', snapshot.storageProvider],
@@ -85,7 +102,7 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 	const generate = async () => {
 		setError(undefined)
 		try {
-			const artifact = await generateMutation.mutateAsync(title)
+			const artifact = await generateMutation.mutateAsync({ title, engine })
 			setPreview(artifact)
 			host.notify({
 				title: 'Report generated',
@@ -129,8 +146,8 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 					Pluxel Architecture Lab
 				</Title>
 				<Text c="dimmed" maw={820}>
-					一次生成会经过 caller-aware Rates、Cache、可替换 renderer、共享 worker、两个具名 S3
-					bucket、OTel 和 Workbench observer。下面的结果来自真实插件调用链。
+					一次生成会经过 Rates、Cache、所选渲染引擎、两个具名 S3 bucket、OTel 和 Workbench
+					observer。 在一个应用插件中比较图表、Canvas、React JSX、HeroUI 卡片、Markdown 与 Typst。
 				</Text>
 			</div>
 
@@ -143,6 +160,16 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 				<Paper withBorder p="md" radius="md">
 					<Stack gap="sm">
 						<Title order={4}>Generate a report</Title>
+						<Select
+							label="Rendering engine"
+							data={SHOWCASE_ENGINES.map((value) => ({ value, label: ENGINE_LABELS[value] }))}
+							value={engine}
+							allowDeselect={false}
+							disabled={busy !== undefined}
+							onChange={(value) => {
+								if (value) setEngine(value as ShowcaseRendererKind)
+							}}
+						/>
 						<TextInput
 							label="Report title"
 							value={title}
@@ -186,8 +213,8 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 							</Group>
 						) : null}
 						<Text size="xs" c="dimmed">
-							切换 renderer、Cache/Rate backend 或 S3 dependency 后，Runtime 会重启真实 dependent
-							closure；本页面的新 target 会反映新 generation。
+							每次请求显式选择引擎；同一引擎与标题会复用缓存。Takumi 和 HeroUI JSX 模板在共享 Worker
+							内执行；Markdown 报告包含 Typst 行内与块级公式。
 						</Text>
 					</Stack>
 				</Paper>
@@ -230,13 +257,13 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 					<Title order={4} mb="sm">
 						Active implementations
 					</Title>
-					<Table withTableBorder withRowBorders={false}>
+					<Table withTableBorder withRowBorders={false} style={{ tableLayout: 'fixed' }}>
 						<Table.Tbody>
 							{providers.map(([label, value]) => (
 								<Table.Tr key={label}>
-									<Table.Td w={160}>{label}</Table.Td>
+									<Table.Td w="35%">{label}</Table.Td>
 									<Table.Td>
-										<Code>{value}</Code>
+										<Code style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{value}</Code>
 									</Table.Td>
 								</Table.Tr>
 							))}
@@ -248,7 +275,7 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 					<Title order={4}>Inspect in Workbench</Title>
 					<Stack gap="xs" mt="sm">
 						{INSPECTION_SURFACES.map(([label, location]) => (
-							<Group key={label} justify="space-between" wrap="nowrap">
+							<Group key={label} justify="space-between">
 								<Text size="sm">{label}</Text>
 								<Badge variant="outline" color="gray">
 									{location}
@@ -261,7 +288,9 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 					</Title>
 					<Group gap="xs" mt="xs">
 						{SHOWCASE_ROUTES.map((route) => (
-							<Code key={route}>{route}</Code>
+							<Code key={route} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+								{route}
+							</Code>
 						))}
 					</Group>
 					<Text size="xs" c="dimmed" mt="sm">

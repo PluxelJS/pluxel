@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vite-plus'
 import { vitePreset } from '@pluxel/services/vite'
 import { fileURLToPath } from 'node:url'
 

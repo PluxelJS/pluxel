@@ -14,7 +14,6 @@ packages:
   '@pluxel/canvas': patch
   '@pluxel/fonts': patch
   '@pluxel/takumi-markdown': patch
-  '@pluxel/takumi-markdown-typst': patch
   '@pluxel/wretch': patch
 ---
 

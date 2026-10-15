@@ -237,6 +237,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 														Actions.renameTab(result.document.id, title),
 													),
 												)
+											return undefined
 										})
 										.catch((error: unknown) => session.report(error))
 								})
@@ -266,6 +267,7 @@ export function useNativeMenus(session: WorkspaceSession, root: RefObject<HTMLDi
 															Actions.renameTab(result.document.id, title),
 														),
 													)
+												return undefined
 											})
 											.catch((error: unknown) => session.report(error))
 									})

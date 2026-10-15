@@ -95,6 +95,8 @@ export async function buildNodeModule(options: BuildNodeModuleOptions): Promise<
 				sourcemap: false,
 				rolldownOptions: {
 					input: entryPath,
+					// Portable artifacts must not retain source-machine paths in module debug comments.
+					experimental: { attachDebugInfo: 'none' },
 					external: (id: string) => builtins.has(id),
 					output: {
 						format: 'es',

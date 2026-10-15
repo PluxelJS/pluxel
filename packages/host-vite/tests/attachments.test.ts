@@ -239,11 +239,11 @@ it('rejects asynchronous tracks and preserves its rejection through Host cleanup
 		const closing = host.close()
 		let closed = false
 		void closing.then(
-			() => {
+			(): void => {
 				closed = true
 				return undefined
 			},
-			() => {
+			(): void => {
 				closed = true
 				return undefined
 			},

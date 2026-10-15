@@ -46,7 +46,7 @@ function Link({ to, children, ...rest }: { to: string } & ComponentProps<'a'>) {
 }
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	window.matchMedia = vi.fn().mockImplementation((media: string) => ({
 		media,
 		matches: false,

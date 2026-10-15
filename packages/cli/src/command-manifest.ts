@@ -289,7 +289,7 @@ export const sourceBuildArgs = {
 	},
 	force: {
 		type: 'boolean',
-		description: 'Ignore an upstream Turbo build cache hit',
+		description: 'Ignore an upstream Vite+ build cache hit',
 		default: false,
 	},
 } as const

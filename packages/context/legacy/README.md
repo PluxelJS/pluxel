@@ -41,16 +41,16 @@ The package's normal `test` and `typecheck` commands include this directory, so 
 baseline cannot silently rot.
 
 ```sh
-pnpm --filter @pluxel/context test
-pnpm --filter @pluxel/context typecheck
+vp run @pluxel/context#test
+vp run @pluxel/context#typecheck
 ```
 
 The original micro-benchmark is retained separately from the direct current-versus-legacy
 comparison:
 
 ```sh
-pnpm --filter @pluxel/context bench:legacy-snapshot
-pnpm --filter @pluxel/context bench:compare-legacy
+vp run @pluxel/context#bench:legacy-snapshot
+vp run @pluxel/context#bench:compare-legacy
 ```
 
 Benchmarks report trends, not correctness or release thresholds. The comparison intentionally names

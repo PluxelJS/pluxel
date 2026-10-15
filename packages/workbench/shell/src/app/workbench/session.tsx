@@ -424,6 +424,7 @@ export class WorkspaceSession {
 							)
 					}
 				}
+				return undefined
 			} finally {
 				this.synchronizingPanels = undefined
 			}

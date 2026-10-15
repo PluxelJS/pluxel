@@ -120,7 +120,7 @@ describe('generated Workbench React Bridge', () => {
 	it('rejects a descriptor whose kind or key does not match the generated identity', async () => {
 		const apiCall = vi.fn()
 		const handle = await openedHandle({ snapshot: apiCall, [Symbol.dispose]() {} })
-		function WrongRenderer() {
+		function WrongRenderer(): null {
 			const { api } = useWorkbench(OtherWorkbench.other)
 			void api.snapshot()
 			return null

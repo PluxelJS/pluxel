@@ -1,53 +1,51 @@
-# Takumi Markdown Plugin 设计
+# Markdown conversion for Takumi
 
-@pluxel/takumi-markdown 是 TakumiPlugin 的 required consumer，也是一个普通的
-Pluxel Plugin；它不向 Runtime 添加 Markdown capability、全局 parser、theme registry 或新的 renderer
-pool。业务 consumer 只注入 TakumiMarkdownPlugin，取得 caller-generation-owned
-MarkdownRenderer handle。
+`TakumiMarkdownPlugin` owns GFM conversion, static Rangi highlighting, trusted Satteri
+extensions and optional restricted Typst mathematics. A renderer converts Markdown once and
+passes HTML and generated images to one `TakumiPlugin.renderInWorker` or `renderSvgInWorker`
+call. Its options extend cloneable Takumi Worker options with a document theme. Concrete font
+bytes, CSS, image sources and encoding fields retain their native meanings; there is no second
+queue or reservation.
 
-## 选择的边界
+`createRenderer()` snapshots the extension list, available mathematics provider and default
+theme. Its handle belongs to the dependency caller generation. Explicit close, caller stop and
+provider stop abort preparation and await pending work. Standard `AbortSignal.any()` links
+these lifetimes with per-call cancellation. Cleanup does not promise preemption of synchronous
+parser or native work. The final Takumi task uses execution settlement.
 
-- Markdown document、GFM table 和静态 fenced code 属于 HTML/CSS 文档渲染，最后交给 Takumi 的
-  table/layout engine；它们不复用 @pluxel/canvas/table。
-- Canvas table 适合调用方已经拥有 rows、columns 和 native context 的静态报告最后一公里；ECharts
-  继续是图表能力。Markdown package 不重新实现这些成熟领域。
-- Rangi 以 fixed language alias mapping 和 classes-only HTML 提供有限、可预测的静态高亮。没有
-  Shiki grammar/theme 管理、自动语言检测或在线下载，也不把任意高亮器配置暴露为 host contract。
-- Satteri 只编译 Markdown，不编译 MDX；raw Markdown HTML 固定关闭，并在所有 HAST pass 后再次移除。
+The document layer limits its own source, AST, highlighted code, generated HTML, formulas and
+extension assets. Large string walks and asset copies yield cooperatively. GFM, Rangi and
+trusted extension code stay in the caller realm; final HTML/CSS preparation and rendering run
+in the shared Worker. Markdown HTML is disabled and raw HAST nodes are removed after
+extensions. Remote image loading requires explicit `images.allowRemote: true`; preloaded
+images work without network access. Fetch callbacks, Renderer instances and WASM modules do
+not cross the Worker boundary.
 
-## admission、生命周期与取消
+Extensions are trusted application code. Their factories and AST phases run in declaration
+order, and their exceptions propagate unchanged. Each factory receives the resolved per-render
+theme through `MarkdownExtensionContext.theme`. An asset sink copies bytes into this render's
+opaque namespace and rejects use after the render settles. Caller image options are preserved
+when adding those generated sources.
 
-createRenderer() 在 provider generation 正常运行时 snapshot extension list 和 default theme，并把 handle
-的 close effect 归属到当前 dependency caller generation。consumer/provider stop、replacement 或 manual
-close() 都会 abort queued/running work，再等待已有 Promise settle；它不会留下可跨 generation 复用的
-renderer。
+Typst is a type-only optional Plugin ref and optional peer, not a second required Plugin or
+compiler package. Without a running provider, documents use ordinary Markdown. Provider
+appearance, withdrawal or replacement restarts Markdown and downstream consumers; old renderer
+handles cannot silently switch provider. When selected, the built-in mathematics pipeline adds
+restricted formula/SVG limits from `TakumiMarkdownConfig.math`, delegates stateless SVG
+compilation to TypstPlugin, and contributes its SVG bytes to the same asset sink. Typst owns
+fonts, native compilation and its Worker execution. Each formula task settles before the final
+Takumi task is submitted, so a shared slot never waits for nested shared Worker admission.
 
-一次 render() / renderSvg() 先取得 TakumiPlugin.reserveRender()。因此满队列时不会执行
-source byte walk、Satteri parse、Rangi、trusted extension factory、asset copy 或 Typst dispatch。reservation
-的 linked signal 覆盖 Markdown prepare 与 final render；在最终 native work 已提交后，Takumi 保留 capacity
-直到 native settlement，不能把 abort 描述成强制抢占。
+Formula SVGs have transparent backgrounds and use the same theme foreground palette as the
+document stylesheet. Inline and display formulas preserve their compilation modes; SVG
+viewBox dimensions in points become explicit CSS-pixel image dimensions at 96/72 scale.
 
-## 扩展和资源所有权
+`MarkdownError` describes document failures and classified formula/Typst compile or byte-limit
+failures, preserving the original cause for mapped failures. Unknown extension, provider and
+Worker failures retain their own contracts. Error names are not used to guess which extension
+owns an exception.
 
-extension 是 startup-time 的受信任代码，不是用户 Markdown、数据库记录或 HTTP request 可以携带的
-untrusted plugin declaration。每次 accepted render 都按 renderer array order 调用 factory；factory 可以：
-
-- 声明有限的 Satteri feature requirement；
-- 返回 ordered MDAST/HAST plugin entries；
-- 通过此次 MarkdownExtensionContext.assets 添加支持的 image bytes。
-
-extension error 规范化为 MarkdownError('EXTENSION_FAILED')，已有稳定 Markdown/Takumi/Typst/Worker
-失败保持自己的 code。asset sink 不接受 caller-selected URL、不 fetch、不暴露 image map；它对生成 bytes 做
-count/per-item/total budget、cooperative copy 和 opaque pluxel://markdown-internal/ source allocation。
-caller input 不得占用该 namespace。sink 只在 render scope active 时有效，收尾后使用它会失败。
-
-## 有界准备
-
-source UTF-8、MDAST/HAST node、generated HTML、code block count/bytes 和 generated assets 都有独立
-ceiling。大字符串计量、tree walk 和 byte copy 在 checkpoint 让出 event loop，并观察 reservation signal。
-Takumi 继续负责 final content/style/image/dimension/output budget；Markdown 不试图绕开或放宽下游 host
-policy。
-
-tests 在 Runtime host 验证 GFM table、raw HTML removal、Rangi order、queue-full 不运行 factory、asset/error
-ownership 和 handle close。Typst integration 的 worker artifact smoke test 位于 optional package；它验证 SVG
-asset 进入同一次 final Takumi render，而不是嵌套 renderer。
+Verification covers real Plugin ownership, Worker formats/CSS, GFM/highlighting, generated
+assets, limits, raw HTML removal, image IO policy, original extension failures, and Typst
+absence/appearance/replacement with actual SVG output. Public usage lives in the
+[Markdown guide](../../../docs/plugins/rendering/takumi-markdown.md).

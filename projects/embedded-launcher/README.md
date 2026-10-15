@@ -41,9 +41,9 @@
 从仓库根执行（构建需要 Node/pnpm、Rust 和网络以取得固定 LLRT 源码）：
 
 ```sh
-pnpm install --frozen-lockfile
+vp install --frozen-lockfile
 node projects/embedded-launcher/build/prepare-llrt.mjs
-pnpm --filter @embedded-launcher/app build:plugins
+vp run @embedded-launcher/app#build:plugins
 cargo run --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --bin embedded-smoke
 cargo test --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --test runtime
 ```
@@ -58,7 +58,7 @@ cargo test --locked --manifest-path projects/embedded-launcher/native/Cargo.toml
 node dev.mjs
 ```
 
-它启动或连接真实原生应用，通过 Unix socket 借用原生能力，再由 Vite 装配插件。关闭 Node 开发进程后窗口保留；重新运行会建立新执行会话。业务插件与普通 helper 直接 HMR；稳定 SDK 修改需先 `pnpm build:sdk` 并重启 Node。
+它启动或连接真实原生应用，通过 Unix socket 借用原生能力，再由 Vite 装配插件。关闭 Node 开发进程后窗口保留；重新运行会建立新执行会话。业务插件与普通 helper 直接 HMR；稳定 SDK 修改需先 `vp run build:sdk` 并重启 Node。
 
 另一个终端从仓库根使用相同 profile：
 

@@ -11,10 +11,10 @@ description: 通过 Fonts、Canvas 和共享 Worker 在服务端渲染 Apache EC
 
 ## 安装与 catalog
 
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-pnpm catalog:add -- @pluxel/echarts @pluxel/canvas @pluxel/fonts
+vp exec pluxel pncat add @pluxel/echarts @pluxel/canvas @pluxel/fonts
 ```
 
 host catalog 包含 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 与 consumer。业务 Plugin 只注入 ECharts：

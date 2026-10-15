@@ -177,12 +177,16 @@ process.once('SIGINT', shutdown)
 
 `@pluxel/host/environment` 提供 `env`、`hostEnv`、`resolveHostEnv(input)`。显式参数用于根据本次 startup 环境解析，不依赖修改 `process.env`。
 
-| 变量                                    | 含义                                                              |
-| --------------------------------------- | ----------------------------------------------------------------- |
-| `PLUXEL_DATA_ROOT`                      | 数据目录默认值，省略为 `.pluxel`；应用决定子目录                  |
-| `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | 物理 listener 地址与端口                                          |
-| `PLUXEL_WORKBENCH`                      | 由应用传给服务组合的页面开关                                      |
-| `PORTLESS_URL`                          | 开发外部 origin；存在时可采用 `HOST` / `PORT`，显式 Pluxel 值优先 |
+| 变量                                    | 含义                                                     |
+| --------------------------------------- | -------------------------------------------------------- |
+| `PLUXEL_DATA_ROOT`                      | 数据目录默认值，省略为 `.pluxel`；应用决定子目录         |
+| `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | 物理 listener 地址与端口，分别优先于通用 `HOST` / `PORT` |
+| `PLUXEL_WORKBENCH`                      | 由应用传给服务组合的页面开关                             |
+| `HOST` / `PORT`                         | 通用监听输入；没有反向代理或公开 origin 时也生效         |
+| `PLUXEL_PUBLIC_ORIGIN`                  | 显式 HTTP(S) 公开 origin，优先于 `PITCHFORK_URL`         |
+| `PITCHFORK_URL`                         | Pitchfork 提供的公开 origin；未显式配置时自动采用        |
+
+解析后的 `hostEnv.publicOrigin` 由 Vite 和 native listener 共同用于管理会话的浏览器同源校验，Vite 还用它打印公开访问地址；没有公开 origin 时使用监听 origin。它不改变物理监听地址、客户端地址或 TLS 判定，也不从 `Forwarded` / `X-Forwarded-*` 请求头推断。公开 origin 必须是 HTTP(S) origin，不含凭证、业务路径、查询参数或片段。开发代理的配置与排障见[工作区工具链](../development/workspace-toolchain.md#端口与公开地址)。
 
 ## 绑定部署环境与 JSON 文件
 
@@ -410,7 +414,7 @@ Host 的 `kind: 'logtape'` 直接接受原生 `Sink`，保留 `LogRecord`、form
 推荐用 `@logtape/otel` 对接 OTLP 后端。应用按需安装以下依赖；Pluxel 默认不加载网络 exporter：
 
 ```sh
-pnpm add @logtape/otel@^2.3.10 @opentelemetry/sdk-logs@^0.222.0 @opentelemetry/resources@^2.11.0 @opentelemetry/exporter-logs-otlp-proto@^0.222.0
+vp add @logtape/otel@^2.3.10 @opentelemetry/sdk-logs@^0.222.0 @opentelemetry/resources@^2.11.0 @opentelemetry/exporter-logs-otlp-proto@^0.222.0
 ```
 
 在启动环境中设置完整的 logs endpoint；VictoriaLogs 示例：
@@ -692,14 +696,25 @@ PGlite 的 data directory 只为本机工作流提供正常关闭后的便利重
 
 ## 生产构建
 
+把构建选项保存在 `tsdown.config.ts`：
+
 ```ts no-twoslash
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 import { pluxel } from '@pluxel/rolldown'
 
 export default defineConfig({
 	entry: './src/app.ts',
 	plugins: [pluxel()],
 })
+```
+
+在应用的 `vite.config.ts` 中导入这份配置并设置 `pack` 字段，然后运行 `vp pack`。已有开发配置时保留其他字段：
+
+```ts no-twoslash
+import { defineConfig } from 'vite-plus'
+import pack from './tsdown.config'
+
+export default defineConfig({ pack })
 ```
 
 `@pluxel/rolldown` 的 `pluxel()` 统一构建官方与自定义服务组合。生产 bootstrap 通过 `@pluxel/host` 启动同一应用，HTTP handler/listener 属于 `@pluxel/services/elysia/*`。

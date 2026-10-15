@@ -25,7 +25,7 @@ export function LogPreview({ owner }: { owner: PluginNodeAddress }) {
 					</Button>
 				</>
 			)}
-			{!store.length && !error && (
+			{store.length === 0 && !error && (
 				<Text size="xs" c="dimmed">
 					{status === 'loading' ? '正在读取日志…' : '暂无日志'}
 				</Text>

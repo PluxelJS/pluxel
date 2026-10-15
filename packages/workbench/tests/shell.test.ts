@@ -13,7 +13,7 @@ import { createDiskFixture } from '@pluxel/test/fixtures'
 
 import { renderRuntimeUiHtml } from '../src/shell/html'
 
-const assets = {
+const assets: { js: string; css: string[]; preload: string[] } = {
 	js: '/src/client.tsx',
 	css: [],
 	preload: [],
@@ -28,7 +28,7 @@ describe('Workbench UI HTML rendering', () => {
 			'shared.js': 'export const value = 42',
 		})
 		const output = await build({
-			configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
+			configFile: fileURLToPath(new URL('../vite.shell.config.ts', import.meta.url)),
 			logLevel: 'silent',
 			build: {
 				write: false,
@@ -39,8 +39,9 @@ describe('Workbench UI HTML rendering', () => {
 			},
 		})
 		const bundles = Array.isArray(output) ? output : [output]
+		const emptyOutput: never[] = []
 		const code = bundles
-			.flatMap((bundle) => ('output' in bundle ? bundle.output : []))
+			.flatMap((bundle) => ('output' in bundle ? bundle.output : emptyOutput))
 			.filter((item) => item.type === 'chunk')
 			.map((item) => item.code)
 			.join('\n')

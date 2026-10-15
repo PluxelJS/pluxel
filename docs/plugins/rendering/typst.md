@@ -1,21 +1,40 @@
 ---
 title: Typst 文档
-description: 用多文件输入生成同一修订的 Vector 预览与 PDF，并管理会话寿命。
+description: 复用 Typst 生成无状态 SVG，或用多文件会话生成同修订 Vector 预览与 PDF。
 ---
 
 `@pluxel/typst` 是 workspace 内的文档插件，当前保持 private。业务通过 constructor 注入 TypstPlugin。
 
 ## 接入前提
 
-Typst 通过 NodeModules 定位独立编译制品；每个文档会话拥有一个常驻 Worker 和 native compiler。这些是 Host 显式安装的服务，安装包或注册 TypstPlugin 不会自动挂载它们。
+Typst 通过 NodeModules 定位独立编译制品；每个文档会话拥有一个常驻 Worker 和 native compiler。无状态 `renderSvg()` 使用 Host 的共享 Workers。这些是 Host 显式安装的服务，安装包或注册 TypstPlugin 不会自动挂载它们。
 
 - 使用 `standardServices()` 或 `servicesPreset()` 的应用已包含 NodeModules，无需重复安装。
-- 自行组合 Host 时，显式安装 `nodeModules(...)`。生产环境配置已构建的 artifact 来源；源码开发接入 Vite artifact 编译器。具体装配见 [Host 服务](../../host/services.md)与 [Node artifacts 安装说明](../../plugin-development/node-artifacts.md#选择安装能力)。
+- 自行组合 Host 时，会话只需 `nodeModules(...)`；调用 `renderSvg()` 另需 `workers(...)`。生产环境配置已构建的 artifact 来源；源码开发接入 Vite artifact 编译器。具体装配见 [Host 服务](../../host/services.md)与 [Node artifacts 安装说明](../../plugin-development/node-artifacts.md#选择安装能力)。
 - 应用插件清单包含 FontsPlugin、TypstPlugin 与业务 consumer；FontsPlugin 是插件依赖，不是 Host 服务。无 Workbench、无 Persistence 也可使用部署字体，由 `FontsConfig.files` 提供宿主绝对路径。Typst 在模板中选择字体 family；Fonts 的 `defaultFamily` 用于 Canvas 等 renderer 的默认选择。仅管理上传字体和保存交互式默认偏好需要 Persistence，见[字体部署](./fonts.md)。
 
 缺少 NodeModules 时，插件启动会明确失败；不会回退到主线程编译。浏览器单独使用 `@pluxel/typst/browser` 展示已有产物不需要这些服务。
 
-本 private workspace 包使用固定 typst.ts 0.7.0 源码与最小 NAPI 补丁，构建时自动准备当前平台的原生制品，需要 Git、Rust 1.97.1 和系统 C/C++ 链接工具；安装 Rust 可执行 `rustup toolchain install 1.97.1 --profile minimal`。源码开发首次使用前运行 `pnpm --filter @pluxel/typst prepare:native`。已打包应用带有原生制品，终端用户无需 Rust；源码和构建约定见[原生绑定](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/native/README.md)。
+本 private workspace 包使用固定 typst.ts 0.7.0 源码与最小 NAPI 补丁，构建时自动准备当前平台的原生制品，需要 Git、Rust 1.97.1 和系统 C/C++ 链接工具；安装 Rust 可执行 `rustup toolchain install 1.97.1 --profile minimal`。源码开发首次使用前运行 `vp run @pluxel/typst#prepare:native`。已打包应用带有原生制品，终端用户无需 Rust；源码和构建约定见[原生绑定](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/native/README.md)。
+
+## 直接生成 SVG
+
+只需要静态卡片、公式或可信 Typst 文本时，直接调用注入的 `TypstPlugin.renderSvg(source, options)`；无需创建文档会话：
+
+```ts no-twoslash
+const svg = await this.typst.renderSvg(
+	'#set page(width: auto, height: auto, margin: 8pt)\n#set text(size: 18pt)\n$sum_(i=1)^n i$',
+	{ signal, timeoutMs: 10_000, maxOutputBytes: 1024 * 1024 },
+)
+// svg 是调用方拥有的 Uint8Array，mediaType 为 image/svg+xml。
+await saveSvg(svg)
+```
+
+`source` 是完整的可信 Typst 源码，页面尺寸、边距和字号沿用源码；插件不插入包装模板。每次调用在共享 Worker 内创建本包同一 native compiler、编译并导出 plain SVG，不保留 session、修订或文件工作区。源文件和输出不会写入业务目录。需要模板资源、动态文件、增量更新或 PDF 时使用下面的 `open()` 会话。
+
+请求先通过共享 Worker 接纳，再分块检查源码 UTF-8 字节数并读取当时的 FontsPlugin 可移植字体。源码受 `TypstConfig.maxInputBytes` 限制，字体受 `maxFontBytes/maxFiles` 限制；输出上限取调用参数与 `TypstConfig.maxOutputBytes` 的较小值。省略 `maxOutputBytes` 使用 provider 配置，省略 `timeoutMs` 不设请求 deadline。字体仍使用内嵌 family 名。
+
+取消、deadline、provider 或 caller 停止会撤销排队任务或终止执行线程；Promise 等待线程执行结算，不提前释放执行额度。普通语法错误返回带 diagnostics 的 `TypstError('COMPILE_FAILED')`，可修改源码后继续调用。输入/输出超限为 `LIMIT_EXCEEDED`，共享队列/执行和取消错误保留原生契约。可信源码仍可触发 Typst 自带/系统字体及包加载；此入口不是安全沙箱，受限 Markdown 公式由 [Typst 数学扩展](./takumi-markdown.md#可选的-typst-数学)先校验再调用它。
 
 ## 定义可编辑报表
 
@@ -197,16 +216,16 @@ export default defineHostApplication(() => ({
 
 通过 Host 给 TypstPlugin 设置运行预算；这些配置不描述业务数据。以下为初始默认上限，可按代表性模板测量调整，不是性能保证。
 
-| 配置             | 默认值    | 范围                                     |
-| ---------------- | --------- | ---------------------------------------- |
-| maxSessions      | 4         | provider 同时持有及准备中的 session      |
-| maxQueuedUpdates | 8         | 每 session 等待中的 update               |
-| maxFiles         | 4096      | 每份模板/输入/字体集合；模板同时统计目录 |
-| maxTemplateBytes | 64 MiB    | 每 session 静态模板快照                  |
-| maxInputBytes    | 256 MiB   | 每次动态输入                             |
-| maxFontBytes     | 64 MiB    | 每 session 可移植字体快照                |
-| maxOutputBytes   | 64 MiB    | 每修订 Vector + PDF + 定位信息合计       |
-| maxJsonDepth     | 64        | 每份 JSON 嵌套深度                       |
-| maxJsonValues    | 1,000,000 | 每份 JSON 值数量                         |
+| 配置             | 默认值    | 范围                                           |
+| ---------------- | --------- | ---------------------------------------------- |
+| maxSessions      | 4         | provider 同时持有及准备中的 session            |
+| maxQueuedUpdates | 8         | 每 session 等待中的 update                     |
+| maxFiles         | 4096      | 每份模板/输入/字体集合；模板同时统计目录       |
+| maxTemplateBytes | 64 MiB    | 每 session 静态模板快照                        |
+| maxInputBytes    | 256 MiB   | 每次动态输入或无状态 SVG 源码 UTF-8            |
+| maxFontBytes     | 64 MiB    | 每 session 可移植字体快照                      |
+| maxOutputBytes   | 64 MiB    | 每修订 Vector + PDF + 定位信息合计，或单次 SVG |
+| maxJsonDepth     | 64        | 每份 JSON 嵌套深度                             |
+| maxJsonValues    | 1,000,000 | 每份 JSON 值数量                               |
 
-输入替换准备期间可同时保留旧输入和新输入，输出更新期间也可能同时持有旧产物与新产物；预算限制单份资源，不能等同于进程 RSS 上限。每个会话至多一个常驻线程，maxSessions 限制总数，maxQueuedUpdates 限制各会话等待队列；不占用共享 Workers 的执行槽。
+输入替换准备期间可同时保留旧输入和新输入，输出更新期间也可能同时持有旧产物与新产物；预算限制单份资源，不能等同于进程 RSS 上限。每个会话至多一个常驻线程，maxSessions 限制总数，maxQueuedUpdates 限制各会话等待队列；会话不占用共享 Workers 的执行槽。无状态 SVG 使用 Host 的 Workers 并发与队列预算，不占用 `maxSessions`。

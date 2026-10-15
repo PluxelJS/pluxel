@@ -11,13 +11,13 @@ it('does not acquire during SSR or abandoned suspended render', async () => {
 	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	const read = vi.fn(() => 1)
 	const subscribe = vi.fn(() => ({ [Symbol.dispose]() {} }))
-	function Value() {
+	function Value(): null {
 		useRemoteValue({ read, subscribe })
 		return null
 	}
 	renderToString(<Value />)
 	const pending = new Promise<never>(() => {})
-	function Suspended() {
+	function Suspended(): never {
 		useRemoteValue({ read, subscribe })
 		throw pending
 	}
@@ -45,7 +45,7 @@ it('acquires once through StrictMode replay and releases late subscription after
 			}),
 	)
 	const read = vi.fn(() => 1)
-	function Value() {
+	function Value(): null {
 		useRemoteValue({ read, subscribe })
 		return null
 	}

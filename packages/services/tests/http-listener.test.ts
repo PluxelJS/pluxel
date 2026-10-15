@@ -200,10 +200,10 @@ it('captures the public directory before requests and keeps reserved paths outsi
 	}
 })
 
-it('uses validated Portless bind and port defaults', async () => {
+it('uses validated Pitchfork bind and port defaults', async () => {
 	vi.stubEnv('PLUXEL_HOST_BIND', undefined)
 	vi.stubEnv('PLUXEL_HOST_PORT', undefined)
-	vi.stubEnv('PORTLESS_URL', 'http://pluxel.localhost:1355')
+	vi.stubEnv('PITCHFORK_URL', 'http://pluxel.localhost:1355')
 	vi.stubEnv('HOST', '127.0.0.1')
 	vi.stubEnv('PORT', '0')
 	const host = await createHost({ plugins: [], services: [elysia()] })
@@ -211,6 +211,38 @@ it('uses validated Portless bind and port defaults', async () => {
 	try {
 		expect(listener.address.host).toBe('127.0.0.1')
 		expect(listener.address.port).toBeGreaterThan(0)
+	} finally {
+		await listener.close()
+	}
+})
+
+it('exposes the trusted public origin without replacing physical listener metadata', async () => {
+	vi.stubEnv('PLUXEL_PUBLIC_ORIGIN', 'https://app.example.test')
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+		prefix: '/metadata',
+		matchesWebSocketRoute: () => false,
+		async fetch(_request, carrier) {
+			return Response.json(carrier?.metadata)
+		},
+	})
+	const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 0 })
+	try {
+		const origin = `http://127.0.0.1:${listener.address.port}`
+		const response = await fetch(`${origin}/metadata`, {
+			headers: {
+				forwarded: 'host=attacker.test;proto=https',
+				'x-forwarded-host': 'attacker.test',
+				'x-forwarded-proto': 'https',
+			},
+		})
+		expect(await response.json()).toMatchObject({
+			url: `${origin}/`,
+			publicOrigin: 'https://app.example.test',
+			hostname: '127.0.0.1',
+			port: listener.address.port,
+			development: false,
+		})
 	} finally {
 		await listener.close()
 	}

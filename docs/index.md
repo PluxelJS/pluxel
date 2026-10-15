@@ -23,7 +23,7 @@ Pluxel 用 TypeScript 插件组织业务能力，管理依赖、配置、启动�
 
 ## 文档使用方式
 
-`pnpm exec pluxel docs <path>` 输出正文及来源；例如 `pluxel docs plugin-development/logging.md`。已 setup 的下游工作区可直接读 `docs/pluxel/`，源码仓库读 `docs/`。不要把另一版本的在线页面当成本地契约。
+`vp exec pluxel docs <path>` 输出正文及来源；例如 `pluxel docs plugin-development/logging.md`。已 setup 的下游工作区可直接读 `docs/pluxel/`，源码仓库读 `docs/`。不要把另一版本的在线页面当成本地契约。
 
 已知任务直接读目标页，无需先通读索引。明确输入、所有者、修改点和验证方式后开始实现；遇到版本冲突、未知行为或跨领域影响再展开链接。文档与代码不一致时核对 exports、实现和调用方，修正差异。
 

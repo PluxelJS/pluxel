@@ -10,12 +10,11 @@ import type {
 	WorkbenchOpenEntryResult,
 	WorkbenchSessionApi,
 	WorkbenchContentObserver,
-	WorkbenchContentRoot,
 } from '@pluxel/workbench/client'
 import { WorkbenchViewHostHandle } from '@pluxel/workbench/federation'
 import { createWorkbenchBridge } from '@pluxel/workbench/internal/react'
 import { Workbench } from '@worksplit/react'
-import type { RpcStub } from 'capnweb'
+import { RpcTarget, type RpcStub } from 'capnweb'
 import { Actions, DockLocation } from 'flexlayout-react'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -160,7 +159,9 @@ function ownedView(dispose = vi.fn()): OwnedResult {
 		ok: true,
 		value: {
 			kind: 'local',
-			api: { [Symbol.dispose]: vi.fn() },
+			api: new (class extends RpcTarget {
+				[Symbol.dispose] = vi.fn()
+			})(),
 			params: {},
 			federatedViewRef: viewEntry.federatedViewRef,
 		},
@@ -363,12 +364,12 @@ describe('native document activation resource ownership', () => {
 						},
 					],
 				},
-				root: {
-					subscribeDto: subscribe,
-					loadDto: vi.fn(),
-					runDto: vi.fn(),
-					[Symbol.dispose]: vi.fn(),
-				} as unknown as WorkbenchContentRoot,
+				root: new (class extends RpcTarget {
+					[Symbol.dispose] = vi.fn()
+					subscribeDto = subscribe
+					loadDto = vi.fn()
+					runDto = vi.fn()
+				})(),
 			},
 			[Symbol.dispose]: dispose,
 		}
@@ -504,7 +505,7 @@ describe('native document activation resource ownership', () => {
 		const originalDispose = WorkbenchViewHostHandle.prototype[Symbol.dispose]
 		const hostDispose = vi
 			.spyOn(WorkbenchViewHostHandle.prototype, Symbol.dispose)
-			.mockImplementation(function () {
+			.mockImplementation(function (this: WorkbenchViewHostHandle) {
 				order.push('host')
 				originalDispose.call(this)
 			})

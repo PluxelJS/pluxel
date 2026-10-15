@@ -8,7 +8,6 @@ const IGNORED_DIRECTORY_NAMES = new Set([
 	'.hg',
 	'.pluxel',
 	'.svn',
-	'.turbo',
 	'coverage',
 	'dist',
 	'local-projects',

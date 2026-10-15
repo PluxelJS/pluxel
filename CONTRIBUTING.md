@@ -10,18 +10,19 @@
 
 ## 准备开发环境
 
-仓库通过 mise 管理 Node.js 与 pnpm 版本：
+仓库默认通过 mise 管理 Node.js、pnpm、Vite+、hk 与 Pitchfork，准备方式与职责见[工作区工具链](./docs/development/workspace-toolchain.md)。安装并激活 mise 后：
 
 ```sh
 git clone https://github.com/PluxelJS/pluxel.git
 cd pluxel
 mise trust
 mise install
-pnpm install --frozen-lockfile
-pnpm verify
+mise exec -- vp install --frozen-lockfile
+mise run hooks:install
+mise run verify
 ```
 
-如果不使用 mise，本地工具仍须满足根 `package.json` 中的版本约束。不要提交 `node_modules/`、`dist/`、`.turbo/`、`.pluxel/`、`.bench-results/` 或 `local-projects/` 中的本地产物。
+通过 `mise run dev` 启动示例宿主，`mise run docs` 启动文档站；通过 Pitchfork 查看、重启和停止对应服务。未激活 mise shell 时使用 `mise exec -- <command>`。不要提交 `node_modules/`、`dist/`、`.vite/`、`.pluxel/`、`.bench-results/` 或 `local-projects/` 中的本地产物。
 
 ## 修改规则
 
@@ -36,16 +37,16 @@ pnpm verify
 提交前运行完整门禁：
 
 ```sh
-pnpm verify
+vp run verify
 ```
 
 开发期间可以先运行更小的反馈循环：
 
 ```sh
-pnpm --filter <package-name> test
-pnpm --filter <package-name> typecheck
-pnpm lint
-pnpm format:check
+vp run <package-name>#test
+vp run <package-name>#typecheck
+vp lint
+vp fmt --check
 ```
 
 不要通过削弱测试、跳过检查或提交生成缓存来让验证通过。
@@ -55,7 +56,7 @@ pnpm format:check
 公开 package 的用户可见变化需要 Tegami changelog：
 
 ```sh
-pnpm tegami
+vp run tegami
 ```
 
 只选择公开行为实际发生变化的 package，并写清楚用户会感知到的结果。纯文档、测试或不影响公开行为的内部重构不需要空 changelog。版本与发布规则见 [发布指南](./engineering/RELEASING.md)。

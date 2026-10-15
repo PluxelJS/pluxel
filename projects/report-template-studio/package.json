@@ -32,11 +32,11 @@
 	},
 	"scripts": {
 		"prepare:worksplit": "node scripts/prepare-worksplit.mjs",
-		"build": "tsdown && vite build",
+		"build": "vp run compile",
 		"start": "electron .",
 		"dev": "node scripts/dev.mjs",
-		"test": "vitest run",
-		"typecheck": "tsc --noEmit",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types",
 		"package": "node scripts/package.mjs",
 		"test:desktop": "node tests/desktop.mjs",
 		"test:desktop-recovery": "node tests/desktop-recovery.mjs",
@@ -102,9 +102,9 @@
 		"playwright": "catalog:dev",
 		"tm-grammars": "catalog:dev",
 		"tm-themes": "catalog:dev",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"typescript-legacy": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	}
 }

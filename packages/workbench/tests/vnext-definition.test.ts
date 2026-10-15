@@ -149,7 +149,7 @@ describe('Workbench vNext definitions', () => {
 		expect(Object.keys(definition)).toEqual(['settings', 'catalog'])
 		expect(Object.getPrototypeOf(definition)).toBeNull()
 		expect(Object.isFrozen(definition)).toBe(true)
-		expect(definition.unknown).toBeUndefined()
+		expect(Reflect.get(definition, 'unknown')).toBeUndefined()
 		expect(readWorkbenchDefinition(definition).entries).toEqual([
 			expect.objectContaining({ kind: 'view', key: 'settings' }),
 			expect.objectContaining({ kind: 'attachment', key: 'catalog' }),

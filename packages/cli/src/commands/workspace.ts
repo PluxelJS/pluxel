@@ -153,7 +153,7 @@ export const workspaceSyncCommand = define({
 			const count = await syncWorkspaceDependencies(root, ctx.log)
 			ctx.log(
 				count
-					? 'Dependency declarations synchronized. Run pnpm install (Git source users: pluxel source install).'
+					? 'Dependency declarations synchronized. Run vp install (Git source users: vp exec pluxel source install).'
 					: 'Dependency declarations already synchronized.',
 			)
 		}

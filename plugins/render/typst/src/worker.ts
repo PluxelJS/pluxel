@@ -1,7 +1,7 @@
 import { parentPort, isMainThread } from 'node:worker_threads'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, join } from 'node:path'
-import { NodeCompiler, type NavigationDocument } from './native-binding.ts'
+import { loadNativeCompiler, type NodeCompiler, type NavigationDocument } from './native-binding.ts'
 
 import { TypstError, type TypstDiagnostic } from './errors.ts'
 import {
@@ -18,6 +18,8 @@ export type TypstWorkerInput = Readonly<{
 	fontPaths?: readonly string[]
 	maxOutputBytes: number
 }>
+
+export type TypstCompileWorkerInput = TypstWorkerInput & { readonly bindingPath: string }
 
 export type TypstWorkerOutput =
 	| Readonly<{
@@ -74,14 +76,14 @@ let retained:
 			sources: Map<string, { bytes: Buffer; mtime: number; ino: number; size: number }>
 	  }
 	| undefined
-function nativeCompiler(input: TypstWorkerInput) {
+function nativeCompiler(input: TypstCompileWorkerInput) {
 	const fonts = JSON.stringify(input.fontPaths)
 	if (!retained || retained.root !== input.root || retained.fonts !== fonts) {
 		compiled = undefined
 		retained = {
 			root: input.root,
 			fonts,
-			compiler: NodeCompiler.create({
+			compiler: loadNativeCompiler(input.bindingPath).create({
 				workspace: input.root,
 				fontArgs: input.fontPaths?.length ? [{ fontPaths: [...input.fontPaths] }] : undefined,
 			}),
@@ -117,7 +119,7 @@ function nativeCompiler(input: TypstWorkerInput) {
 	state.sources = next
 	return state.compiler
 }
-export default function compileTypst(input: TypstWorkerInput): TypstWorkerOutput {
+export default function compileTypst(input: TypstCompileWorkerInput): TypstWorkerOutput {
 	if (!Number.isSafeInteger(input.revision) || input.revision <= 0)
 		throw new TypeError('Invalid compile revision')
 	if (!Number.isSafeInteger(input.maxOutputBytes) || input.maxOutputBytes <= 0) {
@@ -220,7 +222,7 @@ function isPosition(value: unknown): value is { line: number; character: number 
 }
 
 if (!isMainThread && parentPort) {
-	parentPort.on('message', (input: TypstWorkerInput | TypstRenderWorkerInput) => {
+	parentPort.on('message', (input: TypstCompileWorkerInput | TypstRenderWorkerInput) => {
 		try {
 			parentPort!.postMessage(
 				{ ok: true, value: 'kind' in input ? renderTypstPage(input) : compileTypst(input) },

@@ -12,22 +12,10 @@ import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 import { S3Plugin } from '@pluxel/storage'
 import { TakumiPlugin } from '@pluxel/takumi'
+import { TakumiMarkdownPlugin } from '@pluxel/takumi-markdown'
+import { TypstPlugin } from '@pluxel/typst'
 import { WretchPlugin } from '@pluxel/wretch'
-import {
-	PluginEventsDeclaredConsumer,
-	PluginEventsDeclaredProducer,
-} from '../demo/PluginEventsDemo'
-import {
-	PluginOptionalIntegrationConsumer,
-	PluginOptionalIntegrationProvider,
-} from '../demo/PluginOptionalIntegrationDemo'
-import {
-	CanvasShowcaseRenderer,
-	EChartsShowcaseRenderer,
-	ReleaseArchivePlugin,
-	ReportStudioPlugin,
-	TakumiShowcaseRenderer,
-} from './ReportStudio'
+import { ReportStudioPlugin } from './ReportStudio'
 
 export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
 
@@ -53,15 +41,9 @@ export const hostPlugins = [
 	CanvasPlugin,
 	EChartsPlugin,
 	TakumiPlugin,
-	EChartsShowcaseRenderer,
-	TakumiShowcaseRenderer,
-	CanvasShowcaseRenderer,
-	ReleaseArchivePlugin,
+	TakumiMarkdownPlugin,
+	TypstPlugin,
 	ReportStudioPlugin,
-	PluginEventsDeclaredProducer,
-	PluginEventsDeclaredConsumer,
-	PluginOptionalIntegrationProvider,
-	PluginOptionalIntegrationConsumer,
 ] as const
 
 export const redisBackedPlugins = Object.freeze([

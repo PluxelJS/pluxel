@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/takumi",
 	"version": "1.1.0",
-	"description": "Official bounded Takumi HTML and node-tree rendering capability for Pluxel plugins",
+	"description": "Native Takumi API and shared Worker rendering with reusable font and image resources",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -19,43 +19,46 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./worker": {
+			"@pluxel/hmr": "./src/worker.ts",
+			"default": "./dist/worker.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./worker": "./dist/worker.mjs",
 			"./package.json": "./package.json"
 		},
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pluxel build",
-		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false"
+		"bench:event-loop": "node bench/event-loop.mjs",
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
-		"takumi-js": "catalog:prod",
-		"valibot": "catalog:validation",
-		"valibot-form": "workspace:^"
+		"@takumi-rs/core": "catalog:prod",
+		"@takumi-rs/helpers": "catalog:prod",
+		"takumi-js": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@pluxel/workbench": "workspace:*",
 		"@types/react": "catalog:types",
 		"react": "catalog:frontend",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/fonts": "workspace:^",
-		"@pluxel/workbench": "workspace:^",
+		"@pluxel/services": "workspace:^",
 		"react": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
@@ -67,9 +70,6 @@
 		"node": ">=24"
 	},
 	"pluxel": {
-		"pluginPackages": {
-			"@pluxel/fonts": "required"
-		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
 		"workbenchArtifacts": true

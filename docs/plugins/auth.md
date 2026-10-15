@@ -7,10 +7,10 @@ description: 用官方 Auth Plugin 在唯一 Cap’n Web control socket 上提�
 
 ## 启用
 
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-pnpm catalog:add -- @pluxel/auth
+vp exec pluxel pncat add @pluxel/auth
 ```
 
 在宿主入口从 `@pluxel/auth` 导入 `AuthPlugin`，加入 `plugins` 清单和自动启动项；完整装配方式见 [添加插件](./index.md#把一个插件加入应用)。

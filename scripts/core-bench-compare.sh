@@ -91,7 +91,7 @@ run_bench() {
 
 	if [ "${PLUXEL_BENCH_SKIP_INSTALL:-0}" != "1" ]; then
 		git submodule update --init --recursive
-		if ! pnpm install --filter @pluxel/core... --frozen-lockfile >"$install_log" 2>&1; then
+		if ! vp install --filter @pluxel/core... --frozen-lockfile >"$install_log" 2>&1; then
 			tail -200 "$install_log"
 			return 1
 		fi
@@ -100,7 +100,7 @@ run_bench() {
 
 	# Use each revision's artifact graph. Recursive package builds also traverse dev-only test
 	# helpers, which can pull the entire runtime toolchain into the benchmark or form cycles.
-	if ! pnpm exec turbo run build --filter=@pluxel/core >"$log_file" 2>&1; then
+	if ! vp run @pluxel/core#compile >"$log_file" 2>&1; then
 		tail -200 "$log_file"
 		return 1
 	fi

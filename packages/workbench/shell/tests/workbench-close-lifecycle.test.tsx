@@ -17,7 +17,7 @@ type EditingModel = {
 	dirty: boolean
 	revision: number
 	save?: () => Promise<void>
-	dispose: ReturnType<typeof vi.fn>
+	dispose: ReturnType<typeof vi.fn<() => void>>
 	router: AnyRouter
 }
 const fixtures = vi.hoisted(() => ({
@@ -234,10 +234,10 @@ describe('native document close and save decisions', () => {
 		const model = fixtures.models.get(first)!
 		model.dirty = true
 		await act(async () => {
-			await model.router.navigate({ to: '/logs', search: { filter: 'error' }, hash: 'tail' })
+			await model.router.navigate({ to: '/logs', search: { category: 'error' }, hash: 'tail' })
 		})
 		expect(fixtures.decisions).toHaveLength(0)
-		expect(session.workbench.getDocument(first)?.href).toBe('/logs?filter=error#tail')
+		expect(session.workbench.getDocument(first)?.href).toBe('/logs?category=error#tail')
 		const accepted = window.location.href
 		await act(async () => {
 			void model.router.navigate({ to: '/security' })
@@ -246,7 +246,7 @@ describe('native document close and save decisions', () => {
 		await vi.waitFor(() => expect(fixtures.decisions).toHaveLength(1))
 		expect(model.router.state.location.pathname).toBe('/logs')
 		expect(window.location.href).toBe(accepted)
-		expect(session.workbench.getDocument(first)?.href).toBe('/logs?filter=error#tail')
+		expect(session.workbench.getDocument(first)?.href).toBe('/logs?category=error#tail')
 	})
 
 	it('refuses reset before deleting any pinned or protected document, preserving the native model and saved snapshot', async () => {

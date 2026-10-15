@@ -1,8 +1,6 @@
-import tailwindcss from '@tailwindcss/vite'
-import { fumadocsMdx } from 'fumadocs-mdx/vite'
-import press from 'fumapress/vite'
+import { repositoryTasks } from '../../scripts/vite-tasks'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, lazyPlugins, type Plugin } from 'vite-plus'
 
 function bundleModernMonacoTypeScriptWorker(): Plugin {
 	return {
@@ -38,6 +36,12 @@ function getWorker`,
 }
 
 export default defineConfig({
+	run: {
+		tasks: repositoryTasks('pluxel-docs', {
+			build: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build',
+			typecheck: 'tsc --noEmit',
+		}),
+	},
 	worker: {
 		plugins: () => [bundleModernMonacoTypeScriptWorker()],
 	},
@@ -45,7 +49,14 @@ export default defineConfig({
 		exclude: ['lucide-react', 'modern-monaco/lsp/typescript/setup'],
 		include: ['typescript-legacy'],
 	},
-	plugins: [bundleModernMonacoTypeScriptWorker(), press(), fumadocsMdx(), tailwindcss()],
+	plugins: lazyPlugins(async () => {
+		const [{ default: press }, { fumadocsMdx }, { default: tailwindcss }] = await Promise.all([
+			import('fumapress/vite'),
+			import('fumadocs-mdx/vite'),
+			import('@tailwindcss/vite'),
+		])
+		return [bundleModernMonacoTypeScriptWorker(), press(), fumadocsMdx(), tailwindcss()]
+	}),
 	// The canonical docs source lives outside this Vite root, so Rolldown needs
 	// explicit framework resolution for virtual MDX modules from ../../docs.
 	resolve: {

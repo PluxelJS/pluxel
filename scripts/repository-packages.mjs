@@ -18,7 +18,7 @@ export function rootWorkspaceDependencyErrors(manifest, packages) {
 		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
 			if (names.has(name) || specifier.startsWith('workspace:')) {
 				errors.push(
-					`root ${field}.${name} invalidates every Turbo task; declare it in its consumer package`,
+					`root ${field}.${name} must be owned by its consuming package; declare it in its consumer package`,
 				)
 			}
 		}

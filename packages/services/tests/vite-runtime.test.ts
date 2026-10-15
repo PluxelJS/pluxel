@@ -50,6 +50,13 @@ describe('static Vite runtime', () => {
 		await mkdir(fixture.getPath('node_modules/@fixture'), { recursive: true })
 		await symlink(pluginRoot, pluginLink, 'dir')
 		await symlink(builtPluginRoot, builtPluginLink, 'dir')
+		// The fixture Plugin is a separate package, so Services is a dependency rather than a self-reference.
+		await mkdir(fixture.getPath('node_modules/@pluxel'), { recursive: true })
+		await symlink(
+			resolve(workspaceRoot, 'packages/services'),
+			fixture.getPath('node_modules/@pluxel/services'),
+			'dir',
+		)
 		await fixture.writeFile(
 			'pluxel.static.ts',
 			[

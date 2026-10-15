@@ -5,7 +5,7 @@ import { expect, it } from 'vitest'
 
 const execFileAsync = promisify(execFile)
 
-it('compiles through the Vite-extracted native Worker artifact and returns PDF over HTTP', async () => {
+it('compiles session PDF and stateless SVG through Vite-extracted native artifacts', async () => {
 	await expect(
 		execFileAsync(
 			process.execPath,

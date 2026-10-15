@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { isAbsolute, resolve } from 'pathe'
-import { build as runTsdown, defineConfig, type InlineConfig } from 'tsdown'
+import { build as runTsdown, defineConfig, type InlineConfig } from 'vite-plus/pack'
 import type { BuildLogger, BuildRuntimeConfig, BuildSuccessHook } from './types'
 
 type SuccessArgs = Parameters<BuildSuccessHook>

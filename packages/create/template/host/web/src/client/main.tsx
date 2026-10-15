@@ -14,14 +14,42 @@ type TodoSnapshot = Readonly<{
 	auditEnabled: boolean
 }>
 
-type ApiError = Readonly<{ error?: string }>
+function isTodoItem(value: unknown): value is TodoItem {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'id' in value &&
+		typeof value.id === 'string' &&
+		'title' in value &&
+		typeof value.title === 'string' &&
+		'completed' in value &&
+		typeof value.completed === 'boolean'
+	)
+}
 
 async function readSnapshot(response: Response): Promise<TodoSnapshot> {
-	const body = (await response.json()) as TodoSnapshot | ApiError
+	const body: unknown = await response.json()
 	if (!response.ok) {
-		throw new Error('error' in body && body.error ? body.error : `HTTP ${response.status}`)
+		const message =
+			typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'
+				? body.error
+				: `HTTP ${response.status}`
+		throw new Error(message)
 	}
-	return body as TodoSnapshot
+	if (
+		typeof body !== 'object' ||
+		body === null ||
+		!('items' in body) ||
+		!Array.isArray(body.items) ||
+		!body.items.every(isTodoItem) ||
+		!('maxItems' in body) ||
+		typeof body.maxItems !== 'number' ||
+		!('auditEnabled' in body) ||
+		typeof body.auditEnabled !== 'boolean'
+	) {
+		throw new TypeError('Invalid todo snapshot response')
+	}
+	return { items: body.items, maxItems: body.maxItems, auditEnabled: body.auditEnabled }
 }
 
 function ExampleApp() {

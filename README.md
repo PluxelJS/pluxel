@@ -22,13 +22,14 @@ Pluxel 从 [Cordis v3](https://github.com/cordiverse/cordis/tree/f8f10ec6734ebb4
 
 ## 从任务开始
 
-| 任务               | 入口                                                                  |
-| ------------------ | --------------------------------------------------------------------- |
-| 创建并运行应用     | [快速开始](./docs/getting-started/index.md)                           |
-| 修改已有应用或插件 | [开发指南](./docs/development/index.md)：源码定位、在线操作与隔离回归 |
-| 查公开包和 import  | [Package 矩阵](./docs/reference/package-matrix.md)                    |
-| 修改框架内部       | [工程索引](./engineering/README.md)：职责、约束、实现与验证           |
-| 提交变更           | [贡献指南](./CONTRIBUTING.md)：环境、检查、changelog 与 PR            |
+| 任务                       | 入口                                                                                    |
+| -------------------------- | --------------------------------------------------------------------------------------- |
+| 创建并运行应用             | [快速开始](./docs/getting-started/index.md)                                             |
+| 修改已有应用或插件         | [开发指南](./docs/development/index.md)：源码定位、在线操作与隔离回归                   |
+| 管理工具、hooks 与开发服务 | [工作区工具链](./docs/development/workspace-toolchain.md)：mise、Vite+、hk 与 Pitchfork |
+| 查公开包和 import          | [Package 矩阵](./docs/reference/package-matrix.md)                                      |
+| 修改框架内部               | [工程索引](./engineering/README.md)：职责、约束、实现与验证                             |
+| 提交变更                   | [贡献指南](./CONTRIBUTING.md)：环境、检查、changelog 与 PR                              |
 
 Coding agent 从 [AGENTS.md](./AGENTS.md) 按任务选读。公开用法维护在 `docs/`，框架内部约束维护在 `engineering/`；package README 补充本包操作和源码入口。
 

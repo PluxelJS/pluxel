@@ -156,7 +156,7 @@ it('closes admission immediately and drains admitted operations before disposal 
 	const admitted = scope.run(() => work.promise)
 	await Promise.resolve()
 	let finished = false
-	const disposal = scope.dispose().then(() => {
+	const disposal = scope.dispose().then((): void => {
 		finished = true
 		return undefined
 	})

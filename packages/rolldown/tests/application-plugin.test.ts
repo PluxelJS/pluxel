@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import type { UserConfig } from 'tsdown'
+import type { UserConfig } from 'vite-plus/pack'
 import { pluxel } from '../src/application'
 
 describe('tsdown application plugin', () => {
@@ -83,7 +83,7 @@ export default defineHostApplication(async ({env}) => {
 		await writeFile(
 			script,
 			`
-import { build } from ${JSON.stringify(import.meta.resolve('tsdown'))};
+import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))};
 import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)};
 await build({cwd:${JSON.stringify(root)},entry:'app.ts',minify:false,plugins:[pluxel({variant:'headless',launcher:'host',lint:false})],config:false});`,
 		)

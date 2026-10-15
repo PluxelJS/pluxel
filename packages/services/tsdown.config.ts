@@ -1,5 +1,5 @@
 import { pluginPackage } from '@pluxel/rolldown/build'
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 
 const pluginBuild = pluginPackage({
 	root: import.meta.dirname,

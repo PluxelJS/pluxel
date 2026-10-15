@@ -102,7 +102,7 @@ Playwright 的底层 context 获取不能独立中断。取消时调用可以先
 工作区提供显式外部连接检查。通过部署环境设置 `PLUXEL_BROWSER_ENDPOINT`，需要认证 headers 时设置 JSON 格式的 `PLUXEL_BROWSER_HEADERS`，然后运行：
 
 ```sh
-pnpm --filter @pluxel/playwright test:external
+vp run @pluxel/playwright#test:external
 ```
 
 该命令通过 Vault 绑定地址，连续创建并关闭两个真实 Host generation，在独立页面中读取合成 HTML，检查第一次停止后仍可重新连接。它不访问财政网站、不提交票据、不启动浏览器，也不会被普通 `test` 命令执行。它能证明两次连接可用，不能证明供应商没有自动重建浏览器进程或全部 Web API 兼容。

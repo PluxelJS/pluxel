@@ -35,9 +35,9 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "tsdown",
-		"test": "pnpm exec vitest run",
-		"typecheck": "tsc -p tsconfig.vitest.json --pretty false"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"valibot": "catalog:validation"
@@ -57,9 +57,9 @@
 		"jsdom": "catalog:dev",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
-		"vite": "catalog:build"
+		"vite": "catalog:build",
+		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
 		"@dnd-kit/core": "catalog:frontend",

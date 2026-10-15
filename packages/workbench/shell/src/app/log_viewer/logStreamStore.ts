@@ -31,14 +31,14 @@ export function createLogStreamStore(capacity: number) {
 			}
 		},
 		clear() {
-			if (rows.length) {
+			if (rows.length > 0) {
 				rows = []
 				changed()
 			}
 		},
 		append(incoming: readonly RuntimeLogLine[]) {
-			if (!incoming.length) return
-			let previous = rows.length ? BigInt(rows[rows.length - 1]!.seq) : -1n
+			if (incoming.length === 0) return
+			let previous = rows.length > 0 ? BigInt(rows[rows.length - 1]!.seq) : -1n
 			const appendOnly = incoming.every((line) => {
 				const current = BigInt(line.seq)
 				if (current <= previous) return false

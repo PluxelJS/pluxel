@@ -29,10 +29,10 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pluxel build",
-		"test": "vitest run --config vitest.config.ts",
-		"test:external": "vitest run --config vitest.external.config.ts",
-		"typecheck": "tsc --noEmit --pretty false"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"test:external": "vp test run --config vitest.external.config.ts",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"playwright-core": "catalog:prod",
@@ -45,8 +45,8 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

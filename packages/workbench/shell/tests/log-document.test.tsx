@@ -21,9 +21,9 @@ vi.mock('../src/app/plugins/pluginOverview', () => ({
 vi.mock('../src/app/log_viewer/LogList', () => ({
 	LogList: ({ store, onSelect, follow }: LogListProps) => (
 		<div aria-label="日志列表" data-follow={String(follow)}>
-			{store.toArray().map((line) => (
-				<button key={`${line.epoch}:${line.seq}`} onClick={() => onSelect(line)}>
-					{line.msg}
+			{store.toArray().map((entry) => (
+				<button type="button" key={`${entry.epoch}:${entry.seq}`} onClick={() => onSelect(entry)}>
+					{entry.msg}
 				</button>
 			))}
 		</div>
@@ -46,6 +46,7 @@ const meta: LogStreamMeta = {
 function line(seq: number, epoch = 1, msg = `message-${seq}`): RuntimeLogLine {
 	return {
 		streamId: 'default',
+		category: [],
 		epoch,
 		seq: String(seq),
 		ts: 1000,

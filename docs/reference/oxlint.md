@@ -8,20 +8,20 @@ description: 用静态规则检查 Plugin 元数据、配置、资源归属和�
 CLI 生成的插件包已经接入这些规则，先在包目录运行：
 
 ```sh
-pnpm lint
-pnpm lint:fix
+vp lint
+vp check --fix
 ```
 
-修复后 `pnpm lint` 应成功，且没有 unused-disable 诊断。已有项目手动接入时，安装 `oxlint` 与 `@pluxel/rolldown` 为开发依赖，再保存下面的配置为 `oxlint.config.ts`：
+修复后 `vp lint` 应成功，且没有 unused-disable 诊断。已有项目手动接入时，安装 `vite-plus` 与 `@pluxel/rolldown` 为开发依赖，再保存下面的配置为 `oxlint.config.ts`：
 
 ```sh
-pnpm exec oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error src tests
+vp exec vp lint --report-unused-disable-directives-severity=error src tests
 ```
 
 ## 标准配置
 
 ```ts twoslash
-import { defineConfig, type OxlintConfig } from 'oxlint'
+import type { OxlintConfig } from 'vite-plus/lint'
 import {
 	createPluxelJsPluginEntry,
 	pluxelOxlintIgnorePatterns,
@@ -31,12 +31,23 @@ import {
 
 type RuleMap = NonNullable<OxlintConfig['rules']>
 
-export default defineConfig({
+export default {
 	jsPlugins: [createPluxelJsPluginEntry()],
 	ignorePatterns: [...pluxelOxlintIgnorePatterns],
 	rules: { ...(prefixPluxelRuleSet(pluxelRules) as RuleMap) },
-})
+} satisfies OxlintConfig
 ```
+
+在根 `vite.config.ts` 引用规则对象，`vp lint` 从这个入口读取 `lint`：
+
+```ts no-twoslash
+import { defineConfig } from 'vite-plus'
+import lint from './oxlint.config'
+
+export default defineConfig({ lint })
+```
+
+已有 Vite 配置时只添加 `lint` 字段；规则内容仍只维护在 `oxlint.config.ts`。
 
 ## 重点规则
 
@@ -70,8 +81,8 @@ try {
 
 这些规则运行在 Pluxel/Vite build-correctness pipeline 中，依赖 package-root provenance 和 source semantics；普通 `tsc` 无法替代。
 
-1. 运行 `pnpm lint:fix`，应用安全的 import、字段名和 re-default 修复。
+1. 运行 `vp check --fix`，应用安全的 import、字段名和 re-default 修复。
 2. 按 semantic 诊断修正 Plugin metadata、配置和 lifecycle 边界。
-3. 运行 `pnpm verify`，确认没有 unused disable。
+3. 运行 `vp run verify`，确认没有 unused disable。
 
 不要用大范围 disable 绕过规则。若确有误报，保留最小范围、说明原因，并让 unused-disable 检查仍然开启。

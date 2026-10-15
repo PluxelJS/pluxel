@@ -16,7 +16,7 @@ import { WorkbenchNavigationProvider } from '../src/app/workbench/context'
 const mounted: Root[] = []
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	window.scrollTo = vi.fn()
 })
 

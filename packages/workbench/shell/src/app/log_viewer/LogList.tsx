@@ -35,7 +35,7 @@ export function LogList({
 		overscan: 12,
 	})
 	useEffect(() => {
-		if (follow && store.length) virtualizer.scrollToIndex(store.length - 1, { align: 'end' })
+		if (follow && store.length > 0) virtualizer.scrollToIndex(store.length - 1, { align: 'end' })
 	}, [follow, version, store, virtualizer])
 	return (
 		<div
@@ -51,7 +51,7 @@ export function LogList({
 			}}
 			style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'auto' }}
 		>
-			{!store.length && (
+			{store.length === 0 && (
 				<Text size="sm" c="dimmed" p="sm">
 					暂无日志
 				</Text>

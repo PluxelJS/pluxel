@@ -34,10 +34,10 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pluxel build",
-		"test": "vitest run",
+		"build": "vp run compile",
+		"test": "vp run check-tests",
 		"test:watch": "vitest",
-		"typecheck": "tsc --noEmit --pretty false"
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"undici": "catalog:prod",
@@ -60,9 +60,9 @@
 		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

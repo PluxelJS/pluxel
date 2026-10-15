@@ -250,6 +250,7 @@ describe('plugin state within native documents', () => {
 				renderer: owner,
 				definitionRevisions: { target: 1, renderer: 1 },
 				placement: { kind: 'tab', label: 'Version', order: 0 },
+				federatedViewUnavailable: { reason: 'failed', message: 'Fixture renderer unavailable' },
 			},
 		]
 		const { workspace, content } = await mount()
@@ -279,7 +280,7 @@ describe('plugin state within native documents', () => {
 		const { workspace } = await mount()
 		const initial = Model.fromJson(workspace.workbench.getLayout())
 		const inspector = initial.getNodeById('plugin-inspector') as TabNode
-		expect(inspector.getTabContainer().getId()).toBe('border_right')
+		expect(inspector.getParent()!.getId()).toBe('border_right')
 		expect(inspector.isEnableClose()).toBe(false)
 		expect(inspector.isEnableDrag()).toBe(false)
 		expect((initial.getNodeById('border_bottom') as BorderNode).getChildren()).toHaveLength(0)
@@ -309,7 +310,7 @@ describe('plugin state within native documents', () => {
 		expect(workspace.workbench.getDocument(first)?.containerId).toBe(documentContainer)
 		expect(
 			(Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-inspector') as TabNode)
-				.getTabContainer()
+				.getParent()!
 				.getId(),
 		).toBe('border_right')
 	})

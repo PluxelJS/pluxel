@@ -26,7 +26,9 @@ import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
 vi.mock('../src/app/log_viewer/LogList', () => ({ LogList: () => null }))
 vi.mock('../src/app/log_viewer/LogPolicyPopover', () => ({
 	LogPolicyPopover: ({ owner }: { owner: PluginNodeAddress }) => (
-		<button data-policy-owner={formatPluginNodeReference(owner)}>日志级别</button>
+		<button type="button" data-policy-owner={formatPluginNodeReference(owner)}>
+			日志级别
+		</button>
 	),
 }))
 vi.mock('../src/app/plugins/pluginOverview', () => ({
@@ -82,7 +84,7 @@ describe('plugin log document URL', () => {
 
 	it('rejects invalid explicit filters instead of silently showing every plugin', () => {
 		for (const plugin of ['', 'OrdersPlugin', ['a'], 42, ' package:@test/orders::OrdersPlugin'])
-			expect(() => validateLogsSearch({ plugin })).toThrow()
+			expect(() => validateLogsSearch({ plugin })).toThrow(TypeError)
 	})
 
 	it('restores a filter from a fresh router, keeps policy scoped, and clears it through the URL', async () => {

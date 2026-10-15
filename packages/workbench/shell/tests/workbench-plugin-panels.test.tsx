@@ -164,7 +164,8 @@ async function open(session: WorkspaceSession, entry: WorkbenchLayoutEntry) {
 }
 async function close(session: WorkspaceSession, entry: WorkbenchLayoutEntry) {
 	await act(async () => {
-		expect((await session.workbench.close(panelId(entry))).status).toBe('closed')
+		const closed = await session.workbench.close(panelId(entry))
+		expect(closed.status).toBe('closed')
 		await session.syncWorkspacePanels()
 	})
 }

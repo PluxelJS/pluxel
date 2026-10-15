@@ -44,7 +44,8 @@ const host = await createServiceInternalTestHost({
 let worker!: WorkerTaskBenchmark
 
 beforeAll(async () => {
-	worker = await host.start(lowerTestPlugin(WorkerTaskBenchmark))
+	lowerTestPlugin(WorkerTaskBenchmark)
+	worker = await host.start(WorkerTaskBenchmark)
 	await worker.run(new Uint8Array(1))
 })
 

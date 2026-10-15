@@ -1,6 +1,6 @@
 # 仓库治理：依赖、导出与验证
 
-修改模块依赖先读[依赖方向](#依赖方向)；移动 package 读 [Workspace 与目录](#workspace-与目录)；修改 manifest 读[依赖与版本](#依赖与版本)；增加入口读[导出](#导出)。仓库验证由 `pnpm governance:check` 与 `pnpm verify` 拥有，发布流程见 [RELEASING](RELEASING.md)。
+修改模块依赖先读[依赖方向](#依赖方向)；移动 package 读 [Workspace 与目录](#workspace-与目录)；修改 manifest 读[依赖与版本](#依赖与版本)；增加入口读[导出](#导出)。仓库验证由 `vp run governance:check` 与 `vp run verify` 拥有，发布流程见 [RELEASING](RELEASING.md)。
 
 ## 依赖方向
 
@@ -54,7 +54,7 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 ## 依赖与版本
 
 根 package 只负责编排和共享质量工具，不声明 `dependencies`，也不直接依赖任何 workspace package（包括 vendor），
-避免 Turbo 将工具源码及其传递依赖纳入所有任务的全局缓存输入。根工具通过 package script 运行其 owner 的入口。
+避免根工具依赖扩大无关任务的输入范围。根工具通过 package script 运行其 owner 的入口。
 pnpm catalog 统一外部依赖的版本政策；每个 workspace 仍必须在自己的 `dependencies`、`devDependencies` 或 `peerDependencies` 中声明
 实际使用的包。hoist 只用于工具兼容和实例去重，不构成依赖声明。
 
@@ -90,8 +90,8 @@ pnpm catalog 统一外部依赖的版本政策；每个 workspace 仍必须在�
 ### pncat 的版本维护边界
 
 [vendored pncat](../vendor/pncat/UPSTREAM.md) 拥有依赖解析、catalog 和 manifest 写入。根仓库使用
-`pnpm pncat`（根 script）运行其源码 CLI；不在根 devDependencies 链接这个 workspace。私有包身份为 `@pluxel-internal/pncat`，避免 source 按包名匹配时覆盖独立仓库的 npm `pncat`。
-`pnpm catalog:check` 使用非交互只读计划，漂移时非零退出；`pnpm catalog:migrate` 调用原生 pncat 显式迁移声明。
+`vp run pncat`（根 Vite Task）运行其源码 CLI；不在根 devDependencies 链接这个 workspace。私有包身份为 `@pluxel-internal/pncat`，避免 source 按包名匹配时覆盖独立仓库的 npm `pncat`。
+`vp run catalog:check` 使用非交互只读计划，漂移时非零退出；`vp run pncat migrate` 调用原生 pncat 显式迁移声明。
 原 pncat add/clean 等能力保留，批量版本政策通过 `@pluxel-internal/pncat/sync` 的 plan/apply API 更新，不借用 add
 制造额外依赖，不复制另一套 YAML 或 manifest writer。
 
@@ -121,7 +121,7 @@ peer 保护。workspace/file/link 等协议不转换成外部 registry 范围。
 这些规则保护可核对的模块职责，不维护一个第二模块解析器或通用架构分层框架。
 
 构建任务图是另一个问题：测试夹具可能依赖被测框架，Core 的构建也使用官方 toolchain。
-Turbo 任务必须有可执行的顺序，不能把所有 package dependency 都机械转换成构建前置任务，
+Vite Task 任务必须有可执行的顺序，不能把所有 package dependency 都机械转换成构建前置任务，
 也不能调整发布依赖类型来掩盖任务编排问题。
 
 `@pluxel/core` 源码对 `@pluxel/context` 的复用是构建时源码边界：Core 将其声明为 `devDependencies: workspace:*`，并用
@@ -141,12 +141,11 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 
 ### 治理与验证
 
-`pnpm verify` 是本地与 CI 的共同入口，顺序执行治理、lint、format、Turbo typecheck/build/test，再检查构建是否把声明写入源码。CI 只提供并发数、affected filter 与 summary；构建配置不依赖未计入 Turbo hash 的环境开关。只缓存 `.turbo/cache`，本次报告 `.turbo/runs` 不跨运行复用。
+`vp run verify` 是本地与 CI 的共同入口，通过原生依赖图执行治理、`vp check`、类型检查、测试与构建，再检查构建是否把声明写入源码。各包标准 scripts 委托 `compile`、`check-types`、`check-tests` 等 task；实际命令和依赖图由 `vite.config.ts` 与 `scripts/vite-tasks.ts` 维护。根聚合任务显式引用包 task，避免将框架的合法包依赖环误当成构建顺序。
 
-仓库的 Node 和 pnpm 版本由 `mise.toml` 拥有。验证入口固定 `PNPM_CONFIG_PM_ON_FAIL=ignore`，CI 的其他任务同样设置此项；Turbo 在 strict 环境中显式透传它，避免 vendor 子工作区的上游 `packageManager` 字段重新下载或切换 pnpm。该变量只固定执行工具的所有权，版本仍由已计入任务 hash 的 `mise.toml` 决定。
-根 Turbo scripts 通过 `scripts/turbo.mjs`，verify 通过自身执行器，按仓库位置设置
-`PNPM_CONFIG_WORKSPACE_DIR`；Turbo 显式透传，使实际成员中的上游 vendor workspace 文件不改变本次安装图。
-这不禁用 pnpm 依赖检查。跨仓库 source 执行重新绑定到当前 checkout，不能继承消费方的 workspace root。
+CI 提供并发数、affected package 与日志；缓存目录为当前 checkout 的 `node_modules/.vite/task-cache`，本次执行报告单独上传。缓存输入必须包含影响产物的配置和环境，不能依赖暖缓存留下的文件。
+
+仓库工具版本由 `mise.toml` 拥有。验证入口固定 `PNPM_CONFIG_PM_ON_FAIL=ignore` 与准确的 `PNPM_CONFIG_WORKSPACE_DIR`，任务透传这些执行上下文，避免 vendor 子工作区的上游 `packageManager` 字段切换 pnpm，或 workspace 文件改变当前安装图。这不禁用依赖检查；跨仓库 source 执行重新绑定到当前 checkout。
 
 | 检查所有者                                | 负责的事实                                                                  |
 | ----------------------------------------- | --------------------------------------------------------------------------- |
@@ -197,4 +196,4 @@ module、export key 或首次启用 author options。
 
 实现、公开 exports、已知调用方与测试应表达同一契约。公开行为更新 `docs/`，内部边界更新所属工程文档；通用方法留在 `.agents/rules/`。package README 只提供入口和最短示例，不另定义插件模型或测试规则。当前文档不维护旧 API 教程，历史由 Git 保存；已落地 proposal 删除对应部分。
 
-合并前运行 `pnpm verify` 并检查旧符号与链接。公开包的用户可见变化添加 Tegami changelog，不手改版本与 publish lock；版本 PR 和发布流程见 [RELEASING](RELEASING.md)。
+合并前运行 `vp run verify` 并检查旧符号与链接。公开包的用户可见变化添加 Tegami changelog，不手改版本与 publish lock；版本 PR 和发布流程见 [RELEASING](RELEASING.md)。

@@ -3,7 +3,7 @@ import { dirname, resolve } from 'pathe'
 
 const WORKSPACE_DEFAULT_DEST = 'plugins'
 
-export type WorkspaceReason = 'pnpm-workspace' | 'turbo' | 'package-json' | 'explicit' | 'cwd'
+export type WorkspaceReason = 'pnpm-workspace' | 'package-json' | 'explicit' | 'cwd'
 
 type WorkspaceDetection = {
 	root: string
@@ -75,9 +75,6 @@ function detectWorkspaceRoot(cwd: string): WorkspaceDetection | null {
 function inspectWorkspaceRoot(root: string): WorkspaceDetection | null {
 	if (existsFile(root, 'pnpm-workspace.yaml') || existsFile(root, 'pnpm-workspace.yml')) {
 		return { root, reason: 'pnpm-workspace' }
-	}
-	if (existsFile(root, 'turbo.json') || existsFile(root, 'turbo.jsonc')) {
-		return { root, reason: 'turbo' }
 	}
 	if (existsFile(root, 'package.json')) {
 		return { root, reason: 'package-json' }

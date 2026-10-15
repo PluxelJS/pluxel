@@ -7,10 +7,10 @@
 使用仓库 `mise.toml` 固定的 Node / pnpm；原生 Typst 构建需要 Git 和 Rust 1.97.1。在仓库根目录执行：
 
 ```sh
-pnpm install
+vp install
 rustup toolchain install 1.97.1 --profile minimal
-pnpm --filter '@report-template-studio/app^...' --if-present build
-pnpm --filter @report-template-studio/app dev
+vp run --filter '@report-template-studio/app^...' compile
+vp run @report-template-studio/app#dev
 ```
 
 `dev` 先准备官方 Typst 原生编译器，再启动 Vite renderer 与 Electron，自动移除子进程继承的 `ELECTRON_RUN_AS_NODE`。首次构建会获取固定提交的上游源码并编译，后续复用同一构建缓存。原生库位于 `plugins/render/typst/native/compiler.node`，依赖图、源码映射和原生构建契约由该插件维护。单实例锁保护已经打开的窗口；开始新的开发会话前关闭旧窗口。`start` 运行已有 `dist/` 构建。
@@ -31,7 +31,7 @@ pnpm --filter @report-template-studio/app dev
 启动参数可继续传给 Electron。例如本机 Linux Wayland 遇到 SUID sandbox helper 配置错误时，可以显式使用以下开发启动方式；这些参数不会成为应用默认配置：
 
 ```sh
-pnpm --filter @report-template-studio/app dev -- --no-sandbox --ozone-platform=wayland --disable-gpu
+vp run @report-template-studio/app#dev -- --no-sandbox --ozone-platform=wayland --disable-gpu
 ```
 
 ### 检查正在运行的后端
@@ -42,9 +42,9 @@ Linux / macOS 开发后端启用官方开发控制台，通过本机 Unix socket
 
 ```sh
 studio_root="$(pwd)/projects/report-template-studio"
-pnpm pluxel dev instances --root "$studio_root"
+vp exec pluxel dev instances --root "$studio_root"
 # 将 INSTANCE_ID 替换为上一步返回且 root、pid 匹配的 instanceId
-pnpm pluxel dev run "$studio_root/dev/inspect.ts" --root "$studio_root" --instance INSTANCE_ID
+vp exec pluxel dev run "$studio_root/dev/inspect.ts" --root "$studio_root" --instance INSTANCE_ID
 ```
 
 [`dev/inspect.ts`](dev/inspect.ts) 返回当前插件状态与最近一次更新；后续命令继续使用同一个绝对 `--root` 和已确认的 `--instance`。应用壳重启后先重新发现实例。完整回执与在线操作规则见[开发控制台指南](../../docs/development/dev-console.md)。
@@ -52,9 +52,9 @@ pnpm pluxel dev run "$studio_root/dev/inspect.ts" --root "$studio_root" --instan
 ### 生产构建与打包
 
 ```sh
-pnpm --filter '@report-template-studio/app^...' --if-present build
-pnpm --filter @report-template-studio/app build
-pnpm --filter @report-template-studio/app package
+vp run --filter '@report-template-studio/app^...' compile
+vp run @report-template-studio/app#compile
+vp run @report-template-studio/app#package
 ```
 
 `release/PluxelTypstStudio-<platform>-<arch>/` 输出当前系统和架构的独立应用目录。`pnpm deploy` 只安装生产依赖，使用 hoisted 目录避免 pnpm 链接及 Windows junction 进入发布包；打包前拒绝剩余依赖链接。原生 Typst、字体、Worker 和 QuickJS WASM 保持真实文件，整个目录可复制到另一处启动。构建产物不包含用户项目、AI 凭据或本机应用数据。
@@ -273,11 +273,11 @@ Studio 最多保留四个活跃文档会话。仅修改表单输入时复用模�
 ## 验证
 
 ```sh
-pnpm --filter @report-template-studio/app build
-pnpm --filter @report-template-studio/app typecheck
-pnpm --filter @report-template-studio/app test
-pnpm --filter @report-template-studio/app test:runtime
-pnpm --filter @report-template-studio/app test:desktop
+vp run @report-template-studio/app#compile
+vp run @report-template-studio/app#check-types
+vp run @report-template-studio/app#check-tests
+vp run @report-template-studio/app#test:runtime
+vp run @report-template-studio/app#test:desktop
 ```
 
 首次检查先 build，公开入口的类型来自实际 `dist/` 声明。此次常驻服务重构的实施位置、消费者迁移、真实边界证据及未验证项见 [实施报告](IMPLEMENTATION_REPORT.md)。
@@ -286,6 +286,6 @@ pnpm --filter @report-template-studio/app test:desktop
 
 桌面验收使用隔离 profile 和真实 Electron preload/IPC，只将系统文件选择器替换为指定临时路径；需要桌面显示环境，结果在 `test-results/`。`STUDIO_EXECUTABLE` 可指向独立包执行同一套验收。受限容器中若 Electron 系统沙箱无法启动，可显式设置 `STUDIO_DISABLE_SANDBOX=1`；该变量仅由测试脚本读取，不改变产品 renderer sandbox 配置。
 
-Linux / macOS 可另运行 `pnpm --filter @report-template-studio/app test:desktop-recovery`：复制临时后端源码，通过官方开发控制台检查当前服务，在同一 Electron 页面内连续替换两次后端，验证可选明细表缺省、表单保存、预览恢复及主进程 PDF 保存。脚本自行构建开发壳，使用隔离 profile，关闭自己启动的应用与 Vite，截图和结果保存在 `test-results/desktop-recovery/`。
+Linux / macOS 可另运行 `vp run @report-template-studio/app#test:desktop-recovery`：复制临时后端源码，通过官方开发控制台检查当前服务，在同一 Electron 页面内连续替换两次后端，验证可选明细表缺省、表单保存、预览恢复及主进程 PDF 保存。脚本自行构建开发壳，使用隔离 profile，关闭自己启动的应用与 Vite，截图和结果保存在 `test-results/desktop-recovery/`。
 
 未使用付费模型执行真实供应商生成；已有 AI 工具、技能、引用与无凭据状态测试不能代替该边界的验证。

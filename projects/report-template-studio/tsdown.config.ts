@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 import { createPluginBuildPipeline } from '@pluxel/rolldown/build'
 
 const pipeline = createPluginBuildPipeline({ root: import.meta.dirname, workbench: false })

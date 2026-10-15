@@ -83,14 +83,14 @@ try {
 在仓库的 `packages/async` 目录：
 
 ```sh
-pnpm examples      # 构建后运行不需第三方调度库的示例
-pnpm examples:pacer # 可选 Pacer 组合
-pnpm test          # 源码行为与公开类型
-pnpm typecheck     # 包括示例与基准
-pnpm build         # ESM、类型声明及无源码消费检查
-pnpm bench         # 与锁定版本的同类库比较
+vp run examples       # 构建后运行不需第三方调度库的示例
+vp run examples:pacer # 可选 Pacer 组合
+vp run test           # 源码行为、公开类型及构建产物消费检查
+vp run typecheck      # 包括示例与基准
+vp run build          # ESM 与类型声明
+vp run bench          # 与锁定版本的同类库比较
 ```
 
-工具链使用 tsdown、Vitest，以及仓库统一的 oxlint / oxfmt。维护规则见 [AGENTS.md](https://github.com/PluxelJS/pluxel/blob/main/packages/async/AGENTS.md)。
+工具链通过 Vite+ 的 Pack、Test 和 Check 入口使用 tsdown、Vitest、Oxlint 与 Oxfmt。维护规则见 [AGENTS.md](https://github.com/PluxelJS/pluxel/blob/main/packages/async/AGENTS.md)。
 
 设计参考 grfn 的依赖组合与 lfi 的惰性迭代思路，有独立的引用、背压和收尾契约，不承诺 API 兼容或全面更快。[基准报告](https://github.com/PluxelJS/pluxel/blob/main/packages/async/bench/README.md) 包含对照条件、测量数据与局限。

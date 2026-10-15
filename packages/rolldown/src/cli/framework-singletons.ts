@@ -1,4 +1,6 @@
 import type { Plugin, ResolvedId } from 'rolldown'
+import { dirname } from 'pathe'
+import { resolveWithOxc } from '../resolver/oxc'
 
 /** Shared framework identities always resolve through the application, including package subpaths. */
 export function staticFrameworkSingletonPlugin(
@@ -14,10 +16,28 @@ export function staticFrameworkSingletonPlugin(
 		},
 		resolveId(id, _importer, options) {
 			const name = packageName(id)
-			if (!name || !packages.has(name)) return null
+			const publishedPlugins = id === '@pluxel/services/plugins'
+			if (!name || (!packages.has(name) && !publishedPlugins)) return null
 			let resolution = resolutions.get(id)
 			if (!resolution) {
-				resolution = this.resolve(id, entry, { ...options, skipSelf: true }).then((resolved) => {
+				// The official Services Plugin entry owns a published Workbench inventory. Resolve
+				// that exact entry as published, rather than rebuilding it through @pluxel/hmr
+				// and then merging a second producer with the same revision. Other Services
+				// imports are not made singletons by this rule; ordinary Plugin HMR is unchanged.
+				const published = publishedPlugins
+					? resolveWithOxc(dirname(entry), id, {
+							conditionNames: ['node', 'import', 'module', 'production', 'default'],
+							tsconfig: false,
+						})
+					: undefined
+				if (publishedPlugins && !published)
+					this.error(
+						`[static-application] Cannot resolve published Plugin entry ${id} from ${entry}`,
+					)
+				resolution = this.resolve(published?.path ?? id, entry, {
+					...options,
+					skipSelf: true,
+				}).then((resolved) => {
 					if (!resolved)
 						this.error(
 							`[static-application] Cannot resolve shared framework entry ${id} from ${entry}`,

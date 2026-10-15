@@ -2,7 +2,7 @@ import { defineDevConsole } from '@pluxel/host-vite/console'
 import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
-import { formatPluginNodeRoute } from '@pluxel/core'
+import { formatPluginNodeRoute, pluginNodeAddressOf } from '@pluxel/core'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 import { ReportStudioWorkbench } from '../src/showcase/ReportStudio.workbench'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
@@ -71,3 +71,32 @@ export const startStudio = defineDevConsole(async (dev) => ({
 export const packageManagerSnapshot = defineDevConsole((dev) =>
 	dev.plugins.require(PackageManagerPlugin).snapshot(),
 )
+
+/** Render through the current Workbench publication, keeping online operations on this console. */
+export const renderReport = defineDevConsole(async (dev) => {
+	const input = dev.input
+	if (
+		!input ||
+		typeof input !== 'object' ||
+		!('title' in input) ||
+		typeof input.title !== 'string' ||
+		!('engine' in input) ||
+		typeof input.engine !== 'string'
+	) {
+		throw new TypeError('renderReport requires { title, engine }')
+	}
+	const { SHOWCASE_ENGINES } = await import('../src/showcase/ReportStudio.contracts')
+	const engine = SHOWCASE_ENGINES.find((candidate) => candidate === input.engine)
+	if (!engine) throw new TypeError('Unknown rendering engine')
+	using opened = await openLocalWorkbenchEntry(dev.ctx, {
+		target: pluginNodeAddressOf(ReportStudioPlugin),
+		entry: ReportStudioWorkbench.studio,
+		principal,
+		location: '/architecture-lab',
+		signal: dev.signal,
+	})
+	return await consumeWorkbenchValue(
+		opened.api.generateDto({ title: input.title, engine }),
+		'Report Studio artifact',
+	)
+})

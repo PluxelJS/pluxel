@@ -13,14 +13,10 @@ import {
 	type TypstPageImage,
 } from './page-render.ts'
 import type { TypstPreview } from './preview-contract.ts'
+import { createTypstOperation, type TypstOperationOptions } from './operation.ts'
 import { prepareInputs, prepareTemplate } from './resources.ts'
 import type { TypstWorkerInput, TypstWorkerOutput, TypstRenderWorkerInput } from './worker.ts'
 
-export interface TypstOperationOptions {
-	readonly signal?: AbortSignal
-	/** Includes queue time. Omitted means no per-call deadline. */
-	readonly timeoutMs?: number
-}
 export interface TypstCompiled {
 	readonly revision: number
 	readonly preview: TypstPreview
@@ -272,7 +268,7 @@ export class DocumentSession implements TypstSession {
 			}, signal)
 			signal.throwIfAborted()
 			this.assertOpen()
-			if (!output.ok)
+			if (output.ok === false)
 				throw new TypstError(
 					output.code,
 					output.code === 'COMPILE_FAILED'
@@ -366,37 +362,7 @@ export class DocumentSession implements TypstSession {
 		return promise
 	}
 	private operation(options: TypstOperationOptions) {
-		if (options.signal !== undefined && !(options.signal instanceof AbortSignal))
-			throw new TypstError('INVALID_INPUT', 'signal must be an AbortSignal')
-		if (
-			options.timeoutMs !== undefined &&
-			(!Number.isSafeInteger(options.timeoutMs) ||
-				options.timeoutMs <= 0 ||
-				options.timeoutMs > 2_147_483_647)
-		)
-			throw new TypstError(
-				'INVALID_INPUT',
-				'timeoutMs must be a positive integer at most 2147483647',
-			)
-		const timeout = new AbortController()
-		const timer =
-			options.timeoutMs === undefined
-				? undefined
-				: setTimeout(
-						() => timeout.abort(new DOMException('Typst operation timed out', 'TimeoutError')),
-						options.timeoutMs,
-					)
-		const signal = AbortSignal.any([
-			this.controller.signal,
-			timeout.signal,
-			...(options.signal ? [options.signal] : []),
-		])
-		return {
-			signal,
-			dispose: () => {
-				if (timer) clearTimeout(timer)
-			},
-		}
+		return createTypstOperation(options, [this.controller.signal])
 	}
 }
 

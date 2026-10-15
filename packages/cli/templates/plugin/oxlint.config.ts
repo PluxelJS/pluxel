@@ -1,4 +1,4 @@
-import { defineConfig, type OxlintConfig } from 'oxlint'
+import type { OxlintConfig } from 'vite-plus/lint'
 import {
 	createPluxelJsPluginEntry,
 	pluxelOxlintIgnorePatterns,
@@ -8,7 +8,7 @@ import {
 
 type RuleMap = NonNullable<OxlintConfig['rules']>
 
-export default defineConfig({
+const config: OxlintConfig = {
 	env: { builtin: true },
 	plugins: ['typescript', 'unicorn', 'import', 'promise', 'react', 'vitest'],
 	jsPlugins: [createPluxelJsPluginEntry()],
@@ -26,4 +26,6 @@ export default defineConfig({
 		'react/react-in-jsx-scope': 'off',
 		'react/rules-of-hooks': 'error',
 	},
-})
+}
+
+export default config

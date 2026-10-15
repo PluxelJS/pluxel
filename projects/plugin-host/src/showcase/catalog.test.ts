@@ -10,11 +10,12 @@ import { S3 } from '@pluxel/storage'
 import { describe, expect, it } from 'vitest'
 import {
 	createHostConfigRecords,
+	hostPlugins,
 	createHostRuntimeState,
 	redisBackedPlugins,
 	s3StorageNode,
 } from './catalog'
-import { EChartsShowcaseRenderer, ReportStudioPlugin, ShowcaseRenderer } from './ReportStudio'
+import { ReportStudioPlugin } from './ReportStudio'
 
 describe('plugin-host catalog', () => {
 	it('selects safe in-memory implementations without auto-starting Redis', () => {
@@ -47,10 +48,6 @@ describe('plugin-host catalog', () => {
 				expect.objectContaining({
 					token: pluginDefinitionAddressOf(RatesBackend),
 					provider: pluginNodeAddressOf(MemoryRatesBackendPlugin),
-				}),
-				expect.objectContaining({
-					token: pluginDefinitionAddressOf(ShowcaseRenderer),
-					provider: pluginNodeAddressOf(EChartsShowcaseRenderer),
 				}),
 			]),
 		)
@@ -93,5 +90,13 @@ describe('plugin-host catalog', () => {
 			]),
 		)
 		expect(pluginNodeAddressOf(ReportStudioPlugin)).toBeDefined()
+		expect(hostPlugins.filter((plugin) => plugin.name === 'ReportStudioPlugin')).toEqual([
+			ReportStudioPlugin,
+		])
+		expect(
+			hostPlugins.some((plugin) =>
+				/ShowcaseRenderer|ReleaseArchive|PluginEvents|OptionalIntegration/.test(plugin.name),
+			),
+		).toBe(false)
 	})
 })

@@ -10,6 +10,7 @@
 
 | 任务                                                       | 必读入口                                                                               | 下一步                                                                    |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 工作区工具、提交检查与开发服务                             | [工作区工具链](docs/development/workspace-toolchain.md)                                | 先读 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务         |
 | 修改插件业务、配置声明或日志                               | [插件开发范式](docs/plugin-development/index.md)                                       | 已知主题直接读目标页；验证方式见[开发指南](docs/development/index.md)     |
 | 装配应用、部署绑定或输出                                   | [Host 配置](docs/host/configuration.md)                                                | 直接读对应配置章节；服务扩展再读 host/services                            |
 | 修改 Workbench 导航、布局、目录或视觉                      | [Workbench 交互设计](engineering/WORKBENCH_DESIGN.md)                                  | 再按 [Frontend](engineering/FRONTEND.md) 定位状态所有者和验收入口         |
@@ -31,6 +32,10 @@
 - Pluxel 当前服务此工作区的本地仓库。修改契约时同步更新已知调用方，不为假设的外部消费者保留兼容 alias、旧格式读取器或启动迁移路径。必要时一次性转换已有本地数据，然后移除转换代码。
 - 保留原 API 名称。只有解决命名冲突或来源歧义时才加 alias；不为取得类型重复导入同一个值，不添加无独立契约的 wrapper。
 - 示例展示最短完整调用，包含必要的失败处理和清理。不要让调用方猜入口、状态或副作用。
+
+## 开发服务
+
+默认通过 mise 提供工具、Vite+ 执行任务图与打包/lint/格式化、hk 管理检查、Pitchfork 管理开发服务。修改前先检查 `pitchfork.toml` 与运行服务；优先使用 Pitchfork 的 start、stop、restart、status、list、logs、wait。新增后台进程、端口扫描、重试、轮询或生命周期脚本前，先查[工作区指南](docs/development/workspace-toolchain.md)链接的官方能力和已安装 CLI 帮助。并行 worktree 使用独立 namespace 与数据目录；只操作本任务所属服务。Pitchfork 管进程，Pluxel 应用操作仍遵守下节 dev console 约束。
 
 ## 在线操作
 

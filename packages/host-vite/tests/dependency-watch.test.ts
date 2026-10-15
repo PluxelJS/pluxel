@@ -80,11 +80,11 @@ it.each(['resolve', 'reject'] as const)(
 			expect(watcher.close()).toBe(closing)
 			let closed = false
 			void closing.then(
-				() => {
+				(): void => {
 					closed = true
 					return undefined
 				},
-				() => {
+				(): void => {
 					closed = true
 					return undefined
 				},

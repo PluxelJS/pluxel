@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { requestDocument } from './smoke-navigation.mjs'
 
@@ -27,15 +27,14 @@ const publishRoots = [
 try {
 	await mkdir(tarballRoot, { recursive: true })
 	const publishPackages = await resolveLocalPublishClosure(repositoryRoot, publishRoots)
-	await runPnpm(
-		['exec', 'turbo', 'run', 'build', ...publishPackages.map(({ name }) => `--filter=${name}`)],
-		repositoryRoot,
-	)
+	for (const name of publishRoots) {
+		await runVp(['run', `${name}#build`], repositoryRoot)
+	}
 
 	const overrides: Record<string, string> = {}
 	for (const item of publishPackages) {
 		const tarball = resolve(tarballRoot, `${item.name.replaceAll(/[@/]/g, '-')}.tgz`)
-		await runPnpmCapture(['--dir', resolve(repositoryRoot, item.path), 'pack', '--out', tarball])
+		await runVpCapture(['pm', 'pack', '--out', tarball], resolve(repositoryRoot, item.path))
 		overrides[item.name] = `file:${tarball}`
 	}
 
@@ -52,9 +51,9 @@ try {
 	await verifyDocumentationLink(generatedRoot)
 	await appendOverrides(resolve(generatedRoot, 'pnpm-workspace.yaml'), overrides)
 
-	await runPnpm(['install', '--frozen-lockfile=false'], generatedRoot)
-	await runPnpm(['exec', 'pluxel', 'workspace', 'setup'], generatedRoot)
-	await runPnpm(['verify'], generatedRoot, { CI: '1' })
+	await runVp(['install', '--no-frozen-lockfile'], generatedRoot)
+	await runVp(['exec', 'pluxel', 'workspace', 'setup'], generatedRoot)
+	await runVp(['run', 'verify'], generatedRoot, { CI: '1' })
 	await verifyModulesApplicationDistribution(generatedRoot)
 	await verifyProductionViteApplication(generatedRoot)
 	await verifyViteApplication(generatedRoot)
@@ -134,10 +133,10 @@ async function installPackedCreate(root: string, tarball: string): Promise<void>
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
-		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
+		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, packageManager: 'pnpm@11.28.2', dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
 	)
 	await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
-	await runPnpm(['install', '--frozen-lockfile=false'], root)
+	await runVp(['install', '--no-frozen-lockfile'], root)
 }
 
 async function appendOverrides(path: string, overrides: Record<string, string>): Promise<void> {
@@ -177,7 +176,7 @@ async function verifyDocumentationLink(generated: string): Promise<void> {
 
 async function verifyModulesApplicationDistribution(root: string): Promise<void> {
 	const dist = resolve(root, 'host/dist')
-	await runPnpm(['exec', 'pluxel', 'distribution', 'inspect', dist], root)
+	await runVp(['exec', 'pluxel', 'distribution', 'inspect', dist], root)
 	const deployment = JSON.parse(
 		await readFile(resolve(dist, 'pluxel-deployment.json'), 'utf8'),
 	) as {
@@ -205,7 +204,7 @@ async function verifyModulesApplicationDistribution(root: string): Promise<void>
 	const entry = pathToFileURL(resolve(root, 'host/start.mjs')).href
 	const smoke = [
 		"import { registerHooks } from 'node:module'",
-		'registerHooks({ resolve(id, context, next) { if (/^(?:vite|@pluxel\\/host-vite|@pluxel\\/rolldown|rolldown|oxc-parser|oxc-resolver|tsdown|tsx|typescript|chokidar)(?:$|\\/)/.test(id)) throw new Error(`Native loaded execution tools: ${id}`); return next(id, context) } })',
+		'registerHooks({ resolve(id, context, next) { if (/^(?:vite|vite-plus|@pluxel\\/host-vite|@pluxel\\/rolldown|rolldown|oxc-parser|oxc-resolver|tsdown|tsx|typescript|chokidar)(?:$|\\/)/.test(id)) throw new Error(`Native loaded execution tools: ${id}`); return next(id, context) } })',
 		'const app = await import(process.argv[1])',
 		'try {',
 		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
@@ -319,13 +318,13 @@ async function verifyViteApplication(root: string): Promise<void> {
 		}
 		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
 		const discovered = JSON.parse(
-			await runPnpmCapture(['exec', 'pluxel', 'dev', 'instances', '--root', consoleRoot], root),
+			await runVpCapture(['exec', 'pluxel', 'dev', 'instances', '--root', consoleRoot], root),
 		)
 		if (!discovered.ok || discovered.value.length !== 1) {
 			throw new Error(`Expected one starter development console: ${JSON.stringify(discovered)}`)
 		}
 		const inspection = JSON.parse(
-			await runPnpmCapture(
+			await runVpCapture(
 				[
 					'exec',
 					'pluxel',
@@ -410,8 +409,9 @@ async function waitForDocumentResponse(
 function startVite(root: string, port: number) {
 	const hostRoot = resolve(root, 'host')
 	const require = createRequire(resolve(hostRoot, 'package.json'))
-	const viteBin = resolve(dirname(require.resolve('vite/package.json')), 'bin/vite.js')
-	// Own the actual server process so shutdown cannot stop at a package-manager wrapper.
+	const viteBin = resolve(dirname(require.resolve('vite')), 'cli.js')
+	// Match the bundled CLI layout verified for Vite+ 1.2.0 (its own CLI resolves this path).
+	// Own the actual server PID so cleanup cannot stop at a launcher process.
 	const child = spawn(
 		process.execPath,
 		[
@@ -479,21 +479,27 @@ async function waitForResponse(url: string, timeoutMs: number): Promise<Response
 	throw new Error(`Timed out waiting for ${url}: ${String(lastError)}`)
 }
 
-async function runPnpm(
+async function runVp(
 	args: string[],
 	cwd: string,
 	environment: Record<string, string> = {},
 ): Promise<void> {
-	await runProcess(process.env.npm_execpath ?? 'pnpm', args, cwd, environment)
+	await runProcess('vp', args, cwd, {
+		...environment,
+		PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
+	})
 }
 
-async function runPnpmCapture(args: string[], cwd: string): Promise<string> {
-	const command = process.env.npm_execpath ?? 'pnpm'
+async function runVpCapture(args: string[], cwd: string): Promise<string> {
+	const command = 'vp'
 	return await new Promise((accept, reject) => {
 		const child = spawn(command, args, {
 			cwd,
 			stdio: ['ignore', 'pipe', 'pipe'],
-			env: process.env,
+			env: {
+				...process.env,
+				PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
+			},
 		})
 		let stdout = ''
 		let stderr = ''
@@ -502,8 +508,7 @@ async function runPnpmCapture(args: string[], cwd: string): Promise<string> {
 		child.once('error', reject)
 		child.once('exit', (code, signal) => {
 			if (code === 0) accept(stdout)
-			else
-				reject(new Error(`pnpm ${args.join(' ')} failed (${signal ?? code}): ${stderr || stdout}`))
+			else reject(new Error(`vp ${args.join(' ')} failed (${signal ?? code}): ${stderr || stdout}`))
 		})
 	})
 }

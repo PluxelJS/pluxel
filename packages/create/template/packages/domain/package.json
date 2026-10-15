@@ -10,13 +10,13 @@
 		}
 	},
 	"scripts": {
-		"build": "tsdown",
-		"test": "vitest run",
-		"typecheck": "tsc --noEmit --pretty false"
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"test": "vp run check-tests"
 	},
 	"devDependencies": {
-		"tsdown": "catalog:tooling",
 		"typescript": "catalog:tooling",
+		"vite-plus": "catalog:tooling",
 		"vitest": "catalog:test"
 	}
 }

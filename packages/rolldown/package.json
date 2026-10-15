@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/rolldown",
 	"version": "1.1.0",
-	"description": "Pluxel Rolldown/Vite/tsdown toolchain helpers",
+	"description": "Pluxel Rolldown/Vite+ toolchain helpers",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -125,9 +125,9 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "pnpm exec vitest run",
-		"build": "tsdown",
-		"typecheck": "tsc --noEmit --pretty false --composite false"
+		"test": "vp run check-tests",
+		"build": "vp run compile",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "catalog:prod",
@@ -149,6 +149,7 @@
 		"unrun": "catalog:build",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^",
+		"vite-plus": "catalog:build",
 		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
@@ -161,10 +162,8 @@
 		"@types/node": "catalog:types",
 		"fdir": "catalog:dev",
 		"fs-fixture": "catalog:dev",
-		"oxlint": "catalog:dev",
 		"pathe": "catalog:node",
 		"rolldown": "catalog:build",
-		"tsdown": "catalog:build",
 		"tsx": "catalog:dev",
 		"vite": "catalog:build"
 	},
@@ -172,14 +171,10 @@
 		"@pluxel/core": "workspace:^",
 		"@pluxel/workbench": "workspace:^",
 		"rolldown": "catalog:build",
-		"tsdown": "catalog:build",
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
 		"rolldown": {
-			"optional": true
-		},
-		"tsdown": {
 			"optional": true
 		},
 		"vite": {

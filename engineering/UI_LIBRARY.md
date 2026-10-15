@@ -2,6 +2,8 @@
 
 第一方 Shell 与仓库维护的 renderer 统一直接使用 Mantine。第三方 renderer 可以按隔离契约选择自己的附加依赖；仓库不维护平行组件系统或 UI library adapter。
 
+这里的 renderer 指 Workbench 浏览器界面。Takumi 的离线 JSX 图片模板由消费插件选择组件和编译 CSS；例如 HeroUI v3 卡片模板独立于 Shell 的 Provider、主题与 Federation shared 配置。
+
 ## 修改约束
 
 - 优先普通组件、props、hooks；局部例外使用调用点的 `style`、`styles`、`className` 或 CSS variables。

@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "vitest.config.ts"],
+	"include": ["src", "tests", "vitest.config.ts", "package.json"],
 	"compilerOptions": {
 		"jsx": "react-jsx",
 		// Specify an output folder for all emitted files.

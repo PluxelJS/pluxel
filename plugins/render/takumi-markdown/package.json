@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/takumi-markdown",
 	"version": "1.1.0",
-	"description": "Official bounded Markdown-to-Takumi rendering capability for Pluxel plugins",
+	"description": "GFM Markdown and trusted document extensions for Takumi's native rendering API",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -29,9 +29,9 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pluxel build",
-		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"rangi": "catalog:prod",
@@ -43,24 +43,37 @@
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/host-vite": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/takumi": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:build",
+		"@pluxel/typst": "workspace:*",
+		"@pluxel/workbench": "workspace:*",
+		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/takumi": "workspace:^"
+		"@pluxel/takumi": "workspace:^",
+		"@pluxel/typst": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/typst": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"
 	},
 	"pluxel": {
 		"pluginPackages": {
-			"@pluxel/takumi": "required"
+			"@pluxel/takumi": "required",
+			"@pluxel/typst": "optional"
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,

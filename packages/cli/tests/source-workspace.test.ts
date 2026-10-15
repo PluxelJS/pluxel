@@ -19,6 +19,7 @@ import {
 	readSourceCheckoutRegistry,
 } from '../src/source/config'
 import {
+	buildSourceWorkspace,
 	createPnpmInvocation,
 	sourceChildEnvironment,
 	createSourceBuildArgs,
@@ -371,6 +372,49 @@ describe('source workspace planning', () => {
 		}
 	})
 
+	it('runs the provider local Vite+ launcher without invoking its package manager', async () => {
+		const root = await createTemporaryRoot()
+		const provider = resolve(root, 'provider')
+		const consumer = resolve(root, 'consumer')
+		await createWorkspace(provider, {
+			'package.json': { name: 'provider', devDependencies: { 'vite-plus': '*' } },
+			'lib/package.json': {
+				name: '@acme/lib',
+				exports: './dist/index.js',
+				scripts: { build: 'vp run build' },
+			},
+		})
+		await createWorkspace(
+			consumer,
+			{
+				'app/package.json': { name: 'app', dependencies: { '@acme/lib': '*' } },
+			},
+			['https://github.com/acme/provider'],
+		)
+		const registryPath = resolve(root, 'registry.json')
+		await writeJson(registryPath, {
+			version: 1,
+			checkouts: { 'https://github.com/acme/provider': provider },
+		})
+		const plan = await createSourceWorkspacePlan({ root: consumer, registryPath })
+		await expect(buildSourceWorkspace({ plan, log: () => {} })).rejects.toThrow(/vite-plus/)
+		await writeJson(resolve(provider, 'node_modules/vite-plus/package.json'), {
+			name: 'vite-plus',
+			type: 'module',
+			bin: { vp: './launcher.mjs' },
+		})
+		await writeFile(
+			resolve(provider, 'node_modules/vite-plus/launcher.mjs'),
+			"import { writeFileSync } from 'node:fs'; writeFileSync('observed.json', JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), workspace: process.env.PNPM_CONFIG_WORKSPACE_DIR }));",
+		)
+		await buildSourceWorkspace({ plan, force: true, log: () => {} })
+		expect(JSON.parse(await readFile(resolve(provider, 'observed.json'), 'utf8'))).toEqual({
+			args: ['run', '--no-cache', '@acme/lib#build'],
+			cwd: provider,
+			workspace: provider,
+		})
+	})
+
 	it('derives install and build commands from source artifact contracts', () => {
 		expect(createSourceInstallArgs({ '@acme/app': 'link:/src/app' })).toEqual(['install'])
 		expect(createSourceInstallArgs({})).toEqual(['install'])
@@ -410,21 +454,13 @@ describe('source workspace planning', () => {
 				pluxel: { sourceBuild: false },
 			}),
 		).toBe(false)
-		expect(createSourceBuildArgs(['@acme/app'], true)).toEqual([
-			'exec',
-			'turbo',
-			'run',
-			'build',
-			'--dangerously-disable-package-manager-check',
-			'--filter=@acme/app',
+		expect(createSourceBuildArgs(['@acme/app'], true)).toEqual([['run', '@acme/app#build']])
+		expect(createSourceBuildArgs(['@acme/app', '@acme/shared'], true, true)).toEqual([
+			['run', '--no-cache', '@acme/app#build'],
+			['run', '--no-cache', '@acme/shared#build'],
 		])
-		expect(createSourceBuildArgs(['@acme/app'], true, true)).toContain('--force')
 		expect(createSourceBuildArgs(['@acme/app'], false)).toEqual([
-			'--filter',
-			'@acme/app...',
-			'--if-present',
-			'run',
-			'build',
+			['--filter', '@acme/app...', '--if-present', 'run', 'build'],
 		])
 
 		const artifact = {

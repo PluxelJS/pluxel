@@ -25,6 +25,7 @@ export class WorkspaceSnapshotStorage {
 	private timer?: ReturnType<typeof setTimeout>
 	private last?: string
 	private pending = false
+	private closed = false
 
 	constructor(
 		readonly key: string,
@@ -74,6 +75,7 @@ export class WorkspaceSnapshotStorage {
 		document.addEventListener('visibilitychange', this.onVisibility)
 	}
 	schedule = () => {
+		if (this.closed) return
 		this.pending = true
 		if (this.timer) clearTimeout(this.timer)
 		this.timer = setTimeout(this.flush, 180)
@@ -124,6 +126,8 @@ export class WorkspaceSnapshotStorage {
 	}
 	close() {
 		this.flush()
+		this.closed = true
+		this.source = undefined
 		window.removeEventListener('pagehide', this.flush)
 		document.removeEventListener('visibilitychange', this.onVisibility)
 	}

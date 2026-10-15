@@ -10,7 +10,10 @@ export class NativeCompilerClient {
 	private closing?: Promise<void>
 	private failure?: Error
 	private pending?: { resolve(value: unknown): void; reject(reason: unknown): void }
-	constructor(private readonly url: URL) {}
+	constructor(
+		private readonly url: URL,
+		private readonly bindingPath: string,
+	) {}
 	run(input: TypstWorkerInput, signal: AbortSignal): Promise<TypstWorkerOutput> {
 		return this.request(input, signal)
 	}
@@ -64,7 +67,7 @@ export class NativeCompilerClient {
 				}
 				signal.addEventListener('abort', abort, { once: true })
 				try {
-					this.worker!.postMessage(input, [])
+					this.worker!.postMessage({ ...input, bindingPath: this.bindingPath }, [])
 				} catch (error) {
 					this.pending = undefined
 					reject(error)

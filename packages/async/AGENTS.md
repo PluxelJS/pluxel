@@ -18,5 +18,5 @@ Read README.md for orientation and docs/guide.md for the public contract. Public
 - sleep and waitFor cancel waiting; until and retry await active callbacks. Preserve real results/errors and clean listeners/timers.
 - Do not add persistent caches, graph visualization, global scheduling, reactive hooks, or speculative compatibility layers.
 
-Commands: `pnpm test` (source + types), `pnpm build` (also runs the installed-package smoke), `pnpm bench` (optional), `pnpm examples` (build and run standalone examples).
-Tests must run after deleting dist/. Benchmarks instead build first and use native ESM via vitest.bench.config.ts to compare published artifacts without source-loader overhead. Keep benchmark claims scoped to what was actually measured.
+Commands: `vp run test` (source + types and the installed-package smoke, after building), `vp run build` (ESM + declarations), `vp run bench` (optional), `vp run examples` (build and run standalone examples).
+Source tests must also work without dist/; use `vp test run` to check that boundary separately from the complete test task. Benchmarks build first and use native ESM via vitest.bench.config.ts to compare published artifacts without source-loader overhead. Keep benchmark claims scoped to what was actually measured.

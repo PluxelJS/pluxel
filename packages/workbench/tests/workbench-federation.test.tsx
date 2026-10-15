@@ -6,7 +6,11 @@ import { act, useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RpcTarget, type RpcStub } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
-import type { WorkbenchLayoutEntry, WorkbenchSessionApi } from '@pluxel/workbench/client'
+import type {
+	WorkbenchLayoutEntry,
+	WorkbenchFederatedLayoutEntry,
+	WorkbenchSessionApi,
+} from '@pluxel/workbench/client'
 import {
 	createWorkbenchViewHost,
 	type WorkbenchManagementOperations,
@@ -129,7 +133,8 @@ describe('Workbench Federation activation', () => {
 		})
 		expect(mf.registerRemotes.mock.calls[0]?.[1]).toBeUndefined()
 
-		act(() => opened.view[Symbol.dispose]())
+		const view = opened.view
+		act(() => view[Symbol.dispose]())
 		expect(order).toEqual(['bridge', 'dirty', 'host', 'rpc'])
 		expect(disposeResult).toHaveBeenCalledTimes(1)
 
@@ -208,7 +213,7 @@ describe('Workbench Federation activation', () => {
 		const changedEntry = {
 			...entry,
 			federatedViewRef: changedRef,
-		} as WorkbenchLayoutEntry
+		} satisfies WorkbenchFederatedLayoutEntry
 		await expect(
 			openFederatedWorkbenchView({
 				session,

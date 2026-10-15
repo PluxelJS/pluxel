@@ -13,7 +13,7 @@ import { RuntimeUpdatesProvider, useRuntimeUpdates } from '../src/app/runtimeUpd
 
 const roots: ReturnType<typeof createRoot>[] = []
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 })
 afterEach(async () => {
 	await act(async () => {
@@ -22,22 +22,26 @@ afterEach(async () => {
 	document.body.replaceChildren()
 })
 
+function attempt(
+	sequence: number,
+	state: 'updating',
+): Extract<RuntimeUpdateSnapshot, { state: 'updating' }>
+function attempt(
+	sequence: number,
+	state: 'settled',
+): Extract<RuntimeUpdateSnapshot, { state: 'settled'; outcome: 'retained-previous' }>
 function attempt(sequence: number, state: 'updating' | 'settled'): RuntimeUpdateSnapshot {
+	const common = { sequence, phase: 'evaluate' as const, durationMs: 10, trigger: 'new-helper.ts' }
+	if (state === 'updating') return { ...common, state, outcome: null, error: null }
 	return {
-		sequence,
+		...common,
 		state,
-		phase: 'evaluate',
-		outcome: state === 'settled' ? 'retained-previous' : null,
-		durationMs: 10,
-		trigger: 'new-helper.ts',
-		error:
-			state === 'settled'
-				? {
-						message: 'candidate failed',
-						file: 'new-helper.ts',
-						importChain: ['plugin.ts', 'new-helper.ts'],
-					}
-				: null,
+		outcome: 'retained-previous',
+		error: {
+			message: 'candidate failed',
+			file: 'new-helper.ts',
+			importChain: ['plugin.ts', 'new-helper.ts'],
+		},
 	}
 }
 

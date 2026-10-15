@@ -91,12 +91,16 @@ describe('pluxel bin launcher', () => {
 			'vendor/pncat/src/sync.ts': 'export {}\n',
 			'vendor/pncat/package.json': '{"name":"pncat"}',
 			'tsconfig.cli-build.json': '{}',
+			'scripts/vite-tasks.ts': 'export {}\n',
+			'vite.config.ts': 'export default {}\n',
+			'mise.toml': '',
 			'pnpm-workspace.yaml': 'packages: [packages/*]\n',
 			[`${packagePath}/package.json`]: JSON.stringify({ name: '@pluxel/cli', type: 'module' }),
 			[`${packagePath}/src/cli.ts`]: 'export const version = 1\n',
 			[`${packagePath}/scripts/build.mjs`]: '',
 			[`${packagePath}/tsconfig.json`]: '{}',
 			[`${packagePath}/tsdown.config.ts`]: 'export default {}\n',
+			[`${packagePath}/vite.config.ts`]: 'export default {}\n',
 			[`${packagePath}/bin/pluxel.mjs`]: await readFile(pluxelBin, 'utf8'),
 			[`${packagePath}/bin/build-state.mjs`]: await readFile(
 				resolve(dirname(pluxelBin), 'build-state.mjs'),
@@ -124,7 +128,7 @@ describe('pluxel bin launcher', () => {
 		const stale = await run()
 		expect(stale.code).toBe(1)
 		expect(stale.stdout).toBe('')
-		expect(stale.stderr).toContain(`pnpm --dir "${root}" --filter @pluxel/cli build`)
+		expect(stale.stderr).toContain(`cd "${root}" && vp run @pluxel/cli#compile`)
 		await writeFile(resolve(packageRoot, 'src/cli.ts'), 'export const version = 1\n')
 		const restored = await run()
 		expect(restored.stdout).toBe('artifact executed')

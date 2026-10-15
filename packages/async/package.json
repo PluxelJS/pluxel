@@ -58,16 +58,15 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "tsdown",
-		"postbuild": "pnpm run test:installed",
-		"typecheck": "tsc --noEmit --pretty false",
-		"test": "pnpm exec vitest run",
-		"test:watch": "pnpm exec vitest",
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"test": "vp run check-tests",
+		"test:watch": "vp test",
 		"test:installed": "node tests/installed-package.smoke.mjs",
-		"bench": "pnpm build && pnpm exec vitest bench --config vitest.bench.config.ts --run",
-		"prepack": "pnpm build",
-		"examples": "pnpm build && node examples/run.ts",
-		"examples:pacer": "pnpm build && node examples/pacer-run.ts"
+		"bench": "vp run build && vp test bench --config vitest.bench.config.ts --run",
+		"prepack": "vp run build",
+		"examples": "vp run build && node examples/run.ts",
+		"examples:pacer": "vp run build && node examples/pacer-run.ts"
 	},
 	"devDependencies": {
 		"@tanstack/pacer": "catalog:workflow",
@@ -78,8 +77,8 @@
 		"p-map": "catalog:test",
 		"p-memoize": "catalog:test",
 		"p-retry": "catalog:test",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"engines": {

@@ -32,7 +32,7 @@ export function workbenchArtifacts(
 			pluxelHost: {
 				async attach({ host, server, semantics, catalog: initialCatalog, profile }) {
 					const removeUrlPrinter = installPluxelViteUrlPrinter(server, {
-						publicOrigin: hostEnv.portlessOrigin,
+						publicOrigin: hostEnv.publicOrigin,
 						workbenchBasePath: () => workbenchShellMount(host.ctx),
 					})
 					const backend = requireWorkbench(host.ctx)

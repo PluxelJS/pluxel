@@ -1,17 +1,26 @@
 import { inflateSync } from 'node:zlib'
-import { NodeCompiler } from '../src/native-binding.ts'
+import { fileURLToPath } from 'node:url'
+import { loadNativeCompiler } from '../src/native-binding.ts'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import compileTypst from '../src/worker.ts'
+import runTypst, { type TypstWorkerInput } from '../src/worker.ts'
 
 vi.mock('../src/native-binding.ts', async () => {
 	const actual = await vi.importActual<typeof import('../src/native-binding.ts')>(
 		'../src/native-binding.ts',
 	)
-	return { ...actual, NodeCompiler: { create: vi.fn((args) => actual.NodeCompiler.create(args)) } }
+	const compiler = actual.loadNativeCompiler(
+		fileURLToPath(new URL('../native/compiler.node', import.meta.url)),
+	)
+	const wrapped = { create: vi.fn((args) => compiler.create(args)) }
+	return { ...actual, loadNativeCompiler: () => wrapped }
 })
+
+const bindingPath = fileURLToPath(new URL('../native/compiler.node', import.meta.url))
+const NodeCompiler = loadNativeCompiler(bindingPath)
+const compileTypst = (input: TypstWorkerInput) => runTypst({ ...input, bindingPath })
 
 const roots: string[] = []
 

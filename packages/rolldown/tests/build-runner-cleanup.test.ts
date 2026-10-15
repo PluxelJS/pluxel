@@ -1,9 +1,9 @@
 import { expect, it, vi } from 'vitest'
-import { build, type TsdownBundle } from 'tsdown'
+import { build, type TsdownBundle } from 'vite-plus/pack'
 import { runWithTsdown } from '../src/cli/tsdown-runner'
 
-vi.mock('tsdown', async (importOriginal) => ({
-	...(await importOriginal<typeof import('tsdown')>()),
+vi.mock('vite-plus/pack', async (importOriginal) => ({
+	...(await importOriginal<typeof import('vite-plus/pack')>()),
 	build: vi.fn(),
 }))
 

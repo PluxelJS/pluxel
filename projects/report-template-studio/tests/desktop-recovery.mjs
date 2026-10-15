@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { build } from 'tsdown'
+import { build } from 'vite-plus/pack'
 import { createServer } from 'vite'
 import { _electron as electron } from 'playwright'
 import electronExecutable from 'electron'
@@ -23,7 +23,7 @@ async function until(check, message) {
 	const deadline = Date.now() + 60_000
 	while (Date.now() < deadline) {
 		if (await check()) return
-		await new Promise((resolve) => setTimeout(resolve, 100))
+		await new Promise((done) => setTimeout(done, 100))
 	}
 	throw new Error(message)
 }
@@ -180,11 +180,10 @@ export default defineDevConsole(async dev => {
 			generation === 1 ? 'Optional table preserved' : 'After generation 1',
 		)
 		await bank.fill(`After generation ${generation}`)
-		await until(
-			async () =>
-				(await inspect()).input.data.header?.bankName === `After generation ${generation}`,
-			'Editing after HMR failed',
-		)
+		await until(async () => {
+			const snapshot = await inspect()
+			return snapshot.input.data.header?.bankName === `After generation ${generation}`
+		}, 'Editing after HMR failed')
 		await until(
 			() => page.getByRole('button', { name: '导出 PDF', exact: true }).isEnabled(),
 			'Edited preview did not recover',
@@ -197,7 +196,8 @@ export default defineDevConsole(async dev => {
 		await page.getByRole('button', { name: '导出 PDF', exact: true }).click()
 		await until(async () => {
 			try {
-				return (await readFile(pdf)).subarray(0, 5).toString() === '%PDF-'
+				const contents = await readFile(pdf)
+				return contents.subarray(0, 5).toString() === '%PDF-'
 			} catch (error) {
 				if (error.code !== 'ENOENT') throw error
 				return false

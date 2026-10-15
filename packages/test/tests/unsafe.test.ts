@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest'
 // This suite intentionally models lowering facts without the semantic pass.
 // oxlint-disable-next-line pluxel/plugin-base-class-requires-plugin-registration
 class OriginalPlugin extends BasePlugin {
-	readonly revision = 'original'
+	readonly revision: string = 'original'
 }
 
 Plugin()(OriginalPlugin)

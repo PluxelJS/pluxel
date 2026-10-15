@@ -2,6 +2,8 @@
 
 修改应用交付、环境模板、Node bundle 闭包或部署装配时读本页。Plugin 声明语义由 [TOOLCHAIN](TOOLCHAIN.md) 拥有，browser/Node 独立制品由 [ARTIFACT_BUILD](ARTIFACT_BUILD.md) 拥有，最终 inventory/签名由 [DISTRIBUTION](DISTRIBUTION.md) 拥有。
 
+应用构建宿主为 `vite-plus/pack` 的原生 tsdown API；`pluxel()` 的 `tsdownConfig` hook 和构建语义保持不变。独立打包配置由 `tsdown.config.ts` 拥有：普通包的 `vite.config.ts.pack` 引用它供 `vp pack` 使用；冷任务图扫描不能提前加载框架构建产物的应用，使用 `scripts/pack.mjs` 在前置构建完成后调用 `build({ config: 'tsdown.config.ts', watch: false })`。`vp pack --config` 不负责读取独立配置。
+
 ## 交付选择与 modules
 
 `@pluxel/rolldown` 的 `pluxel({ delivery })` 将交付边界与 headless/workbench 资源 variant 分开。默认 standalone；modules 适合保留真实包边界及来源目录的应用。
@@ -10,6 +12,8 @@
 modules 复用 `createPluginBuildPipeline` 的 lowering、config metadata、Node/Workbench 制品编译，不冻结 plugins 数组、不执行工厂。它编译本包相对模块和 `package.json#imports` 指向的本地模块；`#imports` 由构建解析，指向外部依赖时保持真实包边界，不向产物保留失去映射的别名。bare package imports 保持 external；明确的 public source exports 输出为对应 ESM entry，保留 package-root/subpath identity。`app.mjs` 默认导出应用工厂并保留 product/named exports，不自动启动。自定义 `outputOptions.entryFileNames` 时须保留 `.mjs` 扩展名；package exports 与 deployment server entry 从实际输出 chunk 生成，不另维护文件名。共享 parser 仍检查 application/bindings 声明；static catalog 限制只进入 standalone 分支。
 
 `package.json` 声明真实 output artifactRoot、Node/Workbench 制品能力和 modules 版本。`pluxel-modules.json` 保存编译所有权 definition 地址与实际 chunk SHA-256，原生解析工厂时验证文件、边界和摘要，然后仅给这些本地定义登记所属输出；不会把所有 source-entry 都冒充本包。Node/Workbench 服务按已求值 definition 的实际所属 package 读取 inventory，支持 compiled local source-entry。缺失或损坏的声明 inventory 明确失败，不回到源码编译。
+
+modules 含真实 Workbench view/attachment target 时，复用发布包相同的 capnweb peer、开发依赖与已安装版本验证，再向部署 `package.json` 写入 `pluxel.workbenchCapnweb`；headless 或无 target 的输出不继承 source marker。
 
 modules 的 `pluxel-deployment.json` kind 为 pluxel-modules-application，runtimeClosure 为 packages；最终文件仍通过既有 distribution finalizer。依赖由实际安装提供，运行数据放在发行目录外；产物可以搬移、删除 src 并只读运行。调用方显式 `runHostApplication` 并传 startup.root/sharedPackages；持续更新显式使用 Vite `/run`，用法见[Host 配置](../docs/host/configuration.md#生产构建)。
 
@@ -24,6 +28,8 @@ remote extraction 和 production preprocessing，然后生成以 canonical entry
 因此具有相同语义。fixed plugins、runtime 和可达的
 runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
 静态插件清单是部署合同：模块声明与导入的数组在模块求值、配置工厂执行及其 helper/callback 中都必须保持原始成员，不能通过赋值、别名、mutator 或动态 import 追加插件。检查器拒绝工厂中的明显赋值、删除、mutator、引用别名和向 helper 传递数组；允许 `map`、`slice` 等读取，但作者仍须保证 callback 没有修改原数组。该检查只覆盖有限语法，不做跨模块副作用分析，也不证明任意 JavaScript 的清单完整性。standalone 的 AST 分支拒绝任何 sources 声明；目录应用使用 modules。
+
+standalone 中的官方 `@pluxel/services/plugins` 入口使用 production exports，与 Services 已发布的 Workbench inventory 对应，避免将同一个 producer 从源码重建后再与发布制品合并。普通 Plugin 的 `@pluxel/hmr` 源码编译与相对源码入口保持不变；inventory 的内容冲突仍明确拒绝。
 
 optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
 缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
@@ -102,8 +108,8 @@ headless 与 workbench 使用分离的 internal Node adapter；headless dependen
 
 ### URL 与磁盘目录分离
 
-开发 route 的 URL 输出由 `host-vite` 的共享 presenter 负责，固定与来源插件不各自推断 ingress。存在 Portless origin 时它显示同一
-origin 上的 Application `/` 与 Workbench `uiBasePath`；没有 Portless 时保留 Vite 原生 listener URL，并只追加 Workbench mount。
+开发 route 的 URL 输出由 `host-vite` 的共享 presenter 负责，固定与来源插件不各自推断 ingress。存在 Host `publicOrigin` 时它显示同一
+origin 上的 Application `/` 与 Workbench `uiBasePath`；没有公开 origin 时保留 Vite 原生 listener URL，并只追加 Workbench mount。
 Workbench-only host 若让 UI 拥有 `/`，不得虚构第二个 Application root。
 
 Workbench Shell 的 browser asset URL 使用 `/__pluxel/workbench/assets/**`；磁盘仍由 distribution 内部的 `workbench/public/`

@@ -109,7 +109,7 @@ function resolvedEdge(
 			resolution: Object.freeze({
 				state: 'resolved' as const,
 				provider: resolvedProvider,
-				via,
+				via: 'direct' as const,
 			}),
 			effective,
 		})

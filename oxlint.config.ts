@@ -1,4 +1,4 @@
-import { defineConfig, type OxlintConfig, type OxlintOverride } from 'oxlint'
+import type { OxlintConfig, OxlintOverride } from 'vite-plus/lint'
 import {
 	createPluxelSourceJsPluginEntry,
 	pluxelOxlintIgnorePatterns,
@@ -59,12 +59,46 @@ const categories: Categories = {
 	perf: 'error',
 }
 
-const ignorePatterns: IgnorePatterns = [...pluxelOxlintIgnorePatterns]
+const ignorePatterns: IgnorePatterns = [
+	...pluxelOxlintIgnorePatterns,
+	// These independent projects and uninstalled templates have their own checks.
+	'vendor/**',
+	'engineering/**',
+	'packages/create/template/**',
+	'packages/cli/templates/**',
+]
 
 const createOverride = (files: GlobSet, rules: RuleMap): OxlintOverride => ({ files, rules })
 // Repository deviations from enabled defaults. Rules should appear here only when
 // Pluxel intentionally differs from oxlint/plugin recommendations.
 const baselineRules: RuleMap = {
+	// Enabling the TypeScript engine must not broaden the existing lint policy.
+	// These category defaults were inactive before typeAware; frontend rules opt in below.
+	'typescript/await-thenable': 'off',
+	'typescript/consistent-return': 'off',
+	'typescript/no-array-delete': 'off',
+	'typescript/no-base-to-string': 'off',
+	'typescript/no-duplicate-type-constituents': 'off',
+	'typescript/no-floating-promises': 'off',
+	'typescript/no-for-in-array': 'off',
+	'typescript/no-generated-empty-object-type': 'off',
+	'typescript/no-implied-eval': 'off',
+	'typescript/no-meaningless-void-operator': 'off',
+	'typescript/no-misused-spread': 'off',
+	'typescript/no-redundant-type-constituents': 'off',
+	'typescript/no-unnecessary-boolean-literal-compare': 'off',
+	'typescript/no-unnecessary-template-expression': 'off',
+	'typescript/no-unnecessary-type-arguments': 'off',
+	'typescript/no-unnecessary-type-assertion': 'off',
+	'typescript/no-unnecessary-type-conversion': 'off',
+	'typescript/no-unnecessary-type-parameters': 'off',
+	'typescript/no-unsafe-enum-comparison': 'off',
+	'typescript/no-unsafe-type-assertion': 'off',
+	'typescript/no-unsafe-unary-minus': 'off',
+	'typescript/no-useless-default-assignment': 'off',
+	'typescript/require-array-sort-compare': 'off',
+	'typescript/restrict-template-expressions': 'off',
+	'typescript/unbound-method': 'off',
 	'eslint/no-await-in-loop': 'off',
 	// Pluxel intentionally uses underscore names for runtime globals, Node compatibility
 	// shims, decorator/DI fields, and double-underscore internal hooks.
@@ -172,11 +206,22 @@ const overrides: OxlintOverride[] = [
 			'react/exhaustive-deps': 'error',
 			'react/no-unstable-nested-components': ['error', { allowAsProps: true }],
 			'react/rules-of-hooks': 'error',
+			'typescript/await-thenable': 'error',
+			'typescript/no-array-delete': 'error',
+			'typescript/no-base-to-string': 'error',
+			'typescript/no-floating-promises': 'error',
+			'typescript/no-for-in-array': 'error',
+			'typescript/no-misused-promises': 'error',
+			'typescript/no-misused-spread': 'error',
+			'typescript/only-throw-error': 'error',
+			'typescript/prefer-promise-reject-errors': 'error',
+			'typescript/use-unknown-in-catch-callback-variable': 'error',
 		},
 	),
 ]
 
-export default defineConfig({
+export default {
+	options: { typeAware: true, typeCheck: true, reportUnusedDisableDirectives: 'error' },
 	env,
 	plugins,
 	jsPlugins,
@@ -184,4 +229,4 @@ export default defineConfig({
 	ignorePatterns,
 	rules,
 	overrides,
-})
+} satisfies OxlintConfig

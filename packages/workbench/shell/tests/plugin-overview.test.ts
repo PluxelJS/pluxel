@@ -39,7 +39,7 @@ const catalog = {
 		{
 			sectionId: 'package:@pluxel/example',
 			name: '@pluxel/example',
-			basis: { kind: 'host-reload' },
+			basis: { kind: 'dependency', definition: address.definition },
 			nodes: [address],
 		},
 	],

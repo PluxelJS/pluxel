@@ -86,16 +86,14 @@ async function runCurrentCli() {
 				: undefined
 			if (built !== cliSourceFingerprint(resolve(__dirname, '..'))) {
 				console.error(`[pluxel] CLI build is stale for Git checkout ${owningCheckout}.`)
-				console.error(
-					`Run \`pnpm --dir "${owningCheckout}" --filter @pluxel/cli build\`, then retry.`,
-				)
+				console.error(`Run \`cd "${owningCheckout}" && vp run @pluxel/cli#compile\`, then retry.`)
 				process.exit(1)
 			}
 		}
 		await import(pathToFileURL(distCli).href)
 	} else {
 		console.error('[pluxel] CLI build is missing.')
-		console.error('Run `pnpm --filter @pluxel/cli build` before invoking the workspace CLI.')
+		console.error('Run `vp run @pluxel/cli#compile` before invoking the workspace CLI.')
 		process.exit(1)
 	}
 }

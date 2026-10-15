@@ -9,8 +9,8 @@
 	},
 	"scripts": {
 		"build:plugins": "node build/plugins.mjs",
-		"typecheck": "tsc --noEmit",
-		"test": "vitest run",
+		"typecheck": "vp run check-types",
+		"test": "vp run check-tests",
 		"build:sdk": "node build/plugins.mjs --sdk-only"
 	},
 	"dependencies": {
@@ -39,6 +39,7 @@
 		"semver": "catalog:dev",
 		"typescript": "catalog:prod",
 		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test",
 		"yaml": "catalog:dev",
 		"zod": "catalog:test"

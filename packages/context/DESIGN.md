@@ -36,8 +36,8 @@ Compilation 为 root/scope/owner cache 分别分配数字 slot，并生成 scope
 执行：
 
 ```sh
-pnpm --filter @pluxel/context bench
-pnpm --filter @pluxel/context bench:compare-legacy
+vp run @pluxel/context#bench
+vp run @pluxel/context#bench:compare-legacy
 ```
 
 2026-08-23，Node 24，同进程 comparison benchmark 的一次记录：

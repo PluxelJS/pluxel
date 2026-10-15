@@ -23,6 +23,7 @@
 		"tests/**/*.tsx",
 		"tsdown.config.ts",
 		"vitest.config.ts",
-		"oxlint.config.ts"
+		"oxlint.config.ts",
+		"vite.config.ts"
 	]
 }

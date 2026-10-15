@@ -89,7 +89,7 @@ update.materializeNode(
 	consumePluginDefinitionCandidate(CallerViewBenchConsumer),
 )
 const committed = await update.commit()
-if (!committed.ok) throw committed.err
+if (committed.ok === false) throw committed.err
 
 const raw = registry.getInstance(
 	pluginNodeAddressOf(CallerViewBenchProvider),

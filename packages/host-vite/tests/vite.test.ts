@@ -8,6 +8,7 @@ import {
 	createRunnableDevEnvironment,
 	type RunnableDevEnvironment,
 	type InlineConfig,
+	type ConfigPluginContext,
 	type Plugin,
 	type ViteDevServer,
 } from 'vite'
@@ -23,6 +24,16 @@ import {
 	invalidateHostModule,
 	invalidateHostModuleGraphFiles,
 } from '../src/environment'
+
+const configHookContext: ConfigPluginContext = {
+	meta: { viteVersion: 'test', rolldownVersion: 'test', rollupVersion: 'test' },
+	error(error: unknown): never {
+		throw new Error('Config hook failed', { cause: error })
+	},
+	info() {},
+	warn() {},
+	debug() {},
+}
 
 function createTestViteServer(config: InlineConfig): Promise<ViteDevServer> {
 	return createServer({
@@ -62,7 +73,11 @@ describe('host-vite Vite plugin stack', () => {
 	it('exposes source/server semantics as a dedicated plugin', () => {
 		const plugins = pluginSourceVitePlugins() as Plugin[]
 		const plugin = plugins.at(-1)!
-		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' }) as {
+		if (typeof plugin.config !== 'function') throw new Error('Expected a config hook function')
+		const config = plugin.config.call(configHookContext, {} as never, {
+			command: 'serve',
+			mode: 'development',
+		}) as {
 			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
 			ssr?: {
 				external?: string[]
@@ -185,7 +200,8 @@ describe('host-vite Vite plugin stack', () => {
 	it('keeps distribution ESM packages in the Vite graph', () => {
 		const plugins = pluginSourceVitePlugins({ packageMode: 'distribution' }) as Plugin[]
 		const plugin = plugins.at(-1)!
-		const config = plugin.config?.({} as never, {
+		if (typeof plugin.config !== 'function') throw new Error('Expected a config hook function')
+		const config = plugin.config.call(configHookContext, {} as never, {
 			command: 'serve',
 			mode: 'production',
 		}) as {

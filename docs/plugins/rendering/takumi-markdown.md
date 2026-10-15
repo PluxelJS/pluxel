@@ -1,40 +1,30 @@
 ---
 title: Markdown / Typst 图片渲染
-description: 使用 GFM、固定静态代码高亮和可选受限 Typst 数学，将 Markdown 有界地渲染为 Takumi 图片或 SVG。
+description: 使用 GFM、静态代码高亮与可选 Typst 数学，通过共享 Worker 将 Markdown 渲染为图片或 SVG。
 ---
 
-@pluxel/takumi-markdown 把 Markdown 文档变成图片：它在取得 Takumi 的 render
-admission 后再解析 GFM、处理 table、固定高亮 code fence，最后只做一次 Takumi render。它适合
-release note、说明文档、报告、社交卡片或需要稳定静态快照的 Markdown 内容。
+`@pluxel/takumi-markdown` 负责 Markdown 文档转换：解析 GFM、排版 table、静态高亮 code fence，再通过 `TakumiPlugin` 提交一次最终 Worker render。它适合 release note、说明文档、报告与需要静态快照的 Markdown 内容。
 
-先按输出的真实模型选择能力：
+| 需求                                               | 选择                             |
+| -------------------------------------------------- | -------------------------------- |
+| Markdown 文档、GFM table、代码块、图片             | `@pluxel/takumi-markdown`        |
+| React JSX、HeroUI 卡片、HTML 或 node tree          | [Takumi](./takumi.md)            |
+| 已有 rows/columns 的静态报告表，需精确 Canvas 绘制 | [Canvas table](./canvas.md)      |
+| 完整 Typst 文档、Vector 预览或 PDF                 | 工作区 [TypstPlugin](./typst.md) |
 
-| 需求                                               | 选择                    |
-| -------------------------------------------------- | ----------------------- |
-| Markdown 文档、GFM table、代码块、图片             | @pluxel/takumi-markdown |
-| 已有 rows/columns 的静态报告表，需精确 Canvas 绘制 | @pluxel/canvas/table    |
-| 折线、柱状、饼图、坐标轴等图表                     | @pluxel/echarts         |
-
-Markdown table 由 Takumi 的 HTML/CSS layout 排版，不重复调用 Canvas table；图表仍交给 ECharts。
-
-## 部署配置
-
-`@pluxel/takumi-markdown` 导出 `TakumiMarkdownConfig`；公式扩展包导出 `TypstMathConfig`。两者均是各自 `configs.use()` 的同一 schema，可直接用于 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)，无需 Workbench。前者配置源文本、AST、生成 HTML 与扩展容量，后者配置公式数量、长度与 SVG 输出容量；底层绘制预算由 `TakumiConfig`、字体由 [FontsConfig](./fonts.md)、共享线程池由 Host Workers 配置。
-
-配置变更后重启对应插件，env/file 变更后重建 Host。Markdown、主题与受信任扩展仍通过业务方法提供，不把可执行扩展或模板内容塞入部署配置。
+Markdown table 由 Takumi 的 HTML/CSS layout 排版。可用的工作区 `TypstPlugin` 自动为 Markdown 提供受限公式编译。
 
 ## 安装与最小装配
 
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-pnpm catalog:add -- @pluxel/takumi-markdown @pluxel/takumi @pluxel/fonts
+vp exec pluxel pncat add @pluxel/takumi-markdown @pluxel/takumi
 ```
 
-host catalog 包含 Fonts、Takumi、Markdown 和 consumer。MarkdownPlugin 已 required-depend Takumi，
-Takumi 又 required-depend Fonts；业务 Plugin 只注入直接使用的 Markdown capability：
+Host catalog 包含 Takumi、Markdown 和 consumer，并安装共享 [Workers 服务](../../plugin-development/node-artifacts.md#选择安装能力)。`standardServices()` 与 `servicesPreset()` 已包含该服务。MarkdownPlugin required-depend Takumi；业务 Plugin 只注入直接使用的 Markdown capability：
 
-```ts
+```ts no-twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
 
@@ -50,139 +40,148 @@ export class ReleaseImagePlugin extends BasePlugin {
 		this.renderer = this.markdown.createRenderer({ theme: 'light' })
 	}
 
-	renderReleaseNotes(markdown: string, signal?: AbortSignal) {
-		return this.renderer.render({
-			markdown,
+	renderReleaseNotes(source: string, signal?: AbortSignal) {
+		return this.renderer.render(source, {
 			width: 1200,
 			height: 630,
-			output: { format: 'webp', quality: 88 },
+			format: 'webp',
+			quality: 88,
 			signal,
 		})
 	}
 }
 ```
 
-`createRenderer()` 保存当前插件这一轮运行所需的扩展列表和默认主题。插件停止或被替换时，返回的 renderer 自动关闭；需要提前结束时调用 `await renderer.close()`。
+`createRenderer({ extensions?, theme? })` 保存当前插件这一轮运行的扩展列表和默认主题。插件停止或被替换时，renderer 自动关闭；需要提前结束时调用 `await renderer.close()`。
 
-调用 `renderReleaseNotes('# 1.0.0\n\n首次发布')` 后，将返回值的 `data` 保存为 `.webp`，应能看到标题与正文。需要 SVG 时调用 `renderSvg()`，并省略 `devicePixelRatio` 和 raster `output`。
+`render(source, options?)` 直接返回图片 bytes；`renderSvg(source, options?)` 直接返回 SVG string。将 `await renderReleaseNotes('# 1.0.0\n\n首次发布')` 保存为 `.webp`，应能看到标题与正文。
 
-## GFM、表格与代码块
+转换和扩展执行期间仍会读取 options 及其字体/图片 bytes；在返回的 Promise settle 前保持它们不变。`assets.add()` 只借用输入 bytes 到该次 `add()` settle，随后由本次 render 拥有副本。
 
-GFM 固定开启，包括 table、task list、strike-through 和 footnote。每个 Markdown table 变成
-Takumi HTML/CSS table；它不是可排序/分页的数据网格，也不使用 @pluxel/canvas/table。
+## 上游选项与文档主题
 
-Raw HTML 固定关闭，并在所有 HAST extension pass 后移除。因此 request 中的
-&lt;img&gt;、&lt;script&gt; 或任意 HTML 不会作为 HTML 输出。Markdown 图片仍可使用标准 Markdown
-syntax；若 image URL 是 HTTP(S) 或内存 source，先由业务 HTTP capability 取得 bytes，然后用完全相同的
-src 填入 images：
+`MarkdownRenderOptions` 与 `MarkdownSvgRenderOptions` 分别沿用 Takumi 的 `WorkerRenderOptions` 与 `WorkerSvgRenderOptions`，另加单次文档的 `theme`。宽高、字体、DPR、CSS、图片、格式和取消使用对应字段：
 
-```ts
-await this.renderer.render({
-	markdown: '![Logo](https://assets.example/logo.png)',
-	images: [{ src: 'https://assets.example/logo.png', data: logoBytes }],
+```ts no-twoslash
+const png = await this.renderer.render('# 月度报告', {
 	width: 1200,
 	height: 630,
+	theme: 'dark',
+	fonts: [{ name: 'Report Sans', data: fontBytes }],
+	css: 'article { font-family: "Report Sans"; }',
+	format: 'png',
+	signal,
+})
+
+const svg = await this.renderer.renderSvg('# 月度报告', {
+	width: 1200,
+	height: 630,
+	fonts: [{ name: 'Report Sans', data: fontBytes }],
+	signal,
 })
 ```
 
-Fence code 使用 Rangi 的 classes-only HTML 和内置 light/dark CSS。语言名称按固定 alias mapping
-转换，未知语言按 plain code 显示；没有 Shiki grammar/theme 下载、自动语言检测或按 request 选择高亮器。
-可继续用 stylesheets 为本次文档加自己的 CSS，但内容、stylesheets 与 image bytes 在 render Promise
-settle 前都按 Takumi borrowed contract 保持不变。
+单次调用的 `theme` 覆盖 `createRenderer()` 的默认主题；两处都省略时使用 `light`。
 
-## 可选的 Typst 数学
+自定义 `css` 在内置文档与高亮样式之后应用。字体使用具体 bytes；需要中文时提供覆盖相应字形的字体。函数 loader、fetch callback、Renderer 与 WASM module 不跨线程，样式使用 `css`。Worker options、缓存与执行边界见 [Takumi](./takumi.md)。
 
-需要普通 inline/display math 时，额外安装 Typst extension：
+## GFM、表格、代码块与图片
 
-```sh
-pnpm catalog:add -- @pluxel/takumi-markdown-typst
+GFM 固定开启，包括 table、task list、strike-through 和 footnote。Raw HTML 固定关闭，并在所有 HAST extension pass 后移除；请求中的 HTML 标签不会作为原始 HTML 输出。
+
+Fence code 使用 Rangi 的 classes-only HTML 和内置 light/dark CSS。语言名称按固定 alias mapping 转换，未知语言按 plain code 显示；高亮器和语言集合由插件固定。
+
+Markdown 图片使用标准语法。默认只消费预加载资源，consumer 将 bytes 与原始图片 URL 一起交给 `images`：
+
+```ts no-twoslash
+await this.renderer.render('![Logo](https://assets.example/logo.png)', {
+	width: 1200,
+	height: 630,
+	images: [{ src: 'https://assets.example/logo.png', data: logoBytes }],
+})
 ```
 
-catalog 再加入 TypstMathPlugin，consumer 注入它并把 extension 交给 renderer：
+若文档需要网络图片，显式设置 `images.allowRemote: true`。超时、下载 bytes 上限与解码 cache 使用同一个可跨线程的对象：
 
-```ts
-import { TypstMathPlugin } from '@pluxel/takumi-markdown-typst'
-
-constructor(
-	private readonly markdown: TakumiMarkdownPlugin,
-	private readonly typst: TypstMathPlugin,
-) {
-	super()
-}
-
-override init(): void {
-	this.renderer = this.markdown.createRenderer({
-		extensions: [this.typst.createMarkdownExtension()],
-	})
-}
+```ts no-twoslash
+await this.renderer.render('![Logo](https://assets.example/logo.png)', {
+	width: 1200,
+	height: 630,
+	images: {
+		allowRemote: true,
+		timeout: 5_000,
+		maxBytes: 2 * 1024 * 1024,
+	},
+})
 ```
 
-随后文档可写 $x^2 + y^2 = z^2$ 或 display math block。这个能力只接受受限 math
-expression：普通字母、数字、数学符号、空白、分组和表达式标点可用；# command、反斜杠、
-字符串、path、import/include/read、image、plugin 等会在编译前拒绝。
+## 工作区可选的 Typst 数学
 
-它不是通用 Typst document compiler：不能传 main file、package、font、页面选项、网络 source 或外部 input；
-也不支持 MDX。每个公式在 宿主共享 Worker 生成 SVG asset，再进入这一次最终 Takumi render，
-不会创建内嵌 renderer。
+`@pluxel/typst` 目前是 workspace-only 能力，只能在包含该包的源码工作区中集成；公开包状态见 [Package 与入口矩阵](../../reference/package-matrix.md#workspace-only-能力)。普通 Markdown 不要求安装 Typst。
+
+在 Host catalog 中加入 FontsPlugin 和 TypstPlugin，并运行 Typst provider 后，Markdown 自动启用内置数学能力。业务插件仍只注入 `TakumiMarkdownPlugin`，沿用前面的 `createRenderer()` 与调用方式：
+
+```ts no-twoslash
+const png = await this.renderer.render('$x^2 + y^2 = z^2$', {
+	width: 1200,
+	height: 630,
+	format: 'png',
+})
+```
+
+没有运行中的 Typst provider 时，内容按普通 Markdown 处理。provider 出现、撤回或替换会触发 Markdown 与下游重启；旧 renderer 失效，业务在新一轮 `init()` 中创建 renderer。
+
+公式支持 inline math 和 display math block，只接受受限 math expression：字母、数字、数学符号、空白、分组和表达式标点可用；command、反斜杠、字符串、path、import/include/read、image、plugin 等在编译前拒绝。
+
+内置数学层为公式构造固定 Typst 文档，并调用 `TypstPlugin.renderSvg(source, options)`。字体、native compiler 与编译 Worker 都由 TypstPlugin 负责；Markdown 只拥有公式校验、公式/SVG 容量和资产接线。生成的 SVG bytes 进入同一次最终 Takumi Worker render。
+
+公式 SVG 使用透明背景和当前 `theme` 对应的内置正文前景色。Inline 与 display 公式按各自模式编译，display 公式居中；SVG viewBox 的 point 尺寸换算为 CSS pixel 后写入图片宽高。
+
+完整 Typst 文件、package、页面、模板和会话使用 [Typst 文档](./typst.md)，不通过数学表达式入口传入。
 
 ## 自定义受信任 Markdown 扩展
 
-createRenderer({ extensions }) 是受信任的 startup-time composition，不要把 extension declaration
-从 Markdown request、用户配置或数据库记录直接接收。每个 extension factory 只会在 render 已被 Takumi
-admit 后执行，并按 array 顺序运行一次；它可以请求有限的 Satteri feature、返回 MDAST/HAST plugins，
-或通过 context 的 assets.add() 加入 PNG/JPEG/WebP/SVG bytes。
+`createRenderer({ extensions })` 是受信任的 startup-time composition。不要从 Markdown request、用户配置或数据库记录直接接受可执行 extension declaration。
 
-asset sink 分配 opaque internal source、copy bytes 并执行 count/per-asset/total limits。extension 不能选 URL、
-不能让 renderer fetch、也不能在本次 render settle 后继续使用 sink。若需要保留资源或独立生命周期，应建立自己的
-Plugin capability，而不是捕获该 render-local sink。
+每次 render 按 array 顺序执行一次 extension factory。它可以请求有限的 Satteri feature、返回 MDAST/HAST plugins，或通过 context 的 `assets.add()` 加入 PNG/JPEG/WebP/SVG bytes。
 
-## 限额、取消与错误
+`MarkdownExtensionContext.theme` 是本次调用解析后的 `light` 或 `dark`，扩展可用它生成与文档主题一致的资产。
 
-MarkdownPlugin 的默认值为：1 MiB source、20,000 个 AST nodes、1 MiB generated HTML、16 个 trusted
-extensions、32 个 generated assets（单个 1 MiB、合计 8 MiB）、64 个 code blocks（单个 128 KiB、合计
-512 KiB）。Typst extension 默认最多 32 个公式、每个 4,096 characters、每个 SVG 1 MiB、每次文档合计
-4 MiB。两层还受 Takumi 的 dimension、pixel、content/style/image、output、deadline 和 fair queue policy
-约束；host config 是上限，不会被 request 放宽。
+Asset sink 分配 opaque internal source、复制 bytes，并检查 count/per-asset/total limits。Extension 不能选择资产 URL，也不能在本次 render settle 后继续使用 sink。需要保留资源或独立生命周期时，建立自己的 Plugin capability。
 
-signal 取消排队、cooperative source/tree/asset preparation、Worker formula task 和尚未开始的 native
-render。已进入 Takumi native work 的计算不能强制抢占；caller 立即收到取消，但 admission capacity 会等真实
-native settlement 后才释放。
+## 文档限额、取消与失败
 
-可按稳定 error code 分支：
+`TakumiMarkdownConfig` 只配置文档自身的容量：source、AST、生成 HTML、扩展资产、代码块与公式。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件) 提供它与 `configs.use()` 使用的同一 schema；配置变更后重启插件，env/file 变更后重建 Host。
 
-- MarkdownError：MARKDOWN_TOO_LARGE、AST_LIMIT_EXCEEDED、HTML_TOO_LARGE、
-  CODE_LIMIT_EXCEEDED、asset limit、EXTENSION_FAILED、NOT_RUNNING。
-- TypstMathError：FORMULA_INVALID、FORMULA_TOO_LARGE、FORMULA_COMPILE_FAILED、
-  SVG_TOO_LARGE、NOT_RUNNING。
-- TakumiError：例如 RENDER_BUSY、RENDER_TIMEOUT、PIXELS_EXCEEDED、
-  IMAGE_BYTES_EXCEEDED 和 OUTPUT_TOO_LARGE。
+默认最多 1 MiB source、20,000 个 AST nodes、1 MiB generated HTML、16 个 extensions、32 个 generated assets（单个 1 MiB、合计 8 MiB）、64 个 code blocks（单个 128 KiB、合计 512 KiB）。同一个 `TakumiMarkdownConfig` 的 `math` 配置默认最多 32 个公式、每个 4,096 characters、每个 SVG 1 MiB、每次文档 SVG 合计 4 MiB。
 
-缩小输入、延后任务或由 host operator 明确调整 config；consumer 不应捕获错误后自行绕过 host
-budget。Takumi 的字体、remote image loading、render output 与 native cancellation 细节见
-[Takumi HTML 图片渲染](./takumi.md)。
+GFM、代码高亮与受信任 extension 在调用 realm 执行；大文本检查与资产 copy 在 checkpoint 让出 event loop。最终 HTML、CSS 和图片准备及 raster/SVG render 进入共享 Worker。公式编译完成后释放其 Typst Worker slot，再提交最终 Takumi task，不在一个 slot 内等待第二个共享 task。
+
+`signal` 用于文档转换 checkpoint、extension、Typst 编译与最终 Worker task；renderer 的 `close()` abort 本 handle 的任务并等待它们 settle。Takumi task 使用 execution settlement，因此取消时会等待线程退出确认；底层 native work 不能立即抢占。
+
+`MarkdownError` 描述文档自己能判定的失败，例如 `MARKDOWN_TOO_LARGE`、`AST_LIMIT_EXCEEDED`、`HTML_TOO_LARGE`、`CODE_LIMIT_EXCEEDED`、资产超限和已关闭 handle。公式失败使用同一个错误类的 `FORMULA_INVALID`、`FORMULA_TOO_LARGE`、`FORMULA_COMPILE_FAILED` 与 `SVG_TOO_LARGE`，已知 Typst 编译/容量失败保留 cause。未知扩展、Typst 及共享 Workers 失败继续 reject，consumer 按能恢复的具体契约处理。
 
 ## 将可恢复失败交给业务调用方
 
-文档预览可以要求用户缩短过大的 Markdown，consumer 因而只把 `MARKDOWN_TOO_LARGE` 转成 Err。
-`renderer` 是当前 consumer 从 `createRenderer()` 取得的 handle，使用期间借给这个普通 helper。
+文档预览可以提示用户缩短过大的 Markdown，因此 consumer 只把 `MARKDOWN_TOO_LARGE` 转成领域 Err。这里的 renderer 由 owning Plugin 创建和清理：
 
 ```ts no-twoslash
 import { Result, TaggedError } from '@pluxel/core/better-result'
-import type { TakumiRenderResult } from '@pluxel/takumi'
 import {
 	MarkdownError,
 	type MarkdownRenderer,
-	type MarkdownRenderInput,
+	type MarkdownRenderOptions,
 } from '@pluxel/takumi-markdown'
 
 export class DocumentTooLarge extends TaggedError('DocumentTooLarge')<{ message: string }> {}
 
 export async function renderDocument(
 	renderer: MarkdownRenderer,
-	input: MarkdownRenderInput,
-): Promise<Result<TakumiRenderResult, DocumentTooLarge>> {
+	source: string,
+	options?: MarkdownRenderOptions,
+): Promise<Result<Uint8Array, DocumentTooLarge>> {
 	try {
-		return Result.ok(await renderer.render(input))
+		return Result.ok(await renderer.render(source, options))
 	} catch (error) {
 		if (error instanceof MarkdownError && error.code === 'MARKDOWN_TOO_LARGE') {
 			return Result.err(new DocumentTooLarge({ message: 'Shorten the Markdown document.' }))
@@ -192,48 +191,6 @@ export async function renderDocument(
 }
 ```
 
-调用方对 Err 提示缩短文档，Ok 时使用图片数据；最终仍用 `try/finally` 调用 `renderer.close()`，或按既有
-caller generation 清理。extension bug、资源冲突、取消、Worker 故障和已关闭 handle 不属于文档超限。
+Err 时提示缩短文档，Ok 时直接使用 bytes。启用内置数学后，consumer 还可以按 `MarkdownError.code` 将 `FORMULA_INVALID` 或 `FORMULA_TOO_LARGE` 转成修正公式的提示；未处理的编译失败、未知扩展错误与取消继续 reject。
 
 [可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown/tests/markdown.test.ts)。
-
-### Typst 公式校验
-
-启用数学扩展后，`TypstMathError` 会穿过 Markdown renderer，consumer 按稳定 code 捕获用户能修正的失败。
-将下例的 renderer 创建为 `markdown.createRenderer({ extensions: [typst.createMarkdownExtension()] })`；
-`markdown` 和 `typst` 均来自 constructor dependency。
-
-```ts no-twoslash
-import { Result, TaggedError } from '@pluxel/core/better-result'
-import type { TakumiRenderResult } from '@pluxel/takumi'
-import type { MarkdownRenderer, MarkdownRenderInput } from '@pluxel/takumi-markdown'
-import { TypstMathError } from '@pluxel/takumi-markdown-typst'
-
-export class FormulaRejected extends TaggedError('FormulaRejected')<{
-	reason: 'invalid_formula' | 'too_large'
-}> {}
-
-// The renderer must be created with typst.createMarkdownExtension().
-export async function renderFormulaDocument(
-	renderer: MarkdownRenderer,
-	input: MarkdownRenderInput,
-): Promise<Result<TakumiRenderResult, FormulaRejected>> {
-	try {
-		return Result.ok(await renderer.render(input))
-	} catch (error) {
-		if (error instanceof TypstMathError && error.code === 'FORMULA_INVALID') {
-			return Result.err(new FormulaRejected({ reason: 'invalid_formula' }))
-		}
-		if (error instanceof TypstMathError && error.code === 'FORMULA_TOO_LARGE') {
-			return Result.err(new FormulaRejected({ reason: 'too_large' }))
-		}
-		throw error
-	}
-}
-```
-
-Err 时按 `reason` 提示修正受限语法或缩短公式，Ok 时读取图片数据；handle 的关闭责任仍属于创建它的 consumer。
-这里不把 `FORMULA_COMPILE_FAILED`、未知扩展错误或 Worker 故障当成公式语法问题。
-若要组合文档超限与公式错误，在同一个领域方法中明确声明两种错误 union，不重复捕获所有 renderer 异常。
-
-[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown-typst/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/takumi-markdown-typst/tests/typst-plugin.test.ts)。

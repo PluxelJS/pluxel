@@ -192,7 +192,7 @@ function Bot() {
 									<Text fw={600} size="sm">
 										该机器人的事件
 									</Text>
-									{value.events.length ? (
+									{value.events.length > 0 ? (
 										value.events.map((event, index) => (
 											<div key={`${event.at}:${index}`}>
 												<Text size="xs">{event.message}</Text>

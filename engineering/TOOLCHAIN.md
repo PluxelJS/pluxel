@@ -108,8 +108,10 @@ Part facts 服务 occurrence construction 与来源诊断，不建立第二张 g
 
 ## Plugin package build
 
-`pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
-Rolldown。`pluginPackage()` 与 `pluxel()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
+`pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过本地 `vite-plus/pack` 提供的 tsdown API 驱动
+Rolldown。独立 `tsdown.config.ts` 保留原有字段和 hooks，`defineConfig` 从 `vite-plus/pack` 导入；`pluxel build` 继续由 runner 直接读取它。
+普通包的 `vp pack` 从 `vite.config.ts.pack` 导入同一配置，不复制第二份构建选项；不能把 `--config tsdown.config.ts` 当成 `vp pack` 的配置选择器。
+Lint guard 使用本包安装的 `vite-plus/bin` 执行 `lint -c`，读取 `oxlint.build.config.ts` 的 `lint` 块；没有专用构建配置时交由 Vite+ 原生发现 `vite.config.ts` 的 lint 设置，不搜索全局工具或要求 mise 存在。`pluginPackage()` 与 `pluxel()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
 legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench semantic lowering 和 decorator
 output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
 官方 CLI 从 `@pluxel/rolldown/internal/cli` 按 allowlist 加载 `resolveBuildContext`、`pluginPackage` 与 `runWithTsdown`。

@@ -161,7 +161,7 @@ function NavigationContent({
 		void panels.session
 			.openPanel(entry)
 			.then(() => onChosen?.())
-			.catch((error) => panels.session.report(error))
+			.catch((error: unknown) => panels.session.report(error))
 	}
 	const showTool = Boolean(
 		mode === 'all' && onShowNavigation && matches('插件目录 固定工具 navigation'),

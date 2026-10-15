@@ -1,1 +1,1 @@
-throw new Error('expected entry initialization failure');
+throw new Error('expected entry initialization failure')

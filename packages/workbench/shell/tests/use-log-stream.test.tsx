@@ -66,7 +66,7 @@ const roots: Root[] = []
 const frames = new Map<number, FrameRequestCallback>()
 let frameId = 0
 beforeEach(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
 		frames.set(++frameId, cb)
 		return frameId
@@ -92,12 +92,14 @@ function backend() {
 	const observers: Array<(event: RuntimeLogEvent) => void> = []
 	const releases: Array<ReturnType<typeof vi.fn>> = []
 	const logs = {
-		follow: vi.fn(async (_input: unknown, observe: (event: RuntimeLogEvent) => void) => {
-			observers.push(observe)
-			const release = vi.fn()
-			releases.push(release)
-			return { [Symbol.dispose]: release }
-		}),
+		follow: vi.fn(
+			async (_input: unknown, observe: (event: RuntimeLogEvent) => void): Promise<Disposable> => {
+				observers.push(observe)
+				const release = vi.fn()
+				releases.push(release)
+				return { [Symbol.dispose]: release }
+			},
+		),
 		meta: vi.fn(async (): Promise<LogStreamMeta> => meta),
 		range: vi.fn(async (): Promise<LogRangeOk> => page([])),
 	}
@@ -130,6 +132,35 @@ async function mount(
 }
 
 describe('independent log stream reader', () => {
+	it('preserves subscriptions for equivalent owner addresses and replaces them when the owner changes', async () => {
+		const api = backend()
+		function Probe({ plugin }: { plugin: PluginNodeAddress }) {
+			useLogStream({ streamId: 'default', filter: { plugin }, capacity: 10, historyLimit: 10 })
+			return null
+		}
+		const root = createRoot(document.body.appendChild(document.createElement('div')))
+		roots.push(root)
+		const render = async (plugin: PluginNodeAddress) => {
+			await act(async () =>
+				root.render(
+					<RuntimeManagementClientProvider client={api.client}>
+						<Probe plugin={plugin} />
+					</RuntimeManagementClientProvider>,
+				),
+			)
+		}
+		await render(owner)
+		await render({
+			...owner,
+			definition: { ...owner.definition, entry: { ...owner.definition.entry } },
+		})
+		expect(api.logs.follow).toHaveBeenCalledTimes(1)
+		expect(api.releases[0]).not.toHaveBeenCalled()
+		await render({ definition: owner.definition, variant: 'fork', forkId: 'west' })
+		expect(api.logs.follow).toHaveBeenCalledTimes(2)
+		expect(api.releases[0]).toHaveBeenCalledOnce()
+	})
+
 	it('subscribes before reading and finds bounded matching history across empty pages far behind the global tail', async () => {
 		const api = backend()
 		api.logs.range

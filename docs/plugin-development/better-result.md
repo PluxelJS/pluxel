@@ -207,18 +207,18 @@ async function readReport(signal: AbortSignal): Promise<Result<string, RetryLate
 
 官方 capability 保留各自成熟的值、错误和资源契约；下表的示例在拥有业务恢复策略的层完成适配。
 
-| 插件                                                                                                                                       | 演示与保留的边界                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| [Wretch](../plugins/wretch.md#将可预期失败返回给调用方)                                                                                    | 404 → `CustomerNotFound`；503、网络故障、响应 schema 错误继续 reject，HTTP consumer 投影普通响应 |
-| [Cache](../plugins/cache.md#在缓存之外构造-result)                                                                                         | 缓存数据 / `null`，读取后转换缺失；不缓存 Result/Error 实例                                      |
-| [Rates](../plugins/rates.md#第一个-limiter)                                                                                                | deny → 业务 `MessageRateLimited`；保留 retry 信息，backend failure 仍拒绝                        |
-| [Redis](../plugins/redis.md#将缺失映射为业务-result)                                                                                       | 原生 GET 的 `null` → 业务缺失；空字符串是成功，连接与命令故障不伪装成缺失                        |
-| [S3](../plugins/storage.md#将对象缺失返回给调用方)                                                                                         | 对象不存在 → 业务缺失；bucket 配置、权限和 IO 故障继续拒绝                                       |
-| [Canvas](../plugins/rendering/canvas.md#将可恢复失败交给业务调用方)、[Fonts](../plugins/rendering/fonts.md#将可恢复失败交给业务调用方)     | 用户图片 / 字体内容被拒绝 → 明确的 Err；成功的 native object / registration 保留所有权           |
-| [ECharts](../plugins/rendering/echarts.md#将可恢复失败交给业务调用方)、[Takumi](../plugins/rendering/takumi.md#将可恢复失败交给业务调用方) | consumer 选择处理 render busy；未知 render failure、取消和停止不混为“稍后重试”                   |
-| [Markdown / Typst](../plugins/rendering/takumi-markdown.md#将可恢复失败交给业务调用方)                                                     | 文档超限或受限公式不合法 → 可修正输入；extension defect、Worker 故障继续拒绝                     |
-| [Auth](../plugins/auth.md#本地-result-与设置回执)                                                                                          | 内部校验直接返回 Result；Setup API 保持经过校验的普通 DTO                                        |
-| [Package Manager](../plugins/package-manager.md)、[OTel](../plugins/otel.md)、Vault Admin                                                  | 安装回执、原生 telemetry 和管理 action 已有协议；不增加无业务恢复需求的 Result 包装              |
+| 插件                                                                                                                                   | 演示与保留的边界                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [Wretch](../plugins/wretch.md#将可预期失败返回给调用方)                                                                                | 404 → `CustomerNotFound`；503、网络故障、响应 schema 错误继续 reject，HTTP consumer 投影普通响应 |
+| [Cache](../plugins/cache.md#在缓存之外构造-result)                                                                                     | 缓存数据 / `null`，读取后转换缺失；不缓存 Result/Error 实例                                      |
+| [Rates](../plugins/rates.md#第一个-limiter)                                                                                            | deny → 业务 `MessageRateLimited`；保留 retry 信息，backend failure 仍拒绝                        |
+| [Redis](../plugins/redis.md#将缺失映射为业务-result)                                                                                   | 原生 GET 的 `null` → 业务缺失；空字符串是成功，连接与命令故障不伪装成缺失                        |
+| [S3](../plugins/storage.md#将对象缺失返回给调用方)                                                                                     | 对象不存在 → 业务缺失；bucket 配置、权限和 IO 故障继续拒绝                                       |
+| [Canvas](../plugins/rendering/canvas.md#将可恢复失败交给业务调用方)、[Fonts](../plugins/rendering/fonts.md#将可恢复失败交给业务调用方) | 用户图片 / 字体内容被拒绝 → 明确的 Err；成功的 native object / registration 保留所有权           |
+| [ECharts](../plugins/rendering/echarts.md#将可恢复失败交给业务调用方)                                                                  | consumer 选择处理 render busy；未知 render failure、取消和停止不混为“稍后重试”                   |
+| [Markdown / Typst](../plugins/rendering/takumi-markdown.md#将可恢复失败交给业务调用方)                                                 | 文档超限或受限公式不合法 → 可修正输入；extension defect、Worker 故障继续拒绝                     |
+| [Auth](../plugins/auth.md#本地-result-与设置回执)                                                                                      | 内部校验直接返回 Result；Setup API 保持经过校验的普通 DTO                                        |
+| [Package Manager](../plugins/package-manager.md)、[OTel](../plugins/otel.md)、Vault Admin                                              | 安装回执、原生 telemetry 和管理 action 已有协议；不增加无业务恢复需求的 Result 包装              |
 
 各指南链接到包内可执行示例。验证时至少检查成功、预期 Err 和非预期 rejection；涉及数据缓存、DTO 或资源时，
 再验证序列化边界、失败后的副作用和清理。只断言 `.isErr()` 不足以证明错误没有被错误分类。

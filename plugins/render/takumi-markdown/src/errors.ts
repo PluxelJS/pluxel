@@ -10,6 +10,10 @@ export type MarkdownErrorCode =
 	| 'CODE_LIMIT_EXCEEDED'
 	| 'EXTENSION_FAILED'
 	| 'INTERNAL_ASSET_COLLISION'
+	| 'FORMULA_INVALID'
+	| 'FORMULA_TOO_LARGE'
+	| 'FORMULA_COMPILE_FAILED'
+	| 'SVG_TOO_LARGE'
 
 export class MarkdownError extends Error {
 	override readonly name = 'MarkdownError'

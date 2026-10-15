@@ -1,4 +1,4 @@
-import { pluginNodeIndexKey } from '@pluxel/core'
+import { formatPluginNodeReference, parsePluginNodeReference } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	type LogFilter,
@@ -44,10 +44,17 @@ export function useLogStream({
 		throw new RangeError('Log historyLimit must be between zero and the positive cache capacity')
 	const management = useRuntimeManagementClient()
 	const store = useMemo(() => createLogStreamStore(capacity), [capacity])
-	const ownerKey = filter.plugin ? pluginNodeIndexKey(filter.plugin) : undefined
+	// Canonical primitive dependencies keep equivalent owner objects from restarting the subscription.
+	const ownerReference = filter.plugin ? formatPluginNodeReference(filter.plugin) : undefined
+	const { context, displayName, category } = filter
 	const activeFilter = useMemo(
-		() => ({ ...filter }),
-		[ownerKey, filter.context, filter.displayName, filter.category],
+		() => ({
+			plugin: ownerReference === undefined ? undefined : parsePluginNodeReference(ownerReference),
+			context,
+			displayName,
+			category,
+		}),
+		[ownerReference, context, displayName, category],
 	)
 	const [attempt, setAttempt] = useState(0)
 	const [state, setState] = useState<Pick<LogStreamState, 'status' | 'error' | 'meta'>>({
@@ -100,7 +107,7 @@ export function useLogStream({
 		const append = (lines: readonly RuntimeLogLine[]) => {
 			if (disposed) return
 			pending.append(lines.filter((line) => line.epoch === epoch))
-			if (!pending.length || frame !== undefined) return
+			if (pending.length === 0 || frame !== undefined) return
 			frame = requestAnimationFrame(() => {
 				frame = undefined
 				if (disposed) return
@@ -139,7 +146,7 @@ export function useLogStream({
 						limit: PAGE_LIMIT,
 						filter: activeFilter,
 					})
-					.catch((error) => {
+					.catch((error: unknown) => {
 						if (disposed || generation !== epochGeneration || epoch !== meta.epoch) return null
 						throw error
 					})
@@ -157,7 +164,7 @@ export function useLogStream({
 		const snapshot = async () => {
 			const version = clearVersion
 			const generation = epochGeneration
-			const meta = await management.logs.meta(streamId).catch((error) => {
+			const meta = await management.logs.meta(streamId).catch((error: unknown) => {
 				if (disposed || generation !== epochGeneration) return null
 				throw error
 			})
@@ -180,7 +187,7 @@ export function useLogStream({
 			}
 			const version = clearVersion
 			const generation = epochGeneration
-			const meta = await management.logs.meta(streamId).catch((error) => {
+			const meta = await management.logs.meta(streamId).catch((error: unknown) => {
 				if (disposed || generation !== epochGeneration) return null
 				throw error
 			})
@@ -204,7 +211,7 @@ export function useLogStream({
 			draining = true
 			let recoveries = 0
 			try {
-				while (!disposed && (resync || queue.length)) {
+				while (!disposed && (resync || queue.length > 0)) {
 					if (resync) {
 						if (++recoveries > 8) throw new Error('日志更新过快，无法完成同步，请重试')
 						resync = false

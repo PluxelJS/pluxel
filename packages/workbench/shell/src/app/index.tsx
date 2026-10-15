@@ -180,7 +180,7 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 				})
 					.then(async () => {
 						const current = workspace.workbench.getDocument(active.id)
-						if (!changedPage || current?.href !== publicHref) return
+						if (!changedPage || current?.href !== publicHref) return undefined
 						const title = defaultDocumentTitle(publication.current, destination, basepath)
 						if (title)
 							workspace.check(
@@ -188,6 +188,7 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 									Actions.updateNodeAttributes(active.id, { name: title }),
 								),
 							)
+						return undefined
 					})
 					.catch((cause: unknown) => workspace.report(cause))
 				return

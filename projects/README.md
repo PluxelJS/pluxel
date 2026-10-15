@@ -3,11 +3,11 @@
 `projects/` contains reference applications that must evolve in the Pluxel repository-level
 workspace, including explicitly marked designs awaiting implementation. The current and intentionally small set is:
 
-| Project                                            | Purpose                                                                                      |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `plugin-host`                                      | Native modules delivery, Vite execution, HMR diagnostics and focused runtime demos.          |
-| `docs`                                             | Fumapress/Waku site built from the repository's `docs/` Markdown source.                     |
-| [`embedded-launcher`](embedded-launcher/README.md) | Design only: Rust native UI, Node/Vite HMR and an embedded LLRT plugin runtime. |
+| Project                                            | Purpose                                                                             |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `plugin-host`                                      | Native modules delivery, Vite execution, HMR diagnostics and focused runtime demos. |
+| `docs`                                             | Fumapress/Waku site built from the repository's `docs/` Markdown source.            |
+| [`embedded-launcher`](embedded-launcher/README.md) | Design only: Rust native UI, Node/Vite HMR and an embedded LLRT plugin runtime.     |
 
 Product-scale applications have independent Git history, lockfiles, CI and release lifecycles.
 During cross-repository development they consume the current Pluxel checkout through

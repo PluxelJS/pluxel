@@ -1,7 +1,9 @@
+export const MARKDOWN_FOREGROUND = Object.freeze({ light: '#172033', dark: '#e5e7eb' })
+
 export const MARKDOWN_STYLESHEET = String.raw`
-.pluxel-markdown{box-sizing:border-box;display:block;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;font-size:16px;line-height:1.5;color:#172033;background:#fff;padding:32px}
+.pluxel-markdown{box-sizing:border-box;display:block;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;font-size:16px;line-height:1.5;color:${MARKDOWN_FOREGROUND.light};background:#fff;padding:32px}
 .pluxel-markdown *{box-sizing:border-box}
-.pluxel-markdown--dark{color:#e5e7eb;background:#111827}
+.pluxel-markdown--dark{color:${MARKDOWN_FOREGROUND.dark};background:#111827}
 .pluxel-markdown h1,.pluxel-markdown h2,.pluxel-markdown h3,.pluxel-markdown h4,.pluxel-markdown h5,.pluxel-markdown h6{margin:1.2em 0 .55em;line-height:1.22}
 .pluxel-markdown h1{font-size:2em}.pluxel-markdown h2{font-size:1.55em}.pluxel-markdown h3{font-size:1.25em}
 .pluxel-markdown p{margin:.75em 0}
@@ -14,6 +16,8 @@ export const MARKDOWN_STYLESHEET = String.raw`
 .pluxel-markdown hr{border:0;border-top:1px solid #cbd5e1;margin:1.5em 0}
 .pluxel-markdown--dark hr{border-color:#475569}
 .pluxel-markdown img{max-width:100%;height:auto}
+.pluxel-markdown .pluxel-math-image{vertical-align:middle}
+.pluxel-markdown .pluxel-math-display{text-align:center}
 .pluxel-markdown table{width:100%;border-collapse:collapse;margin:1em 0;font-size:.9em}
 .pluxel-markdown th,.pluxel-markdown td{border:1px solid #cbd5e1;padding:.5em .65em;text-align:left;vertical-align:top}
 .pluxel-markdown th{font-weight:700;background:#f1f5f9}

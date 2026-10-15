@@ -318,3 +318,8 @@ packages/*/data/
 
 # Temporary type probes (elysia typing checks)
 **/.tmp-elysia-typing-check.ts
+
+# Machine-local tool and hook overrides
+mise.local.toml
+pitchfork.local.toml
+hk.local.pkl

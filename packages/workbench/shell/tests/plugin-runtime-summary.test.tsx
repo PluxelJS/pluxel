@@ -41,7 +41,7 @@ const mounted: Root[] = []
 const writeText = vi.fn().mockResolvedValue(undefined)
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	window.matchMedia = vi.fn().mockImplementation((media: string) => ({
 		media,
 		matches: false,

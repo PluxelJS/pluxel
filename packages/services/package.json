@@ -214,12 +214,12 @@
 	},
 	"scripts": {
 		"bench:logger": "vitest bench bench/logger.bench.ts",
-		"bench:worker-task": "pnpm exec vitest bench bench/worker-task.bench.ts",
-		"build": "tsdown",
-		"test": "pnpm exec vitest run",
-		"test:installed": "pnpm exec vitest run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
+		"bench:worker-task": "vp test bench bench/worker-task.bench.ts",
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"test:installed": "vp test run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
 		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs",
-		"typecheck": "tsc --noEmit --pretty false"
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@logtape/file": "catalog:prod",
@@ -262,7 +262,8 @@
 		"react-dom": "catalog:frontend",
 		"tsx": "catalog:dev",
 		"valibot": "catalog:validation",
-		"vite": "catalog:build"
+		"vite": "catalog:build",
+		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
 		"@electric-sql/pglite": "catalog:prod",

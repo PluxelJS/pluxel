@@ -41,6 +41,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 								const url = new URL(production.url)
 								return {
 									url,
+									publicOrigin: hostEnv.publicOrigin,
 									hostname: url.hostname,
 									port: Number(url.port || 80),
 									development: false,
@@ -97,7 +98,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 						}
 					}
 					const carrier = createViteNodeElysiaApplicationCarrier(server, {
-						publicOrigin: hostEnv.portlessOrigin,
+						publicOrigin: hostEnv.publicOrigin,
 						fetch: http.fetch,
 						matches: http.matchesWebSocketRoute,
 					})
@@ -106,7 +107,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 						'workbench' in host.ctx
 							? undefined
 							: installPluxelViteUrlPrinter(server, {
-									publicOrigin: hostEnv.portlessOrigin,
+									publicOrigin: hostEnv.publicOrigin,
 									workbenchBasePath: () => undefined,
 								})
 					const current = { http, carrier }

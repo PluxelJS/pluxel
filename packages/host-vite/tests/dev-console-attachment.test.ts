@@ -17,7 +17,7 @@ const mocked = vi.hoisted(() => ({
 	load: vi.fn(async () => {}),
 }))
 vi.mock('../src/environment', () => ({
-	collectHostImportFiles: () => [],
+	collectHostImportFiles: (): string[] => [],
 	importHostModule: async () => {
 		await mocked.load()
 		return { default: mocked.script }

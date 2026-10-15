@@ -28,9 +28,9 @@
 		}
 	},
 	"scripts": {
-		"build": "pluxel build",
-		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"valibot": "catalog:validation"
@@ -41,8 +41,8 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

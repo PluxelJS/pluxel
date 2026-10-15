@@ -3,7 +3,7 @@ import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 export default definePluxelVitestConfig({
 	test: {
 		passWithNoTests: false,
-		// Each fixture owns its installation root. Turbo's pnpm scheduling override
+		// Each fixture owns its installation root. The workspace task runner's pnpm scheduling override
 		// is not part of the application environment exercised by these native tests.
 		env: {
 			PNPM_CONFIG_WORKSPACE_DIR: '',

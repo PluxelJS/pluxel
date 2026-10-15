@@ -190,7 +190,7 @@ export async function buildSourceWorkspace(options: {
 
 /**
  * Select explicit build artifacts from the source closure without widening it to every linked
- * package. The selected package's own Turbo/pnpm task graph remains the authority for its build
+ * package. The selected package's own Vite+/pnpm task graph remains the authority for its build
  * prerequisites.
  */
 export function selectSourceBuildTargets(
@@ -227,24 +227,16 @@ export function createPnpmInvocation(packageManager: string | undefined, args: s
 	return exactVersion ? { command: 'corepack', args: ['pnpm', ...args] } : { command: 'pnpm', args }
 }
 
-export function createSourceBuildArgs(packageNames: string[], hasTurbo: boolean, force = false) {
-	return hasTurbo
-		? [
-				'exec',
-				'turbo',
-				'run',
-				'build',
-				...(force ? ['--force'] : []),
-				// The source orchestrator already selected pnpm for this checkout. Turbo otherwise
-				// rejects valid devEngines ranges such as "pnpm@>=11 <12" as non-exact specs.
-				'--dangerously-disable-package-manager-check',
-				...packageNames.map((name) => `--filter=${name}`),
-			]
+export function createSourceBuildArgs(packageNames: string[], hasVitePlus: boolean, force = false) {
+	return hasVitePlus
+		? packageNames.map((name) => ['run', ...(force ? ['--no-cache'] : []), `${name}#build`])
 		: [
-				...packageNames.flatMap((name) => ['--filter', `${name}...`]),
-				'--if-present',
-				'run',
-				'build',
+				[
+					...packageNames.flatMap((name) => ['--filter', `${name}...`]),
+					'--if-present',
+					'run',
+					'build',
+				],
 			]
 }
 
@@ -560,15 +552,28 @@ async function buildSourceCheckout(
 		return
 	}
 	log(`\n→ Building ${targets.map((pkg) => pkg.name).join(', ')} from ${checkout.repository}`)
-	const hasTurbo =
-		existsSync(resolve(checkout.root, 'turbo.json')) ||
-		existsSync(resolve(checkout.root, 'turbo.jsonc'))
+	const manifest = checkout.workspace.rootManifest
+	const hasVitePlus = Boolean(
+		manifest.devDependencies?.['vite-plus'] || manifest.dependencies?.['vite-plus'],
+	)
 	const args = createSourceBuildArgs(
 		targets.map((pkg) => pkg.name),
-		hasTurbo,
+		hasVitePlus,
 		force,
 	)
-	await runPnpm(args, checkout.root, checkout.workspace.rootManifest.packageManager)
+	if (hasVitePlus) {
+		// Resolve only this checkout's installation; a consumer/global vp must not own its tasks.
+		const packagePath = resolve(checkout.root, 'node_modules/vite-plus/package.json')
+		const installed = JSON.parse(readFileSync(packagePath, 'utf8')) as { bin: { vp: string } }
+		const executable = resolve(dirname(packagePath), installed.bin.vp)
+		for (const invocation of args) {
+			await runInherited(process.execPath, [executable, ...invocation], checkout.root)
+		}
+	} else {
+		for (const invocation of args) {
+			await runPnpm(invocation, checkout.root, manifest.packageManager)
+		}
+	}
 }
 
 function acquireSourceInstallLocks(roots: string[]): () => void {

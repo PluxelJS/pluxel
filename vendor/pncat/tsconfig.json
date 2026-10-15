@@ -3,7 +3,6 @@
     "target": "ESNext",
     "lib": ["ESNext"],
     "moduleDetection": "force",
-    "rootDir": ".",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {

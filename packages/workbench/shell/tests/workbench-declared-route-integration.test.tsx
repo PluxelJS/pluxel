@@ -174,7 +174,7 @@ it.each(['/', '/__pluxel/workbench'])(
 		expect(active().textContent).toContain('Runtime logs')
 		expect(container.querySelector('.worksplit-workbench')).toBe(native)
 		await act(async () => {
-			await workspace.workbench.open({ to: '/accounts/other/history' })
+			await workspace.workbench.open({ to: '/$', params: { _splat: 'accounts/other/history' } })
 		})
 		expect(active().textContent).toContain('Selected renderer: Accounts')
 		expect(container.querySelector('.worksplit-workbench')).toBe(native)

@@ -119,11 +119,7 @@ describe('plugin catalog search', () => {
 		).toBe(false)
 	})
 
-	it.each<{
-		name: string
-		execution: PluginExecutionSnapshot
-		query: string
-	}>([
+	it.each([
 		{
 			name: 'known static built artifact',
 			execution: {
@@ -135,28 +131,35 @@ describe('plugin catalog search', () => {
 			query: 'exec:构建模块 exec:host-reload',
 		},
 		{
-			name: 'known dynamic route with unreported artifact',
+			name: 'unreported execution artifact',
 			execution: {
-				kind: 'vite',
-				origin: 'source',
+				kind: 'unreported',
 				artifact: { kind: 'unreported' },
-				update: { kind: 'definition-hmr' },
+				update: { kind: 'unreported' },
 			},
 			query: 'exec:制品未报告',
 		},
-	])('searches the localized artifact label for $name', ({ execution, query }) => {
-		const status = {
-			name: 'Artifact probe',
-			exportName: 'ArtifactPlugin',
-			reference: 'package:@fixture/catalog::ArtifactPlugin',
-			executionSearchTerms: describePluginExecution(execution).searchTerms,
-			availability: 'available' as const,
-			lifecycleState: 'running' as const,
-		}
-		expect(
-			matchesPluginSearch('opaque-route', status, parseSearchTokens(query), DEFAULT_STATUS_FILTER),
-		).toBe(true)
-	})
+	] satisfies { name: string; execution: PluginExecutionSnapshot; query: string }[])(
+		'searches the localized artifact label for $name',
+		({ execution, query }) => {
+			const status = {
+				name: 'Artifact probe',
+				exportName: 'ArtifactPlugin',
+				reference: 'package:@fixture/catalog::ArtifactPlugin',
+				executionSearchTerms: describePluginExecution(execution).searchTerms,
+				availability: 'available' as const,
+				lifecycleState: 'running' as const,
+			}
+			expect(
+				matchesPluginSearch(
+					'opaque-route',
+					status,
+					parseSearchTokens(query),
+					DEFAULT_STATUS_FILTER,
+				),
+			).toBe(true)
+		},
+	)
 
 	it('treats removed tag, version, and route-id syntax as ordinary text', () => {
 		expect(parseSearchTokens('#stable v:1.2 id:route')).toEqual({

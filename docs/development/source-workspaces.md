@@ -7,13 +7,13 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 ## 准备 checkout 和 CLI
 
-先准备应用、Pluxel 和需要联调的 provider Git checkout，并按各仓库要求安装 mise 工具链。消费方是最终运行 `pnpm dev` 的应用，不是 Pluxel 根仓库。
+先准备应用、Pluxel 和需要联调的 provider Git checkout，并按各仓库要求安装 mise 工具链。消费方是最终运行 `mise run dev` 的应用，不是 Pluxel 根仓库。
 
 本页后续命令在消费方根目录执行，要求 `pluxel --version` 可运行。可以使用全局 CLI；希望以 Pluxel 源码为准时，用该 checkout 已构建的 `packages/cli/bin/pluxel.mjs` 入口或它的全局符号链接。CLI 会从自己的真实路径发现 Pluxel，不会根据目录相邻关系猜测。
 
 各 checkout 可独立切换分支；依赖声明变化后重新执行 `source install`。
 
-拉取或修改 CLI 源码后，先在 Pluxel checkout 执行 `pnpm --filter @pluxel/cli build`。
+拉取或修改 CLI 源码后，先在 Pluxel checkout 执行 `vp run @pluxel/cli#build`。
 Git launcher 在加载命令前核对 CLI 源码内容与构建指纹；缺失或不匹配时明确提示重建，不执行旧命令或自动安装。
 重建后再从消费方运行 `source install`，更新包改名、移动或依赖变化后的 overlay。
 
@@ -40,7 +40,7 @@ pluxel source register /path/to/chatbot
 pluxel source list
 pluxel source install
 pluxel source doctor
-pnpm dev
+mise run dev
 ```
 
 成功时，`source list` 应显示每个 URL 对应的真实 checkout，`source doctor` 应通过；随后应用启动应读取这些 checkout 的源码。若 list 标记 `missing`，先修正路径，不要继续安装。
@@ -83,15 +83,15 @@ CLI 扫描每个 checkout 自己的 workspace 和 manifest，按实际依赖闭�
 pluxel source build --package @pluxel/test
 ```
 
-默认尊重 source checkout 自己的 Turbo 缓存；只有明确需要重新执行时才使用 `pluxel source build --force`。
+默认尊重 source checkout 自己的 任务缓存；只有明确需要重新执行时才使用 `pluxel source build --force`。
 
 多个消费方可同时执行 `source build` / `source install`。CLI 按 checkout 的真实路径排序获取整个来源图的 `.pluxel/source-operation.lock`；共享来源的命令会显示持有者 PID 与等待路径，并在前一操作结束后继续。安装内部的构建复用同一次所有权，失败时等待已经启动的同层任务全部退出后再释放锁。
 
-锁只协调这些 source 命令，不覆盖直接运行的上游 `pnpm build`、Turbo、`pnpm verify`，也不覆盖 source 命令返回后消费者自己的构建或运行。不要让这些操作与会重写相同产物的构建（尤其 `--force`）重叠。进程异常终止后若留下锁，CLI 不会自动删除：先确认原命令及其子进程均已停止，再按错误中给出的准确路径清理锁并重试。
+锁只协调这些 source 命令，不覆盖直接运行的上游 `vp run build`、Vite Task、`vp run verify`，也不覆盖 source 命令返回后消费者自己的构建或运行。不要让这些操作与会重写相同产物的构建（尤其 `--force`）重叠。进程异常终止后若留下锁，CLI 不会自动删除：先确认原命令及其子进程均已停止，再按错误中给出的准确路径清理锁并重试。
 具有非标准 artifact 目录的 package 可以在 manifest 中声明 `"pluxel": { "sourceBuild": true }`；纯源码 package
 也可显式声明 `false`。省略时 CLI 继续根据标准 package entry 推断。
 
-CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被选 package 自己的 Turbo/pnpm task graph 仍决定必要前置。这个窄构建不安装依赖、
+CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被选 package 自己的 Vite Task 任务图 仍决定必要前置。这个窄构建不安装依赖、
 不改 consumer lockfile，也不替代 production build 或 source install。
 
 `singletons` 只用于具有 nominal/private identity 的 direct dependency，而且必须能从本次选中的 source package 中推导出唯一 owner。不要把 node_modules 绝对路径写进配置。
@@ -110,7 +110,7 @@ CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被
 
 - 每个 checkout 保留自己的 Git、pnpm workspace 和 lockfile。
 - 不在根 workspace 增加机器路径或 nested workspace pattern。
-- 上游有 Turbo 时，把目标交给它自己的 task graph；不要复制 package filter。
+- 上游使用 Vite Task 时，把目标交给它自己的任务图；不要复制 package filter。
 - source checkout 的 Plugin 仍必须经过 Pluxel Vite/Rolldown pipeline。
 - 解析冲突先看 package identity、singletons 和 dependency owner，再看 lockfile。
 - `pluxel source doctor` 同时检查 checkout identity、当前 package closure、生成的 pnpmfile 和每个稳定代理；配置正确但 overlay 未安装或已漂移也会失败。
@@ -127,7 +127,7 @@ CLI 会拒绝不在当前 closure 中或本来不需要 artifact 的名称；被
 
 `source doctor` 检查包 overlay 以及开发资源来源、完整性与链接；缺失或漂移会失败并提示接入命令。检查本身不写文件、不联网、不修复。它不证明构建产物最新或在线应用健康。
 
-npm 用户正常安装依赖后运行 `pnpm exec pluxel workspace setup`，从 CLI 随包携带的发行文档与 skill 建立相同入口；升级后重新 setup。无需 Git checkout 或额外下载。`workspace doctor` 检查开发资源与工作区治理。
+npm 用户正常安装依赖后运行 `vp exec pluxel workspace setup`，从 CLI 随包携带的发行文档与 skill 建立相同入口；升级后重新 setup。无需 Git checkout 或额外下载。`workspace doctor` 检查开发资源与工作区治理。
 
 Codex 从项目 `.agents/skills` 发现链接的 skill；AGENTS 同时保留显式读取要求。新链接未出现在已有会话时重新打开会话。项目不复制正文，其他自有 skill 不受 setup 影响。
 
@@ -141,7 +141,7 @@ Codex 从项目 `.agents/skills` 发现链接的 skill；AGENTS 同时保留显�
 | `pluxel pncat clean`                                          | 清理没有任何声明引用的 catalog 项               | catalog                  |
 | `pluxel workspace sync`                                       | 用本 CLI 的政策对齐已有 catalog 版本            | 仅 `pnpm-workspace.yaml` |
 | `workspace sync --check`、`workspace doctor`、`source doctor` | 检查声明、引用和版本差异                        | 只读                     |
-| `pnpm install` 或 `pluxel source install`                     | 安装并更新锁文件；source install 先同步版本政策 | 安装产物与 lockfile      |
+| `vp install` 或 `pluxel source install`                       | 安装并更新锁文件；source install 先同步版本政策 | 安装产物与 lockfile      |
 
 工作区必须已有 `pnpm-workspace.yaml`（单包项目可使用 `packages: []`）。已有裸版本时先显式迁移，再同步：
 
@@ -149,11 +149,11 @@ Codex 从项目 `.agents/skills` 发现链接的 skill；AGENTS 同时保留显�
 cd /absolute/path/to/project
 pluxel pncat migrate --yes --no-install
 pluxel workspace sync
-pnpm install
+vp install
 pluxel workspace sync --check
 ```
 
-Git 源码工作区将上面的 `pnpm install` 替换为 `pluxel source install`。该命令在安装锁内对 consumer 和相关 checkout 执行相同版本同步，再生成 overlay 并安装；不会替你迁移清单。使用 `--frozen-lockfile` 时，政策更新若使锁文件过期，pnpm 会如实拒绝，先普通安装并审查变更。
+Git 源码工作区将上面的 `vp install` 替换为 `pluxel source install`。该命令在安装锁内对 consumer 和相关 checkout 执行相同版本同步，再生成 overlay 并安装；不会替你迁移清单。使用 `--frozen-lockfile` 时，政策更新若使锁文件过期，pnpm 会如实拒绝，先普通安装并审查变更。
 
 `workspace sync` 不添加新依赖，不更改任何 `package.json`，也不联网查询 latest。政策之外的已有 catalog 条目保持原值。升级共享版本先更新核心 catalog 或升级 CLI；`pncat.config.ts` 只拥有分类与迁移规则。未迁移的可治理裸版本、缺失 catalog 引用和政策冲突会明确报错，修复后再同步。
 

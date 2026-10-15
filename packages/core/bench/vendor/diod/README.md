@@ -1,6 +1,6 @@
 # diod benchmark fixture
 
-This is the minimal source snapshot needed by `pnpm --filter @pluxel/core bench:di` to compare the
+This is the minimal source snapshot needed by `vp run @pluxel/core#bench:di` to compare the
 current internal DI kernel with its historical `diod` baseline. It is benchmark-only code, not a
 workspace package or a Pluxel runtime dependency.
 

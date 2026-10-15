@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
-const cli = join(dirname(fileURLToPath(import.meta.resolve('vite/package.json'))), 'bin/vite.js')
+const cli = join(dirname(fileURLToPath(import.meta.resolve('vite'))), 'cli.js')
 const host = new URL('../dist/index.mjs', import.meta.url).href
 for (const stage of ['service', 'application']) {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-initial-host-failure-'))

@@ -40,9 +40,9 @@
 	},
 	"scripts": {
 		"prepare:native": "node native/build.mjs",
-		"build": "node native/build.mjs && pluxel build",
-		"test": "node native/build.mjs && vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@myriaddreamin/typst-ts-node-compiler": "catalog:prod",
@@ -59,10 +59,11 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "catalog:build",
+		"@pluxel/workbench": "workspace:*",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

@@ -1,4 +1,5 @@
-import { defineConfig, type OxlintConfig } from 'oxlint'
+import type { OxlintConfig } from 'vite-plus/lint'
+import { defineConfig } from 'vite-plus'
 import {
 	createPluxelJsPluginEntry,
 	pluxelOxlintIgnorePatterns,
@@ -17,8 +18,10 @@ const jsPlugins: JsPlugins = [
 const ignorePatterns: IgnorePatterns = [...pluxelOxlintIgnorePatterns]
 
 export default defineConfig({
-	env: { builtin: true },
-	jsPlugins,
-	ignorePatterns,
-	rules: prefixPluxelRuleSet(pluxelCorrectnessRules) as RuleMap,
+	lint: {
+		env: { builtin: true },
+		jsPlugins,
+		ignorePatterns,
+		rules: prefixPluxelRuleSet(pluxelCorrectnessRules) as RuleMap,
+	},
 })

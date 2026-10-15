@@ -169,7 +169,11 @@ describe('dev console execution ownership', () => {
 
 describe('dev JSON snapshots', () => {
 	it('copies plain data using native undefined conventions without invoking getters or toJSON', () => {
-		const source = { nested: { count: 1 }, absent: undefined, values: [undefined] }
+		const source: { nested: { count: number }; absent: undefined; values: undefined[] } = {
+			nested: { count: 1 },
+			absent: undefined,
+			values: [undefined],
+		}
 		const copy = snapshotJson(source)
 		source.nested.count = 2
 		expect(copy).toEqual({ nested: { count: 1 }, values: [null] })

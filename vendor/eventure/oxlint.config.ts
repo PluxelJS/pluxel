@@ -1,4 +1,4 @@
-import { defineConfig, type DummyRuleMap, type RuleCategories } from 'oxlint'
+import type { DummyRuleMap, RuleCategories, OxlintConfig } from 'vite-plus/lint'
 
 const ignorePatterns = [
 	'node_modules/**',
@@ -141,7 +141,7 @@ const projectTradeoffRules = {
 	'unicorn/prefer-spread': 'off',
 } satisfies DummyRuleMap
 
-export default defineConfig({
+export default {
 	plugins: ['typescript', 'unicorn', 'oxc', 'import', 'promise', 'node'],
 	categories,
 	ignorePatterns,
@@ -184,4 +184,4 @@ export default defineConfig({
 			},
 		},
 	],
-})
+} satisfies OxlintConfig

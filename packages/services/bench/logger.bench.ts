@@ -21,6 +21,7 @@ function record(input: Partial<LogRecord> = {}): LogRecord {
 	return {
 		category: pluginLogCategory('bench-root', plugin42),
 		level: 'debug',
+		rawMessage: 'plugin message {value}',
 		message: ['plugin message ', 42, { nested: { ok: true } }],
 		properties: {
 			context: 'Plugin42',

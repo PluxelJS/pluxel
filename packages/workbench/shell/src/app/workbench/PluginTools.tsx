@@ -1,4 +1,4 @@
-import { Button, Group, Stack, Text } from '@mantine/core'
+import { Button, Group, Stack, Text, Tabs } from '@mantine/core'
 import { formatPluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
 import { useWorkbenchState } from '@worksplit/react'
 import { useSyncExternalStore } from 'react'
@@ -9,7 +9,6 @@ import { usePluginDetail } from '../plugins/detail/usePluginDetail'
 import { PluginRuntimeSummaryCard } from '../plugins/detail/cards/PluginRuntimeSummaryCard'
 import { PluginDependencyDetailCard } from '../plugins/detail/cards/PluginDependencyDetailCard'
 import { LogPolicyPopover } from '../log_viewer/LogPolicyPopover'
-import { Tabs } from '@mantine/core'
 import { Actions, Model, TabNode } from 'flexlayout-react'
 import { PluginPanelDirectory } from './PluginPanelDirectory'
 import { useWorkspaceSession } from './workspaceContext'
@@ -51,7 +50,7 @@ export function PluginTool() {
 						}),
 					)
 					.then((result) => session.check(result))
-					.catch((error) => session.report(error))
+					.catch((error: unknown) => session.report(error))
 			}}
 		>
 			<Tabs.List className="plx-plugin-region__tabs" aria-label="官方插件面板">

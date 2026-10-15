@@ -1,19 +1,25 @@
 import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { Commands } from '@pluxel/services/commands'
+import { Workers, defineWorkerTask } from '@pluxel/services/workers'
 import { Cache, type CacheNamespace, type CacheStats } from '@pluxel/cache'
 import { CanvasPlugin } from '@pluxel/canvas'
+import { FontsPlugin, type PortableFontsSnapshot } from '@pluxel/fonts'
 import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { EChartsPlugin } from '@pluxel/echarts'
 import { OtelPlugin } from '@pluxel/otel'
 import { Rates, type RateDecision, type RateLimiter } from '@pluxel/rates'
-import { BasePlugin, formatPluginNodeReference, Plugin, PluginPart } from '@pluxel/core'
+import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
 import { S3 } from '@pluxel/storage'
 import { TakumiPlugin } from '@pluxel/takumi'
+import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
+import { TypstPlugin } from '@pluxel/typst'
+import type { ReportFont, ReportRenderInput } from './report-render.contracts'
+import { SHOWCASE_ENGINES, type ShowcaseRenderRequest } from './ReportStudio.contracts'
 import { WretchPlugin } from '@pluxel/wretch'
 import {
 	ReportStudioWorkbench,
@@ -29,255 +35,37 @@ const MAX_ARTIFACTS = 8
 const MAX_TITLE_LENGTH = 80
 const WIDTH = 720
 const HEIGHT = 405
+const renderTask = defineWorkerTask<ReportRenderInput, Uint8Array>(
+	import.meta.url,
+	'./report-render.task.tsx',
+)
 
 type RenderedPreview = Readonly<{
 	engine: ShowcaseRendererKind
-	mediaType: 'image/png'
+	mediaType: 'image/png' | 'image/svg+xml'
 	data: Uint8Array
 }>
 
-export abstract class ShowcaseRenderer extends BasePlugin {
-	abstract kind(): ShowcaseRendererKind
-	abstract render(title: string): Promise<RenderedPreview>
-}
-
-@Plugin(ShowcaseRenderer, { displayName: 'Showcase Renderer · ECharts' })
-export class EChartsShowcaseRenderer extends ShowcaseRenderer {
-	constructor(private readonly echarts: EChartsPlugin) {
-		super()
-	}
-
-	kind(): ShowcaseRendererKind {
-		return 'echarts'
-	}
-
-	async render(title: string): Promise<RenderedPreview> {
-		const result = await this.echarts.render({
-			width: WIDTH,
-			height: HEIGHT,
-			option: {
-				animation: false,
-				backgroundColor: '#10172a',
-				title: { text: title, left: 'center', top: 24, textStyle: { color: '#f8fafc' } },
-				grid: { left: 60, right: 36, top: 100, bottom: 48 },
-				xAxis: {
-					type: 'category',
-					data: ['Catalog', 'Graph', 'Runtime', 'Workbench'],
-					axisLabel: { color: '#cbd5e1' },
-				},
-				yAxis: { type: 'value', axisLabel: { color: '#cbd5e1' } },
-				series: [
-					{
-						type: 'bar',
-						data: [16, 12, 9, 7],
-						itemStyle: { color: '#5eead4', borderRadius: [6, 6, 0, 0] },
-					},
-				],
-			},
-		})
-		return Object.freeze({
-			engine: 'echarts',
-			mediaType: 'image/png',
-			data: new Uint8Array(result.data),
-		})
-	}
-}
-
-@Plugin(ShowcaseRenderer, { displayName: 'Showcase Renderer · Takumi' })
-export class TakumiShowcaseRenderer extends ShowcaseRenderer {
-	constructor(private readonly takumi: TakumiPlugin) {
-		super()
-	}
-
-	kind(): ShowcaseRendererKind {
-		return 'takumi'
-	}
-
-	async render(title: string): Promise<RenderedPreview> {
-		const result = await this.takumi.render({
-			width: WIDTH,
-			height: HEIGHT,
-			content: `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:56px;background:#10172a;color:#f8fafc"><div style="font-size:18px;color:#5eead4">PLUXEL REPORT STUDIO</div><div style="font-size:46px;font-weight:700;margin-top:18px">${escapeHtml(title)}</div><div style="font-size:20px;color:#94a3b8;margin-top:28px">Plugin graph → bounded renderer → named storage buckets</div></div>`,
-		})
-		return Object.freeze({
-			engine: 'takumi',
-			mediaType: 'image/png',
-			data: new Uint8Array(result.data),
-		})
-	}
-}
-
-@Plugin(ShowcaseRenderer, { displayName: 'Showcase Renderer · Canvas' })
-export class CanvasShowcaseRenderer extends ShowcaseRenderer {
-	constructor(private readonly canvas: CanvasPlugin) {
-		super()
-	}
-
-	kind(): ShowcaseRendererKind {
-		return 'canvas'
-	}
-
-	async render(title: string): Promise<RenderedPreview> {
-		const canvas = this.canvas.createCanvasSync(WIDTH, HEIGHT)
-		const context = canvas.getContext('2d')
-		context.fillStyle = '#10172a'
-		context.fillRect(0, 0, WIDTH, HEIGHT)
-		context.fillStyle = '#5eead4'
-		context.fillRect(48, 48, 8, HEIGHT - 96)
-		context.fillStyle = '#f8fafc'
-		context.font = 'bold 42px sans-serif'
-		context.fillText(title, 88, 185, WIDTH - 136)
-		context.fillStyle = '#94a3b8'
-		context.font = '20px sans-serif'
-		context.fillText('Caller-owned native canvas with Fonts policy', 88, 235)
-		return Object.freeze({
-			engine: 'canvas',
-			mediaType: 'image/png',
-			data: new Uint8Array(canvas.toBuffer('image/png')),
-		})
-	}
-}
-
-const AdmissionConfig = v.object({
-	limit: v.pipe(
-		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)), 12),
-		f.formMeta({ title: '生成次数', description: '每个限流窗口允许的 Workbench 生成次数' }),
+const StudioConfig = v.object({
+	admission: v.optional(
+		v.object({
+			limit: v.pipe(
+				v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)), 12),
+				f.formMeta({ title: '生成次数' }),
+			),
+			windowMs: v.pipe(
+				v.optional(v.pipe(v.number(), v.integer(), v.minValue(1_000)), 60_000),
+				f.formMeta({ title: '限流窗口 (ms)' }),
+			),
+		}),
+		{},
 	),
-	windowMs: v.pipe(
-		v.optional(v.pipe(v.number(), v.integer(), v.minValue(1_000)), 60_000),
-		f.formMeta({ title: '限流窗口 (ms)' }),
-	),
-})
-
-class AdmissionPart extends PluginPart<ReportStudioPlugin> {
-	private readonly config = this.configs.use(AdmissionConfig)
-	private limiter?: RateLimiter
-
-	constructor(private readonly rates: Rates) {
-		super()
-	}
-
-	protected override init(): void {
-		this.limiter = this.rates.use('report-generation', {
-			algorithm: 'sliding-window-counter',
-			limit: this.config.limit,
-			windowMs: this.config.windowMs,
-		})
-	}
-
-	consume(): Promise<RateDecision> {
-		if (!this.limiter) throw new Error('AdmissionPart is not running')
-		return this.limiter.consume('workbench')
-	}
-
-	providerReference(): string {
-		return formatPluginNodeReference(this.rates.ctx.pluginInfo.nodeAddress)
-	}
-}
-
-const RenderingConfig = v.object({
 	cacheTtlMs: v.pipe(
 		v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 120_000),
 		f.formMeta({ title: '预览缓存 TTL (ms)' }),
 	),
-})
-
-class RenderingPart extends PluginPart<ReportStudioPlugin> {
-	private readonly config = this.configs.use(RenderingConfig)
-	private cache?: CacheNamespace
-
-	constructor(
-		private readonly renderer: ShowcaseRenderer,
-		private readonly cacheProvider: Cache,
-	) {
-		super()
-	}
-
-	protected override init(): void {
-		this.cache = this.cacheProvider.scope('previews', {
-			ttlMs: this.config.cacheTtlMs,
-			maxEntries: 32,
-			maxInFlight: 4,
-		})
-	}
-
-	async render(title: string): Promise<Readonly<{ preview: RenderedPreview; cacheHit: boolean }>> {
-		const cache = this.requireCache()
-		const before = cache.stats()
-		const key = `${this.renderer.kind()}:${title}`
-		const preview = await cache.getOrLoad<RenderedPreview>(key, () => this.renderer.render(title))
-		const after = cache.stats()
-		return Object.freeze({ preview, cacheHit: after.loads === before.loads })
-	}
-
-	providerReference(): string {
-		return formatPluginNodeReference(this.renderer.ctx.pluginInfo.nodeAddress)
-	}
-
-	cacheProviderReference(): string {
-		return formatPluginNodeReference(this.cacheProvider.ctx.pluginInfo.nodeAddress)
-	}
-
-	stats(): CacheStats {
-		return this.requireCache().stats()
-	}
-
-	async clear(): Promise<CacheStats> {
-		const cache = this.requireCache()
-		await cache.clear()
-		return cache.stats()
-	}
-
-	private requireCache(): CacheNamespace {
-		if (!this.cache) throw new Error('RenderingPart is not running')
-		return this.cache
-	}
-}
-
-const PublishingConfig = v.object({
-	prefix: v.pipe(v.optional(v.string(), 'drafts'), f.formMeta({ title: '草稿对象前缀' })),
-})
-
-class PublishingPart extends PluginPart<ReportStudioPlugin> {
-	private readonly config = this.configs.use(PublishingConfig)
-
-	constructor(private readonly storage: S3) {
-		super()
-	}
-
-	async put(id: string, preview: RenderedPreview): Promise<string> {
-		const key = `${this.config.prefix}/${id}.png`
-		await this.storage
-			.bucket('drafts')
-			.client.putObject(key, Buffer.from(preview.data), preview.mediaType)
-		return key
-	}
-
-	async read(key: string): Promise<ArrayBuffer | null> {
-		return await this.storage.bucket('drafts').client.getObjectArrayBuffer(key)
-	}
-
-	providerReference(): string {
-		return formatPluginNodeReference(this.storage.ctx.pluginInfo.nodeAddress)
-	}
-}
-
-@Plugin({ displayName: 'Release Archive' })
-export class ReleaseArchivePlugin extends BasePlugin {
-	constructor(private readonly storage: S3) {
-		super()
-	}
-
-	async archive(id: string, preview: RenderedPreview): Promise<string> {
-		const key = `releases/${id}.png`
-		await this.storage
-			.bucket('releases')
-			.client.putObject(key, Buffer.from(preview.data), preview.mediaType)
-		return key
-	}
-}
-
-const StudioConfig = v.object({
+	draftPrefix: v.pipe(v.optional(v.string(), 'drafts'), f.formMeta({ title: '草稿对象前缀' })),
+	releasePrefix: v.pipe(v.optional(v.string(), 'releases'), f.formMeta({ title: '发布对象前缀' })),
 	outboundBaseUrl: v.pipe(
 		v.optional(v.pipe(v.string(), v.url()), 'https://httpbingo.org'),
 		f.formMeta({ title: '出站探测服务' }),
@@ -291,9 +79,15 @@ const StudioConfig = v.object({
 @Plugin({ displayName: 'Report Studio · Architecture Lab' })
 export class ReportStudioPlugin extends BasePlugin {
 	private readonly config = this.configs.use(StudioConfig)
-	private readonly admission = this.parts.use(AdmissionPart)
-	private readonly rendering = this.parts.use(RenderingPart)
-	private readonly publishing = this.parts.use(PublishingPart)
+	readonly generated = new EvtChannel<readonly [artifact: ShowcaseArtifact]>(this.ctx)
+	private cache?: CacheNamespace
+	private limiter?: RateLimiter
+	private markdownRenderer?: MarkdownRenderer
+	private fontSnapshot?: Readonly<{
+		provider: FontsPlugin
+		revision: number
+		data: Promise<readonly ReportFont[]>
+	}>
 	private readonly listeners = new Set<(revision: number) => void>()
 	private artifacts: ShowcaseArtifact[] = []
 	private revision = 1
@@ -310,12 +104,33 @@ export class ReportStudioPlugin extends BasePlugin {
 	constructor(
 		private readonly http: WretchPlugin,
 		private readonly otel: OtelPlugin,
-		private readonly archive: ReleaseArchivePlugin,
+		private readonly cacheProvider: Cache,
+		private readonly rates: Rates,
+		private readonly storage: S3,
+		private readonly canvas: CanvasPlugin,
+		private readonly echarts: EChartsPlugin,
+		private readonly takumi: TakumiPlugin,
+		private readonly markdown: TakumiMarkdownPlugin,
+		private readonly typst: TypstPlugin,
+		private readonly fonts: FontsPlugin,
 	) {
 		super()
 	}
 
 	protected override async init(): Promise<void> {
+		this.cache = this.cacheProvider.scope('previews', {
+			ttlMs: this.config.cacheTtlMs,
+			maxEntries: 32,
+			maxInFlight: 4,
+		})
+		this.limiter = this.rates.use('report-generation', {
+			algorithm: 'sliding-window-counter',
+			limit: this.config.admission.limit,
+			windowMs: this.config.admission.windowMs,
+		})
+		const markdownRenderer = this.markdown.createRenderer({ theme: 'dark' })
+		this.markdownRenderer = markdownRenderer
+		this.ctx.effects.defer(() => markdownRenderer.close())
 		await this.http.enableManagedSettings()
 		const meter = this.otel.meter
 		this.renderCounter = meter.createCounter('showcase.report.generated', { unit: '{report}' })
@@ -325,9 +140,12 @@ export class ReportStudioPlugin extends BasePlugin {
 			defineCommand({
 				name: 'showcase.report.generate',
 				description: 'Render, cache and publish one Report Studio preview.',
-				input: obj({ title: Type.String({ minLength: 1, maxLength: MAX_TITLE_LENGTH }) }),
-				execute: async ({ title }) => {
-					const artifact = await this.generate(title)
+				input: obj({
+					title: Type.String({ minLength: 1, maxLength: MAX_TITLE_LENGTH }),
+					engine: Type.Union(SHOWCASE_ENGINES.map((engine) => Type.Literal(engine))),
+				}),
+				execute: async (request) => {
+					const artifact = await this.generate(request)
 					return Result.ok(pickCommandArtifact(artifact))
 				},
 			}),
@@ -347,8 +165,10 @@ export class ReportStudioPlugin extends BasePlugin {
 		this.ctx
 			.require(ElysiaApp)
 			.get('/showcase/status', () => compactSnapshot(this.snapshot()))
-			.post('/showcase/generate/:title', async ({ params }) =>
-				pickCommandArtifact(await this.generate(params.title)),
+			.post('/showcase/generate/:engine/:title', async ({ params }) =>
+				pickCommandArtifact(
+					await this.generate({ title: params.title, engine: parseEngine(params.engine) }),
+				),
 			)
 			.get('/showcase/artifacts/:id', async ({ params, set }) => {
 				const artifact = this.artifacts.find((candidate) => candidate.id === params.id)
@@ -356,7 +176,9 @@ export class ReportStudioPlugin extends BasePlugin {
 					set.status = 404
 					return { error: 'artifact_not_found' }
 				}
-				const data = await this.publishing.read(artifact.objectKey)
+				const data = await this.storage
+					.bucket('drafts')
+					.client.getObjectArrayBuffer(artifact.objectKey)
 				if (!data) {
 					set.status = 404
 					return { error: 'object_not_found' }
@@ -376,7 +198,7 @@ export class ReportStudioPlugin extends BasePlugin {
 						const snapshot = this.snapshot()
 						return {
 							status: {
-								renderer: snapshot.rendererProvider,
+								renderer: snapshot.engines.join(' · '),
 								storage: snapshot.storageProvider,
 								cacheHits: snapshot.cache.localHits + snapshot.cache.backendHits,
 								cacheMisses: snapshot.cache.misses,
@@ -411,11 +233,19 @@ export class ReportStudioPlugin extends BasePlugin {
 	snapshot(): ShowcaseSnapshot {
 		return Object.freeze({
 			revision: this.revision,
-			rendererProvider: this.rendering.providerReference(),
-			storageProvider: this.publishing.providerReference(),
-			cacheProvider: this.rendering.cacheProviderReference(),
-			ratesProvider: this.admission.providerReference(),
-			cache: cacheStats(this.rendering.stats()),
+			engines: SHOWCASE_ENGINES,
+			renderingProviders: Object.freeze({
+				echarts: reference(this.echarts),
+				canvas: reference(this.canvas),
+				takumi: reference(this.takumi),
+				heroui: reference(this.takumi),
+				markdown: reference(this.markdown),
+				typst: reference(this.typst),
+			}),
+			storageProvider: reference(this.storage),
+			cacheProvider: reference(this.cacheProvider),
+			ratesProvider: reference(this.rates),
+			cache: cacheStats(this.requireCache().stats()),
 			...(this.lastRateDecision
 				? { lastRateDecision: Object.freeze({ ...this.lastRateDecision }) }
 				: {}),
@@ -424,9 +254,11 @@ export class ReportStudioPlugin extends BasePlugin {
 		})
 	}
 
-	async generate(input: string): Promise<ShowcaseArtifact> {
-		const title = normalizeTitle(input)
-		const decision = await this.admission.consume()
+	async generate(input: ShowcaseRenderRequest): Promise<ShowcaseArtifact> {
+		const title = normalizeTitle(input.title)
+		const engine = parseEngine(input.engine)
+		if (!this.limiter) throw new Error('Report Studio is not running')
+		const decision = await this.limiter.consume('workbench')
 		this.lastRateDecision = decision
 		if (decision.denied) {
 			this.changed()
@@ -434,10 +266,29 @@ export class ReportStudioPlugin extends BasePlugin {
 		}
 
 		const started = performance.now()
-		const { preview, cacheHit } = await this.rendering.render(title)
+		const fonts = this.fonts.portableFonts
+		let loaded = false
+		const preview = await this.requireCache().getOrLoad<RenderedPreview>(
+			`${engine}:${this.fonts.revision}:${title}`,
+			() => {
+				loaded = true
+				return this.renderPreview(title, engine, fonts)
+			},
+		)
+		const cacheHit = !loaded
 		const id = `${Date.now().toString(36)}-${this.sequence++}`
-		const objectKey = await this.publishing.put(id, preview)
-		await this.archive.archive(id, preview)
+		const extension = preview.mediaType === 'image/svg+xml' ? 'svg' : 'png'
+		const objectKey = `${this.config.draftPrefix}/${id}.${extension}`
+		await this.storage
+			.bucket('drafts')
+			.client.putObject(objectKey, Buffer.from(preview.data), preview.mediaType)
+		await this.storage
+			.bucket('releases')
+			.client.putObject(
+				`${this.config.releasePrefix}/${id}.${extension}`,
+				Buffer.from(preview.data),
+				preview.mediaType,
+			)
 		const artifact = Object.freeze({
 			id,
 			title,
@@ -451,6 +302,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		this.artifacts = [...this.artifacts, artifact].slice(-MAX_ARTIFACTS)
 		this.renderCounter?.add(1, { engine: preview.engine, cache_hit: String(cacheHit) })
 		this.renderDuration?.record(performance.now() - started, { engine: preview.engine })
+		this.generated.emit(artifact)
 		this.changed()
 		return artifact
 	}
@@ -479,7 +331,9 @@ export class ReportStudioPlugin extends BasePlugin {
 	}
 
 	async clearCache(): Promise<ShowcaseCacheStats> {
-		const stats = cacheStats(await this.rendering.clear())
+		const cache = this.requireCache()
+		await cache.clear()
+		const stats = cacheStats(cache.stats())
 		this.changed()
 		return stats
 	}
@@ -494,6 +348,127 @@ export class ReportStudioPlugin extends BasePlugin {
 				this.listeners.delete(listener)
 			},
 		})
+	}
+
+	private async renderPreview(
+		title: string,
+		engine: ShowcaseRendererKind,
+		fontResources: PortableFontsSnapshot,
+	): Promise<RenderedPreview> {
+		if (engine === 'typst') {
+			const source = `#set page(width: ${WIDTH}pt, height: ${HEIGHT}pt, margin: 40pt, fill: rgb("#10172a"))
+#set text(fill: rgb("#f8fafc"), size: 18pt)
+#text(fill: rgb("#5eead4"))[PLUXEL REPORT STUDIO]
+#v(24pt)
+#text(size: 36pt, weight: "bold", ${JSON.stringify(title)})
+#v(24pt)
+Typst document rendering · shared worker
+#v(24pt)
+$ sum_(i=1)^n i = (n(n+1))/2 $`
+			return { engine, mediaType: 'image/svg+xml', data: await this.typst.renderSvg(source) }
+		}
+		if (engine === 'canvas') {
+			const canvas = this.canvas.createCanvasSync(WIDTH, HEIGHT)
+			const context = canvas.getContext('2d')
+			context.fillStyle = '#10172a'
+			context.fillRect(0, 0, WIDTH, HEIGHT)
+			context.fillStyle = '#5eead4'
+			context.fillRect(48, 48, 8, HEIGHT - 96)
+			context.fillStyle = '#f8fafc'
+			context.font = 'bold 38px sans-serif'
+			context.fillText(title, 88, 185, WIDTH - 136)
+			context.fillStyle = '#94a3b8'
+			context.font = '18px sans-serif'
+			context.fillText('Native Canvas · shared Fonts registry', 88, 235)
+			return { engine, mediaType: 'image/png', data: new Uint8Array(canvas.toBuffer('image/png')) }
+		}
+		if (engine === 'echarts') {
+			const result = await this.echarts.render({
+				width: WIDTH,
+				height: HEIGHT,
+				option: {
+					animation: false,
+					backgroundColor: '#10172a',
+					title: { text: title, left: 'center', top: 24, textStyle: { color: '#f8fafc' } },
+					grid: { left: 60, right: 36, top: 100, bottom: 48 },
+					xAxis: {
+						type: 'category',
+						data: ['Catalog', 'Graph', 'Runtime', 'Workbench'],
+						axisLabel: { color: '#cbd5e1' },
+					},
+					yAxis: { type: 'value', axisLabel: { color: '#cbd5e1' } },
+					series: [
+						{
+							type: 'bar',
+							data: [16, 12, 9, 7],
+							itemStyle: { color: '#5eead4', borderRadius: [6, 6, 0, 0] },
+						},
+					],
+				},
+			})
+			return { engine, mediaType: 'image/png', data: new Uint8Array(result.data) }
+		}
+		const fonts = await this.readFonts(fontResources)
+		const options = { width: WIDTH, height: HEIGHT, fonts, format: 'png' as const }
+		if (engine === 'markdown') {
+			if (!this.markdownRenderer) throw new Error('Report Studio is not running')
+			const source = `# ${title.replaceAll(/[\\`*_[\]<>#]/g, '\\$&')}
+
+**Pluxel Report Studio** · Markdown and Typst math
+
+Inline math: $a^2 + b^2 = c^2$.
+
+$$
+sum_(i=1)^n i = (n(n+1))/2
+$$
+
+> Typst compiles formulas; Takumi renders the report in shared Workers.`
+			return {
+				engine,
+				mediaType: 'image/png',
+				data: await this.markdownRenderer.render(source, options),
+			}
+		}
+		return {
+			engine,
+			mediaType: 'image/png',
+			// The font snapshot belongs to this generation and is never mutated. Borrow it until
+			// execution settles, avoiding an extra admission-time copy of the shared font bytes.
+			data: await this.ctx
+				.require(Workers)
+				.run(
+					renderTask,
+					{ title, engine, fonts },
+					{ inputOwnership: 'borrowed', settlement: 'execution' },
+				),
+		}
+	}
+
+	private readFonts(resources: PortableFontsSnapshot): Promise<readonly ReportFont[]> {
+		if (
+			this.fontSnapshot?.provider === this.fonts &&
+			this.fontSnapshot.revision === resources.revision
+		)
+			return this.fontSnapshot.data
+		const data = Promise.all(
+			resources.fonts.map(async (font) =>
+				Object.freeze({
+					data: await this.fonts.readPortableFont(font.id),
+					...(font.family ? { name: font.family } : {}),
+				}),
+			),
+		).then((fonts) => Object.freeze(fonts))
+		const snapshot = { provider: this.fonts, revision: resources.revision, data }
+		this.fontSnapshot = snapshot
+		void data.catch(() => {
+			if (this.fontSnapshot === snapshot) this.fontSnapshot = undefined
+		})
+		return data
+	}
+
+	private requireCache(): CacheNamespace {
+		if (!this.cache) throw new Error('Report Studio is not running')
+		return this.cache
 	}
 
 	private changed(): void {
@@ -525,8 +500,8 @@ class ReportStudioTarget extends RpcTarget implements ReportStudioApi {
 		})
 	}
 
-	async generateDto(title: string): Promise<ShowcaseArtifact> {
-		const result = await this.studio.generate(title)
+	async generateDto(request: ShowcaseRenderRequest): Promise<ShowcaseArtifact> {
+		const result = await this.studio.generate(request)
 		assertWorkbenchDto(result)
 		return result
 	}
@@ -554,13 +529,15 @@ function normalizeTitle(input: string): string {
 	return title
 }
 
-function escapeHtml(value: string): string {
-	return value
-		.replaceAll('&', '&amp;')
-		.replaceAll('<', '&lt;')
-		.replaceAll('>', '&gt;')
-		.replaceAll('"', '&quot;')
-		.replaceAll("'", '&#39;')
+function parseEngine(value: string): ShowcaseRendererKind {
+	if (!SHOWCASE_ENGINES.includes(value as ShowcaseRendererKind)) {
+		throw new TypeError(`Unknown rendering engine: ${value}`)
+	}
+	return value as ShowcaseRendererKind
+}
+
+function reference(plugin: BasePlugin): string {
+	return formatPluginNodeReference(plugin.ctx.pluginInfo.nodeAddress)
 }
 
 function cacheStats(stats: CacheStats): ShowcaseCacheStats {
@@ -577,7 +554,8 @@ function cacheStats(stats: CacheStats): ShowcaseCacheStats {
 function compactSnapshot(snapshot: ShowcaseSnapshot) {
 	return {
 		revision: snapshot.revision,
-		rendererProvider: snapshot.rendererProvider,
+		engines: snapshot.engines,
+		renderingProviders: snapshot.renderingProviders,
 		storageProvider: snapshot.storageProvider,
 		cache: snapshot.cache,
 		artifacts: snapshot.artifacts.map(pickCommandArtifact),

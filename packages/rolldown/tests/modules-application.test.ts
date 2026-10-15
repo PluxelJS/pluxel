@@ -156,6 +156,120 @@ it('rejects malformed package manifest fields before constructing output entries
 	}
 })
 
+it('records verified Workbench transport in modules deployments and omits it from headless output', async () => {
+	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-modules-workbench-peer-'))
+	try {
+		await mkdir(resolve(root, 'node_modules/@pluxel'), { recursive: true })
+		for (const name of ['core', 'host', 'workbench'])
+			await symlink(
+				fileURLToPath(new URL(`../../${name}`, import.meta.url)),
+				resolve(root, 'node_modules/@pluxel', name),
+			)
+		for (const name of [
+			'capnweb',
+			'react',
+			'react-dom',
+			'@mantine/core',
+			'@mantine/hooks',
+			'@types/react',
+			'@types/react-dom',
+		]) {
+			const target = resolve(root, 'node_modules', name)
+			await mkdir(resolve(target, '..'), { recursive: true })
+			await symlink(
+				fileURLToPath(new URL(`../../workbench/node_modules/${name}`, import.meta.url)),
+				target,
+			)
+		}
+		await symlink(
+			fileURLToPath(new URL('../node_modules/@types/node', import.meta.url)),
+			resolve(root, 'node_modules/@types/node'),
+		)
+		const manifest = {
+			name: '@fixture/modules-workbench-peer',
+			type: 'module',
+			exports: { '.': './src/owner.ts' },
+			peerDependencies: { capnweb: '0.12.0' },
+			devDependencies: { capnweb: '0.12.0' },
+		}
+		await writeFile(resolve(root, 'package.json'), JSON.stringify(manifest))
+		await writeFile(
+			resolve(root, 'tsconfig.json'),
+			JSON.stringify({
+				extends: fileURLToPath(new URL('../../../tsconfig.options.json', import.meta.url)),
+				compilerOptions: {
+					composite: false,
+					noEmit: false,
+					strict: true,
+					jsx: 'react-jsx',
+					lib: ['ES2024', 'DOM', 'DOM.Iterable', 'ESNext.Disposable'],
+					types: ['node', 'react'],
+					experimentalDecorators: true,
+				},
+				include: ['src', '.pluxel/workbench-generated'],
+			}),
+		)
+		await mkdir(resolve(root, 'src'))
+		await writeFile(
+			resolve(root, 'src/panel.tsx'),
+			'export default function Panel(): null { return null }',
+		)
+		await writeFile(
+			resolve(root, 'src/owner.ts'),
+			`import { BasePlugin, Plugin } from '@pluxel/core'
+import { workbench } from '@pluxel/workbench'
+import { RpcTarget } from 'capnweb'
+export const OwnerWorkbench = workbench.define({
+ panel: workbench.view({ renderer: workbench.entry(import.meta.url, './panel.tsx'), placement: workbench.tab({ label: 'Peer' }) }),
+})
+@Plugin()
+export class Owner extends BasePlugin {
+ init() { this.ctx.workbench?.publish(OwnerWorkbench, { panel: () => new RpcTarget() }) }
+}`,
+		)
+		await writeFile(
+			resolve(root, 'src/app.ts'),
+			`import { defineHostApplication } from '@pluxel/host'; import { Owner } from './owner'; export default defineHostApplication(() => ({ plugins: [Owner] }))`,
+		)
+		await writeFile(
+			resolve(root, 'build.mts'),
+			`import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({ cwd: ${JSON.stringify(root)}, entry: 'src/app.ts', plugins: [pluxel({ delivery: 'modules', variant: process.argv[2], lint: false })], config: false });`,
+		)
+		const build = (variant: 'workbench' | 'headless') =>
+			promisify(execFile)(
+				process.execPath,
+				['--import', import.meta.resolve('tsx'), resolve(root, 'build.mts'), variant],
+				{ timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
+			)
+		await build('workbench')
+		const deployed = JSON.parse(await readFile(resolve(root, 'dist/package.json'), 'utf8'))
+		expect(deployed.pluxel.workbenchCapnweb).toBe('0.12.0')
+		expect(deployed.devDependencies).toBeUndefined()
+		expect(JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))).toEqual(manifest)
+		await writeFile(
+			resolve(root, 'package.json'),
+			JSON.stringify({ ...manifest, devDependencies: {} }),
+		)
+		await expect(build('workbench')).rejects.toThrow('capnweb admission failed')
+		await writeFile(
+			resolve(root, 'package.json'),
+			JSON.stringify({ ...manifest, devDependencies: {}, pluxel: { workbenchCapnweb: 'stale' } }),
+		)
+		await build('headless')
+		const headless = JSON.parse(await readFile(resolve(root, 'dist/package.json'), 'utf8'))
+		expect(headless.pluxel.workbenchCapnweb).toBeUndefined()
+		await writeFile(
+			resolve(root, 'src/owner.ts'),
+			`import { BasePlugin, Plugin } from '@pluxel/core'; @Plugin() export class Owner extends BasePlugin {}`,
+		)
+		await build('workbench')
+		const withoutTargets = JSON.parse(await readFile(resolve(root, 'dist/package.json'), 'utf8'))
+		expect(withoutTargets.pluxel.workbenchCapnweb).toBeUndefined()
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+}, 90_000)
+
 it('preserves public and private identities, named product, minified artifacts and signed relocation for native and production Vite', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-modules-contract-'))
 	const deployed = resolve(root, 'relocated')
@@ -200,7 +314,7 @@ it('preserves public and private identities, named product, minified artifacts a
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),
-			`import {build} from ${JSON.stringify(import.meta.resolve('tsdown'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; const options={delivery:'modules',variant:'headless',lint:false}; const application=pluxel(options); options.delivery='standalone'; options.variant='workbench'; await build({cwd:${JSON.stringify(root)},entry:'src/app.ts',plugins:[application],config:false});`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; const options={delivery:'modules',variant:'headless',lint:false}; const application=pluxel(options); options.delivery='standalone'; options.variant='workbench'; await build({cwd:${JSON.stringify(root)},entry:'src/app.ts',plugins:[application],config:false});`,
 		)
 		await promisify(execFile)(
 			process.execPath,
@@ -345,7 +459,7 @@ it('compiles package-local imports and records actual entry names in relocatable
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),
-			`import {build} from ${JSON.stringify(import.meta.resolve('tsdown'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'src/app.ts',outputOptions:{entryFileNames:process.argv[2]??'entries/[name]-[hash].mjs'},plugins:[pluxel({delivery:'modules',variant:'headless',lint:false})],config:false});`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'src/app.ts',outputOptions:{entryFileNames:process.argv[2]??'entries/[name]-[hash].mjs'},plugins:[pluxel({delivery:'modules',variant:'headless',lint:false})],config:false});`,
 		)
 		await expect(
 			promisify(execFile)(

@@ -420,7 +420,7 @@ describe('remote value owner', () => {
 
 	it('validates the whole tree before freezing and rejects hidden data and sparse arrays', () => {
 		const nested = { value: 1 }
-		const input = { nested, invalid: undefined }
+		const input: { nested: typeof nested; invalid: undefined } = { nested, invalid: undefined }
 		expect(() => consumeWorkbenchValue(input)).toThrowError(WorkbenchPortableValueError)
 		expect(Object.isFrozen(nested)).toBe(false)
 		const sparse: unknown[] = []
@@ -441,14 +441,12 @@ describe('remote value owner', () => {
 
 	it('consumes, validates, and releases a transport-owned portable value', () => {
 		const dispose = vi.fn()
-		const input = Object.assign(Object.create(null), {
+		const input: { nested: Readonly<{ value: string }> } = Object.assign(Object.create(null), {
 			nested: Object.assign(Object.create(null), { value: 'safe' }),
 		})
 		Object.defineProperty(input, Symbol.dispose, { configurable: true, value: dispose })
 
-		const detached = consumeWorkbenchValue(input, 'test Workbench DTO') as {
-			readonly nested: Readonly<{ value: string }>
-		}
+		const detached = consumeWorkbenchValue(input, 'test Workbench DTO')
 
 		expect(detached).toEqual({ nested: { value: 'safe' } })
 		expect(detached).toBe(input)

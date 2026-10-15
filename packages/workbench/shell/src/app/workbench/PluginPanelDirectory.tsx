@@ -67,7 +67,7 @@ function ConnectedDirectory({ session }: { session: WorkspaceSession }) {
 					正在读取扩展…
 				</Text>
 			) : null}
-			{!directory.entries.length && directory.snapshot.state === 'ready' ? (
+			{directory.entries.length === 0 && directory.snapshot.state === 'ready' ? (
 				<Text size="xs" c="dimmed">
 					当前插件没有可用扩展
 				</Text>
@@ -92,7 +92,7 @@ function ConnectedDirectory({ session }: { session: WorkspaceSession }) {
 							disabled={!!unavailable}
 							aria-label={`${unavailable ?? (opened ? '显示' : '打开')} ${entry.placement.label}`}
 							onClick={() => {
-								void session.openPanel(entry).catch((error) => session.report(error))
+								void session.openPanel(entry).catch((error: unknown) => session.report(error))
 							}}
 						>
 							{unavailable ?? (opened ? '显示' : '打开')}

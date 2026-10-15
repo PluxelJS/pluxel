@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 
 // The transport admission rules are a pure metadata leaf; compiling them keeps package
 // builds independent of the Workbench runtime and its downstream Services build.

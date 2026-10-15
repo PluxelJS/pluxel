@@ -3,10 +3,10 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite --config vite.config.ts",
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"dev": "vp dev --config vite.config.ts",
 		"start": "node start.mjs",
-		"build": "vite build --config vite.config.ts && tsdown && pluxel distribution create ./dist",
-		"typecheck": "tsc --noEmit --pretty false",
 		"start:vite": "NODE_ENV=production node start-vite.mjs"
 	},
 	"dependencies": {
@@ -37,8 +37,8 @@
 		"@types/react": "catalog:frontend",
 		"@types/react-dom": "catalog:frontend",
 		"@vitejs/plugin-react": "catalog:frontend",
-		"tsdown": "catalog:tooling",
 		"typescript": "catalog:tooling",
-		"vite": "catalog:tooling"
+		"vite": "catalog:tooling",
+		"vite-plus": "catalog:tooling"
 	}
 }

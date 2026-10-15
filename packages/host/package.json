@@ -54,10 +54,10 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "tsdown",
-		"typecheck": "tsc --noEmit --pretty false",
-		"test": "pnpm exec vitest run",
-		"bench:state": "pnpm exec vitest bench bench/state.bench.ts"
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"test": "vp run check-tests",
+		"bench:state": "vp test bench bench/state.bench.ts"
 	},
 	"dependencies": {
 		"@standard-schema/spec": "catalog:prod",
@@ -74,7 +74,8 @@
 		"@types/node": "catalog:types",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
-		"valibot": "catalog:validation"
+		"valibot": "catalog:validation",
+		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^"

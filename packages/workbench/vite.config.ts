@@ -1,37 +1,17 @@
-import { resolve } from 'pathe'
-import { defineConfig, mergeConfig } from 'vite'
-import shellConfig from './shell/vite.config'
-import { UI_PUBLIC_BASE } from './src/paths'
-import { resolveBuiltAssets } from './src/shell/assets'
+import { defineConfig } from 'vite-plus'
+import { repositoryTasks } from '../../scripts/vite-tasks'
+import packConfig from './tsdown.config'
 
-// Shell development and packaged assets share React, router and CSS configuration.
-export default defineConfig((environment) =>
-	mergeConfig(shellConfig(environment), {
-		root: import.meta.dirname,
-		appType: 'custom',
-		base: `${UI_PUBLIC_BASE}/`,
-		publicDir: false,
-		plugins: [
-			{
-				name: 'pluxel-workbench-shell-artifact',
-				configResolved(config) {
-					if (config.base !== `${UI_PUBLIC_BASE}/`)
-						throw new Error(
-							`Workbench Shell asset base must be ${UI_PUBLIC_BASE}/, got ${config.base}`,
-						)
-				},
-				async writeBundle() {
-					await resolveBuiltAssets(resolve(import.meta.dirname, 'public'))
-				},
-			},
-		],
-		build: {
-			outDir: 'public/',
-			manifest: true,
-			emptyOutDir: true,
-			rolldownOptions: {
-				input: resolve(import.meta.dirname, 'shell/src/client.tsx'),
-			},
-		},
-	}),
-)
+export default defineConfig({
+	pack: packConfig,
+	run: {
+		tasks: repositoryTasks('@pluxel/workbench', {
+			build: 'node scripts/verify-shell.mjs',
+			typecheck:
+				'tsc --noEmit --pretty false && tsc --noEmit --pretty false -p shell/tsconfig.json',
+			test: 'vp test run && vp test run --config shell/vitest.config.ts',
+			'build:web': 'vp build --config vite.shell.config.ts',
+			'build:lib': 'vp pack',
+		}),
+	},
+})

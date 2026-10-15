@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
 import { findDatabasePackageRoot, loadDatabaseArtifact } from '../../src/database/artifact.ts'
@@ -105,6 +106,12 @@ describe('database migration artifact', () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-test-'))
 		const schema = join(root, 'src/database.ts')
 		await mkdir(join(root, 'src'), { recursive: true })
+		await mkdir(join(root, 'node_modules'), { recursive: true })
+		await symlink(
+			fileURLToPath(new URL('../../../services/node_modules/drizzle-orm/', import.meta.url)),
+			join(root, 'node_modules/drizzle-orm'),
+			'dir',
+		)
 		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
 		await writeFile(
 			schema,
@@ -144,6 +151,12 @@ describe('database migration artifact', () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-change-test-'))
 		const schema = join(root, 'src/database.ts')
 		await mkdir(join(root, 'src'), { recursive: true })
+		await mkdir(join(root, 'node_modules'), { recursive: true })
+		await symlink(
+			fileURLToPath(new URL('../../../services/node_modules/drizzle-orm/', import.meta.url)),
+			join(root, 'node_modules/drizzle-orm'),
+			'dir',
+		)
 		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
 		try {
 			await writeFile(

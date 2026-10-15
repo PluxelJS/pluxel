@@ -1,13 +1,10 @@
-import { BasePlugin, Plugin, type Context } from '@pluxel/core'
+import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
+import type { TypstPlugin } from '@pluxel/typst'
 import {
-	TakumiError,
 	TakumiPlugin,
-	type TakumiImageInput,
-	type TakumiRasterOutput,
-	type TakumiRenderLimits,
-	type TakumiRenderReservation,
-	type TakumiRenderResult,
-	type TakumiSvgRenderResult,
+	type CssInput,
+	type WorkerRenderOptions,
+	type WorkerSvgRenderOptions,
 } from '@pluxel/takumi'
 import { codeToHtml } from 'rangi'
 import {
@@ -27,6 +24,9 @@ import {
 } from './config.ts'
 import { MarkdownError, type MarkdownErrorCode } from './errors.ts'
 import { MARKDOWN_STYLESHEET } from './styles.ts'
+import { createTypstMathExtension } from './math.ts'
+
+const Typst = definePluginRef<TypstPlugin>()
 
 const INTERNAL_ASSET_PREFIX = 'pluxel://markdown-internal/'
 const UTF8_CHUNK_CHARACTERS = 64 * 1024
@@ -37,15 +37,15 @@ export type MarkdownTheme = 'light' | 'dark'
 export type MarkdownAssetMediaType = 'image/svg+xml' | 'image/png' | 'image/jpeg' | 'image/webp'
 
 export type MarkdownAssetInput = Readonly<{
-	/** Bytes are copied while the accepted render remains active. */
+	/** Bytes are borrowed until add() settles and then owned by this render. */
 	data: Uint8Array
 	mediaType: MarkdownAssetMediaType
 }>
 
 export type MarkdownAssetSink = Readonly<{
 	/**
-	 * Adds a generated image under an opaque internal source. Extensions cannot choose a URL,
-	 * fetch a resource, or retain the sink after this render settles.
+	 * Copies an image under an allocated internal source. The sink performs no IO and expires
+	 * after this render settles.
 	 */
 	add(input: MarkdownAssetInput): Promise<string>
 }>
@@ -66,6 +66,8 @@ export type MarkdownExtensionFeatures = Readonly<
 
 export type MarkdownExtensionContext = Readonly<{
 	source: string
+	/** The resolved renderer default or per-render theme. */
+	theme: MarkdownTheme
 	signal: AbortSignal
 	assets: MarkdownAssetSink
 	limits: MarkdownRenderLimits
@@ -77,7 +79,7 @@ export type MarkdownExtensionPipeline = Readonly<{
 }>
 
 /**
- * Trusted startup-time composition. Extension factories run once for each accepted render,
+ * Trusted startup-time composition. Extension factories run once for each render,
  * in renderer-array order; raw Markdown HTML remains disabled and is removed after HAST passes.
  */
 export type MarkdownExtension = Readonly<{
@@ -94,57 +96,46 @@ export type MarkdownRendererOptions = Readonly<{
 	theme?: MarkdownTheme
 }>
 
-export type MarkdownRenderInput = Readonly<{
-	markdown: string
-	width: number
-	height: number
-	/** Uses Takumi's configured default when omitted. */
-	devicePixelRatio?: number
-	images?: readonly TakumiImageInput[]
-	stylesheets?: readonly string[]
-	output?: TakumiRasterOutput
-	/** Cancels admission, Markdown preparation and the final Takumi render. */
-	signal?: AbortSignal
-	/** Overrides the renderer default for this document only. */
-	theme?: MarkdownTheme
-}>
+/** Shared-worker Takumi options using css for styles, plus a document theme. */
+export type MarkdownRenderOptions = WorkerRenderOptions &
+	Readonly<{ theme?: MarkdownTheme; stylesheets?: never }>
+export type MarkdownSvgRenderOptions = WorkerSvgRenderOptions &
+	Readonly<{ theme?: MarkdownTheme; stylesheets?: never }>
 
-export type MarkdownSvgRenderInput = Omit<MarkdownRenderInput, 'output' | 'devicePixelRatio'>
-
-export type MarkdownRenderer = Readonly<{
-	render(input: MarkdownRenderInput): Promise<TakumiRenderResult>
-	renderSvg(input: MarkdownSvgRenderInput): Promise<TakumiSvgRenderResult>
-	/** Idempotently aborts caller-owned queued/running work and waits for it to settle. */
+export interface MarkdownRenderer extends AsyncDisposable {
+	render(
+		markdown: string,
+		options?: MarkdownRenderOptions,
+	): ReturnType<TakumiPlugin['renderInWorker']>
+	renderSvg(
+		markdown: string,
+		options?: MarkdownSvgRenderOptions,
+	): ReturnType<TakumiPlugin['renderSvgInWorker']>
+	/** Abort this renderer's work and wait for it to settle. Safe to call repeatedly. */
 	close(): Promise<void>
-}>
+}
 
 type NormalizedExtension = Readonly<{
 	name: string
 	requiredFeatures?: MarkdownExtensionFeatures
 	create: MarkdownExtension['create']
 }>
-
 type MarkdownGeneration = Readonly<{
 	controller: AbortController
 	limits: MarkdownRenderLimits
-	renderers: Set<MarkdownRendererState>
+	math?: MarkdownExtension
+	pending: Set<Promise<unknown>>
 }>
-
-type MarkdownRendererState = {
-	readonly controller: AbortController
-	readonly extensions: readonly NormalizedExtension[]
-	readonly generation: MarkdownGeneration
-	readonly owner: Context
-	readonly pending: Set<Promise<unknown>>
-	readonly theme: MarkdownTheme
-	active: boolean
-}
-
-type PreparedMarkdown = Readonly<{
-	content: string
-	images: readonly TakumiImageInput[]
-	closeAssets(): void
+type MarkdownRendererState = Readonly<{
+	controller: AbortController
+	generation: MarkdownGeneration
+	extensions: readonly NormalizedExtension[]
+	theme: MarkdownTheme
+	pending: Set<Promise<unknown>>
 }>
+type GeneratedImage = Readonly<{ src: string; data: Uint8Array }>
+type ImagesInput = NonNullable<WorkerRenderOptions['images']>
+type PreparedOptions = { signal: AbortSignal; css: CssInput[]; images: ImagesInput }
 
 @Plugin()
 export class TakumiMarkdownPlugin extends BasePlugin {
@@ -156,331 +147,197 @@ export class TakumiMarkdownPlugin extends BasePlugin {
 	}
 
 	override init(): void {
-		const generation: MarkdownGeneration = Object.freeze({
+		let math: MarkdownExtension | undefined
+		this.plugins.use(Typst, (typst) => {
+			math = createTypstMathExtension(typst, Object.freeze({ ...this.config.math }))
+		})
+		const generation: MarkdownGeneration = {
 			controller: new AbortController(),
 			limits: createMarkdownRenderLimits(this.config),
-			renderers: new Set<MarkdownRendererState>(),
-		})
+			math,
+			pending: new Set(),
+		}
 		this.generation = generation
 		this.ctx.effects.defer(
 			async () => {
 				if (this.generation === generation) this.generation = undefined
-				const reason = new MarkdownError(
-					'NOT_RUNNING',
-					'Markdown rendering belongs to a stopped plugin generation',
-				)
-				generation.controller.abort(reason)
-				await Promise.allSettled(
-					[...generation.renderers].map((renderer) => this.closeRenderer(renderer, reason)),
-				)
+				generation.controller.abort(new MarkdownError('NOT_RUNNING', 'Markdown provider stopped'))
+				await Promise.allSettled(generation.pending)
 			},
-			{ tag: 'takumi-markdown-generation' },
+			{ tag: 'markdown-generation' },
 		)
 	}
 
-	/**
-	 * Creates a caller-generation-owned renderer. Its extension list is snapshotted now and cannot
-	 * be changed per request; owner stop/replacement automatically closes the handle.
-	 */
+	/** Creates a renderer owned by the current caller generation. */
 	createRenderer(options: MarkdownRendererOptions = {}): MarkdownRenderer {
-		const generation = this.requireGeneration()
-		const normalized = normalizeRendererOptions(options, this.config.maxExtensions)
-		const owner = this.ctx.caller ?? this.ctx
-		const state: MarkdownRendererState = {
-			active: true,
-			controller: new AbortController(),
-			extensions: normalized.extensions,
-			generation,
-			owner,
-			pending: new Set(),
-			theme: normalized.theme,
-		}
-		generation.renderers.add(state)
-		try {
-			owner.effects.defer(
-				() =>
-					this.closeRenderer(
-						state,
-						new MarkdownError(
-							'NOT_RUNNING',
-							'Markdown renderer belongs to a stopped caller generation',
-						),
-					),
-				{ tag: 'takumi-markdown-renderer' },
-			)
-		} catch (cause) {
-			void this.closeRenderer(
-				state,
-				new MarkdownError('NOT_RUNNING', 'Markdown renderer caller is stopped', { cause }),
-			)
-			throw new MarkdownError('NOT_RUNNING', 'Markdown renderer caller is stopped', { cause })
-		}
-		return Object.freeze({
-			render: (input) => this.trackRenderer(state, this.renderRaster(state, input)),
-			renderSvg: (input) => this.trackRenderer(state, this.renderSvg(state, input)),
-			close: () => this.closeRenderer(state),
-		})
-	}
-
-	private async renderRaster(
-		state: MarkdownRendererState,
-		input: MarkdownRenderInput,
-	): Promise<TakumiRenderResult> {
-		validateMarkdownInput(input)
-		this.assertRendererActive(state)
-		const abortLink = linkAbortSignals([
-			state.generation.controller.signal,
-			state.controller.signal,
-			input.signal,
-		])
-		let reservation: TakumiRenderReservation | undefined
-		let prepared: PreparedMarkdown | undefined
-		try {
-			reservation = await this.takumi.reserveRender({ signal: abortLink.signal })
-			prepared = await this.prepareMarkdown(state, input, reservation)
-			return await reservation.render({
-				content: prepared.content,
-				width: input.width,
-				height: input.height,
-				...(input.devicePixelRatio === undefined
-					? {}
-					: { devicePixelRatio: input.devicePixelRatio }),
-				stylesheets: [
-					MARKDOWN_STYLESHEET,
-					...(input.stylesheets === undefined ? [] : input.stylesheets),
-				],
-				images: [...(input.images === undefined ? [] : input.images), ...prepared.images],
-				...(input.output === undefined ? {} : { output: input.output }),
-			})
-		} finally {
-			prepared?.closeAssets()
-			if (reservation) await reservation.close()
-			abortLink.dispose()
-		}
-	}
-
-	private async renderSvg(
-		state: MarkdownRendererState,
-		input: MarkdownSvgRenderInput,
-	): Promise<TakumiSvgRenderResult> {
-		validateMarkdownInput(input)
-		this.assertRendererActive(state)
-		const abortLink = linkAbortSignals([
-			state.generation.controller.signal,
-			state.controller.signal,
-			input.signal,
-		])
-		let reservation: TakumiRenderReservation | undefined
-		let prepared: PreparedMarkdown | undefined
-		try {
-			reservation = await this.takumi.reserveRender({ signal: abortLink.signal })
-			prepared = await this.prepareMarkdown(state, input, reservation)
-			return await reservation.renderSvg({
-				content: prepared.content,
-				width: input.width,
-				height: input.height,
-				stylesheets: [
-					MARKDOWN_STYLESHEET,
-					...(input.stylesheets === undefined ? [] : input.stylesheets),
-				],
-				images: [...(input.images === undefined ? [] : input.images), ...prepared.images],
-			})
-		} finally {
-			prepared?.closeAssets()
-			if (reservation) await reservation.close()
-			abortLink.dispose()
-		}
-	}
-
-	private async prepareMarkdown(
-		state: MarkdownRendererState,
-		input: MarkdownRenderInput | MarkdownSvgRenderInput,
-		reservation: TakumiRenderReservation,
-	): Promise<PreparedMarkdown> {
-		const signal = reservation.signal
-		await assertUtf8Limit(
-			input.markdown,
-			state.generation.limits.maxSourceBytes,
-			signal,
-			'MARKDOWN_TOO_LARGE',
-			'Markdown source exceeds the configured byte limit',
-		)
-		assertNoInternalAssetSource(input.images)
-		const assets = createAssetCollector({
-			limits: state.generation.limits,
-			signal,
-			takumiLimits: reservation.limits,
-		})
-		try {
-			const pipeline = await this.resolveExtensionPipeline(
-				state,
-				input.markdown,
-				signal,
-				assets.sink,
-			)
-			const result = await this.compileMarkdown(
-				input.markdown,
-				pipeline,
-				state.generation.limits,
-				signal,
-			)
-			const theme = input.theme ?? state.theme
-			const content =
-				'<article class="pluxel-markdown pluxel-markdown--' +
-				theme +
-				'">' +
-				result.html +
-				'</article>'
-			await assertUtf8Limit(
-				content,
-				Math.min(state.generation.limits.maxHtmlBytes, reservation.limits.maxContentBytes),
-				signal,
-				'HTML_TOO_LARGE',
-				'Markdown output exceeds the configured HTML byte limit',
-			)
-			return Object.freeze({
-				content,
-				images: Object.freeze([...assets.images]),
-				closeAssets: assets.close,
-			})
-		} catch (cause) {
-			assets.close()
-			throw normalizeMarkdownFailure(cause)
-		}
-	}
-
-	private async resolveExtensionPipeline(
-		state: MarkdownRendererState,
-		source: string,
-		signal: AbortSignal,
-		assets: MarkdownAssetSink,
-	): Promise<
-		Readonly<{
-			features: Features
-			hast: readonly HastPluginEntry[]
-			mdast: readonly MdastPluginEntry[]
-		}>
-	> {
-		const mdast: MdastPluginEntry[] = []
-		const hast: HastPluginEntry[] = []
-		const features = resolveFeatures(state.extensions)
-		for (const extension of state.extensions) {
-			signal.throwIfAborted()
-			let pipeline: MarkdownExtensionPipeline | null
-			try {
-				pipeline =
-					(await extension.create(
-						Object.freeze({
-							source,
-							signal,
-							assets,
-							limits: state.generation.limits,
-						}),
-					)) ?? null
-			} catch (cause) {
-				throw extensionFailure(extension.name, cause)
-			}
-			signal.throwIfAborted()
-			if (pipeline === null) continue
-			if (!isRecord(pipeline) || Array.isArray(pipeline)) {
-				throw new MarkdownError(
-					'EXTENSION_FAILED',
-					'Markdown extension "' + extension.name + '" returned an invalid pipeline',
-				)
-			}
-			if (pipeline.mdast !== undefined) {
-				if (!Array.isArray(pipeline.mdast)) {
-					throw new MarkdownError(
-						'EXTENSION_FAILED',
-						'Markdown extension "' + extension.name + '" returned invalid MDAST plugins',
-					)
-				}
-				mdast.push(...pipeline.mdast)
-			}
-			if (pipeline.hast !== undefined) {
-				if (!Array.isArray(pipeline.hast)) {
-					throw new MarkdownError(
-						'EXTENSION_FAILED',
-						'Markdown extension "' + extension.name + '" returned invalid HAST plugins',
-					)
-				}
-				hast.push(...pipeline.hast)
-			}
-		}
-		return Object.freeze({
-			features,
-			hast: Object.freeze(hast),
-			mdast: Object.freeze(mdast),
-		})
-	}
-
-	private async compileMarkdown(
-		source: string,
-		pipeline: Readonly<{
-			features: Features
-			hast: readonly HastPluginEntry[]
-			mdast: readonly MdastPluginEntry[]
-		}>,
-		limits: MarkdownRenderLimits,
-		signal: AbortSignal,
-	): Promise<Readonly<{ html: string }>> {
-		try {
-			signal.throwIfAborted()
-			const result = await markdownToHtml(source, {
-				features: pipeline.features,
-				mdastPlugins: [...pipeline.mdast, createMdastBudgetPlugin(limits.maxAstNodes, signal)],
-				hastPlugins: [
-					createCodeHighlighter(limits, signal),
-					...pipeline.hast,
-					createHastBudgetPlugin(limits.maxAstNodes, signal),
-					removeRawHtml,
-				],
-			})
-			return Object.freeze({ html: result.html })
-		} catch (cause) {
-			throw normalizeMarkdownFailure(cause)
-		}
-	}
-
-	private trackRenderer<T>(state: MarkdownRendererState, operation: Promise<T>): Promise<T> {
-		state.pending.add(operation)
-		void operation.then(
-			() => state.pending.delete(operation),
-			() => state.pending.delete(operation),
-		)
-		return operation
-	}
-
-	private async closeRenderer(
-		state: MarkdownRendererState,
-		reason = new MarkdownError('NOT_RUNNING', 'Markdown renderer was closed'),
-	): Promise<void> {
-		if (!state.active) {
-			await Promise.allSettled(state.pending)
-			return
-		}
-		state.active = false
-		state.generation.renderers.delete(state)
-		state.controller.abort(reason)
-		await Promise.allSettled(state.pending)
-	}
-
-	private requireGeneration(): MarkdownGeneration {
 		const generation = this.generation
 		if (!generation || generation.controller.signal.aborted) {
 			throw new MarkdownError('NOT_RUNNING', 'TakumiMarkdownPlugin is not running')
 		}
-		return generation
+		const normalized = normalizeRendererOptions(options, this.config.maxExtensions)
+		const state: MarkdownRendererState = {
+			controller: new AbortController(),
+			generation,
+			extensions: generation.math
+				? Object.freeze([...normalized.extensions, generation.math])
+				: normalized.extensions,
+			theme: normalized.theme,
+			pending: new Set(),
+		}
+		let cleanup: { cancel(): void } | undefined
+		const close = async (): Promise<void> => {
+			cleanup?.cancel()
+			state.controller.abort(new MarkdownError('NOT_RUNNING', 'Markdown renderer was closed'))
+			await Promise.allSettled(state.pending)
+		}
+		cleanup = (this.ctx.caller ?? this.ctx).effects.defer(close, { tag: 'markdown-renderer' })
+		return Object.freeze({
+			render: (source: string, input: MarkdownRenderOptions = {}) => {
+				const { theme: _, ...native } = input
+				return this.track(
+					state,
+					this.renderMarkdown(state, source, input, (html, prepared) =>
+						this.takumi.renderInWorker(html, { ...native, ...prepared }),
+					),
+				)
+			},
+			renderSvg: (source: string, input: MarkdownSvgRenderOptions = {}) => {
+				const { theme: _, ...native } = input
+				return this.track(
+					state,
+					this.renderMarkdown(state, source, input, (html, prepared) =>
+						this.takumi.renderSvgInWorker(html, { ...native, ...prepared }),
+					),
+				)
+			},
+			close,
+			[Symbol.asyncDispose]: close,
+		})
 	}
 
-	private assertRendererActive(state: MarkdownRendererState): void {
-		if (!state.active || state.generation.controller.signal.aborted) {
-			throw new MarkdownError(
-				'NOT_RUNNING',
-				'Markdown renderer is closed or belongs to a stopped generation',
+	private async renderMarkdown<T>(
+		state: MarkdownRendererState,
+		source: string,
+		options: MarkdownRenderOptions | MarkdownSvgRenderOptions,
+		render: (html: string, prepared: PreparedOptions) => Promise<T>,
+	): Promise<T> {
+		const signal = AbortSignal.any([
+			state.generation.controller.signal,
+			state.controller.signal,
+			...(options.signal ? [options.signal] : []),
+		])
+		signal.throwIfAborted()
+		if (typeof source !== 'string')
+			throw new MarkdownError('INVALID_INPUT', 'Markdown must be a string')
+		const theme = options.theme ?? state.theme
+		if (theme !== 'light' && theme !== 'dark') {
+			throw new MarkdownError('INVALID_INPUT', 'Markdown theme must be light or dark')
+		}
+		const limits = state.generation.limits
+		await assertUtf8Limit(
+			source,
+			limits.maxSourceBytes,
+			signal,
+			'MARKDOWN_TOO_LARGE',
+			'Markdown source exceeds the configured byte limit',
+		)
+		const assets = createAssetCollector({ limits, signal })
+		try {
+			const mdast: MdastPluginEntry[] = []
+			const hast: HastPluginEntry[] = []
+			for (const extension of state.extensions) {
+				signal.throwIfAborted()
+				const pipeline = await extension.create(
+					Object.freeze({ source, theme, signal, assets: assets.sink, limits }),
+				)
+				if (pipeline == null) continue
+				if (
+					!isRecord(pipeline) ||
+					(pipeline.mdast !== undefined && !Array.isArray(pipeline.mdast)) ||
+					(pipeline.hast !== undefined && !Array.isArray(pipeline.hast))
+				) {
+					throw new MarkdownError(
+						'EXTENSION_FAILED',
+						`Invalid pipeline from Markdown extension "${extension.name}"`,
+					)
+				}
+				mdast.push(...(pipeline.mdast ?? []))
+				hast.push(...(pipeline.hast ?? []))
+			}
+			const result = await markdownToHtml(source, {
+				features: resolveFeatures(state.extensions),
+				mdastPlugins: [...mdast, createMdastBudgetPlugin(limits.maxAstNodes, signal)],
+				hastPlugins: [
+					createCodeHighlighter(limits, signal),
+					...hast,
+					createHastBudgetPlugin(limits.maxAstNodes, signal),
+					removeRawHtml,
+				],
+			})
+			signal.throwIfAborted()
+			const html = `<article class="pluxel-markdown pluxel-markdown--${theme}">${result.html}</article>`
+			await assertUtf8Limit(
+				html,
+				limits.maxHtmlBytes,
+				signal,
+				'HTML_TOO_LARGE',
+				'Markdown output exceeds the configured HTML byte limit',
 			)
+			return await render(html, {
+				signal,
+				css: [
+					MARKDOWN_STYLESHEET,
+					...(Array.isArray(options.css)
+						? options.css
+						: options.css === undefined
+							? []
+							: [options.css]),
+				],
+				images: mergeImages(options.images, assets.images),
+			})
+		} finally {
+			assets.close()
 		}
 	}
+
+	private track<T>(state: MarkdownRendererState, operation: Promise<T>): Promise<T> {
+		state.pending.add(operation)
+		state.generation.pending.add(operation)
+		const release = () => {
+			state.pending.delete(operation)
+			state.generation.pending.delete(operation)
+		}
+		void operation.then(release, release)
+		return operation
+	}
+}
+
+/** Generated assets join the native image pipeline; Markdown URLs require explicit opt-in. */
+function mergeImages(
+	input: ImagesInput | undefined,
+	generated: readonly GeneratedImage[],
+): ImagesInput {
+	const group: Exclude<ImagesInput, readonly unknown[]> | undefined = isImageSources(input)
+		? { sources: input }
+		: input
+	const sources = group?.sources ?? []
+	if (sources.some((image) => image.src.startsWith(INTERNAL_ASSET_PREFIX))) {
+		throw new MarkdownError(
+			'INTERNAL_ASSET_COLLISION',
+			'Caller images use the reserved Markdown asset namespace',
+		)
+	}
+	return {
+		...group,
+		allowRemote: group?.allowRemote ?? false,
+		sources: [...sources, ...generated],
+	}
+}
+
+function isImageSources(
+	input: ImagesInput | undefined,
+): input is Extract<ImagesInput, readonly unknown[]> {
+	return Array.isArray(input)
 }
 
 const removeRawHtml = defineHastPlugin({
@@ -740,42 +597,20 @@ function mergeFeatureOption<T extends boolean | object | undefined>(current: T, 
 	return next
 }
 
-function validateMarkdownInput(input: MarkdownRenderInput | MarkdownSvgRenderInput): void {
-	if (!input || typeof input !== 'object' || Array.isArray(input)) {
-		throw new MarkdownError('INVALID_INPUT', 'Markdown render input must be an object')
-	}
-	if (typeof input.markdown !== 'string') {
-		throw new MarkdownError('INVALID_INPUT', 'markdown must be a string')
-	}
-	if (!Number.isSafeInteger(input.width) || !Number.isSafeInteger(input.height)) {
-		throw new MarkdownError('INVALID_INPUT', 'Markdown width and height must be integers')
-	}
-	if (input.width <= 0 || input.height <= 0) {
-		throw new MarkdownError('INVALID_INPUT', 'Markdown width and height must be positive')
-	}
-	if (input.signal !== undefined && !isAbortSignal(input.signal)) {
-		throw new MarkdownError('INVALID_INPUT', 'signal must be an AbortSignal')
-	}
-	if (input.theme !== undefined && input.theme !== 'light' && input.theme !== 'dark') {
-		throw new MarkdownError('INVALID_INPUT', 'Markdown theme must be light or dark')
-	}
-}
-
 function createAssetCollector(
 	input: Readonly<{
 		limits: MarkdownRenderLimits
 		signal: AbortSignal
-		takumiLimits: TakumiRenderLimits
 	}>,
 ): Readonly<{
 	sink: MarkdownAssetSink
-	images: readonly TakumiImageInput[]
+	images: readonly GeneratedImage[]
 	close(): void
 }> {
-	const images: TakumiImageInput[] = []
+	const images: GeneratedImage[] = []
 	const prefix = INTERNAL_ASSET_PREFIX + crypto.randomUUID() + '/'
-	const perAssetLimit = Math.min(input.limits.maxAssetBytes, input.takumiLimits.maxImageBytes)
-	const totalLimit = Math.min(input.limits.maxTotalAssetBytes, input.takumiLimits.maxImageBytes)
+	const perAssetLimit = input.limits.maxAssetBytes
+	const totalLimit = input.limits.maxTotalAssetBytes
 	let active = true
 	let nextAsset = 0
 	let pendingAssets = 0
@@ -793,13 +628,15 @@ function createAssetCollector(
 					'Generated Markdown asset requires Uint8Array data',
 				)
 			}
-			if (!isAssetMediaType(asset.mediaType)) {
+			const { data: bytes, mediaType } = asset
+			const byteLength = bytes.byteLength
+			if (!isAssetMediaType(mediaType)) {
 				throw new MarkdownError(
 					'INVALID_INPUT',
 					'Generated Markdown asset media type is unsupported',
 				)
 			}
-			if (asset.data.buffer instanceof SharedArrayBuffer || asset.data.byteLength === 0) {
+			if (bytes.buffer instanceof SharedArrayBuffer || byteLength === 0) {
 				throw new MarkdownError('INVALID_INPUT', 'Generated Markdown asset bytes are invalid')
 			}
 			if (images.length + pendingAssets >= input.limits.maxAssets) {
@@ -808,24 +645,24 @@ function createAssetCollector(
 					'Markdown extensions exceed the configured generated-asset limit',
 				)
 			}
-			if (asset.data.byteLength > perAssetLimit) {
+			if (byteLength > perAssetLimit) {
 				throw new MarkdownError(
 					'ASSET_TOO_LARGE',
 					'Generated Markdown asset exceeds the configured byte limit',
 				)
 			}
-			if (asset.data.byteLength > totalLimit - totalBytes - reservedBytes) {
+			if (byteLength > totalLimit - totalBytes - reservedBytes) {
 				throw new MarkdownError(
 					'ASSET_BYTES_EXCEEDED',
 					'Generated Markdown assets exceed the configured byte limit',
 				)
 			}
-			const source = prefix + nextAsset + mediaTypeSuffix(asset.mediaType)
+			const source = prefix + nextAsset + mediaTypeSuffix(mediaType)
 			nextAsset += 1
 			pendingAssets += 1
-			reservedBytes += asset.data.byteLength
+			reservedBytes += byteLength
 			try {
-				const data = await copyBytes(asset.data, input.signal)
+				const data = await copyBytes(bytes, input.signal)
 				if (!active) {
 					throw new MarkdownError(
 						'NOT_RUNNING',
@@ -838,7 +675,7 @@ function createAssetCollector(
 				return source
 			} finally {
 				pendingAssets -= 1
-				reservedBytes -= asset.data.byteLength
+				reservedBytes -= byteLength
 			}
 		},
 	})
@@ -849,23 +686,6 @@ function createAssetCollector(
 			active = false
 		},
 	})
-}
-
-function assertNoInternalAssetSource(images: readonly TakumiImageInput[] | undefined): void {
-	if (!Array.isArray(images)) return
-	for (const image of images) {
-		if (
-			image &&
-			typeof image === 'object' &&
-			typeof (image as TakumiImageInput).src === 'string' &&
-			(image as TakumiImageInput).src.startsWith(INTERNAL_ASSET_PREFIX)
-		) {
-			throw new MarkdownError(
-				'INTERNAL_ASSET_COLLISION',
-				'Caller image sources cannot use the reserved Markdown asset namespace',
-			)
-		}
-	}
 }
 
 async function assertTreeNodeLimit(
@@ -990,63 +810,9 @@ function readFenceLanguage(value: unknown): string | undefined {
 	return undefined
 }
 
-function extensionFailure(name: string, cause: unknown): Error {
-	if (shouldPreserveFailure(cause)) return cause
-	return new MarkdownError('EXTENSION_FAILED', 'Markdown extension "' + name + '" failed', {
-		cause,
-	})
-}
-
-function normalizeMarkdownFailure(cause: unknown): Error {
-	if (shouldPreserveFailure(cause)) return cause
-	return new MarkdownError('EXTENSION_FAILED', 'Markdown conversion failed', { cause })
-}
-
-function shouldPreserveFailure(cause: unknown): cause is Error {
-	return (
-		cause instanceof MarkdownError ||
-		cause instanceof TakumiError ||
-		(cause instanceof Error &&
-			(cause.name === 'TypstMathError' || cause.name === 'WorkerTaskError'))
-	)
-}
-
-function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readonly<{
-	signal: AbortSignal
-	dispose(): void
-}> {
-	const controller = new AbortController()
-	const listeners: Array<Readonly<{ signal: AbortSignal; listener: () => void }>> = []
-	for (const signal of signals) {
-		if (!signal) continue
-		if (signal.aborted) {
-			controller.abort(signal.reason)
-			break
-		}
-		const listener = () => controller.abort(signal.reason)
-		signal.addEventListener('abort', listener, { once: true })
-		listeners.push({ signal, listener })
-	}
-	return Object.freeze({
-		signal: controller.signal,
-		dispose() {
-			for (const { signal, listener } of listeners) signal.removeEventListener('abort', listener)
-		},
-	})
-}
-
 async function yieldToEventLoop(signal: AbortSignal): Promise<void> {
 	await new Promise<void>((resolve) => setImmediate(resolve))
 	signal.throwIfAborted()
-}
-
-function isAbortSignal(value: unknown): value is AbortSignal {
-	return (
-		Boolean(value && typeof value === 'object') &&
-		typeof (value as AbortSignal).aborted === 'boolean' &&
-		typeof (value as AbortSignal).addEventListener === 'function' &&
-		typeof (value as AbortSignal).removeEventListener === 'function'
-	)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

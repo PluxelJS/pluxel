@@ -19,7 +19,7 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 
 ## 记录变化
 
-用户可见的公开包变化通过 `pnpm tegami` 创建 `.tegami/*.md`，也可以按以下格式手工编写：
+用户可见的公开包变化通过 `vp run tegami` 创建 `.tegami/*.md`，也可以按以下格式手工编写：
 
 ```md
 ---
@@ -44,7 +44,7 @@ Explain the observable behavior and any migration requirement.
 
 1. Pull request CI 的 `governance:check` 解析全部 pending changelog，并验证计划中只有允许发布的公开包。
 2. 变更合并到 `main` 后，CI 完成通用 lint、format、typecheck、build 和 test。
-3. `.github/workflows/release.yml` 由成功 CI 的 `workflow_run` 触发并执行 `pnpm tegami ci`。
+3. `.github/workflows/release.yml` 由成功 CI 的 `workflow_run` 触发并执行 `vp run tegami ci`。
 4. 有 pending changelog 时，Tegami 更新 versions、package changelogs 和 lockfile，并创建或更新
    `tegami/version-packages` Version Packages PR；这一步不构建、不发布。
 5. Version Packages PR 合并且 CI 成功后，Tegami 从已提交的 publish lock 发布 npm 包，创建 tags 和
@@ -62,7 +62,7 @@ gh workflow run release.yml --ref main
 ```
 
 手动触发仍要求当前 `main` 的同一提交已有成功的 CI **push** run；没有通过时会明确报错，不会绕过检查。
-它执行同一个 `pnpm tegami ci`：已有 publish lock 时发布，有 pending changelog 时更新版本 PR，没有待处理内容时不发布。
+它执行同一个 `vp run tegami ci`：已有 publish lock 时发布，有 pending changelog 时更新版本 PR，没有待处理内容时不发布。
 开发提交和 changelog 可以持续积累在版本 PR 中，由维护者合并版本 PR 决定发布时机。
 
 自动触发的 Release 显示 skipped 时，先查看对应 CI：失败、取消或非 push run 都不会发布；仓库是否公开不影响这一检查。
@@ -72,12 +72,12 @@ gh workflow run release.yml --ref main
 ## 发布验证
 
 普通 CI 已完成 release metadata、workspace 治理、lint、format、typecheck、build 和单元测试。Release workflow
-只接受同一 `main` commit 的成功 CI，并复用其 pnpm 和 Turbo cache，不重复这些通用检查。
+只接受同一 `main` commit 的成功 CI，并复用其 pnpm 和 Vite Task cache，不重复这些通用检查。
 
 真正发布时，Tegami hooks 只执行 package boundary 验证：
 
 - `beforePublishAll` 分别从真实 create/CLI tarball 验证 example workspace 与独立插件模板，整批发布只执行一次；
-- `willPublish` 按 Tegami 当前即将发布的 package 调用 Turbo build，由 task graph 补齐其构建依赖；
+- `willPublish` 按 Tegami 当前即将发布的 package 调用 Vite Task 构建入口，由 task graph 补齐其构建依赖；
 - 已成功发布的 package 在失败重试时不会重新发布，未完成 package 仍会在发布前单独重建。
 
 ## Starter 发行版本
@@ -86,7 +86,7 @@ gh workflow run release.yml --ref main
 `catalogs.pluxel`。每个第一方范围来自当前公开包 manifest 的 `^version`；不修改源码 manifest、publish lock 或外部 catalog。
 源码模板中的第一方范围是可读的基线，不能据此推断发行版本。Tegami Version Packages PR 更新 manifest 后，下一次构建自然生成对应范围。
 
-Create 的 Turbo build inputs 包含框架及插件的 package manifests，避免版本变更命中旧模板缓存。创建测试验证生成范围与当前公开包版本一致，
+Create 的 Vite Task 缓存输入 包含框架及插件的 package manifests，避免版本变更命中旧模板缓存。创建测试验证生成范围与当前公开包版本一致，
 并确认其它 catalog 保持原样；tarball smoke 继续验证真实安装、应用构建和启动，不能仅以本地 tarball overrides 掩盖版本范围问题。
 
 ## Trusted Publishing
@@ -103,7 +103,7 @@ Release workflow 按 repository visibility 开关 provenance。
 
 ```sh
 mise install
-mise exec -- pnpm install --frozen-lockfile
+mise exec -- vp install --frozen-lockfile
 mise exec -- npm login
 mise exec -- node scripts/prepare-npm-publishing.mts
 mise exec -- node scripts/prepare-npm-publishing.mts --apply
@@ -132,10 +132,10 @@ GitHub repository 必须允许 GitHub Actions 创建 pull request；workflow 的
 
 ```sh
 mise install
-pnpm install --frozen-lockfile
-pnpm verify
-CI=true pnpm --filter @pluxel/create test:starter
-CI=true pnpm --filter @pluxel/cli test:templates
+vp install --frozen-lockfile
+vp run verify
+CI=true vp run @pluxel/create#test:starter
+CI=true vp run @pluxel/cli#test:templates
 ```
 
 `governance:check` 作为 `verify` 的前置步骤，同时验证精确工具版本、workspace 结构、公开 package metadata、

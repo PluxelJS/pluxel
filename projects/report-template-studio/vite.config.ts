@@ -1,18 +1,26 @@
-import { defineConfig } from 'vite'
+import { repositoryTasks } from '../../scripts/vite-tasks'
+import { defineConfig, lazyPlugins } from 'vite-plus'
 import react from '@vitejs/plugin-react'
 import { offlineMonaco } from './scripts/monaco-vite.ts'
 import { generateEditorTypes } from './scripts/generate-editor-types.mjs'
 
 export default defineConfig({
+	run: {
+		tasks: repositoryTasks('@report-template-studio/app', {
+			build: 'node ../../scripts/pack.mjs && vp build',
+			test: 'vp test run',
+			typecheck: 'tsc --noEmit',
+		}),
+	},
 	base: './',
 	// Declaration files must reach the language worker unchanged, without Vite's TS transform.
 	publicDir: '.editor-generated/public',
 	cacheDir: '.studio-dev/vite-renderer',
-	plugins: [
+	plugins: lazyPlugins(() => [
 		react(),
 		offlineMonaco(),
 		{ name: 'studio-editor-types', buildStart: generateEditorTypes },
-	],
+	]),
 	worker: { format: 'es', plugins: () => [offlineMonaco()] },
 	optimizeDeps: { exclude: ['modern-monaco', 'modern-monaco/lsp/typescript/setup'] },
 	build: {

@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import { requireWorkbench, WorkbenchBackend } from '@pluxel/workbench/server'
 import {
+	WorkbenchContentTarget,
 	type WorkbenchArtifactLookup,
 	type WorkbenchContentArtifactLookup,
 } from '@pluxel/workbench/internal'
@@ -344,14 +345,17 @@ describe('Workbench vNext publication', () => {
 			const opened = await session.target.openEntry(input)
 			expect(opened.ok).toBe(true)
 			if (!opened.ok) throw new Error('Panel open failed')
-			if (entry.descriptor.key === 'inspector') {
-				expect(opened.value.kind).toBe('local')
-				if (opened.value.kind === 'local') inspector = opened.value.api as SettingsTarget
-			} else if (entry.descriptor.key === 'fonts') {
-				expect(opened.value.kind).toBe('attachment')
-				expect(attachmentConsumerNode).toEqual(target)
-			} else expect(opened.value.kind).toBe('content')
+			const expectedKind =
+				entry.descriptor.key === 'inspector'
+					? 'local'
+					: entry.descriptor.key === 'fonts'
+						? 'attachment'
+						: 'content'
+			expect(opened.value.kind).toBe(expectedKind)
+			if (entry.descriptor.key === 'inspector' && opened.value.kind === 'local')
+				inspector = opened.value.api as SettingsTarget
 		}
+		expect(attachmentConsumerNode).toEqual(target)
 		expect(inspector?.disposed).toBe(false)
 		host.stop(PanelPlugin)
 		await host.commit()
@@ -457,7 +461,7 @@ describe('Workbench vNext publication', () => {
 				dup: () => observer,
 				[Symbol.dispose]: disposeObserver,
 			},
-		) as unknown as Parameters<typeof opened.value.root.subscribe>[0] & WorkbenchContentObserver
+		) as unknown as Parameters<typeof opened.value.root.subscribeDto>[0] & WorkbenchContentObserver
 		await expect(opened.value.root.subscribeDto(observer)).resolves.toMatchObject({
 			ok: true,
 			data: { status: { count: 0 } },
@@ -472,6 +476,8 @@ describe('Workbench vNext publication', () => {
 		await vi.waitFor(() => expect(updates).toHaveLength(1))
 		expect(updates[0]).toMatchObject({ ok: true, data: { status: { count: 2 } } })
 
+		if (!(opened.value.root instanceof WorkbenchContentTarget))
+			throw new Error('expected local Content root')
 		opened.value.root[Symbol.dispose]()
 		expect(contentSignal?.aborted).toBe(true)
 		expect(disposeObserver).toHaveBeenCalledTimes(1)
@@ -549,7 +555,7 @@ describe('Workbench vNext publication', () => {
 				dup: () => observer,
 				[Symbol.dispose]: disposeObserver,
 			},
-		) as unknown as Parameters<typeof opened.value.root.subscribe>[0]
+		) as unknown as Parameters<typeof opened.value.root.subscribeDto>[0]
 		await opened.value.root.subscribeDto(observer)
 
 		contentChanged?.()
@@ -728,7 +734,9 @@ describe('Workbench vNext publication', () => {
 		const pendingOnlyBackend = new WorkbenchBackend(
 			host.ctx,
 			{},
-			Object.freeze({ resolveEntry: () => undefined }),
+			Object.freeze({
+				resolveEntry: (): ReturnType<WorkbenchArtifactLookup['resolveEntry']> => undefined,
+			}),
 			emptyContentLookup,
 		)
 		pendingOnlyBackend.producerStatus.enablePendingProducerBuilds()
@@ -742,7 +750,9 @@ describe('Workbench vNext publication', () => {
 		const strictStatusBackend = new WorkbenchBackend(
 			host.ctx,
 			{},
-			Object.freeze({ resolveEntry: () => undefined }),
+			Object.freeze({
+				resolveEntry: (): ReturnType<WorkbenchArtifactLookup['resolveEntry']> => undefined,
+			}),
 			emptyContentLookup,
 		)
 		strictStatusBackend.producerStatus.setFailed({
@@ -1096,7 +1106,7 @@ describe('Workbench vNext publication', () => {
 const localPrincipal = Object.freeze({ provider: 'local', subject: 'local' })
 
 const emptyContentLookup: WorkbenchContentArtifactLookup = Object.freeze({
-	resolveContent: () => undefined,
+	resolveContent: (): ReturnType<WorkbenchContentArtifactLookup['resolveContent']> => undefined,
 })
 
 function mutableWorkbenchArtifactLookup(): Readonly<{
@@ -1106,7 +1116,9 @@ function mutableWorkbenchArtifactLookup(): Readonly<{
 	let ready = false
 	return Object.freeze({
 		lookup: Object.freeze({
-			resolveEntry(definition, descriptor) {
+			resolveEntry(
+				...[definition, descriptor]: Parameters<WorkbenchArtifactLookup['resolveEntry']>
+			) {
 				if (!ready) return undefined
 				const producer = workbenchFederationProducerName(definition)
 				const buildRevision = 'ready-build'

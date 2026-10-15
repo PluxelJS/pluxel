@@ -1,5 +1,5 @@
 import { createModulesApplicationConfig } from './cli/modules-application'
-import type { TsdownPlugin, TsdownPluginOption, UserConfig } from 'tsdown'
+import type { TsdownPlugin, TsdownPluginOption, UserConfig } from 'vite-plus/pack'
 import {
 	createStaticApplicationConfig,
 	resolveResidualDependencies,

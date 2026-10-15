@@ -90,7 +90,7 @@ export function WorkbenchShell() {
 	useEffect(() => {
 		void session
 			.syncWorkspacePanels(ownerSnapshot.layout?.entries ?? [])
-			.catch((error) => session.report(error))
+			.catch((error: unknown) => session.report(error))
 	}, [activeDocumentId, contentRevision, ownerSnapshot.layout, layoutRevision, session])
 	const storageError = useSyncExternalStore(session.storage.subscribe, session.storage.getSnapshot)
 	useEffect(() => {
@@ -237,7 +237,7 @@ export function WorkbenchShell() {
 				)
 			},
 		}),
-		[menu.native, session, activeDocumentId],
+		[menu.native, session, activeDocumentId, navigation],
 	)
 	const closeDocuments = () =>
 		openConfirmModal({

@@ -42,10 +42,10 @@ envBinding(FontsPlugin, {
 
 ## 安装与 catalog
 
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `pnpm install`。
+以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-pnpm catalog:add -- @pluxel/fonts
+vp exec pluxel pncat add @pluxel/fonts
 ```
 
 host catalog 必须包含 `FontsPlugin`。直接使用字体能力的 Plugin 将它声明为 required dependency：

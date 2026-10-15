@@ -1,4 +1,4 @@
-import type { InlineConfig, TsdownPluginOption } from 'tsdown'
+import type { InlineConfig, TsdownPluginOption } from 'vite-plus/pack'
 import Macros from 'unplugin-macros/rolldown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'

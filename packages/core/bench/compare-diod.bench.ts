@@ -3,7 +3,11 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Bench } from 'tinybench'
 import { ContainerBuilder } from './vendor/diod/dist/index.mjs'
-import { DraftGraph, Runtime, classProvider } from '../dist/bench/index.mjs'
+import type * as CoreDi from '../src/internal/di/index'
+
+// Execute the compiled benchmark bundle while checking against its source contract.
+const coreBundle = new URL('../dist/bench/index.mjs', import.meta.url)
+const { DraftGraph, Runtime, classProvider }: typeof CoreDi = await import(coreBundle.href)
 
 type BenchCase = {
 	id: string
@@ -36,7 +40,7 @@ const namedClass = (name: string, Base?: ClassCtor): ClassCtor => {
 	return Ctor
 }
 
-const mustCoreBuild = <M>(draft: DraftGraph<M>) => {
+const mustCoreBuild = <M>(draft: CoreDi.DraftGraph<M>) => {
 	const built = draft.build()
 	if (built.ok === true) return built.val
 	throw built.err

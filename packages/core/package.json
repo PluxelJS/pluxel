@@ -107,14 +107,14 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "pnpm exec vitest run",
+		"test": "vp run check-tests",
 		"test:installed-result": "node tests/installed-result.smoke.mjs",
-		"build": "tsdown",
-		"typecheck": "tsc --noEmit --pretty false",
-		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
-		"bench:caller-view": "pnpm run build && node --experimental-strip-types bench/pluginCallerView.bench.ts",
-		"bench:fork-cost": "pnpm run build && node --expose-gc --experimental-strip-types bench/pluginForkCost.bench.ts",
-		"bench:di": "pnpm exec tsdown bench/vendor/diod/src/index.ts --no-config --format esm --out-dir bench/vendor/diod/dist --minify && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"bench:dist": "vp run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
+		"bench:caller-view": "vp run build && node --experimental-strip-types bench/pluginCallerView.bench.ts",
+		"bench:fork-cost": "vp run build && node --expose-gc --experimental-strip-types bench/pluginForkCost.bench.ts",
+		"bench:di": "vp pack bench/vendor/diod/src/index.ts --no-config --format esm --out-dir bench/vendor/diod/dist --minify && vp pack src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "catalog:prod",
@@ -126,11 +126,13 @@
 		"@pluxel/context": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@types/node": "catalog:types",
 		"eventure": "workspace:*",
 		"option-t": "catalog:validation",
 		"rolldown": "catalog:build",
 		"tinybench": "catalog:dev",
-		"unplugin-macros": "catalog:build"
+		"unplugin-macros": "catalog:build",
+		"vite-plus": "catalog:build"
 	},
 	"engines": {
 		"node": ">=24"

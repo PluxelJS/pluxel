@@ -1,4 +1,6 @@
-# Host demos
+# Focused source references
+
+默认应用演示统一由 `../showcase/ReportStudio.ts` 的一个 Plugin 提供，包含六种渲染引擎及真实 HTTP、Commands、Cache、Rates、Storage 与 Otel。下列文件只作为聚焦 API 示例和测试，不注册到默认应用目录；Bot Workspace 是独立产品。
 
 - `PluginCompositionConfigDemo`：一个 Plugin 一次声明完整 object schema，并用嵌套字段组织内部模块配置。
 - `PluginOptionalIntegrationDemo`：module-level `definePluginRef<T>()`、init-time `plugins.use(ref, setup)` 与 owner cleanup。

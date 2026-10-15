@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { act, type React } from 'react'
+import { act, type ReactNode, type ComponentPropsWithoutRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
 	PluginOrganizer,
 	type GroupConfig,
@@ -24,7 +24,7 @@ class ResizeObserverMock {
 }
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	if (typeof globalThis.ResizeObserver === 'undefined') {
 		globalThis.ResizeObserver = ResizeObserverMock as any
 	}
@@ -115,6 +115,7 @@ function buildStatuses(count: number): PluginStatuses {
 			executionTone: index % 5 === 0 ? 'blue' : 'gray',
 			executionDescription:
 				index % 5 === 0 ? '动态插件入口 · 源码模块；源码依赖图 HMR' : '应用静态构建',
+			recentUpdateSearchTerms: [],
 			executionSearchTerms: index % 5 === 0 ? ['vite', 'definition-hmr'] : ['application-bundle'],
 			availability: index % 7 === 0 ? 'unavailable' : 'available',
 			autoStart: index % 2 === 0,
@@ -150,8 +151,8 @@ async function renderOrganizer(props: {
 		...rest
 	}: {
 		to: string
-		children: React.ReactNode
-	} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>) => (
+		children: ReactNode
+	} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>) => (
 		<a
 			href={to}
 			{...rest}

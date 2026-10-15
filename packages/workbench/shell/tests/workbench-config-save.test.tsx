@@ -118,6 +118,16 @@ describe('business configuration save in native documents', () => {
 		const patch = vi.fn(async (_owner: PluginNodeAddress, config: Record<string, unknown>) => ({
 			ok: true as const,
 			config,
+			sources: [],
+			saved: true as const,
+			desiredRevision: 1,
+			appliedRevision: 1,
+			report: {
+				catalogRevision: 1,
+				runtimeStateRevision: 1,
+				reconciliation: [],
+				core: { status: 'unchanged' as const },
+			},
 			application: 'applied' as const,
 		}))
 		const { session, container, id, input } = await fixture(patch)
@@ -197,6 +207,16 @@ describe('business configuration save in native documents', () => {
 		const patch = vi.fn(async (_owner: PluginNodeAddress, values: Record<string, unknown>) => ({
 			ok: true as const,
 			config: values,
+			sources: [],
+			saved: true as const,
+			desiredRevision: 1,
+			appliedRevision: 1,
+			report: {
+				catalogRevision: 1,
+				runtimeStateRevision: 1,
+				reconciliation: [],
+				core: { status: 'unchanged' as const },
+			},
 			application: 'applied' as const,
 		}))
 		const { session, container, id, input } = await fixture(patch)
@@ -249,7 +269,21 @@ describe('business configuration save in native documents', () => {
 		expect(patch).toHaveBeenCalledWith(owner, { name: 'saved draft' })
 		expect(session.workbench.getDocument(id)).not.toBeNull()
 		await act(async () => {
-			release({ ok: true, config: { name: 'saved draft' }, application: 'applied' })
+			release({
+				ok: true,
+				config: { name: 'saved draft' },
+				sources: [],
+				saved: true as const,
+				desiredRevision: 1,
+				appliedRevision: 1,
+				report: {
+					catalogRevision: 1,
+					runtimeStateRevision: 1,
+					reconciliation: [],
+					core: { status: 'unchanged' as const },
+				},
+				application: 'applied',
+			})
 			await pending
 		})
 		await act(async () => {
@@ -275,7 +309,21 @@ describe('business configuration save in native documents', () => {
 		await confirm()
 		await type(input, 'newer draft while saving')
 		await act(async () => {
-			release({ ok: true, config: { name: 'submitted draft' }, application: 'applied' })
+			release({
+				ok: true,
+				config: { name: 'submitted draft' },
+				sources: [],
+				saved: true as const,
+				desiredRevision: 1,
+				appliedRevision: 1,
+				report: {
+					catalogRevision: 1,
+					runtimeStateRevision: 1,
+					reconciliation: [],
+					core: { status: 'unchanged' as const },
+				},
+				application: 'applied',
+			})
 			await pending
 		})
 		await act(async () => expect(await closing).toMatchObject({ status: 'rejected' }))
@@ -307,6 +355,16 @@ describe('business configuration save in native documents', () => {
 		const patch = vi.fn(async (_owner: PluginNodeAddress, config: Record<string, unknown>) => ({
 			ok: true as const,
 			config,
+			sources: [],
+			saved: true as const,
+			desiredRevision: 1,
+			appliedRevision: 1,
+			report: {
+				catalogRevision: 1,
+				runtimeStateRevision: 1,
+				reconciliation: [],
+				core: { status: 'unchanged' as const },
+			},
 			application: 'applied' as const,
 		}))
 		const { session, container, id: first, input } = await fixture(patch)

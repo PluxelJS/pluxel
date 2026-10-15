@@ -5,7 +5,7 @@ import {
 	parseWorkbenchDeclarationIdentity,
 	type WorkbenchDeclarationIdentity,
 } from '@pluxel/core/federation'
-import { StrictMode, act, useState, type ReactNode } from 'react'
+import { StrictMode, act, useState, type ReactNode, type ComponentType } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { type RpcStub, type RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
@@ -22,7 +22,7 @@ import {
 } from '@pluxel/workbench/react'
 import { createWorkbenchBridge } from '@pluxel/workbench/internal/react'
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
+vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
 interface QueryApi extends RpcTarget {
 	snapshot(): Readonly<{ value: number }>
@@ -62,13 +62,13 @@ describe('Workbench renderer query scope', () => {
 			borrowed.add(api)
 			return { mutationFn: () => api.snapshot() }
 		})
-		function Child() {
+		function Child(): ReactNode {
 			borrowed.add(scope.useWorkbench().api)
 			query.useQuery()
 			mutation.useMutation()
 			return null
 		}
-		function Page() {
+		function Page(): ReactNode {
 			const [visible, setVisible] = useState(true)
 			return (
 				<StrictMode>
@@ -98,6 +98,7 @@ describe('Workbench renderer query scope', () => {
 	})
 
 	it('rejects flat legacy options when their factories bind to an owner', async () => {
+		const invalidates: never[] = []
 		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const legacyQuery = scope.query((() => ({
@@ -105,7 +106,7 @@ describe('Workbench renderer query scope', () => {
 			queryFn: () => ({ value: 1 }),
 			watch: () => ({ [Symbol.dispose]() {} }),
 		})) as never)
-		function LegacyQueryPage() {
+		function LegacyQueryPage(): ReactNode {
 			legacyQuery.useQuery()
 			return null
 		}
@@ -117,10 +118,10 @@ describe('Workbench renderer query scope', () => {
 
 		const mutationScope = createWorkbenchRenderer(QueryWorkbench.query)
 		const legacyMutation = mutationScope.mutation((() => ({
-			mutationFn: () => undefined,
-			invalidates: [],
+			mutationFn: (): undefined => undefined,
+			invalidates,
 		})) as never)
-		function LegacyMutationPage() {
+		function LegacyMutationPage(): ReactNode {
 			legacyMutation.useMutation()
 			return null
 		}
@@ -141,7 +142,10 @@ describe('Workbench renderer query scope', () => {
 			})),
 		).not.toThrow()
 		expect(() =>
-			scope.mutation(() => ({ mutationFn: () => undefined, workbench: { invalidates: [] } })),
+			scope.mutation(() => ({
+				mutationFn: (): undefined => undefined,
+				workbench: { invalidates },
+			})),
 		).not.toThrow()
 	})
 
@@ -152,7 +156,7 @@ describe('Workbench renderer query scope', () => {
 			queryFn: () => api.snapshot(),
 		}))
 		const observed: WorkbenchQueryResult<Readonly<{ value: number }>>[] = []
-		function Page() {
+		function Page(): ReactNode {
 			const value = query.useQuery()
 			observed.push(value)
 			return <p>{value.data?.value ?? 'pending'}</p>
@@ -211,11 +215,11 @@ describe('Workbench renderer query scope', () => {
 				},
 			},
 		}))
-		function Child() {
+		function Child(): ReactNode {
 			const value = query.useQuery()
 			return <span>{value.data?.value ?? 'pending'}</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			return (
 				<StrictMode>
 					<Child />
@@ -252,7 +256,7 @@ describe('Workbench renderer query scope', () => {
 			queryFn: () => read.promise,
 			workbench: { subscribe: () => watch.promise },
 		}))
-		function Page() {
+		function Page(): ReactNode {
 			query.useQuery()
 			return null
 		}
@@ -270,7 +274,7 @@ describe('Workbench renderer query scope', () => {
 			queryKey: ['late-read'],
 			queryFn: () => read.promise,
 		}))
-		function LatePage() {
+		function LatePage(): ReactNode {
 			lateQuery.useQuery()
 			return null
 		}
@@ -299,7 +303,7 @@ describe('Workbench renderer query scope', () => {
 				subscribe: () => ({ [Symbol.dispose]: subscriptionDispose }),
 			},
 		}))
-		function Page() {
+		function Page(): ReactNode {
 			query.useQuery()
 			return null
 		}
@@ -332,11 +336,11 @@ describe('Workbench renderer query scope', () => {
 				subscribe: () => ({ [Symbol.dispose]: subscriptionDispose }),
 			},
 		}))
-		function Child({ input }: Readonly<{ input: number }>) {
+		function Child({ input }: Readonly<{ input: number }>): ReactNode {
 			query.useQuery(input)
 			return null
 		}
-		function Page() {
+		function Page(): ReactNode {
 			return Array.from({ length: 129 }, (_, input) => <Child key={input} input={input} />)
 		}
 		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
@@ -357,10 +361,10 @@ describe('Workbench renderer query scope', () => {
 			queryFn: () => queryFn(input),
 		}))
 		let replaceFirst!: () => void
-		function Child({ slot, input }: Readonly<{ slot: number; input: number }>) {
+		function Child({ slot, input }: Readonly<{ slot: number; input: number }>): ReactNode {
 			return <span data-slot={slot}>{query.useQuery(input).data?.value ?? 'pending'},</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			const [first, setFirst] = useState(0)
 			replaceFirst = () => setFirst(64)
 			return Array.from({ length: 64 }, (_, slot) => (
@@ -386,10 +390,10 @@ describe('Workbench renderer query scope', () => {
 			queryKey: ['sum', input],
 			queryFn: () => queryFn(input),
 		}))
-		function Child({ input }: Readonly<{ input: Readonly<{ a: number; b: number }> }>) {
+		function Child({ input }: Readonly<{ input: Readonly<{ a: number; b: number }> }>): ReactNode {
 			return <span>{query.useQuery(input).data?.value ?? 'pending'}</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			return (
 				<>
 					<Child input={{ a: 1, b: 2 }} />
@@ -413,26 +417,26 @@ describe('Workbench renderer query scope', () => {
 		const hiddenIndex = ['unsafe']
 		Object.defineProperty(hiddenIndex, '0', { value: 'unsafe', enumerable: false })
 		const invalidMutation = scope.mutation(() => ({
-			mutationFn: () => undefined,
+			mutationFn: (): undefined => undefined,
 			workbench: { invalidates: [query.target(invalid as never)] },
 		}))
 		const oversizedMutation = scope.mutation(() => ({
-			mutationFn: () => undefined,
+			mutationFn: (): undefined => undefined,
 			workbench: { invalidates: [query.target(oversized as never)] },
 		}))
 		const hiddenFieldMutation = scope.mutation(() => ({
-			mutationFn: () => undefined,
+			mutationFn: (): undefined => undefined,
 			workbench: { invalidates: [query.target(hiddenField)] },
 		}))
 		const hiddenIndexMutation = scope.mutation(() => ({
-			mutationFn: () => undefined,
+			mutationFn: (): undefined => undefined,
 			workbench: { invalidates: [query.target(hiddenIndex as never)] },
 		}))
 		let invalidate!: WorkbenchMutationState<void, void>
 		let invalidateOversized!: WorkbenchMutationState<void, void>
 		let invalidateHiddenField!: WorkbenchMutationState<void, void>
 		let invalidateHiddenIndex!: WorkbenchMutationState<void, void>
-		function Invalidations() {
+		function Invalidations(): ReactNode {
 			invalidate = invalidMutation.useMutation()
 			invalidateOversized = oversizedMutation.useMutation()
 			invalidateHiddenField = hiddenFieldMutation.useMutation()
@@ -470,7 +474,7 @@ describe('Workbench renderer query scope', () => {
 			queryFn,
 			workbench: { subscribe: ({ invalidate }) => watch(invalidate) },
 		}))
-		function Page() {
+		function Page(): ReactNode {
 			return <p>{query.useQuery().data?.value ?? 'pending'}</p>
 		}
 		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
@@ -490,7 +494,7 @@ describe('Workbench renderer query scope', () => {
 			queryKey: ['replace-api'],
 			queryFn: () => api.snapshot(),
 		}))
-		function Page() {
+		function Page(): ReactNode {
 			return <p>{query.useQuery().data?.value ?? 'pending'}</p>
 		}
 		const opened = await renderOpened(identity, scope.render(Page), firstApi)
@@ -516,7 +520,7 @@ describe('Workbench renderer query scope', () => {
 		}))
 		let mutation: WorkbenchMutationState<number, Readonly<{ value: number }>> | undefined
 		let setLocal!: (value: number) => void
-		function Page() {
+		function Page(): ReactNode {
 			const [local, updateLocal] = useState(0)
 			setLocal = updateLocal
 			mutation = save.useMutation()
@@ -571,10 +575,10 @@ describe('Workbench renderer query scope', () => {
 			workbench: { subscribe },
 		}))
 		let setVisible!: (visible: boolean) => void
-		function Child() {
+		function Child(): ReactNode {
 			return <span>{query.useQuery().data?.value ?? 'pending'}</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			const [visible, updateVisible] = useState(true)
 			setVisible = updateVisible
 			return visible ? <Child /> : <span>hidden</span>
@@ -618,10 +622,10 @@ describe('Workbench renderer query scope', () => {
 			workbench: { subscribe },
 		}))
 		let setVisible!: (visible: boolean) => void
-		function Child() {
+		function Child(): ReactNode {
 			return <span>{query.useQuery().data?.value ?? 'pending'}</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			const [visible, updateVisible] = useState(true)
 			setVisible = updateVisible
 			return visible ? <Child /> : <span>hidden</span>
@@ -670,10 +674,10 @@ describe('Workbench renderer query scope', () => {
 			workbench: { subscribe },
 		}))
 		let setVisible!: (visible: boolean) => void
-		function Child() {
+		function Child(): ReactNode {
 			return <span>{query.useQuery().data?.value ?? 'pending'}</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			const [visible, updateVisible] = useState(true)
 			setVisible = updateVisible
 			return visible ? <Child /> : <span>hidden</span>
@@ -712,7 +716,7 @@ describe('Workbench renderer query scope', () => {
 			workbench: { subscribe },
 		}))
 		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			observed = query.useQuery()
 			return <p>{observed.status}</p>
 		}
@@ -747,11 +751,11 @@ describe('Workbench renderer query scope', () => {
 		}))
 		let observed!: WorkbenchQueryResult<Readonly<{ value: number }>>
 		let setVisible!: (visible: boolean) => void
-		function Child() {
+		function Child(): ReactNode {
 			observed = query.useQuery()
 			return <span>{`${observed.status}:${observed.data?.value ?? 'none'}`}</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			const [visible, updateVisible] = useState(true)
 			setVisible = updateVisible
 			return visible ? <Child /> : <span>hidden</span>
@@ -781,7 +785,7 @@ describe('Workbench renderer query scope', () => {
 				staleTime: 200,
 			}))
 			let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-			function Page() {
+			function Page(): ReactNode {
 				observed = query.useQuery()
 				return <p>{`${observed.status}:${observed.isStale}`}</p>
 			}
@@ -811,12 +815,12 @@ describe('Workbench renderer query scope', () => {
 		let savedMutation!: WorkbenchMutationState<number, Readonly<{ value: number }>>
 		let setVisible!: (visible: boolean) => void
 		let setInput!: (input: number) => void
-		function Child({ input }: Readonly<{ input: number }>) {
+		function Child({ input }: Readonly<{ input: number }>): ReactNode {
 			savedQuery = query.useQuery(input)
 			savedMutation = mutation.useMutation()
 			return <span>{savedQuery.data?.value ?? 'pending'}</span>
 		}
-		function Page() {
+		function Page(): ReactNode {
 			const [visible, updateVisible] = useState(true)
 			const [input, updateInput] = useState(1)
 			setVisible = updateVisible
@@ -860,7 +864,7 @@ describe('Workbench renderer query scope', () => {
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const query = scope.query(() => ({ queryKey: ['background-failure'], queryFn }))
 		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			observed = query.useQuery()
 			return <p>{`${observed.status}:${observed.data?.value ?? 'none'}`}</p>
 		}
@@ -879,7 +883,7 @@ describe('Workbench renderer query scope', () => {
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const query = scope.query(() => ({ queryKey: ['concurrent-refetch'], queryFn }))
 		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			observed = query.useQuery()
 			return <p>{observed.data?.value ?? 'pending'}</p>
 		}
@@ -925,7 +929,7 @@ describe('Workbench renderer query scope', () => {
 			workbench: { subscribe },
 		}))
 		let observed!: WorkbenchQueryResult<Readonly<{ value: number }>>
-		function Page() {
+		function Page(): ReactNode {
 			observed = query.useQuery()
 			return <p>{observed.data?.value ?? 'pending'}</p>
 		}
@@ -959,7 +963,7 @@ describe('Workbench renderer query scope', () => {
 	it('turns a throwing retry predicate into query error state and cancels retries on close', async () => {
 		const retryFailure = new Error('retry predicate failed')
 		const queryFn = vi.fn(() => Promise.reject(new Error('read failed')))
-		const retry = vi.fn(() => {
+		const retry = vi.fn((_context: { failureCount: number; error: unknown }) => {
 			throw retryFailure
 		})
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
@@ -969,7 +973,7 @@ describe('Workbench renderer query scope', () => {
 			retry: (_failureCount, error) => retry({ failureCount: 1, error }),
 		}))
 		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			observed = query.useQuery()
 			return <p>{observed.status}</p>
 		}
@@ -986,7 +990,7 @@ describe('Workbench renderer query scope', () => {
 			queryFn: retryingFn,
 			retry: 5,
 		}))
-		function RetryingPage() {
+		function RetryingPage(): ReactNode {
 			retryingQuery.useQuery()
 			return null
 		}
@@ -1001,7 +1005,7 @@ describe('Workbench renderer query scope', () => {
 
 	it('uses TanStack retryDelay semantics without retrying Workbench boundary failures', async () => {
 		const readFailure = new Error('transient read failure')
-		const retryDelay = vi.fn(() => 0)
+		const retryDelay = vi.fn((_failureCount: number, _error: unknown) => 0)
 		const retriedQueryFn = vi
 			.fn()
 			.mockRejectedValueOnce(readFailure)
@@ -1023,7 +1027,7 @@ describe('Workbench renderer query scope', () => {
 			retryDelay: boundaryRetryDelay,
 		}))
 		let boundaryResult: WorkbenchQueryResult<unknown> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			const retriedResult = retried.useQuery()
 			boundaryResult = boundary.useQuery()
 			return <p>{`${retriedResult.data?.value ?? 'pending'}:${boundaryResult.status}`}</p>
@@ -1057,7 +1061,7 @@ describe('Workbench renderer query scope', () => {
 			queryFn: secondRead,
 			workbench: { subscribe: () => ({ [Symbol.dispose]: secondDispose }) },
 		}))
-		function Page() {
+		function Page(): ReactNode {
 			first.useQuery()
 			second.useQuery()
 			return null
@@ -1093,7 +1097,7 @@ describe('Workbench renderer mutation resource', () => {
 			workbench: { invalidates: invalidations },
 		}))
 		let mutation: WorkbenchMutationState<number, Readonly<{ value: number }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			const snapshot = query.useQuery()
 			mutation = save.useMutation()
 			return <p>{`${snapshot.data?.value ?? 'pending'}:${mutation.status}`}</p>
@@ -1137,7 +1141,7 @@ describe('Workbench renderer mutation resource', () => {
 		const mutationFn = vi.fn(() => ({ value: 1 }))
 		const malformed = scope.mutation(() => ({
 			mutationFn,
-			workbench: { invalidates: (() => null) as never },
+			workbench: { invalidates: ((): null => null) as never },
 		}))
 		const oversized = scope.mutation(() => ({
 			mutationFn,
@@ -1145,7 +1149,7 @@ describe('Workbench renderer mutation resource', () => {
 		}))
 		let malformedState: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
 		let oversizedState: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			malformedState = malformed.useMutation()
 			oversizedState = oversized.useMutation()
 			return null
@@ -1188,14 +1192,14 @@ describe('Workbench renderer mutation resource', () => {
 			},
 		}))
 		const duplicate = scope.mutation(() => ({
-			mutationFn: () => undefined,
+			mutationFn: (): undefined => undefined,
 			workbench: {
 				invalidates: [query, query, query],
 			},
 		}))
 		let sparseState: WorkbenchMutationState<void, void> | undefined
 		let duplicateState: WorkbenchMutationState<void, void> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			const snapshot = query.useQuery()
 			sparseState = sparse.useMutation()
 			duplicateState = duplicate.useMutation()
@@ -1232,7 +1236,7 @@ describe('Workbench renderer mutation resource', () => {
 			},
 		}))
 		let state: WorkbenchMutationState<void, void> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			state = mutation.useMutation()
 			return null
 		}
@@ -1266,12 +1270,12 @@ describe('Workbench renderer mutation resource', () => {
 			workbench: { invalidates: (input: Key) => [query.target(input)] },
 		}))
 		const invalidateAll = scope.mutation(() => ({
-			mutationFn: () => undefined,
+			mutationFn: (): undefined => undefined,
 			workbench: { invalidates: [query.all()] },
 		}))
 		let exactState: WorkbenchMutationState<Key, void> | undefined
 		let allState: WorkbenchMutationState<void, void> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			const first = query.useQuery('first')
 			const second = query.useQuery('second')
 			const separate = unrelated.useQuery('first')
@@ -1318,7 +1322,7 @@ describe('Workbench renderer mutation resource', () => {
 		}))
 		let foreign: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
 		let invalidKey: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			foreign = foreignMutation.useMutation()
 			invalidKey = invalidKeyMutation.useMutation()
 			return null
@@ -1365,7 +1369,7 @@ describe('Workbench renderer mutation resource', () => {
 		}))
 		let rejectState: WorkbenchMutationState<void, never> | undefined
 		let invalidState: WorkbenchMutationState<void, Readonly<{ missing: undefined }>> | undefined
-		function Page() {
+		function Page(): ReactNode {
 			const snapshot = query.useQuery()
 			rejectState = rejected.useMutation()
 			invalidState = invalidResult.useMutation()
@@ -1404,7 +1408,7 @@ describe('Workbench renderer mutation resource', () => {
 				return result.promise
 			},
 		}))
-		function Page() {
+		function Page(): ReactNode {
 			mutation = save.useMutation()
 			return <p>{mutation.status}</p>
 		}
@@ -1462,7 +1466,7 @@ function disposableDeferred<Value>() {
 
 async function renderOpened(
 	declaration: WorkbenchDeclarationIdentity,
-	Renderer: () => ReactNode,
+	Renderer: ComponentType<Readonly<Record<string, never>>>,
 	api: object,
 ) {
 	const federatedViewRef = Object.freeze({

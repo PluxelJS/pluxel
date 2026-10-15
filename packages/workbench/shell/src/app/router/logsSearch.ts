@@ -27,5 +27,5 @@ export function validateLogsSearch(search: Record<string, unknown>): LogsSearch 
 }
 export function buildLogsHref(search: LogsSearch): string {
 	const params = new URLSearchParams(validateLogsSearch(search))
-	return `/logs${params.size ? `?${params}` : ''}`
+	return `/logs${params.size > 0 ? `?${params}` : ''}`
 }

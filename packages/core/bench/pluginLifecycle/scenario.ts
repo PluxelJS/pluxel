@@ -37,6 +37,7 @@ export type PluginFixture = Readonly<{
 const passthroughSchema = {
 	'~standard': {
 		version: 1,
+		vendor: 'pluxel-benchmark',
 		validate: (input: unknown) => ({ value: input }),
 	},
 } as const

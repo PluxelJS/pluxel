@@ -4,6 +4,8 @@ import { stringifyUnknown } from '../../utils/unknown'
 
 const ANSI_ESC = '\u001b'
 const ANSI_CSI_RE = new RegExp(`${ANSI_ESC}\\[[0-9;]*[A-Za-z]`, 'g')
+// OSC sequences terminate with BEL or ESC followed by a backslash; matching controls is intentional.
+// oxlint-disable-next-line no-control-regex
 const ANSI_OSC_RE = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g
 const ANSI_SGR_RE = new RegExp(`${ANSI_ESC}\\[([0-9;]*)m`, 'g')
 

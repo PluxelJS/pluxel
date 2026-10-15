@@ -8,10 +8,10 @@
 		"predev": "pnpm generate:playground-types",
 		"dev": "cross-env DEBUG= DOCS_TWOSLASH_MODE=development fumapress dev",
 		"prebuild": "pnpm generate:playground-types",
-		"build": "cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build",
+		"build": "vp run compile",
 		"start": "fumapress start",
-		"typecheck": "tsc --noEmit",
-		"lint": "oxlint --tsconfig tsconfig.json --type-aware -A typescript/no-implied-eval src press.config.tsx source.config.ts vite.config.ts scripts"
+		"typecheck": "vp run check-types",
+		"lint": "vp lint --tsconfig tsconfig.json --type-aware -A typescript/no-implied-eval src press.config.tsx source.config.ts vite.config.ts scripts"
 	},
 	"dependencies": {
 		"@base-ui/react": "catalog:frontend",
@@ -68,13 +68,12 @@
 		"dts-bundle-generator": "catalog:dev",
 		"elysia": "catalog:dev",
 		"fumadocs-mdx": "catalog:docs",
-		"oxlint": "catalog:dev",
 		"postcss": "catalog:dev",
 		"tailwindcss": "catalog:frontend",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
 		"typescript-legacy": "catalog:dev",
 		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test",
 		"wretch": "catalog:dev"
 	}

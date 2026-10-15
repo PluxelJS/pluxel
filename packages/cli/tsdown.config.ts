@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 
 export default defineConfig({
 	entry: {
@@ -35,7 +35,13 @@ export default defineConfig({
 		DEV: 'false',
 		NODE_ENV: 'production',
 	},
-	copy: ['templates'],
+	copy: [
+		{
+			from: ['templates/**/*', 'templates/**/.gitignore.tpl', '!templates/**/node_modules/**'],
+			to: 'dist/templates',
+			flatten: false,
+		},
+	],
 	plugins: [],
 	format: ['esm'],
 	clean: true,

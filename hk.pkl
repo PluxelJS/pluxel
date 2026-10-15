@@ -1,0 +1,13 @@
+amends "package://github.com/jdx/hk/releases/download/v2.6.0/hk@2.6.0#/Config.pkl"
+
+steps {
+  ["check"] {
+    glob = List("**/*.{js,jsx,ts,tsx,cjs,mjs,mts,cts,md,mdx,json,jsonc,yaml,yml,toml,css,scss,html}")
+    check = new Command {
+      argv = List("vp", "check", "--no-error-on-unmatched-pattern", "{{files}}")
+    }
+    fix = new Command {
+      argv = List("vp", "check", "--fix", "--no-error-on-unmatched-pattern", "{{files}}")
+    }
+  }
+}

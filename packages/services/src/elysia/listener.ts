@@ -13,9 +13,9 @@ import { NodeElysiaApplicationCarrier } from './node'
 export async function listenElysia(
 	host: PluginHost,
 	options: Readonly<{
-		/** Overrides PLUXEL_HOST_BIND / Portless HOST; defaults to 0.0.0.0. */
+		/** Overrides PLUXEL_HOST_BIND / launcher HOST; defaults to 0.0.0.0. */
 		hostname?: string
-		/** Overrides PLUXEL_HOST_PORT / Portless PORT; defaults to 3000. Zero selects a free port. */
+		/** Overrides PLUXEL_HOST_PORT / launcher PORT; defaults to 3000. Zero selects a free port. */
 		port?: number
 		/** Optional public directory, resolved against cwd at listener creation and served after a non-reserved 404. */
 		publicDir?: string
@@ -41,7 +41,13 @@ export async function listenElysia(
 		metadata() {
 			if (!server?.url) throw new Error('[host] HTTP listener is not ready')
 			const url = new URL(server.url)
-			return { url, hostname: url.hostname, port: Number(url.port || 80), development: false }
+			return {
+				url,
+				publicOrigin: environment.publicOrigin,
+				hostname: url.hostname,
+				port: Number(url.port || 80),
+				development: false,
+			}
 		},
 	})
 	const detach = http.attachApplicationCarrier(carrier)

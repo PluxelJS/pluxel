@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 import { pluxel } from '@pluxel/rolldown'
 
 export default defineConfig({

@@ -146,7 +146,7 @@ try {
 				await expect(page).toHaveURL(documentUrl)
 			}
 			const status = page.getByRole('tabpanel', { name: '渲染状态', exact: true })
-			await expect(status).toContainText(before.snapshot.rendererProvider)
+			await expect(status).toContainText(before.snapshot.engines.join(' · '))
 			await expect(status).toContainText(before.snapshot.storageProvider)
 			const recent = page.getByRole('tabpanel', { name: '最近产物', exact: true })
 			for (const artifact of before.snapshot.artifacts)

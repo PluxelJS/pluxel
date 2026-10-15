@@ -3,7 +3,7 @@ title: CLI 与工具链
 description: 了解脚手架、插件构建、应用执行、HMR、源码联调和发行检查分别由谁负责。
 ---
 
-按任务选择下面的命令。生成项目已固定 `@pluxel/cli`，在项目根目录用 `pnpm exec pluxel` 调用；还没有项目时，从[快速开始](../getting-started/index.md)创建。已有项目补装 CLI 的方法见安装分层。
+按任务选择下面的命令。生成项目已固定 `@pluxel/cli`，在项目根目录用 `vp exec pluxel` 调用；还没有项目时，从[快速开始](../getting-started/index.md)创建。已有项目补装 CLI 的方法见安装分层。
 
 Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；先发现并固定项目和实例，再执行 TypeScript 操作。
 
@@ -13,7 +13,7 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 
 | 目标                                                     | 命令                                                          |
 | -------------------------------------------------------- | ------------------------------------------------------------- |
-| 生成固定 example workspace                               | `pnpm create @pluxel [directory]`                             |
+| 生成固定 example workspace                               | `vp create @pluxel [directory]`                               |
 | 读取当前来源文档                                         | `pluxel docs [path]`                                          |
 | 在 workspace 生成 Plugin package                         | `pluxel new`                                                  |
 | 构建当前 Plugin package                                  | `pluxel build`                                                |
@@ -23,7 +23,8 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 发布 npm package 并通知 market                           | `pluxel publish`                                              |
 | 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
 | 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
-| 管理与接入 workspace                                     | `pluxel workspace setup/doctor`                               |
+| 管理与接入 workspace                                     | `pluxel workspace setup/doctor/sync`                          |
+| 维护依赖声明与 catalog                                   | `pluxel pncat add/remove/migrate/clean`                       |
 
 确切参数通过 `pluxel <command> --help` 查看。CLI 状态目录默认是项目根目录下的 `.pluxel`；设置 `PLUXEL_STATE_DIR` 可指定路径。变量未设置时才使用默认值，显式设置为空字符串或空白会报错，需修改该环境变量后重试。
 
@@ -34,10 +35,10 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 
 ```sh
 # 创建完整 example workspace
-pnpm create @pluxel my-workspace
+vp create @pluxel my-workspace
 
 # 在已有 workspace 创建可发布 Plugin package
-pnpm exec pluxel new --name @acme/orders plugins
+vp exec pluxel new --name @acme/orders plugins
 ```
 
 项目内固定 CLI 版本：
@@ -55,7 +56,7 @@ npx nypm add -g @pluxel/cli
 `@pluxel/cli` 是统一 executable，但不是所有能力的安装闭包。项目 `package.json` 直接声明
 `@pluxel/cli` 时，全局 `pluxel` 会优先使用这个项目本地版本；声明了但尚未安装时会失败并提示先安装，
 不会悄悄回退到全局版本。Git checkout 的 CLI 始终保持自身来源，不委托另一份项目 CLI；`source install` 统一接入源码包、文档和 skill。发行版 CLI 的 `source list/register/unregister` 仍使用调用入口，源码 install/build/doctor 需从 Git CLI 执行。CI 和 package scripts 应继续使用本地
-`pluxel` 或 `pnpm exec pluxel`。CLI 只在最近的 Git/workspace/lockfile 项目边界内寻找本地安装；嵌套在
+`pluxel` 或 `vp exec pluxel`。CLI 只在最近的 Git/workspace/lockfile 项目边界内寻找本地安装；嵌套在
 另一个 checkout 里的独立项目不会借用父项目的 CLI。
 
 按命令安装可选能力：
@@ -63,7 +64,7 @@ npx nypm add -g @pluxel/cli
 Plugin/应用构建与源码转换：
 
 ```sh package-install
-npx nypm add -D @pluxel/rolldown tsdown oxlint
+npx nypm add -D @pluxel/rolldown vite-plus
 ```
 
 Native 应用执行：

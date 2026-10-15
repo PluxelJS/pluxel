@@ -60,7 +60,7 @@ const host: WorkbenchBrowserHost = Object.freeze({
 	colorScheme: 'light',
 	notify: vi.fn(),
 	confirm: vi.fn(async () => true),
-	runningPluginKeys: new Set(),
+	runningPluginKeys: new Set<string>(),
 	runningPluginsReady: true,
 })
 

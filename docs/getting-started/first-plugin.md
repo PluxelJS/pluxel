@@ -10,10 +10,10 @@ description: 从 CLI 模板完成普通方法、配置、日志和资源清理�
 在 `my-app` 所在的父目录执行以下命令。这篇练习先用独立包验证插件，接入应用宿主的步骤见文末。
 
 ```sh
-pnpm dlx @pluxel/cli@1 new --template plugin --name @acme/pluxel-plugin-status --root .
+vp dlx @pluxel/cli@1 new --template plugin --name @acme/pluxel-plugin-status --root .
 cd status
-pnpm add -D @types/node@24 --save-catalog
-pnpm verify
+vp add -D @types/node@24 --save-catalog
+vp run verify
 ```
 
 生成命令默认安装依赖。本例额外安装 Node.js 类型，因为下面会使用计时器；`--save-catalog` 将版本加入模板已有的 catalog。
@@ -104,7 +104,7 @@ it('reads config and stops its sampler', async () => {
 运行完整检查：
 
 ```sh
-pnpm verify
+vp run verify
 ```
 
 ## 接下来

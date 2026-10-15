@@ -183,7 +183,7 @@ describe('workspace dependency policy', () => {
 			[
 				'--input-type=module',
 				'-e',
-				"import { defineConfig } from '@pluxel/cli/pncat'; console.log(defineConfig({ saveExact: false }).saveExact)",
+				"import { defineConfig } from '@pluxel/cli/pncat'; console.log(String(defineConfig({ saveExact: false }).saveExact))",
 			],
 			{ cwd: consumer, encoding: 'utf8' },
 		)

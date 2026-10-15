@@ -9,6 +9,8 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 还不清楚插件、Part 或 config schema 在哪里声明时，先用[源码查询](./inspection.md)定位；它不需要运行 Vite，也不读取当前 Host 状态。
 
+服务进程由 [Pitchfork](./workspace-toolchain.md#管理开发服务)管理；进程状态与 stdout/stderr 可通过其 CLI 检查。下面的应用操作仍通过 Pluxel 控制台执行，服务重启后重新发现实例。
+
 ## Coding agent 工作流程
 
 配置、Plugin 方法、Workbench RPC、生命周期和日志都从当前实例操作。一次任务遵循下面的顺序；CLI、脚本和恢复细节按后续章节查阅。
@@ -19,14 +21,14 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 4. 检查外层请求是否成功、run 的 `state`，再检查脚本返回的领域 `ok`、apply report 和配置 `application`。修改后重新读取目标状态及相关日志；CLI 退出成功不等于配置已应用或插件已启动。
 5. 保留 receipt 中的 root、instanceId 和 runId。工具超时或终端断开后，用这些字段查询 `result`；先确定已发生的操作，再决定下一次提交。已验证的行为需要回归保护时，另写隔离测试。
 
-本仓库的 `projects/plugin-host` 已开启控制台，并提供只读的 `dev/inspect.ts`。仓库根目录的 `pnpm pluxel` 脚本调用本地 CLI，保留当前目录作为相对路径基准。保持该项目原有 dev 命令运行后，从仓库根目录调用：
+本仓库的 `projects/plugin-host` 已开启控制台，并提供只读的 `dev/inspect.ts`。仓库根目录的 `vp run pluxel` 任务调用本地 CLI，保留当前目录作为相对路径基准。保持该项目原有 dev 命令运行后，从仓库根目录调用：
 
 ```sh
-pnpm pluxel dev instances --root projects/plugin-host
-pnpm pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <instanceId>
+vp run pluxel dev instances --root projects/plugin-host
+vp run pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <instanceId>
 ```
 
-安装了 `@pluxel/cli` 的用户项目仍使用 `pnpm exec pluxel`，替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
+安装了 `@pluxel/cli` 的用户项目仍使用 `vp exec pluxel`，替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
 
 ## 开启与发现
 
@@ -49,7 +51,7 @@ export default defineConfig({
 启动项目原有的 Vite dev 命令，然后运行：
 
 ```sh
-pnpm exec pluxel dev instances --root /absolute/project-root
+vp exec pluxel dev instances --root /absolute/project-root
 ```
 
 从返回结果确认 `root`、`pid` 和 `instanceId`。`application.state` 同时说明本次 Vite 进程的应用状态：`ready` 表示已有可运行 Host，`updating` 表示正在接纳候选，`unavailable` 表示尚无可运行 Host。`application.latestUpdate` 保留最近一次接纳的阶段、结果与安全诊断，首次源码求值失败时也可从 `instances` 查看；Vite 进程存在本身不代表应用可运行。修正源文件后同一进程可重新接纳。首次 Host 创建、服务准备或应用准备失败则中止 Vite 启动、释放已取得的资源并返回失败退出码，不输出就绪地址；修复持久数据或服务配置后重新启动。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
@@ -97,8 +99,8 @@ export const add = defineDevConsole(async (dev) => {
 ```
 
 ```sh
-pnpm exec pluxel dev run dev/inspect.ts --root /absolute/project-root --instance INSTANCE_ID
-pnpm exec pluxel dev run dev/inspect.ts --export add --input '"Verify current data"' --root /absolute/project-root --instance INSTANCE_ID
+vp exec pluxel dev run dev/inspect.ts --root /absolute/project-root --instance INSTANCE_ID
+vp exec pluxel dev run dev/inspect.ts --export add --input '"Verify current data"' --root /absolute/project-root --instance INSTANCE_ID
 ```
 
 默认调用 default export；`--export` 选择具名函数。`--input` 是 JSON，较大输入可以用互斥的 `--input-file`；省略时 `dev.input` 为 `undefined`。`dev` 同时提供本次执行的 `id` 和 `signal`。跨进程的 input 类型始终是 unknown，需要脚本校验。
@@ -235,9 +237,9 @@ export const restartWithLogs = defineDevConsole(async (dev) => {
 命令执行结果在 stdout 输出单一 JSON envelope。帮助输出和参数解析失败遵循普通 CLI 输出规则，agent 还需检查退出码与 stderr。同步 run 接纳后，stderr 会先输出一行包含 root/instanceId/runId 的 receipt，方便 agent 工具超时后恢复查询。run/result/cancel 返回的 snapshot 同样带 root，便于 agent 校验目标。领域返回值在成功运行 snapshot 的 `value` 中。长操作可以先 detach：
 
 ```sh
-pnpm exec pluxel dev run dev/seed.ts --detach --root /absolute/project-root --instance INSTANCE_ID
-pnpm exec pluxel dev result RUN_ID --root /absolute/project-root --instance INSTANCE_ID
-pnpm exec pluxel dev cancel RUN_ID --root /absolute/project-root --instance INSTANCE_ID
+vp exec pluxel dev run dev/seed.ts --detach --root /absolute/project-root --instance INSTANCE_ID
+vp exec pluxel dev result RUN_ID --root /absolute/project-root --instance INSTANCE_ID
+vp exec pluxel dev cancel RUN_ID --root /absolute/project-root --instance INSTANCE_ID
 ```
 
 客户端错误保留稳定 `error.code` 和面向人的 `message`，并尽量提供 `error.context.root`、`error.context.instanceId` 和下一步 `error.hint`。root 仅在成功解析目标项目后出现，不会为未知项目猜一个路径。无法确定执行结果时还保留 runId；agent 应据此恢复查询，不能直接重放写操作。多实例错误的 `error.candidates` 只含公开候选信息，选择后用同一 root 与明确 instanceId 重新调用。

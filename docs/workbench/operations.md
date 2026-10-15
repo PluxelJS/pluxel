@@ -131,7 +131,7 @@ description: 查看依赖、定位启动和更新失败，以及部署 Workbench
 - `ref:关键词`：只匹配插件引用；
 - `exec:关键词`：只匹配制品、更新方式和最近结果，例如 `hmr`、`next-start`、`bundle`、`restored-previous` 或“失败”。
 
-开发自定义客户端时，管理入口和快照契约见 [Management](../host/management.md)，更新订阅和批次字段见[更新状态](../../engineering/HMR.md#更新报告批次与节点事实)。
+开发自定义客户端时，管理入口和快照契约见 [Management](../host/management.md)，更新订阅和批次字段的实现约束见[工程文档中的更新状态](https://github.com/PluxelJS/pluxel/blob/main/engineering/HMR.md#更新报告批次与节点事实)。
 
 ## 生命周期和故障
 

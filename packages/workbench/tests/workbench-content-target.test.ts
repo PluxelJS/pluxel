@@ -128,7 +128,9 @@ describe('WorkbenchContentTarget', () => {
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
 		attachWorkbenchContentTarget(root, { load })
 		const updates: unknown[] = []
-		const observer = rpcObserver((outcome) => updates.push(outcome))
+		const observer = rpcObserver((outcome) => {
+			updates.push(outcome)
+		})
 
 		root.dataChanged()
 		const initial = await root.subscribeDto(observer.callback)
@@ -189,7 +191,8 @@ describe('WorkbenchContentTarget', () => {
 				v.transform((value) => Number(value)),
 			),
 		})
-		const handler = vi.fn(({ value }: { value: number }) => {
+		const handler = vi.fn((input: unknown) => {
+			const { value } = v.parse(v.object({ value: v.number() }), input)
 			state = value
 			return { ok: true as const, message: 'updated' }
 		})

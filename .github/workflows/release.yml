@@ -98,23 +98,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-files-v3-
 
+      - name: Install dependencies
+        if: steps.release-commit.outputs.current == 'true'
+        run: vp install --frozen-lockfile
+
       - name: Restore verified build cache
         if: steps.release-commit.outputs.current == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .turbo/cache
-          key: ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-release
+          path: node_modules/.vite/task-cache
+          key: ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-release
           restore-keys: |
-            ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-
-            ${{ runner.os }}-turbo-v4-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-
+            ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-
 
-      - name: Install dependencies
+      - name: Install Typst native toolchain
         if: steps.release-commit.outputs.current == 'true'
-        run: pnpm install --frozen-lockfile
+        run: rustup toolchain install 1.97.1 --profile minimal
+
+      - name: Restore Typst native build cache
+        if: steps.release-commit.outputs.current == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: plugins/render/typst/native/.build
+          key: ${{ runner.os }}-x64-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
 
       - name: Version or publish packages
         if: steps.release-commit.outputs.current == 'true'
-        run: pnpm tegami ci
+        run: vp run tegami ci
         env:
           GITHUB_TOKEN: ${{ github.token }}
           NPM_CONFIG_PROVENANCE: ${{ github.event.repository.private && 'false' || 'true' }}

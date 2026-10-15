@@ -33,9 +33,9 @@
 		}
 	},
 	"scripts": {
-		"build": "pluxel build",
-		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@pnpm/napi": "catalog:prod",
@@ -59,10 +59,10 @@
 		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"tsdown": "catalog:build",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

@@ -69,11 +69,25 @@ describe('create-pluxel', () => {
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
 		assert.equal(manifest.name, undefined)
 		assert.equal(manifest.private, true)
-		assert.equal(manifest.packageManager, 'pnpm@11.25.0')
-		assert.equal(
-			manifest.scripts['governance:check'],
-			'pluxel workspace doctor && node scripts/check-workspace-governance.mjs',
-		)
+		assert.equal(manifest.packageManager, 'pnpm@11.28.2')
+		assert.equal(manifest.devDependencies['vite-plus'], 'catalog:tooling')
+		for (const file of [
+			'mise.toml',
+			'hk.pkl',
+			'pitchfork.toml',
+			'vite.config.ts',
+			'scripts/vite-tasks.ts',
+		]) {
+			assert.equal(
+				await readFile(resolve(generated, file), 'utf8'),
+				await readFile(resolve(packageRoot, 'template', file), 'utf8'),
+				`${file} must reach the generated workspace unchanged`,
+			)
+		}
+		assert.match(result.stdout, /mise trust/)
+		assert.match(result.stdout, /mise run setup/)
+		assert.match(result.stdout, /mise run dev/)
+
 		const webManifest = JSON.parse(
 			await readFile(resolve(generated, 'host/web/package.json'), 'utf8'),
 		)
@@ -84,10 +98,6 @@ describe('create-pluxel', () => {
 			'react-dom': 'catalog:frontend',
 		})
 		assert.equal(manifest.devDependencies.pncat, undefined)
-		assert.equal(manifest.scripts['catalog:add'], 'pluxel pncat add')
-		assert.equal(manifest.scripts['catalog:clean'], 'pluxel pncat clean --yes')
-		assert.equal(manifest.scripts['catalog:migrate'], 'pluxel pncat migrate --yes --no-install')
-		assert.equal(manifest.scripts['catalog:sync'], 'pluxel workspace sync')
 		assert.match(
 			await readFile(resolve(generated, 'pncat.config.ts'), 'utf8'),
 			/from '@pluxel\/cli\/pncat'/,
@@ -109,6 +119,14 @@ describe('create-pluxel', () => {
 			},
 		)
 		assert.equal(hostManifest.devDependencies['@example/web'], 'workspace:*')
+		assert.match(
+			await readFile(resolve(generated, 'host/tsdown.config.ts'), 'utf8'),
+			/vite-plus\/pack/,
+		)
+		assert.match(
+			await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8'),
+			/pack: packConfig/,
+		)
 		assert.equal(hostManifest.dependencies['@pluxel/runtime'], undefined)
 		assert.equal(hostManifest.dependencies['@pluxel/host'], 'catalog:pluxel')
 		assert.equal(hostManifest.dependencies['@pluxel/services'], 'catalog:pluxel')
@@ -144,15 +162,24 @@ describe('create-pluxel', () => {
 		await assert.rejects(readFile(resolve(generated, 'host/vite.dynamic.config.ts')), {
 			code: 'ENOENT',
 		})
-		await assert.rejects(readFile(resolve(generated, 'host/web/vite.config.ts')), {
-			code: 'ENOENT',
-		})
+		const webTasks = await readFile(resolve(generated, 'host/web/vite.config.ts'), 'utf8')
+		assert.match(webTasks, /'check-types'/)
+		assert.doesNotMatch(webTasks, /vitePreset|server:/)
 
 		await assert.rejects(readFile(resolve(generated, 'docs/pluxel/index.md')), { code: 'ENOENT' })
 		assert.match(
 			await readFile(resolve(generated, 'README.md'), 'utf8'),
 			/https:\/\/github\.com\/PluxelJS\/pluxel\/blob\/main\/docs\/index\.md/,
 		)
+		for (const file of ['README.md', 'AGENTS.md']) {
+			const contents = await readFile(resolve(generated, file), 'utf8')
+			assert.match(contents, /development\/workspace-toolchain\.md/)
+			for (const [, page] of contents.matchAll(
+				/(?:docs\/pluxel\/|github\.com\/PluxelJS\/pluxel\/blob\/main\/docs\/)([\w/.-]+\.md)/g,
+			)) {
+				assert.ok(await readFile(resolve(packageRoot, '../../docs', page), 'utf8'), page)
+			}
+		}
 		await assert.rejects(readFile(resolve(generated, '.pnpmfile.cjs')), { code: 'ENOENT' })
 	})
 

@@ -34,37 +34,37 @@ const OFFICIAL_CAPABILITIES = {
 		command: 'build',
 		owner: '@pluxel/rolldown',
 		subpath: './internal/cli',
-		install: 'pnpm add -D @pluxel/rolldown',
+		install: 'vp add -D @pluxel/rolldown',
 	},
 	'rolldown-database': {
 		command: 'database',
 		owner: '@pluxel/rolldown',
 		subpath: './database',
-		install: 'pnpm add -D @pluxel/rolldown',
+		install: 'vp add -D @pluxel/rolldown',
 	},
 	'rolldown-distribution': {
 		command: 'distribution',
 		owner: '@pluxel/rolldown',
 		subpath: './distribution',
-		install: 'pnpm add -D @pluxel/rolldown',
+		install: 'vp add -D @pluxel/rolldown',
 	},
 	'rolldown-workspace-fs': {
 		command: 'workspace',
 		owner: '@pluxel/rolldown',
 		subpath: './workspace/fs',
-		install: 'pnpm add -D @pluxel/rolldown',
+		install: 'vp add -D @pluxel/rolldown',
 	},
 	'rolldown-workspace-info': {
 		command: 'workspace',
 		owner: '@pluxel/rolldown',
 		subpath: './workspace/info',
-		install: 'pnpm add -D @pluxel/rolldown',
+		install: 'vp add -D @pluxel/rolldown',
 	},
 	market: {
 		command: 'publish --webhook',
 		owner: '@pluxel/market',
 		subpath: '.',
-		install: 'pnpm add -D @pluxel/market',
+		install: 'vp add -D @pluxel/market',
 	},
 } satisfies Record<OfficialCapabilityId, OfficialCapabilityMetadata>
 

@@ -8,8 +8,8 @@ description: 定义受校验的操作，并按需发布到命令目录或载体�
 在插件包安装 `@pluxel/commands`：
 
 ```sh
-pnpm catalog:add -- @pluxel/commands
-pnpm install
+vp exec pluxel pncat add @pluxel/commands
+vp install
 ```
 
 ## 定义和调用

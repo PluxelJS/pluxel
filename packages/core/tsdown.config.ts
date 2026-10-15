@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 import Macros from 'unplugin-macros/rolldown'
 
 const transformOptions = {

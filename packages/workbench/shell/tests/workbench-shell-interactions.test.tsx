@@ -158,7 +158,7 @@ describe('native Shell interaction contracts', () => {
 			restored.workbench
 				.getLayout()
 				.borders?.find((border) => border.location === 'left')
-				?.children.map((node) => node.id),
+				?.children?.map((node) => node.id),
 		).toEqual(['navigation'])
 		expect(session.workbench.getActiveDocument()?.id).toBe(id)
 		await click(container.querySelector('[aria-label="左侧导航"]')!)
@@ -176,9 +176,8 @@ describe('native Shell interaction contracts', () => {
 		const { session, container } = await workspace()
 		await openDocument(session, '/plugins')
 		await act(async () => {
-			expect((await session.workbench.dispatch(Actions.deleteTab('navigation'))).status).toBe(
-				'rejected',
-			)
+			const result = await session.workbench.dispatch(Actions.deleteTab('navigation'))
+			expect(result.status).toBe('rejected')
 		})
 		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeInstanceOf(
 			TabNode,

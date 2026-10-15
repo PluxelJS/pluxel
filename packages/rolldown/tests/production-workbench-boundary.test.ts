@@ -92,7 +92,7 @@ export default defineHostApplication(() => ({
 		await put(
 			'build.mts',
 			`
-import { build } from ${JSON.stringify(import.meta.resolve('tsdown'))}
+import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}
 import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}
 await build({ cwd: ${JSON.stringify(root)}, entry: 'app.ts', minify: false, plugins: [pluxel({ delivery: 'modules', variant: 'workbench', lint: false })], config: false })
 `,

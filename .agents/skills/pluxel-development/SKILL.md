@@ -24,7 +24,7 @@ description: 开发、修改和排查 Pluxel 应用或插件时使用，优先�
 使用源码 overlay 时，先用 `pluxel source` 查看本项目选择的 checkout 与包；`pluxel source list` 查看可用登记。Git CLI 所属 checkout 是 Pluxel 来源；先确认 setup/doctor 通过，再读 `docs/pluxel/`。读取正文也可运行：
 
 ```sh
-pnpm exec pluxel docs development/index.md
+vp exec pluxel docs development/index.md
 ```
 
 **该命令输出文档正文及来源。** 优先读工作区 `docs/pluxel/`；入口缺失时 Git 用户执行上游 CLI 的 `source install`，npm 用户安装依赖后执行 `workspace setup`。不要手工复制正文或改链接；文档仍需与实际 exports、类型和调用方核对。
@@ -67,7 +67,7 @@ Core 自带 events/logger/effects，依赖、配置和 Part 属于插件基础�
 
 ## 静态检查与隔离回归
 
-先看所属包和根项目的 scripts。模板项目完成修改后运行 `pnpm verify`；其他项目执行实际声明的相关检查。静态类型、lint、构建与运行测试各自提供证据，不能互相代替；不得通过关闭 lowering 或绕过 Pluxel lint 规则让检查假通过。
+先看所属包的 scripts 与根 `vite.config.ts` 的原生 tasks。模板项目完成修改后运行 `vp run verify`；其他项目执行实际声明的相关检查。静态类型、lint、构建与运行测试各自提供证据，不能互相代替；不得通过关闭 lowering 或绕过 Pluxel lint 规则让检查假通过。
 
 修改插件运行行为时，运行相关回归；已有覆盖不足时增加最小有意义的测试。使用 `@pluxel/test/vitest` 与 `createTestHost()`，显式选择服务并用 `await using` 回收。直接 `new Plugin()` 或 mock Context 不能证明依赖注入、配置与生命周期正确。
 
@@ -80,8 +80,8 @@ Core 自带 events/logger/effects，依赖、配置和 Part 属于插件基础�
 修复正在运行的应用问题，或任务要求确认配置、调用、HMR 的实际效果时，主动使用控制台。先读 `development/dev-console.md`，检查现有 Vite 配置与进程，再发现实例：
 
 ```sh
-pnpm exec pluxel dev instances --root /absolute/vite-root
-pnpm exec pluxel dev run dev/check.ts --root /absolute/vite-root --instance INSTANCE_ID
+vp exec pluxel dev instances --root /absolute/vite-root
+vp exec pluxel dev run dev/check.ts --root /absolute/vite-root --instance INSTANCE_ID
 ```
 
 把示例 root 和 instance 换成发现的真实值；入口脚本位于所选 Vite root 内，CLI 脚本路径相对命令当前目录。使用 `defineDevConsole` 定义普通 TypeScript 导出函数，在函数内执行操作，返回有界 JSON 数据。

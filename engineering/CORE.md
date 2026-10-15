@@ -109,9 +109,9 @@ closure 与 dependent traversal 使用可复用 epoch marks 和 sparse work queu
 硬成本断言位于 `packages/core/tests/PluginDefinitions.cost-model.test.ts`、`PluginService.cost-model.test.ts` 与 internal DI tests；趋势探针使用：
 
 ```sh
-pnpm --filter @pluxel/core bench:caller-view
-pnpm --filter @pluxel/core bench:fork-cost
-pnpm --filter @pluxel/context bench
+vp run @pluxel/core#bench:caller-view
+vp run @pluxel/core#bench:fork-cost
+vp run @pluxel/context#bench
 ```
 
 benchmark 不承诺跨机器延迟阈值；架构契约是 absent read 零物化、definition family 枚举 O(k)、固定 k update 不扫描/复制无关 graph，

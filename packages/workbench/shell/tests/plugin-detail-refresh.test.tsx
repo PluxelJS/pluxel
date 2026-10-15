@@ -28,7 +28,7 @@ const committedAfterMutation = graph({
 const mounted: Array<ReturnType<typeof createRoot>> = []
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 })
 
 afterEach(async () => {

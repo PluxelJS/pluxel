@@ -12,7 +12,7 @@ import type {
 } from '@pluxel/workbench/client'
 import type { WorkbenchViewHostHandle } from '@pluxel/workbench/federation'
 import { createWorkbenchBridge } from '@pluxel/workbench/internal/react'
-import type { RpcStub } from 'capnweb'
+import { RpcTarget, type RpcStub } from 'capnweb'
 import { Actions } from 'flexlayout-react'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -173,7 +173,7 @@ beforeEach(() => {
 		const key = id.split('/').at(-1)
 		const entry = [manager, account, preview].find((candidate) => candidate.descriptor.key === key)!
 		return {
-			default: createWorkbenchBridge(entry.descriptor, () => (
+			default: createWorkbenchBridge(entry.federatedViewRef.descriptor, () => (
 				<input aria-label={`${key} draft`} defaultValue="local draft" />
 			)),
 		}
@@ -227,7 +227,9 @@ async function mount(basepath: string, conflict = false) {
 					ok: true,
 					value: {
 						kind: 'local',
-						api: { [Symbol.dispose]: vi.fn() },
+						api: new (class extends RpcTarget {
+							[Symbol.dispose] = vi.fn()
+						})(),
 						params:
 							entry === manager
 								? {}
@@ -272,7 +274,7 @@ describe('Plugin host navigation through the authenticated native App', () => {
 		expect(location.search).toContain('plugin=')
 		await act(async () => {
 			const button = [...container.querySelectorAll('button')].find(
-				(button) => button.textContent === '清除插件筛选',
+				(candidate) => candidate.textContent === '清除插件筛选',
 			)!
 			button.focus()
 			button.click()
@@ -296,6 +298,9 @@ describe('Plugin host navigation through the authenticated native App', () => {
 					conflict,
 				)
 				const original = workspace.workbench.getActiveDocument()!
+				expect(workspace.workbench.getDocuments().map(({ id, href }) => ({ id, href }))).toEqual([
+					{ id: original.id, href: sourceHref },
+				])
 				const historyLength = history.length
 				const historyState: unknown = history.state
 				const input = container.querySelector<HTMLInputElement>('[aria-label="manager draft"]')!
@@ -313,8 +318,8 @@ describe('Plugin host navigation through the authenticated native App', () => {
 				expect(leave).toHaveBeenCalledExactlyOnceWith(
 					`${prefix}${conflict ? buildWorkbenchHref(owner, path, 'standalone') : path}`,
 				)
-				expect(workspace.workbench.getDocuments().map((document) => document.id)).toEqual([
-					original.id,
+				expect(workspace.workbench.getDocuments().map(({ id, href }) => ({ id, href }))).toEqual([
+					{ id: original.id, href: sourceHref },
 				])
 				expect(workspace.workbench.getActiveDocument()!.href).toBe(sourceHref)
 				expect(location.pathname + location.search + location.hash).toBe(sourceHref)

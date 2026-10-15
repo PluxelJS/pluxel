@@ -105,7 +105,7 @@ async function mount(ui: ReactNode) {
 }
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	globalThis.ResizeObserver = ResizeObserverMock as any
 	if (typeof window.matchMedia !== 'function') {
 		window.matchMedia = ((query: string) => ({

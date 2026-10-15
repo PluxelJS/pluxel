@@ -117,7 +117,7 @@ const initialData = {
 const mounted = new Set<Root>()
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	globalThis.ResizeObserver = class ResizeObserver {
 		observe() {}
 		unobserve() {}
@@ -168,7 +168,11 @@ describe('interactive Workbench Content', () => {
 	it('renders an initial load error and recovers through retry', async () => {
 		const load = vi.fn(async () => ({ ...initialData, sequence: 2 }))
 		const fixture = await renderInteractive({
-			subscribe: vi.fn(async () => ({ sequence: 1, ok: false, code: 'load_failed' })),
+			subscribe: vi.fn(async (): Promise<WorkbenchContentDataOutcome> => ({
+				sequence: 1,
+				ok: false,
+				code: 'load_failed',
+			})),
 			load,
 		})
 		await tick()
@@ -330,7 +334,9 @@ describe('interactive Workbench Content', () => {
 				version: 1,
 				blocks: [{ type: 'slot', key: 'refresh' }],
 			},
-			slots: [{ kind: 'action', key: 'refresh', display: 'block' }],
+			slots: [
+				{ kind: 'action', key: 'refresh', display: 'block', label: 'Refresh', input: 'none' },
+			],
 		} satisfies WorkbenchContentPlan
 		const handle = interactiveHandle({ presentation: actionPresentation, run, subscribe })
 		const controller = new WorkbenchContentController(handle)
@@ -448,7 +454,9 @@ describe('interactive Workbench Content', () => {
 		const nestedPresentation: WorkbenchContentPresentation = {
 			...presentation,
 			slots: presentation.slots.map((slot) =>
-				slot.key === 'save' ? { ...slot, fields: [profileField] } : slot,
+				slot.kind === 'action' && slot.input === 'embedded' && slot.key === 'save'
+					? { ...slot, fields: [profileField] }
+					: slot,
 			),
 		}
 		const fixture = await renderInteractive({ run }, {}, false, nestedPresentation)

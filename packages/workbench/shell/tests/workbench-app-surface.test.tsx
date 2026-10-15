@@ -11,7 +11,7 @@ import type {
 	WorkbenchSessionApi,
 } from '@pluxel/workbench/client'
 import type { RpcStub } from 'capnweb'
-import { Actions, DockLocation, Model, TabNode } from 'flexlayout-react'
+import { Actions, DockLocation, Model, TabGroupNode, TabNode } from 'flexlayout-react'
 import { StrictMode, act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -90,7 +90,7 @@ function PluginPage({ pluginRoute }: { pluginRoute: string }) {
 	useDocumentWorkspace(
 		new URLSearchParams(router.state.location.searchStr).has('entry') ? 'apps' : 'plugins',
 	)
-	useDocumentPlugin(parsePluginDetailHref(`/plugins/${pluginRoute}`)!.target)
+	useDocumentPlugin(parsePluginDetailHref(`/plugins/${pluginRoute}`)?.target)
 	return <BuiltinPage />
 }
 
@@ -132,7 +132,7 @@ afterEach(async () => {
 	vi.unstubAllGlobals()
 })
 
-function entry(path: string, frame: 'shell' | 'standalone'): WorkbenchLayoutEntry {
+function entry(path: string, frame: 'shell' | 'standalone') {
 	const node: PluginNodeAddress = {
 		definition: {
 			entry: { kind: 'package-root', packageName: '@test/preview' },
@@ -148,7 +148,7 @@ function entry(path: string, frame: 'shell' | 'standalone'): WorkbenchLayoutEntr
 		definitionRevisions: { target: 1, renderer: 1 },
 		placement: { kind: 'route', path, frame, title: 'Preview page', order: 0 },
 		federatedViewUnavailable: { reason: 'failed', message: 'Preview renderer unavailable' },
-	}
+	} satisfies WorkbenchLayoutEntry
 }
 async function mount(href: string, entries: WorkbenchLayoutEntry[] = [], pending?: Promise<void>) {
 	window.history.replaceState(null, '', href)
@@ -266,6 +266,7 @@ describe('authenticated App surface ownership', () => {
 			await act(async () =>
 				probe.navigation.openTab({
 					path: `${buildPluginDetailHref(labeled.target.node)}?entry=diagnostics`,
+					title: 'diagnostics',
 				}),
 			)
 			await vi.waitFor(() =>
@@ -604,7 +605,7 @@ describe('authenticated App surface ownership', () => {
 		const probe = [...fixture.probes.values()][0]!
 		const workspace = probe.workspace!
 		const security = workspace.workbench.getActiveDocument()!
-		await act(async () => probe.navigation.openTab({ path: '/preview/one' }))
+		await act(async () => probe.navigation.openTab({ path: '/preview/one', title: 'Preview page' }))
 		await vi.waitFor(() => expect(workspace.activeWorkspace()).toBe('apps'))
 		expect(workspace.isToolVisible('navigation')).toBe(false)
 		await act(async () => {
@@ -663,7 +664,7 @@ describe('authenticated App surface ownership', () => {
 			const probe = [...fixture.probes.values()][0]!
 			const workspace = probe.workspace!
 			const original = workspace.workbench.getActiveDocument()!
-			await act(async () => probe.navigation.openTab({ path: '/security' }))
+			await act(async () => probe.navigation.openTab({ path: '/security', title: 'Security' }))
 			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(2))
 			const security = workspace.workbench.getActiveDocument()!
 			await act(async () => {
@@ -688,12 +689,9 @@ describe('authenticated App surface ownership', () => {
 			const node = Model.fromJson(workspace.workbench.getLayout()).getNodeById(
 				original.id,
 			) as TabNode
-			expect(
-				node
-					.getTabContainer()
-					.getChildren()
-					.map((child) => child.getId()),
-			).toEqual(
+			const parent = node.getParent()!
+			const container = parent instanceof TabGroupNode ? parent.getParent()! : parent
+			expect(container.getChildren().map((child) => child.getId())).toEqual(
 				kind === 'pinned'
 					? [original.id, security.id, copy.id]
 					: [kind === 'grouped' ? node.getParent()!.getId() : original.id, copy.id, security.id],
@@ -713,7 +711,7 @@ describe('authenticated App surface ownership', () => {
 		const input = container.querySelector<HTMLInputElement>('[aria-label="Page /logs"]')!
 		input.value = 'retained log draft'
 		const log = [...fixture.probes.values()][0]!
-		await act(async () => log.navigation.openTab({ path: '/security' }))
+		await act(async () => log.navigation.openTab({ path: '/security', title: 'Security' }))
 		await vi.waitFor(() =>
 			expect(container.querySelector('[aria-label="Page /security"]')).not.toBeNull(),
 		)

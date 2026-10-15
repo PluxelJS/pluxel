@@ -24,8 +24,16 @@ function Fixture() {
 		locked: false,
 	})
 	return (
-		<div ref={selection.containerRef} tabIndex={0} onKeyDown={selection.handleKeyDown}>
-			<button onClick={move}>展开分组</button>
+		<div
+			role="listbox"
+			aria-label="插件"
+			ref={selection.containerRef}
+			tabIndex={0}
+			onKeyDown={selection.handleKeyDown}
+		>
+			<button type="button" onClick={move}>
+				展开分组
+			</button>
 			<a href="#plugin">插件</a>
 		</div>
 	)
@@ -42,8 +50,13 @@ afterEach(async () => {
 	await act(async () => root.unmount())
 	host.remove()
 })
-async function key(target: Element, key: string, init: KeyboardEventInit = {}) {
-	const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+async function key(target: Element, pressedKey: string, init: KeyboardEventInit = {}) {
+	const event = new KeyboardEvent('keydown', {
+		key: pressedKey,
+		bubbles: true,
+		cancelable: true,
+		...init,
+	})
 	await act(async () => {
 		target.dispatchEvent(event)
 	})
@@ -60,8 +73,10 @@ it('skips collapsed rows for keyboard focus, range selection and select all', as
 })
 it('leaves button and link Enter/Space to their own native interaction', async () => {
 	for (const element of [host.querySelector('button')!, host.querySelector('a')!]) {
-		for (const name of ['Enter', ' '])
-			expect((await key(element, name)).defaultPrevented).toBe(false)
+		for (const name of ['Enter', ' ']) {
+			const event = await key(element, name)
+			expect(event.defaultPrevented).toBe(false)
+		}
 	}
 	expect(selection.selectedIds).toEqual([])
 })

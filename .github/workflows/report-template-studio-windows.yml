@@ -54,7 +54,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Node and pnpm
+      - name: Install workspace toolchain
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           cache: true
@@ -84,24 +84,21 @@ jobs:
           key: ${{ runner.os }}-x64-studio-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Build native compiler
-        run: pnpm --filter @pluxel/typst prepare:native
-
-      - name: Build application dependencies
-        run: pnpm --filter '@report-template-studio/app^...' --if-present build
+        run: vp run @pluxel/typst#prepare:native
 
       - name: Check and build Studio
         run: |
-          pnpm --filter @report-template-studio/app build
-          pnpm --filter @report-template-studio/app typecheck
+          vp run @report-template-studio/app#compile
+          vp run @report-template-studio/app#check-types
 
       - name: Package current Windows architecture
-        run: pnpm --filter @report-template-studio/app package
+        run: vp run @report-template-studio/app#package
 
       - name: Verify packaged runtime with named pipe and no TCP/HTTP listener
-        run: pnpm --filter @report-template-studio/app test:runtime
+        run: vp run @report-template-studio/app#test:runtime
         env:
           STUDIO_APP_ROOT: ${{ github.workspace }}/projects/report-template-studio/release/PluxelTypstStudio-win32-x64/resources/app
 

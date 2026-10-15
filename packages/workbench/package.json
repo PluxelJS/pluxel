@@ -98,13 +98,13 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pnpm run build:web && pnpm run build:lib && node scripts/verify-shell.mjs",
-		"typecheck": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p shell/tsconfig.json",
-		"test": "vitest run && vitest run --config shell/vitest.config.ts",
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"test": "vp run check-tests",
 		"test:installed": "node tests/installed-vite.smoke.mjs",
-		"build:web": "vite build",
-		"build:lib": "tsdown",
-		"dev:shell": "vite --config shell/vite.config.ts"
+		"build:web": "vp run compile-web",
+		"build:lib": "vp run compile-lib",
+		"dev:shell": "vp dev --config shell/vite.config.ts"
 	},
 	"dependencies": {
 		"@module-federation/runtime": "catalog:prod",
@@ -155,6 +155,7 @@
 		"typescript": "catalog:dev",
 		"valibot-form": "workspace:*",
 		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
 		"ws": "catalog:test"
 	},
 	"peerDependencies": {

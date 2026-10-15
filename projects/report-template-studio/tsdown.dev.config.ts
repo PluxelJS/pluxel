@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 
 // Only the Electron carrier is compiled here. Plugin source is owned by host-vite.
 export default defineConfig([

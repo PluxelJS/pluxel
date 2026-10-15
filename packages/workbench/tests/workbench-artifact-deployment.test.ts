@@ -68,6 +68,7 @@ function manifest(
 	plan: WorkbenchFederationProducerPlan,
 	exposes = plan.entries.map((entry) => entry.expose),
 ) {
+	const remotes: never[] = []
 	return {
 		id: plan.producer,
 		name: plan.producer,
@@ -80,7 +81,7 @@ function manifest(
 			types: { path: '', name: '', api: 'types/index.d.ts', zip: '@mf-types.zip' },
 			type: 'global',
 		},
-		remotes: [],
+		remotes,
 		shared: Object.entries(compatibility.shared).map(([name, version]) => ({
 			name,
 			version,
@@ -96,7 +97,10 @@ function manifest(
 	}
 }
 
-function assetGroup(js: string[] = []) {
+function assetGroup(js: string[] = []): {
+	js: { sync: string[]; async: string[] }
+	css: { sync: string[]; async: string[] }
+} {
 	return {
 		js: { sync: js, async: [] },
 		css: { sync: [], async: [] },

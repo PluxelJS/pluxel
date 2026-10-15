@@ -1,5 +1,5 @@
 node_modules/
-.turbo/
+.vite/
 dist/
 .pluxel/
 .pnpmfile.cjs
@@ -11,3 +11,8 @@ logs/
 .env.local
 .env.*.local
 !.env.example
+
+# Machine-local tool and hook overrides
+mise.local.toml
+pitchfork.local.toml
+hk.local.pkl

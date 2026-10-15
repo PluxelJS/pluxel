@@ -17,13 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 11.25.0
-          run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm verify
+          cache: true
+      - run: hk validate
+      - run: pitchfork daemons --json
+      - run: vp install --frozen-lockfile
+      - run: vp exec pluxel workspace setup
+      - run: vp run verify

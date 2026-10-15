@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { TypstPlugin } from '../../src/index.ts'
+import { TypstPlugin } from '@pluxel/typst'
 
 @Plugin()
 export class TypstDynamicProbePlugin extends BasePlugin {
@@ -12,7 +12,15 @@ export class TypstDynamicProbePlugin extends BasePlugin {
 	}
 
 	protected override init(): void {
-		this.ctx.require(ElysiaApp).get('/__pluxel-test/typst/document', () => this.render())
+		this.ctx
+			.require(ElysiaApp)
+			.get('/__pluxel-test/typst/document', () => this.render())
+			.get('/__pluxel-test/typst/svg', async () => {
+				const data = await this.typst.renderSvg('#set page(width: auto, height: auto)\n$x^2$')
+				return new Response(Uint8Array.from(data).buffer, {
+					headers: { 'content-type': 'image/svg+xml' },
+				})
+			})
 	}
 
 	private async render(): Promise<Response> {

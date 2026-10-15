@@ -3,13 +3,13 @@
 {{description}}
 
 Before changing plugin code or package/build configuration, consult the documentation matching the
-installed Pluxel version. Run `pnpm exec pluxel docs` for the canonical upstream documentation entry;
+installed Pluxel version. Run `vp exec pluxel docs` for the canonical upstream documentation entry;
 keep this package README focused on its own contract instead of copying framework documentation.
 
 ## Install
 
 ```sh
-pnpm add {{packageName}} @pluxel/core
+vp add {{packageName}} @pluxel/core
 ```
 
 Import the root named Plugin export into a static catalog or expose the same package root through a
@@ -25,9 +25,12 @@ export const plugins = [{{className}}Plugin]
 ## Develop
 
 ```sh
-pnpm install
-pnpm exec pluxel workspace setup
-pnpm verify
+mise trust
+mise install
+mise run setup
+# Once the project is a Git repository:
+mise run hooks:install
+vp run verify
 ```
 
 `verify` checks Oxfmt, Oxlint with the Pluxel rule plugin, unused lint suppressions, types, tests, and

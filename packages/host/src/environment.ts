@@ -9,11 +9,13 @@ export interface PluxelEnvironmentVariables extends Readonly<Record<string, stri
 	readonly PLUXEL_WORKBENCH?: 'true' | 'false'
 	readonly PLUXEL_HOST_BIND?: string
 	readonly PLUXEL_HOST_PORT?: string
-	/** Injected by Portless while a named development route is active. */
-	readonly PORTLESS_URL?: string
-	/** Portless child-process listener bind address. */
+	/** Explicit public HTTP(S) origin for any reverse proxy. */
+	readonly PLUXEL_PUBLIC_ORIGIN?: string
+	/** Injected by Pitchfork when the development service has a proxy URL. */
+	readonly PITCHFORK_URL?: string
+	/** Launcher-provided physical listener bind address. */
 	readonly HOST?: string
-	/** Portless child-process listener port. */
+	/** Launcher-provided physical listener port. */
 	readonly PORT?: string
 	readonly PLUXEL_VAULT_DEPLOY_IDENTITY?: string
 	readonly PLUXEL_HMR_ATTRIBUTION?: string
@@ -32,8 +34,8 @@ export type PluxelHostEnvironment = Readonly<{
 	hostBind?: string
 	/** Explicit physical listener port. Meaningful only to listener-owning launchers. */
 	hostPort?: number
-	/** Validated named Portless origin for development URL presentation. */
-	portlessOrigin?: string
+	/** Validated public origin for URL presentation and management same-origin checks. */
+	publicOrigin?: string
 }>
 
 /**
@@ -45,19 +47,19 @@ export function resolveHostEnv(
 ): PluxelHostEnvironment {
 	const dataRoot = optionalText(input.PLUXEL_DATA_ROOT, 'PLUXEL_DATA_ROOT') ?? '.pluxel'
 	const workbench = optionalBoolean(input.PLUXEL_WORKBENCH, 'PLUXEL_WORKBENCH')
-	const portlessOrigin = optionalHttpOrigin(input.PORTLESS_URL, 'PORTLESS_URL')
+	const publicOrigin =
+		optionalHttpOrigin(input.PLUXEL_PUBLIC_ORIGIN, 'PLUXEL_PUBLIC_ORIGIN') ??
+		optionalHttpOrigin(input.PITCHFORK_URL, 'PITCHFORK_URL')
 	const hostBind =
-		optionalText(input.PLUXEL_HOST_BIND, 'PLUXEL_HOST_BIND') ??
-		(portlessOrigin ? optionalText(input.HOST, 'HOST') : undefined)
+		optionalText(input.PLUXEL_HOST_BIND, 'PLUXEL_HOST_BIND') ?? optionalText(input.HOST, 'HOST')
 	const hostPort =
-		optionalPort(input.PLUXEL_HOST_PORT, 'PLUXEL_HOST_PORT') ??
-		(portlessOrigin ? optionalPort(input.PORT, 'PORT') : undefined)
+		optionalPort(input.PLUXEL_HOST_PORT, 'PLUXEL_HOST_PORT') ?? optionalPort(input.PORT, 'PORT')
 	return Object.freeze({
 		dataRoot,
 		...(workbench === undefined ? {} : { workbench }),
 		...(hostBind === undefined ? {} : { hostBind }),
 		...(hostPort === undefined ? {} : { hostPort }),
-		...(portlessOrigin === undefined ? {} : { portlessOrigin }),
+		...(publicOrigin === undefined ? {} : { publicOrigin }),
 	})
 }
 

@@ -390,7 +390,9 @@ describe('Pluxel native workspace menus', () => {
 
 	it('uses the native overflow candidates and selection callback with keyboard focus return', async () => {
 		const { session, container } = await workspace()
-		vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+		vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+			this: HTMLElement,
+		) {
 			if (this.matches('[role="tab"]')) return new DOMRect(800, 0, 120, 30)
 			if (this.classList.contains('flexlayout__tabset_tabbar_inner'))
 				return new DOMRect(0, 0, 260, 34)

@@ -35,11 +35,11 @@
 		"access": "public"
 	},
 	"scripts": {
-		"dev": "pnpm run build && node dist/cli.mjs new --dry-run --no-install",
-		"build": "tsdown && node scripts/copy-development-resources.mjs",
-		"test": "pnpm exec vitest run",
+		"dev": "vp run build && node dist/cli.mjs new --dry-run --no-install",
+		"build": "vp run compile",
+		"test": "vp run check-tests",
 		"test:templates": "node scripts/smoke-plugin.ts",
-		"typecheck": "tsc --noEmit --pretty false --composite false --customConditions development"
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@clack/prompts": "catalog:prod",
@@ -59,14 +59,13 @@
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
-		"tsdown": "catalog:build",
-		"typescript": "catalog:dev"
+		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
 		"@pluxel/market": "catalog:peer",
 		"@pluxel/rolldown": "workspace:^",
-		"oxlint": "catalog:peer",
-		"tsdown": "catalog:build"
+		"vite-plus": "catalog:build"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/market": {
@@ -75,10 +74,7 @@
 		"@pluxel/rolldown": {
 			"optional": true
 		},
-		"oxlint": {
-			"optional": true
-		},
-		"tsdown": {
+		"vite-plus": {
 			"optional": true
 		}
 	},

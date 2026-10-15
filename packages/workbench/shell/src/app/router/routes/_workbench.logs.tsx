@@ -5,5 +5,9 @@ import { validateLogsSearch } from '../logsSearch'
 export const Route = createFileRoute('/_workbench/logs')({
 	validateSearch: validateLogsSearch,
 	staticData: { worksplit: { title: '日志', identitySearch: ['plugin'] } },
-	component: () => <LogsPage search={Route.useSearch()} />,
+	component: LogsRoute,
 })
+
+function LogsRoute() {
+	return <LogsPage search={Route.useSearch()} />
+}

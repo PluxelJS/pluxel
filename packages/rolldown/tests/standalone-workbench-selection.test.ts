@@ -84,7 +84,7 @@ async function buildApplication(root: string): Promise<void> {
 		root,
 		'build.mts',
 		`
-import { build } from ${JSON.stringify(import.meta.resolve('tsdown'))}
+import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}
 import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}
 await build({ cwd: ${JSON.stringify(root)}, entry: 'app.ts', minify: true, plugins: [pluxel({ delivery: 'standalone', variant: 'workbench', launcher: 'host', lint: false })], config: false })
 `,

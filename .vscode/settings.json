@@ -1,5 +1,4 @@
 {
-	"oxc.fmt.configPath": ".oxfmtrc.json",
 	"[javascript]": {
 		"editor.defaultFormatter": "oxc.oxc-vscode",
 		"editor.formatOnSave": true
@@ -28,8 +27,7 @@
 		"editor.defaultFormatter": "oxc.oxc-vscode",
 		"editor.formatOnSave": true
 	},
-	"ColorfulMonorepo.data": {
-		"workspaces": [],
-		"scriptFavorites": [".#build", ".#dev", ".#hmr", ".#test", "projects/plugin-host#dynamic"]
-	}
+	"oxc.disableNestedConfig": true,
+	"oxc.fmt.disableNestedConfig": true,
+	"editor.formatOnSaveMode": "file"
 }

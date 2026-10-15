@@ -12,7 +12,7 @@ import {
 	compileWorkbenchSnapshot,
 	type WorkbenchTargetSnapshot,
 } from '../src/workbench/client-snapshot'
-import { buildPluginDetailHref, buildWorkbenchHref } from '../src/workbench/paths'
+import { buildPluginDetailHref } from '../src/workbench/paths'
 import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
 
 const source = vi.hoisted(() => ({ snapshot: undefined as WorkbenchTargetSnapshot | undefined }))
@@ -29,14 +29,14 @@ vi.mock('../src/app/plugins/pluginOverview', () => ({
 						lifecycleState: 'running',
 					},
 					{
-						address: { ...owner, forkId: 'west' },
-						route: formatPluginNodeRoute({ ...owner, forkId: 'west' }),
+						address: { ...owner, variant: 'fork', forkId: 'west' },
+						route: formatPluginNodeRoute({ ...owner, variant: 'fork', forkId: 'west' }),
 						label: 'Accounts West config',
 						lifecycleState: 'stopped',
 					},
 					{
-						address: { ...owner, forkId: 'north' },
-						route: formatPluginNodeRoute({ ...owner, forkId: 'north' }),
+						address: { ...owner, variant: 'fork', forkId: 'north' },
+						route: formatPluginNodeRoute({ ...owner, variant: 'fork', forkId: 'north' }),
 						label: 'Accounts North config',
 						lifecycleState: 'running',
 					},
@@ -212,7 +212,7 @@ describe('workspace entry discovery', () => {
 			frame: 'shell',
 			order: 1,
 		})
-		const secondOwner = { ...owner, forkId: 'west' }
+		const secondOwner: PluginNodeAddress = { ...owner, variant: 'fork', forkId: 'west' }
 		const secondEntry = {
 			...entry('west-tab', { kind: 'tab', label: '西区账户', order: 3 }),
 			target: { node: secondOwner, displayName: 'Accounts West' },

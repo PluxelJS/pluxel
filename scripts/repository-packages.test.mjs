@@ -93,7 +93,7 @@ describe('root workspace dependency ownership', () => {
 		assert.deepEqual(
 			rootWorkspaceDependencyErrors({ devDependencies: { pncat: 'workspace:*' } }, []),
 			[
-				'root devDependencies.pncat invalidates every Turbo task; declare it in its consumer package',
+				'root devDependencies.pncat must be owned by its consuming package; declare it in its consumer package',
 			],
 		)
 	})

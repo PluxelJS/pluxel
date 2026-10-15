@@ -29,8 +29,8 @@
 	"license": "Apache-2.0",
 	"scripts": {
 		"dev": "bun run --hot ./src/index.ts",
-		"test": "vitest run",
-		"build": "tsdown",
+		"test": "vp run check-tests",
+		"build": "vp run compile",
 		"bench:onlyEmit": "bun ./tinybench/onlyEmit.ts",
 		"bench:compare": "bun ./tinybench/onlyEmit.ts",
 		"bench:api": "bun ./tinybench/apiRegression.ts",
@@ -38,16 +38,13 @@
 		"lint": "oxlint -c oxlint.config.ts .",
 		"format:check": "oxfmt --check .",
 		"format": "oxfmt --write .",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "vp run check-types"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:types",
-		"oxfmt": "catalog:dev",
-		"oxlint": "catalog:dev",
-		"oxlint-tsgolint": "catalog:dev",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
-		"vitest": "catalog:test"
+		"vitest": "catalog:test",
+		"vite-plus": "catalog:build"
 	},
 	"publishConfig": {
 		"exports": {

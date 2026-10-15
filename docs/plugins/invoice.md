@@ -180,6 +180,6 @@ if (result.status === 'completed' && result.verification.status === 'matched') {
 
 取消、调用方停止、插件停止会终止请求并关闭独立浏览器会话，等待清理后归还额度。无法强停任意回调代码，浏览器获取/关闭也没有硬清理期限；总预算不保证浏览器在该时刻完成清理。取消不回滚已提交查询或恢复官网额度。
 
-`pnpm test` 验证字段归一化及真实隔离 Host 行为；`pnpm test:browser` 用 Chromium 和合成网页验证 UI、快照、结果分支和清理。真实官网成功详情已做离线回放，验证了购销双方、税号、金额和明细映射。这不代表新一次在线核验：后续无人介入实测仍出现服务器异常、验证码拒绝及 `action_required`，尚未证明稳定的全自动成功率。
+`vp run test` 验证字段归一化及真实隔离 Host 行为；`vp run test:browser` 用 Chromium 和合成网页验证 UI、快照、结果分支和清理。真实官网成功详情已做离线回放，验证了购销双方、税号、金额和明细映射。这不代表新一次在线核验：后续无人介入实测仍出现服务器异常、验证码拒绝及 `action_required`，尚未证明稳定的全自动成功率。
 
-`pnpm test:live` 显式访问外部模型和官网，需要模型环境变量及 `INVOICE_IMAGES`（1–3 个本地 JPEG 绝对路径的 JSON 数组）。默认每张最多自动提交一次，`INVOICE_CAPTCHA_ATTEMPTS` 可设 0–3。输出只含文件名、模型、无人回调标记和状态；命令成功不等于官网 `matched`。`INVOICE_REPORT` 可追加 JSONL，`INVOICE_CAPTURE_DIR` 可保存 HTML/截图；这些敏感材料及 key 应留在本地忽略目录。
+`vp run test:live` 显式访问外部模型和官网，需要模型环境变量及 `INVOICE_IMAGES`（1–3 个本地 JPEG 绝对路径的 JSON 数组）。默认每张最多自动提交一次，`INVOICE_CAPTCHA_ATTEMPTS` 可设 0–3。输出只含文件名、模型、无人回调标记和状态；命令成功不等于官网 `matched`。`INVOICE_REPORT` 可追加 JSONL，`INVOICE_CAPTURE_DIR` 可保存 HTML/截图；这些敏感材料及 key 应留在本地忽略目录。

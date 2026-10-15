@@ -114,11 +114,11 @@ it('closes the recovery observer and drains a rejected hook accepted before upda
 		expect(recovery.close()).toBe(closing)
 		let closed = false
 		void closing.then(
-			() => {
+			(): void => {
 				closed = true
 				return undefined
 			},
-			() => {
+			(): void => {
 				closed = true
 				return undefined
 			},

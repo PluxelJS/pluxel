@@ -10,7 +10,7 @@ describe('WorkbenchContentController', () => {
 		const initial = deferred<WorkbenchContentDataOutcome>()
 		const handle = interactiveHandle({
 			subscribe: vi.fn(async (observer) => {
-				await observer({ sequence: 2, ok: true, data: { status: 'live' } })
+				await observer({ sequence: 2, ok: true as const, data: { status: 'live' } })
 				return initial.promise
 			}),
 		})
@@ -24,7 +24,7 @@ describe('WorkbenchContentController', () => {
 			stale: false,
 		})
 
-		initial.resolve({ sequence: 1, ok: true, data: { status: 'old' } })
+		initial.resolve({ sequence: 1, ok: true as const, data: { status: 'old' } })
 		await tick()
 		expect(controller.getSnapshot().data).toEqual({ status: 'live' })
 	})
@@ -34,7 +34,7 @@ describe('WorkbenchContentController', () => {
 		const handle = interactiveHandle({
 			subscribe: vi.fn(async (next) => {
 				observer = next
-				return { sequence: 1, ok: true, data: { count: 1 } }
+				return { sequence: 1, ok: true as const, data: { count: 1 } }
 			}),
 		})
 		const controller = new WorkbenchContentController(handle)
@@ -48,7 +48,7 @@ describe('WorkbenchContentController', () => {
 			stale: true,
 		})
 
-		observer({ sequence: 3, ok: true, data: { count: 2 } })
+		observer({ sequence: 3, ok: true as const, data: { count: 2 } })
 		expect(controller.getSnapshot()).toMatchObject({
 			status: 'ready',
 			data: { count: 2 },
@@ -58,11 +58,11 @@ describe('WorkbenchContentController', () => {
 
 	it('retries without replacing data for busy or older load results', async () => {
 		const handle = interactiveHandle({
-			subscribe: vi.fn(async () => ({ sequence: 3, ok: true, data: { count: 3 } })),
+			subscribe: vi.fn(async () => ({ sequence: 3, ok: true as const, data: { count: 3 } })),
 			load: vi
 				.fn()
 				.mockResolvedValueOnce({ ok: false, code: 'busy' })
-				.mockResolvedValueOnce({ sequence: 2, ok: true, data: { count: 2 } }),
+				.mockResolvedValueOnce({ sequence: 2, ok: true as const, data: { count: 2 } }),
 		})
 		const controller = new WorkbenchContentController(handle)
 		controller.start()
@@ -85,8 +85,8 @@ describe('WorkbenchContentController', () => {
 			subscribe: vi.fn(async () => subscription.promise),
 			load: vi.fn(async () => load.promise),
 			run: vi.fn(async () => ({
-				action: { ok: true, message: 'done' },
-				data: { sequence: 4, ok: true, data: { status: 'done' } },
+				action: { ok: true as const, message: 'done' },
+				data: { sequence: 4, ok: true as const, data: { status: 'done' } },
 			})),
 		})
 		const controller = new WorkbenchContentController(handle)
@@ -94,14 +94,14 @@ describe('WorkbenchContentController', () => {
 		controller.subscribe(listener)
 		controller.start()
 
-		expect(await controller.run('save')).toEqual({ ok: true, message: 'done' })
+		expect(await controller.run('save')).toEqual({ ok: true as const, message: 'done' })
 		expect(controller.getSnapshot().data).toEqual({ status: 'done' })
 		const callsBeforeDispose = listener.mock.calls.length
 
 		const retry = controller.retry()
 		controller[Symbol.dispose]()
-		subscription.resolve({ sequence: 5, ok: true, data: { status: 'late-subscribe' } })
-		load.resolve({ sequence: 6, ok: true, data: { status: 'late-load' } })
+		subscription.resolve({ sequence: 5, ok: true as const, data: { status: 'late-subscribe' } })
+		load.resolve({ sequence: 6, ok: true as const, data: { status: 'late-load' } })
 		await retry
 		await tick()
 
@@ -146,8 +146,8 @@ function interactiveHandle(
 				},
 			],
 		},
-		subscribe: vi.fn(async () => ({ sequence: 1, ok: true, data: {} })),
-		load: vi.fn(async () => ({ sequence: 1, ok: true, data: {} })),
+		subscribe: vi.fn(async () => ({ sequence: 1, ok: true as const, data: {} })),
+		load: vi.fn(async () => ({ sequence: 1, ok: true as const, data: {} })),
 		run: vi.fn(async () => ({ action: { ok: true }, data: null })),
 		...overrides,
 	} as unknown as WorkbenchOpenedContentHandle

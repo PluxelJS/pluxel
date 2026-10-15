@@ -13,7 +13,8 @@ describe('Pluxel environment', () => {
 		expect(env).toBe(standardEnvironment)
 		expectTypeOf(env.PLUXEL_WORKBENCH).toEqualTypeOf<'true' | 'false' | undefined>()
 		expectTypeOf(env.PLUXEL_HOST_PORT).toEqualTypeOf<string | undefined>()
-		expectTypeOf(env.PORTLESS_URL).toEqualTypeOf<string | undefined>()
+		expectTypeOf(env.PLUXEL_PUBLIC_ORIGIN).toEqualTypeOf<string | undefined>()
+		expectTypeOf(env.PITCHFORK_URL).toEqualTypeOf<string | undefined>()
 		expectTypeOf(env.APPLICATION_REGION).toEqualTypeOf<string | undefined>()
 	})
 
@@ -40,10 +41,10 @@ describe('Pluxel environment', () => {
 		expect(resolveHostEnv({})).toEqual({ dataRoot: '.pluxel' })
 	})
 
-	it('adopts Portless listener values without overriding explicit Pluxel host policy', () => {
+	it('adopts Pitchfork listener values without overriding explicit Pluxel host policy', () => {
 		expect(
 			resolveHostEnv({
-				PORTLESS_URL: 'https://rhythm.localhost',
+				PITCHFORK_URL: 'https://rhythm.localhost',
 				HOST: '127.0.0.1',
 				PORT: '4321',
 			}),
@@ -51,11 +52,11 @@ describe('Pluxel environment', () => {
 			dataRoot: '.pluxel',
 			hostBind: '127.0.0.1',
 			hostPort: 4321,
-			portlessOrigin: 'https://rhythm.localhost',
+			publicOrigin: 'https://rhythm.localhost',
 		})
 		expect(
 			resolveHostEnv({
-				PORTLESS_URL: 'https://rhythm.localhost/',
+				PITCHFORK_URL: 'https://rhythm.localhost/',
 				HOST: '127.0.0.1',
 				PORT: '4321',
 				PLUXEL_HOST_BIND: '0.0.0.0',
@@ -64,7 +65,34 @@ describe('Pluxel environment', () => {
 		).toMatchObject({ hostBind: '0.0.0.0', hostPort: 3310 })
 		expect(resolveHostEnv({ HOST: '127.0.0.1', PORT: '4321' })).toEqual({
 			dataRoot: '.pluxel',
+			hostBind: '127.0.0.1',
+			hostPort: 4321,
 		})
+	})
+
+	it('uses an explicit public origin for any proxy, ahead of launcher discovery', () => {
+		expect(resolveHostEnv({ PLUXEL_PUBLIC_ORIGIN: 'https://app.example.test/' })).toEqual({
+			dataRoot: '.pluxel',
+			publicOrigin: 'https://app.example.test',
+		})
+		expect(
+			resolveHostEnv({
+				PLUXEL_PUBLIC_ORIGIN: 'https://app.example.test',
+				PITCHFORK_URL: 'https://web.project.localhost',
+			}),
+		).toMatchObject({ publicOrigin: 'https://app.example.test' })
+	})
+
+	it.each([
+		'app.test',
+		'ftp://app.test',
+		'https://user:pass@app.test',
+		'https://app.test/path',
+		'https://app.test/?query',
+		'https://app.test/#hash',
+		'',
+	])('rejects invalid public origin %s', (value) => {
+		expect(() => resolveHostEnv({ PLUXEL_PUBLIC_ORIGIN: value })).toThrow('PLUXEL_PUBLIC_ORIGIN')
 	})
 
 	it('rejects malformed explicit values', () => {
@@ -77,14 +105,14 @@ describe('Pluxel environment', () => {
 		expect(() => resolveHostEnv({ PLUXEL_DATA_ROOT: '  ' })).toThrow(
 			'PLUXEL_DATA_ROOT must not be empty',
 		)
-		expect(() => resolveHostEnv({ PORTLESS_URL: 'rhythm.localhost' })).toThrow(
-			'PORTLESS_URL must be an HTTP(S) origin',
+		expect(() => resolveHostEnv({ PITCHFORK_URL: 'rhythm.localhost' })).toThrow(
+			'PITCHFORK_URL must be an HTTP(S) origin',
 		)
 		expect(() =>
-			resolveHostEnv({ PORTLESS_URL: 'https://rhythm.localhost/path', PORT: '4321' }),
-		).toThrow('PORTLESS_URL must be an HTTP(S) origin')
+			resolveHostEnv({ PITCHFORK_URL: 'https://rhythm.localhost/path', PORT: '4321' }),
+		).toThrow('PITCHFORK_URL must be an HTTP(S) origin')
 		expect(() =>
-			resolveHostEnv({ PORTLESS_URL: 'https://rhythm.localhost', PORT: 'auto' }),
+			resolveHostEnv({ PITCHFORK_URL: 'https://rhythm.localhost', PORT: 'auto' }),
 		).toThrow('PORT must be an integer')
 	})
 })

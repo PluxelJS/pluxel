@@ -26,7 +26,7 @@ describe('Pluxel Vite URL presentation', () => {
 		expect(info).toHaveBeenCalledWith('  ➜  Workbench:   http://127.0.0.1:43123/__pluxel/workbench')
 	})
 
-	it('uses the stable Portless origin for both application surfaces', () => {
+	it('uses the stable Pitchfork origin for both application surfaces', () => {
 		const { server, info, printUrls } = fixture()
 		installPluxelViteUrlPrinter(server, {
 			publicOrigin: 'https://rhythm.localhost',

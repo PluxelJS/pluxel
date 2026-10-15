@@ -13,7 +13,7 @@ import {
 
 /** Native Layout must receive geometry in jsdom for its real content portals to mount. */
 export function prepareNativeWorkbenchDom() {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
 		() => new DOMRect(0, 0, 1200, 800),
 	)

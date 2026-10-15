@@ -1,6 +1,6 @@
 import type { PluginDependencyMode } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { relative, dirname } from 'node:path'
-import type { ResolvedConfig } from 'tsdown'
+import type { ResolvedConfig } from 'vite-plus/pack'
 import { runRules } from './rules'
 import { validateWorkbenchCapnwebPeer } from './workbench-peer'
 import type { BuildLogger, BuildRuntimeConfig, BuildSuccessHook } from './types'

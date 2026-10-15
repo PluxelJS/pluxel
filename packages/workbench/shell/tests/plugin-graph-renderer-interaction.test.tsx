@@ -19,7 +19,7 @@ const mounted: Array<ReturnType<typeof createRoot>> = []
 let boundingRectMock: ReturnType<typeof vi.spyOn>
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	boundingRectMock = vi
 		.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
 		.mockReturnValue(new DOMRect(0, 0, 800, 600))

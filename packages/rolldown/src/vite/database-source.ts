@@ -1,4 +1,5 @@
 import { resolve } from 'pathe'
+import type { Plugin } from 'vite'
 import {
 	findDatabasePackageRoot,
 	loadDatabaseArtifactForSource,
@@ -6,13 +7,12 @@ import {
 } from '../database/artifact.ts'
 import { extractDatabaseDeclarations } from '../database/declaration.ts'
 import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
-import type { ViteCompatPlugin } from '../rolldown/plugins/compat.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 import { normalizeViteId } from '../rolldown/plugins/viteNormalizeId.ts'
 
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
 
-export function databaseSourceVitePlugin(options: { root?: string } = {}): ViteCompatPlugin {
+export function databaseSourceVitePlugin(options: { root?: string } = {}): Plugin {
 	const root = resolve(options.root ?? process.cwd())
 	const packages = new Map<string, string>()
 	return {

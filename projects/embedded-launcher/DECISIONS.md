@@ -30,13 +30,13 @@ LLRT 放在专用线程，复用异步执行机制并验证 CPU 预算与公平�
 
 2026-10-08 的文档/API 调研，不是完整候选应用的性能、稳定性或 agent 成功率实测。所有候选都能接外部消息；差异在于应用需要维护多少接线与 UI 约定，而不是谁有“QuickJS 专用支持”。
 
-| 方案 | 与本例相关的优势 | 取舍 |
-| --- | --- | --- |
-| Iced + 按需 iced_aw（选择） | Subscription/Message/update/view 直接表达外部事件与显示投影；iced_test 支持无头交互与截图 | 组件够本例使用，但需统一主题和布局；iced_aw 是扩展控件，不是完整桌面设计系统 |
-| GPUI Kit | 组件、主题与资源配套更完整；异步任务接收 channel 后更新 Entity，同样可以清晰接入 LLRT | 需管理 Entity/Context、观察关系和任务寿命，并使用 Kit 配套的 GPUI 快照；本例暂不需要富工作台的组件广度 |
-| libcosmic | 基于 Iced 的完整 COSMIC 应用工具包，比附加控件更成体系 | 同时采用 COSMIC 设计体系和应用约定；本例无需额外平台集成 |
-| Slint | 声明式 UI、预览与 Rust 逻辑分离，有无头测试和开发 MCP 工具 | 新增 .slint DSL、生成接口与模型映射；需核对许可与发布条件；本例没有足够的视觉设计收益来优先采用 |
-| egui/eframe | Rust 内直接布局，egui_kittest 与 inspection 提供测试反馈 | 外部事件与 UI 状态的组织更依赖应用约定；并非不能做好，但不作为本例默认 |
+| 方案                        | 与本例相关的优势                                                                          | 取舍                                                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Iced + 按需 iced_aw（选择） | Subscription/Message/update/view 直接表达外部事件与显示投影；iced_test 支持无头交互与截图 | 组件够本例使用，但需统一主题和布局；iced_aw 是扩展控件，不是完整桌面设计系统                           |
+| GPUI Kit                    | 组件、主题与资源配套更完整；异步任务接收 channel 后更新 Entity，同样可以清晰接入 LLRT     | 需管理 Entity/Context、观察关系和任务寿命，并使用 Kit 配套的 GPUI 快照；本例暂不需要富工作台的组件广度 |
+| libcosmic                   | 基于 Iced 的完整 COSMIC 应用工具包，比附加控件更成体系                                    | 同时采用 COSMIC 设计体系和应用约定；本例无需额外平台集成                                               |
+| Slint                       | 声明式 UI、预览与 Rust 逻辑分离，有无头测试和开发 MCP 工具                                | 新增 .slint DSL、生成接口与模型映射；需核对许可与发布条件；本例没有足够的视觉设计收益来优先采用        |
+| egui/eframe                 | Rust 内直接布局，egui_kittest 与 inspection 提供测试反馈                                  | 外部事件与 UI 状态的组织更依赖应用约定；并非不能做好，但不作为本例默认                                 |
 
 来源：[Iced Subscription](https://docs.rs/iced/0.14.0/iced/struct.Subscription.html)、[iced_aw](https://github.com/iced-rs/iced_aw)、[iced_test](https://docs.rs/iced_test/0.14.0/iced_test/)、[GPUI Kit 配套版本](https://gpui-kit.com/docs/installation/)、[GPUI Task](https://gpui-kit.com/docs/task/)、[COSMIC Toolkit](https://pop-os.github.io/libcosmic-book/)、[Slint testing/MCP](https://docs.rs/i-slint-backend-testing/1.18.1/i_slint_backend_testing/)、[Slint 许可证入口](https://github.com/slint-ui/slint/blob/v1.18.1/LICENSE.md)、[egui_kittest](https://docs.rs/egui_kittest/latest/egui_kittest/)、[eframe](https://docs.rs/eframe/latest/eframe/)。这些工具的存在不等于本机已经验证可用。
 

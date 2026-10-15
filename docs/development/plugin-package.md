@@ -8,15 +8,15 @@ description: 创建一个可以独立构建、测试和发布的 Pluxel 插件�
 准备 Node.js 24+、pnpm 11，在空的工作目录运行：
 
 ```sh
-pnpm dlx @pluxel/cli@1 new --template plugin --name @acme/orders
+vp dlx @pluxel/cli@1 new --template plugin --name @acme/orders
 cd orders
-pnpm verify
-pnpm pack --dry-run
+vp run verify
+vp pm pack --dry-run
 ```
 
 这个名称会规范化为 npm 包 `@acme/pluxel-plugin-orders`，输出目录为 `orders/`，实现文件为 `src/orders.ts`，导出类为 `OrdersPlugin`。
 
-`verify` 应完成治理、格式、lint、类型、测试和构建检查；pack 列表应包含 `dist/index.mjs`、类型声明及插件声明需要的生成文件。已有 workspace 固定 CLI 时，用 `pnpm exec pluxel new`。
+`verify` 应完成治理、格式、lint、类型、测试和构建检查；pack 列表应包含 `dist/index.mjs`、类型声明及插件声明需要的生成文件。已有 workspace 固定 CLI 时，用 `vp exec pluxel new`。
 
 官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。local template 则默认不执行安装，必须显式传入
 `--install` 才会运行 package manager。编写 manifest 与 `.tpl` 文件前先阅读[自定义本地 Plugin 模板](./tooling.md#自定义本地-plugin-模板)。
@@ -40,6 +40,7 @@ tests/
 package.json
 tsconfig.json
 tsdown.config.ts
+vite.config.ts
 vitest.config.ts
 oxlint.config.ts
 ```
@@ -76,7 +77,7 @@ export { VaultAdminPlugin } from './plugins/vault/index.ts'
 
 ## 包清单的关键字段
 
-下面只摘录关键字段；完整依赖、catalog 和 scripts 使用 CLI 生成的文件，不要用这个片段覆盖整个 manifest：
+下面只摘录关键字段；完整依赖、catalog 和任务配置使用 CLI 生成的文件，不要用这个片段覆盖整个 manifest：
 
 ```json
 {
@@ -91,19 +92,13 @@ export { VaultAdminPlugin } from './plugins/vault/index.ts'
 		}
 	},
 	"files": ["dist", "!**/*.map"],
-	"scripts": {
-		"build": "pluxel build",
-		"lint": "oxlint -c oxlint.config.ts src tests tsdown.config.ts vitest.config.ts",
-		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --check .",
-		"test": "vitest run",
-		"typecheck": "tsc --noEmit --pretty false",
-		"verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
-	},
 	"peerDependencies": {
 		"@pluxel/core": "catalog:"
 	}
 }
 ```
+
+构建和验证任务由生成的 `vite.config.ts` 的 `run.tasks` 维护：`build` 执行 `pluxel build`，`test` 执行 `vp test run`，`verify` 通过依赖图组合治理、`vp check`、测试与构建。格式规则在 `fmt`；`lint` 同时开启 `typeAware` 与 `typeCheck`，覆盖 TypeScript 项目检查。
 
 上例用 `@pluxel/hmr` 选择源码、`default` 选择构建制品，适合同时开发和发布的包。
 源码识别也接受 `@pluxel/source`、`development` 条件；仅在工作区消费的 TypeScript 包可以直接写
@@ -155,6 +150,7 @@ Plugin source 需要 decorator；使用条件源码导出时，让 TypeScript �
 		"tests/**/*.ts",
 		"tests/**/*.tsx",
 		"tsdown.config.ts",
+		"vite.config.ts",
 		"vitest.config.ts",
 		"oxlint.config.ts"
 	]
@@ -168,7 +164,7 @@ Plugin source 需要 decorator；使用条件源码导出时，让 TypeScript �
 当前 CLI 模板使用普通 tsdown config：
 
 ```ts twoslash
-import { defineConfig } from 'tsdown'
+import { defineConfig } from 'vite-plus/pack'
 
 export default defineConfig({
 	tsconfig: './tsconfig.json',
@@ -187,7 +183,7 @@ export default defineConfig({
 })
 ```
 
-构建命令仍然是 `pluxel build`。CLI 读取并合并这个 tsdown config，再安装标准 semantic/build pipeline；不要直接把 package script 改成裸 `tsdown`，也不要自行重复安装 decorator transform、config extractor 或 Workbench builder。
+构建命令仍然是 `pluxel build`。CLI 读取并合并这个 tsdown config，再安装标准 semantic/build pipeline；不要直接把 package script 改成裸 `vp pack`，也不要自行重复安装 decorator transform、config extractor 或 Workbench builder。
 
 `pluginPackage()` 是 `@pluxel/rolldown/build` 的底层集成入口，适合自定义构建工具；canonical CLI package 使用 `pluxel build`。
 `pluxel build --watch` 的 watcher、配置重启与终端交互由命令进程拥有；停止命令结束整个 watch 会话。
@@ -241,8 +237,8 @@ Content-only package 不加载 Federation builder、不生成 remote entry，也
 ## 构建与发布检查
 
 ```sh
-pnpm verify
-pnpm pack --dry-run
+vp run verify
+vp pm pack --dry-run
 ```
 
 `verify` 应依次覆盖 format、lint、typecheck、test 和 `pluxel build`。发布前再检查 pack 列表：

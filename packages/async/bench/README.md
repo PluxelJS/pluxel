@@ -3,7 +3,7 @@
 ## 复现
 
 ```sh
-pnpm --filter @pluxel/async bench
+vp run @pluxel/async#bench
 ```
 
 该命令先用 tsdown 构建并验证制品，然后使用 `vitest.bench.config.ts` 的原生 ESM 模式运行全部基准。普通测试继续从 `@pluxel/source` 读取源码，不依赖 dist；基准则断言所有本包入口解析到 dist，与对照库的 npm 制品保持同一层级。这样避免了 [Vitest module runner 的 export getter 开销](https://vitest.dev/guide/benchmarking#module-runner-overhead)。

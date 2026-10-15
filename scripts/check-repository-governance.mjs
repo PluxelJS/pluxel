@@ -42,8 +42,7 @@ const errors = []
 const packageManifests = repositoryPackages
 const rootManifest = packageManifests.find(({ kind }) => kind === 'root')?.manifest
 if (!rootManifest) throw new Error('repository package inventory is missing the root package')
-// Turbo includes root workspace dependencies transitively in every task's global cache hash.
-// Keep workspace tools owned by their consuming packages; root CLI access uses a package script.
+// Keep workspace tools owned by their consuming packages; root CLI access uses a native Vite task.
 const workspaceNames = new Set(
 	packageManifests.filter(({ kind }) => kind !== 'root').map(({ manifest }) => manifest.name),
 )
@@ -55,6 +54,9 @@ const pnpmLock = await readFile(resolve(root, 'pnpm-lock.yaml'), 'utf8')
 for (const [tool, requiredMajor] of [
 	['node', 24],
 	['pnpm', 11],
+	['viteplus', 1],
+	['hk', 2],
+	['pitchfork', 2],
 ]) {
 	const configured = new RegExp(`^${tool}\\s*=\\s*["']([^"']+)["']`, 'm').exec(miseConfig)?.[1]
 	if (!isSemver(configured)) {
@@ -78,29 +80,16 @@ if (rootManifest.repository?.url !== repositoryUrl) {
 if (rootManifest.license !== expectedLicense) {
 	errors.push(`root package license must be ${expectedLicense}`)
 }
-if (rootManifest.packageManager !== undefined) {
-	errors.push('use devEngines.packageManager instead of a version-pinned packageManager field')
+const pnpmVersion = /^pnpm\s*=\s*["']([^"']+)["']/m.exec(miseConfig)?.[1]
+if (rootManifest.packageManager !== `pnpm@${pnpmVersion}`) {
+	errors.push('root packageManager must match the exact pnpm version in mise.toml')
 }
 if (!isSemver(rootManifest.devDependencies?.tegami)) {
 	errors.push('root devDependencies.tegami must pin an exact semver')
 }
-const packageManager = rootManifest.devEngines?.packageManager
-if (packageManager?.name !== 'pnpm') {
-	errors.push('devEngines.packageManager.name must be pnpm')
-}
-if (typeof packageManager?.version !== 'string' || isSemver(packageManager.version)) {
-	errors.push(
-		'devEngines.packageManager.version must be a non-exact range; mise controls the installed pnpm version',
-	)
-}
-if (packageManager?.onFail !== 'ignore') {
-	errors.push(
-		'devEngines.packageManager.onFail must be ignore; mise selects pnpm while npm handles trusted publishing',
-	)
-}
 if (/^\s+packageManagerDependencies:/m.test(pnpmLock)) {
 	errors.push(
-		'pnpm-lock.yaml must not pin pnpm; mise controls the installed package manager version',
+		'pnpm-lock.yaml must not pin pnpm; packageManager and mise.toml own the package manager version',
 	)
 }
 if (rootManifest.workspaces !== undefined) {
@@ -114,6 +103,17 @@ if (Object.keys(rootManifest.dependencies ?? {}).length > 0) {
 
 const workspaceSource = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8')
 const workspace = parse(workspaceSource)
+const vitePlusVersion = /^viteplus\s*=\s*["']([^"']+)["']/m.exec(miseConfig)?.[1]
+if (
+	workspace.catalogs?.build?.['vite-plus'] !== vitePlusVersion ||
+	workspace.peerDependencyRules?.allowedVersions?.vite !== vitePlusVersion ||
+	workspace.catalogs?.build?.vite !== `npm:@voidzero-dev/vite-plus-core@${vitePlusVersion}` ||
+	workspace.overrides?.['vite@*'] !== `npm:@voidzero-dev/vite-plus-core@${vitePlusVersion}`
+) {
+	errors.push(
+		'mise viteplus, the vite-plus catalog, Vite Core aliases and peer allowance must pin the same version',
+	)
+}
 const workspacePatterns = new Set(workspace.packages)
 for (const pattern of ['packages/*', 'plugins/*', 'plugins/*/*']) {
 	if (!workspacePatterns.has(pattern)) errors.push(`workspace is missing ${pattern}`)
@@ -203,7 +203,11 @@ for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
 
 for (const { packageRoot, manifestPath, directory, kind, manifest } of packageManifests) {
 	const isPublic = isPublishablePackage({ kind, manifest })
-	if (typeof manifest.scripts?.typecheck !== 'string' || manifest.scripts.typecheck.length === 0) {
+	// The private root owns its aggregate typecheck in vite.config.ts.
+	if (
+		kind !== 'root' &&
+		(typeof manifest.scripts?.typecheck !== 'string' || manifest.scripts.typecheck.length === 0)
+	) {
 		errors.push(`${relative(manifestPath)}: every workspace package must define a typecheck script`)
 	}
 	if (

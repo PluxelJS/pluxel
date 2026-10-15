@@ -123,7 +123,7 @@ generation 开始时的 ambient version，已有更新 ambient 事实的 module 
 React transform/refresh 由应用 Vite 配置显式安装一次，Host-vite 开发入口不因是否存在动态来源改变 React 所有权。
 Starter 的统一 Vite smoke 验证 browser graph 与 `/@react-refresh`，避免重复或缺失 React plugin。
 
-Portless 只把稳定的外部 `*.localhost` origin 路由到这一个 `ViteDevServer` 注入的物理 listener；它不创建第二个 HMR graph。
+Pitchfork 等反代只把公开 origin 路由到这一个 `ViteDevServer` 注入的物理 listener，并转发 HMR WebSocket；它不创建第二个 HMR graph。
 业务 SPA、Workbench、Cap'n Web WebSocket、MF assets 与 Vite HMR 保持同源，分别由既有 path/upgrade 仲裁。Workbench 与业务前端
 因此可以同时显示两个 URL，但不能据此拆成两个 server port。
 

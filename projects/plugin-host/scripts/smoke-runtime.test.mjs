@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { request } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -56,9 +56,42 @@ for (const mode of ['native', 'production-vite']) {
 		const origin = `http://127.0.0.1:${port}`
 		try {
 			const status = await waitForStatus(origin, child)
-			assert.match(status.rendererProvider, /EChartsShowcaseRenderer/)
+			assert.deepEqual(status.engines, [
+				'echarts',
+				'canvas',
+				'takumi',
+				'heroui',
+				'markdown',
+				'typst',
+			])
+			assert.match(status.renderingProviders.takumi, /TakumiPlugin/)
 			assert.match(status.storageProvider, /S3Plugin/)
 			assert.deepEqual(status.artifacts, [])
+			for (const engine of ['takumi', 'heroui', 'markdown', 'typst']) {
+				const generated = await fetch(`${origin}/showcase/generate/${engine}/Compiled%20report`, {
+					method: 'POST',
+				})
+				assert.equal(generated.status, 200, await generated.clone().text())
+				const artifact = await generated.json()
+				assert.equal(artifact.engine, engine)
+				assert.ok(artifact.byteLength > 100)
+				const preview = await fetch(`${origin}/showcase/artifacts/${artifact.id}`)
+				assert.equal(preview.status, 200)
+				assert.equal(
+					preview.headers.get('content-type'),
+					engine === 'typst' ? 'image/svg+xml' : 'image/png',
+				)
+				const previewBytes = await preview.arrayBuffer()
+				assert.equal(previewBytes.byteLength, artifact.byteLength)
+				const evidenceDirectory = process.env.PLUXEL_SMOKE_ARTIFACTS_DIR
+				if (evidenceDirectory && ['heroui', 'markdown'].includes(engine)) {
+					await mkdir(evidenceDirectory, { recursive: true })
+					await writeFile(
+						join(evidenceDirectory, `${mode}-${engine}.png`),
+						new Uint8Array(previewBytes),
+					)
+				}
+			}
 			const shell = await requestDocument(`${origin}/__pluxel/workbench/plugins`)
 			assert.equal(shell.status, 200)
 			assert.match(shell.text, /content="\/__pluxel\/workbench"/)

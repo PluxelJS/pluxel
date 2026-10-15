@@ -59,9 +59,9 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "tsdown",
-		"test": "pnpm exec vitest run --config vitest.config.ts",
-		"typecheck": "tsc -p tsconfig.json --noEmit"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@pluxel/rolldown": "workspace:^",
@@ -73,6 +73,7 @@
 		"@pluxel/core": "workspace:*",
 		"capnweb": "catalog:prod",
 		"fs-fixture": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import electron from 'electron'
-import { build } from 'tsdown'
+import { build } from 'vite-plus/pack'
 import { createServer } from 'vite'
 import { runPnpm } from './run-pnpm.mjs'
 

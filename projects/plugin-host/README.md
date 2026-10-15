@@ -2,12 +2,12 @@
 
 > Status: internal workspace application and end-to-end architecture smoke. It is not published.
 
-`projects/plugin-host` is the runnable reference host for Pluxel. It loads every official Plugin,
+`projects/plugin-host` is the runnable reference host for Pluxel. It composes official rendering, storage and application capabilities,
 starts the dependency chains that work without external infrastructure, and exposes the important
 architecture choices through the Workbench instead of leaving them in logs-only toy examples.
 
 The product identity is **Pluxel Architecture Lab**. `src/app.ts` imports the official Plugins,
-showcases and focused demos, and adds a mutable directory for Package Manager's published ESM entries.
+one Report Studio application plugin and the independent Bot Workspace product, and adds a mutable directory for Package Manager's published ESM entries.
 The same declaration drives Vite development, modules builds and native startup; `sources` adds discovery to the
 fixed catalog. Native accepts a startup snapshot; Vite owns live updates. Package Manager owns installation and atomic publication,
 while the Host owns catalog acceptance and lifecycle.
@@ -18,26 +18,25 @@ Memory is the explicit default for both backend tokens.
 ## Run
 
 ```sh
-pnpm --filter @pluxel/plugins-host dev
+mise run dev
 ```
 
-The dev command builds workspace dependencies one Turbo task at a time before starting Vite.
-Each task can still build Workbench bundles and generate declarations using its own workers, so
-`--concurrency=1` limits overlapping package tasks, not peak memory inside a build. Turbo reuses unchanged outputs.
+Pitchfork manages the development service. Workspace builds use Vite Task with explicit build dependencies and cached outputs;
+individual bundlers and declaration generators may still use their own workers.
 
 When workspace dependencies are already built, start Vite directly for UI development without repeating
 the production dependency build:
 
 ```sh
-pnpm --filter @pluxel/plugins-host exec vite --config vite.config.ts
+(cd projects/plugin-host && vp dev --config vite.config.ts)
 ```
 
 Use the full `dev` command when dependency build outputs need preparation.
 
-For production, run `pnpm --filter @pluxel/plugins-host build`, then
-`pnpm --filter @pluxel/plugins-host start` for native startup in a fresh Node process.
+For production, run `vp run @pluxel/plugins-host#compile`, then
+`vp run @pluxel/plugins-host#start` for native startup in a fresh Node process.
 The launcher binds before evaluating business imports; do not preload the application or its dependency graph.
-Use `pnpm --filter @pluxel/plugins-host start:vite` after building for continuous production updates;
+Use `vp run @pluxel/plugins-host#start:vite` after building for continuous production updates;
 `vite.runtime.config.ts` loads the compiled factory independently of the development config. Mutable data lives in `PLUXEL_DATA_ROOT`
 (default: `.pluxel` relative to `startup.root`), shared by Package Manager,
 persistence and local S3 storage. Keep this directory outside `dist`; use an absolute
@@ -50,48 +49,63 @@ Plugin persistence and stored showcase artifacts still use the configured data d
 The application explicitly allows 30 seconds for Plugin startup, including cold Node artifact compilation in development.
 This policy is shared by all three launchers; Core's default remains unchanged.
 
-One report generation exercises this graph:
+One **ReportStudioPlugin** owns the full report workflow. Select an engine for each request in the
+Architecture Lab page; no renderer adapter Plugins or provider switches are needed:
 
 ```text
-Rates -> admission Part
-Cache -> rendering Part -> ShowcaseRenderer
-                         ├─ ECharts -> Canvas -> Fonts
-                         ├─ Takumi ----------> Fonts
-                         └─ Canvas ----------> Fonts
-S3 bucket:drafts   -> publishing Part
-S3 bucket:releases -> ReleaseArchivePlugin
-Wretch      -> provider-owned HTTP settings Attachment
-Otel        -> report metrics at /showcase/metrics
+ReportStudioPlugin
+  ├─ Rates + Cache
+  ├─ ECharts -> Canvas -> Fonts
+  ├─ Canvas -> Fonts
+  ├─ Workers task -> Takumi worker adapter (React JSX and HeroUI v3 Card/Chip/Button)
+  ├─ TakumiMarkdown -> Typst math + Takumi shared Worker
+  ├─ Typst (stateless SVG compilation through the shared Workers service)
+  ├─ S3 bucket:drafts + bucket:releases
+  ├─ Wretch (provider-owned HTTP settings Attachment)
+  └─ Otel (report metrics at /showcase/metrics)
 ```
 
-The page shows the exact injected nodes, cache/rate facts, generated image, draft object key and
-the Workbench location of each architecture surface. Preview metadata stays small over Cap’n Web;
-the image itself is read from the stored artifact route. The same Plugin also registers:
+ECharts, Canvas, Takumi, HeroUI and Markdown generate PNG; Typst generates SVG. The engine, title
+and current Fonts revision identify a cache entry. Generation emits the Plugin-owned `generated`
+event, publishes to both named buckets, records metrics and notifies the Workbench observers.
+The recent-artifact list and RPC payload contain metadata; the preview image is read through its
+stored artifact route.
 
-- HTTP: `GET /showcase/status`, `POST /showcase/generate/:title`,
+The declared `report-render.task.tsx` constructs both JSX templates inside the shared Workers
+service. The application sends business data and concrete font bytes; it creates no JSX on the
+main thread. Native rendering and React Hooks execute in that task's bundle through
+`@pluxel/takumi/worker`. Font snapshots are read once per Fonts provider/portable revision and
+remain immutable until execution settles; `inputOwnership: 'borrowed'` avoids an extra queue-time
+font copy. Worker transport still clones the bytes at dispatch. Worker-local renderer/font-set
+caches can survive repeated tasks while that shared Worker remains alive.
+
+HeroUI uses the real `@heroui/react` v3 components, passed directly as JSX to Takumi in the Worker. The
+`report-card.css` stylesheet imports official HeroUI base/theme and the three component styles.
+`vp run @pluxel/plugins-host#styles:report-card` compiles it with Tailwind v4 into the
+committed `report-card-css.ts`; `dev` and `build` also regenerate it. The native application only
+loads the compiled CSS string in the task artifact. Card, Chip and Button have been probed with Takumi's JSX resolver
+and are covered by the real Plugin render test. Other React Aria components need their own
+compatibility checks. Configure portable Fonts resources to render Chinese or other scripts
+beyond the default font coverage.
+
+The Markdown report includes inline and display mathematics. `createRenderer()` automatically
+uses the optional Typst provider already in this catalog, then rasterizes through Takumi's shared
+Worker path; there is no separate math Plugin.
+
+The same application Plugin also registers:
+
+- HTTP: `GET /showcase/status`, `POST /showcase/generate/:engine/:title`,
   `GET /showcase/artifacts/:id`;
-- Commands: `showcase.report.generate`, `showcase.cache.clear`;
-- Workbench: a Direct View with a fresh Cap'n Web target and observer, plus Wretch's provider-owned
-  Attachment;
-- nested PluginPart config for admission, rendering and publishing.
+- Commands: `showcase.report.generate` with `{ title, engine }`, `showcase.cache.clear`;
+- Workbench: one view with an engine selector, status/artifact panels, observer and Wretch's
+  provider-owned Attachment;
+- one object config for admission, preview caching, output prefixes and outbound HTTP.
 
-## Choices worth changing in the Workbench
-
-- Change the `ShowcaseRenderer` dependency between ECharts, Takumi and Canvas. The consumer and its
-  dependent closure restart with a newly bound caller facade.
-- Inspect the single `S3Plugin` provider. Its bounded `drafts` and `releases` bucket catalog keeps
-  the two storage domains explicit without provider forks or dependency overrides.
-- Change `CacheBackend` or `RatesBackend` from Memory to a Redis implementation after configuring
-  and starting Redis. A failed external provider blocks only its required branch.
-- Edit the Report Studio Part config, Wretch Attachment settings, Fonts selection, auth setup and
-  official Plugin config forms.
-- Inspect plugin graph, lifecycle and logs; these are host-owned projections of the same runtime
-  state used by the showcase.
-
-The catalog keeps only two focused scenarios that add semantics not already covered by
-Report Studio: a required `EvtChannel` edge and optional-provider attach/detach. Their graph,
-lifecycle and logs are visible in the Workbench. The other examples remain in `src/demo` as focused
-source references and tests without cluttering the default runtime catalog.
+Inspect the single `S3Plugin` provider's `drafts` and `releases` buckets. Cache and Rates keep their
+real provider edges, so their backends can still be changed to Redis after configuring it.
+The four timer-only event/optional-integration registrations were removed from the runtime
+catalog. Focused examples remain in `src/demo` for individual API reading and tests. Bot Workspace
+keeps its own product boundary and independent sources.
 
 ## Coding agent runtime operations
 
@@ -104,9 +118,9 @@ From the repository root, discover the already running host and use its returned
 
 ```sh
 plugin_host_root="$(pwd)/projects/plugin-host"
-pnpm exec pluxel dev instances --root "$plugin_host_root"
-pnpm exec pluxel dev run projects/plugin-host/dev/inspect.ts --root "$plugin_host_root" --instance <id>
-pnpm exec pluxel dev run projects/plugin-host/dev/inspect.ts --export health --input '{"origin":"http://127.0.0.1:3310"}' --root "$plugin_host_root" --instance <id>
+vp exec pluxel dev instances --root "$plugin_host_root"
+vp exec pluxel dev run projects/plugin-host/dev/inspect.ts --root "$plugin_host_root" --instance <id>
+vp exec pluxel dev run projects/plugin-host/dev/inspect.ts --export health --input '{"origin":"http://127.0.0.1:3310"}' --root "$plugin_host_root" --instance <id>
 ```
 
 Multiple Vite processes can share this project root, so always keep the selected instance ID for subsequent `run`, `result` and `cancel` commands. Add ordinary named exports to
@@ -131,16 +145,16 @@ explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/
 ## Verify
 
 ```sh
-pnpm --filter @pluxel/plugins-host typecheck
-pnpm --filter @pluxel/plugins-host test
-pnpm --filter @pluxel/plugins-host build
-pnpm --filter @pluxel/plugins-host test:runtime
+vp run @pluxel/plugins-host#check-types
+vp run @pluxel/plugins-host#check-tests
+vp run @pluxel/plugins-host#compile
+vp run @pluxel/plugins-host#test:runtime
 ```
 
 The tests cover safe provider defaults, stopped Redis/Pi policy,
-the S3 named-bucket catalog, real render/cache behavior and isolated draft/release storage.
+the S3 named-bucket catalog, all six real render engines, cache separation, generated events and isolated draft/release storage.
 The runtime smoke uses fresh Node processes and temporary data for both launchers. It blocks Vite/compiler/watcher
-imports in Native, checks the compiled showcase and Workbench assets over HTTP, and requires natural exit after SIGTERM.
+imports in Native, renders Takumi/HeroUI PNG, Markdown with Typst mathematics and Typst SVG through the compiled application, checks the Workbench assets over HTTP, and requires natural exit after SIGTERM. Set `PLUXEL_SMOKE_ARTIFACTS_DIR` to retain the HeroUI and Markdown PNGs for visual inspection.
 
 ### 机器人工作区：真实插件 API、模拟业务数据
 

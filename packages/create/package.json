@@ -22,19 +22,19 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "tsdown --config-loader tsx",
-		"test": "pnpm run build && vitest run tests/*.test.mjs",
+		"build": "vp run compile",
+		"test": "vp run check-tests",
 		"test:starter": "node scripts/smoke-starter.ts",
-		"typecheck": "tsc --noEmit --pretty false",
-		"prepack": "pnpm run build"
+		"typecheck": "vp run check-types",
+		"prepack": "vp run compile"
 	},
 	"devDependencies": {
 		"@pluxel-internal/pncat": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@types/node": "catalog:types",
-		"tsdown": "catalog:build",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"engines": {

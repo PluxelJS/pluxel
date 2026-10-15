@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-cli-plugin-smoke-'))
@@ -17,15 +17,14 @@ try {
 		mkdir(scaffoldRoot, { recursive: true }),
 	])
 	const publishPackages = await resolveLocalPublishClosure(repositoryRoot, publishRoots)
-	await runPnpm(
-		['exec', 'turbo', 'run', 'build', ...publishPackages.map(({ name }) => `--filter=${name}`)],
-		repositoryRoot,
-	)
+	for (const name of publishRoots) {
+		await runVp(['run', `${name}#build`], repositoryRoot)
+	}
 
 	const overrides: Record<string, string> = {}
 	for (const item of publishPackages) {
 		const tarball = resolve(tarballRoot, `${item.name.replaceAll(/[@/]/g, '-')}.tgz`)
-		await runPnpmCapture(['--dir', resolve(repositoryRoot, item.path), 'pack', '--out', tarball])
+		await runVpCapture(['pm', 'pack', '--out', tarball], resolve(repositoryRoot, item.path))
 		overrides[item.name] = `file:${tarball}`
 	}
 
@@ -48,13 +47,10 @@ try {
 
 	await assertGeneratedGitIgnore(pluginRoot)
 	await appendOverrides(resolve(pluginRoot, 'pnpm-workspace.yaml'), overrides)
-	await runPnpm(['install', '--frozen-lockfile=false'], pluginRoot)
-	await runPnpm(
-		['exec', 'oxfmt', '-c', '.oxfmtrc.json', '--write', 'pnpm-workspace.yaml'],
-		pluginRoot,
-	)
-	await runPnpm(['exec', 'pluxel', 'workspace', 'setup'], pluginRoot)
-	await runPnpm(['verify'], pluginRoot, { CI: '1' })
+	await runVp(['install', '--no-frozen-lockfile'], pluginRoot)
+	await runVp(['fmt', '--write', 'pnpm-workspace.yaml'], pluginRoot)
+	await runVp(['exec', 'pluxel', 'workspace', 'setup'], pluginRoot)
+	await runVp(['run', 'verify'], pluginRoot, { CI: '1' })
 	await verifyStandalonePluginPack(pluginRoot)
 } finally {
 	if (process.env.PLUXEL_KEEP_TEMPLATE_SMOKE) {
@@ -129,11 +125,14 @@ async function installPackedCli(
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
-		`${JSON.stringify({ name: 'pluxel-cli-smoke', private: true, dependencies: { '@pluxel/cli': tarball } }, null, 2)}\n`,
+		`${JSON.stringify({ name: 'pluxel-cli-smoke', private: true, packageManager: 'pnpm@11.28.2', dependencies: { '@pluxel/cli': tarball } }, null, 2)}\n`,
 	)
-	await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+	await writeFile(
+		resolve(root, 'pnpm-workspace.yaml'),
+		'packages:\n  - .\nallowBuilds:\n  esbuild: true\n',
+	)
 	await appendOverrides(resolve(root, 'pnpm-workspace.yaml'), overrides)
-	await runPnpm(['install', '--frozen-lockfile=false'], root)
+	await runVp(['install', '--no-frozen-lockfile'], root)
 }
 
 async function appendOverrides(path: string, overrides: Record<string, string>): Promise<void> {
@@ -141,7 +140,14 @@ async function appendOverrides(path: string, overrides: Record<string, string>):
 	const lines = Object.entries(overrides)
 		.sort(([left], [right]) => left.localeCompare(right))
 		.map(([name, specifier]) => `  '${name}': '${specifier}'`)
-	await writeFile(path, `${source.trimEnd()}\n\noverrides:\n${lines.join('\n')}\n`)
+	const marker = 'overrides:\n'
+	const block = `${lines.join('\n')}\n`
+	await writeFile(
+		path,
+		source.includes(marker)
+			? source.replace(marker, `${marker}${block}`)
+			: `${source.trimEnd()}\n\n${marker}${block}`,
+	)
 }
 
 async function assertGeneratedGitIgnore(root: string): Promise<void> {
@@ -152,7 +158,7 @@ async function assertGeneratedGitIgnore(root: string): Promise<void> {
 }
 
 async function verifyStandalonePluginPack(root: string): Promise<void> {
-	const output = await runPnpmCapture(['pack', '--dry-run', '--json'], root)
+	const output = await runVpCapture(['pm', 'pack', '--json', '--', '--dry-run'], root)
 	const manifest = JSON.parse(output) as { files?: Array<{ path?: string }> }
 	const files = (manifest.files ?? []).map((file) => file.path).filter(Boolean) as string[]
 	for (const required of ['dist/index.mjs', 'dist/index.d.mts', 'package.json', 'README.md']) {
@@ -166,21 +172,27 @@ async function verifyStandalonePluginPack(root: string): Promise<void> {
 	}
 }
 
-async function runPnpm(
+async function runVp(
 	args: string[],
 	cwd: string,
 	environment: Record<string, string> = {},
 ): Promise<void> {
-	await runProcess(process.env.npm_execpath ?? 'pnpm', args, cwd, environment)
+	await runProcess('vp', args, cwd, {
+		...environment,
+		PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
+	})
 }
 
-async function runPnpmCapture(args: string[], cwd: string): Promise<string> {
-	const command = process.env.npm_execpath ?? 'pnpm'
+async function runVpCapture(args: string[], cwd: string): Promise<string> {
+	const command = 'vp'
 	return await new Promise((accept, reject) => {
 		const child = spawn(command, args, {
 			cwd,
 			stdio: ['ignore', 'pipe', 'pipe'],
-			env: process.env,
+			env: {
+				...process.env,
+				PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
+			},
 		})
 		let stdout = ''
 		let stderr = ''
@@ -189,8 +201,7 @@ async function runPnpmCapture(args: string[], cwd: string): Promise<string> {
 		child.once('error', reject)
 		child.once('exit', (code, signal) => {
 			if (code === 0) accept(stdout)
-			else
-				reject(new Error(`pnpm ${args.join(' ')} failed (${signal ?? code}): ${stderr || stdout}`))
+			else reject(new Error(`vp ${args.join(' ')} failed (${signal ?? code}): ${stderr || stdout}`))
 		})
 	})
 }

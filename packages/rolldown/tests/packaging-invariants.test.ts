@@ -328,7 +328,7 @@ describe('toolchain package boundaries', () => {
 		const packageNames = ['cli', 'rolldown', 'host-vite', 'host', 'test']
 		const offenders: string[] = []
 		const nativeToolchainPackage =
-			/^(?:oxc-(?:parser|resolver)|@oxc-(?:parser|resolver)\/binding-|rolldown|@rolldown\/binding-|oxlint|@oxlint\/binding-|oxfmt|@oxfmt\/binding-)$/
+			/^(?:oxc-(?:parser|resolver)|@oxc-(?:parser|resolver)\/binding-|rolldown|@rolldown\/binding-|oxlint|@oxlint\/binding-|oxfmt|@oxfmt\/binding-|vite-plus|@voidzero-dev\/vite-plus[^/]*)$/
 
 		for (const packageName of packageNames) {
 			const pkg = await readJson(`${root}/packages/${packageName}/package.json`)

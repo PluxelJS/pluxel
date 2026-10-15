@@ -29,7 +29,7 @@ const statePath = '.pluxel/development.json'
 const skillPath = '.agents/skills/pluxel-development'
 const agentStart = '<!-- pluxel:development -->'
 const agentEnd = '<!-- /pluxel:development -->'
-const instructions = `${agentStart}\n\nFor Pluxel development, read .agents/skills/pluxel-development/SKILL.md and docs/pluxel/development/index.md.\nMissing generated resources: Git users run their upstream CLI's source install; npm users install dependencies then run pnpm exec pluxel workspace setup.\nKeep upstream instructions in their source; maintain only project-specific constraints here.\n${agentEnd}`
+const instructions = `${agentStart}\n\nFor Pluxel development, read .agents/skills/pluxel-development/SKILL.md and docs/pluxel/development/index.md.\nMissing generated resources: Git users run their upstream CLI's source install; npm users install dependencies then run vp exec pluxel workspace setup.\nKeep upstream instructions in their source; maintain only project-specific constraints here.\n${agentEnd}`
 
 export function developmentSource(moduleUrl = import.meta.url): DevelopmentSource {
 	const git = Object.values(discoverCliCheckout(moduleUrl))[0]
@@ -231,7 +231,8 @@ export function setupDevelopmentWorkspace(root: string, source = developmentSour
 export function diagnoseDevelopmentWorkspace(root: string, source = developmentSource()): string[] {
 	root = realpathSync(root)
 	if (source.kind === 'git' && root === source.root) return []
-	const fix = source.kind === 'git' ? 'pluxel source install' : 'pnpm exec pluxel workspace setup'
+	const fix =
+		source.kind === 'git' ? 'vp exec pluxel source install' : 'vp exec pluxel workspace setup'
 	try {
 		if (existsSync(resolve(root, '.pluxel/source-install.lock')))
 			return [`Development install in progress at ${root}`]

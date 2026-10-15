@@ -126,17 +126,21 @@ function createPluginSourcePlugins(
 					lintGuardPlugin({
 						cwd: options.root ?? environment.config.root,
 						...options.lintGuard,
-					}),
+					}) as Plugin,
 				{ enforce: 'pre', environment: environmentName },
 			),
 		)
 	}
 	if (options.configSource !== false) {
 		serverPlugins.push(
-			serverOnlyVitePlugin('pluxel-config-source', configSourcePlugin(options.configSource), {
-				enforce: 'pre',
-				environment: environmentName,
-			}),
+			serverOnlyVitePlugin(
+				'pluxel-config-source',
+				configSourcePlugin(options.configSource) as Plugin,
+				{
+					enforce: 'pre',
+					environment: environmentName,
+				},
+			),
 		)
 	}
 	return [...plugins, ...serverPlugins]

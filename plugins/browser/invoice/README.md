@@ -17,4 +17,4 @@ The result separates model transcription (`extraction`) from official verificati
 
 This assumes an injected, running `InvoicePlugin`. `extract(image, { signal })` performs transcription alone; `verify(input, options)` accepts already validated domain inputs. Each call owns its IO and closes acquired browser contexts before settling. Model transport failures reject; inspect the documented error codes, and do not blindly retry a possibly submitted website query.
 
-Checks: `pnpm test`, `pnpm typecheck`, `pnpm test:browser` (requires a Playwright Chromium installation). `pnpm test:live` explicitly sends supplied images to an external model and may submit official queries; see the guide before running it.
+Checks: `vp run test`, `vp run typecheck`, `vp run test:browser` (requires a Playwright Chromium installation). `vp run test:live` explicitly sends supplied images to an external model and may submit official queries; see the guide before running it.

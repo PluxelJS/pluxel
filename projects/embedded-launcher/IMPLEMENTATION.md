@@ -6,12 +6,12 @@
 
 本表是实现进度的唯一维护处；每阶段完成后填写真实命令、产物位置、观察结果和剩余缺口，不以文件存在或 CLI 退出码代替功能验收。
 
-| 阶段 | 当前状态 | 完成证据 |
-| --- | --- | --- |
-| A：真实 LLRT 嵌入与插件生命周期 | 主要门槛通过，最终集成后仍需回归 | 主 agent 亲跑 smoke、runtime regression、14 项兼容与正常关闭；重复兼容销毁子任务已过，见下 |
-| B：Node/Vite HMR 与原生往返 | 已实现，部分真实验收通过 | helper HMR、旧 action 拒绝、init 失败修复、断线窗口保留与 fresh session；完整竞态待补 |
-| C：UI/CLI/配置与插件管理 | 已实现，部分真实验收通过 | Wayland 真实截图中文正常、保存/应用精度与 CLI 共享结果；真实控件/剪贴板待补 |
-| D：联网、能力观察、安装和 runtime 重建 | 主路径已实现并真实通过，扩展矩阵未全验收 | workspace 外无 Node、HTTPS/Wretch、v1→v2、移除/显式恢复、ABI/摘要拒绝通过 |
+| 阶段                                   | 当前状态                                 | 完成证据                                                                                   |
+| -------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
+| A：真实 LLRT 嵌入与插件生命周期        | 主要门槛通过，最终集成后仍需回归         | 主 agent 亲跑 smoke、runtime regression、14 项兼容与正常关闭；重复兼容销毁子任务已过，见下 |
+| B：Node/Vite HMR 与原生往返            | 已实现，部分真实验收通过                 | helper HMR、旧 action 拒绝、init 失败修复、断线窗口保留与 fresh session；完整竞态待补      |
+| C：UI/CLI/配置与插件管理               | 已实现，部分真实验收通过                 | Wayland 真实截图中文正常、保存/应用精度与 CLI 共享结果；真实控件/剪贴板待补                |
+| D：联网、能力观察、安装和 runtime 重建 | 主路径已实现并真实通过，扩展矩阵未全验收 | workspace 外无 Node、HTTPS/Wretch、v1→v2、移除/显式恢复、ABI/摘要拒绝通过                  |
 
 先完成 A 再展开 B-D；无需预先生成所有模块。遇到关键嵌入阻断应保留最小复现，解释影响并修正当前路线，不靠删掉能力或改为 Node 发布执行伪装成功。
 
@@ -38,17 +38,17 @@
 
 ## 1. 已核对的基础与缺口
 
-| 项目        | 当前事实/来源                                                                                                                                        | 实施要解决的问题                                                |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Core/Host   | [系统边界](../../engineering/PLUGIN_SYSTEM.md)、[Host 实现](../../packages/host/src/host.ts)                                                         | 不复制 graph；Host 根入口含 Node 执行路径，需审计 portable 闭包 |
-| Plugin 编译 | [版本化 lowering ABI](../../engineering/TOOLCHAIN.md)                                                                                                | 两端复用 lowering；不能依赖 runtime reflection 或原始 TS        |
-| 开发执行    | [HMR](../../engineering/HMR.md)                                                                                                                      | 唯一 ModuleRunner，普通插件变更必须为 definition HMR            |
-| singleton   | [hostSingletons](../../packages/host-vite/src/singletons.ts)、[官方服务接线](../../packages/services/src/vite.ts)                                    | 应用 SDK token 与官方服务保持同一实例；业务插件留在 HMR 图      |
-| 应用服务    | [服务组合](../../docs/host/services.md)                                                                                                              | owner 绑定、候选注册与提交投影、cleanup                         |
-| Commands    | [Commands](../../docs/plugin-development/commands.md)、[服务实现](../../packages/services/src/commands/service.ts)                                   | 复用 argv/mount；核对其完整依赖在 QuickJS 中可运行              |
-| 配置持久化  | [HostDocumentStorage](../../packages/host/src/document-storage.ts)                                                                                   | 启动前可用；原生存储 commit 与 Host apply 分开报告              |
-| 包管理      | [现有 Node/pnpm 模型](../../docs/plugins/package-manager.md)                                                                                         | 本例实现受控预编译包安装，不声称已有 QuickJS 安装器             |
-| LLRT | [Vm](https://github.com/awslabs/llrt/blob/v0.9.0-beta/llrt_core/src/vm.rs)、[运行时证据](RUNTIME.md) | 真正嵌入、错误/退出接管、异步调度、加载和销毁；CLI 成功不替代它 |
+| 项目        | 当前事实/来源                                                                                                      | 实施要解决的问题                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Core/Host   | [系统边界](../../engineering/PLUGIN_SYSTEM.md)、[Host 实现](../../packages/host/src/host.ts)                       | 不复制 graph；Host 根入口含 Node 执行路径，需审计 portable 闭包 |
+| Plugin 编译 | [版本化 lowering ABI](../../engineering/TOOLCHAIN.md)                                                              | 两端复用 lowering；不能依赖 runtime reflection 或原始 TS        |
+| 开发执行    | [HMR](../../engineering/HMR.md)                                                                                    | 唯一 ModuleRunner，普通插件变更必须为 definition HMR            |
+| singleton   | [hostSingletons](../../packages/host-vite/src/singletons.ts)、[官方服务接线](../../packages/services/src/vite.ts)  | 应用 SDK token 与官方服务保持同一实例；业务插件留在 HMR 图      |
+| 应用服务    | [服务组合](../../docs/host/services.md)                                                                            | owner 绑定、候选注册与提交投影、cleanup                         |
+| Commands    | [Commands](../../docs/plugin-development/commands.md)、[服务实现](../../packages/services/src/commands/service.ts) | 复用 argv/mount；核对其完整依赖在 QuickJS 中可运行              |
+| 配置持久化  | [HostDocumentStorage](../../packages/host/src/document-storage.ts)                                                 | 启动前可用；原生存储 commit 与 Host apply 分开报告              |
+| 包管理      | [现有 Node/pnpm 模型](../../docs/plugins/package-manager.md)                                                       | 本例实现受控预编译包安装，不声称已有 QuickJS 安装器             |
+| LLRT        | [Vm](https://github.com/awslabs/llrt/blob/v0.9.0-beta/llrt_core/src/vm.rs)、[运行时证据](RUNTIME.md)               | 真正嵌入、错误/退出接管、异步调度、加载和销毁；CLI 成功不替代它 |
 
 实施前读取仓库 AGENTS、工程原则和 API 设计规则。当前工作区可能已有其他修改，不回退它们。框架公开行为变化需要同步所属 docs/engineering 和 `.tegami`；本次纯设计文档不需要 changelog。
 
@@ -131,7 +131,7 @@ SDK 独立 package identity 用于满足现有按包名选择 singleton 的边�
 | 应用升级/移除           | 只重建插件 JSRuntime，窗口不关闭，完整新集合加载                   |
 | ABI 不匹配/包文件损坏   | 激活前拒绝，指出具体输入；不降级加载或补猜入口                     |
 | 重复 HMR/运行时重建     | 有界资源计数回归稳定，JS handles、原生回调和 pending 请求无累积    |
-| 发布环境缺 Node/源码    | 真实 Rust UI + 内嵌 LLRT 路径仍工作                               |
+| 发布环境缺 Node/源码    | 真实 Rust UI + 内嵌 LLRT 路径仍工作                                |
 
 纯计算用普通测试；Plugin 行为用正式 lowering 的隔离测试；socket 与 rquickjs 绑定用共享 wire fixtures 和真实集成。生命周期、HMR 和发布兼容必须跑上述真实路径。原生 UI 用 iced_test、原生窗口自动化和截图验证，接线与覆盖要求见 [STACK 第 7 节](STACK.md#7-ui-完成度与-agent-验证)；不得用浏览器 Playwright 页面替代真实窗口。测试视图切换不影响 runtime 身份，UI 的迟到回执不能覆盖新 session/query。
 
@@ -142,7 +142,6 @@ SDK 独立 package identity 用于满足现有按包名选择 singleton 的边�
 README 提供实际存在的构建、开发、生产和 CLI 命令；从干净构建到两种运行方式可复现。给出一条短演示流程：查询 -> 改源码 HMR -> 改配置 -> stop/start -> 安装新版 -> 应用变更。记录实际验证的平台、引擎版本、失败场景和剩余边界。
 
 到此即完成架构演示。不要继续实现插件市场、通用桌面 SDK、任意 UI 插件、全盘搜索、跨平台安装器或每插件隔离运行时。若实现改变本设计，先更新实际拥有该事实的章节，删除被替代的路线，避免让下一位读者在两套方案中猜测。
-
 
 ## 本次提交验收与剩余边界（2026-10-08）
 

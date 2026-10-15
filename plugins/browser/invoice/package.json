@@ -29,11 +29,11 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pluxel build",
-		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false",
-		"test:browser": "vitest run --config vitest.browser.config.ts",
-		"test:live": "vitest run --config vitest.live.config.ts"
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types",
+		"test:browser": "vp test run --config vitest.browser.config.ts",
+		"test:live": "vp test run --config vitest.live.config.ts"
 	},
 	"dependencies": {
 		"playwright-core": "catalog:prod",
@@ -48,8 +48,8 @@
 		"@pluxel/test": "workspace:*",
 		"@types/jsdom": "catalog:types",
 		"jsdom": "catalog:dev",
-		"tsdown": "catalog:build",
 		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {

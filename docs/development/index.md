@@ -30,6 +30,7 @@ description: 区分源码事实、静态检查、隔离行为和在线状态，�
 
 | 任务                        | 入口                                                                           |
 | --------------------------- | ------------------------------------------------------------------------------ |
+| 工具安装、hooks 与开发服务  | [工作区工具链](./workspace-toolchain.md)                                       |
 | 理解生成项目                | [示例项目](./starter-monorepo.md)                                              |
 | CLI、源码 lowering 与构建   | [工具链](./tooling.md)                                                         |
 | Git/npm setup 与 skill 安装 | [源码工作区](./source-workspaces.md)                                           |

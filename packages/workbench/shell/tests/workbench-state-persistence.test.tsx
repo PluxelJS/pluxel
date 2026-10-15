@@ -72,6 +72,20 @@ const saved = (basepath = '/') =>
 	JSON.parse(window.localStorage.getItem(workspaceStorageKey(basepath))!)
 
 describe('native Workbench snapshot persistence', () => {
+	it('does not resurrect a disposed workspace snapshot from a late persistence effect', async () => {
+		const { workspace } = await mount()
+		await openDocument(workspace, '/security')
+		await act(async () => workspace.dispose())
+		window.localStorage.clear()
+		const write = vi.spyOn(Storage.prototype, 'setItem')
+		// A mounted persistence effect can finish after the session has closed its storage.
+		workspace.storage.schedule()
+		workspace.storage.retry()
+		await act(async () => vi.advanceTimersByTime(180))
+		expect(write).not.toHaveBeenCalled()
+		expect(window.localStorage.getItem(workspaceStorageKey('/'))).toBeNull()
+	})
+
 	it('coalesces native changes into the latest snapshot without persisting draft, dirty or Router resources', async () => {
 		const write = vi.spyOn(Storage.prototype, 'setItem')
 		const { workspace } = await mount()

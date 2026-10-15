@@ -10,10 +10,13 @@
 		}
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*"
+	},
+	"devDependencies": {
+		"vite-plus": "catalog:build"
 	}
 }

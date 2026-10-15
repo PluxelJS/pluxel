@@ -11,9 +11,9 @@ icon: Blocks
 以出站 HTTP 为例，快速开始生成的项目使用命名 catalog 管理依赖。在工作区根目录运行：
 
 ```sh
-pnpm catalog:add -- @pluxel/wretch
-pnpm install
-pnpm governance:check
+vp exec pluxel pncat add @pluxel/wretch
+vp install
+vp run governance:check
 ```
 
 在 pncat 的包选择界面中选中直接导入它的 `package.json`：宿主入口需要 `host/package.json`；如果业务插件在独立的 `plugins/` 包内，该包也要选中。pncat 将版本写入 `pluxel` catalog，并为所选包写入 `catalog:pluxel` 引用。下文各插件的安装命令沿用这个工作流，依赖管理细节见 [示例项目](../development/starter-monorepo.md#添加依赖)。
@@ -28,7 +28,7 @@ pnpm governance:check
 
 ## 同一配置用于独立部署与 Workbench
 
-官方插件导出传给 `configs.use()` 的同一个配置 schema。应用通过 Host 初始配置、`envBinding` 或 `fileBinding` 提供部署输入，Workbench 编辑保存层；校验、默认值和插件消费的配置始终由该 schema 定义。环境名称由应用显式选择，插件不另外实现自己的环境变量配置系统。字段绑定与来源优先级见 [Host 配置](../host/configuration.md#绑定部署环境与-json-文件)，secret 使用同页的 Vault 部署绑定。
+有部署配置的官方插件导出传给 `configs.use()` 的同一个配置 schema。应用通过 Host 初始配置、`envBinding` 或 `fileBinding` 提供部署输入，Workbench 编辑保存层；校验、默认值和插件消费的配置始终由该 schema 定义。环境名称由应用显式选择，插件不另外实现自己的环境变量配置系统。字段绑定与来源优先级见 [Host 配置](../host/configuration.md#绑定部署环境与-json-文件)，secret 使用同页的 Vault 部署绑定。
 
 例如，以下是无 Workbench 的生产应用入口，出站 HTTP 策略全部由环境提供，基础 client 无需附加服务：
 
@@ -56,30 +56,30 @@ export default defineHostApplication(() => ({
 
 Workbench 服务是否安装不决定业务配置是否可用。按实际能力选择 Host 服务：
 
-| 能力                                            | 服务前提                                                       |
-| ----------------------------------------------- | -------------------------------------------------------------- |
-| Fonts 核心、Canvas、Takumi、Markdown            | 不要求 Workbench 或 Persistence；字体文件可由 FontsConfig 提供 |
-| ECharts、Typst 文档及 Typst 数学编译            | NodeModules 与 Workers，并正确定位构建制品或开发编译器         |
-| Fonts 保存偏好/上传集合、Wretch opt-in 受管设置 | Persistence；程序化 API 同样可在无 Workbench 时使用            |
-| S3 与 Auth 部署凭据                             | Vault；Auth 另需管理访问能力，TOTP 等可变凭据需要可写 backend  |
-| Redis、Cache、Rates、Otel、Package Manager      | 按所属指南选择后端、来源和服务；没有 Workbench 前置条件        |
+| 能力                                            | 服务前提                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| Fonts 核心、Canvas                              | 不要求 Workbench 或 Persistence；字体文件可由 FontsConfig 提供               |
+| Takumi 原生入口                                 | 不要求 Workbench、Persistence 或 FontsPlugin；字体/CSS 通过原生 options 提供 |
+| Takumi Worker、Markdown、ECharts、Typst 编译    | NodeModules 与 Workers，并正确定位构建制品或开发编译器                       |
+| Fonts 保存偏好/上传集合、Wretch opt-in 受管设置 | Persistence；程序化 API 同样可在无 Workbench 时使用                          |
+| S3 与 Auth 部署凭据                             | Vault；Auth 另需管理访问能力，TOTP 等可变凭据需要可写 backend                |
+| Redis、Cache、Rates、Otel、Package Manager      | 按所属指南选择后端、来源和服务；没有 Workbench 前置条件                      |
 
 插件指南区分部署配置、业务保存状态和调用参数。上传字体、已安装 package、缓存条目、consumer 请求设置等仍属于各自领域状态，不因提供环境变量就变成第二套配置。Otel 的 `OTEL_*` 保留上游 SDK 的进程环境契约。
 
 ## 可公开安装
 
-| Plugin                          | 用途                                         | 文档                                               |
-| ------------------------------- | -------------------------------------------- | -------------------------------------------------- |
-| `@pluxel/auth`                  | Workbench 与 Management API 认证             | [Management 认证](./auth.md)                       |
-| `@pluxel/wretch`                | 带宿主出站策略的 HTTP client                 | [Wretch HTTP client](./wretch.md)                  |
-| `@pluxel/playwright`            | 外部 CDP / Playwright 浏览器连接与调用方会话 | [浏览器连接](./browser.md)                         |
-| `@pluxel/invoice`               | VLM 图片提取与财政/数电发票查验编排          | [图片票据提取与查验](./invoice.md)                 |
-| `@pluxel/fonts`                 | 服务端字体发现与管理                         | [服务端字体](./rendering/fonts.md)                 |
-| `@pluxel/canvas`                | 服务端 Canvas、图片处理与静态表格            | [服务端 Canvas](./rendering/canvas.md)             |
-| `@pluxel/echarts`               | 服务端 ECharts 渲染                          | [服务端 ECharts](./rendering/echarts.md)           |
-| `@pluxel/takumi`                | HTML/node-tree 图片渲染                      | [Takumi](./rendering/takumi.md)                    |
-| `@pluxel/takumi-markdown`       | GFM Markdown、表格与固定代码高亮图片渲染     | [Markdown / Typst](./rendering/takumi-markdown.md) |
-| `@pluxel/takumi-markdown-typst` | 可选受限 Typst 数学 SVG 扩展                 | [Markdown / Typst](./rendering/takumi-markdown.md) |
+| Plugin                    | 用途                                              | 文档                                               |
+| ------------------------- | ------------------------------------------------- | -------------------------------------------------- |
+| `@pluxel/auth`            | Workbench 与 Management API 认证                  | [Management 认证](./auth.md)                       |
+| `@pluxel/wretch`          | 带宿主出站策略的 HTTP client                      | [Wretch HTTP client](./wretch.md)                  |
+| `@pluxel/playwright`      | 外部 CDP / Playwright 浏览器连接与调用方会话      | [浏览器连接](./browser.md)                         |
+| `@pluxel/invoice`         | VLM 图片提取与财政/数电发票查验编排               | [图片票据提取与查验](./invoice.md)                 |
+| `@pluxel/fonts`           | 服务端字体发现与管理                              | [服务端字体](./rendering/fonts.md)                 |
+| `@pluxel/canvas`          | 服务端 Canvas、图片处理与静态表格                 | [服务端 Canvas](./rendering/canvas.md)             |
+| `@pluxel/echarts`         | 服务端 ECharts 渲染                               | [服务端 ECharts](./rendering/echarts.md)           |
+| `@pluxel/takumi`          | 原生 JSX/HTML/node-tree 渲染与共享 Worker adapter | [Takumi](./rendering/takumi.md)                    |
+| `@pluxel/takumi-markdown` | GFM、静态代码高亮与可选 Typst 数学渲染            | [Markdown / Typst](./rendering/takumi-markdown.md) |
 
 这些 package 已声明公共入口。具体可安装版本以 npm registry 和发布记录为准。
 
@@ -89,7 +89,7 @@ Workbench 服务是否安装不决定业务配置是否可用。按实际能力�
 
 | Plugin                    | 用途                               | 文档                                    |
 | ------------------------- | ---------------------------------- | --------------------------------------- |
-| `@pluxel/typst`           | Typst 文档会话、Vector 预览与 PDF  | [Typst 文档](./rendering/typst.md)      |
+| `@pluxel/typst`           | Typst 文档会话、SVG、Vector 与 PDF | [Typst 文档](./rendering/typst.md)      |
 | `@pluxel/cache`           | Plugin 隔离的缓存与后端抽象        | [缓存](./cache.md)                      |
 | `@pluxel/rates`           | 按调用方和成本执行频率限制         | [请求频率控制](./rates.md)              |
 | `@pluxel/redis`           | Redis client、Lua script 和后端    | [Redis](./redis.md)                     |

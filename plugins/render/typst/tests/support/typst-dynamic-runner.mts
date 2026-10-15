@@ -16,7 +16,7 @@ await using runtime = {
 	[Symbol.asyncDispose]: () => server.close(),
 }
 const rendered = await fetch(new URL('/__pluxel-test/typst/document', runtime.origin))
-assert.equal(rendered.status, 200, await rendered.clone().text())
+assert.equal(rendered.status, 200, `Session PDF: ${await rendered.clone().text()}`)
 assert.equal(rendered.headers.get('content-type'), 'application/pdf')
 assert.equal(
 	Buffer.from(await rendered.arrayBuffer())
@@ -24,3 +24,7 @@ assert.equal(
 		.toString(),
 	'%PDF-',
 )
+const svg = await fetch(new URL('/__pluxel-test/typst/svg', runtime.origin))
+assert.equal(svg.status, 200, `Stateless SVG: ${await svg.clone().text()}`)
+assert.equal(svg.headers.get('content-type'), 'image/svg+xml')
+assert.match(await svg.text(), /^<svg/)

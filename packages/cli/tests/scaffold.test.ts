@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
+import { tmpdir } from 'node:os'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import fs from 'node:fs'
@@ -14,6 +15,7 @@ import { collectTemplateAnswers } from '../src/scaffold/prompts'
 import { renderTemplateValue } from '../src/scaffold/render'
 import { parseTemplateSource } from '../src/scaffold/source'
 import { formatPackageScriptCommand } from '../src/utils/pm'
+import { resolveWorkspaceRoot } from '../src/scaffold/workspace'
 
 async function generateTemplate(params: {
 	templateBase: string
@@ -348,8 +350,10 @@ describe('scaffold template rendering', () => {
 			String(fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')),
 		) as Record<string, any>
 		expect(manifest.scripts).not.toHaveProperty('build:plugin')
-		expect(manifest.scripts.build).toBe('pluxel build')
-		expect(manifest.scripts).toHaveProperty('verify')
+		expect(manifest.scripts.build).toBe('vp run compile')
+		for (const name of ['vite.config.ts', 'mise.toml', 'hk.pkl']) {
+			expect(fixture.fs.existsSync(resolve(targetDir, name))).toBe(true)
+		}
 		expect(manifest.peerDependencies).toEqual({ '@pluxel/core': 'catalog:' })
 		expect(manifest.dependencies).toEqual({ valibot: 'catalog:' })
 		expect(manifest.exports).toEqual({
@@ -367,13 +371,13 @@ describe('scaffold template rendering', () => {
 			'@pluxel/core': 'catalog:',
 			'@pluxel/rolldown': 'catalog:',
 			'@pluxel/test': 'catalog:',
-			oxfmt: 'catalog:',
+			'vite-plus': 'catalog:',
 		})
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
 			"'@pluxel/core': ^1.0.0",
 		)
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			'vitest: 5.0.2',
+			'vitest: 5.0.4',
 		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
@@ -405,4 +409,15 @@ describe('scaffold template rendering', () => {
 		expect(tsdownConfig).toContain("index: 'src/hello-world.ts'")
 		expect(tsdownConfig).not.toContain('pluginPackage(')
 	})
+})
+
+it('finds the pnpm workspace above a package-owned Vite configuration', () => {
+	const root = fs.mkdtempSync(resolve(tmpdir(), 'pluxel-scaffold-root-'))
+	onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }))
+	fs.writeFileSync(resolve(root, 'pnpm-workspace.yaml'), 'packages: [packages/*]\n')
+	const leaf = resolve(root, 'packages/app')
+	fs.mkdirSync(leaf, { recursive: true })
+	fs.writeFileSync(resolve(leaf, 'package.json'), JSON.stringify({ name: '@example/app' }))
+	fs.writeFileSync(resolve(leaf, 'vite.config.ts'), 'export default {}\n')
+	expect(resolveWorkspaceRoot(leaf)).toEqual({ root, reason: 'pnpm-workspace' })
 })

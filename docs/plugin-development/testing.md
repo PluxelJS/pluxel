@@ -3,7 +3,7 @@ title: 测试 Pluxel 插件
 description: 选择最小测试边界，用真实构建语义验证依赖、配置、HTTP、Workbench 与资源回收。
 ---
 
-本页帮助你验证插件能否启动、处理请求并在停止后释放资源。CLI 模板已配置 Vitest preset；在生成的插件目录运行 `pnpm test` 即可。手动接入已有项目时，安装 preset，并显式选择测试需要的服务。
+本页帮助你验证插件能否启动、处理请求并在停止后释放资源。CLI 模板已配置 Vitest preset；在生成的插件目录运行 `vp run test` 即可。手动接入已有项目时，安装 preset，并显式选择测试需要的服务。
 
 插件测试需要真实的装饰器、依赖和配置转换。直接 `new` 实例或模拟 Context 只能验证普通对象行为，不能验证宿主加载和生命周期。
 
@@ -478,11 +478,11 @@ in-process Plugin test host 代替。`@pluxel/create` 的 packed smoke 同时验
 ## CI 顺序
 
 ```sh
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
+vp fmt --check
+vp lint
+vp run typecheck
+vp run test
+vp run build
 ```
 
 `test` 证明 runtime behavior，`build` 证明 package root、metadata 和 artifacts 可以真正发布；两者不能互相替代。

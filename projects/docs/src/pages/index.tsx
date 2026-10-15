@@ -88,7 +88,7 @@ export default defineConfig({
 	{
 		title: '生产构建',
 		file: 'tsdown.config.ts',
-		code: `import { defineConfig } from 'tsdown'
+		code: `import { defineConfig } from 'vite-plus/pack'
 import { pluxel } from '@pluxel/rolldown'
 
 export default defineConfig({

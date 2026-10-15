@@ -32,23 +32,10 @@ const fontsPlugin = packageNode('@pluxel/fonts', 'FontsPlugin')
 const canvasPlugin = packageNode('@pluxel/canvas', 'CanvasPlugin')
 const echartsPlugin = packageNode('@pluxel/echarts', 'EChartsPlugin')
 const takumiPlugin = packageNode('@pluxel/takumi', 'TakumiPlugin')
+const markdownPlugin = packageNode('@pluxel/takumi-markdown', 'TakumiMarkdownPlugin')
+const typstPlugin = packageNode('@pluxel/typst', 'TypstPlugin')
 
 const reportStudioPlugin = sourceNode('src/showcase/ReportStudio.ts', 'ReportStudioPlugin')
-const echartsShowcaseRenderer = sourceNode(
-	'src/showcase/ReportStudio.ts',
-	'EChartsShowcaseRenderer',
-)
-const showcaseRenderer = sourceDefinition('src/showcase/ReportStudio.ts', 'ShowcaseRenderer')
-const eventConsumer = sourceNode('src/demo/PluginEventsDemo.ts', 'PluginEventsDeclaredConsumer')
-const optionalProvider = sourceNode(
-	'src/demo/PluginOptionalIntegrationDemo.ts',
-	'PluginOptionalIntegrationProvider',
-)
-const optionalConsumer = sourceNode(
-	'src/demo/PluginOptionalIntegrationDemo.ts',
-	'PluginOptionalIntegrationConsumer',
-)
-
 export const s3StorageNode = defaultNode(s3PluginDefinition)
 
 const bootSafeOfficialPlugins = Object.freeze([
@@ -64,6 +51,8 @@ const bootSafeOfficialPlugins = Object.freeze([
 	canvasPlugin,
 	echartsPlugin,
 	takumiPlugin,
+	markdownPlugin,
+	typstPlugin,
 ])
 
 export function createHostRuntimeState(): Partial<HostStateSnapshot> {
@@ -76,9 +65,6 @@ export function createHostRuntimeState(): Partial<HostStateSnapshot> {
 			sourceNode('src/bot-lab/BotSources.ts', 'WeComBotPlugin'),
 			packageManagerNode,
 			reportStudioPlugin,
-			eventConsumer,
-			optionalProvider,
-			optionalConsumer,
 			s3StorageNode,
 		],
 		providerDefaults: [
@@ -87,7 +73,6 @@ export function createHostRuntimeState(): Partial<HostStateSnapshot> {
 			providerDefault(packageDefinition('@pluxel/rates', 'Rates'), ratesPlugin),
 			providerDefault(packageDefinition('@pluxel/rates', 'RatesBackend'), memoryRatesBackendPlugin),
 			providerDefault(packageDefinition('@pluxel/storage', 'S3'), defaultNode(s3PluginDefinition)),
-			providerDefault(showcaseRenderer, echartsShowcaseRenderer),
 		],
 	}
 }

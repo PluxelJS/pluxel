@@ -14,17 +14,17 @@ LLRT 官方仍标注 experimental。其 WPT 子集/预期失败基线、txiki �
 
 Linux x64，Node 24.16.0；LLRT 官方 v0.9.0-beta Linux x64 no-sdk 二进制；txiki v26.6.0（1a230d31183f062fae7a6c4fd2cff466cecc1787）及固定子模块，默认 CMake Release 构建，上游源码无修改。三者使用相同 esbuild 0.28.2 browser/ESM/es2022 bundle、依赖锁、真实 HTTP echo server 与断言，无专属兼容补丁。
 
-| 场景与版本 | LLRT | txiki |
-| --- | --- | --- |
-| zod 4.6.5 + yaml 2.9.1 + semver 7.8.5 解析校验 | 通过 | 通过 |
-| noble ciphers/hashes 2.4.0：AES-GCM 往返、SHA256 | 通过 | 通过 |
-| jose 6.2.12：HS256 JWT 签验、A256GCM JWE 往返 | 通过 | 通过 |
-| wretch 3.0.9 JSON POST | 通过 | 通过 |
-| axios 1.20.0 browser 默认 adapter JSON POST | 通过 | 通过 |
-| wretch / 直接 Fetch 上传 Blob 文件 | 失败 | 失败 |
-| fetch URL 对象、取消原因保留、Response.clone 双读 | 三项通过 | 三项失败 |
-| Symbol.dispose / asyncDispose | 存在 | 存在 |
-| Pluxel 空 Host start/status/close、Commands 空 registry | 通过 | 通过 |
+| 场景与版本                                              | LLRT     | txiki    |
+| ------------------------------------------------------- | -------- | -------- |
+| zod 4.6.5 + yaml 2.9.1 + semver 7.8.5 解析校验          | 通过     | 通过     |
+| noble ciphers/hashes 2.4.0：AES-GCM 往返、SHA256        | 通过     | 通过     |
+| jose 6.2.12：HS256 JWT 签验、A256GCM JWE 往返           | 通过     | 通过     |
+| wretch 3.0.9 JSON POST                                  | 通过     | 通过     |
+| axios 1.20.0 browser 默认 adapter JSON POST             | 通过     | 通过     |
+| wretch / 直接 Fetch 上传 Blob 文件                      | 失败     | 失败     |
+| fetch URL 对象、取消原因保留、Response.clone 双读       | 三项通过 | 三项失败 |
+| Symbol.dispose / asyncDispose                           | 存在     | 存在     |
+| Pluxel 空 Host start/status/close、Commands 空 registry | 通过     | 通过     |
 
 Node 对照全部通过。12 个 portable 探针 LLRT 10 过、txiki 7 过；上传测了库和直接调用两条路径，不能算两个独立缺陷，也不能将计数解释为 npm 兼容率。空 Host 使用当时工作区 Host/Commands 源码和已有依赖制品，不是干净重建全仓库。
 
@@ -38,11 +38,11 @@ LLRT 实测 createHash/createHmac 正常；createCipheriv/createSign/pbkdf2/scry
 
 LLRT 内置 AWS SDK 经过 browser 构建和 shim/alias，不是未经适配支持任意 SDK 的证据。[构建配置](https://github.com/awslabs/llrt/blob/v0.9.0-beta/build.mjs)。
 
-| 缺陷 | 证据与处理 |
-| --- | --- |
-| LLRT Blob -> FormData 内容损坏 | hello-file append 后成为十进制字节数字串；File::from_bytes 错用 Blob parts，研究时 main 也存在。冻结发布版本前修复，补非 ASCII/二进制回归，不让插件作者绕开标准路径。[源码](https://github.com/awslabs/llrt/blob/v0.9.0-beta/modules/llrt_buffer/src/file.rs#L112) |
-| LLRT Fetch 自动 Origin 影响 OAuth | v0.9.0-beta 有该逻辑，研究时 main 已移除。锁定修复 revision/补丁，验证真实请求头；不是升级 main 就消除其他缺陷。[上游问题](https://github.com/awslabs/llrt/issues/1792) |
-| txiki Fetch 语义缺口 | 完整 runtime 复现文件变 URL-encoded [object File]、URL 入参失败、取消原因丢失、clone 流冲突。只保留比较证据，不维护第二套修复。[Fetch](https://github.com/saghul/txiki.js/blob/v26.6.0/src/js/polyfills/fetch/fetch.js)、[Body](https://github.com/saghul/txiki.js/blob/v26.6.0/src/js/polyfills/fetch/body.js) |
+| 缺陷                              | 证据与处理                                                                                                                                                                                                                                                                                                      |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LLRT Blob -> FormData 内容损坏    | hello-file append 后成为十进制字节数字串；File::from_bytes 错用 Blob parts，研究时 main 也存在。冻结发布版本前修复，补非 ASCII/二进制回归，不让插件作者绕开标准路径。[源码](https://github.com/awslabs/llrt/blob/v0.9.0-beta/modules/llrt_buffer/src/file.rs#L112)                                              |
+| LLRT Fetch 自动 Origin 影响 OAuth | v0.9.0-beta 有该逻辑，研究时 main 已移除。锁定修复 revision/补丁，验证真实请求头；不是升级 main 就消除其他缺陷。[上游问题](https://github.com/awslabs/llrt/issues/1792)                                                                                                                                         |
+| txiki Fetch 语义缺口              | 完整 runtime 复现文件变 URL-encoded [object File]、URL 入参失败、取消原因丢失、clone 流冲突。只保留比较证据，不维护第二套修复。[Fetch](https://github.com/saghul/txiki.js/blob/v26.6.0/src/js/polyfills/fetch/fetch.js)、[Body](https://github.com/saghul/txiki.js/blob/v26.6.0/src/js/polyfills/fetch/body.js) |
 
 优先使用上游已修 commit，否则保留小而可审查的补丁及测试，不复制标准 API 到 SDK。修复后的精确组合才是发布基线；v0.9.0-beta 只是研究基线，不是无条件通过的版本。
 

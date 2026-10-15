@@ -11,6 +11,6 @@ export async function runPncat(args: string[]): Promise<void> {
 			source.root,
 			source.kind === 'git' ? 'packages/cli/dist/pncat-config.mjs' : 'dist/pncat-config.mjs',
 		),
-		{ configImport: '@pluxel/cli/pncat', command: 'pluxel pncat' },
+		{ configImport: '@pluxel/cli/pncat', command: 'vp exec pluxel pncat' },
 	)
 }

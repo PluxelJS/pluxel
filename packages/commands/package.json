@@ -82,10 +82,10 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "pnpm exec vitest run",
-		"bench": "pnpm exec vitest bench bench/commands.bench.ts",
-		"typecheck": "tsc --noEmit --pretty false",
-		"build": "tsdown"
+		"test": "vp run check-tests",
+		"bench": "vp test bench bench/commands.bench.ts",
+		"typecheck": "vp run check-types",
+		"build": "vp run compile"
 	},
 	"dependencies": {
 		"@sinclair/typebox": "catalog:prod",
@@ -96,7 +96,8 @@
 		"@pluxel/test": "workspace:*",
 		"@sinclair/parsebox": "catalog:dev",
 		"@types/node": "catalog:types",
-		"capnweb": "catalog:dev"
+		"capnweb": "catalog:dev",
+		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
 		"@modelcontextprotocol/sdk": "catalog:prod",

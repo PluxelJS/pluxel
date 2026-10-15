@@ -1,5 +1,5 @@
 import { parsePluginDefinitionAddress, parsePluginNodeAddress } from '@pluxel/core'
-import { parseWorkbenchDeclarationIdentity } from '@pluxel/core/federation'
+import type { WorkbenchDeclarationIdentity } from '@pluxel/core/federation'
 import type { RpcStub } from 'capnweb'
 import type { WorkbenchLayout, WorkbenchSessionApi } from '@pluxel/workbench/client'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,18 +10,18 @@ const definition = parsePluginDefinitionAddress({
 	exportName: 'BotPlugin',
 })
 const node = parsePluginNodeAddress({ definition, variant: 'default' })
-const panelDescriptor = parseWorkbenchDeclarationIdentity({
+const panelDescriptor = {
 	kind: 'view',
 	owner: definition,
 	key: 'panel',
-})
-const accountDescriptor = parseWorkbenchDeclarationIdentity({
+} as const satisfies WorkbenchDeclarationIdentity
+const accountDescriptor = {
 	kind: 'view',
 	owner: definition,
 	key: 'account',
-})
+} as const satisfies WorkbenchDeclarationIdentity
 
-function federatedRef(descriptor: typeof panelDescriptor) {
+function federatedRef(descriptor: Extract<WorkbenchDeclarationIdentity, { kind: 'view' }>) {
 	return Object.freeze({
 		profile: 1 as const,
 		producer: 'pluxel_workbench_bot',

@@ -10,11 +10,12 @@ export type {
 	ShowcaseCacheStats,
 	ShowcaseObserver,
 	ShowcaseRendererKind,
+	ShowcaseRenderRequest,
 	ShowcaseSnapshot,
 } from './ReportStudio.contracts'
 
 const StudioStatus = v.object({
-	renderer: v.pipe(v.string(), f.formMeta({ title: '渲染提供者' })),
+	renderer: v.pipe(v.string(), f.formMeta({ title: '可选渲染引擎' })),
 	storage: v.pipe(v.string(), f.formMeta({ title: '存储提供者' })),
 	cacheHits: v.pipe(v.number(), f.formMeta({ title: '缓存命中' })),
 	cacheMisses: v.pipe(v.number(), f.formMeta({ title: '缓存未命中' })),

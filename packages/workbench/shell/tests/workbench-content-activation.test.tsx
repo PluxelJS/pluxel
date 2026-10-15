@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import type { RpcStub } from 'capnweb'
+import { RpcStub, RpcTarget } from 'capnweb'
+import { createWorkbenchOpenedContentHandle } from '../../src/workbench/opened-entry'
+import type { WorkbenchContentRoot } from '../../src/workbench/client-protocol'
 import type {
 	WorkbenchOpenedContentHandle,
 	WorkbenchSessionApi,
 	WorkbenchContentLayoutEntry,
 	WorkbenchContentPlan,
+	WorkbenchContentObserver,
 } from '@pluxel/workbench/client'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -77,7 +80,7 @@ const actionPlan = {
 		version: 1,
 		blocks: [{ type: 'slot', key: 'restart' }],
 	},
-	slots: [{ kind: 'action', key: 'restart', display: 'block' }],
+	slots: [{ kind: 'action', key: 'restart', display: 'block', label: 'Restart', input: 'none' }],
 } satisfies WorkbenchContentPlan
 
 const definition = {
@@ -109,7 +112,7 @@ const host: WorkbenchBrowserHost = {
 const mounted = new Set<Root>()
 
 beforeAll(() => {
-	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 	Object.defineProperty(window, 'matchMedia', {
 		configurable: true,
 		value: vi.fn((query: string) => ({
@@ -138,7 +141,7 @@ describe('Workbench Content activation', () => {
 	it('opens once across StrictMode replay without creating a View host or MF Bridge', async () => {
 		const request = deferred<ReturnType<typeof contentOpenResult>>()
 		mocks.openWorkbenchEntry.mockReturnValue(request.promise)
-		const handle = openedContentHandle()
+		const { handle, dispose } = openedContentHandle()
 		const { container, root } = await renderContent()
 
 		expect(mocks.openWorkbenchEntry).toHaveBeenCalledOnce()
@@ -155,14 +158,14 @@ describe('Workbench Content activation', () => {
 		expect(container.textContent).not.toContain('正在打开')
 
 		await unmount(root)
-		expect(handle.dispose).toHaveBeenCalledOnce()
+		expect(dispose).toHaveBeenCalledOnce()
 	})
 
 	it('keeps the Content activation when browser host callbacks change identity', async () => {
 		const firstConfirm = vi.fn(async () => true)
 		const latestConfirm = vi.fn(async () => false)
 		const run = vi.fn(async () => ({ action: { ok: true as const }, data: null }))
-		const handle = actionOpenedContentHandle(run)
+		const { handle } = actionOpenedContentHandle(run)
 		mocks.openWorkbenchEntry.mockResolvedValue(contentOpenResult(handle))
 		const { container, root } = await renderContent({
 			...host,
@@ -191,13 +194,13 @@ describe('Workbench Content activation', () => {
 	it('disposes a successful open that settles after the Content has closed', async () => {
 		const request = deferred<ReturnType<typeof contentOpenResult>>()
 		mocks.openWorkbenchEntry.mockReturnValue(request.promise)
-		const handle = openedContentHandle()
+		const { handle, dispose } = openedContentHandle()
 		const { container, root } = await renderContent()
 
 		await unmount(root)
 		await act(async () => request.resolve(contentOpenResult(handle)))
 
-		expect(handle.dispose).toHaveBeenCalledOnce()
+		expect(dispose).toHaveBeenCalledOnce()
 		expect(container.querySelector('h1')).toBeNull()
 	})
 
@@ -215,16 +218,12 @@ describe('Workbench Content activation', () => {
 	})
 
 	it('starts one interactive subscription across StrictMode replay and closes it with the handle', async () => {
-		let observer!: (outcome: {
-			sequence: number
-			ok: true
-			data: Readonly<Record<string, string>>
-		}) => void | Promise<void>
-		const subscribe = vi.fn(async (next) => {
-			observer = next
+		let observer!: RpcStub<WorkbenchContentObserver>
+		const subscribe = vi.fn(async (next: RpcStub<WorkbenchContentObserver>) => {
+			observer = next.dup()
 			return { sequence: 1, ok: true as const, data: { status: 'connected' } }
 		})
-		const handle = interactiveOpenedContentHandle(subscribe)
+		const { handle, dispose } = interactiveOpenedContentHandle(subscribe)
 		mocks.openWorkbenchEntry.mockResolvedValue(contentOpenResult(handle))
 		const { container, root } = await renderContent()
 
@@ -232,11 +231,12 @@ describe('Workbench Content activation', () => {
 		expect(container.textContent).toContain('Status: connected')
 
 		await unmount(root)
-		expect(handle.dispose).toHaveBeenCalledOnce()
+		expect(dispose).toHaveBeenCalledOnce()
 		await act(async () => {
 			await observer({ sequence: 2, ok: true, data: { status: 'late' } })
 		})
 		expect(container.textContent).not.toContain('late')
+		observer[Symbol.dispose]()
 	})
 })
 
@@ -277,103 +277,121 @@ async function unmount(root: Root) {
 }
 
 function openedContentHandle() {
-	let active = true
-	const dispose = vi.fn(() => {
-		active = false
-	})
-	const handle = {
-		kind: 'content' as const,
-		mode: 'static' as const,
-		params: Object.freeze({}),
-		contentRef: entry.contentRef,
-		plan,
-		presentation: null,
-		get active() {
-			return active
-		},
-		[Symbol.dispose]: dispose,
-	} as WorkbenchOpenedContentHandle & { dispose: ReturnType<typeof vi.fn> }
-	return Object.assign(handle, { dispose })
+	const dispose = vi.fn()
+	return {
+		handle: createWorkbenchOpenedContentHandle({
+			active: true,
+			result: { [Symbol.dispose]: dispose },
+			value: {
+				kind: 'content',
+				mode: 'static',
+				params: {},
+				contentRef: entry.contentRef,
+				plan,
+			},
+		}),
+		dispose,
+	}
 }
 
 function interactiveOpenedContentHandle(
-	subscribe: ReturnType<typeof vi.fn>,
-): WorkbenchOpenedContentHandle & { dispose: ReturnType<typeof vi.fn> } {
-	let active = true
-	const dispose = vi.fn(() => {
-		active = false
-	})
+	subscribe: (
+		observer: RpcStub<WorkbenchContentObserver>,
+	) => ReturnType<WorkbenchContentRoot['subscribeDto']>,
+) {
+	const root = new RpcStub<WorkbenchContentRoot>(
+		new (class extends RpcTarget {
+			subscribeDto(observer: RpcStub<WorkbenchContentObserver>) {
+				return subscribe(observer)
+			}
+			async loadDto() {
+				return { ok: false as const, code: 'busy' as const }
+			}
+			async runDto() {
+				return { action: { ok: true as const }, data: null }
+			}
+		})(),
+	)
+	const dispose = vi.fn(() => root[Symbol.dispose]())
 	return {
-		kind: 'content',
-		mode: 'interactive',
-		params: Object.freeze({}),
-		contentRef: entry.contentRef,
-		plan: interactivePlan,
-		presentation: {
-			slots: [
-				{
-					kind: 'data',
-					key: 'status',
-					display: 'inline',
-					field: {
-						kind: 'string',
-						name: 'status',
-						path: 'status',
-						depth: 0,
-						meta: { label: 'Status' },
-						required: true,
-						control: 'text',
-					},
+		handle: createWorkbenchOpenedContentHandle({
+			active: true,
+			result: { [Symbol.dispose]: dispose },
+			value: {
+				kind: 'content',
+				mode: 'interactive',
+				params: {},
+				contentRef: entry.contentRef,
+				plan: interactivePlan,
+				presentation: {
+					slots: [
+						{
+							kind: 'data',
+							key: 'status',
+							display: 'inline',
+							field: {
+								kind: 'string',
+								name: 'status',
+								path: 'status',
+								depth: 0,
+								meta: { label: 'Status' },
+								required: true,
+								control: 'text',
+							},
+						},
+					],
 				},
-			],
-		},
-		subscribe,
-		load: vi.fn(async () => ({ ok: false as const, code: 'busy' as const })),
-		run: vi.fn(async () => ({ action: { ok: true as const }, data: null })),
-		get active() {
-			return active
-		},
-		[Symbol.dispose]: dispose,
+				root,
+			},
+		}),
 		dispose,
-	} as unknown as WorkbenchOpenedContentHandle & { dispose: ReturnType<typeof vi.fn> }
+	}
 }
 
-function actionOpenedContentHandle(
-	run: ReturnType<typeof vi.fn>,
-): WorkbenchOpenedContentHandle & { dispose: ReturnType<typeof vi.fn> } {
-	let active = true
-	const dispose = vi.fn(() => {
-		active = false
-	})
+function actionOpenedContentHandle(run: WorkbenchContentRoot['runDto']) {
+	const root = new RpcStub<WorkbenchContentRoot>(
+		new (class extends RpcTarget {
+			async subscribeDto() {
+				return { sequence: 0, ok: true as const, data: {} }
+			}
+			async loadDto() {
+				return { ok: false as const, code: 'busy' as const }
+			}
+			runDto(...args: Parameters<WorkbenchContentRoot['runDto']>) {
+				return run(...args)
+			}
+		})(),
+	)
+	const dispose = vi.fn(() => root[Symbol.dispose]())
 	return {
-		kind: 'content',
-		mode: 'interactive',
-		params: Object.freeze({}),
-		contentRef: entry.contentRef,
-		plan: actionPlan,
-		presentation: {
-			slots: [
-				{
-					kind: 'action',
-					key: 'restart',
-					label: 'Restart',
-					input: 'none',
-					confirm: 'Restart the service?',
+		handle: createWorkbenchOpenedContentHandle({
+			active: true,
+			result: { [Symbol.dispose]: dispose },
+			value: {
+				kind: 'content',
+				mode: 'interactive',
+				params: {},
+				contentRef: entry.contentRef,
+				plan: actionPlan,
+				presentation: {
+					slots: [
+						{
+							kind: 'action',
+							key: 'restart',
+							label: 'Restart',
+							input: 'none',
+							confirm: 'Restart the service?',
+						},
+					],
 				},
-			],
-		},
-		subscribe: vi.fn(),
-		load: vi.fn(async () => ({ ok: false as const, code: 'busy' as const })),
-		run,
-		get active() {
-			return active
-		},
-		[Symbol.dispose]: dispose,
+				root,
+			},
+		}),
 		dispose,
-	} as unknown as WorkbenchOpenedContentHandle & { dispose: ReturnType<typeof vi.fn> }
+	}
 }
 
-function contentOpenResult(handle = openedContentHandle()) {
+function contentOpenResult(handle: WorkbenchOpenedContentHandle = openedContentHandle().handle) {
 	return { ok: true as const, handle }
 }
 
