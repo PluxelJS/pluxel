@@ -139,7 +139,7 @@ pitchfork wait app
 
 `start` 等待配置的就绪条件，服务随后由 supervisor 管理；命令退出不代表服务停止。`wait` 等待服务停止，不用于等待就绪。修改配置后针对目标服务重启，结束工作时停止自己启动的服务。命令细节先查 `pitchfork --help`、`pitchfork <command> --help` 和 [CLI Reference](https://pitchfork.jdx.dev/cli/)。
 
-根 `dev` script 执行 `pitchfork start <service> && pitchfork status <service>`，启动成功或复用已有服务后都显示当前状态、端口和真实代理 URL；文档站入口采用同样方式。地址由 Pitchfork 的状态输出提供，无需重新打印 Vite 启动日志。Pitchfork 的 `run` 调用应用包的 `dev:server` script，后者拥有实际 Vite 启动命令。不要再经过 mise task，也不要让 `dev:server` 回调根 `dev`。`mise = true` 只为服务加载项目工具环境。根 `dev:status`、`dev:logs`、`dev:stop` 是 IDE 可发现的常用操作；其他服务管理直接使用 Pitchfork CLI，不为每个子命令增加包装。前台调试入口按下节操作，不与同一个托管服务同时运行。
+根 `dev` script 直接执行 `pitchfork start`；Pitchfork 的 `run` 调用应用包的 `dev:server` script，后者拥有实际 Vite 启动命令。不要再经过 mise task，也不要让 `dev:server` 回调根 `dev`。`mise = true` 只为服务加载项目工具环境。根 `dev:status`、`dev:logs`、`dev:stop` 是 IDE 可发现的常用操作；其他服务管理直接使用 Pitchfork CLI，不为每个子命令增加包装。前台调试入口按下节操作，不与同一个托管服务同时运行。
 
 ### 按访问启动与服务复用
 

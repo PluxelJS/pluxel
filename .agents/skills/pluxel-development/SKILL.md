@@ -18,7 +18,7 @@ description: 开发、修改和排查 Pluxel 应用或插件时使用；指导�
 **只有需要运行应用或排查服务时才执行以下流程。** 独立插件模板没有应用服务，不为纯插件测试额外启动 Host。
 
 1. 读取现有 `pitchfork.toml`，运行 `pitchfork list --json`，确认项目、namespace 与完整服务 ID。源码仓库服务为 `plugin-host`，create 应用模板为 `app`；其他项目以配置和发现结果为准。
-2. 用 `pitchfork status <service> --json` 检查现有服务，优先复用。需要启动时使用项目 `vp run dev`，仓库与应用模板入口随后通过 `pitchfork status` 显示实际代理 URL；Pitchfork 的 `start` 等待就绪后返回，服务继续在后台运行，再次执行不会自动重启。`pitchfork wait` 等待停止，不用于等待就绪。
+2. 用 `pitchfork status <service> --json` 检查现有服务，优先复用。需要启动时使用项目 `vp run dev`；Pitchfork 的 `start` 等待就绪后返回，服务继续在后台运行，再次执行不会自动重启。`pitchfork wait` 等待停止，不用于等待就绪。
 3. 从 Pitchfork 返回值读取实际代理 URL，不拼域名。已注册项目可通过访问 URL 唤起服务及依赖；首次 checkout 仍需准备依赖并注册或启动。代理启动页、HTTP 响应或进程 running 不代表应用 ready，随后按下方 dev console 流程确认应用状态。
 4. 启动失败、编译错误、进程退出及 stdout/stderr 使用有限窗口日志：
 

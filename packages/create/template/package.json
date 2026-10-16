@@ -2,7 +2,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "pitchfork start app && pitchfork status app",
+		"dev": "pitchfork start app",
 		"build": "vp run workspace:build",
 		"test": "vp run workspace:test",
 		"check": "vp check",
