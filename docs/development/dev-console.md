@@ -9,7 +9,7 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 还不清楚插件、Part 或 config schema 在哪里声明时，先用[源码查询](./inspection.md)定位；它不需要运行 Vite，也不读取当前 Host 状态。
 
-服务进程由 [Pitchfork](./workspace-toolchain.md#管理开发服务)管理；进程状态与 stdout/stderr 可通过其 CLI 检查。下面的应用操作仍通过 Pluxel 控制台执行，服务重启后重新发现实例。
+服务进程由 [Pitchfork](./workspace-toolchain.md#管理开发服务)管理；启动失败、Vite 编译错误、进程退出及 stdout/stderr 使用 `pitchfork logs`，按[日志与排障顺序](./workspace-toolchain.md#agent-的日志与排障顺序)查询有限时间窗口。已注册服务可通过代理 URL 唤起，但启动页或进程 running 不代表应用 ready；启动后仍需发现实例并检查 `application.state`。下面的应用业务日志和操作通过 Pluxel 控制台执行，服务重启后重新发现实例。
 
 ## Coding agent 工作流程
 

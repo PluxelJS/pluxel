@@ -120,6 +120,16 @@ pitchfork wait app
 
 `start` 等待配置的就绪条件，服务随后由 supervisor 管理；命令退出不代表服务停止。`wait` 等待服务停止，不用于等待就绪。修改配置后针对目标服务重启，结束工作时停止自己启动的服务。命令细节先查 `pitchfork --help`、`pitchfork <command> --help` 和 [CLI Reference](https://pitchfork.jdx.dev/cli/)。
 
+### 按访问启动与服务复用
+
+保留 Pitchfork 的目的是让开发服务、稳定 URL 和进程日志独立于某个终端或 agent 会话。Agent 复用已运行的服务，不为获取日志再开一个 Vite。需要前台 Vite 交互时使用下节的直接调试入口；后台服务不承载 Vite 的 `h/o/r` 键盘会话。
+
+代理启用且项目已被发现后，访问已停止 daemon 的代理 URL 会启动它及其 `depends` 依赖。首次 checkout 仍需安装工具和项目依赖；supervisor/代理必须已运行，项目必须已注册或至少启动过一次。默认入口 `mise run dev` 完成显式启动；仅切换目录不会注册项目。不要手工拼域名，先从 `pitchfork list --json`、`pitchfork status app --json` 或 `pitchfork proxy status` 取得实际 URL。只访问本任务所属服务：访问停止服务的 URL 本身会触发启动及依赖命令。
+
+首次请求等待服务启动后转发；并发请求可能收到自动刷新的启动页。依赖失败会返回错误；收到 HTTP 响应或启动页不能证明 Pluxel 应用 ready。自动启动默认等待 30 秒，超时后后台启动仍会继续。当前模板和仓库的 `ready_output.timeout` 为 5 分钟，它不改变代理的等待预算；冷构建耗时较长时优先显式 `pitchfork start app` 等待就绪，或按实际需求配置 `settings.proxy.auto_start_timeout`。不要因首次请求超时重复启动进程或自行添加轮询器。
+
+按需启动不等于默认自动停止：空闲停止默认关闭，可按需配置 `proxy.idle_timeout`。经代理保持打开的 Vite HMR WebSocket 会计入活动；显式 CLI 启动的服务不受代理空闲停止控制。依赖顺序、并发启动与空闲回收使用 Pitchfork 原生能力，详见 [Auto-Start](https://pitchfork.jdx.dev/guides/port-management#auto-start) 和 [Idle Shutdown](https://pitchfork.jdx.dev/guides/port-management#idle-shutdown)。Redis 等普通 TCP 服务可以作为依赖启动，但客户端仍直连其端口，不经过 HTTP 反代。
+
 ### 端口与公开地址
 
 官方工作区默认使用项目 `pitchfork.toml` 中的 HTTP 反代配置，对外统一端口 `8088`。新机器安装工具和依赖后，直接运行 `mise run dev`；Pitchfork 自动启动 supervisor 和代理，不要求创建 `~/.config/pitchfork/config.toml`，不需要证书、sudo、系统 DNS 或 hosts 修改。
@@ -163,6 +173,35 @@ Pluxel 的开发地址契约与代理供应商分开：
 开发服务的就绪检查应该验证实际可用的入口；TCP 监听只证明端口可连接。多个 `ready_*` 条件是“任一成功”，需要全部满足时合并到一个 `ready_cmd`。就绪检查用于启动依赖，持续健康检查另行按需配置，见[就绪检查](https://pitchfork.jdx.dev/guides/ready-checks.html)和[健康检查](https://pitchfork.jdx.dev/guides/health-checks.html)。Vite 自身已有热更新，不必为同一源码变化再配置整个服务重启。
 
 Pitchfork `logs` 用于进程启动、退出和 stdout/stderr 排障。查询 Pluxel 应用日志、配置、Plugin 方法、Workbench RPC 或 Plugin 生命周期，仍必须走[在线开发控制台](./dev-console.md)：先发现实例，再固定绝对 `--root` 与准确 `--instance`。Pitchfork 显示 running 或 ready 不能证明某次业务配置已经应用；重启进程后需要重新发现实例。
+
+### Agent 的日志与排障顺序
+
+| 要确认的事实                                             | 首选入口                                                       |
+| -------------------------------------------------------- | -------------------------------------------------------------- |
+| 服务是否存在、运行、监听及公开 URL                       | `pitchfork list`、`pitchfork status`、`pitchfork proxy status` |
+| 启动失败、Vite 编译错误、进程退出、stdout/stderr         | `pitchfork logs`                                               |
+| 当前应用是否 ready、HMR 是否接纳、Plugin 状态与应用报告  | dev console 实例发现及控制台脚本                               |
+| Plugin 业务日志、配置读写、方法、Workbench RPC、生命周期 | 固定 root/instance 的 dev console                              |
+
+Agent 按以下顺序操作：
+
+1. 读取目标 checkout 的 `pitchfork.toml`，用 `pitchfork list` 确认完整服务 ID、目录和已有状态。复用目标实例，不停止其他任务的服务。
+2. 需要运行验证而目标未运行时，通过已注册的公开 URL 唤起，或显式 `pitchfork start`。启动失败先查看该服务的有限时间窗口日志；无需运行验证的纯静态任务不启动服务。
+3. 服务启动后按[控制台指南](./dev-console.md)发现 Vite 实例，确认 `application.state`；后续调用固定绝对 root 与准确 instance。重启后重新发现，不沿用旧 instance。
+4. 修改后先利用 Vite HMR，再检查应用报告及相关日志。只有实际需要重启时才用 `pitchfork restart`；进程 running、URL 可访问与业务修改生效分别验证。
+5. 交付说明实际观察的服务、实例、结果及未验证边界；结束时按任务约定清理自己启动的临时服务，保留原有共享实例。
+
+以下以生成项目的 `app` 为例；框架仓库使用 `plugin-host`，跨目录操作替换为发现的完整 ID：
+
+```sh
+pitchfork logs app --since 5min -n 100 --no-pager
+pitchfork logs app --since 5min --grep error -n 100 --json
+pitchfork logs app --follow
+```
+
+默认按时间和条数查询，避免每次读取全部历史；记录操作时间，再查相应窗口。仅在等待一次启动或复现时短暂 follow，完成观察后结束订阅，不必让 agent 一直占用长运行命令。`--grep error` 只是筛选文本，空结果不能证明没有失败。`--level` 需要服务配置结构化日志格式，普通 Vite 文本不能据此可靠筛选级别。业务日志仍经 dev console 读取，stdout 中的零散输出不能代替应用日志查询。
+
+日志由 Pitchfork 保存，可跨终端和 agent 会话查询；它不是无限期审计存储。默认不自动清理，长期使用可按需在 `[settings.logs]` 配置 `time_retention` / `line_retention`，不自行增加 tail 文件、日志收集进程或清空其他任务日志。CLI 默认足够；只有结构化集成有明确收益时再使用 MCP/HTTP API。详见 [Logs](https://pitchfork.jdx.dev/guides/logs) 与 [MCP](https://pitchfork.jdx.dev/guides/mcp)。
 
 ### 并行 agent 与 Git worktree
 

@@ -37,9 +37,15 @@
 
 默认通过 mise 提供工具、Vite+ 执行任务图与打包/lint/格式化、hk 管理检查、Pitchfork 管理开发服务。修改前先检查 `pitchfork.toml` 与运行服务；优先使用 Pitchfork 的 start、stop、restart、status、list、logs、wait。新增后台进程、端口扫描、重试、轮询或生命周期脚本前，先查[工作区指南](docs/development/workspace-toolchain.md)链接的官方能力和已安装 CLI 帮助。并行 worktree 使用独立 namespace 与数据目录；只操作本任务所属服务。Pitchfork 管进程，Pluxel 应用操作仍遵守下节 dev console 约束。
 
+具体流程见[按访问启动](docs/development/workspace-toolchain.md#按访问启动与服务复用)和[日志与排障顺序](docs/development/workspace-toolchain.md#agent-的日志与排障顺序)：
+
+- 先发现并复用目标服务；已注册项目可通过公开 URL 唤起，首次 checkout 仍需准备依赖并注册或启动。URL 访问会执行服务及依赖的启动命令，不是纯只读探测。
+- 启动、编译或进程退出问题先用 `pitchfork logs <完整服务ID> --since 5min -n 100 --no-pager`；按需短暂 follow，不读取全部历史或另起 Vite 捕获日志。
+- 应用 ready、HMR 接纳与业务效果使用 dev console 验证；代理启动页、HTTP 响应和进程 running 均不能替代应用报告。重启后重新发现 instance。
+
 ## 在线操作
 
-对已运行应用的配置修改、Workbench RPC、Plugin 方法、生命周期操作和日志读取，必须使用现有 Vite 进程的开发控制台：
+对已运行应用的配置修改、Workbench RPC、Plugin 方法、生命周期操作和应用业务日志读取，必须使用现有 Vite 进程的开发控制台：
 
 1. 先发现实例，后续命令固定其绝对 `--root` 与准确 `--instance`。
 2. 提交普通 TypeScript 导出函数。
