@@ -22,6 +22,10 @@ import { {{className}}Plugin } from '{{packageName}}'
 export const plugins = [{{className}}Plugin]
 ```
 
+For coding agents, start with [AGENTS.md](./AGENTS.md) and the Coding agent guide: run
+`vp exec pluxel docs development/coding-agent.md`, or read
+[the local guide](docs/pluxel/development/coding-agent.md) after workspace setup.
+
 ## Develop
 
 ```sh

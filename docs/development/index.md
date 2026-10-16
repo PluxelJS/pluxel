@@ -5,6 +5,8 @@ description: 区分源码事实、静态检查、隔离行为和在线状态，�
 
 本目录回答“如何定位和验证修改”。业务写法从[插件开发范式](../plugin-development/index.md)选择；服务安装和部署输入从[Host 配置](../host/configuration.md)选择。
 
+Coding agent 从[开发指南](./coding-agent.md)开始：准备工作区、复用服务、操作在线实例、排障与交付。
+
 ## 先确认任务需要什么证据
 
 | 问题                                      | 首选工具                                     | 证据边界                                      |

@@ -8,6 +8,8 @@ Pluxel 用 TypeScript 插件组织业务能力，管理依赖、配置、启动�
 
 插件基础从[依赖](./plugin-development/model.md)、[事件](./plugin-development/events.md)、[日志](./plugin-development/logging.md)和[资源清理](./plugin-development/lifecycle.md)开始。这些能力由 Core 提供，不要求先接 HTTP 或管理页面。
 
+**使用 coding agent 开发？** 从 [Coding agent 开发指南](./development/coding-agent.md)进入实际工作流程，再按任务读取领域文档。
+
 ## 先选你正在改的东西
 
 | 当前任务                         | 入口                                                                                  | 读到哪里就可以开始做                                       |

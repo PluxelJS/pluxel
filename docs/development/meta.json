@@ -3,6 +3,7 @@
 	"title": "开发与验证",
 	"pages": [
 		"index",
+		"coding-agent",
 		"workspace-toolchain",
 		"inspection",
 		"dev-console",

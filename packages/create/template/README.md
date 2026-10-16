@@ -4,6 +4,10 @@ This is a fixed, neutral example workspace for learning Pluxel plugin developmen
 package names and class names are intentionally not generated: rename them only when the example has
 become your own application.
 
+For coding agents, start with [AGENTS.md](./AGENTS.md) and the Coding agent guide: run
+`vp exec pluxel docs development/coding-agent.md`, or read
+[the local guide](docs/pluxel/development/coding-agent.md) after workspace setup.
+
 Start with the [current upstream Pluxel documentation](https://github.com/PluxelJS/pluxel/blob/main/docs/index.md),
 or find source inspection, live operations and tests with `vp exec pluxel docs development/index.md`, then run:
 
