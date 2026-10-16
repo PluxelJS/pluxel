@@ -1,5 +1,6 @@
 import { pluginSource } from '@pluxel/host/sources'
 import { defineHostApplication } from '@pluxel/host'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
 
 import { resolve } from 'pathe'
@@ -14,13 +15,9 @@ import {
 export { product }
 
 export default defineHostApplication(async (startup) => {
-	const dataRoot = resolve(
-		startup.deployment?.root ?? startup.root,
-		startup.env.PLUXEL_DATA_ROOT ?? '.pluxel',
-	)
+	const environment = resolveHostEnv(startup.env)
+	const dataRoot = resolve(startup.deployment?.root ?? startup.root, environment.dataRoot)
 	const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
-	const { env } = startup
-	const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
 	return {
 		name: 'pluxel-architecture-lab',
 		plugins: hostPlugins,
@@ -36,7 +33,7 @@ export default defineHostApplication(async (startup) => {
 		services: await servicesPreset(startup, {
 			persistence: resolve(dataRoot, 'persistence'),
 			product,
-			workbench: withWorkbench,
+			workbench: environment.workbench ?? true,
 		}),
 		configRecords: {
 			mode: 'memory',

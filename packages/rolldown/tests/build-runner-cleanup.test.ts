@@ -25,7 +25,6 @@ it('cleans every acquired bundle on hook failure and retains cleanup failures', 
 		context: {
 			projectRoot: process.cwd(),
 			packageJsonPath: 'package.json',
-			manifestField: 'pluxel',
 			watch: false,
 			debug: false,
 		},
@@ -57,7 +56,6 @@ it('settles one-shot hooks before releasing every bundle', async () => {
 			context: {
 				projectRoot: process.cwd(),
 				packageJsonPath: 'package.json',
-				manifestField: 'pluxel',
 				watch: false,
 				debug: false,
 			},
@@ -84,7 +82,6 @@ it('leaves native watch controls and success hooks with the CLI process', async 
 		context: {
 			projectRoot: process.cwd(),
 			packageJsonPath: 'package.json',
-			manifestField: 'pluxel',
 			watch: true,
 			debug: false,
 		},

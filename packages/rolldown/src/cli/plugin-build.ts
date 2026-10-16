@@ -41,7 +41,6 @@ export type PluginBuildPipelineOptions = {
 export type PluginPackageOptions = PluginBuildPipelineOptions & {
 	packageMetadata: {
 		packageJsonPath: string
-		manifestField: string
 		log: BuildLogger
 	}
 }
@@ -126,7 +125,6 @@ export function pluginPackage(
 		...pipeline,
 		onSuccess: createPluginDependencyMetadataHook({
 			packageJsonPath: options.packageMetadata.packageJsonPath,
-			manifestField: options.packageMetadata.manifestField,
 			workbenchArtifacts: options.workbench !== false,
 			log: options.packageMetadata.log,
 			collectPlugins: () => semantics.snapshot(),

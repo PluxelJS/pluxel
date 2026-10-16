@@ -4,7 +4,9 @@ import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { decodeDevReceipt, encodeDevReceipt } from '../src/dev/receipt'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stripVTControlCharacters } from 'node:util'
+import { WriteStream } from 'node:tty'
 import { cli as gunshiCli, type CliOptions } from 'gunshi'
 import { renderCliHeader } from '../src/render-header'
 import { devCommand } from '../src/commands/dev'
@@ -34,6 +36,11 @@ function cli(argv: string[], entry: typeof devCommand, options: CliOptions) {
 }
 
 const cleanup: Array<() => Promise<void>> = []
+beforeEach(() => {
+	vi.stubEnv('NO_COLOR', '1')
+	vi.stubEnv('FORCE_COLOR', undefined)
+	vi.stubEnv('NODE_DISABLE_COLORS', undefined)
+})
 afterEach(async () => {
 	process.exitCode = 0
 	vi.restoreAllMocks()
@@ -537,7 +544,7 @@ describe('development console CLI', () => {
 	})
 })
 
-async function pitchforkFixture(root: string, exitCode = 0) {
+async function pitchforkFixture(root: string, exitCode = 0, status = 'running') {
 	await writeFile(
 		resolve(root, 'package.json'),
 		JSON.stringify({
@@ -549,7 +556,7 @@ async function pitchforkFixture(root: string, exitCode = 0) {
 		`#!${process.execPath}
 const args = process.argv.slice(2)
 if (JSON.stringify(args) === JSON.stringify(['status', 'app', '--json'])) {
- console.log(JSON.stringify({ id: 'workspace/app', status: 'running' }))
+ console.log(JSON.stringify({ id: 'workspace/app', status: ${JSON.stringify(status)} }))
 } else if (JSON.stringify(args) === JSON.stringify(['start', 'workspace/app', '--quiet'])) {
  process.exit(${exitCode})
 } else { process.exit(99) }
@@ -600,11 +607,11 @@ it('dev prints fresh server-owned URLs on repeated invocations without running a
 		'  ➜  Workbench:   http://app.localhost:8088/admin',
 	]
 	await cli([], devCommand, {})
-	expect(output).toEqual(instance.urlOutput)
+	expect(output).toEqual(['  Pluxel · web · reused', '', ...instance.urlOutput!])
 	output.length = 0
 	instance.urlOutput = ['  ➜  Workbench:   http://app.localhost:8088/']
 	await cli([], devCommand, {})
-	expect(output).toEqual(instance.urlOutput)
+	expect(output).toEqual(['  Pluxel · web · reused', '', ...instance.urlOutput!])
 	expect(requests.map(({ method }) => method)).toEqual(['inspect', 'inspect'])
 })
 
@@ -760,7 +767,11 @@ it.each([undefined, { command: 'command-must-not-run' }])(
 		for (let invocation = 0; invocation < 2; invocation++) {
 			output.length = 0
 			await cli(['--root', root], devCommand, {})
-			expect(output).toEqual(instance.urlOutput)
+			expect(output).toEqual([
+				dev ? '  Pluxel · app · reused' : '  Pluxel · reused',
+				'',
+				...instance.urlOutput!,
+			])
 			expect(process.exitCode ?? 0).toBe(0)
 		}
 	},
@@ -775,7 +786,7 @@ it('dev can redisplay a manually started console using --root', async () => {
 		output.push(message)
 	})
 	await cli(['--root', root], devCommand, {})
-	expect(output).toEqual(instance.urlOutput)
+	expect(output).toEqual(['  Pluxel · reused', '', ...instance.urlOutput!])
 })
 
 it('runs a configured command in its workspace and preserves its exit status', async () => {
@@ -794,7 +805,7 @@ it('runs a configured command in its workspace and preserves its exit status', a
 	const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 	await cli(['--root', root], devCommand, {})
 	expect(process.exitCode).toBe(7)
-	expect(log).not.toHaveBeenCalled()
+	expect(log.mock.calls).toEqual([['  Pluxel · app · starting'], ['']])
 })
 
 it('explains missing launch configuration when there is no live console', async () => {
@@ -837,7 +848,7 @@ it('rejects ambiguous command-mode dev and permits an explicit instance', async 
 	process.exitCode = 0
 	output.length = 0
 	await cli(['--root', first.root, '--instance', second.instance.instanceId], devCommand, {})
-	expect(output).toEqual(second.instance.urlOutput)
+	expect(output).toEqual(['  Pluxel · app · reused', '', ...second.instance.urlOutput!])
 	expect(process.exitCode).toBe(0)
 })
 
@@ -854,7 +865,7 @@ it('Pitchfork startup only displays the exact service console when several share
 		output.push(message)
 	})
 	await cli([], devCommand, {})
-	expect(output).toEqual(selected.instance.urlOutput)
+	expect(output).toEqual(['  Pluxel · web · reused', '', ...selected.instance.urlOutput!])
 	expect(process.exitCode ?? 0).toBe(0)
 })
 
@@ -934,7 +945,7 @@ it('replays only the selected command profile when profiles share a root', async
 		output.push(message)
 	})
 	await cli(['--root', first.root, '--profile', 'second'], devCommand, {})
-	expect(output).toEqual(second.instance.urlOutput)
+	expect(output).toEqual(['  Pluxel · second · reused', '', ...second.instance.urlOutput!])
 	output.length = 0
 	await cli(
 		['--root', first.root, '--profile', 'first', '--instance', second.instance.instanceId],
@@ -997,6 +1008,7 @@ it.each([
 	})
 	await cli(['--root', root], devCommand, {})
 	expect(process.exitCode ?? 0).toBe(0)
+	expect(output.slice(0, 2)).toEqual(['  Pluxel · docs · started', ''])
 	expect(output.join('\n')).toContain('Service: workspace/docs (running)')
 	expect(output.join('\n')).toContain('http://docs.localhost:8088/')
 	expect(output.join('\n')).not.toContain('stale.localhost')
@@ -1149,7 +1161,11 @@ it('uses the same default and explicit profile across startup, status, instances
 	] as const) {
 		output.length = 0
 		await cli(['--root', first.root, ...args], devCommand, {})
-		expect(output).toEqual(selected.instance.urlOutput)
+		expect(output).toEqual([
+			`  Pluxel · ${selected.instance.profile} · reused`,
+			'',
+			...selected.instance.urlOutput!,
+		])
 		for (const command of ['status', 'instances', 'run']) {
 			output.length = 0
 			await cli(
@@ -1179,6 +1195,7 @@ it('reports a service that remains stopped without inventing an application URL'
 	})
 	await cli(['--root', root], devCommand, {})
 	expect(process.exitCode).toBe(2)
+	expect(output.slice(0, 2)).toEqual(['  Pluxel · docs · not running', ''])
 	expect(output.join('\n')).toContain('Service: workspace/docs (stopped)')
 	expect(output.join('\n')).not.toContain('http')
 	expect(output.join('\n')).not.toContain('Workbench')
@@ -1253,7 +1270,11 @@ it('keeps URL reuse and console execution within the declaring package for same-
 	] as const) {
 		output.length = 0
 		await cli(['--root', root], devCommand, {})
-		expect(output).toEqual(selected.instance.urlOutput)
+		expect(output).toEqual([
+			`  Pluxel · ${selected.instance.profile} · reused`,
+			'',
+			...selected.instance.urlOutput!,
+		])
 		output.length = 0
 		await cli(['run', file, '--root', root, '--detach'], devCommand, {})
 		expect(JSON.parse(output[0]!)).toMatchObject({
@@ -1274,3 +1295,86 @@ it('keeps URL reuse and console execution within the declaring package for same-
 	for (const current of [outer, inner])
 		expect(current.requests.filter(({ method }) => method === 'run')).toHaveLength(1)
 })
+
+it('marks a managed application started after a successful start from stopped state', async () => {
+	const { root, instance } = await fixture(undefined, { state: 'ready' })
+	await pitchforkFixture(root, 0, 'stopped')
+	await bindService(instance)
+	instance.urlOutput = ['  ➜  Application: http://app.localhost:8088/']
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root], devCommand, {})
+	expect(output).toEqual(['  Pluxel · web · started', '', ...instance.urlOutput])
+	expect(process.exitCode ?? 0).toBe(0)
+})
+
+function mockTerminal(isTTY: boolean) {
+	const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+	const colorDepth = Object.getOwnPropertyDescriptor(process.stdout, 'getColorDepth')
+	// Keep Node's native color detection when simulating a terminal on a pipe.
+	Object.defineProperty(process.stdout, 'getColorDepth', {
+		value: WriteStream.prototype.getColorDepth,
+		configurable: true,
+	})
+	Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: isTTY })
+	cleanup.push(async () => {
+		if (descriptor) Object.defineProperty(process.stdout, 'isTTY', descriptor)
+		else Reflect.deleteProperty(process.stdout, 'isTTY')
+		if (colorDepth) Object.defineProperty(process.stdout, 'getColorDepth', colorDepth)
+		else Reflect.deleteProperty(process.stdout, 'getColorDepth')
+	})
+}
+
+it.each([undefined, '', '1'])(
+	'honors FORCE_COLOR with NO_COLOR=%j while JSON and metadata stay plain',
+	async (noColor) => {
+		const { root, instance } = await fixture(undefined, { state: 'ready' })
+		const urls = [
+			'  ➜  Application: http://localhost:5173/',
+			'  ➜  Workbench:   http://localhost:5173/admin',
+		]
+		instance.urlOutput = [...urls]
+		mockTerminal(false)
+		vi.stubEnv('NO_COLOR', noColor)
+		vi.stubEnv('FORCE_COLOR', '1')
+		const output: string[] = []
+		vi.spyOn(console, 'log').mockImplementation((message: string) => {
+			output.push(message)
+		})
+		await cli(['--root', root], devCommand, {})
+		expect(output.map(stripVTControlCharacters)).toEqual(['  Pluxel · reused', '', ...urls])
+		const urlOutput = output.slice(2).join('\n')
+		expect(urlOutput).toContain('\u001b[32m')
+		expect(urlOutput).toContain('\u001b[1m')
+		expect(urlOutput).toContain('\u001b[36m')
+		expect(instance.urlOutput).toEqual(urls)
+		output.length = 0
+		await cli(['status', '--root', root], devCommand, {})
+		expect(output).toHaveLength(1)
+		expect(output[0]).not.toContain('\u001b')
+		expect(JSON.parse(output[0]!).value.instances[0].urlOutput).toEqual(urls)
+	},
+)
+
+it.each([
+	{ force: undefined, noColor: undefined, tty: false },
+	{ force: undefined, noColor: '1', tty: true },
+])(
+	'keeps presentation plain for a pipe or explicit NO_COLOR (%j)',
+	async ({ force, noColor, tty }) => {
+		const { root, instance } = await fixture(undefined, { state: 'ready' })
+		instance.urlOutput = ['  ➜  Local: http://localhost:5173/']
+		mockTerminal(tty)
+		vi.stubEnv('FORCE_COLOR', force)
+		vi.stubEnv('NO_COLOR', noColor)
+		const output: string[] = []
+		vi.spyOn(console, 'log').mockImplementation((message: string) => {
+			output.push(message)
+		})
+		await cli(['--root', root], devCommand, {})
+		expect(output).toEqual(['  Pluxel · reused', '', ...instance.urlOutput])
+		expect(output.join('\n')).not.toContain('\u001b')
+	},
+)

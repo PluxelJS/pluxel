@@ -4,12 +4,7 @@ import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
-import {
-	BuildEnvKeys,
-	pluginPackage,
-	resolveBuildContext,
-	type BuildRuntimeConfig,
-} from '@pluxel/rolldown/build'
+import { pluginPackage, resolveBuildContext, type BuildRuntimeConfig } from '@pluxel/rolldown/build'
 import { runWithTsdown } from '@pluxel/rolldown/internal/cli'
 
 const toolchainRequire = createRequire(
@@ -22,7 +17,6 @@ const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
 		root: context.projectRoot,
 		packageMetadata: {
 			packageJsonPath: context.packageJsonPath,
-			manifestField: context.manifestField,
 			log: () => {},
 		},
 	})
@@ -626,10 +620,11 @@ describe('build command', () => {
 		})
 	})
 
-	it('respects custom manifest field config', async () => {
+	it('keeps project config and canonical metadata independent of ambient legacy overrides', async () => {
 		try {
-			await withBuildFixture('custom', async (_fixtureDir) => {
-				vi.stubEnv(BuildEnvKeys.manifestField, 'customField')
+			await withBuildFixture('custom', async (fixtureDir) => {
+				vi.stubEnv('PLUXEL_MANIFEST_FIELD', 'customField')
+				vi.stubEnv('PLUXEL_TSDOWN_CONFIG', './missing-config.ts')
 
 				const runtime = await resolveBuildContext({})
 				await runWithTsdown({
@@ -646,7 +641,9 @@ describe('build command', () => {
 				expect(pkg.dependencies?.['acme-plugin-alpha']).toBeUndefined()
 				expect(pkg.devDependencies?.['acme-plugin-beta']).toBe('~1.0.0')
 				expect(pkg.peerDependenciesMeta?.['acme-plugin-beta']?.optional).toBe(true)
-				expect(pkg.customField?.pluginPackages).toEqual({
+				expect(runtime.tsdownConfigPath).toBe(resolve(fixtureDir, 'tsdown.config.ts'))
+				expect(pkg.customField).toBeUndefined()
+				expect(pkg.pluxel?.pluginPackages).toEqual({
 					'acme-plugin-alpha': 'required',
 					'acme-plugin-beta': 'optional',
 				})

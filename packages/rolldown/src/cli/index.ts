@@ -1,5 +1,4 @@
 export * from './config'
-export * from './env'
 export * from './plugin-build'
 export * from './plugin-metadata'
 export * from './types'

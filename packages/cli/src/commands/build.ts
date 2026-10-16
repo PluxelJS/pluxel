@@ -29,7 +29,6 @@ export const buildCommand = define({
 					root: context.projectRoot,
 					packageMetadata: {
 						packageJsonPath: context.packageJsonPath,
-						manifestField: context.manifestField,
 						log: ctx.log,
 					},
 				}),

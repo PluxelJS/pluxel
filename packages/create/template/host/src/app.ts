@@ -1,4 +1,5 @@
 import { defineHostApplication } from '@pluxel/host'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
 
 import { pluginSource } from '@pluxel/host/sources'
@@ -9,12 +10,9 @@ import { exampleConfigRecords, examplePlugins, exampleHostState } from './runtim
 export { product }
 
 export default defineHostApplication(async (startup) => {
-	const dataRoot = resolve(
-		startup.deployment?.root ?? startup.root,
-		startup.env.PLUXEL_DATA_ROOT ?? '.pluxel',
-	)
+	const environment = resolveHostEnv(startup.env)
+	const dataRoot = resolve(startup.deployment?.root ?? startup.root, environment.dataRoot)
 	const { env } = startup
-	const withWorkbench = env.PLUXEL_WORKBENCH !== 'false'
 	return {
 		name: 'pluxel-example',
 		plugins: examplePlugins,
@@ -28,7 +26,7 @@ export default defineHostApplication(async (startup) => {
 		services: await servicesPreset(startup, {
 			persistence: resolve(dataRoot, 'persistence'),
 			product,
-			workbench: withWorkbench,
+			workbench: environment.workbench ?? true,
 		}),
 		configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
 		state: exampleHostState(),

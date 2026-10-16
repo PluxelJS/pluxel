@@ -18,7 +18,6 @@ export interface PluxelEnvironmentVariables extends Readonly<Record<string, stri
 	/** Launcher-provided physical listener port. */
 	readonly PORT?: string
 	readonly PLUXEL_VAULT_DEPLOY_IDENTITY?: string
-	readonly PLUXEL_HMR_ATTRIBUTION?: string
 }
 
 /** The universal `std-env` environment with Pluxel's official variables typed. */

@@ -86,6 +86,7 @@ describe('create-pluxel', () => {
 			'pitchfork.toml',
 			'vite.config.ts',
 			'scripts/vite-tasks.ts',
+			'host/src/app.ts',
 		]) {
 			assert.equal(
 				await readFile(resolve(generated, file), 'utf8'),

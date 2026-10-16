@@ -5,7 +5,6 @@ const pluginBuild = pluginPackage({
 	root: import.meta.dirname,
 	packageMetadata: {
 		packageJsonPath: `${import.meta.dirname}/package.json`,
-		manifestField: 'pluxel',
 		log: console.log,
 	},
 })

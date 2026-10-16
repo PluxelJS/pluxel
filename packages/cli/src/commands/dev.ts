@@ -1,4 +1,5 @@
 import { type ArgValues, type CommandContext, define } from 'gunshi'
+import { styleText } from 'node:util'
 import {
 	devCancelDefinition,
 	devCommandDefinition,
@@ -39,6 +40,26 @@ type DevCommandContext = Pick<
 	CommandContext,
 	'args' | 'tokens' | 'log' | 'positionals' | 'commandPath'
 >
+
+function printDevHeading(
+	ctx: DevCommandContext,
+	profile: string | undefined,
+	action: 'starting' | 'started' | 'reused' | 'not running',
+): void {
+	ctx.log(
+		`  ${styleText('bold', 'Pluxel')}${profile ? ` · ${profile}` : ''} · ${styleText('dim', action)}`,
+	)
+	ctx.log('')
+}
+
+/** Style presentation text only; URL ownership and console data remain with Vite. */
+function terminalUrl(line: string): string {
+	return line.replace(
+		/^(  )➜  ([A-Za-z]+:)(\s+)(https?:\/\/\S+)$/,
+		(_, indent, label, spacing, url) =>
+			`${indent}${styleText('green', '➜')}  ${styleText('bold', label)}${spacing}${styleText('cyan', url)}`,
+	)
+}
 
 function validateDevOptions(ctx: DevCommandContext): void {
 	const allowed = new Set(['help', 'version'])
@@ -137,6 +158,7 @@ export const devCommand = define({
 			const project = selection.project
 			if (selection.instance !== undefined) requireDevConsole(project)
 			let instance: DevInstance
+			let action: 'started' | 'reused' = 'reused'
 			if (project?.pitchfork && selection.instance === undefined) {
 				const service = await readDevService(project)
 				const code = await startDevService(project, service)
@@ -144,6 +166,7 @@ export const devCommand = define({
 					process.exitCode = code
 					return
 				}
+				action = service.status === 'running' ? 'reused' : 'started'
 				if (project.console === false) {
 					const current = await readDevService(project)
 					if (current.id !== service.id)
@@ -151,9 +174,14 @@ export const devCommand = define({
 							'service_unavailable',
 							'Pitchfork service identity changed during startup.',
 						)
+					printDevHeading(
+						ctx,
+						project.profile,
+						current.status === 'running' ? action : 'not running',
+					)
 					ctx.log(`  ➜  Service: ${current.id} (${current.status})`)
 					const url = current.url ?? current.proxy_url
-					if (url) ctx.log(`  ➜  URL:     ${url}`)
+					if (url) ctx.log(terminalUrl(`  ➜  URL:     ${url}`))
 					if (current.status !== 'running') process.exitCode = 2
 					return
 				}
@@ -177,6 +205,7 @@ export const devCommand = define({
 							},
 						)
 					// The foreground process owns startup output, keyboard shortcuts and its lifetime.
+					printDevHeading(ctx, project.profile, 'starting')
 					process.exitCode = await runDevCommand(
 						project.command,
 						project.workspace,
@@ -193,10 +222,14 @@ export const devCommand = define({
 						hint: 'Check devConsole and host-vite, then restart the selected development server.',
 					},
 				)
-			for (const line of instance.urlOutput) ctx.log(line)
+			printDevHeading(ctx, project.profile, action)
+			for (const line of instance.urlOutput) ctx.log(terminalUrl(line))
 			if (instance.application?.state !== 'ready') {
 				ctx.log(
-					`[pluxel] Application: ${instance.application?.state ?? 'unknown'}; use dev status with the same project selection for details.`,
+					styleText(
+						instance.application?.state === 'updating' ? 'yellow' : 'red',
+						`[pluxel] Application: ${instance.application?.state ?? 'unknown'}; use dev status with the same project selection for details.`,
+					),
 				)
 				if (instance.application?.state !== 'updating') process.exitCode = 2
 			}

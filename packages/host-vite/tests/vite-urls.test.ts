@@ -1,6 +1,27 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ViteDevServer } from 'vite'
+import { WriteStream } from 'node:tty'
 import { installPluxelViteUrlPrinter, readViteUrlOutput } from '../src/internal/vite-urls'
+
+const originalTty = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+const originalColorDepth = Object.getOwnPropertyDescriptor(process.stdout, 'getColorDepth')
+beforeEach(() => {
+	// A pipe with only isTTY patched lacks Node's native environment-aware detection.
+	Object.defineProperty(process.stdout, 'getColorDepth', {
+		value: WriteStream.prototype.getColorDepth,
+		configurable: true,
+	})
+	vi.stubEnv('NODE_DISABLE_COLORS', undefined)
+	vi.stubEnv('FORCE_COLOR', undefined)
+	vi.stubEnv('NO_COLOR', '1')
+})
+afterEach(() => {
+	vi.unstubAllEnvs()
+	if (originalTty) Object.defineProperty(process.stdout, 'isTTY', originalTty)
+	else Reflect.deleteProperty(process.stdout, 'isTTY')
+	if (originalColorDepth) Object.defineProperty(process.stdout, 'getColorDepth', originalColorDepth)
+	else Reflect.deleteProperty(process.stdout, 'getColorDepth')
+})
 
 function fixture(localUrl = 'http://127.0.0.1:43123/') {
 	const info = vi.fn()
@@ -14,6 +35,51 @@ function fixture(localUrl = 'http://127.0.0.1:43123/') {
 }
 
 describe('Pluxel Vite URL presentation', () => {
+	it.each([undefined, '', '1'])(
+		'honors FORCE_COLOR with NO_COLOR=%j and keeps console transport plain',
+		(noColor) => {
+			vi.stubEnv('NO_COLOR', noColor)
+			vi.stubEnv('FORCE_COLOR', '1')
+			const { server, info } = fixture()
+			installPluxelViteUrlPrinter(server, {
+				publicOrigin: 'http://app.project.localhost:8088',
+				workbenchBasePath: () => '/__pluxel/workbench',
+			})
+			server.printUrls()
+			expect(info.mock.calls).toEqual([
+				[
+					'  \u001b[32m➜\u001b[39m  \u001b[1mApplication:\u001b[22m \u001b[36mhttp://app.project.localhost:8088/\u001b[39m',
+				],
+				[
+					'  \u001b[32m➜\u001b[39m  \u001b[1mWorkbench:\u001b[22m   \u001b[36mhttp://app.project.localhost:8088/__pluxel/workbench\u001b[39m',
+				],
+			])
+			expect(readViteUrlOutput(server)).toEqual([
+				'  ➜  Application: http://app.project.localhost:8088/',
+				'  ➜  Workbench:   http://app.project.localhost:8088/__pluxel/workbench',
+			])
+		},
+	)
+
+	it.each([
+		{ name: 'NO_COLOR on a TTY', tty: true, noColor: '1', forceColor: undefined },
+		{ name: 'FORCE_COLOR=0 on a TTY', tty: true, noColor: undefined, forceColor: '0' },
+		{ name: 'non-TTY output', tty: false, noColor: undefined, forceColor: undefined },
+	])('keeps $name free of styling', ({ tty, noColor, forceColor }) => {
+		vi.stubEnv('NO_COLOR', noColor)
+		vi.stubEnv('FORCE_COLOR', forceColor)
+		Object.defineProperty(process.stdout, 'isTTY', { value: tty, configurable: true })
+		const { server, info } = fixture()
+		installPluxelViteUrlPrinter(server, {
+			publicOrigin: 'http://app.project.localhost:8088',
+			workbenchBasePath: () => '/',
+		})
+		server.printUrls()
+		expect(info).toHaveBeenCalledExactlyOnceWith(
+			'  ➜  Workbench:   http://app.project.localhost:8088/',
+		)
+	})
+
 	it('preserves native Vite URLs and adds the Workbench mount', () => {
 		const { server, info, printUrls } = fixture()
 		installPluxelViteUrlPrinter(server, {

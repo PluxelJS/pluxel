@@ -1,3 +1,4 @@
+import { styleText } from 'node:util'
 import type { ViteDevServer } from 'vite'
 
 const PLUXEL_VITE_URL_PRINTER = Symbol.for('pluxel.viteUrlPrinter')
@@ -31,9 +32,16 @@ export function installPluxelViteUrlPrinter(
 	server.printUrls = () => {
 		const presentation = urlPresentation(server)
 		if (presentation.native) printViteUrls()
-		for (const line of presentation.lines) server.config.logger.info(line)
+		for (const line of presentation.lines) server.config.logger.info(terminalUrlLine(line))
 	}
 	return dispose
+}
+
+function terminalUrlLine(line: string): string {
+	const match = /^(  )➜  ([A-Za-z]+:)(\s+)(https?:\/\/\S+)$/.exec(line)
+	if (!match) return line
+	const [, prefix, label, spacing, url] = match
+	return `${prefix}${styleText('green', '➜')}  ${styleText('bold', label!)}${spacing}${styleText('cyan', url!)}`
 }
 
 function resolvedViteOrigin(server: ViteDevServer): string | undefined {

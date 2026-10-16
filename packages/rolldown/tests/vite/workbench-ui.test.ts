@@ -430,28 +430,20 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		})
 		const firstOutDir = join(fixture.path, 'artifact-first')
 		const secondOutDir = join(fixture.path, 'artifact-second')
-		const previousTestOverride = process.env.MFE_VITE_NO_TEST_ENV_CHECK
-		process.env.MFE_VITE_NO_TEST_ENV_CHECK = 'caller-owned'
-		try {
-			await Promise.all([
-				buildWorkbenchFederationProducer({
-					root: fixture.path,
-					plan: createPlan('concurrent-a', firstDefinition),
-					outDir: firstOutDir,
-					minify: false,
-				}),
-				buildWorkbenchFederationProducer({
-					root: fixture.path,
-					plan: createPlan('concurrent-b', secondDefinition, 'src/ui/manager-second.ts'),
-					outDir: secondOutDir,
-					minify: false,
-				}),
-			])
-			expect(process.env.MFE_VITE_NO_TEST_ENV_CHECK).toBe('caller-owned')
-		} finally {
-			if (previousTestOverride === undefined) delete process.env.MFE_VITE_NO_TEST_ENV_CHECK
-			else process.env.MFE_VITE_NO_TEST_ENV_CHECK = previousTestOverride
-		}
+		await Promise.all([
+			buildWorkbenchFederationProducer({
+				root: fixture.path,
+				plan: createPlan('concurrent-a', firstDefinition),
+				outDir: firstOutDir,
+				minify: false,
+			}),
+			buildWorkbenchFederationProducer({
+				root: fixture.path,
+				plan: createPlan('concurrent-b', secondDefinition, 'src/ui/manager-second.ts'),
+				outDir: secondOutDir,
+				minify: false,
+			}),
+		])
 
 		const [firstJavaScript, secondJavaScript] = await Promise.all([
 			readJavaScriptOutput(firstOutDir),

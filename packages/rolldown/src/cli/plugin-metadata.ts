@@ -3,12 +3,10 @@ import { relative, dirname } from 'node:path'
 import type { ResolvedConfig } from 'vite-plus/pack'
 import { runRules } from './rules'
 import { validateWorkbenchCapnwebPeer } from './workbench-peer'
-import type { BuildLogger, BuildRuntimeConfig, BuildSuccessHook } from './types'
+import type { BuildLogger, BuildSuccessHook } from './types'
 
-export interface PluginDependencyMetadataOptions extends Pick<
-	BuildRuntimeConfig,
-	'packageJsonPath' | 'manifestField'
-> {
+export interface PluginDependencyMetadataOptions {
+	packageJsonPath: string
 	log: BuildLogger
 	collectPlugins: () => Map<string, PluginDependencyMode>
 	collectWorkbenchTargets: () => Promise<boolean>
@@ -29,7 +27,6 @@ export function createPluginDependencyMetadataHook(
 		if (signal.aborted) return
 		const updates = await runRules({
 			packageJsonPath: options.packageJsonPath,
-			manifestField: options.manifestField,
 			pluginUsages: plugins,
 			workbenchCapnwebVersion: version,
 			workbenchArtifacts: options.workbenchArtifacts,

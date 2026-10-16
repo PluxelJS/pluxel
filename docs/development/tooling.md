@@ -3,33 +3,30 @@ title: CLI 与工具链
 description: 了解脚手架、插件构建、应用执行、HMR、源码联调和发行检查分别由谁负责。
 ---
 
-按任务选择下面的命令。生成项目已固定 `@pluxel/cli`，在项目根目录用 `vp exec pluxel` 调用；还没有项目时，从[快速开始](../getting-started/index.md)创建。已有项目补装 CLI 的方法见安装分层。
+本页维护 CLI 加载、构建转换与 HMR 契约。生成项目已固定 `@pluxel/cli`，通过 package scripts 或 `vp exec pluxel` 调用。
 
-Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；选择项目 profile 并核对 Vite root 与实例归属后执行 TypeScript 操作；结果与取消使用原 receipt。
+按需读[安装与加载](#安装分层)、[构建边界](#source-build-boundary)或 [HMR](#hmr-失败与自动恢复)；源码接入与 catalog 见[源码工作区](./source-workspaces.md)。
 
-源码定位使用 [inspect TypeScript API](./inspection.md)，没有 `pluxel inspect` 子命令。
+源码定位使用 [inspect TypeScript API](./inspection.md)，没有 `pluxel inspect` 子命令。首次创建应用见[快速开始](../getting-started/index.md)；工作区任务、服务与日志入口见[工作区工具链](./workspace-toolchain.md)。
 
 ## 当前 CLI 命令地图
 
-| 目标                                                     | 命令                                                          |
-| -------------------------------------------------------- | ------------------------------------------------------------- |
-| 生成固定 example workspace                               | `vp create @pluxel [directory]`                               |
-| 读取当前来源文档                                         | `pluxel docs [path]`                                          |
-| 在 workspace 生成 Plugin package                         | `pluxel new`                                                  |
-| 构建当前 Plugin package                                  | `pluxel build`                                                |
-| 生成/检查/rebase database migration（`migrations` 策略） | `pluxel database generate/check/rebase`                       |
-| 创建/检查/验证应用发行物                                 | `pluxel distribution create/inspect/verify`                   |
-| 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
-| 发布 npm package 并通知 market                           | `pluxel publish`                                              |
-| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev status/run/result/cancel`                         |
-| 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
-| 管理与接入 workspace                                     | `pluxel workspace setup/doctor/sync`                          |
-| 维护依赖声明与 catalog                                   | `pluxel pncat add/remove/migrate/clean`                       |
+- 生成固定 example workspace：`vp create @pluxel [directory]`。
+- 读取当前来源文档：`pluxel docs [path]`。
+- 在 workspace 生成 Plugin package：`pluxel new`。
+- 构建当前 Plugin package：`pluxel build`。
+- 生成/检查/rebase database migration（`migrations` 策略）：`pluxel database generate/check/rebase`。
+- 创建/检查/验证应用发行物：`pluxel distribution create/inspect/verify`。
+- 写入/关联 delivery marker：`pluxel distribution mark/correlate`。
+- 发布 npm package 并通知 market：`pluxel publish`。
+- 操作当前 Vite 实例的插件、配置、Workbench 和日志：`pluxel dev status/run/result/cancel`。
+- 跨仓库 source checkout：`pluxel source register/list/unregister/doctor/build/install`。
+- 管理与接入 workspace：`pluxel workspace setup/doctor/sync`。
+- 维护依赖声明与 catalog：`pluxel pncat add/remove/migrate/clean`。
 
-确切参数通过 `pluxel <command> --help` 查看。CLI 状态目录默认是项目根目录下的 `.pluxel`；设置 `PLUXEL_STATE_DIR` 可指定路径。变量未设置时才使用默认值，显式设置为空字符串或空白会报错，需修改该环境变量后重试。
+确切参数通过 `pluxel <command> --help` 查看。工作区候选缓存默认位于项目 `.pluxel`；`PLUXEL_STATE_DIR` 可改其位置，显式空值或空白会报错。该变量不迁移源码接入状态或开发控制台目录。
 
-`pluxel workspace doctor` 校验框架共同拥有的 workspace 契约：pnpm 主版本、workspace 文件，以及已激活时由 CLI
-管理的 machine-local source `.pnpmfile.cjs`，以及 docs/skill 接入状态。安装 npm 依赖后先运行 `pluxel workspace setup`。产品自己的依赖方向和目录规则仍由项目 `governance:check` 负责。
+工作区接入、doctor 的检查范围见[开发资源与接入状态](./source-workspaces.md#文档skill-与接入状态)，依赖政策检查见[catalog](./source-workspaces.md#统一外部依赖)。产品依赖方向和目录规则由项目自己的 `governance:check` 负责。
 
 ## 安装分层
 
@@ -53,13 +50,14 @@ npx nypm add -D @pluxel/cli
 npx nypm add -g @pluxel/cli
 ```
 
-`@pluxel/cli` 是统一 executable，但不是所有能力的安装闭包。项目 `package.json` 直接声明
-`@pluxel/cli` 时，全局 `pluxel` 会优先使用这个项目本地版本；声明了但尚未安装时会失败并提示先安装，
-不会悄悄回退到全局版本。Git checkout 的 CLI 始终保持自身来源，不委托另一份项目 CLI；`source install` 统一接入源码包、文档和 skill。发行版 CLI 的 `source list/register/unregister` 仍使用调用入口，源码 install/build/doctor 需从 Git CLI 执行。CI 和 package scripts 应继续使用本地
-`pluxel` 或 `vp exec pluxel`。CLI 只在最近的 Git/workspace/lockfile 项目边界内寻找本地安装；嵌套在
-另一个 checkout 里的独立项目不会借用父项目的 CLI。
+CLI 来源选择：
 
-按命令安装可选能力：
+- 发行版入口优先委托项目 `package.json` 直接声明的本地 `@pluxel/cli`；声明后未安装则失败，不回退全局版本。仅在最近的 Git/workspace/lockfile 边界内寻找安装，不借用独立父项目的 CLI。
+- Git checkout 的 CLI 保持自身来源，不委托另一份项目 CLI。
+- `source` 命令族使用实际调用入口；`list/register/unregister` 可用发行版 CLI，`install/build/doctor` 必须使用 Git CLI。接入步骤见[源码工作区](./source-workspaces.md#准备-checkout-和-cli)。
+- CI 和 package scripts 使用本地 `pluxel` 或 `vp exec pluxel`。
+
+CLI 是统一 executable，各能力按命令从当前项目加载：
 
 Plugin/应用构建与源码转换：
 
@@ -89,14 +87,11 @@ npx nypm add -D @pluxel/market
 
 有 Workbench browser entry 的 host 还需要 Vite/React 等自己的 web toolchain。插件 package 的 canonical scripts 见 [开发和发布插件包](./plugin-package.md)。
 
-这些可选包只在执行对应命令时从当前项目加载。`pluxel --help`、`pluxel --version` 和
-`pluxel new` 不会加载 Rolldown 或 market；缺少对应包时只影响被调用的命令，并给出
-安装提示。
+`pluxel --help`、`pluxel --version` 和 `pluxel new` 不加载 Rolldown 或 market。缺少可选包只影响对应命令，并给出安装提示。
 
 ## 自定义本地 Plugin 模板
 
-只是创建标准 Plugin package 时使用 CLI 内置的 `plugin` 模板。团队需要固定自己的目录、文档或工具配置时，
-可以从明确的本地路径生成：
+标准 Plugin package 使用内置 `plugin` 模板；团队目录、文档或工具配置可从显式本地路径生成：
 
 ```sh
 pluxel new --template ./templates/company-plugin --name @acme/orders --no-install
@@ -127,8 +122,7 @@ pluxel new --template ./templates/company-plugin --name @acme/orders --no-instal
 `{{ json key }}`；文件名也可以使用同样的 token。模板不支持 condition、loop、partial、dynamic helper、
 JavaScript hook 或 post-create command，也不接受 symlink。
 
-CLI 在首次写入前完成 manifest、UTF-8 token、path containment、portable collision 和已有目标检查。
-local template 默认不运行 package manager；审查模板内容后显式传入 `--install` 才会执行安装及 lifecycle scripts。
+首次写入前检查 manifest、UTF-8 token、路径包含关系、跨平台路径冲突和已有目标。本地模板默认不运行 package manager；审查内容后显式 `--install` 才会安装并执行 lifecycle scripts。
 
 ## 构建入口
 
@@ -137,6 +131,8 @@ CLI 安装标准 semantic pipeline，成功后同步 metadata；作者不重复�
 完整 package 配置、Part 依赖聚合与 pack 验证见[插件包](./plugin-package.md)。自定义构建工具才使用 `@pluxel/rolldown/build` 的 `pluginPackage()`。
 
 应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`，按[宿主构建配置](../host/configuration.md#生产构建)选择交付边界与资源 variant。
+
+测试中实际构建 Workbench federation 产物时，在测试配置显式设置上游 `MFE_VITE_NO_TEST_ENV_CHECK=true`；MF 默认跳过测试环境中的 Vite 插件。构建器沿用调用方环境，不自动开启或覆盖此设置。
 Plugin build 保留 provider peer 边界供多宿主使用；应用 build 按 `delivery` 选择部署闭包。
 
 ## Source build boundary
@@ -180,27 +176,19 @@ symlinked root，但会拒绝通过文件 symlink 逃出 root。修改 `name`、
 
 ## HMR 失败与自动恢复
 
-排查更新时分别看三个事实：运行意图决定插件是否应该运行，当前状态说明它是否已经运行，更新历史说明上次更新发生了什么。
-一次更新已提交，不代表每个插件都已启动；某个插件启动失败，也不代表同一批次里的其他插件失败。
+分别读取运行意图、当前状态和更新历史：批次已提交不等于全部插件已启动，单个插件失败也不等于整批失败。
 
-显式 catalog 与动态来源 的插件源码 HMR 都保留运行意图。原来要求运行的插件即使启动失败，也不会被改成手动停止；
-下一次有效源码更新会自动启动修复后的版本，连同被 required dependency 阻塞的 consumer 一起恢复，不需要去工作台点击“启动”。
-用户主动停止的插件则继续停止，源码更新不会覆盖这个选择。
+显式 catalog 与动态来源的插件 HMR 都保留运行意图：启动失败的插件及被其 required dependency 阻塞的 consumer，在下一次有效源码更新后自动恢复；用户主动停止的插件保持停止。
 
 “保留上一版”取决于失败发生在哪个阶段：
 
-| 失败阶段                         | 期间的服务状态                                                                    | 修复源码后的行为               |
-| -------------------------------- | --------------------------------------------------------------------------------- | ------------------------------ |
-| 编译、模块求值、提交前依赖图校验 | 旧版本及其已建立的连接继续工作；连续失败也不会替换它                              | 自动替换为新版本               |
-| 提交后的配置校验或 `init()`      | 旧 generation 已停止；失败节点及其 required consumer 暂不可用，其他节点可继续运行 | 按保留的运行意图自动恢复       |
-| 旧 generation 的资源清理         | 记录清理异常；新实例是否运行以当前状态为准                                        | 不根据历史清理异常推断启动失败 |
+- 编译、模块求值、提交前依赖图校验：旧版本及其已建立的连接继续工作；连续失败也不会替换它；自动替换为新版本。
+- 提交后的配置校验或 `init()`：旧 generation 已停止；失败节点及其 required consumer 暂不可用，其他节点可继续运行；按保留的运行意图自动恢复。
+- 旧 generation 的资源清理：记录清理异常；新实例是否运行以当前状态为准；不根据历史清理异常推断启动失败。
 
-因此，普通插件 HMR 不保证任意 `init()` 失败都能无中断保留旧实例。新旧版本可能争用同一端口、连接或其他独占资源，
-旧实例清理后也不能安全地原地复活。失败 generation 不会发布部分 HTTP/WebSocket routes。
+插件 HMR 不保证 `init()` 失败时无中断保留旧实例：新旧版本可能争用独占资源，旧实例清理后不能安全原地复活。失败 generation 不发布部分 HTTP/WebSocket routes。
 
-这里的自动恢复由下一次有效更新触发，不是后台无限重试。没有新定义的重复通知也不是“启动”命令。
-连续保存时，进入提交队列的更新按顺序执行；前一次被拒绝不会堵住已经排队的修复更新。修复后的状态以当前运行状态为准，
-不要仅凭历史错误再次点击“启动”；仍未恢复时，先检查本节点的配置、启动错误和阻塞它的 required dependency。
+恢复由下一次有效更新触发，不做后台无限重试；没有新定义的重复通知也不触发启动。连续保存按提交队列顺序执行，前一次拒绝不阻塞排队的修复。是否恢复看当前状态；未恢复时检查配置、启动错误和 required dependency，不仅凭历史错误再次启动。
 修改 application entry 或 host 配置会重建宿主，使用新的启动策略；这与同一宿主内保留运行意图的插件 HMR 不同，
 详见 [宿主设置](../host/configuration.md)。
 
@@ -221,5 +209,5 @@ Workbench 收到 publication、运行 generation 或产物变化造成的会话�
 
 运行受影响 package 的实际 scripts；源码声明位置与脚本可用 [inspect](./inspection.md) 查询。
 构建失败先看报错对应的 root export、constructor、`configs.use()`、`parts.use()` 或 literal declaration，不通过关闭 lowering 绕过错误。
-当前应用的状态、最近更新和日志使用[devconsole](./dev-console.md)读取。
+当前应用的状态、最近更新和日志使用[开发控制台](./dev-console.md)读取。
 跨 checkout 联调见[源码开发](./source-workspaces.md)，发行检查见[发行物](./distribution.md)。

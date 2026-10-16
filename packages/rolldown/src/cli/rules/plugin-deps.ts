@@ -1,16 +1,13 @@
-import { MANIFEST_PLUGIN_PACKAGES_FIELD } from '../env'
 import type { WorkspacePackageJson } from '../../workspace/package-json'
 import type { RuleContext } from './types'
 
 /** Build validates author-owned dependency roles and updates only compiled publication facts. */
 export function pluginDependencyRule(pkg: WorkspacePackageJson, context: RuleContext) {
 	validatePluginDependencies(pkg, context)
-	const manifestUpdate = syncPluginPackages(pkg, context.pluginUsages, context.manifestField)
+	const manifestUpdate = syncPluginPackages(pkg, context.pluginUsages)
 	return manifestUpdate
 		? [
-				`${context.manifestField}.${MANIFEST_PLUGIN_PACKAGES_FIELD} updated (${Object.entries(
-					manifestUpdate,
-				)
+				`pluxel.pluginPackages updated (${Object.entries(manifestUpdate)
 					.map(([name, mode]) => `${name}=${mode}`)
 					.join(', ')})`,
 			]
@@ -49,24 +46,21 @@ function validatePluginDependencies(pkg: WorkspacePackageJson, context: RuleCont
 function syncPluginPackages(
 	pkg: WorkspacePackageJson,
 	facts: RuleContext['pluginUsages'],
-	manifestField: string,
 ): Record<string, 'required' | 'optional'> | undefined {
 	const next = Object.fromEntries(
 		[...facts.entries()].sort(([a], [b]) => a.localeCompare(b)),
 	) as Record<string, 'required' | 'optional'>
-	const manifest = isRecord(pkg[manifestField])
-		? (pkg[manifestField] as Record<string, unknown>)
-		: {}
-	const previous = isRecord(manifest[MANIFEST_PLUGIN_PACKAGES_FIELD])
-		? (manifest[MANIFEST_PLUGIN_PACKAGES_FIELD] as Record<string, unknown>)
+	const manifest = isRecord(pkg.pluxel) ? (pkg.pluxel as Record<string, unknown>) : {}
+	const previous = isRecord(manifest.pluginPackages)
+		? (manifest.pluginPackages as Record<string, unknown>)
 		: {}
 	if (recordsEqual(previous, next)) return undefined
 
 	const updated = { ...manifest }
-	if (Object.keys(next).length === 0) delete updated[MANIFEST_PLUGIN_PACKAGES_FIELD]
-	else updated[MANIFEST_PLUGIN_PACKAGES_FIELD] = next
-	if (Object.keys(updated).length === 0) delete pkg[manifestField]
-	else pkg[manifestField] = updated
+	if (Object.keys(next).length === 0) delete updated.pluginPackages
+	else updated.pluginPackages = next
+	if (Object.keys(updated).length === 0) delete pkg.pluxel
+	else pkg.pluxel = updated
 	return next
 }
 

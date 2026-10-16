@@ -16,9 +16,6 @@ import PreprocessorDirectives from 'unplugin-preprocessor-directives/vite'
 const toolchainRequire = createRequire(import.meta.url)
 const toolchainTypeScriptRoot = dirname(toolchainRequire.resolve('typescript/package.json'))
 
-let activeFederationTestBuilds = 0
-let previousTestEnvironmentOverride: string | undefined
-
 export type WorkbenchViteBuildOptions = Readonly<{
 	producerRoot: string
 	applicationRoot: string
@@ -37,14 +34,8 @@ export type WorkbenchViteBuildOptions = Readonly<{
 }>
 
 export async function runWorkbenchViteBuild(options: WorkbenchViteBuildOptions): Promise<void> {
-	const restoreTestEnvironment = enableFederationInTestEnvironment()
-	try {
-		const dtsTsConfigPath =
-			options.typeAssets === 'required' ? await writeDtsTsConfig(options) : null
-		await build(createViteConfig(options, dtsTsConfigPath))
-	} finally {
-		restoreTestEnvironment()
-	}
+	const dtsTsConfigPath = options.typeAssets === 'required' ? await writeDtsTsConfig(options) : null
+	await build(createViteConfig(options, dtsTsConfigPath))
 }
 
 function createViteConfig(
@@ -113,32 +104,6 @@ function workbenchCustomConditions(
 				'@pluxel/source',
 				packageMode === 'development' ? 'development' : 'production',
 			]
-}
-
-function enableFederationInTestEnvironment(): () => void {
-	const isTestEnvironment =
-		Reflect.get(process.env, 'NODE_ENV') === 'test' ||
-		process.env.VITEST !== undefined ||
-		process.env.JEST_WORKER_ID !== undefined
-	if (!isTestEnvironment) return () => undefined
-	if (activeFederationTestBuilds === 0) {
-		previousTestEnvironmentOverride = process.env.MFE_VITE_NO_TEST_ENV_CHECK
-		process.env.MFE_VITE_NO_TEST_ENV_CHECK = 'true'
-	}
-	activeFederationTestBuilds += 1
-	let active = true
-	return () => {
-		if (!active) return
-		active = false
-		activeFederationTestBuilds -= 1
-		if (activeFederationTestBuilds > 0) return
-		if (previousTestEnvironmentOverride === undefined) {
-			delete process.env.MFE_VITE_NO_TEST_ENV_CHECK
-		} else {
-			process.env.MFE_VITE_NO_TEST_ENV_CHECK = previousTestEnvironmentOverride
-		}
-		previousTestEnvironmentOverride = undefined
-	}
 }
 
 async function writeDtsTsConfig(options: WorkbenchViteBuildOptions): Promise<string> {

@@ -1,4 +1,4 @@
-import { readFile, readdir } from 'node:fs/promises'
+import { access, readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -40,4 +40,34 @@ it('builds development renderers for the JSX runtime supplied by a packaged Shel
 	// MF may retain a side-effect-only export descriptor; no callable binding may use jsxDEV.
 	expect(code).not.toMatch(/=\s*exportModule\["jsxDEV"\]/)
 	expect(code).toMatch(/=\s*exportModule\["jsx"\]/)
+})
+
+it.each([undefined, 'false'])('preserves the upstream federation test opt-in %s', async (value) => {
+	vi.stubEnv('MFE_VITE_NO_TEST_ENV_CHECK', value)
+	await using fixture = await createDiskFixture({
+		'package.json': '{"name":"test-environment-probe","type":"module"}',
+		'view.ts': 'export const marker = "ordinary-vite-build"',
+	})
+	await runWorkbenchViteBuild({
+		producerRoot: fixture.getPath(),
+		declarationRoot: fixture.getPath(),
+		applicationRoot: fixture.getPath(),
+		packageMode: 'development',
+		outDir: fixture.getPath('dist'),
+		producer: 'test_environment_probe',
+		exposes: { './views/main': fixture.getPath('view.ts') },
+		cacheDir: fixture.getPath('cache'),
+		shared: {},
+		bridgeReactEntry: 'unused',
+		minify: false,
+		sourcemap: false,
+		typeAssets: 'optional',
+		paraglide: null,
+	})
+	expect(process.env.MFE_VITE_NO_TEST_ENV_CHECK).toBe(value)
+	// Vite still builds, but upstream intentionally omits MF artifacts without the test opt-in.
+	await expect(access(fixture.getPath('dist'))).resolves.toBeUndefined()
+	await expect(access(fixture.getPath('dist/mf-manifest.json'))).rejects.toMatchObject({
+		code: 'ENOENT',
+	})
 })

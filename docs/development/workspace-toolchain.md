@@ -5,6 +5,16 @@ description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开
 
 官方 monorepo 和 `@pluxel/create` 项目以 mise、Vite+、hk、Pitchfork 作为默认开发工作区。先按[快速开始](../getting-started/index.md)创建应用；本页用于准备 checkout、管理服务、调整检查，以及指导 coding agent 修改工具配置。生产交付见[应用交付](./distribution.md)。
 
+按任务读取，不必通读：
+
+| 当前任务                        | 入口                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------- |
+| 准备 checkout、安装工具或 hooks | [准备 checkout](#准备-checkout)                                                             |
+| 调整构建、检查或缓存            | [构建与检查](#构建检查与任务图)、[Vite Task](#下游迁移到-vite-task)                         |
+| 启动服务、查日志或调整反代      | [管理服务](#管理开发服务)、[排障入口](#agent-的日志与排障顺序)、[公开地址](#端口与公开地址) |
+| 修改 hk / Pkl 或 CI             | [hk 配置](#修改-hk-与-pkl-配置)、[GitHub Actions](#github-actions)                          |
+| 在线读取或修改应用              | [开发控制台](./dev-console.md)                                                              |
+
 ## 每个工具维护什么
 
 | 文件或工具                 | 职责                                                                            |
@@ -20,21 +30,21 @@ mise 管理工具的安装和执行环境；package scripts 提供统一操作�
 
 ## 构建、检查与任务图
 
-Vite+ 的 `vp run` 执行原生任务图；`vp run verify` 用 `dependsOn` 组合治理、`vp check`、测试与构建，不再用 shell 串联多套检查入口。`vp check` 同时检查格式、lint 和类型；根 `vite.config.ts` 的 `fmt` 拥有格式规则，`lint.options.typeAware` 与 `typeCheck` 同时启用类型检查。`vp check --fix` 显式修复可自动处理的问题。上游入口见 [Check](https://viteplus.dev/guide/check)、[任务图与缓存](https://viteplus.dev/config/run)。
+package scripts 是人和 IDE 的入口，Vite Task 拥有实际命令、依赖图与缓存。根 `build` / `test` / `verify` 委托 `workspace:*` 聚合任务；叶包的标准 `build` / `test` / `typecheck` 分别委托 `compile` / `check-tests` / `check-types`，保留 source 发现与外部调用入口。不要同时定义同名 script 和原生 task，也不要在 mise 重复定义任务。框架的具体实现与包依赖环处理见[工作区任务图](https://github.com/PluxelJS/pluxel/blob/main/engineering/CLI_WORKSPACES.md#工作区任务图)。
 
-`vp pack` 是源码打包器；发布 tarball 使用 `vp pm pack`，两者不可互换。保留有领域价值的 `tsdown.config.ts` 与 `oxlint.config.ts`，由 `vite.config.ts` 的 `pack`、`lint` 引用。Plugin 构建仍使用 `pluxel build` 的编译语义。框架中依赖未构建编译插件的配置通过 `scripts/pack.mjs` 在依赖任务完成后调用 Pack API，避免任务发现提前加载产物。任务拥有实际命令、依赖顺序和缓存；根工作区在 `package.json` 保留 IDE 可发现的 `dev`、`build`、`test`、`check`、`verify` 等 scripts；构建、测试与验收入口委托给 `vite.config.ts` 中的 `workspace:*` 聚合任务；叶包保留标准 `build` / `test` / `typecheck` scripts，分别委托 `compile` / `check-tests` / `check-types`，供 source 发现与外部调用。
+本仓库与模板使用 `run.cache.scripts: false, tasks: true`：入口每次执行，底层构建与测试按输入复用缓存，开发服务和验收入口不会被缓存跳过。IDE 的 `pnpm run build` 仍进入同一任务图。简单下游也可直接用 scripts 并启用其缓存；存在依赖顺序、产物或环境规则时再声明原生 task。参考 [run 配置](https://viteplus.dev/config/run)。
 
-日常使用 `vp install`、`vp add`、`vp remove`、`vp exec` 和 `vp run`；Vite+ 按 `packageManager` 使用固定 pnpm。官方工作区有 catalog 分类政策，添加依赖使用 `vp exec pluxel pncat add <package>`，移除、迁移和清理同样使用 `pluxel pncat` 原生命令。`vp exec pluxel workspace sync` 只对齐已有 catalog 版本，不修改包依赖声明。pncat 负责依赖写入，Pluxel 负责自己的版本政策；不维护 `catalog:add` 一类重复脚本。参考 [Vite+ 包管理](https://viteplus.dev/guide/package-management)。
+| 操作                    | 入口与边界                                                                                                                                                |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 静态检查 / 修复         | `vp check` / `vp check --fix`；格式由根 `fmt` 配置拥有，类型由 `lint.options.typeAware` 与 `typeCheck` 启用，见 [Check](https://viteplus.dev/guide/check) |
+| 完整门禁                | `vp run verify` 通过 `dependsOn` 组合治理、检查、测试与构建；提交前增量检查不能替代它                                                                     |
+| 源码打包 / 发布 tarball | `vp pack` / `vp pm pack`，两者不可互换；现有 tsdown / oxlint 配置由 `vite.config.ts` 引用，Plugin 仍用 [`pluxel build`](./tooling.md#构建入口)            |
+| 普通依赖操作            | `vp install/add/remove/exec/run` 按 `packageManager` 使用固定 pnpm，见 [Vite+ 包管理](https://viteplus.dev/guide/package-management)                      |
+| 官方 catalog 政策       | `vp exec pluxel pncat add/remove/migrate/clean` 修改声明；`pluxel workspace sync` 只对齐已有 catalog 版本，不改依赖声明，不另设重复脚本                   |
 
-`vite` 依赖指向 Vite+ Core 的 npm alias；Core 使用自己的版本号，工作区通过精确的 `peerDependencyRules.allowedVersions.vite` 接纳该版本，避免将其误当成旧版 Vite。升级 Vite+ 时同步 mise 版本、`vite-plus` catalog、Vite alias 与此 peer 规则，并验证插件兼容性。
+框架的独立 `check-types` 还覆盖明确的 tsconfig、编译期 API probes 与前端配置；例如 `*.typecheck.ts` 不进入源码语义 lint，不能因 `vp check` 已检查类型就删除它们。普通下游只有额外类型契约时才增加独立任务。测试与 benchmark 也必须归属正确的 TypeScript 项目：必要时在测试目录继承包 tsconfig，设置 `noEmit: true`、`composite: false` 和环境类型，不扩大生产声明构建输入。
 
-Vitest 继续提供测试契约；vendor 中参与根工作区的包按根任务图执行；未接入的第三方子项目保持各自工具配置，不递归改写整棵 vendor。新增任务先查看 [Vite Task 配置](https://viteplus.dev/config/run)，不要恢复另一套任务调度器。
-
-框架仍保留独立的 `check-types` 任务：它们验证各包明确声明的 tsconfig、仅供编译的 API probes，以及额外的前端配置。`vp check` 的文件选择与这些检查不同，例如 `*.typecheck.ts` 不进入源码语义 lint；不能因为启用了原生类型检查就删除这些契约测试。普通下游项目可用 `vp check` 作为统一静态检查入口，只有存在额外类型契约时才增加独立任务。
-
-测试和 benchmark 也必须属于明确的 TypeScript 项目。若包的打包配置只包含 `src`，在测试目录提供继承包配置的 `tsconfig.json`，显式设置 `noEmit: true`、`composite: false` 和测试所需环境类型；不要扩大生产声明构建的输入，也不要让测试落入缺少正确标准库的推断项目。`vp check` 会按文件发现就近的配置。
-
-根 scripts 是人和 IDE 的入口，原生任务拥有依赖图与缓存，两者可以共存。Vite+ 支持通过 `run.cache.scripts: true` 缓存 package scripts，但默认关闭。本仓库和模板保留 `scripts: false, tasks: true`：入口每次执行，底层构建与测试任务按各自输入复用缓存，开发服务和验收检查不会被入口缓存跳过。不要同时定义同名 script 和原生 task；例如 `"build": "vp run workspace:build"` 对应原生 `workspace:build`。直接执行 `pnpm run build` 的 IDE 也会进入同一 Vite Task 图。简单项目可以直接使用 scripts 并启用缓存；有明确依赖、产物或环境规则时再使用原生 task，不能为了迁移而删除可发现的入口。
+升级 Vite+ 时同步 mise 版本、`vite-plus` catalog、指向 Vite+ Core 的 `vite` npm alias，以及精确的 `peerDependencyRules.allowedVersions.vite`，再验证插件兼容性。Core 有独立版本号。vendor 中已接入工作区的包执行根任务图，未接入的第三方项目保留自己的配置。
 
 ## 下游迁移到 Vite Task
 
@@ -61,9 +71,9 @@ export default defineConfig({
 })
 ```
 
-运行 `vp run deploy` 时，Vite Task 先完成构建与测试；多个任务依赖同一构建时共享该任务。不要在各命令中再次执行完整工作区 build。测试如果消费构建产物，在 test 上声明 `dependsOn: ['build']`；直接测试源码则无需这个依赖。同一个名称不能同时定义为 package script 和原生 task。官方模板保留标准 package scripts 作为 source 发现入口，委托给 `compile`、`check-tests` 等原生任务；新增 deploy 可直接定义为 task。
+运行 `vp run deploy` 会先完成构建与测试，共享依赖任务只执行一次，不要在每个命令中再跑整仓 build。测试消费构建产物时才声明 `dependsOn: ['build']`；直接测源码则无需依赖。新增 deploy 可直接定义为 task，标准 scripts 的保留规则见上节。
 
-Monorepo 使用 `dependsOn: [{ task: 'build', from: ['dependencies', 'devDependencies', 'peerDependencies'] }]` 表达直接依赖的构建，或用 `@example/domain#build` 指定精确任务。这些引用应指向实际原生任务：官方模板内部使用 `compile` / `check-tests`，不重复经过供外部使用的 package script。框架仓库有合法的包依赖环，根任务通过明确的构建边组织顺序，不能简单用递归 package 排序代替。语法与嵌套任务行为见 [Vite Task](https://viteplus.dev/guide/run)。
+Monorepo 用 `dependsOn: [{ task: 'build', from: ['dependencies', 'devDependencies', 'peerDependencies'] }]` 表达依赖包构建，或用 `@example/domain#build` 指定任务。引用必须指向实际原生任务；官方模板使用 `compile` / `check-tests`，不再经过外层 scripts。包依赖有环时使用明确构建边，不能依赖递归 package 排序。语法见 [Vite Task](https://viteplus.dev/guide/run)。
 
 标准 `vp build` 会自动报告输入、输出与相关环境变量，无需重复手写这些设置。组合 Pack、Pluxel 编译或自定义命令时，缓存需要覆盖真实契约：
 
@@ -76,7 +86,7 @@ Monorepo 使用 `dependsOn: [{ task: 'build', from: ['dependencies', 'devDepende
 
 ## 准备 checkout
 
-先按 [mise 入门](https://mise.jdx.dev/getting-started.html)安装并激活 mise，再检查 checkout 的 `mise.toml`。在工作区根目录运行：
+先按 [mise 入门](https://mise.jdx.dev/getting-started.html)安装并激活 mise，检查 checkout 的 `mise.toml` 后在根目录运行：
 
 ```sh
 mise trust
@@ -85,38 +95,33 @@ mise exec -- vp install --frozen-lockfile
 vp run
 ```
 
-源码 checkout 首次安装后运行 `vp run @pluxel/cli#compile` 准备 CLI，再执行 `vp run dev`。修改 CLI 后按启动器提示重建；日常复用开发服务不重建 CLI。
+- 源码 checkout 首次安装后执行 `vp run @pluxel/cli#compile` 准备 CLI，再运行 `vp run dev`。修改 CLI 后按启动器提示重建；日常复用服务不重建 CLI。
+- 新生成项目尚无锁文件时用 `mise exec -- vp install`，安装后运行 `vp run setup` 接入开发资源；这一步不要求 Git。已有 Git 仓库运行 `vp run hooks:install`，新应用先显式 `git init` 再安装 hooks。
+- 首次安装直接用 `vp install`，不经任务发现。`mise.toml` 的 `env._.path = ["node_modules/.bin"]` 让已安装项目优先用本地 Vite+；安装前才用 mise 提供的入口。未激活 shell 的 CI / agent 使用 `mise exec -- <command>`。版本以 checkout 为准，相对路径按 [mise 配置根目录](https://mise.jdx.dev/configuration.html#config-root)解析。
 
-新生成项目尚无锁文件时，安装依赖使用 `mise exec -- vp install`。安装 hooks 是独立步骤：已有 Git 仓库运行 `vp run hooks:install`；新应用先决定并执行 `git init`，再安装 hooks。生成项目安装依赖后运行 `vp run setup` 接入 Pluxel 文档与开发资源，不要求已经初始化 Git。首次安装直接使用 `vp install`，不经过依赖项目配置的任务发现。信任配置后再执行安装，版本以该 checkout 的 `mise.toml` 为准。`mise.toml` 使用官方 `env._.path = ["node_modules/.bin"]`，让已安装项目优先使用自己的 Vite+ 与编译依赖；首次安装前才使用 mise 提供的入口。未激活 shell 的 CI 或 agent 使用 `mise exec -- <command>`。相对路径由 mise 按项目根解析，详见 [mise 配置路径](https://mise.jdx.dev/configuration.html#config-root)。
+| 验证范围                      | 命令                                         |
+| ----------------------------- | -------------------------------------------- |
+| hk 配置有效                   | `hk validate`                                |
+| 改动文件 / hk 全量文件        | `hk check` / `hk check --all`                |
+| 全项目静态检查 / 完整交付门禁 | `vp run check` / `vp run verify`             |
+| 显式修复后审阅 diff           | `hk fix`（改动文件）/ `vp run fix`（全项目） |
 
-检查与修复分开执行：
-
-```sh
-mise exec -- hk validate
-mise exec -- hk check --all
-mise exec -- vp run verify
-```
-
-`vp run check` / `vp run fix` 执行全项目 Vite+ 检查与修复；只处理改动文件时直接运行 `hk check` / `hk fix`。`vp run verify` 执行完整门禁。
-
-`hk check --all` 执行 hk 声明的全量检查；`vp run verify` 是完整交付门禁，包含仓库实际定义的治理、类型、测试和构建。提交前的增量检查不能替代完整门禁。需要自动修复时显式运行 `hk fix` 并审阅 diff。[hk CLI](https://hk.jdx.dev/cli/)说明文件选择和各命令参数。
+非交互环境可给上述命令加 `mise exec --`。`hk check --all` 的范围取决于 `hk.pkl`，不能替代完整交付门禁；文件选择参数见 [hk CLI](https://hk.jdx.dev/cli/)。
 
 ## 进入工作区时的可选诊断
 
-mise 的目录 hooks 属于环境生命周期，不需要恢复 `[tasks]`。已激活 mise 的交互 shell 可用 `hooks.enter` 提前提示工作区问题：从项目外进入时执行，在项目内部切换目录不重复执行；`hooks.cd` 则每次目录切换都执行，不适合重复扫描 source 图。新建或信任配置也可能触发 enter，详见 [mise Hooks](https://mise.jdx.dev/hooks.html)。
+mise 的 `hooks.enter` 是环境生命周期入口，不需要恢复 `[tasks]`。它在从项目外进入时执行，项目内切换目录不重复执行；`hooks.cd` 则每次切换都执行。信任或新建配置也可能触发 enter，见 [mise Hooks](https://mise.jdx.dev/hooks.html)。
 
-安装 CLI 并完成源码接入后，可在本机 `mise.local.toml` 中启用：
+安装 CLI 并完成 source 接入后，可在本机 `mise.local.toml` 启用：
 
 ```toml
 [hooks]
 enter = 'pluxel source doctor --root "{{config_root}}"'
 ```
 
-npm 消费项目改用 `pluxel workspace doctor --root "{{config_root}}"` 检查开发资源与工作区治理；不要对没有 source 接入的项目强加源码检查。显式 root 避免从子目录进入时检查错对象。首次 clone 尚无工具、依赖或 CLI 时先完成安装，再开启诊断；框架仓库尚未构建的 CLI 也不适合直接放进 enter。默认共享配置不安装该钩子。
+npm 消费项目用 `pluxel workspace doctor --root "{{config_root}}"`。显式 root 避免从子目录进入时检查错对象；首次 clone 先安装工具、依赖并构建 CLI。共享配置默认不开启这个 hook。
 
-钩子只触发既有只读检查，不重复实现解析或修复。`source doctor` 检查声明、checkout 和 overlay，不证明构建产物最新；`source install`、`source build`、`workspace setup` 与 `workspace sync` 仍显式执行，不能因为进入目录就安装包、修改文件或重建来源。检查失败保留诊断，随后按提示修复，不用 `|| true` 隐藏结果。
-
-enter 依赖 shell activation，不能假定 IDE、CI、agent 的非交互命令或 `mise exec` 一定执行它。钩子失败会由 mise 显示警告，不是阻止后续操作的门禁；开发启动与交付流程中的必要检查仍保留。Agent 发现自动提示后应读取具体错误，不能将“进入目录没有报错”作为验证证据。
+只调用现有只读诊断：`source doctor` 检查声明、checkout 与 overlay，不证明产物最新。安装、构建、setup 与 sync 仍显式执行；不得借 enter 自动改文件或用 `|| true` 隐藏诊断。enter 依赖 shell activation，IDE、CI、agent 非交互命令与 `mise exec` 不保证触发；失败只产生警告，不是门禁，“进入目录无报错”也不是验证证据。
 
 ## GitHub Actions
 
@@ -128,7 +133,7 @@ enter 依赖 shell activation，不能假定 IDE、CI、agent 的非交互命令
 
 ## 管理开发服务
 
-先读 `pitchfork.toml`，再检查 `pitchfork list`，确认当前目录、namespace 与已有进程。生成应用的 daemon 名为 `app`；框架仓库的示例宿主名为 `plugin-host`，文档站名为 `docs`。`vp run dev` 选择对应工作区的默认服务，框架仓库另有 `vp run docs`。以下以生成应用为例，在框架仓库将 `app` 替换为对应名称：
+先读 `pitchfork.toml`，再用 `pitchfork list` 确认目录、namespace、完整服务 ID 和已有进程。模板默认服务是 `app`，框架仓库是 `plugin-host`，文档站是 `docs`。日常入口为 `vp run dev` / `vp run docs`；profile 的配置、默认选择、前台 `command` 模式和无控制台服务只在[项目入口与启动方式](./dev-console.md#项目入口与启动方式)维护。
 
 ```sh
 pitchfork start app
@@ -139,21 +144,21 @@ pitchfork stop app
 pitchfork wait app
 ```
 
-`start` 等待配置的就绪条件，服务随后由 supervisor 管理；命令退出不代表服务停止。`wait` 等待服务停止，不用于等待就绪。修改配置后针对目标服务重启，结束工作时停止自己启动的服务。命令细节先查 `pitchfork --help`、`pitchfork <command> --help` 和 [CLI Reference](https://pitchfork.jdx.dev/cli/)。
+`start` 等待配置的就绪条件，退出后服务由 supervisor 继续管理；`wait` 等待服务**停止**，不是等待就绪。跨目录将示例中的 `app` 换成发现的完整 ID。只操作本任务所属服务；参数以 `pitchfork <command> --help` 和 [CLI Reference](https://pitchfork.jdx.dev/cli/)为准。
 
-根 `dev` script 调用 `pluxel dev`：`package.json` 的 `pluxel.dev` 直接按名称声明 profile，例如 `{ "app": { "root": "host/web", "pitchfork": "app" } }`。CLI 委托 Pitchfork 启动或复用服务，核对完整服务 ID 与控制台启动归属，再显示 Vite 当前的 Application / Workbench 地址。首次和重复执行共用 Vite 展示逻辑，不重放日志或拼接 Workbench 路径。普通项目可改为 `{ "app": { "command": "vp dev" } }`，不安装 Pitchfork；`command` 保持前台运行，Ctrl+C 停止，`root` 默认 package 目录。一个 package 可以声明多个 profile，使用相同或不同 Vite root；显式 `--profile` 优先于 `pluxel.dev.default`，再自动选择唯一 profile，跨目录用 `--root` 选择配置发现起点；详见[项目入口与启动方式](./dev-console.md#项目入口与启动方式)。
+启动链只有一条：package `dev` script → `pluxel dev` → Pitchfork → 应用包 `dev:server` script → Vite。Pitchfork 的 `mise = true` 只加载工具环境，不经过 mise task，也不回调根 `dev`。源码仓库的 `dev` / `pluxel` scripts 直接调用 CLI，不在每次在线操作前恢复构建缓存，避免意外触发 HMR。停止、重启与进程日志继续用原生 Pitchfork。
 
-源码仓库的 `dev` 直接执行 `node packages/cli/bin/pluxel.mjs dev`，模板直接执行项目 CLI，重复进入不执行构建任务图或恢复构建缓存。源码仓库的 `pluxel` script 同样直接调用 CLI；在线操作不会因恢复依赖构建产物而触发 HMR。`dev:status` 调用统一的 `pluxel dev status`。`pluxel dev status` 检查当前 Vite 实例与应用，`dev run` 按同一 profile 连接；启用控制台的 profile 的这些命令不调用 Pitchfork，也不自动启动服务。同一 profile 多个匹配实例时显式 `--instance`，不绕过归属检查。文档站声明 `docs: { root: "projects/docs", pitchfork: "docs", console: false }`，根 `docs` script 使用 `pluxel dev --profile docs`。它等待 Pitchfork 就绪后读取最新服务状态与实际 URL；重复启动仍显示当前信息。`dev status --profile docs` 查询 Pitchfork，run/instances/--instance 明确不受支持，不输出虚构的应用或 Workbench 状态。Pitchfork 的 `run` 调用应用包的 `dev:server` script，后者拥有实际 Vite 启动命令；不经过 mise task，也不回调根 `dev`。`mise = true` 只为服务加载项目工具环境。进程 stop、restart、logs 继续用原生 Pitchfork，Pluxel 不增加平行命令。应用模板已提供同 root 的 `local` command profile，`vp run dev:local` 启动，后续用 `--profile local` 连接；手动 Vite 的无配置连接方式见控制台指南。
+`pluxel dev` 首次和重复启动均显示 Vite 当前地址。应用状态、在线操作与业务日志使用[开发控制台](./dev-console.md)；Pitchfork 只负责进程。模板的 `vp run dev:local` 提供前台 Vite 交互，后续控制台操作选择 `--profile local`；数据共用与并行隔离要求也见该指南。
 
 ### 按访问启动与服务复用
 
-保留 Pitchfork 的目的是让开发服务、稳定 URL 和进程日志独立于某个终端或 agent 会话。Agent 复用已运行的服务，不为获取日志再开一个 Vite。需要前台 Vite 交互时使用下节的直接调试入口；后台服务不承载 Vite 的 `h/o/r` 键盘会话。
+Pitchfork 服务、稳定 URL 与日志独立于终端或 agent 会话。复用现有服务；后台服务不承载 Vite 的 `h/o/r` 键盘交互，需要时使用模板的 `dev:local`。
 
-代理启用且项目已被发现后，访问已停止 daemon 的代理 URL 会启动它及其 `depends` 依赖。首次 checkout 仍需安装工具和项目依赖；supervisor/代理必须已运行，项目必须已注册或至少启动过一次。默认入口 `vp run dev` 完成显式启动；仅切换目录不会注册项目。不要手工拼域名，先从 `pitchfork list --json`、`pitchfork status app --json` 或 `pitchfork proxy status` 取得实际 URL。只访问本任务所属服务：访问停止服务的 URL 本身会触发启动及依赖命令。
+代理启用、supervisor 已运行且项目已注册后，访问已停止服务的 URL 会启动它及其 `depends`。首次 checkout 先安装工具和依赖，再用 `vp run dev` 显式启动；仅切换目录不会注册项目。从 `pitchfork list --json`、`pitchfork status app --json` 或 `pitchfork proxy status` 取实际 URL，不拼域名。访问会执行启动命令，只访问本任务所属服务。
 
-首次请求等待服务启动后转发；并发请求可能收到自动刷新的启动页。依赖失败会返回错误；收到 HTTP 响应或启动页不能证明 Pluxel 应用 ready。自动启动默认等待 30 秒，超时后后台启动仍会继续。当前模板和仓库的 `ready_output.timeout` 为 5 分钟，它不改变代理的等待预算；冷构建耗时较长时优先显式 `pitchfork start app` 等待就绪，或按实际需求配置 `settings.proxy.auto_start_timeout`。不要因首次请求超时重复启动进程或自行添加轮询器。
+首次请求等待启动后转发，并发请求可能收到自动刷新的启动页；依赖失败返回错误。启动页或 HTTP 响应不证明应用 ready。代理默认等 30 秒，超时后后台启动继续；模板的 `ready_output.timeout` 为 5 分钟，但不改变代理预算。冷构建优先显式 `pitchfork start app`，或调整 `settings.proxy.auto_start_timeout`，不要因请求超时重复启动或自建轮询。
 
-按需启动不等于默认自动停止：空闲停止默认关闭，可按需配置 `proxy.idle_timeout`。经代理保持打开的 Vite HMR WebSocket 会计入活动；显式 CLI 启动的服务不受代理空闲停止控制。依赖顺序、并发启动与空闲回收使用 Pitchfork 原生能力，详见 [Auto-Start](https://pitchfork.jdx.dev/guides/port-management#auto-start) 和 [Idle Shutdown](https://pitchfork.jdx.dev/guides/port-management#idle-shutdown)。Redis 等普通 TCP 服务可以作为依赖启动，但客户端仍直连其端口，不经过 HTTP 反代。
+空闲停止默认关闭，可按需设置 `proxy.idle_timeout`；代理上的 HMR WebSocket 计入活动，显式 CLI 启动的服务不受空闲停止控制。依赖、并发与回收使用原生 [Auto-Start](https://pitchfork.jdx.dev/guides/port-management#auto-start) / [Idle Shutdown](https://pitchfork.jdx.dev/guides/port-management#idle-shutdown)。Redis 等 TCP 服务可随依赖启动，但客户端仍直连其端口，不经过 HTTP 反代。
 
 ### 端口与公开地址
 
@@ -178,7 +183,7 @@ sync_hosts = false
 
 浏览器需要支持 `*.localhost` 的本地解析。命令行客户端的系统解析行为可能不同；本配置不安装系统解析规则。无需运行 `pitchfork proxy setup`。HTTPS、自定义 TLD 或 LAN 访问是额外部署选择，按[官方反代指南](https://pitchfork.jdx.dev/guides/port-management)配置。
 
-**已有 supervisor 的一次性迁移：** 代理设置在共享 supervisor 启动时读取，后来进入另一个项目不会重新配置它。先通过 `pitchfork list` 检查已有服务；需要采用本项目设置时，在项目根目录显式运行 `pitchfork supervisor start --force`，然后重新启动所需服务。日常 `dev` 不强制重启共享 supervisor。用 `pitchfork proxy status` 确认实际公开地址；若 `8088` 被其他程序占用，先解决冲突。相同配置的项目共享同一个代理，无需为每个应用启动独立代理或修改用户配置。详见[设置加载规则](https://pitchfork.jdx.dev/reference/settings.html#when-changes-take-effect)。
+**已有 supervisor 的配置迁移：** 设置只在共享 supervisor 启动时读取，进入另一项目不会重配。先用 `pitchfork list` 检查已有服务；确需采用本项目设置时，在项目根显式运行 `pitchfork supervisor start --force` 并重启所需服务，日常 `dev` 不强制执行。用 `pitchfork proxy status` 核对地址；`8088` 被占用时先解决冲突。相同配置共享代理，不为每个应用另开代理。见[设置加载规则](https://pitchfork.jdx.dev/reference/settings.html#when-changes-take-effect)。
 
 Pitchfork 2.30.1 的路由表有约两秒缓存；第二个项目刚注册后立即请求可能短暂返回 `Unknown project`，稍后刷新即可。服务 ready 与代理路由缓存更新是不同的完成条件。
 
@@ -191,42 +196,35 @@ Pluxel 的开发地址契约与代理供应商分开：
 | `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | 显式监听地址和端口，分别优先于 `HOST` / `PORT`   |
 | `HOST` / `PORT`                         | 通用进程监听输入，未启用代理也可使用             |
 
-公开 origin 用于终端 `Application` / `Workbench` 地址与管理会话同源校验；实际 listener 地址保持物理地址。没有公开 origin 时显示 Vite 本地地址。Pluxel 不通过任意请求的转发头猜测可信 origin。切换其他反代时设置 `PLUXEL_PUBLIC_ORIGIN`，并让反代转发 HTTP 与 Vite WebSocket；这个变量本身不会建立代理路由或配置证书。直接调试 Vite 的终端时，可运行生成应用的 `vp run @example/host#dev:server` 或框架仓库的 `vp run @pluxel/plugins-host#dev:server`。若还需通过控制台操作前台实例，模板可直接运行 `vp run dev:local`；其他工作区先声明对应 command profile，再用 `pluxel dev --profile <name>` 启动，让 CLI 自动绑定归属；不要用托管服务的 profile 连接手动进程。
+公开 origin 用于终端 `Application` / `Workbench` 地址与管理会话同源校验；实际 listener 地址保持物理地址。没有公开 origin 时显示 Vite 本地地址。Pluxel 不通过任意请求的转发头猜测可信 origin。切换其他反代时设置 `PLUXEL_PUBLIC_ORIGIN`，并让反代转发 HTTP 与 Vite WebSocket；这个变量本身不会建立代理路由或配置证书。需要前台调试时使用[command profile](./dev-console.md#项目入口与启动方式)，不要用托管服务的 profile 连接手动进程。
 
 ### 就绪、健康与应用操作
 
-开发服务的就绪检查应该验证实际可用的入口；TCP 监听只证明端口可连接。多个 `ready_*` 条件是“任一成功”，需要全部满足时合并到一个 `ready_cmd`。就绪检查用于启动依赖，持续健康检查另行按需配置，见[就绪检查](https://pitchfork.jdx.dev/guides/ready-checks.html)和[健康检查](https://pitchfork.jdx.dev/guides/health-checks.html)。Vite 自身已有热更新，不必为同一源码变化再配置整个服务重启。
+就绪检查应验证实际入口；TCP 监听只证明端口可连接。多个 `ready_*` 条件是“任一成功”，必须全部满足时合并为一个 `ready_cmd`。就绪用于启动依赖，持续健康检查另行按需配置，见[就绪检查](https://pitchfork.jdx.dev/guides/ready-checks.html)和[健康检查](https://pitchfork.jdx.dev/guides/health-checks.html)。Vite 已有 HMR，不要为同一源码变化再配置整个服务重启。
 
-Pitchfork `logs` 用于进程启动、退出和 stdout/stderr 排障。查询 Pluxel 应用日志、配置、Plugin 方法、Workbench RPC 或 Plugin 生命周期，仍必须走[在线开发控制台](./dev-console.md)：按 profile 选择 Vite root 并核对实例归属。Pitchfork 显示 running 或 ready 不能证明某次业务配置已经应用；重启后重新查询目标状态，已提交操作仍以原 receipt 查询或取消。
+进程 ready 不等于 Pluxel 应用 ready 或业务配置已应用；使用下节的对应入口验证。重启后重新查询实例，旧操作仍以原 receipt [查询或取消](./dev-console.md#结果取消和恢复)。
 
 ### Agent 的日志与排障顺序
 
-| 要确认的事实                                             | 首选入口                                                       |
-| -------------------------------------------------------- | -------------------------------------------------------------- |
-| 服务是否存在、运行、监听及公开 URL                       | `pitchfork list`、`pitchfork status`、`pitchfork proxy status` |
-| 启动失败、Vite 编译错误、进程退出、stdout/stderr         | `pitchfork logs`                                               |
-| 当前应用是否 ready、HMR 是否接纳、Plugin 状态与应用报告  | `pluxel dev status` 及控制台脚本                               |
-| Plugin 业务日志、配置读写、方法、Workbench RPC、生命周期 | 按 profile 与实例连接的 dev console                            |
+| 要确认的事实                                         | 入口                                              |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| 服务是否存在、运行、监听及公开 URL                   | `pitchfork list/status`、`pitchfork proxy status` |
+| 启动失败、Vite 编译错误、退出、stdout/stderr         | `pitchfork logs`                                  |
+| 应用 ready、HMR 接纳、Plugin 状态与报告              | `pluxel dev status` 与控制台脚本                  |
+| Plugin 业务日志、配置、方法、Workbench RPC、生命周期 | [开发控制台](./dev-console.md)                    |
 
-Agent 按以下顺序操作：
-
-1. 读取目标 checkout 的 `pitchfork.toml`，用 `pitchfork list` 确认完整服务 ID、目录和已有状态。复用目标实例，不停止其他任务的服务。
-2. 需要运行验证而目标未运行时，通过已注册的公开 URL 唤起，或显式 `pitchfork start`。启动失败先查看该服务的有限时间窗口日志；无需运行验证的纯静态任务不启动服务。
-3. 服务启动后用 `pluxel dev status` 确认 profile、Vite root、实例和 `application.state`，通过同一 profile 执行控制台脚本；保存每次操作的 receipt，结果查询与取消始终绑定原实例。手动 Vite 的直接连接见[控制台指南](./dev-console.md)。
-4. 修改后先利用 Vite HMR，再检查应用报告及相关日志。只有实际需要重启时才用 `pitchfork restart`；进程 running、URL 可访问与业务修改生效分别验证。
-5. 交付说明实际观察的服务、实例、结果及未验证边界；结束时按任务约定清理自己启动的临时服务，保留原有共享实例。
-
-以下以生成项目的 `app` 为例；框架仓库使用 `plugin-host`，跨目录操作替换为发现的完整 ID：
+先发现并复用已有服务；纯静态任务不启动服务。需要运行且服务未启动时，才用已注册 URL 或显式 `start`。启动失败先查进程日志；修改后优先使用 HMR，再查应用报告和业务日志，实际需要时才 `restart`。操作步骤、receipt 与交付证据见[控制台工作流程](./dev-console.md#coding-agent-工作流程)。只清理本任务启动且约定清理的服务，保留已有共享实例。
 
 ```sh
+# 将 app 替换为发现的完整服务 ID
 pitchfork logs app --since 5min -n 100 --no-pager
 pitchfork logs app --since 5min --grep error -n 100 --json
 pitchfork logs app --follow
 ```
 
-默认按时间和条数查询，避免每次读取全部历史；记录操作时间，再查相应窗口。仅在等待一次启动或复现时短暂 follow，完成观察后结束订阅，不必让 agent 一直占用长运行命令。`--grep error` 只是筛选文本，空结果不能证明没有失败。`--level` 需要服务配置结构化日志格式，普通 Vite 文本不能据此可靠筛选级别。业务日志仍经 dev console 读取，stdout 中的零散输出不能代替应用日志查询。
+记录操作时间，默认查有限窗口与条数；只为一次启动或复现短暂 follow，完成后结束订阅，不另起 Vite 捕获日志。`--grep error` 空结果不能证明没有失败；`--level` 依赖结构化日志配置，不能可靠筛选普通 Vite 文本。stdout 的零散输出不能代替控制台业务日志。
 
-日志由 Pitchfork 保存，可跨终端和 agent 会话查询；它不是无限期审计存储。默认不自动清理，长期使用可按需在 `[settings.logs]` 配置 `time_retention` / `line_retention`，不自行增加 tail 文件、日志收集进程或清空其他任务日志。CLI 默认足够；只有结构化集成有明确收益时再使用 MCP/HTTP API。详见 [Logs](https://pitchfork.jdx.dev/guides/logs) 与 [MCP](https://pitchfork.jdx.dev/guides/mcp)。
+Pitchfork 日志可跨终端和 agent 会话查询，默认不自动清理，也不是无限期审计存储；按需在 `[settings.logs]` 设置 `time_retention` / `line_retention`，不要自建收集进程或清空其他任务日志。默认用 CLI，结构化集成确有收益时再接 [MCP](https://pitchfork.jdx.dev/guides/mcp) / HTTP API。日志参数见 [Logs](https://pitchfork.jdx.dev/guides/logs)。
 
 ### 并行 agent 与 Git worktree
 
@@ -247,17 +245,11 @@ hk 的提交 hook 可以暂存修复结果、保护未暂存修改；具体行�
 
 ## 按需求查官方能力
 
-下面是可用能力入口，不是要求全部启用的清单。新增进程管理脚本前，先确认 Pitchfork 是否已经提供对应功能。
+只在需要时启用；新增进程管理脚本前先查原生能力：
 
-| 需求                                                   | 官方文档                                                                                                                                                                              |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 固定工具、环境与任务                                   | [mise 入门](https://mise.jdx.dev/getting-started.html)、[mise Tasks](https://mise.jdx.dev/tasks/)                                                                                     |
-| 服务依赖、环境与资源限制                               | [Pitchfork 配置参考](https://pitchfork.jdx.dev/reference/configuration.html)                                                                                                          |
-| 端口分配、冲突、稳定 URL 与 HTTPS                      | [Ports & reverse proxy](https://pitchfork.jdx.dev/guides/port-management)                                                                                                             |
-| 就绪、健康、恢复与日志                                 | [Ready checks](https://pitchfork.jdx.dev/guides/ready-checks.html)、[Health checks](https://pitchfork.jdx.dev/guides/health-checks.html)、[Guides](https://pitchfork.jdx.dev/guides/) |
-| 文件监控、shell 自动启停、一次性初始化、生命周期与调度 | [Pitchfork Guides](https://pitchfork.jdx.dev/guides/)                                                                                                                                 |
-| 外部配置、配置模板、mise 集成                          | [mise integration](https://pitchfork.jdx.dev/guides/mise-integration.html)、[Pitchfork Guides](https://pitchfork.jdx.dev/guides/)                                                     |
-| TUI、Web UI、MCP 与 HTTP API                           | [Pitchfork Guides](https://pitchfork.jdx.dev/guides/)；默认先用 CLI，结构化操作有明确收益时再接 API                                                                                   |
-| hooks、文件筛选、monorepo 与 CI                        | [hk 配置](https://hk.jdx.dev/configuration.html)、[hk CLI](https://hk.jdx.dev/cli/)                                                                                                   |
+- 工具与环境：[mise 入门](https://mise.jdx.dev/getting-started.html)；[mise Tasks](https://mise.jdx.dev/tasks/)是原生能力，本工作区任务仍统一在 package scripts / Vite Task。
+- 服务依赖、环境与资源限制：[Pitchfork 配置](https://pitchfork.jdx.dev/reference/configuration.html)。端口、就绪、健康与日志见本页对应章节的官方链接。
+- 文件监控、shell 自动启停、一次性任务、生命周期、调度、TUI、Web UI 和 API：[Pitchfork Guides](https://pitchfork.jdx.dev/guides/)；外部配置集成见 [mise integration](https://pitchfork.jdx.dev/guides/mise-integration.html)。默认使用 CLI。
+- hooks、文件筛选、monorepo 与 CI：[hk 配置](https://hk.jdx.dev/configuration.html)、[hk CLI](https://hk.jdx.dev/cli/)。
 
-本页解释 Pluxel 的接入边界。上游参数和能力会变化，实际操作以安装版本的帮助、配置验证与官方文档为准。
+上游参数以安装版本的帮助、配置验证和官方文档为准。

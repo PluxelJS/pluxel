@@ -1,10 +1,8 @@
 import { access } from 'node:fs/promises'
 import { resolve } from 'pathe'
-import { resolvePluginEnv } from './env'
 import { resolvePackageJsonPath } from './package-json'
 import type { BuildRuntimeConfig } from './types'
 
-const ENV_TSDOWN_CONFIG = 'PLUXEL_TSDOWN_CONFIG'
 const DEFAULT_TSDOWN_CONFIG_FILES = [
 	'tsdown.config.ts',
 	'tsdown.config.mts',
@@ -24,15 +22,11 @@ export async function resolveBuildContext(
 	values: BuildCommandArgsShape,
 ): Promise<BuildRuntimeConfig> {
 	const projectRoot = process.cwd()
-	const envConfig = resolvePluginEnv()
 	const packageJsonPath = await resolveProjectPackageJsonPath(projectRoot)
-	const tsdownConfigPath =
-		resolveOverridePath(process.env[ENV_TSDOWN_CONFIG], projectRoot) ??
-		(await discoverDefaultTsdownConfig(projectRoot))
+	const tsdownConfigPath = await discoverDefaultTsdownConfig(projectRoot)
 
 	const context: BuildRuntimeConfig = {
 		projectRoot,
-		manifestField: envConfig.manifestField,
 		packageJsonPath,
 		watch: Boolean(values.watch),
 		debug: Boolean(values.debug),
@@ -54,11 +48,6 @@ async function resolveProjectPackageJsonPath(projectRoot: string) {
 			cause: error,
 		})
 	}
-}
-
-function resolveOverridePath(pathInput: string | undefined, projectRoot: string) {
-	if (!pathInput) return undefined
-	return resolve(projectRoot, pathInput)
 }
 
 async function discoverDefaultTsdownConfig(projectRoot: string) {

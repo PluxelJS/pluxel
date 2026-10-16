@@ -24,7 +24,6 @@ describe('application', () => {
 			root: '/tmp/pluxel-plugin-package',
 			packageMetadata: {
 				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
-				manifestField: 'pluxel',
 				log: () => undefined,
 			},
 		})
@@ -52,7 +51,6 @@ describe('application', () => {
 			root: '/tmp/pluxel-plugin-package',
 			packageMetadata: {
 				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
-				manifestField: 'pluxel',
 				log: () => undefined,
 			},
 		})

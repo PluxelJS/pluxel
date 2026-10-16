@@ -113,7 +113,6 @@ it('does not apply the Workbench peer policy to a package with private RPC only'
 	const hook = createPluginDependencyMetadataHook({
 		packageJsonPath,
 		workbenchArtifacts: true,
-		manifestField: 'pluxel',
 		log: () => undefined,
 		collectPlugins: () => new Map(),
 		collectWorkbenchTargets: async () => false,
@@ -136,7 +135,6 @@ it('writes and withdraws the exact generated target publication fact', async () 
 	const hook = createPluginDependencyMetadataHook({
 		packageJsonPath,
 		workbenchArtifacts: true,
-		manifestField: 'customMetadata',
 		log: () => undefined,
 		collectPlugins: () => new Map(),
 		collectWorkbenchTargets: async () => publishes,
