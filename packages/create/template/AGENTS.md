@@ -1,6 +1,6 @@
 # Coding agent 工作入口
 
-开发 Pluxel 应用或插件前读取 `.agents/skills/pluxel-development/SKILL.md` 与 [Coding agent 开发指南](docs/pluxel/development/coding-agent.md)，按任务选择 inspect、静态检查、隔离测试和现有 Vite dev console。
+开发 Pluxel 应用或插件前先使用 [pluxel-development skill](.agents/skills/pluxel-development/SKILL.md)，由 skill 指导工具选择、开发服务、日志和在线操作；只按当前任务展开其引用文档。
 
 入口缺失时：Git 用户从上游 checkout 的 CLI 执行 `source install --root <本项目>`；npm 用户安装依赖后执行 `vp exec pluxel workspace setup`。`vp exec pluxel docs` 可直接读取当前来源的正文。CLI 管理生成链接，不复制或提交上游正文。
 

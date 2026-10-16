@@ -20,8 +20,8 @@
 	},
 	"type": "module",
 	"scripts": {
-		"dev": "pitchfork start plugin-host",
-		"docs": "pitchfork start docs",
+		"dev": "pitchfork start plugin-host && pitchfork status plugin-host",
+		"docs": "pitchfork start docs && pitchfork status docs",
 		"build": "vp run workspace:build",
 		"test": "vp run workspace:test",
 		"typecheck": "vp run workspace:typecheck",

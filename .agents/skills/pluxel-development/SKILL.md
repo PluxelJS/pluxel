@@ -1,11 +1,43 @@
 ---
 name: pluxel-development
-description: 开发、修改和排查 Pluxel 应用或插件时使用，优先利用源码 inspect、静态检查、官方插件测试和现有 Vite dev console 验证修改。纯业务函数按普通测试处理；框架内部维护另读仓库工程入口。
+description: 开发、修改和排查 Pluxel 应用或插件时使用；指导工作区入口、Pitchfork 开发服务与日志、源码 inspect、隔离测试和现有 Vite dev console 在线操作。纯业务函数按普通测试处理；框架内部维护另读仓库工程入口。
 ---
 
 # Pluxel 开发
 
 优先使用 Pluxel 提供的结构化查询与验证能力。先确认项目根、目标包/应用、已安装版本和 package scripts；只查询本次任务需要的范围。用户任务与项目 AGENTS 约束决定操作范围。
+
+## 工作区与开发服务
+
+先读取项目 `AGENTS.md` 和目标包 scripts。源码仓库通过 `vp run pluxel …` 调用 CLI；生成的应用和独立插件通过 `vp exec pluxel …`。下文 CLI 示例使用下游入口，源码仓库替换前缀即可。
+
+首次准备使用 `mise trust`、`mise install`、`vp install`；模板项目再执行 `vp run setup`，已有 Git 仓库按需执行 `vp run hooks:install`。已有工作区先确认状态，不在每次任务开始时重复安装或 setup。
+
+工具版本与环境由 mise 提供，日常操作从 package scripts 发现，任务依赖与缓存由 Vite+ 管理。修改这些配置时读 `development/workspace-toolchain.md`；不要添加重复的任务包装。
+
+**只有需要运行应用或排查服务时才执行以下流程。** 独立插件模板没有应用服务，不为纯插件测试额外启动 Host。
+
+1. 读取现有 `pitchfork.toml`，运行 `pitchfork list --json`，确认项目、namespace 与完整服务 ID。源码仓库服务为 `plugin-host`，create 应用模板为 `app`；其他项目以配置和发现结果为准。
+2. 用 `pitchfork status <service> --json` 检查现有服务，优先复用。需要启动时使用项目 `vp run dev`，仓库与应用模板入口随后通过 `pitchfork status` 显示实际代理 URL；Pitchfork 的 `start` 等待就绪后返回，服务继续在后台运行，再次执行不会自动重启。`pitchfork wait` 等待停止，不用于等待就绪。
+3. 从 Pitchfork 返回值读取实际代理 URL，不拼域名。已注册项目可通过访问 URL 唤起服务及依赖；首次 checkout 仍需准备依赖并注册或启动。代理启动页、HTTP 响应或进程 running 不代表应用 ready，随后按下方 dev console 流程确认应用状态。
+4. 启动失败、编译错误、进程退出及 stdout/stderr 使用有限窗口日志：
+
+   ```sh
+   pitchfork logs <service> --since 5min -n 100 --no-pager
+   ```
+
+   只为有目的的短时观察使用 `--follow`；退出订阅不会停止服务。Plugin 业务日志、配置和方法调用使用 dev console，不以进程日志代替应用报告。
+
+按失败所属层处理重启：
+
+| 需要处理的变化 | 操作 | 随后确认 |
+| --- | --- | --- |
+| 普通源码修改 | 交给 Vite HMR | `application.latestUpdate` 与目标业务结果 |
+| 单个 Plugin 的生命周期 | 现有 console 的 `dev.plugins.restart` 或 Workbench Plugin 操作 | 生命周期报告与业务结果 |
+| 进程环境变化或完整服务重启 | `pitchfork restart <service>` | 重新发现 Vite root/instance，确认应用状态 |
+| 结束本任务启动的临时服务 | `pitchfork stop <service>` | 服务停止；之后访问 URL 仍可能唤起 |
+
+并行 worktree 保留独立 namespace 与数据目录，只操作本任务所属服务，保留原有共享实例。新增后台进程、端口扫描、轮询、重试或生命周期脚本前，先查工作区指南链接的官方能力与 `pitchfork <command> --help`。
 
 ## 先选能力
 
@@ -44,6 +76,7 @@ vp exec pluxel docs development/index.md
 | 应用装配、配置来源、持久化、日志输出、部署 | `host/configuration.md`：直接定位章节                                                                   |
 | 自定义服务安装器或管理入口                 | `host/services.md`、`host/management.md`                                                                |
 | 源码声明 / 隔离回归 / 在线操作             | `development/inspection.md` / `plugin-development/testing.md` / `development/dev-console.md`            |
+| 工具、任务缓存、hk/Pkl 与开发服务          | `development/workspace-toolchain.md`                                                                    |
 | CLI、源码联调与发布                        | `development/tooling.md`、`development/source-workspaces.md`、`development/plugin-package.md`           |
 | import 入口与包职责                        | `reference/package-matrix.md`                                                                           |
 
@@ -67,7 +100,7 @@ Core 自带 events/logger/effects，依赖、配置和 Part 属于插件基础�
 
 ## 静态检查与隔离回归
 
-先看所属包的 scripts 与根 `vite.config.ts` 的原生 tasks。模板项目完成修改后运行 `vp run verify`；其他项目执行实际声明的相关检查。静态类型、lint、构建与运行测试各自提供证据，不能互相代替；不得通过关闭 lowering 或绕过 Pluxel lint 规则让检查假通过。
+先看所属包的 scripts 与根 `vite.config.ts` 的原生 tasks。模板项目使用 `vp run verify` 作为完整检查入口；按改动风险和用户要求选择实际检查范围，其他项目执行实际声明的相关检查。不要从脚本名称推断覆盖范围；用户明确跳过检查时记录未验证边界。静态类型、lint、构建与运行测试各自提供证据，不能互相代替；不得通过关闭 lowering 或绕过 Pluxel lint 规则让检查假通过。
 
 修改插件运行行为时，运行相关回归；已有覆盖不足时增加最小有意义的测试。使用 `@pluxel/test/vitest` 与 `createTestHost()`，显式选择服务并用 `await using` 回收。直接 `new Plugin()` 或 mock Context 不能证明依赖注入、配置与生命周期正确。
 
@@ -84,9 +117,11 @@ vp exec pluxel dev instances --root /absolute/vite-root
 vp exec pluxel dev run dev/check.ts --root /absolute/vite-root --instance INSTANCE_ID
 ```
 
+源码仓库示例 Vite root 是 `projects/plugin-host`，create 应用模板是 `host/web`（不是应用声明目录 `host`）。先核对配置与发现结果。
+
 把示例 root 和 instance 换成发现的真实值；入口脚本位于所选 Vite root 内，CLI 脚本路径相对命令当前目录。使用 `defineDevConsole` 定义普通 TypeScript 导出函数，在函数内执行操作，返回有界 JSON 数据。
 
-- 复用现有实例；确认 `application.state` 与最近更新，进程存在不代表应用 ready。未启用时按项目需要配置 `devConsole: true`，使用项目原有 dev 命令；无可用实例时明确报告在线验证缺口，不用隔离 host 冒充。
+- 复用现有实例；确认 `application.state` 与最近更新，进程存在不代表应用 ready。`updating` / `unavailable` 时读取 `application.latestUpdate`；进程重启后重新发现实例。未启用时按项目需要配置 `devConsole: true`，使用项目原有 dev 命令；无可用实例时明确报告在线验证缺口，不用隔离 host 冒充。
 - 后续 `run/result/cancel` 固定相同绝对 `--root` 与准确 `--instance`。配置、Plugin 方法、生命周期、Workbench RPC、数据及日志操作通过该控制台执行。
 - 检查退出码、run state、业务返回值、应用/生命周期报告和相关日志；CLI 成功不等于业务成功，保存配置不等于已应用。
 - 每次取得当前 Plugin/service handle；await 操作，释放脚本创建的资源。控制台借用现有 host，不重开其数据库，不创建替代 runtime 推断在线状态。

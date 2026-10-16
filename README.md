@@ -10,7 +10,7 @@
 [![CI](https://github.com/PluxelJS/pluxel/actions/workflows/ci.yml/badge.svg)](https://github.com/PluxelJS/pluxel/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-663399.svg)](./LICENSE)
 
-[文档](https://www.pluxel.dev) · [Coding agent 指南](./docs/development/coding-agent.md) · [设计初心](./docs/why-pluxel.md) · [参与贡献](./CONTRIBUTING.md) · [许可](./LICENSE)
+[文档](https://www.pluxel.dev) · [Coding agent skill](./.agents/skills/pluxel-development/SKILL.md) · [设计初心](./docs/why-pluxel.md) · [参与贡献](./CONTRIBUTING.md) · [许可](./LICENSE)
 
 </div>
 
@@ -31,7 +31,7 @@ Pluxel 从 [Cordis v3](https://github.com/cordiverse/cordis/tree/f8f10ec6734ebb4
 | 修改框架内部               | [工程索引](./engineering/README.md)：职责、约束、实现与验证                             |
 | 提交变更                   | [贡献指南](./CONTRIBUTING.md)：环境、检查、changelog 与 PR                              |
 
-Coding agent 从 [AGENTS.md](./AGENTS.md) 按任务选读。公开用法维护在 `docs/`，框架内部约束维护在 `engineering/`；package README 补充本包操作和源码入口。
+Coding agent 先读 [AGENTS.md](./AGENTS.md) 的项目约束；应用与插件开发使用 [pluxel-development skill](./.agents/skills/pluxel-development/SKILL.md)，由 skill 指导工具选择、服务与日志操作和验证。公开用法维护在 `docs/`，框架内部约束维护在 `engineering/`；package README 补充本包操作和源码入口。
 
 ## 应用如何组成
 
