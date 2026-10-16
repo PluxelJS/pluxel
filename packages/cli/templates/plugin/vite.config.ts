@@ -38,12 +38,12 @@ export default defineConfig({
 				},
 			},
 			'check-types': { command: 'tsc --noEmit --pretty false' },
-			check: { command: 'vp check', cache: false },
+			'verify:checks': { command: 'vp check', cache: false },
 			'governance:check': { command: 'pluxel workspace doctor', cache: false },
-			verify: {
+			'workspace:verify': {
 				command: [],
 				cache: false,
-				dependsOn: ['governance:check', 'check', 'check-tests', 'compile'],
+				dependsOn: ['governance:check', 'verify:checks', 'check-tests', 'compile'],
 			},
 		},
 	},

@@ -12,4 +12,4 @@
 - `tsdown.config.ts` 只描述包的输入输出；`pluxel build` 拥有编译语义与生成的插件依赖 metadata。
 - 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 
-工作区默认使用 mise 固定 Node、pnpm、Vite+ 和 hk；先 `mise trust`、`mise install`、`mise run setup`，已有 Git 仓库再 `mise run hooks:install`。`hk.pkl` 只选择文件并调用 `vp check`；完整验证使用 `vp run verify` 原生任务图。根 `vite.config.ts` 统一格式规则与启用类型检查的 lint 配置。
+工作区默认使用 mise 固定 Node、pnpm、Vite+ 和 hk；先 `mise trust`、`mise install`、`vp install`、`vp run setup`，已有 Git 仓库再 `vp run hooks:install`。`hk.pkl` 只选择文件并调用 `vp check`；完整验证使用 `vp run verify` 原生任务图。根 `vite.config.ts` 统一格式规则与启用类型检查的 lint 配置。

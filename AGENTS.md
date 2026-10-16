@@ -35,7 +35,7 @@
 
 ## 开发服务
 
-默认通过 mise 提供工具、Vite+ 执行任务图与打包/lint/格式化、hk 管理检查、Pitchfork 管理开发服务。修改前先检查 `pitchfork.toml` 与运行服务；优先使用 Pitchfork 的 start、stop、restart、status、list、logs、wait。新增后台进程、端口扫描、重试、轮询或生命周期脚本前，先查[工作区指南](docs/development/workspace-toolchain.md)链接的官方能力和已安装 CLI 帮助。并行 worktree 使用独立 namespace 与数据目录；只操作本任务所属服务。Pitchfork 管进程，Pluxel 应用操作仍遵守下节 dev console 约束。
+mise.toml 配置工具版本、环境和 PATH，可选 enter hook 只触发已有只读诊断；项目操作由 package scripts 提供，依赖图与缓存由 Vite Task 声明，不再定义 mise tasks。默认通过 mise 提供工具、Vite+ 执行任务图与打包/lint/格式化、hk 管理检查、Pitchfork 管理开发服务。修改前先检查 `pitchfork.toml` 与运行服务；优先使用 Pitchfork 的 start、stop、restart、status、list、logs、wait。新增后台进程、端口扫描、重试、轮询或生命周期脚本前，先查[工作区指南](docs/development/workspace-toolchain.md)链接的官方能力和已安装 CLI 帮助。并行 worktree 使用独立 namespace 与数据目录；只操作本任务所属服务。Pitchfork 管进程，Pluxel 应用操作仍遵守下节 dev console 约束。
 
 具体流程见[按访问启动](docs/development/workspace-toolchain.md#按访问启动与服务复用)和[日志与排障顺序](docs/development/workspace-toolchain.md#agent-的日志与排障顺序)：
 

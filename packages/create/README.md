@@ -19,11 +19,12 @@ vp create @pluxel my-workspace --no-install
 cd my-workspace
 mise trust
 mise install
-mise run setup
-mise run dev
+vp install
+vp run setup
+vp run dev
 ```
 
-`setup` 安装依赖并接入 Pluxel 开发资源；已有 Git 仓库再运行 `mise run hooks:install`。项目自带固定 `8088` 端口的 HTTP 反代配置，首次启动自动创建 supervisor，无需用户级配置、证书或系统网络设置。Pluxel 自动采用 `PITCHFORK_URL` 展示公开入口。工具职责、代理启用方式和配置参考见[工作区工具链](../../docs/development/workspace-toolchain.md)。
+`vp install` 安装依赖，`setup` 接入 Pluxel 开发资源；已有 Git 仓库再运行 `vp run hooks:install`。项目自带固定 `8088` 端口的 HTTP 反代配置，首次启动自动创建 supervisor，无需用户级配置、证书或系统网络设置。Pluxel 自动采用 `PITCHFORK_URL` 展示公开入口。工具职责、代理启用方式和配置参考见[工作区工具链](../../docs/development/workspace-toolchain.md)。
 
 生成项目链接上游权威文档，不复制易过期的文档快照。根目录通过 `pncat` 维护 catalog 版本策略；各包仍声明自己的直接 runtime、peer 和 dev dependencies。治理检查拒绝裸第三方版本，本地包之间保留各包拥有的 workspace / peer 契约。
 

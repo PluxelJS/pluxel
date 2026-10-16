@@ -12,13 +12,13 @@ sync_hosts = false
 
 # Directory-derived namespaces keep projects and Git worktrees distinct.
 [daemons.plugin-host]
-run = "vp run @pluxel/plugins-host#dev"
+run = "vp run @pluxel/plugins-host#dev:server"
 mise = true
 port = { expect = [3310], bump = 100 }
 ready_output = { pattern = "(Local:|Application:|Workbench:)", timeout = "5m" }
 
 [daemons.docs]
-run = "vp run pluxel-docs#dev"
+run = "vp run pluxel-docs#dev:server"
 mise = true
 port = { expect = [3000], bump = 100 }
 ready_output = { pattern = "(Local:|Application:|Workbench:)", timeout = "5m" }

@@ -19,14 +19,15 @@ export default defineConfig({
 	},
 	lint: { ...lint, options: { typeAware: true, typeCheck: true } },
 	run: {
+		cache: { scripts: false, tasks: true },
 		tasks: {
 			'governance:check': {
 				command: 'pluxel workspace doctor && node scripts/check-workspace-governance.mjs',
 				cache: false,
 			},
-			check: { command: 'vp check', cache: false },
-			build: { command: [], dependsOn: ['@example/host#compile'] },
-			test: {
+			'verify:checks': { command: 'vp check', cache: false },
+			'workspace:build': { command: [], dependsOn: ['@example/host#compile'] },
+			'workspace:test': {
 				command: [],
 				dependsOn: [
 					'@example/domain#check-tests',
@@ -35,10 +36,10 @@ export default defineConfig({
 					'@example/todo-plugin#check-tests',
 				],
 			},
-			verify: {
+			'workspace:verify': {
 				command: [],
 				cache: false,
-				dependsOn: ['governance:check', 'check', 'test', 'build'],
+				dependsOn: ['governance:check', 'verify:checks', 'workspace:test', 'workspace:build'],
 			},
 		},
 	},

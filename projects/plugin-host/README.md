@@ -18,7 +18,7 @@ Memory is the explicit default for both backend tokens.
 ## Run
 
 ```sh
-mise run dev
+vp run dev
 ```
 
 Pitchfork manages the development service. Workspace builds use Vite Task with explicit build dependencies and cached outputs;

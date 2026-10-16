@@ -18,11 +18,11 @@ cd pluxel
 mise trust
 mise install
 mise exec -- vp install --frozen-lockfile
-mise run hooks:install
-mise run verify
+vp run hooks:install
+vp run verify
 ```
 
-通过 `mise run dev` 启动示例宿主，`mise run docs` 启动文档站；通过 Pitchfork 查看、重启和停止对应服务。未激活 mise shell 时使用 `mise exec -- <command>`。不要提交 `node_modules/`、`dist/`、`.vite/`、`.pluxel/`、`.bench-results/` 或 `local-projects/` 中的本地产物。
+通过 `vp run dev` 启动示例宿主，`vp run docs` 启动文档站；通过 Pitchfork 查看、重启和停止对应服务。未激活 mise shell 时使用 `mise exec -- <command>`。不要提交 `node_modules/`、`dist/`、`.vite/`、`.pluxel/`、`.bench-results/` 或 `local-projects/` 中的本地产物。
 
 ## 修改规则
 

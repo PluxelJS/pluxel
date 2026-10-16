@@ -62,9 +62,10 @@ try {
 	console.info(`\nNext: cd ${relative(process.cwd(), destination) || '.'}`)
 	console.info('      mise trust')
 	console.info('      mise install')
-	console.info('      mise run setup')
-	console.info('      mise run dev')
-	console.info('      # In a Git repository: mise run hooks:install')
+	console.info('      vp install')
+	console.info('      vp run setup')
+	console.info('      vp run dev')
+	console.info('      # In a Git repository: vp run hooks:install')
 } catch (error) {
 	console.error(`[create-pluxel] ${error instanceof Error ? error.message : String(error)}`)
 	process.exitCode = 1

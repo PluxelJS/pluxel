@@ -85,8 +85,8 @@ describe('create-pluxel', () => {
 			)
 		}
 		assert.match(result.stdout, /mise trust/)
-		assert.match(result.stdout, /mise run setup/)
-		assert.match(result.stdout, /mise run dev/)
+		assert.match(result.stdout, /vp run setup/)
+		assert.match(result.stdout, /vp run dev/)
 
 		const webManifest = JSON.parse(
 			await readFile(resolve(generated, 'host/web/package.json'), 'utf8'),

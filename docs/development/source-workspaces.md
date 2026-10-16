@@ -7,7 +7,7 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 
 ## 准备 checkout 和 CLI
 
-先准备应用、Pluxel 和需要联调的 provider Git checkout，并按各仓库要求安装 mise 工具链。消费方是最终运行 `mise run dev` 的应用，不是 Pluxel 根仓库。
+先准备应用、Pluxel 和需要联调的 provider Git checkout，并按各仓库要求安装 mise 工具链。消费方是最终运行 `vp run dev` 的应用，不是 Pluxel 根仓库。
 
 本页后续命令在消费方根目录执行，要求 `pluxel --version` 可运行。可以使用全局 CLI；希望以 Pluxel 源码为准时，用该 checkout 已构建的 `packages/cli/bin/pluxel.mjs` 入口或它的全局符号链接。CLI 会从自己的真实路径发现 Pluxel，不会根据目录相邻关系猜测。
 
@@ -40,7 +40,7 @@ pluxel source register /path/to/chatbot
 pluxel source list
 pluxel source install
 pluxel source doctor
-mise run dev
+vp run dev
 ```
 
 成功时，`source list` 应显示每个 URL 对应的真实 checkout，`source doctor` 应通过；随后应用启动应读取这些 checkout 的源码。若 list 标记 `missing`，先修正路径，不要继续安装。

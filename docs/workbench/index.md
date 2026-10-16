@@ -8,7 +8,7 @@ Workbench 是宿主提供的管理工作台。插件目录负责配置、生命�
 
 ## 使用工作台
 
-从应用的 `mise run dev` 输出打开 Workbench 地址。已有宿主需要先按[宿主配置](../host/configuration.md#选择组合)启用 Workbench。
+从应用的 `vp run dev` 输出打开 Workbench 地址。已有宿主需要先按[宿主配置](../host/configuration.md#选择组合)启用 Workbench。
 
 - 从“插件”进入唯一的插件目录，按分组查找、选择和管理插件。中央显示选中插件的配置或页面。
 - 从“应用”进入业务页面，例如机器人集合、会话或报表；业务应用自行组织集合与实体导航。

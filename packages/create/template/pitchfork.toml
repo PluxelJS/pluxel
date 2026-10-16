@@ -12,7 +12,7 @@ sync_hosts = false
 
 # Directory-derived namespaces keep projects and Git worktrees distinct.
 [daemons.app]
-run = "vp run @example/host#dev"
+run = "vp run @example/host#dev:server"
 mise = true
 port = { expect = [5173], bump = 100 }
 ready_output = { pattern = "(Local:|Application:|Workbench:)", timeout = "5m" }

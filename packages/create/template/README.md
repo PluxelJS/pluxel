@@ -10,10 +10,11 @@ or find source inspection, live operations and tests with `vp exec pluxel docs d
 ```sh
 mise trust
 mise install
-mise run setup
+vp install
+vp run setup
 # In an initialized Git repository:
-mise run hooks:install
-mise run dev
+vp run hooks:install
+vp run dev
 ```
 
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
@@ -53,11 +54,11 @@ Use `pitchfork status app`, `pitchfork logs app`, `pitchfork restart app` and
 `pitchfork stop app` to inspect and manage the service. Vite owns source hot reload;
 Pitchfork owns process lifetime. Set `PLUXEL_WORKBENCH=false` in `pitchfork.local.toml`
 under `[daemons.app.env]` and restart `app` to disable Workbench locally.
-For foreground debugging, run `vp run @example/host#dev`.
+For foreground debugging, run `vp run @example/host#dev:server`.
 
 `mise.toml` pins Node, pnpm, Vite+, hk and Pitchfork. `hk.pkl` owns changed-file linting and
-formatting (`mise run check` / `mise run fix`); install its Git hooks explicitly after
-`git init`. Full workspace checks remain `mise run verify`, also used in CI.
+formatting (`hk check` / `hk fix`); install its Git hooks explicitly after
+`git init`. Full workspace checks remain `vp run verify`, also used in CI.
 
 The application declares `.pluxel/managed-plugins/entries/*.mjs` as a source. `PLUXEL_DATA_ROOT`
 selects the data directory relative to the execution root; development uses `host/web`, while both

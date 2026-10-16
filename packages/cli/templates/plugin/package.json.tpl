@@ -19,6 +19,11 @@
 		"!**/*.map"
 	],
 	"scripts": {
+		"setup": "pluxel workspace setup",
+		"hooks:install": "hk install --mise",
+		"check": "vp check",
+		"fix": "vp check --fix",
+		"verify": "vp run workspace:verify",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
 		"typecheck": "vp run check-types"

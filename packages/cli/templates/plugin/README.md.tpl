@@ -27,9 +27,10 @@ export const plugins = [{{className}}Plugin]
 ```sh
 mise trust
 mise install
-mise run setup
+vp install
+vp run setup
 # Once the project is a Git repository:
-mise run hooks:install
+vp run hooks:install
 vp run verify
 ```
 

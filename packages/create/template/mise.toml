@@ -8,27 +8,3 @@ viteplus = "1.2.0"
 [env]
 _.path = ["node_modules/.bin"]
 PNPM_CONFIG_PM_ON_FAIL = "ignore"
-
-[tasks.setup]
-description = "Install workspace dependencies and Pluxel development resources"
-run = ["vp install", "vp exec pluxel workspace setup"]
-
-[tasks."hooks:install"]
-description = "Install hk hooks in an initialized Git repository"
-run = "hk install --mise"
-
-[tasks.dev]
-description = "Start the application with Pitchfork"
-run = "pitchfork start app"
-
-[tasks.check]
-description = "Check changed files with hk"
-run = "hk check"
-
-[tasks.fix]
-description = "Fix changed files with hk"
-run = "hk fix"
-
-[tasks.verify]
-description = "Run complete workspace verification"
-run = "vp run verify"

@@ -14,17 +14,18 @@ mise exec node@24 pnpm@11 viteplus@1.2.0 -- vp create @pluxel my-app --no-instal
 cd my-app
 mise trust
 mise install
-mise run setup
-mise run dev
+vp install
+vp run setup
+vp run dev
 ```
 
-`vp create @pluxel` 调用 `@pluxel/create`。这里用 `--no-install` 先生成文件，再由 `mise run setup` 安装依赖并准备 Pluxel 工作区。目标目录需要不存在或为空；不需要克隆 Pluxel 源码或全局安装 CLI。
+`vp create @pluxel` 调用 `@pluxel/create`。这里用 `--no-install` 先生成文件，再由 `vp install` 安装依赖、`vp run setup` 准备 Pluxel 工作区。目标目录需要不存在或为空；不需要克隆 Pluxel 源码或全局安装 CLI。
 
-项目初始化 Git 后运行 `mise run hooks:install` 安装 hk 提交检查。工具职责、常用命令和代理设置见[工作区工具链](../development/workspace-toolchain.md)。
+项目初始化 Git 后运行 `vp run hooks:install` 安装 hk 提交检查。工具职责、常用命令和代理设置见[工作区工具链](../development/workspace-toolchain.md)。
 
 ## 确认应用已运行
 
-`mise run dev` 通过 Pitchfork 启动 `app` 服务，命令结束后服务继续运行。用 `pitchfork logs app` 查看 Vite 打印的 **Application** 地址并打开。页面标题是 **Todo route lab**：输入一条待办并点击 **Add**，再试着勾选完成或删除。
+`vp run dev` 通过 Pitchfork 启动 `app` 服务，命令结束后服务继续运行。用 `pitchfork logs app` 查看 Vite 打印的 **Application** 地址并打开。页面标题是 **Todo route lab**：输入一条待办并点击 **Add**，再试着勾选完成或删除。
 
 这条操作已经经过完整的应用链路：React 页面请求同一站点的 `/api/example/todos`，HTTP 插件调用 Todo 插件处理状态。
 
@@ -36,7 +37,7 @@ mise run dev
 
 ```sh
 pitchfork stop app
-vp run @example/host#dev
+vp run @example/host#dev:server
 ```
 
 打开这次 Vite 输出的本地地址即可，应用和 API 仍在同一个服务中。结束托管开发会话时使用 `pitchfork stop app`。

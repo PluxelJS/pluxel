@@ -11,7 +11,7 @@ description: 快速开始之后，定位业务代码、添加依赖、配置动�
 
 ```sh
 vp run verify
-mise run dev
+vp run dev
 ```
 
 `verify` 成功后，通过 `pitchfork logs app` 查看 `Application` 地址并打开。创建一条 Todo，再完成或删除它；这些操作经过真实 Plugin HTTP 路由。管理界面使用同一地址下的 `/__pluxel/workbench`。
@@ -69,7 +69,7 @@ peer dependency 与 constructor import 对应 required edge。Todo 对 Audit 使
 一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/rolldown` 的 `pluxel()` 选择应用交付并编译配套制品；不需要逐项维护 Node、HTTP、Workbench 的开发接线。共享身份由 Native 启动的 `sharedPackages` 或 Vite 的 singleton 绑定；完整契约见[组合 Host 服务](../host/services.md)。
 
 ```sh
-mise run dev
+vp run dev
 vp run build
 vp run @example/host#start
 ```
@@ -82,14 +82,14 @@ Workbench 默认包含在构建结果中；需要临时关闭开发管理界面�
 
 ```sh
 pitchfork stop app
-PLUXEL_WORKBENCH=false vp run @example/host#dev
+PLUXEL_WORKBENCH=false vp run @example/host#dev:server
 ```
 
 ### 打开页面与直接运行 Vite
 
-`mise run dev` 通过 Pitchfork 启动 `app` 服务，使用 `pitchfork logs app` 查看 `Application` 与 `Workbench` 地址。命令结束后服务继续运行；用 `pitchfork stop app` 停止。稳定公开地址、端口分配和换用其他反代的输入契约见[工作区工具链](./workspace-toolchain.md#端口与公开地址)。
+`vp run dev` 通过 Pitchfork 启动 `app` 服务，使用 `pitchfork logs app` 查看 `Application` 与 `Workbench` 地址。命令结束后服务继续运行；用 `pitchfork stop app` 停止。稳定公开地址、端口分配和换用其他反代的输入契约见[工作区工具链](./workspace-toolchain.md#端口与公开地址)。
 
-需要直接调试 Vite 时先停止 `app`，再运行 `vp run @example/host#dev`。Vite root 为 `host/web/`：Todo API `/api/example/todos` 由插件处理，页面、模块和静态文件由同一 Vite 进程提供。生产应用同样从一个 origin 提供 API 与 `public/` 页面。
+需要直接调试 Vite 时先停止 `app`，再运行 `vp run @example/host#dev:server`。Vite root 为 `host/web/`：Todo API `/api/example/todos` 由插件处理，页面、模块和静态文件由同一 Vite 进程提供。生产应用同样从一个 origin 提供 API 与 `public/` 页面。
 
 ### 添加依赖
 
@@ -132,7 +132,7 @@ vp run governance:check
 ## 常用命令
 
 ```sh
-mise run dev
+vp run dev
 vp run build
 vp run test
 vp check --no-fmt --no-lint

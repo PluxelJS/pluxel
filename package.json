@@ -19,6 +19,20 @@
 		"url": "https://github.com/PluxelJS/pluxel"
 	},
 	"type": "module",
+	"scripts": {
+		"dev": "pitchfork start plugin-host",
+		"docs": "pitchfork start docs",
+		"build": "vp run workspace:build",
+		"test": "vp run workspace:test",
+		"typecheck": "vp run workspace:typecheck",
+		"check": "vp check",
+		"fix": "vp check --fix",
+		"verify": "vp run workspace:verify",
+		"hooks:install": "hk install --mise",
+		"dev:status": "pitchfork status plugin-host",
+		"dev:logs": "pitchfork logs plugin-host --follow",
+		"dev:stop": "pitchfork stop plugin-host"
+	},
 	"devDependencies": {
 		"@fumapress/tegami": "catalog:dev",
 		"tegami": "1.5.0",

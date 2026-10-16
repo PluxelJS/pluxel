@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "node scripts/compile-report-card-css.mjs && vp run prepare-dev --concurrency-limit=1 && vp dev --config vite.config.ts",
+		"dev:server": "node scripts/compile-report-card-css.mjs && vp run prepare-dev --concurrency-limit=1 && vp dev --config vite.config.ts",
 		"build": "vp run compile",
 		"start": "node start.mjs",
 		"test": "vp run check-tests",

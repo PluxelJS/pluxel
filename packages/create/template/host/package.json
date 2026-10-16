@@ -5,7 +5,7 @@
 	"scripts": {
 		"build": "vp run compile",
 		"typecheck": "vp run check-types",
-		"dev": "vp dev --config vite.config.ts",
+		"dev:server": "vp dev --config vite.config.ts",
 		"start": "node start.mjs",
 		"start:vite": "NODE_ENV=production node start-vite.mjs"
 	},

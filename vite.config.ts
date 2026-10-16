@@ -25,7 +25,7 @@ export default defineConfig(async () => {
 	const tasks = Object.fromEntries(
 		Object.entries({ build: 'compile', typecheck: 'check-types', test: 'check-tests' }).map(
 			([script, task]) => [
-				script,
+				`workspace:${script}`,
 				{
 					command: script === 'build' ? 'node scripts/check-source-declarations.mjs' : [],
 					cache: false,
@@ -61,9 +61,15 @@ export default defineConfig(async () => {
 		'bench:core:compare': { command: 'scripts/core-bench-compare.sh', cache: false },
 		tegami: { command: 'node scripts/tegami.mts', cache: false },
 		'verify:checks': { command: 'vp check', cache: false },
-		verify: {
+		'workspace:verify': {
 			command: 'node scripts/check-source-declarations.mjs',
-			dependsOn: ['verify:checks', 'governance:check', 'build', 'typecheck', 'test'],
+			dependsOn: [
+				'verify:checks',
+				'governance:check',
+				'workspace:build',
+				'workspace:typecheck',
+				'workspace:test',
+			],
 			cache: false,
 		},
 	})
