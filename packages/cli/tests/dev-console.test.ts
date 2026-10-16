@@ -1,19 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { decodeDevReceipt, encodeDevReceipt } from '../src/dev/receipt'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cli as gunshiCli, type CliOptions } from 'gunshi'
 import { renderCliHeader } from '../src/render-header'
 import { devCommand } from '../src/commands/dev'
+import { normalizeDevArgs } from '../src/command-manifest'
 import {
 	discoverDevInstances,
 	liveDevInstances,
 	parseInput,
 	publicInstance,
 	requestDev,
-	resolveDevRoot,
 	runDevFile,
 	selectDevInstance,
 	type DevInstance,
@@ -22,7 +23,7 @@ import {
 // Exercise the same nested dev command path and renderer as the production CLI entry.
 function cli(argv: string[], entry: typeof devCommand, options: CliOptions) {
 	return gunshiCli(
-		['dev', ...argv],
+		normalizeDevArgs(['dev', ...argv]),
 		{ run() {} },
 		{
 			...options,
@@ -36,6 +37,7 @@ const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
 	process.exitCode = 0
 	vi.restoreAllMocks()
+	vi.unstubAllEnvs()
 	for (const close of cleanup.splice(0).toReversed()) await close()
 })
 
@@ -138,34 +140,34 @@ describe('development console CLI', () => {
 		expect(output).toEqual([JSON.stringify({ ok: true, value: [publicInstance(instance)] })])
 	})
 
-	it('selects only the current project when separate projects are running', async () => {
+	it('selects only the explicitly chosen root when separate projects are running', async () => {
 		const first = await fixture()
 		const second = await fixture()
 		const directory = resolve(first.root, 'src/dev')
 		await mkdir(directory, { recursive: true })
 		const cwd = vi.spyOn(process, 'cwd').mockReturnValue(directory)
-		expect(await selectDevInstance({})).toEqual(first.instance)
-		await expect(selectDevInstance({ instance: second.instance.instanceId })).rejects.toMatchObject(
-			{
-				code: 'dev_unavailable',
-				context: { root: first.root, instanceId: second.instance.instanceId },
-				message: 'The requested instance is not available in this project.',
-				hint: expect.stringContaining('--root'),
-			},
-		)
+		expect(await selectDevInstance({ root: first.root })).toEqual(first.instance)
+		await expect(
+			selectDevInstance({ root: first.root, instance: second.instance.instanceId }),
+		).rejects.toMatchObject({
+			code: 'dev_unavailable',
+			context: { root: first.root, instanceId: second.instance.instanceId },
+			message: 'The requested instance is not available in this project.',
+			hint: expect.stringContaining('original instance'),
+		})
 		expect(second.requests).toHaveLength(0)
 		cwd.mockReturnValue(second.root)
-		expect(await selectDevInstance({})).toEqual(second.instance)
+		expect(await selectDevInstance({ root: second.root })).toEqual(second.instance)
 	})
 
-	it('does not fall back to an ancestor host across a package boundary', async () => {
+	it('does not fall back to an ancestor host when the explicit root has no console', async () => {
 		const parent = await fixture()
 		const child = resolve(parent.root, 'projects/child')
 		const directory = resolve(child, 'src')
 		await mkdir(directory, { recursive: true })
 		await writeFile(resolve(child, 'package.json'), '{}')
 		vi.spyOn(process, 'cwd').mockReturnValue(directory)
-		await expect(selectDevInstance({})).rejects.toMatchObject({
+		await expect(selectDevInstance({ root: child })).rejects.toMatchObject({
 			code: 'dev_unavailable',
 			context: { root: child },
 			message: 'No running development console was found in the selected project.',
@@ -191,7 +193,7 @@ describe('development console CLI', () => {
 		vi.spyOn(console, 'log').mockImplementation((message: string) => {
 			output.push(message)
 		})
-		await cli(['result', 'pending-result', '--root', first.root], devCommand, {
+		await cli(['run', 'pending.ts', '--root', first.root], devCommand, {
 			name: '@pluxel/cli',
 			version: '1.0.0',
 			subCommands: devCommand.subCommands,
@@ -201,7 +203,6 @@ describe('development console CLI', () => {
 			ok: false,
 			error: {
 				code: 'ambiguous_instance',
-				runId: 'pending-result',
 				context: { root: first.root },
 				hint: expect.stringContaining('--instance'),
 			},
@@ -281,11 +282,17 @@ describe('development console CLI', () => {
 			ok: true,
 			value: { state: 'succeeded', root, instanceId: instance.instanceId },
 		})
+		expect(decodeDevReceipt(response.value.receipt)).toEqual({
+			root,
+			instanceId: instance.instanceId,
+			runId: response.value.runId,
+		})
 		expect(JSON.parse(diagnostics[0]!)).toEqual({
 			event: 'accepted',
 			root,
 			runId: response.value.runId,
 			instanceId: instance.instanceId,
+			receipt: response.value.receipt,
 			state: 'succeeded',
 		})
 	})
@@ -308,7 +315,7 @@ describe('development console CLI', () => {
 		await writeFile(file, source)
 		expect(
 			await runDevFile({
-				root,
+				instance,
 				file,
 				exportName: 'add',
 				input: { name: 'hello' },
@@ -368,6 +375,11 @@ describe('development console CLI', () => {
 		})
 		expect(output[0]).not.toContain(instance.nonce)
 		expect(output[0]).not.toContain(instance.socketPath)
+		expect(decodeDevReceipt(JSON.parse(output[0]!).error.receipt)).toEqual({
+			root,
+			instanceId: instance.instanceId,
+			runId: submitted[0]!.runId,
+		})
 	})
 
 	it('keeps selected identity on failed and cancelled result snapshots', async () => {
@@ -388,11 +400,18 @@ describe('development console CLI', () => {
 			output.push(message)
 		})
 		for (const command of ['result', 'cancel'])
-			await cli([command, 'existing-run', '--root', root], devCommand, {
-				name: '@pluxel/cli',
-				version: '1.0.0',
-				subCommands: devCommand.subCommands,
-			})
+			await cli(
+				[
+					command,
+					encodeDevReceipt({ root, instanceId: instance.instanceId, runId: 'existing-run' }),
+				],
+				devCommand,
+				{
+					name: '@pluxel/cli',
+					version: '1.0.0',
+					subCommands: devCommand.subCommands,
+				},
+			)
 		expect(output.map((value) => JSON.parse(value).value)).toEqual([
 			expect.objectContaining({
 				root,
@@ -409,58 +428,39 @@ describe('development console CLI', () => {
 		])
 	})
 
-	it('explains a missing project without claiming that a root was selected', async () => {
-		const { root, requests } = await fixture()
+	it('discovers a console without a declaration or package file', async () => {
+		const { root, instance } = await fixture()
 		await rm(resolve(root, 'package.json'))
+		vi.spyOn(process, 'cwd').mockReturnValue(root)
+		vi.stubEnv('PATH', '')
+		const output: string[] = []
+		vi.spyOn(console, 'log').mockImplementation((message: string) => {
+			output.push(message)
+		})
+		await cli(['instances'], devCommand, {})
+		expect(JSON.parse(output[0]!)).toEqual({ ok: true, value: [publicInstance(instance)] })
+	})
+
+	it('accepts an instance selector with the current project', async () => {
+		const { root, instance } = await fixture()
 		vi.spyOn(process, 'cwd').mockReturnValue(root)
 		const output: string[] = []
 		vi.spyOn(console, 'log').mockImplementation((message: string) => {
 			output.push(message)
 		})
-		await cli(['instances'], devCommand, {
-			name: '@pluxel/cli',
-			version: '1.0.0',
-			subCommands: devCommand.subCommands,
-		})
-		const error = JSON.parse(output[0]!).error
-		expect(error).toMatchObject({
-			code: 'dev_unavailable',
-			message: expect.stringContaining('No package.json project root'),
-			hint: expect.stringContaining('--root'),
-		})
-		expect(error.context).toBeUndefined()
-		expect(requests).toHaveLength(0)
-	})
-
-	it('does not accept an ignored instance selector for the project-wide instances command', async () => {
-		const output: string[] = []
-		vi.spyOn(console, 'log').mockImplementation((message: string) => {
-			output.push(message)
-		})
-		await cli(['instances', '--instance', 'ignored'], devCommand, {
-			name: '@pluxel/cli',
-			version: '1.0.0',
-			subCommands: devCommand.subCommands,
-		})
-		expect(JSON.parse(output[0]!)).toMatchObject({
-			ok: false,
-			error: {
-				code: 'invalid_input',
-				message: expect.stringContaining('Unknown dev option --instance'),
-				hint: expect.stringContaining('--help'),
-			},
-		})
+		await cli(['instances', '--instance', instance.instanceId], devCommand, {})
+		expect(JSON.parse(output[0]!)).toEqual({ ok: true, value: [publicInstance(instance)] })
 	})
 
 	it('rejects misspelled dev options before selecting or contacting any instance', async () => {
-		const { root, requests } = await fixture()
+		const { requests } = await fixture()
 		const output: string[] = []
 		vi.spyOn(console, 'log').mockImplementation((message: string) => {
 			output.push(message)
 		})
 		for (const command of ['run', 'result', 'cancel', 'instances']) {
 			const positional = command === 'instances' ? [] : [command === 'run' ? 'script.ts' : 'run-id']
-			await cli([command, ...positional, '--root', root, '--instnace', 'typo'], devCommand, {
+			await cli([command, ...positional, '--instnace', 'typo'], devCommand, {
 				name: '@pluxel/cli',
 				version: '1.0.0',
 				subCommands: devCommand.subCommands,
@@ -472,7 +472,6 @@ describe('development console CLI', () => {
 				ok: false,
 				error: {
 					code: 'invalid_input',
-					context: { root },
 					message: 'Unknown dev option --instnace.',
 					hint: expect.stringContaining('--help'),
 				},
@@ -481,14 +480,14 @@ describe('development console CLI', () => {
 	})
 
 	it('rejects symlink scripts escaping the selected project before submission', async () => {
-		const { root, requests } = await fixture()
+		const { root, instance, requests } = await fixture()
 		const outside = await mkdtemp(resolve(tmpdir(), 'px-outside-'))
 		cleanup.push(() => rm(outside, { recursive: true, force: true }))
 		await writeFile(resolve(outside, 'script.ts'), 'export default () => 1')
 		await symlink(resolve(outside, 'script.ts'), resolve(root, 'script.ts'))
 		await expect(
 			runDevFile({
-				root,
+				instance,
 				file: resolve(root, 'script.ts'),
 				exportName: 'default',
 				timeoutMs: 1000,
@@ -529,7 +528,6 @@ describe('development console CLI', () => {
 				error: {
 					code: 'invalid_input',
 					message: 'Use either --input or --input-file',
-					context: { root: await resolveDevRoot() },
 					hint: expect.stringContaining('dev run --help'),
 				},
 			},
@@ -537,4 +535,742 @@ describe('development console CLI', () => {
 		expect(process.exitCode).toBe(1)
 		log.mockRestore()
 	})
+})
+
+async function pitchforkFixture(root: string, exitCode = 0) {
+	await writeFile(
+		resolve(root, 'package.json'),
+		JSON.stringify({
+			pluxel: { dev: { web: { pitchfork: 'app' } } },
+		}),
+	)
+	await writeFile(
+		resolve(root, 'pitchfork'),
+		`#!${process.execPath}
+const args = process.argv.slice(2)
+if (JSON.stringify(args) === JSON.stringify(['status', 'app', '--json'])) {
+ console.log(JSON.stringify({ id: 'workspace/app', status: 'running' }))
+} else if (JSON.stringify(args) === JSON.stringify(['start', 'workspace/app', '--quiet'])) {
+ process.exit(${exitCode})
+} else { process.exit(99) }
+`,
+		{ mode: 0o755 },
+	)
+	vi.stubEnv('PATH', `${root}:${process.env.PATH}`)
+	vi.spyOn(process, 'cwd').mockReturnValue(root)
+}
+
+async function bindProfile(instance: DevInstance, profile: string, project = instance.root) {
+	instance.profile = profile
+	instance.project = project
+	await writeFile(
+		resolve(instance.root, '.pluxel/dev-console', `${instance.instanceId}.json`),
+		JSON.stringify(instance),
+		{ mode: 0o600 },
+	)
+}
+
+async function bindService(
+	instance: DevInstance,
+	serviceId = 'workspace/app',
+	root = instance.root,
+) {
+	instance.root = root
+	instance.serviceId = serviceId
+	await writeFile(
+		resolve(root, '.pluxel/dev-console', `${instance.instanceId}.json`),
+		JSON.stringify(instance),
+		{ mode: 0o600 },
+	)
+}
+
+it('dev prints fresh server-owned URLs on repeated invocations without running a console script', async () => {
+	const { root, instance, requests } = await fixture(undefined, {
+		state: 'ready',
+		latestUpdate: null,
+	})
+	await pitchforkFixture(root)
+	await bindService(instance)
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	instance.urlOutput = [
+		'  ➜  Application: http://app.localhost:8088/',
+		'  ➜  Workbench:   http://app.localhost:8088/admin',
+	]
+	await cli([], devCommand, {})
+	expect(output).toEqual(instance.urlOutput)
+	output.length = 0
+	instance.urlOutput = ['  ➜  Workbench:   http://app.localhost:8088/']
+	await cli([], devCommand, {})
+	expect(output).toEqual(instance.urlOutput)
+	expect(requests.map(({ method }) => method)).toEqual(['inspect', 'inspect'])
+})
+
+it('dev preserves startup failure and does not print an unrelated live instance', async () => {
+	const { root, requests } = await fixture()
+	await pitchforkFixture(root, 7)
+	const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+	await cli([], devCommand, {})
+	expect(process.exitCode).toBe(7)
+	expect(requests).toHaveLength(0)
+	expect(log).not.toHaveBeenCalled()
+})
+
+it('rejects the removed positional start command before contacting a console', async () => {
+	const { root, requests } = await fixture()
+	await pitchforkFixture(root)
+	await expect(cli(['start'], devCommand, {})).rejects.toThrow('Command not found: start')
+	expect(requests).toHaveLength(0)
+})
+
+it('dev reports a missing URL capability instead of inventing a Workbench address', async () => {
+	const { root, instance } = await fixture()
+	await pitchforkFixture(root)
+	await bindService(instance)
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli([], devCommand, {})
+	expect(process.exitCode).toBe(1)
+	expect(output.join('\n')).toContain('no URL presentation')
+	expect(output.join('\n')).not.toContain('/__pluxel/workbench')
+})
+
+it('routes result and cancel receipts to the original instance regardless of cwd or newer instances', async () => {
+	const original = await fixture((request, socket) => {
+		socket.end(
+			JSON.stringify({ ok: true, value: snapshot(original.instance.instanceId, request.runId) }) +
+				'\n',
+		)
+	})
+	await bindService(original.instance)
+	const replacement = await fixture()
+	await bindService(replacement.instance, 'workspace/app', original.root)
+	const otherService = await fixture()
+	await bindService(otherService.instance, 'workspace/other', original.root)
+	const unrelated = await fixture()
+	vi.spyOn(process, 'cwd').mockReturnValue(unrelated.root)
+	const receipt = encodeDevReceipt({ ...original.instance, runId: 'original-run' })
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => output.push(message))
+	for (const command of ['result', 'cancel']) await cli([command, receipt], devCommand, {})
+	expect(output.map((line) => JSON.parse(line))).toEqual([
+		expect.objectContaining({
+			ok: true,
+			value: expect.objectContaining({ instanceId: original.instance.instanceId, receipt }),
+		}),
+		expect.objectContaining({
+			ok: true,
+			value: expect.objectContaining({ instanceId: original.instance.instanceId, receipt }),
+		}),
+	])
+	expect(
+		original.requests.filter(({ method }) => method !== 'inspect').map(({ method }) => method),
+	).toEqual(['result', 'cancel'])
+	expect(unrelated.requests).toHaveLength(0)
+
+	await rm(resolve(original.directory, `${original.instance.instanceId}.json`))
+	output.length = 0
+	for (const command of ['result', 'cancel']) await cli([command, receipt], devCommand, {})
+	for (const line of output)
+		expect(JSON.parse(line)).toMatchObject({
+			ok: false,
+			error: {
+				code: 'dev_unavailable',
+				runId: 'original-run',
+				receipt,
+				context: { instanceId: original.instance.instanceId, serviceId: 'workspace/app' },
+			},
+		})
+	for (const candidate of [replacement, otherService]) {
+		expect(
+			candidate.requests.some(
+				({ method }) => method === 'result' || method === 'cancel' || method === 'run',
+			),
+		).toBe(false)
+	}
+})
+
+it('refuses a receipt whose service no longer matches its instance', async () => {
+	const { instance, requests } = await fixture()
+	await bindService(instance, 'workspace/other')
+	const receipt = encodeDevReceipt({ ...instance, serviceId: 'workspace/app', runId: 'old-run' })
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => output.push(message))
+	await cli(['cancel', receipt], devCommand, {})
+	expect(JSON.parse(output[0]!)).toMatchObject({
+		ok: false,
+		error: { code: 'dev_unavailable', receipt },
+	})
+	expect(requests.some(({ method }) => method === 'cancel')).toBe(false)
+})
+
+it('reads status and executes an operation without Pitchfork even when startup declares it', async () => {
+	const { root, instance, requests } = await fixture((request, socket) => {
+		socket.end(
+			JSON.stringify({ ok: true, value: snapshot(instance.instanceId, request.runId) }) + '\n',
+		)
+	})
+	await writeFile(
+		resolve(root, 'package.json'),
+		JSON.stringify({ pluxel: { dev: { web: { pitchfork: 'app' } } } }),
+	)
+	await bindService(instance)
+	const file = resolve(root, 'inspect.ts')
+	await writeFile(file, 'export default () => 1')
+	vi.stubEnv('PATH', '')
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['status', '--root', root], devCommand, {})
+	expect(JSON.parse(output[0]!)).toMatchObject({
+		ok: true,
+		value: { root, instances: [expect.objectContaining({ instanceId: instance.instanceId })] },
+	})
+	await cli(['run', file, '--root', root, '--detach'], devCommand, {})
+	expect(JSON.parse(output[1]!)).toMatchObject({
+		ok: true,
+		value: { instanceId: instance.instanceId, state: 'succeeded' },
+	})
+	expect(requests.filter(({ method }) => method === 'run')).toHaveLength(1)
+})
+
+it.each([undefined, { command: 'command-must-not-run' }])(
+	'reuses an existing ordinary Vite console without a supervisor (%j)',
+	async (dev) => {
+		const { root, instance } = await fixture(undefined, { state: 'ready' })
+		await writeFile(
+			resolve(root, 'package.json'),
+			JSON.stringify(dev ? { pluxel: { dev: { app: dev } } } : {}),
+		)
+		if (dev) await bindProfile(instance, 'app')
+		instance.urlOutput = [
+			'  ➜  Local: http://localhost:5173/',
+			'  ➜  Workbench: http://localhost:5173/custom',
+		]
+		vi.stubEnv('PATH', '')
+		const output: string[] = []
+		vi.spyOn(console, 'log').mockImplementation((message: string) => {
+			output.push(message)
+		})
+		for (let invocation = 0; invocation < 2; invocation++) {
+			output.length = 0
+			await cli(['--root', root], devCommand, {})
+			expect(output).toEqual(instance.urlOutput)
+			expect(process.exitCode ?? 0).toBe(0)
+		}
+	},
+)
+
+it('dev can redisplay a manually started console using --root', async () => {
+	const { root, instance } = await fixture(undefined, { state: 'ready' })
+	instance.urlOutput = ['  ➜  Local: http://localhost:5173/']
+	vi.stubEnv('PATH', '')
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root], devCommand, {})
+	expect(output).toEqual(instance.urlOutput)
+})
+
+it('runs a configured command in its workspace and preserves its exit status', async () => {
+	const { root, directory } = await fixture()
+	await rm(directory, { recursive: true })
+	await writeFile(
+		resolve(root, 'start.cjs'),
+		'process.exit(require("node:fs").existsSync("start.cjs") && process.env.PLUXEL_DEV_PROFILE === "app" && process.env.PLUXEL_DEV_PROJECT === process.cwd() ? 7 : 99)',
+	)
+	await writeFile(
+		resolve(root, 'package.json'),
+		JSON.stringify({
+			pluxel: { dev: { app: { command: `${JSON.stringify(process.execPath)} start.cjs` } } },
+		}),
+	)
+	const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+	await cli(['--root', root], devCommand, {})
+	expect(process.exitCode).toBe(7)
+	expect(log).not.toHaveBeenCalled()
+})
+
+it('explains missing launch configuration when there is no live console', async () => {
+	const { root, directory } = await fixture()
+	await rm(directory, { recursive: true })
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root], devCommand, {})
+	expect(process.exitCode).toBe(1)
+	expect(output.join('\n')).toContain('invalid_project')
+	expect(output.join('\n')).toContain('command')
+})
+
+it('rejects ambiguous command-mode dev and permits an explicit instance', async () => {
+	const first = await fixture(undefined, { state: 'ready' })
+	const second = await fixture(undefined, { state: 'ready' })
+	second.instance.root = first.root
+	await writeFile(
+		resolve(first.directory, `${second.instance.instanceId}.json`),
+		JSON.stringify(second.instance),
+		{ mode: 0o600 },
+	)
+	await bindProfile(first.instance, 'app')
+	await bindProfile(second.instance, 'app')
+	second.instance.urlOutput = ['  ➜  Local: http://localhost:5174/']
+	await writeFile(
+		resolve(first.root, 'package.json'),
+		JSON.stringify({ pluxel: { dev: { app: { command: 'must-not-run' } } } }),
+	)
+	vi.stubEnv('PATH', '')
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', first.root], devCommand, {})
+	expect(process.exitCode).toBe(1)
+	expect(output.join('\n')).toContain('ambiguous_instance')
+	process.exitCode = 0
+	output.length = 0
+	await cli(['--root', first.root, '--instance', second.instance.instanceId], devCommand, {})
+	expect(output).toEqual(second.instance.urlOutput)
+	expect(process.exitCode).toBe(0)
+})
+
+it('Pitchfork startup only displays the exact service console when several share a root', async () => {
+	const selected = await fixture(undefined, { state: 'ready' })
+	const unrelated = await fixture(undefined, { state: 'ready' })
+	await pitchforkFixture(selected.root)
+	await bindService(selected.instance)
+	await bindService(unrelated.instance, 'other-worktree/app', selected.root)
+	selected.instance.urlOutput = ['  ➜  Application: http://selected.localhost:8088/']
+	unrelated.instance.urlOutput = ['  ➜  Application: http://unrelated.localhost:8088/']
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli([], devCommand, {})
+	expect(output).toEqual(selected.instance.urlOutput)
+	expect(process.exitCode ?? 0).toBe(0)
+})
+
+it('rejects the removed --target selector rather than ignoring it', async () => {
+	const { root, requests } = await fixture()
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['status', '--root', root, '--target', 'app'], devCommand, {})
+	expect(JSON.parse(output[0]!)).toMatchObject({
+		ok: false,
+		error: { code: 'invalid_input', message: 'Unknown dev option --target.' },
+	})
+	expect(requests).toHaveLength(0)
+})
+
+it('does not route an instance selector value as a dev subcommand', async () => {
+	const { root, requests } = await fixture()
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root, '--instance', 'status'], devCommand, {})
+	expect(output.join('\n')).toContain('dev_unavailable')
+	expect(output.join('\n')).toContain('requested instance')
+	expect(process.exitCode).toBe(1)
+	expect(requests.some(({ method }) => method !== 'inspect')).toBe(false)
+})
+
+it('rejects a selector without a value before contacting a console', async () => {
+	const { root, requests } = await fixture()
+	vi.spyOn(process, 'cwd').mockReturnValue(root)
+	vi.spyOn(console, 'log').mockImplementation(() => {})
+	await expect(cli(['--root'], devCommand, {})).rejects.toMatchObject({
+		errors: [expect.objectContaining({ message: expect.stringContaining('root') })],
+	})
+	expect(requests).toHaveLength(0)
+})
+
+it('rejects the removed --workspace selector', async () => {
+	const { root, requests } = await fixture()
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['status', '--workspace', root], devCommand, {})
+	expect(JSON.parse(output[0]!)).toMatchObject({
+		ok: false,
+		error: { code: 'invalid_input', message: 'Unknown dev option --workspace.' },
+	})
+	expect(requests).toHaveLength(0)
+})
+
+it('replays only the selected command profile when profiles share a root', async () => {
+	const first = await fixture(undefined, { state: 'ready' })
+	const second = await fixture(undefined, { state: 'ready' })
+	second.instance.root = first.root
+	await bindProfile(first.instance, 'first')
+	await bindProfile(second.instance, 'second')
+	first.instance.urlOutput = ['  ➜  Local: http://localhost:5173/']
+	second.instance.urlOutput = ['  ➜  Local: http://localhost:5174/']
+	await writeFile(
+		resolve(first.root, 'package.json'),
+		JSON.stringify({
+			pluxel: {
+				dev: {
+					first: { command: 'must-not-run' },
+					second: { command: 'must-not-run' },
+				},
+			},
+		}),
+	)
+	vi.stubEnv('PATH', '')
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', first.root, '--profile', 'second'], devCommand, {})
+	expect(output).toEqual(second.instance.urlOutput)
+	output.length = 0
+	await cli(
+		['--root', first.root, '--profile', 'first', '--instance', second.instance.instanceId],
+		devCommand,
+		{},
+	)
+	expect(process.exitCode).toBe(1)
+	expect(output.join('\n')).toContain('dev_unavailable')
+})
+
+async function serviceOnlyFixture(
+	root: string,
+	after: Record<string, unknown> = {
+		id: 'workspace/docs',
+		status: 'running',
+		url: 'http://docs.localhost:8088/',
+	},
+) {
+	await writeFile(
+		resolve(root, 'package.json'),
+		JSON.stringify({ pluxel: { dev: { docs: { pitchfork: 'docs', console: false } } } }),
+	)
+	const callsFile = resolve(root, 'pitchfork-calls.jsonl')
+	await writeFile(callsFile, '')
+	await writeFile(
+		resolve(root, 'pitchfork'),
+		`#!${process.execPath}
+const fs = require('node:fs')
+const args = process.argv.slice(2)
+fs.appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify(args) + '\\n')
+const state = ${JSON.stringify(resolve(root, 'started'))}
+if (JSON.stringify(args) === JSON.stringify(['status', 'docs', '--json'])) {
+ console.log(JSON.stringify(fs.existsSync(state) ? ${JSON.stringify(after)} : { id: 'workspace/docs', status: 'stopped', url: 'http://stale.localhost:8088/' }))
+} else if (JSON.stringify(args) === JSON.stringify(['start', 'workspace/docs', '--quiet'])) {
+ fs.writeFileSync(state, '')
+} else { process.exit(99) }
+`,
+		{ mode: 0o755 },
+	)
+	vi.stubEnv('PATH', root)
+	return async () => {
+		const output = await readFile(callsFile, 'utf8')
+		return output
+			.trim()
+			.split('\n')
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as string[])
+	}
+}
+
+it.each([
+	{ id: 'workspace/docs', status: 'running', url: 'http://docs.localhost:8088/' },
+	{ id: 'workspace/docs', status: 'running', proxy_url: 'http://docs.localhost:8088/' },
+])('starts a service-only profile and prints its fresh service URL (%j)', async (after) => {
+	const { root, requests } = await fixture()
+	const calls = await serviceOnlyFixture(root, after)
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root], devCommand, {})
+	expect(process.exitCode ?? 0).toBe(0)
+	expect(output.join('\n')).toContain('Service: workspace/docs (running)')
+	expect(output.join('\n')).toContain('http://docs.localhost:8088/')
+	expect(output.join('\n')).not.toContain('stale.localhost')
+	expect(output.join('\n')).not.toContain('Workbench')
+	expect(await calls()).toEqual([
+		['status', 'docs', '--json'],
+		['start', 'workspace/docs', '--quiet'],
+		['status', 'docs', '--json'],
+	])
+	expect(requests).toHaveLength(0)
+})
+
+it('reads service-only status without starting or discovering application instances', async () => {
+	const { root, requests } = await fixture()
+	const calls = await serviceOnlyFixture(root)
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['status', '--root', root], devCommand, {})
+	expect(JSON.parse(output[0]!)).toEqual({
+		ok: true,
+		value: {
+			workspace: root,
+			profile: 'docs',
+			root,
+			console: false,
+			service: { id: 'workspace/docs', status: 'stopped', url: 'http://stale.localhost:8088/' },
+		},
+	})
+	expect(await calls()).toEqual([['status', 'docs', '--json']])
+	expect(requests).toHaveLength(0)
+})
+
+it.each(['instances', 'run'])(
+	'rejects %s for a service-only profile before starting or contacting sockets',
+	async (command) => {
+		const { root, requests } = await fixture()
+		const calls = await serviceOnlyFixture(root)
+		const output: string[] = []
+		vi.spyOn(console, 'log').mockImplementation((message: string) => {
+			output.push(message)
+		})
+		await cli(
+			[command, ...(command === 'run' ? ['missing.ts'] : []), '--root', root],
+			devCommand,
+			{},
+		)
+		expect(JSON.parse(output[0]!)).toMatchObject({
+			ok: false,
+			error: { code: 'unsupported_console' },
+		})
+		expect(await calls()).toEqual([])
+		expect(requests).toHaveLength(0)
+	},
+)
+
+it('rejects --instance for service-only startup before invoking Pitchfork', async () => {
+	const { root, requests, instance } = await fixture()
+	const calls = await serviceOnlyFixture(root)
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root, '--instance', instance.instanceId], devCommand, {})
+	expect(process.exitCode).toBe(1)
+	expect(output.join('\n')).toContain('unsupported_console')
+	expect(await calls()).toEqual([])
+	expect(requests).toHaveLength(0)
+})
+
+it('rejects service ownership changing between startup and fresh status', async () => {
+	const { root, requests } = await fixture()
+	await serviceOnlyFixture(root, {
+		id: 'other-workspace/docs',
+		status: 'running',
+		url: 'http://unrelated.localhost:8088/',
+	})
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root], devCommand, {})
+	expect(process.exitCode).toBe(1)
+	expect(output.join('\n')).not.toContain('http://unrelated.localhost:8088/')
+	expect(requests).toHaveLength(0)
+})
+
+it('does not treat an application with a missing console as a service-only profile', async () => {
+	const { root, directory, requests } = await fixture()
+	await pitchforkFixture(root)
+	await rm(directory, { recursive: true })
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root], devCommand, {})
+	expect(process.exitCode).toBe(1)
+	expect(output.join('\n')).toContain('dev_unavailable')
+	expect(output.join('\n')).not.toContain('Service:')
+	expect(requests).toHaveLength(0)
+})
+
+it('uses the same default and explicit profile across startup, status, instances and run', async () => {
+	const first = await fixture(
+		(request, socket) => {
+			socket.end(
+				JSON.stringify({ ok: true, value: snapshot(first.instance.instanceId, request.runId) }) +
+					'\n',
+			)
+		},
+		{ state: 'ready' },
+	)
+	const second = await fixture(
+		(request, socket) => {
+			socket.end(
+				JSON.stringify({ ok: true, value: snapshot(second.instance.instanceId, request.runId) }) +
+					'\n',
+			)
+		},
+		{ state: 'ready' },
+	)
+	second.instance.root = first.root
+	await bindProfile(first.instance, 'first')
+	await bindProfile(second.instance, 'second')
+	first.instance.urlOutput = ['  ➜  Local: http://localhost:5173/']
+	second.instance.urlOutput = ['  ➜  Local: http://localhost:5174/']
+	await writeFile(
+		resolve(first.root, 'package.json'),
+		JSON.stringify({
+			pluxel: {
+				dev: {
+					default: 'first',
+					first: { command: 'must-not-run' },
+					second: { command: 'must-not-run' },
+				},
+			},
+		}),
+	)
+	const file = resolve(first.root, 'inspect.ts')
+	await writeFile(file, 'export default () => 1')
+	vi.stubEnv('PATH', '')
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	for (const [args, selected] of [
+		[[], first],
+		[['--profile', 'second'], second],
+	] as const) {
+		output.length = 0
+		await cli(['--root', first.root, ...args], devCommand, {})
+		expect(output).toEqual(selected.instance.urlOutput)
+		for (const command of ['status', 'instances', 'run']) {
+			output.length = 0
+			await cli(
+				[command, ...(command === 'run' ? [file, '--detach'] : []), '--root', first.root, ...args],
+				devCommand,
+				{},
+			)
+			const result = JSON.parse(output[0]!)
+			expect(result.ok).toBe(true)
+			const instances: DevInstance[] =
+				command === 'status'
+					? result.value.instances
+					: command === 'instances'
+						? result.value
+						: [result.value]
+			expect(instances.map((item) => item.instanceId)).toEqual([selected.instance.instanceId])
+		}
+	}
+})
+
+it('reports a service that remains stopped without inventing an application URL', async () => {
+	const { root, requests } = await fixture()
+	await serviceOnlyFixture(root, { id: 'workspace/docs', status: 'stopped' })
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	await cli(['--root', root], devCommand, {})
+	expect(process.exitCode).toBe(2)
+	expect(output.join('\n')).toContain('Service: workspace/docs (stopped)')
+	expect(output.join('\n')).not.toContain('http')
+	expect(output.join('\n')).not.toContain('Workbench')
+	expect(requests).toHaveLength(0)
+})
+
+it.each([
+	{ profile: 'app' },
+	{ project: '/absolute' },
+	{ profile: 'app', project: 'relative' },
+	{ profile: 'app', project: '/with\nnewline' },
+	{ profile: 'app', project: 123 },
+])(
+	'rejects malformed paired command profile provenance before socket access (%j)',
+	async (binding) => {
+		const { root, directory, instance, requests } = await fixture()
+		await writeFile(
+			resolve(directory, `${instance.instanceId}.json`),
+			JSON.stringify({ ...instance, ...binding }),
+			{ mode: 0o600 },
+		)
+		await expect(discoverDevInstances(root)).rejects.toMatchObject({ code: 'invalid_discovery' })
+		expect(requests).toHaveLength(0)
+	},
+)
+
+it('keeps URL reuse and console execution within the declaring package for same-name profiles', async () => {
+	const outer = await fixture(
+		(request, socket) => {
+			socket.end(
+				JSON.stringify({ ok: true, value: snapshot(outer.instance.instanceId, request.runId) }) +
+					'\n',
+			)
+		},
+		{ state: 'ready' },
+	)
+	const inner = await fixture(
+		(request, socket) => {
+			socket.end(
+				JSON.stringify({ ok: true, value: snapshot(inner.instance.instanceId, request.runId) }) +
+					'\n',
+			)
+		},
+		{ state: 'ready' },
+	)
+	const web = resolve(outer.root, 'web')
+	await mkdir(resolve(web, '.pluxel/dev-console'), { recursive: true, mode: 0o700 })
+	outer.instance.root = web
+	inner.instance.root = web
+	await bindProfile(outer.instance, 'app', outer.root)
+	await bindProfile(inner.instance, 'app', web)
+	outer.instance.urlOutput = ['  ➜  Local: http://localhost:5173/']
+	inner.instance.urlOutput = ['  ➜  Local: http://localhost:5174/']
+	await writeFile(
+		resolve(outer.root, 'package.json'),
+		JSON.stringify({ pluxel: { dev: { app: { root: 'web', command: 'must-not-run' } } } }),
+	)
+	await writeFile(
+		resolve(web, 'package.json'),
+		JSON.stringify({ pluxel: { dev: { app: { command: 'must-not-run' } } } }),
+	)
+	const file = resolve(web, 'inspect.ts')
+	await writeFile(file, 'export default () => 1')
+	vi.stubEnv('PATH', '')
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((message: string) => {
+		output.push(message)
+	})
+	for (const [root, selected, other] of [
+		[outer.root, outer, inner],
+		[web, inner, outer],
+	] as const) {
+		output.length = 0
+		await cli(['--root', root], devCommand, {})
+		expect(output).toEqual(selected.instance.urlOutput)
+		output.length = 0
+		await cli(['run', file, '--root', root, '--detach'], devCommand, {})
+		expect(JSON.parse(output[0]!)).toMatchObject({
+			ok: true,
+			value: { instanceId: selected.instance.instanceId },
+		})
+		output.length = 0
+		await cli(['--root', root, '--instance', other.instance.instanceId], devCommand, {})
+		expect(output.join('\n')).toContain('dev_unavailable')
+		output.length = 0
+		await cli(
+			['run', file, '--root', root, '--instance', other.instance.instanceId, '--detach'],
+			devCommand,
+			{},
+		)
+		expect(JSON.parse(output[0]!)).toMatchObject({ ok: false, error: { code: 'dev_unavailable' } })
+	}
+	for (const current of [outer, inner])
+		expect(current.requests.filter(({ method }) => method === 'run')).toHaveLength(1)
 })

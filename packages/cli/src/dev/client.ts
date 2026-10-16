@@ -21,6 +21,10 @@ export interface DevInstance {
 	root: string
 	socketPath: string
 	startedAt: string
+	serviceId?: string
+	profile?: string
+	project?: string
+	urlOutput?: readonly string[]
 	application?: Readonly<{ state: 'ready' | 'updating' | 'unavailable'; latestUpdate: unknown }>
 }
 
@@ -33,7 +37,7 @@ export interface DevRunSnapshot {
 	[key: string]: unknown
 }
 
-export type DevErrorContext = Readonly<{ root?: string; instanceId?: string }>
+export type DevErrorContext = Readonly<{ root?: string; instanceId?: string; serviceId?: string }>
 type DevErrorDetails = Readonly<{
 	runId?: string
 	context?: DevErrorContext
@@ -62,7 +66,7 @@ export class DevClientError extends Error {
 
 function diagnosticHint(code: string, runId?: string): string | undefined {
 	if (code === 'outcome_unknown' || (code === 'dev_unavailable' && runId)) {
-		return 'Read the retained result with dev result using this runId and the root and instanceId in context before submitting again.'
+		return 'Read the retained result with dev result using the receipt before submitting again.'
 	}
 	if (code === 'ambiguous_instance')
 		return 'Choose one candidate instanceId and pass --instance with the same --root.'
@@ -75,7 +79,7 @@ function diagnosticHint(code: string, runId?: string): string | undefined {
 	if (code === 'source_changed')
 		return 'Review the current source file, then explicitly submit it as a new run.'
 	if (code === 'run_not_found' || code === 'result_expired')
-		return 'Check the root, instanceId and runId from the original receipt. Missing results do not establish that earlier side effects did not happen.'
+		return 'Use the original receipt to select the original instance. Missing results do not establish that earlier side effects did not happen.'
 	return undefined
 }
 
@@ -153,35 +157,13 @@ export function parseInput(source: string): unknown {
 	return value
 }
 
-export async function resolveDevRoot(root?: string): Promise<string> {
-	if (root !== undefined) {
-		try {
-			return await realpath(resolve(root))
-		} catch {
-			throw new DevClientError(
-				'dev_unavailable',
-				'The requested project root could not be resolved.',
-				{ hint: 'Check that --root names an existing project directory.' },
-			)
-		}
-	}
-	const searchStart = await realpath(process.cwd())
-	let candidate = searchStart
-	while (true) {
-		try {
-			const stat = await lstat(resolve(candidate, 'package.json'))
-			if (stat.isFile()) return candidate
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-		}
-		const parent = dirname(candidate)
-		if (parent === candidate)
-			throw new DevClientError(
-				'dev_unavailable',
-				`No package.json project root was found above ${searchStart}.`,
-				{ hint: 'Run this command from the intended project, or pass --root with its directory.' },
-			)
-		candidate = parent
+export async function resolveDevRoot(root: string): Promise<string> {
+	try {
+		return await realpath(resolve(root))
+	} catch {
+		throw new DevClientError('dev_unavailable', 'The requested Vite root could not be resolved.', {
+			hint: 'Check the target’s Vite root or the explicit --root directory.',
+		})
 	}
 }
 
@@ -237,6 +219,19 @@ export async function discoverDevInstances(root: string): Promise<DevInstance[]>
 			value.root !== root ||
 			typeof value.socketPath !== 'string' ||
 			value.socketPath.length > 512 ||
+			(value.serviceId !== undefined &&
+				(typeof value.serviceId !== 'string' ||
+					value.serviceId.trim() !== value.serviceId ||
+					!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.serviceId))) ||
+			(value.profile !== undefined &&
+				(typeof value.profile !== 'string' ||
+					!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(value.profile))) ||
+			(value.profile === undefined) !== (value.project === undefined) ||
+			(value.project !== undefined &&
+				(typeof value.project !== 'string' ||
+					!isAbsolute(value.project) ||
+					// eslint-disable-next-line no-control-regex -- Reject control characters in discovery paths.
+					/[\u0000-\u001f\u007f]/.test(value.project))) ||
 			typeof value.startedAt !== 'string' ||
 			!Number.isFinite(Date.parse(value.startedAt))
 		) {
@@ -374,7 +369,11 @@ export function publicInstance(instance: DevInstance) {
 		pid: instance.pid,
 		root: instance.root,
 		startedAt: instance.startedAt,
+		...(instance.serviceId ? { serviceId: instance.serviceId } : {}),
+		...(instance.profile ? { profile: instance.profile } : {}),
+		...(instance.project ? { project: instance.project } : {}),
 		...(instance.application ? { application: instance.application } : {}),
+		...(instance.urlOutput ? { urlOutput: instance.urlOutput } : {}),
 	}
 }
 
@@ -386,15 +385,32 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 		const results = await Promise.allSettled(
 			instances.slice(offset, offset + 8).map(async (instance) => {
 				const value = await requestDev(instance, { method: 'inspect' }, 500)
-				if (!record(value) || value.instanceId !== instance.instanceId || value.root !== root)
+				if (
+					!record(value) ||
+					value.instanceId !== instance.instanceId ||
+					value.root !== root ||
+					value.serviceId !== instance.serviceId ||
+					value.profile !== instance.profile ||
+					value.project !== instance.project
+				)
 					fail('protocol_mismatch', 'Console handshake identity does not match discovery')
-				if (value.application === undefined) return instance
+				if (
+					value.urlOutput !== undefined &&
+					(!Array.isArray(value.urlOutput) ||
+						!value.urlOutput.every((line) => typeof line === 'string'))
+				)
+					fail('protocol_mismatch', 'Console URL output is invalid')
+				const inspected =
+					value.urlOutput === undefined
+						? instance
+						: Object.assign({}, instance, { urlOutput: value.urlOutput as string[] })
+				if (value.application === undefined) return inspected
 				if (
 					!record(value.application) ||
 					!['ready', 'updating', 'unavailable'].includes(String(value.application.state))
 				)
 					fail('protocol_mismatch', 'Console application status is invalid')
-				return Object.assign({}, instance, {
+				return Object.assign({}, inspected, {
 					application: {
 						state: value.application.state as 'ready' | 'updating' | 'unavailable',
 						latestUpdate: value.application.latestUpdate ?? null,
@@ -415,14 +431,23 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 }
 
 export async function selectDevInstance(options: {
-	root?: string
+	root: string
 	instance?: string
+	serviceId?: string
+	service?: string
+	profile?: string
+	projectRoot?: string
 }): Promise<DevInstance> {
 	const root = await resolveDevRoot(options.root)
-	const context = { root, ...(options.instance ? { instanceId: options.instance } : {}) }
+	const context = {
+		root,
+		...(options.instance ? { instanceId: options.instance } : {}),
+		...(options.serviceId ? { serviceId: options.serviceId } : {}),
+	}
 	let instances: DevInstance[]
 	try {
-		instances = await liveDevInstances(root)
+		const live = await liveDevInstances(root)
+		instances = live.filter((instance) => matchesDevInstance(instance, options))
 	} catch (error) {
 		throw withDevContext(error, context)
 	}
@@ -434,7 +459,7 @@ export async function selectDevInstance(options: {
 				'The requested instance is not available in this project.',
 				{
 					context,
-					hint: 'Use dev instances with this --root to choose a running instance. An instance from another project requires that project’s --root.',
+					hint: 'The original instance is no longer available for this root and service. Do not replay a write against a replacement instance.',
 				},
 			)
 		return selected
@@ -445,7 +470,7 @@ export async function selectDevInstance(options: {
 			'No running development console was found in the selected project.',
 			{
 				context,
-				hint: 'Start this project’s Vite dev host with devConsole enabled, or use --root to select the project that is already running.',
+				hint: 'Start the project with pluxel dev, or start Vite with devConsole enabled and select its --root.',
 			},
 		)
 	if (instances.length !== 1)
@@ -455,9 +480,30 @@ export async function selectDevInstance(options: {
 			{
 				context,
 				candidates: instances.map(publicInstance),
+				hint: 'Select the intended running console with --instance; Pluxel does not guess between processes sharing a Vite root.',
 			},
 		)
 	return instances[0]!
+}
+
+/** Startup provenance narrows a profile; an explicit instance never bypasses that binding. */
+export function matchesDevInstance(
+	instance: DevInstance,
+	selection: {
+		instance?: string
+		serviceId?: string
+		service?: string
+		profile?: string
+		projectRoot?: string
+	},
+): boolean {
+	return (
+		(selection.instance === undefined || instance.instanceId === selection.instance) &&
+		(selection.serviceId === undefined || instance.serviceId === selection.serviceId) &&
+		(selection.service === undefined || instance.serviceId?.split('/')[1] === selection.service) &&
+		(selection.profile === undefined || instance.profile === selection.profile) &&
+		(selection.projectRoot === undefined || instance.project === selection.projectRoot)
+	)
 }
 
 export function parseRunSnapshot(
@@ -483,8 +529,7 @@ export function parseRunSnapshot(
 }
 
 export async function runDevFile(options: {
-	root?: string
-	instance?: string
+	instance: DevInstance
 	file: string
 	exportName: string
 	input?: unknown
@@ -498,7 +543,7 @@ export async function runDevFile(options: {
 		options.timeoutMs > 300_000
 	)
 		fail('invalid_input', '--timeout must be an integer from 1 to 300000 milliseconds')
-	const instance = await selectDevInstance(options)
+	const instance = options.instance
 	let runId: string | undefined
 	try {
 		const file = await realpath(resolve(options.file))
@@ -535,6 +580,10 @@ export async function runDevFile(options: {
 		}
 		return snapshot
 	} catch (error) {
-		throw withDevContext(error, { root: instance.root, instanceId: instance.instanceId }, runId)
+		throw withDevContext(
+			error,
+			{ root: instance.root, instanceId: instance.instanceId, serviceId: instance.serviceId },
+			runId,
+		)
 	}
 }

@@ -64,9 +64,11 @@ Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 loggi
 
 首版使用具有文件权限保护的 Unix socket，仅支持 Unix 系统。project discovery 目录 0700、描述文件 0600，socket 放在当前用户私有短临时目录；nonce/instance/root/protocol 握手发生在求值前。它是受信任项目代码执行能力，不是隔离恶意代码的 sandbox，也不通过 Vite 公共 HTTP listener 暴露。
 
-实例发现默认止于 cwd 向上最近的 package.json 所在目录；显式 root 使用 realpath。只在选定 root 下探测描述文件，握手核对 instanceId/root，服务端核对 instanceId/nonce。没有服务不回退父项目，多个服务不猜测默认实例，instance selector 也不扩大 root 搜索范围。Vite root 与 package 目录不同时由调用方显式指定 root。
+日常 CLI 从 `pluxel.dev` 中的具名 profile 解析 Vite root 与启动方式，配置发现规则由 [CLI_WORKSPACES](CLI_WORKSPACES.md) 维护。控制台以 root realpath、启动归属和 instanceId 定位运行实例；按 profile 筛选后只有一个候选时自动选择，多个候选必须显式 `--instance`，不能越过归属检查。启用控制台的 profile 的 status/instances/run 不查询 Pitchfork，也不自动启动；显式 console:false 的 Pitchfork 服务由 CLI 服务状态分支处理，不进入控制台发现或执行。
 
-协议固定为单请求/单响应 JSON 行。CLI 独立实现最小 wire contract，真实 client/server 互操作测试保护一致性；协议是 internal，不导出业务 RPC client 或 transport adapter。同步 CLI 在 stderr 先给带 root/instanceId/runId 的 accepted receipt，stdout 保持单一最终 JSON；run/result/cancel snapshot 也带 root。客户端错误以 code 供分支处理，以 context 和 hint 提供目标与恢复步骤；多实例只返回公开候选 metadata，不输出 nonce 或 socket path。
+前台命令由 CLI 自动注入 `PLUXEL_DEV_PROJECT` 与 `PLUXEL_DEV_PROFILE`，控制台启动时捕获声明 package 的 canonical 目录与 profile，结合 Vite root 校验归属。两项环境变量不要求用户配置。Pitchfork 服务捕获原生 `PITCHFORK_DAEMON_ID` 为不可变 serviceId，按配置中的短服务名过滤，启动后额外核对完整服务 ID。无配置的手动 Vite 可按 root/instance 连接。握手核对 instanceId/root/project/profile/serviceId，服务端核对 instanceId/nonce；原实例消失不重定向操作。
+
+协议固定为单请求/单响应 JSON 行。CLI 独立实现最小 wire contract，真实 client/server 互操作测试保护一致性；协议是 internal，不导出业务 RPC client 或 transport adapter。同步 CLI 在 stderr 先给带 `receipt` 的接纳信息，stdout 保持单一最终 JSON；run/result/cancel 输出保留 receipt 与 root/instanceId/runId 诊断。receipt 编码原 root、instanceId、runId 和 serviceId，不含 nonce；result/cancel 仅凭 receipt 定位原实例，不接收另一套目标选项，不因重启而重新选择当前实例。客户端错误以 code 供分支处理，以 context 和 hint 提供目标与恢复步骤；多实例只返回公开候选 metadata，不输出 nonce 或 socket path。
 
 | 预算                 | 上限/默认                                      |
 | -------------------- | ---------------------------------------------- |

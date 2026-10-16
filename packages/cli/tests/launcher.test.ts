@@ -67,6 +67,44 @@ async function releaseBin() {
 }
 
 describe('pluxel bin launcher', () => {
+	it.each(['--root'])('checks dev %s source binding before loading CLI code', async (option) => {
+		const root = await createProject({
+			'package.json': '{"name":"bound-consumer"}',
+			'.pluxel/development.json': JSON.stringify({
+				source: { kind: 'git', root: '/other-pluxel-checkout' },
+			}),
+		})
+		for (const selector of [[option, root], [`${option}=${root}`]]) {
+			const result = await runNode([pluxelBin, 'dev', 'status', ...selector], dirname(root))
+			expect(result.code).toBe(1)
+			expect(result.stderr).toContain('Source mismatch')
+			expect(result.stderr).toContain('/other-pluxel-checkout')
+		}
+	})
+
+	it.each([
+		['dev', '--root'],
+		['pncat', '--cwd'],
+		['build', '--root'],
+	])('stops reading %s source selectors at --', async (command, option) => {
+		const root = await createProject({
+			'package.json': '{"name":"bound-consumer"}',
+			'.pluxel/development.json': JSON.stringify({
+				source: { kind: 'git', root: '/other-pluxel-checkout' },
+			}),
+			'other/.git/HEAD': 'ref: refs/heads/main\n',
+		})
+		for (const selector of [
+			[option, resolve(root, 'other')],
+			[`${option}=${resolve(root, 'other')}`],
+		]) {
+			const result = await runNode([pluxelBin, command, '--', ...selector], root)
+			expect(result.code).toBe(1)
+			expect(result.stderr).toContain('Source mismatch')
+			expect(result.stderr).toContain('/other-pluxel-checkout')
+		}
+	})
+
 	it('checks the pncat cwd binding before forwarding native arguments', async () => {
 		const root = await createProject({
 			'package.json': '{"name":"bound-consumer"}',

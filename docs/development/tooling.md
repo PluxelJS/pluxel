@@ -5,7 +5,7 @@ description: 了解脚手架、插件构建、应用执行、HMR、源码联调�
 
 按任务选择下面的命令。生成项目已固定 `@pluxel/cli`，在项目根目录用 `vp exec pluxel` 调用；还没有项目时，从[快速开始](../getting-started/index.md)创建。已有项目补装 CLI 的方法见安装分层。
 
-Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；先发现并固定项目和实例，再执行 TypeScript 操作。
+Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 [开发控制台](./dev-console.md) 的 `pluxel dev` 命令；选择项目 profile 并核对 Vite root 与实例归属后执行 TypeScript 操作；结果与取消使用原 receipt。
 
 源码定位使用 [inspect TypeScript API](./inspection.md)，没有 `pluxel inspect` 子命令。
 
@@ -21,7 +21,7 @@ Coding agent 在线检查或操作已经运行的 Vite 宿主时，必须使用 
 | 创建/检查/验证应用发行物                                 | `pluxel distribution create/inspect/verify`                   |
 | 写入/关联 delivery marker                                | `pluxel distribution mark/correlate`                          |
 | 发布 npm package 并通知 market                           | `pluxel publish`                                              |
-| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev instances/run/result/cancel`                      |
+| 操作当前 Vite 实例的插件、配置、Workbench 和日志         | `pluxel dev status/run/result/cancel`                         |
 | 跨仓库 source checkout                                   | `pluxel source register/list/unregister/doctor/build/install` |
 | 管理与接入 workspace                                     | `pluxel workspace setup/doctor/sync`                          |
 | 维护依赖声明与 catalog                                   | `pluxel pncat add/remove/migrate/clean`                       |

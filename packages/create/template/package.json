@@ -2,7 +2,8 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "pitchfork start app",
+		"dev": "pluxel dev",
+		"dev:local": "pluxel dev --profile local",
 		"build": "vp run workspace:build",
 		"test": "vp run workspace:test",
 		"check": "vp check",
@@ -10,7 +11,7 @@
 		"verify": "vp run workspace:verify",
 		"setup": "pluxel workspace setup",
 		"hooks:install": "hk install --mise",
-		"dev:status": "pitchfork status app",
+		"dev:status": "pluxel dev status",
 		"dev:logs": "pitchfork logs app --follow",
 		"dev:stop": "pitchfork stop app"
 	},
@@ -25,5 +26,18 @@
 		"node": ">=24",
 		"pnpm": ">=11 <12"
 	},
-	"packageManager": "pnpm@11.28.2"
+	"packageManager": "pnpm@11.28.2",
+	"pluxel": {
+		"dev": {
+			"default": "app",
+			"app": {
+				"root": "host/web",
+				"pitchfork": "app"
+			},
+			"local": {
+				"root": "host/web",
+				"command": "vp run @example/host#dev:server"
+			}
+		}
+	}
 }

@@ -34,6 +34,51 @@ export async function startDevConsoleServer(options: {
 			'unsupported_platform',
 			'Dev console currently requires Unix local socket permissions',
 		)
+	// Pitchfork injects the qualified identity for every launch, including proxy-triggered starts.
+	// Capture once: later environment or application changes must not rebind a live console.
+	const serviceId = process.env.PITCHFORK_DAEMON_ID
+	if (
+		serviceId !== undefined &&
+		(serviceId.trim() !== serviceId || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(serviceId))
+	)
+		throw new ConsoleExecutionError(
+			'invalid_service_id',
+			'PITCHFORK_DAEMON_ID must be the qualified namespace/name assigned by Pitchfork',
+		)
+	const profile = process.env.PLUXEL_DEV_PROFILE
+	if (
+		profile !== undefined &&
+		(profile.trim() !== profile || !/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(profile))
+	)
+		throw new ConsoleExecutionError(
+			'invalid_profile',
+			'PLUXEL_DEV_PROFILE must be a nonempty Pluxel development profile name',
+		)
+	const projectPath = process.env.PLUXEL_DEV_PROJECT
+	if ((profile === undefined) !== (projectPath === undefined))
+		throw new ConsoleExecutionError(
+			'invalid_project',
+			'PLUXEL_DEV_PROFILE and PLUXEL_DEV_PROJECT must be supplied together',
+		)
+	let project: string | undefined
+	if (projectPath !== undefined) {
+		// eslint-disable-next-line no-control-regex -- Discovery paths must reject control characters.
+		if (!isAbsolute(projectPath) || /[\u0000-\u001f\u007f]/.test(projectPath))
+			throw new ConsoleExecutionError(
+				'invalid_project',
+				'PLUXEL_DEV_PROJECT must be an absolute declaring package directory',
+			)
+		try {
+			project = await realpath(projectPath)
+			const projectStat = await lstat(project)
+			if (!projectStat.isDirectory()) throw new Error('Not a directory')
+		} catch {
+			throw new ConsoleExecutionError(
+				'invalid_project',
+				'PLUXEL_DEV_PROJECT must identify an existing declaring package directory',
+			)
+		}
+	}
 	const root = await realpath(options.root)
 	const instanceId = randomUUID()
 	const nonce = randomBytes(24).toString('hex')
@@ -48,6 +93,9 @@ export async function startDevConsoleServer(options: {
 		nonce,
 		pid: process.pid,
 		root,
+		...(serviceId === undefined ? {} : { serviceId }),
+		...(profile === undefined ? {} : { profile }),
+		...(project === undefined ? {} : { project }),
 		socketPath,
 		startedAt: new Date().toISOString(),
 	})
@@ -106,12 +154,15 @@ export async function startDevConsoleServer(options: {
 					return {
 						ok: true,
 						value: {
+							...options.inspect?.(),
 							protocol: instance.protocol,
 							instanceId,
 							pid: instance.pid,
 							root,
+							serviceId: instance.serviceId,
+							profile: instance.profile,
+							project: instance.project,
 							startedAt: instance.startedAt,
-							...options.inspect?.(),
 						},
 					}
 				case 'result':

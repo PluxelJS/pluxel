@@ -7,14 +7,14 @@ description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开
 
 ## 每个工具维护什么
 
-| 文件或工具                 | 职责                                                            |
-| -------------------------- | --------------------------------------------------------------- |
-| `mise.toml`                | 固定 Node、pnpm、Vite+、hk、Pitchfork 版本，配置环境变量和 PATH，不定义项目任务  |
-| `vite.config.ts`           | Vite+ 的任务、pack、lint 与 fmt 入口；每份规则只有一个来源      |
-| `pitchfork.toml`           | 用 **TOML** 声明长期服务、启动命令、分配端口与就绪条件          |
-| `hk.pkl`                   | 用 **Pkl** 声明提交检查、文件选择和检查/修复命令                |
-| `package.json` / Vite Task | package 声明依赖；Vite Task 声明命令、依赖图和缓存              |
-| Pluxel dev console         | 在指定的现有 Vite 实例中读取或操作 Plugin、配置、报告和应用日志 |
+| 文件或工具                 | 职责                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `mise.toml`                | 固定 Node、pnpm、Vite+、hk、Pitchfork 版本，配置环境变量和 PATH，不定义项目任务 |
+| `vite.config.ts`           | Vite+ 的任务、pack、lint 与 fmt 入口；每份规则只有一个来源                      |
+| `pitchfork.toml`           | 用 **TOML** 声明长期服务、启动命令、分配端口与就绪条件                          |
+| `hk.pkl`                   | 用 **Pkl** 声明提交检查、文件选择和检查/修复命令                                |
+| `package.json` / Vite Task | package 声明依赖；Vite Task 声明命令、依赖图和缓存                              |
+| Pluxel dev console         | 在指定的现有 Vite 实例中读取或操作 Plugin、配置、报告和应用日志                 |
 
 mise 管理工具的安装和执行环境；package scripts 提供统一操作入口；Pitchfork 管理进程；hk 调用项目检查。不要在三份配置中分别实现同一个检查，也不要用新的后台脚本重做 Pitchfork 的端口、重试或日志管理。
 
@@ -85,6 +85,8 @@ mise exec -- vp install --frozen-lockfile
 vp run
 ```
 
+源码 checkout 首次安装后运行 `vp run @pluxel/cli#compile` 准备 CLI，再执行 `vp run dev`。修改 CLI 后按启动器提示重建；日常复用开发服务不重建 CLI。
+
 新生成项目尚无锁文件时，安装依赖使用 `mise exec -- vp install`。安装 hooks 是独立步骤：已有 Git 仓库运行 `vp run hooks:install`；新应用先决定并执行 `git init`，再安装 hooks。生成项目安装依赖后运行 `vp run setup` 接入 Pluxel 文档与开发资源，不要求已经初始化 Git。首次安装直接使用 `vp install`，不经过依赖项目配置的任务发现。信任配置后再执行安装，版本以该 checkout 的 `mise.toml` 为准。`mise.toml` 使用官方 `env._.path = ["node_modules/.bin"]`，让已安装项目优先使用自己的 Vite+ 与编译依赖；首次安装前才使用 mise 提供的入口。未激活 shell 的 CI 或 agent 使用 `mise exec -- <command>`。相对路径由 mise 按项目根解析，详见 [mise 配置路径](https://mise.jdx.dev/configuration.html#config-root)。
 
 检查与修复分开执行：
@@ -139,7 +141,9 @@ pitchfork wait app
 
 `start` 等待配置的就绪条件，服务随后由 supervisor 管理；命令退出不代表服务停止。`wait` 等待服务停止，不用于等待就绪。修改配置后针对目标服务重启，结束工作时停止自己启动的服务。命令细节先查 `pitchfork --help`、`pitchfork <command> --help` 和 [CLI Reference](https://pitchfork.jdx.dev/cli/)。
 
-根 `dev` script 直接执行 `pitchfork start`；Pitchfork 的 `run` 调用应用包的 `dev:server` script，后者拥有实际 Vite 启动命令。不要再经过 mise task，也不要让 `dev:server` 回调根 `dev`。`mise = true` 只为服务加载项目工具环境。根 `dev:status`、`dev:logs`、`dev:stop` 是 IDE 可发现的常用操作；其他服务管理直接使用 Pitchfork CLI，不为每个子命令增加包装。前台调试入口按下节操作，不与同一个托管服务同时运行。
+根 `dev` script 调用 `pluxel dev`：`package.json` 的 `pluxel.dev` 直接按名称声明 profile，例如 `{ "app": { "root": "host/web", "pitchfork": "app" } }`。CLI 委托 Pitchfork 启动或复用服务，核对完整服务 ID 与控制台启动归属，再显示 Vite 当前的 Application / Workbench 地址。首次和重复执行共用 Vite 展示逻辑，不重放日志或拼接 Workbench 路径。普通项目可改为 `{ "app": { "command": "vp dev" } }`，不安装 Pitchfork；`command` 保持前台运行，Ctrl+C 停止，`root` 默认 package 目录。一个 package 可以声明多个 profile，使用相同或不同 Vite root；显式 `--profile` 优先于 `pluxel.dev.default`，再自动选择唯一 profile，跨目录用 `--root` 选择配置发现起点；详见[项目入口与启动方式](./dev-console.md#项目入口与启动方式)。
+
+源码仓库的 `dev` 直接执行 `node packages/cli/bin/pluxel.mjs dev`，模板直接执行项目 CLI，重复进入不执行构建任务图或恢复构建缓存。源码仓库的 `pluxel` script 同样直接调用 CLI；在线操作不会因恢复依赖构建产物而触发 HMR。`dev:status` 调用统一的 `pluxel dev status`。`pluxel dev status` 检查当前 Vite 实例与应用，`dev run` 按同一 profile 连接；启用控制台的 profile 的这些命令不调用 Pitchfork，也不自动启动服务。同一 profile 多个匹配实例时显式 `--instance`，不绕过归属检查。文档站声明 `docs: { root: "projects/docs", pitchfork: "docs", console: false }`，根 `docs` script 使用 `pluxel dev --profile docs`。它等待 Pitchfork 就绪后读取最新服务状态与实际 URL；重复启动仍显示当前信息。`dev status --profile docs` 查询 Pitchfork，run/instances/--instance 明确不受支持，不输出虚构的应用或 Workbench 状态。Pitchfork 的 `run` 调用应用包的 `dev:server` script，后者拥有实际 Vite 启动命令；不经过 mise task，也不回调根 `dev`。`mise = true` 只为服务加载项目工具环境。进程 stop、restart、logs 继续用原生 Pitchfork，Pluxel 不增加平行命令。应用模板已提供同 root 的 `local` command profile，`vp run dev:local` 启动，后续用 `--profile local` 连接；手动 Vite 的无配置连接方式见控制台指南。
 
 ### 按访问启动与服务复用
 
@@ -187,13 +191,13 @@ Pluxel 的开发地址契约与代理供应商分开：
 | `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | 显式监听地址和端口，分别优先于 `HOST` / `PORT`   |
 | `HOST` / `PORT`                         | 通用进程监听输入，未启用代理也可使用             |
 
-公开 origin 用于终端 `Application` / `Workbench` 地址与管理会话同源校验；实际 listener 地址保持物理地址。没有公开 origin 时显示 Vite 本地地址。Pluxel 不通过任意请求的转发头猜测可信 origin。切换其他反代时设置 `PLUXEL_PUBLIC_ORIGIN`，并让反代转发 HTTP 与 Vite WebSocket；这个变量本身不会建立代理路由或配置证书。直接调试 Vite 时，先停止对应的托管服务，再运行生成应用的 `vp run @example/host#dev:server` 或框架仓库的 `vp run @pluxel/plugins-host#dev:server`，避免混淆两个实例。
+公开 origin 用于终端 `Application` / `Workbench` 地址与管理会话同源校验；实际 listener 地址保持物理地址。没有公开 origin 时显示 Vite 本地地址。Pluxel 不通过任意请求的转发头猜测可信 origin。切换其他反代时设置 `PLUXEL_PUBLIC_ORIGIN`，并让反代转发 HTTP 与 Vite WebSocket；这个变量本身不会建立代理路由或配置证书。直接调试 Vite 的终端时，可运行生成应用的 `vp run @example/host#dev:server` 或框架仓库的 `vp run @pluxel/plugins-host#dev:server`。若还需通过控制台操作前台实例，模板可直接运行 `vp run dev:local`；其他工作区先声明对应 command profile，再用 `pluxel dev --profile <name>` 启动，让 CLI 自动绑定归属；不要用托管服务的 profile 连接手动进程。
 
 ### 就绪、健康与应用操作
 
 开发服务的就绪检查应该验证实际可用的入口；TCP 监听只证明端口可连接。多个 `ready_*` 条件是“任一成功”，需要全部满足时合并到一个 `ready_cmd`。就绪检查用于启动依赖，持续健康检查另行按需配置，见[就绪检查](https://pitchfork.jdx.dev/guides/ready-checks.html)和[健康检查](https://pitchfork.jdx.dev/guides/health-checks.html)。Vite 自身已有热更新，不必为同一源码变化再配置整个服务重启。
 
-Pitchfork `logs` 用于进程启动、退出和 stdout/stderr 排障。查询 Pluxel 应用日志、配置、Plugin 方法、Workbench RPC 或 Plugin 生命周期，仍必须走[在线开发控制台](./dev-console.md)：先发现实例，再固定绝对 `--root` 与准确 `--instance`。Pitchfork 显示 running 或 ready 不能证明某次业务配置已经应用；重启进程后需要重新发现实例。
+Pitchfork `logs` 用于进程启动、退出和 stdout/stderr 排障。查询 Pluxel 应用日志、配置、Plugin 方法、Workbench RPC 或 Plugin 生命周期，仍必须走[在线开发控制台](./dev-console.md)：按 profile 选择 Vite root 并核对实例归属。Pitchfork 显示 running 或 ready 不能证明某次业务配置已经应用；重启后重新查询目标状态，已提交操作仍以原 receipt 查询或取消。
 
 ### Agent 的日志与排障顺序
 
@@ -201,14 +205,14 @@ Pitchfork `logs` 用于进程启动、退出和 stdout/stderr 排障。查询 Pl
 | -------------------------------------------------------- | -------------------------------------------------------------- |
 | 服务是否存在、运行、监听及公开 URL                       | `pitchfork list`、`pitchfork status`、`pitchfork proxy status` |
 | 启动失败、Vite 编译错误、进程退出、stdout/stderr         | `pitchfork logs`                                               |
-| 当前应用是否 ready、HMR 是否接纳、Plugin 状态与应用报告  | dev console 实例发现及控制台脚本                               |
-| Plugin 业务日志、配置读写、方法、Workbench RPC、生命周期 | 固定 root/instance 的 dev console                              |
+| 当前应用是否 ready、HMR 是否接纳、Plugin 状态与应用报告  | `pluxel dev status` 及控制台脚本                               |
+| Plugin 业务日志、配置读写、方法、Workbench RPC、生命周期 | 按 profile 与实例连接的 dev console                            |
 
 Agent 按以下顺序操作：
 
 1. 读取目标 checkout 的 `pitchfork.toml`，用 `pitchfork list` 确认完整服务 ID、目录和已有状态。复用目标实例，不停止其他任务的服务。
 2. 需要运行验证而目标未运行时，通过已注册的公开 URL 唤起，或显式 `pitchfork start`。启动失败先查看该服务的有限时间窗口日志；无需运行验证的纯静态任务不启动服务。
-3. 服务启动后按[控制台指南](./dev-console.md)发现 Vite 实例，确认 `application.state`；后续调用固定绝对 root 与准确 instance。重启后重新发现，不沿用旧 instance。
+3. 服务启动后用 `pluxel dev status` 确认 profile、Vite root、实例和 `application.state`，通过同一 profile 执行控制台脚本；保存每次操作的 receipt，结果查询与取消始终绑定原实例。手动 Vite 的直接连接见[控制台指南](./dev-console.md)。
 4. 修改后先利用 Vite HMR，再检查应用报告及相关日志。只有实际需要重启时才用 `pitchfork restart`；进程 running、URL 可访问与业务修改生效分别验证。
 5. 交付说明实际观察的服务、实例、结果及未验证边界；结束时按任务约定清理自己启动的临时服务，保留原有共享实例。
 

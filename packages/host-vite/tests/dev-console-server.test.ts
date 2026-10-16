@@ -1,16 +1,27 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { chmod, lstat, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+	chmod,
+	lstat,
+	mkdir,
+	mkdtemp,
+	readFile,
+	readdir,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises'
 import { createConnection } from 'node:net'
 import type { DevConsoleInstance } from '../src/console/protocol'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { requestDev } from '../../cli/src/dev/client'
 import { startDevConsoleServer } from '../src/console/server'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
 	for (const close of cleanup.splice(0).toReversed()) await close()
+	vi.unstubAllEnvs()
 })
 
 async function project() {
@@ -73,6 +84,151 @@ function requestWithProtocol(instance: DevConsoleInstance, protocol: number): Pr
 }
 
 describe('private development console server boundaries', () => {
+	it('binds discovery and inspect to the Pitchfork service captured at startup', async () => {
+		vi.stubEnv('PITCHFORK_DAEMON_ID', 'pluxel.worktree/plugin-host')
+		const { root } = await project()
+		const server = await startDevConsoleServer({
+			root,
+			async execute() {
+				return null
+			},
+			inspect: () => ({ serviceId: 'wrong/app', instanceId: 'wrong-instance' }),
+		})
+		cleanup.push(() => server.close())
+		vi.stubEnv('PITCHFORK_DAEMON_ID', 'other-project/app')
+		const descriptor = JSON.parse(
+			await readFile(
+				resolve(root, '.pluxel/dev-console', `${server.instance.instanceId}.json`),
+				'utf8',
+			),
+		)
+		expect(descriptor.serviceId).toBe('pluxel.worktree/plugin-host')
+		expect(Object.isFrozen(server.instance)).toBe(true)
+		await expect(requestDev(server.instance, { method: 'inspect' })).resolves.toMatchObject({
+			instanceId: server.instance.instanceId,
+			serviceId: descriptor.serviceId,
+		})
+	})
+
+	it('keeps manually started Vite unbound', async () => {
+		vi.stubEnv('PITCHFORK_DAEMON_ID', undefined)
+		vi.stubEnv('PLUXEL_DEV_PROFILE', undefined)
+		vi.stubEnv('PLUXEL_DEV_PROJECT', undefined)
+		const { server } = await fixture()
+		expect(server.instance).not.toHaveProperty('serviceId')
+		expect(server.instance).not.toHaveProperty('profile')
+		expect(server.instance).not.toHaveProperty('project')
+		expect(await requestDev(server.instance, { method: 'inspect' })).not.toHaveProperty('serviceId')
+		expect(await requestDev(server.instance, { method: 'inspect' })).not.toHaveProperty('profile')
+		expect(await requestDev(server.instance, { method: 'inspect' })).not.toHaveProperty('project')
+	})
+
+	it('protects the command profile captured at startup in discovery and inspect', async () => {
+		vi.stubEnv('PITCHFORK_DAEMON_ID', undefined)
+		vi.stubEnv('PLUXEL_DEV_PROFILE', 'app.preview-1')
+		const { root } = await project()
+		vi.stubEnv('PLUXEL_DEV_PROJECT', root)
+		const server = await startDevConsoleServer({
+			root,
+			execute: async () => null,
+			inspect: () => ({ profile: 'other', project: '/other' }),
+		})
+		cleanup.push(() => server.close())
+		vi.stubEnv('PLUXEL_DEV_PROFILE', 'changed')
+		vi.stubEnv('PLUXEL_DEV_PROJECT', '/changed')
+		const descriptor = JSON.parse(
+			await readFile(
+				resolve(root, '.pluxel/dev-console', `${server.instance.instanceId}.json`),
+				'utf8',
+			),
+		)
+		expect(descriptor.profile).toBe('app.preview-1')
+		expect(descriptor.project).toBe(root)
+		expect(server.instance.project).toBe(root)
+		expect(server.instance.profile).toBe('app.preview-1')
+		expect(Object.isFrozen(server.instance)).toBe(true)
+		await expect(requestDev(server.instance, { method: 'inspect' })).resolves.toMatchObject({
+			profile: 'app.preview-1',
+			project: root,
+		})
+	})
+
+	it.each(['', ' app', 'app ', 'app\n', 'app/other', '-app', 'app name'])(
+		'refuses malformed command profile %j before publishing discovery',
+		async (profile) => {
+			vi.stubEnv('PLUXEL_DEV_PROFILE', profile)
+			const { root } = await project()
+			vi.stubEnv('PLUXEL_DEV_PROJECT', root)
+			await expect(
+				startDevConsoleServer({ root, execute: async () => null }),
+			).rejects.toMatchObject({
+				code: 'invalid_profile',
+			})
+			await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
+				code: 'ENOENT',
+			})
+		},
+	)
+
+	it.each(['profile', 'project'] as const)('rejects an unpaired command %s', async (field) => {
+		const { root } = await project()
+		vi.stubEnv('PLUXEL_DEV_PROFILE', field === 'profile' ? 'app' : undefined)
+		vi.stubEnv('PLUXEL_DEV_PROJECT', field === 'project' ? root : undefined)
+		await expect(startDevConsoleServer({ root, execute: async () => null })).rejects.toMatchObject({
+			code: 'invalid_project',
+		})
+		await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
+			code: 'ENOENT',
+		})
+	})
+
+	it.each(['', 'relative/path', '/path\n', '/path\u0000', '/path\u007f', 'missing', 'file'])(
+		'rejects invalid command project %j before publishing discovery',
+		async (value) => {
+			const { root, file } = await project()
+			vi.stubEnv('PLUXEL_DEV_PROFILE', 'app')
+			vi.stubEnv(
+				'PLUXEL_DEV_PROJECT',
+				value === 'missing' ? resolve(root, 'missing') : value === 'file' ? file : value,
+			)
+			await expect(
+				startDevConsoleServer({ root, execute: async () => null }),
+			).rejects.toMatchObject({ code: 'invalid_project' })
+			await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
+				code: 'ENOENT',
+			})
+		},
+	)
+
+	it('canonicalizes the declaring directory while preserving valid spaces', async () => {
+		const { root } = await project()
+		const actual = resolve(root, 'package with spaces')
+		const alias = resolve(root, 'alias')
+		await mkdir(actual)
+		await symlink(actual, alias)
+		vi.stubEnv('PLUXEL_DEV_PROFILE', 'app')
+		vi.stubEnv('PLUXEL_DEV_PROJECT', alias)
+		const server = await startDevConsoleServer({ root, execute: async () => null })
+		cleanup.push(() => server.close())
+		expect(server.instance.project).toBe(actual)
+	})
+
+	it.each(['', 'plugin-host', 'pluxel/app/extra', ' pluxel/app', 'pluxel/app\n'])(
+		'refuses malformed managed service identity %j before publishing discovery',
+		async (serviceId) => {
+			vi.stubEnv('PITCHFORK_DAEMON_ID', serviceId)
+			const { root } = await project()
+			await expect(
+				startDevConsoleServer({ root, execute: async () => null }),
+			).rejects.toMatchObject({
+				code: 'invalid_service_id',
+			})
+			await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
+				code: 'ENOENT',
+			})
+		},
+	)
+
 	it('rejects wrong credentials, Unicode credentials, versions and unexpected fields before execution', async () => {
 		const { server, packet, calls } = await fixture()
 		for (const nonce of [

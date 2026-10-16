@@ -42,3 +42,5 @@ vp run verify
 the production plugin build. Core is a peer dependency; build and test tooling stays in
 development dependencies. `pnpm-workspace.yaml` owns their shared compatible ranges through the
 catalog and explicitly allows the esbuild install script required by the toolchain.
+
+This standalone plugin has no development service. For live operations, use the consuming application’s `pluxel.dev` configuration with `pluxel dev status/run --root <app-project>` and use `--profile <name>` to override its default (or to resolve several profiles without a default). Use `--instance <id>` when several live instances match that profile; the console does not require Pitchfork. The development skill explains when to use the application console instead of isolated plugin tests.

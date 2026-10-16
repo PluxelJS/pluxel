@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ViteDevServer } from 'vite'
-import { installPluxelViteUrlPrinter } from '../src/internal/vite-urls'
+import { installPluxelViteUrlPrinter, readViteUrlOutput } from '../src/internal/vite-urls'
 
 function fixture(localUrl = 'http://127.0.0.1:43123/') {
 	const info = vi.fn()
@@ -69,4 +69,25 @@ it('updates the current mount across Host replacement without nesting URL printe
 	server.printUrls()
 	expect(printUrls).toHaveBeenCalledTimes(2)
 	expect(info).not.toHaveBeenCalled()
+})
+
+it('reprints the current mount without writing to the background logger', () => {
+	const { server, info } = fixture()
+	let mount: string | undefined = '/admin'
+	installPluxelViteUrlPrinter(server, {
+		publicOrigin: 'http://app.project.localhost:8088',
+		workbenchBasePath: () => mount,
+	})
+	const first = readViteUrlOutput(server)
+	expect(info).not.toHaveBeenCalled()
+	server.printUrls()
+	expect(first).toEqual(info.mock.calls.map(([line]) => line))
+	mount = '/'
+	expect(readViteUrlOutput(server)).toEqual([
+		'  ➜  Workbench:   http://app.project.localhost:8088/',
+	])
+	mount = undefined
+	expect(readViteUrlOutput(server)).toEqual([
+		'  ➜  Application: http://app.project.localhost:8088/',
+	])
 })

@@ -18,7 +18,7 @@
 | 修改框架、Context 服务、生命周期、工具链或包边界           | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md) | 从 [工程索引](engineering/README.md) 选择涉及的领域，再读实现和测试       |
 | 创建或修改公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)                                    | 先读执行方式与硬约束，再按变更类型读取相关规则；检查 exports 和真实调用方 |
 | 设计本地 Plugin 可恢复失败                                 | [Better Result](./docs/plugin-development/better-result.md)                            | 明确调用方如何恢复；保留原生 SDK、判定、回执和生命周期失败契约            |
-| 操作已运行的应用                                           | [开发控制台](docs/development/dev-console.md)                                          | 发现现有 Vite 实例，再固定 root 与 instance                               |
+| 操作已运行的应用                                           | [开发控制台](docs/development/dev-console.md)                                          | 确认 profile、Vite root、实例与应用状态                                   |
 | 添加隔离回归                                               | [插件测试](docs/plugin-development/testing.md)                                         | 框架测试设施的边界见 [工程测试](engineering/TESTING.md)                   |
 
 普通源码查找使用 `rg`、package exports 和领域文档的实现入口。inspect 用于确认声明与应用绑定关系；目标和相关声明已明确时直接读源码，不为执行流程重复查询。它不代替任意 import 影响分析或框架内部搜索。
@@ -41,15 +41,15 @@ mise.toml 配置工具版本、环境和 PATH，可选 enter hook 只触发已�
 
 - 先发现并复用目标服务；已注册项目可通过公开 URL 唤起，首次 checkout 仍需准备依赖并注册或启动。URL 访问会执行服务及依赖的启动命令，不是纯只读探测。
 - 启动、编译或进程退出问题先用 `pitchfork logs <完整服务ID> --since 5min -n 100 --no-pager`；按需短暂 follow，不读取全部历史或另起 Vite 捕获日志。
-- 应用 ready、HMR 接纳与业务效果使用 dev console 验证；代理启动页、HTTP 响应和进程 running 均不能替代应用报告。重启后重新发现 instance。
+- 应用 ready、HMR 接纳与业务效果使用 dev console 验证；代理启动页、HTTP 响应和进程 running 均不能替代应用报告。重启后重新查询目标状态；旧操作仍用原 receipt 恢复。
 
 ## 在线操作
 
 对已运行应用的配置修改、Workbench RPC、Plugin 方法、生命周期操作和应用业务日志读取，必须使用现有 Vite 进程的开发控制台：
 
-1. 先发现实例，后续命令固定其绝对 `--root` 与准确 `--instance`。
+1. 通过 `pluxel dev status` 确认 profile、Vite root 与实例，`dev run` 使用同一 profile；profile 按显式 `--profile`、配置 default、唯一候选选择；跨目录用 `--root` 选择配置发现起点。匹配 profile 的实例仍有多个时指定 `--instance`，不能绕过归属检查。控制台不依赖 Pitchfork，也不自动启动服务。`console: false` 的文档站只提供 Pitchfork 启动和状态，不能用于在线应用操作。
 2. 提交普通 TypeScript 导出函数。
-3. 检查运行结果、领域/应用报告和相关日志。
+3. 检查运行结果、领域/应用报告和相关日志。保存 `receipt`；`dev result/cancel` 只接受原 receipt，不切换到重启后的实例。
 
 隔离 test host 不能证明在线状态。具体调用与限制只维护在[控制台指南](docs/development/dev-console.md)。
 

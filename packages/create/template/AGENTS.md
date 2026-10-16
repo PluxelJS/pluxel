@@ -20,15 +20,17 @@
 
 先读 `docs/pluxel/development/workspace-toolchain.md`（或 `vp exec pluxel docs development/workspace-toolchain.md`）。`mise.toml` 只配置工具版本、环境和 PATH，package scripts 提供项目操作入口，Vite+ 执行任务图、打包、lint 和格式化，`hk.pkl` 定义检查，`pitchfork.toml` 声明 `app` 服务。首次运行 `mise trust`、`mise install`、`vp install`、`vp run setup`；已有 Git 仓库再运行 `vp run hooks:install`。
 
-修改服务前先读现有配置、运行 `pitchfork list` 和 `pitchfork status app`，按需查询 `pitchfork <command> --help` 与官方文档。用 `vp run dev` / `pitchfork start app` 启动；用原生 stop、restart、logs 管理，不手写后台进程、端口探测、轮询或 supervisor。命名空间默认由目录决定，保留 Git worktree 隔离。Vite 已拥有 HMR，不重复配置进程级源码 watch。
+修改服务前先读现有配置、运行 `pitchfork list` 和 `pitchfork status app`，按需查询 `pitchfork <command> --help` 与官方文档。用 `vp run dev` 启动或复用并显示当前应用与 Workbench 地址（项目 CLI 的 `dev`；`package.json` 中 `pluxel.dev.default` 选择 `app`，`pluxel.dev.app` 声明 `root: host/web` 与 `pitchfork: app`）；用原生 stop、restart、logs 管理，不手写后台进程、端口探测、轮询或 supervisor。命名空间默认由目录决定，保留 Git worktree 隔离。Vite 已拥有 HMR，不重复配置进程级源码 watch。
+
+`vp run dev:local` 使用内置 `local` profile 在相同 `host/web` root 前台启动，Ctrl+C 停止；控制台操作也加 `--profile local`，不使用默认 app 的归属。模板没有文档站，不声明无实际服务的 docs profile。
 
 服务与日志操作遵循工作区指南的“按访问启动与服务复用”和“Agent 的日志与排障顺序”：
 
 - 复用现有服务；已注册项目可访问真实代理 URL 唤起，首次 checkout 仍需准备依赖并注册或启动。访问 URL 会启动服务和依赖；不要猜域名或把启动页当作应用 ready。
 - 启动失败、Vite 编译错误、进程退出和 stdout/stderr 使用 `pitchfork logs app --since 5min -n 100 --no-pager`。跨目录先发现完整服务 ID；仅为具体观察短暂使用 `--follow`，不另起进程收集日志。
-- 应用状态、HMR 接纳、Plugin 业务日志、配置、方法和 Workbench RPC 使用 `docs/pluxel/development/dev-console.md` 指导的控制台。先发现真实 Vite root/instance，后续固定绝对 root 与准确 instance；重启后重新发现，不能用进程 running 代替业务结果。
+- 应用状态、HMR 接纳、Plugin 业务日志、配置、方法和 Workbench RPC 使用 `docs/pluxel/development/dev-console.md` 指导的控制台。用 `vp exec pluxel dev status` 确认 `host/web` 的实例与应用状态，再用 `dev run host/web/dev/<script>.ts` 操作。控制台不调用 Pitchfork；显式 `--profile` 优先于 default，再选择唯一 profile，匹配实例仍有多个时显式 `--instance`，跨目录用 `--root` 选择配置发现起点；保存 receipt 用于 `dev result/cancel`，旧操作不转投重启后的实例。不能用进程 running 代替业务结果。
 - 普通源码修改先利用 HMR；按需启动不等于自动空闲停止。只清理本任务启动的临时服务，保留原有共享实例。冷启动和日志保留策略按工作区指南及已安装 CLI 帮助配置。
 
-`hk check` 检查改动文件，`hk fix` 显式修复；完整验收用 `vp run verify`。修改 Pkl 后运行 `hk validate`，修改服务配置后运行 `pitchfork daemons --json` 并验证实际服务。运行中 Pluxel 操作仍通过固定 root/instance 的 dev console。
+`hk check` 检查改动文件，`hk fix` 显式修复；完整验收用 `vp run verify`。修改 Pkl 后运行 `hk validate`，修改服务配置后运行 `pitchfork daemons --json` 并验证实际服务。运行中 Pluxel 操作通过现有 dev console；`--root` 不绕过已发现配置，`--instance` 不绕过 profile 归属。
 
 `vp run build` 通过 Vite Task 调度各包的标准 `build` 入口（委托 `compile` task）；`vp run verify` 组合治理、`vp check`、测试和构建。根 `package.json` scripts 保留 IDE 可发现的开发、构建、测试和检查入口；聚合 scripts 委托给 `workspace:*` 原生任务，入口不缓存，底层任务按各自规则缓存。根 `vite.config.ts` 拥有 `fmt` 与启用类型检查的 `lint`；包配置拥有任务、依赖和缓存。原生 `tsdown.config.ts` 通过 `pack` 引用，Plugin 构建继续使用 `pluxel build` 的编译语义。依赖操作使用 `vp exec pluxel pncat`，版本对齐使用 `vp exec pluxel workspace sync`；不要添加重复的 catalog 脚本。

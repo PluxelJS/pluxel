@@ -21,13 +21,17 @@ vp run hooks:install
 vp run dev
 ```
 
+`vp run dev` starts or reuses the Pitchfork service and prints the running Vite application and Workbench URLs on every invocation. The `package.json` setting `pluxel.dev.default` selects `app`, declared as `{ "root": "host/web", "pitchfork": "app" }`. The `local` profile runs the same root in the foreground through `vp run dev:local`. Startup verifies service ownership through the enabled console and does not restart an existing service. Other projects can use a foreground `command` instead of `pitchfork`; Pluxel console operations do not require Pitchfork.
+
+Use `vp exec pluxel dev status` to inspect the Vite instance and application, and `vp exec pluxel dev run host/web/dev/check.ts` to execute a console script inside that root. Neither command calls Pitchfork or starts a stopped service. One package may declare several profiles, using the same or different Vite roots; an explicit `--profile <name>` takes precedence over `pluxel.dev.default`, then a sole profile is selected automatically. The default must name an existing profile. Cross-directory calls use `--root <project-path>` to find the configuration. If several live instances match the profile, select `--instance <id>`; this cannot bypass profile ownership. Save the returned `receipt` for `dev result <receipt>` or `dev cancel <receipt>`: it remains bound to the original process after a restart. See the [console guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/dev-console.md) for scripts, foreground commands and direct Vite connections.
+
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
 Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
 The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
 Logging, Vault, Management and optional Workbench. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
 configuration, installs the workspace Plugins and serves the page and Plugin routes on
-the application origin reported by Pitchfork. See the [workspace guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/workspace-toolchain.md) for tool setup, proxy configuration and agent workflows.
+the application origin shown by the running Vite server (the proxy URL for `app`, or the local URL for `local`). See the [workspace guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/workspace-toolchain.md) for tool setup, proxy configuration and agent workflows.
 
 The CLI bundles pncat; use `pluxel pncat` without installing a separate `pncat` dependency.
 Configuration helpers come from `@pluxel/cli/pncat`. Versions are grouped by
@@ -58,7 +62,9 @@ Use `pitchfork status app`, `pitchfork logs app`, `pitchfork restart app` and
 `pitchfork stop app` to inspect and manage the service. Vite owns source hot reload;
 Pitchfork owns process lifetime. Set `PLUXEL_WORKBENCH=false` in `pitchfork.local.toml`
 under `[daemons.app.env]` and restart `app` to disable Workbench locally.
-For foreground debugging, run `vp run @example/host#dev:server`.
+The `app` and `local` profiles are alternative ways to run the same application and share its default data directory. Profiles separate console routing, not data. Run `pitchfork stop app` before `vp run dev:local` when using the same data; for concurrent processes, explicitly set a distinct `PLUXEL_DATA_ROOT` for each.
+
+For foreground debugging with console access, use `vp run dev:local`. The supplied `local` profile runs `vp run @example/host#dev:server` and the CLI binds the foreground process automatically. Use `pluxel dev status --profile local` and `pluxel dev run <script> --profile local` for that instance; Ctrl+C stops it.
 
 `mise.toml` pins Node, pnpm, Vite+, hk and Pitchfork. `hk.pkl` owns changed-file linting and
 formatting (`hk check` / `hk fix`); install its Git hooks explicitly after
@@ -98,7 +104,7 @@ Native deployment keeps these tools in development dependencies. Development con
 - `host/vite.config.ts` serves that source and lets generation-scoped Elysia routes claim `/api` before SPA fallback.
 - `host` records `@example/web` as a build input, installs the workspace Plugins and owns one application declaration for development and production.
 
-Open the application URL from `pitchfork status app`. The Todo UI calls the same-origin Plugin-owned
+Open the application URL printed by `vp run dev`. The Todo UI calls the same-origin Plugin-owned
 `/api/example/todos` routes to list, create, complete and remove items.
 
 ## Verify the complete workspace

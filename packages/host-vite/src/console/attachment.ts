@@ -13,6 +13,7 @@ import {
 } from '../environment'
 import { ConsoleExecutionError, DEV_CONSOLE_VALUE_BYTES } from './protocol'
 import { startDevConsoleServer } from './server'
+import { readViteUrlOutput } from '../internal/vite-urls'
 
 export type DevConsoleHost = Readonly<{
 	ctx: RootContext
@@ -56,6 +57,7 @@ export async function attachDevConsole(
 		inspect: () => ({
 			hostEpoch: options.getHost()?.epoch,
 			application: options.getApplicationStatus?.(),
+			urlOutput: readViteUrlOutput(options.server),
 		}),
 		execute: async (input, run) => {
 			run.signal.throwIfAborted()

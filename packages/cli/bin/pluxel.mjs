@@ -33,9 +33,11 @@ if (!process.argv.slice(2).some((arg) => ['--help', '-h', '--version', '-v'].inc
 	const rootOption = args[0] === 'pncat' ? '--cwd' : '--root'
 	let requestedRoot = startupCwd
 	for (let index = 0; index < args.length; index += 1) {
-		if (args[index] === rootOption && args[index + 1]) requestedRoot = args[++index]
-		else if (args[index].startsWith(`${rootOption}=`))
-			requestedRoot = args[index].slice(rootOption.length + 1)
+		if (args[index] === '--') break
+		if (args[index] !== rootOption && !args[index].startsWith(`${rootOption}=`)) continue
+		if (args[index] === rootOption) {
+			if (args[index + 1] && !args[index + 1].startsWith('-')) requestedRoot = args[++index]
+		} else requestedRoot = args[index].slice(rootOption.length + 1)
 	}
 	let directory = resolve(requestedRoot)
 	for (;;) {

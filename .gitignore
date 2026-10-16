@@ -208,6 +208,7 @@ web_modules/
 # Next.js build output
 .next
 projects/docs/.source
+projects/docs/src/pages.gen.ts
 projects/docs/public/playground-types.json
 projects/docs/public/playground-types/
 out

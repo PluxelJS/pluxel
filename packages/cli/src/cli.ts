@@ -9,6 +9,7 @@ import {
 	distributionCommandDefinition,
 	docsCommandDefinition,
 	newCommandDefinition,
+	normalizeDevArgs,
 	publishCommandDefinition,
 	sourceCommandDefinition,
 	workspaceCommandDefinition,
@@ -96,7 +97,7 @@ async function main() {
 			return
 		}
 		const nextArgv = argv.length === 0 ? ['--help'] : argv
-		await cli(nextArgv, rootCommand, {
+		await cli(normalizeDevArgs(nextArgv), rootCommand, {
 			name: pkg.name ?? 'pluxel',
 			version: pkg.version,
 			renderHeader: renderCliHeader,

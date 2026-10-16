@@ -14,13 +14,25 @@ CLI build 的输入包含仓库 `docs/` 与 `pluxel-development` skill 正文；
 
 Git launcher 加载 dist 前核对 CLI 的 src、bin、构建 scripts、manifest 与包级构建配置的内容指纹。
 构建完成后才写入 dist 指纹，Vite+ 恢复或移动 checkout 不依赖 mtime；缺失或过期时拒绝执行并提示精确重建命令。
-此检查不证明其他框架产物最新，也不自动构建；npm launcher 不要求源码或指纹。
+此检查不证明其他框架产物最新，也不自动构建；npm launcher 不要求源码或指纹。源码仓库的 `pluxel` / `dev` scripts 直接执行 launcher，不带构建依赖；首次准备和修改 CLI 后显式 compile，避免在线操作恢复缓存产物触发 HMR。
 
 `pluxel new` 的唯一流程为 source → acquire → validate → answers → byte plan → materialize → optional install。Bare name 只解析 bundled plugin template，local source 须显式路径；无 remote fallback。`pluxel-template.jsonc` 只声明 identity、包管理器与 prompts。仅 `.tpl` 支持固定插值，其余文件按字节复制；不接受任意代码、命令、循环或 symlink。
 
 Byte plan 在写入前完成 UTF-8/token/path/portable collision/目标检查，持有最终 bytes。Materializer 不重读模板；`--force` 只覆盖 plan 已确认的精确 existing files，每文件 temp+rename，不承诺整个目录 rollback。Bundled template 默认 install，local template 仅显式 `--install` 才执行包管理器。
 
-Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web package 只拥有浏览器代码；mise 固定工具与任务入口，hk 拥有 Git hooks 和文件检查，Pitchfork 拥有开发进程、端口和反代，Vite+ 拥有构建、检查与包任务图和缓存。Pitchfork 不成为 runtime capability；公开地址由 Host 环境契约解析。配置与使用见[工作区工具链](../docs/development/workspace-toolchain.md)。Browser assets 在应用构建后写入时，必须再次调用同一个 distribution finalizer。目录、命令和样例以 [create README](../packages/create/README.md) 为准。
+Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web package 只拥有浏览器代码；mise 固定工具与环境，hk 拥有 Git hooks 和文件检查，Pitchfork 拥有开发进程、端口和反代，Vite+ 拥有构建、检查与包任务图和缓存。
+
+`package.json` 的 `pluxel.dev` 直接以名称声明 profiles。每个 profile 的 `root` 默认声明目录，显式值必须解析为该目录内的真实 Vite root；`command` 与 `pitchfork` 必须且只能选择一个。一个 package 可以声明多个 profile，共用或分别使用 Vite root；显式 `--profile` 优先，其次选择 `pluxel.dev.default`，最后选择唯一 profile。`default` 是保留字段，必须引用已声明名称。
+
+普通 command 在声明目录前台执行，继承终端并传递退出状态，CLI 自动注入 `PLUXEL_DEV_PROJECT` 与 `PLUXEL_DEV_PROFILE`，无须用户配置。控制台捕获 declaring package 的 canonical 目录与 profile，连接时按该目录、profile 名和 Vite root realpath 筛选。Pitchfork profile 根据控制台原生 `PITCHFORK_DAEMON_ID` 的短服务名筛选，启动时再解析并核对完整服务 ID；同 root、同短服务但不同 namespace 的多实例仍要求明确选择。前台启动不创建后台 supervisor 或轮询就绪；复用实例时读取当前地址。
+
+向上发现配置止于最近 Git / pnpm workspace 边界；`--root` 选择发现起点，默认 cwd。没有声明时控制台采用最近 package 根目录，若显式传入 `--root` 则采用该目录本身；没有配置却指定 `--profile` 必须失败。`--root` 不绕过已发现配置。控制台 profile 的 `dev status/run/instances` 仅依赖本地实例描述与握手，不调用 Pitchfork、不自动启动；按 profile 绑定过滤后，多个候选使用 `--instance`，该选项不能越过归属检查。
+
+`console` 默认 true。只有 Pitchfork profile 可以显式设置 false，用于文档站等没有 Pluxel Host 的服务：启动遵守 Pitchfork readiness，随后重新读取服务状态与公开 URL；status 查询 Pitchfork，run/instances/--instance 在产生效果前报 unsupported_console。此类服务不创建假控制台，也不生成 Vite Application / Workbench 输出。框架仓库的 docs script 使用该 profile；create 模板只包含真实存在的默认 app 与前台 local。
+
+控制台地址由 Vite URL presenter 拥有，不复制反代命名、Workbench 挂载路径或日志历史。Pitchfork 是可选启动集成，不成为 runtime capability；控制台直接读取已捕获的启动归属，不调用服务管理器；公开地址由 Host 环境契约解析。配置与使用见[开发控制台](../docs/development/dev-console.md#项目入口与启动方式)。Browser assets 在应用构建后写入时，必须再次调用同一个 distribution finalizer。目录、命令和样例以 [create README](../packages/create/README.md) 为准。
+
+`result/cancel` 只接受绑定原 root/instanceId/runId/serviceId 的 receipt，不重新解析当前项目，不转投重启后的实例；nonce 不进入 receipt 或公开诊断。执行队列、取消、资源释放与结果保留仍由控制台内核拥有，见 [DEV_CONSOLE](DEV_CONSOLE.md)。
 
 CLI packed smoke 验证独立 Plugin scaffold，create packed smoke 验证完整 workspace、Vite 与 production distribution；两者不是输出 parity。CLI 不提供第三方 command discovery/registry，capability ID 的类型映射只用 type import，不能提前加载可选 owner。
 

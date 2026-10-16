@@ -9,13 +9,13 @@ Coding agent 的操作入口是 [pluxel-development skill](https://github.com/Pl
 
 ## 先确认任务需要什么证据
 
-| 问题                                      | 首选工具                                     | 证据边界                                      |
-| ----------------------------------------- | -------------------------------------------- | --------------------------------------------- |
-| Plugin、Part、schema 或应用输入在哪里声明 | [inspect](./inspection.md)                   | 静态声明与绑定关系；不能证明在线实例已应用    |
-| 类型、lint、包边界或构建是否正确          | 项目实际 scripts / `pluxel workspace doctor` | 静态检查；inspect 列出脚本不等于执行检查      |
-| 插件行为、错误与停止清理是否正确          | [插件测试](../plugin-development/testing.md) | 真实 lowering 的隔离 host；不代表运行实例     |
-| 当前应用的配置、方法、报告和日志          | [dev console](./dev-console.md)              | 现有 Vite 实例；固定绝对 root 和准确 instance |
-| Git overlay、文档或 skill 来源是否正确    | [源码工作区](./source-workspaces.md)         | setup、链接、所选 checkout 与产物来源         |
+| 问题                                      | 首选工具                                     | 证据边界                                    |
+| ----------------------------------------- | -------------------------------------------- | ------------------------------------------- |
+| Plugin、Part、schema 或应用输入在哪里声明 | [inspect](./inspection.md)                   | 静态声明与绑定关系；不能证明在线实例已应用  |
+| 类型、lint、包边界或构建是否正确          | 项目实际 scripts / `pluxel workspace doctor` | 静态检查；inspect 列出脚本不等于执行检查    |
+| 插件行为、错误与停止清理是否正确          | [插件测试](../plugin-development/testing.md) | 真实 lowering 的隔离 host；不代表运行实例   |
+| 当前应用的配置、方法、报告和日志          | [dev console](./dev-console.md)              | profile、Vite root 与实例；检查操作 receipt |
+| Git overlay、文档或 skill 来源是否正确    | [源码工作区](./source-workspaces.md)         | setup、链接、所选 checkout 与产物来源       |
 
 已知文件和符号时直接用 `rg`、exports 和源码。inspect 用于确认声明关系，不代替任意 import 分析；空结果或 partial 报告不能证明不存在。
 

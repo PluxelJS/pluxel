@@ -9,64 +9,129 @@ description: 让 coding agent 通过当前 Vite 执行 TypeScript，检查插件
 
 还不清楚插件、Part 或 config schema 在哪里声明时，先用[源码查询](./inspection.md)定位；它不需要运行 Vite，也不读取当前 Host 状态。
 
-服务进程由 [Pitchfork](./workspace-toolchain.md#管理开发服务)管理；启动失败、Vite 编译错误、进程退出及 stdout/stderr 使用 `pitchfork logs`，按[日志与排障顺序](./workspace-toolchain.md#agent-的日志与排障顺序)查询有限时间窗口。已注册服务可通过代理 URL 唤起，但启动页或进程 running 不代表应用 ready；启动后仍需发现实例并检查 `application.state`。下面的应用业务日志和操作通过 Pluxel 控制台执行，服务重启后重新发现实例。
+官方工作区由 [Pitchfork](./workspace-toolchain.md#管理开发服务)管理服务进程，普通 Vite 项目也可以使用前台命令。开发控制台不依赖 Pitchfork：它连接选定 Vite root 下的现有实例。应用业务日志和操作通过控制台执行；进程 running、代理启动页和 HTTP 响应不能代替应用状态与业务结果。
+
+## 项目入口与启动方式
+
+`package.json` 的 `pluxel.dev` 直接按名称声明开发 profile。普通 Vite 项目：
+
+```json
+{
+	"pluxel": {
+		"dev": {
+			"app": { "command": "vp dev" }
+		}
+	}
+}
+```
+
+每个 profile 的 `root` 默认是声明配置的 package 目录；Vite root 不同才填写相对此目录的路径。`command` 在声明配置的目录执行，必须保持前台运行；不要填入会立即退出的后台启动器，也不要回调 `pluxel dev` 自身。首次启动直接保留 Vite 终端输出，Ctrl+C 结束前台进程。再次执行时复用归属当前 profile 的唯一实例并重新显示地址，不重复启动。
+
+官方应用模板同时提供默认 Pitchfork 服务与前台调试入口：
+
+```json
+{
+	"pluxel": {
+		"dev": {
+			"default": "app",
+			"app": { "root": "host/web", "pitchfork": "app" },
+			"local": { "root": "host/web", "command": "vp run @example/host#dev:server" }
+		}
+	}
+}
+```
+
+`vp run dev` 使用默认 `app`，`vp run dev:local` 显式使用 `local`。它们是同一应用的两种启动方式，共用 Vite root 和默认数据目录；profile 只区分控制台归属，不隔离数据。使用同一份数据时，先 `pitchfork stop app` 再运行 `vp run dev:local`；需要并行运行时，为进程显式设置不同的 `PLUXEL_DATA_ROOT`。控制台操作前台实例时也使用 `--profile local`。
+
+每个 profile 必须在 `command` 与 `pitchfork` 中选择一个。`pitchfork` 是 `pitchfork.toml` 中的短服务名。框架仓库默认选择 `plugin-host`，其 root 为 `projects/plugin-host`，服务名为 `plugin-host`。CLI 委托 Pitchfork 启动或复用，再核对完整服务 ID 与控制台的 `serviceId`，显示该服务的实时地址。启动命令返回后服务继续运行；停止、重启和进程日志使用原生 `pitchfork stop/restart/logs <完整服务ID>`。Pluxel 不自行创建后台 supervisor。
+
+一个 package 可以声明多个 profile，使用不同目录，也可以使用同一个 Vite root；各 profile 独立选择前台命令或 Pitchfork。选择顺序是 **显式 `--profile` → `pluxel.dev.default` → 唯一 profile**；仍不能确定时才要求指定名称。`default` 是保留字段，值必须指向已声明的 profile，不是另一个 profile 或启动命令。
+
+文档站等没有 Pluxel Host 的服务可显式声明 `console: false`，目前只支持 Pitchfork。例如本仓库：
+
+```json
+{
+	"pluxel": {
+		"dev": {
+			"default": "plugin-host",
+			"plugin-host": { "root": "projects/plugin-host", "pitchfork": "plugin-host" },
+			"docs": { "root": "projects/docs", "pitchfork": "docs", "console": false }
+		}
+	}
+}
+```
+
+`vp run docs` 执行 `pluxel dev --profile docs`：等待 Pitchfork 就绪，再读取最新服务状态与公开 URL，重复执行也显示当前信息，不生成 Workbench 或应用控制台状态。`pluxel dev status --profile docs` 查询 Pitchfork 状态；该 profile 的 `run`、`instances` 与 `--instance` 不受支持，会在启动或连接前报告 `unsupported_console`。应用模板没有文档站，因此只生成实际存在的 `app` / `local`。
+
+`root` 必须位于声明配置的目录内，它是 Vite 根目录，不是应用声明目录：模板的应用声明在 `host`，Vite root 在 `host/web`。CLI 从当前目录向上寻找最近声明 `pluxel.dev` 的 package.json，止于最近 Git / pnpm workspace 边界；跨目录用 `--root /absolute/project` 改变配置发现起点。`--root` 不绕过找到的 profile 配置，也不改变脚本路径相对终端当前目录的基准。
+
+```sh
+# 使用默认 profile（或项目唯一的 profile）
+vp exec pluxel dev
+vp exec pluxel dev status
+vp exec pluxel dev run host/web/dev/inspect.ts
+# 切换 profile：启动和后续操作使用同一个名称
+vp exec pluxel dev --profile app
+vp exec pluxel dev status --profile app
+vp exec pluxel dev run /absolute/project/host/web/dev/inspect.ts --root /absolute/project --profile app
+```
+
+profile 的 `console` 默认 `true`，要求 Vite 开启 `devConsole`。此时 `dev status` 查看应用状态，`dev instances` 列出匹配 profile 的实例。**控制台 profile 的 status、instances、run 不调用 Pitchfork；所有 status/instances/run 都不自动启动服务**。CLI 先按 Vite root 与启动归属筛选，再选择实例：
+
+- 前台命令由 CLI 自动传入 `PLUXEL_DEV_PROJECT` 与 `PLUXEL_DEV_PROFILE`，无需项目手动配置。控制台按声明配置的 package 真实目录、profile 名和 Vite root 核对归属；其他 package 的同名 profile、相同目录的其他 profile 或手动 Vite 不会被误选。
+- Pitchfork profile 按控制台捕获的 `serviceId` 核对短服务名；启动时额外核对 Pitchfork 返回的完整服务 ID。代理按访问启动也保留原生服务身份。
+- 筛选后只有一个实例时自动选中；多个时使用 `--instance` 明确选择。同 root、同短服务名但不同 namespace 仍可能有多个候选。`--instance` 只能在当前 profile 的候选中选择，不能越过归属检查。
+
+profile 表达项目的启动方式及运行归属，`instanceId` 标识其中一次运行；不需要单独登记实例。没有 `pluxel.dev` 配置时，控制台可以按 root 连接手动启动的 Vite，见下节。
+
+启动后的地址与重复调用的地址共用 Vite 的展示逻辑，不重放日志或猜 Workbench 路径。控制台 profile 需要 `devConsole: true`，模板已经配置。`dev instances` 的 `urlOutput` 是 Vite 的当前展示文本，不作为路由协议解析，也不缓存在实例文件中。启动失败保留启动命令退出码；复用实例或 Pitchfork 启动后检查发现应用更新中时附带提示，应用不可用时返回退出码 2，服务不会因此被停止。
+
+应用模板的 `vp run dev` 直接执行 `pluxel dev`；源码仓库直接执行 `node packages/cli/bin/pluxel.mjs dev`，不重复执行构建任务图。源码 checkout 首次使用前运行 `vp run @pluxel/cli#compile`；后续仅在 launcher 提示 CLI 过期时重建。
 
 ## Coding agent 工作流程
 
-配置、Plugin 方法、Workbench RPC、生命周期和日志都从当前实例操作。一次任务遵循下面的顺序；CLI、脚本和恢复细节按后续章节查阅。
+1. 读取项目 AGENTS 和 `package.json` 的 `pluxel.dev`；使用 Pitchfork 时再读 `pitchfork.toml`。用 `dev status` 核对 profile、Vite root、实例和应用状态；只有需要运行且尚未运行时才执行 `dev`。
+2. 使用同一 profile 提交 `dev run`；该 profile 有多个实例时显式指定 `--instance`。在 Vite root 内维护少数 TypeScript 操作文件；先读插件状态、配置或服务 layout，再按实际类型操作，输入经 `dev.input` 校验。
+3. 检查请求、run state、脚本领域返回值和 apply report，修改后再读状态与相关日志。CLI 成功不等于配置已应用或插件已启动。
+4. 保存输出的 `receipt`；超时或终端断开后用 `dev result <receipt>` 查询原操作。不要因为应用已重启，就把旧操作重新投递给新实例。需要可重复回归保护时另写隔离测试。
 
-1. 从项目的 Vite 配置或启动命令确定 root，用 `pluxel dev instances --root <project-root>` 发现实例。核对返回的 `root`、`pid` 和 `instanceId`，将选中的绝对 root 与 instanceId 记入任务上下文。
-2. 后续 `run/result/cancel` 都显式传相同的 `--root` 和 `--instance`，避免切换工作目录或新增 dev 实例后改变操作目标。没有发现服务时先核对 root、原 dev 进程和 `devConsole` 配置。
-3. 在该 root 内维护少数普通 TypeScript 操作文件，通过 default/named export 追加操作。先读取插件状态、当前配置或服务公开的 layout，再按项目实际类型修改；参数经 `dev.input` 传入并校验，跨次保存业务 ID 和 JSON 游标。
-4. 检查外层请求是否成功、run 的 `state`，再检查脚本返回的领域 `ok`、apply report 和配置 `application`。修改后重新读取目标状态及相关日志；CLI 退出成功不等于配置已应用或插件已启动。
-5. 保留 receipt 中的 root、instanceId 和 runId。工具超时或终端断开后，用这些字段查询 `result`；先确定已发生的操作，再决定下一次提交。已验证的行为需要回归保护时，另写隔离测试。
-
-本仓库的 `projects/plugin-host` 已开启控制台，并提供只读的 `dev/inspect.ts`。仓库根目录的 `vp run pluxel` 任务调用本地 CLI，保留当前目录作为相对路径基准。保持该项目原有 dev 命令运行后，从仓库根目录调用：
+本仓库已有只读脚本，根目录调用：
 
 ```sh
-vp run pluxel dev instances --root projects/plugin-host
-vp run pluxel dev run projects/plugin-host/dev/inspect.ts --root projects/plugin-host --instance <instanceId>
+vp run pluxel dev status
+vp run pluxel dev run projects/plugin-host/dev/inspect.ts
 ```
 
-安装了 `@pluxel/cli` 的用户项目仍使用 `vp exec pluxel`，替换 root 和脚本路径即可。跨工作目录调用时使用绝对路径；`--root` 选择运行宿主，不改变脚本路径的解析基准。
+下游使用 `vp exec pluxel`。脚本路径始终相对终端当前目录，且文件必须在选定 Vite root 内；跨目录操作可使用绝对脚本路径。
 
-## 开启与发现
+## 开启控制台与直接连接 Vite
 
-先检查项目是否已有开启控制台的 Vite 进程。已有时直接发现实例；尚未配置时，在现有 Vite route 上显式开启：
+在现有 Vite 集成上显式开启；开启控制台不会安装官方服务或配置日志 backend：
 
 ```ts no-twoslash
 import { defineConfig } from 'vite'
 import { host } from '@pluxel/host-vite'
 
 export default defineConfig({
-	plugins: [
-		host({
-			entry: './src/app.ts',
-			devConsole: true,
-		}),
-	],
+	plugins: [host({ entry: './src/app.ts', devConsole: true })],
 })
 ```
 
-启动项目原有的 Vite dev 命令，然后运行：
+官方 `@pluxel/services/vite` 的 `vitePreset()` 也接受 `devConsole: true`。省略时不安装控制台；控制台只在 serve 时安装。当前支持具有 Unix socket 文件权限的 Linux/macOS，Windows 尚不支持。
+
+`application.state` 为 `ready`、`updating` 或 `unavailable`；`application.latestUpdate` 保留最近一次应用接纳的阶段、结果与诊断。源码求值失败后可修正源文件，由同一进程重新接纳。首次 Host 创建、服务准备或应用准备失败会中止 Vite 启动并释放资源，不输出就绪地址；修复后重新启动。
+
+没有 `pluxel.dev` 声明的普通 Vite 项目也可以连接控制台。不指定 `--root` 时使用最近 package 根目录；显式 `--root` 且向上未发现配置时使用该目录本身：
 
 ```sh
-vp exec pluxel dev instances --root /absolute/project-root
+vp exec pluxel dev instances --root /absolute/vite-root
+vp exec pluxel dev status --root /absolute/vite-root --instance INSTANCE_ID
+vp exec pluxel dev run /absolute/vite-root/dev/inspect.ts --root /absolute/vite-root --instance INSTANCE_ID
 ```
 
-从返回结果确认 `root`、`pid` 和 `instanceId`。`application.state` 同时说明本次 Vite 进程的应用状态：`ready` 表示已有可运行 Host，`updating` 表示正在接纳候选，`unavailable` 表示尚无可运行 Host。`application.latestUpdate` 保留最近一次接纳的阶段、结果与安全诊断，首次源码求值失败时也可从 `instances` 查看；Vite 进程存在本身不代表应用可运行。修正源文件后同一进程可重新接纳。首次 Host 创建、服务准备或应用准备失败则中止 Vite 启动、释放已取得的资源并返回失败退出码，不输出就绪地址；修复持久数据或服务配置后重新启动。下面的 `/absolute/project-root` 与 `INSTANCE_ID` 必须替换为这次发现的值；脚本路径从当前终端目录解析。先创建“写一个可以反复运行的操作”中的 `dev/inspect.ts`，再运行它。
+若发现 profile 配置，上述命令仍按显式 `--profile`、default、唯一 profile 的顺序选择并筛选。没有配置却指定 `--profile` 会报错，不忽略这个选择。多个候选时 `run` 报 `ambiguous_instance`，先从 `instances` 选择准确 ID。实际实例发现只在选定 Vite root 的 realpath 下进行，不向其他项目回退。重启后重新发现当前实例，旧操作的 receipt 仍只指向旧实例。
 
-控制台属于 `@pluxel/host-vite`，没有安装官方服务也可以操作插件和基础配置。官方组合 `@pluxel/services/vite` 的 `vitePreset()` 接受同样的 `devConsole: true`。脚本通过 `dev.ctx` 借用当前 RootContext，自行 import 所需服务的 token 或 API；开启控制台不安装服务，也不配置日志 backend。
-
-省略 `devConsole` 不安装控制台。Vite integration 只在 serve 时安装。当前执行服务支持 Linux/macOS 等具有 Unix socket 文件权限的系统，Windows 尚不支持。
-
-CLI 默认从命令当前目录向上找到最近的 `package.json`，只查询该目录的控制台；以命令工作目录为准，不以脚本路径为准。该项目没有运行中的控制台就报告 `dev_unavailable`，不会继续寻找父项目或其他项目的服务。
-
-从 monorepo 顶层操作子项目，或 Vite root 与最近的 package 目录不同时，显式指定 `--root projects/my-host`。同一 root 只有一个运行实例时自动选择；有多个时报告 `ambiguous_instance`，必须用 `--instance <instanceId>` 选择。`--instance` 只在选定 root 内匹配，不进行全局搜索。它不会猜最近启动的实例，也不会替你启动另一个 dev。
-
-dev 命令会在连接前拒绝未知选项；例如拼错 `--instance` 会返回 `invalid_input`，不会因此退回自动选择。`instances` 只按 root 列出候选，`--instance` 用于后续 `run/result/cancel`。
-
-入口文件必须在所选 Vite root 内，不能放在 `.pluxel`、`.git` 或 `node_modules`。脚本依赖按原有 Vite 规则解析，可以 import 已允许的工作区源码。相对 CLI 文件路径从命令当前目录解析，`--root` 只选择宿主。
+命令在连接前拒绝未知选项。入口文件不能放在 `.pluxel`、`.git` 或 `node_modules`，依赖按原有 Vite 规则解析；指定 root 或 profile 都不改变 CLI 文件路径相对终端当前目录的解析基准。
 
 ## 写一个可以反复运行的操作
 
@@ -99,8 +164,8 @@ export const add = defineDevConsole(async (dev) => {
 ```
 
 ```sh
-vp exec pluxel dev run dev/inspect.ts --root /absolute/project-root --instance INSTANCE_ID
-vp exec pluxel dev run dev/inspect.ts --export add --input '"Verify current data"' --root /absolute/project-root --instance INSTANCE_ID
+vp exec pluxel dev run host/web/dev/inspect.ts
+vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"Verify current data"'
 ```
 
 默认调用 default export；`--export` 选择具名函数。`--input` 是 JSON，较大输入可以用互斥的 `--input-file`；省略时 `dev.input` 为 `undefined`。`dev` 同时提供本次执行的 `id` 和 `signal`。跨进程的 input 类型始终是 unknown，需要脚本校验。
@@ -234,40 +299,23 @@ export const restartWithLogs = defineDevConsole(async (dev) => {
 
 ## 结果、取消和恢复
 
-命令执行结果在 stdout 输出单一 JSON envelope。帮助输出和参数解析失败遵循普通 CLI 输出规则，agent 还需检查退出码与 stderr。同步 run 接纳后，stderr 会先输出一行包含 root/instanceId/runId 的 receipt，方便 agent 工具超时后恢复查询。run/result/cancel 返回的 snapshot 同样带 root，便于 agent 校验目标。领域返回值在成功运行 snapshot 的 `value` 中。长操作可以先 detach：
+操作命令在 stdout 输出单一 JSON envelope；帮助和参数解析失败遵循普通 CLI 输出规则，同时检查退出码与 stderr。同步 run 接纳后，stderr 先输出包含 `receipt` 的接纳信息；run/result/cancel 输出同样保留 receipt 与 root/instanceId/runId 诊断。领域返回值在成功运行 snapshot 的 `value` 中。长操作可以先 detach：
 
 ```sh
-vp exec pluxel dev run dev/seed.ts --detach --root /absolute/project-root --instance INSTANCE_ID
-vp exec pluxel dev result RUN_ID --root /absolute/project-root --instance INSTANCE_ID
-vp exec pluxel dev cancel RUN_ID --root /absolute/project-root --instance INSTANCE_ID
+vp exec pluxel dev run host/web/dev/seed.ts --detach
+vp exec pluxel dev result RECEIPT
+vp exec pluxel dev cancel RECEIPT
 ```
 
-客户端错误保留稳定 `error.code` 和面向人的 `message`，并尽量提供 `error.context.root`、`error.context.instanceId` 和下一步 `error.hint`。root 仅在成功解析目标项目后出现，不会为未知项目猜一个路径。无法确定执行结果时还保留 runId；agent 应据此恢复查询，不能直接重放写操作。多实例错误的 `error.candidates` 只含公开候选信息，选择后用同一 root 与明确 instanceId 重新调用。
+将 `RECEIPT` 换成输出的 `receipt` 字符串，原样保存和传回。它绑定原 root、instanceId、runId 和 serviceId，不包含 socket nonce，也不授予额外权限。`result/cancel` 不接受 profile、root 或 instance 参数，不会随当前目录或项目配置变化而改变对象。原进程不存在时明确失败；即使同名服务已经重启，也不会转投新实例或重新执行。
 
-例如下面的诊断表示需要先查原运行结果；程序按 code 分支，不匹配 message 或 hint 文本：
-
-```json
-{
-	"ok": false,
-	"error": {
-		"code": "outcome_unknown",
-		"message": "The operation outcome is unknown.",
-		"runId": "run-id",
-		"context": { "root": "/workspace/my-host", "instanceId": "instance-id" },
-		"hint": "Read the retained result before submitting again."
-	}
-}
-```
-
-```sh
-pluxel dev result run-id --root /workspace/my-host --instance instance-id
-```
+客户端错误保留稳定 `error.code` 和面向人的 `message`，并尽量提供目标 context 与恢复 hint。无法确定结果时保留原操作 receipt；先查询已接纳的操作，不能直接重放写操作。raw `runId` 只用于诊断，不能代替 receipt。程序按 code 分支，不匹配 message 或 hint 文本。
 
 | 观察结果                  | 含义与下一步                                          |
 | ------------------------- | ----------------------------------------------------- |
 | 退出码 `0`                | 已完成或 detach 已接纳；继续检查 run state 和领域结果 |
 | 退出码 `1`                | 失败、取消或客户端错误；按结构化 `code` 处理          |
-| 退出码 `2` / `cancelling` | 尚未结束；使用原 root、instanceId、runId 查询         |
+| 退出码 `2` / `cancelling` | 尚未结束；使用原 receipt 查询                         |
 | `outcome_unknown`         | 无法确认是否已写入；先查询原结果，不能直接重放        |
 | `result_expired`          | 保留结果已过期；从领域状态和日志核对实际结果          |
 

@@ -37,11 +37,6 @@ export default defineConfig(async () => {
 		),
 	)
 	Object.assign(tasks, {
-		pluxel: {
-			command: 'node packages/cli/bin/pluxel.mjs',
-			dependsOn: ['@pluxel/cli#compile'],
-			cache: false,
-		},
 		pncat: { command: 'node vendor/pncat/bin/pncat.mjs', cache: false },
 		'catalog:check': {
 			command: 'node packages/cli/bin/pluxel.mjs workspace sync --check',

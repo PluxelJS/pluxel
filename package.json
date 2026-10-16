@@ -20,8 +20,8 @@
 	},
 	"type": "module",
 	"scripts": {
-		"dev": "pitchfork start plugin-host",
-		"docs": "pitchfork start docs",
+		"dev": "node packages/cli/bin/pluxel.mjs dev",
+		"docs": "node packages/cli/bin/pluxel.mjs dev --profile docs",
 		"build": "vp run workspace:build",
 		"test": "vp run workspace:test",
 		"typecheck": "vp run workspace:typecheck",
@@ -29,9 +29,10 @@
 		"fix": "vp check --fix",
 		"verify": "vp run workspace:verify",
 		"hooks:install": "hk install --mise",
-		"dev:status": "pitchfork status plugin-host",
+		"dev:status": "node packages/cli/bin/pluxel.mjs dev status",
 		"dev:logs": "pitchfork logs plugin-host --follow",
-		"dev:stop": "pitchfork stop plugin-host"
+		"dev:stop": "pitchfork stop plugin-host",
+		"pluxel": "node packages/cli/bin/pluxel.mjs"
 	},
 	"devDependencies": {
 		"@fumapress/tegami": "catalog:dev",
@@ -47,5 +48,19 @@
 		"node": ">=24",
 		"pnpm": ">=11 <12"
 	},
-	"packageManager": "pnpm@11.28.2"
+	"packageManager": "pnpm@11.28.2",
+	"pluxel": {
+		"dev": {
+			"default": "plugin-host",
+			"plugin-host": {
+				"root": "projects/plugin-host",
+				"pitchfork": "plugin-host"
+			},
+			"docs": {
+				"root": "projects/docs",
+				"pitchfork": "docs",
+				"console": false
+			}
+		}
+	}
 }

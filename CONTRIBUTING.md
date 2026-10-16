@@ -18,6 +18,7 @@ cd pluxel
 mise trust
 mise install
 mise exec -- vp install --frozen-lockfile
+vp run @pluxel/cli#compile
 vp run hooks:install
 vp run verify
 ```

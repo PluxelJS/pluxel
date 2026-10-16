@@ -18,6 +18,12 @@ export type DevConsoleInstance = Readonly<{
 	nonce: string
 	pid: number
 	root: string
+	/** Pitchfork's qualified daemon ID, captured when this instance starts. Absent for manual Vite. */
+	serviceId?: string
+	/** Pluxel command profile, captured when this instance starts. */
+	profile?: string
+	/** Canonical declaring package directory paired with the command profile. */
+	project?: string
 	socketPath: string
 	startedAt: string
 }>
