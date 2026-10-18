@@ -132,10 +132,18 @@ await withStudio(instance, async (studio) => {
 				await assert.rejects(
 					async () => await studio.compile({ ...target, data: {} }),
 					(error) => {
-						assert.equal(error.code, 'COMPILE_FAILED')
+						const failure = JSON.stringify({
+							path,
+							code: error.code,
+							message: error.message,
+							diagnostics: error.diagnostics,
+							issues: error.issues,
+						})
+						assert.equal(error.code, 'COMPILE_FAILED', failure)
+						assert.ok(Array.isArray(error.diagnostics), `Missing compile diagnostics: ${failure}`)
 						assert.ok(
 							error.diagnostics.some((item) => item.path === path && item.range?.start.line >= 0),
-							'Actual diagnostics retain workspace source locations',
+							`Actual diagnostics retain workspace source locations: ${failure}`,
 						)
 						errors.push({
 							code: error.code,

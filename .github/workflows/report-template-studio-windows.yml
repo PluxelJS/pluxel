@@ -105,6 +105,9 @@ jobs:
           vp run @report-template-studio/app#compile
           vp run @report-template-studio/app#check-types
 
+      - name: Verify template compiler syntax diagnostics and HMR
+        run: vp test run --config vite.config.ts projects/report-template-studio/tests/compiler.test.ts
+
       - name: Package current Windows architecture
         run: vp run @report-template-studio/app#package
 

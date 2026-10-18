@@ -399,6 +399,67 @@ it('retains the TypeScript module path and source range in syntax diagnostics', 
 	}
 })
 
+it.each([
+	{
+		path: 'report/report.ts',
+		invalidSource: 'export const broken = ;',
+		repairedSource: source,
+		expectedValue: 1,
+	},
+	{
+		path: 'report/value.ts',
+		invalidSource: 'export const value = ;',
+		repairedSource: 'export const value = 2',
+		expectedValue: 2,
+	},
+])('retains warm $path syntax diagnostics and recovers the same compiler', async (test) => {
+	const compiler = new TemplateCompiler()
+	const doc = template()
+	try {
+		const initial = await evaluate(compiler, doc)
+		expect(initial.files['/inputs/data.json']).toEqual({ kind: 'json', value: 1 })
+		const description = await compiler.describe(doc, 'report/report.ts')
+		expect(description).toMatchObject({
+			entry: 'report/report.ts',
+			template: 'report/main.typ',
+			fields: [],
+			defaults: {},
+		})
+		const invalid = {
+			...doc,
+			revision: '2',
+			files: { ...doc.files, [test.path]: test.invalidSource },
+		}
+		const character = test.invalidSource.indexOf(';')
+		await expect.soft(evaluate(compiler, invalid)).rejects.toMatchObject({
+			code: 'COMPILE_FAILED',
+			diagnostics: expect.arrayContaining([
+				expect.objectContaining({
+					path: test.path,
+					severity: 'error',
+					range: {
+						start: { line: 0, character },
+						end: { line: 0, character: character + 1 },
+					},
+				}),
+			]),
+		})
+		const repaired = {
+			...invalid,
+			revision: '3',
+			files: { ...invalid.files, [test.path]: test.repairedSource },
+		}
+		const recovered = await evaluate(compiler, repaired)
+		expect(recovered.files['/inputs/data.json']).toEqual({
+			kind: 'json',
+			value: test.expectedValue,
+		})
+		expect(await compiler.describe(repaired, 'report/report.ts')).toEqual(description)
+	} finally {
+		await compiler.close()
+	}
+})
+
 it('rejects non-JSON transformed output before JSON serialization can discard values', async () => {
 	const compiler = new TemplateCompiler()
 	const doc = template()
