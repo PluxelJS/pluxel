@@ -4,13 +4,38 @@ import react from '@vitejs/plugin-react'
 import { offlineMonaco } from './scripts/monaco-vite.ts'
 import { generateEditorTypes } from './scripts/generate-editor-types.mjs'
 
+const tasks = repositoryTasks('@report-template-studio/app', {
+	build: 'node ../../scripts/pack.mjs',
+	test: 'vp test run',
+	typecheck: 'tsc --noEmit',
+})
+const compile = tasks.compile!
+const compileCache = typeof compile.cache === 'object' ? compile.cache : {}
+
 export default defineConfig({
 	run: {
-		tasks: repositoryTasks('@report-template-studio/app', {
-			build: 'node ../../scripts/pack.mjs && vp build',
-			test: 'vp test run',
-			typecheck: 'tsc --noEmit',
-		}),
+		tasks: {
+			...tasks,
+			'compile-code': {
+				...compile,
+				cache: {
+					...compileCache,
+					input: [...(compileCache.input ?? [{ auto: true }]), '!dist/**'],
+					output: [
+						'dist/*.mjs',
+						'dist/*.mjs.map',
+						'dist/*.d.mts',
+						'dist/electron/**',
+						'dist/artifacts/**',
+					],
+				},
+			},
+			compile: {
+				command: 'vp build',
+				dependsOn: ['compile-code'],
+				cache: { ...compileCache, output: ['dist/renderer/**'] },
+			},
+		},
 	},
 	base: './',
 	// Declaration files must reach the language worker unchanged, without Vite's TS transform.
