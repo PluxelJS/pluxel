@@ -1,16 +1,5 @@
-import {
-	IS_ASYNC,
-	ORIGFUNC,
-	isCapturedError,
-	isPromiseLike,
-} from '../core/listener'
-import type {
-	Awaitable,
-	EventArgs,
-	EventDescriptor,
-	EventListener,
-	EventResult,
-} from '../types'
+import { IS_ASYNC, ORIGFUNC, isCapturedError, isPromiseLike } from '../core/listener'
+import type { Awaitable, EventArgs, EventDescriptor, EventListener, EventResult } from '../types'
 
 export type FireSyncRecord<D extends EventDescriptor> =
 	| { type: 'success'; fn: EventListener<D>; result: EventResult<D> }
@@ -40,9 +29,9 @@ export function* fireFromListeners<D extends EventDescriptor>(
 		const recordFn = ((fn as any)[ORIGFUNC] ?? fn) as EventListener<D>
 		if ((fn as any)[IS_ASYNC] === true) {
 			try {
-				const promise = Promise.resolve(fn(...args)).then(
-					unwrapCapturedAsync,
-				) as Awaitable<EventResult<D>>
+				const promise = Promise.resolve(fn(...args)).then(unwrapCapturedAsync) as Awaitable<
+					EventResult<D>
+				>
 				yield { type: 'async', fn: recordFn, promise }
 			} catch (error) {
 				yield { type: 'error', fn: recordFn, error }
@@ -59,9 +48,7 @@ export function* fireFromListeners<D extends EventDescriptor>(
 				yield {
 					type: 'async',
 					fn: recordFn,
-					promise: Promise.resolve(result).then(
-						unwrapCapturedAsync,
-					) as Awaitable<EventResult<D>>,
+					promise: Promise.resolve(result).then(unwrapCapturedAsync) as Awaitable<EventResult<D>>,
 				}
 				continue
 			}

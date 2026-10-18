@@ -24,8 +24,7 @@ describe('Eventure once/many', () => {
 			},
 			{
 				name: 'at-front once',
-				register: (fn: (m: string) => void) =>
-					emitter.at('foo', 'front').once(fn),
+				register: (fn: (m: string) => void) => emitter.at('foo', 'front').once(fn),
 			},
 		] as const)('$name only fires once', ({ register }) => {
 			const calls: string[] = []
@@ -83,8 +82,7 @@ describe('Eventure once/many', () => {
 		it.each([
 			{
 				name: 'many',
-				register: (times: number, fn: (m: string) => void) =>
-					emitter.many('foo', times, fn),
+				register: (times: number, fn: (m: string) => void) => emitter.many('foo', times, fn),
 			},
 			{
 				name: 'at-front many',
@@ -120,9 +118,7 @@ describe('Eventure once/many', () => {
 			expect(() => emitter.many('foo', 0, () => {})).toThrow()
 			expect(() => emitter.many('foo', -1, () => {})).toThrow()
 			expect(() => emitter.many('foo', 1.5, () => {})).toThrow(RangeError)
-			expect(() => emitter.many('foo', Number.NaN, () => {})).toThrow(
-				RangeError,
-			)
+			expect(() => emitter.many('foo', Number.NaN, () => {})).toThrow(RangeError)
 			expect(() => emitter.many('foo', Infinity, () => {})).toThrow(RangeError)
 		})
 	})

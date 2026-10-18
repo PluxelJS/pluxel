@@ -34,10 +34,10 @@
 		"bench:onlyEmit": "bun ./tinybench/onlyEmit.ts",
 		"bench:compare": "bun ./tinybench/onlyEmit.ts",
 		"bench:api": "bun ./tinybench/apiRegression.ts",
-		"prepublishOnly": "tsdown",
-		"lint": "oxlint -c oxlint.config.ts .",
-		"format:check": "oxfmt --check .",
-		"format": "oxfmt --write .",
+		"prepublishOnly": "vp run compile",
+		"lint": "vp lint",
+		"format:check": "vp fmt --check .",
+		"format": "vp fmt .",
 		"typecheck": "vp run check-types"
 	},
 	"devDependencies": {

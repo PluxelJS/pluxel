@@ -8,7 +8,6 @@ import {
 } from '../../../workbench/paths'
 import type { PluginNodeAddress } from '@pluxel/core'
 import { useResolvedWorkbenchRoute } from '../../../workbench/runtime'
-import { useCurrentPathname } from '../useCurrentRoute'
 import { WorkbenchRouteRenderer } from './WorkbenchRouteRenderer'
 
 export function WorkbenchRouteScreen({
@@ -16,15 +15,12 @@ export function WorkbenchRouteScreen({
 	pathname,
 }: {
 	prefix: WorkbenchRoutePrefix
-	pathname?: string
+	pathname: string
 }) {
-	const routerPathname = useCurrentPathname()
-	const locationPath = pathname ?? routerPathname
 	const parsed = useMemo(() => {
-		if (!locationPath) return undefined
-		const result = parseWorkbenchHref(locationPath)
+		const result = parseWorkbenchHref(pathname)
 		return result?.frame === getWorkbenchFrame(prefix) ? result : undefined
-	}, [locationPath, prefix])
+	}, [pathname, prefix])
 	if (!parsed) throw new Error('Invalid Workbench Plugin route')
 	const target = parsed.target
 	const restPath = parsed.path

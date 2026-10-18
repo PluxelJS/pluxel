@@ -30,19 +30,14 @@ export const resolveImport = (specifier: string, baseDir = process.cwd()) =>
 
 export const resultWithStatistics = (task: Task): CompletedResult => {
 	const { result } = task
-	if (
-		result.state !== 'completed' &&
-		result.state !== 'aborted-with-statistics'
-	) {
+	if (result.state !== 'completed' && result.state !== 'aborted-with-statistics') {
 		throw new Error(`Benchmark task "${task.name}" ended as ${result.state}`)
 	}
 	return result
 }
 
 export const renderPercent = (value: number | null | undefined) =>
-	value === null || value === undefined
-		? '-'
-		: `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+	value === null || value === undefined ? '-' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
 
 export const renderNumber = (value: number) => value.toFixed(2)
 

@@ -1,9 +1,7 @@
 import type { EventArgs, EventDescriptor, EventListener } from '../types'
 
 export type GuardResult = boolean | undefined | void
-export type GuardPredicate<D extends EventDescriptor> = (
-	...args: EventArgs<D>
-) => GuardResult
+export type GuardPredicate<D extends EventDescriptor> = (...args: EventArgs<D>) => GuardResult
 
 export type WrapFn = <T extends (...args: any[]) => any>(listener: T) => T
 

@@ -9,21 +9,9 @@ type ChannelEvent = [string]
 type Harness = {
 	name: string
 	create: () => {
-		on: (
-			listener: (value: string) => unknown,
-			options?: SubscriptionOptions,
-		) => () => void
-		at: (
-			position:
-				| 'front'
-				| 'back'
-				| number
-				| ((ctx: { count: number }) => number),
-		) => {
-			on: (
-				listener: (value: string) => unknown,
-				options?: SubscriptionOptions,
-			) => () => void
+		on: (listener: (value: string) => unknown, options?: SubscriptionOptions) => () => void
+		at: (position: 'front' | 'back' | number | ((ctx: { count: number }) => number)) => {
+			on: (listener: (value: string) => unknown, options?: SubscriptionOptions) => () => void
 		}
 		emit: (value: string) => number
 		count: () => number

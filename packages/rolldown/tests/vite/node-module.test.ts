@@ -1,11 +1,30 @@
+import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
 import {
 	buildNodeModule,
 	resolveNodeModuleNativeResiduals,
 } from '../../src/plugin-artifact/node-module.ts'
+
+// Native bridges use Node's require conditions, outside the test runner's module resolver.
+async function resolveNativeResidualsInNode(entryPath: string, root: string) {
+	const { stdout } = await promisify(execFile)(
+		process.execPath,
+		[
+			'--import',
+			import.meta.resolve('tsx'),
+			'--input-type=module',
+			'-e',
+			`import { resolveNodeModuleNativeResiduals } from ${JSON.stringify(new URL('../../src/plugin-artifact/node-module.ts', import.meta.url).href)};
+process.stdout.write(JSON.stringify(await resolveNodeModuleNativeResiduals(${JSON.stringify(entryPath)}, ${JSON.stringify(root)})));`,
+		],
+		{ cwd: root, timeout: 10_000 },
+	)
+	return JSON.parse(stdout) as Awaited<ReturnType<typeof resolveNodeModuleNativeResiduals>>
+}
 
 describe('buildNodeModule', () => {
 	it('builds a loadable single-file Node ESM closure', async () => {
@@ -112,6 +131,56 @@ describe('buildNodeModule', () => {
 			expect.objectContaining({ name: 'fake-native' }),
 		])
 	})
+
+	it('traces the require entry from the native bridge owner despite a source-directory shadow', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ dependencies: { 'fake-native': '1.0.0' } }),
+			'src/task.ts': "import { value } from 'fake-native'\nexport default () => value\n",
+			'src/node_modules/fake-native/package.json': JSON.stringify({
+				name: 'fake-native',
+				version: '2.0.0',
+				type: 'module',
+				exports: { '.': { import: './import.mjs', require: './require.cjs' } },
+				napi: { binaryName: 'fake' },
+			}),
+			'src/node_modules/fake-native/import.mjs': 'export const value = 13\n',
+			'src/node_modules/fake-native/require.cjs': 'exports.value = 13\n',
+			'node_modules/fake-native/package.json': JSON.stringify({
+				name: 'fake-native',
+				version: '1.0.0',
+				type: 'module',
+				exports: { '.': { import: './import.mjs', require: './require.cjs' } },
+				napi: { binaryName: 'fake' },
+			}),
+			'node_modules/fake-native/import.mjs': 'export const value = 0\n',
+			'node_modules/fake-native/require.cjs': 'exports.value = 42\n',
+		})
+		const entryPath = `${fixture.path}/src/task.ts`
+		await expect(resolveNativeResidualsInNode(entryPath, fixture.path)).resolves.toEqual([
+			{
+				name: 'fake-native',
+				entryPath: `${fixture.path}/node_modules/fake-native/require.cjs`,
+			},
+		])
+	}, 15_000)
+
+	it('rejects a native package without an entry that the require bridge can load', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ dependencies: { 'fake-native': '1.0.0' } }),
+			'task.ts': "import native from 'fake-native'\nexport default () => native\n",
+			'node_modules/fake-native/package.json': JSON.stringify({
+				name: 'fake-native',
+				version: '1.0.0',
+				type: 'module',
+				exports: { '.': { import: './import.mjs' } },
+				napi: { binaryName: 'fake' },
+			}),
+			'node_modules/fake-native/import.mjs': 'export default 0\n',
+		})
+		await expect(
+			resolveNativeResidualsInNode(`${fixture.path}/task.ts`, fixture.path),
+		).rejects.toThrow('native dependency fake-native cannot be required from')
+	}, 15_000)
 
 	it('rejects an imported native package that is not a direct dependency', async () => {
 		await using fixture = await createFixture({

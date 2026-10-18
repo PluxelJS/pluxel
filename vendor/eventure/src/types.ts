@@ -6,24 +6,18 @@ export type EventDescriptor = readonly [...any[]] | ((...args: any[]) => any)
 export type IEventMap<T> = { [K in keyof T]: EventDescriptor }
 
 /** —— 工具类型 —— */
-export type EventArgs<D extends EventDescriptor> = D extends (
-	...args: infer A
-) => any
+export type EventArgs<D extends EventDescriptor> = D extends (...args: infer A) => any
 	? A
 	: D extends readonly [...infer T]
 		? T
 		: never
 
 export type Awaitable<T> = T | Promise<T>
-export type EventResult<D extends EventDescriptor> = D extends (
-	...args: any[]
-) => infer R
+export type EventResult<D extends EventDescriptor> = D extends (...args: any[]) => infer R
 	? R
 	: void
 
-export type EventListener<D extends EventDescriptor> = (
-	...args: EventArgs<D>
-) => EventResult<D>
+export type EventListener<D extends EventDescriptor> = (...args: EventArgs<D>) => EventResult<D>
 
 export type UnsubscribeFunction = () => void
 type DisposeSymbol = typeof Symbol extends { readonly dispose: infer S }
@@ -39,11 +33,7 @@ export type EmitSettledRecord<Fn, Value> =
 	| { fn: Fn; status: 'fulfilled'; value: Value }
 	| { fn: Fn; status: 'rejected'; reason: unknown }
 
-export type ListenerPosition<Ctx = unknown> =
-	| 'front'
-	| 'back'
-	| number
-	| ((ctx: Ctx) => number)
+export type ListenerPosition<Ctx = unknown> = 'front' | 'back' | number | ((ctx: Ctx) => number)
 
 /** —— 订阅参数：只保留横切生命周期控制，监听语义由 API 表达 —— */
 export interface SubscriptionOptions {
@@ -66,10 +56,7 @@ export interface ListenerWrapPolicy {
 
 /** —— Eventure 构造参数：继承策略类型，附加 logger & 事件预分配 —— */
 export interface EventureOptions<
-	E extends { [K in keyof E]: EventDescriptor } = Record<
-		string | symbol,
-		EventDescriptor
-	>,
+	E extends { [K in keyof E]: EventDescriptor } = Record<string | symbol, EventDescriptor>,
 > extends ListenerWrapPolicy {
 	logger?: Logger
 	/** 如果提供，就会在构造时预先为这些事件名分配 listener 数组 */

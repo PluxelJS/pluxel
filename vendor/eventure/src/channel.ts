@@ -1,8 +1,4 @@
-import {
-	ChannelListenerScope,
-	type EvtChannelPosition,
-	type EvtChannelScope,
-} from './channelScope'
+import { ChannelListenerScope, type EvtChannelPosition, type EvtChannelScope } from './channelScope'
 import {
 	appendListenerCopy,
 	copyWithoutIndex,
@@ -25,21 +21,14 @@ import {
 	resolveInsertIndex,
 	withAbortSignal,
 } from './core/registration'
-import {
-	emitAllFromListeners,
-	emitSettledFromListeners,
-} from './ext/emitShared'
+import { emitAllFromListeners, emitSettledFromListeners } from './ext/emitShared'
 import {
 	type FireAsyncRecord,
 	type FireSyncRecord,
 	fireAsyncFromListeners,
 	fireFromListeners,
 } from './ext/fireShared'
-import {
-	createLimitedListener,
-	type GuardPredicate,
-	normalizeTimes,
-} from './ext/limitSingle'
+import { createLimitedListener, type GuardPredicate, normalizeTimes } from './ext/limitSingle'
 import {
 	type CancellablePromise,
 	type WaitForSingleOptions,
@@ -68,19 +57,13 @@ export type EvtChannelOptions<D extends EventDescriptor> = Omit<
 	'preallocateEvents'
 >
 
-export type EvtChannelFireSyncResult<D extends EventDescriptor> =
-	FireSyncRecord<D>
-export type EvtChannelFireAsyncResult<D extends EventDescriptor> =
-	FireAsyncRecord<D>
+export type EvtChannelFireSyncResult<D extends EventDescriptor> = FireSyncRecord<D>
+export type EvtChannelFireAsyncResult<D extends EventDescriptor> = FireAsyncRecord<D>
 export type EvtChannelSplit<D extends EventDescriptor> = CoreSplitWaterfall<D>
 export type EvtChannelWFResult<D extends EventDescriptor> =
-	EvtChannelSplit<D> extends never
-		? WFResult<never>
-		: WFResult<EvtChannelSplit<D>['ret']>
-export type EvtChannelWaitForOptions<D extends EventDescriptor> =
-	WaitForSingleOptions<D>
-export type EvtChannelWaitForPromise<D extends EventDescriptor> =
-	CancellablePromise<EventArgs<D>>
+	EvtChannelSplit<D> extends never ? WFResult<never> : WFResult<EvtChannelSplit<D>['ret']>
+export type EvtChannelWaitForOptions<D extends EventDescriptor> = WaitForSingleOptions<D>
+export type EvtChannelWaitForPromise<D extends EventDescriptor> = CancellablePromise<EventArgs<D>>
 
 export type { EvtChannelPosition, EvtChannelScope } from './channelScope'
 
@@ -135,20 +118,12 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 				next = prependListenerCopy(prev, fn)
 				break
 			case POS_INDEX:
-				next = insertListenerCopy(
-					prev,
-					resolveInsertIndex(count, posValue as number),
-					fn,
-				)
+				next = insertListenerCopy(prev, resolveInsertIndex(count, posValue as number), fn)
 				break
 			case POS_RESOLVE:
 				next = insertListenerCopy(
 					prev,
-					resolveInsertIndex(
-						count,
-						posValue as (ctx: { count: number }) => number,
-						{ count },
-					),
+					resolveInsertIndex(count, posValue as (ctx: { count: number }) => number, { count }),
 					fn,
 				)
 				break
@@ -223,10 +198,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return attachDispose(unsub)
 	}
 
-	public on(
-		listener: EventListener<D>,
-		options?: SubscriptionOptions,
-	): Unsubscribe {
+	public on(listener: EventListener<D>, options?: SubscriptionOptions): Unsubscribe {
 		return this._append(this._wrap(listener), options?.signal)
 	}
 
@@ -356,10 +328,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return this._listeners.slice()
 	}
 
-	public once(
-		listener: EventListener<D>,
-		options?: SubscriptionOptions,
-	): Unsubscribe {
+	public once(listener: EventListener<D>, options?: SubscriptionOptions): Unsubscribe {
 		return this._add(listener, 1, POS_BACK, 0, undefined, options?.signal)
 	}
 
@@ -384,21 +353,8 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 			scopePosValue: number | ((ctx: { count: number }) => number),
 			scopePredicate?: GuardPredicate<D>,
 			signal?: AbortSignal,
-		) =>
-			this._add(
-				listener,
-				times,
-				scopePosKind,
-				scopePosValue,
-				scopePredicate,
-				signal,
-			)
-		return new ChannelListenerScope(
-			add,
-			posKind,
-			posValue,
-			predicate,
-		) as EvtChannelScope<D>
+		) => this._add(listener, times, scopePosKind, scopePosValue, scopePredicate, signal)
+		return new ChannelListenerScope(add, posKind, posValue, predicate) as EvtChannelScope<D>
 	}
 
 	public when(predicate: GuardPredicate<D>): EvtChannelScope<D> {
@@ -410,9 +366,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return this._scope(encodedKind, encodedValue)
 	}
 
-	public waitFor(
-		options?: EvtChannelWaitForOptions<D>,
-	): EvtChannelWaitForPromise<D> {
+	public waitFor(options?: EvtChannelWaitForOptions<D>): EvtChannelWaitForPromise<D> {
 		const register = (listener: EventListener<D>) => this._append(listener)
 		return waitForSingle(this._wrap, register, options, 'channel')
 	}
@@ -429,12 +383,8 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return fireFromListeners(listeners, args)
 	}
 
-	public fireAsync(
-		...args: EventArgs<D>
-	): AsyncGenerator<EvtChannelFireAsyncResult<D>>
-	public fireAsync(
-		...args: EventArgs<D>
-	): AsyncGenerator<EvtChannelFireAsyncResult<D>> {
+	public fireAsync(...args: EventArgs<D>): AsyncGenerator<EvtChannelFireAsyncResult<D>>
+	public fireAsync(...args: EventArgs<D>): AsyncGenerator<EvtChannelFireAsyncResult<D>> {
 		return fireAsyncFromListeners(this._listeners, args)
 	}
 
@@ -455,9 +405,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 			: [...EvtChannelSplit<D>['args'], EvtChannelSplit<D>['next']]
 	): EvtChannelWFResult<D>
 	public waterfall(
-		...args: EvtChannelSplit<D> extends never
-			? never[]
-			: EvtChannelSplit<D>['args']
+		...args: EvtChannelSplit<D> extends never ? never[] : EvtChannelSplit<D>['args']
 	): EvtChannelWFResult<D>
 	public waterfall(...args: any[]): EvtChannelWFResult<D> {
 		return runWaterfall(this._listeners, args) as any
@@ -465,9 +413,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 
 	public waterfallFrom(
 		listeners: EventListener<D>[],
-		...args: EvtChannelSplit<D> extends never
-			? never[]
-			: EvtChannelSplit<D>['args']
+		...args: EvtChannelSplit<D> extends never ? never[] : EvtChannelSplit<D>['args']
 	): EvtChannelWFResult<D>
 	public waterfallFrom(
 		listeners: EventListener<D>[],
@@ -475,10 +421,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 			? never[]
 			: [...EvtChannelSplit<D>['args'], EvtChannelSplit<D>['next']]
 	): EvtChannelWFResult<D>
-	public waterfallFrom(
-		listeners: EventListener<D>[],
-		...args: any[]
-	): EvtChannelWFResult<D> {
+	public waterfallFrom(listeners: EventListener<D>[], ...args: any[]): EvtChannelWFResult<D> {
 		return runWaterfall(listeners, args) as any
 	}
 }

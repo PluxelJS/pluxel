@@ -24,18 +24,10 @@ export function captureError(error: unknown): CapturedError {
 }
 
 export function isCapturedError(value: unknown): value is CapturedError {
-	return (
-		value !== null &&
-		typeof value === 'object' &&
-		(value as any)[CAPTURED_ERROR] === true
-	)
+	return value !== null && typeof value === 'object' && (value as any)[CAPTURED_ERROR] === true
 }
 
-export function onSyncError(
-	err: unknown,
-	policy: ErrorPolicy,
-	logger: Logger,
-): void {
+export function onSyncError(err: unknown, policy: ErrorPolicy, logger: Logger): void {
 	switch (policy) {
 		case 'log':
 			logger.error(err)
@@ -70,10 +62,7 @@ function wrapCheckedListener<T extends (...args: any[]) => any>(
 		try {
 			const r = listener(...args)
 			if (isPromiseLike(r)) {
-				const promise =
-					typeof (r as any).catch === 'function'
-						? (r as any)
-						: Promise.resolve(r)
+				const promise = typeof (r as any).catch === 'function' ? (r as any) : Promise.resolve(r)
 				return promise.catch((err: unknown) => {
 					if (options.errorPolicy === 'log') {
 						options.logger.error(err)
@@ -105,22 +94,16 @@ function wrapCheckedListener<T extends (...args: any[]) => any>(
 
 export function createWrapHelper(options: WrapOptions) {
 	if (!options.captureRejections) {
-		return function identity<T extends (...args: any[]) => any>(
-			listener: T,
-		): T {
+		return function identity<T extends (...args: any[]) => any>(listener: T): T {
 			return listener
 		}
 	}
 
 	if (!options.captureReturnedPromises) {
-		return function wrapNativeAsync<T extends (...args: any[]) => any>(
-			listener: T,
-		): T {
+		return function wrapNativeAsync<T extends (...args: any[]) => any>(listener: T): T {
 			if ((listener as any)[ORIGFUNC] !== undefined) return listener as any
 			const nativeAsync = isNativeAsync(listener)
-			return nativeAsync
-				? wrapCheckedListener(listener, options, true)
-				: listener
+			return nativeAsync ? wrapCheckedListener(listener, options, true) : listener
 		}
 	}
 
@@ -138,10 +121,7 @@ export function appendListenerCopy<T>(prev: T[] | undefined, listener: T): T[] {
 	return next
 }
 
-export function prependListenerCopy<T>(
-	prev: T[] | undefined,
-	listener: T,
-): T[] {
+export function prependListenerCopy<T>(prev: T[] | undefined, listener: T): T[] {
 	if (!prev || prev.length === 0) return [listener]
 	const len = prev.length
 	const next = new Array<T>(len + 1)

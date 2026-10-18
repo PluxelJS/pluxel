@@ -1,4 +1,4 @@
-import { builtinModules } from 'node:module'
+import { builtinModules, createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve } from 'pathe'
@@ -242,13 +242,24 @@ async function analyzeNodeModuleSourceGraph(
 						`[node-module] native dependency ${packageName} must be declared directly in ${owner.name ?? ownerRoot} dependencies`,
 					)
 				}
+				// The generated native bridge calls createRequire(owner)(packageName).
+				// Trace that exact entry; an import condition may select a different file.
+				let requiredEntry: string
+				try {
+					requiredEntry = createRequire(resolve(ownerRoot, 'package.json')).resolve(packageName)
+				} catch (cause) {
+					throw new Error(
+						`[node-module] native dependency ${packageName} cannot be required from ${ownerRoot}`,
+						{ cause },
+					)
+				}
 				const existing = nativeResiduals.get(packageName)
-				if (existing && existing !== hit.path) {
+				if (existing && existing !== requiredEntry) {
 					throw new Error(
 						`[node-module] native dependency ${packageName} resolves to multiple package entries`,
 					)
 				}
-				nativeResiduals.set(packageName, hit.path)
+				nativeResiduals.set(packageName, requiredEntry)
 				if (item.kind === 'dynamic') {
 					throw new Error(
 						`[node-module] dynamic imports of native dependency ${packageName} are not supported; use a static import`,

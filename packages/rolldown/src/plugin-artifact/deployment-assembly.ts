@@ -1,38 +1,42 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 
 export type AssembleNodeModuleDeploymentArtifactsOptions = Readonly<{
 	/** Final application artifact directory, normally `dist/artifacts/node`. */
 	destinationRoot: string
-	/** Reachable package artifact directories to merge into the application deployment. */
-	dependencyRoots: readonly string[]
+	/** Exact keys lowered from source in the final server module closure. */
+	sourceArtifactKeys: readonly string[]
+	/** Artifact keys referenced by built modules, paired with their owning package outputs. */
+	dependencies: readonly Readonly<{ root: string; artifactKeys: readonly string[] }>[]
 	/** Artifact keys embedded in the bundled server closure and required at runtime. */
 	requiredArtifactKeys: readonly string[]
 }>
 
-/** Merges immutable Node artifacts from reachable packages into one static deployment root. */
+/** Assembles only referenced Node artifacts, retaining every selected owner's collision checks. */
 export async function assembleNodeModuleDeploymentArtifacts(
 	options: AssembleNodeModuleDeploymentArtifactsOptions,
 ): Promise<void> {
 	const destinationRoot = resolve(options.destinationRoot)
+	const required = validatedKeys(options.requiredArtifactKeys)
+	const source = validatedKeys(options.sourceArtifactKeys)
 	const artifacts = new Map<string, Readonly<{ content: Buffer; source: string }>>()
-	await collectArtifacts(artifacts, destinationRoot)
-	for (const dependencyRoot of [
-		...new Set(options.dependencyRoots.map((root) => resolve(root))),
-	].sort()) {
-		if (dependencyRoot === destinationRoot) continue
-		await collectArtifacts(artifacts, dependencyRoot)
+	for (const key of source) {
+		if (!required.has(key)) continue
+		await collectArtifact(artifacts, destinationRoot, key)
 	}
-
-	for (const key of [...new Set(options.requiredArtifactKeys)].sort()) {
-		if (!/^node-[0-9a-f]{16}$/.test(key)) {
-			throw new Error(`[static-application] Invalid required Node artifact key: ${key}`)
+	for (const dependency of [...options.dependencies].sort((left, right) =>
+		left.root.localeCompare(right.root),
+	)) {
+		const dependencyRoot = resolve(dependency.root)
+		for (const key of validatedKeys(dependency.artifactKeys)) {
+			if (!required.has(key)) continue
+			// Existing output without source facts cannot override a selected packaged artifact.
+			await collectArtifact(artifacts, destinationRoot, key, true)
+			await collectArtifact(artifacts, dependencyRoot, key)
 		}
-		if (!artifacts.has(`${key}.mjs`)) {
-			throw new Error(
-				`[static-application] Required Node artifact was not found in application or reachable package outputs: ${key}`,
-			)
-		}
+	}
+	for (const key of required) {
+		if (!artifacts.has(`${key}.mjs`)) throw missingArtifact(key)
 	}
 
 	await mkdir(destinationRoot, { recursive: true })
@@ -45,29 +49,43 @@ export async function assembleNodeModuleDeploymentArtifacts(
 	}
 }
 
-async function readArtifactDirectory(root: string) {
-	try {
-		return await readdir(root, { withFileTypes: true })
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-		throw error
+function validatedKeys(keys: readonly string[]): Set<string> {
+	const result = new Set(keys)
+	for (const key of result) {
+		if (!/^node-[0-9a-f]{16}$/.test(key)) {
+			throw new Error(`[static-application] Invalid required Node artifact key: ${key}`)
+		}
 	}
+	return result
 }
 
-async function collectArtifacts(
+function missingArtifact(key: string, root?: string): Error {
+	return new Error(
+		`[static-application] Required Node artifact was not found in ${root ?? 'application or reachable package outputs'}: ${key}`,
+	)
+}
+
+async function collectArtifact(
 	artifacts: Map<string, Readonly<{ content: Buffer; source: string }>>,
 	root: string,
+	key: string,
+	optional = false,
 ): Promise<void> {
-	for (const entry of await readArtifactDirectory(root)) {
-		if (!entry.isFile() || !entry.name.endsWith('.mjs')) continue
-		const source = resolve(root, entry.name)
-		const content = await readFile(source)
-		const existing = artifacts.get(entry.name)
-		if (existing && !existing.content.equals(content)) {
-			throw new Error(
-				`[static-application] Node artifact content collision for ${entry.name}: ${source} conflicts with ${existing.source}`,
-			)
-		}
-		if (!existing) artifacts.set(entry.name, Object.freeze({ content, source }))
+	const name = `${key}.mjs`
+	const source = resolve(root, name)
+	let content: Buffer
+	try {
+		content = await readFile(source)
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+		if (optional) return
+		throw missingArtifact(key, root)
 	}
+	const existing = artifacts.get(name)
+	if (existing && !existing.content.equals(content)) {
+		throw new Error(
+			`[static-application] Node artifact content collision for ${name}: ${source} conflicts with ${existing.source}`,
+		)
+	}
+	if (!existing) artifacts.set(name, Object.freeze({ content, source }))
 }

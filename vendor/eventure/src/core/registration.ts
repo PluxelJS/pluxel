@@ -11,23 +11,16 @@ export type PositionKind =
 	| typeof POS_FRONT
 	| typeof POS_INDEX
 	| typeof POS_RESOLVE
-export type EncodedPosition<Ctx> = [
-	PositionKind,
-	number | ((ctx: Ctx) => number),
-]
+export type EncodedPosition<Ctx> = [PositionKind, number | ((ctx: Ctx) => number)]
 
-export function encodeListenerPosition<Ctx>(
-	position: ListenerPosition<Ctx>,
-): EncodedPosition<Ctx> {
+export function encodeListenerPosition<Ctx>(position: ListenerPosition<Ctx>): EncodedPosition<Ctx> {
 	switch (position) {
 		case 'front':
 			return [POS_FRONT, 0]
 		case 'back':
 			return [POS_BACK, 0]
 		default:
-			return typeof position === 'function'
-				? [POS_RESOLVE, position]
-				: [POS_INDEX, position]
+			return typeof position === 'function' ? [POS_RESOLVE, position] : [POS_INDEX, position]
 	}
 }
 
@@ -42,13 +35,8 @@ export function resolveInsertIndex<Ctx>(
 }
 
 export function normalizeMaxListeners(count: number): number {
-	if (
-		count !== Number.POSITIVE_INFINITY &&
-		(!Number.isInteger(count) || count < 0)
-	) {
-		throw new RangeError(
-			'maxListeners must be a non-negative integer or Infinity',
-		)
+	if (count !== Number.POSITIVE_INFINITY && (!Number.isInteger(count) || count < 0)) {
+		throw new RangeError('maxListeners must be a non-negative integer or Infinity')
 	}
 	return count
 }
@@ -58,14 +46,9 @@ export function attachDispose<T extends Unsubscribe>(unsub: T): T {
 	return unsub
 }
 
-export const noopSubscription: Unsubscribe = attachDispose(
-	(() => {}) as Unsubscribe,
-)
+export const noopSubscription: Unsubscribe = attachDispose((() => {}) as Unsubscribe)
 
-export function withAbortSignal(
-	signal: AbortSignal | undefined,
-	sub: Unsubscribe,
-): Unsubscribe {
+export function withAbortSignal(signal: AbortSignal | undefined, sub: Unsubscribe): Unsubscribe {
 	if (!signal) return sub
 
 	let settled = false

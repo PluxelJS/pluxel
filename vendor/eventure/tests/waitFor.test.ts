@@ -27,9 +27,7 @@ describe('Eventure.waitFor', () => {
 	it('rejects on timeout and removes the listener', async () => {
 		const timeoutMs = 10
 		const p = emitter.waitFor('ready', { timeout: timeoutMs })
-		await expect(p).rejects.toThrow(
-			`waitFor 'ready' timeout after ${timeoutMs}ms`,
-		)
+		await expect(p).rejects.toThrow(`waitFor 'ready' timeout after ${timeoutMs}ms`)
 		expect(emitter.count('ready')).toBe(0)
 	})
 
@@ -53,9 +51,7 @@ describe('Eventure.waitFor', () => {
 			filter: (v) => v > 100, // 永不满足
 		})
 		emitter.emit('data', 10)
-		await expect(p).rejects.toThrow(
-			`waitFor 'data' timeout after ${timeoutMs}ms`,
-		)
+		await expect(p).rejects.toThrow(`waitFor 'data' timeout after ${timeoutMs}ms`)
 		expect(emitter.count('data')).toBe(0)
 	})
 
@@ -127,8 +123,6 @@ describe('Eventure.waitFor', () => {
 		emitter.emit('data', 1)
 		const timeoutMs = 10
 		const p = emitter.waitFor('data', { timeout: timeoutMs })
-		await expect(p).rejects.toThrow(
-			`waitFor 'data' timeout after ${timeoutMs}ms`,
-		)
+		await expect(p).rejects.toThrow(`waitFor 'data' timeout after ${timeoutMs}ms`)
 	})
 })

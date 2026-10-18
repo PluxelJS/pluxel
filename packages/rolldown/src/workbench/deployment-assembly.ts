@@ -44,6 +44,8 @@ export type AssembleWorkbenchDeploymentInput = Readonly<{
 	dependencyRoots: readonly string[]
 	/** Canonical definition keys selected by the application's validated immutable catalog. */
 	definitions: ReadonlySet<string>
+	/** Selected definitions backed by compiled ABI facts in the bundled dependency modules. */
+	dependencyDefinitions: ReadonlySet<string>
 }>
 
 type ProducerSource = Readonly<{
@@ -85,7 +87,9 @@ export async function assembleWorkbenchDeploymentArtifacts(
 	for (const source of inventories) {
 		if (!source.inventory) continue
 		for (const producer of source.inventory.producers) {
-			if (!input.definitions.has(pluginDefinitionIndexKey(producer.plan.definition))) continue
+			const definition = pluginDefinitionIndexKey(producer.plan.definition)
+			if (!input.definitions.has(definition)) continue
+			if (source.root !== destinationRoot && !input.dependencyDefinitions.has(definition)) continue
 			const artifactRoot = resolveArtifactRoot(source.root, producer)
 			const fingerprint = await fingerprintArtifactTree(artifactRoot)
 			const candidate = Object.freeze({ producer, artifactRoot, fingerprint })
@@ -146,11 +150,12 @@ export async function assembleWorkbenchContentDeploymentArtifacts(
 	for (const source of inventories) {
 		if (!source.inventory) continue
 		for (const content of source.inventory.entries) {
-			if (!input.definitions.has(pluginDefinitionIndexKey(content.definition))) continue
+			const key = pluginDefinitionIndexKey(content.definition)
+			if (!input.definitions.has(key)) continue
+			if (source.root !== destinationRoot && !input.dependencyDefinitions.has(key)) continue
 			const artifactRoot = resolve(source.root, content.artifactRoot)
 			const fingerprint = await validateContentArtifact(artifactRoot, content)
 			const candidate = Object.freeze({ content, artifactRoot, fingerprint })
-			const key = pluginDefinitionIndexKey(content.definition)
 			const existing = merged.get(key)
 			if (!existing) {
 				merged.set(key, candidate)

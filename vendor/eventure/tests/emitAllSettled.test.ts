@@ -15,9 +15,7 @@ type EmitHarness = {
 	create: () => {
 		on: (listener: Listener) => void
 		emitAll: (value: string) => Promise<Result[]>
-		emitSettled: (
-			value: string,
-		) => Promise<EmitSettledRecord<Listener, Result>[]>
+		emitSettled: (value: string) => Promise<EmitSettledRecord<Listener, Result>[]>
 	}
 }
 
@@ -80,8 +78,7 @@ describe.each(harnesses)('emitAll/emitSettled ($name)', ({ create }) => {
 		if (!r1) throw new Error('Expected result[1]')
 		expect(r1).toMatchObject({ status: 'fulfilled' })
 		expect(r1.fn).toBe(syncReturnError)
-		if (r1.status !== 'fulfilled')
-			throw new Error('Expected fulfilled result[1]')
+		if (r1.status !== 'fulfilled') throw new Error('Expected fulfilled result[1]')
 		expect(r1.value).toBeInstanceOf(Error)
 		expect((r1.value as Error).message).toBe('bad-value')
 

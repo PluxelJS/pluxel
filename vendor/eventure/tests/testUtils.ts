@@ -1,10 +1,4 @@
-import {
-	type EventDescriptor,
-	Eventure,
-	EvtChannel,
-	type IEventMap,
-	type Logger,
-} from 'eventure'
+import { type EventDescriptor, Eventure, EvtChannel, type IEventMap, type Logger } from 'eventure'
 
 export const silentLogger: Logger = {
 	trace: () => {},

@@ -39,8 +39,7 @@ describe('Eventure.fire (sync generator)', () => {
 		// 第二个 listener 抛错
 		const second = results[1]
 		expect(second?.type).toBe('error')
-		if (!second || second.type !== 'error')
-			throw new Error('Expected error record')
+		if (!second || second.type !== 'error') throw new Error('Expected error record')
 		expect(second.fn).toBe(errFn)
 		expect(second.error).toBeInstanceOf(Error)
 		expect((second.error as Error).message).toBe('fail')

@@ -34,6 +34,8 @@ import type { NodeModuleNativeResidual } from './node-module.ts'
 
 const NODE_MODULE_BUILD_CACHE_VERSION = 2
 const PRODUCTION_ARTIFACT_CACHE_KEEP = 3
+/** Internal per-module facts emitted only for declarations lowered in this compilation. */
+export const NODE_MODULE_SOURCE_ARTIFACT_KEYS = 'pluxel:source-node-artifact-keys'
 const CODE_HINT = /\b(?:defineNodeModule\s*\(|defineWorkerTask\b)/
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
 const NODE_MODULE_IMPORTS = new Map([
@@ -64,6 +66,8 @@ type NodeLike = {
 
 type NodeModuleDeclaration = Readonly<{
 	artifactKey: string
+	/** Exact bundler IDs; artifact identity and filesystem paths use normalized IDs separately. */
+	moduleIds: readonly string[]
 	entryPath: string
 	insertOffset: number
 }>
@@ -152,11 +156,13 @@ export function pluginArtifactBuildPlugin(
 				id: { include: includePatterns, exclude: excludePatterns },
 			},
 			async handler(code, rawId) {
-				if (!CODE_HINT.test(code) && !DATABASE_CODE_HINT.test(code)) return null
+				if (!CODE_HINT.test(code) && !DATABASE_CODE_HINT.test(code)) {
+					return { meta: { [NODE_MODULE_SOURCE_ARTIFACT_KEYS]: [] } }
+				}
 				const id = normalizeViteId(rawId)
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[pluxel] failed to parse declaration module: ${id}`)
-				const extractedNode = extractNodeModuleDeclarations(ast, code, id, root)
+				const extractedNode = extractNodeModuleDeclarations(ast, code, id, root, rawId)
 				const databaseDeclarations = extractDatabaseDeclarations(ast, code, id)
 				let databaseArtifact: string | undefined
 				if (databaseDeclarations.length > 0) {
@@ -199,9 +205,14 @@ export function pluginArtifactBuildPlugin(
 					if (existing && existing.entryPath !== declaration.entryPath) {
 						this.error(`[node-module] artifact key collision: ${declaration.artifactKey}`)
 					}
-					nodeDeclarations.set(declaration.artifactKey, declaration)
+					nodeDeclarations.set(declaration.artifactKey, {
+						...declaration,
+						moduleIds: [...new Set([...(existing?.moduleIds ?? []), ...declaration.moduleIds])],
+					})
 				}
-				if (extractedNode.length === 0 && databaseDeclarations.length === 0) return null
+				if (extractedNode.length === 0 && databaseDeclarations.length === 0) {
+					return { meta: { [NODE_MODULE_SOURCE_ARTIFACT_KEYS]: [] } }
+				}
 				let transformed = code
 				const lowerings = [
 					...extractedNode.map((item) => ({
@@ -216,10 +227,25 @@ export function pluginArtifactBuildPlugin(
 				for (const declaration of lowerings) {
 					transformed = `${transformed.slice(0, declaration.offset)}${declaration.value}${transformed.slice(declaration.offset)}`
 				}
-				return { code: transformed, map: null }
+				return {
+					code: transformed,
+					map: null,
+					meta: {
+						[NODE_MODULE_SOURCE_ARTIFACT_KEYS]: extractedNode.map((item) => item.artifactKey),
+					},
+				}
 			},
 		},
-		async writeBundle() {
+		async writeBundle(_outputOptions, bundle) {
+			const selectedNodeDeclarations = [...nodeDeclarations.values()].filter((declaration) =>
+				Object.values(bundle).some(
+					(item) =>
+						item.type === 'chunk' &&
+						declaration.moduleIds.some((id) =>
+							item.modules[id]?.code?.includes(declaration.artifactKey),
+						),
+				),
+			)
 			const producerCompilations =
 				options.workbench === false ? [] : await (options.workbench?.compilations?.() ?? [])
 			const contentCompilations =
@@ -245,7 +271,7 @@ export function pluginArtifactBuildPlugin(
 				...producerCompilations
 					.toSorted((left, right) => left.plan.producer.localeCompare(right.plan.producer))
 					.map((compilation) => buildProductionProducer(root, compilation, options)),
-				...[...nodeDeclarations.values()]
+				...selectedNodeDeclarations
 					.sort((a, b) => a.artifactKey.localeCompare(b.artifactKey))
 					.map((declaration) => buildProductionNodeModule(root, declaration, options)),
 				...(databasePackages.get(root)
@@ -255,13 +281,16 @@ export function pluginArtifactBuildPlugin(
 			const artifactRoot = resolve(root, options.buildDir ?? 'dist', 'artifacts/node')
 			await mkdir(artifactRoot, { recursive: true })
 			const nodeInventory = await Promise.all(
-				[...nodeDeclarations.keys()].sort().map(async (key) => ({
-					key,
-					file: `${key}.mjs`,
-					sha256: createHash('sha256')
-						.update(await readFile(resolve(artifactRoot, `${key}.mjs`)))
-						.digest('hex'),
-				})),
+				selectedNodeDeclarations
+					.map(({ artifactKey }) => artifactKey)
+					.sort()
+					.map(async (key) => ({
+						key,
+						file: `${key}.mjs`,
+						sha256: createHash('sha256')
+							.update(await readFile(resolve(artifactRoot, `${key}.mjs`)))
+							.digest('hex'),
+					})),
 			)
 			await writeFile(
 				resolve(artifactRoot, 'pluxel-node-artifacts.json'),
@@ -502,6 +531,7 @@ function extractNodeModuleDeclarations(
 	code: string,
 	id: string,
 	root: string,
+	moduleId: string,
 ): NodeModuleDeclaration[] {
 	const localNames = collectNodeModuleImports(ast)
 	if (localNames.size === 0) return []
@@ -533,6 +563,7 @@ function extractNodeModuleDeclarations(
 		const artifactKey = resolveNodeModuleArtifactKey(root, id, relativeEntry)
 		out.push({
 			artifactKey,
+			moduleIds: [moduleId],
 			entryPath: isAbsolute(relativeEntry)
 				? resolve(relativeEntry)
 				: resolve(dirname(id), relativeEntry),

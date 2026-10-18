@@ -1,12 +1,6 @@
 import type { DummyRuleMap, RuleCategories, OxlintConfig } from 'vite-plus/lint'
 
-const ignorePatterns = [
-	'node_modules/**',
-	'dist/**',
-	'coverage/**',
-	'tinybench/**',
-	'**/*.test.ts',
-]
+const ignorePatterns = ['node_modules/**', 'dist/**', 'coverage/**', 'tinybench/**', '**/*.test.ts']
 
 const categories = {
 	// Keep the default bug-finding rules hard-failing.
@@ -177,7 +171,13 @@ export default {
 			},
 		},
 		{
-			files: ['oxlint.config.ts', 'tsdown.config.ts', 'vitest.config.ts'],
+			files: [
+				'oxlint.config.ts',
+				'oxfmt.config.ts',
+				'tsdown.config.ts',
+				'vitest.config.ts',
+				'vite.config.ts',
+			],
 			rules: {
 				// Tooling config files are consumed through default exports.
 				'import/no-default-export': 'off',

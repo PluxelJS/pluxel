@@ -18,9 +18,7 @@ export function runWaterfall<D extends EventDescriptor>(
 ) {
 	const last = args[args.length - 1]
 	const hasInner = typeof last === 'function'
-	const inner = hasInner
-		? (args.pop() as (...innerArgs: any[]) => any)
-		: noopInner
+	const inner = hasInner ? (args.pop() as (...innerArgs: any[]) => any) : noopInner
 	const callArgs = args
 
 	let idx = 0
@@ -51,13 +49,7 @@ export function runWaterfall<D extends EventDescriptor>(
 					ret = listener(arguments[0], arguments[1], arguments[2], next)
 					break
 				case 4:
-					ret = listener(
-						arguments[0],
-						arguments[1],
-						arguments[2],
-						arguments[3],
-						next,
-					)
+					ret = listener(arguments[0], arguments[1], arguments[2], arguments[3], next)
 					break
 				default: {
 					const argc = arguments.length

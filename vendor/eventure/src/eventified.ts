@@ -22,36 +22,21 @@ import {
 	resolveInsertIndex,
 	withAbortSignal,
 } from './core/registration'
-import {
-	EventureListenerScope,
-	type EventurePosition,
-	type EventureScope,
-} from './eventureScope'
-import {
-	emitAllFromListeners,
-	emitSettledFromListeners,
-} from './ext/emitShared'
+import { EventureListenerScope, type EventurePosition, type EventureScope } from './eventureScope'
+import { emitAllFromListeners, emitSettledFromListeners } from './ext/emitShared'
 import {
 	type FireAsyncRecord,
 	type FireSyncRecord,
 	fireAsyncFromListeners,
 	fireFromListeners,
 } from './ext/fireShared'
-import {
-	createLimitedListener,
-	type GuardPredicate,
-	normalizeTimes,
-} from './ext/limitSingle'
+import { createLimitedListener, type GuardPredicate, normalizeTimes } from './ext/limitSingle'
 import {
 	type CancellablePromise,
 	type WaitForSingleOptions,
 	waitForSingle,
 } from './ext/waitForSingle'
-import {
-	runWaterfall,
-	type SplitWaterfall,
-	type WFResult,
-} from './ext/waterfallShared'
+import { runWaterfall, type SplitWaterfall, type WFResult } from './ext/waterfallShared'
 import { defaultLogger, type Logger } from './logger'
 import type {
 	ErrorPolicy,
@@ -66,47 +51,34 @@ import type {
 	Unsubscribe,
 } from './types'
 
-export type EventureFireSyncResult<
-	E extends IEventMap<E>,
-	K extends keyof E,
-> = FireSyncRecord<E[K]>
-export type EventureFireAsyncResult<
-	E extends IEventMap<E>,
-	K extends keyof E,
-> = FireAsyncRecord<E[K]>
+export type EventureFireSyncResult<E extends IEventMap<E>, K extends keyof E> = FireSyncRecord<E[K]>
+export type EventureFireAsyncResult<E extends IEventMap<E>, K extends keyof E> = FireAsyncRecord<
+	E[K]
+>
 
 export type EventureWaitForOptions<
 	E extends IEventMap<E>,
 	K extends keyof E,
 > = WaitForSingleOptions<E[K]>
-export type EventureWaitForPromise<
-	E extends IEventMap<E>,
-	K extends keyof E,
-> = CancellablePromise<EventArgs<E[K]>>
+export type EventureWaitForPromise<E extends IEventMap<E>, K extends keyof E> = CancellablePromise<
+	EventArgs<E[K]>
+>
 
 export type WFKeys<E extends IEventMap<E>> = {
 	[K in keyof E]: SplitWaterfall<E[K]> extends never ? never : K
 }[keyof E]
 
-export type EventureSplit<
-	E extends IEventMap<E>,
-	K extends WFKeys<E>,
-> = SplitWaterfall<E[K]>
+export type EventureSplit<E extends IEventMap<E>, K extends WFKeys<E>> = SplitWaterfall<E[K]>
 export type EventureWFResult<E extends IEventMap<E>, K extends WFKeys<E>> =
-	EventureSplit<E, K> extends never
-		? WFResult<never>
-		: WFResult<EventureSplit<E, K>['ret']>
+	EventureSplit<E, K> extends never ? WFResult<never> : WFResult<EventureSplit<E, K>['ret']>
 
 export type { EventurePosition, EventureScope } from './eventureScope'
 
 const EMPTY_LISTENERS: readonly EventListener<any>[] = []
 
-export class Eventure<
-	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
-> {
+export class Eventure<E extends IEventMap<E> = Record<string | symbol, EventDescriptor>> {
 	// 事件 → 监听器列表（不可变写入，emit 避免 slice）
-	protected _listeners: { [K in keyof E]?: EventListener<E[K]>[] } =
-		Object.create(null)
+	protected _listeners: { [K in keyof E]?: EventListener<E[K]>[] } = Object.create(null)
 	protected _activeEvents = new Set<keyof E>()
 
 	protected _maxListeners = 10
@@ -177,20 +149,15 @@ export class Eventure<
 				next = prependListenerCopy(prev, fn)
 				break
 			case POS_INDEX:
-				next = insertListenerCopy(
-					prev,
-					resolveInsertIndex(count, posValue as number),
-					fn,
-				)
+				next = insertListenerCopy(prev, resolveInsertIndex(count, posValue as number), fn)
 				break
 			case POS_RESOLVE:
 				next = insertListenerCopy(
 					prev,
-					resolveInsertIndex(
+					resolveInsertIndex(count, posValue as (ctx: { count: number; event: K }) => number, {
 						count,
-						posValue as (ctx: { count: number; event: K }) => number,
-						{ count, event },
-					),
+						event,
+					}),
 					fn,
 				)
 				break
@@ -274,17 +241,11 @@ export class Eventure<
 	}
 
 	/** 移除单个监听器；返回是否真的移除了一个条目 */
-	public off<K extends keyof E>(
-		event: K,
-		listener: EventListener<E[K]>,
-	): boolean {
+	public off<K extends keyof E>(event: K, listener: EventListener<E[K]>): boolean {
 		return this._offBy(event, listener, false)
 	}
 
-	protected _offRegistered<K extends keyof E>(
-		event: K,
-		listener: EventListener<E[K]>,
-	): boolean {
+	protected _offRegistered<K extends keyof E>(event: K, listener: EventListener<E[K]>): boolean {
 		return this._offBy(event, listener, true)
 	}
 
@@ -414,9 +375,7 @@ export class Eventure<
 	public emitSettled<K extends keyof E>(
 		event: K,
 		...args: EventArgs<E[K]>
-	): Promise<
-		EmitSettledRecord<EventListener<E[K]>, Awaited<EventResult<E[K]>>>[]
-	> {
+	): Promise<EmitSettledRecord<EventListener<E[K]>, Awaited<EventResult<E[K]>>>[]> {
 		return emitSettledFromListeners(this._listeners[event], args)
 	}
 
@@ -446,15 +405,7 @@ export class Eventure<
 		listener: EventListener<E[K]>,
 		options?: SubscriptionOptions,
 	): Unsubscribe {
-		return this._add(
-			event,
-			listener,
-			1,
-			POS_BACK,
-			0,
-			undefined,
-			options?.signal,
-		)
+		return this._add(event, listener, 1, POS_BACK, 0, undefined, options?.signal)
 	}
 
 	public many<K extends keyof E>(
@@ -464,15 +415,7 @@ export class Eventure<
 		options?: SubscriptionOptions,
 	): Unsubscribe {
 		normalizeTimes(times)
-		return this._add(
-			event,
-			listener,
-			times,
-			POS_BACK,
-			0,
-			undefined,
-			options?.signal,
-		)
+		return this._add(event, listener, times, POS_BACK, 0, undefined, options?.signal)
 	}
 
 	protected _scope<K extends keyof E>(
@@ -488,35 +431,15 @@ export class Eventure<
 			scopePosValue: number | ((ctx: { count: number; event: K }) => number),
 			scopePredicate?: GuardPredicate<E[K]>,
 			signal?: AbortSignal,
-		) =>
-			this._add(
-				event,
-				listener,
-				times,
-				scopePosKind,
-				scopePosValue,
-				scopePredicate,
-				signal,
-			)
-		return new EventureListenerScope(
-			add,
-			posKind,
-			posValue,
-			predicate,
-		) as EventureScope<E, K>
+		) => this._add(event, listener, times, scopePosKind, scopePosValue, scopePredicate, signal)
+		return new EventureListenerScope(add, posKind, posValue, predicate) as EventureScope<E, K>
 	}
 
-	public when<K extends keyof E>(
-		event: K,
-		predicate: GuardPredicate<E[K]>,
-	): EventureScope<E, K> {
+	public when<K extends keyof E>(event: K, predicate: GuardPredicate<E[K]>): EventureScope<E, K> {
 		return this._scope(event, POS_BACK, 0, predicate)
 	}
 
-	public at<K extends keyof E>(
-		event: K,
-		position: EventurePosition<E, K>,
-	): EventureScope<E, K> {
+	public at<K extends keyof E>(event: K, position: EventurePosition<E, K>): EventureScope<E, K> {
 		const [encodedKind, encodedValue] = encodeListenerPosition(position)
 		return this._scope(event, encodedKind, encodedValue)
 	}
@@ -525,8 +448,7 @@ export class Eventure<
 		event: K,
 		options: EventureWaitForOptions<E, K> = {},
 	): EventureWaitForPromise<E, K> {
-		const register = (listener: EventListener<E[K]>) =>
-			this._append(event, listener)
+		const register = (listener: EventListener<E[K]>) => this._append(event, listener)
 		return waitForSingle(this._wrap, register, options, String(event))
 	}
 
@@ -574,9 +496,7 @@ export class Eventure<
 	): EventureWFResult<E, K>
 	public waterfall<K extends WFKeys<E>>(
 		event: K,
-		...args: EventureSplit<E, K> extends never
-			? never[]
-			: EventureSplit<E, K>['args']
+		...args: EventureSplit<E, K> extends never ? never[] : EventureSplit<E, K>['args']
 	): EventureWFResult<E, K>
 	public waterfall(event: any, ...args: any[]): WFResult<any> {
 		return runWaterfall(this._readListeners(event), args)
@@ -590,14 +510,9 @@ export class Eventure<
 	): EventureWFResult<E, K>
 	public waterfallFrom<K extends WFKeys<E>>(
 		listeners: EventListener<E[K]>[],
-		...args: EventureSplit<E, K> extends never
-			? never[]
-			: EventureSplit<E, K>['args']
+		...args: EventureSplit<E, K> extends never ? never[] : EventureSplit<E, K>['args']
 	): EventureWFResult<E, K>
-	public waterfallFrom(
-		listeners: EventListener<any>[],
-		...args: any[]
-	): WFResult<any> {
+	public waterfallFrom(listeners: EventListener<any>[], ...args: any[]): WFResult<any> {
 		return runWaterfall(listeners, args)
 	}
 }

@@ -1,6 +1,7 @@
 import { applicationCatalogHash } from './application-hash'
 import { pluginDefinitionIndexKey } from '@pluxel/core'
 import type { ConfigSourceSymbol } from '../rolldown/plugins/configSourcePlugin'
+import type { PluginSemanticsCollector } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
@@ -20,6 +21,7 @@ import {
 	collectWorkbenchContentDeploymentArtifacts,
 } from '../workbench/deployment-assembly'
 import { assembleNodeModuleDeploymentArtifacts } from '../plugin-artifact/deployment-assembly'
+import { NODE_MODULE_SOURCE_ARTIFACT_KEYS } from '../plugin-artifact/pluginArtifactBuildPlugin'
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 import { staticElysiaSingletonPlugin } from './elysia-singleton'
 import { staticFrameworkSingletonPlugin } from './framework-singletons'
@@ -228,7 +230,14 @@ export function createStaticApplicationConfig(
 				variant,
 				launcher,
 			}),
-			staticApplicationAssemblyPlugin({ cwd, outDir, variant, state, selectWorkbenchDefinitions }),
+			staticApplicationAssemblyPlugin({
+				cwd,
+				outDir,
+				variant,
+				state,
+				selectWorkbenchDefinitions,
+				builtDefinitionModules: sourcePipeline.semantics.builtDefinitionModules,
+			}),
 		],
 		inputOptions: {
 			...sourcePipeline.inputOptions,
@@ -612,6 +621,7 @@ function staticApplicationAssemblyPlugin(options: {
 	variant: 'headless' | 'workbench'
 	state: StaticApplicationBuildState
 	selectWorkbenchDefinitions(): ReadonlySet<string>
+	builtDefinitionModules: PluginSemanticsCollector['builtDefinitionModules']
 }): Plugin {
 	return {
 		name: 'pluxel-static-application-assembly',
@@ -621,12 +631,15 @@ function staticApplicationAssemblyPlugin(options: {
 				assertBundledPluxelClosure(bundle, options.state.residualPackages)
 				await mkdir(options.outDir, { recursive: true })
 				const packageRoots = await collectBundledPackageRoots(bundle)
+				const requiredArtifactKeys = collectBundledNodeArtifactKeys(bundle)
+				const nodeArtifacts = await collectBundledNodeArtifactInputs(
+					bundle,
+					(id) => this.getModuleInfo(id)?.meta[NODE_MODULE_SOURCE_ARTIFACT_KEYS],
+				)
 				await assembleNodeModuleDeploymentArtifacts({
 					destinationRoot: resolve(options.outDir, 'artifacts/node'),
-					dependencyRoots: packageRoots.map((packageRoot) =>
-						resolve(packageRoot, 'dist/artifacts/node'),
-					),
-					requiredArtifactKeys: collectBundledNodeArtifactKeys(bundle),
+					...nodeArtifacts,
+					requiredArtifactKeys,
 				})
 				options.state.environmentExampleOwned = await writeStaticConfigEnvironmentExample({
 					outDir: options.outDir,
@@ -641,10 +654,18 @@ function staticApplicationAssemblyPlugin(options: {
 						recursive: true,
 						force: true,
 					})
+					const bundledModules = Object.values(bundle).flatMap((item) =>
+						item.type === 'chunk' ? Object.keys(item.modules) : [],
+					)
+					const dependencyDefinitions = new Set<string>()
+					for (const keys of options.builtDefinitionModules(bundledModules).values()) {
+						for (const key of keys) dependencyDefinitions.add(key)
+					}
 					workbenchInventories = await assembleBundledPackageWorkbenchArtifacts(
 						packageRoots,
 						resolve(options.outDir, 'workbench'),
 						options.selectWorkbenchDefinitions(),
+						dependencyDefinitions,
 					)
 				}
 				const entry = Object.values(bundle).find(
@@ -667,6 +688,7 @@ function staticApplicationAssemblyPlugin(options: {
 					: []
 				const nodeModules = await collectNodeModuleArtifacts(
 					resolve(options.outDir, 'artifacts/node'),
+					requiredArtifactKeys,
 				)
 				const catalogHash = applicationCatalogHash(bundle)
 				await writeFile(
@@ -716,6 +738,7 @@ async function assembleBundledPackageWorkbenchArtifacts(
 	packageRoots: readonly string[],
 	destinationRoot: string,
 	definitions: ReadonlySet<string>,
+	dependencyDefinitions: ReadonlySet<string>,
 ): Promise<
 	Readonly<{
 		producers: Awaited<ReturnType<typeof assembleWorkbenchDeploymentArtifacts>>
@@ -727,6 +750,7 @@ async function assembleBundledPackageWorkbenchArtifacts(
 			destinationRoot,
 			dependencyRoots: packageRoots.map((packageRoot) => resolve(packageRoot, 'dist/workbench')),
 			definitions,
+			dependencyDefinitions,
 		}
 		const producers = await assembleWorkbenchDeploymentArtifacts(input)
 		const content = await assembleWorkbenchContentDeploymentArtifacts(input)
@@ -752,9 +776,66 @@ function collectBundledNodeArtifactKeys(bundle: OutputBundle): string[] {
 	const keys = new Set<string>()
 	for (const item of Object.values(bundle)) {
 		if (item.type !== 'chunk') continue
-		for (const match of item.code.matchAll(/\bnode-[0-9a-f]{16}\b/g)) keys.add(match[0])
+		for (const key of nodeArtifactKeys(item.code)) keys.add(key)
 	}
 	return [...keys].sort()
+}
+
+function nodeArtifactKeys(code: string): string[] {
+	return [...code.matchAll(/\bnode-[0-9a-f]{16}\b/g)].map((match) => match[0])
+}
+
+async function collectBundledNodeArtifactInputs(
+	bundle: OutputBundle,
+	sourceKeysForModule: (id: string) => unknown,
+): Promise<
+	Pick<
+		Parameters<typeof assembleNodeModuleDeploymentArtifacts>[0],
+		'sourceArtifactKeys' | 'dependencies'
+	>
+> {
+	const sourceArtifactKeys = new Set<string>()
+	const dependencies = new Map<string, Set<string>>()
+	for (const item of Object.values(bundle)) {
+		if (item.type !== 'chunk') continue
+		for (const [moduleId, rendered] of Object.entries(item.modules)) {
+			const keys = nodeArtifactKeys(rendered.code ?? '')
+			if (keys.length === 0) continue
+			const sourceKeys: unknown = sourceKeysForModule(moduleId) ?? []
+			if (
+				!Array.isArray(sourceKeys) ||
+				!sourceKeys.every((key) => typeof key === 'string' && /^node-[0-9a-f]{16}$/.test(key))
+			) {
+				throw new Error(`[static-application] Invalid source Node artifact facts: ${moduleId}`)
+			}
+			let dependencyRoot: string | undefined
+			for (const key of keys) {
+				if (sourceKeys.includes(key)) {
+					sourceArtifactKeys.add(key)
+					continue
+				}
+				if (!dependencyRoot) {
+					const id = moduleId.split('?', 1)[0]!
+					const packageRoot = isAbsolute(id) ? await findNearestPackageRoot(id) : null
+					if (!packageRoot)
+						throw new Error(
+							`[static-application] Referenced Node artifact has no package owner: ${moduleId} (${key})`,
+						)
+					dependencyRoot = resolve(packageRoot, 'dist/artifacts/node')
+				}
+				let selected = dependencies.get(dependencyRoot)
+				if (!selected) dependencies.set(dependencyRoot, (selected = new Set()))
+				selected.add(key)
+			}
+		}
+	}
+	return {
+		sourceArtifactKeys: [...sourceArtifactKeys].sort(),
+		dependencies: [...dependencies].map(([root, keys]) => ({
+			root,
+			artifactKeys: [...keys].sort(),
+		})),
+	}
 }
 
 async function findNearestPackageRoot(file: string): Promise<string | null> {
@@ -798,15 +879,16 @@ function resolveWorkbenchPublicDir(cwd: string): string {
 	)
 }
 
-async function collectNodeModuleArtifacts(root: string): Promise<unknown[]> {
-	const entries = await readdir(root, { withFileTypes: true }).catch((): never[] => [])
+async function collectNodeModuleArtifacts(
+	root: string,
+	requiredKeys: readonly string[],
+): Promise<unknown[]> {
 	const artifacts: Array<{ key: string; file: string; sha256: string }> = []
-	for (const entry of entries) {
-		if (!entry.isFile() || !entry.name.endsWith('.mjs')) continue
-		const file = resolve(root, entry.name)
+	for (const key of requiredKeys) {
+		const file = resolve(root, `${key}.mjs`)
 		const content = await readFile(file)
 		artifacts.push({
-			key: entry.name.slice(0, -4),
+			key,
 			file: relative(dirname(dirname(root)), file),
 			sha256: createHash('sha256').update(content).digest('hex'),
 		})

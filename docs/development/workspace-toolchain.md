@@ -28,6 +28,8 @@ description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开
 
 mise 管理工具的安装和执行环境；package scripts 提供统一操作入口；Pitchfork 管理进程；hk 调用项目检查。不要在三份配置中分别实现同一个检查，也不要用新的后台脚本重做 Pitchfork 的端口、重试或日志管理。
 
+执行工具和规则文件分别决定。较大的 lint / fmt 策略可放在独立的 `oxlint.config.ts` / `oxfmt.config.ts` 模块，由根 `vite.config.ts` 显式导入到 `lint` / `fmt`；简短配置也可内联。`vp check` 以工作区根配置为入口，因此不要同时维护内容重复的 rc 文件；使用 `vp` 不要求把所有规则都写进 Vite 文件。相关行为见 [Lint](https://viteplus.dev/config/lint) 与 [Fmt](https://viteplus.dev/config/fmt)。
+
 ## 构建、检查与任务图
 
 package scripts 是人和 IDE 的入口，Vite Task 拥有实际命令、依赖图与缓存。根 `build` / `test` / `verify` 委托 `workspace:*` 聚合任务；叶包的标准 `build` / `test` / `typecheck` 分别委托 `compile` / `check-tests` / `check-types`，保留 source 发现与外部调用入口。不要同时定义同名 script 和原生 task，也不要在 mise 重复定义任务。框架的具体实现与包依赖环处理见[工作区任务图](https://github.com/PluxelJS/pluxel/blob/main/engineering/CLI_WORKSPACES.md#工作区任务图)。
@@ -78,7 +80,8 @@ Monorepo 用 `dependsOn: [{ task: 'build', from: ['dependencies', 'devDependenci
 标准 `vp build` 会自动报告输入、输出与相关环境变量，无需重复手写这些设置。组合 Pack、Pluxel 编译或自定义命令时，缓存需要覆盖真实契约：
 
 - `input: [{ auto: true }]` 保留自动文件追踪；跨包共享配置可补充 `{ pattern: 'tsconfig.base.json', base: 'workspace' }`。不要排除构建实际读取的模板、声明、测试夹具或文档资源。
-- `output` 声明可恢复的产物，例如 `dist/**`；测试通常使用 `[]`。每份产物只由实际生成它的任务归档，聚合任务不重复归档子任务的输出。
+- 直接复制已安装包资源的构建任务显式包含这些资源。例如 standalone 构建复制 Workbench Shell 时，在保留 `{ auto: true }` 的输入中添加 `{ pattern: 'node_modules/@pluxel/workbench/dist/public/**', base: 'package' }`。将输入声明放在实际消费资源的任务中，并用资源内容变更验证缓存失效；source overlay 的目录符号链接也需要这项验证。
+- `output` 声明可恢复的产物，例如 `dist/**`；测试通常使用 `[]`。每份产物只由实际生成它的任务归档，聚合任务不重复归档子任务的输出。多个构建阶段使用 `dependsOn` 排序并各自声明输出；不要用一个缓存任务串联多个会继承同一输出范围的命令，否则后续命令命中旧缓存时可能覆盖刚生成的文件。输出目录嵌套时，用 `!dist/resources/**` 这类排除项明确归属。
 - `env` 声明影响结果的环境变量，例如 `CI`、`NODE_ENV` 和构建开关；密钥不能写进配置。自动环境追踪的适用范围见 [Automatic Data Tracking](https://viteplus.dev/guide/automatic-data-tracking)。
 - 部署、发布、数据迁移、实时服务检查和外部集成测试使用 `cache: false`。URL 没变不能证明远端服务状态没变。官方模板的治理与完整验收入口每次执行，底层构建和单元测试仍复用缓存。
 
@@ -107,6 +110,8 @@ vp run
 | 显式修复后审阅 diff           | `hk fix`（改动文件）/ `vp run fix`（全项目） |
 
 非交互环境可给上述命令加 `mise exec --`。`hk check --all` 的范围取决于 `hk.pkl`，不能替代完整交付门禁；文件选择参数见 [hk CLI](https://hk.jdx.dev/cli/)。
+
+`hk validate` 只验证配置，不证明 Git hook 已安装。执行 `vp run hooks:install` 后核对实际 pre-commit 入口；Git 2.54+ 可用 `git hook list --show-scope pre-commit` 查看原生配置 hook，不应只凭 `.git/hooks/pre-commit` 是否存在判断。安装方式与旧版 Git 的脚本 hook 见 [hk install](https://hk.jdx.dev/cli/install.html)。
 
 ## 进入工作区时的可选诊断
 
@@ -146,7 +151,16 @@ pitchfork wait app
 
 `start` 等待配置的就绪条件，退出后服务由 supervisor 继续管理；`wait` 等待服务**停止**，不是等待就绪。跨目录将示例中的 `app` 换成发现的完整 ID。只操作本任务所属服务；参数以 `pitchfork <command> --help` 和 [CLI Reference](https://pitchfork.jdx.dev/cli/)为准。
 
-启动链只有一条：package `dev` script → `pluxel dev` → Pitchfork → 应用包 `dev:server` script → Vite。Pitchfork 的 `mise = true` 只加载工具环境，不经过 mise task，也不回调根 `dev`。源码仓库的 `dev` / `pluxel` scripts 直接调用 CLI，不在每次在线操作前恢复构建缓存，避免意外触发 HMR。停止、重启与进程日志继续用原生 Pitchfork。
+启动链只有一条：package `dev` script → `pluxel dev` → Pitchfork → 应用包 `dev:server` script → Vite。Pitchfork 的 `mise = true` 加载工具版本、PATH 与项目环境变量，不经过 mise task，也不回调根 `dev`。源码仓库的 `dev` / `pluxel` scripts 直接调用 CLI，不在每次在线操作前恢复构建缓存，避免意外触发 HMR。停止、重启与进程日志继续用原生 Pitchfork。
+
+`mise = true` 还要求 Pitchfork 能定位 mise。非标准安装位置（例如 Nix profile）需要在所属项目 Git 根目录的已忽略 `pitchfork.local.toml` 中设置实际可执行路径：
+
+```toml
+[settings.general]
+mise_bin = "/absolute/path/to/mise"
+```
+
+用 `command -v mise` 查询路径；保留本机文件中已有的 namespace 等设置，不提交绝对路径。用 `pitchfork settings explain general.mise_bin` 确认来源是目标检出的 local 文件，再重启所属服务并确认实际环境已加载。Pitchfork 2.30.1 在 Unix 上的默认查找不包含 `PATH`，见[原生 mise 配置](https://github.com/jdx/pitchfork/blob/v2.30.1/src/settings.rs#L180-L201)；该版本在嵌套检出中运行 `settings set --local` 可能选到外层项目，因此直接维护目标 local 文件并核对来源。
 
 `pluxel dev` 首次和重复启动均显示 Vite 当前地址。应用状态、在线操作与业务日志使用[开发控制台](./dev-console.md)；Pitchfork 只负责进程。模板的 `vp run dev:local` 提供前台 Vite 交互，后续控制台操作选择 `--profile local`；数据共用与并行隔离要求也见该指南。
 

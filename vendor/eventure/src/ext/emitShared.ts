@@ -53,9 +53,7 @@ export async function emitSettledFromListeners<D extends EventDescriptor>(
 	if (!listeners || listeners.length === 0) return []
 
 	const len = listeners.length
-	const results = new Array<
-		EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>
-	>(len)
+	const results = new Array<EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>>(len)
 	let pending: Promise<void>[] | null = null
 
 	for (let i = 0; i < len; i++) {

@@ -16,9 +16,20 @@ export default defineConfig({
 	run: {
 		tasks: {
 			'check-types': { command: 'tsc --noEmit --pretty false', cache: checkCache },
-			compile: buildTask(
-				'vp build --config vite.config.ts && vp pack && pluxel distribution create ./dist',
-			),
+			'compile-web': {
+				...buildTask('vp build --config vite.config.ts'),
+				cache: { ...checkCache, output: ['web/dist/**'] },
+			},
+			'compile-server': {
+				command: 'vp pack',
+				dependsOn: ['compile-web'],
+				cache: { ...checkCache, output: ['dist/**', '!dist/pluxel-distribution.json'] },
+			},
+			compile: {
+				command: 'pluxel distribution create ./dist',
+				dependsOn: ['compile-server'],
+				cache: { ...checkCache, output: ['dist/pluxel-distribution.json'] },
+			},
 		},
 	},
 

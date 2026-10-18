@@ -107,7 +107,9 @@ standalone 的 Workbench 制品选择只消费已验证的固定 `plugins` catal
 解析器保存 constructor 的 lexical binding；Plugin semantic pass 从源声明或已编译 lowering ABI 把该 binding 映射为
 canonical definition。缺失或歧义事实明确使构建失败，不求值 application factory，也不按 class display name 或整个包推断。
 同一 definition key 集在 semantic snapshot 读取 renderer/Markdown 前筛选 publication，并在 final assembly 中筛选
-应用和依赖包的 producer/Content inventory。未选中定义不构建、不读取或复制其制品树；被读取的 inventory 仍完整解析，
+应用的 producer/Content inventory。依赖包 inventory 另外只接纳最终 server bundle 模块中具有 compiled lowering ABI 事实的
+definition；从源码编译的定义以本次输出为权威，不再读取同包旧 `dist` 中的副本。同一个包可以同时包含源码与已编译定义，
+因此选择按 definition 而非 package 或目录判断。未选中定义不构建、不读取或复制其制品树；被读取的 inventory 仍完整解析，
 所选树继续验证 digest、immutable bytes 与 collision。包里有其他 producer，或其注册副作用仍保留在 server chunk，
 都不会扩大应用 catalog 的制品集合。modules 和插件包按其公开编译定义交付，不套用 standalone 的固定 catalog 选择。
 
@@ -130,6 +132,15 @@ Production producer 不输出内嵌源码 sourcemap；host-vite producer 保留 
 static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
 relative file 与 sha256；artifact builder 同时把受控 native residual 的已解析 entry 交给 NF3，因此只在 worker entry 中出现的
 binding 也会被复制进 deployment `node_modules`。variant 只改变 browser Workbench closure。
+Native residual 从生成桥的 owner package.json 以 Node `require` 条件解析；不能复用源码 import 命中的另一条件入口。
+NF3 从该实际入口追踪 CJS 及其传递依赖，搬迁后的 Worker 只依赖发行目录内的文件。
+
+Node declaration compiler 把本轮 lowering 的 artifact keys 写入对应 Rolldown module meta；Node builder 与 standalone
+assembly 都只选择最终 rendered module 中保留的引用，不以原始 imports 或同包 Plugin definition 推断 Node 所有权。
+同一 artifact 的所有原始 module IDs 都参与保留判定；query alias 被裁剪不能覆盖另一个仍在使用的 source 引用。
+本轮 source 引用消费本轮输出；built module 引用按其实际 package root 和 key 读取已构建产物。同一个包可同时提供
+source 和 built Node 模块，未被引用的旧 `dist/artifacts/node` 文件不读取、不合并。若 source 与 built 都实际引用同一个
+key，两份 bytes 仍须一致；未知来源的 destination 文件也不能覆盖已选 packaged artifact，真实冲突继续使构建失败。
 
 `@pluxel/core/federation` 是唯一 dependency-neutral build contract。host-vite、Rolldown 和 host 直接依赖该
 contract，不通过 runtime 转手 re-export，也不引入反向 build dependency。

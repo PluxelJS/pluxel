@@ -57,12 +57,8 @@ type BenchEventureOptions = {
 	checkSyncFuncReturnPromise?: boolean
 	logger?: BenchLogger
 }
-type EventureConstructor = new (
-	options?: BenchEventureOptions,
-) => EventureInstance
-type ChannelConstructor = new (
-	options?: BenchEventureOptions,
-) => ChannelInstance
+type EventureConstructor = new (options?: BenchEventureOptions) => EventureInstance
+type ChannelConstructor = new (options?: BenchEventureOptions) => ChannelInstance
 type BenchLogger = {
 	trace: (...args: unknown[]) => void
 	debug: (...args: unknown[]) => void
@@ -181,16 +177,14 @@ const eventureCandidates = await (async () => {
 				label: `${NAME} base`,
 				createEventure: () => new base.Eventure(eventureOptions),
 				createDefaultEventure: () => new base.Eventure(defaultCaptureOptions),
-				createPromiseCaptureEventure: () =>
-					new base.Eventure(returnedPromiseCaptureOptions),
+				createPromiseCaptureEventure: () => new base.Eventure(returnedPromiseCaptureOptions),
 				createChannel: () => new base.EvtChannel(eventureOptions),
 			},
 			{
 				label: `${NAME} PR`,
 				createEventure: () => new target.Eventure(eventureOptions),
 				createDefaultEventure: () => new target.Eventure(defaultCaptureOptions),
-				createPromiseCaptureEventure: () =>
-					new target.Eventure(returnedPromiseCaptureOptions),
+				createPromiseCaptureEventure: () => new target.Eventure(returnedPromiseCaptureOptions),
 				createChannel: () => new target.EvtChannel(eventureOptions),
 			},
 		] satisfies Candidate[]
@@ -205,8 +199,7 @@ const eventureCandidates = await (async () => {
 			label: NAME,
 			createEventure: () => new mod.Eventure(eventureOptions),
 			createDefaultEventure: () => new mod.Eventure(defaultCaptureOptions),
-			createPromiseCaptureEventure: () =>
-				new mod.Eventure(returnedPromiseCaptureOptions),
+			createPromiseCaptureEventure: () => new mod.Eventure(returnedPromiseCaptureOptions),
 			createChannel: () => new mod.EvtChannel(eventureOptions),
 		},
 	] satisfies Candidate[]
@@ -312,13 +305,7 @@ const cases: ApiCase[] = [
 		setup: (candidate) => {
 			const emitter = candidate.createEventure()
 			let count = 0
-			const listener = (
-				a: number,
-				b: number,
-				c: number,
-				d: number,
-				e: number,
-			) => {
+			const listener = (a: number, b: number, c: number, d: number, e: number) => {
 				count += a + b + c + d + e
 			}
 			emitter.on('five', listener)
@@ -381,15 +368,11 @@ const cases: ApiCase[] = [
 		async: true,
 		setup: (candidate) => {
 			const emitter = candidate.createDefaultEventure()
-			return createAsyncEmitHarness(
-				emitter,
-				'defaultAsync',
-				(begin, complete) => async (data) => {
-					begin()
-					await Promise.resolve()
-					complete(data)
-				},
-			)
+			return createAsyncEmitHarness(emitter, 'defaultAsync', (begin, complete) => async (data) => {
+				begin()
+				await Promise.resolve()
+				complete(data)
+			})
 		},
 	},
 	{
@@ -399,14 +382,10 @@ const cases: ApiCase[] = [
 		async: true,
 		setup: (candidate) => {
 			const emitter = candidate.createPromiseCaptureEventure()
-			return createAsyncEmitHarness(
-				emitter,
-				'returnedPromise',
-				(begin, complete) => (data) => {
-					begin()
-					return Promise.resolve().then(() => complete(data))
-				},
-			)
+			return createAsyncEmitHarness(emitter, 'returnedPromise', (begin, complete) => (data) => {
+				begin()
+				return Promise.resolve().then(() => complete(data))
+			})
 		},
 	},
 	{
@@ -483,18 +462,13 @@ const cases: ApiCase[] = [
 		setup: (candidate) => {
 			const emitter = candidate.createEventure()
 			let count = 0
-			emitter.on('waterfall', (n: number, next: (n: number) => number) =>
-				next(n + 1),
-			)
-			emitter.on('waterfall', (n: number, next: (n: number) => number) =>
-				next(n * 2),
-			)
+			emitter.on('waterfall', (n: number, next: (n: number) => number) => next(n + 1))
+			emitter.on('waterfall', (n: number, next: (n: number) => number) => next(n * 2))
 			return {
 				run() {
 					count = 0
 					for (let i = 0; i < 50_000; i++) {
-						count += emitter.waterfall('waterfall', 2, (n: number) => n)
-							.value as number
+						count += emitter.waterfall('waterfall', 2, (n: number) => n).value as number
 					}
 				},
 				value: () => count,
@@ -596,9 +570,7 @@ const createBench = () => {
 	bench.addEventListener('cycle', (event) => {
 		if (event.task === undefined) return
 		const result = resultWithStatistics(event.task)
-		const apiCase = cases.find((candidate) =>
-			event.task!.name.endsWith(candidate.name),
-		)
+		const apiCase = cases.find((candidate) => event.task!.name.endsWith(candidate.name))
 		const runs = apiCase?.runs ?? 1
 		console.log(
 			`${event.task.name}: ${formatNumber(result.throughput.mean * runs)} ops/s, rme ${result.throughput.rme.toFixed(2)}%`,
@@ -635,9 +607,7 @@ const addTasks = (bench: Bench) => {
 const benchRows = (bench: Bench) => {
 	return bench.tasks.map((task) => {
 		const result = resultWithStatistics(task)
-		const apiCase = cases.find((candidate) =>
-			task.name.endsWith(candidate.name),
-		)
+		const apiCase = cases.find((candidate) => task.name.endsWith(candidate.name))
 		const runs = apiCase?.runs ?? 1
 		const hz = result.throughput.mean * runs
 
@@ -688,14 +658,10 @@ const renderMarkdown = (
 ): { markdown: string; hasRegression: boolean } => {
 	const summarized = summarizeRows(rows)
 	const baseRows = new Map(
-		summarized
-			.filter((row) => row.label === `${NAME} base`)
-			.map((row) => [row.caseName, row]),
+		summarized.filter((row) => row.label === `${NAME} base`).map((row) => [row.caseName, row]),
 	)
 	const prRows = new Map(
-		summarized
-			.filter((row) => row.label === `${NAME} PR`)
-			.map((row) => [row.caseName, row]),
+		summarized.filter((row) => row.label === `${NAME} PR`).map((row) => [row.caseName, row]),
 	)
 	const paired = baseRows.size > 0 && prRows.size > 0
 	const ratios: number[] = []
@@ -723,8 +689,7 @@ const renderMarkdown = (
 			const delta = ((pr.hz - base.hz) / base.hz) * 100
 			const rme = Math.max(base.rme, pr.rme)
 			const significant =
-				delta < 0 &&
-				Math.abs(delta) > REGRESSION_THRESHOLD_PCT + base.rme + pr.rme
+				delta < 0 && Math.abs(delta) > REGRESSION_THRESHOLD_PCT + base.rme + pr.rme
 			ratios.push(pr.hz / base.hz)
 			if (significant) caseRegressions.push(apiCase.name)
 			lines.push(
@@ -732,10 +697,7 @@ const renderMarkdown = (
 			)
 		}
 	} else {
-		lines.push(
-			'| Case | x10^5 ops/s | RME | Samples | ns/op |',
-			'| --- | --- | --- | --- | --- |',
-		)
+		lines.push('| Case | x10^5 ops/s | RME | Samples | ns/op |', '| --- | --- | --- | --- | --- |')
 		for (const row of summarized) {
 			lines.push(
 				`| ${row.caseName} | ${renderNumber(row.hz / 100_000)} | ${row.rme.toFixed(2)}% | ${row.samples} | ${(1_000_000_000 / row.hz).toFixed(2)} |`,
@@ -746,11 +708,7 @@ const renderMarkdown = (
 	const geomeanDelta =
 		ratios.length === 0
 			? null
-			: (Math.exp(
-					ratios.reduce((sum, ratio) => sum + Math.log(ratio), 0) /
-						ratios.length,
-				) -
-					1) *
+			: (Math.exp(ratios.reduce((sum, ratio) => sum + Math.log(ratio), 0) / ratios.length) - 1) *
 				100
 	const hasRegression =
 		(geomeanDelta !== null && geomeanDelta < -REGRESSION_THRESHOLD_PCT) ||

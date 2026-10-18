@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
 import { createStaticApplicationConfig as application } from '../src/cli/static-application.ts'
 import { readPublicElysiaSpecifiers } from '../src/cli/elysia-singleton.ts'
+import { NODE_MODULE_SOURCE_ARTIFACT_KEYS } from '../src/plugin-artifact/pluginArtifactBuildPlugin.ts'
 import { createPluginSourceVitePipeline } from '../src/vite/plugin-source.ts'
 
 vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
@@ -182,7 +183,17 @@ describe('application', () => {
 					| undefined
 			)?.handler
 
-			await writeBundle?.(
+			await writeBundle?.call(
+				{
+					getModuleInfo(id: string) {
+						return {
+							meta: {
+								[NODE_MODULE_SOURCE_ARTIFACT_KEYS]:
+									id === applicationEntry ? [applicationArtifactKey] : [],
+							},
+						}
+					},
+				},
 				{},
 				{
 					'app.mjs': {
@@ -192,7 +203,10 @@ describe('application', () => {
 						facadeModuleId: '\0pluxel:static-application-bootstrap',
 						imports: [],
 						dynamicImports: [],
-						modules: { [dependencyEntry]: {} },
+						modules: {
+							[applicationEntry]: { code: JSON.stringify(applicationArtifactKey) },
+							[dependencyEntry]: { code: JSON.stringify(dependencyArtifactKey) },
+						},
 						code: `export const artifacts = [${JSON.stringify(applicationArtifactKey)}, ${JSON.stringify(dependencyArtifactKey)}]\n`,
 					},
 				},

@@ -106,6 +106,7 @@ function contentArtifact(packageName: string, marker = 'Guide', exportName = 'Fi
 		digest,
 		artifactRoot,
 		body,
+		inventoryEntries: inventory.entries,
 		inventory: `${JSON.stringify(inventory)}\n`,
 		tree: {
 			[WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE]: `${JSON.stringify(inventory)}\n`,
@@ -152,6 +153,7 @@ describe('static Workbench deployment assembly', () => {
 			destinationRoot: fixture.getPath('application/workbench'),
 			dependencyRoots: [fixture.getPath('dependency/dist/workbench')],
 			definitions: new Set([pluginDefinitionIndexKey(selected.definition)]),
+			dependencyDefinitions: new Set([pluginDefinitionIndexKey(selected.definition)]),
 		}
 		const producers = await assembleWorkbenchDeploymentArtifacts(input)
 		const content = await assembleWorkbenchContentDeploymentArtifacts(input)
@@ -167,6 +169,7 @@ describe('static Workbench deployment assembly', () => {
 		const unusedInput = {
 			...input,
 			definitions: new Set([pluginDefinitionIndexKey(unused.definition)]),
+			dependencyDefinitions: new Set([pluginDefinitionIndexKey(unused.definition)]),
 		}
 		await expect(assembleWorkbenchDeploymentArtifacts(unusedInput)).rejects.toThrow(
 			'artifact directory is missing',
@@ -174,6 +177,73 @@ describe('static Workbench deployment assembly', () => {
 		await expect(assembleWorkbenchContentDeploymentArtifacts(unusedInput)).rejects.toThrow(
 			'artifact directory is missing',
 		)
+	})
+
+	it('keeps source-owned artifacts while reusing built definitions from the same package', async () => {
+		const source = createPlan(
+			'@example/mixed',
+			'source-revision',
+			'generated/source.tsx',
+			'SourcePlugin',
+		)
+		const built = createPlan(
+			'@example/mixed',
+			'built-revision',
+			'generated/built.tsx',
+			'BuiltPlugin',
+		)
+		const sourceContent = contentArtifact('@example/mixed', 'Current source', 'SourcePlugin')
+		const oldSourceContent = contentArtifact('@example/mixed', 'Published source', 'SourcePlugin')
+		const builtContent = contentArtifact('@example/mixed', 'Published built', 'BuiltPlugin')
+		const publishedContent = createWorkbenchContentDeploymentInventory(
+			[...oldSourceContent.inventoryEntries, ...builtContent.inventoryEntries].sort((left, right) =>
+				pluginDefinitionIndexKey(left.definition).localeCompare(
+					pluginDefinitionIndexKey(right.definition),
+				),
+			),
+		)
+		await using fixture = await createDiskFixture({
+			application: {
+				workbench: {
+					...sourceContent.tree,
+					...producerTree(source, 'current source bytes'),
+					[WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE]: inventoryFile([source]),
+				},
+			},
+			dependency: {
+				dist: {
+					workbench: {
+						...producerTree(source, 'published source bytes'),
+						...producerTree(built),
+						content: { ...oldSourceContent.tree.content, ...builtContent.tree.content },
+						[WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE]: `${JSON.stringify(publishedContent)}\n`,
+						[WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE]: inventoryFile([source, built]),
+					},
+				},
+			},
+		})
+		const input = {
+			destinationRoot: fixture.getPath('application/workbench'),
+			dependencyRoots: [fixture.getPath('dependency/dist/workbench')],
+			definitions: new Set([source.definition, built.definition].map(pluginDefinitionIndexKey)),
+			dependencyDefinitions: new Set([pluginDefinitionIndexKey(built.definition)]),
+		}
+		const producers = await assembleWorkbenchDeploymentArtifacts(input)
+		const content = await assembleWorkbenchContentDeploymentArtifacts(input)
+		expect(producers.producers.map(({ plan }) => plan.producer).sort()).toEqual(
+			[source.producer, built.producer].sort(),
+		)
+		expect(content.entries.map(({ digest }) => digest).sort()).toEqual(
+			[sourceContent.digest, builtContent.digest].sort(),
+		)
+		await expect(
+			readFile(
+				fixture.getPath(
+					`application/workbench/${source.producer}/${source.buildRevision}/remoteEntry.js`,
+				),
+				'utf8',
+			),
+		).resolves.toContain('current source bytes')
 	})
 
 	it('merges immutable Content inventories independently from MF producers', async () => {
@@ -187,6 +257,9 @@ describe('static Workbench deployment assembly', () => {
 		const inventory = await assembleWorkbenchContentDeploymentArtifacts({
 			destinationRoot,
 			definitions: new Set([local.definition, dependency.definition].map(pluginDefinitionIndexKey)),
+			dependencyDefinitions: new Set(
+				[local.definition, dependency.definition].map(pluginDefinitionIndexKey),
+			),
 			dependencyRoots: [fixture.getPath('dependency/dist/workbench')],
 		})
 
@@ -232,6 +305,7 @@ describe('static Workbench deployment assembly', () => {
 			assembleWorkbenchContentDeploymentArtifacts({
 				destinationRoot: fixture.getPath('application/workbench'),
 				definitions: new Set([pluginDefinitionIndexKey(content.definition)]),
+				dependencyDefinitions: new Set([pluginDefinitionIndexKey(content.definition)]),
 				dependencyRoots: [],
 			}),
 		).rejects.toThrow('digest mismatch')
@@ -272,6 +346,7 @@ describe('static Workbench deployment assembly', () => {
 			assembleWorkbenchContentDeploymentArtifacts({
 				destinationRoot: fixture.getPath('extra/workbench'),
 				definitions: new Set([pluginDefinitionIndexKey(content.definition)]),
+				dependencyDefinitions: new Set([pluginDefinitionIndexKey(content.definition)]),
 				dependencyRoots: [],
 			}),
 		).rejects.toThrow(`must contain only ${WORKBENCH_CONTENT_ARTIFACT_FILE}`)
@@ -279,6 +354,7 @@ describe('static Workbench deployment assembly', () => {
 			assembleWorkbenchContentDeploymentArtifacts({
 				destinationRoot: fixture.getPath('overBudget/workbench'),
 				definitions: new Set([pluginDefinitionIndexKey(content.definition)]),
+				dependencyDefinitions: new Set([pluginDefinitionIndexKey(content.definition)]),
 				dependencyRoots: [],
 			}),
 		).rejects.toThrow('exceeds its byte budget')
@@ -314,6 +390,9 @@ describe('static Workbench deployment assembly', () => {
 		const inventory = await assembleWorkbenchDeploymentArtifacts({
 			destinationRoot,
 			definitions: new Set([local.definition, dependency.definition].map(pluginDefinitionIndexKey)),
+			dependencyDefinitions: new Set(
+				[local.definition, dependency.definition].map(pluginDefinitionIndexKey),
+			),
 			dependencyRoots: [
 				fixture.getPath('dependency/dist/workbench'),
 				fixture.getPath('legacy/dist/workbench'),
@@ -375,6 +454,7 @@ describe('static Workbench deployment assembly', () => {
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('application/workbench'),
 				definitions: new Set([pluginDefinitionIndexKey(plan.definition)]),
+				dependencyDefinitions: new Set([pluginDefinitionIndexKey(plan.definition)]),
 				dependencyRoots: [fixture.getPath('dependency/dist/workbench')],
 			}),
 		).resolves.toMatchObject({ producers: [{ plan: { producer: plan.producer } }] })
@@ -443,6 +523,7 @@ describe('static Workbench deployment assembly', () => {
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('planCollision/application/workbench'),
 				definitions: new Set([pluginDefinitionIndexKey(local.definition)]),
+				dependencyDefinitions: new Set([pluginDefinitionIndexKey(local.definition)]),
 				dependencyRoots: [fixture.getPath('planCollision/dependency/dist/workbench')],
 			}),
 		).rejects.toThrow('producer plan collision')
@@ -450,6 +531,7 @@ describe('static Workbench deployment assembly', () => {
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('revisionCollision/application/workbench'),
 				definitions: new Set([pluginDefinitionIndexKey(local.definition)]),
+				dependencyDefinitions: new Set([pluginDefinitionIndexKey(local.definition)]),
 				dependencyRoots: [fixture.getPath('revisionCollision/dependency/dist/workbench')],
 			}),
 		).rejects.toThrow('producer revision collision')
@@ -457,6 +539,7 @@ describe('static Workbench deployment assembly', () => {
 			assembleWorkbenchDeploymentArtifacts({
 				destinationRoot: fixture.getPath('contentCollision/application/workbench'),
 				definitions: new Set([pluginDefinitionIndexKey(local.definition)]),
+				dependencyDefinitions: new Set([pluginDefinitionIndexKey(local.definition)]),
 				dependencyRoots: [fixture.getPath('contentCollision/dependency/dist/workbench')],
 			}),
 		).rejects.toThrow('artifact content collision')

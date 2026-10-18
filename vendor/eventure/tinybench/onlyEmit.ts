@@ -144,12 +144,9 @@ const referenceVersions = [
 ].join(', ')
 const toNs = (ms: number) => ms * 1_000_000
 const x100kEmitsPerSecond = (result: CompletedResult) => result.throughput.mean
-const emitsPerSecond = (result: CompletedResult) =>
-	x100kEmitsPerSecond(result) * RUNS
+const emitsPerSecond = (result: CompletedResult) => x100kEmitsPerSecond(result) * RUNS
 const reportLabel = (taskName: string) =>
-	taskName
-		.replace(/ mirror(?= (?:sync|async)$)/, '')
-		.replace(/ (?:sync|async)$/, '')
+	taskName.replace(/ mirror(?= (?:sync|async)$)/, '').replace(/ (?:sync|async)$/, '')
 
 const assertCount = (label: string, count: number) => {
 	if (count !== EXPECTED_COUNT) {
@@ -334,9 +331,7 @@ const runBench = async (bench: Bench) => {
 
 const markdownTable = (rows: ReturnType<typeof benchRows>) => {
 	const summarizedRows = reportRows(rows)
-	const eventureBase = summarizedRows.find(
-		(row) => row.label === `${NAME} base`,
-	)
+	const eventureBase = summarizedRows.find((row) => row.label === `${NAME} base`)
 	const eventurePr = summarizedRows.find((row) => row.label === `${NAME} PR`)
 	const pairedDelta =
 		eventureBase !== undefined && eventurePr !== undefined

@@ -120,6 +120,8 @@ Remote 只得到固定 appearance、feedback、受限 relative navigation、docu
 
 每个文档用 `createAppRouter({ history })` 消费同一生成 route tree，history 由 Worksplit 提供并在内存中保存。路由只渲染内容，不递归创建 Shell；Management、Product、Mantine 和 session providers 位于文档 Router 之外。`connectBrowser()` 是工作区浏览器地址的唯一写入者，固定工具取得焦点不改变活动文档 URL。
 
+Plugin route 的 pathname 由该 match 的 `beforeLoad` 保存到 route context，页面显式消费该输入。导航期间旧 match 仍可能显示，不能让它解析 Router 已指向的新目标地址；Shell 与 standalone 使用相同边界。
+
 ### 导航与身份
 
 - 普通 Shell 入口交给活动文档注册的 Router 导航，经过离开确认；没有活动文档才创建文档。标签外的“+”复制当前已提交地址，在源标签后创建独立 Router 和 opened owner，不复制草稿。
