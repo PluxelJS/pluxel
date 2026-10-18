@@ -11,7 +11,7 @@
 - `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog。默认 modules 构建与原生 `start.mjs` 只在启动接纳预编译来源；开发 Vite 持续更新。生产 Vite 使用独立 `vite.runtime.config.ts` 与 `start-vite.mjs`，加载同一 compiled factory。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
 - inspect 选择本应用时使用 workspace-relative `application: { root: 'host', entry: 'src/app.ts' }`。
-- 修改 `plugins/`、公共契约、Host 配置或 `oxlint.config.ts` 前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。
+- 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。
 - 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 
 插件范式按需读 `docs/pluxel/plugin-development/`；Host 装配读 `docs/pluxel/host/configuration.md` 的对应章节。已知目标直接定位，不把目录当作通读清单。
@@ -33,4 +33,4 @@
 
 `hk check` 检查改动文件，`hk fix` 显式修复；完整验收用 `vp run verify`。修改 Pkl 后运行 `hk validate`，修改服务配置后运行 `pitchfork daemons --json` 并验证实际服务。运行中 Pluxel 操作通过现有 dev console；`--root` 不绕过已发现配置，`--instance` 不绕过 profile 归属。
 
-`vp run build` 通过 Vite Task 调度各包的标准 `build` 入口（委托 `compile` task）；`vp run verify` 组合治理、`vp check`、测试和构建。根 `package.json` scripts 保留 IDE 可发现的开发、构建、测试和检查入口；聚合 scripts 委托给 `workspace:*` 原生任务，入口不缓存，底层任务按各自规则缓存。根 `vite.config.ts` 拥有 `fmt` 与启用类型检查的 `lint`；包配置拥有任务、依赖和缓存。原生 `tsdown.config.ts` 通过 `pack` 引用，Plugin 构建继续使用 `pluxel build` 的编译语义。依赖操作使用 `vp exec pluxel pncat`，版本对齐使用 `vp exec pluxel workspace sync`；不要添加重复的 catalog 脚本。
+`vp run build` 通过 Vite Task 调度各包的标准 `build` 入口（委托 `compile` task）；`vp run verify` 组合治理、`vp check`、测试和构建。根 `package.json` scripts 保留 IDE 可发现的开发、构建、测试和检查入口；聚合 scripts 委托给 `workspace:*` 原生任务，入口不缓存，底层任务按各自规则缓存。`oxlint.config.ts` 与 `oxfmt.config.ts` 分别维护规则，根 `vite.config.ts` 引用为 `lint` / `fmt` 并启用类型检查；包配置拥有任务、依赖和缓存。CI 直接运行 `vp run --concurrency-limit=2 workspace:verify`，让并发限制覆盖实际任务图。原生 `tsdown.config.ts` 通过 `pack` 引用，Plugin 构建继续使用 `pluxel build` 的编译语义。依赖操作使用 `vp exec pluxel pncat`，版本对齐使用 `vp exec pluxel workspace sync`；不要添加重复的 catalog 脚本。

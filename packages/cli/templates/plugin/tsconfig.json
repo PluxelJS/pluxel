@@ -24,6 +24,7 @@
 		"tsdown.config.ts",
 		"vitest.config.ts",
 		"oxlint.config.ts",
+		"oxfmt.config.ts",
 		"vite.config.ts"
 	]
 }

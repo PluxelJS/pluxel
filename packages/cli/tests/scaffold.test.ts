@@ -351,7 +351,13 @@ describe('scaffold template rendering', () => {
 		) as Record<string, any>
 		expect(manifest.scripts).not.toHaveProperty('build:plugin')
 		expect(manifest.scripts.build).toBe('vp run compile')
-		for (const name of ['vite.config.ts', 'mise.toml', 'hk.pkl']) {
+		for (const name of [
+			'vite.config.ts',
+			'oxlint.config.ts',
+			'oxfmt.config.ts',
+			'mise.toml',
+			'hk.pkl',
+		]) {
 			expect(fixture.fs.existsSync(resolve(targetDir, name))).toBe(true)
 		}
 		expect(manifest.peerDependencies).toEqual({ '@pluxel/core': 'catalog:' })

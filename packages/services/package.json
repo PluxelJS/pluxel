@@ -213,7 +213,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"bench:logger": "vitest bench bench/logger.bench.ts",
+		"bench:logger": "vp test bench bench/logger.bench.ts",
 		"bench:worker-task": "vp test bench bench/worker-task.bench.ts",
 		"build": "vp run compile",
 		"test": "vp run check-tests",

@@ -67,7 +67,7 @@ vp run @report-template-studio/app#package
 
 `dev` 和 `start` 使用同一个 Electron 系统应用数据目录，开发构建只更新 `.studio-dev/`、生产构建只更新 `dist/`，不会清空项目。项目文件位于 `userData/studio/workspaces/projects/`，最近列表为 `userData/studio/workspaces/recent.json`，填写数据为 `userData/studio/inputs/`。这里的 `userData` 由 Electron 按操作系统确定；在 Flatpak 中属于该应用沙箱的配置目录。重启后从首页“最近项目”打开即可继续。只有桌面自动测试才显式使用临时 profile；正常启动不要传每次变化的 `--user-data-dir`。
 
-左侧文件树支持创建目录/文件、重命名/移动、删除和资产导入。文件和目录的右键菜单提供管理操作，键盘也可操作菜单。报表目录及其同名 TypeScript 入口有专用标记；点击报表打开填写表单和右侧预览，左侧可切换“表单 / 代码”。普通文本文件打开源码标签页；`.typ` 是源码和共享模块，不作为独立预览入口。标签页可以拖动分屏。布局使用 **Worksplit `refactor/flexlayout-tanstack` 的 `eff5b57e593ed9c8df3edefcc2886775b9886b45` 提交**，详见 [vendor/README.md](vendor/README.md)。其他组件使用 Mantine。
+左侧文件树支持创建目录/文件、重命名/移动、删除和资产导入。文件和目录的右键菜单提供管理操作，键盘也可操作菜单。报表目录及其同名 TypeScript 入口有专用标记；点击报表打开填写表单和右侧预览，左侧可切换“表单 / 代码”。普通文本文件打开源码标签页；`.typ` 是源码和共享模块，不作为独立预览入口。标签页可以拖动分屏。布局使用工作区中的 [Worksplit](../../vendor/split-like-vscode/README.md)，与 Pluxel Workbench 共用同一份源码和依赖图。其他组件使用 Mantine。
 
 分组使用 FlexLayout 原生关闭按钮。关闭会先保存相关草稿；保存冲突或失败时保留标签与草稿。切换项目、重命名和删除路径使用一次批量关闭检查，任一标签拒绝就不删除任何标签。关闭最后一个标签后，多余空分屏自动回收；再次打开报表按当前布局选择编辑组，并在需要时创建右侧预览组，不依赖已删除分组的固定 ID。
 

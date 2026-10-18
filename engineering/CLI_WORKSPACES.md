@@ -115,6 +115,6 @@ pncat 作为构建依赖内联交付，packed CLI 检验无需另装 pncat 和 G
 
 ### 工作区任务图
 
-根 `vite.config.ts` 声明依赖聚合任务，包级 `vite.config.ts` 保留真实命令，`scripts/vite-tasks.ts` 只生成 Vite+ 原生依赖与缓存配置。标准 `build` / `test` / `typecheck` package scripts 委托对应原生任务，保留 pnpm 消费入口。发布依赖图可以有环，因此根构建不使用 `vp run -r` 的隐式包拓扑；聚合任务使用显式 `package#compile` 边。根 `vp run build` / `test` / `typecheck` / `verify` 使用原生聚合任务；定向执行使用 `vp run @package/name#compile`。CI 全量执行 `vp run verify`，由原生缓存复用未变化任务。verify 在检查、治理、构建、类型与测试依赖完成后检查源码声明污染，不维护自制 affected 选择器。
+根 `vite.config.ts` 声明依赖聚合任务，包级 `vite.config.ts` 保留真实命令，`scripts/vite-tasks.ts` 只生成 Vite+ 原生依赖与缓存配置。标准 `build` / `test` / `typecheck` package scripts 委托对应原生任务，保留 pnpm 消费入口。发布依赖图可以有环，因此根构建不使用 `vp run -r` 的隐式包拓扑；聚合任务使用显式 `package#compile` 边。根 `vp run build` / `test` / `typecheck` / `verify` 使用原生聚合任务；定向执行使用 `vp run @package/name#compile`。CI 直接执行 `vp run --concurrency-limit=2 workspace:verify`，让并发限制与任务报告覆盖实际依赖图，由原生缓存复用未变化任务。verify 在检查、治理、构建、类型与测试依赖完成后检查源码声明污染，不维护自制 affected 选择器。
 
 缓存位于 `node_modules/.vite/task-cache`。mise、共享任务策略和延迟 pack 执行器是显式缓存输入，包级额外输入和输出由共享任务策略声明。dev 服务仍由 Pitchfork 管理，不能套进清理环境与缓存的有限任务。应用插件用 Vite+ `lazyPlugins` 延迟加载，任务元数据扫描不启动框架服务或要求上游已有构建产物。

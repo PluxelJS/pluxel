@@ -64,7 +64,7 @@ afterEach(async () => {
 	vi.unstubAllGlobals()
 })
 
-describe('Studio project operations through the packed Worksplit API', () => {
+describe('Studio project operations through the public Worksplit API', () => {
 	it('shares startup work and does not open reports after the project shuts down', async () => {
 		const session = setup()
 		let resolveTree!: (tree: Awaited<ReturnType<typeof api.getTree>>) => void

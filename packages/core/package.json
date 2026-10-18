@@ -114,7 +114,7 @@
 		"bench:dist": "vp run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
 		"bench:caller-view": "vp run build && node --experimental-strip-types bench/pluginCallerView.bench.ts",
 		"bench:fork-cost": "vp run build && node --expose-gc --experimental-strip-types bench/pluginForkCost.bench.ts",
-		"bench:di": "vp pack bench/vendor/diod/src/index.ts --no-config --format esm --out-dir bench/vendor/diod/dist --minify && vp pack src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
+		"bench:di": "vp pack bench/vendor/diod/src/index.ts --no-config --no-dts --format esm --out-dir bench/vendor/diod/dist --minify && vp pack src/internal/di/index.ts --no-config --no-dts --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "catalog:prod",

@@ -179,6 +179,12 @@ for (const filename of await readdir(resolve(root, '.tegami'))) {
 			Object.keys(metadata.packages).length === 0
 		)
 			errors.push(`.tegami/${filename}: front matter must declare package bumps`)
+		else {
+			for (const name of Object.keys(metadata.packages)) {
+				if (!publicVersions.has(name))
+					errors.push(`.tegami/${filename}: bump target ${name} is not a public package`)
+			}
+		}
 	} catch (error) {
 		errors.push(`.tegami/${filename}: invalid YAML front matter: ${String(error)}`)
 	}

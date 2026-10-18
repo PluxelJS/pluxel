@@ -33,17 +33,24 @@ describe('dev console wire interoperability', () => {
 			},
 		})
 		cleanup.push(() => server.close())
+		const instance = await selectDevInstance({ root })
+		expect(instance.instanceId).toBe(server.instance.instanceId)
 		const first = await runDevFile({
-			root,
+			instance,
 			file,
 			exportName: 'default',
 			input: { count: 3 },
 			timeoutMs: 1000,
 			detach: false,
 		})
-		expect(first).toMatchObject({ state: 'succeeded', value: { calls: 1, input: { count: 3 } } })
+		expect(first).toMatchObject({
+			root: instance.root,
+			instanceId: instance.instanceId,
+			state: 'succeeded',
+			value: { calls: 1, input: { count: 3 } },
+		})
 		const second = await runDevFile({
-			root,
+			instance,
 			file,
 			exportName: 'default',
 			timeoutMs: 1000,
@@ -51,13 +58,12 @@ describe('dev console wire interoperability', () => {
 		})
 		expect(second).toMatchObject({ state: 'succeeded', value: { calls: 2 } })
 		const waiting = await runDevFile({
-			root,
+			instance,
 			file,
 			exportName: 'wait',
 			timeoutMs: 1000,
 			detach: true,
 		})
-		const instance = await selectDevInstance({ root })
 		expect(await requestDev(instance, { method: 'cancel', runId: waiting.runId })).toMatchObject({
 			state: 'cancelling',
 		})

@@ -43,6 +43,7 @@ tsdown.config.ts
 vite.config.ts
 vitest.config.ts
 oxlint.config.ts
+oxfmt.config.ts
 ```
 
 包根或显式导出的子路径可以作为 plugin-bearing entry。它可以导出 schema、types 和普通 helper，但每个具体 Plugin class 必须能从唯一入口的唯一 named export 追溯。
@@ -98,7 +99,7 @@ export { VaultAdminPlugin } from './plugins/vault/index.ts'
 }
 ```
 
-构建和验证任务由生成的 `vite.config.ts` 的 `run.tasks` 维护：`build` 执行 `pluxel build`，`test` 执行 `vp test run`，`verify` 通过依赖图组合治理、`vp check`、测试与构建。格式规则在 `fmt`；`lint` 同时开启 `typeAware` 与 `typeCheck`，覆盖 TypeScript 项目检查。
+构建和验证任务由生成的 `vite.config.ts` 的 `run.tasks` 维护：`build` / `test` scripts 分别委托 `compile` / `check-tests`，`verify` 委托 `workspace:verify`，通过依赖图组合治理、`vp check`、测试与构建。独立 lint / fmt 规则模块由根配置引用；工具与规则的职责见[工作区工具链](./workspace-toolchain.md#每个工具维护什么)。`lint` 同时开启 `typeAware` 与 `typeCheck`，覆盖 TypeScript 项目检查。
 
 上例用 `@pluxel/hmr` 选择源码、`default` 选择构建制品，适合同时开发和发布的包。
 源码识别也接受 `@pluxel/source`、`development` 条件；仅在工作区消费的 TypeScript 包可以直接写
@@ -152,7 +153,8 @@ Plugin source 需要 decorator；使用条件源码导出时，让 TypeScript �
 		"tsdown.config.ts",
 		"vite.config.ts",
 		"vitest.config.ts",
-		"oxlint.config.ts"
+		"oxlint.config.ts",
+		"oxfmt.config.ts"
 	]
 }
 ```

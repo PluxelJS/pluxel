@@ -29,7 +29,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"bench:render": "vitest bench bench/render.bench.ts --config vitest.config.ts",
+		"bench:render": "vp test bench bench/render.bench.ts --config vitest.config.ts",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
 		"typecheck": "vp run check-types"

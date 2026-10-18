@@ -85,6 +85,9 @@ describe('create-pluxel', () => {
 			'hk.pkl',
 			'pitchfork.toml',
 			'vite.config.ts',
+			'oxlint.config.ts',
+			'oxfmt.config.ts',
+			'.github/workflows/ci.yml',
 			'scripts/vite-tasks.ts',
 			'host/src/app.ts',
 		]) {

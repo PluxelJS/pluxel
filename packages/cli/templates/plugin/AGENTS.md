@@ -8,10 +8,10 @@
 
 ## 本包构建与检查
 
-- 修改插件、公共契约、package metadata、`tsdown.config.ts` 或 `oxlint.config.ts` 前，按开发指南确认对应契约；包发布见 `vp exec pluxel docs development/plugin-package.md`。
+- 修改插件、公共契约、package metadata、`tsdown.config.ts` 或 lint / fmt 规则前，按开发指南确认对应契约；包发布见 `vp exec pluxel docs development/plugin-package.md`。
 - `tsdown.config.ts` 只描述包的输入输出；`pluxel build` 拥有编译语义与生成的插件依赖 metadata。
 - 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 
-工作区默认使用 mise 固定 Node、pnpm、Vite+ 和 hk；先 `mise trust`、`mise install`、`vp install`、`vp run setup`，已有 Git 仓库再 `vp run hooks:install`。`hk.pkl` 只选择文件并调用 `vp check`；完整验证使用 `vp run verify` 原生任务图。根 `vite.config.ts` 统一格式规则与启用类型检查的 lint 配置。
+工作区默认使用 mise 固定 Node、pnpm、Vite+ 和 hk；先 `mise trust`、`mise install`、`vp install`、`vp run setup`，已有 Git 仓库再 `vp run hooks:install`。`hk.pkl` 只选择文件并调用 `vp check`；`vp run verify` 委托 `workspace:verify` 原生任务图。`oxlint.config.ts` 与 `oxfmt.config.ts` 分别维护规则，根 `vite.config.ts` 引用为 `lint` / `fmt` 并启用类型检查；每份规则只维护一个来源，详见工作区工具链指南。
 
 独立插件没有可运行应用，不声明空的 `pluxel.dev` 或启动临时 Host。在线调试时用 `--root` 从消费应用目录发现配置，显式 `--profile` 优先于应用 default，没有默认且多 profile 时必须指定；匹配实例仍有多个时使用 `--instance`。没有配置的手动 Vite 可用 `--root` 指定其真实根目录。操作与 receipt 恢复方式由 skill 和开发控制台指南维护。

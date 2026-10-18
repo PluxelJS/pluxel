@@ -30,6 +30,8 @@ mise 管理工具的安装和执行环境；package scripts 提供统一操作�
 
 执行工具和规则文件分别决定。较大的 lint / fmt 策略可放在独立的 `oxlint.config.ts` / `oxfmt.config.ts` 模块，由根 `vite.config.ts` 显式导入到 `lint` / `fmt`；简短配置也可内联。`vp check` 以工作区根配置为入口，因此不要同时维护内容重复的 rc 文件；使用 `vp` 不要求把所有规则都写进 Vite 文件。相关行为见 [Lint](https://viteplus.dev/config/lint) 与 [Fmt](https://viteplus.dev/config/fmt)。
 
+官方应用和 Plugin 模板分别通过 `oxlint.config.ts` 与 `oxfmt.config.ts` 维护规则，根 Vite 配置引用这些模块。
+
 ## 构建、检查与任务图
 
 package scripts 是人和 IDE 的入口，Vite Task 拥有实际命令、依赖图与缓存。根 `build` / `test` / `verify` 委托 `workspace:*` 聚合任务；叶包的标准 `build` / `test` / `typecheck` 分别委托 `compile` / `check-tests` / `check-types`，保留 source 发现与外部调用入口。不要同时定义同名 script 和原生 task，也不要在 mise 重复定义任务。框架的具体实现与包依赖环处理见[工作区任务图](https://github.com/PluxelJS/pluxel/blob/main/engineering/CLI_WORKSPACES.md#工作区任务图)。
@@ -85,7 +87,7 @@ Monorepo 用 `dependsOn: [{ task: 'build', from: ['dependencies', 'devDependenci
 - `env` 声明影响结果的环境变量，例如 `CI`、`NODE_ENV` 和构建开关；密钥不能写进配置。自动环境追踪的适用范围见 [Automatic Data Tracking](https://viteplus.dev/guide/automatic-data-tracking)。
 - 部署、发布、数据迁移、实时服务检查和外部集成测试使用 `cache: false`。URL 没变不能证明远端服务状态没变。官方模板的治理与完整验收入口每次执行，底层构建和单元测试仍复用缓存。
 
-迁移后连续执行两次 `vp run verify`，检查第二次的 cache hit；再删除一个构建产物验证恢复，修改一个真实输入确认相应任务失效。`vp run --last-details` 显示上次执行细节；需要强制重跑使用 `--no-cache`。CI 持久化 `node_modules/.vite/task-cache`，避免每次 checkout 都失去缓存。完整配置参考 [Task Caching](https://viteplus.dev/guide/cache) 与 [run 配置](https://viteplus.dev/config/run)。
+迁移后连续执行两次 `vp run verify`，检查第二次的 cache hit；再删除一个构建产物验证恢复，修改一个真实输入确认相应任务失效。CI 或需要指定并发与查看任务报告时，直接调用原生聚合任务，例如 `vp run --concurrency-limit=2 workspace:verify`，避免 package script 再启动内层 runner，让限制与报告覆盖实际任务图。`vp run --last-details` 显示上次执行细节；需要强制重跑使用 `--no-cache`。CI 持久化 `node_modules/.vite/task-cache`，避免每次 checkout 都失去缓存。完整配置参考 [Task Caching](https://viteplus.dev/guide/cache) 与 [run 配置](https://viteplus.dev/config/run)。
 
 ## 准备 checkout
 

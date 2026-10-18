@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite-plus'
 import lint from './oxlint.config'
+import fmt from './oxfmt.config'
 import { readRepositoryPackages } from './scripts/repository-packages.mjs'
 
 export default defineConfig(async () => {
@@ -55,7 +56,12 @@ export default defineConfig(async () => {
 		},
 		'bench:core:compare': { command: 'scripts/core-bench-compare.sh', cache: false },
 		tegami: { command: 'node scripts/tegami.mts', cache: false },
-		'verify:checks': { command: 'vp check', cache: false },
+		'verify:checks': {
+			command: 'vp check',
+			// Typed lint consumes package declarations, including generated Plugin exports.
+			dependsOn: ['workspace:build'],
+			cache: false,
+		},
 		'workspace:verify': {
 			command: 'node scripts/check-source-declarations.mjs',
 			dependsOn: [
@@ -69,30 +75,7 @@ export default defineConfig(async () => {
 		},
 	})
 	return {
-		fmt: {
-			useTabs: true,
-			tabWidth: 2,
-			printWidth: 100,
-			singleQuote: true,
-			jsxSingleQuote: false,
-			quoteProps: 'as-needed',
-			trailingComma: 'all',
-			semi: false,
-			arrowParens: 'always',
-			bracketSameLine: false,
-			bracketSpacing: true,
-			ignorePatterns: [
-				'dist/',
-				'**/dist/',
-				'coverage/',
-				'vendor/',
-				'**/*.hbs',
-				'packages/core/benchmarks/',
-				'packages/workbench/shell/src/app/router/routeTree.gen.ts',
-				'projects/plugin-host/pluxel.loader.hmr.discovered.jsonc',
-				'projects/docs/next-env.d.ts',
-			],
-		},
+		fmt,
 		lint,
 		run: { cache: { scripts: false, tasks: true }, tasks },
 	}

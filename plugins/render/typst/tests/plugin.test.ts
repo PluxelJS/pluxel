@@ -12,7 +12,7 @@ import {
 	resolveHostApplication,
 } from '@pluxel/host'
 import { nodeModules } from '@pluxel/services/node'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TypstConfig, TypstPlugin, type TypstFiles, type TypstSession } from '../src/index.ts'
 
 @Plugin()
@@ -205,22 +205,28 @@ describe('TypstPlugin real host and worker', () => {
 
 	it('cancels queued updates and removes private resources after disposal', async () => {
 		await using host = await fixture()
-		const initialEntries = await readdir(tmpdir())
-		const before = new Set(initialEntries.filter((name) => name.startsWith('pluxel-typst-')))
-		const session = await host.require(TypstConsumer).typst.open(await template())
-		const first = session.update({ files })
-		const controller = new AbortController()
-		const reason = new Error('cancel queued document')
-		const second = session.update({ files, signal: controller.signal })
-		controller.abort(reason)
-		await expect(second).rejects.toBe(reason)
-		await first
-		await session.dispose()
-		const finalEntries = await readdir(tmpdir())
-		const remaining = finalEntries.filter(
-			(name) => name.startsWith('pluxel-typst-') && !before.has(name),
-		)
-		expect(remaining).toEqual([])
+		const temporaryRoot = await mkdtemp(join(tmpdir(), 'typst-resource-check-'))
+		roots.push(temporaryRoot)
+		// Session resources must be checked independently of other files' concurrent workers.
+		for (const key of ['TMPDIR', 'TEMP', 'TMP']) vi.stubEnv(key, temporaryRoot)
+		try {
+			const session = await host.require(TypstConsumer).typst.open(await template())
+			const first = session.update({ files })
+			const controller = new AbortController()
+			const reason = new Error('cancel queued document')
+			const second = session.update({ files, signal: controller.signal })
+			controller.abort(reason)
+			await expect(second).rejects.toBe(reason)
+			await first
+			const activeEntries = await readdir(temporaryRoot)
+			expect(activeEntries.filter((name) => name.startsWith('pluxel-typst-'))).toHaveLength(1)
+			await session.dispose()
+			const finalEntries = await readdir(temporaryRoot)
+			const remaining = finalEntries.filter((name) => name.startsWith('pluxel-typst-'))
+			expect(remaining).toEqual([])
+		} finally {
+			vi.unstubAllEnvs()
+		}
 	}, 30_000)
 	it('reads a 16 MiB disk JSON with a long table and SVG through the actual worker', async () => {
 		await using host = await fixture()

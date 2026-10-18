@@ -44,7 +44,10 @@ host/
   vite.config.ts            指向 web/ 的唯一 Vite config
   tsdown.config.ts          pluxel({ delivery: 'modules' }) + Web public copy
   web/                      @example/web workspace package，React client 与前端专属依赖
-mise.toml                   工具版本和工作区任务
+mise.toml                   工具版本、环境和 PATH
+vite.config.ts              原生任务图与 lint / fmt 接入
+oxlint.config.ts            lint 规则
+oxfmt.config.ts             fmt 规则
 pitchfork.toml              app 开发服务、端口与就绪检查
 hk.pkl                      提交检查与修复规则
 pncat.config.ts             catalog 分组和迁移的唯一策略入口
@@ -143,7 +146,7 @@ vp run governance:check
 vp run verify
 ```
 
-`verify` 是 CI 的 canonical 门禁，覆盖 governance、format、lint，以及 Vite Task 任务图 中的 typecheck、test 和 build。
+`vp run verify` 委托原生 `workspace:verify` 门禁，覆盖 governance、format、lint，以及 Vite Task 任务图中的 typecheck、test 和 build。CI 直接调用原生聚合任务，详见[工作区工具链](./workspace-toolchain.md#构建检查与任务图)。
 
 ## 创建自己的 Plugin package
 

@@ -3215,12 +3215,9 @@ importers:
       '@tanstack/react-store':
         specifier: catalog:frontend
         version: 0.11.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@worksplit/core':
-        specifier: file:vendor/worksplit-core.tgz
-        version: file:projects/report-template-studio/vendor/worksplit-core.tgz
       '@worksplit/react':
-        specifier: file:vendor/worksplit-react.tgz
-        version: file:projects/report-template-studio/vendor/worksplit-react.tgz(@tanstack/react-hotkeys@0.13.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-router@1.170.42(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-store@0.11.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@worksplit/core@file:projects/report-template-studio/vendor/worksplit-core.tgz)(flexlayout-react@0.11.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: workspace:*
+        version: link:../../vendor/split-like-vscode/packages/react
       capnweb:
         specifier: catalog:prod
         version: 0.12.0
@@ -8257,22 +8254,6 @@ packages:
 
   '@workflow/serde@4.1.0':
     resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
-
-  '@worksplit/core@file:projects/report-template-studio/vendor/worksplit-core.tgz':
-    resolution: {integrity: sha512-Z5rM1kMf6WDb2fz+UCB+G131m6BO0gmoZoeaLI08Ij1nBdA87mSqO/Bk0wL3SB5Wuu8Z7CnrJpaK3aplX9Mokw==, tarball: file:projects/report-template-studio/vendor/worksplit-core.tgz}
-    version: 0.1.0
-
-  '@worksplit/react@file:projects/report-template-studio/vendor/worksplit-react.tgz':
-    resolution: {integrity: sha512-IpOyyMt/iL+F3r+q+grXoFPGl22qoK9wx3OzOxh4nz/HWbhXT3476qPe4CgBQVddkZYV70J6OzLDfnagftgpUg==, tarball: file:projects/report-template-studio/vendor/worksplit-react.tgz}
-    version: 0.1.0
-    peerDependencies:
-      '@tanstack/react-hotkeys': ^0.13.0
-      '@tanstack/react-router': ^1.170.42
-      '@tanstack/react-store': ^0.11.2
-      '@worksplit/core': 0.1.0
-      flexlayout-react: ^0.11.1
-      react: '>=18.3.0 || >=19.0.0'
-      react-dom: '>=18.3.0 || >=19.0.0'
 
   '@xmldom/xmldom@0.9.12':
     resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
@@ -17273,18 +17254,6 @@ snapshots:
       '@xtuc/long': 4.2.2
 
   '@workflow/serde@4.1.0': {}
-
-  '@worksplit/core@file:projects/report-template-studio/vendor/worksplit-core.tgz': {}
-
-  '@worksplit/react@file:projects/report-template-studio/vendor/worksplit-react.tgz(@tanstack/react-hotkeys@0.13.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-router@1.170.42(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-store@0.11.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@worksplit/core@file:projects/report-template-studio/vendor/worksplit-core.tgz)(flexlayout-react@0.11.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
-    dependencies:
-      '@tanstack/react-hotkeys': 0.13.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@tanstack/react-router': 1.170.42(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@tanstack/react-store': 0.11.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@worksplit/core': file:projects/report-template-studio/vendor/worksplit-core.tgz
-      flexlayout-react: 0.11.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      react: 19.3.0
-      react-dom: 19.3.0(react@19.3.0)
 
   '@xmldom/xmldom@0.9.12': {}
 

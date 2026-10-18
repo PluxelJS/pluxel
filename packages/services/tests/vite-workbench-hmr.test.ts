@@ -17,7 +17,13 @@ it('recovers Workbench definitions and dependents through the physical Vite watc
 	await expect(
 		execFileAsync(process.execPath, ['--import', 'tsx', runner], {
 			cwd: packageRoot,
-			env: { ...process.env, CI: '1', PLUXEL_WORKBENCH_HMR_ROOT: fixture.path },
+			env: {
+				...process.env,
+				CI: '1',
+				// This integration builds real artifacts; MF otherwise skips its plugin in tests.
+				MFE_VITE_NO_TEST_ENV_CHECK: 'true',
+				PLUXEL_WORKBENCH_HMR_ROOT: fixture.path,
+			},
 			timeout: 150_000,
 			maxBuffer: 4 * 1024 * 1024,
 		}),

@@ -429,8 +429,10 @@ try {
 		await rm(fixture.getPath('node_modules'), { recursive: true })
 		await rm(fixture.getPath('src/node_modules'), { recursive: true })
 		const key = resolveNodeModuleArtifactKey(root, fixture.getPath('src/entry.ts'), './worker.ts')
+		// Deployment workers use Node's default conditions; Vitest adds an `import` condition.
 		const worker = new Worker(
 			pathToFileURL(relocated.getPath('application/artifacts/node/' + key + '.mjs')),
+			{ execArgv: [] },
 		)
 		try {
 			await expect(

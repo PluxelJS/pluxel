@@ -31,7 +31,6 @@
 		}
 	},
 	"scripts": {
-		"prepare:worksplit": "node scripts/prepare-worksplit.mjs",
 		"build": "vp run compile",
 		"start": "electron .",
 		"dev": "node scripts/dev.mjs",
@@ -66,8 +65,7 @@
 		"@tanstack/react-hotkeys": "catalog:frontend",
 		"@tanstack/react-router": "catalog:frontend",
 		"@tanstack/react-store": "catalog:frontend",
-		"@worksplit/core": "file:vendor/worksplit-core.tgz",
-		"@worksplit/react": "file:vendor/worksplit-react.tgz",
+		"@worksplit/react": "workspace:*",
 		"capnweb": "catalog:prod",
 		"fflate": "catalog:prod",
 		"flexlayout-react": "catalog:frontend",

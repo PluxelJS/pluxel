@@ -108,7 +108,7 @@ jobs:
           set -euo pipefail
           node -e 'const os = require("node:os"); console.log(`Runner: ${os.availableParallelism()} CPUs, ${Math.round(os.totalmem() / 1024 ** 3)} GiB RAM; 2 concurrent package tasks`)'
           # Explicit native task dependencies handle publishing cycles; cache unchanged work.
-          vp run --concurrency-limit=2 -v verify
+          vp run --concurrency-limit=2 -v workspace:verify
 
       - name: Capture Vite task execution details
         if: always() && steps.task-verify.outcome != 'skipped'

@@ -2,10 +2,12 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Bench } from 'tinybench'
-import { ContainerBuilder } from './vendor/diod/dist/index.mjs'
+import type * as Diod from './vendor/diod/src/index'
 import type * as CoreDi from '../src/internal/di/index'
 
 // Execute the compiled benchmark bundle while checking against its source contract.
+const diodBundle = new URL('./vendor/diod/dist/index.mjs', import.meta.url)
+const { ContainerBuilder }: typeof Diod = await import(diodBundle.href)
 const coreBundle = new URL('../dist/bench/index.mjs', import.meta.url)
 const { DraftGraph, Runtime, classProvider }: typeof CoreDi = await import(coreBundle.href)
 
@@ -46,7 +48,7 @@ const mustCoreBuild = <M>(draft: CoreDi.DraftGraph<M>) => {
 	throw built.err
 }
 
-const mustDiodBuild = (builder: ContainerBuilder) => {
+const mustDiodBuild = (builder: Diod.ContainerBuilder) => {
 	const built = builder.build({ autowire: false, aliasPolicy: 'error' })
 	if (!built.ok) throw built.err
 	return built.val

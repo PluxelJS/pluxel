@@ -24,4 +24,4 @@ jobs:
       - run: pitchfork daemons --json
       - run: vp install --frozen-lockfile
       - run: vp exec pluxel workspace setup
-      - run: vp run verify
+      - run: vp run --concurrency-limit=2 workspace:verify

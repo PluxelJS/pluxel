@@ -141,9 +141,9 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 
 ### 治理与验证
 
-`vp run verify` 是本地与 CI 的共同入口，通过原生依赖图执行治理、`vp check`、类型检查、测试与构建，再检查构建是否把声明写入源码。各包标准 scripts 委托 `compile`、`check-types`、`check-tests` 等 task；实际命令和依赖图由 `vite.config.ts` 与 `scripts/vite-tasks.ts` 维护。根聚合任务显式引用包 task，避免将框架的合法包依赖环误当成构建顺序。
+`vp run verify` 委托 `workspace:verify`，本地与 CI 共享该原生依赖图，执行治理、`vp check`、类型检查、测试与构建，再检查构建是否把声明写入源码。各包标准 scripts 委托 `compile`、`check-types`、`check-tests` 等 task；实际命令和依赖图由 `vite.config.ts` 与 `scripts/vite-tasks.ts` 维护。根聚合任务显式引用包 task，避免将框架的合法包依赖环误当成构建顺序。
 
-CI 提供并发数、affected package 与日志；缓存目录为当前 checkout 的 `node_modules/.vite/task-cache`，本次执行报告单独上传。缓存输入必须包含影响产物的配置和环境，不能依赖暖缓存留下的文件。
+CI 直接调用原生聚合任务并指定并发数，上传实际执行任务、缓存命中与日志；缓存目录为当前 checkout 的 `node_modules/.vite/task-cache`。缓存输入必须包含影响产物的配置和环境，不能依赖暖缓存留下的文件。
 
 仓库工具版本由 `mise.toml` 拥有。验证入口固定 `PNPM_CONFIG_PM_ON_FAIL=ignore` 与准确的 `PNPM_CONFIG_WORKSPACE_DIR`，任务透传这些执行上下文，避免 vendor 子工作区的上游 `packageManager` 字段切换 pnpm，或 workspace 文件改变当前安装图。这不禁用依赖检查；跨仓库 source 执行重新绑定到当前 checkout。
 
@@ -155,7 +155,7 @@ CI 提供并发数、affected package 与日志；缓存目录为当前 checkout
 | package `test`                            | Vitest 行为回归；边界选择见 [TESTING](TESTING.md)                           |
 | `scripts/check-source-declarations.mjs`   | 显式登记的 ambient declarations；生成声明只进入 dist 或可清理缓存           |
 
-治理与 Tegami 消费同一份 inventory。迁移完成后移除一次性扫描器；不要把历史 API 黑名单、源码片段或旧提案名称变成永久架构概念。当前契约由 exports、编译器和所属边界的行为测试维护。
+治理与 Tegami 消费同一份 inventory。`.tegami/*.md` 的 bump 目标必须属于 inventory 中的公开包；private 项目不维护发布 bump，失效目标由治理检查拒绝。迁移完成后移除一次性扫描器；不要把历史 API 黑名单、源码片段或旧提案名称变成永久架构概念。当前契约由 exports、编译器和所属边界的行为测试维护。
 
 各 workspace 必须声明自己的 `typecheck`，`tsconfig` 覆盖本包源码、测试和构建配置。外部环境类型由 `compilerOptions.types` 加载。测试统一由 Vitest 编排；纯 Node fixture 可以使用 Node assert，不另设 `node --test` runner。
 
