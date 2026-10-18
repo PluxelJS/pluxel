@@ -68,6 +68,29 @@ it('applies indirect module HMR updates and template raw updates without replaci
 		await compiler.close()
 	}
 })
+it('accepts Vite wrapped source and importer URLs within each compiler source tree', async () => {
+	for (const id of ['wrapped-one', 'wrapped-two']) {
+		const compiler = new TemplateCompiler()
+		const doc = template(id)
+		doc.files['report/value.ts'] =
+			`const response = JSON.parse(await __studioInvoke(JSON.stringify({
+  type: 'custom', event: 'vite:invoke', data: { name: 'fetchModule', data: [
+    '/@id/' + import.meta.dirname + '/main.typ?raw', '/@id/' + import.meta.filename
+  ] }
+})));
+if (response.error) throw new Error(response.error.message);
+export const value = response.result.code;`
+		try {
+			const result = await evaluate(compiler, doc)
+			expect(result.files['/inputs/data.json']).toEqual({
+				kind: 'json',
+				value: expect.stringContaining('Test'),
+			})
+		} finally {
+			await compiler.close()
+		}
+	}
+})
 it('keeps module state separate between two active templates', async () => {
 	const compiler = new TemplateCompiler()
 	const other = new TemplateCompiler()
@@ -158,6 +181,38 @@ it('rejects forged transport imports and recovers the same template after interr
 		await compiler.close()
 	}
 	await expect(evaluate(compiler, doc)).rejects.toThrow('closed')
+})
+
+it.each([
+	{ name: 'outside source', request: `['/@id//etc/passwd']` },
+	{ name: 'unregistered library', request: `['/@id/__x00__studio-library:node:fs']` },
+	{
+		name: 'sibling root',
+		request: `['/@id/' + import.meta.dirname.slice(0, -'/report'.length) + '-outside/report/report.ts']`,
+	},
+	{ name: 'unregistered query', request: `['/@id/' + import.meta.filename + '?unregistered']` },
+	{
+		name: 'outside importer',
+		request: `['/@id/' + import.meta.dirname + '/main.typ?raw', '/@id//etc/passwd']`,
+	},
+])('rejects Vite wrapped $name and recovers the same compiler', async ({ request }) => {
+	const compiler = new TemplateCompiler()
+	const doc = template()
+	try {
+		await expect(
+			evaluate(compiler, {
+				...doc,
+				files: {
+					...doc.files,
+					'report/report.ts': `await __studioInvoke(JSON.stringify({type: 'custom', event: 'vite:invoke', data: { name: 'fetchModule', data: ${request} }}));\n${source}`,
+				},
+			}),
+		).rejects.toThrow('own source tree')
+		const recovered = await evaluate(compiler, doc)
+		expect(recovered.files['/inputs/data.json']).toEqual({ kind: 'json', value: 1 })
+	} finally {
+		await compiler.close()
+	}
 })
 
 it('times out a pending top-level await and can compile a corrected template', async () => {

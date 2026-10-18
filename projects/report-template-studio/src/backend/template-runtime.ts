@@ -384,18 +384,19 @@ export async function describe() {
 				if (request.name === 'getBuiltins') return { result: [] }
 				if (request.name !== 'fetchModule' || !Array.isArray(request.data))
 					throw new Error('Unsupported Vite transport operation')
+				// Vite wraps non-root URLs (including Windows drive paths) before HMR.
+				// Compare their source identities while forwarding the original payload.
 				const [id, importer] = request.data
+					.slice(0, 2)
+					.map((value: unknown) =>
+						typeof value === 'string' && value.startsWith('/@id/')
+							? value.slice('/@id/'.length).replace('__x00__', '\0')
+							: value,
+					)
 				const allowed = (value: unknown, isImporter = false): boolean => {
 					if (typeof value !== 'string') return false
 					if (value === entry) return true
-					if (
-						libraryNames.some(
-							(name) =>
-								value === name ||
-								value === `\0studio-library:${name}` ||
-								value === `/@id/__x00__studio-library:${name}`,
-						)
-					)
+					if (libraryNames.some((name) => value === name || value === `\0studio-library:${name}`))
 						return true
 					let name = value
 					if (name.startsWith(root + '/')) name = name.slice(root.length + 1)
