@@ -118,7 +118,8 @@ jobs:
           PLUXEL_BENCH_DEFAULT_BRANCH: ${{ env.DEFAULT_BRANCH }}
           PLUXEL_BENCH_TOLERANCE: ${{ env.BENCH_TOLERANCE }}
           PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
-        run: vp run bench:core:compare
+        # The comparison installs each revision before loading its build configuration.
+        run: scripts/core-bench-compare.sh
 
       - name: Save dependency cache
         if: always() && steps.benchmark.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
