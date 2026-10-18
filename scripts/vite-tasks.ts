@@ -254,7 +254,7 @@ const packages: Record<string, Partial<Task>> = {
 		},
 	},
 	'pluxel-docs#build': {
-		dependsOn: ['generate:playground-types', 'valibot-form#build'],
+		dependsOn: ['prepare:docs'],
 		cache: {
 			input: [
 				{

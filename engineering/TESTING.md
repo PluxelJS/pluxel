@@ -63,7 +63,9 @@ closure。统一测试组合依赖 Services/Workbench 的发布入口，因此�
 
 消费本包发布制品的测试任务必须显式依赖本包 `build`，不能只依赖 依赖包的 `build` 或依赖暖缓存碰巧留下的文件。Package Manager 的不可变安装测试与维护者 Host 的 native/production-Vite smoke 都遵守这一顺序；测试子进程失败或超时也必须被回收。
 
-CI 按整个 PR 相对目标分支的变化选择包；CI workflow、工具链、根清单、锁文件、Vite Task、TypeScript、lint/format/catalog 配置、仓库脚本，以及 CLI/Create/docs 任务读取的根 `docs/` 和 `.agents/skills/pluxel-development/` 变化时执行全量验证。包选择不会因 task inputs 引用包外文件就选中消费包，这些改动必须显式扩大范围，避免以零 package task 通过。`packages/*/package.json` 与 `plugins/**/package.json` 变化也执行全量验证，因为公开包清单决定 starter 构建中的发行依赖范围。在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
+文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、valibot-form 构建与 Playground 类型资源；Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。
+
+CI 直接执行 `workspace:verify` 的完整任务图，由 Vite Task 根据真实输入复用结果，不再维护另一套按变更路径选择包的规则。在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
 任务执行日志和缓存结果，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
 Core benchmark 跟踪 core、Context、基准场景与构建依赖变化；仅修改测试或 Markdown 文档不触发完整的同 runner 对比。
 

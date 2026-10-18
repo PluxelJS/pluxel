@@ -46,6 +46,16 @@ export default defineConfig({
 				command: 'node scripts/generate-playground-types.mjs',
 				cache: false,
 			},
+			'prepare:docs': {
+				command: [],
+				dependsOn: ['generate:playground-types', '@pluxel/core#compile', 'valibot-form#compile'],
+				cache: false,
+			},
+			serve: {
+				command: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=development fumapress dev',
+				dependsOn: ['prepare:docs'],
+				cache: false,
+			},
 		},
 	},
 	worker: {
