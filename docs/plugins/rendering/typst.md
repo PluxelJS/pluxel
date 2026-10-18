@@ -141,6 +141,8 @@ open/update/renderPage 接受 AbortSignal 和可选 timeoutMs，deadline 包含�
 
 TypstError 的稳定 code 包括 INVALID_INPUT、LIMIT_EXCEEDED、COMPILE_FAILED、BUSY、CLOSED、STALE_REVISION。IO、Worker 和取消错误保留各自契约及 cause，不转换为语法错误。
 
+文档会话的 diagnostics.path 相对工作区，目录分隔符统一为 `/`；range 的行和字符位置从 0 开始。原生诊断消息与源码范围保留，修复对应文件后可在同一会话继续更新。
+
 ## 服务端按页 PNG
 
 先读取 `compiled.preview.navigation.pages` 和 `outline` 选择所需页面，再从同一成功修订按需取图。无需浏览器、额外端口或重新编译：

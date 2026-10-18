@@ -1,6 +1,6 @@
 import { parentPort, isMainThread } from 'node:worker_threads'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { isAbsolute, relative, resolve, join } from 'node:path'
+import { isAbsolute, relative, resolve, join, sep } from 'node:path'
 import { loadNativeCompiler, type NodeCompiler, type NavigationDocument } from './native-binding.ts'
 
 import { TypstError, type TypstDiagnostic } from './errors.ts'
@@ -128,7 +128,7 @@ export default function compileTypst(input: TypstCompileWorkerInput): TypstWorke
 	if (!isAbsolute(input.root)) throw new TypeError('Typst worker root must be absolute')
 	const entry = resolve(input.root, input.entry)
 	const entryRelative = relative(input.root, entry)
-	if (entryRelative === '..' || entryRelative.startsWith('../') || isAbsolute(entryRelative)) {
+	if (entryRelative === '..' || entryRelative.startsWith(`..${sep}`) || isAbsolute(entryRelative)) {
 		throw new TypeError('Typst worker entry must stay inside its workspace')
 	}
 	const compiler = nativeCompiler(input)
@@ -194,7 +194,9 @@ function normalizeDiagnostics(values: readonly unknown[], root: string): TypstDi
 				? `[${item.package}] ${item.message}`
 				: item.message
 			).slice(0, 4096),
-			path: path ? (isAbsolute(path) ? relative(root, path) : path).slice(0, 4096) : undefined,
+			path: path
+				? (isAbsolute(path) ? relative(root, path) : path).replaceAll(sep, '/').slice(0, 4096)
+				: undefined,
 			range: isRange(item.range) ? item.range : undefined,
 		}
 	})

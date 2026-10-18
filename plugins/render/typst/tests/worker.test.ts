@@ -111,6 +111,34 @@ Report
 		expect(result.diagnostics[0]?.message).toContain('missing')
 	})
 
+	it('preserves portable nested source paths and ranges in native diagnostics', async () => {
+		const path = '报表/季度经营分析/排版.typ'
+		const root = await workspace(`#include "${path}"`)
+		await mkdir(join(root, '报表/季度经营分析'), { recursive: true })
+		await writeFile(join(root, path), '#let x = missing\n#x')
+		const result = compileTypst({ revision: 1, root, entry: 'main.typ', maxOutputBytes: 8_000_000 })
+		expect(result).toMatchObject({
+			ok: false,
+			code: 'COMPILE_FAILED',
+			diagnostics: expect.arrayContaining([
+				expect.objectContaining({
+					severity: 'error',
+					message: expect.stringContaining('missing'),
+					path,
+					range: { start: { line: 0, character: 9 }, end: { line: 0, character: 16 } },
+				}),
+			]),
+		})
+		expect(structuredClone(result)).toEqual(result)
+	})
+
+	it('rejects entries outside the workspace before native compilation', async () => {
+		const root = await workspace('Report')
+		expect(() =>
+			compileTypst({ revision: 1, root, entry: '../outside.typ', maxOutputBytes: 8_000_000 }),
+		).toThrow('Typst worker entry must stay inside its workspace')
+	})
+
 	it('rejects combined output overflow rather than publishing a partial revision', async () => {
 		const root = await workspace('Report')
 		expect(compileTypst({ revision: 1, root, entry: 'main.typ', maxOutputBytes: 1 })).toMatchObject(

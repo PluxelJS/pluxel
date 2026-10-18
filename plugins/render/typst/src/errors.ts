@@ -9,6 +9,7 @@ export type TypstErrorCode =
 export interface TypstDiagnostic {
 	readonly severity: 'error' | 'warning' | 'info'
 	readonly message: string
+	/** Workspace-relative path using / as the directory separator. */
 	readonly path?: string
 	readonly range?: {
 		readonly start: { readonly line: number; readonly character: number }
