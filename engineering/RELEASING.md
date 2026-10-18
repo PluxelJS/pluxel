@@ -88,7 +88,7 @@ Vite Task 结果。该边界遵循 [mise-action 的发布工作流指南](https:
 
 ## Starter 发行版本
 
-`@pluxel/create` 在 tsdown 的 `build:done` hook 中，复制完成后仅重写 `dist/template/pnpm-workspace.yaml` 的
+`@pluxel/create` 在 Vite+ Pack 的 `build:done` hook 中，复制完成后仅重写 `dist/template/pnpm-workspace.yaml` 的
 `catalogs.pluxel`。每个第一方范围来自当前公开包 manifest 的 `^version`；不修改源码 manifest、publish lock 或外部 catalog。
 源码模板中的第一方范围是可读的基线，不能据此推断发行版本。Tegami Version Packages PR 更新 manifest 后，下一次构建自然生成对应范围。
 

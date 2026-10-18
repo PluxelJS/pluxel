@@ -38,13 +38,13 @@ package scripts 是人和 IDE 的入口，Vite Task 拥有实际命令、依赖�
 
 本仓库与模板使用 `run.cache.scripts: false, tasks: true`：入口每次执行，底层构建与测试按输入复用缓存，开发服务和验收入口不会被缓存跳过。IDE 的 `pnpm run build` 仍进入同一任务图。简单下游也可直接用 scripts 并启用其缓存；存在依赖顺序、产物或环境规则时再声明原生 task。参考 [run 配置](https://viteplus.dev/config/run)。
 
-| 操作                    | 入口与边界                                                                                                                                                |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 静态检查 / 修复         | `vp check` / `vp check --fix`；格式由根 `fmt` 配置拥有，类型由 `lint.options.typeAware` 与 `typeCheck` 启用，见 [Check](https://viteplus.dev/guide/check) |
-| 完整门禁                | `vp run verify` 通过 `dependsOn` 组合治理、检查、测试与构建；提交前增量检查不能替代它                                                                     |
-| 源码打包 / 发布 tarball | `vp pack` / `vp pm pack`，两者不可互换；现有 tsdown / oxlint 配置由 `vite.config.ts` 引用，Plugin 仍用 [`pluxel build`](./tooling.md#构建入口)            |
-| 普通依赖操作            | `vp install/add/remove/exec/run` 按 `packageManager` 使用固定 pnpm，见 [Vite+ 包管理](https://viteplus.dev/guide/package-management)                      |
-| 官方 catalog 政策       | `vp exec pluxel pncat add/remove/migrate/clean` 修改声明；`pluxel workspace sync` 只对齐已有 catalog 版本，不改依赖声明，不另设重复脚本                   |
+| 操作                    | 入口与边界                                                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 静态检查 / 修复         | `vp check` / `vp check --fix`；格式由根 `fmt` 配置拥有，类型由 `lint.options.typeAware` 与 `typeCheck` 启用，见 [Check](https://viteplus.dev/guide/check)    |
+| 完整门禁                | `vp run verify` 通过 `dependsOn` 组合治理、检查、测试与构建；提交前增量检查不能替代它                                                                        |
+| 源码打包 / 发布 tarball | `vp pack` / `vp pm pack`，两者不可互换；独立打包配置使用 `vite-plus/pack`，下游由 `vite.config.ts` 引用，Plugin 仍用 [`pluxel build`](./tooling.md#构建入口) |
+| 普通依赖操作            | `vp install/add/remove/exec/run` 按 `packageManager` 使用固定 pnpm，见 [Vite+ 包管理](https://viteplus.dev/guide/package-management)                         |
+| 官方 catalog 政策       | `vp exec pluxel pncat add/remove/migrate/clean` 修改声明；`pluxel workspace sync` 只对齐已有 catalog 版本，不改依赖声明，不另设重复脚本                      |
 
 框架的独立 `check-types` 还覆盖明确的 tsconfig、编译期 API probes 与前端配置；例如 `*.typecheck.ts` 不进入源码语义 lint，不能因 `vp check` 已检查类型就删除它们。普通下游只有额外类型契约时才增加独立任务。测试与 benchmark 也必须归属正确的 TypeScript 项目：必要时在测试目录继承包 tsconfig，设置 `noEmit: true`、`composite: false` 和环境类型，不扩大生产声明构建输入。
 

@@ -82,7 +82,7 @@ describe('private discovery directory boundaries', () => {
 			await mkdir(executables)
 			await writeFile(
 				join(executables, 'powershell.exe'),
-				'#!/bin/sh\nprintf "discovery ACL child failure\\n" >&2\nexit 7\n',
+				'#!/bin/sh\nprintf "studio-acl:startup\\nstudio-acl:identity\\ndiscovery ACL child failure\\n" >&2\nexit 7\n',
 				{ mode: 0o700 },
 			)
 			vi.stubGlobal('process', {
@@ -93,7 +93,14 @@ describe('private discovery directory boundaries', () => {
 			await expect(checkPrivateDirectory(join(directory, 'instances'), true)).rejects.toMatchObject(
 				{
 					code: 'INVALID_DISCOVERY_DIRECTORY',
-					cause: { code: 7, stderr: 'discovery ACL child failure\n' },
+					message: expect.stringMatching(
+						/^Unable to establish or verify the Windows private ACL \(deadline 10000 ms, elapsed \d+ ms\)$/,
+					),
+					cause: {
+						code: 7,
+						stdout: '',
+						stderr: 'studio-acl:startup\nstudio-acl:identity\ndiscovery ACL child failure\n',
+					},
 				},
 			)
 		},

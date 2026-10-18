@@ -45,9 +45,12 @@ export function studioDiscoveryDirectory(directory?: string): string {
 const runFile = promisify(execFile)
 async function windowsPrivatePath(path: string, created: boolean): Promise<void> {
 	// Windows ACLs, rather than chmod, establish the current-user boundary.
+	const timeoutMs = 10000
 	const script = `
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('studio-acl:startup')
 $path = $env:STUDIO_PRIVATE_DIRECTORY
+[Console]::Error.WriteLine('studio-acl:identity')
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 if ($env:STUDIO_PRIVATE_DIRECTORY_CREATED -eq 'yes') {
   $acl = New-Object System.Security.AccessControl.DirectorySecurity
@@ -55,14 +58,19 @@ if ($env:STUDIO_PRIVATE_DIRECTORY_CREATED -eq 'yes') {
   $acl.SetAccessRuleProtection($true, $false)
   $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
   $acl.AddAccessRule($rule)
+  [Console]::Error.WriteLine('studio-acl:set-acl')
   Set-Acl -LiteralPath $path -AclObject $acl
 }
+[Console]::Error.WriteLine('studio-acl:get-acl')
 $acl = Get-Acl -LiteralPath $path
+[Console]::Error.WriteLine('studio-acl:verify-acl')
 if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'Studio discovery directory has a different owner' }
 foreach ($rule in $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
   if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -ne $sid.Value) { throw 'Studio discovery directory grants access to another identity' }
 }
+[Console]::Error.WriteLine('studio-acl:complete')
 `
+	const startedAt = performance.now()
 	try {
 		await runFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
 			env: {
@@ -70,13 +78,13 @@ foreach ($rule in $acl.GetAccessRules($true, $true, [System.Security.Principal.S
 				STUDIO_PRIVATE_DIRECTORY: path,
 				STUDIO_PRIVATE_DIRECTORY_CREATED: created ? 'yes' : 'no',
 			},
-			timeout: 10000,
+			timeout: timeoutMs,
 			maxBuffer: 4096,
 		})
 	} catch (error) {
 		throw rpcError(
 			'INVALID_DISCOVERY_DIRECTORY',
-			'Studio discovery directory must grant access only to the current Windows user',
+			`Unable to establish or verify the Windows private ACL (deadline ${timeoutMs} ms, elapsed ${Math.round(performance.now() - startedAt)} ms)`,
 			error,
 		)
 	}
