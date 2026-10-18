@@ -37,6 +37,7 @@ afterEach(async () => {
 })
 
 describe('Typst native worker', () => {
+	// The first compile includes native font discovery; Windows cold starts can exceed 5 seconds.
 	it('maps imported UTF-16 source spans, images and headings from the same paged output', async () => {
 		const root = await workspace(
 			'#include "共享.typ"\n#pagebreak()\n== Appendix\n#image("/inputs/logo.svg", width: 20pt)',
@@ -73,7 +74,7 @@ describe('Typst native worker', () => {
 				[point.x, point.y, point.width, point.height].every(Number.isFinite),
 			),
 		).toBe(true)
-	})
+	}, 30_000)
 
 	it('reads multiple JSON files and raw CBOR from disk and exports one document twice', async () => {
 		const root = await workspace(`
