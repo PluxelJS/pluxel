@@ -433,6 +433,8 @@ export function repositoryTasks(name: string, commands: Record<string, string>) 
 			cache.env = [...new Set(['NODE_ENV', 'CI', ...(cache.env ?? [])])]
 			cache.input = [
 				...(cache.input ?? [{ auto: true }]),
+				{ pattern: '!**/node_modules/.vite/**', base: 'workspace' },
+				{ pattern: '!**/node_modules/.vitest-cache/**', base: 'workspace' },
 				{ pattern: 'mise.toml', base: 'workspace' },
 				{ pattern: 'scripts/vite-tasks.ts', base: 'workspace' },
 				{ pattern: 'scripts/pack.mjs', base: 'workspace' },
