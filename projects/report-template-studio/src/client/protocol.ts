@@ -73,10 +73,11 @@ foreach ($rule in $acl.GetAccessRules($true, $true, [System.Security.Principal.S
 			timeout: 10000,
 			maxBuffer: 4096,
 		})
-	} catch {
+	} catch (error) {
 		throw rpcError(
 			'INVALID_DISCOVERY_DIRECTORY',
 			'Studio discovery directory must grant access only to the current Windows user',
+			error,
 		)
 	}
 }

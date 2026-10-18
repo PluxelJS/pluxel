@@ -60,9 +60,6 @@ jobs:
           cache: true
           install: true
 
-      - name: Install Rust
-        run: rustup toolchain install 1.97.1 --profile minimal
-
       - name: Resolve pnpm store
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
@@ -77,17 +74,31 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-files-v3-
 
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Verify private discovery directory and descriptors
+        run: vp run @report-template-studio/app#check-discovery
+
+      - name: Install Rust
+        run: rustup toolchain install 1.97.1 --profile minimal
+
       - name: Restore native compiler build cache
-        uses: actions/cache@v6
+        id: native-cache
+        uses: actions/cache/restore@v6
         with:
           path: plugins/render/typst/native/.build
           key: ${{ runner.os }}-x64-studio-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
 
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-
       - name: Build native compiler
         run: vp run @pluxel/typst#prepare:native
+
+      - name: Save native compiler build cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: plugins/render/typst/native/.build
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Check and build Studio
         run: |

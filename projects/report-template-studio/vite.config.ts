@@ -16,6 +16,11 @@ export default defineConfig({
 	run: {
 		tasks: {
 			...tasks,
+			'check-discovery': {
+				// Node-only protocol checks run before framework and native compiler builds.
+				command: 'vp test run --config ../../vite.config.ts tests/discovery-acl.test.ts',
+				cache: false,
+			},
 			'compile-code': {
 				...compile,
 				cache: {

@@ -277,6 +277,7 @@ Studio 最多保留四个活跃文档会话。仅修改表单输入时复用模�
 ## 验证
 
 ```sh
+vp run @report-template-studio/app#check-discovery
 vp run @report-template-studio/app#compile
 vp run @report-template-studio/app#check-types
 vp run @report-template-studio/app#check-tests
@@ -284,7 +285,9 @@ vp run @report-template-studio/app#test:runtime
 vp run @report-template-studio/app#test:desktop
 ```
 
-首次检查先 build，公开入口的类型来自实际 `dist/` 声明。此次常驻服务重构的实施位置、消费者迁移、真实边界证据及未验证项见 [实施报告](IMPLEMENTATION_REPORT.md)。
+`check-discovery` 只依赖 Node 和当前系统，验证私有发现目录与 descriptor 的权限，不需要先构建框架或原生编译器。Windows Action 在安装依赖后先执行这一检查；已有不安全目录明确拒绝，不自动改写 ACL，PowerShell 失败保留底层 cause。
+
+其余检查首次先 build，公开入口的类型来自实际 `dist/` 声明。此次常驻服务重构的实施位置、消费者迁移、真实边界证据及未验证项见 [实施报告](IMPLEMENTATION_REPORT.md)。
 
 测试覆盖真实目录、外部改动与并发冲突、ZIP 往返和失败清理、默认值合并、跨目录 Vite HMR、运行器限制、官方 Typst/PDF、Pi 真实文件工具与会话生命周期。生产 `test:runtime` 在导入运行入口前禁止 TCP/HTTP `net.Server.listen`，仅允许本机 IPC。它从构建后的公开 client export 在另一个 Node 进程发现、认证、编译并读取 PNG/PDF，验证重连、原生源码定位及真实多页标题目录。默认使用当前项目 `dist/`；设置 `STUDIO_APP_ROOT` 为发布目录中的 `resources/app` 可执行同一检查，使用发布包自己的依赖、字体、原生库和 QuickJS。Windows Action 只在打包后执行这一生产检查。
 
