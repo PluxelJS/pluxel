@@ -77,7 +77,7 @@ describe('Auth Workbench credential setup', () => {
 			})
 
 			using opened = await openSetup(host, {
-				provider: '@pluxel/auth',
+				provider: '@pluxel/plugin-auth',
 				subject: 'local:admin',
 			})
 			await expect(

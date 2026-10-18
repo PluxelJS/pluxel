@@ -1,11 +1,11 @@
-# `@pluxel/fonts`
+# `@pluxel/plugin-fonts`
 
 系统字体发现、程序化注册、持久化上传与统一默认字体。
 
 在直接导入它的包目录安装（catalog 工作区见下方指南）：
 
 ```sh
-pnpm add @pluxel/fonts
+pnpm add @pluxel/plugin-fonts
 ```
 
 宿主 catalog 需要 FontsPlugin；业务插件通过 constructor 注入直接使用的能力。

@@ -1,11 +1,11 @@
-# `@pluxel/takumi-markdown`
+# `@pluxel/plugin-takumi-markdown`
 
 将 GFM Markdown、表格、固定代码高亮与可选 Typst 数学渲染为图片或 SVG。
 
 在直接导入它的包目录安装（catalog 工作区见下方指南）：
 
 ```sh
-pnpm add @pluxel/takumi-markdown
+pnpm add @pluxel/plugin-takumi-markdown
 ```
 
 宿主 catalog 包含 TakumiPlugin、TakumiMarkdownPlugin，并安装 NodeModules / Workers 服务。业务插件通过 constructor 注入 Markdown 能力，创建 `createRenderer({ extensions?, theme? })`，再用 `render(source, options)` 或 `renderSvg(source, options)` 取得 bytes / SVG string。最终渲染使用共享 Worker options；字体使用具体 bytes，远程图片需要显式 `images.allowRemote: true`。

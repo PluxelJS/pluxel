@@ -371,7 +371,7 @@ type MemoryCacheBackendRuntime = {
 	stopping: boolean
 }
 
-const MEMORY_CACHE_PERSISTENCE_NAMESPACE = '@pluxel/cache'
+const MEMORY_CACHE_PERSISTENCE_NAMESPACE = '@pluxel/plugin-cache'
 const MEMORY_CACHE_SNAPSHOT_KEY = 'memory-backend.snapshot'
 
 function defaultEncodeKey(key: CacheKey): string {

@@ -1,6 +1,6 @@
 # Typst 文档运行时设计
 
-`@pluxel/typst` 是 workspace 内的 private 插件。公开调用、输入契约与预算由[用法文档](../../../docs/plugins/rendering/typst.md)维护。
+`@pluxel/plugin-typst` 是 workspace 内的 private 插件。公开调用、输入契约与预算由[用法文档](../../../docs/plugins/rendering/typst.md)维护。
 
 ## 边界
 

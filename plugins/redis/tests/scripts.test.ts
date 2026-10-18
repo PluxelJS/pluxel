@@ -59,7 +59,7 @@ class ScriptRedisPlugin extends Redis {
 	}
 }
 
-describe('@pluxel/redis scripts', () => {
+describe('@pluxel/plugin-redis scripts', () => {
 	it('defines typed scripts and falls back from EVALSHA to EVAL on NOSCRIPT', async () => {
 		await using host = await createTestHost()
 		const redis = await host.start(ScriptRedisPlugin)

@@ -1,6 +1,6 @@
 import { Workers, defineWorkerTask, WorkerTaskError } from '@pluxel/services/workers'
-import { CanvasPlugin } from '@pluxel/canvas'
-import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
+import { CanvasPlugin } from '@pluxel/plugin-canvas'
+import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/plugin-fonts'
 import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 
 import type { EChartsOption, SetOptionOpts } from 'echarts'

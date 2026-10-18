@@ -96,7 +96,7 @@ export function assertEChartsVersion(): void {
 	if (!echarts.version.startsWith('6.')) {
 		throw new EChartsError(
 			'RENDER_FAILED',
-			`@pluxel/echarts requires Apache ECharts 6.x; found ${echarts.version}`,
+			`@pluxel/plugin-echarts requires Apache ECharts 6.x; found ${echarts.version}`,
 		)
 	}
 }
@@ -195,7 +195,7 @@ function getPlatformState(): PlatformState {
 		) {
 			throw new EChartsError(
 				'RENDER_FAILED',
-				'Process-global @pluxel/echarts platform state is incompatible',
+				'Process-global @pluxel/plugin-echarts platform state is incompatible',
 			)
 		}
 		cachedPlatformState = existing as PlatformState

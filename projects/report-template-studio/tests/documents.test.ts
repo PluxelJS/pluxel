@@ -2,8 +2,13 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { FontsPlugin } from '@pluxel/fonts'
-import { TypstError, type TypstPlugin, type TypstSession, type TypstCompiled } from '@pluxel/typst'
+import type { FontsPlugin } from '@pluxel/plugin-fonts'
+import {
+	TypstError,
+	type TypstPlugin,
+	type TypstSession,
+	type TypstCompiled,
+} from '@pluxel/plugin-typst'
 import type { JsonObject, WorkspaceSnapshot } from '../src/shared/contracts.js'
 import { ArtifactStore } from '../src/backend/artifacts.js'
 import { TemplateCompiler } from '../src/backend/compiler.js'

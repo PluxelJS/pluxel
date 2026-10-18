@@ -1,5 +1,5 @@
 import { deserialize, serialize } from 'node:v8'
-import { CacheBackend, type CacheValue } from '@pluxel/cache'
+import { CacheBackend, type CacheValue } from '@pluxel/plugin-cache'
 import { Plugin } from '@pluxel/core'
 import * as v from 'valibot'
 import { Redis, type RedisConnection } from './client.ts'

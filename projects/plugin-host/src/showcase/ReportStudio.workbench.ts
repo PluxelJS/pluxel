@@ -1,7 +1,7 @@
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { workbench } from '@pluxel/workbench'
-import { WretchWorkbench } from '@pluxel/wretch/workbench'
+import { WretchWorkbench } from '@pluxel/plugin-wretch/workbench'
 import type { ReportStudioApi } from './ReportStudio.contracts'
 
 export type {

@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PlaywrightPlugin } from '@pluxel/playwright'
+import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
 import { Vault } from '@pluxel/services/vault'
 import type { BrowserContext } from 'playwright-core'
 import * as v from 'valibot'

@@ -103,7 +103,7 @@ class FakeRedisPlugin extends Redis {
 	}
 }
 
-describe('@pluxel/redis cache backend', () => {
+describe('@pluxel/plugin-redis cache backend', () => {
 	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
 		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\u{1f680}:' }).success).toBe(
 			true,

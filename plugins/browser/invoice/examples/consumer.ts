@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { InvoicePlugin, type InvoiceImage, type InvoiceOptions } from '@pluxel/invoice'
+import { InvoicePlugin, type InvoiceImage, type InvoiceOptions } from '@pluxel/plugin-invoice'
 
 @Plugin()
 export class InvoiceConsumer extends BasePlugin {

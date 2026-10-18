@@ -7,7 +7,7 @@ description: Create or edit Typst documents and Valibot-backed input forms in a 
 
 Read `studio.json`, the affected same-name `.ts` report entry, its `template` `.typ` source, and imported shared theme before editing. Use the file tools to inspect only the relevant directories. `@folder` in the user's request identifies context to inspect, not a request to rewrite every file there.
 
-A report is discovered by the naming convention `folder/folder.ts`, including nested folders. The entry must default-export `defineTypstDocument({ template, schema, createFiles? })` imported from `@pluxel/typst/template`. The entry filename supplies its name; do not declare a separate name. `createFiles` is synchronous. `template` is a `.typ` path relative to the entry directory and must resolve inside the workspace. Ordinary `.typ` files are source/modules, not standalone preview entries. No document list is stored in studio.json. Filename discovery keeps broken entries visible for repair. Keep shared typography, page setup, and table styles in reusable `.typ` functions; use relative imports such as `../../共享/主题/财务函件.typ`. Font directories are listed in `studio.json`; use the font's actual family name and preserve bundled licenses.
+A report is discovered by the naming convention `folder/folder.ts`, including nested folders. The entry must default-export `defineTypstDocument({ template, schema, createFiles? })` imported from `@pluxel/plugin-typst/template`. The entry filename supplies its name; do not declare a separate name. `createFiles` is synchronous. `template` is a `.typ` path relative to the entry directory and must resolve inside the workspace. Ordinary `.typ` files are source/modules, not standalone preview entries. No document list is stored in studio.json. Filename discovery keeps broken entries visible for repair. Keep shared typography, page setup, and table styles in reusable `.typ` functions; use relative imports such as `../../共享/主题/财务函件.typ`. Font directories are listed in `studio.json`; use the font's actual family name and preserve bundled licenses.
 
 # Form defaults and input data
 
@@ -15,7 +15,7 @@ The same-name TypeScript entry defines its `schema` using `valibot` inside the d
 
 ```ts
 import * as v from 'valibot'
-import { defineTypstDocument } from '@pluxel/typst/template'
+import { defineTypstDocument } from '@pluxel/plugin-typst/template'
 
 export default defineTypstDocument({
 	template: './排版.typ',

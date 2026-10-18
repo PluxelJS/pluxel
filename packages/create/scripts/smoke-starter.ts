@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { requestDocument } from './smoke-navigation.mjs'
+import { parse } from 'yaml'
+import { isPublishablePackage, repositoryPackages } from '../../../scripts/repository-packages.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-create-smoke-'))
@@ -49,6 +51,7 @@ try {
 	await runProcess(createBin, [generatedRoot, '--no-install'], installRoot)
 	await assertGeneratedGitIgnore(generatedRoot)
 	await verifyDocumentationLink(generatedRoot)
+	await assertGeneratedFrameworkVersions(generatedRoot)
 	await appendOverrides(resolve(generatedRoot, 'pnpm-workspace.yaml'), overrides)
 
 	await runVp(['install', '--no-frozen-lockfile'], generatedRoot)
@@ -73,6 +76,21 @@ type LocalPublishPackage = {
 		optionalDependencies?: Record<string, string>
 		peerDependencies?: Record<string, string>
 		peerDependenciesMeta?: Record<string, { optional?: boolean }>
+	}
+}
+
+async function assertGeneratedFrameworkVersions(root: string): Promise<void> {
+	const workspace = parse(await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8'))
+	const versions = new Map(
+		repositoryPackages
+			.filter(isPublishablePackage)
+			.map(({ manifest }) => [manifest.name, `^${manifest.version}`]),
+	)
+	const ranges = Object.entries(workspace.catalogs?.pluxel ?? {})
+	if (ranges.length === 0) throw new Error('Generated starter is missing its framework catalog')
+	for (const [name, range] of ranges) {
+		if (range !== versions.get(name))
+			throw new Error(`Generated starter ${name}: expected ${versions.get(name)}, got ${range}`)
 	}
 }
 
@@ -318,7 +336,10 @@ async function verifyViteApplication(root: string): Promise<void> {
 		}
 		await verifyWorkbenchNavigation(`http://127.0.0.1:${port}`)
 		const discovered = JSON.parse(
-			await runVpCapture(['exec', 'pluxel', 'dev', 'instances', '--root', consoleRoot], root),
+			await runVpCapture(
+				['exec', 'pluxel', 'dev', 'instances', '--profile', 'local', '--root', consoleRoot],
+				root,
+			),
 		)
 		if (!discovered.ok || discovered.value.length !== 1) {
 			throw new Error(`Expected one starter development console: ${JSON.stringify(discovered)}`)
@@ -331,6 +352,8 @@ async function verifyViteApplication(root: string): Promise<void> {
 					'dev',
 					'run',
 					inspectionFile,
+					'--profile',
+					'local',
 					'--root',
 					consoleRoot,
 					'--instance',
@@ -424,7 +447,11 @@ function startVite(root: string, port: number) {
 			String(port),
 			'--strictPort',
 		],
-		{ cwd: hostRoot, stdio: 'inherit', env: process.env },
+		{
+			cwd: hostRoot,
+			stdio: 'inherit',
+			env: { ...process.env, PLUXEL_DEV_PROFILE: 'local', PLUXEL_DEV_PROJECT: root },
+		},
 	)
 	const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
 		(accept, reject) => {

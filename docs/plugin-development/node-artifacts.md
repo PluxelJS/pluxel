@@ -200,9 +200,9 @@ void this.ctx.require(Workers).run(task, input)
 
 ## Canvas 与 ECharts
 
-native Canvas/Image 不能 structured clone。官方 [Canvas Plugin](../plugins/rendering/canvas.md) 提供纯数据 `workerSnapshot` 和 `@pluxel/canvas/worker` adapter，让 worker 在自己的线程内创建 native surface；业务插件不直接传 native handle。
+native Canvas/Image 不能 structured clone。官方 [Canvas Plugin](../plugins/rendering/canvas.md) 提供纯数据 `workerSnapshot` 和 `@pluxel/plugin-canvas/worker` adapter，让 worker 在自己的线程内创建 native surface；业务插件不直接传 native handle。
 
-`@pluxel/echarts` 始终使用 runtime shared worker pool。调用方只需调用 `render()`，不要再套一层自建 worker。
+`@pluxel/plugin-echarts` 始终使用 runtime shared worker pool。调用方只需调用 `render()`，不要再套一层自建 worker。
 
 ## 构建与验证
 

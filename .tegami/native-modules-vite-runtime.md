@@ -7,12 +7,12 @@ packages:
   '@pluxel/workbench': major
   '@pluxel/create': minor
   '@pluxel/cli': patch
-  '@pluxel/auth': patch
-  '@pluxel/canvas': patch
-  '@pluxel/echarts': patch
-  '@pluxel/fonts': patch
-  '@pluxel/takumi': patch
-  '@pluxel/wretch': patch
+  '@pluxel/plugin-auth': patch
+  '@pluxel/plugin-canvas': patch
+  '@pluxel/plugin-echarts': patch
+  '@pluxel/plugin-fonts': patch
+  '@pluxel/plugin-takumi': patch
+  '@pluxel/plugin-wretch': patch
 ---
 
 # Native modules delivery and owned Vite execution

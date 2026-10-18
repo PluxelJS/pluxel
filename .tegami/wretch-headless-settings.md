@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/wretch': minor
+  '@pluxel/plugin-wretch': minor
 ---
 
 # Headless Wretch deployment and managed settings

@@ -1,4 +1,4 @@
-# `@pluxel/storage`
+# `@pluxel/plugin-storage`
 
 通过 s3mini API 访问有界的 local / remote bucket catalog。
 

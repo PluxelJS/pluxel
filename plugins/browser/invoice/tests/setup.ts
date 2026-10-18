@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { HostVaultBindings } from '@pluxel/host/bindings'
 import { defineHostService } from '@pluxel/host'
-import { PlaywrightPlugin } from '@pluxel/playwright'
+import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
 import { vault, Vault } from '@pluxel/services/vault'
 import { createTestHost } from '@pluxel/test'
 import { chromium, type Browser } from 'playwright-core'
@@ -12,7 +12,7 @@ import {
 	type InvoiceImage,
 	type InvoiceInput,
 	type InvoiceOptions,
-} from '@pluxel/invoice'
+} from '@pluxel/plugin-invoice'
 
 export const settings = {
 	endpoint: 'https://model.invalid/v1/chat/completions',

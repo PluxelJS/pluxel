@@ -1,4 +1,4 @@
-# `@pluxel/redis`
+# `@pluxel/plugin-redis`
 
 原生 Redis connection、typed Lua，以及 Cache / Rates backend。
 

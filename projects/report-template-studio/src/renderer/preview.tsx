@@ -3,7 +3,7 @@ import { ActionIcon, Alert, Button, Group, NumberInput, Text, Tooltip } from '@m
 import { IconChevronLeft, IconChevronRight, IconList } from '@tabler/icons-react'
 import { createTypstRenderer } from '@myriaddreamin/typst.ts'
 import wasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
-import { TypstPreviewView } from '@pluxel/typst/browser'
+import { TypstPreviewView } from '@pluxel/plugin-typst/browser'
 import type { PreviewResult } from '../shared/contracts'
 import type { WorkspaceController } from './workspace'
 import { pointAtPreview, pointAtSource, type SourcePosition } from './source-navigation'

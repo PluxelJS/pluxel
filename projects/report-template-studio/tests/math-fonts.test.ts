@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'vitest'
 
 // Exercise the same native compiler version owned by the official Typst plugin.
-const requireTypst = createRequire(import.meta.resolve('@pluxel/typst'))
+const requireTypst = createRequire(import.meta.resolve('@pluxel/plugin-typst'))
 const { NodeCompiler } = requireTypst('@myriaddreamin/typst-ts-node-compiler')
 const assets = fileURLToPath(new URL('../financial-document-assets/', import.meta.url))
 

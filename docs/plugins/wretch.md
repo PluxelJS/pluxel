@@ -3,14 +3,14 @@ title: 出站 HTTP（Wretch）
 description: 从不可变的 Wretch 基础实例派生业务客户端，并统一应用宿主的出站策略。
 ---
 
-> `@pluxel/wretch` 面向插件作者的公开入口是 `.` 与 `./workbench`。可安装版本以 npm registry 为准；仓库内边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-wretch` 面向插件作者的公开入口是 `.` 与 `./workbench`。可安装版本以 npm registry 为准；仓库内边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/wretch` 提供一个原生、不可变的 Wretch 基础实例，并在请求真正发出前应用宿主级出站策略。URL 构造、addon、middleware、catcher 和响应链仍使用原生 Wretch API。
+`@pluxel/plugin-wretch` 提供一个原生、不可变的 Wretch 基础实例，并在请求真正发出前应用宿主级出站策略。URL 构造、addon、middleware、catcher 和响应链仍使用原生 Wretch API。
 
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-vp exec pluxel pncat add @pluxel/wretch
+vp exec pluxel pncat add @pluxel/plugin-wretch
 ```
 
 普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 Persistence 服务；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
@@ -18,7 +18,7 @@ vp exec pluxel pncat add @pluxel/wretch
 ## 第一个 HTTP consumer
 
 ```ts twoslash
-import { WretchPlugin, type Wretch } from '@pluxel/wretch'
+import { WretchPlugin, type Wretch } from '@pluxel/plugin-wretch'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result, TaggedError } from '@pluxel/core/better-result'
 import * as v from 'valibot'
@@ -133,7 +133,7 @@ vp exec pluxel pncat add wretch
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { WretchPlugin, WretchConfig } from '@pluxel/wretch'
+import { WretchPlugin, WretchConfig } from '@pluxel/plugin-wretch'
 
 // 放入应用的 envBindings 数组；HTTP_ORIGINS 使用 JSON 数组。
 envBinding(WretchPlugin, {
@@ -231,12 +231,12 @@ managed settings 使用 runtime persistence，而不是 secret store。不要把
 
 ## 放置 Workbench Attachment
 
-从 `@pluxel/wretch/workbench` 导入 provider-owned Attachment，并在 consumer 的 Workbench 定义中选择
+从 `@pluxel/plugin-wretch/workbench` 导入 provider-owned Attachment，并在 consumer 的 Workbench 定义中选择
 placement：
 
 ```ts no-twoslash
 import { workbench } from '@pluxel/workbench'
-import { WretchWorkbench } from '@pluxel/wretch/workbench'
+import { WretchWorkbench } from '@pluxel/plugin-wretch/workbench'
 
 export const CustomerWorkbench = workbench.define({
 	http: WretchWorkbench.settings.place(

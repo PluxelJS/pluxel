@@ -3,14 +3,14 @@ title: S3 对象存储
 description: 通过统一的 s3mini API 在本地存储、远端 S3 和平台实现之间切换。
 ---
 
-> `@pluxel/storage` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-storage` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/storage` 提供接近原始 bucket 的 `S3` 能力。业务 Plugin 通过 `S3.bucket(id).client` 使用 s3mini 1.x API，宿主则通过 `S3Plugin` 配置一个有界的 local/remote bucket catalog。
+`@pluxel/plugin-storage` 提供接近原始 bucket 的 `S3` 能力。业务 Plugin 通过 `S3.bucket(id).client` 使用 s3mini 1.x API，宿主则通过 `S3Plugin` 配置一个有界的 local/remote bucket catalog。
 
 ## 写入与读取对象
 
 ```ts twoslash
-import { S3 } from '@pluxel/storage'
+import { S3 } from '@pluxel/plugin-storage'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Assets' })
@@ -56,7 +56,7 @@ export class AssetsPlugin extends BasePlugin {
 以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
-import { S3Plugin } from '@pluxel/storage'
+import { S3Plugin } from '@pluxel/plugin-storage'
 
 await host.start(S3Plugin, {
 	initialConfig: {
@@ -128,7 +128,7 @@ anonymous 是显式选择，不是 credential 查找失败后的隐式 fallback�
 access key 不进入普通 Plugin config。先把以下对象写入 Vault：
 
 ```ts no-twoslash
-import type { S3AccessKeyCredentials } from '@pluxel/storage'
+import type { S3AccessKeyCredentials } from '@pluxel/plugin-storage'
 
 const credentials = {
 	accessKeyId: '…',
@@ -231,7 +231,7 @@ S3 继续提供 s3mini 原生接口；业务 consumer 才知道缺少对象是�
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result, TaggedError } from '@pluxel/core/better-result'
-import { S3 } from '@pluxel/storage'
+import { S3 } from '@pluxel/plugin-storage'
 
 export class DocumentNotFound extends TaggedError('DocumentNotFound')<{ id: string }> {}
 

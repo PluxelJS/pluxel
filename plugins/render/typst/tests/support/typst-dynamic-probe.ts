@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { TypstPlugin } from '@pluxel/typst'
+import { TypstPlugin } from '@pluxel/plugin-typst'
 
 @Plugin()
 export class TypstDynamicProbePlugin extends BasePlugin {

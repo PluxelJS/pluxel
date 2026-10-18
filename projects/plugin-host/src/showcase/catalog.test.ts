@@ -1,12 +1,12 @@
-import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
-import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/rates'
-import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
+import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/plugin-cache'
+import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/plugin-rates'
+import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/plugin-redis'
 import {
 	pluginDefinitionAddressOf,
 	pluginNodeAddressEqual,
 	pluginNodeAddressOf,
 } from '@pluxel/core'
-import { S3 } from '@pluxel/storage'
+import { S3 } from '@pluxel/plugin-storage'
 import { describe, expect, it } from 'vitest'
 import {
 	createHostConfigRecords,

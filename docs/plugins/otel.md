@@ -3,9 +3,9 @@ title: OpenTelemetry
 description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主统一管理输出。
 ---
 
-> `@pluxel/otel` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-otel` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/otel` 直接向业务 Plugin 提供标准 OpenTelemetry `Meter`、`Tracer` 和 `Logger`，不另造一套遥测 API。宿主统一管理 provider、resource、exporter、上下文传播和生命周期，并保留每个调用方的身份。
+`@pluxel/plugin-otel` 直接向业务 Plugin 提供标准 OpenTelemetry `Meter`、`Tracer` 和 `Logger`，不另造一套遥测 API。宿主统一管理 provider、resource、exporter、上下文传播和生命周期，并保留每个调用方的身份。
 
 ## 先选择输出
 
@@ -13,7 +13,7 @@ description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { OtelPlugin, OtelConfig } from '@pluxel/otel'
+import { OtelPlugin, OtelConfig } from '@pluxel/plugin-otel'
 
 // 应用 envBindings 数组的一项；两项都使用 JSON 值。
 envBinding(OtelPlugin, {
@@ -77,7 +77,7 @@ Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.require(ElysiaApp)` 
 ```ts twoslash
 import type { Counter } from '@opentelemetry/api'
 import { SeverityNumber } from '@opentelemetry/api-logs'
-import { OtelPlugin } from '@pluxel/otel'
+import { OtelPlugin } from '@pluxel/plugin-otel'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Catalog' })

@@ -380,7 +380,7 @@ describe('scaffold template rendering', () => {
 			'vite-plus': 'catalog:',
 		})
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			"'@pluxel/core': ^1.0.0",
+			"'@pluxel/core': ^1.1.0",
 		)
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
 			'vitest: 5.0.4',

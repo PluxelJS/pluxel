@@ -89,7 +89,7 @@ class DelayedRatesBackend extends RatesBackend {
 
 afterEach(() => vi.useRealTimers())
 
-describe('@pluxel/rates public API', () => {
+describe('@pluxel/plugin-rates public API', () => {
 	it('binds local quotas to callers and shares only explicit global quotas', async () => {
 		{
 			await using host = await createHost()
@@ -330,7 +330,7 @@ describe('@pluxel/rates public API', () => {
 	})
 })
 
-describe('@pluxel/rates memory algorithms', () => {
+describe('@pluxel/plugin-rates memory algorithms', () => {
 	it('stores and verifies the full structured owner independently of the opaque key', async () => {
 		{
 			await using host = await createHost()

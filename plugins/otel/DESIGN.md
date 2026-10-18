@@ -2,7 +2,7 @@
 
 ## 决策
 
-`@pluxel/otel` 是 OTel SDK 的 Pluxel 生命周期装配层。公开作者 contract 只有 concrete `OtelPlugin` 的三个 caller-scoped
+`@pluxel/plugin-otel` 是 OTel SDK 的 Pluxel 生命周期装配层。公开作者 contract 只有 concrete `OtelPlugin` 的三个 caller-scoped
 getter：
 
 | Contract | 原生类型                           | instrumentation scope                 |

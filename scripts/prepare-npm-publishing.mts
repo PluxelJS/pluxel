@@ -89,7 +89,7 @@ export async function preparePublishing(
 	)
 	// Tegami owns placeholder publication and publish-lock updates. If it fails after
 	// publishing a placeholder, the next run skips that package and repairs its trust below.
-	execute('pnpm', ['tegami', 'npm', 'pretrust', ...(apply ? [] : ['--dry-run'])])
+	execute('vp', ['run', 'tegami', 'npm', 'pretrust', ...(apply ? [] : ['--dry-run'])])
 	if (!apply) {
 		log(
 			'Apply will inspect all package trusts and add only missing publish permissions. Run with --apply after npm login.',

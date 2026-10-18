@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/rates",
+	"name": "@pluxel/plugin-rates",
 	"version": "0.0.0",
 	"private": true,
 	"description": "Official caller-aware admission control capability for Pluxel plugins",

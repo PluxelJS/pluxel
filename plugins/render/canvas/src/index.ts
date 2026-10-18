@@ -17,7 +17,7 @@ import {
 	type SKRSContext2D,
 	type SvgCanvas,
 } from '@napi-rs/canvas'
-import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
+import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/plugin-fonts'
 import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 import { CanvasConfig, type CanvasPluginConfig } from './config.ts'
 import {
@@ -135,7 +135,7 @@ export class CanvasPlugin extends BasePlugin {
 		return this.resourceLimits()
 	}
 
-	/** Detached native/text/font policy for `@pluxel/canvas/worker` adapters. */
+	/** Detached native/text/font policy for `@pluxel/plugin-canvas/worker` adapters. */
 	get workerSnapshot(): CanvasWorkerSnapshot {
 		this.requireLease()
 		const revision = this.fonts.revision

@@ -1,4 +1,4 @@
-# `@pluxel/rates`
+# `@pluxel/plugin-rates`
 
 caller 隔离的原子频率判定，支持 memory 或 Redis backend。
 

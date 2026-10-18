@@ -2,7 +2,11 @@ import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
-import { PlaywrightConfig, PlaywrightPlugin, PlaywrightVaultSchema } from '@pluxel/playwright'
+import {
+	PlaywrightConfig,
+	PlaywrightPlugin,
+	PlaywrightVaultSchema,
+} from '@pluxel/plugin-playwright'
 
 const observations: string[] = []
 

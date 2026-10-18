@@ -139,7 +139,7 @@ function WretchSettingsPanel() {
 				<Stack gap={2}>
 					<Title order={4}>HTTP 设置</Title>
 					<Text size="sm" c="dimmed">
-						这些运行时覆盖项由 @pluxel/wretch 统一保存，并在每次请求发送前自动应用。
+						这些运行时覆盖项由 @pluxel/plugin-wretch 统一保存，并在每次请求发送前自动应用。
 					</Text>
 				</Stack>
 

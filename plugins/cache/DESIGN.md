@@ -99,5 +99,5 @@ namespace、timer、序列化副本或持久状态：
 数量，不记录原始 key/value。Cache 不发布专用 Workbench Definition；Host 根据 constructor dependency
 选择 backend，override commit 重启 Cache 与 dependent closure，确保 consumer 获得新 caller-bound view。
 
-Cache 不依赖 Redis client 或数据库 driver。`@pluxel/redis` 通过 Cache peer contract 提供
+Cache 不依赖 Redis client 或数据库 driver。`@pluxel/plugin-redis` 通过 Cache peer contract 提供
 `RedisCacheBackendPlugin`，memory-only consumer 不携带 node-redis。

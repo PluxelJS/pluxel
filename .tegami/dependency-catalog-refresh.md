@@ -10,11 +10,11 @@ packages:
   '@pluxel/test': patch
   'valibot-form': patch
   '@pluxel/workbench': patch
-  '@pluxel/auth': patch
-  '@pluxel/canvas': patch
-  '@pluxel/fonts': patch
-  '@pluxel/takumi-markdown': patch
-  '@pluxel/wretch': patch
+  '@pluxel/plugin-auth': patch
+  '@pluxel/plugin-canvas': patch
+  '@pluxel/plugin-fonts': patch
+  '@pluxel/plugin-takumi-markdown': patch
+  '@pluxel/plugin-wretch': patch
 ---
 
 # Refresh shared external dependency ranges

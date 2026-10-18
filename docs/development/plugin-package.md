@@ -16,6 +16,9 @@ vp pm pack --dry-run
 
 这个名称会规范化为 npm 包 `@acme/pluxel-plugin-orders`，输出目录为 `orders/`，实现文件为 `src/orders.ts`，导出类为 `OrdersPlugin`。
 
+本仓库 `plugins/` 下的官方独立插件包统一使用 `@pluxel/plugin-<name>`，例如 `@pluxel/plugin-auth` 和
+`@pluxel/plugin-takumi-markdown`。第三方插件使用自己的 npm scope 与模板命名；服务包的配套插件继续通过服务的公开子路径提供。
+
 `verify` 应完成治理、格式、lint、类型、测试和构建检查；pack 列表应包含 `dist/index.mjs`、类型声明及插件声明需要的生成文件。已有 workspace 固定 CLI 时，用 `vp exec pluxel new`。
 
 官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。local template 则默认不执行安装，必须显式传入
@@ -57,6 +60,9 @@ oxfmt.config.ts
 - 同一个 Plugin 不得从包根与子路径重复导出；`./plugins` 可以集中导出多个不同的配套 Plugin。
 
 对于可发布包，包名、公开入口路径或导出名改变会得到新的 Plugin definition identity；这些公开标识不变时，内部源码文件移动不改变这个身份。持久 config/runtime state 不按旧 class name 自动迁移。
+
+官方插件统一包名前缀也会改变 canonical entry 中的 `packageName`。即使 Plugin class 与导出名不变，
+新的包名仍代表新的 definition identity；已有持久 config/runtime state 需要显式维护对应 address，不会自动映射旧包名。
 
 ## 服务包的配套插件
 

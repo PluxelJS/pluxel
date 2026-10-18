@@ -19,21 +19,24 @@ const vaultAdminPlugin = defaultNode(
 		exportName: 'VaultAdminPlugin',
 	}),
 )
-const authPlugin = packageNode('@pluxel/auth', 'AuthPlugin')
-const memoryCacheBackendPlugin = packageNode('@pluxel/cache', 'MemoryCacheBackendPlugin')
-const cachePlugin = packageNode('@pluxel/cache', 'CachePlugin')
-const otelPlugin = packageNode('@pluxel/otel', 'OtelPlugin')
-export const packageManagerNode = packageNode('@pluxel/package-manager', 'PackageManagerPlugin')
-const memoryRatesBackendPlugin = packageNode('@pluxel/rates', 'MemoryRatesBackendPlugin')
-const ratesPlugin = packageNode('@pluxel/rates', 'RatesPlugin')
-const s3PluginDefinition = packageDefinition('@pluxel/storage', 'S3Plugin')
-const wretchPlugin = packageNode('@pluxel/wretch', 'WretchPlugin')
-const fontsPlugin = packageNode('@pluxel/fonts', 'FontsPlugin')
-const canvasPlugin = packageNode('@pluxel/canvas', 'CanvasPlugin')
-const echartsPlugin = packageNode('@pluxel/echarts', 'EChartsPlugin')
-const takumiPlugin = packageNode('@pluxel/takumi', 'TakumiPlugin')
-const markdownPlugin = packageNode('@pluxel/takumi-markdown', 'TakumiMarkdownPlugin')
-const typstPlugin = packageNode('@pluxel/typst', 'TypstPlugin')
+const authPlugin = packageNode('@pluxel/plugin-auth', 'AuthPlugin')
+const memoryCacheBackendPlugin = packageNode('@pluxel/plugin-cache', 'MemoryCacheBackendPlugin')
+const cachePlugin = packageNode('@pluxel/plugin-cache', 'CachePlugin')
+const otelPlugin = packageNode('@pluxel/plugin-otel', 'OtelPlugin')
+export const packageManagerNode = packageNode(
+	'@pluxel/plugin-package-manager',
+	'PackageManagerPlugin',
+)
+const memoryRatesBackendPlugin = packageNode('@pluxel/plugin-rates', 'MemoryRatesBackendPlugin')
+const ratesPlugin = packageNode('@pluxel/plugin-rates', 'RatesPlugin')
+const s3PluginDefinition = packageDefinition('@pluxel/plugin-storage', 'S3Plugin')
+const wretchPlugin = packageNode('@pluxel/plugin-wretch', 'WretchPlugin')
+const fontsPlugin = packageNode('@pluxel/plugin-fonts', 'FontsPlugin')
+const canvasPlugin = packageNode('@pluxel/plugin-canvas', 'CanvasPlugin')
+const echartsPlugin = packageNode('@pluxel/plugin-echarts', 'EChartsPlugin')
+const takumiPlugin = packageNode('@pluxel/plugin-takumi', 'TakumiPlugin')
+const markdownPlugin = packageNode('@pluxel/plugin-takumi-markdown', 'TakumiMarkdownPlugin')
+const typstPlugin = packageNode('@pluxel/plugin-typst', 'TypstPlugin')
 
 const reportStudioPlugin = sourceNode('src/showcase/ReportStudio.ts', 'ReportStudioPlugin')
 export const s3StorageNode = defaultNode(s3PluginDefinition)
@@ -68,11 +71,20 @@ export function createHostRuntimeState(): Partial<HostStateSnapshot> {
 			s3StorageNode,
 		],
 		providerDefaults: [
-			providerDefault(packageDefinition('@pluxel/cache', 'Cache'), cachePlugin),
-			providerDefault(packageDefinition('@pluxel/cache', 'CacheBackend'), memoryCacheBackendPlugin),
-			providerDefault(packageDefinition('@pluxel/rates', 'Rates'), ratesPlugin),
-			providerDefault(packageDefinition('@pluxel/rates', 'RatesBackend'), memoryRatesBackendPlugin),
-			providerDefault(packageDefinition('@pluxel/storage', 'S3'), defaultNode(s3PluginDefinition)),
+			providerDefault(packageDefinition('@pluxel/plugin-cache', 'Cache'), cachePlugin),
+			providerDefault(
+				packageDefinition('@pluxel/plugin-cache', 'CacheBackend'),
+				memoryCacheBackendPlugin,
+			),
+			providerDefault(packageDefinition('@pluxel/plugin-rates', 'Rates'), ratesPlugin),
+			providerDefault(
+				packageDefinition('@pluxel/plugin-rates', 'RatesBackend'),
+				memoryRatesBackendPlugin,
+			),
+			providerDefault(
+				packageDefinition('@pluxel/plugin-storage', 'S3'),
+				defaultNode(s3PluginDefinition),
+			),
 		],
 	}
 }

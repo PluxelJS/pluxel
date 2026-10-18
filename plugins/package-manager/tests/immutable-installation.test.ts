@@ -97,7 +97,7 @@ it('pnpm shares immutable dependency slots across private installations', async 
 		await mkdir(resolve(root, 'node_modules/@pluxel'), { recursive: true })
 		await symlink(
 			resolve(workspace, 'plugins/package-manager'),
-			resolve(root, 'node_modules/@pluxel/package-manager'),
+			resolve(root, 'node_modules/@pluxel/plugin-package-manager'),
 		)
 		for (const name of ['core', 'host', 'services', 'commands', 'workbench'])
 			await symlink(
@@ -251,7 +251,7 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 			})
 			await writeFile(
 				resolve(root, 'app.mjs'),
-				`import {defineHostApplication} from '@pluxel/host'; import {pluginSource} from '@pluxel/host/sources'; import {standardServices} from '@pluxel/services'; import {value} from './fixed.mjs'; import {PackageManagerPlugin} from '@pluxel/package-manager'; export default defineHostApplication(() => ({plugins: [PackageManagerPlugin], configRecords:{initial:[{owner:${JSON.stringify(node('@pluxel/package-manager', 'PackageManagerPlugin'))},config:{rootDir:${JSON.stringify(rootDir)},minimumReleaseAgeMinutes:0}}]}, sources: [pluginSource({kind:'directory',path:'./managed/entries',include:['*.mjs']})], services:standardServices({persistence:{mode:'memory'}}), state:{initial:{autoStart:${JSON.stringify([node('fixture-a', 'A'), node('fixture-b', 'B'), node('@pluxel/package-manager', 'PackageManagerPlugin')])}}}, prepare({host,startup}) { startup.bindings.capture(host, value) }}))`,
+				`import {defineHostApplication} from '@pluxel/host'; import {pluginSource} from '@pluxel/host/sources'; import {standardServices} from '@pluxel/services'; import {value} from './fixed.mjs'; import {PackageManagerPlugin} from '@pluxel/plugin-package-manager'; export default defineHostApplication(() => ({plugins: [PackageManagerPlugin], configRecords:{initial:[{owner:${JSON.stringify(node('@pluxel/plugin-package-manager', 'PackageManagerPlugin'))},config:{rootDir:${JSON.stringify(rootDir)},minimumReleaseAgeMinutes:0}}]}, sources: [pluginSource({kind:'directory',path:'./managed/entries',include:['*.mjs']})], services:standardServices({persistence:{mode:'memory'}}), state:{initial:{autoStart:${JSON.stringify([node('fixture-a', 'A'), node('fixture-b', 'B'), node('@pluxel/plugin-package-manager', 'PackageManagerPlugin')])}}}, prepare({host,startup}) { startup.bindings.capture(host, value) }}))`,
 			)
 			await writeFile(
 				resolve(root, 'vite.config.mjs'),

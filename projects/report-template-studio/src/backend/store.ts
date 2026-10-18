@@ -455,7 +455,7 @@ export class WorkspaceStore {
 			try {
 				await writeFile(
 					join(target, `${name}.ts`),
-					`import * as v from 'valibot'\nimport { defineTypstDocument } from '@pluxel/typst/template'\n\nexport default defineTypstDocument({\n  template: './排版.typ',\n  schema: v.object({\n    title: v.optional(v.pipe(v.string(), v.title('标题')), '新报表'),\n    body: v.optional(v.pipe(v.string(), v.title('正文')), '在这里填写内容。'),\n  }),\n})\n`,
+					`import * as v from 'valibot'\nimport { defineTypstDocument } from '@pluxel/plugin-typst/template'\n\nexport default defineTypstDocument({\n  template: './排版.typ',\n  schema: v.object({\n    title: v.optional(v.pipe(v.string(), v.title('标题')), '新报表'),\n    body: v.optional(v.pipe(v.string(), v.title('正文')), '在这里填写内容。'),\n  }),\n})\n`,
 					{ flag: 'wx' },
 				)
 				await writeFile(

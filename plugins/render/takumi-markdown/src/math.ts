@@ -1,4 +1,4 @@
-import type { TypstPlugin } from '@pluxel/typst'
+import type { TypstPlugin } from '@pluxel/plugin-typst'
 import type { TakumiMarkdownPluginConfig } from './config.ts'
 import { MarkdownError } from './errors.ts'
 import { createTypstMathSource, validateTypstMathFormula } from './formula.ts'

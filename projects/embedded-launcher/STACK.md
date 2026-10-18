@@ -47,14 +47,14 @@ UI 通过 Subscription 接收新投影，不无条件持续轮询；具体接线
 
 ## 4. TypeScript 包与身份
 
-| 包                                | 用途                                                                      |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| @pluxel/core、@pluxel/host        | 原有 Plugin/Host、配置、依赖、effects、日志；按实际闭包处理 Node 特定入口 |
-| @pluxel/services/commands         | 现有安装器、owner mount，不自造命令系统                                   |
-| @pluxel/commands、/argv、/typebox | 同一 Command 的 UI/CLI 入口，沿用 schema 路径                             |
-| valibot                           | Plugin 配置与有限 wire 校验，沿用工作区版本                               |
-| wretch                            | RemoteLookup，注入 owner-bound fetch；不是整个 @pluxel/wretch provider    |
-| mathjs/number                     | 首选计算器引擎，仍需实际兼容与体积验证                                    |
+| 包                                | 用途                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| @pluxel/core、@pluxel/host        | 原有 Plugin/Host、配置、依赖、effects、日志；按实际闭包处理 Node 特定入口     |
+| @pluxel/services/commands         | 现有安装器、owner mount，不自造命令系统                                       |
+| @pluxel/commands、/argv、/typebox | 同一 Command 的 UI/CLI 入口，沿用 schema 路径                                 |
+| valibot                           | Plugin 配置与有限 wire 校验，沿用工作区版本                                   |
+| wretch                            | RemoteLookup，注入 owner-bound fetch；不是整个 @pluxel/plugin-wretch provider |
+| mathjs/number                     | 首选计算器引擎，仍需实际兼容与体积验证                                        |
 
 private SDK 包提供 DTO、Service tokens 和实现；业务插件放另一个应用包，避免按包 singleton 排除业务 HMR。Core、SDK tokens、Commands 等共享身份在同一 realm 唯一。公共 API 以当前仓库 exports/源码为准，不从设计抄造签名。
 

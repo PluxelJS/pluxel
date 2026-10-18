@@ -5,7 +5,7 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: repositoryTasks('@pluxel/auth', {
+		tasks: repositoryTasks('@pluxel/plugin-auth', {
 			build: 'pluxel build',
 			test: 'vp test run --config vitest.config.ts',
 			typecheck: 'tsc --noEmit --pretty false',

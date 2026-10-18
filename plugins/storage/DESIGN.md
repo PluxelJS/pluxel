@@ -2,7 +2,7 @@
 
 ## 能力与治理粒度
 
-`@pluxel/storage` 以 S3/s3mini 为 canonical contract，但不把每个配置分支提升成插件：
+`@pluxel/plugin-storage` 以 S3/s3mini 为 canonical contract，但不把每个配置分支提升成插件：
 
 ```text
 consumer -> S3 token -> S3Plugin -> bounded named bucket catalog

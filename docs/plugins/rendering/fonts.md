@@ -3,7 +3,7 @@ title: 服务端字体
 description: 发现、注册和管理服务端字体，并为 Canvas、ECharts 与 Takumi 提供统一字体资源。
 ---
 
-`@pluxel/fonts` 统一管理服务端字体：发现系统字体、注册 Plugin 随包携带的字体、保存从 Workbench 上传的字体，
+`@pluxel/plugin-fonts` 统一管理服务端字体：发现系统字体、注册 Plugin 随包携带的字体、保存从 Workbench 上传的字体，
 并为 Canvas/ECharts 选择 native default、为 Takumi 等独立 renderer 提供可移植 bytes。
 
 Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字体字节。需要一致的跨机器输出时，通过部署配置提供字体文件、随包提供字体或从 Workbench 上传；只安装 Fonts 不会替操作系统安装字体。
@@ -16,7 +16,7 @@ Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { FontsPlugin, FontsConfig } from '@pluxel/fonts'
+import { FontsPlugin, FontsConfig } from '@pluxel/plugin-fonts'
 
 envBinding(FontsPlugin, {
 	config: {
@@ -45,13 +45,13 @@ envBinding(FontsPlugin, {
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-vp exec pluxel pncat add @pluxel/fonts
+vp exec pluxel pncat add @pluxel/plugin-fonts
 ```
 
 host catalog 必须包含 `FontsPlugin`。直接使用字体能力的 Plugin 将它声明为 required dependency：
 
 ```ts twoslash
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
@@ -65,7 +65,7 @@ export class ReportsPlugin extends BasePlugin {
 以下 `host` 是 [测试宿主](../../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { ReportsPlugin } from '@acme/reports'
 
 await host.start(ReportsPlugin, { catalog: [FontsPlugin] })
@@ -78,7 +78,7 @@ await host.start(ReportsPlugin, { catalog: [FontsPlugin] })
 使用绝对服务端路径注册静态资源：
 
 ```ts twoslash
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { fileURLToPath } from 'node:url'
 
@@ -175,7 +175,7 @@ host persistence 中，provider 重启时恢复。上传受 `maxFontBytes` / `ma
 其他 Plugin 不应复制上传管理界面。如果只需在自己的详情页让用户选择统一默认字体，放置 Fonts 提供的 Attachment：
 
 ```ts no-twoslash
-import { FontsWorkbench } from '@pluxel/fonts/workbench'
+import { FontsWorkbench } from '@pluxel/plugin-fonts/workbench'
 import { workbench } from '@pluxel/workbench'
 
 export const ReportsWorkbench = workbench.define({
@@ -245,7 +245,7 @@ import {
 	type FontsPlugin,
 	type FontRegistration,
 	type FontRegistrationInput,
-} from '@pluxel/fonts'
+} from '@pluxel/plugin-fonts'
 
 export class FontRejected extends TaggedError('FontRejected')<{
 	reason: 'invalid_font' | 'too_large'

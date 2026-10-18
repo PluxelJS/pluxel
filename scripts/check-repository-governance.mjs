@@ -7,6 +7,7 @@ import {
 	isPublishablePackage,
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
+	releasePackageErrors,
 	repositoryPackages,
 } from './repository-packages.mjs'
 import { paper } from './tegami.mts'
@@ -103,6 +104,17 @@ if (Object.keys(rootManifest.dependencies ?? {}).length > 0) {
 
 const workspaceSource = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8')
 const workspace = parse(workspaceSource)
+const reactVersion = workspace.catalogs?.frontend?.react
+if (
+	typeof reactVersion !== 'string' ||
+	!isSemver(reactVersion) ||
+	reactVersion.includes('-') ||
+	workspace.catalogs?.frontend?.['react-dom'] !== reactVersion
+) {
+	errors.push(
+		'React and ReactDOM must pin the same exact stable version for the precompiled Workbench MF shared contract; ranges can install a version different from the published assets',
+	)
+}
 const vitePlusVersion = /^viteplus\s*=\s*["']([^"']+)["']/m.exec(miseConfig)?.[1]
 if (
 	workspace.catalogs?.build?.['vite-plus'] !== vitePlusVersion ||
@@ -145,6 +157,7 @@ if (new Set(packageNames).size !== packageNames.length) {
 	errors.push('repository package names must be unique')
 }
 const publicPackages = packageManifests.filter(isPublishablePackage)
+errors.push(...releasePackageErrors(packageManifests))
 const publishedDependencies = new Map(
 	packageManifests
 		.filter(({ kind }) => kind !== 'root')
@@ -162,7 +175,8 @@ const publicVersions = new Map(
 )
 if (publicPackages.length === 0) errors.push('no public packages found under packages/ or plugins/')
 
-for (const filename of await readdir(resolve(root, '.tegami'))) {
+const pendingChangelogFiles = await readdir(resolve(root, '.tegami'))
+for (const filename of pendingChangelogFiles) {
 	if (!filename.endsWith('.md')) continue
 	const source = await readFile(resolve(root, '.tegami', filename), 'utf8')
 	const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(source)
@@ -191,19 +205,43 @@ for (const filename of await readdir(resolve(root, '.tegami'))) {
 }
 
 const releaseDraft = await paper.draft()
+for (const filename of pendingChangelogFiles) {
+	if (
+		filename.startsWith('release-') &&
+		filename.endsWith('.md') &&
+		!releaseDraft.getChangelogs().some((entry) => entry.filename === filename)
+	) {
+		errors.push(`.tegami/${filename} must be a valid pending Tegami changelog`)
+	}
+}
+const releaseContext = await paper._internal.context()
+const releaseGraph = releaseContext.graph
 const plannedPackages = []
-const plannedTypes = new Map()
+const plannedVersions = new Set()
 for (const [id, draft] of releaseDraft.getPackageDrafts()) {
-	if (draft.type === undefined) continue
 	const name = id.startsWith('npm:') ? id.slice('npm:'.length) : id
+	const pkg = releaseGraph.get(id)
+	if (!pkg || draft.bumpVersion(pkg) === pkg.version) continue
 	plannedPackages.push(name)
-	plannedTypes.set(name, draft.type)
+	plannedVersions.add(draft.bumpVersion(pkg))
 	if (!publicVersions.has(name)) errors.push(`Tegami planned non-public package ${name}`)
 }
+if (plannedVersions.size > 1)
+	errors.push(`Tegami must plan one public version, got ${[...plannedVersions].join(', ')}`)
 
 for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
-	if (plannedTypes.get(manifest.name) !== 'major') {
-		errors.push(`${manifest.name} must have a major Tegami intent before its initial 1.0.0 release`)
+	if (
+		!releaseDraft
+			.getChangelogs()
+			.some((entry) =>
+				[manifest.name, `npm:${manifest.name}`, 'group:pluxel'].some(
+					(name) => entry.packages.get(name)?.type === 'major',
+				),
+			)
+	) {
+		errors.push(
+			`${manifest.name} must have its own major Tegami intent before its initial stable release`,
+		)
 	}
 }
 

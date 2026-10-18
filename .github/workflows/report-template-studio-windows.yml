@@ -95,7 +95,7 @@ jobs:
           key: ${{ runner.os }}-x64-studio-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
 
       - name: Build native compiler
-        run: vp run @pluxel/typst#prepare:native
+        run: vp run @pluxel/plugin-typst#prepare:native
 
       - name: Save native compiler build cache
         if: steps.native-cache.outputs.cache-hit != 'true'

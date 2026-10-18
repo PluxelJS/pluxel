@@ -18,7 +18,7 @@ TakumiPlugin (native methods + HTML/Node *InWorker methods)
           └─ one final Takumi worker render
 
 Business Worker task (local JSX template + plain input)
-   └─ @pluxel/takumi/worker (worker-local Renderer cache)
+   └─ @pluxel/plugin-takumi/worker (worker-local Renderer cache)
 ```
 
 | 能力          | 宿主线程                                                                                     | Worker/native 边界                                                       | Admission owner                  |
@@ -33,7 +33,7 @@ Business Worker task (local JSX template + plain input)
 
 Takumi 的三个原生 prototype methods 直接调用 `takumi-js`，保留原生输入、options、bytes/string 返回值和异常。
 显式的 `renderInWorker`、`renderSvgInWorker`、`renderAnimationInWorker` 只接收 cloneable HTML/Node/options，统一提交官方
-task。业务 JSX 在自己的 task 中构建，并通过 `@pluxel/takumi/worker` 的 `render`、`renderSvg`、`renderAnimation` 使用
+task。业务 JSX 在自己的 task 中构建，并通过 `@pluxel/plugin-takumi/worker` 的 `render`、`renderSvg`、`renderAnimation` 使用
 同一缓存机制。插件不创建私有线程池或第二层 queue。
 
 Takumi Markdown 拥有 GFM parse、Rangi static highlighting、document limits、extension 与 render-local assets；转换后只调用一次
@@ -124,14 +124,14 @@ source native decode 两次；普通 image failure 会撤销 render-local scope�
 约束 caller copy/read/hash，用 pending ceiling 约束 managed serialized tail，并用 provider native registration count/bytes
 ceiling 约束累计 key。
 需要任意 Canvas drawing 的业务 Plugin 应声明一个 worker task，在 artifact 内使用
-`@pluxel/canvas/worker`；root `*Sync()` surface 只服务明确接受同步执行的小型 primitive 调用。
+`@pluxel/plugin-canvas/worker`；root `*Sync()` surface 只服务明确接受同步执行的小型 primitive 调用。
 
 累计资源与单项资源必须同时有界：ECharts named themes 有 provider count/bytes ceiling，Fonts 有 native key ceiling。
 ECharts 默认 root surface 与累计 decoded images 分别最多约 64 MiB raw RGBA；默认
 4 个 active Worker 仍可能合计约 512 MiB raw pixels，且不含 encoded bytes、Skia 和 transient allocation。ECharts
 encoded output 在返回前检查，且该检查不能撤销已发生的编码成本；decoded-pixel 检查同样不能撤销当前图片的 decode。
 
-Canvas native capacity probe 使用 `vp run @pluxel/canvas#bench:native-capacity`；可再分别设置
+Canvas native capacity probe 使用 `vp run @pluxel/plugin-canvas#bench:native-capacity`；可再分别设置
 `PLUXEL_CANVAS_BENCH_DECODE_CONCURRENCY=1` 与 `UV_THREADPOOL_SIZE=1`，观察 Promise 返回前同步耗时、event-loop timer gap、
 filesystem queue delay 和 RSS delta。它是可重复诊断，不是跨机器固定阈值。
 

@@ -130,12 +130,15 @@ describe('pluxel bin launcher', () => {
 			'vendor/pncat/package.json': '{"name":"pncat"}',
 			'tsconfig.cli-build.json': '{}',
 			'scripts/vite-tasks.ts': 'export {}\n',
+			'scripts/repository-packages.mjs': 'export {}\n',
+			'packages/core/package.json': '{"name":"@pluxel/core","version":"1.1.0"}',
 			'vite.config.ts': 'export default {}\n',
 			'mise.toml': '',
 			'pnpm-workspace.yaml': 'packages: [packages/*]\n',
 			[`${packagePath}/package.json`]: JSON.stringify({ name: '@pluxel/cli', type: 'module' }),
 			[`${packagePath}/src/cli.ts`]: 'export const version = 1\n',
 			[`${packagePath}/scripts/build.mjs`]: '',
+			[`${packagePath}/templates/plugin/pnpm-workspace.yaml`]: 'catalog: {}\n',
 			[`${packagePath}/tsconfig.json`]: '{}',
 			[`${packagePath}/tsdown.config.ts`]: 'export default {}\n',
 			[`${packagePath}/vite.config.ts`]: 'export default {}\n',
@@ -170,6 +173,23 @@ describe('pluxel bin launcher', () => {
 		await writeFile(resolve(packageRoot, 'src/cli.ts'), 'export const version = 1\n')
 		const restored = await run()
 		expect(restored.stdout).toBe('artifact executed')
+		await writeFile(
+			resolve(root, 'packages/core/package.json'),
+			'{"name":"@pluxel/core","version":"1.2.0"}',
+		)
+		const staleVersion = await run()
+		expect(staleVersion.stderr).toContain('CLI build is stale')
+		await writeFile(
+			resolve(root, 'packages/core/package.json'),
+			'{"name":"@pluxel/core","version":"1.1.0"}',
+		)
+		await writeFile(
+			resolve(packageRoot, 'templates/plugin/pnpm-workspace.yaml'),
+			'catalog: { yaml: ^2.0.0 }\n',
+		)
+		const staleTemplate = await run()
+		expect(staleTemplate.stderr).toContain('CLI build is stale')
+		await writeFile(resolve(packageRoot, 'templates/plugin/pnpm-workspace.yaml'), 'catalog: {}\n')
 		await writeFile(
 			resolve(root, 'pnpm-workspace.yaml'),
 			'packages: [packages/*]\ncatalog: { yaml: ^2.0.0 }\n',

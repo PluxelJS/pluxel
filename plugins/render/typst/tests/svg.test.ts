@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { nodeModules } from '@pluxel/services/node'
 import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'

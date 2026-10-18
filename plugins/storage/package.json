@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/storage",
+	"name": "@pluxel/plugin-storage",
 	"version": "0.0.0",
 	"private": true,
 	"description": "S3mini-compatible S3 capability with a bounded local and remote bucket catalog",

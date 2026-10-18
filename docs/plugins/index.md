@@ -11,14 +11,14 @@ icon: Blocks
 以出站 HTTP 为例，快速开始生成的项目使用命名 catalog 管理依赖。在工作区根目录运行：
 
 ```sh
-vp exec pluxel pncat add @pluxel/wretch
+vp exec pluxel pncat add @pluxel/plugin-wretch
 vp install
 vp run governance:check
 ```
 
 在 pncat 的包选择界面中选中直接导入它的 `package.json`：宿主入口需要 `host/package.json`；如果业务插件在独立的 `plugins/` 包内，该包也要选中。pncat 将版本写入 `pluxel` catalog，并为所选包写入 `catalog:pluxel` 引用。下文各插件的安装命令沿用这个工作流，依赖管理细节见 [示例项目](../development/starter-monorepo.md#添加依赖)。
 
-已有、不使用 catalog 的应用可以在对应包目录执行 `npx nypm add @pluxel/wretch`。使用哪种包管理方式不改变下面的宿主装配。
+已有、不使用 catalog 的应用可以在对应包目录执行 `npx nypm add @pluxel/plugin-wretch`。使用哪种包管理方式不改变下面的宿主装配。
 
 安装只让代码可导入。把 provider 和 consumer 加入应用的 `plugins` 清单，在 `state.initial.autoStart` 中选择业务 consumer；它的 required dependencies 会随图启动。应用入口与初始配置只按 [Host 配置教程](../host/configuration.md#应用入口)维护，不在每个插件指南重复装配宿主。
 
@@ -35,7 +35,7 @@ vp run governance:check
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
-import { WretchPlugin, WretchConfig } from '@pluxel/wretch'
+import { WretchPlugin, WretchConfig } from '@pluxel/plugin-wretch'
 
 export default defineHostApplication(() => ({
 	plugins: [WretchPlugin],
@@ -69,17 +69,17 @@ Workbench 服务是否安装不决定业务配置是否可用。按实际能力�
 
 ## 可公开安装
 
-| Plugin                    | 用途                                              | 文档                                               |
-| ------------------------- | ------------------------------------------------- | -------------------------------------------------- |
-| `@pluxel/auth`            | Workbench 与 Management API 认证                  | [Management 认证](./auth.md)                       |
-| `@pluxel/wretch`          | 带宿主出站策略的 HTTP client                      | [Wretch HTTP client](./wretch.md)                  |
-| `@pluxel/playwright`      | 外部 CDP / Playwright 浏览器连接与调用方会话      | [浏览器连接](./browser.md)                         |
-| `@pluxel/invoice`         | VLM 图片提取与财政/数电发票查验编排               | [图片票据提取与查验](./invoice.md)                 |
-| `@pluxel/fonts`           | 服务端字体发现与管理                              | [服务端字体](./rendering/fonts.md)                 |
-| `@pluxel/canvas`          | 服务端 Canvas、图片处理与静态表格                 | [服务端 Canvas](./rendering/canvas.md)             |
-| `@pluxel/echarts`         | 服务端 ECharts 渲染                               | [服务端 ECharts](./rendering/echarts.md)           |
-| `@pluxel/takumi`          | 原生 JSX/HTML/node-tree 渲染与共享 Worker adapter | [Takumi](./rendering/takumi.md)                    |
-| `@pluxel/takumi-markdown` | GFM、静态代码高亮与可选 Typst 数学渲染            | [Markdown / Typst](./rendering/takumi-markdown.md) |
+| Plugin                           | 用途                                              | 文档                                               |
+| -------------------------------- | ------------------------------------------------- | -------------------------------------------------- |
+| `@pluxel/plugin-auth`            | Workbench 与 Management API 认证                  | [Management 认证](./auth.md)                       |
+| `@pluxel/plugin-wretch`          | 带宿主出站策略的 HTTP client                      | [Wretch HTTP client](./wretch.md)                  |
+| `@pluxel/plugin-playwright`      | 外部 CDP / Playwright 浏览器连接与调用方会话      | [浏览器连接](./browser.md)                         |
+| `@pluxel/plugin-invoice`         | VLM 图片提取与财政/数电发票查验编排               | [图片票据提取与查验](./invoice.md)                 |
+| `@pluxel/plugin-fonts`           | 服务端字体发现与管理                              | [服务端字体](./rendering/fonts.md)                 |
+| `@pluxel/plugin-canvas`          | 服务端 Canvas、图片处理与静态表格                 | [服务端 Canvas](./rendering/canvas.md)             |
+| `@pluxel/plugin-echarts`         | 服务端 ECharts 渲染                               | [服务端 ECharts](./rendering/echarts.md)           |
+| `@pluxel/plugin-takumi`          | 原生 JSX/HTML/node-tree 渲染与共享 Worker adapter | [Takumi](./rendering/takumi.md)                    |
+| `@pluxel/plugin-takumi-markdown` | GFM、静态代码高亮与可选 Typst 数学渲染            | [Markdown / Typst](./rendering/takumi-markdown.md) |
 
 这些 package 已声明公共入口。具体可安装版本以 npm registry 和发布记录为准。
 
@@ -87,14 +87,14 @@ Workbench 服务是否安装不决定业务配置是否可用。按实际能力�
 
 以下 Plugin 目前仍是 Pluxel workspace 的内部集成，不是仓库外项目可以依赖的公开 package。文档用于说明当前能力和验证设计，不构成发布承诺。
 
-| Plugin                    | 用途                               | 文档                                    |
-| ------------------------- | ---------------------------------- | --------------------------------------- |
-| `@pluxel/typst`           | Typst 文档会话、SVG、Vector 与 PDF | [Typst 文档](./rendering/typst.md)      |
-| `@pluxel/cache`           | Plugin 隔离的缓存与后端抽象        | [缓存](./cache.md)                      |
-| `@pluxel/rates`           | 按调用方和成本执行频率限制         | [请求频率控制](./rates.md)              |
-| `@pluxel/redis`           | Redis client、Lua script 和后端    | [Redis](./redis.md)                     |
-| `@pluxel/storage`         | 本地或远端 S3 对象存储             | [S3 对象存储](./storage.md)             |
-| `@pluxel/otel`            | OpenTelemetry signals 与 exporters | [OpenTelemetry](./otel.md)              |
-| `@pluxel/package-manager` | Native/Vite 的受控目录来源         | [Package manager](./package-manager.md) |
+| Plugin                           | 用途                               | 文档                                    |
+| -------------------------------- | ---------------------------------- | --------------------------------------- |
+| `@pluxel/plugin-typst`           | Typst 文档会话、SVG、Vector 与 PDF | [Typst 文档](./rendering/typst.md)      |
+| `@pluxel/plugin-cache`           | Plugin 隔离的缓存与后端抽象        | [缓存](./cache.md)                      |
+| `@pluxel/plugin-rates`           | 按调用方和成本执行频率限制         | [请求频率控制](./rates.md)              |
+| `@pluxel/plugin-redis`           | Redis client、Lua script 和后端    | [Redis](./redis.md)                     |
+| `@pluxel/plugin-storage`         | 本地或远端 S3 对象存储             | [S3 对象存储](./storage.md)             |
+| `@pluxel/plugin-otel`            | OpenTelemetry signals 与 exporters | [OpenTelemetry](./otel.md)              |
+| `@pluxel/plugin-package-manager` | Native/Vite 的受控目录来源         | [Package manager](./package-manager.md) |
 
 公开状态和允许导入的入口以 [Package 与入口矩阵](../reference/package-matrix.md) 为准。

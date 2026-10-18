@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/redis",
+	"name": "@pluxel/plugin-redis",
 	"version": "0.0.0",
 	"private": true,
 	"description": "Official named Redis connection catalog, Lua helpers, cache backend, and rates backend",
@@ -38,10 +38,10 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
-		"@pluxel/cache": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/rates": "workspace:*",
+		"@pluxel/plugin-cache": "workspace:*",
+		"@pluxel/plugin-rates": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -51,9 +51,9 @@
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/cache": "workspace:^",
 		"@pluxel/core": "workspace:^",
-		"@pluxel/rates": "workspace:^",
+		"@pluxel/plugin-cache": "workspace:^",
+		"@pluxel/plugin-rates": "workspace:^",
 		"@pluxel/workbench": "workspace:^"
 	},
 	"pluxel": {

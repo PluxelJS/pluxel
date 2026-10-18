@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { nodeModules } from '@pluxel/services/node'
 import { workers } from '@pluxel/services/workers'
 import { createTestHost, type RawPluginConfig } from '@pluxel/test'
-import { TakumiPlugin } from '@pluxel/takumi'
+import { TakumiPlugin } from '@pluxel/plugin-takumi'
 import { defineHastPlugin, defineMdastPlugin } from 'satteri'
 import { describe, expect, it } from 'vitest'
 import {

@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/canvas",
+	"name": "@pluxel/plugin-canvas",
 	"version": "1.1.0",
 	"description": "Official bounded server-side Canvas capability for Pluxel plugins",
 	"license": "AGPL-3.0-only",
@@ -63,7 +63,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
+		"@pluxel/plugin-fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -74,7 +74,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/fonts": "workspace:^",
+		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/workbench": "workspace:^"
 	},
 	"engines": {
@@ -82,7 +82,7 @@
 	},
 	"pluxel": {
 		"pluginPackages": {
-			"@pluxel/fonts": "required"
+			"@pluxel/plugin-fonts": "required"
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,

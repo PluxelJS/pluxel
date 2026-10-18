@@ -7,17 +7,17 @@ import { promisify } from 'node:util'
 import { tegami, type TegamiPlugin } from 'tegami'
 import { runCli } from 'tegami/cli'
 import { github } from 'tegami/plugins/github'
+import { unifiedReleaseVersions } from './release-policy.mts'
 import {
 	isPublishablePackage,
 	repositoryPackages,
-	tegamiIgnoredPackageNames,
+	tegamiIgnorePattern,
 } from './repository-packages.mjs'
 
-const ignoredPackages = [...tegamiIgnoredPackageNames(repositoryPackages), /^@worksplit\//]
 const execFileAsync = promisify(execFile)
 
 export const paper = tegami({
-	ignore: ignoredPackages,
+	ignore: [tegamiIgnorePattern(repositoryPackages)],
 	groups: {
 		pluxel: {
 			syncBump: true,
@@ -44,6 +44,7 @@ export const paper = tegami({
 		},
 	},
 	plugins: [
+		unifiedReleaseVersions(),
 		verifyBeforePublish(),
 		fumapressPlugin({ dir: 'projects/docs/content/changelog' }),
 		github({

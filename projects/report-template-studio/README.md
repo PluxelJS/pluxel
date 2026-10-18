@@ -130,11 +130,11 @@ AGENTS.md
 
 主题直接使用正常 Typst import，例如 `#import "../../共享/主题/财务函件.typ": correspondence`。共享设计是普通源码，同工作区内任意文档可复用。字体通过配置中的目录或具体路径注册；导入自定义字体后将其目录加入配置即可。默认财务主题复用随附四种字体及许可证。没有独立的资源发布、版本固定或模板实例数据库。
 
-同名 TypeScript 入口统一默认导出官方 `@pluxel/typst/template` 的 `defineTypstDocument({ template, schema, createFiles? })`。名称直接来自入口文件名，无需单独声明 `name`。`template` 是相对于入口目录的 `.typ` 路径，解析结果必须在工作区内；共享逻辑可从其他工作区模块导入：
+同名 TypeScript 入口统一默认导出官方 `@pluxel/plugin-typst/template` 的 `defineTypstDocument({ template, schema, createFiles? })`。名称直接来自入口文件名，无需单独声明 `name`。`template` 是相对于入口目录的 `.typ` 路径，解析结果必须在工作区内；共享逻辑可从其他工作区模块导入：
 
 ```ts
 import * as v from 'valibot'
-import { defineTypstDocument } from '@pluxel/typst/template'
+import { defineTypstDocument } from '@pluxel/plugin-typst/template'
 
 export default defineTypstDocument({
 	template: './排版.typ',

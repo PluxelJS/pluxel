@@ -1,4 +1,4 @@
-# `@pluxel/otel`
+# `@pluxel/plugin-otel`
 
 原生 OpenTelemetry Meter / Tracer / Logger，支持 OTLP 与 Prometheus。
 

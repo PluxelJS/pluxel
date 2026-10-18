@@ -5,7 +5,7 @@ import { RpcStub } from 'capnweb'
 import { formatPluginNodeRoute, pluginNodeAddressOf } from '@pluxel/core'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 import { ReportStudioWorkbench } from '../src/showcase/ReportStudio.workbench'
-import { PackageManagerPlugin } from '@pluxel/package-manager'
+import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 
 const principal = { provider: 'development-console', subject: 'workbench-migration-validation' }
 

@@ -12,7 +12,7 @@ import {
 } from 'vite'
 import { rolldown } from 'rolldown'
 import { newQuickJSWASMModule, type QuickJSContext } from 'quickjs-emscripten'
-import type { TypstDiagnostic } from '@pluxel/typst'
+import type { TypstDiagnostic } from '@pluxel/plugin-typst'
 import type { JsonObject } from '../shared/contracts.js'
 export interface RuntimeSource {
 	files: Record<string, string>
@@ -33,7 +33,7 @@ function sandboxFailure(value: unknown): Error {
 	})
 }
 
-const libraryNames = ['valibot', 'valibot-form', '@pluxel/typst/template'] as const
+const libraryNames = ['valibot', 'valibot-form', '@pluxel/plugin-typst/template'] as const
 const libraries = new Map<string, Promise<string>>()
 async function bundleLibrary(name: string) {
 	let pending = libraries.get(name)
@@ -343,7 +343,7 @@ export async function describe() {
 						else if (source.startsWith('/') && !source.startsWith('/@')) path = source.slice(1)
 						else
 							throw new Error(
-								`模板不能导入 ${source}；仅允许模板内模块、valibot、valibot-form 和 @pluxel/typst/template`,
+								`模板不能导入 ${source}；仅允许模板内模块、valibot、valibot-form 和 @pluxel/plugin-typst/template`,
 							)
 						if (path.startsWith('../') || path.startsWith('/'))
 							throw new Error('模板 import 不得越出当前模板')

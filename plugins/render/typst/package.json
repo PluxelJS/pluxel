@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/typst",
+	"name": "@pluxel/plugin-typst",
 	"private": true,
 	"description": "Typst document sessions with isolated compilation and file resources",
 	"license": "AGPL-3.0-only",
@@ -53,9 +53,9 @@
 		"@myriaddreamin/typst-ts-renderer": "catalog:prod",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/host-vite": "workspace:*",
+		"@pluxel/plugin-fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -68,7 +68,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/fonts": "workspace:^",
+		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/services": "workspace:^"
 	},
 	"engines": {
@@ -76,7 +76,7 @@
 	},
 	"pluxel": {
 		"pluginPackages": {
-			"@pluxel/fonts": "required"
+			"@pluxel/plugin-fonts": "required"
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,

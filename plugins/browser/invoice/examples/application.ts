@@ -1,8 +1,8 @@
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding, type HostApplicationFactory } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
-import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/playwright'
-import { InvoicePlugin, InvoiceVaultSchema } from '@pluxel/invoice'
+import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/plugin-playwright'
+import { InvoicePlugin, InvoiceVaultSchema } from '@pluxel/plugin-invoice'
 import { InvoiceConsumer } from './consumer.ts'
 
 const application: HostApplicationFactory = defineHostApplication((startup) => ({

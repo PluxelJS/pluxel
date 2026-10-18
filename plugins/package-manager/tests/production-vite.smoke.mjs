@@ -20,7 +20,7 @@ const address = (name, exportName) => ({
 const a = address('fixture-a', 'A'),
 	b = address('fixture-b', 'B'),
 	p = address('fixture-p', 'P'),
-	manager = address('@pluxel/package-manager', 'PackageManagerPlugin')
+	manager = address('@pluxel/plugin-package-manager', 'PackageManagerPlugin')
 let session
 let initial
 let beforeProvider

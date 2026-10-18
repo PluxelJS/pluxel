@@ -1,5 +1,5 @@
-import { CanvasPlugin } from '@pluxel/canvas'
-import { FontsPlugin } from '@pluxel/fonts'
+import { CanvasPlugin } from '@pluxel/plugin-canvas'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'

@@ -30,7 +30,7 @@ import {
 	type ManagedFontSnapshot,
 } from './workbench.ts'
 
-const STORAGE_NAMESPACE = '@pluxel/fonts'
+const STORAGE_NAMESPACE = '@pluxel/plugin-fonts'
 const DEFAULT_FONT_KEY = 'settings/default-font.json'
 const MANAGED_ID = /^[A-Za-z0-9_-]{43}$/
 const MAX_FILE_NAME_LENGTH = 255

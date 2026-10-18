@@ -1,4 +1,4 @@
-import { FontsWorkbench } from '@pluxel/fonts/workbench'
+import { FontsWorkbench } from '@pluxel/plugin-fonts/workbench'
 import { workbench } from '@pluxel/workbench'
 
 export const CanvasWorkbench = workbench.define({

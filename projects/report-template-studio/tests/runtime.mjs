@@ -195,8 +195,8 @@ try {
 	const { requirePluginService } = await import(
 		new URL(corePackage.exports['./internal'].import, pathToFileURL(coreManifest)).href
 	)
-	const { FontsPlugin } = await load('@pluxel/fonts')
-	const { TypstPlugin } = await load('@pluxel/typst')
+	const { FontsPlugin } = await load('@pluxel/plugin-fonts')
+	const { TypstPlugin } = await load('@pluxel/plugin-typst')
 	const { nodeModules } = await load('@pluxel/services/node')
 	const probeRoot = join(root, 'native-page-probe')
 	await mkdir(probeRoot)
@@ -209,7 +209,7 @@ try {
 		services: [
 			nodeModules({
 				root: join(
-					dirname(applicationRequire.resolve('@pluxel/typst/package.json')),
+					dirname(applicationRequire.resolve('@pluxel/plugin-typst/package.json')),
 					'dist/artifacts/node',
 				),
 			}),

@@ -1,4 +1,4 @@
-# `@pluxel/typst`
+# `@pluxel/plugin-typst`
 
 Workspace 内的 Typst 编译插件，当前保持 private。`renderSvg(source, options)` 为其他插件提供无状态 SVG；`open()` 支持多文件 JSON/文本/字节/真实文件输入、隔离编译、同修订 Vector/PDF 和 `await using` 会话。
 
@@ -9,4 +9,4 @@ Workspace 内的 Typst 编译插件，当前保持 private。`renderSvg(source, 
 - [实现设计](DESIGN.md)
 - [渲染执行规则](../ARCHITECTURE.md)
 
-服务端入口为 `@pluxel/typst`，浏览器预览入口为 `@pluxel/typst/browser`。
+服务端入口为 `@pluxel/plugin-typst`，浏览器预览入口为 `@pluxel/plugin-typst/browser`。

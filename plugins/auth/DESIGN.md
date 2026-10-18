@@ -2,7 +2,7 @@
 
 ## Ownership
 
-Runtime owns the control WebSocket, physical peer/TLS facts, pre-auth quotas, Cap’n Web target admission and the three exact unauthenticated HTTP routes. `@pluxel/auth` is an ordinary generation-owned provider registered through `ctx.managementAccess.provide()`.
+Runtime owns the control WebSocket, physical peer/TLS facts, pre-auth quotas, Cap’n Web target admission and the three exact unauthenticated HTTP routes. `@pluxel/plugin-auth` is an ordinary generation-owned provider registered through `ctx.managementAccess.provide()`.
 
 The plugin owns credential verification, OIDC, opaque browser sessions, one-use cookie commits, login failure state and credential persistence. It does not own the listener, Workbench root, Management operations or generic HTTP routing.
 
@@ -36,7 +36,7 @@ They cannot return access state, layout, Management data or capabilities. Passwo
 
 ## Workbench setup boundary
 
-The browser-safe `@pluxel/auth/workbench` entry exports the exact `AuthWorkbench.setup` Direct View descriptor and its input/result
+The browser-safe `@pluxel/plugin-auth/workbench` entry exports the exact `AuthWorkbench.setup` Direct View descriptor and its input/result
 types. The owning Plugin publishes that View at `/auth/setup`; no Runtime setup resource, generic capability registry or second transport
 exists. Each open creates a fresh `AuthSetupTarget` and `CredentialProvisioning`, both bound to the open signal and Plugin generation.
 

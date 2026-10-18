@@ -36,7 +36,8 @@ export type LocalAnimationOptions = OmitEach<
 type ContentOptions = Pick<LocalRenderOptions, 'emoji' | 'jsx' | 'signal' | 'images' | 'css'>
 
 function assertWorker(options?: Extras): void {
-	if (isMainThread) throw new Error('@pluxel/takumi/worker must execute inside a Worker task')
+	if (isMainThread)
+		throw new Error('@pluxel/plugin-takumi/worker must execute inside a Worker task')
 	if (
 		options?.renderer !== undefined ||
 		options?.module !== undefined ||

@@ -74,7 +74,7 @@ stored artifact route.
 The declared `report-render.task.tsx` constructs both JSX templates inside the shared Workers
 service. The application sends business data and concrete font bytes; it creates no JSX on the
 main thread. Native rendering and React Hooks execute in that task's bundle through
-`@pluxel/takumi/worker`. Font snapshots are read once per Fonts provider/portable revision and
+`@pluxel/plugin-takumi/worker`. Font snapshots are read once per Fonts provider/portable revision and
 remain immutable until execution settles; `inputOwnership: 'borrowed'` avoids an extra queue-time
 font copy. Worker transport still clones the bytes at dispatch. Worker-local renderer/font-set
 caches can survive repeated tasks while that shared Worker remains alive.

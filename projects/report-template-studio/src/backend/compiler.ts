@@ -1,6 +1,6 @@
 import { posix } from 'node:path'
 import type { FieldNode } from 'valibot-form'
-import type { TypstFiles } from '@pluxel/typst'
+import type { TypstFiles } from '@pluxel/plugin-typst'
 import type { JsonObject, StudioError, WorkspaceSnapshot } from '../shared/contracts.js'
 import { pathName, reportEntry } from './storage-validation.js'
 import { TemplateRuntime, type RuntimeOperation } from './template-runtime.js'

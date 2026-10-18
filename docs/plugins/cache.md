@@ -3,9 +3,9 @@ title: 缓存
 description: 为每个 Plugin 隔离缓存，并组合本地缓存、后端、加载器、失效和请求合并。
 ---
 
-> `@pluxel/cache` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-cache` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/cache` 会识别当前调用它的 Plugin，并自动隔离普通 key。业务 Plugin 依赖抽象的 `Cache`，宿主选择内存或 Redis 后端；只有多个 Plugin 明确共享同一份值协议时，才应使用 `cache.global`。
+`@pluxel/plugin-cache` 会识别当前调用它的 Plugin，并自动隔离普通 key。业务 Plugin 依赖抽象的 `Cache`，宿主选择内存或 Redis 后端；只有多个 Plugin 明确共享同一份值协议时，才应使用 `cache.global`。
 
 ## 先选择用法
 
@@ -40,7 +40,7 @@ consumer 只依赖 `Cache` 抽象；host catalog 选择：
 
 ## 部署配置入口
 
-`@pluxel/cache` 根入口导出 `CacheConfig` 和 `MemoryCacheBackendConfig`，分别用于对应 Plugin 的 env/file 绑定。比如 `envBinding(CachePlugin, { config: { schema: CacheConfig, mapping: { maxEntries: 'CACHE_MAX_ENTRIES' } } })`。完整绑定与来源优先级见 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)。Workbench 不参与配置生效。
+`@pluxel/plugin-cache` 根入口导出 `CacheConfig` 和 `MemoryCacheBackendConfig`，分别用于对应 Plugin 的 env/file 绑定。比如 `envBinding(CachePlugin, { config: { schema: CacheConfig, mapping: { maxEntries: 'CACHE_MAX_ENTRIES' } } })`。完整绑定与来源优先级见 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)。Workbench 不参与配置生效。
 
 Cache 配置提供默认策略；consumer 的 `scope()` 显式字段覆盖默认值。Memory backend 的持久快照只恢复缓存条目，不恢复旧配置；当前容量、TTL 过期判定和持久化策略仍由本次部署决定。
 
@@ -49,7 +49,7 @@ Cache 配置提供默认策略；consumer 的 `scope()` 显式字段覆盖默认
 复杂缓存应在 Plugin generation 启动时创建一次：
 
 ```ts twoslash
-import { Cache, type CacheNamespace } from '@pluxel/cache'
+import { Cache, type CacheNamespace } from '@pluxel/plugin-cache'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 type CatalogItem = { id: string }
@@ -167,7 +167,7 @@ local 数据只存在当前进程，不参与 Redis，也不提供跨 instance c
 简单 method cache-aside 可以使用 decorator：
 
 ```ts no-twoslash
-import { Cached, Memoized } from '@pluxel/cache'
+import { Cached, Memoized } from '@pluxel/plugin-cache'
 
 @Cached({ ttlMs: 60_000 })
 async findUser(id: string): Promise<User | null> {
@@ -203,7 +203,7 @@ constructor 仍需声明 `Cache` required dependency。`@Cached` 要求 Promise-
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result, TaggedError } from '@pluxel/core/better-result'
-import { Cache, type CacheNamespace } from '@pluxel/cache'
+import { Cache, type CacheNamespace } from '@pluxel/plugin-cache'
 
 export type Account = Readonly<{ id: string; name: string }>
 

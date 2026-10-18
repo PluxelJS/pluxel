@@ -1,11 +1,11 @@
-# `@pluxel/canvas`
+# `@pluxel/plugin-canvas`
 
 有资源预算的 native Canvas、图片解码、Pretext 与静态表格。
 
 在直接导入它的包目录安装（catalog 工作区见下方指南）：
 
 ```sh
-pnpm add @pluxel/canvas
+pnpm add @pluxel/plugin-canvas
 ```
 
 宿主 catalog 需要 FontsPlugin、CanvasPlugin；业务插件通过 constructor 注入直接使用的能力。

@@ -3,11 +3,11 @@ title: Markdown / Typst 图片渲染
 description: 使用 GFM、静态代码高亮与可选 Typst 数学，通过共享 Worker 将 Markdown 渲染为图片或 SVG。
 ---
 
-`@pluxel/takumi-markdown` 负责 Markdown 文档转换：解析 GFM、排版 table、静态高亮 code fence，再通过 `TakumiPlugin` 提交一次最终 Worker render。它适合 release note、说明文档、报告与需要静态快照的 Markdown 内容。
+`@pluxel/plugin-takumi-markdown` 负责 Markdown 文档转换：解析 GFM、排版 table、静态高亮 code fence，再通过 `TakumiPlugin` 提交一次最终 Worker render。它适合 release note、说明文档、报告与需要静态快照的 Markdown 内容。
 
 | 需求                                               | 选择                             |
 | -------------------------------------------------- | -------------------------------- |
-| Markdown 文档、GFM table、代码块、图片             | `@pluxel/takumi-markdown`        |
+| Markdown 文档、GFM table、代码块、图片             | `@pluxel/plugin-takumi-markdown` |
 | React JSX、HeroUI 卡片、HTML 或 node tree          | [Takumi](./takumi.md)            |
 | 已有 rows/columns 的静态报告表，需精确 Canvas 绘制 | [Canvas table](./canvas.md)      |
 | 完整 Typst 文档、Vector 预览或 PDF                 | 工作区 [TypstPlugin](./typst.md) |
@@ -19,14 +19,14 @@ Markdown table 由 Takumi 的 HTML/CSS layout 排版。可用的工作区 `Typst
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-vp exec pluxel pncat add @pluxel/takumi-markdown @pluxel/takumi
+vp exec pluxel pncat add @pluxel/plugin-takumi-markdown @pluxel/plugin-takumi
 ```
 
 Host catalog 包含 Takumi、Markdown 和 consumer，并安装共享 [Workers 服务](../../plugin-development/node-artifacts.md#选择安装能力)。`standardServices()` 与 `servicesPreset()` 已包含该服务。MarkdownPlugin required-depend Takumi；业务 Plugin 只注入直接使用的 Markdown capability：
 
 ```ts no-twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/takumi-markdown'
+import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/plugin-takumi-markdown'
 
 @Plugin()
 export class ReleaseImagePlugin extends BasePlugin {
@@ -117,7 +117,7 @@ await this.renderer.render('![Logo](https://assets.example/logo.png)', {
 
 ## 工作区可选的 Typst 数学
 
-`@pluxel/typst` 目前是 workspace-only 能力，只能在包含该包的源码工作区中集成；公开包状态见 [Package 与入口矩阵](../../reference/package-matrix.md#workspace-only-能力)。普通 Markdown 不要求安装 Typst。
+`@pluxel/plugin-typst` 目前是 workspace-only 能力，只能在包含该包的源码工作区中集成；公开包状态见 [Package 与入口矩阵](../../reference/package-matrix.md#workspace-only-能力)。普通 Markdown 不要求安装 Typst。
 
 在 Host catalog 中加入 FontsPlugin 和 TypstPlugin，并运行 Typst provider 后，Markdown 自动启用内置数学能力。业务插件仍只注入 `TakumiMarkdownPlugin`，沿用前面的 `createRenderer()` 与调用方式：
 
@@ -171,7 +171,7 @@ import {
 	MarkdownError,
 	type MarkdownRenderer,
 	type MarkdownRenderOptions,
-} from '@pluxel/takumi-markdown'
+} from '@pluxel/plugin-takumi-markdown'
 
 export class DocumentTooLarge extends TaggedError('DocumentTooLarge')<{ message: string }> {}
 

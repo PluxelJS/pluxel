@@ -42,7 +42,7 @@ export function initCodeEditor(): Promise<Monaco> {
 						imports: {
 							valibot,
 							'valibot-form': valibotForm,
-							'@pluxel/typst/template': typstTemplate,
+							'@pluxel/plugin-typst/template': typstTemplate,
 						},
 						scopes: {},
 					},

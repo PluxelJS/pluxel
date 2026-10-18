@@ -1,4 +1,4 @@
-# @pluxel/playwright
+# @pluxel/plugin-playwright
 
 使用 `playwright-core` 连接部署方提供的外部浏览器；插件不安装、下载、启动或重启浏览器。
 `protocol: 'cdp'`（默认）连接 Chromium / Lightpanda 的 CDP endpoint；`protocol: 'playwright'` 连接 Playwright server 的 WebSocket endpoint。
@@ -7,7 +7,7 @@
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PlaywrightPlugin } from '@pluxel/playwright'
+import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
 
 @Plugin()
 export class PageTitlePlugin extends BasePlugin {
@@ -49,7 +49,7 @@ Playwright 的 `newContext()` 和 `context.close()` 没有 AbortSignal；取消�
 
 ## 外部端点验证
 
-提供 `PLUXEL_BROWSER_ENDPOINT` 后运行 `vp run @pluxel/playwright#test:external`。
+提供 `PLUXEL_BROWSER_ENDPOINT` 后运行 `vp run @pluxel/plugin-playwright#test:external`。
 `PLUXEL_BROWSER_PROTOCOL` 选择 `cdp`（默认）或 `playwright`；`PLUXEL_BROWSER_HEADERS` 可提供 JSON 格式的连接 headers。
 测试通过 Vault 绑定读取连接，连续建立两个真实 Host generation，在隔离 context 中读取静态页面并清理；第二次连接同时验证前一代未停止外部浏览器。
 此命令不启动浏览器，也不访问财政网站。

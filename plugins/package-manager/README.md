@@ -1,4 +1,4 @@
-# `@pluxel/package-manager`
+# `@pluxel/plugin-package-manager`
 
 为 Native/Vite 应用管理 pnpm 安装，并逐条原子发布插件 source entries。
 
@@ -9,4 +9,4 @@
 - [用法、配置与验证](../../docs/plugins/package-manager.md)
 - [维护约束](DESIGN.md)
 
-维护时用 `PLUXEL_PNPM_NATIVE_INTEGRATION=1 vp run @pluxel/package-manager#check-tests` 验证真实 registry install → entry publish → remove。
+维护时用 `PLUXEL_PNPM_NATIVE_INTEGRATION=1 vp run @pluxel/plugin-package-manager#check-tests` 验证真实 registry install → entry publish → remove。

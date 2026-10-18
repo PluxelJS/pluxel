@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite-plus/pack'
+import { resolve } from 'node:path'
+import { syncTemplateCatalog } from './scripts/sync-template-catalog.mjs'
 
 export default defineConfig({
 	entry: {
@@ -42,6 +44,11 @@ export default defineConfig({
 			flatten: false,
 		},
 	],
+	hooks: {
+		async 'build:done'() {
+			await syncTemplateCatalog(resolve(import.meta.dirname, 'dist/templates/plugin'))
+		},
+	},
 	plugins: [],
 	format: ['esm'],
 	clean: true,

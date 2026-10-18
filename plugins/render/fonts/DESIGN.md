@@ -1,6 +1,6 @@
 # Fonts 插件设计
 
-`@pluxel/fonts` 是服务端渲染进程中字体事实与管理状态的唯一 owner。Canvas native backend 是
+`@pluxel/plugin-fonts` 是服务端渲染进程中字体事实与管理状态的唯一 owner。Canvas native backend 是
 `@napi-rs/canvas` 的进程级 `GlobalFonts`；managed/caller sources 另外投影成 renderer-neutral portable bytes。
 
 ## 资源所有权与部署

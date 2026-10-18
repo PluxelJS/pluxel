@@ -1,4 +1,4 @@
-# `@pluxel/cache`
+# `@pluxel/plugin-cache`
 
 caller 隔离的 local / backend 缓存、scope 与进程内 single-flight。
 

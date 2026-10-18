@@ -9,7 +9,7 @@ import type { TypstNavigation } from './preview-contract.ts'
 
 /** Resolve from the Plugin package, before its worker source is extracted into a cache. */
 export function resolveNativeBinding(moduleUrl: string): string {
-	const root = dirname(createRequire(moduleUrl).resolve('@pluxel/typst/package.json'))
+	const root = dirname(createRequire(moduleUrl).resolve('@pluxel/plugin-typst/package.json'))
 	return join(root, 'native/compiler.node')
 }
 

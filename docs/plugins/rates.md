@@ -3,9 +3,9 @@ title: 请求频率控制
 description: 按调用方、身份和成本执行原子的请求准入判定。
 ---
 
-> `@pluxel/rates` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-rates` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/rates` 只负责一件事：根据一次请求的身份和成本，原子地判断是否放行。它不负责排队、等待、长期套餐额度或计费，也不会替 HTTP 或 RPC 层选择响应状态。
+`@pluxel/plugin-rates` 只负责一件事：根据一次请求的身份和成本，原子地判断是否放行。它不负责排队、等待、长期套餐额度或计费，也不会替 HTTP 或 RPC 层选择响应状态。
 
 ## 第一个 limiter
 
@@ -14,7 +14,7 @@ description: 按调用方、身份和成本执行原子的请求准入判定。
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result, TaggedError } from '@pluxel/core/better-result'
-import { Rates, type RateLimiter } from '@pluxel/rates'
+import { Rates, type RateLimiter } from '@pluxel/plugin-rates'
 
 export class MessageRateLimited extends TaggedError('MessageRateLimited')<{
 	retryAfterMs: number
@@ -74,7 +74,7 @@ export class MessagingPlugin extends BasePlugin {
 以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
-import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/rates'
+import { MemoryRatesBackendPlugin, RatesPlugin } from '@pluxel/plugin-rates'
 
 await host.commit((change) => {
 	change.start(MemoryRatesBackendPlugin, {
@@ -87,11 +87,11 @@ await host.commit((change) => {
 
 内存 backend 重启后额度会重置，也不会淘汰仍有效的 state。达到 `maxIdentities` 时，它会抛出 `RatesUnavailableError`，其中可能带 `retryAfterMs`。
 
-多进程共享额度可改用 `@pluxel/redis` 提供的 adapter：
+多进程共享额度可改用 `@pluxel/plugin-redis` 提供的 adapter：
 
 ```ts no-twoslash
-import { RatesPlugin } from '@pluxel/rates'
-import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
+import { RatesPlugin } from '@pluxel/plugin-rates'
+import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/plugin-redis'
 
 await host.start([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 ```

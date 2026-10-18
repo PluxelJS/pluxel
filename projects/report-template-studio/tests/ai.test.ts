@@ -59,7 +59,7 @@ async function fixture() {
 	)
 	await writeFile(
 		join(workspace, 'reports/reports.ts'),
-		"import * as v from 'valibot'; import { defineTypstDocument } from '@pluxel/typst/template'; export default defineTypstDocument({ template: './main.typ', schema: v.object({}) });",
+		"import * as v from 'valibot'; import { defineTypstDocument } from '@pluxel/plugin-typst/template'; export default defineTypstDocument({ template: './main.typ', schema: v.object({}) });",
 	)
 	await writeFile(join(workspace, 'shared/theme.typ'), '#let title = "Original"\n')
 	await writeFile(join(workspace, 'AGENTS.md'), 'Use the reports skill and preserve user input.')

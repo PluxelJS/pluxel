@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/invoice",
+	"name": "@pluxel/plugin-invoice",
 	"version": "0.1.0",
 	"description": "VLM-assisted fiscal ticket and digital tax invoice extraction and browser verification",
 	"license": "AGPL-3.0-only",
@@ -43,7 +43,7 @@
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
-		"@pluxel/playwright": "workspace:*",
+		"@pluxel/plugin-playwright": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/jsdom": "catalog:types",
@@ -54,7 +54,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/playwright": "workspace:^",
+		"@pluxel/plugin-playwright": "workspace:^",
 		"@pluxel/services": "workspace:^"
 	},
 	"pluxel": {
@@ -62,7 +62,7 @@
 		"nodeArtifacts": true,
 		"workbenchArtifacts": true,
 		"pluginPackages": {
-			"@pluxel/playwright": "required"
+			"@pluxel/plugin-playwright": "required"
 		}
 	}
 }

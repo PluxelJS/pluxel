@@ -1,6 +1,11 @@
 import type { FieldNode } from 'valibot-form'
-import type { TypstPreview } from '@pluxel/typst/browser'
-import type { TypstDiagnostic, TypstPage, TypstOutlineItem, TypstRegion } from '@pluxel/typst'
+import type { TypstPreview } from '@pluxel/plugin-typst/browser'
+import type {
+	TypstDiagnostic,
+	TypstPage,
+	TypstOutlineItem,
+	TypstRegion,
+} from '@pluxel/plugin-typst'
 import type { SearchOptions, SearchResult } from './search.js'
 import type { AiProviders, AiProviderWrite, AiProvider } from './ai-providers.js'
 

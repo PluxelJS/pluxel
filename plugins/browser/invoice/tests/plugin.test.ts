@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
-import { InvoiceConfig, InvoicePlugin } from '@pluxel/invoice'
+import { InvoiceConfig, InvoicePlugin } from '@pluxel/plugin-invoice'
 import { candidate, Consumer, image, invoice, response, settings, setup } from './setup.ts'
 import { InvoiceConsumer } from '../examples/consumer.ts'
 import application from '../examples/application.ts'

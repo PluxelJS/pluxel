@@ -419,10 +419,12 @@ describe('FontsPlugin', () => {
 	it('fails the provider instead of silently skipping corrupt persisted state', async () => {
 		const fontBackend = createMemoryPersistenceBackend()
 		await fontBackend
-			.namespace('@pluxel/fonts')
+			.namespace('@pluxel/plugin-fonts')
 			.put(`managed/${'a'.repeat(43)}.font`, new Uint8Array([1, 2, 3]))
 		const selectionBackend = createMemoryPersistenceBackend()
-		await selectionBackend.namespace('@pluxel/fonts').put('settings/default-font.json', '{broken')
+		await selectionBackend
+			.namespace('@pluxel/plugin-fonts')
+			.put('settings/default-font.json', '{broken')
 
 		for (const [backend, message] of [
 			[fontBackend, 'Managed font is corrupt'],

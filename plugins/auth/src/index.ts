@@ -142,7 +142,7 @@ export class AuthPlugin extends BasePlugin {
 
 	private providerStatus(): ManagementAccessProviderStatus {
 		return Object.freeze({
-			id: '@pluxel/auth',
+			id: '@pluxel/plugin-auth',
 			label: 'Pluxel Authentication',
 			method: this.config.mode.type,
 			ready: this.ready(),

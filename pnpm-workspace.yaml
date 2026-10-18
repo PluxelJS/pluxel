@@ -192,8 +192,8 @@ catalogs:
     '@tanstack/react-virtual': ^3.14.13
     '@types/react': ^19.3.0
     '@types/react-dom': ^19.3.0
-    react: ^19.3.0
-    react-dom: ^19.3.0
+    react: 19.3.0
+    react-dom: 19.3.0
     tailwindcss: ^4.3.3
     '@assistant-ui/react': 0.15.28
     '@assistant-ui/react-streamdown': 0.3.18

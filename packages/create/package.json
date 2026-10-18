@@ -29,13 +29,12 @@
 		"prepack": "vp run compile"
 	},
 	"devDependencies": {
-		"@pluxel-internal/pncat": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@types/node": "catalog:types",
-		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vite-plus": "catalog:build",
-		"vitest": "catalog:test"
+		"vitest": "catalog:test",
+		"yaml": "catalog:prod"
 	},
 	"engines": {
 		"node": ">=24"

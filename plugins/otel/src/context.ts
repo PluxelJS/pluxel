@@ -6,7 +6,7 @@ import {
 	W3CTraceContextPropagator,
 } from '@opentelemetry/core'
 
-const PROCESS_CONTEXT = Symbol.for('@pluxel/otel/process-context/v1')
+const PROCESS_CONTEXT = Symbol.for('@pluxel/plugin-otel/process-context/v1')
 
 type ProcessContextState = Readonly<{ installed: true }>
 

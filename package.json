@@ -36,6 +36,7 @@
 	},
 	"devDependencies": {
 		"@fumapress/tegami": "catalog:dev",
+		"@types/node": "catalog:types",
 		"tegami": "1.5.0",
 		"typescript": "catalog:dev",
 		"unplugin-preprocessor-directives": "catalog:build",

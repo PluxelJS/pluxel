@@ -220,7 +220,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 	it('starts empty and replaces a corrupt best-effort snapshot', async () => {
 		const persistence = createMemoryPersistenceBackend()
 		await persistence
-			.namespace('@pluxel/cache')
+			.namespace('@pluxel/plugin-cache')
 			.put('memory-backend.snapshot', new Uint8Array([1, 2, 3]), { atomic: true })
 
 		await withPersistentCache(

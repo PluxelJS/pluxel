@@ -126,7 +126,11 @@ function scheduleRestart() {
 async function start() {
 	execFileSync(
 		process.execPath,
-		[fileURLToPath(import.meta.resolve('vite-plus/bin')), 'run', '@pluxel/typst#prepare:native'],
+		[
+			fileURLToPath(import.meta.resolve('vite-plus/bin')),
+			'run',
+			'@pluxel/plugin-typst#prepare:native',
+		],
 		{ cwd: root, stdio: 'inherit' },
 	)
 	await buildCarrier()

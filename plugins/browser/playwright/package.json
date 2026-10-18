@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/playwright",
+	"name": "@pluxel/plugin-playwright",
 	"version": "0.1.0",
 	"description": "Official external CDP and Playwright browser connector for Pluxel plugins",
 	"license": "AGPL-3.0-only",

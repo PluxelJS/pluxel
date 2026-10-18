@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import type { Font, FontDetails, FontLoader, Renderer } from '@takumi-rs/core'
 
 // One ABI per worker realm; independently bundled templates share only native resources.
-const CACHE = Symbol.for('@pluxel/takumi/renderer-cache/v1')
+const CACHE = Symbol.for('@pluxel/plugin-takumi/renderer-cache/v1')
 const MAX_RENDERERS = 4
 const MAX_FONT_BYTES = 64 * 1024 * 1024
 const RESOURCE_CACHE_BYTES = 16 * 1024 * 1024

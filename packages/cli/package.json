@@ -59,6 +59,7 @@
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
+		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vite-plus": "catalog:build"
 	},

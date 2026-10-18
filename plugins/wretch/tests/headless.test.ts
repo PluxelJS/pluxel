@@ -148,7 +148,7 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 		const backend = {
 			...memory,
 			namespace(name: string) {
-				if (name === '@pluxel/wretch') settingsNamespaces++
+				if (name === '@pluxel/plugin-wretch') settingsNamespaces++
 				return memory.namespace(name)
 			},
 		}

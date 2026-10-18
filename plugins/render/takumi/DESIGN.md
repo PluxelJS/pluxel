@@ -25,7 +25,7 @@ task already executing cannot be preempted immediately. No private pool, schedul
 provider font policy, configuration or Workbench projection is introduced.
 
 Business JSX tasks import `render`, `renderSvg`, or `renderAnimation` from
-`@pluxel/takumi/worker`, construct their own React elements, and use the same installed Workers
+`@pluxel/plugin-takumi/worker`, construct their own React elements, and use the same installed Workers
 service. Their bundled React, hooks dispatcher and JSX resolver remain together. The worker
 adapter accepts local JSX/options and callbacks, but owns Renderer selection and accepts only
 concrete font bytes; `renderer`, `module`, and `stylesheets` are unavailable. Importing its
@@ -60,7 +60,7 @@ HTML/Node task, real JSX templates, separately bundled cache reuse, font-set sep
 capacity, cancellation and worker replacement. Public usage belongs to the
 [Takumi guide](../../../docs/plugins/rendering/takumi.md).
 
-Run `vp run @pluxel/takumi#bench:event-loop` after building this package to compare native
+Run `vp run @pluxel/plugin-takumi#bench:event-loop` after building this package to compare native
 and shared-Worker SVG rendering with timer-gap measurements. The probe uses the packaged Node
 artifact through a real Host. It reports one machine's warm timings, not a throughput or latency
 guarantee; Worker transport and native libuv work remain part of the measurement.

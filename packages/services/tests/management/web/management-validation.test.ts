@@ -671,7 +671,7 @@ describe("management Cap'n Web DTO validation", () => {
 				adminAccess: {
 					policy: 'provider-or-local-recovery',
 					provider: {
-						id: '@pluxel/auth',
+						id: '@pluxel/plugin-auth',
 						label: 'Pluxel Auth',
 						method: 'password-totp',
 						ready: true,

@@ -1,7 +1,7 @@
 ---
 packages:
-  '@pluxel/takumi': major
-  '@pluxel/takumi-markdown': major
+  '@pluxel/plugin-takumi': major
+  '@pluxel/plugin-takumi-markdown': major
 ---
 
 # Simplify Takumi and consolidate Markdown rendering
@@ -11,7 +11,7 @@ TakumiPlugin exposes the upstream `render(input, options)`, `renderSvg(input, op
 provider envelopes, configuration, font policy, Workbench integration, reservation API and scheduler.
 
 Add explicit `renderInWorker`, `renderSvgInWorker` and `renderAnimationInWorker` methods for
-cloneable HTML/node data, and `@pluxel/takumi/worker` for business task JSX and HeroUI. Reuse the
+cloneable HTML/node data, and `@pluxel/plugin-takumi/worker` for business task JSX and HeroUI. Reuse the
 existing shared Workers service; parsing, component execution and native input conversion stay
 in the Worker. Independently bundled tasks share a bounded native resource cache per Worker,
 isolated by backend constructor and ordered font contents/metadata. React resolvers stay local

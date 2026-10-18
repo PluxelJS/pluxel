@@ -3,7 +3,7 @@ import { mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { FontsConfig, FontsPlugin } from '@pluxel/fonts'
+import { FontsConfig, FontsPlugin } from '@pluxel/plugin-fonts'
 import { createTestHost } from '@pluxel/test'
 import {
 	defineHostApplication,

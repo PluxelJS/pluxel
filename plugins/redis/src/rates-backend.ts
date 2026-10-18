@@ -5,7 +5,7 @@ import {
 	type RateDecision,
 	type ResolvedRatePolicy,
 	RatesPolicyConflictError,
-} from '@pluxel/rates'
+} from '@pluxel/plugin-rates'
 import { formatPluginNodeReference, Plugin, type PluginNodeAddress } from '@pluxel/core'
 import * as v from 'valibot'
 import { Redis, type RedisConnection } from './client.ts'

@@ -267,7 +267,7 @@ Plugin generation。
 
 ## Persistence 文件契约
 
-`@pluxel/services/persistence` 的内存与 Node 后端使用相同的相对分层路径：namespace 和 key 保留原字面（包括 `@pluxel/wretch`），不 trim、替换字符或猜测绝对路径。空段、`.`、`..`、反斜杠、冒号和控制字符会抛出 `TypeError`；仅 `list()` / `list('')` 的空前缀表示 namespace 根。namespace 是路径前缀，不是互相隔离的权限域，例如 `a/b` 位于 `a` 之下。
+`@pluxel/services/persistence` 的内存与 Node 后端使用相同的相对分层路径：namespace 和 key 保留原字面（包括 `@pluxel/plugin-wretch`），不 trim、替换字符或猜测绝对路径。空段、`.`、`..`、反斜杠、冒号和控制字符会抛出 `TypeError`；仅 `list()` / `list('')` 的空前缀表示 namespace 根。namespace 是路径前缀，不是互相隔离的权限域，例如 `a/b` 位于 `a` 之下。
 
 `list(prefix)` 按 key 排序返回目录的直接子项，包含 `file` 与 `directory`；缺失目录返回空集合，文件不能作为列举前缀。`stat(key)` 可识别文件与目录；内存后端在写入嵌套文件时建立目录，删除最后一个文件不会删除目录。`delete()` 只删除文件，缺失文件无操作；`get()` / `getText()` 的缺失结果为 `undefined`，读取目录失败。`size` / `updatedAt` 是后端可提供的 metadata，不保证存在。
 
@@ -485,7 +485,7 @@ try {
 - 每个 Host 创建独立 sink/provider。Host 关闭先停止插件，再通过 LogTape async disposal 关闭 sink；此版本的 `getOpenTelemetrySink` **也会 shutdown 传入的 provider**，不要传入其他组件仍在使用的共享 provider。
 - 运行中需要立即发送时使用原生 `await provider.forceFlush()`。`host.ctx.logging.flush()` 只刷新 store 与 policy，不是远程送达确认。批量队列、超时、重试及丢弃行为遵循 OTel SDK；没有持久队列或无损交付保证。
 - 原生 sink 保留 category（含插件身份）和结构化属性，默认把 Error 投影为 OTel exception 属性；需要保留 cause/自定义字段时使用上游 `exceptionAttributes: 'raw'`。后端 stream 字段选择稳定的 service/deployment 属性，不使用每次启动变化的 rootId 或 request ID。
-- 本方案不依赖 `@pluxel/otel` Plugin；该 Plugin 的 telemetry logger 与 `ctx.logger` 是不同入口。
+- 本方案不依赖 `@pluxel/plugin-otel` Plugin；该 Plugin 的 telemetry logger 与 `ctx.logger` 是不同入口。
 
 默认示例显式使用 provider：上游自动创建模式使用逐条 processor，且未配置 endpoint 时会成为 no-op。更多参数直接查看 [LogTape OTel sink](https://logtape.org/sinks/otel)、[OTel SDK](https://open-telemetry.github.io/opentelemetry-js/modules/_opentelemetry_sdk-logs.html) 和 [VictoriaLogs OTLP 接入](https://docs.victoriametrics.com/victorialogs/data-ingestion/opentelemetry/)。
 

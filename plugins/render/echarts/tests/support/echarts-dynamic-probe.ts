@@ -1,5 +1,5 @@
 import { ElysiaApp } from '@pluxel/services/elysia'
-import { CanvasPlugin } from '@pluxel/canvas'
+import { CanvasPlugin } from '@pluxel/plugin-canvas'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { EChartsError, EChartsPlugin, type EChartsOption } from '../../src/index.ts'
 

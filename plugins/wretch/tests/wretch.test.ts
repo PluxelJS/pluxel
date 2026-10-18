@@ -66,7 +66,7 @@ function gatedSettingsPersistence(): {
 			...memory,
 			namespace(name) {
 				const namespace = memory.namespace(name)
-				if (name !== '@pluxel/wretch') return namespace
+				if (name !== '@pluxel/plugin-wretch') return namespace
 				return {
 					...namespace,
 					getText: async (key) => {
@@ -87,7 +87,7 @@ function trackedSettingsPersistence(): {
 } {
 	const memory = createMemoryPersistenceBackend()
 	const writes = new Map<string, string>()
-	const namespace = memory.namespace('@pluxel/wretch')
+	const namespace = memory.namespace('@pluxel/plugin-wretch')
 	return {
 		writes,
 		put: async (key, value) => {
@@ -98,7 +98,7 @@ function trackedSettingsPersistence(): {
 			...memory,
 			namespace(name) {
 				const target = memory.namespace(name)
-				if (name !== '@pluxel/wretch') return target
+				if (name !== '@pluxel/plugin-wretch') return target
 				return {
 					...target,
 					put: async (key, value, options) => {
@@ -217,11 +217,19 @@ describe('WretchPlugin', () => {
 		const stored = JSON.parse(persistence.writes.get(key)!) as Record<string, unknown>
 		await persistence.put(key, JSON.stringify({ ...stored, owner: wrongOwner }))
 		await expect(
-			loadManagedSettings(persistence.backend.namespace('@pluxel/wretch'), key, expectedOwner),
+			loadManagedSettings(
+				persistence.backend.namespace('@pluxel/plugin-wretch'),
+				key,
+				expectedOwner,
+			),
 		).rejects.toThrow('owner does not match')
 		await persistence.put(key, JSON.stringify({ headers: {} }))
 		await expect(
-			loadManagedSettings(persistence.backend.namespace('@pluxel/wretch'), key, expectedOwner),
+			loadManagedSettings(
+				persistence.backend.namespace('@pluxel/plugin-wretch'),
+				key,
+				expectedOwner,
+			),
 		).rejects.toThrow('unsupported format')
 		await persistence.put(key, JSON.stringify({ ...stored, owner: wrongOwner }))
 

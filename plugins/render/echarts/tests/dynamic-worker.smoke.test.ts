@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile)
 const runner = fileURLToPath(new URL('./support/echarts-dynamic-runner.mts', import.meta.url))
 const entry = fileURLToPath(new URL('./support/echarts.dynamic.ts', import.meta.url))
 
-describe('@pluxel/echarts dynamic worker artifact', () => {
+describe('@pluxel/plugin-echarts dynamic worker artifact', () => {
 	it('runs the built worker through the production dynamic launcher and HTTP boundary', async () => {
 		const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 		await expect(

@@ -1,10 +1,10 @@
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
-import { TakumiPlugin } from '@pluxel/takumi'
+import { TakumiPlugin } from '@pluxel/plugin-takumi'
 import { TakumiMarkdownPlugin } from '../../src/index.ts'
-import { TypstPlugin } from '@pluxel/typst'
+import { TypstPlugin } from '@pluxel/plugin-typst'
 import { TypstDynamicProbePlugin } from './typst-dynamic-probe.ts'
 
 const plugins = [

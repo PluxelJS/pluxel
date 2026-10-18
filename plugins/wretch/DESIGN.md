@@ -1,6 +1,6 @@
 # Wretch 插件设计
 
-`@pluxel/wretch` 只做一件事：让多个插件通过正常 required dependency 共享一个带宿主级 outbound policy
+`@pluxel/plugin-wretch` 只做一件事：让多个插件通过正常 required dependency 共享一个带宿主级 outbound policy
 的原生 Wretch base。
 
 ## 为什么仍然是插件

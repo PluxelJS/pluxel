@@ -5,7 +5,7 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: repositoryTasks('@pluxel/cache', {
+		tasks: repositoryTasks('@pluxel/plugin-cache', {
 			build: 'pluxel build',
 			test: 'vp test run --config vitest.config.ts',
 			typecheck: 'tsc --noEmit --pretty false',

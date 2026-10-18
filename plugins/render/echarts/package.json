@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/echarts",
+	"name": "@pluxel/plugin-echarts",
 	"version": "1.1.0",
 	"description": "Official server-side Apache ECharts capability for Pluxel plugins",
 	"license": "AGPL-3.0-only",
@@ -40,12 +40,12 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
-		"@pluxel/canvas": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/host-vite": "workspace:*",
+		"@pluxel/plugin-canvas": "workspace:*",
+		"@pluxel/plugin-fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -57,9 +57,9 @@
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/canvas": "workspace:^",
 		"@pluxel/core": "workspace:^",
-		"@pluxel/fonts": "workspace:^",
+		"@pluxel/plugin-canvas": "workspace:^",
+		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@pluxel/workbench": "workspace:^"
 	},
@@ -68,8 +68,8 @@
 	},
 	"pluxel": {
 		"pluginPackages": {
-			"@pluxel/canvas": "required",
-			"@pluxel/fonts": "required"
+			"@pluxel/plugin-canvas": "required",
+			"@pluxel/plugin-fonts": "required"
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,

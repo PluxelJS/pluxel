@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/takumi-markdown",
+	"name": "@pluxel/plugin-takumi-markdown",
 	"version": "1.1.0",
 	"description": "GFM Markdown and trusted document extensions for Takumi's native rendering API",
 	"license": "AGPL-3.0-only",
@@ -42,14 +42,14 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/host-vite": "workspace:*",
+		"@pluxel/plugin-fonts": "workspace:*",
+		"@pluxel/plugin-takumi": "workspace:*",
+		"@pluxel/plugin-typst": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
-		"@pluxel/takumi": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@pluxel/typst": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
@@ -59,11 +59,11 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/takumi": "workspace:^",
-		"@pluxel/typst": "workspace:^"
+		"@pluxel/plugin-takumi": "workspace:^",
+		"@pluxel/plugin-typst": "workspace:^"
 	},
 	"peerDependenciesMeta": {
-		"@pluxel/typst": {
+		"@pluxel/plugin-typst": {
 			"optional": true
 		}
 	},
@@ -72,8 +72,8 @@
 	},
 	"pluxel": {
 		"pluginPackages": {
-			"@pluxel/takumi": "required",
-			"@pluxel/typst": "optional"
+			"@pluxel/plugin-takumi": "required",
+			"@pluxel/plugin-typst": "optional"
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,

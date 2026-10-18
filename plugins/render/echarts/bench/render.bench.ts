@@ -1,4 +1,4 @@
-import { createCanvasWorkerAdapter, type CanvasWorkerSnapshot } from '@pluxel/canvas/worker'
+import { createCanvasWorkerAdapter, type CanvasWorkerSnapshot } from '@pluxel/plugin-canvas/worker'
 import { afterAll, test } from 'vitest'
 import {
 	renderECharts,

@@ -23,7 +23,7 @@ export async function workspaceSeed(
 				'#let data = json("/inputs/data.json")\n#let letter = data.header\n#let accounts = data.accounts\n#let body = data.body',
 			)
 			.replace('"financial-correspondence.typ"', '"../../共享/主题/财务函件.typ"'),
-		'报表/银行询证函/银行询证函.ts': `import { defineTypstDocument } from '@pluxel/typst/template'
+		'报表/银行询证函/银行询证函.ts': `import { defineTypstDocument } from '@pluxel/plugin-typst/template'
 import * as v from 'valibot'
 
 export default defineTypstDocument({
@@ -47,7 +47,7 @@ export default defineTypstDocument({
   }),
 })
 `,
-		'报表/银行账户余额汇总表/银行账户余额汇总表.ts': `import { defineTypstDocument } from '@pluxel/typst/template'
+		'报表/银行账户余额汇总表/银行账户余额汇总表.ts': `import { defineTypstDocument } from '@pluxel/plugin-typst/template'
 import * as v from 'valibot'
 
 export default defineTypstDocument({
@@ -80,7 +80,7 @@ export default defineTypstDocument({
   ..data.accounts.map(account => (account.code, account.name, account.bankAccountNumber, amount(account.bookAmountDisplay))).flatten(),
 )
 `,
-		'报表/季度经营分析/季度经营分析.ts': `import { defineTypstDocument } from '@pluxel/typst/template'
+		'报表/季度经营分析/季度经营分析.ts': `import { defineTypstDocument } from '@pluxel/plugin-typst/template'
 import * as v from 'valibot'
 
 export default defineTypstDocument({

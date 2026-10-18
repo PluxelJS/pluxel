@@ -14,7 +14,7 @@ const REFERENCE = Object.freeze({
 	key: 'assets.s3',
 })
 const RECOVERY = Object.freeze({ provider: 'local', subject: 'local' })
-const ADMIN = Object.freeze({ provider: '@pluxel/auth', subject: 'local:admin' })
+const ADMIN = Object.freeze({ provider: '@pluxel/plugin-auth', subject: 'local:admin' })
 
 async function startVaultS3(host: TestHost<true>): Promise<void> {
 	await host.start(S3Plugin, {

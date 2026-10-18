@@ -1,6 +1,6 @@
 # ECharts plugin design
 
-`@pluxel/echarts` is the first consumer of Pluxel's shared worker-task capability. ECharts is not a
+`@pluxel/plugin-echarts` is the first consumer of Pluxel's shared worker-task capability. ECharts is not a
 runtime special case: the plugin declares a typed worker artifact and submits cloneable jobs through
 `ctx.require(Workers)`, while runtime owns thread admission and lifecycle.
 
@@ -11,7 +11,7 @@ runtime special case: the plugin declares a typed worker artifact and submits cl
   most blocking work behind.
 - Native Canvas/Image instances cannot cross a worker boundary. A job contains normalized option,
   resolved theme, output policy, and `CanvasPlugin.workerSnapshot`. The worker reconstructs native
-  objects through `@pluxel/canvas/worker` and rechecks allocation, decode and font availability.
+  objects through `@pluxel/plugin-canvas/worker` and rechecks allocation, decode and font availability.
 - The public option graph is declarative and borrowed without mutation until render settles. Main-realm
   bytes/value/depth budgets are walked with event-loop checkpoints only after Runtime fair admission;
   one large string is also measured in cooperative chunks. Queue rejection does no graph work. Prepared borrowed input removes the redundant snapshot, bounds

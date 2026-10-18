@@ -186,7 +186,7 @@ describe.each(['memory', 'node'] as const)('%s persistence contract', (mode) => 
 				expect(() => backend.namespace(invalid)).toThrow(TypeError)
 				await expect(backend.namespace('safe').put(invalid, 'x')).rejects.toThrow(TypeError)
 			}
-			const ns = backend.namespace('@pluxel/wretch')
+			const ns = backend.namespace('@pluxel/plugin-wretch')
 			await ns.put('nested/deep/file', 'hello')
 			await ns.put('nested/second', 'world')
 			expect(await backend.namespace('_pluxel/wretch').getText('nested/second')).toBeUndefined()

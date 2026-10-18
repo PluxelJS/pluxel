@@ -3,22 +3,22 @@ title: Management 认证
 description: 用官方 Auth Plugin 在唯一 Cap’n Web control socket 上提供 OIDC、密码或密码加 TOTP。
 ---
 
-`@pluxel/auth` 是官方 Management authentication provider。它保护 Workbench 与 Management Cap’n Web object graph，不会自动保护业务 Plugin 路由。
+`@pluxel/plugin-auth` 是官方 Management authentication provider。它保护 Workbench 与 Management Cap’n Web object graph，不会自动保护业务 Plugin 路由。
 
 ## 启用
 
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-vp exec pluxel pncat add @pluxel/auth
+vp exec pluxel pncat add @pluxel/plugin-auth
 ```
 
-在宿主入口从 `@pluxel/auth` 导入 `AuthPlugin`，加入 `plugins` 清单和自动启动项；完整装配方式见 [添加插件](./index.md#把一个插件加入应用)。
+在宿主入口从 `@pluxel/plugin-auth` 导入 `AuthPlugin`，加入 `plugins` 清单和自动启动项；完整装配方式见 [添加插件](./index.md#把一个插件加入应用)。
 
 先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用入口合入现有清单：
 
 ```ts no-twoslash
-import { AuthPlugin } from '@pluxel/auth'
+import { AuthPlugin } from '@pluxel/plugin-auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
@@ -64,10 +64,10 @@ OIDC challenge 返回固定 same-origin navigation path。Authorization redirect
 
 ## 无 Workbench 部署
 
-`AuthConfig` 与 `AuthVaultSchema` 均从 `@pluxel/auth` 根入口导出。前者只描述登录模式和 OIDC 的非敏感参数，后者校验版本化凭据记录。部署不需要调用 setup RPC：
+`AuthConfig` 与 `AuthVaultSchema` 均从 `@pluxel/plugin-auth` 根入口导出。前者只描述登录模式和 OIDC 的非敏感参数，后者校验版本化凭据记录。部署不需要调用 setup RPC：
 
 ```ts no-twoslash
-import { AuthPlugin, AuthConfig, AuthVaultSchema } from '@pluxel/auth'
+import { AuthPlugin, AuthConfig, AuthVaultSchema } from '@pluxel/plugin-auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
 import { managementAccess } from '@pluxel/services/management/access'
@@ -102,7 +102,7 @@ Password 模式可绑定已有的 `management-account-v1` 完整记录，其中�
 Public OIDC 只依赖配置，始终进入 `configured`。Password、password + TOTP 和 confidential OIDC 还要求 Vault 中存在有效
 credential record；缺失或损坏时 provider 报告 `ready: false`，远端得到 `access_unavailable`。
 
-Workbench enabled 时，Auth Plugin 发布 `@pluxel/auth/workbench` 的 `AuthWorkbench.setup` Direct View，固定 route 为
+Workbench enabled 时，Auth Plugin 发布 `@pluxel/plugin-auth/workbench` 的 `AuthWorkbench.setup` Direct View，固定 route 为
 `/auth/setup`。这是唯一的交互式 credential provisioning 入口；不存在 setup HTTP endpoint、CLI 命令或备用 transport。通过 SSH
 tunnel 打开 loopback Workbench 后进入该 route。View API 是：
 

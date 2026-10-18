@@ -3,7 +3,7 @@ title: Typst 文档
 description: 复用 Typst 生成无状态 SVG，或用多文件会话生成同修订 Vector 预览与 PDF。
 ---
 
-`@pluxel/typst` 是 workspace 内的文档插件，当前保持 private。业务通过 constructor 注入 TypstPlugin。
+`@pluxel/plugin-typst` 是 workspace 内的文档插件，当前保持 private。业务通过 constructor 注入 TypstPlugin。
 
 ## 接入前提
 
@@ -13,9 +13,9 @@ Typst 通过 NodeModules 定位独立编译制品；每个文档会话拥有一�
 - 自行组合 Host 时，会话只需 `nodeModules(...)`；调用 `renderSvg()` 另需 `workers(...)`。生产环境配置已构建的 artifact 来源；源码开发接入 Vite artifact 编译器。具体装配见 [Host 服务](../../host/services.md)与 [Node artifacts 安装说明](../../plugin-development/node-artifacts.md#选择安装能力)。
 - 应用插件清单包含 FontsPlugin、TypstPlugin 与业务 consumer；FontsPlugin 是插件依赖，不是 Host 服务。无 Workbench、无 Persistence 也可使用部署字体，由 `FontsConfig.files` 提供宿主绝对路径。Typst 在模板中选择字体 family；Fonts 的 `defaultFamily` 用于 Canvas 等 renderer 的默认选择。仅管理上传字体和保存交互式默认偏好需要 Persistence，见[字体部署](./fonts.md)。
 
-缺少 NodeModules 时，插件启动会明确失败；不会回退到主线程编译。浏览器单独使用 `@pluxel/typst/browser` 展示已有产物不需要这些服务。
+缺少 NodeModules 时，插件启动会明确失败；不会回退到主线程编译。浏览器单独使用 `@pluxel/plugin-typst/browser` 展示已有产物不需要这些服务。
 
-本 private workspace 包使用固定 typst.ts 0.7.0 源码与最小 NAPI 补丁，构建时自动准备当前平台的原生制品，需要 Git、Rust 1.97.1 和系统 C/C++ 链接工具；安装 Rust 可执行 `rustup toolchain install 1.97.1 --profile minimal`。源码开发首次使用前运行 `vp run @pluxel/typst#prepare:native`。已打包应用带有原生制品，终端用户无需 Rust；源码和构建约定见[原生绑定](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/native/README.md)。
+本 private workspace 包使用固定 typst.ts 0.7.0 源码与最小 NAPI 补丁，构建时自动准备当前平台的原生制品，需要 Git、Rust 1.97.1 和系统 C/C++ 链接工具；安装 Rust 可执行 `rustup toolchain install 1.97.1 --profile minimal`。源码开发首次使用前运行 `vp run @pluxel/plugin-typst#prepare:native`。已打包应用带有原生制品，终端用户无需 Rust；源码和构建约定见[原生绑定](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/native/README.md)。
 
 ## 直接生成 SVG
 
@@ -38,11 +38,11 @@ await saveSvg(svg)
 
 ## 定义可编辑报表
 
-`@pluxel/typst/template` 提供纯 TypeScript 文档契约，不加载 native compiler、Node 服务或插件。Studio 的报表入口采用 `目录/目录.ts`，名称由入口文件名决定，报表定义采用 default export：
+`@pluxel/plugin-typst/template` 提供纯 TypeScript 文档契约，不加载 native compiler、Node 服务或插件。Studio 的报表入口采用 `目录/目录.ts`，名称由入口文件名决定，报表定义采用 default export：
 
 ```ts no-twoslash
 import * as v from 'valibot'
-import { defineTypstDocument } from '@pluxel/typst/template'
+import { defineTypstDocument } from '@pluxel/plugin-typst/template'
 
 export default defineTypstDocument({
 	template: './main.typ',
@@ -66,7 +66,7 @@ export default defineTypstDocument({
 以下片段位于已注入 TypstPlugin 的业务方法内。`report`、`items` 和文件来源已由业务验证；插件不接收业务 Schema。
 
 ```ts no-twoslash
-import { TypstPlugin, TypstError, type TypstFiles } from '@pluxel/typst'
+import { TypstPlugin, TypstError, type TypstFiles } from '@pluxel/plugin-typst'
 
 // this.typst 是 constructor 注入的 TypstPlugin。
 await using session = await this.typst.open({
@@ -133,7 +133,7 @@ JSON 编码拒绝非有限数字、BigInt、undefined、循环引用、类实例
 
 同一 session 的更新与按页 PNG 渲染串行，共用有界队列。每个会话保留专用 Worker、native compiler 与 shadow VFS；每次更新只同步变更或删除的文件，再编译一次，从同一 document 生成 Vector、PDF 与源码定位信息。`exportPdf` 校验修订并返回独立字节副本，不再次编译。
 
-更新失败不替换最新成功修订。新成功更新使旧 revision 失效；已接纳的 PDF 导出不受后续更新影响。revision 仅在所属 session 中有效。预览可携带给应用通信层；浏览器入口为 `@pluxel/typst/browser`。
+更新失败不替换最新成功修订。新成功更新使旧 revision 失效；已接纳的 PDF 导出不受后续更新影响。revision 仅在所属 session 中有效。预览可携带给应用通信层；浏览器入口为 `@pluxel/plugin-typst/browser`。
 
 open/update/renderPage 接受 AbortSignal 和可选 timeoutMs，deadline 包含排队时间。取消运行中 Worker 会终止会话线程，Promise 等待执行结算，该会话随后 CLOSED，须重新 open；不保证能立即抢占 native 调用。session 关闭会取消排队/在途操作，等确认退出后清理。`dispose()` 与 `await using` 共用同一次释放，provider 或 consumer 停止也会关闭 session。
 
@@ -171,7 +171,7 @@ PNG 直接使用保留的成功文档；源码或输入发生变更后，应用�
 应用安装与编译器匹配的 `@myriaddreamin/typst.ts`、`@myriaddreamin/typst-ts-renderer`（当前 0.7.0），初始化 Renderer 后交给 `TypstPreviewView`。Renderer 仍由应用持有，View 拥有指定容器和每次渲染的短生命周期 RenderSession。以下使用 Vite 的 WASM URL 导入：
 
 ```ts no-twoslash
-import { TypstPreviewView } from '@pluxel/typst/browser'
+import { TypstPreviewView } from '@pluxel/plugin-typst/browser'
 import { createTypstRenderer } from '@myriaddreamin/typst.ts'
 import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
 
@@ -194,9 +194,9 @@ packet 来自 `compiled.preview`。View 在离屏渲染完成后才替换容器�
 
 ```ts no-twoslash
 import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { nodeModules } from '@pluxel/services/node'
-import { TypstConfig, TypstPlugin } from '@pluxel/typst'
+import { TypstConfig, TypstPlugin } from '@pluxel/plugin-typst'
 
 export default defineHostApplication(() => ({
 	plugins: [FontsPlugin, TypstPlugin], // 加入业务 consumer。

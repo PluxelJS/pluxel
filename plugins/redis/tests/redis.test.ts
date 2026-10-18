@@ -123,7 +123,7 @@ beforeEach(() => {
 		.mockImplementation(async (payload?: string) => payload || 'PONG')
 })
 
-describe('@pluxel/redis', () => {
+describe('@pluxel/plugin-redis', () => {
 	it('demonstrates a domain Result for GET absence while preserving empty values and command failures', async () => {
 		await using host = await createTestHost()
 		await host.start([RedisPlugin, DraftsPlugin])

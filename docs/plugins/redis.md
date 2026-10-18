@@ -3,7 +3,7 @@ title: Redis
 description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cache 与 Rates 提供后端。
 ---
 
-> `@pluxel/redis` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-redis` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
 需要队列、Stream、Pub/Sub 或原子 Lua 操作时使用 Redis；只需要缓存或限频时，让业务依赖抽象能力，宿主选择 Redis 后端。
 
@@ -17,7 +17,7 @@ description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cach
 ## 直接使用 Redis
 
 ```ts twoslash
-import { Redis } from '@pluxel/redis'
+import { Redis } from '@pluxel/plugin-redis'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Queue' })
@@ -37,7 +37,7 @@ host 安装默认 provider：
 以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
-import { RedisPlugin } from '@pluxel/redis'
+import { RedisPlugin } from '@pluxel/plugin-redis'
 
 await host.commit((change) => {
 	change.start(RedisPlugin, {
@@ -65,7 +65,7 @@ await host.commit((change) => {
 
 ## 部署配置入口
 
-以下 schema 均从 `@pluxel/redis` 根入口导出，可直接交给 `envBinding` 或 `fileBinding`，无需 Workbench：
+以下 schema 均从 `@pluxel/plugin-redis` 根入口导出，可直接交给 `envBinding` 或 `fileBinding`，无需 Workbench：
 
 | Plugin                    | 配置 schema               | 部署字段                                                    |
 | ------------------------- | ------------------------- | ----------------------------------------------------------- |
@@ -100,7 +100,7 @@ custom provider 必须自己把连接清理注册到 lifecycle；consumer 和下
 `arguments` tuple 含必需成员时，调用必须提供该字段；允许空数组的参数契约（例如 `readonly []` 或 `readonly [] | readonly [string]`）可省略。类型不会解析 Lua 或代替运行时校验。
 
 ```ts no-twoslash
-import { defineRedisScript } from '@pluxel/redis'
+import { defineRedisScript } from '@pluxel/plugin-redis'
 
 const Increment = defineRedisScript<readonly [string], readonly [string], number>({
 	name: 'counter.increment',
@@ -142,8 +142,8 @@ const value = await this.redis.connection('queue').scripts.run(Increment, {
 ## 作为 Cache backend
 
 ```ts no-twoslash
-import { CachePlugin } from '@pluxel/cache'
-import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
+import { CachePlugin } from '@pluxel/plugin-cache'
+import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/plugin-redis'
 
 await host.commit((change) => {
 	change.start(RedisPlugin, {
@@ -178,8 +178,8 @@ await host.commit((change) => {
 ## 作为 Rates backend
 
 ```ts no-twoslash
-import { RatesPlugin } from '@pluxel/rates'
-import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
+import { RatesPlugin } from '@pluxel/plugin-rates'
+import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/plugin-redis'
 
 await host.commit((change) => {
 	change.start(RedisPlugin, {
@@ -218,7 +218,7 @@ Redis 保留原生 node-redis API。只有领域确定“没有这个 key”需�
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Result, TaggedError } from '@pluxel/core/better-result'
-import { Redis } from '@pluxel/redis'
+import { Redis } from '@pluxel/plugin-redis'
 
 export class DraftNotFound extends TaggedError('DraftNotFound')<{ id: string }> {}
 

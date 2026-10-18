@@ -1,8 +1,6 @@
-import { glob, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite-plus/pack'
-import { tsImport } from 'tsx/esm/api'
-import { dependencyPolicy } from '../cli/scripts/dependency-policy.mjs'
+import { syncTemplateCatalog } from '../cli/scripts/sync-template-catalog.mjs'
 
 export default defineConfig({
 	entry: {
@@ -21,33 +19,7 @@ export default defineConfig({
 	hooks: {
 		// build:done is awaited after copy; the published template follows Tegami's versions.
 		async 'build:done'() {
-			// pncat is vendored TypeScript with extensionless imports; keep its loader scoped to this hook.
-			const { applyCatalogSync, planCatalogSync } = await tsImport(
-				'@pluxel-internal/pncat/sync',
-				import.meta.url,
-			)
-			const repositoryRoot = resolve(import.meta.dirname, '../..')
-			const versions = dependencyPolicy(
-				await readFile(resolve(repositoryRoot, 'pnpm-workspace.yaml'), 'utf8'),
-			)
-			for await (const file of glob(
-				['packages/*/package.json', 'plugins/*/package.json', 'plugins/*/*/package.json'],
-				{
-					cwd: repositoryRoot,
-					exclude: ['**/node_modules/**', '**/dist/**'],
-				},
-			)) {
-				const manifest = JSON.parse(await readFile(resolve(repositoryRoot, file), 'utf8'))
-				if (!manifest.private && typeof manifest.version === 'string')
-					versions[manifest.name] = `^${manifest.version}`
-			}
-			const plan = await planCatalogSync({
-				root: resolve(import.meta.dirname, 'dist/template'),
-				versions,
-				preservePeerRanges: false,
-			})
-			if (plan.conflicts.length > 0) throw new Error(plan.conflicts.join('\n'))
-			await applyCatalogSync(plan)
+			await syncTemplateCatalog(resolve(import.meta.dirname, 'dist/template'))
 		},
 	},
 	dts: false,

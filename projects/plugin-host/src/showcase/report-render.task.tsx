@@ -1,4 +1,4 @@
-import { render } from '@pluxel/takumi/worker'
+import { render } from '@pluxel/plugin-takumi/worker'
 import type { WorkerTaskHandler } from '@pluxel/services/workers'
 import type { ReportRenderInput } from './report-render.contracts'
 import { ReportCard } from './report-card'

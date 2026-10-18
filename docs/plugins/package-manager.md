@@ -3,7 +3,7 @@ title: 插件包管理器
 description: 为 Native 与 Vite 应用管理和发布 pnpm 插件包。
 ---
 
-> `@pluxel/package-manager` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-package-manager` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
 需要在受控应用中安装 npm 插件时使用本页；它目前是仓库内部预览。已有应用的固定依赖直接写进应用清单，Git 源码协作使用 [源码开发](../development/tooling.md)，部署格式见 [发行物](../development/distribution.md)。
 
@@ -17,7 +17,7 @@ import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { PackageManagerPlugin } from '@pluxel/package-manager'
+import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 import { pluginSource } from '@pluxel/host/sources'
 
 const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
@@ -76,7 +76,7 @@ source path 必须与 `rootDir/entries` 一致。Plugin 会在加载 native engi
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { PackageManagerPlugin, PackageManagerConfig } from '@pluxel/package-manager'
+import { PackageManagerPlugin, PackageManagerConfig } from '@pluxel/plugin-package-manager'
 
 envBinding(PackageManagerPlugin, {
 	config: {

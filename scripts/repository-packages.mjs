@@ -30,17 +30,40 @@ export function isPublishablePackage({ kind, manifest }) {
 	return (kind === 'package' || kind === 'plugin') && manifest.private !== true
 }
 
-export function tegamiIgnoredPackageNames(packages) {
-	return packages
-		.filter((pkg) => !isPublishablePackage(pkg))
-		.map(({ manifest }) => manifest.name)
-		.filter((name) => typeof name === 'string' && name.length > 0)
+export function tegamiIgnorePattern(packages) {
+	const names = packages
+		.filter(isPublishablePackage)
+		.map(({ manifest }) => manifest.name.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 		.toSorted()
+	// Tegami tests both bare package names and qualified workspace IDs.
+	return new RegExp(`^(?!(?:npm:)?(?:${names.join('|')})$)`)
 }
 
 export function packagesRequiringInitialMajor(packages) {
 	const preOnePackages = packages.filter(({ manifest }) => manifest.version?.startsWith('0.'))
 	return preOnePackages.length === packages.length ? packages : preOnePackages
+}
+
+export function releasePackageErrors(packages) {
+	const errors = []
+	const publicPackages = packages.filter(isPublishablePackage)
+	const coreVersion = publicPackages.find(({ manifest }) => manifest.name === '@pluxel/core')
+		?.manifest.version
+	if (!coreVersion || coreVersion.startsWith('0.'))
+		errors.push('@pluxel/core must define the stable public release line')
+	for (const { kind, manifest } of packages) {
+		if (kind === 'plugin' && !/^@pluxel\/plugin-.+/.test(manifest.name ?? '')) {
+			errors.push(`${manifest.name} official Plugin packages must use @pluxel/plugin-xxx names`)
+		}
+	}
+	for (const { manifest } of publicPackages) {
+		if (!manifest.version?.startsWith('0.') && manifest.version !== coreVersion) {
+			errors.push(
+				`${manifest.name} stable version ${manifest.version} must match Core ${coreVersion}`,
+			)
+		}
+	}
+	return errors
 }
 
 export async function readRepositoryPackages(root = repositoryRoot) {

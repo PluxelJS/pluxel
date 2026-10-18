@@ -101,6 +101,14 @@ const defaults: Record<string, Partial<Task>> = {
 	},
 }
 
+const templateCatalogInputs = [
+	'packages/cli/scripts/sync-template-catalog.*',
+	'scripts/repository-packages.mjs',
+	'packages/*/package.json',
+	'plugins/*/package.json',
+	'plugins/*/*/package.json',
+].map((pattern) => ({ pattern, base: 'workspace' as const }))
+
 const packages: Record<string, Partial<Task>> = {
 	'@pluxel/async#test': {
 		dependsOn: ['@pluxel/async#build', '@pluxel/test#build'],
@@ -111,10 +119,10 @@ const packages: Record<string, Partial<Task>> = {
 			output: ['dist/**'],
 		},
 	},
-	'@pluxel/typst#build': {
+	'@pluxel/plugin-typst#build': {
 		cache: false,
 	},
-	'@pluxel/typst#test': {
+	'@pluxel/plugin-typst#test': {
 		// Build and tests share the native compiler preparation lock.
 		dependsOn: ['build', '@pluxel/test#build'],
 	},
@@ -183,9 +191,12 @@ const packages: Record<string, Partial<Task>> = {
 		dependsOn: ['@pluxel/rolldown#build'],
 		cache: {
 			input: [
+				...templateCatalogInputs,
 				{
 					auto: true,
 				},
+				{ pattern: 'templates/**', base: 'package' },
+				{ pattern: '!templates/**/node_modules/**', base: 'package' },
 				{
 					pattern: 'docs/**',
 					base: 'workspace',
@@ -226,6 +237,7 @@ const packages: Record<string, Partial<Task>> = {
 		dependsOn: ['@pluxel/cli#build'],
 		cache: {
 			input: [
+				...templateCatalogInputs,
 				{
 					auto: true,
 				},
@@ -235,14 +247,6 @@ const packages: Record<string, Partial<Task>> = {
 				},
 				{
 					pattern: 'packages/cli/scripts/dependency-policy.*',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/*/package.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'plugins/**/package.json',
 					base: 'workspace',
 				},
 				{
@@ -269,7 +273,7 @@ const packages: Record<string, Partial<Task>> = {
 			env: ['VERCEL*'],
 		},
 	},
-	'@pluxel/redis#test': {
+	'@pluxel/plugin-redis#test': {
 		dependsOn: [
 			{
 				task: 'build',
@@ -288,7 +292,7 @@ const packages: Record<string, Partial<Task>> = {
 			'build',
 		],
 	},
-	'@pluxel/package-manager#test': {
+	'@pluxel/plugin-package-manager#test': {
 		// The optional registry integration observes external state.
 		cache: false,
 		dependsOn: [

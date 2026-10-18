@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/invoice': major
+  '@pluxel/plugin-invoice': major
 ---
 
 # Unify invoice recognition and verification with typed business results

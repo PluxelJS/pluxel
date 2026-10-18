@@ -3,7 +3,7 @@ import {
 	createCanvasWorkerAdapter,
 	type CanvasWorkerAdapter,
 	type CanvasWorkerSnapshot,
-} from '@pluxel/canvas/worker'
+} from '@pluxel/plugin-canvas/worker'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { EChartsConfig } from '../src/config.ts'

@@ -6,7 +6,7 @@ import { TemplateCompiler } from '../src/backend/compiler.js'
 import type { WorkspaceSnapshot } from '../src/shared/contracts.js'
 
 const source = `import * as v from 'valibot';
-import { defineTypstDocument } from '@pluxel/typst/template';
+import { defineTypstDocument } from '@pluxel/plugin-typst/template';
 import { value } from './value.ts';
 const schema = v.object({});
 const template = './main.typ';
@@ -118,7 +118,7 @@ it('preserves official hot.data/dispose through indirect dependency and shared T
 	const doc = template()
 	doc.files['report/shared/theme.typ'] = 'Theme one'
 	doc.files['report/report.ts'] = `import * as v from 'valibot';
-import { defineTypstDocument } from '@pluxel/typst/template';
+import { defineTypstDocument } from '@pluxel/plugin-typst/template';
 import { value } from './value.ts';
 import theme from './shared/theme.typ?raw';
 const updates = import.meta.hot.data.updates ?? 0;
@@ -281,9 +281,9 @@ it('merges recursive defaults and isolates report input within one workspace', a
 	doc.files['shared/schema.ts'] = `import * as v from 'valibot';
 export const schema = v.object({ nested: v.object({ title: v.optional(v.string(), 'Default'), amount: v.optional(v.number(), 1) }) });`
 	doc.files['report/report.ts'] =
-		`import { schema } from '../shared/schema.ts'; import { defineTypstDocument } from '@pluxel/typst/template'; export default defineTypstDocument({ schema, template: './main.typ' })`
+		`import { schema } from '../shared/schema.ts'; import { defineTypstDocument } from '@pluxel/plugin-typst/template'; export default defineTypstDocument({ schema, template: './main.typ' })`
 	doc.files['second/second.ts'] =
-		`import { schema } from '../shared/schema.ts'; import { defineTypstDocument } from '@pluxel/typst/template'; export default defineTypstDocument({ schema, template: '../report/main.typ' })`
+		`import { schema } from '../shared/schema.ts'; import { defineTypstDocument } from '@pluxel/plugin-typst/template'; export default defineTypstDocument({ schema, template: '../report/main.typ' })`
 	try {
 		const first = await compiler.evaluate(doc, 'report/report.ts', { nested: { title: 'User' } })
 		expect(first.data).toEqual({ nested: { title: 'User', amount: 1 } })

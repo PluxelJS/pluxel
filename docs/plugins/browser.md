@@ -3,7 +3,7 @@ title: 浏览器连接
 description: 连接外部浏览器，在独立会话中执行自动化。
 ---
 
-`@pluxel/playwright` 提供外部 CDP / Playwright 协议连接和原生 Playwright `BrowserContext`。财政票据、税务发票的图片提取和查验统一由 [`@pluxel/invoice`](./invoice.md) 提供。
+`@pluxel/plugin-playwright` 提供外部 CDP / Playwright 协议连接和原生 Playwright `BrowserContext`。财政票据、税务发票的图片提取和查验统一由 [`@pluxel/plugin-invoice`](./invoice.md) 提供。
 
 浏览器由部署者独立运行。插件依赖 `playwright-core`，不下载、安装或启动 Chromium、Chrome、Lightpanda，也不管理它们的进程。连接地址必须来自可信的部署配置。
 
@@ -16,7 +16,7 @@ description: 连接外部浏览器，在独立会话中执行自动化。
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
-import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/playwright'
+import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/plugin-playwright'
 
 export default defineHostApplication(() => ({
 	plugins: [PlaywrightPlugin],
@@ -41,7 +41,11 @@ export default defineHostApplication(() => ({
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
-import { PlaywrightConfig, PlaywrightPlugin, PlaywrightVaultSchema } from '@pluxel/playwright'
+import {
+	PlaywrightConfig,
+	PlaywrightPlugin,
+	PlaywrightVaultSchema,
+} from '@pluxel/plugin-playwright'
 
 export default defineHostApplication(() => ({
 	plugins: [PlaywrightPlugin],
@@ -70,7 +74,7 @@ Vault 记录形状为 `{ endpoint: string, headers?: Record<string, string> }`�
 
 ```ts no-twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PlaywrightPlugin } from '@pluxel/playwright'
+import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
 
 @Plugin()
 export class PageTitlePlugin extends BasePlugin {
@@ -102,7 +106,7 @@ Playwright 的底层 context 获取不能独立中断。取消时调用可以先
 工作区提供显式外部连接检查。通过部署环境设置 `PLUXEL_BROWSER_ENDPOINT`，需要认证 headers 时设置 JSON 格式的 `PLUXEL_BROWSER_HEADERS`，然后运行：
 
 ```sh
-vp run @pluxel/playwright#test:external
+vp run @pluxel/plugin-playwright#test:external
 ```
 
 该命令通过 Vault 绑定地址，连续创建并关闭两个真实 Host generation，在独立页面中读取合成 HTML，检查第一次停止后仍可重新连接。它不访问财政网站、不提交票据、不启动浏览器，也不会被普通 `test` 命令执行。它能证明两次连接可用，不能证明供应商没有自动重建浏览器进程或全部 Web API 兼容。

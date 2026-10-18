@@ -2,8 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { FontsPlugin, FontRegistration } from '@pluxel/fonts'
-import type { TypstPlugin, TypstSession, TypstCompiled, TypstPreview } from '@pluxel/typst'
+import type { FontsPlugin, FontRegistration } from '@pluxel/plugin-fonts'
+import type { TypstPlugin, TypstSession, TypstCompiled, TypstPreview } from '@pluxel/plugin-typst'
 import type {
 	CompileRequest,
 	CompileResult,

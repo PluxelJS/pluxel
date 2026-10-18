@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/fonts': major
+  '@pluxel/plugin-fonts': major
 ---
 
 # Declarative fonts and deployment default precedence

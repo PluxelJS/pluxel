@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/otel",
+	"name": "@pluxel/plugin-otel",
 	"version": "0.0.0",
 	"private": true,
 	"description": "Official OpenTelemetry metrics, traces, and logs runtime for Pluxel plugins",

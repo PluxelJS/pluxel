@@ -1,11 +1,11 @@
 import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
-import type { TypstPlugin } from '@pluxel/typst'
+import type { TypstPlugin } from '@pluxel/plugin-typst'
 import {
 	TakumiPlugin,
 	type CssInput,
 	type WorkerRenderOptions,
 	type WorkerSvgRenderOptions,
-} from '@pluxel/takumi'
+} from '@pluxel/plugin-takumi'
 import { codeToHtml } from 'rangi'
 import {
 	defineHastPlugin,

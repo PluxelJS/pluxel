@@ -6,11 +6,13 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 
 ## 版本模型
 
-- 公开包使用统一版本线，由 Tegami 的 `pluxel` group 同步 bump 和 git tag；private、project 和 vendor 不参与。
-- 本轮大 PR 统一收敛到 `1.1.0`，包含新包。由于当前主要服务仓库自身，维护者明确选择将本轮破坏性变更作为一次 minor 发布；原有 breaking change 说明完整保留。这是本轮发布决策，不是以后忽略 semver 的默认规则。
-- 本轮收敛通过 Tegami draft 的 `bumpVersion` 显式指定 `1.1.0`，再由 Tegami 生成 manifests、依赖、changelog 和 publish lock；没有手改生成版本或锁。
-- 后续按变更影响记录 semver bump，组内全部公开包同步推进。新增公开包发布时应通过 Tegami draft 对齐当次版本线，不能单独从 `1.0.0` 发布；源码 pre-1.0 阶段仍须提供初次发布的 `major` intent。
-- workspace-only、private、project 和 vendor package 在 `scripts/tegami.mts` 中显式忽略，不参与版本传播；
+- 公开包使用 Core 的统一版本线；private、project 和 vendor 不参与。`pluxel` group 的 `syncBump` 只同步 bump 类型，`syncGitTag` 合并 git tag；绝对版本由 `scripts/release-policy.mts` 的原生 Tegami `initDraft` hook 统一计算。
+- 本轮全部公开包和官方 Plugin 统一发布 `1.2.0`。维护者明确选择将本轮破坏性变更纳入这次 minor 发布，原有 `major` intent、breaking change 说明和迁移要求完整保留。这是本轮发布决策，不是以后忽略 semver 的默认规则。
+- 一次性目标由 `.tegami/release-1.2.0.md` 的文件名声明。保留普通 Tegami changelog 的 package bumps 和 Markdown 正文；`release-X.Y.Z.md` 是保留命名，只允许一个严格高于 Core 当前版本的稳定目标。无效、重复、倒退或多个目标会失败，目标记录不得 replay。
+- Tegami 应用 draft 时消费该记录，并生成 manifests、依赖、changelog 和 publish lock；没有手改生成版本或锁。目标只从当前 pending changelog 读取，旧锁中的同名历史记录不会再次固定版本。
+- 后续无显式目标时，根据 pending changelog 的原始意图选择组内最高 bump，从 draft 创建时的 Core 版本计算一次绝对版本，避免逐包写入期间基准漂移。已有稳定包的 `major` 使整组升 major；pre-1.0 新包仍须有自己的初次发布 `major` intent，但此意图只使既有组推进 minor，新包直接加入当次版本线。没有 pending bump 时不创建新的版本计划。
+- 所有 `plugins/` package 使用 `@pluxel/plugin-xxx` 名称；已有公开稳定版本与 Core 对齐，尚未首次发布的 pre-1.0 新包可等待 Tegami 在本轮统一。普通库保留各自名称。
+- `scripts/tegami.mts` 从公开包 inventory 生成排除规则，workspace-only、private、project 和 vendor package 不进入 Tegami graph、版本传播或发布锁；
 - semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为对应 package version 的兼容范围；
 - 第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的对应 package version 兼容范围；同时以
   `workspace:*` devDependency 提供仓库内构建和测试实现；
@@ -57,6 +59,8 @@ PR CI 已经执行。此机制与上面的创建 PR 权限是两层独立检查�
 publish lock 是发布事实来源。部分包发布失败时保留原 lock，重跑同一 workflow 会跳过已成功的包并继续未完成任务。
 不要删除 pending lock 或通过手工 npm publish 绕过它。
 
+若维护者明确重做一份尚未发布的旧计划，先显式将旧锁中未发布的说明恢复为 pending changelog，保留原正文并审查已移除或更名的包目标，再交给 Tegami 重新生成。`draft()` 只读取 pending Markdown，生成锁时不会自动合并旧锁中的说明；不能直接用新记录覆盖并丢弃旧计划。已经成功发布的内容不能用这种方式撤回。
+
 ## 手动发布与重试
 
 在 GitHub Actions → Release → Run workflow 选择 `main`，或运行：
@@ -86,13 +90,13 @@ Vite Task 结果。该边界遵循 [mise-action 的发布工作流指南](https:
 - `willPublish` 按 Tegami 当前即将发布的 package 调用 Vite Task 构建入口，由 task graph 补齐其构建依赖；
 - 已成功发布的 package 在失败重试时不会重新发布，未完成 package 仍会在发布前单独重建。
 
-## Starter 发行版本
+## 模板发行版本
 
-`@pluxel/create` 在 Vite+ Pack 的 `build:done` hook 中，复制完成后仅重写 `dist/template/pnpm-workspace.yaml` 的
-`catalogs.pluxel`。每个第一方范围来自当前公开包 manifest 的 `^version`；不修改源码 manifest、publish lock 或外部 catalog。
+`@pluxel/create` 和 `@pluxel/cli` 在 Vite+ Pack 的 `build:done` hook 中，复制完成后通过同一构建专用 pncat 同步函数更新
+`dist/template` 与 `dist/templates/plugin` 的 catalog。每个第一方范围来自公开包 inventory 中当前 manifest 的 `^version`，外部依赖遵循工作区 catalog 政策；不修改源码模板、manifest 或 publish lock。
 源码模板中的第一方范围是可读的基线，不能据此推断发行版本。Tegami Version Packages PR 更新 manifest 后，下一次构建自然生成对应范围。
 
-Create 的 Vite Task 缓存输入 包含框架及插件的 package manifests，避免版本变更命中旧模板缓存。创建测试验证生成范围与当前公开包版本一致，
+两个包的 Vite Task 缓存输入包含同步函数、inventory 与公开包所在目录的 package manifests，CLI 源码指纹也包含模板与这些 manifests，避免版本变更命中旧模板缓存。创建测试验证生成范围与当前公开包版本一致，
 并确认其它 catalog 保持原样；tarball smoke 继续验证真实安装、应用构建和启动，不能仅以本地 tarball overrides 掩盖版本范围问题。
 
 ## Trusted Publishing
@@ -105,7 +109,7 @@ Release workflow 按 repository visibility 开关 provenance。
 使用 `mise exec -- npm --version` 核对 npm 版本，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧的全局 npm，
 也不要使用 bypass-2FA granular token 配置信任。
 
-首次整批初始化，或同时包含既有包和新包的全量发布，可使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包，允许各包版本不同；在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。
+首次整批初始化，或同时包含既有包和新包的全量发布，可使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包；本仓库由上述统一版本策略生成同一目标版本。在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。
 
 ```sh
 mise install
@@ -165,4 +169,4 @@ CI=true vp run @pluxel/cli#test:templates
 consumer peer ranges、Tegami draft 和发布集合。模板命令复现整批发布前执行一次的 package boundary smoke，
 不修改版本或发布。公开包判定和 Tegami ignore 都来自共享 repository package inventory：只有
 `packages/*`、`plugins/*` 中未标记 `private` 的包可发布，root、project 和 private package 自动排除。
-首次发布完成前，治理还会拒绝部分 package 提前进入 1.x 或任一公开 package 缺少 `major` intent。
+治理还会验证官方 Plugin 包名、稳定版本与 Core 对齐、草稿只有一个公开目标版本，以及每个 pre-1.0 新包自身的初次发布 `major` intent；组内传播的 bump 不能代替该包自己的发布记录。

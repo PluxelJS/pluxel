@@ -1,8 +1,8 @@
 import { join, isAbsolute } from 'node:path'
 import { open } from 'node:fs/promises'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { FontsPlugin } from '@pluxel/fonts'
-import { TypstPlugin } from '@pluxel/typst'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
+import { TypstPlugin } from '@pluxel/plugin-typst'
 import * as v from 'valibot'
 import type {
 	DesktopApi,

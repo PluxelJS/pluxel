@@ -3,7 +3,7 @@ title: 服务端 Canvas
 description: 在服务端绘制位图与 SVG，解码图片、排版文字和生成静态数据表，并用资源预算约束原生内存。
 ---
 
-`@pluxel/canvas` 基于 `@napi-rs/canvas` 提供服务端绘图能力，包括位图 Canvas、SVG Canvas、图片解码、Pretext 文字布局和静态数据表。宿主会在分配原生内存前检查资源预算，避免单个 Plugin 无限制占用内存。
+`@pluxel/plugin-canvas` 基于 `@napi-rs/canvas` 提供服务端绘图能力，包括位图 Canvas、SVG Canvas、图片解码、Pretext 文字布局和静态数据表。宿主会在分配原生内存前检查资源预算，避免单个 Plugin 无限制占用内存。
 
 `CanvasPlugin` 必须依赖 `FontsPlugin`，也为 `EChartsPlugin` 提供底层绘图能力。业务 Plugin 直接绘图时只需注入 `CanvasPlugin`。
 
@@ -12,14 +12,14 @@ description: 在服务端绘制位图与 SVG，解码图片、排版文字和生
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-vp exec pluxel pncat add @pluxel/canvas @pluxel/fonts
+vp exec pluxel pncat add @pluxel/plugin-canvas @pluxel/plugin-fonts
 ```
 
 host catalog 至少包含 `FontsPlugin`、`CanvasPlugin` 和 consumer。CanvasPlugin required-depend FontsPlugin；业务 Plugin 只需注入 Canvas：
 
 ```ts twoslash
 import type { Buffer } from 'node:buffer'
-import { CanvasPlugin, Path2D } from '@pluxel/canvas'
+import { CanvasPlugin, Path2D } from '@pluxel/plugin-canvas'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin()
@@ -47,8 +47,8 @@ export class BadgePlugin extends BasePlugin {
 以下 `host` 是 [测试宿主](../../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
 
 ```ts no-twoslash
-import { CanvasPlugin } from '@pluxel/canvas'
-import { FontsPlugin } from '@pluxel/fonts'
+import { CanvasPlugin } from '@pluxel/plugin-canvas'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { BadgePlugin } from '@acme/badge'
 
 await host.start(BadgePlugin, {
@@ -115,7 +115,7 @@ CanvasPlugin root 不提供裸 Image placeholder factory；native `src` setter �
 Canvas 将 `@chenglou/pretext` 的文字准备连接到 native measurement context：
 
 ```ts no-twoslash
-import { layoutWithLines } from '@pluxel/canvas/pretext'
+import { layoutWithLines } from '@pluxel/plugin-canvas/pretext'
 
 const prepared = this.canvas.prepareTextSync({
 	text: 'A progressively wrapped paragraph',
@@ -136,16 +136,16 @@ const layout = layoutWithLines(prepared, 360, 24)
 
 省略 `font` 时使用当前 Pluxel 默认 family，可通过 `fontSize` 指定字号，默认 16px。传完整 Canvas `font` shorthand 时不能再传 `fontSize`。准备结果是不可变快照；默认字体之后发生变化，不会重写旧结果。
 
-`@pluxel/canvas/pretext` 导出 Pretext 的纯布局 helper，包括 `layoutWithLines()`、`layoutNextLine()`、`measureLineStats()`、`measureNaturalWidth()`、line range walkers，以及对应 rich-inline helper。准备步骤读取 native 字体；之后的布局计算是纯 arithmetic。
+`@pluxel/plugin-canvas/pretext` 导出 Pretext 的纯布局 helper，包括 `layoutWithLines()`、`layoutNextLine()`、`measureLineStats()`、`measureNaturalWidth()`、line range walkers，以及对应 rich-inline helper。准备步骤读取 native 字体；之后的布局计算是纯 arithmetic。
 
 共享 measurement cache 会在 Fonts revision 改变或累计准备字符达到 `maxTextCacheCharacters` 时清空。
 
 ## 生成静态数据表
 
-当输出是报告、榜单或审计表格时，使用 `@pluxel/canvas/table`。它只处理 Canvas 最后一公里的列宽、单元格、Pretext 断行和默认省略；排序、筛选、数值本地化、二维码、图表和文件输出仍应由调用方或各自成熟工具负责。
+当输出是报告、榜单或审计表格时，使用 `@pluxel/plugin-canvas/table`。它只处理 Canvas 最后一公里的列宽、单元格、Pretext 断行和默认省略；排序、筛选、数值本地化、二维码、图表和文件输出仍应由调用方或各自成熟工具负责。
 
 ```ts no-twoslash
-import { drawTable, layoutTable } from '@pluxel/canvas/table'
+import { drawTable, layoutTable } from '@pluxel/plugin-canvas/table'
 
 const table = layoutTable({
 	width: 640,
@@ -200,7 +200,7 @@ const snapshot = this.canvas.workerSnapshot
 worker artifact 从独立子入口重建 adapter，不启动第二个 CanvasPlugin：
 
 ```ts no-twoslash
-import { createCanvasWorkerAdapter } from '@pluxel/canvas/worker'
+import { createCanvasWorkerAdapter } from '@pluxel/plugin-canvas/worker'
 
 export default async ({ canvas: snapshot }: Input) => {
 	const canvas = createCanvasWorkerAdapter(snapshot)
@@ -224,17 +224,17 @@ decode scheduler；任务结束时必须 `await close()`。close 会拒绝 queue
 只有 worker 需要 Pretext 时再引入额外子入口：
 
 ```ts no-twoslash
-import { createCanvasWorkerTextLayout } from '@pluxel/canvas/worker/pretext'
+import { createCanvasWorkerTextLayout } from '@pluxel/plugin-canvas/worker/pretext'
 
 const text = createCanvasWorkerTextLayout(snapshot)
 const prepared = text.prepareText({ text: 'Hello', fontSize: 24 })
 ```
 
-`@pluxel/canvas/worker/pretext` 只提供受限 preparation；纯 layout/walker 始终从 `@pluxel/canvas/pretext` 导入。这避免 ECharts 等不使用 Pretext 的 worker artifact 承担其代码与 cache 成本。两个 worker 子入口都不提供 Plugin、Context、Workbench 或字体 mutation。
+`@pluxel/plugin-canvas/worker/pretext` 只提供受限 preparation；纯 layout/walker 始终从 `@pluxel/plugin-canvas/pretext` 导入。这避免 ECharts 等不使用 Pretext 的 worker artifact 承担其代码与 cache 成本。两个 worker 子入口都不提供 Plugin、Context、Workbench 或字体 mutation。
 
 ## 配置与职责
 
-`@pluxel/canvas` 导出的 `CanvasConfig` 与 Plugin 的 `configs.use()` 使用同一 schema，配置画布、图片、文字与解码容量。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)传入该 schema 即可部署，无需 Workbench；不直接读取环境变量。配置变更后重启插件，env/file 变更后重建 Host。字体文件及默认 family 由 [FontsPlugin](./fonts.md) 配置，渲染内容保留为方法输入。
+`@pluxel/plugin-canvas` 导出的 `CanvasConfig` 与 Plugin 的 `configs.use()` 使用同一 schema，配置画布、图片、文字与解码容量。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)传入该 schema 即可部署，无需 Workbench；不直接读取环境变量。配置变更后重启插件，env/file 变更后重建 Host。字体文件及默认 family 由 [FontsPlugin](./fonts.md) 配置，渲染内容保留为方法输入。
 
 在应用的 Plugin config 中按需覆盖以下默认值：
 
@@ -289,7 +289,7 @@ Canvas 为每个 caller generation 建立 lease。consumer stop/replacement 会�
 
 ```ts twoslash
 import { Result, TaggedError } from '@pluxel/core/better-result'
-import { CanvasError, type CanvasPlugin, type Image } from '@pluxel/canvas'
+import { CanvasError, type CanvasPlugin, type Image } from '@pluxel/plugin-canvas'
 
 export class ImageRejected extends TaggedError('ImageRejected')<{
 	reason: 'invalid_image' | 'too_large'

@@ -2,8 +2,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, type HostApplication } from '@pluxel/host'
-import { FontsPlugin } from '@pluxel/fonts'
-import { TypstPlugin } from '@pluxel/typst'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
+import { TypstPlugin } from '@pluxel/plugin-typst'
 import { nodeModules } from '@pluxel/services/node'
 import { StudioPlugin } from '@report-template-studio/app/plugin'
 import { DOCUMENT_POLICY } from './documents.js'
@@ -22,7 +22,7 @@ export default defineHostApplication((startup): HostApplication => {
 				startup.mode === 'production'
 					? {
 							root: resolve(
-								dirname(fileURLToPath(import.meta.resolve('@pluxel/typst/package.json'))),
+								dirname(fileURLToPath(import.meta.resolve('@pluxel/plugin-typst/package.json'))),
 								'dist/artifacts/node',
 							),
 						}

@@ -64,6 +64,8 @@ Node 与 Workers 使用 `@pluxel/services/node`、`@pluxel/services/workers`，�
 
 浏览器和 producer 统一共享 `@pluxel/workbench`、`/client`、`/react`、`/internal/react` 的精确版本及同一 React 实例。修改入口后必须重新生成制品；构建契约版本为 3。
 
+安装 React/ReactDOM 时使用发布包声明的同一个精确版本，保证 fresh install 与预编译制品一致。
+
 ## 官方 Shell 与 HTTP
 
 `workbenchHttp({ uiBasePath?, publicDir? })` 只将 Shell 页面与静态资源接入 HTTP。认证、管理连接与受保护的 Workbench 制品由 `managementHttp()` 持有。`servicesPreset()` 已显式组合两者；自行组合时声明现有 bindings 与准备依赖：

@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 import { Workers, defineWorkerTask } from '@pluxel/services/workers'
 import { NativeCompilerClient } from './native-client.js'

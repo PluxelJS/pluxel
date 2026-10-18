@@ -3,7 +3,7 @@ title: Takumi JSX / HTML 图片渲染
 description: 使用原生 Takumi API 或共享 Worker，将 JSX、HTML 与 node tree 渲染为图片、SVG 和动画。
 ---
 
-`@pluxel/takumi` 将 `takumi-js` 的渲染能力接入 Plugin 依赖图。业务渲染优先使用共享 Worker：HTML / node tree 调用 `*InWorker()`，React / HeroUI 在业务 task 内构建。以下原生方法保留上游的输入、选项、返回值和异常，供需要在当前 realm 执行的调用方使用：
+`@pluxel/plugin-takumi` 将 `takumi-js` 的渲染能力接入 Plugin 依赖图。业务渲染优先使用共享 Worker：HTML / node tree 调用 `*InWorker()`，React / HeroUI 在业务 task 内构建。以下原生方法保留上游的输入、选项、返回值和异常，供需要在当前 realm 执行的调用方使用：
 
 | 方法                         | 返回值                               |
 | ---------------------------- | ------------------------------------ |
@@ -21,14 +21,14 @@ description: 使用原生 Takumi API 或共享 Worker，将 JSX、HTML 与 node 
 以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
 
 ```sh
-vp exec pluxel pncat add @pluxel/takumi
+vp exec pluxel pncat add @pluxel/plugin-takumi
 ```
 
 Host catalog 包含 Takumi 和 consumer，并安装 Workers 与 NodeModules 服务。业务 Plugin 只声明自己使用的能力：
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { TakumiPlugin } from '@pluxel/takumi'
+import { TakumiPlugin } from '@pluxel/plugin-takumi'
 
 @Plugin()
 export class SocialCardsPlugin extends BasePlugin {
@@ -119,7 +119,7 @@ CSS 入口按 HeroUI 的顺序导入，并把模板加入 Tailwind source：
 
 ```ts no-twoslash
 import { Workers, defineWorkerTask } from '@pluxel/services/workers'
-import type { Font } from '@pluxel/takumi'
+import type { Font } from '@pluxel/plugin-takumi'
 
 const cardTask = defineWorkerTask<{ title: string; css: string; fonts: Font[] }, Uint8Array>(
 	import.meta.url,
@@ -141,8 +141,8 @@ return this.ctx.require(Workers).run(
 
 ```tsx no-twoslash
 import { Card } from '@heroui/react'
-import type { Font } from '@pluxel/takumi'
-import { render } from '@pluxel/takumi/worker'
+import type { Font } from '@pluxel/plugin-takumi'
+import { render } from '@pluxel/plugin-takumi/worker'
 
 export default function renderCard({
 	title,
@@ -165,7 +165,7 @@ export default function renderCard({
 }
 ```
 
-`@pluxel/takumi/worker` 提供 `render`、`renderSvg`、`renderAnimation` 与对应的 `LocalRenderOptions`、`LocalSvgRenderOptions`、`LocalAnimationOptions`。它接受当前线程内的 JSX、JSX options 与图片加载 callback；字体仍只接受具体 bytes，样式使用 `css`，`renderer` 与 `module` 由 adapter 管理。业务 task、React、组件与 JSX resolver 位于同一 bundle。无需 `new Worker()` 或创建线程池。
+`@pluxel/plugin-takumi/worker` 提供 `render`、`renderSvg`、`renderAnimation` 与对应的 `LocalRenderOptions`、`LocalSvgRenderOptions`、`LocalAnimationOptions`。它接受当前线程内的 JSX、JSX options 与图片加载 callback；字体仍只接受具体 bytes，样式使用 `css`，`renderer` 与 `module` 由 adapter 管理。业务 task、React、组件与 JSX resolver 位于同一 bundle。无需 `new Worker()` 或创建线程池。
 
 在线程内调用这些函数时，输入、options 与字体/图片 bytes 在 Promise settle 前保持不变。保留缓存拥有自己的字体副本，调用完成后可以复用原始 bytes。
 

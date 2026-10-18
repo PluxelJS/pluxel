@@ -30,7 +30,7 @@ import {
 	type WretchSettingsApi,
 } from './workbench.ts'
 
-const SETTINGS_NAMESPACE = '@pluxel/wretch'
+const SETTINGS_NAMESPACE = '@pluxel/plugin-wretch'
 
 type ClientLease = {
 	active: boolean

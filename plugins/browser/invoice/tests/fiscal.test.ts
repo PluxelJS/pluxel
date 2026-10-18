@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PlaywrightPlugin } from '@pluxel/playwright'
+import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
 import { createTestHost } from '@pluxel/test'
 import { chromium } from 'playwright-core'
 import { afterEach, describe, expect, it, vi } from 'vitest'

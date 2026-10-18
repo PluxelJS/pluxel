@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile)
 const runner = fileURLToPath(new URL('./support/typst-dynamic-runner.mts', import.meta.url))
 const entry = fileURLToPath(new URL('./support/typst.dynamic.ts', import.meta.url))
 
-describe('@pluxel/takumi-markdown optional math dynamic artifact', () => {
+describe('@pluxel/plugin-takumi-markdown optional math dynamic artifact', () => {
 	it('runs generated formula SVG assets through the dynamic runtime and final Takumi renderer', async () => {
 		const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 		await expect(

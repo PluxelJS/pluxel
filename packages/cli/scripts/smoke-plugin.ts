@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
+import { parse } from 'yaml'
+import { isPublishablePackage, repositoryPackages } from '../../../scripts/repository-packages.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-cli-plugin-smoke-'))
@@ -46,6 +48,7 @@ try {
 	)
 
 	await assertGeneratedGitIgnore(pluginRoot)
+	await assertGeneratedFrameworkVersions(pluginRoot)
 	await appendOverrides(resolve(pluginRoot, 'pnpm-workspace.yaml'), overrides)
 	await runVp(['install', '--no-frozen-lockfile'], pluginRoot)
 	await runVp(['fmt', '--write', 'pnpm-workspace.yaml'], pluginRoot)
@@ -154,6 +157,23 @@ async function assertGeneratedGitIgnore(root: string): Promise<void> {
 	const contents = await readFile(resolve(root, '.gitignore'), 'utf8')
 	if (!contents.includes('node_modules/') || !contents.includes('dist/')) {
 		throw new Error('Generated plugin .gitignore is incomplete')
+	}
+}
+
+async function assertGeneratedFrameworkVersions(root: string): Promise<void> {
+	const workspace = parse(await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8'))
+	const versions = new Map(
+		repositoryPackages
+			.filter(isPublishablePackage)
+			.map(({ manifest }) => [manifest.name, `^${manifest.version}`]),
+	)
+	const ranges = Object.entries(workspace.catalog ?? {}).filter(([name]) =>
+		name.startsWith('@pluxel/'),
+	)
+	if (ranges.length === 0) throw new Error('Generated plugin is missing its framework catalog')
+	for (const [name, range] of ranges) {
+		if (range !== versions.get(name))
+			throw new Error(`Generated plugin ${name}: expected ${versions.get(name)}, got ${range}`)
 	}
 }
 

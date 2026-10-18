@@ -1,7 +1,7 @@
 import { formatPluginNodeReference, type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost, type TestHost } from '@pluxel/test'
-import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
+import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/plugin-rates'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import {
@@ -88,7 +88,7 @@ const policies = [
 	{ algorithm: 'sliding-window-log', limit: 2, windowMs: 1_000 },
 ] satisfies RatePolicy[]
 
-describe('@pluxel/redis rates backend', () => {
+describe('@pluxel/plugin-redis rates backend', () => {
 	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
 		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\u{1f680}:' }).success).toBe(
 			true,

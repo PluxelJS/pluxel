@@ -1,4 +1,4 @@
-import type { CanvasWorkerSnapshot } from '@pluxel/canvas/worker'
+import type { CanvasWorkerSnapshot } from '@pluxel/plugin-canvas/worker'
 import { describe, expect, it } from 'vitest'
 import type { RenderEngineInput } from '../src/render-engine.ts'
 import {

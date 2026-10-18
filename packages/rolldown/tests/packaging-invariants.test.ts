@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -52,35 +53,6 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 				continue
 			}
 			if (/\.(?:ts|tsx|mts|cts)$/.test(ent.name)) out.push(next)
-		}
-	}
-	await walk(dir)
-	return out.sort()
-}
-
-async function collectPackageManifests(dir: string): Promise<string[]> {
-	const out: string[] = []
-	const walk = async (current: string) => {
-		let entries
-		try {
-			entries = await readdir(current, { withFileTypes: true, encoding: 'utf8' })
-		} catch {
-			return
-		}
-		for (const ent of entries) {
-			if (
-				ent.name === 'node_modules' ||
-				ent.name === 'dist' ||
-				ent.name === '.turbo' ||
-				ent.name.startsWith('fs-fixture-')
-			)
-				continue
-			const next = join(current, ent.name)
-			if (ent.isDirectory()) {
-				await walk(next)
-				continue
-			}
-			if (ent.name === 'package.json') out.push(next)
 		}
 	}
 	await walk(dir)
@@ -180,10 +152,26 @@ describe('toolchain package boundaries', () => {
 			new RegExp(`neverBundle:\\s*\\[[^\\]]*${contextPackageName}`),
 		)
 
-		const manifestGroups = await Promise.all(
-			['packages', 'plugins', 'projects'].map((dir) => collectPackageManifests(`${root}/${dir}`)),
+		// Source ownership excludes ignored native/compiler caches and generated docs.
+		const repositoryFiles = execFileSync(
+			'git',
+			[
+				'ls-files',
+				'--cached',
+				'--others',
+				'--exclude-standard',
+				'-z',
+				'--',
+				'packages',
+				'plugins',
+				'projects',
+			],
+			{ cwd: root, encoding: 'utf8' },
 		)
-		const manifests = manifestGroups.flat()
+			.split('\0')
+			.filter(Boolean)
+			.map((file) => `${root}/${file}`)
+		const manifests = repositoryFiles.filter((file) => file.endsWith('/package.json'))
 		for (const manifestPath of manifests) {
 			if (manifestPath === `${contextRoot}/package.json`) continue
 			const manifest = await readJson(manifestPath)
@@ -201,10 +189,7 @@ describe('toolchain package boundaries', () => {
 			}
 		}
 
-		const sourceFileGroups = await Promise.all(
-			['packages', 'plugins', 'projects'].map((dir) => collectSourceFiles(`${root}/${dir}`)),
-		)
-		const sourceFiles = sourceFileGroups.flat()
+		const sourceFiles = repositoryFiles.filter((file) => /\.(?:ts|tsx|mts|cts)$/.test(file))
 		const sourceLeaks: string[] = []
 		for (const file of sourceFiles) {
 			if (file.startsWith(`${coreRoot}/`) || file.startsWith(`${contextRoot}/`)) continue

@@ -146,7 +146,7 @@ function deferred<T>() {
 	return { promise, resolve, reject }
 }
 
-describe('@pluxel/cache', () => {
+describe('@pluxel/plugin-cache', () => {
 	it('keeps scoped L1 synchronous, bounded, TTL-aware, and independently configurable', async () => {
 		vi.useFakeTimers()
 		try {

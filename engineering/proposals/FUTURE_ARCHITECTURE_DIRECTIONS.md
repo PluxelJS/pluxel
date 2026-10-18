@@ -29,7 +29,7 @@ declaration/identity namespace。它不会自动删除通用 decorator transform
 
 尚未证明：
 
-- root re-export 多 Plugin package（以 `@pluxel/redis` 为基准）；
+- root re-export 多 Plugin package（以 `@pluxel/plugin-redis` 为基准）；
 - `displayName`、`startTimeoutMs`、literal `forkable: true` 与显式 abstract provider relation 四类 marker fact
   应使用何种单一 static declaration，并保持 build-time 可判定与同等错误质量；
 - abstract base、inherited constructor、provider import alias 与同包 token；

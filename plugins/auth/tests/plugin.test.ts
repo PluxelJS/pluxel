@@ -18,7 +18,7 @@ describe('AuthPlugin lifecycle', () => {
 			expect(await host.ctx.adminAccess?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: {
-					id: '@pluxel/auth',
+					id: '@pluxel/plugin-auth',
 					label: 'Pluxel Authentication',
 					method: 'password',
 					ready: false,

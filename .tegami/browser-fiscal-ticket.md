@@ -1,6 +1,6 @@
 ---
 packages:
-  '@pluxel/playwright': major
+  '@pluxel/plugin-playwright': major
 ---
 
 # Add external browser connections

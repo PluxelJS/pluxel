@@ -4,7 +4,7 @@ import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/tes
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { GlobalFonts } from '@napi-rs/canvas'
-import { FontsPlugin } from '@pluxel/fonts'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { CanvasConfig, CanvasError, CanvasPlugin } from '../src/index.ts'
 import { createCanvasWorkerAdapter } from '../src/worker.ts'
 import { layoutWithLines, measureRichInlineStats } from '../src/pretext.ts'

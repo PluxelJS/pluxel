@@ -94,6 +94,8 @@ Manifest 是唯一浏览器模块事实，Snapshot 从标准 Manifest 生成。H
 
 Fixed singleton set 唯一由 `@pluxel/core/federation` 定义：React/ReactDOM 及其 subpaths、Mantine Core/Hooks、MF React Bridge、Workbench 根、client、react 与 internal/react。使用 exact versions、`loaded-first`、producer `import: false`；Shell 先建立 winner，producer 不携带 fallback。其他库由 producer 自己 bundle。
 
+预编译制品与安装声明共同拥有这条精确版本契约。根 frontend catalog 将 React/ReactDOM 固定为同一个稳定版本，公开包的 peer 与开发依赖沿用该 catalog，发行模板通过原生 pncat 同步继承；消费应用也必须安装该精确版本。工作区 lock 只固定框架本次构建，不能约束消费应用的 fresh install。升级共享版本时同步安装声明并重新生成 Shell 与全部 producer，不能只改范围或放宽运行时 Manifest 验证。
+
 Bridge ABI 位于 `@pluxel/workbench/internal/react`，每次 mount 创建独立 React root/Context，调用零 props renderer。Remote 不读取 Shell private Context。Mantine renderer 自建 Provider，module 来自 singleton、Core CSS 只由 Shell 加载；共享 module 不等于共享 React ancestry。
 
 Dev 可先提交 topology/Content，让缺失 producer 的 placement 显示 building；后台成功提交后 full reload，失败显示安全 message，后续更新可重试。Production 必须一次性通过含 dynamic types 的完整验证，不使用这条降级路径。

@@ -99,7 +99,7 @@ export function FontManagerContent({
 				<Stack gap={2}>
 					<Title order={4}>服务端字体</Title>
 					<Text size="sm" c="dimmed">
-						字体由 @pluxel/fonts 统一持久化并注入服务端 Canvas registry。
+						字体由 @pluxel/plugin-fonts 统一持久化并注入服务端 Canvas registry。
 					</Text>
 				</Stack>
 				<Button
@@ -289,7 +289,7 @@ export function FontSelectionContent({
 				<Stack gap={2}>
 					<Title order={4}>字体选择</Title>
 					<Text size="sm" c="dimmed">
-						候选字体与默认值由 @pluxel/fonts 统一提供；上传和删除请在 FontsPlugin 页面管理。
+						候选字体与默认值由 @pluxel/plugin-fonts 统一提供；上传和删除请在 FontsPlugin 页面管理。
 					</Text>
 				</Stack>
 				<Button

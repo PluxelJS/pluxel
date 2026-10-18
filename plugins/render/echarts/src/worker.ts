@@ -3,7 +3,7 @@ import {
 	createCanvasWorkerAdapter,
 	type CanvasWorkerAdapter,
 	type CanvasWorkerSnapshot,
-} from '@pluxel/canvas/worker'
+} from '@pluxel/plugin-canvas/worker'
 import { EChartsError, type EChartsErrorCode } from './errors.ts'
 import {
 	renderECharts,

@@ -26,7 +26,7 @@ function harness(options = {}) {
 			calls.push([command, ...args])
 			if (args[0] === '--version') return options.version ?? '11.16.0\n'
 			if (args[0] === 'whoami' && options.loginError) throw new Error('login required')
-			if (command === 'pnpm' && options.pretrustError) throw new Error('pretrust failed')
+			if (command === 'vp' && options.pretrustError) throw new Error('pretrust failed')
 			if (args[0] === 'trust' && args[1] === 'list') {
 				if (options.listError) throw new Error('registry failed')
 				if (options.malformed) return 'not JSON'
@@ -82,7 +82,7 @@ describe('npm publishing preparation', () => {
 		await preparePublishing(false, names, lock, dependencies)
 		assert.deepEqual(calls, [
 			['npm', '--version'],
-			['pnpm', 'tegami', 'npm', 'pretrust', '--dry-run'],
+			['vp', 'run', 'tegami', 'npm', 'pretrust', '--dry-run'],
 		])
 	})
 	it('checks toolchain and login before any publication', async () => {
@@ -90,7 +90,7 @@ describe('npm publishing preparation', () => {
 			const { calls, dependencies } = harness(options)
 			await assert.rejects(preparePublishing(true, names, lock, dependencies))
 			assert.equal(
-				calls.some(([command]) => command === 'pnpm'),
+				calls.some(([command]) => command === 'vp'),
 				false,
 			)
 		}
