@@ -98,9 +98,12 @@ run_bench() {
 		echo "[bench] ${label} install log: ${install_log}"
 	fi
 
-	# Use each revision's artifact graph. Recursive package builds also traverse dev-only test
-	# helpers, which can pull the entire runtime toolchain into the benchmark or form cycles.
-	if ! vp run @pluxel/core#compile >"$log_file" 2>&1; then
+	# Run each revision's public build scripts without Vite loading unrelated historical
+	# workspace configs whose plugins have not been built. Current scripts delegate to Vite
+	# tasks. Select only the measured artifact owners; dependency-wide recursion also includes
+	# dev-only test helpers. Revisions using registry eventure already have its artifacts.
+	if ! pnpm --recursive --filter eventure --filter @pluxel/context --filter @pluxel/core \
+		--fail-if-no-match run build >"$log_file" 2>&1; then
 		tail -200 "$log_file"
 		return 1
 	fi
