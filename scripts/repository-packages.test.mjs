@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { join, resolve } from 'node:path'
 import { describe, it } from 'vitest'
 import { tegami } from 'tegami'
 import { parse } from 'yaml'
@@ -12,6 +14,7 @@ import {
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	releasePackageErrors,
+	workspaceOnlyDependencyErrors,
 	tegamiIgnorePattern,
 	readRepositoryPackages,
 } from './repository-packages.mjs'
@@ -127,6 +130,99 @@ describe('repository package policy', () => {
 		assert.match(errors[0], /@pluxel\/plugin-xxx/)
 		assert.match(errors[1], /must match Core 1\.2\.0/)
 	})
+})
+
+describe('workspace-only provider publication', () => {
+	it('keeps private integrations optional and their development links inside the workspace', () => {
+		const packageRoot = resolve(tmpdir(), 'pluxel-private-peer', 'markdown')
+		const provider = {
+			...packageRecord('plugin', '@pluxel/plugin-private', true),
+			packageRoot: resolve(packageRoot, '../private'),
+		}
+		const valid = {
+			name: '@pluxel/plugin-markdown',
+			peerDependencies: { [provider.manifest.name]: '*' },
+			peerDependenciesMeta: { [provider.manifest.name]: { optional: true } },
+			devDependencies: { [provider.manifest.name]: 'link:../private' },
+		}
+		const check = (manifest) =>
+			workspaceOnlyDependencyErrors([{ kind: 'plugin', manifest, packageRoot }, provider])
+		assert.deepEqual(check(valid), [])
+		for (const manifest of [
+			{ ...valid, peerDependenciesMeta: {} },
+			{ ...valid, peerDependencies: { [provider.manifest.name]: 'workspace:^' } },
+			{ ...valid, devDependencies: { [provider.manifest.name]: 'workspace:*' } },
+			{ ...valid, devDependencies: { [provider.manifest.name]: 'link:../../other-checkout' } },
+			{ ...valid, dependencies: { [provider.manifest.name]: '*' } },
+			{ ...valid, optionalDependencies: { [provider.manifest.name]: '*' } },
+		])
+			assert.ok(check(manifest).length > 0, JSON.stringify(manifest))
+	})
+
+	it('packs the real Markdown private peer without inventing a provider version', async () => {
+		const execute = promisify(execFile)
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-private-peer-pack-'))
+		try {
+			const owner = JSON.parse(
+				await readFile(
+					new URL('../plugins/render/takumi-markdown/package.json', import.meta.url),
+					'utf8',
+				),
+			)
+			const provider = JSON.parse(
+				await readFile(new URL('../plugins/render/typst/package.json', import.meta.url), 'utf8'),
+			)
+			assert.equal(provider.private, true)
+			assert.equal(provider.version, undefined)
+			for (const directory of ['takumi-markdown', 'typst']) await mkdir(join(root, directory))
+			await writeFile(join(root, 'package.json'), JSON.stringify({ private: true }))
+			await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages: [takumi-markdown, typst]\n')
+			const privateManifest = JSON.stringify({ name: provider.name, private: true })
+			await writeFile(join(root, 'typst/package.json'), privateManifest)
+			await writeFile(join(root, 'takumi-markdown/index.js'), 'export const value = 1;\n')
+			const manifest = {
+				name: owner.name,
+				version: owner.version,
+				files: ['index.js'],
+				peerDependencies: { [provider.name]: owner.peerDependencies[provider.name] },
+				peerDependenciesMeta: { [provider.name]: owner.peerDependenciesMeta[provider.name] },
+				devDependencies: { [provider.name]: 'workspace:*' },
+			}
+			const manifestPath = join(root, 'takumi-markdown/package.json')
+			const options = { env: { ...process.env, PNPM_CONFIG_WORKSPACE_DIR: root }, timeout: 10000 }
+			const args = [
+				'--dir',
+				join(root, 'takumi-markdown'),
+				'pack',
+				'--pack-destination',
+				join(root, 'out'),
+			]
+			await writeFile(manifestPath, JSON.stringify(manifest))
+			await assert.rejects(
+				() => execute('pnpm', args, options),
+				(error) =>
+					`${error.stdout}${error.stderr}`.includes('ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL'),
+			)
+			manifest.devDependencies[provider.name] = owner.devDependencies[provider.name]
+			await writeFile(manifestPath, JSON.stringify(manifest))
+			await execute('pnpm', args, options)
+			const archives = await readdir(join(root, 'out'))
+			const tarball = archives.find((file) => file.endsWith('.tgz'))
+			assert.ok(tarball)
+			const { stdout } = await execute(
+				'tar',
+				['-xOf', join(root, 'out', tarball), 'package/package.json'],
+				options,
+			)
+			const packed = JSON.parse(stdout)
+			assert.equal(packed.peerDependencies[provider.name], '*')
+			assert.equal(packed.peerDependenciesMeta[provider.name].optional, true)
+			assert.equal(packed.devDependencies[provider.name], owner.devDependencies[provider.name])
+			assert.equal(await readFile(join(root, 'typst/package.json'), 'utf8'), privateManifest)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	}, 20000)
 })
 
 describe('native Tegami unified release versions', () => {

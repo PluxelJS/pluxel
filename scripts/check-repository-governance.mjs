@@ -8,6 +8,7 @@ import {
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	releasePackageErrors,
+	workspaceOnlyDependencyErrors,
 	repositoryPackages,
 } from './repository-packages.mjs'
 import { paper } from './tegami.mts'
@@ -158,6 +159,7 @@ if (new Set(packageNames).size !== packageNames.length) {
 }
 const publicPackages = packageManifests.filter(isPublishablePackage)
 errors.push(...releasePackageErrors(packageManifests))
+errors.push(...workspaceOnlyDependencyErrors(packageManifests))
 const publishedDependencies = new Map(
 	packageManifests
 		.filter(({ kind }) => kind !== 'root')
@@ -340,6 +342,8 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 		}
 		for (const [name, specifier] of Object.entries(manifest.peerDependencies ?? {})) {
 			if (!name.startsWith('@pluxel/')) continue
+			const provider = packageManifests.find((pkg) => pkg.manifest.name === name)
+			if (isPublic && provider && !isPublishablePackage(provider)) continue
 			if (specifier !== 'workspace:^') {
 				errors.push(`${relative(manifestPath)}: peerDependencies.${name} must be workspace:^`)
 			}

@@ -28,7 +28,12 @@ opaque namespace and rejects use after the render settles. Caller image options 
 when adding those generated sources.
 
 Typst is a type-only optional Plugin ref and optional peer, not a second required Plugin or
-compiler package. Without a running provider, documents use ordinary Markdown. Provider
+compiler package. The private workspace-only provider has no registry version: its optional
+peer is `*`, and its development implementation uses a relative `link:` within this workspace.
+Published JavaScript and declarations do not import the private module. Without a running
+provider, documents use ordinary Markdown. Local build, test and typecheck tasks explicitly
+depend on Typst compilation because Vite Task does not infer workspace edges from relative
+development links. Provider
 appearance, withdrawal or replacement restarts Markdown and downstream consumers; old renderer
 handles cannot silently switch provider. When selected, the built-in mathematics pipeline adds
 restricted formula/SVG limits from `TakumiMarkdownConfig.math`, delegates stateless SVG

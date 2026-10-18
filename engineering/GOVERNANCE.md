@@ -80,9 +80,14 @@ pnpm catalog 统一外部依赖的版本政策；每个 workspace 仍必须在�
   只有类型引用不构成必须使用 peer 的理由；发布声明仍需引用的包可以是 dependencies 或 peer，依据实际兼容与所有权选择，
   不能直接降为 dev-only。不要按 `@pluxel/` 前缀机械迁移整个依赖表。
 - Plugin package 在源码中使用
-  `workspace:^` 消费 Core、服务和 provider contract，发布后由 pnpm 转换为各包对应的 semver 范围；本地构建/测试
+  `workspace:^` 消费可发布的 Core、服务和 provider contract，发布后由 pnpm 转换为各包对应的 semver 范围；本地构建/测试
   副本同时以 `workspace:*` 放入 `devDependencies`，不得把 provider 放入普通 dependencies 形成第二份
   Plugin identity。
+- 公开包不得要求 workspace-only provider。私有 provider 只允许作为 `*` optional peer，开发实现用指向同一
+  workspace 实际 package 目录的相对 `link:` devDependency；不承诺 registry 版本，也不自动安装。发布的 JavaScript
+  和 declarations 不得加载或引用该私有模块。无版本私有包的 `workspace:` 开发依赖也会使 pnpm pack 失败；
+  不为打包添加虚构版本、发布私有包或改写运行时依赖。Vite Task 不将 `link:` 纳入 workspace 依赖图，
+  consumer 的构建、测试和类型检查须在所属 `vite.config.ts` 显式依赖该开发 provider 的 `compile` task。
 - 真正隔离在可选入口或条件加载后的集成可以标记 optional peer。optional 只影响安装要求，既不消除架构边，
   也不允许无条件入口加载缺失的包。`devDependencies` 只承载开发工具、测试夹具和已明确内联的源码；
   不能用它隐藏发布 JavaScript 或 declarations 仍引用的包。

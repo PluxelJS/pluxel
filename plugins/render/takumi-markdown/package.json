@@ -46,7 +46,7 @@
 		"@pluxel/host-vite": "workspace:*",
 		"@pluxel/plugin-fonts": "workspace:*",
 		"@pluxel/plugin-takumi": "workspace:*",
-		"@pluxel/plugin-typst": "workspace:*",
+		"@pluxel/plugin-typst": "link:../typst",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -60,7 +60,7 @@
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
 		"@pluxel/plugin-takumi": "workspace:^",
-		"@pluxel/plugin-typst": "workspace:^"
+		"@pluxel/plugin-typst": "*"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/plugin-typst": {

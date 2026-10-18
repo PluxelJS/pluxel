@@ -66,6 +66,45 @@ export function releasePackageErrors(packages) {
 	return errors
 }
 
+export function workspaceOnlyDependencyErrors(packages) {
+	const providers = new Map(packages.map((pkg) => [pkg.manifest.name, pkg]))
+	const errors = []
+	for (const { manifest, packageRoot } of packages.filter(isPublishablePackage)) {
+		for (const field of [
+			'dependencies',
+			'optionalDependencies',
+			'peerDependencies',
+			'devDependencies',
+		]) {
+			for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
+				const provider = providers.get(name)
+				if (!provider || isPublishablePackage(provider)) continue
+				const developmentLink = `link:${relative(packageRoot, provider.packageRoot).replaceAll(sep, '/')}`
+				if (field === 'devDependencies') {
+					if (specifier !== developmentLink)
+						errors.push(
+							`${manifest.name} devDependencies.${name} must be ${developmentLink} for a workspace-only provider`,
+						)
+				} else if (field === 'peerDependencies') {
+					if (specifier !== '*' || manifest.peerDependenciesMeta?.[name]?.optional !== true)
+						errors.push(
+							`${manifest.name} peerDependencies.${name} must be an optional '*' peer for a workspace-only provider`,
+						)
+					if (manifest.devDependencies?.[name] !== developmentLink)
+						errors.push(
+							`${manifest.name} optional workspace-only peer ${name} must have devDependencies.${name}=${developmentLink}`,
+						)
+				} else {
+					errors.push(
+						`${manifest.name} ${field}.${name} cannot require a workspace-only provider; use an optional peer integration`,
+					)
+				}
+			}
+		}
+	}
+	return errors
+}
+
 export async function readRepositoryPackages(root = repositoryRoot) {
 	const packagesDirectory = resolve(root, 'packages')
 	const pluginsDirectory = resolve(root, 'plugins')

@@ -2513,7 +2513,7 @@ importers:
         specifier: workspace:*
         version: link:../takumi
       '@pluxel/plugin-typst':
-        specifier: workspace:*
+        specifier: link:../typst
         version: link:../typst
       '@pluxel/rolldown':
         specifier: workspace:*

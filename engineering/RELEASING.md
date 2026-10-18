@@ -14,8 +14,9 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 - 所有 `plugins/` package 使用 `@pluxel/plugin-xxx` 名称；已有公开稳定版本与 Core 对齐，尚未首次发布的 pre-1.0 新包可等待 Tegami 在本轮统一。普通库保留各自名称。
 - `scripts/tegami.mts` 从公开包 inventory 生成排除规则，workspace-only、private、project 和 vendor package 不进入 Tegami graph、版本传播或发布锁；
 - semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为对应 package version 的兼容范围；
-- 第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的对应 package version 兼容范围；同时以
-  `workspace:*` devDependency 提供仓库内构建和测试实现；
+- 可发布的第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的对应 package version 兼容范围；同时以
+  `workspace:*` devDependency 提供仓库内构建和测试实现；workspace-only provider 的 optional peer 与本地开发链接
+  遵循 [治理边界](GOVERNANCE.md#依赖与版本)，不进入发布版本线；
 - Plugin package 对 Core、服务和 required provider 一律使用 peer dependency，避免宿主图出现重复 Plugin identity；
 - workspace 普通依赖变化只为公开 dependent 产生 patch bump，private dependent 不进入发布计划。
 

@@ -117,7 +117,7 @@ await this.renderer.render('![Logo](https://assets.example/logo.png)', {
 
 ## 工作区可选的 Typst 数学
 
-`@pluxel/plugin-typst` 目前是 workspace-only 能力，只能在包含该包的源码工作区中集成；公开包状态见 [Package 与入口矩阵](../../reference/package-matrix.md#workspace-only-能力)。普通 Markdown 不要求安装 Typst。
+`@pluxel/plugin-typst` 目前是 workspace-only 能力，只能在包含该包的源码工作区中集成；公开包状态见 [Package 与入口矩阵](../../reference/package-matrix.md#workspace-only-能力)。普通 Markdown 不要求安装 Typst。此可选 peer 不承诺 npm 版本，也不会自动安装私有 provider。
 
 在 Host catalog 中加入 FontsPlugin 和 TypstPlugin，并运行 Typst provider 后，Markdown 自动启用内置数学能力。业务插件仍只注入 `TakumiMarkdownPlugin`，沿用前面的 `createRenderer()` 与调用方式：
 
