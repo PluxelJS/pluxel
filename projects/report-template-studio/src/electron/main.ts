@@ -52,6 +52,7 @@ const MAX_BYTES = 128 * 1024 * 1024
 let window: BrowserWindow | undefined
 let backend: UtilityProcess | undefined
 let closed = false
+let shutdownComplete = false
 let nativeClient: ReturnType<typeof createNativeDesktopClient> | undefined
 
 function sender(event: IpcMainInvokeEvent | IpcMainEvent) {
@@ -290,13 +291,17 @@ if (app.requestSingleInstanceLock()) {
 } else {
 	if (development) console.info('[studio:dev] Studio 已在运行。请先关闭旧窗口，再启动 dev。')
 	closed = true
+	shutdownComplete = true
 	app.quit()
 }
 
 app.on('window-all-closed', () => app.quit())
 app.on('will-quit', (event) => {
-	if (closed) return
+	if (shutdownComplete) return
 	event.preventDefault()
+	// Every quit request must wait for the same backend drain, including a second
+	// request after the last window closed.
+	if (closed) return
 	closed = true
 	void (async () => {
 		try {
@@ -334,6 +339,7 @@ app.on('will-quit', (event) => {
 		} finally {
 			nativeClient?.disconnect()
 			backend?.kill()
+			shutdownComplete = true
 			app.quit()
 		}
 	})()

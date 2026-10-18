@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -20,7 +21,7 @@ const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 const errors = [],
 	logs = []
-let instance, page, project, documentConfig, connection, studio, portEvidence
+let instance, processClosed, page, project, documentConfig, connection, studio, portEvidence
 const executablePath = process.env.STUDIO_EXECUTABLE ?? electronExecutable
 const args = [
 	...(process.env.STUDIO_EXECUTABLE ? [] : [applicationRoot]),
@@ -48,6 +49,7 @@ assert.ok(probeBundle)
 
 async function start() {
 	instance = await electron.launch({ executablePath, args, env, timeout: 90_000 })
+	processClosed = once(instance.process(), 'close')
 	instance.process().stderr?.on('data', (bytes) => logs.push(bytes.toString()))
 	instance.process().stdout?.on('data', (bytes) => logs.push(bytes.toString()))
 	page = await instance.firstWindow({ timeout: 90_000 })
@@ -114,6 +116,30 @@ async function start() {
 		})
 		window.studioProbe = window.StudioRpcProbe.createDesktopClient(port)
 	})
+}
+async function closeInstance(destroyWindows = false) {
+	if (!instance) return
+	if (destroyWindows)
+		await instance
+			.evaluate(({ BrowserWindow }) => {
+				for (const window of BrowserWindow.getAllWindows()) window.destroy()
+			})
+			.catch((error) => {
+				if (!error.message.includes('Target page, context or browser has been closed')) throw error
+			})
+	// Destroying the last window already requests quit. Playwright requests it again;
+	// both requests must wait for the same backend cleanup acknowledgement.
+	await instance.close()
+	const [code, signal] = await processClosed
+	instance = undefined
+	processClosed = undefined
+	assert.equal(code, 0, 'The Electron process exits successfully after backend cleanup')
+	assert.equal(signal, null, 'The Electron process exits without being killed')
+	assert.doesNotMatch(
+		logs.join(''),
+		/Studio shutdown failed/,
+		'Backend shutdown completes normally',
+	)
 }
 const readText = (path) => studio.readFile({ projectId: project.id, path })
 async function until(check, reason) {
@@ -580,8 +606,7 @@ try {
 
 	connection.disconnect()
 	connection = undefined
-	await instance.close()
-	instance = undefined
+	await closeInstance()
 	await start()
 	await page.getByRole('button', { name: '桌面工作区验收', exact: false }).first().click()
 	await selectDocument()
@@ -784,6 +809,10 @@ try {
 	)
 	await screenshot('06-imported-workspace')
 	assert.deepEqual(errors, [], 'Renderer has no uncaught errors')
+	const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+	connection.disconnect()
+	connection = undefined
+	await closeInstance(true)
 	await writeFile(
 		join(output, 'result.json'),
 		JSON.stringify(
@@ -809,9 +838,10 @@ try {
 					'invalid workspace config editing and recovery',
 					'PDF and workspace ZIP native transport',
 					'native open directory reuses existing project',
+					'normal and repeated quit wait for backend cleanup without shutdown errors',
 				],
 				portEvidence,
-				viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
+				viewport,
 			},
 			null,
 			2,
@@ -822,15 +852,11 @@ try {
 	if (page && !page.isClosed()) await screenshot('failure').catch(() => {})
 	throw error
 } finally {
-	await writeFile(join(output, 'electron-stderr.log'), logs.join(''))
-	connection?.disconnect()
-	if (instance) {
-		await instance
-			.evaluate(({ BrowserWindow }) => {
-				for (const window of BrowserWindow.getAllWindows()) window.destroy()
-			})
-			.catch(() => {})
-		await instance.close().catch(() => {})
+	try {
+		connection?.disconnect()
+		await closeInstance(true)
+	} finally {
+		await writeFile(join(output, 'electron-stderr.log'), logs.join(''))
+		if (process.env.STUDIO_KEEP_PROFILE !== '1') await rm(profile, { recursive: true, force: true })
 	}
-	if (process.env.STUDIO_KEEP_PROFILE !== '1') await rm(profile, { recursive: true, force: true })
 }

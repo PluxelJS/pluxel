@@ -1,7 +1,7 @@
 import { rm, mkdir, readFile, writeFile, readdir, stat } from 'node:fs/promises'
 import { resolve, relative, basename } from 'node:path'
 import { packager } from '@electron/packager'
-import { runPnpm } from './run-pnpm.mjs'
+import { execFileSync } from 'node:child_process'
 
 const root = resolve(import.meta.dirname, '..')
 const release = resolve(root, 'release')
@@ -23,7 +23,8 @@ for (const file of [
 	await stat(resolve(root, file))
 await rm(staged, { recursive: true, force: true })
 await mkdir(release, { recursive: true })
-runPnpm(
+execFileSync(
+	'pnpm',
 	[
 		'--filter',
 		'@report-template-studio/app',

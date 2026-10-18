@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -18,7 +19,7 @@ const appRoot = join(directory, 'app')
 const output = join(root, 'test-results/desktop-recovery')
 const execute = promisify(execFile)
 const logs = []
-let server, application, page
+let server, application, processClosed, page, evidence
 async function until(check, message) {
 	const deadline = Date.now() + 60_000
 	while (Date.now() < deadline) {
@@ -29,11 +30,11 @@ async function until(check, message) {
 }
 // Use the installed workspace CLI; pin the discovered root and instance for every run.
 async function command(args) {
-	const { stdout } = await execute('pnpm', ['exec', 'pluxel', 'dev', ...args], {
-		cwd: root,
-		timeout: 60_000,
-		maxBuffer: 1024 * 1024,
-	})
+	const { stdout } = await execute(
+		process.execPath,
+		[fileURLToPath(import.meta.resolve('vite-plus/bin')), 'exec', 'pluxel', 'dev', ...args],
+		{ cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 },
+	)
 	return JSON.parse(stdout)
 }
 let instanceId
@@ -56,7 +57,10 @@ try {
 	await mkdir(output, { recursive: true })
 	await mkdir(appRoot)
 	await cp(join(root, 'src'), join(appRoot, 'src'), { recursive: true })
-	await cp(join(root, 'package.json'), join(appRoot, 'package.json'))
+	const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+	// This fixture starts its own processes and discovers the standalone Vite root directly.
+	delete manifest.pluxel?.dev
+	await writeFile(join(appRoot, 'package.json'), JSON.stringify(manifest))
 	for (const name of ['node_modules', 'dist', 'financial-document-assets', 'workspace-assets'])
 		await symlink(
 			join(root, name),
@@ -115,6 +119,7 @@ export default defineDevConsole(async dev => {
 		env,
 		timeout: 90_000,
 	})
+	processClosed = once(application.process(), 'close')
 	application.process().stderr?.on('data', (bytes) => logs.push(bytes.toString()))
 	application.process().stdout?.on('data', (bytes) => logs.push(bytes.toString()))
 	page = await application.firstWindow({ timeout: 90_000 })
@@ -206,33 +211,40 @@ export default defineDevConsole(async dev => {
 	}
 	await page.screenshot({ path: join(output, 'recovered.png') })
 	assert.deepEqual(errors, [])
-	const evidence = {
+	evidence = {
 		generations: 2,
 		samePage: true,
 		optionalTableOmitted: true,
 		nativePdfSaves: 2,
 		console: await inspect(),
 	}
-	await writeFile(join(output, 'result.json'), JSON.stringify(evidence, null, 2))
-	console.log(
-		'Desktop recovery passed: two backend generations, form input, preview and native PDF save',
-	)
 } catch (error) {
 	await page?.screenshot({ path: join(output, 'failure.png') }).catch(() => {})
 	throw error
 } finally {
-	if (application) {
-		const closed = application.waitForEvent('close', { timeout: 35_000 })
-		await application
-			.evaluate(({ BrowserWindow }) => {
-				for (const window of BrowserWindow.getAllWindows()) window.destroy()
-			})
-			.catch(() => {})
-		// Destroying the last test window already requests an ordinary app quit.
-		// Wait for its backend drain instead of issuing a second Playwright shutdown.
-		await closed.catch(() => application.close().catch(() => {}))
+	try {
+		if (application) {
+			await application
+				.evaluate(({ BrowserWindow }) => {
+					for (const window of BrowserWindow.getAllWindows()) window.destroy()
+				})
+				.catch((error) => {
+					if (!error.message.includes('Target page, context or browser has been closed'))
+						throw error
+				})
+			await application.close()
+			const [code, signal] = await processClosed
+			assert.equal(code, 0, 'The Electron process exits after backend cleanup')
+			assert.equal(signal, null)
+			assert.doesNotMatch(logs.join(''), /Studio shutdown failed/)
+		}
+	} finally {
+		await server?.close()
+		await writeFile(join(output, 'electron.log'), logs.join(''))
+		await rm(directory, { recursive: true, force: true })
 	}
-	await server?.close()
-	await writeFile(join(output, 'electron.log'), logs.join(''))
-	await rm(directory, { recursive: true, force: true })
 }
+await writeFile(join(output, 'result.json'), JSON.stringify(evidence, null, 2))
+console.log(
+	'Desktop recovery passed: two backend generations, form input, preview and native PDF save',
+)

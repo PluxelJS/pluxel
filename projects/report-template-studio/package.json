@@ -104,5 +104,12 @@
 		"typescript-legacy": "catalog:dev",
 		"vite-plus": "catalog:build",
 		"vitest": "catalog:test"
+	},
+	"pluxel": {
+		"dev": {
+			"app": {
+				"command": "vp run dev"
+			}
+		}
 	}
 }

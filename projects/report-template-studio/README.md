@@ -10,7 +10,7 @@
 vp install
 rustup toolchain install 1.97.1 --profile minimal
 vp run --filter '@report-template-studio/app^...' compile
-vp run @report-template-studio/app#dev
+vp exec pluxel dev --root projects/report-template-studio
 ```
 
 `dev` 先准备官方 Typst 原生编译器，再启动 Vite renderer 与 Electron，自动移除子进程继承的 `ELECTRON_RUN_AS_NODE`。首次构建会获取固定提交的上游源码并编译，后续复用同一构建缓存。原生库位于 `plugins/render/typst/native/compiler.node`，依赖图、源码映射和原生构建契约由该插件维护。单实例锁保护已经打开的窗口；开始新的开发会话前关闭旧窗口。`start` 运行已有 `dist/` 构建。
@@ -38,11 +38,13 @@ vp run @report-template-studio/app#dev -- --no-sandbox --ozone-platform=wayland 
 
 Linux / macOS 开发后端启用官方开发控制台，通过本机 Unix socket 操作当前 Host；Windows 暂时关闭这个控制台，因为其 socket 传输尚不支持 Windows。该限制不改变 Electron IPC 或后端 HMR 的接线方式，Windows 桌面运行仍需独立验证。
 
+`package.json` 的本包 `app` profile 指向 `vp run dev`。在本包执行 `vp exec pluxel dev` 启动并绑定控制台；`--root` 指向本包时选择这个 profile，避免继承父仓库的默认应用。前面的直接 `dev` 入口仍用于转发 Electron 参数；直接启动不会获得 command profile 绑定。
+
 在仓库根目录执行，固定当前 checkout 的绝对项目路径：
 
 ```sh
 studio_root="$(pwd)/projects/report-template-studio"
-vp exec pluxel dev instances --root "$studio_root"
+vp exec pluxel dev status --root "$studio_root"
 # 将 INSTANCE_ID 替换为上一步返回且 root、pid 匹配的 instanceId
 vp exec pluxel dev run "$studio_root/dev/inspect.ts" --root "$studio_root" --instance INSTANCE_ID
 ```
@@ -259,6 +261,8 @@ Electron 主进程只校验 window/frame/origin、转交 port 并拥有系统对
 报表执行使用独立的 Vite `DevEnvironment`、模块图与官方 `ModuleRunner`，通过进程内 HMR channel 传递更新，不启动 HTTP/WebSocket listener。工作区源文件快照是每次编译的权威输入，源码差异通过 `reloadModule` 传播；外部文件编辑和 Studio 保存走同一条热更新路径。共享 `.typ` 也进入依赖图。
 
 每个活跃文档入口拥有独立 QuickJS WASM 运行环境，最多四个；允许 workspace 内 TypeScript 模块与 `valibot` / `valibot-form`，无 Node、网络和主机文件访问。64 MiB 堆、1.5 秒执行片段中断与 10 秒异步期限限制失控代码。Rolldown 仅预打包固定运行时依赖；项目代码转换和 HMR 由 Vite 管理。
+
+QuickJS 0.32.0 的 WASM 扩容会使 SDK 保存的内存视图失效，影响异步任务和后续资源释放。工作区通过 pnpm patch 在 `quickjs-emscripten-core` 的共享内存视图 getter 中刷新视图，覆盖 ESM/CJS 入口，沿用[上游修复方案](https://github.com/justjake/quickjs-emscripten/pull/248)。升级到包含该修复的正式 SDK 后移除此补丁，并保留真实扩容后执行任务和关闭 VM 的回归检查。
 
 增量分为两层：Vite 保留报表入口及依赖的模块图与热更新状态；官方 Typst 文档会话保留专用 worker 内的原生编译器及缓存。`session.update({ files, template? })` 全量替换本次输入；可选 `template` 替换源码快照，worker 对比虚拟文件内容，仅更新变更或删除的 shadow 文件。编译错误保留上次成功预览，修正后继续使用会话。
 

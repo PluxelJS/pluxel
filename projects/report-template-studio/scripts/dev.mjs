@@ -1,11 +1,10 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import electron from 'electron'
 import { build } from 'vite-plus/pack'
 import { createServer } from 'vite'
-import { runPnpm } from './run-pnpm.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = join(root, '.studio-dev')
@@ -125,7 +124,11 @@ function scheduleRestart() {
 }
 
 async function start() {
-	runPnpm(['--filter', '@pluxel/typst', 'prepare:native'], { cwd: root, stdio: 'inherit' })
+	execFileSync(
+		process.execPath,
+		[fileURLToPath(import.meta.resolve('vite-plus/bin')), 'run', '@pluxel/typst#prepare:native'],
+		{ cwd: root, stdio: 'inherit' },
+	)
 	await buildCarrier()
 	if (stopping) return
 	server = await createServer({
