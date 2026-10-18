@@ -20,8 +20,12 @@ export default defineConfig({
 	appType: 'spa',
 	ssr: { noExternal: ['@opentelemetry/resources'] },
 	plugins: lazyPlugins(async () => {
-		const { hostEnv } = await import('@pluxel/host/environment')
-		const { vitePreset } = await import('@pluxel/services/vite')
+		const { hostEnv } = (await import(
+			import.meta.resolve('@pluxel/host/environment')
+		)) as typeof import('@pluxel/host/environment')
+		const { vitePreset } = (await import(
+			import.meta.resolve('@pluxel/services/vite')
+		)) as typeof import('@pluxel/services/vite')
 		return [
 			{
 				name: 'pluxel-plugin-host-listener',
