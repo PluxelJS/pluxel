@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { fork } from 'node:child_process'
-import { mkdtemp, mkdir, readdir, rm, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, realpath, rm, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { Server } from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -91,9 +91,11 @@ try {
 		discoveryDirectory,
 	}
 	backend = await startBackend(config)
+	// Discovery publishes the canonical root; temporary paths may contain filesystem aliases.
+	const expectedStateRoot = await realpath(state)
 	const instances = await discoverStudio({ discoveryDirectory })
 	assert.equal(instances.length, 1)
-	const instance = instances.find((item) => item.root === state)
+	const instance = instances.find((item) => relative(expectedStateRoot, item.root) === '')
 	assert.ok(instance, 'Select the explicitly requested application state root')
 	assert.equal(Object.hasOwn(instance, 'token'), false)
 	await assert.rejects(startBackend(config), { code: 'ROOT_IN_USE' })
@@ -156,7 +158,7 @@ try {
 	}
 	backend = await startBackend(config)
 	const restartedInstances = await discoverStudio({ discoveryDirectory })
-	const restarted = restartedInstances.find((item) => item.root === state)
+	const restarted = restartedInstances.find((item) => relative(expectedStateRoot, item.root) === '')
 	assert.ok(restarted)
 	assert.notEqual(restarted.instanceId, instance.instanceId)
 	await assert.rejects(connectStudio(instance), { code: 'INSTANCE_CHANGED' })
