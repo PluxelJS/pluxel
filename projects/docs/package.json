@@ -4,10 +4,8 @@
 	"type": "module",
 	"sideEffects": false,
 	"scripts": {
-		"generate:playground-types": "node scripts/generate-playground-types.mjs",
 		"predev:server": "vp run generate:playground-types",
 		"dev:server": "cross-env DEBUG= DOCS_TWOSLASH_MODE=development fumapress dev",
-		"prebuild": "vp run generate:playground-types",
 		"build": "vp run compile",
 		"start": "fumapress start",
 		"typecheck": "vp run check-types",

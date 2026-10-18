@@ -7,6 +7,13 @@ import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { expect, it } from 'vitest'
 
+const { version: coreVersion } = JSON.parse(
+	await readFile(new URL('../../core/package.json', import.meta.url), 'utf8'),
+) as { version: string }
+const { version: servicesVersion } = JSON.parse(
+	await readFile(new URL('../../services/package.json', import.meta.url), 'utf8'),
+) as { version: string }
+
 it('relocates a traced native library in the Pluxel namespace without external framework copies', async () => {
 	const temporary = await mkdtemp(join(tmpdir(), 'pluxel-standalone-native-library-'))
 	const root = join(temporary, 'source')
@@ -94,7 +101,7 @@ it('preserves native modules and shared framework identity with installed module
 			join(root, 'mutable/node_modules/@pluxel/core/package.json'),
 			JSON.stringify({
 				name: '@pluxel/core',
-				version: '1.1.0',
+				version: coreVersion,
 				type: 'module',
 				exports: { '.': './wrong.mjs', './toolchain': './wrong.mjs' },
 			}),
@@ -108,7 +115,7 @@ it('preserves native modules and shared framework identity with installed module
 			join(root, 'mutable/node_modules/@pluxel/services/package.json'),
 			JSON.stringify({
 				name: '@pluxel/services',
-				version: '1.1.0',
+				version: servicesVersion,
 				type: 'module',
 				exports: { './persistence': './wrong.mjs', './commands': './wrong.mjs' },
 			}),

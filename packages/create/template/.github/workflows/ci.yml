@@ -15,13 +15,39 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           cache: true
+          install: true
       - run: hk validate
       - run: pitchfork daemons --json
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ runner.os }}-pnpm-files-v1-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-files-v1-
+
       - run: vp install --frozen-lockfile
       - run: vp exec pluxel workspace setup
+
+      - name: Restore Vite task cache
+        uses: actions/cache@v6
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}-
+            ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-
+
       - run: vp run --concurrency-limit=2 workspace:verify

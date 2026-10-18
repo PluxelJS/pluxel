@@ -10,3 +10,12 @@ updates:
       github-actions:
         patterns:
           - '*'
+  - package-ecosystem: github-actions
+    directory: /packages/create/template/.github/workflows
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions-template:
+        patterns:
+          - '*'

@@ -34,6 +34,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -79,49 +80,16 @@ jobs:
         if: steps.release-commit.outputs.current == 'true'
         uses: jdx/mise-action@v5
         with:
-          cache: true
+          cache: false
           install: true
-
-      - name: Resolve pnpm store
-        if: steps.release-commit.outputs.current == 'true'
-        id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - name: Restore pnpm store
-        if: steps.release-commit.outputs.current == 'true'
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            ${{ steps.pnpm-store.outputs.path }}/files
-            ${{ steps.pnpm-store.outputs.path }}/index.db
-          key: ${{ runner.os }}-pnpm-files-v3-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-files-v3-
 
       - name: Install dependencies
         if: steps.release-commit.outputs.current == 'true'
         run: vp install --frozen-lockfile
 
-      - name: Restore verified build cache
-        if: steps.release-commit.outputs.current == 'true'
-        uses: actions/cache/restore@v6
-        with:
-          path: node_modules/.vite/task-cache
-          key: ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-release
-          restore-keys: |
-            ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.release-commit.outputs.sha }}-
-            ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-
-
       - name: Install Typst native toolchain
         if: steps.release-commit.outputs.current == 'true'
         run: rustup toolchain install 1.97.1 --profile minimal
-
-      - name: Restore Typst native build cache
-        if: steps.release-commit.outputs.current == 'true'
-        uses: actions/cache@v6
-        with:
-          path: plugins/render/typst/native/.build
-          key: ${{ runner.os }}-x64-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
 
       - name: Version or publish packages
         if: steps.release-commit.outputs.current == 'true'

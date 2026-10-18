@@ -31,6 +31,11 @@ import {
 	createDistributionManifest,
 } from '../src/distribution'
 
+const { version: hostVersion } = JSON.parse(
+	await readFile(new URL('../../host/package.json', import.meta.url), 'utf8'),
+) as { version: string }
+const hostRange = `^${hostVersion}`
+
 async function setOutputPermissions(directory: string, writable: boolean): Promise<void> {
 	await chmod(directory, writable ? 0o755 : 0o555)
 	for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -285,7 +290,7 @@ it('preserves public and private identities, named product, minified artifacts a
 			resolve(root, 'package.json'),
 			JSON.stringify({
 				name: '@fixture/modules',
-				dependencies: { '@pluxel/host': '^1.1.0' },
+				dependencies: { '@pluxel/host': hostRange },
 				version: '1.0.0',
 				type: 'module',
 				exports: {
@@ -331,7 +336,7 @@ it('preserves public and private identities, named product, minified artifacts a
 		await writeFile(resolve(deployed, 'public/main.js'), 'console.log("compiled")')
 		await createDistributionManifest(deployed)
 		const outputPackage = JSON.parse(await readFile(resolve(deployed, 'package.json'), 'utf8'))
-		expect(outputPackage.dependencies).toEqual({ '@pluxel/host': '^1.1.0' })
+		expect(outputPackage.dependencies).toEqual({ '@pluxel/host': hostRange })
 		expect(outputPackage.exports['./feature']).toBe('./feature.mjs')
 		expect(outputPackage.exports['./__proto__']).toBe('./__proto__.mjs')
 		const manifest = await readFile(resolve(deployed, 'pluxel-distribution.json'))
@@ -449,7 +454,7 @@ it('compiles package-local imports and records actual entry names in relocatable
 				version: '1.0.0',
 				type: 'module',
 				imports: { '#value': './src/value.ts', '#external': 'fixture-value' },
-				dependencies: { '@pluxel/host': '^1.1.0', 'fixture-value': '1.0.0' },
+				dependencies: { '@pluxel/host': hostRange, 'fixture-value': '1.0.0' },
 			}),
 		)
 		await writeFile(resolve(root, 'src/value.ts'), 'export const value = 42')

@@ -50,6 +50,10 @@ Explain the observable behavior and any migration requirement.
 5. Version Packages PR 合并且 CI 成功后，Tegami 从已提交的 publish lock 发布 npm 包，创建 tags 和
    GitHub Releases。
 
+Tegami 使用 `GITHUB_TOKEN` 创建或更新 PR 时，GitHub 将对应的 PR 工作流置为等待批准。维护者审阅生成的
+版本变更后，在 PR 中选择 **Approve workflows to run** 启动检查，再按正常流程合并版本 PR；创建 PR 成功不代表
+PR CI 已经执行。此机制与上面的创建 PR 权限是两层独立检查，见 [GitHub 工作流触发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)。
+
 publish lock 是发布事实来源。部分包发布失败时保留原 lock，重跑同一 workflow 会跳过已成功的包并继续未完成任务。
 不要删除 pending lock 或通过手工 npm publish 绕过它。
 
@@ -72,7 +76,9 @@ gh workflow run release.yml --ref main
 ## 发布验证
 
 普通 CI 已完成 release metadata、workspace 治理、lint、format、typecheck、build 和单元测试。Release workflow
-只接受同一 `main` commit 的成功 CI，并复用其 pnpm 和 Vite Task cache，不重复这些通用检查。
+只接受同一 `main` commit 的成功 CI，不重复这些通用检查。发布 job 从锁定依赖安装工具和包，不恢复其他运行
+写入的 mise、pnpm、Vite Task 或 native build cache；CI 仍保留缓存，同一次发布的构建任务也可复用本次生成的
+Vite Task 结果。该边界遵循 [mise-action 的发布工作流指南](https://github.com/jdx/mise-action/tree/v5.2.0#release-workflows)。
 
 真正发布时，Tegami hooks 只执行 package boundary 验证：
 
@@ -122,8 +128,25 @@ Tegami 可能更新本地 publish lock，运行后检查并提交这些生成的
 完成初始化；若 main 的 Release 已因缺少信任而失败，完成初始化后重跑最新 main 对应的 Release 即可，已成功发布的包会被跳过。
 该脚本要求全量公开包锁；只发布部分包时不能使用它，后续单个新包可以使用 Tegami `npm pretrust` 和 npm `trust` 命令。
 
-GitHub repository 必须允许 GitHub Actions 创建 pull request；workflow 的 `contents: write`、
-`pull-requests: write` 和 `id-token: write` 权限不得降低。
+### GitHub 版本 PR 权限
+
+Version Packages PR 需要两层授权：Release workflow 的 `contents: write`、`pull-requests: write`，以及
+GitHub Settings → Actions → General → Workflow permissions 中的 **Allow GitHub Actions to create and
+approve pull requests**。仓库默认权限可以保持 `read`；它与 job 显式请求的写权限、允许创建 PR 的策略是不同设置。
+
+组织必须先允许这项策略。若仓库开关不可选，或仓库权限 API 返回 `409` 并指出组织禁止创建 PR，由组织所有者在
+组织 Settings → Actions → General 中启用，再核对仓库设置。只修改 workflow 的 `permissions` 无法覆盖组织策略。
+拥有仓库管理员权限时可读取实际设置：
+
+```sh
+gh api repos/PluxelJS/pluxel/actions/permissions/workflow
+```
+
+Release 报 `GitHub Actions is not permitted to create or approve pull requests` 时，失败仍在创建版本 PR
+阶段，尚未进入 npm publish。修复 GitHub 策略后重跑当前 `main` 对应的 Release；只有发布阶段报告 npm 信任错误时
+才处理 Trusted Publishing。OIDC 发布仍需要 `id-token: write`。
+
+策略与 token 权限见 [GitHub Actions 设置](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests)。
 
 参考：[npm trusted publishers](https://docs.npmjs.com/trusted-publishers/)、
 [`npm trust` 的权限与批量设置要求](https://docs.npmjs.com/cli/v11/commands/npm-trust)。

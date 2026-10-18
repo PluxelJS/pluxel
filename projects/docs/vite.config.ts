@@ -37,10 +37,16 @@ function getWorker`,
 
 export default defineConfig({
 	run: {
-		tasks: repositoryTasks('pluxel-docs', {
-			build: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build',
-			typecheck: 'tsc --noEmit',
-		}),
+		tasks: {
+			...repositoryTasks('pluxel-docs', {
+				build: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build',
+				typecheck: 'tsc --noEmit',
+			}),
+			'generate:playground-types': {
+				command: 'node scripts/generate-playground-types.mjs',
+				cache: false,
+			},
+		},
 	},
 	worker: {
 		plugins: () => [bundleModernMonacoTypeScriptWorker()],
