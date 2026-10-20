@@ -44,8 +44,8 @@
 vp install --frozen-lockfile
 node projects/embedded-launcher/build/prepare-llrt.mjs
 vp run @embedded-launcher/app#build:plugins
-cargo run --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --bin embedded-smoke
-cargo test --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --test runtime
+cargo +1.99.1 run --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --bin embedded-smoke
+cargo +1.99.1 test --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --test runtime
 ```
 
 这两项原生入口运行真实嵌入回归，不启动 LLRT CLI 子进程；它们尚不是原生窗口、开发 HMR 或最终发布命令。兼容矩阵和关闭验收仍以 IMPLEMENTATION 的实际结果为准。
@@ -63,7 +63,7 @@ node dev.mjs
 另一个终端从仓库根使用相同 profile：
 
 ```sh
-cargo run --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --bin embedded-launcher -- cli --profile "$PWD/projects/embedded-launcher/.pluxel/dev" -- calc '1/3'
+cargo +1.99.1 run --locked --manifest-path projects/embedded-launcher/native/Cargo.toml --bin embedded-launcher -- cli --profile "$PWD/projects/embedded-launcher/.pluxel/dev" -- calc '1/3'
 node packages/cli/bin/pluxel.mjs dev instances --root "$PWD/projects/embedded-launcher"
 ```
 
@@ -75,8 +75,8 @@ node packages/cli/bin/pluxel.mjs dev instances --root "$PWD/projects/embedded-la
 
 ```sh
 node build/release.mjs
-cargo build --locked --manifest-path native/Cargo.toml --bin embedded-launcher
-cargo run --locked --manifest-path native/Cargo.toml --bin embedded-launcher -- --plugins "$PWD/release/runtime" --profile "$PWD/.pluxel/production"
+cargo +1.99.1 build --locked --manifest-path native/Cargo.toml --bin embedded-launcher
+cargo +1.99.1 run --locked --manifest-path native/Cargo.toml --bin embedded-launcher -- --plugins "$PWD/release/runtime" --profile "$PWD/.pluxel/production"
 ```
 
 分发原生 `embedded-launcher` 可执行文件与 `release/runtime/` 即可；运行机不需要 Node/pnpm 或仓库源码，但需要 Linux 桌面环境及二进制所链接的系统库。构建机的 Cargo target 目录可由 `cargo metadata --format-version 1 --no-deps --manifest-path native/Cargo.toml` 查询，不能假定是项目内 `target/`。当前验证使用开发构建，未声称已完成优化发行构建或跨发行版兼容。

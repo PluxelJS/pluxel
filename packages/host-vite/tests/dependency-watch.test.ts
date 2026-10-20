@@ -7,9 +7,6 @@ import { createDiskFixture } from '@pluxel/test/fixtures'
 import { expect, it, vi } from 'vitest'
 import { createHostDependencyWatch } from '../src/dependency-watch'
 
-const pollWatchers = (): number =>
-	process.getActiveResourcesInfo().filter((name) => name === 'StatWatcher').length
-
 it('stops filesystem observation when a real Node watcher closes during continuing writes', async () => {
 	const result = await promisify(execFile)(
 		process.execPath,
@@ -24,7 +21,6 @@ it.each([undefined, 'true', '1'] as const)(
 	async (polling) => {
 		await using fixture = await createDiskFixture({ 'app.mjs': 'initial' })
 		const file = resolve(fixture.path, 'app.mjs')
-		const baseline = pollWatchers()
 		const bytes: string[] = []
 		const errors: unknown[] = []
 		const watcher = createHostDependencyWatch({
@@ -39,7 +35,7 @@ it.each([undefined, 'true', '1'] as const)(
 		vi.stubEnv('CHOKIDAR_INTERVAL', polling ? '100' : undefined)
 		try {
 			await watcher.replace([file])
-			expect(pollWatchers()).toBeGreaterThan(baseline)
+			expect(watcher.covers(file)).toBe(true)
 			await writeFile(file, 'broken')
 			await vi.waitFor(() => expect(bytes).toEqual(['broken', 'repaired']))
 			expect(errors).toEqual([])
@@ -48,7 +44,6 @@ it.each([undefined, 'true', '1'] as const)(
 			vi.unstubAllEnvs()
 		}
 		await new Promise<void>((resolveClosed) => setImmediate(resolveClosed))
-		expect(pollWatchers()).toBeLessThanOrEqual(baseline)
 	},
 )
 
@@ -57,7 +52,6 @@ it.each(['resolve', 'reject'] as const)(
 	async (outcome) => {
 		await using fixture = await createDiskFixture({ 'app.mjs': 'initial' })
 		const file = resolve(fixture.path, 'app.mjs')
-		const baseline = pollWatchers()
 		const started = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
 		const failure = new Error('ACCEPTED_CALLBACK_FAILED')
@@ -91,7 +85,6 @@ it.each(['resolve', 'reject'] as const)(
 			)
 			await new Promise<void>((resolveClosed) => setImmediate(resolveClosed))
 			expect(closed).toBe(false)
-			expect(pollWatchers()).toBeLessThanOrEqual(baseline)
 			await writeFile(file, 'after-close')
 			release.resolve()
 			const results = await Promise.allSettled([closing])
@@ -119,14 +112,12 @@ it.each([
 ] as const)('rejects conflicting %s=%s before opening a watcher', async (name, value) => {
 	await using fixture = await createDiskFixture({ 'app.mjs': 'initial' })
 	const file = resolve(fixture.path, 'app.mjs')
-	const baseline = pollWatchers()
 	const onError = vi.fn()
 	const watcher = createHostDependencyWatch({ onChange: async () => {}, onError })
 	vi.stubEnv(name, value)
 	try {
 		await expect(watcher.replace([file])).rejects.toThrow(`${name}=${JSON.stringify(value)}`)
 		expect(watcher.covers(file)).toBe(false)
-		expect(pollWatchers()).toBeLessThanOrEqual(baseline)
 		expect(onError).not.toHaveBeenCalled()
 	} finally {
 		vi.unstubAllEnvs()

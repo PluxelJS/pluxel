@@ -17,7 +17,7 @@ class NativeElysiaCapabilities extends BasePlugin {
 			.derive(({ request }) => ({
 				requestMarker: request.headers.get('x-marker') ?? 'missing',
 			}))
-			.error('global', ({ error }) =>
+			.onError('global', ({ error }) =>
 				error instanceof Error && error.message === 'native-capability-error'
 					? new Response('mapped-native-error', { status: 418 })
 					: undefined,

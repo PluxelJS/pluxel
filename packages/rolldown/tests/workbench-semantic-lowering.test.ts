@@ -55,8 +55,8 @@ function fixtureFiles(): Record<string, string> {
 			name: '@example/semantic-plugin',
 			type: 'module',
 			devDependencies: {
-				'@mantine/core': '9.7.1',
-				'@mantine/hooks': '9.7.1',
+				'@mantine/core': '9.7.3',
+				'@mantine/hooks': '9.7.3',
 				'@pluxel/workbench': '0.1.0',
 				react: '19.3.0',
 				'react-dom': '19.3.0',
@@ -89,8 +89,8 @@ function fixtureFiles(): Record<string, string> {
 		'node_modules/react/index.d.ts': reactExportNames
 			.map((name) => `export declare const ${name}: string`)
 			.join('\n'),
-		...packageFiles('@mantine/core', '9.7.1', ['.']),
-		...packageFiles('@mantine/hooks', '9.7.1', ['.']),
+		...packageFiles('@mantine/core', '9.7.3', ['.']),
+		...packageFiles('@mantine/hooks', '9.7.3', ['.']),
 		...packageFiles('@pluxel/workbench', '0.1.0', ['.', './internal/react', './client', './react']),
 		...packageFiles('capnweb', '0.4.0', ['.']),
 		'node_modules/capnweb/index.d.ts': `

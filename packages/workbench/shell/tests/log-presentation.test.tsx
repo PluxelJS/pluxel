@@ -55,6 +55,8 @@ beforeEach(() => {
 	}))
 	vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800)
 	vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(240)
+	vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800)
+	vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(240)
 	host = document.createElement('div')
 	document.body.append(host)
 })

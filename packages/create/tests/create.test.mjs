@@ -70,7 +70,7 @@ describe('create-pluxel', () => {
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
 		assert.equal(manifest.name, undefined)
 		assert.equal(manifest.private, true)
-		assert.equal(manifest.packageManager, 'pnpm@11.28.2')
+		assert.equal(manifest.packageManager, 'pnpm@11.28.6')
 		assert.equal(manifest.devDependencies['vite-plus'], 'catalog:tooling')
 		const managed = await resolveDevProject({ root: generated })
 		assert.equal(managed.profile, 'app')

@@ -11,7 +11,7 @@
 provider 自己的调用共用 generation cleanup，不另登记一个会阻止断开连接的 owner cleanup。
 不主动重连。断开事件使后续获取拒绝，显式重启重新建立连接。
 
-`playwright-core` 1.64.0 的 `lib/coreBundle.js` 中，CDP 的 `_connectOverCDPImpl` 将 `browserProcess.close` 和 `kill` 指向调用 WebSocket transport `closeAndWait()` 的函数；原生协议连接将 `_shouldCloseConnectionOnClose` 置为 true，`Browser.close()` 据此调用客户端 `_connection.close()`。
+`playwright-core` 1.64.1 的 `lib/coreBundle.js` 中，CDP 的 `_connectOverCDPImpl` 将 `browserProcess.close` 和 `kill` 指向调用 WebSocket transport `closeAndWait()` 的函数；原生协议连接将 `_shouldCloseConnectionOnClose` 置为 true，`Browser.close()` 据此调用客户端 `_connection.close()`。
 两种连接产生的 `browser.close()` 都断开当前 transport，不终止部署方的浏览器进程。升级 SDK 时需复核该语义；实现未使用内部 SDK import。
 公开语义也见 [Browser.close](https://playwright.dev/docs/api/class-browser#browser-close)。
 CDP 连接使用 `noDefaults: true`，避免连接时自动修改远端默认 context 的 focus/media/download 设置。

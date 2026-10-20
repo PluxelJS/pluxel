@@ -89,17 +89,19 @@ federation artifact 与 Shell asset 均留在 `/__pluxel/**`。包含产品 SPA 
 cookie、stream 和普通 function plugin 都按 Elysia 2 API 使用。需要这些 API 的 Plugin package 直接依赖 `elysia`；
 `@pluxel/core` 不重新导出 Elysia 或它的官方 plugin。
 
+请求与错误 hook 使用 `onRequest()` 和 `onError()`；Elysia 2 rc 已替换 beta 版的 `request()` / `error()` 命名。
+
 发布给其他宿主使用的 Plugin package 应把宿主支持的 Elysia 精确版本同时声明为 `peerDependencies` 和 `devDependencies`：peer
 声明与宿主互操作的兼容意图，dev dependency 则供本 package 编译、测试和编辑器解析。实际 singleton 还依赖构建与加载解析。不要把 Elysia 打进 Plugin bundle，也不要让
-Plugin 自带另一份 runtime copy。当前 HTTP 服务锁定 `2.0.0-beta.19`，对应声明为：
+Plugin 自带另一份 runtime copy。当前 HTTP 服务锁定 `2.0.0-rc.0`，对应声明为：
 
 ```json
 {
 	"peerDependencies": {
-		"elysia": "2.0.0-beta.19"
+		"elysia": "2.0.0-rc.0"
 	},
 	"devDependencies": {
-		"elysia": "2.0.0-beta.19"
+		"elysia": "2.0.0-rc.0"
 	}
 }
 ```
@@ -377,11 +379,11 @@ Registry 自己负责稳定 ID、重复注册、结果上限与幂等 disposer�
 
 ## 当前 Elysia 2 与 carrier 边界
 
-HTTP 服务当前锁定 Elysia `2.0.0-beta.19`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
+HTTP 服务当前锁定 Elysia `2.0.0-rc.0`。已经验证并作为当前 contract 的是 Fetch HTTP route、普通 Elysia composition、native
 compile/seal、atomic generation publication、stream lease、owner withdrawal，以及上述三条 Node listener 路线的基础业务 WebSocket。
 以下能力仍不能按“所有 runtime 上完整等同原生 Elysia server”使用：
 
-- Elysia `setup()` / `cleanup()` 尚无公开 external attach/detach runner，直接注册会 fail-fast。带隐藏 lifecycle callback 的 standalone instance 也不能通过 `.use()` 绕过；listener 所有权见[独立 Host](../host/configuration.md#独立-http-host)。
+- Elysia `onStart()` / `onStop()` 尚无公开 external attach/detach runner，直接注册会 fail-fast。带隐藏 lifecycle callback 的 standalone instance 也不能通过 `.use()` 绕过；listener 所有权见[独立 Host](../host/configuration.md#独立-http-host)。
 - 唯一受支持的接入是 Node srvx 与 Vite 开发接线；不承诺 Bun、Deno 或 Worker adapter。
 - crossws 的 portable socket API 尚不能实现 Elysia socket 的主动 `pong()`。不同 runtime 的 send 返回值、backpressure 和 buffered
   byte 语义也尚未完成精确对齐，不应据此编写跨 runtime 流控协议。

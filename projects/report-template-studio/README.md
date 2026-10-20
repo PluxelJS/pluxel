@@ -4,11 +4,11 @@
 
 ## 运行与打包
 
-使用仓库 `mise.toml` 固定的 Node / pnpm；原生 Typst 构建需要 Git 和 Rust 1.97.1。在仓库根目录执行：
+使用仓库 `mise.toml` 固定的 Node / pnpm；原生 Typst 构建需要 Git 和 Rust 1.99.1。在仓库根目录执行：
 
 ```sh
 vp install
-rustup toolchain install 1.97.1 --profile minimal
+rustup toolchain install 1.99.1 --profile minimal
 vp run --filter '@report-template-studio/app^...' compile
 vp exec pluxel dev --root projects/report-template-studio
 ```
@@ -61,7 +61,7 @@ vp run @report-template-studio/app#package
 
 `release/PluxelTypstStudio-<platform>-<arch>/` 输出当前系统和架构的独立应用目录。`pnpm deploy` 只安装生产依赖，使用 hoisted 目录避免 pnpm 链接及 Windows junction 进入发布包；打包前拒绝剩余依赖链接。原生 Typst、字体、Worker 和 QuickJS WASM 保持真实文件，整个目录可复制到另一处启动。构建产物不包含用户项目、AI 凭据或本机应用数据。
 
-[Typst Studio Windows Action](../../.github/workflows/report-template-studio-windows.yml) 支持手动执行，也在 `main` 上的相关源码变更后运行；使用相同 Node / pnpm、Rust 1.97.1 和打包脚本，构建 Windows x64 原生库，执行仅允许本机 IPC、禁止 TCP/HTTP 业务监听的生产后端检查，再上传便携应用 ZIP。归档包含项目指引的 `.agents/skills/`。下载产物后解压，运行 `pluxel-typst-studio.exe`；该任务提供构建产物，未增加安装器、签名或自动更新。Linux 本机验证不能替代 Windows 桌面交互验收。
+[Typst Studio Windows Action](../../.github/workflows/report-template-studio-windows.yml) 支持手动执行，也在 `main` 上的相关源码变更后运行；使用相同 Node / pnpm、Rust 1.99.1 和打包脚本，构建 Windows x64 原生库，执行仅允许本机 IPC、禁止 TCP/HTTP 业务监听的生产后端检查，再上传便携应用 ZIP。归档包含项目指引的 `.agents/skills/`。下载产物后解压，运行 `pluxel-typst-studio.exe`；该任务提供构建产物，未增加安装器、签名或自动更新。Linux 本机验证不能替代 Windows 桌面交互验收。
 
 ## 使用
 

@@ -371,7 +371,7 @@ export class ElysiaApplicationDirectory {
 		})
 		const serverView = this.createServerView(owner, ownerKey, app)
 		this.serverViews.set(owner, serverView)
-		app.request((context) => {
+		app.onRequest((context) => {
 			context.server = app!.server ?? null
 		})
 		app.wrap((fetch) => async (request) => {
@@ -581,19 +581,19 @@ export class ElysiaApplicationDirectory {
 				`[pluxel/elysia] app.${operation}() controls the shared physical carrier and is unavailable to a Plugin Elysia application`,
 			)
 		}
-		const externalEpochUnavailable = (operation: 'setup' | 'cleanup') => () => {
+		const externalEpochUnavailable = (operation: 'onStart' | 'onStop') => () => {
 			throw new Error(
-				`[pluxel/elysia] app.${operation}() is unsupported because Elysia 2 beta.19 exposes no public external application attach/detach epoch`,
+				`[pluxel/elysia] app.${operation}() is unsupported because Elysia 2 rc.0 exposes no public external application attach/detach epoch`,
 			)
 		}
 		Object.defineProperties(app, {
-			setup: {
-				value: externalEpochUnavailable('setup'),
+			onStart: {
+				value: externalEpochUnavailable('onStart'),
 				writable: false,
 				configurable: false,
 			},
-			cleanup: {
-				value: externalEpochUnavailable('cleanup'),
+			onStop: {
+				value: externalEpochUnavailable('onStop'),
 				writable: false,
 				configurable: false,
 			},

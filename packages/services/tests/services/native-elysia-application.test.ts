@@ -116,7 +116,7 @@ class NativePhysicalLifecycleGuard extends BasePlugin {
 @Plugin({ displayName: 'Native unsupported Elysia lifecycle hook' })
 class NativeUnsupportedLifecycleHook extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).cleanup((): undefined => undefined)
+		this.ctx.require(ElysiaApp).onStop((): undefined => undefined)
 	}
 }
 
@@ -339,10 +339,10 @@ describe('native generation Elysia application', () => {
 			const serverId = server!.id
 			expect(() => app.listen(0)).toThrow('shared physical carrier')
 			expect(() => app.stop()).toThrow('shared physical carrier')
-			expect(() => app.setup((): undefined => undefined)).toThrow(
+			expect(() => app.onStart((): undefined => undefined)).toThrow(
 				'public external application attach/detach epoch',
 			)
-			expect(() => app.cleanup((): undefined => undefined)).toThrow(
+			expect(() => app.onStop((): undefined => undefined)).toThrow(
 				'public external application attach/detach epoch',
 			)
 			expect(() => server?.stop()).toThrow('shared physical carrier')

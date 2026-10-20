@@ -10,7 +10,7 @@ description: 用 @pluxel/create 创建并启动一个带 React 页面、HTTP API
 先按 [mise 入门](https://mise.jdx.dev/getting-started.html)安装并激活 mise。使用 Node.js 24、pnpm 11 和 Vite+ 创建项目，进入生成目录后安装项目固定的工具链：
 
 ```sh
-mise exec node@24 pnpm@11 viteplus@1.2.0 -- vp create @pluxel my-app --no-install
+mise exec node@24 pnpm@11 viteplus@1.3.0 -- vp create @pluxel my-app --no-install
 cd my-app
 mise trust
 mise install

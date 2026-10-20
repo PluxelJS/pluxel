@@ -4,7 +4,7 @@
 	"description": {{json description}},
 	"version": "0.1.0",
 	"type": "module",
-	"packageManager": "pnpm@11.28.2",
+	"packageManager": "pnpm@11.28.6",
 	"exports": {
 		".": {
 			"@pluxel/hmr": "./src/{{pluginName}}.ts",

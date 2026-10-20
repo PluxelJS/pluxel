@@ -14,13 +14,21 @@ async function probe(policy) {
 	const firstChange = Promise.withResolvers()
 	let closed = false
 	let filesystemReadsAfterClose = 0
+	const timers = new Set()
 	const hook = createHook({
 		init(_id, type) {
-			if (type !== 'FSREQCALLBACK') return
+			if (!['FSREQCALLBACK', 'FSREQPROMISE', 'Timeout'].includes(type)) return
 			const stack = new Error('Filesystem observer trace').stack.replaceAll('\\', '/')
 			if (!stack.includes('/chokidar/')) return
-			if (stack.includes('awaitWriteFinishFn')) firstPoll.resolve()
+			if (type === 'Timeout') {
+				timers.add(_id)
+				return
+			}
+			if (stack.includes('/chokidar/policy.js')) firstPoll.resolve()
 			if (closed) filesystemReadsAfterClose++
+		},
+		destroy(id) {
+			timers.delete(id)
 		},
 	}).enable()
 	const watcher = watch(file, { ...policy, ignoreInitial: true })
@@ -31,7 +39,7 @@ async function probe(policy) {
 		})
 		watcher.once('change', () => firstChange.resolve())
 		await writeFile(file, 'first-write')
-		// In the negative control, close while Chokidar is actually polling the pending write.
+		// For awaitWriteFinish, close while Chokidar is actually polling the pending write.
 		// In the owned policy, close after the ordinary input notification.
 		await (policy.awaitWriteFinish ? firstPoll.promise : firstChange.promise)
 		await watcher.close()
@@ -43,9 +51,7 @@ async function probe(policy) {
 		}
 		return {
 			filesystemReadsAfterClose,
-			pollWatchersAfterClose: process
-				.getActiveResourcesInfo()
-				.filter((name) => name === 'StatWatcher').length,
+			timersAfterClose: timers.size,
 		}
 	} finally {
 		await watcher.close()
@@ -59,5 +65,7 @@ const awaitWriteFinish = await probe({
 })
 const ownedPolicy = await probe(hostFileWatchOptions())
 assert.equal(ownedPolicy.filesystemReadsAfterClose, 0)
-assert.equal(ownedPolicy.pollWatchersAfterClose, 0)
+assert.equal(ownedPolicy.timersAfterClose, 0)
+assert.equal(awaitWriteFinish.filesystemReadsAfterClose, 0)
+assert.equal(awaitWriteFinish.timersAfterClose, 0)
 console.log(`WATCH_POLICY_EVIDENCE=${JSON.stringify({ awaitWriteFinish, ownedPolicy })}`)

@@ -1,6 +1,6 @@
 {
 	"$schema": "https://openapi.vercel.sh/vercel.json",
 	"framework": null,
-	"installCommand": "npx --yes --package=vite-plus@1.2.0 vp install --frozen-lockfile",
+	"installCommand": "npx --yes --package=vite-plus@1.3.0 vp install --frozen-lockfile",
 	"buildCommand": "./node_modules/.bin/vp run --concurrency-limit=2 pluxel-docs#compile && mkdir -p .vercel && cp -R projects/docs/.vercel/output .vercel/"
 }

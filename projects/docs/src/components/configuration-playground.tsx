@@ -1,7 +1,7 @@
 'use client'
 
 import '@mantine/core/styles.css'
-import { Accordion, Alert, Button, Code, Group, Select, Stack, Text, Title } from '@mantine/core'
+import { Alert, Button, Code, Group, Select, Stack, Tabs, Text, Title } from '@mantine/core'
 import { init } from 'modern-monaco'
 import { registerLSPProvider } from 'modern-monaco/core'
 import type { editor } from 'modern-monaco/editor-core'
@@ -292,20 +292,20 @@ function ValueInspector({ schema }: { schema: ObjectLikeSchema }) {
 			{(input) => {
 				const result = v.safeParse(schema, input)
 				return (
-					<>
-						<Accordion.Item value="input">
-							<Accordion.Control>Input · 表单原始值</Accordion.Control>
-							<Accordion.Panel>
-								<JsonValue value={input} />
-							</Accordion.Panel>
-						</Accordion.Item>
-						<Accordion.Item value="output">
-							<Accordion.Control>Output · Valibot 归一化结果</Accordion.Control>
-							<Accordion.Panel>
-								<JsonValue value={result.success ? result.output : { issues: result.issues }} />
-							</Accordion.Panel>
-						</Accordion.Item>
-					</>
+					<Stack gap="md">
+						<section aria-labelledby="playground-input-title">
+							<Title id="playground-input-title" order={3} size="sm" mb="xs">
+								Input · 表单原始值
+							</Title>
+							<JsonValue value={input} />
+						</section>
+						<section aria-labelledby="playground-output-title">
+							<Title id="playground-output-title" order={3} size="sm" mb="xs">
+								Output · Valibot 归一化结果
+							</Title>
+							<JsonValue value={result.success ? result.output : { issues: result.issues }} />
+						</section>
+					</Stack>
 				)
 			}}
 		</form.Subscribe>
@@ -463,14 +463,17 @@ export function ConfigurationPlayground() {
 					formProps={{ className: 'configuration-playground-form' }}
 				>
 					<div className="configuration-playground-layout">
-						<Stack
+						<Tabs
 							className="configuration-playground-pane configuration-playground-editor-pane"
-							gap="sm"
+							defaultValue="schema"
+							keepMounted
+							keepMountedMode="display-none"
 						>
-							<Group justify="space-between" gap="xs">
-								<Title order={2} size="h4">
-									Schema
-								</Title>
+							<Tabs.List aria-label="配置 Playground 视图">
+								<Tabs.Tab value="schema">Schema</Tabs.Tab>
+								<Tabs.Tab value="values">Input / Output</Tabs.Tab>
+							</Tabs.List>
+							<Tabs.Panel value="schema" className="configuration-playground-schema-panel" pt="sm">
 								<Group gap={8}>
 									<Select
 										aria-label="Config 预设"
@@ -508,25 +511,27 @@ export function ConfigurationPlayground() {
 										运行 schema
 									</Button>
 								</Group>
-							</Group>
-
-							<div className="configuration-playground-editor-frame overflow-hidden rounded-lg border">
-								<div ref={editorContainerRef} className="configuration-playground-editor" />
-							</div>
-							{error ? (
-								<Alert color="red" role="alert">
-									{error}
-								</Alert>
-							) : null}
-							<Text
-								size="xs"
-								c="dimmed"
-								aria-live="polite"
-								title="草稿仅保存在当前浏览器，不会发送到服务端。"
-							>
-								{dirty ? '代码有未运行的修改，生成的表单仍使用上次运行的 Schema。' : status}
-							</Text>
-						</Stack>
+								<div className="configuration-playground-editor-frame overflow-hidden rounded-lg border">
+									<div ref={editorContainerRef} className="configuration-playground-editor" />
+								</div>
+								{error ? (
+									<Alert color="red" role="alert">
+										{error}
+									</Alert>
+								) : null}
+								<Text
+									size="xs"
+									c="dimmed"
+									aria-live="polite"
+									title="草稿仅保存在当前浏览器，不会发送到服务端。"
+								>
+									{dirty ? '代码有未运行的修改，生成的表单仍使用上次运行的 Schema。' : status}
+								</Text>
+							</Tabs.Panel>
+							<Tabs.Panel value="values" pt="sm">
+								<ValueInspector schema={schema} />
+							</Tabs.Panel>
+						</Tabs>
 
 						<Stack
 							className="configuration-playground-pane configuration-playground-preview-pane"
@@ -546,10 +551,6 @@ export function ConfigurationPlayground() {
 							</Group>
 
 							<AutoForm.Fields />
-
-							<Accordion multiple variant="contained" order={4}>
-								<ValueInspector schema={schema} />
-							</Accordion>
 						</Stack>
 					</div>
 				</AutoForm>

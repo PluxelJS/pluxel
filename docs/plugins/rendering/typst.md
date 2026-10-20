@@ -15,7 +15,7 @@ Typst 通过 NodeModules 定位独立编译制品；每个文档会话拥有一�
 
 缺少 NodeModules 时，插件启动会明确失败；不会回退到主线程编译。浏览器单独使用 `@pluxel/plugin-typst/browser` 展示已有产物不需要这些服务。
 
-本 private workspace 包使用固定 typst.ts 0.7.0 源码与最小 NAPI 补丁，构建时自动准备当前平台的原生制品，需要 Git、Rust 1.97.1 和系统 C/C++ 链接工具；安装 Rust 可执行 `rustup toolchain install 1.97.1 --profile minimal`。源码开发首次使用前运行 `vp run @pluxel/plugin-typst#prepare:native`。已打包应用带有原生制品，终端用户无需 Rust；源码和构建约定见[原生绑定](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/native/README.md)。
+本 private workspace 包使用固定 typst.ts 0.7.0 源码与最小 NAPI 补丁，构建时自动准备当前平台的原生制品，需要 Git、Rust 1.99.1 和系统 C/C++ 链接工具；安装 Rust 可执行 `rustup toolchain install 1.99.1 --profile minimal`。源码开发首次使用前运行 `vp run @pluxel/plugin-typst#prepare:native`。已打包应用带有原生制品，终端用户无需 Rust；源码和构建约定见[原生绑定](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/native/README.md)。
 
 ## 直接生成 SVG
 

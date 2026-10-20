@@ -9,7 +9,7 @@ description: 连接外部浏览器，在独立会话中执行自动化。
 
 ## 选择浏览器与连接
 
-通过 `PlaywrightConfig.protocol` 显式选择协议：默认 `cdp` 使用 `chromium.connectOverCDP()`，适用于 Chromium 或 Lightpanda 的 CDP 端点；`playwright` 使用 `chromium.connect()`，适用于 Playwright 原生 WebSocket 服务。原生协议要求服务端与客户端的主、次版本一致；当前客户端为 `playwright-core@1.64.0`。端口号不能判断协议，插件不会自动探测或回退。Lightpanda 的 DOM、Web API、安全验证与 Canvas 兼容性需要按目标网页验证，能够连接不等于能够查验。
+通过 `PlaywrightConfig.protocol` 显式选择协议：默认 `cdp` 使用 `chromium.connectOverCDP()`，适用于 Chromium 或 Lightpanda 的 CDP 端点；`playwright` 使用 `chromium.connect()`，适用于 Playwright 原生 WebSocket 服务。原生协议要求服务端与客户端的主、次版本一致；当前客户端为 `playwright-core@1.64.1`。端口号不能判断协议，插件不会自动探测或回退。Lightpanda 的 DOM、Web API、安全验证与 Canvas 兼容性需要按目标网页验证，能够连接不等于能够查验。
 
 无凭据的连接直接使用 `PlaywrightConfig.endpoint`；带 token 的 URL、认证 headers 或其他私密连接信息使用 `connectionKey` 指向 Vault 记录。两者必须且只能配置一个。普通 endpoint 不允许 userinfo、query 或 hash；路径若包含秘密也必须放进 Vault。
 

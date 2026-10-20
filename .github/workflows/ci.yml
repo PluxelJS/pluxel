@@ -93,13 +93,13 @@ jobs:
             ${{ runner.os }}-vp-task-v1-
 
       - name: Install Typst native toolchain
-        run: rustup toolchain install 1.97.1 --profile minimal
+        run: rustup toolchain install 1.99.1 --profile minimal
 
       - name: Restore Typst native build cache
         uses: actions/cache@v6
         with:
           path: plugins/render/typst/native/.build
-          key: ${{ runner.os }}-x64-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
+          key: ${{ runner.os }}-x64-typst-rust-1.99.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
 
       - name: Verify repository
         id: task-verify

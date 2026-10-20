@@ -49,7 +49,7 @@ worker artifact 不加载 Pretext。worker thread 退出会自然回收其 ESM/n
 
 ## Pretext 排版
 
-`@chenglou/pretext` 0.0.8 的测量入口仍只寻找 browser `OffscreenCanvas` / DOM。Canvas 在第一次受控 prepare 时临时
+`@chenglou/pretext` 1.0 的测量入口仍只寻找 browser `OffscreenCanvas` / DOM。Canvas 在第一次受控 prepare 时临时
 安装一个只允许 1×1 measurement canvas 的 shim，让 Pretext 缓存 native 2D context 后立即恢复原 global property；不向
 进程暴露可任意分配的 OffscreenCanvas constructor。prepare API 由 CanvasPlugin 承担 lifecycle、文本/inline item 输入
 限制和默认 font shorthand，纯 layout/materialize/walk helper 从 `@pluxel/plugin-canvas/pretext` 作为无资源 value operation 导出。

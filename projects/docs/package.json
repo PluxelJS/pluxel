@@ -72,6 +72,7 @@
 		"vite": "catalog:build",
 		"vite-plus": "catalog:build",
 		"vitest": "catalog:test",
+		"waku": "catalog:docs",
 		"wretch": "catalog:dev"
 	}
 }

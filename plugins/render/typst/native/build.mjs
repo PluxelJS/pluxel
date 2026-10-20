@@ -11,7 +11,7 @@ const output = join(root, 'compiler.node')
 const stampPath = join(root, 'compiler.stamp.json')
 const revision = '0501ced21131dccc68d12c5602cdb20909a52541'
 const upstream = 'https://github.com/Myriad-Dreamin/typst.ts.git'
-const toolchain = '1.97.1'
+const toolchain = '1.99.1'
 const target = process.env.CARGO_TARGET_DIR
 	? resolve(process.env.CARGO_TARGET_DIR)
 	: join(cache, 'target')

@@ -663,13 +663,13 @@ function measureCellLines(
 	const lines: CanvasTableLine[] = []
 	let cursor = { segmentIndex: 0, graphemeIndex: 0 }
 	for (let index = 0; index < style.maxLines; index += 1) {
-		const line = layoutNextLine(prepared, cursor, width)
+		const line = layoutNextLine(prepared, width, cursor)
 		if (line === null) break
 		lines.push(freezeLine(line))
 		cursor = line.end
 	}
 	const hasMore =
-		lines.length === style.maxLines && layoutNextLine(prepared, cursor, width) !== null
+		lines.length === style.maxLines && layoutNextLine(prepared, width, cursor) !== null
 	if (hasMore && style.overflow === 'ellipsis' && lines.length > 0) {
 		const lastIndex = lines.length - 1
 		lines[lastIndex] = truncateLine(lines[lastIndex]!, width, style.font, prepareText)

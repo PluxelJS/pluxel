@@ -138,6 +138,8 @@ const layout = layoutWithLines(prepared, 360, 24)
 
 `@pluxel/plugin-canvas/pretext` 导出 Pretext 的纯布局 helper，包括 `layoutWithLines()`、`layoutNextLine()`、`measureLineStats()`、`measureNaturalWidth()`、line range walkers，以及对应 rich-inline helper。准备步骤读取 native 字体；之后的布局计算是纯 arithmetic。
 
+这些 helper 使用 Pretext 1.0 契约：`layoutNextLine(prepared, maxWidth, cursor?)` 与 `layoutNextLineRange(prepared, maxWidth, cursor?)` 都将宽度放在 cursor 前。Prepared handle 的 segments 为只读；rich-inline fragment 的源文本偏移使用 `sourceStart` / `sourceEnd`。
+
 共享 measurement cache 会在 Fonts revision 改变或累计准备字符达到 `maxTextCacheCharacters` 时清空。
 
 ## 生成静态数据表

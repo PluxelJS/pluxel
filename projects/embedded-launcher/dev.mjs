@@ -77,6 +77,7 @@ try {
 		child = spawn(
 			'cargo',
 			[
+				'+1.99.1',
 				'run',
 				'--locked',
 				'--manifest-path',

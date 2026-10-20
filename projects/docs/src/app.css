@@ -711,6 +711,18 @@ main:has(> .configuration-playground-page) {
 	overflow-wrap: anywhere;
 }
 
+.configuration-playground-layout > .configuration-playground-editor-pane,
+.configuration-playground-editor-pane > .configuration-playground-schema-panel {
+	display: flex;
+	flex-direction: column;
+}
+
+.configuration-playground-editor-pane > .configuration-playground-schema-panel {
+	flex: 1;
+	min-height: 0;
+	gap: 0.75rem;
+}
+
 @media (min-width: 1100px) {
 	.configuration-playground-layout {
 		grid-template-columns: minmax(0, 3fr) minmax(22rem, 2fr);

@@ -19,6 +19,8 @@
 
 [Iced](https://docs.rs/iced/0.14.0/iced/) 提供原生窗口与消息驱动 UI；[rquickjs](https://docs.rs/rquickjs/latest/rquickjs/) 提供绑定。实际 API 读取锁定版本，不复制 latest/dev 示例。JS 沿用工作区 catalog/lockfile；Rust crate 版本在首次编译成功后固定，iced_aw/iced_test 与 Iced 配套。LLRT 锁定精确 commit 与依赖锁，上游补丁记录来源、目的、回归和移除条件。
 
+当前 Rust 工具链由 `native/rust-toolchain.toml` 固定；从仓库根运行 Cargo 时显式选择该工具链。`native/Cargo.lock` 保留 LLRT 兼容的 `rsa 0.10.0-rc.18` 与 `pkcs1 0.8.0-rc.4`：后续预发布版改变了 PKCS#1 key 的泛型类型，固定 LLRT 源码尚不能编译，升级 LLRT 后再解除此边界。
+
 LLRT 不是完善的嵌入 SDK。若 core 退出/全局策略无法用小补丁接管，报告具体阻断，再决定是否使用同版本 rquickjs + 官方 LLRT 模块装配；不能默默删减标准库，让嵌入支持面与 CLI 探针不一致。
 
 ## 2. 按阶段引入原生依赖

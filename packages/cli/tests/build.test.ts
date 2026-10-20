@@ -188,8 +188,8 @@ const buildFixtures = {
 		].join('\n'),
 	},
 	runtimeUi: {
-		...fixturePackage('react', '19.3.0', ['.', './jsx-runtime', './jsx-dev-runtime']),
-		...fixturePackage('react-dom', '19.3.0', ['.', './client']),
+		...fixturePackage('react', '19.3.1', ['.', './jsx-runtime', './jsx-dev-runtime']),
+		...fixturePackage('react-dom', '19.3.1', ['.', './client']),
 		// Shared export analysis inspects the toolchain's real Bridge and its React imports.
 		'node_modules/react/index.js': reactExportNames
 			.map((name) => `export const ${name} = 'must-not-bundle-react-${name}'`)
@@ -197,8 +197,8 @@ const buildFixtures = {
 		'node_modules/react/index.d.ts': reactExportNames
 			.map((name) => `export declare const ${name}: string`)
 			.join('\n'),
-		...fixturePackage('@mantine/core', '9.7.1', ['.']),
-		...fixturePackage('@mantine/hooks', '9.7.1', ['.']),
+		...fixturePackage('@mantine/core', '9.7.3', ['.']),
+		...fixturePackage('@mantine/hooks', '9.7.3', ['.']),
 		...fixturePackage('@pluxel/workbench', '0.1.0', [
 			'.',
 			'./client',
@@ -243,12 +243,12 @@ export function createWorkbenchBridge(identity, Renderer) {
 				version: '1.0.0',
 				type: 'module',
 				dependencies: {
-					'@mantine/core': '9.7.1',
-					'@mantine/hooks': '9.7.1',
+					'@mantine/core': '9.7.3',
+					'@mantine/hooks': '9.7.3',
 					'@pluxel/core': '1.0.0',
 					'@pluxel/workbench': '0.1.0',
-					react: '19.3.0',
-					'react-dom': '19.3.0',
+					react: '19.3.1',
+					'react-dom': '19.3.1',
 				},
 				peerDependencies: { capnweb: '0.12.0' },
 				devDependencies: { capnweb: '0.12.0' },

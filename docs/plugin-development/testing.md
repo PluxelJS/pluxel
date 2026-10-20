@@ -25,10 +25,10 @@ description: 选择最小测试边界，用真实构建语义验证依赖、配�
 ## 安装 Vitest preset
 
 ```sh package-install
-npx nypm add -D @pluxel/test @pluxel/core vitest@5.0.4 vite-plus
+npx nypm add -D @pluxel/test @pluxel/core vitest@5.0.5 vite-plus
 ```
 
-当前 preset 使用 Vitest `5.0.4`，项目使用 Node.js 24+。直接使用服务工厂时声明 `@pluxel/services`；选择 HTTP 时满足 Elysia peer，直接使用 Workbench 声明时安装 `@pluxel/workbench` 及相应 peers。
+当前 preset 使用 Vitest `5.0.5`，项目使用 Node.js 24+。直接使用服务工厂时声明 `@pluxel/services`；选择 HTTP 时满足 Elysia peer，直接使用 Workbench 声明时安装 `@pluxel/workbench` 及相应 peers。
 
 最小 `vitest.config.ts`：
 

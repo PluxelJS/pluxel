@@ -151,7 +151,7 @@ async function installPackedCreate(root: string, tarball: string): Promise<void>
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
-		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, packageManager: 'pnpm@11.28.2', dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
+		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, packageManager: 'pnpm@11.28.6', dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
 	)
 	await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
 	await runVp(['install', '--no-frozen-lockfile'], root)

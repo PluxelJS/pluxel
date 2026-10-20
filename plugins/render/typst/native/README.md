@@ -6,14 +6,14 @@ This directory owns a small patch to the Typst 0.7 Node binding. `NodeTypstDocum
 
 ## Build
 
-Install Git, Rustup with Rust **1.97.1**, and the native C/C++ linker for your platform. Windows requires the Visual Studio C++ build tools and the MSVC Rust toolchain. Then run:
+Install Git, Rustup with Rust **1.99.1**, and the native C/C++ linker for your platform. Windows requires the Visual Studio C++ build tools and the MSVC Rust toolchain. Then run:
 
 ```sh
-rustup toolchain install 1.97.1 --profile minimal
+rustup toolchain install 1.99.1 --profile minimal
 node plugins/render/typst/native/build.mjs
 ```
 
-Build on the target platform and architecture. The script runs `cargo +1.97.1 build --release --locked -p typst-ts-node-compiler` and installs `native/compiler.node`. Missing prerequisites or failed compilation are errors; there is no fallback to a different compiler. The package build must invoke this preparation before packaging its native artifact.
+Build on the target platform and architecture. The script runs `cargo +1.99.1 build --release --locked -p typst-ts-node-compiler` and installs `native/compiler.node`. Missing prerequisites or failed compilation are errors; there is no fallback to a different compiler. The package build must invoke this preparation before packaging its native artifact.
 
 The private `.build/source` checkout is reset to the pinned revision on a rebuild. `.build/target` is the default Cargo cache; set `CARGO_TARGET_DIR` to reuse another persistent cache. `CARGO_BUILD_TARGET` cross compilation is intentionally rejected. The script skips compilation only when the platform, architecture, source/patch/build-script fingerprint and output artifact hash match its stamp. After an interrupted build, remove `.build/build.lock` if it remains.
 

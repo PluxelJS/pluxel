@@ -59,7 +59,10 @@ pub struct PackageStore {
     error: Option<String>,
 }
 fn hash(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 fn selection_revision(selection: &Selection) -> String {
     hash(&serde_json::to_vec(selection).unwrap())
@@ -289,8 +292,8 @@ impl PackageStore {
         let mut expanded = 0u64;
         for index in 0..zip.len() {
             let entry = zip.by_index(index).map_err(|e| e.to_string())?;
-            let name = entry.name();
-            if !path_ok(name) || entry.enclosed_name().is_none() || entry.is_dir() {
+            let name = entry.name().map_err(|e| e.to_string())?.into_owned();
+            if !path_ok(&name) || entry.enclosed_name().is_none() || entry.is_dir() {
                 return Err(format!("invalid archive file path: {name}"));
             }
             if entry

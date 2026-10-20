@@ -1,7 +1,7 @@
 const policy = Object.freeze({
-	usePolling: true,
-	interval: 100,
-	binaryInterval: 100,
+	backend: 'polling',
+	pollingInterval: 100,
+	pollingBinaryInterval: 100,
 	atomic: true,
 })
 
@@ -14,9 +14,9 @@ export function hostFileWatchOptions(): typeof policy {
 			`[host-vite] CHOKIDAR_USEPOLLING=${JSON.stringify(polling)} conflicts with reliable file updates; unset it or use true`,
 		)
 	const interval = process.env.CHOKIDAR_INTERVAL
-	if (interval !== undefined && interval !== String(policy.interval))
+	if (interval !== undefined && interval !== String(policy.pollingInterval))
 		throw new TypeError(
-			`[host-vite] CHOKIDAR_INTERVAL=${JSON.stringify(interval)} conflicts with the ${policy.interval}ms file update interval; unset it or use ${policy.interval}`,
+			`[host-vite] CHOKIDAR_INTERVAL=${JSON.stringify(interval)} conflicts with the ${policy.pollingInterval}ms file update interval; unset it or use ${policy.pollingInterval}`,
 		)
 	return policy
 }

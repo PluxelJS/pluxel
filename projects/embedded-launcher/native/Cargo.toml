@@ -29,10 +29,10 @@ arboard = { version = "3", default-features = false, features = ["wayland-data-c
 fs2 = "0.4"
 tempfile = "3"
 png = "0.18"
-zip = { version = "=6.0.0", default-features = false, features = ["deflate"] }
-sha2 = "0.10"
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
+sha2 = "0.11"
 semver = "1"
-rfd = { version = "0.15", default-features = false, features = ["tokio", "xdg-portal"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
 
 [dev-dependencies]
 iced_test = "=0.14.0"

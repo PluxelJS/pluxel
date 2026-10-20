@@ -85,14 +85,14 @@ jobs:
         run: vp run @report-template-studio/app#check-discovery
 
       - name: Install Rust
-        run: rustup toolchain install 1.97.1 --profile minimal
+        run: rustup toolchain install 1.99.1 --profile minimal
 
       - name: Restore native compiler build cache
         id: native-cache
         uses: actions/cache/restore@v6
         with:
           path: plugins/render/typst/native/.build
-          key: ${{ runner.os }}-x64-studio-typst-rust-1.97.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
+          key: ${{ runner.os }}-x64-studio-typst-rust-1.99.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
 
       - name: Build native compiler
         run: vp run @pluxel/plugin-typst#prepare:native

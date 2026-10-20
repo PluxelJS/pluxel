@@ -158,7 +158,7 @@ SDK 的初始观察 epoch 只收集入口事件；ready 后在原队列校验完
 私有会话的 `entries()` 异步读取同一观察 owner 并重新验证当前来源。工厂独立重评也必须等待它；坏发布不能因缓存条目仍可读就启动空 catalog 或旧 catalog 并报告成功。Raw 文件事件只请求 discovery 校验，普通入口接纳等待原 SDK 观察事件，不凭 raw 类型合成已观察入口。
 启动时不存在的父目录后来变为别名，也不能让 SDK 忽略它并返回空来源。已固定的 physical owner 在 materialized ancestor 改指真实路径时以 `PLUGIN_SOURCE_PATH_CHANGED` / `file` 拒绝；恢复原路径或重启 Vite 会话可恢复。同声明的 Host replacement 复用该 owner，不自动重新绑定；fresh Native opening 仍可解析已有父目录别名。
 
-Host-vite 的私有来源、依赖和恢复 watcher 共用 100 ms polling/atomic 策略，仅观察各自已知覆盖范围。真实快速修复回归证明默认 Chokidar change 节流会丢更新；`awaitWriteFinish` 的内部 stat 轮询又不随 close 排空，因此不采用它。Chokidar 会用环境变量覆盖显式 options；与此策略冲突的 `CHOKIDAR_USEPOLLING`（只接受省略、`true`、`1`）或 `CHOKIDAR_INTERVAL`（只接受省略、`100`）明确拒绝，不修改进程环境或 SDK 私有缓存。事件仍进入原串行队列，关闭先禁止接纳，再排空已接纳 callback/discovery 并释放 polling 资源。
+Host-vite 的私有来源、依赖和恢复 watcher 共用 100 ms polling/atomic 策略，仅观察各自已知覆盖范围。Chokidar 6 使用显式 polling backend 与 polling interval 配置；不启用 `awaitWriteFinish`，使快速修复无需等待额外稳定窗口。真实回归覆盖连续修复通知、已接纳 callback 的排空，以及 close 后停止文件读取和释放计时器。Chokidar 会用环境变量覆盖显式 options；与此策略冲突的 `CHOKIDAR_USEPOLLING`（只接受省略、`true`、`1`）或 `CHOKIDAR_INTERVAL`（只接受省略、`100`）明确拒绝，不修改进程环境或 SDK 私有缓存。事件仍进入原串行队列，关闭先禁止接纳，再排空已接纳 callback/discovery 并释放 polling 资源。
 
 固定 imports 和动态 entries 共用候选处理与 Host 提交路径。来源发现负责精确 entry anchors，执行分类只消费
 已证明的 source/built semantic facts；ordinary ESM 传递依赖仍由 runner 管理，CJS/native/singleton 维持 Node 边界。

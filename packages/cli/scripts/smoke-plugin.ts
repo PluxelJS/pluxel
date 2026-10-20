@@ -128,7 +128,7 @@ async function installPackedCli(
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
-		`${JSON.stringify({ name: 'pluxel-cli-smoke', private: true, packageManager: 'pnpm@11.28.2', dependencies: { '@pluxel/cli': tarball } }, null, 2)}\n`,
+		`${JSON.stringify({ name: 'pluxel-cli-smoke', private: true, packageManager: 'pnpm@11.28.6', dependencies: { '@pluxel/cli': tarball } }, null, 2)}\n`,
 	)
 	await writeFile(
 		resolve(root, 'pnpm-workspace.yaml'),
