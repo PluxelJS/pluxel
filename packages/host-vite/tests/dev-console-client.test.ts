@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startDevConsoleServer } from '../src/console/server'
-import { requestDev, runDevFile, selectDevInstance } from '../../cli/src/dev/client'
+import { controlDevHmr, requestDev, runDevFile, selectDevInstance } from '../../cli/src/dev/client'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -11,6 +11,45 @@ afterEach(async () => {
 })
 
 describe('dev console wire interoperability', () => {
+	it('controls HMR without a source file or available Host and returns the retained receipt identity', async () => {
+		const root = await mkdtemp(resolve(tmpdir(), 'px-hmr-interop-'))
+		cleanup.push(() => rm(root, { recursive: true, force: true }))
+		const hmr = {
+			mode: 'paused',
+			running: false,
+			pending: { files: 3, full: false },
+			observedRevision: 3,
+			attemptedRevision: 0,
+		}
+		const server = await startDevConsoleServer({
+			root,
+			execute: async () => {
+				throw new Error('Host unavailable')
+			},
+			control: async (action) => ({ action, hmr }),
+			inspect: () => ({ hmr, application: { state: 'unavailable', latestUpdate: null } }),
+		})
+		cleanup.push(() => server.close())
+		const instance = await selectDevInstance({ root })
+		expect(instance.hmr).toEqual(hmr)
+		for (const action of ['pause', 'apply', 'resume']) {
+			const result = await controlDevHmr({ instance, action, timeoutMs: 1000, detach: false })
+			expect(result).toMatchObject({
+				root,
+				kind: 'hmr',
+				action,
+				state: 'succeeded',
+				instanceId: instance.instanceId,
+				value: { action, hmr },
+			})
+			expect(await requestDev(instance, { method: 'result', runId: result.runId })).toMatchObject({
+				kind: 'hmr',
+				action,
+				state: 'succeeded',
+			})
+		}
+	})
+
 	it('interoperates with the real console server for repeated runs, results and cancellation', async () => {
 		const root = await mkdtemp(resolve(tmpdir(), 'px-interop-'))
 		cleanup.push(() => rm(root, { recursive: true, force: true }))

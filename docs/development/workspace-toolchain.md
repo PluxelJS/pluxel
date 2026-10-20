@@ -24,7 +24,7 @@ description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开
 | `pitchfork.toml`           | 用 **TOML** 声明长期服务、启动命令、分配端口与就绪条件                          |
 | `hk.pkl`                   | 用 **Pkl** 声明提交检查、文件选择和检查/修复命令                                |
 | `package.json` / Vite Task | package 声明依赖；Vite Task 声明命令、依赖图和缓存                              |
-| Pluxel dev console         | 在指定的现有 Vite 实例中读取或操作 Plugin、配置、报告和应用日志                 |
+| Pluxel dev console         | 控制现有 Vite 的 HMR 批次，读取或操作 Plugin、配置、报告和应用日志              |
 
 mise 管理工具的安装和执行环境；package scripts 提供统一操作入口；Pitchfork 管理进程；hk 调用项目检查。不要在三份配置中分别实现同一个检查，也不要用新的后台脚本重做 Pitchfork 的端口、重试或日志管理。
 
@@ -229,7 +229,7 @@ Pluxel 的开发地址契约与代理供应商分开：
 | 应用 ready、HMR 接纳、Plugin 状态与报告              | `pluxel dev status` 与控制台脚本                  |
 | Plugin 业务日志、配置、方法、Workbench RPC、生命周期 | [开发控制台](./dev-console.md)                    |
 
-先发现并复用已有服务；纯静态任务不启动服务。需要运行且服务未启动时，才用已注册 URL 或显式 `start`。启动失败先查进程日志；修改后优先使用 HMR，再查应用报告和业务日志，实际需要时才 `restart`。操作步骤、receipt 与交付证据见[控制台工作流程](./dev-console.md#coding-agent-工作流程)。只清理本任务启动且约定清理的服务，保留已有共享实例。
+先发现并复用已有服务；纯静态任务不启动服务。需要运行且服务未启动时，才用已注册 URL 或显式 `start`。启动失败先查进程日志；运行中跨文件或连续编辑先按 [HMR 批次控制](./dev-console.md#hmr-批次控制)暂停，检查后显式应用，再查应用报告和业务日志，不通过服务 restart 代替 apply。操作步骤、receipt 与交付证据见[控制台工作流程](./dev-console.md#coding-agent-工作流程)。只清理本任务启动且约定清理的服务，保留已有共享实例。
 
 ```sh
 # 将 app 替换为发现的完整服务 ID

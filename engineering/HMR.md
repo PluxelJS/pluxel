@@ -3,9 +3,21 @@
 HMR 是 Plugin definition replacement，不是对运行中 instance 的字段修补。Module、Core graph、owner effects、
 Workbench publication 和构建产物必须按一个确定边界切换。
 
-按问题选读：[replacement 与提交边界](#definition-replacement)、[Vite namespace](#canonical-vite-module-graph)、[固定/动态来源](#固定-catalog-与可选动态来源)、[制品候选](#workbench-candidate-inputs)、[producer 构建](#workbench-producer-build)、[来源失败恢复](#来源观察失败)。[验证](#验证)区分 graph、真实 Vite、browser 与 Node 资源边界。
+按问题选读：[调度与暂停](#开发批次调度)、[replacement 与提交边界](#definition-replacement)、[Vite namespace](#canonical-vite-module-graph)、[固定/动态来源](#固定-catalog-与可选动态来源)、[制品候选](#workbench-candidate-inputs)、[producer 构建](#workbench-producer-build)、[来源失败恢复](#来源观察失败)。[验证](#验证)区分 graph、真实 Vite、browser 与 Node 资源边界。
 
 首次启动的源码求值失败保留 watcher 恢复与开发控制台诊断；Host 创建、服务准备或应用准备的致命失败则拒绝 `configureServer`，排空 Host/update/watch 资源后向 Vite 传播原始异常，CLI 不得进入监听并打印 ready。已启动应用的更新仍执行下面的保留／补偿规则。
+
+## 开发批次调度
+
+Host-vite 拥有每个 Vite 实例唯一的更新调度器，默认 auto。最多一个批次执行，后续事件按 canonical 文件路径合并到一份 pending 集合，不为每次保存追加候选求值 Promise。4096 个不同文件之外折叠成 full rescan 请求，保留更新意图；重新核对仍经过原来源准入与候选验证，不能把容量限制变成静默丢事件或接受旧 catalog。
+
+暂停先关闭自动批次的接纳，再等待已执行批次结算；watcher 继续记录变化。apply 保持 paused，等待当前批次后取得一份 pending 工作，resume 等待当前批次后恢复 auto 并应用一份 pending 工作。批次执行期间新增的观察属于后续 pending，不能随当前结算一起清空。失败批次重新保留待处理意图，auto 只因新观察再尝试，不建立失败重试循环。关闭时停止接纳，清除未执行的 pending 并排空已开始的工作，不为退出额外应用未完成编辑。
+
+控制边界在应用模块求值、候选制品准备与生命周期提交之前；主 watcher、来源与恢复 watcher、已求值 ESM dependency watcher 汇入同一调度入口。文件观察、来源路径准入与 IO 校验仍运行；Vite watchChange 的缓存失效属于观察，不等于已经求值应用。普通 client React/CSS HMR 与 Vite 配置触发的 server restart 仍由 Vite 所有，不宣称冻结整个 dev server、请求触发的 transform 或文件系统。
+
+dev console 直接控制调度器，不经过操作脚本 loader、应用 ready gate 或随 Host 替换撤销的 run scope。模式在完整 Host replacement 后保留，Vite 实例关闭后释放。状态只包含 mode、running、有界 pending 与观察/尝试 revision；最近候选结果仍由 `application.latestUpdate` 所有，不增加第二套生命周期成功判定。命令和 agent 工作流只维护在[开发控制台指南](../docs/development/dev-console.md#hmr-批次控制)。
+
+调度合并不改变原来的 prepare/commit、运行意图与失败恢复契约；attempted revision 不表示已提交或应用 ready。脚本入口的 finite barrier 遇到 paused 且待处理运行时变更时拒绝 `hmr_pending`，不为加载脚本隐式越过暂停。没有磁盘 snapshot 保证，也不能用调度上界证明单次构建或应用资源没有内存泄漏。
 
 ## Definition replacement
 
@@ -55,7 +67,7 @@ rejection 记录 `applied-with-issues / commit`，提交返回但生命周期有
 不读取全局“最后一次 commit”。未知节点或新 fork 不继承同 definition 其他节点的 lifecycle。成功补偿宿主使用 `restored-previous / application-reload`，
 仍附带补偿启动的逐节点事实。
 
-开发驱动在接纳更新时分配 attempt sequence，区分正在 evaluate / artifacts / commit / application-reload 与已结算结果；
+开发驱动在开始批次时分配 attempt sequence，区分正在 evaluate / artifacts / commit / application-reload 与已结算结果；
 失败候选即使没有任何已提交 Plugin，也保留独立的 latest attempt。来源更新与 Content refresh 使用同一记录器序列。
 Management `updates.snapshot()` / `updates.follow()` 沿现有会话提供这份状态；订阅首帧包含当前值，慢消费者合并到最新快照，dispose 撤回观察者。
 批次错误包含有界 message、可用的相对文件和已观察导入链；原始异常写入本地 runtime log，不把绝对路径或 stack 传入页面。
@@ -130,7 +142,7 @@ Pitchfork 等反代只把公开 origin 路由到这一个 `ViteDevServer` 注入
 ## 固定 catalog 与可选动态来源
 
 `host({ entry })` 通过 ModuleRunner 加载 canonical `HostApplicationFactory` entry。开发驱动使用 Vite 的
-`hotUpdate` 将 create/update/delete 事件送入同一个更新队列；同一次文件事件只执行一次 runtime 更新，避免 client/SSR
+`hotUpdate` 将 create/update/delete 事件送入同一个有界批次调度器；同一次文件事件只进入一次 runtime 更新，避免 client/SSR
 两套环境重复提交或在提交后再次失效已加载的 constructor。普通 Plugin
 dependency 变化精确失效 importer graph；application factory identity 变化重建 host。Single-active logging root
 在候选工厂成功求值后，要求先停止旧 host；候选服务准备、prepare 或 start 抛出错误时先停止并清理失败的新 host，再从上一次成功工厂及 startup 快照创建一个
@@ -152,13 +164,14 @@ Vite 来源变化且 factory identity 不变时复用已解析配置，在当前
 继续忽略 persistence、安装目录和 artifact cache；来源 watcher 只接纳声明覆盖的 entry 事件，不扩大 source 集合。
 已接纳的来源更新在同一开发序列中结算，关闭先停止接纳，再等待已接纳工作排空，迟到结果不能发布。
 SDK 的初始观察 epoch 只收集入口事件；ready 后在原队列校验完整来源才返回就绪结果，避免逐个 add 重复扫描目录。
-后续事件和每次 `entries()` 消费继续验证同一 physical owner，初始优化不跳过错误准入或关闭排空。
+后续 SDK 文件通知按路径合并到最多 4096 项的 pending map，以固定 25 ms 窗口触发校验，同一来源只有一个执行中的校验。溢出时将 Chokidar 实际观察集合与已校验路径重新核对；discovery 或 raw-only 通知不能接纳 SDK 尚未观察的文件。
+校验失败将该批通知合回 pending，保留同一路径的新通知；只有新观察或显式读取才再次尝试，不因回填而循环重试。`entries()` 在自己的串行执行位置取得一批 pending（包括前一轮失败保留的通知），校验一次同一 physical owner 后返回；校验期间新通知留给下一批，不等待全局空闲。关闭丢弃尚未启动的 pending、释放计时器并排空已接纳 IO，初始与批次优化均不跳过错误准入。
 
 来源发现由 Host 的内部 discovery 维护共同准入规则：拒绝声明根和 include 命中入口的符号链接，不遍历符号链接子目录；允许父目录别名，并在打开会话时固定 canonical path。Vite 观察会话把该路径的覆盖事实传给 evaluator，不能用声明的 lexical path 错分 canonical 文件事件。
 私有会话的 `entries()` 异步读取同一观察 owner 并重新验证当前来源。工厂独立重评也必须等待它；坏发布不能因缓存条目仍可读就启动空 catalog 或旧 catalog 并报告成功。Raw 文件事件只请求 discovery 校验，普通入口接纳等待原 SDK 观察事件，不凭 raw 类型合成已观察入口。
 启动时不存在的父目录后来变为别名，也不能让 SDK 忽略它并返回空来源。已固定的 physical owner 在 materialized ancestor 改指真实路径时以 `PLUGIN_SOURCE_PATH_CHANGED` / `file` 拒绝；恢复原路径或重启 Vite 会话可恢复。同声明的 Host replacement 复用该 owner，不自动重新绑定；fresh Native opening 仍可解析已有父目录别名。
 
-Host-vite 的私有来源、依赖和恢复 watcher 共用 100 ms polling/atomic 策略，仅观察各自已知覆盖范围。Chokidar 6 使用显式 polling backend 与 polling interval 配置；不启用 `awaitWriteFinish`，使快速修复无需等待额外稳定窗口。真实回归覆盖连续修复通知、已接纳 callback 的排空，以及 close 后停止文件读取和释放计时器。Chokidar 会用环境变量覆盖显式 options；与此策略冲突的 `CHOKIDAR_USEPOLLING`（只接受省略、`true`、`1`）或 `CHOKIDAR_INTERVAL`（只接受省略、`100`）明确拒绝，不修改进程环境或 SDK 私有缓存。事件仍进入原串行队列，关闭先禁止接纳，再排空已接纳 callback/discovery 并释放 polling 资源。
+Host-vite 的私有来源、依赖和恢复 watcher 共用 100 ms polling/atomic 策略，仅观察各自已知覆盖范围。Chokidar 6 使用显式 polling backend 与 polling interval 配置；不启用 `awaitWriteFinish`，使快速修复无需等待额外稳定窗口。真实回归覆盖连续修复通知、已接纳 callback 的排空，以及 close 后停止文件读取和释放计时器。Chokidar 会用环境变量覆盖显式 options；与此策略冲突的 `CHOKIDAR_USEPOLLING`（只接受省略、`true`、`1`）或 `CHOKIDAR_INTERVAL`（只接受省略、`100`）明确拒绝，不修改进程环境或 SDK 私有缓存。事件按上述规则合并并串行处理，关闭先禁止接纳，再排空已接纳 callback/discovery 并释放 polling 资源。
 
 固定 imports 和动态 entries 共用候选处理与 Host 提交路径。来源发现负责精确 entry anchors，执行分类只消费
 已证明的 source/built semantic facts；ordinary ESM 传递依赖仍由 runner 管理，CJS/native/singleton 维持 Node 边界。
@@ -251,11 +264,11 @@ Worker task 的新 dispatch 读取 content-addressed 新 module URL，已运行 
 
 围绕更新边界验证：structural reject 保留旧 catalog；PONR 后仅报告新 lifecycle facts；definition-wide replacement 与 required/optional closure 一致；显式 Stop 不被源码恢复覆盖；失败候选不污染 semantic/artifact authority；迟到 producer 不提交；full-host compensation 只在 fresh host 启动成功后报告 restored。
 
-使用真实 Vite 验证单一 Host namespace、来源恢复、execution provenance、watcher 关闭与队列排空。Management DTO 不泄漏绝对路径/Vite ID，批次错误不伪装成所有节点失败。Workbench/browser 与 Node staged setup 分别在各自真实资源边界验证。
+使用真实 Vite 验证单一 Host namespace、来源恢复、execution provenance、watcher 关闭与队列排空。批次控制覆盖暂停期间多次无效/有效编辑只应用最终内容、执行中新增事件进入下一批、失败后的显式修复、自动模式合并、pending 上界和关闭撤回；完整 Host replacement 不撤销自己的控制命令。Management DTO 不泄漏绝对路径/Vite ID，批次错误不伪装成所有节点失败。Workbench/browser 与 Node staged setup 分别在各自真实资源边界验证。
 
 ## Development console execution
 
-显式启用的 dev console 使用同一个 `pluxel` environment runner，执行根不是 Plugin catalog entry。脚本等待真实 watcher 接纳已知依赖修改，再等待开发驱动已接纳的有限更新序列；执行期间不锁住整个 HMR coordinator。full-host replacement 撤回旧 run scope，后续提交获取新 epoch。源码观察、finite barrier 与资源边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+显式启用的 dev console 使用同一个 `pluxel` environment runner，执行根不是 Plugin catalog entry。脚本等待真实 watcher 接纳已知依赖修改，再等待开发驱动已接纳的有限更新序列；paused 且存在运行时 pending 时拒绝加载，执行期间不锁住整个 HMR coordinator。full-host replacement 撤回旧脚本 run scope，后续提交获取新 epoch；独立 HMR 控制仍绑定 Vite 实例。源码观察、finite barrier 与资源边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
 
 ## 来源观察失败
 
@@ -289,6 +302,8 @@ Workbench renderer 的 semantic candidate 被拒绝时，应用更新报告 `ret
 动态入口的集中集成覆盖见 `packages/services/tests/installed-plugin.smoke.mjs`：真实 Vite 启动后新增 `.ts` wrapper，按 `@pluxel/hmr` 选择 TypeScript 源码，修改其传递依赖完成 replacement，删除 wrapper 撤回能力；同一进程还验证已编译 `.mjs` 包安装、升级、失败保留与卸载。入口被发现不等于自动启动：仍服从 Host 的 auto-start/session intent，撤回后保留配置意图而非伪装成正在运行。
 
 来源 wrapper 重发时，先比较已求值闭包中的真实文件摘要，只失效变更模块及其 importers；不能无条件清空旧依赖闭包，否则共同 P 会被重新求值并连带替换未变的 B。不可变 pnpm slots 与未变 wrapper 保持物理路径、字节和 namespace。
+
+模块失效按整个更新批次执行：resolver/classifier 缓存只清理一次，Vite graph 与 ModuleRunner 的 importer 闭包各共享 visited 集合遍历一次，避免多个变更入口反复失效共同依赖与控制台 importers；仍保留缺失导入恢复和精确字节变化的判定。
 
 同次发布的包文件通知可能晚于 wrapper 已接纳新字节。仅对现有依赖 watcher 覆盖、且不是失败恢复输入的已加载文件，比较 Vite load 时记录的摘要；字节相同的迟到通知在开始事务前忽略，避免重复驱逐同一 namespace。未知、缺失与读取错误仍进入原处理路径，来源契约校验不由该去重跳过。真实发行回归用公开 `watchChange` 将包通知延后到 wrapper 结算，再验证报告序号和实例次数均不变化。
 

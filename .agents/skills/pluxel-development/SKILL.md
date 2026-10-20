@@ -23,7 +23,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 | 装配应用或服务                          | `host/configuration.md`；扩展服务读 `host/services.md`，不要混用生产应用、独立 Host 与 test host API                                                             |
 | 查声明、配置绑定与源码位置              | `development/inspection.md`；定向请求所需 sections，显式选择 application；先检查 complete/partial/unavailable，缺口不等于不存在                                  |
 | 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                       |
-| 操作运行中的应用                        | `development/dev-console.md`；使用现有 Vite 控制台，隔离 host 不能证明在线状态                                                                                   |
+| 操作运行中的应用、分批接纳源码修改      | `development/dev-console.md`；使用现有 Vite 控制台与 HMR 批次控制，隔离 host 不能证明在线状态                                                                    |
 | 安装工具、管理服务或修改任务缓存/hk/Pkl | `development/workspace-toolchain.md`；先看现有配置与服务                                                                                                         |
 | 源码联调、安装、catalog 或开发文档接入  | `development/source-workspaces.md`；source doctor 不证明构建产物最新，按需 source build                                                                          |
 | CLI、构建/HMR、包导出或发布             | `development/tooling.md`、`development/plugin-package.md`；跨包职责查 `reference/package-matrix.md`                                                              |
@@ -42,7 +42,13 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 pitchfork logs <service> --since 5min -n 100 --no-pager
 ```
 
-`--follow` 仅用于短时观察。普通源码更新交给 HMR，单个 Plugin 重启用 console/Workbench；进程环境变化才完整重启服务。并行 worktree 隔离 namespace 与数据目录，只停止本任务拥有的服务。新增进程监督、端口扫描或轮询前，查工作区指南与已安装 Pitchfork 的帮助。
+`--follow` 仅用于短时观察。源码更新使用 HMR，单个 Plugin 重启用 console/Workbench；进程环境变化才完整重启服务。并行 worktree 隔离 namespace 与数据目录，只停止本任务拥有的服务。新增进程监督、端口扫描或轮询前，查工作区指南与已安装 Pitchfork 的帮助。
+
+## 分批修改运行中的源码
+
+已有应用运行且要跨文件或连续编辑时，先读控制台指南的「HMR 批次控制」。用同一 profile/instance 的 `dev status` 记录原模式，再 `dev hmr pause`，等待当前批次结算后编辑。完成相关静态检查，执行 `dev hmr apply`，核对 HMR 结果、应用报告和实际行为；执行期间新增的修改仍需下一批 apply。
+
+失败后保持暂停，检查 `dev status` 与有界日志，再修复和 apply。只有本次任务暂停了原本 auto 的实例、更新成功且待处理变化已清空时才 `dev hmr resume`；不要在 finally 中无条件恢复，不替其他任务恢复原本 paused 的实例。暂停按 Vite 实例共享，并行 agent 由一个协调者应用批次。控制命令无需加载应用脚本，源码损坏时仍可使用；不要重启服务模拟 apply，或让 `dev run` 代替应用待处理源码。普通 browser HMR 与 Vite 配置重启的范围以指南为准。
 
 ## 在线操作与交付
 

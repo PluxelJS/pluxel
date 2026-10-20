@@ -12,7 +12,7 @@ Coding agent 从 [pluxel-development skill](https://github.com/PluxelJS/pluxel/b
 | 定位 Plugin/Part、配置声明或应用绑定   | [源码 inspect](./inspection.md)                              | 静态声明关系；partial/空结果不证明不存在    |
 | 检查类型、lint、构建与工作区契约       | 项目 scripts、[工作区工具链](./workspace-toolchain.md)       | 实际执行的检查；inspect 列出脚本不等于执行  |
 | 验证插件行为、失败与清理               | [插件测试](../plugin-development/testing.md)                 | 隔离 host 的回归；不代表运行实例            |
-| 检查或操作当前配置、方法、日志         | [开发控制台](./dev-console.md)                               | 选定 profile/实例的在线结果；保留原 receipt |
+| 控制 HMR 批次、操作配置、方法或日志    | [开发控制台](./dev-console.md)                               | 选定 profile/实例的在线结果；保留原 receipt |
 | Git 源码联调、catalog、文档/skill 接入 | [源码工作区](./source-workspaces.md)                         | 安装与来源状态；doctor 不证明产物最新       |
 | 理解生成项目的目录与任务               | [示例项目](./starter-monorepo.md)                            | 模板的职责划分与操作入口                    |
 | CLI、构建转换与 HMR                    | [CLI 与工具链](./tooling.md)                                 | 命令职责、源码转换与更新边界                |

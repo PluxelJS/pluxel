@@ -25,6 +25,7 @@ export interface DevInstance {
 	profile?: string
 	project?: string
 	urlOutput?: readonly string[]
+	hmr?: Readonly<Record<string, unknown>>
 	application?: Readonly<{ state: 'ready' | 'updating' | 'unavailable'; latestUpdate: unknown }>
 }
 
@@ -309,9 +310,11 @@ async function sendDevRequest(
 		}
 		const disconnected = () =>
 			new DevClientError(
-				sent && payload.method === 'run' ? 'outcome_unknown' : 'dev_unavailable',
-				sent && payload.method === 'run'
-					? 'Connection ended before run acceptance could be confirmed.'
+				sent && (payload.method === 'run' || payload.method === 'hmr')
+					? 'outcome_unknown'
+					: 'dev_unavailable',
+				sent && (payload.method === 'run' || payload.method === 'hmr')
+					? 'Connection ended before operation acceptance could be confirmed.'
 					: 'The selected development console did not return a valid response.',
 				{ runId },
 			)
@@ -373,6 +376,7 @@ export function publicInstance(instance: DevInstance) {
 		...(instance.profile ? { profile: instance.profile } : {}),
 		...(instance.project ? { project: instance.project } : {}),
 		...(instance.application ? { application: instance.application } : {}),
+		...(instance.hmr ? { hmr: instance.hmr } : {}),
 		...(instance.urlOutput ? { urlOutput: instance.urlOutput } : {}),
 	}
 }
@@ -400,10 +404,14 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 						!value.urlOutput.every((line) => typeof line === 'string'))
 				)
 					fail('protocol_mismatch', 'Console URL output is invalid')
-				const inspected =
-					value.urlOutput === undefined
-						? instance
-						: Object.assign({}, instance, { urlOutput: value.urlOutput as string[] })
+				if (value.hmr !== undefined && !record(value.hmr))
+					fail('protocol_mismatch', 'Console HMR status is invalid')
+				const inspected = Object.assign(
+					{},
+					instance,
+					value.urlOutput === undefined ? {} : { urlOutput: value.urlOutput as string[] },
+					value.hmr === undefined ? {} : { hmr: value.hmr as Record<string, unknown> },
+				)
 				if (value.application === undefined) return inspected
 				if (
 					!record(value.application) ||
@@ -528,23 +536,27 @@ export function parseRunSnapshot(
 	return { ...value, root: instance.root } as DevRunSnapshot
 }
 
-export async function runDevFile(options: {
+type DevOperationOptions = {
 	instance: DevInstance
-	file: string
-	exportName: string
-	input?: unknown
 	timeoutMs: number
 	detach: boolean
 	onAccepted?(snapshot: DevRunSnapshot): void
-}): Promise<DevRunSnapshot> {
-	if (
-		!Number.isSafeInteger(options.timeoutMs) ||
-		options.timeoutMs < 1 ||
-		options.timeoutMs > 300_000
-	)
+}
+
+function validateTimeout(timeoutMs: number): void {
+	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000)
 		fail('invalid_input', '--timeout must be an integer from 1 to 300000 milliseconds')
+}
+
+export async function runDevFile(
+	options: DevOperationOptions & {
+		file: string
+		exportName: string
+		input?: unknown
+	},
+): Promise<DevRunSnapshot> {
+	validateTimeout(options.timeoutMs)
 	const instance = options.instance
-	let runId: string | undefined
 	try {
 		const file = await realpath(resolve(options.file))
 		const path = relative(instance.root, file)
@@ -553,17 +565,43 @@ export async function runDevFile(options: {
 		const sourceHash = createHash('sha256')
 			.update(await readBoundedFile(file))
 			.digest('hex')
-		runId = randomUUID()
+		return await submitDevOperation(options, {
+			method: 'run',
+			file,
+			sourceHash,
+			exportName: options.exportName,
+			input: options.input,
+		})
+	} catch (error) {
+		throw withDevContext(error, {
+			root: instance.root,
+			instanceId: instance.instanceId,
+			serviceId: instance.serviceId,
+		})
+	}
+}
+
+export async function controlDevHmr(
+	options: DevOperationOptions & {
+		action: string
+	},
+): Promise<DevRunSnapshot> {
+	validateTimeout(options.timeoutMs)
+	if (options.action !== 'pause' && options.action !== 'apply' && options.action !== 'resume')
+		fail('invalid_input', 'Expected HMR action pause, apply or resume')
+	return submitDevOperation(options, { method: 'hmr', action: options.action })
+}
+
+/** One admission, then read only the same instance and run; transport failure never replays. */
+async function submitDevOperation(
+	options: DevOperationOptions,
+	payload: Record<string, unknown>,
+): Promise<DevRunSnapshot> {
+	const instance = options.instance
+	const runId = randomUUID()
+	try {
 		let snapshot = parseRunSnapshot(
-			await requestDev(instance, {
-				method: 'run',
-				runId,
-				file,
-				sourceHash,
-				exportName: options.exportName,
-				input: options.input,
-				timeoutMs: options.timeoutMs,
-			}),
+			await requestDev(instance, { ...payload, runId, timeoutMs: options.timeoutMs }),
 			instance,
 			runId,
 		)

@@ -7,13 +7,13 @@ vp add -D @pluxel/cli
 vp exec pluxel docs development/index.md
 ```
 
-| 任务                | 命令与指南                                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------------- |
-| 创建 Plugin package | `pluxel new`；[模板与安装](../../docs/development/tooling.md)                                 |
-| 构建与发布 Plugin   | `pluxel build` / `publish`；[插件包](../../docs/development/plugin-package.md)                |
-| 操作已有 Vite 应用  | `pluxel dev instances/run/result/cancel`；[开发控制台](../../docs/development/dev-console.md) |
-| 跨仓库源码联调      | `pluxel source` / `workspace`；[源码工作区](../../docs/development/source-workspaces.md)      |
-| 验证发行物          | `pluxel distribution`；[应用交付](../../docs/development/distribution.md)                     |
+| 任务                | 命令与指南                                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| 创建 Plugin package | `pluxel new`；[模板与安装](../../docs/development/tooling.md)                                            |
+| 构建与发布 Plugin   | `pluxel build` / `publish`；[插件包](../../docs/development/plugin-package.md)                           |
+| 操作已有 Vite 应用  | `pluxel dev status/instances/hmr/run/result/cancel`；[开发控制台](../../docs/development/dev-console.md) |
+| 跨仓库源码联调      | `pluxel source` / `workspace`；[源码工作区](../../docs/development/source-workspaces.md)                 |
+| 验证发行物          | `pluxel distribution`；[应用交付](../../docs/development/distribution.md)                                |
 
 完整应用由 `vp create @pluxel` 创建。源码检查使用 `@pluxel/rolldown/inspect` 的 library API。
 

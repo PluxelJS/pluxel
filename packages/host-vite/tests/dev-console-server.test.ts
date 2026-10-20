@@ -84,6 +84,36 @@ function requestWithProtocol(instance: DevConsoleInstance, protocol: number): Pr
 }
 
 describe('private development console server boundaries', () => {
+	it('validates HMR action, deadline and fields before admission', async () => {
+		const { root } = await project()
+		const control = vi.fn(async () => null)
+		const server = await startDevConsoleServer({ root, execute: async () => null, control })
+		cleanup.push(() => server.close())
+		const packet = { method: 'hmr', runId: 'hmr-action', action: 'pause' }
+		for (const invalid of [
+			{ action: 'restart' },
+			{ action: undefined },
+			{ timeoutMs: 0 },
+			{ timeoutMs: 300001 },
+			{ timeoutMs: '1000' },
+			{ file: '/script.ts' },
+			{ input: {} },
+			{ runId: '' },
+		]) {
+			await expect(requestDev(server.instance, { ...packet, ...invalid })).rejects.toMatchObject({
+				code: 'invalid_request',
+			})
+		}
+		expect(control).not.toHaveBeenCalled()
+		await requestDev(server.instance, packet)
+		expect(await server.executor.settled(packet.runId)).toMatchObject({
+			kind: 'hmr',
+			action: 'pause',
+			state: 'succeeded',
+		})
+		expect(control).toHaveBeenCalledTimes(1)
+	})
+
 	it('binds discovery and inspect to the Pitchfork service captured at startup', async () => {
 		vi.stubEnv('PITCHFORK_DAEMON_ID', 'pluxel.worktree/plugin-host')
 		const { root } = await project()

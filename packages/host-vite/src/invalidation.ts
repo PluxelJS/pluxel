@@ -1,62 +1,72 @@
 import { normalizePath, type EnvironmentModuleNode, type ViteDevServer } from 'vite'
-import { invalidateHostModuleClassifiers, HOST_VITE_ENVIRONMENT } from './environment'
+import type { EvaluatedModuleNode } from 'vite/module-runner'
+import {
+	getHostModuleRunner,
+	invalidateHostModuleClassifiers,
+	HOST_VITE_ENVIRONMENT,
+} from './environment'
 
 export function invalidateHostChangedModules(options: {
 	server: ViteDevServer
-	changedFile: string
+	changes: readonly Readonly<{ file: string; reloadDependencies: boolean }>[]
 	applicationFiles: ReadonlySet<string>
-	changedModules: readonly EnvironmentModuleNode[]
 	recoverMissingImports: boolean
-	/** A producer republished an entry; new entries must not evict the existing catalog. */
-	reloadDependencies?: boolean
 	/** Only old dependencies whose evaluated bytes changed may be evicted. */
 	changedDependencies?: readonly string[]
-}): Readonly<{ count: number; modules: ReadonlySet<string> }> {
-	const { server, changedFile, applicationFiles, changedModules, recoverMissingImports } = options
+}): void {
+	const { server, changes, applicationFiles, recoverMissingImports } = options
 	invalidateHostModuleClassifiers(server)
-	type ModuleLike = {
-		id?: string
-		file?: string | null
-		importers?: Set<ModuleLike>
-	}
-
-	const queue: ModuleLike[] = [...changedModules]
-	const seen = new Set<ModuleLike>()
+	const queue: EnvironmentModuleNode[] = []
+	const seen = new Set<EnvironmentModuleNode>()
+	const invalidatedGraph = new Set<EnvironmentModuleNode>()
 	// The watcher path is the direct update authority. Keep it alongside graph IDs/files because
 	// Vite may index a package-root module through its symlink while semantic transforms use the
 	// physical file (or vice versa).
-	const modules = new Set<string>([normalizePath(changedFile)])
+	const modules = new Set<string>(changes.map(({ file }) => normalizePath(file)))
 	const graph = server.environments[HOST_VITE_ENVIRONMENT].moduleGraph
-	for (const mod of graph.getModulesByFile(changedFile) ?? []) {
-		queue.push(mod as ModuleLike)
+	let retryApplication = recoverMissingImports
+	for (const change of changes) {
+		const changed = graph.getModulesByFile(change.file)
+		if (!changed?.size && !change.reloadDependencies) retryApplication = true
+		for (const mod of changed ?? []) queue.push(mod)
 	}
-	// A new producer entry has no graph node yet. Its absence must not evict unrelated
-	// fixed plugins. Failed imports and ordinary application path misses still need
-	// their importer closure retried.
-	if ((queue.length === 0 && !options.reloadDependencies) || recoverMissingImports) {
+	// New producer entries don't evict unrelated fixed plugins; unresolved imports do.
+	if (retryApplication) {
 		for (const file of applicationFiles) {
-			for (const mod of graph.getModulesByFile(file) ?? []) {
-				queue.push(mod as ModuleLike)
-			}
+			modules.add(file)
+			for (const mod of graph.getModulesByFile(file) ?? []) queue.push(mod)
 		}
 	}
-
-	if (options.reloadDependencies) {
-		for (const file of options.changedDependencies ?? []) {
-			for (const mod of graph.getModulesByFile(file) ?? []) queue.push(mod as ModuleLike)
-		}
+	for (const file of options.changedDependencies ?? []) {
+		modules.add(file)
+		for (const mod of graph.getModulesByFile(file) ?? []) queue.push(mod)
 	}
 
-	let invalidated = 0
-	while (queue.length > 0) {
-		const mod = queue.shift()!
+	for (let index = 0; index < queue.length; index++) {
+		const mod = queue[index]!
 		if (seen.has(mod)) continue
 		seen.add(mod)
 		if (mod.id) modules.add(mod.id)
 		if (mod.file) modules.add(normalizePath(mod.file))
-		graph.invalidateModule(mod as Parameters<typeof graph.invalidateModule>[0])
-		invalidated++
+		graph.invalidateModule(mod, invalidatedGraph)
 		for (const importer of mod.importers ?? []) queue.push(importer)
 	}
-	return { count: invalidated, modules }
+	// Invalidate the evaluated namespace once per batch, including console importers.
+	const runner = getHostModuleRunner(server)
+	const evaluated: EvaluatedModuleNode[] = []
+	for (const file of modules) {
+		for (const module of runner.evaluatedModules.getModulesByFile(file) ?? [])
+			evaluated.push(module)
+	}
+	const visited = new Set<string>()
+	for (let index = 0; index < evaluated.length; index++) {
+		const current = evaluated[index]!
+		if (visited.has(current.id)) continue
+		visited.add(current.id)
+		for (const importer of current.importers) {
+			const module = runner.evaluatedModules.getModuleById(importer)
+			if (module) evaluated.push(module)
+		}
+		runner.evaluatedModules.invalidateModule(current)
+	}
 }

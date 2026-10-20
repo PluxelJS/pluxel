@@ -48,7 +48,12 @@ import {
 } from './internal/update-error'
 import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
-import { createHostViteDriver, HostViteClosedError } from './driver'
+import {
+	createHostViteDriver,
+	HostViteClosedError,
+	type HostViteBatch,
+	type HostViteChange,
+} from './driver'
 import { beginHostCandidate } from './candidate'
 import { createHostSourceEvaluator, type HostSourceCandidate } from './application-sources'
 import { ViteApplicationRecovery } from './internal/vite-application-recovery'
@@ -57,7 +62,6 @@ import {
 	isHostNativeModule,
 	collectHostImportFiles,
 	importHostModule,
-	invalidateHostModule,
 	hostEnvironment,
 	HOST_VITE_ENVIRONMENT,
 } from './environment'
@@ -106,7 +110,13 @@ export function host(options: HostViteOptions): PluginOption[] {
 			return profile === 'production' ? 'distribution' : 'development'
 		},
 	})
-	const driver = createHostViteDriver()
+	const driver = createHostViteDriver({
+		apply: async (batch) => {
+			if (batch.full || batch.changes.some((change) => change.kind === 'source')) await apply(batch)
+			else await updateArtifacts(batch.changes[0]?.file)
+		},
+		onError: (error) => report(error),
+	})
 	const recentUpdates = new PluginRecentUpdateTracker()
 	let server: ViteDevServer
 	let entry: string
@@ -164,34 +174,45 @@ export function host(options: HostViteOptions): PluginOption[] {
 			throw await closeFailedHost(instance, error)
 		}
 	}
-	const apply = async (changed?: {
-		file: string
-		type: 'create' | 'update' | 'delete'
-	}): Promise<void> => {
+	const apply = async (batch?: HostViteBatch): Promise<void> => {
 		if (closing) return
-		if (
-			changed &&
-			dependencies?.covers(changed.file) &&
-			!recovery.matches(changed.file) &&
-			(await moduleBytes.unchanged(changed.file))
-		)
-			return
-		if (changed) {
-			const changedDependencies = sources.covers(changed.file)
-				? await moduleBytes.changed(collectHostImportFiles(server, changed.file))
-				: []
-			const invalidation = invalidateHostChangedModules({
+		if (batch) {
+			const changes: HostViteChange[] = []
+			for (const change of batch.changes) {
+				if (change.kind !== 'source') continue
+				if (
+					dependencies?.covers(change.file) &&
+					!recovery.matches(change.file) &&
+					(await moduleBytes.unchanged(change.file))
+				)
+					continue
+				changes.push(change)
+			}
+			if (!batch.full && changes.length === 0) {
+				if (batch.changes.some((change) => change.kind === 'artifact'))
+					await updateArtifacts(batch.changes[0]?.file)
+				return
+			}
+			const dependenciesToCheck = new Set<string>()
+			for (const change of changes) {
+				if (sources.covers(change.file)) {
+					for (const file of collectHostImportFiles(server, change.file))
+						dependenciesToCheck.add(file)
+				}
+			}
+			invalidateHostChangedModules({
 				server,
-				changedFile: changed.file,
+				changes: changes.map(({ file }) => ({ file, reloadDependencies: sources.covers(file) })),
 				applicationFiles: recovery.invalidationFiles(files),
-				changedModules: [],
-				changedDependencies,
+				changedDependencies: await moduleBytes.changed(dependenciesToCheck),
 				recoverMissingImports:
-					recovery.requiresResolutionRetry(changed.file) ||
-					(changed.type === 'create' && !sources.covers(changed.file)),
-				reloadDependencies: sources.covers(changed.file),
+					batch.full ||
+					changes.some(
+						(change) =>
+							recovery.requiresResolutionRetry(change.file) ||
+							(change.type === 'create' && !sources.covers(change.file)),
+					),
 			})
-			for (const file of invalidation.modules) invalidateHostModule(server, file)
 		}
 		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
 		let sourceCandidate: HostSourceCandidate<ResolvedHostApplication> | undefined
@@ -207,7 +228,11 @@ export function host(options: HostViteOptions): PluginOption[] {
 		let updateError: RuntimeUpdateError | null = null
 		const started = performance.now()
 		const previousCatalog = active?.catalog()
-		recentUpdates.beginUpdate(changed ? portableUpdatePath(changed.file, server.config.root) : null)
+		recentUpdates.beginUpdate(
+			batch?.changes.length === 1
+				? portableUpdatePath(batch.changes[0]!.file, server.config.root)
+				: null,
+		)
 		let artifactCandidate: HostViteCandidate | undefined
 		const settle = async (accept: boolean): Promise<void> => {
 			const results = await Promise.allSettled([
@@ -486,72 +511,76 @@ export function host(options: HostViteOptions): PluginOption[] {
 		}
 	}
 
-	const updateArtifacts = (file: string): Promise<void> =>
-		driver.enqueue(async () => {
-			if (!active || closing) return
-			const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
-			let prepared: HostViteCandidate | undefined
-			let committed = false
-			let updateError: RuntimeUpdateError | null = null
-			const started = performance.now()
-			recentUpdates.beginUpdate(portableUpdatePath(file, server.config.root))
-			recentUpdates.updatePhase('artifacts')
-			try {
-				await candidate.run(async () => {
-					prepared = await attachments.get(active!)?.prepareCandidate(acceptedCatalog!)
+	const updateArtifacts = async (file?: string): Promise<void> => {
+		if (!active || closing) return
+		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
+		let prepared: HostViteCandidate | undefined
+		let committed = false
+		let updateError: RuntimeUpdateError | null = null
+		const started = performance.now()
+		recentUpdates.beginUpdate(file ? portableUpdatePath(file, server.config.root) : null)
+		recentUpdates.updatePhase('artifacts')
+		try {
+			await candidate.run(async () => {
+				prepared = await attachments.get(active!)?.prepareCandidate(acceptedCatalog!)
+			})
+			if (closing) throw new HostViteClosedError()
+			committed = true
+			prepared?.commit()
+			recentUpdates.updatePhase('commit')
+			await candidate.accept()
+		} catch (error) {
+			let failure = error
+			const results = await Promise.allSettled([
+				Promise.resolve().then(() => {
+					return !committed ? prepared?.rollback() : undefined
+				}),
+				committed ? candidate.accept() : candidate.reject(),
+			])
+			const errors = results.flatMap((result) =>
+				result.status === 'rejected' ? [result.reason] : [],
+			)
+			if (errors.length > 0)
+				failure = new AggregateError([error, ...errors], '[host-vite] artifact settlement failed', {
+					cause: error,
 				})
-				if (closing) throw new HostViteClosedError()
-				committed = true
-				prepared?.commit()
-				recentUpdates.updatePhase('commit')
-				await candidate.accept()
-			} catch (error) {
-				let failure = error
-				const results = await Promise.allSettled([
-					Promise.resolve().then(() => {
-						return !committed ? prepared?.rollback() : undefined
-					}),
-					committed ? candidate.accept() : candidate.reject(),
-				])
-				const errors = results.flatMap((result) =>
-					result.status === 'rejected' ? [result.reason] : [],
-				)
-				if (errors.length > 0)
-					failure = new AggregateError(
-						[error, ...errors],
-						'[host-vite] artifact settlement failed',
-						{ cause: error },
-					)
-				updateError = describeUpdateError(failure, server.config.root)
-				throw failure
-			} finally {
-				const result: Omit<PluginUpdateBatchSnapshot, 'sequence'> = {
-					scope: 'application',
-					outcome: updateError
-						? committed
-							? 'applied-with-issues'
-							: 'retained-previous'
-						: 'applied',
-					phase: updateError ? (committed ? 'commit' : 'artifacts') : null,
-					durationMs: performance.now() - started,
-				}
-				recentUpdates.record({ definitionKeys: [], batch: result })
-				recentUpdates.finishUpdate(updateError)
+			updateError = describeUpdateError(failure, server.config.root)
+			throw failure
+		} finally {
+			const result: Omit<PluginUpdateBatchSnapshot, 'sequence'> = {
+				scope: 'application',
+				outcome: updateError
+					? committed
+						? 'applied-with-issues'
+						: 'retained-previous'
+					: 'applied',
+				phase: updateError ? (committed ? 'commit' : 'artifacts') : null,
+				durationMs: performance.now() - started,
 			}
-		})
-	const update = (file: string, type: 'create' | 'update' | 'delete'): Promise<void> => {
-		if (closing) return Promise.resolve()
-		devConsole?.invalidate(file)
-		devConsole?.observed(file)
-		return driver.enqueue(() => apply({ file: normalizePath(file), type }))
+			recentUpdates.record({ definitionKeys: [], batch: result })
+			recentUpdates.finishUpdate(updateError)
+		}
 	}
+	const update = async (file: string, type: 'create' | 'update' | 'delete'): Promise<void> => {
+		if (closing) return
+		driver.changed({ file: normalizePath(file), type, kind: 'source' })
+		devConsole?.observed(file)
+	}
+	let sourceFailure: { cause: unknown } | undefined
+	let sourceFailureQueued = false
 	const sourceFailed = (cause: unknown): void => {
 		if (closing) return
+		sourceFailure = { cause }
+		if (sourceFailureQueued) return
+		sourceFailureQueued = true
 		// Watcher failures are application facts, even without a matching catalog definition.
-		// Publish in the same lane so an in-flight candidate retains its own settlement.
+		// Keep only the latest pending diagnostic while a candidate owns settlement.
 		void driver
 			.enqueue(async () => {
-				const diagnostic = describeUpdateError(cause, server.config.root)
+				const failure = sourceFailure!.cause
+				sourceFailure = undefined
+				sourceFailureQueued = false
+				const diagnostic = describeUpdateError(failure, server.config.root)
 				recentUpdates.beginUpdate(diagnostic.file)
 				recentUpdates.record({
 					definitionKeys: [],
@@ -564,7 +593,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					},
 				})
 				recentUpdates.finishUpdate(diagnostic)
-				report(cause)
+				report(failure)
 			})
 			.catch(report)
 	}
@@ -592,6 +621,13 @@ export function host(options: HostViteOptions): PluginOption[] {
 					cause: errors[0],
 				})
 		})())
+	const applicationStatus = () => {
+		const latestUpdate = recentUpdates.latestUpdate()
+		return {
+			state: !active ? 'unavailable' : latestUpdate?.state === 'updating' ? 'updating' : 'ready',
+			latestUpdate,
+		}
+	}
 	const lifecycle: Plugin = {
 		name: 'pluxel:host',
 		config(config) {
@@ -666,20 +702,17 @@ export function host(options: HostViteOptions): PluginOption[] {
 				devConsole = await attachDevConsole({
 					server,
 					getHost: () => active && { ctx: active.ctx, epoch: epochs.get(active)! },
-					getApplicationStatus: () => {
-						const latestUpdate = recentUpdates.latestUpdate()
-						return {
-							state: !active
-								? 'unavailable'
-								: latestUpdate?.state === 'updating'
-									? 'updating'
-									: 'ready',
-							latestUpdate,
-						}
+					getApplicationStatus: applicationStatus,
+					getUpdateStatus: driver.status,
+					assertApplied: driver.assertApplied,
+					control: async (action, run) => {
+						await driver.control(action, run.signal)
+						return { hmr: driver.status(), application: applicationStatus() }
 					},
 					prepare: async (_file, signal) => {
 						await driver.settled()
 						signal.throwIfAborted()
+						driver.assertApplied()
 					},
 				})
 			}
@@ -689,7 +722,6 @@ export function host(options: HostViteOptions): PluginOption[] {
 			async handler(context) {
 				if (this.environment.name !== HOST_VITE_ENVIRONMENT || closing) return undefined
 				try {
-					devConsole?.invalidate(context.file)
 					devConsole?.observed(context.file)
 					if (sources.covers(context.file)) return undefined
 					if (dependencies?.covers(context.file)) return undefined
@@ -699,9 +731,14 @@ export function host(options: HostViteOptions): PluginOption[] {
 						!sources.covers(context.file)
 					) {
 						if (active && attachments.get(active)?.tracks(context.file)) {
-							await updateArtifacts(context.file)
+							driver.changed({
+								file: normalizePath(context.file),
+								type: context.type,
+								kind: 'artifact',
+							})
 							return []
 						}
+						devConsole?.invalidate(context.file)
 						return undefined
 					}
 					await update(context.file, context.type)

@@ -35,6 +35,12 @@ export type DevConsoleRunInput = Readonly<{
 	input?: JsonValue
 	timeoutMs?: number
 }>
+export type DevConsoleHmrAction = 'pause' | 'apply' | 'resume'
+export type DevConsoleHmrInput = Readonly<{
+	runId: string
+	action: DevConsoleHmrAction
+	timeoutMs?: number
+}>
 export type DevConsoleRequest = Readonly<{
 	protocol: 1
 	instanceId: string
@@ -43,6 +49,7 @@ export type DevConsoleRequest = Readonly<{
 	(
 		| Readonly<{ method: 'inspect' }>
 		| (Readonly<{ method: 'run' }> & DevConsoleRunInput)
+		| (Readonly<{ method: 'hmr' }> & DevConsoleHmrInput)
 		| Readonly<{ method: 'result' | 'cancel'; runId: string }>
 	)
 export type DevConsolePhase = 'admission' | 'load' | 'execute' | 'encode' | 'cleanup'
@@ -50,14 +57,15 @@ export type DevConsoleFailure = Readonly<{ code: string; message: string; stack?
 type RunMetadata = Readonly<{
 	runId: string
 	instanceId: string
-	file: string
-	exportName: string
-	sourceHash: string
 	submittedAt: string
 	startedAt?: string
 	hostEpoch?: string
 	revisions?: Readonly<{ before?: JsonValue; after?: JsonValue }>
-}>
+}> &
+	(
+		| Readonly<{ kind: 'script'; file: string; exportName: string; sourceHash: string }>
+		| Readonly<{ kind: 'hmr'; action: DevConsoleHmrAction }>
+	)
 export type DevConsoleRunSnapshot = RunMetadata &
 	(
 		| Readonly<{

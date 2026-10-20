@@ -13,6 +13,8 @@ import {
 } from '../environment'
 import { ConsoleExecutionError, DEV_CONSOLE_VALUE_BYTES } from './protocol'
 import { startDevConsoleServer } from './server'
+import type { RunExecution } from './executor'
+import type { HostViteUpdateStatus } from '../driver'
 import { readViteUrlOutput } from '../internal/vite-urls'
 
 export type DevConsoleHost = Readonly<{
@@ -34,6 +36,9 @@ export type AttachDevConsoleOptions = Readonly<{
 	server: ViteDevServer
 	getHost(): DevConsoleHost | undefined
 	getApplicationStatus?(): Readonly<Record<string, unknown>>
+	getUpdateStatus?(): HostViteUpdateStatus
+	assertApplied?(): void
+	control?(action: 'pause' | 'apply' | 'resume', run: RunExecution): Promise<unknown>
 	/** Drain the finite set of real updates admitted before this call, before evaluation. */
 	prepare(file: string, signal: AbortSignal): Promise<void>
 }>
@@ -54,9 +59,11 @@ export async function attachDevConsole(
 	let closed = false
 	const server = await startDevConsoleServer({
 		root,
+		control: options.control,
 		inspect: () => ({
 			hostEpoch: options.getHost()?.epoch,
 			application: options.getApplicationStatus?.(),
+			hmr: options.getUpdateStatus?.(),
 			urlOutput: readViteUrlOutput(options.server),
 		}),
 		execute: async (input, run) => {
@@ -117,7 +124,9 @@ export async function attachDevConsole(
 					'source_changed',
 					'Script changed while preparing execution',
 				)
+			options.assertApplied?.()
 			const exports = await importHostModule<Record<string, unknown>>(options.server, file)
+			options.assertApplied?.()
 			run.signal.throwIfAborted()
 			if (options.getHost()?.epoch !== host.epoch)
 				throw new ConsoleExecutionError('host_changed', 'Dev host changed during module loading')
@@ -155,6 +164,7 @@ export async function attachDevConsole(
 					'host_changed',
 					'Dev host changed while loading dependencies',
 				)
+			options.assertApplied?.()
 			const scope = createDevConsoleScope({
 				ctx: host.ctx,
 				id: input.runId,
@@ -229,7 +239,7 @@ export async function attachDevConsole(
 		},
 
 		async hostChanged() {
-			server.executor.abortAll('host_changed')
+			server.executor.abortScripts('host_changed')
 			await disposeScopes()
 		},
 		close() {

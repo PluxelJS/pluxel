@@ -19,7 +19,7 @@ description: 了解脚手架、插件构建、应用执行、HMR、源码联调�
 - 创建/检查/验证应用发行物：`pluxel distribution create/inspect/verify`。
 - 写入/关联 delivery marker：`pluxel distribution mark/correlate`。
 - 发布 npm package 并通知 market：`pluxel publish`。
-- 操作当前 Vite 实例的插件、配置、Workbench 和日志：`pluxel dev status/run/result/cancel`。
+- 控制当前 Vite 的 HMR 批次，操作插件、配置、Workbench 和日志：`pluxel dev status/hmr/run/result/cancel`，见[开发控制台](./dev-console.md)。
 - 跨仓库 source checkout：`pluxel source register/list/unregister/doctor/build/install`。
 - 管理与接入 workspace：`pluxel workspace setup/doctor/sync`。
 - 维护依赖声明与 catalog：`pluxel pncat add/remove/migrate/clean`。
@@ -175,6 +175,8 @@ symlinked root，但会拒绝通过文件 symlink 逃出 root。修改 `name`、
 稳定的可发布 Plugin 应使用 公开 package entry named export。
 
 ## HMR 失败与自动恢复
+
+默认自动模式合并积压的源码事件；跨文件或连续修改时，coding agent 通过 [dev console 批次控制](./dev-console.md#hmr-批次控制)先暂停，检查后显式应用，验证成功后按原模式恢复。暂停只控制 Pluxel 的应用更新，不关闭普通浏览器 HMR。下述恢复发生在实际应用更新时；暂停期间继续记录变化，不逐次求值中间状态。
 
 分别读取运行意图、当前状态和更新历史：批次已提交不等于全部插件已启动，单个插件失败也不等于整批失败。
 

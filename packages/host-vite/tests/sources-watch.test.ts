@@ -10,10 +10,324 @@ import { openPluginSources, type PluginSourceChange } from '../src/source-sessio
 import { createHostSourceEvaluator } from '../src/application-sources'
 import type { ViteDevServer } from 'vite'
 import { discoverPluginSources } from '@pluxel/host/internal'
+import { FSWatcher } from 'chokidar'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).toReversed()) await cleanup()
+})
+
+it('coalesces changed entries into bounded directory validation during a burst', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-watch-burst-'))
+	cleanups.push(() => rm(root, { recursive: true, force: true }))
+	const directory = join(root, 'entries')
+	await mkdir(directory)
+	const paths = Array.from({ length: 32 }, (_, index) =>
+		join(directory, `entry-${index}.mjs`),
+	).sort()
+	await Promise.all(paths.map((path) => writeFile(path, 'export const revision = 0')))
+	const changes: PluginSourceChange[] = []
+	const errors: unknown[] = []
+	const source = await watchPluginSource(
+		{ kind: 'directory', path: directory, include: ['*.mjs'] },
+		{
+			root,
+			onChange: (change) => changes.push(change),
+			onError: (error) => errors.push(error),
+		},
+	)
+	cleanups.push(() => source.close())
+	const scans = vi.spyOn(filesystem, 'readdir')
+	syncBuiltinESMExports()
+	try {
+		await Promise.all(paths.map((path) => writeFile(path, 'export const revision = 1')))
+		await expect.poll(() => new Set(changes.map((change) => change.path))).toEqual(new Set(paths))
+		expect(changes.every((change) => change.type === 'change')).toBe(true)
+		expect(errors).toEqual([])
+		const burstScans = scans.mock.calls.filter(
+			([directoryPath]) => directoryPath === directory,
+		).length
+		expect(burstScans).toBeGreaterThan(0)
+		expect(burstScans).toBeLessThanOrEqual(6)
+		expect(await source.entries()).toEqual(paths)
+	} finally {
+		scans.mockRestore()
+		syncBuiltinESMExports()
+	}
+})
+
+it('forces accepted notifications through entries and reconciles SDK observations on overflow', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-watch-overflow-'))
+	cleanups.push(() => rm(root, { recursive: true, force: true }))
+	const file = join(root, 'entry.mjs')
+	await writeFile(file, 'export {}')
+	const changes: PluginSourceChange[] = []
+	const watched = vi.spyOn(FSWatcher.prototype, 'on')
+	try {
+		const source = await watchPluginSource(
+			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{
+				root,
+				onChange: (change) => changes.push(change),
+				onError(error) {
+					throw error
+				},
+			},
+		)
+		cleanups.push(() => source.close())
+		const watcher = watched.mock.contexts[0] as FSWatcher
+		// The SDK seam makes notification arrival deterministic; all discovery remains real.
+		watcher.emit('change', file)
+		expect(changes).toEqual([])
+		expect(await source.entries()).toEqual([file])
+		expect(changes).toEqual([{ type: 'change', path: file }])
+		changes.length = 0
+		const sdkSnapshot = vi.spyOn(watcher, 'getWatched')
+		for (let index = 0; index < 4097; index++)
+			watcher.emit('change', join(root, `missing-${index}.mjs`))
+		expect(await source.entries()).toEqual([file])
+		expect(sdkSnapshot).toHaveBeenCalledOnce()
+		expect(changes).toEqual([{ type: 'change', path: file }])
+		sdkSnapshot.mockRestore()
+	} finally {
+		watched.mockRestore()
+	}
+})
+
+it('retains observed publications after invalid siblings without retrying absent new evidence', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-watch-rejected-batch-'))
+	cleanups.push(() => rm(root, { recursive: true, force: true }))
+	const directory = join(root, 'entries')
+	await mkdir(directory)
+	const changed = join(directory, 'changed.mjs')
+	const removed = join(directory, 'removed.mjs')
+	const added = join(directory, 'added.mjs')
+	const invalid = join(directory, 'invalid.mjs')
+	const target = join(root, 'target.mjs')
+	await Promise.all([changed, removed, target].map((file) => writeFile(file, 'export {}')))
+	const changes: PluginSourceChange[] = []
+	const watched = vi.spyOn(FSWatcher.prototype, 'on')
+	const scans = vi.spyOn(filesystem, 'readdir')
+	syncBuiltinESMExports()
+	let emitted: ReturnType<typeof vi.spyOn> | undefined
+	try {
+		const source = await watchPluginSource(
+			{ kind: 'directory', path: directory, include: ['*.mjs'] },
+			{
+				root,
+				onChange: (change) => changes.push(change),
+				onError() {},
+			},
+		)
+		cleanups.push(() => source.close())
+		const watcher = watched.mock.contexts[0] as FSWatcher
+		const emit = watcher.emit.bind(watcher)
+		// Control notification order; filesystem validation still sees the real invalid link.
+		emitted = vi.spyOn(watcher, 'emit').mockReturnValue(true)
+		await writeFile(added, 'export {}')
+		await writeFile(changed, 'export const revision = 1')
+		await rm(removed)
+		await symlink(target, invalid)
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+		emit('add', added)
+		emit('change', changed)
+		emit('unlink', removed)
+		await expect(source.entries()).rejects.toMatchObject({
+			code: 'PLUGIN_SOURCE_SYMLINK',
+			file: invalid,
+		})
+		expect(changes).toEqual([])
+		const failedScans = scans.mock.calls.length
+		await vi.advanceTimersByTimeAsync(100)
+		expect(scans.mock.calls).toHaveLength(failedScans)
+		await rm(invalid)
+		// Only the invalid sibling is repaired; A gets no duplicate SDK add to rescue it.
+		expect(await source.entries()).toEqual([added, changed])
+		expect(changes).toEqual([
+			{ type: 'add', path: added },
+			{ type: 'change', path: changed },
+			{ type: 'unlink', path: removed },
+		])
+	} finally {
+		vi.useRealTimers()
+		emitted?.mockRestore()
+		watched.mockRestore()
+		scans.mockRestore()
+		syncBuiltinESMExports()
+	}
+})
+
+it('merges failed observations into an already queued read while newer notifications win', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-watch-retry-order-'))
+	cleanups.push(() => rm(root, { recursive: true, force: true }))
+	const existing = join(root, 'existing.mjs')
+	const added = join(root, 'added.mjs')
+	await writeFile(existing, 'export {}')
+	const changes: PluginSourceChange[] = []
+	const watched = vi.spyOn(FSWatcher.prototype, 'on')
+	const scans = vi.spyOn(filesystem, 'readdir')
+	syncBuiltinESMExports()
+	let emitted: ReturnType<typeof vi.spyOn> | undefined
+	try {
+		const source = await watchPluginSource(
+			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{
+				root,
+				onChange: (change) => changes.push(change),
+				onError() {},
+			},
+		)
+		cleanups.push(() => source.close())
+		const watcher = watched.mock.contexts[0] as FSWatcher
+		const emit = watcher.emit.bind(watcher)
+		emitted = vi.spyOn(watcher, 'emit').mockReturnValue(true)
+		await writeFile(added, 'export {}')
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		scans.mockImplementationOnce(async () => {
+			entered.resolve()
+			await release.promise
+			throw new Error('source validation failed')
+		})
+		emit('add', added)
+		emit('unlink', existing)
+		const failed = source.entries().catch((error: unknown) => error)
+		await entered.promise
+		emit('add', existing)
+		const queued = source.entries()
+		release.resolve()
+		expect(await failed).toMatchObject({ message: 'source validation failed' })
+		expect(await queued).toEqual([added, existing])
+		expect(changes).toEqual([
+			{ type: 'change', path: existing },
+			{ type: 'add', path: added },
+		])
+	} finally {
+		emitted?.mockRestore()
+		watched.mockRestore()
+		scans.mockRestore()
+		syncBuiltinESMExports()
+	}
+})
+
+it('bounds merged failed observations and retains full reconciliation across another failure', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-watch-retry-cap-'))
+	cleanups.push(() => rm(root, { recursive: true, force: true }))
+	const existing = join(root, 'existing.mjs')
+	await writeFile(existing, 'export {}')
+	const changes: PluginSourceChange[] = []
+	const watched = vi.spyOn(FSWatcher.prototype, 'on')
+	const scans = vi.spyOn(filesystem, 'readdir')
+	syncBuiltinESMExports()
+	let emitted: ReturnType<typeof vi.spyOn> | undefined
+	try {
+		const source = await watchPluginSource(
+			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{
+				root,
+				onChange: (change) => changes.push(change),
+				onError() {},
+			},
+		)
+		cleanups.push(() => source.close())
+		const watcher = watched.mock.contexts[0] as FSWatcher
+		const emit = watcher.emit.bind(watcher)
+		emitted = vi.spyOn(watcher, 'emit').mockReturnValue(true)
+		const sdkSnapshot = vi.spyOn(watcher, 'getWatched')
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		scans
+			.mockImplementationOnce(async () => {
+				entered.resolve()
+				await release.promise
+				throw new Error('first source validation failed')
+			})
+			.mockRejectedValueOnce(new Error('full reconciliation failed'))
+		for (let index = 0; index < 4096; index++) emit('change', join(root, `missing-${index}.mjs`))
+		const first = source.entries().catch((error: unknown) => error)
+		await entered.promise
+		emit('change', existing)
+		const second = source.entries().catch((error: unknown) => error)
+		release.resolve()
+		expect(await first).toMatchObject({ message: 'first source validation failed' })
+		expect(await second).toMatchObject({ message: 'full reconciliation failed' })
+		expect(changes).toEqual([])
+		expect(await source.entries()).toEqual([existing])
+		expect(sdkSnapshot).toHaveBeenCalledOnce()
+		expect(changes).toEqual([{ type: 'change', path: existing }])
+		sdkSnapshot.mockRestore()
+	} finally {
+		emitted?.mockRestore()
+		watched.mockRestore()
+		scans.mockRestore()
+		syncBuiltinESMExports()
+	}
+})
+
+it('keeps reads finite during later notifications and drains validation IO before close', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-watch-drain-'))
+	cleanups.push(() => rm(root, { recursive: true, force: true }))
+	const file = join(root, 'entry.mjs')
+	await writeFile(file, 'export {}')
+	const changes: PluginSourceChange[] = []
+	const watched = vi.spyOn(FSWatcher.prototype, 'on')
+	const originalRead = filesystem.readdir
+	const scans = vi.spyOn(filesystem, 'readdir')
+	syncBuiltinESMExports()
+	try {
+		const source = await watchPluginSource(
+			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{
+				root,
+				onChange: (change) => changes.push(change),
+				onError(error) {
+					throw error
+				},
+			},
+		)
+		cleanups.push(() => source.close())
+		const watcher = watched.mock.contexts[0] as FSWatcher
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		scans.mockImplementationOnce(async (...args) => {
+			entered.resolve()
+			await release.promise
+			return originalRead(...args)
+		})
+		watcher.emit('change', file)
+		const reading = source.entries()
+		await entered.promise
+		watcher.emit('change', file)
+		release.resolve()
+		expect(await reading).toEqual([file])
+		expect(changes).toEqual([{ type: 'change', path: file }])
+		const draining = Promise.withResolvers<void>()
+		const finishIO = Promise.withResolvers<void>()
+		scans.mockImplementationOnce(async (...args) => {
+			draining.resolve()
+			await finishIO.promise
+			return originalRead(...args)
+		})
+		const lastRead = source.entries()
+		await draining.promise
+		let closed = false
+		const closing = source.close().then((): undefined => {
+			closed = true
+			return undefined
+		})
+		await Promise.resolve()
+		expect(closed).toBe(false)
+		const rejected = lastRead.catch((error: unknown) => error)
+		finishIO.resolve()
+		expect(await rejected).toMatchObject({ message: '[host-vite] source watcher is closed' })
+		await closing
+		expect(closed).toBe(true)
+		expect(changes).toEqual([{ type: 'change', path: file }])
+	} finally {
+		watched.mockRestore()
+		scans.mockRestore()
+		syncBuiltinESMExports()
+	}
 })
 
 it('validates the completed initial directory without rescanning it for each SDK entry', async () => {

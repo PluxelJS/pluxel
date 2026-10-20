@@ -40,6 +40,8 @@ mise 管工具、环境和 PATH，package scripts 管操作入口，Vite Task �
 2. 提交普通 TypeScript 导出函数，检查运行结果、领域/应用报告与日志。
 3. 保存 `receipt`；`dev result/cancel` 使用原 receipt，不转投重启后的实例。
 
+在运行中的应用上进行多文件或连续源码修改前，用同一目标的 `dev hmr pause` 等待当前批次结算；完成检查后 `dev hmr apply`，核对 HMR 与应用报告及实际行为。失败保持暂停继续修复，成功且原模式为 auto 时才 `dev hmr resume`。控制范围与待处理变化见[HMR 批次控制](docs/development/dev-console.md#hmr-批次控制)；不通过重启服务代替 apply。
+
 profile 选择、日志命令、服务就绪与应用 ready 的区别由 skill 和指南说明。隔离 test host 不能证明在线状态。
 
 ## 完成变更

@@ -12,6 +12,7 @@ import {
 	DEV_CONSOLE_MAX_TIMEOUT,
 	DEV_CONSOLE_PROTOCOL,
 	type DevConsoleInstance,
+	type DevConsoleHmrAction,
 	type DevConsoleRequest,
 	type DevConsoleRunInput,
 	type DevConsoleResponse,
@@ -27,6 +28,7 @@ export type DevConsoleServer = Readonly<{
 export async function startDevConsoleServer(options: {
 	root: string
 	execute(input: DevConsoleRunInput, run: RunExecution): Promise<unknown>
+	control?(action: DevConsoleHmrAction, run: RunExecution): Promise<unknown>
 	inspect?(): Readonly<Record<string, unknown>>
 }): Promise<DevConsoleServer> {
 	if (process.platform === 'win32')
@@ -99,7 +101,7 @@ export async function startDevConsoleServer(options: {
 		socketPath,
 		startedAt: new Date().toISOString(),
 	})
-	const executor = new DevConsoleExecutor(instanceId, options.execute)
+	const executor = new DevConsoleExecutor(instanceId, options.execute, options.control)
 	const sockets = new Set<Socket>()
 	const server = createServer((socket) => {
 		if (sockets.size >= 32) {
@@ -169,6 +171,15 @@ export async function startDevConsoleServer(options: {
 					return { ok: true, value: executor.result(request.runId) }
 				case 'cancel':
 					return { ok: true, value: executor.cancel(request.runId) }
+				case 'hmr':
+					return {
+						ok: true,
+						value: executor.submitControl({
+							runId: request.runId,
+							action: request.action,
+							...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
+						}),
+					}
 				case 'run': {
 					const file = await realpath(request.file)
 					if (
@@ -307,17 +318,43 @@ function validateRequest(input: unknown, instance: DevConsoleInstance): DevConso
 	const allowed =
 		value.method === 'run'
 			? [...common, 'runId', 'file', 'sourceHash', 'exportName', 'input', 'timeoutMs']
-			: value.method === 'result' || value.method === 'cancel'
-				? [...common, 'runId']
-				: common
+			: value.method === 'hmr'
+				? [...common, 'runId', 'action', 'timeoutMs']
+				: value.method === 'result' || value.method === 'cancel'
+					? [...common, 'runId']
+					: common
 	if (Object.keys(value).some((key) => !allowed.includes(key)))
 		throw new ConsoleExecutionError('invalid_request', 'Unexpected request field')
 	if (value.method === 'inspect') return value as DevConsoleRequest
-	if (value.method !== 'run' && value.method !== 'result' && value.method !== 'cancel')
+	if (
+		value.method !== 'run' &&
+		value.method !== 'hmr' &&
+		value.method !== 'result' &&
+		value.method !== 'cancel'
+	)
 		throw new ConsoleExecutionError('invalid_request', 'Unknown console request method')
 	if (typeof value.runId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.runId))
 		throw new ConsoleExecutionError('invalid_request', 'Invalid run ID')
-	if (value.method !== 'run') return value as DevConsoleRequest
+	if (value.method !== 'run' && value.method !== 'hmr') return value as DevConsoleRequest
+	if (
+		value.timeoutMs !== undefined &&
+		(typeof value.timeoutMs !== 'number' ||
+			!Number.isInteger(value.timeoutMs) ||
+			value.timeoutMs < 1 ||
+			value.timeoutMs > DEV_CONSOLE_MAX_TIMEOUT)
+	)
+		throw new ConsoleExecutionError(
+			'invalid_request',
+			'timeoutMs must be an integer between 1 and 300000',
+		)
+	if (value.method === 'hmr') {
+		if (value.action !== 'pause' && value.action !== 'apply' && value.action !== 'resume')
+			throw new ConsoleExecutionError(
+				'invalid_request',
+				'Expected HMR action pause, apply or resume',
+			)
+		return value as DevConsoleRequest
+	}
 	if (
 		typeof value.file !== 'string' ||
 		value.file.length > 4096 ||
@@ -332,16 +369,5 @@ function validateRequest(input: unknown, instance: DevConsoleInstance): DevConso
 		!/^[a-zA-Z_$][a-zA-Z0-9_$]{0,127}$/.test(value.exportName)
 	)
 		throw new ConsoleExecutionError('invalid_request', 'Invalid export name')
-	if (
-		value.timeoutMs !== undefined &&
-		(typeof value.timeoutMs !== 'number' ||
-			!Number.isInteger(value.timeoutMs) ||
-			value.timeoutMs < 1 ||
-			value.timeoutMs > DEV_CONSOLE_MAX_TIMEOUT)
-	)
-		throw new ConsoleExecutionError(
-			'invalid_request',
-			'timeoutMs must be an integer between 1 and 300000',
-		)
 	return value as DevConsoleRequest
 }

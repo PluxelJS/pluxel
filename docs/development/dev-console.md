@@ -1,17 +1,18 @@
 ---
 title: 在线开发控制台
-description: 通过现有 Vite 提交 TypeScript 操作，检查应用状态、配置、Workbench 和日志，并恢复原操作结果。
+description: 控制现有 Vite 的 HMR 批次，提交 TypeScript 操作，检查应用状态、配置、Workbench 和日志，并恢复原操作结果。
 ---
 
-开发控制台在**现有 Vite 的同一个 Host** 中执行项目 TypeScript，适合检查在线状态、修改配置和验证实际调用。写入不会随脚本结束还原；可重复的隔离回归使用 [test host](../plugin-development/testing.md)。还不知道声明位置时先用[源码查询](./inspection.md)。
+开发控制台在**现有 Vite 的同一个 Host** 中执行项目 TypeScript，也可直接控制 Pluxel 源码更新批次。它适合分阶段修改、检查在线状态、修改配置和验证实际调用。写入不会随脚本结束还原；可重复的隔离回归使用 [test host](../plugin-development/testing.md)。还不知道声明位置时先用[源码查询](./inspection.md)。
 
-已有应用从下方工作流程开始；设置启动入口读[项目配置](#项目入口与启动方式)，操作超时或断线读[结果恢复](#结果取消和恢复)，日志查询读[有界日志](#有界操作日志与等待)。进程启动失败、编译错误和 stdout/stderr 的排查由[工作区指南](./workspace-toolchain.md#agent-的日志与排障顺序)维护。
+已有应用从下方工作流程开始；多文件编辑读 [HMR 批次控制](#hmr-批次控制)，设置启动入口读[项目配置](#项目入口与启动方式)，操作超时或断线读[结果恢复](#结果取消和恢复)，日志查询读[有界日志](#有界操作日志与等待)。进程启动失败、编译错误和 stdout/stderr 的排查由[工作区指南](./workspace-toolchain.md#agent-的日志与排障顺序)维护。
 
 ## Coding agent 工作流程
 
-1. 读取项目 AGENTS 与 `package.json` 的 `pluxel.dev`，用 `dev status` 确认 profile、Vite root、实例和 `application.state`。需要运行且尚未运行时才执行 `dev`；status、instances、run 不自动启动。
-2. 在选定 Vite root 内写普通导出函数，用同一 profile 提交 `dev run`。多个匹配实例时先 `dev instances`，再明确 `--instance`，不挑最近进程。
-3. 检查 run state、领域结果、应用/生命周期报告及相关日志。保存 `receipt`；结果不确定时查询原操作，不直接重放写入。
+1. 读取项目 AGENTS 与 `package.json` 的 `pluxel.dev`，用 `dev status` 确认 profile、Vite root、实例、`hmr` 与 `application.state`。需要运行且尚未运行时才执行 `dev`；status、instances、run、hmr 不自动启动。多个匹配实例时先 `dev instances`，再明确 `--instance`，不挑最近进程。
+2. 运行中的应用需要跨文件或连续编辑时，先记录原 `hmr.mode`，用同一目标的 `dev hmr pause` 等待当前批次结算。修改完成并通过相关静态检查后 `dev hmr apply`，检查更新报告。只做只读检查时无需暂停。
+3. 在选定 Vite root 内写普通导出函数，用同一目标提交 `dev run`。检查 run state、领域结果、应用/生命周期报告及相关日志；实际应用行为也要验证，CLI 成功不等于业务正确。
+4. 更新失败保持暂停，修复后再 apply。成功且待处理变化清空、原模式为 auto 时才 `dev hmr resume`；不在 finally 中无条件恢复，也不替其他任务恢复原本 paused 的实例。保存每次操作的 `receipt`；结果不确定时查询原操作，不直接重放写入。
 
 ```sh
 # 下游应用：使用配置的默认 profile
@@ -28,6 +29,47 @@ vp exec pluxel dev status --profile local
 ```
 
 `application.state` 为 `ready`、`updating` 或 `unavailable`；非 ready 时检查 `application.latestUpdate` 的阶段、结果和诊断。进程 running、代理启动页或 HTTP 成功都不能证明应用已采用修改。源码求值失败后可修正并由原进程接纳；首次 Host/服务/应用准备失败会中止 Vite 启动，修复后重新启动。
+
+## HMR 批次控制
+
+默认 `auto` 模式继续自动更新，同时合并编辑期间积压的文件事件。跨文件修改可在求值、候选构建和生命周期提交之前暂停，将一轮修改显式作为一批应用：
+
+```sh
+vp exec pluxel dev status
+vp exec pluxel dev hmr pause
+# 修改源码，运行本次改动需要的静态检查
+vp exec pluxel dev hmr apply
+vp exec pluxel dev status
+vp exec pluxel dev run host/web/dev/inspect.ts
+# 确认更新成功、没有待处理变化且原模式为 auto 后执行
+vp exec pluxel dev hmr resume
+```
+
+| 命令             | 行为                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `dev hmr pause`  | 立即切到 paused，等待已经执行的批次结算；watcher 继续记录并合并变化                          |
+| `dev hmr apply`  | 切到 paused，等待当前批次后应用一批已观察的待处理变化；完成后仍为 paused，没有变化则无需更新 |
+| `dev hmr resume` | 等待当前批次后切到 auto，应用一批待处理变化；后续变化继续自动更新，不等待全局空闲            |
+| `dev status`     | 同时读取 HMR 调度状态和应用状态，不触发应用                                                  |
+
+`hmr` 命令使用与 `dev run` 相同的 `--root`、`--profile`、`--instance` 选择规则，以及 `--timeout`、`--detach`、receipt 和 [result/cancel](#结果取消和恢复) 协议。它直接调用 Host-vite 的控制通道，不加载操作脚本；应用源码损坏或暂时没有可用 Host 时仍可控制。完整 Host replacement 保留当前 Vite 实例的 HMR 模式；Vite 进程重启后是新实例，重新查询状态，旧 receipt 不转接。
+
+`dev status` 的 `hmr` 包含：
+
+| 字段                                     | 含义                                                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `mode`                                   | `auto` 或 `paused`，属于整个 Vite 实例                                                         |
+| `running`                                | 是否正在执行更新批次；paused 仍可能正在等待旧批次结束                                          |
+| `pending.files` / `pending.full`         | 合并的待处理文件数；超过 4096 个不同文件时折叠为完整重新核对请求，`full: true`，不丢弃更新意图 |
+| `observedRevision` / `attemptedRevision` | 已观察变化与已尝试批次的 revision；attempted 不代表应用成功                                    |
+
+成功的控制操作在结果 `value` 中返回 `{ hmr, application }`，最近更新仍以 `application.latestUpdate` 为准。检查其中 outcome、phase 和节点 lifecycle issue；操作失败时通过 `dev status` 读取报告，失败批次会保留待处理变化以便显式重试。auto 模式只有新观察到变化才再次尝试，不循环重试同一失败批次。先求值/准备失败可保留旧应用；已经停止旧 generation 后的失败按实际生命周期状态报告，暂停不提供回滚。
+
+每个实例只运行一个更新批次，后续文件变化合并到一份有界集合；重复保存同一路径不会形成等长的执行队列。暂停覆盖 Pluxel 应用、插件来源、失败恢复输入和由这些候选触发的制品更新。文件观察、来源路径校验和 Vite 缓存失效仍可发生；普通浏览器 React/CSS HMR、请求触发的 transform、Vite 配置变更导致的 server restart 不在此范围，已开始的更新也不会被强制中断。不要通过重启服务代替 apply。
+
+apply 使用执行时文件内容，不冻结磁盘，也不承诺发现所有尚未被 watcher 观察的修改。执行期间新观察的变化留给下一批；在报告中看到 pending 时，先确认编辑已完成再 apply。并行 agent 修改同一实例时由一个协调者控制批次；paused 不是每个客户端独占的锁。该调度限制重复更新与积压，不承诺消除应用资源泄漏或单次构建的内存峰值。
+
+暂停且存在待处理的运行时修改时，普通 `dev run` 会以 `hmr_pending` 拒绝加载，不自行应用半成品代码；先通过 status/进程日志检查，再 apply。没有待处理修改时可在 paused 模式执行脚本。HMR 控制取消不回滚模式或已开始的应用，超时/断线后用原 receipt 确认真实结果，不自动重发控制命令。
 
 ## 写一个可以反复运行的操作
 
@@ -84,14 +126,14 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"Verify cur
 
 一个 package 可有多个 profile，并可共用 Vite root。`vp run dev` 使用模板默认 `app`；`vp run dev:local` 使用 `local`。它们共用默认数据目录，**profile 只区分控制台归属，不隔离数据**：使用同一数据时先 `pitchfork stop app` 再切换；并行时显式设置不同 `PLUXEL_DATA_ROOT`。
 
-控制台 profile 的 status/instances/run 只查询现有实例，不调用 Pitchfork。CLI 按真实 Vite root 和启动归属筛选，再选择唯一实例；多个候选必须 `--instance`，该选项不能绕过绑定：
+控制台 profile 的 status/instances/run/hmr 只连接现有实例，不调用 Pitchfork。CLI 按真实 Vite root 和启动归属筛选，再选择唯一实例；多个候选必须 `--instance`，该选项不能绕过绑定：
 
 - command：CLI 自动注入 `PLUXEL_DEV_PROJECT` / `PLUXEL_DEV_PROFILE`，核对声明 package 的真实目录与 profile 名，无需手配环境变量。
 - Pitchfork：核对控制台捕获的 `serviceId` 短服务名，启动后额外核对 Pitchfork 返回的完整 ID；按 URL 唤醒也保留原生身份。同 root、同短名但不同 namespace 仍可能需要选 instance。
 
 `dev` 启动或复用，重复调用读取当前实例的 Application / Workbench 地址；首次前台启动直接保留 Vite 输出。CLI 用一行显示 profile 与 starting/started/reused；终端样式直接遵循 [Node `styleText`](https://nodejs.org/api/util.html#utilstyletextformat-text-options) 的终端检测与颜色环境变量规则，无 Pluxel 专属开关。`urlOutput` 和 status JSON 保持纯文本，展示文本不作为路由协议。启动失败保留命令退出码；复用或托管启动后应用 updating 会提示，unavailable 返回 2，均不停止服务。
 
-无 Host 的服务示例是本仓库 `docs: { "root": "projects/docs", "pitchfork": "docs", "console": false }`。`vp run docs` 选择它：等待 Pitchfork 就绪，再显示最新状态与实际 URL；`dev status --profile docs` 同样查询 Pitchfork。run、instances 和 `--instance` 在启动/连接前报 `unsupported_console`，不生成应用或 Workbench 状态。本仓库默认 profile 为 `plugin-host`，root 为 `projects/plugin-host`。
+无 Host 的服务示例是本仓库 `docs: { "root": "projects/docs", "pitchfork": "docs", "console": false }`。`vp run docs` 选择它：等待 Pitchfork 就绪，再显示最新状态与实际 URL；`dev status --profile docs` 同样查询 Pitchfork。run、hmr、instances 和 `--instance` 在启动/连接前报 `unsupported_console`，不生成应用或 Workbench 状态。本仓库默认 profile 为 `plugin-host`，root 为 `projects/plugin-host`。
 
 开发 scripts 与首次 CLI 构建由[工作区指南](./workspace-toolchain.md#管理开发服务)维护；这里不新增服务管理命令或后台 supervisor。
 
@@ -233,15 +275,15 @@ vp exec pluxel dev cancel RECEIPT
 
 ## 执行边界
 
-控制台是受信任项目代码执行，不是沙箱；权限等于 dev 宿主。通信只走当前用户私有 Unix socket/discovery，不在公共 Vite HTTP listener 暴露 eval。每 Host 串行执行，但 HMR、浏览器和后台任务仍可交错，一段脚本不是全局事务。
+控制台是受信任项目代码执行，不是沙箱；权限等于 dev 宿主。通信只走当前用户私有 Unix socket/discovery，不在公共 Vite HTTP listener 暴露 eval。脚本和 HMR 控制各自串行执行；HMR、浏览器和后台任务仍可与脚本交错，一段脚本不是全局事务。
 
-脚本及辅助模块遵循当前 Vite 编译、解析和模块身份。已知依赖变化等待真实 watcher 与更新完成；禁用/忽略 watcher 可能等到超时。首次加载只保证当前已提交 Host 和已观察更新，不承诺发现全部磁盘修改。提交后入口改变报 source_changed，依赖使用执行时模块图，不提供全文件系统 snapshot。完整 Host replacement 取消旧 run、撤回 driver；新提交使用当前 epoch，旧 run 不转接新 Host。
+脚本及辅助模块遵循当前 Vite 编译、解析和模块身份。已知依赖变化等待真实 watcher；auto 模式等待已接纳的有限批次，paused 且有运行时待处理变化时报 `hmr_pending`。禁用/忽略 watcher 可能等到超时。首次加载只保证当前已提交 Host 和已观察更新，不承诺发现全部磁盘修改。提交后入口改变报 source_changed，依赖使用执行时模块图，不提供全文件系统 snapshot。完整 Host replacement 取消旧脚本 run、撤回其 driver；新提交使用当前 epoch，旧 run 不转接新 Host。HMR 控制属于 Vite 实例，独立于这个脚本执行 scope。
 
 仅返回 JSON 投影：对象 undefined 省略，数组 undefined/顶层无返回值编码为 null；函数、BigInt、非有限数字、循环、accessor、class instance、RPC capability 明确失败，不调用 toJSON。运行上限如下；优先复用少量脚本和 named exports：
 
 | 预算                               | 上限                                                                        |
 | ---------------------------------- | --------------------------------------------------------------------------- |
-| 同时执行 / 排队                    | 1 / 16                                                                      |
+| 同时执行 / 排队                    | 脚本和 HMR 控制各 1 / 16，两类操作互不占用执行位置                          |
 | 输入、输出                         | 各 1 MiB、64 层、100000 节点                                                |
 | 保留完成结果                       | 最近 100 个、总计 16 MiB；过期报 result_expired                             |
 | 每实例请求去重                     | 最多接纳 100000 次；相同请求 ID 不重复执行，不承诺进程崩溃后的 exactly-once |

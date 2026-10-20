@@ -4,6 +4,8 @@ import {
 	devCancelDefinition,
 	devCommandDefinition,
 	devCommonArgs,
+	devHmrArgs,
+	devHmrDefinition,
 	devInstancesDefinition,
 	devStatusDefinition,
 	devResultDefinition,
@@ -13,6 +15,7 @@ import {
 } from '../command-manifest'
 import {
 	DevClientError,
+	controlDevHmr,
 	liveDevInstances,
 	matchesDevInstance,
 	parseInput,
@@ -104,6 +107,19 @@ function runReceipt(instance: DevInstance, runId: string): string {
 
 function runResult(instance: DevInstance, snapshot: DevRunSnapshot) {
 	return { ...snapshot, receipt: runReceipt(instance, snapshot.runId) }
+}
+
+function printAccepted(instance: DevInstance, snapshot: DevRunSnapshot): void {
+	process.stderr.write(
+		JSON.stringify({
+			event: 'accepted',
+			root: snapshot.root,
+			runId: snapshot.runId,
+			instanceId: snapshot.instanceId,
+			receipt: runReceipt(instance, snapshot.runId),
+			state: snapshot.state,
+		}) + '\n',
+	)
 }
 
 async function printResult(
@@ -307,18 +323,29 @@ export const devRunCommand = define({
 					input,
 					timeoutMs: Number(values.timeout),
 					detach: values.detach,
-					onAccepted: (snapshot) => {
-						process.stderr.write(
-							JSON.stringify({
-								event: 'accepted',
-								root: snapshot.root,
-								runId: snapshot.runId,
-								instanceId: snapshot.instanceId,
-								receipt: runReceipt(instance, snapshot.runId),
-								state: snapshot.state,
-							}) + '\n',
-						)
-					},
+					onAccepted: (snapshot) => printAccepted(instance, snapshot),
+				})
+				return runResult(instance, result)
+			},
+			values.detach ? 0 : 2,
+		)
+	},
+})
+
+export const devHmrCommand = define({
+	...devHmrDefinition,
+	async run(ctx) {
+		const values = ctx.values as ArgValues<typeof devHmrArgs>
+		await printResult(
+			ctx,
+			async () => {
+				const instance = await connectDevProject(values)
+				const result = await controlDevHmr({
+					instance,
+					action: values.action,
+					timeoutMs: Number(values.timeout),
+					detach: values.detach,
+					onAccepted: (snapshot) => printAccepted(instance, snapshot),
 				})
 				return runResult(instance, result)
 			},

@@ -11,6 +11,10 @@ import {
 import { hostFileWatchOptions } from './internal/watch-policy'
 import type { PluginSourceOpenOptions, PluginSourceWatch } from './source-session'
 
+const MAX_PENDING_FILES = 4096
+const VALIDATION_WINDOW_MS = 25
+type FileEvent = 'add' | 'change' | 'unlink'
+
 /** Watch one immutable declaration; Host owns composition and deduplication across sources. */
 export async function watchPluginSource(
 	source: PluginSource,
@@ -44,6 +48,15 @@ export async function watchPluginSource(
 	let closed = false
 	let closing: Promise<void> | undefined
 	let processing = Promise.resolve()
+	let validations = 0
+	let pending = new Map<string, FileEvent>()
+	let full = false
+	let dirty = false
+	let timer: ReturnType<typeof setTimeout> | undefined
+	const cancelTimer = () => {
+		clearTimeout(timer)
+		timer = undefined
+	}
 	let initialFailure: unknown
 	options.signal?.throwIfAborted()
 	const policy = hostFileWatchOptions()
@@ -65,6 +78,10 @@ export async function watchPluginSource(
 	})
 	const close = (): Promise<void> => {
 		closed = true
+		cancelTimer()
+		pending.clear()
+		full = false
+		dirty = false
 		options.signal?.removeEventListener('abort', abort)
 		return (closing ??= (async () => {
 			const results = await Promise.allSettled([watcher.close(), processing])
@@ -80,19 +97,6 @@ export async function watchPluginSource(
 		void close().catch(() => {})
 	}
 	options.signal?.addEventListener('abort', abort, { once: true })
-	const observe = (operation: () => Promise<void>): void => {
-		if (closed) return
-		processing = processing
-			.then(async () => {
-				if (closed) return
-				return operation()
-			})
-			.catch((error) => {
-				if (closed) return
-				if (!ready) initialFailure ??= error
-				else options.onError(error)
-			})
-	}
 	const snapshot = async (): Promise<readonly string[]> => {
 		const missingLiveFile = (error: unknown): undefined => {
 			if (
@@ -126,43 +130,119 @@ export async function watchPluginSource(
 			},
 		)
 	}
-	const observed = (file: string, type: 'add' | 'change' | 'unlink' | 'addDir'): void => {
-		observe(async () => {
-			// SDK readiness owns the initial observation epoch. Validate the completed
-			// epoch once before returning, instead of rescanning its directory per add.
+	const schedule = (): void => {
+		if (closed || !ready || !dirty || timer || validations > 0) return
+		// A fixed window joins a burst without deferring forever during continuous edits.
+		timer = setTimeout(() => {
+			timer = undefined
+			void validate(false).catch(() => {})
+		}, VALIDATION_WINDOW_MS)
+		timer.unref()
+	}
+	const publish = (file: string, type: FileEvent, paths: ReadonlySet<string>): void => {
+		const existed = entries.has(file)
+		if (!paths.has(file)) {
+			if (!existed) return
+			entries.delete(file)
+			options.onChange(Object.freeze({ type: 'unlink', path: file }))
+		} else if (type !== 'unlink') {
+			entries.add(file)
+			options.onChange(Object.freeze({ type: existed ? 'change' : 'add', path: file }))
+		}
+	}
+	const retain = (file: string, type: FileEvent): void => {
+		if (full) return
+		pending.set(file, type)
+		if (pending.size > MAX_PENDING_FILES) {
+			pending.clear()
+			full = true
+		}
+	}
+	const validate = (read: boolean): Promise<readonly string[]> => {
+		cancelTimer()
+		validations++
+		const result = processing.then(async () => {
+			if (closed) throw new Error('[host-vite] source watcher is closed')
+			// Take the batch only when its turn starts, including any previous failed
+			// validation. Notifications arriving during this snapshot stay pending.
+			const batch = pending
+			const reconcile = full
+			pending = new Map()
+			full = false
+			dirty = false
+			let discovered: readonly string[]
+			try {
+				discovered = await snapshot()
+			} catch (error) {
+				if (!closed) {
+					if (reconcile) {
+						pending.clear()
+						full = true
+					} else for (const [file, type] of batch) if (!pending.has(file)) retain(file, type)
+				}
+				// Keep failed observations, but only a new event or explicit read retries them.
+				// In particular, restoring the batch must not mark it dirty again.
+				throw error
+			}
+			const paths = new Set(discovered.map(normalize))
+			if (closed) throw new Error('[host-vite] source watcher is closed')
+			if (reconcile) {
+				// Recover the SDK's observation set on overflow. Discovery alone must never
+				// admit files that Chokidar has not observed, including raw-only notifications.
+				for (const file of entries) if (!paths.has(file)) publish(file, 'unlink', paths)
+				for (const [directory, children] of Object.entries(watcher.getWatched())) {
+					for (const child of children) {
+						const file = normalize(resolve(directory, child))
+						if (matches(file) && paths.has(file)) publish(file, 'change', paths)
+					}
+				}
+			} else for (const [file, type] of batch) publish(file, type, paths)
+			return Object.freeze([...entries].sort())
+		})
+		// Explicit reads own their failures; background validation reports through onError.
+		// Both keep one serial IO owner, and close drains the accepted operation.
+		processing = result.then(
+			(): undefined => {
+				validations--
+				schedule()
+				return undefined
+			},
+			(error: unknown) => {
+				validations--
+				schedule()
+				if (!read && !closed) options.onError(error)
+			},
+		)
+		return result
+	}
+	const observed = (file: string, type: FileEvent | 'addDir'): void => {
+		if (closed) return
+		try {
+			const normalized = normalize(resolve(file))
+			if (type !== 'addDir' && !matches(normalized)) return
+			// SDK readiness owns the initial observation epoch; validate it once below.
 			if (!ready) {
-				if (type === 'addDir') return
-				const normalized = normalize(resolve(file))
-				if (!matches(normalized)) return
 				if (type === 'unlink') entries.delete(normalized)
-				else entries.add(normalized)
+				else if (type !== 'addDir') entries.add(normalized)
 				return
 			}
-			const paths = await snapshot()
-			if (closed || type === 'addDir') return
-			const normalized = normalize(resolve(file))
-			if (!matches(normalized)) return
-			const existed = entries.has(normalized)
-			if (!paths.map(normalize).includes(normalized)) {
-				if (!existed) return
-				entries.delete(normalized)
-				if (ready) options.onChange(Object.freeze({ type: 'unlink', path: normalized }))
-			} else if (type !== 'unlink') {
-				entries.add(normalized)
-				if (ready)
-					options.onChange(Object.freeze({ type: existed ? 'change' : 'add', path: normalized }))
-			}
-		})
+			if (type !== 'addDir') retain(normalized, type)
+			dirty = true
+			schedule()
+		} catch (error) {
+			if (!ready) initialFailure ??= error
+			else options.onError(error)
+		}
 	}
 	for (const type of ['add', 'change', 'unlink', 'addDir'] as const)
 		watcher.on(type, (file) => observed(file, type))
 	// Chokidar omits rejected/dangling links. Raw events only request validation by
 	// the same discovery; regular file admission waits for its SDK observer.
 	watcher.on('raw', (_event, file) => {
-		if (ready && !closed && related(normalize(resolve(file)), root))
-			observe(async () => {
-				await snapshot()
-			})
+		if (ready && !closed && related(normalize(resolve(file)), root)) {
+			dirty = true
+			schedule()
+		}
 	})
 	try {
 		await new Promise<void>((resolveReady, reject) => {
@@ -200,18 +280,9 @@ export async function watchPluginSource(
 		ready = true
 		return Object.freeze({
 			entries(): Promise<readonly string[]> {
-				const reading = processing.then(async () => {
-					if (closed) throw new Error('[host-vite] source watcher is closed')
-					await snapshot()
-					if (closed) throw new Error('[host-vite] source watcher is closed')
-					return Object.freeze([...entries].sort())
-				})
-				// The caller owns the validation failure; close still drains its accepted IO.
-				processing = reading.then(
-					(): undefined => undefined,
-					(): undefined => undefined,
-				)
-				return reading
+				// One queued validation, including retained failures. It takes one snapshot
+				// when its turn starts and never waits for later notifications to stop.
+				return validate(true)
 			},
 			covers,
 			close,

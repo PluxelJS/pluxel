@@ -26,7 +26,7 @@ Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web
 
 普通 command 在声明目录前台执行，继承终端并传递退出状态，CLI 自动注入 `PLUXEL_DEV_PROJECT` 与 `PLUXEL_DEV_PROFILE`，无须用户配置。控制台捕获 declaring package 的 canonical 目录与 profile，连接时按该目录、profile 名和 Vite root realpath 筛选。Pitchfork profile 根据控制台原生 `PITCHFORK_DAEMON_ID` 的短服务名筛选，启动时再解析并核对完整服务 ID；同 root、同短服务但不同 namespace 的多实例仍要求明确选择。前台启动不创建后台 supervisor 或轮询就绪；复用实例时读取当前地址。
 
-向上发现配置止于最近 Git / pnpm workspace 边界；`--root` 选择发现起点，默认 cwd。没有声明时控制台采用最近 package 根目录，若显式传入 `--root` 则采用该目录本身；没有配置却指定 `--profile` 必须失败。`--root` 不绕过已发现配置。控制台 profile 的 `dev status/run/instances` 仅依赖本地实例描述与握手，不调用 Pitchfork、不自动启动；按 profile 绑定过滤后，多个候选使用 `--instance`，该选项不能越过归属检查。
+向上发现配置止于最近 Git / pnpm workspace 边界；`--root` 选择发现起点，默认 cwd。没有声明时控制台采用最近 package 根目录，若显式传入 `--root` 则采用该目录本身；没有配置却指定 `--profile` 必须失败。`--root` 不绕过已发现配置。控制台 profile 的 `dev status/run/hmr/instances` 仅依赖本地实例描述与握手，不调用 Pitchfork、不自动启动；按 profile 绑定过滤后，多个候选使用 `--instance`，该选项不能越过归属检查。
 
 `console` 默认 true。只有 Pitchfork profile 可以显式设置 false，用于文档站等没有 Pluxel Host 的服务：启动遵守 Pitchfork readiness，随后重新读取服务状态与公开 URL；status 查询 Pitchfork，run/instances/--instance 在产生效果前报 unsupported_console。此类服务不创建假控制台，也不生成 Vite Application / Workbench 输出。框架仓库的 docs script 使用该 profile；create 模板只包含真实存在的默认 app 与前台 local。
 

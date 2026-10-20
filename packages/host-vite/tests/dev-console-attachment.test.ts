@@ -28,7 +28,7 @@ vi.mock('../src/environment', () => ({
 vi.mock('../src/console/server', () => ({
 	startDevConsoleServer: async (options: { execute: typeof mocked.execute }) => {
 		mocked.execute = options.execute
-		return { close: async () => {}, executor: { abortAll: vi.fn() } }
+		return { close: async () => {}, executor: { abortScripts: vi.fn() } }
 	},
 }))
 const cleanup: Array<() => Promise<void>> = []

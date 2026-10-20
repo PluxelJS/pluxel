@@ -25,6 +25,8 @@ vp run dev
 
 Use `vp exec pluxel dev status` to inspect the Vite instance and application, and `vp exec pluxel dev run host/web/dev/check.ts` to execute a console script inside that root. Neither command calls Pitchfork or starts a stopped service. One package may declare several profiles, using the same or different Vite roots; an explicit `--profile <name>` takes precedence over `pluxel.dev.default`, then a sole profile is selected automatically. The default must name an existing profile. Cross-directory calls use `--root <project-path>` to find the configuration. If several live instances match the profile, select `--instance <id>`; this cannot bypass profile ownership. Save the returned `receipt` for `dev result <receipt>` or `dev cancel <receipt>`: it remains bound to the original process after a restart. See the [console guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/dev-console.md) for scripts, foreground commands and direct Vite connections.
 
+For continuous or multi-file edits while the application is running, use the console guide's HMR batch workflow: `dev hmr pause`, edit and check, then `dev hmr apply` and verify the result. Failed updates remain paused; use `dev hmr resume` only after verification if the original mode was auto. These commands use the same profile and instance selection as `dev run`.
+
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
 Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
 The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,

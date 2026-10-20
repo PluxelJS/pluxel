@@ -9,10 +9,10 @@
 `host({ entry, devConsole: true })` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 `pluxel` environment ModuleRunner 求值，并借用当前 Host root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
 
 - `@pluxel/host-vite/console`：独立脚本类型、typed targets、稳定错误与借用的 `RootContext`。
-- Host-vite：每 run 的基础插件/配置操作、执行队列、源码加载、IPC、Vite 更新 barrier、host epoch 与清理。其中宿主操作仅依赖 Core/Host；控制台不依赖官方服务或其 optional peers。
+- Host-vite：每 run 的基础插件/配置操作、执行队列、源码加载、IPC、Vite 更新 barrier、HMR 批次控制、host epoch 与清理。其中宿主操作仅依赖 Core/Host；控制台不依赖官方服务或其 optional peers。
 - Services 的 `vitePreset()`：组合官方开发附件，将 `devConsole` 开关交给通用 `host()`；不实现控制台。
 - 应用脚本：显式 import 服务 token/API，通过 `dev.ctx` 访问已安装能力，并拥有直接调用的取消传递与资源释放。
-- CLI：只做 discovery/提交/结果/取消，不求值 Plugin，也不依赖开发驱动的发布产物。
+- CLI：只做 discovery、脚本或 HMR 控制提交、结果与取消，不求值 Plugin，也不依赖开发驱动的发布产物。
 
 Dev API 不继承 RuntimeTestHost。插件与基础配置操作直接委托 Host，不要求 Management，不复制其协议或展示层。服务操作使用各包现有公开契约，不注册控制台适配器或修改 Context shape。
 
@@ -32,7 +32,7 @@ Dev API 不继承 RuntimeTestHost。插件与基础配置操作直接委托 Host
 
 每个 Vite server 只有既有 `pluxel` environment runner；不追加一次性 query ID 创建无限 namespace，不全量 clearCache，不建立第二套 import cache。运行未改变的导出函数可以直接复用模块。
 
-每次调用先核对已知依赖版本。尚未观察的修改等待真实 Vite watcher 在 route 同步入队时确认，再等待有限 barrier；此等待受 run signal 与 deadline 约束。等待范围覆盖统一开发驱动已经接纳的源码与来源更新序列。不以全局 idle 或 sleep 模拟源码已应用。
+每次调用先核对已知依赖版本。尚未观察的修改等待真实 Vite watcher 在 route 同步入队时确认，再等待有限 barrier；此等待受 run signal 与 deadline 约束。等待范围覆盖统一开发驱动已经接纳的源码与来源更新序列。paused 且有运行时待处理变化时以 `hmr_pending` 拒绝加载，不隐式 apply；auto 也不能将失败后保留的 pending 当成已应用。不以全局 idle 或 sleep 模拟源码已应用。
 
 真实 route admission 对已跟踪源码记录有界 hash 并唤醒等待者。来源 listener 与 Vite hook 的确认不重复失效同一已发布 constructor。控制台不合成文件事件、不吞真实 watcher 事件。删除/无法读取的文件仍进入正常 removal 路径。
 
@@ -41,6 +41,14 @@ Dev API 不继承 RuntimeTestHost。插件与基础配置操作直接委托 Host
 失效必须发生在 route publication 之前。新 constructor 已成为 committed authority 后再失效，会令脚本 import 身份与 running Plugin 分裂。static catalog 更新采用精确 importer invalidation，未变化的 built Plugin 保持当前实例。script-only 更新不改变 catalog 或重建 root。
 
 脚本体不锁住整个 coordinator/HMR；它可以调用 restart 等异步 mutation。后台任务、浏览器和未来更新可交错，单个脚本不是全局事务。
+
+### 独立 HMR 控制
+
+pause/apply/resume 直接调用 Host-vite 实例拥有的批次调度器，不加载项目模块、不依赖应用 ready，不借用 Host run scope。脚本和控制命令各有一个串行执行位置，避免等待更新的脚本占住应用该更新所需的入口；它们共用现有 IPC 的接纳、receipt、结果、取消与保留预算。run snapshot 用 `kind: script | hmr` 区分源码与控制元数据，不通过 `defineDevConsole()` 暴露另一套应用控制 API。full-host replacement 只撤销旧脚本 run，不能撤销引起 replacement 的控制操作；Vite server 关闭才结束该控制通道。
+
+`dev status` 的 hmr 与控制结果中的 hmr 读取同一调度状态，控制结果同时包含 application。状态暴露 mode、running、pending.files/full、observedRevision 与 attemptedRevision；不保留无限文件名或逐事件历史。最近候选和 lifecycle 结果仍读取 application.latestUpdate，控制请求成功不替代领域状态。pause 等待已有工作，apply 留在 paused 应用一次 pending，resume 等待有限工作后继续 auto；合并、失败恢复与关闭语义见 [HMR 调度](HMR.md#开发批次调度)。
+
+控制取消关闭进一步执行入口并等待已经开始的工作真实结算；不回滚已经切换的模式或已开始的候选提交。receipt 始终绑定原 Vite 实例，断线不能自动重放，也不能转投重启后的新实例。
 
 ## 操作 API 与资源
 
@@ -64,7 +72,7 @@ Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 loggi
 
 首版使用具有文件权限保护的 Unix socket，仅支持 Unix 系统。project discovery 目录 0700、描述文件 0600，socket 放在当前用户私有短临时目录；nonce/instance/root/protocol 握手发生在求值前。它是受信任项目代码执行能力，不是隔离恶意代码的 sandbox，也不通过 Vite 公共 HTTP listener 暴露。
 
-日常 CLI 从 `pluxel.dev` 中的具名 profile 解析 Vite root 与启动方式，配置发现规则由 [CLI_WORKSPACES](CLI_WORKSPACES.md) 维护。控制台以 root realpath、启动归属和 instanceId 定位运行实例；按 profile 筛选后只有一个候选时自动选择，多个候选必须显式 `--instance`，不能越过归属检查。启用控制台的 profile 的 status/instances/run 不查询 Pitchfork，也不自动启动；显式 console:false 的 Pitchfork 服务由 CLI 服务状态分支处理，不进入控制台发现或执行。
+日常 CLI 从 `pluxel.dev` 中的具名 profile 解析 Vite root 与启动方式，配置发现规则由 [CLI_WORKSPACES](CLI_WORKSPACES.md) 维护。控制台以 root realpath、启动归属和 instanceId 定位运行实例；按 profile 筛选后只有一个候选时自动选择，多个候选必须显式 `--instance`，不能越过归属检查。启用控制台的 profile 的 status/instances/run/hmr 不查询 Pitchfork，也不自动启动；显式 console:false 的 Pitchfork 服务由 CLI 服务状态分支处理，不进入控制台发现或执行。
 
 前台命令由 CLI 自动注入 `PLUXEL_DEV_PROJECT` 与 `PLUXEL_DEV_PROFILE`，控制台启动时捕获声明 package 的 canonical 目录与 profile，结合 Vite root 校验归属。两项环境变量不要求用户配置。Pitchfork 服务捕获原生 `PITCHFORK_DAEMON_ID` 为不可变 serviceId，按配置中的短服务名过滤，启动后额外核对完整服务 ID。无配置的手动 Vite 可按 root/instance 连接。握手核对 instanceId/root/project/profile/serviceId，服务端核对 instanceId/nonce；原实例消失不重定向操作。
 
@@ -72,7 +80,7 @@ Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 loggi
 
 | 预算                 | 上限/默认                                      |
 | -------------------- | ---------------------------------------------- |
-| 同时执行/排队        | 1 / 16                                         |
+| 同时执行/排队        | 脚本与 HMR 控制各 1 / 16                       |
 | run timeout          | 默认30秒，最多5分钟，覆盖排队与执行            |
 | 输入/输出            | 各1MiB、64层、100000节点                       |
 | frame / open sockets | 2MiB / 32，socket空闲5秒关闭                   |

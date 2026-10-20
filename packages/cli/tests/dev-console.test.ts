@@ -12,6 +12,7 @@ import { renderCliHeader } from '../src/render-header'
 import { devCommand } from '../src/commands/dev'
 import { normalizeDevArgs } from '../src/command-manifest'
 import {
+	controlDevHmr,
 	discoverDevInstances,
 	liveDevInstances,
 	parseInput,
@@ -102,6 +103,86 @@ function snapshot(instanceId: string, runId: unknown, state = 'succeeded') {
 }
 
 describe('development console CLI', () => {
+	it.each(['pause', 'apply', 'resume'])(
+		'routes hmr %s directly and returns a receipt without a script',
+		async (action) => {
+			const { root, instance, requests } = await fixture(
+				(request, socket) => {
+					socket.end(
+						JSON.stringify({
+							ok: true,
+							value: {
+								...snapshot(instance.instanceId, request.runId, 'queued'),
+								kind: 'hmr',
+								action: request.action,
+							},
+						}) + '\n',
+					)
+				},
+				{ state: 'unavailable', latestUpdate: null },
+			)
+			instance.hmr = {
+				mode: 'paused',
+				running: false,
+				pending: { files: 2, full: false },
+				observedRevision: 2,
+				attemptedRevision: 0,
+			}
+			const output: string[] = []
+			vi.spyOn(console, 'log').mockImplementation((message: string) => {
+				output.push(message)
+			})
+			const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+			await cli(['hmr', action, '--root', root, '--timeout', '500', '--detach'], devCommand, {})
+			const result = JSON.parse(output[0]!)
+			expect(result).toMatchObject({
+				ok: true,
+				value: { kind: 'hmr', action, state: 'queued', root },
+			})
+			expect(decodeDevReceipt(result.value.receipt)).toMatchObject({
+				root,
+				instanceId: instance.instanceId,
+				runId: result.value.runId,
+			})
+			expect(requests.filter(({ method }) => method !== 'inspect')).toEqual([
+				expect.objectContaining({ method: 'hmr', action, timeoutMs: 500 }),
+			])
+			expect(requests.find(({ method }) => method === 'hmr')).not.toHaveProperty('file')
+			expect(stderr).not.toHaveBeenCalled()
+			expect(process.exitCode ?? 0).toBe(0)
+			output.length = 0
+			await cli(['status', '--root', root], devCommand, {})
+			expect(JSON.parse(output[0]!)).toMatchObject({
+				value: { instances: [{ hmr: instance.hmr }] },
+			})
+		},
+	)
+
+	it('does not replay HMR control when the connection is lost after submission', async () => {
+		const { instance, requests } = await fixture((_request, socket) => socket.destroy())
+		await expect(
+			controlDevHmr({ instance, action: 'apply', timeoutMs: 1000, detach: false }),
+		).rejects.toMatchObject({
+			code: 'outcome_unknown',
+			runId: expect.any(String),
+			context: { instanceId: instance.instanceId, root: instance.root },
+			hint: expect.stringContaining('receipt'),
+		})
+		expect(requests).toHaveLength(1)
+		expect(requests[0]).toMatchObject({ method: 'hmr', action: 'apply' })
+	})
+
+	it.each(['restart', 'PAUSE', ''])(
+		'rejects invalid HMR action %j before submission',
+		async (action) => {
+			const { instance, requests } = await fixture()
+			await expect(
+				controlDevHmr({ instance, action, timeoutMs: 1000, detach: false }),
+			).rejects.toMatchObject({ code: 'invalid_input' })
+			expect(requests).toHaveLength(0)
+		},
+	)
+
 	it('discovers live consoles without returning local credentials', async () => {
 		const { root, instance } = await fixture()
 		expect(await selectDevInstance({ root })).toEqual(instance)

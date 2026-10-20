@@ -5,12 +5,18 @@ import {
 	snapshotJson,
 	DEV_CONSOLE_DEFAULT_TIMEOUT,
 	type DevConsoleRunInput,
+	type DevConsoleHmrInput,
+	type DevConsoleHmrAction,
 	type DevConsoleRunSnapshot,
 	type DevConsolePhase,
 } from './protocol'
 
+type Operation =
+	| { kind: 'script'; input: DevConsoleRunInput }
+	| { kind: 'hmr'; input: DevConsoleHmrInput }
+type Lane = { pending: Run[]; active?: Run }
 type Run = {
-	input: DevConsoleRunInput
+	operation: Operation
 	controller: AbortController
 	snapshot: DevConsoleRunSnapshot
 	timer: ReturnType<typeof setTimeout>
@@ -26,22 +32,37 @@ export type RunExecution = Readonly<{
 
 /** Host-local admission and result ownership; cancellation never releases an unsettled execution. */
 export class DevConsoleExecutor {
-	private readonly pending: Run[] = []
+	private readonly lanes: Record<Operation['kind'], Lane> = {
+		script: { pending: [] },
+		hmr: { pending: [] },
+	}
 	private readonly runs = new Map<string, Run>()
 	private readonly fingerprints = new Map<string, string>()
 	private readonly completed: string[] = []
 	private completedBytes = 0
 	private readonly sizes = new Map<string, number>()
-	private active: Run | undefined
 	private closed = false
 
 	constructor(
 		private readonly instanceId: string,
 		private readonly execute: (input: DevConsoleRunInput, run: RunExecution) => Promise<unknown>,
+		private readonly control?: (action: DevConsoleHmrAction, run: RunExecution) => Promise<unknown>,
 	) {}
 
 	submit(input: DevConsoleRunInput): DevConsoleRunSnapshot {
-		const fingerprint = createHash('sha256').update(JSON.stringify(input)).digest('hex')
+		return this.admit({ kind: 'script', input })
+	}
+
+	submitControl(input: DevConsoleHmrInput): DevConsoleRunSnapshot {
+		if (!this.control)
+			throw new ConsoleExecutionError('hmr_unavailable', 'HMR control is unavailable')
+		return this.admit({ kind: 'hmr', input })
+	}
+
+	private admit(operation: Operation): DevConsoleRunSnapshot {
+		const { input, kind } = operation
+		const lane = this.lanes[kind]
+		const fingerprint = createHash('sha256').update(JSON.stringify(operation)).digest('hex')
 		const existing = this.fingerprints.get(input.runId)
 		if (existing) {
 			if (existing !== fingerprint)
@@ -52,8 +73,8 @@ export class DevConsoleExecutor {
 			return this.result(input.runId)
 		}
 		if (this.closed) throw new ConsoleExecutionError('dev_unavailable', 'Dev console is closed')
-		if (this.pending.length >= 16)
-			throw new ConsoleExecutionError('queue_full', 'Dev console has 16 pending scripts')
+		if (lane.pending.length >= 16)
+			throw new ConsoleExecutionError('queue_full', `Dev console has 16 pending ${kind} operations`)
 		if (this.fingerprints.size >= 100_000)
 			throw new ConsoleExecutionError(
 				'run_limit_reached',
@@ -64,16 +85,21 @@ export class DevConsoleExecutor {
 			finish = resolve
 		})
 		const run: Run = {
-			input,
+			operation,
 			controller: new AbortController(),
 			done,
 			finish,
 			snapshot: {
 				runId: input.runId,
 				instanceId: this.instanceId,
-				file: input.file,
-				exportName: input.exportName,
-				sourceHash: input.sourceHash,
+				...(operation.kind === 'script'
+					? {
+							kind: 'script' as const,
+							file: operation.input.file,
+							exportName: operation.input.exportName,
+							sourceHash: operation.input.sourceHash,
+						}
+					: { kind: 'hmr' as const, action: operation.input.action }),
 				submittedAt: new Date().toISOString(),
 				state: 'queued',
 				phase: 'admission',
@@ -85,9 +111,9 @@ export class DevConsoleExecutor {
 		run.timer.unref()
 		this.fingerprints.set(input.runId, fingerprint)
 		this.runs.set(input.runId, run)
-		this.pending.push(run)
+		lane.pending.push(run)
 		queueMicrotask(() => {
-			this.pump()
+			this.pump(lane)
 		})
 		return run.snapshot
 	}
@@ -108,7 +134,8 @@ export class DevConsoleExecutor {
 		if (!run.controller.signal.aborted)
 			run.controller.abort(new ConsoleExecutionError(reason, `Dev execution ${reason}`))
 		clearTimeout(run.timer)
-		if (run === this.active) {
+		const lane = this.lanes[run.operation.kind]
+		if (run === lane.active) {
 			run.snapshot = {
 				...metadata(run.snapshot),
 				state: 'cancelling',
@@ -116,8 +143,8 @@ export class DevConsoleExecutor {
 				cancelReason: reason,
 			}
 		} else {
-			const index = this.pending.indexOf(run)
-			if (index >= 0) this.pending.splice(index, 1)
+			const index = lane.pending.indexOf(run)
+			if (index >= 0) lane.pending.splice(index, 1)
 			run.snapshot = {
 				...metadata(run.snapshot),
 				state: 'cancelled',
@@ -131,9 +158,17 @@ export class DevConsoleExecutor {
 		return run.snapshot
 	}
 
+	abortScripts(reason: string): void {
+		this.abortLane(this.lanes.script, reason)
+	}
+
 	abortAll(reason: string): void {
-		for (const run of [...this.pending, ...(this.active ? [this.active] : [])])
-			this.cancel(run.input.runId, reason)
+		for (const lane of Object.values(this.lanes)) this.abortLane(lane, reason)
+	}
+
+	private abortLane(lane: Lane, reason: string): void {
+		for (const run of [...lane.pending, ...(lane.active ? [lane.active] : [])])
+			this.cancel(run.operation.input.runId, reason)
 	}
 
 	close(): void {
@@ -148,28 +183,28 @@ export class DevConsoleExecutor {
 		return this.result(id)
 	}
 
-	private pump(): void {
-		if (this.active || this.closed) return
-		const run = this.pending.shift()
+	private pump(lane: Lane): void {
+		if (lane.active || this.closed) return
+		const run = lane.pending.shift()
 		if (!run) return
-		this.active = run
+		lane.active = run
 		run.snapshot = {
 			...metadata(run.snapshot),
 			startedAt: new Date().toISOString(),
-			state: 'preparing',
-			phase: 'load',
+			state: run.operation.kind === 'script' ? 'preparing' : 'running',
+			phase: run.operation.kind === 'script' ? 'load' : 'execute',
 		}
 		void this.perform(run).finally(() => {
-			this.active = undefined
+			lane.active = undefined
 			run.finish()
-			this.pump()
+			this.pump(lane)
 		})
 	}
 
 	private async perform(run: Run): Promise<void> {
-		let phase: DevConsolePhase = 'load'
+		let phase: DevConsolePhase = run.operation.kind === 'script' ? 'load' : 'execute'
 		try {
-			const value = await this.execute(run.input, {
+			const execution: RunExecution = {
 				signal: run.controller.signal,
 				phase: (next) => {
 					phase = next
@@ -196,7 +231,10 @@ export class DevConsoleExecutor {
 						revisions: { ...run.snapshot.revisions, [stage]: snapshotJson(snapshot) },
 					}
 				},
-			})
+			}
+			const value = await (run.operation.kind === 'script'
+				? this.execute(run.operation.input, execution)
+				: this.control!(run.operation.input.action, execution))
 			run.controller.signal.throwIfAborted()
 			phase = 'encode'
 			const snapshot = snapshotJson(value)
@@ -224,9 +262,10 @@ export class DevConsoleExecutor {
 	}
 
 	private retain(run: Run): void {
-		const id = run.input.runId
+		const id = run.operation.input.runId
 		// Keep only request metadata after settlement; input may itself occupy the whole value budget.
-		run.input = { ...run.input, input: undefined }
+		if (run.operation.kind === 'script')
+			run.operation = { kind: 'script', input: { ...run.operation.input, input: undefined } }
 		const size = Buffer.byteLength(JSON.stringify(run.snapshot))
 		this.completed.push(id)
 		this.sizes.set(id, size)
@@ -251,9 +290,14 @@ function metadata(snapshot: DevConsoleRunSnapshot) {
 	return {
 		runId: snapshot.runId,
 		instanceId: snapshot.instanceId,
-		file: snapshot.file,
-		exportName: snapshot.exportName,
-		sourceHash: snapshot.sourceHash,
+		...(snapshot.kind === 'script'
+			? {
+					kind: 'script' as const,
+					file: snapshot.file,
+					exportName: snapshot.exportName,
+					sourceHash: snapshot.sourceHash,
+				}
+			: { kind: 'hmr' as const, action: snapshot.action }),
 		submittedAt: snapshot.submittedAt,
 		...(snapshot.startedAt ? { startedAt: snapshot.startedAt } : {}),
 		...(snapshot.hostEpoch ? { hostEpoch: snapshot.hostEpoch } : {}),

@@ -427,9 +427,9 @@ try {
 		pluginNodeAddressEqual(status.address, address),
 	)
 	assert.equal(serializedStatus?.recentUpdate?.batch.outcome, 'applied')
-	assert.ok(
-		(serializedStatus?.recentUpdate?.batch.sequence ?? 0) >=
-			(finalStatus?.recentUpdate?.batch.sequence ?? 0) + 2,
+	assert.equal(
+		serializedStatus?.recentUpdate?.batch.sequence,
+		(finalStatus?.recentUpdate?.batch.sequence ?? 0) + 1,
 	)
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
@@ -478,14 +478,33 @@ assert.equal(currentPlugins().isRunning(address), false)
 async function invokeHotUpdate(route: VitePlugin, changedFile: string): Promise<void> {
 	const hook = typeof route.hotUpdate === 'function' ? route.hotUpdate : route.hotUpdate?.handler
 	if (typeof hook !== 'function') throw new Error('static Vite hot-update hook is missing')
-	await hook.call({ environment: server.environments[HOST_VITE_ENVIRONMENT] } as never, {
-		type: 'update',
-		file: normalizePath(changedFile),
-		server,
-		modules: [],
-		read: () => Promise.resolve(''),
-		timestamp: Date.now(),
-	} satisfies HotUpdateOptions)
+	// The hook admits changes; the route-owned report signals batch completion across Host replacement.
+	const updates = readHostRecentUpdates(currentHost().ctx)
+	assert.ok(updates?.subscribeUpdates, 'route update subscription is missing')
+	const previousSequence = updates.latestUpdate?.()?.sequence ?? 0
+	const settled = Promise.withResolvers<void>()
+	const timer = setTimeout(() => settled.reject(new Error('HMR batch did not settle')), 10_000)
+	const unsubscribe = updates.subscribeUpdates((snapshot) => {
+		if (!snapshot || snapshot.sequence <= previousSequence || snapshot.state !== 'settled') return
+		if (snapshot.error) settled.reject(new Error(snapshot.error.message))
+		else settled.resolve()
+	})
+	try {
+		await Promise.all([
+			settled.promise,
+			hook.call({ environment: server.environments[HOST_VITE_ENVIRONMENT] } as never, {
+				type: 'update',
+				file: normalizePath(changedFile),
+				server,
+				modules: [],
+				read: () => Promise.resolve(''),
+				timestamp: Date.now(),
+			} satisfies HotUpdateOptions),
+		])
+	} finally {
+		clearTimeout(timer)
+		unsubscribe()
+	}
 }
 
 async function invokeViteWatchChange(

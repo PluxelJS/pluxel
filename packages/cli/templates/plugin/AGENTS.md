@@ -15,3 +15,5 @@
 工作区默认使用 mise 固定 Node、pnpm、Vite+ 和 hk；先 `mise trust`、`mise install`、`vp install`、`vp run setup`，已有 Git 仓库再 `vp run hooks:install`。`hk.pkl` 只选择文件并调用 `vp check`；`vp run verify` 委托 `workspace:verify` 原生任务图。`oxlint.config.ts` 与 `oxfmt.config.ts` 分别维护规则，根 `vite.config.ts` 引用为 `lint` / `fmt` 并启用类型检查；每份规则只维护一个来源，详见工作区工具链指南。
 
 独立插件没有可运行应用，不声明空的 `pluxel.dev` 或启动临时 Host。在线调试时用 `--root` 从消费应用目录发现配置，显式 `--profile` 优先于应用 default，没有默认且多 profile 时必须指定；匹配实例仍有多个时使用 `--instance`。没有配置的手动 Vite 可用 `--root` 指定其真实根目录。操作与 receipt 恢复方式由 skill 和开发控制台指南维护。
+
+消费应用运行时，跨文件或连续修改按指南的「HMR 批次控制」使用 `dev hmr pause` → 修改与检查 → `dev hmr apply` → 验证。失败保持暂停；成功且原本 auto 才恢复，不为独立插件测试另起应用。

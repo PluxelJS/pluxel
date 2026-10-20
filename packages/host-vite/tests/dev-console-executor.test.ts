@@ -20,6 +20,78 @@ function deferred<T = void>() {
 }
 
 describe('dev console execution ownership', () => {
+	it('runs HMR control while a script is blocked and survives its own Host replacement', async () => {
+		const scriptEntered = deferred()
+		const releaseScript = deferred()
+		const control = vi.fn(async () => {
+			executor.abortScripts('host_replaced')
+			return { mode: 'paused' }
+		})
+		const executor = new DevConsoleExecutor(
+			'instance',
+			async () => {
+				scriptEntered.resolve()
+				await releaseScript.promise
+			},
+			control,
+		)
+		try {
+			executor.submit(input('blocked'))
+			await scriptEntered.promise
+			executor.submit(input('queued-script'))
+			executor.submitControl({ runId: 'apply', action: 'apply' })
+			expect(await executor.settled('apply')).toMatchObject({
+				kind: 'hmr',
+				action: 'apply',
+				state: 'succeeded',
+				value: { mode: 'paused' },
+			})
+			expect(executor.result('blocked')).toMatchObject({
+				state: 'cancelling',
+				cancelReason: 'host_replaced',
+			})
+			expect(executor.result('queued-script')).toMatchObject({ state: 'cancelled' })
+			executor.submitControl({ runId: 'apply', action: 'apply' })
+			expect(control).toHaveBeenCalledTimes(1)
+			expect(() => executor.submitControl({ runId: 'apply', action: 'resume' })).toThrow(
+				'different request',
+			)
+			expect(() => executor.submit(input('apply'))).toThrow('different request')
+		} finally {
+			releaseScript.resolve()
+			await executor.settled('blocked')
+			executor.close()
+		}
+	})
+
+	it('bounds and serializes HMR control, retaining cancellation until the operation settles', async () => {
+		const entered = deferred()
+		const release = deferred()
+		const control = vi.fn(async () => {
+			entered.resolve()
+			await release.promise
+		})
+		const executor = new DevConsoleExecutor('instance', async () => null, control)
+		try {
+			executor.submitControl({ runId: 'active', action: 'apply' })
+			await entered.promise
+			for (let index = 0; index < 16; index++)
+				executor.submitControl({ runId: `queued-${index}`, action: 'resume' })
+			expect(() => executor.submitControl({ runId: 'overflow', action: 'pause' })).toThrow(
+				'16 pending',
+			)
+			expect(executor.cancel('active')).toMatchObject({ state: 'cancelling' })
+			expect(executor.result('queued-0')).toMatchObject({ state: 'queued' })
+			expect(control).toHaveBeenCalledTimes(1)
+			executor.close()
+			expect(executor.result('queued-0')).toMatchObject({ state: 'cancelled' })
+		} finally {
+			release.resolve()
+			expect(await executor.settled('active')).toMatchObject({ state: 'cancelled' })
+			executor.close()
+		}
+	})
+
 	it('retains one execution across resubmission and disconnect-like result retrieval', async () => {
 		const execute = vi.fn(async () => ({ count: 1 }))
 		const executor = new DevConsoleExecutor('instance', execute)

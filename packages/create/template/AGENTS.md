@@ -29,7 +29,8 @@
 - 复用现有服务；已注册项目可访问真实代理 URL 唤起，首次 checkout 仍需准备依赖并注册或启动。访问 URL 会启动服务和依赖；不要猜域名或把启动页当作应用 ready。
 - 启动失败、Vite 编译错误、进程退出和 stdout/stderr 使用 `pitchfork logs app --since 5min -n 100 --no-pager`。跨目录先发现完整服务 ID；仅为具体观察短暂使用 `--follow`，不另起进程收集日志。
 - 应用状态、HMR 接纳、Plugin 业务日志、配置、方法和 Workbench RPC 使用 `docs/pluxel/development/dev-console.md` 指导的控制台。用 `vp exec pluxel dev status` 确认 `host/web` 的实例与应用状态，再用 `dev run host/web/dev/<script>.ts` 操作。控制台不调用 Pitchfork；显式 `--profile` 优先于 default，再选择唯一 profile，匹配实例仍有多个时显式 `--instance`，跨目录用 `--root` 选择配置发现起点；保存 receipt 用于 `dev result/cancel`，旧操作不转投重启后的实例。不能用进程 running 代替业务结果。
-- 普通源码修改先利用 HMR；按需启动不等于自动空闲停止。只清理本任务启动的临时服务，保留原有共享实例。冷启动和日志保留策略按工作区指南及已安装 CLI 帮助配置。
+- 在运行中的应用上跨文件或连续修改前，按控制台指南的「HMR 批次控制」先 `dev hmr pause`；检查通过后 `dev hmr apply` 并验证报告与实际行为。失败保持暂停，成功且原本 auto 才 `dev hmr resume`，不在 finally 中无条件恢复或重启服务模拟 apply。
+- 按需启动不等于自动空闲停止。只清理本任务启动的临时服务，保留原有共享实例。冷启动和日志保留策略按工作区指南及已安装 CLI 帮助配置。
 
 `hk check` 检查改动文件，`hk fix` 显式修复；完整验收用 `vp run verify`。修改 Pkl 后运行 `hk validate`，修改服务配置后运行 `pitchfork daemons --json` 并验证实际服务。运行中 Pluxel 操作通过现有 dev console；`--root` 不绕过已发现配置，`--instance` 不绕过 profile 归属。
 

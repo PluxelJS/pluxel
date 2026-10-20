@@ -17,7 +17,7 @@ export default defineConfig({ plugins: [host({ entry: './app.ts', devConsole: tr
 | `/run`     | `runViteApplication({ root, configFile, signal? })`；[生产配置](../../docs/host/configuration.md#vite-生产) |
 | `/console` | `defineDevConsole()` 与当前应用操作类型；[开发控制台](../../docs/development/dev-console.md)                |
 
-应用、来源插件与开发控制台共享专用 `pluxel` environment。默认 SSR 和第三方 `ssrLoadModule` 独立，不能用其中的 Plugin constructor 操作 Host 实例。源码变更由同一串行队列处理，失败候选不覆盖已接受事实。
+应用、来源插件与开发控制台共享专用 `pluxel` environment。默认 SSR 和第三方 `ssrLoadModule` 独立，不能用其中的 Plugin constructor 操作 Host 实例。源码变更由同一有界批次调度器处理，失败候选不覆盖已接受事实；连续编辑使用 [dev console 的 pause/apply/resume](../../docs/development/dev-console.md#hmr-批次控制) 控制接纳时机。
 
 HMR、工厂重建、恢复和关闭约束见 [HMR.md](../../engineering/HMR.md)；开发诊断不自动安装日志 sink，输出配置见[日志](../../docs/plugin-development/logging.md)。
 
