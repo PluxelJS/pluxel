@@ -101,7 +101,7 @@ try {
 	await assert.rejects(startBackend(config), { code: 'ROOT_IN_USE' })
 	const project = await backend.api.createProject({ name: 'Production external Node workspace' })
 	const tree = await backend.api.getTree({ projectId: project.id })
-	assert.equal(tree.documents.length, 3)
+	assert.equal(tree.documents.length, 5)
 	assert.ok(!tree.entries.some((entry) => entry.path.endsWith('/data.json')))
 	const providers = await backend.api.providers()
 	assert.ok(providers.providers.length > 10)
@@ -166,7 +166,7 @@ try {
 	assert.ok(restartedProjects.some((item) => item.id === project.id))
 	const restartedInput = await backend.api.getInput(first.target)
 	assert.deepEqual(restartedInput.data, {})
-	const afterRestart = await backend.api.compile({ ...first.target, data: {} })
+	const afterRestart = await backend.api.compile({ clientRevision: 0, ...first.target, data: {} })
 	assert.notEqual(afterRestart.revision, first.compiled.revision)
 	await assert.rejects(
 		backend.api.renderPage({ ...first.target, revision: first.compiled.revision, page: 1 }),

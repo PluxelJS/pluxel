@@ -1,6 +1,14 @@
 import type { FieldNode } from 'valibot-form'
 import type { TypstPreview } from '@pluxel/plugin-typst/browser'
 import type {
+	JSONContent,
+	TypstRegionDefinition,
+	TypstTableStyleOptions,
+	TypstTemplateDefinition,
+	TypstDataField,
+	TypstGeneratedMapping,
+} from '@pluxel/plugin-typst/tiptap'
+import type {
 	TypstDiagnostic,
 	TypstPage,
 	TypstOutlineItem,
@@ -19,6 +27,40 @@ export interface DocumentTarget {
 }
 export interface CompileRequest extends DocumentTarget {
 	data: JsonObject
+	/** Host-owned version of this captured data and region snapshot, including unsaved edits. */
+	clientRevision: number
+	editor?: EditorDraft
+}
+export interface EditorDraft {
+	formatVersion: 1
+	templateId: string
+	templateRevision: string
+	regions: Record<string, JSONContent>
+}
+export interface DocumentInput {
+	/** Original schema input; parsed defaults/transforms are never persisted here. */
+	data: JsonObject
+	editor?: EditorDraft
+	/** null means no saved draft exists. */
+	storageVersion: string | null
+}
+export interface InputWrite extends DocumentTarget {
+	data: JsonObject
+	editor?: EditorDraft
+	expectedVersion: string | null
+}
+export interface EditorDescription {
+	table?: Partial<TypstTableStyleOptions>
+	/** Host-owned, serializable template components; instances live in region JSON. */
+	templates?: Array<Pick<TypstTemplateDefinition, 'id' | 'label' | 'source' | 'defaults'>>
+	/** Explicitly permit authoring executable Typst blocks in this report. */
+	sourceBlocks?: boolean
+	templateId: string
+	templateRevision: string
+	regions: TypstRegionDefinition[]
+	fields: TypstDataField[]
+	/** Explicit initial region documents used only when creating a draft. */
+	defaults: Record<string, JSONContent>
 }
 export interface RevisionTarget extends DocumentTarget {
 	revision: string
@@ -34,8 +76,11 @@ export interface DocumentDescription extends DocumentTarget {
 	sourceRevision: string
 	fields: FieldNode[]
 	defaults: JsonObject
+	editor?: EditorDescription
 }
 export interface PreviewResult extends RevisionTarget {
+	clientRevision: number
+	generatedMapping?: TypstGeneratedMapping[]
 	sourceRevision: string
 	sourceVersions: Readonly<Record<string, string>>
 	preview: TypstPreview
@@ -118,6 +163,8 @@ export interface CompileResult extends DocumentTarget {
 	revision: string
 	sourceRevision: string
 	data: JsonObject
+	clientRevision: number
+	generatedMapping?: TypstGeneratedMapping[]
 	pageCount: number
 	pages: readonly TypstPage[]
 	outline: readonly TypstOutlineItem[]
@@ -168,8 +215,8 @@ export interface StudioApi {
 		expectedVersion: string
 	}): Promise<WorkspaceTree>
 	search(input: SearchOptions & { projectId: string }): Promise<SearchResult>
-	getInput(input: DocumentTarget): Promise<{ data: JsonObject }>
-	setInput(input: DocumentTarget & { data: JsonObject }): Promise<{ data: JsonObject }>
+	getInput(input: DocumentTarget): Promise<DocumentInput>
+	setInput(input: InputWrite): Promise<DocumentInput>
 	describeDocument(input: DocumentTarget): Promise<DocumentDescription>
 	compile(input: CompileRequest): Promise<CompileResult>
 	renderPage(input: RenderPageRequest): Promise<PageArtifact>

@@ -1,0 +1,850 @@
+import { isTypstBlock, blockAttributeError, templateDefinitionError } from './blocks.js'
+import { flattenExtensions, getSchema, type JSONContent } from '@tiptap/core'
+import type { NodeType, MarkType, Schema } from '@tiptap/pm/model'
+import { createTypstExtensions } from './extensions.js'
+import { tableStyleOptions, tableStyleOptionsError, tableStyleError } from './table-style.js'
+import { textStyleAttributes, validTextStyleValue } from './text-style.js'
+import type {
+	TypstDataField,
+	TypstDocumentDraft,
+	TypstEditorConfig,
+	TypstEditorIssue,
+	TypstEditorResult,
+	TypstJsonObject,
+	TypstRegionDefinition,
+} from './types.js'
+
+export const builtinNodes = new Set([
+	'doc',
+	'text',
+	'paragraph',
+	'heading',
+	'blockquote',
+	'bulletList',
+	'orderedList',
+	'listItem',
+	'hardBreak',
+	'horizontalRule',
+	'codeBlock',
+	'table',
+	'tableRow',
+	'tableCell',
+	'tableHeader',
+	'image',
+	'dataField',
+	'templateBlock',
+	'typstSource',
+])
+export const builtinMarks = new Set([
+	'bold',
+	'italic',
+	'strike',
+	'underline',
+	'code',
+	'link',
+	'textStyle',
+])
+export const isObject = (value: unknown): value is Record<string, unknown> =>
+	value !== null &&
+	typeof value === 'object' &&
+	!Array.isArray(value) &&
+	(Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+export const samePath = (a: readonly string[], b: readonly string[]) =>
+	a.length === b.length && a.every((part, index) => part === b[index])
+export const safeFieldPath = (value: unknown): value is string[] =>
+	Array.isArray(value) &&
+	value.length > 0 &&
+	value.every((part) => typeof part === 'string' && validUnicode(part))
+
+function validUnicode(value: string): boolean {
+	for (let index = 0; index < value.length; index++) {
+		const code = value.charCodeAt(index)
+		if (code >= 0xd800 && code <= 0xdbff) {
+			const next = value.charCodeAt(++index)
+			if (!(next >= 0xdc00 && next <= 0xdfff)) return false
+		} else if (code >= 0xdc00 && code <= 0xdfff) return false
+	}
+	return true
+}
+
+export function fieldAt(data: unknown, path: readonly string[]): unknown {
+	let current = data
+	for (const segment of path) {
+		if ((!isObject(current) && !Array.isArray(current)) || !Object.hasOwn(current, segment))
+			return undefined
+		current = (current as Record<string, unknown>)[segment]
+	}
+	return current
+}
+
+export function fieldDisplay(data: unknown, descriptor: TypstDataField): string | undefined {
+	const value = fieldAt(data, descriptor.path)
+	if (value === null) return descriptor.nullText
+	return typeof value === 'string' ||
+		typeof value === 'boolean' ||
+		(typeof value === 'number' && Number.isFinite(value))
+		? String(value)
+		: undefined
+}
+
+function jsonValue(value: unknown, ancestors = new Set<object>()): boolean {
+	if (value === null || typeof value === 'boolean') return true
+	if (typeof value === 'string') return validUnicode(value)
+	if (typeof value === 'number') return Number.isFinite(value)
+	if (
+		typeof value !== 'object' ||
+		(!Array.isArray(value) && !isObject(value)) ||
+		ancestors.has(value)
+	)
+		return false
+	ancestors.add(value)
+	const valid =
+		(Array.isArray(value) || Object.keys(value).every(validUnicode)) &&
+		(Array.isArray(value) ? value : Object.values(value)).every((entry) =>
+			jsonValue(entry, ancestors),
+		)
+	ancestors.delete(value)
+	return valid
+}
+
+/** Checks declarations and serializer coverage before accepting any document. */
+export function editorSchema(config: TypstEditorConfig): TypstEditorResult<Schema> {
+	const issues: TypstEditorIssue[] = []
+	if (!isObject(config) || !Array.isArray(config.regions) || !Array.isArray(config.fields))
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'INVALID_CONFIG',
+					message: 'Editor configuration requires regions and fields arrays.',
+				},
+			],
+		}
+	if (
+		(config.extensions !== undefined && !Array.isArray(config.extensions)) ||
+		(config.nodeMappings !== undefined && !isObject(config.nodeMappings)) ||
+		(config.markMappings !== undefined && !isObject(config.markMappings)) ||
+		(config.allowLink !== undefined && typeof config.allowLink !== 'function') ||
+		(config.resolveImage !== undefined && typeof config.resolveImage !== 'function')
+	)
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'INVALID_CONFIG',
+					message:
+						'Extensions, serializer mappings and resource/link callbacks have invalid shapes.',
+				},
+			],
+		}
+	const ids = new Set<string>()
+	for (const region of config.regions) {
+		if (
+			!isObject(region) ||
+			typeof region.id !== 'string' ||
+			!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(region.id) ||
+			ids.has(region.id)
+		) {
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message:
+					'Region IDs must be unique safe filenames: letter followed by up to 63 letters, digits, underscores or hyphens.',
+			})
+			continue
+		}
+		ids.add(region.id)
+		if (
+			Object.keys(region).some(
+				(name) => !['id', 'label', 'nodes', 'marks', 'fields'].includes(name),
+			) ||
+			(region.label !== undefined && typeof region.label !== 'string')
+		)
+			issues.push({
+				code: 'INVALID_CONFIG',
+				regionId: region.id,
+				message: 'Unknown region property or invalid region label.',
+			})
+		if (
+			(region.nodes !== undefined &&
+				(!Array.isArray(region.nodes) || region.nodes.some((name) => typeof name !== 'string'))) ||
+			(region.marks !== undefined &&
+				(!Array.isArray(region.marks) || region.marks.some((name) => typeof name !== 'string'))) ||
+			(region.fields !== undefined &&
+				(!Array.isArray(region.fields) || !region.fields.every(safeFieldPath)))
+		)
+			issues.push({
+				code: 'INVALID_CONFIG',
+				regionId: region.id,
+				message: 'Region nodes, marks and fields must contain valid names or field paths.',
+			})
+	}
+	const fieldKeys = new Set<string>()
+	for (const field of config.fields) {
+		if (
+			!isObject(field) ||
+			Object.keys(field).some((name) => !['path', 'label', 'nullText'].includes(name)) ||
+			!safeFieldPath(field.path) ||
+			typeof field.label !== 'string' ||
+			(field.nullText !== undefined &&
+				(typeof field.nullText !== 'string' || !validUnicode(field.nullText))) ||
+			fieldKeys.has(JSON.stringify(field.path))
+		) {
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message:
+					'Fields need unique safe string-array paths, labels and optional nullText strings.',
+			})
+		} else fieldKeys.add(JSON.stringify(field.path))
+	}
+	if (issues.length > 0) return { ok: false, issues }
+	const extensions = createTypstExtensions(config)
+	const names = new Set<string>()
+	for (const extension of flattenExtensions(extensions)) {
+		if (names.has(extension.name))
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message: `Duplicate extension name: ${extension.name}.`,
+			})
+		names.add(extension.name)
+	}
+	if (issues.length > 0) return { ok: false, issues }
+	const tableOptions = tableStyleOptions(extensions)
+	const tableOptionError = tableOptions && tableStyleOptionsError(tableOptions)
+	if (tableOptionError)
+		return { ok: false, issues: [{ code: 'INVALID_CONFIG', message: tableOptionError }] }
+	const blockError = templateDefinitionError(extensions)
+	if (blockError) return { ok: false, issues: [{ code: 'INVALID_CONFIG', message: blockError }] }
+	const schema = getSchema(extensions)
+	for (const name of Object.keys(schema.nodes))
+		if (!builtinNodes.has(name) && !config.nodeMappings?.[name])
+			issues.push({ code: 'MISSING_SERIALIZER', message: `Node ${name} has no Typst serializer.` })
+	for (const name of Object.keys(schema.marks))
+		if (!builtinMarks.has(name) && !config.markMappings?.[name])
+			issues.push({ code: 'MISSING_SERIALIZER', message: `Mark ${name} has no Typst serializer.` })
+	for (const name of Object.keys(config.nodeMappings ?? {}))
+		if (builtinNodes.has(name) || !schema.nodes[name])
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message: `Node mapping ${name} duplicates a built-in serializer or has no extension.`,
+			})
+	for (const name of Object.keys(config.markMappings ?? {}))
+		if (builtinMarks.has(name) || !schema.marks[name])
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message: `Mark mapping ${name} duplicates a built-in serializer or has no extension.`,
+			})
+	const htmlTags = new Set<string>()
+	for (const [name, mapping] of Object.entries(config.nodeMappings ?? {})) {
+		if (!isObject(mapping)) {
+			issues.push({ code: 'INVALID_CONFIG', message: `Invalid serializer mapping for ${name}.` })
+			continue
+		}
+		if (
+			typeof mapping.serialize !== 'function' ||
+			(mapping.validateAttributes !== undefined && typeof mapping.validateAttributes !== 'function')
+		)
+			issues.push({ code: 'INVALID_CONFIG', message: `Invalid serializer mapping for ${name}.` })
+		if (
+			Object.keys(schema.nodes[name]?.spec.attrs ?? {}).length > 0 &&
+			typeof mapping.validateAttributes !== 'function'
+		)
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message: `Node ${name} has custom attributes and requires validateAttributes.`,
+			})
+		if (mapping.html) {
+			if (
+				!/^[a-z][a-z0-9-]*$/.test(mapping.html.tag) ||
+				!Array.isArray(mapping.html.attributes) ||
+				mapping.html.attributes.some((attribute) => typeof attribute !== 'string') ||
+				htmlTags.has(mapping.html.tag)
+			)
+				issues.push({
+					code: 'INVALID_CONFIG',
+					message: `Invalid or duplicate HTML admission mapping for ${name}.`,
+				})
+			htmlTags.add(mapping.html.tag)
+		}
+	}
+	for (const [name, mapping] of Object.entries(config.markMappings ?? {})) {
+		if (!isObject(mapping)) {
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message: `Invalid Mark serializer mapping for ${name}.`,
+			})
+			continue
+		}
+		if (
+			typeof mapping.serialize !== 'function' ||
+			(mapping.validateAttributes !== undefined && typeof mapping.validateAttributes !== 'function')
+		)
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message: `Invalid Mark serializer mapping for ${name}.`,
+			})
+		if (
+			Object.keys(schema.marks[name]?.spec.attrs ?? {}).length > 0 &&
+			typeof mapping.validateAttributes !== 'function'
+		)
+			issues.push({
+				code: 'INVALID_CONFIG',
+				message: `Mark ${name} has custom attributes and requires validateAttributes.`,
+			})
+	}
+	for (const region of config.regions) {
+		for (const name of region.nodes ?? [])
+			if (!schema.nodes[name])
+				issues.push({
+					code: 'INVALID_CONFIG',
+					regionId: region.id,
+					message: `Unknown allowed node: ${name}.`,
+				})
+		for (const name of region.marks ?? [])
+			if (!schema.marks[name])
+				issues.push({
+					code: 'INVALID_CONFIG',
+					regionId: region.id,
+					message: `Unknown allowed Mark: ${name}.`,
+				})
+		for (const path of region.fields ?? [])
+			if (!config.fields.some((field) => samePath(field.path, path)))
+				issues.push({
+					code: 'INVALID_CONFIG',
+					regionId: region.id,
+					fieldPath: path,
+					message: 'Region permits an undeclared field.',
+				})
+	}
+	return issues.length > 0 ? { ok: false, issues } : { ok: true, value: schema }
+}
+
+/** Grid positions preserve row/column spans; no Markdown conversion is involved. */
+export function tableGrid(
+	table: JSONContent,
+):
+	| { columns: number; cells: { node: JSONContent; x: number; y: number }[]; widths: number[] }
+	| string {
+	const rows = table.content ?? []
+	if (rows.length === 0) return 'A table needs at least one row.'
+	const grid: boolean[][] = rows.map(() => [])
+	const cells: { node: JSONContent; x: number; y: number }[] = []
+	const widths: number[] = []
+	for (let y = 0; y < rows.length; y++) {
+		let x = 0
+		for (const cell of rows[y]!.content ?? []) {
+			while (grid[y]![x]) x++
+			const colspan = cell.attrs?.colspan ?? 1
+			const rowspan = cell.attrs?.rowspan ?? 1
+			if (
+				!Number.isSafeInteger(colspan) ||
+				colspan < 1 ||
+				!Number.isSafeInteger(rowspan) ||
+				rowspan < 1 ||
+				y + rowspan > rows.length
+			)
+				return 'Invalid table span or a rowspan extends beyond the last row.'
+			const colwidth = cell.attrs?.colwidth
+			if (
+				colwidth !== undefined &&
+				colwidth !== null &&
+				(!Array.isArray(colwidth) ||
+					colwidth.length !== colspan ||
+					colwidth.some((width) => !Number.isSafeInteger(width) || width < 0))
+			)
+				return 'colwidth must contain one non-negative integer per spanned column.'
+			for (let dy = 0; dy < rowspan; dy++)
+				for (let dx = 0; dx < colspan; dx++) {
+					if (grid[y + dy]![x + dx]) return 'Table cells overlap.'
+					grid[y + dy]![x + dx] = true
+				}
+			if (Array.isArray(colwidth))
+				for (let dx = 0; dx < colspan; dx++) {
+					const width = colwidth[dx] as number
+					if (width > 0 && widths[x + dx] !== undefined && widths[x + dx] !== width)
+						return 'Conflicting colwidth values for the same table column.'
+					if (width > 0) widths[x + dx] = width
+				}
+			cells.push({ node: cell, x, y })
+			x += colspan
+		}
+	}
+	const columns = grid[0]!.length
+	if (
+		!columns ||
+		grid.some(
+			(row) =>
+				row.length !== columns ||
+				Array.from({ length: columns }, (_, x) => row[x]).some((filled) => !filled),
+		)
+	)
+		return 'Table rows do not form a complete rectangular grid.'
+	return { columns, cells, widths: Array.from({ length: columns }, (_, x) => widths[x] ?? 100) }
+}
+
+function allowedLink(config: TypstEditorConfig, value: unknown): boolean {
+	return (
+		typeof value === 'string' &&
+		value.length > 0 &&
+		!Array.from(value).some((character) => {
+			const code = character.codePointAt(0)!
+			return code <= 0x20 || code === 0x7f
+		}) &&
+		(config.allowLink ? config.allowLink(value) : /^(?:https?:\/\/|mailto:|tel:|#)/i.test(value))
+	)
+}
+
+function inspectNode(
+	value: unknown,
+	options: {
+		config: TypstEditorConfig
+		schema: Schema
+		region: TypstRegionDefinition
+		data?: unknown
+	},
+	path: (string | number)[],
+	issues: TypstEditorIssue[],
+	ancestors = new Set<object>(),
+): void {
+	const { config, schema, region, data } = options
+	const issueStart = issues.length
+	const issue = (
+		code: TypstEditorIssue['code'],
+		message: string,
+		suffix: (string | number)[] = [],
+		fieldPath?: readonly string[],
+	) =>
+		issues.push({
+			code,
+			message,
+			regionId: region.id,
+			path: [...path, ...suffix],
+			...(fieldPath ? { fieldPath } : {}),
+		})
+	if (!isObject(value) || typeof value.type !== 'string') {
+		issue('INVALID_JSON', 'Expected a native Tiptap node with a type.')
+		return
+	}
+	if (ancestors.has(value)) {
+		issue('INVALID_JSON', 'Circular node content is not JSON.')
+		return
+	}
+	for (const key of Object.keys(value))
+		if (!['type', 'attrs', 'content', 'text', 'marks'].includes(key))
+			issue('INVALID_JSON', `Unknown node property: ${key}.`, [key])
+	const type = schema.nodes[value.type]
+	if (!type) {
+		issue('UNKNOWN_NODE', `Unknown node: ${value.type}.`)
+		return
+	}
+	ancestors.add(value)
+	if (value.type !== 'doc' && region.nodes && !region.nodes.includes(value.type))
+		issue('REGION_RULE', `Node ${value.type} is not allowed in this region.`)
+	const attrs = inspectAttrs(value.attrs, type, path, region.id, issues)
+	const customValidation = config.nodeMappings?.[value.type]?.validateAttributes?.(attrs)
+	if (customValidation !== undefined && customValidation !== true)
+		issue(
+			'INVALID_ATTRIBUTE',
+			typeof customValidation === 'string' ? customValidation : `Invalid ${value.type} attributes.`,
+			['attrs'],
+		)
+	if (
+		value.type === 'heading' &&
+		(!Number.isInteger(attrs.level) || (attrs.level as number) < 1 || (attrs.level as number) > 6)
+	)
+		issue('INVALID_ATTRIBUTE', 'Heading level must be between 1 and 6.', ['attrs', 'level'])
+	if (
+		value.type === 'orderedList' &&
+		(!Number.isSafeInteger(attrs.start) || (attrs.start as number) < 1)
+	)
+		issue('INVALID_ATTRIBUTE', 'Ordered list start must be a positive integer.', ['attrs', 'start'])
+	if (
+		value.type === 'orderedList' &&
+		![null, undefined, '1', 'a', 'A', 'i', 'I'].includes(attrs.type as string)
+	)
+		issue('INVALID_ATTRIBUTE', 'Ordered list type must be 1, a, A, i, I or null.', [
+			'attrs',
+			'type',
+		])
+	if (
+		value.type === 'codeBlock' &&
+		attrs.language !== null &&
+		attrs.language !== undefined &&
+		typeof attrs.language !== 'string'
+	)
+		issue('INVALID_ATTRIBUTE', 'Code language must be a string or null.', ['attrs', 'language'])
+	if (isTypstBlock(value.type)) {
+		const error = blockAttributeError(value.type, attrs, config.extensions, data)
+		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs'])
+	}
+	if (value.type === 'table') {
+		const tableOptions = tableStyleOptions(config.extensions)
+		const error = tableOptions && tableStyleError(attrs.typstTableStyle, tableOptions)
+		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs', 'typstTableStyle'])
+	}
+	if (value.type === 'dataField') {
+		const fieldPath = attrs.path
+		if (!safeFieldPath(fieldPath))
+			issue('INVALID_FIELD', 'A data field path must be a safe non-empty string array.', [
+				'attrs',
+				'path',
+			])
+		else {
+			const field = config.fields.find((descriptor) => samePath(descriptor.path, fieldPath))
+			if (
+				!field ||
+				(region.fields && !region.fields.some((allowed) => samePath(allowed, fieldPath)))
+			)
+				issue(
+					'INVALID_FIELD',
+					'This field is not declared or not allowed in this region.',
+					['attrs', 'path'],
+					fieldPath,
+				)
+			else if (data !== undefined && fieldDisplay(data, field) === undefined)
+				issue(
+					'INVALID_FIELD',
+					'The parsed field is missing, non-scalar or null without a nullText declaration.',
+					['attrs', 'path'],
+					fieldPath,
+				)
+		}
+	}
+	if (value.type === 'image') {
+		if (
+			typeof attrs.src !== 'string' ||
+			!attrs.src ||
+			/^(?:[a-z]+:|\/|\\)/i.test(attrs.src) ||
+			attrs.src.split(/[/\\]/).includes('..')
+		)
+			issue('INVALID_RESOURCE', 'Image src must be a host-assigned logical resource ID.', [
+				'attrs',
+				'src',
+			])
+		for (const key of ['alt', 'title'])
+			if (attrs[key] !== null && attrs[key] !== undefined && typeof attrs[key] !== 'string')
+				issue('INVALID_ATTRIBUTE', `Image ${key} must be a string or null.`, ['attrs', key])
+		for (const key of ['width', 'height'])
+			if (
+				attrs[key] !== null &&
+				attrs[key] !== undefined &&
+				(typeof attrs[key] !== 'number' ||
+					!Number.isFinite(attrs[key]) ||
+					(attrs[key] as number) <= 0)
+			)
+				issue('INVALID_ATTRIBUTE', `Image ${key} must be a positive finite number or null.`, [
+					'attrs',
+					key,
+				])
+	}
+	if (
+		(value.type === 'tableCell' || value.type === 'tableHeader') &&
+		![undefined, null, 'left', 'center', 'right'].includes(attrs.align as string)
+	)
+		issue('INVALID_ATTRIBUTE', 'Cell alignment must be left, center, right or null.', [
+			'attrs',
+			'align',
+		])
+	if (
+		value.text !== undefined &&
+		(value.type !== 'text' ||
+			typeof value.text !== 'string' ||
+			value.text.length === 0 ||
+			!validUnicode(value.text))
+	)
+		issue(
+			'INVALID_STRUCTURE',
+			'Text must be a non-empty well-formed Unicode string on a text node.',
+			['text'],
+		)
+	if (value.type === 'text' && typeof value.text !== 'string')
+		issue('INVALID_STRUCTURE', 'Text nodes require text.', ['text'])
+	if (value.content !== undefined && !Array.isArray(value.content))
+		issue('INVALID_STRUCTURE', 'Node content must be an array.', ['content'])
+	if (value.type === 'text' && Array.isArray(value.content) && value.content.length > 0)
+		issue('INVALID_STRUCTURE', 'Text nodes cannot contain child content.', ['content'])
+	if (Array.isArray(value.content))
+		value.content.forEach((child, index) =>
+			inspectNode(child, options, [...path, 'content', index], issues, ancestors),
+		)
+	if (value.marks !== undefined && !Array.isArray(value.marks))
+		issue('INVALID_STRUCTURE', 'Node marks must be an array.', ['marks'])
+	const markNames = new Set<string>()
+	if (Array.isArray(value.marks))
+		for (let index = 0; index < value.marks.length; index++) {
+			const mark: unknown = value.marks[index]
+			if (!isObject(mark) || typeof mark.type !== 'string') {
+				issue('INVALID_JSON', 'Expected a Mark type.', ['marks', index])
+				continue
+			}
+			for (const key of Object.keys(mark))
+				if (key !== 'type' && key !== 'attrs')
+					issue('INVALID_JSON', `Unknown Mark property: ${key}.`, ['marks', index, key])
+			const markType = schema.marks[mark.type]
+			if (!markType) {
+				issue('UNKNOWN_MARK', `Unknown Mark: ${mark.type}.`, ['marks', index])
+				continue
+			}
+			if (markNames.has(mark.type))
+				issue('INVALID_STRUCTURE', `Duplicate Mark: ${mark.type}.`, ['marks', index])
+			markNames.add(mark.type)
+			if (region.marks && !region.marks.includes(mark.type))
+				issue('REGION_RULE', `Mark ${mark.type} is not allowed in this region.`, ['marks', index])
+			const markAttrs = inspectAttrs(
+				mark.attrs,
+				markType,
+				[...path, 'marks', index],
+				region.id,
+				issues,
+			)
+			if (mark.type === 'textStyle')
+				for (const attribute of textStyleAttributes)
+					if (!validTextStyleValue(attribute, markAttrs[attribute]))
+						issue('INVALID_ATTRIBUTE', `Invalid portable text style ${attribute}.`, [
+							'marks',
+							index,
+							'attrs',
+							attribute,
+						])
+			if (mark.type === 'link' && !allowedLink(config, markAttrs.href))
+				issue('INVALID_ATTRIBUTE', 'Link destination is not permitted.', [
+					'marks',
+					index,
+					'attrs',
+					'href',
+				])
+			for (const key of ['target', 'rel', 'class', 'title'])
+				if (
+					mark.type === 'link' &&
+					markAttrs[key] !== null &&
+					markAttrs[key] !== undefined &&
+					typeof markAttrs[key] !== 'string'
+				)
+					issue('INVALID_ATTRIBUTE', `Link ${key} must be a string or null.`, [
+						'marks',
+						index,
+						'attrs',
+						key,
+					])
+			const validation = config.markMappings?.[mark.type]?.validateAttributes?.(markAttrs)
+			if (validation !== undefined && validation !== true)
+				issue(
+					'INVALID_ATTRIBUTE',
+					typeof validation === 'string' ? validation : `Invalid ${mark.type} attributes.`,
+					['marks', index, 'attrs'],
+				)
+		}
+	if (value.type === 'table' && issues.length === issueStart) {
+		const grid = tableGrid(value as JSONContent)
+		if (typeof grid === 'string') issue('INVALID_TABLE', grid)
+	}
+	ancestors.delete(value)
+}
+
+function inspectAttrs(
+	value: unknown,
+	type: NodeType | MarkType,
+	path: (string | number)[],
+	regionId: string,
+	issues: TypstEditorIssue[],
+): Record<string, unknown> {
+	if (value !== undefined && !isObject(value)) {
+		issues.push({
+			code: 'INVALID_ATTRIBUTE',
+			regionId,
+			path: [...path, 'attrs'],
+			message: 'Attributes must be an object.',
+		})
+		return {}
+	}
+	const attrs = (value ?? {}) as Record<string, unknown>
+	const specs = type.spec.attrs ?? {}
+	const resolved: Record<string, unknown> = {}
+	for (const [name, spec] of Object.entries(specs)) {
+		if (Object.hasOwn(attrs, name)) resolved[name] = attrs[name]
+		else if (Object.hasOwn(spec as object, 'default')) resolved[name] = spec.default
+		else
+			issues.push({
+				code: 'INVALID_ATTRIBUTE',
+				regionId,
+				path: [...path, 'attrs', name],
+				message: `Missing required attribute ${name}.`,
+			})
+	}
+	for (const [name, entry] of Object.entries(attrs)) {
+		if (!Object.hasOwn(specs, name))
+			issues.push({
+				code: 'UNKNOWN_ATTRIBUTE',
+				regionId,
+				path: [...path, 'attrs', name],
+				message: `Unknown ${type.name} attribute: ${name}.`,
+			})
+		else if (!jsonValue(entry))
+			issues.push({
+				code: 'INVALID_ATTRIBUTE',
+				regionId,
+				path: [...path, 'attrs', name],
+				message: 'Attribute values must be JSON encodable.',
+			})
+	}
+	return resolved
+}
+
+export function validateTypstRegion(options: {
+	document: unknown
+	regionId: string
+	config: TypstEditorConfig
+	data?: unknown
+}): TypstEditorResult<JSONContent> {
+	const checked = editorSchema(options.config)
+	if (!checked.ok) return checked
+	const region = options.config.regions.find((entry) => entry.id === options.regionId)
+	if (!region)
+		return {
+			ok: false,
+			issues: [{ code: 'REGION_RULE', regionId: options.regionId, message: 'Unknown region.' }],
+		}
+	const issues: TypstEditorIssue[] = []
+	if (!isObject(options.document) || options.document.type !== 'doc')
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'INVALID_STRUCTURE',
+					regionId: region.id,
+					path: [],
+					message: 'A region must contain a complete native Tiptap doc.',
+				},
+			],
+		}
+	inspectNode(options.document, { ...options, schema: checked.value, region }, [], issues)
+	if (issues.length > 0) return { ok: false, issues }
+	const blockIds = new Set<string>()
+	const checkIds = (node: JSONContent, path: (string | number)[]) => {
+		if (isTypstBlock(node.type!)) {
+			const id = node.attrs!.id as string
+			if (blockIds.has(id))
+				issues.push({
+					code: 'INVALID_ATTRIBUTE',
+					regionId: region.id,
+					path: [...path, 'attrs', 'id'],
+					message: 'Typst block instance IDs must be unique within a region.',
+				})
+			blockIds.add(id)
+		}
+		node.content?.forEach((child, index) => checkIds(child, [...path, 'content', index]))
+	}
+	checkIds(options.document as JSONContent, [])
+	if (issues.length > 0) return { ok: false, issues }
+	try {
+		const node = checked.value.nodeFromJSON(options.document)
+		node.check()
+	} catch (error) {
+		if (!(error instanceof RangeError)) throw error
+		return {
+			ok: false,
+			issues: [
+				{ code: 'INVALID_STRUCTURE', regionId: region.id, path: [], message: error.message },
+			],
+		}
+	}
+	// Return the original JSON: validation never deletes attrs or rewrites saved content.
+	return { ok: true, value: options.document as JSONContent }
+}
+
+export function validateTypstRegions(options: {
+	regions: unknown
+	config: TypstEditorConfig
+	data?: unknown
+}): TypstEditorResult<Record<string, JSONContent>> {
+	const checked = editorSchema(options.config)
+	if (!checked.ok) return checked
+	if (!isObject(options.regions))
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'REGION_SET',
+					message: 'Regions must be an object containing every declared region.',
+				},
+			],
+		}
+	const regions = options.regions
+	const expected = options.config.regions.map((region) => region.id)
+	if (
+		Object.keys(regions).length !== expected.length ||
+		expected.some((id) => !Object.hasOwn(regions, id))
+	)
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'REGION_SET',
+					message: 'Draft regions must exactly match the template region declarations.',
+				},
+			],
+		}
+	const issues: TypstEditorIssue[] = []
+	for (const id of expected) {
+		const result = validateTypstRegion({
+			document: options.regions[id],
+			regionId: id,
+			config: options.config,
+			data: options.data,
+		})
+		if (!result.ok) issues.push(...result.issues)
+	}
+	return issues.length > 0
+		? { ok: false, issues }
+		: { ok: true, value: options.regions as Record<string, JSONContent> }
+}
+
+export function validateTypstDraft(options: {
+	draft: unknown
+	config: TypstEditorConfig
+	templateId: string
+	templateRevision: string
+}): TypstEditorResult<TypstDocumentDraft> {
+	const draft = options.draft
+	if (
+		!isObject(draft) ||
+		Object.keys(draft).some(
+			(key) =>
+				!['formatVersion', 'templateId', 'templateRevision', 'data', 'regions'].includes(key),
+		) ||
+		draft.formatVersion !== 1 ||
+		typeof draft.templateId !== 'string' ||
+		typeof draft.templateRevision !== 'string' ||
+		!isObject(draft.data) ||
+		!jsonValue(draft.data)
+	)
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'INVALID_DRAFT',
+					message: 'Expected a version 1 draft with raw JSON data and complete region documents.',
+				},
+			],
+		}
+	if (
+		draft.templateId !== options.templateId ||
+		draft.templateRevision !== options.templateRevision
+	)
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'TEMPLATE_CONFLICT',
+					message:
+						'Draft template identity or revision differs from the current template. Keep the draft and explicitly resolve the template revision.',
+				},
+			],
+		}
+	const regions = validateTypstRegions({ regions: draft.regions, config: options.config })
+	if (!regions.ok) return regions
+	return { ok: true, value: draft as unknown as TypstDocumentDraft }
+}
+
+export function validateTypstData(data: unknown): data is TypstJsonObject {
+	return isObject(data) && jsonValue(data)
+}

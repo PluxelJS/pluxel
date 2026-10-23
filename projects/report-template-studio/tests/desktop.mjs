@@ -186,6 +186,7 @@ async function ready() {
 		async () => await page.getByRole('button', { name: '导出 PDF', exact: true }).isEnabled(),
 		'Preview did not recover to exportable revision',
 	)
+	await page.locator('.document-preview[data-preview-current="true"]:visible').waitFor()
 }
 const treeItem = (path) =>
 	page.getByRole('treeitem').and(page.locator(`[data-path=${JSON.stringify(path)}]`))
@@ -320,7 +321,7 @@ async function verifyPortBoundary(entry) {
 	const before = await studio.getInput(requestedTarget)
 	const binary = await page.evaluate(async (target) => {
 		const api = window.studioProbe.api
-		const compiled = await api.compile({ ...target, data: {} })
+		const compiled = await api.compile({ ...target, data: {}, clientRevision: 0 })
 		const first = await api.getPreview({ ...target, revision: compiled.revision })
 		const original = new Uint8Array(first.preview.data)
 		const firstWasBinary = first.preview.data instanceof Uint8Array
@@ -364,7 +365,11 @@ async function verifyPortBoundary(entry) {
 	const invalidJson = await portError('compile', requestedTarget)
 	assert.equal(invalidJson.code, 'INVALID_INPUT')
 	assert.ok(invalidJson.issues?.length)
-	const schema = await portError('compile', { ...requestedTarget, data: { company: 42 } })
+	const schema = await portError('compile', {
+		...requestedTarget,
+		data: { company: 42 },
+		clientRevision: 0,
+	})
 	assert.equal(schema.code, 'INVALID_INPUT')
 	assert.ok(schema.issues?.some((issue) => issue.path.includes('company')))
 	const pageError = await portError('renderPage', {
@@ -381,7 +386,11 @@ async function verifyPortBoundary(entry) {
 	})
 	assert.equal(cropError.code, 'INVALID_INPUT')
 	const newer = await page.evaluate(async (target) => {
-		const compiled = await window.studioProbe.api.compile({ ...target, data: {} })
+		const compiled = await window.studioProbe.api.compile({
+			...target,
+			data: {},
+			clientRevision: 0,
+		})
 		return { revision: compiled.revision }
 	}, requestedTarget)
 	assert.notEqual(
@@ -401,7 +410,7 @@ async function verifyPortBoundary(entry) {
 			content: '#let broken = (',
 			expectedVersion: originalTyp.version,
 		})
-		typst = await portError('compile', { ...requestedTarget, data: {} })
+		typst = await portError('compile', { ...requestedTarget, data: {}, clientRevision: 0 })
 		assert.equal(typst.code, 'COMPILE_FAILED')
 		assert.ok(
 			typst.diagnostics?.some((diagnostic) => diagnostic.path === template),
@@ -424,7 +433,7 @@ async function verifyPortBoundary(entry) {
 			content: 'export default { broken:',
 			expectedVersion: originalTs.version,
 		})
-		typescript = await portError('compile', { ...requestedTarget, data: {} })
+		typescript = await portError('compile', { ...requestedTarget, data: {}, clientRevision: 0 })
 		assert.equal(typescript.code, 'COMPILE_FAILED')
 		assert.ok(
 			typescript.diagnostics?.some((diagnostic) => diagnostic.path === entry),
@@ -484,6 +493,481 @@ async function verifyMultiPageUi(entry, binary) {
 	await sourceLine.click({ position: { x: 42, y: 5 } })
 	await page.locator('.preview-source-highlight:visible').waitFor()
 	await screenshot('01-quarterly-source-navigation')
+}
+
+async function selectEditorText(editor, text, collapse = false) {
+	await editor.evaluate(
+		(element, input) => {
+			element.focus()
+			const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+			let node
+			while ((node = walker.nextNode())) {
+				const offset = node.textContent.indexOf(input.text)
+				if (offset < 0) continue
+				const range = document.createRange()
+				range.setStart(node, offset)
+				range.setEnd(node, offset + input.text.length)
+				if (input.collapse) range.collapse(false)
+				const selection = window.getSelection()
+				selection.removeAllRanges()
+				selection.addRange(range)
+				return
+			}
+			throw new Error(`Editor text is missing: ${input.text}`)
+		},
+		{ text, collapse },
+	)
+	// Allow the native selectionchange to reach ProseMirror before clicking a toolbar button.
+	await editor.evaluate(
+		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+	)
+}
+
+const bodyTypographyText = '中文输入验收𠮷'
+const bodyTypography = {
+	fontFamily: 'Noto Serif CJK SC',
+	fontSize: '18pt',
+	color: '#dc2626',
+	backgroundColor: '#fef08a',
+}
+
+function typographyTextNode(input) {
+	const find = (node) => {
+		if (node?.type === 'text' && node.text.includes(bodyTypographyText)) return node
+		for (const child of node?.content ?? []) {
+			const found = find(child)
+			if (found) return found
+		}
+	}
+	return find(input.editor?.regions.summary)
+}
+
+function assertBodyTypography(input) {
+	const node = typographyTextNode(input)
+	assert.ok(node, 'Saved raw region retains the native composition text')
+	const style = node.marks?.find((mark) => mark.type === 'textStyle')
+	assert.ok(style, 'Saved raw region retains its textStyle mark')
+	for (const [attribute, value] of Object.entries(bodyTypography))
+		assert.equal(style.attrs[attribute], value)
+	assert.ok(
+		node.marks.some((mark) => mark.type === 'bold'),
+		'Typography retains existing bold',
+	)
+}
+
+async function bodyTypographyStyle(editor) {
+	return editor.evaluate((element, text) => {
+		const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+		let node
+		while ((node = walker.nextNode())) {
+			if (!node.textContent.includes(text)) continue
+			const span = node.parentElement.closest('span[style]')
+			if (!span) return null
+			const style = getComputedStyle(span)
+			return {
+				fontFamily: style.fontFamily,
+				fontSize: style.fontSize,
+				color: style.color,
+				backgroundColor: style.backgroundColor,
+			}
+		}
+		throw new Error(`Editor text is missing: ${text}`)
+	}, bodyTypographyText)
+}
+
+async function assertBodyTypographyStyle(editor) {
+	const style = await bodyTypographyStyle(editor)
+	assert.ok(style, 'Native editor renders the textStyle span')
+	assert.match(style.fontFamily, /Noto Serif CJK SC/)
+	assert.equal(style.fontSize, '24px', '18pt renders at the browser equivalent size')
+	assert.equal(style.color, 'rgb(220, 38, 38)')
+	assert.equal(style.backgroundColor, 'rgb(254, 240, 138)')
+}
+
+async function assertBodyTypographyPreview() {
+	const fills = await page
+		.locator('.typst-pages:visible svg')
+		.evaluateAll((pages) =>
+			pages.flatMap((svg) =>
+				[...svg.querySelectorAll('*')].map((node) => getComputedStyle(node).fill),
+			),
+		)
+	assert.ok(fills.includes('rgb(220, 38, 38)'), 'Native preview renders the selected text color')
+	assert.ok(
+		fills.includes('rgb(254, 240, 138)'),
+		'Native preview renders the selected background color',
+	)
+}
+
+async function verifyBodyEditor(entry) {
+	await revealFile(entry)
+	await treeItem(entry).click()
+	await page
+		.locator('[aria-label="报表编辑模式"]:visible')
+		.getByText('正文', { exact: true })
+		.click()
+	const summary = page.getByRole('textbox', { name: '正文区域 summary', exact: true })
+	const recommendations = page.getByRole('textbox', {
+		name: '正文区域 recommendations',
+		exact: true,
+	})
+	await summary.waitFor()
+	const toolbar = page.locator('.studio-region-editor:visible').getByRole('toolbar', {
+		name: '正文格式',
+		exact: true,
+	})
+	await ready()
+	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
+	assert.equal(await summary.locator('td').first().locator('p').count(), 2)
+	await screenshot('07-body-table')
+	const region = page.getByRole('combobox', { name: '正文区域', exact: true })
+	const switchRegion = async (label) => {
+		await region.focus()
+		await region.press('ArrowDown')
+		await page.getByRole('option', { name: label, exact: true }).click()
+	}
+	const setCustomerName = async (name) => {
+		const modes = page.locator('[aria-label="报表编辑模式"]:visible')
+		await modes.getByText('表单', { exact: true }).click()
+		await page.locator('input[name="customer.name"]:visible').fill(name)
+		await modes.getByText('正文', { exact: true }).click()
+	}
+	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。', true)
+	await page.keyboard.press('Enter')
+	// Chromium's IME path emits genuine composition events, then commits one native edit.
+	const cdp = await page.context().newCDPSession(page)
+	await cdp.send('Input.imeSetComposition', {
+		text: '中文输入验收𠮷',
+		selectionStart: 8,
+		selectionEnd: 8,
+	})
+	await cdp.send('Input.insertText', { text: '中文输入验收𠮷' })
+	await cdp.detach()
+	assert.match(await summary.innerText(), /中文输入验收𠮷/)
+	await setCustomerName('青山有限公司')
+	await until(
+		async () => (await summary.locator('[data-data-field]').first().innerText()) === '青山有限公司',
+		'Data field NodeView did not receive parsed data',
+	)
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.doesNotMatch(
+		await summary.innerText(),
+		/中文输入验收𠮷/,
+		'Data updates do not consume the native editor history',
+	)
+	assert.equal(await summary.locator('[data-data-field]').first().innerText(), '青山有限公司')
+	await toolbar.getByRole('button', { name: '重做', exact: true }).click()
+	assert.match(await summary.innerText(), /中文输入验收𠮷/)
+	await selectEditorText(summary, '中文输入验收𠮷')
+	await page.getByRole('toolbar', { name: '选区格式', exact: true }).waitFor()
+	await screenshot('07b-body-selection')
+	await toolbar.getByRole('button', { name: '加粗', exact: true }).click()
+	assert.match(await summary.locator('strong').last().innerText(), /中文输入验收𠮷/)
+	const target = { projectId: project.id, entry }
+	await until(async () => {
+		const saved = await studio.getInput(target)
+		return saved.data.customer?.name === '青山有限公司'
+	}, 'Customer data was not saved before typography commands')
+	const beforeTypography = await studio.getInput(target)
+	const typography = page.locator('.studio-region-editor:visible').getByRole('toolbar', {
+		name: '排版扩展',
+		exact: true,
+	})
+	const applyTypography = async () => {
+		await typography
+			.getByRole('combobox', { name: '字体', exact: true })
+			.selectOption(bodyTypography.fontFamily)
+		await typography
+			.getByRole('combobox', { name: '字号', exact: true })
+			.selectOption(bodyTypography.fontSize)
+		await typography.getByRole('button', { name: '文字颜色', exact: true }).click()
+		await page
+			.getByRole('dialog', { name: '文字颜色', exact: true })
+			.getByRole('button', { name: '红色', exact: true })
+			.click()
+		await typography.getByRole('button', { name: '背景颜色', exact: true }).click()
+		await page
+			.getByRole('dialog', { name: '背景颜色', exact: true })
+			.getByRole('button', { name: '黄色', exact: true })
+			.click()
+	}
+	await applyTypography()
+	await assertBodyTypographyStyle(summary)
+	await typography.getByRole('button', { name: '清除排版', exact: true }).click()
+	assert.equal(await bodyTypographyStyle(summary), null, 'Clear typography removes textStyle')
+	assert.match(await summary.locator('strong').last().innerText(), /中文输入验收𠮷/)
+	await applyTypography()
+	await assertBodyTypographyStyle(summary)
+	await until(async () => {
+		const saved = await studio.getInput(target)
+		const attrs = typographyTextNode(saved)?.marks?.find((mark) => mark.type === 'textStyle')?.attrs
+		return Object.entries(bodyTypography).every(
+			([attribute, value]) => attrs?.[attribute] === value,
+		)
+	}, 'Typography attributes were not persisted')
+	const styledInput = await studio.getInput(target)
+	assertBodyTypography(styledInput)
+	assert.deepEqual(styledInput.data, beforeTypography.data, 'Typography commands preserve raw data')
+	await screenshot('07c-body-typography')
+	await page.keyboard.press('ArrowRight')
+	await page.getByRole('toolbar', { name: '选区格式', exact: true }).waitFor({ state: 'hidden' })
+	await page.keyboard.press('Enter')
+	await toolbar.getByRole('button', { name: '列表', exact: true }).click()
+	await page.keyboard.insertText('列表项保留')
+	assert.match(await summary.locator('ul').innerText(), /列表项保留/)
+	assert.match(
+		await summary.innerText(),
+		/中文输入验收𠮷/,
+		'List commands retain the IME paragraph',
+	)
+	await summary.locator('th').first().click()
+	await toolbar.getByRole('button', { name: '表格', exact: true }).click()
+	await page
+		.getByRole('menu', { name: '表格操作', exact: true })
+		.getByRole('menuitem', { name: '拆分单元格', exact: true })
+		.click()
+	assert.equal(await summary.locator('th').count(), 2)
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
+	assert.match(await summary.innerText(), /中文输入验收𠮷/, 'Table undo retains the IME paragraph')
+	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。', true)
+	await toolbar.getByRole('button', { name: '插入提示块', exact: true }).click()
+	await summary.locator('aside[data-typst-notice]').waitFor()
+	assert.match(
+		await summary.innerText(),
+		/中文输入验收𠮷/,
+		'Business insertion retains nearby text',
+	)
+	const details = page.locator('.studio-candidate:visible')
+	await details.locator('summary').click()
+	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details
+		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
+		.fill('不能覆盖合并表格')
+	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
+	await details.getByRole('alert').waitFor()
+	assert.match(await summary.innerText(), /交付与客户反馈/)
+	await switchRegion('后续建议')
+	await recommendations.click()
+	await page.keyboard.press('Control+Home')
+	const restrictedTable = toolbar.getByRole('button', { name: '表格', exact: true })
+	assert.ok(
+		(await restrictedTable.count()) === 0 || (await restrictedTable.isDisabled()),
+		'Restricted regions do not offer table commands',
+	)
+	assert.equal(await recommendations.locator('table').count(), 0)
+	assert.equal(await typography.count(), 1, 'Node restrictions retain allowed typography commands')
+	assert.equal(
+		await typography.getByRole('combobox', { name: '字号', exact: true }).isDisabled(),
+		false,
+	)
+	await screenshot('08-body-restricted-region')
+	await recommendations.click()
+	await page.keyboard.press('Control+A')
+	await page.keyboard.insertText('原始建议')
+	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details
+		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
+		.fill('**接纳后的建议**')
+	await setCustomerName('海川工作室')
+	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
+	await details.getByRole('alert').waitFor()
+	assert.equal(
+		await recommendations.innerText(),
+		'原始建议',
+		'Data changes invalidate staged candidates',
+	)
+	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
+	await until(
+		async () => (await recommendations.innerText()) === '接纳后的建议',
+		'Accepted candidate was not rendered',
+	)
+	assert.equal(await recommendations.innerText(), '接纳后的建议')
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.equal(
+		await recommendations.innerText(),
+		'原始建议',
+		'One undo restores the complete pre-candidate region',
+	)
+	await toolbar.getByRole('button', { name: '重做', exact: true }).click()
+	await switchRegion('服务概况')
+	assert.match(await summary.innerText(), /中文输入验收𠮷/)
+	await until(async () => {
+		const input = await studio.getInput({ projectId: project.id, entry })
+		return (
+			JSON.stringify(input.editor?.regions).includes('接纳后的建议') &&
+			JSON.stringify(input.editor?.regions).includes('中文输入验收𠮷')
+		)
+	}, 'Unified body draft was not persisted')
+	const input = await studio.getInput({ projectId: project.id, entry })
+	assertBodyTypography(input)
+	const { result, point, mapping } = await page.evaluate(
+		async (request) => {
+			const api = window.studioProbe.api
+			const compiled = await api.compile(request)
+			const preview = await api.getPreview({
+				projectId: request.projectId,
+				entry: request.entry,
+				revision: compiled.revision,
+			})
+			return {
+				result: compiled,
+				point: preview.preview.navigation.points.find(
+					(item) => item.path === '_editor/regions/summary.typ',
+				),
+				mapping: preview.generatedMapping,
+			}
+		},
+		{ projectId: project.id, entry, data: input.data, editor: input.editor, clientRevision: 1000 },
+	)
+	assert.ok(point, 'Real native navigation includes generated region spans')
+	await page.getByRole('button', { name: '刷新预览', exact: true }).click()
+	await ready()
+	await assertBodyTypographyPreview()
+	const svg = page.locator('.typst-pages:visible .typst-page').nth(point.page - 1)
+	const click = await svg.evaluate((element, hit) => {
+		const position = new DOMPoint(hit.x + hit.width / 2, hit.y + hit.height / 2).matrixTransform(
+			element.getScreenCTM(),
+		)
+		return { x: position.x, y: position.y }
+	}, point)
+	await page.mouse.click(click.x, click.y)
+	await summary.waitFor()
+	assert.equal(
+		await page.locator('.flexlayout__tab_button').filter({ hasText: '_editor' }).count(),
+		0,
+	)
+	await summary
+		.locator('p')
+		.first()
+		.click({ position: { x: 65, y: 8 } })
+	await page.locator('.preview-source-highlight:visible').waitFor()
+	await screenshot('09-body-navigation')
+	const pdf = join(output, 'body.pdf')
+	await savePicker(pdf)
+	await page.getByRole('button', { name: '导出 PDF', exact: true }).click()
+	await completeFile(
+		pdf,
+		(bytes) =>
+			bytes.subarray(0, 5).toString() === '%PDF-' &&
+			bytes.subarray(-64).toString().includes('%%EOF'),
+	)
+	await writeFile(
+		join(output, 'body-evidence.json'),
+		JSON.stringify({ result, input, mapping }, null, 2),
+	)
+	return input
+}
+
+async function verifyDraftRecovery() {
+	const directory = '报表/草稿恢复验收'
+	const { entry } = await studio.createReport({ projectId: project.id, path: directory })
+	const target = { projectId: project.id, entry }
+	const data = { title: '已有填写数据', body: '保留这份原始输入' }
+	await studio.setInput({ ...target, data, expectedVersion: null })
+	const document = (text) => ({
+		type: 'doc',
+		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+	})
+	await studio.writeFile({
+		projectId: project.id,
+		path: entry.replace(/\.ts$/, '.editor.json'),
+		expectedVersion: null,
+		content: JSON.stringify({
+			regions: [{ id: 'body', label: '正文' }],
+			fields: [],
+			defaults: { body: document('初始正文') },
+		}),
+	})
+	const template = await studio.readFile({ projectId: project.id, path: `${directory}/排版.typ` })
+	await studio.writeFile({
+		projectId: project.id,
+		path: template.path,
+		expectedVersion: template.version,
+		content: `${template.content}\n#include "../../_editor/regions/body.typ"\n`,
+	})
+	await until(
+		async () => (await treeItem(directory).count()) > 0,
+		'New report did not reach the tree',
+	)
+	await revealFile(entry)
+	await treeItem(entry).click()
+	await page
+		.locator('[aria-label="报表编辑模式"]:visible')
+		.getByText('正文', { exact: true })
+		.click()
+	await page.getByRole('button', { name: '初始化正文', exact: true }).click()
+	const body = page.getByRole('textbox', { name: '正文区域 body', exact: true })
+	await until(async () => {
+		const input = await studio.getInput(target)
+		return input.editor !== undefined
+	}, 'Body initialization was not saved')
+	const initialized = await studio.getInput(target)
+	assert.deepEqual(initialized.data, data, 'Initializing regions preserves existing input')
+	assert.equal(await body.innerText(), '初始正文')
+	assert.equal(await page.getByRole('button', { name: '切换客户', exact: true }).count(), 0)
+	await ready()
+	await screenshot('10-draft-initialized')
+	const details = page.locator('.studio-candidate:visible')
+	await details.locator('summary').click()
+	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details
+		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
+		.fill('旧草稿的未接纳候选')
+	const remote = await studio.setInput({
+		...target,
+		data: { ...data, title: '其他写入者的标题' },
+		editor: { ...initialized.editor, regions: { body: document('远端正文') } },
+		expectedVersion: initialized.storageVersion,
+	})
+	const replaceBody = async (text) => {
+		await body.click()
+		await body.press('Control+A')
+		await page.keyboard.insertText(text)
+	}
+	await replaceBody('本地冲突正文')
+	await page.getByText('填写数据与正文存在保存冲突', { exact: true }).waitFor()
+	assert.deepEqual(
+		await studio.getInput(target),
+		remote,
+		'Conflicting edits cannot overwrite storage',
+	)
+	await screenshot('11-draft-conflict')
+	await page.getByRole('button', { name: '载入已保存版本，放弃本地修改', exact: true }).click()
+	await until(
+		async () => (await body.innerText()) === '远端正文',
+		'Loading storage did not replace the native editor',
+	)
+	await ready()
+	await details.locator('summary').click()
+	assert.equal(
+		await details.getByRole('textbox', { name: 'Markdown 候选', exact: true }).inputValue(),
+		'',
+	)
+	assert.equal(
+		await details.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
+		true,
+	)
+	assert.equal(await page.getByRole('button', { name: '撤销', exact: true }).isDisabled(), true)
+	await studio.setInput({
+		...target,
+		data,
+		editor: remote.editor,
+		expectedVersion: remote.storageVersion,
+	})
+	await replaceBody('明确保留本地正文')
+	await page.getByRole('button', { name: '保留本地并覆盖已保存版本', exact: true }).click()
+	await until(async () => {
+		const input = await studio.getInput(target)
+		return JSON.stringify(input.editor).includes('明确保留本地正文')
+	}, 'Explicit local conflict resolution was not persisted')
+	await ready()
+	await screenshot('12-draft-recovered')
+	await writeFile(
+		join(output, 'draft-recovery.json'),
+		JSON.stringify({ initialized, remote, resolved: await studio.getInput(target) }, null, 2),
+	)
 }
 
 try {
@@ -554,6 +1038,10 @@ try {
 	portEvidence = await verifyPortBoundary(quarterly.entry)
 	await writeFile(join(output, 'port-evidence.json'), JSON.stringify(portEvidence, null, 2))
 	await verifyMultiPageUi(quarterly.entry, portEvidence.binary)
+	await verifyDraftRecovery()
+	const customer = tree.documents.find((document) => document.name === '客户服务报告')
+	assert.ok(customer)
+	const bodyInput = await verifyBodyEditor(customer.entry)
 	await selectDocument()
 	await openAssistant()
 	const composer = page.getByRole('textbox', { name: '发送给 AI 的消息', exact: true })
@@ -609,6 +1097,30 @@ try {
 	await closeInstance()
 	await start()
 	await page.getByRole('button', { name: '桌面工作区验收', exact: false }).first().click()
+	await revealFile(customer.entry)
+	await treeItem(customer.entry).click()
+	await page
+		.locator('[aria-label="报表编辑模式"]:visible')
+		.getByText('正文', { exact: true })
+		.click()
+	const reopenedBody = page.getByRole('textbox', { name: '正文区域 summary', exact: true })
+	assert.match(await reopenedBody.innerText(), /中文输入验收𠮷/)
+	await assertBodyTypographyStyle(reopenedBody)
+	const reopenedInput = await studio.getInput({ projectId: project.id, entry: customer.entry })
+	assert.deepEqual(reopenedInput, bodyInput, 'Desktop reopen preserves the complete raw body draft')
+	assertBodyTypography(reopenedInput)
+	await ready()
+	await assertBodyTypographyPreview()
+	await screenshot('09b-body-typography-reopened')
+	const reopenedBodyPdf = join(output, 'body-reopened.pdf')
+	await savePicker(reopenedBodyPdf)
+	await page.getByRole('button', { name: '导出 PDF', exact: true }).click()
+	await completeFile(
+		reopenedBodyPdf,
+		(bytes) =>
+			bytes.subarray(0, 5).toString() === '%PDF-' &&
+			bytes.subarray(-64).toString().includes('%%EOF'),
+	)
 	await selectDocument()
 	assert.equal(await bank().inputValue(), '桌面验证银行')
 	const schema = await readText(documentConfig.entry)
@@ -825,6 +1337,10 @@ try {
 					'real Electron MessagePort Uint8Array and cached buffer preservation',
 					'structured input/schema/Typst/TypeScript/page/crop/revision errors over the real port',
 					'multi-page SVG, last-page navigation, outline, and two-way source navigation',
+					'explicit body initialization preserves saved data; conflict reload resets editor/candidates/history and explicit local replacement uses CAS',
+					'native body composition, formatting, lists, table commands, restrictions, fields without history, staged candidates and one undo',
+					'font family, 18pt, text and background colors, clear typography without clearing bold, persisted raw marks and real PDF after desktop reopen',
+					'body drafts retained across region switches and desktop reopen, generated navigation and real PDF',
 					'project creation and recent persistence',
 					'real filesystem explorer CRUD',
 					'Valibot defaults and schema recovery',
@@ -850,6 +1366,8 @@ try {
 	console.log(`Workspace desktop smoke passed: ${output}`)
 } catch (error) {
 	if (page && !page.isClosed()) await screenshot('failure').catch(() => {})
+	if (page && !page.isClosed())
+		await writeFile(join(output, 'failure.html'), await page.content()).catch(() => {})
 	throw error
 } finally {
 	try {

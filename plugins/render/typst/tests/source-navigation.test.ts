@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { pointAtPreview, pointAtSource, type PreviewPoint } from '../src/renderer/source-navigation'
+import { pointAtPreview, pointAtSource, type TypstNavigationPoint } from '../src/browser/preview.js'
 
-const text: PreviewPoint = {
+const text: TypstNavigationPoint = {
 	path: '报表/排版.typ',
 	line: 4,
 	column: 3,
@@ -28,5 +28,10 @@ describe('native preview source navigation', () => {
 		)
 		expect(pointAtSource([text], { path: text.path, line: 4, column: 9 }, 1)).toBeUndefined()
 		expect(pointAtSource([text], { path: '共享/主题.typ', line: 4, column: 3 }, 1)).toBeUndefined()
+	})
+	it('selects the smallest containing multiline span without matching its exclusive end', () => {
+		const outer = { ...text, line: 1, column: 1, endLine: 6, endColumn: 1 }
+		expect(pointAtSource([outer, text], { path: text.path, line: 4, column: 5 }, 1)).toBe(text)
+		expect(pointAtSource([outer], { path: text.path, line: 6, column: 1 }, 1)).toBeUndefined()
 	})
 })

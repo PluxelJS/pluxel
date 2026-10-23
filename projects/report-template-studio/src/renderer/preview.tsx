@@ -3,10 +3,9 @@ import { ActionIcon, Alert, Button, Group, NumberInput, Text, Tooltip } from '@m
 import { IconChevronLeft, IconChevronRight, IconList } from '@tabler/icons-react'
 import { createTypstRenderer } from '@myriaddreamin/typst.ts'
 import wasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
-import { TypstPreviewView } from '@pluxel/plugin-typst/browser'
+import { TypstPreviewView, type TypstPreviewState } from '@pluxel/plugin-typst/browser'
 import type { PreviewResult } from '../shared/contracts'
 import type { WorkspaceController } from './workspace'
-import { pointAtPreview, pointAtSource, type SourcePosition } from './source-navigation'
 
 let rendererPromise: ReturnType<typeof initialize> | undefined
 async function initialize() {
@@ -27,121 +26,36 @@ export function Preview({
 	const root = useRef<HTMLDivElement>(null)
 	const container = useRef<HTMLDivElement>(null)
 	const scroll = useRef<HTMLDivElement>(null)
-	const pages = useRef<SVGGraphicsElement[]>([])
+	const currentWorkspace = useRef(workspace)
+	currentWorkspace.current = workspace
 	const displayedResult = useRef<PreviewResult | null>(null)
-	const [navigation, setNavigation] = useState<PreviewResult['preview']['navigation']>()
-	const [currentHeading, setCurrentHeading] = useState(-1)
-	const mouseDown = useRef<
-		{ x: number; y: number; pointerId: number; dragged: boolean } | undefined
-	>(undefined)
-	const highlight = useRef<SVGRectElement | undefined>(undefined)
-	const highlightTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-	const [pageCount, setPageCount] = useState(0)
-	const [currentPage, setCurrentPage] = useState(1)
+	const [viewState, setViewState] = useState<TypstPreviewState>({
+		pageCount: 0,
+		currentPage: 1,
+		currentHeading: -1,
+	})
+	const { pageCount, currentPage, currentHeading } = viewState
+	const navigation = viewState.preview?.navigation
 	const [pageInput, setPageInput] = useState<string | number>(1)
 	const [navigationOpen, setNavigationOpen] = useState(false)
-	function pageTop(page: SVGGraphicsElement) {
-		return page.getScreenCTM()?.f ?? page.getBoundingClientRect().top
-	}
-	function trackPage() {
-		if (!scroll.current) return
-		const threshold =
-			scroll.current.getBoundingClientRect().top + Math.min(120, scroll.current.clientHeight / 3)
-		let active = 1
-		for (const [index, page] of pages.current.entries()) {
-			if (pageTop(page) <= threshold) active = index + 1
-		}
-		// A short final page may fit below the tracking threshold at maximum scroll.
-		if (
-			scroll.current.scrollHeight > scroll.current.clientHeight &&
-			scroll.current.scrollHeight - scroll.current.scrollTop - scroll.current.clientHeight <= 2
-		)
-			active = pages.current.length
-		setCurrentPage(active)
-		setPageInput(active)
-		let heading = -1
-		for (const [index, item] of (
-			displayedResult.current?.preview.navigation?.outline ?? []
-		).entries()) {
-			const matrix = pages.current[item.page - 1]?.getScreenCTM()
-			if (!matrix) continue
-			const position = new DOMPoint(item.x, item.y).matrixTransform(matrix)
-			if (position.y <= threshold) heading = index
-		}
-		setCurrentHeading(heading)
-	}
-	function jumpToPosition(pageNumber: number, x: number, y: number) {
-		const matrix = pages.current[pageNumber - 1]?.getScreenCTM()
-		const viewport = scroll.current
-		if (!matrix || !viewport) return
-		const position = new DOMPoint(x, y).matrixTransform(matrix)
-		viewport.scrollTo({
-			top:
-				viewport.scrollTop +
-				position.y -
-				viewport.getBoundingClientRect().top -
-				Math.min(120, viewport.clientHeight / 3),
-		})
-		setCurrentPage(pageNumber)
-		setPageInput(pageNumber)
-	}
-	function revealPosition(position: SourcePosition) {
-		const compiled = displayedResult.current
-		if (!compiled || !workspace.isNavigationCurrent(compiled)) return false
-		const point = pointAtSource(compiled.preview.navigation?.points ?? [], position, currentPage)
-		const page = point && pages.current[point.page - 1]
-		if (!point || !page) return false
-		jumpToPosition(point.page, point.x, point.y)
-		clearTimeout(highlightTimer.current)
-		highlight.current?.remove()
-		const rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-		rectangle.classList.add('preview-source-highlight')
-		rectangle.setAttribute('x', String(point.x - 2))
-		rectangle.setAttribute('y', String(point.y - 2))
-		rectangle.setAttribute('width', String(point.width + 4))
-		rectangle.setAttribute('height', String(point.height + 4))
-		rectangle.setAttribute('rx', '2')
-		page.append(rectangle)
-		highlight.current = rectangle
-		highlightTimer.current = setTimeout(() => {
-			rectangle.remove()
-			if (highlight.current === rectangle) highlight.current = undefined
-		}, 1400)
-		return true
-	}
-	const reveal = useRef(revealPosition)
-	reveal.current = revealPosition
+	const displayed = useRef<TypstPreviewView | undefined>(undefined)
 	useEffect(() => {
 		if (!root.current) return
 		return workspace.registerPreview({
 			entry,
 			element: root.current,
 			result: () => displayedResult.current,
-			reveal: (position) => reveal.current(position),
+			reveal: (position) => displayed.current?.revealSource(position) ?? false,
 		})
 	}, [workspace, entry])
-	function jumpToPage(requested: number) {
-		const next = Math.max(1, Math.min(pages.current.length, Math.round(requested)))
-		const page = pages.current[next - 1]
-		const viewport = scroll.current
-		if (!page || !viewport) return
-		viewport.scrollTo({
-			top: viewport.scrollTop + pageTop(page) - viewport.getBoundingClientRect().top - 18,
-		})
-		setCurrentPage(next)
-		setPageInput(next)
-	}
 	function submitPage() {
 		const requested = Number(pageInput)
-		if (Number.isFinite(requested) && requested > 0) jumpToPage(requested)
+		if (Number.isFinite(requested) && requested > 0) displayed.current?.jumpToPage(requested)
 		else setPageInput(currentPage)
 	}
 	const [error, setError] = useState('')
-	const displayed = useRef<TypstPreviewView | undefined>(undefined)
 	useEffect(
 		() => () => {
-			clearTimeout(highlightTimer.current)
-			highlight.current?.remove()
 			void displayed.current?.dispose()
 			displayed.current = undefined
 			displayedResult.current = null
@@ -149,12 +63,13 @@ export function Preview({
 		[],
 	)
 	useEffect(() => {
-		if (!result || !container.current) return
+		if (!result || !container.current || !scroll.current) return
 		let canceled = false
 		let view: TypstPreviewView | undefined
 		// Keep the last complete page visible until the new artifact has rendered.
 		const candidate = document.createElement('div')
 		const destination = container.current
+		const viewport = scroll.current
 		void (async () => {
 			const renderer = await (rendererPromise ??= initialize().catch((cause) => {
 				rendererPromise = undefined
@@ -163,20 +78,30 @@ export function Preview({
 			if (canceled) return
 			view = new TypstPreviewView({
 				container: candidate,
+				scrollContainer: viewport,
 				renderer,
 				sessionId: result.preview.sessionId,
+				isNavigationCurrent: () =>
+					displayed.current === view &&
+					currentWorkspace.current === workspace &&
+					workspace.isNavigationCurrent(result),
+				onNavigate: ({ point }) => {
+					void workspace.revealSource(result, point)
+				},
+				onStateChange: (state) => {
+					if (displayed.current !== view) return
+					setViewState(state)
+					setPageInput(state.currentPage)
+				},
 			})
 			if (result.preview.compilerVersion !== '0.7.0') throw new Error('预览编译器版本不匹配')
 			await view.show(result.preview)
 			if (!canceled) {
 				const previous = displayed.current
 				destination.replaceChildren(candidate)
-				pages.current = [...candidate.querySelectorAll<SVGGraphicsElement>('.typst-page')]
 				displayedResult.current = result
-				setNavigation(result.preview.navigation)
-				setPageCount(pages.current.length)
-				trackPage()
 				displayed.current = view
+				view.refresh()
 				void previous?.dispose()
 				setError('')
 			}
@@ -187,11 +112,15 @@ export function Preview({
 			canceled = true
 			if (view !== displayed.current) void view?.dispose()
 		}
-	}, [result])
+	}, [result, workspace])
 	return (
 		<div
 			ref={root}
 			className="document-preview"
+			data-preview-current={Boolean(
+				displayedResult.current && workspace.isNavigationCurrent(displayedResult.current),
+			)}
+			data-preview-revision={viewState.preview?.revision}
 			onFocusCapture={() => workspace.preferPreview(entry)}
 		>
 			{pageCount > 0 && (
@@ -211,7 +140,7 @@ export function Preview({
 							variant="subtle"
 							aria-label="上一页"
 							disabled={currentPage <= 1}
-							onClick={() => jumpToPage(currentPage - 1)}
+							onClick={() => displayed.current?.jumpToPage(currentPage - 1)}
 						>
 							<IconChevronLeft size={17} />
 						</ActionIcon>
@@ -240,7 +169,7 @@ export function Preview({
 							variant="subtle"
 							aria-label="下一页"
 							disabled={currentPage >= pageCount}
-							onClick={() => jumpToPage(currentPage + 1)}
+							onClick={() => displayed.current?.jumpToPage(currentPage + 1)}
 						>
 							<IconChevronRight size={17} />
 						</ActionIcon>
@@ -266,7 +195,7 @@ export function Preview({
 										title={item.title}
 										aria-current={currentHeading === index ? 'location' : undefined}
 										style={{ paddingInlineStart: 8 + Math.min(item.level - 1, 4) * 12 }}
-										onClick={() => jumpToPosition(item.page, item.x, item.y)}
+										onClick={() => displayed.current?.jumpToPosition(item)}
 									>
 										<span className="preview-heading-title">{item.title}</span>
 										<span className="preview-heading-page">{item.page}</span>
@@ -285,14 +214,14 @@ export function Preview({
 								justify="start"
 								size="xs"
 								aria-current={currentPage === index + 1 ? 'page' : undefined}
-								onClick={() => jumpToPage(index + 1)}
+								onClick={() => displayed.current?.jumpToPage(index + 1)}
 							>
 								第 {index + 1} 页
 							</Button>
 						))}
 					</nav>
 				)}
-				<div ref={scroll} className="preview-scroll" onScroll={trackPage}>
+				<div ref={scroll} className="preview-scroll">
 					{error && (
 						<Alert color="red" title="预览失败">
 							{error}
@@ -311,60 +240,6 @@ export function Preview({
 						ref={container}
 						className="typst-pages"
 						aria-label="Typst 文档预览，点击内容定位源码"
-						onPointerDown={(event) => {
-							mouseDown.current =
-								event.button === 0 &&
-								!event.ctrlKey &&
-								!event.metaKey &&
-								!event.altKey &&
-								!event.shiftKey
-									? {
-											x: event.clientX,
-											y: event.clientY,
-											pointerId: event.pointerId,
-											dragged: false,
-										}
-									: undefined
-						}}
-						onPointerMove={(event) => {
-							const start = mouseDown.current
-							if (start && Math.hypot(start.x - event.clientX, start.y - event.clientY) > 4)
-								start.dragged = true
-						}}
-						onPointerCancel={() => {
-							mouseDown.current = undefined
-						}}
-						onPointerUp={(event) => {
-							const start = mouseDown.current
-							mouseDown.current = undefined
-							const compiled = displayedResult.current
-							if (
-								!start ||
-								start.dragged ||
-								start.pointerId !== event.pointerId ||
-								Math.hypot(start.x - event.clientX, start.y - event.clientY) > 4 ||
-								!compiled ||
-								!workspace.isNavigationCurrent(compiled)
-							)
-								return
-							const element =
-								event.target instanceof Element
-									? event.target.closest<SVGGraphicsElement>('.typst-page')
-									: null
-							const pageNumber = element ? pages.current.indexOf(element) + 1 : 0
-							const matrix = element?.getScreenCTM()
-							if (!pageNumber || !matrix) return
-							const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(
-								matrix.inverse(),
-							)
-							const point = pointAtPreview(
-								compiled.preview.navigation?.points ?? [],
-								pageNumber,
-								local.x,
-								local.y,
-							)
-							if (point) void workspace.revealSource(compiled, point)
-						}}
 					/>
 				</div>
 			</div>

@@ -28,25 +28,43 @@
 			"@pluxel/hmr": "./src/template.ts",
 			"default": "./dist/template.mjs"
 		},
-		"./package.json": "./package.json"
+		"./tiptap": {
+			"@pluxel/hmr": "./src/tiptap/index.ts",
+			"default": "./dist/tiptap.mjs"
+		},
+		"./tiptap/react": {
+			"@pluxel/hmr": "./src/tiptap/react.tsx",
+			"default": "./dist/tiptap/react.mjs"
+		},
+		"./package.json": "./package.json",
+		"./tiptap/style.css": {
+			"@pluxel/hmr": "./src/tiptap/style.css",
+			"default": "./dist/tiptap/style.css"
+		}
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
 			"./browser": "./dist/browser.mjs",
 			"./template": "./dist/template.mjs",
-			"./package.json": "./package.json"
+			"./tiptap": "./dist/tiptap.mjs",
+			"./tiptap/react": "./dist/tiptap/react.mjs",
+			"./package.json": "./package.json",
+			"./tiptap/style.css": "./dist/tiptap/style.css"
 		}
 	},
 	"scripts": {
 		"prepare:native": "node native/build.mjs",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
+		"test:consumer": "node tests/consumer.mjs",
+		"dev:consumer": "vp dev --config tests/consumer/vite.config.ts",
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@myriaddreamin/typst-ts-node-compiler": "catalog:prod",
 		"@myriaddreamin/typst.ts": "catalog:prod",
+		"marked": "catalog:frontend",
 		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
@@ -60,6 +78,19 @@
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
+		"@tiptap/core": "catalog:frontend",
+		"@tiptap/extension-image": "catalog:frontend",
+		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-style": "catalog:frontend",
+		"@tiptap/markdown": "catalog:frontend",
+		"@tiptap/pm": "catalog:frontend",
+		"@tiptap/react": "catalog:frontend",
+		"@tiptap/starter-kit": "catalog:frontend",
+		"@types/react": "catalog:frontend",
+		"@types/react-dom": "catalog:frontend",
+		"playwright": "catalog:dev",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
 		"tsx": "catalog:dev",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
@@ -69,7 +100,49 @@
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
 		"@pluxel/plugin-fonts": "workspace:^",
-		"@pluxel/services": "workspace:^"
+		"@pluxel/services": "workspace:^",
+		"@tiptap/core": "catalog:frontend",
+		"@tiptap/extension-image": "catalog:frontend",
+		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-style": "catalog:frontend",
+		"@tiptap/markdown": "catalog:frontend",
+		"@tiptap/pm": "catalog:frontend",
+		"@tiptap/react": "catalog:frontend",
+		"@tiptap/starter-kit": "catalog:frontend",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
+	},
+	"peerDependenciesMeta": {
+		"@tiptap/extension-text-style": {
+			"optional": true
+		},
+		"@tiptap/core": {
+			"optional": true
+		},
+		"@tiptap/pm": {
+			"optional": true
+		},
+		"@tiptap/starter-kit": {
+			"optional": true
+		},
+		"@tiptap/extension-table": {
+			"optional": true
+		},
+		"@tiptap/extension-image": {
+			"optional": true
+		},
+		"@tiptap/markdown": {
+			"optional": true
+		},
+		"@tiptap/react": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"

@@ -105,7 +105,7 @@ describe('WorkspaceStore', () => {
 		await writeFile(join(project.root, 'studio.json'), '{broken')
 		const tree = await store.tree(project.id)
 		expect(tree.configError).toContain('Invalid studio.json')
-		expect(tree.documents).toHaveLength(3)
+		expect(tree.documents).toHaveLength(5)
 		const broken = await store.readFile(project.id, 'studio.json')
 		expect(broken.content).toBe('{broken')
 		await expect(store.snapshot(project.id)).rejects.toThrow('Invalid studio.json')
@@ -119,7 +119,7 @@ describe('WorkspaceStore', () => {
 		})
 		const repaired = await store.tree(project.id)
 		expect(repaired.configError).toBeUndefined()
-		expect(repaired.documents).toHaveLength(3)
+		expect(repaired.documents).toHaveLength(5)
 	})
 	it('uses real files, detects external edits and serializes competing saves', async () => {
 		const { store, project, root, seed } = await fixture()
@@ -281,25 +281,31 @@ it('discovers broken report entries without executing them and keeps the convent
 it('preserves persisted inputs across report and ancestor directory rename, rejecting entry collisions', async () => {
 	const { root, seed, project } = await fixture()
 	const inputs = new InputStore(join(root, 'inputs'))
-	const store = new WorkspaceStore(join(root, 'app'), seed, {}, (id, entries) =>
-		inputs.copyEntries(id, entries),
+	const store = new WorkspaceStore(join(root, 'app'), seed, {}, (id, entries, revisions) =>
+		inputs.copyEntries(id, entries, revisions),
 	)
 	await store.initialize()
 	const source = '报表/银行询证函/银行询证函.ts'
-	await inputs.set(project.id, source, { title: 'User data' })
+	await inputs.set(project.id, source, { data: { title: 'User data' }, expectedVersion: null })
 	const before = await store.tree(project.id)
 	const renamed = await store.rename(project.id, {
 		path: '报表/银行询证函',
 		to: '报表/custom',
 		expectedVersion: before.entries.find((entry) => entry.path === '报表/银行询证函')!.version,
 	})
-	expect(await inputs.get(project.id, '报表/custom/custom.ts')).toEqual({ title: 'User data' })
+	const renamedInput = await inputs.get(project.id, '报表/custom/custom.ts')
+	expect(renamedInput.data).toEqual({
+		title: 'User data',
+	})
 	await store.rename(project.id, {
 		path: '报表',
 		to: 'archive',
 		expectedVersion: renamed.entries.find((entry) => entry.path === '报表')!.version,
 	})
-	expect(await inputs.get(project.id, 'archive/custom/custom.ts')).toEqual({ title: 'User data' })
+	const archivedInput = await inputs.get(project.id, 'archive/custom/custom.ts')
+	expect(archivedInput.data).toEqual({
+		title: 'User data',
+	})
 	await store.writeFile(project.id, {
 		path: 'archive/custom/taken.ts',
 		expectedVersion: null,
@@ -313,11 +319,63 @@ it('preserves persisted inputs across report and ancestor directory rename, reje
 			expectedVersion: collision.entries.find((entry) => entry.path === 'archive/custom')!.version,
 		}),
 	).rejects.toThrow('File changed')
-	expect(await inputs.get(project.id, 'archive/custom/custom.ts')).toEqual({ title: 'User data' })
+	const afterCollisionInput = await inputs.get(project.id, 'archive/custom/custom.ts')
+	expect(afterCollisionInput.data).toEqual({
+		title: 'User data',
+	})
 	const afterCollision = await store.tree(project.id)
 	expect(afterCollision.documents.some((doc) => doc.entry === 'archive/custom/custom.ts')).toBe(
 		true,
 	)
+})
+it('renames region configuration and its complete draft together and removes the draft with its report', async () => {
+	const { root, seed, project } = await fixture()
+	const inputs = new InputStore(join(root, 'inputs'))
+	const store = new WorkspaceStore(
+		join(root, 'app'),
+		seed,
+		{},
+		(id, entries, revisions) => inputs.copyEntries(id, entries, revisions),
+		(id, entries) => inputs.removeEntries(id, entries),
+	)
+	await store.initialize()
+	const before = await store.tree(project.id)
+	const source = '报表/客户服务报告/客户服务报告.ts'
+	const configFile = await store.readFile(project.id, source.replace('.ts', '.editor.json'))
+	const config = JSON.parse(configFile.content)
+	await inputs.set(project.id, source, {
+		data: { customer: { name: 'Saved user' } },
+		editor: {
+			formatVersion: 1,
+			templateId: source,
+			templateRevision: before.revision,
+			regions: config.defaults,
+		},
+		expectedVersion: null,
+	})
+	const renamed = await store.rename(project.id, {
+		path: '报表/客户服务报告',
+		to: '报表/客户报告',
+		expectedVersion: before.entries.find((entry) => entry.path === '报表/客户服务报告')!.version,
+	})
+	expect(renamed.entries.some((entry) => entry.path === '报表/客户报告/客户报告.editor.json')).toBe(
+		true,
+	)
+	const saved = await inputs.get(project.id, '报表/客户报告/客户报告.ts')
+	expect(saved).toMatchObject({
+		data: { customer: { name: 'Saved user' } },
+		editor: { templateId: '报表/客户报告/客户报告.ts', templateRevision: renamed.revision },
+	})
+	expect(saved.editor?.regions).toEqual(config.defaults)
+	await store.remove(project.id, {
+		path: '报表/客户报告',
+		expectedVersion: renamed.entries.find((entry) => entry.path === '报表/客户报告')!.version,
+	})
+	expect(await inputs.get(project.id, '报表/客户报告/客户报告.ts')).toEqual({
+		data: {},
+		storageVersion: null,
+	})
+	expect(await inputs.get(project.id, source)).toEqual({ data: {}, storageVersion: null })
 })
 it('rolls source rename back when saving renamed input mappings fails', async () => {
 	const { root, seed, project } = await fixture()

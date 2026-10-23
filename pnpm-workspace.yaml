@@ -236,8 +236,17 @@ catalogs:
     '@tanstack/react-router': ^1.170.45
     '@tanstack/react-store': ^0.11.2
     '@tanstack/react-virtual': ^3.14.21
+    '@tiptap/core': 3.32.0
+    '@tiptap/extension-image': 3.32.0
+    '@tiptap/extension-table': 3.32.0
+    '@tiptap/extension-text-style': 3.32.0
+    '@tiptap/markdown': 3.32.0
+    '@tiptap/pm': 3.32.0
+    '@tiptap/react': 3.32.0
+    '@tiptap/starter-kit': 3.32.0
     '@types/react': ^19.3.0
     '@types/react-dom': ^19.3.0
+    marked: 17.0.6
     react: 19.3.1
     react-dom: 19.3.1
     tailwindcss: ^4.3.3

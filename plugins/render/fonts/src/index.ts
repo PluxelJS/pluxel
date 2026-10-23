@@ -1,4 +1,3 @@
-import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
@@ -18,17 +17,16 @@ import {
 	toManagedFontSnapshot,
 	type StoredManagedFont,
 } from './managed-record.ts'
-import {
-	FontsWorkbench,
-	type DefaultFontSnapshot,
-	type FontFamilySnapshot,
-	type FontSelectionApi,
-	type FontSelectionSnapshot,
-	type FontsManagerApi,
-	type FontsManagerSnapshot,
-	type InstallManagedFontInput,
-	type ManagedFontSnapshot,
-} from './workbench.ts'
+import { FontsWorkbench } from './workbench.ts'
+import type { DefaultFontSnapshot, FontFamilySnapshot } from './font-snapshots.ts'
+import type {
+	FontSelectionApi,
+	FontSelectionSnapshot,
+	FontsManagerApi,
+	FontsManagerSnapshot,
+	InstallManagedFontInput,
+	ManagedFontSnapshot,
+} from './workbench-contracts.ts'
 
 const STORAGE_NAMESPACE = '@pluxel/plugin-fonts'
 const DEFAULT_FONT_KEY = 'settings/default-font.json'
@@ -1028,7 +1026,9 @@ class FontsManagerRpc extends RpcTarget implements FontsManagerApi {
 
 	async snapshotDto(): Promise<FontsManagerSnapshot> {
 		const snapshot = await this.read()
-		assertWorkbenchDto(snapshot)
+		const server: typeof import('@pluxel/workbench/server') =
+			await import('@pluxel/workbench/server')
+		server.assertWorkbenchDto(snapshot)
 		return snapshot
 	}
 
@@ -1055,7 +1055,9 @@ class FontSelectionRpc extends RpcTarget implements FontSelectionApi {
 
 	async snapshotDto(): Promise<FontSelectionSnapshot> {
 		const snapshot = await this.read()
-		assertWorkbenchDto(snapshot)
+		const server: typeof import('@pluxel/workbench/server') =
+			await import('@pluxel/workbench/server')
+		server.assertWorkbenchDto(snapshot)
 		return snapshot
 	}
 
@@ -1331,4 +1333,8 @@ function changedFamilies(before: ReadonlyMap<string, string>): readonly string[]
 }
 
 export { FontsConfig, FontsError, type FontsErrorCode, type FontsPluginConfig }
-export type { DefaultFontSnapshot, FontFamilySnapshot, FontStyleSnapshot } from './workbench.ts'
+export type {
+	DefaultFontSnapshot,
+	FontFamilySnapshot,
+	FontStyleSnapshot,
+} from './font-snapshots.ts'

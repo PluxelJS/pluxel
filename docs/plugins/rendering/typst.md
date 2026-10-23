@@ -186,7 +186,9 @@ packet 来自 `compiled.preview`。View 在离屏渲染完成后才替换容器�
 
 `packet.navigation` 与 Vector/PDF 属于同一次编译：`points` 包含工作区相对路径、以 1 开始的 UTF-16 源码行列（结束位置不包含在范围内）、页码，以及页面局部坐标的矩形；`outline` 包含标题、层级、页码和坐标；`pages` 包含每页的 `page`、`width`、`height`，页码以 1 开始，尺寸单位为 pt。坐标单位为 pt。生成的 `/inputs/` 和根目录外文件不作为源码跳转目标。
 
-应用在 SVG 对应页面使用 `getScreenCTM()` 转换坐标，并自行管理编辑器联动、文件版本和交互。保留旧预览时不能直接套用已修改源码的行列。Typst 的布局映射来自原生文档 span，TypeScript 的转换 sourcemap 由 Vite 管理，二者不互相替代。每修订最多 200,000 个有效定位点，超限明确失败。
+View 统一管理 SVG CTM 坐标、普通点击/拖选过滤、页码/目录跟随和高亮；宿主通过普通位置回调连接编辑器，并维护文件/草稿版本与可见目标选择。保留旧预览时不能直接套用已修改源码的行列。Typst 的布局映射来自原生文档 span，TypeScript 的转换 sourcemap 由 Vite 管理，二者不互相替代。每修订最多 200,000 个有效定位点，超限明确失败。
+
+可选 `/tiptap` 与 `/tiptap/react` 支持固定模板中的命名正文区域、原生表格、数据字段和候选内容；安装、生成、持久化与定位见 [Typst 区域编辑](./typst-editor.md)。根入口、`/template` 和 `/browser` 不要求安装 Tiptap/React。
 
 ## 容量配置
 

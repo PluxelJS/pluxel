@@ -411,3 +411,56 @@ button {
 	overflow-wrap: anywhere;
 	font-family: monospace;
 }
+
+.body-editor-scroll {
+	height: 100%;
+	overflow: auto;
+	padding: 20px;
+	background: var(--mantine-color-gray-0);
+}
+.body-editor-header {
+	max-width: 840px;
+	margin-inline: auto;
+}
+.studio-region-editor {
+	--typst-text: var(--mantine-color-text);
+	--typst-muted: var(--mantine-color-dimmed);
+	--typst-border: var(--mantine-color-gray-3);
+	--typst-surface: var(--mantine-color-body);
+	--typst-hover: var(--mantine-color-gray-0);
+	--typst-accent: var(--mantine-color-teal-7);
+	--typst-active: var(--mantine-color-teal-0);
+	max-width: 840px;
+	margin-inline: auto;
+	border: 1px solid var(--mantine-color-gray-3);
+	border-radius: 12px;
+	background: var(--mantine-color-body);
+	box-shadow: 0 2px 8px rgb(15 23 42 / 3%);
+}
+.studio-region-editor .tiptap {
+	min-height: 360px;
+}
+.studio-region-editor .tiptap aside {
+	border-left: 3px solid var(--mantine-color-teal-5);
+	padding: 12px 16px;
+	border-radius: 0 6px 6px 0;
+	background: var(--mantine-color-teal-0);
+}
+@media (max-width: 600px) {
+	.body-editor-scroll {
+		padding: 10px;
+	}
+}
+.studio-candidate {
+	max-width: 840px;
+	margin: 20px auto 0;
+	border-top: 1px solid var(--mantine-color-gray-3);
+	padding-top: 12px;
+}
+.studio-candidate summary {
+	padding: 4px 0 12px;
+	color: var(--mantine-color-gray-7);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+}

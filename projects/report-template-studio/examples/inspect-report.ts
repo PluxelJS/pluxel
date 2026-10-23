@@ -1,5 +1,9 @@
 import { discoverStudio, withStudio } from '@report-template-studio/app/client'
-import { isStudioError, type JsonObject } from '@report-template-studio/app/contracts'
+import {
+	isStudioError,
+	type EditorDraft,
+	type JsonObject,
+} from '@report-template-studio/app/contracts'
 
 /** Selection comes from the caller; this function never starts or chooses a backend for them. */
 export async function inspectReport(input: {
@@ -7,6 +11,8 @@ export async function inspectReport(input: {
 	selectedProjectRoot: string
 	entry: string
 	data: JsonObject
+	clientRevision: number
+	editor?: EditorDraft
 	discoveryDirectory?: string
 }) {
 	try {
@@ -18,7 +24,12 @@ export async function inspectReport(input: {
 			const project = projects.find((item) => item.root === input.selectedProjectRoot)
 			if (!project) throw new Error('请先明确选择或打开目标项目')
 			const target = { projectId: project.id, entry: input.entry }
-			const compiled = await studio.compile({ ...target, data: input.data })
+			const compiled = await studio.compile({
+				...target,
+				data: input.data,
+				clientRevision: input.clientRevision,
+				...(input.editor ? { editor: input.editor } : {}),
+			})
 			const page = await studio.renderPage({
 				...target,
 				revision: compiled.revision,

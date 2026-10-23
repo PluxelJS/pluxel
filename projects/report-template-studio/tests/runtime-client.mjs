@@ -45,6 +45,7 @@ await withStudio(instance, async (studio) => {
 		}
 	}
 	const compiled = await studio.compile({
+		clientRevision: 0,
 		...target,
 		data: config.phase === 2 ? { revenue: 1400000 } : {},
 	})
@@ -88,8 +89,8 @@ await withStudio(instance, async (studio) => {
 	await copyFile(pdf.path, join(config.evidenceDirectory, `phase-${config.phase}.pdf`))
 	const errors = []
 	for (const operation of [
-		() => studio.compile({ ...target }),
-		() => studio.compile({ ...target, data: { revenue: 'invalid' } }),
+		() => studio.compile({ clientRevision: 0, ...target }),
+		() => studio.compile({ clientRevision: 0, ...target, data: { revenue: 'invalid' } }),
 		() => studio.readFile({ projectId: project.id, path: '../outside' }),
 		() => studio.renderPage({ ...target, revision: compiled.revision, page: 0 }),
 		() =>
@@ -130,7 +131,7 @@ await withStudio(instance, async (studio) => {
 			})
 			try {
 				await assert.rejects(
-					async () => await studio.compile({ ...target, data: {} }),
+					async () => await studio.compile({ clientRevision: 0, ...target, data: {} }),
 					(error) => {
 						const failure = JSON.stringify({
 							path,
@@ -168,7 +169,7 @@ await withStudio(instance, async (studio) => {
 	const other = await connectStudio(instance)
 	let retained
 	try {
-		retained = await other.api.compile({ ...target, data: { revenue: 1500000 } })
+		retained = await other.api.compile({ clientRevision: 0, ...target, data: { revenue: 1500000 } })
 		await assert.rejects(
 			async () => await studio.renderPage({ ...target, revision: compiled.revision, page: 1 }),
 			{ code: 'REVISION_CONFLICT' },

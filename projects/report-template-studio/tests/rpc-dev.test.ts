@@ -79,10 +79,11 @@ try {
   const target = {projectId:project.id, entry:'报表/季度经营分析/季度经营分析.ts'}
   const storedData = {revenue:1300000}
   const explicitData = {revenue:1400000}
-  await connection.api.setInput({...target, data:storedData})
+  const initialInput = await connection.api.getInput(target)
+  await connection.api.setInput({...target, data:storedData, expectedVersion:initialInput.storageVersion})
   const beforeInput = await connection.api.getInput(target)
   assert.deepEqual(beforeInput.data, storedData)
-  const beforeCompiled = await connection.api.compile({...target, data:explicitData})
+  const beforeCompiled = await connection.api.compile({ clientRevision: 0,...target, data:explicitData})
   assert.ok(beforeCompiled.pageCount > 2, 'The real seeded report must produce multiple pages')
   const png = await connection.api.renderPage({...target, revision:beforeCompiled.revision, page:2, scale:1})
   const pdf = await connection.api.exportPdf({...target, revision:beforeCompiled.revision})
@@ -141,7 +142,7 @@ try {
     await copyFile(metadata.path, evidencePath)
     afterArtifacts.push({metadata, sha256:sha256(bytes), evidencePath})
   }
-  const afterCompiled = await connection.api.compile({...target, data:explicitData})
+  const afterCompiled = await connection.api.compile({ clientRevision: 0,...target, data:explicitData})
   assert.notEqual(afterCompiled.revision, beforeCompiled.revision)
   assert.equal(afterCompiled.sourceRevision, beforeCompiled.sourceRevision)
   assert.equal(afterCompiled.pageCount, beforeCompiled.pageCount)

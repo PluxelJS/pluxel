@@ -10,6 +10,8 @@ Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字
 
 系统发现、部署字体与程序化注册不要求额外 Host 服务。上传字体与保存默认偏好才需要 Persistence；Workbench 是可选编辑入口。
 
+`DefaultFontSnapshot`、`FontFamilySnapshot` 和 `FontStyleSnapshot` 从包根以 `type` 导入；它们只描述字体数据。Workbench definition 与 RPC API 从 `/workbench` 导入。
+
 ## 无 Workbench 部署
 
 `FontsConfig` 是插件使用的同一 schema，可由 Host config、`envBinding` 或 `fileBinding` 提供。应用在 `envBindings` 中声明：

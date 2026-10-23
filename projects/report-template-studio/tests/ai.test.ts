@@ -76,6 +76,7 @@ async function fixture() {
 		name: 'reports',
 		template: 'reports/main.typ',
 		revision: 'revision',
+		clientRevision: 0,
 		sourceRevision: 'source',
 		pageCount: 1,
 		pages: [{ page: 1, width: 595, height: 842 }],
@@ -94,9 +95,10 @@ async function fixture() {
 		rename: (id, input) => store.rename(id, input),
 		remove: (id, input) => store.remove(id, input),
 		compile,
-		getInput: vi.fn(async () => ({ data: {} })),
+		getInput: vi.fn(async () => ({ data: {}, storageVersion: null })),
 		getPreview: vi.fn(async (input) => ({
 			...input,
+			clientRevision: 0,
 			sourceRevision: 'source',
 			sourceVersions: {},
 			preview: {
@@ -280,6 +282,7 @@ it('uses official Pi file tools against real workspace files, references and ski
 		projectId: project.id,
 		entry: 'reports/reports.ts',
 		data: {},
+		clientRevision: 0,
 	})
 	expect(dispose).toHaveBeenCalledOnce()
 })

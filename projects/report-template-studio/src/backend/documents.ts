@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { generateTypstRegions, type TypstGeneratedMapping } from '@pluxel/plugin-typst/tiptap'
 import type { FontsPlugin, FontRegistration } from '@pluxel/plugin-fonts'
 import type { TypstPlugin, TypstSession, TypstCompiled, TypstPreview } from '@pluxel/plugin-typst'
 import type {
@@ -9,6 +10,7 @@ import type {
 	CompileResult,
 	DocumentDescription,
 	DocumentTarget,
+	DocumentInput,
 	PageArtifact,
 	PdfArtifact,
 	PreviewResult,
@@ -18,7 +20,9 @@ import type {
 } from '../shared/contracts.js'
 import { ArtifactStore } from './artifacts.js'
 import { TemplateCompiler } from './compiler.js'
-import { inputData } from './inputs.js'
+import { inputData, editorDraft } from './inputs.js'
+import { describeEditor, editorResult, validateEditorDraft } from './editor-config.js'
+import { studioEditorConfig } from '../shared/editor.js'
 import { pathName, reportEntry } from './storage-validation.js'
 import { WorkspaceStore } from './store.js'
 import type { RuntimeOperation } from './template-runtime.js'
@@ -119,15 +123,64 @@ export class DocumentService {
 		const started = performance.now()
 		const document = target(input)
 		const data = inputData(input.data)
+		const editor = input.editor === undefined ? undefined : editorDraft(input.editor)
+		const clientRevision = input.clientRevision
+		if (!Number.isSafeInteger(clientRevision) || clientRevision < 0)
+			throw failure(
+				'INVALID_INPUT',
+				'clientRevision must be a nonnegative safe integer covering the captured data and regions',
+			)
 		return this.operate(document, true, async (record, options) => {
 			const snapshot = await this.borrowSnapshot(document.projectId, options)
+			let templateRoot: string | undefined
 			try {
+				const description = describeEditor(snapshot.document, document.entry)
 				const evaluated = await record.compiler.evaluate(
 					snapshot.document,
 					document.entry,
 					data,
 					options,
 				)
+				const draft = validateEditorDraft(description, editor, evaluated.data)
+				const files = { ...evaluated.files }
+				let mapping: TypstGeneratedMapping[] | undefined
+				let generatedFiles: Record<string, string> | undefined
+				if (description && draft) {
+					for (const name of Object.keys(evaluated.files))
+						if (name === '/inputs/editor' || name.startsWith('/inputs/editor/'))
+							throw failure(
+								'EDITOR_RESOURCE_CONFLICT',
+								`createFiles uses the reserved editor namespace: ${name}`,
+							)
+					try {
+						await lstat(join(snapshot.root, '_editor'))
+						throw failure(
+							'EDITOR_RESOURCE_CONFLICT',
+							'Template sources use the reserved _editor/ namespace',
+						)
+					} catch (error) {
+						if (errorCode(error) !== 'ENOENT') throw error
+					}
+					const generated = editorResult(
+						generateTypstRegions({
+							regions: draft.regions,
+							config: studioEditorConfig(description),
+							data: evaluated.data,
+							snapshotRevision: clientRevision,
+						}),
+					)
+					generatedFiles = generated.templateFiles
+					mapping = generated.mapping
+					for (const [name, text] of Object.entries(generated.inputFiles))
+						files[name] = { kind: 'text', text }
+				}
+				const templateRevision = generatedFiles
+					? createHash('sha256')
+							.update(
+								JSON.stringify([snapshot.document.revision, evaluated.template, generatedFiles]),
+							)
+							.digest('hex')
+					: snapshot.document.revision
 				const fonts = await this.fontSignature(snapshot, options)
 				if (record.session && record.fonts !== fonts) {
 					this.typst.ctx.logger.info('Studio document fonts changed; rebuilding session', {
@@ -135,17 +188,36 @@ export class DocumentService {
 					})
 					await this.releaseSession(record)
 				}
-				if (!record.session) await this.openSession(record, snapshot, evaluated.template, options)
+				const replaceTemplate =
+					record.templateRevision !== templateRevision || record.template !== evaluated.template
+				if (generatedFiles && (!record.session || replaceTemplate)) {
+					templateRoot = await mkdtemp(join(tmpdir(), 'pluxel-studio-editor-'))
+					await cp(snapshot.root, templateRoot, { recursive: true, errorOnExist: true })
+					for (const [path, source] of Object.entries(generatedFiles)) {
+						const file = join(templateRoot, pathName(path))
+						await mkdir(dirname(file), { recursive: true })
+						await writeFile(file, source, { flag: 'wx' })
+					}
+				}
+				if (!record.session)
+					await this.openSession(
+						record,
+						snapshot,
+						evaluated.template,
+						options,
+						templateRoot,
+						templateRevision,
+					)
 				await this.assertSnapshot(snapshot, options)
 				let compiled: TypstCompiled
 				try {
 					compiled = await record.session!.update({
-						files: evaluated.files,
-						...(record.templateRevision === snapshot.document.revision &&
+						files,
+						...(record.templateRevision === templateRevision &&
 						record.template === evaluated.template
 							? {}
 							: {
-									template: { root: snapshot.root, entry: evaluated.template },
+									template: { root: templateRoot ?? snapshot.root, entry: evaluated.template },
 								}),
 						signal: options.signal,
 						timeoutMs: this.remaining(options),
@@ -153,7 +225,7 @@ export class DocumentService {
 				} catch (error) {
 					if (errorCode(error) === 'COMPILE_FAILED') {
 						// A failed layout consumed the template replacement but retained the old document.
-						record.templateRevision = snapshot.document.revision
+						record.templateRevision = templateRevision
 						record.template = evaluated.template
 					} else {
 						record.templateRevision = undefined
@@ -164,7 +236,7 @@ export class DocumentService {
 				// Native success already replaced the retained document. Never leave the old
 				// public revision readable if any following publication check fails.
 				record.current = undefined
-				record.templateRevision = snapshot.document.revision
+				record.templateRevision = templateRevision
 				record.template = evaluated.template
 				await this.assertSnapshot(snapshot, options)
 				if ((await this.fontSignature(snapshot, options)) !== record.fonts)
@@ -179,6 +251,8 @@ export class DocumentService {
 					revision: randomUUID(),
 					sourceRevision: snapshot.document.revision,
 					data: evaluated.data,
+					clientRevision,
+					...(mapping ? { generatedMapping: mapping } : {}),
 					pageCount: compiled.preview.navigation.pages.length,
 					pages: compiled.preview.navigation.pages,
 					outline: compiled.preview.navigation.outline,
@@ -201,7 +275,11 @@ export class DocumentService {
 				}
 				return receipt
 			} finally {
-				await this.releaseSnapshot(snapshot)
+				try {
+					if (templateRoot) await rm(templateRoot, { recursive: true, force: true })
+				} finally {
+					await this.releaseSnapshot(snapshot)
+				}
 			}
 		})
 	}
@@ -213,10 +291,41 @@ export class DocumentService {
 			try {
 				const described = await record.compiler.describe(snapshot.document, document.entry, options)
 				await this.assertSnapshot(snapshot, options)
-				return { ...document, ...described, sourceRevision: snapshot.document.revision }
+				const editor = describeEditor(snapshot.document, document.entry)
+				return {
+					...document,
+					...described,
+					sourceRevision: snapshot.document.revision,
+					...(editor ? { editor } : {}),
+				}
 			} finally {
 				await this.releaseSnapshot(snapshot)
 			}
+		})
+	}
+
+	/** Validate at the owning host boundary; no schema output is written into raw input. */
+	async validateInput(input: DocumentTarget & Pick<DocumentInput, 'data' | 'editor'>) {
+		if (this.closed) throw failure('CLOSED', 'Studio documents are closed')
+		const document = target(input)
+		const data = inputData(input.data)
+		const editor = input.editor === undefined ? undefined : editorDraft(input.editor)
+		const source = await this.store.snapshot(document.projectId)
+		if (!Object.hasOwn(source.files, document.entry))
+			throw failure('INVALID_INPUT', 'Report entry does not exist in the workspace')
+		const description = describeEditor(source, document.entry)
+		if (!description) {
+			validateEditorDraft(undefined, editor)
+			return
+		}
+		return this.operate(document, true, async (record, operation) => {
+			validateEditorDraft(description, editor)
+			const parsed = await record.compiler.evaluate(source, document.entry, data, operation)
+			validateEditorDraft(description, editor, parsed.data)
+			const currentSource = await this.store.snapshot(document.projectId)
+			if (currentSource.revision !== source.revision)
+				throw failure('REVISION_CONFLICT', 'Workspace changed while validating the document draft')
+			this.remaining(operation)
 		})
 	}
 
@@ -226,6 +335,10 @@ export class DocumentService {
 			const current = await this.current(record, request.revision, options)
 			const result = structuredClone({
 				...request,
+				clientRevision: current.result.clientRevision,
+				...(current.result.generatedMapping
+					? { generatedMapping: current.result.generatedMapping }
+					: {}),
 				sourceRevision: current.result.sourceRevision,
 				sourceVersions: current.sourceVersions,
 				preview: current.preview,
@@ -559,6 +672,8 @@ export class DocumentService {
 		snapshot: Snapshot,
 		template: string,
 		options: RuntimeOperation,
+		templateRoot = snapshot.root,
+		templateRevision = snapshot.document.revision,
 	) {
 		await this.withFonts(options, async () => {
 			const baseline = this.portableSignature()
@@ -574,7 +689,7 @@ export class DocumentService {
 						}),
 					)
 				session = await this.typst.open(
-					{ root: snapshot.root, entry: template },
+					{ root: templateRoot, entry: template },
 					{ signal: options.signal, timeoutMs: this.remaining(options) },
 				)
 			} catch (error) {
@@ -603,7 +718,7 @@ export class DocumentService {
 			}
 			record.session = session
 			record.fonts = JSON.stringify([snapshot.fonts, baseline])
-			record.templateRevision = snapshot.document.revision
+			record.templateRevision = templateRevision
 			record.template = template
 			this.typst.ctx.logger.info('Studio document session opened', {
 				...record.target,

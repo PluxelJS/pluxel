@@ -22,6 +22,7 @@
 	"scripts": {
 		"dev": "node packages/cli/bin/pluxel.mjs dev",
 		"docs": "node packages/cli/bin/pluxel.mjs dev --profile docs",
+		"typst": "node packages/cli/bin/pluxel.mjs dev --profile typst",
 		"build": "vp run workspace:build",
 		"test": "vp run workspace:test",
 		"typecheck": "vp run workspace:typecheck",
@@ -60,6 +61,11 @@
 			"docs": {
 				"root": "projects/docs",
 				"pitchfork": "docs",
+				"console": false
+			},
+			"typst": {
+				"root": "plugins/render/typst/tests/consumer",
+				"pitchfork": "typst",
 				"console": false
 			}
 		}

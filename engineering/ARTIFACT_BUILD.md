@@ -94,6 +94,8 @@ renderer declaration、runtime-module fallback、root override 或第二套 file
 
 ## Production build
 
+可选 UI 集成的 JavaScript 与声明都需保持入口边界。Fonts 根入口保留静态 Workbench definition 与直接 publication，供 semantic pass 识别 producer；只有 Workbench RPC 执行快照读取时才加载 server DTO 校验。根入口公开的纯字体 snapshot 类型单独维护，不能在声明共享 chunk 中重新连到 Workbench RPC 类型。Typst 对 Fonts 的 required constructor 仍使用直接值导入，不用类型导入绕过来源检查。
+
 生产构建输出 `dist/workbench/<producer>/<revision>/mf-manifest.json`、`remoteEntry.js`、expose chunks、CSS 和 dynamic
 types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-digest>/content-plan.json`。Root 分别写
 `dist/workbench/pluxel-workbench-producers.json` 与 `dist/workbench/pluxel-workbench-content.json`。发布包和应用产物

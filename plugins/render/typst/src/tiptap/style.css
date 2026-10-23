@@ -1,0 +1,1172 @@
+.typst-editor,
+.typst-floating-menu,
+.typst-table-trigger {
+	--typst-text: #27272a;
+	--typst-muted: #71717a;
+	--typst-border: #e4e4e7;
+	--typst-surface: #fff;
+	--typst-hover: #f4f4f5;
+	--typst-accent: #52525b;
+	--typst-active: #eaeaec;
+	--typst-shadow: 0 8px 24px #18181b14, 0 2px 6px #18181b0a;
+}
+
+.typst-editor {
+	color: var(--typst-text);
+	background: var(--typst-surface);
+	border: 1px solid var(--typst-border);
+	border-radius: 12px;
+	font-family: inherit;
+	font-size: 14px;
+	line-height: 1.7;
+	position: relative;
+	min-width: 0;
+}
+
+.typst-toolbars {
+	position: sticky;
+	top: 0;
+	z-index: 4;
+}
+
+.typst-toolbar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 3px 0;
+	padding: 8px 9px;
+	border-bottom: 1px solid var(--typst-border);
+	border-radius: 12px 12px 0 0;
+	background: var(--typst-surface);
+}
+
+.typst-typography {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 5px 2px;
+	padding: 7px 9px;
+	border-bottom: 1px solid var(--typst-border);
+	background: var(--typst-surface);
+}
+.typst-typography-label {
+	font-size: 10px;
+	letter-spacing: 0.03em;
+	color: var(--typst-muted);
+	padding: 3px 5px;
+	margin-right: 2px;
+	border-radius: 4px;
+	cursor: help;
+	white-space: nowrap;
+}
+.typst-type-picker {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11px;
+	color: var(--typst-muted);
+}
+.typst-type-picker + .typst-type-picker {
+	margin-left: 6px;
+}
+.typst-type-picker select {
+	font: inherit;
+	font-size: 12px;
+	color: var(--typst-text);
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	padding: 5px 3px;
+	min-width: 0;
+	height: 29px;
+}
+.typst-type-picker select:hover:not(:disabled) {
+	background: var(--typst-hover);
+}
+.typst-type-picker select option,
+.typst-block-picker select option,
+.typst-field-picker select option {
+	color: var(--typst-text);
+	background: var(--typst-surface);
+}
+.typst-font-picker select {
+	width: 134px;
+}
+.typst-size-picker select {
+	width: 80px;
+}
+.typst-color-menu {
+	position: relative;
+}
+.typst-color-trigger {
+	gap: 5px;
+}
+.typst-color-icon,
+.typst-background-icon {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 17px;
+	height: 20px;
+	padding-bottom: 4px;
+	font-size: 16px;
+	font-weight: 600;
+}
+.typst-background-icon {
+	font-size: 19px;
+}
+.typst-color-icon > span,
+.typst-background-icon > span {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	width: 100%;
+	height: 3px;
+	border-radius: 1px;
+	border: 1px solid var(--typst-border);
+}
+.typst-picker-chevron {
+	font-size: 12px;
+	color: var(--typst-muted);
+}
+.typst-color-dialog {
+	position: absolute;
+	top: calc(100% + 8px);
+	left: 0;
+	width: 232px;
+	max-width: calc(100vw - 24px);
+	max-height: calc(100dvh - 24px);
+	overflow-y: auto;
+	padding: 12px;
+	box-sizing: border-box;
+	background: var(--typst-surface);
+	border: 1px solid var(--typst-border);
+	border-radius: 9px;
+	box-shadow: var(--typst-shadow);
+	z-index: 6;
+}
+.typst-color-heading {
+	font-size: 12px;
+	font-weight: 600;
+	margin-bottom: 10px;
+}
+.typst-color-swatches {
+	display: grid;
+	grid-template-columns: repeat(5, minmax(0, 1fr));
+	gap: 4px;
+	margin-bottom: 12px;
+}
+.typst-color-swatches button {
+	position: relative;
+	display: grid;
+	place-items: center;
+	min-width: 0;
+	height: 36px;
+	padding: 3px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: transparent;
+	cursor: pointer;
+}
+.typst-color-sample {
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	border: 1px solid #18181b1a;
+	border-radius: 4px;
+	background: #fafafa;
+	color: #27272a;
+	font:
+		600 16px/1 ui-serif,
+		Georgia,
+		serif;
+}
+.typst-color-swatches button:hover {
+	background: var(--typst-hover);
+}
+.typst-color-swatches button[aria-pressed='true'] {
+	background: var(--typst-active);
+	border-color: var(--typst-accent);
+}
+.typst-color-swatches button[aria-pressed='true']::after {
+	content: '';
+	position: absolute;
+	right: 2px;
+	bottom: 2px;
+	width: 5px;
+	height: 5px;
+	border: 1px solid var(--typst-surface);
+	border-radius: 50%;
+	background: var(--typst-text);
+}
+.typst-color-custom {
+	display: flex;
+	align-items: end;
+	gap: 6px;
+}
+.typst-color-custom label {
+	display: grid;
+	gap: 4px;
+	flex: 1;
+	min-width: 0;
+	font-size: 10px;
+	color: var(--typst-muted);
+}
+.typst-color-custom input {
+	width: 100%;
+	box-sizing: border-box;
+	min-width: 0;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	padding: 6px;
+	font: inherit;
+	font-size: 12px;
+	color: var(--typst-text);
+	background: var(--typst-surface);
+}
+.typst-color-custom input[aria-invalid='true'] {
+	border-color: #dc2626;
+}
+.typst-color-custom button,
+.typst-color-reset {
+	border: 0;
+	border-radius: 5px;
+	background: var(--typst-hover);
+	color: var(--typst-text);
+	font: inherit;
+	font-size: 11px;
+	padding: 7px 9px;
+	cursor: pointer;
+}
+.typst-color-reset {
+	width: 100%;
+	margin-top: 10px;
+	background: transparent;
+	color: var(--typst-muted);
+}
+.typst-color-custom button:hover:not(:disabled),
+.typst-color-reset:hover {
+	background: var(--typst-active);
+	color: var(--typst-text);
+}
+.typst-typography .typst-typography-reset {
+	font-size: 11px;
+	color: var(--typst-muted);
+}
+
+.typst-tool-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 0 6px;
+	border-right: 1px solid var(--typst-border);
+	min-height: 28px;
+}
+
+.typst-tool-group:first-child {
+	padding-left: 0;
+}
+.typst-tool-group:last-child {
+	border-right: 0;
+	padding-right: 0;
+}
+.typst-tool-group:empty {
+	display: none;
+}
+.typst-tool-group-custom {
+	flex-wrap: wrap;
+}
+
+.typst-tool-button,
+.typst-block-picker,
+.typst-field-picker,
+.typst-tool-group-custom > button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	min-height: 30px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--typst-text);
+	font: inherit;
+	font-size: 12px;
+	line-height: 1;
+	margin: 0;
+	padding: 6px;
+	cursor: pointer;
+}
+
+.typst-tool-button {
+	min-width: 30px;
+}
+.typst-tool-button svg {
+	flex-shrink: 0;
+}
+.typst-tool-button svg + svg {
+	width: 12px;
+}
+.typst-tool-button:hover:not(:disabled),
+.typst-block-picker:hover,
+.typst-field-picker:hover,
+.typst-tool-group-custom > button:hover:not(:disabled) {
+	background: var(--typst-hover);
+}
+.typst-tool-button[aria-pressed='true'],
+.typst-tool-button[aria-expanded='true'] {
+	color: var(--typst-accent);
+	background: var(--typst-active);
+}
+.typst-editor button:disabled,
+.typst-editor select:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.typst-editor button:focus-visible,
+.typst-editor select:focus-visible,
+.typst-editor input:focus-visible {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 2px;
+}
+
+.typst-block-picker,
+.typst-field-picker {
+	position: relative;
+	padding: 0 24px 0 6px;
+}
+.typst-block-picker {
+	min-width: 96px;
+}
+.typst-block-picker select,
+.typst-field-picker select {
+	appearance: none;
+	background: transparent;
+	border: 0;
+	color: inherit;
+	font: inherit;
+	padding: 7px 2px;
+	max-width: 144px;
+	cursor: inherit;
+}
+.typst-block-picker > svg:last-child,
+.typst-field-picker > svg:last-child {
+	position: absolute;
+	right: 4px;
+	width: 14px;
+	pointer-events: none;
+}
+.typst-block-picker select {
+	width: 100%;
+}
+.typst-field-picker {
+	gap: 3px;
+}
+.typst-field-picker > svg:first-child {
+	width: 16px;
+}
+
+.typst-command-menu {
+	position: relative;
+}
+.typst-dropdown {
+	position: absolute;
+	top: calc(100% + 8px);
+	left: 0;
+	min-width: 160px;
+	max-height: min(380px, 70vh);
+	overflow-y: auto;
+	padding: 5px;
+	border: 1px solid var(--typst-border);
+	border-radius: 8px;
+	background: var(--typst-surface);
+	box-shadow: var(--typst-shadow);
+	z-index: 6;
+}
+.typst-dropdown button {
+	display: block;
+	width: 100%;
+	border: 0;
+	border-radius: 4px;
+	padding: 7px 10px;
+	color: var(--typst-text);
+	background: transparent;
+	font: inherit;
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+}
+.typst-dropdown button:hover:not(:disabled),
+.typst-dropdown button:focus-visible {
+	background: var(--typst-hover);
+}
+.typst-dropdown button:last-child:not(:only-child) {
+	color: #c44848;
+	border-top: 1px solid var(--typst-border);
+	border-radius: 0 0 4px 4px;
+	margin-top: 4px;
+	padding-top: 10px;
+}
+
+.typst-editor-content .tiptap {
+	position: relative;
+	min-height: 320px;
+	padding: 26px 32px 40px;
+	outline: none;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+	caret-color: var(--typst-accent);
+}
+.typst-editor-content .tiptap > :first-child {
+	margin-top: 0;
+}
+.typst-editor-content .tiptap > :last-child {
+	margin-bottom: 0;
+}
+.typst-editor-content .tiptap p {
+	margin: 0.7em 0;
+}
+.typst-editor-content .tiptap h1,
+.typst-editor-content .tiptap h2,
+.typst-editor-content .tiptap h3,
+.typst-editor-content .tiptap h4,
+.typst-editor-content .tiptap h5,
+.typst-editor-content .tiptap h6 {
+	line-height: 1.4;
+	font-weight: 650;
+	margin: 1.35em 0 0.55em;
+	letter-spacing: -0.02em;
+}
+.typst-editor-content .tiptap h1 {
+	font-size: 1.8em;
+}
+.typst-editor-content .tiptap h2 {
+	font-size: 1.5em;
+}
+.typst-editor-content .tiptap h3 {
+	font-size: 1.25em;
+}
+.typst-editor-content .tiptap h4 {
+	font-size: 1.12em;
+}
+.typst-editor-content .tiptap h5,
+.typst-editor-content .tiptap h6 {
+	font-size: 1em;
+}
+.typst-editor-content .tiptap ul,
+.typst-editor-content .tiptap ol {
+	padding-left: 1.6em;
+	margin: 0.8em 0;
+}
+.typst-editor-content .tiptap li p {
+	margin: 0.2em 0;
+}
+.typst-editor-content .tiptap li::marker {
+	color: var(--typst-muted);
+}
+.typst-editor-content .tiptap blockquote {
+	border-left: 3px solid var(--typst-border);
+	padding-left: 1em;
+	margin: 1.2em 0;
+	color: var(--typst-muted);
+}
+.typst-editor-content .tiptap code {
+	background: var(--typst-hover);
+	border-radius: 4px;
+	padding: 0.12em 0.3em;
+	font-size: 0.9em;
+}
+.typst-editor-content .tiptap pre {
+	background: var(--typst-hover);
+	border: 1px solid var(--typst-border);
+	border-radius: 7px;
+	padding: 12px 16px;
+	overflow-x: auto;
+}
+.typst-editor-content .tiptap pre code {
+	background: transparent;
+	padding: 0;
+}
+.typst-editor-content .tiptap a {
+	color: var(--typst-accent);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.typst-editor-content .tiptap hr {
+	border: 0;
+	border-top: 1px solid var(--typst-border);
+	margin: 1.7em 0;
+}
+.typst-editor-content .tiptap img {
+	max-width: 100%;
+	height: auto;
+	border-radius: 5px;
+}
+.typst-editor-content .tiptap[data-empty='true']::before {
+	content: attr(data-placeholder);
+	position: absolute;
+	color: var(--typst-muted);
+	pointer-events: none;
+}
+.typst-editor[data-readonly] .tiptap::before {
+	content: none;
+}
+.typst-editor-content .tiptap ::selection {
+	background: #bbd3ff85;
+}
+
+.typst-editor-content .tableWrapper {
+	overflow-x: auto;
+	margin: 1em 0;
+}
+.typst-editor-content table {
+	border-collapse: collapse;
+	width: 100%;
+	table-layout: fixed;
+	margin: 0;
+	overflow: hidden;
+}
+.typst-editor-content td,
+.typst-editor-content th {
+	border: 1px solid #d9dfe9;
+	min-width: 48px;
+	position: relative;
+	padding: 7px 10px;
+	vertical-align: top;
+	text-align: left;
+}
+.typst-editor-content th {
+	background: var(--typst-hover);
+	font-weight: 600;
+}
+.typst-editor-content td > :first-child,
+.typst-editor-content th > :first-child {
+	margin-top: 0;
+}
+.typst-editor-content td > :last-child,
+.typst-editor-content th > :last-child {
+	margin-bottom: 0;
+}
+.typst-editor-content .selectedCell::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: #5286e426;
+	pointer-events: none;
+	z-index: 1;
+}
+.typst-editor-content .column-resize-handle {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: -2px;
+	width: 4px;
+	background: #7599ed;
+	pointer-events: none;
+}
+.typst-editor-content .resize-cursor {
+	cursor: col-resize;
+}
+
+/* Optional table properties: the same markers work with an ordinary TableKit Editor. */
+.typst-table-style-controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--typst-border, #e5e8ec);
+	background: var(--typst-hover, #f2f4f7);
+	color: var(--typst-text, #242934);
+	font: inherit;
+	line-height: 1.3;
+}
+.typst-table-style-label {
+	font-size: 11px;
+	color: var(--typst-muted, #75808f);
+	white-space: nowrap;
+}
+.typst-table-style-options {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+}
+.typst-table-style-options button {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 5px 7px;
+	border: 1px solid var(--typst-border, #e5e8ec);
+	border-radius: 5px;
+	background: var(--typst-surface, #fff);
+	color: inherit;
+	font: inherit;
+	font-size: 11px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.typst-table-style-options button:hover:not(:disabled) {
+	border-color: var(--typst-accent, #4269c7);
+}
+.typst-table-style-options button[aria-pressed='true'] {
+	color: var(--typst-accent, #4269c7);
+	background: var(--typst-active, #edf2ff);
+	border-color: var(--typst-accent, #4269c7);
+}
+.typst-table-style-options button:focus-visible {
+	outline: 2px solid var(--typst-accent, #4269c7);
+	outline-offset: 2px;
+}
+.typst-table-style-options button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.typst-table-style-sample {
+	display: block;
+	width: 35px;
+	height: 24px;
+	flex-shrink: 0;
+}
+.typst-table-style-hint {
+	font-size: 11px;
+	color: var(--typst-muted, #75808f);
+}
+
+:is(
+	.tableWrapper[data-typst-table-appearance] > table,
+	table[data-typst-table-appearance]:not(.tableWrapper[data-typst-table-appearance] > table)
+) {
+	border-collapse: collapse;
+	border: 0;
+}
+:is(
+		.tableWrapper[data-typst-table-appearance] > table,
+		table[data-typst-table-appearance]:not(.tableWrapper[data-typst-table-appearance] > table)
+	)
+	> :is(thead, tbody, tfoot)
+	> tr
+	> :is(td, th) {
+	border: 0;
+}
+:is(
+		.tableWrapper[data-typst-table-appearance='grid'] > table,
+		.tableWrapper[data-typst-table-appearance='grid-open-sides'] > table,
+		table[data-typst-table-appearance='grid']:not(
+				.tableWrapper[data-typst-table-appearance] > table
+			),
+		table[data-typst-table-appearance='grid-open-sides']:not(
+				.tableWrapper[data-typst-table-appearance] > table
+			)
+	)
+	> :is(thead, tbody, tfoot)
+	> tr
+	> :is(td, th) {
+	border: 1px solid var(--typst-table-line, #8a929e);
+}
+:is(
+		.tableWrapper[data-typst-table-appearance='grid-open-sides'] > table,
+		table[data-typst-table-appearance='grid-open-sides']:not(
+				.tableWrapper[data-typst-table-appearance] > table
+			)
+	)
+	> :is(thead, tbody, tfoot)
+	> tr
+	> .typst-table-edge-left {
+	border-left: 0;
+}
+:is(
+		.tableWrapper[data-typst-table-appearance='grid-open-sides'] > table,
+		table[data-typst-table-appearance='grid-open-sides']:not(
+				.tableWrapper[data-typst-table-appearance] > table
+			)
+	)
+	> :is(thead, tbody, tfoot)
+	> tr
+	> .typst-table-edge-right {
+	border-right: 0;
+}
+:is(
+	.tableWrapper[data-typst-table-appearance='three-line'] > table,
+	table[data-typst-table-appearance='three-line']:not(
+			.tableWrapper[data-typst-table-appearance] > table
+		)
+) {
+	border-top: 2px solid var(--typst-table-line, #59616e);
+	border-bottom: 2px solid var(--typst-table-line, #59616e);
+}
+:is(
+		.tableWrapper[data-typst-table-appearance='three-line'] > table,
+		table[data-typst-table-appearance='three-line']:not(
+				.tableWrapper[data-typst-table-appearance] > table
+			)
+	)
+	> :is(thead, tbody, tfoot)
+	> tr
+	> .typst-table-header-end {
+	border-bottom: 1px solid var(--typst-table-line, #59616e);
+}
+/* Editing guides are scoped to an editable, focused surface and never enter exported HTML. */
+:where([contenteditable='true']:focus-within)
+	.tableWrapper[data-typst-table-appearance='borderless']
+	> table
+	> :is(thead, tbody, tfoot)
+	> tr
+	> :is(td, th) {
+	outline: 1px dashed var(--typst-border, #cbd1db);
+	outline-offset: -1px;
+}
+.typst-data-field {
+	border-radius: 4px;
+	padding: 2px 5px;
+	background: var(--typst-active);
+	color: var(--typst-accent);
+	border: 1px solid var(--typst-border);
+	box-decoration-break: clone;
+	white-space: nowrap;
+}
+.typst-data-field[data-selected] {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 1px;
+}
+.typst-editor-content .tiptap span[style*='color:'] .typst-data-field {
+	color: inherit;
+}
+.typst-editor-content .tiptap span[style*='background-color:'] .typst-data-field {
+	background: transparent;
+}
+.typst-editor-error {
+	margin: 10px;
+	padding: 10px 12px;
+	background: #fff0f0;
+	color: #ad3434;
+	border-radius: 6px;
+	font-size: 12px;
+	white-space: pre-wrap;
+}
+
+.typst-floating-menu {
+	position: fixed;
+	z-index: 1000;
+	max-width: calc(100vw - 16px);
+	box-sizing: border-box;
+	color: var(--typst-text);
+	font-family: inherit;
+	font-size: 14px;
+	line-height: 1.4;
+	background: var(--typst-surface);
+	border: 1px solid var(--typst-border);
+	border-radius: 9px;
+	box-shadow: var(--typst-shadow);
+}
+.typst-bubble {
+	padding: 4px;
+}
+.typst-bubble > [role='toolbar'],
+.typst-context-marks {
+	display: flex;
+	gap: 1px;
+}
+.typst-bubble .typst-tool-button {
+	width: 30px;
+}
+.typst-floating-menu button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.typst-floating-menu button:focus-visible,
+.typst-table-trigger button:focus-visible {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 2px;
+}
+.typst-table-trigger {
+	z-index: 1001;
+}
+.typst-table-trigger button {
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 30px;
+	border: 1px solid var(--typst-border);
+	border-radius: 6px;
+	background: var(--typst-surface);
+	color: var(--typst-muted);
+	box-shadow: 0 2px 7px #15213a12;
+	font: inherit;
+	font-size: 22px;
+	line-height: 1;
+	cursor: pointer;
+}
+.typst-table-trigger button:hover {
+	background: var(--typst-hover);
+	color: var(--typst-accent);
+}
+.typst-table-context {
+	z-index: 1002;
+	min-width: min(290px, calc(100vw - 16px));
+	max-width: min(320px, calc(100vw - 16px));
+	max-height: calc(100dvh - 16px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 6px;
+}
+.typst-table-context-heading {
+	padding: 6px 8px 8px;
+	font-size: 12px;
+	font-weight: 600;
+}
+.typst-table-context .typst-table-style-controls {
+	display: block;
+	padding: 8px;
+	margin-bottom: 5px;
+	border: 0;
+	border-radius: 5px;
+}
+.typst-table-context .typst-table-style-label {
+	display: block;
+	margin-bottom: 6px;
+}
+.typst-table-context .typst-table-style-options {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.typst-table-context .typst-table-style-options button {
+	justify-content: center;
+	min-width: 0;
+	padding: 6px 4px;
+}
+.typst-table-context .typst-table-style-hint {
+	display: block;
+	margin-top: 7px;
+}
+.typst-table-actions {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 2px;
+}
+.typst-table-actions button {
+	min-width: 0;
+	border: 0;
+	border-radius: 4px;
+	padding: 9px 8px;
+	text-align: left;
+	color: var(--typst-text);
+	background: transparent;
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+.typst-table-actions button:hover:not(:disabled),
+.typst-table-actions button:focus-visible {
+	background: var(--typst-hover);
+}
+.typst-table-actions button:last-child {
+	color: #c44848;
+}
+.typst-slash {
+	width: 286px;
+	overflow: hidden;
+}
+.typst-slash-heading,
+.typst-slash-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 9px 12px;
+	color: var(--typst-muted);
+	font-size: 11px;
+	line-height: 1.4;
+}
+.typst-slash-heading {
+	font-weight: 600;
+	letter-spacing: 0.03em;
+}
+.typst-slash-list {
+	max-height: min(310px, 46vh);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 0 5px;
+}
+.typst-slash-list > button {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 8px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--typst-text);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.typst-slash-list > button[aria-selected='true'] {
+	background: var(--typst-active);
+}
+.typst-slash-icon {
+	display: flex;
+	flex: 0 0 32px;
+	justify-content: center;
+	align-items: center;
+	height: 32px;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	background: var(--typst-surface);
+}
+.typst-slash-title {
+	display: block;
+	font-size: 12px;
+	font-weight: 550;
+	line-height: 1.5;
+}
+.typst-slash-description {
+	display: block;
+	font-size: 10px;
+	color: var(--typst-muted);
+	line-height: 1.5;
+}
+.typst-slash-list > button > kbd {
+	margin-left: auto;
+}
+.typst-slash-empty {
+	padding: 16px 10px;
+	color: var(--typst-muted);
+	font-size: 12px;
+}
+.typst-slash-footer {
+	border-top: 1px solid var(--typst-border);
+	margin-top: 5px;
+}
+.typst-slash-footer span {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+.typst-floating-menu kbd {
+	border: 1px solid var(--typst-border);
+	border-radius: 3px;
+	background: var(--typst-surface);
+	color: var(--typst-muted);
+	padding: 1px 4px;
+	font: inherit;
+	font-size: 10px;
+	font-weight: 400;
+}
+
+@media (max-width: 600px) {
+	.typst-toolbar {
+		padding: 7px 6px;
+		gap: 5px 0;
+	}
+	.typst-tool-group {
+		padding: 0 4px;
+	}
+	.typst-tool-button {
+		padding: 5px;
+		min-width: 28px;
+		min-height: 30px;
+	}
+	.typst-editor-content .tiptap {
+		padding: 20px 18px 32px;
+		min-height: 280px;
+	}
+	.typst-tool-group-custom {
+		border-right: 0;
+	}
+}
+
+@media (prefers-color-scheme: dark) {
+	.typst-editor,
+	.typst-floating-menu,
+	.typst-table-trigger {
+		--typst-text: #e4e4e7;
+		--typst-muted: #a1a1aa;
+		--typst-border: #3f3f46;
+		--typst-surface: #202023;
+		--typst-hover: #2d2d32;
+		--typst-accent: #d4d4d8;
+		--typst-active: #3f3f46;
+		--typst-shadow: 0 6px 28px #0004;
+	}
+	.typst-editor-content td,
+	.typst-editor-content th {
+		border-color: #495366;
+	}
+	.typst-editor-content .tiptap blockquote {
+		color: #aab9d2;
+		border-left-color: #62789c;
+	}
+	.typst-editor-error {
+		background: #4d282d;
+		color: #ffc0c0;
+	}
+}
+
+/* Optional content blocks use the same controls as the ordinary text editor. */
+.typst-content-block {
+	margin: 1em 0;
+	padding: 10px 12px;
+	border: 1px solid var(--typst-border);
+	border-radius: 8px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	white-space: normal;
+}
+.typst-content-block[data-selected='true'] {
+	border-color: var(--typst-accent);
+	box-shadow: 0 0 0 1px var(--typst-accent);
+}
+.typst-content-block-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 6px 12px;
+	font-size: 13px;
+	font-weight: 600;
+}
+.typst-block-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.typst-block-title[data-drag-handle] {
+	cursor: grab;
+}
+.typst-block-grip {
+	color: var(--typst-muted);
+}
+.typst-block-menu-trigger {
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--typst-muted);
+	font: inherit;
+	font-size: 18px;
+	width: 28px;
+	height: 28px;
+	cursor: pointer;
+}
+.typst-block-menu-trigger:hover:not(:disabled) {
+	background: var(--typst-hover);
+}
+.typst-block-menu {
+	position: fixed;
+	inset: auto;
+	margin: 0;
+	box-sizing: border-box;
+	width: 160px;
+	padding: 4px;
+	border: 1px solid var(--typst-border);
+	border-radius: 8px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	box-shadow: var(--typst-shadow);
+}
+.typst-block-menu button {
+	display: block;
+	width: 100%;
+	padding: 6px 10px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+}
+.typst-block-menu button:hover:not(:disabled),
+.typst-block-menu button:focus-visible {
+	background: var(--typst-hover);
+}
+.typst-block-data {
+	margin: 10px 0 0;
+}
+.typst-block-data dt {
+	color: var(--typst-muted);
+}
+.typst-block-data dd {
+	margin: 4px 0 10px;
+}
+.typst-block-data pre {
+	margin: 0;
+	padding: 8px;
+	max-height: 180px;
+	overflow: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: var(--typst-hover);
+	border-radius: 5px;
+	font-size: 12px;
+}
+.typst-block-settings button,
+.typst-select {
+	min-height: 28px;
+	padding: 5px 8px;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	font: inherit;
+	font-size: 12px;
+	line-height: 1.4;
+	cursor: pointer;
+}
+.typst-block-settings button:hover:not(:disabled),
+.typst-select:hover:not(:disabled) {
+	background: var(--typst-hover);
+}
+.typst-select {
+	max-width: 100%;
+}
+.typst-block-settings {
+	margin-top: 10px;
+	border-top: 1px solid var(--typst-border);
+	padding-top: 8px;
+	font-size: 12px;
+}
+.typst-block-settings summary {
+	color: var(--typst-muted);
+	cursor: pointer;
+}
+.typst-block-settings summary:focus-visible,
+.typst-block-settings textarea:focus-visible {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 2px;
+}
+.typst-block-settings textarea {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 120px;
+	max-height: 360px;
+	margin: 8px 0;
+	padding: 10px;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	background: var(--typst-hover);
+	color: var(--typst-text);
+	font:
+		12px/1.6 ui-monospace,
+		monospace;
+	white-space: pre;
+	resize: vertical;
+}
+.typst-block-error {
+	margin: 8px 0 0;
+	color: #c44848;
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.typst-context-marks {
+	padding: 4px 6px 8px;
+	margin-bottom: 4px;
+	border-bottom: 1px solid var(--typst-border);
+}

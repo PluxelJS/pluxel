@@ -50,7 +50,7 @@ it('preserves all workspace/document behaviors through the shared service and re
 		const project = await studio.createProject({ name: 'Financial workspace' })
 		expect(await studio.listProjects()).toEqual(expect.arrayContaining([project]))
 		const tree = await studio.getTree({ projectId: project.id })
-		expect(tree.documents).toHaveLength(3)
+		expect(tree.documents).toHaveLength(5)
 		const search = await studio.search({ projectId: project.id, query: '毛利率', mode: 'content' })
 		expect(search.matches).toEqual(
 			expect.arrayContaining([
@@ -71,15 +71,20 @@ it('preserves all workspace/document behaviors through the shared service and re
 		const target = { projectId: project.id, entry }
 		const description = await studio.describeDocument(target)
 		expect(description.fields.length).toBeGreaterThan(0)
-		const first = await studio.compile({ ...target, data: {} })
+		const first = await studio.compile({ clientRevision: 0, ...target, data: {} })
 		expect(first).not.toHaveProperty('fields')
 		expect(first).not.toHaveProperty('preview')
 		const vector = await studio.getPreview({ ...target, revision: first.revision })
 		expect(vector.preview.data).toBeInstanceOf(Uint8Array)
 		expect(vector.preview.data.byteLength).toBeGreaterThan(100)
 		expect(first.sourceRevision).toBe(tree.revision)
-		await studio.setInput({ ...target, data: { header: { companyName: 'Saved input' } } })
+		await studio.setInput({
+			...target,
+			expectedVersion: null,
+			data: { header: { companyName: 'Saved input' } },
+		})
 		const next = await studio.compile({
+			clientRevision: 0,
 			...target,
 			data: { header: { companyName: 'Explicit input' } },
 		})
@@ -94,14 +99,14 @@ it('preserves all workspace/document behaviors through the shared service and re
 		const layoutPath = '报表/银行询证函/排版.typ'
 		const layout = await studio.readFile({ projectId: project.id, path: layoutPath })
 		await writeFile(join(project.root, layoutPath), layout.content + '\n// External layout edit\n')
-		const typstUpdated = await studio.compile({ ...target, data: {} })
+		const typstUpdated = await studio.compile({ clientRevision: 0, ...target, data: {} })
 		const module = await studio.readFile({ projectId: project.id, path: entry })
 		await writeFile(join(project.root, entry), module.content + '\n// External TS edit\n')
-		const tsUpdated = await studio.compile({ ...target, data: {} })
+		const tsUpdated = await studio.compile({ clientRevision: 0, ...target, data: {} })
 		const themePath = '共享/主题/财务函件.typ'
 		const theme = await studio.readFile({ projectId: project.id, path: themePath })
 		await writeFile(join(project.root, themePath), theme.content + '\n// Shared import edit\n')
-		const sharedUpdated = await studio.compile({ ...target, data: {} })
+		const sharedUpdated = await studio.compile({ clientRevision: 0, ...target, data: {} })
 		const latestVector = await studio.getPreview({ ...target, revision: sharedUpdated.revision })
 		expect(latestVector.preview.sessionId).toBe(vector.preview.sessionId)
 		expect(clients.size).toBe(1)
@@ -133,7 +138,11 @@ it('preserves all workspace/document behaviors through the shared service and re
 		const pdf = await studio.exportPdf({ ...target, revision: sharedUpdated.revision })
 		const pdfBytes = await readFile(pdf.path)
 		expect(pdfBytes.subarray(0, 5).toString()).toBe('%PDF-')
-		await studio.setInput({ ...target, data: { header: { companyName: 'Changed stored input' } } })
+		await studio.setInput({
+			...target,
+			expectedVersion: savedInput.storageVersion,
+			data: { header: { companyName: 'Changed stored input' } },
+		})
 		const savedIndependent = await studio.renderPage({
 			...target,
 			revision: sharedUpdated.revision,
@@ -146,7 +155,7 @@ it('preserves all workspace/document behaviors through the shared service and re
 			code: 'REVISION_CONFLICT',
 		})
 		const analysis = { projectId: project.id, entry: '报表/季度经营分析/季度经营分析.ts' }
-		const compiled = await studio.compile({ ...analysis, data: {} })
+		const compiled = await studio.compile({ clientRevision: 0, ...analysis, data: {} })
 		expect(compiled.data.projects).toHaveLength(36)
 		expect(compiled.pageCount).toBeGreaterThan(2)
 		expect(compiled.outline).toEqual(
@@ -275,7 +284,7 @@ it('preserves all workspace/document behaviors through the shared service and re
 			),
 		).toContain('application/pdf')
 		// Explicit input does not mutate persistence; invalid entry/schema remains editable.
-		await expect(studio.compile({ ...target } as never)).rejects.toMatchObject({
+		await expect(studio.compile({ clientRevision: 0, ...target } as never)).rejects.toMatchObject({
 			code: 'INVALID_INPUT',
 		})
 		const currentModule = await studio.readFile({ projectId: project.id, path: entry })
@@ -288,7 +297,7 @@ it('preserves all workspace/document behaviors through the shared service and re
 				'schema: v.object({ required: v.string(),',
 			),
 		})
-		await expect(studio.compile({ ...target, data: {} })).rejects.toMatchObject({
+		await expect(studio.compile({ clientRevision: 0, ...target, data: {} })).rejects.toMatchObject({
 			code: 'INVALID_INPUT',
 			issues: expect.arrayContaining([expect.objectContaining({ path: ['required'] })]),
 		})
@@ -301,7 +310,7 @@ it('preserves all workspace/document behaviors through the shared service and re
 		).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
 		await studio.createReport({ projectId: project.id, path: 'plain' })
 		const plain = { projectId: project.id, entry: 'plain/plain.ts' }
-		const clean = await studio.compile({ ...plain, data: {} })
+		const clean = await studio.compile({ clientRevision: 0, ...plain, data: {} })
 		const cleanVector = await studio.getPreview({ ...plain, revision: clean.revision })
 		const original = await studio.readFile({ projectId: project.id, path: 'plain/排版.typ' })
 		const broken = await studio.writeFile({
@@ -310,12 +319,12 @@ it('preserves all workspace/document behaviors through the shared service and re
 			expectedVersion: original.version,
 			content: '#let broken = (',
 		})
-		await expect(studio.compile({ ...plain, data: {} })).rejects.toMatchObject({
+		await expect(studio.compile({ clientRevision: 0, ...plain, data: {} })).rejects.toMatchObject({
 			code: 'COMPILE_FAILED',
 			diagnostics: expect.arrayContaining([expect.objectContaining({ path: 'plain/排版.typ' })]),
 		})
 		await studio.writeFile({ projectId: project.id, ...original, expectedVersion: broken.version })
-		const repaired = await studio.compile({ ...plain, data: {} })
+		const repaired = await studio.compile({ clientRevision: 0, ...plain, data: {} })
 		expect(repaired.revision).not.toBe(clean.revision)
 		const repairedPreview = await studio.getPreview({ ...plain, revision: repaired.revision })
 		expect(repairedPreview.preview.sessionId).toBe(cleanVector.preview.sessionId)
@@ -326,15 +335,20 @@ it('preserves all workspace/document behaviors through the shared service and re
 			expectedVersion: config.version,
 			content: JSON.stringify({ ...JSON.parse(config.content), fonts: [] }),
 		})
-		const noFonts = await studio.compile({ ...plain, data: {} })
+		const noFonts = await studio.compile({ clientRevision: 0, ...plain, data: {} })
 		const noFontsVector = await studio.getPreview({ ...plain, revision: noFonts.revision })
 		expect(noFontsVector.preview.sessionId).not.toBe(cleanVector.preview.sessionId)
 		for (let index = 0; index < 4; index++) {
 			const folder = `extra-${index}`
 			await studio.createReport({ projectId: project.id, path: folder })
-			await studio.compile({ projectId: project.id, entry: `${folder}/${folder}.ts`, data: {} })
+			await studio.compile({
+				clientRevision: 0,
+				projectId: project.id,
+				entry: `${folder}/${folder}.ts`,
+				data: {},
+			})
 		}
-		const reopened = await studio.compile({ ...plain, data: {} })
+		const reopened = await studio.compile({ clientRevision: 0, ...plain, data: {} })
 		const reopenedPreview = await studio.getPreview({ ...plain, revision: reopened.revision })
 		expect(reopenedPreview.preview.sessionId).not.toBe(noFontsVector.preview.sessionId)
 		const zip = await studio.exportWorkspace({ projectId: project.id })
@@ -344,7 +358,7 @@ it('preserves all workspace/document behaviors through the shared service and re
 		await expect(
 			studio.readFile({ projectId: project.id, path: '../outside.txt' }),
 		).rejects.toThrow('Invalid workspace path')
-		const compiling = studio.compile({ ...plain, data: {} }),
+		const compiling = studio.compile({ clientRevision: 0, ...plain, data: {} }),
 			forgetting = studio.forgetProject({ projectId: project.id })
 		await Promise.allSettled([compiling, forgetting])
 		await forgetting

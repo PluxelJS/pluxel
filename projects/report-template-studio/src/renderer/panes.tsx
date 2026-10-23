@@ -17,6 +17,7 @@ import { Preview } from './preview'
 import { api } from './api'
 import { useWorkspace } from './workspace-context'
 import { editorLifecycle } from './editor-lifecycle'
+import { BodyEditor } from './body-editor'
 
 function SaveStatus({
 	saving,
@@ -152,9 +153,16 @@ export function FormPane({ entry }: { entry: string }) {
 	const workspace = useWorkspace()
 	const [mode, setMode] = useState('form')
 	const [codeOpened, setCodeOpened] = useState(false)
+	const [bodyOpened, setBodyOpened] = useState(false)
 	useEffect(() => workspace.retainDocument(entry), [workspace, entry])
 	const document = workspace.documents.get(entry)
 	const file = workspace.files.get(entry)
+	useEffect(() => {
+		if (workspace.regionLocation?.entry === entry) {
+			setBodyOpened(true)
+			setMode('body')
+		}
+	}, [entry, workspace.regionLocation])
 	useWorkbenchContentLifecycle(
 		useMemo(() => editorLifecycle(workspace, entry, 'form'), [workspace, entry]),
 	)
@@ -179,9 +187,13 @@ export function FormPane({ entry }: { entry: string }) {
 					onChange={(value) => {
 						setMode(value)
 						if (value === 'code') setCodeOpened(true)
+						if (value === 'body') setBodyOpened(true)
 					}}
 					data={[
 						{ value: 'form', label: '表单' },
+						...(document?.inputLoaded && document.description?.editor
+							? [{ value: 'body', label: '正文' }]
+							: []),
 						{ value: 'code', label: '入口代码' },
 					]}
 				/>
@@ -189,12 +201,19 @@ export function FormPane({ entry }: { entry: string }) {
 					<SaveStatus
 						saving={mode === 'code' ? file?.saving : document?.inputSaving}
 						dirty={mode === 'code' ? file?.dirty : document?.inputDirty}
-						error={mode === 'code' ? file?.error : document?.inputError}
+						error={
+							mode === 'code'
+								? file?.error
+								: document?.inputConflict
+									? '保存冲突'
+									: document?.inputError
+						}
 					/>
 					{mode === 'code' ? (
 						<FileActions path={entry} />
 					) : (
-						document?.inputError && (
+						document?.inputError &&
+						!document.inputConflict && (
 							<Tooltip label="重试保存">
 								<ActionIcon
 									variant="subtle"
@@ -208,17 +227,54 @@ export function FormPane({ entry }: { entry: string }) {
 					)}
 				</Group>
 			</Group>
-			{mode === 'form' && (document?.error || document?.inputError) && (
+			{mode !== 'code' && document?.inputConflict && (
+				<Alert color="orange" title="填写数据与正文存在保存冲突" style={{ maxHeight: '50%' }}>
+					<Text size="sm">本地草稿已保留。检查两个版本后，选择要保留的内容。</Text>
+					<details>
+						<summary>本地草稿</summary>
+						<pre>{JSON.stringify({ data: document.data, editor: document.editor }, null, 2)}</pre>
+					</details>
+					<details>
+						<summary>冲突时读取的已保存版本</summary>
+						<pre>
+							{JSON.stringify(
+								{ data: document.inputConflict.data, editor: document.inputConflict.editor },
+								null,
+								2,
+							)}
+						</pre>
+					</details>
+					<Group mt="sm">
+						<Button
+							size="xs"
+							loading={document.inputSaving}
+							onClick={() => void workspace.resolveInputConflict(entry, 'local')}
+						>
+							保留本地并覆盖已保存版本
+						</Button>
+						<Button
+							size="xs"
+							variant="default"
+							disabled={document.inputSaving}
+							onClick={() => void workspace.resolveInputConflict(entry, 'saved')}
+						>
+							载入已保存版本，放弃本地修改
+						</Button>
+					</Group>
+				</Alert>
+			)}
+			{mode !== 'code' && !document?.inputConflict && (document?.error || document?.inputError) && (
 				<Alert color="red" title={document?.inputError ? '填写数据尚未保存' : '报表需要修复'}>
 					{document?.inputError ?? document?.error}
 				</Alert>
 			)}
 			<div className="form-scroll" style={{ display: mode === 'form' ? undefined : 'none' }}>
-				{document?.fields.length ? (
+				{document?.inputLoaded && document.fields.length > 0 ? (
 					<DataForm
 						key={JSON.stringify(document.fields)}
 						fields={document.fields}
 						data={document.data}
+						parsedData={document.result?.data}
 						onChange={(next) => {
 							void workspace.writeData(entry, next).catch((cause) => {
 								workspace.error = String(cause)
@@ -232,6 +288,22 @@ export function FormPane({ entry }: { entry: string }) {
 					</Text>
 				)}
 			</div>
+			{bodyOpened && document?.description?.editor && (
+				<div
+					style={{
+						display: mode === 'body' ? undefined : 'none',
+						flex: 1,
+						minHeight: 0,
+						overflow: 'hidden',
+					}}
+				>
+					<BodyEditor
+						key={`${entry}:${document.inputEpoch ?? 0}`}
+						entry={entry}
+						description={document.description.editor}
+					/>
+				</div>
+			)}
 			{codeOpened && (
 				<div
 					className="workspace-pane"
@@ -253,13 +325,24 @@ export function PreviewPane({ entry }: { entry: string }) {
 		workspace.tree?.documents.find((item) => item.entry === entry)?.name ??
 		entry.split('/').at(-1)?.replace(/\.ts$/, '') ??
 		entry
-	const dirty = [...workspace.files.values()].some((file) => file.dirty)
+	const dirty = Object.keys(document?.preview?.sourceVersions ?? {}).some(
+		(path) => workspace.files.get(path)?.dirty,
+	)
 	const exportPdf = async () => {
-		if (!document?.result) return
+		if (!document?.result || dirty) return
+		if (document.result.clientRevision !== (document.inputToken ?? 0))
+			await workspace.compile(entry)
+		const current = workspace.documents.get(entry)
+		if (
+			!current?.result ||
+			current.error ||
+			current.result.clientRevision !== (current.inputToken ?? 0)
+		)
+			return
 		const artifact = await api.exportPdf({
 			projectId: workspace.project.id,
 			entry,
-			revision: document.result.revision,
+			revision: current.result.revision,
 		})
 		await window.studio.saveArtifact({
 			suggestedName: `${
@@ -293,14 +376,7 @@ export function PreviewPane({ entry }: { entry: string }) {
 						size="xs"
 						variant="light"
 						leftSection={<IconDownload size={15} />}
-						disabled={
-							!document?.result ||
-							document.busy ||
-							document.inputDirty ||
-							document.inputSaving ||
-							Boolean(document.error) ||
-							dirty
-						}
+						disabled={!document?.result || document.busy || Boolean(document.error) || dirty}
 						onClick={() =>
 							void exportPdf().catch((cause) => {
 								workspace.error = String(cause)
@@ -312,6 +388,16 @@ export function PreviewPane({ entry }: { entry: string }) {
 					</Button>
 				</Group>
 			</Group>
+			{dirty && (
+				<Alert color="orange">
+					模板源码尚未保存，预览显示已保存的模板。保存源码后可导航或导出当前草稿。
+				</Alert>
+			)}
+			{document?.result && document.result.clientRevision !== (document.inputToken ?? 0) && (
+				<Text size="xs" c="dimmed" px="md">
+					正文或数据已改变，正在准备当前草稿的预览。
+				</Text>
+			)}
 			{document?.error && (
 				<Alert
 					color="red"

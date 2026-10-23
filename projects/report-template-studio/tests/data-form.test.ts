@@ -64,7 +64,7 @@ it.each<JsonObject>([{}, { rows: [] }, { rows: [{ label: 'existing' }] }])(
 				},
 			}),
 		)
-		capture.change!({ formApi: { state: { values: { title: 'after' } } } })
+		capture.change!({ fieldApi: { name: 'title', state: { value: 'after' } } })
 		expect(emitted).toStrictEqual({ title: 'after', ...table })
 		expect(inputData(emitted)).toStrictEqual(emitted)
 	},

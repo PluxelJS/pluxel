@@ -21,13 +21,14 @@ import type {
 	PageArtifact,
 	PdfArtifact,
 	JsonObject,
+	DocumentInput,
 } from '../shared/contracts.js'
 
 export interface WorkspaceAIOptions extends WorkspaceBashStore {
 	root: string
 	getProject(id: string): Promise<ProjectSummary>
 	compile(input: CompileRequest): Promise<CompileResult>
-	getInput(input: DocumentTarget): Promise<{ data: JsonObject }>
+	getInput(input: DocumentTarget): Promise<DocumentInput>
 	getPreview(input: RevisionTarget): Promise<PreviewResult>
 	renderPage(input: RenderPageRequest): Promise<PageArtifact>
 	exportPdf(input: RevisionTarget): Promise<PdfArtifact>
@@ -208,11 +209,18 @@ export function createWorkspaceTools(
 				try {
 					const target = { projectId: project.id, entry: path(input.entry) }
 					let data: JsonObject
+					let editor: DocumentInput['editor']
 					if (input.input.kind === 'stored') {
 						const stored = await options.getInput(target)
 						data = stored.data
+						editor = stored.editor
 					} else data = input.input.data as JsonObject
-					result = await options.compile({ ...target, data })
+					result = await options.compile({
+						...target,
+						data,
+						clientRevision: 0,
+						...(editor ? { editor } : {}),
+					})
 				} catch (error) {
 					check()
 					// Pi serializes thrown tool errors by message. Preserve actual source

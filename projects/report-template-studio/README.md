@@ -65,11 +65,11 @@ vp run @report-template-studio/app#package
 
 ## 使用
 
-首页提供“财务报表 Starter”：填项目名称并新建，即复制默认字体、共享主题和三个带演示默认值的财务文档，打开后自动显示第一个文档的表单与预览；也可打开已有本地目录、从最近列表切换项目，或导入 ZIP。应用创建的项目位于 Electron `userData/studio` 下；打开已有目录直接编辑原文件。“移除记录”只删除最近列表记录。
+首页提供“财务报表 Starter”：填项目名称并新建，即复制默认字体、共享主题、三个财务文档和区域编辑样例“客户服务报告”，打开后自动显示第一个文档的表单与预览；也可打开已有本地目录、从最近列表切换项目，或导入 ZIP。应用创建的项目位于 Electron `userData/studio` 下；打开已有目录直接编辑原文件。“移除记录”只删除最近列表记录。
 
 `dev` 和 `start` 使用同一个 Electron 系统应用数据目录，开发构建只更新 `.studio-dev/`、生产构建只更新 `dist/`，不会清空项目。项目文件位于 `userData/studio/workspaces/projects/`，最近列表为 `userData/studio/workspaces/recent.json`，填写数据为 `userData/studio/inputs/`。这里的 `userData` 由 Electron 按操作系统确定；在 Flatpak 中属于该应用沙箱的配置目录。重启后从首页“最近项目”打开即可继续。只有桌面自动测试才显式使用临时 profile；正常启动不要传每次变化的 `--user-data-dir`。
 
-左侧文件树支持创建目录/文件、重命名/移动、删除和资产导入。文件和目录的右键菜单提供管理操作，键盘也可操作菜单。报表目录及其同名 TypeScript 入口有专用标记；点击报表打开填写表单和右侧预览，左侧可切换“表单 / 代码”。普通文本文件打开源码标签页；`.typ` 是源码和共享模块，不作为独立预览入口。标签页可以拖动分屏。布局使用工作区中的 [Worksplit](../../vendor/split-like-vscode/README.md)，与 Pluxel Workbench 共用同一份源码和依赖图。其他组件使用 Mantine。
+左侧文件树支持创建目录/文件、重命名/移动、删除和资产导入。文件和目录的右键菜单提供管理操作，键盘也可操作菜单。报表目录及其同名 TypeScript 入口有专用标记；点击报表打开填写表单和右侧预览，左侧可切换“表单 / 入口代码”，启用区域配置后增加“正文”。普通文本文件打开源码标签页；`.typ` 是源码和共享模块，不作为独立预览入口。标签页可以拖动分屏。布局使用工作区中的 [Worksplit](../../vendor/split-like-vscode/README.md)，与 Pluxel Workbench 共用同一份源码和依赖图。其他组件使用 Mantine。
 
 分组使用 FlexLayout 原生关闭按钮。关闭会先保存相关草稿；保存冲突或失败时保留标签与草稿。切换项目、重命名和删除路径使用一次批量关闭检查，任一标签拒绝就不删除任何标签。关闭最后一个标签后，多余空分屏自动回收；再次打开报表按当前布局选择编辑组，并在需要时创建右侧预览组，不依赖已删除分组的固定 ID。
 
@@ -89,9 +89,33 @@ vp run @report-template-studio/app#package
 
 预览工具栏显示当前页和总页数，支持上一页、下一页、直接输入页码，以及可折叠的标题目录和页面列表；标题位置直接来自本次编译，滚动时同步当前页和标题。
 
-可见的 `.typ` 编辑器与相应预览自然联动：普通单击源码定位并短暂高亮排版位置，单击预览打开对应源码并选择范围；共享 import 文件同样支持。拖动选择、键盘输入和程序定位不会反向触发。多个可见文档复用同一源文件时使用最近配对的预览，不能唯一配对时不广播。联动校验本次编译的已保存文件版本；草稿、编译中或失败时保留预览但停用过期定位。TypeScript 入口负责 schema 与数据生成，预览跳转目标由 Typst 源码 span 提供。
+可见的 `.typ` 编辑器与相应预览自然联动：普通单击源码定位并短暂高亮排版位置，单击预览打开对应源码并选择范围；共享 import 文件同样支持。拖动选择、键盘输入和程序定位不会反向触发。多个可见文档复用同一源文件时使用最近配对的预览，不能唯一配对时不广播。联动校验本次编译的已保存文件版本和客户端 data/regions 修订；匹配的未保存正文可导航，未保存源码、编译中或失败时保留画面并停用过期定位。TypeScript 入口负责 schema 与数据生成，预览跳转目标由 Typst 源码 span 提供。通用预览/命中算法由公开 `/browser` 入口拥有，Monaco、语言服务、双 worker 和 Vite 集成仍由 Studio 持有。
+
+### 正文区域
+
+在报表入口旁放置同名 `<name>.editor.json` 显式启用正文，例如 `报表/客户服务报告/客户服务报告.editor.json`。配置包含 SDK 的 `regions`、`fields`，以及每个区域的新建原生 JSON `defaults`；没有该文件仍走原有源码报表，坏配置明确报错。已有填写数据的报表新增区域配置后，在“正文”选择“初始化正文”，明确采用当前模板的区域 defaults，保留原始填写数据并按原存储版本保存；不会在打开时隐式补写。完整字段和扩展规则见 [Typst 区域编辑](../../docs/plugins/rendering/typst-editor.md)，可直接查看 Starter 生成的样例。
+
+“客户服务报告”提供固定页眉/条款、服务概况和后续建议两个区域，包含合并表格、多段单元格、客户字段与消费方提示块。切区保留原生 Editor/history，在“表单”修改客户数据只更新字段显示和编译输入；通用正文界面不写入样例客户数据。工具栏与自定义按钮直接调用原生命令，仍受区域规则校验。固定模板不进入可编辑 JSON；模板作者可单独编辑源码。生成位置跳转到正文区域，不打开 `_editor/` 文件。
+
+正文使用共享 React 编辑界面与公开样式：工具栏按历史、段落类型、文字格式和插入分组；“段落样式”可直接将当前段落改为六级标题、引用或代码块。选中文字不会自动弹层，文字右键或 `Shift+F10` / 菜单键主动打开官方 BubbleMenu 格式条；右键选区内保留范围，选区外先移动光标。只读、IME、源码输入和卡片数据文本保留原生菜单。输入 `/` 可搜索标题、列表、表格、数据字段和“提示块”，用方向键选择、Enter 插入、Escape 关闭。表格内右键、同样的快捷键或表边按钮打开就近菜单；文本选区显示“单元格文字格式”，同面板提供表格样式、增删行列、合并和拆分，结构操作仍调用官方 TableKit 命令。可选 Typst 样式提供跟随模板、网格、去掉左右外框的网格、三线表和无边框，不增加顶部样式行。`.editor.json` 的 `table` 可设置 `defaultStyle` 和 `allowedStyles`；完整约束见 [表格样式](../../docs/plugins/rendering/typst-editor.md#可选表格样式)。
+
+模板作者可在 `.editor.json` 的 `templates` 数组注册 `{ id, label, source, defaults? }`，其中 `defaults` 是新实例的 JSON 参数对象。Studio 在前后端使用同一组公共 `TypstTemplateBlock` 定义；正文中的实例保存稳定 ID、模板 ID、`props` 和 `dataPath`，组件源码读取 `props` 与绑定后的 `data`，`dataPath: []` 绑定整份已解析输入。模板定义属于模板修订，实例顺序与参数属于正文草稿。
+
+工具栏插入器和简洁卡片直接消费 SDK：拖动名称旁的原生手柄调整顺序，点击名称或空白处选中组件并定位预览。“块操作”按钮或右键菜单提供“复制一份”和“删除”，支持原生撤销；复制只在当前文档内生成新实例，不支持经系统剪贴板恢复组件。“参数与数据”只读显示实例参数和当前绑定数据，不将展示数据写回正文；需要业务参数表单时由宿主组合官方 `updateAttributes` 等命令。控件操作和数据文本选择不触发定位。
+
+只有显式设置 `sourceBlocks: true` 才启用 `TypstSource`，允许用户在正文中插入并现场编写 Typst。在“编辑 Typst 源码”修改后，点击“应用组件修改”才提交一次可撤销的草稿变化。省略或设为 `false` 不安装源码节点；卸载能力后含对应节点的旧草稿会明确报错，不隐式删除。源码块由同一编译会话处理，失败保留源码与上一份成功预览；预览定位选中对应组件，源码块还传递行列位置。Monaco 仍只属于 Studio 的独立源码面板，SDK 组件不依赖它。
+
+独立的“排版扩展”行提供字体、字号、文字颜色与背景颜色，字体选项使用工作区随附的 Noto Serif CJK SC 和 Liberation Serif；色板也接受自定义十六进制色值。“清除排版”保留加粗等基础格式，每次操作支持原生撤销。这些格式保存在正文 JSON 并进入真实 Typst/PDF；Markdown 无法完整保留，带排版格式的区域不能被有损候选整区覆盖。
+
+Markdown 候选在独立折叠区暂存，可选择“整个区域”或“当前选中顶层块”。后者把原生选区展开为完整顶层块；光标在段落内时只改该段，范围外的图表、源码块、复杂表格保持原样。“开始候选”固定区域、范围与当前正文、数据及源码/资源修订，“接纳候选”重新检查后一次提交，可用一次撤销恢复。目标块本身必须能无损往返 Markdown；旧版本、未授权内容和有损替换均保留原文并显示错误，不自动重定位旧范围。Markdown 的 `typst` 代码围栏仍是代码展示，不会执行。不需要模型调用即可验收这条路径。
+
+正文 JSON 与原始表单输入保存在同一应用草稿中，坏草稿保留原始 JSON，模板修订不匹配时需显式校验并采用当前模板。区域生成只进入文档私有临时树，不写回模板工作区或共享源码缓存。连续变化只保留一个在途编译和最新待处理快照；旧结果不发布，失败保留上一份预览。导出当前草稿会先取得匹配的成功修订；未保存源码不导出旧画面。
 
 默认提供银行询证函、银行账户余额汇总表和季度经营分析。季度经营分析演示本地 SVG 图片、盈利公式、跨页重复表头、页眉页码和 36 行项目明细；静态图片随工作区导出，数值及明细由 schema 默认值或外部业务数据提供。
+
+新建工作区还包含 **图表分析报告**：`报表/图表分析报告/图表分析报告.ts` 定义公司、期间、分析负责人和渠道收入 schema；`.editor.json` 将 KPI、实际/目标柱图及并置明细表定义为“渠道收入与目标”模板组件。组件实例位于分析区的原生 JSON 中，可移动到解读段落前后、复制或删除；`排版.typ` 只负责外层页面和固定口径。示例还包含无边框表、三线表、字段绑定与一个可编辑的 Typst 源码注释块。改动表单数据只更新图表和字段，不覆盖正文；图表布局由组件的 Typst 源码负责，编辑器不拥有另一套图表 AST。
+
+目录中的 `示例输入.json` 是供外部调用者显式读取、传入 `setInput` / `compile` 的原始数据样本，不会因文件存在而自动覆盖表单。通过下面的后端 API 使用时，先 `describeDocument` 取得 editor 描述并显式建立草稿，再把 JSON 作为 `data` 提交；示范与真实 native/PDF 验证见 [chart-report.test.ts](./tests/chart-report.test.ts)。该 seed 仅用于新工作区，现有项目不会被启动迁移改写。无桌面体验及外部 JSON / `.typ` 文件导入见 [独立浏览器示例](../../plugins/render/typst/tests/consumer/README.md#external-data-and-chart-report-example)。
 
 ## 文件契约
 
@@ -155,11 +179,11 @@ export default defineTypstDocument({
 
 模板的可移植契约是 **真实源码/资产 + 外部输入 → 虚拟文件系统 → Typst**。同名 TypeScript 入口、`.typ`、共享主题、字体及许可证属于工作区；表单填写结果和业务系统查询结果属于调用方。`/inputs/` 是编译时生成的虚拟命名空间，不是应该创建在模板目录中的数据文件夹。
 
-Studio 的表单输入保存在应用配置目录，按项目和文档入口区分。关闭重开保留填写结果，导入 ZIP 得到新的项目与 schema 默认值。`studio.json` 不声明 `data` 路径。确有静态参考数据（例如固定的标准附录）时，它是普通资产；可变的业务数据不应借此混入模板。
+Studio 的原始表单输入和可选区域 JSON 保存在应用配置目录的同一草稿，按项目和文档入口区分。关闭重开保留填写结果，导入 ZIP 得到新的项目与 schema 默认值。schema defaults/transform 的解析输出只属于编译结果，不反写原始输入；表单缺省显示也不把整份派生值保存。草稿以 `storageVersion` 条件写入，冲突保留本地内容。`studio.json` 不声明 `data` 路径。确有静态参考数据（例如固定的标准附录）时，它是普通资产；可变的业务数据不应借此混入模板。
 
 schema 是文档的数据契约，不限定输入来源：API、数据库、批处理和 Studio 表单都可以提供数据。外部系统不需要表单 UI；使用原生 Valibot 元数据的入口也不依赖 `valibot-form`。默认值仅适合合理缺省或演示；真实业务的关键必填字段应保持必填，缺失时报告校验错误。
 
-外部程序推荐连接已经运行的 Studio，复用同一份求值器和原生编译会话，见下文“程序接入”。`compile({ projectId, entry, data })` 的 `data` 必填：`{}` 使用默认值，显式空字符串、0、false、null 保留其 schema 校验语义。对象递归补齐缺失键；调用方数组决定长度，各已提供项仍合并同一索引默认值，空数组保持为空。编译不读写保存的表单输入；需要保存值时先 `getInput`，再显式传 `data`。`describeDocument` 单独返回 fields/defaults，不运行 `createFiles`，非法表单值不会阻止字段继续显示。业务求值实现由 [`compiler.ts`](src/backend/compiler.ts) 和 [`documents.ts`](src/backend/documents.ts) 拥有。
+外部程序推荐连接已经运行的 Studio，复用同一份求值器和原生编译会话，见下文“程序接入”。`compile({ projectId, entry, data, clientRevision, editor? })` 的 `data` 和非负整数 `clientRevision` 必填：`{}` 使用默认值，显式空字符串、0、false、null 保留其 schema 校验语义。对象递归补齐缺失键；调用方数组决定长度，各已提供项仍合并同一索引默认值，空数组保持为空。编译不读写保存的草稿；需要保存值时先 `getInput`，再显式传 `data` 与 `editor`。区域报表的 `editor` 必须携带当前模板身份/修订及完整区域集合。`describeDocument` 单独返回 fields/defaults 和可选区域配置，不运行 `createFiles`，非法表单值不会阻止字段继续显示。业务求值实现由 [`compiler.ts`](src/backend/compiler.ts) 和 [`documents.ts`](src/backend/documents.ts) 拥有。
 
 ## Workspace ZIP
 
@@ -206,7 +230,7 @@ export async function inspect(selectedInstanceId: string, selectedProjectRoot: s
 		const project = (await studio.listProjects()).find((item) => item.root === selectedProjectRoot)
 		if (!project) throw new Error('请明确选择或打开目标项目')
 		const target = { projectId: project.id, entry: '报表/季度经营分析/季度经营分析.ts' }
-		const compiled = await studio.compile({ ...target, data: {} })
+		const compiled = await studio.compile({ ...target, data: {}, clientRevision: 0 })
 		const page = await studio.renderPage({
 			...target,
 			revision: compiled.revision,
@@ -222,6 +246,10 @@ export async function inspect(selectedInstanceId: string, selectedProjectRoot: s
 用返回 PNG 的绝对 `path` 调用 agent 的图片查看能力。修改普通源码后再次 compile/render；页码从 1 开始，region 是官方 Typst 页内 pt，scale 默认 2、上限 8，受完整页面原生 raster 限额约束。`withStudio` 在 finally 断开连接；长程序可使用 `connectStudio` 返回的 `{ api, disconnect }`。断连不关闭应用、求值器或原生 session，不取消已接纳的有界工作。socket 中断后写入可能已完成，client 不自动重试或切换实例。
 
 共有方法覆盖项目 list/get/create/open/forget/tree、源码 read/write/mkdir/createReport/rename/remove/search、输入 get/set、describe/compile/renderPage/exportPdf。`writeFile` 必须提供 `expectedVersion`，创建时为 `null`。外部 ZIP/资产使用 `importWorkspaceFile` / `importAssetFile`，只为相应导入读取明确本机来源；ZIP 输出为 `exportWorkspaceFile` 的产物引用。业务 capability 不含供应商配置、模型付费调用、任意文件读取或应用关闭。
+
+`getInput(target)` 返回 `{ data, editor?, storageVersion }`，尚无保存时 storageVersion 为 null；`setInput({ ...target, data, editor?, expectedVersion: storageVersion })` 返回新版本。`DRAFT_VERSION_CONFLICT` 不覆盖其他写入者；`TEMPLATE_REVISION_CONFLICT` 要求显式处理模板升级。已有旧格式输入文件不会被启动时隐式改写，应在停机维护中一次性显式转换；新建/ZIP 项目不携带其他项目的用户数据。
+
+界面保存失败后会读回完整记录，确认响应丢失时写入是否已经完成：与提交的 data/regions 相同则确认保存，期间的新编辑仍保留为待保存草稿。版本变化且内容不同时保留本地草稿，展示双方内容供明确选择载入已保存版本或用本地内容覆盖该版本；覆盖仍使用条件写入，再次冲突不能覆盖新版本。载入已保存版本会重建正文编辑器与历史，清除旧候选和定位并重新编译。
 
 失败保持 reject。用 `isStudioError(error)` 检查 `code/message/diagnostics/issues`，不要依赖跨进程 class prototype。`INVALID_INPUT` 与字段 issues 指向数据或源码；Typst 失败保留 `COMPILE_FAILED` 与原生位置；`REVISION_CONFLICT` 要求显式重新编译；`BUSY` / `LIMIT_EXCEEDED` 明确拒绝容量不足；generation 撤回会返回 `BACKEND_UNAVAILABLE` / `CLOSED`，需重新连接。一次操作失败就停止本轮输出，不无条件继续导出。
 

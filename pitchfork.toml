@@ -22,3 +22,10 @@ run = "vp run pluxel-docs#dev:server"
 mise = true
 port = { expect = [3000], bump = 100 }
 ready_output = { pattern = "ready: Listening on", timeout = "5m" }
+
+# Browser-only consumer of the shared Typst editor and preview, with a local compiler.
+[daemons.typst]
+run = "vp run @pluxel/plugin-typst#dev:consumer"
+mise = true
+port = { expect = [3410], bump = 100 }
+ready_output = { pattern = "Local:", timeout = "5m" }

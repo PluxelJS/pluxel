@@ -194,7 +194,7 @@ it('requires explicit data, gives each success a unique revision, reuses native 
 		})
 		expect(f.open).not.toHaveBeenCalled()
 		const data: JsonObject = { label: 'original' }
-		const compiling = f.service.compile({ ...target(), data })
+		const compiling = f.service.compile({ clientRevision: 0, ...target(), data })
 		data.label = 'mutated'
 		const first = await compiling
 		expect(first.data).toEqual({ label: 'original' })
@@ -204,7 +204,7 @@ it('requires explicit data, gives each success a unique revision, reuses native 
 		const detached = await f.service.getPreview(first)
 		expect(detached.preview.data[0]).toBe(1)
 		const artifact = await f.service.renderPage({ ...first, page: 1 })
-		const second = await f.service.compile({ ...target(), data: {} })
+		const second = await f.service.compile({ clientRevision: 0, ...target(), data: {} })
 		expect(second.revision).not.toBe(first.revision)
 		expect(f.open).toHaveBeenCalledTimes(1)
 		const secondPreview = await f.service.getPreview(second)
@@ -221,13 +221,15 @@ it('requires explicit data, gives each success a unique revision, reuses native 
 it('retains the previous document for COMPILE_FAILED but revokes it after native success followed by a source conflict', async () => {
 	const f = await fixture()
 	try {
-		const first = await f.service.compile({ ...target(), data: {} })
+		const first = await f.service.compile({ clientRevision: 0, ...target(), data: {} })
 		f.setBeforeUpdate(async () => {
 			throw new TypstError('COMPILE_FAILED', 'invalid layout', {
 				diagnostics: [{ severity: 'error', message: 'layout error', path: 'a/main.typ' }],
 			})
 		})
-		await expect(f.service.compile({ ...target(), data: {} })).rejects.toMatchObject({
+		await expect(
+			f.service.compile({ clientRevision: 0, ...target(), data: {} }),
+		).rejects.toMatchObject({
 			code: 'COMPILE_FAILED',
 			diagnostics: [expect.objectContaining({ path: 'a/main.typ' })],
 		})
@@ -237,7 +239,9 @@ it('retains the previous document for COMPILE_FAILED but revokes it after native
 		f.setAfterUpdate(async () => {
 			f.documents.get('project')!.revision = 'changed'
 		})
-		await expect(f.service.compile({ ...target(), data: {} })).rejects.toMatchObject({
+		await expect(
+			f.service.compile({ clientRevision: 0, ...target(), data: {} }),
+		).rejects.toMatchObject({
 			code: 'REVISION_CONFLICT',
 		})
 		f.documents.get('project')!.revision = 'one'
@@ -267,7 +271,7 @@ it('rejects a fifth busy record and allows independent documents to finish concu
 			}
 		})
 		const compiling = ['a', 'b', 'c', 'd'].map((entry) =>
-			f.service.compile({ ...target(entry), data: {} }),
+			f.service.compile({ clientRevision: 0, ...target(entry), data: {} }),
 		)
 		await entered.promise
 		await expect(f.service.describeDocument(target('e'))).rejects.toMatchObject({ code: 'BUSY' })
@@ -288,9 +292,9 @@ it('evicts the least recently used idle document, including read accesses', asyn
 	try {
 		const compiled = []
 		for (const entry of ['a', 'b', 'c', 'd'])
-			compiled.push(await f.service.compile({ ...target(entry), data: {} }))
+			compiled.push(await f.service.compile({ clientRevision: 0, ...target(entry), data: {} }))
 		await f.service.getPreview(compiled[0]!)
-		await f.service.compile({ ...target('e'), data: {} })
+		await f.service.compile({ clientRevision: 0, ...target('e'), data: {} })
 		await expect(f.service.getPreview(compiled[1]!)).rejects.toMatchObject({
 			code: 'REVISION_CONFLICT',
 		})
@@ -312,12 +316,16 @@ it('bounds the shared compile/describe queue and counts waiting time in its dead
 			entered.resolve()
 			await gate.promise
 		})
-		const first = f.service.compile({ ...target(), data: {} }).catch((error) => error)
+		const first = f.service
+			.compile({ clientRevision: 0, ...target(), data: {} })
+			.catch((error) => error)
 		await entered.promise
 		const queued = Array.from({ length: DOCUMENT_POLICY.maxQueuedUpdates }, () =>
 			f.service.describeDocument(target()).catch((error) => error),
 		)
-		await expect(f.service.compile({ ...target(), data: {} })).rejects.toMatchObject({
+		await expect(
+			f.service.compile({ clientRevision: 0, ...target(), data: {} }),
+		).rejects.toMatchObject({
 			code: 'BUSY',
 		})
 		await vi.advanceTimersByTimeAsync(DOCUMENT_POLICY.deadlineMs + 1)
@@ -344,12 +352,14 @@ it('keeps a borrowed old project snapshot readable until a blocked open settles'
 			await gate.promise
 			expect(await readFile(join(root, 'a/main.typ'), 'utf8')).toBe('layout')
 		})
-		const first = f.service.compile({ ...target(), data: {} }).catch((error) => error)
+		const first = f.service
+			.compile({ clientRevision: 0, ...target(), data: {} })
+			.catch((error) => error)
 		const oldRoot = await entered.promise
 		const document = f.documents.get('project')!
 		document.revision = 'two'
 		document.files['a/main.typ'] = 'new layout'
-		const second = f.service.compile({ ...target('b'), data: {} })
+		const second = f.service.compile({ clientRevision: 0, ...target('b'), data: {} })
 		await vi.waitFor(() => expect(f.materialize).toHaveBeenCalledTimes(2))
 		expect(await readFile(join(oldRoot, 'a/main.typ'), 'utf8')).toBe('layout')
 		f.setBeforeOpen(undefined)
@@ -385,9 +395,9 @@ it('isolates temporary font registrations across projects and rebuilds changed f
 				await gate.promise
 			}
 		})
-		const first = f.service.compile({ ...target(), data: {} })
+		const first = f.service.compile({ clientRevision: 0, ...target(), data: {} })
 		await entered.promise
-		const second = f.service.compile({ ...target('a', 'other'), data: {} })
+		const second = f.service.compile({ clientRevision: 0, ...target('a', 'other'), data: {} })
 		await vi.waitFor(() => expect(f.materialize).toHaveBeenCalledTimes(2))
 		expect([...f.registered.keys()]).toEqual(['font-a'])
 		gate.resolve()
@@ -397,7 +407,7 @@ it('isolates temporary font registrations across projects and rebuilds changed f
 		const doc = f.documents.get('project')!
 		doc.revision = 'font-change'
 		doc.files['fonts/font.ttf'] = 'font-c'
-		const next = await f.service.compile({ ...target(), data: {} })
+		const next = await f.service.compile({ clientRevision: 0, ...target(), data: {} })
 		expect(f.sessions[0]!.closed).toBe(true)
 		const rebuilt = await f.service.getPreview(next)
 		expect(rebuilt.preview.revision).toBe(1)
@@ -412,7 +422,7 @@ it('isolates temporary font registrations across projects and rebuilds changed f
 it('deletes unpublished PDF files when source changes during the disk write', async () => {
 	const f = await fixture()
 	try {
-		const compiled = await f.service.compile({ ...target(), data: {} })
+		const compiled = await f.service.compile({ clientRevision: 0, ...target(), data: {} })
 		const publish = f.artifacts.publish.bind(f.artifacts)
 		vi.spyOn(f.artifacts, 'publish').mockImplementation(
 			(metadata, bytes, validate?: () => Promise<void>) =>
@@ -441,20 +451,26 @@ it('drains only the removed project and keeps admission withdrawn through the wo
 				await gate.promise
 			}
 		})
-		const compiling = f.service.compile({ ...target(), data: {} })
+		const compiling = f.service.compile({ clientRevision: 0, ...target(), data: {} })
 		await entered.promise
 		const removing = f.service.remove('project', async () => {
 			forgetEntered.resolve()
 			await forgetGate.promise
 		})
 		await expect(f.service.describeDocument(target())).rejects.toMatchObject({ code: 'CLOSED' })
-		const independent = await f.service.compile({ ...target('a', 'other'), data: {} })
+		const independent = await f.service.compile({
+			clientRevision: 0,
+			...target('a', 'other'),
+			data: {},
+		})
 		expect(independent.projectId).toBe('other')
 		gate.resolve()
 		await compiling
 		await forgetEntered.promise
 		expect(f.sessions[0]!.closed).toBe(true)
-		await expect(f.service.compile({ ...target(), data: {} })).rejects.toMatchObject({
+		await expect(
+			f.service.compile({ clientRevision: 0, ...target(), data: {} }),
+		).rejects.toMatchObject({
 			code: 'CLOSED',
 		})
 		forgetGate.resolve()
@@ -476,7 +492,9 @@ it('closes once, cancels accepted queues and waits for native work to settle bef
 				input.signal!.addEventListener('abort', () => reject(input.signal!.reason), { once: true }),
 			)
 		})
-		const compiling = f.service.compile({ ...target(), data: {} }).catch((error) => error)
+		const compiling = f.service
+			.compile({ clientRevision: 0, ...target(), data: {} })
+			.catch((error) => error)
 		await entered.promise
 		const queued = f.service.describeDocument(target()).catch((error) => error)
 		const closing = f.service.close()
@@ -486,7 +504,9 @@ it('closes once, cancels accepted queues and waits for native work to settle bef
 		await closing
 		expect(f.sessions[0]!.closed).toBe(true)
 		expect(f.describe).not.toHaveBeenCalled()
-		await expect(f.service.compile({ ...target(), data: {} })).rejects.toMatchObject({
+		await expect(
+			f.service.compile({ clientRevision: 0, ...target(), data: {} }),
+		).rejects.toMatchObject({
 			code: 'CLOSED',
 		})
 	} finally {

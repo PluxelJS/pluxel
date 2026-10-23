@@ -25,6 +25,8 @@ The returned JSON has `points`, `outline` and `pages` arrays. Source paths are s
 
 Point source ranges use **1-based lines and UTF-16 columns**, with exclusive end positions. Page numbers are 1-based. `x`, `y`, `width`, `height` use Typst points in page coordinates. Nested group transforms are applied to all four corners and reported as axis-aligned bounds. Text uses glyph advance bounds; images and shapes use their layout geometry. These are navigation hit areas, not pixel-accurate glyph outlines. Generated content without a resolvable source span has no point. One source expression can produce multiple points/pages.
 
+Literal text offsets are decoded UTF-8 offsets, not offsets into a function name. The collector maps supported string escapes back to their original source bytes, then reports UTF-16 columns. Direct text spans are checked against the glyph text. Ligatures retain their full source cluster. Computed expressions or text transformed without character provenance retain the whole expression range instead of an invented character offset. Multiline `raw("…")` and tab expansion lose unique offsets upstream; generated editor code blocks use raw backtick syntax to retain distinct line spans. Tabs and other upstream transformations can still fall back to the owning span.
+
 The mapping has a hard limit of 200,000 points. Exceeding it throws an explicit error; a partial mapping is never returned as success. Outline entries contain the compiler's heading title, level and page position.
 
 ## Retained page images

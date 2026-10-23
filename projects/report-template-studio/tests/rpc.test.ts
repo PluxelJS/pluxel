@@ -95,6 +95,7 @@ describe('real Cap’n Web error and binary boundaries', () => {
 			},
 			getPreview: async (input) => ({
 				...input,
+				clientRevision: 0,
 				sourceRevision: 'source',
 				sourceVersions: {},
 				preview: {
@@ -121,7 +122,12 @@ describe('real Cap’n Web error and binary boundaries', () => {
 			transport.abort(rpcError('CLOSED', 'test complete'))
 		})
 		const error = await client.api
-			.compile({ projectId: 'selected-project', entry: 'report/report.ts', data: {} })
+			.compile({
+				clientRevision: 0,
+				projectId: 'selected-project',
+				entry: 'report/report.ts',
+				data: {},
+			})
 			.catch((caught: unknown) => caught)
 		expect(error).toMatchObject({
 			code: 'INVALID_INPUT',
@@ -148,7 +154,12 @@ describe('real Cap’n Web error and binary boundaries', () => {
 		})
 		await withStudio(instance, async (api) => {
 			const error = await api
-				.compile({ projectId: 'selected-project', entry: 'report/report.ts', data: {} })
+				.compile({
+					clientRevision: 0,
+					projectId: 'selected-project',
+					entry: 'report/report.ts',
+					data: {},
+				})
 				.catch((caught: unknown) => caught)
 			expect(error).toMatchObject({
 				code: 'INVALID_INPUT',
@@ -283,7 +294,12 @@ describe('discovery, authentication and connection ownership', () => {
 		})
 		const client = await connectStudio(instance)
 		const pending = Promise.resolve(
-			client.api.compile({ projectId: 'selected-project', entry: 'report/report.ts', data: {} }),
+			client.api.compile({
+				clientRevision: 0,
+				projectId: 'selected-project',
+				entry: 'report/report.ts',
+				data: {},
+			}),
 		)
 		await accepted.promise
 		client.disconnect()
@@ -294,6 +310,7 @@ describe('discovery, authentication and connection ownership', () => {
 			name: 'Report',
 			template: 'report/report.typ',
 			revision: 'completed',
+			clientRevision: 0,
 			sourceRevision: 'source',
 			data: {},
 			pageCount: 0,

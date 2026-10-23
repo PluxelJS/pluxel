@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { chartReportSeed } from './chart-report-seed.js'
 /** Extra files provide the studio's agent instructions without rewriting supplied assets. */
 export async function workspaceSeed(
 	assetsRoot: string,
@@ -152,10 +153,168 @@ $ "盈亏平衡收入" = frac("固定成本", "边际贡献率") $
 <rect x="60" y="132" width="200" height="26" rx="4" fill="#d97706"/>
 <text x="575" y="39">50%</text><text x="375" y="95">30%</text><text x="275" y="151">20%</text>
 </g></svg>`,
+		'报表/客户服务报告/客户服务报告.ts': `import { defineTypstDocument } from '@pluxel/plugin-typst/template'
+import * as v from 'valibot'
+
+export default defineTypstDocument({
+  template: './排版.typ',
+  schema: v.object({
+    customer: v.optional(v.pipe(v.object({
+      name: v.optional(v.pipe(v.string(), v.trim(), v.title('客户名称')), '青山科技有限公司'),
+      contact: v.optional(v.pipe(v.string(), v.title('客户联系人')), '林小姐'),
+    }), v.title('客户信息')), {}),
+    period: v.optional(v.pipe(v.string(), v.title('服务期间')), '2026 年第三季度'),
+  }),
+})
+`,
+		'报表/客户服务报告/排版.typ': `#import "../../共享/主题/财务函件.typ": correspondence
+#let data = json("/inputs/editor/data.json")
+#set page(header: align(right, text(size: 9pt)[#data.customer.name · #data.period]))
+#show: correspondence.with(title: [客户服务报告], numbering: "1 / 1")
+#text(weight: "bold")[客户：#data.customer.name]
+#parbreak()
+联系人：#data.customer.contact #h(1fr) 服务期间：#data.period
+
+= 服务概况
+#include "../../_editor/regions/summary.typ"
+
+= 后续建议
+#include "../../_editor/regions/recommendations.typ"
+
+#line(length: 100%, stroke: 0.4pt + luma(190))
+#text(size: 9pt, fill: luma(100))[固定条款：本报告用于服务沟通。服务范围与交付责任以双方签署的合同为准。]
+`,
+		'报表/客户服务报告/客户服务报告.editor.json': JSON.stringify(
+			{
+				regions: [
+					{
+						id: 'summary',
+						label: '服务概况',
+						fields: [['customer', 'name'], ['customer', 'contact'], ['period']],
+					},
+					{
+						id: 'recommendations',
+						label: '后续建议',
+						nodes: [
+							'doc',
+							'paragraph',
+							'text',
+							'heading',
+							'bulletList',
+							'orderedList',
+							'listItem',
+							'hardBreak',
+							'dataField',
+							'notice',
+						],
+						fields: [['customer', 'name'], ['period']],
+					},
+				],
+				fields: [
+					{ path: ['customer', 'name'], label: '客户名称' },
+					{ path: ['customer', 'contact'], label: '客户联系人' },
+					{ path: ['period'], label: '服务期间' },
+				],
+				defaults: {
+					summary: {
+						type: 'doc',
+						content: [
+							{
+								type: 'paragraph',
+								content: [
+									{ type: 'dataField', attrs: { path: ['customer', 'name'] } },
+									{ type: 'text', text: ' 本期服务已完成交付，详细情况如下。' },
+								],
+							},
+							{
+								type: 'table',
+								content: [
+									{
+										type: 'tableRow',
+										content: [
+											{
+												type: 'tableHeader',
+												attrs: { colspan: 2, rowspan: 1, colwidth: [160, 220] },
+												content: [
+													{
+														type: 'paragraph',
+														content: [{ type: 'text', text: '交付与客户反馈' }],
+													},
+												],
+											},
+										],
+									},
+									{
+										type: 'tableRow',
+										content: [
+											{
+												type: 'tableCell',
+												attrs: { colspan: 1, rowspan: 1, colwidth: [160] },
+												content: [
+													{
+														type: 'paragraph',
+														content: [{ type: 'text', text: '例行服务 | 专项支持' }],
+													},
+													{
+														type: 'paragraph',
+														content: [{ type: 'text', text: '已完成现场回访。' }],
+													},
+												],
+											},
+											{
+												type: 'tableCell',
+												attrs: { colspan: 1, rowspan: 1, colwidth: [220] },
+												content: [
+													{
+														type: 'paragraph',
+														content: [
+															{ type: 'text', text: '客户：' },
+															{ type: 'dataField', attrs: { path: ['customer', 'name'] } },
+														],
+													},
+												],
+											},
+										],
+									},
+								],
+							},
+						],
+					},
+					recommendations: {
+						type: 'doc',
+						content: [
+							{
+								type: 'paragraph',
+								content: [
+									{ type: 'text', text: '建议为 ' },
+									{ type: 'dataField', attrs: { path: ['customer', 'name'] } },
+									{ type: 'text', text: ' 安排下期服务计划。' },
+								],
+							},
+							{
+								type: 'notice',
+								attrs: { tone: 'info' },
+								content: [
+									{
+										type: 'paragraph',
+										content: [
+											{ type: 'text', text: '服务提示：请在下次回访前确认负责人和计划时间。' },
+										],
+									},
+								],
+							},
+						],
+					},
+				},
+			},
+			null,
+			2,
+		),
 		'共享/主题/财务函件.typ': await readFile(
 			join(assetsRoot, 'templates/financial-correspondence.typ'),
 			'utf8',
 		),
+		...chartReportSeed,
 		...extraFiles,
 	}
 	for (const [path, text] of Object.entries(texts)) files[path] = Buffer.from(text)

@@ -1,0 +1,80 @@
+# Independent Typst consumer
+
+## Interactive browser playground
+
+From the workspace root, build once and start the managed service:
+
+```sh
+mise exec -- vp run @pluxel/plugin-typst#compile
+mise exec -- vp run typst
+```
+
+Open the URL printed by the command. Pitchfork keeps `typst` running after the terminal exits; `mise exec -- pitchfork stop typst` stops this service. `dev:consumer` is its foreground Vite entry. The playground consumes built public browser entries; rebuild the Typst package after changing those components. Changes to this consumer page use ordinary Vite HMR.
+
+The page uses the same `TypstRegionEditor`, `TypstEditorToolbar`, `TypstFieldPicker`, public stylesheet and `TypstPreviewView` as Report Template Studio. Studio retains its workspace, persistence, AI transport and Monaco shell. Here a textarea provides the template-author source editor, and explicit Save/Reopen stores the draft in this browser's local storage. This is a browser UI with a local native compiler, not a compiler running entirely in the browser.
+
+The consumer explicitly installs `TypstTableStyle` through `config.extensions`, as Studio does. `createEditorExtensions()` contains only official Tiptap extensions; `createTypstExtensions()` adds data fields and the configured extensions, without automatically adding table styles. Removing the optional style extension retains official TableKit structure and commands; persisted style attributes require explicit cleanup before strict admission without the extension. See the [public table-style contract](../../../../../docs/plugins/rendering/typst-editor.md#可选表格样式) for options and the inherited template default.
+
+Try these paths:
+
+- Click different characters in a paragraph or table cell on the left to highlight the matching rendered glyph. Ordinary clicks navigate; dragging a selection or modifier-clicking does not. The repeated body on page 3 stays on that occurrence when it is the current page.
+- Click preview text to place the caret at that character in the body/notes region. Try the middle/end of a line and text after emoji or escaped quotes; fields remain atomic. Fixed template text goes to the source textarea; click that source to return to the preview.
+- Select text, then right-click within the selection or press Shift+F10 / the context-menu key to open its format bar. Selection alone does not open a bubble; right-clicking outside it first places the caret at the clicked position. Read-only text, IME composition, source textareas and card data retain the browser menu. Change customer data, try a Markdown candidate in Notes, or export PDF; navigation uses the current successful revision and is disabled while stale.
+- Right-click inside a table, press Shift+F10, or use its nearby handle to open table actions. A text selection shows **单元格文字格式** in the same panel as table style and structure actions. Try grid, grid without left/right outer borders, three-line, borderless, and follow-template; undo, Save/Reopen, and compare the native preview/PDF. `grid-open-sides` retains internal grid lines and top/bottom borders even with row/column spans. Three-line adds a header separator only when the table has complete leading header rows; choosing it does not invent a header. Ordinary row, column, merge, and resize operations remain TableKit commands. Removing the style extension removes only its appearance group.
+
+The saved JSON retains table appearance and structure. An explicit table appearance makes Markdown export `lossless: false`, and a Markdown candidate cannot overwrite that styled table; a candidate scoped to adjacent text can preserve the table unchanged. Inherited appearance alone does not add a Markdown loss; merged cells and other complex content can still do so. HTML preserves the style attribute for re-entry under the same editor configuration, but is not a final paginated document: static `getHTML()` output omits decorations marking complex header and side boundaries. Use the Typst preview/PDF for final layout.
+
+With the managed playground running, `mise exec -- node plugins/render/typst/tests/consumer/table-style.mjs` checks all four appearances, native table/cell selection preservation, merged-cell boundaries, undo/redo, HTML re-entry, Save/Reopen, character navigation, read-only controls, mobile layout and PDF export. It prints an external temporary evidence directory with screenshots and the exported PDF.
+
+Run `mise exec -- node plugins/render/typst/tests/consumer/contexts-check.mjs` to check explicit text/table/block context menus, selection retention, formatting and undo, keyboard focus and Escape, menu switching, read-only/IME behavior, native input context menus and desktop/mobile bounds. It prints a temporary screenshot evidence directory.
+
+## External data and chart-report example
+
+Choose **图表报告 · 外部数据与模板** in the playground. It combines an editable image, a **渠道收入与目标** template component containing KPI cards and a native Typst actual/target bar chart beside its data table, an analysis section with a three-line table, and a separate action region with a source block and borderless table. The chart component lives in the same Tiptap JSON as the analysis: drag its title handle before or after text, or duplicate it through its block menu. Changing data updates the generated chart/table and bound fields while retaining edited body JSON and native undo history. The outer template handles the page, fixed title, header and footer; chart logic and input schema belong to this consumer.
+
+This example explicitly installs the independent `TypstTemplateBlock` and `TypstSource` extensions. The shared `TypstBlockPicker` appears in the toolbar slot. Cards show their name, native drag handle and **块操作** menu; right-click also opens that menu. **复制一份** inserts a new instance with its own ID, and **删除** removes the selected node, each as one undoable change. Duplication stays inside the current document; component round-tripping through the system clipboard is not supported. Click a card's title or blank area to select it and reveal its preview; using controls or selecting displayed data does not navigate.
+
+Open **参数与数据** to read the template instance's parameters and currently bound data. This view reads the existing data provider and does not change saved JSON or undo history; host-specific parameter forms can use official editor commands. The source block instead exposes **编辑 Typst 源码**; **应用组件修改** commits its local source edits in one undoable change. Clicking raw source output opens the source at the returned line/column; unapplied local source edits are retained and must be applied before those coordinates can be used.
+
+Template registration, defaults, instance identity, binding and opt-in source execution follow the [public block contract](../../../../../docs/plugins/rendering/typst-editor.md#可选模板组件与源码块). Removing these extensions leaves official editing features available but requires an explicit conversion of saved custom nodes. Raw Typst executes under the host compiler's resource policy; the editor extension is not a code sandbox.
+
+The left workspace has **正文 / 数据 / 模板 / AI 候选** tabs, with the preview always alongside on desktop. Editors remain mounted while switching tabs, preserving selection and undo history. Preview navigation opens the matching body or template tab. On narrow screens, the editor and preview stack with their own scrolling areas.
+
+Open **数据** to load or edit JSON, then apply it. Open **模板** to import a `.typ` file or edit its source; both compile immediately. Use **AI 候选** to inspect Markdown/HTML or accept a Markdown candidate into the selected region. To rewrite analysis next to a chart, first place the caret in that paragraph, then choose **当前选中块**, stage the Markdown and accept it. The UI expands the selection to complete top-level blocks. The SDK requires the same revision at preparation and commit and preserves nodes outside that range; a target containing a component, source block or styled table is rejected as lossy. Plain Markdown `typst` fences remain literal code blocks, and exporting custom components/source to Markdown explicitly reports `lossless: false`.
+
+Downloadable samples are [operations-report.json](./public/examples/operations-report.json), [operations-report.typ](./public/examples/operations-report.typ), and the [cover SVG](./public/examples/operations-cover.svg). The input schema and registered chart source in [report-example.mjs](./report-example.mjs) accept a company, period, analyst and one to eight channels with nonnegative actual/target values. The imported outer template and registered components must agree with that schema. Images use an explicit logical ID mapped to a host-prepared `/inputs/` file; importing a template does not grant arbitrary filesystem or network resources.
+
+Invalid JSON leaves the admitted data and body unchanged. Applying a template uses the existing source compilation queue: a compile error retains the candidate source for repair, marks the preview stale, and disables PDF export until recovery. Save/Reopen retains the selected example, raw data, body and template. Switching examples starts a new draft, so save first if needed. The original **基础编辑与定位** fixture is preserved for focused navigation checks.
+
+Run `mise exec -- node plugins/render/typst/tests/consumer/report-example-check.mjs` against the managed playground to check external file input, data-only updates and undo, invalid input, template failure/recovery, save/reopen across examples, character navigation, mobile layout and current-revision PDF. It prints a screenshot/PDF evidence directory. Studio's separate **图表分析报告** seed exercises the same public editor and native compiler with its own report schema and workspace template.
+
+Run `mise exec -- node plugins/render/typst/tests/consumer/blocks-check.mjs` against the same playground for component move/copy/native drag and single-step undo, selected-block Markdown replacement without changing charts or styled tables, literal `typst` code fences, read-only/editable transitions, textarea composition with structural actions disabled, source apply/compile failure/recovery, and precise source navigation that preserves unapplied drafts. The script also checks color-picker keyboard navigation and mobile bounds, prints desktop/mobile screenshot evidence, and releases its document session on completion.
+
+`vite.config.ts` owns a small local HTTP adapter around the built native Typst/Fonts plugins, with a separate session per page. It registers the same Fontconfig families used below, validates drafts, generates regions and exports the same compiled PDF. Page close releases its session; Vite shutdown releases all remaining sessions and temporary template files. This helper is for local manual testing and is not a production backend or a new public SDK.
+
+## Isolated package acceptance
+
+Build the package first, then run from the workspace root:
+
+```sh
+mise exec -- vp run @pluxel/plugin-typst#compile
+mise exec -- node plugins/render/typst/tests/consumer.mjs
+```
+
+The script copies the actual `dist` and native compiler into an external temporary directory. It expands workspace/catalog dependency protocols and applies `publishConfig.exports` in the staged manifests. The package is private and has no version, so this uses built files rather than inventing a tarball version. It never imports workspace source into the consumer or changes the repository's versions. All copied JavaScript, declarations, and native bytes remain unchanged.
+
+The separate `native-checker/` installs the root entry's existing Core, Fonts, services, Workbench, and capnweb server peers. It checks the built root with strict declarations and a Node import while Tiptap and React are absent. These are existing native server requirements, not dependencies of the browser app.
+
+The external browser application in `app/` starts with only Typst and valibot, then installs optional dependencies in three stages:
+
+1. No Tiptap, React, or native server peers: import `/template` and `/browser`; typecheck with `skipLibCheck: false`; build the browser entries with the public editor stylesheet.
+2. Tiptap peers, including the official optional `@tiptap/extension-text-style`, without React: typecheck `/tiptap`, parse Markdown and generate regions in Node without a DOM.
+3. React peers: typecheck and build the textarea, shared preview, and region editor UI; run Chromium against the production output.
+
+The browser imports the published `@pluxel/plugin-typst/tiptap/style.css` and receives real native previews through host callbacks in the test. It exercises the shared heading dropdown, explicitly opened text format menu, filtered slash menu and keyboard commands, mobile menus, and the separate typography row: host-supplied fonts, size, foreground/background colors, clearing styles, and one-step native undo. Styled HTML paste, rejected unsupported CSS, style-preserving save/reopen and rejected lossy Markdown candidates are covered alongside data fields, native compilation failure/recovery, navigation, a consumer-owned notice node, table paste, Chinese composition, formatting, history, candidates, strict HTML and Markdown parity, region switching, and PDF export. Monaco, Studio, Workbench, and Electron are absent from the browser app. The browser module list also rejects Core, services, and Node/native compiler imports. Playwright serves the production output and callbacks through request interception; no additional development service is started.
+
+The native fixture uses Fontconfig's `fc-match` to locate `Noto Serif CJK SC` and `Liberation Serif`, copies the original bytes into external `fonts/`, and registers them through the public Fonts API without aliases before opening the Typst session. The fixture allows 32 MiB per font because the installed Noto TTC is larger than the default 16 MiB font limit. Registrations are disposed after the session. A TTC can expose only its first face in Skia's family list while Typst reads the other faces from the same portable bytes; selected fonts are therefore checked against actual Typst compilation diagnostics. Registration metadata, portable snapshots, generated source, and native rendered PNG evidence are saved.
+
+The test prints its output directory, normally `$TMPDIR/pluxel-typst-consumer-*`. Set `PLUXEL_TYPST_CONSUMER_OUTPUT` to a new external directory to choose a persistent location. `app/` contains the standalone browser consumer, `native-checker/` the root import check, and `artifacts/` the installed built packages. `evidence/` contains strict check/install logs, bundle module lists, native compilation metrics, Markdown/HTML results, saved draft, PDF, PNG, and desktop/mobile screenshots.
+
+This is an acceptance fixture, not an additional SDK or application. It requires network access for the staged npm installs and an installed Playwright Chromium browser (`mise exec -- vp exec playwright install chromium`). The native test host stays in the workspace; its contract boundary is the same public Typst session API that another consumer's backend would supply. It does not prove Studio's desktop lifecycle or UI; Studio has its own acceptance checks.

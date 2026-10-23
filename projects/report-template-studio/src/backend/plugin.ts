@@ -13,11 +13,12 @@ import type {
 	FileWrite,
 	AiPrompt,
 	WorkspaceArtifact,
+	InputWrite,
 } from '../shared/contracts.js'
 import type { SearchOptions } from '../shared/search.js'
 import type { AiProviderWrite } from '../shared/ai-providers.js'
 import { WorkspaceStore } from './store.js'
-import { InputStore, inputData } from './inputs.js'
+import { InputStore, inputData, editorDraft } from './inputs.js'
 import { DocumentService } from './documents.js'
 import { ArtifactStore } from './artifacts.js'
 import { StudioAI } from './ai.js'
@@ -63,7 +64,8 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 			join(this.config.root, 'workspaces'),
 			this.config.assetsRoot,
 			{},
-			(id, entries) => this.inputs.copyEntries(id, entries),
+			(id, entries, revisions) => this.inputs.copyEntries(id, entries, revisions),
+			(id, entries) => this.inputs.removeEntries(id, entries),
 		)
 		this.artifacts = new ArtifactStore(join(this.config.root, 'artifacts'))
 		this.documents = new DocumentService(this.store, this.fonts, this.typst, this.artifacts)
@@ -204,13 +206,19 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 	async getInput(input: DocumentTarget) {
 		const target = this.document(input)
 		await this.store.get(target.projectId)
-		return { data: await this.inputs.get(target.projectId, target.entry) }
+		return this.inputs.get(target.projectId, target.entry)
 	}
-	async setInput(input: DocumentTarget & { data: import('../shared/contracts.js').JsonObject }) {
+	async setInput(input: InputWrite) {
 		const target = this.document(input)
 		const data = inputData(input.data)
-		await this.store.get(target.projectId)
-		return { data: await this.inputs.set(target.projectId, target.entry, data) }
+		const editor = input.editor === undefined ? undefined : editorDraft(input.editor)
+		const { expectedVersion } = parse(v.object({ expectedVersion: v.nullable(string) }), input)
+		await this.documents.validateInput({ ...target, data, ...(editor ? { editor } : {}) })
+		return this.inputs.set(target.projectId, target.entry, {
+			data,
+			...(editor ? { editor } : {}),
+			expectedVersion,
+		})
 	}
 	describeDocument(input: DocumentTarget) {
 		this.ready()

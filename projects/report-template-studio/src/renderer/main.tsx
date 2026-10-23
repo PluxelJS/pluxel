@@ -5,6 +5,7 @@ import { connectDesktop } from './api'
 import '@mantine/core/styles.css'
 import '@worksplit/react/style.css'
 import 'flexlayout-react/style/light.css'
+import '@pluxel/plugin-typst/tiptap/style.css'
 import './style.css'
 
 await connectDesktop()

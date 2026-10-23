@@ -176,7 +176,9 @@ export class WorkspaceStore {
 		private readonly renameInputs?: (
 			id: string,
 			entries: { from: string; to: string }[],
+			revisions: { before: string; after: string },
 		) => Promise<void>,
+		private readonly removeInputs?: (id: string, entries: string[]) => Promise<void>,
 	) {}
 	private serial<T>(operation: () => Promise<T>): Promise<T> {
 		const task = this.queue.then(operation)
@@ -483,6 +485,13 @@ export class WorkspaceStore {
 				entry.kind === 'directory' && tree.documents.some((doc) => doc.entry === oldEntry)
 			const renameEntry = ownReport && basename(input.path) !== basename(input.to)
 			if (renameEntry) await this.check(id, `${input.path}/${basename(input.to)}.ts`, null)
+			const renameEditor =
+				renameEntry &&
+				tree.entries.some(
+					(file) => file.path === `${input.path}/${basename(input.path)}.editor.json`,
+				)
+			if (renameEditor)
+				await this.check(id, `${input.path}/${basename(input.to)}.editor.json`, null)
 			const mappings = tree.documents
 				.filter((doc) => doc.entry === input.path || doc.entry.startsWith(input.path + '/'))
 				.map((doc) => ({
@@ -494,6 +503,7 @@ export class WorkspaceStore {
 				}))
 			await rename(source, target)
 			let renamedEntry = false
+			let renamedEditor = false
 			try {
 				if (renameEntry) {
 					await rename(
@@ -502,8 +512,22 @@ export class WorkspaceStore {
 					)
 					renamedEntry = true
 				}
-				await this.renameInputs?.(id, mappings)
+				if (renameEditor) {
+					await rename(
+						join(target, `${basename(input.path)}.editor.json`),
+						join(target, `${basename(input.to)}.editor.json`),
+					)
+					renamedEditor = true
+				}
+				const after = await this.currentTree(id)
+				await this.renameInputs?.(id, mappings, { before: tree.revision, after: after.revision })
+				return after
 			} catch (error) {
+				if (renamedEditor)
+					await rename(
+						join(target, `${basename(input.to)}.editor.json`),
+						join(target, `${basename(input.path)}.editor.json`),
+					)
 				if (renamedEntry)
 					await rename(
 						join(target, `${basename(input.to)}.ts`),
@@ -512,7 +536,6 @@ export class WorkspaceStore {
 				await rename(target, source)
 				throw error
 			}
-			return this.currentTree(id)
 		})
 	}
 
@@ -520,9 +543,17 @@ export class WorkspaceStore {
 		return this.serial(async () => {
 			const entry = await this.check(id, input.path, input.expectedVersion)
 			if (!entry) throw conflict()
+			const tree = await this.currentTree(id)
+			const documents = tree.documents
+				.filter(
+					(document) =>
+						document.entry === input.path || document.entry.startsWith(input.path + '/'),
+				)
+				.map((document) => document.entry)
 			await rm(await safePath(join(this.project(id).root, input.path)), {
 				recursive: entry.kind === 'directory',
 			})
+			await this.removeInputs?.(id, documents)
 			return this.currentTree(id)
 		})
 	}
