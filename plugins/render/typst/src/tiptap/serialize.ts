@@ -1,7 +1,6 @@
-import { templateDefinitions } from './blocks.js'
 import type { JSONContent } from '@tiptap/core'
 import type { Schema } from '@tiptap/pm/model'
-import { tableHeaderRows, tableStyleOptions } from './table-style.js'
+import { tableHeaderRows } from './table-style.js'
 import type { TypstNavigation } from '../preview-contract.js'
 import { fontFamilyName, fontSizeInPoints, textStyleColor } from './text-style.js'
 import type {
@@ -14,11 +13,10 @@ import type {
 	TypstSerializerContext,
 } from './types.js'
 import {
-	editorSchema,
-	samePath,
+	prepareTypstValidation,
 	tableGrid,
 	validateTypstData,
-	validateTypstRegions,
+	validateRegionsWithContext,
 } from './validation.js'
 
 /** This is a Typst string literal, not JSON or HTML encoding. */
@@ -83,11 +81,12 @@ export function generateTypstRegions(options: {
 				},
 			],
 		}
-	const checked = validateTypstRegions(options)
+	const validation = prepareTypstValidation(options.config)
+	if (!validation.ok) return validation
+	const prepared = validation.value
+	const checked = validateRegionsWithContext(options, prepared)
 	if (!checked.ok) return checked
-	const schema = editorSchema(options.config)
-	if (!schema.ok) return schema
-	const nativeSchema = schema.value
+	const nativeSchema = prepared.schema
 	const issues: TypstEditorIssue[] = []
 	const imagePaths = new Map<string, string>()
 	const inspectResources = (node: JSONContent, regionId: string, path: (string | number)[]) => {
@@ -234,9 +233,7 @@ export function generateTypstRegions(options: {
 				}
 
 				case 'dataField': {
-					const field = options.config.fields.find((entry) =>
-						samePath(entry.path, attrs.path as string[]),
-					)!
+					const field = prepared.fields.get(JSON.stringify(attrs.path))!
 					// Resolve against the current data: numeric dictionary keys stay strings,
 					// and data-only updates may change a parent between an array and an object.
 					const access = `(${field.path.map(typstString).join(', ')},).fold(_editor_data, (value, key) => if type(value) == array and key == "length" { value.len() } else { value.at(if type(value) == array { int(key) } else { key }) })`
@@ -252,9 +249,7 @@ export function generateTypstRegions(options: {
 					const blockPath = `_editor/blocks/${region.id}/${attrs.id}.typ`
 					let blockSource: string
 					if (node.type === 'templateBlock') {
-						const definition = templateDefinitions(options.config.extensions).find(
-							(item) => item.id === attrs.template,
-						)!
+						const definition = prepared.templates.find((item) => item.id === attrs.template)!
 						const inputPath = `/inputs/editor/blocks/${region.id}/${attrs.id}.json`
 						inputFiles[inputPath] = JSON.stringify({
 							props: attrs.props ?? {},
@@ -289,8 +284,7 @@ export function generateTypstRegions(options: {
 					const grid = tableGrid(node)
 					if (typeof grid === 'string') throw new Error('Validated table lost its grid.')
 					const headerRows = tableHeaderRows(node)
-					const appearance =
-						attrs.typstTableStyle ?? tableStyleOptions(options.config.extensions)?.defaultStyle
+					const appearance = attrs.typstTableStyle ?? prepared.table?.defaultStyle
 					const openSides = appearance === 'grid-open-sides'
 					const border =
 						appearance === 'grid' || openSides ? '.5pt + black' : appearance ? 'none' : undefined

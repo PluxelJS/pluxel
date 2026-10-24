@@ -460,9 +460,25 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	)
 	await install()
 	await absent(['modern-monaco', 'monaco-editor', '@pluxel/workbench', 'electron'])
-	for (const file of ['index.html', 'main.tsx', 'style.css', 'editor-config.d.mts'])
+	for (const file of [
+		'index.html',
+		'main.tsx',
+		'style.css',
+		'editor-config.d.mts',
+		'compile-contract.ts',
+		'channel-parameters.tsx',
+		'report-example.mjs',
+		'report-example.d.mts',
+	])
 		await cp(join(fixtureRoot, file), join(app, file))
-	await checkTypes(['main.tsx', 'editor-config.mjs'], true)
+	const editorDocs = await readFile(
+		join(workspace, 'docs/plugins/rendering/typst-editor.md'),
+		'utf8',
+	)
+	const reactExample = editorDocs.match(/```tsx no-twoslash\n([\s\S]*?)```/)?.[1]
+	assert.ok(reactExample, 'Public React example must remain type-checkable')
+	await writeFile(join(app, 'react-example.tsx'), reactExample)
+	await checkTypes(['main.tsx', 'editor-config.mjs', 'react-example.tsx'], true)
 	await consumerBuild('index.html', 'dist')
 	const installedRoot = await realpath(join(app, 'node_modules/@pluxel/plugin-typst'))
 	assert.ok(!installedRoot.startsWith(workspace))
@@ -553,7 +569,9 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		pdfBytes: number
 		diagnostics: readonly { severity: string; message: string }[]
 	}[] = []
-	let latest: { clientRevision: number; preview: any; mapping: any[] } | undefined
+	let latest:
+		| { clientRevision: number; preview: any; mapping: any[]; diagnostics: unknown }
+		| undefined
 	let latestTemplateFiles: Record<string, string> = {}
 	let generatedTemplate = ''
 	let browserReadyMs = 0
@@ -568,6 +586,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	const page = await context.newPage()
 	page.setDefaultTimeout(30_000)
 	page.on('pageerror', (cause) => browserErrors.push(String(cause)))
+	page.on('dialog', (dialog) => dialog.accept())
 	await page.route('https://typst-consumer.test/**', async (route) => {
 		const url = new URL(route.request().url())
 		try {
@@ -624,6 +643,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 					clientRevision: snapshot.revision,
 					preview: { ...compiled.preview, data: [...compiled.preview.data] },
 					mapping: generated.value.mapping,
+					diagnostics: compiled.diagnostics,
 				}
 				compilations.push({
 					kind: compilations.length === 0 ? 'cold' : templateChanged ? 'edit' : 'data-only',
@@ -665,7 +685,13 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			await route.fulfill({
 				status: 400,
 				contentType: 'application/json',
-				body: JSON.stringify({ message: String(cause) }),
+				body: JSON.stringify({
+					kind: 'unexpected',
+					name: cause instanceof Error ? cause.name : 'UnknownError',
+					code: 'CONSUMER_TEST_FAILURE',
+					message: String(cause),
+					diagnostics: [],
+				}),
 			})
 		}
 	})
@@ -816,9 +842,13 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await page.screenshot({ path: join(evidence, '02-navigation.png'), fullPage: true })
 		const initialBody = await text(page.getByTestId('region-body').locator('.tiptap'))
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
+		assert.equal(
+			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
+			true,
+		)
 		assert.match(await text(page.getByRole('alert')), /COMPLEX_CONTENT/)
 		assert.equal(await text(page.getByTestId('region-body').locator('.tiptap')), initialBody)
 
@@ -836,6 +866,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			await notesToolbar.getByRole('button', { name: '加粗', exact: true }).isDisabled(),
 			true,
 		)
+		await notesRegion.locator('.typst-typography-panel > summary').click()
 		const notesTypography = notesRegion.getByRole('toolbar', { name: '排版扩展', exact: true })
 		assert.equal(
 			await notesTypography.getByRole('combobox', { name: '字体', exact: true }).isDisabled(),
@@ -1136,10 +1167,14 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await openWorkspace('AI 候选')
 		await candidateInput.fill(acceptedMarkdown)
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		const beforeLossyCandidate = await notes.innerHTML()
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
+		assert.equal(
+			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
+			true,
+		)
 		assert.match(await text(page.getByRole('alert')), /COMPLEX_CONTENT/)
 		assert.equal(await notes.innerHTML(), beforeLossyCandidate, 'A candidate retains inline styles')
 		await openWorkspace('正文')
@@ -1158,7 +1193,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			'The rendered field inherits its explicit text color',
 		)
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
 		await currentPreview(page)
 		const styledFieldNative = await session.renderPage({
 			revision: latest!.preview.revision,
@@ -1205,24 +1240,33 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await candidateInput.fill(acceptedMarkdown)
 		await page.getByRole('checkbox', { name: '允许接纳候选', exact: true }).uncheck()
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
+		assert.equal(
+			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
+			true,
+		)
 		assert.match(await text(page.getByRole('alert')), /FORBIDDEN_REGION/)
 		assert.equal(await text(notes), originalNotes)
 		await page.getByRole('checkbox', { name: '允许接纳候选', exact: true }).check()
 		await openWorkspace('AI 候选')
 		await candidateInput.fill('<data-field path=\'["unknown"]\'></data-field>')
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
+		assert.equal(
+			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
+			true,
+		)
 		assert.match(await text(page.getByRole('alert')), /INVALID_FIELD/)
 		assert.equal(await text(notes), originalNotes)
 		await openWorkspace('AI 候选')
 		await candidateInput.fill(acceptedMarkdown)
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await openWorkspace('正文')
 		await notes.click()
 		await notes.press('ControlOrMeta+End')
@@ -1261,7 +1305,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await notes.locator('ul li').waitFor()
 
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await page.getByRole('combobox', { name: '客户', exact: true }).selectOption('Acme')
 		const beforeCandidate = await text(notes)
 		await openWorkspace('AI 候选')
@@ -1269,7 +1314,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		assert.match(await text(page.getByRole('alert')), /STALE_CANDIDATE/)
 		assert.equal(await text(notes), beforeCandidate)
 		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await openWorkspace('AI 候选')
 		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
 		await notes.getByText('Accepted candidate', { exact: true }).waitFor()
@@ -1315,6 +1361,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		const body = page.getByTestId('region-body').locator('.tiptap')
 		const bodyRegion = page.getByTestId('region-body')
 		const bodyToolbar = bodyRegion.getByRole('toolbar', { name: '正文格式', exact: true })
+		await bodyRegion.locator('.typst-typography-panel > summary').click()
 		const typographyToolbar = bodyRegion.getByRole('toolbar', { name: '排版扩展', exact: true })
 		const fontFamily = typographyToolbar.getByRole('combobox', { name: '字体', exact: true })
 		const fontSize = typographyToolbar.getByRole('combobox', { name: '字号', exact: true })
@@ -1561,6 +1608,10 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await writeFile(join(evidence, 'native-page-1.png'), png.data)
 		await page.screenshot({ path: join(evidence, '04-reopened.png'), fullPage: true })
 		await page.setViewportSize({ width: 390, height: 844 })
+		await page
+			.getByRole('navigation', { name: '编辑与预览', exact: true })
+			.getByRole('button', { name: '预览', exact: true })
+			.click()
 		await page.locator('.preview-pane').scrollIntoViewIfNeeded()
 		await page.getByRole('button', { name: 'Fixed template', exact: true }).click()
 		await poll(() => text(page.getByTestId('page')), '1 / 3')
@@ -1591,6 +1642,25 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	} catch (cause) {
 		await page.screenshot({ path: join(evidence, 'failure.png'), fullPage: true })
 		await writeFile(join(evidence, 'failure.html'), await page.content())
+		await writeFile(
+			join(evidence, 'failure-selection.json'),
+			JSON.stringify(
+				await page.locator('.tiptap').evaluateAll((elements) => ({
+					domSelection: document.getSelection()?.toString(),
+					activeElement: document.activeElement?.outerHTML,
+					editors: elements.map((element) => {
+						const editor = (element as TiptapEditorHTMLElement).editor
+						return {
+							region: element.getAttribute('data-typst-region'),
+							selection: editor?.state.selection.toJSON(),
+							storedMarks: editor?.state.storedMarks?.map((mark) => mark.toJSON()),
+						}
+					}),
+				})),
+				null,
+				2,
+			),
+		)
 		throw cause
 	} finally {
 		await writeFile(join(evidence, 'commands.log'), log.join('\n\n'))

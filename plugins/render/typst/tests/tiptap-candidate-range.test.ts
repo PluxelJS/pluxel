@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { getSchema, type Editor, type JSONContent } from '@tiptap/core'
-import { EditorState } from '@tiptap/pm/state'
+import {
+	AllSelection,
+	EditorState,
+	NodeSelection,
+	TextSelection,
+	type Selection,
+} from '@tiptap/pm/state'
+import { CellSelection } from '@tiptap/pm/tables'
 import { history, undo } from '@tiptap/pm/history'
 import {
 	applyTypstCandidate,
+	captureTypstCandidateTarget,
 	createTypstExtensions,
 	prepareTypstCandidate,
 	TypstTableStyle,
@@ -41,6 +49,88 @@ const table: JSONContent = {
 		},
 	],
 }
+
+describe('candidate target capture from native selections', () => {
+	const schema = getSchema(createTypstExtensions(config))
+	const doc = schema.nodeFromJSON({
+		type: 'doc',
+		content: [
+			paragraph('First'),
+			paragraph('Second'),
+			{ type: 'blockquote', content: [paragraph('Nested'), paragraph('More')] },
+			table,
+			{ type: 'horizontalRule' },
+		],
+	})
+	const offsets: number[] = []
+	doc.forEach((_node, offset) => offsets.push(offset))
+	const capture = (selection: Selection, scope: 'region' | 'blocks' = 'blocks') => {
+		const before = selection.toJSON()
+		const result = captureTypstCandidateTarget({
+			selection,
+			regionId: 'body',
+			baseRevision: 'fixed:7',
+			scope,
+		})
+		expect(selection.toJSON()).toEqual(before)
+		return result
+	}
+	it('expands cursors/characters, excludes a boundary end, and captures identity atomically', () => {
+		for (const selection of [
+			TextSelection.create(doc, 2),
+			TextSelection.create(doc, 2, offsets[1]!),
+		])
+			expect(capture(selection)).toEqual({
+				ok: true,
+				value: {
+					regionId: 'body',
+					baseRevision: 'fixed:7',
+					range: { from: 0, to: offsets[1] },
+				},
+			})
+		expect(capture(TextSelection.create(doc, 2, offsets[1]! + 2))).toMatchObject({
+			value: { range: { from: 0, to: offsets[2] } },
+		})
+		expect(capture(TextSelection.create(doc, offsets[1]!))).toMatchObject({
+			value: { range: { from: offsets[1], to: offsets[2] } },
+		})
+		expect(capture(TextSelection.create(doc, doc.content.size))).toMatchObject({
+			value: { range: { from: offsets[4], to: doc.content.size } },
+		})
+		expect(capture(TextSelection.create(doc, 2), 'region')).toEqual({
+			ok: true,
+			value: { regionId: 'body', baseRevision: 'fixed:7' },
+		})
+	})
+	it('captures enclosing nested/table blocks and native atom/all selections', () => {
+		expect(capture(TextSelection.create(doc, offsets[2]! + 3))).toMatchObject({
+			value: { range: { from: offsets[2], to: offsets[3] } },
+		})
+		const cells: number[] = []
+		doc.descendants((node, at) => {
+			if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') cells.push(at)
+		})
+		for (const selection of [
+			CellSelection.create(doc, cells[0]!, cells.at(-1)!),
+			CellSelection.create(doc, cells.at(-1)!, cells[0]!),
+			TextSelection.create(doc, cells[0]! + 2),
+			NodeSelection.create(doc, offsets[3]!),
+		])
+			expect(capture(selection)).toMatchObject({
+				value: { range: { from: offsets[3], to: offsets[4] } },
+			})
+		expect(capture(NodeSelection.create(doc, offsets[4]!))).toMatchObject({
+			value: { range: { from: offsets[4], to: doc.content.size } },
+		})
+		expect(capture(new AllSelection(doc))).toMatchObject({
+			value: { range: { from: 0, to: doc.content.size } },
+		})
+		expect(capture(new AllSelection(schema.nodes.doc!.create()))).toMatchObject({
+			ok: false,
+			issues: [{ code: 'INVALID_CANDIDATE_RANGE' }],
+		})
+	})
+})
 
 function fixture() {
 	const schema = getSchema(createTypstExtensions(config))

@@ -1,4 +1,4 @@
-import { isTypstBlock } from './blocks'
+import { isTypstBlock, typstBlockPolicy } from './blocks'
 import { TypstBlockView } from './blocks-react'
 import '@tiptap/extension-text-style'
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -76,7 +76,9 @@ export function createTypstReactExtensions(config: TypstEditorConfig): Extension
 
 export interface TypstRegionEditorProps {
 	regionId: string
-	/** Initial JSON. Mount a new instance when the document or template revision changes. */
+	/** Initial JSON, not a controlled value. Keep config/extensions stable. Change the
+	 * document key to load another full draft with fresh history; data/region switches
+	 * keep their mounted Editor. onChange reports snapshots for the host to save. */
 	content: JSONContent
 	config: TypstEditorConfig
 	data: unknown
@@ -116,6 +118,7 @@ function RegionEditor(props: TypstRegionEditorProps) {
 	latestProps.current = props
 	const [issues, setIssues] = useState<TypstEditorIssue[]>([])
 	const [composing, setComposing] = useState(false)
+	const composition = useRef(false)
 	const ui = useMemo(
 		() => ({
 			config: props.config,
@@ -137,6 +140,19 @@ function RegionEditor(props: TypstRegionEditorProps) {
 				name: 'typstRegionAdmission',
 				addProseMirrorPlugins: () => [
 					new Plugin({
+						key: typstBlockPolicy,
+						state: {
+							init: () => (name: string) => {
+								const latest = latestProps.current
+								const region = latest.config.regions.find((item) => item.id === latest.regionId)
+								return (
+									latest.editable !== false &&
+									!composition.current &&
+									(!region?.nodes || region.nodes.includes(name))
+								)
+							},
+							apply: (_transaction, value) => value,
+						},
 						filterTransaction: (transaction) => {
 							if (!transaction.docChanged) return true
 							const latest = latestProps.current
@@ -228,8 +244,14 @@ function RegionEditor(props: TypstRegionEditorProps) {
 				<div
 					className={['typst-editor', props.className].filter(Boolean).join(' ')}
 					data-readonly={props.editable === false || undefined}
-					onCompositionStartCapture={() => setComposing(true)}
-					onCompositionEndCapture={() => setComposing(false)}
+					onCompositionStartCapture={() => {
+						composition.current = true
+						setComposing(true)
+					}}
+					onCompositionEndCapture={() => {
+						composition.current = false
+						setComposing(false)
+					}}
 				>
 					{issues.length > 0 && !props.onValidationError && (
 						<div role="alert" className="typst-editor-error">

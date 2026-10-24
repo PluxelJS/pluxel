@@ -46,7 +46,11 @@ export {
 	exportTypstMarkdown,
 	type TypstMarkdownExport,
 } from './markdown.js'
-export { prepareTypstCandidate, applyTypstCandidate } from './candidate.js'
+export {
+	captureTypstCandidateTarget,
+	prepareTypstCandidate,
+	applyTypstCandidate,
+} from './candidate.js'
 
 export {
 	TypstTemplateBlock,

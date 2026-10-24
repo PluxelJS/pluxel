@@ -284,10 +284,14 @@ it('loads the chosen saved draft through the UI and replaces editors, candidates
 	act(() => {
 		editor.commands.insertContent('本地修改')
 	})
-	fireEvent.click(screen.getByRole('button', { name: '开始候选' }))
+	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
 	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
 		target: { value: '旧候选' },
 	})
+	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
+	expect((screen.getByRole('button', { name: '接纳候选' }) as HTMLButtonElement).disabled).toBe(
+		false,
+	)
 	const oldRevision = workspace.draftRevision(target.entry)
 	const oldPreview = workspace.documents.get(target.entry)!.preview!
 	workspace.regionLocation = { entry: target.entry, regionId: 'body', from: 0, to: 2, serial: 1 }
@@ -360,10 +364,19 @@ it('edits only selected text blocks beside components and navigates a first atom
 	fireEvent.change(screen.getByRole('combobox', { name: '候选范围' }), {
 		target: { value: 'selection' },
 	})
-	fireEvent.click(screen.getByRole('button', { name: '开始候选' }))
+	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
+	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
+		target: { value: '不可接纳的旧文字' },
+	})
+	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
 	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
 		target: { value: '**新的分析**：收入已达标。' },
 	})
+	expect((screen.getByRole('button', { name: '接纳候选' }) as HTMLButtonElement).disabled).toBe(
+		true,
+	)
+	expect(editor.getJSON()).toEqual(original)
+	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
 	fireEvent.click(screen.getByRole('button', { name: '接纳候选' }))
 	await waitFor(() => expect(editor.state.doc.child(1).textContent).toBe('新的分析：收入已达标。'))
 	expect(editor.getJSON().content![0]).toEqual(original.content![0])

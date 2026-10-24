@@ -23,29 +23,10 @@ export function TypstBlockPicker({ editor }: { editor: Editor }) {
 			onChange={(event) => {
 				const value = event.currentTarget.value
 				const definition = templates.find((item) => `template:${item.id}` === value)
-				const content = definition
-					? {
-							type: 'templateBlock',
-							attrs: {
-								id: crypto.randomUUID(),
-								template: definition.id,
-								props: structuredClone(definition.defaults ?? {}),
-								dataPath: [],
-							},
-						}
-					: {
-							type: 'typstSource',
-							attrs: { id: crypto.randomUUID(), source: '#text(fill: blue)[补充说明]' },
-						}
-				editor
-					.chain()
-					.focus()
-					.command(({ tr }) => {
-						closeHistory(tr)
-						return true
-					})
-					.insertContent(content)
-					.run()
+				if (definition)
+					editor.chain().focus().insertTypstTemplateBlock({ template: definition.id }).run()
+				else if (value === 'source')
+					editor.chain().focus().insertTypstSource('#text(fill: blue)[补充说明]').run()
 			}}
 		>
 			<option value="" disabled>
@@ -162,6 +143,12 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 			}
 		}
 		menu.current?.hidePopover()
+		if (action === 'copy') {
+			const chain = editor.chain().focus()
+			if (source) chain.duplicateTypstSource(at).run()
+			else chain.duplicateTypstTemplateBlock(at).run()
+			return
+		}
 		const chain = editor
 			.chain()
 			.focus()
@@ -169,16 +156,7 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 				closeHistory(tr)
 				return true
 			})
-		if (action === 'copy') {
-			const next = at + current.nodeSize
-			chain
-				.insertContentAt(next, {
-					...current.toJSON(),
-					attrs: { ...current.attrs, id: crypto.randomUUID() },
-				})
-				.setNodeSelection(next)
-				.run()
-		} else if (action === 'delete') chain.setNodeSelection(at).deleteSelection().run()
+		if (action === 'delete') chain.setNodeSelection(at).deleteSelection().run()
 		else chain.setNodeSelection(at).updateAttributes(current.type.name, { source: text }).run()
 		setError('')
 	}
@@ -306,11 +284,13 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 						<textarea
 							ref={sourceInput}
 							aria-label="组件 Typst 源码"
+							data-typst-unapplied={text !== stored || undefined}
 							value={text}
 							readOnly={readOnly}
 							onChange={(event) => setText(event.currentTarget.value)}
 							spellCheck={false}
 						/>
+						{text !== stored && <small>未应用的源码修改；应用后才能随草稿保存。</small>}
 						<button
 							type="button"
 							disabled={disabled || text === stored}

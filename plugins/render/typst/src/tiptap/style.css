@@ -28,6 +28,24 @@
 	top: 0;
 	z-index: 4;
 }
+.typst-typography-panel {
+	background: var(--typst-surface);
+	border-bottom: 1px solid var(--typst-border);
+}
+.typst-typography-panel > summary {
+	cursor: pointer;
+	padding: 5px 12px;
+	font-size: 12px;
+	width: fit-content;
+}
+.typst-typography-panel > summary:focus-visible {
+	outline: 2px solid currentColor;
+	outline-offset: -2px;
+}
+.typst-editing-reason {
+	padding: 4px 12px;
+	color: var(--typst-muted);
+}
 
 .typst-toolbar {
 	display: flex;

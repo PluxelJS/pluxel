@@ -105,9 +105,9 @@ vp run @report-template-studio/app#package
 
 只有显式设置 `sourceBlocks: true` 才启用 `TypstSource`，允许用户在正文中插入并现场编写 Typst。在“编辑 Typst 源码”修改后，点击“应用组件修改”才提交一次可撤销的草稿变化。省略或设为 `false` 不安装源码节点；卸载能力后含对应节点的旧草稿会明确报错，不隐式删除。源码块由同一编译会话处理，失败保留源码与上一份成功预览；预览定位选中对应组件，源码块还传递行列位置。Monaco 仍只属于 Studio 的独立源码面板，SDK 组件不依赖它。
 
-独立的“排版扩展”行提供字体、字号、文字颜色与背景颜色，字体选项使用工作区随附的 Noto Serif CJK SC 和 Liberation Serif；色板也接受自定义十六进制色值。“清除排版”保留加粗等基础格式，每次操作支持原生撤销。这些格式保存在正文 JSON 并进入真实 Typst/PDF；Markdown 无法完整保留，带排版格式的区域不能被有损候选整区覆盖。
+默认收起的“排版”面板提供字体、字号、文字颜色与背景颜色，展开仍使用同一“排版扩展”工具栏；收起不重建 Editor 或改变 history。字体选项使用工作区随附的 Noto Serif CJK SC 和 Liberation Serif；色板也接受自定义十六进制色值。“清除排版”保留加粗等基础格式，每次操作支持原生撤销。这些格式保存在正文 JSON 并进入真实 Typst/PDF；Markdown 无法完整保留，带排版格式的区域不能被有损候选整区覆盖。
 
-Markdown 候选在独立折叠区暂存，可选择“整个区域”或“当前选中顶层块”。后者把原生选区展开为完整顶层块；光标在段落内时只改该段，范围外的图表、源码块、复杂表格保持原样。“开始候选”固定区域、范围与当前正文、数据及源码/资源修订，“接纳候选”重新检查后一次提交，可用一次撤销恢复。目标块本身必须能无损往返 Markdown；旧版本、未授权内容和有损替换均保留原文并显示错误，不自动重定位旧范围。Markdown 的 `typst` 代码围栏仍是代码展示，不会执行。不需要模型调用即可验收这条路径。
+Markdown 候选在独立折叠区审阅，可选择“整个区域”或“当前选中顶层块”。后者把原生选区展开为完整顶层块；光标在段落内时只改该段，范围外的图表、源码块、复杂表格保持原样。“固定候选目标”使用共享 `captureTypstCandidateTarget` 捕获区域、范围与当前正文、数据及源码/资源修订；“查看修改预览”准备并展示原文/候选对照，“接纳候选”读取最新事实复核后一次提交，可用一次撤销恢复。编辑候选文字会使已准备结果失效，需重新查看预览；不会刷新固定目标的修订。目标块本身必须能无损往返 Markdown；旧版本、未授权内容和有损替换均保留原文并显示错误，不自动重定位旧范围。Markdown 的 `typst` 代码围栏仍是代码展示，不会执行。不需要模型调用即可验收这条路径。
 
 正文 JSON 与原始表单输入保存在同一应用草稿中，坏草稿保留原始 JSON，模板修订不匹配时需显式校验并采用当前模板。区域生成只进入文档私有临时树，不写回模板工作区或共享源码缓存。连续变化只保留一个在途编译和最新待处理快照；旧结果不发布，失败保留上一份预览。导出当前草稿会先取得匹配的成功修订；未保存源码不导出旧画面。
 
@@ -319,7 +319,7 @@ vp run @report-template-studio/app#test:desktop
 
 测试覆盖真实目录、外部改动与并发冲突、ZIP 往返和失败清理、默认值合并、跨目录 Vite HMR、运行器限制、官方 Typst/PDF、Pi 真实文件工具与会话生命周期。生产 `test:runtime` 在导入运行入口前禁止 TCP/HTTP `net.Server.listen`，仅允许本机 IPC。它从构建后的公开 client export 在另一个 Node 进程发现、认证、编译并读取 PNG/PDF，验证重连、原生源码定位及真实多页标题目录。默认使用当前项目 `dist/`；设置 `STUDIO_APP_ROOT` 为发布目录中的 `resources/app` 可执行同一检查，使用发布包自己的依赖、字体、原生库和 QuickJS。Windows Action 只在打包后执行这一生产检查。
 
-桌面验收使用隔离 profile 和真实 Electron preload/IPC，只将系统文件选择器替换为指定临时路径；需要桌面显示环境，结果在 `test-results/`。`STUDIO_EXECUTABLE` 可指向独立包执行同一套验收。受限容器中若 Electron 系统沙箱无法启动，可显式设置 `STUDIO_DISABLE_SANDBOX=1`；该变量仅由测试脚本读取，不改变产品 renderer sandbox 配置。
+桌面验收使用隔离 profile 和真实 Electron preload/IPC，只将系统文件选择器替换为指定临时路径；窗口固定为 1440×900，结果在 `test-results/`。`STUDIO_EXECUTABLE` 可指向独立包执行同一套验收。Linux 默认沿用当前显示环境，也可显式设置 `STUDIO_OZONE_PLATFORM=headless`，以 Electron 的原生 Ozone headless 执行同一套窗口、后端与 PDF 检查；它不能证明 Wayland/X11 显示兼容性。受限容器中若 Electron 系统沙箱无法启动，可显式设置 `STUDIO_DISABLE_SANDBOX=1`。这些变量只由 `tests/desktop.mjs` 读取，不改变产品 renderer sandbox 或显示配置；`STUDIO_SCREENSHOTS` 可指定证据目录。
 
 Linux / macOS 可另运行 `vp run @report-template-studio/app#test:desktop-recovery`：复制临时后端源码，通过官方开发控制台检查当前服务，在同一 Electron 页面内连续替换两次后端，验证可选明细表缺省、表单保存、预览恢复及主进程 PDF 保存。脚本自行构建开发壳，使用隔离 profile，关闭自己启动的应用与 Vite，截图和结果保存在 `test-results/desktop-recovery/`。
 

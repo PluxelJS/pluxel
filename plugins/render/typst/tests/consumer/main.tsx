@@ -7,9 +7,12 @@ import {
 	type SourcePosition,
 	type TypstPreview,
 	type TypstPreviewState,
+	type TypstDiagnostic,
 } from '@pluxel/plugin-typst/browser'
 import {
 	applyTypstCandidate,
+	exportTypstMarkdown,
+	captureTypstCandidateTarget,
 	findTypstGeneratedPosition,
 	findTypstRegionPosition,
 	prepareTypstCandidate,
@@ -29,6 +32,8 @@ import {
 	TypstRegionEditor,
 } from '@pluxel/plugin-typst/tiptap/react'
 import type { Editor } from '@tiptap/core'
+import { diagnosticPosition, sourceOffset, type ConsumerFailure } from './compile-contract'
+import { ChannelParameters } from './channel-parameters'
 import { TextSelection, NodeSelection } from '@tiptap/pm/state'
 import { fontFamilies, initialDraft, initialSource } from './editor-config.mjs'
 import { examples, getExample } from './report-example.mjs'
@@ -53,6 +58,12 @@ interface Compiled {
 	preview: TypstPreview
 	mapping: TypstGeneratedMapping[]
 }
+interface Diagnosis {
+	revision: number
+	mapping: TypstGeneratedMapping[]
+	diagnostics: readonly TypstDiagnostic[]
+	failure?: ConsumerFailure
+}
 
 function App() {
 	const [draft, setDraft] = useState<TypstDocumentDraft>(
@@ -74,11 +85,24 @@ function App() {
 		currentHeading: -1,
 	})
 	const [candidateScope, setCandidateScope] = useState<'region' | 'blocks'>('region')
-	const [candidate, setCandidate] = useState<TypstMarkdownCandidate>()
+	const [candidateTarget, setCandidateTarget] = useState<
+		Omit<TypstMarkdownCandidate, 'markdown'> & { original: string }
+	>()
+	const [candidateReview, setCandidateReview] = useState<TypstPreparedCandidate>()
 	const [candidateText, setCandidateText] = useState(
 		'## Accepted candidate\n\nPrepared for <data-field path=\'["customer","name"]\'></data-field>.',
 	)
 	const [message, setMessage] = useState('')
+	const [pane, setPane] = useState<'editor' | 'preview'>('editor')
+	const [diagnosis, setDiagnosis] = useState<Diagnosis>()
+	const [displayedRevision, setDisplayedRevision] = useState<number>()
+	const [baseline, setBaseline] = useState(() => ({
+		kind: 'example' as 'example' | 'saved',
+		content: JSON.stringify({ draft: initialDraft, source: initialSource }),
+	}))
+	const [saveError, setSaveError] = useState('')
+	const [unappliedInput, setUnappliedInput] = useState(false)
+	const [composing, setComposing] = useState(false)
 	const [permission, setPermission] = useState(true)
 	const [editable, setEditable] = useState(true)
 	const [importResult, setImportResult] = useState('')
@@ -87,6 +111,7 @@ function App() {
 	const [zoom, setZoom] = useState(1)
 	const [navigation, setNavigation] = useState('')
 	const container = useRef<HTMLDivElement>(null)
+	const editing = useRef<HTMLElement>(null)
 	const viewport = useRef<HTMLDivElement>(null)
 	const sourceEditor = useRef<HTMLTextAreaElement>(null)
 	const view = useRef<TypstPreviewView | undefined>(undefined)
@@ -101,6 +126,47 @@ function App() {
 	const pointer = useRef<{ x: number; y: number } | null>(null)
 	const [clientId] = useState(() => crypto.randomUUID())
 	const parsedData = parseData(draft.data)
+	const dirty = JSON.stringify({ draft, source }) !== baseline.content
+	const pendingData = dataText !== JSON.stringify(draft.data, null, 2)
+	const hasUnappliedInput = () => !!editing.current?.querySelector('[data-typst-unapplied="true"]')
+	const replacementGuard = useRef<() => boolean>(() => false)
+	replacementGuard.current = () => dirty || pendingData || hasUnappliedInput()
+	const previewCurrent =
+		compiled?.clientRevision === revision && displayedRevision === revision && !busy
+
+	function confirmReplacement() {
+		if (
+			!replacementGuard.current() ||
+			window.confirm('存在未保存修改或未应用输入。放弃这些修改并替换当前草稿？')
+		)
+			return true
+		setMessage('已取消替换，正文、输入和撤销历史保留')
+		return false
+	}
+	useEffect(() => {
+		if (!editing.current) return
+		// The same marker drives the status and synchronous save/leave guards. Observe
+		// cancellation, application and mount changes as well as text input.
+		const update = () => setUnappliedInput(hasUnappliedInput())
+		const observer = new MutationObserver(update)
+		observer.observe(editing.current, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['data-typst-unapplied'],
+		})
+		update()
+		return () => observer.disconnect()
+	}, [])
+	useEffect(() => {
+		const guard = (event: BeforeUnloadEvent) => {
+			if (!replacementGuard.current()) return
+			event.preventDefault()
+			event.returnValue = ''
+		}
+		window.addEventListener('beforeunload', guard)
+		return () => window.removeEventListener('beforeunload', guard)
+	}, [])
 
 	function change(update: (previous: TypstDocumentDraft) => TypstDocumentDraft) {
 		setDraft(update)
@@ -113,13 +179,19 @@ function App() {
 			const response = next.templateUrl ? await fetch(next.templateUrl) : undefined
 			if (response && !response.ok) throw new Error('示例模板读取失败')
 			const template = response ? await response.text() : next.source!
-			if (serial !== exampleLoad.current) return
+			if (serial !== exampleLoad.current || !confirmReplacement()) return
+			setBaseline({
+				kind: 'example',
+				content: JSON.stringify({ draft: next.draft, source: template }),
+			})
+			setSaveError('')
 			setDraft(structuredClone(next.draft))
 			setDataText(JSON.stringify(next.draft.data, null, 2))
 			setSource(template)
 			setRegion('body')
 			setWorkspaceTab('editor')
-			setCandidate(undefined)
+			setCandidateTarget(undefined)
+			setCandidateReview(undefined)
 			setEpoch((value) => value + 1)
 			setRevision((value) => value + 1)
 			setError('')
@@ -140,6 +212,7 @@ function App() {
 			})
 			if (!checked.ok) throw new Error(JSON.stringify(checked.issues))
 			change((previous) => ({ ...previous, data: checked.value.data }))
+			setDataText(JSON.stringify(checked.value.data, null, 2))
 			setError('')
 			setMessage('已应用外部数据，正文与撤销历史保留')
 		} catch (cause) {
@@ -187,8 +260,21 @@ function App() {
 							body: JSON.stringify(snapshot),
 						})
 						const value = await response.json()
-						if (!response.ok) throw new Error(value.message)
 						if (!alive.current || snapshot.revision !== current.current.revision) continue
+						if (!response.ok) {
+							setDiagnosis({
+								revision: snapshot.revision,
+								mapping: value.mapping ?? [],
+								diagnostics: value.diagnostics ?? [],
+								failure: value,
+							})
+							continue
+						}
+						setDiagnosis({
+							revision: snapshot.revision,
+							mapping: value.mapping,
+							diagnostics: value.diagnostics,
+						})
 						setCompiled({
 							...value,
 							preview: { ...value.preview, data: new Uint8Array(value.preview.data) },
@@ -196,7 +282,18 @@ function App() {
 						setError('')
 					} catch (cause) {
 						if (alive.current && snapshot.revision === current.current.revision)
-							setError(String(cause))
+							setDiagnosis({
+								revision: snapshot.revision,
+								mapping: [],
+								diagnostics: [],
+								failure: {
+									kind: 'unexpected',
+									name: cause instanceof Error ? cause.name : 'UnknownError',
+									code: 'TRANSPORT_FAILED',
+									message: String(cause),
+									diagnostics: [],
+								},
+							})
 					}
 				}
 			} finally {
@@ -223,62 +320,15 @@ function App() {
 					isNavigationCurrent: () => displayed.current?.clientRevision === current.current.revision,
 					onNavigate: ({ point }) => {
 						const snapshot = displayed.current
-						if (!snapshot || snapshot.clientRevision !== current.current.revision) return
-						const serial = ++navigationSerial.current
-						const target = findTypstRegionPosition({
-							mapping: snapshot.mapping,
-							position: point,
-							snapshotRevision: snapshot.clientRevision,
-						})
-						if (target) {
-							setWorkspaceTab('editor')
-							setRegion(target.regionId)
-							requestAnimationFrame(() => {
-								if (
-									serial !== navigationSerial.current ||
-									snapshot.clientRevision !== current.current.revision
-								)
-									return
-								const editor = editors.current.get(target.regionId)
-								if (!editor) return
-								const from = Math.min(Math.max(0, target.from), editor.state.doc.content.size)
-								editor.view.dispatch(
-									editor.state.tr
-										.setSelection(
-											editor.state.doc.nodeAt(from)?.isAtom &&
-												!editor.state.doc.nodeAt(from)?.isText
-												? NodeSelection.create(editor.state.doc, from)
-												: TextSelection.near(editor.state.doc.resolve(from)),
-										)
-										.setMeta('typst-navigation', target.source ?? true)
-										.scrollIntoView(),
-								)
-								editor.view.focus()
-								setNavigation(`region:${target.regionId}:${target.from}`)
-							})
-						} else if (point.path === 'main.typ' && sourceEditor.current) {
-							const lines = current.current.source.split('\n')
-							const offset =
-								lines.slice(0, point.line - 1).reduce((sum, line) => sum + line.length + 1, 0) +
-								point.column -
-								1
-							setWorkspaceTab('template')
-							requestAnimationFrame(() => {
-								if (
-									serial !== navigationSerial.current ||
-									snapshot.clientRevision !== current.current.revision
-								)
-									return
-								sourceEditor.current?.focus()
-								sourceEditor.current?.setSelectionRange(offset, offset)
-								setNavigation(`source:${point.line}:${point.column}`)
-							})
-						}
+						if (snapshot) navigateToSource(point, snapshot.clientRevision, snapshot.mapping)
 					},
 				})
 			}
 			if (canceled) return
-			if (await view.current.show(compiled.preview)) displayed.current = compiled
+			if (await view.current.show(compiled.preview)) {
+				displayed.current = compiled
+				setDisplayedRevision(compiled.clientRevision)
+			}
 		})().catch((cause) => {
 			if (!canceled) setError(String(cause))
 		})
@@ -286,6 +336,53 @@ function App() {
 			canceled = true
 		}
 	}, [compiled])
+
+	function navigateToSource(
+		position: SourcePosition,
+		snapshotRevision: number,
+		mapping: TypstGeneratedMapping[],
+	) {
+		if (snapshotRevision !== current.current.revision) return
+		const serial = ++navigationSerial.current
+		const target = findTypstRegionPosition({ mapping, position, snapshotRevision })
+		if (target) {
+			setPane('editor')
+			setWorkspaceTab('editor')
+			setRegion(target.regionId)
+			requestAnimationFrame(() => {
+				if (serial !== navigationSerial.current || snapshotRevision !== current.current.revision)
+					return
+				const editor = editors.current.get(target.regionId)
+				if (!editor) return
+				const from = Math.min(Math.max(0, target.from), editor.state.doc.content.size)
+				const node = editor.state.doc.nodeAt(from)
+				editor.view.dispatch(
+					editor.state.tr
+						.setSelection(
+							node?.isAtom && !node.isText && NodeSelection.isSelectable(node)
+								? NodeSelection.create(editor.state.doc, from)
+								: TextSelection.near(editor.state.doc.resolve(from)),
+						)
+						.setMeta('typst-navigation', target.source ?? true)
+						.scrollIntoView(),
+				)
+				editor.view.focus()
+				setNavigation(`region:${target.regionId}:${target.from}`)
+			})
+		} else if (position.path === 'main.typ') {
+			const offset = sourceOffset(current.current.source, position)
+			if (offset === undefined) return
+			setPane('editor')
+			setWorkspaceTab('template')
+			requestAnimationFrame(() => {
+				if (serial !== navigationSerial.current || snapshotRevision !== current.current.revision)
+					return
+				sourceEditor.current?.focus()
+				sourceEditor.current?.setSelectionRange(offset, offset)
+				setNavigation(`source:${position.line}:${position.column}`)
+			})
+		}
+	}
 
 	function revealSource(position: SourcePosition) {
 		if (
@@ -310,18 +407,24 @@ function App() {
 	}
 
 	function save() {
-		const checked = validateTypstDraft({
-			draft,
-			config,
-			templateId: example.id,
-			templateRevision: example.draft.templateRevision,
-		})
-		if (!checked.ok) {
-			setError(JSON.stringify(checked.issues))
-			return
+		try {
+			if (pendingData || hasUnappliedInput())
+				throw new Error('请先应用数据、源码块修改或确认组件参数，再保存。未应用输入仍保留。')
+			const checked = validateTypstDraft({
+				draft,
+				config,
+				templateId: example.id,
+				templateRevision: example.draft.templateRevision,
+			})
+			if (!checked.ok) throw new Error(JSON.stringify(checked.issues))
+			const content = JSON.stringify({ draft: checked.value, source })
+			localStorage.setItem('typst-consumer-draft', content)
+			setBaseline({ kind: 'saved', content })
+			setSaveError('')
+			setMessage('已保存原始输入、区域 JSON 与模板到本浏览器的单一保存槽')
+		} catch (cause) {
+			setSaveError(String(cause))
 		}
-		localStorage.setItem('typst-consumer-draft', JSON.stringify({ draft: checked.value, source }))
-		setMessage('已保存原始输入与区域 JSON')
 	}
 
 	function reopen() {
@@ -342,12 +445,19 @@ function App() {
 				setError(JSON.stringify(checked.issues))
 				return
 			}
+			if (!confirmReplacement()) return
+			setBaseline({
+				kind: 'saved',
+				content: JSON.stringify({ draft: checked.value, source: saved.source }),
+			})
+			setSaveError('')
 			setDraft(checked.value)
 			setSource(saved.source)
 			setDataText(JSON.stringify(checked.value.data, null, 2))
 			setRegion('body')
 			setWorkspaceTab('editor')
-			setCandidate(undefined)
+			setCandidateTarget(undefined)
+			setCandidateReview(undefined)
 			setError('')
 			setEpoch((value) => value + 1)
 			setRevision((value) => value + 1)
@@ -357,40 +467,88 @@ function App() {
 		}
 	}
 
-	function acceptCandidate() {
+	function fixCandidateTarget() {
 		const editor = editors.current.get(region)
-		if (!candidate || !editor) return
+		if (!editor) return
+		const target = captureTypstCandidateTarget({
+			selection: editor.state.selection,
+			regionId: region,
+			baseRevision: revision,
+			scope: candidateScope,
+		})
+		if (!target.ok) {
+			setError(JSON.stringify(target.issues))
+			return
+		}
+		const from = target.value.range?.from ?? 0
+		const to = target.value.range?.to ?? editor.state.doc.content.size
+		const original = exportTypstMarkdown({
+			document: editor.state.doc.cut(from, to).toJSON(),
+			regionId: region,
+			config,
+			data: parsedData,
+		})
+		setCandidateTarget({
+			...target.value,
+			original: original.ok ? original.value.markdown : JSON.stringify(original.issues),
+		})
+		setCandidateReview(undefined)
+		setError('')
+		setMessage(`已固定草稿 ${revision} 的候选目标，字符选区将扩展为完整顶层块`)
+	}
+	function reviewCandidate() {
+		if (!candidateTarget) return
+		const editor = editors.current.get(candidateTarget.regionId)
+		if (!editor) return
 		const prepared = prepareTypstCandidate({
-			candidate,
+			candidate: {
+				regionId: candidateTarget.regionId,
+				baseRevision: candidateTarget.baseRevision,
+				range: candidateTarget.range,
+				markdown: candidateText,
+			},
 			currentRevision: current.current.revision,
 			document: editor.getJSON(),
 			config,
 			data: parseData(current.current.draft.data),
-			canEdit: (id) => permission && id === region,
+			canEdit: (id) => permission && editable && !composing && id === candidateTarget.regionId,
 		})
 		if (!prepared.ok) {
+			setCandidateReview(undefined)
 			setError(JSON.stringify(prepared.issues))
 			return
 		}
+		setCandidateReview(prepared.value)
+		setError('')
+	}
+	function acceptCandidate() {
+		if (!candidateReview) return
+		const editor = editors.current.get(candidateReview.regionId)
+		if (!editor) return
 		const result = applyTypstCandidate({
-			candidate: prepared.value as TypstPreparedCandidate,
+			candidate: candidateReview,
 			editor,
-			regionId: region,
+			regionId: candidateReview.regionId,
 			currentRevision: () => current.current.revision,
 			config,
 			data: () => parseData(current.current.draft.data),
-			canEdit: (id) => permission && id === region,
+			canEdit: (id) => permission && editable && !composing && id === candidateReview.regionId,
 		})
 		if (!result.ok) setError(JSON.stringify(result.issues))
 		else {
+			setCandidateReview(undefined)
 			setError('')
 			setMessage('候选已接纳，可一次撤销')
+			setRegion(candidateReview.regionId)
 			setWorkspaceTab('editor')
 		}
 	}
 
 	return (
-		<main>
+		<main
+			onCompositionStartCapture={() => setComposing(true)}
+			onCompositionEndCapture={() => setComposing(false)}
+		>
 			<header>
 				<div>
 					<p className="eyebrow">PLUXEL / TYPST</p>
@@ -419,12 +577,11 @@ function App() {
 						<select
 							aria-label="客户"
 							value={(draft.data.customer as { name: string }).name}
-							onChange={(event) =>
-								change((previous) => ({
-									...previous,
-									data: { customer: { name: event.target.value } },
-								}))
-							}
+							onChange={(event) => {
+								const data = { customer: { name: event.target.value } }
+								setDataText(JSON.stringify(data, null, 2))
+								change((previous) => ({ ...previous, data }))
+							}}
 						>
 							<option>Acme</option>
 							<option>Beta</option>
@@ -447,7 +604,7 @@ function App() {
 				</button>
 				<button
 					type="button"
-					disabled={!compiled || compiled.clientRevision !== revision || busy}
+					disabled={!previewCurrent}
 					onClick={async () => {
 						try {
 							const response = await fetch('/pdf', {
@@ -474,13 +631,82 @@ function App() {
 					导出当前 PDF
 				</button>
 				<output data-testid="revision">
-					草稿 {revision} / 预览 {compiled?.clientRevision ?? '—'}
-					{busy ? ' · 编译中' : compiled?.clientRevision !== revision ? ' · 过期' : ' · 当前'}
+					草稿 {revision} / 预览 {displayedRevision ?? '—'}
+					{busy ? ' · 编译中' : previewCurrent ? ' · 当前' : ' · 过期'}
+				</output>
+				<output data-testid="save-state" title="单一保存槽；仅保存到当前浏览器">
+					{saveError
+						? '保存失败'
+						: baseline.kind === 'saved' && !dirty
+							? '已保存到本浏览器'
+							: '未保存'}
+					{(pendingData || unappliedInput) && ' · 有未应用输入'}
 				</output>
 			</div>
+			{saveError && <pre role="alert">{saveError}</pre>}
 			{error && <pre role="alert">{error}</pre>}
-			<div className="columns">
-				<section className="editing">
+			{diagnosis && (diagnosis.failure || diagnosis.diagnostics.length > 0) && (
+				<details className="compile-diagnostics" open={!!diagnosis.failure}>
+					<summary>
+						编译诊断 · 草稿 {diagnosis.revision}
+						{diagnosis.revision !== revision && '（已过期，不能定位）'}
+					</summary>
+					{diagnosis.failure && (
+						<p role="alert">
+							{diagnosis.failure.kind} / {diagnosis.failure.code} · {diagnosis.failure.name}:{' '}
+							{diagnosis.failure.message}
+						</p>
+					)}
+					<ul>
+						{diagnosis.diagnostics.map((item, index) => {
+							const position = diagnosticPosition(item)
+							const mapped =
+								position &&
+								(position.path === 'main.typ' ||
+									findTypstRegionPosition({
+										mapping: diagnosis.mapping,
+										position,
+										snapshotRevision: diagnosis.revision,
+									}))
+							return (
+								<li key={index}>
+									<span>
+										{item.severity} · {item.message} {item.path}
+										{position && `:${position.line}:${position.column}`}
+									</span>
+									{position && (
+										<button
+											type="button"
+											disabled={diagnosis.revision !== revision || !mapped}
+											onClick={() =>
+												navigateToSource(position, diagnosis.revision, diagnosis.mapping)
+											}
+										>
+											定位诊断 {index + 1}
+										</button>
+									)}
+									{position?.path.startsWith('_editor/') && !mapped && (
+										<small>无匹配映射；请核对区域配置和模板组件定义。</small>
+									)}
+								</li>
+							)
+						})}
+					</ul>
+					{diagnosis.failure && diagnosis.mapping.length === 0 && (
+						<p>没有本次请求的生成映射；仅展示可用诊断。</p>
+					)}
+				</details>
+			)}
+			<nav className="pane-switch" aria-label="编辑与预览">
+				<button type="button" aria-pressed={pane === 'editor'} onClick={() => setPane('editor')}>
+					编辑
+				</button>
+				<button type="button" aria-pressed={pane === 'preview'} onClick={() => setPane('preview')}>
+					预览
+				</button>
+			</nav>
+			<div className="columns" data-pane={pane}>
+				<section className="editing" ref={editing}>
 					<div role="tablist" aria-label="编辑工作区" className="workspace-tabs">
 						{workspaceTabs.map((tab, index) => (
 							<button
@@ -596,32 +822,37 @@ function App() {
 									}}
 								>
 									{(editor) => (
-										<TypstEditorToolbar editor={editor} fontFamilies={fontFamilies}>
-											<TypstFieldPicker editor={editor} fields={config.fields} />
-											<TypstBlockPicker editor={editor} />
-											<button
-												type="button"
-												onMouseDown={(event) => event.preventDefault()}
-												onClick={() =>
-													editor
-														.chain()
-														.focus()
-														.insertContent({
-															type: 'notice',
-															attrs: { tone: 'info' },
-															content: [
-																{
-																	type: 'paragraph',
-																	content: [{ type: 'text', text: 'Consumer-owned notice' }],
-																},
-															],
-														})
-														.run()
-												}
-											>
-												添加提示块
-											</button>
-										</TypstEditorToolbar>
+										<>
+											<TypstEditorToolbar editor={editor} fontFamilies={fontFamilies}>
+												<TypstFieldPicker editor={editor} fields={config.fields} />
+												<TypstBlockPicker editor={editor} />
+												<button
+													type="button"
+													onMouseDown={(event) => event.preventDefault()}
+													onClick={() =>
+														editor
+															.chain()
+															.focus()
+															.insertContent({
+																type: 'notice',
+																attrs: { tone: 'info' },
+																content: [
+																	{
+																		type: 'paragraph',
+																		content: [{ type: 'text', text: 'Consumer-owned notice' }],
+																	},
+																],
+															})
+															.run()
+													}
+												>
+													添加提示块
+												</button>
+											</TypstEditorToolbar>
+											{example.id === 'operations-report' && (
+												<ChannelParameters editor={editor} editable={editable} />
+											)}
+										</>
 									)}
 								</TypstRegionEditor>
 							</div>
@@ -736,7 +967,11 @@ function App() {
 							<select
 								aria-label="候选目标区域"
 								value={region}
-								onChange={(event) => setRegion(event.currentTarget.value)}
+								onChange={(event) => {
+									setRegion(event.currentTarget.value)
+									setCandidateTarget(undefined)
+									setCandidateReview(undefined)
+								}}
 							>
 								{config.regions.map((item) => (
 									<option key={item.id} value={item.id}>
@@ -750,9 +985,11 @@ function App() {
 							<select
 								aria-label="候选修改范围"
 								value={candidateScope}
-								onChange={(event) =>
+								onChange={(event) => {
 									setCandidateScope(event.currentTarget.value as 'region' | 'blocks')
-								}
+									setCandidateTarget(undefined)
+									setCandidateReview(undefined)
+								}}
 							>
 								<option value="region">整个区域</option>
 								<option value="blocks">当前选中块</option>
@@ -764,7 +1001,10 @@ function App() {
 						<textarea
 							aria-label="候选 Markdown"
 							value={candidateText}
-							onChange={(event) => setCandidateText(event.target.value)}
+							onChange={(event) => {
+								setCandidateText(event.target.value)
+								setCandidateReview(undefined)
+							}}
 						/>
 						<div className="panel-actions">
 							<label>
@@ -775,36 +1015,21 @@ function App() {
 								/>
 								允许接纳候选
 							</label>
+							<button type="button" onClick={fixCandidateTarget} disabled={composing}>
+								固定候选目标
+							</button>
 							<button
 								type="button"
-								onClick={() => {
-									const editor = editors.current.get(region)
-									if (!editor) return
-									const { selection, doc } = editor.state
-									let from = -1,
-										to = -1
-									doc.forEach((node, offset) => {
-										if (
-											selection.from < offset + node.nodeSize &&
-											(selection.empty ? selection.from >= offset : selection.to > offset)
-										) {
-											if (from === -1) from = offset
-											to = offset + node.nodeSize
-										}
-									})
-									setCandidate({
-										...(candidateScope === 'blocks' ? { range: { from, to } } : {}),
-										regionId: region,
-										baseRevision: revision,
-										markdown: candidateText,
-									})
-									setMessage(`候选基于草稿 ${revision}`)
-									setError('')
-								}}
+								onClick={reviewCandidate}
+								disabled={!candidateTarget || composing}
 							>
-								暂存候选
+								查看修改预览
 							</button>
-							<button type="button" onClick={acceptCandidate}>
+							<button
+								type="button"
+								onClick={acceptCandidate}
+								disabled={!candidateReview || composing}
+							>
 								接纳候选
 							</button>
 							<button
@@ -843,6 +1068,35 @@ function App() {
 								检查 HTML
 							</button>
 						</div>
+						{candidateTarget && (
+							<div className="candidate-review" data-testid="candidate-review">
+								<p>
+									目标：{candidateTarget.regionId} · 草稿 {candidateTarget.baseRevision} ·{' '}
+									{candidateTarget.range
+										? `完整顶层块 [${candidateTarget.range.from}, ${candidateTarget.range.to})`
+										: '整个区域'}
+									。范围外的图表、组件和表格保持原样。
+								</p>
+								{candidateTarget.baseRevision !== revision && (
+									<p>目标已过期；保留对照，接纳时会拒绝。请明确重新固定目标。</p>
+								)}
+								<div className="candidate-comparison">
+									<section>
+										<h3>原内容</h3>
+										<pre>{candidateTarget.original}</pre>
+									</section>
+									<section>
+										<h3>待替换内容</h3>
+										<pre>{candidateText}</pre>
+									</section>
+								</div>
+								<p>
+									{candidateReview
+										? '已准备：接纳将提交以上候选，一次撤销可恢复。'
+										: '尚未准备或文字已修改，请查看修改预览后再接纳。'}
+								</p>
+							</div>
+						)}
 						{importResult && <pre data-testid="import-result">{importResult}</pre>}
 					</div>
 				</section>
@@ -894,7 +1148,9 @@ function App() {
 				</section>
 			</div>
 			<footer className="workspace-status">
-				<span role="status">{message || '切换工作标签保留编辑内容；切换示例前请先保存。'}</span>
+				<span role="status">
+					{message || '切换工作标签保留编辑内容；保存使用本浏览器的单一槽位。'}
+				</span>
 				<output data-testid="navigation">{navigation}</output>
 			</footer>
 		</main>

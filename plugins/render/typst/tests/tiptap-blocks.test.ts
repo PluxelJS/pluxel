@@ -2,9 +2,9 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { getSchema, type Editor, type JSONContent } from '@tiptap/core'
+import { Editor, getSchema, type JSONContent } from '@tiptap/core'
 import { EditorState } from '@tiptap/pm/state'
-import { history, undo } from '@tiptap/pm/history'
+import { history, undo, redo } from '@tiptap/pm/history'
 import { describe, expect, it } from 'vitest'
 import {
 	applyTypstCandidate,
@@ -70,6 +70,120 @@ const source = (id: string, text = '#heading(level: 2)[Source #data.period]'): J
 })
 const validate = (content: JSONContent, rules = config) =>
 	validateTypstRegion({ document: content, regionId: 'body', config: rules, data })
+
+describe('native Typst creation commands', () => {
+	it('rejects explicit null options without changing content, defaults or history', () => {
+		const defaults = { title: 'Default title', extra: [1, 2] }
+		const editor = new Editor({
+			element: null,
+			extensions: createTypstExtensions({
+				...plain,
+				extensions: [TypstTemplateBlock.configure({ templates: [{ ...definition, defaults }] })],
+			}),
+			content: document(paragraph('Before')),
+		})
+		try {
+			editor.view.updateState(editor.state.reconfigure({ plugins: [history()] }))
+			const initial = editor.getJSON()
+			editor.view.dispatch(editor.state.tr.insertText('Keep this edit'))
+			const before = editor.getJSON()
+			for (const invalid of [{ props: null }, { dataPath: null }]) {
+				// JavaScript/JSON callers do not have TypeScript's non-null guarantee.
+				const options = { template: 'channel', ...invalid } as unknown as Parameters<
+					typeof editor.commands.insertTypstTemplateBlock
+				>[0]
+				const state = editor.state
+				expect(editor.can().insertTypstTemplateBlock(options)).toBe(false)
+				expect(editor.state).toBe(state)
+				expect(editor.commands.insertTypstTemplateBlock(options)).toBe(false)
+				expect(editor.getJSON()).toEqual(before)
+				expect(defaults).toEqual({ title: 'Default title', extra: [1, 2] })
+			}
+			expect(undo(editor.state, (tr) => editor.view.dispatch(tr))).toBe(true)
+			expect(editor.getJSON()).toEqual(initial)
+			expect(redo(editor.state, (tr) => editor.view.dispatch(tr))).toBe(true)
+			expect(editor.getJSON()).toEqual(before)
+			for (const props of [undefined, { title: 'Explicit title' }]) {
+				expect(editor.commands.insertTypstTemplateBlock({ template: 'channel', props })).toBe(true)
+				const nodes: JSONContent[] = []
+				editor.state.doc.descendants((node) => {
+					if (node.type.name === 'templateBlock') nodes.push(node.toJSON())
+				})
+				expect(nodes.at(-1)!.attrs!.props).toEqual(props ?? defaults)
+				expect(undo(editor.state, (tr) => editor.view.dispatch(tr))).toBe(true)
+				expect(editor.getJSON()).toEqual(before)
+			}
+		} finally {
+			editor.destroy()
+		}
+	})
+
+	it('shares defaults/identity rules for programmatic insertion and copy with one undo/redo', () => {
+		const defaults = { title: 'Nested defaults', values: [1, { value: 2 }] }
+		const editor = new Editor({
+			element: null,
+			extensions: createTypstExtensions({
+				...plain,
+				extensions: [
+					TypstTemplateBlock.configure({ templates: [{ ...definition, defaults }] }),
+					TypstSource,
+				],
+			}),
+			content: document(paragraph('Before')),
+		})
+		try {
+			editor.view.updateState(editor.state.reconfigure({ plugins: [history()] }))
+			const before = editor.getJSON()
+			const state = editor.state
+			expect(editor.can().insertTypstTemplateBlock({ template: 'channel' })).toBe(true)
+			expect(editor.state).toBe(state)
+			expect(defaults.values[1]).toEqual({ value: 2 })
+			expect(editor.commands.insertTypstTemplateBlock({ template: 'channel' })).toBe(true)
+			const positions: number[] = []
+			editor.state.doc.descendants((node, at) => {
+				if (node.type.name === 'templateBlock') positions.push(at)
+			})
+			const at = positions[0]!
+			const first = editor.state.doc.nodeAt(at)!
+			expect(first.attrs.props).toEqual(defaults)
+			expect(first.attrs.props).not.toBe(defaults)
+			const inserted = editor.getJSON()
+			expect(undo(editor.state, (tr) => editor.view.dispatch(tr))).toBe(true)
+			expect(editor.getJSON()).toEqual(before)
+			expect(redo(editor.state, (tr) => editor.view.dispatch(tr))).toBe(true)
+			expect(editor.getJSON()).toEqual(inserted)
+			expect(editor.can().duplicateTypstTemplateBlock(at)).toBe(true)
+			expect(editor.getJSON()).toEqual(inserted)
+			expect(editor.commands.duplicateTypstTemplateBlock(at)).toBe(true)
+			const copy = editor.state.doc.nodeAt(at + first.nodeSize)!
+			expect(copy.attrs.id).not.toBe(first.attrs.id)
+			expect(copy.attrs.props).not.toBe(first.attrs.props)
+			copy.attrs.props.values[1].value = 9
+			expect(first.attrs.props.values[1].value).toBe(2)
+			expect(defaults.values[1]).toEqual({ value: 2 })
+			expect(undo(editor.state, (tr) => editor.view.dispatch(tr))).toBe(true)
+			expect(editor.getJSON()).toEqual(inserted)
+			expect(editor.commands.insertTypstSource('#text[Explicit source]')).toBe(true)
+			let sourceAt = -1
+			editor.state.doc.descendants((node, pos) => {
+				if (node.type.name === 'typstSource') sourceAt = pos
+			})
+			expect(editor.commands.duplicateTypstSource(sourceAt)).toBe(true)
+			const ids: string[] = []
+			editor.state.doc.descendants((node) => {
+				if (['templateBlock', 'typstSource'].includes(node.type.name)) ids.push(node.attrs.id)
+			})
+			expect(new Set(ids).size).toBe(ids.length)
+			editor.setEditable(false)
+			const readOnly = editor.getJSON()
+			expect(editor.can().insertTypstSource('')).toBe(false)
+			expect(editor.commands.duplicateTypstSource(sourceAt)).toBe(false)
+			expect(editor.getJSON()).toEqual(readOnly)
+		} finally {
+			editor.destroy()
+		}
+	})
+})
 function generate(content: JSONContent, input: TypstJsonObject = data, revision = 1) {
 	const result = generateTypstRegions({
 		regions: { body: content },

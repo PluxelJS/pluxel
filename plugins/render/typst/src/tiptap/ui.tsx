@@ -447,12 +447,22 @@ export function TypstEditorToolbar({
 				{children && <div className="typst-tool-group typst-tool-group-custom">{children}</div>}
 			</div>
 			{allowedMark(ui, editor, 'textStyle') && (
-				<TypographyTools
-					editor={editor}
-					disabled={!canEdit(editor, ui)}
-					fontFamilies={fontFamilies}
-					chain={() => editChain(editor)}
-				/>
+				<details className="typst-typography-panel">
+					<summary>排版</summary>
+					<TypographyTools
+						editor={editor}
+						disabled={!canEdit(editor, ui)}
+						fontFamilies={fontFamilies}
+						chain={() => editChain(editor)}
+					/>
+				</details>
+			)}
+			{!canEdit(editor, ui) && (
+				<small className="typst-editing-reason">
+					{ui.composing
+						? '输入法编辑中，结构和格式操作暂不可用'
+						: '当前区域只读，格式和插入操作不可用'}
+				</small>
 			)}
 		</div>
 	)

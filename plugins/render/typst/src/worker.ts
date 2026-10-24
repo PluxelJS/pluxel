@@ -134,10 +134,13 @@ export default function compileTypst(input: TypstCompileWorkerInput): TypstWorke
 	const compiler = nativeCompiler(input)
 	try {
 		const result = compiler.compile({ mainFilePath: entry, resetRead: true })
-		const nativeDiagnostics = result.takeDiagnostics()
-		const diagnostics = nativeDiagnostics
-			? normalizeDiagnostics(compiler.fetchDiagnostics(nativeDiagnostics), input.root)
-			: []
+		// This binding's takeDiagnostics takes errors only; successful warnings have a separate receipt.
+		const diagnostics = normalizeDiagnostics(
+			[result.takeDiagnostics(), result.takeWarnings()].flatMap((value) =>
+				value ? compiler.fetchDiagnostics(value) : [],
+			),
+			input.root,
+		)
 		const document = result.result
 		if (!document) return { ok: false, code: 'COMPILE_FAILED', diagnostics }
 		const navigation = (document as NavigationDocument).navigation()

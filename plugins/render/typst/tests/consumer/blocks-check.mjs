@@ -3,10 +3,13 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
+import { trackConsumerSessions } from './browser-session.mjs'
 
 const output = await mkdtemp(join(tmpdir(), 'typst-blocks-ui-'))
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
+const releaseSessions = trackConsumerSessions(page)
+page.on('dialog', (dialog) => dialog.accept())
 const errors = []
 let compiled
 page.on('pageerror', (error) => errors.push(String(error)))
@@ -186,7 +189,8 @@ try {
 			'## LLM 经营解读\n\n新增分析由 Markdown 接纳，图表保持原样。\n\n```typst\n#text[这里是代码示例]\n```',
 		)
 	await page.getByRole('checkbox', { name: '允许接纳候选', exact: true }).check()
-	await page.getByRole('button', { name: '暂存候选', exact: true }).click()
+	await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+	await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	await page.getByRole('button', { name: '接纳候选', exact: true }).click()
 	await body.getByText('LLM 经营解读', { exact: true }).waitFor()
 	await current()
@@ -300,6 +304,7 @@ try {
 	await page.screenshot({ path: join(output, 'source-navigation.png'), fullPage: true })
 
 	await notes.locator('p').first().click()
+	await page.getByTestId('region-notes').locator('.typst-typography-panel > summary').click()
 	const typography = page
 		.getByTestId('region-notes')
 		.getByRole('toolbar', { name: '排版扩展', exact: true })
@@ -368,6 +373,10 @@ try {
 	console.error({ output, errors, text: await page.locator('body').innerText() })
 	throw error
 } finally {
-	await page.goto('about:blank')
-	await browser.close()
+	try {
+		await page.goto('about:blank')
+		await releaseSessions()
+	} finally {
+		await browser.close()
+	}
 }

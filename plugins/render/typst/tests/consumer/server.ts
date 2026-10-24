@@ -10,9 +10,11 @@ import { requirePluginService } from '@pluxel/core/internal'
 import { createHost, type PluginHost } from '@pluxel/host'
 import { hostEnv } from '@pluxel/host/environment'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
-import { TypstPlugin, type TypstSession } from '@pluxel/plugin-typst'
+import { TypstPlugin, TypstError, type TypstSession } from '@pluxel/plugin-typst'
 import { generateTypstRegions, validateTypstDraft } from '@pluxel/plugin-typst/tiptap'
 import { nodeModules } from '@pluxel/services/node'
+import { WorkerTaskError } from '@pluxel/services/workers'
+import type { ConsumerFailure } from './compile-contract'
 import type { Plugin } from 'vite'
 import { fontFamilies, initialSource } from './editor-config.mjs'
 import { getExample } from './report-example.mjs'
@@ -20,6 +22,36 @@ import { getExample } from './report-example.mjs'
 const run = promisify(execFile)
 const maxClients = 8
 const clientIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function consumerFailure(error: unknown): ConsumerFailure {
+	const name = error instanceof Error ? error.name : 'UnknownError'
+	const message = error instanceof Error ? error.message : String(error)
+	const code =
+		error instanceof Error && 'code' in error && typeof error.code === 'string'
+			? error.code
+			: undefined
+	if (error instanceof TypstError)
+		return {
+			kind: 'typst',
+			name,
+			code: error.code,
+			message,
+			path: error.path,
+			diagnostics: error.diagnostics.map((item) => ({ ...item })),
+		}
+	if (error instanceof WorkerTaskError)
+		return { kind: 'worker', name, code: error.code, message, diagnostics: [] }
+	if (error instanceof Error && (name === 'AbortError' || name === 'TimeoutError'))
+		return { kind: 'cancelled', name, code: name, message, diagnostics: [] }
+	if (
+		error instanceof Error &&
+		'syscall' in error &&
+		'code' in error &&
+		typeof error.code === 'string'
+	)
+		return { kind: 'io', name, code: error.code, message, diagnostics: [] }
+	return { kind: 'unexpected', name, code: code ?? 'UNEXPECTED', message, diagnostics: [] }
+}
 
 interface Client {
 	root: string
@@ -160,6 +192,7 @@ export function consumerCompiler(): Plugin {
 					return next()
 				void (async () => {
 					response.setHeader('Cache-Control', 'no-store')
+					let snapshot: Pick<ConsumerFailure, 'clientRevision' | 'mapping'> = {}
 					try {
 						if (closing) throw new Error('Consumer host is closing')
 						const address = server.httpServer?.address()
@@ -204,6 +237,7 @@ export function consumerCompiler(): Plugin {
 								(body.revision as number) < 1
 							)
 								throw new Error('Expected source text and a positive client revision')
+							snapshot = { clientRevision: body.revision as number }
 							const draft = body.draft as { templateId?: string } | undefined
 							const example = getExample(draft?.templateId ?? '')
 							const { config, parseData } = example
@@ -213,14 +247,16 @@ export function consumerCompiler(): Plugin {
 								templateId: example.id,
 								templateRevision: example.draft.templateRevision,
 							})
-							if (!checked.ok) throw new Error(JSON.stringify(checked.issues))
+							if (!checked.ok) throw new TypstError('INVALID_INPUT', JSON.stringify(checked.issues))
 							const generated = generateTypstRegions({
 								regions: checked.value.regions,
 								config,
 								data: parseData(checked.value.data),
 								snapshotRevision: body.revision as number,
 							})
-							if (!generated.ok) throw new Error(JSON.stringify(generated.issues))
+							if (!generated.ok)
+								throw new TypstError('INVALID_INPUT', JSON.stringify(generated.issues))
+							snapshot.mapping = generated.value.mapping
 							const key = JSON.stringify([body.source, generated.value.templateFiles])
 							const templateChanged = key !== client.templateKey
 							if (templateChanged) {
@@ -258,6 +294,7 @@ export function consumerCompiler(): Plugin {
 								clientRevision: body.revision,
 								preview: { ...compiled.preview, data: [...compiled.preview.data] },
 								mapping: generated.value.mapping,
+								diagnostics: compiled.diagnostics,
 							}
 						})
 						client.tail = result.catch(() => {})
@@ -270,9 +307,7 @@ export function consumerCompiler(): Plugin {
 					} catch (error) {
 						if (response.statusCode === 200) response.statusCode = 400
 						response.setHeader('Content-Type', 'application/json')
-						response.end(
-							JSON.stringify({ message: error instanceof Error ? error.message : String(error) }),
-						)
+						response.end(JSON.stringify({ ...consumerFailure(error), ...snapshot }))
 					}
 				})()
 			})

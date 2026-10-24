@@ -764,3 +764,51 @@ describe('candidate commit ownership', () => {
 		expect(fixture.editor.getJSON()).toEqual(initial)
 	})
 })
+
+describe('operation-scoped validation preparation', () => {
+	it('prepares the schema once for all regions and generation, rechecking a later changed config', () => {
+		let preparations = 0
+		const marker = Node.create({
+			name: 'preparationMarker',
+			group: 'block',
+			atom: true,
+			addAttributes: () => {
+				preparations++
+				return { label: { default: 'marker' } }
+			},
+		})
+		const rules: TypstEditorConfig = {
+			regions: [{ id: 'one' }, { id: 'two' }],
+			fields: [],
+			extensions: [marker],
+			nodeMappings: {
+				preparationMarker: { validateAttributes: () => true, serialize: () => '#text[marker]' },
+			},
+		}
+		const content = doc(paragraph('Text'))
+		expect(validateTypstRegion({ document: content, regionId: 'one', config: rules }).ok).toBe(true)
+		const once = preparations
+		preparations = 0
+		expect(
+			validateTypstRegions({ regions: { one: content, two: content }, config: rules }).ok,
+		).toBe(true)
+		expect(preparations).toBe(once)
+		preparations = 0
+		expect(
+			generateTypstRegions({
+				regions: { one: content, two: content },
+				config: rules,
+				data: {},
+				snapshotRevision: 1,
+			}).ok,
+		).toBe(true)
+		expect(preparations).toBe(once)
+		rules.nodeMappings = {}
+		expect(
+			validateTypstRegions({ regions: { one: content, two: content }, config: rules }),
+		).toMatchObject({
+			ok: false,
+			issues: expect.arrayContaining([expect.objectContaining({ code: 'MISSING_SERIALIZER' })]),
+		})
+	})
+})

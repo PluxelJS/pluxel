@@ -5,6 +5,51 @@ import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import runTypst from '../src/worker.ts'
 
+it('retains real successful warnings separately from errors and clears them after repair', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'typst-native-diagnostics-'))
+	const compile = (revision: number) =>
+		runTypst({
+			root,
+			entry: 'main.typ',
+			revision,
+			maxOutputBytes: 32 * 1024 * 1024,
+			bindingPath: fileURLToPath(new URL('../native/compiler.node', import.meta.url)),
+		})
+	try {
+		await writeFile(
+			join(root, 'main.typ'),
+			'#set text(font: "Pluxel missing font warning fixture")\nWarning fixture',
+		)
+		const warning = compile(1)
+		expect(warning.ok).toBe(true)
+		expect(warning.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					severity: 'warning',
+					path: 'main.typ',
+					message: expect.stringContaining('unknown font family'),
+					range: expect.objectContaining({ start: { line: 0, character: 16 } }),
+				}),
+			]),
+		)
+		if (!warning.ok) throw new Error(JSON.stringify(warning.diagnostics))
+		expect(Buffer.from(warning.pdf).subarray(0, 5).toString()).toBe('%PDF-')
+		await writeFile(join(root, 'main.typ'), '#let = invalid')
+		const failed = compile(2)
+		expect(failed).toMatchObject({
+			ok: false,
+			code: 'COMPILE_FAILED',
+			diagnostics: expect.arrayContaining([
+				expect.objectContaining({ severity: 'error', path: 'main.typ' }),
+			]),
+		})
+		await writeFile(join(root, 'main.typ'), '#set text(font: "DejaVu Sans")\nRepaired')
+		expect(compile(3)).toMatchObject({ ok: true, diagnostics: [] })
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
 it.each([
 	['markup', 'A😀B ffi', ['A', '😀', 'B', ' ', 'ffi']],
 	[
