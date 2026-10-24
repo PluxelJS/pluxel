@@ -53,8 +53,8 @@ export {
 	PLUGIN_SERVICE_CAPABILITY,
 	type CoreRootInputs,
 } from './context/core-plan'
-export { checkPluginDecorator } from './plugins/decorators/decorator/api'
 export {
+	checkPluginDecorator,
 	consumePluginDefinitionCandidate,
 	type ConcretePluginDefinitionCandidate,
 	type ConcretePluginDefinitionDeclaration,

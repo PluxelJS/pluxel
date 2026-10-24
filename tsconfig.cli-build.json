@@ -1,5 +1,5 @@
 {
-	"extends": "./tsconfig.src.json",
-	"compilerOptions": { "composite": false },
+	"extends": "./packages/cli/tsconfig.json",
+	"compilerOptions": { "customConditions": ["@pluxel/source"] },
 	"include": ["packages/cli/src", "vendor/pncat/src"]
 }

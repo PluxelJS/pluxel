@@ -34,7 +34,7 @@ mise 管理工具的安装和执行环境；package scripts 提供统一操作�
 
 ## 构建、检查与任务图
 
-package scripts 是人和 IDE 的入口，Vite Task 拥有实际命令、依赖图与缓存。根 `build` / `test` / `verify` 委托 `workspace:*` 聚合任务；叶包的标准 `build` / `test` / `typecheck` 分别委托 `compile` / `check-tests` / `check-types`，保留 source 发现与外部调用入口。不要同时定义同名 script 和原生 task，也不要在 mise 重复定义任务。框架的具体实现与包依赖环处理见[工作区任务图](https://github.com/PluxelJS/pluxel/blob/main/engineering/CLI_WORKSPACES.md#工作区任务图)。
+package scripts 是人和 IDE 的入口，Vite Task 拥有实际命令、依赖图与缓存。包内 `vite.config.ts` 使用原生 task 名并就地声明特殊依赖与缓存；`scripts/vite-tasks.ts` 只提供共用默认，不按包名分发隐藏规则。根任务从 `pnpm-workspace.yaml` 的实际成员聚合，不维护第二份目录清单。根 `build` / `test` / `verify` 委托 `workspace:*` 聚合任务；叶包的标准 `build` / `test` / `typecheck` 分别委托 `compile` / `check-tests` / `check-types`，保留 source 发现与外部调用入口。不要同时定义同名 script 和原生 task，也不要在 mise 重复定义任务。框架的具体实现与包依赖环处理见[工作区任务图](https://github.com/PluxelJS/pluxel/blob/main/engineering/CLI_WORKSPACES.md#工作区任务图)。
 
 本仓库与模板使用 `run.cache.scripts: false, tasks: true`：入口每次执行，底层构建与测试按输入复用缓存，开发服务和验收入口不会被缓存跳过。IDE 的 `pnpm run build` 仍进入同一任务图。简单下游也可直接用 scripts 并启用其缓存；存在依赖顺序、产物或环境规则时再声明原生 task。参考 [run 配置](https://viteplus.dev/config/run)。
 
@@ -46,7 +46,7 @@ package scripts 是人和 IDE 的入口，Vite Task 拥有实际命令、依赖�
 | 普通依赖操作            | `vp install/add/remove/exec/run` 按 `packageManager` 使用固定 pnpm，见 [Vite+ 包管理](https://viteplus.dev/guide/package-management)                         |
 | 官方 catalog 政策       | `vp exec pluxel pncat add/remove/migrate/clean` 修改声明；`pluxel workspace sync` 只对齐已有 catalog 版本，不改依赖声明，不另设重复脚本                      |
 
-框架的独立 `check-types` 还覆盖明确的 tsconfig、编译期 API probes 与前端配置；例如 `*.typecheck.ts` 不进入源码语义 lint，不能因 `vp check` 已检查类型就删除它们。普通下游只有额外类型契约时才增加独立任务。测试与 benchmark 也必须归属正确的 TypeScript 项目：必要时在测试目录继承包 tsconfig，设置 `noEmit: true`、`composite: false` 和环境类型，不扩大生产声明构建输入。
+框架的独立 `check-types` 还覆盖明确的 tsconfig、编译期 API probes 与前端配置；例如 `*.typecheck.ts` 不进入源码语义 lint，不能因 `vp check` 已检查类型就删除它们。普通下游只有额外类型契约时才增加独立任务。源码、测试、benchmark 和构建配置默认由同一份包 `tsconfig.json` 检查；只有不同运行环境或声明构建输入确需隔离时才增加配置。共享检查选项由根 `tsconfig.json` 维护，不建立只做转发的继承层。
 
 升级 Vite+ 时同步 mise 版本、`vite-plus` catalog、指向 Vite+ Core 的 `vite` npm alias，以及精确的 `peerDependencyRules.allowedVersions.vite`，再验证插件兼容性。Core 有独立版本号。vendor 中已接入工作区的包执行根任务图，未接入的第三方项目保留自己的配置。
 

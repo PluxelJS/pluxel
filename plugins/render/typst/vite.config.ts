@@ -5,10 +5,16 @@ import { repositoryTasks } from '../../../scripts/vite-tasks'
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: repositoryTasks('@pluxel/plugin-typst', {
-			build: 'node native/build.mjs && pluxel build',
-			test: 'node native/build.mjs && vp test run --config vitest.config.ts',
-			typecheck: 'tsc --noEmit --pretty false',
+		tasks: repositoryTasks({
+			compile: {
+				command: 'node native/build.mjs && pluxel build',
+				cache: false,
+			},
+			'check-tests': {
+				command: 'node native/build.mjs && vp test run --config vitest.config.ts',
+				dependsOn: ['compile', '@pluxel/test#compile'],
+			},
+			'check-types': 'tsc --noEmit --pretty false',
 		}),
 	},
 })

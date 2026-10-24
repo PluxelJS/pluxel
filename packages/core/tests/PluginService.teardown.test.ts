@@ -27,6 +27,9 @@ class TeardownConsumer extends BasePlugin {
 	override init() {
 		return () => {
 			teardownEvents.push('consumer')
+			this.ctx.effects.defer(() => {
+				teardownEvents.push('consumer:reentrant')
+			})
 		}
 	}
 }
@@ -41,14 +44,15 @@ class DrainFailure extends BasePlugin {
 }
 
 describe('effects-only generation teardown', () => {
-	it('drains dependent effects before provider effects', async () => {
+	it('drains dependent effects, including reentrant cleanup, before provider effects', async () => {
 		await withCoreInternalTestHost(async (host) => {
 			teardownEvents.length = 0
 			host.add([TeardownProvider, TeardownConsumer])
 			await host.commit()
 			host.remove(TeardownProvider)
 			await host.commit()
-			expect(teardownEvents).toEqual(['consumer', 'provider'])
+			expect(teardownEvents).toEqual(['consumer', 'consumer:reentrant', 'provider'])
+			expect(host.isRunning(TeardownConsumer)).toBe(false)
 		})
 	})
 

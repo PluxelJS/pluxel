@@ -1,7 +1,6 @@
 import { envBinding, fileBinding } from '../src/bindings'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { pluginNodeAddressOf } from '@pluxel/core'
-import { requireConfigService } from '@pluxel/core/internal'
 import * as v from 'valibot'
 import { expect, it } from 'vitest'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
@@ -9,7 +8,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineHostApplication, resolveHostApplication } from '../src/application'
 import { createHost } from '../src/host'
-import { createDocumentStorage } from './helpers/document-storage'
 import { resolveInputBindings } from '../src/input-bindings'
 
 const Config = v.object({
@@ -106,48 +104,35 @@ it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or 
 	expect(absent.configRecords?.overlays).toEqual([])
 })
 
-it('keeps env out of storage and reveals the saved value after env removal', async () => {
+it('passes resolved environment values and source provenance into Host', async () => {
 	const owner = pluginNodeAddressOf(Configured)
-	const storage = createDocumentStorage()
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
-		configRecords: { storage, initial: [{ owner, config: { limit: 2 } }] },
+		configRecords: { initial: [{ owner, config: { limit: 2 } }] },
 		envBindings: [binding],
 	}))
-	const firstApplication = await resolveHostApplication(application, startup)
-	const first = await createHost({
-		plugins: firstApplication.plugins,
-		configRecords: firstApplication.configRecords,
-	})
-	await first.start()
-	const patched = await first.config.patch(owner, { limit: 8 })
-	expect(patched.ok).toBe(true)
-	await first.close()
-	const secondApplication = await resolveHostApplication(application, {
+	const resolved = await resolveHostApplication(application, {
 		...startup,
 		env: { APP_LIMIT: '99' },
 	})
-	const second = await createHost({
-		plugins: secondApplication.plugins,
-		configRecords: secondApplication.configRecords,
+	const host = await createHost({
+		plugins: resolved.plugins,
+		configRecords: resolved.configRecords,
 	})
-	await second.start()
-	expect(requireConfigService(second.ctx).getRawConfig(owner).limit).toBe(99)
-	const denied = await second.config.patch(owner, { limit: 99 })
-	expect(denied.ok).toBe(false)
-	const reset = await second.config.reset(owner)
-	expect(reset.ok).toBe(false)
-	await second.close()
-	const thirdApplication = await resolveHostApplication(application, startup)
-	const third = await createHost({
-		plugins: thirdApplication.plugins,
-		configRecords: thirdApplication.configRecords,
-	})
-	await third.start()
 	try {
-		expect(requireConfigService(third.ctx).getRawConfig(owner).limit).toBe(8)
+		await host.startNode(owner)
+		const result = await host.config.get(owner)
+		expect(result).toMatchObject({ ok: true, application: 'applied', config: { limit: 99 } })
+		if (result.ok === false) throw new Error(result.message)
+		expect(result.sources).toContainEqual({
+			owner,
+			path: ['limit'],
+			kind: 'env',
+			name: 'APP_LIMIT',
+			readonly: true,
+		})
 	} finally {
-		await third.close()
+		await host.close()
 	}
 })
 

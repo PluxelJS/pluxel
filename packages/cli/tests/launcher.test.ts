@@ -128,6 +128,7 @@ describe('pluxel bin launcher', () => {
 			'.git/HEAD': 'ref: refs/heads/main\n',
 			'vendor/pncat/src/sync.ts': 'export {}\n',
 			'vendor/pncat/package.json': '{"name":"pncat"}',
+			'tsconfig.json': '{}',
 			'tsconfig.cli-build.json': '{}',
 			'scripts/vite-tasks.ts': 'export {}\n',
 			'scripts/repository-packages.mjs': 'export {}\n',

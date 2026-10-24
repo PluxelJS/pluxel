@@ -38,9 +38,17 @@ function getWorker`,
 export default defineConfig({
 	run: {
 		tasks: {
-			...repositoryTasks('pluxel-docs', {
-				build: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build',
-				typecheck: 'tsc --noEmit',
+			...repositoryTasks({
+				compile: {
+					command: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build',
+					dependsOn: ['prepare:docs'],
+					cache: {
+						input: ['docs/**'].map((pattern) => ({ pattern, base: 'workspace' as const })),
+						output: ['dist/**', '.source/**', '.vercel/output/**'],
+						env: ['VERCEL*'],
+					},
+				},
+				'check-types': 'tsc --noEmit',
 			}),
 			'generate:playground-types': {
 				command: 'node scripts/generate-playground-types.mjs',

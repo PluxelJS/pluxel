@@ -27,7 +27,7 @@ export default defineConfig({
 	},
 	dts: {
 		entry: ['src/cli.ts', 'src/workspace/pncat-config.ts'],
-		// The bundled source belongs to both directories; tsgo roots emit at the config directory.
+		// The native generator overrides rootDir with the config directory; bundled pncat is a sibling.
 		tsconfig: '../../tsconfig.cli-build.json',
 		sourcemap: true,
 		eager: true,

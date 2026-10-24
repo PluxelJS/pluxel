@@ -27,8 +27,6 @@ export default defineConfig({
 				'**/src/**/*.tsx',
 				'**/tests/**/*.ts',
 				'**/tests/**/*.tsx',
-				'**/fsm/**/*.ts',
-				'**/fsm/**/*.tsx',
 				'**/parts/**/*.ts',
 				'**/parts/**/*.tsx',
 			],

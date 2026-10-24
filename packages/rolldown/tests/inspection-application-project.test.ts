@@ -1,10 +1,9 @@
 import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { createFixture } from 'fs-fixture'
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
 	openProject,
 	type InspectionSection,
-	type InspectionSectionData,
 	type InspectionSourceLocation,
 } from '../src/inspect/index.ts'
 
@@ -319,7 +318,7 @@ describe('application-aware public Plugin inspection', () => {
 		})
 	})
 
-	it('requires application for inputs and preserves literal and dynamic section typing', async () => {
+	it('requires an application for input inspection and source-entry references', async () => {
 		await using fixture = await packageFixture()
 		await using project = await openProject({ root: fixture.path })
 		await expect(project.plugin(reference, { include: ['inputs'] })).rejects.toMatchObject({
@@ -328,19 +327,5 @@ describe('application-aware public Plugin inspection', () => {
 		await expect(project.plugin('source:app/mail.ts::MailPlugin')).rejects.toMatchObject({
 			code: 'invalid_input',
 		})
-		const selectedApplication = { root: 'host', entry: 'a.ts' }
-		const literal = await project.plugin(reference, {
-			application: selectedApplication,
-			include: ['inputs'],
-		})
-		expectTypeOf<keyof typeof literal.data.sections>().toEqualTypeOf<'inputs'>()
-		expectTypeOf(literal.data.sections.inputs).toEqualTypeOf<
-			InspectionSection<InspectionSectionData['inputs']>
-		>()
-		const include: ('inputs' | 'config')[] = ['inputs']
-		const dynamic = await project.plugin(reference, { application: selectedApplication, include })
-		expectTypeOf(dynamic.data.sections.inputs).toEqualTypeOf<
-			InspectionSection<InspectionSectionData['inputs']> | undefined
-		>()
 	})
 })

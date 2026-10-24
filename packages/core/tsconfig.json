@@ -1,16 +1,13 @@
 {
-	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "vitest.config.ts"],
+	"extends": "../../tsconfig.json",
+	"include": ["src", "tests", "bench", "tsdown.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
-		"rootDir": ".",
-		"outDir": "dist",
-		"noEmit": false,
-		"emitDeclarationOnly": true,
 		"jsx": "react-jsx",
 		"experimentalDecorators": true,
 		"paths": {
 			"@pluxel/core": ["./src"],
 			"@pluxel/core/*": ["./src/*"]
-		}
+		},
+		"customConditions": ["@pluxel/source"]
 	}
 }

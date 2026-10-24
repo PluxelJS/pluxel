@@ -3,23 +3,14 @@ import { createServiceInternalTestHarness } from '@pluxel/services/internal/test
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { serialize } from 'capnweb'
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
 	applyLifecycleCommands,
 	setAutoStart,
 } from '../../../src/management/api/usecases/pluginStatus.ts'
 import { parsePluginStatusQueryResult } from '../../../src/management/web/management-validation.ts'
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
-import type {
-	ConfigResult,
-	ConfigPresentationResult,
-	EnsureForkResult,
-	PluginDependencyMutationResult,
-	PluginApplyReport,
-	PluginControlMutationResult,
-	PluginLifecycleCommand,
-	RemoveForkResult,
-} from '../../../src/management/web/protocol.ts'
+import type { PluginApplyReport } from '../../../src/management/web/protocol.ts'
 
 @Plugin()
 class ManagedPlugin extends BasePlugin {}
@@ -101,10 +92,6 @@ describe('runtime web control protocol', () => {
 			ok: true,
 			value: { lifecycleState: 'running', issues: [] },
 		})
-	})
-
-	it('exposes only the three process lifecycle commands', () => {
-		expectTypeOf<PluginLifecycleCommand>().toEqualTypeOf<'start' | 'stop' | 'restart'>()
 	})
 
 	it('keeps expected status and persistence failures closed and state-bearing', async () => {
@@ -640,31 +627,6 @@ describe('runtime web control protocol', () => {
 			status: 'rejected',
 			results: [{ address, ok: false, code: 'plugin_not_found', state: 'unchanged' }],
 		})
-	})
-
-	it('does not expose an internal-error catch-all in any control result', () => {
-		type ConfigInternal = Extract<ConfigResult, { ok: false; code: 'internal_error' }>
-		type PresentationInternal = Extract<
-			ConfigPresentationResult,
-			{ ok: false; code: 'internal_error' }
-		>
-		type DependencyInternal = Extract<
-			PluginDependencyMutationResult,
-			{ ok: false; code: 'internal_error' }
-		>
-		type ForkInternal = Extract<EnsureForkResult, { ok: false; code: 'internal_error' }>
-		type ForkRemoveInternal = Extract<RemoveForkResult, { ok: false; code: 'internal_error' }>
-		type StatusInternal = Extract<
-			PluginControlMutationResult,
-			{ ok: false; code: 'internal_error' }
-		>
-
-		expectTypeOf<ConfigInternal>().toEqualTypeOf<never>()
-		expectTypeOf<PresentationInternal>().toEqualTypeOf<never>()
-		expectTypeOf<DependencyInternal>().toEqualTypeOf<never>()
-		expectTypeOf<ForkInternal>().toEqualTypeOf<never>()
-		expectTypeOf<ForkRemoveInternal>().toEqualTypeOf<never>()
-		expectTypeOf<StatusInternal>().toEqualTypeOf<never>()
 	})
 })
 

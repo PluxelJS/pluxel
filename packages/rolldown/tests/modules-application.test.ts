@@ -201,7 +201,7 @@ it('records verified Workbench transport in modules deployments and omits it fro
 		await writeFile(
 			resolve(root, 'tsconfig.json'),
 			JSON.stringify({
-				extends: fileURLToPath(new URL('../../../tsconfig.options.json', import.meta.url)),
+				extends: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 				compilerOptions: {
 					composite: false,
 					noEmit: false,

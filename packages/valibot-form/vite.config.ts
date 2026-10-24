@@ -5,10 +5,16 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: repositoryTasks('valibot-form', {
-			build: 'vp pack',
-			test: 'vp test run',
-			typecheck: 'tsc -p tsconfig.vitest.json --pretty false',
+		tasks: repositoryTasks({
+			compile: {
+				command: 'vp pack',
+				dependsOn: [],
+				cache: {
+					output: ['dist/**'],
+				},
+			},
+			'check-tests': 'vp test run',
+			'check-types': 'tsc --noEmit --pretty false',
 		}),
 	},
 })

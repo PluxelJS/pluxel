@@ -31,6 +31,26 @@ afterEach(() => {
 	vi.unstubAllGlobals()
 })
 
+it.each<JsonObject>([{}, { rows: [] }, { rows: [{ label: 'existing' }] }])(
+	'editing a scalar preserves optional table presence: %j',
+	(table) => {
+		const fields = extractFormFields(
+			v.object({ title: v.string(), rows: v.optional(v.array(v.object({ label: v.string() }))) }),
+		)
+		const onChange = vi.fn()
+		const { container } = render(
+			<MantineProvider>
+				<DataForm fields={fields} data={{ title: 'before', ...table }} onChange={onChange} />
+			</MantineProvider>,
+		)
+		expect(onChange).not.toHaveBeenCalled()
+		fireEvent.change(container.querySelector<HTMLInputElement>('input[name="title"]')!, {
+			target: { value: 'after' },
+		})
+		expect(onChange).toHaveBeenCalledExactlyOnceWith({ title: 'after', ...table })
+	},
+)
+
 it('shows parsed defaults while writing only actual edits to the original input and table row', () => {
 	const increment = () =>
 		v.pipe(

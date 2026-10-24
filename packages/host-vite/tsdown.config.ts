@@ -15,10 +15,8 @@ export default defineConfig({
 		run: 'src/run.ts',
 	},
 	dts: {
-		// TS7's native declaration generator uses the config directory as rootDir. This root-level,
-		// package-scoped config keeps intentional sibling source bridges inside that root so their
-		// intermediate declarations stay in rolldown-plugin-dts's disposable output directory.
-		tsconfig: '../../tsconfig.host-vite-dts.json',
+		// Generate declarations from production source only.
+		tsconfig: './tsconfig.build.json',
 		sourcemap: true,
 		eager: true,
 	},

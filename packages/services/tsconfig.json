@@ -1,9 +1,8 @@
 {
-	"extends": "../../tsconfig.workspace.json",
-	"include": ["src", "tests", "vitest.config.ts", "tsdown.config.ts"],
+	"extends": "../../tsconfig.json",
+	"include": ["src", "tests", "bench", "tsdown.config.ts", "vitest.config.ts"],
 	"exclude": ["node_modules", "dist", "tests/fs-fixture-*"],
 	"compilerOptions": {
-		"outDir": "dist",
 		"experimentalDecorators": true,
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"jsx": "react-jsx",

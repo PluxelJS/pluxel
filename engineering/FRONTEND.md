@@ -132,6 +132,8 @@ Plugin route 的 pathname 由该 match 的 `beforeLoad` 保存到 route context�
 
 中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例；真正关闭或替换路由才清理原 activation。单文档 Router 错误只影响该文档，允许重试，不卸载全局 Shell。
 
+根 `pnpm-workspace.yaml` 接入 Worksplit 维护的 FlexLayout 0.11.1 patch，保证移出组内最后一个标签时不提前清理其容器；补丁正文只有 `vendor/split-like-vscode/patches/` 一份，由 vendor 的 `native-singleton-group.test.ts` 验证。嵌套 workspace 的补丁声明不会自动应用到根安装。
+
 ### 动作与关闭
 
 Shell 呈现原生 `onContextMenu` / `onShowOverflowMenu`，保留 React Provider ancestry，通过 `workbench.dispatch()` 提交 Actions 并检查实际回执。可见标签的批量操作不包含折叠组隐藏成员，文案必须准确表达范围。完整容器关闭与纯删除 Action group 由 Worksplit 一次预检全部内容守卫；拒绝时不逐个删除。已成功的业务保存不因后续拒绝而回滚。

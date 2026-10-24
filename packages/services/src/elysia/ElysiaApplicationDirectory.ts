@@ -414,7 +414,7 @@ export class ElysiaApplicationDirectory {
 				// request out of the host fallback; the carrier consumes its upgrade hooks.
 				if (ingress.transferred) return response ?? new Response(null, { status: 204 })
 				if (!(response instanceof Response)) {
-					throw new Error(
+					throw new TypeError(
 						'[pluxel/elysia] Elysia fetch returned no Response without transferring a WebSocket upgrade',
 					)
 				}

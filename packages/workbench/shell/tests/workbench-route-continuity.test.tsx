@@ -35,7 +35,7 @@ const mounted: Root[] = []
 const sessions: WorkspaceSession[] = []
 
 vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
-vi.mock('../src/app/router/screens/HomeScreen', () => ({ HomeScreen: Page }))
+vi.mock('../src/app/home/HomeIntro', () => ({ HomeIntro: Page }))
 vi.mock('../src/app/log_viewer/LogsPage', () => ({ LogsPage: Page }))
 vi.mock('../src/app/security/SecurityScreen', () => ({ SecurityScreen: Page }))
 vi.mock('../src/app/plugins/catalog/PluginCatalog', () => ({

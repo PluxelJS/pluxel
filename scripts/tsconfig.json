@@ -1,9 +1,22 @@
 {
-	"extends": "../tsconfig.options.json",
+	"extends": "../tsconfig.json",
 	"compilerOptions": {
-		"composite": false,
 		"allowJs": true,
+		"jsx": "react-jsx",
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
 		"types": ["node"]
 	},
-	"include": ["**/*.mts"]
+	"include": [
+		"../*.config.ts",
+		"**/*.ts",
+		"**/*.mts",
+		"../packages/*/vite*.config.ts",
+		"../packages/workbench/shell/vite*.config.ts",
+		"../plugins/*/vite*.config.ts",
+		"../plugins/*/*/vite*.config.ts",
+		"../projects/*/vite*.config.ts",
+		"../projects/*/sdk/vite*.config.ts",
+		"../vendor/eventure/vite.config.ts",
+		"../vendor/pncat/vite.config.ts"
+	]
 }

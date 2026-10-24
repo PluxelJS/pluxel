@@ -1,6 +1,6 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { isStandardSchemaV1 } from '../../services/config/standardSchema'
-import { consumePluginMarker } from '../decorators/decorator/marker'
+import { consumePluginMarker, getPluginMarker } from '../decorators/marker'
 import type { PluginConstructor, PluginToken } from '../types'
 import {
 	parsePluginNodeAddress,
@@ -116,8 +116,10 @@ const candidateByImplementation = new WeakMap<
 >()
 
 /** @internal Route discovery remains true after ingestion drops mutable decorator staging. */
-export function hasConsumedPluginDefinitionCandidate(ctor: Function): boolean {
-	return candidateByImplementation.has(ctor as PluginConstructor)
+export function checkPluginDecorator(ctor: Function): boolean {
+	return (
+		getPluginMarker(ctor) !== undefined || candidateByImplementation.has(ctor as PluginConstructor)
+	)
 }
 
 function nonEmpty(value: unknown, label: string): string {

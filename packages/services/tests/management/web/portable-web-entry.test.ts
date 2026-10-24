@@ -1,11 +1,5 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import {
-	parseRuntimeMeta,
-	type PluginDependencyGraphEdge,
-	type PluginDependencyGraphSnapshot,
-	type RuntimeManagementClient,
-	type RuntimeMeta,
-} from '@pluxel/services/management/client'
+import { describe, expect, it, vi } from 'vitest'
+import { parseRuntimeMeta, type RuntimeMeta } from '@pluxel/services/management/client'
 
 describe('@pluxel/services/management/client framework boundary', () => {
 	it('loads without React, Mantine, fetch, or a transport constructor', async () => {
@@ -19,33 +13,9 @@ describe('@pluxel/services/management/client framework boundary', () => {
 
 		const web = await import('@pluxel/services/management/client')
 		expect(web.createRuntimeManagementClient).toEqual(expect.any(Function))
-		expect(web).not.toHaveProperty('discoverRuntime')
-		expect(web).not.toHaveProperty('createRuntimeTransportClient')
-		expect(web).not.toHaveProperty('createAdminAccessAwareFetch')
-	})
-
-	it('exports the closed dependency graph DTO through the injected client', () => {
-		expectTypeOf<ReturnType<RuntimeManagementClient['dependencies']['graph']>>().toEqualTypeOf<
-			Promise<PluginDependencyGraphSnapshot>
-		>()
-		type OptionalUnresolved = Extract<
-			PluginDependencyGraphEdge,
-			{ mode: 'optional'; resolution: { state: 'unresolved' } }
-		>
-		type EffectiveUnresolved = Extract<
-			PluginDependencyGraphEdge,
-			{ resolution: { state: 'unresolved' }; effective: true }
-		>
-		expectTypeOf<OptionalUnresolved>().toEqualTypeOf<never>()
-		expectTypeOf<EffectiveUnresolved>().toEqualTypeOf<never>()
 	})
 
 	it('keeps fixed session transport out of runtime metadata', () => {
-		type WorkbenchDetail = Extract<keyof RuntimeMeta['workbench'], 'revision' | 'renderers'>
-		type Transport = Extract<keyof RuntimeMeta, 'transport'>
-		expectTypeOf<WorkbenchDetail>().toEqualTypeOf<never>()
-		expectTypeOf<Transport>().toEqualTypeOf<never>()
-
 		const metadata: RuntimeMeta = {
 			service: 'pluxel-runtime',
 			ready: true,

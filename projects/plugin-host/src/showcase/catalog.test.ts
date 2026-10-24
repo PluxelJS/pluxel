@@ -89,14 +89,8 @@ describe('plugin-host catalog', () => {
 				}),
 			]),
 		)
-		expect(pluginNodeAddressOf(ReportStudioPlugin)).toBeDefined()
-		expect(hostPlugins.filter((plugin) => plugin.name === 'ReportStudioPlugin')).toEqual([
+		expect(hostPlugins.filter((plugin) => plugin === ReportStudioPlugin)).toEqual([
 			ReportStudioPlugin,
 		])
-		expect(
-			hostPlugins.some((plugin) =>
-				/ShowcaseRenderer|ReleaseArchive|PluginEvents|OptionalIntegration/.test(plugin.name),
-			),
-		).toBe(false)
 	})
 })

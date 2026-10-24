@@ -128,6 +128,9 @@ export function host(options: HostViteOptions): PluginOption[] {
 	let provenance = new Map<PluginConstructor, PluginCatalogProvenance>()
 	let files = new Set<string>()
 	let acceptedCatalog: HostViteCatalog | undefined
+	let acceptedSources:
+		| { entries: ReadonlySet<string>; bytes: ReadonlyMap<string, string> }
+		| undefined
 	let closing = false
 	let shutdown: Promise<void> | undefined
 	let devConsole: DevConsoleAttachment | undefined
@@ -177,15 +180,44 @@ export function host(options: HostViteOptions): PluginOption[] {
 	const apply = async (batch?: HostViteBatch): Promise<void> => {
 		if (closing) return
 		if (batch) {
+			const sourceSnapshot = acceptedSources
+			let validatedSources = false
+			if (
+				!batch.full &&
+				sourceSnapshot &&
+				batch.changes.some(
+					(change) =>
+						change.kind === 'source' &&
+						change.type === 'update' &&
+						sourceSnapshot.entries.has(change.file),
+				)
+			) {
+				try {
+					const entries = await sources.entries()
+					validatedSources =
+						acceptedSources === sourceSnapshot &&
+						entries.length === sourceSnapshot.entries.size &&
+						entries.every((file) => sourceSnapshot.entries.has(file))
+				} catch (error) {
+					sourceFailed(error)
+					throw error
+				}
+			}
 			const changes: HostViteChange[] = []
 			for (const change of batch.changes) {
 				if (change.kind !== 'source') continue
-				if (
-					dependencies?.covers(change.file) &&
-					!recovery.matches(change.file) &&
-					(await moduleBytes.unchanged(change.file))
-				)
-					continue
+				if (change.type === 'update' && !recovery.matches(change.file)) {
+					if (dependencies?.covers(change.file) && (await moduleBytes.unchanged(change.file)))
+						continue
+					if (validatedSources && sourceSnapshot?.entries.has(change.file)) {
+						const unchanged = await Promise.all(
+							Array.from(collectHostImportFiles(server, change.file), (file) =>
+								moduleBytes.unchanged(file, sourceSnapshot.bytes),
+							),
+						)
+						if (unchanged.every(Boolean)) continue
+					}
+				}
 				changes.push(change)
 			}
 			if (!batch.full && changes.length === 0) {
@@ -216,6 +248,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 		}
 		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
 		let sourceCandidate: HostSourceCandidate<ResolvedHostApplication> | undefined
+		let nextSourceBytes: ReadonlyMap<string, string> | undefined
 		let nextProvenance = provenance
 		let nextCatalog: HostViteCatalog | undefined
 		let accepted = false
@@ -235,6 +268,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 		)
 		let artifactCandidate: HostViteCandidate | undefined
 		const settle = async (accept: boolean): Promise<void> => {
+			if (accept && sourceCandidate && nextSourceBytes)
+				acceptedSources = { entries: sourceCandidate.sourceFiles, bytes: nextSourceBytes }
 			const results = await Promise.allSettled([
 				Promise.resolve().then(() =>
 					accept ? artifactCandidate?.commit() : artifactCandidate?.rollback(),
@@ -272,6 +307,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					application: declared,
 					entryFiles: collectHostImportFiles(server, entry),
 				})
+				nextSourceBytes = moduleBytes.snapshot(sourceCandidate.sourceModules)
 				if (closing) throw new HostViteClosedError()
 				const next = sourceCandidate.application
 				nextCatalog = Object.freeze({
@@ -570,6 +606,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	let sourceFailureQueued = false
 	const sourceFailed = (cause: unknown): void => {
 		if (closing) return
+		acceptedSources = undefined
 		sourceFailure = { cause }
 		if (sourceFailureQueued) return
 		sourceFailureQueued = true
@@ -577,6 +614,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 		// Keep only the latest pending diagnostic while a candidate owns settlement.
 		void driver
 			.enqueue(async () => {
+				// A candidate accepted while the failure was queued cannot acknowledge its repair.
+				acceptedSources = undefined
 				const failure = sourceFailure!.cause
 				sourceFailure = undefined
 				sourceFailureQueued = false

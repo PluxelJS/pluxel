@@ -11,6 +11,7 @@ import {
 	writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import { resolve } from 'pathe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -28,7 +29,6 @@ import {
 	ensureSourcePnpmfileBootstrap,
 	materializeSourceOverrides,
 	selectSourceBuildTargets,
-	sourcePnpmfileBootstrapContents,
 	writeSourcePnpmfile,
 } from '../src/source/execution'
 import {
@@ -350,13 +350,10 @@ describe('source workspace planning', () => {
 	it('fails before pnpm resolves private source packages when the overlay is absent', async () => {
 		const root = await createTemporaryRoot()
 		ensureSourcePnpmfileBootstrap(root)
-		const written = await readFile(resolve(root, '.pnpmfile.cjs'), 'utf8')
-		const bootstrap = sourcePnpmfileBootstrapContents()
-		expect(written).toBe(bootstrap)
-		expect(bootstrap).toContain('Source overlay is missing')
-		expect(bootstrap).toContain('pluxel source install')
-		expect(bootstrap).not.toContain('source-local-project.mjs')
-		expect(bootstrap).not.toContain('{ hooks: {} }')
+		const require = createRequire(resolve(root, 'package.json'))
+		expect(() => require('./.pnpmfile.cjs')).toThrow(
+			'Source overlay is missing. Run `pluxel source install`',
+		)
 	})
 
 	it('resets pnpm workspace ownership for each independent checkout', () => {

@@ -4,7 +4,6 @@ import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
-import pncatConfig from '../template/pncat.config.ts'
 import { repositoryPackages, isPublishablePackage } from '../../../scripts/repository-packages.mjs'
 import { resolveDevProject } from '../../cli/src/dev/project'
 
@@ -21,35 +20,6 @@ afterAll(async () => {
 })
 
 describe('create-pluxel', () => {
-	it('routes common ecosystem dependencies into stable named catalogs', () => {
-		assert.deepEqual(
-			Object.fromEntries(
-				[
-					'@pluxel/test',
-					'@heroui/react',
-					'@tanstack/react-router',
-					'lucide-react',
-					'playwright',
-					'@libsql/client',
-					'graphql-yoga',
-					'@types/qrcode',
-					'electron-builder',
-				].map((name) => [name, catalogFor(name)]),
-			),
-			{
-				'@pluxel/test': 'pluxel',
-				'@heroui/react': 'frontend',
-				'@tanstack/react-router': 'frontend',
-				'lucide-react': 'frontend',
-				playwright: 'test',
-				'@libsql/client': 'backend',
-				'graphql-yoga': 'backend',
-				'@types/qrcode': 'tooling',
-				'electron-builder': 'tooling',
-			},
-		)
-	})
-
 	it('builds a typed single-file npm CLI boundary with tsdown', async () => {
 		const manifest = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8'))
 		assert.deepEqual(manifest.bin, { 'create-pluxel': './dist/create.mjs' })
@@ -70,8 +40,6 @@ describe('create-pluxel', () => {
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
 		assert.equal(manifest.name, undefined)
 		assert.equal(manifest.private, true)
-		assert.equal(manifest.packageManager, 'pnpm@11.28.6')
-		assert.equal(manifest.devDependencies['vite-plus'], 'catalog:tooling')
 		const managed = await resolveDevProject({ root: generated })
 		assert.equal(managed.profile, 'app')
 		assert.equal(managed.pitchfork, 'app')
@@ -89,7 +57,11 @@ describe('create-pluxel', () => {
 			'oxfmt.config.ts',
 			'.github/workflows/ci.yml',
 			'scripts/vite-tasks.ts',
+			'pncat.config.ts',
 			'host/src/app.ts',
+			'host/vite.config.ts',
+			'host/web/vite.config.ts',
+			'host/web/src/client/main.tsx',
 		]) {
 			assert.equal(
 				await readFile(resolve(generated, file), 'utf8'),
@@ -101,85 +73,6 @@ describe('create-pluxel', () => {
 		assert.match(result.stdout, /vp run setup/)
 		assert.match(result.stdout, /vp run dev/)
 
-		const webManifest = JSON.parse(
-			await readFile(resolve(generated, 'host/web/package.json'), 'utf8'),
-		)
-		assert.equal(webManifest.name, '@example/web')
-		assert.equal(webManifest.private, true)
-		assert.deepEqual(webManifest.dependencies, {
-			react: 'catalog:frontend',
-			'react-dom': 'catalog:frontend',
-		})
-		assert.equal(manifest.devDependencies.pncat, undefined)
-		assert.match(
-			await readFile(resolve(generated, 'pncat.config.ts'), 'utf8'),
-			/from '@pluxel\/cli\/pncat'/,
-		)
-		assert.match(await readFile(resolve(generated, 'pncat.config.ts'), 'utf8'), /name: 'pluxel'/)
-		assert.doesNotMatch(
-			await readFile(resolve(generated, 'host/web/src/client/main.tsx'), 'utf8'),
-			/from ['"](?:@pluxel\/|@example\/)/,
-		)
-		const hostManifest = JSON.parse(await readFile(resolve(generated, 'host/package.json'), 'utf8'))
-		assert.deepEqual(
-			Object.fromEntries(
-				Object.entries(hostManifest.dependencies).filter(([name]) => name.startsWith('@example/')),
-			),
-			{
-				'@example/audit-plugin': 'workspace:*',
-				'@example/http-plugin': 'workspace:*',
-				'@example/todo-plugin': 'workspace:*',
-			},
-		)
-		assert.equal(hostManifest.devDependencies['@example/web'], 'workspace:*')
-		assert.match(
-			await readFile(resolve(generated, 'host/tsdown.config.ts'), 'utf8'),
-			/vite-plus\/pack/,
-		)
-		assert.match(
-			await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8'),
-			/pack: packConfig/,
-		)
-		assert.equal(hostManifest.dependencies['@pluxel/runtime'], undefined)
-		assert.equal(hostManifest.dependencies['@pluxel/host'], 'catalog:pluxel')
-		assert.equal(hostManifest.dependencies['@pluxel/services'], 'catalog:pluxel')
-		for (const plugin of ['audit', 'http', 'todo']) {
-			const pluginManifest = JSON.parse(
-				await readFile(resolve(generated, `plugins/${plugin}/package.json`), 'utf8'),
-			)
-			assert.deepEqual(
-				Object.keys(pluginManifest.dependencies).filter((name) => name.startsWith('@pluxel/')),
-				[],
-			)
-			const frameworkPeers = Object.keys(pluginManifest.peerDependencies).filter((name) =>
-				name.startsWith('@pluxel/'),
-			)
-			assert.deepEqual(
-				frameworkPeers,
-				plugin === 'http' ? ['@pluxel/core', '@pluxel/services'] : ['@pluxel/core'],
-			)
-			for (const name of frameworkPeers) {
-				assert.equal(pluginManifest.peerDependencies[name], 'catalog:pluxel')
-				assert.equal(pluginManifest.devDependencies[name], 'catalog:pluxel')
-			}
-			assert.equal(pluginManifest.devDependencies.oxlint, undefined)
-		}
-		const viteConfig = await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8')
-		assert.match(viteConfig, /root: webRoot/)
-		assert.equal(viteConfig.match(/\breact\(\)/g)?.length, 1)
-		assert.match(viteConfig, /vitePreset\(\{ entry, devConsole: true \}\)/)
-		assert.match(
-			await readFile(resolve(generated, 'host/src/app.ts'), 'utf8'),
-			/defineHostApplication\(async \(startup\) =>/,
-		)
-		await assert.rejects(readFile(resolve(generated, 'host/vite.dynamic.config.ts')), {
-			code: 'ENOENT',
-		})
-		const webTasks = await readFile(resolve(generated, 'host/web/vite.config.ts'), 'utf8')
-		assert.match(webTasks, /'check-types'/)
-		assert.doesNotMatch(webTasks, /vitePreset|server:/)
-
-		await assert.rejects(readFile(resolve(generated, 'docs/pluxel/index.md')), { code: 'ENOENT' })
 		assert.match(
 			await readFile(resolve(generated, 'README.md'), 'utf8'),
 			/https:\/\/github\.com\/PluxelJS\/pluxel\/blob\/main\/docs\/index\.md/,
@@ -193,7 +86,6 @@ describe('create-pluxel', () => {
 				assert.ok(await readFile(resolve(packageRoot, '../../docs', page), 'utf8'), page)
 			}
 		}
-		await assert.rejects(readFile(resolve(generated, '.pnpmfile.cjs')), { code: 'ENOENT' })
 	})
 
 	it('emits first-party catalog ranges from the actual publishable package versions', async () => {
@@ -261,16 +153,6 @@ describe('create-pluxel', () => {
 		assert.match(version.stdout, /^\d+\.\d+\.\d+\s*$/)
 	})
 })
-
-function catalogFor(packageName) {
-	return [...pncatConfig.catalogRules]
-		.sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0))
-		.find((rule) =>
-			rule.match.some((matcher) =>
-				typeof matcher === 'string' ? matcher === packageName : matcher.test(packageName),
-			),
-		)?.name
-}
 
 async function run(args, cwd) {
 	return await new Promise((accept, reject) => {

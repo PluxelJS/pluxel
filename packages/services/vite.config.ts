@@ -3,10 +3,24 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 
 export default defineConfig({
 	run: {
-		tasks: repositoryTasks('@pluxel/services', {
-			build: 'node ../../scripts/pack.mjs',
-			test: 'vp test run',
-			typecheck: 'tsc --noEmit --pretty false',
+		tasks: repositoryTasks({
+			compile: {
+				command: 'node ../../scripts/pack.mjs',
+				dependsOn: [
+					'@pluxel/commands#compile',
+					'@pluxel/host#compile',
+					'@pluxel/host-vite#compile',
+				],
+				cache: {
+					input: [
+						'packages/workbench/package.json',
+						'packages/workbench/tsconfig.json',
+						'packages/workbench/src/**',
+					].map((pattern) => ({ pattern, base: 'workspace' as const })),
+				},
+			},
+			'check-tests': 'vp test run',
+			'check-types': 'tsc --noEmit --pretty false',
 		}),
 	},
 })

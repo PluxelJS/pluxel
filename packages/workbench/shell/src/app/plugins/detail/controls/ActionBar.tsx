@@ -5,7 +5,7 @@ import { IconPlayerPlay, IconPlayerStop, IconRotateClockwise } from '@tabler/ico
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { formatPluginDefinitionReference, formatPluginNodeReference } from '@pluxel/core'
-import { useNotify } from '../../../hooks/useNotify'
+import { notifyAndRecord } from '../../../notifications/notifyBridge'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../../runtime'
 import {
 	applyPluginLifecycleCommand,
@@ -20,7 +20,6 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
 	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
-	const notify = useNotify()
 	const autoStartPendingRef = useRef(false)
 	const lifecyclePendingRef = useRef(false)
 	const [autoStartPending, setAutoStartPending] = useState(false)
@@ -34,14 +33,14 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 		try {
 			const result = await setPluginAutoStart(management, queryClient, owner, autoStart)
 			if (result.ok === false) {
-				notify({
+				notifyAndRecord({
 					title: '自动启动策略更新失败',
 					message: result.error || '操作失败，请稍后重试',
 					color: 'red',
 				})
 				return
 			}
-			notify({
+			notifyAndRecord({
 				title: autoStart ? '已开启自动启动' : '已关闭自动启动',
 				message: autoStart
 					? `${pluginLabel} 将在宿主启动时自动请求运行；当前会话状态不变。`
@@ -49,7 +48,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 				color: 'green',
 			})
 		} catch (error: unknown) {
-			notify({
+			notifyAndRecord({
 				title: '自动启动策略更新失败',
 				message: runtimeErrorMessage(error, '操作失败，请稍后重试'),
 				color: 'red',
@@ -68,16 +67,16 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 		try {
 			const result = await applyPluginLifecycleCommand(management, queryClient, owner, command)
 			if (result.ok === false) {
-				notify({
+				notifyAndRecord({
 					title: '生命周期命令执行失败',
 					message: result.error || '操作失败，请稍后重试',
 					color: 'red',
 				})
 				return
 			}
-			notify(describePluginLifecycleOutcome(pluginLabel, command, result))
+			notifyAndRecord(describePluginLifecycleOutcome(pluginLabel, command, result))
 		} catch (error: unknown) {
-			notify({
+			notifyAndRecord({
 				title: '生命周期命令执行失败',
 				message: runtimeErrorMessage(error, '操作失败，请稍后重试'),
 				color: 'red',

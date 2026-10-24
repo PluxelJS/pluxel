@@ -1,10 +1,10 @@
 {
-	"extends": "../../tsconfig.workspace.json",
-	"include": ["src"],
+	"extends": "../../tsconfig.json",
+	"include": ["src", "tests", "tsdown.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
-		"noEmit": true,
 		"jsx": "react-jsx",
-		"lib": ["ES2023", "DOM"],
-		"types": ["vite/client"]
+		"lib": ["ES2024", "DOM"],
+		"types": ["vite/client"],
+		"customConditions": ["@pluxel/source"]
 	}
 }

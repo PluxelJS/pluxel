@@ -1,9 +1,3 @@
-// pluginActor.ts
-// Runtime lifecycle state machine for a single plugin instance.
-// This module is performance‑sensitive: it avoids allocations on hot transitions.
-
-import { bakeMachine } from '../../internal/fsm/defineMachine.macro.ts' with { type: 'macro' }
-import { hydrateMachine, type MachineImpl } from '../../internal/fsm/defineMachine.macro.ts'
 import type { PluginLifecycleAdapter } from '../composition/BasePlugin'
 import { LATE_INIT_CLEANUP_ERROR } from '../composition/symbols'
 
@@ -11,7 +5,6 @@ import { LATE_INIT_CLEANUP_ERROR } from '../composition/symbols'
 export type LifecycleEvent =
 	| { type: 'START' }
 	| { type: 'STOP' }
-	| { type: 'RETRY' }
 	| { type: 'ASYNC_ERROR'; error: unknown }
 
 /* ────────────────────────── 机器输入 & 上下文 ────────────────────────── */
@@ -32,10 +25,6 @@ interface LifecycleCtx extends LifecycleInput {
 
 /* ────────────────────────── 选项 ────────────────────────── */
 export interface LifecycleOptions {
-	/** actor.start() 时是否自动发 START */
-	autoStart?: boolean
-	/** 运行态是否订阅插件侧的错误上报（用于延迟抛错） */
-	useErrorChannel?: boolean
 	/** Receives init settlement errors after stop/drain has already won the generation. */
 	onLateError?: (error: unknown, phase: 'start' | 'drain') => void
 }
@@ -85,167 +74,126 @@ const toError = (e: unknown): Error => {
 	return new Error(msg, { cause: e })
 }
 
+const enum State {
+	Idle,
+	Starting,
+	Running,
+	Stopping,
+	Failing,
+	Stopped,
+}
+const enum Event {
+	Start,
+	Started,
+	Failed,
+	Stop,
+	Drained,
+	AsyncError,
+}
 const stateNames = ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'] as const
+const eventNames = ['start', 'started', 'failed', 'stop', 'drained', 'asyncError'] as const
 type LifecycleState = (typeof stateNames)[number]
+type TransitionEvent = Event
+const eventCount = 6
+const invalid = -1
+// One table for all generations; rows are states, columns are events in the order above.
+// prettier-ignore
+const transitions = new Int8Array([
+  State.Starting, invalid, invalid, State.Stopping, invalid, invalid, // idle
+  invalid, State.Running, State.Failing, State.Stopping, invalid, invalid, // starting
+  invalid, invalid, invalid, State.Stopping, invalid, State.Failing, // running
+  invalid, invalid, invalid, invalid, State.Stopped, invalid, // stopping
+  invalid, invalid, invalid, State.Stopping, invalid, invalid, // failing
+  invalid, invalid, invalid, invalid, invalid, invalid, // stopped
+])
 
-const bakedLifecycle = bakeMachine({
-	states: ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'],
-	events: ['start', 'startOk', 'startErr', 'stop', 'stopOk', 'stopErr', 'asyncError', 'retry'],
-	init: 'idle',
-	transitions: [
-		['idle', 'start', 'starting', 'onStart'],
-		['idle', 'stop', 'stopping', 'onStop'],
-		['starting', 'startOk', 'running'],
-		['starting', 'startErr', 'failing'],
-		['starting', 'stop', 'stopping', 'onStop'],
-		['running', 'stop', 'stopping', 'onStop'],
-		['running', 'asyncError', 'failing', 'onAsyncError'],
-		['failing', 'stop', 'stopping', 'onStop'],
-		['failing', 'retry', 'starting'],
-		['stopping', 'stopOk', 'stopped'],
-		['stopping', 'stopErr', 'stopped'],
-		['stopped', 'start', 'starting', 'onStart'],
-	],
-	hooks: {
-		enter: { running: 'onEnterRunning' },
-		exit: { running: 'onExitRunning' },
-	},
-	abortOnStateChange: false,
-})
-
-type LifecycleImpl = MachineImpl<typeof bakedLifecycle>
+const settled = Promise.resolve()
 
 export class PluginLifecycleActor {
 	private readonly ctx: LifecycleCtx
 	private readonly opts: LifecycleOptions
 	private readonly listeners = new Set<Observer<LifecycleSnapshot>>()
 	private snapshot: LifecycleSnapshot
-	private queue = Promise.resolve()
+	private queue = settled
 	private errorUnsub: (() => void) | undefined
 	private startAbort: AbortController | null = null
 	private pendingStop = false
 	private drainTask: Promise<void> | null = null
 	private drainError: unknown
-	private readonly machine
-	private readonly E
-	private readonly S
-	private readonly stateNames = stateNames
+	private state: State = State.Idle
 
 	constructor(opts: LifecycleOptions, input: LifecycleInput) {
 		this.opts = opts
 		this.ctx = {
-			...input,
+			id: input.id,
+			runtime: input.runtime,
 			attempt: 0,
 			err: undefined,
 			startedAt: undefined,
 			failedStep: undefined,
 		}
 
-		const dispatch = (ev: number, ...args: any[]) => this.dispatch(ev, ...args)
-
-		const impl: LifecycleImpl = {
-			callbacks: {
-				onStart: async () => {
-					this.startAbort = new AbortController()
-					const { runtime } = this.ctx
-					try {
-						// If a stop was requested before the start transition actually runs,
-						// do not execute init() at all.
-						if (this.pendingStop) {
-							this.startAbort.abort()
-							return
-						}
-						if (runtime.init) await runtime.init(this.startAbort.signal)
-						if (this.startAbort.signal.aborted || this.pendingStop) return
-						if (runtime.finalize) await runtime.finalize(this.startAbort.signal)
-						if (this.startAbort.signal.aborted || this.pendingStop) return
-						if (!this.ctx.startedAt) this.ctx.startedAt = Date.now()
-						this.ctx.err = undefined
-						this.ctx.attempt = 0
-						this.ctx.failedStep = undefined
-						if (this.machine.getState() === this.S.starting) {
-							await dispatch(E.startOk)
-						}
-					} catch (e) {
-						if (this.startAbort.signal.aborted && this.pendingStop) {
-							const phase =
-								e &&
-								typeof e === 'object' &&
-								(e as { [LATE_INIT_CLEANUP_ERROR]?: unknown })[LATE_INIT_CLEANUP_ERROR]
-									? 'drain'
-									: 'start'
-							this.opts.onLateError?.(e, phase)
-							return
-						}
-						this.ctx.err = toError(e)
-						this.ctx.failedStep = 'start'
-						this.ctx.attempt++
-						if (this.machine.getState() === this.S.starting) {
-							await dispatch(E.startErr)
-						}
-					} finally {
-						this.startAbort = null
-					}
-				},
-				onStop: async () => {
-					this.pendingStop = true
-					if (this.startAbort) this.startAbort.abort()
-					await this.beginDrain()
-					if (this.drainError) {
-						if (!this.ctx.err) this.ctx.err = toError(this.drainError)
-						if (!this.ctx.failedStep) this.ctx.failedStep = 'drain'
-						this.ctx.attempt++
-						await dispatch(E.stopErr)
-					} else {
-						await dispatch(E.stopOk)
-					}
-					this.pendingStop = false
-				},
-				onAsyncError: (err: unknown) => {
-					this.ctx.err = toError(err)
-					this.ctx.failedStep = 'runtime'
-					this.ctx.attempt++
-				},
-			},
-			hooks: {
-				onEnterRunning: () => {
-					if (
-						this.opts.useErrorChannel &&
-						(this.errorUnsub === null || this.errorUnsub === undefined)
-					) {
-						const unsub = this.ctx.runtime.subscribeErrors?.((err) => {
-							void dispatch(E.asyncError, err)
-						})
-						if (typeof unsub === 'function') this.errorUnsub = unsub
-					}
-				},
-				onExitRunning: () => {
-					if (this.errorUnsub) {
-						try {
-							this.errorUnsub()
-						} catch {
-							/* ignore */
-						}
-						this.errorUnsub = undefined
-					}
-				},
-			},
-		}
-
-		// hydrate machine with instance-specific impl
-		const { E, S, createMachine } = hydrateMachine(bakedLifecycle, impl)
-		this.E = E
-		this.S = S
-		this.machine = createMachine()
 		this.snapshot = this.buildSnapshot()
 	}
 
-	start() {
-		if (this.opts.autoStart) this.send({ type: 'START' })
+	private async startRuntime(): Promise<void> {
+		const abort = (this.startAbort = new AbortController())
+		const { runtime } = this.ctx
+		try {
+			// A stop queued before START runs must not admit init.
+			if (this.pendingStop) {
+				abort.abort()
+				return
+			}
+			if (runtime.init) await runtime.init(abort.signal)
+			if (abort.signal.aborted || this.pendingStop) return
+			if (runtime.finalize) await runtime.finalize(abort.signal)
+			if (abort.signal.aborted || this.pendingStop) return
+			if (!this.ctx.startedAt) this.ctx.startedAt = Date.now()
+			this.ctx.err = undefined
+			this.ctx.attempt = 0
+			this.ctx.failedStep = undefined
+			if (this.state === State.Starting) await this.dispatch(Event.Started)
+		} catch (error) {
+			if (abort.signal.aborted && this.pendingStop) {
+				const phase =
+					error &&
+					typeof error === 'object' &&
+					(error as { [LATE_INIT_CLEANUP_ERROR]?: unknown })[LATE_INIT_CLEANUP_ERROR]
+						? 'drain'
+						: 'start'
+				this.opts.onLateError?.(error, phase)
+				return
+			}
+			this.ctx.err = toError(error)
+			this.ctx.failedStep = 'start'
+			this.ctx.attempt++
+			if (this.state === State.Starting) await this.dispatch(Event.Failed)
+		} finally {
+			this.startAbort = null
+		}
 	}
 
-	stop() {
-		this.send({ type: 'STOP' })
+	private async stopRuntime(): Promise<void> {
+		this.pendingStop = true
+		this.startAbort?.abort()
+		await this.beginDrain()
+		if (this.drainError !== undefined) {
+			if (!this.ctx.err) this.ctx.err = toError(this.drainError)
+			if (!this.ctx.failedStep) this.ctx.failedStep = 'drain'
+			this.ctx.attempt++
+		}
+		await this.dispatch(Event.Drained)
+		this.pendingStop = false
+	}
+
+	private unsubscribeErrors(): void {
+		try {
+			this.errorUnsub?.()
+		} catch {
+			// Error channel teardown must not prevent generation drain.
+		}
+		this.errorUnsub = undefined
 	}
 
 	getSnapshot(): LifecycleSnapshot {
@@ -272,7 +220,7 @@ export class PluginLifecycleActor {
 
 		return new Promise((resolve, reject) => {
 			let done = false
-			let timer: any
+			let timer: ReturnType<typeof setTimeout> | undefined
 
 			const sub = this.subscribe((snapshot: LifecycleSnapshot) => {
 				if (done || !predicate(snapshot)) return
@@ -306,14 +254,12 @@ export class PluginLifecycleActor {
 	}
 
 	send(event: LifecycleEvent): void {
-		const ev = this.toEvent(event.type)
-		const args = event.type === 'ASYNC_ERROR' ? [event.error] : []
-		const current = this.snapshot.value
+		const current = this.state
 		if (event.type === 'STOP') {
-			if (current === 'stopped' || current === 'stopping') return
+			if (this.pendingStop || current === State.Stopped || current === State.Stopping) return
 			this.pendingStop = true
 			// Abort in-flight init immediately; waiting for the STOP transition can be too late
-			// because onStart awaits init() and blocks the machine dispatch.
+			// because startRuntime awaits init() and blocks the event queue.
 			if (this.startAbort) {
 				try {
 					this.startAbort.abort()
@@ -323,9 +269,18 @@ export class PluginLifecycleActor {
 			}
 			void this.beginDrain()
 		}
-		if (event.type === 'START' && (current === 'running' || current === 'starting')) return
+		if (event.type === 'START' && (current === State.Running || current === State.Starting)) return
 		this.queue = this.queue
-			.then(() => this.dispatch(ev, ...args))
+			.then(() =>
+				this.dispatch(
+					event.type === 'START'
+						? Event.Start
+						: event.type === 'STOP'
+							? Event.Stop
+							: Event.AsyncError,
+					event.type === 'ASYNC_ERROR' ? event.error : undefined,
+				),
+			)
 			.catch((err) => {
 				this.notifyError(err)
 			})
@@ -343,38 +298,68 @@ export class PluginLifecycleActor {
 		return this.drainError
 	}
 
-	private toEvent(type: LifecycleEvent['type']): number {
-		switch (type) {
-			case 'START':
-				return this.E.start
-			case 'STOP':
-				return this.E.stop
-			case 'RETRY':
-				return this.E.retry
-			case 'ASYNC_ERROR':
-				return this.E.asyncError
-			default:
-				throw new Error(`Unknown event ${type}`)
-		}
-	}
-
-	private async dispatch(ev: number, ...args: any[]): Promise<void> {
-		await this.machine.dispatch(ev, ...args)
+	private async dispatch(event: TransitionEvent, error?: unknown): Promise<void> {
+		// Settle errors queued during subscription setup before publishing a stable state.
+		await this.transition(event, error)
 		this.snapshot = this.buildSnapshot()
 		this.notify()
 	}
 
+	private async transition(event: TransitionEvent, error?: unknown): Promise<void> {
+		const from = this.state
+		const next = transitions[from * eventCount + event] as State | -1
+		if (next === invalid)
+			throw new Error(
+				`Invalid Plugin lifecycle transition: ${stateNames[from]} -> ${eventNames[event]}`,
+			)
+		if (from === State.Running) this.unsubscribeErrors()
+		this.state = next
+		if (next === State.Running) {
+			const onError = (cause: unknown) => {
+				void this.dispatch(Event.AsyncError, cause).catch((failure) => this.notifyError(failure))
+			}
+			try {
+				this.errorUnsub = this.ctx.runtime.subscribeErrors?.(onError)
+				// A synchronous error can leave running before subscribeErrors returns its cleanup.
+				if (this.state !== State.Running) this.unsubscribeErrors()
+			} catch (cause) {
+				// Subscription installation is part of start admission; startRuntime reports its failure.
+				this.state = from
+				throw cause
+			}
+		}
+		if (event === Event.Start) await this.startRuntime()
+		else if (event === Event.Stop) await this.stopRuntime()
+		else if (event === Event.AsyncError) {
+			this.ctx.err = toError(error)
+			this.ctx.failedStep = 'runtime'
+			this.ctx.attempt++
+		}
+	}
+
 	private notify() {
-		for (const l of this.listeners) l.next?.(this.snapshot)
+		const snapshot = this.snapshot
+		for (const listener of this.listeners) {
+			try {
+				listener.next?.(snapshot)
+			} catch (error) {
+				this.notifyError(error)
+			}
+		}
 	}
 
 	private notifyError(err: unknown) {
-		for (const l of this.listeners) l.error?.(err)
+		for (const listener of this.listeners) {
+			try {
+				listener.error?.(err)
+			} catch {
+				// Reporting is terminal: a broken observer cannot change lifecycle facts or block drain.
+			}
+		}
 	}
 
 	private buildSnapshot(): LifecycleSnapshot {
-		const id = this.machine.getState()
-		const value = this.stateNames[id] as LifecycleState
+		const value = stateNames[this.state]
 		return {
 			value,
 			context: this.ctx,

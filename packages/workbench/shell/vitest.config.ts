@@ -17,6 +17,8 @@ export default defineConfig({
 	},
 	test: {
 		include: ['tests/**/*.test.{ts,tsx}'],
+		// Each UI worker initializes its own DOM and React application dependencies.
+		maxWorkers: 2,
 		server: {
 			deps: { inline: ['@pluxel/workbench', '@material/material-color-utilities'] },
 		},

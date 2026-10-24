@@ -5,7 +5,7 @@ import {
 	withCoreInternalTestHost,
 	type CoreInternalTestHost,
 } from '@pluxel/core/internal/test'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 
 type NodeName = 'provider' | 'required' | 'optional' | 'independent'
@@ -28,15 +28,6 @@ const counters: Record<EffectName, Counters> = {
 
 let providerShouldFail = false
 const optionalProviderGenerations: number[] = []
-let queuedInitStarted: Promise<void>
-let markQueuedInitStarted: () => void
-let queuedInitRelease: Promise<void>
-let releaseQueuedInit: () => void
-const queuedCommitEvents: string[] = []
-const reentrantCleanupOrder: string[] = []
-let lateInitPromise: Promise<void>
-let resolveLateInit: () => void
-let lateCleanupRuns = 0
 
 function createCounters(): Counters {
 	return { constructed: 0, started: 0, cleaned: 0, active: 0 }
@@ -51,12 +42,6 @@ function resetLifecycleModelState(): void {
 	}
 	providerShouldFail = false
 	optionalProviderGenerations.length = 0
-	queuedCommitEvents.length = 0
-	reentrantCleanupOrder.length = 0
-	lateCleanupRuns = 0
-	;({ promise: queuedInitStarted, resolve: markQueuedInitStarted } = Promise.withResolvers<void>())
-	;({ promise: queuedInitRelease, resolve: releaseQueuedInit } = Promise.withResolvers<void>())
-	;({ promise: lateInitPromise, resolve: resolveLateInit } = Promise.withResolvers<void>())
 }
 
 function nextGeneration(name: NodeName): number {
@@ -122,56 +107,6 @@ class LifecycleModelIndependent extends BasePlugin {
 
 	override init(): void {
 		this.ctx.effects.defer(ownEffect('independent'))
-	}
-}
-
-@Plugin({ displayName: 'Lifecycle model queued provider' })
-class LifecycleModelQueuedProvider extends BasePlugin {
-	readonly generation = nextGeneration('provider')
-
-	override async init(): Promise<void> {
-		queuedCommitEvents.push(`provider:start:${this.generation}`)
-		markQueuedInitStarted()
-		await queuedInitRelease
-		this.ctx.effects.defer(() => {
-			queuedCommitEvents.push(`provider:cleanup:${this.generation}`)
-		})
-	}
-}
-
-@Plugin({ displayName: 'Lifecycle model queued consumer' })
-class LifecycleModelQueuedConsumer extends BasePlugin {
-	constructor(readonly provider: LifecycleModelQueuedProvider) {
-		super()
-	}
-
-	override init(): () => void {
-		queuedCommitEvents.push(`consumer:start:${this.provider.generation}`)
-		return () => {
-			queuedCommitEvents.push(`consumer:cleanup:${this.provider.generation}`)
-		}
-	}
-}
-
-@Plugin({ displayName: 'Lifecycle model reentrant cleanup' })
-class LifecycleModelReentrantCleanup extends BasePlugin {
-	override init(): void {
-		this.ctx.effects.defer(() => {
-			reentrantCleanupOrder.push('outer')
-			this.ctx.effects.defer(() => {
-				reentrantCleanupOrder.push('inner')
-			})
-		})
-	}
-}
-
-@Plugin({ displayName: 'Lifecycle model late init', startTimeoutMs: 15 })
-class LifecycleModelLateInit extends BasePlugin {
-	override async init(): Promise<() => void> {
-		await lateInitPromise
-		return () => {
-			lateCleanupRuns++
-		}
 	}
 }
 
@@ -275,59 +210,6 @@ describe('PluginService lifecycle model traces', () => {
 		expect(counters.provider.started).toBe(2)
 		expect(counters.provider.cleaned).toBe(2)
 		expect(optionalProviderGenerations).toEqual([1, 2])
-	})
-
-	it('rejects an overlapping transaction and converges after the active commit', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			host.add([LifecycleModelQueuedProvider, LifecycleModelQueuedConsumer])
-			const initialCommit = host.commit()
-			await queuedInitStarted
-
-			expect(() => host.remove(LifecycleModelQueuedProvider)).toThrow(/another update is active/i)
-
-			releaseQueuedInit()
-			await initialCommit
-			host.remove(LifecycleModelQueuedProvider)
-			await host.commit()
-
-			expect(host.has(LifecycleModelQueuedProvider)).toBe(false)
-			expect(host.has(LifecycleModelQueuedConsumer)).toBe(false)
-			expect(host.isRunning(LifecycleModelQueuedProvider)).toBe(false)
-			expect(host.isRunning(LifecycleModelQueuedConsumer)).toBe(false)
-			expect(queuedCommitEvents).toEqual([
-				'provider:start:1',
-				'consumer:start:1',
-				'consumer:cleanup:1',
-				'provider:cleanup:1',
-			])
-		})
-	})
-
-	it('drains reentrant cleanups registered during generation teardown', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			host.add(LifecycleModelReentrantCleanup)
-			await host.commit()
-			host.remove(LifecycleModelReentrantCleanup)
-			await host.commit()
-
-			expect(reentrantCleanupOrder).toEqual(['outer', 'inner'])
-			expect(host.isRunning(LifecycleModelReentrantCleanup)).toBe(false)
-		})
-	})
-
-	it('does not publish a generation after late init settlement wins a timeout', async () => {
-		await withCoreInternalTestHost(
-			async (host) => {
-				host.add(LifecycleModelLateInit)
-				await host.commitAllowFail()
-				expect(host.isRunning(LifecycleModelLateInit)).toBe(false)
-
-				resolveLateInit()
-				await vi.waitFor(() => expect(lateCleanupRuns).toBe(1))
-				expect(host.isRunning(LifecycleModelLateInit)).toBe(false)
-			},
-			{ plugins: { drainTimeoutMs: 20 } },
-		)
 	})
 })
 

@@ -3,7 +3,7 @@ import type { PluginNodeAddress } from '@pluxel/core'
 import type { ConfigValidationErrors } from '@pluxel/services/management/client'
 
 import type { RuntimeManagementClient } from '../../../runtime'
-import { useNotify } from '../../hooks/useNotify'
+import { notifyAndRecord } from '../../notifications/notifyBridge'
 import { refreshPluginReadModels } from '../pluginReadModels'
 import { commitPluginConfig, refreshPluginConfig } from './usePluginConfig'
 
@@ -20,7 +20,6 @@ type ConfigSaveVariables = {
 /** Owns the write lifecycle; callers retain responsibility for their submitted draft snapshots. */
 export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 	const queryClient = useQueryClient()
-	const notify = useNotify()
 
 	return useMutation({
 		retry: false,
@@ -34,7 +33,7 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 						refreshPluginReadModels(queryClient),
 					])
 				}
-				notify({
+				notifyAndRecord({
 					title: all ? '全部保存失败' : '提交失败',
 					message: result.message ?? result.code ?? '未知错误',
 					color: 'red',
@@ -47,14 +46,14 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 			// A failed read-model refresh must not turn an acknowledged write into a save failure.
 			await Promise.allSettled([refreshPluginReadModels(queryClient)])
 			if (result.application === 'saved-not-applied') {
-				notify({
+				notifyAndRecord({
 					title: '配置已保存，但尚未应用',
 					message:
 						result.saved === true ? result.applyFailure.message : '运行中的插件尚未应用当前配置。',
 					color: 'yellow',
 				})
 			} else {
-				notify({
+				notifyAndRecord({
 					title: all ? '全部保存成功' : '提交成功',
 					message:
 						result.application === 'deferred'
@@ -71,7 +70,7 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 				refreshPluginConfig(queryClient, owner),
 				refreshPluginReadModels(queryClient),
 			])
-			notify({
+			notifyAndRecord({
 				title: all ? '全部保存失败' : '提交失败',
 				message: cause instanceof Error ? cause.message : '无法连接运行时',
 				color: 'red',

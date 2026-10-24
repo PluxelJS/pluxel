@@ -1,12 +1,6 @@
-import {
-	formatPluginNodeReference,
-	pluginNodeAddressOf,
-	type PluginConstructor,
-	BasePlugin,
-	Plugin,
-} from '@pluxel/core'
+import { formatPluginNodeReference, pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
-import { createTestHost, type TestHost } from '@pluxel/test'
+import { createTestHost } from '@pluxel/test'
 import * as v from 'valibot'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -90,13 +84,6 @@ class RedisConsumerB extends BasePlugin {
 	}
 }
 
-async function startPlugins(
-	host: TestHost<boolean>,
-	plugins: readonly PluginConstructor[],
-): Promise<void> {
-	await host.start(plugins)
-}
-
 beforeEach(() => {
 	redisMock.state.open = false
 	redisMock.state.ready = false
@@ -148,7 +135,7 @@ describe('@pluxel/plugin-redis', () => {
 				services: standardServices({ persistence: { mode: 'memory' } }),
 			})
 
-			await startPlugins(host, [RedisPlugin, RedisConsumer])
+			await host.start([RedisPlugin, RedisConsumer])
 
 			const consumer = host.require(RedisConsumer)
 			const handle = consumer.redis.connection()

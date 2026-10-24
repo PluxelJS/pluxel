@@ -148,9 +148,10 @@ describe('private development console server boundaries', () => {
 		expect(server.instance).not.toHaveProperty('serviceId')
 		expect(server.instance).not.toHaveProperty('profile')
 		expect(server.instance).not.toHaveProperty('project')
-		expect(await requestDev(server.instance, { method: 'inspect' })).not.toHaveProperty('serviceId')
-		expect(await requestDev(server.instance, { method: 'inspect' })).not.toHaveProperty('profile')
-		expect(await requestDev(server.instance, { method: 'inspect' })).not.toHaveProperty('project')
+		const inspection = await requestDev(server.instance, { method: 'inspect' })
+		expect(inspection).not.toHaveProperty('serviceId')
+		expect(inspection).not.toHaveProperty('profile')
+		expect(inspection).not.toHaveProperty('project')
 	})
 
 	it('protects the command profile captured at startup in discovery and inspect', async () => {

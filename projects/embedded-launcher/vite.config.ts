@@ -3,9 +3,9 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 
 export default defineConfig({
 	run: {
-		tasks: repositoryTasks('@embedded-launcher/app', {
-			typecheck: 'tsc --noEmit',
-			test: 'vp test run',
+		tasks: repositoryTasks({
+			'check-types': 'tsc --noEmit',
+			'check-tests': 'vp test run',
 		}),
 	},
 })

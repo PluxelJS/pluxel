@@ -3,16 +3,15 @@
 This directory preserves the last complete implementation of the Context service registry used
 before the immutable capability-host kernel. The snapshot comes from commit `8b06c75d`.
 
-The source and tests retain the historical behavior. Besides relocation, relative imports and the
-Vitest module augmentation target are the only edits needed to execute the snapshot inside the
-current package.
+The source retains the historical behavior as a performance reference. Its retired API is not part
+of the package's normal regression suite; current contracts are tested in `../tests/`.
 
 ## Boundary
 
 - This is executable architecture history, not a supported API or compatibility layer.
 - Nothing under `legacy/` is exported by `@pluxel/context`, entered into tsdown, or included by the
   package `files` list.
-- Production code must not import it. Only the historical tests and benchmarks may depend on it.
+- Production code must not import it. Only the historical benchmarks may depend on it.
 - Fixes belong in the current kernel. Change the snapshot only when the repository toolchain can no
   longer execute it, and document such a mechanical change here.
 
@@ -35,15 +34,10 @@ The current kernel replaces those runtime choices with a host-compiled immutable
 `root`, `scope`, and `owner-view` capability lifetimes. In particular, owner views retain a stable
 owner instead of rebinding a shared object's `ctx` field.
 
-## Executable evidence
+## Performance reference
 
-The package's normal `test` and `typecheck` commands include this directory, so the historical
-baseline cannot silently rot.
-
-```sh
-vp run @pluxel/context#test
-vp run @pluxel/context#typecheck
-```
+The package's typecheck still includes the benchmark source. Normal tests cover only the current
+kernel, without maintaining the retired registry's behavioral contract.
 
 The original micro-benchmark is retained separately from the direct current-versus-legacy
 comparison:

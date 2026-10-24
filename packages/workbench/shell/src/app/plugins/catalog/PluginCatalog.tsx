@@ -14,7 +14,7 @@ import type { JSX } from 'react/jsx-runtime'
 import { PluginOrganizer } from './organizer/PluginOrganizer'
 import type { GroupConfig } from './organizer/types'
 import { EmptyState, ErrorState } from '../../../components'
-import { useNotify } from '../../hooks/useNotify'
+import { notifyAndRecord } from '../../notifications/notifyBridge'
 import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { setPluginAutoStarts } from '../pluginStatusActions'
@@ -161,7 +161,6 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 	const [bulkBusy, setBulkBusy] = useState(false)
 	const [layoutSaving, setLayoutSaving] = useState(false)
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
-	const notify = useNotify()
 
 	const overviewState = usePluginOverview()
 	const refetchOverview = overviewState.refetch
@@ -251,7 +250,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 			})
 			.catch(async (error: unknown): Promise<void> => {
 				const message = runtimeErrorMessage(error, '分组同步失败，请稍后重试。')
-				notify({ title: '同步失败', message, color: 'red' })
+				notifyAndRecord({ title: '同步失败', message, color: 'red' })
 				if (error instanceof PluginCatalogLayoutPersistenceUnknownError) {
 					await refetchOverview()
 					if (!pendingCommitRef.current) {
@@ -276,7 +275,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				}
 			})
 		inflightCommitRef.current = task
-	}, [management.catalog, notify, overview.statuses, refetchOverview])
+	}, [management.catalog, overview.statuses, refetchOverview])
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {
@@ -299,11 +298,15 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 			setDraftGroups(null)
 			setOrganizerResetToken((n) => n + 1)
 		} catch (error) {
-			notify({ title: '恢复自动分组失败', message: runtimeErrorMessage(error), color: 'red' })
+			notifyAndRecord({
+				title: '恢复自动分组失败',
+				message: runtimeErrorMessage(error),
+				color: 'red',
+			})
 		} finally {
 			setBulkBusy(false)
 		}
-	}, [management.catalog, notify, refetchOverview])
+	}, [management.catalog, refetchOverview])
 
 	useEffect(() => {
 		return () => {
@@ -331,7 +334,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				)
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
-					notify({
+					notifyAndRecord({
 						title: '操作完成但部分失败',
 						message:
 							failed
@@ -341,7 +344,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 						color: 'red',
 					})
 				} else {
-					notify({
+					notifyAndRecord({
 						title: autoStart ? '已批量开启自动启动' : '已批量关闭自动启动',
 						message: (
 							<Group gap={6} align="center" wrap="nowrap">
@@ -365,7 +368,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 												)
 												const undoFailed = undoResults.filter((result) => !result.ok)
 												if (undoFailed.length > 0) {
-													notify({
+													notifyAndRecord({
 														title: '部分策略恢复失败',
 														message:
 															undoFailed
@@ -377,14 +380,14 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 														color: 'red',
 													})
 												} else {
-													notify({
+													notifyAndRecord({
 														title: '已恢复原策略',
 														message: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
 														color: 'green',
 													})
 												}
 											} catch (error: unknown) {
-												notify({
+												notifyAndRecord({
 													title: '恢复失败',
 													message: runtimeErrorMessage(error, '恢复失败，请稍后重试。'),
 													color: 'red',
@@ -404,7 +407,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 					})
 				}
 			} catch (error: unknown) {
-				notify({
+				notifyAndRecord({
 					title: '操作失败',
 					message: runtimeErrorMessage(error, '批量操作失败，请稍后重试。'),
 					color: 'red',
@@ -413,7 +416,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				setBulkBusy(false)
 			}
 		},
-		[management, selectedIds, notify, overview.statuses, queryClient],
+		[management, selectedIds, overview.statuses, queryClient],
 	)
 
 	const handleBulkAction = useCallback(

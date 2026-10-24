@@ -1,14 +1,8 @@
 {
-	"extends": "../../tsconfig.options.json",
+	"extends": "../../tsconfig.json",
 	"compilerOptions": {
 		"jsx": "react-jsx",
-		"lib": ["ES2023", "DOM", "DOM.Iterable"],
-
-		// 输出配置
-		"outDir": "dist", // 输出目录
-		"rootDir": "src" // 源码根目录
-
-		// 路径映射（alias）已移除，统一使用相对路径
+		"lib": ["ES2023", "DOM", "DOM.Iterable"]
 	},
-	"include": ["src/**/*.ts", "src/**/*.tsx"]
+	"include": ["src/**/*.ts", "src/**/*.tsx", "tsdown.config.ts", "vitest.config.ts"]
 }

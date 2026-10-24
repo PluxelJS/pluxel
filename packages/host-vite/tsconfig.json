@@ -1,11 +1,10 @@
 {
-	"extends": "../../tsconfig.src.json",
-	"include": ["src", "vitest.config.ts"],
+	"extends": "../../tsconfig.json",
+	"include": ["src", "tests", "tsdown.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
 		"jsx": "react-jsx",
 		"experimentalDecorators": true,
-		"outDir": "dist",
-		"emitDeclarationOnly": true,
-		"lib": ["ES2023", "DOM"]
+		"lib": ["ES2024", "DOM"],
+		"customConditions": ["@pluxel/source"]
 	}
 }

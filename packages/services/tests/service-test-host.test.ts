@@ -66,14 +66,6 @@ describe('service test host', () => {
 		expect(() => httpOnly.commands.list()).toThrow(/commands/i)
 	})
 
-	it('creates a public fixture without root authority', async () => {
-		await using host = await createTestHost()
-
-		expect('ctx' in host).toBe(false)
-		expect(host[Symbol.asyncDispose]).toBeTypeOf('function')
-		expect(host.http.origin).toBe('http://local.test')
-	})
-
 	it('keeps optional Workbench and Vault disabled by default', async () => {
 		await using host = await createServiceInternalTestHost()
 
@@ -82,8 +74,11 @@ describe('service test host', () => {
 		expect(host.ctx.vaultAdmin).toBeUndefined()
 	})
 
-	it('starts a typed root and its real required dependency in one immediate operation', async () => {
+	it('starts a typed dependency closure without exposing root authority', async () => {
 		await using host = await createTestHost()
+		expect('ctx' in host).toBe(false)
+		expect(host[Symbol.asyncDispose]).toBeTypeOf('function')
+		expect(host.http.origin).toBe('http://local.test')
 
 		const consumer = await host.start(DependencyConsumer, {
 			catalog: [RequiredDependency],

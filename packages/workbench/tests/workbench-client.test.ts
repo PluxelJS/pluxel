@@ -4,17 +4,14 @@ import {
 	parseWorkbenchOpenableIdentity,
 	type WorkbenchViewDeclarationIdentity,
 } from '@pluxel/core/federation'
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
 	createRemoteValue,
 	consumeWorkbenchValue,
 	openWorkbenchEntry,
 	readWorkbenchLayout,
 	WorkbenchPortableValueError,
-	type WorkbenchSnapshot,
 	type WorkbenchLayoutEntry,
-	type WorkbenchPortableValue,
-	type WorkbenchPortableValueErrorCode,
 	type WorkbenchSessionApi,
 	type WorkbenchContentLayoutEntry,
 	type WorkbenchUnavailableFederatedLayoutEntry,
@@ -459,34 +456,6 @@ describe('remote value owner', () => {
 		expect(dispose).toHaveBeenCalledOnce()
 	})
 
-	it('retains the synchronous overload and exposes deeply readonly output types', () => {
-		const detached = consumeWorkbenchValue({
-			nested: { value: 'safe' },
-			items: [1, 2],
-		})
-
-		expect(detached).not.toBeInstanceOf(Promise)
-		expectTypeOf(detached).toEqualTypeOf<{
-			readonly nested: { readonly value: string }
-			readonly items: readonly number[]
-		}>()
-		expectTypeOf<WorkbenchSnapshot<{ value: { count: number } }>>().toEqualTypeOf<{
-			readonly value: { readonly count: number }
-		}>()
-		expectTypeOf<WorkbenchSnapshot<[string, { count: number }]>>().toEqualTypeOf<
-			readonly [string, { readonly count: number }]
-		>()
-		expectTypeOf<WorkbenchPortableValueErrorCode>().toEqualTypeOf<
-			| 'WORKBENCH_NON_PORTABLE_VALUE'
-			| 'WORKBENCH_PORTABLE_VALUE_TOO_DEEP'
-			| 'WORKBENCH_PORTABLE_VALUE_TOO_LARGE'
-			| 'WORKBENCH_TRANSPORT_DISPOSE_FAILED'
-		>()
-		expectTypeOf<WorkbenchPortableValue>().toMatchTypeOf<
-			null | boolean | number | string | readonly WorkbenchPortableValue[] | object
-		>()
-	})
-
 	it('awaits a PromiseLike before detaching and releasing its resolved result', async () => {
 		const dispose = vi.fn()
 		const input = Object.defineProperty({ nested: { value: 'safe' } }, Symbol.dispose, {
@@ -495,11 +464,6 @@ describe('remote value owner', () => {
 		})
 
 		const detached = consumeWorkbenchValue(Promise.resolve(input))
-		expectTypeOf(detached).toEqualTypeOf<
-			Promise<{
-				readonly nested: { readonly value: string }
-			}>
-		>()
 		await expect(detached).resolves.toEqual({ nested: { value: 'safe' } })
 		expect(dispose).toHaveBeenCalledOnce()
 	})

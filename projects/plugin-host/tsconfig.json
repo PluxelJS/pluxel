@@ -1,9 +1,10 @@
 {
-	// MF declaration generation resolves this project-root config, then supplies exact renderer files.
-	"extends": "./src/demo/tsconfig.json",
+	"extends": "../../tsconfig.json",
 	"compilerOptions": {
-		"rootDir": ".",
+		"experimentalDecorators": true,
+		"jsx": "react-jsx",
+		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
 		"types": ["vite/client"]
 	},
-	"files": []
+	"include": ["src", "dev", "*.config.ts"]
 }

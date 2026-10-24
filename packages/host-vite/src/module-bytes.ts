@@ -35,9 +35,22 @@ export function createHostModuleBytes() {
 	}
 	return {
 		plugin,
+		/** Capture a successfully evaluated candidate before another load can replace its facts. */
+		snapshot(files: Iterable<string>): ReadonlyMap<string, string> {
+			return new Map(
+				Array.from(files).flatMap((file) => {
+					const path = normalizePath(file)
+					const value = loaded.get(path)
+					return value ? [[path, value] as const] : []
+				}),
+			)
+		},
 		/** A late dependency notification cannot evict bytes already loaded through another entry. */
-		async unchanged(file: string): Promise<boolean> {
-			const previous = loaded.get(normalizePath(file))
+		async unchanged(
+			file: string,
+			snapshot: ReadonlyMap<string, string> = loaded,
+		): Promise<boolean> {
+			const previous = snapshot.get(normalizePath(file))
 			if (!previous) return false
 			try {
 				return (await digest(file)) === previous

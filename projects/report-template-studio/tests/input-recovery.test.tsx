@@ -53,6 +53,7 @@ let directory: string
 let store: InputStore
 let workspace: WorkspaceController
 let currentDescription: EditorDescription
+let hidePopover: PropertyDescriptor | undefined
 
 beforeEach(async () => {
 	directory = await mkdtemp(join(tmpdir(), 'studio-input-recovery-'))
@@ -71,6 +72,12 @@ beforeEach(async () => {
 		'matchMedia',
 		vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })),
 	)
+	hidePopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidePopover')
+	// jsdom lacks popovers; these cases only dismiss an unopened component menu.
+	Object.defineProperty(HTMLElement.prototype, 'hidePopover', {
+		configurable: true,
+		value() {},
+	})
 	vi.mocked(api.describeDocument).mockResolvedValue({
 		...target,
 		name: 'Main',
@@ -129,11 +136,16 @@ beforeEach(async () => {
 	}))
 })
 afterEach(async () => {
-	cleanup()
-	workspace.dispose()
-	vi.unstubAllGlobals()
-	vi.resetAllMocks()
-	await rm(directory, { recursive: true, force: true })
+	try {
+		cleanup()
+		workspace.dispose()
+	} finally {
+		if (hidePopover) Object.defineProperty(HTMLElement.prototype, 'hidePopover', hidePopover)
+		else Reflect.deleteProperty(HTMLElement.prototype, 'hidePopover')
+		vi.unstubAllGlobals()
+		vi.resetAllMocks()
+		await rm(directory, { recursive: true, force: true })
+	}
 })
 async function open(editor?: EditorDraft) {
 	const saved = await store.set(target.projectId, target.entry, {

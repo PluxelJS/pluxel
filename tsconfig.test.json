@@ -1,7 +1,0 @@
-{
-	"extends": "./tsconfig.workspace.json",
-	"compilerOptions": {
-		// Include test-specific types.
-		"types": ["vitest/globals"]
-	}
-}

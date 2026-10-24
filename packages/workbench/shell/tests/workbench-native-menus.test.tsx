@@ -14,8 +14,8 @@ import {
 } from './helpers/native-workbench'
 
 vi.mock('../src/app/log_viewer/LogPreview', () => ({ LogPreview: () => null }))
-vi.mock('../src/app/router/screens/HomeScreen', () => ({
-	HomeScreen: () => <input aria-label="文档输入" defaultValue="draft" />,
+vi.mock('../src/app/home/HomeIntro', () => ({
+	HomeIntro: () => <input aria-label="文档输入" defaultValue="draft" />,
 }))
 vi.mock('../src/app/log_viewer/LogsPage', () => ({
 	LogsPage: () => <input aria-label="日志输入" defaultValue="draft" />,

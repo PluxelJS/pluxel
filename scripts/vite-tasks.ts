@@ -3,462 +3,58 @@ import type { UserConfig } from 'vite-plus'
 type Task = Exclude<NonNullable<NonNullable<UserConfig['run']>['tasks']>[string], string | string[]>
 type Cache = Exclude<Task['cache'], boolean | undefined>
 
-// Shared workspace build constraints. Commands remain with their owning package.
-// Preserve native observed inputs: Markdown, fixtures and templates can be build resources.
+// Package-specific commands, dependency edges and outputs belong in each vite.config.ts.
+// This helper only supplies the shared workspace defaults, using native task names.
+const dependencyBuilds = [
+	{ task: 'compile', from: ['dependencies', 'devDependencies', 'peerDependencies'] },
+] satisfies Task['dependsOn']
+
 const defaults: Record<string, Partial<Task>> = {
-	build: {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-		],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-				{
-					pattern: 'tsconfig*.json',
-					base: 'workspace',
-				},
-			],
-			output: ['dist/**', 'public/**'],
-		},
+	compile: { dependsOn: dependencyBuilds, cache: { output: ['dist/**', 'public/**'] } },
+	'compile-lib': { dependsOn: dependencyBuilds, cache: { output: ['dist/**'] } },
+	'compile-web': { cache: { output: ['public/**'] } },
+	'compile-plugin': { dependsOn: dependencyBuilds, cache: { output: ['dist/**', 'public/**'] } },
+	'check-tests': {
+		dependsOn: [...dependencyBuilds, '@pluxel/test#compile'],
+		cache: { output: [] },
 	},
-	'build:lib': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-		],
-		cache: {
-			output: ['dist/**'],
-		},
-	},
-	'build:web': {
-		dependsOn: [],
-		cache: {
-			output: ['public/**'],
-		},
-	},
-	'build:plugin': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-		],
-		cache: {
-			output: ['dist/**', 'public/**'],
-		},
-	},
-	test: {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-			'@pluxel/test#build',
-		],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-				{
-					pattern: 'oxlint.config.ts',
-					base: 'workspace',
-				},
-				{
-					pattern: 'tsconfig*.json',
-					base: 'workspace',
-				},
-			],
-			output: [],
-		},
-	},
-	typecheck: {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-		],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-				{
-					pattern: 'tsconfig*.json',
-					base: 'workspace',
-				},
-			],
-			output: [],
-		},
-	},
+	'check-types': { dependsOn: dependencyBuilds, cache: { output: [] } },
 }
 
-const templateCatalogInputs = [
-	'packages/cli/scripts/sync-template-catalog.*',
-	'scripts/repository-packages.mjs',
-	'packages/*/package.json',
-	'plugins/*/package.json',
-	'plugins/*/*/package.json',
-].map((pattern) => ({ pattern, base: 'workspace' as const }))
-
-const packages: Record<string, Partial<Task>> = {
-	'@pluxel/async#test': {
-		dependsOn: ['@pluxel/async#build', '@pluxel/test#build'],
-	},
-	'@pluxel/commands#build': {
-		dependsOn: [],
-		cache: {
-			output: ['dist/**'],
-		},
-	},
-	'@pluxel/plugin-typst#build': {
-		cache: false,
-	},
-	'@pluxel/plugin-typst#test': {
-		// Build and tests share the native compiler preparation lock.
-		dependsOn: ['build', '@pluxel/test#build'],
-	},
-	'@pluxel/core#build': {
-		dependsOn: ['@pluxel/context#build', 'eventure#build'],
-		cache: {
-			output: ['dist/**'],
-		},
-	},
-	'valibot-form#build': {
-		dependsOn: [],
-		cache: {
-			output: ['dist/**'],
-		},
-	},
-	'@pluxel/rolldown#build': {
-		dependsOn: ['@pluxel/core#build', 'valibot-form#build'],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-				{
-					pattern: 'tsconfig*.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/workbench/package.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/workbench/src/workbench/shared-transport.ts',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/workbench/src/workbench/definition.ts',
-					base: 'workspace',
-				},
-			],
-			output: ['dist/**'],
-		},
-	},
-	'@pluxel/test#build': {
-		dependsOn: ['@pluxel/rolldown#build', '@pluxel/services#build', '@pluxel/workbench#build'],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-			],
-			output: ['dist/**'],
-		},
-	},
-	'@pluxel/host-vite#build': {
-		dependsOn: ['@pluxel/core#build', '@pluxel/host#build', '@pluxel/rolldown#build'],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-			],
-			output: ['dist/**'],
-		},
-	},
-	'@pluxel/cli#build': {
-		dependsOn: ['@pluxel/rolldown#build'],
-		cache: {
-			input: [
-				...templateCatalogInputs,
-				{
-					auto: true,
-				},
-				{ pattern: 'templates/**', base: 'package' },
-				{ pattern: '!templates/**/node_modules/**', base: 'package' },
-				{
-					pattern: 'docs/**',
-					base: 'workspace',
-				},
-				{
-					pattern: '.agents/skills/pluxel-development/**',
-					base: 'workspace',
-				},
-				{
-					pattern: 'pnpm-workspace.yaml',
-					base: 'workspace',
-				},
-				{
-					pattern: 'vendor/pncat/src/**',
-					base: 'workspace',
-				},
-				{
-					pattern: 'vendor/pncat/package.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'tsconfig.cli-build.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'vendor/pncat/LICENSE.md',
-					base: 'workspace',
-				},
-				{
-					pattern: 'vendor/pncat/UPSTREAM.md',
-					base: 'workspace',
-				},
-			],
-			output: ['dist/**'],
-		},
-	},
-	'@pluxel/create#build': {
-		dependsOn: ['@pluxel/cli#build'],
-		cache: {
-			input: [
-				...templateCatalogInputs,
-				{
-					auto: true,
-				},
-				{
-					pattern: 'pnpm-workspace.yaml',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/cli/scripts/dependency-policy.*',
-					base: 'workspace',
-				},
-				{
-					pattern: 'docs/**',
-					base: 'workspace',
-				},
-			],
-			output: ['dist/**'],
-		},
-	},
-	'pluxel-docs#build': {
-		dependsOn: ['prepare:docs'],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-				{
-					pattern: 'docs/**',
-					base: 'workspace',
-				},
-			],
-			output: ['dist/**', '.source/**', '.vercel/output/**'],
-			env: ['VERCEL*'],
-		},
-	},
-	'@pluxel/plugin-redis#test': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-		],
-		// Redis availability and state are external inputs that a file cache cannot validate.
-		cache: false,
-	},
-	'@pluxel/cli#test': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-			'build',
-		],
-	},
-	'@pluxel/plugin-package-manager#test': {
-		// The optional registry integration observes external state.
-		cache: false,
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-			'build',
-			'@pluxel/test#build',
-		],
-	},
-	'@pluxel/plugins-host#test': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-			'build',
-			'@pluxel/test#build',
-		],
-	},
-	'@pluxel/create#test': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-			'build',
-			'@pluxel/test#build',
-		],
-	},
-	'@pluxel/host-vite#test': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-			'build',
-			'@pluxel/host#build',
-			'@pluxel/test#build',
-		],
-	},
-	'@pluxel/rolldown#test': {
-		dependsOn: [
-			{
-				task: 'build',
-				from: ['dependencies', 'devDependencies', 'peerDependencies'],
-			},
-		],
-	},
-	'@pluxel/plugins-host#typecheck': {
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-				{
-					pattern: 'tsconfig*.json',
-					base: 'workspace',
-				},
-			],
-		},
-	},
-	'@pluxel/services#build': {
-		dependsOn: ['@pluxel/commands#build', '@pluxel/host#build', '@pluxel/host-vite#build'],
-		cache: {
-			input: [
-				{
-					auto: true,
-				},
-				{
-					pattern: 'tsconfig*.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/workbench/package.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/workbench/tsconfig.json',
-					base: 'workspace',
-				},
-				{
-					pattern: 'packages/workbench/src/**',
-					base: 'workspace',
-				},
-			],
-		},
-	},
-	'@pluxel/workbench#build:lib': {
-		dependsOn: ['build:web'],
-	},
-	'@pluxel/workbench#build:web': {
-		dependsOn: [
-			'@pluxel/services#build',
-			'@pluxel/rolldown#build',
-			'@worksplit/react#build',
-			'valibot-form#build',
-		],
-	},
-	'@pluxel/workbench#build': {
-		dependsOn: ['build:lib'],
-		cache: {
-			output: [],
-			input: [
-				{
-					auto: true,
-				},
-			],
-		},
-	},
-	'@pluxel/host#build': {
-		dependsOn: ['@pluxel/core#build'],
-		cache: {
-			output: ['dist/**'],
-		},
-	},
-}
-
-const taskNames: Record<string, string> = {
-	build: 'compile',
-	test: 'check-tests',
-	typecheck: 'check-types',
-	'build:web': 'compile-web',
-	'build:lib': 'compile-lib',
-	'build:plugin': 'compile-plugin',
-}
-
-export function repositoryTasks(name: string, commands: Record<string, string>) {
+export function repositoryTasks(definitions: Record<string, string | Task>) {
 	const tasks: Record<string, Task> = {}
-	for (const [script, command] of Object.entries(commands)) {
-		const base = defaults[script] ?? {}
-		const specific = packages[`${name}#${script}`] ?? {}
+	for (const [name, definition] of Object.entries(definitions)) {
+		const task = typeof definition === 'string' ? { command: definition } : definition
+		const base = defaults[name] ?? {}
+		const baseCache = typeof base.cache === 'object' ? base.cache : {}
+		const overrides = typeof task.cache === 'object' ? task.cache : {}
 		const cache: Cache | false =
-			specific.cache === false
+			task.cache === false
 				? false
 				: {
-						...(typeof base.cache === 'object' ? base.cache : {}),
-						...(typeof specific.cache === 'object' ? specific.cache : {}),
+						...baseCache,
+						...overrides,
+						input: [
+							{ auto: true },
+							{ pattern: 'tsconfig*.json', base: 'workspace' },
+							...(name === 'check-tests'
+								? [{ pattern: 'oxlint.config.ts', base: 'workspace' as const }]
+								: []),
+							...(overrides.input ?? []),
+							{ pattern: '!**/node_modules/.vite/**', base: 'workspace' },
+							{ pattern: '!**/node_modules/.vitest-cache/**', base: 'workspace' },
+							{ pattern: 'mise.toml', base: 'workspace' },
+							{ pattern: 'scripts/vite-tasks.ts', base: 'workspace' },
+							{ pattern: 'scripts/pack.mjs', base: 'workspace' },
+						],
+						env: [...new Set(['NODE_ENV', 'CI', ...(overrides.env ?? [])])],
+						untrackedEnv: [
+							'CHOKIDAR_USEPOLLING',
+							'PNPM_CONFIG_PM_ON_FAIL',
+							'PNPM_CONFIG_WORKSPACE_DIR',
+						],
 					}
-		if (cache !== false) {
-			cache.env = [...new Set(['NODE_ENV', 'CI', ...(cache.env ?? [])])]
-			cache.input = [
-				...(cache.input ?? [{ auto: true }]),
-				{ pattern: '!**/node_modules/.vite/**', base: 'workspace' },
-				{ pattern: '!**/node_modules/.vitest-cache/**', base: 'workspace' },
-				{ pattern: 'mise.toml', base: 'workspace' },
-				{ pattern: 'scripts/vite-tasks.ts', base: 'workspace' },
-				{ pattern: 'scripts/pack.mjs', base: 'workspace' },
-			]
-			cache.untrackedEnv = [
-				'CHOKIDAR_USEPOLLING',
-				'PNPM_CONFIG_PM_ON_FAIL',
-				'PNPM_CONFIG_WORKSPACE_DIR',
-			]
-		}
-		const dependsOn = (specific.dependsOn ?? base.dependsOn ?? []).map((dependency) => {
-			if (typeof dependency !== 'string')
-				return Object.assign({}, dependency, {
-					task: taskNames[dependency.task] ?? dependency.task,
-				})
-			const separator = dependency.lastIndexOf('#')
-			const task = dependency.slice(separator + 1)
-			return dependency.slice(0, separator + 1) + (taskNames[task] ?? task)
-		})
-		tasks[taskNames[script] ?? script] = { ...base, ...specific, dependsOn, command, cache }
+		tasks[name] = { ...base, ...task, dependsOn: task.dependsOn ?? base.dependsOn ?? [], cache }
 	}
 	return tasks
 }

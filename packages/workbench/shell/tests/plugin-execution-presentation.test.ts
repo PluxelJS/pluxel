@@ -81,26 +81,8 @@ describe('plugin execution presentation', () => {
 		{
 			execution: {
 				kind: 'vite',
-				origin: 'fixed',
-				artifact: { kind: 'built-module' },
-				update: { kind: 'host-reload' },
-			},
-			badge: '宿主重载',
-		},
-		{
-			execution: {
-				kind: 'vite',
 				origin: 'source',
 				artifact: { kind: 'source-module' },
-				update: { kind: 'definition-hmr' },
-			},
-			badge: '定义 HMR',
-		},
-		{
-			execution: {
-				kind: 'vite',
-				origin: 'source',
-				artifact: { kind: 'built-module' },
 				update: { kind: 'definition-hmr' },
 			},
 			badge: '定义 HMR',

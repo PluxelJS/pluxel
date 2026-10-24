@@ -1,6 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { StandaloneShell } from '../../frames/StandaloneShell'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_standalone')({
-	component: StandaloneShell,
+	component: Outlet,
 })

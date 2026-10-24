@@ -89,6 +89,13 @@ export function createHostSourceEvaluator(options: {
 		return slot
 	}
 	return {
+		/** Revalidate the active physical owner and entry set without evaluating modules. */
+		async entries(): Promise<readonly string[]> {
+			if (closed) throw new Error('[host-vite] source evaluator is closed')
+			if (!active) return []
+			const session = await active.opening
+			return await session.entries()
+		},
 		/** True for declared entry paths, including absent paths and currently staged declarations. */
 		covers(path: string): boolean {
 			return [...slots].some(

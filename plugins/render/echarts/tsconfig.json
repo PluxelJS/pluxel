@@ -1,8 +1,9 @@
 {
-	"extends": "../../../tsconfig.plugin.json",
+	"extends": "../../../tsconfig.json",
 	"include": ["src", "tests", "bench", "tsdown.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
 		"experimentalDecorators": true,
-		"lib": ["ES2024", "DOM", "DOM.Iterable"]
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"customConditions": ["@pluxel/hmr"]
 	}
 }

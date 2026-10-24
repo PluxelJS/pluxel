@@ -546,15 +546,17 @@ describe('development console CLI', () => {
 		vi.spyOn(console, 'log').mockImplementation((message: string) => {
 			output.push(message)
 		})
-		for (const command of ['run', 'result', 'cancel', 'instances']) {
-			const positional = command === 'instances' ? [] : [command === 'run' ? 'script.ts' : 'run-id']
+		for (const command of ['run', 'result', 'cancel', 'instances', 'status']) {
+			const positional = ['instances', 'status'].includes(command)
+				? []
+				: [command === 'run' ? 'script.ts' : 'run-id']
 			await cli([command, ...positional, '--instnace', 'typo'], devCommand, {
 				name: '@pluxel/cli',
 				version: '1.0.0',
 				subCommands: devCommand.subCommands,
 			})
 		}
-		expect(output).toHaveLength(4)
+		expect(output).toHaveLength(5)
 		for (const message of output)
 			expect(JSON.parse(message)).toMatchObject({
 				ok: false,
@@ -704,13 +706,6 @@ it('dev preserves startup failure and does not print an unrelated live instance'
 	expect(process.exitCode).toBe(7)
 	expect(requests).toHaveLength(0)
 	expect(log).not.toHaveBeenCalled()
-})
-
-it('rejects the removed positional start command before contacting a console', async () => {
-	const { root, requests } = await fixture()
-	await pitchforkFixture(root)
-	await expect(cli(['start'], devCommand, {})).rejects.toThrow('Command not found: start')
-	expect(requests).toHaveLength(0)
 })
 
 it('dev reports a missing URL capability instead of inventing a Workbench address', async () => {
@@ -950,20 +945,6 @@ it('Pitchfork startup only displays the exact service console when several share
 	expect(process.exitCode ?? 0).toBe(0)
 })
 
-it('rejects the removed --target selector rather than ignoring it', async () => {
-	const { root, requests } = await fixture()
-	const output: string[] = []
-	vi.spyOn(console, 'log').mockImplementation((message: string) => {
-		output.push(message)
-	})
-	await cli(['status', '--root', root, '--target', 'app'], devCommand, {})
-	expect(JSON.parse(output[0]!)).toMatchObject({
-		ok: false,
-		error: { code: 'invalid_input', message: 'Unknown dev option --target.' },
-	})
-	expect(requests).toHaveLength(0)
-})
-
 it('does not route an instance selector value as a dev subcommand', async () => {
 	const { root, requests } = await fixture()
 	const output: string[] = []
@@ -983,20 +964,6 @@ it('rejects a selector without a value before contacting a console', async () =>
 	vi.spyOn(console, 'log').mockImplementation(() => {})
 	await expect(cli(['--root'], devCommand, {})).rejects.toMatchObject({
 		errors: [expect.objectContaining({ message: expect.stringContaining('root') })],
-	})
-	expect(requests).toHaveLength(0)
-})
-
-it('rejects the removed --workspace selector', async () => {
-	const { root, requests } = await fixture()
-	const output: string[] = []
-	vi.spyOn(console, 'log').mockImplementation((message: string) => {
-		output.push(message)
-	})
-	await cli(['status', '--workspace', root], devCommand, {})
-	expect(JSON.parse(output[0]!)).toMatchObject({
-		ok: false,
-		error: { code: 'invalid_input', message: 'Unknown dev option --workspace.' },
 	})
 	expect(requests).toHaveLength(0)
 })

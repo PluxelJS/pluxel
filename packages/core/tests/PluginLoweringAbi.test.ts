@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin } from '../src/plugins/composition/BasePlugin'
-import { Plugin } from '../src/plugins/decorators/decorator/decorators'
-import { checkPluginDecorator } from '../src/plugins/decorators/decorator/api'
+import { Plugin } from '../src/plugins/decorators/PluginDecorator'
 import {
+	checkPluginDecorator,
 	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
 	type PluginDefinitionLoweringPayload,

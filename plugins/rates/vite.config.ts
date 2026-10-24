@@ -5,10 +5,10 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: repositoryTasks('@pluxel/plugin-rates', {
-			build: 'pluxel build',
-			test: 'vp test run --config vitest.config.ts',
-			typecheck: 'tsc --noEmit --pretty false',
+		tasks: repositoryTasks({
+			compile: 'pluxel build',
+			'check-tests': 'vp test run --config vitest.config.ts',
+			'check-types': 'tsc --noEmit --pretty false',
 		}),
 	},
 })

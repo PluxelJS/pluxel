@@ -51,7 +51,7 @@ function xterm256(n: number, ansi16: readonly string[]): string | undefined {
 export function stripAnsi(s: string): string {
 	if (!s) return ''
 	// Best-effort: strip CSI sequences (incl. SGR) and OSC hyperlinks.
-	return s.replace(ANSI_CSI_RE, '').replace(ANSI_OSC_RE, '')
+	return s.replaceAll(ANSI_CSI_RE, '').replaceAll(ANSI_OSC_RE, '')
 }
 
 type AnsiStyle = {

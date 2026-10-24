@@ -1,6 +1,6 @@
-import { formatPluginNodeReference, type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
+import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
-import { createTestHost, type TestHost } from '@pluxel/test'
+import { createTestHost } from '@pluxel/test'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/plugin-rates'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
@@ -72,13 +72,6 @@ class RedisRatesConsumer extends BasePlugin {
 	constructor(readonly rates: Rates) {
 		super()
 	}
-}
-
-async function startPlugins(
-	host: TestHost<boolean>,
-	plugins: readonly PluginConstructor[],
-): Promise<void> {
-	await host.start(plugins)
 }
 
 const policies = [
@@ -154,7 +147,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 				services: standardServices({ persistence: { mode: 'memory' } }),
 			})
 
-			await startPlugins(host, [
+			await host.start([
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
 				RatesPlugin,
@@ -183,7 +176,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 				services: standardServices({ persistence: { mode: 'memory' } }),
 			})
 
-			await startPlugins(host, [
+			await host.start([
 				FakeRatesRedisPlugin,
 				RedisRatesBackendPlugin,
 				RatesPlugin,

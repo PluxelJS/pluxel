@@ -56,7 +56,7 @@ export class LifecycleManager {
 	): PluginLifecycleActor {
 		const runtime = getPluginLifecycleAdapter(plugin)
 		const ref = new PluginLifecycleActor(
-			{ autoStart: false, useErrorChannel: true, onLateError: options.onLateError },
+			{ onLateError: options.onLateError },
 			{
 				id,
 				runtime: options.finalizeGeneration
@@ -73,7 +73,6 @@ export class LifecycleManager {
 				})
 			},
 		})
-		ref.start()
 		this.setLifecycle(plugin, ref)
 		return ref
 	}

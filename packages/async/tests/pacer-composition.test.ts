@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { test, vi } from 'vitest'
-import { AsyncDebouncer } from '@tanstack/pacer'
-import { singleflight, SingleflightClosedError } from '@pluxel/async/singleflight'
+import { SingleflightClosedError } from '@pluxel/async/singleflight'
 import { createRateLimitedReads } from '../examples/pacer-shared-reads.ts'
 import { deferred } from './helpers.ts'
 
@@ -99,33 +98,6 @@ test('read failures remain original, consume a token, and do not trigger hidden 
 		assert.equal(calls, 2, 'new calls can enter after the window expires normally')
 	} finally {
 		await reads.close()
-		assert.equal(vi.getTimerCount(), 0)
-		vi.useRealTimers()
-	}
-})
-
-test('counterexample: one global debouncer inside keyed flights suppresses a different key', async () => {
-	vi.useFakeTimers()
-	const executed: string[] = []
-	const debounce = new AsyncDebouncer(
-		async (id: string) => {
-			executed.push(id)
-			return { id }
-		},
-		{ wait: 20, throwOnError: true, asyncRetryerOptions: { maxAttempts: 1 } },
-	)
-	const flights = singleflight<string, { id: string } | undefined>()
-	try {
-		const first = flights.run('a', () => debounce.maybeExecute('a'))
-		const second = flights.run('b', () => debounce.maybeExecute('b'))
-		assert.equal(await first, undefined, 'key b cancelled key a at the global debouncer')
-		assert.deepEqual(executed, [])
-		await vi.advanceTimersByTimeAsync(20)
-		assert.deepEqual(await second, { id: 'b' })
-		assert.deepEqual(executed, ['b'])
-	} finally {
-		debounce.cancel()
-		await flights.close()
 		assert.equal(vi.getTimerCount(), 0)
 		vi.useRealTimers()
 	}

@@ -1,42 +1,32 @@
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
-import { defineConfig } from 'vite-plus'
+import { defineConfig, type UserConfig } from 'vite-plus'
 import lint from './oxlint.config'
 import fmt from './oxfmt.config'
-import { readRepositoryPackages } from './scripts/repository-packages.mjs'
+import { repositoryPackages } from './scripts/repository-packages.mjs'
 
-export default defineConfig(async () => {
-	const inventory = await readRepositoryPackages()
-	const packages = inventory
-		.filter(({ kind }) => kind !== 'root')
-		.map(({ manifest }) => ({ manifest }))
-	for (const directory of [
-		'vendor/eventure',
-		'vendor/pncat',
-		'vendor/split-like-vscode/packages/core',
-		'vendor/split-like-vscode/packages/react',
-	]) {
-		packages.push({
-			manifest: JSON.parse(
-				await readFile(resolve(import.meta.dirname, directory, 'package.json'), 'utf8'),
-			),
-		})
-	}
+type Task = Exclude<NonNullable<NonNullable<UserConfig['run']>['tasks']>[string], string | string[]>
+
+export default defineConfig(() => {
+	const packages = repositoryPackages.filter(({ kind }) => kind !== 'root')
 	// Explicit task edges avoid cycles in the publishing dependency graph.
-	const tasks = Object.fromEntries(
-		Object.entries({ build: 'compile', typecheck: 'check-types', test: 'check-tests' }).map(
-			([script, task]) => [
-				`workspace:${script}`,
-				{
-					command: script === 'build' ? 'node scripts/check-source-declarations.mjs' : [],
-					cache: false,
-					dependsOn: packages
-						.filter(({ manifest }) => manifest.scripts?.[script])
-						.map(({ manifest }) => `${manifest.name}#${task}`),
-				},
-			],
-		),
-	)
+	const tasks: Record<string, Task> = {}
+	for (const [script, task] of Object.entries({
+		build: 'compile',
+		typecheck: 'check-types',
+		test: 'check-tests',
+	})) {
+		tasks[`workspace:${script}`] = {
+			command:
+				script === 'build'
+					? 'node scripts/check-source-declarations.mjs'
+					: script === 'typecheck'
+						? 'tsc --noEmit --pretty false -p scripts/tsconfig.json'
+						: [],
+			cache: false,
+			dependsOn: packages
+				.filter(({ manifest }) => manifest.scripts?.[script])
+				.map(({ manifest }) => `${manifest.name}#${task}`),
+		}
+	}
 	Object.assign(tasks, {
 		pncat: { command: 'node vendor/pncat/bin/pncat.mjs', cache: false },
 		'catalog:check': {
@@ -63,7 +53,7 @@ export default defineConfig(async () => {
 			cache: false,
 		},
 		'workspace:verify': {
-			command: 'node scripts/check-source-declarations.mjs',
+			command: [],
 			dependsOn: [
 				'verify:checks',
 				'governance:check',
@@ -73,7 +63,7 @@ export default defineConfig(async () => {
 			],
 			cache: false,
 		},
-	})
+	} satisfies Record<string, Task>)
 	return {
 		fmt,
 		lint,

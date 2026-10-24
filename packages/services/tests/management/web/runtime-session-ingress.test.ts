@@ -233,3 +233,37 @@ describe('Runtime Session physical ingress contract', () => {
 		expect(validateRuntimeSessionOrigin(request, secure)).toBe(false)
 	})
 })
+
+describe('RuntimeSessionWebSocket outbound limits', () => {
+	it('measures UTF-8 bytes and rejects an oversized message before the carrier sends it', () => {
+		const carrier = { readyState: WebSocket.OPEN, send: vi.fn(), close: vi.fn() }
+		const onLimitViolation = vi.fn()
+		const socket = new RuntimeSessionWebSocket(carrier, { maxMessageBytes: 4, onLimitViolation })
+		socket.webSocket.send('éé')
+		expect(() => socket.webSocket.send('ééé')).toThrow(/message exceeds/)
+		expect(carrier.send.mock.calls).toEqual([['éé']])
+		expect(carrier.close).toHaveBeenCalledWith(1009, 'outbound-message-bytes exceeded')
+		expect(onLimitViolation).toHaveBeenCalledExactlyOnceWith({
+			kind: 'outbound-message-bytes',
+			actualBytes: 6,
+			limitBytes: 4,
+		})
+	})
+
+	it('reports carrier backpressure and closes the session with retry-later status', () => {
+		const carrier = { readyState: WebSocket.OPEN, send: vi.fn(() => false), close: vi.fn() }
+		const onLimitViolation = vi.fn()
+		const socket = new RuntimeSessionWebSocket(carrier, {
+			maxMessageBytes: 1_024,
+			onLimitViolation,
+		})
+		expect(() => socket.webSocket.send('request')).toThrow(/backpressured/)
+		expect(carrier.send).toHaveBeenCalledExactlyOnceWith('request')
+		expect(carrier.close).toHaveBeenCalledWith(1013, 'Control session backpressure limit exceeded')
+		expect(onLimitViolation).toHaveBeenCalledExactlyOnceWith({
+			kind: 'outbound-queue',
+			actualBytes: 7,
+			limitBytes: 0,
+		})
+	})
+})

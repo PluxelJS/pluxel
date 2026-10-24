@@ -264,7 +264,7 @@ await savePdf(pdf)
 
 自定义 Tiptap 扩展通过 `extensions` 加入，同时为持久化节点/Mark 提供 `nodeMappings` / `markMappings`。扩展声明结构和属性名，mapping 声明属性值校验及 Typst 输出。有属性的扩展必须提供 `validateAttributes`，它也收到 schema 默认值。
 
-serializer 使用 `context.children(node)` 复用子节点校验和序列化，`context.text(value)` / `context.string(value)` 编码外部文字。业务固定排版代码由可信宿主映射提供；需要用户编写源码时显式安装上述 `TypstSource`。若接受业务 HTML，还需给 node mapping 声明 `html.tag`、允许属性与值校验，再由扩展 `parseHTML` 解析。Studio 的 [提示块](../../../projects/report-template-studio/src/shared/editor.ts)和独立 [consumer](../../../plugins/render/typst/tests/consumer/main.tsx)是实际调用方。
+serializer 使用 `context.children(node)` 复用子节点校验和序列化，`context.text(value)` / `context.string(value)` 编码外部文字。业务固定排版代码由可信宿主映射提供；需要用户编写源码时显式安装上述 `TypstSource`。若接受业务 HTML，还需给 node mapping 声明 `html.tag`、允许属性与值校验，再由扩展 `parseHTML` 解析。Studio 的 [提示块](https://github.com/PluxelJS/pluxel/blob/main/projects/report-template-studio/src/shared/editor.ts)和独立 [consumer](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/main.tsx)是实际调用方。
 
 ## Markdown、HTML 与候选
 
@@ -315,7 +315,7 @@ if (source) view.revealSource(source)
 
 ## 可运行消费者
 
-[Report Template Studio](../../../projects/report-template-studio/README.md)使用上述入口实现正常源码预览与区域报表；Monaco 和双 worker 留在应用。其“客户服务报告”包含固定模板、两个区域、客户切换、合并表格、提示块与确定性 Markdown 候选。独立 consumer 的运行和构建制品验收见 [consumer 测试](../../../plugins/render/typst/tests/consumer/README.md)。
+[Report Template Studio](https://github.com/PluxelJS/pluxel/blob/main/projects/report-template-studio/README.md)使用上述入口实现正常源码预览与区域报表；Monaco 和双 worker 留在应用。其“客户服务报告”包含固定模板、两个区域、客户切换、合并表格、提示块与确定性 Markdown 候选。独立 consumer 的运行和构建制品验收见 [consumer 测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/README.md)。
 
 Studio 与独立 consumer 默认显式安装 `TypstTableStyle`。Studio 同名 `.editor.json` 的顶层可选 `table` 对象使用相同的 `defaultStyle`、`allowedStyles` 选项，例如 `"table": { "defaultStyle": "three-line", "allowedStyles": [] }` 锁定三线表默认外观；省略 `table` 保持跟随原 Typst 模板并允许四种逐表覆盖。Studio 的 `studioEditorConfig` 将这份宿主配置转换为扩展选项，保存的草稿不能覆盖它。
 

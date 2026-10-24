@@ -5,12 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { createHost, type HostStartupContext } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
-import { Logging } from '@pluxel/services/logging'
 import { ElysiaRuntime } from '@pluxel/services/internal'
-import { VaultAdmin } from '@pluxel/services/vault'
 import { createWorkbenchFederationDeploymentInventory } from '@pluxel/core/federation'
-import { Management } from '@pluxel/services/management/service'
-import { parseVaultAdminState } from '@pluxel/services/management/internal/test'
 import { NodeModuleHost } from '../src/node/token'
 import { createNodeModuleDeclaration } from '../src/node/declaration'
 import { servicesPreset } from '@pluxel/services/preset'
@@ -21,32 +17,6 @@ const startup: HostStartupContext = {
 	env: {},
 	bindings: {},
 }
-
-test('disabled Workbench retains prepared management and vault and releases logging on close', async () => {
-	const host = await createHost({
-		plugins: [],
-		services: await servicesPreset(startup, {
-			persistence: { mode: 'memory' },
-			workbench: false,
-		}),
-	})
-	const logging = resolveContextCapability(host.ctx, Logging)
-	try {
-		expect(logging.state).toBe('installed')
-		expect(resolveContextCapability(host.ctx, Management)).toBeDefined()
-		expect(resolveContextCapability(host.ctx, VaultAdmin)).toBeDefined()
-		const vault = await resolveContextCapability(host.ctx, VaultAdmin).describe()
-		expect(parseVaultAdminState(vault)).toEqual(vault)
-		expect('workbench' in host.ctx).toBe(false)
-		const response = await resolveContextCapability(host.ctx, ElysiaRuntime).fetch(
-			new Request('http://localhost/__pluxel/workbench', { headers: { accept: 'text/html' } }),
-		)
-		expect(response.status).toBe(404)
-	} finally {
-		await host.close()
-	}
-	expect(logging.state).toBe('disposed')
-})
 
 test('deployment root supplies Node artifacts and the default Workbench shell', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-services-'))

@@ -9,10 +9,10 @@ export default defineConfig({
 	pack: packConfig,
 	lint,
 	run: {
-		tasks: repositoryTasks('eventure', {
-			test: 'vp test run',
-			build: 'vp pack',
-			typecheck: 'tsc --noEmit',
+		tasks: repositoryTasks({
+			'check-tests': 'vp test run',
+			compile: 'vp pack',
+			'check-types': 'tsc --noEmit',
 		}),
 	},
 })

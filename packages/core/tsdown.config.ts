@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite-plus/pack'
-import Macros from 'unplugin-macros/rolldown'
 
 const transformOptions = {
 	assumptions: {
@@ -35,7 +34,6 @@ export default defineConfig({
 		sourcemap: true,
 	},
 	format: ['esm', 'cjs'],
-	plugins: [Macros()],
 	sourcemap: true,
 	clean: true,
 	minify: true,

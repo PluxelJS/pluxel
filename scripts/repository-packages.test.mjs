@@ -11,6 +11,7 @@ import { unifiedReleaseVersions } from './release-policy.mts'
 
 import {
 	isPublishablePackage,
+	publishPackageClosure,
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	releasePackageErrors,
@@ -29,13 +30,19 @@ const packageRecord = (kind, name, isPrivate, version) => ({
 })
 
 describe('repository package policy', () => {
-	it('includes the embedded launcher SDK without discovering arbitrary nested projects', async () => {
+	it('uses workspace membership, including nested packages and exclusions', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-inventory-'))
 		try {
+			await writeFile(
+				join(root, 'pnpm-workspace.yaml'),
+				"packages: [projects/*, projects/embedded-launcher/sdk, vendor/library, '!projects/excluded']\n",
+			)
 			for (const directory of [
 				'projects/embedded-launcher',
 				'projects/embedded-launcher/sdk',
 				'projects/embedded-launcher/unrelated',
+				'projects/excluded',
+				'vendor/library',
 			]) {
 				await mkdir(join(root, directory), { recursive: true })
 				await writeFile(
@@ -47,8 +54,12 @@ describe('repository package policy', () => {
 			assert.deepEqual(packages.map(({ directory }) => directory).sort(), [
 				'projects/embedded-launcher',
 				'projects/embedded-launcher/sdk',
+				'vendor/library',
 			])
-			assert.ok(packages.every(({ kind }) => kind === 'project'))
+			assert.deepEqual(
+				packages.map(({ kind }) => kind),
+				['project', 'project', 'vendor'],
+			)
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
@@ -59,6 +70,52 @@ describe('repository package policy', () => {
 		assert.equal(isPublishablePackage(packageRecord('package', '@scope/internal', true)), false)
 		assert.equal(isPublishablePackage(packageRecord('project', '@scope/app')), false)
 		assert.equal(isPublishablePackage(packageRecord('root', 'workspace')), false)
+	})
+
+	it('selects published runtime dependencies and required peers across inventory paths', () => {
+		const consumer = {
+			...packageRecord('package', '@scope/consumer'),
+			directory: 'packages/consumer',
+			manifest: {
+				name: '@scope/consumer',
+				dependencies: { '@scope/nested': 'workspace:*', external: '^1' },
+				optionalDependencies: { '@scope/optional': 'workspace:*' },
+				peerDependencies: { '@scope/peer': '*', '@scope/optional-peer': '*' },
+				peerDependenciesMeta: { '@scope/optional-peer': { optional: true } },
+				devDependencies: { '@scope/development': 'workspace:*' },
+			},
+		}
+		const nested = {
+			...packageRecord('plugin', '@scope/nested'),
+			directory: 'plugins/nested/provider',
+			manifest: { name: '@scope/nested', dependencies: { '@scope/consumer': 'workspace:*' } },
+		}
+		const peer = packageRecord('package', '@scope/peer')
+		const optional = packageRecord('package', '@scope/optional')
+		const packages = [
+			consumer,
+			nested,
+			peer,
+			optional,
+			packageRecord('package', '@scope/optional-peer'),
+			packageRecord('package', '@scope/development'),
+			packageRecord('vendor', '@scope/vendor'),
+		]
+		assert.deepEqual(publishPackageClosure(packages, ['@scope/consumer', '@scope/nested']), [
+			consumer,
+			nested,
+			optional,
+			peer,
+		])
+	})
+
+	it('fails explicitly when a smoke root has no publishable provider', () => {
+		const packages = [packageRecord('package', '@scope/private', true)]
+		for (const root of ['@scope/missing', '@scope/private']) {
+			assert.throws(() => publishPackageClosure(packages, [root]), {
+				message: `Local publish package not found: ${root}`,
+			})
+		}
 	})
 
 	it('limits Tegami to public inventory names and their npm IDs', () => {

@@ -6,13 +6,11 @@
 		"strict": true,
 		"experimentalDecorators": true,
 		"skipLibCheck": true,
-		"noEmit": true,
 		"customConditions": ["@pluxel/source"],
 		"lib": ["ESNext", "DOM"],
 		"types": ["node"],
-		"allowImportingTsExtensions": true,
-		"composite": false
+		"allowImportingTsExtensions": true
 	},
 	"include": ["src", "sdk/src", "tests", "vitest.config.ts", "dev"],
-	"extends": "../../tsconfig.options.json"
+	"extends": "../../tsconfig.json"
 }

@@ -38,7 +38,7 @@ export default defineConfig({
 		},
 	},
 	outputOptions: (options, format) => {
-		if (format !== 'cjs') return
+		if (format !== 'cjs') return options
 		return {
 			...options,
 			exports: 'named',

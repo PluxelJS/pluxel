@@ -40,7 +40,7 @@ import {
 	usePluginDependencyControls,
 } from '../usePluginDependencyControls'
 import { runtimeErrorMessage } from '../../../../runtime'
-import { useNotify } from '../../../hooks/useNotify'
+import { notifyAndRecord } from '../../../notifications/notifyBridge'
 import { PluginProvidedCapability, usePluginProviderPolicy } from './PluginProvidedCapability'
 
 type DetailLinkComponent = ElementType<{
@@ -385,12 +385,11 @@ export function PluginDependencyDetailCard() {
 	const graph = usePluginDependencyDetail()
 	const controls = usePluginDependencyControls()
 	const providerPolicy = usePluginProviderPolicy(controls.refresh)
-	const notify = useNotify()
 	const renderRequiredControl = (dependency: PluginDependencyDetail['required'][number]) => {
 		const key = pluginDefinitionIndexKey(dependency.edge.requirement)
 		const row = controls.byRequirement.get(key)
 		if (!row || !isConsumerOverrideConfigurable(row)) return null
-		return <DependencyImplementationControl row={row} controls={controls} notify={notify} />
+		return <DependencyImplementationControl row={row} controls={controls} />
 	}
 	const loading = graph.isLoading || controls.isLoading || providerPolicy.loading
 	return (
@@ -460,11 +459,9 @@ type DependencyControls = ReturnType<typeof usePluginDependencyControls>
 function DependencyImplementationControl({
 	row,
 	controls,
-	notify,
 }: {
 	row: import('../../../../runtime').PluginConsumerRequirementState
 	controls: DependencyControls
-	notify: ReturnType<typeof useNotify>
 }) {
 	const consumerOverridePending = controls.isConsumerOverridePending(row.requirement)
 	const createPending = controls.isCreateForkPending(row.requirement)
@@ -510,7 +507,7 @@ function DependencyImplementationControl({
 						const result = await controls.createFork(base.address, normalized, row.requirement)
 						if (result.ok === false) throw new Error(result.error || result.code || '创建失败')
 						const deferred = result.status === 'deferred'
-						notify({
+						notifyAndRecord({
 							title: 'Fork 已创建并选择',
 							message: deferred
 								? `${base.displayName} / ${normalized}；当前未运行，将由依赖关系按需启动。`
@@ -518,7 +515,7 @@ function DependencyImplementationControl({
 							color: 'green',
 						})
 					} catch (error) {
-						notify({
+						notifyAndRecord({
 							title: '创建 Fork 失败',
 							message: runtimeErrorMessage(error, '操作失败'),
 							color: 'red',
@@ -552,7 +549,7 @@ function DependencyImplementationControl({
 							try {
 								const result = await controls.setConsumerOverride(row.requirement, provider)
 								if (result.ok === false) throw new Error(result.error || result.code || '操作失败')
-								notify({
+								notifyAndRecord({
 									title: '当前插件的依赖实现已更新',
 									message: provider
 										? providerAddressDisplayName(provider, row.options)
@@ -560,7 +557,7 @@ function DependencyImplementationControl({
 									color: 'green',
 								})
 							} catch (error) {
-								notify({
+								notifyAndRecord({
 									title: '更新依赖实现失败',
 									message: runtimeErrorMessage(error, '操作失败'),
 									color: 'red',
@@ -619,7 +616,7 @@ function DependencyImplementationControl({
 																		: result.error
 																throw new Error(detail)
 															}
-															notify({
+															notifyAndRecord({
 																title:
 																	result.status === 'already-absent'
 																		? 'Fork 已不存在'
@@ -633,7 +630,7 @@ function DependencyImplementationControl({
 																		: 'green',
 															})
 														} catch (error) {
-															notify({
+															notifyAndRecord({
 																title: '删除 Fork 失败',
 																message: runtimeErrorMessage(error, '操作失败'),
 																color: 'red',

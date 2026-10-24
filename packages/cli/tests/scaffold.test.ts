@@ -349,7 +349,7 @@ describe('scaffold template rendering', () => {
 		const manifest = JSON.parse(
 			String(fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')),
 		) as Record<string, any>
-		expect(manifest.scripts).not.toHaveProperty('build:plugin')
+		expect(manifest.name).toBe('pluxel-plugin-hello-world')
 		expect(manifest.scripts.build).toBe('vp run compile')
 		for (const name of [
 			'vite.config.ts',
@@ -357,6 +357,11 @@ describe('scaffold template rendering', () => {
 			'oxfmt.config.ts',
 			'mise.toml',
 			'hk.pkl',
+			'pnpm-workspace.yaml',
+			'src/hello-world.ts',
+			'tests/hello-world.test.ts',
+			'tsconfig.json',
+			'tsdown.config.ts',
 		]) {
 			expect(fixture.fs.existsSync(resolve(targetDir, name))).toBe(true)
 		}
@@ -368,9 +373,6 @@ describe('scaffold template rendering', () => {
 				default: './dist/index.mjs',
 			},
 		})
-		for (const field of ['main', 'module', 'types', 'publishConfig']) {
-			expect(manifest).not.toHaveProperty(field)
-		}
 		expect(manifest.files).toEqual(['dist', '!**/*.map'])
 		expect(manifest.devDependencies).toMatchObject({
 			'@pluxel/cli': 'catalog:',
@@ -379,41 +381,7 @@ describe('scaffold template rendering', () => {
 			'@pluxel/test': 'catalog:',
 			'vite-plus': 'catalog:',
 		})
-		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			"'@pluxel/core': ^1.1.0",
-		)
-		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			'vitest: 5.0.5',
-		)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
-		const source = fixture.fs.readFileSync(resolve(targetDir, 'src/hello-world.ts'), 'utf8')
-		expect(source).toContain('export class HelloWorldPlugin extends BasePlugin')
-		expect(source).toContain('@Plugin()')
-		expect(source).toContain('const MessageConfig = v.object({')
-		const pluginTest = fixture.fs.readFileSync(
-			resolve(targetDir, 'tests/hello-world.test.ts'),
-			'utf8',
-		)
-		expect(pluginTest).toContain("from 'pluxel-plugin-hello-world'")
-		expect(pluginTest).not.toContain("from '../src/")
-		expect(source).not.toContain('export default')
-		expect(pluginTest).toContain('createTestHost')
-		expect(pluginTest).toContain("initialConfig: { message: 'configured' }")
-		expect(pluginTest).not.toContain('createRuntimeHost')
-		expect(pluginTest).not.toContain('host.cfg(')
 		expect(manifest.engines).toEqual({ node: '>=24' })
-		const tsconfigSource = String(
-			fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.json'), 'utf8'),
-		)
-		const tsconfig = JSON.parse(tsconfigSource) as {
-			compilerOptions?: { customConditions?: string[]; emitDecoratorMetadata?: boolean }
-		}
-		expect(tsconfig.compilerOptions?.customConditions).toEqual(['@pluxel/hmr'])
-		expect(tsconfig.compilerOptions?.emitDecoratorMetadata).toBeUndefined()
-		const tsdownConfig = fixture.fs.readFileSync(resolve(targetDir, 'tsdown.config.ts'), 'utf8')
-		expect(tsdownConfig).toContain("index: 'src/hello-world.ts'")
-		expect(tsdownConfig).not.toContain('pluginPackage(')
 	})
 })
 

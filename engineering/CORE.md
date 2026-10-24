@@ -125,6 +125,8 @@ failure 只进入结构化 lifecycle report，不把旧 generation 冒充成已�
 
 Commit transition、finalizer/settlement/publication、late init 与 effects 不变量由 [生命周期语义](CORE_LIFECYCLE_SEMANTICS.md)及其证据矩阵统一维护。Core 的关键边界是 prepare 可拒绝候选，旧 admission 关闭后只报告真实 lifecycle outcome，不复活旧 generation；Host publication 必须先准备完整 immutable state，再同步交换 pointer。
 
+每个 generation 的 actor 直接维护 lifecycle 状态，所有实例共享一张紧凑整数转移表，对外快照与错误仍使用具名状态；不依赖通用状态机引擎或构建期宏。队列串行接纳 START/STOP；STOP 接纳时立即 abort init 并启动同一 drain。转换效果异步结算后才发布新快照，订阅安装期间排队的错误必须先于稳定启动结果结算。停止后的 actor 为终态，重启由新 generation 承担。每个 actor 只持有自己的上下文、队列和订阅；转移表与已结算的初始 Promise 可共享，排队后的 Promise 链仍各自独立。
+
 generation construction 通过同步 construction stack 把 node Context 注入原始 implementation；default 与 fork 都以同一个
 implementation 作为 `new.target`，不创建 subclass。root constructor 只消费自己有序的 direct requirements；provider factory 按
 aggregated graph requirements 建立只读 requirement-to-running-provider map。Part construction frame 创建 child Context 后，按当前 Part
@@ -166,7 +168,7 @@ module-augmented `ctx.events`，其订阅绑定 owner effects。Core lifecycle �
 - `packages/core/src/plugins/runtime/PluginService.ts`
 - `packages/core/src/plugins/composition/caller-view.ts`
 - `packages/core/src/internal/di/`
-- `packages/core/src/internal/fsm/`
+- `packages/core/src/plugins/runtime/PluginActor.ts`
 - `packages/core/src/plugins/runtime/plugin-service/LifecycleManager.ts`
 - `packages/core/src/plugins/composition/`
 - `packages/core/src/plugins/runtime/part-definition.ts`

@@ -1,14 +1,22 @@
 import { servicesPreset } from '@pluxel/services/preset'
+import { createElysiaHandler } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { Commands, commands } from '../src/commands'
 import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
-import { defineContextCapability, installOwnerViewCapability } from '@pluxel/core/host'
+import {
+	defineContextCapability,
+	installOwnerViewCapability,
+	resolveContextCapability,
+} from '@pluxel/core/host'
 import { createHost, defineHostService } from '@pluxel/host'
+import { Logging } from '@pluxel/services/logging'
+import { Management } from '@pluxel/services/management/service'
+import { parseVaultAdminState } from '@pluxel/services/management/internal/test'
 import { describe, expect, it } from 'vitest'
 import { createMemoryPersistenceBackend, persistence } from '../src/persistence'
-import { Vault, vault } from '../src/vault'
+import { Vault, VaultAdmin, vault } from '../src/vault'
 
 const Search = defineContextCapability<{ query(): string }>('example.search')
 const observations: string[] = []
@@ -47,9 +55,18 @@ describe('independently composed official and external services', () => {
 			)
 			// Preparation order follows declared capabilities, not the preset's array order.
 			const host = await createHost({ plugins: [], services: services.toReversed() })
+			const logging = resolveContextCapability(host.ctx, Logging)
 			try {
+				expect(logging.state).toBe('installed')
+				expect(resolveContextCapability(host.ctx, Management)).toBeDefined()
+				const vaultState = await resolveContextCapability(host.ctx, VaultAdmin).describe()
+				expect(parseVaultAdminState(vaultState)).toEqual(vaultState)
 				await host.start()
 				const server = host.ctx.require(ElysiaRuntime)
+				const missing = new Request('http://local.dev/missing')
+				expect(server.matchesRequest(missing)).toBe(false)
+				const missingResponse = await createElysiaHandler(host)(missing)
+				expect(missingResponse.status).toBe(404)
 				const request = new Request('http://local.dev/__pluxel/runtime/session', {
 					headers: { upgrade: 'websocket', connection: 'Upgrade' },
 				})
@@ -67,6 +84,7 @@ describe('independently composed official and external services', () => {
 			} finally {
 				await host.close()
 			}
+			expect(logging.state).toBe('disposed')
 		},
 		30_000,
 	)

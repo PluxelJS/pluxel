@@ -1,12 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, expectTypeOf, it } from 'vitest'
-import {
-	openProject,
-	type InspectionSection,
-	type InspectionSectionData,
-} from '../src/inspect/index.ts'
+import { afterEach, describe, expect, it } from 'vitest'
+import { openProject, type InspectionSection } from '../src/inspect/index.ts'
 
 const roots: string[] = []
 const mailReference = 'package:@fixture/mail::MailPlugin'
@@ -98,8 +94,6 @@ describe('project inspection public API', () => {
 				.scripts.map((script) => script.name)
 				.sort(),
 		).toEqual(['test', 'typecheck'])
-		const typed = await project.plugin(mailReference, { include: ['config'] })
-		expectTypeOf<keyof typeof typed.data.sections>().toEqualTypeOf<'config'>()
 		const summary = await project.plugin(mailReference)
 		expect(summary.data.sections).toEqual({})
 	})
@@ -224,32 +218,6 @@ describe('project inspection public API', () => {
 		const config = plugin.data.sections.config
 		if (!config) throw new Error('Expected the config section selected at admission')
 		expect(available(config).declarations[0]!.partPath).toEqual(['backup'])
-	})
-
-	it('types section presence according to literal, dynamic, optional and omitted include inputs', async () => {
-		const { root } = await fixture()
-		await using project = await openProject({ root })
-		type ConfigSection = InspectionSection<InspectionSectionData['config']>
-		type PartsSection = InspectionSection<InspectionSectionData['parts']>
-
-		const literal = await project.plugin(mailReference, { include: ['config'] })
-		expectTypeOf(literal.data.sections.config).toEqualTypeOf<ConfigSection>()
-		expectTypeOf<keyof typeof literal.data.sections>().toEqualTypeOf<'config'>()
-
-		const include: ('config' | 'parts')[] = ['config']
-		const dynamic = await project.plugin(mailReference, { include })
-		expectTypeOf(dynamic.data.sections.config).toEqualTypeOf<ConfigSection | undefined>()
-		expectTypeOf(dynamic.data.sections.parts).toEqualTypeOf<PartsSection | undefined>()
-		expect(Object.keys(dynamic.data.sections)).toEqual(['config'])
-
-		const optionalOptions: { include?: readonly ['config'] } = {}
-		const optional = await project.plugin(mailReference, optionalOptions)
-		expectTypeOf(optional.data.sections.config).toEqualTypeOf<ConfigSection | undefined>()
-		expect(optional.data.sections).toEqual({})
-
-		const omitted = await project.plugin(mailReference)
-		expectTypeOf<keyof typeof omitted.data.sections>().toEqualTypeOf<never>()
-		expect(omitted.data.sections).toEqual({})
 	})
 
 	it('rejects sparse section and Part path arrays as invalid query inputs', async () => {

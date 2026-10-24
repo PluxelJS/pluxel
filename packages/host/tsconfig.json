@@ -1,10 +1,10 @@
 {
-	"extends": "../../tsconfig.workspace.json",
-	"include": ["src", "tests", "vitest.config.ts"],
+	"extends": "../../tsconfig.json",
+	"include": ["src", "tests", "bench", "tsdown.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
-		"outDir": "dist",
 		"experimentalDecorators": true,
 		"lib": ["ESNext", "DOM"],
-		"types": ["node"]
+		"types": ["node"],
+		"customConditions": ["@pluxel/source"]
 	}
 }

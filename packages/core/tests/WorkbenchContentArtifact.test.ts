@@ -49,7 +49,7 @@ describe('Workbench Content artifact contract', () => {
 		expect(WORKBENCH_CONTENT_DEPLOYMENT_INVENTORY_FILE).toBe('pluxel-workbench-content.json')
 	})
 
-	it('canonicalizes a sorted immutable content set', () => {
+	it('canonicalizes an immutable content set and enforces exact entry fields', () => {
 		const set = createWorkbenchContentSet({
 			definition,
 			entries: [{ key: 'guide', content }],
@@ -58,6 +58,11 @@ describe('Workbench Content artifact contract', () => {
 		expect(Object.isFrozen(set.entries)).toBe(true)
 		expect(Object.isFrozen(set.entries[0]?.content.document.blocks)).toBe(true)
 		expect(serializeWorkbenchContentSet(set)).toBe(`${JSON.stringify(set)}\n`)
+		for (const entry of [{ key: 'guide' }, { key: 'guide', content, extra: true }]) {
+			expect(() => parseWorkbenchContentSet({ ...set, entries: [entry] })).toThrow(
+				'unsupported or missing fields',
+			)
+		}
 	})
 
 	it('canonicalizes exact data and action slot topology', () => {
@@ -226,21 +231,10 @@ describe('Workbench Content artifact contract', () => {
 		).toThrow('.key is invalid')
 	})
 
-	it('rejects the removed Page wire contract', () => {
-		expect(() => parseWorkbenchContentPlan({ ...content, kind: 'standard-page' })).toThrow(
+	it('rejects unknown plan kinds, unsafe content, and broken fragments', () => {
+		expect(() => parseWorkbenchContentPlan({ ...content, kind: 'unknown' })).toThrow(
 			'version or kind is unsupported',
 		)
-		expect(() =>
-			parseWorkbenchContentSet({
-				version: 1,
-				kind: 'workbench-content-set',
-				definition,
-				entries: [{ key: 'guide', page: content }],
-			}),
-		).toThrow('unsupported or missing fields')
-	})
-
-	it('rejects unsafe content and broken fragments', () => {
 		expect(() =>
 			parseWorkbenchContentPlan({
 				...content,

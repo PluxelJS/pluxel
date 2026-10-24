@@ -188,7 +188,12 @@ async function readJavaScriptOutput(outDir: string): Promise<string> {
 
 describe('Workbench Profile 1 federation producer', () => {
 	it('builds multiple Bridge exposes with a runtime-only development Manifest and Snapshot', async () => {
-		await using fixture = await createFixture(producerFixtureFiles())
+		const filesWithMarker = producerFixtureFiles()
+		filesWithMarker['src/ui/manager.ts'] = filesWithMarker['src/ui/manager.ts']!.replace(
+			'profile-one-manager-',
+			'profile-one-manager-user-owned-@pluxel-workbench-full-shared-surface-',
+		)
+		await using fixture = await createFixture(filesWithMarker)
 		const plan = createPlan()
 		const outDir = join(fixture.path, 'artifact')
 		const build = await buildWorkbenchFederationProducer({
@@ -274,7 +279,7 @@ describe('Workbench Profile 1 federation producer', () => {
 		expect(javascript.join('\n')).not.toContain('must-not-bundle-mantine-hooks')
 		expect(javascript.join('\n')).not.toContain('must-not-bundle-react-forward-ref')
 		expect(javascript.join('\n')).not.toContain('must-not-bundle-react-create-element')
-		expect(javascript.join('\n')).not.toContain('@pluxel-workbench-full-shared-surface')
+		expect(javascript.join('\n')).toContain('user-owned-@pluxel-workbench-full-shared-surface')
 	}, 60_000)
 
 	it('selects the explicit development or distribution package export graph', async () => {
@@ -453,26 +458,6 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		expect(firstJavaScript).not.toContain('concurrent-producer-second')
 		expect(secondJavaScript).toContain('concurrent-producer-second')
 		expect(secondJavaScript).not.toContain('concurrent-producer-first')
-	}, 60_000)
-
-	it('preserves user source that contains the shared-surface analysis marker', async () => {
-		const files = producerFixtureFiles()
-		files['src/ui/manager.ts'] = `
-export const marker = 'user-owned-@pluxel-workbench-full-shared-surface'
-export default () => ({ marker, async render() {}, destroy() {} })
-`
-		await using fixture = await createFixture(files)
-		const outDir = join(fixture.path, 'artifact')
-
-		await buildWorkbenchFederationProducer({
-			root: fixture.path,
-			plan: createPlan('user-owned-analysis-marker'),
-			outDir,
-			minify: false,
-		})
-
-		const javascript = await readJavaScriptOutput(outDir)
-		expect(javascript).toContain('user-owned-@pluxel-workbench-full-shared-surface')
 	}, 60_000)
 
 	it('inspects fixed shared exports from the application root for a nested producer', async () => {

@@ -19,6 +19,8 @@ dev console 直接控制调度器，不经过操作脚本 loader、应用 ready 
 
 调度合并不改变原来的 prepare/commit、运行意图与失败恢复契约；attempted revision 不表示已提交或应用 ready。脚本入口的 finite barrier 遇到 paused 且待处理运行时变更时拒绝 `hmr_pending`，不为加载脚本隐式越过暂停。没有磁盘 snapshot 保证，也不能用调度上界证明单次构建或应用资源没有内存泄漏。
 
+来源候选可能先求值最新文件，稍后才收到该文件的 SDK 通知。后续批次先重新校验同一 physical owner 和完整 entry 集合，只有普通 update 对应已接纳候选的入口且模块与已知依赖摘要都未变化时，才消费通知而不再次创建候选。摘要只在候选接纳后生效；新增、删除、full rescan、失败恢复与来源校验失败不走此去重，失败后恢复相同内容也必须重新验证并接纳。
+
 ## Definition replacement
 
 Source/module 变化以 `PluginDefinitionSlot` 为 invalidation unit。同一 definition 的 default 与已创建 forks 在同一个

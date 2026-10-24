@@ -1,8 +1,9 @@
 {
-	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tsdown.config.ts"],
+	"extends": "../../tsconfig.json",
+	"include": ["src", "tests", "scripts", "tsdown.config.ts"],
 	"compilerOptions": {
-		"outDir": "dist",
-		"types": ["node"]
+		"types": ["node"],
+		"customConditions": ["@pluxel/source"],
+		"allowJs": true
 	}
 }

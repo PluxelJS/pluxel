@@ -4,10 +4,11 @@ import react from '@vitejs/plugin-react'
 import { offlineMonaco } from './scripts/monaco-vite.ts'
 import { generateEditorTypes } from './scripts/generate-editor-types.mjs'
 
-const tasks = repositoryTasks('@report-template-studio/app', {
-	build: 'node ../../scripts/pack.mjs',
-	test: 'vp test run',
-	typecheck: 'tsc --noEmit',
+const tasks = repositoryTasks({
+	compile: 'node ../../scripts/pack.mjs',
+	// Tests and examples consume this package's public client/contracts artifacts.
+	'check-tests': { command: 'vp test run', dependsOn: ['compile-code'] },
+	'check-types': { command: 'tsc --noEmit', dependsOn: ['compile-code'] },
 })
 const compile = tasks.compile!
 const compileCache = typeof compile.cache === 'object' ? compile.cache : {}

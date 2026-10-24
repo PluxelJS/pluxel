@@ -14,7 +14,10 @@ import {
 	type RuntimeSessionEvent,
 	type RuntimeSessionObserver,
 } from '@pluxel/services/management/session'
-import { CapnwebCrosswsWebSocket } from './support/capnweb-crossws-websocket'
+import {
+	RuntimeSessionWebSocket,
+	type RuntimeSessionLimitViolation,
+} from '../../src/management/web/session/elysia-websocket'
 
 class ProbeChild extends RpcTarget {
 	constructor(private readonly disposed: () => void) {
@@ -35,8 +38,9 @@ class ProbeWorkbench extends RpcTarget {
 	child(): ProbeChild {
 		return new ProbeChild(() => this.state.childDisposals++)
 	}
-	value(): string {
-		return 'workbench'
+	value(value = 'workbench'): string {
+		this.state.workbenchCalls++
+		return value
 	}
 	[Symbol.dispose](): void {
 		this.state.workbenchDisposals++
@@ -50,6 +54,9 @@ type ProbeState = {
 	managementDisposals: number
 	workbenchDisposals: number
 	childDisposals: number
+	workbenchCalls: number
+	closeCodes: number[]
+	limitViolations: RuntimeSessionLimitViolation[]
 	observer?: RpcStub<RuntimeSessionObserver>
 	bootstrapGate?: Promise<void>
 }
@@ -84,17 +91,20 @@ class SessionProbeServer {
 		managementDisposals: 0,
 		workbenchDisposals: 0,
 		childDisposals: 0,
+		workbenchCalls: 0,
+		closeCodes: [],
+		limitViolations: [],
 	}
 	private readonly httpServer: Server
 	private readonly adapter: NodeAdapter
 	private readonly peers = new Map<
 		Peer,
 		{
-			socket: CapnwebCrosswsWebSocket
+			socket: RuntimeSessionWebSocket
 			root: RpcStub<RpcTarget>
 		}
 	>()
-	constructor() {
+	constructor(maxMessageBytes = 64 * 1024) {
 		this.adapter = nodeWebSocketAdapter({
 			idleTimeout: 0,
 			hooks: {
@@ -103,10 +113,21 @@ class SessionProbeServer {
 						? { namespace: 'runtime-client-regression' }
 						: new Response('Not Found', { status: 404 }),
 				open: (peer) => {
-					const socket = new CapnwebCrosswsWebSocket(peer, {
-						maxMessageBytes: 64 * 1024,
-						maxQueuedBytes: 256 * 1024,
-					})
+					const socket = new RuntimeSessionWebSocket(
+						{
+							get readyState() {
+								return peer.websocket.readyState
+							},
+							send(data) {
+								peer.send(data)
+							},
+							close: (code, reason) => peer.close(code, reason),
+						},
+						{
+							maxMessageBytes,
+							onLimitViolation: (violation) => this.state.limitViolations.push(violation),
+						},
+					)
 					const root = newWebSocketRpcSession<RpcTarget>(
 						socket.webSocket,
 						new ProbeRoot(this.state),
@@ -115,7 +136,7 @@ class SessionProbeServer {
 					this.state.connections++
 					this.state.activeConnections++
 				},
-				message: (peer, message) => this.peers.get(peer)?.socket.receive(message),
+				message: (peer, message) => this.peers.get(peer)?.socket.receive(message.rawData),
 				close: (peer, details) => {
 					const session = this.peers.get(peer)
 					if (!session) return
@@ -123,6 +144,7 @@ class SessionProbeServer {
 					session.socket.closed(details.code, details.reason)
 					session.root[Symbol.dispose]()
 					this.state.activeConnections--
+					this.state.closeCodes.push(details.code ?? 1000)
 				},
 				error: (peer, error) => this.peers.get(peer)?.socket.errored(error),
 			},
@@ -151,6 +173,9 @@ class SessionProbeServer {
 			// The client closes its root while processing this final notification.
 		}
 	}
+	terminate(): void {
+		for (const peer of this.peers.keys()) peer.terminate()
+	}
 	async close(): Promise<void> {
 		this.adapter.closeAll(1001, 'Test shutdown', true)
 		await this.adapter.close(1001, 'Test shutdown')
@@ -170,8 +195,8 @@ afterEach(async () => {
 	vi.unstubAllGlobals()
 })
 
-async function fixture(bootstrapGate?: Promise<void>) {
-	const server = new SessionProbeServer()
+async function fixture(bootstrapGate?: Promise<void>, maxMessageBytes?: number) {
+	const server = new SessionProbeServer(maxMessageBytes)
 	server.state.bootstrapGate = bootstrapGate
 	servers.push(server)
 	await server.listen()
@@ -192,12 +217,50 @@ async function fixture(bootstrapGate?: Promise<void>) {
 			}
 		},
 	)
-	const client = createRuntimeSessionClient<ProbeWorkbench>()
+	const onBroken = vi.fn()
+	const client = createRuntimeSessionClient<ProbeWorkbench>({ onBroken })
 	clients.push(client)
-	return { server, client, sockets, sends }
+	return { server, client, sockets, sends, onBroken }
 }
 
 describe('Runtime session client over native Capnweb and WebSocket', () => {
+	it('rejects pending and future bootstrap calls when the physical socket dies', async () => {
+		const gate = Promise.withResolvers<void>()
+		const { server, client, onBroken } = await fixture(gate.promise)
+		const pending = client
+			.bootstrap(() => {})
+			.then(
+				(value) => ({ value }),
+				(error: unknown) => ({ error }),
+			)
+		try {
+			await vi.waitFor(() => expect(server.state.bootstrapCalls).toBe(1))
+			server.terminate()
+			expect(await pending).toEqual({ error: expect.any(Error) })
+			expect(onBroken).toHaveBeenCalledWith(expect.any(Error))
+			await expect(client.bootstrap(() => {})).rejects.toBeInstanceOf(Error)
+			expect(client.current).toBeUndefined()
+			await vi.waitFor(() => expect(server.state.activeConnections).toBe(0))
+			expect(server.state.connections).toBe(1)
+		} finally {
+			gate.resolve()
+		}
+	})
+
+	it('rejects oversized encoded RPC messages before dispatch through the production adapter', async () => {
+		const { server, client } = await fixture(undefined, 1_024)
+		const bootstrap = await client.bootstrap(() => {})
+		if (bootstrap.kind !== 'workbench') throw new Error('Expected the native Workbench capability')
+		await expect(bootstrap.workbench.value()).resolves.toBe('workbench')
+		await expect(bootstrap.workbench.value('x'.repeat(16 * 1024))).rejects.toBeInstanceOf(Error)
+		await vi.waitFor(() => expect(server.state.activeConnections).toBe(0))
+		expect(server.state.workbenchCalls).toBe(1)
+		expect(server.state.limitViolations).toEqual([
+			expect.objectContaining({ kind: 'inbound-message-bytes', limitBytes: 1_024 }),
+		])
+		expect(server.state.closeCodes).toEqual([1009])
+	})
+
 	it('replaces an accepted bootstrap graph without closing the socket and disposes both generations exactly once', async () => {
 		const { server, client, sends } = await fixture()
 		const first = await client.bootstrap(() => {})

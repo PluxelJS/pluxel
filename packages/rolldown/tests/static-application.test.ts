@@ -4,89 +4,13 @@ import { dirname, join, relative } from 'node:path'
 import { traceNodeModules } from 'nf3'
 import { describe, expect, it, vi } from 'vitest'
 
-import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
 import { createStaticApplicationConfig as application } from '../src/cli/static-application.ts'
 import { readPublicElysiaSpecifiers } from '../src/cli/elysia-singleton.ts'
 import { NODE_MODULE_SOURCE_ARTIFACT_KEYS } from '../src/plugin-artifact/pluginArtifactBuildPlugin.ts'
-import { createPluginSourceVitePipeline } from '../src/vite/plugin-source.ts'
 
 vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
 
-function pluginNames(config: { plugins?: unknown }): string[] {
-	return (config.plugins as Array<{ name?: string } | null | undefined>)
-		.filter((plugin): plugin is { name?: string } => Boolean(plugin))
-		.map((plugin) => plugin.name ?? '')
-}
-
 describe('application', () => {
-	it('exposes one standard plugin package preset and shared source pipeline', () => {
-		const pipeline = createPluginBuildPipeline({ root: '/tmp/pluxel-plugin-package' })
-		const config = pluginPackage({
-			root: '/tmp/pluxel-plugin-package',
-			packageMetadata: {
-				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
-				log: () => undefined,
-			},
-		})
-
-		expect(pluginNames(config)).toEqual(pluginNames(pipeline))
-		expect(pluginNames(config)).toEqual([
-			'unplugin-preprocessor-directives',
-			'pluxel:plugin-semantics',
-			'unplugin-macros',
-			'pluxel-lint-guard',
-			'pluxel-config-source',
-			'pluxel-plugin-artifact-build',
-			'pluxel:decorator-output-guard',
-		])
-		expect(config.deps?.neverBundle).toEqual([/^@pluxel\//])
-		expect(config.exports).toEqual({ devExports: '@pluxel/hmr' })
-		expect(config.inputOptions?.transform?.decorator).toEqual({
-			legacy: true,
-			emitDecoratorMetadata: false,
-		})
-	})
-
-	it('keeps semantic package metadata inside the plugin package preset', () => {
-		const config = pluginPackage({
-			root: '/tmp/pluxel-plugin-package',
-			packageMetadata: {
-				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
-				log: () => undefined,
-			},
-		})
-		expect(pluginNames(config).filter((name) => name === 'pluxel:plugin-semantics')).toHaveLength(1)
-		expect(config.onSuccess).toBeTypeOf('function')
-	})
-
-	it('exposes one concrete Vite source pipeline and its sole semantic collector', () => {
-		const pipeline = createPluginSourceVitePipeline({
-			root: '/tmp/pluxel-plugin-source',
-			lintGuard: false,
-			configSource: false,
-		})
-		expect(pluginNames(pipeline)).toEqual([
-			'unplugin-preprocessor-directives',
-			'pluxel:browser-node-imports',
-			'pluxel:plugin-semantics',
-			'pluxel:plugin-source',
-		])
-		expect(pipeline.semantics.workbenchPlans).toBeTypeOf('function')
-		expect(pipeline.semantics.classifyDefinitionArtifact).toBeTypeOf('function')
-		expect(pipeline.semantics.beginArtifactGeneration).toBeTypeOf('function')
-	})
-
-	it('runs the final output guard after caller-supplied compiler plugins', () => {
-		const pipeline = createPluginBuildPipeline({
-			root: '/tmp/pluxel-plugin-package',
-			additionalPlugins: [{ name: 'fixture:additional' }],
-		})
-		expect(pluginNames(pipeline).slice(-2)).toEqual([
-			'fixture:additional',
-			'pluxel:decorator-output-guard',
-		])
-	})
-
 	it('builds Node applications with native residual tracing', () => {
 		const config = application({
 			cwd: '/tmp/pluxel-static-node',
@@ -103,11 +27,6 @@ describe('application', () => {
 		expect(config.inputOptions?.resolve?.conditionNames).not.toContain('development')
 		expect(config.platform).toBe('node')
 		expect(config.target).toBe('node24')
-		expect(pluginNames(config)).toContain('pluxel:nf3-externals')
-		expect(pluginNames(config)).toContain('pluxel:decorator-output-guard')
-		expect(pluginNames(config).indexOf('pluxel:static-elysia-singleton')).toBeLessThan(
-			pluginNames(config).indexOf('unplugin-preprocessor-directives'),
-		)
 		expect(config.inputOptions?.transform?.decorator).toEqual({
 			legacy: true,
 			emitDecoratorMetadata: false,

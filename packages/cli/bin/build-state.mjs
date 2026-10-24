@@ -41,6 +41,7 @@ export function cliSourceFingerprint(packageRoot) {
 		'../../scripts/vite-tasks.ts',
 		'../../scripts/repository-packages.mjs',
 		'../../vite.config.ts',
+		'../../tsconfig.json',
 		'../../mise.toml',
 	])
 		add(path)

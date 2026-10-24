@@ -16,8 +16,6 @@ on:
       - '!packages/core/**/*.md'
       - '!packages/context/**/*.md'
       - 'scripts/core-bench-compare.sh'
-      - 'scripts/core-bench-reference-bridge.mjs'
-      - 'scripts/core-bench-node-runner.mjs'
       - 'mise.toml'
       - 'pnpm-lock.yaml'
       - 'vite.config.ts'
@@ -36,8 +34,6 @@ on:
       - '!packages/core/**/*.md'
       - '!packages/context/**/*.md'
       - 'scripts/core-bench-compare.sh'
-      - 'scripts/core-bench-reference-bridge.mjs'
-      - 'scripts/core-bench-node-runner.mjs'
       - 'mise.toml'
       - 'pnpm-lock.yaml'
       - 'vite.config.ts'
@@ -138,7 +134,6 @@ jobs:
           name: core-bench-run-${{ github.run_id }}
           path: |
             .bench-results/core/base/plugin-lifecycle.json
-            .bench-results/core/base/plugin-lifecycle.bridged.json
             .bench-results/core/base/plugin-lifecycle.md
             .bench-results/core/base/install.log
             .bench-results/core/base/bench.log
@@ -146,14 +141,6 @@ jobs:
             .bench-results/core/head/plugin-lifecycle.md
             .bench-results/core/head/install.log
             .bench-results/core/head/bench.log
-            .bench-results/core/bridge-legacy/plugin-lifecycle.json
-            .bench-results/core/bridge-legacy/plugin-lifecycle.md
-            .bench-results/core/bridge-legacy/install.log
-            .bench-results/core/bridge-legacy/bench.log
-            .bench-results/core/bridge-current/plugin-lifecycle.json
-            .bench-results/core/bridge-current/plugin-lifecycle.md
-            .bench-results/core/bridge-current/install.log
-            .bench-results/core/bridge-current/bench.log
           include-hidden-files: true
           if-no-files-found: error
 

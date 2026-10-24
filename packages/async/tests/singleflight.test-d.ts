@@ -26,8 +26,6 @@ test('singleflight fixes one key/result domain and accepts sync, async and thena
 	flights.get(1)
 	// @ts-expect-error size is read-only
 	flights.size = 3
-	// @ts-expect-error factory no longer binds an operation
-	singleflight((key: string) => key)
 	const numeric = singleflight<string, number>()
 	const thenable: PromiseLike<number> = Promise.resolve(1)
 	expectTypeOf(numeric.run('a', () => thenable)).toEqualTypeOf<Promise<number>>()

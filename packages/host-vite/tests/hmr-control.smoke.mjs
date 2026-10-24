@@ -432,7 +432,9 @@ await scenario(
 			const status = await inspect()
 			return (
 				metrics.starts.filter((entry) => entry.endsWith(':20')).length === count &&
-				!status.hmr.running
+				!status.hmr.running &&
+				status.hmr.pending.files === 0 &&
+				!status.hmr.pending.full
 			)
 		}, 'automatic burst must finish')
 		const automatic = await inspect()
@@ -441,6 +443,56 @@ await scenario(
 		assert.equal(metrics.evaluations.length, beforeEvaluations + count * (cycles + 1))
 		const automaticRead = await script()
 		assert.equal(automaticRead.value, 20)
+
+		// Matching bytes cannot bypass source validation or acknowledge a rejected owner.
+		await control('pause')
+		await writeObserved(sourcePath(0), source(0, 20))
+		const sameBytes = await control('apply')
+		assert.equal(
+			sameBytes.application.latestUpdate.sequence,
+			automatic.application.latestUpdate.sequence,
+		)
+		const duplicateEvaluations = metrics.evaluations.length
+		await writeObserved(sourcePath(0), source(0, 20))
+		const target = join(root, 'same-bytes.mjs')
+		await writeFile(target, source(0, 20))
+		await rm(sourcePath(0))
+		await symlink(target, sourcePath(0))
+		const invalidOwner = await result(await submit('apply'))
+		assert.equal(invalidOwner.state, 'failed')
+		assert.equal(metrics.evaluations.length, duplicateEvaluations)
+		await rm(sourcePath(0))
+		await writeObserved(sourcePath(0), source(0, 20))
+		const restoredOwner = await control('apply')
+		assert.equal(restoredOwner.application.latestUpdate.outcome, 'applied')
+		assert.equal(metrics.evaluations.length, duplicateEvaluations + 1)
+		// apply is finite: late observations stay pending until the user resumes or applies again.
+		await control('resume')
+		const restoredRead = await script()
+		assert.equal(
+			restoredRead.state,
+			'succeeded',
+			JSON.stringify({ receipt: restoredRead, status: await inspect() }),
+		)
+		assert.equal(restoredRead.value, 20)
+		await control('pause')
+
+		// Removing and recreating the same bytes still withdraws and readmits the definition.
+		await rm(sourcePath(0))
+		await until(async () => {
+			const status = await inspect()
+			return status.hmr.pending.files > 0
+		}, 'source removal must be observed')
+		const beforeRemoval = metrics.stops.length
+		await control('apply')
+		assert.equal(metrics.stops.length, beforeRemoval + 1)
+		await writeObserved(sourcePath(0), source(0, 20))
+		await control('apply')
+		assert.equal(metrics.evaluations.length, duplicateEvaluations + 2)
+		await control('resume')
+		const recreatedRead = await script()
+		assert.equal(recreatedRead.state, 'succeeded', JSON.stringify(recreatedRead))
+		assert.equal(recreatedRead.value, 20)
 		console.log(
 			'HMR_CONTROL_SMOKE_OK',
 			JSON.stringify({

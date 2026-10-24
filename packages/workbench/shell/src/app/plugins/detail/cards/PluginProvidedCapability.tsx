@@ -11,7 +11,7 @@ import {
 	useRuntimeManagementClient,
 	type PluginProviderPolicyInfo,
 } from '../../../../runtime'
-import { useNotify } from '../../../hooks/useNotify'
+import { notifyAndRecord } from '../../../notifications/notifyBridge'
 import { usePluginScope } from '../context'
 import { managementQueryKeys } from '../../../managementQuery'
 
@@ -19,7 +19,6 @@ export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 	const { owner } = usePluginScope()
 	const ownerKey = pluginNodeIndexKey(owner)
 	const management = useRuntimeManagementClient()
-	const notify = useNotify()
 	const policyQuery = useQuery<PluginProviderPolicyInfo | null>({
 		queryKey: managementQueryKeys.providerPolicy(owner),
 		queryFn: async () => {
@@ -71,7 +70,7 @@ export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 		},
 		onSettled: () => refresh(),
 		onSuccess: (provider) => {
-			notify({
+			notifyAndRecord({
 				title: '已更新默认实现',
 				message: provider
 					? (optionsByKey.get(pluginNodeIndexKey(provider))?.displayName ??
@@ -81,7 +80,7 @@ export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 			})
 		},
 		onError: (error) => {
-			notify({
+			notifyAndRecord({
 				title: '更新失败',
 				message: runtimeErrorMessage(error, '操作失败'),
 				color: 'red',

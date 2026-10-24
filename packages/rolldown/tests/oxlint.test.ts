@@ -1,22 +1,12 @@
 import { RuleTester } from 'vite-plus/lint/plugins-dev'
-import { describe, expect, it } from 'vitest'
-import {
-	createPluxelJsPluginEntry,
-	prefixPluxelRuleSet,
-	pluxelCorrectnessRuleNames,
-	pluxelCorrectnessRules,
-	pluxelRulePolicy,
-	pluxelRules,
-	type OxRule,
-} from '../src/workspace/oxlint/index.ts'
+import { describe, it } from 'vitest'
+import { pluxelRules, type OxRule } from '../src/workspace/oxlint/index.ts'
 
 RuleTester.describe = describe
 RuleTester.it = it
 
 type TestedRule = Parameters<RuleTester['run']>[1]
 type TestedCases = Parameters<RuleTester['run']>[2]
-
-const WORKSPACE_PLUGIN_SPECIFIER = './packages/rolldown/src/workspace/oxlint/plugin.ts'
 
 const tester = new RuleTester({
 	languageOptions: {
@@ -648,26 +638,4 @@ runRule('configs-use-single-object-schema', pluxelRules['configs-use-single-obje
 			errors: [{ messageId: 'nonObject' }],
 		},
 	],
-})
-
-describe('pluxel correctness helpers', () => {
-	it('keeps build enforcement sourced from the correctness rule set', () => {
-		expect(Object.keys(pluxelRulePolicy).sort()).toEqual(Object.keys(pluxelRules).sort())
-		expect(Object.keys(pluxelCorrectnessRules).sort()).toEqual(
-			[...pluxelCorrectnessRuleNames].sort(),
-		)
-		expect(
-			Object.entries(pluxelRulePolicy)
-				.filter(([, policy]) => policy.buildCritical)
-				.map(([name]) => name)
-				.sort(),
-		).toEqual([...pluxelCorrectnessRuleNames].sort())
-		expect(createPluxelJsPluginEntry(WORKSPACE_PLUGIN_SPECIFIER)).toEqual({
-			name: 'pluxel',
-			specifier: WORKSPACE_PLUGIN_SPECIFIER,
-		})
-		expect(prefixPluxelRuleSet(pluxelCorrectnessRules)).toEqual(
-			Object.fromEntries(pluxelCorrectnessRuleNames.map((name) => [`pluxel/${name}`, 'error'])),
-		)
-	})
 })

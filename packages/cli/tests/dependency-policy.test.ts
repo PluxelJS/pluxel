@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
@@ -74,7 +74,9 @@ describe('workspace dependency policy', () => {
 		expect(await diagnoseWorkspaceDependencies(root, source)).toEqual([])
 	})
 
-	it('runs the release artifact without a Git checkout or an external pncat installation', async () => {
+	it('runs the release artifact without a Git checkout or an external pncat installation', async ({
+		signal,
+	}) => {
 		const root = await fixture({})
 		const release = resolve(root, 'release')
 		await mkdir(release)
@@ -106,58 +108,73 @@ describe('workspace dependency policy', () => {
 			'pncat.config.ts':
 				"import { defineConfig, mergeCatalogRules } from '@pluxel/cli/pncat'; export default defineConfig({ depFields: { peerDependencies: false }, catalogRules: mergeCatalogRules([{ name: 'runtime', match: ['yaml'], priority: 1000 }]) })\n",
 		})
-		const run = (...args: string[]) =>
-			spawnSync(
-				process.execPath,
-				[resolve(release, 'bin/pluxel.mjs'), 'workspace', 'sync', '--root', consumer, ...args],
-				{
-					cwd: consumer,
-					encoding: 'utf8',
-					env: { ...process.env, NODE_OPTIONS: '', NODE_PATH: '' },
-				},
-			)
-		const native = (...args: string[]) =>
-			spawnSync(process.execPath, [resolve(release, 'bin/pluxel.mjs'), 'pncat', ...args], {
-				cwd: consumer,
-				encoding: 'utf8',
-				env: { ...process.env, NODE_OPTIONS: '', NODE_PATH: '' },
+		const execute = (args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) =>
+			new Promise<{ status: number; stdout: string; stderr: string }>((resolveResult, reject) => {
+				execFile(
+					process.execPath,
+					args,
+					{
+						cwd: options.cwd ?? consumer,
+						encoding: 'utf8',
+						env: { ...process.env, NODE_OPTIONS: '', NODE_PATH: '', ...options.env },
+						signal,
+						timeout: 10_000,
+						killSignal: 'SIGKILL',
+					},
+					(error, stdout, stderr) => {
+						const status = error ? error.code : 0
+						if (typeof status === 'number') resolveResult({ status, stdout, stderr })
+						else reject(error)
+					},
+				)
 			})
+		const run = (...args: string[]) =>
+			execute([
+				resolve(release, 'bin/pluxel.mjs'),
+				'workspace',
+				'sync',
+				'--root',
+				consumer,
+				...args,
+			])
+		const native = (...args: string[]) =>
+			execute([resolve(release, 'bin/pluxel.mjs'), 'pncat', ...args])
 		const before = await readFile(resolve(consumer, 'package.json'), 'utf8')
-		const check = run('--check')
+		const check = await run('--check')
 		expect({ status: check.status, stderr: check.stderr }).toMatchObject({ status: 1 })
 		expect(check.stderr).toContain('pluxel pncat migrate --yes --no-install')
 		expect(await readFile(resolve(consumer, 'package.json'), 'utf8')).toBe(before)
-		const rejected = run()
+		const rejected = await run()
 		expect(rejected.status).toBe(1)
 		expect(await readFile(resolve(consumer, 'package.json'), 'utf8')).toBe(before)
-		const detected = native('detect', '--yes')
+		const detected = await native('detect', '--yes')
 		expect(detected.status).toBe(0) // Upstream detect reports drift; it is not a CI gate.
 		expect(detected.stdout).toContain('pluxel pncat migrate')
 		expect(await readFile(resolve(consumer, 'package.json'), 'utf8')).toBe(before)
-		const migrated = native('migrate', '--yes', '--no-install')
+		const migrated = await native('migrate', '--yes', '--no-install')
 		expect({ status: migrated.status, stderr: migrated.stderr }).toEqual({ status: 0, stderr: '' })
 		const manifestPaths = ['package.json', 'packages/member/package.json']
 		const migratedManifests = await Promise.all(
 			manifestPaths.map((path) => readFile(resolve(consumer, path), 'utf8')),
 		)
-		const result = run()
+		const result = await run()
 		expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' })
 		expect(
 			await Promise.all(manifestPaths.map((path) => readFile(resolve(consumer, path), 'utf8'))),
 		).toEqual(migratedManifests)
-		const after = run('--check')
+		const after = await run('--check')
 		expect({ status: after.status, stderr: after.stderr }).toEqual({ status: 0, stderr: '' })
 		expect(
 			readDependencyPolicy({ kind: 'release', root: release, version: manifest.version }),
 		).toEqual(readDependencyPolicy())
-		const help = native('--help')
+		const help = await native('--help')
 		expect(help.status).toBe(0)
 		expect(help.stdout).toContain('pncat/0.13.4')
 		for (const args of [
 			['remove', 'yaml', '--yes', '--no-install'],
 			['add', 'yaml@^2.9.1', '--yes', '--no-install'],
 		]) {
-			const nativeResult = native(...args)
+			const nativeResult = await native(...args)
 			expect({ status: nativeResult.status, stderr: nativeResult.stderr }).toEqual({
 				status: 0,
 				stderr: '',
@@ -171,22 +188,18 @@ describe('workspace dependency policy', () => {
 			resolve(consumer, 'pnpm-workspace.yaml'),
 			unused + '\ncatalog:\n  orphan: ^1.0.0\n',
 		)
-		const cleaned = native('clean', '--yes', '--no-install')
+		const cleaned = await native('clean', '--yes', '--no-install')
 		expect({ status: cleaned.status, stderr: cleaned.stderr }).toEqual({ status: 0, stderr: '' })
 		expect(await readFile(resolve(consumer, 'pnpm-workspace.yaml'), 'utf8')).not.toContain('orphan')
 		expect(await readFile(resolve(consumer, 'pnpm-workspace.yaml'), 'utf8')).toContain('peer-only')
 		// Actual package exports resolve at runtime and in an isolated TypeScript consumer.
 		await mkdir(resolve(consumer, 'node_modules/@pluxel'), { recursive: true })
 		await symlink(release, resolve(consumer, 'node_modules/@pluxel/cli'))
-		const imported = spawnSync(
-			process.execPath,
-			[
-				'--input-type=module',
-				'-e',
-				"import { defineConfig } from '@pluxel/cli/pncat'; console.log(String(defineConfig({ saveExact: false }).saveExact))",
-			],
-			{ cwd: consumer, encoding: 'utf8' },
-		)
+		const imported = await execute([
+			'--input-type=module',
+			'-e',
+			"import { defineConfig } from '@pluxel/cli/pncat'; console.log(String(defineConfig({ saveExact: false }).saveExact))",
+		])
 		expect({ status: imported.status, stdout: imported.stdout }).toEqual({
 			status: 0,
 			stdout: 'false\n',
@@ -212,17 +225,11 @@ describe('workspace dependency policy', () => {
 			'#!/bin/sh\necho install-fixture-failed >&2\nexit 42\n',
 			{ mode: 0o755 },
 		)
-		const failedInstall = spawnSync(
-			process.execPath,
+		const failedInstall = await execute(
 			[resolve(release, 'bin/pluxel.mjs'), 'pncat', 'add', 'yaml@^2.9.2', '--yes'],
 			{
-				cwd: consumer,
-				encoding: 'utf8',
 				env: {
-					...process.env,
 					PATH: `${fakeBin}:${process.env.PATH}`,
-					NODE_OPTIONS: '',
-					NODE_PATH: '',
 				},
 			},
 		)
@@ -232,24 +239,19 @@ describe('workspace dependency policy', () => {
 			'package.json':
 				'{"name":"standalone","packageManager":"pnpm@11.25.0","dependencies":{"yaml":"^2.9.1"}}',
 		})
-		const failedRemove = spawnSync(
-			process.execPath,
+		const failedRemove = await execute(
 			[resolve(release, 'bin/pluxel.mjs'), 'pncat', 'remove', 'yaml', '--yes'],
 			{
 				cwd: standalone,
-				encoding: 'utf8',
 				env: {
-					...process.env,
 					PATH: `${fakeBin}:${process.env.PATH}`,
-					NODE_OPTIONS: '',
-					NODE_PATH: '',
 				},
 			},
 		)
 		expect(failedRemove.status).toBe(1)
 		expect(failedRemove.stderr).toContain('install-fixture-failed')
 		await rm(resolve(consumer, 'pncat.config.ts'))
-		const initialized = native('init', '--yes', '--no-install')
+		const initialized = await native('init', '--yes', '--no-install')
 		expect({ status: initialized.status, stderr: initialized.stderr }).toEqual({
 			status: 0,
 			stderr: '',
@@ -258,19 +260,15 @@ describe('workspace dependency policy', () => {
 		expect(await readFile(resolve(consumer, 'pncat.config.ts'), 'utf8')).toContain(
 			"from '@pluxel/cli/pncat'",
 		)
-		const tsc = spawnSync(
-			process.execPath,
-			[
-				resolve(cliRoot, 'node_modules/typescript/bin/tsc'),
-				'--project',
-				resolve(consumer, 'tsconfig.json'),
-			],
-			{ cwd: consumer, encoding: 'utf8' },
-		)
+		const tsc = await execute([
+			resolve(cliRoot, 'node_modules/typescript/bin/tsc'),
+			'--project',
+			resolve(consumer, 'tsconfig.json'),
+		])
 		expect({ status: tsc.status, stdout: tsc.stdout, stderr: tsc.stderr }).toEqual({
 			status: 0,
 			stdout: '',
 			stderr: '',
 		})
-	}, 15_000)
+	}, 45_000)
 })

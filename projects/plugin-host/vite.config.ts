@@ -7,13 +7,24 @@ export default defineConfig({
 			'prepare-dev': {
 				command: [],
 				dependsOn: [
+					'compile-report-card-css',
 					{ task: 'compile', from: ['dependencies', 'devDependencies', 'peerDependencies'] },
 				],
 			},
-			...repositoryTasks('@pluxel/plugins-host', {
-				build: 'node scripts/compile-report-card-css.mjs && node ../../scripts/pack.mjs',
-				test: 'vp test run --config vitest.config.ts',
-				typecheck: 'vp exec tsc -p src/tsconfig.json --pretty false',
+			...repositoryTasks({
+				'compile-report-card-css': {
+					command: 'node scripts/compile-report-card-css.mjs',
+					cache: { output: ['src/showcase/report-card-css.ts'] },
+				},
+				compile: {
+					command: 'node ../../scripts/pack.mjs',
+					dependsOn: ['prepare-dev'],
+				},
+				'check-tests': {
+					command: 'vp test run --config vitest.config.ts',
+					dependsOn: ['compile'],
+				},
+				'check-types': 'tsc --noEmit --pretty false',
 			}),
 		},
 	},

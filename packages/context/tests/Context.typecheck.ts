@@ -1,4 +1,4 @@
-import { expectTypeOf, it } from 'vitest'
+import { expectTypeOf } from 'vitest'
 import {
 	createContextHost,
 	defineContextCapability,
@@ -14,7 +14,8 @@ import {
 	type RootContextOf,
 } from '../src'
 
-it('infers a host shape while keeping root-only projections off child contexts', () => {
+// Infer a host shape while keeping root-only projections off child contexts.
+{
 	const rootCapability = defineContextCapability<{ root: true }>('types.root')
 	const scopeCapability = defineContextCapability<{ scope: true }>('types.scope')
 	const ownerCapability = defineContextCapability<{ owner: true }>('types.owner')
@@ -47,9 +48,10 @@ it('infers a host shape while keeping root-only projections off child contexts',
 
 	type HasNoRootProjection = 'rootValue' extends keyof HostContext ? false : true
 	expectTypeOf<HasNoRootProjection>().toEqualTypeOf<true>()
-})
+}
 
-it('keeps capability value types invariant', () => {
+// Capability value types are invariant.
+{
 	type Animal = { kind: string }
 	type Dog = Animal & { bark(): void }
 	const dogCapability = null as unknown as ContextCapability<Dog>
@@ -63,9 +65,10 @@ it('keeps capability value types invariant', () => {
 	// @ts-expect-error A descriptor cannot be narrowed to a more specific value type either.
 	const alsoUnsafe: ContextCapability<Dog> = animalCapability
 	void alsoUnsafe
-})
+}
 
-it('infers owner-view backing and factory Context types without annotations', () => {
+// Infer owner-view backing and factory Context types without annotations.
+{
 	const rootCapability = defineContextCapability<{ root: true }>('types.factory-root')
 	const scopeCapability = defineContextCapability<{ scope: true }>('types.factory-scope')
 	const ownerCapability = defineContextCapability<{ view: true }>('types.factory-owner')
@@ -93,9 +96,10 @@ it('infers owner-view backing and factory Context types without annotations', ()
 			return { view: true as const }
 		},
 	})
-})
+}
 
-it('keeps Context, RootContext, installation, and host contracts nominal', () => {
+// Context, RootContext, installation, and host contracts are nominal.
+{
 	const context = null as unknown as Context
 	expectTypeOf(context).toEqualTypeOf<Context>()
 	// @ts-expect-error A normal Context cannot be used as a host root.
@@ -118,9 +122,10 @@ it('keeps Context, RootContext, installation, and host contracts nominal', () =>
 	// @ts-expect-error Capability descriptors can only be created by defineContextCapability().
 	const capability: ContextCapability<string> = { description: 'forged' }
 	void capability
-})
+}
 
-it('infers symbol projections without leaking root-only properties to normal Contexts', () => {
+// Infer symbol projections without leaking root-only properties to normal Contexts.
+{
 	const rootKey: unique symbol = Symbol('root')
 	const scopeKey: unique symbol = Symbol('scope')
 	const rootCapability = defineContextCapability<number>('types.symbol-root')
@@ -140,9 +145,10 @@ it('infers symbol projections without leaking root-only properties to normal Con
 	expectTypeOf<HostContext[typeof scopeKey]>().toEqualTypeOf<string>()
 	type HasNoRootSymbol = typeof rootKey extends keyof HostContext ? false : true
 	expectTypeOf<HasNoRootSymbol>().toEqualTypeOf<true>()
-})
+}
 
-it('constrains overrides to the base host projection contract', () => {
+// Constrain overrides to the base host projection contract.
+{
 	const stringCapability = defineContextCapability<string>('types.override-string')
 	const numberCapability = defineContextCapability<number>('types.override-number')
 	const base = installRootCapability(stringCapability, {
@@ -182,4 +188,4 @@ it('constrains overrides to the base host projection contract', () => {
 		})
 	}
 	void assertInvalidOverrides
-})
+}

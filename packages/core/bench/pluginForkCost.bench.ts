@@ -206,7 +206,9 @@ function providerResourceFacts(
 	for (const address of addresses) {
 		const instance = registry.getInstance(address)
 		if (!(instance instanceof ForkCostProviderV1)) {
-			throw new Error('Initial fork generation does not use the expected provider implementation')
+			throw new TypeError(
+				'Initial fork generation does not use the expected provider implementation',
+			)
 		}
 		buffers.add(instance.ownedState.buffer)
 		payloadBytes += instance.ownedState.byteLength

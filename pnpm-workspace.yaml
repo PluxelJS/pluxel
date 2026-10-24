@@ -407,4 +407,5 @@ catalogs:
   workflow:
     '@tanstack/pacer': ^0.23.1
 patchedDependencies:
+  flexlayout-react@0.11.1: vendor/split-like-vscode/patches/flexlayout-react@0.11.1.patch
   quickjs-emscripten-core@0.32.0: patches/quickjs-emscripten-core@0.32.0.patch

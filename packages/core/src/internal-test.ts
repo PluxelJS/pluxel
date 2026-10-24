@@ -17,10 +17,12 @@ import {
 	type PluginNodeSlot,
 	type PluginPart,
 } from './index'
-import { checkPluginDecorator } from './plugins/decorators/decorator/api'
 import { requireConfigService } from './internal/config-service'
 import { requirePluginService } from './internal/plugin-service'
-import { consumePluginDefinitionCandidate } from './plugins/runtime/definition'
+import {
+	checkPluginDecorator,
+	consumePluginDefinitionCandidate,
+} from './plugins/runtime/definition'
 import { parsePluginNodeAddress } from './plugins/runtime/identity'
 import { assertCommitStarted, type PluginService } from './plugins/runtime/PluginService'
 import type { PreparedRuntimeUpdateCommitOptions } from './plugins/runtime/plugin-service/RuntimeUpdateTransaction'

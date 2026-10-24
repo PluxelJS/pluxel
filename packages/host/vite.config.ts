@@ -5,10 +5,16 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: repositoryTasks('@pluxel/host', {
-			build: 'vp pack',
-			typecheck: 'tsc --noEmit --pretty false',
-			test: 'vp test run',
+		tasks: repositoryTasks({
+			compile: {
+				command: 'vp pack',
+				dependsOn: ['@pluxel/core#compile'],
+				cache: {
+					output: ['dist/**'],
+				},
+			},
+			'check-types': 'tsc --noEmit --pretty false',
+			'check-tests': 'vp test run',
 		}),
 	},
 })

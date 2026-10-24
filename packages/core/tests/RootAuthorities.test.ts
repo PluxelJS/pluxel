@@ -1,16 +1,10 @@
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
-import { createCoreInternalTestHost, withCoreInternalTestContext } from '@pluxel/core/internal/test'
+import { withCoreInternalTestContext } from '@pluxel/core/internal/test'
 import { createOwnerContext } from '../src/context/context-factory'
 import type { RootContext } from '@pluxel/core'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 describe('root host authorities', () => {
-	it('keeps mutable PluginService authority off the normal test host', async () => {
-		await using host = createCoreInternalTestHost()
-		expectTypeOf(host.ctx).toEqualTypeOf<RootContext>()
-		expect('registry' in host).toBe(false)
-	})
-
 	it('ignores child service spoofs and keeps service ownership on the root Context', async () => {
 		await withCoreInternalTestContext(async (root) => {
 			expectTypeOf(root).toEqualTypeOf<RootContext>()

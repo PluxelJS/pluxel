@@ -44,12 +44,7 @@ vi.mock('@pluxel/workbench/react', () => ({
 
 import ManagerWorkbench from '../src/ui/manager.tsx'
 
-it('owns the Mantine context for the Package Manager Workbench renderer', () => {
-	const markup = renderToStaticMarkup(createElement(ManagerWorkbench))
-	expect(markup).toContain('Managed plugin packages')
-})
-
-it('keeps failed withdrawals visible with an explicit retry action', () => {
+it('renders failed withdrawals and their retry action in its own Mantine context', () => {
 	queryState.data = {
 		engine: 'test',
 		rootDir: '/managed',
@@ -60,6 +55,7 @@ it('keeps failed withdrawals visible with an explicit retry action', () => {
 	}
 	try {
 		const markup = renderToStaticMarkup(createElement(ManagerWorkbench))
+		expect(markup).toContain('Managed plugin packages')
 		expect(markup).toContain('Package removal needs retry')
 		expect(markup).toContain('alpha')
 		expect(markup).toContain('Retry removal')

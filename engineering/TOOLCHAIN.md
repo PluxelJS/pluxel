@@ -211,10 +211,16 @@ CommonJS/native 与显式 singleton 交给 Node，其余交给 Vite。Singleton 
 Host-vite 直接依赖 `@pluxel/rolldown/vite` 公共入口；workspace source conditions 选择当前源码，发布产物保留工具链外部依赖。
 Services 拥有 Node HTTP carrier，Host-vite 不复制 carrier 实现或维护另一套 source transform。
 
-仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
-`@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的
-`@pluxel/hmr` 只把其他插件解析到源码，Pluxel Core/Host/toolchain 本身消费已构建的公开声明。
+根 `tsconfig.json` 只维护共用编译选项，默认 `noEmit`，不维护另一份 project-reference 构建图。
+框架和官方插件的 `tsconfig.json` 直接继承它，并包含源码、测试、benchmark 和配置；编译条件在消费包显式声明。
+工作区 `vite*.config.ts` 与共享任务 helper 统一由 `scripts/tsconfig.json` 检查，避免包声明构建沿配置引用把类型输出到根 scripts。
+框架实现 package 用 `@pluxel/source` 检查当前源码；具体插件默认用 `@pluxel/hmr` 只把其他插件解析到源码，
+Pluxel Core/Host/toolchain 本身消费已构建的公开声明。
 因此单个插件 typecheck 不会把整个框架源码并入同一个 TypeScript program，也不会用插件编译选项重新检查内部实现。
+
+只有不同运行环境、严格度或声明生成输入需要隔离时才增加包内配置。`tsconfig.build.json` 归构建包拥有；
+CLI 捆绑仓库内的 pncat 源码；当前原生声明生成器强制以配置目录作为 `rootDir`，因此只有它保留根目录的
+`tsconfig.cli-build.json`，避免兄弟目录源码的声明丢失。依赖构建顺序由 Vite Task 维护。
 
 tsdown `entry` 是 build package subpath 的唯一作者事实源。framework package 配置
 `exports.devExports: "@pluxel/source"`；`pluginPackage()` preset 统一配置

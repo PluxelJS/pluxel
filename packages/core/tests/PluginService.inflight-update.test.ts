@@ -17,6 +17,7 @@ const ConfigSchema: StandardSchemaV1<unknown, { value?: number }> = {
 }
 
 let applied: number[]
+let lifecycleEvents: string[]
 let started: Promise<void>
 let markStarted: () => void
 let release: Promise<void>
@@ -24,6 +25,7 @@ let allowInit: () => void
 
 function resetRace(): void {
 	applied = []
+	lifecycleEvents = []
 	;({ promise: started, resolve: markStarted } = Promise.withResolvers<void>())
 	;({ promise: release, resolve: allowInit } = Promise.withResolvers<void>())
 }
@@ -34,9 +36,26 @@ class InflightUpdatePlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		applied.push(this.config.value ?? 0)
+		lifecycleEvents.push('provider:start')
+		this.ctx.effects.defer(() => {
+			lifecycleEvents.push('provider:cleanup')
+		})
 		if (this.config.value !== 1) return
 		markStarted()
 		await release
+	}
+}
+
+@Plugin()
+class InflightConsumer extends BasePlugin {
+	constructor(readonly provider: InflightUpdatePlugin) {
+		super()
+	}
+	override init() {
+		lifecycleEvents.push('consumer:start')
+		return () => {
+			lifecycleEvents.push('consumer:cleanup')
+		}
 	}
 }
 
@@ -102,7 +121,7 @@ describe('updates attempted during an in-flight Core transaction', () => {
 	it('admits removal only after the active transaction settles', async () => {
 		await withCoreInternalTestHost(async (host) => {
 			host.cfg(InflightUpdatePlugin).set({ value: 1 })
-			host.add(InflightUpdatePlugin)
+			host.add([InflightUpdatePlugin, InflightConsumer])
 
 			const initialCommit = host.commit()
 			await started
@@ -117,6 +136,14 @@ describe('updates attempted during an in-flight Core transaction', () => {
 			expect(applied).toEqual([1])
 			expect(host.has(InflightUpdatePlugin)).toBe(false)
 			expect(host.isRunning(InflightUpdatePlugin)).toBe(false)
+			expect(host.has(InflightConsumer)).toBe(false)
+			expect(host.isRunning(InflightConsumer)).toBe(false)
+			expect(lifecycleEvents).toEqual([
+				'provider:start',
+				'consumer:start',
+				'consumer:cleanup',
+				'provider:cleanup',
+			])
 		})
 	})
 })

@@ -35,7 +35,8 @@ reflection 或 name fallback。
 
 ### decorators/
 
-- `decorators.ts` / `decorator/*`：thin marker validation 与 runtime facts projection；
+- `PluginDecorator.ts`：作者选项校验与 `@Plugin`；
+- `marker.ts`：求值期 marker 的登记与一次性消费，避免 marker 存储反向依赖 generation runtime；
 - decorator 不能恢复 arbitrary metadata bag 或 name identity。
 
 ### composition/

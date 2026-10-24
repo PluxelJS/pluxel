@@ -118,86 +118,6 @@ describe('PluginService read cost model', () => {
 		},
 	)
 
-	it('unions every provider-default consumer into one closure traversal', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const plugins = requirePluginService(host.ctx)
-			host.add(QueryTarget)
-			const first = host.fork(QueryTarget, 'provider-default-consumer-1')
-			const second = host.fork(QueryTarget, 'provider-default-consumer-2')
-			await host.commit()
-			const consumers = [plugins.resolvePluginNode(first)!, plugins.resolvePluginNode(second)!]
-			let collectedRoots: unknown[] = []
-			const internals = plugins as unknown as {
-				definitions: {
-					setProviderDefault: (token: unknown, provider: unknown) => void
-				}
-				currentPlanningGraph: () => { consumers: (token: unknown) => unknown[] }
-				collectPlanningCascadeTargets: (
-					roots: Iterable<unknown>,
-					cascadeDependents: boolean,
-				) => Set<unknown>
-				setProviderDefault: (token: unknown, provider: unknown) => void
-			}
-			vi.spyOn(internals, 'currentPlanningGraph').mockReturnValue({
-				consumers: () => consumers,
-			})
-			vi.spyOn(internals.definitions, 'setProviderDefault').mockImplementation(() => undefined)
-			const collect = vi
-				.spyOn(internals, 'collectPlanningCascadeTargets')
-				.mockImplementation((roots) => {
-					collectedRoots = Array.from(roots)
-					return new Set()
-				})
-
-			internals.setProviderDefault(pluginNodeAddressOf(QueryTarget).definition, null)
-
-			expect(collect).toHaveBeenCalledOnce()
-			expect(collect.mock.calls[0]![1]).toBe(true)
-			expect(collectedRoots).toEqual(consumers)
-		})
-	})
-
-	it('does not create slots, records, or generations for unmaterialized orphan reads', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const registry = requirePluginService(host.ctx)
-			const orphan = Object.freeze({
-				definition: pluginNodeAddressOf(QueryTarget).definition,
-				variant: 'fork' as const,
-				forkId: 'unmaterialized-orphan',
-			}) satisfies PluginNodeAddress
-			const definitions = definitionInternalsOf(registry)
-			const createPluginContext = definitions.createPluginContext
-			let generationContexts = 0
-			definitions.createPluginContext = () => {
-				generationContexts += 1
-				return createPluginContext()
-			}
-
-			expect(registry.readCommittedDependencyAdjacency()).toEqual({
-				nodes: [],
-				required: [],
-				optional: [],
-			})
-			expect(registry.isMaterialized(orphan)).toBe(false)
-			expect(registry.isRunning(orphan)).toBe(false)
-			expect(registry.getInstance(orphan)).toBeUndefined()
-			expect(registry.resolvedDependencies(orphan)).toEqual([])
-			expect(registry.resolvePluginNode(orphan)).toBeUndefined()
-			const unwatch = registry.watchInstance(orphan, () => {})
-			unwatch()
-
-			expect(generationContexts).toBe(0)
-			expect(definitions.definitions).toHaveLength(0)
-			expect(definitions.nodes).toHaveLength(0)
-			expect(definitions.pendingDefinitions).toHaveLength(0)
-			expect(definitions.pendingNodes).toHaveLength(0)
-			expect(definitions.lastGraph.slotCount()).toBe(0)
-			expect(definitions.lastGraph.activeCount()).toBe(0)
-			expect(slotsOf(registry).lookupDefinition(orphan.definition)).toBeUndefined()
-			expect(slotsOf(registry).lookupNode(orphan)).toBeUndefined()
-		})
-	})
-
 	it('does not intern absent nodes through reads or rejected planning mutations', async () => {
 		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
@@ -208,6 +128,18 @@ describe('PluginService read cost model', () => {
 				forkId: 'orphan',
 			}) satisfies PluginNodeAddress
 			const slots = slotsOf(registry)
+			const definitions = definitionInternalsOf(registry)
+			const createPluginContext = definitions.createPluginContext
+			let generationContexts = 0
+			definitions.createPluginContext = () => {
+				generationContexts += 1
+				return createPluginContext()
+			}
+			expect(registry.readCommittedDependencyAdjacency()).toEqual({
+				nodes: [],
+				required: [],
+				optional: [],
+			})
 			const addressWatcher = vi.fn()
 			const constructorWatcher = vi.fn()
 
@@ -225,6 +157,13 @@ describe('PluginService read cost model', () => {
 			host.remove(orphan)
 			expect(() => host.restart(orphan)).toThrow(/absent Plugin node/)
 			expect(() => host.override(orphan, QueryTarget, null)).toThrow(/consumer is absent/)
+			expect(generationContexts).toBe(0)
+			expect(definitions.definitions).toHaveLength(0)
+			expect(definitions.nodes).toHaveLength(0)
+			expect(definitions.pendingDefinitions).toHaveLength(0)
+			expect(definitions.pendingNodes).toHaveLength(0)
+			expect(definitions.lastGraph.slotCount()).toBe(0)
+			expect(definitions.lastGraph.activeCount()).toBe(0)
 			expect(slots.lookupDefinition(orphan.definition)).toBeUndefined()
 			expect(slots.lookupNode(orphan)).toBeUndefined()
 			expect(addressWatcher).toHaveBeenCalledOnce()

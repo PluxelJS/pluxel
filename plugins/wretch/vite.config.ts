@@ -5,10 +5,10 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: repositoryTasks('@pluxel/plugin-wretch', {
-			build: 'pluxel build',
-			test: 'vp test run',
-			typecheck: 'tsc --noEmit --pretty false',
+		tasks: repositoryTasks({
+			compile: 'pluxel build',
+			'check-tests': 'vp test run',
+			'check-types': 'tsc --noEmit --pretty false',
 		}),
 	},
 })

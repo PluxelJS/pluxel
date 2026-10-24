@@ -9,7 +9,7 @@ import { watchPluginSource } from '../src/sources-watch'
 import { openPluginSources, type PluginSourceChange } from '../src/source-session'
 import { createHostSourceEvaluator } from '../src/application-sources'
 import type { ViteDevServer } from 'vite'
-import { discoverPluginSources } from '@pluxel/host/internal'
+import * as hostInternal from '@pluxel/host/internal'
 import { FSWatcher } from 'chokidar'
 
 const cleanups: (() => Promise<void>)[] = []
@@ -165,8 +165,7 @@ it('merges failed observations into an already queued read while newer notificat
 	await writeFile(existing, 'export {}')
 	const changes: PluginSourceChange[] = []
 	const watched = vi.spyOn(FSWatcher.prototype, 'on')
-	const scans = vi.spyOn(filesystem, 'readdir')
-	syncBuiltinESMExports()
+	const discovery = vi.spyOn(hostInternal, 'discoverPluginSources')
 	let emitted: ReturnType<typeof vi.spyOn> | undefined
 	try {
 		const source = await watchPluginSource(
@@ -184,7 +183,7 @@ it('merges failed observations into an already queued read while newer notificat
 		await writeFile(added, 'export {}')
 		const entered = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
-		scans.mockImplementationOnce(async () => {
+		discovery.mockImplementationOnce(async () => {
 			entered.resolve()
 			await release.promise
 			throw new Error('source validation failed')
@@ -205,8 +204,7 @@ it('merges failed observations into an already queued read while newer notificat
 	} finally {
 		emitted?.mockRestore()
 		watched.mockRestore()
-		scans.mockRestore()
-		syncBuiltinESMExports()
+		discovery.mockRestore()
 	}
 })
 
@@ -217,8 +215,7 @@ it('bounds merged failed observations and retains full reconciliation across ano
 	await writeFile(existing, 'export {}')
 	const changes: PluginSourceChange[] = []
 	const watched = vi.spyOn(FSWatcher.prototype, 'on')
-	const scans = vi.spyOn(filesystem, 'readdir')
-	syncBuiltinESMExports()
+	const discovery = vi.spyOn(hostInternal, 'discoverPluginSources')
 	let emitted: ReturnType<typeof vi.spyOn> | undefined
 	try {
 		const source = await watchPluginSource(
@@ -236,7 +233,7 @@ it('bounds merged failed observations and retains full reconciliation across ano
 		const sdkSnapshot = vi.spyOn(watcher, 'getWatched')
 		const entered = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
-		scans
+		discovery
 			.mockImplementationOnce(async () => {
 				entered.resolve()
 				await release.promise
@@ -259,8 +256,7 @@ it('bounds merged failed observations and retains full reconciliation across ano
 	} finally {
 		emitted?.mockRestore()
 		watched.mockRestore()
-		scans.mockRestore()
-		syncBuiltinESMExports()
+		discovery.mockRestore()
 	}
 })
 
@@ -271,9 +267,8 @@ it('keeps reads finite during later notifications and drains validation IO befor
 	await writeFile(file, 'export {}')
 	const changes: PluginSourceChange[] = []
 	const watched = vi.spyOn(FSWatcher.prototype, 'on')
-	const originalRead = filesystem.readdir
-	const scans = vi.spyOn(filesystem, 'readdir')
-	syncBuiltinESMExports()
+	const discover = hostInternal.discoverPluginSources
+	const discovery = vi.spyOn(hostInternal, 'discoverPluginSources')
 	try {
 		const source = await watchPluginSource(
 			{ kind: 'directory', path: root, include: ['*.mjs'] },
@@ -289,10 +284,10 @@ it('keeps reads finite during later notifications and drains validation IO befor
 		const watcher = watched.mock.contexts[0] as FSWatcher
 		const entered = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
-		scans.mockImplementationOnce(async (...args) => {
+		discovery.mockImplementationOnce(async (...args) => {
 			entered.resolve()
 			await release.promise
-			return originalRead(...args)
+			return discover(...args)
 		})
 		watcher.emit('change', file)
 		const reading = source.entries()
@@ -303,10 +298,10 @@ it('keeps reads finite during later notifications and drains validation IO befor
 		expect(changes).toEqual([{ type: 'change', path: file }])
 		const draining = Promise.withResolvers<void>()
 		const finishIO = Promise.withResolvers<void>()
-		scans.mockImplementationOnce(async (...args) => {
+		discovery.mockImplementationOnce(async (...args) => {
 			draining.resolve()
 			await finishIO.promise
-			return originalRead(...args)
+			return discover(...args)
 		})
 		const lastRead = source.entries()
 		await draining.promise
@@ -325,8 +320,7 @@ it('keeps reads finite during later notifications and drains validation IO befor
 		expect(changes).toEqual([{ type: 'change', path: file }])
 	} finally {
 		watched.mockRestore()
-		scans.mockRestore()
-		syncBuiltinESMExports()
+		discovery.mockRestore()
 	}
 })
 
@@ -748,7 +742,7 @@ __setPluginDefinition(Foreign, { abiVersion: 2, kind: 'plugin', definition: { en
 	await initial.accept()
 	await symlink(target, parent)
 	// A fresh opening can resolve an existing parent alias. The earlier watcher owns its captured path.
-	expect(await discoverPluginSources({ root, sources: [source] })).toEqual([foreign])
+	expect(await hostInternal.discoverPluginSources({ root, sources: [source] })).toEqual([foreign])
 	const rebound = await Promise.allSettled([session.entries(), evaluate()])
 	expect(rebound).toMatchObject([
 		{ status: 'rejected', reason: { code: 'PLUGIN_SOURCE_PATH_CHANGED', file: path } },

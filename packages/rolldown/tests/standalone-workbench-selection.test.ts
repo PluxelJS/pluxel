@@ -61,7 +61,7 @@ async function linkDependencies(root: string): Promise<void> {
 		root,
 		'tsconfig.json',
 		JSON.stringify({
-			extends: fileURLToPath(new URL('../../../tsconfig.options.json', import.meta.url)),
+			extends: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 			compilerOptions: {
 				composite: false,
 				noEmit: false,

@@ -8,7 +8,7 @@
 | `src/host.ts`                                         | 服务作者 token/descriptor                                                                          |
 | `src/plugins/`                                        | identity、definition、composition 与 generation lifecycle；详见[目录说明](./src/plugins/README.md) |
 | `src/internal/di/`                                    | 增量依赖图、snapshot、instance store                                                               |
-| `src/internal/fsm/`                                   | PluginActor 的 baked state machine                                                                 |
+| `src/plugins/runtime/PluginActor.ts`                  | 单 generation 的显式状态转移、启动、abort 与 drain                                                 |
 | `src/plugins/runtime/plugin-service/HostLifecycle.ts` | pre-root generation finalization、commit preparation 与原子 publication                            |
 | `src/services/`                                       | effects、events、内存 config facts                                                                 |
 | `src/logger/`                                         | Context logger facade 与 category identity                                                         |

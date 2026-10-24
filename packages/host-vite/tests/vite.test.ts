@@ -8,11 +8,9 @@ import {
 	createRunnableDevEnvironment,
 	type RunnableDevEnvironment,
 	type InlineConfig,
-	type ConfigPluginContext,
-	type Plugin,
 	type ViteDevServer,
 } from 'vite'
-import { pluginSourceVitePlugins, createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
+import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 
 import { host, hostSingletons } from '../src/index'
 import { createHostModuleClassifier } from '../src/host-modules'
@@ -24,16 +22,6 @@ import {
 	invalidateHostModule,
 	invalidateHostModuleGraphFiles,
 } from '../src/environment'
-
-const configHookContext: ConfigPluginContext = {
-	meta: { viteVersion: 'test', rolldownVersion: 'test', rollupVersion: 'test' },
-	error(error: unknown): never {
-		throw new Error('Config hook failed', { cause: error })
-	},
-	info() {},
-	warn() {},
-	debug() {},
-}
 
 function createTestViteServer(config: InlineConfig): Promise<ViteDevServer> {
 	return createServer({
@@ -68,36 +56,6 @@ describe('host-vite Vite plugin stack', () => {
 	it('rejects unknown Host options rather than silently ignoring misspelled configuration', () => {
 		const options = { entry: 'app.ts', devConsol: true }
 		expect(() => host(options)).toThrow('[host-vite] unsupported devConsol')
-	})
-
-	it('exposes source/server semantics as a dedicated plugin', () => {
-		const plugins = pluginSourceVitePlugins() as Plugin[]
-		const plugin = plugins.at(-1)!
-		if (typeof plugin.config !== 'function') throw new Error('Expected a config hook function')
-		const config = plugin.config.call(configHookContext, {} as never, {
-			command: 'serve',
-			mode: 'development',
-		}) as {
-			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
-			ssr?: {
-				external?: string[]
-				resolve?: { conditions?: string[]; externalConditions?: string[] }
-			}
-			oxc?: { decorator?: { legacy?: boolean; emitDecoratorMetadata?: boolean } }
-		}
-
-		expect(plugin.name).toBe('pluxel:plugin-source')
-		expect(config.resolve?.conditions?.slice(0, 2)).toEqual(['@pluxel/hmr', '@pluxel/source'])
-		expect(config.ssr?.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', 'module', 'node', 'development|production']),
-		)
-		expect(config.resolve?.externalConditions).not.toContain('@pluxel/source')
-		expect(config.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
-		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
-		expect(config.resolve?.dedupe).toBeUndefined()
-		expect(config.ssr?.external).toEqual([])
-		expect(config.oxc?.decorator?.legacy).toBe(true)
-		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(false)
 	})
 
 	it('pins selected service entries to their native application installation', async () => {
@@ -197,29 +155,28 @@ describe('host-vite Vite plugin stack', () => {
 		)
 	})
 
-	it('keeps distribution ESM packages in the Vite graph', () => {
-		const plugins = pluginSourceVitePlugins({ packageMode: 'distribution' }) as Plugin[]
-		const plugin = plugins.at(-1)!
-		if (typeof plugin.config !== 'function') throw new Error('Expected a config hook function')
-		const config = plugin.config.call(configHookContext, {} as never, {
-			command: 'serve',
-			mode: 'production',
-		}) as {
-			resolve?: { conditions?: string[] }
-			ssr?: { external?: string[] | true }
-		}
-
-		expect(config.resolve?.conditions).not.toContain('@pluxel/source')
-		expect(config.ssr?.external).toEqual([])
-	})
-
-	it('applies preprocessor semantics through the real Vite module runner', async () => {
+	it('preprocesses distribution ESM packages inside the real Vite module graph', async () => {
 		await using fixture = await createDiskFixture({}, { tempDir: process.cwd() })
 		const root = fixture.path
 		const modulePath = join(root, 'plugin.ts')
+		await writePackage(
+			root,
+			'fixture-distribution',
+			{
+				name: 'fixture-distribution',
+				type: 'module',
+				exports: { '@pluxel/source': './source.js', default: './index.js' },
+			},
+			"export const selected = 'distribution'\n",
+		)
+		await writeFile(
+			join(root, 'node_modules/fixture-distribution/source.js'),
+			"export const selected = 'source'\n",
+		)
 		await writeFile(
 			modulePath,
 			[
+				"export { selected } from 'fixture-distribution'",
 				'// #define PLUXEL_PIPELINE',
 				'',
 				'// #if PLUXEL_PIPELINE',
@@ -234,11 +191,21 @@ describe('host-vite Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: hostSourcePlugins({ lintGuard: false, configSource: false }),
+				plugins: hostSourcePlugins({
+					packageMode: 'distribution',
+					lintGuard: false,
+					configSource: false,
+				}),
 			},
 			async (server) => {
-				const mod = await importHostModule<{ branch: string }>(server, modulePath)
+				const mod = await importHostModule<{ branch: string; selected: string }>(server, modulePath)
 				expect(mod.branch).toBe('included')
+				expect(mod.selected).toBe('distribution')
+				expect(
+					server.environments[HOST_VITE_ENVIRONMENT]!.moduleGraph.getModuleById(
+						join(root, 'node_modules/fixture-distribution/index.js'),
+					),
+				).toBeDefined()
 			},
 		)
 	})

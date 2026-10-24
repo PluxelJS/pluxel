@@ -49,7 +49,8 @@ closure。统一测试组合依赖 Services/Workbench 的发布入口，因此�
 
 每个 case 保护一个当前契约、资源所有权或已观察的失败模式。合并相同前提与结果的重复断言；不同失败阶段、owner、并发和真实传输不能因表面相似而删除。
 
-- 类型签名由 package typecheck 验证，preset 行为由 `packages/test/tests/vitest.test.ts` 验证；不扫描源码字符串来推断 API。
+- 纯类型断言放在 tests 下的 `*.typecheck.ts`，由包含 tests 的 package typecheck 验证，不再启动 Vitest；preset 行为由 `packages/test/tests/vitest.test.ts` 验证，不扫描源码字符串来推断 API。
+- 编译器行为归 Rolldown；CLI 测试执行真实 bin 并消费产物。协议行为复用生产适配器，真实连接、背压与关闭仍在传输边界验证，不维护第二份测试适配器。
 - exports、workspace 依赖和目录政策由 [Governance](GOVERNANCE.md) 拥有；完成的一次性迁移不保留旧符号黑名单与历史版本扫描器。
 - 模板、独立安装与真实 carrier 用各自的集成测试验证，不能用 manifest 文本匹配代替执行。
 - `start/require()` 返回 raw instance；caller attribution、admission 和 withdrawal 必须建立真实 Consumer dependency。
@@ -57,9 +58,13 @@ closure。统一测试组合依赖 Services/Workbench 的发布入口，因此�
 
 ## CI scheduling and cache
 
-根目录只声明外部编排工具；workspace 工具依赖由实际消费包声明。仓库根 CLI 入口使用 `vp run pluxel`，Vite Task 的真实命令、依赖和缓存输入由各包配置及 `scripts/vite-tasks.ts` 维护。
+根目录只声明外部编排工具；workspace 工具依赖由实际消费包声明。仓库根 CLI 入口使用 `vp run pluxel`，Vite Task 的真实命令、特殊依赖和缓存输入由各包 `vite.config.ts` 维护，`scripts/vite-tasks.ts` 只提供共用默认。
 
 任务缓存位于当前 checkout 的 `node_modules/.vite/task-cache`。不同 worktree 保持独立本地缓存，CI 按 workflow 的缓存键复用该目录。
+
+不同产物的命令各自声明 task 与 output，再用依赖连接。Vite Task 会将 `&&` 命令拆为独立缓存步骤；生成 CSS 的步骤不能共用后续打包的 `dist/**` 输出，否则缓存恢复会覆盖或叠回旧构建产物。
+
+嵌套 vendor workspace 的 Vitest 5 文件模块缓存按最近的 lockfile 失效，而实际依赖由外层安装。根依赖或补丁更新后若仍加载旧依赖，用原生 `vp run --ignore-depends-on --no-cache @worksplit/react#check-tests --clearCache` 清理所属测试缓存，再执行正常测试；不删除服务数据或复制第二份依赖安装。
 
 消费本包发布制品的测试任务必须显式依赖本包 `build`，不能只依赖 依赖包的 `build` 或依赖暖缓存碰巧留下的文件。Package Manager 的不可变安装测试与维护者 Host 的 native/production-Vite smoke 都遵守这一顺序；测试子进程失败或超时也必须被回收。
 
@@ -68,5 +73,6 @@ closure。统一测试组合依赖 Services/Workbench 的发布入口，因此�
 CI 直接执行 `workspace:verify` 的完整任务图，由 Vite Task 根据真实输入复用结果，不再维护另一套按变更路径选择包的规则。在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
 任务执行日志和缓存结果，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
 Core benchmark 跟踪 core、Context、基准场景与构建依赖变化；仅修改测试或 Markdown 文档不触发完整的同 runner 对比。
+比较脚本使用 Node 24 原生 TypeScript 入口，只比较相同 workload 标识与 scenario 的 base/head 实测报告。workload 变化后重新选取基线；不兼容的报告明确失败，不换算历史数据。
 
 在改变 shared test surface、package export、runner config 或 test host lifecycle 后，先运行直接 owner test 与 package typecheck；合并前运行 `vp run verify`。

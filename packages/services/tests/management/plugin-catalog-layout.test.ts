@@ -149,7 +149,7 @@ describe('editable group document', () => {
 		await storage.delete('plugin-groups.json')
 		expect(await layout.listSections(entries)).toMatchObject([{ name: 'C' }])
 	})
-	it('persists explicit groups and orders as formatted references and round-trips without migration', async () => {
+	it('persists explicit groups and orders as formatted references and round-trips', async () => {
 		const { host, layout, storage } = await setup()
 		const entries = [entry('A'), entry('B'), entry('C')]
 		const saved = await layout.updateSections(
@@ -161,8 +161,6 @@ describe('editable group document', () => {
 		)
 		expect((await storage.getText('plugin-groups.json'))!).toContain('\n  "version"')
 		expect(await new PluginCatalogLayoutService(host.ctx).listSections(entries)).toEqual(saved)
-		await storage.put('plugin-catalog.json', '{invalid legacy data')
-		expect(await layout.listSections(entries)).toEqual(saved)
 	})
 	it('pins auto groups when saved, preserves manual names on catalog changes, and resets explicitly', async () => {
 		const { layout } = await setup()

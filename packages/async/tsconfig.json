@@ -1,16 +1,23 @@
 {
-	"extends": "../../tsconfig.workspace.json",
-	"include": ["src", "tests", "examples", "bench", "*.config.ts"],
+	"extends": "../../tsconfig.json",
+	"include": [
+		"src",
+		"tests",
+		"examples",
+		"bench",
+		"tsdown.config.ts",
+		"vitest.bench.config.ts",
+		"vitest.config.ts"
+	],
 	"compilerOptions": {
 		"target": "ES2022",
 		"lib": ["ES2022", "DOM"],
-		"composite": false,
 		"strict": true,
 		"strictNullChecks": true,
 		"exactOptionalPropertyTypes": true,
 		"useUnknownInCatchVariables": true,
 		"noUncheckedIndexedAccess": true,
-		"noEmit": true,
-		"types": ["node", "vitest/globals"]
+		"types": ["node", "vitest/globals"],
+		"customConditions": ["@pluxel/source"]
 	}
 }

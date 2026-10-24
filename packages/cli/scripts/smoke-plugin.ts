@@ -1,9 +1,13 @@
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { parse } from 'yaml'
-import { isPublishablePackage, repositoryPackages } from '../../../scripts/repository-packages.mjs'
+import {
+	isPublishablePackage,
+	publishPackageClosure,
+	repositoryPackages,
+} from '../../../scripts/repository-packages.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-cli-plugin-smoke-'))
@@ -18,16 +22,17 @@ try {
 		mkdir(tarballRoot, { recursive: true }),
 		mkdir(scaffoldRoot, { recursive: true }),
 	])
-	const publishPackages = await resolveLocalPublishClosure(repositoryRoot, publishRoots)
+	const publishPackages = publishPackageClosure(repositoryPackages, publishRoots)
+	// Multi-package filters add package ordering, which cycles across the framework's dev links.
 	for (const name of publishRoots) {
-		await runVp(['run', `${name}#build`], repositoryRoot)
+		await runVp(['run', '--concurrency-limit=2', `${name}#compile`], repositoryRoot)
 	}
 
 	const overrides: Record<string, string> = {}
 	for (const item of publishPackages) {
-		const tarball = resolve(tarballRoot, `${item.name.replaceAll(/[@/]/g, '-')}.tgz`)
-		await runVpCapture(['pm', 'pack', '--out', tarball], resolve(repositoryRoot, item.path))
-		overrides[item.name] = `file:${tarball}`
+		const tarball = resolve(tarballRoot, `${item.manifest.name.replaceAll(/[@/]/g, '-')}.tgz`)
+		await runVpCapture(['pm', 'pack', '--out', tarball], item.packageRoot)
+		overrides[item.manifest.name] = `file:${tarball}`
 	}
 
 	const cliTarball = overrides['@pluxel/cli']
@@ -61,63 +66,6 @@ try {
 	} else {
 		await rm(temporaryRoot, { recursive: true, force: true })
 	}
-}
-
-type LocalPublishPackage = {
-	name: string
-	path: string
-	manifest: {
-		dependencies?: Record<string, string>
-		optionalDependencies?: Record<string, string>
-		peerDependencies?: Record<string, string>
-		peerDependenciesMeta?: Record<string, { optional?: boolean }>
-	}
-}
-
-async function resolveLocalPublishClosure(
-	root: string,
-	rootNames: readonly string[],
-): Promise<LocalPublishPackage[]> {
-	const entries = await readdir(resolve(root, 'packages'), { withFileTypes: true })
-	const discovered = new Map<string, LocalPublishPackage>()
-	for (const entry of entries) {
-		if (!entry.isDirectory()) continue
-		const path = `packages/${entry.name}`
-		let manifest: LocalPublishPackage['manifest'] & { name?: string; private?: boolean }
-		try {
-			manifest = JSON.parse(await readFile(resolve(root, path, 'package.json'), 'utf8'))
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-			throw error
-		}
-		if (manifest.private === true || !manifest.name) continue
-		discovered.set(manifest.name, { name: manifest.name, path, manifest })
-	}
-
-	const closure = new Map<string, LocalPublishPackage>()
-	const pending = [...rootNames]
-	while (pending.length > 0) {
-		const name = pending.shift()!
-		if (closure.has(name)) continue
-		const item = discovered.get(name)
-		if (!item) throw new Error(`Local publish package not found: ${name}`)
-		closure.set(name, item)
-		for (const dependency of Object.keys({
-			...item.manifest.dependencies,
-			...item.manifest.optionalDependencies,
-		})) {
-			if (discovered.has(dependency)) pending.push(dependency)
-		}
-		for (const dependency of Object.keys(item.manifest.peerDependencies ?? {})) {
-			if (
-				discovered.has(dependency) &&
-				item.manifest.peerDependenciesMeta?.[dependency]?.optional !== true
-			) {
-				pending.push(dependency)
-			}
-		}
-	}
-	return [...closure.values()].sort((left, right) => left.name.localeCompare(right.name))
 }
 
 async function installPackedCli(

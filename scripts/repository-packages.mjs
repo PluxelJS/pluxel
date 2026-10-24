@@ -1,5 +1,6 @@
-import { readdir, readFile } from 'node:fs/promises'
-import { relative, resolve, sep } from 'node:path'
+import { glob, readFile } from 'node:fs/promises'
+import { dirname, relative, resolve, sep } from 'node:path'
+import { parse } from 'yaml'
 
 export const repositoryRoot = resolve(import.meta.dirname, '..')
 
@@ -28,6 +29,40 @@ export function rootWorkspaceDependencyErrors(manifest, packages) {
 
 export function isPublishablePackage({ kind, manifest }) {
 	return (kind === 'package' || kind === 'plugin') && manifest.private !== true
+}
+
+/**
+ * Local tarballs needed by a published consumer; development and optional peer links stay external.
+ * @param {Awaited<ReturnType<typeof readRepositoryPackages>>} packages
+ * @param {readonly string[]} roots
+ * @returns {Awaited<ReturnType<typeof readRepositoryPackages>>}
+ */
+export function publishPackageClosure(packages, roots) {
+	const available = new Map(
+		packages.filter(isPublishablePackage).map((item) => [item.manifest.name, item]),
+	)
+	const selected = new Map()
+	const pending = [...roots]
+	while (pending.length > 0) {
+		const name = pending.shift()
+		if (selected.has(name)) continue
+		const item = available.get(name)
+		if (!item) throw new Error(`Local publish package not found: ${name}`)
+		selected.set(name, item)
+		const { dependencies, optionalDependencies, peerDependencies, peerDependenciesMeta } =
+			item.manifest
+		for (const dependency of Object.keys({ ...dependencies, ...optionalDependencies })) {
+			if (available.has(dependency)) pending.push(dependency)
+		}
+		for (const dependency of Object.keys(peerDependencies ?? {})) {
+			if (available.has(dependency) && peerDependenciesMeta?.[dependency]?.optional !== true) {
+				pending.push(dependency)
+			}
+		}
+	}
+	return [...selected.values()].sort((left, right) =>
+		left.manifest.name.localeCompare(right.manifest.name),
+	)
 }
 
 export function tegamiIgnorePattern(packages) {
@@ -78,7 +113,7 @@ export function workspaceOnlyDependencyErrors(packages) {
 		]) {
 			for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
 				const provider = providers.get(name)
-				if (!provider || isPublishablePackage(provider)) continue
+				if (!provider || provider.kind === 'vendor' || isPublishablePackage(provider)) continue
 				const developmentLink = `link:${relative(packageRoot, provider.packageRoot).replaceAll(sep, '/')}`
 				if (field === 'devDependencies') {
 					if (specifier !== developmentLink)
@@ -105,84 +140,61 @@ export function workspaceOnlyDependencyErrors(packages) {
 	return errors
 }
 
+// pnpm owns membership; directory names only classify the selected packages.
+/**
+ * @returns {Promise<Array<{
+ *   packageRoot: string,
+ *   manifestPath: string,
+ *   directory: string,
+ *   kind: 'root' | 'package' | 'plugin' | 'project' | 'vendor',
+ *   manifest: Record<string, any>
+ * }>>}
+ */
 export async function readRepositoryPackages(root = repositoryRoot) {
-	const packagesDirectory = resolve(root, 'packages')
-	const pluginsDirectory = resolve(root, 'plugins')
-	const projectRoots = await childDirectories(resolve(root, 'projects'))
-	const packageRootGroups = await Promise.all(
-		[resolve(root, 'apps'), packagesDirectory].map(packageDirectories),
-	)
-	const packageRoots = packageRootGroups.flat()
-	const pluginDirectories = await childDirectories(pluginsDirectory)
-	const pluginRootGroups = await Promise.all(
-		pluginDirectories.map(async (directory) =>
-			(await hasPackageManifest(directory)) ? [directory] : packageDirectories(directory),
-		),
-	)
-	const pluginRoots = pluginRootGroups.flat()
-	const candidateRoots = [
-		root,
-		resolve(root, 'web'),
-		...projectRoots,
-		resolve(root, 'projects/embedded-launcher/sdk'),
-		...packageRoots,
-		...pluginRoots,
-	]
-	const roots = []
-	for (const directory of candidateRoots) {
-		if (await hasPackageManifest(directory)) roots.push(directory)
+	const workspace = parse(await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8'))
+	if (
+		!Array.isArray(workspace?.packages) ||
+		!workspace.packages.every((pattern) => typeof pattern === 'string')
+	) {
+		throw new Error('pnpm-workspace.yaml must declare a packages array of glob patterns')
 	}
-
-	return await Promise.all(
-		roots.map(async (packageRoot) => {
-			const manifestPath = resolve(packageRoot, 'package.json')
+	const patterns = [
+		'package.json',
+		...workspace.packages
+			.filter((pattern) => !pattern.startsWith('!'))
+			.map((pattern) => `${pattern}/package.json`),
+	]
+	const exclude = [
+		'**/node_modules/**',
+		...workspace.packages
+			.filter((pattern) => pattern.startsWith('!'))
+			.map((pattern) => `${pattern.slice(1)}/**`),
+	]
+	const paths = await Array.fromAsync(glob(patterns, { cwd: root, exclude }))
+	return Promise.all(
+		paths.toSorted().map(async (path) => {
+			const manifestPath = resolve(root, path)
+			const packageRoot = dirname(manifestPath)
+			const directory = relative(root, packageRoot).replaceAll(sep, '/')
 			const kind =
-				packageRoot === root
+				directory === ''
 					? 'root'
-					: packageRoot.startsWith(`${pluginsDirectory}${sep}`)
+					: directory.startsWith('plugins/')
 						? 'plugin'
-						: packageRoot.startsWith(`${packagesDirectory}${sep}`)
+						: directory.startsWith('packages/')
 							? 'package'
-							: 'project'
+							: directory.startsWith('vendor/')
+								? 'vendor'
+								: 'project'
 			return {
 				packageRoot,
 				manifestPath,
-				directory: relative(root, packageRoot).replaceAll(sep, '/'),
+				directory,
 				kind,
 				manifest: JSON.parse(await readFile(manifestPath, 'utf8')),
 			}
 		}),
 	)
-}
-
-async function childDirectories(directory) {
-	try {
-		const entries = await readdir(directory, { withFileTypes: true })
-		return entries
-			.filter((entry) => entry.isDirectory())
-			.map((entry) => resolve(directory, entry.name))
-	} catch (error) {
-		if (error?.code === 'ENOENT') return []
-		throw error
-	}
-}
-
-async function packageDirectories(directory) {
-	const packages = []
-	for (const child of await childDirectories(directory)) {
-		if (await hasPackageManifest(child)) packages.push(child)
-	}
-	return packages
-}
-
-async function hasPackageManifest(directory) {
-	try {
-		await readFile(resolve(directory, 'package.json'))
-		return true
-	} catch (error) {
-		if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false
-		throw error
-	}
 }
 
 export const repositoryPackages = await readRepositoryPackages()

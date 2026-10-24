@@ -41,7 +41,7 @@ const serviceCompositionFiles = new Set(
 
 const errors = []
 
-const packageManifests = repositoryPackages
+const packageManifests = repositoryPackages.filter(({ kind }) => kind !== 'vendor')
 const rootManifest = packageManifests.find(({ kind }) => kind === 'root')?.manifest
 if (!rootManifest) throw new Error('repository package inventory is missing the root package')
 // Keep workspace tools owned by their consuming packages; root CLI access uses a native Vite task.

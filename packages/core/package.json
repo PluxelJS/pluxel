@@ -131,7 +131,6 @@
 		"option-t": "catalog:validation",
 		"rolldown": "catalog:build",
 		"tinybench": "catalog:dev",
-		"unplugin-macros": "catalog:build",
 		"vite-plus": "catalog:build"
 	},
 	"engines": {

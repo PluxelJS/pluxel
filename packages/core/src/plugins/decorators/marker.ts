@@ -1,4 +1,10 @@
-import type { PluginMarker } from './types'
+import type { PluginOptions } from './PluginDecorator'
+import type { PluginToken } from '../types'
+
+interface PluginMarker {
+	readonly options: PluginOptions
+	readonly providerClass?: PluginToken
+}
 
 const markers = new WeakMap<Function, PluginMarker>()
 

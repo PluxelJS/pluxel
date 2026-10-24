@@ -49,12 +49,6 @@ describe('configSourcePlugin', () => {
 		)
 	})
 
-	it('keeps Vite/Rolldown object hook filtering compatible', () => {
-		const hook = configSourcePlugin().transform
-		expect(hook).toBeTypeOf('object')
-		expect((hook as { filter?: { code?: unknown } }).filter?.code).toBeUndefined()
-	})
-
 	it('lowers one object config schema to the unified Plugin config fact', async () => {
 		const result = await transform(`
 			import * as v from 'valibot'
@@ -66,15 +60,12 @@ describe('configSourcePlugin', () => {
 			}
 		`)
 
-		expect(result?.code).toContain('// [pluxel-config] Injected definition')
 		expect(result?.code).toContain(
 			'import { __setPluginConfig as __pluxelSetPluginConfig } from "@pluxel/core/toolchain"',
 		)
 		expect(result?.code).toContain(
 			'__pluxelSetPluginConfig(OrdersPlugin, { abiVersion: 2, fieldName: "config", schema: OrdersConfig, source: "v.object({batchSize:v.optional(v.number(),10)})" })',
 		)
-		expect(result?.code).not.toContain('__registerConfigBinding__')
-		expect(result?.code).not.toContain('__setConfigLayout__')
 	})
 
 	it('preserves the existing normalized schema-source transport across modules', async () => {

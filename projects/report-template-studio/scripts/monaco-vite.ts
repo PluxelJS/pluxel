@@ -29,7 +29,7 @@ export function offlineMonaco(): Plugin {
 				const highlightTask = /this\.runDelayer\.trigger\(\(\) => \{[\s\S]*?\n\s*\}\);/g
 				const tasks = [...code.matchAll(highlightTask)]
 				if (tasks.length !== 3) throw new Error('Modern Monaco word highlight scheduler changed')
-				const ownedTasks = code.replace(
+				const ownedTasks = code.replaceAll(
 					highlightTask,
 					(task) => task.slice(0, -1) + '.catch(onUnexpectedError);',
 				)

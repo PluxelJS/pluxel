@@ -35,8 +35,6 @@ const reactHooksGlobs: GlobSet = [
 	'packages/valibot-form/src/web/**/*.{ts,tsx}',
 ]
 
-const macroImportExceptionGlobs: GlobSet = ['packages/core/src/plugins/runtime/**/*.{ts,tsx,mjs}']
-
 const env: Env = {
 	builtin: true,
 }
@@ -192,13 +190,6 @@ const rules: RuleMap = {
 
 // Keep overrides rare and structural.
 const overrides: OxlintOverride[] = [
-	createOverride(
-		// Macro imports need duplicate specifiers with attributes; keep this directory exempt.
-		macroImportExceptionGlobs,
-		{
-			'eslint/no-duplicate-imports': 'off',
-		},
-	),
 	createOverride(
 		// Hooks enforcement stays scoped to real React hook-heavy surfaces.
 		reactHooksGlobs,

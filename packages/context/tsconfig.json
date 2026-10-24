@@ -1,9 +1,8 @@
 {
-	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "bench", "legacy"],
+	"extends": "../../tsconfig.json",
+	"include": ["src", "tests", "bench", "legacy", "tsdown.config.ts"],
 	"compilerOptions": {
-		"outDir": "dist",
-		"emitDeclarationOnly": true,
-		"types": ["node"]
+		"types": ["node"],
+		"customConditions": ["@pluxel/source"]
 	}
 }

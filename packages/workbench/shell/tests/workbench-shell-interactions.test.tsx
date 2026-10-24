@@ -25,8 +25,8 @@ vi.mock('../src/app/product', () => ({ useProduct: () => ({ displayName: 'Fixtur
 vi.mock('../src/app/workbench/shell/WorkbenchUpdateStatus', () => ({
 	WorkbenchUpdateStatus: () => <span>运行更新</span>,
 }))
-vi.mock('../src/app/router/screens/HomeScreen', () => ({
-	HomeScreen: () => <input aria-label="文档输入" defaultValue="draft" />,
+vi.mock('../src/app/home/HomeIntro', () => ({
+	HomeIntro: () => <input aria-label="文档输入" defaultValue="draft" />,
 }))
 vi.mock('../src/app/log_viewer/LogsPage', () => ({
 	LogsPage: () => <input aria-label="日志输入" defaultValue="draft" />,
