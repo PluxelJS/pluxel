@@ -1,0 +1,13 @@
+---
+title: Headless Wretch deployment and managed settings
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/plugin-wretch':
+    version: 1.2.0
+---
+
+# Headless Wretch deployment and managed settings
+
+Export the existing WretchConfig schema and configuration types for Host env/file bindings. Expose caller-scoped managed settings reads, updates and resets without Workbench, preserving saved settings ownership and provider policy limits.
+
+Allow ordinary HTTP clients and outbound policy to run without Persistence. Acquire storage only for explicitly enabled managed settings, and report missing Persistence instead of substituting transient storage.

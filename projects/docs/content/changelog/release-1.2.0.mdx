@@ -1,0 +1,59 @@
+---
+title: Align the official Pluxel release line
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/async':
+    version: 1.2.0
+  '@pluxel/cli':
+    version: 1.2.0
+  '@pluxel/commands':
+    version: 1.2.0
+  '@pluxel/context':
+    version: 1.2.0
+  '@pluxel/core':
+    version: 1.2.0
+  '@pluxel/create':
+    version: 1.2.0
+  '@pluxel/host':
+    version: 1.2.0
+  '@pluxel/host-vite':
+    version: 1.2.0
+  '@pluxel/rolldown':
+    version: 1.2.0
+  '@pluxel/services':
+    version: 1.2.0
+  '@pluxel/test':
+    version: 1.2.0
+  valibot-form:
+    version: 1.2.0
+  '@pluxel/workbench':
+    version: 1.2.0
+  '@pluxel/plugin-auth':
+    version: 1.2.0
+  '@pluxel/plugin-invoice':
+    version: 1.2.0
+  '@pluxel/plugin-playwright':
+    version: 1.2.0
+  '@pluxel/plugin-canvas':
+    version: 1.2.0
+  '@pluxel/plugin-echarts':
+    version: 1.2.0
+  '@pluxel/plugin-fonts':
+    version: 1.2.0
+  '@pluxel/plugin-takumi':
+    version: 1.2.0
+  '@pluxel/plugin-takumi-markdown':
+    version: 1.2.0
+  '@pluxel/plugin-wretch':
+    version: 1.2.0
+---
+
+# Align the official Pluxel release line
+
+Release the public framework packages and official Plugins together at 1.2.0. This is the maintainer's explicit version choice for the currently unpublished release; existing breaking-change descriptions remain part of the release notes. Future releases retain semver-based group bumps, and newly introduced pre-1.0 packages join the current release line.
+
+Independent official Plugin packages use `@pluxel/plugin-*`. Update dependency names, package imports, subpath imports and application declarations together. This naming change preserves Plugin class names, exports and constructor declarations. Core, Host, Services, Workbench and tooling packages retain their existing names. Private Plugins remain workspace-only.
+
+A Plugin's canonical identity includes its package entry. Rebuild consumer artifacts and explicitly review saved configuration, startup intent and Workbench state keyed by the previous identity before deployment; no old-name alias or automatic runtime migration is installed.
+
+Carry forward the unpublished release notes. Earlier Host Dev notes belong to Host-vite; the former Typst Markdown extension belongs to the consolidated Markdown package. Their original explanatory bodies remain available alongside the later migration notes.

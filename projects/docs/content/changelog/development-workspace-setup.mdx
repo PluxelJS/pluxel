@@ -1,0 +1,15 @@
+---
+title: Bind development packages, documentation and skills to one source
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/cli':
+    version: 1.2.0
+  '@pluxel/host-vite':
+    version: 1.2.0
+  '@pluxel/create':
+    version: 1.2.0
+---
+
+# Bind development packages, documentation and skills to one source
+
+Git CLI setup uses its owning checkout instead of a global Pluxel override, manages ignored docs/skill links and records workspace setup. CLI releases include offline development resources; `workspace setup` materializes them and `docs` reads their contents. Development hosts check project setup before startup. Generated project instructions describe the unified setup flow.

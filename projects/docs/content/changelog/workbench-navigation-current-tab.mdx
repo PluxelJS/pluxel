@@ -1,0 +1,15 @@
+---
+title: Browse within the active tab and duplicate explicitly
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/workbench':
+    version: 1.2.0
+---
+
+# Browse within the active tab and duplicate explicitly
+
+Use the active document router for ordinary navigation, preserving its native leave guards and history. The active tab's plus button opens an independent copy of its current URL immediately after it. Global search remains navigation; explicit plugin openDocument requests continue to create separate documents. Copies do not clone unsaved editor state.
+
+Place the active tab's plus control after its visible tab boundary, with separate space from the title and close control.
+
+Keep the browser URL synchronized with accepted query-only navigation when focus changes inside the active document, including clearing a plugin log filter.

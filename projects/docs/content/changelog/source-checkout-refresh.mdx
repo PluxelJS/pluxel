@@ -1,0 +1,11 @@
+---
+title: Keep nested source installs aligned with the Git CLI
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/cli':
+    version: 1.2.0
+---
+
+# Keep nested source installs aligned with the Git CLI
+
+Apply the implicit Pluxel checkout when installing provider workspaces, including providers with empty sources and their own development dependencies. Reject stale Git CLI artifacts before executing outdated commands and print the rebuild command.

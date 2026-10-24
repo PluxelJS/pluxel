@@ -1,0 +1,15 @@
+---
+title: Keep fresh React installs compatible with precompiled Workbench artifacts
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/workbench':
+    version: 1.2.0
+  '@pluxel/services':
+    version: 1.2.0
+  '@pluxel/create':
+    version: 1.2.0
+---
+
+## Keep fresh React installs compatible with precompiled Workbench artifacts
+
+Pin React and ReactDOM installation and peer declarations to the same exact stable version used by the precompiled Workbench producers. Generated starters inherit these exact versions, so a fresh installation cannot select a newer patch that the published Federation manifest rejects. Applications consuming these artifacts must use the declared exact versions; upgrading the shared runtime requires rebuilding the corresponding assets.

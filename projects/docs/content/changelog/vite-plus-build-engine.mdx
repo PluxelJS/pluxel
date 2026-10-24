@@ -1,0 +1,21 @@
+---
+title: Use the locally installed Vite+ build and lint engines
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/rolldown':
+    version: 1.2.0
+---
+
+# Use the locally installed Vite+ build and lint engines
+
+Build application and Plugin artifacts through `vite-plus/pack` while preserving
+native tsdown hooks and standalone build configuration. Build-time lint checks
+invoke the package's own Vite+ CLI with a Vite+ config containing the existing rules in its `lint` block, so
+independent installations do not require globally installed tools. Vite+ replaces
+the separate tsdown and Oxlint dependency contract.
+
+The database source Vite plugin now exposes Vite’s native `Plugin` type, keeping
+per-environment plugin composition compatible with the installed Vite engine.
+
+Portable Node artifacts disable bundler source-region comments so generated files
+do not retain absolute build-machine paths.

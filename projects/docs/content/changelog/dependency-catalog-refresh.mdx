@@ -1,0 +1,45 @@
+---
+title: Refresh shared external dependency ranges
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/cli':
+    version: 1.2.0
+  '@pluxel/create':
+    version: 1.2.0
+  '@pluxel/commands':
+    version: 1.2.0
+  '@pluxel/core':
+    version: 1.2.0
+  '@pluxel/host':
+    version: 1.2.0
+  '@pluxel/rolldown':
+    version: 1.2.0
+  '@pluxel/services':
+    version: 1.2.0
+  '@pluxel/test':
+    version: 1.2.0
+  valibot-form:
+    version: 1.2.0
+  '@pluxel/workbench':
+    version: 1.2.0
+  '@pluxel/plugin-auth':
+    version: 1.2.0
+  '@pluxel/plugin-canvas':
+    version: 1.2.0
+  '@pluxel/plugin-fonts':
+    version: 1.2.0
+  '@pluxel/plugin-takumi-markdown':
+    version: 1.2.0
+  '@pluxel/plugin-wretch':
+    version: 1.2.0
+---
+
+# Refresh shared external dependency ranges
+
+Upgrade the shared runtime and tooling catalogs and use caret ranges for compatible stable releases. Align source consumers through the bundled pncat policy, including Elysia 2 beta.26 and current TypeBox. Preserve explicit prerelease, native pairing, patched dependency, and public peer compatibility exceptions.
+
+Rebuild Workbench producer artifacts against the Mantine 9.7.1 compatibility set; the Shell and remote producers continue to require identical shared UI versions.
+
+Generate starter catalogs through pncat using the same core version policy and Tegami package versions.
+
+Handle declared optional dependencies whose platform packages are not installed, including dangling package-manager links, while keeping actual source imports strictly validated.

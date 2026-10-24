@@ -1,0 +1,11 @@
+---
+title: Reject development startup when Host initialization fails
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/host-vite':
+    version: 1.2.0
+---
+
+# Reject development startup when Host initialization fails
+
+First-start Host creation, service preparation, and application preparation failures now reject Vite startup after draining acquired resources. The CLI exits unsuccessfully without advertising a ready server. Source evaluation failures retain development watcher recovery, and later updates retain the existing replacement and compensation behavior.
