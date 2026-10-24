@@ -1,0 +1,13 @@
+---
+title: Stop snapshot writes after workspace disposal
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/workbench':
+    version: 1.2.0
+---
+
+# Stop snapshot writes after workspace disposal
+
+Flush the final workspace snapshot when its storage closes, then reject delayed
+persistence scheduling and retries. Disposed workspaces can no longer overwrite
+the saved state of a subsequently opened workspace.

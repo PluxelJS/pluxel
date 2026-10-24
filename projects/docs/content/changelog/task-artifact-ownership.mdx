@@ -1,0 +1,13 @@
+---
+title: Keep cached build outputs with their owning task
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/cli':
+    version: 1.2.0
+  '@pluxel/create':
+    version: 1.2.0
+---
+
+# Keep cached build outputs with their owning task
+
+Split CLI code and development resources, and generated applications' web, server, and distribution builds into native Vite Task dependencies. Each stage caches only its own outputs so a cached later stage cannot restore stale artifacts over a fresh build.

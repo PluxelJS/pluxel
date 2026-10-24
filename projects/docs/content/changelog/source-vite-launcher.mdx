@@ -1,0 +1,15 @@
+---
+title: Run source build tasks through their own Vite+ installation
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/cli':
+    version: 1.2.0
+---
+
+# Run source build tasks through their own Vite+ installation
+
+Source builds invoke the provider checkout's locally installed Vite+ launcher directly,
+without a package-manager execution step that can implicitly install dependencies.
+Independent pnpm sources and explicit source installation retain their package-manager policy.
+Catalog command guidance uses `vp exec pluxel pncat`; workspace synchronization remains
+the explicit Pluxel dependency-policy operation.

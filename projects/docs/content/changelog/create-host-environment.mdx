@@ -1,0 +1,11 @@
+---
+title: Use the shared Host environment parser in generated applications
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/create':
+    version: 1.2.0
+---
+
+# Use the shared Host environment parser in generated applications
+
+Generated applications resolve data paths and the Workbench switch through `resolveHostEnv(startup.env)`, keeping normalization and invalid-value errors consistent with the Host environment contract.

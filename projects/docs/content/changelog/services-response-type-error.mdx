@@ -1,0 +1,12 @@
+---
+title: Identify invalid Elysia responses as type errors
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/services':
+    version: 1.2.0
+---
+
+## Identify invalid Elysia responses as type errors
+
+Throw a `TypeError` when Elysia returns no `Response` without transferring a WebSocket
+upgrade, preserving the existing diagnostic and request cleanup.

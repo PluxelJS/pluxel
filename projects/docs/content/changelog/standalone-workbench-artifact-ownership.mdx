@@ -1,0 +1,15 @@
+---
+title: Keep standalone artifact ownership explicit
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/rolldown':
+    version: 1.2.0
+---
+
+# Keep standalone artifact ownership explicit
+
+Reuse packaged Workbench producer and Content artifacts only for definitions with compiled lowering ABI facts in the final server bundle. Definitions compiled from source use the current build output, avoiding collisions with older artifacts from the same linked package while preserving validation of actual packaged conflicts.
+
+Select Node artifacts using exact source lowering facts and retained server-module references, including ordinary workers without Plugin classes. Reuse only the referenced packaged keys, allowing source and built modules from one package without merging unused older outputs. Keep byte collisions when the same key is actually referenced from multiple owners, and omit tree-shaken Node declarations from artifact builds and deployment inventories.
+
+Trace native residuals from the generated bridge's owner using Node's require conditions, so conditional CommonJS entries and their transitive dependencies remain available to workers after relocating a standalone distribution.

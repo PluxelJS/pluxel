@@ -1,0 +1,11 @@
+---
+title: Reuse published framework Workbench artifacts in standalone builds
+date: 2026-10-24T14:31:24.993Z
+packages:
+  '@pluxel/rolldown':
+    version: 1.2.0
+---
+
+# Reuse published framework Workbench artifacts in standalone builds
+
+Resolve the official `@pluxel/services/plugins` entry through its production exports, so standalone builds consume the published Services Workbench inventory without rebuilding the same producer. Preserve Plugin source compilation through `@pluxel/hmr` and reject conflicting artifact contents.
