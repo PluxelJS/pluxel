@@ -323,6 +323,7 @@ describe('optional Typst content blocks', () => {
 			getJSON: () => state.doc.toJSON(),
 			view: { dispatch },
 		} as unknown as Editor
+		const baseline = editor.getJSON()
 		const candidate = prepareTypstCandidate({
 			candidate: {
 				regionId: 'body',
@@ -353,12 +354,13 @@ describe('optional Typst content blocks', () => {
 			initial.content![0],
 			{
 				type: 'paragraph',
+				attrs: { textAlign: null },
 				content: [{ type: 'text', text: 'Updated', marks: [{ type: 'bold' }] }],
 			},
 			initial.content![2],
 		])
 		expect(undo(editor.state, dispatch)).toBe(true)
-		expect(editor.getJSON()).toEqual(initial)
+		expect(editor.getJSON()).toEqual(baseline)
 		for (const range of [undefined, { from: 0, to: 11 }])
 			expect(
 				prepareTypstCandidate({

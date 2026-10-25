@@ -1,5 +1,6 @@
 // Keep the official command augmentation available to consumers of the aggregate kit.
 import '@tiptap/extension-text-style'
+import '@tiptap/extension-text-align'
 
 export type {
 	JSONContent,

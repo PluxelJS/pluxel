@@ -242,6 +242,7 @@ catalogs:
     '@tiptap/extension-drag-handle': 3.32.0
     '@tiptap/extension-node-range': 3.32.0
     '@tiptap/extension-collaboration': 3.32.0
+    '@tiptap/extension-text-align': 3.32.0
     '@tiptap/y-tiptap': 3.0.7
     'yjs': 13.6.27
     'y-protocols': 1.0.6

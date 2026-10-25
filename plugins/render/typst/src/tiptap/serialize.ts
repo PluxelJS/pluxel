@@ -362,6 +362,11 @@ export function generateTypstRegions(options: {
 						content = options.config.markMappings![mark.type]!.serialize(content, mark, context)
 				}
 			}
+			if ((node.type === 'paragraph' || node.type === 'heading') && attrs.textAlign != null) {
+				// Scope alignment and justification to this block; unset values inherit the template.
+				const justify = attrs.textAlign === 'justify'
+				content = `#align(${justify ? 'start' : attrs.textAlign})[#set par(justify: ${justify})\n${content}]\n`
+			}
 			if (node.type === 'text') return content
 			const range = nodeRange(node, position, nativeSchema)
 			return mapped(

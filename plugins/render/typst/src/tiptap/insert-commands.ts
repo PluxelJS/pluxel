@@ -41,7 +41,28 @@ export const blockTypes: { value: BlockType; label: string; node: string }[] = [
 ]
 
 export function convertBlock(chain: ChainedCommands, type: BlockType): ChainedCommands {
-	return chain.command(({ state, commands }) => {
+	return chain.command(({ state, commands, tr, dispatch }) => {
+		// Native setNode only copies attrs for a single parent. Keep each selected
+		// text block's alignment through its native mapping, including list lifting.
+		const alignments: { position: number; value: unknown }[] = []
+		if (dispatch && type !== 'codeBlock')
+			state.doc.nodesBetween(state.selection.from, state.selection.to, (node, position) => {
+				if (node.type.name === 'paragraph' || node.type.name === 'heading')
+					alignments.push({ position: position + 1, value: node.attrs.textAlign })
+			})
+		const mapFrom = tr.mapping.maps.length
+		const preserveAlignment = (success: boolean) => {
+			if (success && dispatch)
+				for (const { position, value } of alignments) {
+					const target = tr.doc.resolve(tr.mapping.slice(mapFrom).map(position))
+					if (
+						(target.parent.type.name === 'paragraph' || target.parent.type.name === 'heading') &&
+						target.parent.attrs.textAlign !== value
+					)
+						tr.setNodeAttribute(target.before(), 'textAlign', value)
+				}
+			return success
+		}
 		if (type === 'codeBlock') {
 			let containsInlineAtom = false
 			state.doc.nodesBetween(state.selection.from, state.selection.to, (node) => {
@@ -57,15 +78,17 @@ export function convertBlock(chain: ChainedCommands, type: BlockType): ChainedCo
 			return false
 		if (type.startsWith('heading-')) {
 			const level = Number(type.slice(-1)) as 1 | 2 | 3 | 4 | 5 | 6
-			return isNodeActive(state, 'heading', { level }) || commands.setHeading({ level })
+			return preserveAlignment(
+				isNodeActive(state, 'heading', { level }) || commands.setHeading({ level }),
+			)
 		}
 		if (type === 'blockquote') {
 			if (isNodeActive(state, 'blockquote')) return true
 			if (!isNodeActive(state, 'paragraph') && !commands.setParagraph()) return false
-			return commands.wrapIn('blockquote')
+			return preserveAlignment(commands.wrapIn('blockquote'))
 		}
 		if (type === 'codeBlock') return isNodeActive(state, 'codeBlock') || commands.setCodeBlock()
-		return isNodeActive(state, 'paragraph') || commands.setParagraph()
+		return preserveAlignment(isNodeActive(state, 'paragraph') || commands.setParagraph())
 	})
 }
 
@@ -83,6 +106,37 @@ export function isInsertionBoundary(doc: ProseMirrorNode, at: number): boolean {
 export interface InsertEntry extends TypstSlashCommand {
 	icon: IconName
 	group: '段落' | '内容' | '数据字段' | '模板组件'
+}
+
+export interface TableSize {
+	rows: number
+	cols: number
+	withHeaderRow: boolean
+}
+
+// Interactive creation stays bounded; native table commands retain their own full API.
+export const tableSizeLimits = { rows: 50, cols: 20 } as const
+
+export function tableEntry(size: TableSize): InsertEntry | undefined {
+	if (
+		!Number.isInteger(size.rows) ||
+		size.rows < 1 ||
+		size.rows > tableSizeLimits.rows ||
+		!Number.isInteger(size.cols) ||
+		size.cols < 1 ||
+		size.cols > tableSizeLimits.cols ||
+		typeof size.withHeaderRow !== 'boolean'
+	)
+		return undefined
+	return {
+		id: 'table',
+		title: '表格',
+		description: '选择行数、列数和表头',
+		keywords: ['table'],
+		icon: 'table',
+		group: '内容',
+		command: (chain) => chain.insertTable(size),
+	}
 }
 
 export function insertEntries(
@@ -143,20 +197,9 @@ export function insertEntries(
 		allowedNode(ui, editor, 'table', 'tableRow', 'tableCell', 'paragraph') &&
 		(local || !editor.isActive('table'))
 	)
-		entries.push({
-			id: 'table',
-			title: '表格',
-			description: '插入 3 × 3 表格',
-			keywords: ['table'],
-			icon: 'table',
-			group: '内容',
-			command: (chain) =>
-				chain.insertTable({
-					rows: 3,
-					cols: 3,
-					withHeaderRow: allowedNode(ui, editor, 'tableHeader'),
-				}),
-		})
+		entries.push(
+			tableEntry({ rows: 3, cols: 3, withHeaderRow: allowedNode(ui, editor, 'tableHeader') })!,
+		)
 	if (allowedNode(ui, editor, 'horizontalRule'))
 		entries.push({
 			id: 'horizontalRule',

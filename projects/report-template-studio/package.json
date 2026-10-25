@@ -73,6 +73,7 @@
 		"@tiptap/extension-image": "catalog:frontend",
 		"@tiptap/extension-node-range": "catalog:frontend",
 		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
 		"@tiptap/extensions": "catalog:frontend",
 		"@tiptap/markdown": "catalog:frontend",

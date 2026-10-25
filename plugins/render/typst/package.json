@@ -85,6 +85,7 @@
 		"@tiptap/extension-image": "catalog:frontend",
 		"@tiptap/extension-node-range": "catalog:frontend",
 		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
 		"@tiptap/extensions": "catalog:frontend",
 		"@tiptap/markdown": "catalog:frontend",
@@ -113,6 +114,7 @@
 		"@tiptap/extension-drag-handle-react": "catalog:frontend",
 		"@tiptap/extension-image": "catalog:frontend",
 		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
 		"@tiptap/extensions": "catalog:frontend",
 		"@tiptap/markdown": "catalog:frontend",
@@ -123,6 +125,9 @@
 		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
+		"@tiptap/extension-text-align": {
+			"optional": true
+		},
 		"@tiptap/core": {
 			"optional": true
 		},

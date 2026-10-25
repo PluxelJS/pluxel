@@ -11,7 +11,7 @@ import { FontsPlugin, type FontRegistration } from '@pluxel/plugin-fonts'
 import { TypstPlugin, type TypstSession } from '@pluxel/plugin-typst'
 import { createTestHost } from '@pluxel/test'
 import { nodeModules } from '@pluxel/services/node'
-import type { TiptapEditorHTMLElement } from '@tiptap/core'
+import type { Editor, EditorOptions, TiptapEditorHTMLElement } from '@tiptap/core'
 import { chromium, type Locator, type Page } from 'playwright'
 import { build } from 'vite'
 import { expect, it } from 'vitest'
@@ -375,6 +375,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		[
 			'@tiptap/core',
 			'@tiptap/extension-text-style',
+			'@tiptap/extension-text-align',
 			'@tiptap/react',
 			'react',
 			'react-dom',
@@ -401,6 +402,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	await absent([
 		'@tiptap/core',
 		'@tiptap/extension-text-style',
+		'@tiptap/extension-text-align',
 		'@tiptap/react',
 		'react',
 		'react-dom',
@@ -434,6 +436,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	const pluginManifest = await manifest(join(packageRoot, 'package.json'))
 	assert.ok(pluginManifest.peerDependencies['@tiptap/extension-text-style'])
 	assert.equal(pluginManifest.peerDependenciesMeta['@tiptap/extension-text-style'].optional, true)
+	assert.ok(pluginManifest.peerDependencies['@tiptap/extension-text-align'])
+	assert.equal(pluginManifest.peerDependenciesMeta['@tiptap/extension-text-align'].optional, true)
 	for (const name of Object.keys(pluginManifest.peerDependencies).filter(
 		(dependency) =>
 			dependency.startsWith('@tiptap/') &&
@@ -457,7 +461,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	await cp(join(fixtureRoot, 'public'), join(app, 'public'), { recursive: true })
 	await writeFile(
 		join(app, 'tiptap-check.mts'),
-		`import { createEditorExtensions, TypstTableStyle, generateTypstRegions, parseTypstMarkdown, type TypstEditorConfig } from '@pluxel/plugin-typst/tiptap'; import { getSchema, type Editor } from '@tiptap/core'; declare const editor: Editor; const typography = editor.chain().setFontFamily('Liberation Serif').setFontSize('18pt').setColor('#dc2626').setBackgroundColor('#fef08a'); void typography; getSchema(createEditorExtensions()); const config: TypstEditorConfig = { regions: [{id:'body'}], fields: [], extensions: [TypstTableStyle.configure({ defaultStyle: 'three-line', allowedStyles: [] })] }; const parsed = parseTypstMarkdown({config, regionId:'body', markdown:'# Node without DOM'}); if(parsed.ok) generateTypstRegions({config, regions:{body:parsed.value}, data:{}, snapshotRevision:1});`,
+		`import { createEditorExtensions, TypstTableStyle, generateTypstRegions, parseTypstMarkdown, type TypstEditorConfig } from '@pluxel/plugin-typst/tiptap'; import { getSchema, type Editor } from '@tiptap/core'; declare const editor: Editor; const typography = editor.chain().setFontFamily('Liberation Serif').setFontSize('18pt').setColor('#dc2626').setBackgroundColor('#fef08a').setTextAlign('center').unsetTextAlign().toggleTextAlign('justify'); void typography; getSchema(createEditorExtensions()); const config: TypstEditorConfig = { regions: [{id:'body'}], fields: [], extensions: [TypstTableStyle.configure({ defaultStyle: 'three-line', allowedStyles: [] })] }; const parsed = parseTypstMarkdown({config, regionId:'body', markdown:'# Node without DOM'}); if(parsed.ok) generateTypstRegions({config, regions:{body:parsed.value}, data:{}, snapshotRevision:1});`,
 	)
 	await checkTypes(['tiptap-check.mts'])
 	await writeFile(
@@ -1067,6 +1071,34 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		)
 		const richHtml =
 			'<table><colgroup><col style="width:120px"><col style="width:240px"></colgroup><tbody><tr><td colspan="2"><p>A</p><p>B</p></td></tr></tbody></table>'
+		const alignedHtml =
+			'<p style="text-align: left">Left</p><h2 style="text-align: center">Center</h2><p style="text-align: right">Right</p><h3 style="text-align: justify">Justify</h3><p>Inherit</p>'
+		const alignedImport = await inspectImport(alignedHtml, 'HTML')
+		assert.equal(alignedImport.ok, true, JSON.stringify(alignedImport))
+		assert.deepEqual(
+			alignedImport.value.content.map((node: any) => node.attrs.textAlign),
+			['left', 'center', 'right', 'justify', null],
+		)
+		const alignedNativeHtml = await notes.evaluate((element, content) => {
+			const owner = (element as TiptapEditorHTMLElement).editor!
+			const NativeEditor = owner.constructor as new (options: Partial<EditorOptions>) => Editor
+			const editor = new NativeEditor({
+				element: null,
+				extensions: owner.options.extensions,
+				content,
+			})
+			try {
+				return editor.getHTML()
+			} finally {
+				editor.destroy()
+			}
+		}, alignedImport.value)
+		const alignedRoundtrip = await inspectImport(alignedNativeHtml, 'HTML')
+		assert.deepEqual(
+			alignedRoundtrip,
+			alignedImport,
+			'Native paragraph/heading HTML keeps alignment and null inheritance',
+		)
 		const htmlTable = await inspectImport(richHtml, 'HTML')
 		assert.equal(htmlTable.ok, true, JSON.stringify(htmlTable))
 		const mergedCell = htmlTable.value.content[0].content[0].content[0]
@@ -1082,6 +1114,10 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		assert.equal(noticeHtml.value.content[0].attrs.tone, 'warning')
 		const htmlRejections = []
 		for (const html of [
+			'<p style="text-align: start">Unsupported alignment</p>',
+			'<h2 style="text-align: center; text-align: right">Duplicate alignment</h2>',
+			'<p style="text-align: center !important">Unsupported priority</p>',
+			'<p style="text-align: center; width: 12px">Unsupported block style</p>',
 			'<table><tr><td colspan="1" colspan="2"><p>duplicate</p></td></tr></table>',
 			'<table><tr><td unknown="true"><p>unknown</p></td></tr></table>',
 			'<tr><td>orphan row</td></tr>',

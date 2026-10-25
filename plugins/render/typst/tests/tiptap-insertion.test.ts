@@ -13,6 +13,8 @@ import {
 	insertEntries,
 	matchesInsertion,
 	prepareInsertion,
+	tableEntry,
+	tableSizeLimits,
 	type TypstSlashCommand,
 } from '../src/tiptap/insert-commands'
 
@@ -65,6 +67,64 @@ function createEditor(text: string, rules = config) {
 }
 
 describe('shared insertion commands', () => {
+	it('validates interactive table dimensions and inserts a custom table with slash removal in one history event', () => {
+		const { editor, admission } = createEditor('/table')
+		try {
+			const before = editor.getJSON()
+			for (const size of [
+				{ rows: 0, cols: 3 },
+				{ rows: 2.5, cols: 3 },
+				{ rows: tableSizeLimits.rows + 1, cols: 3 },
+				{ rows: 2, cols: NaN },
+				{ rows: 2, cols: tableSizeLimits.cols + 1 },
+			])
+				expect(tableEntry({ ...size, withHeaderRow: true })).toBeUndefined()
+			const entry = tableEntry({ rows: 2, cols: 4, withHeaderRow: false })!
+			const transaction = prepareInsertion(editor, context(), entry, { from: 1, to: 7 })!
+			expect(admission).not.toHaveBeenCalled()
+			expect(editor.getJSON()).toEqual(before)
+			editor.view.dispatch(transaction)
+			const table = editor.state.doc.firstChild!
+			expect(table.type.name).toBe('table')
+			expect(table.childCount).toBe(2)
+			for (let row = 0; row < table.childCount; row++) {
+				expect(table.child(row).childCount).toBe(4)
+				expect(table.child(row).firstChild!.type.name).toBe('tableCell')
+			}
+			expect(admission).toHaveBeenCalledTimes(1)
+			expect(undo(editor.state, (tr) => editor.view.dispatch(tr))).toBe(true)
+			expect(editor.getJSON()).toEqual(before)
+			expect(undo(editor.state)).toBe(false)
+		} finally {
+			editor.destroy()
+		}
+	})
+
+	it('keeps table header and editing permission under the same region admission', () => {
+		const rules = {
+			...config,
+			regions: [{ id: 'body', nodes: ['paragraph', 'text', 'table', 'tableRow', 'tableCell'] }],
+		}
+		const { editor, admission } = createEditor('/table', rules)
+		try {
+			const ui = context(rules)
+			const range = { from: 1, to: 7 }
+			const plain = tableEntry({ rows: 2, cols: 2, withHeaderRow: false })!
+			expect(prepareInsertion(editor, ui, plain, range)).toBeDefined()
+			expect(
+				prepareInsertion(editor, ui, tableEntry({ rows: 2, cols: 2, withHeaderRow: true })!, range),
+			).toBeUndefined()
+			for (const policy of [
+				{ ...ui, editable: false },
+				{ ...ui, composing: true },
+			])
+				expect(prepareInsertion(editor, policy, plain, range)).toBeUndefined()
+			expect(admission).not.toHaveBeenCalled()
+			expect(editor.state.doc.textContent).toBe('/table')
+		} finally {
+			editor.destroy()
+		}
+	})
 	it('derives the same searchable actions from region rules, fields and installed extensions', () => {
 		const custom: TypstSlashCommand = {
 			id: 'notice',

@@ -10,6 +10,7 @@ import {
 } from './format-menu'
 import { InsertMenu, SlashMenu } from './insert-menu'
 import { BlockMenu } from './block-menu'
+import { TableTools } from './table-tools'
 
 /** Common commands stay visible; the same native selection drives the full format menu. */
 export function TypstEditorToolbar({ editor, children }: { editor: Editor; children?: ReactNode }) {
@@ -48,7 +49,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 						type="button"
 						className="typst-tool-button typst-format-trigger"
 						aria-label="格式"
-						title="更多格式（字体、字号、颜色等）"
+						title="更多格式（删除线、代码、精细排版等）"
 						aria-haspopup="dialog"
 						disabled={!canEdit(editor, ui) || !hasFormatTarget(editor)}
 						onMouseDown={(event) => event.preventDefault()}
@@ -62,6 +63,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 				</div>
 				{children && <div className="typst-tool-group typst-tool-group-custom">{children}</div>}
 			</div>
+			<TableTools editor={editor} />
 			{!canEdit(editor, ui) && (
 				<small className="typst-editing-reason">
 					{ui.composing

@@ -9,6 +9,7 @@ import type { NodeType, MarkType, Schema } from '@tiptap/pm/model'
 import { createTypstExtensions } from './extensions.js'
 import { tableStyleOptions, tableStyleOptionsError, tableStyleError } from './table-style.js'
 import { textStyleAttributes, validTextStyleValue } from './text-style.js'
+import { validTextAlignment } from './text-align.js'
 import type {
 	TypstDataField,
 	TypstDocumentDraft,
@@ -457,6 +458,15 @@ function inspectNode(
 	if (value.type !== 'doc' && region.nodes && !region.nodes.includes(value.type))
 		issue('REGION_RULE', `Node ${value.type} is not allowed in this region.`)
 	const attrs = inspectAttrs(value.attrs, type, path, region.id, issues)
+	if (
+		(value.type === 'paragraph' || value.type === 'heading') &&
+		!validTextAlignment(attrs.textAlign)
+	)
+		issue(
+			'INVALID_ATTRIBUTE',
+			'Text alignment must be left, center, right, justify or null (template inheritance).',
+			['attrs', 'textAlign'],
+		)
 	const customValidation = config.nodeMappings?.[value.type]?.validateAttributes?.(attrs)
 	if (customValidation !== undefined && customValidation !== true)
 		issue(

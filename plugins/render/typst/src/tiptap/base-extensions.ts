@@ -3,8 +3,10 @@ import { StarterKit } from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { Image } from '@tiptap/extension-image'
 import { TextStyleKit } from '@tiptap/extension-text-style'
+import { TextAlign } from '@tiptap/extension-text-align'
 import { Markdown } from '@tiptap/markdown'
 import { Marked, type marked } from 'marked'
+import { textAlignments } from './text-align.js'
 
 export function isolatedMarked(): typeof marked {
 	// MarkdownManager uses the Lexer/defaults/use methods shared by official Marked.
@@ -18,6 +20,11 @@ export function createEditorExtensions(): Extensions {
 		TableKit.configure({ table: { resizable: true } }),
 		Image.configure({ allowBase64: false }),
 		TextStyleKit.configure({ lineHeight: false }),
+		TextAlign.configure({
+			types: ['paragraph', 'heading'],
+			alignments: [...textAlignments],
+			defaultAlignment: null,
+		}),
 		Markdown.configure({ marked: isolatedMarked(), markedOptions: { gfm: true, breaks: false } }),
 	]
 }

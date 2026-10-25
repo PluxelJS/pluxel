@@ -13,6 +13,7 @@
 }
 
 .typst-editor {
+	container: typst-editor / inline-size;
 	color: var(--typst-text);
 	background: var(--typst-surface);
 	border: 1px solid var(--typst-border);
@@ -43,6 +44,65 @@
 	border-bottom: 1px solid var(--typst-border);
 	border-radius: 12px 12px 0 0;
 	background: var(--typst-surface);
+}
+
+.typst-toolbar-fonts .typst-type-picker > span {
+	display: none;
+}
+.typst-toolbar-fonts .typst-font-picker select {
+	width: 126px;
+}
+.typst-toolbar-fonts .typst-size-picker select {
+	width: 78px;
+}
+.typst-alignment-picker select {
+	width: 86px;
+}
+.typst-toolbar .typst-color-trigger {
+	gap: 2px;
+}
+.typst-toolbar-palette {
+	z-index: 1010;
+	width: min(254px, calc(100vw - 16px));
+	max-height: calc(100dvh - 16px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 6px;
+}
+.typst-toolbar-palette .typst-color-dialog {
+	border: 0;
+	background: var(--typst-surface);
+}
+.typst-mixed-color {
+	background-image: repeating-linear-gradient(135deg, #71717a 0 3px, #e4e4e7 3px 6px);
+}
+
+@container typst-editor (max-width: 600px) {
+	.typst-toolbar .typst-tool-group,
+	.typst-toolbar .typst-color-trigger {
+		padding-inline: 4px;
+	}
+	.typst-toolbar .typst-insert-trigger > span {
+		display: none;
+	}
+}
+
+@container typst-editor (max-width: 420px) {
+	.typst-toolbar-fonts .typst-font-picker {
+		display: none;
+	}
+	.typst-toolbar-fonts .typst-size-picker {
+		margin-left: 0;
+	}
+	.typst-toolbar {
+		padding: 7px 6px;
+	}
+	.typst-toolbar .typst-tool-group {
+		padding: 0 4px;
+	}
+	.typst-toolbar .typst-block-picker {
+		min-width: 82px;
+	}
 }
 
 .typst-typography {
@@ -1034,6 +1094,88 @@
 }
 .typst-table-actions button:last-child {
 	color: #c44848;
+}
+.typst-table-tools {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 3px;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--typst-border);
+	background: var(--typst-hover);
+	font-size: 11px;
+}
+.typst-table-tools-size {
+	margin-right: 6px;
+	color: var(--typst-muted);
+	white-space: nowrap;
+}
+.typst-table-tools button {
+	border: 0;
+	border-radius: 5px;
+	padding: 7px 6px;
+	background: transparent;
+	color: var(--typst-text);
+	font: inherit;
+	cursor: pointer;
+}
+.typst-table-tools button:hover:not(:disabled) {
+	background: var(--typst-active);
+}
+.typst-table-size-form {
+	display: grid;
+	gap: 14px;
+	padding: 12px;
+}
+.typst-table-size-form h3 {
+	margin: 0;
+	font-size: 13px;
+}
+.typst-table-size-fields {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+}
+.typst-table-size-fields label {
+	display: grid;
+	gap: 6px;
+	font-size: 12px;
+}
+.typst-table-size-fields input {
+	min-width: 0;
+	width: 100%;
+	box-sizing: border-box;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	padding: 8px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	font: inherit;
+}
+.typst-table-size-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+}
+.typst-table-size-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+}
+.typst-table-size-actions button {
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	padding: 8px 12px;
+	background: var(--typst-hover);
+	color: var(--typst-text);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+.typst-table-size-actions button[type='submit'] {
+	background: var(--typst-text);
+	color: var(--typst-surface);
 }
 .typst-slash {
 	width: 286px;

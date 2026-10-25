@@ -13,7 +13,8 @@ import { useEditorState } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import { EditorUi, Icon, ToolButton, allowedMark, allowedNode, canEdit } from './editor-ui'
 import { blockTypes, convertBlock, type BlockType } from './insert-commands'
-import { TypographyTools } from './typography'
+import { ColorTools, FontTools, TypographyTools } from './typography'
+import { selectionAlignment, selectionBlockType } from './selection-format'
 import { TypstTableStyleControls } from './table-style-controls'
 import { selectedTable, tableActions } from './table-menu'
 import { LinkMenu } from './link-menu'
@@ -106,24 +107,23 @@ function MarkTools({ editor, primary = false }: { editor: Editor; primary?: bool
 function BlockPicker({ editor }: { editor: Editor }) {
 	const ui = useContext(EditorUi)
 	const options = blockTypes.filter((block) => allowedNode(ui, editor, block.node))
-	const value = editor.isActive('codeBlock')
-		? 'codeBlock'
-		: editor.isActive('blockquote')
-			? 'blockquote'
-			: editor.isActive('heading')
-				? `heading-${editor.getAttributes('heading').level}`
-				: 'paragraph'
+	const value = selectionBlockType(editor)
 	return (
 		<label className="typst-block-picker" title="段落样式">
 			<select
 				aria-label="段落样式"
-				value={value}
+				value={value ?? '__mixed__'}
 				disabled={!canEdit(editor, ui) || !hasFormatTarget(editor)}
 				onChange={(event) => {
 					if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
 					convertBlock(formatChain(editor), event.currentTarget.value as BlockType).run()
 				}}
 			>
+				{value === null && (
+					<option value="__mixed__" disabled>
+						混合样式
+					</option>
+				)}
 				{options.map((block) => (
 					<option
 						key={block.value}
@@ -203,18 +203,158 @@ function ListTools({ editor, restoreFocus = false }: { editor: Editor; restoreFo
 	)
 }
 
+function ClearFormatButton({
+	editor,
+	restoreFocus = false,
+}: {
+	editor: Editor
+	restoreFocus?: boolean
+}) {
+	const ui = useContext(EditorUi)
+	return (
+		<button
+			type="button"
+			className="typst-tool-button typst-clear-format"
+			aria-label="清除文字格式"
+			title="清除文字格式（保留段落样式与对齐）"
+			disabled={!canEdit(editor, ui) || !hasFormatTarget(editor) || !editor.can().unsetAllMarks()}
+			onMouseDown={(event) => event.preventDefault()}
+			onClick={() => {
+				if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
+				formatChain(editor)
+					.unsetAllMarks()
+					.command(({ tr }) => {
+						if (tr.selection.empty)
+							tr.setStoredMarks(
+								(tr.storedMarks ?? tr.selection.$from.marks()).filter((mark) =>
+									editor.extensionManager.nonClearableMarks.includes(mark.type.name),
+								),
+							)
+						return true
+					})
+					.run()
+				if (restoreFocus) editor.view.focus()
+			}}
+		>
+			<Icon name="clear" />
+		</button>
+	)
+}
+
+function AlignmentPicker({ editor }: { editor: Editor }) {
+	const ui = useContext(EditorUi)
+	if (
+		!['paragraph', 'heading'].some(
+			(name) => allowedNode(ui, editor, name) && editor.schema.nodes[name]?.spec.attrs?.textAlign,
+		)
+	)
+		return null
+	const value = selectionAlignment(editor)
+	const alignments = [
+		['left', '左对齐'],
+		['center', '居中'],
+		['right', '右对齐'],
+		['justify', '两端对齐'],
+	] as const
+	return (
+		<label
+			className="typst-type-picker typst-alignment-picker"
+			title="段落对齐（Ctrl/⌘ Shift L/E/R/J）"
+		>
+			<select
+				aria-label="段落对齐"
+				value={value ?? '__mixed__'}
+				disabled={
+					!canEdit(editor, ui) || !hasFormatTarget(editor) || !editor.can().setTextAlign('left')
+				}
+				onChange={(event) => {
+					if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
+					const align = event.currentTarget.value
+					if (align) formatChain(editor).setTextAlign(align).run()
+					else formatChain(editor).unsetTextAlign().run()
+				}}
+			>
+				{value === null && (
+					<option value="__mixed__" disabled>
+						混合对齐
+					</option>
+				)}
+				<option value="">模板对齐</option>
+				{alignments.map(([align, label]) => (
+					<option key={align} value={align}>
+						{label}
+					</option>
+				))}
+			</select>
+		</label>
+	)
+}
+
+function ListIndentTools({
+	editor,
+	restoreFocus = false,
+}: {
+	editor: Editor
+	restoreFocus?: boolean
+}) {
+	const ui = useContext(EditorUi)
+	if (!editor.isActive('listItem') || !allowedNode(ui, editor, 'listItem')) return null
+	return (
+		<>
+			<ToolButton
+				label="增加缩进"
+				icon="indent"
+				disabled={!canEdit(editor, ui) || !editor.can().sinkListItem('listItem')}
+				onClick={() => {
+					if (canEdit(editor, ui)) {
+						formatChain(editor).sinkListItem('listItem').run()
+						if (restoreFocus) editor.view.focus()
+					}
+				}}
+			/>
+			<ToolButton
+				label="减少缩进"
+				icon="outdent"
+				disabled={!canEdit(editor, ui) || !editor.can().liftListItem('listItem')}
+				onClick={() => {
+					if (canEdit(editor, ui)) {
+						formatChain(editor).liftListItem('listItem').run()
+						if (restoreFocus) editor.view.focus()
+					}
+				}}
+			/>
+		</>
+	)
+}
+
 /** Frequent toolbar controls share menu commands, permissions and native selection. */
 export function PrimaryFormatTools({ editor }: { editor: Editor }) {
+	const ui = useContext(EditorUi)
+	const typography = {
+		editor,
+		disabled: !canEdit(editor, ui) || !hasFormatTarget(editor),
+		fontFamilies: ui.fontFamilies,
+		chain: () => formatChain(editor),
+	}
 	return (
 		<>
 			<div className="typst-tool-group">
 				<BlockPicker editor={editor} />
 			</div>
+			{allowedMark(ui, editor, 'textStyle') && (
+				<div className="typst-tool-group typst-toolbar-fonts">
+					<FontTools {...typography} />
+				</div>
+			)}
 			<div className="typst-tool-group">
 				<MarkTools editor={editor} primary />
+				{allowedMark(ui, editor, 'textStyle') && <ColorTools {...typography} compact />}
+				<ClearFormatButton editor={editor} restoreFocus />
 			</div>
 			<div className="typst-tool-group">
+				<AlignmentPicker editor={editor} />
 				<ListTools editor={editor} restoreFocus />
+				<ListIndentTools editor={editor} restoreFocus />
 				<LinkButton editor={editor} />
 			</div>
 		</>
@@ -232,60 +372,13 @@ function FormatTools({ editor }: { editor: Editor }) {
 			>
 				<MarkTools editor={editor} />
 				<LinkButton editor={editor} />
-				<button
-					type="button"
-					className="typst-tool-button typst-clear-format"
-					aria-label="清除文字格式"
-					title="清除文字格式（保留段落样式）"
-					disabled={!canEdit(editor, ui) || !editor.can().unsetAllMarks()}
-					onMouseDown={(event) => event.preventDefault()}
-					onClick={() => {
-						if (canEdit(editor, ui))
-							formatChain(editor)
-								.unsetAllMarks()
-								.command(({ tr }) => {
-									if (tr.selection.empty) tr.setStoredMarks([])
-									return true
-								})
-								.run()
-					}}
-				>
-					<Icon name="clear" />
-				</button>
+				<ClearFormatButton editor={editor} />
 			</div>
 			<div role="group" aria-label="段落格式" className="typst-format-paragraph">
 				<BlockPicker editor={editor} />
 				<ListTools editor={editor} />
-				{editor.isActive('listItem') && allowedNode(ui, editor, 'listItem') && (
-					<>
-						<button
-							type="button"
-							className="typst-tool-button typst-list-indent"
-							aria-label="增加缩进"
-							title="增加缩进"
-							disabled={!canEdit(editor, ui) || !editor.can().sinkListItem('listItem')}
-							onMouseDown={(event) => event.preventDefault()}
-							onClick={() => {
-								if (canEdit(editor, ui)) formatChain(editor).sinkListItem('listItem').run()
-							}}
-						>
-							<Icon name="indent" />
-						</button>
-						<button
-							type="button"
-							className="typst-tool-button typst-list-outdent"
-							aria-label="减少缩进"
-							title="减少缩进"
-							disabled={!canEdit(editor, ui) || !editor.can().liftListItem('listItem')}
-							onMouseDown={(event) => event.preventDefault()}
-							onClick={() => {
-								if (canEdit(editor, ui)) formatChain(editor).liftListItem('listItem').run()
-							}}
-						>
-							<Icon name="outdent" />
-						</button>
-					</>
-				)}
+				<AlignmentPicker editor={editor} />
+				<ListIndentTools editor={editor} />
 			</div>
 			{allowedMark(ui, editor, 'textStyle') && (
 				<TypographyTools
@@ -705,7 +798,7 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 								}}
 							/>
 						) : (
-							editor.state.selection instanceof TextSelection && <FormatTools editor={editor} />
+							hasFormatTarget(editor) && <FormatTools editor={editor} />
 						)}
 						{view === 'format' && table && (
 							<>

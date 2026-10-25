@@ -9,15 +9,15 @@ description: 通过可选 Tiptap 入口编辑原生 JSON，生成可定位的 Ty
 
 ## 入口与安装
 
-| 入口            | 能力                                                                      | 需要的编辑器 peers                                                                                                                                            |
-| --------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 包根            | native Plugin、会话、PDF                                                  | 无                                                                                                                                                            |
-| `/template`     | 纯文档定义                                                                | 无                                                                                                                                                            |
-| `/browser`      | 无框架预览、页码/目录状态、普通源码位置与双向定位                         | 无                                                                                                                                                            |
-| `/tiptap`       | 原生 JSON 校验、扩展、Markdown、区域生成和映射；可在无 DOM 的 Node 中使用 | `@tiptap/core`、`@tiptap/pm`、`@tiptap/starter-kit`、`@tiptap/extension-table`、`@tiptap/extension-image`、`@tiptap/extension-text-style`、`@tiptap/markdown` |
-| `/tiptap/react` | 字段 NodeView、区域组件、格式上下文和统一插入菜单                         | 上列 peers，加 `@tiptap/react`、`@tiptap/extensions`、`@tiptap/extension-drag-handle-react`、`react`、`react-dom`                                             |
+| 入口            | 能力                                                                      | 需要的编辑器 peers                                                                                                                                                                            |
+| --------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 包根            | native Plugin、会话、PDF                                                  | 无                                                                                                                                                                                            |
+| `/template`     | 纯文档定义                                                                | 无                                                                                                                                                                                            |
+| `/browser`      | 无框架预览、页码/目录状态、普通源码位置与双向定位                         | 无                                                                                                                                                                                            |
+| `/tiptap`       | 原生 JSON 校验、扩展、Markdown、区域生成和映射；可在无 DOM 的 Node 中使用 | `@tiptap/core`、`@tiptap/pm`、`@tiptap/starter-kit`、`@tiptap/extension-table`、`@tiptap/extension-image`、`@tiptap/extension-text-style`、`@tiptap/extension-text-align`、`@tiptap/markdown` |
+| `/tiptap/react` | 字段 NodeView、区域组件、格式上下文和统一插入菜单                         | 上列 peers，加 `@tiptap/react`、`@tiptap/extensions`、`@tiptap/extension-drag-handle-react`、`react`、`react-dom`                                                                             |
 
-Tiptap peers 使用已验收的同一版本 `3.32.0`；React 集成使用 React 19。对应依赖均为 optional peers，只使用编译或预览无需安装它们。选用相应入口时必须安装依赖，缺失时明确报错。浏览器从子路径导入，不从包根取运行时值；包级已有 native 依赖的下载成本仍存在。本包当前 private，验收对象是本地构建制品，未发布到 registry。
+Tiptap peers 使用同一版本 `3.32.0`；React 集成使用 React 19。对应依赖均为 optional peers，只使用编译或预览无需安装它们。选用相应入口时必须安装依赖，缺失时明确报错；已有 Tiptap 接入也需安装 `@tiptap/extension-text-align@3.32.0`。浏览器从子路径导入，不从包根取运行时值；包级已有 native 依赖的下载成本仍存在。本包当前 private，验收对象是本地构建制品，未发布到 registry。
 
 React 块拖动复用官方 [DragHandle React](https://tiptap.dev/docs/editor/extensions/functionality/drag-handle-react)。它还需要 `@tiptap/extension-drag-handle`、`@tiptap/extension-node-range`、`@tiptap/extension-collaboration`（均为 `3.32.0`）、`@tiptap/y-tiptap@3.0.7`、`yjs@13.6.27`、`y-protocols@1.0.6` 的 peer 依赖；使用不自动安装 peers 的包管理配置时一并安装。协作依赖来自官方拖动扩展，区域编辑器没有启用多人协作，也没有替换原生 history。
 
@@ -83,15 +83,19 @@ export function Body({
 
 `content` 是挂载时的初始值；`onSnapshot` 在宿主保存最新原生 JSON 快照，不把组件变成受控输入。同一组件不因 React 更新调用 `setContent`。`config` 和 `extensions` 保持稳定；扩展数组身份改变会重建 Editor，不能在每次 render 中内联新数组。宿主校验另一份完整草稿后，显式设置新的 `loadedDraft = { key: crypto.randomUUID(), regions: checked.value.regions }`；换文档、模板修订或重新加载同一保存槽也使用新 key 挂载，并清除宿主暂存的旧候选与定位；这样不会沿用被替换草稿的 history。切换区域可保留各区域组件，保留原生 history；卸载会释放 Editor。也可直接组合 `createTypstExtensions` / `createTypstReactExtensions` 与官方 `Editor`、`useEditor`、`EditorContent`，自行处理原始输入准入。
 
-`TypstRegionEditor` 默认提供完整编辑界面，常驻条提供撤销/重做、段落/标题样式、加粗/斜体/下划线、无序/有序列表、链接和插入；窄屏按工具组换行，常用项仍可直接操作。“…”（格式）展开字体、字号、颜色等完整设置；常驻控件与右键面板复用同一命令、权限和原生选区。文字、段落与排版设置也可在同一个格式面板操作；文字右键、`Shift+F10` / 菜单键和“格式”按钮打开同一面板，按钮也适用于触屏。选择文字不会自动弹层。已有选区内右键保留范围，选区外右键先把光标移到点击处；光标处也能设置接下来输入的文字格式。表格内打开同一入口时，面板同时提供单元格格式、表格样式和结构操作；表边入口仍可用。只读或输入法组合输入期间不拦截文本右键，源码 textarea 和卡片中的只读数据文本也保留浏览器菜单。可用项随区域规则与 `editable` 权限变化，最终准入仍由同一原生 transaction 校验。
+`TypstRegionEditor` 默认提供完整编辑界面。常驻条提供撤销/重做、段落/标题样式、字体、字号、加粗/斜体/下划线、文字色/高亮、清除文字格式、段落对齐、无序/有序列表、链接和插入；在列表内显示增加/减少缩进。工具组随编辑容器宽度换行；容器不超过 420px 时，字体选择收至“…”（格式）的完整面板，字号与颜色仍可直接操作。常驻控件与右键面板复用同一命令、权限和原生选区。
 
-字段、表格、已安装的模板组件/源码块和宿主业务动作集中在“插入”菜单，也可输入 `/` 搜索；宿主不再逐项拼装字段或组件选择器。“插入”使用当前原生选区，slash 只删除本次查询文本；块前的“＋”在指定块后插入，选择内容前不产生空段落或撤销记录。三种入口复用同一命令与准入检查。`children(editor)` 可在常驻条下、正文上添加业务参数表单等控件。确需自定义常驻条时设置 `toolbar={false}`，然后通过 `children` 组合 `TypstEditorToolbar` 与原生命令；关闭常驻条不会关闭右键、键盘菜单或 slash。
+文字右键、`Shift+F10` / 菜单键和“格式”按钮打开同一个完整面板，按钮也适用于触屏。选择文字不会自动弹层。已有选区内右键保留范围，选区外右键先把光标移到点击处；光标处也能设置接下来输入的文字格式。进入表格时，常驻条下显示表格尺寸与常用结构操作；“更多…”、完整面板和表边入口提供表格样式及完整结构操作。只读或输入法组合输入期间不拦截文本右键，源码 textarea 和卡片中的只读数据文本也保留浏览器菜单。可用项随区域规则与 `editable` 权限变化，最终准入仍由同一原生 transaction 校验。
+
+字段、表格、已安装的模板组件/源码块和宿主业务动作集中在“插入”菜单，也可输入 `/` 搜索；宿主不再逐项拼装字段或组件选择器。“插入”使用当前原生选区，slash 只删除本次查询文本；块前的“＋”在指定块后插入，选择内容前不产生空段落或撤销记录。三种入口复用同一命令与准入检查。选择“表格”后填写行数、列数和是否首行表头，默认 3×3 并启用首行表头；行数允许 1–50、列数允许 1–20，越界显示错误，不自动截断。取消不会修改正文或删除 slash 查询。
+
+`children(editor)` 可在常驻条下、正文上添加业务参数表单等控件。确需自定义常驻条时设置 `toolbar={false}`，然后在 `children` 内组合 `TypstEditorToolbar` 与原生命令，沿用区域的权限、字体选项和输入法状态；关闭常驻条不会关闭右键、键盘菜单或 slash。
 
 普通段落、标题、引用、列表、表格和图片有就地块操作入口。点击操作柄可转换类型、复制、删除或上下移动，拖动操作柄可调整顺序；键盘与触屏也可用当前块入口和移动按钮；`Alt+F10` 聚焦当前块入口，`Shift+F10` 仍打开文字格式。目标是打开菜单时的整个顶层块，表格不会误作用于一个单元格。转换只提供当前结构能完整保留内容的选项；复杂结构不能通过转换悄悄丢掉内容。菜单打开后正文变化会取消旧目标。模板组件与源码块沿用卡片自己的入口；复制中的实例使用新 ID，移动保留原 ID，操作支持原生撤销。
 
-格式面板支持列表缩进、减少缩进和“清除文字格式”；后者移除文字 Mark，保留段落结构。通过链接按钮或 `Mod+K`（macOS 为 Command，其他平台为 Ctrl）添加或修改链接：选中文字时修改该范围，在已有链接中修改整个链接，在空光标处可输入显示文字并插入。链接面板可以移除链接或在新标签打开当前有效地址。URL 遵循相同的区域与链接准入规则，错误不会回写正文。输入链接、字号等控件时，原生文字选区继续高亮。
+“清除文字格式”移除选区的可清除文字 Mark，包括链接和四项排版；空光标处清除后续输入格式。它遵循原生扩展的 `clearable: false` 保护，保留段落结构与对齐。通过链接按钮或 `Mod+K`（macOS 为 Command，其他平台为 Ctrl）添加或修改链接：选中文字时修改该范围，在已有链接中修改整个链接，在空光标处可输入显示文字并插入。链接面板可以移除链接或在新标签打开当前有效地址。URL 遵循相同的区域与链接准入规则，错误不会回写正文。输入链接、字号等控件时，原生文字选区继续高亮。
 
-格式面板中的字体、字号、文字颜色和背景颜色与加粗等基础格式共用当前原生选区，连续调整时保持面板。字体菜单来自 `TypstRegionEditor.fontFamilies`，该参数只提供选择项，不安装字体；省略且当前正文没有字体时，字体菜单禁用。后端通过 [Fonts](./fonts.md) 或会话字体输入提供真实字体，浏览器能否显示同一字体取决于宿主 CSS 和本机字体；最终排版以 native 预览/PDF 为准。字号菜单提供常用 pt 值；颜色菜单提供色板、自定义十六进制色值和单独清除。“清除排版”一次移除这四项，保留加粗等其他格式；选择“模板字体/模板字号”恢复继承模板。每次操作沿用原生事务和 undo。
+字体、字号、文字颜色和背景颜色与加粗等基础格式共用当前原生选区；格式面板内连续调整时保持面板。字体菜单来自 `TypstRegionEditor.fontFamilies`，传入字体家族名，该参数只提供选择项，不安装字体；省略且当前正文没有字体时，字体菜单禁用。后端通过 [Fonts](./fonts.md) 或会话字体输入提供真实字体，浏览器能否显示同一字体取决于宿主 CSS 和本机字体；最终排版以 native 预览/PDF 为准。字号菜单提供常用 pt 值；颜色菜单提供色板、自定义十六进制色值和单独清除。“清除排版”只移除这四项，保留加粗、链接、段落结构与对齐；选择“模板字体/模板字号”恢复继承模板。混合选区的字体、字号、颜色、段落样式与对齐明确显示“混合”，不会用首段的值代表整个范围；空光标优先显示原生后续输入格式。每次操作沿用原生事务和 undo。
 
 这些格式复用官方 [TextStyleKit](https://tiptap.dev/docs/editor/extensions/functionality/text-style-kit) 的 `textStyle` Mark，仍存于同一份原生 JSON：
 
@@ -103,6 +107,8 @@ export function Body({
 | `backgroundColor` | 同上，支持 alpha                                                                                                                                  | `highlight(fill: ...)` |
 
 `null` 表示继承。区域的 `marks` 显式允许 `textStyle` 才开放这些排版设置；未声明 `marks` 时与其他内置 Mark 一样可用；只读和输入法期间说明禁用原因。无效值、相对字号、CSS 变量和未知样式均明确拒绝。HTML 的受控 `span style` 可以保留四项格式；导入沿用浏览器 CSSOM 的等价表示，例如 `rgb()` 色值和字体外层引号，已保存的原生 JSON 不因此改写。Markdown 不承载它们，导出返回 `lossless: false` 和格式损失诊断，不能用输出覆盖原生 JSON。Markdown 候选覆盖带排版格式的区域也会被复杂内容检查阻止。
+
+段落对齐复用官方 [TextAlign](https://tiptap.dev/docs/editor/extensions/functionality/textalign)，作用于 `paragraph` 和 `heading` 的 `attrs.textAlign`，支持 `left`、`center`、`right`、`justify`；`null` 或缺省继承模板。选择“模板对齐”清除覆盖，原生 `setTextAlign` / `unsetTextAlign` 与 `Ctrl/⌘+Shift+L/E/R/J` 快捷键仍可用。JSON、HTML 和 Typst/PDF 保留对齐；显式左、中、右对齐在该段关闭模板的两端对齐，清除后恢复模板规则。HTML 接受 `<p>`、`<h1>` 至 `<h6>` 上单个 `style="text-align: center"` 形式的声明，值限上述四项；不接受额外 CSS、重复声明、`!important` 或 `start/end/inherit`。Markdown 无法承载显式对齐，导出返回 `lossless: false` 并在 `attrs.textAlign` 给出诊断；候选不能有损替换该范围，其他可无损往返的块仍可独立修改。
 
 `placeholder` 设置空段落提示。`slashCommands` 向常驻“插入”、块旁“＋”和 slash 添加宿主业务操作；一份声明覆盖三种入口。回调只组合传入的原生 chain，共享菜单负责在需要时删除 `/query`，并执行一次 transaction；不要在回调中调用 `run()`、`focus()`、`dispatch` 或产生外部副作用，预演可多次执行该回调：
 
@@ -147,7 +153,7 @@ const config: TypstEditorConfig = {
 
 每张表只增加 `attrs.typstTableStyle`，值为 `null`、`'grid'`、`'grid-open-sides'`、`'three-line'` 或 `'borderless'`。`null` 或缺省表示跟随 `defaultStyle`；`defaultStyle` 默认也是 `null`，此时 Typst 输出继续使用模板原有规则，编辑区以网格作为可编辑外观。`allowedStyles` 默认开放四种显式样式，只限制逐表覆盖；空数组锁定为跟随模板，仍可使用配置的默认样式。
 
-安装后，表格上下文菜单中增加“表格样式”组，提供跟随模板、网格、网格·无左右框、三线表和无边框；选择跟随模板即清除覆盖。它不占顶部工具栏的新一行。表格结构操作仍调用官方 TableKit 命令，卸载样式扩展只移除这组样式项。操作只修改当前表格，保留原生选区和撤销；只读、输入法组合输入及未获准的选项不能提交。也可从 `/tiptap/react` 单独挂载 `TypstTableStyleControls`，传入安装了该扩展的官方 `Editor`，无需使用区域组件。
+安装后，表格完整上下文面板增加“表格样式”组，提供跟随模板、网格、网格·无左右框、三线表和无边框；选择跟随模板即清除覆盖。可从当前表格工具条的“更多…”打开面板；离开表格时快捷工具条收起。表格结构操作仍调用官方 TableKit 命令，卸载样式扩展只移除这组样式项。操作只修改当前表格，保留原生选区和撤销；只读、输入法组合输入及未获准的选项不能提交。也可从 `/tiptap/react` 单独挂载 `TypstTableStyleControls`，传入安装了该扩展的官方 `Editor`，无需使用区域组件。
 
 `grid-open-sides` 保留内部横纵网格和上下边线，只移除左右外框；跨行、跨列合并后按实际列边界判断。三线表使用上下边线，以及连续完整表头后的分隔线；没有这样的表头时只有上下边线，不自动把首行改成表头。跨表头边界的合并单元格不会触发表头重复或分隔线。无边框表格仅在聚焦编辑时显示辅助虚线，不进入 Typst 输出。
 

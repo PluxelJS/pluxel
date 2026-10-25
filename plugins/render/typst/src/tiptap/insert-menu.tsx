@@ -7,85 +7,27 @@ import {
 	useMemo,
 	useRef,
 	useState,
-	type ReactNode,
-	type RefObject,
 } from 'react'
-import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Plugin, PluginKey, type Selection } from '@tiptap/pm/state'
 import { useEditorState } from '@tiptap/react'
 import { EditorUi, Icon, canEdit } from './editor-ui'
+import { FloatingMenu } from './floating-menu'
+import { TableSizeForm } from './table-size-form'
 import {
 	insertEntries,
 	isInsertionBoundary,
 	matchesInsertion,
 	prepareInsertion,
+	tableEntry,
 	type InsertEntry,
 	type LocalInsertionTarget,
 } from './insert-commands'
 
-function FloatingMenu({
-	editor,
-	reference,
-	className,
-	elementRef,
-	onReady,
-	children,
-}: {
-	editor: Editor
-	reference(): { left: number; top: number; bottom: number }
-	className: string
-	elementRef?: RefObject<HTMLDivElement | null>
-	onReady?(): void
-	children: ReactNode
-}) {
-	const ownRef = useRef<HTMLDivElement>(null)
-	const ref = elementRef ?? ownRef
-	const [point, setPoint] = useState<{ left: number; top: number } | null>(null)
-	const ready = useRef(onReady)
-	ready.current = onReady
-	const positioned = point !== null
-	useLayoutEffect(() => {
-		if (positioned) ready.current?.()
-	}, [positioned])
-	useLayoutEffect(() => {
-		const document = editor.view.dom.ownerDocument
-		const window = document.defaultView!
-		function position() {
-			if (!ref.current || editor.isDestroyed) return
-			const target = reference()
-			const { width, height } = ref.current.getBoundingClientRect()
-			const left = Math.max(8, Math.min(target.left, window.innerWidth - width - 8))
-			const top =
-				target.bottom + height + 8 < window.innerHeight
-					? target.bottom + 8
-					: Math.max(8, target.top - height - 8)
-			setPoint((previous) =>
-				previous?.left === left && previous.top === top ? previous : { left, top },
-			)
-		}
-		position()
-		document.addEventListener('scroll', position, true)
-		window.addEventListener('resize', position)
-		return () => {
-			document.removeEventListener('scroll', position, true)
-			window.removeEventListener('resize', position)
-		}
-	}, [editor, reference, children, ref])
-	return createPortal(
-		<div
-			ref={ref}
-			className={`typst-floating-menu ${className}`}
-			style={{
-				left: point?.left ?? 0,
-				top: point?.top ?? 0,
-				visibility: point ? 'visible' : 'hidden',
-			}}
-		>
-			{children}
-		</div>,
-		editor.view.dom.ownerDocument.body,
-	)
+interface TableTarget {
+	doc: ProseMirrorNode
+	selection: Selection
 }
 
 function EntryList({
@@ -179,16 +121,24 @@ export function InsertMenu({
 	const [open, setOpen] = useState(false)
 	const [query, setQuery] = useState('')
 	const [choice, setChoice] = useState(0)
+	const [table, setTable] = useState<TableTarget>()
 	const container = useRef<HTMLDivElement>(null)
 	const popup = useRef<HTMLDivElement>(null)
 	const trigger = useRef<HTMLButtonElement>(null)
 	const search = useRef<HTMLInputElement>(null)
+	const rows = useRef<HTMLInputElement>(null)
 	const target = useRef<LocalInsertionTarget | undefined>(undefined)
 	const openChange = useRef(onOpenChange)
 	openChange.current = onOpenChange
 	const enabled =
 		canEdit(editor, ui) && (at === undefined || isInsertionBoundary(editor.state.doc, at))
-	const visible = open && enabled && (!target.current || target.current.doc === editor.state.doc)
+	const visible =
+		open &&
+		enabled &&
+		(!target.current || target.current.doc === editor.state.doc) &&
+		(!table ||
+			(table.doc === editor.state.doc &&
+				(Boolean(target.current) || table.selection.eq(editor.state.selection))))
 	const entries = useMemo(
 		() =>
 			visible
@@ -201,12 +151,19 @@ export function InsertMenu({
 	)
 	const active = Math.min(choice, entries.length - 1)
 	useLayoutEffect(() => {
-		if (!visible) setOpen(false)
+		if (!visible) {
+			setOpen(false)
+			setTable(undefined)
+		}
 		openChange.current?.(visible)
 		return () => {
 			if (visible) openChange.current?.(false)
 		}
 	}, [visible])
+	useLayoutEffect(() => {
+		if (table && popup.current?.style.visibility === 'visible')
+			rows.current?.focus({ preventScroll: true })
+	}, [table])
 	useEffect(() => {
 		if (!visible) return
 		const dom = editor.view.dom
@@ -231,6 +188,10 @@ export function InsertMenu({
 		}
 	}, [editor, visible])
 	function select(entry: InsertEntry) {
+		if (entry.id === 'table') {
+			setTable({ doc: editor.state.doc, selection: editor.state.selection })
+			return
+		}
 		const transaction = prepareInsertion(editor, ui, entry, target.current)
 		if (!transaction) return
 		editor.view.dispatch(transaction)
@@ -242,7 +203,13 @@ export function InsertMenu({
 		target.current = at === undefined ? undefined : { at, doc: editor.state.doc }
 		setQuery('')
 		setChoice(0)
+		setTable(undefined)
 		setOpen(true)
+	}
+	function cancel() {
+		setOpen(false)
+		if (compact) editor.view.focus()
+		else trigger.current?.focus({ preventScroll: true })
 	}
 	return (
 		<div ref={container} className={`typst-insert-menu${compact ? ' typst-insert-compact' : ''}`}>
@@ -272,52 +239,80 @@ export function InsertMenu({
 				<FloatingMenu
 					editor={editor}
 					elementRef={popup}
-					onReady={() => search.current?.focus({ preventScroll: true })}
+					onReady={() => (table ? rows : search).current?.focus({ preventScroll: true })}
 					reference={() => trigger.current!.getBoundingClientRect()}
 					className="typst-insert-popover"
 				>
-					<div id={`${id}-dialog`} role="dialog" aria-label="插入内容">
-						<input
-							ref={search}
-							type="search"
-							className="typst-insert-search"
-							aria-label="搜索插入内容"
-							aria-controls={id}
-							aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
-							placeholder="搜索段落、字段或组件…"
-							value={query}
-							onKeyDown={(event) => {
-								if (event.nativeEvent.isComposing) return
-								if (event.key === 'Escape') {
-									event.preventDefault()
-									event.stopPropagation()
-									setOpen(false)
-									if (compact) editor.view.focus()
-									else trigger.current?.focus({ preventScroll: true })
-									return
-								}
-								if (!['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) return
-								event.preventDefault()
-								if (entries.length === 0) return
-								if (event.key === 'Enter') select(entries[active]!)
-								else
-									setChoice(
-										(active + (event.key === 'ArrowUp' ? -1 : 1) + entries.length) % entries.length,
+					<div
+						id={`${id}-dialog`}
+						role={table ? undefined : 'dialog'}
+						aria-label={table ? undefined : '插入内容'}
+					>
+						{table ? (
+							<TableSizeForm
+								editor={editor}
+								inputRef={rows}
+								onCancel={cancel}
+								onInsert={(size) => {
+									if (
+										table.doc !== editor.state.doc ||
+										(!target.current && !table.selection.eq(editor.state.selection))
 									)
-							}}
-							onChange={(event) => {
-								setQuery(event.currentTarget.value)
-								setChoice(0)
-							}}
-						/>
-						<EntryList
-							id={id}
-							entries={entries}
-							active={active}
-							onChoice={setChoice}
-							onSelect={select}
-						/>
-						<InsertHelp />
+										return false
+									const entry = tableEntry(size)
+									const transaction = entry && prepareInsertion(editor, ui, entry, target.current)
+									if (!transaction) return false
+									editor.view.dispatch(transaction)
+									if (!editor.state.doc.eq(transaction.doc)) return false
+									setOpen(false)
+									editor.view.focus()
+									return true
+								}}
+							/>
+						) : (
+							<>
+								<input
+									ref={search}
+									type="search"
+									className="typst-insert-search"
+									aria-label="搜索插入内容"
+									aria-controls={id}
+									aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
+									placeholder="搜索段落、字段或组件…"
+									value={query}
+									onKeyDown={(event) => {
+										if (event.nativeEvent.isComposing) return
+										if (event.key === 'Escape') {
+											event.preventDefault()
+											event.stopPropagation()
+											cancel()
+											return
+										}
+										if (!['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) return
+										event.preventDefault()
+										if (entries.length === 0) return
+										if (event.key === 'Enter') select(entries[active]!)
+										else
+											setChoice(
+												(active + (event.key === 'ArrowUp' ? -1 : 1) + entries.length) %
+													entries.length,
+											)
+									}}
+									onChange={(event) => {
+										setQuery(event.currentTarget.value)
+										setChoice(0)
+									}}
+								/>
+								<EntryList
+									id={id}
+									entries={entries}
+									active={active}
+									onChoice={setChoice}
+									onSelect={select}
+								/>
+								<InsertHelp />
+							</>
+						)}
 					</div>
 				</FloatingMenu>
 			)}
@@ -351,6 +346,16 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 	const ui = useContext(EditorUi)
 	const id = useId()
 	const [choice, setChoice] = useState({ key: '', index: 0 })
+	const [table, setTable] = useState<
+		TableTarget & {
+			range: { from: number; to: number }
+			point: { left: number; top: number; bottom: number }
+		}
+	>()
+	const tableRef = useRef(table)
+	tableRef.current = table
+	const popup = useRef<HTMLDivElement>(null)
+	const rows = useRef<HTMLInputElement>(null)
 	const [dismissed, setDismissed] = useState<number | null>(null)
 	const dismissedRef = useRef<number | null>(null)
 	const latest = useRef(ui)
@@ -370,7 +375,48 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 		[editor, editor.state, ui, key],
 	)
 	const active = Math.min(choice.key === key ? choice.index : 0, entries.length - 1)
-	const visible = range && dismissed !== range.from
+	const visible = range && dismissed !== range.from && !table
+	const tableVisible = Boolean(
+		table &&
+		canEdit(editor, ui) &&
+		table.doc === editor.state.doc &&
+		table.selection.eq(editor.state.selection),
+	)
+	function openTable(target: { from: number; to: number }) {
+		const start = editor.view.coordsAtPos(target.from)
+		const end = editor.view.coordsAtPos(target.to)
+		setTable({
+			doc: editor.state.doc,
+			selection: editor.state.selection,
+			range: target,
+			point: { left: start.left, top: start.top, bottom: end.bottom },
+		})
+	}
+	useEffect(() => {
+		if (table && !tableVisible) setTable(undefined)
+	}, [table, tableVisible])
+	useEffect(() => {
+		if (!tableVisible) return
+		const dom = editor.view.dom
+		const document = dom.ownerDocument
+		const outside = (event: Event) => {
+			if (!popup.current?.contains(event.target as Node)) setTable(undefined)
+		}
+		const observer = new ResizeObserver(() => {
+			if (dom.getClientRects().length === 0) setTable(undefined)
+		})
+		observer.observe(dom)
+		document.addEventListener('pointerdown', outside, true)
+		document.addEventListener('focusin', outside)
+		// The slash form freezes its screen anchor with the native insertion target.
+		document.addEventListener('scroll', outside, true)
+		return () => {
+			observer.disconnect()
+			document.removeEventListener('pointerdown', outside, true)
+			document.removeEventListener('focusin', outside)
+			document.removeEventListener('scroll', outside, true)
+		}
+	}, [editor, tableVisible])
 	useEffect(() => {
 		if (!range) {
 			dismissedRef.current = null
@@ -385,7 +431,7 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 				props: {
 					handleKeyDown(_view, event) {
 						const current = latest.current
-						if (!canEdit(editor, current) || event.isComposing) return false
+						if (!canEdit(editor, current) || event.isComposing || tableRef.current) return false
 						const target = slashRange(editor)
 						if (!target || dismissedRef.current === target.from) return false
 						if (event.key === 'Escape') {
@@ -406,6 +452,10 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 								? Math.min(choiceRef.current.index, items.length - 1)
 								: 0
 						if (event.key === 'Enter') {
+							if (items[index]!.id === 'table') {
+								openTable(target)
+								return true
+							}
 							const transaction = prepareInsertion(editor, current, items[index]!, target)
 							if (transaction) editor.view.dispatch(transaction)
 							return true
@@ -433,6 +483,42 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 			dom.removeAttribute('aria-activedescendant')
 		}
 	}, [editor, visible, id, active])
+	if (table && tableVisible)
+		return (
+			<FloatingMenu
+				key="table"
+				editor={editor}
+				elementRef={popup}
+				reference={() => table.point}
+				className="typst-insert-popover"
+				onReady={() => rows.current?.focus({ preventScroll: true })}
+			>
+				<div>
+					<TableSizeForm
+						editor={editor}
+						inputRef={rows}
+						onCancel={() => {
+							dismissedRef.current = table.range.from
+							setDismissed(table.range.from)
+							setTable(undefined)
+							editor.view.focus()
+						}}
+						onInsert={(size) => {
+							if (table.doc !== editor.state.doc || !table.selection.eq(editor.state.selection))
+								return false
+							const entry = tableEntry(size)
+							const transaction = entry && prepareInsertion(editor, ui, entry, table.range)
+							if (!transaction) return false
+							editor.view.dispatch(transaction)
+							if (!editor.state.doc.eq(transaction.doc)) return false
+							setTable(undefined)
+							editor.view.focus()
+							return true
+						}}
+					/>
+				</div>
+			</FloatingMenu>
+		)
 	if (!visible) return null
 	return (
 		<FloatingMenu
@@ -455,6 +541,10 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 				onSelect={(entry) => {
 					const current = slashRange(editor)
 					if (!current) return
+					if (entry.id === 'table') {
+						openTable(current)
+						return
+					}
 					const transaction = prepareInsertion(editor, ui, entry, current)
 					if (transaction) {
 						editor.view.dispatch(transaction)
