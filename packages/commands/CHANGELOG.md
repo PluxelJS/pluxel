@@ -1,3 +1,66 @@
+## @pluxel/commands@1.2.0
+
+### Make Command execution return Better Result
+
+Define Commands with name, description, input, and a Result-returning execute handler. Direct, registry, and argv calls now return `Result<T, CommandFailure>`. A fixed registration handle stops when disposed, and dynamic name lookup follows the current registration. Remove the obsolete `InstalledCommand` alias. Cancellation reaches the handler and cannot overwrite a completed Result. Remove output schemas and behavior metadata from Command definitions.
+The execution boundary rejects a returned Result whose status conflicts with its branch methods.
+Absolute deadlines beyond the platform timer range remain scheduled until their actual time instead of expiring immediately.
+Framework deadline cancellation remains `TIMEOUT` when its signal passes through owner or carrier signal composition into a nested Command.
+Use `toCli()` to compile an argv projection before publishing it with `router.bind()`; the router now accepts that projection instead of a Command and separate syntax options.
+
+### Add a native Cap'n Web adapter for Commands
+
+`@pluxel/commands/adapters` exposes `toCapnweb({ method: command })`. It creates a native `RpcTarget` class whose methods execute selected Commands with a trusted constructor context and return JSON data results.
+The adapter rejects method and data keys that Cap'n Web cannot preserve and checks its encoder before reporting a successful result.
+
+### Keep carrier handling inside publication ownership
+
+Command mounts accept `{ install, handle? }` instead of an installer callback. The optional
+handler receives the captured Command, untrusted input, and carrier context; authorization,
+context projection, execution, and response presentation settle within the provider and
+publisher invocations. A custom handler can project its own output type and construct a
+command-specific context. Direct bindings still execute the selected Command unchanged.
+
+Mounted endpoints carry an explicit marker and cannot be re-mounted as direct definitions.
+The new `snapshotCommand()` captures and validates the descriptor and execute function without
+creating a temporary registry, preserving the receiver and existing publication withdrawal.
+
+### Add a native MCP Tool projection for Commands
+
+`@pluxel/commands/adapters` exposes `toMcp(command)`, producing a native MCP Tool descriptor and a per-call handler. Applications own tool publication, authentication, transport and lifecycle. The adapter maps Command Results to MCP text results without exposing local causes.
+
+### Isolate Command protocol entry points
+
+Replace `@pluxel/commands/adapters` with `@pluxel/commands/mcp` and `@pluxel/commands/capnweb`. The Cap’n Web peer is optional; kernel and MCP consumers no longer need to install or load it. MCP SDK remains an optional type dependency.
+
+### Refresh shared external dependency ranges
+
+Upgrade the shared runtime and tooling catalogs and use caret ranges for compatible stable releases. Align source consumers through the bundled pncat policy, including Elysia 2 beta.26 and current TypeBox. Preserve explicit prerelease, native pairing, patched dependency, and public peer compatibility exceptions.
+
+Rebuild Workbench producer artifacts against the Mantine 9.7.1 compatibility set; the Shell and remote producers continue to require identical shared UI versions.
+
+Generate starter catalogs through pncat using the same core version policy and Tegami package versions.
+
+Handle declared optional dependencies whose platform packages are not installed, including dangling package-manager links, while keeping actual source imports strictly validated.
+
+### Align the official Pluxel release line
+
+Release the public framework packages and official Plugins together at 1.2.0. This is the maintainer's explicit version choice for the currently unpublished release; existing breaking-change descriptions remain part of the release notes. Future releases retain semver-based group bumps, and newly introduced pre-1.0 packages join the current release line.
+
+Independent official Plugin packages use `@pluxel/plugin-*`. Update dependency names, package imports, subpath imports and application declarations together. This naming change preserves Plugin class names, exports and constructor declarations. Core, Host, Services, Workbench and tooling packages retain their existing names. Private Plugins remain workspace-only.
+
+A Plugin's canonical identity includes its package entry. Rebuild consumer artifacts and explicitly review saved configuration, startup intent and Workbench state keyed by the previous identity before deployment; no old-name alias or automatic runtime migration is installed.
+
+Carry forward the unpublished release notes. Earlier Host Dev notes belong to Host-vite; the former Typst Markdown extension belongs to the consolidated Markdown package. Their original explanatory bodies remain available alongside the later migration notes.
+
+### Refresh supported tooling and generated projects
+
+Update runtime, rendering, validation and tooling dependencies together across the published packages and generated projects.
+New projects use Elysia 2 beta.19 and TypeScript 7, with TypeBox 1.3.23 pinned for Elysia eager schema compilation.
+Update fixture dependencies while retaining the tested VFS release until its newer release restores trusted-publisher evidence.
+
+Read extracted HTML CSS through Takumi’s current `css` result field, avoiding its deprecated alias and per-process warning.
+
 ## @pluxel/commands@1.1.0
 
 ### Make Command execution return Better Result

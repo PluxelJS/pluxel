@@ -1,0 +1,11 @@
+---
+title: Resolve package imports in modules delivery
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/rolldown':
+    version: 1.2.0
+---
+
+# Resolve package imports in modules delivery
+
+Resolve package.json imports during modules builds: compile local targets and retain external package boundaries. Relocated outputs no longer contain unresolved package-local aliases whose mappings were omitted from the output manifest.

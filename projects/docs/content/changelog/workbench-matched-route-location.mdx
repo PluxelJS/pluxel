@@ -1,0 +1,11 @@
+---
+title: Preserve the matched Plugin route during navigation
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/workbench':
+    version: 1.2.0
+---
+
+# Preserve the matched Plugin route during navigation
+
+Read Plugin page paths from their accepted route context. Navigating to another page while its loader is pending keeps the current Plugin page visible without reporting an invalid route from the destination URL.

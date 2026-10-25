@@ -1,0 +1,15 @@
+---
+title: Use the application build entry directly
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/services':
+    version: 1.2.0
+  '@pluxel/create':
+    version: 1.2.0
+---
+
+# Use the application build entry directly
+
+Remove `buildPreset()` and the `@pluxel/services/build` export. Application builds use `pluxel()` from `@pluxel/rolldown`; delivery, Workbench variant, launcher and residual dependency options keep their existing behavior and defaults. Runtime service and Vite attachment presets retain their distinct contracts.
+
+Generated hosts and the official Host example import the same application build entry. No compatibility alias or forwarding entry remains.

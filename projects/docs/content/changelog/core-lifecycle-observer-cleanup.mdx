@@ -1,0 +1,21 @@
+---
+title: Preserve lifecycle cleanup when error reporting reenters the actor
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/core':
+    version: 1.2.0
+---
+
+## Preserve lifecycle cleanup when error reporting reenters the actor
+
+Release the runtime error subscription when it reports an error synchronously during
+registration. Lifecycle observer failures now reach error observers without changing
+the generation's startup result or blocking its drain, and repeated stop requests
+share the existing stop operation.
+Errors queued during subscription setup settle before the actor publishes a stable
+startup result, preserving asynchronous lifecycle admission.
+
+The lifecycle implementation keeps shared integer transition lookup without the
+generic FSM engine or build-time macro. Fixed context initialization and a shared
+resolved queue seed reduce per-generation allocation while preserving fresh
+snapshots and independent event queues.

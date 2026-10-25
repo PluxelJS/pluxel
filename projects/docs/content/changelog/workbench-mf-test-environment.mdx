@@ -1,0 +1,11 @@
+---
+title: Preserve Module Federation test environment controls
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/rolldown':
+    version: 1.2.0
+---
+
+# Preserve Module Federation test environment controls
+
+Workbench builds no longer change `MFE_VITE_NO_TEST_ENV_CHECK` implicitly. Test harnesses that build real federation artifacts opt in explicitly with the upstream `MFE_VITE_NO_TEST_ENV_CHECK=true` setting.
