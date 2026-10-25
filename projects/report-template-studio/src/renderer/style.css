@@ -464,3 +464,24 @@ button {
 	font-weight: 500;
 	cursor: pointer;
 }
+
+.studio-candidate-comparison {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+	margin: 12px 0;
+}
+.studio-candidate-comparison pre {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 200px;
+	overflow: auto;
+	font-size: 12px;
+	padding: 8px;
+	background: var(--mantine-color-gray-0);
+}
+@media (max-width: 600px) {
+	.studio-candidate-comparison {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

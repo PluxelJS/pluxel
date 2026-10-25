@@ -2,42 +2,40 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { Alert, Button, Group, NativeSelect, Select, Text, Textarea } from '@mantine/core'
-import {
-	TypstEditorToolbar,
-	TypstFieldPicker,
-	TypstBlockPicker,
-	TypstRegionEditor,
-	type TypstSlashCommand,
-} from '@pluxel/plugin-typst/tiptap/react'
+import { TypstRegionEditor, type TypstSlashCommand } from '@pluxel/plugin-typst/tiptap/react'
 import {
 	applyTypstCandidate,
+	captureTypstCandidateTarget,
+	exportTypstMarkdown,
 	prepareTypstCandidate,
 	validateTypstRegions,
 	type TypstEditorConfig,
 	type TypstMarkdownCandidate,
+	type TypstPreparedCandidate,
 } from '@pluxel/plugin-typst/tiptap'
 import { studioEditorConfig } from '../shared/editor'
 import type { EditorDescription, EditorDraft } from '../shared/contracts'
 import { useWorkspace } from './workspace-context'
 
-const noticeCommand: TypstSlashCommand = {
-	id: 'studio-notice',
-	title: '提示块',
-	description: '添加报告核对提醒',
-	keywords: ['notice', '提示', '提醒'],
-	command: (chain) =>
-		chain.insertContent({
-			type: 'notice',
-			attrs: { tone: 'info' },
-			content: [
-				{
-					type: 'paragraph',
-					content: [{ type: 'text', text: '请核对本报告的数据与建议。' }],
-				},
-			],
-		}),
-}
-const studioSlashCommands = [noticeCommand]
+const studioSlashCommands: readonly TypstSlashCommand[] = [
+	{
+		id: 'studio-notice',
+		title: '提示块',
+		description: '添加报告核对提醒',
+		keywords: ['notice', '提示', '提醒'],
+		command: (chain) =>
+			chain.insertContent({
+				type: 'notice',
+				attrs: { tone: 'info' },
+				content: [
+					{
+						type: 'paragraph',
+						content: [{ type: 'text', text: '请核对本报告的数据与建议。' }],
+					},
+				],
+			}),
+	},
+]
 const studioFontFamilies = ['Noto Serif CJK SC', 'Liberation Serif']
 
 function Region({
@@ -139,6 +137,7 @@ function Region({
 				className="studio-region-editor"
 				placeholder="开始写作，输入 / 插入内容…"
 				slashCommands={studioSlashCommands}
+				fontFamilies={studioFontFamilies}
 				onEditor={connect}
 				onReveal={(position) => workspace.revealRegion(entry, regionId, position)}
 				onValidationError={(issues) =>
@@ -148,36 +147,7 @@ function Region({
 					setValidationError('')
 					void workspace.writeRegion(entry, regionId, content)
 				}}
-			>
-				{(editor) => (
-					<>
-						<TypstEditorToolbar editor={editor} fontFamilies={studioFontFamilies}>
-							<TypstFieldPicker
-								editor={editor}
-								fields={config.fields.filter((field) => {
-									const rule = config.regions.find((region) => region.id === regionId)
-									return (
-										!rule?.fields ||
-										rule.fields.some((path) => JSON.stringify(path) === JSON.stringify(field.path))
-									)
-								})}
-							/>
-							<TypstBlockPicker editor={editor} />
-							<Button
-								type="button"
-								size="compact-xs"
-								variant="subtle"
-								color="gray"
-								aria-label="插入提示块"
-								onMouseDown={(event) => event.preventDefault()}
-								onClick={() => noticeCommand.command(editor.chain().focus()).run()}
-							>
-								提示块
-							</Button>
-						</TypstEditorToolbar>
-					</>
-				)}
-			</TypstRegionEditor>
+			/>
 		</div>
 	)
 }
@@ -194,11 +164,12 @@ export function BodyEditor({
 	const draft = document.editor
 	const [selected, setSelected] = useState(description.regions[0]?.id ?? '')
 	const [candidate, setCandidate] = useState('')
-	const [candidateRevision, setCandidateRevision] = useState<string | null>(null)
+	const [candidateTarget, setCandidateTarget] = useState<
+		Omit<TypstMarkdownCandidate, 'markdown'> & { original: string }
+	>()
+	const [candidateReview, setCandidateReview] = useState<TypstPreparedCandidate>()
 	const [candidateError, setCandidateError] = useState('')
-	const [candidateRegion, setCandidateRegion] = useState(selected)
 	const [candidateScope, setCandidateScope] = useState('region')
-	const [candidateRange, setCandidateRange] = useState<TypstMarkdownCandidate['range']>()
 	const editors = useRef(new Map<string, Editor>())
 	const configKey = JSON.stringify({
 		regions: description.regions,
@@ -282,7 +253,7 @@ export function BodyEditor({
 			<details className="studio-candidate">
 				<summary>Markdown 导入与候选内容</summary>
 				<Text size="xs" c="dimmed">
-					候选独立暂存；选中块按完整顶层块替换，其他图表、组件与正文保留。开始后修改正文、数据或模板会使候选过期。
+					先固定目标，再查看原文与候选对照。字符选区扩展为完整顶层块；范围外图表和表格保留。正文、数据或模板变化会使候选过期。
 				</Text>
 				<NativeSelect
 					label="候选范围"
@@ -294,8 +265,8 @@ export function BodyEditor({
 					]}
 					onChange={(event) => {
 						setCandidateScope(event.currentTarget.value)
-						setCandidateRevision(null)
-						setCandidateRange(undefined)
+						setCandidateTarget(undefined)
+						setCandidateReview(undefined)
 					}}
 				/>
 				<Button
@@ -304,84 +275,139 @@ export function BodyEditor({
 					onClick={() => {
 						const editor = editors.current.get(selected)
 						if (!editor) return
-						let range: TypstMarkdownCandidate['range']
-						if (candidateScope === 'selection') {
-							const { $from, $to } = editor.state.selection
-							range = {
-								from: $from.depth ? $from.before(1) : $from.pos,
-								to: $to.depth ? $to.after(1) : $to.pos,
-							}
-							if (range.from === range.to) {
-								setCandidateError('请将光标放入正文块，或选中需要替换的完整块。')
-								return
-							}
+						const target = captureTypstCandidateTarget({
+							selection: editor.state.selection,
+							regionId: selected,
+							baseRevision: workspace.draftRevision(entry),
+							scope: candidateScope === 'selection' ? 'blocks' : 'region',
+						})
+						if (!target.ok) {
+							setCandidateError(target.issues.map((issue) => issue.message).join('\n'))
+							return
 						}
-						setCandidateRange(range)
-						setCandidateRevision(workspace.draftRevision(entry))
-						setCandidateRegion(selected)
+						const from = target.value.range?.from ?? 0
+						const to = target.value.range?.to ?? editor.state.doc.content.size
+						const original = exportTypstMarkdown({
+							document: editor.state.doc.cut(from, to).toJSON(),
+							regionId: selected,
+							config,
+							data: document.result?.data,
+						})
+						setCandidateTarget({
+							...target.value,
+							original: original.ok ? original.value.markdown : JSON.stringify(original.issues),
+						})
+						setCandidateReview(undefined)
 						setCandidateError('')
 					}}
 				>
-					开始候选
+					固定候选目标
 				</Button>
-				{candidateRevision !== null && (
-					<Text size="xs" c="dimmed">
-						{candidateRange ? '已固定选中块范围' : '已固定整个区域'} · {candidateRegion}
-					</Text>
-				)}
 				<Textarea
 					aria-label="Markdown 候选"
 					value={candidate}
-					onChange={(event) => setCandidate(event.currentTarget.value)}
+					onChange={(event) => {
+						setCandidate(event.currentTarget.value)
+						setCandidateReview(undefined)
+					}}
 					minRows={4}
 				/>
-				<Button
-					size="xs"
-					mt="xs"
-					disabled={candidateRevision === null}
-					onClick={() => {
-						const editor = editors.current.get(candidateRegion)
-						if (!editor || candidateRevision === null) return
-						const prepared = prepareTypstCandidate({
-							candidate: {
-								regionId: candidateRegion,
-								baseRevision: candidateRevision,
-								markdown: candidate,
-								range: candidateRange,
-							},
-							currentRevision: workspace.draftRevision(entry),
-							document: draft.regions[candidateRegion]!,
-							config,
-							data: document.result?.data,
-							canEdit: (id) =>
-								!mismatch &&
-								id === candidateRegion &&
-								description.regions.some((region) => region.id === id),
-						})
-						if (!prepared.ok) {
-							setCandidateError(prepared.issues.map((issue) => issue.message).join('\n'))
-							return
-						}
-						const applied = applyTypstCandidate({
-							editor,
-							candidate: prepared.value,
-							currentRevision: () => workspace.draftRevision(entry),
-							config,
-							regionId: candidateRegion,
-							data: () => workspace.documents.get(entry)?.result?.data,
-							canEdit: (id) =>
-								id === candidateRegion &&
-								workspace.documents.get(entry)?.editor?.templateRevision ===
-									description.templateRevision,
-						})
-						setCandidateError(
-							applied.ok ? '' : applied.issues.map((issue) => issue.message).join('\n'),
-						)
-						if (applied.ok) setCandidateRevision(null)
-					}}
-				>
-					接纳候选
-				</Button>
+				{candidateTarget && (
+					<div className="studio-candidate-review">
+						<Text size="xs">
+							目标：{candidateTarget.regionId} ·{' '}
+							{candidateTarget.range
+								? `完整顶层块 [${candidateTarget.range.from}, ${candidateTarget.range.to})`
+								: '整个区域'}
+						</Text>
+						{candidateTarget.baseRevision !== workspace.draftRevision(entry) && (
+							<Text size="xs" c="orange">
+								目标已过期；请明确重新固定目标。
+							</Text>
+						)}
+						<div className="studio-candidate-comparison">
+							<section>
+								<Text size="xs" fw={600}>
+									原内容
+								</Text>
+								<pre>{candidateTarget.original}</pre>
+							</section>
+							<section>
+								<Text size="xs" fw={600}>
+									待替换内容
+								</Text>
+								<pre>{candidate}</pre>
+							</section>
+						</div>
+						<Text size="xs" c="dimmed">
+							{candidateReview
+								? '已准备；接纳将提交以上候选，一次撤销可恢复。'
+								: '尚未准备或文字已修改，请查看修改预览后再接纳。'}
+						</Text>
+					</div>
+				)}
+				<Group mt="xs">
+					<Button
+						size="xs"
+						disabled={!candidateTarget}
+						onClick={() => {
+							if (!candidateTarget) return
+							const editor = editors.current.get(candidateTarget.regionId)
+							if (!editor) return
+							const { regionId, baseRevision, range } = candidateTarget
+							const prepared = prepareTypstCandidate({
+								candidate: { regionId, baseRevision, range, markdown: candidate },
+								currentRevision: workspace.draftRevision(entry),
+								document: editor.getJSON(),
+								config,
+								data: document.result?.data,
+								canEdit: (id) =>
+									!mismatch &&
+									!editor.view.composing &&
+									id === regionId &&
+									description.regions.some((region) => region.id === id),
+							})
+							setCandidateReview(prepared.ok ? prepared.value : undefined)
+							setCandidateError(
+								prepared.ok ? '' : prepared.issues.map((issue) => issue.message).join('\n'),
+							)
+						}}
+					>
+						查看修改预览
+					</Button>
+					<Button
+						size="xs"
+						disabled={!candidateReview}
+						onClick={() => {
+							if (!candidateReview) return
+							const editor = editors.current.get(candidateReview.regionId)
+							if (!editor) return
+							const applied = applyTypstCandidate({
+								editor,
+								candidate: candidateReview,
+								currentRevision: () => workspace.draftRevision(entry),
+								config,
+								regionId: candidateReview.regionId,
+								data: () => workspace.documents.get(entry)?.result?.data,
+								canEdit: (id) =>
+									id === candidateReview.regionId &&
+									!editor.view.composing &&
+									workspace.documents.get(entry)?.editor?.templateRevision ===
+										description.templateRevision,
+							})
+							setCandidateError(
+								applied.ok ? '' : applied.issues.map((issue) => issue.message).join('\n'),
+							)
+							if (applied.ok) {
+								setSelected(candidateReview.regionId)
+								setCandidateReview(undefined)
+								setCandidateTarget(undefined)
+							}
+						}}
+					>
+						接纳候选
+					</Button>
+				</Group>
 				{candidateError && (
 					<Alert color="red" mt="xs">
 						{candidateError}

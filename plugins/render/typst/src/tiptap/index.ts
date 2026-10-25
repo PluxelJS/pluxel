@@ -1,5 +1,6 @@
 // Keep the official command augmentation available to consumers of the aggregate kit.
 import '@tiptap/extension-text-style'
+import '@tiptap/extension-text-align'
 
 export type {
 	JSONContent,
@@ -46,7 +47,11 @@ export {
 	exportTypstMarkdown,
 	type TypstMarkdownExport,
 } from './markdown.js'
-export { prepareTypstCandidate, applyTypstCandidate } from './candidate.js'
+export {
+	captureTypstCandidateTarget,
+	prepareTypstCandidate,
+	applyTypstCandidate,
+} from './candidate.js'
 
 export {
 	TypstTemplateBlock,

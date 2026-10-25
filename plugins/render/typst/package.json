@@ -79,13 +79,20 @@
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@tiptap/core": "catalog:frontend",
+		"@tiptap/extension-collaboration": "catalog:frontend",
+		"@tiptap/extension-drag-handle": "catalog:frontend",
+		"@tiptap/extension-drag-handle-react": "catalog:frontend",
 		"@tiptap/extension-image": "catalog:frontend",
+		"@tiptap/extension-node-range": "catalog:frontend",
 		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
+		"@tiptap/extensions": "catalog:frontend",
 		"@tiptap/markdown": "catalog:frontend",
 		"@tiptap/pm": "catalog:frontend",
 		"@tiptap/react": "catalog:frontend",
 		"@tiptap/starter-kit": "catalog:frontend",
+		"@tiptap/y-tiptap": "catalog:frontend",
 		"@types/react": "catalog:frontend",
 		"@types/react-dom": "catalog:frontend",
 		"playwright": "catalog:dev",
@@ -95,16 +102,21 @@
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
 		"vite-plus": "catalog:build",
-		"vitest": "catalog:test"
+		"vitest": "catalog:test",
+		"y-protocols": "catalog:frontend",
+		"yjs": "catalog:frontend"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
 		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@tiptap/core": "catalog:frontend",
+		"@tiptap/extension-drag-handle-react": "catalog:frontend",
 		"@tiptap/extension-image": "catalog:frontend",
 		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
+		"@tiptap/extensions": "catalog:frontend",
 		"@tiptap/markdown": "catalog:frontend",
 		"@tiptap/pm": "catalog:frontend",
 		"@tiptap/react": "catalog:frontend",
@@ -113,28 +125,37 @@
 		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
-		"@tiptap/extension-text-style": {
+		"@tiptap/extension-text-align": {
 			"optional": true
 		},
 		"@tiptap/core": {
 			"optional": true
 		},
-		"@tiptap/pm": {
-			"optional": true
-		},
-		"@tiptap/starter-kit": {
-			"optional": true
-		},
-		"@tiptap/extension-table": {
+		"@tiptap/extension-drag-handle-react": {
 			"optional": true
 		},
 		"@tiptap/extension-image": {
 			"optional": true
 		},
+		"@tiptap/extension-table": {
+			"optional": true
+		},
+		"@tiptap/extension-text-style": {
+			"optional": true
+		},
+		"@tiptap/extensions": {
+			"optional": true
+		},
 		"@tiptap/markdown": {
 			"optional": true
 		},
+		"@tiptap/pm": {
+			"optional": true
+		},
 		"@tiptap/react": {
+			"optional": true
+		},
+		"@tiptap/starter-kit": {
 			"optional": true
 		},
 		"react": {

@@ -7,6 +7,7 @@ Workspace 内的 Typst 编译插件，当前保持 private。`renderSvg(source, 
 - [用法与生命周期](../../../docs/plugins/rendering/typst.md)
 - [原生绑定准备与构建](native/README.md)
 - [实现设计](DESIGN.md)
+- [编辑器实用化重构与验收记录](../../../engineering/proposals/TYPST_EDITOR_REFACTOR.md)
 - [渲染执行规则](../ARCHITECTURE.md)
 
 服务端入口为 `@pluxel/plugin-typst`，浏览器预览入口为 `@pluxel/plugin-typst/browser`。

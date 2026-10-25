@@ -6,6 +6,7 @@ import { isolatedMarked } from './base-extensions.js'
 import { tableStyleOptions, tableStyleError } from './table-style.js'
 import { editorSchema, tableGrid, validateTypstRegion } from './validation.js'
 import { textStyleAttributes, textStyleDeclarationError } from './text-style.js'
+import { textAlignmentDeclarationError } from './text-align.js'
 import type { TypstEditorConfig, TypstEditorIssue, TypstEditorResult } from './types.js'
 
 interface RegionInput {
@@ -103,6 +104,13 @@ export function exportTypstMarkdown(
 	if (!checked.ok) return checked
 	const issues: TypstEditorIssue[] = []
 	const inspect = (node: JSONContent, path: (string | number)[]) => {
+		if ((node.type === 'paragraph' || node.type === 'heading') && node.attrs?.textAlign != null)
+			issues.push({
+				code: 'COMPLEX_CONTENT',
+				regionId: options.regionId,
+				path: [...path, 'attrs', 'textAlign'],
+				message: 'Paragraph and heading alignment cannot round-trip through Markdown.',
+			})
 		node.marks?.forEach((mark, index) => {
 			if (
 				mark.type === 'textStyle' &&
@@ -161,13 +169,13 @@ const htmlTags: Record<string, readonly string[]> = {
 	head: [],
 	body: [],
 	meta: ['charset'],
-	p: [],
-	h1: [],
-	h2: [],
-	h3: [],
-	h4: [],
-	h5: [],
-	h6: [],
+	p: ['style'],
+	h1: ['style'],
+	h2: ['style'],
+	h3: ['style'],
+	h4: ['style'],
+	h5: ['style'],
+	h6: ['style'],
 	blockquote: [],
 	ul: [],
 	ol: ['start', 'type'],
@@ -446,9 +454,15 @@ export function parseTypstHtml(
 					.split(';')
 					.map((part) => part.trim())
 					.filter(Boolean)
-				const styleError = tag === 'span' ? textStyleDeclarationError(attribute.value) : undefined
-				const valid =
+				const textBlock = tag === 'p' || /^h[1-6]$/.test(tag)
+				const styleError =
 					tag === 'span'
+						? textStyleDeclarationError(attribute.value)
+						: textBlock
+							? textAlignmentDeclarationError(attribute.value)
+							: undefined
+				const valid =
+					tag === 'span' || textBlock
 						? styleError === undefined
 						: declarations.every((declaration) =>
 								tag === 'td' || tag === 'th'

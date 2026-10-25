@@ -13,6 +13,8 @@
 
 研究与必要决策记录：
 
+- [`TYPST_EDITOR_REFACTOR.md`](TYPST_EDITOR_REFACTOR.md)：Typst 编辑器实用化与重构实施、独立验收及后续修正记录；当前 API 见正式用法与 Typst DESIGN。
+
 - [`TYPST_EDITOR.md`](TYPST_EDITOR.md)：Typst 预览/定位下沉、可选 Tiptap 编辑器与 Studio 迁移的实施和验收记录；当前 API 见正式用法与 Typst DESIGN。
 
 - [`../WORKBENCH_FLEXLAYOUT_VALIDATION.md`](../WORKBENCH_FLEXLAYOUT_VALIDATION.md)：当前工作区的定向回归与浏览器验收入口；迁移记录保留在 Git 历史，设计理由见 [交互设计决策](../WORKBENCH_DESIGN.md)。

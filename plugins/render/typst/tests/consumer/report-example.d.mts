@@ -2,6 +2,7 @@ import type {
 	TypstDocumentDraft,
 	TypstEditorConfig,
 	TypstJsonObject,
+	TypstTemplateDefinition,
 } from '@pluxel/plugin-typst/tiptap'
 export interface ConsumerExample {
 	id: string
@@ -13,4 +14,5 @@ export interface ConsumerExample {
 	templateUrl?: string
 }
 export const examples: readonly ConsumerExample[]
+export const channelTemplate: TypstTemplateDefinition
 export function getExample(id: string): ConsumerExample

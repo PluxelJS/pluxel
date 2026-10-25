@@ -1,66 +1,9 @@
 import { useContext, useEffect, useId, useRef, useState, type DragEvent } from 'react'
 import { closeHistory } from '@tiptap/pm/history'
-import type { Editor } from '@tiptap/core'
 import { NodeViewWrapper, useEditorState, type NodeViewProps } from '@tiptap/react'
 import { blockAttributeError, templateDefinitions } from './blocks'
-import { EditorUi } from './ui'
+import { EditorUi } from './editor-ui'
 import { FieldData } from './data-context'
-
-/** Consumer toolbar slot; only explicitly installed nodes appear. */
-export function TypstBlockPicker({ editor }: { editor: Editor }) {
-	const ui = useContext(EditorUi)
-	useEditorState({ editor, selector: ({ editor: current }) => current.state })
-	const templates = templateDefinitions(editor.extensionManager.extensions)
-	const allowed = (name: string) =>
-		!!editor.schema.nodes[name] && (!ui.region?.nodes || ui.region.nodes.includes(name))
-	if ((!allowed('templateBlock') || templates.length === 0) && !allowed('typstSource')) return null
-	return (
-		<select
-			className="typst-select"
-			aria-label="插入模板内容"
-			value=""
-			disabled={!(ui.config ? ui.editable : editor.isEditable) || ui.composing}
-			onChange={(event) => {
-				const value = event.currentTarget.value
-				const definition = templates.find((item) => `template:${item.id}` === value)
-				const content = definition
-					? {
-							type: 'templateBlock',
-							attrs: {
-								id: crypto.randomUUID(),
-								template: definition.id,
-								props: structuredClone(definition.defaults ?? {}),
-								dataPath: [],
-							},
-						}
-					: {
-							type: 'typstSource',
-							attrs: { id: crypto.randomUUID(), source: '#text(fill: blue)[补充说明]' },
-						}
-				editor
-					.chain()
-					.focus()
-					.command(({ tr }) => {
-						closeHistory(tr)
-						return true
-					})
-					.insertContent(content)
-					.run()
-			}}
-		>
-			<option value="" disabled>
-				模板内容
-			</option>
-			{allowed('templateBlock') &&
-				templates.map((item) => (
-					<option key={item.id} value={`template:${item.id}`}>
-						{item.label}
-					</option>
-				))}
-			{allowed('typstSource') && <option value="source">Typst 源码块</option>}
-		</select>
-	)
-}
 
 /** Atomic content uses native selection, drag/drop and commands; only source editing is local. */
 export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps) {
@@ -162,6 +105,12 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 			}
 		}
 		menu.current?.hidePopover()
+		if (action === 'copy') {
+			const chain = editor.chain().focus()
+			if (source) chain.duplicateTypstSource(at).run()
+			else chain.duplicateTypstTemplateBlock(at).run()
+			return
+		}
 		const chain = editor
 			.chain()
 			.focus()
@@ -169,16 +118,7 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 				closeHistory(tr)
 				return true
 			})
-		if (action === 'copy') {
-			const next = at + current.nodeSize
-			chain
-				.insertContentAt(next, {
-					...current.toJSON(),
-					attrs: { ...current.attrs, id: crypto.randomUUID() },
-				})
-				.setNodeSelection(next)
-				.run()
-		} else if (action === 'delete') chain.setNodeSelection(at).deleteSelection().run()
+		if (action === 'delete') chain.setNodeSelection(at).deleteSelection().run()
 		else chain.setNodeSelection(at).updateAttributes(current.type.name, { source: text }).run()
 		setError('')
 	}
@@ -306,11 +246,13 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 						<textarea
 							ref={sourceInput}
 							aria-label="组件 Typst 源码"
+							data-typst-unapplied={text !== stored || undefined}
 							value={text}
 							readOnly={readOnly}
 							onChange={(event) => setText(event.currentTarget.value)}
 							spellCheck={false}
 						/>
+						{text !== stored && <small>未应用的源码修改；应用后才能随草稿保存。</small>}
 						<button
 							type="button"
 							disabled={disabled || text === stored}

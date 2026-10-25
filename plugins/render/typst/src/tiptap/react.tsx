@@ -1,4 +1,4 @@
-import { isTypstBlock } from './blocks'
+import { isTypstBlock, typstBlockPolicy } from './blocks'
 import { TypstBlockView } from './blocks-react'
 import '@tiptap/extension-text-style'
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -6,6 +6,7 @@ import { Extension, type Editor, type Extensions, type JSONContent } from '@tipt
 import { Plugin } from '@tiptap/pm/state'
 import { Slice } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
+import { Selection } from '@tiptap/extensions/selection'
 import {
 	EditorContent,
 	NodeViewWrapper,
@@ -23,11 +24,13 @@ import {
 	type TypstDataField,
 	type TypstEditorIssue,
 } from './index'
-import { EditorMenus, EditorUi, type TypstSlashCommand } from './ui'
+import { EditorMenus, TypstEditorToolbar } from './ui'
+import { EditorUi } from './editor-ui'
+import type { TypstSlashCommand } from './insert-commands'
 import { FieldData, emptyFields } from './data-context'
 
-export { TypstEditorToolbar, TypstFieldPicker, type TypstSlashCommand } from './ui'
-export { TypstBlockPicker } from './blocks-react'
+export { TypstEditorToolbar } from './ui'
+export type { TypstSlashCommand } from './insert-commands'
 export { TypstTableStyleControls } from './table-style-controls'
 
 /** Values are a view of host data; updating them never creates a document transaction. */
@@ -76,7 +79,10 @@ export function createTypstReactExtensions(config: TypstEditorConfig): Extension
 
 export interface TypstRegionEditorProps {
 	regionId: string
-	/** Initial JSON. Mount a new instance when the document or template revision changes. */
+	/** Initial JSON, not a controlled value; later content/data updates keep the native
+	 * Editor and history. Keep config/extensions stable. Change the document key to
+	 * load a full draft; changing regionId or extensions also initializes a new Editor.
+	 * onChange reports snapshots for the host to save. */
 	content: JSONContent
 	config: TypstEditorConfig
 	data: unknown
@@ -85,14 +91,22 @@ export interface TypstRegionEditorProps {
 	onSelection?(position: number): void
 	/** Reveal a component in the host's current compiled preview. */
 	onReveal?(position: number): void
-	/** Host controls compose with the native Editor commands. */
+	/** Host business controls appear below the default toolbar; they share the native Editor. */
 	children?: (editor: Editor) => ReactNode
+	/** Hide only the permanent toolbar when the host provides its own controls.
+	 * Context/block menus and slash insertion remain available. */
+	toolbar?: boolean
+	/** Families prepared by the host for Typst output; this does not install fonts. */
+	fontFamilies?: readonly string[]
 	className?: string
 	editable?: boolean
 	/** Shown for an empty region; slash insertion remains available without a placeholder. */
 	placeholder?: string
-	/** Pure native chain composition; do not call run() or dispatch from a command callback. */
+	/** Extra insertion actions, shared by Insert, block-local insertion and slash search.
+	 * Compose pure native chains; do not call run(), focus() or dispatch in a callback. */
 	slashCommands?: readonly TypstSlashCommand[]
+	/** Reports rejected initial content or native document changes. Without this
+	 * callback, the component displays its own validation alert. */
 	onValidationError?(issues: TypstEditorIssue[]): void
 }
 
@@ -105,17 +119,41 @@ export function TypstRegionEditor(props: TypstRegionEditorProps) {
 		}),
 		[props.config, props.regionId],
 	)
-	const checked = validateTypstRegions({ regions: { [props.regionId]: props.content }, config })
-	if (!checked.ok)
-		return <div role="alert">{checked.issues.map((issue) => issue.message).join('\n')}</div>
-	return <RegionEditor {...props} config={config} />
+	const admit = () => ({
+		regionId: props.regionId,
+		extensions: props.config.extensions,
+		checked: validateTypstRegions({ regions: { [props.regionId]: props.content }, config }),
+	})
+	const [initial, setInitial] = useState(admit)
+	const onValidationError = useRef(props.onValidationError)
+	onValidationError.current = props.onValidationError
+	useEffect(() => {
+		if (!initial.checked.ok) onValidationError.current?.(initial.checked.issues)
+	}, [initial])
+	// These are the same identities that recreate useEditor's native instance. A
+	// snapshot prop update alone must neither replace nor unmount a live document.
+	if (initial.regionId !== props.regionId || initial.extensions !== props.config.extensions) {
+		setInitial(admit())
+		return null
+	}
+	if (!initial.checked.ok)
+		return props.onValidationError ? null : (
+			<div role="alert">{initial.checked.issues.map((issue) => issue.message).join('\n')}</div>
+		)
+	return (
+		<RegionEditor {...props} content={initial.checked.value[props.regionId]!} config={config} />
+	)
 }
+
+const emptyFontFamilies: readonly string[] = []
+const emptyCommands: readonly TypstSlashCommand[] = []
 
 function RegionEditor(props: TypstRegionEditorProps) {
 	const latestProps = useRef(props)
 	latestProps.current = props
 	const [issues, setIssues] = useState<TypstEditorIssue[]>([])
 	const [composing, setComposing] = useState(false)
+	const composition = useRef(false)
 	const ui = useMemo(
 		() => ({
 			config: props.config,
@@ -123,8 +161,18 @@ function RegionEditor(props: TypstRegionEditorProps) {
 			editable: props.editable !== false,
 			composing,
 			onReveal: props.onReveal,
+			fontFamilies: props.fontFamilies ?? emptyFontFamilies,
+			slashCommands: props.slashCommands ?? emptyCommands,
 		}),
-		[props.config, props.regionId, props.editable, props.onReveal, composing],
+		[
+			props.config,
+			props.regionId,
+			props.editable,
+			props.onReveal,
+			props.fontFamilies,
+			props.slashCommands,
+			composing,
+		],
 	)
 	function report(next: TypstEditorIssue[]) {
 		setIssues(next)
@@ -133,10 +181,24 @@ function RegionEditor(props: TypstRegionEditorProps) {
 	const extensions = useMemo(
 		() => [
 			...createTypstReactExtensions(props.config),
+			Selection.configure({ className: 'typst-selection' }),
 			Extension.create({
 				name: 'typstRegionAdmission',
 				addProseMirrorPlugins: () => [
 					new Plugin({
+						key: typstBlockPolicy,
+						state: {
+							init: () => (name: string) => {
+								const latest = latestProps.current
+								const region = latest.config.regions.find((item) => item.id === latest.regionId)
+								return (
+									latest.editable !== false &&
+									!composition.current &&
+									(!region?.nodes || region.nodes.includes(name))
+								)
+							},
+							apply: (_transaction, value) => value,
+						},
 						filterTransaction: (transaction) => {
 							if (!transaction.docChanged) return true
 							const latest = latestProps.current
@@ -228,17 +290,28 @@ function RegionEditor(props: TypstRegionEditorProps) {
 				<div
 					className={['typst-editor', props.className].filter(Boolean).join(' ')}
 					data-readonly={props.editable === false || undefined}
-					onCompositionStartCapture={() => setComposing(true)}
-					onCompositionEndCapture={() => setComposing(false)}
+					onCompositionStartCapture={(event) => {
+						// Portalled controls own their composition. The document, NodeViews
+						// and host controls mounted inside this region share its edit guard.
+						if (!event.currentTarget.contains(event.target as Node)) return
+						composition.current = true
+						setComposing(true)
+					}}
+					onCompositionEndCapture={(event) => {
+						if (!event.currentTarget.contains(event.target as Node)) return
+						composition.current = false
+						setComposing(false)
+					}}
 				>
 					{issues.length > 0 && !props.onValidationError && (
 						<div role="alert" className="typst-editor-error">
 							{issues.map((issue) => `${issue.code}: ${issue.message}`).join('\n')}
 						</div>
 					)}
+					{editor && props.toolbar !== false && <TypstEditorToolbar editor={editor} />}
 					{editor && props.children?.(editor)}
 					<EditorContent editor={editor} className="typst-editor-content" />
-					{editor && <EditorMenus editor={editor} commands={props.slashCommands} />}
+					{editor && <EditorMenus editor={editor} />}
 				</div>
 			</EditorUi.Provider>
 		</TypstDataProvider>

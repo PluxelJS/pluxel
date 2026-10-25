@@ -4,7 +4,7 @@ import * as v from 'valibot'
 
 export const fontFamilies = ['Noto Serif CJK SC', 'Liberation Serif']
 
-// This node and button belong to the consumer, including their output meaning.
+// This node and insertion command belong to the consumer, including their output meaning.
 const Notice = Node.create({
 	name: 'notice',
 	group: 'block',

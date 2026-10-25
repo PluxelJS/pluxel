@@ -641,6 +641,7 @@ describe('candidate commit ownership', () => {
 	it('accepts a complete candidate in one transaction and one undo restores the original', () => {
 		const initial = doc(paragraph('Original'))
 		const fixture = stateEditor(initial)
+		const baseline = fixture.editor.getJSON()
 		const candidate = prepareTypstCandidate({
 			candidate: { regionId: 'body', baseRevision: 1, markdown: '**Replacement**' },
 			currentRevision: 1,
@@ -665,7 +666,7 @@ describe('candidate commit ownership', () => {
 		expect(fixture.dispatches).toBe(1)
 		expect(fixture.editor.state.doc.textContent).toBe('Replacement')
 		expect(undo(fixture.editor.state, fixture.dispatch)).toBe(true)
-		expect(fixture.editor.getJSON()).toEqual(initial)
+		expect(fixture.editor.getJSON()).toEqual(baseline)
 	})
 
 	it('keeps the current document for forbidden, stale and malformed candidates', () => {
@@ -690,6 +691,7 @@ describe('candidate commit ownership', () => {
 			}),
 		).toMatchObject({ ok: false, issues: [{ code: 'FORBIDDEN_REGION' }] })
 		const fixture = stateEditor(initial)
+		const baseline = fixture.editor.getJSON()
 		const prepared = prepareTypstCandidate({
 			candidate: { regionId: 'body', baseRevision: 1, markdown: 'new' },
 			currentRevision: 1,
@@ -709,12 +711,13 @@ describe('candidate commit ownership', () => {
 			}),
 		).toMatchObject({ ok: false, issues: [{ code: 'STALE_CANDIDATE' }] })
 		expect(fixture.dispatches).toBe(0)
-		expect(fixture.editor.getJSON()).toEqual(initial)
+		expect(fixture.editor.getJSON()).toEqual(baseline)
 	})
 
 	it('rejects text child content in a prepared candidate without dispatching a lossy replacement', () => {
 		const initial = doc(paragraph('Original'))
 		const fixture = stateEditor(initial)
+		const baseline = fixture.editor.getJSON()
 		expect(
 			applyTypstCandidate({
 				candidate: {
@@ -736,12 +739,13 @@ describe('candidate commit ownership', () => {
 			}),
 		).toMatchObject({ ok: false, issues: [{ code: 'INVALID_STRUCTURE' }] })
 		expect(fixture.dispatches).toBe(0)
-		expect(fixture.editor.getJSON()).toEqual(initial)
+		expect(fixture.editor.getJSON()).toEqual(baseline)
 	})
 
 	it('reports native editor transaction rejection without claiming a commit', () => {
 		const initial = doc(paragraph('Original'))
 		const fixture = stateEditor(initial)
+		const baseline = fixture.editor.getJSON()
 		const prepared = prepareTypstCandidate({
 			candidate: { regionId: 'body', baseRevision: 1, markdown: 'New' },
 			currentRevision: 1,
@@ -761,6 +765,54 @@ describe('candidate commit ownership', () => {
 				canEdit: () => true,
 			}),
 		).toMatchObject({ ok: false, issues: [{ code: 'REGION_RULE' }] })
-		expect(fixture.editor.getJSON()).toEqual(initial)
+		expect(fixture.editor.getJSON()).toEqual(baseline)
+	})
+})
+
+describe('operation-scoped validation preparation', () => {
+	it('prepares the schema once for all regions and generation, rechecking a later changed config', () => {
+		let preparations = 0
+		const marker = Node.create({
+			name: 'preparationMarker',
+			group: 'block',
+			atom: true,
+			addAttributes: () => {
+				preparations++
+				return { label: { default: 'marker' } }
+			},
+		})
+		const rules: TypstEditorConfig = {
+			regions: [{ id: 'one' }, { id: 'two' }],
+			fields: [],
+			extensions: [marker],
+			nodeMappings: {
+				preparationMarker: { validateAttributes: () => true, serialize: () => '#text[marker]' },
+			},
+		}
+		const content = doc(paragraph('Text'))
+		expect(validateTypstRegion({ document: content, regionId: 'one', config: rules }).ok).toBe(true)
+		const once = preparations
+		preparations = 0
+		expect(
+			validateTypstRegions({ regions: { one: content, two: content }, config: rules }).ok,
+		).toBe(true)
+		expect(preparations).toBe(once)
+		preparations = 0
+		expect(
+			generateTypstRegions({
+				regions: { one: content, two: content },
+				config: rules,
+				data: {},
+				snapshotRevision: 1,
+			}).ok,
+		).toBe(true)
+		expect(preparations).toBe(once)
+		rules.nodeMappings = {}
+		expect(
+			validateTypstRegions({ regions: { one: content, two: content }, config: rules }),
+		).toMatchObject({
+			ok: false,
+			issues: expect.arrayContaining([expect.objectContaining({ code: 'MISSING_SERIALIZER' })]),
+		})
 	})
 })

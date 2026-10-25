@@ -3,10 +3,13 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
+import { trackConsumerSessions } from './browser-session.mjs'
 
 const output = await mkdtemp(join(tmpdir(), 'typst-contexts-ui-'))
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
+const releaseSessions = trackConsumerSessions(page)
+page.on('dialog', (dialog) => dialog.accept())
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))
 const body = page.getByTestId('region-body').locator('.tiptap')
@@ -274,6 +277,7 @@ try {
 } finally {
 	try {
 		await page.goto('about:blank')
+		await releaseSessions()
 	} finally {
 		await browser.close()
 	}

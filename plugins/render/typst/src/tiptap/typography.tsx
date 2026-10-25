@@ -1,6 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import { fontFamilyName, textStyleColor } from './text-style'
+import { selectionTextStyle } from './selection-format'
+import { FloatingMenu } from './floating-menu'
 
 const textColors = [
 	{ label: '黑色', value: '#1f2937' },
@@ -34,13 +36,17 @@ const fontSizes = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 7
 const hexColor = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i
 
 function ColorPicker({
+	editor,
+	compact = false,
 	background,
 	value,
 	disabled,
 	apply,
 }: {
+	editor: Editor
+	compact?: boolean
 	background?: boolean
-	value: string
+	value: string | null
 	disabled: boolean
 	apply(color: string | null): void
 }) {
@@ -48,9 +54,13 @@ function ColorPicker({
 	const colors = background ? backgroundColors : textColors
 	const [open, setOpen] = useState(false)
 	const [custom, setCustom] = useState('')
+	const [composing, setComposing] = useState(false)
+	const composingRef = useRef(composing)
+	composingRef.current = composing
 	const container = useRef<HTMLDivElement>(null)
+	const popup = useRef<HTMLDivElement>(null)
 	const trigger = useRef<HTMLButtonElement>(null)
-	const palette = useRef<HTMLDivElement>(null)
+	const reference = useCallback(() => trigger.current!.getBoundingClientRect(), [])
 	const id = useId()
 	const rgba = textStyleColor(value)
 	const currentHex = rgba
@@ -59,44 +69,27 @@ function ColorPicker({
 				.map((channel) => channel.toString(16).padStart(2, '0'))
 				.join('')
 		: ''
-	useLayoutEffect(() => {
-		if (!open) return
-		const document = container.current!.ownerDocument
-		const window = document.defaultView!
-		function position() {
-			if (!palette.current || !container.current) return
-			const bounds = container.current.getBoundingClientRect()
-			const left = bounds.left
-			const editor = container.current.closest('.typst-editor')?.getBoundingClientRect()
-			const start = Math.max(12, (editor?.left ?? 0) + 8)
-			const end = Math.min(window.innerWidth - 12, editor ? editor.right - 8 : window.innerWidth)
-			const offset = Math.min(0, end - left - palette.current.offsetWidth)
-			palette.current.style.left = `${Math.max(start - left, offset)}px`
-			const height = palette.current.offsetHeight
-			const below = bounds.bottom + 8
-			const preferred = below + height <= window.innerHeight - 12 ? below : bounds.top - height - 8
-			const top = Math.max(12, Math.min(preferred, window.innerHeight - height - 12))
-			palette.current.style.top = `${top - bounds.top}px`
-		}
-		position()
-		window.addEventListener('resize', position)
-		document.addEventListener('scroll', position, true)
-		return () => {
-			window.removeEventListener('resize', position)
-			document.removeEventListener('scroll', position, true)
-		}
-	}, [open])
+	const focusSwatch = () => {
+		const root = compact ? popup.current : container.current
+		const initial =
+			root?.querySelector<HTMLButtonElement>('[data-swatch][aria-pressed="true"]') ??
+			root?.querySelector<HTMLButtonElement>('[data-swatch]')
+		initial?.focus({ preventScroll: true })
+	}
 	useEffect(() => {
 		if (!open) return
-		const root = container.current!
+		const root = (compact ? popup.current : container.current)!
 		const document = root.ownerDocument
+		const contains = (node: Node | null) =>
+			container.current?.contains(node) || popup.current?.contains(node)
 		function outside(event: PointerEvent) {
-			if (!container.current?.contains(event.target as Node)) setOpen(false)
+			if (!contains(event.target as Node)) setOpen(false)
 		}
 		function focusOutside() {
-			if (!container.current?.contains(document.activeElement)) setOpen(false)
+			if (!contains(document.activeElement)) setOpen(false)
 		}
 		function navigate(event: KeyboardEvent) {
+			if (event.isComposing || composingRef.current) return
 			if (event.key === 'Escape') {
 				event.preventDefault()
 				event.stopPropagation()
@@ -123,24 +116,112 @@ function ColorPicker({
 		document.addEventListener('pointerdown', outside)
 		document.addEventListener('focusin', focusOutside)
 		root.addEventListener('keydown', navigate)
-		const initial =
-			root.querySelector<HTMLButtonElement>('[data-swatch][aria-pressed="true"]') ??
-			root.querySelector<HTMLButtonElement>('[data-swatch]')
-		initial?.focus()
+		if (!compact) focusSwatch()
+		const selection = editor.state.selection
+		const doc = editor.state.doc
+		const changed = () => {
+			if (!selection.eq(editor.state.selection) || doc !== editor.state.doc) setOpen(false)
+		}
+		const hidden = new ResizeObserver(() => {
+			if (editor.view.dom.getClientRects().length === 0) setOpen(false)
+		})
+		hidden.observe(editor.view.dom)
+		editor.on('transaction', changed)
 		return () => {
+			hidden.disconnect()
+			editor.off('transaction', changed)
 			document.removeEventListener('pointerdown', outside)
 			document.removeEventListener('focusin', focusOutside)
 			root.removeEventListener('keydown', navigate)
 		}
-	}, [open])
+	}, [open, compact, editor])
 	useEffect(() => {
 		if (disabled) setOpen(false)
 	}, [disabled])
 	function commit(color: string | null) {
-		if (disabled) return
+		if (disabled || composing) return
 		apply(color)
 		setOpen(false)
+		if (compact) editor.view.focus()
+		else trigger.current?.focus({ preventScroll: true })
 	}
+	const palette = (
+		<div id={id} role="dialog" tabIndex={-1} aria-label={label} className="typst-color-dialog">
+			<div className="typst-color-heading">
+				{label}
+				{value === null ? ' · 混合' : ''}
+			</div>
+			<div className="typst-color-swatches" role="group" aria-label="预设颜色">
+				{colors.map((color) => (
+					<button
+						key={color.value}
+						type="button"
+						data-swatch
+						aria-label={color.label}
+						title={color.label}
+						aria-pressed={currentHex === color.value}
+						disabled={composing}
+						onMouseDown={(event) => event.preventDefault()}
+						onClick={() => commit(color.value)}
+					>
+						<span
+							aria-hidden="true"
+							className="typst-color-sample"
+							style={
+								background
+									? { backgroundColor: color.value }
+									: {
+											color: color.value,
+											backgroundColor: color.value === '#ffffff' ? '#52525b' : undefined,
+										}
+							}
+						>
+							A
+						</span>
+					</button>
+				))}
+			</div>
+			<form
+				className="typst-color-custom"
+				onCompositionStart={() => setComposing(true)}
+				onCompositionEnd={() => setComposing(false)}
+				onSubmit={(event) => {
+					event.preventDefault()
+					if (!composing && hexColor.test(custom)) commit(custom)
+				}}
+			>
+				<label>
+					<span>自定义</span>
+					<input
+						aria-label="色值"
+						onKeyDown={(event) => {
+							if (event.nativeEvent.isComposing || composing) {
+								if (event.key === 'Enter') event.preventDefault()
+								event.stopPropagation()
+							}
+						}}
+
+						value={custom}
+						placeholder="#RRGGBB"
+						aria-invalid={!hexColor.test(custom)}
+						onChange={(event) => setCustom(event.currentTarget.value)}
+						spellCheck={false}
+					/>
+				</label>
+				<button type="submit" disabled={composing || !hexColor.test(custom)}>
+					应用
+				</button>
+			</form>
+			<button
+				type="button"
+				className="typst-color-reset"
+				disabled={composing}
+				onClick={() => commit(null)}
+			>
+				清除颜色
+			</button>
+		</div>
+	)
 	return (
 		<div ref={container} className="typst-color-menu">
 			<button
@@ -148,13 +229,14 @@ function ColorPicker({
 				type="button"
 				className="typst-tool-button typst-color-trigger"
 				aria-label={label}
-				title={label}
+				title={`${background ? '背景颜色 / 高亮' : label}：${value === null ? '混合' : currentHex || '继承模板'}`}
 				aria-haspopup="dialog"
 				aria-expanded={open}
 				aria-controls={open ? id : undefined}
 				disabled={disabled}
 				onMouseDown={(event) => event.preventDefault()}
 				onClick={() => {
+					setComposing(false)
 					setCustom(currentHex || (background ? '#fef08a' : '#2563eb'))
 					setOpen(!open)
 				}}
@@ -180,185 +262,186 @@ function ColorPicker({
 						'A'
 					)}
 					<span
+						className={value === null ? 'typst-mixed-color' : undefined}
 						style={{ backgroundColor: value || (background ? 'transparent' : 'currentColor') }}
 					/>
 				</span>
-				<span>{background ? '底色' : '文字'}</span>
+				{!compact && <span>{background ? '底色' : '文字'}</span>}
 				<span aria-hidden="true" className="typst-picker-chevron">
 					⌄
 				</span>
 			</button>
-			{open && (
-				<div
-					ref={palette}
-					id={id}
-					role="dialog"
-					tabIndex={-1}
-					aria-label={label}
-					className="typst-color-dialog"
-				>
-					<div className="typst-color-heading">{label}</div>
-					<div className="typst-color-swatches" role="group" aria-label="预设颜色">
-						{colors.map((color) => (
-							<button
-								key={color.value}
-								type="button"
-								data-swatch
-								aria-label={color.label}
-								title={color.label}
-								aria-pressed={currentHex === color.value}
-								onMouseDown={(event) => event.preventDefault()}
-								onClick={() => commit(color.value)}
-							>
-								<span
-									aria-hidden="true"
-									className="typst-color-sample"
-									style={
-										background
-											? { backgroundColor: color.value }
-											: {
-													color: color.value,
-													backgroundColor: color.value === '#ffffff' ? '#52525b' : undefined,
-												}
-									}
-								>
-									A
-								</span>
-							</button>
-						))}
-					</div>
-					<form
-						className="typst-color-custom"
-						onSubmit={(event) => {
-							event.preventDefault()
-							if (hexColor.test(custom)) commit(custom)
-						}}
+			{open &&
+				(compact ? (
+					<FloatingMenu
+						editor={editor}
+						reference={reference}
+						elementRef={popup}
+						onReady={focusSwatch}
+						className="typst-toolbar-palette"
 					>
-						<label>
-							<span>自定义</span>
-							<input
-								aria-label="色值"
-								value={custom}
-								placeholder="#RRGGBB"
-								aria-invalid={!hexColor.test(custom)}
-								onChange={(event) => setCustom(event.currentTarget.value)}
-								spellCheck={false}
-							/>
-						</label>
-						<button type="submit" disabled={!hexColor.test(custom)}>
-							应用
-						</button>
-					</form>
-					<button type="button" className="typst-color-reset" onClick={() => commit(null)}>
-						清除颜色
-					</button>
-				</div>
-			)}
+						{palette}
+					</FloatingMenu>
+				) : (
+					palette
+				))}
 		</div>
 	)
 }
 
-/** Uses the host's native history boundary; local state only owns an open palette. */
-export function TypographyTools({
+interface TypographyProps {
+	editor: Editor
+	disabled: boolean
+	chain(): ChainedCommands
+}
+
+/** Selects retain native keyboard focus; their values describe the entire native selection. */
+export function FontTools({
 	editor,
 	disabled,
 	fontFamilies,
 	chain,
-}: {
-	editor: Editor
-	disabled: boolean
-	fontFamilies: readonly string[]
-	chain(): ChainedCommands
-}) {
-	const attributes = editor.getAttributes('textStyle')
-	const fontFamily =
-		typeof attributes.fontFamily === 'string'
-			? attributes.fontFamily.replace(/^(['"])(.*)\1$/, '$2')
-			: ''
-	const fontSize = typeof attributes.fontSize === 'string' ? attributes.fontSize : ''
-	const families = [...new Set([...fontFamilies, ...(fontFamily ? [fontFamily] : [])])]
+}: TypographyProps & { fontFamilies: readonly string[] }) {
+	const { fontFamily, fontSize } = selectionTextStyle(editor)
+	const families = [
+		...new Set([
+			...fontFamilies.map((family) => fontFamilyName(family) ?? family),
+			...(fontFamily ? [fontFamily] : []),
+		]),
+	]
 	const sizes = fontSize && !fontSizes.includes(fontSize) ? [...fontSizes, fontSize] : fontSizes
 	return (
-		<div role="toolbar" aria-label="排版扩展" className="typst-typography">
-			<span
-				className="typst-typography-label"
-				title="这些格式保存在正文 JSON 和 Typst/PDF 中，Markdown 无法完整保留。"
+		<>
+			<label
+				className="typst-type-picker typst-font-picker"
+				title={fontFamily === null ? '字体：混合' : fontFamily || '继承模板字体'}
 			>
-				排版扩展
-			</span>
+				<span>字体</span>
+				<select
+					aria-label="字体"
+					value={fontFamily ?? '__mixed__'}
+					disabled={disabled || (families.length === 0 && !fontFamily && fontFamily !== null)}
+					onChange={(event) => {
+						if (disabled || !editor.isEditable || editor.view.composing) return
+						const value = event.currentTarget.value
+						if (value)
+							chain()
+								.setFontFamily(fontFamilyName(value) ? value : JSON.stringify(value))
+								.run()
+						else chain().unsetFontFamily().run()
+					}}
+				>
+					{fontFamily === null && (
+						<option value="__mixed__" disabled>
+							混合字体
+						</option>
+					)}
+					<option value="">模板字体</option>
+					{families.map((family) => (
+						<option
+							key={family}
+							value={family}
+							disabled={
+								!editor
+									.can()
+									.setFontFamily(fontFamilyName(family) ? family : JSON.stringify(family))
+							}
+						>
+							{family}
+						</option>
+					))}
+				</select>
+			</label>
+			<label
+				className="typst-type-picker typst-size-picker"
+				title={fontSize === null ? '字号：混合' : fontSize || '继承模板字号'}
+			>
+				<span>字号</span>
+				<select
+					aria-label="字号"
+					value={fontSize ?? '__mixed__'}
+					disabled={disabled || !editor.can().setFontSize('18pt')}
+					onChange={(event) => {
+						if (disabled || !editor.isEditable || editor.view.composing) return
+						const value = event.currentTarget.value
+						if (value) chain().setFontSize(value).run()
+						else chain().unsetFontSize().run()
+					}}
+				>
+					{fontSize === null && (
+						<option value="__mixed__" disabled>
+							混合字号
+						</option>
+					)}
+					<option value="">模板字号</option>
+					{sizes.map((size) => (
+						<option key={size} value={size}>
+							{size}
+						</option>
+					))}
+				</select>
+			</label>
+		</>
+	)
+}
+
+export function ColorTools({
+	editor,
+	disabled,
+	chain,
+	compact = false,
+}: TypographyProps & { compact?: boolean }) {
+	const attributes = selectionTextStyle(editor)
+	const canApply = () => !disabled && editor.isEditable && !editor.view.composing
+	return (
+		<>
+			<ColorPicker
+				editor={editor}
+				compact={compact}
+				value={attributes.color}
+				disabled={disabled || !editor.can().setColor('#2563eb')}
+				apply={(value) => {
+					if (canApply()) (value ? chain().setColor(value) : chain().unsetColor()).run()
+				}}
+			/>
+			<ColorPicker
+				editor={editor}
+				compact={compact}
+				background
+				value={attributes.backgroundColor}
+				disabled={disabled || !editor.can().setBackgroundColor('#fef08a')}
+				apply={(value) => {
+					if (canApply())
+						(value ? chain().setBackgroundColor(value) : chain().unsetBackgroundColor()).run()
+				}}
+			/>
+		</>
+	)
+}
+
+/** Uses the host's native history boundary; local state only owns an open palette. */
+export function TypographyTools(props: TypographyProps & { fontFamilies: readonly string[] }) {
+	const { editor, disabled, chain } = props
+	const attributes = selectionTextStyle(editor)
+	return (
+		<div role="toolbar" aria-label="排版扩展" className="typst-typography">
 			<div className="typst-tool-group">
-				<label className="typst-type-picker typst-font-picker">
-					<span>字体</span>
-					<select
-						aria-label="字体"
-						value={fontFamily}
-						disabled={
-							disabled || families.length === 0 || !editor.can().setFontFamily(families[0]!)
-						}
-						onChange={(event) => {
-							const value = event.currentTarget.value
-							if (value)
-								chain()
-									.setFontFamily(fontFamilyName(value) ? value : JSON.stringify(value))
-									.run()
-							else chain().unsetFontFamily().run()
-						}}
-					>
-						<option value="">模板字体</option>
-						{families.map((family) => (
-							<option key={family} value={family}>
-								{family}
-							</option>
-						))}
-					</select>
-				</label>
-				<label className="typst-type-picker typst-size-picker">
-					<span>字号</span>
-					<select
-						aria-label="字号"
-						value={fontSize}
-						disabled={disabled || !editor.can().setFontSize('18pt')}
-						onChange={(event) => {
-							const value = event.currentTarget.value
-							if (value) chain().setFontSize(value).run()
-							else chain().unsetFontSize().run()
-						}}
-					>
-						<option value="">模板字号</option>
-						{sizes.map((size) => (
-							<option key={size} value={size}>
-								{size}
-							</option>
-						))}
-					</select>
-				</label>
+				<FontTools {...props} />
 			</div>
-			<div className="typst-tool-group">
-				<ColorPicker
-					value={attributes.color ?? ''}
-					disabled={disabled || !editor.can().setColor('#2563eb')}
-					apply={(value) => (value ? chain().setColor(value).run() : chain().unsetColor().run())}
-				/>
-				<ColorPicker
-					background
-					value={attributes.backgroundColor ?? ''}
-					disabled={disabled || !editor.can().setBackgroundColor('#fef08a')}
-					apply={(value) =>
-						value ? chain().setBackgroundColor(value).run() : chain().unsetBackgroundColor().run()
-					}
-				/>
+			<div className="typst-format-colors">
+				<ColorTools {...props} />
 			</div>
 			<button
 				type="button"
 				className="typst-tool-button typst-typography-reset"
 				aria-label="清除排版"
 				title="清除字体、字号、文字颜色与背景颜色，保留其他格式"
-				disabled={
-					disabled ||
-					!Object.values(attributes).some((value) => value !== null && value !== undefined)
-				}
+				disabled={disabled || !Object.values(attributes).some((value) => value !== '')}
 				onMouseDown={(event) => event.preventDefault()}
-				onClick={() => chain().unsetMark('textStyle').run()}
+				onClick={() => {
+					if (!disabled && editor.isEditable && !editor.view.composing)
+						chain().unsetMark('textStyle').run()
+				}}
 			>
 				清除排版
 			</button>

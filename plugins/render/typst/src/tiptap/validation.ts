@@ -1,9 +1,15 @@
-import { isTypstBlock, blockAttributeError, templateDefinitionError } from './blocks.js'
+import {
+	isTypstBlock,
+	blockAttributeError,
+	templateDefinitionError,
+	templateDefinitions,
+} from './blocks.js'
 import { flattenExtensions, getSchema, type JSONContent } from '@tiptap/core'
 import type { NodeType, MarkType, Schema } from '@tiptap/pm/model'
 import { createTypstExtensions } from './extensions.js'
 import { tableStyleOptions, tableStyleOptionsError, tableStyleError } from './table-style.js'
 import { textStyleAttributes, validTextStyleValue } from './text-style.js'
+import { validTextAlignment } from './text-align.js'
 import type {
 	TypstDataField,
 	TypstDocumentDraft,
@@ -381,16 +387,27 @@ export function tableGrid(
 	return { columns, cells, widths: Array.from({ length: columns }, (_, x) => widths[x] ?? 100) }
 }
 
-function allowedLink(config: TypstEditorConfig, value: unknown): boolean {
-	return (
-		typeof value === 'string' &&
-		value.length > 0 &&
-		!Array.from(value).some((character) => {
+export function allowedLink(config: TypstEditorConfig, value: unknown): boolean {
+	if (
+		typeof value !== 'string' ||
+		value.length === 0 ||
+		Array.from(value).some((character) => {
 			const code = character.codePointAt(0)!
 			return code <= 0x20 || code === 0x7f
-		}) &&
-		(config.allowLink ? config.allowLink(value) : /^(?:https?:\/\/|mailto:|tel:|#)/i.test(value))
+		})
 	)
+		return false
+	if (config.allowLink) return config.allowLink(value)
+	if (/^https?:\/\//i.test(value)) {
+		try {
+			// Validate the destination without rewriting the author's URL.
+			const parsed = new URL(value)
+			return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+		} catch {
+			return false
+		}
+	}
+	return /^(?:mailto:|tel:|#)/i.test(value)
 }
 
 function inspectNode(
@@ -399,6 +416,7 @@ function inspectNode(
 		config: TypstEditorConfig
 		schema: Schema
 		region: TypstRegionDefinition
+		context: ValidationContext
 		data?: unknown
 	},
 	path: (string | number)[],
@@ -440,6 +458,15 @@ function inspectNode(
 	if (value.type !== 'doc' && region.nodes && !region.nodes.includes(value.type))
 		issue('REGION_RULE', `Node ${value.type} is not allowed in this region.`)
 	const attrs = inspectAttrs(value.attrs, type, path, region.id, issues)
+	if (
+		(value.type === 'paragraph' || value.type === 'heading') &&
+		!validTextAlignment(attrs.textAlign)
+	)
+		issue(
+			'INVALID_ATTRIBUTE',
+			'Text alignment must be left, center, right, justify or null (template inheritance).',
+			['attrs', 'textAlign'],
+		)
 	const customValidation = config.nodeMappings?.[value.type]?.validateAttributes?.(attrs)
 	if (customValidation !== undefined && customValidation !== true)
 		issue(
@@ -473,11 +500,17 @@ function inspectNode(
 	)
 		issue('INVALID_ATTRIBUTE', 'Code language must be a string or null.', ['attrs', 'language'])
 	if (isTypstBlock(value.type)) {
-		const error = blockAttributeError(value.type, attrs, config.extensions, data)
+		const error = blockAttributeError(
+			value.type,
+			attrs,
+			config.extensions,
+			data,
+			options.context.templates,
+		)
 		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs'])
 	}
 	if (value.type === 'table') {
-		const tableOptions = tableStyleOptions(config.extensions)
+		const tableOptions = options.context.table
 		const error = tableOptions && tableStyleError(attrs.typstTableStyle, tableOptions)
 		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs', 'typstTableStyle'])
 	}
@@ -489,7 +522,7 @@ function inspectNode(
 				'path',
 			])
 		else {
-			const field = config.fields.find((descriptor) => samePath(descriptor.path, fieldPath))
+			const field = options.context.fields.get(JSON.stringify(fieldPath))
 			if (
 				!field ||
 				(region.fields && !region.fields.some((allowed) => samePath(allowed, fieldPath)))
@@ -689,15 +722,44 @@ function inspectAttrs(
 	return resolved
 }
 
+/** Private, synchronous preparation. Never retained between public calls. */
+export function prepareTypstValidation(config: TypstEditorConfig) {
+	const checked = editorSchema(config)
+	if (!checked.ok) return checked
+	return {
+		ok: true as const,
+		value: {
+			config,
+			schema: checked.value,
+			regions: new Map(config.regions.map((region) => [region.id, region])),
+			fields: new Map(config.fields.map((field) => [JSON.stringify(field.path), field])),
+			templates: templateDefinitions(config.extensions),
+			table: tableStyleOptions(config.extensions),
+		},
+	}
+}
+type ValidationContext = Extract<ReturnType<typeof prepareTypstValidation>, { ok: true }>['value']
+
 export function validateTypstRegion(options: {
 	document: unknown
 	regionId: string
 	config: TypstEditorConfig
 	data?: unknown
 }): TypstEditorResult<JSONContent> {
-	const checked = editorSchema(options.config)
-	if (!checked.ok) return checked
-	const region = options.config.regions.find((entry) => entry.id === options.regionId)
+	const context = prepareTypstValidation(options.config)
+	if (!context.ok) return context
+	return validateRegionWithContext(options, context.value)
+}
+
+function validateRegionWithContext(
+	options: {
+		document: unknown
+		regionId: string
+		data?: unknown
+	},
+	context: ValidationContext,
+): TypstEditorResult<JSONContent> {
+	const region = context.regions.get(options.regionId)
 	if (!region)
 		return {
 			ok: false,
@@ -716,7 +778,12 @@ export function validateTypstRegion(options: {
 				},
 			],
 		}
-	inspectNode(options.document, { ...options, schema: checked.value, region }, [], issues)
+	inspectNode(
+		options.document,
+		{ ...options, config: context.config, schema: context.schema, region, context },
+		[],
+		issues,
+	)
 	if (issues.length > 0) return { ok: false, issues }
 	const blockIds = new Set<string>()
 	const checkIds = (node: JSONContent, path: (string | number)[]) => {
@@ -736,7 +803,7 @@ export function validateTypstRegion(options: {
 	checkIds(options.document as JSONContent, [])
 	if (issues.length > 0) return { ok: false, issues }
 	try {
-		const node = checked.value.nodeFromJSON(options.document)
+		const node = context.schema.nodeFromJSON(options.document)
 		node.check()
 	} catch (error) {
 		if (!(error instanceof RangeError)) throw error
@@ -756,8 +823,18 @@ export function validateTypstRegions(options: {
 	config: TypstEditorConfig
 	data?: unknown
 }): TypstEditorResult<Record<string, JSONContent>> {
-	const checked = editorSchema(options.config)
-	if (!checked.ok) return checked
+	const context = prepareTypstValidation(options.config)
+	if (!context.ok) return context
+	return validateRegionsWithContext(options, context.value)
+}
+
+export function validateRegionsWithContext(
+	options: {
+		regions: unknown
+		data?: unknown
+	},
+	context: ValidationContext,
+): TypstEditorResult<Record<string, JSONContent>> {
 	if (!isObject(options.regions))
 		return {
 			ok: false,
@@ -769,7 +846,7 @@ export function validateTypstRegions(options: {
 			],
 		}
 	const regions = options.regions
-	const expected = options.config.regions.map((region) => region.id)
+	const expected = [...context.regions.keys()]
 	if (
 		Object.keys(regions).length !== expected.length ||
 		expected.some((id) => !Object.hasOwn(regions, id))
@@ -785,12 +862,14 @@ export function validateTypstRegions(options: {
 		}
 	const issues: TypstEditorIssue[] = []
 	for (const id of expected) {
-		const result = validateTypstRegion({
-			document: options.regions[id],
-			regionId: id,
-			config: options.config,
-			data: options.data,
-		})
+		const result = validateRegionWithContext(
+			{
+				document: options.regions[id],
+				regionId: id,
+				data: options.data,
+			},
+			context,
+		)
 		if (!result.ok) issues.push(...result.issues)
 	}
 	return issues.length > 0

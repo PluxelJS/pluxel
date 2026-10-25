@@ -1,5 +1,6 @@
 import type { Editor, JSONContent } from '@tiptap/core'
 import { closeHistory } from '@tiptap/pm/history'
+import type { Selection } from '@tiptap/pm/state'
 import { exportTypstMarkdown, parseTypstMarkdown } from './markdown.js'
 import { editorSchema, validateTypstRegion } from './validation.js'
 import type {
@@ -9,6 +10,49 @@ import type {
 	TypstMarkdownCandidate,
 	TypstPreparedCandidate,
 } from './types.js'
+
+/** Capture region/revision and, optionally, the enclosing top-level blocks together.
+ * A nonempty selection has an exclusive end. Nested and cell selections cover their
+ * enclosing blocks; a boundary caret chooses the following block (the last at EOF).
+ * This reads the native selection without changing it or the document. */
+export function captureTypstCandidateTarget(options: {
+	selection: Selection
+	regionId: string
+	baseRevision: TypstDraftRevision
+	scope: 'region' | 'blocks'
+}): TypstEditorResult<Omit<TypstMarkdownCandidate, 'markdown'>> {
+	const target = { regionId: options.regionId, baseRevision: options.baseRevision }
+	if (options.scope === 'region') return { ok: true, value: target }
+	const { selection } = options
+	const doc = selection.$from.doc
+	// CellSelection can have several ranges; .from/.to alone describe only its first cell.
+	const start = Math.min(...selection.ranges.map((range) => range.$from.pos))
+	const end = Math.max(...selection.ranges.map((range) => range.$to.pos))
+	let from = -1
+	let to = -1
+	doc.forEach((node, offset, index) => {
+		const limit = offset + node.nodeSize
+		const includes = selection.empty
+			? start >= offset && (start < limit || index === doc.childCount - 1)
+			: start < limit && end > offset
+		if (includes) {
+			if (from === -1) from = offset
+			to = limit
+		}
+	})
+	if (from === -1 || from >= to)
+		return {
+			ok: false,
+			issues: [
+				{
+					code: 'INVALID_CANDIDATE_RANGE',
+					regionId: options.regionId,
+					message: 'Place the cursor in a block or select the blocks to replace.',
+				},
+			],
+		}
+	return { ok: true, value: { ...target, range: { from, to } } }
+}
 
 function admission(options: {
 	regionId: string

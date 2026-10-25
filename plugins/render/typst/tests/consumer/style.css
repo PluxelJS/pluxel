@@ -295,6 +295,65 @@ pre[data-testid='import-result'] {
 	font-size: 12px;
 	color: var(--consumer-muted);
 }
+.pane-switch {
+	display: none;
+}
+.compile-diagnostics {
+	flex-shrink: 0;
+	max-height: 180px;
+	overflow: auto;
+	border: 1px solid var(--consumer-border);
+	border-radius: 6px;
+	padding: 8px 12px;
+	font-size: 12px;
+}
+.compile-diagnostics :is(p, ul) {
+	margin: 8px 0;
+}
+.compile-diagnostics li {
+	margin-bottom: 8px;
+	overflow-wrap: anywhere;
+}
+.compile-diagnostics button {
+	margin-left: 8px;
+}
+.compile-diagnostics small {
+	display: block;
+}
+.candidate-review {
+	font-size: 12px;
+}
+.candidate-comparison {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+}
+.candidate-comparison pre {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 180px;
+	overflow: auto;
+	padding: 8px;
+	background: var(--consumer-hover);
+}
+.channel-parameters {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--consumer-border);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: 12px;
+}
+.channel-parameters label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.channel-parameters input {
+	min-width: 0;
+	flex: 1;
+	padding: 6px;
+}
 .workspace-status > span {
 	white-space: nowrap;
 	text-overflow: ellipsis;
@@ -308,7 +367,7 @@ output[data-testid='navigation'] {
 }
 @media (max-width: 850px) {
 	main {
-		height: auto;
+		height: 100dvh;
 		min-height: 100dvh;
 		padding: 12px;
 	}
@@ -333,9 +392,38 @@ output[data-testid='navigation'] {
 	.columns {
 		grid-template-columns: minmax(0, 1fr);
 	}
+	.pane-switch {
+		display: flex;
+		flex-shrink: 0;
+	}
+	.pane-switch button {
+		flex: 1;
+		padding: 8px;
+		border: 1px solid var(--consumer-border);
+		border-radius: 5px;
+		background: var(--consumer-surface);
+		color: inherit;
+	}
+	.pane-switch button[aria-pressed='true'] {
+		background: var(--consumer-active);
+		font-weight: 650;
+	}
+	.columns[data-pane='editor'] > .preview-pane,
+	.columns[data-pane='preview'] > .editing {
+		display: none;
+	}
 	.editing,
 	.preview-pane {
-		height: max(560px, 75dvh);
+		height: auto;
+	}
+	.candidate-comparison {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	header > span {
+		display: none;
+	}
+	.host-actions select {
+		max-width: 240px;
 	}
 	.workspace-tabs {
 		padding: 6px 6px 0;

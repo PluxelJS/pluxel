@@ -23,13 +23,13 @@ const errors = [],
 	logs = []
 let instance, processClosed, page, project, documentConfig, connection, studio, portEvidence
 const executablePath = process.env.STUDIO_EXECUTABLE ?? electronExecutable
+const ozonePlatform =
+	process.env.STUDIO_OZONE_PLATFORM ?? (process.env.WAYLAND_DISPLAY ? 'wayland' : undefined)
 const args = [
 	...(process.env.STUDIO_EXECUTABLE ? [] : [applicationRoot]),
 	`--user-data-dir=${profile}`,
 	'--disable-gpu',
-	...(process.platform === 'linux' && process.env.WAYLAND_DISPLAY
-		? ['--ozone-platform=wayland']
-		: []),
+	...(process.platform === 'linux' && ozonePlatform ? [`--ozone-platform=${ozonePlatform}`] : []),
 	...(process.env.STUDIO_DISABLE_SANDBOX === '1' ? ['--no-sandbox'] : []),
 ]
 await mkdir(output, { recursive: true })
@@ -53,6 +53,11 @@ async function start() {
 	instance.process().stderr?.on('data', (bytes) => logs.push(bytes.toString()))
 	instance.process().stdout?.on('data', (bytes) => logs.push(bytes.toString()))
 	page = await instance.firstWindow({ timeout: 90_000 })
+	await instance.evaluate(({ BrowserWindow }) => {
+		const window = BrowserWindow.getAllWindows()[0]
+		window.unmaximize()
+		window.setBounds({ x: 0, y: 0, width: 1440, height: 900 })
+	})
 	page.setDefaultTimeout(60_000)
 	page.on('pageerror', (error) => {
 		errors.push(error.message)
@@ -465,13 +470,13 @@ async function verifyMultiPageUi(entry, binary) {
 	const navigation = page.getByRole('navigation', { name: '文档目录与页面', exact: true })
 	await navigation.getByRole('button', { name: `第 ${binary.pageCount} 页`, exact: true }).click()
 	assert.equal(
-		await page.getByLabel('跳转到页', { exact: true }).inputValue(),
+		await page.getByLabel('跳转到页', { exact: true }).filter({ visible: true }).inputValue(),
 		String(binary.pageCount),
 	)
 	await screenshot('01-quarterly-last-page')
 	await navigation.getByRole('button').filter({ hasText: '经营概况' }).click()
 	assert.equal(
-		await page.getByLabel('跳转到页', { exact: true }).inputValue(),
+		await page.getByLabel('跳转到页', { exact: true }).filter({ visible: true }).inputValue(),
 		String(binary.outline.find((heading) => heading.title === '经营概况').page),
 	)
 	await screenshot('01-quarterly-outline')
@@ -521,6 +526,22 @@ async function selectEditorText(editor, text, collapse = false) {
 	await editor.evaluate(
 		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
 	)
+}
+
+async function openFormat(toolbar, name = '文字格式') {
+	const dialog = page.getByRole('dialog', { name, exact: true })
+	if (!(await dialog.isVisible()))
+		await toolbar.getByRole('button', { name: '格式', exact: true }).click()
+	await dialog.waitFor()
+	return dialog
+}
+
+async function insertBodyContent(toolbar, title) {
+	await toolbar.getByRole('button', { name: '插入', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: '插入内容', exact: true })
+	await dialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).fill(title)
+	await dialog.getByRole('option', { name: title, exact: true }).click()
+	await dialog.waitFor({ state: 'hidden' })
 }
 
 const bodyTypographyText = '中文输入验收𠮷'
@@ -619,6 +640,33 @@ async function verifyBodyEditor(entry) {
 	await ready()
 	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
 	assert.equal(await summary.locator('td').first().locator('p').count(), 2)
+	const originalBlocks = await summary.evaluate((element) => element.editor.getJSON())
+	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。')
+	await page.keyboard.press('Control+k')
+	const linkDialog = page.getByRole('dialog', { name: '链接', exact: true })
+	await linkDialog
+		.getByRole('textbox', { name: '链接地址', exact: true })
+		.fill('https://tiptap.dev')
+	await linkDialog.getByRole('button', { name: '应用链接', exact: true }).click()
+	assert.equal(await summary.locator('a[href="https://tiptap.dev"]').count(), 1)
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.deepEqual(await summary.evaluate((element) => element.editor.getJSON()), originalBlocks)
+	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。', true)
+	await page.keyboard.press('Alt+F10')
+	assert.equal(
+		await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+		'当前块操作',
+	)
+	await page.keyboard.press('Enter')
+	const blockDialog = page.getByRole('dialog', { name: '块操作', exact: true })
+	await blockDialog.getByRole('button', { name: '复制块', exact: true }).click()
+	assert.equal(
+		await summary.evaluate((element) => element.editor.state.doc.childCount),
+		originalBlocks.content.length + 1,
+	)
+	await screenshot('07a-body-block-duplicate')
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.deepEqual(await summary.evaluate((element) => element.editor.getJSON()), originalBlocks)
 	await screenshot('07-body-table')
 	const region = page.getByRole('combobox', { name: '正文区域', exact: true })
 	const switchRegion = async (label) => {
@@ -659,9 +707,11 @@ async function verifyBodyEditor(entry) {
 	await toolbar.getByRole('button', { name: '重做', exact: true }).click()
 	assert.match(await summary.innerText(), /中文输入验收𠮷/)
 	await selectEditorText(summary, '中文输入验收𠮷')
+	await page.keyboard.press('Shift+F10')
 	await page.getByRole('toolbar', { name: '选区格式', exact: true }).waitFor()
 	await screenshot('07b-body-selection')
-	await toolbar.getByRole('button', { name: '加粗', exact: true }).click()
+	const formatDialog = page.getByRole('dialog', { name: '文字格式', exact: true })
+	await formatDialog.getByRole('button', { name: '加粗', exact: true }).click()
 	assert.match(await summary.locator('strong').last().innerText(), /中文输入验收𠮷/)
 	const target = { projectId: project.id, entry }
 	await until(async () => {
@@ -669,11 +719,12 @@ async function verifyBodyEditor(entry) {
 		return saved.data.customer?.name === '青山有限公司'
 	}, 'Customer data was not saved before typography commands')
 	const beforeTypography = await studio.getInput(target)
-	const typography = page.locator('.studio-region-editor:visible').getByRole('toolbar', {
+	const typography = formatDialog.getByRole('toolbar', {
 		name: '排版扩展',
 		exact: true,
 	})
 	const applyTypography = async () => {
+		await openFormat(toolbar)
 		await typography
 			.getByRole('combobox', { name: '字体', exact: true })
 			.selectOption(bodyTypography.fontFamily)
@@ -690,6 +741,7 @@ async function verifyBodyEditor(entry) {
 			.getByRole('dialog', { name: '背景颜色', exact: true })
 			.getByRole('button', { name: '黄色', exact: true })
 			.click()
+		assert.equal(await formatDialog.isVisible(), true, 'Consecutive typography keeps one context')
 	}
 	await applyTypography()
 	await assertBodyTypographyStyle(summary)
@@ -709,10 +761,22 @@ async function verifyBodyEditor(entry) {
 	assertBodyTypography(styledInput)
 	assert.deepEqual(styledInput.data, beforeTypography.data, 'Typography commands preserve raw data')
 	await screenshot('07c-body-typography')
+	await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
+	await selectEditorText(summary, bodyTypographyText)
 	await page.keyboard.press('ArrowRight')
+	await until(
+		() =>
+			summary.evaluate(
+				(element) => element.editor.state.selection.empty && window.getSelection()?.isCollapsed,
+			),
+		'ArrowRight did not settle the native editor caret',
+	)
 	await page.getByRole('toolbar', { name: '选区格式', exact: true }).waitFor({ state: 'hidden' })
 	await page.keyboard.press('Enter')
-	await toolbar.getByRole('button', { name: '列表', exact: true }).click()
+	assert.match(await summary.innerText(), /中文输入验收𠮷/, 'Enter retains the IME paragraph')
+	await openFormat(toolbar)
+	await formatDialog.getByRole('button', { name: '列表', exact: true }).click()
+	await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
 	await page.keyboard.insertText('列表项保留')
 	assert.match(await summary.locator('ul').innerText(), /列表项保留/)
 	assert.match(
@@ -721,17 +785,14 @@ async function verifyBodyEditor(entry) {
 		'List commands retain the IME paragraph',
 	)
 	await summary.locator('th').first().click()
-	await toolbar.getByRole('button', { name: '表格', exact: true }).click()
-	await page
-		.getByRole('menu', { name: '表格操作', exact: true })
-		.getByRole('menuitem', { name: '拆分单元格', exact: true })
-		.click()
+	const tableMenu = await openFormat(toolbar, '表格操作')
+	await tableMenu.getByRole('button', { name: '拆分单元格', exact: true }).click()
 	assert.equal(await summary.locator('th').count(), 2)
 	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
 	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
 	assert.match(await summary.innerText(), /中文输入验收𠮷/, 'Table undo retains the IME paragraph')
 	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。', true)
-	await toolbar.getByRole('button', { name: '插入提示块', exact: true }).click()
+	await insertBodyContent(toolbar, '提示块')
 	await summary.locator('aside[data-typst-notice]').waitFor()
 	assert.match(
 		await summary.innerText(),
@@ -740,22 +801,31 @@ async function verifyBodyEditor(entry) {
 	)
 	const details = page.locator('.studio-candidate:visible')
 	await details.locator('summary').click()
-	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
 	await details
 		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
 		.fill('不能覆盖合并表格')
-	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
+	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
+	assert.equal(
+		await details.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
+		true,
+	)
 	await details.getByRole('alert').waitFor()
 	assert.match(await summary.innerText(), /交付与客户反馈/)
 	await switchRegion('后续建议')
 	await recommendations.click()
 	await page.keyboard.press('Control+Home')
-	const restrictedTable = toolbar.getByRole('button', { name: '表格', exact: true })
+	await toolbar.getByRole('button', { name: '插入', exact: true }).click()
+	const insertDialog = page.getByRole('dialog', { name: '插入内容', exact: true })
+	await insertDialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).fill('表格')
+	const restrictedTable = insertDialog.getByRole('option', { name: '表格', exact: true })
 	assert.ok(
 		(await restrictedTable.count()) === 0 || (await restrictedTable.isDisabled()),
 		'Restricted regions do not offer table commands',
 	)
 	assert.equal(await recommendations.locator('table').count(), 0)
+	await insertDialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).press('Escape')
+	await openFormat(toolbar)
 	assert.equal(await typography.count(), 1, 'Node restrictions retain allowed typography commands')
 	assert.equal(
 		await typography.getByRole('combobox', { name: '字号', exact: true }).isDisabled(),
@@ -765,10 +835,11 @@ async function verifyBodyEditor(entry) {
 	await recommendations.click()
 	await page.keyboard.press('Control+A')
 	await page.keyboard.insertText('原始建议')
-	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
 	await details
 		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
 		.fill('**接纳后的建议**')
+	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	await setCustomerName('海川工作室')
 	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
 	await details.getByRole('alert').waitFor()
@@ -777,7 +848,8 @@ async function verifyBodyEditor(entry) {
 		'原始建议',
 		'Data changes invalidate staged candidates',
 	)
-	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
+	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
 	await until(
 		async () => (await recommendations.innerText()) === '接纳后的建议',
@@ -911,7 +983,7 @@ async function verifyDraftRecovery() {
 	await screenshot('10-draft-initialized')
 	const details = page.locator('.studio-candidate:visible')
 	await details.locator('summary').click()
-	await details.getByRole('button', { name: '开始候选', exact: true }).click()
+	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
 	await details
 		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
 		.fill('旧草稿的未接纳候选')
@@ -1339,6 +1411,7 @@ try {
 					'multi-page SVG, last-page navigation, outline, and two-way source navigation',
 					'explicit body initialization preserves saved data; conflict reload resets editor/candidates/history and explicit local replacement uses CAS',
 					'native body composition, formatting, lists, table commands, restrictions, fields without history, staged candidates and one undo',
+					'shared link editing and current-block duplication in the real desktop renderer, each reverted by one native undo',
 					'font family, 18pt, text and background colors, clear typography without clearing bold, persisted raw marks and real PDF after desktop reopen',
 					'body drafts retained across region switches and desktop reopen, generated navigation and real PDF',
 					'project creation and recent persistence',
@@ -1365,6 +1438,20 @@ try {
 	)
 	console.log(`Workspace desktop smoke passed: ${output}`)
 } catch (error) {
+	await writeFile(
+		join(output, 'failure.json'),
+		JSON.stringify(
+			{
+				error: String(error),
+				stack: error?.stack,
+				errors,
+				exitCode: instance?.process().exitCode,
+				signal: instance?.process().signalCode,
+			},
+			null,
+			2,
+		),
+	)
 	if (page && !page.isClosed()) await screenshot('failure').catch(() => {})
 	if (page && !page.isClosed())
 		await writeFile(join(output, 'failure.html'), await page.content()).catch(() => {})

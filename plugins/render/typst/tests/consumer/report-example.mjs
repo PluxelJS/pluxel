@@ -33,7 +33,7 @@ const row = (texts, header = false) => ({
 		content: [paragraph(text)],
 	})),
 })
-const channelTemplate = {
+export const channelTemplate = {
 	id: 'channels',
 	label: '渠道收入与目标',
 	defaults: { title: '渠道收入与目标' },
