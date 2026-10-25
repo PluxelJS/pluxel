@@ -38,7 +38,7 @@
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
-	gap: 3px 0;
+	gap: 4px 0;
 	padding: 8px 9px;
 	border-bottom: 1px solid var(--typst-border);
 	border-radius: 12px 12px 0 0;
@@ -956,9 +956,6 @@
 .typst-insert-trigger {
 	gap: 5px;
 }
-.typst-format-trigger > svg:last-child {
-	width: 12px;
-}
 .typst-insert-menu {
 	position: relative;
 }
@@ -1133,6 +1130,9 @@
 	.typst-toolbar {
 		padding: 7px 6px;
 		gap: 5px 0;
+	}
+	.typst-toolbar .typst-block-picker {
+		min-width: 82px;
 	}
 	.typst-tool-group {
 		padding: 0 4px;

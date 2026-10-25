@@ -44,6 +44,7 @@ export type IconName =
 	| 'clear'
 	| 'indent'
 	| 'outdent'
+	| 'more'
 
 const paths: Record<IconName, string> = {
 	bold: 'M6 4h6a4 4 0 0 1 0 8H6m6 0h1a4 4 0 0 1 0 8H6V4',
@@ -67,6 +68,7 @@ const paths: Record<IconName, string> = {
 	clear: 'm14 3 7 7-10 10H6l-4-4L14 3ZM8 10l7 7m-4 3h10',
 	indent: 'M11 5h10M11 10h10M11 15h10M3 20h18M3 6l4 4-4 4',
 	outdent: 'M11 5h10M11 10h10M11 15h10M3 20h18M7 6l-4 4 4 4',
+	more: 'M5 12h.01M12 12h.01M19 12h.01',
 }
 
 export function Icon({ name }: { name: IconName }) {

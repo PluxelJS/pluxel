@@ -6,7 +6,7 @@ import { chromium } from 'playwright'
 import { trackConsumerSessions } from './browser-session.mjs'
 const dir = await mkdtemp(join(tmpdir(), 'typst-format-ui-'))
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
-const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
+const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, hasTouch: true })
 const release = trackConsumerSessions(page)
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))
@@ -52,6 +52,71 @@ try {
 	})
 	assert.equal(typeof from, 'number')
 	const original = await snapshot()
+	for (const [name, tag] of [
+		['加粗', 'strong'],
+		['斜体', 'em'],
+		['下划线', 'u'],
+	]) {
+		await select(from, to)
+		const button = toolbar.getByRole('button', { name, exact: true })
+		await button.click()
+		assert.equal(await body.locator(`h2 ${tag}`).innerText(), 'Editable')
+		assert.equal(await button.getAttribute('aria-pressed'), 'true')
+		assert.equal(await menu.isVisible(), false)
+		assert.equal(await body.evaluate((el) => el.editor.view.hasFocus()), true)
+		assert.deepEqual(await body.evaluate((el) => el.editor.state.selection.toJSON()), {
+			type: 'text',
+			anchor: from,
+			head: to,
+		})
+		await undo()
+		assert.deepEqual(await snapshot(), original)
+	}
+	await select(from, to)
+	const style = toolbar.getByRole('combobox', { name: '段落样式', exact: true })
+	await style.focus()
+	await style.selectOption('heading-3')
+	assert.equal(await body.locator('h3').innerText(), 'Editable overview')
+	assert.equal(await style.evaluate((el) => el === el.ownerDocument.activeElement), true)
+	await undo()
+	assert.deepEqual(await snapshot(), original)
+	const paragraphStart = await body.evaluate((el) => el.editor.state.doc.firstChild.nodeSize + 1)
+	for (const [name, tag] of [
+		['列表', 'ul'],
+		['有序列表', 'ol'],
+	]) {
+		await select(paragraphStart)
+		await toolbar.getByRole('button', { name, exact: true }).click()
+		assert.match(await body.locator(`:scope > ${tag}`).innerText(), /Prepared for/)
+		assert.equal(await body.evaluate((el) => el.editor.view.hasFocus()), true)
+		await undo()
+		assert.deepEqual(await snapshot(), original)
+	}
+	passed.push(
+		'frequent toolbar marks, heading and lists operate directly with native selection and one undo',
+	)
+	await select(from, to)
+	await toolbar.getByRole('button', { name: '链接', exact: true }).click()
+	await page.getByRole('dialog', { name: '链接', exact: true }).waitFor()
+	await page.keyboard.press('Escape')
+	assert.deepEqual(await snapshot(), original)
+	assert.equal(await body.evaluate((el) => el.editor.view.hasFocus()), true)
+	await page.setViewportSize({ width: 320, height: 740 })
+	await select(from, to)
+	for (const name of ['加粗', '斜体', '下划线', '列表', '有序列表', '链接', '格式', '插入']) {
+		const bounds = await toolbar.getByRole('button', { name, exact: true }).boundingBox()
+		assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320)
+	}
+	await toolbar.getByRole('button', { name: '加粗', exact: true }).tap()
+	assert.equal(await body.locator('h2 strong').innerText(), 'Editable')
+	await page.screenshot({ path: `${dir}/mobile-toolbar.png`, fullPage: true })
+	await undo()
+	assert.deepEqual(await snapshot(), original)
+	await page.setViewportSize({ width: 1440, height: 1100 })
+	await page.screenshot({ path: `${dir}/desktop-toolbar.png`, fullPage: true })
+	passed.push(
+		'toolbar link shares the link dialog; all common actions remain reachable at 320px with touch',
+	)
 	await select(from, to)
 	await toolbar.getByRole('button', { name: '格式', exact: true }).click()
 	await menu.waitFor()
@@ -204,6 +269,12 @@ try {
 	await settle()
 	assert.equal(await menu.isVisible(), false)
 	assert.equal(await toolbar.getByRole('button', { name: '格式', exact: true }).isDisabled(), true)
+	for (const name of ['加粗', '斜体', '下划线', '列表', '有序列表', '链接'])
+		assert.equal(await toolbar.getByRole('button', { name, exact: true }).isDisabled(), true)
+	assert.equal(
+		await toolbar.getByRole('combobox', { name: '段落样式', exact: true }).isDisabled(),
+		true,
+	)
 	for (const target of [body.locator('h2'), body.locator('td, th').first()]) {
 		assert.equal(
 			await mousePrevented(target, 'mousedown'),
@@ -226,6 +297,12 @@ try {
 	await page.getByRole('checkbox', { name: '区域只读', exact: true }).check()
 	await settle()
 	assert.equal(await toolbar.getByRole('button', { name: '格式', exact: true }).isDisabled(), true)
+	for (const name of ['加粗', '斜体', '下划线', '列表', '有序列表', '链接'])
+		assert.equal(await toolbar.getByRole('button', { name, exact: true }).isDisabled(), true)
+	assert.equal(
+		await toolbar.getByRole('combobox', { name: '段落样式', exact: true }).isDisabled(),
+		true,
+	)
 	assert.equal(await mousePrevented(body.locator('h2'), 'contextmenu'), false)
 	await body.locator('td, th').first().click({ button: 'right' })
 	await tableMenu.waitFor()

@@ -74,11 +74,12 @@ const marks = [
 	},
 ] as const
 
-function MarkTools({ editor }: { editor: Editor }) {
+function MarkTools({ editor, primary = false }: { editor: Editor; primary?: boolean }) {
 	const ui = useContext(EditorUi)
 	return (
 		<>
 			{marks
+				.filter((mark) => !primary || ['bold', 'italic', 'underline'].includes(mark.name))
 				.filter((mark) => allowedMark(ui, editor, mark.name))
 				.map((mark) => (
 					<ToolButton
@@ -86,9 +87,15 @@ function MarkTools({ editor }: { editor: Editor }) {
 						label={mark.label}
 						icon={mark.icon}
 						active={editor.isActive(mark.name)}
-						disabled={!canEdit(editor, ui) || !mark.command(editor.can().chain()).run()}
+						disabled={
+							!canEdit(editor, ui) ||
+							!hasFormatTarget(editor) ||
+							!mark.command(editor.can().chain()).run()
+						}
 						onClick={() => {
-							if (canEdit(editor, ui)) mark.command(formatChain(editor)).run()
+							if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
+							mark.command(formatChain(editor)).run()
+							if (primary) editor.view.focus()
 						}}
 					/>
 				))}
@@ -111,11 +118,11 @@ function BlockPicker({ editor }: { editor: Editor }) {
 			<select
 				aria-label="段落样式"
 				value={value}
-				disabled={!canEdit(editor, ui)}
-				onChange={(event) =>
-					canEdit(editor, ui) &&
+				disabled={!canEdit(editor, ui) || !hasFormatTarget(editor)}
+				onChange={(event) => {
+					if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
 					convertBlock(formatChain(editor), event.currentTarget.value as BlockType).run()
-				}
+				}}
 			>
 				{options.map((block) => (
 					<option
@@ -132,6 +139,88 @@ function BlockPicker({ editor }: { editor: Editor }) {
 	)
 }
 
+function LinkButton({ editor }: { editor: Editor }) {
+	const ui = useContext(EditorUi)
+	return (
+		<>
+			{allowedMark(ui, editor, 'link') && (
+				<button
+					type="button"
+					className="typst-tool-button typst-link-trigger"
+					aria-label="链接"
+					title="链接（Ctrl/⌘ K）"
+					aria-haspopup="dialog"
+					aria-pressed={editor.isActive('link')}
+					disabled={!canEdit(editor, ui) || !(editor.state.selection instanceof TextSelection)}
+					onMouseDown={(event) => event.preventDefault()}
+					onClick={() => {
+						if (canEdit(editor, ui))
+							editor.view.dispatch(editor.state.tr.setMeta(formatRequest, { view: 'link' }))
+					}}
+				>
+					<Icon name="link" />
+				</button>
+			)}
+		</>
+	)
+}
+
+function ListTools({ editor, restoreFocus = false }: { editor: Editor; restoreFocus?: boolean }) {
+	const ui = useContext(EditorUi)
+	return (
+		<>
+			{allowedNode(ui, editor, 'bulletList', 'listItem', 'paragraph') && (
+				<ToolButton
+					label="列表"
+					icon="bullet"
+					active={editor.isActive('bulletList')}
+					disabled={
+						!canEdit(editor, ui) || !hasFormatTarget(editor) || !editor.can().toggleBulletList()
+					}
+					onClick={() => {
+						if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
+						formatChain(editor).toggleBulletList().run()
+						if (restoreFocus) editor.view.focus()
+					}}
+				/>
+			)}
+			{allowedNode(ui, editor, 'orderedList', 'listItem', 'paragraph') && (
+				<ToolButton
+					label="有序列表"
+					icon="ordered"
+					active={editor.isActive('orderedList')}
+					disabled={
+						!canEdit(editor, ui) || !hasFormatTarget(editor) || !editor.can().toggleOrderedList()
+					}
+					onClick={() => {
+						if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
+						formatChain(editor).toggleOrderedList().run()
+						if (restoreFocus) editor.view.focus()
+					}}
+				/>
+			)}
+		</>
+	)
+}
+
+/** Frequent toolbar controls share menu commands, permissions and native selection. */
+export function PrimaryFormatTools({ editor }: { editor: Editor }) {
+	return (
+		<>
+			<div className="typst-tool-group">
+				<BlockPicker editor={editor} />
+			</div>
+			<div className="typst-tool-group">
+				<MarkTools editor={editor} primary />
+			</div>
+			<div className="typst-tool-group">
+				<ListTools editor={editor} restoreFocus />
+				<LinkButton editor={editor} />
+			</div>
+		</>
+	)
+}
+
 function FormatTools({ editor }: { editor: Editor }) {
 	const ui = useContext(EditorUi)
 	return (
@@ -142,24 +231,7 @@ function FormatTools({ editor }: { editor: Editor }) {
 				className="typst-format-marks"
 			>
 				<MarkTools editor={editor} />
-				{allowedMark(ui, editor, 'link') && (
-					<button
-						type="button"
-						className="typst-tool-button typst-link-trigger"
-						aria-label="链接"
-						title="链接（Ctrl/⌘ K）"
-						aria-haspopup="dialog"
-						aria-pressed={editor.isActive('link')}
-						disabled={!canEdit(editor, ui)}
-						onMouseDown={(event) => event.preventDefault()}
-						onClick={() => {
-							if (canEdit(editor, ui))
-								editor.view.dispatch(editor.state.tr.setMeta(formatRequest, { view: 'link' }))
-						}}
-					>
-						<Icon name="link" />
-					</button>
-				)}
+				<LinkButton editor={editor} />
 				<button
 					type="button"
 					className="typst-tool-button typst-clear-format"
@@ -183,28 +255,7 @@ function FormatTools({ editor }: { editor: Editor }) {
 			</div>
 			<div role="group" aria-label="段落格式" className="typst-format-paragraph">
 				<BlockPicker editor={editor} />
-				{allowedNode(ui, editor, 'bulletList', 'listItem', 'paragraph') && (
-					<ToolButton
-						label="列表"
-						icon="bullet"
-						active={editor.isActive('bulletList')}
-						disabled={!canEdit(editor, ui) || !editor.can().toggleBulletList()}
-						onClick={() => {
-							if (canEdit(editor, ui)) formatChain(editor).toggleBulletList().run()
-						}}
-					/>
-				)}
-				{allowedNode(ui, editor, 'orderedList', 'listItem', 'paragraph') && (
-					<ToolButton
-						label="有序列表"
-						icon="ordered"
-						active={editor.isActive('orderedList')}
-						disabled={!canEdit(editor, ui) || !editor.can().toggleOrderedList()}
-						onClick={() => {
-							if (canEdit(editor, ui)) formatChain(editor).toggleOrderedList().run()
-						}}
-					/>
-				)}
+				<ListTools editor={editor} />
 				{editor.isActive('listItem') && allowedNode(ui, editor, 'listItem') && (
 					<>
 						<button

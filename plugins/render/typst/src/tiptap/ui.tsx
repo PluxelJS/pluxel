@@ -2,11 +2,16 @@ import { useContext, type ReactNode } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
 import { EditorUi, Icon, ToolButton, canEdit } from './editor-ui'
-import { FormatContextMenu, hasFormatTarget, openFormatMenu } from './format-menu'
+import {
+	FormatContextMenu,
+	PrimaryFormatTools,
+	hasFormatTarget,
+	openFormatMenu,
+} from './format-menu'
 import { InsertMenu, SlashMenu } from './insert-menu'
 import { BlockMenu } from './block-menu'
 
-/** The region owns fonts, available insertions and native selection; this toolbar only opens them. */
+/** Common commands stay visible; the same native selection drives the full format menu. */
 export function TypstEditorToolbar({ editor, children }: { editor: Editor; children?: ReactNode }) {
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
 	const ui = useContext(EditorUi)
@@ -37,11 +42,13 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 						}}
 					/>
 				</div>
+				<PrimaryFormatTools editor={editor} />
 				<div className="typst-tool-group">
 					<button
 						type="button"
 						className="typst-tool-button typst-format-trigger"
 						aria-label="格式"
+						title="更多格式（字体、字号、颜色等）"
 						aria-haspopup="dialog"
 						disabled={!canEdit(editor, ui) || !hasFormatTarget(editor)}
 						onMouseDown={(event) => event.preventDefault()}
@@ -49,9 +56,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 							if (canEdit(editor, ui)) openFormatMenu(editor, event.currentTarget)
 						}}
 					>
-						<Icon name="text" />
-						<span>格式</span>
-						<Icon name="chevron" />
+						<Icon name="more" />
 					</button>
 					<InsertMenu editor={editor} />
 				</div>

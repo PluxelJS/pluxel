@@ -62,13 +62,13 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 生成映射使用原生 ProseMirror UTF-16 位置，递归记录字符、原子与嵌套块。序列化过程的临时锚点在输出前移除，允许自定义 serializer 重排或重复 `context.children` 结果而保留来源；不会拆散字符串破坏排版塑形。native 将字面量解码后的 UTF-8 字形偏移还原为源码范围；计算表达式保留整体来源。代码块使用原生 raw 字面量以区分重复行。组件独立文件区分同模板的多个实例；源码块映射额外记录 `sourceStartLine`，反向查询去掉数据前缀后返回原始 source 行列。具体精度边界和宿主点击时序见[定位契约](../../../docs/plugins/rendering/typst-editor.md#预览与定位)。
 
-`/tiptap/react` 是同一契约的普通消费者，提供 dataField NodeView 与原生 Editor 控件。`TypstRegionEditor` 默认拥有完整编辑 UI：常驻撤销、重做、格式和插入，字段及组件从已有配置和扩展产生可用操作，宿主不重复装配选择器或筛选区域字段。`toolbar={false}` 仅关闭常驻条，保留上下文与 slash；`children(editor)` 是常驻条后、正文前的业务控件插槽，也可用于组合自定义常驻条。字体选项由 RegionEditor 传入同一个上下文。`blocks-react.tsx` 为已安装原子节点提供同一 NodeView；卡片只常驻名称、原生 drag handle 与块菜单。顺序使用官方 drag/drop，复制调用节点扩展命令，删除使用 `setNodeSelection().deleteSelection()`，均沿用原生 history，不添加并行排序或剪贴板协议。标题/空白点击经控件及拖选过滤后选中节点并调用宿主 `onReveal`。
+`/tiptap/react` 是同一契约的普通消费者，提供 dataField NodeView 与原生 Editor 控件。`TypstRegionEditor` 默认拥有完整编辑 UI：常驻撤销/重做、段落样式、常用文字 Mark、列表、链接、更多格式和插入，字段及组件从已有配置和扩展产生可用操作，宿主不重复装配选择器或筛选区域字段。`toolbar={false}` 仅关闭常驻条，保留上下文与 slash；`children(editor)` 是常驻条后、正文前的业务控件插槽，也可用于组合自定义常驻条。字体选项由 RegionEditor 传入同一个上下文。`blocks-react.tsx` 为已安装原子节点提供同一 NodeView；卡片只常驻名称、原生 drag handle 与块菜单。顺序使用官方 drag/drop，复制调用节点扩展命令，删除使用 `setNodeSelection().deleteSelection()`，均沿用原生 history，不添加并行排序或剪贴板协议。标题/空白点击经控件及拖选过滤后选中节点并调用宿主 `onReveal`。
 
 模板参数和绑定数据只读展示，绑定值读取已有 `TypstDataProvider`，不复制到节点属性；宿主参数表单直接组合官方 `updateAttributes`。仅源码保留局部编辑状态，显式应用才提交原生 transaction。源码导航通过当前节点及 `typst-navigation` 元数据展开源码；未应用修改与已编译源码不一致时保留修改并提示。
 
 宿主数据更新只影响 Context，不触发文档 transaction；每个区域保留独立 Editor/history。受控粘贴在同一原生 transaction 中设置 `closeHistory` 与 `paste` / `uiEvent`，一次撤销只移除本次粘贴。准入插件对最新规则与 editable 权限检查，外部 commands 也不能绕过。`candidate.ts` 在准备/提交时均严格检查版本与权限；可选 range 必须覆盖完整、非空顶层块，在目标范围做 Markdown 往返检查，再校验合并后的整个区域。一次 transaction 只替换目标范围，外围复杂节点原样保留；范围本身包含复杂内容时明确拒绝，不自动重定位过期范围。
 
-`tiptap/ui.tsx` 组合常驻入口、文字/段落/排版上下文和表格操作。文字和表格浮层复用官方 React `BubbleMenu`，由右键、键盘菜单键或“格式”按钮显式打开，不随文本选择自动出现；按钮提供触屏入口。文本右键命中原选区时保留范围，命中外部时移动 caret；光标处支持设置后续输入格式。只读、IME、源码输入与卡片数据文本保留原生菜单。表格菜单在 `TextSelection` 时复用同一套文字、段落和排版控件，同时保留表格属性和结构操作；表边入口仍可用。表格结构命令属于官方 TableKit，`TypstTableStyleControls` 仅在样式扩展安装时贡献外观选项。
+`tiptap/ui.tsx` 组合常驻入口、文字/段落/排版上下文和表格操作。高频格式直接可见，与格式面板复用 `PrimaryFormatTools` 使用的同一套控件和命令，不让宿主重复实现；窄屏按组换行。“…”保留完整格式入口。文字和表格浮层复用官方 React `BubbleMenu`，由右键、键盘菜单键或“格式”按钮显式打开，不随文本选择自动出现；按钮提供触屏入口。文本右键命中原选区时保留范围，命中外部时移动 caret；光标处支持设置后续输入格式。只读、IME、源码输入与卡片数据文本保留原生菜单。表格菜单在 `TextSelection` 时复用同一套文字、段落和排版控件，同时保留表格属性和结构操作；表边入口仍可用。表格结构命令属于官方 TableKit，`TypstTableStyleControls` 仅在样式扩展安装时贡献外观选项。
 
 常驻“插入”、块旁“＋”和 slash 消费同一命令集合，包括官方结构、数据字段、已安装模板/源码扩展和 `slashCommands` 提供的宿主操作。先用官方 CommandManager 对借用的原生 state 构造事务并按同一准入规则预演，提交时再检查；slash 删除查询与插入共享一次事务，普通插入使用当前选区，就地插入固定顶层块后的边界；准备阶段不提交占位段落，外部文档变化使打开的目标失效。宿主回调仅组合 chain，不再维护提示块按钮等第二条执行路径。UI 不维护另一份正文或历史，IME 期间不拦截插入键。`/tiptap/style.css` 是独立资源，由 tsdown 的 copy/customExports 同时维护开发和制品入口，JS 导入不附带 CSS 副作用。
 
