@@ -23,11 +23,13 @@ import {
 	type TypstDataField,
 	type TypstEditorIssue,
 } from './index'
-import { EditorMenus, EditorUi, type TypstSlashCommand } from './ui'
+import { EditorMenus, TypstEditorToolbar } from './ui'
+import { EditorUi } from './editor-ui'
+import type { TypstSlashCommand } from './insert-commands'
 import { FieldData, emptyFields } from './data-context'
 
-export { TypstEditorToolbar, TypstFieldPicker, type TypstSlashCommand } from './ui'
-export { TypstBlockPicker } from './blocks-react'
+export { TypstEditorToolbar } from './ui'
+export type { TypstSlashCommand } from './insert-commands'
 export { TypstTableStyleControls } from './table-style-controls'
 
 /** Values are a view of host data; updating them never creates a document transaction. */
@@ -87,13 +89,19 @@ export interface TypstRegionEditorProps {
 	onSelection?(position: number): void
 	/** Reveal a component in the host's current compiled preview. */
 	onReveal?(position: number): void
-	/** Host controls compose with the native Editor commands. */
+	/** Host business controls appear below the default toolbar; they share the native Editor. */
 	children?: (editor: Editor) => ReactNode
+	/** Hide only the permanent toolbar when the host provides its own controls.
+	 * Context menus and slash insertion remain available. */
+	toolbar?: boolean
+	/** Families prepared by the host for Typst output; this does not install fonts. */
+	fontFamilies?: readonly string[]
 	className?: string
 	editable?: boolean
 	/** Shown for an empty region; slash insertion remains available without a placeholder. */
 	placeholder?: string
-	/** Pure native chain composition; do not call run() or dispatch from a command callback. */
+	/** Extra insertion actions, shared by the Insert menu and slash search.
+	 * Compose pure native chains; do not call run(), focus() or dispatch in a callback. */
 	slashCommands?: readonly TypstSlashCommand[]
 	onValidationError?(issues: TypstEditorIssue[]): void
 }
@@ -113,6 +121,9 @@ export function TypstRegionEditor(props: TypstRegionEditorProps) {
 	return <RegionEditor {...props} config={config} />
 }
 
+const emptyFontFamilies: readonly string[] = []
+const emptyCommands: readonly TypstSlashCommand[] = []
+
 function RegionEditor(props: TypstRegionEditorProps) {
 	const latestProps = useRef(props)
 	latestProps.current = props
@@ -126,8 +137,18 @@ function RegionEditor(props: TypstRegionEditorProps) {
 			editable: props.editable !== false,
 			composing,
 			onReveal: props.onReveal,
+			fontFamilies: props.fontFamilies ?? emptyFontFamilies,
+			slashCommands: props.slashCommands ?? emptyCommands,
 		}),
-		[props.config, props.regionId, props.editable, props.onReveal, composing],
+		[
+			props.config,
+			props.regionId,
+			props.editable,
+			props.onReveal,
+			props.fontFamilies,
+			props.slashCommands,
+			composing,
+		],
 	)
 	function report(next: TypstEditorIssue[]) {
 		setIssues(next)
@@ -258,9 +279,10 @@ function RegionEditor(props: TypstRegionEditorProps) {
 							{issues.map((issue) => `${issue.code}: ${issue.message}`).join('\n')}
 						</div>
 					)}
+					{editor && props.toolbar !== false && <TypstEditorToolbar editor={editor} />}
 					{editor && props.children?.(editor)}
 					<EditorContent editor={editor} className="typst-editor-content" />
-					{editor && <EditorMenus editor={editor} commands={props.slashCommands} />}
+					{editor && <EditorMenus editor={editor} />}
 				</div>
 			</EditorUi.Provider>
 		</TypstDataProvider>

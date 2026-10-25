@@ -2,13 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { Alert, Button, Group, NativeSelect, Select, Text, Textarea } from '@mantine/core'
-import {
-	TypstEditorToolbar,
-	TypstFieldPicker,
-	TypstBlockPicker,
-	TypstRegionEditor,
-	type TypstSlashCommand,
-} from '@pluxel/plugin-typst/tiptap/react'
+import { TypstRegionEditor, type TypstSlashCommand } from '@pluxel/plugin-typst/tiptap/react'
 import {
 	applyTypstCandidate,
 	captureTypstCandidateTarget,
@@ -23,24 +17,25 @@ import { studioEditorConfig } from '../shared/editor'
 import type { EditorDescription, EditorDraft } from '../shared/contracts'
 import { useWorkspace } from './workspace-context'
 
-const noticeCommand: TypstSlashCommand = {
-	id: 'studio-notice',
-	title: '提示块',
-	description: '添加报告核对提醒',
-	keywords: ['notice', '提示', '提醒'],
-	command: (chain) =>
-		chain.insertContent({
-			type: 'notice',
-			attrs: { tone: 'info' },
-			content: [
-				{
-					type: 'paragraph',
-					content: [{ type: 'text', text: '请核对本报告的数据与建议。' }],
-				},
-			],
-		}),
-}
-const studioSlashCommands = [noticeCommand]
+const studioSlashCommands: readonly TypstSlashCommand[] = [
+	{
+		id: 'studio-notice',
+		title: '提示块',
+		description: '添加报告核对提醒',
+		keywords: ['notice', '提示', '提醒'],
+		command: (chain) =>
+			chain.insertContent({
+				type: 'notice',
+				attrs: { tone: 'info' },
+				content: [
+					{
+						type: 'paragraph',
+						content: [{ type: 'text', text: '请核对本报告的数据与建议。' }],
+					},
+				],
+			}),
+	},
+]
 const studioFontFamilies = ['Noto Serif CJK SC', 'Liberation Serif']
 
 function Region({
@@ -142,6 +137,7 @@ function Region({
 				className="studio-region-editor"
 				placeholder="开始写作，输入 / 插入内容…"
 				slashCommands={studioSlashCommands}
+				fontFamilies={studioFontFamilies}
 				onEditor={connect}
 				onReveal={(position) => workspace.revealRegion(entry, regionId, position)}
 				onValidationError={(issues) =>
@@ -151,36 +147,7 @@ function Region({
 					setValidationError('')
 					void workspace.writeRegion(entry, regionId, content)
 				}}
-			>
-				{(editor) => (
-					<>
-						<TypstEditorToolbar editor={editor} fontFamilies={studioFontFamilies}>
-							<TypstFieldPicker
-								editor={editor}
-								fields={config.fields.filter((field) => {
-									const rule = config.regions.find((region) => region.id === regionId)
-									return (
-										!rule?.fields ||
-										rule.fields.some((path) => JSON.stringify(path) === JSON.stringify(field.path))
-									)
-								})}
-							/>
-							<TypstBlockPicker editor={editor} />
-							<Button
-								type="button"
-								size="compact-xs"
-								variant="subtle"
-								color="gray"
-								aria-label="插入提示块"
-								onMouseDown={(event) => event.preventDefault()}
-								onClick={() => noticeCommand.command(editor.chain().focus()).run()}
-							>
-								提示块
-							</Button>
-						</TypstEditorToolbar>
-					</>
-				)}
-			</TypstRegionEditor>
+			/>
 		</div>
 	)
 }

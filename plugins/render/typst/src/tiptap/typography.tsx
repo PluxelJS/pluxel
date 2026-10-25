@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import { fontFamilyName, textStyleColor } from './text-style'
 
@@ -50,7 +50,6 @@ function ColorPicker({
 	const [custom, setCustom] = useState('')
 	const container = useRef<HTMLDivElement>(null)
 	const trigger = useRef<HTMLButtonElement>(null)
-	const palette = useRef<HTMLDivElement>(null)
 	const id = useId()
 	const rgba = textStyleColor(value)
 	const currentHex = rgba
@@ -59,33 +58,6 @@ function ColorPicker({
 				.map((channel) => channel.toString(16).padStart(2, '0'))
 				.join('')
 		: ''
-	useLayoutEffect(() => {
-		if (!open) return
-		const document = container.current!.ownerDocument
-		const window = document.defaultView!
-		function position() {
-			if (!palette.current || !container.current) return
-			const bounds = container.current.getBoundingClientRect()
-			const left = bounds.left
-			const editor = container.current.closest('.typst-editor')?.getBoundingClientRect()
-			const start = Math.max(12, (editor?.left ?? 0) + 8)
-			const end = Math.min(window.innerWidth - 12, editor ? editor.right - 8 : window.innerWidth)
-			const offset = Math.min(0, end - left - palette.current.offsetWidth)
-			palette.current.style.left = `${Math.max(start - left, offset)}px`
-			const height = palette.current.offsetHeight
-			const below = bounds.bottom + 8
-			const preferred = below + height <= window.innerHeight - 12 ? below : bounds.top - height - 8
-			const top = Math.max(12, Math.min(preferred, window.innerHeight - height - 12))
-			palette.current.style.top = `${top - bounds.top}px`
-		}
-		position()
-		window.addEventListener('resize', position)
-		document.addEventListener('scroll', position, true)
-		return () => {
-			window.removeEventListener('resize', position)
-			document.removeEventListener('scroll', position, true)
-		}
-	}, [open])
 	useEffect(() => {
 		if (!open) return
 		const root = container.current!
@@ -140,6 +112,7 @@ function ColorPicker({
 		if (disabled) return
 		apply(color)
 		setOpen(false)
+		trigger.current?.focus({ preventScroll: true })
 	}
 	return (
 		<div ref={container} className="typst-color-menu">
@@ -189,14 +162,7 @@ function ColorPicker({
 				</span>
 			</button>
 			{open && (
-				<div
-					ref={palette}
-					id={id}
-					role="dialog"
-					tabIndex={-1}
-					aria-label={label}
-					className="typst-color-dialog"
-				>
+				<div id={id} role="dialog" tabIndex={-1} aria-label={label} className="typst-color-dialog">
 					<div className="typst-color-heading">{label}</div>
 					<div className="typst-color-swatches" role="group" aria-label="预设颜色">
 						{colors.map((color) => (
@@ -280,12 +246,6 @@ export function TypographyTools({
 	const sizes = fontSize && !fontSizes.includes(fontSize) ? [...fontSizes, fontSize] : fontSizes
 	return (
 		<div role="toolbar" aria-label="排版扩展" className="typst-typography">
-			<span
-				className="typst-typography-label"
-				title="这些格式保存在正文 JSON 和 Typst/PDF 中，Markdown 无法完整保留。"
-			>
-				排版扩展
-			</span>
 			<div className="typst-tool-group">
 				<label className="typst-type-picker typst-font-picker">
 					<span>字体</span>
@@ -296,6 +256,7 @@ export function TypographyTools({
 							disabled || families.length === 0 || !editor.can().setFontFamily(families[0]!)
 						}
 						onChange={(event) => {
+							if (disabled || !editor.isEditable || editor.view.composing) return
 							const value = event.currentTarget.value
 							if (value)
 								chain()
@@ -319,6 +280,7 @@ export function TypographyTools({
 						value={fontSize}
 						disabled={disabled || !editor.can().setFontSize('18pt')}
 						onChange={(event) => {
+							if (disabled || !editor.isEditable || editor.view.composing) return
 							const value = event.currentTarget.value
 							if (value) chain().setFontSize(value).run()
 							else chain().unsetFontSize().run()
@@ -333,7 +295,7 @@ export function TypographyTools({
 					</select>
 				</label>
 			</div>
-			<div className="typst-tool-group">
+			<div className="typst-format-colors">
 				<ColorPicker
 					value={attributes.color ?? ''}
 					disabled={disabled || !editor.can().setColor('#2563eb')}
@@ -358,7 +320,10 @@ export function TypographyTools({
 					!Object.values(attributes).some((value) => value !== null && value !== undefined)
 				}
 				onMouseDown={(event) => event.preventDefault()}
-				onClick={() => chain().unsetMark('textStyle').run()}
+				onClick={() => {
+					if (!disabled && editor.isEditable && !editor.view.composing)
+						chain().unsetMark('textStyle').run()
+				}}
 			>
 				清除排版
 			</button>

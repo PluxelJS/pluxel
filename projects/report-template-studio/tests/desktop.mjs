@@ -528,6 +528,22 @@ async function selectEditorText(editor, text, collapse = false) {
 	)
 }
 
+async function openFormat(toolbar, name = '文字格式') {
+	const dialog = page.getByRole('dialog', { name, exact: true })
+	if (!(await dialog.isVisible()))
+		await toolbar.getByRole('button', { name: '格式', exact: true }).click()
+	await dialog.waitFor()
+	return dialog
+}
+
+async function insertBodyContent(toolbar, title) {
+	await toolbar.getByRole('button', { name: '插入', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: '插入内容', exact: true })
+	await dialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).fill(title)
+	await dialog.getByRole('option', { name: title, exact: true }).click()
+	await dialog.waitFor({ state: 'hidden' })
+}
+
 const bodyTypographyText = '中文输入验收𠮷'
 const bodyTypography = {
 	fontFamily: 'Noto Serif CJK SC',
@@ -667,7 +683,8 @@ async function verifyBodyEditor(entry) {
 	await page.keyboard.press('Shift+F10')
 	await page.getByRole('toolbar', { name: '选区格式', exact: true }).waitFor()
 	await screenshot('07b-body-selection')
-	await toolbar.getByRole('button', { name: '加粗', exact: true }).click()
+	const formatDialog = page.getByRole('dialog', { name: '文字格式', exact: true })
+	await formatDialog.getByRole('button', { name: '加粗', exact: true }).click()
 	assert.match(await summary.locator('strong').last().innerText(), /中文输入验收𠮷/)
 	const target = { projectId: project.id, entry }
 	await until(async () => {
@@ -675,12 +692,12 @@ async function verifyBodyEditor(entry) {
 		return saved.data.customer?.name === '青山有限公司'
 	}, 'Customer data was not saved before typography commands')
 	const beforeTypography = await studio.getInput(target)
-	await page.locator('.studio-region-editor:visible .typst-typography-panel > summary').click()
-	const typography = page.locator('.studio-region-editor:visible').getByRole('toolbar', {
+	const typography = formatDialog.getByRole('toolbar', {
 		name: '排版扩展',
 		exact: true,
 	})
 	const applyTypography = async () => {
+		await openFormat(toolbar)
 		await typography
 			.getByRole('combobox', { name: '字体', exact: true })
 			.selectOption(bodyTypography.fontFamily)
@@ -697,6 +714,7 @@ async function verifyBodyEditor(entry) {
 			.getByRole('dialog', { name: '背景颜色', exact: true })
 			.getByRole('button', { name: '黄色', exact: true })
 			.click()
+		assert.equal(await formatDialog.isVisible(), true, 'Consecutive typography keeps one context')
 	}
 	await applyTypography()
 	await assertBodyTypographyStyle(summary)
@@ -716,6 +734,7 @@ async function verifyBodyEditor(entry) {
 	assertBodyTypography(styledInput)
 	assert.deepEqual(styledInput.data, beforeTypography.data, 'Typography commands preserve raw data')
 	await screenshot('07c-body-typography')
+	await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
 	await selectEditorText(summary, bodyTypographyText)
 	await page.keyboard.press('ArrowRight')
 	await until(
@@ -728,7 +747,9 @@ async function verifyBodyEditor(entry) {
 	await page.getByRole('toolbar', { name: '选区格式', exact: true }).waitFor({ state: 'hidden' })
 	await page.keyboard.press('Enter')
 	assert.match(await summary.innerText(), /中文输入验收𠮷/, 'Enter retains the IME paragraph')
-	await toolbar.getByRole('button', { name: '列表', exact: true }).click()
+	await openFormat(toolbar)
+	await formatDialog.getByRole('button', { name: '列表', exact: true }).click()
+	await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
 	await page.keyboard.insertText('列表项保留')
 	assert.match(await summary.locator('ul').innerText(), /列表项保留/)
 	assert.match(
@@ -737,17 +758,14 @@ async function verifyBodyEditor(entry) {
 		'List commands retain the IME paragraph',
 	)
 	await summary.locator('th').first().click()
-	await toolbar.getByRole('button', { name: '表格', exact: true }).click()
-	await page
-		.getByRole('menu', { name: '表格操作', exact: true })
-		.getByRole('menuitem', { name: '拆分单元格', exact: true })
-		.click()
+	const tableMenu = await openFormat(toolbar, '表格操作')
+	await tableMenu.getByRole('button', { name: '拆分单元格', exact: true }).click()
 	assert.equal(await summary.locator('th').count(), 2)
 	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
 	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
 	assert.match(await summary.innerText(), /中文输入验收𠮷/, 'Table undo retains the IME paragraph')
 	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。', true)
-	await toolbar.getByRole('button', { name: '插入提示块', exact: true }).click()
+	await insertBodyContent(toolbar, '提示块')
 	await summary.locator('aside[data-typst-notice]').waitFor()
 	assert.match(
 		await summary.innerText(),
@@ -770,13 +788,17 @@ async function verifyBodyEditor(entry) {
 	await switchRegion('后续建议')
 	await recommendations.click()
 	await page.keyboard.press('Control+Home')
-	const restrictedTable = toolbar.getByRole('button', { name: '表格', exact: true })
+	await toolbar.getByRole('button', { name: '插入', exact: true }).click()
+	const insertDialog = page.getByRole('dialog', { name: '插入内容', exact: true })
+	await insertDialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).fill('表格')
+	const restrictedTable = insertDialog.getByRole('option', { name: '表格', exact: true })
 	assert.ok(
 		(await restrictedTable.count()) === 0 || (await restrictedTable.isDisabled()),
 		'Restricted regions do not offer table commands',
 	)
 	assert.equal(await recommendations.locator('table').count(), 0)
-	await page.locator('.studio-region-editor:visible .typst-typography-panel > summary').click()
+	await insertDialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).press('Escape')
+	await openFormat(toolbar)
 	assert.equal(await typography.count(), 1, 'Node restrictions retain allowed typography commands')
 	assert.equal(
 		await typography.getByRole('combobox', { name: '字号', exact: true }).isDisabled(),

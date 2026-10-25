@@ -28,20 +28,6 @@
 	top: 0;
 	z-index: 4;
 }
-.typst-typography-panel {
-	background: var(--typst-surface);
-	border-bottom: 1px solid var(--typst-border);
-}
-.typst-typography-panel > summary {
-	cursor: pointer;
-	padding: 5px 12px;
-	font-size: 12px;
-	width: fit-content;
-}
-.typst-typography-panel > summary:focus-visible {
-	outline: 2px solid currentColor;
-	outline-offset: -2px;
-}
 .typst-editing-reason {
 	padding: 4px 12px;
 	color: var(--typst-muted);
@@ -59,23 +45,14 @@
 }
 
 .typst-typography {
-	display: flex;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 5px 2px;
-	padding: 7px 9px;
-	border-bottom: 1px solid var(--typst-border);
-	background: var(--typst-surface);
+	display: grid;
+	gap: 8px;
+	padding: 8px 0;
 }
-.typst-typography-label {
-	font-size: 10px;
-	letter-spacing: 0.03em;
-	color: var(--typst-muted);
-	padding: 3px 5px;
-	margin-right: 2px;
-	border-radius: 4px;
-	cursor: help;
-	white-space: nowrap;
+.typst-typography > .typst-tool-group {
+	padding: 0;
+	border: 0;
+	justify-content: space-between;
 }
 .typst-type-picker {
 	display: flex;
@@ -102,8 +79,7 @@
 	background: var(--typst-hover);
 }
 .typst-type-picker select option,
-.typst-block-picker select option,
-.typst-field-picker select option {
+.typst-block-picker select option {
 	color: var(--typst-text);
 	background: var(--typst-surface);
 }
@@ -113,8 +89,22 @@
 .typst-size-picker select {
 	width: 80px;
 }
+.typst-format-colors {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 4px;
+}
 .typst-color-menu {
-	position: relative;
+	display: contents;
+}
+.typst-color-menu > .typst-color-trigger {
+	grid-row: 1;
+}
+.typst-color-menu:first-child > .typst-color-trigger {
+	grid-column: 1;
+}
+.typst-color-menu:last-child > .typst-color-trigger {
+	grid-column: 2;
 }
 .typst-color-trigger {
 	gap: 5px;
@@ -149,20 +139,14 @@
 	color: var(--typst-muted);
 }
 .typst-color-dialog {
-	position: absolute;
-	top: calc(100% + 8px);
-	left: 0;
-	width: 232px;
-	max-width: calc(100vw - 24px);
-	max-height: calc(100dvh - 24px);
-	overflow-y: auto;
-	padding: 12px;
+	grid-column: 1 / -1;
+	grid-row: 2;
+	width: 100%;
+	padding: 10px;
 	box-sizing: border-box;
-	background: var(--typst-surface);
+	background: var(--typst-hover);
 	border: 1px solid var(--typst-border);
-	border-radius: 9px;
-	box-shadow: var(--typst-shadow);
-	z-index: 6;
+	border-radius: 7px;
 }
 .typst-color-heading {
 	font-size: 12px;
@@ -299,7 +283,6 @@
 
 .typst-tool-button,
 .typst-block-picker,
-.typst-field-picker,
 .typst-tool-group-custom > button {
 	display: inline-flex;
 	align-items: center;
@@ -329,7 +312,6 @@
 }
 .typst-tool-button:hover:not(:disabled),
 .typst-block-picker:hover,
-.typst-field-picker:hover,
 .typst-tool-group-custom > button:hover:not(:disabled) {
 	background: var(--typst-hover);
 }
@@ -350,82 +332,26 @@
 	outline-offset: 2px;
 }
 
-.typst-block-picker,
-.typst-field-picker {
+.typst-block-picker {
 	position: relative;
+	min-width: 96px;
 	padding: 0 24px 0 6px;
 }
-.typst-block-picker {
-	min-width: 96px;
-}
-.typst-block-picker select,
-.typst-field-picker select {
+.typst-block-picker select {
 	appearance: none;
 	background: transparent;
 	border: 0;
 	color: inherit;
 	font: inherit;
 	padding: 7px 2px;
-	max-width: 144px;
 	cursor: inherit;
+	width: 100%;
 }
-.typst-block-picker > svg:last-child,
-.typst-field-picker > svg:last-child {
+.typst-block-picker > svg:last-child {
 	position: absolute;
 	right: 4px;
 	width: 14px;
 	pointer-events: none;
-}
-.typst-block-picker select {
-	width: 100%;
-}
-.typst-field-picker {
-	gap: 3px;
-}
-.typst-field-picker > svg:first-child {
-	width: 16px;
-}
-
-.typst-command-menu {
-	position: relative;
-}
-.typst-dropdown {
-	position: absolute;
-	top: calc(100% + 8px);
-	left: 0;
-	min-width: 160px;
-	max-height: min(380px, 70vh);
-	overflow-y: auto;
-	padding: 5px;
-	border: 1px solid var(--typst-border);
-	border-radius: 8px;
-	background: var(--typst-surface);
-	box-shadow: var(--typst-shadow);
-	z-index: 6;
-}
-.typst-dropdown button {
-	display: block;
-	width: 100%;
-	border: 0;
-	border-radius: 4px;
-	padding: 7px 10px;
-	color: var(--typst-text);
-	background: transparent;
-	font: inherit;
-	font-size: 12px;
-	text-align: left;
-	cursor: pointer;
-}
-.typst-dropdown button:hover:not(:disabled),
-.typst-dropdown button:focus-visible {
-	background: var(--typst-hover);
-}
-.typst-dropdown button:last-child:not(:only-child) {
-	color: #c44848;
-	border-top: 1px solid var(--typst-border);
-	border-radius: 0 0 4px 4px;
-	margin-top: 4px;
-	padding-top: 10px;
 }
 
 .typst-editor-content .tiptap {
@@ -778,22 +704,14 @@
 	border-radius: 9px;
 	box-shadow: var(--typst-shadow);
 }
-.typst-bubble {
-	padding: 4px;
-}
-.typst-bubble > [role='toolbar'],
-.typst-context-marks {
-	display: flex;
-	gap: 1px;
-}
-.typst-bubble .typst-tool-button {
-	width: 30px;
-}
-.typst-floating-menu button:disabled {
+.typst-floating-menu button:disabled,
+.typst-floating-menu select:disabled {
 	opacity: 0.4;
 	cursor: default;
 }
 .typst-floating-menu button:focus-visible,
+.typst-floating-menu input:focus-visible,
+.typst-floating-menu select:focus-visible,
 .typst-table-trigger button:focus-visible {
 	outline: 2px solid var(--typst-accent);
 	outline-offset: 2px;
@@ -820,18 +738,92 @@
 	background: var(--typst-hover);
 	color: var(--typst-accent);
 }
-.typst-table-context {
+.typst-format-context {
 	z-index: 1002;
-	min-width: min(290px, calc(100vw - 16px));
+	min-width: min(340px, calc(100vw - 16px));
+	max-width: min(340px, calc(100vw - 16px));
+	max-height: calc(100dvh - 16px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 8px;
+}
+.typst-format-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0 2px 7px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--typst-muted);
+}
+.typst-format-heading > button {
+	border: 0;
+	background: transparent;
+	color: inherit;
+	padding: 0;
+	width: 28px;
+	height: 28px;
+	border-radius: 5px;
+	font-size: 20px;
+	cursor: pointer;
+}
+.typst-format-heading > button:hover {
+	background: var(--typst-hover);
+}
+.typst-format-marks,
+.typst-format-paragraph {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px;
+	padding: 4px 0;
+	border-bottom: 1px solid var(--typst-border);
+}
+.typst-format-marks .typst-tool-button {
+	flex: 1;
+}
+.typst-format-paragraph .typst-block-picker {
+	flex: 1;
+}
+.typst-format-paragraph select {
+	max-width: none;
+}
+.typst-format-trigger,
+.typst-insert-trigger {
+	gap: 5px;
+}
+.typst-format-trigger > svg:last-child {
+	width: 12px;
+}
+.typst-insert-menu {
+	position: relative;
+}
+.typst-insert-popover {
+	z-index: 1003;
+	min-width: min(320px, calc(100vw - 16px));
 	max-width: min(320px, calc(100vw - 16px));
 	max-height: calc(100dvh - 16px);
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	padding: 6px;
 }
-.typst-table-context-heading {
-	padding: 6px 8px 8px;
+.typst-insert-search {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin-bottom: 5px;
+	padding: 8px 10px;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	color: var(--typst-text);
+	background: var(--typst-surface);
+	font: inherit;
 	font-size: 12px;
+}
+.typst-insert-group {
+	margin: 7px 8px 3px;
+	color: var(--typst-muted);
+	font-size: 11px;
 	font-weight: 600;
 }
 .typst-table-context .typst-table-style-controls {
@@ -1181,10 +1173,4 @@
 	font-size: 12px;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
-}
-
-.typst-context-marks {
-	padding: 4px 6px 8px;
-	margin-bottom: 4px;
-	border-bottom: 1px solid var(--typst-border);
 }

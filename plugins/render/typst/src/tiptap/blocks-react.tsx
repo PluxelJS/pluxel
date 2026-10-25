@@ -1,47 +1,9 @@
 import { useContext, useEffect, useId, useRef, useState, type DragEvent } from 'react'
 import { closeHistory } from '@tiptap/pm/history'
-import type { Editor } from '@tiptap/core'
 import { NodeViewWrapper, useEditorState, type NodeViewProps } from '@tiptap/react'
 import { blockAttributeError, templateDefinitions } from './blocks'
-import { EditorUi } from './ui'
+import { EditorUi } from './editor-ui'
 import { FieldData } from './data-context'
-
-/** Consumer toolbar slot; only explicitly installed nodes appear. */
-export function TypstBlockPicker({ editor }: { editor: Editor }) {
-	const ui = useContext(EditorUi)
-	useEditorState({ editor, selector: ({ editor: current }) => current.state })
-	const templates = templateDefinitions(editor.extensionManager.extensions)
-	const allowed = (name: string) =>
-		!!editor.schema.nodes[name] && (!ui.region?.nodes || ui.region.nodes.includes(name))
-	if ((!allowed('templateBlock') || templates.length === 0) && !allowed('typstSource')) return null
-	return (
-		<select
-			className="typst-select"
-			aria-label="插入模板内容"
-			value=""
-			disabled={!(ui.config ? ui.editable : editor.isEditable) || ui.composing}
-			onChange={(event) => {
-				const value = event.currentTarget.value
-				const definition = templates.find((item) => `template:${item.id}` === value)
-				if (definition)
-					editor.chain().focus().insertTypstTemplateBlock({ template: definition.id }).run()
-				else if (value === 'source')
-					editor.chain().focus().insertTypstSource('#text(fill: blue)[补充说明]').run()
-			}}
-		>
-			<option value="" disabled>
-				模板内容
-			</option>
-			{allowed('templateBlock') &&
-				templates.map((item) => (
-					<option key={item.id} value={`template:${item.id}`}>
-						{item.label}
-					</option>
-				))}
-			{allowed('typstSource') && <option value="source">Typst 源码块</option>}
-		</select>
-	)
-}
 
 /** Atomic content uses native selection, drag/drop and commands; only source editing is local. */
 export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps) {

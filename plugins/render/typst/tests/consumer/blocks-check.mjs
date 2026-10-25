@@ -304,10 +304,11 @@ try {
 	await page.screenshot({ path: join(output, 'source-navigation.png'), fullPage: true })
 
 	await notes.locator('p').first().click()
-	await page.getByTestId('region-notes').locator('.typst-typography-panel > summary').click()
-	const typography = page
-		.getByTestId('region-notes')
-		.getByRole('toolbar', { name: '排版扩展', exact: true })
+	const format = page.getByRole('dialog', { name: '文字格式', exact: true })
+	const openFormat = () =>
+		page.getByTestId('region-notes').getByRole('button', { name: '格式', exact: true }).click()
+	await openFormat()
+	const typography = format.getByRole('toolbar', { name: '排版扩展', exact: true })
 	await typography.getByRole('button', { name: '文字颜色', exact: true }).click()
 	const textPalette = page.getByRole('dialog', { name: '文字颜色', exact: true })
 	await textPalette.waitFor()
@@ -315,6 +316,9 @@ try {
 	assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), '灰色')
 	await page.screenshot({ path: join(output, 'text-color-desktop.png'), fullPage: true })
 	await page.keyboard.press('Escape')
+	assert.equal(await format.isVisible(), true, 'Escape closes the palette before the format panel')
+	await page.keyboard.press('Escape')
+	await format.waitFor({ state: 'hidden' })
 	await page.setViewportSize({ width: 390, height: 844 })
 	await page
 		.getByRole('navigation', { name: '正文区域', exact: true })
@@ -352,6 +356,7 @@ try {
 	await page.screenshot({ path: join(output, 'block-menu-mobile.png') })
 	await page.keyboard.press('Escape')
 	await notes.locator('p').first().click()
+	await openFormat()
 	await typography.scrollIntoViewIfNeeded()
 	await typography.getByRole('button', { name: '背景颜色', exact: true }).click()
 	const background = page.getByRole('dialog', { name: '背景颜色', exact: true })

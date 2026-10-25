@@ -15,7 +15,7 @@ description: 通过可选 Tiptap 入口编辑原生 JSON，生成可定位的 Ty
 | `/template`     | 纯文档定义                                                                | 无                                                                                                                                                            |
 | `/browser`      | 无框架预览、页码/目录状态、普通源码位置与双向定位                         | 无                                                                                                                                                            |
 | `/tiptap`       | 原生 JSON 校验、扩展、Markdown、区域生成和映射；可在无 DOM 的 Node 中使用 | `@tiptap/core`、`@tiptap/pm`、`@tiptap/starter-kit`、`@tiptap/extension-table`、`@tiptap/extension-image`、`@tiptap/extension-text-style`、`@tiptap/markdown` |
-| `/tiptap/react` | 字段 NodeView、区域组件、分组工具栏、浮动菜单和字段选择器                 | 上列 peers，加 `@tiptap/react`、`react`、`react-dom`                                                                                                          |
+| `/tiptap/react` | 字段 NodeView、区域组件、格式上下文和统一插入菜单                         | 上列 peers，加 `@tiptap/react`、`react`、`react-dom`                                                                                                          |
 
 Tiptap peers 使用已验收的同一版本 `3.32.0`；React 集成使用 React 19。对应依赖均为 optional peers，只使用编译或预览无需安装它们。选用相应入口时必须安装依赖，缺失时明确报错。浏览器从子路径导入，不从包根取运行时值；包级已有 native 依赖的下载成本仍存在。本包当前 private，验收对象是本地构建制品，未发布到 registry。
 
@@ -29,11 +29,7 @@ Tiptap peers 使用已验收的同一版本 `3.32.0`；React 集成使用 React 
 import { useState } from 'react'
 import '@pluxel/plugin-typst/tiptap/style.css'
 import type { JSONContent, TypstEditorConfig } from '@pluxel/plugin-typst/tiptap'
-import {
-	TypstRegionEditor,
-	TypstEditorToolbar,
-	TypstFieldPicker,
-} from '@pluxel/plugin-typst/tiptap/react'
+import { TypstRegionEditor } from '@pluxel/plugin-typst/tiptap/react'
 
 // Stable declarations, including the extension array. Do not recreate it on every render.
 const config: TypstEditorConfig = {
@@ -72,15 +68,10 @@ export function Body({
 						content={loadedDraft.regions[id]!}
 						config={config}
 						data={parsedData}
+						fontFamilies={fontFamilies}
 						onChange={(content) => onSnapshot(id, content)}
 						onValidationError={(issues) => setError(issues.map((item) => item.message).join('\n'))}
-					>
-						{(editor) => (
-							<TypstEditorToolbar editor={editor} fontFamilies={fontFamilies}>
-								<TypstFieldPicker editor={editor} fields={config.fields} />
-							</TypstEditorToolbar>
-						)}
-					</TypstRegionEditor>
+					/>
 				</div>
 			))}
 		</>
@@ -90,9 +81,11 @@ export function Body({
 
 `content` 是挂载时的初始值；`onSnapshot` 在宿主保存最新原生 JSON 快照，不把组件变成受控输入。同一组件不因 React 更新调用 `setContent`。`config` 和 `extensions` 保持稳定；扩展数组身份改变会重建 Editor，不能在每次 render 中内联新数组。宿主校验另一份完整草稿后，显式设置新的 `loadedDraft = { key: crypto.randomUUID(), regions: checked.value.regions }`；换文档、模板修订或重新加载同一保存槽也使用新 key 挂载，并清除宿主暂存的旧候选与定位；这样不会沿用被替换草稿的 history。切换区域可保留各区域组件，保留原生 history；卸载会释放 Editor。也可直接组合 `createTypstExtensions` / `createTypstReactExtensions` 与官方 `Editor`、`useEditor`、`EditorContent`，自行处理原始输入准入。
 
-默认 React 界面提供分组图标工具栏、段落/标题类型菜单、文字上下文菜单和 `/` 插入命令。选择文字不会自动弹出格式条；文字右键或 `Shift+F10` / 菜单键才打开基于官方 React `BubbleMenu` 的格式条。右键落在已有文本选区内时保留范围，落在外部时先把光标移到点击处。表格内右键、同样的快捷键或表边入口打开表格菜单；当前为文本选区时，同一面板显示“单元格文字格式”，并保留表格样式与结构操作。只读或输入法组合输入期间不拦截文本右键，源码 textarea 和卡片中的只读数据文本也保留浏览器菜单。可用项随区域规则与 `editable` 权限变化，最终准入仍由同一原生 transaction 校验。
+`TypstRegionEditor` 默认提供完整编辑界面，常驻条仅保留撤销、重做、“格式”和“插入”。文字、段落与排版设置集中在同一个格式面板；文字右键、`Shift+F10` / 菜单键和“格式”按钮打开同一面板，按钮也适用于触屏。选择文字不会自动弹层。已有选区内右键保留范围，选区外右键先把光标移到点击处；光标处也能设置接下来输入的文字格式。表格内打开同一入口时，面板同时提供单元格格式、表格样式和结构操作；表边入口仍可用。只读或输入法组合输入期间不拦截文本右键，源码 textarea 和卡片中的只读数据文本也保留浏览器菜单。可用项随区域规则与 `editable` 权限变化，最终准入仍由同一原生 transaction 校验。
 
-字体、字号、文字颜色和背景颜色位于默认收起的“排版”内，展开后仍是同一个“排版扩展”工具栏。收起不卸载 Editor、不改变选区或撤销历史。字体菜单来自 `TypstEditorToolbar.fontFamilies`，该参数只提供选择项，不安装字体；省略且当前正文没有字体时，字体菜单禁用。后端通过 [Fonts](./fonts.md) 或会话字体输入提供真实字体，浏览器能否显示同一字体取决于宿主 CSS 和本机字体；最终排版以 native 预览/PDF 为准。字号菜单提供常用 pt 值；颜色菜单提供色板、自定义十六进制色值和单独清除。“清除排版”一次移除这四项，保留加粗等其他格式；选择“模板字体/模板字号”恢复继承模板。每次操作沿用原生事务和 undo。
+字段、表格、已安装的模板组件/源码块和宿主业务动作集中在“插入”菜单，也可输入 `/` 搜索；宿主不再逐项拼装字段或组件选择器。“插入”使用当前原生选区，slash 只删除本次查询文本，两者复用同一命令与准入检查。`children(editor)` 可在常驻条下、正文上添加业务参数表单等控件。确需自定义常驻条时设置 `toolbar={false}`，然后通过 `children` 组合 `TypstEditorToolbar` 与原生命令；关闭常驻条不会关闭右键、键盘菜单或 slash。
+
+格式面板中的字体、字号、文字颜色和背景颜色与加粗等基础格式共用当前原生选区，连续调整时保持面板。字体菜单来自 `TypstRegionEditor.fontFamilies`，该参数只提供选择项，不安装字体；省略且当前正文没有字体时，字体菜单禁用。后端通过 [Fonts](./fonts.md) 或会话字体输入提供真实字体，浏览器能否显示同一字体取决于宿主 CSS 和本机字体；最终排版以 native 预览/PDF 为准。字号菜单提供常用 pt 值；颜色菜单提供色板、自定义十六进制色值和单独清除。“清除排版”一次移除这四项，保留加粗等其他格式；选择“模板字体/模板字号”恢复继承模板。每次操作沿用原生事务和 undo。
 
 这些格式复用官方 [TextStyleKit](https://tiptap.dev/docs/editor/extensions/functionality/text-style-kit) 的 `textStyle` Mark，仍存于同一份原生 JSON：
 
@@ -103,9 +96,9 @@ export function Body({
 | `color`           | 十六进制 3/4/6/8 位，或整数 RGB 通道的 `rgb()` / `rgba()`                                                                                         | `text(fill: ...)`      |
 | `backgroundColor` | 同上，支持 alpha                                                                                                                                  | `highlight(fill: ...)` |
 
-`null` 表示继承。区域的 `marks` 显式允许 `textStyle` 才开放这行；未声明 `marks` 时与其他内置 Mark 一样可用；只读和输入法期间说明禁用原因。无效值、相对字号、CSS 变量和未知样式均明确拒绝。HTML 的受控 `span style` 可以保留四项格式；导入沿用浏览器 CSSOM 的等价表示，例如 `rgb()` 色值和字体外层引号，已保存的原生 JSON 不因此改写。Markdown 不承载它们，导出返回 `lossless: false` 和格式损失诊断，不能用输出覆盖原生 JSON。Markdown 候选覆盖带排版格式的区域也会被复杂内容检查阻止。
+`null` 表示继承。区域的 `marks` 显式允许 `textStyle` 才开放这些排版设置；未声明 `marks` 时与其他内置 Mark 一样可用；只读和输入法期间说明禁用原因。无效值、相对字号、CSS 变量和未知样式均明确拒绝。HTML 的受控 `span style` 可以保留四项格式；导入沿用浏览器 CSSOM 的等价表示，例如 `rgb()` 色值和字体外层引号，已保存的原生 JSON 不因此改写。Markdown 不承载它们，导出返回 `lossless: false` 和格式损失诊断，不能用输出覆盖原生 JSON。Markdown 候选覆盖带排版格式的区域也会被复杂内容检查阻止。
 
-`placeholder` 设置空段落提示。`slashCommands` 可添加宿主业务操作，回调只组合传入的原生 chain，由共享菜单统一删除 `/query` 并执行一次 transaction；不要在回调中自行 `run()` 或产生外部副作用：
+`placeholder` 设置空段落提示。`slashCommands` 向“插入”菜单和 slash 同时添加宿主业务操作；一份声明覆盖两种入口。回调只组合传入的原生 chain，共享菜单负责在需要时删除 `/query`，并执行一次 transaction；不要在回调中调用 `run()`、`focus()`、`dispatch` 或产生外部副作用，预演可多次执行该回调：
 
 ```tsx no-twoslash
 import type { TypstSlashCommand } from '@pluxel/plugin-typst/tiptap/react'
@@ -213,7 +206,7 @@ const initial: JSONContent = {
 
 安装扩展后，UI 和程序共用原生 Tiptap 命令：`editor.commands.insertTypstTemplateBlock({ template: 'channels', dataPath: ['channels'] })` 使用定义的 defaults；显式 `props` 替换 defaults，不进行合并。`props` / `dataPath` 只有省略或 `undefined` 时使用默认值；显式 `null` 等非法值拒绝，不回退默认参数或完整输入绑定。`editor.commands.insertTypstSource(source)` 要求显式提供源码，包括空字符串。`duplicateTypstTemplateBlock(position)` 和 `duplicateTypstSource(position)` 接收对应节点起始的原生位置，在其后插入独立副本并选中它。每次创建分配区域内唯一 ID，深复制实例参数；移动继续使用官方 drag/drop 并保留 ID。返回 `false` 时不提交，宿主应据此显示失败。`editor.can()` 预演不生成 ID、不修改默认参数、正文或 history。只读、区域准入和组合输入限制同样适用于程序调用。载入和粘贴仍需严格校验，缺失/重复 ID 不自动修复。
 
-React 宿主可把 `TypstBlockPicker` 放进工具栏插槽，只显示已安装且当前区域允许的类型。卡片显示名称、原生拖拽手柄和“块操作”菜单；拖拽调整顺序，点击名称或空白处选中节点并定位预览。右键或菜单按钮提供“复制一份”和“删除”，均沿用原生命令与 history。“复制一份”在当前文档内插入带新实例 ID 的节点，不承诺系统剪贴板往返。控件操作及参数、数据文本的选择不触发预览跳转。
+React 区域编辑器按已安装扩展和当前区域规则在“插入”和 slash 菜单提供组件操作，宿主无需另装选择器。卡片显示名称、原生拖拽手柄和“块操作”菜单；拖拽调整顺序，点击名称或空白处选中节点并定位预览。右键或菜单按钮提供“复制一份”和“删除”，均沿用原生命令与 history。“复制一份”在当前文档内插入带新实例 ID 的节点，不承诺系统剪贴板往返。控件操作及参数、数据文本的选择不触发预览跳转。
 
 模板卡片的“参数与数据”只读展示 `props` 和当前绑定数据；数据来自已有 `TypstDataProvider`，不写入正文 JSON 或产生撤销记录。宿主需要参数编辑时，可提供业务表单，选中目标节点后使用官方 `updateAttributes` 等命令修改 `props` / `dataPath`，仍受同一准入规则约束。
 

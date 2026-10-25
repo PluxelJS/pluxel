@@ -147,6 +147,22 @@ async function text(locator: Locator): Promise<string> {
 	return (await locator.textContent()) ?? ''
 }
 
+async function openFormat(page: Page, toolbar: Locator, name = '文字格式') {
+	const dialog = page.getByRole('dialog', { name, exact: true })
+	if (!(await dialog.isVisible()))
+		await toolbar.getByRole('button', { name: '格式', exact: true }).click()
+	await dialog.waitFor()
+	return dialog
+}
+
+async function insertContent(page: Page, toolbar: Locator, title: string) {
+	await toolbar.getByRole('button', { name: '插入', exact: true }).click()
+	const dialog = page.getByRole('dialog', { name: '插入内容', exact: true })
+	await dialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).fill(title)
+	await dialog.getByRole('option', { name: title, exact: true }).click()
+	await dialog.waitFor({ state: 'hidden' })
+}
+
 async function containsText(locator: Locator, pattern: RegExp): Promise<boolean> {
 	return pattern.test(await text(locator))
 }
@@ -857,43 +873,38 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		const notes = page.getByTestId('region-notes').locator('.tiptap')
 		const notesRegion = page.getByTestId('region-notes')
 		const notesToolbar = notesRegion.getByRole('toolbar', { name: '正文格式', exact: true })
-		const paragraphStyle = notesToolbar.getByRole('combobox', { name: '段落样式', exact: true })
+		const formatDialog = page.getByRole('dialog', { name: '文字格式', exact: true })
+		const paragraphStyle = formatDialog.getByRole('combobox', { name: '段落样式', exact: true })
 		const readOnlyRevision = await text(page.getByTestId('revision'))
 		await page.getByRole('checkbox', { name: '区域只读', exact: true }).check()
 		assert.equal(await notes.getAttribute('contenteditable'), 'false')
-		assert.equal(await paragraphStyle.isDisabled(), true)
 		assert.equal(
-			await notesToolbar.getByRole('button', { name: '加粗', exact: true }).isDisabled(),
-			true,
-		)
-		await notesRegion.locator('.typst-typography-panel > summary').click()
-		const notesTypography = notesRegion.getByRole('toolbar', { name: '排版扩展', exact: true })
-		assert.equal(
-			await notesTypography.getByRole('combobox', { name: '字体', exact: true }).isDisabled(),
+			await notesToolbar.getByRole('button', { name: '格式', exact: true }).isDisabled(),
 			true,
 		)
 		assert.equal(
-			await notesTypography.getByRole('combobox', { name: '字号', exact: true }).isDisabled(),
+			await notesToolbar.getByRole('button', { name: '插入', exact: true }).isDisabled(),
 			true,
 		)
-		assert.equal(
-			await notesTypography.getByRole('button', { name: '文字颜色', exact: true }).isDisabled(),
-			true,
-		)
-		assert.equal(
-			await notesTypography.getByRole('button', { name: '背景颜色', exact: true }).isDisabled(),
-			true,
-		)
+		assert.equal(await formatDialog.isVisible(), false, 'Read-only formatting stays unavailable')
 		await notes.press('/')
 		assert.equal(await page.getByRole('listbox', { name: '插入内容', exact: true }).count(), 0)
 		await openWorkspace('正文')
-		await notesToolbar.getByRole('button', { name: '添加提示块', exact: true }).click()
+		await notes.evaluate((element) => {
+			const editor = (element as TiptapEditorHTMLElement).editor!
+			editor.commands.insertContent({
+				type: 'notice',
+				attrs: { tone: 'info' },
+				content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Forbidden notice' }] }],
+			})
+		})
 		assert.match(await text(page.getByRole('alert')), /FORBIDDEN_REGION/)
 		assert.equal(await text(notes), 'Notes ready for a Markdown candidate.')
 		assert.equal(await text(page.getByTestId('revision')), readOnlyRevision)
 		await page.getByRole('checkbox', { name: '区域只读', exact: true }).uncheck()
 		await openWorkspace('正文')
 		await notes.click()
+		await openFormat(page, notesToolbar)
 		await paragraphStyle.selectOption({ label: '标题 2' })
 		await notes.locator('h2').waitFor()
 		await currentPreview(page)
@@ -904,6 +915,9 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		assert.equal(await notes.locator('h2').count(), 0, 'Block conversion is one native undo step')
 		assert.equal(await text(notes), 'Notes ready for a Markdown candidate.')
 		const plainNotesHtml = await notes.innerHTML()
+		// ProseMirror 1.42.6 domobserver restores the old selection when a newly focused
+		// editor moves to document start within 200ms. Let that native focus window settle.
+		await page.waitForTimeout(200)
 		await notes.press('ControlOrMeta+Home')
 		await notes.press('ControlOrMeta+Shift+ArrowRight')
 		await poll(() => page.evaluate(() => window.getSelection()?.toString().trim()), 'Notes')
@@ -1292,10 +1306,12 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await notes.press('Shift+Home')
 		await waitForEditorSelection(notes)
 		await openWorkspace('正文')
-		await notesToolbar.getByRole('button', { name: '加粗', exact: true }).click()
+		await openFormat(page, notesToolbar)
+		await formatDialog.getByRole('button', { name: '加粗', exact: true }).click()
 		assert.match(await text(notes.locator('strong')), /中文输入/)
 		await openWorkspace('正文')
-		await notesToolbar.getByRole('button', { name: '列表', exact: true }).click()
+		await openFormat(page, notesToolbar)
+		await formatDialog.getByRole('button', { name: '列表', exact: true }).click()
 		await notes.locator('ul li').waitFor()
 		await openWorkspace('正文')
 		await notesToolbar.getByRole('button', { name: '撤销', exact: true }).click()
@@ -1335,11 +1351,9 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await notes.locator('table').waitFor()
 		await notes.locator('td p').first().click()
 		await openWorkspace('正文')
-		await notesToolbar.getByRole('button', { name: '表格', exact: true }).click()
-		const tableMenu = page.getByRole('menu', { name: '表格操作', exact: true })
-		await tableMenu.waitFor()
+		const tableMenu = await openFormat(page, notesToolbar, '表格操作')
 		await page.screenshot({ path: join(evidence, '10-table-menu.png'), fullPage: true })
-		await tableMenu.getByRole('menuitem', { name: '增加行', exact: true }).click()
+		await tableMenu.getByRole('button', { name: '增加行', exact: true }).click()
 		await poll(() => notes.locator('tr').count(), 3)
 		await openWorkspace('正文')
 		await notesToolbar.getByRole('button', { name: '撤销', exact: true }).click()
@@ -1348,9 +1362,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await notesToolbar.getByRole('button', { name: '重做', exact: true }).click()
 		await poll(() => notes.locator('tr').count(), 3)
 		await notes.locator('td p').first().click()
-		await page
-			.getByRole('combobox', { name: '插入数据字段', exact: true })
-			.selectOption('["customer","name"]')
+		await insertContent(page, notesToolbar, '客户名称')
 		await notes.locator('table [data-data-field]').waitFor()
 		await page.screenshot({
 			path: join(evidence, '03-table-composition-candidate.png'),
@@ -1361,19 +1373,19 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		const body = page.getByTestId('region-body').locator('.tiptap')
 		const bodyRegion = page.getByTestId('region-body')
 		const bodyToolbar = bodyRegion.getByRole('toolbar', { name: '正文格式', exact: true })
-		await bodyRegion.locator('.typst-typography-panel > summary').click()
-		const typographyToolbar = bodyRegion.getByRole('toolbar', { name: '排版扩展', exact: true })
+		const typographyToolbar = formatDialog.getByRole('toolbar', { name: '排版扩展', exact: true })
 		const fontFamily = typographyToolbar.getByRole('combobox', { name: '字体', exact: true })
 		const fontSize = typographyToolbar.getByRole('combobox', { name: '字号', exact: true })
-		assert.deepEqual(await fontFamily.locator('option').allTextContents(), [
-			'模板字体',
-			...fixture.fontFamilies,
-		])
 		await body.locator('h2').click()
 		await body.press('ControlOrMeta+Home')
 		await body.press('ControlOrMeta+Shift+ArrowRight')
 		await poll(() => page.evaluate(() => window.getSelection()?.toString().trim()), 'Editable')
 		await waitForEditorSelection(body)
+		await openFormat(page, bodyToolbar)
+		assert.deepEqual(await fontFamily.locator('option').allTextContents(), [
+			'模板字体',
+			...fixture.fontFamilies,
+		])
 		const bodyHeading = body.locator('h2')
 		async function typographyStep(
 			action: () => Promise<unknown>,
@@ -1381,6 +1393,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			value: string,
 		) {
 			const before = await bodyHeading.innerHTML()
+			await openFormat(page, bodyToolbar)
 			await action()
 			await poll(
 				() =>
@@ -1389,6 +1402,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 						.evaluate((element, property) => element.style.getPropertyValue(property), attribute),
 				value,
 			)
+			assert.equal(await formatDialog.isVisible(), true, 'Formatting keeps the context open')
 			await currentPreview(page)
 			const after = await bodyHeading.innerHTML()
 			await bodyToolbar.getByRole('button', { name: '撤销', exact: true }).click()
@@ -1432,6 +1446,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await currentPreview(page)
 		const beforeColorCancel = await bodyHeading.innerHTML()
 		const beforeColorCancelRevision = await text(page.getByTestId('revision'))
+		await openFormat(page, bodyToolbar)
 		await typographyToolbar.getByRole('button', { name: '文字颜色', exact: true }).click()
 		const textPalette = page.getByRole('dialog', { name: '文字颜色', exact: true })
 		const colorInput = textPalette.getByRole('textbox', { name: '色值', exact: true })
@@ -1448,6 +1463,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		)
 		await colorInput.press('Escape')
 		assert.equal(await textPalette.count(), 0)
+		assert.equal(await formatDialog.isVisible(), true, 'Escape only dismisses the color palette')
 		assert.equal(await bodyHeading.innerHTML(), beforeColorCancel, 'Escape cancels an edited color')
 		assert.equal(await text(page.getByTestId('revision')), beforeColorCancelRevision)
 		await typographyStep(
@@ -1483,12 +1499,14 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 				preserved === 'color' ? 'rgb(220, 38, 38)' : 'rgb(254, 240, 138)',
 				'Clearing a color preserves the other color attribute',
 			)
+			await openFormat(page, bodyToolbar)
 			assert.equal(await fontFamily.inputValue(), 'Liberation Serif')
 			assert.equal(await fontSize.inputValue(), '18pt')
 			await bodyToolbar.getByRole('button', { name: '撤销', exact: true }).click()
 			assert.equal(await bodyHeading.innerHTML(), beforeColorCancel)
 		}
 		const completeTypography = await bodyHeading.innerHTML()
+		await openFormat(page, bodyToolbar)
 		await typographyToolbar.getByRole('button', { name: '清除排版', exact: true }).click()
 		assert.equal(await bodyHeading.locator('span[style]').count(), 0)
 		assert.equal(await text(bodyHeading), 'Editable overview')
@@ -1519,6 +1537,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await page.evaluate(() => window.scrollTo(0, 0))
 		await page.screenshot({ path: join(evidence, '11-typography-desktop.png'), fullPage: true })
 		await page.setViewportSize({ width: 390, height: 844 })
+		await openFormat(page, bodyToolbar)
 		await typographyToolbar.scrollIntoViewIfNeeded()
 		await typographyToolbar.getByRole('button', { name: '背景颜色', exact: true }).click()
 		const backgroundPalette = page.getByRole('dialog', { name: '背景颜色', exact: true })
@@ -1526,7 +1545,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		assert.equal(
 			await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
 			false,
-			'The typography row and color palette fit the mobile viewport',
+			'The formatting context and color palette fit the mobile viewport',
 		)
 		const paletteBounds = await backgroundPalette.boundingBox()
 		assert.ok(
@@ -1538,7 +1557,9 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		)
 		await page.screenshot({ path: join(evidence, '12-typography-mobile.png') })
 		await backgroundPalette.getByRole('button', { name: '黄色', exact: true }).click()
-		// Official focus completes in an animation frame; finish that action before sending a new key.
+		assert.equal(await formatDialog.isVisible(), true, 'Mobile color changes retain the context')
+		await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
+		// Explicitly closing the format panel returns the native editor focus for further typing.
 		await poll(
 			() =>
 				body.evaluate((element) => (element as TiptapEditorHTMLElement).editor?.view.hasFocus()),
@@ -1548,7 +1569,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await page.setViewportSize({ width: 1440, height: 1100 })
 		await body.press('ControlOrMeta+End')
 		await waitForCollapsedEditorSelection(body)
-		await page.getByRole('button', { name: '添加提示块', exact: true }).click()
+		await insertContent(page, bodyToolbar, '提示块')
 		await body.locator('aside').waitFor()
 		assert.equal(
 			await bodyHeading.innerHTML(),
@@ -1637,7 +1658,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await writeFile(join(evidence, 'saved-draft.json'), JSON.stringify(stored, null, 2))
 		await writeFile(join(evidence, 'composition.json'), JSON.stringify(compositionEvents, null, 2))
 		stages.push(
-			'Chromium: real native preview/PDF and compile failure recovery, template and generated navigation, zoom/modifier/drag filtering, heading dropdown, explicit selection context menu, slash filtering/Arrow/Enter/Escape and one-step undo, mobile menus, separate typography row with installed fonts/size/text and background colors, one-step styling and reset history, live field data, composition, selection formatting, lists, native undo/redo, Markdown table and styled HTML paste, supported CSS roundtrip and invalid CSS rejection, field insertion, consumer node, strict HTML and Markdown parity, permission/stale/complex/style-loss candidate rejection, region switching, typography-preserving validated save/reopen',
+			'Chromium: real native preview/PDF and compile failure recovery, template and generated navigation, zoom/modifier/drag filtering, paragraph styles and explicit format context, shared insertion/slash filtering/Arrow/Enter/Escape and one-step undo, mobile menus, contextual fonts/size/text and background colors, retained format panel and palette-only cancellation, one-step styling and reset history, live field data, composition, selection formatting, lists, native undo/redo, Markdown table and styled HTML paste, supported CSS roundtrip and invalid CSS rejection, field insertion, consumer node, strict HTML and Markdown parity, permission/stale/complex/style-loss candidate rejection, region switching, typography-preserving validated save/reopen',
 		)
 	} catch (cause) {
 		await page.screenshot({ path: join(evidence, 'failure.png'), fullPage: true })

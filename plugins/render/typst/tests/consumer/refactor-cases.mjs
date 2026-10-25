@@ -385,7 +385,7 @@ export async function refactorCases({ browser, url, output }) {
 		await rawInput.fill(originalRaw)
 		await raw.getByRole('button', { name: '应用组件修改', exact: true }).click()
 		await ready()
-		// Collapsed typography and mobile pane switches retain selection, history and preview DOM.
+		// Context formatting and mobile pane switches retain selection, history and preview DOM.
 		await page
 			.getByRole('navigation', { name: '正文区域', exact: true })
 			.getByRole('button', { name: '经营解读', exact: true })
@@ -393,9 +393,10 @@ export async function refactorCases({ browser, url, output }) {
 		await body.locator('p').first().click()
 		await rememberEditor()
 		const selection = await body.evaluate((element) => element.editor.state.selection.toJSON())
-		const typography = page.getByTestId('region-body').locator('.typst-typography-panel')
-		await typography.locator('summary').click()
-		await typography.locator('summary').click()
+		assert.equal(await page.locator('.typst-typography-panel').count(), 0)
+		await page.getByTestId('region-body').getByRole('button', { name: '格式', exact: true }).click()
+		await page.getByRole('dialog', { name: '文字格式', exact: true }).waitFor()
+		await page.getByRole('button', { name: '关闭格式', exact: true }).click()
 		assert.deepEqual(
 			await body.evaluate((element) => element.editor.state.selection.toJSON()),
 			selection,

@@ -25,12 +25,7 @@ import {
 	type TypstMarkdownCandidate,
 	type TypstPreparedCandidate,
 } from '@pluxel/plugin-typst/tiptap'
-import {
-	TypstEditorToolbar,
-	TypstFieldPicker,
-	TypstBlockPicker,
-	TypstRegionEditor,
-} from '@pluxel/plugin-typst/tiptap/react'
+import { TypstRegionEditor, type TypstSlashCommand } from '@pluxel/plugin-typst/tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { diagnosticPosition, sourceOffset, type ConsumerFailure } from './compile-contract'
 import { ChannelParameters } from './channel-parameters'
@@ -39,6 +34,26 @@ import { fontFamilies, initialDraft, initialSource } from './editor-config.mjs'
 import { examples, getExample } from './report-example.mjs'
 import '@pluxel/plugin-typst/tiptap/style.css'
 import './style.css'
+
+const consumerSlashCommands: readonly TypstSlashCommand[] = [
+	{
+		id: 'consumer-notice',
+		title: '提示块',
+		description: '添加报告核对提醒',
+		keywords: ['notice', '提示', '提醒'],
+		command: (chain) =>
+			chain.insertContent({
+				type: 'notice',
+				attrs: { tone: 'info' },
+				content: [
+					{
+						type: 'paragraph',
+						content: [{ type: 'text', text: 'Consumer-owned notice' }],
+					},
+				],
+			}),
+	},
+]
 
 const workspaceTabs = [
 	{ id: 'editor', label: '正文' },
@@ -554,7 +569,7 @@ function App() {
 					<p className="eyebrow">PLUXEL / TYPST</p>
 					<h1>编辑与排版体验</h1>
 				</div>
-				<span>点击正文或预览文字，双向定位 · 表格右键打开操作</span>
+				<span>点击正文或预览文字双向定位 · 文字右键设置格式</span>
 			</header>
 			<div className="host-actions">
 				<label>
@@ -804,6 +819,8 @@ function App() {
 									content={draft.regions[item.id]!}
 									config={config}
 									data={parsedData}
+									fontFamilies={fontFamilies}
+									slashCommands={consumerSlashCommands}
 									editable={editable}
 									onValidationError={(issues) => setError(JSON.stringify(issues))}
 									onEditor={(editor) => {
@@ -821,39 +838,11 @@ function App() {
 										if (element) element.dataset.consumerSelection = String(position)
 									}}
 								>
-									{(editor) => (
-										<>
-											<TypstEditorToolbar editor={editor} fontFamilies={fontFamilies}>
-												<TypstFieldPicker editor={editor} fields={config.fields} />
-												<TypstBlockPicker editor={editor} />
-												<button
-													type="button"
-													onMouseDown={(event) => event.preventDefault()}
-													onClick={() =>
-														editor
-															.chain()
-															.focus()
-															.insertContent({
-																type: 'notice',
-																attrs: { tone: 'info' },
-																content: [
-																	{
-																		type: 'paragraph',
-																		content: [{ type: 'text', text: 'Consumer-owned notice' }],
-																	},
-																],
-															})
-															.run()
-													}
-												>
-													添加提示块
-												</button>
-											</TypstEditorToolbar>
-											{example.id === 'operations-report' && (
-												<ChannelParameters editor={editor} editable={editable} />
-											)}
-										</>
-									)}
+									{(editor) =>
+										example.id === 'operations-report' && (
+											<ChannelParameters editor={editor} editable={editable} />
+										)
+									}
 								</TypstRegionEditor>
 							</div>
 						))}
