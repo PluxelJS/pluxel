@@ -1,6 +1,7 @@
 .typst-editor,
 .typst-floating-menu,
-.typst-table-trigger {
+.typst-table-trigger,
+.typst-block-current {
 	--typst-text: #27272a;
 	--typst-muted: #71717a;
 	--typst-border: #e4e4e7;
@@ -354,10 +355,13 @@
 	pointer-events: none;
 }
 
+.typst-editor-content {
+	position: relative;
+}
 .typst-editor-content .tiptap {
 	position: relative;
 	min-height: 320px;
-	padding: 26px 32px 40px;
+	padding: 26px 32px 40px 68px;
 	outline: none;
 	overflow-wrap: anywhere;
 	white-space: pre-wrap;
@@ -459,6 +463,166 @@
 }
 .typst-editor-content .tiptap ::selection {
 	background: #bbd3ff85;
+}
+
+.typst-editor-content .typst-selection {
+	background: #93b4e94d;
+}
+.typst-editor-content .ProseMirror-selectednode:not(.typst-content-block) {
+	outline: 2px solid #93b4e9;
+	outline-offset: 3px;
+}
+.typst-block-drag,
+.typst-block-current {
+	width: 58px;
+	color: var(--typst-muted);
+}
+.typst-block-drag {
+	padding-right: 4px;
+	box-sizing: border-box;
+	z-index: 8;
+}
+.typst-block-drag-hidden {
+	visibility: hidden !important;
+	pointer-events: none !important;
+}
+.typst-block-current {
+	position: fixed;
+	z-index: 9;
+}
+.typst-block-controls {
+	display: flex;
+	align-items: flex-start;
+	gap: 2px;
+}
+.typst-block-controls .typst-tool-button {
+	width: 26px;
+	min-width: 26px;
+	height: 30px;
+	padding: 3px;
+	background: var(--typst-surface);
+}
+.typst-block-controls .typst-insert-trigger {
+	border: 0;
+}
+.typst-block-drag .typst-block-grip {
+	cursor: grab;
+}
+.typst-block-drag[data-dragging='true'] .typst-block-grip {
+	cursor: grabbing;
+}
+.typst-block-actions-menu {
+	width: min(250px, calc(100vw - 16px));
+	max-height: calc(100dvh - 16px);
+	overflow-y: auto;
+	padding: 10px;
+	box-sizing: border-box;
+}
+.typst-block-menu-heading {
+	font-size: 12px;
+	font-weight: 600;
+}
+.typst-block-preview {
+	font-size: 11px;
+	color: var(--typst-muted);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	overflow: hidden;
+	margin: 4px 0 10px;
+}
+.typst-block-conversion {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	font-size: 12px;
+	margin: 10px 0;
+}
+.typst-block-conversion select {
+	min-width: 0;
+	max-width: 65%;
+	padding: 6px;
+	border: 1px solid var(--typst-border);
+	border-radius: 6px;
+	font: inherit;
+	color: var(--typst-text);
+	background: var(--typst-surface);
+}
+.typst-block-actions {
+	display: grid;
+	gap: 2px;
+	border-top: 1px solid var(--typst-border);
+	padding-top: 6px;
+}
+.typst-block-actions button {
+	text-align: left;
+	padding: 9px 8px;
+	font: inherit;
+	font-size: 12px;
+	color: var(--typst-text);
+	background: transparent;
+	border: 0;
+	border-radius: 6px;
+	cursor: pointer;
+}
+.typst-block-actions button:hover:not(:disabled) {
+	background: var(--typst-hover);
+}
+.typst-block-actions button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.typst-block-actions .typst-block-delete {
+	color: #dc2626;
+}
+
+.typst-link-form {
+	display: grid;
+	gap: 12px;
+	padding: 8px 0;
+}
+.typst-link-form label {
+	display: grid;
+	gap: 5px;
+	font-size: 12px;
+	color: var(--typst-muted);
+}
+.typst-link-form input {
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	padding: 8px;
+	border: 1px solid var(--typst-border);
+	border-radius: 6px;
+	font: inherit;
+	color: var(--typst-text);
+	background: var(--typst-surface);
+}
+.typst-link-form input[aria-invalid='true'] {
+	border-color: #dc2626;
+}
+.typst-link-form [role='alert'] {
+	margin: 0;
+	font-size: 12px;
+	color: #dc2626;
+}
+.typst-link-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+.typst-link-actions button,
+.typst-link-actions a {
+	padding: 7px 9px;
+	border: 0;
+	border-radius: 6px;
+	color: var(--typst-text);
+	background: var(--typst-hover);
+	font: inherit;
+	font-size: 12px;
+	text-decoration: none;
+	cursor: pointer;
 }
 
 .typst-editor-content .tableWrapper {
@@ -979,18 +1143,22 @@
 		min-height: 30px;
 	}
 	.typst-editor-content .tiptap {
-		padding: 20px 18px 32px;
+		padding: 20px 18px 32px 68px;
 		min-height: 280px;
 	}
 	.typst-tool-group-custom {
 		border-right: 0;
+	}
+	.typst-block-actions button {
+		min-height: 42px;
 	}
 }
 
 @media (prefers-color-scheme: dark) {
 	.typst-editor,
 	.typst-floating-menu,
-	.typst-table-trigger {
+	.typst-table-trigger,
+	.typst-block-current {
 		--typst-text: #e4e4e7;
 		--typst-muted: #a1a1aa;
 		--typst-border: #3f3f46;

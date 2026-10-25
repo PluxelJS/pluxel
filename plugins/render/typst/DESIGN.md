@@ -70,7 +70,11 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 `tiptap/ui.tsx` 组合常驻入口、文字/段落/排版上下文和表格操作。文字和表格浮层复用官方 React `BubbleMenu`，由右键、键盘菜单键或“格式”按钮显式打开，不随文本选择自动出现；按钮提供触屏入口。文本右键命中原选区时保留范围，命中外部时移动 caret；光标处支持设置后续输入格式。只读、IME、源码输入与卡片数据文本保留原生菜单。表格菜单在 `TextSelection` 时复用同一套文字、段落和排版控件，同时保留表格属性和结构操作；表边入口仍可用。表格结构命令属于官方 TableKit，`TypstTableStyleControls` 仅在样式扩展安装时贡献外观选项。
 
-“插入”和 slash 消费同一命令集合，包括官方结构、数据字段、已安装模板/源码扩展和 `slashCommands` 提供的宿主操作。先用官方 CommandManager 对借用的原生 state 构造事务并按同一准入规则预演，提交时再检查；slash 删除查询与插入共享一次事务，普通插入使用当前选区。宿主回调仅组合 chain，不再维护提示块按钮等第二条执行路径。UI 不维护另一份正文或历史，IME 期间不拦截插入键。`/tiptap/style.css` 是独立资源，由 tsdown 的 copy/customExports 同时维护开发和制品入口，JS 导入不附带 CSS 副作用。
+常驻“插入”、块旁“＋”和 slash 消费同一命令集合，包括官方结构、数据字段、已安装模板/源码扩展和 `slashCommands` 提供的宿主操作。先用官方 CommandManager 对借用的原生 state 构造事务并按同一准入规则预演，提交时再检查；slash 删除查询与插入共享一次事务，普通插入使用当前选区，就地插入固定顶层块后的边界；准备阶段不提交占位段落，外部文档变化使打开的目标失效。宿主回调仅组合 chain，不再维护提示块按钮等第二条执行路径。UI 不维护另一份正文或历史，IME 期间不拦截插入键。`/tiptap/style.css` 是独立资源，由 tsdown 的 copy/customExports 同时维护开发和制品入口，JS 导入不附带 CSS 副作用。
+
+`block-menu.tsx` 使用官方 DragHandle React 的定位、顶层目标与原生拖放；不自行追踪鼠标或维护排序模型。普通块提供就地插入、类型转换、复制、删除和上下移动，键盘/触屏有当前块入口。菜单固定原生 doc/node/pos，打开后不借旧 caret 执行动作，文档变化取消旧目标。`block-actions.ts` 准备完整块的原生事务，通过现有区域校验后提交；不可完整保留内容的转换禁用。复制嵌套模板/源码节点复用 `blocks.ts` 的身份分配，移动保留身份。卡片继续使用已有 NodeView 入口，避免重叠操作柄。官方拖动扩展的 collaboration/Yjs peers 只属于 React 入口依赖，没有安装协作扩展或第二份 history。
+
+链接视图与格式视图共用 `format-menu.tsx` 的显式请求和 native Selection，Mod+K、格式按钮进入同一编辑过程；URL 草稿属于界面，`link-actions.ts` 只准备原生 transaction，不保存正文副本。链接复用 canonical `allowedLink`、原生 Link URI 检查和区域准入；点击提交时重查。清除 Mark 与列表缩进也用原生命令。React RegionEditor 安装官方 Selection extension，只用 decoration 保留控件失焦时的文字高亮，不改变 JSON/schema。
 
 `captureTypstCandidateTarget` 统一消费原生 Selection 的所有 ranges，捕获区域、修订与完整顶层块；表格 CellSelection 包络整个表。两个宿主删除各自范围算法，固定目标后仅保留一份可编辑文字；文字变化使 prepare 结果失效，apply 仍读取最新事实。`TypstRegionEditor.content` 只初始化，稳定扩展集合和显式文档 key 决定 history 归属，不通过受控回填重置正文。
 

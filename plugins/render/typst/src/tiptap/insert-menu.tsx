@@ -8,31 +8,46 @@ import {
 	useRef,
 	useState,
 	type ReactNode,
+	type RefObject,
 } from 'react'
+import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { useEditorState } from '@tiptap/react'
 import { EditorUi, Icon, canEdit } from './editor-ui'
 import {
 	insertEntries,
+	isInsertionBoundary,
 	matchesInsertion,
 	prepareInsertion,
 	type InsertEntry,
+	type LocalInsertionTarget,
 } from './insert-commands'
 
 function FloatingMenu({
 	editor,
 	reference,
 	className,
+	elementRef,
+	onReady,
 	children,
 }: {
 	editor: Editor
 	reference(): { left: number; top: number; bottom: number }
 	className: string
+	elementRef?: RefObject<HTMLDivElement | null>
+	onReady?(): void
 	children: ReactNode
 }) {
-	const ref = useRef<HTMLDivElement>(null)
+	const ownRef = useRef<HTMLDivElement>(null)
+	const ref = elementRef ?? ownRef
 	const [point, setPoint] = useState<{ left: number; top: number } | null>(null)
+	const ready = useRef(onReady)
+	ready.current = onReady
+	const positioned = point !== null
+	useLayoutEffect(() => {
+		if (positioned) ready.current?.()
+	}, [positioned])
 	useLayoutEffect(() => {
 		const document = editor.view.dom.ownerDocument
 		const window = document.defaultView!
@@ -56,8 +71,8 @@ function FloatingMenu({
 			document.removeEventListener('scroll', position, true)
 			window.removeEventListener('resize', position)
 		}
-	}, [editor, reference, children])
-	return (
+	}, [editor, reference, children, ref])
+	return createPortal(
 		<div
 			ref={ref}
 			className={`typst-floating-menu ${className}`}
@@ -68,7 +83,8 @@ function FloatingMenu({
 			}}
 		>
 			{children}
-		</div>
+		</div>,
+		editor.view.dom.ownerDocument.body,
 	)
 }
 
@@ -146,7 +162,17 @@ function InsertHelp() {
 }
 
 /** The explicit entry also works when the editor has a caret, without a text selection. */
-export function InsertMenu({ editor }: { editor: Editor }) {
+export function InsertMenu({
+	editor,
+	at,
+	compact = false,
+	onOpenChange,
+}: {
+	editor: Editor
+	at?: number
+	compact?: boolean
+	onOpenChange?(open: boolean): void
+}) {
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
 	const ui = useContext(EditorUi)
 	const id = useId()
@@ -154,59 +180,78 @@ export function InsertMenu({ editor }: { editor: Editor }) {
 	const [query, setQuery] = useState('')
 	const [choice, setChoice] = useState(0)
 	const container = useRef<HTMLDivElement>(null)
+	const popup = useRef<HTMLDivElement>(null)
 	const trigger = useRef<HTMLButtonElement>(null)
 	const search = useRef<HTMLInputElement>(null)
-	const enabled = canEdit(editor, ui)
-	const visible = open && enabled
+	const target = useRef<LocalInsertionTarget | undefined>(undefined)
+	const openChange = useRef(onOpenChange)
+	openChange.current = onOpenChange
+	const enabled =
+		canEdit(editor, ui) && (at === undefined || isInsertionBoundary(editor.state.doc, at))
+	const visible = open && enabled && (!target.current || target.current.doc === editor.state.doc)
 	const entries = useMemo(
 		() =>
 			visible
-				? insertEntries(editor, ui).filter(
-						(entry) => matchesInsertion(entry, query) && prepareInsertion(editor, ui, entry),
+				? insertEntries(editor, ui, target.current).filter(
+						(entry) =>
+							matchesInsertion(entry, query) && prepareInsertion(editor, ui, entry, target.current),
 					)
 				: [],
 		[editor, editor.state, ui, visible, query],
 	)
 	const active = Math.min(choice, entries.length - 1)
-	useEffect(() => {
-		if (!enabled) setOpen(false)
-	}, [enabled])
 	useLayoutEffect(() => {
-		if (visible) search.current?.focus({ preventScroll: true })
+		if (!visible) setOpen(false)
+		openChange.current?.(visible)
+		return () => {
+			if (visible) openChange.current?.(false)
+		}
 	}, [visible])
 	useEffect(() => {
 		if (!visible) return
-		const document = editor.view.dom.ownerDocument
+		const dom = editor.view.dom
+		const document = dom.ownerDocument
+		const observer = new ResizeObserver(() => {
+			if (dom.getClientRects().length === 0) setOpen(false)
+		})
+		observer.observe(dom)
 		const outside = (event: Event) => {
-			if (!container.current?.contains(event.target as Node)) setOpen(false)
+			if (
+				!container.current?.contains(event.target as Node) &&
+				!popup.current?.contains(event.target as Node)
+			)
+				setOpen(false)
 		}
 		document.addEventListener('pointerdown', outside, true)
 		document.addEventListener('focusin', outside)
 		return () => {
+			observer.disconnect()
 			document.removeEventListener('pointerdown', outside, true)
 			document.removeEventListener('focusin', outside)
 		}
 	}, [editor, visible])
 	function select(entry: InsertEntry) {
-		const transaction = prepareInsertion(editor, ui, entry)
+		const transaction = prepareInsertion(editor, ui, entry, target.current)
 		if (!transaction) return
 		editor.view.dispatch(transaction)
 		setOpen(false)
 		editor.view.focus()
 	}
 	function show() {
+		if (!enabled) return
+		target.current = at === undefined ? undefined : { at, doc: editor.state.doc }
 		setQuery('')
 		setChoice(0)
 		setOpen(true)
 	}
 	return (
-		<div ref={container} className="typst-insert-menu">
+		<div ref={container} className={`typst-insert-menu${compact ? ' typst-insert-compact' : ''}`}>
 			<button
 				ref={trigger}
 				type="button"
 				className="typst-tool-button typst-insert-trigger"
-				aria-label="插入"
-				title="插入内容，也可以在正文输入 /"
+				aria-label={compact ? '在块后插入' : '插入'}
+				title={compact ? '在块后插入' : '插入内容，也可以在正文输入 /'}
 				aria-haspopup="dialog"
 				aria-expanded={visible}
 				aria-controls={visible ? `${id}-dialog` : undefined}
@@ -221,11 +266,13 @@ export function InsertMenu({ editor }: { editor: Editor }) {
 				}}
 			>
 				<Icon name="plus" />
-				<span>插入</span>
+				{!compact && <span>插入</span>}
 			</button>
 			{visible && (
 				<FloatingMenu
 					editor={editor}
+					elementRef={popup}
+					onReady={() => search.current?.focus({ preventScroll: true })}
 					reference={() => trigger.current!.getBoundingClientRect()}
 					className="typst-insert-popover"
 				>
@@ -245,7 +292,8 @@ export function InsertMenu({ editor }: { editor: Editor }) {
 									event.preventDefault()
 									event.stopPropagation()
 									setOpen(false)
-									trigger.current?.focus({ preventScroll: true })
+									if (compact) editor.view.focus()
+									else trigger.current?.focus({ preventScroll: true })
 									return
 								}
 								if (!['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) return

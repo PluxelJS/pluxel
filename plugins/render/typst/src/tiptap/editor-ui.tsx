@@ -39,6 +39,11 @@ export type IconName =
 	| 'heading'
 	| 'quote'
 	| 'plus'
+	| 'rule'
+	| 'link'
+	| 'clear'
+	| 'indent'
+	| 'outdent'
 
 const paths: Record<IconName, string> = {
 	bold: 'M6 4h6a4 4 0 0 1 0 8H6m6 0h1a4 4 0 0 1 0 8H6V4',
@@ -57,6 +62,11 @@ const paths: Record<IconName, string> = {
 	heading: 'M5 4v16M19 4v16M5 12h14',
 	quote: 'M10 5H4v7h6V5Zm0 7c0 4-2 6-5 7m15-14h-6v7h6V5Zm0 7c0 4-2 6-5 7',
 	plus: 'M12 4v16M4 12h16',
+	rule: 'M4 12h16',
+	link: 'm10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0',
+	clear: 'm14 3 7 7-10 10H6l-4-4L14 3ZM8 10l7 7m-4 3h10',
+	indent: 'M11 5h10M11 10h10M11 15h10M3 20h18M3 6l4 4-4 4',
+	outdent: 'M11 5h10M11 10h10M11 15h10M3 20h18M7 6l-4 4 4 4',
 }
 
 export function Icon({ name }: { name: IconName }) {

@@ -6,6 +6,7 @@ import { Extension, type Editor, type Extensions, type JSONContent } from '@tipt
 import { Plugin } from '@tiptap/pm/state'
 import { Slice } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
+import { Selection } from '@tiptap/extensions/selection'
 import {
 	EditorContent,
 	NodeViewWrapper,
@@ -92,7 +93,7 @@ export interface TypstRegionEditorProps {
 	/** Host business controls appear below the default toolbar; they share the native Editor. */
 	children?: (editor: Editor) => ReactNode
 	/** Hide only the permanent toolbar when the host provides its own controls.
-	 * Context menus and slash insertion remain available. */
+	 * Context/block menus and slash insertion remain available. */
 	toolbar?: boolean
 	/** Families prepared by the host for Typst output; this does not install fonts. */
 	fontFamilies?: readonly string[]
@@ -100,7 +101,7 @@ export interface TypstRegionEditorProps {
 	editable?: boolean
 	/** Shown for an empty region; slash insertion remains available without a placeholder. */
 	placeholder?: string
-	/** Extra insertion actions, shared by the Insert menu and slash search.
+	/** Extra insertion actions, shared by Insert, block-local insertion and slash search.
 	 * Compose pure native chains; do not call run(), focus() or dispatch in a callback. */
 	slashCommands?: readonly TypstSlashCommand[]
 	onValidationError?(issues: TypstEditorIssue[]): void
@@ -157,6 +158,7 @@ function RegionEditor(props: TypstRegionEditorProps) {
 	const extensions = useMemo(
 		() => [
 			...createTypstReactExtensions(props.config),
+			Selection.configure({ className: 'typst-selection' }),
 			Extension.create({
 				name: 'typstRegionAdmission',
 				addProseMirrorPlugins: () => [
@@ -265,11 +267,15 @@ function RegionEditor(props: TypstRegionEditorProps) {
 				<div
 					className={['typst-editor', props.className].filter(Boolean).join(' ')}
 					data-readonly={props.editable === false || undefined}
-					onCompositionStartCapture={() => {
+					onCompositionStartCapture={(event) => {
+						// Portalled controls own their composition. The document, NodeViews
+						// and host controls mounted inside this region share its edit guard.
+						if (!event.currentTarget.contains(event.target as Node)) return
 						composition.current = true
 						setComposing(true)
 					}}
-					onCompositionEndCapture={() => {
+					onCompositionEndCapture={(event) => {
+						if (!event.currentTarget.contains(event.target as Node)) return
 						composition.current = false
 						setComposing(false)
 					}}

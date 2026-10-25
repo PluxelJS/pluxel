@@ -15,9 +15,11 @@ description: 通过可选 Tiptap 入口编辑原生 JSON，生成可定位的 Ty
 | `/template`     | 纯文档定义                                                                | 无                                                                                                                                                            |
 | `/browser`      | 无框架预览、页码/目录状态、普通源码位置与双向定位                         | 无                                                                                                                                                            |
 | `/tiptap`       | 原生 JSON 校验、扩展、Markdown、区域生成和映射；可在无 DOM 的 Node 中使用 | `@tiptap/core`、`@tiptap/pm`、`@tiptap/starter-kit`、`@tiptap/extension-table`、`@tiptap/extension-image`、`@tiptap/extension-text-style`、`@tiptap/markdown` |
-| `/tiptap/react` | 字段 NodeView、区域组件、格式上下文和统一插入菜单                         | 上列 peers，加 `@tiptap/react`、`react`、`react-dom`                                                                                                          |
+| `/tiptap/react` | 字段 NodeView、区域组件、格式上下文和统一插入菜单                         | 上列 peers，加 `@tiptap/react`、`@tiptap/extensions`、`@tiptap/extension-drag-handle-react`、`react`、`react-dom`                                             |
 
 Tiptap peers 使用已验收的同一版本 `3.32.0`；React 集成使用 React 19。对应依赖均为 optional peers，只使用编译或预览无需安装它们。选用相应入口时必须安装依赖，缺失时明确报错。浏览器从子路径导入，不从包根取运行时值；包级已有 native 依赖的下载成本仍存在。本包当前 private，验收对象是本地构建制品，未发布到 registry。
+
+React 块拖动复用官方 [DragHandle React](https://tiptap.dev/docs/editor/extensions/functionality/drag-handle-react)。它还需要 `@tiptap/extension-drag-handle`、`@tiptap/extension-node-range`、`@tiptap/extension-collaboration`（均为 `3.32.0`）、`@tiptap/y-tiptap@3.0.7`、`yjs@13.6.27`、`y-protocols@1.0.6` 的 peer 依赖；使用不自动安装 peers 的包管理配置时一并安装。协作依赖来自官方拖动扩展，区域编辑器没有启用多人协作，也没有替换原生 history。
 
 样式单独从 `@pluxel/plugin-typst/tiptap/style.css` 导入，由宿主决定加载。JS 和声明入口不隐式加载 CSS，保留 Node / SSR 导入能力。样式作用于 `.typst-*` 控件及带表格外观标记的官方表格 DOM，不改变未安装样式扩展的表格；宿主可用 CSS 变量调整配色。
 
@@ -83,7 +85,11 @@ export function Body({
 
 `TypstRegionEditor` 默认提供完整编辑界面，常驻条仅保留撤销、重做、“格式”和“插入”。文字、段落与排版设置集中在同一个格式面板；文字右键、`Shift+F10` / 菜单键和“格式”按钮打开同一面板，按钮也适用于触屏。选择文字不会自动弹层。已有选区内右键保留范围，选区外右键先把光标移到点击处；光标处也能设置接下来输入的文字格式。表格内打开同一入口时，面板同时提供单元格格式、表格样式和结构操作；表边入口仍可用。只读或输入法组合输入期间不拦截文本右键，源码 textarea 和卡片中的只读数据文本也保留浏览器菜单。可用项随区域规则与 `editable` 权限变化，最终准入仍由同一原生 transaction 校验。
 
-字段、表格、已安装的模板组件/源码块和宿主业务动作集中在“插入”菜单，也可输入 `/` 搜索；宿主不再逐项拼装字段或组件选择器。“插入”使用当前原生选区，slash 只删除本次查询文本，两者复用同一命令与准入检查。`children(editor)` 可在常驻条下、正文上添加业务参数表单等控件。确需自定义常驻条时设置 `toolbar={false}`，然后通过 `children` 组合 `TypstEditorToolbar` 与原生命令；关闭常驻条不会关闭右键、键盘菜单或 slash。
+字段、表格、已安装的模板组件/源码块和宿主业务动作集中在“插入”菜单，也可输入 `/` 搜索；宿主不再逐项拼装字段或组件选择器。“插入”使用当前原生选区，slash 只删除本次查询文本；块前的“＋”在指定块后插入，选择内容前不产生空段落或撤销记录。三种入口复用同一命令与准入检查。`children(editor)` 可在常驻条下、正文上添加业务参数表单等控件。确需自定义常驻条时设置 `toolbar={false}`，然后通过 `children` 组合 `TypstEditorToolbar` 与原生命令；关闭常驻条不会关闭右键、键盘菜单或 slash。
+
+普通段落、标题、引用、列表、表格和图片有就地块操作入口。点击操作柄可转换类型、复制、删除或上下移动，拖动操作柄可调整顺序；键盘与触屏也可用当前块入口和移动按钮；`Alt+F10` 聚焦当前块入口，`Shift+F10` 仍打开文字格式。目标是打开菜单时的整个顶层块，表格不会误作用于一个单元格。转换只提供当前结构能完整保留内容的选项；复杂结构不能通过转换悄悄丢掉内容。菜单打开后正文变化会取消旧目标。模板组件与源码块沿用卡片自己的入口；复制中的实例使用新 ID，移动保留原 ID，操作支持原生撤销。
+
+格式面板支持列表缩进、减少缩进和“清除文字格式”；后者移除文字 Mark，保留段落结构。通过链接按钮或 `Mod+K`（macOS 为 Command，其他平台为 Ctrl）添加或修改链接：选中文字时修改该范围，在已有链接中修改整个链接，在空光标处可输入显示文字并插入。链接面板可以移除链接或在新标签打开当前有效地址。URL 遵循相同的区域与链接准入规则，错误不会回写正文。输入链接、字号等控件时，原生文字选区继续高亮。
 
 格式面板中的字体、字号、文字颜色和背景颜色与加粗等基础格式共用当前原生选区，连续调整时保持面板。字体菜单来自 `TypstRegionEditor.fontFamilies`，该参数只提供选择项，不安装字体；省略且当前正文没有字体时，字体菜单禁用。后端通过 [Fonts](./fonts.md) 或会话字体输入提供真实字体，浏览器能否显示同一字体取决于宿主 CSS 和本机字体；最终排版以 native 预览/PDF 为准。字号菜单提供常用 pt 值；颜色菜单提供色板、自定义十六进制色值和单独清除。“清除排版”一次移除这四项，保留加粗等其他格式；选择“模板字体/模板字号”恢复继承模板。每次操作沿用原生事务和 undo。
 
@@ -98,7 +104,7 @@ export function Body({
 
 `null` 表示继承。区域的 `marks` 显式允许 `textStyle` 才开放这些排版设置；未声明 `marks` 时与其他内置 Mark 一样可用；只读和输入法期间说明禁用原因。无效值、相对字号、CSS 变量和未知样式均明确拒绝。HTML 的受控 `span style` 可以保留四项格式；导入沿用浏览器 CSSOM 的等价表示，例如 `rgb()` 色值和字体外层引号，已保存的原生 JSON 不因此改写。Markdown 不承载它们，导出返回 `lossless: false` 和格式损失诊断，不能用输出覆盖原生 JSON。Markdown 候选覆盖带排版格式的区域也会被复杂内容检查阻止。
 
-`placeholder` 设置空段落提示。`slashCommands` 向“插入”菜单和 slash 同时添加宿主业务操作；一份声明覆盖两种入口。回调只组合传入的原生 chain，共享菜单负责在需要时删除 `/query`，并执行一次 transaction；不要在回调中调用 `run()`、`focus()`、`dispatch` 或产生外部副作用，预演可多次执行该回调：
+`placeholder` 设置空段落提示。`slashCommands` 向常驻“插入”、块旁“＋”和 slash 添加宿主业务操作；一份声明覆盖三种入口。回调只组合传入的原生 chain，共享菜单负责在需要时删除 `/query`，并执行一次 transaction；不要在回调中调用 `run()`、`focus()`、`dispatch` 或产生外部副作用，预演可多次执行该回调：
 
 ```tsx no-twoslash
 import type { TypstSlashCommand } from '@pluxel/plugin-typst/tiptap/react'
@@ -116,7 +122,7 @@ const extraCommands: TypstSlashCommand[] = [
 
 字段路径是非空 `string[]`，不使用点号拆分；例如 `['items', '0', 'name']` 可读取数组首项。路径按实际父值解释：数组使用索引，对象仍使用字符串键，因此对象的 `'0'` 键不会被改成数组访问。`data` 必须是宿主 schema 解析后的输出；仅绑定声明过的 string/number/boolean，nullable 字段需显式配置 `nullText`。字段在 React 中不可直接改文字，但可以通过原生命令删除整个节点。更新 provider 数据只改变显示，不产生正文 transaction 或 undo 记录。草稿只保存原始业务输入；解析输出仅用于展示和一次编译，不能回写草稿，否则 transform 会重复执行。
 
-官方 StarterKit、TableKit、Image 提供标题、列表、引用、代码、格式、表格和逻辑图片。区域的 `nodes`、`marks`、`fields` 可缩小允许范围；它们是内容规则，不能代替宿主授权。Link 默认接受 http(s)、mailto、tel 和页内锚点；`allowLink` 可提供宿主自己的规则，空值、空白和控制字符仍会拒绝。图片 `src` 是宿主逻辑 ID，`resolveImage(id)` 将它映射到预备好的 `/inputs/` 资源，不读取任意磁盘路径。
+官方 StarterKit、TableKit、Image 提供标题、列表、引用、代码、格式、表格和逻辑图片。区域的 `nodes`、`marks`、`fields` 可缩小允许范围；它们是内容规则，不能代替宿主授权。Link 默认接受可解析的完整 http(s) 地址、mailto、tel 和页内锚点；URL 检查不改写保存的原字符串。`allowLink` 可提供宿主自己的规则，空值、空白和控制字符仍会拒绝。图片 `src` 是宿主逻辑 ID，`resolveImage(id)` 将它映射到预备好的 `/inputs/` 资源，不读取任意磁盘路径。
 
 `createEditorExtensions()` 只组合官方 Tiptap 扩展，可直接用于普通 `Editor`。`createTypstExtensions(config)` 在这组能力上加入 `DataField` 与宿主的 `config.extensions`；`createTypstReactExtensions` 为字段及已安装的模板组件、源码块提供 NodeView。表格样式、模板组件和源码块均需分别显式安装。
 

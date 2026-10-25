@@ -16,13 +16,21 @@ import { blockTypes, convertBlock, type BlockType } from './insert-commands'
 import { TypographyTools } from './typography'
 import { TypstTableStyleControls } from './table-style-controls'
 import { selectedTable, tableActions } from './table-menu'
+import { LinkMenu } from './link-menu'
 
 // Requests and format actions stay on the native editor transaction channel.
 const formatRequest = new PluginKey('typstFormatRequest')
 const formatAction = new PluginKey('typstFormatAction')
+type FormatView = 'format' | 'link'
+type FormatRequest = { point?: DOMRect; view: FormatView }
 
 export function openFormatMenu(editor: Editor, anchor: HTMLElement) {
-	editor.view.dispatch(editor.state.tr.setMeta(formatRequest, anchor.getBoundingClientRect()))
+	editor.view.dispatch(
+		editor.state.tr.setMeta(formatRequest, {
+			point: anchor.getBoundingClientRect(),
+			view: 'format',
+		}),
+	)
 }
 
 function formatChain(editor: Editor) {
@@ -106,14 +114,14 @@ function BlockPicker({ editor }: { editor: Editor }) {
 				disabled={!canEdit(editor, ui)}
 				onChange={(event) =>
 					canEdit(editor, ui) &&
-					convertBlock(editor, formatChain(editor), event.currentTarget.value as BlockType).run()
+					convertBlock(formatChain(editor), event.currentTarget.value as BlockType).run()
 				}
 			>
 				{options.map((block) => (
 					<option
 						key={block.value}
 						value={block.value}
-						disabled={!convertBlock(editor, editor.can().chain(), block.value).run()}
+						disabled={!convertBlock(editor.can().chain(), block.value).run()}
 					>
 						{block.label}
 					</option>
@@ -134,6 +142,44 @@ function FormatTools({ editor }: { editor: Editor }) {
 				className="typst-format-marks"
 			>
 				<MarkTools editor={editor} />
+				{allowedMark(ui, editor, 'link') && (
+					<button
+						type="button"
+						className="typst-tool-button typst-link-trigger"
+						aria-label="链接"
+						title="链接（Ctrl/⌘ K）"
+						aria-haspopup="dialog"
+						aria-pressed={editor.isActive('link')}
+						disabled={!canEdit(editor, ui)}
+						onMouseDown={(event) => event.preventDefault()}
+						onClick={() => {
+							if (canEdit(editor, ui))
+								editor.view.dispatch(editor.state.tr.setMeta(formatRequest, { view: 'link' }))
+						}}
+					>
+						<Icon name="link" />
+					</button>
+				)}
+				<button
+					type="button"
+					className="typst-tool-button typst-clear-format"
+					aria-label="清除文字格式"
+					title="清除文字格式（保留段落样式）"
+					disabled={!canEdit(editor, ui) || !editor.can().unsetAllMarks()}
+					onMouseDown={(event) => event.preventDefault()}
+					onClick={() => {
+						if (canEdit(editor, ui))
+							formatChain(editor)
+								.unsetAllMarks()
+								.command(({ tr }) => {
+									if (tr.selection.empty) tr.setStoredMarks([])
+									return true
+								})
+								.run()
+					}}
+				>
+					<Icon name="clear" />
+				</button>
 			</div>
 			<div role="group" aria-label="段落格式" className="typst-format-paragraph">
 				<BlockPicker editor={editor} />
@@ -158,6 +204,36 @@ function FormatTools({ editor }: { editor: Editor }) {
 							if (canEdit(editor, ui)) formatChain(editor).toggleOrderedList().run()
 						}}
 					/>
+				)}
+				{editor.isActive('listItem') && allowedNode(ui, editor, 'listItem') && (
+					<>
+						<button
+							type="button"
+							className="typst-tool-button typst-list-indent"
+							aria-label="增加缩进"
+							title="增加缩进"
+							disabled={!canEdit(editor, ui) || !editor.can().sinkListItem('listItem')}
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => {
+								if (canEdit(editor, ui)) formatChain(editor).sinkListItem('listItem').run()
+							}}
+						>
+							<Icon name="indent" />
+						</button>
+						<button
+							type="button"
+							className="typst-tool-button typst-list-outdent"
+							aria-label="减少缩进"
+							title="减少缩进"
+							disabled={!canEdit(editor, ui) || !editor.can().liftListItem('listItem')}
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => {
+								if (canEdit(editor, ui)) formatChain(editor).liftListItem('listItem').run()
+							}}
+						>
+							<Icon name="outdent" />
+						</button>
+					</>
 				)}
 			</div>
 			{allowedMark(ui, editor, 'textStyle') && (
@@ -186,6 +262,7 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 	const latest = useRef(ui)
 	latest.current = ui
 	const [open, setOpen] = useState(false)
+	const [view, setView] = useState<FormatView>('format')
 	const dialog = useRef<HTMLDivElement>(null)
 	const tableTrigger = useRef<HTMLDivElement>(null)
 	const active = useRef(false)
@@ -224,14 +301,22 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 		[editor, keys],
 	)
 	const openAt = useCallback(
-		(point?: DOMRect) => {
-			if (!canOpen()) return
+		(point?: DOMRect, nextView: FormatView = 'format') => {
+			if (
+				!canOpen() ||
+				(nextView === 'link' &&
+					(!canEdit(editor, latest.current) ||
+						!allowedMark(latest.current, editor, 'link') ||
+						!(editor.state.selection instanceof TextSelection)))
+			)
+				return
 			target.current = {
 				selection: editor.state.selection,
 				point,
 			}
 			active.current = true
 			focusPending.current = true
+			setView(nextView)
 			setOpen(true)
 			editor.view.dispatch(editor.state.tr.setMeta(keys.trigger, 'hide').setMeta(keys.menu, 'show'))
 			editor.view.dispatch(editor.state.tr.setMeta(keys.menu, 'updatePosition'))
@@ -276,7 +361,7 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 				if (!active.current || !focusPending.current) return
 				focusPending.current = false
 				const first = dialog.current?.querySelector<HTMLElement>(
-					'.typst-format-tools button:not(:disabled), .typst-table-style-controls button:not(:disabled), .typst-table-actions button:not(:disabled)',
+					'.typst-link-form input:not(:disabled), .typst-format-tools button:not(:disabled), .typst-table-style-controls button:not(:disabled), .typst-table-actions button:not(:disabled)',
 				)
 				;(first ?? dialog.current)?.focus({ preventScroll: true })
 			},
@@ -307,12 +392,14 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 	useEffect(() => {
 		if (!open || !dialog.current) return
 		const observer = new ResizeObserver(() => {
-			if (active.current && !editor.isDestroyed)
-				editor.view.dispatch(editor.state.tr.setMeta(keys.menu, 'updatePosition'))
+			if (!active.current || editor.isDestroyed) return
+			if (!canOpen()) close()
+			else editor.view.dispatch(editor.state.tr.setMeta(keys.menu, 'updatePosition'))
 		})
 		observer.observe(dialog.current)
+		observer.observe(editor.view.dom)
 		return () => observer.disconnect()
-	}, [editor, keys, open])
+	}, [canOpen, close, editor, keys, open])
 	useEffect(() => {
 		const dom = editor.view.dom
 		const document = dom.ownerDocument
@@ -376,7 +463,18 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 		}
 		const keydown = (event: KeyboardEvent) => {
 			if (event.isComposing || nativeInput(event) || !canOpen()) return
-			if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+			if (
+				(event.metaKey || event.ctrlKey) &&
+				!event.altKey &&
+				!event.shiftKey &&
+				event.key.toLowerCase() === 'k' &&
+				canEdit(editor, latest.current) &&
+				allowedMark(latest.current, editor, 'link') &&
+				editor.state.selection instanceof TextSelection
+			) {
+				event.preventDefault()
+				openAt(undefined, 'link')
+			} else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
 				event.preventDefault()
 				openAt()
 			}
@@ -402,15 +500,20 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 		}
 		const blur = () => close()
 		const escape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape' && active.current && !event.defaultPrevented) {
+			if (
+				event.key === 'Escape' &&
+				!event.isComposing &&
+				active.current &&
+				!event.defaultPrevented
+			) {
 				event.preventDefault()
 				close(true)
 			}
 		}
 		const changed = ({ transaction }: { transaction: Transaction }) => {
-			const request = transaction.getMeta(formatRequest) as DOMRect | undefined
+			const request = transaction.getMeta(formatRequest) as FormatRequest | undefined
 			if (request) {
-				openAt(request)
+				openAt(request.point, request.view)
 				return
 			}
 			if (!active.current) return
@@ -488,8 +591,9 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 				className={`typst-floating-menu typst-format-context${table ? ' typst-table-context' : ''}`}
 				role="dialog"
 				tabIndex={-1}
-				aria-label={table ? '表格操作' : '文字格式'}
+				aria-label={view === 'link' ? '链接' : table ? '表格操作' : '文字格式'}
 				onKeyDown={(event) => {
+					if (event.nativeEvent.isComposing) return
 					const key = event.nativeEvent.key
 					if (key === 'Escape') {
 						event.preventDefault()
@@ -525,13 +629,34 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 				{open && (
 					<>
 						<div className="typst-format-heading">
-							<span>{table ? '表格与文字' : '文字格式'}</span>
+							{view === 'link' && (
+								<button
+									type="button"
+									aria-label="返回格式"
+									onClick={() => openAt(target.current?.point)}
+								>
+									←
+								</button>
+							)}
+							<span>{view === 'link' ? '链接' : table ? '表格与文字' : '文字格式'}</span>
 							<button type="button" aria-label="关闭格式" onClick={() => close(true)}>
 								×
 							</button>
 						</div>
-						{editor.state.selection instanceof TextSelection && <FormatTools editor={editor} />}
-						{table && (
+						{view === 'link' ? (
+							<LinkMenu
+								editor={editor}
+								onApply={(transaction) => {
+									editor.view.dispatch(transaction.setMeta(formatAction, true))
+									if (!editor.state.doc.eq(transaction.doc)) return false
+									close(true)
+									return true
+								}}
+							/>
+						) : (
+							editor.state.selection instanceof TextSelection && <FormatTools editor={editor} />
+						)}
+						{view === 'format' && table && (
 							<>
 								<TypstTableStyleControls
 									editor={editor}

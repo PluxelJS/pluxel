@@ -640,6 +640,33 @@ async function verifyBodyEditor(entry) {
 	await ready()
 	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
 	assert.equal(await summary.locator('td').first().locator('p').count(), 2)
+	const originalBlocks = await summary.evaluate((element) => element.editor.getJSON())
+	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。')
+	await page.keyboard.press('Control+k')
+	const linkDialog = page.getByRole('dialog', { name: '链接', exact: true })
+	await linkDialog
+		.getByRole('textbox', { name: '链接地址', exact: true })
+		.fill('https://tiptap.dev')
+	await linkDialog.getByRole('button', { name: '应用链接', exact: true }).click()
+	assert.equal(await summary.locator('a[href="https://tiptap.dev"]').count(), 1)
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.deepEqual(await summary.evaluate((element) => element.editor.getJSON()), originalBlocks)
+	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。', true)
+	await page.keyboard.press('Alt+F10')
+	assert.equal(
+		await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+		'当前块操作',
+	)
+	await page.keyboard.press('Enter')
+	const blockDialog = page.getByRole('dialog', { name: '块操作', exact: true })
+	await blockDialog.getByRole('button', { name: '复制块', exact: true }).click()
+	assert.equal(
+		await summary.evaluate((element) => element.editor.state.doc.childCount),
+		originalBlocks.content.length + 1,
+	)
+	await screenshot('07a-body-block-duplicate')
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.deepEqual(await summary.evaluate((element) => element.editor.getJSON()), originalBlocks)
 	await screenshot('07-body-table')
 	const region = page.getByRole('combobox', { name: '正文区域', exact: true })
 	const switchRegion = async (label) => {
@@ -1384,6 +1411,7 @@ try {
 					'multi-page SVG, last-page navigation, outline, and two-way source navigation',
 					'explicit body initialization preserves saved data; conflict reload resets editor/candidates/history and explicit local replacement uses CAS',
 					'native body composition, formatting, lists, table commands, restrictions, fields without history, staged candidates and one undo',
+					'shared link editing and current-block duplication in the real desktop renderer, each reverted by one native undo',
 					'font family, 18pt, text and background colors, clear typography without clearing bold, persisted raw marks and real PDF after desktop reopen',
 					'body drafts retained across region switches and desktop reopen, generated navigation and real PDF',
 					'project creation and recent persistence',

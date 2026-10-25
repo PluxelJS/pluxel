@@ -239,9 +239,17 @@ catalogs:
     '@tanstack/react-store': ^0.11.2
     '@tanstack/react-virtual': ^3.14.22
     '@tiptap/core': 3.32.0
+    '@tiptap/extension-drag-handle': 3.32.0
+    '@tiptap/extension-node-range': 3.32.0
+    '@tiptap/extension-collaboration': 3.32.0
+    '@tiptap/y-tiptap': 3.0.7
+    'yjs': 13.6.27
+    'y-protocols': 1.0.6
+    '@tiptap/extension-drag-handle-react': 3.32.0
     '@tiptap/extension-image': 3.32.0
     '@tiptap/extension-table': 3.32.0
     '@tiptap/extension-text-style': 3.32.0
+    '@tiptap/extensions': 3.32.0
     '@tiptap/markdown': 3.32.0
     '@tiptap/pm': 3.32.0
     '@tiptap/react': 3.32.0

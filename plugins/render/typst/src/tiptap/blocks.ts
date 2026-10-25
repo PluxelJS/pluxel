@@ -40,14 +40,19 @@ declare module '@tiptap/core' {
 // A standalone native Editor uses its own editable/composing state.
 export const typstBlockPolicy = new PluginKey<(name: string) => boolean>('typst-block-policy')
 
-function instanceId(doc: ProseMirrorNode, commit: boolean): string {
+/** Internal identity allocation shared by native atom creation and explicit subtree copies. */
+export function instanceId(
+	doc: ProseMirrorNode,
+	commit: boolean,
+	reserved: ReadonlySet<string> = new Set(),
+): string {
 	const ids = new Set<string>()
 	doc.descendants((node) => {
 		if (isTypstBlock(node.type.name)) ids.add(node.attrs.id)
 	})
 	let id = commit ? crypto.randomUUID() : 'block-0'
 	let index = 0
-	while (ids.has(id)) id = commit ? crypto.randomUUID() : `block-${++index}`
+	while (ids.has(id) || reserved.has(id)) id = commit ? crypto.randomUUID() : `block-${++index}`
 	return id
 }
 

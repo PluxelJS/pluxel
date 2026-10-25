@@ -569,7 +569,7 @@ function App() {
 					<p className="eyebrow">PLUXEL / TYPST</p>
 					<h1>编辑与排版体验</h1>
 				</div>
-				<span>点击正文或预览文字双向定位 · 文字右键设置格式</span>
+				<span>块前操作柄调整结构 · 文字右键设置格式 · 正文与预览双向定位</span>
 			</header>
 			<div className="host-actions">
 				<label>

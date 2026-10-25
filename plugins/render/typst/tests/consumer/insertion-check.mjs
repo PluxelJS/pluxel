@@ -73,6 +73,7 @@ try {
 	const originalSelection = await selection()
 	await trigger.click()
 	await menu.waitFor()
+	assert.equal(await search.evaluate((element) => element === document.activeElement), true)
 	const baseTitles = await titles()
 	assert.ok(baseTitles.includes('客户名称'))
 	assert.ok(baseTitles.includes('提示块'))
@@ -95,6 +96,23 @@ try {
 	await search.press('Escape')
 	await menu.waitFor({ state: 'hidden' })
 	assert.equal(await trigger.evaluate((element) => element === document.activeElement), true)
+	await trigger.press('ArrowDown')
+	await search.waitFor()
+	assert.equal(await search.evaluate((element) => element === document.activeElement), true)
+	// Hide the owning region directly: no pointer, focus or editor transaction closes the portal.
+	await region.evaluate((element) => {
+		element.hidden = true
+	})
+	try {
+		await menu.waitFor({ state: 'hidden' })
+		assert.deepEqual(await snapshot(), original, 'Hiding a region never inserts content')
+		assert.deepEqual(await selection(), originalSelection)
+	} finally {
+		await region.evaluate((element) => {
+			element.hidden = false
+		})
+	}
+	assert.equal(await menu.isVisible(), false, 'Showing the region does not revive an old menu')
 	await trigger.press('ArrowDown')
 	await search.waitFor()
 	await search.fill('customer')
@@ -220,6 +238,7 @@ try {
 		checks: [
 			'shared-directory',
 			'search-keyboard-escape',
+			'hidden-region-closes-portal',
 			'field',
 			'custom-notice',
 			'template',

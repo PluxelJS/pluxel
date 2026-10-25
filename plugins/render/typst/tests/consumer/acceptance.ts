@@ -435,7 +435,11 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	assert.ok(pluginManifest.peerDependencies['@tiptap/extension-text-style'])
 	assert.equal(pluginManifest.peerDependenciesMeta['@tiptap/extension-text-style'].optional, true)
 	for (const name of Object.keys(pluginManifest.peerDependencies).filter(
-		(dependency) => dependency.startsWith('@tiptap/') && dependency !== '@tiptap/react',
+		(dependency) =>
+			dependency.startsWith('@tiptap/') &&
+			!['@tiptap/react', '@tiptap/extension-drag-handle-react', '@tiptap/extensions'].includes(
+				dependency,
+			),
 	))
 		dependencies[name] = await installedSpec(name)
 	await install()
@@ -467,7 +471,20 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		'Tiptap peers including official TextStyleKit only: strict types and field/table Markdown plus region generation without DOM or React',
 	)
 
-	for (const name of ['@tiptap/react', 'react', 'react-dom'])
+	// Explicit peers keep the --legacy-peer-deps fixture independent of the workspace.
+	for (const name of [
+		'@tiptap/react',
+		'@tiptap/extensions',
+		'@tiptap/extension-drag-handle-react',
+		'@tiptap/extension-drag-handle',
+		'@tiptap/extension-node-range',
+		'@tiptap/extension-collaboration',
+		'@tiptap/y-tiptap',
+		'yjs',
+		'y-protocols',
+		'react',
+		'react-dom',
+	])
 		dependencies[name] = await installedSpec(name)
 	for (const name of ['@types/react', '@types/react-dom'])
 		devDependencies[name] = await installedSpec(name)
@@ -1387,12 +1404,21 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			...fixture.fontFamilies,
 		])
 		const bodyHeading = body.locator('h2')
+		// Selection decorations depend on focus; undo must restore the native content and marks.
+		const headingSnapshot = () =>
+			body.evaluate((element) => {
+				const heading = (element as TiptapEditorHTMLElement).editor
+					?.getJSON()
+					.content?.find((node) => node.type === 'heading')
+				if (!heading) throw new Error('Expected the native body heading')
+				return heading
+			})
 		async function typographyStep(
 			action: () => Promise<unknown>,
 			attribute: string,
 			value: string,
 		) {
-			const before = await bodyHeading.innerHTML()
+			const before = await headingSnapshot()
 			await openFormat(page, bodyToolbar)
 			await action()
 			await poll(
@@ -1404,11 +1430,11 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			)
 			assert.equal(await formatDialog.isVisible(), true, 'Formatting keeps the context open')
 			await currentPreview(page)
-			const after = await bodyHeading.innerHTML()
+			const after = await headingSnapshot()
 			await bodyToolbar.getByRole('button', { name: '撤销', exact: true }).click()
-			assert.equal(await bodyHeading.innerHTML(), before, `${attribute} changes are one undo step`)
+			assert.deepEqual(await headingSnapshot(), before, `${attribute} changes are one undo step`)
 			await bodyToolbar.getByRole('button', { name: '重做', exact: true }).click()
-			assert.equal(await bodyHeading.innerHTML(), after, `${attribute} redo preserves prior styles`)
+			assert.deepEqual(await headingSnapshot(), after, `${attribute} redo preserves prior styles`)
 		}
 		await typographyStep(
 			() => fontFamily.selectOption('Noto Serif CJK SC'),
@@ -1444,7 +1470,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			'rgb(254, 240, 138)',
 		)
 		await currentPreview(page)
-		const beforeColorCancel = await bodyHeading.innerHTML()
+		const beforeColorCancel = await headingSnapshot()
 		const beforeColorCancelRevision = await text(page.getByTestId('revision'))
 		await openFormat(page, bodyToolbar)
 		await typographyToolbar.getByRole('button', { name: '文字颜色', exact: true }).click()
@@ -1464,7 +1490,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await colorInput.press('Escape')
 		assert.equal(await textPalette.count(), 0)
 		assert.equal(await formatDialog.isVisible(), true, 'Escape only dismisses the color palette')
-		assert.equal(await bodyHeading.innerHTML(), beforeColorCancel, 'Escape cancels an edited color')
+		assert.deepEqual(await headingSnapshot(), beforeColorCancel, 'Escape cancels an edited color')
 		assert.equal(await text(page.getByTestId('revision')), beforeColorCancelRevision)
 		await typographyStep(
 			async () => {
@@ -1476,7 +1502,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			'rgb(18, 58, 188)',
 		)
 		await bodyToolbar.getByRole('button', { name: '撤销', exact: true }).click()
-		assert.equal(await bodyHeading.innerHTML(), beforeColorCancel)
+		assert.deepEqual(await headingSnapshot(), beforeColorCancel)
 		for (const [label, attribute, preserved] of [
 			['文字颜色', 'color', 'background-color'],
 			['背景颜色', 'background-color', 'color'],
@@ -1503,23 +1529,23 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			assert.equal(await fontFamily.inputValue(), 'Liberation Serif')
 			assert.equal(await fontSize.inputValue(), '18pt')
 			await bodyToolbar.getByRole('button', { name: '撤销', exact: true }).click()
-			assert.equal(await bodyHeading.innerHTML(), beforeColorCancel)
+			assert.deepEqual(await headingSnapshot(), beforeColorCancel)
 		}
-		const completeTypography = await bodyHeading.innerHTML()
+		const completeTypography = await headingSnapshot()
 		await openFormat(page, bodyToolbar)
 		await typographyToolbar.getByRole('button', { name: '清除排版', exact: true }).click()
 		assert.equal(await bodyHeading.locator('span[style]').count(), 0)
 		assert.equal(await text(bodyHeading), 'Editable overview')
 		await bodyToolbar.getByRole('button', { name: '撤销', exact: true }).click()
-		assert.equal(
-			await bodyHeading.innerHTML(),
+		assert.deepEqual(
+			await headingSnapshot(),
 			completeTypography,
 			'One undo restores all four styles',
 		)
 		await bodyToolbar.getByRole('button', { name: '重做', exact: true }).click()
 		assert.equal(await bodyHeading.locator('span[style]').count(), 0)
 		await bodyToolbar.getByRole('button', { name: '撤销', exact: true }).click()
-		assert.equal(await bodyHeading.innerHTML(), completeTypography)
+		assert.deepEqual(await headingSnapshot(), completeTypography)
 		await currentPreview(page)
 		assert.match(latestTemplateFiles['_editor/regions/body.typ']!, /Liberation Serif/)
 		assert.match(latestTemplateFiles['_editor/regions/body.typ']!, /18pt/)
@@ -1571,8 +1597,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await waitForCollapsedEditorSelection(body)
 		await insertContent(page, bodyToolbar, '提示块')
 		await body.locator('aside').waitFor()
-		assert.equal(
-			await bodyHeading.innerHTML(),
+		assert.deepEqual(
+			await headingSnapshot(),
 			completeTypography,
 			'Inserting a notice retains typography',
 		)
@@ -1610,7 +1636,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await page.getByRole('button', { name: '重开', exact: true }).click()
 		assert.doesNotMatch(await text(body), /temporary unsaved text/)
 		await body.locator('aside').waitFor()
-		assert.equal(await bodyHeading.innerHTML(), completeTypography, 'Reopening retains typography')
+		assert.deepEqual(await headingSnapshot(), completeTypography, 'Reopening retains typography')
 		assert.match(await text(body), /Acme!/)
 		assert.doesNotMatch(await text(body), /Acme!!/)
 		await currentPreview(page)

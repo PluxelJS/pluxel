@@ -386,16 +386,27 @@ export function tableGrid(
 	return { columns, cells, widths: Array.from({ length: columns }, (_, x) => widths[x] ?? 100) }
 }
 
-function allowedLink(config: TypstEditorConfig, value: unknown): boolean {
-	return (
-		typeof value === 'string' &&
-		value.length > 0 &&
-		!Array.from(value).some((character) => {
+export function allowedLink(config: TypstEditorConfig, value: unknown): boolean {
+	if (
+		typeof value !== 'string' ||
+		value.length === 0 ||
+		Array.from(value).some((character) => {
 			const code = character.codePointAt(0)!
 			return code <= 0x20 || code === 0x7f
-		}) &&
-		(config.allowLink ? config.allowLink(value) : /^(?:https?:\/\/|mailto:|tel:|#)/i.test(value))
+		})
 	)
+		return false
+	if (config.allowLink) return config.allowLink(value)
+	if (/^https?:\/\//i.test(value)) {
+		try {
+			// Validate the destination without rewriting the author's URL.
+			const parsed = new URL(value)
+			return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+		} catch {
+			return false
+		}
+	}
+	return /^(?:mailto:|tel:|#)/i.test(value)
 }
 
 function inspectNode(

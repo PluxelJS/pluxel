@@ -4,6 +4,7 @@ import { useEditorState } from '@tiptap/react'
 import { EditorUi, Icon, ToolButton, canEdit } from './editor-ui'
 import { FormatContextMenu, hasFormatTarget, openFormatMenu } from './format-menu'
 import { InsertMenu, SlashMenu } from './insert-menu'
+import { BlockMenu } from './block-menu'
 
 /** The region owns fonts, available insertions and native selection; this toolbar only opens them. */
 export function TypstEditorToolbar({ editor, children }: { editor: Editor; children?: ReactNode }) {
@@ -70,6 +71,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 export function EditorMenus({ editor }: { editor: Editor }) {
 	return (
 		<>
+			<BlockMenu editor={editor} />
 			<FormatContextMenu editor={editor} />
 			<SlashMenu editor={editor} />
 		</>
