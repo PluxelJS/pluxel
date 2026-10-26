@@ -1,5 +1,12 @@
-import { Extension, Node, mergeAttributes, type Extensions } from '@tiptap/core'
+import { Extension, Node, flattenExtensions, mergeAttributes, type Extensions } from '@tiptap/core'
 import { createEditorExtensions } from './base-extensions.js'
+import {
+	TypstFigure,
+	TypstFigureCaption,
+	TypstBlockMath,
+	TypstInlineMath,
+	TypstReference,
+} from './document-nodes.js'
 import type { TypstEditorConfig } from './types.js'
 
 export function decodeFieldAttribute(value: string): string {
@@ -100,12 +107,22 @@ const DataFieldMarkdownBlock = Extension.create({
 	},
 })
 
-/** Typst composition adds field semantics; optional layout extensions are installed explicitly. */
+/** Document semantics share one schema; template/source capabilities remain explicit extensions. */
 export function createTypstExtensions(config?: Pick<TypstEditorConfig, 'extensions'>): Extensions {
+	const optionalBodies = flattenExtensions(config?.extensions ?? [])
+		.filter((extension) => ['templateBlock', 'typstSource'].includes(extension.name))
+		.map((extension) => extension.name)
 	return [
 		...createEditorExtensions(),
 		DataField,
 		DataFieldMarkdownBlock,
+		TypstFigure.extend({
+			content: `(${['image', 'table', ...optionalBodies].join(' | ')}) figureCaption`,
+		}),
+		TypstFigureCaption,
+		TypstBlockMath,
+		TypstInlineMath,
+		TypstReference,
 		...(config?.extensions ?? []),
 	]
 }

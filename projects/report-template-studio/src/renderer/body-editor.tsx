@@ -56,13 +56,18 @@ function Region({
 	const workspace = useWorkspace()
 	const document = workspace.documents.get(entry)!
 	const editorRef = useRef<Editor | null>(null)
+	const disconnect = useRef<(() => void) | undefined>(undefined)
 	const [validationError, setValidationError] = useState('')
 	const connect = useCallback(
 		(editor: Editor | null) => {
+			disconnect.current?.()
+			disconnect.current = editor
+				? workspace.registerBodyEditor(entry, regionId, editor)
+				: undefined
 			editorRef.current = editor
 			onEditor(editor)
 		},
-		[onEditor],
+		[onEditor, workspace, entry, regionId],
 	)
 	const location = workspace.regionLocation
 	useEffect(() => {
@@ -132,6 +137,7 @@ function Region({
 			<TypstRegionEditor
 				regionId={regionId}
 				content={draft.regions[regionId]!}
+				regions={draft.regions}
 				config={config}
 				data={document.result?.data}
 				className="studio-region-editor"
@@ -253,7 +259,7 @@ export function BodyEditor({
 			<details className="studio-candidate">
 				<summary>Markdown 导入与候选内容</summary>
 				<Text size="xs" c="dimmed">
-					先固定目标，再查看原文与候选对照。字符选区扩展为完整顶层块；范围外图表和表格保留。正文、数据或模板变化会使候选过期。
+					固定目标后直接编辑当前原文。字符选区扩展为同一父节点内的完整块；范围外内容保留。正文、数据或模板变化会使候选过期。
 				</Text>
 				<NativeSelect
 					label="候选范围"
@@ -261,7 +267,7 @@ export function BodyEditor({
 					value={candidateScope}
 					data={[
 						{ value: 'region', label: '整个区域' },
-						{ value: 'selection', label: '当前选中顶层块' },
+						{ value: 'selection', label: '当前选中完整块' },
 					]}
 					onChange={(event) => {
 						setCandidateScope(event.currentTarget.value)
@@ -288,21 +294,46 @@ export function BodyEditor({
 						const from = target.value.range?.from ?? 0
 						const to = target.value.range?.to ?? editor.state.doc.content.size
 						const original = exportTypstMarkdown({
-							document: editor.state.doc.cut(from, to).toJSON(),
+							format: 'agent',
+							document: editor.state.doc.copy(editor.state.doc.slice(from, to).content).toJSON(),
 							regionId: selected,
 							config,
 							data: document.result?.data,
 						})
+						if (!original.ok) {
+							setCandidateError(original.issues.map((issue) => issue.message).join('\n'))
+							return
+						}
 						setCandidateTarget({
 							...target.value,
-							original: original.ok ? original.value.markdown : JSON.stringify(original.issues),
+							original: original.value.markdown,
 						})
+						if (!candidate || candidate === candidateTarget?.original)
+							setCandidate(original.value.markdown)
 						setCandidateReview(undefined)
 						setCandidateError('')
 					}}
 				>
 					固定候选目标
 				</Button>
+				{candidateTarget && candidate !== candidateTarget.original && (
+					<Group gap="xs">
+						<Text size="xs" c="dimmed">
+							已保留候选修改，可继续编辑或重新载入原文。
+						</Text>
+						<Button
+							size="xs"
+							variant="subtle"
+							onClick={() => {
+								setCandidate(candidateTarget.original)
+								setCandidateReview(undefined)
+								setCandidateError('')
+							}}
+						>
+							用原文替换候选
+						</Button>
+					</Group>
+				)}
 				<Textarea
 					aria-label="Markdown 候选"
 					value={candidate}
@@ -317,7 +348,7 @@ export function BodyEditor({
 						<Text size="xs">
 							目标：{candidateTarget.regionId} ·{' '}
 							{candidateTarget.range
-								? `完整顶层块 [${candidateTarget.range.from}, ${candidateTarget.range.to})`
+								? `完整块 [${candidateTarget.range.from}, ${candidateTarget.range.to})`
 								: '整个区域'}
 						</Text>
 						{candidateTarget.baseRevision !== workspace.draftRevision(entry) && (
@@ -356,7 +387,7 @@ export function BodyEditor({
 							if (!editor) return
 							const { regionId, baseRevision, range } = candidateTarget
 							const prepared = prepareTypstCandidate({
-								candidate: { regionId, baseRevision, range, markdown: candidate },
+								candidate: { regionId, baseRevision, range, markdown: candidate, format: 'agent' },
 								currentRevision: workspace.draftRevision(entry),
 								document: editor.getJSON(),
 								config,

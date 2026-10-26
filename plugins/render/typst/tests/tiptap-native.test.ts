@@ -10,6 +10,8 @@ import { expect, it } from 'vitest'
 import {
 	generateTypstRegions,
 	createTypstExtensions,
+	exportTypstMarkdown,
+	parseTypstMarkdown,
 	fieldDisplay,
 	findTypstRegionPosition,
 	findTypstGeneratedPosition,
@@ -18,7 +20,7 @@ import {
 import runTypst, { renderTypstPage } from '../src/worker.ts'
 import { pointAtSource } from '../src/browser/navigation.js'
 
-it('compiles real generated fields, tables, resources, styled Marks and an external node into PDF/vector/PNG with navigation', async () => {
+it('compiles agent Markdown fields, tables, resources, styled Marks and an external node into PDF/vector/PNG with navigation', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'typst-editor-native-'))
 	try {
 		const Notice = Node.create({
@@ -147,10 +149,42 @@ it('compiles real generated fields, tables, resources, styled Marks and an exter
 				],
 			},
 		}
-		const result = generateTypstRegions({
-			regions,
+		const data = { customer: { name: 'Acme😀' } }
+		const parsedRegions: Record<string, JSONContent> = {}
+		for (const [regionId, document] of Object.entries(regions)) {
+			const exported = exportTypstMarkdown({
+				document,
+				regionId,
+				format: 'agent',
+				config,
+				data,
+			})
+			if (!exported.ok) throw new Error(JSON.stringify(exported.issues))
+			expect(exported.value.lossless).toBe(true)
+			const parsed = parseTypstMarkdown({
+				markdown: exported.value.markdown,
+				regionId,
+				format: 'agent',
+				config,
+				data,
+			})
+			if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues))
+			parsedRegions[regionId] = parsed.value
+		}
+		const styled = parseTypstMarkdown({
+			markdown:
+				'[textStyle {"fontFamily":"Liberation Serif","fontSize":"18pt","color":"#16a34a","backgroundColor":"#e0f2fe"}]**Agent text**[/textStyle]',
+			regionId: 'body',
+			format: 'agent',
 			config,
-			data: { customer: { name: 'Acme😀' } },
+			data,
+		})
+		if (!styled.ok) throw new Error(JSON.stringify(styled.issues))
+		parsedRegions.body!.content!.push(...styled.value.content!)
+		const result = generateTypstRegions({
+			regions: parsedRegions,
+			config,
+			data,
 			snapshotRevision: 'native-1',
 		})
 		if (!result.ok) throw new Error(JSON.stringify(result.issues))
@@ -196,14 +230,18 @@ it('compiles real generated fields, tables, resources, styled Marks and an exter
 		const pixels = pngPixels(image.data)
 		let redPixels = 0
 		let yellowPixels = 0
+		let greenPixels = 0
 		for (let offset = 0; offset < pixels.length; offset += 4) {
 			if (pixels[offset] === 220 && pixels[offset + 1] === 38 && pixels[offset + 2] === 38)
 				redPixels++
 			if (pixels[offset] === 255 && pixels[offset + 1] === 255 && pixels[offset + 2] === 0)
 				yellowPixels++
+			if (pixels[offset] === 22 && pixels[offset + 1] === 163 && pixels[offset + 2] === 74)
+				greenPixels++
 		}
 		expect(redPixels).toBeGreaterThan(20)
 		expect(yellowPixels).toBeGreaterThan(100)
+		expect(greenPixels).toBeGreaterThan(20)
 		expect(compiled.navigation.outline).toContainEqual(
 			expect.objectContaining({ title: 'Report A😀B' }),
 		)
@@ -240,7 +278,7 @@ it('compiles real generated fields, tables, resources, styled Marks and an exter
 		expect(
 			compiled.navigation.points.some((point) => point.path === '_editor/regions/conclusion.typ'),
 		).toBe(true)
-		const reverseMarks = structuredClone(regions)
+		const reverseMarks = structuredClone(parsedRegions)
 		reverseMarks.body!.content![2]!.content![0]!.marks!.reverse()
 		const reordered = generateTypstRegions({
 			regions: reverseMarks,

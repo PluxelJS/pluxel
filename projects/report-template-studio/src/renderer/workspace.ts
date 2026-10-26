@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from 'react'
-import type { JSONContent } from '@tiptap/core'
+import type { Editor, JSONContent } from '@tiptap/core'
+import { RpcStub, RpcTarget } from 'capnweb'
 import type { SourcePosition, TypstNavigationPoint } from '@pluxel/plugin-typst/browser'
 import {
 	validateTypstRegions,
 	findTypstRegionPosition,
 	findTypstGeneratedPosition,
+	applyTypstCandidate,
 } from '@pluxel/plugin-typst/tiptap'
 import {
 	isStudioError,
@@ -17,6 +19,8 @@ import {
 	type WorkspaceTree,
 	type EditorDraft,
 	type DocumentInput,
+	type BodyEditorParticipant,
+	type BodyEditorAttachment,
 } from '../shared/contracts'
 import { studioEditorConfig } from '../shared/editor'
 import { api, onDesktopConnectionChange } from './api'
@@ -60,6 +64,7 @@ export interface DocumentState {
 	inputConflict?: DocumentInput
 	/** Replacing the whole draft also replaces native editor history and staged candidates. */
 	inputEpoch?: number
+	bodyLocked?: boolean
 }
 
 function inputContent({ data, editor }: Pick<DocumentInput, 'data' | 'editor'>): string {
@@ -111,6 +116,13 @@ export class WorkspaceController {
 	private disconnectListener?: () => void
 	private refreshing?: Promise<boolean>
 	private closed = false
+	private bodyAttachment?: BodyEditorAttachment
+	private bodyConnection = 0
+	private bodyEditors = new Map<string, Map<string, Set<Editor>>>()
+	private bodyLocks = new Map<
+		string,
+		{ lease: string; token: number; content: string; editability: Map<Editor, boolean> }
+	>()
 	constructor(readonly project: ProjectSummary) {}
 	subscribe = (listener: () => void) => {
 		this.listeners.add(listener)
@@ -128,6 +140,7 @@ export class WorkspaceController {
 	start() {
 		if (this.closed || this.polling) return
 		this.disconnectListener = onDesktopConnectionChange((connected) => {
+			for (const entry of this.bodyLocks.keys()) this.unlockBody(entry)
 			// Retain visible pages and drafts, but never export or navigate an old generation.
 			for (const [entry, document] of this.documents) {
 				this.documents.set(entry, {
@@ -139,8 +152,12 @@ export class WorkspaceController {
 				})
 			}
 			this.emit()
-			if (connected) for (const entry of this.documentUsers.keys()) void this.compile(entry)
+			if (connected) {
+				void this.attachBodyEditor()
+				for (const entry of this.documentUsers.keys()) void this.compile(entry)
+			}
 		})
+		void this.attachBodyEditor()
 		void this.refresh()
 		this.polling = setInterval(() => {
 			void this.refresh()
@@ -148,6 +165,10 @@ export class WorkspaceController {
 	}
 	dispose() {
 		this.closed = true
+		++this.bodyConnection
+		void this.bodyAttachment?.close().catch(() => {})
+		this.bodyAttachment = undefined
+		for (const entry of this.bodyLocks.keys()) this.unlockBody(entry)
 		this.disconnectListener?.()
 		clearInterval(this.polling)
 		for (const timer of this.timers.values()) clearTimeout(timer)
@@ -158,6 +179,146 @@ export class WorkspaceController {
 		this.assistantState.activeThreadId = null
 		this.openSource = undefined
 		++this.navigationSerial
+	}
+	private async attachBodyEditor() {
+		const generation = ++this.bodyConnection
+		const participant = new RpcStub(new WorkspaceBodyParticipant(this))
+		try {
+			const attachment = await api.attachBodyEditor({ projectId: this.project.id }, participant)
+			if (this.closed || generation !== this.bodyConnection) {
+				await attachment.close()
+				return
+			}
+			this.bodyAttachment = attachment
+		} catch (cause) {
+			if (!this.closed && generation === this.bodyConnection) {
+				this.error = `正文 Agent 连接失败：${String(cause)}`
+				this.emit()
+			}
+		} finally {
+			participant[Symbol.dispose]()
+		}
+	}
+	registerBodyEditor(entry: string, regionId: string, editor: Editor): () => void {
+		let regions = this.bodyEditors.get(entry)
+		if (!regions) this.bodyEditors.set(entry, (regions = new Map()))
+		let editors = regions.get(regionId)
+		if (!editors) regions.set(regionId, (editors = new Set()))
+		editors.add(editor)
+		return () => {
+			editors.delete(editor)
+			if (editors.size === 0) regions.delete(regionId)
+			if (regions.size === 0) this.bodyEditors.delete(entry)
+		}
+	}
+	async captureBody({ entry }: { entry: string }): ReturnType<BodyEditorParticipant['capture']> {
+		if (this.closed) throw new Error('项目已关闭')
+		if (!this.documents.has(entry)) return null
+		if (this.bodyLocks.has(entry)) throw new Error('正文操作正在进行')
+		const editability = new Map<Editor, boolean>()
+		for (const editors of this.bodyEditors.get(entry)?.values() ?? [])
+			for (const editor of editors) {
+				if (editor.view.composing) throw new Error('请完成输入法组合后重试正文操作')
+				editability.set(editor, editor.isEditable)
+			}
+		const lease = crypto.randomUUID()
+		this.bodyLocks.set(entry, { lease, token: 0, content: '', editability })
+		for (const editor of editability.keys()) editor.setEditable(false, false)
+		this.documents.set(entry, { ...this.documents.get(entry)!, bodyLocked: true })
+		clearTimeout(this.timers.get(`input:${entry}`))
+		clearTimeout(this.timers.get(`compile:${entry}`))
+		this.emit()
+		try {
+			await this.inputSaves.get(entry)
+			await this.compiles.get(entry)
+			if (this.bodyLocks.get(entry)?.lease !== lease)
+				throw new Error('正文操作期间连接已改变，请重试')
+			const current = this.documents.get(entry)
+			if (this.closed || !current?.inputLoaded || !current.editor)
+				throw new Error('正文尚未载入或初始化')
+			if (current.inputConflict || current.inputError)
+				throw new Error('请先解决正文保存失败或版本冲突')
+			if ([...this.files.values()].some((file) => file.dirty || file.saving || file.missing))
+				throw new Error('请先保存或处理模板源码草稿，再编辑正文')
+			const input = structuredClone({
+				data: current.data,
+				editor: current.editor,
+				storageVersion: current.storageVersion ?? null,
+			})
+			const token = current.inputToken ?? 0
+			this.bodyLocks.set(entry, { lease, token, content: inputContent(input), editability })
+			return { lease, input, clientRevision: token }
+		} catch (cause) {
+			this.unlockBody(entry, lease)
+			throw cause
+		}
+	}
+	async finishBody({ entry, lease, commit }: Parameters<BodyEditorParticipant['finish']>[0]) {
+		const lock = this.bodyLocks.get(entry)
+		if (!lock || lock.lease !== lease) throw new Error('正文编辑会话已改变；已提交内容需要重新载入')
+		try {
+			if (!commit) return
+			const current = this.documents.get(entry)
+			if (
+				this.closed ||
+				!current ||
+				inputContent(current) !== lock.content ||
+				(current.inputToken ?? 0) !== lock.token
+			)
+				throw new Error('当前正文已改变；保留本地草稿并重新载入已提交内容')
+			const description = current.description?.editor
+			if (!description) throw new Error('正文模板已失效')
+			for (const editor of this.bodyEditors.get(entry)?.get(commit.candidate.regionId) ?? []) {
+				const applied = applyTypstCandidate({
+					editor,
+					candidate: commit.candidate,
+					regionId: commit.candidate.regionId,
+					currentRevision: () => commit.candidate.baseRevision,
+					config: studioEditorConfig(description),
+					data: () => commit.data,
+					canEdit: () => !editor.view.composing,
+				})
+				if (!applied.ok) throw new Error(applied.issues.map((issue) => issue.message).join('\n'))
+			}
+			this.documents.set(entry, {
+				...current,
+				...structuredClone(commit.input),
+				inputToken: lock.token + 1,
+				inputDirty: false,
+				inputError: undefined,
+				inputConflict: undefined,
+				result: commit.compile ?? current.result,
+				preview: commit.preview ?? current.preview,
+				diagnostics: commit.compile?.diagnostics ?? [],
+				error: commit.previewError,
+				busy: false,
+			})
+			this.compilePending.delete(entry)
+		} catch (cause) {
+			const current = this.documents.get(entry)
+			if (commit && current)
+				this.documents.set(entry, {
+					...current,
+					inputConflict: structuredClone(commit.input),
+					inputError: `正文已保存，但当前编辑器未能接纳：${String(cause)}`,
+				})
+			throw cause
+		} finally {
+			this.unlockBody(entry, lease)
+		}
+	}
+	private unlockBody(entry: string, lease?: string) {
+		const lock = this.bodyLocks.get(entry)
+		if (!lock || (lease !== undefined && lock.lease !== lease)) return
+		this.bodyLocks.delete(entry)
+		for (const [editor, editable] of lock.editability)
+			if (!editor.isDestroyed) editor.setEditable(editable, false)
+		const current = this.documents.get(entry)
+		if (current) {
+			this.documents.set(entry, { ...current, bodyLocked: false })
+			if (current.inputDirty && !this.closed) this.changedInput(entry)
+		}
+		this.emit()
 	}
 	connectSourceNavigation(open: (path: string) => Promise<boolean>) {
 		this.openSource = open
@@ -467,7 +628,13 @@ export class WorkspaceController {
 	}
 	private releaseUnusedDocument(entry: string) {
 		const document = this.documents.get(entry)
-		if (this.documentUsers.has(entry) || document?.inputDirty || document?.inputSaving) return
+		if (
+			this.bodyLocks.has(entry) ||
+			this.documentUsers.has(entry) ||
+			document?.inputDirty ||
+			document?.inputSaving
+		)
+			return
 		if (this.documents.delete(entry)) this.emit()
 	}
 	isDirty() {
@@ -478,7 +645,7 @@ export class WorkspaceController {
 	}
 	/** One in-flight compilation and one latest pending snapshot per document. */
 	async compile(entry: string): Promise<void> {
-		if (this.closed || !this.documents.has(entry)) return
+		if (this.closed || this.bodyLocks.has(entry) || !this.documents.has(entry)) return
 		const pending = this.compiles.get(entry)
 		if (pending) {
 			this.compilePending.add(entry)
@@ -488,7 +655,12 @@ export class WorkspaceController {
 			do {
 				this.compilePending.delete(entry)
 				await this.compileSnapshot(entry)
-			} while (!this.closed && this.documents.has(entry) && this.compilePending.has(entry))
+			} while (
+				!this.closed &&
+				!this.bodyLocks.has(entry) &&
+				this.documents.has(entry) &&
+				this.compilePending.has(entry)
+			)
 		})()
 		this.compiles.set(entry, work)
 		try {
@@ -621,6 +793,7 @@ export class WorkspaceController {
 		)
 	}
 	async writeRegion(entry: string, regionId: string, content: JSONContent) {
+		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
 		if (!current?.editor || !Object.hasOwn(current.editor.regions, regionId)) return
 		this.documents.set(entry, {
@@ -639,6 +812,7 @@ export class WorkspaceController {
 	}
 	/** Adding a sidecar to an existing report never replaces its saved raw data. */
 	initializeEditorDraft(entry: string) {
+		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
 		const description = current?.description?.editor
 		if (!current?.inputLoaded || current.editor || !description) return
@@ -659,6 +833,7 @@ export class WorkspaceController {
 
 	/** Explicit author-approved template adoption; invalid content stays in the old draft. */
 	async adoptEditorTemplate(entry: string) {
+		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
 		const description = current?.description?.editor
 		if (!current?.editor || !description) return
@@ -689,6 +864,7 @@ export class WorkspaceController {
 	}
 
 	async writeData(entry: string, data: JsonObject) {
+		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
 		if (!current) return
 		this.documents.set(entry, {
@@ -702,6 +878,7 @@ export class WorkspaceController {
 	}
 
 	async saveInput(entry: string): Promise<void> {
+		if (this.bodyLocks.has(entry)) return
 		const pending = this.inputSaves.get(entry)
 		if (pending) {
 			await pending
@@ -803,6 +980,18 @@ export class WorkspaceController {
 		this.releaseUnusedDocument(entry)
 	}
 }
+class WorkspaceBodyParticipant extends RpcTarget implements BodyEditorParticipant {
+	constructor(private readonly workspace: WorkspaceController) {
+		super()
+	}
+	capture(input: Parameters<BodyEditorParticipant['capture']>[0]) {
+		return this.workspace.captureBody(input)
+	}
+	finish(input: Parameters<BodyEditorParticipant['finish']>[0]) {
+		return this.workspace.finishBody(input)
+	}
+}
+
 export function useWorkspaceState(workspace: WorkspaceController) {
 	useSyncExternalStore(workspace.subscribe, workspace.snapshot)
 	return workspace

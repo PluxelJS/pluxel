@@ -125,7 +125,7 @@ it('compiles movable chart components and source blocks from external input with
 		expect(await studio.getInput(target)).toEqual(saved)
 
 		const styled = structuredClone(editor)
-		const actionTable = styled.regions.actions!.content![0]!
+		const actionTable = styled.regions.actions!.content!.find((node) => node.type === 'table')!
 		expect(actionTable.attrs?.typstTableStyle).toBe('three-line')
 		actionTable.attrs!.typstTableStyle = 'borderless'
 		const third = await studio.compile({
@@ -136,7 +136,9 @@ it('compiles movable chart components and source blocks from external input with
 		})
 		expect(third.diagnostics).toEqual([])
 		expect(updates.at(-1)?.template).toBeDefined()
-		expect(actionTable.content).toEqual(editor.regions.actions!.content![0]!.content)
+		expect(actionTable.content).toEqual(
+			editor.regions.actions!.content!.find((node) => node.type === 'table')!.content,
+		)
 		const thirdPage = await studio.renderPage({ ...third, page: 1, scale: 1 })
 		const thirdPng = await readFile(thirdPage.path)
 		expect(thirdPng.equals(secondPng)).toBe(false)
@@ -171,6 +173,47 @@ it('compiles movable chart components and source blocks from external input with
 			}),
 		).rejects.toMatchObject({ code: 'INVALID_INPUT' })
 		expect(await studio.getInput(target)).toEqual(saved)
+
+		// The agent edits the same figure/LaTeX projection that the human editor saves.
+		// Renaming its public label must retain references in the other body file.
+		const body = await studio.readBody({ ...target, regionId: 'analysis' })
+		const markdown = body.regions[0]!.markdown
+		expect(markdown).toContain(':::figure')
+		expect(markdown).toContain(':::caption')
+		const revised = await studio.applyBodyCandidate({
+			...target,
+			regionId: 'analysis',
+			baseRevision: body.baseRevision,
+			markdown: markdown
+				.replace('fig:channels', 'fig:channel-results')
+				.replace('各渠道收入与目标对比', 'Agent 修订的渠道图题')
+				.replace('r = \\frac{A}{T}', 'r = \\frac{A-T}{T}'),
+		})
+		expect(revised.previewError).toBeUndefined()
+		expect(revised.compile?.pageCount).toBeGreaterThan(0)
+		const revisedFigure = revised.input.editor!.regions.analysis!.content!.find(
+			(node) => node.type === 'figure',
+		)!
+		expect(revisedFigure.attrs).toEqual({ id: 'channel-figure', label: 'fig:channel-results' })
+		expect(revisedFigure.content![1]!.content![0]!.text).toBe('Agent 修订的渠道图题')
+		expect(
+			revised.input.editor!.regions.analysis!.content!.find((node) => node.type === 'blockMath')!
+				.attrs!.latex,
+		).toBe('r = \\frac{A-T}{T} \\times 100\\%')
+		expect(revised.input.editor!.regions.actions).toEqual(saved.editor!.regions.actions)
+		const actionBody = await studio.readBody({ ...target, regionId: 'actions' })
+		expect(actionBody.regions[0]!.markdown).toContain('[ref {"target":"channel-figure"}]')
+		await expect(
+			studio.applyBodyCandidate({
+				...target,
+				regionId: 'actions',
+				baseRevision: actionBody.baseRevision,
+				markdown:
+					actionBody.regions[0]!.markdown +
+					'\n\n:::attrs {"id":"channel-figure","label":"eq:duplicate"}\n$$\nx=1\n$$\n:::',
+			}),
+		).rejects.toMatchObject({ code: 'INVALID_EDITOR_DRAFT' })
+		expect(await studio.getInput(target)).toEqual(revised.input)
 
 		await writeFile(join(output, 'external-input.png'), firstPng)
 		await writeFile(join(output, 'data-update.png'), secondPng)

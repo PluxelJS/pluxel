@@ -3,11 +3,24 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { MarkdownManager } from '@tiptap/markdown'
 import { createTypstExtensions } from './extensions.js'
 import { isolatedMarked } from './base-extensions.js'
+import { AgentMarkdownManager } from './agent-markdown.js'
 import { tableStyleOptions, tableStyleError } from './table-style.js'
-import { editorSchema, tableGrid, validateTypstRegion } from './validation.js'
+import {
+	editorSchema,
+	tableGrid,
+	validateTypstRegion,
+	prepareTypstValidation,
+	validateRegionWithContext,
+	type ValidationContext,
+} from './validation.js'
 import { textStyleAttributes, textStyleDeclarationError } from './text-style.js'
 import { textAlignmentDeclarationError } from './text-align.js'
-import type { TypstEditorConfig, TypstEditorIssue, TypstEditorResult } from './types.js'
+import type {
+	TypstEditorConfig,
+	TypstEditorIssue,
+	TypstEditorResult,
+	TypstMarkdownFormat,
+} from './types.js'
 
 interface RegionInput {
 	regionId: string
@@ -15,7 +28,14 @@ interface RegionInput {
 	data?: unknown
 }
 
-function manager(config: TypstEditorConfig): MarkdownManager {
+type MarkdownInput = RegionInput & { format?: TypstMarkdownFormat }
+
+function manager(
+	config: TypstEditorConfig,
+	format?: TypstMarkdownFormat,
+	context?: ValidationContext,
+): MarkdownManager {
+	if (format === 'agent' && context) return new AgentMarkdownManager(config, context.schema)
 	return new MarkdownManager({
 		extensions: createTypstExtensions(config),
 		marked: isolatedMarked(),
@@ -28,15 +48,33 @@ function inputIssues(
 	value: unknown,
 	regionId: string,
 	issues: TypstEditorIssue[],
+	agent: boolean,
 	path: (string | number)[] = [],
 ): void {
 	if (!value || typeof value !== 'object') return
 	if (Array.isArray(value)) {
-		value.forEach((entry, index) => inputIssues(entry, regionId, issues, [...path, index]))
+		value.forEach((entry, index) => inputIssues(entry, regionId, issues, agent, [...path, index]))
 		return
 	}
 	const token = value as Record<string, unknown>
+	if (typeof token.agentError === 'string') {
+		issues.push({ code: 'UNSUPPORTED_MARKDOWN', regionId, path, message: token.agentError })
+		return
+	}
 	if (token.type === 'code' || token.type === 'codespan') return
+	if (
+		agent &&
+		token.type === 'text' &&
+		!Array.isArray(token.tokens) &&
+		typeof token.raw === 'string' &&
+		/^ {0,3}:{3,}(?:tiptap|attrs|figure|caption)(?=\s|$)/m.test(token.raw)
+	)
+		issues.push({
+			code: 'UNSUPPORTED_MARKDOWN',
+			regionId,
+			path,
+			message: 'Reserved agent block markers must begin a separate Markdown block.',
+		})
 	if (token.type === 'html')
 		issues.push({
 			code: 'UNSUPPORTED_MARKDOWN',
@@ -53,15 +91,39 @@ function inputIssues(
 			message: 'Task list checkboxes are not in the declared Markdown subset.',
 		})
 	for (const [key, child] of Object.entries(token))
-		if (typeof child === 'object') inputIssues(child, regionId, issues, [...path, key])
+		if (typeof child === 'object') inputIssues(child, regionId, issues, agent, [...path, key])
 }
 
 /** The same official MarkdownManager/extension collection works with or without DOM. */
 export function parseTypstMarkdown(
-	options: RegionInput & { markdown: string },
+	options: MarkdownInput & { markdown: string },
 ): TypstEditorResult<JSONContent> {
-	const checked = editorSchema(options.config)
+	const checked = prepareTypstValidation(options.config)
 	if (!checked.ok) return checked
+	return parseMarkdown(
+		options,
+		manager(options.config, options.format, checked.value),
+		checked.value,
+	)
+}
+
+function formatIssue(options: MarkdownInput): TypstEditorIssue[] {
+	return options.format === undefined || options.format === 'markdown' || options.format === 'agent'
+		? []
+		: [
+				{
+					code: 'UNSUPPORTED_MARKDOWN',
+					regionId: options.regionId,
+					message: 'Unknown Markdown format.',
+				},
+			]
+}
+
+function parseMarkdown(
+	options: MarkdownInput & { markdown: string },
+	markdown: MarkdownManager,
+	context: ValidationContext,
+): TypstEditorResult<JSONContent> {
 	if (typeof options.markdown !== 'string')
 		return {
 			ok: false,
@@ -73,13 +135,18 @@ export function parseTypstMarkdown(
 				},
 			],
 		}
-	const markdown = manager(options.config)
-	const issues: TypstEditorIssue[] = []
-	inputIssues(markdown.instance.lexer(options.markdown), options.regionId, issues)
+	const issues = formatIssue(options)
+	if (issues.length > 0) return { ok: false, issues }
+	inputIssues(
+		markdown.instance.lexer(options.markdown),
+		options.regionId,
+		issues,
+		options.format === 'agent',
+	)
 	if (issues.length > 0) return { ok: false, issues }
 	const document = markdown.parse(options.markdown)
 	if (!document.content?.length) document.content = [{ type: 'paragraph' }]
-	return validateTypstRegion({ ...options, document })
+	return validateRegionWithContext({ ...options, document }, context)
 }
 
 export interface TypstMarkdownExport {
@@ -89,19 +156,37 @@ export interface TypstMarkdownExport {
 	issues: TypstEditorIssue[]
 }
 
-function canonical(document: JSONContent, config: TypstEditorConfig): string {
-	const checked = editorSchema(config)
-	if (!checked.ok)
-		throw new Error('Validated editor configuration changed during Markdown conversion.')
-	return JSON.stringify(checked.value.nodeFromJSON(document).toJSON())
-}
-
 /** JSON stays authoritative; representability is checked by a real round trip. */
 export function exportTypstMarkdown(
-	options: RegionInput & { document: unknown },
+	options: MarkdownInput & { document: unknown },
 ): TypstEditorResult<TypstMarkdownExport> {
-	const checked = validateTypstRegion(options)
+	const context = prepareTypstValidation(options.config)
+	if (!context.ok) return context
+	const checked = validateRegionWithContext(options, context.value)
 	if (!checked.ok) return checked
+	const invalidFormat = formatIssue(options)
+	if (invalidFormat.length > 0) return { ok: false, issues: invalidFormat }
+	const schema = { value: context.value.schema }
+	const markdownManager = manager(options.config, options.format, context.value)
+	const equal = (a: JSONContent, b: JSONContent) =>
+		schema.value.nodeFromJSON(a).eq(schema.value.nodeFromJSON(b))
+	if (options.format === 'agent') {
+		const markdown = markdownManager.serialize(checked.value)
+		const parsed = parseMarkdown({ ...options, markdown }, markdownManager, context.value)
+		if (!parsed.ok) return parsed
+		if (!equal(checked.value, parsed.value))
+			return {
+				ok: false,
+				issues: [
+					{
+						code: 'COMPLEX_CONTENT',
+						regionId: options.regionId,
+						message: 'Agent Markdown could not preserve this document. Keep the original JSON.',
+					},
+				],
+			}
+		return { ok: true, value: { markdown, lossless: true, issues: [] } }
+	}
 	const issues: TypstEditorIssue[] = []
 	const inspect = (node: JSONContent, path: (string | number)[]) => {
 		if ((node.type === 'paragraph' || node.type === 'heading') && node.attrs?.textAlign != null)
@@ -150,10 +235,10 @@ export function exportTypstMarkdown(
 		node.content?.forEach((child, index) => inspect(child, [...path, 'content', index]))
 	}
 	inspect(checked.value, [])
-	const markdown = manager(options.config).serialize(checked.value)
-	const parsed = parseTypstMarkdown({ ...options, markdown })
+	const markdown = markdownManager.serialize(checked.value)
+	const parsed = parseMarkdown({ ...options, markdown }, markdownManager, context.value)
 	if (!parsed.ok) issues.push(...parsed.issues)
-	else if (canonical(checked.value, options.config) !== canonical(parsed.value, options.config))
+	else if (!equal(checked.value, parsed.value))
 		issues.push({
 			code: 'COMPLEX_CONTENT',
 			regionId: options.regionId,
@@ -192,7 +277,10 @@ const htmlTags: Record<string, readonly string[]> = {
 	strike: [],
 	del: [],
 	u: [],
-	span: ['style'],
+	span: ['style', 'data-type', 'data-latex', 'data-typst-reference'],
+	div: ['data-type', 'data-latex', 'id', 'label'],
+	figure: ['id', 'label', 'data-typst-figure'],
+	figcaption: [],
 	a: ['href', 'target', 'rel', 'class'],
 	table: ['style'],
 	thead: [],
@@ -413,6 +501,31 @@ export function parseTypstHtml(
 		const rawAttributes = Object.fromEntries(
 			Array.from(element.attributes).map((attribute) => [attribute.name, attribute.value]),
 		)
+		const mathKind = rawAttributes['data-type']
+		const mathElement =
+			(tag === 'span' && mathKind === 'inline-math') || (tag === 'div' && mathKind === 'block-math')
+		const referenceElement = tag === 'span' && Object.hasOwn(rawAttributes, 'data-typst-reference')
+		if (
+			(tag === 'div' && !mathElement && !custom) ||
+			(tag === 'span' &&
+				((mathKind !== undefined && !mathElement) ||
+					(rawAttributes['data-latex'] !== undefined && !mathElement))) ||
+			(mathElement &&
+				(rawAttributes['data-latex'] === undefined ||
+					referenceElement ||
+					element.childNodes.length > 0)) ||
+			(referenceElement &&
+				(element.children.length > 0 ||
+					(element.textContent !== '' &&
+						element.textContent !== `@${rawAttributes['data-typst-reference']}`)))
+		)
+			issues.push({
+				code: 'UNSUPPORTED_HTML',
+				regionId: options.regionId,
+				path,
+				message:
+					'Document atoms require their matching math/reference metadata without additional editable content.',
+			})
 		if (tag === 'table') {
 			const tableOptions = tableStyleOptions(options.config.extensions)
 			const style = rawAttributes['data-typst-table-style']
@@ -534,6 +647,20 @@ export function parseTypstHtml(
 		node.content?.forEach(countNodes)
 	}
 	countNodes(parsed)
+	for (const [name, selector] of [
+		['figure', 'figure'],
+		['figureCaption', 'figcaption'],
+		['blockMath', 'div[data-type="block-math"]'],
+		['inlineMath', 'span[data-type="inline-math"]'],
+		['reference', 'span[data-typst-reference]'],
+	] as const)
+		if ((nodeCounts.get(name) ?? 0) < document.body.querySelectorAll(selector).length)
+			issues.push({
+				code: 'UNSUPPORTED_HTML',
+				regionId: options.regionId,
+				path: [name],
+				message: `The ${name} extension did not preserve its admitted HTML nodes.`,
+			})
 	for (const [name, mapping] of Object.entries(options.config.nodeMappings ?? {}))
 		if (mapping.html && (nodeCounts.get(name) ?? 0) < (originalTags.get(mapping.html.tag) ?? 0))
 			issues.push({

@@ -4,6 +4,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { TypstPlugin } from '@pluxel/plugin-typst'
 import * as v from 'valibot'
+import type { RpcStub } from 'capnweb'
 import type {
 	DesktopApi,
 	DocumentTarget,
@@ -14,6 +15,9 @@ import type {
 	AiPrompt,
 	WorkspaceArtifact,
 	InputWrite,
+	BodyRead,
+	BodyCandidate,
+	BodyEditorParticipant,
 } from '../shared/contracts.js'
 import type { SearchOptions } from '../shared/search.js'
 import type { AiProviderWrite } from '../shared/ai-providers.js'
@@ -22,6 +26,7 @@ import { InputStore, inputData, editorDraft } from './inputs.js'
 import { DocumentService } from './documents.js'
 import { ArtifactStore } from './artifacts.js'
 import { StudioAI } from './ai.js'
+import { BodyService } from './body.js'
 import { MAX_FILE, MAX_ARCHIVE, safePath, pathName, reportEntry } from './storage-validation.js'
 
 export const StudioConfig = v.object({ root: v.string(), assetsRoot: v.string() })
@@ -29,6 +34,12 @@ const string = v.pipe(v.string(), v.minLength(1), v.maxLength(1024))
 const project = v.object({ projectId: string })
 const document = v.object({ projectId: string, entry: string })
 const thread = v.object({ projectId: string, threadId: string })
+const bodyRange = v.optional(
+	v.object({
+		from: v.pipe(v.number(), v.integer(), v.minValue(0)),
+		to: v.pipe(v.number(), v.integer(), v.minValue(1)),
+	}),
+)
 function parse<T extends v.GenericSchema>(schema: T, input: unknown): v.InferOutput<T> {
 	const result = v.safeParse(schema, input)
 	if (result.success) return result.output
@@ -50,6 +61,7 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 	private ai!: StudioAI
 	private inputs!: InputStore
 	private documents!: DocumentService
+	private body!: BodyService
 	private artifacts!: ArtifactStore
 	private closed = false
 	constructor(
@@ -69,6 +81,7 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 		)
 		this.artifacts = new ArtifactStore(join(this.config.root, 'artifacts'))
 		this.documents = new DocumentService(this.store, this.fonts, this.typst, this.artifacts)
+		this.body = new BodyService(this.inputs, this.documents)
 		this.ai = new StudioAI({
 			root: join(this.config.root, 'ai'),
 			getProject: (id) => this.getProject({ projectId: id }),
@@ -80,6 +93,8 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 			writeFile: (id, write) => this.writeFile({ projectId: id, ...write }),
 			compile: (input) => this.compile(input),
 			getInput: (input) => this.getInput(input),
+			readBody: (input) => this.readBody(input),
+			applyBodyCandidate: (input) => this.applyBodyCandidate(input),
 			getPreview: (input) => this.getPreview(input),
 			renderPage: (input) => this.renderPage(input),
 			exportPdf: (input) => this.exportPdf(input),
@@ -91,6 +106,7 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 				await this.ai.dispose()
 			} finally {
 				try {
+					this.body.close()
 					await this.documents.close()
 				} finally {
 					await this.artifacts.close()
@@ -213,12 +229,38 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 		const data = inputData(input.data)
 		const editor = input.editor === undefined ? undefined : editorDraft(input.editor)
 		const { expectedVersion } = parse(v.object({ expectedVersion: v.nullable(string) }), input)
-		await this.documents.validateInput({ ...target, data, ...(editor ? { editor } : {}) })
-		return this.inputs.set(target.projectId, target.entry, {
+		return this.body.setInput({
+			...target,
 			data,
 			...(editor ? { editor } : {}),
 			expectedVersion,
 		})
+	}
+	readBody(input: BodyRead) {
+		const target = this.document(input)
+		const selected = parse(v.object({ regionId: v.optional(string), range: bodyRange }), input)
+		return this.body.read({ ...target, ...selected })
+	}
+	applyBodyCandidate(input: BodyCandidate) {
+		const target = this.document(input)
+		const candidate = parse(
+			v.object({
+				regionId: string,
+				baseRevision: string,
+				markdown: v.pipe(v.string(), v.maxLength(MAX_FILE)),
+				range: bodyRange,
+			}),
+			input,
+		)
+		return this.body.apply({ ...target, ...candidate })
+	}
+	async attachBodyEditor(
+		input: { projectId: string },
+		participant: RpcStub<BodyEditorParticipant>,
+	) {
+		const { projectId } = this.project(input)
+		await this.store.get(projectId)
+		return this.body.attach(projectId, participant)
 	}
 	describeDocument(input: DocumentTarget) {
 		this.ready()

@@ -95,6 +95,12 @@ export class StudioRpcTarget extends RpcTarget implements StudioApi {
 	setInput(input: Parameters<StudioApi['setInput']>[0]) {
 		return this.#generation.run((api) => api.setInput(input))
 	}
+	readBody(input: Parameters<StudioApi['readBody']>[0]) {
+		return this.#generation.run((api) => api.readBody(input))
+	}
+	applyBodyCandidate(input: Parameters<StudioApi['applyBodyCandidate']>[0]) {
+		return this.#generation.run((api) => api.applyBodyCandidate(input))
+	}
 	describeDocument(input: Parameters<StudioApi['describeDocument']>[0]) {
 		return this.#generation.run((api) => api.describeDocument(input))
 	}
@@ -123,6 +129,12 @@ export class DesktopRpcTarget extends StudioRpcTarget implements DesktopApi {
 	constructor(generation: ApiGeneration) {
 		super(generation)
 		this.#generation = generation
+	}
+	attachBodyEditor(
+		input: Parameters<DesktopApi['attachBodyEditor']>[0],
+		participant: Parameters<DesktopApi['attachBodyEditor']>[1],
+	) {
+		return this.#generation.run((api) => api.attachBodyEditor(input, participant))
 	}
 	getPreview(input: Parameters<DesktopApi['getPreview']>[0]) {
 		return this.#generation.run((api) => api.getPreview(input))

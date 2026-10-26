@@ -87,7 +87,7 @@ try {
 	assert.deepEqual(await body.evaluate((element) => element.editor.getJSON()), edited)
 	await applyData(data)
 	await current()
-	await workspace('模板')
+	await workspace('原始 Typst')
 	const templatePath = join(import.meta.dirname, 'public/examples/operations-report.typ')
 	await page.getByLabel('导入 Typst 模板文件', { exact: true }).setInputFiles(templatePath)
 	const templateSource = await readFile(templatePath, 'utf8')
@@ -125,8 +125,9 @@ try {
 	)
 	assert.deepEqual(await body.evaluate((element) => element.editor.getJSON()), edited)
 	assert.match(await source.inputValue(), /外部模板 · 渠道复盘/)
-	// A preview click opens the hidden matching panel, without remounting the editor.
+	// A preview click opens the matching source tab, without remounting the editor.
 	await workspace('数据')
+	await workspace('Typst 预览')
 	await page.locator('.preview-scroll').evaluate((element) => {
 		element.scrollTop = 0
 	})
@@ -151,7 +152,7 @@ try {
 	await page.mouse.click(fixedScreen.x, fixedScreen.y)
 	await source.waitFor({ state: 'visible' })
 	assert.equal(
-		await page.getByRole('tab', { name: '模板', exact: true }).getAttribute('aria-selected'),
+		await page.getByRole('tab', { name: '原始 Typst', exact: true }).getAttribute('aria-selected'),
 		'true',
 	)
 	const fixedOffset =
@@ -162,7 +163,8 @@ try {
 		fixed.column -
 		1
 	assert.equal(await source.evaluate((element) => element.selectionStart), fixedOffset)
-	await workspace('AI 候选')
+	await workspace('数据')
+	await workspace('Typst 预览')
 	// After data/template replacement, a click in the preview still places a character caret.
 	const position = await body.evaluate((element) => {
 		let found

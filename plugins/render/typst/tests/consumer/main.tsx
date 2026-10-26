@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createTypstRenderer } from '@myriaddreamin/typst.ts/renderer'
 import wasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
@@ -58,10 +58,61 @@ const consumerSlashCommands: readonly TypstSlashCommand[] = [
 const workspaceTabs = [
 	{ id: 'editor', label: '正文' },
 	{ id: 'data', label: '数据' },
-	{ id: 'template', label: '模板' },
-	{ id: 'candidate', label: 'AI 候选' },
 ] as const
 type WorkspaceTab = (typeof workspaceTabs)[number]['id']
+const outputTabs = [
+	{ id: 'preview', label: 'Typst 预览' },
+	{ id: 'template', label: '原始 Typst' },
+	{ id: 'candidate', label: 'Markdown' },
+] as const
+type OutputTab = (typeof outputTabs)[number]['id']
+
+function TabBar<T extends string>({
+	label,
+	tabs,
+	value,
+	onChange,
+}: {
+	label: string
+	tabs: readonly { id: T; label: string }[]
+	value: T
+	onChange: (value: T) => void
+}) {
+	return (
+		<div role="tablist" aria-label={label} className="workspace-tabs">
+			{tabs.map((tab, index) => (
+				<button
+					type="button"
+					role="tab"
+					key={tab.id}
+					id={`tab-${tab.id}`}
+					aria-controls={`panel-${tab.id}`}
+					aria-selected={value === tab.id}
+					tabIndex={value === tab.id ? 0 : -1}
+					onClick={() => onChange(tab.id)}
+					onKeyDown={(event) => {
+						const next =
+							event.key === 'ArrowRight'
+								? (index + 1) % tabs.length
+								: event.key === 'ArrowLeft'
+									? (index + tabs.length - 1) % tabs.length
+									: event.key === 'Home'
+										? 0
+										: event.key === 'End'
+											? tabs.length - 1
+											: undefined
+						if (next === undefined) return
+						event.preventDefault()
+						onChange(tabs[next]!.id)
+						document.getElementById(`tab-${tabs[next]!.id}`)?.focus()
+					}}
+				>
+					{tab.label}
+				</button>
+			))}
+		</div>
+	)
+}
 
 interface Snapshot {
 	revision: number
@@ -89,6 +140,9 @@ function App() {
 	const { config, parseData } = example
 	const [dataText, setDataText] = useState(JSON.stringify(initialDraft.data, null, 2))
 	const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('editor')
+	const [outputTab, setOutputTab] = useState<OutputTab>('preview')
+	const [markdownEditing, setMarkdownEditing] = useState(false)
+	const [selectionVersion, setSelectionVersion] = useState(0)
 	const exampleLoad = useRef(0)
 	const [revision, setRevision] = useState(1)
 	const [epoch, setEpoch] = useState(0)
@@ -104,9 +158,7 @@ function App() {
 		Omit<TypstMarkdownCandidate, 'markdown'> & { original: string }
 	>()
 	const [candidateReview, setCandidateReview] = useState<TypstPreparedCandidate>()
-	const [candidateText, setCandidateText] = useState(
-		'## Accepted candidate\n\nPrepared for <data-field path=\'["customer","name"]\'></data-field>.',
-	)
+	const [candidateText, setCandidateText] = useState('')
 	const [message, setMessage] = useState('')
 	const [pane, setPane] = useState<'editor' | 'preview'>('editor')
 	const [diagnosis, setDiagnosis] = useState<Diagnosis>()
@@ -126,7 +178,7 @@ function App() {
 	const [zoom, setZoom] = useState(1)
 	const [navigation, setNavigation] = useState('')
 	const container = useRef<HTMLDivElement>(null)
-	const editing = useRef<HTMLElement>(null)
+	const workspace = useRef<HTMLDivElement>(null)
 	const viewport = useRef<HTMLDivElement>(null)
 	const sourceEditor = useRef<HTMLTextAreaElement>(null)
 	const view = useRef<TypstPreviewView | undefined>(undefined)
@@ -143,11 +195,53 @@ function App() {
 	const parsedData = parseData(draft.data)
 	const dirty = JSON.stringify({ draft, source }) !== baseline.content
 	const pendingData = dataText !== JSON.stringify(draft.data, null, 2)
-	const hasUnappliedInput = () => !!editing.current?.querySelector('[data-typst-unapplied="true"]')
+	const hasUnappliedInput = () =>
+		!!workspace.current?.querySelector('[data-typst-unapplied="true"]')
 	const replacementGuard = useRef<() => boolean>(() => false)
 	replacementGuard.current = () => dirty || pendingData || hasUnappliedInput()
 	const previewCurrent =
 		compiled?.clientRevision === revision && displayedRevision === revision && !busy
+	// A region projection changes with its content, not with every caret movement.
+	const markdownSelectionVersion = candidateScope === 'blocks' ? selectionVersion : 0
+	const liveMarkdown = useMemo(() => {
+		if (outputTab !== 'candidate' || markdownEditing) return undefined
+		let document = draft.regions[region]!
+		if (candidateScope === 'blocks') {
+			const editor = editors.current.get(region)
+			if (!editor) return undefined
+			const target = captureTypstCandidateTarget({
+				selection: editor.state.selection,
+				regionId: region,
+				baseRevision: 0,
+				scope: 'blocks',
+			})
+			if (!target.ok) return target
+			const { from, to } = target.value.range!
+			document = editor.state.doc.copy(editor.state.doc.slice(from, to).content).toJSON()
+		}
+		return exportTypstMarkdown({
+			format: 'agent',
+			document,
+			regionId: region,
+			config,
+			data: parseData(draft.data),
+		})
+	}, [
+		outputTab,
+		markdownEditing,
+		draft.regions,
+		draft.data,
+		region,
+		config,
+		parseData,
+		candidateScope,
+		markdownSelectionVersion,
+	])
+
+	useEffect(() => {
+		const id = new URLSearchParams(location.search).get('example')
+		if (id) void loadExample(id)
+	}, [])
 
 	function confirmReplacement() {
 		if (
@@ -159,12 +253,12 @@ function App() {
 		return false
 	}
 	useEffect(() => {
-		if (!editing.current) return
+		if (!workspace.current) return
 		// The same marker drives the status and synchronous save/leave guards. Observe
 		// cancellation, application and mount changes as well as text input.
 		const update = () => setUnappliedInput(hasUnappliedInput())
 		const observer = new MutationObserver(update)
-		observer.observe(editing.current, {
+		observer.observe(workspace.current, {
 			subtree: true,
 			childList: true,
 			attributes: true,
@@ -207,6 +301,8 @@ function App() {
 			setWorkspaceTab('editor')
 			setCandidateTarget(undefined)
 			setCandidateReview(undefined)
+			setMarkdownEditing(false)
+			setCandidateText('')
 			setEpoch((value) => value + 1)
 			setRevision((value) => value + 1)
 			setError('')
@@ -294,7 +390,6 @@ function App() {
 							...value,
 							preview: { ...value.preview, data: new Uint8Array(value.preview.data) },
 						})
-						setError('')
 					} catch (cause) {
 						if (alive.current && snapshot.revision === current.current.revision)
 							setDiagnosis({
@@ -387,8 +482,8 @@ function App() {
 		} else if (position.path === 'main.typ') {
 			const offset = sourceOffset(current.current.source, position)
 			if (offset === undefined) return
-			setPane('editor')
-			setWorkspaceTab('template')
+			setPane('preview')
+			setOutputTab('template')
 			requestAnimationFrame(() => {
 				if (serial !== navigationSerial.current || snapshotRevision !== current.current.revision)
 					return
@@ -424,7 +519,9 @@ function App() {
 	function save() {
 		try {
 			if (pendingData || hasUnappliedInput())
-				throw new Error('请先应用数据、源码块修改或确认组件参数，再保存。未应用输入仍保留。')
+				throw new Error(
+					'请先应用数据、源码块、Markdown 修改或确认组件参数，再保存。未应用输入仍保留。',
+				)
 			const checked = validateTypstDraft({
 				draft,
 				config,
@@ -473,6 +570,8 @@ function App() {
 			setWorkspaceTab('editor')
 			setCandidateTarget(undefined)
 			setCandidateReview(undefined)
+			setMarkdownEditing(false)
+			setCandidateText('')
 			setError('')
 			setEpoch((value) => value + 1)
 			setRevision((value) => value + 1)
@@ -498,18 +597,28 @@ function App() {
 		const from = target.value.range?.from ?? 0
 		const to = target.value.range?.to ?? editor.state.doc.content.size
 		const original = exportTypstMarkdown({
-			document: editor.state.doc.cut(from, to).toJSON(),
+			format: 'agent',
+			document: editor.state.doc.copy(editor.state.doc.slice(from, to).content).toJSON(),
 			regionId: region,
 			config,
 			data: parsedData,
 		})
+		if (!original.ok) {
+			setError(JSON.stringify(original.issues))
+			return
+		}
+		const retainCandidate = candidateText !== '' && candidateText !== candidateTarget?.original
+		if (!retainCandidate) setCandidateText(original.value.markdown)
 		setCandidateTarget({
 			...target.value,
-			original: original.ok ? original.value.markdown : JSON.stringify(original.issues),
+			original: original.value.markdown,
 		})
 		setCandidateReview(undefined)
 		setError('')
-		setMessage(`已固定草稿 ${revision} 的候选目标，字符选区将扩展为完整顶层块`)
+		setMarkdownEditing(true)
+		setMessage(
+			`已固定草稿 ${revision} 的候选目标。${retainCandidate ? '已保留候选框中的修改；可用原文替换候选。' : '原文已载入候选，可直接编辑。'}`,
+		)
 	}
 	function reviewCandidate() {
 		if (!candidateTarget) return
@@ -517,6 +626,7 @@ function App() {
 		if (!editor) return
 		const prepared = prepareTypstCandidate({
 			candidate: {
+				format: 'agent',
 				regionId: candidateTarget.regionId,
 				baseRevision: candidateTarget.baseRevision,
 				range: candidateTarget.range,
@@ -556,6 +666,9 @@ function App() {
 			setMessage('候选已接纳，可一次撤销')
 			setRegion(candidateReview.regionId)
 			setWorkspaceTab('editor')
+			setMarkdownEditing(false)
+			setCandidateTarget(undefined)
+			setCandidateText('')
 		}
 	}
 
@@ -720,40 +833,14 @@ function App() {
 					预览
 				</button>
 			</nav>
-			<div className="columns" data-pane={pane}>
-				<section className="editing" ref={editing}>
-					<div role="tablist" aria-label="编辑工作区" className="workspace-tabs">
-						{workspaceTabs.map((tab, index) => (
-							<button
-								type="button"
-								role="tab"
-								key={tab.id}
-								id={`tab-${tab.id}`}
-								aria-controls={`panel-${tab.id}`}
-								aria-selected={workspaceTab === tab.id}
-								tabIndex={workspaceTab === tab.id ? 0 : -1}
-								onClick={() => setWorkspaceTab(tab.id)}
-								onKeyDown={(event) => {
-									const next =
-										event.key === 'ArrowRight'
-											? (index + 1) % workspaceTabs.length
-											: event.key === 'ArrowLeft'
-												? (index + workspaceTabs.length - 1) % workspaceTabs.length
-												: event.key === 'Home'
-													? 0
-													: event.key === 'End'
-														? workspaceTabs.length - 1
-														: undefined
-									if (next === undefined) return
-									event.preventDefault()
-									setWorkspaceTab(workspaceTabs[next]!.id)
-									document.getElementById(`tab-${workspaceTabs[next]!.id}`)?.focus()
-								}}
-							>
-								{tab.label}
-							</button>
-						))}
-					</div>
+			<div className="columns" data-pane={pane} ref={workspace}>
+				<section className="editing">
+					<TabBar
+						label="编辑工作区"
+						tabs={workspaceTabs}
+						value={workspaceTab}
+						onChange={setWorkspaceTab}
+					/>
 					<div
 						id="panel-editor"
 						role="tabpanel"
@@ -817,6 +904,7 @@ function App() {
 									regionId={item.id}
 									onReveal={(position) => revealRegion(item.id, position)}
 									content={draft.regions[item.id]!}
+									regions={draft.regions}
 									config={config}
 									data={parsedData}
 									fontFamilies={fontFamilies}
@@ -836,6 +924,13 @@ function App() {
 									onSelection={(position) => {
 										const element = editors.current.get(item.id)?.view.dom
 										if (element) element.dataset.consumerSelection = String(position)
+										if (
+											outputTab === 'candidate' &&
+											candidateScope === 'blocks' &&
+											!markdownEditing &&
+											region === item.id
+										)
+											setSelectionVersion((value) => value + 1)
 									}}
 								>
 									{(editor) =>
@@ -885,16 +980,71 @@ function App() {
 							下载图表报告 JSON
 						</a>
 					</div>
+				</section>
+				<section className="output-pane">
+					<TabBar label="文档视图" tabs={outputTabs} value={outputTab} onChange={setOutputTab} />
+					<div
+						id="panel-preview"
+						role="tabpanel"
+						aria-labelledby="tab-preview"
+						hidden={outputTab !== 'preview'}
+						className="workspace-panel preview-pane"
+					>
+						<h2>Typst 排版预览</h2>
+						<div className="preview-actions">
+							<button
+								type="button"
+								onClick={() => view.current?.jumpToPage(viewState.currentPage - 1)}
+							>
+								上一页
+							</button>
+							<output data-testid="page">
+								{viewState.currentPage} / {viewState.pageCount}
+							</output>
+							<button
+								type="button"
+								onClick={() => view.current?.jumpToPage(viewState.currentPage + 1)}
+							>
+								下一页
+							</button>
+							<label>
+								缩放{' '}
+								<select
+									aria-label="缩放"
+									value={zoom}
+									onChange={(event) => setZoom(Number(event.target.value))}
+								>
+									<option value={1}>100%</option>
+									<option value={1.5}>150%</option>
+								</select>
+							</label>
+						</div>
+						<nav aria-label="目录">
+							{viewState.preview?.navigation.outline.map((item, index) => (
+								<button
+									type="button"
+									key={index}
+									aria-current={viewState.currentHeading === index ? 'location' : undefined}
+									onClick={() => view.current?.jumpToPosition(item)}
+								>
+									{item.title}
+								</button>
+							))}
+						</nav>
+						<div className="preview-scroll" ref={viewport}>
+							<div ref={container} className="typst-pages" style={{ width: `${zoom * 100}%` }} />
+						</div>
+					</div>
 					<div
 						id="panel-template"
 						role="tabpanel"
 						aria-labelledby="tab-template"
-						hidden={workspaceTab !== 'template'}
+						hidden={outputTab !== 'template'}
 						className="workspace-panel input-panel"
 					>
 						<div className="panel-intro">
-							<h2>排版模板</h2>
-							<p>源码实时编译。点击预览中的固定文字，会自动定位到这里。</p>
+							<h2>原始 Typst</h2>
+							<p>模板源码实时编译，正文按区域插入模板。点击预览中的固定文字可定位到源码。</p>
 						</div>
 						<input
 							aria-label="导入 Typst 模板文件"
@@ -944,12 +1094,16 @@ function App() {
 						id="panel-candidate"
 						role="tabpanel"
 						aria-labelledby="tab-candidate"
-						hidden={workspaceTab !== 'candidate'}
+						hidden={outputTab !== 'candidate'}
 						className="workspace-panel input-panel"
 					>
 						<div className="panel-intro">
-							<h2>AI / Markdown 候选</h2>
-							<p>粘贴外部生成的 Markdown，检查后接纳到指定区域。接纳可一次撤销。</p>
+							<h2 id="markdown-heading">Markdown</h2>
+							<p>
+								{markdownEditing
+									? '编辑候选，检查后接纳。正文和排版会同步更新，可一次撤销。'
+									: '实时查看正文的 agent Markdown；颜色、字体和模板信息随正文保留。'}
+							</p>
 						</div>
 						<label>
 							目标区域{' '}
@@ -985,17 +1139,64 @@ function App() {
 							</select>
 						</label>
 						<p className="candidate-hint">
-							只改文字时，先在正文中放置光标或选中文字，再选择“当前选中块”。其他图表和表格会完整保留。
+							分段修改：在正文放置光标，再选“当前选中块”。模板组件和表格可独立保留。
 						</p>
+						<div className="panel-actions">
+							<output>
+								{markdownEditing ? '候选修改 · 尚未写回' : `实时正文 · 草稿 ${revision}`}
+							</output>
+							{markdownEditing ? (
+								<button
+									type="button"
+									disabled={composing}
+									onClick={() => {
+										setMarkdownEditing(false)
+										setCandidateTarget(undefined)
+										setCandidateReview(undefined)
+										setCandidateText('')
+										setImportResult('')
+										setError('')
+									}}
+								>
+									放弃候选修改
+								</button>
+							) : (
+								<button
+									type="button"
+									onClick={fixCandidateTarget}
+									disabled={composing || !editable || !liveMarkdown?.ok}
+								>
+									编辑这份 Markdown
+								</button>
+							)}
+						</div>
+						{!markdownEditing && (
+							<>
+								<textarea
+									aria-label="实时 Markdown"
+									readOnly
+									spellCheck={false}
+									value={liveMarkdown?.ok ? liveMarkdown.value.markdown : ''}
+								/>
+								{liveMarkdown && !liveMarkdown.ok && (
+									<pre role="alert">{JSON.stringify(liveMarkdown.issues)}</pre>
+								)}
+							</>
+						)}
 						<textarea
 							aria-label="候选 Markdown"
+							data-typst-unapplied={
+								markdownEditing && candidateText !== candidateTarget?.original ? 'true' : undefined
+							}
+							hidden={!markdownEditing}
+							spellCheck={false}
 							value={candidateText}
 							onChange={(event) => {
 								setCandidateText(event.target.value)
 								setCandidateReview(undefined)
 							}}
 						/>
-						<div className="panel-actions">
+						<div className="panel-actions" hidden={!markdownEditing}>
 							<label>
 								<input
 									type="checkbox"
@@ -1006,6 +1207,17 @@ function App() {
 							</label>
 							<button type="button" onClick={fixCandidateTarget} disabled={composing}>
 								固定候选目标
+							</button>
+							<button
+								type="button"
+								disabled={!candidateTarget || composing}
+								onClick={() => {
+									if (!candidateTarget) return
+									setCandidateText(candidateTarget.original)
+									setCandidateReview(undefined)
+								}}
+							>
+								用原文替换候选
 							</button>
 							<button
 								type="button"
@@ -1027,6 +1239,7 @@ function App() {
 									setImportResult(
 										JSON.stringify(
 											parseTypstMarkdown({
+												format: 'agent',
 												markdown: candidateText,
 												regionId: region,
 												config,
@@ -1057,12 +1270,12 @@ function App() {
 								检查 HTML
 							</button>
 						</div>
-						{candidateTarget && (
+						{markdownEditing && candidateTarget && (
 							<div className="candidate-review" data-testid="candidate-review">
 								<p>
 									目标：{candidateTarget.regionId} · 草稿 {candidateTarget.baseRevision} ·{' '}
 									{candidateTarget.range
-										? `完整顶层块 [${candidateTarget.range.from}, ${candidateTarget.range.to})`
+										? `完整块 [${candidateTarget.range.from}, ${candidateTarget.range.to})`
 										: '整个区域'}
 									。范围外的图表、组件和表格保持原样。
 								</p>
@@ -1087,52 +1300,6 @@ function App() {
 							</div>
 						)}
 						{importResult && <pre data-testid="import-result">{importResult}</pre>}
-					</div>
-				</section>
-				<section className="preview-pane">
-					<h2>排版预览</h2>
-					<div className="preview-actions">
-						<button
-							type="button"
-							onClick={() => view.current?.jumpToPage(viewState.currentPage - 1)}
-						>
-							上一页
-						</button>
-						<output data-testid="page">
-							{viewState.currentPage} / {viewState.pageCount}
-						</output>
-						<button
-							type="button"
-							onClick={() => view.current?.jumpToPage(viewState.currentPage + 1)}
-						>
-							下一页
-						</button>
-						<label>
-							缩放{' '}
-							<select
-								aria-label="缩放"
-								value={zoom}
-								onChange={(event) => setZoom(Number(event.target.value))}
-							>
-								<option value={1}>100%</option>
-								<option value={1.5}>150%</option>
-							</select>
-						</label>
-					</div>
-					<nav aria-label="目录">
-						{viewState.preview?.navigation.outline.map((item, index) => (
-							<button
-								type="button"
-								key={index}
-								aria-current={viewState.currentHeading === index ? 'location' : undefined}
-								onClick={() => view.current?.jumpToPosition(item)}
-							>
-								{item.title}
-							</button>
-						))}
-					</nav>
-					<div className="preview-scroll" ref={viewport}>
-						<div ref={container} className="typst-pages" style={{ width: `${zoom * 100}%` }} />
 					</div>
 				</section>
 			</div>

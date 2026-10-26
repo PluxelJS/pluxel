@@ -19,11 +19,21 @@ export type {
 	TypstEditorConfig,
 	TypstGeneratedMapping,
 	TypstGeneratedRegions,
+	TypstReferenceTarget,
+	TypstMarkdownFormat,
 	TypstMarkdownCandidate,
 	TypstPreparedCandidate,
 } from './types.js'
 export { DataField, createTypstExtensions } from './extensions.js'
 export { createEditorExtensions } from './base-extensions.js'
+export {
+	TypstFigure,
+	TypstFigureCaption,
+	TypstBlockMath,
+	TypstInlineMath,
+	TypstReference,
+} from './document-nodes.js'
+export { collectTypstReferenceTargets } from './reference-targets.js'
 export {
 	TypstTableStyle,
 	type TypstTableAppearance,

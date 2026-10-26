@@ -61,7 +61,7 @@ vp run @report-template-studio/app#package
 
 `release/PluxelTypstStudio-<platform>-<arch>/` 输出当前系统和架构的独立应用目录。`pnpm deploy` 只安装生产依赖，使用 hoisted 目录避免 pnpm 链接及 Windows junction 进入发布包；打包前拒绝剩余依赖链接。原生 Typst、字体、Worker 和 QuickJS WASM 保持真实文件，整个目录可复制到另一处启动。构建产物不包含用户项目、AI 凭据或本机应用数据。
 
-[Typst Studio Windows Action](../../.github/workflows/report-template-studio-windows.yml) 支持手动执行，也在 `main` 上的相关源码变更后运行；使用相同 Node / pnpm、Rust 1.99.1 和打包脚本，构建 Windows x64 原生库，执行仅允许本机 IPC、禁止 TCP/HTTP 业务监听的生产后端检查，再上传便携应用 ZIP。归档包含项目指引的 `.agents/skills/`。下载产物后解压，运行 `pluxel-typst-studio.exe`；该任务提供构建产物，未增加安装器、签名或自动更新。Linux 本机验证不能替代 Windows 桌面交互验收。
+Studio 与 Typst 原生库按需在目标平台本地构建，GitHub Actions 不生成 Electron 应用。Windows 需准备 Rust 1.99.1 与 Visual Studio C++ build tools，再执行上述命令；便携目录包含项目指引的 `.agents/skills/`，运行 `pluxel-typst-studio.exe`。打包后运行下文的 `test:runtime` 验证本机 IPC 与资源释放；Linux 本机验证不能替代 Windows 桌面交互验收。CI 仅运行无需 native compiler 的短场景，范围见[工作区工具链](../../docs/development/workspace-toolchain.md#github-actions)。
 
 ## 使用
 
@@ -93,29 +93,37 @@ vp run @report-template-studio/app#package
 
 ### 正文区域
 
-在报表入口旁放置同名 `<name>.editor.json` 显式启用正文，例如 `报表/客户服务报告/客户服务报告.editor.json`。配置包含 SDK 的 `regions`、`fields`，以及每个区域的新建原生 JSON `defaults`；没有该文件仍走原有源码报表，坏配置明确报错。已有填写数据的报表新增区域配置后，在“正文”选择“初始化正文”，明确采用当前模板的区域 defaults，保留原始填写数据并按原存储版本保存；不会在打开时隐式补写。完整字段和扩展规则见 [Typst 区域编辑](../../docs/plugins/rendering/typst-editor.md)，可直接查看 Starter 生成的样例。
+Studio 的正文权威是 **Tiptap JSON**。模板负责页面设计和章节组合，正文保留基础文字样式、对齐、图表、题注、公式和引用；Agent Markdown 读写同一份正文。每个区域可以当作一份章节正文填写，当前没有独立 `.md` 磁盘镜像。
 
-“客户服务报告”提供固定页眉/条款、服务概况和后续建议两个区域，包含合并表格、多段单元格、客户字段与消费方提示块。切区保留原生 Editor/history，在“表单”修改客户数据只更新字段显示和编译输入；通用正文界面不写入样例客户数据。Studio 直接使用区域编辑器的默认界面，仅提供字体与提示块命令，所有编辑仍受区域规则校验。固定模板不进入可编辑 JSON；模板作者可单独编辑源码。生成位置跳转到正文区域，不打开 `_editor/` 文件。
+在报表入口旁放置同名 `<name>.editor.json` 显式启用正文，例如 `报表/客户服务报告/客户服务报告.editor.json`。配置包含 SDK 的 `regions`、`fields` 和每个区域的新建 JSON `defaults`；没有该文件仍是普通源码报表，坏配置明确报错。已有填写数据的报表新增配置后，在“正文”选择“初始化正文”，明确采用当前 defaults、保留原始数据并按存储版本保存，不在打开时隐式补写。
 
-正文使用共享 React 编辑界面与公开样式。常驻条提供撤销/重做、段落样式、字体/字号、常用文字格式、文字色/高亮、清除文字格式、段落对齐、列表、链接和插入；列表内显示增减缩进。工具组随编辑面板宽度换行，面板不超过 420px 时字体选择进入“…”（格式）的完整面板，字号与颜色仍可直接操作。“段落样式”可将当前段落改为六级标题、引用或代码块。选中文字不会自动弹层，文字右键、`Shift+F10` / 菜单键或“格式”按钮主动打开同一面板，按钮也适用于触屏。右键选区内保留范围，选区外先移动光标；光标处可设置后续输入格式。只读、IME、源码输入和卡片数据文本保留原生菜单。
+模板通过原生 `#include "/_editor/regions/<regionId>.typ"` 引入各份正文，也可拆成普通 `.typ` 章节后再组合。固定条款、页眉页脚、分栏、首行缩进、行距、段间距、题注位置和编号属于模板；正文不复刻文件依赖关系。`_editor/` 与 `/inputs/editor/` 只存在于私有编译树，不写回工作区。预览跳转到生成位置时打开对应正文区域，不打开生成文件。
 
-“插入”和 `/` 共用标题、列表、表格、字段、已安装组件和“提示块”等命令；提示块只声明一份宿主命令。选择表格后填写行数、列数和首行表头选项，确认才插入，取消保留原文。进入表格时常驻条下显示表格工具；完整格式面板和表边入口也保留单元格格式、表格样式、增删行列、合并和拆分，结构操作均调用官方 TableKit。可选 Typst 样式提供跟随模板、网格、去掉左右外框的网格、三线表和无边框。`.editor.json` 的 `table` 可设置 `defaultStyle` 和 `allowedStyles`；完整约束见 [表格样式](../../docs/plugins/rendering/typst-editor.md#可选表格样式)。
+“客户服务报告”提供服务概况和后续建议两个区域，包含合并表格、多段单元格、客户字段与提示块。切区保持原生 Editor/history；在“表单”修改客户数据只更新字段显示和编译输入。Studio 给共享编辑器传入完整区域集合，因此 `@` 补全能找到其他区域的图表和公式，当前区域仍读取实际未保存的 Editor 内容。
 
-模板作者可在 `.editor.json` 的 `templates` 数组注册 `{ id, label, source, defaults? }`，其中 `defaults` 是新实例的 JSON 参数对象。Studio 在前后端使用同一组公共 `TypstTemplateBlock` 定义；正文中的实例保存稳定 ID、模板 ID、`props` 和 `dataPath`，组件源码读取 `props` 与绑定后的 `data`，`dataPath: []` 绑定整份已解析输入。模板定义属于模板修订，实例顺序与参数属于正文草稿。
+正文使用共享 `TypstRegionEditor` 和公开样式，完整行为由[区域编辑指南](../../docs/plugins/rendering/typst-editor.md)维护：
 
-“插入”与 slash 自动提供已安装组件，卡片直接消费 SDK：拖动名称旁的原生手柄调整顺序，点击名称或空白处选中组件并定位预览。“块操作”按钮或右键菜单提供“复制一份”和“删除”，支持原生撤销；复制只在当前文档内生成新实例，不支持经系统剪贴板恢复组件。“参数与数据”只读显示实例参数和当前绑定数据，不将展示数据写回正文；需要业务参数表单时由宿主组合官方 `updateAttributes` 等命令。控件操作和数据文本选择不触发定位。
+- 常驻条提供撤销、段落/标题、字体字号、基础格式、文字与背景色、对齐、列表、链接和插入。列表内显示缩进操作；“模板字体 / 字号 / 对齐”清除局部覆盖，页面排版继续继承模板。
+- “插入”和 `/` 共用标题、列表、表格、字段、行内/独立公式、已安装组件和提示块。表格结构继续使用官方 TableKit；选择行列和首行表头后确认才插入。表格外观复用已有可选[表格样式](../../docs/plugins/rendering/typst-editor.md#可选表格样式)，不额外增加策略层。
+- 选中图片、表格或组件后添加图题/表题；题注直接在对象内编辑，包含格式的题注随对象移动。图题/表题文字与引用 label 分开，label 通过对象设置修改。
+- 点击公式编辑 LaTeX，独立公式还能修改 label。编辑区用 KaTeX，模板用固定 MiTeX；两端共享源码，但宏支持可能不同，分别检查预览与编译诊断。
+- 输入 `@` 搜索整份正文的对象，选择后插入按稳定 id 关联的引用。重命名 label 不破坏结构化引用，编号由最终 Typst 决定；删除目标或清空 label 后显示缺失，编译前须修复。手写 Typst 中的旧 label 引用需要另行更新。
 
-只有显式设置 `sourceBlocks: true` 才启用 `TypstSource`，允许用户在正文中插入并现场编写 Typst。在“编辑 Typst 源码”修改后，点击“应用组件修改”才提交一次可撤销的草稿变化。省略或设为 `false` 不安装源码节点；卸载能力后含对应节点的旧草稿会明确报错，不隐式删除。源码块由同一编译会话处理，失败保留源码与上一份成功预览；预览定位选中对应组件，源码块还传递行列位置。Monaco 仍只属于 Studio 的独立源码面板，SDK 组件不依赖它。
+字体选项来自工作区随附的 Noto Serif CJK SC 和 Liberation Serif，浏览器实际字体依宿主环境，最终以 native 预览/PDF 为准。文字右键、`Shift+F10` / 菜单键和“格式”按钮打开同一完整面板；选择本身不自动弹层。选区混合值、清除格式、表格工具、只读/输入法和键盘行为沿用共享编辑器，不由 Studio 再维护一份规则。
 
-字体选项使用工作区随附的 Noto Serif CJK SC 和 Liberation Serif；浏览器的字体显示仍取决于本机字体，最终以 native 预览/PDF 为准。色板也接受自定义十六进制色值。不同字体、字号、颜色、段落样式或对齐的选区明确显示混合状态，光标处显示后续输入格式；操作保持同一原生编辑目标。“清除文字格式”移除可清除的文字 Mark，“清除排版”只移除字体、字号和两项颜色，两者都保留段落结构与对齐。段落/标题可左对齐、居中、右对齐或两端对齐，选择“模板对齐”恢复继承。每次操作支持原生撤销，格式保存于正文 JSON 并进入真实 Typst/PDF；Markdown 无法完整保留排版与显式对齐，带这些格式的范围不能被有损候选覆盖。依赖及准入规则由 [Typst 区域编辑](../../docs/plugins/rendering/typst-editor.md#区域数据与原生编辑) 维护。
+模板组件在 `.editor.json` 的 `templates` 中注册 `{ id, label, source, defaults? }`。实例保存 ID、模板 ID、`props` 和 `dataPath`，`dataPath: []` 绑定整份解析后的数据；组件定义属于模板修订，实例顺序和参数属于正文。卡片的移动、复制、删除走原生事务；“参数与数据”只读显示当前值，业务参数表单通过原生 `updateAttributes` 接入。
 
-Markdown 候选在独立折叠区审阅，可选择“整个区域”或“当前选中顶层块”。后者把原生选区展开为完整顶层块；光标在段落内时只改该段，范围外的图表、源码块、复杂表格保持原样。“固定候选目标”使用共享 `captureTypstCandidateTarget` 捕获区域、范围与当前正文、数据及源码/资源修订；“查看修改预览”准备并展示原文/候选对照，“接纳候选”读取最新事实复核后一次提交，可用一次撤销恢复。编辑候选文字会使已准备结果失效，需重新查看预览；不会刷新固定目标的修订。目标块本身必须能无损往返 Markdown；旧版本、未授权内容和有损替换均保留原文并显示错误，不自动重定位旧范围。Markdown 的 `typst` 代码围栏仍是代码展示，不会执行。不需要模型调用即可验收这条路径。
+保留局部原生 Typst：仅显式 `sourceBlocks: true` 安装 `TypstSource`。源码修改在“应用组件修改”后提交一次可撤销编辑，失败保留草稿和旧预览；省略或关闭时，已有源码节点明确报错，不静默删除。该扩展沿用宿主编译资源政策，不是代码安全沙箱；Monaco 仍属于 Studio 的独立源码面板。
 
-正文 JSON 与原始表单输入保存在同一应用草稿中，坏草稿保留原始 JSON，模板修订不匹配时需显式校验并采用当前模板。区域生成只进入文档私有临时树，不写回模板工作区或共享源码缓存。连续变化只保留一个在途编译和最新待处理快照；旧结果不发布，失败保留上一份预览。导出当前草稿会先取得匹配的成功修订；未保存源码不导出旧画面。
+Markdown 候选在折叠区审阅，可选整个区域或当前选中的完整块。固定目标绑定正文、数据、源码/资源修订；已有改写保留，只有明确“用原文替换候选”才重置。查看原文/候选对照后接纳，提交时重查版本与权限，一次撤销恢复；修改候选后需重新准备，不刷新固定的 baseRevision。目标范围取同一父节点的完整块，支持单元格和提示块内段落，范围外节点保持原样。
+
+候选使用 [Agent Markdown](../../docs/plugins/rendering/typst-editor.md#agent-markdown)：基础 Markdown、文字样式与字段标记、figure/caption 包装、`$` / `$$` 公式、稳定 id 引用以及最小原生子树。普通 Markdown 导出仍有明确损失检查，`typst` 代码围栏只展示代码，不会执行。Pi 和外部 coding agent 通过 `read_body` / `apply_body_candidate` 或公开 `readBody` / `applyBodyCandidate` 消费同一草稿，见[程序接入](#程序接入)及工作区生成的 skill。
+
+正文 JSON 与原始表单输入保存在同一应用草稿，坏 JSON 保留供修复，模板修订不匹配需显式采用新模板。连续修改只保留一个在途编译和最新待处理快照；旧结果不发布，失败保留旧预览并标记过期。导出当前草稿前取得匹配成功修订，不能把未保存源码对应的旧画面导出为当前结果。
 
 默认提供银行询证函、银行账户余额汇总表和季度经营分析。季度经营分析演示本地 SVG 图片、盈利公式、跨页重复表头、页眉页码和 36 行项目明细；静态图片随工作区导出，数值及明细由 schema 默认值或外部业务数据提供。
 
-新建工作区还包含 **图表分析报告**：`报表/图表分析报告/图表分析报告.ts` 定义公司、期间、分析负责人和渠道收入 schema；`.editor.json` 将 KPI、实际/目标柱图及并置明细表定义为“渠道收入与目标”模板组件。组件实例位于分析区的原生 JSON 中，可移动到解读段落前后、复制或删除；`排版.typ` 只负责外层页面和固定口径。示例还包含无边框表、三线表、字段绑定与一个可编辑的 Typst 源码注释块。改动表单数据只更新图表和字段，不覆盖正文；图表布局由组件的 Typst 源码负责，编辑器不拥有另一套图表 AST。
+新建工作区还包含 **图表分析报告**：`报表/图表分析报告/图表分析报告.ts` 定义公司、期间、分析负责人和渠道收入 schema；`.editor.json` 将 KPI、实际/目标柱图及并置明细表定义为“渠道收入与目标”模板组件。组件实例位于分析区的原生 JSON 中，可添加独立题注、移动到解读段落前后、复制或删除；`排版.typ` 只负责外层页面和固定口径。示例还包含无边框表、三线表、字段绑定与一个可编辑的 Typst 源码注释块。改动表单数据只更新图表和字段，不覆盖正文；图表布局由组件的 Typst 源码负责，编辑器不拥有另一套图表 AST。
 
 目录中的 `示例输入.json` 是供外部调用者显式读取、传入 `setInput` / `compile` 的原始数据样本，不会因文件存在而自动覆盖表单。通过下面的后端 API 使用时，先 `describeDocument` 取得 editor 描述并显式建立草稿，再把 JSON 作为 `data` 提交；示范与真实 native/PDF 验证见 [chart-report.test.ts](./tests/chart-report.test.ts)。该 seed 仅用于新工作区，现有项目不会被启动迁移改写。无桌面体验及外部 JSON / `.typ` 文件导入见 [独立浏览器示例](../../plugins/render/typst/tests/consumer/README.md#external-data-and-chart-report-example)。
 
@@ -201,13 +209,15 @@ AI 助手默认展开为 240px 高的紧凑底部面板，点击原生工具标�
 
 图片能力使用 Pi 模型信息和内置 [models.dev](https://models.dev/) 精简快照，按模型 ID 或显示名称精确匹配，跨供应商也尝试图片输入；用户的明确勾选优先。当前快照包含 `deepseek-flash` 的图片能力，同名公司代理模型可直接使用。模型发现接口只提供 ID 列表，不猜能力；代理是否真正接受图片由其实际响应决定。运行 `node projects/report-template-studio/scripts/update-model-image-input.mjs` 更新快照；快照记录来源、抓取时间和原始数据 SHA256，可离线使用。
 
-Agent 的调试循环是 `compile_preview({ entry, input: { kind: 'stored' } })`（保存输入），或 `input: { kind: 'data', data: {} }`（默认值/显式数据）→ `read_preview_pages` → 修改源码 → 再编译。编译工具返回真实诊断、输入数据、版本、页数、连续相同尺寸的页面范围及目录概览。取图工具从对应成功编译的原生 document 输出 PNG，每次 1–3 页，可指定页内 pt 坐标裁剪、默认最长边 1600 像素（可设 256–2048），同时返回该页标题和源码行范围。切换查看其他页不会重编译；源码改变或另一次成功 compile 后拒绝旧版本；单独修改保存输入不会改变已显式编译的版本。图片通过 Pi 原生 image blocks 提供给模型，折叠工具 UI 仅展示页信息，避免把 base64 反复传到前端。取图无需打开预览窗口、启动浏览器或网络端口。
+正文改写使用 `read_body({ entry, regionId? })` → 编辑返回的 Agent Markdown → `apply_body_candidate({ entry, regionId, baseRevision, markdown, range? })` → `read_preview_pages`。读取包含已打开编辑器的未保存正文与数据；提交会复核完整输入及模板修订，保留其他区域，并让当前 Tiptap 编辑器产生一次可撤销的修改。提交已包含一次真实编译，直接用返回的 `compile.revision` 看图，不再为同一结果重复编译。`STALE_CANDIDATE` 要求重新读取后协调修改。
+
+源码改写的调试循环是 `compile_preview({ entry, input: { kind: 'stored' } })`（保存输入），或 `input: { kind: 'data', data: {} }`（默认值/显式数据）→ `read_preview_pages` → 修改源码 → 再编译。编译工具返回真实诊断、输入数据、版本、页数、连续相同尺寸的页面范围及目录概览。取图工具从对应成功编译的原生 document 输出 PNG，每次 1–3 页，可指定页内 pt 坐标裁剪、默认最长边 1600 像素（可设 256–2048），同时返回该页标题和源码行范围。切换查看其他页不会重编译；源码改变或另一次成功 compile 后拒绝旧版本；单独修改保存输入不会改变已显式编译的版本。图片通过 Pi 原生 image blocks 提供给模型，折叠工具 UI 仅展示页信息，避免把 base64 反复传到前端。取图无需打开预览窗口、启动浏览器或网络端口。
 
 多页文档先通过目录选择首页、跨页表格续页和末页，再放大公式、图片和可疑分页位置；任务要求全面审查时逐批检查相关页面，不以抽样代表所有页。PNG 裁剪保留原页面背景，完整页 raster 有 8192 像素/边和 16M 像素限制，Pi adapter 根据模型最长边预算明确计算 scale，返回实际尺寸；一批 PNG 总量限制 12 MiB。外部 `renderPage` 保留所请求的 scale，超限明确失败。默认 skill 和系统提示维护这套流程；未支持图片的模型会明确得到能力提示，不声称完成视觉验证。
 
 消息展示沿用 [browser-worker-agent](https://github.com/PluxelJS/browser-worker-agent) 的 assistant-ui 内容分组与 Streamdown 流式渲染设计：中文 Markdown、代码高亮和复制使用 `@assistant-ui/react-streamdown` 及 Streamdown 原生控件。推理和工具调用按真实 Pi 消息顺序呈现，使用传统折叠区；运行时自动展开，用户手动选择后保持其展开状态。工具标题显示名称、相关路径或命令、运行/完成/失败状态，展开后可查看参数与返回结果；错误结果同样保留。推理区只在供应商实际返回推理内容时出现，停止或失败会明确标记未完成。本地持久化记录与实时消息使用同一份 parts 契约，不把工具调用压缩成活动状态文字。外围控件继续使用 Mantine。
 
-每个项目可以保存多个独立会话。面板顶部可以新建、搜索切换、重命名和删除会话；切换会保留本次打开项目期间的输入草稿。模型选择和供应商设置在消息输入框底部，模型按供应商分组，可搜索；每个会话会记住实际使用的模型。聊天记录保存在项目目录外，重启后仍可继续。一个项目同时只运行一个会话，以避免并发改写文件；其他会话仍可查看，输入框会提示跳回正在运行的会话。Pi 的 `cwd` 就是实际项目根。使用 SDK 的 `read` / `edit` / `write` / `ls` / `find` 工具及 Studio 的 `search_files`、`compile_preview`、`read_preview_pages`、`export_pdf`。文件工具经工作区存储边界执行，保留文件内容冲突检查，禁止越界路径；额外的 `bash` 工具使用 [just-bash](https://github.com/vercel-labs/just-bash) 模拟命令，文件操作仍经过工作区存储层；不启动系统 shell，不开放网络、JavaScript/Python 执行或自动加载可执行扩展。文本操作支持 UTF-8 源码，二进制资产不能当文本读写；目录移动/删除仍作用于真实文件。agent 可以跨文件夹修改共享主题和不同文档。命令并非事务：失败或取消前已经成功的写入仍保留；移动不会覆盖已有目标，权限与时间戳修改不受支持。执行时间与循环限制是模拟器的合作式限制，并非操作系统 CPU 沙箱。
+每个项目可以保存多个独立会话。面板顶部可以新建、搜索切换、重命名和删除会话；切换会保留本次打开项目期间的输入草稿。模型选择和供应商设置在消息输入框底部，模型按供应商分组，可搜索；每个会话会记住实际使用的模型。聊天记录保存在项目目录外，重启后仍可继续。一个项目同时只运行一个会话，以避免并发改写文件；其他会话仍可查看，输入框会提示跳回正在运行的会话。Pi 的 `cwd` 就是实际项目根。使用 SDK 的 `read` / `edit` / `write` / `ls` / `find` 工具及 Studio 的 `search_files`、`read_body`、`apply_body_candidate`、`compile_preview`、`read_preview_pages`、`export_pdf`。文件工具经工作区存储边界执行，保留文件内容冲突检查，禁止越界路径；额外的 `bash` 工具使用 [just-bash](https://github.com/vercel-labs/just-bash) 模拟命令，文件操作仍经过工作区存储层；不启动系统 shell，不开放网络、JavaScript/Python 执行或自动加载可执行扩展。文本操作支持 UTF-8 源码，二进制资产不能当文本读写；目录移动/删除仍作用于真实文件。agent 可以跨文件夹修改共享主题和不同文档。命令并非事务：失败或取消前已经成功的写入仍保留；移动不会覆盖已有目标，权限与时间戳修改不受支持。执行时间与循环限制是模拟器的合作式限制，并非操作系统 CPU 沙箱。
 
 just-bash 使用虚拟 POSIX 路径，不要求用户安装 Bash 或 WSL。这是 Windows 兼容的实现路线；上游 CI 与本项目当前桌面验证均为 Linux，尚不能宣称 Windows 整包经过实测。
 
@@ -247,13 +257,39 @@ export async function inspect(selectedInstanceId: string, selectedProjectRoot: s
 
 用返回 PNG 的绝对 `path` 调用 agent 的图片查看能力。修改普通源码后再次 compile/render；页码从 1 开始，region 是官方 Typst 页内 pt，scale 默认 2、上限 8，受完整页面原生 raster 限额约束。`withStudio` 在 finally 断开连接；长程序可使用 `connectStudio` 返回的 `{ api, disconnect }`。断连不关闭应用、求值器或原生 session，不取消已接纳的有界工作。socket 中断后写入可能已完成，client 不自动重试或切换实例。
 
-共有方法覆盖项目 list/get/create/open/forget/tree、源码 read/write/mkdir/createReport/rename/remove/search、输入 get/set、describe/compile/renderPage/exportPdf。`writeFile` 必须提供 `expectedVersion`，创建时为 `null`。外部 ZIP/资产使用 `importWorkspaceFile` / `importAssetFile`，只为相应导入读取明确本机来源；ZIP 输出为 `exportWorkspaceFile` 的产物引用。业务 capability 不含供应商配置、模型付费调用、任意文件读取或应用关闭。
+共有方法覆盖项目 list/get/create/open/forget/tree、源码 read/write/mkdir/createReport/rename/remove/search、保存输入 get/set、当前正文 readBody/applyBodyCandidate、describe/compile/renderPage/exportPdf。`writeFile` 必须提供 `expectedVersion`，创建时为 `null`。外部 ZIP/资产使用 `importWorkspaceFile` / `importAssetFile`，只为相应导入读取明确本机来源；ZIP 输出为 `exportWorkspaceFile` 的产物引用。业务 capability 不含供应商配置、模型付费调用、任意文件读取或应用关闭。
 
-`getInput(target)` 返回 `{ data, editor?, storageVersion }`，尚无保存时 storageVersion 为 null；`setInput({ ...target, data, editor?, expectedVersion: storageVersion })` 返回新版本。`DRAFT_VERSION_CONFLICT` 不覆盖其他写入者；`TEMPLATE_REVISION_CONFLICT` 要求显式处理模板升级。已有旧格式输入文件不会被启动时隐式改写，应在停机维护中一次性显式转换；新建/ZIP 项目不携带其他项目的用户数据。
+`getInput(target)` 只读取保存记录；编辑当前正文请使用下面的 `readBody` / `applyBodyCandidate`。`getInput(target)` 返回 `{ data, editor?, storageVersion }`，尚无保存时 storageVersion 为 null；`setInput({ ...target, data, editor?, expectedVersion: storageVersion })` 返回新版本。`DRAFT_VERSION_CONFLICT` 不覆盖其他写入者；`TEMPLATE_REVISION_CONFLICT` 要求显式处理模板升级。已有旧格式输入文件不会被启动时隐式改写，应在停机维护中一次性显式转换；新建/ZIP 项目不携带其他项目的用户数据。
+
+`readBody({ ...target, regionId? })` 返回 `{ baseRevision, sourceRevision, regions }`，每个区域包含 `regionId/label/markdown`；省略 regionId 可发现全部区域。指定 `range: { from, to }` 时必须同时指定 regionId，范围是本次原生文档中的完整同父块边界。Agent Markdown 的属性、颜色、表格及复杂节点规则由 [SDK 文档](../../docs/plugins/rendering/typst-editor.md#agent-markdown) 维护。它是正文 IR 的编辑表示，不是另一份磁盘文档。
+
+已连接的 `studio` 可直接执行：
+
+```ts
+const snapshot = await studio.readBody({ ...target, regionId: 'summary' })
+const region = snapshot.regions[0]!
+const receipt = await studio.applyBodyCandidate({
+	...target,
+	regionId: region.regionId,
+	baseRevision: snapshot.baseRevision,
+	markdown: region.markdown.replace('需要更新的原文', '更新后的正文'),
+})
+// 返回回执即表示输入已经保存；显示或编译失败不会撤销这次提交。
+if (receipt.editorStatus === 'disconnected') console.error(receipt.editorError)
+if (receipt.previewError || !receipt.compile) console.error(receipt.previewError)
+else {
+	const page = await studio.renderPage({ ...target, revision: receipt.compile.revision, page: 1 })
+	console.log(page.path)
+}
+```
+
+`baseRevision` 绑定完整 data/regions 和源码快照；普通自动保存不会使内容未变的候选失效。提交复核候选、模板版本与 InputStore CAS；正在编辑或保存冲突不会被覆盖。有活动桌面时，窄 Cap’n Web participant 短暂暂停该文档交互、等在途保存/编译结算、捕获最新草稿，并用原生事务接纳提交；人类逐键输入仍在本地处理。没有活动文档时使用同一后端服务，返回 `editorStatus: 'headless'`。已退出 Electron 的实例不再提供能力；无窗口编辑需要下文的 headless host 继续运行。
+
+`applyBodyCandidate` 返回的 `input/storageVersion` 是持久化事实，`editorStatus` 区分当前界面接纳、无活动界面和接纳失败，`previewError` 单独报告编译/取预览失败。已保存后连接中断不得无条件重试；重新读取后核对内容。输入写入是原子 CAS，源码文件、原生编译与桌面接纳不构成跨进程事务；后续源码修改或成功编译可使返回的预览 revision 过期。body API 共用输入写队列，逐键编辑、保存输入和编译产物不另建镜像存储。
 
 界面保存失败后会读回完整记录，确认响应丢失时写入是否已经完成：与提交的 data/regions 相同则确认保存，期间的新编辑仍保留为待保存草稿。版本变化且内容不同时保留本地草稿，展示双方内容供明确选择载入已保存版本或用本地内容覆盖该版本；覆盖仍使用条件写入，再次冲突不能覆盖新版本。载入已保存版本会重建正文编辑器与历史，清除旧候选和定位并重新编译。
 
-失败保持 reject。用 `isStudioError(error)` 检查 `code/message/diagnostics/issues`，不要依赖跨进程 class prototype。`INVALID_INPUT` 与字段 issues 指向数据或源码；Typst 失败保留 `COMPILE_FAILED` 与原生位置；`REVISION_CONFLICT` 要求显式重新编译；`BUSY` / `LIMIT_EXCEEDED` 明确拒绝容量不足；generation 撤回会返回 `BACKEND_UNAVAILABLE` / `CLOSED`，需重新连接。一次操作失败就停止本轮输出，不无条件继续导出。
+尚未提交的失败保持 reject；正文已提交后的显示/预览失败见上述回执。用 `isStudioError(error)` 检查 `code/message/diagnostics/issues`，不要依赖跨进程 class prototype。`INVALID_INPUT` 与字段 issues 指向数据或源码；Typst 失败保留 `COMPILE_FAILED` 与原生位置；`REVISION_CONFLICT` 要求显式重新编译；`BUSY` / `LIMIT_EXCEEDED` 明确拒绝容量不足；generation 撤回会返回 `BACKEND_UNAVAILABLE` / `CLOSED`，需重新连接。一次操作失败就停止本轮输出，不无条件继续导出。
 
 ### 无桌面常驻宿主
 
@@ -283,7 +319,7 @@ PNG、PDF、ZIP 返回时已经完整落盘，随机 id 的独立目录原子发
 renderer → Cap’n Web / structured-clone MessagePort → narrow Desktop capability ─┐
 Node client → authenticated Cap’n Web / local socket → narrow Studio capability ┼→ StudioPlugin
 Pi tools → direct business methods ─────────────────────────────────────────────┘
-  → WorkspaceStore / InputStore → DocumentService → TemplateCompiler + TypstSession + ArtifactStore
+  → WorkspaceStore / BodyService → InputStore / DocumentService → TemplateCompiler + TypstSession + ArtifactStore
 ```
 
 Electron 主进程只校验 window/frame/origin、转交 port 并拥有系统对话框。向量按需通过 `getPreview` 的 Uint8Array 进入原有 WASM/SVG renderer，无文本编码或转移后端缓存 buffer。PDF 保存只传 artifact id，由受信任主进程 capability 校验并复制；renderer 不能指定任意绝对来源。开发后端由 [`dev.ts`](src/backend/dev.ts) 使用官方 host-vite 装配 [`application.ts`](src/backend/application.ts)，撤回旧 generation 会使连接失败；不自动重放。renderer 保留 context isolation、sandbox、CSP 和关闭保护。Pi 的受信任 adapter 按 id 读取 PNG 并生成模型 image content；普通 read/bash 仍限定模板工作区。
@@ -315,11 +351,11 @@ vp run @report-template-studio/app#test:runtime
 vp run @report-template-studio/app#test:desktop
 ```
 
-`check-discovery` 只依赖 Node 和当前系统，验证私有发现目录与 descriptor 的权限，不需要先构建框架或原生编译器。Windows Action 在安装依赖后先执行这一检查；已有不安全目录明确拒绝，不自动改写 ACL，PowerShell 失败保留底层 cause。
+`check-discovery` 只依赖 Node 和当前系统，验证私有发现目录与 descriptor 的权限，不需要先构建框架或原生编译器。CI 短测试包含同一测试文件；Windows ACL 分支需在 Windows 本地执行。已有不安全目录明确拒绝，不自动改写 ACL，PowerShell 失败保留底层 cause。
 
 其余检查首次先 build，公开入口的类型来自实际 `dist/` 声明。此次常驻服务重构的实施位置、消费者迁移、真实边界证据及未验证项见 [实施报告](IMPLEMENTATION_REPORT.md)。
 
-测试覆盖真实目录、外部改动与并发冲突、ZIP 往返和失败清理、默认值合并、跨目录 Vite HMR、运行器限制、官方 Typst/PDF、Pi 真实文件工具与会话生命周期。生产 `test:runtime` 在导入运行入口前禁止 TCP/HTTP `net.Server.listen`，仅允许本机 IPC。它从构建后的公开 client export 在另一个 Node 进程发现、认证、编译并读取 PNG/PDF，验证重连、原生源码定位及真实多页标题目录。默认使用当前项目 `dist/`；设置 `STUDIO_APP_ROOT` 为发布目录中的 `resources/app` 可执行同一检查，使用发布包自己的依赖、字体、原生库和 QuickJS。Windows Action 只在打包后执行这一生产检查。
+测试覆盖真实目录、外部改动与并发冲突、ZIP 往返和失败清理、默认值合并、跨目录 Vite HMR、运行器限制、官方 Typst/PDF、Pi 真实文件工具与会话生命周期。生产 `test:runtime` 在导入运行入口前禁止 TCP/HTTP `net.Server.listen`，仅允许本机 IPC。它从构建后的公开 client export 在另一个 Node 进程发现、认证、编译并读取 PNG/PDF，验证重连、原生源码定位及真实多页标题目录。默认使用当前项目 `dist/`；设置 `STUDIO_APP_ROOT` 为发布目录中的 `resources/app` 可执行同一检查，使用发布包自己的依赖、字体、原生库和 QuickJS。此检查在目标平台本地构建或打包后执行。
 
 桌面验收使用隔离 profile 和真实 Electron preload/IPC，只将系统文件选择器替换为指定临时路径；窗口固定为 1440×900，结果在 `test-results/`。`STUDIO_EXECUTABLE` 可指向独立包执行同一套验收。Linux 默认沿用当前显示环境，也可显式设置 `STUDIO_OZONE_PLATFORM=headless`，以 Electron 的原生 Ozone headless 执行同一套窗口、后端与 PDF 检查；它不能证明 Wayland/X11 显示兼容性。受限容器中若 Electron 系统沙箱无法启动，可显式设置 `STUDIO_DISABLE_SANDBOX=1`。这些变量只由 `tests/desktop.mjs` 读取，不改变产品 renderer sandbox 或显示配置；`STUDIO_SCREENSHOTS` 可指定证据目录。
 

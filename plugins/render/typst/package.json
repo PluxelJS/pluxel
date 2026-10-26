@@ -36,6 +36,10 @@
 			"@pluxel/hmr": "./src/tiptap/react.tsx",
 			"default": "./dist/tiptap/react.mjs"
 		},
+		"./wasm": {
+			"@pluxel/hmr": "./src/wasm.ts",
+			"default": "./dist/wasm.mjs"
+		},
 		"./package.json": "./package.json",
 		"./tiptap/style.css": {
 			"@pluxel/hmr": "./src/tiptap/style.css",
@@ -49,6 +53,7 @@
 			"./template": "./dist/template.mjs",
 			"./tiptap": "./dist/tiptap.mjs",
 			"./tiptap/react": "./dist/tiptap/react.mjs",
+			"./wasm": "./dist/wasm.mjs",
 			"./package.json": "./package.json",
 			"./tiptap/style.css": "./dist/tiptap/style.css"
 		}
@@ -63,12 +68,13 @@
 	},
 	"dependencies": {
 		"@myriaddreamin/typst-ts-node-compiler": "catalog:prod",
+		"@myriaddreamin/typst-ts-renderer": "catalog:prod",
+		"@myriaddreamin/typst-ts-web-compiler": "catalog:prod",
 		"@myriaddreamin/typst.ts": "catalog:prod",
 		"marked": "catalog:frontend",
 		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
-		"@myriaddreamin/typst-ts-renderer": "catalog:prod",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
@@ -83,6 +89,7 @@
 		"@tiptap/extension-drag-handle": "catalog:frontend",
 		"@tiptap/extension-drag-handle-react": "catalog:frontend",
 		"@tiptap/extension-image": "catalog:frontend",
+		"@tiptap/extension-mathematics": "catalog:frontend",
 		"@tiptap/extension-node-range": "catalog:frontend",
 		"@tiptap/extension-table": "catalog:frontend",
 		"@tiptap/extension-text-align": "catalog:frontend",
@@ -92,9 +99,12 @@
 		"@tiptap/pm": "catalog:frontend",
 		"@tiptap/react": "catalog:frontend",
 		"@tiptap/starter-kit": "catalog:frontend",
+		"@tiptap/suggestion": "catalog:frontend",
 		"@tiptap/y-tiptap": "catalog:frontend",
+		"@types/katex": "catalog:types",
 		"@types/react": "catalog:frontend",
 		"@types/react-dom": "catalog:frontend",
+		"katex": "catalog:frontend",
 		"playwright": "catalog:dev",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
@@ -113,6 +123,7 @@
 		"@tiptap/core": "catalog:frontend",
 		"@tiptap/extension-drag-handle-react": "catalog:frontend",
 		"@tiptap/extension-image": "catalog:frontend",
+		"@tiptap/extension-mathematics": "catalog:frontend",
 		"@tiptap/extension-table": "catalog:frontend",
 		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
@@ -121,10 +132,21 @@
 		"@tiptap/pm": "catalog:frontend",
 		"@tiptap/react": "catalog:frontend",
 		"@tiptap/starter-kit": "catalog:frontend",
+		"@tiptap/suggestion": "catalog:frontend",
+		"katex": "catalog:frontend",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
+		"@tiptap/extension-mathematics": {
+			"optional": true
+		},
+		"@tiptap/suggestion": {
+			"optional": true
+		},
+		"katex": {
+			"optional": true
+		},
 		"@tiptap/extension-text-align": {
 			"optional": true
 		},

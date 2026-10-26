@@ -200,6 +200,39 @@ export function insertEntries(
 		entries.push(
 			tableEntry({ rows: 3, cols: 3, withHeaderRow: allowedNode(ui, editor, 'tableHeader') })!,
 		)
+	if (allowedNode(ui, editor, 'inlineMath'))
+		entries.push({
+			id: 'inlineMath',
+			title: '行内公式',
+			description: '在正文中插入 LaTeX 公式',
+			keywords: ['math', 'latex', '公式'],
+			icon: 'code',
+			group: '内容',
+			command: (chain) =>
+				chain.command(({ commands, tr }) =>
+					commands.insertInlineMath({ latex: 'x^2', pos: tr.selection.from }),
+				),
+		})
+	if (allowedNode(ui, editor, 'blockMath'))
+		entries.push({
+			id: 'blockMath',
+			title: '独立公式',
+			description: '可编号、可引用的 LaTeX 公式',
+			keywords: ['math', 'equation', 'latex', '公式'],
+			icon: 'code',
+			group: '内容',
+			command: (chain) => chain.insertBlockMath({ latex: 'E = mc^2' }),
+		})
+	if (allowedNode(ui, editor, 'reference'))
+		entries.push({
+			id: 'reference',
+			title: '交叉引用',
+			description: '输入 @ 搜索图、表或公式',
+			keywords: ['reference', '引用'],
+			icon: 'link',
+			group: '内容',
+			command: (chain) => chain.insertContent({ type: 'text', text: '@' }),
+		})
 	if (allowedNode(ui, editor, 'horizontalRule'))
 		entries.push({
 			id: 'horizontalRule',
@@ -299,7 +332,7 @@ export function prepareInsertion(
 		ui.config &&
 		ui.region &&
 		!validateTypstRegions({
-			regions: { [ui.region.id]: transaction.doc.toJSON() },
+			regions: { ...ui.regions, [ui.region.id]: transaction.doc.toJSON() },
 			config: ui.config,
 		}).ok
 	)

@@ -11,7 +11,7 @@ import { FontsPlugin, type FontRegistration } from '@pluxel/plugin-fonts'
 import { TypstPlugin, type TypstSession } from '@pluxel/plugin-typst'
 import { createTestHost } from '@pluxel/test'
 import { nodeModules } from '@pluxel/services/node'
-import type { Editor, EditorOptions, TiptapEditorHTMLElement } from '@tiptap/core'
+import type { Editor, EditorOptions, JSONContent, TiptapEditorHTMLElement } from '@tiptap/core'
 import { chromium, type Locator, type Page } from 'playwright'
 import { build } from 'vite'
 import { expect, it } from 'vitest'
@@ -34,14 +34,14 @@ const rootRequire = createRequire(join(workspace, 'package.json'))
 const packageRequire = createRequire(join(packageRoot, 'package.json'))
 const markdownFixture = `## Heading
 
-Customer <data-field path='["customer","name"]'></data-field>
+Customer [dataField {"path":["customer","name"]}]
 
 |A|B|
 |-|-|
 |one|two|`
 const acceptedMarkdown = `## Accepted candidate
 
-Prepared for <data-field path='["customer","name"]'></data-field>.`
+Prepared for [dataField {"path":["customer","name"]}].`
 
 function importGuard(packages: string[]): string {
 	return `import { registerHooks } from 'node:module'; const forbidden=${JSON.stringify(packages)}; const hooks=registerHooks({resolve(name,context,next){if(forbidden.some(prefix=>name===prefix||name.startsWith(prefix+'/')))throw new Error('Optional dependency leaked: '+name+' from '+context.parentURL);return next(name,context)}});`
@@ -422,7 +422,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	await command(process.execPath, ['base.mjs'], app, log)
 	await writeFile(
 		join(app, 'base-browser.ts'),
-		`import { TypstPreviewView, pointAtSource } from '@pluxel/plugin-typst/browser'; import { defineTypstDocument } from '@pluxel/plugin-typst/template'; import '@pluxel/plugin-typst/tiptap/style.css'; document.body.textContent = [typeof TypstPreviewView, typeof pointAtSource, typeof defineTypstDocument].join(',');`,
+		`import { TypstPreviewView, pointAtSource } from '@pluxel/plugin-typst/browser'; import { defineTypstDocument } from '@pluxel/plugin-typst/template'; document.body.textContent = [typeof TypstPreviewView, typeof pointAtSource, typeof defineTypstDocument].join(',');`,
 	)
 	await writeFile(
 		join(app, 'base.html'),
@@ -446,6 +446,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			),
 	))
 		dependencies[name] = await installedSpec(name)
+	dependencies.katex = await installedSpec('katex')
 	await install()
 	await absent([
 		'@tiptap/react',
@@ -466,7 +467,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 	await checkTypes(['tiptap-check.mts'])
 	await writeFile(
 		join(app, 'node-without-dom.mjs'),
-		`import assert from 'node:assert/strict'; ${importGuard(['react', 'react-dom', '@tiptap/react'])} const sdk=await import('@pluxel/plugin-typst/tiptap'); const {config,initialDraft,parseData}=await import('./editor-config.mjs'); assert.equal(typeof document,'undefined'); const markdown=${JSON.stringify(markdownFixture)}; const parsed=sdk.parseTypstMarkdown({config,regionId:'notes',markdown,data:parseData(initialDraft.data)}); assert.equal(parsed.ok,true,JSON.stringify(parsed)); const generated=sdk.generateTypstRegions({config,regions:initialDraft.regions,data:parseData(initialDraft.data),snapshotRevision:1}); assert.equal(generated.ok,true,JSON.stringify(generated)); console.log(JSON.stringify(parsed.value)); hooks.deregister();`,
+		`import assert from 'node:assert/strict'; ${importGuard(['react', 'react-dom', '@tiptap/react'])} const sdk=await import('@pluxel/plugin-typst/tiptap'); const {config,initialDraft,parseData}=await import('./editor-config.mjs'); assert.equal(typeof document,'undefined'); const markdown=${JSON.stringify(markdownFixture)}; const parsed=sdk.parseTypstMarkdown({config,regionId:'notes',format:'agent',markdown,data:parseData(initialDraft.data)}); assert.equal(parsed.ok,true,JSON.stringify(parsed)); const generated=sdk.generateTypstRegions({config,regions:initialDraft.regions,data:parseData(initialDraft.data),snapshotRevision:1}); assert.equal(generated.ok,true,JSON.stringify(generated)); console.log(JSON.stringify(parsed.value)); hooks.deregister();`,
 	)
 	const nodeMarkdown = JSON.parse(
 		await command(process.execPath, ['node-without-dom.mjs'], app, log),
@@ -741,10 +742,27 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await poll(() => page.locator('[data-data-field]').filter({ hasText: 'Acme!' }).count(), 2)
 		await page.screenshot({ path: join(evidence, '01-initial.png'), fullPage: true })
 		async function openWorkspace(name: string) {
+			const pane = page.getByRole('navigation', { name: '编辑与预览', exact: true })
+			if (await pane.isVisible())
+				await pane
+					.getByRole('button', {
+						name: ['正文', '数据'].includes(name) ? '编辑' : '预览',
+						exact: true,
+					})
+					.click()
 			const tab = page.getByRole('tab', { name, exact: true })
 			if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click()
 		}
-		await openWorkspace('模板')
+		async function editMarkdown() {
+			await openWorkspace('Markdown')
+			const edit = page.getByRole('button', { name: '编辑这份 Markdown', exact: true })
+			if (await edit.isVisible()) await edit.click()
+		}
+		async function captureCandidate() {
+			await editMarkdown()
+			await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		}
+		await openWorkspace('原始 Typst')
 		const sourceInput = page.locator('textarea[aria-label="Typst 源码"]')
 		const initialSource = await sourceInput.inputValue()
 		await sourceInput.fill(`${initialSource}\n#let broken = (`)
@@ -765,6 +783,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		assert.ok(stalePoint)
 		await clickPoint(stalePoint)
 		assert.equal(await text(page.getByTestId('navigation')), beforeStaleClick)
+		await openWorkspace('原始 Typst')
 		await sourceInput.fill(initialSource)
 		await currentPreview(page)
 		await page.getByRole('combobox', { name: '客户', exact: true }).selectOption('Beta')
@@ -781,6 +800,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		)
 		assert.ok(point)
 		async function clickPoint(target: any, modifiers: ('Control' | 'Shift')[] = []) {
+			await openWorkspace('Typst 预览')
 			const position = await page
 				.locator('.typst-page')
 				.nth(target.page - 1)
@@ -802,7 +822,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			element.scrollTop = 0
 		})
 		await page.getByRole('textbox', { name: 'Typst 源码' }).click({ position: { x: 90, y: 62 } })
-		await page.locator('.preview-source-highlight').waitFor()
+		await page.locator('.preview-source-highlight').waitFor({ state: 'attached' })
+		await openWorkspace('Typst 预览')
 		await page.getByRole('combobox', { name: '缩放', exact: true }).selectOption('1.5')
 		const generatedPoint = latest!.preview.navigation.points.find(
 			(item: any) => item.path === '_editor/regions/body.typ' && item.page === 1,
@@ -877,17 +898,98 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			'A real preview drag does not navigate',
 		)
 		await page.screenshot({ path: join(evidence, '02-navigation.png'), fullPage: true })
-		const initialBody = await text(page.getByTestId('region-body').locator('.tiptap'))
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		const bodyEditor = page.getByTestId('region-body').locator('.tiptap')
+		const initialBody = await bodyEditor.evaluate((element) =>
+			(element as TiptapEditorHTMLElement).editor!.getJSON(),
+		)
+		const candidateInput = page.getByRole('textbox', { name: '候选 Markdown', exact: true })
+		await editMarkdown()
+		await captureCandidate()
+		const originalBodyMarkdown = await text(
+			page.getByTestId('candidate-review').locator('pre').first(),
+		)
+		assert.match(originalBodyMarkdown, /Editable overview/)
+		assert.equal(await candidateInput.inputValue(), originalBodyMarkdown)
+		await candidateInput.fill(
+			originalBodyMarkdown.replace('Editable overview', 'Agent edited overview'),
+		)
 		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
-		await openWorkspace('AI 候选')
 		assert.equal(
 			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
-			true,
+			false,
 		)
-		assert.match(await text(page.getByRole('alert')), /COMPLEX_CONTENT/)
-		assert.equal(await text(page.getByTestId('region-body').locator('.tiptap')), initialBody)
+		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
+		await currentPreview(page)
+		const editedBody = structuredClone(initialBody)
+		const headingText = editedBody.content![0]!.content![0]!
+		assert.ok('text' in headingText)
+		headingText.text = 'Agent edited overview'
+		assert.deepEqual(
+			await bodyEditor.evaluate((element) =>
+				(element as TiptapEditorHTMLElement).editor!.getJSON(),
+			),
+			editedBody,
+			'Agent Markdown edits the heading while preserving the merged, multi-paragraph table',
+		)
+		assert.ok(
+			latest!.preview.navigation.outline.some(
+				(item: any) => item.title === 'Agent edited overview',
+			),
+		)
+		await writeFile(join(evidence, 'agent-body.md'), originalBodyMarkdown)
+		await page.screenshot({ path: join(evidence, '02-agent-candidate.png'), fullPage: true })
+		await openWorkspace('正文')
+		await page.getByTestId('region-body').getByRole('button', { name: '撤销', exact: true }).click()
+		assert.deepEqual(
+			await bodyEditor.evaluate((element) =>
+				(element as TiptapEditorHTMLElement).editor!.getJSON(),
+			),
+			initialBody,
+			'Agent Markdown replacement is one native undo step',
+		)
+		await currentPreview(page)
+
+		await bodyEditor.locator('td, th').first().locator('p').first().click()
+		await openWorkspace('Markdown')
+		await page.getByRole('combobox', { name: '候选修改范围', exact: true }).selectOption('blocks')
+		await captureCandidate()
+		const cellMarkdown = await text(page.getByTestId('candidate-review').locator('pre').first())
+		assert.equal(cellMarkdown.trim(), 'Merged heading')
+		assert.equal(await candidateInput.inputValue(), cellMarkdown)
+		await candidateInput.fill('Pending merged cell edit')
+		await captureCandidate()
+		assert.equal(
+			await candidateInput.inputValue(),
+			'Pending merged cell edit',
+			'Recapturing retains unapplied edits',
+		)
+		await page.getByRole('button', { name: '用原文替换候选', exact: true }).click()
+		assert.equal(await candidateInput.inputValue(), cellMarkdown)
+		await candidateInput.fill('Updated merged cell')
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
+		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
+		await currentPreview(page)
+		const expectedCellEdit: JSONContent = structuredClone(initialBody)
+		const editedCell = expectedCellEdit.content!.find((node) => node.type === 'table')!
+		editedCell.content![0]!.content![0]!.content![0]!.content![0]!.text = 'Updated merged cell'
+		assert.deepEqual(
+			await bodyEditor.evaluate((element) =>
+				(element as TiptapEditorHTMLElement).editor!.getJSON(),
+			),
+			expectedCellEdit,
+			'A cell candidate preserves the merged table structure and every surrounding block',
+		)
+		await openWorkspace('正文')
+		await page.getByTestId('region-body').getByRole('button', { name: '撤销', exact: true }).click()
+		assert.deepEqual(
+			await bodyEditor.evaluate((element) =>
+				(element as TiptapEditorHTMLElement).editor!.getJSON(),
+			),
+			initialBody,
+		)
+		await currentPreview(page)
+		await openWorkspace('Markdown')
+		await page.getByRole('combobox', { name: '候选修改范围', exact: true }).selectOption('region')
 
 		await openWorkspace('正文')
 		await page.getByRole('button', { name: '备注', exact: true }).click()
@@ -1055,9 +1157,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await page.getByRole('combobox', { name: '客户', exact: true }).selectOption('Beta')
 		await poll(() => text(slashField), 'Beta!')
 		const originalNotes = await text(notes)
-		const candidateInput = page.getByRole('textbox', { name: '候选 Markdown', exact: true })
 		async function inspectImport(value: string, kind: 'Markdown' | 'HTML') {
-			await openWorkspace('AI 候选')
+			await editMarkdown()
 			await candidateInput.fill(value)
 			await page.getByRole('button', { name: `检查 ${kind}`, exact: true }).click()
 			return JSON.parse(await text(page.getByTestId('import-result')))
@@ -1189,7 +1290,9 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await waitForEditorSelection(notes)
 		await notes.press('Escape')
 		await notes.press('Enter')
-		const beforeStyledPaste = await notes.innerHTML()
+		const beforeStyledPaste = await notes.evaluate((element) =>
+			(element as TiptapEditorHTMLElement).editor!.getJSON(),
+		)
 		await pasteHtml(page, notes, styledHtml, 'Styled paste')
 		const pastedStyle = notes.locator('span[style]').filter({ hasText: 'Styled paste' })
 		await pastedStyle.waitFor()
@@ -1231,24 +1334,68 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			canonicalStyleDocuments[0],
 			'HTML roundtrip preserves structure and browser-equivalent style values',
 		)
-		await openWorkspace('AI 候选')
-		await candidateInput.fill(acceptedMarkdown)
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await editMarkdown()
+		await captureCandidate()
+		const styledMarkdown = await text(page.getByTestId('candidate-review').locator('pre').first())
+		assert.match(styledMarkdown, /textStyle/)
+		assert.match(styledMarkdown, /Styled paste/)
+		const beforeStyledCandidate = await notes.evaluate((element) =>
+			(element as TiptapEditorHTMLElement).editor!.getJSON(),
+		)
+		await candidateInput.fill('[textStyle {"color":"not-a-color"}]Invalid candidate[/textStyle]')
 		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
-		const beforeLossyCandidate = await notes.innerHTML()
-		await openWorkspace('AI 候选')
 		assert.equal(
 			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
 			true,
 		)
-		assert.match(await text(page.getByRole('alert')), /COMPLEX_CONTENT/)
-		assert.equal(await notes.innerHTML(), beforeLossyCandidate, 'A candidate retains inline styles')
+		assert.match(await text(page.getByRole('alert')), /UNSUPPORTED_MARKDOWN/)
+		assert.deepEqual(
+			await notes.evaluate((element) => (element as TiptapEditorHTMLElement).editor!.getJSON()),
+			beforeStyledCandidate,
+			'Invalid agent styles preserve the draft',
+		)
+		await candidateInput.fill(styledMarkdown.replace('Styled paste', 'Agent styled edit'))
+		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
+		assert.equal(
+			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
+			false,
+		)
+		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
+		await currentPreview(page)
+		const agentStyle = notes.locator('span[style]').filter({ hasText: 'Agent styled edit' })
+		assert.deepEqual(
+			await agentStyle.evaluate((element) => ({
+				fontFamily: element.style.fontFamily,
+				fontSize: element.style.fontSize,
+				color: element.style.color,
+				backgroundColor: element.style.backgroundColor,
+			})),
+			{
+				fontFamily: '"Liberation Serif"',
+				fontSize: '18pt',
+				color: 'rgb(220, 38, 38)',
+				backgroundColor: 'rgb(254, 240, 138)',
+			},
+			'Agent Markdown text editing preserves all four typography attributes',
+		)
+		await writeFile(join(evidence, 'agent-styled.md'), styledMarkdown)
+		await page.screenshot({ path: join(evidence, 'agent-styled-candidate.png'), fullPage: true })
 		await openWorkspace('正文')
 		await notesToolbar.getByRole('button', { name: '撤销', exact: true }).click()
-		assert.equal(await notes.innerHTML(), beforeStyledPaste, 'Styled HTML paste is one undo step')
+		assert.deepEqual(
+			await notes.evaluate((element) => (element as TiptapEditorHTMLElement).editor!.getJSON()),
+			beforeStyledCandidate,
+			'Styled agent editing is one undo step',
+		)
+		await openWorkspace('正文')
+		await notesToolbar.getByRole('button', { name: '撤销', exact: true }).click()
+		assert.deepEqual(
+			await notes.evaluate((element) => (element as TiptapEditorHTMLElement).editor!.getJSON()),
+			beforeStyledPaste,
+			'Styled HTML paste is one undo step',
+		)
 		await pasteHtml(page, notes, styledFieldHtml, 'Customer field')
-		const styledField = notes.locator('span[style]:has([data-data-field])')
+		const styledField = notes.locator('span[style*="font-size"]:has([data-data-field])')
 		await poll(() => text(styledField), 'Beta!')
 		assert.equal(await styledField.evaluate((element) => element.style.fontSize), '18pt')
 		assert.equal(await styledField.evaluate((element) => element.style.color), 'rgb(220, 38, 38)')
@@ -1259,8 +1406,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			'rgb(220, 38, 38)',
 			'The rendered field inherits its explicit text color',
 		)
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await editMarkdown()
+		await captureCandidate()
 		await currentPreview(page)
 		const styledFieldNative = await session.renderPage({
 			revision: latest!.preview.revision,
@@ -1270,8 +1417,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await writeFile(join(evidence, 'native-styled-field.png'), styledFieldNative.data)
 		await openWorkspace('正文')
 		await notesToolbar.getByRole('button', { name: '撤销', exact: true }).click()
-		assert.equal(
-			await notes.innerHTML(),
+		assert.deepEqual(
+			await notes.evaluate((element) => (element as TiptapEditorHTMLElement).editor!.getJSON()),
 			beforeStyledPaste,
 			'A styled field paste is one undo step',
 		)
@@ -1280,8 +1427,8 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		const invalidStyledHtml = '<p><span style="font-size:calc(12pt + 1pt)">Invalid style</span></p>'
 		await pasteHtml(page, notes, invalidStyledHtml, 'Invalid style')
 		await poll(() => containsText(page.getByRole('alert'), /UNSUPPORTED_HTML/), true)
-		assert.equal(
-			await notes.innerHTML(),
+		assert.deepEqual(
+			await notes.evaluate((element) => (element as TiptapEditorHTMLElement).editor!.getJSON()),
 			beforeStyledPaste,
 			'Invalid CSS paste leaves content intact',
 		)
@@ -1303,13 +1450,13 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 				2,
 			),
 		)
-		await openWorkspace('AI 候选')
+		await editMarkdown()
 		await candidateInput.fill(acceptedMarkdown)
 		await page.getByRole('checkbox', { name: '允许接纳候选', exact: true }).uncheck()
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await editMarkdown()
+		await captureCandidate()
 		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
-		await openWorkspace('AI 候选')
+		await editMarkdown()
 		assert.equal(
 			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
 			true,
@@ -1317,22 +1464,22 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		assert.match(await text(page.getByRole('alert')), /FORBIDDEN_REGION/)
 		assert.equal(await text(notes), originalNotes)
 		await page.getByRole('checkbox', { name: '允许接纳候选', exact: true }).check()
-		await openWorkspace('AI 候选')
-		await candidateInput.fill('<data-field path=\'["unknown"]\'></data-field>')
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await editMarkdown()
+		await candidateInput.fill('[dataField {"path":["unknown"]}]')
+		await editMarkdown()
+		await captureCandidate()
 		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
-		await openWorkspace('AI 候选')
+		await editMarkdown()
 		assert.equal(
 			await page.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
 			true,
 		)
 		assert.match(await text(page.getByRole('alert')), /INVALID_FIELD/)
 		assert.equal(await text(notes), originalNotes)
-		await openWorkspace('AI 候选')
+		await editMarkdown()
 		await candidateInput.fill(acceptedMarkdown)
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await editMarkdown()
+		await captureCandidate()
 		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await openWorkspace('正文')
 		await notes.click()
@@ -1373,19 +1520,19 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await notesToolbar.getByRole('button', { name: '重做', exact: true }).click()
 		await notes.locator('ul li').waitFor()
 
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await editMarkdown()
+		await captureCandidate()
 		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
 		await page.getByRole('combobox', { name: '客户', exact: true }).selectOption('Acme')
 		const beforeCandidate = await text(notes)
-		await openWorkspace('AI 候选')
+		await editMarkdown()
 		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
 		assert.match(await text(page.getByRole('alert')), /STALE_CANDIDATE/)
 		assert.equal(await text(notes), beforeCandidate)
-		await openWorkspace('AI 候选')
-		await page.getByRole('button', { name: '固定候选目标', exact: true }).click()
+		await editMarkdown()
+		await captureCandidate()
 		await page.getByRole('button', { name: '查看修改预览', exact: true }).click()
-		await openWorkspace('AI 候选')
+		await editMarkdown()
 		await page.getByRole('button', { name: '接纳候选', exact: true }).click()
 		await notes.getByText('Accepted candidate', { exact: true }).waitFor()
 		await openWorkspace('正文')
@@ -1609,14 +1756,23 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 			false,
 			'The formatting context and color palette fit the mobile viewport',
 		)
-		const paletteBounds = await backgroundPalette.boundingBox()
-		assert.ok(
-			paletteBounds &&
-				paletteBounds.x >= 0 &&
-				paletteBounds.x + paletteBounds.width <= 390 &&
-				paletteBounds.y >= 0 &&
-				paletteBounds.y + paletteBounds.height <= 844,
-		)
+		// The viewport resize and scroll reposition the portal through observers.
+		await expect
+			.poll(
+				async () => {
+					const bounds = await backgroundPalette.boundingBox()
+					return (
+						bounds && {
+							left: bounds.x >= 0,
+							right: bounds.x + bounds.width <= 390,
+							top: bounds.y >= 0,
+							bottom: bounds.y + bounds.height <= 844,
+						}
+					)
+				},
+				{ timeout: 5_000 },
+			)
+			.toEqual({ left: true, right: true, top: true, bottom: true })
 		await page.screenshot({ path: join(evidence, '12-typography-mobile.png') })
 		await backgroundPalette.getByRole('button', { name: '黄色', exact: true }).click()
 		assert.equal(await formatDialog.isVisible(), true, 'Mobile color changes retain the context')
@@ -1720,7 +1876,7 @@ it('consumes built optional entries outside the workspace and edits a real nativ
 		await writeFile(join(evidence, 'saved-draft.json'), JSON.stringify(stored, null, 2))
 		await writeFile(join(evidence, 'composition.json'), JSON.stringify(compositionEvents, null, 2))
 		stages.push(
-			'Chromium: real native preview/PDF and compile failure recovery, template and generated navigation, zoom/modifier/drag filtering, paragraph styles and explicit format context, shared insertion/slash filtering/Arrow/Enter/Escape and one-step undo, mobile menus, contextual fonts/size/text and background colors, retained format panel and palette-only cancellation, one-step styling and reset history, live field data, composition, selection formatting, lists, native undo/redo, Markdown table and styled HTML paste, supported CSS roundtrip and invalid CSS rejection, field insertion, consumer node, strict HTML and Markdown parity, permission/stale/complex/style-loss candidate rejection, region switching, typography-preserving validated save/reopen',
+			'Chromium: real native preview/PDF and compile failure recovery, template and generated navigation, zoom/modifier/drag filtering, paragraph styles and explicit format context, shared insertion/slash filtering/Arrow/Enter/Escape and one-step undo, mobile menus, contextual fonts/size/text and background colors, retained format panel and palette-only cancellation, one-step styling and reset history, live field data, composition, selection formatting, lists, native undo/redo, Markdown table and styled HTML paste, supported CSS roundtrip and invalid CSS rejection, field insertion, consumer node, strict HTML and Markdown parity, agent rich-content export/edit/apply/undo, permission/stale/invalid candidate rejection, region switching, typography-preserving validated save/reopen',
 		)
 	} catch (cause) {
 		await page.screenshot({ path: join(evidence, 'failure.png'), fullPage: true })

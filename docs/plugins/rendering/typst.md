@@ -3,7 +3,9 @@ title: Typst 文档
 description: 复用 Typst 生成无状态 SVG，或用多文件会话生成同修订 Vector 预览与 PDF。
 ---
 
-`@pluxel/plugin-typst` 是 workspace 内的文档插件，当前保持 private。业务通过 constructor 注入 TypstPlugin。
+`@pluxel/plugin-typst` 是 workspace 内的文档插件，当前保持 private。业务通过 constructor 注入 TypstPlugin。本页维护编译、资源、会话和产物契约；正文、Agent Markdown、图题表题、公式和引用的使用见[区域编辑](./typst-editor.md)。
+
+模板是普通多文件 Typst 项目。页面设计与章节组合继续使用原生 `#import` / `#include`；可编辑正文由 Tiptap JSON 生成区域文件，再由模板包含。编译器不要求模板的文件结构与编辑器 AST 相互模拟。
 
 ## 接入前提
 
@@ -34,7 +36,53 @@ await saveSvg(svg)
 
 请求先通过共享 Worker 接纳，再分块检查源码 UTF-8 字节数并读取当时的 FontsPlugin 可移植字体。源码受 `TypstConfig.maxInputBytes` 限制，字体受 `maxFontBytes/maxFiles` 限制；输出上限取调用参数与 `TypstConfig.maxOutputBytes` 的较小值。省略 `maxOutputBytes` 使用 provider 配置，省略 `timeoutMs` 不设请求 deadline。字体仍使用内嵌 family 名。
 
-取消、deadline、provider 或 caller 停止会撤销排队任务或终止执行线程；Promise 等待线程执行结算，不提前释放执行额度。普通语法错误返回带 diagnostics 的 `TypstError('COMPILE_FAILED')`，可修改源码后继续调用。输入/输出超限为 `LIMIT_EXCEEDED`，共享队列/执行和取消错误保留原生契约。可信源码仍可触发 Typst 自带/系统字体及包加载；此入口不是安全沙箱，受限 Markdown 公式由 [Typst 数学扩展](./takumi-markdown.md#可选的-typst-数学)先校验再调用它。
+取消、deadline、provider 或 caller 停止会撤销排队任务或终止执行线程；Promise 等待线程执行结算，不提前释放执行额度。普通语法错误返回带 diagnostics 的 `TypstError('COMPILE_FAILED')`，可修改源码后继续调用。输入/输出超限为 `LIMIT_EXCEEDED`，共享队列/执行和取消错误保留原生契约。可信源码仍可触发 Typst 自带/系统字体及包加载；此入口不是安全沙箱，受限 Markdown 公式由 [Typst 数学扩展](./takumi-markdown.md#工作区可选的-typst-数学)先校验再调用它。
+
+## 浏览器编译
+
+`@pluxel/plugin-typst/wasm` 导出独立的 `TypstPlugin` 与 `TypstConfig`，在浏览器 Web Worker 内运行真实 Pluxel 插件，提供 `renderSvg(source, options?): Promise<Uint8Array>`。它使用官方 0.7.0 WASM 编译器和渲染器，不需要 NodeModules、Workers 服务、FontsPlugin 或本地原生绑定。`/browser` 仍只负责展示已有预览产物；服务端主入口的会话 API 保持原契约。
+
+宿主为这个插件提供完整配置，没有 CDN 或默认字体地址：
+
+```ts no-twoslash
+import { TypstPlugin, TypstConfig, TypstError } from '@pluxel/plugin-typst/wasm'
+import type * as v from 'valibot'
+
+const config = {
+	compilerWasmUrl: '/assets/typst_ts_web_compiler_bg.wasm',
+	rendererWasmUrl: '/assets/typst_ts_renderer_bg.wasm',
+	fontUrls: ['/assets/LXGWWenKai-Regular.ttf'],
+} satisfies v.InferInput<typeof TypstConfig>
+// 把 config 作为 TypstPlugin 的配置记录交给宿主。
+
+// 在已注入 TypstPlugin 的业务方法内：
+try {
+	const svg = await this.typst.renderSvg('#set text(font: "LXGW WenKai")\nHello, Pluxel!')
+	return svg // UTF-8 image/svg+xml，字节由调用方持有。
+} catch (error) {
+	if (error instanceof TypstError && error.code === 'COMPILE_FAILED') {
+		return { diagnostics: error.diagnostics }
+	}
+	throw error
+}
+```
+
+WASM 文件必须与已安装的 `@myriaddreamin/typst-ts-web-compiler` / `typst-ts-renderer` 0.7.0 匹配。插件为资源下载和初始化设置了 30 秒启动时限。字体在插件启动时读取，源码使用字体文件内嵌的 family 名；显式 `fontUrls: []` 适合不含文字的图形。入口固定为本次 `source` 对应的 `/main.typ`；可通过 `TypstSvgOptions.files` 提供本次编译使用的文本文件：
+
+```ts no-twoslash
+const svg = await this.typst.renderSvg('#include "sections/body.typ"', {
+	files: {
+		'/sections/body.typ': '#let data = json("/inputs/data.json")\n#text(data.title)',
+		'/inputs/data.json': JSON.stringify({ title: 'Browser document' }),
+	},
+})
+```
+
+`files` 是绝对 POSIX 文件路径到文本的只读记录，接纳调用时复制。省略时没有附加文件；`/main.typ` 不允许覆盖，空路径段、`.`、`..`、反斜杠和 NUL 均以 `INVALID_INPUT` 拒绝，不做路径改写。所有文件只属于这次调用，成功或失败后均清空；后续调用必须重新提供所需文件。插件不读取站点文件、不加载 Typst 包注册表，也不注入模板。返回完整 SVG，不包含渲染器 JavaScript。
+
+一次只接纳一个编译，重叠调用拒绝为 `BUSY`；未启动或已停止时为 `CLOSED`，空源码为 `INVALID_INPUT`。语法错误通过 `COMPILE_FAILED` 与 diagnostics 返回，修改源码后可继续调用。资源加载与底层 WASM 错误保留原始异常。每次编译释放自己的 world/session，插件停止通过 effects 释放 compiler/renderer。
+
+WASM 编译会同步占用所在 Worker，插件没有软取消或时间上限。宿主负责超时后终止 Worker，并在页面退出时停止应用、终止 Worker；终止也会回收该 Worker 的 WASM 线性内存。需要 PDF、二进制文件资源或保留编译状态的编辑会话时继续使用服务端入口。
 
 ## 定义可编辑报表
 
@@ -188,7 +236,7 @@ packet 来自 `compiled.preview`。View 在离屏渲染完成后才替换容器�
 
 View 统一管理 SVG CTM 坐标、普通点击/拖选过滤、页码/目录跟随和高亮；宿主通过普通位置回调连接编辑器，并维护文件/草稿版本与可见目标选择。保留旧预览时不能直接套用已修改源码的行列。Typst 的布局映射来自原生文档 span，TypeScript 的转换 sourcemap 由 Vite 管理，二者不互相替代。每修订最多 200,000 个有效定位点，超限明确失败。
 
-可选 `/tiptap` 与 `/tiptap/react` 支持固定模板中的命名正文区域、原生表格、数据字段和候选内容；安装、生成、持久化与定位见 [Typst 区域编辑](./typst-editor.md)。根入口、`/template` 和 `/browser` 不要求安装 Tiptap/React。
+可选 `/tiptap` 与 `/tiptap/react` 支持命名正文区域、文字排版、表格、题注、LaTeX 公式、交叉引用、数据字段和 Markdown 候选。公式生成附带固定 MiTeX 文本资源，不要求动态导包；完整生成文件仍由宿主加入私有模板树，原生 `#include` 与标签解析保持 Typst 自身语义。安装、生成、持久化与定位见 [Typst 区域编辑](./typst-editor.md)。根入口、`/template` 和 `/browser` 不要求安装 Tiptap/React。
 
 ## 容量配置
 

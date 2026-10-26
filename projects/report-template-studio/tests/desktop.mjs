@@ -762,6 +762,74 @@ async function verifyBodyEditor(entry) {
 	assert.deepEqual(styledInput.data, beforeTypography.data, 'Typography commands preserve raw data')
 	await screenshot('07c-body-typography')
 	await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
+	// Cross the public RPC boundary while the native editor still owns an unsaved edit.
+	const bodyAgent = await summary.evaluate(async (element, bodyTarget) => {
+		const editor = element.editor
+		editor.commands.insertContentAt(editor.state.doc.content.size, {
+			type: 'paragraph',
+			content: [{ type: 'text', text: 'Unsaved human paragraph for agent.' }],
+		})
+		const reading = window.studioProbe.api.readBody({ ...bodyTarget, regionId: 'summary' })
+		const savedBefore = await window.studioProbe.api.getInput(bodyTarget)
+		const snapshot = await reading
+		return { savedBefore, snapshot, original: editor.getJSON() }
+	}, target)
+	assert.doesNotMatch(
+		JSON.stringify(bodyAgent.savedBefore.editor),
+		/Unsaved human paragraph for agent/,
+	)
+	assert.match(bodyAgent.snapshot.regions[0].markdown, /Unsaved human paragraph for agent/)
+	const agentCandidate = {
+		...target,
+		regionId: 'summary',
+		baseRevision: bodyAgent.snapshot.baseRevision,
+		markdown: bodyAgent.snapshot.regions[0].markdown.replace(
+			'Unsaved human paragraph for agent.',
+			'[textStyle {"color":"#16a34a","backgroundColor":"#e0f2fe"}]Agent revised the unsaved paragraph.[/textStyle]',
+		),
+	}
+	const agentReceipt = await studio.applyBodyCandidate(agentCandidate)
+	assert.equal(agentReceipt.editorStatus, 'applied', agentReceipt.editorError)
+	assert.equal(agentReceipt.previewError, undefined)
+	assert.ok(agentReceipt.compile?.pageCount > 0)
+	assert.match(await summary.innerText(), /Agent revised the unsaved paragraph/)
+	assertBodyTypography(agentReceipt.input)
+	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
+	const agentPng = await studio.renderPage({
+		...target,
+		revision: agentReceipt.compile.revision,
+		page: 1,
+	})
+	const agentPngBytes = await readFile(agentPng.path)
+	assert.deepEqual(agentPngBytes.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+	await assert.rejects(async () => await studio.applyBodyCandidate(agentCandidate), {
+		code: 'STALE_CANDIDATE',
+	})
+	await ready()
+	await screenshot('07d-agent-body-preview')
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.deepEqual(
+		await summary.evaluate((element) => element.editor.getJSON()),
+		bodyAgent.original,
+		'One undo restores the unsaved human body, including merged table and typography',
+	)
+	await until(async () => {
+		const savedUndo = await studio.getInput(target)
+		return JSON.stringify(savedUndo.editor?.regions.summary) === JSON.stringify(bodyAgent.original)
+	}, 'Undo did not persist through the shared input boundary')
+	await writeFile(
+		join(output, 'agent-body-evidence.json'),
+		JSON.stringify(
+			{
+				snapshot: bodyAgent.snapshot,
+				receipt: agentReceipt,
+				png: agentPng,
+				undo: bodyAgent.original,
+			},
+			null,
+			2,
+		),
+	)
 	await selectEditorText(summary, bodyTypographyText)
 	await page.keyboard.press('ArrowRight')
 	await until(
@@ -784,9 +852,16 @@ async function verifyBodyEditor(entry) {
 		/中文输入验收𠮷/,
 		'List commands retain the IME paragraph',
 	)
+	await summary.locator('th').first().scrollIntoViewIfNeeded()
+	await summary.evaluate(
+		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+	)
 	await summary.locator('th').first().click()
-	const tableMenu = await openFormat(toolbar, '表格操作')
-	await tableMenu.getByRole('button', { name: '拆分单元格', exact: true }).click()
+	await page
+		.locator('.studio-region-editor:visible')
+		.getByRole('toolbar', { name: '表格快捷操作', exact: true })
+		.getByRole('button', { name: '拆分单元格', exact: true })
+		.click()
 	assert.equal(await summary.locator('th').count(), 2)
 	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
 	assert.equal(await summary.locator('th[colspan="2"]').count(), 1)
@@ -804,7 +879,7 @@ async function verifyBodyEditor(entry) {
 	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
 	await details
 		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
-		.fill('不能覆盖合并表格')
+		.fill(':::tiptap\n{"type":"table","content":[]}\n:::')
 	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	assert.equal(
 		await details.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
@@ -849,6 +924,19 @@ async function verifyBodyEditor(entry) {
 		'Data changes invalidate staged candidates',
 	)
 	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
+	assert.equal(
+		await details.getByRole('textbox', { name: 'Markdown 候选', exact: true }).inputValue(),
+		'**接纳后的建议**',
+		'Recapturing preserves the edited candidate until explicitly replaced',
+	)
+	await details.getByRole('button', { name: '用原文替换候选', exact: true }).click()
+	assert.equal(
+		await details.getByRole('textbox', { name: 'Markdown 候选', exact: true }).inputValue(),
+		'原始建议',
+	)
+	await details
+		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
+		.fill('**接纳后的建议**')
 	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
 	await until(

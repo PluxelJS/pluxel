@@ -117,8 +117,18 @@ nav,
 	flex: 1;
 	min-height: 0;
 }
+.candidate-hint {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--consumer-muted);
+}
+#panel-candidate output {
+	font-size: 12px;
+	color: var(--consumer-muted);
+}
 .editing,
-.preview-pane {
+.output-pane {
 	display: flex;
 	flex-direction: column;
 	background: var(--consumer-surface);
@@ -222,6 +232,8 @@ nav,
 	tab-size: 2;
 }
 .preview-pane {
+	display: flex;
+	flex-direction: column;
 	padding: 12px;
 	gap: 10px;
 }
@@ -408,12 +420,12 @@ output[data-testid='navigation'] {
 		background: var(--consumer-active);
 		font-weight: 650;
 	}
-	.columns[data-pane='editor'] > .preview-pane,
+	.columns[data-pane='editor'] > .output-pane,
 	.columns[data-pane='preview'] > .editing {
 		display: none;
 	}
 	.editing,
-	.preview-pane {
+	.output-pane {
 		height: auto;
 	}
 	.candidate-comparison {

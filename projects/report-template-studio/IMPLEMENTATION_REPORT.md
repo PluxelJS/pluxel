@@ -1,6 +1,34 @@
-# 常驻文档服务重构实施报告
+# Studio 实施与验证记录
 
-日期：2026-10-12。目标契约：[REFACTOR_DESIGN.md](REFACTOR_DESIGN.md)。重构、全部已知消费者迁移与 Linux 真实边界验收已完成；本报告供独立审核，不将未执行的平台或模型验证计为通过。[验证摘要](VALIDATION_EVIDENCE.json) 随提交保留实测回执与证据哈希；完整截图、PNG/PDF/ZIP 和日志位置记录在下文。当前公开用法由 [README](README.md#程序接入) 拥有。
+当前用法由 [README](README.md) 与 [Typst 区域编辑](../../docs/plugins/rendering/typst-editor.md) 维护；本文件记录实现边界与验收来源，历史执行结果不能替代当前改动的验证。
+
+## 正文、题注、公式和引用（2026-10-26）
+
+正文继续以 Tiptap JSON 为唯一权威，Agent Markdown 回读后更新同一草稿；模板通过原生 `#include` 组合各区域，控制页面、缩进、行距、段间距、题注和编号。没有新增 Markdown 镜像文件、Typst AST 反解器或文件依赖模拟层。
+
+共享 Typst SDK 增加 figure/figureCaption、官方 LaTeX 数学节点和按稳定 id 关联的 reference。图表内容和富文本题注属于同一子树，label 可独立改名；复制生成新身份，跨区域结构化引用在完整生成时解析为当前 label。未解析的目标保留在编辑器中供修复，生成明确失败。模板手写引用不参与自动 label 改名。
+
+Studio 给共享编辑器提供完整区域快照，复用题注、公式编辑和 `@` 搜索；没有再实现一份正文 AST 或引用编号。MiTeX 0.2.7 固定资源随生成文件提供，native 与 browser WASM 不依赖联网获取该包。KaTeX 与 MiTeX 共用 LaTeX 源码，但宏支持仍以两端实际结果为准。
+
+验收入口及各自边界：
+
+| 入口                                                                                            | 证明范围                                                                                                          |
+| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [tiptap-document.test.ts](../../plugins/render/typst/tests/tiptap-document.test.ts)             | 原生文档身份、label、复制、引用与跨 include 的真实 Typst 输出；含长表分页与模板规则                               |
+| [tiptap-agent-markdown.test.ts](../../plugins/render/typst/tests/tiptap-agent-markdown.test.ts) | Agent 标记、最小原生回退和 Markdown/JSON 往返                                                                     |
+| [mitex.test.ts](../../plugins/render/typst/tests/mitex.test.ts)                                 | 同一宿主数学字体下的 native PDF/Vector 与 WASM SVG、编号/跨文件引用及失败恢复；只获取显式编译器/renderer/字体资源 |
+| [chart-report.test.ts](tests/chart-report.test.ts)                                              | Studio 的真实 body 读写、草稿持久化、生成和 native 编译边界                                                       |
+| [consumer](../../plugins/render/typst/tests/consumer/README.md)                                 | 当前运行界面的人工/浏览器验证入口；源码和机制测试不替代桌面/触屏操作                                              |
+
+在相应包目录执行的完整检查包括 Typst 的 `mise exec -- vp test run --config vitest.config.ts`（205 项通过）、Studio 的 `mise exec -- vp test run`（171 项通过、1 项 Windows 专用检查跳过）及两包 TypeScript 类型检查。Typst 包构建和 Studio renderer 的 `mise exec -- vp build` 通过，KaTeX 样式与字体进入实际产物；这些计数只属于本次运行，不是稳定功能契约。
+
+`document-clipboard-check.mjs`、`document-check.mjs` 和 `view-tabs-check.mjs` 均已连接现有 Playwright WebSocket 服务通过。实际界面验证了题注和 label 独立修改、跨区域 `@` 引用与改名同步、公式应用与撤销、图表及题注整体复制、同一界面会话内剪切粘贴保留身份、普通复制重新分配身份，以及桌面/手机的预览、源码和 Markdown 标签；截图已人工查看。Studio 的 `chart-report.test.ts` 另验证真实 `readBody → applyBodyCandidate → native compile`，修改图题、label 和 LaTeX 保留跨区域引用，重复对象 ID 被拒绝且不落库。
+
+这些结果不宣称已重新验证所有发布包、操作系统、Electron 生命周期或付费模型调用。
+
+## 常驻文档服务重构（历史基线：2026-10-12）
+
+以下为当次重构的原始执行记录。日期：2026-10-12。目标契约：[REFACTOR_DESIGN.md](REFACTOR_DESIGN.md)。重构、全部已知消费者迁移与 Linux 真实边界验收已完成；本报告供独立审核，不将未执行的平台或模型验证计为通过。[验证摘要](VALIDATION_EVIDENCE.json) 随提交保留实测回执与证据哈希；完整截图、PNG/PDF/ZIP 和日志位置记录在下文。当前公开用法由 [README](README.md#程序接入) 拥有。
 
 ## 最终架构与技术细化
 
@@ -45,7 +73,7 @@
 | Pi 供应商、会话、消息、停止与引用             | [assistant.tsx](src/renderer/assistant.tsx)、[provider-settings.tsx](src/renderer/provider-settings.tsx)、[backend/ai.ts](src/backend/ai.ts)：models/providers/configureProvider/discoverModels、threads/createThread/snapshot/renameThread/deleteThread/prompt/abort 经 Desktop capability；外部 Studio capability 不含这些方法或密钥 |
 | 外部 coding agent / 无桌面宿主                | 公开 client 经真实 AF_UNIX socket 认证，显式选择实例与项目，receipt + 可读文件产物；宿主一次 startBackend，消费者断连不关闭原生 session                                                                                                                                                                                                |
 
-同步了 [README](README.md)、[新建项目 AGENTS](workspace-assets/AGENTS.md)、[typst-authoring skill](workspace-assets/.agents/skills/typst-authoring/SKILL.md)、[Typst 包文档链接](../../docs/plugins/rendering/typst.md)、开发/打包脚本和 [Windows workflow](../../.github/workflows/report-template-studio-windows.yml)。新 exports 的四组 `.mjs/.d.mts` 进入打包前检查，示例纳入 package files。添加 [.tegami/studio-resident-rpc.md](../../.tegami/studio-resident-rpc.md)；未手改版本或 publish-lock。
+同步了 [README](README.md)、[新建项目 AGENTS](workspace-assets/AGENTS.md)、[typst-authoring skill](workspace-assets/.agents/skills/typst-authoring/SKILL.md)、[Typst 包文档链接](../../docs/plugins/rendering/typst.md)、开发/打包脚本和当时的 Windows workflow（现已移除，当前按需本地构建流程见 [README](README.md#生产构建与打包)）。新 exports 的四组 `.mjs/.d.mts` 进入打包前检查，示例纳入 package files。当时的 `.tegami/studio-resident-rpc.md` 是历史变更条目，当前工作区已不保留该文件；未手改版本或 publish-lock。
 
 ## 旧路径删除与数据保护
 

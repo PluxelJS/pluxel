@@ -268,7 +268,11 @@ export function FormPane({ entry }: { entry: string }) {
 					{document?.inputError ?? document?.error}
 				</Alert>
 			)}
-			<div className="form-scroll" style={{ display: mode === 'form' ? undefined : 'none' }}>
+			<div
+				inert={document?.bodyLocked}
+				className="form-scroll"
+				style={{ display: mode === 'form' ? undefined : 'none' }}
+			>
 				{document?.inputLoaded && document.fields.length > 0 ? (
 					<DataForm
 						key={JSON.stringify(document.fields)}
@@ -290,6 +294,7 @@ export function FormPane({ entry }: { entry: string }) {
 			</div>
 			{bodyOpened && document?.description?.editor && (
 				<div
+					inert={document.bodyLocked}
 					style={{
 						display: mode === 'body' ? undefined : 'none',
 						flex: 1,

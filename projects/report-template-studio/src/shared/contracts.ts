@@ -1,4 +1,5 @@
 import type { FieldNode } from 'valibot-form'
+import type { RpcStub, RpcTarget } from 'capnweb'
 import type { TypstPreview } from '@pluxel/plugin-typst/browser'
 import type {
 	JSONContent,
@@ -7,6 +8,7 @@ import type {
 	TypstTemplateDefinition,
 	TypstDataField,
 	TypstGeneratedMapping,
+	TypstPreparedCandidate,
 } from '@pluxel/plugin-typst/tiptap'
 import type {
 	TypstDiagnostic,
@@ -48,6 +50,60 @@ export interface InputWrite extends DocumentTarget {
 	data: JsonObject
 	editor?: EditorDraft
 	expectedVersion: string | null
+}
+export interface BodyRead extends DocumentTarget {
+	regionId?: string
+	range?: { from: number; to: number }
+}
+export interface BodySnapshot extends DocumentTarget {
+	/** Identity of the complete input and template source snapshot, including unsaved input. */
+	baseRevision: string
+	sourceRevision: string
+	regions: {
+		regionId: string
+		label: string
+		markdown: string
+		range?: { from: number; to: number }
+	}[]
+}
+export interface BodyCandidate extends DocumentTarget {
+	regionId: string
+	baseRevision: string
+	markdown: string
+	range?: { from: number; to: number }
+}
+export interface BodyCommit extends DocumentTarget {
+	input: DocumentInput
+	baseRevision: string
+	/** A persisted commit survives a failed preview or a disconnected editor. */
+	editorStatus: 'applied' | 'headless' | 'disconnected'
+	compile?: CompileResult
+	previewError?: string
+	editorError?: string
+}
+/** Desktop-only participant; no parallel document store or per-keystroke RPC. */
+export interface BodyEditorParticipant extends RpcTarget {
+	capture(input: { entry: string }): Promise<{
+		lease: string
+		input: DocumentInput
+		clientRevision: number
+	} | null>
+	finish(input: {
+		entry: string
+		lease: string
+		commit?: {
+			input: DocumentInput
+			candidate: TypstPreparedCandidate
+			/** Validated data from the captured input, independent of compilation success. */
+			data: JsonObject
+			compile?: CompileResult
+			preview?: PreviewResult
+			previewError?: string
+		}
+	}): Promise<void>
+}
+export interface BodyEditorAttachment extends RpcTarget {
+	close(): Promise<void>
 }
 export interface EditorDescription {
 	table?: Partial<TypstTableStyleOptions>
@@ -217,6 +273,8 @@ export interface StudioApi {
 	search(input: SearchOptions & { projectId: string }): Promise<SearchResult>
 	getInput(input: DocumentTarget): Promise<DocumentInput>
 	setInput(input: InputWrite): Promise<DocumentInput>
+	readBody(input: BodyRead): Promise<BodySnapshot>
+	applyBodyCandidate(input: BodyCandidate): Promise<BodyCommit>
 	describeDocument(input: DocumentTarget): Promise<DocumentDescription>
 	compile(input: CompileRequest): Promise<CompileResult>
 	renderPage(input: RenderPageRequest): Promise<PageArtifact>
@@ -231,6 +289,10 @@ export interface StudioApi {
 	exportWorkspaceFile(input: { projectId: string }): Promise<WorkspaceArtifact>
 }
 export interface DesktopApi extends StudioApi {
+	attachBodyEditor(
+		input: { projectId: string },
+		participant: RpcStub<BodyEditorParticipant>,
+	): Promise<BodyEditorAttachment>
 	getPreview(input: RevisionTarget): Promise<PreviewResult>
 	importWorkspace(input: { bytes: Uint8Array; name?: string }): Promise<ProjectSummary>
 	putAsset(input: {

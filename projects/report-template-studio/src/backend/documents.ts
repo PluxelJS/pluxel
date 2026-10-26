@@ -305,12 +305,20 @@ export class DocumentService {
 	}
 
 	/** Validate at the owning host boundary; no schema output is written into raw input. */
-	async validateInput(input: DocumentTarget & Pick<DocumentInput, 'data' | 'editor'>) {
+	async validateInput(
+		input: DocumentTarget & Pick<DocumentInput, 'data' | 'editor'>,
+		expectedSourceRevision?: string,
+	) {
 		if (this.closed) throw failure('CLOSED', 'Studio documents are closed')
 		const document = target(input)
 		const data = inputData(input.data)
 		const editor = input.editor === undefined ? undefined : editorDraft(input.editor)
 		const source = await this.store.snapshot(document.projectId)
+		if (expectedSourceRevision !== undefined && source.revision !== expectedSourceRevision)
+			throw failure(
+				'REVISION_CONFLICT',
+				'Document source changed after the body snapshot was captured',
+			)
 		if (!Object.hasOwn(source.files, document.entry))
 			throw failure('INVALID_INPUT', 'Report entry does not exist in the workspace')
 		const description = describeEditor(source, document.entry)
@@ -326,6 +334,7 @@ export class DocumentService {
 			if (currentSource.revision !== source.revision)
 				throw failure('REVISION_CONFLICT', 'Workspace changed while validating the document draft')
 			this.remaining(operation)
+			return parsed.data
 		})
 	}
 

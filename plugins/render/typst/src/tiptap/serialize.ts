@@ -3,6 +3,8 @@ import type { Schema } from '@tiptap/pm/model'
 import { tableHeaderRows } from './table-style.js'
 import type { TypstNavigation } from '../preview-contract.js'
 import { fontFamilyName, fontSizeInPoints, textStyleColor } from './text-style.js'
+import { createMiTeXFiles } from './mitex.js'
+import { isReferenceObject } from './document-nodes.js'
 import type {
 	TypstDraftRevision,
 	TypstEditorConfig,
@@ -88,8 +90,28 @@ export function generateTypstRegions(options: {
 	if (!checked.ok) return checked
 	const nativeSchema = prepared.schema
 	const issues: TypstEditorIssue[] = []
+	const labels = new Map<string, string>()
+	const mathRegions = new Set<string>()
+	const inspectObjects = (node: JSONContent, regionId: string) => {
+		if (
+			isReferenceObject(node.type!) &&
+			typeof node.attrs?.id === 'string' &&
+			typeof node.attrs.label === 'string'
+		)
+			labels.set(node.attrs.id, node.attrs.label)
+		if (node.type === 'inlineMath' || node.type === 'blockMath') mathRegions.add(regionId)
+		node.content?.forEach((child) => inspectObjects(child, regionId))
+	}
+	for (const [id, document] of Object.entries(checked.value)) inspectObjects(document, id)
 	const imagePaths = new Map<string, string>()
 	const inspectResources = (node: JSONContent, regionId: string, path: (string | number)[]) => {
+		if (node.type === 'reference' && !labels.has(node.attrs!.target))
+			issues.push({
+				code: 'INVALID_REFERENCE',
+				regionId,
+				path: [...path, 'attrs', 'target'],
+				message: `Reference target ${node.attrs!.target} is missing or has no label.`,
+			})
 		if (node.type === 'image') {
 			const id = node.attrs!.src as string
 			const resource = options.config.resolveImage?.(id)
@@ -113,7 +135,7 @@ export function generateTypstRegions(options: {
 	}
 	for (const [id, document] of Object.entries(checked.value)) inspectResources(document, id, [])
 	if (issues.length > 0) return { ok: false, issues }
-	const templateFiles: Record<string, string> = {}
+	const templateFiles: Record<string, string> = mathRegions.size > 0 ? createMiTeXFiles() : {}
 	const inputFiles: Record<string, string> = {
 		'/inputs/editor/data.json': JSON.stringify(options.data),
 	}
@@ -122,6 +144,7 @@ export function generateTypstRegions(options: {
 		const document = checked.value[region.id]!
 		const path = `_editor/regions/${region.id}.typ`
 		let source = '#let _editor_data = json("/inputs/editor/data.json")\n'
+		if (mathRegions.has(region.id)) source += '#import "/_editor/mitex/mitex.typ": mi, mitex\n'
 		// The temporary markers retain identity through arbitrary trusted wrappers and
 		// repeated context.children() strings. They never reach the generated files.
 		let markerPrefix = '/*pluxel-editor-map:'
@@ -197,6 +220,28 @@ export function generateTypstRegions(options: {
 					break
 				case 'paragraph':
 					content = `#par[${context.children(node)}]\n`
+					break
+				case 'figure': {
+					const body = node.content![0]!
+					const caption = node.content![1]!
+					const bodySource = serialize(body, position + 1)
+					const captionSource = serialize(caption, position + 1 + nodeSize(body, nativeSchema))
+					// A fixed kind keeps table numbering separate even when its body uses wrappers.
+					const kind = body.type === 'table' ? 'table' : 'image'
+					content = `#figure([${bodySource}], kind: ${kind}${attrs.label == null ? ', numbering: none' : ''}, caption: [${captionSource}])${attrs.label == null ? '' : `#label(${typstString(attrs.label)})`}\n`
+					break
+				}
+				case 'figureCaption':
+					content = context.children(node)
+					break
+				case 'inlineMath':
+					content = `#mi(${typstString(attrs.latex)})`
+					break
+				case 'blockMath':
+					content = `#mitex(${typstString(attrs.latex)}${attrs.label == null ? ', numbering: none' : ''})${attrs.label == null ? '' : `#label(${typstString(attrs.label)})`}\n`
+					break
+				case 'reference':
+					content = `#ref(label(${typstString(labels.get(attrs.target)!)}))`
 					break
 				case 'heading':
 					content = `#heading(level: ${attrs.level ?? 1})[${context.children(node)}]\n`

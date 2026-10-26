@@ -37,6 +37,7 @@ async function current() {
 	assert.equal(await page.getByRole('alert').count(), 0)
 }
 async function clickPoint(point) {
+	await workspace('Typst 预览')
 	const svg = page.locator('.typst-page').nth(point.page - 1)
 	await svg.scrollIntoViewIfNeeded()
 	await svg.evaluate((element, target) => {
@@ -66,7 +67,9 @@ try {
 	await current()
 	const original = await documentJson(body)
 	const originalNotes = await documentJson(notes)
-	const chartIndex = original.content.findIndex((node) => node.type === 'templateBlock')
+	const chartIndex = original.content.findIndex(
+		(node) => node.type === 'figure' && node.content[0].type === 'templateBlock',
+	)
 	for (const label of ['上移', '下移', '定位预览', '复制', '删除'])
 		assert.equal(await chart.getByRole('button', { name: label, exact: true }).count(), 0)
 	assert.equal(
@@ -91,7 +94,7 @@ try {
 	)
 	assert.deepEqual(
 		JSON.parse(await chart.getByLabel('组件参数', { exact: true }).innerText()),
-		original.content[chartIndex].attrs.props,
+		original.content[chartIndex].content[0].attrs.props,
 	)
 	const initialData = JSON.parse(await chart.getByLabel('组件数据', { exact: true }).innerText())
 	assert.ok(initialData.channels.length > 0)
@@ -106,7 +109,9 @@ try {
 	await chart.locator('.typst-block-title').click({ button: 'right' })
 	await menu.getByRole('menuitem', { name: '复制一份', exact: true }).click()
 	const copiedDocument = await documentJson(body)
-	const copied = copiedDocument.content.filter((node) => node.type === 'templateBlock')
+	const copied = copiedDocument.content
+		.flatMap((node) => (node.type === 'figure' ? node.content : [node]))
+		.filter((node) => node.type === 'templateBlock')
 	assert.equal(copied.length, 2)
 	assert.notEqual(copied[0].attrs.id, copied[1].attrs.id)
 	assert.deepEqual({ ...copied[0].attrs, id: '' }, { ...copied[1].attrs, id: '' })
@@ -145,23 +150,33 @@ try {
 	await chart.getByRole('button', { name: '块操作', exact: true }).click()
 	await menu.getByRole('menuitem', { name: '删除', exact: true }).click()
 	assert.equal(await chart.count(), 0)
-	await current()
+	await page
+		.getByText(/INVALID_REFERENCE/)
+		.first()
+		.waitFor()
 	await undo('body')
 	assert.deepEqual(await documentJson(body), original, 'Menu deletion is one native undo step')
 	await current()
 	await chart.locator('.typst-block-title').click()
 	await page.keyboard.press('Delete')
-	assert.equal(await chart.count(), 0, 'Native Delete removes the selected atom')
-	await current()
+	assert.equal(await chart.count(), 0, 'Native Delete removes the selected figure and body')
+	await page
+		.getByText(/INVALID_REFERENCE/)
+		.first()
+		.waitFor()
 	await undo('body')
 	assert.deepEqual(await documentJson(body), original)
 	await current()
 	// Exercise the native drag/drop route, preserving the node and its instance ID.
-	await chart.locator('[data-drag-handle]').dragTo(body, { targetPosition: { x: 32, y: 10 } })
+	await body
+		.locator(
+			'[data-figure-id="channels-figure"] > .typst-document-object-header [data-drag-handle]',
+		)
+		.dragTo(body, { targetPosition: { x: 32, y: 10 } })
 	await page.waitForFunction(
 		() =>
 			document.querySelector('[data-testid="region-body"] .tiptap').editor.getJSON().content[0]
-				?.attrs?.id === 'channels-primary',
+				?.attrs?.id === 'channels-figure',
 		null,
 		{ timeout: 10000 },
 	)
@@ -181,8 +196,9 @@ try {
 
 	// Markdown replaces just the selected heading. Other authored and generated nodes survive.
 	await body.locator('h1').click()
-	await workspace('AI 候选')
+	await workspace('Markdown')
 	await page.getByRole('combobox', { name: '候选修改范围', exact: true }).selectOption('blocks')
+	await page.getByRole('button', { name: '编辑这份 Markdown', exact: true }).click()
 	await page
 		.getByRole('textbox', { name: '候选 Markdown', exact: true })
 		.fill(
@@ -196,8 +212,12 @@ try {
 	await current()
 	const accepted = await documentJson(body)
 	assert.deepEqual(
-		accepted.content.filter((node) => ['templateBlock', 'table', 'image'].includes(node.type)),
-		original.content.filter((node) => ['templateBlock', 'table', 'image'].includes(node.type)),
+		accepted.content.filter((node) =>
+			['figure', 'templateBlock', 'table', 'image'].includes(node.type),
+		),
+		original.content.filter((node) =>
+			['figure', 'templateBlock', 'table', 'image'].includes(node.type),
+		),
 	)
 	assert.equal(accepted.content.filter((node) => node.type === 'typstSource').length, 0)
 	assert.ok(

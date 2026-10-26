@@ -37,7 +37,14 @@ function blockName(target: BlockTarget) {
 	if (type === 'heading') return `标题 ${target.node.attrs.level}`
 	return (
 		blockConversions.find((item) => item.value === type)?.label ??
-		({ table: '表格', horizontalRule: '分隔线', image: '图片' }[type] || '内容块')
+		({
+			table: '表格',
+			horizontalRule: '分隔线',
+			image: '图片',
+			figure: '图表与题注',
+			blockMath: '独立公式',
+		}[type] ||
+			'内容块')
 	)
 }
 

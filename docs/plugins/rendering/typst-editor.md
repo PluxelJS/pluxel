@@ -1,19 +1,25 @@
 ---
 title: Typst 区域编辑
-description: 通过可选 Tiptap 入口编辑原生 JSON，生成可定位的 Typst 正文并复用同修订预览与 PDF。
+description: 模板负责页面，Tiptap JSON 保存分区域正文，Agent Markdown 编辑同一份内容；支持图表题注、LaTeX 公式和交叉引用。
 ---
 
-`@pluxel/plugin-typst` 通过独立前端入口提供原生 Tiptap JSON 编辑、Typst 区域生成和预览能力。`TypstRegionEditor` 默认带完整工具界面；`onChange` 只交付正文快照，保存、业务数据和 native 编译由宿主连接。
+`@pluxel/plugin-typst` 将模板设计和正文编辑分开：**Typst 模板掌管页面，Tiptap JSON 是正文权威，Agent Markdown 是同一正文的编辑投影。** 编辑器和 agent 可以修改基础文字样式、对齐、图片、表格、题注、公式和引用；模板决定页面、章节组合、行距、段间距、缩进、题注位置和编号格式。
 
-| 要完成的任务                     | 从这里开始                                                      |
-| -------------------------------- | --------------------------------------------------------------- |
-| 在 React 应用里编辑正文          | [安装依赖](#入口与安装) → [挂载一个区域](#最小-react-接入)      |
-| 已有 Tiptap Editor，自己组合界面 | [原生编辑器与自定义控件](#业务数据与自定义控件)                 |
-| 把正文排版为预览或 PDF           | [准入、生成与编译](#准入生成与编译) → [预览与定位](#预览与定位) |
+`TypstRegionEditor` 默认带完整编辑界面；`onChange` 交付原生正文快照，保存、业务数据和编译由宿主连接。Typst 负责最终换行与分页，不把编辑器的浏览器排版视作最终页面，也不从任意 Typst 源码反解 Tiptap JSON。
+
+| 要完成的任务                     | 从这里开始                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| 在 React 应用里编辑正文          | [安装依赖](#入口与安装) → [挂载一个区域](#最小-react-接入)                      |
+| 已有 Tiptap Editor，自己组合界面 | [原生编辑器与自定义控件](#业务数据与自定义控件)                                 |
+| 按章节填写并组成完整报告         | [模板与正文区域](#模板与正文区域) → [准入、生成与编译](#准入生成与编译)         |
+| 编辑图题、表题、公式和引用       | [图表、公式与交叉引用](#图表公式与交叉引用) → [Agent Markdown](#agent-markdown) |
+| 把正文排版为预览或 PDF           | [准入、生成与编译](#准入生成与编译) → [预览与定位](#预览与定位)                 |
 
 服务端仍使用 [TypstPlugin](./typst.md)，文档定义仍是 `/template` 的 `defineTypstDocument({ template, schema, createFiles? })`。Monaco、worker 和 Vite 接线由消费应用拥有。
 
 源码仓库可运行 `mise exec -- vp run @pluxel/plugin-typst#compile`，再运行 `mise exec -- vp run typst` 打开体验页；保存范围及操作见 [consumer 说明](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/README.md#interactive-browser-playground)。
+
+体验页在服务 URL 后加 `/?example=operations-report` 打开图表报告：左侧为“正文 / 数据”，右侧为“Typst 预览 / 原始 Typst / Markdown”三个标签。示例包含文字排版、带题注的图表组件、表格、LaTeX 公式和跨区域引用；Markdown 默认实时显示当前区域或选中块，点击“编辑这份 Markdown”固定候选，经检查接纳后更新正文与排版，并回到同一标签的实时内容。原始 Typst 可编辑外层模板；手机通过“编辑 / 预览”切换左右面板，面板内保留同样的标签。
 
 ## 入口与安装
 
@@ -33,7 +39,8 @@ description: 通过可选 Tiptap 入口编辑原生 JSON，生成可定位的 Ty
 npm install @tiptap/core@3.32.0 @tiptap/pm@3.32.0 @tiptap/starter-kit@3.32.0 \
   @tiptap/extension-table@3.32.0 @tiptap/extension-image@3.32.0 \
   @tiptap/extension-text-style@3.32.0 @tiptap/extension-text-align@3.32.0 \
-  @tiptap/markdown@3.32.0
+  @tiptap/extension-mathematics@3.32.0 @tiptap/suggestion@3.32.0 \
+  @tiptap/markdown@3.32.0 katex@0.16.22
 ```
 
 React 完整界面再安装以下依赖；已有 React 19 应用保留同一份 React 实例：
@@ -47,13 +54,31 @@ npm install react@19.3.1 react-dom@19.3.1 @tiptap/react@3.32.0 @tiptap/extension
 
 TypeScript React 项目还需自己的 `@types/react` / `@types/react-dom` 19.x 类型依赖。块拖动复用官方 [DragHandle React](https://tiptap.dev/docs/editor/extensions/functionality/drag-handle-react)，其 peer 链带来 collaboration/Yjs 依赖；区域编辑器没有启用多人协作，也没有替换原生 history。本包直接声明的编辑器 peers 均为 optional；清单同时包含官方扩展要求的间接 peers。只消费编译或预览时不需要这组依赖，选用对应编辑器入口后则必须满足。
 
-样式单独从 `@pluxel/plugin-typst/tiptap/style.css` 导入，由宿主决定加载。JS 和声明入口不隐式加载 CSS，保留 Node / SSR 导入能力。样式作用于 `.typst-*` 控件及带表格外观标记的官方表格 DOM，不改变未安装样式扩展的表格；宿主可用 CSS 变量调整配色。浏览器只从子路径导入运行时值，不导入包根；包级 native 下载与根入口 peer 元数据仍存在。
+样式单独从 `@pluxel/plugin-typst/tiptap/style.css` 导入，由宿主决定加载；它同时引入 KaTeX 样式，公式字体资源随应用的 CSS 打包。JS 和声明入口不隐式加载 CSS，保留 Node / SSR 导入能力。样式作用于 `.typst-*` 控件及带表格外观标记的官方表格 DOM，不改变未安装样式扩展的表格；宿主可用 CSS 变量调整配色。浏览器只从子路径导入运行时值，不导入包根；包级 native 下载与根入口 peer 元数据仍存在。
 
 独立制品验收会把构建结果移出工作区，显式安装各阶段 peers，使用 `npm --legacy-peer-deps --ignore-scripts` 检查无源码 alias 的导入、严格类型、浏览器构建及真实 native/PDF。它不证明 registry 发布或所有包管理器的自动 peer 安装路径已验证；具体阶段见 [制品验收](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/README.md#isolated-package-acceptance)。
 
-## 区域、数据与原生编辑
+## 模板与正文区域
 
-正文直接保存 Tiptap `JSONContent`，不经过 Markdown 归档。宿主持有模板身份/修订、权限、原始业务输入和各区域 JSON。区域声明属于模板配置，保存的草稿不能覆盖规则。
+正文直接保存各区域的 Tiptap `JSONContent`。宿主持有模板身份/修订、原始业务输入和区域 JSON；区域声明属于模板配置。一个区域对应一份可独立填写的正文，例如“经营分析”“后续行动”。界面可以按文件或章节导航，但目前的持久化仍是原生 JSON 草稿，不生成另一份需要同步的 `.md` 正文文件。
+
+生成器为区域产生 `_editor/regions/<regionId>.typ`。模板使用 Typst 自身的 `#include` 组合正文，不需要在 Tiptap AST 或 Markdown 中模拟文件依赖：
+
+```typst
+#set par(leading: 0.65em, spacing: 1em, first-line-indent: 2em)
+
+= 经营分析
+#include "/_editor/regions/analysis.typ"
+
+= 后续行动
+#include "/_editor/regions/actions.typ"
+```
+
+上例的绝对路径从模板根解析；主模板也可以先包含其他 `.typ` 章节，再由章节引入对应正文。只有最终被主模板包含的内容进入报告；引用目标也必须实际进入同一份 Typst 文档。生成文件供模板消费，不作为用户可写源码打开。
+
+基础文字格式和段落对齐允许局部覆盖；清除覆盖后恢复模板继承。列表层级属于正文，普通段落首行/左右缩进、行距、段间距、分栏和固定左右布局由模板安排。固定图表和文字块可以由模板或注册组件组合；当前正文没有通用可编辑双栏容器。
+
+## 区域、数据与原生编辑
 
 ### 最小 React 接入
 
@@ -96,7 +121,7 @@ export function Body({
 
 宿主校验另一份完整草稿后，传入其区域 JSON 并更新 `documentKey`。换文档、模板修订或重新加载同一保存槽都使用新 key 挂载，并清除旧候选与定位；这样不会沿用被替换草稿的 history。正常编辑、保存快照或更新业务数据时保持 key，避免重建正在使用的 Editor。初始准入失败没有创建 Editor；修正初始 JSON 后，也需提供新 key 重试。
 
-多个区域在 `config.regions` 中分别声明。为每个区域挂载一个 `TypstRegionEditor`，使用稳定的 `${documentKey}:${regionId}` 作为 React key，并在外层容器用 `hidden` 切换可见区域；不要只渲染当前区域再反复卸载。每个区域保留自己的 Editor/history，`onChange` 按 `regionId` 保存对应 JSON；卸载组件会释放 Editor。
+多个区域在 `config.regions` 中分别声明。为每个区域挂载一个 `TypstRegionEditor`，使用稳定的 `${documentKey}:${regionId}` 作为 React key，并在外层容器用 `hidden` 切换可见区域；不要只渲染当前区域再反复卸载。每个区域保留自己的 Editor/history，`onChange` 按 `regionId` 保存对应 JSON；卸载组件会释放 Editor。需要跨区域 `@` 补全时，将当前完整区域集合传入 `regions={draft.regions}`；组件以当前原生 Editor 的内容覆盖同名区域快照，避免自己的未保存修改落后于候选列表。未提供 `regions` 时只列出当前区域的对象。
 
 ### 业务数据与自定义控件
 
@@ -124,7 +149,7 @@ const extraCommands: TypstSlashCommand[] = [
 
 已有界面可直接组合 `createTypstExtensions` / `createTypstReactExtensions` 与官方 `Editor`、`useEditor`、`EditorContent`，自行处理原始输入准入。
 
-`createEditorExtensions()` 只组合官方 Tiptap 扩展，可直接用于普通 `Editor`。`createTypstExtensions(config)` 在这组能力上加入 `DataField` 与宿主的 `config.extensions`；`createTypstReactExtensions` 为字段及已安装的模板组件、源码块提供 NodeView。表格样式、模板组件和源码块均需分别显式安装。
+`createEditorExtensions()` 保留基础官方 Tiptap 扩展组合，可直接用于普通 `Editor`。`createTypstExtensions(config)` 加入数据字段、图表及题注、官方 LaTeX 数学节点、结构化引用和宿主的 `config.extensions`；`createTypstReactExtensions` 提供相应 NodeView。表格样式、模板组件和源码块仍分别显式安装，不因支持图题或公式而开放任意源码。
 
 这一层沿用官方 Tiptap `Editor`、commands 和扩展，不要求宿主学习另一套编辑协议。原生接入方式可对照 [Tiptap React](https://tiptap.dev/docs/editor/getting-started/install/react)，自定义持久化节点仍须满足本页的[业务节点与输出](#业务节点与输出)契约。
 
@@ -153,9 +178,63 @@ const extraCommands: TypstSlashCommand[] = [
 | `color`           | 十六进制 3/4/6/8 位，或整数 RGB 通道的 `rgb()` / `rgba()`                                                                                         | `text(fill: ...)`      |
 | `backgroundColor` | 同上，支持 alpha                                                                                                                                  | `highlight(fill: ...)` |
 
-`null` 表示继承。区域的 `marks` 显式允许 `textStyle` 才开放这些排版设置；未声明 `marks` 时与其他内置 Mark 一样可用；只读和输入法期间说明禁用原因。无效值、相对字号、CSS 变量和未知样式均明确拒绝。HTML 的受控 `span style` 可以保留四项格式；导入沿用浏览器 CSSOM 的等价表示，例如 `rgb()` 色值和字体外层引号，已保存的原生 JSON 不因此改写。Markdown 不承载它们，导出返回 `lossless: false` 和格式损失诊断，不能用输出覆盖原生 JSON。Markdown 候选覆盖带排版格式的区域也会被复杂内容检查阻止。
+`null` 表示继承。区域的 `marks` 显式允许 `textStyle` 才开放这些排版设置；未声明 `marks` 时与其他内置 Mark 一样可用；只读和输入法期间说明禁用原因。无效值、相对字号、CSS 变量和未知样式均明确拒绝。HTML 的受控 `span style` 可以保留四项格式；导入沿用浏览器 CSSOM 的等价表示，例如 `rgb()` 色值和字体外层引号，已保存的原生 JSON 不因此改写。普通 Markdown 不承载它们，导出返回 `lossless: false` 和格式损失诊断，候选不能有损覆盖原生 JSON。供 agent 编辑时使用下文的 [`format: 'agent'`](#agent-markdown) 保留这些格式。
 
-段落对齐复用官方 [TextAlign](https://tiptap.dev/docs/editor/extensions/functionality/textalign)，作用于 `paragraph` 和 `heading` 的 `attrs.textAlign`，支持 `left`、`center`、`right`、`justify`；`null` 或缺省继承模板。选择“模板对齐”清除覆盖，原生 `setTextAlign` / `unsetTextAlign` 与 `Ctrl/⌘+Shift+L/E/R/J` 快捷键仍可用。JSON、HTML 和 Typst/PDF 保留对齐；显式左、中、右对齐在该段关闭模板的两端对齐，清除后恢复模板规则。HTML 接受 `<p>`、`<h1>` 至 `<h6>` 上单个 `style="text-align: center"` 形式的声明，值限上述四项；不接受额外 CSS、重复声明、`!important` 或 `start/end/inherit`。Markdown 无法承载显式对齐，导出返回 `lossless: false` 并在 `attrs.textAlign` 给出诊断；候选不能有损替换该范围，其他可无损往返的块仍可独立修改。
+段落对齐复用官方 [TextAlign](https://tiptap.dev/docs/editor/extensions/functionality/textalign)，作用于 `paragraph` 和 `heading` 的 `attrs.textAlign`，支持 `left`、`center`、`right`、`justify`；`null` 或缺省继承模板。选择“模板对齐”清除覆盖，原生 `setTextAlign` / `unsetTextAlign` 与 `Ctrl/⌘+Shift+L/E/R/J` 快捷键仍可用。JSON、HTML 和 Typst/PDF 保留对齐；显式左、中、右对齐在该段关闭模板的两端对齐，清除后恢复模板规则。HTML 接受 `<p>`、`<h1>` 至 `<h6>` 上单个 `style="text-align: center"` 形式的声明，值限上述四项；不接受额外 CSS、重复声明、`!important` 或 `start/end/inherit`。普通 Markdown 无法承载显式对齐，导出返回 `lossless: false` 并在 `attrs.textAlign` 给出诊断；候选不能有损替换该范围。Agent Markdown 通过 `:::attrs` 保留对齐，复杂节点再使用局部原生表示。
+
+## 图表、公式与交叉引用
+
+### 题注、label 与对象身份
+
+图片、表格和已安装的模板组件/源码块都可以添加题注。选中未包装的对象，在工具条点击“添加图题”或“添加表题”；正文保存一个 `figure`，其中依次包含原对象和 `figureCaption`。表格仍使用原生 TableKit 编辑，题注是可直接编辑的富文本，与对象一起移动、复制和删除，不是旁边恰好相邻的独立段落。
+
+在题注末尾按 Enter 进入图表后的正文段落；若已有紧邻的段落则直接进入，否则插入一个新段落，可单次撤销。Shift+Enter 仍在题注内换行。
+
+| 信息    | 保存位置与用途                                                       |
+| ------- | -------------------------------------------------------------------- |
+| 题注    | `figureCaption` 的行内内容，说明图表；可以有基础格式、字段或行内公式 |
+| `label` | 图表或独立公式的可编辑标签，如 `fig:revenue`；交给 Typst 生成标签    |
+| `id`    | 对象的稳定身份；结构化引用保存这个值，不随题注或 label 改名          |
+| 编号    | 不保存到正文；由 Typst 按实际文档顺序和模板规则计算                  |
+
+图表设置中单独编辑“引用 label”，点击“应用 label”提交；“取消修改”或输入框内的 Escape 恢复原 label，不改正文和撤销历史。独立公式在公式编辑框中编辑 label。label 以字母或数字开头，支持中文等 Unicode 字母，后续可含字母、数字、组合标记、冒号、点、下划线或连字符，最长 128 个字符；整份区域集合内不能重复。id 由编辑命令生成；通过 agent 新建对象时需提供唯一 id。原始 JSON 校验不自动补写或改名修复冲突。
+
+图表和独立公式可以没有 label，此时输出不编号，也不能成为结构化引用目标。设置 label 时必须有稳定 id。清空已有 label 或删除对象后，引用节点保留，编辑器显示目标缺失；生成器返回 `INVALID_REFERENCE`，不会把坏引用静默转换成文字。修复目标、重新设置 label 或删除不再需要的引用后继续生成。
+
+改题注和 label 不改变 id，因此正文中的结构化引用继续指向同一对象。移动保留身份；复制分配新 id 与 label，复制子树内同时包含的引用随复制对象重绑定。同一界面会话内剪切后首次粘贴会在原对象确已移除、目标允许该内容且无身份冲突时保留身份；再次粘贴按复制处理。**模板或原生源码中手写的 `@旧label` 不属于这套结构化引用，修改 label 后需显式更新这些源码。**
+
+底层命令为 `insertTypstFigure({ body, caption?, label? })`、`wrapTypstFigure(position, caption?)`、`duplicateTypstFigure(position)` 和 `insertTypstReference(targetId)`；题注内容和属性修改仍使用原生 Tiptap transaction。所有输入必须满足当前 schema、区域准入和属性校验。
+
+### LaTeX 公式
+
+公式直接保存 LaTeX 源码，复用官方 [Tiptap Mathematics](https://tiptap.dev/docs/editor/extensions/nodes/mathematics) 的 `inlineMath` / `blockMath` 节点和命令。通过“插入”或 `/` 选择行内、独立公式；点击公式打开源码编辑框，“应用公式”提交一次可撤销修改。独立公式另有 id / label，行内公式没有编号和引用身份。
+
+编辑器用 KaTeX 显示，Typst 输出调用固定的 [MiTeX 0.2.7](https://typst.app/universe/package/mitex/)。同一份 LaTeX 贯穿 JSON、Markdown 和编译，不做 LaTeX 与 Typst 数学语法的双向改写。KaTeX 与 MiTeX 的命令和宏支持并不完全相同：编辑器预览错误与最终编译错误分别展示，公式源码保留供修复；成功在其中一端显示不等于另一端已验证。
+
+包含公式时，生成结果附带 `_editor/mitex/` 的固定运行时、许可和声明。它是现有 `templateFiles` 内的文本资源，WASM 通过 JSON 字节数组加载；不依赖部署机器的 MiTeX 包缓存，不在编译时联网下载，也不要求异步初始化 JavaScript 转换器。公式资源合计约 0.82 MiB，会计入宿主模板资源预算。浏览器 WASM 编译仍需宿主显式加载合适的数学字体，模板选择其实际家族名；native 的字体契约见 [Typst](./typst.md)。
+
+### 输入 `@` 插入引用
+
+在正文或题注中输入 `@`，使用官方 [Suggestion](https://tiptap.dev/docs/editor/api/utilities/suggestion) 补全。候选按 label、题注/公式源码、类型和区域搜索；上下键选择、Enter 插入、Escape 关闭。节点保存 `{ type: 'reference', attrs: { target: '稳定id' } }`。编辑器显示当前 `@label`，不猜测最终“图 2”“式 (3)”编号。
+
+跨区域补全需要 `TypstRegionEditor.regions` 提供整份报告的当前 JSON。独立宿主可用 `collectTypstReferenceTargets(regions, config?)` 取得 `{ id, label, kind, regionId, title, position }`；输入应先准入，`position` 是该区域的原生位置，不是跨文件全局坐标。只校验单一区域不能判断另一份文件的目标是否存在；`generateTypstRegions` 针对完整集合解析引用并检查重复 id / label 和缺失目标。
+
+### 由模板统一排版
+
+生成器将图表映射成 Typst `figure`，表格使用 `kind: table`；独立公式使用 MiTeX 生成的 `math.equation`，引用解析成目标当前 label。模板直接使用 Typst 的规则，例如：
+
+```typst
+#set math.equation(numbering: "(1)")
+#show figure.where(kind: table): set figure(supplement: [表])
+#show figure.where(kind: table): set figure.caption(position: top)
+#show figure.where(kind: table): set block(breakable: true)
+#show figure.where(kind: image): set figure(supplement: [图])
+
+#include "/_editor/regions/analysis.typ"
+#include "/_editor/regions/actions.typ"
+```
+
+带题注的长表需要上例的 `block(breakable: true)` 规则才能跨页；表格内容与重复表头仍由 Typst/TableKit 结构决定，不因添加题注而拆成多个正文对象。公式默认是否编号仍由模板决定；需要常规公式引用时，应开启 `math.equation` 编号。题注位置、图表和公式的前缀、字体、间距及最终编号属于模板。固定在模板中的图表也可直接使用 Typst `figure` 和标签，但目前编辑器的 `@` 候选只索引正文 JSON 对象，不解析任意模板源码中的标签。[Typst Figure](https://typst.app/docs/reference/model/figure/)、[Equation](https://typst.app/docs/reference/math/equation/) 和 [Reference](https://typst.app/docs/reference/model/ref/) 维护原生排版规则。
 
 ## 可选表格样式
 
@@ -270,7 +349,7 @@ if (!generated.ok) {
 	showIssues(generated.issues)
 	return
 }
-// templateFiles 是相对模板树的 Typst 文本，inputFiles 是 /inputs/ 内的 JSON 文本。
+// templateFiles 是相对模板树的生成文本资源（含所需公式运行时）；inputFiles 是 /inputs/ 内的 JSON 文本。
 await writePrivateTemplateFiles(generated.value.templateFiles)
 // hostInputs 是本次完整 createFiles/默认数据/资源文件表。
 if (
@@ -305,25 +384,118 @@ serializer 使用 `context.children(node)` 复用子节点校验和序列化，`
 
 ## Markdown、HTML 与候选
 
-`parseTypstMarkdown({ markdown, regionId, config, data? })` 使用官方 MarkdownManager/GFM；Node 无 DOM 与浏览器使用相同 tokenizer。字段仅接受完整的受控标签：
+`parseTypstMarkdown({ markdown, regionId, config, data?, format? })` 使用官方 MarkdownManager/GFM；Node 无 DOM 与浏览器使用相同 tokenizer。`format` 默认是 `'markdown'`，普通格式的字段仅接受完整的受控标签：
 
 ```html
 <data-field path='["customer","name"]'></data-field>
 ```
 
-代码块或行内代码中的标签保持文字；非法属性或字段路径明确失败。Markdown 是转换输入，不能替代原生 JSON。`exportTypstMarkdown` 成功值含 `{ markdown, lossless, issues }`；合并表格、多段单元格、显式表格样式、模板组件、源码块及缺少可往返 Markdown 映射的业务节点等可得到可读文字，但 `lossless: false` 时不能用来覆盖原区域。模板组件导出为说明文字，源码块导出为普通 `typst` 代码围栏，重新导入不会恢复可执行节点。原生 JSON 保存完整表格属性；`typstTableStyle: null` 本身不构成 Markdown 损失，重新导入后仍使用宿主配置的默认样式，其他复杂结构仍需检查。
+代码块或行内代码中的标签保持文字；非法属性或字段路径明确失败。Markdown 是转换输入，不能替代原生 JSON。`exportTypstMarkdown` 成功值含 `{ markdown, lossless, issues }`；合并表格、多段单元格、显式表格样式、带题注/标识的图表、结构化引用、模板组件、源码块及缺少可往返 Markdown 映射的业务节点等可得到可读文字，但 `lossless: false` 时不能用来覆盖原区域。模板组件导出为说明文字，源码块导出为普通 `typst` 代码围栏，重新导入不会恢复可执行节点。原生 JSON 保存完整表格属性；`typstTableStyle: null` 本身不构成 Markdown 损失，重新导入后仍使用宿主配置的默认样式，其他复杂结构仍需检查。
+
+### Agent Markdown
+
+导出、导入与候选都指定 `format: 'agent'`，用于让 coding agent 编辑富文本。粗体、斜体、标题、列表、链接及普通表格继续复用 Tiptap 的 Markdown 规则；四项文字排版和字段绑定增加以下非 HTML 标记：
+
+```md
+# 分析
+
+[textStyle {"fontFamily":"Noto Serif CJK SC","fontSize":"12pt","color":"#dc2626","backgroundColor":"#fff2cc"}]**重点**与*解释*[/textStyle]
+
+客户：[dataField {"path":["customer","name"]}]
+```
+
+标记属性是 JSON 对象，值规则与原生 JSON 相同。字段保存路径，实际值仍由当前 data 决定。样式可以包住字段；不支持嵌套同名 `textStyle`，需要变换样式时使用相邻标记。行内代码、代码围栏和反斜杠转义的标记保持字面量；不完整标记、非法 JSON 和不支持的属性会返回 issues。
+
+段落对齐和简单表格的样式使用 `:::attrs` 给**一个** Markdown 块补充原生属性，正文仍然直接可编辑：
+
+```md
+:::attrs {"textAlign":"center"}
+这段文字居中。
+:::
+
+:::attrs {"typstTableStyle":"three-line"}
+| 项目 | 金额 |
+| ---- | ---- |
+| 服务 | 120  |
+:::
+```
+
+属性名和值仍由该节点的 schema 与宿主配置决定。导出只补充标准语法未承载的属性；例如居中标题仍可直接把 `##` 改为 `###`。属性块和原生节点块独占 Markdown 块，与前后段落用空行分隔；嵌套属性块使用更长的外层冒号围栏。字体空白边界、带格式的字段、下划线或无法用普通 Markdown 精确表示的局部 Mark 组合，可使用 `[marks 原生Mark数组]内容[/marks]`；最小行内原生节点表示为 `[tiptap 原生节点JSON]`。这些表示由导出器按需要选择，普通加粗和斜体仍优先使用 `**` / `*`。
+
+图表使用专用包装，题注保持可读的行内 Markdown；嵌套围栏的外层比内层长。以下表格、题注和引用属于同一份正文：
+
+```md
+::::figure {"id":"quarterly-table","label":"tbl:quarterly"}
+| 项目 | 金额 |
+| ---- | ---- |
+| 服务 | 120  |
+
+:::caption
+季度收入，单位：**万元**。
+:::
+::::
+
+详细数据见 [ref {"target":"quarterly-table"}]。
+```
+
+公式使用官方 `$...$`、`$$...$$` LaTeX Markdown 语法。独立公式的 id / label 放在单块属性包装中：
+
+```md
+增长率为 $g = (v_1-v_0)/v_0$。
+
+:::attrs {"id":"growth-equation","label":"eq:growth"}
+$$
+g = \frac{v_1-v_0}{v_0}
+$$
+:::
+
+计算方法见 [ref {"target":"growth-equation"}]。
+```
+
+id 是引用关系的依据，label 是可改的 Typst 名称；编辑现有对象时保持 id。新建图表或独立公式时，为它分配整份报告内唯一的 id / label，并让 `[ref]` 使用 id。题注和 label 分别编辑，不把“图 3”写死到题注。复杂合并表格、无法用行内语法精确保留的题注等仍可能使用最小原生子树表示；不要清洗掉导出器保留的标记。普通 Markdown 没有这些图表身份与引用约定，仍需检查 `lossless`，不能因为公式本身有 `$` 语法就宣称整份文档无损。
+
+模板实例、可执行源码、合并单元格及其他不能通过上述语法往返的子树，使用完整原生节点块。例如以下组件仍引用宿主安装的 `summary` 模板：
+
+```md
+:::tiptap
+{"type":"templateBlock","attrs":{"id":"summary-1","template":"summary","props":{"title":"结论"},"dataPath":["report"]}}
+:::
+```
+
+Agent 可以直接修改 JSON 参数；模板定义、区域权限、属性、实例 ID 唯一性和 serializer 仍按现有规则校验。这不是任意节点注册入口。普通 `typst` 代码围栏继续表示代码展示；只有显式安装并允许的 `typstSource` 原生节点具有源码语义。
+
+导出递归保留能用标准规则表达的内容，只对无法保留的局部使用原生标记；一个带格式的段落不会使整篇文档退回 JSON。成功返回前会实际回读并比较原生文档，`lossless: true` 表示在同一 config 下保留节点、Mark 和属性语义，不承诺保留原 Markdown 拼写或 JSON 键顺序。格式仍是原生 JSON 的编辑投影，不能用普通 Markdown 工具清洗后假定无损。
+
+```ts no-twoslash
+const source = exportTypstMarkdown({ document, regionId, config, data, format: 'agent' })
+if (!source.ok) throw new Error(JSON.stringify(source.issues))
+// 将 source.value.markdown 交给 agent；接纳返回的 editedMarkdown 前准备候选。
+const prepared = prepareTypstCandidate({
+	candidate: { regionId, baseRevision, markdown: editedMarkdown, format: 'agent' },
+	currentRevision,
+	document,
+	config,
+	data,
+	canEdit,
+})
+if (!prepared.ok) throw new Error(JSON.stringify(prepared.issues))
+```
+
+删除样式标记或原生块会形成相应的删除候选，不会隐式补回旧内容；接纳前审阅修改。编辑器的 `getMarkdown()` 与默认剪贴板入口仍使用普通 Markdown；需要保真投影时调用上述 SDK 入口。
+
+### HTML 与候选接纳
 
 `parseTypstHtml` 只在浏览器使用 DOMParser，先检查原始标签、属性、业务规则，再走官方 schema，拒绝会被浏览器或 ProseMirror 静默丢弃的内容。`parseTypstClipboard` 根据显式 HTML/plain text 输入选择解析路径；Markdown 导入用 `asMarkdown: true`。默认 React 组件拦截富文本粘贴并报告失败；代码块内保留原生粘贴语义。
 
-安装表格样式扩展时，`getHTML()` 的 `data-typst-table-style` 保留显式选择或继承状态，受控 HTML 导入按同一配置校验后恢复。HTML 仅承诺属性往返，不是最终分页排版交付；复杂表头分隔线和无左右框的边界依赖编辑器 decoration，静态 HTML 不带这些标记。模板组件和源码块未声明 HTML 导入映射，不能通过复制 HTML 恢复；使用 JSON 保存。最终表格外观及跨页表头以 Typst 预览/PDF 为准。
+安装表格样式扩展时，`getHTML()` 的 `data-typst-table-style` 保留显式选择或继承状态，受控 HTML 导入按同一配置校验后恢复。HTML 仅承诺属性往返，不是最终分页排版交付；复杂表头分隔线和无左右框的边界依赖编辑器 decoration，静态 HTML 不带这些标记。图片/表格的 figure 包装、富文本题注、LaTeX 数学节点和 reference 有受控 HTML 映射；原始属性仍在官方 parser 规范化前校验。模板组件和源码块未声明 HTML 导入映射，不能通过复制 HTML 恢复；包含这类 body 的 figure 同样需要 JSON/Agent Markdown 保存。最终表格外观及跨页表头以 Typst 预览/PDF 为准。
 
-从原生选区捕获目标使用 `captureTypstCandidateTarget({ selection: editor.state.selection, regionId, baseRevision, scope: 'blocks' })`，先检查 `ok`。`scope: 'region'` 不产生 range；`blocks` 将字符选区扩展为完整顶层块，非空选区的结束边界排他；折叠光标在块边界选择后一个块，在文档结尾选择最后一个块。嵌套正文取外层顶层块，表格的单元格选区包含所属整张表，原子节点选区取该节点，AllSelection 包含全部块。没有可捕获块时返回 `INVALID_CANDIDATE_RANGE`。捕获不修改正文和选区，区域、修订与范围在同一动作固定；UI 应显示扩展后的范围，不能把几个字符当作整个区域的授权。
+从原生选区捕获目标使用 `captureTypstCandidateTarget({ selection: editor.state.selection, regionId, baseRevision, scope: 'blocks' })`，先检查 `ok`。`scope: 'region'` 不产生 range；`blocks` 将字符选区扩展为最近共同容器中的完整块，非空选区的结束边界排他；折叠光标在块边界选择后一个块，在文档结尾选择最后一个块。嵌套正文可直接选中列表项、提示块或单个单元格内的段落；跨多个单元格的选区扩展到整张表，原子节点选区取该节点，AllSelection 包含全部块。没有可捕获块时返回 `INVALID_CANDIDATE_RANGE`。提取该范围的原文时使用 `editor.state.doc.copy(editor.state.doc.slice(from, to).content).toJSON()`，避免把单元格等外围容器一起导出。捕获不修改正文和选区，区域、修订与范围在同一动作固定；UI 应显示扩展后的范围，不能把几个字符当作整个区域的授权。
 
-候选形状为 `{ regionId, baseRevision, markdown, range? }`。省略 `range` 替换整个区域；`range: { from, to }` 指定该修订下非空、完整的顶层块范围，`to` 不包含在内。不能把段落内的字符偏移直接作为范围；不完整边界返回 `INVALID_CANDIDATE_RANGE`。
+候选形状为 `{ regionId, baseRevision, markdown, format?, range? }`。`format` 必须与交给 agent 的导出格式一致。省略 `range` 替换整个区域；`range: { from, to }` 指定该修订下同一父节点内非空、完整的块范围，`to` 不包含在内。不能把段落内的字符偏移或独立的表格行/单元格结构直接作为范围；跨父节点或不完整边界返回 `INVALID_CANDIDATE_RANGE`。
 
-宿主固定目标后调用 `prepareTypstCandidate` 查看原文、目标范围与候选的对照，提供当前 JSON、config、data、currentRevision 和 `canEdit(regionId)`；接纳时再调用 `applyTypstCandidate`，其中 `currentRevision` 与 `data` 用函数读取最新事实，权限也再次检查。输入文字变化后旧准备结果失效，接纳绑定已展示且准备成功的内容；修改文字不更新已固定的 baseRevision。两次都要求严格的修订相等，不自动把旧范围迁移到新文档。只检查目标范围能否无损往返 Markdown，再校验合并后的完整区域；外围的图表、源码块、复杂表格及格式保持原节点。目标本身含不能无损转换的内容时返回 `COMPLEX_CONTENT`，不能借局部范围删除组件。
+宿主固定目标后调用 `prepareTypstCandidate` 查看原文、目标范围与候选的对照，提供当前 JSON、config、data、currentRevision 和 `canEdit(regionId)`；接纳时再调用 `applyTypstCandidate`，其中 `currentRevision` 与 `data` 用函数读取最新事实，权限也再次检查。输入文字变化后旧准备结果失效，接纳绑定已展示且准备成功的内容；修改文字不更新已固定的 baseRevision。两次都要求严格的修订相等，不自动把旧范围迁移到新文档。普通格式检查目标范围能否无损往返；agent 格式直接校验候选的完整语义。两者都校验合并后的完整区域；外围的图表、源码块、复杂表格及格式保持原节点。普通 Markdown 目标含不能无损转换的内容时返回 `COMPLEX_CONTENT`；Agent Markdown 可通过原生块编辑这些内容。
 
-例如让 LLM 只改图表旁边的分析段落，可把该段落的完整顶层范围与当前修订交给候选接口。准备结果的 `document` 仅包含替换内容，提交成功只产生一次原生 transaction，一次 undo 可恢复；失败保留原文。SDK 不调用模型，不把流式 token 写入正式正文；组件参数、顺序和删除仍通过原生结构操作完成。
+例如让 LLM 只改图表旁边的分析段落，可把该段落的完整范围与当前修订交给候选接口。准备结果的 `document` 仅包含替换内容，`mergedDocument` 是验证后将得到的整个区域 JSON。它不能绕过提交时的最新版本、权限和文档校验。提交成功只产生一次原生 transaction，一次 undo 可恢复；失败保留原文。SDK 不调用模型，不把流式 token 写入正式正文；候选与界面结构操作最终都提交原生 transaction。
 
 ## 预览与定位
 
@@ -356,10 +528,12 @@ if (source) view.revealSource(source)
 
 ## 可运行消费者
 
+[Examples](/examples) 在纯浏览器内复用共享区域编辑器、生成器与真实 Pluxel Host，通过 Typst WASM 展示短文档编辑和块级双向定位；编译不经过服务端。WASM 与原生导航精度的区别见[浏览器编译](./typst.md#浏览器编译)。
+
 [Report Template Studio](https://github.com/PluxelJS/pluxel/blob/main/projects/report-template-studio/README.md)使用上述入口实现正常源码预览与区域报表；Monaco 和双 worker 留在应用。其“客户服务报告”包含固定模板、两个区域、客户切换、合并表格、提示块与确定性 Markdown 候选。独立 consumer 的运行和构建制品验收见 [consumer 测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/README.md)。
 
-Studio 与独立 consumer 默认显式安装 `TypstTableStyle`。Studio 同名 `.editor.json` 的顶层可选 `table` 对象使用相同的 `defaultStyle`、`allowedStyles` 选项，例如 `"table": { "defaultStyle": "three-line", "allowedStyles": [] }` 锁定三线表默认外观；省略 `table` 保持跟随原 Typst 模板并允许四种逐表覆盖。Studio 的 `studioEditorConfig` 将这份宿主配置转换为扩展选项，保存的草稿不能覆盖它。
+Studio 与独立 consumer 显式安装 `TypstTableStyle`。Studio 同名 `.editor.json` 的可选 `table` 配置复用[已有表格样式选项](#可选表格样式)；省略时跟随原 Typst 模板，仍可逐表选择外观。不需要为基本正文编辑增加额外样式策略。
 
-独立 consumer 的图表报告显式安装模板组件与源码块：“渠道收入与目标”整体位于正文顺序中，后续行动区提供源码块；外层模板负责页面和固定标题。页面左侧以“正文 / 数据 / 模板 / AI 候选”切换工作区，桌面右侧持续显示预览；切换标签保持 Editor 与撤销历史，预览跳转打开对应工作区。AI 候选选择“当前选中块”后只替换完整选中段落，方便验证 LLM 的 Markdown 修改与图表共存。
+独立 consumer 的图表报告显式安装模板组件与源码块：“渠道收入与目标”整体位于正文顺序中，后续行动区提供源码块；外层模板负责页面和固定标题。页面左侧以“正文 / 数据”切换工作区，右侧以“Typst 预览 / 原始 Typst / Markdown”切换视图；切换标签保持 Editor 与撤销历史，预览跳转打开对应正文或源码标签。Markdown 选择“当前选中块”并点击“编辑这份 Markdown”后，只替换完整选中段落，方便验证 LLM 的 Markdown 修改与图表共存。
 
 窄屏用“编辑 / 预览”切换，隐藏面板仍保留 Editor/history 和预览实例。“保存”写入本浏览器的单一槽；保存状态与编译/显示修订独立，失败保留未保存事实。替换示例或重开前检查正文、数据与未应用源码/参数输入；取消保留当前 Editor。刷新/关闭使用浏览器 `beforeunload`，提示依赖用户激活与平台支持，不能保证浏览器崩溃或系统终止时保留尚未保存的内容。

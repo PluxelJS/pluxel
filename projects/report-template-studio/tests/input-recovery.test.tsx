@@ -25,6 +25,7 @@ vi.mock('../src/renderer/api', () => ({
 	api: {
 		describeDocument: vi.fn(),
 		getInput: vi.fn(),
+		attachBodyEditor: vi.fn(async () => ({ close: async () => {} })),
 		setInput: vi.fn(),
 		compile: vi.fn(),
 		getPreview: vi.fn(),
@@ -327,7 +328,7 @@ it('loads the chosen saved draft through the UI and replaces editors, candidates
 	expect((screen.getByRole('textbox', { name: '标题' }) as HTMLInputElement).value).toBe('远端数据')
 })
 
-it('edits only selected text blocks beside components and navigates a first atom without losing its position', async () => {
+it('round-trips styled candidate blocks beside components and navigates a first atom without losing its position', async () => {
 	currentDescription = {
 		...description,
 		templates: [
@@ -342,7 +343,16 @@ it('edits only selected text blocks beside components and navigates a first atom
 						type: 'templateBlock',
 						attrs: { id: 'chart-1', template: 'chart', props: { title: '渠道收入' }, dataPath: [] },
 					},
-					{ type: 'paragraph', content: [{ type: 'text', text: '需要改写的分析' }] },
+					{
+						type: 'paragraph',
+						content: [
+							{
+								type: 'text',
+								text: '需要改写的分析',
+								marks: [{ type: 'textStyle', attrs: { color: '#dc2626', fontSize: '12pt' } }],
+							},
+						],
+					},
 					{ type: 'typstSource', attrs: { id: 'note-1', source: '#text(size: 8pt)[保留口径]' } },
 				],
 			},
@@ -365,12 +375,26 @@ it('edits only selected text blocks beside components and navigates a first atom
 		target: { value: 'selection' },
 	})
 	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
+	expect(
+		(screen.getByRole('textbox', { name: 'Markdown 候选' }) as HTMLTextAreaElement).value,
+	).toContain('"fontSize":"12pt"')
 	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
 		target: { value: '不可接纳的旧文字' },
 	})
+	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
+	expect(
+		(screen.getByRole('textbox', { name: 'Markdown 候选' }) as HTMLTextAreaElement).value,
+	).toBe('不可接纳的旧文字')
+	fireEvent.click(screen.getByRole('button', { name: '用原文替换候选' }))
+	expect(
+		(screen.getByRole('textbox', { name: 'Markdown 候选' }) as HTMLTextAreaElement).value,
+	).toContain('需要改写的分析')
 	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
 	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
-		target: { value: '**新的分析**：收入已达标。' },
+		target: {
+			value:
+				'[textStyle {"color":"#16a34a","fontSize":"14pt","backgroundColor":"#fff2cc"}]**新的分析**[/textStyle]：收入已达标。',
+		},
 	})
 	expect((screen.getByRole('button', { name: '接纳候选' }) as HTMLButtonElement).disabled).toBe(
 		true,
@@ -379,6 +403,19 @@ it('edits only selected text blocks beside components and navigates a first atom
 	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
 	fireEvent.click(screen.getByRole('button', { name: '接纳候选' }))
 	await waitFor(() => expect(editor.state.doc.child(1).textContent).toBe('新的分析：收入已达标。'))
+	expect(editor.getJSON().content![1]!.content![0]!.marks).toEqual(
+		expect.arrayContaining([
+			{ type: 'bold' },
+			expect.objectContaining({
+				type: 'textStyle',
+				attrs: expect.objectContaining({
+					color: '#16a34a',
+					fontSize: '14pt',
+					backgroundColor: '#fff2cc',
+				}),
+			}),
+		]),
+	)
 	expect(editor.getJSON().content![0]).toEqual(original.content![0])
 	expect(editor.getJSON().content![2]).toEqual(original.content![2])
 	act(() => {

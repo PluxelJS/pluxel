@@ -617,6 +617,9 @@ catalogs:
     '@tiptap/extension-image':
       specifier: 3.32.0
       version: 3.32.0
+    '@tiptap/extension-mathematics':
+      specifier: 3.32.0
+      version: 3.32.0
     '@tiptap/extension-node-range':
       specifier: 3.32.0
       version: 3.32.0
@@ -644,6 +647,9 @@ catalogs:
     '@tiptap/starter-kit':
       specifier: 3.32.0
       version: 3.32.0
+    '@tiptap/suggestion':
+      specifier: 3.32.0
+      version: 3.32.0
     '@tiptap/y-tiptap':
       specifier: 3.0.7
       version: 3.0.7
@@ -656,6 +662,9 @@ catalogs:
     flexlayout-react:
       specifier: 0.11.1
       version: 0.11.1
+    katex:
+      specifier: 0.16.22
+      version: 0.16.22
     marked:
       specifier: 17.0.6
       version: 17.0.6
@@ -753,10 +762,13 @@ catalogs:
       specifier: ^0.7.0
       version: 0.7.0
     '@myriaddreamin/typst-ts-renderer':
-      specifier: ^0.7.0
+      specifier: 0.7.0
+      version: 0.7.0
+    '@myriaddreamin/typst-ts-web-compiler':
+      specifier: 0.7.0
       version: 0.7.0
     '@myriaddreamin/typst.ts':
-      specifier: ^0.7.0
+      specifier: 0.7.0
       version: 0.7.0
     '@napi-rs/canvas':
       specifier: ^1.0.11
@@ -1042,6 +1054,9 @@ catalogs:
     '@types/jsdom':
       specifier: 30.0.0
       version: 30.0.0
+    '@types/katex':
+      specifier: 0.16.7
+      version: 0.16.7
     '@types/mdast':
       specifier: ^4.0.4
       version: 4.0.4
@@ -2603,9 +2618,15 @@ importers:
       '@myriaddreamin/typst-ts-node-compiler':
         specifier: catalog:prod
         version: 0.7.0
+      '@myriaddreamin/typst-ts-renderer':
+        specifier: catalog:prod
+        version: 0.7.0
+      '@myriaddreamin/typst-ts-web-compiler':
+        specifier: catalog:prod
+        version: 0.7.0
       '@myriaddreamin/typst.ts':
         specifier: catalog:prod
-        version: 0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)
+        version: 0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)(@myriaddreamin/typst-ts-web-compiler@0.7.0)
       marked:
         specifier: catalog:frontend
         version: 17.0.6
@@ -2613,9 +2634,6 @@ importers:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)
     devDependencies:
-      '@myriaddreamin/typst-ts-renderer':
-        specifier: catalog:prod
-        version: 0.7.0
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../../packages/cli
@@ -2658,6 +2676,9 @@ importers:
       '@tiptap/extension-image':
         specifier: catalog:frontend
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))
+      '@tiptap/extension-mathematics':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)(katex@0.16.22)
       '@tiptap/extension-node-range':
         specifier: catalog:frontend
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
@@ -2685,15 +2706,24 @@ importers:
       '@tiptap/starter-kit':
         specifier: catalog:frontend
         version: 3.32.0
+      '@tiptap/suggestion':
+        specifier: catalog:frontend
+        version: 3.32.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
       '@tiptap/y-tiptap':
         specifier: catalog:frontend
         version: 3.0.7(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
+      '@types/katex':
+        specifier: catalog:types
+        version: 0.16.7
       '@types/react':
         specifier: catalog:frontend
         version: 19.3.0
       '@types/react-dom':
         specifier: catalog:frontend
         version: 19.3.0(@types/react@19.3.0)
+      katex:
+        specifier: catalog:frontend
+        version: 0.16.22
       playwright:
         specifier: catalog:dev
         version: 1.64.1
@@ -3311,7 +3341,7 @@ importers:
         version: 0.7.0
       '@myriaddreamin/typst.ts':
         specifier: catalog:prod
-        version: 0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)
+        version: 0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)(@myriaddreamin/typst-ts-web-compiler@0.7.0)
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -3363,6 +3393,9 @@ importers:
       '@tiptap/extension-image':
         specifier: catalog:frontend
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))
+      '@tiptap/extension-mathematics':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)(katex@0.16.22)
       '@tiptap/extension-node-range':
         specifier: catalog:frontend
         version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
@@ -3390,6 +3423,9 @@ importers:
       '@tiptap/starter-kit':
         specifier: catalog:frontend
         version: 3.32.0
+      '@tiptap/suggestion':
+        specifier: catalog:frontend
+        version: 3.32.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
       '@tiptap/y-tiptap':
         specifier: catalog:frontend
         version: 3.0.7(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
@@ -3408,6 +3444,9 @@ importers:
       just-bash:
         specifier: catalog:prod
         version: 3.6.0(supports-color@8.1.1)
+      katex:
+        specifier: catalog:frontend
+        version: 0.16.22
       modern-monaco:
         specifier: catalog:prod
         version: 0.4.2(typescript@7.0.2)
@@ -5401,6 +5440,9 @@ packages:
 
   '@myriaddreamin/typst-ts-renderer@0.7.0':
     resolution: {integrity: sha512-3sXIGxZn9MufPrPn6251DeuLf2FIEILYNzY5lX0XOJmaIYqgvQ3qpfqkCjgQD+splBvt5R1N3BuuNFrZKsHhMw==}
+
+  '@myriaddreamin/typst-ts-web-compiler@0.7.0':
+    resolution: {integrity: sha512-nMwMcfOBy5pABPDuVM7/u8425SxhPUM+OJe6daqqgVOT3+neCTz4JKwx2L8XasfEHTNvd0cUI07LR9q5ADo7Gw==}
 
   '@myriaddreamin/typst.ts@0.7.0':
     resolution: {integrity: sha512-JtO5Td/1QesH1IBKAZtbayFNK8u2sl3iz18Y67uYqBEdcXiu3z+wpZcDDKlmVJvAcCgSjHTnuk6ZLfkYclrGGQ==}
@@ -8307,6 +8349,13 @@ packages:
       '@tiptap/core': 3.32.0
       '@tiptap/pm': 3.32.0
 
+  '@tiptap/extension-mathematics@3.32.0':
+    resolution: {integrity: sha512-8kgfYRKNF3hLbihaBUc4S7tda/URmzcviHEMU24rTr6AC7nKcUHsXvsQJiftvTFgL0/CCVA4PQ1U+NrN6IPyjQ==}
+    peerDependencies:
+      '@tiptap/core': 3.32.0
+      '@tiptap/pm': 3.32.0
+      katex: ^0.16.4 || ^0.17.0 || ^0.18.0
+
   '@tiptap/extension-node-range@3.32.0':
     resolution: {integrity: sha512-Btwa7aciucAJkOoX8Fig3g6p7zdbg6PPtplRW/idVcWdYqKgEQgTyMV1M91GN6yksxt6bU2YBmC4FgEqTMyGuw==}
     peerDependencies:
@@ -8382,6 +8431,13 @@ packages:
   '@tiptap/starter-kit@3.32.0':
     resolution: {integrity: sha512-aPYxaevci4PgMrTLsg+baiqI7M1ICd4V9H+zTTdrqs8OUZIbAvj/pNDuHU8uWZyKMu3Dh72t2D6ZdqRu/6aSWw==}
 
+  '@tiptap/suggestion@3.32.0':
+    resolution: {integrity: sha512-5PbouU06zaZ7n4uyYzeNN/jBFVmGsHZ6c56MvN7M33echERAhu1L1X71Up0U6GK/pJfyugX7WbluBehJDPQeSQ==}
+    peerDependencies:
+      '@floating-ui/dom': ^1.0.0
+      '@tiptap/core': 3.32.0
+      '@tiptap/pm': 3.32.0
+
   '@tiptap/y-tiptap@3.0.7':
     resolution: {integrity: sha512-3VG01F7i2JDghWsBZSBKi7ypMiN5UVVSyD18IwoXx7ilm0ZynrTS+XNpmgxfuiSBjdauWk7tUlP04xfM8Bw4Vw==}
     engines: {node: '>=16.0.0', npm: '>=8.0.0'}
@@ -8437,6 +8493,9 @@ packages:
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
+
+  '@types/katex@0.16.7':
+    resolution: {integrity: sha512-HMwFiRujE5PjrgwHQ25+bsLJgowjGjm5Z8FVSf0N6PwgJrwxH0QxzHYDcKsTfV3wva0vzrpqMTJS2jXPr5BMEQ==}
 
   '@types/mdast@4.0.4':
     resolution: {integrity: sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA==}
@@ -9380,6 +9439,10 @@ packages:
   commander@6.2.1:
     resolution: {integrity: sha512-U7VdrJFnJgo4xjrHpTzu0yrHPGImdsmD95ZlgYSEajAn2JKzDhDTPG9kBTefmObL2w/ngeZnilk+OV9CG3d7UA==}
     engines: {node: '>= 6'}
+
+  commander@8.3.0:
+    resolution: {integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==}
+    engines: {node: '>= 12'}
 
   commander@9.5.0:
     resolution: {integrity: sha512-KRs7WVDKg86PWiuAqhDrAQnTXZKraVcCc6vFdL14qrZ/DcWwuRo7VoiYXalXO7S5GKpqYiVEwCbgFDfxNHKJBQ==}
@@ -10553,6 +10616,10 @@ packages:
 
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
+
+  katex@0.16.22:
+    resolution: {integrity: sha512-XCHRdUw4lf3SKBaJe4EvgqIuWwkPSo9XoeO8GjQW94Bp7TWv9hNhzZjZ+OH9yf1UmLygb7DIT5GSFQiyt16zYg==}
+    hasBin: true
 
   koffi@2.16.3:
     resolution: {integrity: sha512-E9y1AsgYGlaxMhcZzHr8y96QF2U5XzA12GGVAfbWqIubTwPNMXQarfBzePNXHe0xtIEtNd6ifAv3GAKYGUeBAQ==}
@@ -14952,11 +15019,14 @@ snapshots:
 
   '@myriaddreamin/typst-ts-renderer@0.7.0': {}
 
-  '@myriaddreamin/typst.ts@0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)':
+  '@myriaddreamin/typst-ts-web-compiler@0.7.0': {}
+
+  '@myriaddreamin/typst.ts@0.7.0(@myriaddreamin/typst-ts-renderer@0.7.0)(@myriaddreamin/typst-ts-web-compiler@0.7.0)':
     dependencies:
       idb: 7.1.1
     optionalDependencies:
       '@myriaddreamin/typst-ts-renderer': 0.7.0
+      '@myriaddreamin/typst-ts-web-compiler': 0.7.0
 
   '@napi-rs/canvas-android-arm64@1.0.11':
     optional: true
@@ -17345,6 +17415,12 @@ snapshots:
       '@tiptap/core': 3.32.0(@tiptap/pm@3.32.0)
       '@tiptap/pm': 3.32.0
 
+  '@tiptap/extension-mathematics@3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)(katex@0.16.22)':
+    dependencies:
+      '@tiptap/core': 3.32.0(@tiptap/pm@3.32.0)
+      '@tiptap/pm': 3.32.0
+      katex: 0.16.22
+
   '@tiptap/extension-node-range@3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)':
     dependencies:
       '@tiptap/core': 3.32.0(@tiptap/pm@3.32.0)
@@ -17454,6 +17530,12 @@ snapshots:
       '@tiptap/extensions': 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
       '@tiptap/pm': 3.32.0
 
+  '@tiptap/suggestion@3.32.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)':
+    dependencies:
+      '@floating-ui/dom': 1.8.0
+      '@tiptap/core': 3.32.0(@tiptap/pm@3.32.0)
+      '@tiptap/pm': 3.32.0
+
   '@tiptap/y-tiptap@3.0.7(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.6)(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)':
     dependencies:
       lib0: 0.2.119
@@ -17518,6 +17600,8 @@ snapshots:
       undici-types: 8.9.0
 
   '@types/json-schema@7.0.15': {}
+
+  '@types/katex@0.16.7': {}
 
   '@types/mdast@4.0.4':
     dependencies:
@@ -18298,6 +18382,8 @@ snapshots:
   commander@2.20.3: {}
 
   commander@6.2.1: {}
+
+  commander@8.3.0: {}
 
   commander@9.5.0: {}
 
@@ -19514,6 +19600,10 @@ snapshots:
     dependencies:
       jwa: 2.0.1
       safe-buffer: 5.2.1
+
+  katex@0.16.22:
+    dependencies:
+      commander: 8.3.0
 
   koffi@2.16.3:
     optional: true

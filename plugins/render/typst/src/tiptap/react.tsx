@@ -1,10 +1,18 @@
 import { isTypstBlock, typstBlockPolicy } from './blocks'
 import { TypstBlockView } from './blocks-react'
+import {
+	TypstFigureView,
+	TypstMathView,
+	TypstReferenceView,
+	createReferenceSuggestion,
+} from './document-react'
 import '@tiptap/extension-text-style'
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Extension, type Editor, type Extensions, type JSONContent } from '@tiptap/core'
-import { Plugin } from '@tiptap/pm/state'
+import { NodeSelection, Plugin } from '@tiptap/pm/state'
 import { Slice } from '@tiptap/pm/model'
+import { dropPoint } from '@tiptap/pm/transform'
+import { copyTypstDocumentNode, isReferenceObject } from './document-nodes'
 import { closeHistory } from '@tiptap/pm/history'
 import { Selection } from '@tiptap/extensions/selection'
 import {
@@ -18,6 +26,7 @@ import {
 	createTypstExtensions,
 	DataField,
 	validateTypstRegions,
+	validateTypstRegion,
 	parseTypstClipboard,
 	fieldDisplay,
 	type TypstEditorConfig,
@@ -73,7 +82,13 @@ export function createTypstReactExtensions(config: TypstEditorConfig): Extension
 			? DataField.extend({ addNodeView: () => ReactNodeViewRenderer(TypstDataFieldView) })
 			: isTypstBlock(extension.name)
 				? extension.extend({ addNodeView: () => ReactNodeViewRenderer(TypstBlockView) })
-				: extension,
+				: extension.name === 'figure'
+					? extension.extend({ addNodeView: () => ReactNodeViewRenderer(TypstFigureView) })
+					: extension.name === 'blockMath' || extension.name === 'inlineMath'
+						? extension.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) })
+						: extension.name === 'reference'
+							? extension.extend({ addNodeView: () => ReactNodeViewRenderer(TypstReferenceView) })
+							: extension,
 	)
 }
 
@@ -84,6 +99,8 @@ export interface TypstRegionEditorProps {
 	 * load a full draft; changing regionId or extensions also initializes a new Editor.
 	 * onChange reports snapshots for the host to save. */
 	content: JSONContent
+	/** All body files in this report, for cross-region references and unique labels. */
+	regions?: Record<string, JSONContent>
 	config: TypstEditorConfig
 	data: unknown
 	onChange(content: JSONContent): void
@@ -115,14 +132,19 @@ export function TypstRegionEditor(props: TypstRegionEditorProps) {
 	const config = useMemo(
 		() => ({
 			...props.config,
-			regions: props.config.regions.filter((region) => region.id === props.regionId),
+			regions: props.regions
+				? props.config.regions
+				: props.config.regions.filter((region) => region.id === props.regionId),
 		}),
-		[props.config, props.regionId],
+		[props.config, props.regionId, Boolean(props.regions)],
 	)
 	const admit = () => ({
 		regionId: props.regionId,
 		extensions: props.config.extensions,
-		checked: validateTypstRegions({ regions: { [props.regionId]: props.content }, config }),
+		checked: validateTypstRegions({
+			regions: { ...props.regions, [props.regionId]: props.content },
+			config,
+		}),
 	})
 	const [initial, setInitial] = useState(admit)
 	const onValidationError = useRef(props.onValidationError)
@@ -145,6 +167,25 @@ export function TypstRegionEditor(props: TypstRegionEditorProps) {
 	)
 }
 
+const cutMime = 'application/x-pluxel-typst-cut'
+let pendingCut:
+	| { token: string; html: string; document: JSONContent; moved: boolean; source: WeakRef<Editor> }
+	| undefined
+
+function objectIds(document: JSONContent) {
+	const ids = new Set<string>()
+	const visit = (node: JSONContent) => {
+		if (
+			(isReferenceObject(node.type ?? '') || isTypstBlock(node.type ?? '')) &&
+			typeof node.attrs?.id === 'string'
+		)
+			ids.add(`${isReferenceObject(node.type ?? '') ? 'ref' : 'block'}:${node.attrs.id}`)
+		node.content?.forEach(visit)
+	}
+	visit(document)
+	return ids
+}
+
 const emptyFontFamilies: readonly string[] = []
 const emptyCommands: readonly TypstSlashCommand[] = []
 
@@ -154,9 +195,11 @@ function RegionEditor(props: TypstRegionEditorProps) {
 	const [issues, setIssues] = useState<TypstEditorIssue[]>([])
 	const [composing, setComposing] = useState(false)
 	const composition = useRef(false)
+	const liveEditor = useRef<Editor | null>(null)
 	const ui = useMemo(
 		() => ({
 			config: props.config,
+			regions: props.regions,
 			region: props.config.regions.find((region) => region.id === props.regionId),
 			editable: props.editable !== false,
 			composing,
@@ -166,6 +209,7 @@ function RegionEditor(props: TypstRegionEditorProps) {
 		}),
 		[
 			props.config,
+			props.regions,
 			props.regionId,
 			props.editable,
 			props.onReveal,
@@ -182,6 +226,7 @@ function RegionEditor(props: TypstRegionEditorProps) {
 		() => [
 			...createTypstReactExtensions(props.config),
 			Selection.configure({ className: 'typst-selection' }),
+			createReferenceSuggestion(() => latestProps.current),
 			Extension.create({
 				name: 'typstRegionAdmission',
 				addProseMirrorPlugins: () => [
@@ -213,7 +258,7 @@ function RegionEditor(props: TypstRegionEditorProps) {
 								return false
 							}
 							const result = validateTypstRegions({
-								regions: { [latest.regionId]: transaction.doc.toJSON() },
+								regions: { ...latest.regions, [latest.regionId]: transaction.doc.toJSON() },
 								config: latest.config,
 							})
 							report(result.ok ? [] : result.issues)
@@ -232,20 +277,90 @@ function RegionEditor(props: TypstRegionEditorProps) {
 			editable: props.editable ?? true,
 			immediatelyRender: false,
 			editorProps: {
+				handleDOMEvents: {
+					cut: (view, event) => {
+						if (
+							!event.clipboardData ||
+							view.state.selection.empty ||
+							!view.editable ||
+							view.composing
+						)
+							return false
+						const slice = view.state.selection.content()
+						if (objectIds({ type: 'doc', content: slice.content.toJSON() }).size === 0) return false
+						const serialized = view.serializeForClipboard(slice)
+						const token = crypto.randomUUID()
+						const html = serialized.dom.innerHTML
+						event.preventDefault()
+						event.clipboardData.clearData()
+						event.clipboardData.setData('text/html', html)
+						event.clipboardData.setData('text/plain', serialized.text)
+						const before = view.state.doc
+						view.dispatch(
+							closeHistory(view.state.tr)
+								.deleteSelection()
+								.scrollIntoView()
+								.setMeta('uiEvent', 'cut'),
+						)
+						const source = liveEditor.current
+						if (view.state.doc !== before && source) {
+							pendingCut = {
+								token,
+								html,
+								document: { type: 'doc', content: slice.content.toJSON() },
+								moved: false,
+								source: new WeakRef(source),
+							}
+							event.clipboardData.setData(cutMime, token)
+						}
+						return true
+					},
+				},
 				handlePaste: (view, event) => {
 					if (view.state.selection.$from.parent.type.name === 'codeBlock') return false
 					const latest = latestProps.current
-					const result = parseTypstClipboard({
-						html: event.clipboardData?.getData('text/html') || undefined,
-						text: event.clipboardData?.getData('text/plain') ?? '',
-						regionId: latest.regionId,
-						config: latest.config,
-					})
+					const cut =
+						pendingCut &&
+						event.clipboardData?.getData(cutMime) === pendingCut.token &&
+						event.clipboardData?.getData('text/html') === pendingCut.html
+							? pendingCut
+							: undefined
+					const result = cut
+						? validateTypstRegion({
+								document: cut.document,
+								regionId: latest.regionId,
+								config: latest.config,
+							})
+						: parseTypstClipboard({
+								html: event.clipboardData?.getData('text/html') || undefined,
+								text: event.clipboardData?.getData('text/plain') ?? '',
+								regionId: latest.regionId,
+								config: latest.config,
+							})
 					if (!result.ok) {
 						report(result.issues)
 						return true
 					}
-					const document = view.state.schema.nodeFromJSON(result.value)
+					const source = cut?.source.deref()
+					const movedIds = objectIds(result.value)
+					const sourceIds =
+						source && !source.isDestroyed ? objectIds(source.getJSON()) : new Set<string>()
+					const existing = new Set(
+						Object.values({
+							...latest.regions,
+							[latest.regionId]: view.state.doc.toJSON(),
+						}).flatMap((document) => Array.from(objectIds(document))),
+					)
+					const isCut =
+						cut &&
+						!cut.moved &&
+						source &&
+						!source.isDestroyed &&
+						[...movedIds].every((id) => !existing.has(id) && !sourceIds.has(id))
+					const document = view.state.schema.nodeFromJSON(
+						isCut ? result.value : copyTypstDocumentNode(result.value, view.state.doc, true),
+					)
+					const before = view.state.doc
 					view.dispatch(
 						closeHistory(view.state.tr)
 							.replaceSelection(new Slice(document.content, 0, 0))
@@ -253,6 +368,61 @@ function RegionEditor(props: TypstRegionEditorProps) {
 							.setMeta('uiEvent', 'paste')
 							.scrollIntoView(),
 					)
+					if (isCut && view.state.doc !== before) cut.moved = true
+					return true
+				},
+				handleKeyDown: (view, event) => {
+					if (
+						!['Backspace', 'Delete'].includes(event.key) ||
+						event.isComposing ||
+						view.composing ||
+						!view.editable ||
+						latestProps.current.editable === false
+					)
+						return false
+					const selection = view.state.selection
+					if (
+						!(selection instanceof NodeSelection) ||
+						selection.$from.parent.type.name !== 'figure'
+					)
+						return false
+					const at = selection.$from.before()
+					view.dispatch(
+						closeHistory(view.state.tr)
+							.setSelection(NodeSelection.create(view.state.doc, at))
+							.deleteSelection()
+							.scrollIntoView(),
+					)
+					return true
+				},
+				handleDrop: (view, event, slice, moved) => {
+					if (moved) return false
+					let hasIdentity = false
+					slice.content.descendants((node) => {
+						if (isReferenceObject(node.type.name) || isTypstBlock(node.type.name))
+							hasIdentity = true
+					})
+					if (!hasIdentity) return false
+					const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
+					if (!coords) return false
+					const copied = copyTypstDocumentNode(
+						{ type: 'doc', content: slice.content.toJSON() },
+						view.state.doc,
+						true,
+					)
+					const next = Slice.fromJSON(view.state.schema, {
+						content: copied.content,
+						openStart: slice.openStart,
+						openEnd: slice.openEnd,
+					})
+					const at = dropPoint(view.state.doc, coords.pos, next) ?? coords.pos
+					view.dispatch(
+						closeHistory(view.state.tr)
+							.replaceRange(at, at, next)
+							.setMeta('uiEvent', 'drop')
+							.scrollIntoView(),
+					)
+					view.focus()
 					return true
 				},
 				attributes: (state) => ({
@@ -277,6 +447,7 @@ function RegionEditor(props: TypstRegionEditorProps) {
 		},
 		[extensions, props.regionId],
 	)
+	liveEditor.current = editor
 	useEffect(() => {
 		props.onEditor?.(editor)
 		return () => props.onEditor?.(null)

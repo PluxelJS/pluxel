@@ -96,6 +96,8 @@ async function fixture() {
 		remove: (id, input) => store.remove(id, input),
 		compile,
 		getInput: vi.fn(async () => ({ data: {}, storageVersion: null })),
+		readBody: vi.fn(),
+		applyBodyCandidate: vi.fn(),
 		getPreview: vi.fn(async (input) => ({
 			...input,
 			clientRevision: 0,
@@ -154,6 +156,74 @@ const model = {
 	name: 'Fixture',
 	input: ['text'] as ('text' | 'image')[],
 }
+it('routes body reads and candidates through the same business API and retains committed failure receipts', async () => {
+	const { ai, project, threadId, options } = await fixture()
+	fake.available = [model]
+	const snapshot = {
+		projectId: project.id,
+		entry: 'reports/reports.ts',
+		baseRevision: 'body-revision',
+		sourceRevision: 'source',
+		regions: [
+			{
+				regionId: 'body',
+				label: 'Body',
+				markdown: '[textStyle {"color":"#16a34a"}]Original[/textStyle]',
+			},
+		],
+	}
+	options.readBody.mockResolvedValue(snapshot)
+	options.applyBodyCandidate.mockResolvedValue({
+		projectId: project.id,
+		entry: snapshot.entry,
+		baseRevision: 'committed',
+		input: { data: {}, storageVersion: 'stored' },
+		editorStatus: 'disconnected',
+		previewError: 'Preview failed',
+	})
+	fake.create.mockImplementation(async ({ customTools }) => ({
+		session: {
+			messages: [],
+			dispose: vi.fn(),
+			abort: vi.fn(),
+			subscribe: () => () => {},
+			prompt: async () => {
+				const read = customTools.find((tool: { name: string }) => tool.name === 'read_body')
+				const apply = customTools.find(
+					(tool: { name: string }) => tool.name === 'apply_body_candidate',
+				)
+				await read.execute('read', { entry: snapshot.entry })
+				const result = await apply.execute('apply', {
+					entry: snapshot.entry,
+					regionId: 'body',
+					baseRevision: snapshot.baseRevision,
+					markdown: snapshot.regions[0]!.markdown.replace('Original', 'Edited'),
+				})
+				expect(JSON.parse(result.content[0].text)).toMatchObject({
+					editorStatus: 'disconnected',
+					storageVersion: 'stored',
+					previewError: 'Preview failed',
+				})
+			},
+		},
+	}))
+	await ai.prompt(project.id, threadId, {
+		message: 'Edit body',
+		provider: model.provider,
+		model: model.id,
+	})
+	await finished(ai, project.id, threadId)
+	expect(options.readBody).toHaveBeenCalledWith({ projectId: project.id, entry: snapshot.entry })
+	expect(options.applyBodyCandidate).toHaveBeenCalledWith(
+		expect.objectContaining({
+			projectId: project.id,
+			baseRevision: snapshot.baseRevision,
+			markdown: expect.stringContaining('Edited'),
+		}),
+	)
+	const finalSnapshot = await ai.snapshot(project.id, threadId)
+	expect(finalSnapshot.error).toBeUndefined()
+})
 it('reports missing credentials without calling a model and isolates project conversations', async () => {
 	const { ai, project, store, root, threadId } = await fixture()
 	expect(await ai.models()).toEqual([])
@@ -192,6 +262,8 @@ it('uses official Pi file tools against real workspace files, references and ski
 				expect(options.agentDir).toBe(join(root, 'ai', project.id))
 				expect(options.sessionManager.getCwd()).toBe(project.root)
 				expect(options.tools).toEqual([
+					'read_body',
+					'apply_body_candidate',
 					'bash',
 					'read',
 					'write',

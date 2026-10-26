@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { serialize } from 'capnweb'
+import { prepareTypstCandidate } from '@pluxel/plugin-typst/tiptap'
+import { studioEditorConfig } from '../src/shared/editor'
 import type { CompileResult, DocumentDescription, PreviewResult } from '../src/shared/contracts'
 import { WorkspaceController } from '../src/renderer/workspace'
 import { api, onDesktopConnectionChange } from '../src/renderer/api'
@@ -12,6 +14,7 @@ vi.mock('../src/renderer/api', () => ({
 	api: {
 		describeDocument: vi.fn(),
 		getInput: vi.fn(),
+		attachBodyEditor: vi.fn(async () => ({ close: async () => {} })),
 		setInput: vi.fn(),
 		compile: vi.fn(),
 		getPreview: vi.fn(),
@@ -92,6 +95,127 @@ afterEach(() => {
 	vi.resetAllMocks()
 })
 describe('workspace explicit form input and preview ownership', () => {
+	it('does not revive a disconnected body lease after an in-flight save settles', async () => {
+		vi.useFakeTimers()
+		const workspace = createWorkspace()
+		workspace.start()
+		const release = workspace.retainDocument(target.entry)
+		await workspace.compile(target.entry)
+		const body = (text: string) => ({
+			type: 'doc',
+			content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+		})
+		workspace.documents.set(target.entry, {
+			entry: target.entry,
+			data: {},
+			editor: {
+				formatVersion: 1,
+				templateId: target.entry,
+				templateRevision: 'source',
+				regions: { body: body('Original') },
+			},
+			inputLoaded: true,
+			inputDirty: true,
+			inputToken: 1,
+			fields: [],
+			busy: false,
+			generation: 1,
+			diagnostics: [],
+		})
+		let saved!: (value: Awaited<ReturnType<typeof api.getInput>>) => void
+		vi.mocked(api.setInput).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					saved = resolve
+				}),
+		)
+		const saving = workspace.saveInput(target.entry)
+		const capturing = workspace.captureBody({ entry: target.entry })
+		const rejected = capturing.catch((cause) => cause)
+		vi.mocked(onDesktopConnectionChange).mock.calls.at(-1)![0](false)
+		saved({
+			data: {},
+			editor: workspace.documents.get(target.entry)!.editor,
+			storageVersion: 'saved',
+		})
+		await saving
+		expect(await rejected).toMatchObject({ message: expect.stringContaining('连接已改变') })
+		expect(workspace.documents.get(target.entry)?.bodyLocked).toBe(false)
+		await workspace.writeRegion(target.entry, 'body', body('Human edit after disconnect'))
+		expect(workspace.documents.get(target.entry)?.editor?.regions.body).toEqual(
+			body('Human edit after disconnect'),
+		)
+		workspace.dispose()
+		release()
+	})
+	it('retains the last preview as stale when a committed body cannot compile', async () => {
+		const workspace = createWorkspace()
+		const release = workspace.retainDocument(target.entry)
+		await workspace.compile(target.entry)
+		const current = workspace.documents.get(target.entry)!
+		const body = {
+			type: 'doc',
+			content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original' }] }],
+		}
+		const editorDescription = {
+			templateId: target.entry,
+			templateRevision: 'source',
+			regions: [{ id: 'body' }],
+			fields: [],
+			defaults: { body },
+		}
+		workspace.documents.set(target.entry, {
+			...current,
+			description: { ...description, editor: editorDescription },
+			editor: {
+				formatVersion: 1,
+				templateId: target.entry,
+				templateRevision: 'source',
+				regions: { body },
+			},
+		})
+		const snapshot = (await workspace.captureBody({ entry: target.entry }))!
+		const prepared = prepareTypstCandidate({
+			candidate: {
+				regionId: 'body',
+				baseRevision: 'captured',
+				markdown: 'Committed body',
+				format: 'agent',
+			},
+			currentRevision: 'captured',
+			document: body,
+			config: studioEditorConfig(editorDescription),
+			data: { title: 'default' },
+			canEdit: () => true,
+		})
+		if (!prepared.ok) throw new Error('Invalid fixture')
+		const saved = {
+			...snapshot.input,
+			editor: { ...snapshot.input.editor!, regions: { body: prepared.value.mergedDocument } },
+			storageVersion: 'committed',
+		}
+		await workspace.finishBody({
+			entry: target.entry,
+			lease: snapshot.lease,
+			commit: {
+				input: saved,
+				candidate: prepared.value,
+				data: { title: 'default' },
+				previewError: 'Typst compilation failed',
+			},
+		})
+		const after = workspace.documents.get(target.entry)!
+		expect(after.editor).toEqual(saved.editor)
+		expect(after.storageVersion).toBe('committed')
+		expect(after.inputDirty).toBe(false)
+		expect(after.bodyLocked).toBe(false)
+		expect(after.result).toBe(current.result)
+		expect(after.preview).toBe(current.preview)
+		expect(after.error).toBe('Typst compilation failed')
+		expect(workspace.isNavigationCurrent(after.preview!)).toBe(false)
+		workspace.dispose()
+		release()
+	})
 	it('preserves edits made during the initial draft read and waits for its storage version before saving', async () => {
 		vi.useFakeTimers()
 		let loaded!: (value: Awaited<ReturnType<typeof api.getInput>>) => void

@@ -724,6 +724,7 @@ describe('candidate commit ownership', () => {
 					regionId: 'body',
 					baseRevision: 1,
 					markdown: 'Visible',
+					mergedDocument: initial,
 					document: doc({
 						type: 'paragraph',
 						content: [

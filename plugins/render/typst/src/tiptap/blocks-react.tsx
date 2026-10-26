@@ -15,6 +15,9 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 	const menuTrigger = useRef<HTMLButtonElement>(null)
 	const pointer = useRef<{ x: number; y: number } | null>(null)
 	const source = node.type.name === 'typstSource'
+	const position = getPos()
+	const wrapped =
+		typeof position === 'number' && editor.state.doc.resolve(position).parent.type.name === 'figure'
 	const definition = templateDefinitions(editor.extensionManager.extensions).find(
 		(item) => item.id === node.attrs.template,
 	)
@@ -105,6 +108,17 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 			}
 		}
 		menu.current?.hidePopover()
+		const resolved = editor.state.doc.resolve(at)
+		const figureAt = resolved.parent.type.name === 'figure' ? resolved.before() : undefined
+		if (action === 'copy' && figureAt !== undefined) {
+			editor
+				.chain()
+				.focus()
+				.duplicateTypstFigure(figureAt)
+				.setNodeSelection(figureAt + resolved.parent.nodeSize + 1)
+				.run()
+			return
+		}
 		if (action === 'copy') {
 			const chain = editor.chain().focus()
 			if (source) chain.duplicateTypstSource(at).run()
@@ -118,7 +132,11 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 				closeHistory(tr)
 				return true
 			})
-		if (action === 'delete') chain.setNodeSelection(at).deleteSelection().run()
+		if (action === 'delete')
+			chain
+				.setNodeSelection(figureAt ?? at)
+				.deleteSelection()
+				.run()
 		else chain.setNodeSelection(at).updateAttributes(current.type.name, { source: text }).run()
 		setError('')
 	}
@@ -177,8 +195,11 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 			}}
 		>
 			<div className="typst-content-block-header">
-				<span className="typst-block-title" data-drag-handle={disabled ? undefined : true}>
-					<span className="typst-block-grip" aria-hidden="true">
+				<span
+					className="typst-block-title"
+					data-drag-handle={disabled || wrapped ? undefined : true}
+				>
+					<span className="typst-block-grip" aria-hidden="true" hidden={wrapped}>
 						⠿
 					</span>
 					<strong>{label}</strong>

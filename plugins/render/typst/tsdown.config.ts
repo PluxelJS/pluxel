@@ -5,6 +5,7 @@ export default defineConfig({
 	entry: {
 		index: 'src/index.ts',
 		browser: 'src/browser/preview.ts',
+		wasm: 'src/wasm.ts',
 		template: 'src/template.ts',
 		tiptap: 'src/tiptap/index.ts',
 		'tiptap/react': 'src/tiptap/react.tsx',

@@ -11,6 +11,7 @@ import {
 import { InsertMenu, SlashMenu } from './insert-menu'
 import { BlockMenu } from './block-menu'
 import { TableTools } from './table-tools'
+import { TypstFigureTools } from './document-react'
 
 /** Common commands stay visible; the same native selection drives the full format menu. */
 export function TypstEditorToolbar({ editor, children }: { editor: Editor; children?: ReactNode }) {
@@ -60,6 +61,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 						<Icon name="more" />
 					</button>
 					<InsertMenu editor={editor} />
+					<TypstFigureTools editor={editor} />
 				</div>
 				{children && <div className="typst-tool-group typst-tool-group-custom">{children}</div>}
 			</div>

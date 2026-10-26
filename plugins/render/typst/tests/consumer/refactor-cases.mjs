@@ -49,8 +49,9 @@ export async function refactorCases({ browser, url, output }) {
 		await page.goto(url)
 		await ready()
 		await rememberEditor()
-		await tab('AI 候选')
+		await tab('Markdown')
 		await page.getByLabel('候选目标区域').selectOption('notes')
+		await button('编辑这份 Markdown').click()
 		const candidate = page.getByLabel('候选 Markdown', { exact: true })
 		await candidate.fill('Visible candidate A')
 		await button('固定候选目标').click()
@@ -63,6 +64,14 @@ export async function refactorCases({ browser, url, output }) {
 		await page.screenshot({ path: join(output, 'candidate-review.png') })
 		await button('接纳候选').click()
 		await ready()
+		assert.equal(
+			await page.getByRole('tab', { name: 'Markdown', exact: true }).getAttribute('aria-selected'),
+			'true',
+		)
+		assert.equal(
+			await page.getByLabel('实时 Markdown', { exact: true }).inputValue(),
+			'Visible candidate B',
+		)
 		assert.equal(await notes.innerText(), 'Visible candidate B')
 		await page
 			.getByTestId('region-notes')
@@ -127,7 +136,7 @@ export async function refactorCases({ browser, url, output }) {
 		assert.equal(await body.evaluate((element) => element.editor.can().undo()), false)
 		assert.equal(await saveState(), '已保存到本浏览器')
 		// Failure diagnostics use their own request mapping, retaining the old picture.
-		await tab('模板')
+		await tab('原始 Typst')
 		const validSource = await source.inputValue()
 		await source.fill('#let text = "😀"; #let = invalid')
 		await page.getByRole('alert').filter({ hasText: 'COMPILE_FAILED' }).waitFor()
@@ -201,7 +210,9 @@ export async function refactorCases({ browser, url, output }) {
 		await ready()
 		let content = await documentJson(body)
 		assert.equal(
-			content.content.find((item) => item.attrs?.id === 'channels-primary').attrs.props.title,
+			content.content
+				.flatMap((node) => (node.type === 'figure' ? node.content : [node]))
+				.find((item) => item.attrs?.id === 'channels-primary').attrs.props.title,
 			'第一实例标题',
 		)
 		const beforeInvalid = JSON.stringify(content)
@@ -216,7 +227,9 @@ export async function refactorCases({ browser, url, output }) {
 		await button('确认参数').click()
 		await ready()
 		content = await documentJson(body)
-		const components = content.content.filter((item) => item.type === 'templateBlock')
+		const components = content.content
+			.flatMap((node) => (node.type === 'figure' ? node.content : [node]))
+			.filter((item) => item.type === 'templateBlock')
 		assert.equal(new Set(components.map((item) => item.attrs.id)).size, 2)
 		assert.deepEqual(
 			components.map((item) => item.attrs.props.title),
@@ -227,6 +240,7 @@ export async function refactorCases({ browser, url, output }) {
 		const undone = await documentJson(body)
 		assert.deepEqual(
 			undone.content
+				.flatMap((node) => (node.type === 'figure' ? node.content : [node]))
 				.filter((item) => item.type === 'templateBlock')
 				.map((item) => item.attrs.props.title),
 			['第一实例标题', '第一实例标题'],
@@ -401,6 +415,7 @@ export async function refactorCases({ browser, url, output }) {
 			await body.evaluate((element) => element.editor.state.selection.toJSON()),
 			selection,
 		)
+		await tab('Typst 预览')
 		await page.setViewportSize({ width: 390, height: 844 })
 		await page.screenshot({ path: join(output, 'mobile-editor.png') })
 		const bodyBounds = await body.boundingBox()

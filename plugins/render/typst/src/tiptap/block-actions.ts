@@ -2,7 +2,8 @@ import { CommandManager, type Editor, type JSONContent } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { NodeSelection, type Transaction } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
-import { blockAttributeError, instanceId, isTypstBlock } from './blocks'
+import { isTypstBlock } from './blocks'
+import { copyTypstDocumentNode } from './document-nodes'
 import { canEdit, type EditorUiContext } from './editor-ui'
 import { blockTypes, convertBlock, type BlockType } from './insert-commands'
 import { validateTypstRegions } from './validation'
@@ -67,34 +68,18 @@ function convertible(node: ProseMirrorNode): boolean {
 	return false
 }
 
-function copyContent(editor: Editor, target: BlockTarget): JSONContent | undefined {
-	const content = structuredClone(target.node.toJSON()) as JSONContent
-	const reserved = new Set<string>()
-	let valid = true
-	const visit = (node: JSONContent) => {
-		if (node.type && isTypstBlock(node.type)) {
-			if (
-				!node.attrs ||
-				blockAttributeError(node.type, node.attrs, editor.extensionManager.extensions)
-			) {
-				valid = false
-				return
-			}
-			const id = instanceId(target.doc, true, reserved)
-			reserved.add(id)
-			node.attrs.id = id
-		}
-		node.content?.forEach(visit)
-	}
-	visit(content)
-	return valid ? content : undefined
+function copyContent(_editor: Editor, target: BlockTarget): JSONContent {
+	return copyTypstDocumentNode(target.node.toJSON(), target.doc, true)
 }
 
 function validDocument(ui: EditorUiContext, doc: ProseMirrorNode): boolean {
 	return (
 		!ui.config ||
 		!ui.region ||
-		validateTypstRegions({ regions: { [ui.region.id]: doc.toJSON() }, config: ui.config }).ok
+		validateTypstRegions({
+			regions: { ...ui.regions, [ui.region.id]: doc.toJSON() },
+			config: ui.config,
+		}).ok
 	)
 }
 

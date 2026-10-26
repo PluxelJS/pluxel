@@ -22,6 +22,10 @@ import type {
 	PdfArtifact,
 	JsonObject,
 	DocumentInput,
+	BodyRead,
+	BodySnapshot,
+	BodyCandidate,
+	BodyCommit,
 } from '../shared/contracts.js'
 
 export interface WorkspaceAIOptions extends WorkspaceBashStore {
@@ -29,6 +33,8 @@ export interface WorkspaceAIOptions extends WorkspaceBashStore {
 	getProject(id: string): Promise<ProjectSummary>
 	compile(input: CompileRequest): Promise<CompileResult>
 	getInput(input: DocumentTarget): Promise<DocumentInput>
+	readBody(input: BodyRead): Promise<BodySnapshot>
+	applyBodyCandidate(input: BodyCandidate): Promise<BodyCommit>
 	getPreview(input: RevisionTarget): Promise<PreviewResult>
 	renderPage(input: RenderPageRequest): Promise<PageArtifact>
 	exportPdf(input: RevisionTarget): Promise<PdfArtifact>
@@ -89,6 +95,49 @@ export function createWorkspaceTools(
 		details: {},
 	})
 	return [
+		defineTool({
+			name: 'read_body',
+			label: 'Read document body',
+			description:
+				'Read current editable body as lossless agent Markdown, including unsaved desktop input. Omit regionId to discover all regions. Preserve textStyle/dataField shortcodes and native JSON blocks. Keep baseRevision for apply_body_candidate. Optional range uses complete sibling block boundaries at this exact revision.',
+			parameters: Type.Object({
+				entry: Type.String(),
+				regionId: Type.Optional(Type.String()),
+				range: Type.Optional(
+					Type.Object({ from: Type.Integer({ minimum: 0 }), to: Type.Integer({ minimum: 1 }) }),
+				),
+			}),
+			execute: async (_id, input) => {
+				check()
+				return content(
+					await options.readBody({ ...input, projectId: project.id, entry: path(input.entry) }),
+				)
+			},
+		}),
+		defineTool({
+			name: 'apply_body_candidate',
+			label: 'Apply document body candidate',
+			description:
+				'Replace a region or the exact range returned by read_body using edited agent Markdown and its baseRevision. Rejects changed body/data/template, invalid fields and invalid styles. Commits to the same document input and updates an attached editor in one undo step. Returns persisted status and a native compile revision for read_preview_pages. A preview/editor failure does not roll back a committed input; inspect receipt before retrying.',
+			parameters: Type.Object({
+				entry: Type.String(),
+				regionId: Type.String(),
+				baseRevision: Type.String(),
+				markdown: Type.String({ maxLength: 1024 * 1024 }),
+				range: Type.Optional(
+					Type.Object({ from: Type.Integer({ minimum: 0 }), to: Type.Integer({ minimum: 1 }) }),
+				),
+			}),
+			execute: async (_id, input) => {
+				check()
+				const { input: saved, ...receipt } = await options.applyBodyCandidate({
+					...input,
+					projectId: project.id,
+					entry: path(input.entry),
+				})
+				return content({ ...receipt, storageVersion: saved.storageVersion })
+			},
+		}),
 		defineTool({
 			name: 'bash',
 			label: 'Workspace bash',

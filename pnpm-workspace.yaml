@@ -240,10 +240,13 @@ catalogs:
     '@tanstack/react-virtual': ^3.14.22
     '@tiptap/core': 3.32.0
     '@tiptap/extension-drag-handle': 3.32.0
+    '@tiptap/extension-mathematics': 3.32.0
     '@tiptap/extension-node-range': 3.32.0
     '@tiptap/extension-collaboration': 3.32.0
     '@tiptap/extension-text-align': 3.32.0
+    '@tiptap/suggestion': 3.32.0
     '@tiptap/y-tiptap': 3.0.7
+    katex: 0.16.22
     'yjs': 13.6.27
     'y-protocols': 1.0.6
     '@tiptap/extension-drag-handle-react': 3.32.0
@@ -303,8 +306,9 @@ catalogs:
     '@module-federation/runtime': 2.9.2
     '@module-federation/sdk': 2.9.2
     '@myriaddreamin/typst-ts-node-compiler': ^0.7.0
-    '@myriaddreamin/typst-ts-renderer': ^0.7.0
-    '@myriaddreamin/typst.ts': ^0.7.0
+    '@myriaddreamin/typst-ts-renderer': 0.7.0
+    '@myriaddreamin/typst-ts-web-compiler': 0.7.0
+    '@myriaddreamin/typst.ts': 0.7.0
     '@napi-rs/canvas': ^1.0.11
     '@opentelemetry/api': ^1.9.1
     '@opentelemetry/api-logs': ^0.223.0
@@ -399,6 +403,7 @@ catalogs:
     zod: 4.6.7
   types:
     '@types/jsdom': 30.0.0
+    '@types/katex': 0.16.7
     '@types/yauzl': 3.4.0
     '@types/mdast': ^4.0.4
     '@types/mdx': ^2.0.14

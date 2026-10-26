@@ -1,9 +1,11 @@
 import { createContext } from 'react'
-import type { Editor } from '@tiptap/core'
+import type { Editor, JSONContent } from '@tiptap/core'
 import type { TypstDataField, TypstEditorConfig, TypstRegionDefinition } from './types'
 import type { TypstSlashCommand } from './insert-commands'
 
 export interface EditorUiContext {
+	/** Current document snapshots; the active native editor always takes precedence. */
+	regions?: Record<string, JSONContent>
 	onReveal?: (position: number) => void
 	config?: TypstEditorConfig
 	region?: TypstRegionDefinition

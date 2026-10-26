@@ -23,7 +23,7 @@ const channelChartSource = `#let actual = data.channels.map(channel => channel.a
   block(fill: rgb("#f0fdfa"), inset: 10pt, width: 100%)[目标达成率 #linebreak() #text(size: 17pt, weight: "bold")[#attainment(actual, target)]],
 )
 
-= #props.title
+#block(above: 8pt, below: 6pt)[#text(size: 12pt, weight: "bold")[#props.title]]
 #grid(columns: (1fr, 1.15fr), gutter: 14pt,
   [
     #text(size: 9pt)[#box(width: 8pt, height: 8pt, fill: blue) 实际 #h(8pt) #box(width: 8pt, height: 8pt, fill: grey) 目标]
@@ -38,7 +38,6 @@ const channelChartSource = `#let actual = data.channels.map(channel => channel.a
       )
       #v(5pt)
     ]
-    #text(size: 8pt, fill: luma(100))[柱长使用同一零起点与比例；单位：万元。]
   ],
   [
     #table(
@@ -50,7 +49,7 @@ const channelChartSource = `#let actual = data.channels.map(channel => channel.a
     )
   ],
 )
-#text(size: 8pt, fill: luma(100))[图与明细表读取同一份已校验的渠道数据；目标为零时达成率显示“—”，所有收入为零时柱长为零。]
+#text(size: 8pt, fill: luma(100))[单位：万元。柱长采用统一零起点与比例；目标为零时达成率显示“—”。]
 `
 
 export const chartReportSeed: Record<string, string> = {
@@ -80,7 +79,10 @@ export default defineTypstDocument({
 #let data = json("/inputs/editor/data.json")
 #set page(header: align(right, text(size: 9pt, fill: luma(90), [#data.company · #data.period])))
 #show: correspondence.with(title: [渠道收入与行动分析], numbering: "1")
-#set text(size: 10pt)
+#set text(size: 10pt, lang: "zh")
+#set math.equation(numbering: "(1)")
+#show figure.where(kind: table): set figure.caption(position: top)
+#show figure.where(kind: table): set block(breakable: true)
 
 #include "../../_editor/regions/analysis.typ"
 
@@ -88,7 +90,7 @@ export default defineTypstDocument({
 #include "../../_editor/regions/actions.typ"
 
 #line(length: 100%, stroke: 0.4pt + luma(190))
-#text(size: 8pt, fill: luma(100))[固定口径：本示例收入以万元展示，用于业务沟通；图表定义由模板负责，顺序由正文决定。分析负责人：#data.analyst。]
+#text(size: 8pt, fill: luma(100))[报告口径：收入以万元展示；总达成率按收入合计计算，不取渠道达成率的平均值。分析负责人：#data.analyst。]
 `,
 	'报表/图表分析报告/图表分析报告.editor.json': JSON.stringify(
 		{
@@ -124,28 +126,59 @@ export default defineTypstDocument({
 								{ type: 'dataField', attrs: { path: ['company'] } },
 								{ type: 'text', text: ' · ' },
 								{ type: 'dataField', attrs: { path: ['period'] } },
-								{ type: 'text', text: '：请结合图表补充渠道差异、风险和下一步判断。' },
+								{
+									type: 'text',
+									text: '：本报告对比渠道收入与目标，结合客户明细核验收入差异，形成下一步判断。',
+								},
 							],
 						},
 						{
-							type: 'templateBlock',
+							type: 'figure',
+							attrs: { id: 'channel-figure', label: 'fig:channels' },
+							content: [
+								{
+									type: 'templateBlock',
+									attrs: {
+										id: 'channel-chart',
+										template: 'channel-performance',
+										props: { title: '渠道收入与目标' },
+										dataPath: [],
+									},
+								},
+								{
+									type: 'figureCaption',
+									content: [{ type: 'text', text: '各渠道收入与目标对比' }],
+								},
+							],
+						},
+						paragraph(
+							'目标达成率以 r 表示，其中 A 为实际收入、T 为目标收入，单位均为万元。仅在 T > 0 时按下式计算。',
+						),
+						{
+							type: 'blockMath',
 							attrs: {
-								id: 'channel-chart',
-								template: 'channel-performance',
-								props: { title: '渠道收入与目标' },
-								dataPath: [],
+								id: 'attainment-equation',
+								label: 'eq:attainment',
+								latex: 'r = \\frac{A}{T} \\times 100\\%',
 							},
 						},
 						paragraph(
-							'经营解读：企业服务收入超过目标，订阅渠道仍有提升空间。可以将图表移到这段解读后，再用 Markdown 候选单独改写文字。',
+							'经营解读：对高于目标的渠道核对新增客户、续约及一次性收入贡献；对低于目标的渠道核对销售周期与回款进展，避免仅凭达成率判断增长质量。',
 						),
 						{
-							type: 'table',
-							attrs: { typstTableStyle: 'borderless' },
+							type: 'figure',
+							attrs: { id: 'observations-table', label: 'tbl:observations' },
 							content: [
-								row(['观察重点', '需要补充的证据']),
-								row(['高于目标的渠道', '确认增长是否来自可持续的订阅或续约。']),
-								row(['低于目标的渠道', '核对销售周期、回款进展与下季转化计划。']),
+								{
+									type: 'table',
+									attrs: { typstTableStyle: 'three-line' },
+									content: [
+										row(['观察重点', '需要补充的证据'], true),
+										row(['高于目标的渠道', '确认增长是否来自可持续的订阅或续约。']),
+										row(['低于目标的渠道', '核对销售周期、回款进展与下季转化计划。']),
+									],
+								},
+								{ type: 'figureCaption', content: [{ type: 'text', text: '经营观察及核验建议' }] },
 							],
 						},
 						{
@@ -153,7 +186,7 @@ export default defineTypstDocument({
 							attrs: {
 								id: 'analysis-note',
 								source:
-									'#text(size: 8pt, fill: luma(100))[补充口径：这是可编辑的 Typst 源码块，可以移动或改成公式、脚注。]',
+									'#text(size: 8pt, fill: luma(100))[核验负责人：#data.analyst。收入与回款分别核对，未确认的差异不提前归因。]',
 							},
 						},
 					],
@@ -161,6 +194,18 @@ export default defineTypstDocument({
 				actions: {
 					type: 'doc',
 					content: [
+						{
+							type: 'paragraph',
+							content: [
+								{ type: 'text', text: '结合 ' },
+								{ type: 'reference', attrs: { target: 'channel-figure' } },
+								{ type: 'text', text: ' 和 ' },
+								{ type: 'reference', attrs: { target: 'observations-table' } },
+								{ type: 'text', text: ' 制定行动计划；达成率按 ' },
+								{ type: 'reference', attrs: { target: 'attainment-equation' } },
+								{ type: 'text', text: ' 计算。复盘结论应附客户与回款明细，便于后续核验。' },
+							],
+						},
 						{
 							type: 'table',
 							attrs: { typstTableStyle: 'three-line' },

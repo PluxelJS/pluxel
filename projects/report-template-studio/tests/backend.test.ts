@@ -200,6 +200,8 @@ it('preserves all workspace/document behaviors through the shared service and re
 				studio.remove({ projectId: id, ...input }),
 			compile: studio.compile.bind(studio),
 			getInput: studio.getInput.bind(studio),
+			readBody: studio.readBody.bind(studio),
+			applyBodyCandidate: studio.applyBodyCandidate.bind(studio),
 			getPreview: studio.getPreview.bind(studio),
 			renderPage: studio.renderPage.bind(studio),
 			exportPdf: studio.exportPdf.bind(studio),

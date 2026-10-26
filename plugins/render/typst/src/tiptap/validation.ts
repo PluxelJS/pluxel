@@ -10,6 +10,7 @@ import { createTypstExtensions } from './extensions.js'
 import { tableStyleOptions, tableStyleOptionsError, tableStyleError } from './table-style.js'
 import { textStyleAttributes, validTextStyleValue } from './text-style.js'
 import { validTextAlignment } from './text-align.js'
+import { isReferenceObject, validReferenceId, validReferenceLabel } from './document-nodes.js'
 import type {
 	TypstDataField,
 	TypstDocumentDraft,
@@ -40,6 +41,11 @@ export const builtinNodes = new Set([
 	'dataField',
 	'templateBlock',
 	'typstSource',
+	'figure',
+	'figureCaption',
+	'inlineMath',
+	'blockMath',
+	'reference',
 ])
 export const builtinMarks = new Set([
 	'bold',
@@ -50,6 +56,29 @@ export const builtinMarks = new Set([
 	'link',
 	'textStyle',
 ])
+// These are the attributes whose meaning is covered by the built-in serializers.
+// Extending a built-in schema alone must not silently discard new authored semantics.
+const builtinNodeAttributes: Readonly<Record<string, readonly string[]>> = {
+	paragraph: ['textAlign'],
+	heading: ['level', 'textAlign'],
+	orderedList: ['start', 'type'],
+	codeBlock: ['language'],
+	table: ['typstTableStyle'],
+	tableCell: ['colspan', 'rowspan', 'colwidth', 'align'],
+	tableHeader: ['colspan', 'rowspan', 'colwidth', 'align'],
+	image: ['src', 'alt', 'title', 'width', 'height'],
+	dataField: ['path'],
+	templateBlock: ['id', 'template', 'props', 'dataPath'],
+	typstSource: ['id', 'source'],
+	figure: ['id', 'label'],
+	blockMath: ['latex', 'id', 'label'],
+	inlineMath: ['latex'],
+	reference: ['target'],
+}
+const builtinMarkAttributes: Readonly<Record<string, readonly string[]>> = {
+	link: ['href', 'target', 'rel', 'class', 'title'],
+	textStyle: textStyleAttributes,
+}
 export const isObject = (value: unknown): value is Record<string, unknown> =>
 	value !== null &&
 	typeof value === 'object' &&
@@ -221,6 +250,22 @@ export function editorSchema(config: TypstEditorConfig): TypstEditorResult<Schem
 	const blockError = templateDefinitionError(extensions)
 	if (blockError) return { ok: false, issues: [{ code: 'INVALID_CONFIG', message: blockError }] }
 	const schema = getSchema(extensions)
+	for (const [name, type] of Object.entries(schema.nodes))
+		if (builtinNodes.has(name))
+			for (const attribute of Object.keys(type.spec.attrs ?? {}))
+				if (!(builtinNodeAttributes[name] ?? []).includes(attribute))
+					issues.push({
+						code: 'MISSING_SERIALIZER',
+						message: `Built-in node ${name} has no Typst mapping for attribute ${attribute}. Use a custom node with an explicit mapping.`,
+					})
+	for (const [name, type] of Object.entries(schema.marks))
+		if (builtinMarks.has(name))
+			for (const attribute of Object.keys(type.spec.attrs ?? {}))
+				if (!(builtinMarkAttributes[name] ?? []).includes(attribute))
+					issues.push({
+						code: 'MISSING_SERIALIZER',
+						message: `Built-in Mark ${name} has no Typst mapping for attribute ${attribute}. Use a custom Mark with an explicit mapping.`,
+					})
 	for (const name of Object.keys(schema.nodes))
 		if (!builtinNodes.has(name) && !config.nodeMappings?.[name])
 			issues.push({ code: 'MISSING_SERIALIZER', message: `Node ${name} has no Typst serializer.` })
@@ -458,6 +503,31 @@ function inspectNode(
 	if (value.type !== 'doc' && region.nodes && !region.nodes.includes(value.type))
 		issue('REGION_RULE', `Node ${value.type} is not allowed in this region.`)
 	const attrs = inspectAttrs(value.attrs, type, path, region.id, issues)
+	if (isReferenceObject(value.type)) {
+		if (attrs.id != null && !validReferenceId(attrs.id))
+			issue('INVALID_ATTRIBUTE', 'Object id must be a stable alphanumeric identifier or null.', [
+				'attrs',
+				'id',
+			])
+		if (attrs.label != null && !validReferenceLabel(attrs.label))
+			issue(
+				'INVALID_ATTRIBUTE',
+				'Label must start with a letter or digit and contain only letters, combining marks, digits, colon, dot, underscore or hyphen (up to 128 characters), or be null.',
+				['attrs', 'label'],
+			)
+		if (attrs.label != null && !validReferenceId(attrs.id))
+			issue('INVALID_ATTRIBUTE', 'A labeled object requires a stable id.', ['attrs', 'id'])
+	}
+	if (
+		(value.type === 'inlineMath' || value.type === 'blockMath') &&
+		(typeof attrs.latex !== 'string' || !validUnicode(attrs.latex))
+	)
+		issue('INVALID_ATTRIBUTE', 'Math latex must be a well-formed string.', ['attrs', 'latex'])
+	if (value.type === 'reference' && !validReferenceId(attrs.target))
+		issue('INVALID_REFERENCE', 'A reference target must be a stable object id.', [
+			'attrs',
+			'target',
+		])
 	if (
 		(value.type === 'paragraph' || value.type === 'heading') &&
 		!validTextAlignment(attrs.textAlign)
@@ -738,7 +808,10 @@ export function prepareTypstValidation(config: TypstEditorConfig) {
 		},
 	}
 }
-type ValidationContext = Extract<ReturnType<typeof prepareTypstValidation>, { ok: true }>['value']
+export type ValidationContext = Extract<
+	ReturnType<typeof prepareTypstValidation>,
+	{ ok: true }
+>['value']
 
 export function validateTypstRegion(options: {
 	document: unknown
@@ -751,7 +824,7 @@ export function validateTypstRegion(options: {
 	return validateRegionWithContext(options, context.value)
 }
 
-function validateRegionWithContext(
+export function validateRegionWithContext(
 	options: {
 		document: unknown
 		regionId: string
@@ -801,6 +874,7 @@ function validateRegionWithContext(
 		node.content?.forEach((child, index) => checkIds(child, [...path, 'content', index]))
 	}
 	checkIds(options.document as JSONContent, [])
+	issues.push(...referenceIdentityIssues({ [region.id]: options.document as JSONContent }))
 	if (issues.length > 0) return { ok: false, issues }
 	try {
 		const node = context.schema.nodeFromJSON(options.document)
@@ -872,9 +946,43 @@ export function validateRegionsWithContext(
 		)
 		if (!result.ok) issues.push(...result.issues)
 	}
+	if (issues.length === 0)
+		issues.push(...referenceIdentityIssues(options.regions as Record<string, JSONContent>))
 	return issues.length > 0
 		? { ok: false, issues }
 		: { ok: true, value: options.regions as Record<string, JSONContent> }
+}
+
+function referenceIdentityIssues(
+	regions: Readonly<Record<string, JSONContent>>,
+): TypstEditorIssue[] {
+	const issues: TypstEditorIssue[] = []
+	const ids = new Set<string>()
+	const labels = new Set<string>()
+	for (const [regionId, document] of Object.entries(regions)) {
+		const visit = (node: JSONContent, path: (string | number)[]) => {
+			if (isReferenceObject(node.type!)) {
+				for (const [name, values] of [
+					['id', ids],
+					['label', labels],
+				] as const) {
+					const value = node.attrs?.[name]
+					if (typeof value !== 'string') continue
+					if (values.has(value))
+						issues.push({
+							code: 'INVALID_REFERENCE',
+							regionId,
+							path: [...path, 'attrs', name],
+							message: `Object ${name} must be unique across the whole document: ${value}.`,
+						})
+					values.add(value)
+				}
+			}
+			node.content?.forEach((child, index) => visit(child, [...path, 'content', index]))
+		}
+		visit(document, [])
+	}
+	return issues
 }
 
 export function validateTypstDraft(options: {

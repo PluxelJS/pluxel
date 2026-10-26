@@ -48,6 +48,7 @@ export type TypstEditorIssueCode =
 	| 'INVALID_FIELD'
 	| 'INVALID_DATA'
 	| 'INVALID_RESOURCE'
+	| 'INVALID_REFERENCE'
 	| 'MISSING_SERIALIZER'
 	| 'UNSUPPORTED_MARKDOWN'
 	| 'UNSUPPORTED_HTML'
@@ -139,16 +140,36 @@ export interface TypstGeneratedRegions {
 	mapping: TypstGeneratedMapping[]
 }
 
+/** Author-facing label and stable identity are independent of Typst's generated numbering. */
+export interface TypstReferenceTarget {
+	id: string
+	label: string
+	kind: 'figure' | 'table' | 'equation'
+	regionId: string
+	title: string
+	/** Native ProseMirror position before the target node. */
+	position: number
+}
+
+/** Ordinary Markdown is portable but may lose formatting; agent adds explicit native semantics. */
+export type TypstMarkdownFormat = 'markdown' | 'agent'
+
 export interface TypstMarkdownCandidate {
 	regionId: string
 	baseRevision: TypstDraftRevision
 	markdown: string
-	/** Omitted replaces the whole region. Otherwise replaces nonempty, complete top-level
-	 * blocks at these ProseMirror positions in baseRevision; to is exclusive. */
+	/** Defaults to ordinary Markdown. Use the same format as the exported editing source. */
+	format?: TypstMarkdownFormat
+	/** Omitted replaces the whole region. Otherwise replaces complete, nonempty sibling
+	 * blocks at these ProseMirror positions in baseRevision; to is exclusive. Nested
+	 * containers (including a table cell) are supported, but partial text and cell/row
+	 * structural fragments are not. */
 	range?: { from: number; to: number }
 }
 
 export interface TypstPreparedCandidate extends TypstMarkdownCandidate {
 	/** Replacement content only, including when range targets part of the region. */
 	document: JSONContent
+	/** Validated full region after replacement. Apply still rechecks the current editor. */
+	mergedDocument: JSONContent
 }

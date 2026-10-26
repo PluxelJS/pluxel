@@ -209,7 +209,8 @@ try {
 	await chooseStyle('网格·无左右框')
 	await appearance('grid-open-sides')
 	const html = await body.evaluate((element) => element.editor.getHTML())
-	await page.getByRole('tab', { name: 'AI 候选', exact: true }).click()
+	await page.getByRole('tab', { name: 'Markdown', exact: true }).click()
+	await page.getByRole('button', { name: '编辑这份 Markdown', exact: true }).click()
 	await page.getByRole('textbox', { name: '候选 Markdown', exact: true }).fill(html)
 	await page.getByRole('button', { name: '检查 HTML', exact: true }).click()
 	const imported = JSON.parse(await page.getByTestId('import-result').innerText())
@@ -218,6 +219,7 @@ try {
 		imported.value.content.find((node) => node.type === 'table').attrs.typstTableStyle,
 		'grid-open-sides',
 	)
+	await page.getByRole('button', { name: '放弃候选修改', exact: true }).click()
 	await page.getByRole('tab', { name: '正文', exact: true }).click()
 	await chooseStyle('三线表')
 	await appearance('three-line')
@@ -242,6 +244,7 @@ try {
 			item.line === entry.range.start.line &&
 			item.column === entry.range.start.column,
 	)
+	await page.getByRole('tab', { name: 'Typst 预览', exact: true }).click()
 	await clickPoint(point, caret)
 	await body.locator('th').first().click()
 	await page.getByRole('checkbox', { name: '区域只读', exact: true }).check()
