@@ -18,6 +18,7 @@ import { selectionAlignment, selectionBlockType } from './selection-format'
 import { TypstTableStyleControls } from './table-style-controls'
 import { selectedTable, tableActions } from './table-menu'
 import { LinkMenu } from './link-menu'
+import { editorShortcuts, matchesShortcut, shortcutProps, shortcutText } from './shortcuts'
 
 // Requests and format actions stay on the native editor transaction channel.
 const formatRequest = new PluginKey('typstFormatRequest')
@@ -86,6 +87,7 @@ function MarkTools({ editor, primary = false }: { editor: Editor; primary?: bool
 					<ToolButton
 						key={mark.name}
 						label={mark.label}
+						shortcut={editorShortcuts[mark.name]}
 						icon={mark.icon}
 						active={editor.isActive(mark.name)}
 						disabled={
@@ -109,7 +111,13 @@ function BlockPicker({ editor }: { editor: Editor }) {
 	const options = blockTypes.filter((block) => allowedNode(ui, editor, block.node))
 	const value = selectionBlockType(editor)
 	return (
-		<label className="typst-block-picker" title="段落样式">
+		<label
+			className="typst-block-picker"
+			title={[
+				'段落样式',
+				...options.map((block) => `${block.label}：${shortcutText(editorShortcuts[block.value])}`),
+			].join('\n')}
+		>
 			<select
 				aria-label="段落样式"
 				value={value ?? '__mixed__'}
@@ -128,6 +136,7 @@ function BlockPicker({ editor }: { editor: Editor }) {
 					<option
 						key={block.value}
 						value={block.value}
+						title={shortcutProps(block.label, editorShortcuts[block.value]).title}
 						disabled={!convertBlock(editor.can().chain(), block.value).run()}
 					>
 						{block.label}
@@ -148,7 +157,7 @@ function LinkButton({ editor }: { editor: Editor }) {
 					type="button"
 					className="typst-tool-button typst-link-trigger"
 					aria-label="链接"
-					title="链接（Ctrl/⌘ K）"
+					{...shortcutProps('链接', editorShortcuts.link)}
 					aria-haspopup="dialog"
 					aria-pressed={editor.isActive('link')}
 					disabled={!canEdit(editor, ui) || !(editor.state.selection instanceof TextSelection)}
@@ -172,6 +181,7 @@ function ListTools({ editor, restoreFocus = false }: { editor: Editor; restoreFo
 			{allowedNode(ui, editor, 'bulletList', 'listItem', 'paragraph') && (
 				<ToolButton
 					label="列表"
+					shortcut={editorShortcuts.bulletList}
 					icon="bullet"
 					active={editor.isActive('bulletList')}
 					disabled={
@@ -187,6 +197,7 @@ function ListTools({ editor, restoreFocus = false }: { editor: Editor; restoreFo
 			{allowedNode(ui, editor, 'orderedList', 'listItem', 'paragraph') && (
 				<ToolButton
 					label="有序列表"
+					shortcut={editorShortcuts.orderedList}
 					icon="ordered"
 					active={editor.isActive('orderedList')}
 					disabled={
@@ -203,6 +214,21 @@ function ListTools({ editor, restoreFocus = false }: { editor: Editor; restoreFo
 	)
 }
 
+function clearTextFormat(editor: Editor) {
+	return formatChain(editor)
+		.unsetAllMarks()
+		.command(({ tr }) => {
+			if (tr.selection.empty)
+				tr.setStoredMarks(
+					(tr.storedMarks ?? tr.selection.$from.marks()).filter((mark) =>
+						editor.extensionManager.nonClearableMarks.includes(mark.type.name),
+					),
+				)
+			return true
+		})
+		.run()
+}
+
 function ClearFormatButton({
 	editor,
 	restoreFocus = false,
@@ -216,23 +242,12 @@ function ClearFormatButton({
 			type="button"
 			className="typst-tool-button typst-clear-format"
 			aria-label="清除文字格式"
-			title="清除文字格式（保留段落样式与对齐）"
+			{...shortcutProps('清除文字格式，保留段落样式与对齐', editorShortcuts.clearFormat)}
 			disabled={!canEdit(editor, ui) || !hasFormatTarget(editor) || !editor.can().unsetAllMarks()}
 			onMouseDown={(event) => event.preventDefault()}
 			onClick={() => {
 				if (!canEdit(editor, ui) || !hasFormatTarget(editor)) return
-				formatChain(editor)
-					.unsetAllMarks()
-					.command(({ tr }) => {
-						if (tr.selection.empty)
-							tr.setStoredMarks(
-								(tr.storedMarks ?? tr.selection.$from.marks()).filter((mark) =>
-									editor.extensionManager.nonClearableMarks.includes(mark.type.name),
-								),
-							)
-						return true
-					})
-					.run()
+				clearTextFormat(editor)
 				if (restoreFocus) editor.view.focus()
 			}}
 		>
@@ -259,7 +274,10 @@ function AlignmentPicker({ editor }: { editor: Editor }) {
 	return (
 		<label
 			className="typst-type-picker typst-alignment-picker"
-			title="段落对齐（Ctrl/⌘ Shift L/E/R/J）"
+			title={[
+				'段落对齐',
+				...alignments.map(([align, label]) => `${label}：${shortcutText(editorShortcuts[align])}`),
+			].join('\n')}
 		>
 			<select
 				aria-label="段落对齐"
@@ -281,7 +299,11 @@ function AlignmentPicker({ editor }: { editor: Editor }) {
 				)}
 				<option value="">模板对齐</option>
 				{alignments.map(([align, label]) => (
-					<option key={align} value={align}>
+					<option
+						key={align}
+						value={align}
+						title={shortcutProps(label, editorShortcuts[align]).title}
+					>
 						{label}
 					</option>
 				))}
@@ -303,6 +325,7 @@ function ListIndentTools({
 		<>
 			<ToolButton
 				label="增加缩进"
+				shortcut={editorShortcuts.indent}
 				icon="indent"
 				disabled={!canEdit(editor, ui) || !editor.can().sinkListItem('listItem')}
 				onClick={() => {
@@ -314,6 +337,7 @@ function ListIndentTools({
 			/>
 			<ToolButton
 				label="减少缩进"
+				shortcut={editorShortcuts.outdent}
 				icon="outdent"
 				disabled={!canEdit(editor, ui) || !editor.can().liftListItem('listItem')}
 				onClick={() => {
@@ -606,19 +630,24 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 			openAt(new DOMRect(event.clientX, event.clientY, 0, 0))
 		}
 		const keydown = (event: KeyboardEvent) => {
-			if (event.isComposing || nativeInput(event) || !canOpen()) return
+			if (event.defaultPrevented || event.isComposing || nativeInput(event) || !canOpen()) return
 			if (
-				(event.metaKey || event.ctrlKey) &&
-				!event.altKey &&
-				!event.shiftKey &&
-				event.key.toLowerCase() === 'k' &&
+				matchesShortcut(event, editorShortcuts.link) &&
 				canEdit(editor, latest.current) &&
 				allowedMark(latest.current, editor, 'link') &&
 				editor.state.selection instanceof TextSelection
 			) {
 				event.preventDefault()
 				openAt(undefined, 'link')
-			} else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+			} else if (
+				matchesShortcut(event, editorShortcuts.clearFormat) &&
+				canEdit(editor, latest.current) &&
+				hasFormatTarget(editor) &&
+				editor.can().unsetAllMarks()
+			) {
+				event.preventDefault()
+				clearTextFormat(editor)
+			} else if (matchesShortcut(event, editorShortcuts.format)) {
 				event.preventDefault()
 				openAt()
 			}
@@ -714,6 +743,7 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 				<button
 					type="button"
 					aria-label="表格操作"
+					{...shortcutProps('表格操作', editorShortcuts.format)}
 					aria-haspopup="dialog"
 					aria-expanded={open && Boolean(table)}
 					disabled={!canOpen()}
@@ -783,7 +813,12 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 								</button>
 							)}
 							<span>{view === 'link' ? '链接' : table ? '表格与文字' : '文字格式'}</span>
-							<button type="button" aria-label="关闭格式" onClick={() => close(true)}>
+							<button
+								type="button"
+								aria-label="关闭格式"
+								{...shortcutProps('关闭格式', editorShortcuts.cancel)}
+								onClick={() => close(true)}
+							>
 								×
 							</button>
 						</div>

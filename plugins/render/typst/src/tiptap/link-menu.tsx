@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core'
 import type { Transaction } from '@tiptap/pm/state'
 import { EditorUi, canEdit } from './editor-ui'
 import { prepareLink, safeLink } from './link-actions'
+import { shortcutProps } from './shortcuts'
 
 export function LinkMenu({
 	editor,
@@ -90,7 +91,11 @@ export function LinkMenu({
 				</p>
 			)}
 			<div className="typst-link-actions">
-				<button type="submit" disabled={composing || !canEdit(editor, ui)}>
+				<button
+					type="submit"
+					{...shortcutProps('应用链接', 'Enter')}
+					disabled={composing || !canEdit(editor, ui)}
+				>
 					应用链接
 				</button>
 				{existing && (

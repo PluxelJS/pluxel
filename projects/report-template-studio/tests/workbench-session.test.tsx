@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MantineProvider } from '@mantine/core'
 import { Workbench, useWorkbenchContentLifecycle } from '@worksplit/react'
 import { Actions, Model, type BorderNode } from 'flexlayout-react'
 import { useMemo } from 'react'
@@ -9,10 +10,11 @@ import { editorLifecycle } from '../src/renderer/editor-lifecycle'
 import { WorkspaceContext, useWorkspace } from '../src/renderer/workspace-context'
 import { StudioSession } from '../src/renderer/workbench-session'
 import { studioDocument } from '../src/renderer/workbench-routes'
+import { App } from '../src/renderer/app'
 
 vi.mock('../src/renderer/api', () => ({
 	onDesktopConnectionChange: vi.fn(),
-	api: { getTree: vi.fn(), writeFile: vi.fn() },
+	api: { getTree: vi.fn(), writeFile: vi.fn(), listProjects: vi.fn() },
 }))
 vi.mock('../src/renderer/assistant', () => ({ AssistantPanel: () => <div>Assistant</div> }))
 vi.mock('../src/renderer/panes', () => ({
@@ -48,6 +50,10 @@ beforeEach(() => {
 		},
 	)
 	vi.stubGlobal('scrollTo', vi.fn())
+	vi.stubGlobal(
+		'matchMedia',
+		vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })),
+	)
 	vi.mocked(api.getTree).mockResolvedValue({
 		project: { id: 'project', name: 'Project', root: '/project' },
 		revision: 'r1',
@@ -65,6 +71,63 @@ afterEach(async () => {
 })
 
 describe('Studio project operations through the public Worksplit API', () => {
+	it('runs workspace shortcuts only after the focused content has had a chance to consume them', async () => {
+		vi.mocked(api.listProjects).mockResolvedValue([
+			{ id: 'project', name: 'Project', root: '/project' },
+		])
+		const start = vi.spyOn(StudioSession.prototype, 'start')
+		render(
+			<MantineProvider>
+				<App />
+			</MantineProvider>,
+		)
+		fireEvent.click(await screen.findByText('Project', { exact: true }))
+		await screen.findByRole('textbox', { name: '筛选文件和文件夹' })
+		await waitFor(() => expect(start).toHaveBeenCalledOnce())
+		const opened = start.mock.contexts[0]
+		if (!(opened instanceof StudioSession))
+			throw new Error('The app did not start a Studio session')
+		sessions.push(opened)
+		const search = screen.getByRole('button', { name: '搜索代码视图' })
+		const explorer = screen.getByRole('button', { name: '资源管理器' })
+		// Native editors such as ProseMirror and Monaco handle keys below React's root.
+		// Exercise actual DOM propagation into App's window listener, without either editor engine.
+		const input = document.createElement('textarea')
+		document.querySelector('.workbench-column')!.append(input)
+		const consume = vi.fn((event: KeyboardEvent) => event.preventDefault())
+		input.addEventListener('keydown', consume)
+		fireEvent.click(search)
+		for (const modifiers of [{ ctrlKey: true }, { metaKey: true }]) {
+			for (const binding of [
+				{ key: 'E', shiftKey: true },
+				{ key: 'F', shiftKey: true },
+				{ key: 'p' },
+			])
+				fireEvent.keyDown(input, { ...modifiers, ...binding })
+		}
+		expect(consume).toHaveBeenCalledTimes(6)
+		expect(search.getAttribute('aria-pressed')).toBe('true')
+		input.removeEventListener('keydown', consume)
+		expect(
+			fireEvent.keyDown(input, { key: 'E', ctrlKey: true, shiftKey: true, isComposing: true }),
+		).toBe(true)
+		expect(search.getAttribute('aria-pressed')).toBe('true')
+		fireEvent.keyDown(input, { key: 'E', ctrlKey: true, shiftKey: true })
+		expect(explorer.getAttribute('aria-pressed')).toBe('true')
+		fireEvent.keyDown(input, { key: 'F', metaKey: true, shiftKey: true })
+		expect(search.getAttribute('aria-pressed')).toBe('true')
+		fireEvent.keyDown(input, { key: 'p', ctrlKey: true })
+		expect(explorer.getAttribute('aria-pressed')).toBe('true')
+		fireEvent.click(search)
+		const query = screen.getByRole('textbox', { name: '搜索代码' })
+		query.addEventListener('keydown', consume)
+		fireEvent.keyDown(query, { key: 'Escape' })
+		expect(search.getAttribute('aria-pressed')).toBe('true')
+		query.removeEventListener('keydown', consume)
+		fireEvent.keyDown(query, { key: 'Escape' })
+		expect(explorer.getAttribute('aria-pressed')).toBe('true')
+	})
+
 	it('shares startup work and does not open reports after the project shuts down', async () => {
 		const session = setup()
 		let resolveTree!: (tree: Awaited<ReturnType<typeof api.getTree>>) => void

@@ -9,6 +9,7 @@ import { validReferenceLabel } from './document-nodes'
 import { referenceTargetsInDocument } from './reference-targets'
 import { EditorUi, allowedNode, canEdit, type EditorUiContext } from './editor-ui'
 import type { TypstEditorConfig, TypstReferenceTarget } from './types'
+import { editorShortcuts, matchesShortcut, shortcutProps, shortcutText } from './shortcuts'
 
 const kindNames = { figure: '图', table: '表', equation: '公式' } as const
 type Target = TypstReferenceTarget
@@ -246,7 +247,10 @@ export function TypstMathView(props: NodeViewProps) {
 	}
 	const sourceKeys = (event: KeyboardEvent<HTMLElement>) => {
 		if (event.nativeEvent.isComposing || latex.composing.current) return
-		if (event.key === 'Escape' || (event.key === 'Enter' && (event.ctrlKey || event.metaKey))) {
+		if (
+			matchesShortcut(event, editorShortcuts.cancel) ||
+			matchesShortcut(event, editorShortcuts.finish)
+		) {
 			event.preventDefault()
 			event.stopPropagation()
 			finish(event.key === 'Escape')
@@ -296,6 +300,7 @@ export function TypstMathView(props: NodeViewProps) {
 						<textarea
 							ref={input}
 							aria-label="公式 LaTeX"
+							title={`${shortcutText(editorShortcuts.finish)} 完成，Esc 取消；移开焦点保存`}
 							onKeyDown={sourceKeys}
 							aria-invalid={Boolean(latex.error)}
 							aria-describedby={latex.error ? errorId : undefined}
@@ -317,6 +322,7 @@ export function TypstMathView(props: NodeViewProps) {
 						<small>移开焦点保存 · Esc 取消</small>
 						<button
 							type="button"
+							{...shortcutProps('取消公式修改', editorShortcuts.cancel)}
 							onMouseDown={(event) => event.preventDefault()}
 							onClick={() => finish(true)}
 							onKeyDown={sourceKeys}
@@ -325,6 +331,7 @@ export function TypstMathView(props: NodeViewProps) {
 						</button>
 						<button
 							type="button"
+							{...shortcutProps('完成公式编辑', editorShortcuts.finish)}
 							onMouseDown={(event) => event.preventDefault()}
 							onClick={() => finish()}
 							onKeyDown={sourceKeys}

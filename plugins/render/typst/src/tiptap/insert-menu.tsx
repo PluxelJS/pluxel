@@ -280,7 +280,7 @@ export function InsertMenu({
 				type="button"
 				className="typst-tool-button typst-insert-trigger"
 				aria-label={compact ? '在块后插入' : '插入'}
-				title={compact ? '在块后插入' : '插入内容，也可以在正文输入 /'}
+				title={compact ? '在块后插入' : '在正文输入 / 插入内容；输入 @ 引用图、表或公式'}
 				aria-haspopup="dialog"
 				aria-expanded={visible}
 				aria-controls={visible ? `${id}-dialog` : undefined}

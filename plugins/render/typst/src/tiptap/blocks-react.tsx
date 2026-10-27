@@ -4,6 +4,7 @@ import { NodeViewWrapper, useEditorState, type NodeViewProps } from '@tiptap/rea
 import { blockAttributeError, templateDefinitions } from './blocks'
 import { EditorUi } from './editor-ui'
 import { FieldData } from './data-context'
+import { editorShortcuts, matchesShortcut, shortcutProps } from './shortcuts'
 
 /** Atomic content uses native selection, drag/drop and commands; only source editing is local. */
 export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps) {
@@ -179,12 +180,12 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 				openMenu(event.clientX, event.clientY)
 			}}
 			onKeyDown={(event: React.KeyboardEvent<HTMLDivElement>) => {
-				if (event.target !== event.currentTarget) return
+				if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return
 				if (event.key === 'Enter') {
 					event.preventDefault()
 					reveal()
 				}
-				if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+				if (matchesShortcut(event, editorShortcuts.format)) {
 					event.preventDefault()
 					const box = event.currentTarget.getBoundingClientRect()
 					openMenu(box.left, box.top)
@@ -209,6 +210,7 @@ export function TypstBlockView({ editor, node, selected, getPos }: NodeViewProps
 					type="button"
 					className="typst-block-menu-trigger"
 					aria-label="块操作"
+					{...shortcutProps('卡片聚焦时打开块操作', editorShortcuts.format)}
 					aria-haspopup="menu"
 					popoverTarget={menuId}
 					disabled={disabled}

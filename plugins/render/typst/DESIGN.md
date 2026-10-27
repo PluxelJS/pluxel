@@ -106,6 +106,8 @@ id/label 在整个区域集合内唯一。引用保存目标 id 与可选 `showC
 
 链接视图与格式视图共用 `format-menu.tsx` 的显式请求和 native Selection，Mod+K、格式按钮进入同一编辑过程；URL 草稿属于界面，`link-actions.ts` 只准备原生 transaction，不保存正文副本。链接复用 canonical `allowedLink`、原生 Link URI 检查和区域准入；点击提交时重查。清除 Mark 与列表缩进也用原生命令。React RegionEditor 安装官方 Selection extension，只用 decoration 保留控件失焦时的文字高亮，不改变 JSON/schema。
 
+`shortcuts.ts` 统一内部按键描述、平台化悬浮提示和 `aria-keyshortcuts`；基础格式执行仍属于官方 Tiptap keymap。只有链接、清除文字格式、菜单和公式完成等 UI 操作由各自界面处理器匹配同一描述，不安装文档级格式快捷键或另一套命令分发。清除格式的按钮与按键调用同一个原生事务，保留 `nonClearableMarks`、段落结构与对齐。
+
 `captureTypstCandidateTarget` 统一消费原生 Selection 的所有 ranges，捕获区域、修订与最近共同容器内的完整块；单单元格 CellSelection 取该格正文，跨单元格才包络整个表。两个宿主删除各自范围算法，固定目标后仅保留一份可编辑文字；文字变化使 prepare 结果失效，apply 仍读取最新事实。`TypstRegionEditor.content` 在原生 Editor 实例创建前准入并固定快照，后续 content prop 不替换或卸载已接纳正文；regionId/扩展集合身份和显式文档 key 决定实例与 history 归属。初始失败不创建 Editor，以 effect 调用宿主 onValidationError 或显示默认 alert；宿主提供回调时接管错误呈现。修正初始失败内容需新 key 重试，不在普通 render 中隐式重新接纳。
 
 `tiptap/table-style-controls.tsx` 独立读取已安装扩展的选项，只在选区属于同一张表时显示固定属性行。它在点击时再次检查权限、组合输入和允许值，使用原生 transaction 按精确位置修改当前表格属性并保留选区，避免对嵌套表格批量更新。样式通过官方 wrapper 的 decoration 标记生效，不依赖区域组件；只读与普通官方 Editor 使用同一外观规则，辅助虚线仅用于聚焦编辑。
