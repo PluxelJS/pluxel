@@ -4,6 +4,7 @@ export default defineConfig({
 	exports: { devExports: '@pluxel/source' },
 	entry: {
 		bindings: './src/bindings.ts',
+		browser: './src/browser.ts',
 		environment: './src/environment.ts',
 		sources: './src/sources.ts',
 		index: './src/index.ts',

@@ -20,6 +20,7 @@ const allowedDeclarations = new Set([
 	'packages/workbench/shell/src/theme/mantine/mantine.d.ts',
 	'packages/workbench/shell/src/types/worksplit-react.d.ts',
 	'packages/workbench/shell/src/vite-env.d.ts',
+	'projects/docs/src/examples/typst/theme-variants.d.ts',
 	'projects/docs/src/styles.d.ts',
 	'projects/embedded-launcher/src/execution/native.d.ts',
 	'projects/report-template-studio/src/renderer/modern-monaco.d.ts',

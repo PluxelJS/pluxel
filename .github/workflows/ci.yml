@@ -92,15 +92,6 @@ jobs:
             ${{ runner.os }}-vp-task-v1-${{ hashFiles('pnpm-lock.yaml') }}-
             ${{ runner.os }}-vp-task-v1-
 
-      - name: Install Typst native toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal
-
-      - name: Restore Typst native build cache
-        uses: actions/cache@v6
-        with:
-          path: plugins/render/typst/native/.build
-          key: ${{ runner.os }}-x64-typst-rust-1.99.1-${{ hashFiles('plugins/render/typst/native/build.mjs', 'plugins/render/typst/native/*.patch', 'plugins/render/typst/native/*.rs') }}
-
       - name: Verify repository
         id: task-verify
         env:
@@ -108,8 +99,8 @@ jobs:
         run: |
           set -euo pipefail
           node -e 'const os = require("node:os"); console.log(`Runner: ${os.availableParallelism()} CPUs, ${Math.round(os.totalmem() / 1024 ** 3)} GiB RAM; 2 concurrent package tasks`)'
-          # Explicit native task dependencies handle publishing cycles; cache unchanged work.
-          vp run --concurrency-limit=2 -v workspace:verify
+          # Explicit task dependencies handle publishing cycles; cache unchanged work.
+          vp run --concurrency-limit=2 -v workspace:ci
 
       - name: Capture Vite task execution details
         if: always() && steps.task-verify.outcome != 'skipped'

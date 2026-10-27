@@ -46,7 +46,7 @@ Explain the observable behavior and any migration requirement.
 ## 自动流程
 
 1. Pull request CI 的 `governance:check` 解析全部 pending changelog，并验证计划中只有允许发布的公开包。
-2. 变更合并到 `main` 后，CI 完成通用 lint、format、typecheck、build 和 test。
+2. 变更合并到 `main` 后，CI 完成 `workspace:ci` 的检查，范围见[GitHub Actions](../docs/development/workspace-toolchain.md#github-actions)。
 3. `.github/workflows/release.yml` 由成功 CI 的 `workflow_run` 触发并执行 `vp run tegami ci`。
 4. 有 pending changelog 时，Tegami 更新 versions、package changelogs 和 lockfile，并创建或更新
    `tegami/version-packages` Version Packages PR；这一步不构建、不发布。
@@ -80,7 +80,7 @@ gh workflow run release.yml --ref main
 
 ## 发布验证
 
-普通 CI 已完成 release metadata、workspace 治理、lint、format、typecheck、build 和单元测试。Release workflow
+普通 CI 已完成 `workspace:ci` 的 release metadata、workspace 治理、格式及所选包的 lint、typecheck、build 和测试。Release workflow
 只接受同一 `main` commit 的成功 CI，不重复这些通用检查。发布 job 从锁定依赖安装工具和包，不恢复其他运行
 写入的 mise、pnpm、Vite Task 或 native build cache；CI 仍保留缓存，同一次发布的构建任务也可复用本次生成的
 Vite Task 结果。该边界遵循 [mise-action 的发布工作流指南](https://github.com/jdx/mise-action/tree/v5.2.0#release-workflows)。
@@ -90,6 +90,8 @@ Vite Task 结果。该边界遵循 [mise-action 的发布工作流指南](https:
 - `beforePublishAll` 分别从真实 create/CLI tarball 验证 example workspace 与独立插件模板，整批发布只执行一次；
 - `willPublish` 按 Tegami 当前即将发布的 package 调用 Vite Task 构建入口，由 task graph 补齐其构建依赖；
 - 已成功发布的 package 在失败重试时不会重新发布，未完成 package 仍会在发布前单独重建。
+
+Release 不安装 Rust 或构建 Typst 原生库。Takumi Markdown 的公开构建只需要 Typst 的 JavaScript、声明与 Plugin reference，依赖 `@pluxel/plugin-typst#compile-lib`；其 native 集成测试、Typst 完整 `build` / `compile` 与 Studio 本地构建仍准备原生库。此拆分不改变 Tegami 的包选择、发布锁或发布 hooks。
 
 ## 模板发行版本
 

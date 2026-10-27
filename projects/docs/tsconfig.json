@@ -1,12 +1,15 @@
 {
 	"compilerOptions": {
-		"target": "ES2023",
-		"lib": ["dom", "dom.iterable", "ES2023"],
+		"target": "ES2024",
+		"lib": ["dom", "dom.iterable", "ES2024"],
 		"jsx": "react-jsx",
+		"experimentalDecorators": true,
 		"module": "ESNext",
 		"moduleResolution": "bundler",
+		"customConditions": ["@pluxel/hmr"],
 		"resolveJsonModule": true,
 		"allowJs": true,
+		"allowImportingTsExtensions": true,
 		"checkJs": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,

@@ -68,9 +68,11 @@ closure。统一测试组合依赖 Services/Workbench 的发布入口，因此�
 
 消费本包发布制品的测试任务必须显式依赖本包 `build`，不能只依赖 依赖包的 `build` 或依赖暖缓存碰巧留下的文件。Package Manager 的不可变安装测试与维护者 Host 的 native/production-Vite smoke 都遵守这一顺序；测试子进程失败或超时也必须被回收。
 
-文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、valibot-form 构建与 Playground 类型资源；Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。
+文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、Host、valibot-form 构建与 Playground 类型资源；Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。
 
-CI 直接执行 `workspace:verify` 的完整任务图，由 Vite Task 根据真实输入复用结果，不再维护另一套按变更路径选择包的规则。在双核 runner 上并行两个 package task。保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
+文档 `/examples` 在浏览器 Worker 中组合真实 Host 与 Typst WASM Plugin。`vp run pluxel-docs#test:examples --url <Examples URL>` 对已运行的文档开发服务或生产构建执行浏览器验收，通过 `ws://127.0.0.1:3000` 连接已有 Playwright 服务，开启 loopback 转发以访问本地文档。用户提供其他服务时可用 `--ws` 或 `PLAYWRIGHT_WS_ENDPOINT` 指定地址，`--artifacts` 指定截图目录；脚本不安装或启动浏览器，只清理自己的 context 并断开连接，不关闭共享服务。首次运行将真实 WASM 二进制请求延迟两秒，确认冷启动不会被原先的 1.5 秒默认预算中断，首次编译后移除拦截。页面验收检查顶栏 Examples 位于 Playground 后并带图标、桌面编辑区靠上且占主要视口、Typst 与插件热替换两个入口持续可见。通过真实入口切换示例，确认同一个 Worker、正文与撤销历史保留，预览点击会返回 Typst 编辑器；日志按需展开。验收覆盖打开页面与修改内容后的自动编译，离线修改 main.typ 页宽后确认 SVG 尺寸实际增大，通过真实点击和 DOM selection 检查共享编辑器的标题、格式与表格、正文/预览双向块定位，以及旧预览保留但跳转禁用、恢复后按新版本定位。断网切换简洁版 → 彩色版 → 简洁版时，检查真实 catalog 报告中 ThemePlugin 替换、ReportPlugin 重启、TypstPlugin 保留，SVG 随实现改变，同一个 Worker 不重复请求 WASM/字体，正文与撤销/重做历史保留；另检查中文 SVG、模板语法错误与恢复、停止/重启、手机切换与热替换操作、无页面横向溢出及无源码 POST。截图保留桌面和手机的实际视口、独立热替换视图及桌面深色主题。CI 的 `@pluxel/plugin-typst#check-wasm` 是更短的真实 WASM/lifecycle 回归，不能替代此页面验收。
+
+CI 直接执行 `workspace:ci` 的明确任务图，由 Vite Task 根据真实输入复用结果，不维护另一套按变更路径选择包的规则；native/Electron 本地任务与 CI 短测试的范围见[GitHub Actions](../docs/development/workspace-toolchain.md#github-actions)。`workspace:verify` 保留本地完整门禁。在双核 runner 上并行两个 package task。所选包保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
 任务执行日志和缓存结果，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
 Core benchmark 跟踪 core、Context、基准场景与构建依赖变化；仅修改测试或 Markdown 文档不触发完整的同 runner 对比。
 比较脚本使用 Node 24 原生 TypeScript 入口，只比较相同 workload 标识与 scenario 的 base/head 实测报告。workload 变化后重新选取基线；不兼容的报告明确失败，不换算历史数据。

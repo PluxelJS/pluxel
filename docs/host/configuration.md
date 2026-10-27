@@ -18,6 +18,7 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 | 控制台、Workbench store 与远程日志 | [日志 plan](#host-logging-plan)、[OTLP](#远程输出原生-logtape-sink)                       |
 | 数据库后端与应用共享数据库         | [Backend](#选择-native-postgresql-或-pglite)、[应用数据库](#application-private-database) |
 | 轻量独立 Host                      | [Logging](#独立-logging-host)、[HTTP listener](#独立-http-host)                           |
+| 浏览器与 Web Worker                | [浏览器 Host](#浏览器-host)                                                               |
 | 生产制品                           | [构建](#生产构建)                                                                         |
 
 以下 `HostApplication`、`servicesPreset()` 和独立 `createHost()` 示例表示不同装配方式；选择一种适合现有项目的入口，不叠加创建第二个 Host。
@@ -25,10 +26,61 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 ## 选择组合
 
 - 自定义或轻量宿主：`@pluxel/host`，只安装显式列出的服务。
+- 浏览器与 Web Worker：`@pluxel/host/browser`，使用固定插件目录和浏览器可用的服务。
 - 官方服务器组合：`servicesPreset()`，包括 HTTP、Commands、Node artifacts、Workers、Persistence、Vault、Logging、Management 和默认启用的 Workbench。
 - 无管理页面的常用基础组合：`standardServices()`，包括 HTTP、Commands、Node artifacts、Workers 和 Persistence。
 
 Database 单独安装；关闭 Workbench 不会关闭插件业务能力。详细服务列表与资源归属见[组合 Host 服务](./services.md)。
+
+## 浏览器 Host
+
+`@pluxel/host/browser` 导出同一个 `createHost()`、`defineHostService()` 及其类型，执行真实的 Core 依赖图、配置和生命周期。这个入口不加载 Node 应用启动器或文件系统来源；插件、所选服务及其依赖也必须支持浏览器，能在启用 Node 兼容层的 Worker 运行不代表浏览器可用。
+
+普通 `@Plugin` 源码仍需在构建阶段经过 Pluxel lowering。Vite 同时为开发模块和生产 Worker 安装独立编译插件：
+
+```ts no-twoslash
+// vite.config.ts
+import { defineConfig } from 'vite'
+import { configSourcePlugin, createPluginSemanticsPlugin } from '@pluxel/rolldown/plugins'
+
+const root = import.meta.dirname
+export default defineConfig({
+	root,
+	oxc: { decorator: { legacy: true } },
+	plugins: [createPluginSemanticsPlugin({ root }).plugin, configSourcePlugin()],
+	worker: {
+		plugins: () => [createPluginSemanticsPlugin({ root }).plugin, configSourcePlugin()],
+	},
+})
+```
+
+在页面或 Worker 中装配已编译的插件，并检查启动报告。下面的 `DemoPlugin` 是普通导出的 Plugin；它依赖的 provider 也要列入 `plugins`：
+
+```ts no-twoslash
+import { pluginNodeAddressOf } from '@pluxel/core'
+import { createHost } from '@pluxel/host/browser'
+import { DemoPlugin, ProviderPlugin } from './plugins'
+
+const host = await createHost({
+	plugins: [DemoPlugin, ProviderPlugin],
+	state: { initial: { autoStart: [pluginNodeAddressOf(DemoPlugin)] } },
+})
+try {
+	const report = await host.start()
+	if (
+		report.reconciliation.length > 0 ||
+		(report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
+	) {
+		throw new Error('Plugin 启动失败', { cause: report })
+	}
+	console.log(await host.status())
+	// 在 Host 存续期间执行应用操作。
+} finally {
+	await host.close()
+}
+```
+
+配置和运行策略默认仅在内存中。业务 consumer 通过 constructor 注入 provider，在 `init()` 中注册页面或 Worker 的消息处理，并用 `ctx.effects` 释放监听器；界面可以消费 `host.status()` 展示真实节点状态。停止页面或 Worker 前由创建者 `await host.close()`，然后终止 Worker；直接 `terminate()` 不会等待插件清理。
 
 ## 应用入口
 

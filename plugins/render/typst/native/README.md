@@ -15,9 +15,11 @@ node plugins/render/typst/native/build.mjs
 
 Build on the target platform and architecture. The script runs `cargo +1.99.1 build --release --locked -p typst-ts-node-compiler` and installs `native/compiler.node`. Missing prerequisites or failed compilation are errors; there is no fallback to a different compiler. The package build must invoke this preparation before packaging its native artifact.
 
+`vp run @pluxel/plugin-typst#compile-lib` builds JavaScript and declarations only, for browser/WASM and type-only consumers such as Takumi Markdown's public package build. The normal `build` / `compile` task also prepares the native binding; full plugin tests and Studio continue to use that complete task.
+
 The private `.build/source` checkout is reset to the pinned revision on a rebuild. `.build/target` is the default Cargo cache; set `CARGO_TARGET_DIR` to reuse another persistent cache. `CARGO_BUILD_TARGET` cross compilation is intentionally rejected. The script skips compilation only when the platform, architecture, source/patch/build-script fingerprint and output artifact hash match its stamp. After an interrupted build, remove `.build/build.lock` if it remains.
 
-Do not commit native binaries, build caches or machine-specific stamps. Each platform's CI builds its own artifact; distributing a package includes the resulting `compiler.node`.
+Do not commit native binaries, build caches or machine-specific stamps. Build locally on the target platform when the native plugin or Studio is needed; distributing a package includes the resulting `compiler.node`. GitHub Actions runs short checks including real Typst WASM compilation, and Release builds the public packages' JavaScript and declarations. Neither workflow builds this native binding or packages Electron applications.
 
 ## Navigation contract
 

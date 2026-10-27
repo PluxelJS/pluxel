@@ -87,7 +87,7 @@ Monorepo 用 `dependsOn: [{ task: 'build', from: ['dependencies', 'devDependenci
 - `env` 声明影响结果的环境变量，例如 `CI`、`NODE_ENV` 和构建开关；密钥不能写进配置。自动环境追踪的适用范围见 [Automatic Data Tracking](https://viteplus.dev/guide/automatic-data-tracking)。
 - 部署、发布、数据迁移、实时服务检查和外部集成测试使用 `cache: false`。URL 没变不能证明远端服务状态没变。官方模板的治理与完整验收入口每次执行，底层构建和单元测试仍复用缓存。
 
-迁移后连续执行两次 `vp run verify`，检查第二次的 cache hit；再删除一个构建产物验证恢复，修改一个真实输入确认相应任务失效。CI 或需要指定并发与查看任务报告时，直接调用原生聚合任务，例如 `vp run --concurrency-limit=2 workspace:verify`，避免 package script 再启动内层 runner，让限制与报告覆盖实际任务图。`vp run --last-details` 显示上次执行细节；需要强制重跑使用 `--no-cache`。CI 持久化 `node_modules/.vite/task-cache`，避免每次 checkout 都失去缓存。完整配置参考 [Task Caching](https://viteplus.dev/guide/cache) 与 [run 配置](https://viteplus.dev/config/run)。
+迁移后连续执行两次 `vp run verify`，检查第二次的 cache hit；再删除一个构建产物验证恢复，修改一个真实输入确认相应任务失效。需要指定并发与查看任务报告时，直接调用原生聚合任务，例如本地完整验证的 `vp run --concurrency-limit=2 workspace:verify`，避免 package script 再启动内层 runner，让限制与报告覆盖实际任务图。仓库 CI 使用下文的 `workspace:ci`。`vp run --last-details` 显示上次执行细节；需要强制重跑使用 `--no-cache`。CI 持久化 `node_modules/.vite/task-cache`，避免每次 checkout 都失去缓存。完整配置参考 [Task Caching](https://viteplus.dev/guide/cache) 与 [run 配置](https://viteplus.dev/config/run)。
 
 ## 准备 checkout
 
@@ -136,7 +136,9 @@ npm 消费项目用 `pluxel workspace doctor --root "{{config_root}}"`。显式 
 
 [Vite+ 官方 setup-vp](https://github.com/voidzero-dev/setup-vp) 可负责 Vite+、Node、包管理器、依赖安装与依赖缓存，适合采用它统一初始化的 CI。本仓库已由 mise 管理这些工具，保留一个安装入口；Vite Task 结果缓存仍需单独持久化。若下游选择 setup-vp，按其官方要求使用精确发布版本并由 Dependabot 更新：它的 `@v1` 标签已冻结，不会跟随新版本。
 
-[hk 官方 CI 指南](https://hk.jdx.dev/ci.html) 使用 mise 安装工具后直接运行 `hk validate` 和 `hk check --all`，无需安装 Git hooks。本仓库的完整门禁由 Vite Task 执行 `vp check`、类型检查、测试与构建，hk 复用相同检查器处理本地提交文件，避免 CI 重复执行全量检查。
+[hk 官方 CI 指南](https://hk.jdx.dev/ci.html) 使用 mise 安装工具后直接运行 `hk validate` 和 `hk check --all`，无需安装 Git hooks。本仓库通过 `vp run --concurrency-limit=2 workspace:ci` 执行治理、全仓格式检查及所选包的 typed lint、类型检查、测试与构建。Typst native、Studio，以及集成测试依赖 native 的 Takumi Markdown 和示例 Plugin Host 完整任务留在本地；CI 对这些目录不执行依赖构建制品的 typed lint，改跑真实 Typst WASM 编译、预览、源码定位、草稿存储、发现协议和 Electron 退出确认的短测试。CI 与 Release 均不安装 Rust、不编译 Typst 原生库，也不打包 Electron。
+
+根 `vite.config.ts` 的同一份 native consumer 集合选择 CI 聚合范围与 typed lint 排除目录。`vp run ci:smoke` 可单独复现短测试，其中 `@pluxel/plugin-typst#check-wasm` 使用发布的 WASM 编译器验证编译、错误恢复和生命周期。`vp run verify` / `workspace:verify` 仍执行全工作区完整门禁，使用 native 的功能或桌面交付前在本地执行相应构建与验收。Release 保留公开包的标准构建；Takumi Markdown 只通过 Typst 的 `compile-lib` 获取 JavaScript 与声明，其 native 集成测试仍依赖完整 `compile`。hk 继续复用根检查器处理本地提交文件。
 
 ## 管理开发服务
 

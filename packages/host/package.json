@@ -23,6 +23,10 @@
 			"@pluxel/source": "./src/bindings.ts",
 			"default": "./dist/bindings.mjs"
 		},
+		"./browser": {
+			"@pluxel/source": "./src/browser.ts",
+			"default": "./dist/browser.mjs"
+		},
 		"./environment": {
 			"@pluxel/source": "./src/environment.ts",
 			"default": "./dist/environment.mjs"
@@ -45,6 +49,7 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./bindings": "./dist/bindings.mjs",
+			"./browser": "./dist/browser.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/protocol": "./dist/internal/protocol.mjs",
@@ -70,6 +75,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/core": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/node": "catalog:types",
 		"@types/picomatch": "catalog:types",

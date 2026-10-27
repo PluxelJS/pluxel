@@ -82,7 +82,11 @@ const svg = await this.typst.renderSvg('#include "sections/body.typ"', {
 
 一次只接纳一个编译，重叠调用拒绝为 `BUSY`；未启动或已停止时为 `CLOSED`，空源码为 `INVALID_INPUT`。语法错误通过 `COMPILE_FAILED` 与 diagnostics 返回，修改源码后可继续调用。资源加载与底层 WASM 错误保留原始异常。每次编译释放自己的 world/session，插件停止通过 effects 释放 compiler/renderer。
 
-WASM 编译会同步占用所在 Worker，插件没有软取消或时间上限。宿主负责超时后终止 Worker，并在页面退出时停止应用、终止 Worker；终止也会回收该 Worker 的 WASM 线性内存。需要 PDF、二进制文件资源或保留编译状态的编辑会话时继续使用服务端入口。
+WASM 编译会同步占用所在 Worker，插件没有软取消或时间上限。宿主负责超时后终止 Worker，并在页面退出时停止应用、终止 Worker；终止也会回收该 Worker 的 WASM 线性内存。需要 PDF、二进制文件资源或保留编译状态的编辑会话时继续使用服务端入口。完整浏览器装配和交互示例见 [Examples](/examples)。
+
+Examples 打开即启动，通过示例列表切换「Typst 实时排版」与「插件热替换」。两者共用同一运行实例，切换时保留草稿与撤销记录；运行记录可在底部展开。排版示例复用 `TypstRegionEditor` 和区域生成器，提供正文格式、列表、表格、Typst 模板编辑，以及正文与预览的块级双向跳转。编辑后自动编译；处理中保留上次预览，禁用旧修订的导航，成功后恢复。示例为生成的顶层块附加 Typst 链接，使用官方 SVG 中的真实链接区域定位；跨页区域由编译器拆分。官方 WASM 0.7.0 没有开放原生补丁的字符来源查询，因此这里不宣称字符级精度；桌面端的精确导航见[编辑与定位](./typst-editor.md#预览与定位)。
+
+在「插件热替换」示例中切换排版版本，会向 `host.updateCatalog()` 提交另一版同身份的 `ThemePlugin`。真实 Core 替换排版插件、重建依赖它的 `ReportPlugin`，保留 `TypstPlugin` 及其 WASM 实例；编辑器、撤销记录和 Worker 均不重建。页面展示实际更新报告和生命周期事件。两版插件经过相同的 Pluxel 编译变换后预先打包，模拟新模块送达；这里演示真实插件热替换，不提供浏览器内 TypeScript 构建器或开发服务器。初次资源加载后，编辑、编译和插件切换都可离线运行。
 
 ## 定义可编辑报表
 

@@ -8,7 +8,8 @@
 		"build": "vp run compile",
 		"start": "fumapress start",
 		"typecheck": "vp run check-types",
-		"lint": "vp lint --tsconfig tsconfig.json --type-aware -A typescript/no-implied-eval src press.config.tsx source.config.ts vite.config.ts scripts"
+		"lint": "vp lint --tsconfig tsconfig.json --type-aware -A typescript/no-implied-eval src press.config.tsx source.config.ts vite.config.ts scripts",
+		"test:examples": "node tests/typst.browser.mjs"
 	},
 	"dependencies": {
 		"@base-ui/react": "catalog:frontend",
@@ -36,10 +37,13 @@
 		"valibot-form": "workspace:*"
 	},
 	"devDependencies": {
+		"@myriaddreamin/typst-ts-renderer": "catalog:prod",
+		"@myriaddreamin/typst-ts-web-compiler": "catalog:prod",
 		"@opentelemetry/api": "catalog:dev",
 		"@opentelemetry/api-logs": "catalog:dev",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/plugin-cache": "workspace:*",
 		"@pluxel/plugin-canvas": "workspace:*",
 		"@pluxel/plugin-echarts": "workspace:*",
@@ -50,11 +54,13 @@
 		"@pluxel/plugin-redis": "workspace:*",
 		"@pluxel/plugin-storage": "workspace:*",
 		"@pluxel/plugin-takumi": "workspace:*",
+		"@pluxel/plugin-typst": "workspace:*",
 		"@pluxel/plugin-wretch": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tailwindcss/vite": "catalog:build",
+		"@tiptap/pm": "catalog:frontend",
 		"@types/mdx": "catalog:types",
 		"@types/node": "catalog:types",
 		"@types/react": "catalog:types",
@@ -65,6 +71,7 @@
 		"dts-bundle-generator": "catalog:dev",
 		"elysia": "catalog:dev",
 		"fumadocs-mdx": "catalog:docs",
+		"playwright": "catalog:dev",
 		"postcss": "catalog:dev",
 		"tailwindcss": "catalog:frontend",
 		"typescript": "catalog:dev",

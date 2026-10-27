@@ -1372,6 +1372,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -2943,6 +2946,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/valibot-form
     devDependencies:
+      '@myriaddreamin/typst-ts-renderer':
+        specifier: catalog:prod
+        version: 0.7.0
+      '@myriaddreamin/typst-ts-web-compiler':
+        specifier: catalog:prod
+        version: 0.7.0
       '@opentelemetry/api':
         specifier: catalog:dev
         version: 1.9.1
@@ -2955,6 +2964,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/plugin-cache':
         specifier: workspace:*
         version: link:../../plugins/cache
@@ -2985,6 +2997,9 @@ importers:
       '@pluxel/plugin-takumi':
         specifier: workspace:*
         version: link:../../plugins/render/takumi
+      '@pluxel/plugin-typst':
+        specifier: workspace:*
+        version: link:../../plugins/render/typst
       '@pluxel/plugin-wretch':
         specifier: workspace:*
         version: link:../../plugins/wretch
@@ -3000,6 +3015,9 @@ importers:
       '@tailwindcss/vite':
         specifier: catalog:build
         version: 4.3.3(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.106.1)(sass@1.106.1)(sugarss@5.0.1(postcss@8.5.31))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))
+      '@tiptap/pm':
+        specifier: catalog:frontend
+        version: 3.32.0
       '@types/mdx':
         specifier: catalog:types
         version: 2.0.14
@@ -3030,6 +3048,9 @@ importers:
       fumadocs-mdx:
         specifier: catalog:docs
         version: 15.4.8(95819dd336786a9e6f1c746c5a25c246)
+      playwright:
+        specifier: catalog:dev
+        version: 1.64.1
       postcss:
         specifier: catalog:dev
         version: 8.5.31

@@ -1,0 +1,529 @@
+main:has(> .typst-example) {
+	max-width: none;
+	padding: 0;
+}
+.typst-example {
+	display: grid;
+	grid-template-columns: 184px minmax(0, 1fr);
+	width: 100%;
+	height: calc(100dvh - 3.5rem);
+	min-height: 420px;
+	color: var(--color-fd-foreground);
+	background: var(--color-fd-background);
+	overflow: hidden;
+	font-size: 13px;
+}
+.typst-example [hidden] {
+	display: none !important;
+}
+.typst-example button,
+.typst-example select,
+.typst-example summary {
+	cursor: pointer;
+}
+.typst-example button:disabled,
+.typst-example select:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.typst-example svg:not(.typst-example-rich-editor svg) {
+	width: 16px;
+	height: 16px;
+	flex-shrink: 0;
+}
+.typst-example :is(button, select, summary, a):focus-visible {
+	outline: 2px solid var(--color-fd-primary);
+	outline-offset: -2px;
+}
+.typst-example-sidebar {
+	display: flex;
+	flex-direction: column;
+	padding: 18px 10px 12px;
+	border-right: 1px solid var(--color-fd-border);
+	background: color-mix(in srgb, var(--color-fd-muted) 40%, var(--color-fd-background));
+}
+.typst-example-sidebar h1 {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0 10px;
+	margin-bottom: 18px;
+	font-size: 14px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+}
+.typst-example-sidebar h1 span {
+	font: 11px var(--font-mono);
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-sidebar nav {
+	display: grid;
+	gap: 4px;
+}
+.typst-example-sidebar nav button {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 10px;
+	text-align: left;
+	border-radius: 6px;
+	color: var(--color-fd-muted-foreground);
+	transition:
+		background-color 120ms,
+		color 120ms;
+}
+.typst-example-sidebar nav button:hover {
+	background: var(--color-fd-muted);
+	color: var(--color-fd-foreground);
+}
+.typst-example-sidebar nav button[aria-current='page'] {
+	background: color-mix(in srgb, var(--color-fd-primary) 9%, transparent);
+	color: var(--color-fd-primary);
+	font-weight: 550;
+}
+.typst-example-sidebar-footer {
+	display: grid;
+	gap: 8px;
+	margin-top: auto;
+	padding: 12px 10px 0;
+	font-size: 11px;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-sidebar-footer a,
+.typst-example-help a {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--color-fd-primary);
+}
+.typst-example-content {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+}
+.typst-example-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 48px;
+	padding: 8px 16px;
+	border-bottom: 1px solid var(--color-fd-border);
+}
+.typst-example-title,
+.typst-example-actions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+}
+.typst-example-title h2 {
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.typst-example-title [role='status'] {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-title [role='status']::before {
+	content: '';
+	flex-shrink: 0;
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--color-fd-muted-foreground);
+}
+.typst-example-title [data-state='ready']::before {
+	background: var(--color-fd-primary);
+}
+.typst-example-title [data-state='error']::before {
+	background: #c65454;
+}
+.typst-example-actions {
+	gap: 4px;
+	flex-shrink: 0;
+}
+.typst-example-actions > button,
+.typst-example-help > summary {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 6px 8px;
+	min-height: 30px;
+	border-radius: 5px;
+	font-size: 12px;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-actions > button:hover:not(:disabled),
+.typst-example-help > summary:hover {
+	color: var(--color-fd-foreground);
+	background: var(--color-fd-muted);
+}
+.typst-example-actions > .typst-example-run {
+	color: var(--color-fd-primary);
+}
+.typst-example-help {
+	position: relative;
+}
+.typst-example-help > summary {
+	list-style: none;
+}
+.typst-example-help > summary::-webkit-details-marker {
+	display: none;
+}
+.typst-example-help > div {
+	position: absolute;
+	z-index: 20;
+	right: 0;
+	top: calc(100% + 8px);
+	width: min(300px, calc(100vw - 32px));
+	padding: 14px;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 8px;
+	background: var(--color-fd-background);
+	box-shadow: 0 8px 24px #0002;
+	font-size: 12px;
+	line-height: 1.8;
+}
+.typst-example-help a {
+	margin-top: 6px;
+}
+.typst-example-workspace {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+.typst-example-workspace > section {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+.typst-example-editor,
+.typst-example-replacement {
+	border-right: 1px solid var(--color-fd-border);
+}
+.typst-example-pane-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	flex-shrink: 0;
+	min-height: 38px;
+	padding: 0 12px;
+	border-bottom: 1px solid var(--color-fd-border);
+	font-size: 12px;
+	background: color-mix(in srgb, var(--color-fd-muted) 30%, transparent);
+}
+.typst-example-pane-title > span:last-child {
+	font-size: 11px;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-tabs {
+	display: flex;
+	align-self: stretch;
+	gap: 16px;
+}
+.typst-example-tabs > button {
+	border-bottom: 2px solid transparent;
+	font-size: 12px;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-tabs > button[aria-selected='true'] {
+	border-bottom-color: var(--color-fd-primary);
+	color: var(--color-fd-foreground);
+}
+.typst-example-editor > [role='tabpanel'] {
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+.typst-example-rich-editor {
+	height: 100%;
+	overflow: auto;
+	overscroll-behavior: contain;
+}
+.typst-example-rich-editor .typst-editor {
+	border: 0;
+	border-radius: 0;
+	min-height: 100%;
+}
+/* The shared editor also portals its menus to body; use the documentation theme. */
+body:has(.typst-example)
+	:is(.typst-editor, .typst-floating-menu, .typst-table-trigger, .typst-block-current) {
+	--typst-text: var(--color-fd-foreground);
+	--typst-muted: var(--color-fd-muted-foreground);
+	--typst-border: var(--color-fd-border);
+	--typst-surface: var(--color-fd-background);
+	--typst-hover: var(--color-fd-muted);
+	--typst-accent: var(--color-fd-primary);
+	--typst-active: color-mix(in srgb, var(--color-fd-primary) 12%, var(--color-fd-background));
+}
+.typst-example-rich-editor .typst-toolbar {
+	border-radius: 0;
+}
+.typst-example-rich-editor .tiptap ul {
+	list-style: disc;
+}
+.typst-example-rich-editor .tiptap ol {
+	list-style: decimal;
+}
+.typst-example-rich-editor :is(td, th) {
+	border-color: var(--typst-border);
+}
+.typst-example-rich-editor .tiptap blockquote {
+	color: var(--typst-muted);
+	border-left-color: var(--typst-border);
+}
+.typst-example textarea {
+	display: block;
+	width: 100%;
+	height: 100%;
+	resize: none;
+	padding: 18px;
+	border: 0;
+	outline: none;
+	font: 13px/1.85 var(--font-mono);
+	background: var(--color-fd-background);
+	tab-size: 2;
+}
+.typst-example textarea:focus-visible {
+	box-shadow: inset 2px 0 var(--color-fd-primary);
+}
+.typst-example iframe {
+	display: block;
+	flex: 1;
+	width: 100%;
+	min-height: 0;
+	border: 0;
+}
+.typst-example-empty {
+	display: grid;
+	flex: 1;
+	align-content: center;
+	justify-items: center;
+	gap: 12px;
+	padding: 20px;
+	color: var(--color-fd-muted-foreground);
+	text-align: center;
+	font-size: 12px;
+}
+.typst-example-empty > span {
+	font-family: Georgia, serif;
+	font-size: 42px;
+	opacity: 0.3;
+}
+.typst-example-navigation {
+	flex-shrink: 0;
+	padding: 6px 12px;
+	min-height: 30px;
+	border-top: 1px solid var(--color-fd-border);
+	font-size: 11px;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-error {
+	flex-shrink: 0;
+	max-height: 130px;
+	overflow: auto;
+	padding: 10px 12px;
+	border-top: 1px solid #bd545460;
+	background: #bd545408;
+	color: #bd5454;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	font-size: 12px;
+}
+.typst-example-replacement-body {
+	padding: 20px;
+	overflow: auto;
+}
+.typst-example-theme {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	font-size: 13px;
+	font-weight: 550;
+}
+.typst-example-theme select {
+	padding: 7px 10px;
+	min-width: 110px;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 6px;
+	background: var(--color-fd-background);
+	font-weight: 400;
+}
+.typst-example-hint {
+	margin-top: 12px;
+	font-size: 12px;
+	line-height: 1.8;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-dependencies {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+	margin: 20px 0;
+}
+.typst-example-dependencies > div {
+	display: grid;
+	gap: 4px;
+	padding: 12px;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 6px;
+	text-align: center;
+}
+.typst-example-dependencies > div:last-child {
+	grid-column: 1 / -1;
+	position: relative;
+	margin-top: 12px;
+	background: var(--color-fd-muted);
+}
+.typst-example-dependencies > div:last-child::before {
+	content: '↓';
+	position: absolute;
+	top: -23px;
+	left: 50%;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-dependencies code,
+.typst-example-update code {
+	font: 12px var(--font-mono);
+}
+.typst-example-dependencies span {
+	font-size: 11px;
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-update {
+	padding: 12px;
+	border-left: 2px solid var(--color-fd-primary);
+	background: color-mix(in srgb, var(--color-fd-primary) 4%, transparent);
+}
+.typst-example-update > div {
+	margin-bottom: 8px;
+	font: 11px var(--font-mono);
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-update p {
+	display: flex;
+	gap: 12px;
+	padding: 3px 0;
+	font-size: 12px;
+}
+.typst-example-update p span {
+	color: var(--color-fd-muted-foreground);
+}
+.typst-example-runtime {
+	flex-shrink: 0;
+	min-height: 30px;
+	border-top: 1px solid var(--color-fd-border);
+}
+.typst-example-runtime > summary {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	font-size: 11px;
+	color: var(--color-fd-muted-foreground);
+	list-style: none;
+}
+.typst-example-runtime > summary::-webkit-details-marker {
+	display: none;
+}
+.typst-example-runtime > summary::after {
+	content: '+';
+	margin-left: auto;
+}
+.typst-example-runtime[open] > summary::after {
+	content: '−';
+}
+.typst-example-log-count {
+	font: 10px var(--font-mono);
+	padding: 1px 5px;
+	border-radius: 4px;
+	background: var(--color-fd-muted);
+}
+.typst-example-runtime ol {
+	max-height: min(160px, 24dvh);
+	overflow: auto;
+	padding: 4px 14px 10px;
+	border-top: 1px solid var(--color-fd-border);
+	font: 11px/1.9 var(--font-mono);
+	color: var(--color-fd-muted-foreground);
+}
+@media (max-width: 1000px) {
+	.typst-example {
+		grid-template-columns: 164px minmax(0, 1fr);
+	}
+	.typst-example-title h2 {
+		display: none;
+	}
+	.typst-example-actions > button > span {
+		display: none;
+	}
+}
+@media (max-width: 760px) {
+	.typst-example {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+		min-height: 560px;
+	}
+	.typst-example-sidebar {
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding: 6px 10px;
+		border-right: 0;
+		border-bottom: 1px solid var(--color-fd-border);
+	}
+	.typst-example-sidebar h1 {
+		margin: 0;
+		padding: 0 4px;
+		font-size: 12px;
+	}
+	.typst-example-sidebar h1 span,
+	.typst-example-sidebar-footer {
+		display: none;
+	}
+	.typst-example-sidebar nav {
+		display: flex;
+		gap: 4px;
+	}
+	.typst-example-sidebar nav button {
+		padding: 8px;
+		gap: 6px;
+		font-size: 12px;
+	}
+	.typst-example-toolbar {
+		padding: 6px 10px;
+		min-height: 42px;
+		gap: 6px;
+	}
+	.typst-example-workspace {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+	}
+	.typst-example-editor,
+	.typst-example-replacement {
+		border-right: 0;
+		border-bottom: 1px solid var(--color-fd-border);
+	}
+	.typst-example-rich-editor .tiptap {
+		padding: 16px 18px 32px 68px;
+	}
+	.typst-example-replacement-body {
+		padding: 14px;
+	}
+	.typst-example-runtime ol {
+		max-height: 110px;
+	}
+}

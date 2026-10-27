@@ -9,6 +9,7 @@
 ## 服务与资源
 
 `createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源在 `prepare({ ctx, dependencies, effects })` 获取。
+`@pluxel/host/browser` 从 `src/browser.ts` 只导出同一 Host 与服务组合实现，避免根 barrel 的 Node application/source loader 求值。它不提供另一套 runtime，也不为所选 Plugin 或服务补 Node polyfill；浏览器装配及 lowering 由[浏览器 Host 用法](../docs/host/configuration.md#浏览器-host)维护。
 每项服务的 effects scope 随服务准备失败或 Host 关闭释放。Plugin generation 的 effects 随该代停止释放，两者都使用 Core effects 契约，但 owner 与生命周期必须在调用位置清楚可见。
 关闭先停止接纳、排空协调操作和插件，再按依赖逆序释放服务；清理失败聚合，不能跳过其余清理。
 Host 从协调队列末尾取得已应用 provider-default bindings，在同一 Core shutdown transaction 中先撤销绑定再删除节点；

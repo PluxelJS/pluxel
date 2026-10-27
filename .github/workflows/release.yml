@@ -87,10 +87,6 @@ jobs:
         if: steps.release-commit.outputs.current == 'true'
         run: vp install --frozen-lockfile
 
-      - name: Install Typst native toolchain
-        if: steps.release-commit.outputs.current == 'true'
-        run: rustup toolchain install 1.99.1 --profile minimal
-
       - name: Version or publish packages
         if: steps.release-commit.outputs.current == 'true'
         run: vp run tegami ci

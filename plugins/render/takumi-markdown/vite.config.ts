@@ -11,7 +11,9 @@ const tasks = repositoryTasks({
 // Vite Task does not include relative development links in its workspace dependency graph.
 for (const name of ['compile', 'check-tests', 'check-types'] as const) {
 	const task = tasks[name]!
-	task.dependsOn = [...(task.dependsOn ?? []), '@pluxel/plugin-typst#compile']
+	// Only the integration tests execute Typst; source imports use its type and Plugin reference.
+	const typstTask = name === 'check-tests' ? 'compile' : 'compile-lib'
+	task.dependsOn = [...(task.dependsOn ?? []), `@pluxel/plugin-typst#${typstTask}`]
 }
 
 export default defineConfig({
