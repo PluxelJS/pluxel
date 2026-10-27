@@ -321,6 +321,7 @@ nav,
 .preview-body {
 	position: relative;
 	display: flex;
+	flex-direction: row-reverse;
 	flex: 1;
 	min-width: 0;
 	min-height: 0;
@@ -336,7 +337,7 @@ nav,
 	padding: 6px 4px;
 	overflow: hidden auto;
 	overscroll-behavior: contain;
-	border-right: 1px solid var(--consumer-border);
+	border-left: 1px solid var(--consumer-border);
 	background: var(--consumer-surface);
 }
 .preview-outline button {
@@ -561,10 +562,10 @@ output[data-testid='navigation'] {
 @container preview-pane (max-width: 500px) {
 	.preview-outline {
 		position: absolute;
-		inset: 0 auto 0 0;
+		inset: 0 0 0 auto;
 		width: min(220px, 80%);
 		z-index: 5;
-		box-shadow: 4px 0 12px #0002;
+		box-shadow: -4px 0 12px #0002;
 	}
 }
 

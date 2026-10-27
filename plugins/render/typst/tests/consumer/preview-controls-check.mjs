@@ -101,11 +101,17 @@ async function checkViewport(name, width, height) {
 			measured.preview.scrollWidth <= measured.preview.clientWidth + 1,
 			'fit zoom fits horizontally',
 		)
-		if (await outline.isVisible())
+		if (await outline.isVisible()) {
 			assert.ok(
 				measured.outline.scrollWidth <= measured.outline.clientWidth + 1,
 				'outline has no horizontal scrollbar',
 			)
+			const body = await page.locator('.preview-body').boundingBox()
+			assert.ok(
+				Math.abs(measured.outline.x + measured.outline.width - body.x - body.width) <= 1,
+				'outline stays at the right edge of the preview pane',
+			)
+		}
 	}
 	async function activeVisible() {
 		await page.waitForFunction(() => {

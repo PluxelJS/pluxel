@@ -243,6 +243,7 @@ button {
 .preview-body {
 	position: relative;
 	display: flex;
+	flex-direction: row-reverse;
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
@@ -254,7 +255,7 @@ button {
 	overflow: auto;
 	overscroll-behavior: contain;
 	padding: 0 6px 8px;
-	border-right: 1px solid var(--mantine-color-default-border);
+	border-left: 1px solid var(--mantine-color-default-border);
 	background: var(--mantine-color-body);
 }
 .preview-navigation-header {
@@ -293,10 +294,10 @@ button {
 @container studio-preview (max-width: 560px) {
 	.preview-navigation {
 		position: absolute;
-		inset: 0 auto 0 0;
+		inset: 0 0 0 auto;
 		z-index: 3;
 		width: min(220px, calc(100% - 24px));
-		box-shadow: 6px 0 20px #0002;
+		box-shadow: -6px 0 20px #0002;
 	}
 }
 .preview-source-highlight {
