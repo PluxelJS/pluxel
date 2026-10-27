@@ -23,6 +23,7 @@ import {
 } from './block-actions'
 import { EditorUi, allowedNode, canEdit } from './editor-ui'
 import { InsertMenu } from './insert-menu'
+import { editorShortcuts, matchesShortcut, shortcutProps } from './shortcuts'
 
 const dragPosition = { placement: 'left-start', strategy: 'absolute' } as const
 
@@ -281,11 +282,8 @@ export function BlockMenu({ editor }: { editor: Editor }) {
 		}
 		function keydown(event: KeyboardEvent) {
 			if (
-				event.key !== 'F10' ||
-				!event.altKey ||
-				event.ctrlKey ||
-				event.metaKey ||
-				event.shiftKey ||
+				!matchesShortcut(event, editorShortcuts.block) ||
+				event.defaultPrevented ||
 				event.isComposing ||
 				(event.target as HTMLElement).closest(
 					'.typst-content-block, input, textarea, select, button',
@@ -357,9 +355,11 @@ export function BlockMenu({ editor }: { editor: Editor }) {
 					type="button"
 					className="typst-tool-button typst-block-grip"
 					aria-label={currentBlock ? '当前块操作' : '块操作'}
-					title={`${blockName(block)}：${currentBlock ? '操作（Alt+F10）' : '操作或拖动'}`}
+					{...shortcutProps(
+						`${blockName(block)}：${currentBlock ? '当前块操作' : '操作或拖动'}`,
+						currentBlock ? editorShortcuts.block : undefined,
+					)}
 					aria-haspopup="dialog"
-					aria-keyshortcuts={currentBlock ? 'Alt+F10' : undefined}
 					onClick={() => open(block)}
 				>
 					<Grip />

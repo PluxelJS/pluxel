@@ -171,7 +171,7 @@ export default defineTypstDocument({
 							content: [
 								{
 									type: 'table',
-									attrs: { typstTableStyle: 'three-line' },
+									attrs: { tableStyle: 'three-line' },
 									content: [
 										row(['观察重点', '需要补充的证据'], true),
 										row(['高于目标的渠道', '确认增长是否来自可持续的订阅或续约。']),
@@ -208,7 +208,7 @@ export default defineTypstDocument({
 						},
 						{
 							type: 'table',
-							attrs: { typstTableStyle: 'three-line' },
+							attrs: { tableStyle: 'three-line' },
 							content: [
 								row(['行动', '负责人', '验收方式'], true),
 								{

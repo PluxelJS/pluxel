@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { ActionIcon, Alert, Button, Group, NumberInput, Text, Tooltip } from '@mantine/core'
-import { IconChevronLeft, IconChevronRight, IconList } from '@tabler/icons-react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { ActionIcon, Alert, Button, Group, Text, Tooltip } from '@mantine/core'
+import { IconChevronLeft, IconChevronRight, IconList, IconX } from '@tabler/icons-react'
 import { createTypstRenderer } from '@myriaddreamin/typst.ts'
 import wasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
-import { TypstPreviewView, type TypstPreviewState } from '@pluxel/plugin-typst/browser'
+import {
+	TypstPreviewView,
+	type TypstPreviewState,
+	type TypstPreviewZoom,
+} from '@pluxel/plugin-typst/browser'
 import type { PreviewResult } from '../shared/contracts'
 import type { WorkspaceController } from './workspace'
 
@@ -26,6 +30,9 @@ export function Preview({
 	const root = useRef<HTMLDivElement>(null)
 	const container = useRef<HTMLDivElement>(null)
 	const scroll = useRef<HTMLDivElement>(null)
+	const navigationElement = useRef<HTMLElement>(null)
+	const navigationToggle = useRef<HTMLButtonElement>(null)
+	const navigationId = useId()
 	const currentWorkspace = useRef(workspace)
 	currentWorkspace.current = workspace
 	const displayedResult = useRef<PreviewResult | null>(null)
@@ -33,12 +40,30 @@ export function Preview({
 		pageCount: 0,
 		currentPage: 1,
 		currentHeading: -1,
+		zoom: 'fit-width',
 	})
-	const { pageCount, currentPage, currentHeading } = viewState
+	const { pageCount, currentPage, currentHeading, zoom } = viewState
 	const navigation = viewState.preview?.navigation
-	const [pageInput, setPageInput] = useState<string | number>(1)
+	const [pageDraft, setPageDraft] = useState<string | null>(null)
+	const cancelPage = useRef(false)
 	const [navigationOpen, setNavigationOpen] = useState(false)
 	const displayed = useRef<TypstPreviewView | undefined>(undefined)
+	useLayoutEffect(() => {
+		const nav = navigationElement.current
+		if (!navigationOpen || !nav) return
+		const active = nav.querySelector<HTMLElement>(
+			currentHeading >= 0 ? '[aria-current="location"]' : '[aria-current="page"]',
+		)
+		if (!active) return
+		const bounds = nav.getBoundingClientRect()
+		const item = active.getBoundingClientRect()
+		const top =
+			bounds.top +
+			(nav.querySelector<HTMLElement>('.preview-navigation-header')?.offsetHeight ?? 0) +
+			4
+		if (item.top < top) nav.scrollTop += item.top - top
+		else if (item.bottom > bounds.bottom - 4) nav.scrollTop += item.bottom - bounds.bottom + 4
+	}, [navigationOpen, currentHeading, currentPage, navigation])
 	useEffect(() => {
 		if (!root.current) return
 		return workspace.registerPreview({
@@ -49,9 +74,28 @@ export function Preview({
 		})
 	}, [workspace, entry])
 	function submitPage() {
-		const requested = Number(pageInput)
-		if (Number.isFinite(requested) && requested > 0) displayed.current?.jumpToPage(requested)
-		else setPageInput(currentPage)
+		if (pageDraft !== null && !cancelPage.current && /^\d+$/.test(pageDraft.trim())) {
+			const requested = Number(pageDraft)
+			if (Number.isSafeInteger(requested) && requested >= 1 && requested <= pageCount)
+				displayed.current?.jumpToPage(requested)
+		}
+		cancelPage.current = false
+		setPageDraft(null)
+	}
+	function closeNavigation() {
+		setNavigationOpen(false)
+		navigationToggle.current?.focus()
+	}
+	function closeNavigationOverlay() {
+		const nav = navigationElement.current
+		if (nav && getComputedStyle(nav).position === 'absolute') closeNavigation()
+	}
+	function navigationKey(event: KeyboardEvent<HTMLButtonElement>) {
+		if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+			event.preventDefault()
+			event.stopPropagation()
+			closeNavigation()
+		}
 	}
 	const [error, setError] = useState('')
 	useEffect(
@@ -91,7 +135,6 @@ export function Preview({
 				onStateChange: (state) => {
 					if (displayed.current !== view) return
 					setViewState(state)
-					setPageInput(state.currentPage)
 				},
 			})
 			if (result.preview.compilerVersion !== '0.7.0') throw new Error('预览编译器版本不匹配')
@@ -101,11 +144,14 @@ export function Preview({
 				destination.replaceChildren(candidate)
 				displayedResult.current = result
 				displayed.current = view
+				view.setZoom(previous?.state.zoom ?? 'fit-width')
 				view.refresh()
+				setViewState(view.state)
 				void previous?.dispose()
 				setError('')
 			}
-		})().catch((cause) => {
+		})().catch(async (cause) => {
+			if (view !== displayed.current) await view?.dispose()
 			if (!canceled) setError(String(cause))
 		})
 		return () => {
@@ -124,12 +170,15 @@ export function Preview({
 			onFocusCapture={() => workspace.preferPreview(entry)}
 		>
 			{pageCount > 0 && (
-				<Group className="preview-toolbar" gap="xs" wrap="nowrap">
+				<Group className="preview-toolbar" gap={4} wrap="nowrap">
 					<Tooltip label="目录与页面">
 						<ActionIcon
+							ref={navigationToggle}
+							size="sm"
 							variant={navigationOpen ? 'light' : 'subtle'}
 							aria-label="目录与页面"
 							aria-expanded={navigationOpen}
+							aria-controls={navigationId}
 							onClick={() => setNavigationOpen(!navigationOpen)}
 						>
 							<IconList size={18} />
@@ -137,48 +186,92 @@ export function Preview({
 					</Tooltip>
 					<Group gap={4} wrap="nowrap">
 						<ActionIcon
+							size="sm"
 							variant="subtle"
 							aria-label="上一页"
+							title="上一页"
 							disabled={currentPage <= 1}
 							onClick={() => displayed.current?.jumpToPage(currentPage - 1)}
 						>
 							<IconChevronLeft size={17} />
 						</ActionIcon>
-						<NumberInput
+						<input
+							className="preview-page-input"
 							aria-label="跳转到页"
-							size="xs"
-							w={58}
-							min={1}
-							max={pageCount}
-							allowDecimal={false}
-							hideControls
-							value={pageInput}
-							onChange={setPageInput}
+							title="输入页码后按 Enter 或移开焦点跳转，Esc 取消"
+							inputMode="numeric"
+							value={pageDraft ?? String(currentPage)}
+							onFocus={() => setPageDraft(String(currentPage))}
+							onChange={(event) => setPageDraft(event.currentTarget.value)}
 							onBlur={submitPage}
 							onKeyDown={(event) => {
-								if (event.key === 'Enter') {
-									submitPage()
+								if (event.nativeEvent.isComposing) return
+								if (event.key === 'Enter' || event.key === 'Escape') {
+									event.preventDefault()
+									event.stopPropagation()
+									cancelPage.current = event.key === 'Escape'
 									event.currentTarget.blur()
 								}
 							}}
 						/>
 						<Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-							/ {pageCount} 页
+							/ {pageCount}
 						</Text>
 						<ActionIcon
+							size="sm"
 							variant="subtle"
 							aria-label="下一页"
+							title="下一页"
 							disabled={currentPage >= pageCount}
 							onClick={() => displayed.current?.jumpToPage(currentPage + 1)}
 						>
 							<IconChevronRight size={17} />
 						</ActionIcon>
 					</Group>
+					<select
+						className="preview-zoom"
+						aria-label="预览缩放"
+						value={zoom}
+						onChange={(event) => {
+							const value = event.currentTarget.value
+							const requested: TypstPreviewZoom =
+								value === 'fit-width' || value === 'fit-page' ? value : Number(value)
+							displayed.current?.setZoom(requested)
+						}}
+					>
+						<option value="fit-width">适合宽度</option>
+						<option value="fit-page">适合整页</option>
+						{[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => (
+							<option key={value} value={value}>
+								{value * 100}%
+							</option>
+						))}
+					</select>
 				</Group>
 			)}
 			<div className="preview-body">
 				{navigationOpen && pageCount > 0 && (
-					<nav className="preview-navigation" aria-label="文档目录与页面">
+					<nav
+						ref={navigationElement}
+						id={navigationId}
+						className="preview-navigation"
+						aria-label="文档目录与页面"
+					>
+						<div className="preview-navigation-header">
+							<Text size="xs" fw={600}>
+								目录与页面
+							</Text>
+							<ActionIcon
+								size="xs"
+								variant="subtle"
+								aria-label="关闭目录与页面"
+								title="关闭目录与页面"
+								onClick={closeNavigation}
+								onKeyDown={navigationKey}
+							>
+								<IconX size={14} />
+							</ActionIcon>
+						</div>
 						{Boolean(navigation?.outline.length) && (
 							<>
 								<Text size="xs" c="dimmed" mb="xs">
@@ -193,9 +286,13 @@ export function Preview({
 										justify="start"
 										size="xs"
 										title={item.title}
+										aria-label={`${item.title}，第 ${item.page} 页`}
 										aria-current={currentHeading === index ? 'location' : undefined}
 										style={{ paddingInlineStart: 8 + Math.min(item.level - 1, 4) * 12 }}
-										onClick={() => displayed.current?.jumpToPosition(item)}
+										onClick={() => {
+											if (displayed.current?.jumpToPosition(item)) closeNavigationOverlay()
+										}}
+										onKeyDown={navigationKey}
 									>
 										<span className="preview-heading-title">{item.title}</span>
 										<span className="preview-heading-page">{item.page}</span>
@@ -214,7 +311,10 @@ export function Preview({
 								justify="start"
 								size="xs"
 								aria-current={currentPage === index + 1 ? 'page' : undefined}
-								onClick={() => displayed.current?.jumpToPage(index + 1)}
+								onClick={() => {
+									if (displayed.current?.jumpToPage(index + 1)) closeNavigationOverlay()
+								}}
+								onKeyDown={navigationKey}
 							>
 								第 {index + 1} 页
 							</Button>

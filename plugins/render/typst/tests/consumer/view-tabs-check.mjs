@@ -45,15 +45,19 @@ async function bounded() {
 }
 try {
 	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
-	url.searchParams.set('example', 'operations-report')
+	url.searchParams.delete('example')
 	await page.goto(url.href)
 	await body.locator('[data-block-id="channels-primary"]').waitFor()
 	await current()
+	assert.equal(
+		await page.getByRole('combobox', { name: '示例', exact: true }).inputValue(),
+		'operations-report',
+	)
 	await page.screenshot({ path: join(output, 'desktop-preview.png'), fullPage: true })
 	await tab('Markdown')
 	assert.match(await live.inputValue(), /fontFamily.*fontSize.*color.*backgroundColor/)
 	assert.match(await live.inputValue(), /"template":"channels"/)
-	assert.match(await live.inputValue(), /"typstTableStyle":"three-line"/)
+	assert.match(await live.inputValue(), /"tableStyle":"three-line"/)
 	const bounds = await Promise.all(
 		['.editing', '.output-pane'].map((selector) => page.locator(selector).boundingBox()),
 	)
@@ -75,7 +79,7 @@ try {
 	await body.evaluate((element) => element.editor.commands.setTextSelection(2))
 	await scope.selectOption('blocks')
 	assert.match(await live.inputValue(), /下一步判断/)
-	assert.doesNotMatch(await live.inputValue(), /templateBlock|typstTableStyle/)
+	assert.doesNotMatch(await live.inputValue(), /templateBlock|tableStyle/)
 	await button('编辑这份 Markdown').click()
 	const paragraphMarkdown = await candidate.inputValue()
 	await candidate.fill(
@@ -102,7 +106,7 @@ try {
 	await candidate.fill(
 		regionMarkdown
 			.replace('"title":"渠道收入与目标"', '"title":"渠道对照演示"')
-			.replace('"typstTableStyle":"three-line"', '"typstTableStyle":"borderless"'),
+			.replace('"tableStyle":"three-line"', '"tableStyle":"borderless"'),
 	)
 	await accept()
 	const componentDocument = await doc()
@@ -115,7 +119,7 @@ try {
 	assert.equal(
 		componentDocument.content
 			.flatMap((node) => (node.type === 'figure' ? node.content : [node]))
-			.find((node) => node.type === 'table').attrs.typstTableStyle,
+			.find((node) => node.type === 'table').attrs.tableStyle,
 		'borderless',
 	)
 	await tab('Typst 预览')

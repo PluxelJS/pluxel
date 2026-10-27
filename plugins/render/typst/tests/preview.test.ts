@@ -5,6 +5,7 @@ import {
 	type TypstNavigationPoint,
 	type TypstPreview,
 	type TypstPreviewViewOptions,
+	type TypstPreviewZoom,
 } from '../src/browser/preview.js'
 
 const packet = (revision: number, sessionId = 'session'): TypstPreview => ({
@@ -22,14 +23,25 @@ function fixture(
 		'onNavigate' | 'onStateChange' | 'isNavigationCurrent'
 	> = {},
 	pageTops: readonly number[] = [],
+	linkHandlers: readonly string[] = [],
 ) {
+	const svg = {
+		viewBox: { baseVal: { width: 300, height: 500 } },
+		style: { width: '600px', maxWidth: '', height: '', display: '' },
+	}
+	const scale = () => Number.parseFloat(svg.style.width) / svg.viewBox.baseVal.width
+	const padding = { paddingLeft: '0', paddingRight: '0', paddingTop: '0', paddingBottom: '0' }
 	const scroll = Object.assign(new EventTarget(), {
 		clientHeight: 300,
+		clientWidth: 600,
 		scrollHeight: pageTops.length > 0 ? 1000 : 0,
 		scrollTop: 0,
-		getBoundingClientRect: () => ({ top: 0 }),
-		scrollTo({ top }: { top: number }) {
-			this.scrollTop = top
+		scrollLeft: 0,
+		getBoundingClientRect: () => ({ top: 0, left: 0, right: scroll.clientWidth }),
+		ownerDocument: { defaultView: { getComputedStyle: () => padding } },
+		scrollTo({ top, left }: { top: number; left?: number }) {
+			this.scrollTop = Math.max(0, Math.min(top, this.scrollHeight - this.clientHeight))
+			if (left !== undefined) this.scrollLeft = left
 			scroll.dispatchEvent(new Event('scroll'))
 		},
 	})
@@ -40,20 +52,40 @@ function fixture(
 	}[] = []
 	const pages = pageTops.map((top) => ({
 		append: vi.fn(),
+		getAttribute: (name: string): string | null => (name === 'data-page-height' ? '200' : null),
 		getScreenCTM: () => ({
-			a: 2,
+			a: scale(),
 			b: 0,
 			c: 0,
-			d: 2,
-			e: 100,
-			f: top - scroll.scrollTop,
-			inverse: () => ({ a: 0.5, b: 0, c: 0, d: 0.5, e: -50, f: (scroll.scrollTop - top) / 2 }),
+			d: scale(),
+			e: 100 - scroll.scrollLeft,
+			f: 20 + ((top - 20) * scale()) / 2 - scroll.scrollTop,
+			inverse: () => ({
+				a: 1 / scale(),
+				b: 0,
+				c: 0,
+				d: 1 / scale(),
+				e: (scroll.scrollLeft - 100) / scale(),
+				f: (scroll.scrollTop - 20 - ((top - 20) * scale()) / 2) / scale(),
+			}),
 		}),
 	}))
+	const createLink = (handler: string) => {
+		const attrs = new Map([['onclick', handler]])
+		return {
+			getAttribute: (name: string) => attrs.get(name) ?? null,
+			setAttribute: (name: string, value: string) => attrs.set(name, value),
+			removeAttribute: (name: string) => attrs.delete(name),
+		}
+	}
+	const links = linkHandlers.map(createLink)
+	let targetLinkIndex: number | undefined
+	let html = 'old'
 	const element = Object.assign(new EventTarget(), {
-		innerHTML: 'old',
-		querySelectorAll: () => pages,
-		closest: () => pages[0],
+		innerHTML: html,
+		querySelector: () => svg,
+		querySelectorAll: (selector: string) => (selector === '.typst-page' ? pages : links),
+		closest: (selector: string) => (selector === 'a' ? links[targetLinkIndex ?? -1] : pages[0]),
 		ownerDocument: {
 			createElementNS: () => {
 				const rectangle = { classList: { add: vi.fn() }, setAttribute: vi.fn(), remove: vi.fn() }
@@ -63,6 +95,13 @@ function fixture(
 		},
 		replaceChildren() {
 			element.innerHTML = ''
+		},
+	})
+	Object.defineProperty(element, 'innerHTML', {
+		get: () => html,
+		set: (value: string) => {
+			html = value
+			links.splice(0, links.length, ...linkHandlers.map(createLink))
 		},
 	})
 	const container = element as unknown as HTMLElement
@@ -83,6 +122,12 @@ function fixture(
 		container,
 		scroll,
 		pages,
+		svg,
+		padding,
+		links,
+		setLink: (index?: number) => {
+			targetLinkIndex = index
+		},
 		rectangles,
 		renderer,
 		cleanup,
@@ -235,6 +280,188 @@ describe('TypstPreviewView', () => {
 		expect(onStateChange).toHaveBeenCalledTimes(notifications)
 	})
 
+	it('notifies only changed snapshots while continuing to track scrolling and hidden updates', async () => {
+		const onStateChange = vi.fn()
+		const { view, scroll } = fixture({ onStateChange }, [20, 420, 850])
+		await view.show(packet(1))
+		expect(onStateChange).toHaveBeenCalledOnce()
+		const first = view.state
+		onStateChange.mockClear()
+		for (const top of [10, 20, 30]) scroll.scrollTo({ top })
+		view.refresh()
+		expect(view.state).toBe(first)
+		expect(onStateChange).not.toHaveBeenCalled()
+
+		const next = packet(2)
+		await view.show(next)
+		expect(onStateChange).toHaveBeenCalledExactlyOnceWith(view.state)
+		expect(view.state.preview).toBe(next)
+		onStateChange.mockClear()
+		view.setZoom(1)
+		expect(onStateChange).toHaveBeenCalledExactlyOnceWith(view.state)
+		onStateChange.mockClear()
+		scroll.scrollTo({ top: 300 })
+		expect(view.state.currentPage).toBe(2)
+		expect(onStateChange).toHaveBeenCalledExactlyOnceWith(view.state)
+		onStateChange.mockClear()
+		view.jumpToPage(2)
+		expect(onStateChange).not.toHaveBeenCalled()
+
+		scroll.clientWidth = 0
+		scroll.clientHeight = 0
+		view.refresh()
+		view.refresh()
+		expect(onStateChange).not.toHaveBeenCalled()
+		view.setZoom(1.5)
+		expect(onStateChange).toHaveBeenCalledExactlyOnceWith(view.state)
+		onStateChange.mockClear()
+		await view.show(packet(3))
+		expect(onStateChange).toHaveBeenCalledExactlyOnceWith(view.state)
+		await view.dispose()
+	})
+
+	it('allows a state callback to refresh without recursively notifying itself', async () => {
+		const onStateChange = vi.fn()
+		const { view } = fixture({ onStateChange }, [20, 420])
+		onStateChange.mockImplementation(() => view.refresh())
+		await view.show(packet(1))
+		expect(onStateChange).toHaveBeenCalledOnce()
+		view.setZoom(1.5)
+		expect(onStateChange).toHaveBeenCalledTimes(2)
+		onStateChange.mockImplementation(() => {
+			view.refresh()
+			void view.dispose()
+		})
+		expect(view.setZoom(1)).toBe(false)
+		expect(onStateChange).toHaveBeenCalledTimes(3)
+		await view.dispose()
+	})
+
+	it('activates the last visible heading when a short final page clamps navigation at the bottom', async () => {
+		const { view, scroll } = fixture({}, [20, 420, 850])
+		const last = { title: 'Last section', level: 1, page: 3, x: 50, y: 60 }
+		await view.show({
+			...packet(1),
+			navigation: {
+				pages: [],
+				points: [],
+				outline: [
+					{ title: 'First section', level: 1, page: 1, x: 50, y: 0 },
+					{ title: 'Middle section', level: 1, page: 2, x: 50, y: 0 },
+					last,
+				],
+			},
+		})
+		expect(view.jumpToPosition(last)).toBe(true)
+		expect(scroll.scrollTop).toBe(700)
+		expect(view.state).toMatchObject({ currentPage: 3, currentHeading: 2 })
+		view.refresh()
+		expect(view.state.currentHeading).toBe(2)
+		scroll.scrollTo({ top: 600 })
+		expect(view.state).toMatchObject({ currentPage: 2, currentHeading: 1 })
+		await view.dispose()
+	})
+
+	it('stores zoom before display, validates it without mutation and uses print units or available viewport space', async () => {
+		const onStateChange = vi.fn()
+		const { view, scroll, svg, pages, padding } = fixture({ onStateChange }, [20, 420])
+		expect(view.state.zoom).toBe('fit-width')
+		expect(view.setZoom(1)).toBe(true)
+		expect(onStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ zoom: 1 }))
+		for (const invalid of [0, -1, Infinity, NaN, '100%', null]) {
+			const previous = view.state
+			expect(view.setZoom(invalid as TypstPreviewZoom)).toBe(false)
+			expect(view.state).toBe(previous)
+		}
+		await view.show(packet(1))
+		expect(svg.style).toMatchObject({
+			width: '400px',
+			height: 'auto',
+			maxWidth: 'none',
+			display: 'block',
+		})
+		Object.assign(padding, {
+			paddingLeft: '12px',
+			paddingRight: '18px',
+			paddingTop: '10px',
+			paddingBottom: '30px',
+		})
+		expect(view.setZoom('fit-width')).toBe(true)
+		expect(Number.parseFloat(svg.style.width)).toBeCloseTo(570)
+		vi.spyOn(pages[1]!, 'getAttribute').mockImplementation((name) =>
+			name === 'data-page-height' ? '400' : null,
+		)
+		expect(view.setZoom('fit-page')).toBe(true)
+		expect(svg.style.width).toBe('195px')
+		scroll.scrollTo({ top: 200 })
+		expect(svg.style.width).toBe('195px')
+		expect(view.setZoom(1.5)).toBe(true)
+		scroll.clientWidth = 450
+		view.refresh()
+		expect(svg.style.width).toBe('600px')
+		await view.dispose()
+		expect(view.setZoom('fit-width')).toBe(false)
+	})
+
+	it('keeps a page-local reading anchor through zoom, resize and hidden viewport restoration', async () => {
+		const { view, scroll, svg, pages } = fixture({}, [20, 420, 850])
+		await view.show(packet(1))
+		scroll.scrollTo({ top: 450 })
+		const readingY = () => {
+			const inverse = pages[1]!.getScreenCTM().inverse()
+			return inverse.d * Math.min(120, scroll.clientHeight / 3) + inverse.f
+		}
+		const before = readingY()
+		expect(view.setZoom(1)).toBe(true)
+		expect(readingY()).toBeCloseTo(before)
+		expect(view.setZoom('fit-width')).toBe(true)
+		scroll.clientWidth = 480
+		view.refresh()
+		expect(svg.style.width).toBe('480px')
+		expect(readingY()).toBeCloseTo(before)
+		const previousPage = view.state.currentPage
+		scroll.clientWidth = 0
+		scroll.clientHeight = 0
+		view.refresh()
+		expect(view.setZoom(1.5)).toBe(true)
+		expect(svg.style.width).toBe('480px')
+		expect(view.state.currentPage).toBe(previousPage)
+		scroll.clientWidth = 600
+		scroll.clientHeight = 300
+		view.refresh()
+		expect(svg.style.width).toBe('600px')
+		expect(readingY()).toBeCloseTo(before)
+		await view.dispose()
+	})
+
+	it('stops zoom changes when synchronous state notification disposes the view', async () => {
+		const onStateChange = vi.fn()
+		const { view, svg } = fixture({ onStateChange }, [20])
+		await view.show(packet(1))
+		onStateChange.mockImplementation(() => void view.dispose())
+		expect(view.setZoom(1)).toBe(false)
+		await view.dispose()
+		const width = svg.style.width
+		view.refresh()
+		expect(view.setZoom(2)).toBe(false)
+		expect(svg.style.width).toBe(width)
+	})
+
+	it('reveals zoomed destinations beyond either horizontal edge without moving visible targets sideways', async () => {
+		const { view, scroll, pages } = fixture({}, [20, 420])
+		await view.show(packet(1))
+		for (const x of [500, 300, 10]) {
+			const before = scroll.scrollLeft
+			expect(view.jumpToPosition({ page: 2, x, y: 30 })).toBe(true)
+			const matrix = pages[1]!.getScreenCTM()
+			const screenX = matrix.a * x + matrix.e
+			expect(screenX).toBeGreaterThanOrEqual(16)
+			expect(screenX).toBeLessThanOrEqual(scroll.clientWidth - 16)
+			expect(scroll.scrollLeft === before).toBe(x === 300)
+		}
+		await view.dispose()
+	})
+
 	it.each([
 		{ action: 'page', disposeAt: 1 },
 		{ action: 'position', disposeAt: 1 },
@@ -246,14 +473,20 @@ describe('TypstPreviewView', () => {
 			vi.useFakeTimers()
 			try {
 				const onStateChange = vi.fn()
-				const { view, scroll, container, pages, rectangles } = fixture({ onStateChange }, [20])
+				const { view, scroll, container, pages, rectangles } = fixture(
+					{ onStateChange },
+					[20, 420, 850],
+				)
+				// A target near page 2's bottom clamps scroll to the end: tracking first reports
+				// the last visible page, then the explicit destination becomes the active page.
+				const point = { ...text, page: 2, y: disposeAt === 2 ? 190 : 60 }
 				await view.show({
 					...packet(1),
-					navigation: { pages: [], outline: [], points: [text] },
+					navigation: { pages: [], outline: [], points: [point] },
 				})
-				// Native scroll events arrive later; exercise both synchronous navigation notifications.
+				// Native scroll events arrive later; exercise synchronous snapshot notifications.
 				vi.spyOn(scroll, 'scrollTo').mockImplementation(({ top }) => {
-					scroll.scrollTop = top
+					scroll.scrollTop = Math.max(0, Math.min(top, scroll.scrollHeight - scroll.clientHeight))
 				})
 				onStateChange.mockClear()
 				onStateChange.mockImplementation(() => {
@@ -261,14 +494,14 @@ describe('TypstPreviewView', () => {
 				})
 				const navigated =
 					action === 'page'
-						? view.jumpToPage(1)
+						? view.jumpToPage(2)
 						: action === 'position'
-							? view.jumpToPosition(text)
+							? view.jumpToPosition(point)
 							: view.revealSource({ path: text.path, line: 4, column: 5 })
 				expect(navigated).toBe(false)
 				expect(onStateChange).toHaveBeenCalledTimes(disposeAt)
 				expect(rectangles).toHaveLength(0)
-				expect(pages[0].append).not.toHaveBeenCalled()
+				expect(pages[1].append).not.toHaveBeenCalled()
 				expect(vi.getTimerCount()).toBe(0)
 				await view.dispose()
 				expect(container.innerHTML).toBe('')
@@ -314,6 +547,68 @@ describe('TypstPreviewView', () => {
 		pointer(container, 'pointerdown')
 		pointer(container, 'pointerup')
 		expect(onNavigate).toHaveBeenCalledTimes(1)
+	})
+
+	it('follows renderer reference destinations without source navigation or placeholder URL changes', async () => {
+		const onNavigate = vi.fn()
+		let current = true
+		const { view, container, scroll, links, setLink } = fixture(
+			{ onNavigate, isNavigationCurrent: () => current },
+			[20, 420],
+			[
+				'handleTypstLocation(this, 2, 32, 10); return false',
+				'handleTypstLocation(this, 0, 32, 10); return false',
+			],
+		)
+		const click = (options: Partial<MouseEvent> = {}) => {
+			const event = Object.assign(new Event('click', { cancelable: true }), {
+				detail: 1,
+				...options,
+			})
+			container.dispatchEvent(event)
+			expect(event.defaultPrevented).toBe(true)
+		}
+		try {
+			await view.show({ ...packet(1), navigation: { pages: [], outline: [], points: [text] } })
+			expect(links[0]!.getAttribute('onclick')).toBeNull()
+			expect(links[0]!.getAttribute('tabindex')).toBe('0')
+			setLink(0)
+			pointer(container, 'pointerdown')
+			pointer(container, 'pointerup')
+			click()
+			expect(scroll.scrollTop).toBe(340)
+			expect(view.state.currentPage).toBe(2)
+			expect(onNavigate).not.toHaveBeenCalled()
+			scroll.scrollTop = 0
+			click({ detail: 0 })
+			expect(scroll.scrollTop).toBe(340)
+			scroll.scrollTop = 0
+			click({ detail: 0, ctrlKey: true })
+			expect(scroll.scrollTop).toBe(0)
+			pointer(container, 'pointerdown')
+			pointer(container, 'pointermove', { clientX: 240 })
+			pointer(container, 'pointerup')
+			click()
+			expect(scroll.scrollTop).toBe(0)
+			current = false
+			pointer(container, 'pointerdown')
+			pointer(container, 'pointerup')
+			click()
+			click({ detail: 0 })
+			expect(scroll.scrollTop).toBe(0)
+			current = true
+			pointer(container, 'pointerdown')
+			await view.show({ ...packet(2), navigation: { pages: [], outline: [], points: [text] } })
+			pointer(container, 'pointerup')
+			click()
+			expect(scroll.scrollTop).toBe(0)
+			setLink(1)
+			click({ detail: 0 })
+			expect(scroll.scrollTop).toBe(0)
+			expect(onNavigate).not.toHaveBeenCalled()
+		} finally {
+			await view.dispose()
+		}
 	})
 
 	it('reveals repeated source near the selected page without a navigation loop and clears its highlight', async () => {

@@ -12,13 +12,15 @@ import { InputStore } from '../src/backend/inputs'
 import { validateEditorDraft } from '../src/backend/editor-config'
 import type { EditorDraft, EditorDescription } from '../src/shared/contracts'
 import { api } from '../src/renderer/api'
-import { FormPane } from '../src/renderer/panes'
+import { FilePane, FormPane } from '../src/renderer/panes'
 import { WorkspaceController } from '../src/renderer/workspace'
 import { WorkspaceContext } from '../src/renderer/workspace-context'
 import { editorLifecycle } from '../src/renderer/editor-lifecycle'
 
 vi.mock('@worksplit/react', () => ({ useWorkbenchContentLifecycle: () => {} }))
-vi.mock('../src/renderer/code-editor', () => ({ CodeEditor: () => null }))
+vi.mock('../src/renderer/code-editor', () => ({
+	CodeEditor: () => <textarea aria-label="Code editor keyboard target" />,
+}))
 vi.mock('../src/renderer/preview', () => ({ Preview: () => null }))
 vi.mock('../src/renderer/api', () => ({
 	onDesktopConnectionChange: vi.fn(),
@@ -144,6 +146,7 @@ afterEach(async () => {
 		if (hidePopover) Object.defineProperty(HTMLElement.prototype, 'hidePopover', hidePopover)
 		else Reflect.deleteProperty(HTMLElement.prototype, 'hidePopover')
 		vi.unstubAllGlobals()
+		vi.restoreAllMocks()
 		vi.resetAllMocks()
 		await rm(directory, { recursive: true, force: true })
 	}
@@ -168,6 +171,66 @@ async function mountBody() {
 	)
 	fireEvent.click(screen.getByText('正文', { exact: true }))
 }
+
+it('lets the real body editor apply strikethrough while plain save keys still persist the draft', async () => {
+	await open(draft('初始正文'))
+	await mountBody()
+	const box = await screen.findByRole('textbox', { name: '正文区域 body' })
+	const editor = (box as HTMLElement & { editor: Editor }).editor
+	const saveFile = vi.spyOn(workspace, 'save')
+	const saveInput = vi.spyOn(workspace, 'saveInput')
+	act(() => editor.commands.setTextSelection({ from: 1, to: 5 }))
+	fireEvent.keyDown(box, { key: 'S', code: 'KeyS', keyCode: 83, ctrlKey: true, shiftKey: true })
+	expect(editor.isActive('strike')).toBe(true)
+	for (const modifiers of [
+		{ ctrlKey: true, altKey: true },
+		{ metaKey: true, shiftKey: true },
+		{ metaKey: true, altKey: true },
+		{ ctrlKey: true, isComposing: true },
+	])
+		fireEvent.keyDown(box, { key: 's', code: 'KeyS', ...modifiers })
+	expect(saveFile).not.toHaveBeenCalled()
+	expect(saveInput).not.toHaveBeenCalled()
+	await act(async () => {
+		fireEvent.keyDown(box, { key: 's', code: 'KeyS', ctrlKey: true })
+	})
+	expect(saveFile).toHaveBeenCalledWith(target.entry)
+	expect(saveInput).toHaveBeenCalledWith(target.entry)
+	await waitFor(() => expect(api.setInput).toHaveBeenCalled())
+	const saved = await store.get(target.projectId, target.entry)
+	expect(saved.editor?.regions.body).toEqual(editor.getJSON())
+})
+
+it('keeps modified and composition keys available inside file editors and saves only plain Mod-S', () => {
+	const path = 'main/main.typ'
+	workspace.files.set(path, {
+		path,
+		content: 'Source',
+		saved: 'Source',
+		version: 'v1',
+		dirty: false,
+		saving: false,
+		token: 0,
+		external: 0,
+	})
+	const save = vi.spyOn(workspace, 'save').mockResolvedValue(undefined)
+	render(
+		<MantineProvider>
+			<WorkspaceContext.Provider value={workspace}>
+				<FilePane path={path} />
+			</WorkspaceContext.Provider>
+		</MantineProvider>,
+	)
+	const input = screen.getByRole('textbox', { name: 'Code editor keyboard target' })
+	for (const modifier of ['ctrlKey', 'metaKey']) {
+		for (const extra of [{ shiftKey: true }, { altKey: true }, { isComposing: true }])
+			expect(fireEvent.keyDown(input, { key: 's', [modifier]: true, ...extra })).toBe(true)
+		expect(save).not.toHaveBeenCalled()
+		expect(fireEvent.keyDown(input, { key: 's', [modifier]: true })).toBe(false)
+		expect(save).toHaveBeenCalledExactlyOnceWith(path)
+		save.mockClear()
+	}
+})
 
 it('explicitly initializes regions for existing saved data through the form pane', async () => {
 	const previous = await open()

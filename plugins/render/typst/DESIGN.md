@@ -54,7 +54,7 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 ## 前端子入口与区域生成
 
-`/browser` 只依赖纯 preview/diagnostic 契约，拥有命中算法、SVG CTM、普通点击过滤、页面/目录跟随、滚动与高亮。View 只持有调用方提供的 renderer；销毁 View 不关闭共享 renderer。同步状态回调可以销毁 View，后续导航发布、高亮与计时器必须在同一调用中停止。宿主拥有源文件与客户端草稿当前性、可见 pane 选择及异步打开后的复核，不向 View 注入整个应用 controller。
+`/browser` 只依赖纯 preview/diagnostic 契约，拥有命中算法、SVG CTM、普通点击过滤、页面/目录跟随、滚动与高亮。固定 0.7.0 SVG 的内部引用携带 `handleTypstLocation(this, page, x, y)`；View 只解析这组数值，移除内联处理器并由实例自己的滚动容器完成跳转，不执行 renderer 脚本、不安装全局回调。链接优先于源码命中，键盘激活使用相同的当前修订检查；外部链接保留浏览器行为。View 只持有调用方提供的 renderer；销毁 View 不关闭共享 renderer。同步状态回调可以销毁 View，后续导航发布、高亮与计时器必须在同一调用中停止。宿主拥有源文件与客户端草稿当前性、可见 pane 选择及异步打开后的复核，不向 View 注入整个应用 controller。缩放也由 View 统一维护：只设置根 SVG 的尺寸，通过页内坐标保存阅读位置，视口 resize 或隐藏后重显时恢复。宿主提供滚动容器、目录与页码控件，不再自行按百分比拉伸 SVG；缩放单位与容器 CSS 约束见[浏览器预览](../../../docs/plugins/rendering/typst.md#浏览器预览)。
 
 `/tiptap` 无 DOM 导入，使用官方 Tiptap 3 schema 与 MarkdownManager；没有第二份正文 AST。`validation.ts` 先检查 raw JSON/属性/表格，再让 schema 检查内容结构；原始输入不能依赖规范化丢弃内容后通过校验。`serialize.ts` 显式覆盖持久化节点与 Mark，生成 `_editor/regions/*.typ`、`/inputs/editor/data.json` 与同客户端修订映射。字段路径按编译时的实际父值解释数组或字典访问，保证纯数据变化无需重新生成模板；重复表头不能覆盖正文单元格。业务扩展有属性时必须提供值 validator；无 serializer 不接纳。HTML 输入先检查原始标签和属性，避免浏览器修复或 ProseMirror 规范化导致静默丢内容。
 
@@ -66,9 +66,15 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 `document-nodes.ts` 持有图表结构、数学扩展、引用身份和复制命令；`reference-targets.ts` 从已准入区域 JSON 生成引用候选。figure 的一个 body（image/table 或已安装的 templateBlock/typstSource）与一个 figureCaption 保持同一原生子树，caption 是 inline 内容；表格继续由官方 TableKit 编辑。独立公式保存 LaTeX 与可选 id/label，行内公式只保存 LaTeX。题注文字、可编辑 label、内部 id 和 Typst 编号分别归属内容、引用名称、对象身份与排版，不合成一个可写字段。
 
-id/label 在整个区域集合内唯一。引用只保存目标 id，生成时解析为当前 label；label 为空的图表/公式不编号，也不是可引用目标。编辑期间允许保留缺失目标以便修复，生成完整报告时返回 `INVALID_REFERENCE`。模板内手写 label/ref 不进入结构化索引，也不随 JSON label 自动改名；即使目标在 JSON 中存在，模板没有 include 该目标时仍由真实 Typst 编译报告缺失。移动保持身份；复制分配新身份并重绑复制子树内的引用，载入时不自动修复坏身份。
+id/label 在整个区域集合内唯一。引用保存目标 id 与可选 `showCaption: null | boolean`，生成时解析为当前 label；`null` 继承模板，布尔值覆盖单条引用。题注从目标读取，不在引用中存副本；没有题注的目标继续显示编号。label 为空的图表/公式不编号，也不是可引用目标。编辑期间允许保留缺失目标以便修复，生成完整报告时返回 `INVALID_REFERENCE`。模板内手写 label/ref 不进入结构化索引，也不随 JSON label 自动改名；即使目标在 JSON 中存在，模板没有 include 该目标时仍由真实 Typst 编译报告缺失。移动保持身份；复制分配新身份并重绑复制子树内的引用，载入时不自动修复坏身份。
 
-`document-react.tsx` 为图表、KaTeX 公式和引用提供 NodeView；题注内容继续在原生 contentDOM 编辑，label/公式输入只在显式应用时提交。引用候选取宿主 `regions` 与当前活跃 Editor 的覆盖快照，官方 Suggestion 负责 `@` 匹配和 decoration；UI 展示当前 label 和目标说明，不保存或模拟 Typst 编号。单区域宿主不传完整集合时只索引自己。
+生成器始终提供 `_editor/references.typ`，用 Typst `state` 持有模板默认值，避免跨 `#include` 复制词法变量。区域通过带私有标记的 metadata 和局部 show 规则生成原生 `ref`，按三态选择追加当前目标的真实 `figure.caption.body`；其余 metadata 保持原值。附加题注内部将结构化引用降为原生短引用，保留链接、字段与富文本并终止自引用或互引展开。编号、前缀和目标位置仍由 Typst 决定；浏览器编辑器只展示标识与显式题注，不解释任意模板代码。
+
+区域源码直接构造引用 metadata 和 `math.equation`，数学 body 仍来自 MiTeX。native 采集器复用 equation/ref/metadata 的 Tag 边界，将 helper 或引用副本的字形归属原子调用位置，保留调用范围内的字符精度。附加题注的坐标属于引用，原图题注不会被副本抢占；重复 include 继续按当前页选择出现位置。预览 View 同时处理纵向及必要的横向滚动；宿主负责显示目标区域、聚焦和等待选区相关控件布局，再滚动原生选区。
+
+`document-react.tsx` 为图表、KaTeX 公式和引用提供 NodeView。题注内容继续在原生 contentDOM 编辑；图表与独立公式复用常驻 label 输入，Enter 或失焦校验并提交，Escape 恢复。图表通过 CSS 将类型、原生题注与 label 排在内容下方同一行，保留 schema 中 body、caption 的顺序；外观不再另套设置卡片。figure 的整体移动统一复用块旁官方 DragHandle，类型文字不再提供第二个拖柄，避免内层组件选区被误当成整个图表。公式点击后在原位置展开 LaTeX 编辑框，草稿只更新局部 KaTeX 预览；Mod+Enter、“完成”或失焦提交并收起，Escape 或“取消”恢复。label 与 LaTeX 各自提交一个原生事务，互不覆盖，也不因逐键输入产生撤销步骤。
+
+提交复核最新节点身份、字段原值、只读与组合输入状态；冲突或校验失败保留本地输入并显示错误，不用旧表单覆盖新的正文。未提交输入保留 `data-typst-unapplied` 标记，供宿主保存和离开检查读取。只读时可查看公式源码。引用候选取宿主 `regions` 与当前活跃 Editor 的覆盖快照，官方 Suggestion 负责 `@` 匹配和 decoration；UI 展示当前 label 和目标说明，不保存或模拟 Typst 编号。单区域宿主不传完整集合时只索引自己。
 
 `serialize.ts` 映射 figure、MiTeX 的 mi/mitex 和 Typst ref，保留原有源码映射；仅有公式时加入 `mitex.ts` 提供的固定运行时文件。`mitex-files.json` 由 `vendor/mitex/generate.mjs` 从固定版本与归档摘要生成，包含 Apache 许可与 notice；只将 upstream 的 WASM 文件加载替换为 JSON bytes。静态资源不在每次编辑重新编码，不扩大同步 `Record<string,string>` 文件契约，不启用网络包 resolver。模板仍设置 math.equation 的编号与数学字体；KaTeX 和 MiTeX 的兼容性由实际公式与各端诊断确认，不承诺所有宏等价。
 
@@ -99,6 +105,8 @@ id/label 在整个区域集合内唯一。引用只保存目标 id，生成时�
 `block-menu.tsx` 使用官方 DragHandle React 的定位、顶层目标与原生拖放；不自行追踪鼠标或维护排序模型。普通块提供就地插入、类型转换、复制、删除和上下移动，键盘/触屏有当前块入口。菜单固定原生 doc/node/pos，打开后不借旧 caret 执行动作，文档变化取消旧目标。`block-actions.ts` 准备完整块的原生事务，通过现有区域校验后提交；不可完整保留内容的转换禁用。复制嵌套模板/源码节点复用 `blocks.ts` 的身份分配，移动保留身份。卡片继续使用已有 NodeView 入口，避免重叠操作柄。官方拖动扩展的 collaboration/Yjs peers 只属于 React 入口依赖，没有安装协作扩展或第二份 history。
 
 链接视图与格式视图共用 `format-menu.tsx` 的显式请求和 native Selection，Mod+K、格式按钮进入同一编辑过程；URL 草稿属于界面，`link-actions.ts` 只准备原生 transaction，不保存正文副本。链接复用 canonical `allowedLink`、原生 Link URI 检查和区域准入；点击提交时重查。清除 Mark 与列表缩进也用原生命令。React RegionEditor 安装官方 Selection extension，只用 decoration 保留控件失焦时的文字高亮，不改变 JSON/schema。
+
+`shortcuts.ts` 统一内部按键描述、平台化悬浮提示和 `aria-keyshortcuts`；基础格式执行仍属于官方 Tiptap keymap。只有链接、清除文字格式、菜单和公式完成等 UI 操作由各自界面处理器匹配同一描述，不安装文档级格式快捷键或另一套命令分发。清除格式的按钮与按键调用同一个原生事务，保留 `nonClearableMarks`、段落结构与对齐。
 
 `captureTypstCandidateTarget` 统一消费原生 Selection 的所有 ranges，捕获区域、修订与最近共同容器内的完整块；单单元格 CellSelection 取该格正文，跨单元格才包络整个表。两个宿主删除各自范围算法，固定目标后仅保留一份可编辑文字；文字变化使 prepare 结果失效，apply 仍读取最新事实。`TypstRegionEditor.content` 在原生 Editor 实例创建前准入并固定快照，后续 content prop 不替换或卸载已接纳正文；regionId/扩展集合身份和显式文档 key 决定实例与 history 归属。初始失败不创建 Editor，以 effect 调用宿主 onValidationError 或显示默认 alert；宿主提供回调时接管错误呈现。修正初始失败内容需新 key 重试，不在普通 render 中隐式重新接纳。
 

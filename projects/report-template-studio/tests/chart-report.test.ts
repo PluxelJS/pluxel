@@ -126,8 +126,8 @@ it('compiles movable chart components and source blocks from external input with
 
 		const styled = structuredClone(editor)
 		const actionTable = styled.regions.actions!.content!.find((node) => node.type === 'table')!
-		expect(actionTable.attrs?.typstTableStyle).toBe('three-line')
-		actionTable.attrs!.typstTableStyle = 'borderless'
+		expect(actionTable.attrs?.tableStyle).toBe('three-line')
+		actionTable.attrs!.tableStyle = 'borderless'
 		const third = await studio.compile({
 			...target,
 			data: dataOnly,

@@ -209,12 +209,12 @@ export function exportTypstMarkdown(
 						'Font family, font size and text/background colors cannot round-trip through Markdown.',
 				})
 		})
-		if (node.type === 'table' && node.attrs?.typstTableStyle != null)
+		if (node.type === 'table' && node.attrs?.tableStyle != null)
 			issues.push({
 				code: 'COMPLEX_CONTENT',
 				regionId: options.regionId,
-				path: [...path, 'attrs', 'typstTableStyle'],
-				message: 'Typst table appearance cannot round-trip through Markdown.',
+				path: [...path, 'attrs', 'tableStyle'],
+				message: 'Table appearance cannot round-trip through ordinary Markdown.',
 			})
 		if (node.type === 'tableCell' || node.type === 'tableHeader') {
 			if (
@@ -277,7 +277,13 @@ const htmlTags: Record<string, readonly string[]> = {
 	strike: [],
 	del: [],
 	u: [],
-	span: ['style', 'data-type', 'data-latex', 'data-typst-reference'],
+	span: [
+		'style',
+		'data-type',
+		'data-latex',
+		'data-typst-reference',
+		'data-typst-reference-caption',
+	],
 	div: ['data-type', 'data-latex', 'id', 'label'],
 	figure: ['id', 'label', 'data-typst-figure'],
 	figcaption: [],
@@ -505,6 +511,18 @@ export function parseTypstHtml(
 		const mathElement =
 			(tag === 'span' && mathKind === 'inline-math') || (tag === 'div' && mathKind === 'block-math')
 		const referenceElement = tag === 'span' && Object.hasOwn(rawAttributes, 'data-typst-reference')
+		if (
+			Object.hasOwn(rawAttributes, 'data-typst-reference-caption') &&
+			(!referenceElement ||
+				!['true', 'false'].includes(rawAttributes['data-typst-reference-caption']!))
+		)
+			issues.push({
+				code: 'UNSUPPORTED_HTML',
+				regionId: options.regionId,
+				path: [...path, 'data-typst-reference-caption'],
+				message:
+					'Reference caption metadata requires a reference and an explicit true or false value.',
+			})
 		if (
 			(tag === 'div' && !mathElement && !custom) ||
 			(tag === 'span' &&

@@ -63,7 +63,7 @@ const builtinNodeAttributes: Readonly<Record<string, readonly string[]>> = {
 	heading: ['level', 'textAlign'],
 	orderedList: ['start', 'type'],
 	codeBlock: ['language'],
-	table: ['typstTableStyle'],
+	table: ['tableStyle'],
 	tableCell: ['colspan', 'rowspan', 'colwidth', 'align'],
 	tableHeader: ['colspan', 'rowspan', 'colwidth', 'align'],
 	image: ['src', 'alt', 'title', 'width', 'height'],
@@ -73,7 +73,7 @@ const builtinNodeAttributes: Readonly<Record<string, readonly string[]>> = {
 	figure: ['id', 'label'],
 	blockMath: ['latex', 'id', 'label'],
 	inlineMath: ['latex'],
-	reference: ['target'],
+	reference: ['target', 'showCaption'],
 }
 const builtinMarkAttributes: Readonly<Record<string, readonly string[]>> = {
 	link: ['href', 'target', 'rel', 'class', 'title'],
@@ -529,6 +529,16 @@ function inspectNode(
 			'target',
 		])
 	if (
+		value.type === 'reference' &&
+		attrs.showCaption != null &&
+		typeof attrs.showCaption !== 'boolean'
+	)
+		issue(
+			'INVALID_ATTRIBUTE',
+			'Reference showCaption must be true, false or null (template inheritance).',
+			['attrs', 'showCaption'],
+		)
+	if (
 		(value.type === 'paragraph' || value.type === 'heading') &&
 		!validTextAlignment(attrs.textAlign)
 	)
@@ -581,8 +591,8 @@ function inspectNode(
 	}
 	if (value.type === 'table') {
 		const tableOptions = options.context.table
-		const error = tableOptions && tableStyleError(attrs.typstTableStyle, tableOptions)
-		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs', 'typstTableStyle'])
+		const error = tableOptions && tableStyleError(attrs.tableStyle, tableOptions)
+		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs', 'tableStyle'])
 	}
 	if (value.type === 'dataField') {
 		const fieldPath = attrs.path

@@ -69,7 +69,9 @@ async function clickPoint(point, expected) {
 	)
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await ready()
 	await page.locator('.typst-page').first().waitFor()
 	await body.locator('td').first().click({ button: 'right' })
@@ -102,7 +104,7 @@ try {
 		await chooseStyle(label)
 		await appearance(style)
 		const content = await body.evaluate((element) => element.editor.getJSON())
-		assert.equal(content.content.find((node) => node.type === 'table').attrs.typstTableStyle, style)
+		assert.equal(content.content.find((node) => node.type === 'table').attrs.tableStyle, style)
 		assert.deepEqual(
 			content.content.find((node) => node.type === 'table').content,
 			original.content.find((node) => node.type === 'table').content,
@@ -176,7 +178,7 @@ try {
 		})
 		editor.commands.insertContentAt(editor.state.doc.content.size, {
 			type: 'table',
-			attrs: { typstTableStyle: 'grid-open-sides' },
+			attrs: { tableStyle: 'grid-open-sides' },
 			content: [
 				[cell('Left', { rowspan: 2 }), cell('Top right', { colspan: 2 })],
 				[cell('Middle'), cell('Right', { rowspan: 2 })],
@@ -216,7 +218,7 @@ try {
 	const imported = JSON.parse(await page.getByTestId('import-result').innerText())
 	assert.equal(imported.ok, true, JSON.stringify(imported))
 	assert.equal(
-		imported.value.content.find((node) => node.type === 'table').attrs.typstTableStyle,
+		imported.value.content.find((node) => node.type === 'table').attrs.tableStyle,
 		'grid-open-sides',
 	)
 	await page.getByRole('button', { name: '放弃候选修改', exact: true }).click()

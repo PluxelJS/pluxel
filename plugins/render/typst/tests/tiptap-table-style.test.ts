@@ -28,7 +28,7 @@ const paragraph = (text: string): JSONContent => ({
 function table(style?: unknown): JSONContent {
 	return {
 		type: 'table',
-		...(style === undefined ? {} : { attrs: { typstTableStyle: style } }),
+		...(style === undefined ? {} : { attrs: { tableStyle: style } }),
 		content: [
 			{
 				type: 'tableRow',
@@ -66,12 +66,13 @@ describe('optional Typst table appearance', () => {
 		const base = getSchema(createEditorExtensions())
 		const enhanced = getSchema(createTypstExtensions(config))
 		expect(base.nodes.dataField).toBeUndefined()
-		expect(base.nodes.table!.spec.attrs ?? {}).not.toHaveProperty('typstTableStyle')
+		expect(base.nodes.table!.spec.attrs ?? {}).not.toHaveProperty('tableStyle')
 		expect(enhanced.nodes.table!.spec.content).toBe(base.nodes.table!.spec.content)
 		expect(enhanced.nodes.tableCell!.spec.content).toBe(base.nodes.tableCell!.spec.content)
 		expect(enhanced.nodes.tableCell!.spec.attrs).toEqual(base.nodes.tableCell!.spec.attrs)
 		expect(enhanced.nodes.tableCell!.spec.tableRole).toBe(base.nodes.tableCell!.spec.tableRole)
-		expect(enhanced.nodes.table!.spec.attrs).toHaveProperty('typstTableStyle')
+		expect(enhanced.nodes.table!.spec.attrs).toHaveProperty('tableStyle')
+		expect(enhanced.nodes.table!.spec.attrs).not.toHaveProperty('typstTableStyle')
 		const markdown = new MarkdownManager({ extensions: createEditorExtensions() })
 		const json = markdown.parse('| A | B |\n|---|---|\n| one | two |')
 		base.nodeFromJSON(json).check()
@@ -81,6 +82,22 @@ describe('optional Typst table appearance', () => {
 			ok: false,
 			issues: [expect.objectContaining({ code: 'UNKNOWN_ATTRIBUTE' })],
 		})
+	})
+
+	it('rejects the old provider-prefixed document attribute instead of silently dropping it', () => {
+		for (const previousStyle of [null, 'three-line']) {
+			const node = table('grid')
+			node.attrs!.typstTableStyle = previousStyle
+			expect(validate(node)).toMatchObject({
+				ok: false,
+				issues: [
+					expect.objectContaining({
+						code: 'UNKNOWN_ATTRIBUTE',
+						path: ['content', 0, 'attrs', 'typstTableStyle'],
+					}),
+				],
+			})
+		}
 	})
 
 	it('validates template defaults and rejects disallowed overrides before generation', () => {
@@ -120,7 +137,7 @@ describe('optional Typst table appearance', () => {
 		expect(result.value.issues).toContainEqual(
 			expect.objectContaining({
 				code: 'COMPLEX_CONTENT',
-				path: ['content', 0, 'attrs', 'typstTableStyle'],
+				path: ['content', 0, 'attrs', 'tableStyle'],
 			}),
 		)
 		const markdown = new MarkdownManager({ extensions: createEditorExtensions() })
@@ -128,7 +145,7 @@ describe('optional Typst table appearance', () => {
 			markdown.parse(result.value.markdown),
 		)
 		expect(restored.textContent).toBe('ItemAmountAlpha123')
-		expect(restored.firstChild!.attrs).not.toHaveProperty('typstTableStyle')
+		expect(restored.firstChild!.attrs).not.toHaveProperty('tableStyle')
 		const inherited = exportTypstMarkdown({
 			config,
 			regionId: 'body',
@@ -150,7 +167,7 @@ describe('optional Typst table appearance', () => {
 				})
 				const node: JSONContent = {
 					type: 'table',
-					attrs: { typstTableStyle: style },
+					attrs: { tableStyle: style },
 					content: [
 						[cell('Group', { colspan: 3 }, true)],
 						['Item', 'Amount', 'Target'].map((text) => cell(text, undefined, true)),
@@ -232,7 +249,7 @@ describe('optional Typst table appearance', () => {
 				if (style === 'grid-open-sides') {
 					// Independent native oracle: erase only the two outer vertical lines of a full grid.
 					// In particular, a row's first/last DOM child is not necessarily an outer cell.
-					const fullGrid = generate({ ...node, attrs: { typstTableStyle: 'grid' } })
+					const fullGrid = generate({ ...node, attrs: { tableStyle: 'grid' } })
 					const reference = fullGrid.templateFiles['_editor/regions/body.typ']!.replace(
 						/(columns: \([^\n]+\),\n)/,
 						'$1table.vline(x: 0, stroke: none), table.vline(x: 3, stroke: none),\n',

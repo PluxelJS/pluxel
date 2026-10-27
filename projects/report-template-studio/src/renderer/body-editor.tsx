@@ -80,13 +80,21 @@ function Region({
 			node?.isAtom && !node.isText && NodeSelection.isSelectable(node)
 				? NodeSelection.create(editor.state.doc, from)
 				: TextSelection.near(editor.state.doc.resolve(from))
-		editor.view.dispatch(
-			editor.state.tr
-				.setSelection(selection)
-				.setMeta('typst-navigation', location.source ?? true)
-				.scrollIntoView(),
-		)
+		// ProseMirror requires the DOM selection inside this editor before it can scroll.
 		editor.view.focus()
+		editor.view.dispatch(
+			editor.state.tr.setSelection(selection).setMeta('typst-navigation', location.source ?? true),
+		)
+		// Selection-dependent controls must finish layout before ProseMirror measures the viewport.
+		const frame = requestAnimationFrame(() => {
+			if (
+				!editor.isDestroyed &&
+				editor.state.selection.eq(selection) &&
+				editor.view.dom.getClientRects().length > 0
+			)
+				editor.view.dispatch(editor.state.tr.scrollIntoView())
+		})
+		return () => cancelAnimationFrame(frame)
 	}, [active, entry, location, regionId])
 	const pointer = useRef<{ x: number; y: number } | null>(null)
 	return (
@@ -107,15 +115,17 @@ function Region({
 					event.shiftKey ||
 					Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 ||
 					(event.target as HTMLElement).closest('.typst-content-block') ||
+					(event.target as HTMLElement).closest('input, textarea, select, button, a') ||
 					!(event.target as HTMLElement).closest('.tiptap')
 				)
 					return
 				const editor = editorRef.current
 				if (editor?.state.selection instanceof NodeSelection) {
 					const position = editor.state.selection.from
-					if (editor.view.nodeDOM(position)?.contains(event.target as Node))
+					if (editor.view.nodeDOM(position)?.contains(event.target as Node)) {
 						workspace.revealRegion(entry, regionId, position)
-					return
+						return
+					}
 				}
 				if (!window.getSelection()?.isCollapsed) return
 				const selection = editor?.view.dom.ownerDocument.getSelection()

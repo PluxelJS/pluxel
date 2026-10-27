@@ -2,6 +2,7 @@ import { createContext } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
 import type { TypstDataField, TypstEditorConfig, TypstRegionDefinition } from './types'
 import type { TypstSlashCommand } from './insert-commands'
+import { shortcutProps, type Shortcut } from './shortcuts'
 
 export interface EditorUiContext {
 	/** Current document snapshots; the active native editor always takes precedence. */
@@ -129,12 +130,14 @@ export function ToolButton({
 	icon,
 	active,
 	disabled,
+	shortcut,
 	onClick,
 }: {
 	label: string
 	icon: IconName
 	active?: boolean
 	disabled?: boolean
+	shortcut?: Shortcut
 	onClick(): void
 }) {
 	return (
@@ -142,7 +145,7 @@ export function ToolButton({
 			type="button"
 			className="typst-tool-button"
 			aria-label={label}
-			title={label}
+			{...shortcutProps(label, shortcut)}
 			aria-pressed={active}
 			disabled={disabled}
 			onMouseDown={(event) => event.preventDefault()}

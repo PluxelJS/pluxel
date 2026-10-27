@@ -6,6 +6,7 @@ import { useEditorState } from '@tiptap/react'
 import { EditorUi, allowedNode, canEdit } from './editor-ui'
 import { openFormatMenu } from './format-menu'
 import { selectedTable, tableActions } from './table-menu'
+import { editorShortcuts, shortcutProps } from './shortcuts'
 
 const commonActions = new Set(['增加行', '增加列', '合并单元格', '拆分单元格', '删除行', '删除列'])
 
@@ -48,6 +49,7 @@ export function TableTools({ editor }: { editor: Editor }) {
 			<button
 				type="button"
 				aria-label="更多表格操作"
+				{...shortcutProps('更多表格操作', editorShortcuts.format)}
 				onMouseDown={(event) => event.preventDefault()}
 				disabled={ui.composing || editor.view.composing}
 				onClick={(event) => openFormatMenu(editor, event.currentTarget)}

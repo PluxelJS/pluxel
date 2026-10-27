@@ -6,7 +6,10 @@ import { chromium } from 'playwright'
 import { trackConsumerSessions } from './browser-session.mjs'
 
 const dir = await mkdtemp(join(tmpdir(), 'typst-block-actions-'))
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+const browser = await chromium.connect(
+	process.env.PLAYWRIGHT_WS_ENDPOINT ?? 'ws://127.0.0.1:3000',
+	{ timeout: 5000, exposeNetwork: '<loopback>' },
+)
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, hasTouch: true })
 const release = trackConsumerSessions(page)
 const errors = []
@@ -69,7 +72,9 @@ async function undo() {
 	await settle()
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await page
 		.getByTestId('revision')
 		.filter({ hasText: / · 当前$/ })
@@ -159,7 +164,7 @@ try {
 	await insertion.getByRole('searchbox', { name: '搜索插入内容', exact: true }).fill('分隔线')
 	const editorBox = await body.boundingBox()
 	await page.mouse.move(editorBox.x + editorBox.width - 15, editorBox.y + 120)
-	await page.getByRole('heading', { name: '编辑与排版体验', exact: true }).hover()
+	await page.getByRole('heading', { name: '编辑与排版', exact: true }).hover()
 	assert.equal(
 		await insertion
 			.getByRole('option', { name: '分隔线', exact: true })
@@ -378,13 +383,11 @@ try {
 		await templateCard.getByRole('button', { name: '块操作', exact: true }).isVisible(),
 		true,
 	)
-	assert.equal(
-		await region
-			.locator('.typst-block-drag')
-			.getByRole('button', { name: '块操作', exact: true })
-			.isVisible(),
-		false,
-	)
+	const figureHandle = region
+		.locator('.typst-block-drag')
+		.getByRole('button', { name: '块操作', exact: true })
+	assert.equal(await figureHandle.isVisible(), true)
+	assert.match(await figureHandle.getAttribute('title'), /^图表与题注：/)
 	await page
 		.getByRole('navigation', { name: '正文区域', exact: true })
 		.getByRole('button', { name: '后续行动', exact: true })
@@ -410,7 +413,7 @@ try {
 		false,
 	)
 	passed.push(
-		'real template/source cards keep their existing controls without a second ordinary block handle',
+		'captioned template exposes whole-figure controls; unwrapped source keeps its own controls without a duplicate handle',
 	)
 	assert.deepEqual(errors, [])
 	await writeFile(join(dir, 'result.json'), JSON.stringify({ passed, errors }, null, 2))

@@ -19,7 +19,9 @@ description: 模板负责页面，Tiptap JSON 保存分区域正文，Agent Mark
 
 源码仓库可运行 `mise exec -- vp run @pluxel/plugin-typst#compile`，再运行 `mise exec -- vp run typst` 打开体验页；保存范围及操作见 [consumer 说明](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/README.md#interactive-browser-playground)。
 
-体验页在服务 URL 后加 `/?example=operations-report` 打开图表报告：左侧为“正文 / 数据”，右侧为“Typst 预览 / 原始 Typst / Markdown”三个标签。示例包含文字排版、带题注的图表组件、表格、LaTeX 公式和跨区域引用；Markdown 默认实时显示当前区域或选中块，点击“编辑这份 Markdown”固定候选，经检查接纳后更新正文与排版，并回到同一标签的实时内容。原始 Typst 可编辑外层模板；手机通过“编辑 / 预览”切换左右面板，面板内保留同样的标签。
+体验页默认打开完整图表报告，也可通过 `/?example=operations-report` 直接打开；最小示例保留在示例选择器和 `/?example=consumer-report`。左侧为“正文 / 数据”，右侧为“Typst 预览 / 原始 Typst / Markdown”三个标签。完整示例包含文字排版、带题注的图表组件、表格、LaTeX 公式和跨区域引用；Markdown 默认实时显示当前区域或选中块，点击“编辑这份 Markdown”固定候选，经检查接纳后更新正文与排版，并回到同一标签的实时内容。原始 Typst 可编辑外层模板；手机通过“编辑 / 预览”切换左右面板，面板内保留同样的标签。
+
+“经营解读”包含图表、公式和同一图的三种引用选择；“后续行动”附有文字格式、四种段落对齐、嵌套列表、引用块、自定义提示块、代码，以及各类表格样式、合并单元格和多段单元格。它们都是可直接修改的正文，使用同一条 Markdown 往返和 Typst 编译路径。
 
 ## 入口与安装
 
@@ -161,7 +163,27 @@ const extraCommands: TypstSlashCommand[] = [
 
 字段、表格、已安装的模板组件/源码块和宿主业务动作集中在“插入”菜单，也可输入 `/` 搜索；宿主不再逐项拼装字段或组件选择器。“插入”使用当前原生选区，slash 只删除本次查询文本；块前的“＋”在指定块后插入，选择内容前不产生空段落或撤销记录。三种入口复用同一命令与准入检查。选择“表格”后填写行数、列数和是否首行表头，默认 3×3 并启用首行表头；行数允许 1–50、列数允许 1–20，越界显示错误，不自动截断。取消不会修改正文或删除 slash 查询。插入与块操作菜单采用非模态焦点：Tab 沿浏览器顺序移出即关闭，Escape 从弹层内任意控件取消并返回入口；输入法组合输入期间不接管 Escape。
 
-普通段落、标题、引用、列表、表格和图片有就地块操作入口。点击操作柄可转换类型、复制、删除或上下移动，拖动操作柄可调整顺序；键盘与触屏也可用当前块入口和移动按钮；`Alt+F10` 聚焦当前块入口，`Shift+F10` 仍打开文字格式。目标是打开菜单时的整个顶层块，表格不会误作用于一个单元格。转换只提供当前结构能完整保留内容的选项；复杂结构不能通过转换悄悄丢掉内容。菜单打开后正文变化会取消旧目标。模板组件与源码块沿用卡片自己的入口；复制中的实例使用新 ID，移动保留原 ID，操作支持原生撤销。
+普通段落、标题、引用、列表、表格和图片有就地块操作入口。点击操作柄可转换类型、复制、删除或上下移动，拖动操作柄可调整顺序；键盘与触屏也可用当前块入口和移动按钮；`Alt+F10` 聚焦当前块入口，`Shift+F10` 仍打开文字格式。目标是打开菜单时的整个顶层块，表格不会误作用于一个单元格。带题注的图表同样使用块旁操作柄，拖动和移动会一起保留图表、题注、label 与原 ID。转换只提供当前结构能完整保留内容的选项；复杂结构不能通过转换悄悄丢掉内容。菜单打开后正文变化会取消旧目标。模板组件与源码块沿用卡片自己的入口；复制中的实例使用新 ID，移动保留原 ID，操作支持原生撤销。
+
+### 快捷键与提示
+
+工具条与格式面板中的同一操作显示相同的悬浮快捷键提示，并提供 `aria-keyshortcuts`；段落样式与对齐选择器的悬浮说明列出各选项的按键。提示按当前平台显示：macOS 使用 `⌘`、`⇧`、`⌥`，其他平台使用 `Ctrl`、`Shift`、`Alt`。下表中的 `Mod` 对应 Command 或 Ctrl，作用域是聚焦的正文编辑器。基础格式继续使用官方 Tiptap 绑定，未给颜色、字体等操作另设组合键。
+
+| 操作                              | 快捷键                                                        |
+| --------------------------------- | ------------------------------------------------------------- |
+| 撤销 / 重做                       | `Mod+Z` / `Mod+Shift+Z` 或 `Mod+Y`                            |
+| 加粗 / 斜体 / 下划线              | `Mod+B` / `Mod+I` / `Mod+U`                                   |
+| 删除线 / 行内代码                 | `Mod+Shift+S` / `Mod+E`                                       |
+| 正文 / 标题 1–6                   | `Mod+Alt+0` / `Mod+Alt+1` 至 `Mod+Alt+6`                      |
+| 引用块 / 代码块                   | `Mod+Shift+B` / `Mod+Alt+C`                                   |
+| 无序 / 有序列表                   | `Mod+Shift+8` / `Mod+Shift+7`                                 |
+| 列表增加 / 减少缩进               | `Tab` / `Shift+Tab`                                           |
+| 左对齐 / 居中 / 右对齐 / 两端对齐 | `Mod+Shift+L` / `Mod+Shift+E` / `Mod+Shift+R` / `Mod+Shift+J` |
+| 添加或编辑链接                    | `Mod+K`                                                       |
+| 清除文字格式，保留段落结构和对齐  | `Mod+\`                                                       |
+| 完整格式面板 / 当前块入口         | `Shift+F10` 或菜单键 / `Alt+F10`                              |
+
+`/` 插入和 `@` 引用是正文输入触发器。“清除文字格式”的按钮和快捷键共享同一事务，支持一次撤销；空光标处同时清除后续输入样式。链接、清除格式和菜单快捷键不会接管卡片输入、公式源码、输入法组合输入等编辑过程。公式源码中的完成键是 `Mod+Enter`，取消键是 `Escape`，对应按钮也显示提示。
 
 ### 文字格式与导入规则
 
@@ -197,7 +219,9 @@ const extraCommands: TypstSlashCommand[] = [
 | `id`    | 对象的稳定身份；结构化引用保存这个值，不随题注或 label 改名          |
 | 编号    | 不保存到正文；由 Typst 按实际文档顺序和模板规则计算                  |
 
-图表设置中单独编辑“引用 label”，点击“应用 label”提交；“取消修改”或输入框内的 Escape 恢复原 label，不改正文和撤销历史。独立公式在公式编辑框中编辑 label。label 以字母或数字开头，支持中文等 Unicode 字母，后续可含字母、数字、组合标记、冒号、点、下划线或连字符，最长 128 个字符；整份区域集合内不能重复。id 由编辑命令生成；通过 agent 新建对象时需提供唯一 id。原始 JSON 校验不自动补写或改名修复冲突。
+图题、表题与常驻的“引用 label”输入框排列在图表内容下方同一行，直接编辑即可；独立公式也使用相同的 label 输入。按 Enter 或离开输入框时校验并提交，一次撤销可恢复；Escape 恢复正文当前值，不产生新的正文修改。格式错误、重名或提交冲突会保留本地输入并提示原因，可以修改后再提交，也可以使用“恢复 label”放弃输入。label 与题注、公式源码分别编辑，不需要展开设置面板。
+
+label 以字母或数字开头，支持中文等 Unicode 字母，后续可含字母、数字、组合标记、冒号、点、下划线或连字符，最长 128 个字符；整份区域集合内不能重复。id 由编辑命令生成；通过 agent 新建对象时需提供唯一 id。原始 JSON 校验不自动补写或改名修复冲突。
 
 图表和独立公式可以没有 label，此时输出不编号，也不能成为结构化引用目标。设置 label 时必须有稳定 id。清空已有 label 或删除对象后，引用节点保留，编辑器显示目标缺失；生成器返回 `INVALID_REFERENCE`，不会把坏引用静默转换成文字。修复目标、重新设置 label 或删除不再需要的引用后继续生成。
 
@@ -207,7 +231,9 @@ const extraCommands: TypstSlashCommand[] = [
 
 ### LaTeX 公式
 
-公式直接保存 LaTeX 源码，复用官方 [Tiptap Mathematics](https://tiptap.dev/docs/editor/extensions/nodes/mathematics) 的 `inlineMath` / `blockMath` 节点和命令。通过“插入”或 `/` 选择行内、独立公式；点击公式打开源码编辑框，“应用公式”提交一次可撤销修改。独立公式另有 id / label，行内公式没有编号和引用身份。
+公式直接保存 LaTeX 源码，复用官方 [Tiptap Mathematics](https://tiptap.dev/docs/editor/extensions/nodes/mathematics) 的 `inlineMath` / `blockMath` 节点和命令。通过“插入”或 `/` 选择行内、独立公式；点击公式会在原位置展开 LaTeX 编辑框，草稿实时更新局部 KaTeX 预览。按 Ctrl/⌘+Enter、点击“完成”或离开编辑框时提交并收起，一次撤销恢复源码；Escape 或“取消”放弃未提交输入。行内公式同样在正文原位置编辑，不弹出浮层。
+
+独立公式的 label 单独编辑和撤销，修改源码不会同时修改 label；行内公式没有编号和引用身份。只读区域可以展开源码查看，不能提交修改。尚未提交或校验失败的 label / LaTeX 输入仍参与宿主的保存和离开检查。
 
 编辑器用 KaTeX 显示，Typst 输出调用固定的 [MiTeX 0.2.7](https://typst.app/universe/package/mitex/)。同一份 LaTeX 贯穿 JSON、Markdown 和编译，不做 LaTeX 与 Typst 数学语法的双向改写。KaTeX 与 MiTeX 的命令和宏支持并不完全相同：编辑器预览错误与最终编译错误分别展示，公式源码保留供修复；成功在其中一端显示不等于另一端已验证。
 
@@ -215,7 +241,23 @@ const extraCommands: TypstSlashCommand[] = [
 
 ### 输入 `@` 插入引用
 
-在正文或题注中输入 `@`，使用官方 [Suggestion](https://tiptap.dev/docs/editor/api/utilities/suggestion) 补全。候选按 label、题注/公式源码、类型和区域搜索；上下键选择、Enter 插入、Escape 关闭。节点保存 `{ type: 'reference', attrs: { target: '稳定id' } }`。编辑器显示当前 `@label`，不猜测最终“图 2”“式 (3)”编号。
+在正文或题注中输入 `@`，使用官方 [Suggestion](https://tiptap.dev/docs/editor/api/utilities/suggestion) 补全。候选按 label、题注/公式源码、类型和区域搜索；上下键选择、Enter 插入、Escape 关闭。节点保存目标的稳定 id，默认跟随模板的引用显示形式。
+
+点击正文中的引用，可在原位置选择“跟随模板”“仅编号”或“编号与题注”，修改支持原生撤销。`reference.attrs.showCaption` 为 `null`（或省略）时继承模板，为 `false` 时只显示编号，为 `true` 时在编号后附上目标图表的当前题注，例如“图 2「渠道收入对比」”。题注不复制到引用节点；修改原图题或表题后，引用一起更新。没有题注的目标和公式保留编号。
+
+编辑器显示当前 `@label`；明确选择显示题注时附上当前题注文字。模板决定的实际编号和继承后的完整外观以 Typst 预览为准，编辑器不解析任意模板代码来猜测结果。预览中的编号和附带题注均可点击跳转到目标。
+
+模板可以设置正文引用的默认形式；没有设置时仅显示编号：
+
+```typst
+#import "/_editor/references.typ": reference-caption
+#reference-caption.update(true)
+#include "/_editor/regions/analysis.typ"
+```
+
+`update(false)` 恢复仅编号，从设置位置起生效；单条引用的显式选择优先于模板默认。生成器始终提供这个小型运行时文件，因此暂时没有引用的正文也能使用同一模板。附带题注中的嵌套引用仅显示编号，避免图表自引用或互相引用导致无限展开。这个设置作用于结构化正文引用；模板手写的 `@label` 仍由原生 Typst `ref` 规则控制。
+
+当前可配置的是是否附带题注，以及原生编号、前缀与 `ref` 样式。附带题注在原生 `ref` 之后单独输出，外层 `「」` 由内置渲染规则提供；`show ref` 不会自动包住这部分，也没有任意重排整条引用的格式函数。
 
 跨区域补全需要 `TypstRegionEditor.regions` 提供整份报告的当前 JSON。独立宿主可用 `collectTypstReferenceTargets(regions, config?)` 取得 `{ id, label, kind, regionId, title, position }`；输入应先准入，`position` 是该区域的原生位置，不是跨文件全局坐标。只校验单一区域不能判断另一份文件的目标是否存在；`generateTypstRegions` 针对完整集合解析引用并检查重复 id / label 和缺失目标。
 
@@ -255,13 +297,15 @@ const config: TypstEditorConfig = {
 }
 ```
 
-每张表只增加 `attrs.typstTableStyle`，值为 `null`、`'grid'`、`'grid-open-sides'`、`'three-line'` 或 `'borderless'`。`null` 或缺省表示跟随 `defaultStyle`；`defaultStyle` 默认也是 `null`，此时 Typst 输出继续使用模板原有规则，编辑区以网格作为可编辑外观。`allowedStyles` 默认开放四种显式样式，只限制逐表覆盖；空数组锁定为跟随模板，仍可使用配置的默认样式。
+每张表只增加 `attrs.tableStyle`，值为 `null`、`'grid'`、`'grid-open-sides'`、`'three-line'` 或 `'borderless'`。`null` 或缺省表示跟随 `defaultStyle`；`defaultStyle` 默认也是 `null`，此时 Typst 输出继续使用模板原有规则，编辑区以网格作为可编辑外观。`allowedStyles` 默认开放四种显式样式，只限制逐表覆盖；空数组锁定为跟随模板，仍可使用配置的默认样式。
+
+`tableStyle` 是正文的中性语义，JSON 与 Agent Markdown 使用同一个名称；`TypstTableStyle` 只是安装扩展的 SDK API 名称。Agent Markdown 中的属性标记描述正文，不应改写为 Typst 代码；只有显式的 `typstSource` 节点保存原生 Typst 源码。
 
 安装后，表格完整上下文面板增加“表格样式”组，提供跟随模板、网格、网格·无左右框、三线表和无边框；选择跟随模板即清除覆盖。可从当前表格工具条的“更多…”打开面板；离开表格时快捷工具条收起。表格结构操作仍调用官方 TableKit 命令，卸载样式扩展只移除这组样式项。操作只修改当前表格，保留原生选区和撤销；只读、输入法组合输入及未获准的选项不能提交。也可从 `/tiptap/react` 单独挂载 `TypstTableStyleControls`，传入安装了该扩展的官方 `Editor`，无需使用区域组件。
 
 `grid-open-sides` 保留内部横纵网格和上下边线，只移除左右外框；跨行、跨列合并后按实际列边界判断。三线表使用上下边线，以及连续完整表头后的分隔线；没有这样的表头时只有上下边线，不自动把首行改成表头。跨表头边界的合并单元格不会触发表头重复或分隔线。无边框表格仅在聚焦编辑时显示辅助虚线，不进入 Typst 输出。
 
-卸载扩展后官方表格结构与命令仍可用。重新载入已有草稿前，宿主需显式移除 `typstTableStyle` 属性并确认放弃其外观；未安装扩展时严格准入会拒绝该未知属性，包括 `null`，不会替宿主改写已保存 JSON。字段能力可独立保留。
+卸载扩展后官方表格结构与命令仍可用。重新载入已有草稿前，宿主需显式移除 `tableStyle` 属性并确认放弃其外观；未安装扩展时严格准入会拒绝该未知属性，包括 `null`，不会替宿主改写已保存 JSON。字段能力可独立保留。
 
 ## 可选模板组件与源码块
 
@@ -390,7 +434,7 @@ serializer 使用 `context.children(node)` 复用子节点校验和序列化，`
 <data-field path='["customer","name"]'></data-field>
 ```
 
-代码块或行内代码中的标签保持文字；非法属性或字段路径明确失败。Markdown 是转换输入，不能替代原生 JSON。`exportTypstMarkdown` 成功值含 `{ markdown, lossless, issues }`；合并表格、多段单元格、显式表格样式、带题注/标识的图表、结构化引用、模板组件、源码块及缺少可往返 Markdown 映射的业务节点等可得到可读文字，但 `lossless: false` 时不能用来覆盖原区域。模板组件导出为说明文字，源码块导出为普通 `typst` 代码围栏，重新导入不会恢复可执行节点。原生 JSON 保存完整表格属性；`typstTableStyle: null` 本身不构成 Markdown 损失，重新导入后仍使用宿主配置的默认样式，其他复杂结构仍需检查。
+代码块或行内代码中的标签保持文字；非法属性或字段路径明确失败。Markdown 是转换输入，不能替代原生 JSON。`exportTypstMarkdown` 成功值含 `{ markdown, lossless, issues }`；合并表格、多段单元格、显式表格样式、带题注/标识的图表、结构化引用、模板组件、源码块及缺少可往返 Markdown 映射的业务节点等可得到可读文字，但 `lossless: false` 时不能用来覆盖原区域。模板组件导出为说明文字，源码块导出为普通 `typst` 代码围栏，重新导入不会恢复可执行节点。原生 JSON 保存完整表格属性；`tableStyle: null` 本身不构成 Markdown 损失，重新导入后仍使用宿主配置的默认样式，其他复杂结构仍需检查。
 
 ### Agent Markdown
 
@@ -413,7 +457,7 @@ serializer 使用 `context.children(node)` 复用子节点校验和序列化，`
 这段文字居中。
 :::
 
-:::attrs {"typstTableStyle":"three-line"}
+:::attrs {"tableStyle":"three-line"}
 | 项目 | 金额 |
 | ---- | ---- |
 | 服务 | 120  |
@@ -436,6 +480,10 @@ serializer 使用 `context.children(node)` 复用子节点校验和序列化，`
 ::::
 
 详细数据见 [ref {"target":"quarterly-table"}]。
+
+带题注的引用：[ref {"target":"quarterly-table","showCaption":true}]。
+
+仅编号的引用：[ref {"target":"quarterly-table","showCaption":false}]。
 ```
 
 公式使用官方 `$...$`、`$$...$$` LaTeX Markdown 语法。独立公式的 id / label 放在单块属性包装中：
@@ -452,7 +500,7 @@ $$
 计算方法见 [ref {"target":"growth-equation"}]。
 ```
 
-id 是引用关系的依据，label 是可改的 Typst 名称；编辑现有对象时保持 id。新建图表或独立公式时，为它分配整份报告内唯一的 id / label，并让 `[ref]` 使用 id。题注和 label 分别编辑，不把“图 3”写死到题注。复杂合并表格、无法用行内语法精确保留的题注等仍可能使用最小原生子树表示；不要清洗掉导出器保留的标记。普通 Markdown 没有这些图表身份与引用约定，仍需检查 `lossless`，不能因为公式本身有 `$` 语法就宣称整份文档无损。
+id 是引用关系的依据，label 是可改的 Typst 名称；编辑现有对象时保持 id。新建图表或独立公式时，为它分配整份报告内唯一的 id / label，并让 `[ref]` 使用 id。省略 `showCaption` 或设为 `null` 即恢复跟随模板；不要把题注副本写入引用属性。题注和 label 分别编辑，不把“图 3”写死到题注。复杂合并表格、无法用行内语法精确保留的题注等仍可能使用最小原生子树表示；不要清洗掉导出器保留的标记。普通 Markdown 没有这些图表身份与引用约定，仍需检查 `lossless`，不能因为公式本身有 `$` 语法就宣称整份文档无损。
 
 模板实例、可执行源码、合并单元格及其他不能通过上述语法往返的子树，使用完整原生节点块。例如以下组件仍引用宿主安装的 `summary` 模板：
 
@@ -499,9 +547,15 @@ if (!prepared.ok) throw new Error(JSON.stringify(prepared.issues))
 
 ## 预览与定位
 
-共享 View 的生命周期见[浏览器预览](./typst.md#浏览器预览)。`TypstPreviewView` 支持 `scrollContainer`、`onStateChange`、`isNavigationCurrent` 和 `onNavigate`；`state` 给出当前 packet、页数、当前页和目录项。`jumpToPage`、`jumpToPosition`、`revealSource` 与 `refresh` 管理滚动和高亮。普通点击经拖选/修饰键过滤及 SVG CTM 转换后返回 `{ preview, point }`；`pointAtPreview` / `pointAtSource` 可供其他编辑器直接使用。
+共享 View 的生命周期、缩放模式和宿主布局约束见[浏览器预览](./typst.md#浏览器预览)。`TypstPreviewView` 支持 `scrollContainer`、`onStateChange`、`isNavigationCurrent` 和 `onNavigate`；`state` 给出当前 packet、缩放模式、页数、当前页和目录项。`setZoom` 切换适合宽度、整页或固定比例；`jumpToPage`、`jumpToPosition`、`revealSource` 与 `refresh` 管理滚动和高亮。点击图、表、公式等内部引用时，优先在当前预览中跳到 Typst 给出的目标页与位置，不切换到引用文字的编辑位置；引用链接也支持 Tab 聚焦后按 Enter。过期预览、拖选和修饰键点击不执行内部跳转。普通非链接内容点击经拖选/修饰键过滤及 SVG CTM 转换后返回 `{ preview, point }`；`pointAtPreview` / `pointAtSource` 可供其他编辑器直接使用。
+
+体验页把预览标签、页码和缩放放在紧凑顶栏，目录使用预览右侧可收起的纵向侧栏；窄面板内目录从右侧覆盖预览，选中章节后自动收起并将焦点还给目录开关。目录会在自身滚动区域内保持当前章节可见。页码输入按 Enter 或失焦跳转，Escape 取消，输入中的草稿不被文档滚动覆盖。默认适合宽度；缩放与面板 resize 保留页内阅读位置，超出可滚动范围时受边界限制。
+
+放大预览后，定位同时处理纵向和必要的横向滚动，使目标进入可视区。演示在 Markdown 或源码标签中保留当前编辑视图，只记住最后一个定位目标；打开预览后才按可见布局应用，同期间正文已变化则丢弃旧目标。预览跳回正文时，宿主先激活目标区域、聚焦并设置选区，等选区相关工具条完成布局后再滚动；异步滚动仍复核修订、最新导航和选区，避免旧请求抢回用户位置。
 
 生成结果的 `mapping` 绑定 `snapshotRevision`，包含 Unicode 字符、原子节点和嵌套块的范围。`findTypstRegionPosition` 将同快照 `_editor/` 的 native 源码位置映射到 `{ regionId, from, to, source? }`；`from` / `to` 已是可直接使用的 ProseMirror UTF-16 位置，**不要再加 1**。文本点击定位到对应字符，字段和图片按完整节点定位；表格、列表及自定义节点通过 `context.children` 保留内部位置。
+
+公式和结构化引用的字形保留对应原子节点的位置。引用附带的题注归属引用，点击编辑器中的原图题不会误定位到远处的题注副本；同一正文被模板重复 include 时，仍优先定位当前页附近的那次输出。
 
 模板组件按实例定位；同一模板插入多次时，独立生成文件和稳定实例 ID 区分各次输出，不能把图表中的计算结果伪装成可编辑正文字符。源码块同样能定位预览，反向点击还返回 `source: { line, column }`，是一基 UTF-16 行列，已去掉生成文件的数据前缀。宿主选中该源码节点并把 `source` 作为 transaction 的 `typst-navigation` 元数据提交，React NodeView 会展开源码并定位；存在未应用源码修改时保留修改并提示，不套用旧坐标。
 

@@ -63,7 +63,9 @@ async function currentPreview() {
 		.waitFor({ timeout: 60000 })
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await currentPreview()
 	const from = await body.evaluate((el) => {
 		let found

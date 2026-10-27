@@ -1311,6 +1311,7 @@
 		--typst-accent: #d4d4d8;
 		--typst-active: #3f3f46;
 		--typst-shadow: 0 6px 28px #0004;
+		--typst-error: #ffabab;
 	}
 	.typst-editor-content td,
 	.typst-editor-content th {
@@ -1489,121 +1490,207 @@
 
 /* Document objects share native editable content and keep settings outside it. */
 .typst-figure {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) fit-content(40%);
+	column-gap: 6px;
+	row-gap: 6px;
+	align-items: baseline;
 	margin: 1rem 0;
-	padding: 10px 12px;
-	border: 1px solid var(--typst-border, #d9e0e6);
-	border-radius: 8px;
+}
+/* Keep one native contentDOM and reading order; only the caption shares its row with controls. */
+.typst-figure-content,
+.typst-figure-content > [data-node-view-content-react] {
+	display: contents;
+}
+.typst-figure-content > [data-node-view-content-react] > :first-child {
+	grid-column: 1 / -1;
+	grid-row: 1;
+	min-width: 0;
+	margin-block: 0;
+}
+.typst-figure-kind {
+	grid-column: 1;
+	grid-row: 2;
+	color: var(--typst-muted);
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+}
+.typst-figure > .typst-object-label {
+	grid-column: 3;
+	grid-row: 2;
+	align-self: start;
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+	color: var(--typst-muted);
 }
 .typst-figure[data-selected],
 .typst-block-math[data-selected] {
 	outline: 2px solid var(--typst-accent, #28745c);
 }
-.typst-document-object-header {
-	display: flex;
-	align-items: start;
-	justify-content: space-between;
-	gap: 12px;
-	margin-bottom: 8px;
-	color: #63716b;
-	font:
-		12px/1.5 system-ui,
-		sans-serif;
-}
-.typst-object-settings {
-	min-width: 0;
-	max-width: 100%;
-}
-.typst-object-settings summary {
-	cursor: pointer;
-	overflow-wrap: anywhere;
-}
-.typst-object-settings .typst-object-form {
-	max-width: 340px;
-	margin-top: 8px;
-}
 .typst-figure-content figcaption {
+	grid-column: 2;
+	grid-row: 2;
+	min-width: 0;
 	min-height: 1.5em;
-	padding: 8px 0 2px;
-	color: #53655e;
-	text-align: center;
+	padding: 4px 0;
+	color: var(--typst-text);
+	text-align: left;
+	overflow-wrap: anywhere;
 }
 .typst-figure-content figcaption:empty::before {
 	content: '填写题注…';
-	color: #87938e;
+	color: var(--typst-muted);
 	pointer-events: none;
 }
-.typst-object-form {
-	display: grid;
-	gap: 9px;
+.typst-object-meta {
+	display: flex;
+	align-items: baseline;
+	justify-content: flex-end;
+	gap: 8px;
+	min-width: 0;
+	margin-top: 5px;
+	color: var(--typst-muted);
 	font:
-		13px/1.5 system-ui,
+		12px/1.5 system-ui,
 		sans-serif;
+	text-align: left;
 }
-.typst-object-form label {
-	display: grid;
-	gap: 3px;
+.typst-object-kind {
+	flex: 0 0 auto;
 }
-.typst-object-form input,
-.typst-object-form textarea {
-	width: 100%;
+.typst-object-kind[data-drag-handle] {
+	cursor: grab;
+}
+.typst-object-label {
+	min-width: 0;
+	max-width: 100%;
+}
+.typst-label-field {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	min-width: 0;
+}
+.typst-label-field > span {
+	flex-shrink: 0;
+	font-size: 11px;
+	white-space: nowrap;
+}
+.typst-label-field input {
+	min-width: 0;
+	max-width: 100%;
 	box-sizing: border-box;
-	border: 1px solid #cbd5cf;
-	border-radius: 5px;
-	background: #fff;
-	color: #20372b;
-	padding: 7px 8px;
+	padding: 4px 6px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--typst-muted);
 	font:
-		13px/1.5 ui-monospace,
+		12px/1.5 ui-monospace,
 		monospace;
+	text-overflow: ellipsis;
 }
-.typst-object-form textarea {
-	min-height: 90px;
-	resize: vertical;
+.typst-label-field input::placeholder {
+	color: var(--typst-muted);
 }
-.typst-object-form button {
-	border: 1px solid #cbd5cf;
-	border-radius: 5px;
-	padding: 5px 9px;
-	color: #214e3a;
-	background: #f5f8f6;
+.typst-label-field input:hover:not(:read-only),
+.typst-label-field input:focus {
+	border-color: var(--typst-border);
+	background: var(--typst-surface);
+	color: var(--typst-text);
+}
+.typst-label-field input[aria-invalid='true'] {
+	border-color: var(--typst-error, #b33e3e);
+}
+.typst-label-field input:focus-visible,
+.typst-math-source textarea:focus-visible,
+.typst-math-source button:focus-visible,
+.typst-object-error button:focus-visible {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 1px;
+}
+.typst-object-error {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+	margin-top: 4px;
+	color: var(--typst-error, #b33e3e);
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+	overflow-wrap: anywhere;
+}
+.typst-object-error button {
+	padding: 2px 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-decoration: underline;
 	cursor: pointer;
 }
-.typst-object-form button:disabled {
-	opacity: 0.5;
-	cursor: default;
-}
-.typst-object-form small {
-	color: #65716b;
-}
-.typst-object-form [role='alert'],
-.typst-math-error {
-	color: #a73232;
-}
-.typst-object-form-actions {
-	display: flex;
-	gap: 8px;
-}
-.typst-math-form {
-	position: fixed;
-	inset: 0;
-	margin: auto;
-	width: min(420px, calc(100vw - 40px));
-	height: fit-content;
-	max-height: calc(100vh - 40px);
-	overflow: auto;
+.typst-math-source {
+	display: block;
+	min-width: 0;
 	box-sizing: border-box;
-	padding: 18px;
-	border: 1px solid #cbd5cf;
-	border-radius: 10px;
-	background: #fff;
-	color: #20372b;
-	box-shadow: 0 12px 48px #213b3129;
+	margin: 8px 0;
+	padding: 10px;
+	border: 1px solid var(--typst-border);
+	border-radius: 6px;
+	background: var(--typst-hover);
+	color: var(--typst-text);
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+	text-align: left;
 }
-.typst-math-form:not(:popover-open) {
-	display: none;
+.typst-math-source label {
+	display: grid;
+	gap: 5px;
 }
-.typst-math-form::backdrop {
-	background: #182c2417;
+.typst-math-source label > span {
+	color: var(--typst-muted);
+}
+.typst-math-source textarea {
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	border: 1px solid var(--typst-border);
+	border-radius: 4px;
+	padding: 7px 8px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	font:
+		13px/1.6 ui-monospace,
+		monospace;
+	resize: vertical;
+}
+.typst-math-source-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 7px;
+}
+.typst-math-source-actions small {
+	margin-right: auto;
+	color: var(--typst-muted);
+}
+.typst-math-source-actions button {
+	padding: 5px 9px;
+	border: 1px solid var(--typst-border);
+	border-radius: 4px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	font: inherit;
+	cursor: pointer;
+}
+.typst-math-source-actions button:hover {
+	background: var(--typst-active);
 }
 .typst-math-preview {
 	border: 0;
@@ -1616,12 +1703,13 @@
 	overflow-x: auto;
 }
 .typst-math-preview:hover {
-	background: #edf4ef;
+	background: var(--typst-hover);
 }
 .typst-block-math {
 	position: relative;
 	margin: 1rem 0;
 	padding: 10px 8px;
+	border: 1px solid transparent;
 	border-radius: 6px;
 	text-align: center;
 }
@@ -1632,15 +1720,15 @@
 .typst-block-math .katex-display {
 	margin: 0.4em 0;
 }
-.typst-math-label {
-	display: block;
-	color: #76877d;
-	font:
-		11px/1.5 ui-monospace,
-		monospace;
+.typst-inline-math[data-editing] {
+	display: inline-flex;
+	flex-direction: column;
+	width: min(28rem, 100%);
+	vertical-align: middle;
 }
 .typst-math-error {
 	display: block;
+	color: var(--typst-error, #b33e3e);
 	font:
 		11px/1.5 system-ui,
 		sans-serif;
@@ -1659,6 +1747,32 @@
 }
 .typst-reference[data-selected] {
 	outline: 2px solid #73aa8d;
+}
+.typst-reference-trigger {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: inherit;
+	cursor: pointer;
+}
+.typst-reference-display {
+	max-width: 100%;
+	margin-left: 6px;
+	padding: 2px 4px;
+	border: 1px solid var(--typst-border);
+	border-radius: 4px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+}
+.typst-reference-trigger:focus-visible,
+.typst-reference-display:focus-visible {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 1px;
 }
 .typst-reference-suggestions {
 	position: fixed;

@@ -4,6 +4,7 @@ import { tableHeaderRows } from './table-style.js'
 import type { TypstNavigation } from '../preview-contract.js'
 import { fontFamilyName, fontSizeInPoints, textStyleColor } from './text-style.js'
 import { createMiTeXFiles } from './mitex.js'
+import { referenceSource } from './reference-source.js'
 import { isReferenceObject } from './document-nodes.js'
 import type {
 	TypstDraftRevision,
@@ -92,6 +93,7 @@ export function generateTypstRegions(options: {
 	const issues: TypstEditorIssue[] = []
 	const labels = new Map<string, string>()
 	const mathRegions = new Set<string>()
+	const referenceRegions = new Set<string>()
 	const inspectObjects = (node: JSONContent, regionId: string) => {
 		if (
 			isReferenceObject(node.type!) &&
@@ -100,6 +102,7 @@ export function generateTypstRegions(options: {
 		)
 			labels.set(node.attrs.id, node.attrs.label)
 		if (node.type === 'inlineMath' || node.type === 'blockMath') mathRegions.add(regionId)
+		if (node.type === 'reference') referenceRegions.add(regionId)
 		node.content?.forEach((child) => inspectObjects(child, regionId))
 	}
 	for (const [id, document] of Object.entries(checked.value)) inspectObjects(document, id)
@@ -136,6 +139,8 @@ export function generateTypstRegions(options: {
 	for (const [id, document] of Object.entries(checked.value)) inspectResources(document, id, [])
 	if (issues.length > 0) return { ok: false, issues }
 	const templateFiles: Record<string, string> = mathRegions.size > 0 ? createMiTeXFiles() : {}
+	// Templates can configure references before any are inserted, or after the last is removed.
+	templateFiles['_editor/references.typ'] = referenceSource
 	const inputFiles: Record<string, string> = {
 		'/inputs/editor/data.json': JSON.stringify(options.data),
 	}
@@ -144,6 +149,9 @@ export function generateTypstRegions(options: {
 		const document = checked.value[region.id]!
 		const path = `_editor/regions/${region.id}.typ`
 		let source = '#let _editor_data = json("/inputs/editor/data.json")\n'
+		if (referenceRegions.has(region.id))
+			source +=
+				'#import "/_editor/references.typ": render-reference\n#show metadata: render-reference\n'
 		if (mathRegions.has(region.id)) source += '#import "/_editor/mitex/mitex.typ": mi, mitex\n'
 		// The temporary markers retain identity through arbitrary trusted wrappers and
 		// repeated context.children() strings. They never reach the generated files.
@@ -235,13 +243,14 @@ export function generateTypstRegions(options: {
 					content = context.children(node)
 					break
 				case 'inlineMath':
-					content = `#mi(${typstString(attrs.latex)})`
+					content = `#math.equation(block: false, mi(${typstString(attrs.latex)}).body)`
 					break
 				case 'blockMath':
-					content = `#mitex(${typstString(attrs.latex)}${attrs.label == null ? ', numbering: none' : ''})${attrs.label == null ? '' : `#label(${typstString(attrs.label)})`}\n`
+					// Construct the equation here so native frame tags retain this atom's source span.
+					content = `#math.equation(block: true, mitex(${typstString(attrs.latex)}).body${attrs.label == null ? ', numbering: none' : ''})${attrs.label == null ? '' : `#label(${typstString(attrs.label)})`}\n`
 					break
 				case 'reference':
-					content = `#ref(label(${typstString(labels.get(attrs.target)!)}))`
+					content = `#metadata((__pluxel_reference: true, target: label(${typstString(labels.get(attrs.target)!)}), show-caption: ${attrs.showCaption == null ? 'auto' : attrs.showCaption}))`
 					break
 				case 'heading':
 					content = `#heading(level: ${attrs.level ?? 1})[${context.children(node)}]\n`
@@ -329,7 +338,7 @@ export function generateTypstRegions(options: {
 					const grid = tableGrid(node)
 					if (typeof grid === 'string') throw new Error('Validated table lost its grid.')
 					const headerRows = tableHeaderRows(node)
-					const appearance = attrs.typstTableStyle ?? prepared.table?.defaultStyle
+					const appearance = attrs.tableStyle ?? prepared.table?.defaultStyle
 					const openSides = appearance === 'grid-open-sides'
 					const border =
 						appearance === 'grid' || openSides ? '.5pt + black' : appearance ? 'none' : undefined

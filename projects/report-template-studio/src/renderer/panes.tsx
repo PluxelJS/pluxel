@@ -19,6 +19,11 @@ import { useWorkspace } from './workspace-context'
 import { editorLifecycle } from './editor-lifecycle'
 import { BodyEditor } from './body-editor'
 
+const saveShortcut =
+	typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform)
+		? '⌘S'
+		: 'Ctrl+S'
+
 function SaveStatus({
 	saving,
 	dirty,
@@ -48,9 +53,10 @@ function FileActions({ path }: { path: string }) {
 			<Menu.Dropdown>
 				<Menu.Item
 					leftSection={<IconDeviceFloppy size={16} />}
+					title={`保存（${saveShortcut}）`}
 					rightSection={
 						<Text size="xs" c="dimmed">
-							Ctrl / ⌘ S
+							{saveShortcut}
 						</Text>
 					}
 					disabled={!file?.dirty || file.saving}
@@ -128,7 +134,14 @@ export function FilePane({ path }: { path: string }) {
 		<section
 			className="workspace-pane"
 			onKeyDownCapture={(event) => {
-				if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+				if (
+					!event.defaultPrevented &&
+					!event.nativeEvent.isComposing &&
+					(event.ctrlKey || event.metaKey) &&
+					!event.shiftKey &&
+					!event.altKey &&
+					event.key.toLowerCase() === 's'
+				) {
 					event.preventDefault()
 					event.stopPropagation()
 					void workspace.save(path)
@@ -171,7 +184,14 @@ export function FormPane({ entry }: { entry: string }) {
 			className="workspace-pane"
 			onFocusCapture={() => workspace.preferPreview(entry)}
 			onKeyDownCapture={(event) => {
-				if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+				if (
+					!event.defaultPrevented &&
+					!event.nativeEvent.isComposing &&
+					(event.ctrlKey || event.metaKey) &&
+					!event.shiftKey &&
+					!event.altKey &&
+					event.key.toLowerCase() === 's'
+				) {
 					event.preventDefault()
 					event.stopPropagation()
 					void workspace.save(entry)
@@ -214,7 +234,7 @@ export function FormPane({ entry }: { entry: string }) {
 					) : (
 						document?.inputError &&
 						!document.inputConflict && (
-							<Tooltip label="重试保存">
+							<Tooltip label={`重试保存（${saveShortcut}）`}>
 								<ActionIcon
 									variant="subtle"
 									aria-label="重试保存"

@@ -46,7 +46,9 @@ export async function refactorCases({ browser, url, output }) {
 	const stored = () => page.evaluate(() => localStorage.getItem('typst-consumer-draft'))
 	const saveState = () => page.getByTestId('save-state').innerText()
 	try {
-		await page.goto(url)
+		const fixtureUrl = new URL(url)
+		fixtureUrl.searchParams.set('example', 'consumer-report')
+		await page.goto(fixtureUrl.href)
 		await ready()
 		await rememberEditor()
 		await tab('Markdown')

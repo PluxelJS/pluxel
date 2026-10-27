@@ -60,6 +60,7 @@ function ProjectWorkspace({
 	}
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
+			if (event.defaultPrevented || event.isComposing) return
 			if (
 				event.key === 'Escape' &&
 				event.target instanceof Element &&
@@ -81,8 +82,9 @@ function ProjectWorkspace({
 				showSidebar('explorer')
 			}
 		}
-		window.addEventListener('keydown', onKey, true)
-		return () => window.removeEventListener('keydown', onKey, true)
+		// The focused editor owns its keybindings before workspace fallbacks run.
+		window.addEventListener('keydown', onKey)
+		return () => window.removeEventListener('keydown', onKey)
 	}, [])
 	// Fast Refresh replays effects while retaining state. Keep imperative resources
 	// alive through that replay, but release them after a real project unmount.

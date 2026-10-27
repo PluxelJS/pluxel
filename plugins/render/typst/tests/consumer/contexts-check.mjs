@@ -95,7 +95,9 @@ async function noOverlap(expected) {
 	)
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await current()
 	const original = await snapshot()
 	const heading = await selectText('Editable', 8)

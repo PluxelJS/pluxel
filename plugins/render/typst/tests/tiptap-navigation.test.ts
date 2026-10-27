@@ -166,3 +166,135 @@ it('maps actual glyphs to characters after escapes, emoji, nested cells and repe
 		await rm(root, { recursive: true, force: true })
 	}
 })
+
+it('keeps math and reference glyphs with their atoms across groups/pages without reusing caption origins', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'typst-atomic-navigation-'))
+	try {
+		const text = (value: string): JSONContent => ({ type: 'text', text: value })
+		const paragraph = (...content: JSONContent[]): JSONContent => ({ type: 'paragraph', content })
+		const doc = (...content: JSONContent[]): JSONContent => ({ type: 'doc', content })
+		const inlineMath: JSONContent = { type: 'inlineMath', attrs: { latex: 'x^2' } }
+		const regions = {
+			objects: doc({
+				type: 'figure',
+				attrs: { id: 'table', label: 'tbl:caption' },
+				content: [
+					{
+						type: 'table',
+						content: [
+							{
+								type: 'tableRow',
+								content: [{ type: 'tableCell', content: [paragraph(text('Cell'))] }],
+							},
+						],
+					},
+					{
+						type: 'figureCaption',
+						content: [text('Original caption with enough words to wrap. '.repeat(4)), inlineMath],
+					},
+				],
+			}),
+			body: doc(
+				paragraph({ type: 'reference', attrs: { target: 'table', showCaption: true } }),
+				paragraph(text('After reference')),
+				{ type: 'blockMath', attrs: { latex: '\\frac{x}{y}', id: 'equation', label: 'eq:ratio' } },
+				paragraph(inlineMath, text(' After math')),
+			),
+			repeated: doc(paragraph(text('Repeated '), inlineMath)),
+		}
+		const config: TypstEditorConfig = {
+			regions: Object.keys(regions).map((id) => ({ id })),
+			fields: [],
+		}
+		const generated = generateTypstRegions({ regions, config, data: {}, snapshotRevision: 1 })
+		if (!generated.ok) throw new Error(JSON.stringify(generated.issues))
+		const template = [
+			'#set page(width: 220pt, height: 140pt, margin: 10pt)',
+			'#set text(font: "DejaVu Sans", size: 10pt)',
+			'#set math.equation(numbering: "(1)")',
+			'#include "_editor/regions/objects.typ"',
+			'#pagebreak()',
+			'Native $a+b$',
+			'#pagebreak()',
+			'#block(height: 72pt)[Before reference]',
+			'#include "_editor/regions/body.typ"',
+			'#pagebreak()',
+			'#rotate(5deg)[#include "_editor/regions/repeated.typ"]',
+			'#pagebreak()',
+			'#rotate(5deg)[#include "_editor/regions/repeated.typ"]',
+		].join('\n')
+		for (const [path, content] of Object.entries({
+			...generated.value.templateFiles,
+			...generated.value.inputFiles,
+			'main.typ': template,
+		})) {
+			const output = join(root, path.replace(/^\//, ''))
+			await mkdir(dirname(output), { recursive: true })
+			await writeFile(output, content)
+		}
+		const compiled = runTypst({
+			root,
+			entry: 'main.typ',
+			revision: 1,
+			maxOutputBytes: 8_000_000,
+			bindingPath: fileURLToPath(new URL('../native/compiler.node', import.meta.url)),
+		})
+		if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics))
+		const { navigation } = compiled
+		const { mapping } = generated.value
+		expect(navigation.points.some((point) => /references\.typ$|\/mitex\//.test(point.path))).toBe(
+			false,
+		)
+		const schema = getSchema(createTypstExtensions(config))
+		const repeatedPages = new Set<number>()
+		for (const [regionId, document] of Object.entries(regions)) {
+			schema.nodeFromJSON(document).descendants((node, position) => {
+				if (!node.isAtom || node.isText) return
+				const source = findTypstGeneratedPosition({
+					mapping,
+					navigation,
+					regionId,
+					position,
+					snapshotRevision: 1,
+				})
+				expect(source, `${regionId}:${node.type.name}:${position}`).toBeDefined()
+				const point = pointAtSource(navigation.points, source!, navigation.pages.length)!
+				expect(findTypstRegionPosition({ mapping, position: point, snapshotRevision: 1 })).toEqual({
+					regionId,
+					from: position,
+					to: position + node.nodeSize,
+				})
+				if (regionId === 'repeated') repeatedPages.add(point.page)
+			})
+		}
+		expect(repeatedPages).toEqual(new Set([navigation.pages.length]))
+		// A reference spanning pages remains one atom. Its copied caption does not
+		// publish the original caption's source, even for math nested in that caption.
+		const referencePages = new Set<number>()
+		const objectPages = new Set<number>()
+		for (const point of navigation.points) {
+			const target = findTypstRegionPosition({ mapping, position: point, snapshotRevision: 1 })
+			if (target?.regionId === 'objects') objectPages.add(point.page)
+			if (target?.regionId === 'body' && target.from === 1) referencePages.add(point.page)
+		}
+		expect(objectPages).toEqual(new Set([1]))
+		expect(referencePages.size).toBeGreaterThan(1)
+		// Tag ownership does not leak past its end or erase ordinary native math spans.
+		const after = mapping.find((entry) => entry.regionId === 'body' && entry.kind === 'text')!
+		expect(
+			pointAtSource(navigation.points, { path: after.path, ...after.range.start }, 1),
+		).toBeDefined()
+		for (const column of [9, 10, 11])
+			expect(navigation.points).toContainEqual(
+				expect.objectContaining({
+					path: 'main.typ',
+					line: 6,
+					column,
+					endLine: 6,
+					endColumn: column + 1,
+				}),
+			)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})

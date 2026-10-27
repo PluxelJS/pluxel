@@ -55,7 +55,7 @@ export function prepareLink(
 		ui.config &&
 		ui.region &&
 		!validateTypstRegions({
-			regions: { [ui.region.id]: transaction.doc.toJSON() },
+			regions: { ...ui.regions, [ui.region.id]: transaction.doc.toJSON() },
 			config: ui.config,
 		}).ok
 	)

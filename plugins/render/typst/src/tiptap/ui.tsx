@@ -12,6 +12,7 @@ import { InsertMenu, SlashMenu } from './insert-menu'
 import { BlockMenu } from './block-menu'
 import { TableTools } from './table-tools'
 import { TypstFigureTools } from './document-react'
+import { editorShortcuts, shortcutProps } from './shortcuts'
 
 /** Common commands stay visible; the same native selection drives the full format menu. */
 export function TypstEditorToolbar({ editor, children }: { editor: Editor; children?: ReactNode }) {
@@ -23,6 +24,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 				<div className="typst-tool-group">
 					<ToolButton
 						label="撤销"
+						shortcut={editorShortcuts.undo}
 						icon="undo"
 						disabled={!canEdit(editor, ui) || !editor.can().undo()}
 						onClick={() => {
@@ -34,6 +36,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 					/>
 					<ToolButton
 						label="重做"
+						shortcut={editorShortcuts.redo}
 						icon="redo"
 						disabled={!canEdit(editor, ui) || !editor.can().redo()}
 						onClick={() => {
@@ -50,7 +53,7 @@ export function TypstEditorToolbar({ editor, children }: { editor: Editor; child
 						type="button"
 						className="typst-tool-button typst-format-trigger"
 						aria-label="格式"
-						title="更多格式（删除线、代码、精细排版等）"
+						{...shortcutProps('更多格式：删除线、代码、精细排版等', editorShortcuts.format)}
 						aria-haspopup="dialog"
 						disabled={!canEdit(editor, ui) || !hasFormatTarget(editor)}
 						onMouseDown={(event) => event.preventDefault()}

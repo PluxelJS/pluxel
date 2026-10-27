@@ -361,7 +361,7 @@ it('enforces the template table policy when admitting Studio drafts', () => {
 	}
 	expect(validateEditorDraft(description, draft)).toEqual(draft)
 	const forged = structuredClone(draft)
-	forged.regions.body!.content![0]!.attrs = { typstTableStyle: 'borderless' }
+	forged.regions.body!.content![0]!.attrs = { tableStyle: 'borderless' }
 	expect(() => validateEditorDraft(description, forged)).toThrowError(
 		expect.objectContaining({ code: 'INVALID_EDITOR_DRAFT' }),
 	)
@@ -378,7 +378,7 @@ it('enforces the template table policy when admitting Studio drafts', () => {
 		},
 		'report.ts',
 	)!
-	forged.regions.body!.content![0]!.attrs = { typstTableStyle: 'grid-open-sides' }
+	forged.regions.body!.content![0]!.attrs = { tableStyle: 'grid-open-sides' }
 	expect(validateEditorDraft(openSides, forged)).toEqual(forged)
 	for (const table of [{ defaultStyle: 'none' }, { allowedStyles: ['none'] }, { unknown: true }]) {
 		expect(() =>

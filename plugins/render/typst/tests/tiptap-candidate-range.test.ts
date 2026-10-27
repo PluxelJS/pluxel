@@ -31,7 +31,7 @@ const paragraph = (text: string): JSONContent => ({
 })
 const table: JSONContent = {
 	type: 'table',
-	attrs: { typstTableStyle: 'three-line' },
+	attrs: { tableStyle: 'three-line' },
 	content: [
 		{
 			type: 'tableRow',
@@ -409,7 +409,7 @@ function nestedFixture() {
 	const schema = getSchema(createTypstExtensions(nestedConfig))
 	const nestedTable: JSONContent = {
 		type: 'table',
-		attrs: { typstTableStyle: 'three-line' },
+		attrs: { tableStyle: 'three-line' },
 		content: [
 			{
 				type: 'tableRow',

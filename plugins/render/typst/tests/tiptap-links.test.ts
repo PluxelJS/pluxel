@@ -54,6 +54,33 @@ function hrefs(editor: Editor) {
 }
 
 describe('native link actions', () => {
+	it('prepares a link with the complete multi-region snapshot without mutating other regions', () => {
+		const { editor } = createEditor()
+		try {
+			const notes: JSONContent = { type: 'doc', content: [{ type: 'paragraph' }] }
+			const regions = { body: editor.getJSON(), notes }
+			const before = structuredClone(regions)
+			const ui = {
+				...context({ ...config, regions: [{ id: 'body' }, { id: 'notes' }] }),
+				regions,
+			}
+			select(editor, 8, 14)
+			const transaction = prepareLink(editor, ui, { href: 'https://example.com' })
+			expect(transaction).toBeDefined()
+			expect(regions).toEqual(before)
+			editor.view.dispatch(transaction!)
+			expect(hrefs(editor)[1]).toEqual({ text: 'linked', href: 'https://example.com' })
+			expect(
+				validateTypstRegions({
+					regions: { ...regions, body: editor.getJSON() },
+					config: ui.config!,
+				}).ok,
+			).toBe(true)
+		} finally {
+			editor.destroy()
+		}
+	})
+
 	it('prepares without dispatch and links only the selected text with one undo/redo', () => {
 		const { editor, admission } = createEditor()
 		try {

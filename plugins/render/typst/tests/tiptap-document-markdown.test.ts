@@ -100,6 +100,22 @@ describe('document objects in agent Markdown', () => {
 		expect(parsed.value.content![1]!.attrs?.label ?? null).toBeNull()
 	})
 
+	it('round-trips per-reference caption overrides separately from target identity', () => {
+		for (const showCaption of [null, true, false]) {
+			const attrs = { target: 'revenue-table', showCaption }
+			const referenceDocument: JSONContent = {
+				type: 'doc',
+				content: [{ type: 'paragraph', content: [{ type: 'reference', attrs }] }],
+			}
+			const exported = exportTypstMarkdown({ ...options, document: referenceDocument })
+			if (!exported.ok) throw new Error(JSON.stringify(exported.issues))
+			expect(exported.value.markdown).toContain(`[ref ${JSON.stringify(attrs)}]`)
+			const parsed = parseTypstMarkdown({ ...options, markdown: exported.value.markdown })
+			if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues))
+			expect(parsed.value.content![0]!.content![0]!.attrs).toEqual(attrs)
+		}
+	})
+
 	it('rejects malformed object syntax instead of flattening it into ordinary text', () => {
 		for (const markdown of [
 			':::figure []\nbody\n:::',
@@ -107,6 +123,7 @@ describe('document objects in agent Markdown', () => {
 			'::::figure {}\n![chart](asset)\n\n:::caption\nfirst\n\nsecond\n:::\n::::',
 			'[ref {"target":17}]',
 			'[ref {"target":"growth-equation","number":3}]',
+			'[ref {"target":"growth-equation","showCaption":"true"}]',
 		])
 			expect(parseTypstMarkdown({ ...options, markdown })).toMatchObject({ ok: false })
 	})

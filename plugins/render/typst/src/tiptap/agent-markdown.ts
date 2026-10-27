@@ -87,7 +87,11 @@ function opening(source: string, name: string): AgentToken | undefined {
 		return failure(name, raw, `${name} attributes must be a JSON object.`)
 	if (duplicate) return failure(name, raw, `Duplicate ${name} attribute.`)
 	const allowed: readonly string[] =
-		name === 'textStyle' ? textStyleAttributes : name === 'ref' ? ['target'] : ['path']
+		name === 'textStyle'
+			? textStyleAttributes
+			: name === 'ref'
+				? ['target', 'showCaption']
+				: ['path']
 	if (Object.keys(attributes).some((key) => !allowed.includes(key)))
 		return failure(name, raw, `Unsupported ${name} attribute.`)
 	if (name === 'textStyle')

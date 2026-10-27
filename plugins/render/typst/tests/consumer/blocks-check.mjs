@@ -6,7 +6,10 @@ import { chromium } from 'playwright'
 import { trackConsumerSessions } from './browser-session.mjs'
 
 const output = await mkdtemp(join(tmpdir(), 'typst-blocks-ui-'))
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+const browser = await chromium.connect(
+	process.env.PLAYWRIGHT_WS_ENDPOINT ?? 'ws://127.0.0.1:3000',
+	{ timeout: 5000, exposeNetwork: '<loopback>' },
+)
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
 const releaseSessions = trackConsumerSessions(page)
 page.on('dialog', (dialog) => dialog.accept())
@@ -60,7 +63,9 @@ async function clickPoint(point) {
 	await page.mouse.click(screen.x, screen.y)
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await current()
 	await page.getByRole('combobox', { name: '示例', exact: true }).selectOption('operations-report')
 	await chart.waitFor()
@@ -168,11 +173,14 @@ try {
 	assert.deepEqual(await documentJson(body), original)
 	await current()
 	// Exercise the native drag/drop route, preserving the node and its instance ID.
-	await body
-		.locator(
-			'[data-figure-id="channels-figure"] > .typst-document-object-header [data-drag-handle]',
-		)
-		.dragTo(body, { targetPosition: { x: 32, y: 10 } })
+	await chart.hover()
+	const figureHandle = page
+		.getByTestId('region-body')
+		.locator('.typst-block-drag')
+		.getByRole('button', { name: '块操作', exact: true })
+	await figureHandle.waitFor({ state: 'visible' })
+	assert.match(await figureHandle.getAttribute('title'), /^图表与题注：/)
+	await figureHandle.dragTo(body, { targetPosition: { x: 32, y: 10 } })
 	await page.waitForFunction(
 		() =>
 			document.querySelector('[data-testid="region-body"] .tiptap').editor.getJSON().content[0]

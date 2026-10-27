@@ -80,7 +80,7 @@ const component: JSONContent = {
 }
 const table: JSONContent = {
 	type: 'table',
-	attrs: { typstTableStyle: 'three-line' },
+	attrs: { tableStyle: 'three-line' },
 	content: [
 		{
 			type: 'tableRow',
@@ -209,6 +209,29 @@ describe('agent Markdown native JSON blocks', () => {
 		expect(native(parsedDocument(rawBlock(table)))).toEqual(native(authored))
 	})
 
+	it('uses neutral tableStyle annotations and rejects the old attribute in agent edits', () => {
+		const simpleTable: JSONContent = {
+			type: 'table',
+			content: [
+				{ type: 'tableRow', content: [{ type: 'tableHeader', content: [paragraph('Heading')] }] },
+				{ type: 'tableRow', content: [{ type: 'tableCell', content: [paragraph('Value')] }] },
+			],
+		}
+		for (const tableStyle of ['grid', 'grid-open-sides', 'three-line', 'borderless']) {
+			const markdown = roundTrip(document({ ...simpleTable, attrs: { tableStyle } }))
+			expect(markdown).toContain(`:::attrs {"tableStyle":"${tableStyle}"}`)
+			expect(markdown).not.toContain('typst')
+		}
+		for (const markdown of [
+			':::attrs {"typstTableStyle":"three-line"}\n| Heading |\n| --- |\n| Value |\n:::',
+			rawBlock({ ...simpleTable, attrs: { typstTableStyle: null } }),
+		])
+			expect(parse(markdown)).toMatchObject({
+				ok: false,
+				issues: [expect.objectContaining({ code: 'UNKNOWN_ATTRIBUTE' })],
+			})
+	})
+
 	it('accepts a complete doc payload and splices its blocks between ordinary Markdown', () => {
 		const markdown = `Before\n\n${rawBlock(document(table, component))}\n\nAfter`
 		const imported = parsedDocument(markdown)
@@ -236,7 +259,7 @@ describe('agent Markdown native JSON blocks', () => {
 		const aligned = { ...paragraph('Centered content'), attrs: { textAlign: 'center' } }
 		const simpleTable: JSONContent = {
 			type: 'table',
-			attrs: { typstTableStyle: 'three-line' },
+			attrs: { tableStyle: 'three-line' },
 			content: [
 				{ type: 'tableRow', content: [{ type: 'tableHeader', content: [paragraph('Heading')] }] },
 				{ type: 'tableRow', content: [{ type: 'tableCell', content: [paragraph('Value')] }] },

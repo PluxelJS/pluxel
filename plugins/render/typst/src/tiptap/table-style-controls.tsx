@@ -80,7 +80,7 @@ export function TypstTableStyleControls({
 	const options = tableStyleOptions(editor.extensionManager.extensions)
 	const table = selectedTable(state.selection)
 	if (!options || !table) return null
-	const value = table.node.attrs.typstTableStyle ?? null
+	const value = table.node.attrs.tableStyle ?? null
 	const appearance = value ?? options.defaultStyle ?? 'grid'
 	const blocked = disabled || !state.editable || composing || editor.view.composing
 	return (
@@ -109,7 +109,7 @@ export function TypstTableStyleControls({
 								(choice.value !== null && !policy.allowedStyles.includes(choice.value))
 							)
 								return
-							if ((current.node.attrs.typstTableStyle ?? null) === choice.value) {
+							if ((current.node.attrs.tableStyle ?? null) === choice.value) {
 								onSelect?.()
 								return
 							}
@@ -120,7 +120,7 @@ export function TypstTableStyleControls({
 									closeHistory(tr)
 									tr.setNodeMarkup(current.position, undefined, {
 										...current.node.attrs,
-										typstTableStyle: choice.value,
+										tableStyle: choice.value,
 									})
 									// Attribute-only changes keep positions, but setNodeMarkup maps NodeSelection away.
 									tr.setSelection(selection.resolve(tr.doc))
