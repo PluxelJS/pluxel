@@ -1,0 +1,11 @@
+---
+title: Close the runtime RPC graph before releasing child resources
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/services':
+    version: 1.2.0
+---
+
+# Close the runtime RPC graph before releasing child resources
+
+Runtime session clients now shut down the native Capnweb root before releasing their bootstrap graph or notifying epoch invalidation observers. Child resource cleanup no longer sends release messages through a WebSocket that is already closing. In-flight or late bootstrap results cannot become current after the client is disposed.

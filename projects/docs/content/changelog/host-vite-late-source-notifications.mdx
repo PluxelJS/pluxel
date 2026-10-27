@@ -1,0 +1,14 @@
+---
+title: Avoid repeated reloads from late source notifications
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/host-vite':
+    version: 1.2.0
+---
+
+## Avoid repeated reloads from late source notifications
+
+Consume source notifications already represented by an accepted candidate without
+evaluating and restarting the same Plugin again. Every batch still validates the
+source owner and entry set; creation, deletion, failed inputs and changed imports
+continue through normal candidate evaluation and recovery.

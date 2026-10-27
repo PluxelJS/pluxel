@@ -1,0 +1,15 @@
+---
+title: Unify invoice recognition and verification with typed business results
+date: 2026-10-25T15:38:21.354Z
+packages:
+  '@pluxel/plugin-invoice':
+    version: 1.2.0
+---
+
+# Unify invoice recognition and verification with typed business results
+
+Replace the separate fiscal-ticket business package with one InvoicePlugin for fiscal tickets and twenty-digit digital tax invoices, sharing configuration, operation limits, deadlines and browser cleanup. Bind VLM credentials through Vault and expose extraction, structured-input verification and image-to-verification workflows.
+
+Separate model transcription, typed official details, raw portal evidence and mapping issues. Return parties, exact decimal amounts, line items and remarks where unambiguous; preserve unknown fields in bounded evidence and explicitly report truncation, ambiguity and contradictory totals. Keep identity matching and observed full red-letter reversal distinct from business approval.
+
+Support bounded automatic tax text-CAPTCHA attempts and a once-only image/text callback without requiring Playwright knowledge. Retain a native-page callback for interactive challenges, reject stale answers, and propagate cancellation and cleanup failures. Include application/consumer examples and real-host, browser and normalization regressions; automatic official verification remains experimental.
