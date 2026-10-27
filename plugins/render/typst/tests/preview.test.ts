@@ -22,6 +22,7 @@ function fixture(
 		'onNavigate' | 'onStateChange' | 'isNavigationCurrent'
 	> = {},
 	pageTops: readonly number[] = [],
+	linkHandlers: readonly string[] = [],
 ) {
 	const scroll = Object.assign(new EventTarget(), {
 		clientHeight: 300,
@@ -50,10 +51,21 @@ function fixture(
 			inverse: () => ({ a: 0.5, b: 0, c: 0, d: 0.5, e: -50, f: (scroll.scrollTop - top) / 2 }),
 		}),
 	}))
+	const createLink = (handler: string) => {
+		const attrs = new Map([['onclick', handler]])
+		return {
+			getAttribute: (name: string) => attrs.get(name) ?? null,
+			setAttribute: (name: string, value: string) => attrs.set(name, value),
+			removeAttribute: (name: string) => attrs.delete(name),
+		}
+	}
+	const links = linkHandlers.map(createLink)
+	let targetLinkIndex: number | undefined
+	let html = 'old'
 	const element = Object.assign(new EventTarget(), {
-		innerHTML: 'old',
-		querySelectorAll: () => pages,
-		closest: () => pages[0],
+		innerHTML: html,
+		querySelectorAll: (selector: string) => (selector === '.typst-page' ? pages : links),
+		closest: (selector: string) => (selector === 'a' ? links[targetLinkIndex ?? -1] : pages[0]),
 		ownerDocument: {
 			createElementNS: () => {
 				const rectangle = { classList: { add: vi.fn() }, setAttribute: vi.fn(), remove: vi.fn() }
@@ -63,6 +75,13 @@ function fixture(
 		},
 		replaceChildren() {
 			element.innerHTML = ''
+		},
+	})
+	Object.defineProperty(element, 'innerHTML', {
+		get: () => html,
+		set: (value: string) => {
+			html = value
+			links.splice(0, links.length, ...linkHandlers.map(createLink))
 		},
 	})
 	const container = element as unknown as HTMLElement
@@ -83,6 +102,10 @@ function fixture(
 		container,
 		scroll,
 		pages,
+		links,
+		setLink: (index?: number) => {
+			targetLinkIndex = index
+		},
 		rectangles,
 		renderer,
 		cleanup,
@@ -314,6 +337,68 @@ describe('TypstPreviewView', () => {
 		pointer(container, 'pointerdown')
 		pointer(container, 'pointerup')
 		expect(onNavigate).toHaveBeenCalledTimes(1)
+	})
+
+	it('follows renderer reference destinations without source navigation or placeholder URL changes', async () => {
+		const onNavigate = vi.fn()
+		let current = true
+		const { view, container, scroll, links, setLink } = fixture(
+			{ onNavigate, isNavigationCurrent: () => current },
+			[20, 420],
+			[
+				'handleTypstLocation(this, 2, 32, 10); return false',
+				'handleTypstLocation(this, 0, 32, 10); return false',
+			],
+		)
+		const click = (options: Partial<MouseEvent> = {}) => {
+			const event = Object.assign(new Event('click', { cancelable: true }), {
+				detail: 1,
+				...options,
+			})
+			container.dispatchEvent(event)
+			expect(event.defaultPrevented).toBe(true)
+		}
+		try {
+			await view.show({ ...packet(1), navigation: { pages: [], outline: [], points: [text] } })
+			expect(links[0]!.getAttribute('onclick')).toBeNull()
+			expect(links[0]!.getAttribute('tabindex')).toBe('0')
+			setLink(0)
+			pointer(container, 'pointerdown')
+			pointer(container, 'pointerup')
+			click()
+			expect(scroll.scrollTop).toBe(340)
+			expect(view.state.currentPage).toBe(2)
+			expect(onNavigate).not.toHaveBeenCalled()
+			scroll.scrollTop = 0
+			click({ detail: 0 })
+			expect(scroll.scrollTop).toBe(340)
+			scroll.scrollTop = 0
+			click({ detail: 0, ctrlKey: true })
+			expect(scroll.scrollTop).toBe(0)
+			pointer(container, 'pointerdown')
+			pointer(container, 'pointermove', { clientX: 240 })
+			pointer(container, 'pointerup')
+			click()
+			expect(scroll.scrollTop).toBe(0)
+			current = false
+			pointer(container, 'pointerdown')
+			pointer(container, 'pointerup')
+			click()
+			click({ detail: 0 })
+			expect(scroll.scrollTop).toBe(0)
+			current = true
+			pointer(container, 'pointerdown')
+			await view.show({ ...packet(2), navigation: { pages: [], outline: [], points: [text] } })
+			pointer(container, 'pointerup')
+			click()
+			expect(scroll.scrollTop).toBe(0)
+			setLink(1)
+			click({ detail: 0 })
+			expect(scroll.scrollTop).toBe(0)
+			expect(onNavigate).not.toHaveBeenCalled()
+		} finally {
+			await view.dispose()
+		}
 	})
 
 	it('reveals repeated source near the selected page without a navigation loop and clears its highlight', async () => {

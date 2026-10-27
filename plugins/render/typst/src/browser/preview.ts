@@ -2,6 +2,14 @@ import type { TypstRenderer } from '@myriaddreamin/typst.ts/renderer'
 import type { TypstNavigationPoint, TypstPreview } from '../preview-contract.js'
 import { pointAtPreview, pointAtSource, type SourcePosition } from './navigation.js'
 
+// typst.ts 0.7.0 emits internal destinations as this fixed SVG callback, even with js: false.
+// Read only its numeric arguments; the View owns scrolling and never executes renderer scripts.
+const coordinate = '([-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?)'
+const locationHandler = new RegExp(
+	`^handleTypstLocation\\(this,\\s*(\\d+),\\s*${coordinate},\\s*${coordinate}\\);\\s*return false;?$`,
+)
+type LinkPosition = { page: number; x: number; y: number }
+
 export type {
 	TypstPreview,
 	TypstNavigation,
@@ -34,7 +42,7 @@ export interface TypstPreviewViewOptions {
 	 * Defaults to true. Asynchronous host navigation must recheck after awaiting.
 	 */
 	readonly isNavigationCurrent?: (preview: TypstPreview) => boolean
-	/** A completed, unmodified pointer click. The callback is not awaited. */
+	/** A completed, unmodified pointer click on non-link content. The callback is not awaited. */
 	readonly onNavigate?: (hit: {
 		readonly preview: TypstPreview
 		readonly point: TypstNavigationPoint
@@ -51,6 +59,7 @@ export class TypstPreviewView implements AsyncDisposable {
 	private readonly isNavigationCurrent?: TypstPreviewViewOptions['isNavigationCurrent']
 	private readonly onNavigate?: TypstPreviewViewOptions['onNavigate']
 	private pages: SVGGraphicsElement[] = []
+	private links = new WeakMap<Element, LinkPosition | null>()
 	private currentState: TypstPreviewState = Object.freeze({
 		pageCount: 0,
 		currentPage: 1,
@@ -86,6 +95,7 @@ export class TypstPreviewView implements AsyncDisposable {
 		this.container.addEventListener('pointermove', this.pointerMove)
 		this.container.addEventListener('pointercancel', this.pointerCancel)
 		this.container.addEventListener('pointerup', this.pointerUp)
+		this.container.addEventListener('click', this.linkClick)
 		this.scrollContainer.addEventListener('scroll', this.refresh, { passive: true })
 		if (typeof ResizeObserver !== 'undefined') {
 			this.resizeObserver = new ResizeObserver(this.refresh)
@@ -134,6 +144,24 @@ export class TypstPreviewView implements AsyncDisposable {
 			this.clearHighlight()
 			this.container.innerHTML = svg
 			this.pages = [...this.container.querySelectorAll<SVGGraphicsElement>('.typst-page')]
+			this.links = new WeakMap()
+			for (const link of this.container.querySelectorAll<SVGAElement>('a[onclick]')) {
+				const match = locationHandler.exec(link.getAttribute('onclick')?.trim() ?? '')
+				if (!match) continue
+				link.removeAttribute('onclick')
+				const position = { page: Number(match[1]), x: Number(match[2]), y: Number(match[3]) }
+				const valid =
+					Number.isSafeInteger(position.page) &&
+					position.page >= 1 &&
+					position.page <= this.pages.length &&
+					Number.isFinite(position.x) &&
+					Number.isFinite(position.y)
+				this.links.set(link, valid ? position : null)
+				link.setAttribute('tabindex', '0')
+				link.setAttribute('aria-label', `跳转到第 ${position.page} 页的引用目标`)
+				for (const [name, value] of Object.entries(position))
+					link.setAttribute(`data-typst-link-${name}`, String(value))
+			}
 			this.displayedRevision = packet.revision
 			this.currentState = Object.freeze({
 				preview: packet,
@@ -290,6 +318,23 @@ export class TypstPreviewView implements AsyncDisposable {
 		this.pointerStart = undefined
 	}
 
+	private followLink(link: Element): void {
+		const preview = this.currentState.preview
+		const position = this.links.get(link)
+		if (!this.closed && preview && position && this.isNavigationCurrent?.(preview) !== false)
+			this.jumpToPosition(position)
+	}
+
+	private linkClick = (event: MouseEvent): void => {
+		const link = (event.target as Element | null)?.closest?.('a')
+		if (!link || !this.links.has(link)) return
+		// Suppress the renderer's placeholder href="#", including stale and modified clicks.
+		event.preventDefault()
+		// Pointer activation already passed the drag/revision checks in pointerUp.
+		if (event.detail === 0 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey)
+			this.followLink(link)
+	}
+
 	private pointerUp = (event: PointerEvent): void => {
 		const start = this.pointerStart
 		this.pointerStart = undefined
@@ -311,6 +356,11 @@ export class TypstPreviewView implements AsyncDisposable {
 		)
 			return
 		const target = event.target as Element | null
+		const link = target?.closest?.('a')
+		if (link) {
+			this.followLink(link)
+			return
+		}
 		const element = target?.closest?.<SVGGraphicsElement>('.typst-page')
 		const page = element ? this.pages.indexOf(element) + 1 : 0
 		const inverse = element?.getScreenCTM()?.inverse()
@@ -335,10 +385,12 @@ export class TypstPreviewView implements AsyncDisposable {
 		this.container.removeEventListener('pointermove', this.pointerMove)
 		this.container.removeEventListener('pointercancel', this.pointerCancel)
 		this.container.removeEventListener('pointerup', this.pointerUp)
+		this.container.removeEventListener('click', this.linkClick)
 		this.scrollContainer.removeEventListener('scroll', this.refresh)
 		this.closing = this.tail.then(() => {
 			this.container.replaceChildren()
 			this.pages = []
+			this.links = new WeakMap()
 			this.currentState = Object.freeze({ pageCount: 0, currentPage: 1, currentHeading: -1 })
 			return undefined
 		})

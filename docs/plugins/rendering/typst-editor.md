@@ -503,7 +503,7 @@ if (!prepared.ok) throw new Error(JSON.stringify(prepared.issues))
 
 ## 预览与定位
 
-共享 View 的生命周期见[浏览器预览](./typst.md#浏览器预览)。`TypstPreviewView` 支持 `scrollContainer`、`onStateChange`、`isNavigationCurrent` 和 `onNavigate`；`state` 给出当前 packet、页数、当前页和目录项。`jumpToPage`、`jumpToPosition`、`revealSource` 与 `refresh` 管理滚动和高亮。普通点击经拖选/修饰键过滤及 SVG CTM 转换后返回 `{ preview, point }`；`pointAtPreview` / `pointAtSource` 可供其他编辑器直接使用。
+共享 View 的生命周期见[浏览器预览](./typst.md#浏览器预览)。`TypstPreviewView` 支持 `scrollContainer`、`onStateChange`、`isNavigationCurrent` 和 `onNavigate`；`state` 给出当前 packet、页数、当前页和目录项。`jumpToPage`、`jumpToPosition`、`revealSource` 与 `refresh` 管理滚动和高亮。点击图、表、公式等内部引用时，优先在当前预览中跳到 Typst 给出的目标页与位置，不切换到引用文字的编辑位置；引用链接也支持 Tab 聚焦后按 Enter。过期预览、拖选和修饰键点击不执行内部跳转。普通非链接内容点击经拖选/修饰键过滤及 SVG CTM 转换后返回 `{ preview, point }`；`pointAtPreview` / `pointAtSource` 可供其他编辑器直接使用。
 
 生成结果的 `mapping` 绑定 `snapshotRevision`，包含 Unicode 字符、原子节点和嵌套块的范围。`findTypstRegionPosition` 将同快照 `_editor/` 的 native 源码位置映射到 `{ regionId, from, to, source? }`；`from` / `to` 已是可直接使用的 ProseMirror UTF-16 位置，**不要再加 1**。文本点击定位到对应字符，字段和图片按完整节点定位；表格、列表及自定义节点通过 `context.children` 保留内部位置。
 
