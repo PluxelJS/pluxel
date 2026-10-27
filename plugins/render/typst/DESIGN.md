@@ -68,7 +68,9 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 id/label 在整个区域集合内唯一。引用只保存目标 id，生成时解析为当前 label；label 为空的图表/公式不编号，也不是可引用目标。编辑期间允许保留缺失目标以便修复，生成完整报告时返回 `INVALID_REFERENCE`。模板内手写 label/ref 不进入结构化索引，也不随 JSON label 自动改名；即使目标在 JSON 中存在，模板没有 include 该目标时仍由真实 Typst 编译报告缺失。移动保持身份；复制分配新身份并重绑复制子树内的引用，载入时不自动修复坏身份。
 
-`document-react.tsx` 为图表、KaTeX 公式和引用提供 NodeView；题注内容继续在原生 contentDOM 编辑，label/公式输入只在显式应用时提交。引用候选取宿主 `regions` 与当前活跃 Editor 的覆盖快照，官方 Suggestion 负责 `@` 匹配和 decoration；UI 展示当前 label 和目标说明，不保存或模拟 Typst 编号。单区域宿主不传完整集合时只索引自己。
+`document-react.tsx` 为图表、KaTeX 公式和引用提供 NodeView。题注内容继续在原生 contentDOM 编辑；图表与独立公式复用常驻 label 输入，Enter 或失焦校验并提交，Escape 恢复。图表通过 CSS 将类型、原生题注与 label 排在内容下方同一行，保留 schema 中 body、caption 的顺序；外观不再另套设置卡片。公式点击后在原位置展开 LaTeX 编辑框，草稿只更新局部 KaTeX 预览；Mod+Enter、“完成”或失焦提交并收起，Escape 或“取消”恢复。label 与 LaTeX 各自提交一个原生事务，互不覆盖，也不因逐键输入产生撤销步骤。
+
+提交复核最新节点身份、字段原值、只读与组合输入状态；冲突或校验失败保留本地输入并显示错误，不用旧表单覆盖新的正文。未提交输入保留 `data-typst-unapplied` 标记，供宿主保存和离开检查读取。只读时可查看公式源码。引用候选取宿主 `regions` 与当前活跃 Editor 的覆盖快照，官方 Suggestion 负责 `@` 匹配和 decoration；UI 展示当前 label 和目标说明，不保存或模拟 Typst 编号。单区域宿主不传完整集合时只索引自己。
 
 `serialize.ts` 映射 figure、MiTeX 的 mi/mitex 和 Typst ref，保留原有源码映射；仅有公式时加入 `mitex.ts` 提供的固定运行时文件。`mitex-files.json` 由 `vendor/mitex/generate.mjs` 从固定版本与归档摘要生成，包含 Apache 许可与 notice；只将 upstream 的 WASM 文件加载替换为 JSON bytes。静态资源不在每次编辑重新编码，不扩大同步 `Record<string,string>` 文件契约，不启用网络包 resolver。模板仍设置 math.equation 的编号与数学字体；KaTeX 和 MiTeX 的兼容性由实际公式与各端诊断确认，不承诺所有宏等价。
 

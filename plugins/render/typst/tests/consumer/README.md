@@ -30,8 +30,8 @@ The [JSON sample](./public/examples/operations-report.json), [outer template](./
 Use these paths to compare the three representations:
 
 1. Change font, size, text/background color or paragraph alignment in the body. The live Markdown preserves overrides; clearing an override restores template inheritance. Templates own line spacing, paragraph spacing, first-line indentation and page layout.
-2. Select an image, table or component and add a caption. Edit its caption directly, then edit the separate label in object settings. The body object retains its id when the label changes. A table inside a captioned object remains editable through TableKit.
-3. Insert inline or independent math through **插入** or `/`. Click its KaTeX view to edit LaTeX; independent equations also expose label. The final preview uses the same source through the pinned MiTeX runtime. Compare both outputs when using a new macro.
+2. Select an image, table or component and add a caption. Edit the caption and its adjacent label directly in the same row below the figure or table. Enter or leaving the field validates and commits one undo step; Escape restores the current document value. Invalid or duplicate labels stay visible with an error and a **恢复 label** action. The body object retains its id when the label changes. A table inside a captioned object remains editable through TableKit.
+3. Insert inline or independent math through **插入** or `/`. Click its KaTeX view to expand LaTeX editing in place, with a live local preview. Mod+Enter, **完成** or leaving the source field commits and closes it; Escape or **取消** discards the draft. Independent equations expose a separate always-visible label field with the same behavior as figures. Source and label changes have independent undo steps. The final preview uses the same source through the pinned MiTeX runtime. Compare both outputs when using a new macro.
 4. Type `@` to find a figure, table or equation from either region by label, title/source, type or region. Enter inserts a structured reference; its editing view shows `@label`, while Typst supplies the actual number. Deleting a target or clearing its label leaves a visible unresolved reference and prevents successful generation until repaired.
 5. Open **Markdown**, choose a region or **当前选中块**, then **编辑这份 Markdown**. Review with **查看修改预览**, then **接纳候选**. This updates the native document in one undo step and refreshes the preview. **放弃候选修改** or acceptance returns to live Markdown in the same tab. This manual agent-format editor does not call an LLM.
 6. Change external JSON under **数据**, then apply it. Bound fields and charts update while body JSON and undo history remain. Edit/import the outer `.typ` under **原始 Typst** to change template design.
@@ -70,16 +70,16 @@ This connects to the existing browser and app, checks the pane/tab, candidate, d
 
 Existing focused drivers under this directory cover the following workflows. A driver being listed is not a claim that it has passed against every subsequent change; inspect its browser setup and actual result before reporting it.
 
-| Driver                                                           | Workflow                                                                                                                       |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `document-check.mjs`                                             | Caption editing/exit, label apply/discard, LaTeX, cross-region `@`, Markdown round trips, copy/cut, undo and responsive bounds |
-| `document-clipboard-check.mjs`                                   | Real browser HTML admission for figures, captions, math and references; rejects malformed or unregistered structures           |
-| `report-example-check.mjs`, `refactor-cases.mjs`                 | External inputs, data-only changes, draft replacement, failure/recovery, late responses, current PDF and mobile panes          |
-| `blocks-check.mjs`, `block-actions-check.mjs`                    | Component/source and ordinary-block operations, selected-block Markdown, native drag, undo and navigation                      |
-| `format-check.mjs`, `toolbar-check.mjs`, `link-format-check.mjs` | Explicit formatting, typography, mixed values, links, caret formats, selection, readonly/IME and narrow layouts                |
-| `insertion-check.mjs`, `table-tools-check.mjs`                   | Shared insertion catalogs, fixed targets, table dimensions/actions, validation, keyboard and touch                             |
-| `table-style.mjs`, `contexts-check.mjs`                          | Table styles, merged boundaries, context menus, HTML re-entry and current PDF                                                  |
-| `react-lifecycle-check.mjs`                                      | Public React content/data/key lifecycle and unmount; uses `/react-lifecycle.html` without native sessions                      |
+| Driver                                                           | Workflow                                                                                                                                        |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document-check.mjs`                                             | Caption editing/exit, label Enter/blur/recovery, in-place LaTeX with separate undo, cross-region `@`, Markdown, copy/cut and dark/mobile bounds |
+| `document-clipboard-check.mjs`                                   | Real browser HTML admission for figures, captions, math and references; rejects malformed or unregistered structures                            |
+| `report-example-check.mjs`, `refactor-cases.mjs`                 | External inputs, data-only changes, draft replacement, failure/recovery, late responses, current PDF and mobile panes                           |
+| `blocks-check.mjs`, `block-actions-check.mjs`                    | Component/source and ordinary-block operations, selected-block Markdown, native drag, undo and navigation                                       |
+| `format-check.mjs`, `toolbar-check.mjs`, `link-format-check.mjs` | Explicit formatting, typography, mixed values, links, caret formats, selection, readonly/IME and narrow layouts                                 |
+| `insertion-check.mjs`, `table-tools-check.mjs`                   | Shared insertion catalogs, fixed targets, table dimensions/actions, validation, keyboard and touch                                              |
+| `table-style.mjs`, `contexts-check.mjs`                          | Table styles, merged boundaries, context menus, HTML re-entry and current PDF                                                                   |
+| `react-lifecycle-check.mjs`                                      | Public React content/data/key lifecycle and unmount; uses `/react-lifecycle.html` without native sessions                                       |
 
 Browser checks must close only their own client sessions. The session-close endpoint is awaited before browser teardown so keepalive timing cannot exhaust the running app's session capacity.
 

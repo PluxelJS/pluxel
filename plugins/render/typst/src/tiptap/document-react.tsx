@@ -1,4 +1,4 @@
-import { useContext, useEffect, useId, useRef, useState } from 'react'
+import { useContext, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { Extension, type Editor, type JSONContent } from '@tiptap/core'
 import { NodeViewContent, NodeViewWrapper, useEditorState, type NodeViewProps } from '@tiptap/react'
 import { closeHistory } from '@tiptap/pm/history'
@@ -63,109 +63,167 @@ function updateNode(props: NodeViewProps, attrs: Record<string, unknown>) {
 	return props.editor.state.doc.nodeAt(at)?.eq(transaction.doc.nodeAt(at)!) ?? false
 }
 
+/** A short local edit commits once when the user leaves the field, never over a changed value. */
+function useObjectAttribute(props: NodeViewProps, attribute: 'label' | 'latex') {
+	const ui = useContext(EditorUi)
+	const stored = String(props.node.attrs[attribute] ?? '')
+	const [draft, setDraft] = useState<{ base: string; value: string } | null>(null)
+	const [error, setError] = useState('')
+	const composing = useRef(false)
+	const dirty = draft !== null && draft.value !== stored
+	const conflict = dirty && draft.base !== stored
+	useEffect(() => {
+		if (draft?.value === stored) {
+			setDraft(null)
+			setError('')
+		}
+	}, [draft, stored])
+	const reset = () => {
+		setDraft(null)
+		setError('')
+	}
+	return {
+		value: draft?.value ?? stored,
+		dirty,
+		error: conflict ? '此内容已在其他位置修改，请恢复后重新编辑。' : error,
+		readOnly: !ui.editable || !props.editor.isEditable,
+		composing,
+		change(value: string) {
+			setDraft(value === stored ? null : { base: draft?.base ?? stored, value })
+			setError('')
+		},
+		reset,
+		commit() {
+			if (composing.current) return false
+			if (!dirty) return true
+			if (conflict) return false
+			if (!canEdit(props.editor, ui)) {
+				setError('当前不可编辑，请恢复或在允许编辑后重试。')
+				return false
+			}
+			const problem =
+				attribute === 'label'
+					? labelProblem(props.editor, ui, props.node.attrs.id, draft.value)
+					: ''
+			if (problem) {
+				setError(problem)
+				return false
+			}
+			if (
+				!updateNode(props, {
+					[attribute]: attribute === 'label' ? draft.value || null : draft.value,
+				})
+			) {
+				setError('修改未通过文档校验，请恢复后重试。')
+				return false
+			}
+			setDraft(null)
+			setError('')
+			return true
+		},
+	}
+}
+
+/** All referenceable objects use this same nearby, nonmodal label field. */
+function ReferenceLabel({ props, kind }: { props: NodeViewProps; kind: string }) {
+	const field = useObjectAttribute(props, 'label')
+	const errorId = useId()
+	return (
+		<div className="typst-object-label" contentEditable={false}>
+			<label className="typst-label-field">
+				<span>label</span>
+				<input
+					aria-label={`${kind}引用 label`}
+					aria-invalid={Boolean(field.error)}
+					aria-describedby={field.error ? errorId : undefined}
+					value={field.value}
+					placeholder="添加引用名称"
+					title="Enter 或移开焦点保存，Esc 恢复"
+					size={Math.min(28, Math.max(12, field.value.length))}
+					readOnly={field.readOnly}
+					data-typst-unapplied={field.dirty || undefined}
+					spellCheck={false}
+					onChange={(event) => field.change(event.currentTarget.value)}
+					onCompositionStart={() => {
+						field.composing.current = true
+					}}
+					onCompositionEnd={() => {
+						field.composing.current = false
+					}}
+					onBlur={() => field.commit()}
+					onKeyDown={(event) => {
+						if (event.nativeEvent.isComposing) return
+						if (event.key === 'Enter' || event.key === 'Escape') {
+							event.preventDefault()
+							event.stopPropagation()
+							if (event.key === 'Escape') field.reset()
+							else field.commit()
+						}
+					}}
+				/>
+			</label>
+			{field.error && (
+				<div className="typst-object-error" id={errorId}>
+					<span role="alert">{field.error}</span>
+					<button
+						type="button"
+						onMouseDown={(event) => event.preventDefault()}
+						onClick={field.reset}
+					>
+						恢复 label
+					</button>
+				</div>
+			)}
+		</div>
+	)
+}
+
 /** Caption content stays in ProseMirror, so table editing, marks and native undo work normally. */
 export function TypstFigureView(props: NodeViewProps) {
 	const { editor, node, selected } = props
 	const ui = useContext(EditorUi)
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
-	const stored = (node.attrs.label ?? '') as string
-	const [label, setLabel] = useState(stored)
-	const [error, setError] = useState('')
-	useEffect(() => {
-		setLabel(stored)
-		setError('')
-	}, [stored])
 	const kind = node.firstChild?.type.name === 'table' ? '表' : '图'
-	const disabled = !canEdit(editor, ui)
-	const discardLabel = () => {
-		setLabel(stored)
-		setError('')
-	}
 	return (
 		<NodeViewWrapper
 			className="typst-figure"
 			data-figure-id={node.attrs.id}
 			data-selected={selected || undefined}
 		>
-			<div contentEditable={false} className="typst-document-object-header">
-				<span data-drag-handle={disabled ? undefined : true}>{kind}与题注</span>
-				<details className="typst-object-settings">
-					<summary>{stored || '设置引用 label'}</summary>
-					<div className="typst-object-form">
-						<label>
-							引用 label
-							<input
-								aria-label={`${kind}引用 label`}
-								value={label}
-								readOnly={disabled}
-								data-typst-unapplied={label !== stored || undefined}
-								spellCheck={false}
-								onChange={(event) => setLabel(event.currentTarget.value)}
-								onKeyDown={(event) => {
-									if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
-									event.preventDefault()
-									event.stopPropagation()
-									discardLabel()
-								}}
-							/>
-						</label>
-						<small>题注在下方直接编辑；编号和题注位置由模板决定。</small>
-						<div className="typst-object-form-actions">
-							<button
-								type="button"
-								disabled={disabled || label === stored}
-								onClick={() => {
-									const problem = labelProblem(editor, ui, node.attrs.id, label)
-									if (problem) {
-										setError(problem)
-										return
-									}
-									setError(
-										updateNode(props, { label: label || null }) ? '' : '修改未通过文档校验。',
-									)
-								}}
-							>
-								应用 label
-							</button>
-							<button type="button" disabled={label === stored && !error} onClick={discardLabel}>
-								取消修改
-							</button>
-						</div>
-						{error && <span role="alert">{error}</span>}
-					</div>
-				</details>
-			</div>
 			<NodeViewContent className="typst-figure-content" />
+			<span
+				className="typst-figure-kind"
+				contentEditable={false}
+				data-drag-handle={canEdit(editor, ui) ? true : undefined}
+			>
+				{kind}：
+			</span>
+			<ReferenceLabel props={props} kind={kind} />
 		</NodeViewWrapper>
 	)
 }
 
-/** Use the official math schema/commands and KaTeX rendering with an explicit draft editor. */
+/** Formula source opens at its own position; preview and label stay visible while editing. */
 export function TypstMathView(props: NodeViewProps) {
 	const { editor, node, selected } = props
-	const ui = useContext(EditorUi)
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
 	const inline = node.type.name === 'inlineMath'
-	const storedLatex = String(node.attrs.latex ?? '')
-	const storedLabel = String(node.attrs.label ?? '')
-	const [latex, setLatex] = useState(storedLatex)
-	const [label, setLabel] = useState(storedLabel)
-	const [error, setError] = useState('')
+	const latex = useObjectAttribute(props, 'latex')
+	const [editing, setEditing] = useState(false)
 	const [renderError, setRenderError] = useState('')
 	const preview = useRef<HTMLSpanElement>(null)
-	const form = useRef<HTMLSpanElement>(null)
+	const trigger = useRef<HTMLButtonElement>(null)
 	const input = useRef<HTMLTextAreaElement>(null)
-	const formId = useId()
-	const disabled = !canEdit(editor, ui)
+	const finishing = useRef(false)
+	const sourceId = useId()
+	const errorId = useId()
 	useEffect(() => {
-		setLatex(storedLatex)
-		setLabel(storedLabel)
-		setError('')
-	}, [storedLatex, storedLabel])
+		if (editing) input.current?.focus()
+	}, [editing])
 	useEffect(() => {
 		if (!preview.current) return
 		try {
-			render(storedLatex, preview.current, {
+			render(latex.value, preview.current, {
 				displayMode: !inline,
 				throwOnError: true,
 				trust: false,
@@ -173,96 +231,116 @@ export function TypstMathView(props: NodeViewProps) {
 			})
 			setRenderError('')
 		} catch (cause) {
-			preview.current.textContent = storedLatex || '空公式'
+			preview.current.textContent = latex.value || '空公式'
 			setRenderError(cause instanceof Error ? cause.message : String(cause))
 		}
-	}, [storedLatex, inline])
-	const changed = latex !== storedLatex || (!inline && label !== storedLabel)
+	}, [latex.value, inline])
+	const finish = (discard = false) => {
+		if (discard) latex.reset()
+		else if (!latex.commit()) return
+		finishing.current = true
+		setEditing(false)
+		trigger.current?.focus()
+	}
+	const sourceKeys = (event: KeyboardEvent<HTMLElement>) => {
+		if (event.nativeEvent.isComposing || latex.composing.current) return
+		if (event.key === 'Escape' || (event.key === 'Enter' && (event.ctrlKey || event.metaKey))) {
+			event.preventDefault()
+			event.stopPropagation()
+			finish(event.key === 'Escape')
+		}
+	}
+
 	return (
 		<NodeViewWrapper
 			as={inline ? 'span' : 'div'}
 			className={inline ? 'typst-inline-math' : 'typst-block-math'}
 			contentEditable={false}
 			data-selected={selected || undefined}
+			data-editing={editing || undefined}
 			data-equation-id={node.attrs.id}
 		>
 			<button
+				ref={trigger}
 				type="button"
 				className="typst-math-preview"
 				aria-label={inline ? '编辑行内公式' : '编辑独立公式'}
-				title={renderError || storedLatex}
-				popoverTarget={formId}
-				onClick={() => requestAnimationFrame(() => input.current?.focus())}
+				aria-expanded={editing}
+				aria-controls={sourceId}
+				title={renderError || latex.value}
+				onClick={() => {
+					finishing.current = false
+					setEditing(true)
+					input.current?.focus()
+				}}
 			>
 				<span ref={preview} />
 				{renderError && <span className="typst-math-error">公式预览错误</span>}
 			</button>
-			{!inline && <span className="typst-math-label">{storedLabel || '未设置引用 label'}</span>}
-			<span
-				ref={form}
-				id={formId}
-				popover="auto"
-				className="typst-math-form typst-object-form"
-				aria-label="编辑公式"
-			>
-				<strong>{inline ? '行内公式' : '独立公式'}</strong>
-				<label>
-					LaTeX
-					<textarea
-						ref={input}
-						aria-label="公式 LaTeX"
-						value={latex}
-						readOnly={disabled}
-						spellCheck={false}
-						data-typst-unapplied={changed || undefined}
-						onChange={(event) => setLatex(event.currentTarget.value)}
-					/>
-				</label>
-				{!inline && (
+			{editing && (
+				<span
+					id={sourceId}
+					className="typst-math-source"
+					onBlur={(event) => {
+						if (finishing.current) return
+						if (event.currentTarget.contains(event.relatedTarget)) return
+						if (latex.commit()) setEditing(false)
+					}}
+				>
 					<label>
-						引用 label
-						<input
-							aria-label="公式引用 label"
-							value={label}
-							readOnly={disabled}
+						<span>LaTeX</span>
+						<textarea
+							ref={input}
+							aria-label="公式 LaTeX"
+							onKeyDown={sourceKeys}
+							aria-invalid={Boolean(latex.error)}
+							aria-describedby={latex.error ? errorId : undefined}
+							value={latex.value}
+							rows={inline ? 2 : 3}
+							readOnly={latex.readOnly}
 							spellCheck={false}
-							onChange={(event) => setLabel(event.currentTarget.value)}
+							data-typst-unapplied={latex.dirty || undefined}
+							onChange={(event) => latex.change(event.currentTarget.value)}
+							onCompositionStart={() => {
+								latex.composing.current = true
+							}}
+							onCompositionEnd={() => {
+								latex.composing.current = false
+							}}
 						/>
 					</label>
-				)}
-				<small>保存同一份 LaTeX；模板通过 MiTeX 排版，独立公式编号由模板设置。</small>
-				<span className="typst-object-form-actions">
-					<button
-						type="button"
-						disabled={disabled || !changed}
-						onClick={() => {
-							const problem = inline ? '' : labelProblem(editor, ui, node.attrs.id, label)
-							if (problem) {
-								setError(problem)
-								return
-							}
-							if (updateNode(props, { latex, ...(!inline ? { label: label || null } : {}) })) {
-								setError('')
-								form.current?.hidePopover()
-							} else setError('修改未通过文档校验。')
-						}}
-					>
-						应用公式
-					</button>
-					<button
-						type="button"
-						onClick={() => {
-							setLatex(storedLatex)
-							setLabel(storedLabel)
-							setError('')
-							form.current?.hidePopover()
-						}}
-					>
-						取消修改
-					</button>
+					<span className="typst-math-source-actions">
+						<small>移开焦点保存 · Esc 取消</small>
+						<button
+							type="button"
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => finish(true)}
+							onKeyDown={sourceKeys}
+						>
+							取消
+						</button>
+						<button
+							type="button"
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => finish()}
+							onKeyDown={sourceKeys}
+						>
+							完成
+						</button>
+					</span>
+					{latex.error && (
+						<span className="typst-object-error" id={errorId} role="alert">
+							{latex.error}
+						</span>
+					)}
 				</span>
-				{error && <span role="alert">{error}</span>}
-			</span>
+			)}
+			{!inline && (
+				<div className="typst-object-meta" contentEditable={false}>
+					<span className="typst-object-kind">公式</span>
+					<ReferenceLabel props={props} kind="公式" />
+				</div>
+			)}
 		</NodeViewWrapper>
 	)
 }

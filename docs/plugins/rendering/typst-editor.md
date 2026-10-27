@@ -197,7 +197,9 @@ const extraCommands: TypstSlashCommand[] = [
 | `id`    | 对象的稳定身份；结构化引用保存这个值，不随题注或 label 改名          |
 | 编号    | 不保存到正文；由 Typst 按实际文档顺序和模板规则计算                  |
 
-图表设置中单独编辑“引用 label”，点击“应用 label”提交；“取消修改”或输入框内的 Escape 恢复原 label，不改正文和撤销历史。独立公式在公式编辑框中编辑 label。label 以字母或数字开头，支持中文等 Unicode 字母，后续可含字母、数字、组合标记、冒号、点、下划线或连字符，最长 128 个字符；整份区域集合内不能重复。id 由编辑命令生成；通过 agent 新建对象时需提供唯一 id。原始 JSON 校验不自动补写或改名修复冲突。
+图题、表题与常驻的“引用 label”输入框排列在图表内容下方同一行，直接编辑即可；独立公式也使用相同的 label 输入。按 Enter 或离开输入框时校验并提交，一次撤销可恢复；Escape 恢复正文当前值，不产生新的正文修改。格式错误、重名或提交冲突会保留本地输入并提示原因，可以修改后再提交，也可以使用“恢复 label”放弃输入。label 与题注、公式源码分别编辑，不需要展开设置面板。
+
+label 以字母或数字开头，支持中文等 Unicode 字母，后续可含字母、数字、组合标记、冒号、点、下划线或连字符，最长 128 个字符；整份区域集合内不能重复。id 由编辑命令生成；通过 agent 新建对象时需提供唯一 id。原始 JSON 校验不自动补写或改名修复冲突。
 
 图表和独立公式可以没有 label，此时输出不编号，也不能成为结构化引用目标。设置 label 时必须有稳定 id。清空已有 label 或删除对象后，引用节点保留，编辑器显示目标缺失；生成器返回 `INVALID_REFERENCE`，不会把坏引用静默转换成文字。修复目标、重新设置 label 或删除不再需要的引用后继续生成。
 
@@ -207,7 +209,9 @@ const extraCommands: TypstSlashCommand[] = [
 
 ### LaTeX 公式
 
-公式直接保存 LaTeX 源码，复用官方 [Tiptap Mathematics](https://tiptap.dev/docs/editor/extensions/nodes/mathematics) 的 `inlineMath` / `blockMath` 节点和命令。通过“插入”或 `/` 选择行内、独立公式；点击公式打开源码编辑框，“应用公式”提交一次可撤销修改。独立公式另有 id / label，行内公式没有编号和引用身份。
+公式直接保存 LaTeX 源码，复用官方 [Tiptap Mathematics](https://tiptap.dev/docs/editor/extensions/nodes/mathematics) 的 `inlineMath` / `blockMath` 节点和命令。通过“插入”或 `/` 选择行内、独立公式；点击公式会在原位置展开 LaTeX 编辑框，草稿实时更新局部 KaTeX 预览。按 Ctrl/⌘+Enter、点击“完成”或离开编辑框时提交并收起，一次撤销恢复源码；Escape 或“取消”放弃未提交输入。行内公式同样在正文原位置编辑，不弹出浮层。
+
+独立公式的 label 单独编辑和撤销，修改源码不会同时修改 label；行内公式没有编号和引用身份。只读区域可以展开源码查看，不能提交修改。尚未提交或校验失败的 label / LaTeX 输入仍参与宿主的保存和离开检查。
 
 编辑器用 KaTeX 显示，Typst 输出调用固定的 [MiTeX 0.2.7](https://typst.app/universe/package/mitex/)。同一份 LaTeX 贯穿 JSON、Markdown 和编译，不做 LaTeX 与 Typst 数学语法的双向改写。KaTeX 与 MiTeX 的命令和宏支持并不完全相同：编辑器预览错误与最终编译错误分别展示，公式源码保留供修复；成功在其中一端显示不等于另一端已验证。
 

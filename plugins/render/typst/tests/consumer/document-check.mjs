@@ -32,6 +32,16 @@ async function current() {
 async function bounded() {
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
 }
+async function captionRow(object, input) {
+	const caption = await object.locator('figcaption').boundingBox()
+	const label = await input.boundingBox()
+	assert.ok(caption && label)
+	assert.ok(
+		Math.max(caption.y, label.y) < Math.min(caption.y + caption.height, label.y + label.height),
+		'caption and label share a visible row',
+	)
+	assert.ok(caption.x + caption.width <= label.x + 1, 'caption and label do not overlap')
+}
 try {
 	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
 	url.searchParams.set('example', 'operations-report')
@@ -43,15 +53,21 @@ try {
 	const original = await body.evaluate(doc)
 	await page.screenshot({ path: join(output, 'desktop.png'), fullPage: true })
 
-	// A label is an explicit draft. Reject duplicate labels without changing document identity.
+	// Labels stay beside captions; invalid input remains local and can be restored.
 	const figure = body.locator('[data-figure-id="channels-figure"]')
-	await figure.locator('.typst-object-settings > summary').click()
 	const label = figure.getByRole('textbox', { name: '图引用 label', exact: true })
+	await label.waitFor({ state: 'visible' })
+	assert.equal(
+		await figure.locator('.typst-object-settings, .typst-object-meta [popover]').count(),
+		0,
+	)
+	assert.equal(await figure.getByRole('button', { name: '应用 label', exact: true }).count(), 0)
 	await label.fill('tbl:observations')
-	await figure.getByRole('button', { name: '应用 label', exact: true }).click()
+	await label.press('Enter')
 	await figure.getByRole('alert').filter({ hasText: '相同 label' }).waitFor()
 	assert.deepEqual(await body.evaluate(doc), original)
-	await figure.getByRole('button', { name: '取消修改', exact: true }).click()
+	assert.equal(await label.getAttribute('data-typst-unapplied'), 'true')
+	await figure.getByRole('button', { name: '恢复 label', exact: true }).click()
 	assert.equal(await label.inputValue(), 'fig:channels')
 	assert.equal(await figure.getByRole('alert').count(), 0)
 	assert.equal(await label.getAttribute('data-typst-unapplied'), null)
@@ -61,7 +77,7 @@ try {
 	assert.equal(await label.getAttribute('data-typst-unapplied'), null)
 	assert.deepEqual(await body.evaluate(doc), original)
 	await label.fill('fig:renamed-channels')
-	await figure.getByRole('button', { name: '应用 label', exact: true }).click()
+	await label.press('Enter')
 	await current()
 	assert.match(
 		await notesPanel.locator('.typst-reference').first().textContent(),
@@ -70,6 +86,80 @@ try {
 	await bodyPanel.getByRole('button', { name: '撤销', exact: true }).click()
 	await current()
 	assert.deepEqual(await body.evaluate(doc), original)
+
+	// A field changed elsewhere cannot be overwritten by an older local draft.
+	await label.fill('fig:local-draft')
+	await body.evaluate((element) => {
+		const editor = element.editor
+		let at
+		editor.state.doc.descendants((node, position) => {
+			if (node.attrs.id === 'channels-figure') at = position
+		})
+		editor
+			.chain()
+			.setNodeSelection(at)
+			.updateAttributes('figure', { label: 'fig:external-change' })
+			.run()
+	})
+	await figure.getByRole('alert').filter({ hasText: '其他位置修改' }).waitFor()
+	assert.equal(await label.inputValue(), 'fig:local-draft')
+	await label.press('Enter')
+	const externallyChanged = await body.evaluate(doc)
+	assert.equal(
+		externallyChanged.content.find((node) => node.attrs?.id === 'channels-figure').attrs.label,
+		'fig:external-change',
+	)
+	// Returning to the original base is still a pending edit after an external replacement.
+	await label.fill('fig:channels')
+	await label.press('Enter')
+	assert.equal(await label.inputValue(), 'fig:channels')
+	assert.equal(await label.getAttribute('data-typst-unapplied'), 'true')
+	assert.deepEqual(await body.evaluate(doc), externallyChanged)
+	await figure.getByRole('alert').filter({ hasText: '其他位置修改' }).waitFor()
+	await figure.getByRole('button', { name: '恢复 label', exact: true }).click()
+	assert.equal(await label.inputValue(), 'fig:external-change')
+	assert.equal(await label.getAttribute('data-typst-unapplied'), null)
+	await bodyPanel.getByRole('button', { name: '撤销', exact: true }).click()
+	await current()
+	assert.deepEqual(await body.evaluate(doc), original)
+
+	// IME composition must not commit a partial label when Enter confirms composition.
+	await label.fill('fig:composing')
+	await label.dispatchEvent('compositionstart', { data: '输入' })
+	await label.press('Enter')
+	assert.deepEqual(await body.evaluate(doc), original)
+	await label.dispatchEvent('compositionend', { data: '输入' })
+	await label.press('Escape')
+	assert.equal(await label.inputValue(), 'fig:channels')
+
+	// Leaving a valid table label commits one change; invalid blur keeps the admitted document.
+	const tableFigureView = body.locator('[data-figure-id="observations-table"]')
+	const tableLabel = tableFigureView.getByRole('textbox', { name: '表引用 label', exact: true })
+	await tableLabel.fill('tbl:renamed-observations')
+	await tableLabel.press('Tab')
+	await current()
+	assert.match(
+		await notesPanel.locator('.typst-reference').nth(1).textContent(),
+		/tbl:renamed-observations/,
+	)
+	await bodyPanel.getByRole('button', { name: '撤销', exact: true }).click()
+	await current()
+	assert.deepEqual(await body.evaluate(doc), original)
+	await tableLabel.fill('fig:channels')
+	await tableLabel.press('Tab')
+	await tableFigureView.getByRole('alert').filter({ hasText: '相同 label' }).waitFor()
+	assert.equal(await tableLabel.inputValue(), 'fig:channels')
+	assert.deepEqual(await body.evaluate(doc), original)
+	await tableLabel.press('Escape')
+	assert.equal(await tableLabel.inputValue(), 'tbl:observations')
+	assert.equal(await tableFigureView.getByRole('alert').count(), 0)
+
+	await figure.locator('figcaption').scrollIntoViewIfNeeded()
+	await captionRow(figure, label)
+	await page.screenshot({ path: join(output, 'desktop-figure-row.png'), fullPage: true })
+	await tableFigureView.locator('figcaption').scrollIntoViewIfNeeded()
+	await captionRow(tableFigureView, tableLabel)
+	await page.screenshot({ path: join(output, 'desktop-table-row.png'), fullPage: true })
 
 	// Native rich caption editing and the table remain live children, not nested editors.
 	await body.locator('figcaption').first().fill('更新后的渠道图题')
@@ -98,18 +188,100 @@ try {
 	await current()
 	assert.deepEqual(await body.evaluate(doc), original)
 
-	// One formula apply updates LaTeX and label, and one undo restores both.
-	await body.getByRole('button', { name: '编辑独立公式', exact: true }).click()
-	await page
-		.getByRole('textbox', { name: '公式 LaTeX', exact: true })
-		.filter({ visible: true })
-		.fill('r = \\frac{A-T}{T}')
-	await page.getByRole('textbox', { name: '公式引用 label', exact: true }).fill('eq:variance')
-	await button('应用公式').filter({ visible: true }).click()
+	// Equation labels use the same field contract, independently of the LaTeX source.
+	const equation = body.locator('[data-equation-id="attainment-equation"]')
+	const equationLabel = equation.getByRole('textbox', { name: '公式引用 label', exact: true })
+	await equationLabel.waitFor({ state: 'visible' })
+	await equationLabel.fill('eq:variance')
+	await equationLabel.press('Enter')
 	await current()
 	assert.match(await notesPanel.locator('.typst-reference').last().textContent(), /eq:variance/)
+	const renamedEquation = await body.evaluate(doc)
+	const equationBefore = original.content.find((node) => node.attrs?.id === 'attainment-equation')
+	assert.equal(
+		renamedEquation.content.find((node) => node.attrs?.id === 'attainment-equation').attrs.latex,
+		equationBefore.attrs.latex,
+	)
 	await bodyPanel.getByRole('button', { name: '撤销', exact: true }).click()
 	await current()
+	assert.deepEqual(await body.evaluate(doc), original)
+
+	// A formula draft renders in its own node without writing the document until committed.
+	const equationButton = equation.getByRole('button', { name: '编辑独立公式', exact: true })
+	const latex = equation.getByRole('textbox', { name: '公式 LaTeX', exact: true })
+	await equationButton.click()
+	await latex.waitFor({ state: 'visible' })
+	assert.equal(await latex.evaluate((element) => element.closest('[popover]')), null)
+	await latex.fill('r = \\frac{A-T}{T}')
+	assert.deepEqual(await body.evaluate(doc), original)
+	assert.equal(await latex.getAttribute('data-typst-unapplied'), 'true')
+	assert.equal(
+		await equation.locator('annotation[encoding="application/x-tex"]').textContent(),
+		'r = \\frac{A-T}{T}',
+	)
+	await latex.press('ControlOrMeta+Enter')
+	await latex.waitFor({ state: 'hidden' })
+	await current()
+	const formulaDocument = await body.evaluate(doc)
+	assert.equal(
+		formulaDocument.content.find((node) => node.attrs?.id === 'attainment-equation').attrs.latex,
+		'r = \\frac{A-T}{T}',
+	)
+	assert.equal(
+		formulaDocument.content.find((node) => node.attrs?.id === 'attainment-equation').attrs.label,
+		'eq:attainment',
+	)
+	await bodyPanel.getByRole('button', { name: '撤销', exact: true }).click()
+	await current()
+	assert.deepEqual(await body.evaluate(doc), original)
+
+	await equationButton.click()
+	await latex.fill('x = 2')
+	await latex.press('Escape')
+	await latex.waitFor({ state: 'hidden' })
+	assert.deepEqual(await body.evaluate(doc), original)
+	assert.equal(await equation.locator('[data-typst-unapplied="true"]').count(), 0)
+
+	// Inline formula editing also stays in the paragraph; blur commits and cancel does not.
+	const inline = body.locator('.typst-inline-math').first()
+	const inlineButton = inline.getByRole('button', { name: '编辑行内公式', exact: true })
+	const inlineLatex = inline.getByRole('textbox', { name: '公式 LaTeX', exact: true })
+	await inlineButton.click()
+	await inlineLatex.waitFor({ state: 'visible' })
+	assert.equal(await inlineLatex.evaluate((element) => element.closest('[popover]')), null)
+	await inlineLatex.fill('r_{net}')
+	await equationLabel.focus()
+	await inlineLatex.waitFor({ state: 'hidden' })
+	await current()
+	const inlineDocument = await body.evaluate(doc)
+	assert.match(JSON.stringify(inlineDocument), /r_\{net\}/)
+	assert.equal(
+		inlineDocument.content.find((node) => node.attrs?.id === 'attainment-equation').attrs.label,
+		'eq:attainment',
+	)
+	await bodyPanel.getByRole('button', { name: '撤销', exact: true }).click()
+	await current()
+	assert.deepEqual(await body.evaluate(doc), original)
+	await inlineButton.click()
+	await inlineLatex.fill('r_{cancelled}')
+	await inline.getByRole('button', { name: '取消', exact: true }).click()
+	await inlineLatex.waitFor({ state: 'hidden' })
+	assert.deepEqual(await body.evaluate(doc), original)
+
+	// Read-only keeps labels locked while formula source remains inspectable.
+	const readOnly = page.getByRole('checkbox', { name: '区域只读', exact: true })
+	await readOnly.check()
+	assert.equal(await label.isEditable(), false)
+	assert.equal(await tableLabel.isEditable(), false)
+	assert.equal(await equationLabel.isEditable(), false)
+	await equationButton.click()
+	await latex.waitFor({ state: 'visible' })
+	assert.equal(await latex.isEditable(), false)
+	assert.equal(await latex.inputValue(), equationBefore.attrs.latex)
+	await equation.getByRole('button', { name: '取消', exact: true }).focus()
+	await page.keyboard.press('Escape')
+	await latex.waitFor({ state: 'hidden' })
+	await readOnly.uncheck()
 	assert.deepEqual(await body.evaluate(doc), original)
 
 	// @ keyboard completion searches the other body file and inserts object identity.
@@ -263,6 +435,56 @@ try {
 	await current()
 	await bodyPanel.getByRole('button', { name: '撤销', exact: true }).click()
 	await current()
+
+	// Source editing remains inside its object in dark mode and on narrow screens.
+	await page.emulateMedia({ colorScheme: 'dark' })
+	await equationButton.click()
+	await latex.fill(
+		`r = ${Array.from({ length: 35 }, (_, index) => `x_{${index + 1}}`).join(' + ')}`,
+	)
+	await bounded()
+	await latex.scrollIntoViewIfNeeded()
+	await page.screenshot({ path: join(output, 'desktop-math-dark.png'), fullPage: true })
+	await page.setViewportSize({ width: 390, height: 844 })
+	await latex.scrollIntoViewIfNeeded()
+	await bounded()
+	assert.equal(
+		await latex.evaluate((element) => {
+			const field = element.getBoundingClientRect()
+			const object = element.closest('.typst-block-math').getBoundingClientRect()
+			return (
+				field.left >= object.left - 1 &&
+				field.right <= object.right + 1 &&
+				field.right <= innerWidth
+			)
+		}),
+		true,
+	)
+	await page.screenshot({ path: join(output, 'mobile-math-dark.png'), fullPage: true })
+	await latex.press('Escape')
+	await inlineButton.click()
+	await inlineLatex.fill('r_{net}')
+	await inlineLatex.scrollIntoViewIfNeeded()
+	await bounded()
+	assert.equal(
+		await inlineLatex.evaluate((element) => {
+			const field = element.getBoundingClientRect()
+			return field.left >= 0 && field.right <= innerWidth
+		}),
+		true,
+	)
+	await page.screenshot({ path: join(output, 'mobile-inline-math-dark.png'), fullPage: true })
+	await inlineLatex.press('Escape')
+	await figure.locator('figcaption').scrollIntoViewIfNeeded()
+	await bounded()
+	await captionRow(figure, label)
+	await page.screenshot({ path: join(output, 'mobile-figure-row-dark.png'), fullPage: true })
+	await tableFigureView.locator('figcaption').scrollIntoViewIfNeeded()
+	await bounded()
+	await captionRow(tableFigureView, tableLabel)
+	await page.screenshot({ path: join(output, 'mobile-table-row-dark.png'), fullPage: true })
+	await page.emulateMedia({ colorScheme: 'light' })
+	await page.setViewportSize({ width: 1440, height: 1000 })
 
 	// Agent Markdown expresses the editable caption, math and stable cross-file reference.
 	await page.getByRole('tab', { name: 'Markdown', exact: true }).click()
