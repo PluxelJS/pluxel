@@ -53,7 +53,8 @@ function labelProblem(editor: Editor, ui: EditorUiContext, id: string, label: st
 
 function updateNode(props: NodeViewProps, attrs: Record<string, unknown>) {
 	const at = props.getPos()
-	if (typeof at !== 'number' || props.editor.state.doc.nodeAt(at) !== props.node) return false
+	// ProseMirror can retain a NodeView for an equal node after replacing document content.
+	if (typeof at !== 'number' || !props.editor.state.doc.nodeAt(at)?.eq(props.node)) return false
 	const transaction = closeHistory(props.editor.state.tr).setNodeMarkup(at, undefined, {
 		...props.node.attrs,
 		...attrs,
@@ -345,12 +346,16 @@ export function TypstMathView(props: NodeViewProps) {
 	)
 }
 
-export function TypstReferenceView({ editor, node, selected }: NodeViewProps) {
+export function TypstReferenceView(props: NodeViewProps) {
+	const { editor, node, selected } = props
 	const ui = useContext(EditorUi)
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
 	const target = targets(editor, ui.regions, ui.region?.id).find(
 		(item) => item.id === node.attrs.target,
 	)
+	const [error, setError] = useState('')
+	const caption =
+		node.attrs.showCaption === true && target?.kind !== 'equation' ? target?.title : ''
 	return (
 		<NodeViewWrapper
 			as="span"
@@ -364,7 +369,53 @@ export function TypstReferenceView({ editor, node, selected }: NodeViewProps) {
 					: `引用目标不存在或尚未设置 label：${node.attrs.target}`
 			}
 		>
-			{target ? `@${target.label}` : `@目标缺失：${node.attrs.target}`}
+			<button
+				type="button"
+				className="typst-reference-trigger"
+				aria-label={target ? `引用 ${target.label}` : `引用目标缺失 ${node.attrs.target}`}
+				aria-expanded={Boolean(selected)}
+				onMouseDown={(event) => event.preventDefault()}
+				onClick={() => {
+					const position = props.getPos()
+					if (typeof position === 'number') editor.chain().focus().setNodeSelection(position).run()
+				}}
+			>
+				{target
+					? `@${target.label}${caption ? `「${caption}」` : ''}`
+					: `@目标缺失：${node.attrs.target}`}
+			</button>
+			{selected && (
+				<select
+					className="typst-reference-display"
+					aria-label="引用显示形式"
+					value={
+						node.attrs.showCaption == null
+							? 'template'
+							: node.attrs.showCaption
+								? 'caption'
+								: 'number'
+					}
+					disabled={!canEdit(editor, ui)}
+					onChange={(event) => {
+						if (!canEdit(editor, ui)) return
+						const value = event.currentTarget.value
+						setError(
+							updateNode(props, { showCaption: value === 'template' ? null : value === 'caption' })
+								? ''
+								: '修改未通过文档校验。',
+						)
+					}}
+				>
+					<option value="template">跟随模板</option>
+					<option value="number">仅编号</option>
+					<option value="caption">编号与题注</option>
+				</select>
+			)}
+			{error && (
+				<span className="typst-object-error" role="alert">
+					{error}
+				</span>
+			)}
 		</NodeViewWrapper>
 	)
 }

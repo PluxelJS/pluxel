@@ -317,6 +317,7 @@ try {
 		.click()
 
 	// Copy via native block UI regenerates outer and nested identities; move preserves them.
+	await figure.scrollIntoViewIfNeeded()
 	await body.evaluate((element) => {
 		const e = element.editor
 		let at
@@ -496,7 +497,10 @@ try {
 		.getByRole('navigation', { name: '正文区域', exact: true })
 		.getByRole('button', { name: '后续行动', exact: true })
 		.click()
-	assert.match(await markdown.inputValue(), /\[ref \{"target":"attainment-equation"\}\]/)
+	assert.match(
+		await markdown.inputValue(),
+		/\[ref \{"target":"attainment-equation","showCaption":null\}\]/,
+	)
 	await bounded()
 	await page.setViewportSize({ width: 390, height: 844 })
 	await bounded()

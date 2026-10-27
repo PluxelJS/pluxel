@@ -1,4 +1,6 @@
 #let data = json("/inputs/editor/data.json")
+#import "_editor/references.typ": reference-caption
+#reference-caption.update(true)
 #set page(paper: "a4", margin: 32pt,
   header: align(right, text(size: 8pt, fill: rgb("#587064"))[#data.company · #data.period]),
   footer: text(size: 8pt, fill: rgb("#587064"))[渠道经营复盘 · #data.analyst #h(1fr) #context counter(page).display("1 / 1", both: true)])

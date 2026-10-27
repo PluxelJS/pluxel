@@ -66,7 +66,9 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 `document-nodes.ts` 持有图表结构、数学扩展、引用身份和复制命令；`reference-targets.ts` 从已准入区域 JSON 生成引用候选。figure 的一个 body（image/table 或已安装的 templateBlock/typstSource）与一个 figureCaption 保持同一原生子树，caption 是 inline 内容；表格继续由官方 TableKit 编辑。独立公式保存 LaTeX 与可选 id/label，行内公式只保存 LaTeX。题注文字、可编辑 label、内部 id 和 Typst 编号分别归属内容、引用名称、对象身份与排版，不合成一个可写字段。
 
-id/label 在整个区域集合内唯一。引用只保存目标 id，生成时解析为当前 label；label 为空的图表/公式不编号，也不是可引用目标。编辑期间允许保留缺失目标以便修复，生成完整报告时返回 `INVALID_REFERENCE`。模板内手写 label/ref 不进入结构化索引，也不随 JSON label 自动改名；即使目标在 JSON 中存在，模板没有 include 该目标时仍由真实 Typst 编译报告缺失。移动保持身份；复制分配新身份并重绑复制子树内的引用，载入时不自动修复坏身份。
+id/label 在整个区域集合内唯一。引用保存目标 id 与可选 `showCaption: null | boolean`，生成时解析为当前 label；`null` 继承模板，布尔值覆盖单条引用。题注从目标读取，不在引用中存副本；没有题注的目标继续显示编号。label 为空的图表/公式不编号，也不是可引用目标。编辑期间允许保留缺失目标以便修复，生成完整报告时返回 `INVALID_REFERENCE`。模板内手写 label/ref 不进入结构化索引，也不随 JSON label 自动改名；即使目标在 JSON 中存在，模板没有 include 该目标时仍由真实 Typst 编译报告缺失。移动保持身份；复制分配新身份并重绑复制子树内的引用，载入时不自动修复坏身份。
+
+生成器始终提供 `_editor/references.typ`，用 Typst `state` 持有模板默认值，避免跨 `#include` 复制词法变量。区域通过带私有标记的 metadata 和局部 show 规则生成原生 `ref`，按三态选择追加当前目标的真实 `figure.caption.body`；其余 metadata 保持原值。附加题注内部将结构化引用降为原生短引用，保留链接、字段与富文本并终止自引用或互引展开。编号、前缀和目标位置仍由 Typst 决定；浏览器编辑器只展示标识与显式题注，不解释任意模板代码。
 
 `document-react.tsx` 为图表、KaTeX 公式和引用提供 NodeView。题注内容继续在原生 contentDOM 编辑；图表与独立公式复用常驻 label 输入，Enter 或失焦校验并提交，Escape 恢复。图表通过 CSS 将类型、原生题注与 label 排在内容下方同一行，保留 schema 中 body、caption 的顺序；外观不再另套设置卡片。公式点击后在原位置展开 LaTeX 编辑框，草稿只更新局部 KaTeX 预览；Mod+Enter、“完成”或失焦提交并收起，Escape 或“取消”恢复。label 与 LaTeX 各自提交一个原生事务，互不覆盖，也不因逐键输入产生撤销步骤。
 

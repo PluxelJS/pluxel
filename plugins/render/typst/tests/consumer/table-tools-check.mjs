@@ -61,7 +61,9 @@ function table(doc) {
 	return doc.content.find((node) => node.type === 'table')
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await page
 		.getByTestId('revision')
 		.filter({ hasText: / · 当前$/ })

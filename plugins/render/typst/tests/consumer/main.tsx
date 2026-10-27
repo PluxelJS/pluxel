@@ -30,8 +30,8 @@ import type { Editor } from '@tiptap/core'
 import { diagnosticPosition, sourceOffset, type ConsumerFailure } from './compile-contract'
 import { ChannelParameters } from './channel-parameters'
 import { TextSelection, NodeSelection } from '@tiptap/pm/state'
-import { fontFamilies, initialDraft, initialSource } from './editor-config.mjs'
-import { examples, getExample } from './report-example.mjs'
+import { fontFamilies } from './editor-config.mjs'
+import { examples, getExample, type ConsumerExample } from './report-example.mjs'
 import '@pluxel/plugin-typst/tiptap/style.css'
 import './style.css'
 
@@ -131,7 +131,20 @@ interface Diagnosis {
 	failure?: ConsumerFailure
 }
 
-function App() {
+async function readExampleSource(example: ConsumerExample) {
+	if (!example.templateUrl) return example.source!
+	const response = await fetch(example.templateUrl)
+	if (!response.ok) throw new Error('示例模板读取失败')
+	return response.text()
+}
+
+function App({
+	initialDraft,
+	initialSource,
+}: {
+	initialDraft: TypstDocumentDraft
+	initialSource: string
+}) {
 	const [draft, setDraft] = useState<TypstDocumentDraft>(
 		structuredClone(initialDraft) as TypstDocumentDraft,
 	)
@@ -238,11 +251,6 @@ function App() {
 		markdownSelectionVersion,
 	])
 
-	useEffect(() => {
-		const id = new URLSearchParams(location.search).get('example')
-		if (id) void loadExample(id)
-	}, [])
-
 	function confirmReplacement() {
 		if (
 			!replacementGuard.current() ||
@@ -285,9 +293,7 @@ function App() {
 		const serial = ++exampleLoad.current
 		try {
 			const next = getExample(id)
-			const response = next.templateUrl ? await fetch(next.templateUrl) : undefined
-			if (response && !response.ok) throw new Error('示例模板读取失败')
-			const template = response ? await response.text() : next.source!
+			const template = await readExampleSource(next)
 			if (serial !== exampleLoad.current || !confirmReplacement()) return
 			setBaseline({
 				kind: 'example',
@@ -771,6 +777,11 @@ function App() {
 					{(pendingData || unappliedInput) && ' · 有未应用输入'}
 				</output>
 			</div>
+			{example.id === 'operations-report' && (
+				<p className="example-guide">
+					经营解读试图表、公式与引用；后续行动试文字与表格样式。右侧可切换 Markdown 对照编辑。
+				</p>
+			)}
 			{saveError && <pre role="alert">{saveError}</pre>}
 			{error && <pre role="alert">{error}</pre>}
 			{diagnosis && (diagnosis.failure || diagnosis.diagnostics.length > 0) && (
@@ -1313,4 +1324,25 @@ function App() {
 	)
 }
 
-createRoot(document.getElementById('root')!).render(<App />)
+const root = createRoot(document.getElementById('root')!)
+root.render(
+	<main>
+		<p role="status">正在载入示例…</p>
+	</main>,
+)
+async function mountExample() {
+	try {
+		const example = getExample(
+			new URLSearchParams(location.search).get('example') ?? 'operations-report',
+		)
+		const source = await readExampleSource(example)
+		root.render(<App initialDraft={example.draft} initialSource={source} />)
+	} catch (cause) {
+		root.render(
+			<main>
+				<p role="alert">无法载入示例：{String(cause)}</p>
+			</main>,
+		)
+	}
+}
+void mountExample()

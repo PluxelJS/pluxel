@@ -65,6 +65,8 @@ try {
 						{ type: 'inlineMath', attrs: { latex: 'x^2' } },
 						text(' see '),
 						{ type: 'reference', attrs: { target: 'table-one' } },
+						{ type: 'reference', attrs: { target: 'table-one', showCaption: true } },
+						{ type: 'reference', attrs: { target: 'table-one', showCaption: false } },
 					),
 				],
 			}
@@ -78,6 +80,9 @@ try {
 				'<span data-type="inline-math" data-latex="x">Lost text</span>',
 				'<span data-typst-reference="table-one">Lost text</span>',
 				'<span data-typst-reference="">@</span>',
+				'<span data-typst-reference="table-one" data-typst-reference-caption="yes">@table-one</span>',
+				'<span data-typst-reference="table-one" data-typst-reference-caption="null">@table-one</span>',
+				'<span data-typst-reference-caption="true">Orphan caption preference</span>',
 				'<figure id="x" label="fig:x"><p>Wrong body</p><figcaption>Caption</figcaption></figure>',
 				'<figcaption>Orphan caption</figcaption>',
 			].map((invalidHtml) => ({

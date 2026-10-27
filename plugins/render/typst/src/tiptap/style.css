@@ -1751,6 +1751,32 @@
 .typst-reference[data-selected] {
 	outline: 2px solid #73aa8d;
 }
+.typst-reference-trigger {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: inherit;
+	cursor: pointer;
+}
+.typst-reference-display {
+	max-width: 100%;
+	margin-left: 6px;
+	padding: 2px 4px;
+	border: 1px solid var(--typst-border);
+	border-radius: 4px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+}
+.typst-reference-trigger:focus-visible,
+.typst-reference-display:focus-visible {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 1px;
+}
 .typst-reference-suggestions {
 	position: fixed;
 	z-index: 1000;

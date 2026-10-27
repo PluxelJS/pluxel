@@ -45,10 +45,14 @@ async function bounded() {
 }
 try {
 	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
-	url.searchParams.set('example', 'operations-report')
+	url.searchParams.delete('example')
 	await page.goto(url.href)
 	await body.locator('[data-block-id="channels-primary"]').waitFor()
 	await current()
+	assert.equal(
+		await page.getByRole('combobox', { name: '示例', exact: true }).inputValue(),
+		'operations-report',
+	)
 	await page.screenshot({ path: join(output, 'desktop-preview.png'), fullPage: true })
 	await tab('Markdown')
 	assert.match(await live.inputValue(), /fontFamily.*fontSize.*color.*backgroundColor/)

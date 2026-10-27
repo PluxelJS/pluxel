@@ -69,7 +69,9 @@ async function clickPoint(point, expected) {
 	)
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await ready()
 	await page.locator('.typst-page').first().waitFor()
 	await body.locator('td').first().click({ button: 'right' })

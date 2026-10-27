@@ -289,6 +289,17 @@ export const TypstReference = Node.create({
 			parseHTML: (element: HTMLElement) => element.getAttribute('data-typst-reference'),
 			renderHTML: (attrs: Record<string, unknown>) => ({ 'data-typst-reference': attrs.target }),
 		},
+		showCaption: {
+			default: null,
+			parseHTML: (element: HTMLElement) => {
+				const value = element.getAttribute('data-typst-reference-caption')
+				return value === null ? null : value === 'true' ? true : value === 'false' ? false : value
+			},
+			renderHTML: (attrs: Record<string, unknown>) =>
+				attrs.showCaption == null
+					? {}
+					: { 'data-typst-reference-caption': String(attrs.showCaption) },
+		},
 	}),
 	parseHTML: () => [{ tag: 'span[data-typst-reference]' }],
 	renderHTML: ({ node, HTMLAttributes }) => [

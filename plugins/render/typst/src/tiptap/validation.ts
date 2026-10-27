@@ -73,7 +73,7 @@ const builtinNodeAttributes: Readonly<Record<string, readonly string[]>> = {
 	figure: ['id', 'label'],
 	blockMath: ['latex', 'id', 'label'],
 	inlineMath: ['latex'],
-	reference: ['target'],
+	reference: ['target', 'showCaption'],
 }
 const builtinMarkAttributes: Readonly<Record<string, readonly string[]>> = {
 	link: ['href', 'target', 'rel', 'class', 'title'],
@@ -528,6 +528,16 @@ function inspectNode(
 			'attrs',
 			'target',
 		])
+	if (
+		value.type === 'reference' &&
+		attrs.showCaption != null &&
+		typeof attrs.showCaption !== 'boolean'
+	)
+		issue(
+			'INVALID_ATTRIBUTE',
+			'Reference showCaption must be true, false or null (template inheritance).',
+			['attrs', 'showCaption'],
+		)
 	if (
 		(value.type === 'paragraph' || value.type === 'heading') &&
 		!validTextAlignment(attrs.textAlign)

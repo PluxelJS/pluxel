@@ -60,7 +60,9 @@ async function clickPoint(point) {
 	await page.mouse.click(screen.x, screen.y)
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await current()
 	await page.getByRole('combobox', { name: '示例', exact: true }).selectOption('operations-report')
 	await chart.waitFor()

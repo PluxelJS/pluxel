@@ -19,7 +19,9 @@ description: 模板负责页面，Tiptap JSON 保存分区域正文，Agent Mark
 
 源码仓库可运行 `mise exec -- vp run @pluxel/plugin-typst#compile`，再运行 `mise exec -- vp run typst` 打开体验页；保存范围及操作见 [consumer 说明](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/README.md#interactive-browser-playground)。
 
-体验页在服务 URL 后加 `/?example=operations-report` 打开图表报告：左侧为“正文 / 数据”，右侧为“Typst 预览 / 原始 Typst / Markdown”三个标签。示例包含文字排版、带题注的图表组件、表格、LaTeX 公式和跨区域引用；Markdown 默认实时显示当前区域或选中块，点击“编辑这份 Markdown”固定候选，经检查接纳后更新正文与排版，并回到同一标签的实时内容。原始 Typst 可编辑外层模板；手机通过“编辑 / 预览”切换左右面板，面板内保留同样的标签。
+体验页默认打开完整图表报告，也可通过 `/?example=operations-report` 直接打开；最小示例保留在示例选择器和 `/?example=consumer-report`。左侧为“正文 / 数据”，右侧为“Typst 预览 / 原始 Typst / Markdown”三个标签。完整示例包含文字排版、带题注的图表组件、表格、LaTeX 公式和跨区域引用；Markdown 默认实时显示当前区域或选中块，点击“编辑这份 Markdown”固定候选，经检查接纳后更新正文与排版，并回到同一标签的实时内容。原始 Typst 可编辑外层模板；手机通过“编辑 / 预览”切换左右面板，面板内保留同样的标签。
+
+“经营解读”包含图表、公式和同一图的三种引用选择；“后续行动”附有文字格式、四种段落对齐、嵌套列表、引用块、自定义提示块、代码，以及各类表格样式、合并单元格和多段单元格。它们都是可直接修改的正文，使用同一条 Markdown 往返和 Typst 编译路径。
 
 ## 入口与安装
 
@@ -219,7 +221,21 @@ label 以字母或数字开头，支持中文等 Unicode 字母，后续可含�
 
 ### 输入 `@` 插入引用
 
-在正文或题注中输入 `@`，使用官方 [Suggestion](https://tiptap.dev/docs/editor/api/utilities/suggestion) 补全。候选按 label、题注/公式源码、类型和区域搜索；上下键选择、Enter 插入、Escape 关闭。节点保存 `{ type: 'reference', attrs: { target: '稳定id' } }`。编辑器显示当前 `@label`，不猜测最终“图 2”“式 (3)”编号。
+在正文或题注中输入 `@`，使用官方 [Suggestion](https://tiptap.dev/docs/editor/api/utilities/suggestion) 补全。候选按 label、题注/公式源码、类型和区域搜索；上下键选择、Enter 插入、Escape 关闭。节点保存目标的稳定 id，默认跟随模板的引用显示形式。
+
+点击正文中的引用，可在原位置选择“跟随模板”“仅编号”或“编号与题注”，修改支持原生撤销。`reference.attrs.showCaption` 为 `null`（或省略）时继承模板，为 `false` 时只显示编号，为 `true` 时在编号后附上目标图表的当前题注，例如“图 2「渠道收入对比」”。题注不复制到引用节点；修改原图题或表题后，引用一起更新。没有题注的目标和公式保留编号。
+
+编辑器显示当前 `@label`；明确选择显示题注时附上当前题注文字。模板决定的实际编号和继承后的完整外观以 Typst 预览为准，编辑器不解析任意模板代码来猜测结果。预览中的编号和附带题注均可点击跳转到目标。
+
+模板可以设置正文引用的默认形式；没有设置时仅显示编号：
+
+```typst
+#import "/_editor/references.typ": reference-caption
+#reference-caption.update(true)
+#include "/_editor/regions/analysis.typ"
+```
+
+`update(false)` 恢复仅编号，从设置位置起生效；单条引用的显式选择优先于模板默认。生成器始终提供这个小型运行时文件，因此暂时没有引用的正文也能使用同一模板。附带题注中的嵌套引用仅显示编号，避免图表自引用或互相引用导致无限展开。这个设置作用于结构化正文引用；模板手写的 `@label` 仍由原生 Typst `ref` 规则控制。
 
 跨区域补全需要 `TypstRegionEditor.regions` 提供整份报告的当前 JSON。独立宿主可用 `collectTypstReferenceTargets(regions, config?)` 取得 `{ id, label, kind, regionId, title, position }`；输入应先准入，`position` 是该区域的原生位置，不是跨文件全局坐标。只校验单一区域不能判断另一份文件的目标是否存在；`generateTypstRegions` 针对完整集合解析引用并检查重复 id / label 和缺失目标。
 
@@ -440,6 +456,10 @@ serializer 使用 `context.children(node)` 复用子节点校验和序列化，`
 ::::
 
 详细数据见 [ref {"target":"quarterly-table"}]。
+
+带题注的引用：[ref {"target":"quarterly-table","showCaption":true}]。
+
+仅编号的引用：[ref {"target":"quarterly-table","showCaption":false}]。
 ```
 
 公式使用官方 `$...$`、`$$...$$` LaTeX Markdown 语法。独立公式的 id / label 放在单块属性包装中：
@@ -456,7 +476,7 @@ $$
 计算方法见 [ref {"target":"growth-equation"}]。
 ```
 
-id 是引用关系的依据，label 是可改的 Typst 名称；编辑现有对象时保持 id。新建图表或独立公式时，为它分配整份报告内唯一的 id / label，并让 `[ref]` 使用 id。题注和 label 分别编辑，不把“图 3”写死到题注。复杂合并表格、无法用行内语法精确保留的题注等仍可能使用最小原生子树表示；不要清洗掉导出器保留的标记。普通 Markdown 没有这些图表身份与引用约定，仍需检查 `lossless`，不能因为公式本身有 `$` 语法就宣称整份文档无损。
+id 是引用关系的依据，label 是可改的 Typst 名称；编辑现有对象时保持 id。新建图表或独立公式时，为它分配整份报告内唯一的 id / label，并让 `[ref]` 使用 id。省略 `showCaption` 或设为 `null` 即恢复跟随模板；不要把题注副本写入引用属性。题注和 label 分别编辑，不把“图 3”写死到题注。复杂合并表格、无法用行内语法精确保留的题注等仍可能使用最小原生子树表示；不要清洗掉导出器保留的标记。普通 Markdown 没有这些图表身份与引用约定，仍需检查 `lossless`，不能因为公式本身有 `$` 语法就宣称整份文档无损。
 
 模板实例、可执行源码、合并单元格及其他不能通过上述语法往返的子树，使用完整原生节点块。例如以下组件仍引用宿主安装的 `summary` 模板：
 

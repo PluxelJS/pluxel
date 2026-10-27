@@ -66,7 +66,9 @@ async function titles() {
 		.evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')))
 }
 try {
-	await page.goto(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	const url = new URL(process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
+	url.searchParams.set('example', 'consumer-report')
+	await page.goto(url.href)
 	await current()
 	await showRegion('备注')
 	const original = await snapshot()
