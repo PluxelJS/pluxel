@@ -230,11 +230,40 @@ import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
 const renderer = createTypstRenderer()
 await renderer.init({ getModule: () => rendererWasmUrl })
 
-await using view = new TypstPreviewView({ container, renderer, sessionId })
+await using view = new TypstPreviewView({
+	container,
+	scrollContainer: viewport,
+	renderer,
+	sessionId,
+})
 await view.show(packet) // true：已展示；false：过期或不属于此 session
+view.setZoom('fit-width') // 默认适合宽度；也支持 'fit-page'、1（100%）、1.5（150%）
 ```
 
 packet 来自 `compiled.preview`。View 在离屏渲染完成后才替换容器；失败保留旧画面，应用展示错误。切换服务端 session 时先 await 旧 View 的 dispose，再在同一容器创建新的 View。关闭会等待渲染结束并清空容器。浏览器构建只导入 `/browser`，不要导入服务端根入口。
+
+`state.zoom` 保存当前 `TypstPreviewZoom`。数字是固定比例：`1` 按每 72 Typst pt 对应 96 CSS px 显示；适合宽度按视口扣除 padding 后的宽度计算，适合整页按整份文档最大的页宽与页高计算，不因滚动章节而改变比例。`setZoom` 可在首次 `show` 前调用；非法值、非正数或非有限数返回 `false` 且不改状态，关闭后也返回 `false`。View 在切换比例、视口 resize 时保留当前页内阅读位置；超出滚动边界时由浏览器限制。隐藏视口不使用零尺寸重新排版，重显后恢复；宿主在主动显示或挂载容器后可调用 `refresh()`。
+
+View 管理根 SVG 的宽度和比例，宿主只负责滚动区域与居中，例如：
+
+```css
+.preview-scroll {
+	overflow: auto;
+	scrollbar-gutter: stable;
+	min-width: 0;
+	min-height: 0;
+	padding: 12px;
+}
+.typst-pages {
+	width: max-content;
+	min-width: 100%;
+}
+.typst-pages .typst-doc {
+	margin-inline: auto;
+}
+```
+
+这里 `viewport` 是 `.preview-scroll`，`container` 是 `.typst-pages`。不要再给 SVG 设置 `width: 100%`、`max-width: 100%` 或用 transform 另做缩放。宿主读取 `state.currentPage` / `currentHeading` 和 `onStateChange` 更新页码与目录；目录自身的滚动容器由宿主把当前项滚到可见，不能因此滚动文档视口。
 
 `packet.navigation` 与 Vector/PDF 属于同一次编译：`points` 包含工作区相对路径、以 1 开始的 UTF-16 源码行列（结束位置不包含在范围内）、页码，以及页面局部坐标的矩形；`outline` 包含标题、层级、页码和坐标；`pages` 包含每页的 `page`、`width`、`height`，页码以 1 开始，尺寸单位为 pt。坐标单位为 pt。生成的 `/inputs/` 和根目录外文件不作为源码跳转目标。
 

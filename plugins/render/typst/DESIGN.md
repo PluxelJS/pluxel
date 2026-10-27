@@ -54,7 +54,7 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 ## 前端子入口与区域生成
 
-`/browser` 只依赖纯 preview/diagnostic 契约，拥有命中算法、SVG CTM、普通点击过滤、页面/目录跟随、滚动与高亮。固定 0.7.0 SVG 的内部引用携带 `handleTypstLocation(this, page, x, y)`；View 只解析这组数值，移除内联处理器并由实例自己的滚动容器完成跳转，不执行 renderer 脚本、不安装全局回调。链接优先于源码命中，键盘激活使用相同的当前修订检查；外部链接保留浏览器行为。View 只持有调用方提供的 renderer；销毁 View 不关闭共享 renderer。同步状态回调可以销毁 View，后续导航发布、高亮与计时器必须在同一调用中停止。宿主拥有源文件与客户端草稿当前性、可见 pane 选择及异步打开后的复核，不向 View 注入整个应用 controller。
+`/browser` 只依赖纯 preview/diagnostic 契约，拥有命中算法、SVG CTM、普通点击过滤、页面/目录跟随、滚动与高亮。固定 0.7.0 SVG 的内部引用携带 `handleTypstLocation(this, page, x, y)`；View 只解析这组数值，移除内联处理器并由实例自己的滚动容器完成跳转，不执行 renderer 脚本、不安装全局回调。链接优先于源码命中，键盘激活使用相同的当前修订检查；外部链接保留浏览器行为。View 只持有调用方提供的 renderer；销毁 View 不关闭共享 renderer。同步状态回调可以销毁 View，后续导航发布、高亮与计时器必须在同一调用中停止。宿主拥有源文件与客户端草稿当前性、可见 pane 选择及异步打开后的复核，不向 View 注入整个应用 controller。缩放也由 View 统一维护：只设置根 SVG 的尺寸，通过页内坐标保存阅读位置，视口 resize 或隐藏后重显时恢复。宿主提供滚动容器、目录与页码控件，不再自行按百分比拉伸 SVG；缩放单位与容器 CSS 约束见[浏览器预览](../../../docs/plugins/rendering/typst.md#浏览器预览)。
 
 `/tiptap` 无 DOM 导入，使用官方 Tiptap 3 schema 与 MarkdownManager；没有第二份正文 AST。`validation.ts` 先检查 raw JSON/属性/表格，再让 schema 检查内容结构；原始输入不能依赖规范化丢弃内容后通过校验。`serialize.ts` 显式覆盖持久化节点与 Mark，生成 `_editor/regions/*.typ`、`/inputs/editor/data.json` 与同客户端修订映射。字段路径按编译时的实际父值解释数组或字典访问，保证纯数据变化无需重新生成模板；重复表头不能覆盖正文单元格。业务扩展有属性时必须提供值 validator；无 serializer 不接纳。HTML 输入先检查原始标签和属性，避免浏览器修复或 ProseMirror 规范化导致静默丢内容。
 

@@ -34,6 +34,7 @@ import { fontFamilies } from './editor-config.mjs'
 import { examples, getExample, type ConsumerExample } from './report-example.mjs'
 import '@pluxel/plugin-typst/tiptap/style.css'
 import './style.css'
+import { PreviewPageControl, PreviewOutline } from './preview-controls'
 
 const consumerSlashCommands: readonly TypstSlashCommand[] = [
 	{
@@ -165,6 +166,7 @@ function App({
 		pageCount: 0,
 		currentPage: 1,
 		currentHeading: -1,
+		zoom: 'fit-width',
 	})
 	const [candidateScope, setCandidateScope] = useState<'region' | 'blocks'>('region')
 	const [candidateTarget, setCandidateTarget] = useState<
@@ -188,7 +190,10 @@ function App({
 	const [importResult, setImportResult] = useState('')
 	const [error, setError] = useState('')
 	const [busy, setBusy] = useState(false)
-	const [zoom, setZoom] = useState(1)
+	const [outlineOpen, setOutlineOpen] = useState(
+		() => window.matchMedia('(min-width: 1100px)').matches,
+	)
+	const outlineToggle = useRef<HTMLButtonElement>(null)
 	const [navigation, setNavigation] = useState('')
 	const container = useRef<HTMLDivElement>(null)
 	const workspace = useRef<HTMLDivElement>(null)
@@ -710,105 +715,107 @@ function App({
 			onCompositionStartCapture={() => setComposing(true)}
 			onCompositionEndCapture={() => setComposing(false)}
 		>
-			<header>
-				<div>
-					<p className="eyebrow">PLUXEL / TYPST</p>
-					<h1>编辑与排版体验</h1>
-				</div>
-				<span>块前操作柄调整结构 · 文字右键设置格式 · 正文与预览双向定位</span>
-			</header>
-			<div className="host-actions">
-				<label>
-					示例{' '}
-					<select
-						aria-label="示例"
-						value={example.id}
-						onChange={(event) => void loadExample(event.currentTarget.value)}
-					>
-						{examples.map((item) => (
-							<option key={item.id} value={item.id}>
-								{item.label}
-							</option>
-						))}
-					</select>
-				</label>
-				{example.id === 'consumer-report' && (
+			<header className="workspace-header">
+				<h1>编辑与排版</h1>
+				<div className="host-actions">
 					<label>
-						客户{' '}
+						示例{' '}
 						<select
-							aria-label="客户"
-							value={(draft.data.customer as { name: string }).name}
-							onChange={(event) => {
-								const data = { customer: { name: event.target.value } }
-								setDataText(JSON.stringify(data, null, 2))
-								change((previous) => ({ ...previous, data }))
-							}}
+							aria-label="示例"
+							value={example.id}
+							onChange={(event) => void loadExample(event.currentTarget.value)}
 						>
-							<option>Acme</option>
-							<option>Beta</option>
+							{examples.map((item) => (
+								<option key={item.id} value={item.id}>
+									{item.label}
+								</option>
+							))}
 						</select>
 					</label>
-				)}
-				<label>
-					<input
-						type="checkbox"
-						checked={!editable}
-						onChange={(event) => setEditable(!event.currentTarget.checked)}
-					/>
-					区域只读
-				</label>
-				<button type="button" onClick={save}>
-					保存
-				</button>
-				<button type="button" onClick={reopen}>
-					重开
-				</button>
-				<button
-					type="button"
-					disabled={!previewCurrent}
-					onClick={async () => {
-						try {
-							const response = await fetch('/pdf', {
-								method: 'POST',
-								headers: { 'Content-Type': 'application/json', 'X-Typst-Client': clientId },
-								body: JSON.stringify({ revision: compiled!.preview.revision }),
-							})
-							if (!response.ok) {
-								const failure = await response.json()
-								throw new Error(failure.message)
+					{example.id === 'consumer-report' && (
+						<label>
+							客户{' '}
+							<select
+								aria-label="客户"
+								value={(draft.data.customer as { name: string }).name}
+								onChange={(event) => {
+									const data = { customer: { name: event.target.value } }
+									setDataText(JSON.stringify(data, null, 2))
+									change((previous) => ({ ...previous, data }))
+								}}
+							>
+								<option>Acme</option>
+								<option>Beta</option>
+							</select>
+						</label>
+					)}
+					<label>
+						<input
+							type="checkbox"
+							checked={!editable}
+							onChange={(event) => setEditable(!event.currentTarget.checked)}
+						/>
+						区域只读
+					</label>
+					<button type="button" onClick={save}>
+						保存
+					</button>
+					<button type="button" onClick={reopen}>
+						重开
+					</button>
+					<button
+						type="button"
+						disabled={!previewCurrent}
+						aria-label="导出当前 PDF"
+						onClick={async () => {
+							try {
+								const response = await fetch('/pdf', {
+									method: 'POST',
+									headers: { 'Content-Type': 'application/json', 'X-Typst-Client': clientId },
+									body: JSON.stringify({ revision: compiled!.preview.revision }),
+								})
+								if (!response.ok) {
+									const failure = await response.json()
+									throw new Error(failure.message)
+								}
+								const blob = await response.blob()
+								const url = URL.createObjectURL(blob)
+								const anchor = document.createElement('a')
+								anchor.href = url
+								anchor.download = 'consumer-report.pdf'
+								anchor.click()
+								URL.revokeObjectURL(url)
+							} catch (cause) {
+								setError(String(cause))
 							}
-							const blob = await response.blob()
-							const url = URL.createObjectURL(blob)
-							const anchor = document.createElement('a')
-							anchor.href = url
-							anchor.download = 'consumer-report.pdf'
-							anchor.click()
-							URL.revokeObjectURL(url)
-						} catch (cause) {
-							setError(String(cause))
-						}
-					}}
-				>
-					导出当前 PDF
-				</button>
-				<output data-testid="revision">
-					草稿 {revision} / 预览 {displayedRevision ?? '—'}
-					{busy ? ' · 编译中' : previewCurrent ? ' · 当前' : ' · 过期'}
-				</output>
-				<output data-testid="save-state" title="单一保存槽；仅保存到当前浏览器">
-					{saveError
-						? '保存失败'
-						: baseline.kind === 'saved' && !dirty
-							? '已保存到本浏览器'
-							: '未保存'}
-					{(pendingData || unappliedInput) && ' · 有未应用输入'}
-				</output>
-			</div>
-			{example.id === 'operations-report' && (
-				<p className="example-guide">
-					经营解读试图表、公式与引用；后续行动试文字与表格样式。右侧可切换 Markdown 对照编辑。
-				</p>
-			)}
+						}}
+					>
+						导出 PDF
+					</button>
+					<details className="workspace-help">
+						<summary>说明</summary>
+						<div>
+							<p>块前操作柄调整结构；文字右键设置格式；正文与预览可以双向定位。</p>
+							<p>
+								经营解读演示图表、公式与引用；后续行动演示文字与表格样式。右侧 Markdown 可对照编辑。
+							</p>
+							<p>切换标签保留编辑内容。保存使用当前浏览器的单一槽位。</p>
+						</div>
+					</details>
+				</div>
+				<nav className="pane-switch" aria-label="编辑与预览">
+					<button type="button" aria-pressed={pane === 'editor'} onClick={() => setPane('editor')}>
+						编辑
+					</button>
+					<button
+						type="button"
+						aria-pressed={pane === 'preview'}
+						onClick={() => setPane('preview')}
+					>
+						预览
+					</button>
+				</nav>
+			</header>
 			{saveError && <pre role="alert">{saveError}</pre>}
 			{error && <pre role="alert">{error}</pre>}
 			{diagnosis && (diagnosis.failure || diagnosis.diagnostics.length > 0) && (
@@ -863,30 +870,17 @@ function App({
 					)}
 				</details>
 			)}
-			<nav className="pane-switch" aria-label="编辑与预览">
-				<button type="button" aria-pressed={pane === 'editor'} onClick={() => setPane('editor')}>
-					编辑
-				</button>
-				<button type="button" aria-pressed={pane === 'preview'} onClick={() => setPane('preview')}>
-					预览
-				</button>
-			</nav>
+
 			<div className="columns" data-pane={pane} ref={workspace}>
 				<section className="editing">
-					<TabBar
-						label="编辑工作区"
-						tabs={workspaceTabs}
-						value={workspaceTab}
-						onChange={setWorkspaceTab}
-					/>
-					<div
-						id="panel-editor"
-						role="tabpanel"
-						aria-labelledby="tab-editor"
-						hidden={workspaceTab !== 'editor'}
-						className="workspace-panel editor-panel"
-					>
-						<nav aria-label="正文区域">
+					<div className="pane-header">
+						<TabBar
+							label="编辑工作区"
+							tabs={workspaceTabs}
+							value={workspaceTab}
+							onChange={setWorkspaceTab}
+						/>
+						<nav className="region-tabs" aria-label="正文区域" hidden={workspaceTab !== 'editor'}>
 							{config.regions.map((item) => (
 								<button
 									type="button"
@@ -898,6 +892,14 @@ function App({
 								</button>
 							))}
 						</nav>
+					</div>
+					<div
+						id="panel-editor"
+						role="tabpanel"
+						aria-labelledby="tab-editor"
+						hidden={workspaceTab !== 'editor'}
+						className="workspace-panel editor-panel"
+					>
 						{config.regions.map((item) => (
 							<div
 								key={`${epoch}:${item.id}`}
@@ -1028,7 +1030,49 @@ function App({
 					</div>
 				</section>
 				<section className="output-pane">
-					<TabBar label="文档视图" tabs={outputTabs} value={outputTab} onChange={setOutputTab} />
+					<div className="pane-header output-header">
+						<TabBar label="文档视图" tabs={outputTabs} value={outputTab} onChange={setOutputTab} />
+						<div
+							className="preview-actions"
+							hidden={outputTab !== 'preview'}
+							role="toolbar"
+							aria-label="预览导航"
+						>
+							<button
+								ref={outlineToggle}
+								type="button"
+								title="展开或收起目录"
+								aria-label="目录"
+								aria-controls="preview-outline"
+								aria-expanded={outlineOpen}
+								disabled={!viewState.preview?.navigation.outline.length}
+								onClick={() => setOutlineOpen(!outlineOpen)}
+							>
+								☰
+							</button>
+							<PreviewPageControl state={viewState} view={view.current} />
+							<select
+								aria-label="缩放"
+								title="预览缩放"
+								value={viewState.zoom}
+								disabled={!viewState.pageCount}
+								onChange={(event) => {
+									const value = event.currentTarget.value
+									view.current?.setZoom(
+										value === 'fit-width' || value === 'fit-page' ? value : Number(value),
+									)
+								}}
+							>
+								<option value="fit-width">适合宽度</option>
+								<option value="fit-page">适合整页</option>
+								{[0.5, 0.75, 1, 1.25, 1.5, 2].map((scale) => (
+									<option key={scale} value={scale}>
+										{scale * 100}%
+									</option>
+								))}
+							</select>
+						</div>
+					</div>
 					<div
 						id="panel-preview"
 						role="tabpanel"
@@ -1036,49 +1080,19 @@ function App({
 						hidden={outputTab !== 'preview'}
 						className="workspace-panel preview-pane"
 					>
-						<h2>Typst 排版预览</h2>
-						<div className="preview-actions">
-							<button
-								type="button"
-								onClick={() => view.current?.jumpToPage(viewState.currentPage - 1)}
-							>
-								上一页
-							</button>
-							<output data-testid="page">
-								{viewState.currentPage} / {viewState.pageCount}
-							</output>
-							<button
-								type="button"
-								onClick={() => view.current?.jumpToPage(viewState.currentPage + 1)}
-							>
-								下一页
-							</button>
-							<label>
-								缩放{' '}
-								<select
-									aria-label="缩放"
-									value={zoom}
-									onChange={(event) => setZoom(Number(event.target.value))}
-								>
-									<option value={1}>100%</option>
-									<option value={1.5}>150%</option>
-								</select>
-							</label>
-						</div>
-						<nav aria-label="目录">
-							{viewState.preview?.navigation.outline.map((item, index) => (
-								<button
-									type="button"
-									key={index}
-									aria-current={viewState.currentHeading === index ? 'location' : undefined}
-									onClick={() => view.current?.jumpToPosition(item)}
-								>
-									{item.title}
-								</button>
-							))}
-						</nav>
-						<div className="preview-scroll" ref={viewport}>
-							<div ref={container} className="typst-pages" style={{ width: `${zoom * 100}%` }} />
+						<div className="preview-body">
+							<PreviewOutline
+								state={viewState}
+								view={view.current}
+								open={outlineOpen}
+								onClose={() => {
+									setOutlineOpen(false)
+									outlineToggle.current?.focus()
+								}}
+							/>
+							<div className="preview-scroll" ref={viewport}>
+								<div ref={container} className="typst-pages" />
+							</div>
 						</div>
 					</div>
 					<div
@@ -1350,10 +1364,24 @@ function App({
 				</section>
 			</div>
 			<footer className="workspace-status">
-				<span role="status">
-					{message || '切换工作标签保留编辑内容；保存使用本浏览器的单一槽位。'}
+				<output data-testid="revision">
+					草稿 {revision} / 预览 {displayedRevision ?? '—'}
+					{busy ? ' · 编译中' : previewCurrent ? ' · 当前' : ' · 过期'}
+				</output>
+				<output data-testid="save-state" title="单一保存槽；仅保存到当前浏览器">
+					{saveError
+						? '保存失败'
+						: baseline.kind === 'saved' && !dirty
+							? '已保存到本浏览器'
+							: '未保存'}
+					{(pendingData || unappliedInput) && ' · 有未应用输入'}
+				</output>
+				<span className="action-status" role="status" title={message}>
+					{message}
 				</span>
-				<output data-testid="navigation">{navigation}</output>
+				<output className="sr-only" data-testid="navigation">
+					{navigation}
+				</output>
 			</footer>
 		</main>
 	)

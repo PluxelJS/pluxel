@@ -19,6 +19,10 @@ The layout has two panes:
 - Right: **Typst 预览 / 原始 Typst / Markdown**. “原始 Typst” edits the outer template. Markdown follows the current region or selected complete blocks until an edit is captured.
 - On phones: **编辑 / 预览** switches panes. Hidden panes and tabs remain mounted, preserving their editors and history.
 
+The example selector and save/export actions share one compact header. Workspace tabs and body-region tabs share a row; preview tabs, page navigation and zoom share a row when there is room. Usage hints live under **说明**, and draft/save status stays in the footer.
+
+The preview has a collapsible vertical **目录** with chapter page numbers. Its active entry follows document scrolling inside the outline itself; long titles are truncated with the full title available on hover. Narrow panes open the outline over the preview. Enter a page number and press Enter or leave the field to jump; Escape cancels the draft, and scrolling does not overwrite a focused draft. **适合宽度** is the default, **适合整页** fits a whole page, and percentage options use fixed print scale. Zoom and pane resizing preserve the current page-local reading position within scroll limits. The [browser preview contract](../../../../../docs/plugins/rendering/typst.md#浏览器预览) defines scale units and SVG ownership.
+
 The template controls the page, fixed clauses, chapter composition, indentation and spacing. It includes generated region files with native Typst `#include`. Body JSON remains authoritative; Markdown is an editable projection, and generated `.typ` files are compiler inputs. There is no Markdown disk mirror or arbitrary Typst-to-Tiptap conversion.
 
 ## External data and chart-report example
@@ -82,6 +86,7 @@ Existing focused drivers under this directory cover the following workflows. A d
 | `reference-navigation-check.mjs`                                 | Native cross-page figure/table/equation links, keyboard and zoom, stale preview rejection, drag and modifier clicks                             |
 | `reference-display-check.mjs`                                    | Template reference defaults, per-reference display and undo, caption updates, Markdown roundtrip and caption-link navigation                    |
 | `source-navigation-check.mjs`                                    | Distant/zoomed navigation, hidden tabs, dynamic layout, rapid targets, original captions, formula/reference atoms (`--atoms-only` available)    |
+| `preview-controls-check.mjs`                                     | Real 35-page document: outline following/long titles, page drafts, zoom/resize reading position, desktop/mobile space and overflow              |
 | `shortcut-check.mjs`                                             | Platform-specific hints, real formatting/undo/menu keys, multi-region links, clear marks, input/IME/read-only guards and mobile menus           |
 | `document-clipboard-check.mjs`                                   | Real browser HTML admission for figures, captions, math and references; rejects malformed or unregistered structures                            |
 | `report-example-check.mjs`, `refactor-cases.mjs`                 | External inputs, data-only changes, draft replacement, failure/recovery, late responses, current PDF and mobile panes                           |

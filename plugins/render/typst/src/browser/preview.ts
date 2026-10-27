@@ -10,6 +10,9 @@ const locationHandler = new RegExp(
 )
 type LinkPosition = { page: number; x: number; y: number }
 
+/** Numeric ratios use CSS print units: 1 means 100%, or 96 CSS pixels per 72 Typst points. */
+export type TypstPreviewZoom = 'fit-width' | 'fit-page' | number
+
 export type {
 	TypstPreview,
 	TypstNavigation,
@@ -23,6 +26,8 @@ export { pointAtPreview, pointAtSource, type SourcePosition } from './navigation
 /** A read-only snapshot. The preview is the exact packet most recently displayed. */
 export interface TypstPreviewState {
 	readonly preview?: TypstPreview
+	/** Defaults to fit-width. Fit-page uses the largest page width and height in the document. */
+	readonly zoom: TypstPreviewZoom
 	readonly pageCount: number
 	readonly currentPage: number
 	/** Index into preview.navigation.outline, or -1 before the first heading. */
@@ -59,8 +64,13 @@ export class TypstPreviewView implements AsyncDisposable {
 	private readonly isNavigationCurrent?: TypstPreviewViewOptions['isNavigationCurrent']
 	private readonly onNavigate?: TypstPreviewViewOptions['onNavigate']
 	private pages: SVGGraphicsElement[] = []
+	private svg?: SVGSVGElement
+	private readingAnchor?: LinkPosition
+	private layout?: { width: number; height: number; svgWidth: number }
+	private updatingLayout = false
 	private links = new WeakMap<Element, LinkPosition | null>()
 	private currentState: TypstPreviewState = Object.freeze({
+		zoom: 'fit-width',
 		pageCount: 0,
 		currentPage: 1,
 		currentHeading: -1,
@@ -108,6 +118,24 @@ export class TypstPreviewView implements AsyncDisposable {
 		return this.currentState
 	}
 
+	/** Set the scale policy, even before showing a document. Invalid values leave state unchanged. */
+	setZoom(zoom: TypstPreviewZoom): boolean {
+		if (
+			this.closed ||
+			(zoom !== 'fit-width' &&
+				zoom !== 'fit-page' &&
+				(typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0))
+		)
+			return false
+		if (zoom === this.currentState.zoom) return true
+		this.readingAnchor = this.captureAnchor(this.currentState.currentPage) ?? this.readingAnchor
+		this.currentState = Object.freeze({ ...this.currentState, zoom })
+		this.layout = undefined
+		if (this.currentState.preview) this.refresh()
+		else this.publishState(this.currentState.currentPage, this.currentState.currentHeading)
+		return !this.closed
+	}
+
 	/**
 	 * Resolves true after displaying this revision; false for a stale or foreign packet.
 	 * Renderer errors reject and preserve the previous picture. Retry is allowed.
@@ -141,8 +169,11 @@ export class TypstPreviewView implements AsyncDisposable {
 				})
 			})
 			if (!current()) return false
+			this.readingAnchor = this.captureAnchor(this.currentState.currentPage) ?? this.readingAnchor
 			this.clearHighlight()
 			this.container.innerHTML = svg
+			this.svg = this.container.querySelector<SVGSVGElement>('svg.typst-doc') ?? undefined
+			this.layout = undefined
 			this.pages = [...this.container.querySelectorAll<SVGGraphicsElement>('.typst-page')]
 			this.links = new WeakMap()
 			for (const link of this.container.querySelectorAll<SVGAElement>('a[onclick]')) {
@@ -165,6 +196,7 @@ export class TypstPreviewView implements AsyncDisposable {
 			this.displayedRevision = packet.revision
 			this.currentState = Object.freeze({
 				preview: packet,
+				zoom: this.currentState.zoom,
 				pageCount: this.pages.length,
 				currentPage: 1,
 				currentHeading: -1,
@@ -178,7 +210,11 @@ export class TypstPreviewView implements AsyncDisposable {
 
 	/** Recompute page/outline tracking after attaching a detached container or changing layout. */
 	refresh = (): void => {
-		if (this.closed || !this.currentState.preview) return
+		if (this.closed || !this.currentState.preview || this.updatingLayout) return
+		if (!this.updateLayout()) {
+			this.publishState(this.currentState.currentPage, this.currentState.currentHeading)
+			return
+		}
 		const viewport = this.scrollContainer
 		const threshold =
 			viewport.getBoundingClientRect().top + Math.min(120, viewport.clientHeight / 3)
@@ -187,19 +223,101 @@ export class TypstPreviewView implements AsyncDisposable {
 			if (this.pageTop(page) <= threshold) currentPage = index + 1
 		}
 		// A short final page may fit below the tracking threshold at maximum scroll.
-		if (
+		const atBottom =
 			this.pages.length > 0 &&
 			viewport.scrollHeight > viewport.clientHeight &&
 			viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 2
-		)
-			currentPage = this.pages.length
+		if (atBottom) currentPage = this.pages.length
+		const headingThreshold = atBottom
+			? viewport.getBoundingClientRect().top + viewport.clientHeight
+			: threshold
 		let currentHeading = -1
 		for (const [index, item] of this.currentState.preview.navigation.outline.entries()) {
 			const matrix = this.pages[item.page - 1]?.getScreenCTM()
-			if (matrix && matrix.b * item.x + matrix.d * item.y + matrix.f <= threshold)
+			if (matrix && matrix.b * item.x + matrix.d * item.y + matrix.f <= headingThreshold)
 				currentHeading = index
 		}
+		this.readingAnchor = this.captureAnchor(currentPage) ?? this.readingAnchor
 		this.publishState(currentPage, currentHeading)
+	}
+
+	private captureAnchor(page: number): LinkPosition | undefined {
+		const viewport = this.scrollContainer
+		if (viewport.clientWidth <= 0 || viewport.clientHeight <= 0) return undefined
+		const inverse = this.pages[page - 1]?.getScreenCTM()?.inverse()
+		if (!inverse) return undefined
+		const bounds = viewport.getBoundingClientRect()
+		const x = bounds.left + viewport.clientWidth / 2
+		const y = bounds.top + Math.min(120, viewport.clientHeight / 3)
+		return {
+			page,
+			x: inverse.a * x + inverse.c * y + inverse.e,
+			y: inverse.b * x + inverse.d * y + inverse.f,
+		}
+	}
+
+	private updateLayout(): boolean {
+		const svg = this.svg
+		const viewport = this.scrollContainer
+		if (viewport.clientWidth <= 0 || viewport.clientHeight <= 0) return false
+		if (!svg) return true
+		const style = viewport.ownerDocument.defaultView?.getComputedStyle(viewport)
+		const padding = (value?: string) => Number.parseFloat(value ?? '0') || 0
+		const width = viewport.clientWidth - padding(style?.paddingLeft) - padding(style?.paddingRight)
+		const height =
+			viewport.clientHeight - padding(style?.paddingTop) - padding(style?.paddingBottom)
+		const documentWidth = svg.viewBox.baseVal.width
+		if (width <= 0 || height <= 0 || documentWidth <= 0) return false
+		const maxPageHeight = Math.max(
+			...this.pages.map((page) => Number(page.getAttribute('data-page-height'))),
+		)
+		const zoom = this.currentState.zoom
+		const scale =
+			typeof zoom === 'number'
+				? (zoom * 96) / 72
+				: zoom === 'fit-page' && maxPageHeight > 0
+					? Math.min(width / documentWidth, height / maxPageHeight)
+					: width / documentWidth
+		const svgWidth = documentWidth * scale
+		if (
+			this.layout?.width === width &&
+			this.layout.height === height &&
+			this.layout.svgWidth === svgWidth
+		)
+			return true
+		this.updatingLayout = true
+		try {
+			this.layout = { width, height, svgWidth }
+			svg.style.width = `${svgWidth}px`
+			svg.style.maxWidth = 'none'
+			svg.style.height = 'auto'
+			svg.style.display = 'block'
+			const anchor = this.readingAnchor
+			const matrix =
+				anchor && this.pages[Math.min(anchor.page, this.pages.length) - 1]?.getScreenCTM()
+			if (anchor && matrix) {
+				const bounds = viewport.getBoundingClientRect()
+				viewport.scrollTo({
+					left:
+						viewport.scrollLeft +
+						matrix.a * anchor.x +
+						matrix.c * anchor.y +
+						matrix.e -
+						bounds.left -
+						viewport.clientWidth / 2,
+					top:
+						viewport.scrollTop +
+						matrix.b * anchor.x +
+						matrix.d * anchor.y +
+						matrix.f -
+						bounds.top -
+						Math.min(120, viewport.clientHeight / 3),
+				})
+			}
+		} finally {
+			this.updatingLayout = false
+		}
+		return true
 	}
 
 	/** Scroll to a one-based page, clamping to the displayed page range. */
@@ -396,8 +514,16 @@ export class TypstPreviewView implements AsyncDisposable {
 		this.closing = this.tail.then(() => {
 			this.container.replaceChildren()
 			this.pages = []
+			this.svg = undefined
+			this.readingAnchor = undefined
+			this.layout = undefined
 			this.links = new WeakMap()
-			this.currentState = Object.freeze({ pageCount: 0, currentPage: 1, currentHeading: -1 })
+			this.currentState = Object.freeze({
+				zoom: this.currentState.zoom,
+				pageCount: 0,
+				currentPage: 1,
+				currentHeading: -1,
+			})
 			return undefined
 		})
 		return this.closing

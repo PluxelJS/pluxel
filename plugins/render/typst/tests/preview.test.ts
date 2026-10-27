@@ -5,6 +5,7 @@ import {
 	type TypstNavigationPoint,
 	type TypstPreview,
 	type TypstPreviewViewOptions,
+	type TypstPreviewZoom,
 } from '../src/browser/preview.js'
 
 const packet = (revision: number, sessionId = 'session'): TypstPreview => ({
@@ -24,15 +25,22 @@ function fixture(
 	pageTops: readonly number[] = [],
 	linkHandlers: readonly string[] = [],
 ) {
+	const svg = {
+		viewBox: { baseVal: { width: 300, height: 500 } },
+		style: { width: '600px', maxWidth: '', height: '', display: '' },
+	}
+	const scale = () => Number.parseFloat(svg.style.width) / svg.viewBox.baseVal.width
+	const padding = { paddingLeft: '0', paddingRight: '0', paddingTop: '0', paddingBottom: '0' }
 	const scroll = Object.assign(new EventTarget(), {
 		clientHeight: 300,
 		clientWidth: 600,
 		scrollHeight: pageTops.length > 0 ? 1000 : 0,
 		scrollTop: 0,
 		scrollLeft: 0,
-		getBoundingClientRect: () => ({ top: 0, left: 0, right: 600 }),
+		getBoundingClientRect: () => ({ top: 0, left: 0, right: scroll.clientWidth }),
+		ownerDocument: { defaultView: { getComputedStyle: () => padding } },
 		scrollTo({ top, left }: { top: number; left?: number }) {
-			this.scrollTop = top
+			this.scrollTop = Math.max(0, Math.min(top, this.scrollHeight - this.clientHeight))
 			if (left !== undefined) this.scrollLeft = left
 			scroll.dispatchEvent(new Event('scroll'))
 		},
@@ -44,20 +52,21 @@ function fixture(
 	}[] = []
 	const pages = pageTops.map((top) => ({
 		append: vi.fn(),
+		getAttribute: (name: string): string | null => (name === 'data-page-height' ? '200' : null),
 		getScreenCTM: () => ({
-			a: 2,
+			a: scale(),
 			b: 0,
 			c: 0,
-			d: 2,
+			d: scale(),
 			e: 100 - scroll.scrollLeft,
-			f: top - scroll.scrollTop,
+			f: 20 + ((top - 20) * scale()) / 2 - scroll.scrollTop,
 			inverse: () => ({
-				a: 0.5,
+				a: 1 / scale(),
 				b: 0,
 				c: 0,
-				d: 0.5,
-				e: (scroll.scrollLeft - 100) / 2,
-				f: (scroll.scrollTop - top) / 2,
+				d: 1 / scale(),
+				e: (scroll.scrollLeft - 100) / scale(),
+				f: (scroll.scrollTop - 20 - ((top - 20) * scale()) / 2) / scale(),
 			}),
 		}),
 	}))
@@ -74,6 +83,7 @@ function fixture(
 	let html = 'old'
 	const element = Object.assign(new EventTarget(), {
 		innerHTML: html,
+		querySelector: () => svg,
 		querySelectorAll: (selector: string) => (selector === '.typst-page' ? pages : links),
 		closest: (selector: string) => (selector === 'a' ? links[targetLinkIndex ?? -1] : pages[0]),
 		ownerDocument: {
@@ -112,6 +122,8 @@ function fixture(
 		container,
 		scroll,
 		pages,
+		svg,
+		padding,
 		links,
 		setLink: (index?: number) => {
 			targetLinkIndex = index
@@ -266,6 +278,116 @@ describe('TypstPreviewView', () => {
 		const notifications = onStateChange.mock.calls.length
 		scroll.dispatchEvent(new Event('scroll'))
 		expect(onStateChange).toHaveBeenCalledTimes(notifications)
+	})
+
+	it('activates the last visible heading when a short final page clamps navigation at the bottom', async () => {
+		const { view, scroll } = fixture({}, [20, 420, 850])
+		const last = { title: 'Last section', level: 1, page: 3, x: 50, y: 60 }
+		await view.show({
+			...packet(1),
+			navigation: {
+				pages: [],
+				points: [],
+				outline: [
+					{ title: 'First section', level: 1, page: 1, x: 50, y: 0 },
+					{ title: 'Middle section', level: 1, page: 2, x: 50, y: 0 },
+					last,
+				],
+			},
+		})
+		expect(view.jumpToPosition(last)).toBe(true)
+		expect(scroll.scrollTop).toBe(700)
+		expect(view.state).toMatchObject({ currentPage: 3, currentHeading: 2 })
+		view.refresh()
+		expect(view.state.currentHeading).toBe(2)
+		scroll.scrollTo({ top: 600 })
+		expect(view.state).toMatchObject({ currentPage: 2, currentHeading: 1 })
+		await view.dispose()
+	})
+
+	it('stores zoom before display, validates it without mutation and uses print units or available viewport space', async () => {
+		const onStateChange = vi.fn()
+		const { view, scroll, svg, pages, padding } = fixture({ onStateChange }, [20, 420])
+		expect(view.state.zoom).toBe('fit-width')
+		expect(view.setZoom(1)).toBe(true)
+		expect(onStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ zoom: 1 }))
+		for (const invalid of [0, -1, Infinity, NaN, '100%', null]) {
+			const previous = view.state
+			expect(view.setZoom(invalid as TypstPreviewZoom)).toBe(false)
+			expect(view.state).toBe(previous)
+		}
+		await view.show(packet(1))
+		expect(svg.style).toMatchObject({
+			width: '400px',
+			height: 'auto',
+			maxWidth: 'none',
+			display: 'block',
+		})
+		Object.assign(padding, {
+			paddingLeft: '12px',
+			paddingRight: '18px',
+			paddingTop: '10px',
+			paddingBottom: '30px',
+		})
+		expect(view.setZoom('fit-width')).toBe(true)
+		expect(Number.parseFloat(svg.style.width)).toBeCloseTo(570)
+		vi.spyOn(pages[1]!, 'getAttribute').mockImplementation((name) =>
+			name === 'data-page-height' ? '400' : null,
+		)
+		expect(view.setZoom('fit-page')).toBe(true)
+		expect(svg.style.width).toBe('195px')
+		scroll.scrollTo({ top: 200 })
+		expect(svg.style.width).toBe('195px')
+		expect(view.setZoom(1.5)).toBe(true)
+		scroll.clientWidth = 450
+		view.refresh()
+		expect(svg.style.width).toBe('600px')
+		await view.dispose()
+		expect(view.setZoom('fit-width')).toBe(false)
+	})
+
+	it('keeps a page-local reading anchor through zoom, resize and hidden viewport restoration', async () => {
+		const { view, scroll, svg, pages } = fixture({}, [20, 420, 850])
+		await view.show(packet(1))
+		scroll.scrollTo({ top: 450 })
+		const readingY = () => {
+			const inverse = pages[1]!.getScreenCTM().inverse()
+			return inverse.d * Math.min(120, scroll.clientHeight / 3) + inverse.f
+		}
+		const before = readingY()
+		expect(view.setZoom(1)).toBe(true)
+		expect(readingY()).toBeCloseTo(before)
+		expect(view.setZoom('fit-width')).toBe(true)
+		scroll.clientWidth = 480
+		view.refresh()
+		expect(svg.style.width).toBe('480px')
+		expect(readingY()).toBeCloseTo(before)
+		const previousPage = view.state.currentPage
+		scroll.clientWidth = 0
+		scroll.clientHeight = 0
+		view.refresh()
+		expect(view.setZoom(1.5)).toBe(true)
+		expect(svg.style.width).toBe('480px')
+		expect(view.state.currentPage).toBe(previousPage)
+		scroll.clientWidth = 600
+		scroll.clientHeight = 300
+		view.refresh()
+		expect(svg.style.width).toBe('600px')
+		expect(readingY()).toBeCloseTo(before)
+		await view.dispose()
+	})
+
+	it('stops zoom changes when synchronous state notification disposes the view', async () => {
+		const onStateChange = vi.fn()
+		const { view, svg } = fixture({ onStateChange }, [20])
+		await view.show(packet(1))
+		onStateChange.mockImplementation(() => void view.dispose())
+		expect(view.setZoom(1)).toBe(false)
+		await view.dispose()
+		const width = svg.style.width
+		view.refresh()
+		expect(view.setZoom(2)).toBe(false)
+		expect(svg.style.width).toBe(width)
 	})
 
 	it('reveals zoomed destinations beyond either horizontal edge without moving visible targets sideways', async () => {

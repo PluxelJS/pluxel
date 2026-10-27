@@ -547,7 +547,9 @@ if (!prepared.ok) throw new Error(JSON.stringify(prepared.issues))
 
 ## 预览与定位
 
-共享 View 的生命周期见[浏览器预览](./typst.md#浏览器预览)。`TypstPreviewView` 支持 `scrollContainer`、`onStateChange`、`isNavigationCurrent` 和 `onNavigate`；`state` 给出当前 packet、页数、当前页和目录项。`jumpToPage`、`jumpToPosition`、`revealSource` 与 `refresh` 管理滚动和高亮。点击图、表、公式等内部引用时，优先在当前预览中跳到 Typst 给出的目标页与位置，不切换到引用文字的编辑位置；引用链接也支持 Tab 聚焦后按 Enter。过期预览、拖选和修饰键点击不执行内部跳转。普通非链接内容点击经拖选/修饰键过滤及 SVG CTM 转换后返回 `{ preview, point }`；`pointAtPreview` / `pointAtSource` 可供其他编辑器直接使用。
+共享 View 的生命周期、缩放模式和宿主布局约束见[浏览器预览](./typst.md#浏览器预览)。`TypstPreviewView` 支持 `scrollContainer`、`onStateChange`、`isNavigationCurrent` 和 `onNavigate`；`state` 给出当前 packet、缩放模式、页数、当前页和目录项。`setZoom` 切换适合宽度、整页或固定比例；`jumpToPage`、`jumpToPosition`、`revealSource` 与 `refresh` 管理滚动和高亮。点击图、表、公式等内部引用时，优先在当前预览中跳到 Typst 给出的目标页与位置，不切换到引用文字的编辑位置；引用链接也支持 Tab 聚焦后按 Enter。过期预览、拖选和修饰键点击不执行内部跳转。普通非链接内容点击经拖选/修饰键过滤及 SVG CTM 转换后返回 `{ preview, point }`；`pointAtPreview` / `pointAtSource` 可供其他编辑器直接使用。
+
+体验页把预览标签、页码和缩放放在紧凑顶栏，目录使用可收起的纵向侧栏；窄面板内目录覆盖预览。目录会在自身滚动区域内保持当前章节可见。页码输入按 Enter 或失焦跳转，Escape 取消，输入中的草稿不被文档滚动覆盖。默认适合宽度；缩放与面板 resize 保留页内阅读位置，超出可滚动范围时受边界限制。
 
 放大预览后，定位同时处理纵向和必要的横向滚动，使目标进入可视区。演示在 Markdown 或源码标签中保留当前编辑视图，只记住最后一个定位目标；打开预览后才按可见布局应用，同期间正文已变化则丢弃旧目标。预览跳回正文时，宿主先激活目标区域、聚焦并设置选区，等选区相关工具条完成布局后再滚动；异步滚动仍复核修订、最新导航和选区，避免旧请求抢回用户位置。
 
