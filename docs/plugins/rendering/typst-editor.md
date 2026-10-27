@@ -237,6 +237,8 @@ label 以字母或数字开头，支持中文等 Unicode 字母，后续可含�
 
 `update(false)` 恢复仅编号，从设置位置起生效；单条引用的显式选择优先于模板默认。生成器始终提供这个小型运行时文件，因此暂时没有引用的正文也能使用同一模板。附带题注中的嵌套引用仅显示编号，避免图表自引用或互相引用导致无限展开。这个设置作用于结构化正文引用；模板手写的 `@label` 仍由原生 Typst `ref` 规则控制。
 
+当前可配置的是是否附带题注，以及原生编号、前缀与 `ref` 样式。附带题注在原生 `ref` 之后单独输出，外层 `「」` 由内置渲染规则提供；`show ref` 不会自动包住这部分，也没有任意重排整条引用的格式函数。
+
 跨区域补全需要 `TypstRegionEditor.regions` 提供整份报告的当前 JSON。独立宿主可用 `collectTypstReferenceTargets(regions, config?)` 取得 `{ id, label, kind, regionId, title, position }`；输入应先准入，`position` 是该区域的原生位置，不是跨文件全局坐标。只校验单一区域不能判断另一份文件的目标是否存在；`generateTypstRegions` 针对完整集合解析引用并检查重复 id / label 和缺失目标。
 
 ### 由模板统一排版
@@ -275,13 +277,15 @@ const config: TypstEditorConfig = {
 }
 ```
 
-每张表只增加 `attrs.typstTableStyle`，值为 `null`、`'grid'`、`'grid-open-sides'`、`'three-line'` 或 `'borderless'`。`null` 或缺省表示跟随 `defaultStyle`；`defaultStyle` 默认也是 `null`，此时 Typst 输出继续使用模板原有规则，编辑区以网格作为可编辑外观。`allowedStyles` 默认开放四种显式样式，只限制逐表覆盖；空数组锁定为跟随模板，仍可使用配置的默认样式。
+每张表只增加 `attrs.tableStyle`，值为 `null`、`'grid'`、`'grid-open-sides'`、`'three-line'` 或 `'borderless'`。`null` 或缺省表示跟随 `defaultStyle`；`defaultStyle` 默认也是 `null`，此时 Typst 输出继续使用模板原有规则，编辑区以网格作为可编辑外观。`allowedStyles` 默认开放四种显式样式，只限制逐表覆盖；空数组锁定为跟随模板，仍可使用配置的默认样式。
+
+`tableStyle` 是正文的中性语义，JSON 与 Agent Markdown 使用同一个名称；`TypstTableStyle` 只是安装扩展的 SDK API 名称。Agent Markdown 中的属性标记描述正文，不应改写为 Typst 代码；只有显式的 `typstSource` 节点保存原生 Typst 源码。
 
 安装后，表格完整上下文面板增加“表格样式”组，提供跟随模板、网格、网格·无左右框、三线表和无边框；选择跟随模板即清除覆盖。可从当前表格工具条的“更多…”打开面板；离开表格时快捷工具条收起。表格结构操作仍调用官方 TableKit 命令，卸载样式扩展只移除这组样式项。操作只修改当前表格，保留原生选区和撤销；只读、输入法组合输入及未获准的选项不能提交。也可从 `/tiptap/react` 单独挂载 `TypstTableStyleControls`，传入安装了该扩展的官方 `Editor`，无需使用区域组件。
 
 `grid-open-sides` 保留内部横纵网格和上下边线，只移除左右外框；跨行、跨列合并后按实际列边界判断。三线表使用上下边线，以及连续完整表头后的分隔线；没有这样的表头时只有上下边线，不自动把首行改成表头。跨表头边界的合并单元格不会触发表头重复或分隔线。无边框表格仅在聚焦编辑时显示辅助虚线，不进入 Typst 输出。
 
-卸载扩展后官方表格结构与命令仍可用。重新载入已有草稿前，宿主需显式移除 `typstTableStyle` 属性并确认放弃其外观；未安装扩展时严格准入会拒绝该未知属性，包括 `null`，不会替宿主改写已保存 JSON。字段能力可独立保留。
+卸载扩展后官方表格结构与命令仍可用。重新载入已有草稿前，宿主需显式移除 `tableStyle` 属性并确认放弃其外观；未安装扩展时严格准入会拒绝该未知属性，包括 `null`，不会替宿主改写已保存 JSON。字段能力可独立保留。
 
 ## 可选模板组件与源码块
 
@@ -410,7 +414,7 @@ serializer 使用 `context.children(node)` 复用子节点校验和序列化，`
 <data-field path='["customer","name"]'></data-field>
 ```
 
-代码块或行内代码中的标签保持文字；非法属性或字段路径明确失败。Markdown 是转换输入，不能替代原生 JSON。`exportTypstMarkdown` 成功值含 `{ markdown, lossless, issues }`；合并表格、多段单元格、显式表格样式、带题注/标识的图表、结构化引用、模板组件、源码块及缺少可往返 Markdown 映射的业务节点等可得到可读文字，但 `lossless: false` 时不能用来覆盖原区域。模板组件导出为说明文字，源码块导出为普通 `typst` 代码围栏，重新导入不会恢复可执行节点。原生 JSON 保存完整表格属性；`typstTableStyle: null` 本身不构成 Markdown 损失，重新导入后仍使用宿主配置的默认样式，其他复杂结构仍需检查。
+代码块或行内代码中的标签保持文字；非法属性或字段路径明确失败。Markdown 是转换输入，不能替代原生 JSON。`exportTypstMarkdown` 成功值含 `{ markdown, lossless, issues }`；合并表格、多段单元格、显式表格样式、带题注/标识的图表、结构化引用、模板组件、源码块及缺少可往返 Markdown 映射的业务节点等可得到可读文字，但 `lossless: false` 时不能用来覆盖原区域。模板组件导出为说明文字，源码块导出为普通 `typst` 代码围栏，重新导入不会恢复可执行节点。原生 JSON 保存完整表格属性；`tableStyle: null` 本身不构成 Markdown 损失，重新导入后仍使用宿主配置的默认样式，其他复杂结构仍需检查。
 
 ### Agent Markdown
 
@@ -433,7 +437,7 @@ serializer 使用 `context.children(node)` 复用子节点校验和序列化，`
 这段文字居中。
 :::
 
-:::attrs {"typstTableStyle":"three-line"}
+:::attrs {"tableStyle":"three-line"}
 | 项目 | 金额 |
 | ---- | ---- |
 | 服务 | 120  |
@@ -525,7 +529,11 @@ if (!prepared.ok) throw new Error(JSON.stringify(prepared.issues))
 
 共享 View 的生命周期见[浏览器预览](./typst.md#浏览器预览)。`TypstPreviewView` 支持 `scrollContainer`、`onStateChange`、`isNavigationCurrent` 和 `onNavigate`；`state` 给出当前 packet、页数、当前页和目录项。`jumpToPage`、`jumpToPosition`、`revealSource` 与 `refresh` 管理滚动和高亮。点击图、表、公式等内部引用时，优先在当前预览中跳到 Typst 给出的目标页与位置，不切换到引用文字的编辑位置；引用链接也支持 Tab 聚焦后按 Enter。过期预览、拖选和修饰键点击不执行内部跳转。普通非链接内容点击经拖选/修饰键过滤及 SVG CTM 转换后返回 `{ preview, point }`；`pointAtPreview` / `pointAtSource` 可供其他编辑器直接使用。
 
+放大预览后，定位同时处理纵向和必要的横向滚动，使目标进入可视区。演示在 Markdown 或源码标签中保留当前编辑视图，只记住最后一个定位目标；打开预览后才按可见布局应用，同期间正文已变化则丢弃旧目标。预览跳回正文时，宿主先激活目标区域、聚焦并设置选区，等选区相关工具条完成布局后再滚动；异步滚动仍复核修订、最新导航和选区，避免旧请求抢回用户位置。
+
 生成结果的 `mapping` 绑定 `snapshotRevision`，包含 Unicode 字符、原子节点和嵌套块的范围。`findTypstRegionPosition` 将同快照 `_editor/` 的 native 源码位置映射到 `{ regionId, from, to, source? }`；`from` / `to` 已是可直接使用的 ProseMirror UTF-16 位置，**不要再加 1**。文本点击定位到对应字符，字段和图片按完整节点定位；表格、列表及自定义节点通过 `context.children` 保留内部位置。
+
+公式和结构化引用的字形保留对应原子节点的位置。引用附带的题注归属引用，点击编辑器中的原图题不会误定位到远处的题注副本；同一正文被模板重复 include 时，仍优先定位当前页附近的那次输出。
 
 模板组件按实例定位；同一模板插入多次时，独立生成文件和稳定实例 ID 区分各次输出，不能把图表中的计算结果伪装成可编辑正文字符。源码块同样能定位预览，反向点击还返回 `source: { line, column }`，是一基 UTF-16 行列，已去掉生成文件的数据前缀。宿主选中该源码节点并把 `source` 作为 transaction 的 `typst-navigation` 元数据提交，React NodeView 会展开源码并定位；存在未应用源码修改时保留修改并提示，不套用旧坐标。
 

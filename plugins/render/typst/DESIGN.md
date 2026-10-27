@@ -70,6 +70,8 @@ id/label 在整个区域集合内唯一。引用保存目标 id 与可选 `showC
 
 生成器始终提供 `_editor/references.typ`，用 Typst `state` 持有模板默认值，避免跨 `#include` 复制词法变量。区域通过带私有标记的 metadata 和局部 show 规则生成原生 `ref`，按三态选择追加当前目标的真实 `figure.caption.body`；其余 metadata 保持原值。附加题注内部将结构化引用降为原生短引用，保留链接、字段与富文本并终止自引用或互引展开。编号、前缀和目标位置仍由 Typst 决定；浏览器编辑器只展示标识与显式题注，不解释任意模板代码。
 
+区域源码直接构造引用 metadata 和 `math.equation`，数学 body 仍来自 MiTeX。native 采集器复用 equation/ref/metadata 的 Tag 边界，将 helper 或引用副本的字形归属原子调用位置，保留调用范围内的字符精度。附加题注的坐标属于引用，原图题注不会被副本抢占；重复 include 继续按当前页选择出现位置。预览 View 同时处理纵向及必要的横向滚动；宿主负责显示目标区域、聚焦和等待选区相关控件布局，再滚动原生选区。
+
 `document-react.tsx` 为图表、KaTeX 公式和引用提供 NodeView。题注内容继续在原生 contentDOM 编辑；图表与独立公式复用常驻 label 输入，Enter 或失焦校验并提交，Escape 恢复。图表通过 CSS 将类型、原生题注与 label 排在内容下方同一行，保留 schema 中 body、caption 的顺序；外观不再另套设置卡片。公式点击后在原位置展开 LaTeX 编辑框，草稿只更新局部 KaTeX 预览；Mod+Enter、“完成”或失焦提交并收起，Escape 或“取消”恢复。label 与 LaTeX 各自提交一个原生事务，互不覆盖，也不因逐键输入产生撤销步骤。
 
 提交复核最新节点身份、字段原值、只读与组合输入状态；冲突或校验失败保留本地输入并显示错误，不用旧表单覆盖新的正文。未提交输入保留 `data-typst-unapplied` 标记，供宿主保存和离开检查读取。只读时可查看公式源码。引用候选取宿主 `regions` 与当前活跃 Editor 的覆盖快照，官方 Suggestion 负责 `@` 匹配和 decoration；UI 展示当前 label 和目标说明，不保存或模拟 Typst 编号。单区域宿主不传完整集合时只索引自己。

@@ -207,6 +207,7 @@ export function TypstFigureView(props: NodeViewProps) {
 /** Formula source opens at its own position; preview and label stay visible while editing. */
 export function TypstMathView(props: NodeViewProps) {
 	const { editor, node, selected } = props
+	const ui = useContext(EditorUi)
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
 	const inline = node.type.name === 'inlineMath'
 	const latex = useObjectAttribute(props, 'latex')
@@ -270,6 +271,8 @@ export function TypstMathView(props: NodeViewProps) {
 				aria-controls={sourceId}
 				title={renderError || latex.value}
 				onClick={() => {
+					const position = props.getPos()
+					if (typeof position === 'number') ui.onReveal?.(position)
 					finishing.current = false
 					setEditing(true)
 					input.current?.focus()
@@ -377,7 +380,10 @@ export function TypstReferenceView(props: NodeViewProps) {
 				onMouseDown={(event) => event.preventDefault()}
 				onClick={() => {
 					const position = props.getPos()
-					if (typeof position === 'number') editor.chain().focus().setNodeSelection(position).run()
+					if (typeof position === 'number') {
+						editor.chain().focus().setNodeSelection(position).run()
+						ui.onReveal?.(position)
+					}
 				}}
 			>
 				{target

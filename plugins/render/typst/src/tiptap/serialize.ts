@@ -151,7 +151,7 @@ export function generateTypstRegions(options: {
 		let source = '#let _editor_data = json("/inputs/editor/data.json")\n'
 		if (referenceRegions.has(region.id))
 			source +=
-				'#import "/_editor/references.typ": editor-ref, render-reference\n#show metadata: render-reference\n'
+				'#import "/_editor/references.typ": render-reference\n#show metadata: render-reference\n'
 		if (mathRegions.has(region.id)) source += '#import "/_editor/mitex/mitex.typ": mi, mitex\n'
 		// The temporary markers retain identity through arbitrary trusted wrappers and
 		// repeated context.children() strings. They never reach the generated files.
@@ -243,13 +243,14 @@ export function generateTypstRegions(options: {
 					content = context.children(node)
 					break
 				case 'inlineMath':
-					content = `#mi(${typstString(attrs.latex)})`
+					content = `#math.equation(block: false, mi(${typstString(attrs.latex)}).body)`
 					break
 				case 'blockMath':
-					content = `#mitex(${typstString(attrs.latex)}${attrs.label == null ? ', numbering: none' : ''})${attrs.label == null ? '' : `#label(${typstString(attrs.label)})`}\n`
+					// Construct the equation here so native frame tags retain this atom's source span.
+					content = `#math.equation(block: true, mitex(${typstString(attrs.latex)}).body${attrs.label == null ? ', numbering: none' : ''})${attrs.label == null ? '' : `#label(${typstString(attrs.label)})`}\n`
 					break
 				case 'reference':
-					content = `#editor-ref(label(${typstString(labels.get(attrs.target)!)}), show-caption: ${attrs.showCaption == null ? 'auto' : attrs.showCaption})`
+					content = `#metadata((__pluxel_reference: true, target: label(${typstString(labels.get(attrs.target)!)}), show-caption: ${attrs.showCaption == null ? 'auto' : attrs.showCaption}))`
 					break
 				case 'heading':
 					content = `#heading(level: ${attrs.level ?? 1})[${context.children(node)}]\n`
@@ -337,7 +338,7 @@ export function generateTypstRegions(options: {
 					const grid = tableGrid(node)
 					if (typeof grid === 'string') throw new Error('Validated table lost its grid.')
 					const headerRows = tableHeaderRows(node)
-					const appearance = attrs.typstTableStyle ?? prepared.table?.defaultStyle
+					const appearance = attrs.tableStyle ?? prepared.table?.defaultStyle
 					const openSides = appearance === 'grid-open-sides'
 					const border =
 						appearance === 'grid' || openSides ? '.5pt + black' : appearance ? 'none' : undefined

@@ -138,10 +138,10 @@ describe('document objects and cross-file references', () => {
 		if (!result.ok) throw new Error(JSON.stringify(result.issues))
 		expect(result.value.templateFiles['_editor/regions/body.typ']).toContain('#label("eq:renamed")')
 		expect(result.value.templateFiles['_editor/regions/notes.typ']).toContain(
-			'#editor-ref(label("eq:renamed"), show-caption: auto)',
+			'#metadata((__pluxel_reference: true, target: label("eq:renamed"), show-caption: auto))',
 		)
 		expect(result.value.templateFiles['_editor/regions/body.typ']).toContain(
-			'#mitex("x + y", numbering: none)',
+			'#math.equation(block: true, mitex("x + y").body, numbering: none)',
 		)
 		expect(result.value.templateFiles['_editor/regions/body.typ']).not.toContain(
 			'set math.equation',

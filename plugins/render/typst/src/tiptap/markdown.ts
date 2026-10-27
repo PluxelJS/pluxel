@@ -209,12 +209,12 @@ export function exportTypstMarkdown(
 						'Font family, font size and text/background colors cannot round-trip through Markdown.',
 				})
 		})
-		if (node.type === 'table' && node.attrs?.typstTableStyle != null)
+		if (node.type === 'table' && node.attrs?.tableStyle != null)
 			issues.push({
 				code: 'COMPLEX_CONTENT',
 				regionId: options.regionId,
-				path: [...path, 'attrs', 'typstTableStyle'],
-				message: 'Typst table appearance cannot round-trip through Markdown.',
+				path: [...path, 'attrs', 'tableStyle'],
+				message: 'Table appearance cannot round-trip through ordinary Markdown.',
 			})
 		if (node.type === 'tableCell' || node.type === 'tableHeader') {
 			if (

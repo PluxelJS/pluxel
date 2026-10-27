@@ -344,7 +344,7 @@ try {
 
 	// The native table within a figure still accepts table commands.
 	await body.locator('[data-figure-id="observations-table"] td').first().click()
-	await body.evaluate((element) => element.editor.commands.addRowAfter())
+	await bodyPanel.getByRole('button', { name: '增加行', exact: true }).click()
 	await current()
 	const tableDocument = await body.evaluate(doc)
 	const tableFigure = tableDocument.content.find((node) => node.attrs?.id === 'observations-table')

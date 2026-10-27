@@ -26,11 +26,14 @@ function fixture(
 ) {
 	const scroll = Object.assign(new EventTarget(), {
 		clientHeight: 300,
+		clientWidth: 600,
 		scrollHeight: pageTops.length > 0 ? 1000 : 0,
 		scrollTop: 0,
-		getBoundingClientRect: () => ({ top: 0 }),
-		scrollTo({ top }: { top: number }) {
+		scrollLeft: 0,
+		getBoundingClientRect: () => ({ top: 0, left: 0, right: 600 }),
+		scrollTo({ top, left }: { top: number; left?: number }) {
 			this.scrollTop = top
+			if (left !== undefined) this.scrollLeft = left
 			scroll.dispatchEvent(new Event('scroll'))
 		},
 	})
@@ -46,9 +49,16 @@ function fixture(
 			b: 0,
 			c: 0,
 			d: 2,
-			e: 100,
+			e: 100 - scroll.scrollLeft,
 			f: top - scroll.scrollTop,
-			inverse: () => ({ a: 0.5, b: 0, c: 0, d: 0.5, e: -50, f: (scroll.scrollTop - top) / 2 }),
+			inverse: () => ({
+				a: 0.5,
+				b: 0,
+				c: 0,
+				d: 0.5,
+				e: (scroll.scrollLeft - 100) / 2,
+				f: (scroll.scrollTop - top) / 2,
+			}),
 		}),
 	}))
 	const createLink = (handler: string) => {
@@ -256,6 +266,21 @@ describe('TypstPreviewView', () => {
 		const notifications = onStateChange.mock.calls.length
 		scroll.dispatchEvent(new Event('scroll'))
 		expect(onStateChange).toHaveBeenCalledTimes(notifications)
+	})
+
+	it('reveals zoomed destinations beyond either horizontal edge without moving visible targets sideways', async () => {
+		const { view, scroll, pages } = fixture({}, [20, 420])
+		await view.show(packet(1))
+		for (const x of [500, 300, 10]) {
+			const before = scroll.scrollLeft
+			expect(view.jumpToPosition({ page: 2, x, y: 30 })).toBe(true)
+			const matrix = pages[1]!.getScreenCTM()
+			const screenX = matrix.a * x + matrix.e
+			expect(screenX).toBeGreaterThanOrEqual(16)
+			expect(screenX).toBeLessThanOrEqual(scroll.clientWidth - 16)
+			expect(scroll.scrollLeft === before).toBe(x === 300)
+		}
+		await view.dispose()
 	})
 
 	it.each([

@@ -203,6 +203,9 @@ function App({
 	const running = useRef(false)
 	const alive = useRef(true)
 	const navigationSerial = useRef(0)
+	const pendingReveal = useRef<{ position: SourcePosition; revision: number } | undefined>(
+		undefined,
+	)
 	const pointer = useRef<{ x: number; y: number } | null>(null)
 	const [clientId] = useState(() => crypto.randomUUID())
 	const parsedData = parseData(draft.data)
@@ -460,6 +463,7 @@ function App({
 	) {
 		if (snapshotRevision !== current.current.revision) return
 		const serial = ++navigationSerial.current
+		pendingReveal.current = undefined
 		const target = findTypstRegionPosition({ mapping, position, snapshotRevision })
 		if (target) {
 			setPane('editor')
@@ -472,17 +476,28 @@ function App({
 				if (!editor) return
 				const from = Math.min(Math.max(0, target.from), editor.state.doc.content.size)
 				const node = editor.state.doc.nodeAt(from)
+				const selection =
+					node?.isAtom && !node.isText && NodeSelection.isSelectable(node)
+						? NodeSelection.create(editor.state.doc, from)
+						: TextSelection.near(editor.state.doc.resolve(from))
+				// ProseMirror scrolls only when the DOM selection belongs to this editor.
+				editor.view.focus()
 				editor.view.dispatch(
 					editor.state.tr
-						.setSelection(
-							node?.isAtom && !node.isText && NodeSelection.isSelectable(node)
-								? NodeSelection.create(editor.state.doc, from)
-								: TextSelection.near(editor.state.doc.resolve(from)),
-						)
-						.setMeta('typst-navigation', target.source ?? true)
-						.scrollIntoView(),
+						.setSelection(selection)
+						.setMeta('typst-navigation', target.source ?? true),
 				)
-				editor.view.focus()
+				// Selection can open table/formula controls and resize the viewport before scrolling.
+				requestAnimationFrame(() => {
+					if (
+						serial === navigationSerial.current &&
+						snapshotRevision === current.current.revision &&
+						!editor.isDestroyed &&
+						editor.state.selection.eq(selection) &&
+						editor.view.dom.getClientRects().length > 0
+					)
+						editor.view.dispatch(editor.state.tr.scrollIntoView())
+				})
 				setNavigation(`region:${target.regionId}:${target.from}`)
 			})
 		} else if (position.path === 'main.typ') {
@@ -493,20 +508,32 @@ function App({
 			requestAnimationFrame(() => {
 				if (serial !== navigationSerial.current || snapshotRevision !== current.current.revision)
 					return
-				sourceEditor.current?.focus()
 				sourceEditor.current?.setSelectionRange(offset, offset)
+				// Native textarea focus reveals its current selection, including distant wrapped lines.
+				sourceEditor.current?.focus()
 				setNavigation(`source:${position.line}:${position.column}`)
 			})
 		}
 	}
 
 	function revealSource(position: SourcePosition) {
-		if (
-			displayed.current?.clientRevision === current.current.revision &&
-			view.current?.revealSource(position)
-		)
+		if (displayed.current?.clientRevision !== current.current.revision) return
+		++navigationSerial.current
+		if (!viewport.current?.getClientRects().length) {
+			// Keep Markdown/source editing visible; apply the latest target when preview opens.
+			pendingReveal.current = { position, revision: current.current.revision }
+			return
+		}
+		pendingReveal.current = undefined
+		if (view.current?.revealSource(position))
 			setNavigation(`preview:${position.path}:${position.line}`)
 	}
+	useEffect(() => {
+		const target = pendingReveal.current
+		if (!target) return
+		if (target.revision !== revision) pendingReveal.current = undefined
+		else if (viewport.current?.getClientRects().length) revealSource(target.position)
+	}, [outputTab, pane, displayedRevision, revision])
 
 	function revealRegion(regionId: string, position: number) {
 		const snapshot = displayed.current
@@ -892,14 +919,22 @@ function App({
 										event.shiftKey ||
 										Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4 ||
 										(event.target as HTMLElement).closest('.typst-content-block') ||
-										!(event.target as HTMLElement).closest('.tiptap') ||
-										!window.getSelection()?.isCollapsed
+										(event.target as HTMLElement).closest('input, textarea, select, button, a') ||
+										!(event.target as HTMLElement).closest('.tiptap')
 									)
 										return
 									const editor = editors.current.get(item.id)
+									if (editor?.state.selection instanceof NodeSelection) {
+										const position = editor.state.selection.from
+										if (editor.view.nodeDOM(position)?.contains(event.target as Node)) {
+											revealRegion(item.id, position)
+											return
+										}
+									}
 									const selection = editor?.view.dom.ownerDocument.getSelection()
 									if (
 										!editor ||
+										!selection?.isCollapsed ||
 										!selection?.anchorNode ||
 										!editor.view.dom.contains(selection.anchorNode)
 									)

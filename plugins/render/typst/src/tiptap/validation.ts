@@ -63,7 +63,7 @@ const builtinNodeAttributes: Readonly<Record<string, readonly string[]>> = {
 	heading: ['level', 'textAlign'],
 	orderedList: ['start', 'type'],
 	codeBlock: ['language'],
-	table: ['typstTableStyle'],
+	table: ['tableStyle'],
 	tableCell: ['colspan', 'rowspan', 'colwidth', 'align'],
 	tableHeader: ['colspan', 'rowspan', 'colwidth', 'align'],
 	image: ['src', 'alt', 'title', 'width', 'height'],
@@ -591,8 +591,8 @@ function inspectNode(
 	}
 	if (value.type === 'table') {
 		const tableOptions = options.context.table
-		const error = tableOptions && tableStyleError(attrs.typstTableStyle, tableOptions)
-		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs', 'typstTableStyle'])
+		const error = tableOptions && tableStyleError(attrs.tableStyle, tableOptions)
+		if (error) issue('INVALID_ATTRIBUTE', error, ['attrs', 'tableStyle'])
 	}
 	if (value.type === 'dataField') {
 		const fieldPath = attrs.path

@@ -67,7 +67,7 @@ function decorations(doc: ProseMirrorNode, options: TypstTableStyleOptions): Dec
 	const result: Decoration[] = []
 	doc.descendants((node, position) => {
 		if (node.type.name !== 'table') return
-		const appearance = node.attrs.typstTableStyle ?? options.defaultStyle ?? 'grid'
+		const appearance = node.attrs.tableStyle ?? options.defaultStyle ?? 'grid'
 		// Official resizable TableView does not apply new renderHTML attributes on update.
 		// A node decoration keeps that view and its resize/selection behavior intact.
 		result.push(
@@ -106,16 +106,16 @@ export const TypstTableStyle = Extension.create<TypstTableStyleOptions>({
 			{
 				types: ['table'],
 				attributes: {
-					typstTableStyle: {
+					tableStyle: {
 						default: null,
 						parseHTML: (element: HTMLElement) => {
 							const value = element.getAttribute('data-typst-table-style')
 							return value === 'inherit' ? null : value
 						},
 						renderHTML: (attrs: Record<string, unknown>) => ({
-							'data-typst-table-style': attrs.typstTableStyle ?? 'inherit',
+							'data-typst-table-style': attrs.tableStyle ?? 'inherit',
 							'data-typst-table-appearance':
-								attrs.typstTableStyle ?? this.options.defaultStyle ?? 'grid',
+								attrs.tableStyle ?? this.options.defaultStyle ?? 'grid',
 						}),
 					},
 				},
@@ -141,7 +141,7 @@ export const TypstTableStyle = Extension.create<TypstTableStyleOptions>({
 					if (!tr.docChanged) return true
 					let valid = true
 					tr.doc.descendants((node) => {
-						if (node.type.name === 'table' && tableStyleError(node.attrs.typstTableStyle, options))
+						if (node.type.name === 'table' && tableStyleError(node.attrs.tableStyle, options))
 							valid = false
 					})
 					return valid

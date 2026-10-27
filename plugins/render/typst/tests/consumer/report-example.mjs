@@ -262,11 +262,11 @@ const styleSamples = [
 		['网格 · 无左右框', 'grid-open-sides'],
 		['三线表', 'three-line'],
 		['无边框', 'borderless'],
-	].flatMap(([name, typstTableStyle]) => [
+	].flatMap(([name, tableStyle]) => [
 		{ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: name }] },
 		{
 			type: 'table',
-			attrs: { typstTableStyle },
+			attrs: { tableStyle },
 			content: [
 				row(['检查项', '状态'], true),
 				row(['收入与目标', '已核对']),
@@ -281,7 +281,7 @@ const styleSamples = [
 	},
 	{
 		type: 'table',
-		attrs: { typstTableStyle: 'grid' },
+		attrs: { tableStyle: 'grid' },
 		content: [
 			row(['阶段', '核验事项', '交付内容'], true),
 			{
@@ -365,7 +365,7 @@ const reportDraft = {
 					'tbl:observations',
 					{
 						type: 'table',
-						attrs: { typstTableStyle: 'three-line' },
+						attrs: { tableStyle: 'three-line' },
 						content: [
 							row(['观察', '证据与建议'], true),
 							row(['企业服务增长', '核对新增客户与续约贡献，优先复盘可持续的收入来源。']),
@@ -433,7 +433,7 @@ const reportDraft = {
 				},
 				{
 					type: 'table',
-					attrs: { typstTableStyle: 'borderless' },
+					attrs: { tableStyle: 'borderless' },
 					content: [
 						row(['行动', '负责人 / 交付'], true),
 						{

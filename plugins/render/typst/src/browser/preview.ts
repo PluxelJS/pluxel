@@ -225,13 +225,19 @@ export class TypstPreviewView implements AsyncDisposable {
 		const matrix = this.pages[position.page - 1]?.getScreenCTM()
 		if (!matrix) return false
 		const viewport = this.scrollContainer
+		const bounds = viewport.getBoundingClientRect()
+		const screenX = matrix.a * position.x + matrix.c * position.y + matrix.e
 		const screenY = matrix.b * position.x + matrix.d * position.y + matrix.f
+		const inset = Math.min(16, viewport.clientWidth / 3)
+		const horizontal =
+			screenX < bounds.left + inset
+				? screenX - bounds.left - inset
+				: screenX > bounds.right - inset
+					? screenX - bounds.right + inset
+					: 0
 		viewport.scrollTo({
-			top:
-				viewport.scrollTop +
-				screenY -
-				viewport.getBoundingClientRect().top -
-				Math.min(120, viewport.clientHeight / 3),
+			left: viewport.scrollLeft + horizontal,
+			top: viewport.scrollTop + screenY - bounds.top - Math.min(120, viewport.clientHeight / 3),
 		})
 		this.refresh()
 		return this.publishState(position.page, this.currentState.currentHeading)

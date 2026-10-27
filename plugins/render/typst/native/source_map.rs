@@ -6,6 +6,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use typst::{
     World,
+    introspection::{Location, Tag},
     layout::{Abs, Frame, FrameItem, Point, Transform},
     syntax::{
         Source, Span, SyntaxKind,
@@ -40,6 +41,8 @@ struct Collector<'a> {
     cache: HashMap<Span, Option<SourceEntry>>,
     points: Vec<NavigationPoint>,
     exceeded: bool,
+    // Locatable inline content can cross frame groups, lines, and pages.
+    owners: Vec<(Location, Span)>,
 }
 struct Literal {
     text: String,
@@ -186,11 +189,32 @@ impl Collector<'_> {
             return;
         }
         let world = self.world;
-        let entry = self
-            .cache
+        let mut span = span;
+        let mut glyph = glyph;
+        self.cache
             .entry(span)
             .or_insert_with(|| source_entry(world, span));
-        let Some(entry) = entry.as_ref() else {
+        // A helper or reused caption can supply the glyphs of an atomic element.
+        // Attribute those glyphs to the element's call, while retaining precise
+        // character provenance for literals written inside that call (e.g. $a+b$).
+        for (_, owner) in self.owners.iter().rev() {
+            let within = match (
+                self.cache.get(&span).and_then(Option::as_ref),
+                self.cache.get(owner).and_then(Option::as_ref),
+            ) {
+                (Some(inner), Some(outer)) => {
+                    inner.path == outer.path
+                        && inner.range.start >= outer.range.start
+                        && inner.range.end <= outer.range.end
+                }
+                _ => false,
+            };
+            if !within {
+                span = *owner;
+                glyph = None;
+            }
+        }
+        let Some(entry) = self.cache.get(&span).and_then(Option::as_ref) else {
             return;
         };
         let SourceEntry {
@@ -306,6 +330,31 @@ impl Collector<'_> {
                     let bbox = shape.geometry.bbox();
                     self.push(*span, None, page, t, bbox.min, bbox.max);
                 }
+                FrameItem::Tag(tag) => match tag {
+                    Tag::Start(elem, _)
+                        if matches!(elem.elem().name(), "equation" | "ref" | "metadata") =>
+                    {
+                        let span = elem.span();
+                        if self
+                            .cache
+                            .entry(span)
+                            .or_insert_with(|| source_entry(self.world, span))
+                            .is_some()
+                        {
+                            self.owners.push((tag.location(), span));
+                        }
+                    }
+                    Tag::End(..) => {
+                        if let Some(index) = self
+                            .owners
+                            .iter()
+                            .rposition(|(location, _)| *location == tag.location())
+                        {
+                            self.owners.remove(index);
+                        }
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -322,6 +371,7 @@ impl NodeTypstDocument {
             cache: HashMap::new(),
             points: vec![],
             exceeded: false,
+            owners: vec![],
         };
         if let TypstDocument::Paged(doc) = &self.doc {
             for (page, item) in doc.pages.iter().enumerate() {
