@@ -582,6 +582,8 @@ if (source) view.revealSource(source)
 
 ## 可运行消费者
 
+[Typst Agent Workspace](https://github.com/PluxelJS/pluxel/blob/main/projects/typst-agent-workspace/README.md) 是独立的文件工作区消费者：通过公开入口导出多区域 Agent Markdown，让 coding agent 编辑文件，校验完整候选并保存，再由普通 Host 编译 PDF。它保留实际修改样本与回归；文件清单、存储和提交属于消费者，尚不是 Typst 核心的工作区 API。
+
 [Examples](/examples) 在纯浏览器内复用共享区域编辑器、生成器与真实 Pluxel Host，通过 Typst WASM 展示短文档编辑和块级双向定位；编译不经过服务端。WASM 与原生导航精度的区别见[浏览器编译](./typst.md#浏览器编译)。
 
 [Report Template Studio](https://github.com/PluxelJS/pluxel/blob/main/projects/report-template-studio/README.md)使用上述入口实现正常源码预览与区域报表；Monaco 和双 worker 留在应用。其“客户服务报告”包含固定模板、两个区域、客户切换、合并表格、提示块与确定性 Markdown 候选。独立 consumer 的运行和构建制品验收见 [consumer 测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/typst/tests/consumer/README.md)。

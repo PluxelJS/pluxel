@@ -3572,6 +3572,72 @@ importers:
         specifier: catalog:test
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.106.1)(sass@1.106.1)(sugarss@5.0.1(postcss@8.5.31))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
+  projects/typst-agent-workspace:
+    devDependencies:
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
+      '@pluxel/plugin-fonts':
+        specifier: workspace:*
+        version: link:../../plugins/render/fonts
+      '@pluxel/plugin-typst':
+        specifier: link:../../plugins/render/typst
+        version: link:../../plugins/render/typst
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
+      '@tiptap/core':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/pm@3.32.0)
+      '@tiptap/extension-image':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))
+      '@tiptap/extension-mathematics':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)(katex@0.16.22)
+      '@tiptap/extension-table':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
+      '@tiptap/extension-text-align':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))
+      '@tiptap/extension-text-style':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))
+      '@tiptap/markdown':
+        specifier: catalog:frontend
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
+      '@tiptap/pm':
+        specifier: catalog:frontend
+        version: 3.32.0
+      '@tiptap/starter-kit':
+        specifier: catalog:frontend
+        version: 3.32.0
+      '@tiptap/suggestion':
+        specifier: catalog:frontend
+        version: 3.32.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
+      '@types/node':
+        specifier: catalog:types
+        version: 26.6.5
+      katex:
+        specifier: catalog:frontend
+        version: 0.16.22
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      valibot:
+        specifier: catalog:validation
+        version: 1.5.0(typescript@7.0.2)
+      vite-plus:
+        specifier: catalog:build
+        version: 1.4.0(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.106.1)(sass@1.106.1)(sugarss@5.0.1(postcss@8.5.31))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+
   vendor/eventure:
     devDependencies:
       '@types/node':

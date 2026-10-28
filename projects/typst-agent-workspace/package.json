@@ -1,0 +1,74 @@
+{
+	"name": "@pluxel-example/typst-agent-workspace",
+	"private": true,
+	"description": "File-based report editing through the public Pluxel Typst APIs",
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./cli": {
+			"@pluxel/hmr": "./src/cli.ts",
+			"default": "./dist/cli.mjs"
+		},
+		"./model": {
+			"@pluxel/hmr": "./src/model.ts",
+			"default": "./dist/model.mjs"
+		},
+		"./workspace": {
+			"@pluxel/hmr": "./src/workspace.ts",
+			"default": "./dist/workspace.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./cli": "./dist/cli.mjs",
+			"./model": "./dist/model.mjs",
+			"./workspace": "./dist/workspace.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"build": "vp run compile",
+		"report": "node dist/cli.mjs",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/plugin-fonts": "workspace:*",
+		"@pluxel/plugin-typst": "link:../../plugins/render/typst",
+		"@pluxel/services": "workspace:*",
+		"@tiptap/core": "catalog:frontend",
+		"@tiptap/extension-image": "catalog:frontend",
+		"@tiptap/extension-mathematics": "catalog:frontend",
+		"@tiptap/extension-table": "catalog:frontend",
+		"@tiptap/extension-text-align": "catalog:frontend",
+		"@tiptap/extension-text-style": "catalog:frontend",
+		"@tiptap/markdown": "catalog:frontend",
+		"@tiptap/pm": "catalog:frontend",
+		"@tiptap/starter-kit": "catalog:frontend",
+		"@tiptap/suggestion": "catalog:frontend",
+		"@types/node": "catalog:types",
+		"katex": "catalog:frontend",
+		"typescript": "catalog:dev",
+		"valibot": "catalog:validation",
+		"vite-plus": "catalog:build"
+	},
+	"peerDependencies": {
+		"@pluxel/plugin-typst": "*"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/plugin-typst": "required"
+		},
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true
+	}
+}

@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"target": "ES2023",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ES2024", "DOM"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"experimentalDecorators": true,
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true
+	},
+	"include": ["src", "tsdown.config.ts", "vite.config.ts"]
+}

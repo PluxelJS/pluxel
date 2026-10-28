@@ -1,0 +1,38 @@
+{
+	"date": "2026-10-28",
+	"editPatches": 1,
+	"editedRegions": ["analysis", "actions"],
+	"baselineNativeJsonBytes": 2319,
+	"byteCounts": {
+		"analysis": {
+			"before": 1126,
+			"edited": 1384,
+			"reexported": 1675,
+			"nativeBlocksBefore": 718,
+			"nativeBlocksReexported": 999,
+			"nativeBlocksEdited": 724
+		},
+		"actions": {
+			"before": 114,
+			"edited": 1048,
+			"reexported": 1066,
+			"nativeBlocksBefore": 0,
+			"nativeBlocksReexported": 0,
+			"nativeBlocksEdited": 0
+		}
+	},
+	"firstEditedCheckMs": 43,
+	"finalRenderMs": 258,
+	"applyMs": 44,
+	"saved": true,
+	"pages": 1,
+	"pdfBytes": 76196,
+	"diagnostics": [],
+	"reexportUnchanged": true,
+	"qualifications": [
+		"One informed agent, one small synthetic report; not a blinded efficiency benchmark.",
+		"Timings are single local observations and exclude model reasoning/tool overhead.",
+		"Tiptap editing uses the real headless Editor; browser UI was not tested."
+	],
+	"secondExportByteStable": true
+}
