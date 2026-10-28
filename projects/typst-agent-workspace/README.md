@@ -68,3 +68,5 @@ mise exec -- vp run test
 测试包括公开制品解析、无修改往返、实际编辑结果重放、跨章移图、复杂表格与字段保留、真实无 DOM Tiptap Editor 命令、候选失败无部分保存、版本冲突及原生 PDF/PNG。它不包含浏览器界面交互，也不证明其他模型、长报告或多人同时编辑的效率。
 
 本次观察与后续核心设计建议见 [evidence/RESULTS.md](evidence/RESULTS.md)。
+
+下一轮以 Typst 源码为权威、Tiptap 作为结构化编辑视图的实验任务见 [TYPST_SOURCE_PROMPT.md](TYPST_SOURCE_PROMPT.md)。这是待验证的设计，不改变本消费者的 Markdown 编辑契约。
