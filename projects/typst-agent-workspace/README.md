@@ -69,4 +69,4 @@ mise exec -- vp run test
 
 本次观察与后续核心设计建议见 [evidence/RESULTS.md](evidence/RESULTS.md)。
 
-下一轮以 Typst 源码为权威、Tiptap 作为结构化编辑视图的实验任务见 [TYPST_SOURCE_PROMPT.md](TYPST_SOURCE_PROMPT.md)。这是待验证的设计，不改变本消费者的 Markdown 编辑契约。
+下一轮 Pluxel Typst 本体重构任务见 [TYPST_SOURCE_PROMPT.md](TYPST_SOURCE_PROMPT.md)：以 Typst 源码为权威，Tiptap 作为结构化编辑视图，并完成核心与已知调用方迁移。该任务尚未实施，本消费者当前仍遵循上述 Markdown 编辑契约。
