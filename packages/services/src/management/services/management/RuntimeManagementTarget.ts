@@ -23,8 +23,10 @@ import {
 	readPluginCatalog,
 	writePluginCatalogLayout,
 } from '../../api/features/pluginCatalog/service'
-import { PluginCatalogLayoutError } from './PluginCatalogLayoutService'
-import { PersistenceError } from '../../../persistence'
+import {
+	PluginCatalogLayoutError,
+	PluginCatalogLayoutPersistenceError,
+} from './PluginCatalogLayoutService'
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
@@ -176,7 +178,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 					error: error.message,
 				})
 			}
-			if (error instanceof PersistenceError) {
+			if (error instanceof PluginCatalogLayoutPersistenceError) {
 				return checkedDto({
 					ok: false,
 					code: 'persistence_failed',

@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { chromium } from 'playwright-core'
 import { expect, it } from 'vitest'
+import { build } from 'vite'
 
 const execFile = promisify(execFileCallback)
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
@@ -56,16 +58,161 @@ const checkOptionalDeclarations = async (root) => {
 		)
 }
 
+const checkInstalledBrowserFs = async (root) => {
+	const fixture = join(root, 'browser-fs.mjs')
+	await writeFile(
+		fixture,
+		await readFile(new URL('./fixtures/installed-fs-browser.mjs', import.meta.url), 'utf8'),
+	)
+	const result = await build({
+		root,
+		configFile: false,
+		logLevel: 'error',
+		build: {
+			write: false,
+			target: 'esnext',
+			minify: false,
+			lib: { entry: fixture, formats: ['es'] },
+		},
+	})
+	const output = (Array.isArray(result) ? result[0] : result).output
+	const entry = output.find((item) => item.type === 'chunk' && item.isEntry)
+	expect(entry).toBeDefined()
+	const scripts = new Map(
+		output.filter((item) => item.type === 'chunk').map((item) => [item.fileName, item.code]),
+	)
+	const browser = await chromium.connect(
+		process.env.PLAYWRIGHT_WS_ENDPOINT ?? 'ws://127.0.0.1:3000',
+		{ timeout: 10_000 },
+	)
+	let context
+	try {
+		context = await browser.newContext()
+		const requests = []
+		await context.route('https://installed-fs.test/**', (route) => {
+			const path = new URL(route.request().url()).pathname.slice(1)
+			requests.push(path)
+			return route.fulfill(
+				path === ''
+					? { contentType: 'text/html', body: '<!doctype html><title>Installed filesystem</title>' }
+					: { contentType: 'text/javascript', body: scripts.get(path) ?? '' },
+			)
+		})
+		const page = await context.newPage()
+		const errors = []
+		page.on('pageerror', (error) => errors.push(error.message))
+		await page.goto('https://installed-fs.test/')
+		// Keep the browser import outside Vitest's SSR transformation of this test module.
+		const load = `import(${JSON.stringify(`/${entry.fileName}`)})`
+		expect(await page.evaluate(`${load}.then((runtime) => runtime.memory())`)).toBe('MEMORY')
+		for (const file of entry.dynamicImports) expect(requests).not.toContain(file)
+		expect(await page.evaluate(`${load}.then((runtime) => runtime.persisted())`)).toEqual({
+			content: 'PERSISTED',
+			empty: '',
+			binary: [0, 1, 255],
+			readonly: 'EROFS',
+			missingOtherOwner: 'ENOENT',
+			rounds: Array.from({ length: 3 }, () => ({
+				content: 'PERSISTED',
+				otherOwner: 'OWNER-B',
+				closed: 'EBADF',
+			})),
+		})
+		const bootstrap = await page.evaluate(`${load}.then((runtime) => runtime.corruptConfig())`)
+		expect(bootstrap).toMatchObject({
+			cause: 'SyntaxError',
+			closed: 'EBADF',
+			bytes: [123, 10, 0, 255],
+		})
+		expect(bootstrap.failure).toMatch(/\[ConfigService\] Cannot load config\.json:/)
+		expect(errors).toEqual([])
+	} finally {
+		try {
+			await context?.close()
+		} finally {
+			await browser.close()
+		}
+	}
+}
+
+const packBaseServices = async (root) => {
+	const dependencies = {}
+	// Include Host's publication-time dependency on valibot-form in the base closure.
+	for (const name of ['core', 'host', 'commands', 'services', 'valibot-form']) {
+		const tarball = join(root, `${name}.tgz`)
+		await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
+		dependencies[name === 'valibot-form' ? name : `@pluxel/${name}`] = `file:${tarball}`
+	}
+	return dependencies
+}
+
+it('ships the patched filesystem to independent Node and browser consumers with its declarations and notices', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-fs-consumer-'))
+	try {
+		const dependencies = await packBaseServices(root)
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: 'independent-service-consumer',
+				private: true,
+				type: 'module',
+				dependencies,
+			}),
+		)
+		await writeFile(
+			join(root, 'pnpm-workspace.yaml'),
+			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+		)
+		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
+		for (const name of Object.keys(dependencies))
+			expect(await realpath(join(root, 'node_modules', name))).not.toContain(workspace)
+		const installed = await readdir(join(root, 'node_modules/.pnpm'))
+		expect(installed.some((name) => name.startsWith('elysia@'))).toBe(false)
+		expect(installed.some((name) => /^(?:@zenfs\+|kerium@|utilium@|memium@)/.test(name))).toBe(
+			false,
+		)
+		const servicePackage = await realpath(join(root, 'node_modules/@pluxel/services'))
+		for (const file of [
+			'README.md',
+			'patches/@zenfs__core@2.8.3.patch',
+			'patches/@zenfs__dom@1.2.14.patch',
+			'@zenfs/core/LICENSE.md',
+			'@zenfs/dom/LICENSE.md',
+			'buffer/LICENSE',
+		]) {
+			const notice = await readFile(join(servicePackage, 'dist/third-party', file), 'utf8')
+			expect(notice.length).toBeGreaterThan(0)
+		}
+		await writeFile(join(root, 'fs.mjs'), fsConsumer)
+		const filesystem = await run(process.execPath, ['fs.mjs'], root)
+		expect(filesystem.stdout).toContain('ISOLATED_FS_OK')
+
+		await writeFile(join(root, 'consumer.ts'), fsTypeConsumer)
+		await writeFile(
+			join(root, 'tsconfig.json'),
+			JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					skipLibCheck: false,
+					noEmit: true,
+					module: 'NodeNext',
+					target: 'ESNext',
+					types: [],
+				},
+				files: ['consumer.ts'],
+			}),
+		)
+		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
+		await checkInstalledBrowserFs(root)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+}, 90_000)
+
 it('consumes real service tarballs outside the workspace with isolated declarations and lazy ESM imports', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-services-consumer-'))
 	try {
-		const dependencies = {}
-		// Include Host's publication-time dependency on valibot-form in the base closure.
-		for (const name of ['core', 'host', 'commands', 'services', 'valibot-form']) {
-			const tarball = join(root, `${name}.tgz`)
-			await run('pnpm', ['pack', '--out', tarball], join(workspace, 'packages', name))
-			dependencies[name === 'valibot-form' ? name : `@pluxel/${name}`] = `file:${tarball}`
-		}
+		const dependencies = await packBaseServices(root)
 		const nodeTypes = JSON.parse(
 			await readFile(
 				join(workspace, 'packages/services/node_modules/@types/node/package.json'),
@@ -78,7 +225,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		const bunTypes = JSON.parse(
 			await readFile(elysiaRequire.resolve('@types/bun/package.json'), 'utf8'),
 		).version
-		// Elysia beta.19 requires the Validator contract present in the project's pinned TypeBox.
+		// Retain the existing optional HTTP fixture; the FS receiver test installs neither package.
 		const typeboxVersion = '1.3.23'
 		const elysiaVersion = JSON.parse(
 			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
@@ -207,6 +354,101 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 	}
 }, 180_000)
 
+const fsTypeConsumer = `
+import * as nativeFs from 'node:fs'
+import {createHost} from '@pluxel/host/browser'
+import {Fs,fs,InMemory,Passthrough,type FsPromises,type FsServiceConfig} from '@pluxel/services/fs'
+import {IndexedDB} from '@pluxel/services/fs/browser'
+const nodeConfig={backend:Passthrough,fs:nativeFs,prefix:'/data',readOnly:true} satisfies FsServiceConfig
+const browserConfig={backend:IndexedDB,storeName:'profile',readOnly:true} satisfies FsServiceConfig
+// @ts-expect-error Passthrough requires its native fs and prefix options.
+const missingNativeConfig:FsServiceConfig={backend:Passthrough}
+const host=await createHost({plugins:[],services:[fs({backend:InMemory})]})
+const io:FsPromises=await host.ctx.require(Fs).directory('documents')
+const bytes:Uint8Array=await io.readFile('value')
+const text:string=await io.readFile('value','utf8')
+void nodeConfig;void browserConfig;void missingNativeConfig;void bytes;void text
+await host.close()
+`
+
+const fsConsumer = `
+import assert from 'node:assert/strict'
+import * as nativeFs from 'node:fs'
+import { registerHooks } from 'node:module'
+import { createHost } from '@pluxel/host'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
+import { Fs, PluginFs, fs, InMemory, Passthrough, writeFileAtomic } from '@pluxel/services/fs'
+const hooks = registerHooks({ load(url, context, next) {
+ assert.equal(/\\/node_modules\\/(?:@zenfs\\/|kerium\\/|utilium\\/|memium\\/)/.test(url), false, 'Filesystem must use its bundled patched implementation')
+ return next(url, context)
+} })
+const views = new Map()
+class Owner extends BasePlugin {
+ async init() {
+  assert.equal(this.ctx.require(PluginFs), this.ctx.fs)
+  assert.throws(() => this.ctx.require(Fs), {code:'CONTEXT_CAPABILITY_ACCESS_DENIED'})
+  views.set(this.ctx.pluginInfo.nodeAddress.definition.exportName, await this.ctx.fs())
+ }
+}
+class First extends Owner {}
+class Second extends Owner {}
+for (const type of [First,Second]) {
+ Plugin()(type)
+ __setPluginDefinition(type,{abiVersion:PLUGIN_LOWERING_ABI_VERSION,kind:'plugin',definition:{entry:{kind:'package-root',packageName:'independent-service-consumer'},exportName:type.name}})
+}
+const service = fs({backend:InMemory})
+const first = await createHost({plugins:[First,Second],services:[service]})
+const second = await createHost({plugins:[],services:[service]})
+let owned
+try {
+ for (const type of [First,Second]) await first.startNode({definition:{entry:{kind:'package-root',packageName:'independent-service-consumer'},exportName:type.name},variant:'default'})
+ owned = views.get('First')
+ await writeFileAtomic(owned,'document','OWNER-A')
+ assert.equal(await owned.readFile('document','utf8'),'OWNER-A')
+ await assert.rejects(views.get('Second').readFile('document'),{code:'ENOENT'})
+ await assert.rejects((await second.ctx.require(Fs).directory('isolated')).readFile('document'),{code:'ENOENT'})
+ await assert.rejects(first.ctx.require(Fs).directory('memory',{durable:true}),{code:'ENOTSUP'})
+} finally { await first.close();await second.close() }
+await assert.rejects(owned.readFile('document'),{code:'EBADF'})
+const prefix = new URL('./native-files/',import.meta.url).pathname
+let reads=0,writes=0
+const shortened = {...nativeFs,promises:{...nativeFs.promises,async open(...args){
+ const handle=await nativeFs.promises.open(...args)
+ const read=handle.read.bind(handle),write=handle.write.bind(handle)
+ handle.read=(buffer,offset,length,position)=>{reads++;return read(buffer,offset,Math.min(length,2),position)}
+ handle.write=(buffer,offset,length,position)=>{writes++;return write(buffer,offset,Math.min(length,2),position)}
+ return handle
+}}}
+let node = await createHost({plugins:[],services:[fs({backend:Passthrough,fs:shortened,prefix})]})
+try {
+ const io=await node.ctx.require(Fs).directory('documents',{durable:true,writable:true})
+ await writeFileAtomic(io,'value','NEW-CONTENT')
+ assert.equal(await nativeFs.promises.readFile(prefix+'/documents/value','utf8'),'NEW-CONTENT')
+ assert.equal(await io.readFile('value','utf8'),'NEW-CONTENT')
+ const handle=await io.open('value','r+')
+ try {await handle.write(Uint8Array.of(88,89),0,2,3)} finally {await handle.close()}
+ assert.equal(await io.readFile('value','utf8'),'NEWXYONTENT')
+ await io.writeFile('value','')
+ assert.equal(await nativeFs.promises.readFile(prefix+'/documents/value','utf8'),'')
+ await io.writeFile('binary',Uint8Array.of(0,1,255))
+ assert.deepEqual(Array.from(await io.readFile('binary')),[0,1,255])
+ assert.ok(reads>1 && writes>1)
+} finally {await node.close()}
+node=await createHost({plugins:[],services:[fs({backend:Passthrough,fs:nativeFs,prefix,readOnly:true})]})
+try {
+ const io=await node.ctx.require(Fs).directory('documents')
+ await assert.rejects(io.writeFile('binary','CHANGED'),{code:'EROFS'})
+ await assert.rejects(io.readFile('missing'),{code:'ENOENT'})
+ assert.deepEqual(Array.from(await io.readFile('binary')),[0,1,255])
+} finally {await node.close()}
+let created=false
+assert.throws(()=>fs({backend:{...InMemory,create(){created=true;throw new Error('external create')}}}),TypeError)
+assert.equal(created,false)
+hooks.deregister()
+console.log('ISOLATED_FS_OK')
+`
+
 const consumer = `
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
@@ -216,7 +458,7 @@ const loads = []
 const hooks = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
 const { Vault, vault } = await import('@pluxel/services/vault')
 assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'token import must not evaluate encryption backend')
-const { persistence, createMemoryPersistenceBackend } = await import('@pluxel/services/persistence')
+const { Fs, fs, InMemory } = await import('@pluxel/services/fs')
 const { Commands, commands } = await import('@pluxel/services/commands')
 const { createHost } = await import('@pluxel/host')
 const { NodeModules, nodeModules } = await import('@pluxel/services/node')
@@ -227,7 +469,7 @@ const ownerToken = defineContextCapability('consumer.owner', { access: 'all' })
 const core = createCoreContextHost({ capabilities: [installOwnerViewCapability(ownerToken, { createRoot: () => ({}), createView: (_, owner) => owner.name })] })
 const coreRoot = core.createRoot()
 assert.equal(core.createScope(coreRoot, 'isolated').require(ownerToken), 'isolated')
-const storage = persistence({ mode: 'custom', backend: createMemoryPersistenceBackend() })
+const storage = fs({ backend: InMemory })
 const first = await createHost({ plugins: [], services: [vault(), storage, commands()] })
 const second = await createHost({ plugins: [], services: [storage] })
 try {
@@ -262,16 +504,23 @@ console.log('ISOLATED_SERVICES_OK')
 `
 const typeConsumer = `
 import { standardServices } from '@pluxel/services'
-const baseServices = standardServices({ persistence: { mode: 'memory' } })
+const baseServices = standardServices({ fs: { backend: InMemory } })
 void baseServices
 import { createHost } from '@pluxel/host'
 import { BasePlugin, type Context } from '@pluxel/core'
-import { Persistence, persistence, createMemoryPersistenceBackend } from '@pluxel/services/persistence'
+import { Fs, PluginFs, fs, InMemory, Passthrough, type FsPromises, type FsServiceConfig } from '@pluxel/services/fs'
+import { IndexedDB } from '@pluxel/services/fs/browser'
+import * as nativeFs from 'node:fs'
+const nativeConfig = { backend: Passthrough, fs: nativeFs, prefix: '/data', readOnly: true } satisfies FsServiceConfig
+const browserConfig = { backend: IndexedDB, storeName: 'profile', readOnly: true } satisfies FsServiceConfig
+// @ts-expect-error Passthrough requires its native fs and prefix options.
+const missingNativeConfig: FsServiceConfig = { backend: Passthrough }
+void nativeConfig; void browserConfig; void missingNativeConfig
 import { Vault, vault, type VaultStorageApi } from '@pluxel/services/vault'
 import { nodeModules, NodeModules } from '@pluxel/services/node'
 import { workers, Workers, defineWorkerTask } from '@pluxel/services/workers'
 import { Commands, commands, type CommandsService } from '@pluxel/services/commands'
-const storage = persistence({ mode: 'custom', backend: createMemoryPersistenceBackend() })
+const storage = fs({ backend: InMemory })
 const first = await createHost({ plugins: [], services: [storage, vault(), commands()] })
 const second = await createHost({ plugins: [], services: [storage] })
 const required: VaultStorageApi = first.ctx.vault
@@ -285,8 +534,10 @@ class Consumer extends BasePlugin {
  init() {
   const optional: VaultStorageApi | undefined = this.ctx.vault
   const owned: VaultStorageApi = this.ctx.require(Vault)
+  const ownerIo: Promise<FsPromises> = this.ctx.require(PluginFs)({ writable: true })
+  void ownerIo
   // @ts-expect-error Root authorities cannot be required on an owner Context.
-  this.ctx.require(Persistence)
+  this.ctx.require(Fs)
   void optional; void owned
  }
 }
@@ -356,13 +607,13 @@ const { requireWorkbench } = await import('@pluxel/workbench/server')
 const { workbenchHttp } = await import('@pluxel/workbench/http')
 const { elysia } = await import('@pluxel/services/elysia')
 const { ElysiaRuntime } = await import('@pluxel/services/internal')
-const { persistence } = await import('@pluxel/services/persistence')
+const { fs, InMemory } = await import('@pluxel/services/fs')
 const { management } = await import('@pluxel/services/management/service')
 const { managementAccess } = await import('@pluxel/services/management/access')
 const { managementHttp } = await import('@pluxel/services/management/http')
 const { createWorkbenchArtifactHandler, WorkbenchHost } = await import('@pluxel/workbench/server')
 const transport = managementHttp({ bindings: (ctx) => ({ createWorkbench: (principal, invalidate) => requireWorkbench(ctx).createSession(principal, invalidate), artifacts: createWorkbenchArtifactHandler(ctx) }) })
-const host = await createHost({ plugins: [], services: [elysia(), persistence({ mode: 'memory' }), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
+const host = await createHost({ plugins: [], services: [elysia(), fs({ backend: InMemory }), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
 const server = resolveContextCapability(host.ctx, ElysiaRuntime)
 const page = await server.fetch(new Request('http://host.test/admin', { headers: { accept: 'text/html' } }))
 assert.equal(page.status, 200)
@@ -379,7 +630,7 @@ assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
 await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
-const workbenchTestHost = await createTestHost({ workbench: true, services: [elysia(), persistence({ mode: 'memory' })] })
+const workbenchTestHost = await createTestHost({ workbench: true, services: [elysia(), fs({ backend: InMemory })] })
 assert.equal(typeof workbenchTestHost.workbench.open, 'function')
 await workbenchTestHost.dispose()
 console.log('ISOLATED_WORKBENCH_OK')
@@ -419,8 +670,9 @@ import { managementAccess } from '@pluxel/services/management/access'
 import * as managementSession from '@pluxel/services/management/session'
 import { createHost as createManagementHost } from '@pluxel/host'
 import { standardServices as managementServices } from '@pluxel/services'
+import { InMemory as ManagementMemory } from '@pluxel/services/fs'
 const headlessHost = await createManagementHost({ plugins: [], services: [
- ...managementServices({ persistence: { mode: 'memory' } }), managementAccess(), management(), managementHttp(),
+ ...managementServices({ fs: { backend: ManagementMemory } }), managementAccess(), management(), managementHttp(),
 ] })
 await headlessHost.close()
 void [management, managementHttp, managementAccess, managementSession]
@@ -440,8 +692,9 @@ const loads = []
 const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
 const { createHost } = await import('@pluxel/host')
 const { standardServices } = await import('@pluxel/services')
+const { InMemory } = await import('@pluxel/services/fs')
 const { ElysiaRuntime } = await import('@pluxel/services/internal')
-const standardHost = await createHost({ plugins: [], services: standardServices({ persistence: { mode: 'memory' } }) })
+const standardHost = await createHost({ plugins: [], services: standardServices({ fs: { backend: InMemory } }) })
 try {
  const response = await standardHost.ctx.require(ElysiaRuntime).fetch(new Request('http://local.test/missing'))
  assert.equal(response.status, 404)

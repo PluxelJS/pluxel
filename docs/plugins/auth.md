@@ -22,12 +22,17 @@ import { AuthPlugin } from '@pluxel/plugin-auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
+import { Passthrough } from '@pluxel/services/fs'
+import * as nativeFs from 'node:fs'
+import { resolve } from 'node:path'
 
 export default defineHostApplication(async (startup) => {
 	return {
 		name: 'my-app',
 		plugins: [AuthPlugin],
-		services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+		services: await servicesPreset(startup, {
+			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(startup.root, '.pluxel/fs') },
+		}),
 		state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
 		configRecords: {
 			initial: [{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } }],

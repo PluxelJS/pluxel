@@ -1,7 +1,9 @@
+import * as nativeFs from 'node:fs'
 import { pluginSource } from '@pluxel/host/sources'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
+import { Passthrough } from '@pluxel/services/fs'
 
 import { resolve } from 'pathe'
 import { hostPlugins } from './showcase/catalog'
@@ -31,7 +33,7 @@ export default defineHostApplication(async (startup) => {
 			}),
 		],
 		services: await servicesPreset(startup, {
-			persistence: resolve(dataRoot, 'persistence'),
+			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(dataRoot, 'fs') },
 			product,
 			workbench: environment.workbench ?? true,
 		}),

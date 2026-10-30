@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,7 +11,7 @@ describe('PluginWithUI Workbench observer', () => {
 	it('delivers updates through a disposable Workbench observer subscription', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 		await host.start(PluginWithUI)
 		using opened = await host.workbench.open({

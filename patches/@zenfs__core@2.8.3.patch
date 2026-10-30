@@ -1,0 +1,1294 @@
+diff --git a/dist/backends/backend.d.ts b/dist/backends/backend.d.ts
+index b6fbf50db99e375b01aeea07e57bd6ee97283a8b..659e9b8863df7479b4f294bb2a5e5e09c0f661f6 100644
+--- a/dist/backends/backend.d.ts
++++ b/dist/backends/backend.d.ts
+@@ -29,6 +29,8 @@ export type OptionsConfig<T> = {
+  * @category Backends and Configuration
+  */
+ export interface SharedConfig {
++    /** Reject mutations with EROFS. Omitted/false preserves the backend's current writable state. */
++    readOnly?: boolean;
+     /**
+      * If set, disables the sync cache and sync operations on async file systems.
+      */
+diff --git a/dist/backends/passthrough.js b/dist/backends/passthrough.js
+index f014099a73e4211bba34e31633157520159a212e..cf4d807977a2539e385696bb651d141c985b6cc1 100644
+--- a/dist/backends/passthrough.js
++++ b/dist/backends/passthrough.js
+@@ -51,7 +51,8 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
+     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+ });
+ // SPDX-License-Identifier: LGPL-3.0-or-later
+-import { err, warn } from 'kerium/log';
++import { UV } from 'kerium';
++import { warn } from 'kerium/log';
+ import { FileSystem } from '../internal/filesystem.js';
+ import { isDirectory } from '../internal/inode.js';
+ export class PassthroughFS extends FileSystem {
+@@ -89,39 +90,32 @@ export class PassthroughFS extends FileSystem {
+      * Timestamps should be updated by the underlying file system.
+      */
+     async touch(path, metadata) {
+-        const env_1 = { stack: [], error: void 0, hasError: false };
+-        try {
+-            const handle = __addDisposableResource(env_1, await this.nodeFS.promises.open(this.path(path), 'r'), true);
+-            await handle.chmod(metadata.mode);
+-            try {
+-                await handle.chown(metadata.uid, metadata.gid);
+-            }
+-            catch (error) {
+-                err('Failed to chown passthrough file: ' + error.message);
+-            }
+-        }
+-        catch (e_1) {
+-            env_1.error = e_1;
+-            env_1.hasError = true;
+-        }
+-        finally {
+-            const result_1 = __disposeResources(env_1);
+-            if (result_1)
+-                await result_1;
++        const pathName = this.path(path);
++        if (metadata.size !== undefined) {
++            const stats = await this.nodeFS.promises.stat(pathName);
++            if (stats.isFile() && stats.size !== metadata.size)
++                await this.nodeFS.promises.truncate(pathName, metadata.size);
+         }
++        if (metadata.mode !== undefined)
++            await this.nodeFS.promises.chmod(pathName, metadata.mode);
++        if (metadata.uid !== undefined && metadata.gid !== undefined)
++            await this.nodeFS.promises.chown(pathName, metadata.uid, metadata.gid);
++        if (metadata.atimeMs !== undefined && metadata.mtimeMs !== undefined)
++            await this.nodeFS.promises.utimes(pathName, metadata.atimeMs / 1000, metadata.mtimeMs / 1000);
+     }
+-    /**
+-     * @privateRemarks
+-     * Timestamps should be updated by the underlying file system.
+-     */
+     touchSync(path, metadata) {
+-        this.nodeFS.chmodSync(this.path(path), metadata.mode);
+-        try {
+-            this.nodeFS.chownSync(this.path(path), metadata.uid, metadata.gid);
+-        }
+-        catch (error) {
+-            err('Failed to chown passthrough file: ' + error.message);
++        const pathName = this.path(path);
++        if (metadata.size !== undefined) {
++            const stats = this.nodeFS.statSync(pathName);
++            if (stats.isFile() && stats.size !== metadata.size)
++                this.nodeFS.truncateSync(pathName, metadata.size);
+         }
++        if (metadata.mode !== undefined)
++            this.nodeFS.chmodSync(pathName, metadata.mode);
++        if (metadata.uid !== undefined && metadata.gid !== undefined)
++            this.nodeFS.chownSync(pathName, metadata.uid, metadata.gid);
++        if (metadata.atimeMs !== undefined && metadata.mtimeMs !== undefined)
++            this.nodeFS.utimesSync(pathName, metadata.atimeMs / 1000, metadata.mtimeMs / 1000);
+     }
+     async unlink(path) {
+         await this.nodeFS.promises.unlink(this.path(path));
+@@ -150,7 +144,7 @@ export class PassthroughFS extends FileSystem {
+         else {
+             const env_2 = { stack: [], error: void 0, hasError: false };
+             try {
+-                const handle = __addDisposableResource(env_2, await this.nodeFS.promises.open(this.path(path), 'wx'), true);
++                const handle = __addDisposableResource(env_2, await this.nodeFS.promises.open(this.path(path), 'wx', options.mode), true);
+                 await handle.close();
+             }
+             catch (e_2) {
+@@ -170,7 +164,7 @@ export class PassthroughFS extends FileSystem {
+             this.nodeFS.mkdirSync(this.path(path), { mode: options.mode });
+         }
+         else {
+-            const fd = this.nodeFS.openSync(this.path(path), 'wx');
++            const fd = this.nodeFS.openSync(this.path(path), 'wx', options.mode);
+             this.nodeFS.closeSync(fd);
+         }
+         return this.nodeFS.statSync(this.path(path));
+@@ -194,50 +188,68 @@ export class PassthroughFS extends FileSystem {
+         this.nodeFS.linkSync(this.path(target), this.path(link));
+     }
+     async read(path, buffer, offset, end) {
+-        const env_3 = { stack: [], error: void 0, hasError: false };
++        const env = { stack: [], error: undefined, hasError: false };
+         try {
+-            const handle = __addDisposableResource(env_3, await this.nodeFS.promises.open(this.path(path), 'r'), true);
+-            await handle.read({ buffer, offset, length: end - offset });
++            const handle = __addDisposableResource(env, await this.nodeFS.promises.open(this.path(path), 'r'), true);
++            for (let done = 0; done < end - offset;) {
++                const { bytesRead } = await handle.read(buffer, done, end - offset - done, offset + done);
++                if (!bytesRead)
++                    throw UV('EIO', 'read', path);
++                done += bytesRead;
++            }
+         }
+-        catch (e_3) {
+-            env_3.error = e_3;
+-            env_3.hasError = true;
++        catch (error) {
++            env.error = error;
++            env.hasError = true;
+         }
+         finally {
+-            const result_3 = __disposeResources(env_3);
+-            if (result_3)
+-                await result_3;
++            const result = __disposeResources(env);
++            if (result) await result;
+         }
+     }
+     readSync(path, buffer, offset, end) {
+         const fd = this.nodeFS.openSync(this.path(path), 'r');
+         try {
+-            this.nodeFS.readSync(fd, buffer, { offset, length: end - offset });
++            for (let done = 0; done < end - offset;) {
++                const bytesRead = this.nodeFS.readSync(fd, buffer, done, end - offset - done, offset + done);
++                if (!bytesRead)
++                    throw UV('EIO', 'read', path);
++                done += bytesRead;
++            }
+         }
+         finally {
+             this.nodeFS.closeSync(fd);
+         }
+     }
+     async write(path, buffer, offset) {
+-        const env_4 = { stack: [], error: void 0, hasError: false };
++        const env = { stack: [], error: undefined, hasError: false };
+         try {
+-            const handle = __addDisposableResource(env_4, await this.nodeFS.promises.open(this.path(path), 'w'), true);
+-            await handle.write(buffer, offset);
++            const handle = __addDisposableResource(env, await this.nodeFS.promises.open(this.path(path), 'r+'), true);
++            for (let done = 0; done < buffer.byteLength;) {
++                const { bytesWritten } = await handle.write(buffer, done, buffer.byteLength - done, offset + done);
++                if (!bytesWritten)
++                    throw UV('EIO', 'write', path);
++                done += bytesWritten;
++            }
+         }
+-        catch (e_4) {
+-            env_4.error = e_4;
+-            env_4.hasError = true;
++        catch (error) {
++            env.error = error;
++            env.hasError = true;
+         }
+         finally {
+-            const result_4 = __disposeResources(env_4);
+-            if (result_4)
+-                await result_4;
++            const result = __disposeResources(env);
++            if (result) await result;
+         }
+     }
+     writeSync(path, buffer, offset) {
+-        const fd = this.nodeFS.openSync(this.path(path), 'w');
++        const fd = this.nodeFS.openSync(this.path(path), 'r+');
+         try {
+-            this.nodeFS.writeSync(fd, buffer, offset);
++            for (let done = 0; done < buffer.byteLength;) {
++                const bytesWritten = this.nodeFS.writeSync(fd, buffer, done, buffer.byteLength - done, offset + done);
++                if (!bytesWritten)
++                    throw UV('EIO', 'write', path);
++                done += bytesWritten;
++            }
+         }
+         finally {
+             this.nodeFS.closeSync(fd);
+diff --git a/dist/backends/store/fs.d.ts b/dist/backends/store/fs.d.ts
+index b08608dd6b73fade6e5f88fb968ed467665f62a8..3aa0073f4ac91225d28152c7139ea7411116ceca 100644
+--- a/dist/backends/store/fs.d.ts
++++ b/dist/backends/store/fs.d.ts
+@@ -33,7 +33,7 @@ export declare class StoreFS<T extends Store = Store> extends FileSystem {
+     /**
+      * Remove a inode/path pair
+      */
+-    _remove(ino: number): void;
++    _remove(ino: number, path?: string): void;
+     /**
+      * Move paths in the tables
+      */
+@@ -76,6 +76,7 @@ export declare class StoreFS<T extends Store = Store> extends FileSystem {
+     readdirSync(path: string): string[];
+     sync(): Promise<void>;
+     syncSync(): void;
++    close(): Promise<void>;
+     link(target: string, link: string): Promise<void>;
+     linkSync(target: string, link: string): void;
+     read(path: string, buffer: Uint8Array, offset: number, end: number): Promise<void>;
+@@ -88,11 +89,11 @@ export declare class StoreFS<T extends Store = Store> extends FileSystem {
+      */
+     transaction(): WrappedTransaction;
+     /**
+-     * Checks if the root directory exists. Creates it if it doesn't.
++     * Checks the root directory, initializing it only when the store is entirely empty.
+      */
+     checkRoot(): Promise<void>;
+     /**
+-     * Checks if the root directory exists. Creates it if it doesn't.
++     * Checks the root directory, initializing it only when the store is entirely empty.
+      */
+     checkRootSync(): void;
+     /**
+diff --git a/dist/backends/store/fs.js b/dist/backends/store/fs.js
+index 9ae516485806ad195051227473486356a02c441a..a6147da42de085512ffa6938270914d577b0a805 100644
+--- a/dist/backends/store/fs.js
++++ b/dist/backends/store/fs.js
+@@ -52,7 +52,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
+ });
+ // SPDX-License-Identifier: LGPL-3.0-or-later
+ import { withErrno } from 'kerium';
+-import { crit, debug, err, notice, warn } from 'kerium/log';
++import { crit, debug, err, warn } from 'kerium/log';
+ import { sizeof } from 'memium';
+ import { _throw, canary, encodeUTF8 } from 'utilium';
+ import { extendBuffer } from 'utilium/buffer';
+@@ -99,7 +99,15 @@ export class StoreFS extends FileSystem {
+     /**
+      * Remove a inode/path pair
+      */
+-    _remove(ino) {
++    _remove(ino, path) {
++        if (path !== undefined) {
++            this._ids.delete(path);
++            const paths = this._paths.get(ino);
++            paths?.delete(path);
++            if (!paths?.size)
++                this._paths.delete(ino);
++            return;
++        }
+         for (const path of this._paths.get(ino) ?? []) {
+             this._ids.delete(path);
+         }
+@@ -135,12 +143,20 @@ export class StoreFS extends FileSystem {
+     async ready() {
+         if (this._initialized)
+             return;
+-        if (!this.attributes.has('no_async_preload')) {
+-            this.checkRootSync();
++        try {
++            await this.checkRoot();
++            await this._populate();
++            this._initialized = true;
++        }
++        catch (cause) {
++            try {
++                await this.store.close?.();
++            }
++            catch (cleanup) {
++                throw new AggregateError([cause, cleanup], 'Store initialization and cleanup failed');
++            }
++            throw cause;
+         }
+-        await this.checkRoot();
+-        await this._populate();
+-        this._initialized = true;
+     }
+     readySync() {
+         if (this._initialized)
+@@ -176,12 +192,13 @@ export class StoreFS extends FileSystem {
+             const tx = __addDisposableResource(env_1, this.transaction(), true);
+             const dirs = index.directories();
+             for (const [path, inode] of index) {
+-                this._add(inode.ino, path);
+                 await tx.set(inode.ino, inode);
+                 if (dirs.has(path))
+                     await tx.set(inode.data, encodeDirListing(dirs.get(path)));
+             }
+             await tx.commit();
++            for (const [path, inode] of index)
++                this._add(inode.ino, path);
+         }
+         catch (e_1) {
+             env_1.error = e_1;
+@@ -203,12 +220,13 @@ export class StoreFS extends FileSystem {
+             const tx = __addDisposableResource(env_2, this.transaction(), false);
+             const dirs = index.directories();
+             for (const [path, inode] of index) {
+-                this._add(inode.ino, path);
+                 tx.setSync(inode.ino, inode);
+                 if (dirs.has(path))
+                     tx.setSync(inode.data, encodeDirListing(dirs.get(path)));
+             }
+             tx.commitSync();
++            for (const [path, inode] of index)
++                this._add(inode.ino, path);
+         }
+         catch (e_2) {
+             env_2.error = e_2;
+@@ -282,6 +300,8 @@ export class StoreFS extends FileSystem {
+      * @todo Make rename compatible with the cache.
+      */
+     async rename(oldPath, newPath) {
++        if (oldPath === newPath)
++            return;
+         const env_5 = { stack: [], error: void 0, hasError: false };
+         try {
+             const tx = __addDisposableResource(env_5, this.transaction(), true);
+@@ -307,18 +327,27 @@ export class StoreFS extends FileSystem {
+             const newDirList = sameParent
+                 ? oldDirList
+                 : decodeDirListing((await tx.get(newDirNode.data)) ?? _throw(withErrno('ENODATA')));
+-            if (newDirList[_new.base]) {
+-                const existing = new Inode((await tx.get(newDirList[_new.base])) ?? _throw(withErrno('ENOENT')));
++            const replaced = newDirList[_new.base];
++            if (replaced) {
++                const existing = new Inode((await tx.get(replaced)) ?? _throw(withErrno('ENOENT')));
+                 if (!isFile(existing))
+                     throw withErrno('EISDIR');
+-                await tx.remove(existing.data);
+-                await tx.remove(newDirList[_new.base]);
++                if (existing.nlink > 1) {
++                    existing.nlink--;
++                    await tx.set(existing.ino, existing);
++                }
++                else {
++                    await tx.remove(existing.data);
++                    await tx.remove(replaced);
++                }
+             }
+             newDirList[_new.base] = ino;
+             // Commit the two changed directory listings.
+             await tx.set(oldDirNode.data, encodeDirListing(oldDirList));
+             await tx.set(newDirNode.data, encodeDirListing(newDirList));
+             await tx.commit();
++            if (replaced)
++                this._remove(replaced, newPath);
+             this._move(oldPath, newPath);
+         }
+         catch (e_5) {
+@@ -332,6 +361,8 @@ export class StoreFS extends FileSystem {
+         }
+     }
+     renameSync(oldPath, newPath) {
++        if (oldPath === newPath)
++            return;
+         const env_6 = { stack: [], error: void 0, hasError: false };
+         try {
+             const tx = __addDisposableResource(env_6, this.transaction(), false);
+@@ -356,18 +387,27 @@ export class StoreFS extends FileSystem {
+             // Prevent us from re-grabbing the same directory listing, which still contains `old_path.base.`
+             const newDirNode = sameParent ? oldDirNode : this.findInodeSync(tx, _new.dir);
+             const newDirList = sameParent ? oldDirList : decodeDirListing(tx.getSync(newDirNode.data) ?? _throw(withErrno('ENODATA')));
+-            if (newDirList[_new.base]) {
+-                const existing = new Inode(tx.getSync(newDirList[_new.base]) ?? _throw(withErrno('ENOENT')));
++            const replaced = newDirList[_new.base];
++            if (replaced) {
++                const existing = new Inode(tx.getSync(replaced) ?? _throw(withErrno('ENOENT')));
+                 if (!isFile(existing))
+                     throw withErrno('EISDIR');
+-                tx.removeSync(existing.data);
+-                tx.removeSync(newDirList[_new.base]);
++                if (existing.nlink > 1) {
++                    existing.nlink--;
++                    tx.setSync(existing.ino, existing);
++                }
++                else {
++                    tx.removeSync(existing.data);
++                    tx.removeSync(replaced);
++                }
+             }
+             newDirList[_new.base] = ino;
+             // Commit the two changed directory listings.
+             tx.setSync(oldDirNode.data, encodeDirListing(oldDirList));
+             tx.setSync(newDirNode.data, encodeDirListing(newDirList));
+             tx.commitSync();
++            if (replaced)
++                this._remove(replaced, newPath);
+             this._move(oldPath, newPath);
+         }
+         catch (e_6) {
+@@ -420,8 +460,7 @@ export class StoreFS extends FileSystem {
+                 await tx.set(inode.data, metadata.size < data.byteLength ? data.subarray(0, metadata.size) : extendBuffer(data, metadata.size));
+             }
+             if (inode.update(metadata)) {
+-                this._add(inode.ino, path);
+-                tx.setSync(inode.ino, inode);
++                await tx.set(inode.ino, inode);
+             }
+             await tx.commit();
+         }
+@@ -447,7 +486,6 @@ export class StoreFS extends FileSystem {
+                 tx.setSync(inode.data, metadata.size < data.byteLength ? data.subarray(0, metadata.size) : extendBuffer(data, metadata.size));
+             }
+             if (inode.update(metadata)) {
+-                this._add(inode.ino, path);
+                 tx.setSync(inode.ino, inode);
+             }
+             tx.commitSync();
+@@ -520,8 +558,9 @@ export class StoreFS extends FileSystem {
+             __disposeResources(env_12);
+         }
+     }
+-    async sync() { }
++    async sync() { await this.store.sync(); }
+     syncSync() { }
++    async close() { await this.store.close?.(); }
+     async link(target, link) {
+         const env_13 = { stack: [], error: void 0, hasError: false };
+         try {
+@@ -530,10 +569,10 @@ export class StoreFS extends FileSystem {
+             const inode = await this.findInode(tx, target);
+             inode.nlink++;
+             listing[basename(link)] = inode.ino;
+-            this._add(inode.ino, link);
+             await tx.set(inode.ino, inode);
+             await tx.set(newDirNode.data, encodeDirListing(listing));
+             await tx.commit();
++            this._add(inode.ino, link);
+         }
+         catch (e_13) {
+             env_13.error = e_13;
+@@ -553,10 +592,10 @@ export class StoreFS extends FileSystem {
+             const inode = this.findInodeSync(tx, target);
+             inode.nlink++;
+             listing[basename(link)] = inode.ino;
+-            this._add(inode.ino, link);
+             tx.setSync(inode.ino, inode);
+             tx.setSync(newDirNode.data, encodeDirListing(listing));
+             tx.commitSync();
++            this._add(inode.ino, link);
+         }
+         catch (e_14) {
+             env_14.error = e_14;
+@@ -633,7 +672,6 @@ export class StoreFS extends FileSystem {
+             // Update the inode in the same transaction, so data and metadata can not get out of sync (#286)
+             inode.update({ size: Math.max(inode.size, end), mtimeMs: Date.now() });
+             await tx.set(inode.ino, inode);
+-            this._add(inode.ino, path);
+             await tx.commit();
+         }
+         catch (e_17) {
+@@ -669,7 +707,6 @@ export class StoreFS extends FileSystem {
+             // Update the inode in the same transaction, so data and metadata can not get out of sync (#286)
+             inode.update({ size: Math.max(inode.size, end), mtimeMs: Date.now() });
+             tx.setSync(inode.ino, inode);
+-            this._add(inode.ino, path);
+             tx.commitSync();
+         }
+         catch (e_18) {
+@@ -688,7 +725,7 @@ export class StoreFS extends FileSystem {
+         return new WrappedTransaction(this.store.transaction(), this);
+     }
+     /**
+-     * Checks if the root directory exists. Creates it if it doesn't.
++     * Checks the root directory, initializing it only when the store is entirely empty.
+      */
+     async checkRoot() {
+         const env_19 = { stack: [], error: void 0, hasError: false };
+@@ -696,9 +733,12 @@ export class StoreFS extends FileSystem {
+             const tx = __addDisposableResource(env_19, this.transaction(), true);
+             if (await tx.get(rootIno))
+                 return;
++            if (this.attributes.has('no_write'))
++                throw withErrno('ENOENT', 'Readonly store has no root directory');
++            if (!(await tx.keys())[Symbol.iterator]().next().done)
++                throw withErrno('EIO', 'Store contains data but is missing its root inode');
+             const inode = new Inode({ ino: rootIno, data: 1, mode: 0o777 | S_IFDIR });
+             await tx.set(inode.data, encodeUTF8('{}'));
+-            this._add(rootIno, '/');
+             await tx.set(rootIno, inode);
+             await tx.commit();
+         }
+@@ -713,7 +753,7 @@ export class StoreFS extends FileSystem {
+         }
+     }
+     /**
+-     * Checks if the root directory exists. Creates it if it doesn't.
++     * Checks the root directory, initializing it only when the store is entirely empty.
+      */
+     checkRootSync() {
+         const env_20 = { stack: [], error: void 0, hasError: false };
+@@ -721,9 +761,12 @@ export class StoreFS extends FileSystem {
+             const tx = __addDisposableResource(env_20, this.transaction(), false);
+             if (tx.getSync(rootIno))
+                 return;
++            if (this.attributes.has('no_write'))
++                throw withErrno('ENOENT', 'Readonly store has no root directory');
++            if (!tx.keysSync()[Symbol.iterator]().next().done)
++                throw withErrno('EIO', 'Store contains data but is missing its root inode');
+             const inode = new Inode({ ino: rootIno, data: 1, mode: 0o777 | S_IFDIR });
+             tx.setSync(inode.data, encodeUTF8('{}'));
+-            this._add(rootIno, '/');
+             tx.setSync(rootIno, inode);
+             tx.commitSync();
+         }
+@@ -748,19 +791,13 @@ export class StoreFS extends FileSystem {
+             debug('Populating tables with existing store metadata');
+             const tx = __addDisposableResource(env_21, this.transaction(), true);
+             const rootData = await tx.get(rootIno);
+-            if (!rootData) {
+-                notice('Store does not have a root inode');
+-                const inode = new Inode({ ino: rootIno, data: 1, mode: 0o777 | S_IFDIR });
+-                await tx.set(inode.data, encodeUTF8('{}'));
+-                this._add(rootIno, '/');
+-                await tx.set(rootIno, inode);
+-                await tx.commit();
+-                return;
+-            }
+-            if (rootData.length < sizeof(Inode)) {
+-                crit('Store contains an invalid root inode. Refusing to populate tables');
+-                return;
+-            }
++            if (!rootData)
++                throw withErrno('EIO', 'Store is missing its root inode during population');
++            if (rootData.length < sizeof(Inode))
++                throw withErrno('EIO', 'Store contains an invalid root inode');
++            const root = new Inode(rootData);
++            if (!isDirectory(root) || root.ino !== rootIno)
++                throw withErrno('EIO', 'Store root is not a valid directory inode');
+             const visitedDirectories = new Set();
+             let i = 0;
+             const queue = [['/', rootIno]];
+@@ -769,23 +806,17 @@ export class StoreFS extends FileSystem {
+                 const [path, ino] = queue.shift();
+                 this._add(ino, path);
+                 const inodeData = await tx.get(ino);
+-                if (!inodeData) {
+-                    warn('Store is missing data for inode: ' + ino);
+-                    continue;
+-                }
+-                if (inodeData.length < sizeof(Inode)) {
+-                    warn(`Invalid inode size for ino ${ino}: ${inodeData.length}`);
+-                    continue;
+-                }
++                if (!inodeData)
++                    throw withErrno('EIO', 'Store is missing data for inode: ' + ino);
++                if (inodeData.length < sizeof(Inode))
++                    throw withErrno('EIO', `Invalid inode size for ino ${ino}: ${inodeData.length}`);
+                 const inode = new Inode(inodeData);
+                 if (!isDirectory(inode) || visitedDirectories.has(ino))
+                     continue;
+                 visitedDirectories.add(ino);
+                 const dirData = await tx.get(inode.data);
+-                if (!dirData) {
+-                    warn('Store is missing directory data: ' + inode.data);
+-                    continue;
+-                }
++                if (!dirData)
++                    throw withErrno('EIO', 'Store is missing directory data: ' + inode.data);
+                 const dirListing = decodeDirListing(dirData);
+                 for (const [entryName, childIno] of Object.entries(dirListing)) {
+                     queue.push([join(path, entryName), childIno]);
+@@ -813,19 +844,13 @@ export class StoreFS extends FileSystem {
+             debug('Populating tables with existing store metadata');
+             const tx = __addDisposableResource(env_22, this.transaction(), false);
+             const rootData = tx.getSync(rootIno);
+-            if (!rootData) {
+-                notice('Store does not have a root inode');
+-                const inode = new Inode({ ino: rootIno, data: 1, mode: 0o777 | S_IFDIR });
+-                tx.setSync(inode.data, encodeUTF8('{}'));
+-                this._add(rootIno, '/');
+-                tx.setSync(rootIno, inode);
+-                tx.commitSync();
+-                return;
+-            }
+-            if (rootData.length < sizeof(Inode)) {
+-                crit('Store contains an invalid root inode. Refusing to populate tables');
+-                return;
+-            }
++            if (!rootData)
++                throw withErrno('EIO', 'Store is missing its root inode during population');
++            if (rootData.length < sizeof(Inode))
++                throw withErrno('EIO', 'Store contains an invalid root inode');
++            const root = new Inode(rootData);
++            if (!isDirectory(root) || root.ino !== rootIno)
++                throw withErrno('EIO', 'Store root is not a valid directory inode');
+             const visitedDirectories = new Set();
+             let i = 0;
+             const queue = [['/', rootIno]];
+@@ -834,24 +859,18 @@ export class StoreFS extends FileSystem {
+                 const [path, ino] = queue.shift();
+                 this._add(ino, path);
+                 const inodeData = tx.getSync(ino);
+-                if (!inodeData) {
+-                    warn('Store is missing data for inode: ' + ino);
+-                    continue;
+-                }
+-                if (inodeData.length < sizeof(Inode)) {
+-                    warn(`Invalid inode size for ino ${ino}: ${inodeData.length}`);
+-                    continue;
+-                }
++                if (!inodeData)
++                    throw withErrno('EIO', 'Store is missing data for inode: ' + ino);
++                if (inodeData.length < sizeof(Inode))
++                    throw withErrno('EIO', `Invalid inode size for ino ${ino}: ${inodeData.length}`);
+                 const inode = new Inode(inodeData);
+                 if (!isDirectory(inode) || visitedDirectories.has(ino)) {
+                     continue;
+                 }
+                 visitedDirectories.add(ino);
+                 const dirData = tx.getSync(inode.data);
+-                if (!dirData) {
+-                    warn('Store is missing directory data: ' + inode.data);
+-                    continue;
+-                }
++                if (!dirData)
++                    throw withErrno('EIO', 'Store is missing directory data: ' + inode.data);
+                 const dirListing = decodeDirListing(dirData);
+                 for (const [entryName, childIno] of Object.entries(dirListing)) {
+                     queue.push([join(path, entryName), childIno]);
+@@ -931,7 +950,6 @@ export class StoreFS extends FileSystem {
+     allocNew(path) {
+         if (this.store.allocId) {
+             const ids = this.store.allocId();
+-            this._add(ids[0], path);
+             return ids;
+         }
+         // @todo use `Iterator` helper #296
+@@ -940,7 +958,6 @@ export class StoreFS extends FileSystem {
+         const id = this._lastID;
+         if (id > size_max)
+             throw err(withErrno('ENOSPC', 'No IDs available'));
+-        this._add(id, path);
+         return [id, id + 1];
+     }
+     /**
+@@ -979,6 +996,7 @@ export class StoreFS extends FileSystem {
+             listing[fname] = inode.ino;
+             await tx.set(parent.data, encodeDirListing(listing));
+             await tx.commit();
++            this._add(inode.ino, path);
+             return inode;
+         }
+         catch (e_23) {
+@@ -1028,6 +1046,7 @@ export class StoreFS extends FileSystem {
+             listing[fname] = inode.ino;
+             tx.setSync(parent.data, encodeDirListing(listing));
+             tx.commitSync();
++            this._add(inode.ino, path);
+             return inode;
+         }
+         catch (e_24) {
+@@ -1063,9 +1082,9 @@ export class StoreFS extends FileSystem {
+             else {
+                 await tx.remove(inode.data);
+                 await tx.remove(ino);
+-                this._remove(ino);
+             }
+             await tx.commit();
++            this._remove(ino, path);
+         }
+         catch (e_25) {
+             env_25.error = e_25;
+@@ -1101,9 +1120,9 @@ export class StoreFS extends FileSystem {
+             else {
+                 tx.removeSync(inode.data);
+                 tx.removeSync(ino);
+-                this._remove(ino);
+             }
+             tx.commitSync();
++            this._remove(ino, path);
+         }
+         catch (e_26) {
+             env_26.error = e_26;
+diff --git a/dist/backends/store/map.d.ts b/dist/backends/store/map.d.ts
+index 2a241b216da63a8e33075dd7b34c3075c2a53de8..510f58d36b8d33813b6885600cee3bb03d8e0a67 100644
+--- a/dist/backends/store/map.d.ts
++++ b/dist/backends/store/map.d.ts
+@@ -19,6 +19,7 @@ export interface SyncMapStore extends Store {
+ export declare class SyncMapTransaction extends SyncTransaction<SyncMapStore> {
+     readonly store: SyncMapStore;
+     keys(): Promise<Iterable<number>>;
++    keysSync(): Iterable<number>;
+     get(id: number, offset?: number, end?: number): Promise<Uint8Array | undefined>;
+     getSync(id: number, offset?: number, end?: number): Uint8Array | undefined;
+     setSync(id: number, data: Uint8Array, offset?: number): void;
+diff --git a/dist/backends/store/map.js b/dist/backends/store/map.js
+index 055a22a61ecdc873623c05696d6dc9430c984815..c3a44497ee9d9c92719560f3c036c1a0e57d8d45 100644
+--- a/dist/backends/store/map.js
++++ b/dist/backends/store/map.js
+@@ -7,6 +7,9 @@ import { AsyncTransaction, SyncTransaction } from './store.js';
+ export class SyncMapTransaction extends SyncTransaction {
+     // eslint-disable-next-line @typescript-eslint/require-await
+     async keys() {
++        return this.keysSync();
++    }
++    keysSync() {
+         return this.store.keys();
+     }
+     async get(id, offset, end) {
+diff --git a/dist/backends/store/store.d.ts b/dist/backends/store/store.d.ts
+index 4231822c20b58be05817ad37eea3fd5a92865767..8402dc48a5ebc7c4ac0319777eaa57ec71d061a1 100644
+--- a/dist/backends/store/store.d.ts
++++ b/dist/backends/store/store.d.ts
+@@ -36,6 +36,8 @@ export interface Store {
+      * Syncs the store
+      */
+     sync(): Promise<void>;
++    /** Releases this store's owned resources; repeated calls share the same result. */
++    close?(): Promise<void>;
+     /**
+      * Begins a new transaction.
+      */
+@@ -64,10 +66,17 @@ export interface Store {
+ export declare abstract class Transaction<T extends Store = Store> {
+     readonly store: T;
+     constructor(store: T);
++    /** Native transaction completion hooks, when provided by the store. */
++    commit?(): Promise<void>;
++    commitSync?(): void;
++    abort?(): Promise<void>;
++    abortSync?(): void;
+     /**
+      * Gets all of the keys
+      */
+     abstract keys(): Promise<Iterable<number>>;
++    /** Gets all keys synchronously, or throws EAGAIN before any write. */
++    keysSync(): Iterable<number>;
+     /**
+      * Retrieves data.
+      * @param id The key to look under for data.
+@@ -171,6 +180,7 @@ export declare class WrappedTransaction<T extends Store = Store> {
+      */
+     protected modifiedKeys: Set<number>;
+     keys(): Promise<Iterable<number>>;
++    keysSync(): Iterable<number>;
+     get(id: number, offset?: number, end?: number): Promise<Uint8Array | undefined>;
+     getSync(id: number, offset?: number, end?: number): Uint8Array | undefined;
+     set(id: number, view: Uint8Array | ArrayBufferView, offset?: number): Promise<void>;
+diff --git a/dist/backends/store/store.js b/dist/backends/store/store.js
+index 36f2868b6e8b7391ddb6e92bc6c721f0b8b7428d..1b142e84600daf15d57f5c52293f349fe8b89862 100644
+--- a/dist/backends/store/store.js
++++ b/dist/backends/store/store.js
+@@ -12,6 +12,9 @@ export class Transaction {
+     constructor(store) {
+         this.store = store;
+     }
++    keysSync() {
++        throw withErrno('EAGAIN', 'Synchronous key enumeration is not available');
++    }
+ }
+ /**
+  * Transaction that implements asynchronous operations with synchronous ones
+@@ -116,24 +119,27 @@ export class WrappedTransaction {
+     keys() {
+         return this.raw.keys();
+     }
++    keysSync() {
++        return this.raw.keysSync();
++    }
+     async get(id, offset = 0, end) {
+         const data = await this.raw.get(id, offset, end);
+-        this.stash(id);
+-        return data;
++        // Consumers may mutate an Inode or buffer constructed from this value.
++        return data?.slice();
+     }
+     getSync(id, offset = 0, end) {
+         const data = this.raw.getSync(id, offset, end);
+-        this.stash(id);
+-        return data;
++        // Consumers may mutate an Inode or buffer constructed from this value.
++        return data?.slice();
+     }
+     async set(id, view, offset) {
+         await this.markModified(id, offset, view.byteLength);
+-        const buffer = view instanceof Uint8Array ? view : new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
++        const buffer = new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice();
+         await this.raw.set(id, buffer, offset);
+     }
+     setSync(id, view, offset) {
+         this.markModifiedSync(id, offset, view.byteLength);
+-        const buffer = view instanceof Uint8Array ? view : new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
++        const buffer = new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice();
+         this.raw.setSync(id, buffer, offset);
+     }
+     async remove(id) {
+@@ -144,25 +150,30 @@ export class WrappedTransaction {
+         this.markModifiedSync(id);
+         this.raw.removeSync(id);
+     }
+-    commit() {
++    async commit() {
++        await this.raw.commit?.();
+         this.done = true;
+-        return Promise.resolve();
+     }
+     commitSync() {
++        this.raw.commitSync?.();
+         this.done = true;
+     }
+     async abort() {
+         if (this.done)
+             return;
++        if (this.raw.abort) {
++            await this.raw.abort();
++            this.done = true;
++            return;
++        }
+         for (const [id, entries] of this.originalData) {
+             if (!this.modifiedKeys.has(id))
+                 continue;
+             if (entries.some(ent => !ent.data)) {
+                 await this.raw.remove(id);
+-                this.fs._remove(id);
+                 continue;
+             }
+-            for (const entry of entries.reverse()) {
++            for (const entry of entries.toReversed()) {
+                 await this.raw.set(id, entry.data, entry.offset);
+             }
+         }
+@@ -171,15 +182,19 @@ export class WrappedTransaction {
+     abortSync() {
+         if (this.done)
+             return;
++        if (this.raw.abortSync) {
++            this.raw.abortSync();
++            this.done = true;
++            return;
++        }
+         for (const [id, entries] of this.originalData) {
+             if (!this.modifiedKeys.has(id))
+                 continue;
+             if (entries.some(ent => !ent.data)) {
+                 this.raw.removeSync(id);
+-                this.fs._remove(id);
+                 continue;
+             }
+-            for (const entry of entries.reverse()) {
++            for (const entry of entries.toReversed()) {
+                 this.raw.setSync(id, entry.data, entry.offset);
+             }
+         }
+@@ -202,58 +217,25 @@ export class WrappedTransaction {
+      * on during the transaction.
+      */
+     stash(id, data, offset) {
+-        this.originalData.getOrInsertComputed(id, () => []).push({ data, offset });
++        this.originalData.getOrInsertComputed(id, () => []).push({ data: data?.slice(), offset });
+     }
+     /**
+      * Marks an id as modified, and stashes its value if it has not been stashed already.
+      */
+     async markModified(id, offset, length) {
++        if (this.modifiedKeys.has(id))
++            return;
++        // Native transactions own rollback; only emulate it for non-transactional stores.
++        if (!this.raw.abort)
++            this.stash(id, await this.raw.get(id, 0));
+         this.modifiedKeys.add(id);
+-        const end = offset !== undefined && length ? offset + length : undefined;
+-        try {
+-            this.stash(id, await this.raw.get(id, offset ?? 0, end), offset);
+-        }
+-        catch (e) {
+-            if (!(this.raw instanceof AsyncTransaction))
+-                throw e;
+-            /*
+-                async transaction has a quirk:
+-                setting the buffer to a larger size doesn't work correctly due to cache ranges
+-                so, we cache the existing sub-ranges
+-            */
+-            const tx = this.raw;
+-            const resource = tx._cached(id);
+-            if (!resource)
+-                throw e;
+-            for (const range of resource.cached(offset ?? 0, end ?? offset ?? 0)) {
+-                this.stash(id, await this.raw.get(id, range.start, range.end), range.start);
+-            }
+-        }
+     }
+-    /**
+-     * Marks an id as modified, and stashes its value if it has not been stashed already.
+-     */
++    /** Records the original complete value before a synchronous modification. */
+     markModifiedSync(id, offset, length) {
++        if (this.modifiedKeys.has(id))
++            return;
++        if (!this.raw.abortSync)
++            this.stash(id, this.raw.getSync(id, 0));
+         this.modifiedKeys.add(id);
+-        const end = offset !== undefined && length ? offset + length : undefined;
+-        try {
+-            this.stash(id, this.raw.getSync(id, offset ?? 0, end), offset);
+-        }
+-        catch (e) {
+-            if (!(this.raw instanceof AsyncTransaction))
+-                throw e;
+-            /*
+-                async transaction has a quirk:
+-                setting the buffer to a larger size doesn't work correctly due to cache ranges
+-                so, we cache the existing sub-ranges
+-            */
+-            const tx = this.raw;
+-            const resource = tx._cached(id);
+-            if (!resource)
+-                throw e;
+-            for (const range of resource.cached(offset ?? 0, end ?? offset ?? 0)) {
+-                this.stash(id, this.raw.getSync(id, range.start, range.end), range.start);
+-            }
+-        }
+     }
+ }
+diff --git a/dist/config.js b/dist/config.js
+index dd2e294a284f1f92abde829ff1bec2ef64e4f857..612b11f7fcb0cb79c25a84165020c9f044e0b770 100644
+--- a/dist/config.js
++++ b/dist/config.js
+@@ -4,15 +4,29 @@ import { defaultContext } from './internal/contexts.js';
+ import { createCredentials } from './internal/credentials.js';
+ import { DeviceFS } from './internal/devices.js';
+ import { FileSystem } from './internal/filesystem.js';
++import { Readonly } from './mixins/readonly.js';
+ import { exists, mkdir, stat } from './node/promises.js';
+ import { existsSync, mkdirSync, statSync } from './node/sync.js';
+ import { _setVFSConfig } from './vfs/config.js';
+ import { mount, umount } from './vfs/shared.js';
++function validateReadOnly(config) {
++    if (config.readOnly !== undefined && typeof config.readOnly !== 'boolean')
++        throw withErrno('EINVAL', 'readOnly must be a boolean');
++}
+ /**
+  * Update the configuration of a file system.
+  * @category Backends and Configuration
+  */
+ export function configureFileSystem(fs, config) {
++    validateReadOnly(config);
++    if (config.readOnly === true) {
++        const descriptors = Object.getOwnPropertyDescriptors(Readonly(FileSystem).prototype);
++        delete descriptors.constructor;
++        Object.defineProperties(fs, descriptors);
++        fs.attributes.set('readonly');
++        fs.attributes.set('no_write');
++        fs.attributes.set('no_atime');
++    }
+     if (config.disableAsyncCache)
+         fs.attributes.set('no_async_preload');
+     if (config.caseFold)
+@@ -59,6 +73,7 @@ export async function resolveMountConfig(configuration, _depth = 0) {
+         throw log.err(withErrno('EPERM', 'Backend not available: ' + backend.name));
+     }
+     checkOptions(backend, configuration);
++    validateReadOnly(configuration);
+     const mount = (await backend.create(configuration));
+     configureFileSystem(mount, configuration);
+     await mount.ready();
+@@ -106,6 +121,7 @@ export function resolveMountConfigSync(configuration, _depth = 0) {
+         }
+     }
+     checkOptions(backend, configuration);
++    validateReadOnly(configuration);
+     const mountFs = backend.create(configuration);
+     if (isThenable(mountFs)) {
+         throw log.err(withErrno('EAGAIN', 'Backend initialization would block: ' + backend.name));
+diff --git a/dist/context.js b/dist/context.js
+index daa785d0981065e1ce6f71b3bc4296d808f52547..0766c5b9d22980add3c35c0dc8472f23b9b60f80 100644
+--- a/dist/context.js
++++ b/dist/context.js
+@@ -21,6 +21,29 @@ export function bindContext(init = {}) {
+     if (!fs.statSync.call(parent, parent.root).isDirectory())
+         throw UV('ENOTDIR', { syscall: 'chroot', path: parent.root });
+     const ctx = createChildContext($, init);
++    let disposal;
++    const dispose = () => disposal ??= (async () => {
++        ctx.disposed = true;
++        const errors = [];
++        for (const child of [...ctx.children]) {
++            try { await boundContexts.get(child.id)?.dispose(); }
++            catch (error) { errors.push(error); }
++        }
++        ctx.children.length = 0;
++        for (const [fd, handle] of ctx.descriptors) {
++            try { if (!handle.closed) await handle.close(); }
++            catch (error) {
++                errors.push(error);
++                try { if (!handle.closed) handle.dispose(true); }
++                catch (cleanupError) { errors.push(cleanupError); }
++            }
++            finally { ctx.descriptors.delete(fd); }
++        }
++        boundContexts.delete(ctx.id);
++        const index = ctx.parent.children.indexOf(ctx);
++        if (index !== -1) ctx.parent.children.splice(index, 1);
++        if (errors.length) throw new AggregateError(errors, 'Failed to dispose file system context');
++    })();
+     const bound = Object.assign(ctx, {
+         fs: {
+             ...bindFunctions(fs, ctx),
+@@ -29,12 +52,13 @@ export function bindContext(init = {}) {
+             xattr: bindFunctions(xattr, ctx),
+         },
+         path: bindFunctions(path, ctx),
++        dispose,
++        [Symbol.asyncDispose]: dispose,
+         bind: (init) => {
+-            const child = bindContext.call(ctx, init);
+-            ctx.children.push(child);
+-            return child;
++            return bindContext.call(ctx, init);
+         },
+     });
+     boundContexts.set(ctx.id, bound);
++    $.children.push(bound);
+     return bound;
+ }
+diff --git a/dist/internal/contexts.d.ts b/dist/internal/contexts.d.ts
+index 0c8db6c01f721ff3ef5001308e4b8cc938087af6..7aa40b75104836ea6b0b83d7c76b0bd6799a2e4a 100644
+--- a/dist/internal/contexts.d.ts
++++ b/dist/internal/contexts.d.ts
+@@ -19,6 +19,8 @@ export interface FSContext {
+     readonly [kIsContext]: boolean;
+     /** The unique ID of the context */
+     readonly id: number;
++    /** Whether this context has started disposal. */
++    disposed: boolean;
+     /**
+      * The absolute root path of the context.
+      * Note the parent's root is not considered
+@@ -58,6 +60,9 @@ export interface BoundContext extends FSContext {
+     path: Bound<typeof path, FSContext>;
+     /** Creates a new child context with this context as the parent */
+     bind(init: ContextInit): BoundContext;
++    /** Close owned descriptors and release context references. Does not close or unmount borrowed backends. */
++    dispose(): Promise<void>;
++    [Symbol.asyncDispose](): Promise<void>;
+     /** The parent context, if any. */
+     parent: FSContext;
+ }
+diff --git a/dist/internal/contexts.js b/dist/internal/contexts.js
+index 322815de9b65177b1849f6fd8af4fef847f89888..e59286c919f21680605434e753469f571ba61748 100644
+--- a/dist/internal/contexts.js
++++ b/dist/internal/contexts.js
+@@ -23,6 +23,7 @@ export function assertContext(ctx) {
+ export const defaultContext = {
+     [kIsContext]: true,
+     id: 1,
++    disposed: false,
+     root: '/',
+     pwd: '/',
+     credentials: createCredentials({ uid: 0, gid: 0 }),
+@@ -33,7 +34,9 @@ export const defaultContext = {
+     mounts: new Map(),
+ };
+ export function contextOf($) {
+-    return isContext($) ? $ : defaultContext;
++    const ctx = isContext($) ? $ : defaultContext;
++    if (ctx.disposed) throw withErrno('EBADF', 'File system context is disposed');
++    return ctx;
+ }
+ /** Clears the permission bits of `mode` that are set in the context's umask. */
+ export function applyUmask($, mode) {
+@@ -55,6 +58,7 @@ export function createChildContext(parent, init = {}) {
+     const ctx = {
+         [kIsContext]: true,
+         id: _nextId++,
++        disposed: false,
+         root,
+         pwd,
+         credentials: createCredentials(credentials),
+diff --git a/dist/mixins/readonly.js b/dist/mixins/readonly.js
+index 3469af760cdb69e3247bf0dde20a65d44bcc574e..9edc3da129c680a51457e3ba6bd237a57983ffd5 100644
+--- a/dist/mixins/readonly.js
++++ b/dist/mixins/readonly.js
+@@ -10,6 +10,8 @@ export function Readonly(FS) {
+         constructor(...args) {
+             super(...args);
+             this.attributes.set('no_write');
++            this.attributes.set('readonly');
++            this.attributes.set('no_atime');
+         }
+         async rename() {
+             throw withErrno('EROFS');
+diff --git a/dist/node/compat.d.ts b/dist/node/compat.d.ts
+index 15f6ad346900c846a03cada068bbda395b1d9f00..f4ac256807f971097be3f3aac6688b5043493337 100644
+--- a/dist/node/compat.d.ts
++++ b/dist/node/compat.d.ts
+@@ -1,5 +1,5 @@
+ export * from '../vfs/ioctl.js';
+-export { chroot, mount, umount } from '../vfs/shared.js';
++export { chroot, mount, umount, umountAsync } from '../vfs/shared.js';
+ export * as xattr from '../vfs/xattr.js';
+ export * from './index.js';
+ export declare const _version: string;
+diff --git a/dist/node/compat.js b/dist/node/compat.js
+index 61165d71b53aa5fa3cc4d37d7f5e9bf57db18c32..fb569ebb2c964bb8e352d28cfcf59c43fc8476f1 100644
+--- a/dist/node/compat.js
++++ b/dist/node/compat.js
+@@ -1,7 +1,7 @@
+ // SPDX-License-Identifier: LGPL-3.0-or-later
+ // For backwards compatibility
+ export * from '../vfs/ioctl.js';
+-export { chroot, mount, umount } from '../vfs/shared.js';
++export { chroot, mount, umount, umountAsync } from '../vfs/shared.js';
+ export * as xattr from '../vfs/xattr.js';
+ export * from './index.js';
+ import $pkg from '../../package.json' with { type: 'json' };
+diff --git a/dist/vfs/async.js b/dist/vfs/async.js
+index 1087f2903a1bfbb17f21206c052e0d4af4e57879..54e84dde553e3da120ddc7046239ed7f323150ee 100644
+--- a/dist/vfs/async.js
++++ b/dist/vfs/async.js
+@@ -124,6 +124,8 @@ export async function open($, path, opt) {
+     const $ex = { syscall: 'open', path };
+     // eslint-disable-next-line prefer-const
+     let { fs, cache, path: resolved, stats } = await resolve($, path, opt.preserveSymlinks, $ex);
++    if (fs.attributes.has('readonly') && (flag & (constants.O_WRONLY | constants.O_RDWR | constants.O_CREAT | constants.O_TRUNC)))
++        throw UV('EROFS', $ex);
+     if (!stats) {
+         const env_1 = { stack: [], error: void 0, hasError: false };
+         try {
+diff --git a/dist/vfs/file.js b/dist/vfs/file.js
+index b0b8f2a9f58bae54e8ec00707cb8f1c02b7ef08d..20b6d0530c3e8745267a51ed3962958b6f09c342 100644
+--- a/dist/vfs/file.js
++++ b/dist/vfs/file.js
+@@ -300,7 +300,7 @@ let Handle = (() => {
+                 if (this.flag & c.O_WRONLY)
+                     throw UV('EBADF', 'read', this.path);
+                 const _ = __addDisposableResource(env_4, this.vnode.lockSync('ro'), false);
+-                if (!(this.inode.flags & InodeFlags.NoAtime) && !this.fs.attributes.has('no_atime')) {
++                if (!(this.inode.flags & InodeFlags.NoAtime) && !this.fs.attributes.has('no_atime') && !this.fs.attributes.has('readonly')) {
+                     this.vnode.metadataDirty = true;
+                     this.inode.atimeMs = Date.now();
+                 }
+@@ -328,6 +328,8 @@ let Handle = (() => {
+             try {
+                 if (this.closed)
+                     throw UV('EBADF', 'chmod', this.path);
++                if (this.fs.attributes.has('readonly'))
++                    throw UV('EROFS', 'chmod', this.path);
+                 assertOwner(this.context, this.inode, { syscall: 'chmod', path: this.path });
+                 const _ = __addDisposableResource(env_5, this.vnode.lockSync('rw'), false);
+                 this.vnode.metadataDirty = true;
+@@ -348,6 +350,8 @@ let Handle = (() => {
+             try {
+                 if (this.closed)
+                     throw UV('EBADF', 'chown', this.path);
++                if (this.fs.attributes.has('readonly'))
++                    throw UV('EROFS', 'chown', this.path);
+                 assertCanChown(this.context, this.inode, uid, gid, { syscall: 'chown', path: this.path });
+                 const _ = __addDisposableResource(env_6, this.vnode.lockSync('rw'), false);
+                 this.vnode.metadataDirty = true;
+@@ -371,6 +375,8 @@ let Handle = (() => {
+             try {
+                 if (this.closed)
+                     throw UV('EBADF', 'utimes', this.path);
++                if (this.fs.attributes.has('readonly'))
++                    throw UV('EROFS', 'utimes', this.path);
+                 assertOwner(this.context, this.inode, { syscall: 'utimes', path: this.path });
+                 const _ = __addDisposableResource(env_7, this.vnode.lockSync('rw'), false);
+                 this.vnode.metadataDirty = true;
+@@ -517,7 +523,7 @@ let Handle = (() => {
+                 if (this.flag & c.O_WRONLY)
+                     throw UV('EBADF', 'read', this.path);
+                 const _ = __addDisposableResource(env_11, await this.vnode.lock('ro'), false);
+-                if (!(this.inode.flags & InodeFlags.NoAtime) && !this.fs.attributes.has('no_atime')) {
++                if (!(this.inode.flags & InodeFlags.NoAtime) && !this.fs.attributes.has('no_atime') && !this.fs.attributes.has('readonly')) {
+                     this.vnode.metadataDirty = true;
+                     this.inode.atimeMs = Date.now();
+                 }
+@@ -545,6 +551,8 @@ let Handle = (() => {
+             try {
+                 if (this.closed)
+                     throw UV('EBADF', 'chmod', this.path);
++                if (this.fs.attributes.has('readonly'))
++                    throw UV('EROFS', 'chmod', this.path);
+                 assertOwner(this.context, this.inode, { syscall: 'chmod', path: this.path });
+                 const _ = __addDisposableResource(env_12, await this.vnode.lock('rw'), false);
+                 this.vnode.metadataDirty = true;
+@@ -565,6 +573,8 @@ let Handle = (() => {
+             try {
+                 if (this.closed)
+                     throw UV('EBADF', 'chown', this.path);
++                if (this.fs.attributes.has('readonly'))
++                    throw UV('EROFS', 'chown', this.path);
+                 assertCanChown(this.context, this.inode, uid, gid, { syscall: 'chown', path: this.path });
+                 const _ = __addDisposableResource(env_13, await this.vnode.lock('rw'), false);
+                 this.vnode.metadataDirty = true;
+@@ -588,6 +598,8 @@ let Handle = (() => {
+             try {
+                 if (this.closed)
+                     throw UV('EBADF', 'utimes', this.path);
++                if (this.fs.attributes.has('readonly'))
++                    throw UV('EROFS', 'utimes', this.path);
+                 assertOwner(this.context, this.inode, { syscall: 'utimes', path: this.path });
+                 const _ = __addDisposableResource(env_14, await this.vnode.lock('rw'), false);
+                 this.vnode.metadataDirty = true;
+diff --git a/dist/vfs/index.d.ts b/dist/vfs/index.d.ts
+index d481acdab5c5b48433830a9d7921b06f17dee271..d906c0b85462f6ff8e436b8f181dfa5793f415e5 100644
+--- a/dist/vfs/index.d.ts
++++ b/dist/vfs/index.d.ts
+@@ -2,6 +2,6 @@ export * from './async.js';
+ export * from './dir.js';
+ export * from './file.js';
+ export * from './ioctl.js';
+-export { chroot, mount, umount } from './shared.js';
++export { chroot, mount, umount, umountAsync } from './shared.js';
+ export * as sync from './sync.js';
+ export * as xattr from './xattr.js';
+diff --git a/dist/vfs/index.js b/dist/vfs/index.js
+index 4e3246c7a10e6a79b312d82bd0a8c3ffeaf802e7..77914e42fdb3941a6d7dc96e5038cf53003e8010 100644
+--- a/dist/vfs/index.js
++++ b/dist/vfs/index.js
+@@ -3,6 +3,6 @@ export * from './async.js';
+ export * from './dir.js';
+ export * from './file.js';
+ export * from './ioctl.js';
+-export { chroot, mount, umount } from './shared.js';
++export { chroot, mount, umount, umountAsync } from './shared.js';
+ export * as sync from './sync.js';
+ export * as xattr from './xattr.js';
+diff --git a/dist/vfs/shared.d.ts b/dist/vfs/shared.d.ts
+index b56eafd1ee855e4b805e90b3d5734475c14a66dc..9d5ed32f7a023aa41ae545f3d2916b24618d7e2c 100644
+--- a/dist/vfs/shared.d.ts
++++ b/dist/vfs/shared.d.ts
+@@ -29,6 +29,8 @@ export declare function mount(this: V_Context, mountPoint: string, fs: FileSyste
+  * @todo [BREAKING] make this `async` and `await` vcache sync
+  */
+ export declare function umount(this: V_Context, mountPoint: string): void;
++/** Await cached writes and detach an owned mount; does not close the backend. */
++export declare function umountAsync(this: V_Context, mountPoint: string): Promise<void>;
+ /**
+  * @internal @hidden
+  */
+diff --git a/dist/vfs/shared.js b/dist/vfs/shared.js
+index e674175530f936b68037acf055598a724cce4142..8ca9463cdfa46272661ac3c44ddf4bd49044c575 100644
+--- a/dist/vfs/shared.js
++++ b/dist/vfs/shared.js
+@@ -4,7 +4,7 @@ import { Errno, Exception, UV, withErrno } from 'kerium';
+ import { alert, debug, err, info, notice, warn } from 'kerium/log';
+ import { InMemory } from '../backends/memory.js';
+ import { size_max } from '../constants.js';
+-import { contextOf, defaultContext } from '../internal/contexts.js';
++import { contextOf, defaultContext, isContext } from '../internal/contexts.js';
+ import { credentialsAllowRoot } from '../internal/credentials.js';
+ import { withExceptionContext } from '../internal/error.js';
+ import { join, resolve } from '../path.js';
+@@ -68,6 +68,25 @@ export function umount(mountPoint) {
+     $.mounts.delete(mountPoint);
+     notice('Unmounted ' + mountPoint);
+ }
++/**
++ * Wait for the mount's cached writes before detaching it.
++ * The caller owns the backing and must ensure no other context is using it.
++ * This does not close a borrowed backend.
++ */
++export async function umountAsync(mountPoint) {
++    const $ = isContext(this) ? this : defaultContext;
++    if (mountPoint[0] != '/') mountPoint = '/' + mountPoint;
++    mountPoint = normalizePath(mountPoint);
++    const fs = $.mounts.get(mountPoint);
++    if (!fs) return;
++    try {
++        await caches.get(fs.uuid)?.sync();
++    }
++    finally {
++        $.mounts.delete(mountPoint);
++        caches.delete(fs.uuid);
++    }
++}
+ /**
+  * Gets the internal `FileSystem` for the path, then returns it along with the path relative to the FS' root
+  * @internal @hidden
+diff --git a/dist/vfs/sync.js b/dist/vfs/sync.js
+index 4acfd60e97f305d4f751f8e5b1fa8d7263b7707f..2c38269c466526674339f0465ffe8fa749bcf151 100644
+--- a/dist/vfs/sync.js
++++ b/dist/vfs/sync.js
+@@ -128,6 +128,8 @@ export function open($, path, opt) {
+     const mode = normalizeMode(opt.mode, 0o644), flag = flags.parse(opt.flag);
+     path = resolve($, path, opt.preserveSymlinks).fullPath;
+     const { fs, cache, path: resolved } = resolveMount(path, $);
++    if (fs.attributes.has('readonly') && (flag & (constants.O_WRONLY | constants.O_RDWR | constants.O_CREAT | constants.O_TRUNC)))
++        throw UV('EROFS', 'open', path);
+     let stats;
+     try {
+         stats = cache.statSync(resolved);

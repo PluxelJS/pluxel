@@ -56,14 +56,14 @@ export default defineHostApplication(() => ({
 
 Workbench 服务是否安装不决定业务配置是否可用。按实际能力选择 Host 服务：
 
-| 能力                                            | 服务前提                                                                     |
-| ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| Fonts 核心、Canvas                              | 不要求 Workbench 或 Persistence；字体文件可由 FontsConfig 提供               |
-| Takumi 原生入口                                 | 不要求 Workbench、Persistence 或 FontsPlugin；字体/CSS 通过原生 options 提供 |
-| Takumi Worker、Markdown、ECharts、Typst 编译    | NodeModules 与 Workers，并正确定位构建制品或开发编译器                       |
-| Fonts 保存偏好/上传集合、Wretch opt-in 受管设置 | Persistence；程序化 API 同样可在无 Workbench 时使用                          |
-| S3 与 Auth 部署凭据                             | Vault；Auth 另需管理访问能力，TOTP 等可变凭据需要可写 backend                |
-| Redis、Cache、Rates、Otel、Package Manager      | 按所属指南选择后端、来源和服务；没有 Workbench 前置条件                      |
+| 能力                                            | 服务前提                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| Fonts 核心、Canvas                              | 不要求 Workbench 或 FS；字体文件可由 FontsConfig 提供               |
+| Takumi 原生入口                                 | 不要求 Workbench、FS 或 FontsPlugin；字体/CSS 通过原生 options 提供 |
+| Takumi Worker、Markdown、ECharts、Typst 编译    | NodeModules 与 Workers，并正确定位构建制品或开发编译器              |
+| Fonts 保存偏好/上传集合、Wretch opt-in 受管设置 | FS；程序化 API 同样可在无 Workbench 时使用                          |
+| S3 与 Auth 部署凭据                             | Vault；Auth 另需管理访问能力，TOTP 等可变凭据需要可写 backend       |
+| Redis、Cache、Rates、Otel、Package Manager      | 按所属指南选择后端、来源和服务；没有 Workbench 前置条件             |
 
 插件指南区分部署配置、业务保存状态和调用参数。上传字体、已安装 package、缓存条目、consumer 请求设置等仍属于各自领域状态，不因提供环境变量就变成第二套配置。Otel 的 `OTEL_*` 保留上游 SDK 的进程环境契约。
 

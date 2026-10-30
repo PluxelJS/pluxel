@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import * as v from 'valibot'
@@ -115,7 +116,7 @@ describe('@pluxel/plugin-redis cache backend', () => {
 	it('uses registered Lua script and round-trips structured cache values', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.commit((change) => {
@@ -153,7 +154,7 @@ describe('@pluxel/plugin-redis cache backend', () => {
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.commit((change) => {

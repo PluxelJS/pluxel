@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
@@ -24,7 +25,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -69,7 +70,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -94,7 +95,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -128,7 +129,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -161,7 +162,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(AuthPlugin, {

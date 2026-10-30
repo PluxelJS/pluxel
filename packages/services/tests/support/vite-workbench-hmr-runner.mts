@@ -66,12 +66,13 @@ await writeFile(
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
+import { InMemory } from '@pluxel/services/fs'
 import { workbenchService } from '@pluxel/workbench/service'
 
 import { Owner, Dependent } from './src/index'
 export default defineHostApplication((startup) => ({
   name: 'workbench-hmr', plugins: [Owner, Dependent],
-    services: [...standardServices({ persistence: { mode: 'memory' } }), workbenchService()],
+    services: [...standardServices({ fs: { backend: InMemory } }), workbenchService()],
     state: { initial: { autoStart: [Owner, Dependent].map(pluginNodeAddressOf) } },
   prepare({ host }) { startup.bindings.capture(host) },
 }))

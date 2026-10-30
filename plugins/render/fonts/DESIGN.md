@@ -8,7 +8,7 @@
 - provider-owned configured files：`FontsConfig.files` 是绝对路径列表，启动有界读取、按路径去重、保留字体内嵌 family；不写入托管上传集合，不占 caller registration 配额。非法来源让启动失败并清理此前注册。Host config/env/file 与 Workbench 使用同一 schema，无插件自行读取环境变量的配置层。
 
 - provider-owned managed collection：字体、统一 preference 和持久化全部属于 FontsPlugin。provider
-  安装 Persistence 时启动自动恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
+  安装 FS 时启动从 provider 的 `PluginFs` 目录恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
   graph 语义被阻塞。
 - caller-owned programmatic registration：业务包随代码携带的字体可调用 `register()` / `registerFromPath()`，但
   native key 仍封装在 FontsPlugin 内。caller stop/replacement 自动删除，handle 只提供幂等提前 `dispose()`。
@@ -43,7 +43,7 @@ scanner/watcher；进程中后来安装的系统字体在 provider/process resta
 `sans-serif` generic。`defaultFont` 同时给出 raw family 与 CSS-safe family。选择 mutation 在 provider queue 中串行并
 原子持久化；选择暂时不可用时保留 preference、运行期降级，family 重现后自动恢复。
 
-Persistence 只支撑上传与偏好保存。未安装时基础字体能力正常启动，持久化 mutation 明确报 `PERSISTENCE_REQUIRED`，不创建隐式存储。配置文件注册跟随 provider cleanup，预算等配置在 restart 应用。
+FS 只支撑上传与偏好保存。未安装时基础字体能力正常启动，持久化 mutation 明确报 `PERSISTENCE_REQUIRED`。记录通过 `writeFileAtomic()` 提交后才发布；缺失的 `managed/` 目录视为空集合，其他读取与损坏错误仍失败。配置文件注册跟随 provider cleanup，预算等配置在 restart 应用。
 
 默认选择放在 constructor 创建的稳定 state object，避免 caller-bound prototype view 的顶层 scalar assignment 变成
 caller-local shadow。`revision` 跟随 FontsPlugin 管理的 native registration/default selection 变化，并由包模块共享以

@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost, type TestHost } from '@pluxel/test'
@@ -21,7 +22,7 @@ import { ExpiryHeap } from '../src/expiry-heap.ts'
 const Fixed = { algorithm: 'fixed-window', limit: 2, windowMs: 1_000 } as const
 
 async function createHost(): Promise<TestHost> {
-	return await createTestHost({ services: standardServices({ persistence: { mode: 'memory' } }) })
+	return await createTestHost({ services: standardServices({ fs: { backend: InMemory } }) })
 }
 
 @Plugin({ displayName: 'RatesConsumer' })

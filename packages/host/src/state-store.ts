@@ -19,9 +19,10 @@ import {
 	freezeTrustedHostStateSnapshot,
 } from './policy'
 import {
-	assertHostStoreStorage,
+	assertResolvedHostStoreStorage,
 	type HostDocumentStorage,
 	type HostStoreStorageOptions,
+	type ResolvedHostStoreStorageOptions,
 } from './document-storage'
 
 export type HostStateFile = {
@@ -59,9 +60,9 @@ export class HostStateStore {
 
 	constructor(
 		public readonly ctx: PluxelContext,
-		options: HostStateStoreOptions = {},
+		options: Omit<HostStateStoreOptions, 'storage' | 'mode'> & ResolvedHostStoreStorageOptions = {},
 	) {
-		assertHostStoreStorage(options)
+		assertResolvedHostStoreStorage(options)
 		this.mode = options.mode ?? (options.storage ? 'writable' : 'memory')
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = options.storage
@@ -183,7 +184,7 @@ export class HostStateStore {
 		draft: HostStateDraft | HostStateSnapshot,
 	): Promise<void> {
 		const content = SuperJSON.stringify(toHostStateFile(draft))
-		await this.storage!.put(file, content, { atomic: true })
+		await this.storage!.put(file, content)
 	}
 }
 

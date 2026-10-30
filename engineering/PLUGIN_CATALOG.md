@@ -32,7 +32,7 @@ Management 拥有插件目录分组；它是管理布局，不是插件能力、
 
 ## Explicit document
 
-唯一文件是 persistence `management` namespace 下的 `plugin-groups.json`，严格 version 1，保存可读 canonical definition references。
+唯一文件是 FS 的 `services/management/plugin-groups.json`，通过 root 的纯文档适配借用同一后端，严格 version 1，保存可读 canonical definition references。
 完整 shape、缺省行为和示例由用户文档定义。无文件与空文档等价；读取不写默认文件。旧布局文件不读取、不迁移。
 
 人工 group 的 ID、名称、成员顺序和空组独立于当前 catalog 存活。未知但语法有效的 reference 保持休眠；definition 回归时恢复。
@@ -41,7 +41,7 @@ Management 拥有插件目录分组；它是管理布局，不是插件能力、
 
 service 每次操作读取文件文本，文本未变不重复 parse。读写在同一 host 内串行；修改校验成功才替换 active document。
 磁盘文件无效时请求明确失败，不覆盖文件；修复或恢复默认后下一次请求可成功，不把失败缓存为永久 rejected ready promise。
-写入使用 persistence 的 atomic put，成功后才发布新内存状态。没有额外 watcher、timer 或与 persistence 平行的文件后端。
+文档 `put(key, text)` 通过同一 FS 原子提交，成功后才发布新内存状态。没有额外 watcher、timer 或平行文件后端。
 外部文件作者应原子替换；多个进程/编辑器之间不承诺锁或 compare-and-swap，完整布局保存采用最后成功写入结果。
 
 ## Management protocol
@@ -58,7 +58,7 @@ mutation 返回的 sections，不能假设服务端 ID 与提交值一致。人�
 opaque ID，创建组使用 `manual:` 加 UUID。分组 UI 与文件编辑共享同一份 authority。
 
 mutation 拒绝未知 node、重复 node 和把同一 family 的 forks 分散到不同组或部分留在 ungrouped 的输入。
-Persistence failure 仍报告 `persistence_failed / state: unknown`，因为自定义后端可能写入后抛错；客户端重新读取 authority。
+提交失败仍报告 `persistence_failed / state: unknown`；底层操作也可能在提交后遇到后续失败，客户端需重新读取 authority。
 
 ## 实现入口
 

@@ -1,13 +1,19 @@
+import * as nativeFs from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { getContextLoggerRootId } from '@pluxel/core/host'
 import { createHost } from '@pluxel/host'
+import { fs, Fs, InMemory, Passthrough } from '@pluxel/services/fs'
 import { expect, it } from 'vitest'
 import {
 	logging,
 	markLogs,
 	readLogs,
 	waitForLogs,
-	type PluginLogPolicyStore,
+	createPluginLogPolicyStore,
+	parsePluginLogPolicySnapshot,
+	type PluginLogPolicySnapshot,
 	type RuntimeLoggingInput,
 } from '../../src/logging/index'
 
@@ -70,20 +76,26 @@ it('bounds log cursors to their Host and stream, and releases waits on delivery,
 
 it('binds the Core identity and retries durable fork policy cleanup through the installed service', async () => {
 	let failWrite = false
-	const writes: Parameters<PluginLogPolicyStore['save']>[1][] = []
-	const store: PluginLogPolicyStore = {
-		async load() {
-			return undefined
-		},
-		async save(_profile, snapshot) {
-			if (failWrite) throw new Error('policy unavailable')
-			writes.push(snapshot)
-		},
-	}
+	const writes: PluginLogPolicySnapshot[] = []
 	const host = await createHost({
 		plugins: [LoggedOwner],
 		config: { logger: { rootId: 'fixed-host-root' } },
-		services: [logging(plan, { policyStore: store })],
+		services: [
+			fs({ backend: InMemory }),
+			logging(plan, {
+				policyStore(root) {
+					const documents = root.require(Fs).documents('services/logging')
+					return createPluginLogPolicyStore({
+						...documents,
+						async put(key, value) {
+							if (failWrite) throw new Error('policy unavailable')
+							await documents.put(key, value)
+							writes.push(parsePluginLogPolicySnapshot(value))
+						},
+					})
+				},
+			}),
+		],
 	})
 	const manager = host.ctx.logging
 	try {
@@ -117,4 +129,54 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 		await host.close()
 	}
 	expect(manager.state).toBe('disposed')
+})
+
+it('prepares shared FS from Logging, flushes before final closure and keeps profile documents separate', async () => {
+	const directory = await nativeFs.promises.mkdtemp(join(tmpdir(), 'pluxel-logging-fs-'))
+	let factoryCalls = 0
+	const services = (profile: string) => [
+		logging(
+			{ ...plan, root: { profile } },
+			{
+				policyStore(root) {
+					factoryCalls++
+					return createPluginLogPolicyStore(root.require(Fs).documents('services/logging'))
+				},
+			},
+		),
+		fs({ backend: Passthrough, fs: nativeFs, prefix: directory }),
+	]
+	const owner = pluginNodeAddressOf(LoggedOwner)
+	try {
+		const first = await createHost({ plugins: [], services: services('first') })
+		try {
+			first.ctx.logging.policy.setPluginLevel(owner, 'debug')
+		} finally {
+			await first.close()
+		}
+		const firstDocument = await nativeFs.promises.readFile(
+			join(directory, 'services/logging/plugin-policy/first.json'),
+			'utf8',
+		)
+		expect(parsePluginLogPolicySnapshot(firstDocument).overrides).toEqual([
+			{ owner, level: 'debug' },
+		])
+		const second = await createHost({ plugins: [], services: services('second') })
+		try {
+			expect(second.ctx.logging.policy.snapshot().overrides).toEqual([])
+			second.ctx.logging.policy.setDefaultLevel('warning')
+		} finally {
+			await second.close()
+		}
+		const reopened = await createHost({ plugins: [], services: services('first') })
+		try {
+			expect(reopened.ctx.logging.policy.snapshot().overrides).toEqual([{ owner, level: 'debug' }])
+			expect(reopened.ctx.logging.policy.snapshot().defaultLevel).toBe('info')
+		} finally {
+			await reopened.close()
+		}
+		expect(factoryCalls).toBe(3)
+	} finally {
+		await nativeFs.promises.rm(directory, { recursive: true, force: true })
+	}
 })

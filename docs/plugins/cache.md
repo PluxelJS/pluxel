@@ -32,9 +32,8 @@ consumer 只依赖 `Cache` 抽象；host catalog 选择：
 `readPolicy: 'cache-first'`、`backendFailure: 'required'`。应用将 `CachePlugin`、所选 backend 和 consumer
 加入 catalog，配置记录与启动策略见 [添加插件](./index.md#把一个插件加入应用)。
 
-`MemoryCacheBackendPlugin` 默认 `maxEntries: 10000`，`persistence.mode: 'off'` 不需要 Persistence。
-启用 `best-effort` 或 `durable` 时，宿主必须安装 Persistence：前者恢复/保存失败只告警，后者要求 durable、writable
-存储且恢复失败时拒绝启动。`persistence.flushIntervalMs` 默认 1000，用于合并快照写入。
+`MemoryCacheBackendPlugin` 默认 `maxEntries: 10000`，`persistence.mode: 'off'` 不需要 FS。
+启用 `best-effort` 或 `durable` 时，宿主必须安装 [FS](../plugin-development/fs.md)：`durable` 要求持久且可写的后端，快照恢复失败时拒绝启动；`best-effort` 在临时存储上告警，只读时仅恢复，快照恢复或保存失败按缓存策略告警并放弃这次恢复或保存。后端准备等其他失败不伪装为成功降级。`persistence.flushIntervalMs` 默认 1000，用于合并快照写入。
 快照只恢复异步 backend，停机时间计入 TTL；可写快照要求 value 能被 Node structured-clone codec 序列化。
 这是重启预热，不是数据库 durability。
 
@@ -245,7 +244,7 @@ export class CachedAccounts extends BasePlugin {
 ```
 
 不要直接在返回 `Result` 的方法上使用 `@Cached`，也不要让 `getOrLoad()` 的 loader 返回 `Err`：它是普通的
-fulfilled value，可能被缓存，经过 Redis / Persistence 序列化后也不保留 Result/Error prototype。
+fulfilled value，可能被缓存，经过 Redis / FS 快照序列化后也不保留 Result/Error prototype。
 这里 repository 或 backend 的拒绝继续传播，不会被保存成“找不到账号”。
 调用方对 `find()` 的 Err 提示账号缺失，对 Ok 使用 `value`；网络故障不应导致创建重复账号。
 

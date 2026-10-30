@@ -50,9 +50,9 @@ description: 按依赖自动整理插件，并用界面或独立 JSON 文件维�
 
 ## 让 coding agent 编辑文件
 
-分组独立存放在 persistence 根目录的 `management/plugin-groups.json`。例如配置
-`persistence: './.pluxel/persistence'` 时，路径是 `.pluxel/persistence/management/plugin-groups.json`。
-使用 memory persistence 时不会创建磁盘文件；自定义后端使用相同 namespace 和文件 key。
+分组独立存放在 FS 的 `services/management/plugin-groups.json`。使用 Node Passthrough 且
+`prefix` 指向 `.pluxel/fs` 时，磁盘路径是 `.pluxel/fs/services/management/plugin-groups.json`。
+InMemory 不创建磁盘文件，浏览器 IndexedDB 使用相同逻辑路径；[后端选择](../host/configuration.md#选择文件后端)由 Host 显式配置。
 
 ```json
 {

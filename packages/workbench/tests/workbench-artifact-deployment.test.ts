@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { workbenchService } from '@pluxel/workbench/service'
 import { createHash } from 'node:crypto'
@@ -430,7 +431,7 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices({ persistence: { mode: 'memory' } }),
+					...standardServices({ fs: { backend: InMemory } }),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})
@@ -483,7 +484,7 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices({ persistence: { mode: 'memory' } }),
+					...standardServices({ fs: { backend: InMemory } }),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})
@@ -532,7 +533,7 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices({ persistence: { mode: 'memory' } }),
+					...standardServices({ fs: { backend: InMemory } }),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})

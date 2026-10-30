@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
@@ -42,7 +43,7 @@ describe('OtelPlugin', () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 			await host.start(OtelPlugin, {
 				catalog: [Consumer],

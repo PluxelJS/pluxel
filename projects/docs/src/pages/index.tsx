@@ -65,11 +65,12 @@ const toolchain = [
 		file: 'src/app.ts',
 		code: `import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
+import { InMemory } from '@pluxel/services/fs'
 
 export default defineHostApplication(async (startup) => ({
   plugins: [],
   services: await servicesPreset(startup, {
-    persistence: { mode: 'memory' },
+    fs: { backend: InMemory },
   }),
 }))`,
 	},

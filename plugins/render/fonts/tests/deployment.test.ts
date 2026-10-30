@@ -27,7 +27,7 @@ describe('Fonts deployment without Workbench', () => {
 		await host.start(FontsPlugin, { initialConfig: { defaultFamily: 'serif' } })
 		const fonts = host.require(FontsPlugin)
 		expect(fonts.ctx.workbench).toBeUndefined()
-		expect(fonts.ctx.root.persistence).toBeUndefined()
+		expect(fonts.ctx.fs).toBeUndefined()
 		expect(fonts.defaultFont).toMatchObject({ family: 'serif', source: 'config' })
 		expect(fonts.portableFonts.fonts).toEqual([])
 		await expect(fonts.setPreferredFamily('monospace')).rejects.toMatchObject({

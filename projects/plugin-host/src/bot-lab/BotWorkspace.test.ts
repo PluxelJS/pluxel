@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -11,7 +12,7 @@ const plugins = [BotWorkspacePlugin, TelegramBotPlugin, DiscordBotPlugin, WeComB
 async function start() {
 	const host = await createTestHost({
 		workbench: true,
-		services: standardServices({ persistence: { mode: 'memory' } }),
+		services: standardServices({ fs: { backend: InMemory } }),
 	})
 	try {
 		await host.commit((change) => {

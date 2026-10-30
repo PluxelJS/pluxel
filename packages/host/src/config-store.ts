@@ -21,9 +21,10 @@ import {
 	copyConfigPath,
 } from './config-paths'
 import {
-	assertHostStoreStorage,
+	assertResolvedHostStoreStorage,
 	type HostDocumentStorage,
 	type HostStoreStorageOptions,
+	type ResolvedHostStoreStorageOptions,
 } from './document-storage'
 
 type HostStoreMode = 'memory' | 'writable' | 'readonly'
@@ -230,9 +231,13 @@ export class HostConfigStore extends CoreConfigService {
 		)
 	}
 
-	constructor(ctx: PluxelContext, options: HostConfigStoreOptions = {}) {
+	constructor(
+		ctx: PluxelContext,
+		options: Omit<HostConfigStoreOptions, 'storage' | 'mode'> &
+			ResolvedHostStoreStorageOptions = {},
+	) {
 		super(ctx)
-		assertHostStoreStorage(options)
+		assertResolvedHostStoreStorage(options)
 		this.mode = options.mode ?? (options.storage ? 'writable' : 'memory')
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = options.storage
@@ -404,7 +409,7 @@ export class HostConfigStore extends CoreConfigService {
 		const nextDigest = ohash(content)
 		if (nextDigest === this.lastWrittenDigest && (await this.storage!.stat(this.file))) return
 
-		const task = this.storage!.put(this.file, content, { atomic: true }).then((): undefined => {
+		const task = this.storage!.put(this.file, content).then((): undefined => {
 			this.lastWrittenDigest = nextDigest
 			return undefined
 		})

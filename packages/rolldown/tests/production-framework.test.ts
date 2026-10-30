@@ -117,7 +117,7 @@ it('preserves native modules and shared framework identity with installed module
 				name: '@pluxel/services',
 				version: servicesVersion,
 				type: 'module',
-				exports: { './persistence': './wrong.mjs', './commands': './wrong.mjs' },
+				exports: { './fs': './wrong.mjs', './commands': './wrong.mjs' },
 			}),
 		)
 		await writeFile(
@@ -140,9 +140,9 @@ it('preserves native modules and shared framework identity with installed module
 			`
 import {BasePlugin,Plugin} from '@pluxel/core';
 import {__setPluginDefinition} from '@pluxel/core/toolchain';
-import {Persistence} from '@pluxel/services/persistence';
+import {Fs} from '@pluxel/services/fs';
 import {Commands} from '@pluxel/services/commands';
-class Dynamic extends BasePlugin { init(){ if (!Array.isArray(this.ctx.require(Commands).list())) throw new Error('MISSING_COMMANDS'); if (Persistence !== globalThis.__frameworkPersistence) throw new Error('PERSISTENCE_IDENTITY_MISMATCH'); process.stdout.write('DYNAMIC_STARTED\\n') } }
+class Dynamic extends BasePlugin { init(){ if (!Array.isArray(this.ctx.require(Commands).list())) throw new Error('MISSING_COMMANDS'); if (Fs !== globalThis.__frameworkFs) throw new Error('FS_IDENTITY_MISMATCH'); process.stdout.write('DYNAMIC_STARTED\\n') } }
 Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(address.definition)}}); export {Dynamic};
 `,
 		)
@@ -151,7 +151,7 @@ Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',def
 		await writeFile(
 			join(root, 'app.ts'),
 			`import {pluginSource} from '@pluxel/host/sources';
-import {Persistence} from '@pluxel/services/persistence';
+import {Fs,InMemory} from '@pluxel/services/fs';
 import {standardServices} from '@pluxel/services';
 import {BasePlugin,Plugin,pluginNodeAddressOf} from '@pluxel/core';
 import {Workers,defineWorkerTask} from '@pluxel/services/workers';
@@ -166,7 +166,7 @@ class FrozenWorker extends BasePlugin {
  }
 }
 import {defineHostApplication} from '@pluxel/host';
-export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkPersistence=Persistence},services:standardServices({persistence:{mode:'memory'}}),state:{initial:{autoStart:[pluginNodeAddressOf(FrozenWorker),${JSON.stringify(address)}]}}}))
+export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkFs=Fs},services:standardServices({fs:{backend:InMemory}}),state:{initial:{autoStart:[pluginNodeAddressOf(FrozenWorker),${JSON.stringify(address)}]}}}))
 `,
 		)
 		const buildScript = join(root, 'build.mts')

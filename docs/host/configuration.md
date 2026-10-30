@@ -14,6 +14,7 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 | Vite 与动态插件来源                | [Vite](#vite-开发)、[动态来源](#动态来源)                                                 |
 | 环境变量、JSON 文件与只读覆盖      | [环境](#配置环境变量)、[插件配置绑定](#绑定部署环境与-json-文件)                          |
 | 配置及运行策略跨重启保存           | [持久化](#保存配置和运行策略)                                                             |
+| 文件后端、只读或浏览器存储         | [FS](#选择文件后端)                                                                       |
 | Vault 后端、部署凭据与备份         | [后端](#选择后端)、[绑定](#部署凭据)、[备份](#密钥与备份)                                 |
 | 控制台、Workbench store 与远程日志 | [日志 plan](#host-logging-plan)、[OTLP](#远程输出原生-logtape-sink)                       |
 | 数据库后端与应用共享数据库         | [Backend](#选择-native-postgresql-或-pglite)、[应用数据库](#application-private-database) |
@@ -27,8 +28,8 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 
 - 自定义或轻量宿主：`@pluxel/host`，只安装显式列出的服务。
 - 浏览器与 Web Worker：`@pluxel/host/browser`，使用固定插件目录和浏览器可用的服务。
-- 官方服务器组合：`servicesPreset()`，包括 HTTP、Commands、Node artifacts、Workers、Persistence、Vault、Logging、Management 和默认启用的 Workbench。
-- 无管理页面的常用基础组合：`standardServices()`，包括 HTTP、Commands、Node artifacts、Workers 和 Persistence。
+- 官方服务器组合：`servicesPreset()`，包括 HTTP、Commands、Node artifacts、Workers、FS、Vault、Logging、Management 和默认启用的 Workbench。
+- 无管理页面的常用基础组合：`standardServices()`，包括 HTTP、Commands、Node artifacts、Workers 和 FS。
 
 Database 单独安装；关闭 Workbench 不会关闭插件业务能力。详细服务列表与资源归属见[组合 Host 服务](./services.md)。
 
@@ -86,10 +87,12 @@ try {
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
+import * as nativeFs from 'node:fs'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
+import { Passthrough } from '@pluxel/services/fs'
 import { TodoPlugin } from '@app/todo'
 
 export default defineHostApplication(async (startup) => {
@@ -98,7 +101,11 @@ export default defineHostApplication(async (startup) => {
 		name: 'my-app',
 		plugins: [TodoPlugin],
 		services: await servicesPreset(startup, {
-			persistence: resolve(startup.root, environment.dataRoot, 'persistence'),
+			fs: {
+				backend: Passthrough,
+				fs: nativeFs,
+				prefix: resolve(startup.root, environment.dataRoot, 'fs'),
+			},
 			workbench: environment.workbench ?? true,
 		}),
 		state: { initial: { autoStart: [pluginNodeAddressOf(TodoPlugin)] } },
@@ -118,7 +125,7 @@ Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内
 
 `prepare({ host, startup })` 在服务与开发附件准备完成后、插件启动前执行；适合应用级硬前提。资源获取成功后立即登记到明确的 owner，清理失败不会跳过其他资源。
 
-`configRecords` 和 `state` 默认存于内存。安装 Persistence 不会隐式持久化 Host 的配置或策略；需要保存时，显式提供借用的 document storage，见[保存配置和运行策略](#保存配置和运行策略)。已有持久文档优先于启动 seed。
+`configRecords` 和 `state` 默认存于内存。安装 FS 不会隐式持久化 Host 的配置或策略；需要保存时，显式提供借用的 document storage，见[保存配置和运行策略](#保存配置和运行策略)。已有持久文档优先于启动 seed。
 
 ## Vite 开发
 
@@ -317,56 +324,96 @@ JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: 
 `validation_failed` 只有在 defaults 可以独立计算时才带可选 `defaults`。持久化失败不会发布 staged revision，也不会把未确认的值注入
 Plugin generation。
 
-## Persistence 文件契约
+## 选择文件后端
 
-`@pluxel/services/persistence` 的内存与 Node 后端使用相同的相对分层路径：namespace 和 key 保留原字面（包括 `@pluxel/plugin-wretch`），不 trim、替换字符或猜测绝对路径。空段、`.`、`..`、反斜杠、冒号和控制字符会抛出 `TypeError`；仅 `list()` / `list('')` 的空前缀表示 namespace 根。namespace 是路径前缀，不是互相隔离的权限域，例如 `a/b` 位于 `a` 之下。
+`@pluxel/services/fs` 的 `fs(config)` 安装一个 Host 独占的文件系统。`standardServices({ fs: config })` 与 `servicesPreset(startup, { fs: config })` 使用同一配置；后端必须显式选择：
 
-`list(prefix)` 按 key 排序返回目录的直接子项，包含 `file` 与 `directory`；缺失目录返回空集合，文件不能作为列举前缀。`stat(key)` 可识别文件与目录；内存后端在写入嵌套文件时建立目录，删除最后一个文件不会删除目录。`delete()` 只删除文件，缺失文件无操作；`get()` / `getText()` 的缺失结果为 `undefined`，读取目录失败。`size` / `updatedAt` 是后端可提供的 metadata，不保证存在。
+| 场景               | 配置                                                                |
+| ------------------ | ------------------------------------------------------------------- |
+| 隔离测试、临时数据 | `{ backend: InMemory }`                                             |
+| Node 持久目录      | `{ backend: Passthrough, fs: nativeFs, prefix: absoluteDirectory }` |
+| 浏览器持久数据     | `{ backend: IndexedDB, storeName: stableProfileName }`              |
 
-Node 后端在创建时固定 root（省略时使用当时的 cwd）。路径检查限制字面路径，不承诺防御宿主在 root 下放置的符号链接；文件树由宿主控制。自定义后端需实现同一目录与完成语义。`readonly` 在实际 `put()` / `delete()` 边界拒绝操作并给出 `PersistenceError.code === 'READONLY'`，不依赖调用方先执行 `preflight()`。
+`InMemory`、`Passthrough` 从 `/fs` 导入，`IndexedDB` 仅从 `@pluxel/services/fs/browser` 导入。Node 的 `nativeFs` 是完整 `node:fs`，部署目录由应用显式解析为绝对路径。不要共享已打开的 FileSystem，也不要传入 mount graph；同一份服务声明可为多个 Host 各创建新实例。
+
+例如独立 Node Host：
+
+```ts
+import * as nativeFs from 'node:fs'
+import { resolve } from 'node:path'
+import { createHost } from '@pluxel/host'
+import { fs, Passthrough } from '@pluxel/services/fs'
+
+const host = await createHost({
+	services: [fs({ backend: Passthrough, fs: nativeFs, prefix: resolve('./data/fs') })],
+})
+try {
+	await host.start()
+} finally {
+	await host.close()
+}
+```
+
+浏览器 Host 的服务清单使用 `fs({ backend: IndexedDB, storeName: 'my-app' })`。`storeName` 是部署 profile 的稳定名称；创建者在页面或 Worker 结束前等待 `host.close()`。选择 `InMemory` 不会跨 Host 保存数据。
+
+配置可加 `readOnly: true`。只读打开不创建缺失目录，实际写操作以 `EROFS` 拒绝；插件的 durable/writable 要求与原生文件操作见[文件存储](../plugin-development/fs.md)。普通目录绑定不是同进程安全沙箱，也不承诺防御宿主放入的符号链接。
 
 ## 保存配置和运行策略
 
-Host 分别通过 `configRecords` 与 `state` 指定启动值及可选文档存储。两者不依赖安装 Persistence 服务，已有存储只需提供 `HostDocumentStorage` 的 `getText()`、`put()` 和 `stat()`：
+Host 分别通过 `configRecords` 与 `state` 指定启动值及可选文档存储。`storage` 唯一形式是同步 root factory，返回借用的 `HostDocumentStorage`。使用同一 FS 时：
 
 ```ts
 import { createHost } from '@pluxel/host'
-import { createNodePersistenceBackend } from '@pluxel/services/persistence'
+import * as nativeFs from 'node:fs'
+import { resolve } from 'node:path'
+import { fs, Fs, Passthrough } from '@pluxel/services/fs'
 
-const files = createNodePersistenceBackend({ root: './data' })
 const host = await createHost({
 	plugins: [MyPlugin],
+	services: [fs({ backend: Passthrough, fs: nativeFs, prefix: resolve('./data/fs') })],
 	configRecords: {
-		storage: files.namespace('config'),
+		storage: (root) => root.require(Fs).documents('host/config'),
 		initial: [{ owner, config: { endpoint: 'https://example.com' } }],
 	},
 	state: {
-		storage: files.namespace('runtime-state'),
+		storage: (root) => root.require(Fs).documents('host/state'),
 		initial: { autoStart: [owner] },
 	},
 })
+try {
+	await host.start()
+} finally {
+	await host.close()
+}
 ```
 
 省略 `storage` 时只用内存。提供 `storage` 时默认 `mode: 'writable'`；`mode: 'readonly'` 读取已有文档并拒绝写入，文档不存在时保留 `initial` 且不创建文件。已有文档优先于启动种子，Host 返回前会完成两个存储的准备。配置保留 v3、运行策略保留 v5 文档格式，不在应用重新打包时覆盖已有数据。
 
-文档存储是借用的：Host 关闭时等待自己的写入、清理定时器并报告 flush 失败；不会调用外部 backend 的 close。共享 backend 的创建和关闭由应用或对应服务拥有。`put()` 必须在完整文档提交后才 resolve，并在 `{ atomic: true }` 时提供旧文档或新文档的完整替换语义；不能用“请求已入队”冒充写入成功。
+两项 factory 在 root 创建后、文档 IO 前各调用一次，同步返回文档对象；异步 factory 和直接对象会被拒绝。`documents()` 本身无 IO，第一次读写和 FS prepare 等待同一个后端准备任务。factory 也可返回应用已有的文档适配；这种接线不要求安装 FS。
+
+文档存储是借用的：Host 关闭时等待自己的写入、清理定时器并报告 flush 失败；不会调用外部 backend 的 close。后端由应用或 FS 服务拥有。`HostDocumentStorage` 仅需 `getText(key)`、`put(key, text)` 和 `stat(key)`；只有缺失返回 `undefined`，`put()` 无条件在完整原子提交后才 resolve，不接受 atomic 选项。不能用“请求已入队”冒充写入成功。
 
 Host 应用解析器从本次 `startup.env` 读取显式 `envBindings`，文件输入来自 `fileBindings`。普通配置优先级为基础对象/文件 < 管理保存值 < env，合并后由 schema 校验；env 控制的路径只读且不落盘。Vault env/file 绑定是整记录只读。底层 `createHost()` 不隐式读取进程环境。
 
 ## 选择后端
 
-可写记录使用加密后端，并显式安装 Persistence：
+可写记录使用加密后端，并显式安装 FS：
 
 ```ts
-services: [
-	persistence('./data/persistence'),
+import * as nativeFs from 'node:fs'
+import { resolve } from 'node:path'
+import { fs, Passthrough } from '@pluxel/services/fs'
+import { vault } from '@pluxel/services/vault'
+
+const services = [
+	fs({ backend: Passthrough, fs: nativeFs, prefix: resolve('./data/fs') }),
 	vault({
 		deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY,
 	}),
 ]
 ```
 
-只有部署凭据时选择 `vault({ backend: 'bindings' })`。它不依赖 Persistence，不创建密钥或磁盘文件；没有绑定的记录不存在，所有写入拒绝。`servicesPreset(startup, options)` 显式从该 startup 环境读取部署解锁身份，`options.vault` 可以覆盖后端和部署解锁身份。直接 `vault()` 不读取进程环境。
+只有部署凭据时选择 `vault({ backend: 'bindings' })`。它不依赖 FS，不创建密钥或磁盘文件；没有绑定的记录不存在，所有写入拒绝。`servicesPreset(startup, options)` 显式从该 startup 环境读取部署解锁身份，`options.vault` 可以覆盖后端和部署解锁身份。直接 `vault()` 不读取进程环境。
 
 ## 部署凭据
 
@@ -403,7 +450,7 @@ Vault snapshot 使用 version 2，包含结构化 KV 与每条记录的 revision
 
 Root 通过 `VaultAdmin` 管理解锁、宿主密钥和部署 recipients。`rekey()` 原子重写密钥 envelope，数据密钥与密文内容保持；失败保留先前可用数据。部署私钥由宿主显式输入，不放入 Plugin config、日志或 UI。
 
-备份与回滚应在 Host 停止后整体复制 Persistence 的 `vault` namespace：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。不要分别恢复不匹配的 key envelope 与数据文件；不支持跨进程 writer 或跨 config/Vault 事务。
+备份与回滚应在 Host 停止后整体复制 FS 的 `services/vault/` 目录：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。不要分别恢复不匹配的 key envelope 与数据文件；不支持跨进程 writer 或跨 config/Vault 事务。
 
 ## 可选管理页面与服务配套插件
 
@@ -413,12 +460,17 @@ Vault 管理页由同一个服务包的 `@pluxel/services/plugins` 入口提供�
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
+import * as nativeFs from 'node:fs'
+import { resolve } from 'node:path'
 import { servicesPreset } from '@pluxel/services/preset'
+import { Passthrough } from '@pluxel/services/fs'
 import { VaultAdminPlugin } from '@pluxel/services/plugins'
 
 export default defineHostApplication(async (startup) => ({
 	name: 'vault-example',
-	services: await servicesPreset(startup, { persistence: '.pluxel/persistence' }),
+	services: await servicesPreset(startup, {
+		fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(startup.root, '.pluxel/fs') },
+	}),
 	plugins: [VaultAdminPlugin],
 	state: { initial: { autoStart: [pluginNodeAddressOf(VaultAdminPlugin)] } },
 }))
@@ -572,8 +624,18 @@ await host.close()
 ```
 
 日志查询和 policy 都属于所选 Host 的 `host.ctx.logging`，不依赖 Management。
-需要持久化 policy 时，把 `createPluginLogPolicyStore(namespace)` 作为 `logging(plan, { policyStore })`
-的选项传入；namespace 是借用资源，关闭由应用或其存储服务负责。
+需要持久化 policy 时，`logging(plan, { policyStore })` 接收同步 root factory：
+
+```ts
+import { Fs } from '@pluxel/services/fs'
+import { createPluginLogPolicyStore, logging } from '@pluxel/services/logging'
+
+logging(plan, {
+	policyStore: (root) => createPluginLogPolicyStore(root.require(Fs).documents('services/logging')),
+})
+```
+
+factory 在 Logging prepare 中解析一次；返回的文档存储借用同一 FS，关闭仍由 FS 服务负责。未配置 factory 时 policy 保持内存模式。
 删除 fork 会在同一 Host 队列内清理日志 policy；写入失败时保留 fork，恢复存储后可重试。
 同一进程仍只允许一个活动日志 Host，第二个安装失败不会影响第一个。
 
@@ -674,19 +736,21 @@ export function appDatabaseFor(ctx: Context): AppDatabase {
 
 `appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；应用声明的泛型不能反向改变独立编译 Plugin 的 Context shape。
 
-应用入口统一决定部署路径，同时供宿主 Persistence 和 application database 使用：
+应用入口统一决定部署路径，同时供宿主 FS 和 application database 使用：
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
+import * as nativeFs from 'node:fs'
 import { defineHostApplication } from '@pluxel/host'
 import { prepareAppDatabase } from '@app/database'
 import { standardServices } from '@pluxel/services'
+import { Passthrough } from '@pluxel/services/fs'
 
 function storagePaths({ env }) {
 	// 部署时传入发行目录外的绝对路径。
 	const root = resolve(env.APP_DATA_ROOT ?? './data')
 	return {
-		hostPersistence: resolve(root, 'runtime'),
+		hostFiles: resolve(root, 'runtime'),
 		applicationDatabase: resolve(root, 'application.sqlite'),
 	}
 }
@@ -695,7 +759,9 @@ export default defineHostApplication((startup) => {
 	return {
 		name: 'application',
 		plugins: [BillingPlugin, AuditPlugin],
-		services: standardServices({ persistence: storagePaths(startup).hostPersistence }),
+		services: standardServices({
+			fs: { backend: Passthrough, fs: nativeFs, prefix: storagePaths(startup).hostFiles },
+		}),
 		async prepare({ host, startup }) {
 			await prepareAppDatabase(host.ctx, {
 				filename: storagePaths(startup).applicationDatabase,
@@ -713,7 +779,7 @@ protected override init() {
 }
 ```
 
-SQLite path、DSN、TLS 和 pool options 从 `startup.env`、`bindings` 或部署配置显式解析，不从 Context 猜测。Persistence 是 `namespace/get/put` 抽象，backend 可能是 memory、readonly 或 custom，不保证存在可打开的文件目录。
+SQLite path、DSN、TLS 和 pool options 从 `startup.env`、`bindings` 或部署配置显式解析，不从 Context 猜测。FS 后端可能是 InMemory 或 IndexedDB，不保证存在原生 driver 可打开的磁盘目录。
 
 `prepare()` 不是通用 service lifecycle：这里只表达“数据库是整个应用的硬 readiness 前提”。数据库 package 负责领域初始化，root effects 负责 acquisition rollback、正常 stop 和 shutdown；consumer replacement 不能关闭共享实例。
 

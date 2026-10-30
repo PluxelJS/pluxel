@@ -16,14 +16,13 @@ import { RuntimeManagementTargetImpl } from '../../../src/management/services/ma
 import {
 	logging as loggingService,
 	Logging,
-	type PluginLogPolicyStore,
+	createPluginLogPolicyStore,
+	parsePluginLogPolicySnapshot,
+	type PluginLogPolicySnapshot,
 	type RuntimeLoggingInput,
 } from '@pluxel/services/logging'
-import {
-	Persistence,
-	createMemoryPersistenceBackend,
-	type PersistenceBackend,
-} from '@pluxel/services/persistence'
+import { Fs, InMemory } from '@pluxel/services/fs'
+import { pluginNodePhysicalKey } from '../../../src/internal/plugin-address.ts'
 import type { PluginApplyReport } from '../../../src/management/web/protocol.ts'
 
 @Plugin({ forkable: true })
@@ -201,15 +200,18 @@ describe('Plugin fork control plane', () => {
 				provider: null,
 			}),
 		).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
-		const business = host.ctx.require(Persistence).namespace('plugin-business')
-		await business.put('referenced/data.json', '{"retained":true}')
+		const business = await host.ctx
+			.require(Fs)
+			.directory(`plugins/${pluginNodePhysicalKey(ensured.fork)}`)
+		await business.mkdir('referenced', { recursive: true })
+		await business.writeFile('referenced/data.json', '{"retained":true}')
 
 		const removed = await rpc.removePluginForkDto({ base, forkId: 'referenced' })
 		expect(removed).toMatchObject({ ok: true, status: 'removed', fork: ensured.fork, report: {} })
 		if (removed.ok && removed.status !== 'already-absent') {
 			expectBrowserSafeReport(removed.report)
 		}
-		expect(await business.getText('referenced/data.json')).toBe('{"retained":true}')
+		expect(await business.readFile('referenced/data.json', 'utf8')).toBe('{"retained":true}')
 		expect(listForkIds(requireHostStateStore(host.ctx).snapshot(), base.definition)).not.toContain(
 			'referenced',
 		)
@@ -259,7 +261,7 @@ describe('Plugin fork control plane', () => {
 		const host = await runtimeHost({
 			configRecords: {
 				mode: 'readonly',
-				storage: createMemoryPersistenceBackend().namespace('config'),
+				storage: (root) => root.require(Fs).documents('host/config'),
 			},
 		})
 		host.add(ForkProvider)
@@ -282,27 +284,22 @@ describe('Plugin fork control plane', () => {
 	})
 
 	it('retries a failed Config cleanup and never purges business persistence', async () => {
-		const delegate = createMemoryPersistenceBackend()
 		let rejectConfigWrite = false
-		const backend: PersistenceBackend = {
-			capability: delegate.capability,
-			preflight: delegate.preflight,
-			namespace(name) {
-				const storage = delegate.namespace(name)
-				return {
-					...storage,
-					async put(key, value, options) {
-						if (rejectConfigWrite && name === 'config' && key === 'config.json') {
-							throw new Error('config cleanup unavailable')
-						}
-						await storage.put(key, value, options)
-					},
-				}
-			},
-		}
 		const host = await runtimeHost({
-			services: standardServices({ persistence: { mode: 'custom', backend } }),
-			configRecords: { storage: backend.namespace('config') },
+			services: standardServices({ fs: { backend: InMemory } }),
+			configRecords: {
+				storage(root) {
+					const documents = root.require(Fs).documents('host/config')
+					return {
+						...documents,
+						async put(key, value) {
+							if (rejectConfigWrite && key === 'config.json')
+								throw new Error('config cleanup unavailable')
+							await documents.put(key, value)
+						},
+					}
+				},
+			},
 		})
 		host.add(ForkProvider)
 		await host.commit()
@@ -313,8 +310,11 @@ describe('Plugin fork control plane', () => {
 		const config = requireConfigService(host.ctx)
 		config.patchConfig(ensured.fork, { desired: true })
 		await config.flush()
-		const business = host.ctx.require(Persistence).namespace('plugin-business')
-		await business.put('retry/data.bin', 'business-state')
+		const business = await host.ctx
+			.require(Fs)
+			.directory(`plugins/${pluginNodePhysicalKey(ensured.fork)}`)
+		await business.mkdir('retry', { recursive: true })
+		await business.writeFile('retry/data.bin', 'business-state')
 
 		rejectConfigWrite = true
 		await expect(rpc.removePluginForkDto({ base, forkId: 'retry' })).resolves.toMatchObject({
@@ -326,7 +326,7 @@ describe('Plugin fork control plane', () => {
 		let state = requireHostStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).toContain('retry')
 		expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
-		expect(await business.getText('retry/data.bin')).toBe('business-state')
+		expect(await business.readFile('retry/data.bin', 'utf8')).toBe('business-state')
 
 		rejectConfigWrite = false
 		await expect(rpc.removePluginForkDto({ base, forkId: 'retry' })).resolves.toMatchObject({
@@ -335,24 +335,29 @@ describe('Plugin fork control plane', () => {
 		})
 		state = requireHostStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).not.toContain('retry')
-		expect(await business.getText('retry/data.bin')).toBe('business-state')
+		expect(await business.readFile('retry/data.bin', 'utf8')).toBe('business-state')
 	})
 
 	it('retries a failed logging-policy cleanup before removing durable fork intent', async () => {
 		let rejectLoggingWrite = false
-		const persisted: Parameters<PluginLogPolicyStore['save']>[1][] = []
-		const loggingStore: PluginLogPolicyStore = {
-			load: async () => undefined,
-			save: async (_profile, snapshot) => {
-				if (rejectLoggingWrite) throw new Error('logging cleanup unavailable')
-				persisted.push(snapshot)
-			},
-		}
+		const persisted: PluginLogPolicySnapshot[] = []
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
-				...standardServices({ persistence: { mode: 'memory' } }),
-				loggingService(loggingPlan(), { policyStore: loggingStore }),
+				...standardServices({ fs: { backend: InMemory } }),
+				loggingService(loggingPlan(), {
+					policyStore(root) {
+						const documents = root.require(Fs).documents('services/logging')
+						return createPluginLogPolicyStore({
+							...documents,
+							async put(key, value) {
+								if (rejectLoggingWrite) throw new Error('logging cleanup unavailable')
+								await documents.put(key, value)
+								persisted.push(parsePluginLogPolicySnapshot(value))
+							},
+						})
+					},
+				}),
 			],
 		})
 		const logging = host.ctx.require(Logging)

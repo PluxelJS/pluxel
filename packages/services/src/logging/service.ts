@@ -1,4 +1,4 @@
-import type { PluginNodeAddress } from '@pluxel/core'
+import type { PluginNodeAddress, RootContext } from '@pluxel/core'
 import {
 	defineContextCapability,
 	installRootCapability,
@@ -18,7 +18,10 @@ export const Logging = defineContextCapability<RuntimeLogging>('logging.host', {
 	access: 'root',
 	property: 'logging',
 })
-export type LoggingOptions = Readonly<{ policyStore?: PluginLogPolicyStore }>
+export type LoggingOptions = Readonly<{
+	/** Borrow one policy store per Host. The factory performs no IO and does not transfer ownership. */
+	policyStore?: (root: RootContext) => PluginLogPolicyStore
+}>
 declare module '@pluxel/core' {
 	interface RootContextServices {
 		readonly logging: RuntimeLogging
@@ -28,6 +31,9 @@ declare module '@pluxel/core' {
 /** Install one process logging owner for this Host; declaration evaluation performs no IO. */
 export function logging(input: RuntimeLoggingInput, options: LoggingOptions = {}) {
 	assertRuntimeLoggingInput(input)
+	const policyStore = options.policyStore
+	if (policyStore !== undefined && typeof policyStore !== 'function')
+		throw new TypeError('[services.logging] policyStore must be a synchronous root factory')
 	const plan: RuntimeLoggingInput = {
 		root: {
 			...input.root,
@@ -67,10 +73,16 @@ export function logging(input: RuntimeLoggingInput, options: LoggingOptions = {}
 		async prepare({ ctx, effects }) {
 			const manager = resolveContextCapability(ctx, Logging)
 			effects.defer(() => manager.dispose(), { tag: 'HostLogging' })
+			const store = policyStore?.(ctx)
+			if (
+				policyStore &&
+				(!store || typeof store.load !== 'function' || typeof store.save !== 'function')
+			)
+				throw new TypeError('[services.logging] policyStore factory must return a policy store')
 			if (manager.state === 'created') await manager.install()
 			const unbind = bindContextRuntimeLogging(ctx, manager)
 			effects.defer(unbind, { tag: 'HostLoggingBinding' })
-			await manager.initializePolicy(options.policyStore)
+			await manager.initializePolicy(store)
 		},
 		removeNodeMetadata(ctx, node) {
 			return clearLoggingPolicy(resolveContextCapability(ctx, Logging), node)

@@ -23,11 +23,11 @@ carrier、browser 和 deployment 行为仍要在各自真实边界验证。
 
 `@pluxel/test` 根入口的异步 `createTestHost()` 组合生产 `createHost()`；业务符号从 `@pluxel/core` 导入，服务工厂从原领域入口导入。`services` 默认 `[]`，完整列表不隐式合并；`standardServices()` 由调用方显式选择。
 
-`workbench: true` 增加 Management、测试后端和本地 RPC driver，要求显式提供 HTTP 与 Persistence；`management: false` 与它冲突时拒绝创建。Workbench 禁用时不初始化后端。HTTP/commands driver 调用已安装的生产服务，缺服务时明确失败。
+`workbench: true` 增加 Management、测试后端和本地 RPC driver，要求显式提供 HTTP 与 FS；`management: false` 与它冲突时拒绝创建。Workbench 禁用时不初始化后端。HTTP/commands driver 调用已安装的生产服务，缺服务时明确失败。
 
 选择无显式制品来源的 Node 服务后，组合层接入正式按需源码编译器并拥有其关闭；显式制品来源保留制品消费路径。Vitest 插件只作用于 Vitest 模块图，不会隐式流入独立 Node 制品构建。领域 driver 与 compiler 仍由各自 package 维护，组合层负责接线和测试寿命。
 
-`@pluxel/test` 显式声明 Services 等安装依赖；生产 Host/Core 不反向依赖它。安装依赖与初始化可选服务分开，不用 optional peer 或动态 import 吞错伪造 API 可用性。`config`、`state`、`configRecords` 复用 Core/Host 契约，默认 Host 内存存储不等于安装 Plugin Persistence 服务。
+`@pluxel/test` 显式声明 Services 等安装依赖；生产 Host/Core 不反向依赖它。安装依赖与初始化可选服务分开，不用 optional peer 或动态 import 吞错伪造 API 可用性。`config`、`state`、`configRecords` 复用 Core/Host 契约，默认 Host 内存存储不等于安装 Plugin FS 服务。
 
 事务 draft 只负责测试断言、目标校验与同步回调作用域；catalog、状态修改、配置应用与 graph commit 仍由 Host 唯一 authority 执行。
 测试 HTTP 与 Workbench driver 拥有本次测试打开的响应 body、RPC handle 和 lease；泄漏会在关闭时报告，所有清理仍然执行。

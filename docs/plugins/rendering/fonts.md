@@ -8,7 +8,7 @@ description: 发现、注册和管理服务端字体，并为 Canvas、ECharts �
 
 Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字体字节。需要一致的跨机器输出时，通过部署配置提供字体文件、随包提供字体或从 Workbench 上传；只安装 Fonts 不会替操作系统安装字体。
 
-系统发现、部署字体与程序化注册不要求额外 Host 服务。上传字体与保存默认偏好才需要 Persistence；Workbench 是可选编辑入口。
+系统发现、部署字体与程序化注册不要求额外 Host 服务。上传字体与保存默认偏好才需要 [FS](../../plugin-development/fs.md)；Workbench 是可选编辑入口。
 
 `DefaultFontSnapshot`、`FontFamilySnapshot` 和 `FontStyleSnapshot` 从包根以 `type` 导入；它们只描述字体数据。Workbench definition 与 RPC API 从 `/workbench` 导入。
 
@@ -148,7 +148,7 @@ const revision = this.fonts.revision
 3. 当前平台的自动系统字体。
 4. generic `sans-serif`。
 
-`source` 表示是哪一层选中了默认值：`preference`、`config`、`system` 或 `generic`，不是字体资源的来源。`preferredFamily` 或 `configuredFamily` 可能存在但暂时不可用，此时解析会继续 fallback。preference 是 Fonts 自身的 provider-wide domain state；显式配置暂时遮盖它，取消配置后可重新生效。即使 Workbench 未启用，安装 Persistence 后仍会恢复保存状态。
+`source` 表示是哪一层选中了默认值：`preference`、`config`、`system` 或 `generic`，不是字体资源的来源。`preferredFamily` 或 `configuredFamily` 可能存在但暂时不可用，此时解析会继续 fallback。preference 是 Fonts 自身的 provider-wide domain state；显式配置暂时遮盖它，取消配置后可重新生效。即使 Workbench 未启用，安装 FS 后仍会恢复保存状态。
 
 `revision` 是进程内字体注册与默认选择的变更信号。renderer 应把它纳入文字测量 cache key，或在其变化时清空缓存。直接操作 `GlobalFonts` 不会遵守这一契约。
 
@@ -170,8 +170,8 @@ content ID，最后一个 registration 释放后才从集合移除。平台自�
 
 ## Workbench 管理与 Selection Attachment
 
-FontsPlugin 自己的 manager View 管理 provider-owned 字体集合：上传、删除字体并设置默认 family。上传字体持久化在
-host persistence 中，provider 重启时恢复。上传受 `maxFontBytes` / `maxManagedFonts` 约束；
+FontsPlugin 自己的 manager View 管理 provider-owned 字体集合：上传、删除字体并设置默认 family。上传字体通过原子保存写入
+Fonts provider 的 FS 目录，provider 重启时恢复。上传受 `maxFontBytes` / `maxManagedFonts` 约束；
 关闭页面会阻止文件读取完成后的 RPC，但不能取消浏览器已经开始的 `File.arrayBuffer()`。
 
 其他 Plugin 不应复制上传管理界面。如果只需在自己的详情页让用户选择统一默认字体，放置 Fonts 提供的 Attachment：
@@ -195,7 +195,7 @@ protected override init() {
 `setPreferredFamily(family | null)`；传 `null` 恢复 host config / 自动选择。selection 修改 provider 统一默认值，
 不是 consumer 私有偏好。Consumer 不创建转发 target；Canvas、ECharts、Takumi 已放置该 selector，通常无需重复添加。
 
-Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。缺少 Persistence 时字体发现、配置文件与程序化注册仍可用；`setPreferredFamily()` 和 managed 上传/删除报 `PERSISTENCE_REQUIRED`，不会假装保存成功或暗中建立存储。
+Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。缺少 FS 时字体发现、配置文件与程序化注册仍可用；`setPreferredFamily()` 和 managed 上传/删除报 `PERSISTENCE_REQUIRED`，不会假装保存成功或暗中建立存储。
 
 ## 配置
 
@@ -228,7 +228,7 @@ Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程�
 - `FONT_BUSY`：全局或 caller 字体任务队列已满。
 - `FONT_NOT_FOUND`：选择或删除的字体不存在。
 - `CORRUPT_FONT_STORAGE`：持久化 managed font 或默认选择损坏。
-- `PERSISTENCE_REQUIRED`：当前 Host 未安装保存偏好和上传集合所需的 Persistence。
+- `PERSISTENCE_REQUIRED`：当前 Host 未安装保存偏好和上传集合所需的 FS 服务。
 
 不要依赖错误 message 做分支；message 用于诊断，稳定分类在 `code`。
 

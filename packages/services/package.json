@@ -57,6 +57,14 @@
 			"@pluxel/source": "./src/development/elysia.ts",
 			"default": "./dist/elysia/vite.mjs"
 		},
+		"./fs": {
+			"@pluxel/source": "./src/fs.ts",
+			"default": "./dist/fs.mjs"
+		},
+		"./fs/browser": {
+			"@pluxel/source": "./src/fs/browser.ts",
+			"default": "./dist/fs/browser.mjs"
+		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
@@ -137,10 +145,6 @@
 			"@pluxel/source": "./src/development/node.ts",
 			"default": "./dist/node/vite.mjs"
 		},
-		"./persistence": {
-			"@pluxel/source": "./src/persistence.ts",
-			"default": "./dist/persistence.mjs"
-		},
 		"./plugins": {
 			"@pluxel/hmr": "./src/plugins.ts",
 			"default": "./dist/plugins.mjs"
@@ -181,6 +185,8 @@
 			"./elysia": "./dist/elysia.mjs",
 			"./elysia/node": "./dist/elysia/node.mjs",
 			"./elysia/vite": "./dist/elysia/vite.mjs",
+			"./fs": "./dist/fs.mjs",
+			"./fs/browser": "./dist/fs/browser.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
 			"./logging": "./dist/logging.mjs",
@@ -201,7 +207,6 @@
 			"./management/session": "./dist/management/session.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
-			"./persistence": "./dist/persistence.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./sources": "./dist/sources.mjs",
@@ -217,6 +222,7 @@
 		"bench:worker-task": "vp test bench bench/worker-task.bench.ts",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
+		"test:zenfs-browser": "vp run check-zenfs-browser",
 		"test:installed": "vp test run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
 		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs",
 		"typecheck": "vp run check-types"
@@ -225,6 +231,7 @@
 		"@logtape/file": "catalog:prod",
 		"@logtape/logtape": "catalog:prod",
 		"@logtape/pretty": "catalog:prod",
+		"@types/node": "catalog:types",
 		"age-encryption": "catalog:prod",
 		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
@@ -238,6 +245,7 @@
 		"@electric-sql/pglite": "catalog:prod",
 		"@logtape/otel": "catalog:dev",
 		"@mantine/core": "catalog:frontend",
+		"@noble/hashes": "catalog:prod",
 		"@opentelemetry/exporter-logs-otlp-http": "catalog:prod",
 		"@opentelemetry/exporter-logs-otlp-proto": "catalog:prod",
 		"@opentelemetry/resources": "catalog:prod",
@@ -250,14 +258,18 @@
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
-		"@types/node": "catalog:types",
 		"@types/pg": "catalog:types",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"@zenfs/core": "catalog:prod",
+		"@zenfs/dom": "catalog:prod",
+		"buffer": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
 		"fs-fixture": "catalog:dev",
+		"kerium": "catalog:prod",
 		"pg": "catalog:backend",
+		"playwright-core": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"tsx": "catalog:dev",
@@ -319,6 +331,19 @@
 	},
 	"engines": {
 		"node": ">=24"
+	},
+	"inlinedDependencies": {
+		"@noble/hashes": "2.4.0",
+		"@zenfs/core": "2.8.3",
+		"@zenfs/dom": "1.2.14",
+		"@zenfs/streams": "1.0.2",
+		"base64-js": "1.5.1",
+		"buffer": "6.0.3",
+		"eventemitter3": "5.0.4",
+		"ieee754": "1.2.1",
+		"kerium": "1.5.0",
+		"memium": "1.1.1",
+		"utilium": "3.10.0"
 	},
 	"pluxel": {
 		"workbenchCapnweb": "0.12.0",

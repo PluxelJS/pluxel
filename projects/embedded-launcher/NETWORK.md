@@ -25,7 +25,7 @@ const body = await api.get('/lookup?q=example').json()
 
 Network Service 接收执行环境已提供的 fetch，固定 owner 后发放函数；缓存、派生 client 和脱离 receiver 不改变归属。它不实现 Headers、Request、Response、AbortController、URL 或 Streams，也不通过可变“当前插件”来识别异步调用方。
 
-[上游 Wretch](https://github.com/elbywan/wretch) 的准确 API 按工作区版本核对。仓库 [@pluxel/plugin-wretch](../../docs/plugins/wretch.md) 是另一层 provider，当前 [主入口](../../plugins/wretch/src/index.ts) 含 Node/Workbench imports 且要求 Persistence；不能因有 Fetch 就宣布整个 provider 已移植。首次用上游 wretch，后续必要的 portable 修复归原包，不复制实现。
+[上游 Wretch](https://github.com/elbywan/wretch) 的准确 API 按工作区版本核对。仓库 [@pluxel/plugin-wretch](../../docs/plugins/wretch.md) 是另一层 provider，当前 [主入口](../../plugins/wretch/src/index.ts) 含 Node/Workbench imports 且要求 Fs；不能因有 Fetch 就宣布整个 provider 已移植。首次用上游 wretch，后续必要的 portable 修复归原包，不复制实现。
 
 ## 2. 标准兼容与生命周期是两个边界
 

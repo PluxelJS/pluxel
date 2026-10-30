@@ -18,10 +18,7 @@ import {
 	pluginConfigPatchField,
 } from '../../../src/management/api/usecases/pluginConfig.ts'
 import { removeFork } from '@pluxel/host/internal'
-import {
-	createMemoryPersistenceBackend,
-	type PersistenceBackend,
-} from '@pluxel/services/persistence'
+import { Fs, InMemory } from '@pluxel/services/fs'
 
 const ConfigSchema = v.object({
 	value: v.optional(v.string(), 'initial'),
@@ -723,27 +720,22 @@ describe('Plugin config application scope', () => {
 
 describe('ConfigService persistence', () => {
 	it('reports a stable unknown persistence state without attempting application', async () => {
-		const delegate = createMemoryPersistenceBackend()
 		let rejectConfigWrite = false
-		const backend: PersistenceBackend = {
-			capability: delegate.capability,
-			preflight: delegate.preflight,
-			namespace(name) {
-				const storage = delegate.namespace(name)
-				return {
-					...storage,
-					async put(key, value, options) {
-						if (rejectConfigWrite && name === 'config' && key === 'config.json') {
-							throw new Error('config persistence outcome unknown')
-						}
-						await storage.put(key, value, options)
-					},
-				}
-			},
-		}
 		const host = await runtimeHost({
-			services: standardServices({ persistence: { mode: 'custom', backend } }),
-			configRecords: { storage: backend.namespace('config') },
+			services: standardServices({ fs: { backend: InMemory } }),
+			configRecords: {
+				storage(root) {
+					const documents = root.require(Fs).documents('host/config')
+					return {
+						...documents,
+						async put(key, value) {
+							if (rejectConfigWrite && key === 'config.json')
+								throw new Error('config persistence outcome unknown')
+							await documents.put(key, value)
+						},
+					}
+				},
+			},
 		})
 		host.add(ConfigOwner)
 		await host.commit()

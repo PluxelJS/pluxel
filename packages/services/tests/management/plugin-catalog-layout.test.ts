@@ -8,6 +8,7 @@ import {
 	type ServiceInternalTestHost,
 } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Fs } from '@pluxel/services/fs'
 import { PluginCatalogLayoutService } from '../../src/management/services/management/PluginCatalogLayoutService.ts'
 import {
 	automaticCatalogGroups,
@@ -44,7 +45,7 @@ async function setup() {
 	return {
 		host,
 		layout: host.ctx.root.pluginCatalogLayout!,
-		storage: host.ctx.root.persistence!.namespace('management'),
+		storage: host.ctx.require(Fs).documents('services/management'),
 	}
 }
 const document = (
@@ -134,7 +135,7 @@ describe('editable group document', () => {
 		expect(await storage.getText('plugin-groups.json')).toBeUndefined()
 	})
 	it('reads human-editable groups live, honors ungrouped, and automatically groups unspecified plugins', async () => {
-		const { layout, storage } = await setup()
+		const { host, layout, storage } = await setup()
 		const entries = [entry('A'), entry('B'), entry('C', ['D']), entry('D')]
 		await storage.put(
 			'plugin-groups.json',
@@ -146,7 +147,8 @@ describe('editable group document', () => {
 		])
 		await storage.put('plugin-groups.json', JSON.stringify(document([], [ref('C')])))
 		expect(await layout.listSections(entries)).toEqual([])
-		await storage.delete('plugin-groups.json')
+		const directory = await host.ctx.require(Fs).directory('services/management')
+		await directory.unlink('plugin-groups.json')
 		expect(await layout.listSections(entries)).toMatchObject([{ name: 'C' }])
 	})
 	it('persists explicit groups and orders as formatted references and round-trips', async () => {
@@ -234,15 +236,20 @@ describe('editable group document', () => {
 			[{ sectionId: 'manual:one', name: 'One', nodes: [node('A')] }],
 			entries,
 		)
-		const namespace = host.ctx.root.persistence!.namespace('management')
-		vi.spyOn(host.ctx.root.persistence!, 'namespace').mockReturnValue({
-			...namespace,
+		const filesystem = host.ctx.require(Fs)
+		const documents = filesystem.documents('services/management')
+		const cause = new Error('disk full')
+		vi.spyOn(filesystem, 'documents').mockReturnValue({
+			...documents,
 			put: async () => {
-				throw new Error('disk full')
+				throw cause
 			},
 		})
 		const failing = new PluginCatalogLayoutService(host.ctx)
-		await expect(failing.updateSections([], entries)).rejects.toThrow('persist')
+		await expect(failing.updateSections([], entries)).rejects.toMatchObject({
+			name: 'PluginCatalogLayoutPersistenceError',
+			cause,
+		})
 		expect(await failing.listSections(entries)).toMatchObject([{ name: 'One' }])
 		await Promise.all([
 			layout.updateSections(

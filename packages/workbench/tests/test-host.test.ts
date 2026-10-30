@@ -2,7 +2,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 import { createTestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
-import { persistence } from '@pluxel/services/persistence'
+import { fs, InMemory } from '@pluxel/services/fs'
 import { WorkbenchOpenedContentHandle } from '@pluxel/workbench/internal'
 import { expect, it, vi } from 'vitest'
 
@@ -20,10 +20,10 @@ class WorkbenchLeaseFixture extends BasePlugin {
 	}
 }
 
-it('opens a Workbench entry with only HTTP and Persistence as base services', async () => {
+it('opens a Workbench entry with only HTTP and Fs as base services', async () => {
 	await using host = await createTestHost({
 		workbench: true,
-		services: [elysia(), persistence({ mode: 'memory' })],
+		services: [elysia(), fs({ backend: InMemory })],
 	})
 	await host.start(WorkbenchLeaseFixture)
 	using opened = await host.workbench.open({
@@ -38,7 +38,7 @@ it('opens a Workbench entry with only HTTP and Persistence as base services', as
 it('reports and closes a leaked public Workbench lease during host disposal', async () => {
 	const host = await createTestHost({
 		workbench: true,
-		services: [elysia(), persistence({ mode: 'memory' })],
+		services: [elysia(), fs({ backend: InMemory })],
 	})
 	let disposalAttempted = false
 	try {

@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
@@ -12,5 +13,5 @@ export default defineHostApplication(() => ({
 	plugins,
 	configRecords: { mode: 'memory' },
 	state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
-	services: standardServices({ persistence: { mode: 'memory' } }),
+	services: standardServices({ fs: { backend: InMemory } }),
 }))

@@ -38,7 +38,9 @@ Management 配置 RPC 与 Host-vite 开发控制台委托 Host；Management 负�
 
 ## 存储与创建边界
 
-Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` 与模式。`HostDocumentStorage` 是借用的 namespaced 文档接口，仅包含现有读取、完整提交写入与 existence/stat 操作；Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。无 storage 时为 memory，有 storage 时默认 writable，可显式 readonly。
+Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` 与模式。`storage` 唯一形式是同步 `(root: RootContext) => HostDocumentStorage`，两项 factory 在 root 创建后、文档 IO 前各解析一次并校验，Core 的惰性 config factory 只消费已解析对象。factory 不执行 IO，也不能返回 Promise。
+
+`HostDocumentStorage` 是借用的目录文档接口，仅含 `getText(key)`、`put(key, text)`、`stat(key)`；put 无条件等待完整原子提交，不接收 atomic 选项。Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。无 storage 时为 memory，有 storage 时默认 writable，可显式 readonly。FS 的纯 `documents()` 适配与首次 IO 准备由 [FS](FS.md)维护，公开接线见 [Host 配置](../docs/host/configuration.md#保存配置和运行策略)。
 
 `HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留 SuperJSON v3/v5 格式与 readonly 失败语义。Config debounce、digest 去重、写失败重试、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
 

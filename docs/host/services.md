@@ -25,7 +25,7 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 | `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件        |
 | `@pluxel/rolldown` 的 `pluxel()`                | 选择应用交付并编译 Shell 与制品 |
 
-`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Persistence、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。数据库或不同管理面组合应使用下文的显式服务安装器。
+`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、FS、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。`fs` 必须显式[选择后端](./configuration.md#选择文件后端)。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。数据库或不同管理面组合应使用下文的显式服务安装器。
 
 `vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。Services 的官方组合分别拥有运行时服务和 Vite 附件；应用交付与配套制品统一由 `@pluxel/rolldown` 的 `pluxel()` 构建。`@pluxel/services` 根入口只提供 `standardServices()`，不加载 Management、Logging 或 Workbench 后端。
 
@@ -33,21 +33,23 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 
 standalone Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位；modules 从已加载模块所属输出的 inventory 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
-`persistence` 安装的是 Plugin 存储能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置下文的 `configRecords.storage` 和 `state.storage`。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+`fs(config)` 安装文件能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置 `configRecords.storage` 和 `state.storage` 的[同步 root factory](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
-应用构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(..., { persistence, workbench: false })` 与 `pluxel({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
+应用构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(startup, { fs: backendConfig, workbench: false })` 与 `pluxel({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
 ## 创建宿主
 
 ```ts
 import { createHost } from '@pluxel/host'
-import { persistence } from '@pluxel/services/persistence'
+import * as nativeFs from 'node:fs'
+import { resolve } from 'node:path'
+import { fs, Passthrough } from '@pluxel/services/fs'
 import { vault } from '@pluxel/services/vault'
 import { MyPlugin } from './plugin.js'
 
 const host = await createHost({
 	plugins: [MyPlugin],
-	services: [persistence('./data/persistence'), vault()],
+	services: [fs({ backend: Passthrough, fs: nativeFs, prefix: resolve('./data/fs') }), vault()],
 })
 try {
 	await host.start()
@@ -56,7 +58,7 @@ try {
 }
 ```
 
-`plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端明确依赖 Persistence；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不依赖 Persistence。Host 不自动补装依赖。
+`plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端明确依赖 FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不依赖 FS。Host 不自动补装依赖。
 
 `createHost()` 只接受 Host 配置字段，未知字段在资源获取前拒绝；应用解析结果中的 `startup/sources/prepare/name` 属于执行入口，不能整对象传给它。服务选择和配置容器在异步准备前捕获；`updateCatalog()` 同样捕获调用时的插件数组。借用的 storage、callback 与服务 handle 保留原身份。
 
@@ -153,19 +155,21 @@ Host 为每次装配浅复制并冻结 startup、env、bindings 和 deployment�
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { resolve } from 'node:path'
+import * as nativeFs from 'node:fs'
+import { Passthrough } from '@pluxel/services/fs'
 
 export default defineHostApplication(({ env, deployment }) => {
 	return {
 		plugins: [],
 		services: standardServices({
-			persistence: env.DATA_DIRECTORY ?? './data',
+			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(env.DATA_DIRECTORY ?? './data') },
 			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
 		}),
 	}
 })
 ```
 
-`standardServices()` 明确提供 HTTP、Commands、NodeModules、Workers、Persistence。
+`standardServices({ fs: backendConfig })` 明确提供 HTTP、Commands、NodeModules、Workers、FS。
 Vault、Database、Logging、Management、Workbench 另行加入服务数组；它不加入任何 Plugin。
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
 生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
@@ -260,7 +264,7 @@ export function clock() {
 
 每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
 
-HTTP、Database、Persistence、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。
+HTTP、Database、FS、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。FS 的首次异步文档 IO 可先于服务 prepare 等待同一个准备任务，供 Host 启动读取配置；其他服务沿用自身 prepare 契约。
 
 ## 服务参与 Plugin 发布
 

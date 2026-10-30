@@ -33,7 +33,7 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-`BROWSER_PROTOCOL=playwright` 连接原生服务，省略时采用 CDP。原生服务地址必须是 `ws://` 或 `wss://`。这是生产应用声明；宿主启动与源码装配见 [Host 配置](../host/configuration.md)。无凭据模式不需要 Vault、Workbench、数据库或 Persistence。
+`BROWSER_PROTOCOL=playwright` 连接原生服务，省略时采用 CDP。原生服务地址必须是 `ws://` 或 `wss://`。这是生产应用声明；宿主启动与源码装配见 [Host 配置](../host/configuration.md)。无凭据模式不需要 Vault、Workbench、数据库或 FS。
 
 有凭据时改用下面的绑定；`BROWSER_CONNECTION_KEY=primary`，`BROWSER_ENDPOINT` 可以包含供应商提供的 token。环境变量由 Host 显式绑定，插件不自行读取进程环境。
 

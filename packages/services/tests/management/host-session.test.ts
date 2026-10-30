@@ -11,7 +11,7 @@ import { getWebSocketHooks, setWebSocketHooks } from 'crossws'
 import { newWebSocketRpcSession } from 'capnweb'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { persistence } from '@pluxel/services/persistence'
+import { fs, InMemory } from '@pluxel/services/fs'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { expect, it, vi } from 'vitest'
 import { requirePluginHostCoordinator } from '@pluxel/host/internal'
@@ -33,7 +33,7 @@ class ManagedWorker extends BasePlugin {}
 it('serves a real authenticated socket for a Core Host and leaves it alive when the endpoint closes', async () => {
 	const host = await createHost({
 		plugins: [ManagedWorker],
-		services: [persistence({ mode: 'memory' }), managementAccess(), management()],
+		services: [fs({ backend: InMemory }), managementAccess(), management()],
 	})
 	await host.start()
 	const endpoint = createManagementEndpoint({
@@ -155,7 +155,7 @@ it.each([undefined, 'http://bot-new-omni.localhost:1355', 'https://bot-new-omni.
 			plugins: [ManagedWorker],
 			services: [
 				elysia(),
-				persistence({ mode: 'memory' }),
+				fs({ backend: InMemory }),
 				managementAccess(),
 				management(),
 				managementHttp(),

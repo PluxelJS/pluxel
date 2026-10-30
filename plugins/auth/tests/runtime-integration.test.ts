@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf } from '@pluxel/core'
@@ -35,7 +36,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using fixture = new AuthRuntimeSessionCarrierFixture(
 			await createServiceInternalTestHost({
 				management: true,
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 			}),
 		)
 
@@ -111,7 +112,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using host = await createServiceInternalTestHost(
 			{
 				management: true,
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 			},
 			{ requestAddress: peerAddress },
 		)

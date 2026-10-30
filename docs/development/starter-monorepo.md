@@ -115,7 +115,7 @@ vp run governance:check
 ## 可选动态来源
 
 `host/src/app.ts` 在固定 Plugin imports 之外声明 `.pluxel/managed-plugins/entries/*.mjs`；默认数据目录相对 `startup.deployment.root ?? startup.root`。
-`PLUXEL_DATA_ROOT` 可以统一覆盖动态来源与 persistence 的数据根目录；部署时使用 distribution root 外的绝对路径。
+`PLUXEL_DATA_ROOT` 可以统一覆盖动态来源与 FS 的数据根目录；部署时使用 distribution root 外的绝对路径。
 向这个目录原子发布预编译 ESM 入口，Native 在下次 fresh 进程启动时扫描接纳，Vite 会话持续观察并更新同一个 catalog；是否启动由正常运行策略决定。
 这个示例不包含 package 下载或 market 管理。只需要固定插件时删除 `sources` 即可，Vite 配置和命令都不变。
 

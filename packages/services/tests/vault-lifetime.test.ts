@@ -1,13 +1,19 @@
 import { BasePlugin, Plugin, pluginNodeAddressOf, type Context } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/internal'
 import { createHost } from '@pluxel/host'
-import { expect, it } from 'vitest'
-import {
-	createMemoryPersistenceBackend,
-	persistence,
-	type PersistenceBackend,
-} from '../src/persistence'
+import { afterEach, expect, it, vi } from 'vitest'
+import * as nativeFs from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Fs, fs, InMemory, Passthrough } from '../src/fs'
 import { Vault, vault, type VaultStorageApi } from '../src/vault'
+
+const directories: string[] = []
+afterEach(async () => {
+	vi.restoreAllMocks()
+	await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
+})
 
 let ownerContext: Context
 let ownerVault: VaultStorageApi
@@ -33,7 +39,7 @@ function waitForClose(signal: AbortSignal): Promise<void> {
 it('drains an accepted transaction before generation stop and rejects retained KV and blob handles', async () => {
 	const host = await createHost({
 		plugins: [VaultOwner],
-		services: [persistence({ mode: 'memory' }), vault()],
+		services: [fs({ backend: InMemory }), vault()],
 	})
 	const entered = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
@@ -83,30 +89,26 @@ it('drains an accepted transaction before generation stop and rejects retained K
 })
 
 it('keeps complete blob IO admitted through Host close, then flushes the final snapshot and rejects stale root handles', async () => {
-	const memory = createMemoryPersistenceBackend()
+	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-vault-lifetime-'))
+	directories.push(prefix)
 	const entered = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
 	const events: string[] = []
-	let blockBlob = true
-	const backend: PersistenceBackend = {
-		capability: memory.capability,
-		namespace(name) {
-			const storage = memory.namespace(name)
-			return {
-				...storage,
-				async put(key, value, options) {
-					if (key.endsWith('.blob') && blockBlob) {
-						entered.resolve()
-						await release.promise
-						events.push('blob completed')
-					} else if (key.endsWith('state.enc')) events.push('snapshot flushed')
-					await storage.put(key, value, options)
-				},
-			}
-		},
-	}
-	const services = [persistence({ mode: 'custom', backend }), vault()]
+	const services = [fs({ backend: Passthrough, fs: nativeFs, prefix }), vault()]
 	const host = await createHost({ plugins: [], services })
+	const directory = await host.ctx.require(Fs).directory('services/vault')
+	const rename = directory.rename
+	vi.spyOn(directory, 'rename').mockImplementation(async (from, to) => {
+		if (String(to).endsWith('.blob')) {
+			entered.resolve()
+			await release.promise
+			await Reflect.apply(rename, directory, [from, to])
+			events.push('blob completed')
+		} else {
+			await Reflect.apply(rename, directory, [from, to])
+			if (String(to).endsWith('state.enc')) events.push('snapshot flushed')
+		}
+	})
 	const rootVault = host.ctx.require(Vault)
 	const blob = rootVault.blobs().open('root-blob')
 	try {
@@ -131,7 +133,6 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 		release.resolve()
 		await host.close()
 	}
-	blockBlob = false
 	const reopened = await createHost({ plugins: [], services })
 	try {
 		const storage = reopened.ctx.require(Vault)

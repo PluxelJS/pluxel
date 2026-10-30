@@ -13,9 +13,11 @@ description: 为 Native 与 Vite 应用管理和发布 pnpm 插件包。
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
+import * as nativeFs from 'node:fs'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
+import { Passthrough } from '@pluxel/services/fs'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 import { pluginSource } from '@pluxel/host/sources'
@@ -39,7 +41,7 @@ export default defineHostApplication(async (startup) => {
 			}),
 		],
 		services: await servicesPreset(startup, {
-			persistence: resolve(dataRoot, 'persistence'),
+			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(dataRoot, 'fs') },
 		}),
 		configRecords: {
 			initial: [

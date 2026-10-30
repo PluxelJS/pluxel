@@ -20,6 +20,7 @@ export default defineConfig({
 				},
 			},
 			'check-tests': 'vp test run',
+			'check-zenfs-browser': { command: 'node tests/zenfs.browser.mjs', cache: false },
 			'check-types': 'tsc --noEmit --pretty false',
 		}),
 	},

@@ -133,13 +133,14 @@ it.each([
 				`
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
+import { InMemory } from '@pluxel/services/fs'
 ${selected ? "import { VaultAdminPlugin } from '@pluxel/services/plugins'" : ''}
 export default defineHostApplication(async startup => {
  process.stdout.write('SELECTION_FACTORY_EVALUATED\\n')
  return {
   name: 'services-selection',
   plugins: ${selected ? '[VaultAdminPlugin]' : '[]'},
-  services: await servicesPreset(startup, { persistence: { mode: 'memory' }, vault: { backend: 'bindings' }, workbench: true }),
+  services: await servicesPreset(startup, { fs: { backend: InMemory }, vault: { backend: 'bindings' }, workbench: true }),
   prepare: ({ host }) => { globalThis.__selectionHost = host },
  }
 })

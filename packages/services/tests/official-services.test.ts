@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -44,7 +45,7 @@ test('deployment root supplies Node artifacts and the default Workbench shell', 
 					...startup,
 					deployment: { root, target: 'node', variant: 'workbench' },
 				},
-				{ persistence: { mode: 'memory' } },
+				{ fs: { backend: InMemory } },
 			),
 		})
 		const response = await resolveContextCapability(host.ctx, ElysiaRuntime).fetch(

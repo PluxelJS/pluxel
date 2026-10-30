@@ -23,8 +23,11 @@ export async function createServiceTestApplication(
 	}
 	let selectedServices = options.services
 	if (selectedServices === undefined) {
-		const { standardServices } = await import('../index')
-		selectedServices = standardServices({ persistence: { mode: 'memory' } })
+		const [{ standardServices }, { InMemory }] = await Promise.all([
+			import('../index'),
+			import('../fs'),
+		])
+		selectedServices = standardServices({ fs: { backend: InMemory } })
 	}
 	const services: HostService[] = [...selectedServices]
 	if (withManagement) {

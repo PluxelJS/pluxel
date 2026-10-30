@@ -163,7 +163,7 @@ Vite 来源变化且 factory identity 不变时复用已解析配置，在当前
 来源更新与源码依赖失效都进入共同候选求值和图提交路径。
 
 纯来源声明由 Vite 私有观察会话打开 watcher 并负责关闭，不以 Vite 是否忽略 `.pluxel` 决定 watcher 所有权。Vite 主 watcher
-继续忽略 persistence、安装目录和 artifact cache；来源 watcher 只接纳声明覆盖的 entry 事件，不扩大 source 集合。
+继续忽略 `.pluxel` 数据、安装目录和 artifact cache；来源 watcher 只接纳声明覆盖的 entry 事件，不扩大 source 集合。
 已接纳的来源更新在同一开发序列中结算，关闭先停止接纳，再等待已接纳工作排空，迟到结果不能发布。
 SDK 的初始观察 epoch 只收集入口事件；ready 后在原队列校验完整来源才返回就绪结果，避免逐个 add 重复扫描目录。
 后续 SDK 文件通知按路径合并到最多 4096 项的 pending map，以固定 25 ms 窗口触发校验，同一来源只有一个执行中的校验。溢出时将 Chokidar 实际观察集合与已校验路径重新核对；discovery 或 raw-only 通知不能接纳 SDK 尚未观察的文件。

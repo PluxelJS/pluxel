@@ -72,7 +72,7 @@ Node 与 Workers 使用 `@pluxel/services/node`、`@pluxel/services/workers`，�
 
 ```ts
 import { elysia } from '@pluxel/services/elysia'
-import { persistence } from '@pluxel/services/persistence'
+import { fs, InMemory } from '@pluxel/services/fs'
 import { managementAccess } from '@pluxel/services/management/access'
 import { management } from '@pluxel/services/management/service'
 import { managementHttp } from '@pluxel/services/management/http'
@@ -93,7 +93,7 @@ const transport = managementHttp({
 })
 const services = [
 	elysia(),
-	persistence({ mode: 'memory' }),
+	fs({ backend: InMemory }),
 	managementAccess(),
 	management({ workbench: true }),
 	workbenchService(),
@@ -102,7 +102,7 @@ const services = [
 ]
 ```
 
-`requires` 保证绑定前 Workbench 后端已准备好，不依赖数组顺序。没有 UI 的应用可只安装 `managementHttp()`；`servicesPreset(..., { workbench: false })` 也保留认证与管理 HTTP/WebSocket 接入。
+`requires` 保证绑定前 Workbench 后端已准备好，不依赖数组顺序。没有 UI 的应用可只安装 `managementHttp()`；官方组合显式选择 FS 后端并设置 `workbench: false` 时，也保留认证与管理 HTTP/WebSocket 接入。
 
 `uiBasePath` 默认为 `/`，`publicDir` 默认使用 Workbench 包内的已构建资源，也可指定部署目录中含 `.vite/manifest.json` 与 `assets/` 的目录。该 manifest 必须包含 `shell/src/client.tsx` 且标记为入口；它引用的静态与动态 chunk、CSS、asset 文件均须存在于同一目录下，额外入口可共存。缺失或损坏时请重新构建或修正所指定目录，不会选择其他入口或旧产物。固定管理路径优先，业务路由先于 Shell；只有匹配 UI 路径的 HTML 导航才回退到页面，普通 API miss 保留 404。Shell 资源（包括懒加载 chunk 与 preload）固定挂载在 `/__pluxel/workbench/` 下，不随 `uiBasePath` 改变，也不占用应用的 `/assets/`。Shell 支持 HEAD 与静态资源条件请求。服务在首次 Shell 请求时读取并验证已构建 manifest；缺失或无效会使该请求失败，并保留资源路径诊断。不存在的资源返回 404，读取错误返回 500，部署路径与原始原因只写入服务端诊断。
 

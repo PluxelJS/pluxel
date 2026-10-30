@@ -13,6 +13,6 @@ Workspace 内的 Typst 文档插件，当前保持 private。`renderSvg(source, 
 | 准备固定原生绑定                       | [Native 构建](native/README.md)                             |
 | 更新固定公式运行时                     | [MiTeX 来源与生成](vendor/mitex/README.md)                  |
 
-服务端接入须注册 FontsPlugin，并由 Host 安装 NodeModules；无状态 SVG 另需 Workers。`standardServices()` / `servicesPreset()` 已包含这些服务，安装本包本身不会挂载它们。无需启用 Workbench 或 Persistence；仅管理字体的持久化需要 Persistence。
+服务端接入须注册 FontsPlugin，并由 Host 安装 NodeModules；无状态 SVG 另需 Workers。`standardServices()` / `servicesPreset()` 已包含这些服务，安装本包本身不会挂载它们。无需启用 Workbench 或 Fs；仅管理字体的持久化需要 Fs。
 
 根入口供 native 服务端使用，`/template` 是纯文档定义，`/browser` 提供预览；这些入口不加载编辑器或解析器。`/source` 和 `/source/browser` 分别提供 Node/Web 源码项目，`/tiptap` 与 `/tiptap/react` 提供结构化编辑视图。`/wasm` 是独立的纯浏览器内存文本编译入口，宿主显式提供 WASM、字体 URL 与本次附加文件；与 native 会话的差异见[浏览器编译](../../../docs/plugins/rendering/typst.md#浏览器编译)。

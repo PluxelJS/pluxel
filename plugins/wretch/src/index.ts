@@ -11,7 +11,7 @@ import {
 	Plugin,
 } from '@pluxel/core'
 
-import { type PersistenceNamespace } from '@pluxel/services/persistence'
+import type { FsPromises } from '@pluxel/services/fs'
 import { RpcTarget } from 'capnweb'
 import wretch, { type Wretch } from 'wretch'
 import { WretchConfig } from './config.ts'
@@ -29,8 +29,6 @@ import {
 	type WretchManagedSettingsSnapshot,
 	type WretchSettingsApi,
 } from './workbench.ts'
-
-const SETTINGS_NAMESPACE = '@pluxel/plugin-wretch'
 
 type ClientLease = {
 	active: boolean
@@ -51,17 +49,24 @@ export class WretchPlugin extends BasePlugin {
 	private readonly managedInitializations = new WeakMap<Context, Promise<ManagedSettingsState>>()
 	private readonly clients = new WeakMap<Context, ClientLease>()
 	private policy?: OutboundPolicy
-	private readonly storageState: { namespace?: PersistenceNamespace } = {}
+	private readonly storageState: {
+		access?: Context['fs']
+		prepared?: Promise<FsPromises>
+		fs?: FsPromises
+	} = {}
 
 	override init(): void {
 		const policy = createOutboundPolicy(this.config)
 		this.policy = policy
+		this.storageState.access = this.ctx.fs
 		this.ctx.effects.defer(
 			async () => {
 				policy.dispose()
 				if (this.policy === policy) {
 					this.policy = undefined
-					this.storageState.namespace = undefined
+					this.storageState.access = undefined
+					this.storageState.prepared = undefined
+					this.storageState.fs = undefined
 				}
 				const states = [...this.managed.values()]
 				this.managed.clear()
@@ -71,10 +76,10 @@ export class WretchPlugin extends BasePlugin {
 			{ tag: 'wretch-policy' },
 		)
 		this.ctx.workbench?.publish(WretchWorkbench, {
-			settings: ({ consumer, signal }) =>
+			settings: async ({ consumer, signal }) =>
 				createSettingsTarget(
 					this.managedByNode,
-					this.requireStorage(),
+					await this.requireStorage(),
 					this.config.timeoutMs,
 					consumer.node,
 					signal,
@@ -148,7 +153,7 @@ export class WretchPlugin extends BasePlugin {
 		const state = this.requireManagedSettings()
 		await replaceManagedSettings(
 			state,
-			this.requireStorage(),
+			await this.requireStorage(),
 			settingsKey(state.owner),
 			settings,
 			this.config.timeoutMs,
@@ -159,12 +164,13 @@ export class WretchPlugin extends BasePlugin {
 	/** Deletes the caller's saved settings and restores its native client options. */
 	async resetManagedSettings(): Promise<WretchManagedSettingsSnapshot> {
 		const state = this.requireManagedSettings()
-		await resetManagedSettings(state, this.requireStorage(), settingsKey(state.owner))
+		await resetManagedSettings(state, await this.requireStorage(), settingsKey(state.owner))
 		return this.managedSettings
 	}
 
 	private requireManagedSettings(): ManagedSettingsState {
-		this.requireStorage()
+		this.requirePolicy()
+		if (!this.storageState.access) throw new Error('Managed Wretch settings require the FS service')
 		const state = this.managed.get(this.requireCaller())
 		if (!state)
 			throw new Error('Call enableManagedSettings() before accessing managed Wretch settings')
@@ -197,28 +203,19 @@ export class WretchPlugin extends BasePlugin {
 		return lease
 	}
 
-	private async initializeManagedSettings(owner: PluginContext): Promise<ManagedSettingsState> {
+	private initializeManagedSettings(owner: PluginContext): Promise<ManagedSettingsState> {
 		const policy = this.requirePolicy()
-		const storage = this.requireStorage()
 		const managed = this.managed
 		const managedByNode = this.managedByNode
 		const nodeKey = pluginNodeIndexKey(owner.pluginInfo.nodeAddress)
-		const state = await loadManagedSettings(
-			storage,
-			settingsKey(owner.pluginInfo.nodeAddress),
-			owner.pluginInfo.nodeAddress,
-		)
-		if (this.policy !== policy || this.storageState.namespace !== storage) {
-			await disposeManagedSettings(state)
-			throw stoppedClientError()
-		}
-		if (managedByNode.has(nodeKey)) {
-			await disposeManagedSettings(state)
-			throw new Error('Managed Wretch settings already exist for this Plugin node')
-		}
+		let initialization: Promise<ManagedSettingsState> | undefined
+		// Own the pending read before I/O so shutdown also drains admitted initialization.
+		let cleanup
 		try {
-			owner.effects.defer(
+			cleanup = owner.effects.defer(
 				async () => {
+					const state = await initialization?.catch((): undefined => undefined)
+					if (!state) return
 					if (managed.get(owner) === state) managed.delete(owner)
 					if (managedByNode.get(nodeKey) === state) managedByNode.delete(nodeKey)
 					await disposeManagedSettings(state)
@@ -226,12 +223,31 @@ export class WretchPlugin extends BasePlugin {
 				{ tag: 'wretch-managed-settings' },
 			)
 		} catch {
-			await disposeManagedSettings(state)
 			throw stoppedClientError()
 		}
-		managed.set(owner, state)
-		managedByNode.set(nodeKey, state)
-		return state
+		initialization = (async () => {
+			const storage = await this.requireStorage()
+			const state = await loadManagedSettings(
+				storage,
+				settingsKey(owner.pluginInfo.nodeAddress),
+				owner.pluginInfo.nodeAddress,
+			)
+			if (this.policy !== policy || this.storageState.fs !== storage) {
+				await disposeManagedSettings(state)
+				throw stoppedClientError()
+			}
+			if (managedByNode.has(nodeKey)) {
+				await disposeManagedSettings(state)
+				throw new Error('Managed Wretch settings already exist for this Plugin node')
+			}
+			managed.set(owner, state)
+			managedByNode.set(nodeKey, state)
+			return state
+		})()
+		return initialization.catch((error) => {
+			cleanup.cancel()
+			throw error
+		})
 	}
 
 	private requireCaller(): PluginContext {
@@ -246,14 +262,18 @@ export class WretchPlugin extends BasePlugin {
 		return this.policy
 	}
 
-	private requireStorage(): PersistenceNamespace {
-		this.requirePolicy()
-		if (!this.storageState.namespace) {
-			const persistence = this.ctx.root.persistence
-			if (!persistence) throw new Error('Managed Wretch settings require the Persistence service')
-			this.storageState.namespace = persistence.namespace(SETTINGS_NAMESPACE)
+	private async requireStorage(): Promise<FsPromises> {
+		const policy = this.requirePolicy()
+		if (!this.storageState.prepared) {
+			const access = this.storageState.access
+			if (!access) throw new Error('Managed Wretch settings require the FS service')
+			this.storageState.prepared = access().then((storage) => {
+				if (this.policy !== policy) throw stoppedClientError()
+				this.storageState.fs = storage
+				return storage
+			})
 		}
-		return this.storageState.namespace
+		return this.storageState.prepared
 	}
 }
 
@@ -282,7 +302,7 @@ function settingsKey(owner: PluginNodeAddress): string {
 
 function createSettingsTarget(
 	managed: ReadonlyMap<string, ManagedSettingsState>,
-	storage: PersistenceNamespace,
+	storage: FsPromises,
 	hostTimeoutMs: number,
 	consumerNode: PluginNodeAddress,
 	signal: AbortSignal,
@@ -308,7 +328,7 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 	readonly #managed: ReadonlyMap<string, ManagedSettingsState>
 	readonly #nodeKey: string
 	readonly #state: ManagedSettingsState
-	readonly #storage: PersistenceNamespace
+	readonly #storage: FsPromises
 	readonly #key: string
 	readonly #hostTimeoutMs: number
 	readonly #signal: AbortSignal
@@ -317,7 +337,7 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 		managed: ReadonlyMap<string, ManagedSettingsState>,
 		nodeKey: string,
 		state: ManagedSettingsState,
-		storage: PersistenceNamespace,
+		storage: FsPromises,
 		key: string,
 		hostTimeoutMs: number,
 		signal: AbortSignal,

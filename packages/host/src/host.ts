@@ -47,7 +47,7 @@ import { createPluginCatalogSnapshot, type PluginCatalogSnapshot } from './catal
 import type { PluginApplyReport } from './coordinator'
 import { installPluginHostCoordinator, requirePluginHostCoordinator } from './install'
 import { HostStateStore, resolveHostStateInitial, type HostStateStoreOptions } from './state-store'
-import { assertHostStoreStorage } from './document-storage'
+import { assertHostStoreStorage, resolveHostStoreStorage } from './document-storage'
 import { HostConfigStore, type HostConfigStoreOptions } from './config-store'
 import { coercePluginConfigRecords } from './config-records'
 import type { PluginSource } from './sources'
@@ -185,16 +185,28 @@ export async function createHost<const TServices extends readonly HostService[] 
 	catalog(1, fixed) // Admit explicit definitions before creating any root resources.
 	const services = planHostServices(options.services ?? [])
 	await validateInputBindingCandidates(fixed, options)
+	let configStoreOptions: ConstructorParameters<typeof HostConfigStore>[1] | undefined
 	const shape = createCoreContextHost({
 		...options.config,
 		createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
 		capabilities: services.flatMap((service) => [...service.capabilities]),
-		createConfigService: (ctx) =>
-			new HostConfigStore(ctx, { ...options.configRecords, initial: initialConfig }),
+		createConfigService: (ctx) => {
+			if (!configStoreOptions)
+				throw new Error('[host] document storage factories must not read Host config')
+			return new HostConfigStore(ctx, configStoreOptions)
+		},
 	})
 	const ctx = shape.createRoot(options.config?.name)
 	try {
-		const state = new HostStateStore(ctx, { ...options.state, initial: initialState })
+		const configStorage = resolveHostStoreStorage(options.configRecords ?? {}, ctx)
+		const stateStorage = resolveHostStoreStorage(options.state ?? {}, ctx)
+		configStoreOptions = {
+			...configStorage,
+			initial: initialConfig,
+			overlays: options.configRecords?.overlays,
+			baseSources: options.configRecords?.baseSources,
+		}
+		const state = new HostStateStore(ctx, { ...stateStorage, initial: initialState })
 		hostStateStores.set(ctx, state)
 		ctx.effects.defer(
 			() => {
@@ -212,6 +224,10 @@ export async function createHost<const TServices extends readonly HostService[] 
 		const failures: unknown[] = [error]
 		try {
 			await closeOwnerInvocations(ctx)
+		} catch (cleanupError) {
+			failures.push(cleanupError)
+		}
+		try {
 			await ctx.effects.dispose()
 		} catch (cleanupError) {
 			failures.push(cleanupError)

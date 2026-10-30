@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
@@ -46,7 +47,7 @@ const discoveredFamily = GlobalFonts.families[0]?.family
 describe('CanvasPlugin', () => {
 	it('demonstrates recoverable upload rejection without treating cancellation or withdrawal as an invalid image', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 		const canvas = host.require(CanvasTestConsumer).canvas
@@ -100,7 +101,7 @@ describe('CanvasPlugin', () => {
 	it('creates a bounded native worker adapter from a detached host snapshot', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
@@ -168,7 +169,7 @@ describe('CanvasPlugin', () => {
 		async () => {
 			{
 				await using host = await createTestHost({
-					services: standardServices({ persistence: { mode: 'memory' } }),
+					services: standardServices({ fs: { backend: InMemory } }),
 				})
 
 				await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasFontAdminConsumer])
@@ -200,7 +201,7 @@ describe('CanvasPlugin', () => {
 	it('decodes caller-provided bytes without adding an outbound HTTP policy', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
@@ -230,7 +231,7 @@ describe('CanvasPlugin', () => {
 	it('cooperatively snapshots borrowed decode bytes and observes cancellation', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
@@ -246,7 +247,7 @@ describe('CanvasPlugin', () => {
 	it('uses bounded Pretext for multiline and rich-inline layout', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
@@ -271,7 +272,7 @@ describe('CanvasPlugin', () => {
 	it('rejects text before Pretext work when the host character budget is exceeded', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
@@ -287,7 +288,7 @@ describe('CanvasPlugin', () => {
 	it('enforces allocation and decode boundaries before returning resources', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
@@ -322,7 +323,7 @@ describe('CanvasPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin])

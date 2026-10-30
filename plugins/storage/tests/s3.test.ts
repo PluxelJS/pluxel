@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
@@ -154,7 +155,7 @@ describe('S3Plugin remote backend', () => {
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
 		{
 			await using host = await createTestHost({
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 			})
 
 			await host.start(S3Plugin, { initialConfig: remoteConfig({ type: 'anonymous' }) })
@@ -196,7 +197,7 @@ describe('S3Plugin remote backend', () => {
 	it('provides O(1) named bucket selection and owner-bound handles', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(S3Plugin, {
@@ -231,7 +232,7 @@ describe('S3Plugin remote backend', () => {
 	it('fails lifecycle when a configured Vault reference is missing', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			const failure = await host.commitExpectFail((change) => {
@@ -263,7 +264,7 @@ describe('S3Plugin remote backend', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(S3Plugin, {
@@ -313,7 +314,7 @@ async function withRemoteS3(
 ): Promise<void> {
 	{
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 
 		await host.start(S3Plugin, {

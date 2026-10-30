@@ -5,7 +5,8 @@ import {
 } from './policy'
 export type PluginLogPolicyStorage = Readonly<{
 	getText(key: string): Promise<string | undefined>
-	put(key: string, value: string, options?: { atomic?: boolean }): Promise<void>
+	/** Resolve only after a complete atomic document commit. */
+	put(key: string, value: string): Promise<void>
 }>
 /** Borrow a namespace; logging owns pending policy writes, never the backend. */
 export function createPluginLogPolicyStore(
@@ -19,9 +20,7 @@ export function createPluginLogPolicyStore(
 			return raw === undefined ? undefined : parsePluginLogPolicySnapshot(raw)
 		},
 		async save(profile, snapshot) {
-			await namespace.put(key(profile), serializePluginLogPolicySnapshot(snapshot), {
-				atomic: true,
-			})
+			await namespace.put(key(profile), serializePluginLogPolicySnapshot(snapshot))
 		},
 	}
 }

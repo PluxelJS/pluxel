@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
@@ -8,7 +9,7 @@ describe('AuthPlugin lifecycle', () => {
 	it('runs in setup-required state and revokes its generation on stop', async () => {
 		{
 			await using host = await createServiceInternalTestHost({
-				services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 				management: true,
 			})
 

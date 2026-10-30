@@ -13,7 +13,7 @@ import {
 } from '@pluxel/core'
 import * as v from 'valibot'
 
-import { type PersistenceNamespace } from '@pluxel/services/persistence'
+import { PluginFs, writeFileAtomic, type FsPromises } from '@pluxel/services/fs'
 import { CacheBackend, type CacheBackendStore, type CacheValue } from './backend.ts'
 
 export { CacheBackend } from './backend.ts'
@@ -360,7 +360,7 @@ type MemoryCacheSnapshotV1 = {
 type MemoryCacheBackendRuntime = {
 	state?: { bucket: Bucket; resolved: Resolved }
 	serializedValues: Map<string, Uint8Array>
-	storage?: PersistenceNamespace
+	storage?: FsPromises
 	persistenceMode: MemoryCachePersistenceMode
 	persistenceWritable: boolean
 	dirtyRevision: number
@@ -371,7 +371,6 @@ type MemoryCacheBackendRuntime = {
 	stopping: boolean
 }
 
-const MEMORY_CACHE_PERSISTENCE_NAMESPACE = '@pluxel/plugin-cache'
 const MEMORY_CACHE_SNAPSHOT_KEY = 'memory-backend.snapshot'
 
 function defaultEncodeKey(key: CacheKey): string {
@@ -894,26 +893,28 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 			this.holder.persistenceMode = this.config.persistence.mode
 			if (this.holder.persistenceMode === 'off') return
 
-			const persistence = this.ctx.root.persistence
-			if (!persistence)
-				throw new Error('MemoryCacheBackendPlugin persistence requires the Persistence service')
-			this.holder.storage = persistence.namespace(MEMORY_CACHE_PERSISTENCE_NAMESPACE)
+			const access = this.ctx.require(PluginFs)
 			if (this.holder.persistenceMode === 'durable') {
-				await persistence.preflight({ durable: true, writable: true })
+				this.holder.storage = await access({ durable: true, writable: true })
 				this.holder.persistenceWritable = true
 			} else {
 				try {
-					await persistence.preflight({ writable: true })
+					this.holder.storage = await access({ durable: true })
+				} catch (error) {
+					if (!hasErrno(error, 'ENOTSUP')) throw error
+					this.ctx.logger.warn(
+						'Memory cache best-effort persistence is using ephemeral storage and will not survive a process restart',
+					)
+					this.holder.storage = await access()
+				}
+				try {
+					await access({ writable: true })
 					this.holder.persistenceWritable = true
 				} catch (error) {
+					if (!hasErrno(error, 'EROFS')) throw error
 					this.ctx.logger.warn(
 						'Memory cache persistence is not writable; restoring without saving updates',
 						{ error },
-					)
-				}
-				if (persistence.capability === 'ephemeral') {
-					this.ctx.logger.warn(
-						'Memory cache best-effort persistence is using ephemeral storage and will not survive a process restart',
 					)
 				}
 			}
@@ -989,8 +990,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 		if (!storage) return
 
 		try {
-			const bytes = await storage.get(MEMORY_CACHE_SNAPSHOT_KEY)
-			if (!bytes) return
+			const bytes = await storage.readFile(MEMORY_CACHE_SNAPSHOT_KEY)
 			const snapshot = decodeMemoryCacheSnapshot(bytes)
 			const state = this.getState()
 			const now = Date.now()
@@ -1021,6 +1021,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 			}
 			if (needsRewrite) this.requestSnapshot()
 		} catch (error) {
+			if (hasErrno(error, 'ENOENT')) return
 			if (this.holder.persistenceMode === 'durable') {
 				throw new Error('Memory cache snapshot could not be restored.', {
 					cause: error,
@@ -1079,7 +1080,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 			const revision = this.holder.dirtyRevision
 			const snapshot = this.createSnapshot()
 			try {
-				await storage.put(MEMORY_CACHE_SNAPSHOT_KEY, serialize(snapshot), { atomic: true })
+				await writeFileAtomic(storage, MEMORY_CACHE_SNAPSHOT_KEY, serialize(snapshot))
 				this.holder.savedRevision = revision
 			} catch (error) {
 				if (this.holder.persistenceMode === 'durable') throw error
@@ -1168,6 +1169,10 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 		this.holder.persistenceWritable = false
 		this.holder.running = false
 	}
+}
+
+function hasErrno(error: unknown, code: string): boolean {
+	return !!error && typeof error === 'object' && 'code' in error && error.code === code
 }
 
 class NamespaceView implements CacheNamespace {

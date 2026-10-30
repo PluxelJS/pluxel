@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { vault } from '@pluxel/services/vault'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
@@ -101,7 +102,7 @@ describe('runtime Management plane installation', () => {
 		await using host = await createServiceInternalTestHost({
 			workbench: false,
 			management: true,
-			services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+			services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 		})
 
 		const target = new RuntimeManagementTargetImpl(host.ctx)

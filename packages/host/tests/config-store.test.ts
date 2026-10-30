@@ -124,30 +124,30 @@ it('initializes an absent writable config document once', async () => {
 	}
 })
 
-it('requests atomic writes, retains failed work for retry, and recreates a deleted committed file', async () => {
+it('retains failed work for retry and recreates a deleted committed document', async () => {
 	const memory = createDocumentStorage()
-	const writes: boolean[] = []
+	let writes = 0
 	let rejectWrite = false
 	const storage: HostDocumentStorage = {
 		...memory,
-		async put(key, value, options) {
-			writes.push(options?.atomic === true)
+		async put(key, value) {
+			writes++
 			if (rejectWrite) throw new Error('config storage unavailable')
-			await memory.put(key, value, options)
+			await memory.put(key, value)
 		},
 	}
 	const ctx = createCoreContextHost().createRoot()
 	const store = new HostConfigStore(ctx, { storage })
 	try {
 		await store.ready
-		writes.length = 0
+		writes = 0
 		store.patchConfig(owner, { value: 'desired' })
 		rejectWrite = true
 		await expect(store.flush()).rejects.toThrow('config storage unavailable')
-		expect(writes).toEqual([true])
+		expect(writes).toBe(1)
 		rejectWrite = false
 		await store.flush()
-		expect(writes).toEqual([true, true])
+		expect(writes).toBe(2)
 		memory.documents.delete('config.json')
 		store.patchConfig(owner, { value: 'temporary' })
 		store.patchConfig(owner, { value: 'desired' })

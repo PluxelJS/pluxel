@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { createTestHost } from '@pluxel/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
@@ -9,7 +10,7 @@ import { VaultWorkbench } from '../src/plugins/vault/workbench.ts'
 it('withdraws its View without withdrawing host Vault management', async () => {
 	await using host = await createTestHost({
 		workbench: true,
-		services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+		services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 	})
 	const plugin = await host.start(VaultAdminPlugin)
 	const management = new RuntimeManagementTargetImpl(plugin.ctx.root)
@@ -29,12 +30,12 @@ it('withdraws its View without withdrawing host Vault management', async () => {
 
 it('can run headless but requires the Vault capability', async () => {
 	await using headless = await createTestHost({
-		services: [...standardServices({ persistence: { mode: 'memory' } }), vault()],
+		services: [...standardServices({ fs: { backend: InMemory } }), vault()],
 	})
 	await headless.start(VaultAdminPlugin)
 	expect(headless.isRunning(VaultAdminPlugin)).toBe(true)
 	await using absent = await createTestHost({
-		services: standardServices({ persistence: { mode: 'memory' } }),
+		services: standardServices({ fs: { backend: InMemory } }),
 	})
 	await expect(absent.start(VaultAdminPlugin)).rejects.toThrow(/Vault|start|lifecycle/i)
 })

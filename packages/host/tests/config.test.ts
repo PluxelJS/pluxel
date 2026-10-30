@@ -89,8 +89,8 @@ it('prepares explicit config and state documents, reopens stored values ahead of
 	const owner = pluginNodeAddressOf(ConfigOwner)
 	const host = await createHost({
 		plugins: [ConfigOwner],
-		state: { storage: stateStorage, initial: { autoStart: [owner] } },
-		configRecords: { storage: borrowed, initial: [{ owner, config: { value: 'seed' } }] },
+		state: { storage: () => stateStorage, initial: { autoStart: [owner] } },
+		configRecords: { storage: () => borrowed, initial: [{ owner, config: { value: 'seed' } }] },
 	})
 	try {
 		await expect(host.config.get(owner)).resolves.toMatchObject({
@@ -104,8 +104,11 @@ it('prepares explicit config and state documents, reopens stored values ahead of
 	}
 	const reopened = await createHost({
 		plugins: [ConfigOwner],
-		state: { storage: stateStorage, initial: { autoStart: [] } },
-		configRecords: { storage: borrowed, initial: [{ owner, config: { value: 'ignored seed' } }] },
+		state: { storage: () => stateStorage, initial: { autoStart: [] } },
+		configRecords: {
+			storage: () => borrowed,
+			initial: [{ owner, config: { value: 'ignored seed' } }],
+		},
 	})
 	try {
 		await expect(reopened.config.get(owner)).resolves.toMatchObject({
@@ -137,8 +140,8 @@ it.each(['config', 'state'] as const)(
 		await expect(
 			createHost({
 				plugins: [],
-				configRecords: { storage: configStorage },
-				state: { storage: stateStorage },
+				configRecords: { storage: () => configStorage },
+				state: { storage: () => stateStorage },
 			}),
 		).rejects.toThrow(/Cannot load (config|state)\.json/)
 		expect(await configStorage.getText('config.json')).toBe(broken === 'config' ? '{' : validConfig)
@@ -239,7 +242,7 @@ it('resolves base < saved < env, persists only management edits, and reveals low
 	const host = await createHost({
 		plugins: [LayeredOwner],
 		configRecords: {
-			storage,
+			storage: () => storage,
 			initial,
 			overlays: [
 				{
@@ -290,7 +293,7 @@ it('resolves base < saved < env, persists only management edits, and reveals low
 	}
 	const reopened = await createHost({
 		plugins: [LayeredOwner],
-		configRecords: { storage, initial },
+		configRecords: { storage: () => storage, initial },
 	})
 	try {
 		await expect(reopened.config.get(owner)).resolves.toMatchObject({
@@ -386,7 +389,7 @@ it('keeps the confirmed revision and generation unchanged when layered persisten
 	const owner = pluginNodeAddressOf(LayeredOwner)
 	const host = await createHost({
 		plugins: [LayeredOwner],
-		configRecords: { storage, initial: [{ owner, config: { value: 'base' } }] },
+		configRecords: { storage: () => storage, initial: [{ owner, config: { value: 'base' } }] },
 	})
 	try {
 		await host.startNode(owner)

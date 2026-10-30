@@ -17,6 +17,7 @@
 		"---按需扩展---",
 		"http",
 		"commands",
+		"fs",
 		"database",
 		"vault",
 		"node-artifacts",

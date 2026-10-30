@@ -1,7 +1,11 @@
 import { createServer } from 'node:http'
+import * as nativeFs from 'node:fs'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
-import { createMemoryPersistenceBackend, persistence } from '@pluxel/services/persistence'
+import { fs, Passthrough } from '@pluxel/services/fs'
 import { expect, it } from 'vitest'
 import { WretchConfig, WretchPlugin } from '../src/index.ts'
 
@@ -14,18 +18,14 @@ class StatelessHttpConsumer extends BasePlugin {
 		super()
 	}
 	async init() {
-		expect(this.ctx.root.persistence).toBeUndefined()
+		expect(this.ctx.fs).toBeUndefined()
 		expect(this.ctx.workbench).toBeUndefined()
-		await expect(this.http.enableManagedSettings()).rejects.toThrow(
-			'require the Persistence service',
-		)
+		await expect(this.http.enableManagedSettings()).rejects.toThrow('require the FS service')
 		await expect(this.http.updateManagedSettings({ headers: {} })).rejects.toThrow(
-			'require the Persistence service',
+			'require the FS service',
 		)
-		await expect(this.http.resetManagedSettings()).rejects.toThrow(
-			'require the Persistence service',
-		)
-		expect(() => this.http.managedSettings).toThrow('require the Persistence service')
+		await expect(this.http.resetManagedSettings()).rejects.toThrow('require the FS service')
+		expect(() => this.http.managedSettings).toThrow('require the FS service')
 		expect(await this.http.client.get(origin).text()).toBe('stateless')
 		await expect(this.http.client.get('https://not-allowed.example').text()).rejects.toThrow(
 			/origin/i,
@@ -130,6 +130,7 @@ class SecondManagedConsumer extends BasePlugin {
 }
 
 it('applies env-bound provider policy and caller saved settings without Workbench', async () => {
+	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-wretch-headless-'))
 	const requests: { managed?: string; authorization?: string }[] = []
 	const server = createServer((request, response) => {
 		requests.push({
@@ -143,18 +144,9 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 		const address = server.address()
 		if (!address || typeof address === 'string') throw new Error('No listener')
 		origin = `http://127.0.0.1:${address.port}`
-		const memory = createMemoryPersistenceBackend()
-		let settingsNamespaces = 0
-		const backend = {
-			...memory,
-			namespace(name: string) {
-				if (name === '@pluxel/plugin-wretch') settingsNamespaces++
-				return memory.namespace(name)
-			},
-		}
 		const application = defineHostApplication(() => ({
 			plugins: [WretchPlugin, HeadlessHttpConsumer, SecondManagedConsumer],
-			services: [persistence({ mode: 'custom', backend })],
+			services: [fs({ backend: Passthrough, fs: nativeFs, prefix })],
 			state: {
 				initial: {
 					autoStart: [
@@ -197,15 +189,19 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 				await host.close()
 			}
 		}
-		expect(settingsNamespaces).toBe(2) // One shared lazy namespace per provider generation.
+		expect(await readdir(join(prefix, 'plugins'))).toHaveLength(1)
 		expect(requests).toEqual([
 			{ managed: 'saved', authorization: 'Bearer caller-owned' },
 			{ managed: 'saved', authorization: 'Bearer caller-owned' },
 			{ managed: 'native', authorization: 'Bearer caller-owned' },
 		])
 	} finally {
-		await new Promise<void>((resolve, reject) =>
-			server.close((error) => (error ? reject(error) : resolve())),
-		)
+		try {
+			await new Promise<void>((resolve, reject) =>
+				server.close((error) => (error ? reject(error) : resolve())),
+			)
+		} finally {
+			await rm(prefix, { recursive: true, force: true })
+		}
 	}
 })

@@ -68,18 +68,18 @@ owner envelope 由 coordinator 生成/校验，adapter 不解释它。序列化�
 
 ### Memory backend 快照恢复
 
-内存 backend 可以选择使用 runtime `PersistenceService` 保存版本化快照；默认 `off`，因此未启用时不创建
-namespace、timer、序列化副本或持久状态：
+内存 backend 可以选择使用 provider 的 `PluginFs` 保存版本化快照；默认 `off`，因此未启用时不取得
+文件目录、创建 timer、序列化副本或持久状态：
 
 - `best-effort`：恢复或保存失败时告警并继续使用空/当前内存状态；ephemeral persistence 可以跨 plugin replacement
   恢复，但不能承诺跨进程重启；readonly persistence 只尝试恢复，不保存更新；
-- `durable`：init 阶段要求 persistence 同时 durable、writable，不满足时诚实启动失败；快照读取或解码失败同样使
+- `durable`：init 通过 `ctx.require(PluginFs)({ durable: true, writable: true })` 检查要求，不满足时诚实启动失败；快照读取或解码失败同样使
   provider 启动失败；
 - `flushIntervalMs`：合并连续 mutation 的快照写入；stop/replacement 取消 timer 并 flush 最新 revision。
 
 快照保存 async memory backend 的有效 key、Node structured-clone value 和绝对 `expiresAt`。停机时间因此计入 TTL；
-恢复时先丢弃过期 entry，再按快照顺序写入当前容量的 SIEVE，容量缩小时自然淘汰。快照使用 atomic put，mutation
-发生在进行中的 put 期间会形成更高 revision，旧写入完成后继续写最新状态，不会让晚到快照复活已删除 key。
+恢复时先丢弃过期 entry，再按快照顺序写入当前容量的 SIEVE，容量缩小时自然淘汰。快照在 provider 固定目录内使用
+`writeFileAtomic()`；mutation 发生在进行中的保存期间会形成更高 revision，旧写入完成后继续写最新状态，不会让晚到快照复活已删除 key。
 
 持久化启用且可写时，`set()` 会拒绝 Node structured-clone codec 无法序列化的值。每个 value 在 set 时生成序列化
 副本，避免对象之后被外部修改成不可序列化形态而令后台 flush 随机失败。live memory value 仍保持原有引用语义，

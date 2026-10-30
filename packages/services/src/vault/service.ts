@@ -4,7 +4,7 @@ import type { Context as PluxelContext } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { pinOwnerContext } from '../internal/owner-view'
 import { basename, join } from 'pathe'
-import type { PersistenceNamespace } from '../persistence/service'
+import { writeFileAtomic, type FsPromises } from '../fs'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import { recordSecurityEvent } from '../internal/security'
 import type {
@@ -42,16 +42,6 @@ async function runVaultOperation<T>(ctx: PluxelContext, run: () => Promise<T>): 
 
 export { VaultError } from './error'
 import { VaultError } from './error'
-
-type VaultStore = {
-	exists(key: string): Promise<boolean>
-	readText(key: string): Promise<string | undefined>
-	writeText(key: string, text: string): Promise<void>
-	readBytes(key: string): Promise<Uint8Array | undefined>
-	writeBytes(key: string, bytes: Uint8Array): Promise<void>
-	delete(key: string): Promise<void>
-	listChildren(prefix: string): Promise<string[]>
-}
 
 type MountRuntime = {
 	dir: string
@@ -139,7 +129,7 @@ type MountCacheEntry = {
 }
 
 type VaultRootBacking = Readonly<{
-	store: VaultStore
+	store: FsPromises | undefined
 	runtime: MountRuntime
 	entry: MountCacheEntry
 }>
@@ -200,33 +190,47 @@ function normalizeSegment(input: string): string {
 	return basename(trimmed).replaceAll(/[^A-Za-z0-9._-]/g, '_')
 }
 
-function normalizeStoreKey(key: string): string {
-	return String(key || '')
-		.replaceAll('\\', '/')
-		.replace(/^\/+/, '')
+function missingFile(error: unknown): boolean {
+	return !!error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT'
 }
 
-function createVaultStore(storage: PersistenceNamespace): VaultStore {
-	return {
-		exists: async (key) => (await storage.stat(key)) !== undefined,
-		readText: (key) => storage.getText(key),
-		writeText: (key, text) => storage.put(key, text, { atomic: true }),
-		readBytes: (key) => storage.get(key),
-		writeBytes: (key, bytes) => storage.put(key, bytes, { atomic: true }),
-		delete: (key) => storage.delete(key),
-		listChildren: async (prefix) => {
-			const cleanPrefix = normalizeStoreKey(prefix)
-			const childNames = new Set<string>()
-			for await (const entry of storage.list(prefix)) {
-				let key = normalizeStoreKey(entry.key)
-				if (cleanPrefix && key.startsWith(`${cleanPrefix}/`)) {
-					key = key.slice(cleanPrefix.length + 1)
-				}
-				const child = key.split('/').find(Boolean)
-				if (child) childNames.add(child)
-			}
-			return [...childNames].sort()
-		},
+function requireVaultFs(fs: FsPromises | undefined): FsPromises {
+	if (!fs) throw new VaultError('READ_ONLY', 'Vault has no persistent backend.')
+	return fs
+}
+
+async function readVaultBytes(
+	fs: FsPromises | undefined,
+	path: string,
+): Promise<Uint8Array | undefined> {
+	if (!fs) return undefined
+	try {
+		return await fs.readFile(path)
+	} catch (error) {
+		if (missingFile(error)) return undefined
+		throw error
+	}
+}
+
+async function vaultFileExists(fs: FsPromises | undefined, path: string): Promise<boolean> {
+	if (!fs) return false
+	try {
+		await fs.stat(path)
+		return true
+	} catch (error) {
+		if (missingFile(error)) return false
+		throw error
+	}
+}
+
+async function listVaultNames(fs: FsPromises | undefined, path: string): Promise<string[]> {
+	if (!fs) return []
+	try {
+		const names = await fs.readdir(path)
+		return names.sort()
+	} catch (error) {
+		if (missingFile(error)) return []
+		throw error
 	}
 }
 
@@ -502,23 +506,30 @@ function securityIdentityHasMaterial(doc: SecurityIdentityDoc): boolean {
 	)
 }
 
-async function readSecurityIdentity(store: VaultStore): Promise<SecurityIdentityDoc> {
-	const raw = await store.readText(SECURITY_IDENTITY_KEY)
+async function readSecurityIdentity(store: FsPromises | undefined): Promise<SecurityIdentityDoc> {
+	const raw = await readVaultBytes(store, SECURITY_IDENTITY_KEY)
 	if (raw === undefined) return emptySecurityIdentityDoc()
-	return normalizeSecurityIdentity(JSON.parse(raw) as unknown)
+	return normalizeSecurityIdentity(JSON.parse(textDecode(raw)) as unknown)
 }
 
-async function writeSecurityIdentity(store: VaultStore, doc: SecurityIdentityDoc): Promise<void> {
+async function writeSecurityIdentity(
+	store: FsPromises | undefined,
+	doc: SecurityIdentityDoc,
+): Promise<void> {
 	const normalized = normalizeSecurityIdentity(doc)
 	if (!securityIdentityHasMaterial(normalized)) {
-		await store.delete(SECURITY_IDENTITY_KEY)
+		await requireVaultFs(store).rm(SECURITY_IDENTITY_KEY, { force: true })
 		return
 	}
-	await store.writeText(SECURITY_IDENTITY_KEY, `${JSON.stringify(normalized, null, 2)}\n`)
+	await writeFileAtomic(
+		requireVaultFs(store),
+		SECURITY_IDENTITY_KEY,
+		`${JSON.stringify(normalized, null, 2)}\n`,
+	)
 }
 
 async function updateSecurityIdentity(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	update: (current: SecurityIdentityDoc) => SecurityIdentityDoc,
 ): Promise<SecurityIdentityDoc> {
 	const next = normalizeSecurityIdentity(update(await readSecurityIdentity(store)))
@@ -526,12 +537,15 @@ async function updateSecurityIdentity(
 	return next
 }
 
-async function readDeployRecipients(store: VaultStore): Promise<string[]> {
+async function readDeployRecipients(store: FsPromises | undefined): Promise<string[]> {
 	const identity = await readSecurityIdentity(store)
 	return normalizeRecipients(identity.vault?.deployRecipients ?? [])
 }
 
-async function writeDeployRecipients(store: VaultStore, recipients: string[]): Promise<void> {
+async function writeDeployRecipients(
+	store: FsPromises | undefined,
+	recipients: string[],
+): Promise<void> {
 	const nextRecipients = normalizeRecipients(recipients)
 	await updateSecurityIdentity(store, (current) => ({
 		...current,
@@ -547,7 +561,7 @@ async function hasDeployIdentity(runtime: MountRuntime): Promise<boolean> {
 }
 
 async function ensureIdentity(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	createIfMissing: boolean,
 ): Promise<string | undefined> {
 	const identityDoc = await readSecurityIdentity(store)
@@ -570,13 +584,13 @@ async function ensureIdentity(
 	return nextIdentity
 }
 
-async function hasHostIdentity(store: VaultStore): Promise<boolean> {
+async function hasHostIdentity(store: FsPromises | undefined): Promise<boolean> {
 	const identity = await readSecurityIdentity(store)
 	return !!identity.vault?.hostIdentity
 }
 
 async function resolveManagedRecipients(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	_runtime: MountRuntime,
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
@@ -592,7 +606,7 @@ async function resolveManagedRecipients(
 }
 
 async function resolveManagedIdentities(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	options: { includeDeployIdentity?: boolean } = {},
 ): Promise<string[]> {
@@ -606,7 +620,7 @@ async function resolveManagedIdentities(
 }
 
 async function encryptDek(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	dek: Uint8Array,
 	deployRecipientsOverride?: string[],
@@ -632,7 +646,7 @@ async function encryptDek(
 }
 
 async function decryptDek(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	ciphertext: Uint8Array,
 	options: { includeDeployIdentity?: boolean } = {},
@@ -661,12 +675,18 @@ function createMountCacheEntry(): MountCacheEntry {
 	}
 }
 
-async function isMountPresent(store: VaultStore, runtime: MountRuntime): Promise<boolean> {
-	return (await store.exists(runtime.keysPath)) || (await store.exists(runtime.statePath))
+async function isMountPresent(
+	store: FsPromises | undefined,
+	runtime: MountRuntime,
+): Promise<boolean> {
+	return (
+		(await vaultFileExists(store, runtime.keysPath)) ||
+		(await vaultFileExists(store, runtime.statePath))
+	)
 }
 
 async function toRuntimeStatus(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	entry: MountCacheEntry,
 ): Promise<VaultRuntimeStatus> {
@@ -679,7 +699,7 @@ async function toRuntimeStatus(
 }
 
 function updateStatus(
-	_store: VaultStore,
+	_store: FsPromises | undefined,
 	_runtime: MountRuntime,
 	entry: MountCacheEntry,
 	patch: Partial<MountCacheEntry['status']>,
@@ -696,7 +716,11 @@ function updateStatus(
 	entry.status = next
 }
 
-function clearStatusError(store: VaultStore, runtime: MountRuntime, entry: MountCacheEntry): void {
+function clearStatusError(
+	store: FsPromises | undefined,
+	runtime: MountRuntime,
+	entry: MountCacheEntry,
+): void {
 	if (!entry.status.lastError) return
 	updateStatus(store, runtime, entry, { lastError: undefined })
 }
@@ -714,7 +738,7 @@ function toFailurePhase(error: unknown): VaultRuntimePhase {
 }
 
 function setStatusFailure(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	entry: MountCacheEntry,
 	error: unknown,
@@ -735,12 +759,12 @@ function namespaceFrom(ctx: PluxelContext, options?: VaultNamespaceOptions): str
 }
 
 async function loadMountState(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	options: { includeDeployIdentity?: boolean } = {},
 ): Promise<{ dek: Uint8Array; snapshot: VaultSnapshot } | undefined> {
-	if (!(await store.exists(runtime.keysPath))) {
-		if (await store.exists(runtime.statePath)) {
+	if (!(await vaultFileExists(store, runtime.keysPath))) {
+		if (await vaultFileExists(store, runtime.statePath)) {
 			throw new VaultError(
 				'INVALID_FORMAT',
 				`Vault mount is missing key envelope: ${runtime.keysPath}`,
@@ -749,12 +773,12 @@ async function loadMountState(
 		return undefined
 	}
 
-	const keys = await store.readBytes(runtime.keysPath)
+	const keys = await readVaultBytes(store, runtime.keysPath)
 	if (!keys) return undefined
 	const dek = await decryptDek(store, runtime, keys, options)
-	if (!(await store.exists(runtime.statePath)))
+	if (!(await vaultFileExists(store, runtime.statePath)))
 		throw new VaultError('INVALID_FORMAT', 'Vault snapshot is missing from an existing mount.')
-	const stateBytes = await store.readBytes(runtime.statePath)
+	const stateBytes = await readVaultBytes(store, runtime.statePath)
 	if (!stateBytes)
 		throw new VaultError('INVALID_FORMAT', 'Vault snapshot is missing from an existing mount.')
 	const plaintext = await aesDecrypt(dek, stateBytes)
@@ -762,13 +786,14 @@ async function loadMountState(
 }
 
 async function createMountKey(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
 ): Promise<Uint8Array> {
 	const dek = randomBytes(32)
-	await store.writeBytes(
+	await writeFileAtomic(
+		requireVaultFs(store),
 		runtime.keysPath,
 		await encryptDek(store, runtime, dek, deployRecipientsOverride, options),
 	)
@@ -786,13 +811,13 @@ async function createDeployKeyPair(): Promise<VaultKeyPair> {
 }
 
 async function flushUnlockedState(
-	store: VaultStore,
+	store: FsPromises | undefined,
 	runtime: MountRuntime,
 	state: Extract<MountCacheState, { status: 'unlocked' }>,
 ) {
 	if (!state.dirty) return
 	const ciphertext = await aesEncrypt(state.dek, serializeSnapshot(state.snapshot))
-	await store.writeBytes(runtime.statePath, ciphertext)
+	await writeFileAtomic(requireVaultFs(store), runtime.statePath, ciphertext)
 	state.dirty = false
 }
 
@@ -833,7 +858,7 @@ export class VaultService {
 	static create(
 		ctx: PluxelContext,
 		config: VaultServiceConfig,
-		storage?: PersistenceNamespace,
+		storage?: FsPromises,
 	): VaultService {
 		const backing = createVaultRootBacking(ctx, config, storage)
 		if (config.backend === 'bindings')
@@ -1025,7 +1050,8 @@ export class VaultService {
 						namespaces: { ...state.snapshot.namespaces, [namespace]: next },
 					}
 					// Only publish after the encrypted atomic replace is confirmed.
-					await store.writeBytes(
+					await writeFileAtomic(
+						requireVaultFs(store),
 						runtime.statePath,
 						await aesEncrypt(state.dek, serializeSnapshot(snapshot)),
 					)
@@ -1125,7 +1151,8 @@ export class VaultService {
 				}
 			}
 			if (!dek) throw new VaultError('INVALID_CONFIG', 'Failed to load vault key for rekey.')
-			await store.writeBytes(
+			await writeFileAtomic(
+				requireVaultFs(store),
 				runtime.keysPath,
 				await encryptDek(store, runtime, dek, deployRecipientsOverride),
 			)
@@ -1386,7 +1413,7 @@ export class VaultService {
 					const readBytes = () =>
 						runVaultOperation(ctx, async () => {
 							const dek = await readDek(false)
-							const encrypted = await store.readBytes(path)
+							const encrypted = await readVaultBytes(store, path)
 							return encrypted ? await aesDecrypt(dek, encrypted) : undefined
 						})
 
@@ -1394,7 +1421,7 @@ export class VaultService {
 						exists: () =>
 							runVaultOperation(ctx, async () => {
 								await readDek(false)
-								return await store.exists(path)
+								return await vaultFileExists(store, path)
 							}),
 						readBytes,
 						readText: async () => {
@@ -1405,18 +1432,19 @@ export class VaultService {
 							runVaultOperation(ctx, async () => {
 								const dek = await readDek(true)
 								if (!dek) throw new VaultError('INVALID_CONFIG', 'Failed to create vault key.')
-								await store.writeBytes(path, await aesEncrypt(dek, bytes))
+								await writeFileAtomic(requireVaultFs(store), path, await aesEncrypt(dek, bytes))
 							}),
 						writeText: (text: string) =>
 							runVaultOperation(ctx, async () => {
-								await store.writeBytes(
+								await writeFileAtomic(
+									requireVaultFs(store),
 									path,
 									await aesEncrypt((await readDek(true))!, textEncode(text)),
 								)
 							}),
 						remove: () =>
 							runVaultOperation(ctx, async () => {
-								if (await store.exists(path)) await store.delete(path)
+								if (await vaultFileExists(store, path)) await requireVaultFs(store).unlink(path)
 							}),
 						describe: () => ({ path }),
 					}
@@ -1431,7 +1459,7 @@ export class VaultService {
 								throw error
 							}
 						})
-						const blobNames = await store.listChildren(join(runtime.blobsDir, namespace))
+						const blobNames = await listVaultNames(store, join(runtime.blobsDir, namespace))
 						return blobNames
 							.filter((blobName) => blobName.endsWith('.blob'))
 							.map((blobName) => blobName.slice(0, -'.blob'.length))
@@ -1466,18 +1494,14 @@ export class VaultService {
 			let namespaces: VaultAdminState['namespaces'] | undefined
 			if (unlocked) {
 				const namespaceNames = new Set<string>(Object.keys(unlocked.snapshot.namespaces))
-				for (const namespaceName of await store
-					.listChildren(runtime.blobsDir)
-					.catch((): string[] => [])) {
+				for (const namespaceName of await listVaultNames(store, runtime.blobsDir)) {
 					if (namespaceName) namespaceNames.add(namespaceName)
 				}
 
 				namespaces = []
 				for (const namespaceName of [...namespaceNames].sort()) {
 					const snapshotState = unlocked.snapshot.namespaces[namespaceName]
-					const blobNames = await store
-						.listChildren(join(runtime.blobsDir, namespaceName))
-						.catch((): string[] => [])
+					const blobNames = await listVaultNames(store, join(runtime.blobsDir, namespaceName))
 					const row: VaultNamespaceStats = {
 						namespace: namespaceName,
 						kvKeys: Object.keys(snapshotState?.kv ?? {}).length,
@@ -1758,29 +1782,15 @@ export class VaultAdminService {
 function createVaultRootBacking(
 	ctx: PluxelContext,
 	config: VaultServiceConfig,
-	storage?: PersistenceNamespace,
+	storage?: FsPromises,
 ): VaultRootBacking {
 	if (ctx !== ctx.root) {
 		throw new TypeError('[runtime:vault] Vault root backing requires the root Context')
 	}
+	if (config.backend !== 'bindings' && !storage)
+		throw new VaultError('INVALID_CONFIG', 'Encrypted Vault requires a filesystem directory.')
 	return Object.freeze({
-		store: storage
-			? createVaultStore(storage)
-			: {
-					exists: async () => false,
-					readText: async (): Promise<string | undefined> => undefined,
-					readBytes: async (): Promise<Uint8Array | undefined> => undefined,
-					listChildren: async (): Promise<string[]> => [],
-					writeText: async () => {
-						throw new VaultError('READ_ONLY', 'Vault has no persistent backend.')
-					},
-					writeBytes: async () => {
-						throw new VaultError('READ_ONLY', 'Vault has no persistent backend.')
-					},
-					delete: async () => {
-						throw new VaultError('READ_ONLY', 'Vault has no persistent backend.')
-					},
-				},
+		store: storage,
 		runtime: resolveRuntime(config),
 		entry: createMountCacheEntry(),
 	})

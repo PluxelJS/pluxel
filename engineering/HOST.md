@@ -8,7 +8,7 @@
 
 ## 服务与资源
 
-`createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源在 `prepare({ ctx, dependencies, effects })` 获取。
+`createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源通常在 `prepare({ ctx, dependencies, effects })` 获取。[FS](FS.md) 为 Host 更早的配置读取提供明确例外：首个异步文件/文档操作和服务 prepare 共享同一个准备任务，capability 构造仍无 IO。
 `@pluxel/host/browser` 从 `src/browser.ts` 只导出同一 Host 与服务组合实现，避免根 barrel 的 Node application/source loader 求值。它不提供另一套 runtime，也不为所选 Plugin 或服务补 Node polyfill；浏览器装配及 lowering 由[浏览器 Host 用法](../docs/host/configuration.md#浏览器-host)维护。
 每项服务的 effects scope 随服务准备失败或 Host 关闭释放。Plugin generation 的 effects 随该代停止释放，两者都使用 Core effects 契约，但 owner 与生命周期必须在调用位置清楚可见。
 关闭先停止接纳、排空协调操作和插件，再按依赖逆序释放服务；清理失败聚合，不能跳过其余清理。
@@ -18,7 +18,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 能力 token 的 access 表达调用 Context 的所有权：`all` 通用，`owner` 需要真实插件/Part owner，`root` 需要真实 RootContext。宿主代码使用 `ctx.require(Token)`，缺失、访问越界和构造失败保留各自错误。
 `ctx.root` 返回真实根引用，持有它的受信任代码可访问 root 能力；这不是不可信代码沙箱。Core 内部图 authority 的 token 不进入普通作者入口。
 
-`@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers、Persistence。同包的 `@pluxel/services/preset` 入口的 `servicesPreset()` 增加 Vault、Logging、Management、管理命令及可选 Workbench。Database 显式选择 backend。
+`@pluxel/services` 的 `standardServices({ fs })` 安装 HTTP、Commands、Node artifacts、Workers、FS。同包的 `@pluxel/services/preset` 入口的 `servicesPreset(startup, { fs })` 增加 Vault、Logging、Management、管理命令及可选 Workbench。FS 和 Database 显式选择 backend。
 未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
 
 ## 应用、开发和部署
@@ -50,7 +50,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 ## 资源边界与验证入口
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
-- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。持久化服务只提供借用的 document storage，不拥有运行事实。 已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
+- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。storage 使用同步 root factory 借用 document storage，不拥有后端；[FS](FS.md) 在 root final 关闭共享资源。已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
 - Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生启动使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移和 backend：[DATABASE.md](DATABASE.md)。
@@ -72,8 +72,8 @@ Services 包含基础服务、Logging、Management 与官方 preset；子入口�
 
 ## Vault 记录与宿主输入
 
-Vault 只用结构化 KV 表达记录，blobs 保留独立文件语义。默认加密后端依赖 Persistence；bindings 后端只安装读取能力，
-不准备密钥、磁盘或 Persistence。Host 在服务准备后、插件启动前，通过 root-only `HostVaultBindings` 安装 schema 已验证的
+Vault 只用结构化 KV 表达记录，blobs 保留独立文件语义。默认加密后端依赖 FS；bindings 后端只安装读取能力，
+不准备密钥、磁盘或 FS。Host 在服务准备后、插件启动前，通过 root-only `HostVaultBindings` 安装 schema 已验证的
 owner/key/value/source 记录；缺少安装能力属于装配错误。Services 不反向拥有 Host 的环境解析。
 
 KV mutation 在唯一 backend lock 内 clone、检查 revision、加密并原子提交，然后才交换 snapshot 与发布通知；失败不推进
@@ -82,4 +82,6 @@ revision。删除保留 tombstone。watch/watchPrefix 在同一 lock 内读取�
 
 持久 snapshot 只接受 version 2 的结构化 KV 与 revision。完整加密格式、操作与恢复边界见 [Vault](../docs/plugin-development/vault.md)。
 
-Persistence 的路径、只读执行与目录列举契约由[公开服务文档](../docs/host/configuration.md#persistence-文件契约)维护。Node 客户端断线由 srvx 原生 `request.signal` 传播，不再另装 response close 监听器；owner 关闭仍由 invocation lease 合成取消。Host endpoint 将 root lease signal 传入 handler；carrier 的请求身份仍指向原始 ingress，不能因取消用 Request 派生而丢失地址或 upgrade 状态。
+文件后端选择由 [Host 配置](../docs/host/configuration.md#选择文件后端)维护，目录、原生 errno 与原子保存见[插件文件存储](../docs/plugin-development/fs.md)。
+
+Node 客户端断线由 srvx 原生 `request.signal` 传播，不再另装 response close 监听器；owner 关闭仍由 invocation lease 合成取消。Host endpoint 将 root lease signal 传入 handler；carrier 的请求身份仍指向原始 ingress，不能因取消用 Request 派生而丢失地址或 upgrade 状态。

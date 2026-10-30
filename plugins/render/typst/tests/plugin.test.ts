@@ -65,7 +65,7 @@ afterEach(async () => {
 
 describe('TypstPlugin real host and worker', () => {
 	it.skipIf(!deploymentFont)(
-		'applies file budgets and env overrides without Workbench or Persistence',
+		'applies file budgets and env overrides without Workbench or Fs',
 		async () => {
 			const source = await template()
 			await writeFile(

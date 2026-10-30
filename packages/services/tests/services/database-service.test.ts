@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import {
 	database as installDatabase,
@@ -170,7 +171,7 @@ describe('DatabaseService', () => {
 		databaseHost = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
-				...standardServices({ persistence: { mode: 'memory' } }),
+				...standardServices({ fs: { backend: InMemory } }),
 				installDatabase({ backend: pglite({ dataDir: 'memory://' }) }),
 			],
 		})
@@ -354,7 +355,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 
 		@Plugin({ displayName: 'DisabledDatabasePlugin' })
@@ -381,7 +382,7 @@ describe('DatabaseService', () => {
 				await using firstHost = await createServiceInternalTestHarness({
 					workbench: false,
 					services: [
-						...standardServices({ persistence: { mode: 'memory' } }),
+						...standardServices({ fs: { backend: InMemory } }),
 						installDatabase({ backend: pglite({ dataDir }) }),
 					],
 				})
@@ -407,7 +408,7 @@ describe('DatabaseService', () => {
 			await using secondHost = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices({ persistence: { mode: 'memory' } }),
+					...standardServices({ fs: { backend: InMemory } }),
 					installDatabase({ backend: pglite({ dataDir }) }),
 				],
 			})
@@ -441,7 +442,7 @@ describe('DatabaseService', () => {
 		const host = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
-				...standardServices({ persistence }),
+				...standardServices({ fs: { backend: InMemory } }),
 				installDatabase({ backend: pglite({ dataDir: join(persistence, 'database') }) }),
 			],
 		})

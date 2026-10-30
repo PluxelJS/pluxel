@@ -70,7 +70,7 @@ describe('host-vite Vite plugin stack', () => {
 				type: 'module',
 				exports: {
 					'./commands': './index.js',
-					'./persistence': './index.js',
+					'./fs': './index.js',
 					'./vault': './index.js',
 					'./internal/security': './index.js',
 				},
@@ -102,7 +102,7 @@ describe('host-vite Vite plugin stack', () => {
 				expect(first.token).toBe(native.token)
 				for (const source of [
 					'@acme/services/commands',
-					'@acme/services/persistence',
+					'@acme/services/fs',
 					'@acme/services/vault',
 					'@acme/services/internal/security',
 				]) {

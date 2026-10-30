@@ -1,6 +1,6 @@
 import { elysia } from '@pluxel/services/elysia'
 import { commands } from '@pluxel/services/commands'
-import { persistence } from '@pluxel/services/persistence'
+import { fs, InMemory } from '@pluxel/services/fs'
 import { nodeModules } from '@pluxel/services/node'
 import {
 	workers,
@@ -107,7 +107,7 @@ async function createWorkerHost(workerOptions: WorkersConfig = {}) {
 		services: [
 			elysia(),
 			commands(),
-			persistence({ mode: 'memory' }),
+			fs({ backend: InMemory }),
 			nodeModules({ root: artifactRoot }),
 			workers(workerOptions),
 		],

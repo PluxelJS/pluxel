@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as nativeFs from 'node:fs'
+import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createHost } from '@pluxel/host'
 import { HostVaultBindings } from '@pluxel/host/bindings'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
-import {
-	persistence,
-	createMemoryPersistenceBackend,
-	type PersistenceBackend,
-} from '../../src/persistence'
+import { Fs, fs, InMemory, Passthrough, type FsServiceConfig } from '../../src/fs'
 import {
 	vault,
 	Vault,
@@ -17,10 +17,22 @@ import {
 } from '../../src/vault'
 import { Decrypter } from 'age-encryption'
 
-function setup(backend = createMemoryPersistenceBackend(), config?: VaultServiceConfig) {
+const directories: string[] = []
+afterEach(async () => {
+	vi.restoreAllMocks()
+	await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
+})
+async function diskConfig() {
+	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-vault-'))
+	directories.push(prefix)
+	return { backend: Passthrough, fs: nativeFs, prefix } as const
+}
+type DiskConfig = Awaited<ReturnType<typeof diskConfig>>
+const vaultPath = (config: DiskConfig, key: string) => join(config.prefix, 'services/vault', key)
+function setup(config: FsServiceConfig = { backend: InMemory }, vaultConfig?: VaultServiceConfig) {
 	return createHost({
 		plugins: [],
-		services: [persistence({ mode: 'custom', backend }), vault(config)],
+		services: [fs(config), vault(vaultConfig)],
 	})
 }
 const owners = new Map<string, VaultStorageApi>()
@@ -40,17 +52,16 @@ class OtherOwner extends BasePlugin {
 function decode(bytes: Uint8Array) {
 	return new TextDecoder().decode(bytes)
 }
-async function decryptState(backend: PersistenceBackend) {
-	const storage = backend.namespace('vault')
-	const identity = JSON.parse((await storage.getText('security/identity.json'))!)
+async function decryptState(backend: DiskConfig) {
+	const identity = JSON.parse(await readFile(vaultPath(backend, 'security/identity.json'), 'utf8'))
 	const decrypter = new Decrypter()
 	decrypter.addIdentity(identity.vault.hostIdentity)
-	const dek = await decrypter.decrypt((await storage.get('global/keys.age'))!)
+	const dek = await decrypter.decrypt(await readFile(vaultPath(backend, 'global/keys.age')))
 	const key = await crypto.subtle.importKey('raw', dek as BufferSource, 'AES-GCM', false, [
 		'decrypt',
 		'encrypt',
 	])
-	const bytes = (await storage.get('global/state.enc'))!
+	const bytes = await readFile(vaultPath(backend, 'global/state.enc'))
 	const plain = await crypto.subtle.decrypt(
 		{ name: 'AES-GCM', iv: bytes.slice(5, 17) },
 		key,
@@ -58,7 +69,7 @@ async function decryptState(backend: PersistenceBackend) {
 	)
 	return { key, snapshot: JSON.parse(decode(new Uint8Array(plain))) }
 }
-async function replaceSnapshot(backend: PersistenceBackend, snapshot: unknown) {
+async function replaceSnapshot(backend: DiskConfig, snapshot: unknown) {
 	const { key } = await decryptState(backend)
 	const nonce = crypto.getRandomValues(new Uint8Array(12))
 	const cipher = new Uint8Array(
@@ -68,18 +79,15 @@ async function replaceSnapshot(backend: PersistenceBackend, snapshot: unknown) {
 			new TextEncoder().encode(JSON.stringify(snapshot)),
 		),
 	)
-	await backend
-		.namespace('vault')
-		.put(
-			'global/state.enc',
-			new Uint8Array([...new TextEncoder().encode('PVLT2'), ...nonce, ...cipher]),
-			{ atomic: true },
-		)
+	await writeFile(
+		vaultPath(backend, 'global/state.enc'),
+		new Uint8Array([...new TextEncoder().encode('PVLT2'), ...nonce, ...cipher]),
+	)
 }
 
 describe('Vault structured records', () => {
 	it('commits immutable snapshots before returning and preserves revision tombstones across restart', async () => {
-		const backend = createMemoryPersistenceBackend()
+		const backend = await diskConfig()
 		const host = await setup(backend)
 		try {
 			const kv = host.ctx.require(Vault).kv()
@@ -118,22 +126,14 @@ describe('Vault structured records', () => {
 	})
 
 	it('does not publish values, revisions or notifications when persistent commit fails', async () => {
-		const memory = createMemoryPersistenceBackend()
 		let reject = false
-		const backend: PersistenceBackend = {
-			capability: memory.capability,
-			namespace(name) {
-				const storage = memory.namespace(name)
-				return {
-					...storage,
-					async put(key, value, options) {
-						if (reject && key.endsWith('state.enc')) throw new Error('commit rejected')
-						await storage.put(key, value, options)
-					},
-				}
-			},
-		}
-		const host = await setup(backend)
+		const host = await setup()
+		const directory = await host.ctx.require(Fs).directory('services/vault')
+		const rename = directory.rename
+		vi.spyOn(directory, 'rename').mockImplementation(async (from, to) => {
+			if (reject && String(to).endsWith('state.enc')) throw new Error('commit rejected')
+			await Reflect.apply(rename, directory, [from, to])
+		})
 		try {
 			const kv = host.ctx.require(Vault).kv()
 			await kv.set('token', 'old')
@@ -229,7 +229,7 @@ describe('Vault structured records', () => {
 		}
 	})
 
-	it('serves bindings without Persistence, disk, encryption keys or writable fallback', async () => {
+	it('serves bindings without Fs, disk, encryption keys or writable fallback', async () => {
 		const host = await createHost({
 			plugins: [Owner, OtherOwner],
 			services: [vault({ backend: 'bindings' })],
@@ -271,7 +271,7 @@ describe('Vault structured records', () => {
 	})
 
 	it('overlays whole records without mixing or persisting deployment values', async () => {
-		const backend = createMemoryPersistenceBackend()
+		const backend = await diskConfig()
 		const host = await setup(backend)
 		const namespace = `plugin-${(await import('../../src/internal/plugin-address').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`
 		try {
@@ -315,7 +315,7 @@ describe('Vault structured records', () => {
 	it('watches new keys and deletions in a prefix and never leaks another owner namespace', async () => {
 		const host = await createHost({
 			plugins: [Owner, OtherOwner],
-			services: [persistence({ mode: 'memory' }), vault()],
+			services: [fs({ backend: InMemory }), vault()],
 		})
 		try {
 			await host.startNode(pluginNodeAddressOf(Owner))
@@ -349,7 +349,7 @@ describe('Vault structured records', () => {
 	it.each([undefined, 1, 3])(
 		'rejects unsupported snapshot version %s without rewriting storage',
 		async (version) => {
-			const backend = createMemoryPersistenceBackend()
+			const backend = await diskConfig()
 			const host = await setup(backend)
 			await host.close()
 			await replaceSnapshot(backend, {
@@ -357,17 +357,16 @@ describe('Vault structured records', () => {
 				version,
 				namespaces: { default: { kv: { token: 'saved' }, revisions: { token: 1 } } },
 			})
-			const storage = backend.namespace('vault')
-			const before = await storage.get('global/state.enc')
+			const before = await readFile(vaultPath(backend, 'global/state.enc'))
 			await expect(setup(backend)).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
-			expect(await storage.get('global/state.enc')).toEqual(before)
+			expect(await readFile(vaultPath(backend, 'global/state.enc'))).toEqual(before)
 		},
 	)
 
 	it.each([undefined, {}, { token: 0 }, { token: 1.5 }])(
 		'rejects invalid snapshot revisions %j without rewriting storage',
 		async (revisions) => {
-			const backend = createMemoryPersistenceBackend()
+			const backend = await diskConfig()
 			const host = await setup(backend)
 			await host.close()
 			await replaceSnapshot(backend, {
@@ -375,25 +374,23 @@ describe('Vault structured records', () => {
 				version: 2,
 				namespaces: { default: { kv: { token: 'saved' }, revisions } },
 			})
-			const storage = backend.namespace('vault')
-			const before = await storage.get('global/state.enc')
+			const before = await readFile(vaultPath(backend, 'global/state.enc'))
 			await expect(setup(backend)).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
-			expect(await storage.get('global/state.enc')).toEqual(before)
+			expect(await readFile(vaultPath(backend, 'global/state.enc'))).toEqual(before)
 		},
 	)
 
 	it('rekeys only the envelope, reopens with explicit deployment identity and rejects missing or damaged state', async () => {
-		const backend = createMemoryPersistenceBackend()
+		const backend = await diskConfig()
 		const host = await setup(backend)
-		const storage = backend.namespace('vault')
 		await host.ctx.require(Vault).kv().set('token', 'secret')
-		const before = await storage.get('global/state.enc')
+		const before = await readFile(vaultPath(backend, 'global/state.enc'))
 		const pair = await host.ctx.require(VaultAdmin).generateDeployKey()
 		await host.ctx.require(VaultAdmin).setDeployRecipients([pair.publicKey])
 		await host.ctx.require(VaultAdmin).rekey()
-		expect(await storage.get('global/state.enc')).toEqual(before)
+		expect(await readFile(vaultPath(backend, 'global/state.enc'))).toEqual(before)
 		await host.close()
-		await storage.delete('security/identity.json')
+		await unlink(vaultPath(backend, 'security/identity.json'))
 		await expect(setup(backend)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
 		const unlocked = await setup(backend, { deployIdentity: pair.privateKey })
 		try {
@@ -413,15 +410,15 @@ describe('Vault structured records', () => {
 		} finally {
 			await unlocked.close()
 		}
-		const original = (await storage.get('global/state.enc'))!
+		const original = await readFile(vaultPath(backend, 'global/state.enc'))
 		const damaged = new Uint8Array(original)
 		damaged[damaged.length - 1] ^= 1
-		await storage.put('global/state.enc', damaged)
+		await writeFile(vaultPath(backend, 'global/state.enc'), damaged)
 		await expect(setup(backend, { deployIdentity: pair.privateKey })).rejects.toMatchObject({
 			code: 'DECRYPT_FAILED',
 		})
-		expect(await storage.get('global/state.enc')).toEqual(damaged)
-		await storage.delete('global/state.enc')
+		expect(new Uint8Array(await readFile(vaultPath(backend, 'global/state.enc')))).toEqual(damaged)
+		await unlink(vaultPath(backend, 'global/state.enc'))
 		await expect(setup(backend, { deployIdentity: pair.privateKey })).rejects.toMatchObject({
 			code: 'INVALID_FORMAT',
 		})

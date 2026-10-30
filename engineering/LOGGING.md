@@ -130,7 +130,7 @@ mutation 规则：
 - 最多 100,000 个 overrides；每个 owner address 都经过严格 schema validation 和 canonical key 编码；
 - `off` 使用专用 numeric rank，不在热路径使用 nullable/string comparison。
 
-policy persistence 接收显式 `PluginLogPolicyStore`；`createPluginLogPolicyStore(namespace)` 借用文档存储，不关闭后端。`servicesPreset` 组合层借用持久化 backend 的 `logger` namespace，没有 module-level singleton。Host 删除 fork 在同一 exclusive queue 中调用已安装服务的 metadata cleanup，policy flush 失败保留 fork 供重试。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
+`logging(plan, { policyStore })` 接收同步 `(root: RootContext) => PluginLogPolicyStore` factory，在 Logging prepare 中解析一次；未提供时保持内存模式，不依赖 FS。使用 FS 时显式返回 `createPluginLogPolicyStore(root.require(Fs).documents('services/logging'))`，借用文档存储，不关闭后端，也没有 module-level singleton。接线和 final 关闭由 [FS](FS.md)维护。Host 删除 fork 在同一 exclusive queue 中调用已安装服务的 metadata cleanup，policy flush 失败保留 fork 供重试。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
 
 ## Debug topics
 

@@ -14,9 +14,18 @@ import { createHost, defineHostService } from '@pluxel/host'
 import { Logging } from '@pluxel/services/logging'
 import { Management } from '@pluxel/services/management/service'
 import { parseVaultAdminState } from '@pluxel/services/management/internal/test'
-import { describe, expect, it } from 'vitest'
-import { createMemoryPersistenceBackend, persistence } from '../src/persistence'
+import { afterEach, describe, expect, it } from 'vitest'
+import * as nativeFs from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fs, InMemory, Passthrough } from '../src/fs'
 import { Vault, VaultAdmin, vault } from '../src/vault'
+
+const directories: string[] = []
+afterEach(async () => {
+	await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
+})
 
 const Search = defineContextCapability<{ query(): string }>('example.search')
 const observations: string[] = []
@@ -49,7 +58,7 @@ describe('independently composed official and external services', () => {
 			const services = await servicesPreset(
 				{ root: process.cwd(), mode: 'development', env: {}, bindings: {} },
 				{
-					persistence: { mode: 'memory' },
+					fs: { backend: InMemory },
 					workbench,
 				},
 			)
@@ -91,7 +100,8 @@ describe('independently composed official and external services', () => {
 
 	it('prepares Vault with explicit persistence, isolates missing service failure, and flushes at close', async () => {
 		observations.length = 0
-		const backend = createMemoryPersistenceBackend()
+		const prefix = await mkdtemp(join(tmpdir(), 'pluxel-composition-'))
+		directories.push(prefix)
 		const events: string[] = []
 		const search = defineHostService({
 			name: 'Example Search',
@@ -107,7 +117,7 @@ describe('independently composed official and external services', () => {
 				})
 			},
 		})
-		const storage = persistence({ mode: 'custom', backend })
+		const storage = fs({ backend: Passthrough, fs: nativeFs, prefix })
 		const plugins = [Credentials, SearchConsumer]
 		const first = await createHost({
 			plugins,

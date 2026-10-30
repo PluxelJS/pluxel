@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost, type TestHost } from '@pluxel/test'
@@ -28,7 +29,7 @@ async function startCanvasFixture(
 describe('Canvas table tools', () => {
 	it('lays out bounded Pretext text and draws onto a caller-owned root surface', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTableConsumer])
 		const canvas = host.require(CanvasTableConsumer).canvas
@@ -98,7 +99,7 @@ describe('Canvas table tools', () => {
 
 	it('uses the same table path with a detached worker text adapter', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTableConsumer])
 		const snapshot = host.require(CanvasTableConsumer).canvas.workerSnapshot

@@ -42,9 +42,9 @@ preparation and shutdown preserve dependency order and clean partially prepared 
 Core provides its own host composition entry, optional service type catalogs and synchronous token-based
 Context.require(), with stable missing-capability and access errors.
 
-Persistence and Vault move to dedicated @pluxel/services entries. Encrypted Vault explicitly requires
-Persistence and flushes pending writes during Host cleanup; read-only deployment bindings need neither.
-Import Persistence helpers and Vault types from their service entries. The Runtime package is removed;
+Fs and Vault move to dedicated @pluxel/services entries. Encrypted Vault explicitly requires
+Fs and flushes pending writes during Host cleanup; read-only deployment bindings need neither.
+Import Fs helpers and Vault types from their service entries. The Runtime package is removed;
 servicesPreset() supplies the official default service composition.
 
 ## Preserve identity through development and generated metadata

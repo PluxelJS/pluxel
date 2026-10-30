@@ -43,6 +43,7 @@ description: 按修改目标选择依赖、资源、配置、API、日志与验�
 | ------------------------------ | ------------------------------------- | ------------------------------------------- |
 | 对外 HTTP / WebSocket          | [HTTP](./http.md)                     | Host 安装 Elysia 服务并接入 carrier         |
 | 命令目录、MCP tool、文本参数   | [Commands](./commands.md)             | 定义 Command 使用独立包；目录与载体另选安装 |
+| 插件文件与原子保存             | [文件存储](./fs.md)                   | Host 显式安装 FS，按需取得所属目录          |
 | 数据库 schema、迁移和查询      | [Database](./database.md)             | Host 显式安装 Database 与 backend           |
 | 私有凭据与条件写入             | [Vault](./vault.md)                   | Host 安装 Vault，按记录判断是否可写         |
 | Node module 与 worker task     | [Node artifacts](./node-artifacts.md) | 选择对应服务与构建产物                      |

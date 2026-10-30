@@ -13,7 +13,7 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 vp exec pluxel pncat add @pluxel/plugin-wretch
 ```
 
-普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 Persistence 服务；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
+普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 [FS 服务](../plugin-development/fs.md)；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
 
 ## 第一个 HTTP consumer
 
@@ -227,7 +227,7 @@ type WretchManagedSettings = Readonly<{
 - proxy 必须是无 credential、path、query 或 hash 的 HTTP(S) origin；authenticated proxy 不受支持；
 - consumer `timeoutMs` 必须是正整数，并且只能收紧 host timeout；host timeout 为 `0` 时，它成为有效 timeout。
 
-managed settings 使用 runtime persistence，而不是 secret store。不要把 access token、API key 或 cookie 放入该 contract。Workbench disabled 时不会创建 UI backend，但已显式启用的 persisted settings 仍会应用于核心 HTTP client。
+managed settings 保存于 Wretch provider 的 FS 目录，仍按完整 consumer owner 区分；它不是 secret store。不要把 access token、API key 或 cookie 放入该 contract。Workbench disabled 时不会创建 UI backend，但已显式启用的 persisted settings 仍会应用于核心 HTTP client。
 
 ## 放置 Workbench Attachment
 

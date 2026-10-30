@@ -315,7 +315,7 @@ it('preserves public and private identities, named product, minified artifacts a
 		)
 		await writeFile(
 			resolve(root, 'src/app.ts'),
-			`import {defineHostApplication} from '@pluxel/host'; import {pluginNodeAddressOf} from '@pluxel/core'; import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices({persistence:{mode:'memory'}}),state:{mode:'memory',initial:{autoStart:[pluginNodeAddressOf(Private)]}},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
+			`import {defineHostApplication} from '@pluxel/host'; import {pluginNodeAddressOf} from '@pluxel/core'; import {standardServices} from '@pluxel/services'; import {InMemory} from '@pluxel/services/fs'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices({fs:{backend:InMemory}}),state:{mode:'memory',initial:{autoStart:[pluginNodeAddressOf(Private)]}},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),

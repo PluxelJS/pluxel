@@ -4,14 +4,13 @@ packages:
     type: major
 ---
 
-## Enforce persistence paths, readonly writes and consistent directory queries
+## Enforce explicit filesystem ownership and readonly writes
 
-Persistence rejects absolute paths, traversal and ambiguous path segments instead of repairing them.
-Namespaces retain literal names including `@pluxel`; any existing files in the former sanitized
-`_pluxel` namespace require a one-time move before using the new backend. No fallback reader is installed.
-Memory and filesystem backends list sorted immediate children and stat directories. Readonly workspace
-and custom service backends reject writes and deletes even without preflight. Filesystem roots are fixed
-when the backend is created.
+FS directory selectors and Host document keys reject absolute paths, traversal and ambiguous
+segments instead of repairing them. Plugins use stable physical-key directories and native
+promise methods; callers decide whether to sort directory entries or accept missing data.
+Readonly backends reject writes and deletes without relying on requirement checks. Filesystem
+roots are fixed by each Host's backend declaration.
 
 ## Forward Host cancellation without losing HTTP carrier identity
 

@@ -12,8 +12,8 @@
 consumer endpoint、headers、auth、retry、dedupe、addon 和 response resolver 都不是 provider 所有。它们由
 consumer 从 immutable base 派生，不注册 profile，也不复制 Wretch request/response API。
 
-普通 client 与宿主策略不需要 Persistence，`services: []` 仍可运行。受管设置是显式 opt-in；首次访问时才取得真实 Persistence namespace，
-缺少服务时明确拒绝启用、读取、保存、重置或打开设置 View，不回退到临时内存存储。namespace 与受管 dispatcher 共属 provider generation。
+普通 client 与宿主策略不需要 FS，`services: []` 仍可运行。受管设置是显式 opt-in；provider init 只捕获可选的 `ctx.fs` 访问函数，
+首次受管操作才等待目录就绪。缺少服务时明确拒绝启用、读取、保存、重置或打开设置 View。provider generation 借用 root 拥有的固定目录，并拥有自己的受管 dispatcher。
 
 ## Wretch 组合顺序
 
@@ -57,12 +57,12 @@ server-only `consumer.node` 查找已经由 `enableManagedSettings()` 建立的 
 session ownership 约束。zero-props renderer 通过 descriptor-bound scope 的 query/mutation resources 取得 provider stub；
 Framework 在结果进入 React state 前完成 portable 校验、原地冻结和顶层 ownership 释放。
 
-managed settings 以 caller `PluginNodeAddress` canonical bytes 的完整 SHA-256 作为物理文件名，并保留一个 caller Context state。
+managed settings 保存在 Wretch provider 的 `PluginFs` 目录内，以 caller `PluginNodeAddress` canonical bytes 的完整 SHA-256 作为物理文件名，并保留一个 caller Context state。
 文件 envelope 同时保存完整结构化 owner，加载时严格比对；display name 相同的 Plugin/fork 不会冲突。只读取
 `consumers/v3` 下的当前 v2 envelope，其他版本直接拒绝。
 cached client 的 deferred callback 每次请求重新解析 state，所以先创建 client、后启用或保存设置都会立即生效。consumer stop 会释放
 proxy dispatcher 和内存 state；replacement 从 persistence 重新加载。同一 caller 的并发
-`enableManagedSettings()` 共享一次初始化，不会重复读取 persistence 或创建 proxy dispatcher。opened settings target
+`enableManagedSettings()` 共享一次初始化，不会重复读取文件或创建 proxy dispatcher。保存使用 `writeFileAtomic()`，提交后才替换 dispatcher；失败关闭新 dispatcher 并保留原状态。opened settings target
 同样绑定 caller/provider generation 与 View signal，stop、replacement 或 View close 后不能继续读写旧 state。managed state 同时登记 caller
 cleanup 和 provider-owned registry；即使宿主显式执行非级联 provider restart，ProxyAgent 也会由 provider effects 释放。
 

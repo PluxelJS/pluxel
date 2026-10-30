@@ -3,7 +3,7 @@ import {
 	pluginNodeAddressEqual,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { type PersistenceNamespace } from '@pluxel/services/persistence'
+import { writeFileAtomic, type FsPromises } from '@pluxel/services/fs'
 import type { Dispatcher } from 'undici'
 import type { WretchManagedSettings } from './workbench.ts'
 
@@ -127,12 +127,16 @@ async function dispatcherFor(proxyUrl?: string): Promise<Dispatcher | undefined>
 }
 
 export async function loadManagedSettings(
-	storage: PersistenceNamespace,
+	storage: FsPromises,
 	key: string,
 	owner: PluginNodeAddress,
 ): Promise<ManagedSettingsState> {
 	const normalizedOwner = parsePluginNodeAddress(owner)
-	const text = await storage.getText(key)
+	const text = await storage.readFile(key, 'utf8').catch((error: unknown): string | undefined => {
+		if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+			return undefined
+		throw error
+	})
 	const settings = text === undefined ? emptySettings() : parseStoredSettings(text, normalizedOwner)
 	return {
 		owner: normalizedOwner,
@@ -144,7 +148,7 @@ export async function loadManagedSettings(
 
 export async function replaceManagedSettings(
 	state: ManagedSettingsState,
-	storage: PersistenceNamespace,
+	storage: FsPromises,
 	key: string,
 	input: unknown,
 	maxTimeoutMs = 0,
@@ -156,7 +160,7 @@ export async function replaceManagedSettings(
 	return state.lock.run(async () => {
 		const dispatcher = await dispatcherFor(next.proxyUrl)
 		try {
-			await storage.put(key, serializeStoredSettings(state.owner, next), { atomic: true })
+			await writeFileAtomic(storage, key, serializeStoredSettings(state.owner, next))
 		} catch (error) {
 			await dispatcher?.close()
 			throw error
@@ -211,12 +215,12 @@ function serializeStoredSettings(
 
 export async function resetManagedSettings(
 	state: ManagedSettingsState,
-	storage: PersistenceNamespace,
+	storage: FsPromises,
 	key: string,
 ): Promise<WretchManagedSettings> {
 	const next = emptySettings()
 	return state.lock.run(async () => {
-		await storage.delete(key)
+		await storage.rm(key, { force: true })
 		const previous = state.dispatcher
 		state.current = next
 		state.dispatcher = undefined

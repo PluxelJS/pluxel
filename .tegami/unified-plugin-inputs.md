@@ -35,7 +35,7 @@ implicit `PLUXEL_CONFIG` snapshot are removed.
 Vault KV reads return immutable snapshots with revision, source, and writability. Writes support
 expected revisions, batches publish only after durable commit, and owner-scoped subscriptions
 observe committed changes. Environment/file records are whole-record read-only overlays;
-bindings-only installations need neither Persistence nor disk keys. Encrypted Vault takes an
+bindings-only installations need neither Fs nor disk keys. Encrypted Vault takes an
 explicit deployment identity. Named namespaces are owner-local; legacy global namespaces require
 explicit owner migration mappings. Legacy documents migrate to collision-checked KV keys.
 Vault root schemas validate record keys and complete records as an application startup contract;

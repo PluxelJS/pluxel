@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { managementCommands } from '@pluxel/services/management/commands'
 import { Commands } from '@pluxel/services/commands'
@@ -119,7 +120,7 @@ describe('CommandsService', () => {
 	it('publishes the built-in plugin management catalog once during preparation', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices({ persistence: { mode: 'memory' } }), managementCommands()],
+			services: [...standardServices({ fs: { backend: InMemory } }), managementCommands()],
 		})
 
 		const prepared = host.ctx.require(Commands).list()
@@ -146,7 +147,7 @@ describe('CommandsService', () => {
 	it('accepts package subpath addresses at the management command boundary', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices({ persistence: { mode: 'memory' } }), managementCommands()],
+			services: [...standardServices({ fs: { backend: InMemory } }), managementCommands()],
 		})
 		const address = {
 			definition: {
@@ -422,7 +423,7 @@ describe('CommandsService', () => {
 	it('executes management commands through the existing lifecycle use case', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices({ persistence: { mode: 'memory' } }), managementCommands()],
+			services: [...standardServices({ fs: { backend: InMemory } }), managementCommands()],
 		})
 
 		@Plugin({ displayName: 'ManagedPlugin' })
@@ -484,7 +485,7 @@ describe('CommandsService', () => {
 	it('restarts the required dependent closure through management commands', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices({ persistence: { mode: 'memory' } }), managementCommands()],
+			services: [...standardServices({ fs: { backend: InMemory } }), managementCommands()],
 		})
 
 		let providerStarts = 0

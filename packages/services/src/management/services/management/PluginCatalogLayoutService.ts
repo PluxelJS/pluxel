@@ -1,4 +1,5 @@
 import type { HostOperationOptions } from '@pluxel/host/internal'
+import type { HostDocumentStorage } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
 import {
 	formatPluginDefinitionReference,
@@ -8,7 +9,7 @@ import {
 	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { Persistence, PersistenceError, type PersistenceNamespace } from '../../../persistence'
+import { Fs } from '../../../fs'
 import {
 	automaticCatalogGroups,
 	catalogFamilies,
@@ -43,15 +44,23 @@ export class PluginCatalogLayoutError extends Error {
 	}
 }
 
+/** Preserve Management's failed-commit receipt while filesystem errors retain their cause. */
+export class PluginCatalogLayoutPersistenceError extends Error {
+	constructor(cause: unknown) {
+		super('Failed to persist Plugin groups', { cause })
+		this.name = 'PluginCatalogLayoutPersistenceError'
+	}
+}
+
 /** Management owns the document; reads never create catalog nodes or write generated defaults. */
 export class PluginCatalogLayoutService {
-	private readonly storage: PersistenceNamespace
+	private readonly storage: HostDocumentStorage
 	private document = emptyDocument()
 	private source: string | undefined
 	private tail: Promise<unknown> = Promise.resolve()
 
 	constructor(root: Context) {
-		this.storage = resolveContextCapability(root.root, Persistence).namespace('management')
+		this.storage = resolveContextCapability(root.root, Fs).documents('services/management')
 	}
 
 	listSections(
@@ -135,10 +144,9 @@ export class PluginCatalogLayoutService {
 		const content = `${JSON.stringify(next, null, 2)}\n`
 		if (content.length > 2_000_000) throw invalid('group file exceeds 2 MB')
 		try {
-			await this.storage.put(FILE, content, { atomic: true })
+			await this.storage.put(FILE, content)
 		} catch (cause) {
-			if (cause instanceof PersistenceError) throw cause
-			throw new PersistenceError('IO', 'Failed to persist Plugin groups', { cause })
+			throw new PluginCatalogLayoutPersistenceError(cause)
 		}
 		this.document = next
 		this.source = content

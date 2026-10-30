@@ -17,7 +17,7 @@ const { createServer } = await import(pathToFileURL(require.resolve('vite')).hre
 const { vitePreset } = await import(
 	pathToFileURL(join(workspace, 'packages/services/dist/vite.mjs')).href
 )
-const { readHostRecentUpdates } = await import(
+const { readHostPluginStatusOverview, readHostRecentUpdates } = await import(
 	pathToFileURL(join(workspace, 'packages/host/dist/internal.mjs')).href
 )
 const root = await mkdtemp(join(tmpdir(), 'pluxel-installed-host-'))
@@ -166,8 +166,7 @@ try {
 	await writeFile(consoleFile, 'export default async (dev) => await dev.plugins.list()')
 	const inspect = () =>
 		runDevFile({
-			root,
-			instance: instance.instanceId,
+			instance,
 			file: consoleFile,
 			exportName: 'default',
 			timeoutMs: 5000,
@@ -234,8 +233,11 @@ try {
 	const retainedResponse = await fetch(new URL('/installed/two', listener))
 	assert.equal(await retainedResponse.text(), 'two')
 	const retained = await inspect()
-	assert.equal(retained.state, 'succeeded', JSON.stringify(retained))
-	const retainedPlugin = retained.value.find(
+	assert.equal(retained.state, 'failed', JSON.stringify(retained))
+	assert.equal(retained.phase, 'load')
+	assert.equal(retained.error.code, 'hmr_pending')
+	const retainedStatus = await readHostPluginStatusOverview(globalThis.__installedHostSmokeContext)
+	const retainedPlugin = retainedStatus.statuses.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
 	)
 	assert.deepEqual(
@@ -252,6 +254,9 @@ try {
 		() => latestUpdate()?.outcome === 'applied' && latestUpdate().sequence > failedAttempt.sequence,
 		'failed candidate recovery',
 	)
+	const recovered = await inspect()
+	assert.equal(recovered.state, 'succeeded', JSON.stringify(recovered))
+	assert.equal(recovered.hostEpoch, initial.hostEpoch, 'wrapper repair keeps the Host')
 	assert.equal(
 		globalThis.__installedHostSmoke.filter((entry) => entry === 'two').length,
 		1,
@@ -307,8 +312,13 @@ try {
 		'service preparation compensation',
 	)
 	const compensated = await inspect()
-	assert.equal(compensated.state, 'succeeded', JSON.stringify(compensated))
-	const compensatedPlugin = compensated.value.find(
+	assert.equal(compensated.state, 'failed', JSON.stringify(compensated))
+	assert.equal(compensated.phase, 'load')
+	assert.equal(compensated.error.code, 'hmr_pending')
+	const compensatedStatus = await readHostPluginStatusOverview(
+		globalThis.__installedHostSmokeContext,
+	)
+	const compensatedPlugin = compensatedStatus.statuses.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/fixed',
 	)
 	assert.equal(compensatedPlugin.recentUpdate.batch.outcome, 'restored-previous')

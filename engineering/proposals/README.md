@@ -13,6 +13,8 @@
 
 研究与必要决策记录：
 
+- [`ZENFS_FS_REFACTOR.md`](ZENFS_FS_REFACTOR.md)：ZenFS FS 重构的实施决策与验收记录；当前用法和资源契约见正式 FS 文档。
+
 - [`TYPST_EDITOR_REFACTOR.md`](TYPST_EDITOR_REFACTOR.md)：旧 JSON 正文方案的 Typst 编辑器重构、独立验收及后续修正历史；当前 API 见正式用法与 Typst DESIGN。
 
 - [`TYPST_EDITOR.md`](TYPST_EDITOR.md)：Typst 预览/定位下沉、区域 JSON 编辑器与 Studio 迁移的历史记录；当前 API 见正式用法与 Typst DESIGN。

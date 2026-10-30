@@ -1,0 +1,361 @@
+diff --git a/dist/IndexedDB.d.ts b/dist/IndexedDB.d.ts
+index 478b404228ffafd49da05b4c603bdc7a1fb1498e..fcd477fef5ad2e44c3545565920c74f583c9eff8 100644
+--- a/dist/IndexedDB.d.ts
++++ b/dist/IndexedDB.d.ts
+@@ -7,12 +7,9 @@ export declare class IndexedDBTransaction extends Transaction<IndexedDBStore> {
+     tx: IDBTransaction;
+     store: IndexedDBStore;
+     private _idb;
+-    protected asyncDone: Promise<unknown>;
+-    /**
+-     * Run a asynchronous operation from a sync context. Not magic and subject to (race) conditions.
+-     * @internal
+-     */
+-    protected async(promise: Promise<unknown>): void;
++    private changes;
++    private state;
++    completion: Promise<void>;
+     constructor(tx: IDBTransaction, store: IndexedDBStore);
+     keys(): Promise<Iterable<number>>;
+     get(id: number): Promise<Uint8Array | undefined>;
+@@ -21,19 +18,26 @@ export declare class IndexedDBTransaction extends Transaction<IndexedDBStore> {
+      * @internal
+      */
+     preload(): Promise<void>;
+-    getSync(id: number, offset: number, end?: number): Uint8Array | undefined;
++    getSync(id: number): Uint8Array | undefined;
+     set(id: number, data: Uint8Array): Promise<void>;
+     setSync(id: number, data: Uint8Array): void;
+     remove(id: number): Promise<void>;
+     removeSync(id: number): void;
+     commit(): Promise<void>;
++    commitSync(): void;
+     abort(): Promise<void>;
++    abortSync(): void;
+ }
+ export declare class IndexedDBStore implements Store {
+     protected db: IDBDatabase;
+     cache: Map<number, Uint8Array<ArrayBufferLike>>;
+-    constructor(db: IDBDatabase);
++    private readOnly;
++    private transactions;
++    private closed;
++    private closing?;
++    constructor(db: IDBDatabase, options?: { readOnly?: boolean });
+     sync(): Promise<void>;
++    close(): Promise<void>;
+     get name(): string;
+     transaction(): IndexedDBTransaction;
+ }
+diff --git a/dist/IndexedDB.js b/dist/IndexedDB.js
+index 621026bc41fb3b57b2cb13afba5e38f327689bc8..ca7b6b85d6c8fbb7a70a65f0f800490192db361c 100644
+--- a/dist/IndexedDB.js
++++ b/dist/IndexedDB.js
+@@ -1,11 +1,18 @@
+ import { StoreFS, Transaction } from '@zenfs/core';
+-import { log } from 'kerium';
++import { log, withErrno } from 'kerium';
+ import { convertException } from './utils.js';
+-function wrap(request) {
++function wrap(makeRequest) {
+     return new Promise((resolve, reject) => {
++        let request;
++        try {
++            request = makeRequest();
++        }
++        catch (error) {
++            reject(convertException(error));
++            return;
++        }
+         request.onsuccess = () => resolve(request.result);
+         request.onerror = e => {
+-            e.preventDefault();
+             reject(convertException(request.error));
+         };
+     });
+@@ -14,85 +21,113 @@ function wrap(request) {
+  * @internal @hidden
+  */
+ export class IndexedDBTransaction extends Transaction {
+-    /**
+-     * Run a asynchronous operation from a sync context. Not magic and subject to (race) conditions.
+-     * @internal
+-     */
+-    async(promise) {
+-        this.asyncDone = this.asyncDone.then(() => promise);
+-    }
+     constructor(tx, store) {
+         super(store);
+         this.tx = tx;
+         this.store = store;
+-        this.asyncDone = Promise.resolve();
+         this._idb = tx.objectStore(store.name);
++        this.changes = new Map();
++        this.state = 'active';
++        this.completion = new Promise((resolve, reject) => {
++            tx.addEventListener('complete', () => {
++                this.state = 'committed';
++                for (const [id, data] of this.changes) {
++                    if (data === undefined)
++                        store.cache.delete(id);
++                    else
++                        store.cache.set(id, data);
++                }
++                this.changes.clear();
++                resolve();
++            }, { once: true });
++            tx.addEventListener('abort', () => {
++                this.state = 'aborted';
++                this.changes.clear();
++                reject(convertException(tx.error ?? new DOMException('IndexedDB transaction aborted', 'AbortError')));
++            }, { once: true });
++        });
++        // A request may fail before the operation reaches its commit/abort boundary.
++        this.completion.catch(() => {});
+     }
+     async keys() {
+-        return (await wrap(this._idb.getAllKeys())).map(Number);
++        return (await wrap(() => this._idb.getAllKeys())).map(Number);
+     }
+     async get(id) {
+-        const data = await wrap(this._idb.get(id));
+-        if (data)
+-            this.store.cache.set(id, new Uint8Array(data));
+-        return data;
+-    }
+-    /**
+-     * Fill the store's cache with every record, in two requests rather than one per record.
+-     * @internal
+-     */
++        const data = await wrap(() => this._idb.get(id));
++        const bytes = data === undefined ? undefined : new Uint8Array(data).slice();
++        this.changes.set(id, bytes);
++        return bytes?.slice();
++    }
+     async preload() {
+-        // Both iterate in ascending key order, so the results line up index for index.
+-        const [keys, values] = await Promise.all([wrap(this._idb.getAllKeys()), wrap(this._idb.getAll())]);
++        const [keys, values] = await Promise.all([wrap(() => this._idb.getAllKeys()), wrap(() => this._idb.getAll())]);
+         for (let i = 0; i < keys.length; i++) {
+-            const data = values[i];
+-            if (data)
+-                this.store.cache.set(Number(keys[i]), data);
++            if (values[i] !== undefined)
++                this.changes.set(Number(keys[i]), new Uint8Array(values[i]).slice());
+         }
+     }
+-    getSync(id, offset, end) {
+-        if (!this.store.cache.has(id))
+-            return;
+-        const data = new Uint8Array(this.store.cache.get(id));
+-        end ?? (end = data.byteLength);
+-        return data.subarray(offset, end);
++    getSync(id) {
++        const value = this.changes.has(id) ? this.changes.get(id) : this.store.cache.get(id);
++        return value?.slice();
+     }
+     async set(id, data) {
+-        this.store.cache.set(id, new Uint8Array(data));
+-        await wrap(this._idb.put(data, id));
++        const bytes = new Uint8Array(data).slice();
++        this.changes.set(id, bytes);
++        await wrap(() => this._idb.put(bytes, id));
+     }
+-    setSync(id, data) {
+-        this.async(this.set(id, data));
++    setSync() {
++        throw withErrno('EAGAIN', 'IndexedDB writes require asynchronous file operations');
+     }
+-    remove(id) {
+-        this.store.cache.delete(id);
+-        return wrap(this._idb.delete(id));
++    async remove(id) {
++        this.changes.set(id, undefined);
++        await wrap(() => this._idb.delete(id));
+     }
+-    removeSync(id) {
+-        this.store.cache.delete(id);
+-        this.async(this.remove(id));
++    removeSync() {
++        throw withErrno('EAGAIN', 'IndexedDB writes require asynchronous file operations');
+     }
+     async commit() {
+-        await this.asyncDone;
+-        const { promise, resolve, reject } = Promise.withResolvers();
+-        this.tx.oncomplete = () => resolve();
+-        this.tx.onerror = () => reject(convertException(this.tx.error));
+-        this.tx.commit();
+-        return promise;
++        // The native transaction commits automatically once its requests finish.
++        // Its complete event, not request success, is the persistence barrier.
++        await this.completion;
++    }
++    commitSync() {
++        throw withErrno('EAGAIN', 'IndexedDB commits require asynchronous file operations');
+     }
+     async abort() {
+-        await this.asyncDone;
+-        const { promise, resolve, reject } = Promise.withResolvers();
+-        this.tx.onabort = () => resolve();
+-        this.tx.onerror = () => reject(convertException(this.tx.error));
+-        this.tx.abort();
+-        return promise;
++        if (this.state === 'active') {
++            try {
++                this.tx.abort();
++            }
++            catch (error) {
++                if (error.name !== 'InvalidStateError')
++                    throw error;
++            }
++        }
++        await this.completion.catch(() => {});
++    }
++    abortSync() {
++        if (this.state !== 'active')
++            return;
++        try {
++            this.tx.abort();
++        }
++        catch (error) {
++            if (error.name !== 'InvalidStateError')
++                throw error;
++        }
+     }
+ }
+-async function createDB(name, indexedDB = globalThis.indexedDB) {
++
++async function createDB(name, indexedDB = globalThis.indexedDB, readOnly = false) {
+     const req = indexedDB.open(name);
++    let missingReadonly = false;
+     req.onupgradeneeded = () => {
+         const db = req.result;
++        if (readOnly) {
++            missingReadonly = true;
++            req.transaction.abort();
++            db.close();
++            return;
++        }
+         // This should never happen; we're at version 1. Why does another database exist?
+         if (db.objectStoreNames.contains(name)) {
+             log.warn('Found unexpected object store: ' + name);
+@@ -100,24 +135,52 @@ async function createDB(name, indexedDB = globalThis.indexedDB) {
+         }
+         db.createObjectStore(name);
+     };
+-    return await wrap(req);
++    try {
++        return await wrap(() => req);
++    }
++    catch (cause) {
++        if (missingReadonly)
++            throw Object.assign(withErrno('ENOENT', 'Readonly IndexedDB database does not exist: ' + name), { cause });
++        throw cause;
++    }
+ }
+ export class IndexedDBStore {
+-    constructor(db) {
++    constructor(db, { readOnly = false } = {}) {
+         this.db = db;
++        this.readOnly = readOnly;
+         this.cache = new Map();
+-    }
+-    sync() {
+-        return Promise.resolve();
++        this.transactions = new Set();
++        this.closed = false;
++    }
++    async sync() {
++        const results = await Promise.allSettled([...this.transactions].map(tx => tx.completion));
++        const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
++        if (errors.length)
++            throw new AggregateError(errors, 'IndexedDB transactions failed');
++    }
++    close() {
++        if (this.closing)
++            return this.closing;
++        this.closed = true;
++        this.closing = this.sync().finally(() => {
++            this.db.close();
++            this.cache.clear();
++        });
++        return this.closing;
+     }
+     get name() {
+         return this.db.name;
+     }
+     transaction() {
+-        const tx = this.db.transaction(this.name, 'readwrite');
+-        return new IndexedDBTransaction(tx, this);
++        if (this.closed)
++            throw withErrno('EBADF', 'IndexedDB store is closed');
++        const tx = new IndexedDBTransaction(this.db.transaction(this.name, this.readOnly ? 'readonly' : 'readwrite'), this);
++        this.transactions.add(tx);
++        tx.completion.then(() => this.transactions.delete(tx), () => this.transactions.delete(tx));
++        return tx;
+     }
+ }
++
+ /**
+  * Used to memoize the availability test result
+  */
+@@ -127,7 +190,7 @@ async function testAvailability(idbFactory) {
+         return false;
+     try {
+         const req = idbFactory.open('__zenfs_test');
+-        const db = await wrap(req);
++        const db = await wrap(() => req);
+         // Make sure the test db gets closed so that other zenfs instances in other workers don't get blocked
+         db.close();
+         return true;
+@@ -156,15 +219,34 @@ const _IndexedDB = {
+         return result;
+     },
+     async create(options) {
+-        const db = await createDB(options.storeName || 'zenfs', options.idbFactory);
+-        const store = new IndexedDBStore(db);
++        const db = await createDB(options.storeName || 'zenfs', options.idbFactory, options.readOnly);
++        const store = new IndexedDBStore(db, { readOnly: options.readOnly });
+         const fs = new StoreFS(store);
+         if (options?.disableAsyncCache) {
+             log.notice('Async preloading disabled for IndexedDB');
+             return fs;
+         }
+-        await store.transaction().preload();
+-        return fs;
++        try {
++            const tx = store.transaction();
++            try {
++                await tx.preload();
++                await tx.commit();
++            }
++            catch (cause) {
++                await tx.abort();
++                throw cause;
++            }
++            return fs;
++        }
++        catch (cause) {
++            try {
++                await store.close();
++            }
++            catch (cleanup) {
++                throw new AggregateError([cause, cleanup], 'IndexedDB preload and cleanup failed');
++            }
++            throw cause;
++        }
+     },
+ };
+ export const IndexedDB = _IndexedDB;
+diff --git a/dist/utils.js b/dist/utils.js
+index c911fcb18e2ecfb8f9900d2ab40a1d0c346ca00c..5ffc14aaa6aa6b5308b5e613538dc5862fa4a4de 100644
+--- a/dist/utils.js
++++ b/dist/utils.js
+@@ -65,6 +65,6 @@ export function convertException(ex, path) {
+     const error = new Exception(code, ex.message);
+     error.stack = ex.stack;
+     Error.captureStackTrace?.(error, convertException);
+-    error.cause = ex.cause;
++    error.cause = ex;
+     return error;
+ }

@@ -1,12 +1,13 @@
+import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/services/fs'
 import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
-import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import * as nativeFs from 'node:fs'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GlobalFonts } from '@napi-rs/canvas'
-import { createMemoryPersistenceBackend } from '@pluxel/services/persistence'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
 import { FontsTestWorkbench, openFontsManager, openFontSelection } from './workbench-helpers.ts'
 import { registerBrandFont } from './fixtures/result-consumer.ts'
@@ -33,11 +34,16 @@ class FontsLazyConsumer extends BasePlugin {
 
 const fontPath = findTestFont()
 const discoveredFamily = GlobalFonts.families[0]?.family
+const directories: string[] = []
+
+afterEach(async () => {
+	await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
+})
 
 describe('FontsPlugin', () => {
 	it('demonstrates invalid font data as a Result while cancellation and withdrawal still reject', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 		await host.start([FontsPlugin, FontsLazyConsumer])
 		const fonts = host.require(FontsLazyConsumer).fonts
@@ -56,7 +62,7 @@ describe('FontsPlugin', () => {
 
 	it.skipIf(!fontPath)('keeps successful Result registrations owned by their caller', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ persistence: { mode: 'memory' } }),
+			services: standardServices({ fs: { backend: InMemory } }),
 		})
 		await host.start([FontsPlugin, FontsLazyConsumer])
 		const result = await registerBrandFont(host.require(FontsLazyConsumer).fonts, {
@@ -74,7 +80,7 @@ describe('FontsPlugin', () => {
 	it('classifies fonts discovered from the host system and resolves an automatic default', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
@@ -95,10 +101,10 @@ describe('FontsPlugin', () => {
 	it.skipIf(!discoveredFamily)(
 		'persists a provider preference while explicit host config takes priority',
 		async () => {
-			const backend = createMemoryPersistenceBackend()
+			const backend = { backend: InMemory }
 			{
 				await using host = await createTestHost({
-					services: standardServices({ persistence: { mode: 'custom', backend } }),
+					services: standardServices({ fs: backend }),
 				})
 
 				await host.start(FontsPlugin)
@@ -149,7 +155,7 @@ describe('FontsPlugin', () => {
 		let registration: FontRegistration | undefined
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
@@ -177,7 +183,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('reference-counts duplicate portable resources by content ID', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
@@ -199,7 +205,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('bounds native registrations across managed and caller fonts', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(FontsPlugin, {
@@ -234,7 +240,7 @@ describe('FontsPlugin', () => {
 			const byteLength = fontData.byteLength
 			{
 				await using host = await createTestHost({
-					services: standardServices({ persistence: { mode: 'memory' } }),
+					services: standardServices({ fs: { backend: InMemory } }),
 				})
 
 				await host.start(FontsPlugin, {
@@ -266,14 +272,17 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)(
 		'keeps one provider-owned managed collection across consumer lifecycles and reloads',
 		async () => {
-			const backend = createMemoryPersistenceBackend()
+			const prefix = await mkdtemp(join(tmpdir(), 'pluxel-fonts-managed-'))
+			directories.push(prefix)
+			const backend = { backend: Passthrough, fs: nativeFs, prefix }
 			const family = `Pluxel Managed ${crypto.randomUUID()}`
 			const data = await readFile(fontPath!)
+			let id = ''
 
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: standardServices({ persistence: { mode: 'custom', backend } }),
+					services: standardServices({ fs: backend }),
 				})
 
 				await host.start([FontsPlugin, FontsTestConsumer])
@@ -287,7 +296,7 @@ describe('FontsPlugin', () => {
 				const first = await manager.api.snapshotDto()
 				expect(first.managedFonts).toHaveLength(1)
 				expect(GlobalFonts.has(family)).toBe(true)
-				const id = first.managedFonts[0]!.id
+				id = first.managedFonts[0]!.id
 
 				await host.stop(FontsTestConsumer)
 				expect(GlobalFonts.has(family)).toBe(true)
@@ -307,9 +316,22 @@ describe('FontsPlugin', () => {
 					expect.objectContaining({ id, fileName: 'brand.ttf', family }),
 				])
 				expect(GlobalFonts.has(family)).toBe(true)
+			}
 
-				await expect(reloadedManager.api.remove(id)).resolves.toBeUndefined()
-				const removed = await reloadedManager.api.snapshotDto()
+			{
+				await using host = await createTestHost({
+					workbench: true,
+					services: standardServices({ fs: backend }),
+				})
+				await host.start([FontsPlugin, FontsTestConsumer])
+				using reopenedManager = await openFontsManager(host)
+				const reopened = await reopenedManager.api.snapshotDto()
+				expect(reopened.managedFonts).toEqual([
+					expect.objectContaining({ id, fileName: 'brand.ttf', family }),
+				])
+				expect(GlobalFonts.has(family)).toBe(true)
+				await expect(reopenedManager.api.remove(id)).resolves.toBeUndefined()
+				const removed = await reopenedManager.api.snapshotDto()
 				expect(removed.managedFonts).toEqual([])
 				expect(GlobalFonts.has(family)).toBe(false)
 			}
@@ -319,7 +341,7 @@ describe('FontsPlugin', () => {
 	it('rejects invalid bytes and enforces the configured byte budget', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(FontsPlugin, { initialConfig: { maxFontBytes: 4 } })
@@ -338,7 +360,7 @@ describe('FontsPlugin', () => {
 	it('cooperatively snapshots registration bytes and observes cancellation', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
@@ -356,7 +378,7 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(FontsPlugin, {
@@ -380,7 +402,7 @@ describe('FontsPlugin', () => {
 	it('does not commit an async registration after its caller generation stops', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start([FontsPlugin, FontsLazyConsumer])
@@ -403,7 +425,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('rejects oversized font files before reading their contents', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(FontsPlugin, { initialConfig: { maxFontBytes: 4 } })
@@ -417,23 +439,18 @@ describe('FontsPlugin', () => {
 	})
 
 	it('fails the provider instead of silently skipping corrupt persisted state', async () => {
-		const fontBackend = createMemoryPersistenceBackend()
-		await fontBackend
-			.namespace('@pluxel/plugin-fonts')
-			.put(`managed/${'a'.repeat(43)}.font`, new Uint8Array([1, 2, 3]))
-		const selectionBackend = createMemoryPersistenceBackend()
-		await selectionBackend
-			.namespace('@pluxel/plugin-fonts')
-			.put('settings/default-font.json', '{broken')
-
-		for (const [backend, message] of [
-			[fontBackend, 'Managed font is corrupt'],
-			[selectionBackend, 'Default font preference is corrupt'],
+		for (const [key, value, message] of [
+			[`managed/${'a'.repeat(43)}.font`, new Uint8Array([1, 2, 3]), 'Managed font is corrupt'],
+			['settings/default-font.json', '{broken', 'Default font preference is corrupt'],
 		] as const) {
 			{
 				await using host = await createTestHost({
-					services: standardServices({ persistence: { mode: 'custom', backend } }),
+					services: standardServices({ fs: { backend: InMemory } }),
 				})
+				await host.start(FontsPlugin)
+				const storage = await host.require(FontsPlugin).ctx.fs!()
+				await host.stop(FontsPlugin)
+				await writeFileAtomic(storage, key, value)
 
 				const failure = await host.commitExpectFail((change) => {
 					change.catalog.add([FontsPlugin, FontsLazyConsumer])
@@ -457,7 +474,7 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start([FontsPlugin, FontsTestConsumer])
@@ -497,5 +514,5 @@ function findTestFont(): string | undefined {
 		'/System/Library/Fonts/Supplemental/Arial.ttf',
 		process.env.WINDIR ? join(process.env.WINDIR, 'Fonts', 'arial.ttf') : '',
 	]
-	return candidates.find((candidate) => candidate && existsSync(candidate))
+	return candidates.find((candidate) => candidate && nativeFs.existsSync(candidate))
 }

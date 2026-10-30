@@ -1,3 +1,4 @@
+import { InMemory } from '@pluxel/services/fs'
 import { formatPluginNodeReference, pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
@@ -132,7 +133,7 @@ describe('@pluxel/plugin-redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start([RedisPlugin, RedisConsumer])
@@ -164,7 +165,7 @@ describe('@pluxel/plugin-redis', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.start(RedisPlugin)
@@ -264,7 +265,7 @@ describe('@pluxel/plugin-redis', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			await host.commit((change) => {
@@ -305,7 +306,7 @@ describe('@pluxel/plugin-redis', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ persistence: { mode: 'memory' } }),
+				services: standardServices({ fs: { backend: InMemory } }),
 			})
 
 			const failure = await host.commitExpectFail((change) => {

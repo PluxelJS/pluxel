@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import type { HostService, HostStartupContext } from '@pluxel/host'
 import type { RuntimeLoggingInput } from './logging/index'
 import type { ProductDescriptor } from './management/product-contract'
-import type { PersistenceServiceConfig } from './persistence'
+import type { FsServiceConfig } from './fs'
 import { standardServices } from './index'
 import { vault, type VaultServiceConfig } from './vault'
 
@@ -10,7 +10,7 @@ import { vault, type VaultServiceConfig } from './vault'
 export async function servicesPreset(
 	startup: HostStartupContext,
 	options: Readonly<{
-		persistence: PersistenceServiceConfig
+		fs: FsServiceConfig
 		/** Explicit Vault backend and deployment identity. */
 		vault?: VaultServiceConfig
 		/** Omitted when the application has no product branding. */
@@ -24,7 +24,7 @@ export async function servicesPreset(
 	if (!options || typeof options !== 'object' || Array.isArray(options))
 		throw new TypeError('[services/preset] options must be an object')
 	for (const key of Object.keys(options)) {
-		if (!['persistence', 'vault', 'product', 'workbench', 'logging'].includes(key))
+		if (!['fs', 'vault', 'product', 'workbench', 'logging'].includes(key))
 			throw new TypeError(`[services/preset] Unknown option options.${key}`)
 	}
 	if (options.workbench !== undefined && typeof options.workbench !== 'boolean')
@@ -97,7 +97,7 @@ export async function servicesPreset(
 			},
 		),
 		...standardServices({
-			persistence: options.persistence,
+			fs: options.fs,
 			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
 		}),
 		vault({ deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY, ...options.vault }),
