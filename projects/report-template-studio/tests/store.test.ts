@@ -186,9 +186,15 @@ describe('WorkspaceStore', () => {
 		const snapshot = await store.materialize(imported.id, join(root, 'snapshot'))
 		expect(snapshot.files['.agents/skills/typst/SKILL.md']).toBe('# Typst skill')
 		expect(snapshot.files['共享/字体/LICENSE.txt']).toBe('Example font license')
-		expect(snapshot.assets).toContainEqual({ path: '共享/字体/fixture.otf', size: 6 })
-		expect(snapshot.files['报表/银行询证函/data.json']).toBeUndefined()
-		expect(snapshot.files['报表/银行账户余额汇总表/data.json']).toBeUndefined()
+		expect(snapshot.assets).toContainEqual(
+			expect.objectContaining({
+				path: '共享/字体/fixture.otf',
+				size: 6,
+				bytes: expect.any(Uint8Array),
+			}),
+		)
+		expect(JSON.parse(snapshot.files['报表/银行询证函/data.json']!)).toBeTypeOf('object')
+		expect(JSON.parse(snapshot.files['报表/银行账户余额汇总表/data.json']!)).toBeTypeOf('object')
 		expect(Object.hasOwn(snapshot.config, 'documents')).toBe(false)
 		expect(snapshot.files['报表/银行询证函/排版.typ']).toContain('../../共享/主题/财务函件.typ')
 		expect(snapshot.files['报表/银行询证函/银行询证函.ts']).toContain('v.optional')
@@ -243,7 +249,13 @@ describe('WorkspaceStore', () => {
 			store.putAsset(project.id, 'renamed/custom.bin', new Uint8Array([3])),
 		).rejects.toThrow('changed')
 		const snapshot = await store.snapshot(project.id)
-		expect(snapshot.assets).toContainEqual({ path: 'renamed/custom.bin', size: 3 })
+		expect(snapshot.assets).toContainEqual(
+			expect.objectContaining({
+				path: 'renamed/custom.bin',
+				size: 3,
+				bytes: expect.any(Uint8Array),
+			}),
+		)
 	})
 })
 
@@ -279,14 +291,14 @@ it('discovers broken report entries without executing them and keeps the convent
 	expect(renamedSource.content).toContain('Must not execute')
 })
 it('preserves persisted inputs across report and ancestor directory rename, rejecting entry collisions', async () => {
-	const { root, seed, project } = await fixture()
-	const inputs = new InputStore(join(root, 'inputs'))
-	const store = new WorkspaceStore(join(root, 'app'), seed, {}, (id, entries, revisions) =>
-		inputs.copyEntries(id, entries, revisions),
-	)
-	await store.initialize()
+	const { store, project } = await fixture()
+	const inputs = new InputStore(store)
 	const source = '报表/银行询证函/银行询证函.ts'
-	await inputs.set(project.id, source, { data: { title: 'User data' }, expectedVersion: null })
+	const initial = await inputs.get(project.id, source)
+	await inputs.set(project.id, source, {
+		data: { title: 'User data' },
+		expectedVersion: initial.storageVersion,
+	})
 	const before = await store.tree(project.id)
 	const renamed = await store.rename(project.id, {
 		path: '报表/银行询证函',
@@ -328,31 +340,21 @@ it('preserves persisted inputs across report and ancestor directory rename, reje
 		true,
 	)
 })
-it('renames region configuration and its complete draft together and removes the draft with its report', async () => {
-	const { root, seed, project } = await fixture()
-	const inputs = new InputStore(join(root, 'inputs'))
-	const store = new WorkspaceStore(
-		join(root, 'app'),
-		seed,
-		{},
-		(id, entries, revisions) => inputs.copyEntries(id, entries, revisions),
-		(id, entries) => inputs.removeEntries(id, entries),
-	)
-	await store.initialize()
-	const before = await store.tree(project.id)
+it('renames source declarations and data with the report and removes every authored file together', async () => {
+	const { store, project } = await fixture()
+	const inputs = new InputStore(store)
 	const source = '报表/客户服务报告/客户服务报告.ts'
 	const configFile = await store.readFile(project.id, source.replace('.ts', '.editor.json'))
 	const config = JSON.parse(configFile.content)
-	await inputs.set(project.id, source, {
+	const initial = await inputs.get(project.id, source)
+	const bodyPath = '报表/客户服务报告/' + config.sources[0].path
+	const authored = initial.editor!.files[bodyPath] + '\n用户保留的正文。\n'
+	const savedBefore = await inputs.set(project.id, source, {
 		data: { customer: { name: 'Saved user' } },
-		editor: {
-			formatVersion: 1,
-			templateId: source,
-			templateRevision: before.revision,
-			regions: config.defaults,
-		},
-		expectedVersion: null,
+		editor: { files: { ...initial.editor!.files, [bodyPath]: authored } },
+		expectedVersion: initial.storageVersion,
 	})
+	const before = await store.tree(project.id)
 	const renamed = await store.rename(project.id, {
 		path: '报表/客户服务报告',
 		to: '报表/客户报告',
@@ -362,35 +364,36 @@ it('renames region configuration and its complete draft together and removes the
 		true,
 	)
 	const saved = await inputs.get(project.id, '报表/客户报告/客户报告.ts')
-	expect(saved).toMatchObject({
-		data: { customer: { name: 'Saved user' } },
-		editor: { templateId: '报表/客户报告/客户报告.ts', templateRevision: renamed.revision },
-	})
-	expect(saved.editor?.regions).toEqual(config.defaults)
+	expect(saved.data).toEqual(savedBefore.data)
+	expect(saved.storageVersion).toBe(renamed.revision)
+	expect(saved.editor!.files[bodyPath.replace('客户服务报告/', '客户报告/')]).toBe(authored)
+	expect(JSON.parse(saved.editor!.files['报表/客户报告/客户报告.editor.json']!)).toEqual(config)
+	expect(
+		Object.keys(saved.editor!.files).some((path) => path.startsWith('报表/客户服务报告/')),
+	).toBe(false)
 	await store.remove(project.id, {
 		path: '报表/客户报告',
 		expectedVersion: renamed.entries.find((entry) => entry.path === '报表/客户报告')!.version,
 	})
-	expect(await inputs.get(project.id, '报表/客户报告/客户报告.ts')).toEqual({
-		data: {},
-		storageVersion: null,
-	})
-	expect(await inputs.get(project.id, source)).toEqual({ data: {}, storageVersion: null })
+	const removed = await store.snapshot(project.id)
+	expect(Object.keys(removed.files).some((path) => path.startsWith('报表/客户报告/'))).toBe(false)
+	const removedInput = await inputs.get(project.id, '报表/客户报告/客户报告.ts')
+	expect(removedInput.data).toEqual({})
 })
-it('rolls source rename back when saving renamed input mappings fails', async () => {
-	const { root, seed, project } = await fixture()
-	const store = new WorkspaceStore(join(root, 'app'), seed, {}, async () => {
-		throw new Error('Input storage unavailable')
-	})
-	await store.initialize()
-	const before = await store.tree(project.id)
+it('rolls a source/data batch back when a later configuration write fails', async () => {
+	const { store, project } = await fixture()
+	const before = await store.snapshot(project.id)
+	const path = '报表/银行询证函/data.json'
 	await expect(
-		store.rename(project.id, {
-			path: '报表/银行询证函',
-			to: '报表/custom',
-			expectedVersion: before.entries.find((entry) => entry.path === '报表/银行询证函')!.version,
+		store.writeFiles(project.id, {
+			expectedRevision: before.revision,
+			files: {
+				[path]: '{"title":"must roll back"}',
+				'studio.json': JSON.stringify({ documents: [] }),
+			},
 		}),
-	).rejects.toThrow('Input storage unavailable')
-	const rolledBack = await store.tree(project.id)
-	expect(rolledBack.documents).toEqual(before.documents)
+	).rejects.toThrow('Invalid studio.json')
+	const after = await store.snapshot(project.id)
+	expect(after.files).toEqual(before.files)
+	expect(after.revision).toBe(before.revision)
 })

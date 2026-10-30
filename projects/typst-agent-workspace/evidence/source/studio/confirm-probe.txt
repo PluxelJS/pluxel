@@ -1,0 +1,4 @@
+headless failure: locator.click: Timeout 15000ms exceeded.
+headless process: [ 0, null ]
+wayland answer: true
+wayland process: [ 0, null ]

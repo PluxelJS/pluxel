@@ -7,11 +7,9 @@ export function editorLifecycle(
 	path: string,
 	kind: 'file' | 'form',
 ): WorkbenchContentLifecycle {
+	const input = () => (kind === 'form' ? workspace.documents.get(path) : workspace.inputOwner(path))
 	const isDirty = () =>
-		Boolean(
-			workspace.files.get(path)?.dirty ||
-			(kind === 'form' && workspace.documents.get(path)?.inputDirty),
-		)
+		Boolean(workspace.files.get(path)?.dirty || input()?.inputDirty || input()?.inputConflict)
 	const save = async () => {
 		await Promise.all([
 			workspace.save(path),
@@ -21,10 +19,10 @@ export function editorLifecycle(
 	return {
 		isDirty,
 		getCloseRevision: () =>
-			`${workspace.files.get(path)?.token ?? 0}:${kind === 'form' ? (workspace.documents.get(path)?.inputToken ?? 0) : ''}`,
+			`${workspace.files.get(path)?.token ?? 0}:${input()?.inputToken ?? 0}:${input()?.inputEpoch ?? 0}:${!!input()?.bodyLocked}:${!!input()?.inputSaving}`,
 		beforeLeave: async () => {
 			await save()
-			return !isDirty()
+			return !isDirty() && !input()?.bodyLocked && !input()?.inputSaving
 		},
 		save,
 	}

@@ -42,12 +42,27 @@ import {
 } from '@assistant-ui/react'
 import '@assistant-ui/styles/index.css'
 import './assistant.css'
-import type { AiModel, AiSnapshot, AiThread, FileEntry } from '../shared/contracts'
+import {
+	isStudioError,
+	type AiModel,
+	type AiSnapshot,
+	type AiThread,
+	type FileEntry,
+} from '../shared/contracts'
 import { api } from './api'
 import { ProviderSettings } from './provider-settings'
 import { toAssistantMessage } from './assistant-messages'
 import { AssistantParts } from './assistant-parts'
 import type { AssistantDraft, AssistantUiState } from './workspace'
+
+const connectionReadMessage = '后端连接已中断，等待恢复。'
+function readFailure(cause: unknown, previous: string | undefined) {
+	return isStudioError(cause) && (cause.code === 'BACKEND_UNAVAILABLE' || cause.code === 'CLOSED')
+		? (previous ?? connectionReadMessage)
+		: cause instanceof Error
+			? cause.message
+			: String(cause)
+}
 
 function readableMessage(text: string) {
 	return defaultDirectiveFormatter
@@ -158,20 +173,22 @@ function WorkspaceAssistant({
 		let disposed = false
 		let timer: ReturnType<typeof setTimeout>
 		async function loadModels() {
+			const connection = api
 			try {
-				const next = await api.models()
-				if (!disposed) setModels(next)
+				const next = await connection.models()
+				if (!disposed && connection === api) setModels(next)
 			} catch (cause) {
-				if (!disposed) reportError(cause)
+				if (!disposed && connection === api) setError((previous) => readFailure(cause, previous))
 			}
 		}
 		void loadModels()
 		async function poll() {
+			const connection = api
 			try {
 				const version = listVersion.current
-				const next = await api.threads({ projectId })
+				const next = await connection.threads({ projectId })
 				if (disposed) return
-				if (version !== listVersion.current) {
+				if (connection !== api || version !== listVersion.current) {
 					timer = setTimeout(poll, 1000)
 					return
 				}
@@ -185,11 +202,12 @@ function WorkspaceAssistant({
 					next.filter((thread) => thread.running).map((thread) => thread.id),
 				)
 				setThreads(next)
+				setError((previous) => (previous === connectionReadMessage ? undefined : previous))
 				setActive((id) =>
 					id && next.some((thread) => thread.id === id) ? id : (next[0]?.id ?? null),
 				)
 			} catch (cause) {
-				if (!disposed) reportError(cause)
+				if (!disposed && connection === api) setError((previous) => readFailure(cause, previous))
 			}
 			if (!disposed) timer = setTimeout(poll, 1000)
 		}
@@ -508,11 +526,15 @@ function Conversation({
 		alive.current = true
 		let timer: ReturnType<typeof setTimeout>
 		async function poll() {
+			const connection = api
 			try {
-				const next = await api.snapshot({ projectId, threadId })
-				if (!disposed) accept(next)
+				const next = await connection.snapshot({ projectId, threadId })
+				if (!disposed && connection === api) {
+					accept(next)
+					setError((previous) => (previous === connectionReadMessage ? undefined : previous))
+				}
 			} catch (cause) {
-				if (!disposed) reportError(cause)
+				if (!disposed && connection === api) setError((previous) => readFailure(cause, previous))
 			}
 			if (!disposed) timer = setTimeout(poll, 500)
 		}

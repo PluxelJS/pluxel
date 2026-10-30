@@ -1,0 +1,6 @@
+pass: All 3 files are correctly formatted (175ms, 14 threads)
+pass: Found no warnings, lint errors, or type errors in 3 files (1.0s, 14 threads)
+
+Recovery harness check:
+pass: All 1 file are correctly formatted (138ms, 14 threads)
+pass: Found no warnings, lint errors, or type errors in 1 file (375ms, 14 threads)

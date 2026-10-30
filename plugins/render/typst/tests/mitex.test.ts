@@ -17,8 +17,8 @@ const template = String.raw`#set text(font: "DejaVu Math TeX Gyre")
 #show math.equation: set text(font: "DejaVu Math TeX Gyre")
 #set page(width: 180mm, height: auto)
 #set math.equation(numbering: "(1)", supplement: "Equation")
-#include "_editor/regions/formulas.typ"
-#include "_editor/regions/references.typ"
+#include "sections/formulas.typ"
+#include "sections/references.typ"
 #context {
   let equations = query(math.equation.where(block: true))
   assert.eq(equations.len(), 2)
@@ -27,16 +27,21 @@ const template = String.raw`#set text(font: "DejaVu Math TeX Gyre")
   assert.eq(counter(math.equation).at(query(<eq:matrix>).first().location()), (2,))
 }
 `
-const body = String.raw`#import "/_editor/mitex/mitex.typ": mi, mitex
+const body = String.raw`#import "/lib/mitex/mitex.typ": mi, mitex
 Inline #mi("x_1^2 + \\alpha") and #mi("\\frac{1}{2}").
 #mitex("\\int_0^1 x^2 \\, dx = \\frac{1}{3}") <eq:integral>
 #mitex("\\begin{pmatrix}1 & 2 \\\\ 3 & 4\\end{pmatrix}") <eq:matrix>
 `
 function documentFiles(): Record<string, string> {
 	return {
-		...createMiTeXFiles(),
-		'_editor/regions/formulas.typ': body,
-		'_editor/regions/references.typ': 'See @eq:integral and @eq:matrix.',
+		...Object.fromEntries(
+			Object.entries(createMiTeXFiles()).map(([path, text]) => [
+				path.replace('_editor/mitex/', 'lib/mitex/'),
+				text,
+			]),
+		),
+		'sections/formulas.typ': body,
+		'sections/references.typ': 'See @eq:integral and @eq:matrix.',
 	}
 }
 
@@ -72,10 +77,10 @@ it('renders pinned LaTeX in native Typst with template numbering and references 
 		if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics))
 		expect(Buffer.from(compiled.pdf).subarray(0, 5).toString()).toBe('%PDF-')
 		expect(compiled.vector.byteLength).toBeGreaterThan(100)
-		await writeFile(join(root, '_editor/regions/references.typ'), 'See @eq:missing.')
+		await writeFile(join(root, 'sections/references.typ'), 'See @eq:missing.')
 		const missing = runTypst({ ...input, revision: 2 })
 		expect(missing).toMatchObject({ ok: false, code: 'COMPILE_FAILED' })
-		await writeFile(join(root, '_editor/regions/references.typ'), 'See @eq:matrix.')
+		await writeFile(join(root, 'sections/references.typ'), 'See @eq:matrix.')
 		expect(runTypst({ ...input, revision: 3 })).toMatchObject({ ok: true })
 	} finally {
 		await rm(root, { recursive: true, force: true })
@@ -125,7 +130,7 @@ it('renders the same LaTeX and cross-file references in WASM using only explicit
 		typst.renderSvg(source, {
 			files: {
 				...files,
-				'/_editor/regions/formulas.typ': body.replace('\\\\alpha', '\\\\unknownPluxelCommand'),
+				'/sections/formulas.typ': body.replace('\\\\alpha', '\\\\unknownPluxelCommand'),
 			},
 		}),
 	).rejects.toMatchObject({ code: 'COMPILE_FAILED' })

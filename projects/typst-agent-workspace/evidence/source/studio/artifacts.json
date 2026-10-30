@@ -1,0 +1,54 @@
+{
+  "agent-body.png": {
+    "bytes": 251080,
+    "sha256": "e6c9c15679a947502f19d275373f0dd7c71a779f771ce271322a1556e46740d3"
+  },
+  "body-navigation.png": {
+    "bytes": 378326,
+    "sha256": "21889f10e0f4bae4335f0d636a780b7ea6034a6b179a0a7e3cfac0e8125efc6b"
+  },
+  "body-reopened.pdf": {
+    "bytes": 52496,
+    "sha256": "cbb673ce482717fa473d84d86404086c521865ea2d9a6033fa8c899dd70c6101"
+  },
+  "body-reopened.png": {
+    "bytes": 387754,
+    "sha256": "647340329eff26b77afbc7e650952b86acb80467090a724cc7c74fd7a783b373"
+  },
+  "body.pdf": {
+    "bytes": 52496,
+    "sha256": "21c990d997ff498b75055eb7aa12c1a853c9334389e93de4be84901cf58fd764"
+  },
+  "imported-workspace.png": {
+    "bytes": 353053,
+    "sha256": "1b71e94445d488b5ab0920ff0be71f569fd48873ffb53db495be77455aa073d8"
+  },
+  "recovery-generation-1.pdf": {
+    "bytes": 65475,
+    "sha256": "31614600e2f1a401a340598b4601db1d370cb06b61bbc5f691d3ca1e64838259"
+  },
+  "recovery-generation-2.pdf": {
+    "bytes": 65533,
+    "sha256": "f5ac00c896da73e071a6b5f8d5c594787ddf3ac99db6778aa79a173e0df25cb8"
+  },
+  "recovery-recovered.png": {
+    "bytes": 349651,
+    "sha256": "e1181d9cd31458b7810d261ea448cacd519c1972ad3eed289fc4e7b0e05a0406"
+  },
+  "rename-stale-before.png": {
+    "bytes": 434907,
+    "sha256": "1af8c90b0f640c3027be98d6ecdef2d512951eb49e24965b6725bde6426f65bb"
+  },
+  "source-file-report-reloaded.png": {
+    "bytes": 283198,
+    "sha256": "bdc2c3a30052cfef21f1ae04f76c7414e54230c01cd95a4e23e966b81fd93db0"
+  },
+  "source-file-shared-save.png": {
+    "bytes": 302154,
+    "sha256": "f246018a1480748294f3c61cec852840e73f73a5673e7b796142a1cc9d84dfc9"
+  },
+  "workspace.pdf": {
+    "bytes": 59154,
+    "sha256": "4512ea05fe6b43b620a07761e5b39528a0c1964e08cc298fcf53beab10672334"
+  }
+}

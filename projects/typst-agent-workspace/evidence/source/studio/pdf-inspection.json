@@ -1,0 +1,113 @@
+{
+  "reader": "pypdf 6.21.3",
+  "files": {
+    "body.pdf": {
+      "bytes": 52496,
+      "sha256": "21c990d997ff498b75055eb7aa12c1a853c9334389e93de4be84901cf58fd764",
+      "pages": 1,
+      "requiredText": [
+        "客户服务报告",
+        "中文输入验收𠮷",
+        "列表项保留",
+        "海川工作室",
+        "接纳后的建议",
+        "PNG image"
+      ],
+      "text": "海川工作室 · 2026 年第三季度\n客户服务报告\n客户：海川工作室\n联系人：林小姐 服务期间：2026 年第三季度\n服务概况\n海川工作室 本期服务已完成交付，详细情况如下。\n请核对本报告的数据与建议。\n中文输入验收𠮷\n• 列表项保留\n交付与客户反馈\n例行服务 | 专项支持\n已完成现场回访。\n客户：海川工作室\n图 1 PNG image\nUnsaved human paragraph for agent.\n后续建议\n接纳后的建议\n固定条款：本报告用于服务沟通。服务范围与交付责任以双方签署的合同为准。\n1 / 1",
+      "metadata": {
+        "/Title": "客户服务报告",
+        "/Creator": "Typst 0.14.2",
+        "/ModDate": "D:20261030023003Z",
+        "/CreationDate": "D:20261030023003Z"
+      },
+      "pageContentSha256": [
+        "05b2de9c02763fad209b4fe05027dde7b04d5b1cf38f79ce315ff98eeb4e9b03"
+      ]
+    },
+    "body-reopened.pdf": {
+      "bytes": 52496,
+      "sha256": "cbb673ce482717fa473d84d86404086c521865ea2d9a6033fa8c899dd70c6101",
+      "pages": 1,
+      "requiredText": [
+        "客户服务报告",
+        "中文输入验收𠮷",
+        "列表项保留",
+        "海川工作室",
+        "接纳后的建议",
+        "PNG image"
+      ],
+      "text": "海川工作室 · 2026 年第三季度\n客户服务报告\n客户：海川工作室\n联系人：林小姐 服务期间：2026 年第三季度\n服务概况\n海川工作室 本期服务已完成交付，详细情况如下。\n请核对本报告的数据与建议。\n中文输入验收𠮷\n• 列表项保留\n交付与客户反馈\n例行服务 | 专项支持\n已完成现场回访。\n客户：海川工作室\n图 1 PNG image\nUnsaved human paragraph for agent.\n后续建议\n接纳后的建议\n固定条款：本报告用于服务沟通。服务范围与交付责任以双方签署的合同为准。\n1 / 1",
+      "metadata": {
+        "/Title": "客户服务报告",
+        "/Creator": "Typst 0.14.2",
+        "/ModDate": "D:20261030023018Z",
+        "/CreationDate": "D:20261030023018Z"
+      },
+      "pageContentSha256": [
+        "05b2de9c02763fad209b4fe05027dde7b04d5b1cf38f79ce315ff98eeb4e9b03"
+      ]
+    },
+    "workspace.pdf": {
+      "bytes": 59154,
+      "sha256": "4512ea05fe6b43b620a07761e5b39528a0c1964e08cc298fcf53beab10672334",
+      "pages": 1,
+      "requiredText": [
+        "银行存款余额询证函",
+        "桌面验证银行",
+        "128,600.00"
+      ],
+      "text": "银行存款余额询证函\n桌面验证银行：\n被询证单位：示例有限公司\n源账套：示例账套\n余额日期：2026-09-30\n为核实本公司银行存款余额，现将下列资料寄送贵行，请予核对。\n如与贵行记录相符，请在回函确认栏签章；如有差异，请说明差异情况。\n银行账户余额明细 单位：人民币 元\n科目名称 银行账号 本位币 账面余额\n1002.01\n银行存款\n示例账号 0001 人民币 128,600.00\n金额取自所选源账期末余额，以本位币列示，借方为正、贷方为负；不代表银行确认的原币存款余额。金额四舍五入至\n分，仅影响展示，不改变源账精度。“待核实”表示来源金额缺失或未知。\n回函确认\n回函地址及接收人：示例市示例路 1 号，财务部\n核对结果 □ 相符 □ 不符（请另附差异说明）\n确认意见\n经办人及日期\n银行签章\n1 / 1",
+      "metadata": {
+        "/Title": "银行存款余额询证函",
+        "/Creator": "Typst 0.14.2",
+        "/ModDate": "D:20261030023011Z",
+        "/CreationDate": "D:20261030023011Z"
+      },
+      "pageContentSha256": [
+        "fce51689e03f2a514b8f6991f67e833e9e152c803780688c3b6392ea709eddc0"
+      ]
+    },
+    "recovery-generation-1.pdf": {
+      "bytes": 65475,
+      "sha256": "31614600e2f1a401a340598b4601db1d370cb06b61bbc5f691d3ca1e64838259",
+      "pages": 1,
+      "requiredText": [
+        "After generation 1",
+        "银行存款余额询证函"
+      ],
+      "text": "银行存款余额询证函\nAfter generation 1：\n被询证单位：示例有限公司\n源账套：示例账套\n余额日期：2026-09-30\n为核实本公司银行存款余额，现将下列资料寄送贵行，请予核对。\n如与贵行记录相符，请在回函确认栏签章；如有差异，请说明差异情况。\n银行账户余额明细 单位：人民币 元\n科目名称 银行账号 本位币 账面余额\n1002.01\n银行存款\n示例账号 0001 人民币 128,600.00\n金额取自所选源账期末余额，以本位币列示，借方为正、贷方为负；不代表银行确认的原币存款余额。金额四舍五入至\n分，仅影响展示，不改变源账精度。“待核实”表示来源金额缺失或未知。\n回函确认\n回函地址及接收人：示例市示例路 1 号，财务部\n核对结果 □ 相符 □ 不符（请另附差异说明）\n确认意见\n经办人及日期\n银行签章\n1 / 1",
+      "metadata": {
+        "/Title": "银行存款余额询证函",
+        "/Creator": "Typst 0.14.2",
+        "/ModDate": "D:20261030025324Z",
+        "/CreationDate": "D:20261030025324Z"
+      },
+      "pageContentSha256": [
+        "275f3a364a8bfba4578514d7b1f518c483aaacc7e9bb9bd258a3d4d19ff0269a"
+      ]
+    },
+    "recovery-generation-2.pdf": {
+      "bytes": 65533,
+      "sha256": "f5ac00c896da73e071a6b5f8d5c594787ddf3ac99db6778aa79a173e0df25cb8",
+      "pages": 1,
+      "requiredText": [
+        "After generation 2",
+        "银行存款余额询证函"
+      ],
+      "text": "银行存款余额询证函\nAfter generation 2：\n被询证单位：示例有限公司\n源账套：示例账套\n余额日期：2026-09-30\n为核实本公司银行存款余额，现将下列资料寄送贵行，请予核对。\n如与贵行记录相符，请在回函确认栏签章；如有差异，请说明差异情况。\n银行账户余额明细 单位：人民币 元\n科目名称 银行账号 本位币 账面余额\n1002.01\n银行存款\n示例账号 0001 人民币 128,600.00\n金额取自所选源账期末余额，以本位币列示，借方为正、贷方为负；不代表银行确认的原币存款余额。金额四舍五入至\n分，仅影响展示，不改变源账精度。“待核实”表示来源金额缺失或未知。\n回函确认\n回函地址及接收人：示例市示例路 1 号，财务部\n核对结果 □ 相符 □ 不符（请另附差异说明）\n确认意见\n经办人及日期\n银行签章\n1 / 1",
+      "metadata": {
+        "/Title": "银行存款余额询证函",
+        "/Creator": "Typst 0.14.2",
+        "/ModDate": "D:20261030025331Z",
+        "/CreationDate": "D:20261030025331Z"
+      },
+      "pageContentSha256": [
+        "275f3a364a8bfba4578514d7b1f518c483aaacc7e9bb9bd258a3d4d19ff0269a"
+      ]
+    }
+  },
+  "reopenedPdfTextMatches": true,
+  "reopenedPdfContentStreamsMatch": true,
+  "reopenedPdfBinaryIdentical": false,
+  "note": "Recompilation changes PDF creation/modification timestamps and document IDs; byte-identical PDF output is not claimed. Authored source preservation is checked by desktop.mjs."
+}

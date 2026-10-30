@@ -77,7 +77,6 @@
 		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
 		"@tiptap/extensions": "catalog:frontend",
-		"@tiptap/markdown": "catalog:frontend",
 		"@tiptap/pm": "catalog:frontend",
 		"@tiptap/react": "catalog:frontend",
 		"@tiptap/starter-kit": "catalog:frontend",

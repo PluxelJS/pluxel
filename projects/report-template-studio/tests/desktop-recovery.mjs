@@ -19,6 +19,7 @@ const appRoot = join(directory, 'app')
 const output = join(root, 'test-results/desktop-recovery')
 const execute = promisify(execFile)
 const logs = []
+const previewReceipts = []
 let server, application, processClosed, page, evidence
 async function until(check, message) {
 	const deadline = Date.now() + 60_000
@@ -38,7 +39,7 @@ async function command(args) {
 	return JSON.parse(stdout)
 }
 let instanceId
-async function inspect(action = 'inspect') {
+async function inspect(action = 'inspect', revision) {
 	const result = await command([
 		'run',
 		join(appRoot, 'dev/check.ts'),
@@ -47,7 +48,7 @@ async function inspect(action = 'inspect') {
 		'--instance',
 		instanceId,
 		'--input',
-		JSON.stringify({ action }),
+		JSON.stringify({ action, revision }),
 	])
 	assert.equal(result.ok, true)
 	assert.equal(result.value.state, 'succeeded')
@@ -80,12 +81,23 @@ export default defineDevConsole(async dev => {
   const tree = await api.getTree({ projectId: project.id })
   const document = tree.documents.find(item => item.name === '银行询证函')!
   const target = { projectId: project.id, entry: document.entry }
-  if ((dev.input as { action: string }).action === 'prepare') {
+  const request = dev.input as { action: string; revision?: string }
+  if (request.action === 'prepare') {
     const file = await api.readFile({ projectId: project.id, path: document.entry })
     await api.writeFile({projectId: project.id, path: file.path, expectedVersion: file.version,
       content: file.content.replace('schema: v.object({', 'schema: v.object({\\n  reviewRows: v.optional(v.pipe(v.array(v.object({ label: v.string() })), v.title("审核可选明细"))),')})
   }
-  return { input: await api.getInput(target), plugins: await dev.plugins.list(), update: await dev.updates.latest() }
+  const input = await api.getInput(target)
+  let preview: { revision: string; sourceRevision: string } | undefined
+  if (request.revision) {
+    try {
+      const shown = await api.getPreview({ ...target, revision: request.revision })
+      preview = { revision: shown.revision, sourceRevision: shown.sourceRevision }
+    } catch (cause) {
+      if (!cause || typeof cause !== 'object' || !('code' in cause) || cause.code !== 'REVISION_CONFLICT') throw cause
+    }
+  }
+  return { input, preview, plugins: await dev.plugins.list(), update: await dev.updates.latest() }
 })
 `,
 	)
@@ -193,6 +205,23 @@ export default defineDevConsole(async dev => {
 			() => page.getByRole('button', { name: '导出 PDF', exact: true }).isEnabled(),
 			'Edited preview did not recover',
 		)
+		// Autosave and preview compilation have separate receipts. The first export
+		// must use the displayed preview compiled against the saved workspace snapshot.
+		let receipt
+		await until(async () => {
+			const shown = page.locator('.document-preview:visible')
+			const revision = await shown.getAttribute('data-preview-revision')
+			if (!revision) return false
+			const state = await inspect('inspect', revision)
+			if (
+				state.preview?.sourceRevision !== state.input.storageVersion ||
+				(await shown.getAttribute('data-preview-revision')) !== revision
+			)
+				return false
+			receipt = { generation, ...state.preview, storageVersion: state.input.storageVersion }
+			return true
+		}, 'Displayed preview did not match the saved workspace revision')
+		previewReceipts.push(receipt)
 		const pdf = join(output, `generation-${generation}.pdf`)
 		await rm(pdf, { force: true })
 		await application.evaluate(({ dialog }, filePath) => {
@@ -209,13 +238,22 @@ export default defineDevConsole(async dev => {
 			}
 		}, 'Native main-process artifact save did not recover')
 	}
+	await until(async () => {
+		return (
+			(await page
+				.getByText(/Studio backend generation was withdrawn|后端连接已中断，等待恢复。/)
+				.count()) === 0
+		)
+	}, 'Recovery clears connection notices from the retired generation')
 	await page.screenshot({ path: join(output, 'recovered.png') })
 	assert.deepEqual(errors, [])
 	evidence = {
 		generations: 2,
 		samePage: true,
+		connectionNoticeCleared: true,
 		optionalTableOmitted: true,
 		nativePdfSaves: 2,
+		previewReceipts,
 		console: await inspect(),
 	}
 } catch (error) {

@@ -73,7 +73,7 @@ try {
 	})
 	await page.goto(values.url, { waitUntil: 'domcontentloaded' })
 	const editor = page.getByRole('textbox', {
-		name: '正文区域 body',
+		name: 'Typst 源文件 main.typ',
 		exact: true,
 		includeHidden: true,
 	})
@@ -236,7 +236,7 @@ try {
 		)
 		await page.waitForFunction(
 			(expected) => {
-				const root = document.querySelector('[data-typst-region="body"]')
+				const root = document.querySelector('[aria-label="Typst 源文件 main.typ"]')
 				const selection = document.getSelection()
 				const node = selection?.anchorNode
 				const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement
@@ -253,7 +253,7 @@ try {
 	}
 
 	const originalBlock = await selectEditorBlock(paragraph, '正文 2')
-	await page.getByRole('tab', { name: 'Typst 模板', exact: true }).click()
+	await page.getByRole('tab', { name: 'Typst 源码', exact: true }).click()
 	await selectPreviewBlock('正文 2', paragraphText)
 	assert.equal(
 		await page.getByRole('tab', { name: '正文编辑器', exact: true }).getAttribute('aria-selected'),
@@ -376,8 +376,8 @@ try {
 	await themeToggle.click()
 	await page.locator('html:not(.dark)').waitFor()
 
-	await page.getByRole('tab', { name: 'Typst 模板', exact: true }).click()
-	const source = page.getByLabel('main.typ')
+	await page.getByRole('tab', { name: 'Typst 源码', exact: true }).click()
+	const source = page.getByLabel('main.typ', { exact: true })
 	const originalTemplate = await source.inputValue()
 	assert.match(originalTemplate, /width:\s*145mm/)
 	const template = originalTemplate.replace(/width:\s*145mm/, 'width: 165mm')
@@ -401,9 +401,9 @@ try {
 	)
 	previousBlock = await paragraphLink.getAttribute('data-editor-block')
 	await source.fill('#let =')
-	await page.locator('.typst-example [role="alert"]').waitFor()
+	await page.locator('.typst-example-error[role="alert"]').waitFor()
 	assert.match(
-		await page.locator('.typst-example [role="alert"]').innerText(),
+		await page.locator('.typst-example-error[role="alert"]').innerText(),
 		/Typst compilation failed/,
 	)
 	assert.equal(await page.locator('iframe[title="Typst 排版结果"]').count(), 1)
@@ -417,7 +417,7 @@ try {
 	assert.ok(staleRect)
 	await page.mouse.click(staleRect.x + staleRect.width / 2, staleRect.y + staleRect.height / 2)
 	assert.equal(
-		await page.getByRole('tab', { name: 'Typst 模板', exact: true }).getAttribute('aria-selected'),
+		await page.getByRole('tab', { name: 'Typst 源码', exact: true }).getAttribute('aria-selected'),
 		'true',
 		'A stale preview cannot move the editor selection.',
 	)

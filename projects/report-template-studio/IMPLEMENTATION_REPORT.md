@@ -1,8 +1,10 @@
 # Studio 实施与验证记录
 
-当前用法由 [README](README.md) 与 [Typst 区域编辑](../../docs/plugins/rendering/typst-editor.md) 维护；本文件记录实现边界与验收来源，历史执行结果不能替代当前改动的验证。
+当前用法由 [README](README.md) 与 [Typst 源码编辑](../../docs/plugins/rendering/typst-editor.md) 维护；本文件记录实现边界与验收来源，历史执行结果不能替代当前改动的验证。
 
-## 正文、题注、公式和引用（2026-10-26）
+> 历史基线：以下记录描述 2026-10-12 与 2026-10-26 的实现。2026-10-28 已迁移为普通 `.typ` / JSON 文件权威；下方的区域 JSON、Agent Markdown 和旧测试计数不代表现行契约。当前用法与新测试入口以 [README](README.md) 为准，历史测试链接固定到重构前提交。
+
+## 正文、题注、公式和引用（历史基线：2026-10-26）
 
 正文继续以 Tiptap JSON 为唯一权威，Agent Markdown 回读后更新同一草稿；模板通过原生 `#include` 组合各区域，控制页面、缩进、行距、段间距、题注和编号。没有新增 Markdown 镜像文件、Typst AST 反解器或文件依赖模拟层。
 
@@ -12,13 +14,13 @@ Studio 给共享编辑器提供完整区域快照，复用题注、公式编辑�
 
 验收入口及各自边界：
 
-| 入口                                                                                            | 证明范围                                                                                                          |
-| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [tiptap-document.test.ts](../../plugins/render/typst/tests/tiptap-document.test.ts)             | 原生文档身份、label、复制、引用与跨 include 的真实 Typst 输出；含长表分页与模板规则                               |
-| [tiptap-agent-markdown.test.ts](../../plugins/render/typst/tests/tiptap-agent-markdown.test.ts) | Agent 标记、最小原生回退和 Markdown/JSON 往返                                                                     |
-| [mitex.test.ts](../../plugins/render/typst/tests/mitex.test.ts)                                 | 同一宿主数学字体下的 native PDF/Vector 与 WASM SVG、编号/跨文件引用及失败恢复；只获取显式编译器/renderer/字体资源 |
-| [chart-report.test.ts](tests/chart-report.test.ts)                                              | Studio 的真实 body 读写、草稿持久化、生成和 native 编译边界                                                       |
-| [consumer](../../plugins/render/typst/tests/consumer/README.md)                                 | 当前运行界面的人工/浏览器验证入口；源码和机制测试不替代桌面/触屏操作                                              |
+| 入口                                                                                                                                                                         | 证明范围                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [tiptap-document.test.ts](https://github.com/PluxelJS/pluxel/blob/a7c965291e3cfff669b86e1a9e6fcf7fcc31b2af/plugins/render/typst/tests/tiptap-document.test.ts)               | 原生文档身份、label、复制、引用与跨 include 的真实 Typst 输出；含长表分页与模板规则                               |
+| [tiptap-agent-markdown.test.ts](https://github.com/PluxelJS/pluxel/blob/a7c965291e3cfff669b86e1a9e6fcf7fcc31b2af/plugins/render/typst/tests/tiptap-agent-markdown.test.ts)   | Agent 标记、最小原生回退和 Markdown/JSON 往返                                                                     |
+| [mitex.test.ts](https://github.com/PluxelJS/pluxel/blob/a7c965291e3cfff669b86e1a9e6fcf7fcc31b2af/plugins/render/typst/tests/mitex.test.ts)                                   | 同一宿主数学字体下的 native PDF/Vector 与 WASM SVG、编号/跨文件引用及失败恢复；只获取显式编译器/renderer/字体资源 |
+| [chart-report.test.ts 历史版本](https://github.com/PluxelJS/pluxel/blob/a7c965291e3cfff669b86e1a9e6fcf7fcc31b2af/projects/report-template-studio/tests/chart-report.test.ts) | Studio 的真实 body 读写、草稿持久化、生成和 native 编译边界                                                       |
+| [consumer](../../plugins/render/typst/tests/consumer/README.md)                                                                                                              | 当前运行界面的人工/浏览器验证入口；源码和机制测试不替代桌面/触屏操作                                              |
 
 在相应包目录执行的完整检查包括 Typst 的 `mise exec -- vp test run --config vitest.config.ts`（205 项通过）、Studio 的 `mise exec -- vp test run`（171 项通过、1 项 Windows 专用检查跳过）及两包 TypeScript 类型检查。Typst 包构建和 Studio renderer 的 `mise exec -- vp build` 通过，KaTeX 样式与字体进入实际产物；这些计数只属于本次运行，不是稳定功能契约。
 

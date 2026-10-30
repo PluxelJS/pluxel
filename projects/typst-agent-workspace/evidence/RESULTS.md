@@ -6,7 +6,7 @@
 
 coding agent 读取导出的任务、数据和两个 Markdown 文件，用一次文件补丁完成：营收与渠道占比分析、普通表格增加列、模板组件参数修改、图表跨章移动、三条可验收建议。修改后第一次检查即通过，无需修复正文。
 
-原文在 [before/](before/)，编辑结果在 [workspace/content/](../workspace/content/)。原生编译的 [PDF](report.pdf) 与 [首页 PNG](page-1.png) 已保留。目视检查确认中文、图表与题注、跨章移动后的编号引用、三列表格、指标组件和合并表格正常。
+原文在 [before/](before/)，编辑结果在 [历史编辑结果](markdown-baseline/)。原生编译的 [PDF](report.pdf) 与 [首页 PNG](page-1.png) 已保留。目视检查确认中文、图表与题注、跨章移动后的编号引用、三列表格、指标组件和合并表格正常。
 
 消费者接纳了整份候选，重新加载保存的 JSON，并由真实的无 DOM Tiptap Editor 继续插入文字、再进行 Agent Markdown 往返。此次没有测试浏览器工具栏、光标或视觉编辑界面。
 

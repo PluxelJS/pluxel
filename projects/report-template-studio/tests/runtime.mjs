@@ -102,7 +102,7 @@ try {
 	const project = await backend.api.createProject({ name: 'Production external Node workspace' })
 	const tree = await backend.api.getTree({ projectId: project.id })
 	assert.equal(tree.documents.length, 5)
-	assert.ok(!tree.entries.some((entry) => entry.path.endsWith('/data.json')))
+	assert.ok(tree.entries.some((entry) => entry.path.endsWith('/data.json')))
 	const providers = await backend.api.providers()
 	assert.ok(providers.providers.length > 10)
 	const company = providers.providers.find((provider) => provider.id === 'company-proxy')

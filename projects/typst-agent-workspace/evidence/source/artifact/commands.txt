@@ -1,0 +1,61 @@
+$ npm install --ignore-scripts --legacy-peer-deps --install-links --package-lock=false --no-audit --no-fund
+
+added 71 packages in 12s
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node absent.mjs
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node /tmp/typst-source-review-artifact/native-checker/node_modules/typescript/bin/tsc --noEmit --pretty false
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node root.mjs
+
+
+$ npm install --ignore-scripts --legacy-peer-deps --install-links --package-lock=false --no-audit --no-fund
+
+added 29 packages in 3s
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node absent.mjs
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node /tmp/typst-source-review-artifact/app/node_modules/typescript/bin/tsc --noEmit --pretty false
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node base.mjs
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node source.mjs
+{"nodeWebParity":true,"parserBytes":371384,"fileCount":13}
+
+
+$ npm install --ignore-scripts --legacy-peer-deps --install-links --package-lock=false --no-audit --no-fund
+
+added 50 packages in 9s
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node absent.mjs
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node /tmp/typst-source-review-artifact/app/node_modules/typescript/bin/tsc --noEmit --pretty false
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node node-without-dom.mjs
+
+
+$ npm install --ignore-scripts --legacy-peer-deps --install-links --package-lock=false --no-audit --no-fund
+
+added 24 packages in 8s
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node absent.mjs
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node /tmp/typst-source-review-artifact/app/node_modules/typescript/bin/tsc --noEmit --pretty false
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node /tmp/typst-source-review-artifact/native-checker/node_modules/typescript/bin/tsc --noEmit --pretty false
+
+
+$ /home/ahdg/.var/app/io.github.trumank.CodeStudio/home/.local/share/mise/installs/node/24.22.0/bin/node run/native.mjs

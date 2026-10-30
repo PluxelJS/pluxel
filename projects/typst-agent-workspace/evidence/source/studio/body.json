@@ -1,0 +1,74 @@
+{
+  "observedAt": "2026-10-30",
+  "entry": "报表/客户服务报告/客户服务报告.ts",
+  "displayedCompile": {
+    "revision": "4d8d91b3-fccf-411f-8a2a-6342f7b0ff0c",
+    "clientRevision": 42,
+    "sourceRevision": "7cd5939290c21d34e9cb77b0c1866098d11f3b003106a68ab19797451d0660d0",
+    "pageCount": 1
+  },
+  "nativeNavigationPoints": 237,
+  "sourceSha256": {
+    "报表/客户服务报告/summary.typ": "3e7f628c82fe6bd22997fa2455902fdcb2c5397eed3d1ce4f3f1d6ace4d0804c",
+    "报表/客户服务报告/recommendations.typ": "de8e914aceef9e2b4e7ef2638090d971debd43007e880f447e0e7bc78ef30140",
+    "报表/客户服务报告/data.json": "50c54eca1d34006eb53df4111f219e25a915cd0ff3d6853fd49e18c6dc4cf678"
+  },
+  "reopenedSourceBytesEqual": true,
+  "agent": {
+    "captureSourceRevision": "66c49f5660ea52c58ce03fa6fdf27ad5f3b2c4a4d3b4cdefc71c5b008ab571ac",
+    "baseRevision": "99d1b4ff0c276c820c97bb89c1c33dbcaef5088c518074f75762c69d03193ac7",
+    "editorStatus": "applied",
+    "compile": {
+      "projectId": "781f31e4-f024-49f7-b8dd-4b9288ae33b4",
+      "entry": "报表/客户服务报告/客户服务报告.ts",
+      "name": "客户服务报告",
+      "template": "报表/客户服务报告/排版.typ",
+      "revision": "e6bf15f5-e8cf-4ec6-ae64-ee1724bbc946",
+      "sourceRevision": "26532db348254c14a9e1296f5c5797c33858535d2d971d75b734e303f6af17da",
+      "data": {
+        "customer": {
+          "name": "青山有限公司",
+          "contact": "林小姐"
+        },
+        "period": "2026 年第三季度"
+      },
+      "clientRevision": 24,
+      "pageCount": 1,
+      "pages": [
+        {
+          "height": 841.8897637795276,
+          "page": 1,
+          "width": 595.2755905511812
+        }
+      ],
+      "outline": [
+        {
+          "level": 1,
+          "page": 1,
+          "title": "服务概况",
+          "x": 70.86614173228347,
+          "y": 139.04530708661417
+        },
+        {
+          "level": 1,
+          "page": 1,
+          "title": "后续建议",
+          "x": 70.86614173228347,
+          "y": 303.63394380536414
+        }
+      ],
+      "diagnostics": [],
+      "elapsedMs": 876.436533
+    },
+    "png": {
+      "revision": "e6bf15f5-e8cf-4ec6-ae64-ee1724bbc946",
+      "kind": "png",
+      "mimeType": "image/png",
+      "page": 1,
+      "width": 1191,
+      "height": 1684,
+      "byteLength": 251080
+    },
+    "oneUndoRestoresCapturedSource": true
+  }
+}

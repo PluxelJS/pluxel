@@ -1,0 +1,82 @@
+{
+  "stages": [
+    "Native checker: existing server peers, root strict declarations and import without Tiptap/React",
+    "Browser app without Tiptap/React or native server peers: template/browser strict types, imports and production browser build",
+    "Source Node and Web parser run without Tiptap/React; WASM copied asset resolves; projections match and no-op retains every source byte",
+    "Real headless Editor changes only the intended Chinese source span; cross-file label rename, stale rejection, undo/redo and reopen use public source APIs",
+    "Public React example strict-checks; actual copied source editor, stylesheet and parser asset build without workspace source or native browser modules",
+    "Shared Chromium executes the production bundle/WASM; Chinese selection, source history, file-only save/reopen, explicit JSON-bound component insertion/parameters/undo, JSON field insertion and live data updates, new-project page reload and lossless HTML clipboard parsing/paste of all four source node types succeed",
+    "External built Native/Core/Fonts/services artifacts compile browser-authored files via constructor injection in one session; JSON-only graph refresh, explicit error, repair, PDF/PNG and navigation are observed"
+  ],
+  "parser": {
+    "nodeWebParity": true,
+    "parserBytes": 371384,
+    "fileCount": 13
+  },
+  "native": [
+    {
+      "ok": true,
+      "compileMs": 157.402,
+      "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+      "revision": 1,
+      "pdfBytes": 37679,
+      "diagnostics": []
+    },
+    {
+      "ok": true,
+      "compileMs": 7.55,
+      "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+      "revision": 2,
+      "pdfBytes": 37730,
+      "diagnostics": []
+    },
+    {
+      "ok": false,
+      "compileMs": 4.781,
+      "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+      "lastSuccessfulRevision": 2,
+      "code": "COMPILE_FAILED",
+      "diagnostics": [
+        {
+          "severity": "error",
+          "message": "unclosed delimiter",
+          "path": "sections/actions.typ",
+          "range": {
+            "end": {
+              "character": 15,
+              "line": 0
+            },
+            "start": {
+              "character": 14,
+              "line": 0
+            }
+          }
+        },
+        {
+          "severity": "info",
+          "message": "import",
+          "path": "main.typ",
+          "range": {
+            "end": {
+              "character": 31,
+              "line": 7
+            },
+            "start": {
+              "character": 9,
+              "line": 7
+            }
+          }
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "compileMs": 5.358,
+      "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+      "revision": 3,
+      "pdfBytes": 37730,
+      "diagnostics": []
+    }
+  ],
+  "browserErrors": []
+}

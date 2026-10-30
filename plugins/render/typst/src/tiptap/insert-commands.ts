@@ -2,15 +2,7 @@ import { CommandManager, isNodeActive, type ChainedCommands, type Editor } from 
 import { closeHistory } from '@tiptap/pm/history'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
-import { templateDefinitions } from './blocks'
-import {
-	allowedFields,
-	allowedNode,
-	canEdit,
-	type EditorUiContext,
-	type IconName,
-} from './editor-ui'
-import { validateTypstRegions } from './validation'
+import { allowedNode, canEdit, type EditorUiContext, type IconName } from './editor-ui'
 
 /** Host insertion actions appear in both the insert menu and slash search.
  * Compose native commands without run(), focus(), dispatch or other side effects;
@@ -143,6 +135,7 @@ export function insertEntries(
 	editor: Editor,
 	ui: EditorUiContext,
 	local?: LocalInsertionTarget,
+	query = '',
 ): InsertEntry[] {
 	const paragraphs: InsertEntry[] = []
 	for (const block of blockTypes) {
@@ -251,36 +244,19 @@ export function insertEntries(
 			keywords: ['typst', 'source', '源码'],
 			icon: 'code',
 			group: '内容',
-			command: (chain) => chain.insertTypstSource(''),
+			command: (chain) =>
+				chain.insertContent({ type: 'typstSource', attrs: { source: '#block[]', role: 'block' } }),
 		})
 	for (const item of ui.slashCommands)
 		entries.push({ ...item, id: `custom:${item.id}`, icon: 'plus', group: '内容' })
-	for (const field of allowedFields(ui, editor, ui.config?.fields ?? []))
-		entries.push({
-			id: `field:${JSON.stringify(field.path)}`,
-			title: field.label,
-			description: `数据字段 · ${field.path.join(' / ')}`,
-			keywords: ['field', '字段', ...field.path],
-			icon: 'field',
-			group: '数据字段',
-			command: (chain) =>
-				chain.insertContent({ type: 'dataField', attrs: { path: [...field.path] } }),
-		})
-	if (allowedNode(ui, editor, 'templateBlock'))
-		for (const definition of templateDefinitions(editor.extensionManager.extensions))
-			entries.push({
-				id: `template:${definition.id}`,
-				title: definition.label,
-				description: '模板组件',
-				keywords: ['template', '组件', definition.id],
-				icon: 'plus',
-				group: '模板组件',
-				command: (chain) => chain.insertTypstTemplateBlock({ template: definition.id }),
-			})
+	for (const entry of ui.sourceEntries?.(query) ?? []) entries.push(entry)
 	return [...entries, ...paragraphs]
 }
 
-export function matchesInsertion(entry: TypstSlashCommand, query: string): boolean {
+export function matchesInsertion(
+	entry: Pick<TypstSlashCommand, 'title' | 'keywords'>,
+	query: string,
+): boolean {
 	const normalized = query.trim().toLocaleLowerCase()
 	return [entry.title, ...(entry.keywords ?? [])].some((term) =>
 		term.toLocaleLowerCase().includes(normalized),
@@ -328,14 +304,7 @@ export function prepareInsertion(
 		})
 		.run()
 	if (!success || !transaction) return undefined
-	if (
-		ui.config &&
-		ui.region &&
-		!validateTypstRegions({
-			regions: { ...ui.regions, [ui.region.id]: transaction.doc.toJSON() },
-			config: ui.config,
-		}).ok
-	)
-		return undefined
+	if (ui.validateDocument)
+		return ui.validateDocument(transaction.doc.toJSON()) ? transaction.scrollIntoView() : undefined
 	return transaction.scrollIntoView()
 }

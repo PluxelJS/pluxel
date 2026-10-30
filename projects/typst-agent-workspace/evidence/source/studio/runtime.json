@@ -1,0 +1,30 @@
+{
+  "observedAt": "2026-10-28",
+  "platform": "linux",
+  "externalProcesses": 2,
+  "projects": 1,
+  "documents": 5,
+  "sessionId": "e1d6b3c9-ba90-4911-8c4e-7daf0b380c67",
+  "nativeRevisions": [
+    2,
+    4
+  ],
+  "navigationPoints": 419,
+  "pages": 3,
+  "externalPngReads": 8,
+  "pdfBytes": 110623,
+  "vectorBytes": 218936,
+  "coldMs": 663.2029229999999,
+  "hotMs": 280.61877600000025,
+  "tcpListeners": 0,
+  "ipcListeners": 2,
+  "rootOwnershipEnforced": true,
+  "restartArtifactsRetained": true,
+  "forgetUserFilesRetained": true,
+  "discoveryCleaned": true,
+  "nativePageProbe": true,
+  "clientImportIsolation": true,
+  "remainingResources": [
+    "FSReqPromise"
+  ]
+}

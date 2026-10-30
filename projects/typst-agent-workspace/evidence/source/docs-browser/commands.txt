@@ -1,0 +1,1 @@
+PASS: delayed WASM cold startup, automatic compilation, real plugin replacement, Worker/WASM/font reuse, shared rich editor and undo, paragraph/table navigation, stale preview guard, offline error/recovery, stop/restart, desktop/mobile.

@@ -1,7 +1,12 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
-import { TypstRegionEditor, type TypstRegionEditorProps } from '@pluxel/plugin-typst/tiptap/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { TypstSourceEditor, type TypstSourceEditorProps } from '@pluxel/plugin-typst/tiptap/react'
+import {
+	createTypstSourceProject,
+	type TypstSourceProject,
+} from '@pluxel/plugin-typst/source/browser'
+import parserWasm from '@pluxel/plugin-typst/source/parser.wasm?url'
 import { TextSelection } from '@tiptap/pm/state'
 import {
 	ArrowUpRight,
@@ -13,13 +18,7 @@ import {
 	Terminal,
 	CircleHelp,
 } from 'lucide-react'
-import {
-	documentData,
-	editorConfig,
-	fontFamilies,
-	initialDocument,
-	initialSource,
-} from './document'
+import { fontFamilies, initialSource } from './document'
 import type { ExampleBlock, ExampleDraft, ThemeVersion } from './protocol'
 import { useTypstRuntime } from './use-runtime'
 import { ExamplePreview } from './preview'
@@ -29,10 +28,9 @@ import './style.css'
 export function TypstExample() {
 	const [draft, setDraft] = useState<ExampleDraft>({
 		source: initialSource,
-		document: initialDocument,
 		revision: 0,
 	})
-	const [epoch, setEpoch] = useState(0)
+	const [project, setProject] = useState<TypstSourceProject>()
 	const [example, setExample] = useState<'typst' | 'hmr'>('typst')
 	const [pane, setPane] = useState<'editor' | 'source'>('editor')
 	const { state, compilation, error, plugins, events, theme, update, restart, stop, replaceTheme } =
@@ -40,8 +38,8 @@ export function TypstExample() {
 	const [selectedBlock, setSelectedBlock] = useState<string>()
 	const [navigation, setNavigation] = useState('')
 	const [validationError, setValidationError] = useState('')
-	const editor = useRef<Parameters<NonNullable<TypstRegionEditorProps['onEditor']>>[0]>(null)
-	const onEditor = useCallback<NonNullable<TypstRegionEditorProps['onEditor']>>((value) => {
+	const editor = useRef<Parameters<NonNullable<TypstSourceEditorProps['onEditor']>>[0]>(null)
+	const onEditor = useCallback<NonNullable<TypstSourceEditorProps['onEditor']>>((value) => {
 		editor.current = value
 	}, [])
 	const revision = useRef(draft.revision)
@@ -50,13 +48,45 @@ export function TypstExample() {
 	const previewCurrent =
 		compilation?.revision === draft.revision && compilation.theme === theme && state !== 'updating'
 
-	function changed(change: Partial<Pick<ExampleDraft, 'source' | 'document'>>) {
-		revision.current += 1
-		const nextRevision = revision.current
-		setDraft((previous) => ({ ...previous, ...change, revision: nextRevision }))
-		setSelectedBlock(undefined)
-		setNavigation('')
-		setValidationError('')
+	useEffect(() => {
+		let active = true
+		let unsubscribe: (() => void) | undefined
+		void createTypstSourceProject({ files: { 'main.typ': initialSource }, parserWasm })
+			.then((value) => {
+				if (!active) return
+				setProject(value)
+				unsubscribe = value.subscribe(() => {
+					const snapshot = value.snapshot()
+					revision.current = snapshot.revision
+					setDraft({ source: snapshot.files['main.typ'] as string, revision: snapshot.revision })
+					setSelectedBlock(undefined)
+					setNavigation('')
+					setValidationError('')
+				})
+				return undefined
+			})
+			.catch((cause: unknown) => {
+				if (active) setValidationError(String(cause))
+			})
+		return () => {
+			active = false
+			unsubscribe?.()
+		}
+	}, [])
+	function changed(change: { source: string }) {
+		if (!project) return
+		const result = project.apply({
+			baseRevision: project.revision,
+			patches: [
+				{
+					path: 'main.typ',
+					from: 0,
+					to: new TextEncoder().encode(draft.source).length,
+					text: change.source,
+				},
+			],
+		})
+		if (!result.ok) setValidationError(result.issues.map((issue) => issue.message).join('\n'))
 	}
 
 	function revealRegion(position: number) {
@@ -176,8 +206,7 @@ export function TypstExample() {
 							title="恢复示例"
 							aria-label="恢复示例"
 							onClick={() => {
-								changed({ source: initialSource, document: initialDocument })
-								setEpoch((value) => value + 1)
+								changed({ source: initialSource })
 								setPane('editor')
 							}}
 						>
@@ -224,7 +253,7 @@ export function TypstExample() {
 									aria-selected={pane === 'source'}
 									onClick={() => setPane('source')}
 								>
-									Typst 模板
+									Typst 源码
 								</button>
 							</div>
 						</div>
@@ -262,27 +291,23 @@ export function TypstExample() {
 									revealRegion(current.view.posAtDOM(selection.anchorNode, selection.anchorOffset))
 								}}
 							>
-								<TypstRegionEditor
-									key={epoch}
-									regionId="body"
-									content={draft.document}
-									config={editorConfig}
-									data={documentData}
-									fontFamilies={fontFamilies}
-									editable
-									onEditor={onEditor}
-									onSelection={(position) => {
-										if (editor.current?.isFocused && editor.current.state.selection.empty)
-											revealRegion(position)
-									}}
-									onReveal={revealRegion}
-									onChange={(content) => {
-										changed({ document: content })
-									}}
-									onValidationError={(issues) =>
-										setValidationError(issues.map((issue) => issue.message).join('\n'))
-									}
-								/>
+								{project && (
+									<TypstSourceEditor
+										project={project}
+										path="main.typ"
+										fontFamilies={fontFamilies}
+										editable
+										onEditor={onEditor}
+										onSelection={(position) => {
+											if (editor.current?.isFocused && editor.current.state.selection.empty)
+												revealRegion(position)
+										}}
+										onReveal={revealRegion}
+										onIssues={(issues) =>
+											setValidationError(issues.map((issue) => issue.message).join('\n'))
+										}
+									/>
+								)}
 							</div>
 						</div>
 						<div
@@ -394,7 +419,7 @@ export function TypstExample() {
 						? '预览为上次结果，更新完成后恢复对照跳转。'
 						: navigation ||
 							(compilation?.blocks.length === 0
-								? '模板未输出正文区域；引入 _editor/regions/body.typ 后可使用对照跳转。'
+								? '当前源码没有可确认的正文块；可继续编辑源码并查看编译结果。'
 								: '点击正文或预览，双向定位到对应的段落、列表或表格。')}
 				</p>
 				{validationError || error ? (

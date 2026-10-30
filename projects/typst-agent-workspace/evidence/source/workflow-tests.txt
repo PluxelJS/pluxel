@@ -1,0 +1,19 @@
+✔ the actual accepted report preserves every prose fragment, data value and figure location after migration (26.517191ms)
+✔ built public entries restore a report using only .typ, JSON and resources (87.806393ms)
+✔ no-op opening and saving preserve exact source bytes, comments and unknown expressions (89.948923ms)
+✔ Agent source edit, real Tiptap Chinese/caption/ref edit, source history, save and reopen (125.545771ms)
+✔ cross-file label rename and project undo/redo commit as one filesystem tree (66.451672ms)
+✔ static figure move preserves label and resource, subtree copy rebinds only copied references (83.413589ms)
+✔ invalid later path rejects a whole staged save without modifying the first file (15.77684ms)
+✔ external Agent changes reject both stale disk writes and old source projections (19.91021ms)
+✔ invalid Typst drafts remain exact on disk and become editable after explicit repair (84.08575ms)
+✔ duplicate and unresolved static labels remain locatable diagnostics (69.323373ms)
+✔ same native session recompiles JSON-driven chart, retains failed revision identity, then recovers (1597.131299ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2432.273447

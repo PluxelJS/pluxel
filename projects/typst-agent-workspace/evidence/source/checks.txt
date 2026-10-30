@@ -1,0 +1,10 @@
+  files - Fetching git status
+  files - Fetching modified files
+  files - Fetching modified files (273 files)
+✔ files - Fetching modified files (273 files)
+❯ check
+  check – 166 files – **/*.{js,jsx,ts,tsx,cjs,mjs,mts,cts,md,mdx,json,jsonc,yaml,yml,toml,css,scss,html} – vp check --no-error-on-unmatched-pattern docs/plugins/rendering/typst-editor.md …
+  check – note: You are running `vp check` as a Vite+ built-in command. If you meant to run the check npm script, use `vpr check` instead.
+  check – pass: All 127 files are correctly formatted (190ms, 14 threads)
+  check – pass: Found no warnings, lint errors, or type errors in 98 files (2.1s, 14 threads)
+✔ check

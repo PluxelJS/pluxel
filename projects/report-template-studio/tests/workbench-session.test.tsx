@@ -14,7 +14,7 @@ import { App } from '../src/renderer/app'
 
 vi.mock('../src/renderer/api', () => ({
 	onDesktopConnectionChange: vi.fn(),
-	api: { getTree: vi.fn(), writeFile: vi.fn(), listProjects: vi.fn() },
+	api: { getTree: vi.fn(), readFile: vi.fn(), writeFile: vi.fn(), listProjects: vi.fn() },
 }))
 vi.mock('../src/renderer/assistant', () => ({ AssistantPanel: () => <div>Assistant</div> }))
 vi.mock('../src/renderer/panes', () => ({
@@ -242,6 +242,67 @@ describe('Studio project operations through the public Worksplit API', () => {
 		const action = vi.fn()
 		await expect(session.mutate('notes', undefined, action)).rejects.toThrow('无法刷新项目')
 		expect(action).not.toHaveBeenCalled()
+	})
+	it('renames with the saved version when an older refresh finishes after the write', async () => {
+		const session = setup()
+		const path = 'scratch/note.typ'
+		const oldTree = {
+			project: session.project,
+			revision: 'before-write',
+			entries: [{ path, kind: 'file' as const, version: 'v1', size: 1 }],
+			documents: [],
+			config: { name: 'Project', fonts: [] },
+		}
+		let diskTree = {
+			...oldTree,
+			revision: 'after-write',
+			entries: [{ ...oldTree.entries[0]!, version: 'v2' }],
+		}
+		session.workspace.tree = oldTree
+		session.workspace.files.set(path, {
+			path,
+			content: 'Edited',
+			saved: 'Original',
+			version: 'v1',
+			dirty: true,
+			saving: false,
+			token: 1,
+			external: 0,
+		})
+		let finishOldRead!: (tree: typeof oldTree) => void
+		vi.mocked(api.getTree)
+			.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishOldRead = resolve
+					}),
+			)
+			.mockImplementation(async () => structuredClone(diskTree))
+		vi.mocked(api.readFile).mockImplementation(async ({ path: filePath }) => ({
+			path: filePath,
+			content: 'Edited',
+			version: 'v2',
+		}))
+		vi.mocked(api.writeFile).mockResolvedValue({ path, content: 'Edited', version: 'v2' })
+		const polling = session.workspace.refresh()
+		const saving = session.workspace.save(path)
+		await vi.waitFor(() => expect(session.workspace.files.get(path)?.version).toBe('v2'))
+		const action = vi.fn(async (version: string) => {
+			if (version !== 'v2') throw new Error('File changed; reload before editing')
+			diskTree = {
+				...diskTree,
+				revision: 'renamed',
+				entries: [{ ...diskTree.entries[0]!, path: 'scratch/renamed.typ' }],
+			}
+		})
+		const mutation = session.mutate(path, 'scratch/renamed.typ', action)
+		for (let index = 0; index < 12; index++) await Promise.resolve()
+		expect(action).not.toHaveBeenCalled()
+		finishOldRead(oldTree)
+		await expect(mutation).resolves.toBeUndefined()
+		await Promise.all([saving, polling])
+		expect(action).toHaveBeenCalledExactlyOnceWith('v2')
+		expect(session.workspace.tree?.revision).toBe('renamed')
 	})
 	it('reveals, moves and reopens the assistant without changing the active document', async () => {
 		const session = setup()

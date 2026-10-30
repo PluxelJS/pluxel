@@ -1,0 +1,95 @@
+{
+  "saved": {
+    "saved": true,
+    "diskRevision": "66e0a2e80bce0f1bd012b97cca655944734432429935ddaa7f4005a158657d08",
+    "cleanupWarnings": []
+  },
+  "migratedReport": {
+    "ok": true,
+    "sourceRevision": "4aeaaacacfdc7feeb5c35f6253fb81a0a42dd03c2038e3047068b9040d0fab1c",
+    "sessionId": "f3c3b381-7dac-4701-9b16-3cf6be8c195a",
+    "revision": 1,
+    "pages": 1,
+    "pdfBytes": 72682,
+    "diagnostics": []
+  },
+  "editingMs": 152.13,
+  "results": [
+    {
+      "ok": true,
+      "sourceRevision": "36cc004fb2dc72dff90a7b64b02c68e0cef4700669f8a13eab55c3e845fe0e9d",
+      "sessionId": "c25f59d4-d4fd-4560-bd0c-ef3ffb9c276a",
+      "revision": 1,
+      "pages": 2,
+      "pdfBytes": 82998,
+      "diagnostics": []
+    },
+    {
+      "ok": true,
+      "sourceRevision": "66e0a2e80bce0f1bd012b97cca655944734432429935ddaa7f4005a158657d08",
+      "sessionId": "c25f59d4-d4fd-4560-bd0c-ef3ffb9c276a",
+      "revision": 2,
+      "pages": 2,
+      "pdfBytes": 82777,
+      "diagnostics": []
+    },
+    {
+      "ok": true,
+      "sourceRevision": "2401828529e5787f122c30c1d785eef82409e3feac4fdd62cc3a76743dffcaf0",
+      "sessionId": "c25f59d4-d4fd-4560-bd0c-ef3ffb9c276a",
+      "revision": 3,
+      "pages": 2,
+      "pdfBytes": 82945,
+      "diagnostics": []
+    },
+    {
+      "ok": false,
+      "sourceRevision": "ab266a2b7b14c0cd2ba7bc7b3dd2d83be56c6d6fdcd909a3823212f1371a39b6",
+      "sessionId": "c25f59d4-d4fd-4560-bd0c-ef3ffb9c276a",
+      "lastSuccessfulRevision": 3,
+      "code": "COMPILE_FAILED",
+      "message": "Typst compilation failed",
+      "diagnostics": [
+        {
+          "severity": "error",
+          "message": "unclosed delimiter",
+          "path": "sections/actions.typ",
+          "range": {
+            "end": {
+              "character": 6,
+              "line": 0
+            },
+            "start": {
+              "character": 5,
+              "line": 0
+            }
+          }
+        },
+        {
+          "severity": "info",
+          "message": "import",
+          "path": "main.typ",
+          "range": {
+            "end": {
+              "character": 31,
+              "line": 10
+            },
+            "start": {
+              "character": 9,
+              "line": 10
+            }
+          }
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "sourceRevision": "8754012caed7e98627f5f7c76a64f5c95c2e40caab14e979853848d0b6bfaeb8",
+      "sessionId": "c25f59d4-d4fd-4560-bd0c-ef3ffb9c276a",
+      "revision": 4,
+      "pages": 2,
+      "pdfBytes": 83686,
+      "diagnostics": []
+    }
+  ]
+}

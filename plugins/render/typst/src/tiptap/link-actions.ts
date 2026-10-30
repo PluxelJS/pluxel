@@ -2,13 +2,10 @@ import { CommandManager, type Editor } from '@tiptap/core'
 import { closeHistory } from '@tiptap/pm/history'
 import { TextSelection, type Transaction } from '@tiptap/pm/state'
 import { allowedMark, canEdit, type EditorUiContext } from './editor-ui'
-import { allowedLink, validateTypstRegions } from './validation'
 
 /** The document policy and native Link URI check both apply to editing and opening links. */
 export function safeLink(editor: Editor, ui: EditorUiContext, href: string): boolean {
-	return (
-		allowedLink(ui.config ?? { regions: [], fields: [] }, href) && editor.can().setLink({ href })
-	)
+	return editor.can().setLink({ href })
 }
 
 /** Prepare against current native selection; the controller closes when that selection changes. */
@@ -51,14 +48,7 @@ export function prepareLink(
 		})
 		.run()
 	if (!success || !transaction) return undefined
-	if (
-		ui.config &&
-		ui.region &&
-		!validateTypstRegions({
-			regions: { ...ui.regions, [ui.region.id]: transaction.doc.toJSON() },
-			config: ui.config,
-		}).ok
-	)
-		return undefined
+	if (ui.validateDocument)
+		return ui.validateDocument(transaction.doc.toJSON()) ? transaction.scrollIntoView() : undefined
 	return transaction.scrollIntoView()
 }

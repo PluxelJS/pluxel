@@ -164,11 +164,11 @@ it('routes body reads and candidates through the same business API and retains c
 		entry: 'reports/reports.ts',
 		baseRevision: 'body-revision',
 		sourceRevision: 'source',
-		regions: [
+		files: [
 			{
-				regionId: 'body',
+				path: 'reports/workspace.typ',
 				label: 'Body',
-				markdown: '[textStyle {"color":"#16a34a"}]Original[/textStyle]',
+				source: '#text(fill: rgb("#16a34a"))[Original]',
 			},
 		],
 	}
@@ -195,9 +195,9 @@ it('routes body reads and candidates through the same business API and retains c
 				await read.execute('read', { entry: snapshot.entry })
 				const result = await apply.execute('apply', {
 					entry: snapshot.entry,
-					regionId: 'body',
+					path: 'reports/workspace.typ',
 					baseRevision: snapshot.baseRevision,
-					markdown: snapshot.regions[0]!.markdown.replace('Original', 'Edited'),
+					source: snapshot.files[0]!.source.replace('Original', 'Edited'),
 				})
 				expect(JSON.parse(result.content[0].text)).toMatchObject({
 					editorStatus: 'disconnected',
@@ -218,7 +218,7 @@ it('routes body reads and candidates through the same business API and retains c
 		expect.objectContaining({
 			projectId: project.id,
 			baseRevision: snapshot.baseRevision,
-			markdown: expect.stringContaining('Edited'),
+			source: expect.stringContaining('Edited'),
 		}),
 	)
 	const finalSnapshot = await ai.snapshot(project.id, threadId)

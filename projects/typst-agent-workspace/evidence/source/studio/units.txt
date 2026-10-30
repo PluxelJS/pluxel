@@ -1,0 +1,12 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.0.5 /home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio
+
+
+ Test Files  30 passed (30)
+      Tests  184 passed | 1 skipped (185)
+   Start at  08:54:00
+   Duration  28.85s (tests 85%, import 12%, environment 2%, transform 1%)
+
+    Isolate  30 workers spawned · ~109ms startup each (spawn + environment, per file)
+             at least ~1.53s faster with isolate: false — reuses workers across files instead of one per file

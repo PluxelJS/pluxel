@@ -166,7 +166,7 @@ export function Preview({
 			data-preview-current={Boolean(
 				displayedResult.current && workspace.isNavigationCurrent(displayedResult.current),
 			)}
-			data-preview-revision={viewState.preview?.revision}
+			data-preview-revision={displayedResult.current?.revision}
 			onFocusCapture={() => workspace.preferPreview(entry)}
 		>
 			{pageCount > 0 && (

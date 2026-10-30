@@ -1,23 +1,20 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { pluginNodeAddressOf } from '@pluxel/core'
-import { requirePluginService } from '@pluxel/core/internal'
-import { createHost, type PluginHost } from '@pluxel/host'
+import { createTestHost, type TestHost } from '@pluxel/test'
 import { hostEnv } from '@pluxel/host/environment'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { TypstPlugin, TypstError, type TypstSession } from '@pluxel/plugin-typst'
-import { generateTypstRegions, validateTypstDraft } from '@pluxel/plugin-typst/tiptap'
+import { createTypstSourceProject, type TypstSourceFiles } from '@pluxel/plugin-typst/source'
 import { nodeModules } from '@pluxel/services/node'
 import { WorkerTaskError } from '@pluxel/services/workers'
 import type { ConsumerFailure } from './compile-contract'
 import type { Plugin } from 'vite'
-import { fontFamilies, initialSource } from './editor-config.mjs'
-import { getExample } from './report-example.mjs'
+import { fontFamilies, sourceExample } from './source-example'
 
 const run = promisify(execFile)
 const maxClients = 8
@@ -57,6 +54,8 @@ interface Client {
 	root: string
 	session: TypstSession
 	templateKey: string
+	sourceRevision: number
+	sourceKey: string
 	tail: Promise<unknown>
 	closing: boolean
 }
@@ -77,7 +76,7 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 
 /** Local consumer host; browser code only receives compiled previews and PDF bytes. */
 export function consumerCompiler(): Plugin {
-	let host: PluginHost | undefined
+	let host: TestHost | undefined
 	let typst: TypstPlugin
 	let directory: string | undefined
 	let closing: Promise<void> | undefined
@@ -101,7 +100,7 @@ export function consumerCompiler(): Plugin {
 		return (closing ??= (async () => {
 			try {
 				const results = await Promise.allSettled([...clients.keys()].map(closeClient))
-				results.push(...(await Promise.allSettled([host?.close()])))
+				results.push(...(await Promise.allSettled([host?.dispose()])))
 				const failures = results.filter((result) => result.status === 'rejected')
 				if (failures.length > 0)
 					throw new AggregateError(
@@ -122,10 +121,18 @@ export function consumerCompiler(): Plugin {
 		const pending = (async () => {
 			const root = join(directory!, id)
 			try {
-				await mkdir(root)
-				await writeFile(join(root, 'main.typ'), initialSource)
-				const session = await typst.open({ root, entry: 'main.typ' })
-				return { root, session, templateKey: '', tail: Promise.resolve(), closing: false }
+				await mkdir(join(root, 'project'), { recursive: true })
+				await writeFile(join(root, 'project/main.typ'), '')
+				const session = await typst.open({ root: join(root, 'project'), entry: 'main.typ' })
+				return {
+					root,
+					session,
+					templateKey: '',
+					sourceRevision: -1,
+					sourceKey: '',
+					tail: Promise.resolve(),
+					closing: false,
+				}
 			} catch (error) {
 				clients.delete(id)
 				await rm(root, { recursive: true, force: true })
@@ -150,8 +157,7 @@ export function consumerCompiler(): Plugin {
 					}),
 				)
 				directory = await mkdtemp(join(tmpdir(), 'typst-consumer-'))
-				host = await createHost({
-					plugins: [FontsPlugin, TypstPlugin],
+				host = await createTestHost({
 					services: [
 						nodeModules({
 							root: resolve(
@@ -160,27 +166,10 @@ export function consumerCompiler(): Plugin {
 							),
 						}),
 					],
-					configRecords: {
-						initial: [
-							{
-								owner: pluginNodeAddressOf(FontsPlugin),
-								config: { files, maxFontBytes: 32 * 1024 * 1024 },
-							},
-							{ owner: pluginNodeAddressOf(TypstPlugin), config: { maxSessions: maxClients } },
-						],
-					},
-					state: { initial: { autoStart: [pluginNodeAddressOf(TypstPlugin)] } },
 				})
-				const report = await host.start()
-				if (
-					report.reconciliation.length > 0 ||
-					(report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
-				)
-					throw new Error(`Consumer host failed to start: ${JSON.stringify(report)}`)
-				// Host currently has no public instance accessor; this dev adapter follows Studio's host bridge.
-				const instance = requirePluginService(host.ctx).getInstance(TypstPlugin)
-				if (!instance) throw new Error('TypstPlugin did not become ready')
-				typst = instance
+				// This is an isolated browser acceptance host, accessed only through public test APIs.
+				await host.start(FontsPlugin, { initialConfig: { files, maxFontBytes: 32 * 1024 * 1024 } })
+				typst = await host.start(TypstPlugin, { initialConfig: { maxSessions: maxClients } })
 			} catch (error) {
 				await close()
 				throw error
@@ -188,11 +177,23 @@ export function consumerCompiler(): Plugin {
 
 			server.middlewares.use((request, response, next) => {
 				const routePath = request.url?.split('?')[0]
+				if (routePath === '/example' && request.method === 'GET') {
+					void sourceExample()
+						.then((example) => {
+							response.setHeader('Content-Type', 'application/json')
+							return response.end(JSON.stringify(example))
+						})
+						.catch((error) => {
+							response.statusCode = 500
+							response.end(String(error))
+						})
+					return
+				}
 				if (routePath !== '/compile' && routePath !== '/pdf' && routePath !== '/session/close')
 					return next()
 				void (async () => {
 					response.setHeader('Cache-Control', 'no-store')
-					let snapshot: Pick<ConsumerFailure, 'clientRevision' | 'mapping'> = {}
+					let snapshot: Pick<ConsumerFailure, 'clientRevision'> = {}
 					try {
 						if (closing) throw new Error('Consumer host is closing')
 						const address = server.httpServer?.address()
@@ -231,69 +232,54 @@ export function consumerCompiler(): Plugin {
 									throw new Error('Expected a positive PDF revision')
 								return client.session.exportPdf(body.revision as number)
 							}
-							if (
-								typeof body.source !== 'string' ||
-								!Number.isSafeInteger(body.revision) ||
-								(body.revision as number) < 1
-							)
-								throw new Error('Expected source text and a positive client revision')
+							if (!Number.isSafeInteger(body.revision) || (body.revision as number) < 0)
+								throw new Error('Expected a nonnegative source revision')
 							snapshot = { clientRevision: body.revision as number }
-							const draft = body.draft as { templateId?: string } | undefined
-							const example = getExample(draft?.templateId ?? '')
-							const { config, parseData } = example
-							const checked = validateTypstDraft({
-								draft: body.draft,
-								config,
-								templateId: example.id,
-								templateRevision: example.draft.templateRevision,
-							})
-							if (!checked.ok) throw new TypstError('INVALID_INPUT', JSON.stringify(checked.issues))
-							const generated = generateTypstRegions({
-								regions: checked.value.regions,
-								config,
-								data: parseData(checked.value.data),
-								snapshotRevision: body.revision as number,
-							})
-							if (!generated.ok)
-								throw new TypstError('INVALID_INPUT', JSON.stringify(generated.issues))
-							snapshot.mapping = generated.value.mapping
-							const key = JSON.stringify([body.source, generated.value.templateFiles])
+							const checked = createTypstSourceProject({
+								files: body.files as TypstSourceFiles,
+							}).snapshot().files
+							if (
+								typeof checked['main.typ'] !== 'string' ||
+								Object.values(checked).some((value) => typeof value !== 'string')
+							)
+								throw new Error(
+									'The browser example accepts a complete text file map with main.typ',
+								)
+							const key = JSON.stringify(
+								Object.fromEntries(Object.entries(checked).sort(([a], [b]) => a.localeCompare(b))),
+							)
+							if (
+								(body.revision as number) < client.sourceRevision ||
+								(body.revision === client.sourceRevision && key !== client.sourceKey)
+							) {
+								response.statusCode = 409
+								throw Object.assign(
+									new Error('Source revision is stale or refers to a different snapshot'),
+									{ code: 'CONFLICT' },
+								)
+							}
+							// Source acceptance advances even when native compilation fails.
+							client.sourceRevision = body.revision as number
+							client.sourceKey = key
 							const templateChanged = key !== client.templateKey
+							const root = join(client.root, 'project')
 							if (templateChanged) {
-								await writeFile(join(client.root, 'main.typ'), body.source)
-								for (const [path, source] of Object.entries(generated.value.templateFiles)) {
-									await mkdir(dirname(join(client.root, path)), { recursive: true })
-									await writeFile(join(client.root, path), source)
+								await rm(root, { recursive: true, force: true })
+								await mkdir(root)
+								for (const [path, text] of Object.entries(checked)) {
+									await mkdir(dirname(join(root, path)), { recursive: true })
+									await writeFile(join(root, path), text)
 								}
 							}
 							client.templateKey = ''
-							const files = Object.fromEntries(
-								Object.entries(generated.value.inputFiles).map(([path, text]) => [
-									path,
-									{ kind: 'text' as const, text },
-								]),
-							)
 							const compiled = await client.session.update({
-								...(templateChanged ? { template: { root: client.root, entry: 'main.typ' } } : {}),
-								files: {
-									...files,
-									...(example.id === 'operations-report'
-										? {
-												'/inputs/report/cover.svg': {
-													kind: 'bytes' as const,
-													bytes: await readFile(
-														new URL('./public/examples/operations-cover.svg', import.meta.url),
-													),
-												},
-											}
-										: {}),
-								},
+								...(templateChanged ? { template: { root, entry: 'main.typ' } } : {}),
+								files: {},
 							})
 							client.templateKey = key
 							return {
 								clientRevision: body.revision,
 								preview: { ...compiled.preview, data: [...compiled.preview.data] },
-								mapping: generated.value.mapping,
 								diagnostics: compiled.diagnostics,
 							}
 						})

@@ -1,0 +1,39 @@
+2026-10-30 pre-commit review, Linux / Electron 44.9.0
+
+First headless desktop attempt: the conflict title existed in both the hidden file
+pane and visible form pane. Playwright rejected an ambiguous text locator.
+The test now selects the visible pane; the product was unchanged for this failure.
+
+Next headless attempt: body/data save and form synchronization succeeded, but
+clicking the native whole-report reload confirmation ended Electron with SIGTRAP.
+The separate minimal confirmation probe could not complete headless, while Wayland
+returned true and exited normally. See confirm-probe.txt. Full acceptance uses the
+existing Wayland display; the product confirmation has not been mocked or bypassed.
+
+One Wayland driver exited 143 before completing the suite; the signal sender is
+unknown. Its retained application remained open and was inspected, then closed
+through its own Browser.close CDP request. rename-stale-before.png records a real
+save-then-rename conflict from that run. An isolated regression reproduced reuse of
+an older in-flight getTree snapshot. The refresh owner now waits for that read and
+shares the next read, retaining disk CAS. It adds no retry writes or refresh queue.
+
+Final accepted commands/results are in commands.txt, desktop.json and recovery.json.
+Preserved failure profiles and complete driver outputs remain in local test-results
+and /tmp; no failure is relabeled as a passing full run.
+
+After the refresh fix, a bank export correctly rejected an old preview receipt
+whose sourceRevision predated autosave. The desktop test now uses the same saved
+input/displayed-preview readiness condition as desktop-recovery.mjs and records
+all three export receipts. It does not retry export or request an extra compilation.
+
+The first readiness helper addressed getPreview through the narrower CLI client,
+which does not expose it. It was corrected to use the existing renderer MessagePort
+probe and return only sourceRevision. The accepted desktop run uses that real port.
+
+The recovery screenshot exposed a stale connection error after successful edits
+and exports. Workspace refresh now ignores retired-generation failures and clears
+only its temporary connection notice. A subsequent UI assertion still failed: the
+remaining notice belonged to AssistantPanel background reads. Those reads now
+ignore retired API results and clear only their temporary notice after recovery;
+actual AI operation failures remain visible. Six mounted-component cases and the
+final two-generation UI/PDF run passed, including the explicit cleared-notice check.

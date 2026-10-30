@@ -1,88 +1,56 @@
 import { expect, it } from 'vitest'
+import { createTypstSourceProject } from '@pluxel/plugin-typst/source'
 import { describeEditor, validateEditorDraft } from '../src/backend/editor-config.js'
-import type { EditorDraft, WorkspaceSnapshot } from '../src/shared/contracts.js'
-
-const components = {
-	regions: [{ id: 'body' }],
-	fields: [],
-	templates: [
-		{ id: 'channels', label: '渠道收入', source: '#props.title', defaults: { title: '收入' } },
-	],
-	sourceBlocks: true,
-	defaults: {
-		body: {
-			type: 'doc',
-			content: [
-				{
-					type: 'templateBlock',
-					attrs: {
-						id: 'chart-1',
-						template: 'channels',
-						props: { title: '渠道收入' },
-						dataPath: ['channels'],
-					},
-				},
-				{ type: 'typstSource', attrs: { id: 'note-1', source: '#text(size: 8pt)[补充口径]' } },
-			],
-		},
-	},
-}
+import type { WorkspaceSnapshot } from '../src/shared/contracts.js'
 function snapshot(config: unknown): WorkspaceSnapshot {
 	return {
 		project: { id: 'test', name: 'Test', root: '/test' },
-		revision: 'revision-1',
+		revision: 'r1',
 		config: { name: 'Test', fonts: [] },
 		assets: [],
-		files: { 'report.editor.json': JSON.stringify(config) },
+		files: {
+			'report/report.editor.json': JSON.stringify(config),
+			'report/workspace.typ':
+				'#import "chart.typ" as chart\n#chart.chart(title: "Sales", data: json("data.json"))\n',
+			'report/chart.typ': '#let chart(title: "", data: (:)) = [#title]',
+			'report/data.json': '{"sales":[1,2]}',
+		},
 	}
 }
-
-it('exposes only serializable component definitions and explicitly enabled source blocks', () => {
-	const description = describeEditor(snapshot(components), 'report.ts')!
-	expect(description.templates).toEqual(components.templates)
-	expect(description.sourceBlocks).toBe(true)
-	const draft: EditorDraft = {
-		formatVersion: 1,
-		templateId: description.templateId,
-		templateRevision: description.templateRevision,
-		regions: description.defaults,
-	}
-	expect(validateEditorDraft(description, draft, { channels: [] })).toEqual(draft)
-	expect(() => validateEditorDraft(description, draft, {})).toThrowError(
-		expect.objectContaining({ code: 'INVALID_EDITOR_DRAFT' }),
-	)
-	for (const change of [
-		{ sourceBlocks: false },
-		{ templates: [] },
-		{ templates: [{ ...components.templates[0], validateProps: 'untrusted callback' }] },
-		{ templates: [{ ...components.templates[0], defaults: [] }] },
-		{ templates: [{ ...components.templates[0], id: '../escape' }] },
-		{ templates: [components.templates[0], components.templates[0]] },
-	]) {
-		expect(() => describeEditor(snapshot({ ...components, ...change }), 'report.ts')).toThrowError(
-			expect.objectContaining({ code: 'INVALID_EDITOR_CONFIG' }),
+const config = {
+	sources: [{ path: 'workspace.typ', label: 'Body' }],
+	components: [
+		{
+			module: 'chart.typ',
+			name: 'chart',
+			label: 'Chart',
+			parameters: { title: { type: 'string' } },
+			data: 'data',
+		},
+	],
+}
+it('projects declared literal component parameters and JSON provenance from ordinary files', () => {
+	const input = snapshot(config),
+		description = describeEditor(input, 'report/report.ts')!
+	expect(description.sources).toEqual([{ path: 'report/workspace.typ', label: 'Body' }])
+	expect(description.components?.[0]?.module).toBe('report/chart.typ')
+	expect(description.components?.[0]?.data).toBe('data')
+	const project = createTypstSourceProject({
+		files: input.files,
+		components: description.components,
+	})
+	expect(JSON.stringify(project.open('report/workspace.typ').document)).toContain('typstComponent')
+	expect(validateEditorDraft(description, { files: input.files })).toEqual({ files: input.files })
+	for (const bad of [
+		{ ...config, sourceBlocks: true },
+		{ ...config, sources: [{ path: 'missing.typ' }] },
+		{ ...config, sources: [{ path: 'workspace.typ' }, { path: 'workspace.typ' }] },
+		{ ...config, components: [{ ...config.components[0], serialize: 'untrusted' }] },
+	])
+		expect(() => describeEditor(snapshot(bad), 'report/report.ts')).toThrow(
+			/editor configuration|Editable source paths/,
 		)
-	}
-	expect(draft.regions).toEqual(components.defaults)
-})
-
-it('keeps the editor schema ordinary when a report does not install component or source extensions', () => {
-	const description = describeEditor(
-		snapshot({
-			regions: components.regions,
-			fields: [],
-			defaults: { body: { type: 'doc', content: [{ type: 'paragraph' }] } },
-		}),
-		'report.ts',
-	)!
-	expect(description.templates).toBeUndefined()
-	expect(description.sourceBlocks).toBeUndefined()
-	expect(() =>
-		validateEditorDraft(description, {
-			formatVersion: 1,
-			templateId: description.templateId,
-			templateRevision: description.templateRevision,
-			regions: components.defaults,
-		}),
-	).toThrowError(expect.objectContaining({ code: 'INVALID_EDITOR_DRAFT' }))
+	expect(() => validateEditorDraft(description, { regions: { body: { type: 'doc' } } })).toThrow(
+		'Editor drafts contain ordinary source files only',
+	)
 })

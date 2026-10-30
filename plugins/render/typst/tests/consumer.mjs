@@ -7,6 +7,10 @@ const root = resolve(import.meta.dirname, '..')
 for (const file of [
 	'dist/index.mjs',
 	'dist/browser.mjs',
+	'dist/source.mjs',
+	'dist/source/browser.mjs',
+	'dist/source/library.mjs',
+	'dist/source/typst_ast_bg.wasm',
 	'dist/tiptap.mjs',
 	'dist/tiptap/react.mjs',
 	'dist/tiptap/style.css',

@@ -1,124 +1,44 @@
-# Independent Typst consumer
+# Independent Typst source consumer
 
-This consumer exercises the built public editor, preview and native compiler without Studio, Monaco or Electron. The [public editor guide](../../../../../docs/plugins/rendering/typst-editor.md) owns the data, Markdown and extension contracts; this page owns the demo workflow and checks.
+This consumer reads ordinary `.typ`, JSON and resource files through the built public source/editor entries. The [source editing guide](../../../../../docs/plugins/rendering/typst-editor.md) owns the API contract.
 
-## Interactive browser playground
+## Browser playground
 
 From the workspace root:
 
 ```sh
 mise exec -- vp run @pluxel/plugin-typst#compile
-mise exec -- vp run typst
+mise exec -- pitchfork start typst
 ```
 
-Use the URL printed by the managed service: it opens the complete report by default. `/?example=operations-report` selects it explicitly; the small fixture remains available as `/?example=consumer-report` and in the example selector. Check `pluxel dev status --profile typst` before operating an existing service; the registered service is `pluxel/typst`. `dev:consumer` is the foreground Vite entry. The consumer uses built public entries: rebuild the plugin after changing those components, while page changes use normal Vite HMR. Package test caches are separate from the open playground's dependency cache.
+Open the registered `http://typst.pluxel.localhost:8088` URL. The Vite consumer uses built package entries. Rebuild after changing the package; page code uses the existing Vite server. The server's compiler is an explicitly isolated public `@pluxel/test` host, not an accessor into a running application. The file-workspace consumer separately demonstrates ordinary Host constructor injection.
 
-The layout has two panes:
+The file selector opens one shared source project. Structured editing and source editing change the same `.typ` files; component controls update literal call parameters, JSON controls update the named JSON file. The seed has two body files, a template module, a real JSON-driven chart, figure captions/labels, cross-file references, LaTeX helpers and preserved unknown syntax. It does not store Tiptap JSON or generate body regions.
 
-- Left: **正文 / 数据**, with a separate native Editor and history for each body region.
-- Right: **Typst 预览 / 原始 Typst / Markdown**. “原始 Typst” edits the outer template. Markdown follows the current region or selected complete blocks until an edit is captured.
-- On phones: **编辑 / 预览** switches panes. Hidden panes and tabs remain mounted, preserving their editors and history.
+“保存项目” stores the ordinary text-file table in this browser's localStorage. “重新打开” restores that snapshot; invalid Typst can be saved. Unapplied source/parameter drafts must first be applied or canceled. Storage failures retain the in-memory project and are reported. This browser fixture accepts text resources (including SVG); the core also supports binary files, and the disk workspace owns its own persistence boundary.
 
-The example selector and save/export actions share one compact header. Workspace tabs and body-region tabs share a row; preview tabs, page navigation and zoom share a row when there is room. Usage hints live under **说明**, and draft/save status stays in the footer.
+Editing is debounced into one existing compiler session per page. Source revision, successful compile revision and displayed preview revision are distinct. Failed compilation keeps the draft, reports the actual diagnostics and marks the old preview; current-only PDF and source navigation remain disabled until it recovers. The server serializes requests and closes its own session on page release. Page/outline/zoom controls use the public preview view.
 
-The preview has a collapsible vertical **目录** on its right edge with chapter page numbers. Its active entry follows document scrolling inside the outline itself; long titles are truncated with the full title available on hover. Narrow panes open the outline over the preview; choosing a chapter closes this overlay and returns focus to its toggle. Enter a page number and press Enter or leave the field to jump; Escape cancels the draft, and scrolling does not overwrite a focused draft. **适合宽度** is the default, **适合整页** fits a whole page, and percentage options use fixed print scale. Zoom and pane resizing preserve the current page-local reading position within scroll limits. The [browser preview contract](../../../../../docs/plugins/rendering/typst.md#浏览器预览) defines scale units and SVG ownership.
+## Real browser acceptance
 
-The template controls the page, fixed clauses, chapter composition, indentation and spacing. It includes generated region files with native Typst `#include`. Body JSON remains authoritative; Markdown is an editable projection, and generated `.typ` files are compiler inputs. There is no Markdown disk mirror or arbitrary Typst-to-Tiptap conversion.
-
-## External data and chart-report example
-
-The default **完整示例 · 图表、排版与外部数据** combines a logical image, a channel chart component, analysis with styled tables, an action region, LaTeX math, captions and cross-region references. The template component contains KPI cards and a native Typst actual/target bar chart beside its data table. Chart logic and input validation belong to the consumer; its instance belongs to the same body JSON as nearby prose.
-
-**经营解读** ends with three references to the same figure: inherited, number only and number with caption. Its outer template enables captions by default through `reference-caption.update(true)`. **后续行动** includes an editable typography and structure section: font/size/color/highlight, standard marks and links, four paragraph alignments, nested lists, a quotation, a custom notice, code, a separator and a hard break. Compact tables demonstrate the inherited style, grid, open-sided grid, three-line and borderless styles, followed by merged cells and multiple paragraphs. The same two regions feed Markdown and native Typst; these are editable examples rather than separate rendered mockups.
-
-The [JSON sample](./public/examples/operations-report.json), [outer template](./public/examples/operations-report.typ) and [cover SVG](./public/examples/operations-cover.svg) are importable assets. [report-example.mjs](./report-example.mjs) accepts a company, period, analyst and one to eight channels with nonnegative actual/target values. Imported templates and registered components must agree with this schema. Logical images map to explicit `/inputs/` resources; template import does not add arbitrary filesystem or network access.
-
-Use these paths to compare the three representations:
-
-1. Change font, size, text/background color or paragraph alignment in the body. The live Markdown preserves overrides; clearing an override restores template inheritance. Templates own line spacing, paragraph spacing, first-line indentation and page layout.
-2. Select an image, table or component and add a caption. Edit the caption and its adjacent label directly in the same row below the figure or table. Enter or leaving the field validates and commits one undo step; Escape restores the current document value. Invalid or duplicate labels stay visible with an error and a **恢复 label** action. The body object retains its id when the label changes. A table inside a captioned object remains editable through TableKit.
-3. Insert inline or independent math through **插入** or `/`. Click its KaTeX view to expand LaTeX editing in place, with a live local preview. Mod+Enter, **完成** or leaving the source field commits and closes it; Escape or **取消** discards the draft. Independent equations expose a separate always-visible label field with the same behavior as figures. Source and label changes have independent undo steps. The final preview uses the same source through the pinned MiTeX runtime. Compare both outputs when using a new macro.
-4. Type `@` to find a figure, table or equation from either region by label, title/source, type or region. Enter inserts a structured reference that follows the template by default. Click it to choose **跟随模板**, **仅编号** or **编号与题注** in place. The caption follows edits to the target; equations keep their number. The editor shows `@label` and any explicitly requested caption, while Typst supplies the actual number and inherited appearance. Both the number and caption jump to the target in the preview. Deleting a target or clearing its label leaves a visible unresolved reference and prevents successful generation until repaired.
-5. Open **Markdown**, choose a region or **当前选中块**, then **编辑这份 Markdown**. Review with **查看修改预览**, then **接纳候选**. This updates the native document in one undo step and refreshes the preview. **放弃候选修改** or acceptance returns to live Markdown in the same tab. This manual agent-format editor does not call an LLM.
-6. Change external JSON under **数据**, then apply it. Bound fields and charts update while body JSON and undo history remain. Edit/import the outer `.typ` under **原始 Typst** to change template design.
-
-Capturing Markdown fixes the target, native range and revision. Later body, data or template changes make that candidate stale. Editing the candidate invalidates its prepared review, but does not refresh the captured revision. Range capture expands to complete sibling blocks; a paragraph inside one cell or notice can be edited independently, while a selection spanning cells covers the table. Agent format retains styles, captions, equation identity, references and local native subtrees. Ordinary Markdown retains its separate loss checks; `typst` code fences remain literal examples.
-
-The example explicitly installs `TypstTableStyle`, `TypstTemplateBlock` and `TypstSource`. The basic editor factory does not silently install these optional capabilities. The Typst extension factory includes fields, figures/captions, official Mathematics nodes and references. See [optional blocks](../../../../../docs/plugins/rendering/typst-editor.md#可选模板组件与源码块) for installation and removal: removing an extension requires explicit conversion of saved nodes, not silent data deletion.
-
-Select a channel component to edit its instance title in **渠道组件参数**. Confirming applies the existing validator and one transaction; cancel leaves the document unchanged. Unapplied titles remain attached to their instance when changing selection or regions. **参数与数据** displays current parameters/bound data without writing data into the document. The source block's **编辑 Typst 源码 → 应用组件修改** applies a local source draft once. Raw source follows the host compiler's policy and is not a separate sandbox.
-
-## Editing, persistence and navigation
-
-The shared toolbar owns typography, alignment, marks, list indentation, links and insertion. Right-click, Shift+F10/the menu key and **格式** open the same explicit panel; selecting text alone does not open a bubble. Mixed selections show mixed values. **模板字体 / 模板字号 / 模板对齐** remove overrides without inventing a concrete template default. Host font choices do not install browser fonts; the native preview/PDF is the final rendering.
-
-Hover hints show the platform's keyboard notation, shared by the toolbar and format panel; accessible controls also expose `aria-keyshortcuts`. Native formatting keys remain Tiptap's bindings. **Mod+Backslash** clears text marks using the same command as the toolbar, retaining paragraph structure/alignment and one-step undo. The complete mapping is maintained in the [shortcut guide](../../../../../docs/plugins/rendering/typst-editor.md#快捷键与提示).
-
-Tables retain official resize, row/column, cell selection, merge and split operations. The table form accepts 1–50 rows and 1–20 columns, with optional leading header. Appearance offers inherited template, grid, grid without side borders, three-line and borderless styles. Three-line does not create a missing header; merged cells preserve their true grid boundaries. Static HTML does not carry editor decorations or final pagination.
-
-Block actions use a fixed native target, with local insertion, conversion, duplication, deletion, move buttons and drag handles. Figure/equation copying assigns fresh identity; moving preserves identity. Ordinary links use **Mod+K** and the shared URL policy. Inputs, source editors, read-only content and IME composition retain their appropriate native behavior. Full details and limits remain in the [editor guide](../../../../../docs/plugins/rendering/typst-editor.md).
-
-Internal figure/table/equation references jump to their actual Typst destination within the preview, including across pages; Tab and Enter can activate them. Non-link content clicks navigate between rendered content and its source; dragging or modified clicks do not. Stale preview coordinates cannot activate an internal reference. Body characters and nested cells use native spans; fields/formulas/objects have atom or object-level fallbacks. Fixed text opens the template tab, generated content opens the matching body region, and source-block navigation preserves unapplied local edits. Only coordinates from the current matching snapshot are actionable.
-
-Source navigation first activates and focuses the destination editor, then scrolls after selection-dependent controls finish layout. Zoomed preview destinations scroll horizontally when needed. While Markdown or template source is visible, body/source clicks retain that tab and remember only the latest target for when the preview opens; a changed draft invalidates the pending target.
-
-Invalid input leaves admitted data and body unchanged. A template compilation error retains the editable source and old preview, marks it stale and prevents current PDF export. Diagnostics preserve severity, path, range and their own request mapping; late responses cannot replace a newer preview. Successful warnings remain visible. The HTTP adapter distinguishes Typst, Worker, IO, cancellation and unexpected failures.
-
-Save/Reopen retains the example, raw data, body JSON and template in one browser-local slot. Saved status is independent of compilation. Only successful localStorage persistence advances the saved baseline. Pending Markdown, component/source/formula/label inputs participate in save/leave guards; apply or discard them first. Switching examples or reopening asks before replacing changed content, and cancellation preserves the current editors. `beforeunload` depends on platform/user activation and cannot guarantee recovery after a crash.
-
-`vite.config.ts` owns a local HTTP adapter around the native Typst/Fonts plugins, with one session per page. It validates drafts, generates regions and exports the same compiled PDF. Page close releases its session; Vite shutdown releases remaining sessions and temporary templates. This adapter is local test infrastructure, not a new public backend SDK.
-
-## Focused checks
-
-With the existing Playwright service at `ws://127.0.0.1:3000`, run:
+Use the user's existing Playwright WebSocket service; this driver never launches a browser or downloads browser binaries:
 
 ```sh
-mise exec -- node plugins/render/typst/tests/consumer/view-tabs-check.mjs
+cd plugins/render/typst
+mise exec -- node tests/consumer/source-check.mjs
 ```
 
-This connects to the existing browser and app, checks the pane/tab, candidate, data/template and mobile paths, and writes screenshot evidence. `PLAYWRIGHT_WS_ENDPOINT` and `PLUXEL_TYPST_URL` override the endpoints. It starts neither service. Agent-driven visual verification must use the configured shared browser; do not install or launch another browser to bypass that boundary.
+Optional environment variables: `PLAYWRIGHT_WS_ENDPOINT`, `PLUXEL_TYPST_URL`, `TYPST_SOURCE_EVIDENCE`. The driver validates byte-preserving no-op save, actual Chinese selection/input, `@` completion, rich caption and cross-file label rename, unknown inline source repair, JSON-only changes, invalid source preservation/stale preview/recovery, and save/reopen. It writes desktop/mobile screenshots and JSON results. It explicitly releases only its page's native sessions before closing the shared remote browser connection.
 
-Existing focused drivers under this directory cover the following workflows. A driver being listed is not a claim that it has passed against every subsequent change; inspect its browser setup and actual result before reporting it.
-
-| Driver                                                           | Workflow                                                                                                                                        |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `document-check.mjs`                                             | Caption editing/exit, label Enter/blur/recovery, in-place LaTeX with separate undo, cross-region `@`, Markdown, copy/cut and dark/mobile bounds |
-| `reference-navigation-check.mjs`                                 | Native cross-page figure/table/equation links, keyboard and zoom, stale preview rejection, drag and modifier clicks                             |
-| `reference-display-check.mjs`                                    | Template reference defaults, per-reference display and undo, caption updates, Markdown roundtrip and caption-link navigation                    |
-| `source-navigation-check.mjs`                                    | Distant/zoomed navigation, hidden tabs, dynamic layout, rapid targets, original captions, formula/reference atoms (`--atoms-only` available)    |
-| `preview-controls-check.mjs`                                     | Real 35-page document: outline following/long titles, page drafts, zoom/resize reading position, desktop/mobile space and overflow              |
-| `shortcut-check.mjs`                                             | Platform-specific hints, real formatting/undo/menu keys, multi-region links, clear marks, input/IME/read-only guards and mobile menus           |
-| `document-clipboard-check.mjs`                                   | Real browser HTML admission for figures, captions, math and references; rejects malformed or unregistered structures                            |
-| `report-example-check.mjs`, `refactor-cases.mjs`                 | External inputs, data-only changes, draft replacement, failure/recovery, late responses, current PDF and mobile panes                           |
-| `blocks-check.mjs`, `block-actions-check.mjs`                    | Component/source and ordinary-block operations, selected-block Markdown, native drag, undo and navigation                                       |
-| `format-check.mjs`, `toolbar-check.mjs`, `link-format-check.mjs` | Explicit formatting, typography, mixed values, links, caret formats, selection, readonly/IME and narrow layouts                                 |
-| `insertion-check.mjs`, `table-tools-check.mjs`                   | Shared insertion catalogs, fixed targets, table dimensions/actions, validation, keyboard and touch                                              |
-| `table-style.mjs`, `contexts-check.mjs`                          | Table styles, merged boundaries, context menus, HTML re-entry and current PDF                                                                   |
-| `react-lifecycle-check.mjs`                                      | Public React content/data/key lifecycle and unmount; uses `/react-lifecycle.html` without native sessions                                       |
-
-Browser checks must close only their own client sessions. The session-close endpoint is awaited before browser teardown so keepalive timing cannot exhaust the running app's session capacity.
-
-The package's `tests/tiptap-document.test.ts` exercises document semantics and real native cross-file output. `tests/mitex.test.ts` exercises the fixed runtime in native PDF/Vector and browser WASM SVG, including template numbering, cross-file references and error recovery. The latter requires Fontconfig and DejaVu Math TeX Gyre on the host and explicitly supplies that font to both compilers.
+Model and native rendering regressions live in `tests/typst-source-*.test.ts`; selection UI, preview, session, resource and WASM tests remain independent. The previous region-JSON and Markdown candidate drivers were retired with their implementation, not retained as a second body pipeline. Source tests cover their remaining report capabilities.
 
 ## Isolated package acceptance
-
-Build the package, then run:
 
 ```sh
 mise exec -- vp run @pluxel/plugin-typst#compile
 mise exec -- node plugins/render/typst/tests/consumer.mjs
 ```
 
-The acceptance fixture copies actual `dist` and native compiler bytes into an external temporary directory, expands workspace/catalog dependency protocols and applies `publishConfig.exports` in staged manifests. The package is private and has no version; the fixture does not invent a tarball version, mutate repository versions or import workspace source into the external app.
+`acceptance.ts` stages actual dist/native files outside the workspace, expands publish exports and checks phased dependency boundaries, strict declarations, Node/Web source projection, a real headless Editor, React bundling and real native output. It explicitly installs peer dependencies with `npm --legacy-peer-deps --ignore-scripts`; it does not claim registry publishing or every package manager's default peer resolution. The package remains private.
 
-A separate native checker installs the root's Core/Fonts/services/Workbench/capnweb server peers and verifies strict declarations plus Node import without Tiptap or React. The external browser app then checks three stages:
-
-1. Typst and valibot only: `/template`, `/browser`, strict declarations and production browser imports.
-2. Tiptap peers without React: `/tiptap`, Markdown conversion and generation in Node without a DOM.
-3. React peers: the public guide's complete React example, UI and public stylesheet build, and real browser/native preview/PDF workflows.
-
-Peers are explicitly installed with `npm --legacy-peer-deps --ignore-scripts`; this validates built entry isolation, not registry publication or every package manager's automatic peer resolution. The [public guide](../../../../../docs/plugins/rendering/typst-editor.md#入口与安装) owns the dependency list. Browser bundles must not import Core, services or the native compiler. The fixture's native backend uses the same public session API as an ordinary consumer.
-
-The native fixture resolves Noto Serif CJK SC and Liberation Serif through Fontconfig, copies their original bytes and registers them through Fonts before opening the session. It allows 32 MiB per font for the installed Noto TTC; Typst diagnostics and rendered output verify actual selected faces. Registrations are disposed after the session. The fixture requires network for staged npm installs and an available Chromium runtime; it does not validate Studio desktop lifecycle or platform portability.
-
-The output directory is normally `$TMPDIR/pluxel-typst-consumer-*`; `PLUXEL_TYPST_CONSUMER_OUTPUT` selects a new external directory. It contains the standalone app, native checker, staged artifacts and evidence: check/install logs, module lists, native metrics, Markdown/HTML results, JSON draft, PDF/PNG and screenshots. Studio has separate runtime and desktop acceptance paths.
+Results and broader ordinary-file round trips are maintained in [the independent workspace](../../../../../projects/typst-agent-workspace/README.md) and its `evidence/source` directory. A test command listed here is not a claim that it passed after every subsequent edit; consult the recorded results.

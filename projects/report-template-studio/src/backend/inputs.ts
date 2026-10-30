@@ -1,14 +1,14 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { safePath } from './storage-validation.js'
 import type {
 	DocumentInput,
-	EditorDraft,
 	InputWrite,
 	JsonObject,
 	JsonValue,
+	WorkspaceSnapshot,
 } from '../shared/contracts.js'
+import { isDeepStrictEqual } from 'node:util'
+import { pathName } from './storage-validation.js'
+import { WorkspaceStore } from './store.js'
+import { describeEditor, editorDraft } from './editor-config.js'
 
 /** Validate before cloning: JSON encoding must never silently drop caller values. */
 export function inputData(value: unknown): JsonObject {
@@ -67,182 +67,92 @@ export function inputData(value: unknown): JsonObject {
 	return result
 }
 
-/** Structural decoding only; the document owner checks this against its current template rules. */
-export function editorDraft(value: unknown): EditorDraft {
-	const invalid = (): never => {
-		throw Object.assign(
-			new Error('Invalid editor draft; preserve it and correct the saved input explicitly'),
-			{
-				code: 'INVALID_EDITOR_DRAFT',
-			},
-		)
-	}
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid()
-	const data = inputData({ editor: value }).editor as JsonObject
-	if (
-		Object.keys(data).some(
-			(key) => !['formatVersion', 'templateId', 'templateRevision', 'regions'].includes(key),
-		) ||
-		data.formatVersion !== 1 ||
-		typeof data.templateId !== 'string' ||
-		!data.templateId ||
-		typeof data.templateRevision !== 'string' ||
-		!data.templateRevision ||
-		!data.regions ||
-		typeof data.regions !== 'object' ||
-		Array.isArray(data.regions)
-	)
-		return invalid()
-	return data as unknown as EditorDraft
+/** The report's raw business data is a visible, ordinary workspace JSON file. */
+export function inputPath(entry: string): string {
+	return pathName(entry.slice(0, entry.lastIndexOf('/') + 1) + 'data.json')
 }
 
-type SavedInput = Pick<DocumentInput, 'data' | 'editor'>
-function savedInput(value: unknown): SavedInput {
-	if (!value || typeof value !== 'object' || Array.isArray(value))
-		throw Object.assign(new Error('Invalid saved document input'), { code: 'INVALID_INPUT' })
-	const object = value as Record<string, unknown>
-	if (
-		object.formatVersion !== 1 ||
-		Object.keys(object).some((key) => !['formatVersion', 'data', 'editor'].includes(key))
-	)
-		throw Object.assign(
-			new Error('Invalid saved document input format; explicit conversion is required'),
-			{ code: 'INVALID_INPUT' },
-		)
-	return {
-		data: inputData(object.data),
-		...(object.editor === undefined ? {} : { editor: editorDraft(object.editor) }),
-	}
-}
-/** Studio state lives outside workspace sources and therefore outside exported ZIPs. */
+/** Per-report data decoding and atomic source/data writes share the workspace's sole IO queue. */
 export class InputStore {
-	private queue: Promise<unknown> = Promise.resolve()
-	constructor(private readonly root: string) {}
-	private path(id: string, entry: string) {
-		return join(
-			this.root,
-			createHash('sha256')
-				.update(JSON.stringify([id, entry]))
-				.digest('hex') + '.json',
+	constructor(private readonly store: WorkspaceStore) {}
+	async get(id: string, entry: string): Promise<DocumentInput> {
+		const snapshot = await this.store.snapshot(id)
+		return decodeInput(snapshot, entry)
+	}
+	async set(
+		id: string,
+		entry: string,
+		input: Pick<InputWrite, 'data' | 'editor' | 'expectedVersion'>,
+	): Promise<DocumentInput> {
+		const data = inputData(input.data)
+		const draft = input.editor === undefined ? undefined : editorDraft(input.editor)
+		const current = await this.store.snapshot(id)
+		if (current.revision !== input.expectedVersion)
+			throw Object.assign(new Error('Workspace source changed; reload before saving'), {
+				code: 'DRAFT_VERSION_CONFLICT',
+				storageVersion: current.revision,
+			})
+		const description = describeEditor(current, entry)
+		const writable = new Set([
+			...(description?.sources.map((source) => source.path) ?? []),
+			inputPath(entry),
+		])
+		const changes: Record<string, string> = {}
+		for (const [path, source] of Object.entries(draft?.files ?? {})) {
+			if (source === current.files[path]) continue
+			if (!writable.has(path))
+				throw Object.assign(new Error(`Source file is not writable from this body: ${path}`), {
+					code: 'READ_ONLY',
+				})
+			changes[path] = source
+		}
+		if (draft && Object.keys(current.files).some((path) => !Object.hasOwn(draft.files, path)))
+			throw Object.assign(new Error('Source snapshot is incomplete; reload before saving'), {
+				code: 'INVALID_EDITOR_DRAFT',
+			})
+		const dataPath = inputPath(entry)
+		if (changes[dataPath] !== undefined) {
+			const parsed = sourceData(changes[dataPath])
+			if (!isDeepStrictEqual(parsed, data))
+				throw Object.assign(new Error('Data form and JSON snapshot disagree'), {
+					code: 'INVALID_INPUT',
+				})
+		} else if (
+			current.files[dataPath] === undefined ||
+			!isDeepStrictEqual(data, sourceData(current.files[dataPath]))
 		)
-	}
-	private serial<T>(operation: () => Promise<T>): Promise<T> {
-		const task = this.queue.then(operation)
-		this.queue = task.catch(() => {})
-		return task
-	}
-	private async read(id: string, entry: string): Promise<DocumentInput> {
+			changes[dataPath] = JSON.stringify(data, null, 2) + '\n'
 		try {
-			const bytes = await readFile(await safePath(this.path(id, entry)))
-			return {
-				...savedInput(JSON.parse(bytes.toString('utf8'))),
-				storageVersion: createHash('sha256').update(bytes).digest('hex'),
-			}
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-				return { data: {}, storageVersion: null }
-			throw error
+			return decodeInput(
+				await this.store.writeFiles(id, { expectedRevision: current.revision, files: changes }),
+				entry,
+			)
+		} catch (cause) {
+			if (
+				cause &&
+				typeof cause === 'object' &&
+				'code' in cause &&
+				cause.code === 'REVISION_CONFLICT'
+			)
+				throw Object.assign(
+					new Error('Workspace source changed; reload before saving', { cause }),
+					{ code: 'DRAFT_VERSION_CONFLICT' },
+				)
+			throw cause
 		}
 	}
-	get(id: string, entry: string): Promise<DocumentInput> {
-		return this.serial(() => this.read(id, entry))
-	}
-	/** Called after the source rename; roll every input mapping back if the move fails. */
-	copyEntries(
-		id: string,
-		entries: { from: string; to: string }[],
-		revisions?: { before: string; after: string },
-	) {
-		return this.serial(async () => {
-			const written: { path: string; before?: Buffer }[] = []
-			const sources: { path: string; bytes: Buffer }[] = []
-			try {
-				for (const entry of entries) {
-					if (entry.from === entry.to) continue
-					let source: Buffer
-					try {
-						source = await readFile(await safePath(this.path(id, entry.from)))
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-						throw error
-					}
-					sources.push({ path: this.path(id, entry.from), bytes: source })
-					if (revisions) {
-						const saved = savedInput(JSON.parse(source.toString('utf8')))
-						if (
-							saved.editor?.templateId === entry.from &&
-							saved.editor.templateRevision === revisions.before
-						)
-							saved.editor = {
-								...saved.editor,
-								templateId: entry.to,
-								templateRevision: revisions.after,
-							}
-						source = Buffer.from(JSON.stringify({ formatVersion: 1, ...saved }))
-					}
-					const path = await safePath(this.path(id, entry.to))
-					let before: Buffer | undefined
-					try {
-						before = await readFile(path)
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-					}
-					written.push({ path, before })
-					const temporary = path + '.' + randomUUID() + '.tmp'
-					try {
-						await writeFile(temporary, source, { flag: 'wx' })
-						await rename(temporary, path)
-					} finally {
-						await rm(temporary, { force: true })
-					}
-				}
-				for (const source of sources) await rm(await safePath(source.path), { force: true })
-			} catch (error) {
-				for (const source of sources) await writeFile(await safePath(source.path), source.bytes)
-				for (const { path, before } of written.toReversed()) {
-					if (before) await writeFile(path, before)
-					else await rm(path, { force: true })
-				}
-				throw error
-			}
-		})
-	}
+}
+function sourceData(source: string | undefined): JsonObject {
+	return source === undefined ? {} : inputData(JSON.parse(source))
+}
 
-	removeEntries(id: string, entries: string[]) {
-		return this.serial(async () => {
-			for (const entry of entries) await rm(await safePath(this.path(id, entry)), { force: true })
-		})
-	}
-
-	set(id: string, entry: string, input: Pick<InputWrite, 'data' | 'editor' | 'expectedVersion'>) {
-		const data = inputData(input.data)
-		const editor = input.editor === undefined ? undefined : editorDraft(input.editor)
-		const expectedVersion = input.expectedVersion
-		if (expectedVersion !== null && (typeof expectedVersion !== 'string' || !expectedVersion))
-			throw Object.assign(new Error('expectedVersion must be the read storage version or null'), {
-				code: 'INVALID_INPUT',
-			})
-		return this.serial(async () => {
-			const current = await this.read(id, entry)
-			if (current.storageVersion !== expectedVersion)
-				throw Object.assign(new Error('Saved document input changed; reload before saving'), {
-					code: 'DRAFT_VERSION_CONFLICT',
-					storageVersion: current.storageVersion,
-				})
-			await mkdir(await safePath(this.root), { recursive: true })
-			const target = await safePath(this.path(id, entry))
-			const temporary = target + '.' + randomUUID() + '.tmp'
-			try {
-				await writeFile(
-					temporary,
-					JSON.stringify({ formatVersion: 1, data, ...(editor ? { editor } : {}) }),
-					{ flag: 'wx' },
-				)
-				await rename(temporary, target)
-			} finally {
-				await rm(temporary, { force: true })
-			}
-			return this.read(id, entry)
-		})
+function decodeInput(snapshot: WorkspaceSnapshot, entry: string): DocumentInput {
+	const source = snapshot.files[inputPath(entry)]
+	const data = source === undefined ? {} : inputData(JSON.parse(source))
+	return {
+		data,
+		editor: { files: { ...snapshot.files } },
+		assets: snapshot.assets.filter((asset) => /\.(?:svg|png|jpe?g|gif|webp)$/i.test(asset.path)),
+		storageVersion: snapshot.revision,
 	}
 }

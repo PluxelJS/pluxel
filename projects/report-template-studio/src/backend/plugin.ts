@@ -22,7 +22,8 @@ import type {
 import type { SearchOptions } from '../shared/search.js'
 import type { AiProviderWrite } from '../shared/ai-providers.js'
 import { WorkspaceStore } from './store.js'
-import { InputStore, inputData, editorDraft } from './inputs.js'
+import { InputStore, inputData } from './inputs.js'
+import { editorDraft } from './editor-config.js'
 import { DocumentService } from './documents.js'
 import { ArtifactStore } from './artifacts.js'
 import { StudioAI } from './ai.js'
@@ -71,14 +72,8 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 		super()
 	}
 	protected override async init() {
-		this.inputs = new InputStore(join(this.config.root, 'inputs'))
-		this.store = new WorkspaceStore(
-			join(this.config.root, 'workspaces'),
-			this.config.assetsRoot,
-			{},
-			(id, entries, revisions) => this.inputs.copyEntries(id, entries, revisions),
-			(id, entries) => this.inputs.removeEntries(id, entries),
-		)
+		this.store = new WorkspaceStore(join(this.config.root, 'workspaces'), this.config.assetsRoot)
+		this.inputs = new InputStore(this.store)
 		this.artifacts = new ArtifactStore(join(this.config.root, 'artifacts'))
 		this.documents = new DocumentService(this.store, this.fonts, this.typst, this.artifacts)
 		this.body = new BodyService(this.inputs, this.documents)
@@ -238,16 +233,16 @@ export class StudioPlugin extends BasePlugin implements DesktopApi {
 	}
 	readBody(input: BodyRead) {
 		const target = this.document(input)
-		const selected = parse(v.object({ regionId: v.optional(string), range: bodyRange }), input)
+		const selected = parse(v.object({ path: v.optional(string), range: bodyRange }), input)
 		return this.body.read({ ...target, ...selected })
 	}
 	applyBodyCandidate(input: BodyCandidate) {
 		const target = this.document(input)
 		const candidate = parse(
 			v.object({
-				regionId: string,
+				path: string,
 				baseRevision: string,
-				markdown: v.pipe(v.string(), v.maxLength(MAX_FILE)),
+				source: v.pipe(v.string(), v.maxLength(MAX_FILE)),
 				range: bodyRange,
 			}),
 			input,

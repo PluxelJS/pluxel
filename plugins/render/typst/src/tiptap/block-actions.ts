@@ -1,12 +1,9 @@
-import { CommandManager, type Editor, type JSONContent } from '@tiptap/core'
+import { CommandManager, type Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { NodeSelection, type Transaction } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
-import { isTypstBlock } from './blocks'
-import { copyTypstDocumentNode } from './document-nodes'
 import { canEdit, type EditorUiContext } from './editor-ui'
 import { blockTypes, convertBlock, type BlockType } from './insert-commands'
-import { validateTypstRegions } from './validation'
 
 export interface BlockTarget {
 	pos: number
@@ -43,7 +40,7 @@ export function captureBlockTarget(editor: Editor, position?: number): BlockTarg
 	if (position === undefined && !selection.empty && topLevelPosition(doc, selection.to - 1) !== pos)
 		return undefined
 	const node = doc.nodeAt(pos)
-	if (!node?.isBlock || isTypstBlock(node.type.name)) return undefined
+	if (!node?.isBlock || node.type.name === 'typstSource') return undefined
 	return { pos, node, doc }
 }
 
@@ -68,19 +65,8 @@ function convertible(node: ProseMirrorNode): boolean {
 	return false
 }
 
-function copyContent(_editor: Editor, target: BlockTarget): JSONContent {
-	return copyTypstDocumentNode(target.node.toJSON(), target.doc, true)
-}
-
 function validDocument(ui: EditorUiContext, doc: ProseMirrorNode): boolean {
-	return (
-		!ui.config ||
-		!ui.region ||
-		validateTypstRegions({
-			regions: { ...ui.regions, [ui.region.id]: doc.toJSON() },
-			config: ui.config,
-		}).ok
-	)
+	return ui.validateDocument?.(doc.toJSON()) ?? true
 }
 
 /** Prepare one native transaction against an explicit, unchanged top-level block. */
@@ -98,6 +84,7 @@ export function prepareBlockAction(
 	)
 		return undefined
 	if (!validDocument(ui, target.doc)) return undefined
+	if (action === 'duplicate' && ui.prepareDuplicate) return ui.prepareDuplicate(editor, target.pos)
 	const manager = new CommandManager({ editor, state: editor.state })
 	const chain = manager.chain().command(({ tr }) => {
 		closeHistory(tr)
@@ -105,12 +92,7 @@ export function prepareBlockAction(
 	})
 	const end = target.pos + target.node.nodeSize
 	if (action === 'duplicate') {
-		const content = copyContent(editor, target)
-		if (!content) return undefined
-		chain.insertContentAt(end, content, { updateSelection: false }).command(({ tr }) => {
-			tr.setSelection(NodeSelection.create(tr.doc, end))
-			return true
-		})
+		return undefined
 	} else if (action === 'delete') {
 		chain.setNodeSelection(target.pos).deleteSelection()
 	} else if (action === 'moveUp' || action === 'moveDown') {

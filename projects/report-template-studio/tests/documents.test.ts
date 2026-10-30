@@ -218,6 +218,35 @@ it('requires explicit data, gives each success a unique revision, reuses native 
 	}
 })
 
+it('rejects incomplete explicit source snapshots without replacing a retained compile', async () => {
+	const f = await fixture()
+	try {
+		const files = f.documents.get('project')!.files
+		files['a/a.editor.json'] = JSON.stringify({ sources: [{ path: 'body.typ' }] })
+		files['a/body.typ'] = 'Authored body'
+		files['a/data.json'] = '{}'
+		const first = await f.service.compile({
+			...target(),
+			data: {},
+			editor: { files },
+			clientRevision: 0,
+		})
+		await expect(
+			f.service.compile({
+				...target(),
+				data: {},
+				editor: { files: { 'a/body.typ': 'Partial draft', 'a/data.json': '{}' } },
+				clientRevision: 1,
+			}),
+		).rejects.toMatchObject({ code: 'INVALID_EDITOR_DRAFT' })
+		expect(f.sessions[0]!.update).toHaveBeenCalledTimes(1)
+		const retained = await f.service.getPreview(first)
+		expect(retained.revision).toBe(first.revision)
+	} finally {
+		await f.close()
+	}
+})
+
 it('retains the previous document for COMPILE_FAILED but revokes it after native success followed by a source conflict', async () => {
 	const f = await fixture()
 	try {
@@ -385,7 +414,9 @@ it('isolates temporary font registrations across projects and rebuilds changed f
 		]) {
 			const doc = f.documents.get(id!)!
 			doc.config.fonts = ['fonts']
-			doc.assets = [{ path: 'fonts/font.ttf', size: label!.length }]
+			doc.assets = [
+				{ path: 'fonts/font.ttf', size: label!.length, bytes: new TextEncoder().encode(label!) },
+			]
 			doc.files['fonts/font.ttf'] = label!
 		}
 		f.setBeforeOpen(async (_root, fonts) => {

@@ -3,14 +3,11 @@ import { BlockMath, InlineMath } from '@tiptap/extension-mathematics'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
-import { isTypstBlock, typstBlockPolicy } from './blocks.js'
 import type { TypstReferenceTarget } from './types.js'
 
-const figureBodies = new Set(['image', 'table', 'templateBlock', 'typstSource'])
+const figureBodies = new Set(['image', 'table', 'typstComponent', 'typstSource'])
 export const isReferenceObject = (name: string): boolean =>
 	name === 'figure' || name === 'blockMath'
-export const validReferenceId = (value: unknown): value is string =>
-	typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)
 export const validReferenceLabel = (value: unknown): value is string =>
 	typeof value === 'string' && /^[\p{L}\p{N}][\p{L}\p{M}\p{N}_:.-]{0,127}$/u.test(value)
 
@@ -37,62 +34,8 @@ function allocateIdentity(
 	return id
 }
 
-/** Internal clipboard/duplicate operation. References within the copy follow copied objects. */
-export function copyTypstDocumentNode(
-	node: JSONContent,
-	doc: ProseMirrorNode,
-	commit: boolean,
-): JSONContent {
-	const copy = structuredClone(node)
-	const ids = new Map<string, string>()
-	const reserved = new Set<string>()
-	const visit = (value: JSONContent) => {
-		if (isReferenceObject(value.type!) || isTypstBlock(value.type!)) {
-			const id = allocateIdentity(doc, commit, reserved)
-			// Template/source instance IDs own generated filenames, not reference targets.
-			// They may share an authored string with a figure in the same region.
-			if (isReferenceObject(value.type!) && typeof value.attrs?.id === 'string')
-				ids.set(value.attrs.id, id)
-			value.attrs = { ...value.attrs, id }
-			if (isReferenceObject(value.type!) && value.attrs.label != null)
-				value.attrs.label = labelFor(value, id)
-		}
-		value.content?.forEach(visit)
-	}
-	visit(copy)
-	const references = (value: JSONContent) => {
-		if (value.type === 'reference' && ids.has(value.attrs?.target))
-			value.attrs = { ...value.attrs, target: ids.get(value.attrs!.target)! }
-		value.content?.forEach(references)
-	}
-	references(copy)
-	return copy
-}
-
-function canChange(name: string, props: Parameters<Command>[0]): boolean {
-	return (
-		props.editor.isEditable &&
-		!props.editor.view.composing &&
-		typstBlockPolicy.getState(props.state)?.(name) !== false
-	)
-}
-
-function duplicateObject(name: string, position: number): Command {
-	return (props) => {
-		if (
-			!canChange(name, props) ||
-			!Number.isSafeInteger(position) ||
-			position < 0 ||
-			position >= props.tr.doc.content.size
-		)
-			return false
-		const node = props.tr.doc.nodeAt(position)
-		if (!node || node.type.name !== name) return false
-		const copy = copyTypstDocumentNode(node.toJSON(), props.tr.doc, !!props.dispatch)
-		if (!props.dispatch) return true
-		closeHistory(props.tr)
-		return props.commands.insertContentAt(position + node.nodeSize, copy)
-	}
+function canChange(_name: string, props: Parameters<Command>[0]): boolean {
+	return props.editor.isEditable && !props.editor.view.composing
 }
 
 declare module '@tiptap/core' {
@@ -184,7 +127,7 @@ export const TypstFigure = Node.create({
 						label: options.label ?? labelFor({ type: this.name, content: [options.body] }, id),
 					},
 					content: [
-						copyTypstDocumentNode(options.body, props.tr.doc, !!props.dispatch),
+						structuredClone(options.body),
 						{ type: 'figureCaption', content: structuredClone(options.caption ?? []) },
 					],
 				}
@@ -240,7 +183,6 @@ export const TypstFigure = Node.create({
 					}
 					return true
 				},
-			duplicateTypstFigure: (position) => duplicateObject(this.name, position),
 		}
 	},
 })
@@ -271,7 +213,6 @@ export const TypstBlockMath = BlockMath.extend({
 					attrs: { latex: options.latex, id, label: `eq:${id}` },
 				})
 			},
-			duplicateTypstBlockMath: (position) => duplicateObject(this.name, position),
 		}
 	},
 })
@@ -313,7 +254,7 @@ export const TypstReference = Node.create({
 		return {
 			insertTypstReference: (target) => (props) =>
 				canChange(this.name, props) &&
-				validReferenceId(target) &&
+				validReferenceLabel(target) &&
 				props.commands.insertContent({ type: this.name, attrs: { target } }),
 		}
 	},

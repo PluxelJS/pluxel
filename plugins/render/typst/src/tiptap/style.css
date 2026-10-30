@@ -1817,3 +1817,69 @@
 	font-size: 12px;
 	white-space: nowrap;
 }
+
+.typst-inline-source,
+.typst-source-card {
+	font-family: ui-monospace, monospace;
+	font-size: 0.85em;
+	color: #555;
+}
+.typst-inline-source > button,
+.typst-source-card > button {
+	color: inherit;
+	background: #f4f6f5;
+	border: 1px solid #d8dfda;
+	border-radius: 4px;
+	text-align: left;
+	cursor: pointer;
+	max-width: 100%;
+}
+.typst-source-card {
+	margin-block: 0.6em;
+	padding: 0.6em;
+	border: 1px solid #d8dfda;
+	border-radius: 5px;
+}
+.typst-source-card code {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.typst-inline-source textarea,
+.typst-source-card textarea {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 6em;
+	font: inherit;
+}
+
+.typst-component > strong {
+	margin-right: 0.5rem;
+}
+.typst-component > code {
+	color: var(--typst-muted, #666);
+}
+.typst-component form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	padding: 0.5rem 0;
+}
+.typst-component form label {
+	display: flex;
+	gap: 0.4rem;
+	align-items: center;
+}
+.typst-binding-controls {
+	display: block;
+}
+.typst-binding-controls textarea {
+	display: block;
+	width: 100%;
+	min-height: 10rem;
+	font: inherit;
+}
+.typst-source-field {
+	display: inline-block;
+	vertical-align: baseline;
+}

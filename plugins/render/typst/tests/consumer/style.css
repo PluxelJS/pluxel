@@ -586,3 +586,58 @@ output[data-testid='navigation'] {
 		background: #3c2020;
 	}
 }
+
+.source-status {
+	margin: 0;
+	padding: 4px 8px;
+	color: var(--consumer-muted);
+}
+.source-failure {
+	max-height: 140px;
+	overflow: auto;
+	color: #9f1239;
+	padding: 8px;
+	white-space: pre-wrap;
+}
+.source-failure button {
+	display: block;
+}
+.workspace-panel {
+	display: flex;
+	flex-direction: column;
+}
+.workspace-panel .editor-panel {
+	overflow: auto;
+	flex: 1;
+}
+.workspace-panel .input-panel {
+	min-height: 300px;
+	flex: 1;
+}
+.workspace-panel .region-tabs {
+	margin: 0 0 6px;
+}
+@media (max-width: 720px) {
+	main {
+		height: auto;
+		min-height: 100dvh;
+	}
+	.columns {
+		display: flex;
+		flex-direction: column;
+	}
+	.workspace-panel {
+		max-height: 72dvh;
+	}
+	.preview-pane {
+		min-height: 70dvh;
+		height: 70dvh;
+	}
+	.workspace-header output {
+		flex-basis: 100%;
+		font-size: 12px;
+	}
+}
+.preview-scroll > div > svg {
+	background: white;
+}

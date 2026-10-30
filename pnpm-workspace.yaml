@@ -254,13 +254,11 @@ catalogs:
     '@tiptap/extension-table': 3.32.0
     '@tiptap/extension-text-style': 3.32.0
     '@tiptap/extensions': 3.32.0
-    '@tiptap/markdown': 3.32.0
     '@tiptap/pm': 3.32.0
     '@tiptap/react': 3.32.0
     '@tiptap/starter-kit': 3.32.0
     '@types/react': ^19.3.0
     '@types/react-dom': ^19.3.0
-    marked: 17.0.6
     react: 19.3.1
     react-dom: 19.3.1
     tailwindcss: ^4.3.3
@@ -285,6 +283,8 @@ catalogs:
     '@opentelemetry/api-logs': ^0.223.0
     '@pluxel/market': ^0.1.0
   prod:
+    '@r4ai/typst-ast-node': 0.3.0
+    '@r4ai/typst-ast-web': 0.3.0
     playwright-core: 1.64.1
     yauzl: 3.4.0
     fflate: 0.8.3

@@ -1,0 +1,64 @@
+Working directory: projects/report-template-studio
+Observed: 2026-10-30 (Asia/Taipei), Linux, installed workspace dependencies.
+Builds finish before native/artifact/Electron acceptance; core/dist stays stable.
+
+mise exec -- vp run compile
+Result: 22/22 successful; production backend/Electron and renderer built.
+
+mise exec -- vp build
+Result: production renderer built successfully; see renderer-final-build.txt.
+Existing large-chunk warning remains.
+
+mise exec -- vp test run
+Result: 31 files, 218 passed, 1 Windows-only ACL test skipped. See tests.txt.
+
+mise exec -- vp exec tsc --noEmit
+Result: exit 0.
+
+mise exec -- vp check projects/report-template-studio/tests/desktop.mjs
+Working directory for this command: repository root.
+Result: formatting, lint and type-aware checks passed after receipt readiness update.
+
+STUDIO_OZONE_PLATFORM=wayland STUDIO_DISABLE_SANDBOX=1 STUDIO_KEEP_PROFILE=1 STUDIO_SCREENSHOTS=test-results/source-review-20261030-delivery mise exec -- node tests/desktop.mjs
+Result: exit 0; 24 complete user-path checks, including source-file saves/reload,
+actual PDFs, reopen and ZIP/data.json round trip. See desktop.txt and desktop.json.
+Requested Electron bounds: 1440x900; actual renderer viewport: 1050x994.
+The Wayland compositor determines actual bounds; captured PNGs are 2100x1988.
+All three export receipts match the displayed preview and saved storage version.
+
+STUDIO_DISABLE_SANDBOX=1 mise exec -- node tests/desktop-recovery.mjs
+Environment: WAYLAND_DISPLAY=wayland-0; the existing harness selects Linux Ozone Wayland.
+Result: see recovery.json and recovery.txt for the two-generation run.
+
+Preserved failed attempts and the independent headless/Wayland confirmation probe
+are described in review-attempts.txt and confirm-probe.txt. They are not full passes.
+
+Earlier backend/native acceptance (2026-10-28):
+mise exec -- node tests/runtime.mjs
+Summary: runtime.json, extracted from test-results/refactor/runtime/summary.json.
+Its elapsed times measure that runtime scenario, not incremental source parsing latency.
+
+Independent PDF verification by root (workspace root):
+python -m venv /tmp/typst-source-pdf-check
+/tmp/typst-source-pdf-check/bin/pip install --disable-pip-version-check pypdf==6.21.3
+/tmp/typst-source-pdf-check/bin/python - <<'PY'
+from pathlib import Path
+from pypdf import PdfReader
+import hashlib, json
+root = Path('projects/typst-agent-workspace/evidence/source/studio')
+evidence = json.loads((root / 'pdf-inspection.json').read_text())
+for name, expected in evidence['files'].items():
+    path = root / name
+    reader = PdfReader(path)
+    text = '\n'.join(page.extract_text() for page in reader.pages)
+    assert len(reader.pages) == expected['pages'] == 1
+    assert all(value in text for value in expected['requiredText'])
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == expected['sha256']
+    assert [hashlib.sha256(page.get_contents().get_data()).hexdigest()
+            for page in reader.pages] == expected['pageContentSha256']
+assert evidence['reopenedPdfTextMatches']
+assert evidence['reopenedPdfContentStreamsMatch']
+print('Five PDFs: text, page count, file and decoded content hashes verified.')
+PY
+Result: five PDFs inspected. Reopened body text and decoded page content match;
+creation/modification timestamps and document IDs differ, so binary identity is not claimed.

@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
-import { undo } from '@tiptap/pm/history'
+import { createTypstSourceProject } from '@pluxel/plugin-typst/source'
 import { MantineProvider } from '@mantine/core'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { InputStore } from '../src/backend/inputs'
+import { WorkspaceStore } from '../src/backend/store'
 import { validateEditorDraft } from '../src/backend/editor-config'
 import type { EditorDraft, EditorDescription } from '../src/shared/contracts'
 import { api } from '../src/renderer/api'
@@ -16,6 +17,15 @@ import { FilePane, FormPane } from '../src/renderer/panes'
 import { WorkspaceController } from '../src/renderer/workspace'
 import { WorkspaceContext } from '../src/renderer/workspace-context'
 import { editorLifecycle } from '../src/renderer/editor-lifecycle'
+
+vi.mock('@pluxel/plugin-typst/source/browser', async () => {
+	const sourceModule = await import('@pluxel/plugin-typst/source')
+	return {
+		createTypstSourceProject: async (
+			options: Parameters<typeof sourceModule.createTypstSourceProject>[0],
+		) => sourceModule.createTypstSourceProject(options),
+	}
+})
 
 vi.mock('@worksplit/react', () => ({ useWorkbenchContentLifecycle: () => {} }))
 vi.mock('../src/renderer/code-editor', () => ({
@@ -35,33 +45,51 @@ vi.mock('../src/renderer/api', () => ({
 }))
 
 const target = { projectId: 'project', entry: 'main/main.ts' }
-const content = (text: string) => ({
-	type: 'doc',
-	content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+const bodyPath = 'main/body.typ'
+const description: EditorDescription = { sources: [{ path: bodyPath }] }
+let initialFiles: Record<string, string>
+const draft = (text: string, data = { title: '原始数据' }): EditorDraft => ({
+	files: {
+		...initialFiles,
+		[bodyPath]: text,
+		'main/data.json': JSON.stringify(data, null, 2) + '\n',
+	},
 })
-const description: EditorDescription = {
-	templateId: target.entry,
-	templateRevision: 'source',
-	regions: [{ id: 'body' }],
-	fields: [],
-	defaults: { body: content('初始正文') },
-}
-const draft = (text: string): EditorDraft => ({
-	formatVersion: 1,
-	templateId: target.entry,
-	templateRevision: 'source',
-	regions: { body: content(text) },
+const content = (text: string) => ({
+	...workspace.documents.get(target.entry)!.editor!.files,
+	[bodyPath]: text,
 })
 let directory: string
 let store: InputStore
+let sourceStore: WorkspaceStore
 let workspace: WorkspaceController
 let currentDescription: EditorDescription
 let hidePopover: PropertyDescriptor | undefined
+const rangeGeometry = ['getClientRects', 'getBoundingClientRect'] as const
+let rangeDescriptors: (PropertyDescriptor | undefined)[]
 
 beforeEach(async () => {
 	directory = await mkdtemp(join(tmpdir(), 'studio-input-recovery-'))
-	store = new InputStore(directory)
-	workspace = new WorkspaceController({ id: 'project', name: 'Project', root: '/project' })
+	const root = join(directory, 'workspace')
+	await mkdir(join(root, 'main'), { recursive: true })
+	initialFiles = {
+		'studio.json': JSON.stringify({ name: 'Project', fonts: [] }),
+		'main/main.ts': 'export default {}',
+		'main/main.typ': '#include "body.typ"',
+		'main/main.editor.json': JSON.stringify({ sources: [{ path: 'body.typ' }] }),
+		'main/blocks.typ': '#let chart(title: "渠道收入") = rect(width: 100%, height: 12pt)[#title]',
+		[bodyPath]: '初始正文',
+		'main/data.json': JSON.stringify({ title: '原始数据' }, null, 2) + '\n',
+	}
+	await Promise.all(
+		Object.entries(initialFiles).map(([path, source]) => writeFile(join(root, path), source)),
+	)
+	sourceStore = new WorkspaceStore(join(directory, 'app'), directory)
+	await sourceStore.initialize()
+	const project = await sourceStore.open(root)
+	target.projectId = project.id
+	store = new InputStore(sourceStore)
+	workspace = new WorkspaceController(project)
 	currentDescription = description
 	vi.stubGlobal(
 		'ResizeObserver',
@@ -80,6 +108,14 @@ beforeEach(async () => {
 	Object.defineProperty(HTMLElement.prototype, 'hidePopover', {
 		configurable: true,
 		value() {},
+	})
+	// jsdom has no layout. Selection identity is verified here; real scrolling is covered by Electron.
+	rangeDescriptors = rangeGeometry.map((name) =>
+		Object.getOwnPropertyDescriptor(Range.prototype, name),
+	)
+	Object.defineProperties(Range.prototype, {
+		getClientRects: { configurable: true, value: () => [] },
+		getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
 	})
 	vi.mocked(api.describeDocument).mockResolvedValue({
 		...target,
@@ -102,11 +138,11 @@ beforeEach(async () => {
 	})
 	vi.mocked(api.getInput).mockImplementation(() => store.get(target.projectId, target.entry))
 	vi.mocked(api.setInput).mockImplementation(async (input) => {
-		validateEditorDraft(currentDescription, input.editor, input.data)
+		validateEditorDraft(currentDescription, input.editor)
 		return store.set(input.projectId, input.entry, input)
 	})
 	vi.mocked(api.compile).mockImplementation(async (input) => {
-		validateEditorDraft(currentDescription, input.editor, input.data)
+		validateEditorDraft(currentDescription, input.editor)
 		return {
 			...target,
 			name: 'Main',
@@ -145,6 +181,11 @@ afterEach(async () => {
 	} finally {
 		if (hidePopover) Object.defineProperty(HTMLElement.prototype, 'hidePopover', hidePopover)
 		else Reflect.deleteProperty(HTMLElement.prototype, 'hidePopover')
+		for (const [index, name] of rangeGeometry.entries()) {
+			const descriptor = rangeDescriptors[index]
+			if (descriptor) Object.defineProperty(Range.prototype, name, descriptor)
+			else Reflect.deleteProperty(Range.prototype, name)
+		}
 		vi.unstubAllGlobals()
 		vi.restoreAllMocks()
 		vi.resetAllMocks()
@@ -152,10 +193,11 @@ afterEach(async () => {
 	}
 })
 async function open(editor?: EditorDraft) {
+	const initial = await store.get(target.projectId, target.entry)
 	const saved = await store.set(target.projectId, target.entry, {
 		data: { title: '原始数据' },
 		editor,
-		expectedVersion: null,
+		expectedVersion: initial.storageVersion,
 	})
 	workspace.retainDocument(target.entry)
 	await workspace.compile(target.entry)
@@ -175,13 +217,14 @@ async function mountBody() {
 it('lets the real body editor apply strikethrough while plain save keys still persist the draft', async () => {
 	await open(draft('初始正文'))
 	await mountBody()
-	const box = await screen.findByRole('textbox', { name: '正文区域 body' })
+	const box = await screen.findByRole('textbox', { name: '正文源码 main/body.typ' })
 	const editor = (box as HTMLElement & { editor: Editor }).editor
 	const saveFile = vi.spyOn(workspace, 'save')
 	const saveInput = vi.spyOn(workspace, 'saveInput')
 	act(() => editor.commands.setTextSelection({ from: 1, to: 5 }))
 	fireEvent.keyDown(box, { key: 'S', code: 'KeyS', keyCode: 83, ctrlKey: true, shiftKey: true })
 	expect(editor.isActive('strike')).toBe(true)
+	expect(workspace.documents.get(target.entry)?.editor?.files[bodyPath]).toContain('#strike[')
 	for (const modifiers of [
 		{ ctrlKey: true, altKey: true },
 		{ metaKey: true, shiftKey: true },
@@ -196,9 +239,17 @@ it('lets the real body editor apply strikethrough while plain save keys still pe
 	})
 	expect(saveFile).toHaveBeenCalledWith(target.entry)
 	expect(saveInput).toHaveBeenCalledWith(target.entry)
-	await waitFor(() => expect(api.setInput).toHaveBeenCalled())
+	await waitFor(() => {
+		expect(api.setInput).toHaveBeenCalled()
+		expect(workspace.documents.get(target.entry)?.inputSaving).toBe(false)
+	})
 	const saved = await store.get(target.projectId, target.entry)
-	expect(saved.editor?.regions.body).toEqual(editor.getJSON())
+	expect(saved.editor!.files[bodyPath]).toContain('#strike[')
+	expect(createTypstSourceProject({ files: saved.editor!.files }).open(bodyPath).document).toEqual(
+		createTypstSourceProject({ files: workspace.documents.get(target.entry)!.editor!.files }).open(
+			bodyPath,
+		).document,
+	)
 })
 
 it('keeps modified and composition keys available inside file editors and saves only plain Mod-S', () => {
@@ -232,20 +283,101 @@ it('keeps modified and composition keys available inside file editors and saves 
 	}
 })
 
-it('explicitly initializes regions for existing saved data through the form pane', async () => {
+it.each([bodyPath, 'main/data.json'])(
+	'shows the input owner save state and persists %s through the file shortcut',
+	async (path) => {
+		await open(draft('初始正文'))
+		const file = await sourceStore.readFile(target.projectId, path)
+		workspace.files.set(path, {
+			...file,
+			saved: file.content,
+			dirty: false,
+			saving: false,
+			token: 0,
+			external: 0,
+		})
+		render(
+			<MantineProvider>
+				<WorkspaceContext.Provider value={workspace}>
+					<FilePane path={path} />
+				</WorkspaceContext.Provider>
+			</MantineProvider>,
+		)
+		const text = path.endsWith('.json') ? '{"title":"文件页保存的数据"}' : '文件页保存的正文'
+		act(() => workspace.edit(path, text))
+		expect(screen.getByRole('status').textContent).toBe('待保存')
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('textbox', { name: 'Code editor keyboard target' }), {
+				key: 's',
+				ctrlKey: true,
+			})
+		})
+		await waitFor(() => expect(screen.getByRole('status').textContent).toBe('已保存'))
+		const saved = await store.get(target.projectId, target.entry)
+		expect(saved.editor!.files[path]).toBe(text)
+		expect(workspace.files.get(path)).toMatchObject({ saved: text, content: text, dirty: false })
+	},
+)
+
+it.each(['从磁盘重新载入整份报表', '放弃整份报表草稿'])(
+	'%s confirms and replaces both data and body from the file menu',
+	async (action) => {
+		const original = await open(draft('初始正文'))
+		const file = await sourceStore.readFile(target.projectId, bodyPath)
+		workspace.files.set(bodyPath, {
+			...file,
+			content: '本地正文',
+			saved: file.content,
+			dirty: false,
+			saving: false,
+			token: 1,
+			external: 0,
+		})
+		workspace.documents.set(target.entry, {
+			...workspace.documents.get(target.entry)!,
+			data: { title: '本地数据' },
+			editor: draft('本地正文', { title: '本地数据' }),
+			inputDirty: true,
+		})
+		const saved = await store.set(target.projectId, target.entry, {
+			data: { title: '磁盘数据' },
+			editor: draft('磁盘正文', { title: '磁盘数据' }),
+			expectedVersion: original.storageVersion,
+		})
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+		render(
+			<MantineProvider>
+				<WorkspaceContext.Provider value={workspace}>
+					<FilePane path={bodyPath} />
+				</WorkspaceContext.Provider>
+			</MantineProvider>,
+		)
+		fireEvent.click(screen.getByRole('button', { name: '文件操作' }))
+		await act(async () => {
+			fireEvent.click(await screen.findByRole('menuitem', { name: action }))
+		})
+		expect(confirm).toHaveBeenCalledWith(expect.stringContaining('全部数据与正文'))
+		await waitFor(() => expect(workspace.documents.get(target.entry)?.inputDirty).toBe(false))
+		expect(workspace.documents.get(target.entry)).toMatchObject({
+			data: saved.data,
+			editor: saved.editor,
+			inputConflict: undefined,
+		})
+		expect(workspace.files.get(bodyPath)).toMatchObject({ content: '磁盘正文', saved: '磁盘正文' })
+	},
+)
+
+it('opens existing authored source without resetting the saved data or creating a separate draft', async () => {
 	const previous = await open()
-	expect(workspace.documents.get(target.entry)?.error).toContain('Create a region draft explicitly')
 	await mountBody()
-	fireEvent.click(screen.getByRole('button', { name: '初始化正文' }))
-	await waitFor(() =>
-		expect(screen.getByRole('textbox', { name: '正文区域 body' }).textContent).toBe('初始正文'),
-	)
+	const body = await screen.findByRole('textbox', { name: '正文源码 main/body.typ' })
+	expect(body.textContent).toBe('初始正文')
+	expect(screen.queryByRole('button', { name: '初始化正文' })).toBeNull()
 	expect(screen.queryByRole('button', { name: '切换客户' })).toBeNull()
 	await act(() => workspace.saveInput(target.entry))
 	const saved = await store.get(target.projectId, target.entry)
-	expect(saved.data).toEqual(previous.data)
+	expect(saved).toEqual(previous)
 	expect(saved.editor).toEqual(draft('初始正文'))
-	expect(saved.storageVersion).not.toBe(previous.storageVersion)
 	await act(() => workspace.compile(target.entry))
 	expect(workspace.documents.get(target.entry)?.error).toBeUndefined()
 })
@@ -257,7 +389,7 @@ it('confirms a complete committed draft after its save response is lost', async 
 		throw new Error('connection lost after commit')
 	})
 	await workspace.writeData(target.entry, { title: '新数据' })
-	await workspace.writeRegion(target.entry, 'body', content('新正文'))
+	workspace.writeSources(target.entry, content('新正文'))
 	await workspace.saveInput(target.entry)
 	const saved = await store.get(target.projectId, target.entry)
 	expect(workspace.documents.get(target.entry)).toMatchObject({
@@ -284,14 +416,14 @@ it('keeps local input and requires another decision if a writer changes the conf
 		editor: draft('远端正文'),
 		expectedVersion: original.storageVersion,
 	})
-	await workspace.writeRegion(target.entry, 'body', content('本地正文'))
+	workspace.writeSources(target.entry, content('本地正文'))
 	await workspace.saveInput(target.entry)
 	expect(workspace.documents.get(target.entry)?.inputConflict).toEqual(other)
 	expect(workspace.documents.get(target.entry)?.editor).toEqual(draft('本地正文'))
 	expect(workspace.documents.get(target.entry)?.storageVersion).toBe(original.storageVersion)
 	const latest = await store.set(target.projectId, target.entry, {
 		data: { title: '更新的远端数据' },
-		editor: draft('更新的远端正文'),
+		editor: draft('更新的远端正文', { title: '更新的远端数据' }),
 		expectedVersion: other.storageVersion,
 	})
 	await workspace.resolveInputConflict(target.entry, 'local')
@@ -318,17 +450,17 @@ it('keeps edits made while confirming a lost save response dirty against the con
 		await store.set(input.projectId, input.entry, input)
 		throw new Error('connection lost after commit')
 	})
-	await workspace.writeRegion(target.entry, 'body', content('第一次正文'))
+	workspace.writeSources(target.entry, content('第一次正文'))
 	const saving = workspace.saveInput(target.entry)
 	await waitFor(() => expect(complete).toBeTypeOf('function'))
 	const committed = await store.get(target.projectId, target.entry)
 	await workspace.writeData(target.entry, { title: '继续输入的数据' })
-	await workspace.writeRegion(target.entry, 'body', content('继续输入的正文'))
+	workspace.writeSources(target.entry, content('继续输入的正文'))
 	complete(committed)
 	await saving
 	expect(workspace.documents.get(target.entry)).toMatchObject({
 		data: { title: '继续输入的数据' },
-		editor: draft('继续输入的正文'),
+		editor: draft('继续输入的正文', { title: '继续输入的数据' }),
 		storageVersion: committed.storageVersion,
 		inputDirty: true,
 		inputError: undefined,
@@ -336,20 +468,58 @@ it('keeps edits made while confirming a lost save response dirty against the con
 	await workspace.saveInput(target.entry)
 	expect(await store.get(target.projectId, target.entry)).toMatchObject({
 		data: { title: '继续输入的数据' },
-		editor: draft('继续输入的正文'),
+		editor: draft('继续输入的正文', { title: '继续输入的数据' }),
 	})
+})
+
+it('keeps a captured source candidate valid when its unchanged draft finishes autosaving', async () => {
+	await open(draft('初始正文'))
+	await mountBody()
+	const box = await screen.findByRole('textbox', { name: '正文源码 main/body.typ' })
+	const editor = (box as HTMLElement & { editor: Editor }).editor
+	workspace.tree = await sourceStore.tree(target.projectId)
+	act(() => editor.commands.insertContentAt(1, { type: 'text', text: '本地修改' }))
+	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
+	fireEvent.change(screen.getByRole('textbox', { name: 'Typst 候选' }), {
+		target: { value: '保存后仍有效的候选' },
+	})
+	const observe = () => {
+		const state = workspace.documents.get(target.entry)!
+		return {
+			projectRevision: workspace.sourceProjects.get(target.entry)!.revision,
+			inputToken: state.inputToken,
+			sourceRevision: state.description?.sourceRevision,
+			treeRevision: workspace.tree?.revision,
+			storageVersion: state.storageVersion,
+		}
+	}
+	const before = observe(),
+		identity = workspace.draftRevision(target.entry)
+	await act(() => workspace.saveInput(target.entry))
+	workspace.tree = await sourceStore.tree(target.projectId)
+	act(() => workspace.emit())
+	const after = observe()
+	expect(after.projectRevision).toBe(before.projectRevision)
+	expect(after.inputToken).toBe(before.inputToken)
+	expect(after.sourceRevision).toBe(before.sourceRevision)
+	expect(after.storageVersion).not.toBe(before.storageVersion)
+	expect(after.treeRevision).not.toBe(before.treeRevision)
+	expect(workspace.draftRevision(target.entry)).toBe(identity)
+	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
+	fireEvent.click(screen.getByRole('button', { name: '接纳候选' }))
+	expect(editor.getText()).toBe('保存后仍有效的候选')
 })
 
 it('loads the chosen saved draft through the UI and replaces editors, candidates and navigation', async () => {
 	const original = await open(draft('初始正文'))
 	await mountBody()
-	const box = await screen.findByRole('textbox', { name: '正文区域 body' })
+	const box = await screen.findByRole('textbox', { name: '正文源码 main/body.typ' })
 	const editor = (box as HTMLElement & { editor: Editor }).editor
 	act(() => {
 		editor.commands.insertContent('本地修改')
 	})
 	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
-	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
+	fireEvent.change(screen.getByRole('textbox', { name: 'Typst 候选' }), {
 		target: { value: '旧候选' },
 	})
 	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
@@ -358,10 +528,10 @@ it('loads the chosen saved draft through the UI and replaces editors, candidates
 	)
 	const oldRevision = workspace.draftRevision(target.entry)
 	const oldPreview = workspace.documents.get(target.entry)!.preview!
-	workspace.regionLocation = { entry: target.entry, regionId: 'body', from: 0, to: 2, serial: 1 }
+	workspace.bodyLocation = { entry: target.entry, path: bodyPath, from: 0, to: 2, serial: 1 }
 	const other = await store.set(target.projectId, target.entry, {
 		data: { title: '远端数据' },
-		editor: draft('远端正文'),
+		editor: draft('远端正文', { title: '远端数据' }),
 		expectedVersion: original.storageVersion,
 	})
 	await act(() => workspace.saveInput(target.entry))
@@ -369,16 +539,18 @@ it('loads the chosen saved draft through the UI and replaces editors, candidates
 	expect(workspace.documents.get(target.entry)?.editor).not.toEqual(other.editor)
 	fireEvent.click(screen.getByRole('button', { name: '载入已保存版本，放弃本地修改' }))
 	await waitFor(() =>
-		expect(screen.getByRole('textbox', { name: '正文区域 body' }).textContent).toBe('远端正文'),
+		expect(screen.getByRole('textbox', { name: '正文源码 main/body.typ' }).textContent).toBe(
+			'远端正文',
+		),
 	)
 	expect(editor.isDestroyed).toBe(true)
-	expect(
-		(screen.getByRole('textbox', { name: 'Markdown 候选' }) as HTMLTextAreaElement).value,
-	).toBe('')
+	expect((screen.getByRole('textbox', { name: 'Typst 候选' }) as HTMLTextAreaElement).value).toBe(
+		'',
+	)
 	expect((screen.getByRole('button', { name: '接纳候选' }) as HTMLButtonElement).disabled).toBe(
 		true,
 	)
-	expect(workspace.regionLocation).toBeUndefined()
+	expect(workspace.bodyLocation).toBeUndefined()
 	expect(workspace.draftRevision(target.entry)).not.toBe(oldRevision)
 	expect(workspace.isNavigationCurrent(oldPreview)).toBe(false)
 	expect(workspace.documents.get(target.entry)).toMatchObject({
@@ -391,105 +563,82 @@ it('loads the chosen saved draft through the UI and replaces editors, candidates
 	expect((screen.getByRole('textbox', { name: '标题' }) as HTMLInputElement).value).toBe('远端数据')
 })
 
-it('round-trips styled candidate blocks beside components and navigates a first atom without losing its position', async () => {
+it('round-trips styled source candidates beside components and navigates the first atom', async () => {
 	currentDescription = {
 		...description,
-		templates: [
-			{ id: 'chart', label: '渠道图表', source: '#props.title', defaults: { title: '渠道收入' } },
-		],
-		sourceBlocks: true,
-		defaults: {
-			body: {
-				type: 'doc',
-				content: [
-					{
-						type: 'templateBlock',
-						attrs: { id: 'chart-1', template: 'chart', props: { title: '渠道收入' }, dataPath: [] },
-					},
-					{
-						type: 'paragraph',
-						content: [
-							{
-								type: 'text',
-								text: '需要改写的分析',
-								marks: [{ type: 'textStyle', attrs: { color: '#dc2626', fontSize: '12pt' } }],
-							},
-						],
-					},
-					{ type: 'typstSource', attrs: { id: 'note-1', source: '#text(size: 8pt)[保留口径]' } },
-				],
+		components: [
+			{
+				module: 'main/blocks.typ',
+				name: 'chart',
+				label: '渠道图表',
+				parameters: { title: { type: 'string' } },
 			},
-		},
+		],
 	}
 	const originalDescription = await api.describeDocument(target)
 	vi.mocked(api.describeDocument).mockResolvedValue({
 		...originalDescription,
 		editor: currentDescription,
 	})
-	await open({ ...draft('unused'), regions: currentDescription.defaults })
+	const source =
+		'#import "blocks.typ": chart\n#chart(title: "渠道收入")\n\n#text(fill: rgb("#dc2626"), size: 12pt)[需要改写的分析]\n\n#box(width: 100%)[保留口径]'
+	await open(draft(source))
 	await mountBody()
-	const box = await screen.findByRole('textbox', { name: '正文区域 body' })
+	const box = await screen.findByRole('textbox', { name: '正文源码 main/body.typ' })
 	const editor = (box as HTMLElement & { editor: Editor }).editor
 	const original = editor.getJSON()
-	act(() => {
-		editor.commands.setTextSelection(4)
+	expect(editor.state.doc.child(0).isAtom).toBe(true)
+	expect(original.content!.some((node) => node.type === 'typstComponent')).toBe(true)
+	let paragraph = -1
+	editor.state.doc.forEach((node, offset) => {
+		if (node.textContent === '需要改写的分析') paragraph = offset
 	})
+	expect(paragraph).toBeGreaterThan(0)
+	act(() => editor.commands.setTextSelection({ from: paragraph + 1, to: paragraph + 8 }))
 	fireEvent.change(screen.getByRole('combobox', { name: '候选范围' }), {
 		target: { value: 'selection' },
 	})
 	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
-	expect(
-		(screen.getByRole('textbox', { name: 'Markdown 候选' }) as HTMLTextAreaElement).value,
-	).toContain('"fontSize":"12pt"')
-	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
-		target: { value: '不可接纳的旧文字' },
-	})
+	const candidate = () => screen.getByRole('textbox', { name: 'Typst 候选' }) as HTMLTextAreaElement
+	expect(candidate().value).toContain('size: 12pt')
+	fireEvent.change(candidate(), { target: { value: '不可接纳的旧文字' } })
 	fireEvent.click(screen.getByRole('button', { name: '固定候选目标' }))
-	expect(
-		(screen.getByRole('textbox', { name: 'Markdown 候选' }) as HTMLTextAreaElement).value,
-	).toBe('不可接纳的旧文字')
+	expect(candidate().value).toBe('不可接纳的旧文字')
 	fireEvent.click(screen.getByRole('button', { name: '用原文替换候选' }))
-	expect(
-		(screen.getByRole('textbox', { name: 'Markdown 候选' }) as HTMLTextAreaElement).value,
-	).toContain('需要改写的分析')
+	expect(candidate().value).toContain('需要改写的分析')
 	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
-	fireEvent.change(screen.getByRole('textbox', { name: 'Markdown 候选' }), {
-		target: {
-			value:
-				'[textStyle {"color":"#16a34a","fontSize":"14pt","backgroundColor":"#fff2cc"}]**新的分析**[/textStyle]：收入已达标。',
-		},
-	})
+	const replacement = '#text(fill: rgb("#16a34a"), size: 14pt)[*新的分析*：收入已达标。]'
+	fireEvent.change(candidate(), { target: { value: replacement } })
 	expect((screen.getByRole('button', { name: '接纳候选' }) as HTMLButtonElement).disabled).toBe(
 		true,
 	)
 	expect(editor.getJSON()).toEqual(original)
 	fireEvent.click(screen.getByRole('button', { name: '查看修改预览' }))
 	fireEvent.click(screen.getByRole('button', { name: '接纳候选' }))
-	await waitFor(() => expect(editor.state.doc.child(1).textContent).toBe('新的分析：收入已达标。'))
-	expect(editor.getJSON().content![1]!.content![0]!.marks).toEqual(
-		expect.arrayContaining([
-			{ type: 'bold' },
-			expect.objectContaining({
-				type: 'textStyle',
-				attrs: expect.objectContaining({
-					color: '#16a34a',
-					fontSize: '14pt',
-					backgroundColor: '#fff2cc',
-				}),
-			}),
-		]),
+	await waitFor(() => expect(editor.state.doc.textContent).toContain('新的分析：收入已达标。'))
+	const changed = workspace.documents.get(target.entry)!.editor!.files[bodyPath]!
+	expect(changed).toBe(
+		source.replace('#text(fill: rgb("#dc2626"), size: 12pt)[需要改写的分析]', replacement),
 	)
 	expect(editor.getJSON().content![0]).toEqual(original.content![0])
-	expect(editor.getJSON().content![2]).toEqual(original.content![2])
-	act(() => {
-		expect(undo(editor.state, editor.view.dispatch)).toBe(true)
-	})
+	expect(editor.getJSON().content![1]).toEqual(original.content![1])
+	expect(editor.getJSON().content!.at(-1)).toEqual(original.content!.at(-1))
+	fireEvent.keyDown(box, { key: 'z', code: 'KeyZ', ctrlKey: true })
 	expect(editor.getJSON()).toEqual(original)
+	expect(workspace.documents.get(target.entry)!.editor!.files[bodyPath]).toBe(source)
 	await act(async () => {
-		workspace.regionLocation = { entry: target.entry, regionId: 'body', from: 0, to: 1, serial: 1 }
+		workspace.bodyLocation = {
+			entry: target.entry,
+			path: bodyPath,
+			from: 0,
+			to: 1,
+			serial: 1,
+		}
 		await workspace.writeData(target.entry, { title: '导航后的数据' })
 	})
 	expect(editor.state.selection).toBeInstanceOf(NodeSelection)
 	expect(editor.state.selection.from).toBe(0)
-	expect((editor.state.selection as NodeSelection).node.attrs.id).toBe('chart-1')
+	expect((editor.state.selection as NodeSelection).node.attrs.source).toBe(
+		'#import "blocks.typ": chart',
+	)
 })

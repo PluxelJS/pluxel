@@ -24,6 +24,18 @@
 			"@pluxel/hmr": "./src/browser/preview.ts",
 			"default": "./dist/browser.mjs"
 		},
+		"./source": {
+			"@pluxel/hmr": "./src/source/node.ts",
+			"default": "./dist/source.mjs"
+		},
+		"./source/browser": {
+			"@pluxel/hmr": "./src/source/browser.ts",
+			"default": "./dist/source/browser.mjs"
+		},
+		"./source/library": {
+			"@pluxel/hmr": "./src/source/library.ts",
+			"default": "./dist/source/library.mjs"
+		},
 		"./template": {
 			"@pluxel/hmr": "./src/template.ts",
 			"default": "./dist/template.mjs"
@@ -41,6 +53,10 @@
 			"default": "./dist/wasm.mjs"
 		},
 		"./package.json": "./package.json",
+		"./source/parser.wasm": {
+			"@pluxel/hmr": "./dist/source/typst_ast_bg.wasm",
+			"default": "./dist/source/typst_ast_bg.wasm"
+		},
 		"./tiptap/style.css": {
 			"@pluxel/hmr": "./src/tiptap/style.css",
 			"default": "./dist/tiptap/style.css"
@@ -50,11 +66,15 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./browser": "./dist/browser.mjs",
+			"./source": "./dist/source.mjs",
+			"./source/browser": "./dist/source/browser.mjs",
+			"./source/library": "./dist/source/library.mjs",
 			"./template": "./dist/template.mjs",
 			"./tiptap": "./dist/tiptap.mjs",
 			"./tiptap/react": "./dist/tiptap/react.mjs",
 			"./wasm": "./dist/wasm.mjs",
 			"./package.json": "./package.json",
+			"./source/parser.wasm": "./dist/source/typst_ast_bg.wasm",
 			"./tiptap/style.css": "./dist/tiptap/style.css"
 		}
 	},
@@ -71,7 +91,8 @@
 		"@myriaddreamin/typst-ts-renderer": "catalog:prod",
 		"@myriaddreamin/typst-ts-web-compiler": "catalog:prod",
 		"@myriaddreamin/typst.ts": "catalog:prod",
-		"marked": "catalog:frontend",
+		"@r4ai/typst-ast-node": "catalog:prod",
+		"@r4ai/typst-ast-web": "catalog:prod",
 		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
@@ -95,7 +116,6 @@
 		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
 		"@tiptap/extensions": "catalog:frontend",
-		"@tiptap/markdown": "catalog:frontend",
 		"@tiptap/pm": "catalog:frontend",
 		"@tiptap/react": "catalog:frontend",
 		"@tiptap/starter-kit": "catalog:frontend",
@@ -128,7 +148,6 @@
 		"@tiptap/extension-text-align": "catalog:frontend",
 		"@tiptap/extension-text-style": "catalog:frontend",
 		"@tiptap/extensions": "catalog:frontend",
-		"@tiptap/markdown": "catalog:frontend",
 		"@tiptap/pm": "catalog:frontend",
 		"@tiptap/react": "catalog:frontend",
 		"@tiptap/starter-kit": "catalog:frontend",
@@ -166,9 +185,6 @@
 			"optional": true
 		},
 		"@tiptap/extensions": {
-			"optional": true
-		},
-		"@tiptap/markdown": {
 			"optional": true
 		},
 		"@tiptap/pm": {

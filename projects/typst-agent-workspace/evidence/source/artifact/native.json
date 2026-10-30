@@ -1,0 +1,65 @@
+[
+  {
+    "ok": true,
+    "compileMs": 157.402,
+    "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+    "revision": 1,
+    "pdfBytes": 37679,
+    "diagnostics": []
+  },
+  {
+    "ok": true,
+    "compileMs": 7.55,
+    "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+    "revision": 2,
+    "pdfBytes": 37730,
+    "diagnostics": []
+  },
+  {
+    "ok": false,
+    "compileMs": 4.781,
+    "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+    "lastSuccessfulRevision": 2,
+    "code": "COMPILE_FAILED",
+    "diagnostics": [
+      {
+        "severity": "error",
+        "message": "unclosed delimiter",
+        "path": "sections/actions.typ",
+        "range": {
+          "end": {
+            "character": 15,
+            "line": 0
+          },
+          "start": {
+            "character": 14,
+            "line": 0
+          }
+        }
+      },
+      {
+        "severity": "info",
+        "message": "import",
+        "path": "main.typ",
+        "range": {
+          "end": {
+            "character": 31,
+            "line": 7
+          },
+          "start": {
+            "character": 9,
+            "line": 7
+          }
+        }
+      }
+    ]
+  },
+  {
+    "ok": true,
+    "compileMs": 5.358,
+    "sessionId": "4cd6056a-0481-4070-9542-e06788a3513e",
+    "revision": 3,
+    "pdfBytes": 37730,
+    "diagnostics": []
+  }
+]

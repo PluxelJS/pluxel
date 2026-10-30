@@ -78,9 +78,10 @@ it('preserves all workspace/document behaviors through the shared service and re
 		expect(vector.preview.data).toBeInstanceOf(Uint8Array)
 		expect(vector.preview.data.byteLength).toBeGreaterThan(100)
 		expect(first.sourceRevision).toBe(tree.revision)
+		const initialInput = await studio.getInput(target)
 		await studio.setInput({
 			...target,
-			expectedVersion: null,
+			expectedVersion: initialInput.storageVersion,
 			data: { header: { companyName: 'Saved input' } },
 		})
 		const next = await studio.compile({
@@ -94,7 +95,7 @@ it('preserves all workspace/document behaviors through the shared service and re
 		expect(next.revision).not.toBe(first.revision)
 		const nextVector = await studio.getPreview({ ...target, revision: next.revision })
 		expect(nextVector.preview.sessionId).toBe(vector.preview.sessionId)
-		expect(materialize).toHaveBeenCalledTimes(1)
+		expect(materialize).toHaveBeenCalledTimes(2) // Saving ordinary data.json changes the workspace snapshot.
 		// Direct external file edits must preserve the same worker for both Typst and TS/shared HMR.
 		const layoutPath = '报表/银行询证函/排版.typ'
 		const layout = await studio.readFile({ projectId: project.id, path: layoutPath })
@@ -138,19 +139,15 @@ it('preserves all workspace/document behaviors through the shared service and re
 		const pdf = await studio.exportPdf({ ...target, revision: sharedUpdated.revision })
 		const pdfBytes = await readFile(pdf.path)
 		expect(pdfBytes.subarray(0, 5).toString()).toBe('%PDF-')
+		const beforeSave = await studio.getInput(target)
 		await studio.setInput({
 			...target,
-			expectedVersion: savedInput.storageVersion,
+			expectedVersion: beforeSave.storageVersion,
 			data: { header: { companyName: 'Changed stored input' } },
 		})
-		const savedIndependent = await studio.renderPage({
-			...target,
-			revision: sharedUpdated.revision,
-			page: 1,
-			scale: 1,
-		})
-		const independentBytes = await readFile(savedIndependent.path)
-		expect(independentBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+		await expect(
+			studio.renderPage({ ...target, revision: sharedUpdated.revision, page: 1, scale: 1 }),
+		).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
 		await expect(studio.getPreview({ ...target, revision: first.revision })).rejects.toMatchObject({
 			code: 'REVISION_CONFLICT',
 		})

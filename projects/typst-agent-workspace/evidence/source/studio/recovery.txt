@@ -1,0 +1,22 @@
+ℹ config file: /home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/tsdown.dev.config.ts
+ℹ entry: src/electron/main.ts, src/electron/backend.ts
+ℹ tsconfig: tsconfig.json
+ℹ entry: src/electron/preload.ts
+ℹ tsconfig: tsconfig.json
+ℹ Build start
+ℹ Cleaning 9 files
+ℹ [CJS] .studio-dev/electron/preload.cjs  0.80 kB │ gzip: 0.34 kB
+ℹ [CJS] 1 files, total: 0.80 kB
+✔ Build complete in 18ms
+ℹ [ESM] .studio-dev/electron/main.mjs                       12.18 kB │ gzip:  4.12 kB
+ℹ [ESM] .studio-dev/electron/backend.mjs                     1.51 kB │ gzip:  0.68 kB
+ℹ [ESM] .studio-dev/electron/dev-Bzu6xgkA.mjs.map           58.29 kB │ gzip: 14.91 kB
+ℹ [ESM] .studio-dev/electron/dev-Bzu6xgkA.mjs               27.93 kB │ gzip:  7.71 kB
+ℹ [ESM] .studio-dev/electron/main.mjs.map                   24.65 kB │ gzip:  7.75 kB
+ℹ [ESM] .studio-dev/electron/message-port-WOUfID3g.mjs.map   8.19 kB │ gzip:  2.69 kB
+ℹ [ESM] .studio-dev/electron/message-port-WOUfID3g.mjs       3.92 kB │ gzip:  1.32 kB
+ℹ [ESM] .studio-dev/electron/backend.mjs.map                 2.86 kB │ gzip:  1.20 kB
+ℹ [ESM] 8 files, total: 139.53 kB
+✔ Build complete in 31ms
+10:53:17 AM [vite+] (client) [console.warn] using deprecated parameters for the initialization function; pass a single object instead
+Desktop recovery passed: two backend generations, form input, preview and native PDF save

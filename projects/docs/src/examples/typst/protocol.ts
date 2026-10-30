@@ -1,5 +1,3 @@
-import type { JSONContent } from '@pluxel/plugin-typst/tiptap'
-
 /** Top-level editor blocks, tied to the exact compiled draft revision. */
 export interface ExampleBlock {
 	id: string
@@ -12,7 +10,6 @@ export type ThemeVersion = 'classic' | 'color'
 
 export interface ExampleDraft {
 	source: string
-	document: JSONContent
 	revision: number
 }
 

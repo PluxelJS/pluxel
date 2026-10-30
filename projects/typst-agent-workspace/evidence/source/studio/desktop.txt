@@ -1,0 +1,25 @@
+Desktop checkpoint: 01-quarterly-last-page
+Desktop checkpoint: 01-quarterly-outline
+Desktop checkpoint: 01-quarterly-source-navigation
+Desktop checkpoint: 10-draft-initialized
+Desktop checkpoint: 11-draft-conflict
+Desktop checkpoint: 12-draft-recovered
+Desktop checkpoint: 13-source-file-shared-save
+Desktop checkpoint: 14-source-file-report-reloaded
+Desktop checkpoint: 07a-body-block-duplicate
+Desktop checkpoint: 07-body-table
+Desktop checkpoint: 07b-body-selection
+Desktop checkpoint: 07c-body-typography
+Desktop checkpoint: 07d-agent-body-preview
+Desktop checkpoint: 08-body-component
+Desktop checkpoint: 09-body-navigation
+Desktop checkpoint: 00-folder-mention
+Desktop checkpoint: 01-form-preview
+Desktop checkpoint: 09b-body-typography-reopened
+Desktop checkpoint: 02-completion
+Desktop checkpoint: 03-hover
+Desktop checkpoint: 04-typst-diagnostic
+Desktop checkpoint: 05-schema-recovery
+Desktop checkpoint: 05-provider-settings
+Desktop checkpoint: 06-imported-workspace
+Workspace desktop smoke passed: /home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/test-results/source-review-20261030-delivery

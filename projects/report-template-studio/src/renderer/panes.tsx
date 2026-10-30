@@ -40,9 +40,55 @@ function SaveStatus({
 	)
 }
 
+function InputConflict({ entry }: { entry: string }) {
+	const workspace = useWorkspace()
+	const document = workspace.documents.get(entry)
+	if (!document?.inputConflict) return null
+	return (
+		<Alert color="orange" title="填写数据与正文存在保存冲突" style={{ maxHeight: '50%' }}>
+			<Text size="sm">本地草稿已保留。检查两个版本后，选择要保留的内容。</Text>
+			<details>
+				<summary>本地草稿</summary>
+				<pre>{JSON.stringify({ data: document.data, editor: document.editor }, null, 2)}</pre>
+			</details>
+			<details>
+				<summary>冲突时读取的已保存版本</summary>
+				<pre>
+					{JSON.stringify(
+						{ data: document.inputConflict.data, editor: document.inputConflict.editor },
+						null,
+						2,
+					)}
+				</pre>
+			</details>
+			<Group mt="sm">
+				<Button
+					size="xs"
+					loading={document.inputSaving}
+					disabled={document.bodyLocked}
+					onClick={() => void workspace.resolveInputConflict(entry, 'local')}
+				>
+					保留本地并覆盖已保存版本
+				</Button>
+				<Button
+					size="xs"
+					variant="default"
+					disabled={document.inputSaving || document.bodyLocked}
+					onClick={() => void workspace.resolveInputConflict(entry, 'saved')}
+				>
+					载入已保存版本，放弃本地修改
+				</Button>
+			</Group>
+		</Alert>
+	)
+}
+
 function FileActions({ path }: { path: string }) {
 	const workspace = useWorkspace()
 	const file = workspace.files.get(path)
+	const owner = workspace.inputOwner(path)
+	const dirty = owner ? owner.inputDirty || !!owner.inputConflict : file?.dirty
+	const saving = owner ? owner.inputSaving : file?.saving
 	return (
 		<Menu position="bottom-end" withinPortal>
 			<Menu.Target>
@@ -59,17 +105,22 @@ function FileActions({ path }: { path: string }) {
 							{saveShortcut}
 						</Text>
 					}
-					disabled={!file?.dirty || file.saving}
+					disabled={!dirty || saving || owner?.bodyLocked || !!owner?.inputConflict}
 					onClick={() => void workspace.save(path)}
 				>
 					保存
 				</Menu.Item>
 				<Menu.Item
 					leftSection={<IconRefresh size={16} />}
+					disabled={owner?.bodyLocked}
 					onClick={() => {
 						if (
-							!file?.dirty ||
-							window.confirm('重新载入将放弃此文件在所有视图中的共享草稿，是否继续？')
+							!dirty ||
+							window.confirm(
+								owner
+									? '重新载入将放弃此报表的全部数据与正文草稿，并同步所有视图，是否继续？'
+									: '重新载入将放弃此文件在所有视图中的共享草稿，是否继续？',
+							)
 						)
 							void workspace.reload(path).catch((cause) => {
 								workspace.error = String(cause)
@@ -77,19 +128,25 @@ function FileActions({ path }: { path: string }) {
 							})
 					}}
 				>
-					从磁盘重新载入
+					{owner ? '从磁盘重新载入整份报表' : '从磁盘重新载入'}
 				</Menu.Item>
 				<Menu.Item
-					disabled={!file?.dirty}
+					disabled={!dirty || owner?.bodyLocked}
 					onClick={() => {
-						if (window.confirm('放弃此文件在所有视图中的共享草稿？'))
+						if (
+							window.confirm(
+								owner
+									? '从磁盘重新载入此报表的全部数据与正文，并放弃所有视图中的报表草稿？'
+									: '放弃此文件在所有视图中的共享草稿？',
+							)
+						)
 							void workspace.discard(path).catch((cause) => {
 								workspace.error = String(cause)
 								workspace.emit()
 							})
 					}}
 				>
-					放弃草稿
+					{owner ? '放弃整份报表草稿' : '放弃草稿'}
 				</Menu.Item>
 			</Menu.Dropdown>
 		</Menu>
@@ -100,10 +157,17 @@ function FileActions({ path }: { path: string }) {
 function FileEditorContent({ path, scope = 'file' }: { path: string; scope?: string }) {
 	const workspace = useWorkspace()
 	const file = workspace.files.get(path)
+	const owner = workspace.inputOwner(path)
+	const dirty = owner ? owner.inputDirty : file?.dirty
+	const error = owner?.inputError ?? file?.error
 	const diagnostics = [...workspace.documents.values()].flatMap((document) => document.diagnostics)
 	return (
 		<>
-			{file?.error && <Alert color="red">{file.error}</Alert>}
+			{owner?.inputConflict ? (
+				<InputConflict entry={owner.entry} />
+			) : (
+				error && <Alert color="red">{error}</Alert>
+			)}
 			{file ? (
 				<div className="workspace-code">
 					<CodeEditor
@@ -112,8 +176,8 @@ function FileEditorContent({ path, scope = 'file' }: { path: string; scope?: str
 						files={{ ...workspace.textFiles(), [path]: file.content }}
 						onChange={(changed, source) => workspace.edit(changed, source)}
 						onClickPosition={(line, column) => workspace.revealPreview({ path, line, column })}
-						diagnostics={file.dirty ? [] : diagnostics}
-						readOnly={file.missing}
+						diagnostics={dirty ? [] : diagnostics}
+						readOnly={file.missing || owner?.bodyLocked}
 						location={workspace.location?.path === path ? workspace.location : undefined}
 					/>
 				</div>
@@ -127,6 +191,12 @@ function FileEditorContent({ path, scope = 'file' }: { path: string; scope?: str
 export function FilePane({ path }: { path: string }) {
 	const workspace = useWorkspace()
 	const file = workspace.files.get(path)
+	const owner = workspace.inputOwner(path)
+	const ownerEntry = owner?.entry
+	useEffect(
+		() => (ownerEntry ? workspace.retainDocument(ownerEntry) : undefined),
+		[workspace, ownerEntry],
+	)
 	useWorkbenchContentLifecycle(
 		useMemo(() => editorLifecycle(workspace, path, 'file'), [workspace, path]),
 	)
@@ -153,7 +223,11 @@ export function FilePane({ path }: { path: string }) {
 					{path}
 				</Text>
 				<Group gap="xs" wrap="nowrap">
-					<SaveStatus {...file} />
+					<SaveStatus
+						dirty={owner ? owner.inputDirty : file?.dirty}
+						saving={owner ? owner.inputSaving : file?.saving}
+						error={owner ? (owner.inputConflict ? '保存冲突' : owner.inputError) : file?.error}
+					/>
 					<FileActions path={path} />
 				</Group>
 			</Group>
@@ -171,11 +245,11 @@ export function FormPane({ entry }: { entry: string }) {
 	const document = workspace.documents.get(entry)
 	const file = workspace.files.get(entry)
 	useEffect(() => {
-		if (workspace.regionLocation?.entry === entry) {
+		if (workspace.bodyLocation?.entry === entry) {
 			setBodyOpened(true)
 			setMode('body')
 		}
-	}, [entry, workspace.regionLocation])
+	}, [entry, workspace.bodyLocation])
 	useWorkbenchContentLifecycle(
 		useMemo(() => editorLifecycle(workspace, entry, 'form'), [workspace, entry]),
 	)
@@ -247,42 +321,7 @@ export function FormPane({ entry }: { entry: string }) {
 					)}
 				</Group>
 			</Group>
-			{mode !== 'code' && document?.inputConflict && (
-				<Alert color="orange" title="填写数据与正文存在保存冲突" style={{ maxHeight: '50%' }}>
-					<Text size="sm">本地草稿已保留。检查两个版本后，选择要保留的内容。</Text>
-					<details>
-						<summary>本地草稿</summary>
-						<pre>{JSON.stringify({ data: document.data, editor: document.editor }, null, 2)}</pre>
-					</details>
-					<details>
-						<summary>冲突时读取的已保存版本</summary>
-						<pre>
-							{JSON.stringify(
-								{ data: document.inputConflict.data, editor: document.inputConflict.editor },
-								null,
-								2,
-							)}
-						</pre>
-					</details>
-					<Group mt="sm">
-						<Button
-							size="xs"
-							loading={document.inputSaving}
-							onClick={() => void workspace.resolveInputConflict(entry, 'local')}
-						>
-							保留本地并覆盖已保存版本
-						</Button>
-						<Button
-							size="xs"
-							variant="default"
-							disabled={document.inputSaving}
-							onClick={() => void workspace.resolveInputConflict(entry, 'saved')}
-						>
-							载入已保存版本，放弃本地修改
-						</Button>
-					</Group>
-				</Alert>
-			)}
+			{mode !== 'code' && <InputConflict entry={entry} />}
 			{mode !== 'code' && !document?.inputConflict && (document?.error || document?.inputError) && (
 				<Alert color="red" title={document?.inputError ? '填写数据尚未保存' : '报表需要修复'}>
 					{document?.inputError ?? document?.error}

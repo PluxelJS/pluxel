@@ -1,291 +1,250 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getSchema } from '@tiptap/core'
+import { promisify } from 'node:util'
 import * as v from 'valibot'
 import {
-	collectTypstReferenceTargets,
-	createTypstExtensions,
-	exportTypstMarkdown,
-	generateTypstRegions,
-	prepareTypstCandidate,
-	validateTypstDraft,
-	validateTypstRegions,
-	type TypstDocumentDraft,
-	type TypstEditorIssue,
-	type TypstEditorResult,
-} from '@pluxel/plugin-typst/tiptap'
-import { config, dataSchema, initialDraft, templateId, templateRevision } from './model.ts'
+	createTypstSourceProject,
+	type TypstSourceFiles,
+	type TypstSourceResult,
+} from '@pluxel/plugin-typst/source'
+import { bodyPaths, components, dataPath, dataSchema, entry } from './model.ts'
 
+const run = promisify(execFile)
+const packageRoot = resolve(import.meta.dirname, '..')
+const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 export class ReportError extends Error {
-	constructor(readonly issues: readonly (TypstEditorIssue & { file?: string })[]) {
+	constructor(readonly issues: readonly { code: string; message: string; path?: string }[]) {
 		super(
 			issues
-				.map(
-					(issue) => `${issue.file ?? issue.regionId ?? 'report'}: ${issue.code}: ${issue.message}`,
-				)
+				.map((issue) => `${issue.path ?? 'report'}: ${issue.code}: ${issue.message}`)
 				.join('\n'),
 		)
 	}
 }
-
-export function accepted<T>(result: TypstEditorResult<T>): T {
-	if (!result.ok)
-		throw new ReportError(
-			result.issues.map((issue) => ({
-				...issue,
-				...(issue.regionId ? { file: `content/${issue.regionId}.md` } : {}),
-			})),
-		)
+export function accepted<T>(result: TypstSourceResult<T>): T {
+	if (!result.ok) throw new ReportError(result.issues)
 	return result.value
 }
 
-const digest = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex')
-const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
-const manifestSchema = v.strictObject({
-	formatVersion: v.literal(1),
-	format: v.literal('agent'),
-	templateId: v.literal(templateId),
-	templateRevision: v.literal(templateRevision),
-	baseRevision: v.string(),
-	files: v.record(v.string(), v.string()),
-	contextHashes: v.record(v.string(), v.string()),
-})
+/** Read ordinary project files. Symlinks and special files are rejected rather than followed. */
+async function readSnapshot(directory: string) {
+	const status = await lstat(directory)
+	if (!status.isDirectory())
+		throw new ReportError([
+			{
+				code: 'INVALID_PATH',
+				path: directory,
+				message: 'Expected an ordinary directory, not a symbolic link.',
+			},
+		])
+	const files: Record<string, string | Uint8Array> = {}
+	const digest = createHash('sha256')
+	async function visit(relative = ''): Promise<void> {
+		const entries = await readdir(join(directory, relative), { withFileTypes: true })
+		for (const item of entries.sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
+			const path = relative ? `${relative}/${item.name}` : item.name
+			if (item.isDirectory()) {
+				await visit(path)
+				continue
+			}
+			if (!item.isFile())
+				throw new ReportError([
+					{
+						code: 'INVALID_PATH',
+						path,
+						message: 'Only ordinary files and directories are supported.',
+					},
+				])
+			const bytes = await readFile(join(directory, path))
+			digest.update(`${Buffer.byteLength(path)}:${path}:${bytes.byteLength}:`).update(bytes)
+			files[path] = /\.(?:typ|json|md|svg|txt)$/.test(path)
+				? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+				: new Uint8Array(bytes)
+		}
+	}
+	await visit()
+	return { directory: resolve(directory), diskRevision: digest.digest('hex'), files }
+}
 
-async function locked<T>(root: string, action: () => Promise<T>): Promise<T> {
-	await mkdir(join(root, '.state'), { recursive: true })
-	const path = join(root, '.state/write.lock')
+function lockPathFor(directory: string) {
+	const destination = resolve(directory)
+	return join(dirname(destination), `.${basename(destination)}.report-write.lock`)
+}
+async function locked<T>(directory: string, action: () => Promise<T>): Promise<T> {
+	const path = lockPathFor(directory)
 	const lock = await open(path, 'wx')
 	try {
 		return await action()
 	} finally {
-		await lock.close()
-		await rm(path)
+		try {
+			await lock.close()
+		} finally {
+			await rm(path)
+		}
+	}
+}
+export function snapshot(directory: string) {
+	return locked(directory, () => readSnapshot(directory))
+}
+
+async function writeFiles(directory: string, files: TypstSourceFiles) {
+	// The public project boundary checks canonical paths before any writes occur.
+	const checked = createTypstSourceProject({ files }).snapshot().files
+	for (const [path, value] of Object.entries(checked)) {
+		await mkdir(dirname(join(directory, path)), { recursive: true })
+		await writeFile(join(directory, path), value, { flag: 'wx' })
 	}
 }
 
-export async function initialize(root: string) {
-	return locked(root, async () => {
-		const draft = initialDraft()
-		await writeFile(join(root, '.state/draft.json'), json(draft), { flag: 'wx' })
-		return { initialized: true }
+export async function initialize(directory: string) {
+	const initial = await snapshot(join(packageRoot, 'workspace'))
+	return locked(directory, async () => {
+		await mkdir(directory)
+		await writeFiles(directory, initial.files)
+		return readSnapshot(directory)
 	})
 }
-
-export async function snapshot(root: string) {
-	const draft = accepted(
-		validateTypstDraft({
-			draft: JSON.parse(await readFile(join(root, '.state/draft.json'), 'utf8')),
-			config,
-			templateId,
-			templateRevision,
-		}),
-	)
-	const data = v.parse(dataSchema, draft.data)
-	const template = await readFile(join(root, 'template/main.typ'), 'utf8')
-	const image = await readFile(join(root, 'template/revenue.svg'))
-	const revision = digest(json([draft, template, digest(image)]))
-	return { draft, data, template, image, revision }
+export async function checkout(directory: string, destination: string) {
+	const current = await snapshot(directory)
+	return locked(destination, async () => {
+		await mkdir(destination)
+		await writeFiles(destination, current.files)
+		return readSnapshot(destination)
+	})
+}
+export async function openWorkspace(directory: string) {
+	const current = await snapshot(directory)
+	return { ...current, project: createTypstSourceProject({ files: current.files, components }) }
 }
 
-export async function checkout(root: string, directory: string) {
-	const current = await snapshot(root)
-	// A checkout is new and independent: never overwrite an agent's existing edits.
-	await mkdir(directory)
-	const files: Record<string, string> = {}
-	const hashes: Record<string, string> = {}
-	const schema = getSchema(createTypstExtensions(config))
-	let markdownBytes = 0
-	for (const region of config.regions) {
-		const exported = accepted(
-			exportTypstMarkdown({
-				document: current.draft.regions[region.id],
-				regionId: region.id,
-				config,
-				data: current.data,
-				format: 'agent',
-			}),
-		)
-		if (!exported.lossless) throw new Error('An editable checkout must be lossless')
-		const path = `content/${region.id}.md`
-		files[path] = region.id
-		await output(directory, path, exported.markdown)
-		markdownBytes += Buffer.byteLength(exported.markdown)
-		// Exercise native schema admission at the consumer boundary too.
-		schema.nodeFromJSON(current.draft.regions[region.id]).check()
-	}
-	for (const [path, value] of Object.entries({
-		'context/data.json': json(current.data),
-		'context/references.json': json(collectTypstReferenceTargets(current.draft.regions, config)),
-		'assets/revenue.svg': current.image,
-		'AGENTS.md': await readFile(join(root, 'instructions.md'), 'utf8'),
-	})) {
-		await output(directory, path, value)
-		hashes[path] = digest(value)
-	}
-	await output(
-		directory,
-		'manifest.json',
-		json({
-			formatVersion: 1,
-			format: 'agent',
-			templateId,
-			templateRevision,
-			baseRevision: current.revision,
-			files,
-			contextHashes: hashes,
-		}),
-	)
-	return {
-		directory,
-		baseRevision: current.revision,
-		markdownBytes,
-		regions: config.regions.length,
-	}
-}
-
-export async function prepare(root: string, directory: string) {
-	const current = await snapshot(root)
-	const manifest = v.parse(
-		manifestSchema,
-		JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8')),
-	)
-	if (manifest.baseRevision !== current.revision)
-		throw new ReportError([
-			{
-				code: 'STALE_CANDIDATE',
-				message: '正文、数据或模板已变化。保留当前文件，重新 checkout 后显式迁移修改。',
-			},
-		])
-	const expectedFiles = Object.fromEntries(config.regions.map(({ id }) => [`content/${id}.md`, id]))
-	if (
-		Object.keys(manifest.files).length !== Object.keys(expectedFiles).length ||
-		Object.entries(expectedFiles).some(([path, id]) => manifest.files[path] !== id)
-	)
-		throw new ReportError([{ code: 'REGION_SET', message: '文件清单必须与模板声明的区域一致。' }])
-	const entries = await readdir(join(directory, 'content'), { withFileTypes: true })
-	if (
-		entries.length !== config.regions.length ||
-		entries.some(
-			(entry) => !entry.isFile() || !Object.hasOwn(expectedFiles, `content/${entry.name}`),
-		)
-	)
-		throw new ReportError([
-			{
-				code: 'REGION_SET',
-				message: 'content/ 必须保留所有已声明文件，不能新增、删除或重命名区域。',
-			},
-		])
-	const expectedContext = [
-		'context/data.json',
-		'context/references.json',
-		'assets/revenue.svg',
-		'AGENTS.md',
-	]
-	if (
-		Object.keys(manifest.contextHashes).length !== expectedContext.length ||
-		expectedContext.some((path) => !Object.hasOwn(manifest.contextHashes, path))
-	)
-		throw new Error('Checkout context manifest is incomplete')
-	for (const path of expectedContext) {
-		if (digest(await readFile(join(directory, path))) !== manifest.contextHashes[path])
+/**
+ * Local Linux consumer transaction. GNU mv's rename-exchange makes the complete tree
+ * visible in one filesystem operation. All this consumer's writers use the sibling lock.
+ * External editors must finish writing before commit; arbitrary noncooperating races
+ * between the final hash check and rename are outside this local consumer's guarantee.
+ */
+export async function commit(
+	directory: string,
+	input: { baseRevision: string; files: TypstSourceFiles },
+) {
+	const destination = resolve(directory)
+	const lockPath = lockPathFor(destination)
+	const lock = await open(lockPath, 'wx')
+	let staged: string | undefined
+	let saved = false
+	const cleanupWarnings: string[] = []
+	let result: { saved: boolean; diskRevision: string; cleanupWarnings: string[] } | undefined
+	try {
+		const current = await readSnapshot(destination)
+		if (current.diskRevision !== input.baseRevision)
 			throw new ReportError([
 				{
-					code: 'INVALID_RESOURCE',
-					file: path,
-					message: '本实验的上下文是只读快照；请只修改 content/*.md。',
+					code: 'CONFLICT',
+					message: 'Project files changed. Read the current files before applying this edit.',
 				},
 			])
-	}
-	const regions = { ...current.draft.regions }
-	const changed: string[] = []
-	const schema = getSchema(createTypstExtensions(config))
-	for (const [path, regionId] of Object.entries(expectedFiles)) {
-		const prepared = accepted(
-			prepareTypstCandidate({
-				candidate: {
-					regionId,
-					baseRevision: manifest.baseRevision,
-					format: 'agent',
-					markdown: await readFile(join(directory, path), 'utf8'),
-				},
-				currentRevision: current.revision,
-				document: regions[regionId]!,
-				config,
-				data: current.data,
-				canEdit: (id) => config.regions.some((region) => region.id === id),
-			}),
-		)
-		if (!schema.nodeFromJSON(regions[regionId]!).eq(schema.nodeFromJSON(prepared.mergedDocument)))
-			changed.push(regionId)
-		regions[regionId] = prepared.mergedDocument
-	}
-	accepted(validateTypstRegions({ regions, config, data: current.data }))
-	const draft: TypstDocumentDraft = { ...current.draft, regions }
-	// Includes cross-region reference and resource checks, without claiming compilation succeeded.
-	const generated = accepted(
-		generateTypstRegions({
-			regions,
-			config,
-			data: current.data,
-			snapshotRevision: current.revision,
-		}),
-	)
-	return { ...current, draft, generated, changed }
-}
-
-export async function apply(root: string, directory: string) {
-	return locked(root, async () => {
-		const candidate = await prepare(root, directory)
-		if (candidate.changed.length === 0)
-			return { saved: false, changed: [], revision: candidate.revision }
-		const temporary = join(root, `.state/draft-${randomUUID()}.json`)
-		try {
-			await writeFile(temporary, json(candidate.draft), { flag: 'wx' })
-			await rename(temporary, join(root, '.state/draft.json'))
-		} finally {
-			await rm(temporary, { force: true })
+		staged = await mkdtemp(join(dirname(destination), `.${basename(destination)}.report-stage-`))
+		await writeFiles(staged, input.files)
+		const candidate = await readSnapshot(staged)
+		if (candidate.diskRevision === current.diskRevision) {
+			result = { saved: false, diskRevision: current.diskRevision, cleanupWarnings }
+		} else {
+			const beforeExchange = await readSnapshot(destination)
+			if (beforeExchange.diskRevision !== input.baseRevision)
+				throw new ReportError([
+					{
+						code: 'CONFLICT',
+						message: 'Project files changed while staging. No file was replaced.',
+					},
+				])
+			await run('mv', ['--exchange', '--no-copy', '-T', '--', staged, destination])
+			saved = true
+			result = { saved: true, diskRevision: candidate.diskRevision, cleanupWarnings }
 		}
-		const saved = await snapshot(root)
-		return { saved: true, changed: candidate.changed, revision: saved.revision }
-	})
+	} finally {
+		try {
+			if (staged)
+				await rm(staged, { recursive: true, force: true }).catch((error: unknown) => {
+					if (!saved) throw error
+					cleanupWarnings.push(`Saved successfully; old tree cleanup failed: ${String(error)}`)
+				})
+		} finally {
+			try {
+				await lock.close()
+			} finally {
+				await rm(lockPath).catch((error: unknown) => {
+					if (!saved) throw error
+					cleanupWarnings.push(`Saved successfully; lock cleanup failed: ${String(error)}`)
+				})
+			}
+		}
+	}
+	return result!
 }
 
-export async function output(root: string, path: string, value: string | Uint8Array) {
-	const destination = join(root, path)
-	await mkdir(dirname(destination), { recursive: true })
-	await writeFile(destination, value)
-}
-
-export async function renderJob(root: string, directory: string) {
-	const candidate = await prepare(root, directory)
-	const job = resolve(root, '.artifacts', `render-${randomUUID()}`)
-	await output(job, 'template/main.typ', candidate.template)
-	for (const [path, source] of Object.entries(candidate.generated.templateFiles))
-		await output(job, `template/${path}`, source)
-	await output(job, 'revenue.svg', candidate.image)
-	const files = Object.fromEntries(
-		Object.entries(candidate.generated.inputFiles).map(([path, text]) => [
-			path,
-			{ kind: 'text', text },
-		]),
-	)
-	await output(
-		job,
-		'inputs.json',
-		json({
-			...files,
-			'/inputs/assets/revenue.svg': { kind: 'file', path: join(job, 'revenue.svg') },
+/** Saving drafts is independent of syntax/data validation and compilation. */
+export async function check(directory: string) {
+	const current = await openWorkspace(directory)
+	const diagnostics: { code: string; message: string; path?: string; severity?: string }[] = [
+		...current.project.diagnostics(),
+	]
+	try {
+		const text = current.files[dataPath]
+		if (typeof text !== 'string') throw new Error('Missing JSON data file')
+		const data = v.safeParse(dataSchema, JSON.parse(text))
+		if (!data.success)
+			for (const issue of data.issues)
+				diagnostics.push({
+					code: 'INVALID_DATA',
+					path: dataPath,
+					severity: 'error',
+					message: issue.message,
+				})
+	} catch (error) {
+		diagnostics.push({
+			code: 'INVALID_DATA',
+			path: dataPath,
+			severity: 'error',
+			message: String(error),
+		})
+	}
+	return {
+		diskRevision: current.diskRevision,
+		valid: !diagnostics.some((issue) => issue.severity === 'error'),
+		diagnostics,
+		files: bodyPaths.map((path) => {
+			const projection = current.project.open(path)
+			return {
+				path,
+				editable: projection.editable,
+				nodes: projection.document.content?.length ?? 0,
+			}
 		}),
-	)
-	await output(job, 'candidate.json', json(candidate.draft))
-	return job
+	}
 }
 
-export async function render(root: string, directory: string, fonts: string[]) {
-	if (fonts.length === 0) throw new Error('Provide font paths, including Noto Serif CJK SC.')
-	const job = await renderJob(root, directory)
+/** Compile all snapshots through one constructor-injected plugin and one retained session. */
+export async function renderSnapshots(
+	snapshots: readonly TypstSourceFiles[],
+	fonts: string[],
+	output?: string,
+) {
+	if (snapshots.length === 0 || fonts.length === 0)
+		throw new Error('At least one snapshot and an explicit font path are required.')
+	const job = output ? resolve(output) : await mkdtemp(join(await ensureArtifacts(), 'render-'))
+	if (output) await mkdir(job, { recursive: true })
+	const requests: { root: string; sourceRevision: string }[] = []
+	for (let index = 0; index < snapshots.length; index++) {
+		const root = join(job, `snapshot-${index + 1}`)
+		await mkdir(root)
+		await writeFiles(root, snapshots[index]!)
+		const stagedSnapshot = await snapshot(root)
+		requests.push({ root, sourceRevision: stagedSnapshot.diskRevision })
+	}
+	await writeFile(join(job, 'requests.json'), json(requests))
 	const { createHost } = await import('@pluxel/host')
 	const { pluginNodeAddressOf } = await import('@pluxel/core')
 	const { FontsPlugin } = await import('@pluxel/plugin-fonts')
@@ -308,7 +267,7 @@ export async function render(root: string, directory: string, fonts: string[]) {
 					owner: pluginNodeAddressOf(FontsPlugin),
 					config: { files: fonts, maxFontBytes: 64 * 1024 * 1024 },
 				},
-				{ owner: pluginNodeAddressOf(ReportRenderPlugin), config: { job } },
+				{ owner: pluginNodeAddressOf(ReportRenderPlugin), config: { job, entry } },
 			],
 		},
 		state: { initial: { autoStart: [pluginNodeAddressOf(ReportRenderPlugin)] } },
@@ -319,9 +278,32 @@ export async function render(root: string, directory: string, fonts: string[]) {
 			report.reconciliation.length > 0 ||
 			(report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
 		)
-			throw new Error('Report consumer failed', { cause: report })
-		return { job, ...JSON.parse(await readFile(join(job, 'compile.json'), 'utf8')) }
+			throw new Error('Report consumer failed to start', { cause: report })
+		return {
+			job,
+			results: JSON.parse(await readFile(join(job, 'compile.json'), 'utf8')) as CompileReceipt[],
+		}
 	} finally {
 		await host.close()
 	}
+}
+export interface CompileReceipt {
+	ok: boolean
+	sourceRevision: string
+	sessionId: string
+	revision?: number
+	lastSuccessfulRevision?: number
+	pages?: number
+	pdfBytes?: number
+	diagnostics?: unknown[]
+	message?: string
+}
+async function ensureArtifacts() {
+	const path = join(packageRoot, '.artifacts')
+	await mkdir(path, { recursive: true })
+	return path
+}
+export async function render(directory: string, fonts: string[], output?: string) {
+	const current = await snapshot(directory)
+	return renderSnapshots([current.files], fonts, output)
 }

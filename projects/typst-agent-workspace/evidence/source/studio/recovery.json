@@ -1,0 +1,172 @@
+{
+  "generations": 2,
+  "samePage": true,
+  "connectionNoticeCleared": true,
+  "optionalTableOmitted": true,
+  "nativePdfSaves": 2,
+  "previewReceipts": [
+    {
+      "generation": 1,
+      "revision": "b96786a7-5d7a-4a36-97de-4349df85fb61",
+      "sourceRevision": "2e39231005e74efa356408a5a531156a7c361e1f627a0398c40917d5368be9fd",
+      "storageVersion": "2e39231005e74efa356408a5a531156a7c361e1f627a0398c40917d5368be9fd"
+    },
+    {
+      "generation": 2,
+      "revision": "e1033602-9146-4b91-a0fe-215b26aed5e3",
+      "sourceRevision": "de9b3b663d6ce3ca39d8d7b1164837c32737dbe3d061a5550909fa8a7bd24642",
+      "storageVersion": "de9b3b663d6ce3ca39d8d7b1164837c32737dbe3d061a5550909fa8a7bd24642"
+    }
+  ],
+  "console": {
+    "input": {
+      "data": {
+        "header": {
+          "bankName": "After generation 2"
+        }
+      },
+      "storageVersion": "de9b3b663d6ce3ca39d8d7b1164837c32737dbe3d061a5550909fa8a7bd24642"
+    },
+    "plugins": [
+      {
+        "address": {
+          "definition": {
+            "entry": {
+              "kind": "package-root",
+              "packageName": "@pluxel/plugin-fonts"
+            },
+            "exportName": "FontsPlugin"
+          },
+          "variant": "default"
+        },
+        "displayName": "FontsPlugin",
+        "rootExportName": "FontsPlugin",
+        "autoStart": false,
+        "sessionIntent": "inherit",
+        "desiredState": "running",
+        "activationReason": "dependency",
+        "lifecycleState": "running",
+        "availability": "available",
+        "issues": [],
+        "execution": {
+          "kind": "vite",
+          "origin": "fixed",
+          "artifact": {
+            "kind": "source-module"
+          },
+          "update": {
+            "kind": "host-reload"
+          }
+        },
+        "recentUpdate": {
+          "batch": {
+            "outcome": "applied",
+            "phase": null,
+            "scope": "application",
+            "sequence": 3,
+            "durationMs": 60.085628999999244
+          },
+          "lifecycle": {
+            "issues": []
+          }
+        }
+      },
+      {
+        "address": {
+          "definition": {
+            "entry": {
+              "kind": "package-root",
+              "packageName": "@pluxel/plugin-typst"
+            },
+            "exportName": "TypstPlugin"
+          },
+          "variant": "default"
+        },
+        "displayName": "TypstPlugin",
+        "rootExportName": "TypstPlugin",
+        "autoStart": false,
+        "sessionIntent": "inherit",
+        "desiredState": "running",
+        "activationReason": "dependency",
+        "lifecycleState": "running",
+        "availability": "available",
+        "issues": [],
+        "execution": {
+          "kind": "vite",
+          "origin": "fixed",
+          "artifact": {
+            "kind": "source-module"
+          },
+          "update": {
+            "kind": "host-reload"
+          }
+        },
+        "recentUpdate": {
+          "batch": {
+            "outcome": "applied",
+            "phase": null,
+            "scope": "application",
+            "sequence": 3,
+            "durationMs": 60.085628999999244
+          },
+          "lifecycle": {
+            "issues": []
+          }
+        }
+      },
+      {
+        "address": {
+          "definition": {
+            "entry": {
+              "kind": "package-subpath",
+              "packageName": "@report-template-studio/app",
+              "subpath": "./plugin"
+            },
+            "exportName": "StudioPlugin"
+          },
+          "variant": "default"
+        },
+        "displayName": "Report Template Studio",
+        "rootExportName": "StudioPlugin",
+        "autoStart": true,
+        "sessionIntent": "inherit",
+        "desiredState": "running",
+        "activationReason": "auto-start",
+        "lifecycleState": "running",
+        "availability": "available",
+        "issues": [],
+        "execution": {
+          "kind": "vite",
+          "origin": "fixed",
+          "artifact": {
+            "kind": "source-module"
+          },
+          "update": {
+            "kind": "host-reload"
+          }
+        },
+        "recentUpdate": {
+          "batch": {
+            "outcome": "applied",
+            "phase": null,
+            "scope": "application",
+            "sequence": 3,
+            "durationMs": 60.085628999999244
+          },
+          "lifecycle": {
+            "issues": []
+          }
+        }
+      }
+    ],
+    "update": {
+      "sequence": 3,
+      "state": "settled",
+      "phase": null,
+      "outcome": "applied",
+      "durationMs": 60.085628999999244,
+      "trigger": "src/backend/application.ts",
+      "error": null
+    }
+  }
+}

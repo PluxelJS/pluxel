@@ -3,9 +3,9 @@ title: Typst 文档
 description: 复用 Typst 生成无状态 SVG，或用多文件会话生成同修订 Vector 预览与 PDF。
 ---
 
-`@pluxel/plugin-typst` 是 workspace 内的文档插件，当前保持 private。业务通过 constructor 注入 TypstPlugin。本页维护编译、资源、会话和产物契约；正文、Agent Markdown、图题表题、公式和引用的使用见[区域编辑](./typst-editor.md)。
+`@pluxel/plugin-typst` 是 workspace 内的文档插件，当前保持 private。业务通过 constructor 注入 TypstPlugin。本页维护编译、资源、会话和产物契约；正文源码、图题表题、公式和引用的使用见[源码编辑](./typst-editor.md)。
 
-模板是普通多文件 Typst 项目。页面设计与章节组合继续使用原生 `#import` / `#include`；可编辑正文由 Tiptap JSON 生成区域文件，再由模板包含。编译器不要求模板的文件结构与编辑器 AST 相互模拟。
+模板是普通多文件 Typst 项目。页面设计与章节组合使用原生 `#import` / `#include`；可编辑正文直接保存在 `.typ` 文件，Tiptap 是源码的结构化视图。编译器读取完整项目源码，编辑器的派生树不参与持久化。
 
 ## 接入前提
 
@@ -84,7 +84,7 @@ const svg = await this.typst.renderSvg('#include "sections/body.typ"', {
 
 WASM 编译会同步占用所在 Worker，插件没有软取消或时间上限。宿主负责超时后终止 Worker，并在页面退出时停止应用、终止 Worker；终止也会回收该 Worker 的 WASM 线性内存。需要 PDF、二进制文件资源或保留编译状态的编辑会话时继续使用服务端入口。完整浏览器装配和交互示例见 [Examples](/examples)。
 
-Examples 打开即启动，通过示例列表切换「Typst 实时排版」与「插件热替换」。两者共用同一运行实例，切换时保留草稿与撤销记录；运行记录可在底部展开。排版示例复用 `TypstRegionEditor` 和区域生成器，提供正文格式、列表、表格、Typst 模板编辑，以及正文与预览的块级双向跳转。编辑后自动编译；处理中保留上次预览，禁用旧修订的导航，成功后恢复。示例为生成的顶层块附加 Typst 链接，使用官方 SVG 中的真实链接区域定位；跨页区域由编译器拆分。官方 WASM 0.7.0 没有开放原生补丁的字符来源查询，因此这里不宣称字符级精度；桌面端的精确导航见[编辑与定位](./typst-editor.md#预览与定位)。
+Examples 打开即启动，通过示例列表切换「Typst 实时排版」与「插件热替换」。两者共用同一运行实例，切换时保留草稿与撤销记录；运行记录可在底部展开。排版示例复用 `TypstSourceEditor`，以普通 Typst 源码保存正文，提供正文格式、列表、表格、源码编辑，以及正文与预览的块级双向跳转。编辑后自动编译；处理中保留上次预览，禁用旧修订的导航，成功后恢复。示例只在编译副本中为可确认的顶层块附加 Typst 链接，使用官方 SVG 中的真实链接区域定位；跨页区域由编译器拆分。官方 WASM 0.7.0 没有开放原生补丁的字符来源查询，因此这里不宣称字符级精度；桌面端的精确导航见[编辑与定位](./typst-editor.md#编译与预览定位)。
 
 在「插件热替换」示例中切换排版版本，会向 `host.updateCatalog()` 提交另一版同身份的 `ThemePlugin`。真实 Core 替换排版插件、重建依赖它的 `ReportPlugin`，保留 `TypstPlugin` 及其 WASM 实例；编辑器、撤销记录和 Worker 均不重建。页面展示实际更新报告和生命周期事件。两版插件经过相同的 Pluxel 编译变换后预先打包，模拟新模块送达；这里演示真实插件热替换，不提供浏览器内 TypeScript 构建器或开发服务器。初次资源加载后，编辑、编译和插件切换都可离线运行。
 
@@ -269,7 +269,7 @@ View 管理根 SVG 的宽度和比例，宿主只负责滚动区域与居中，�
 
 View 统一管理 SVG CTM 坐标、普通点击/拖选过滤、页码/目录跟随和高亮；宿主通过普通位置回调连接编辑器，并维护文件/草稿版本与可见目标选择。保留旧预览时不能直接套用已修改源码的行列。Typst 的布局映射来自原生文档 span，TypeScript 的转换 sourcemap 由 Vite 管理，二者不互相替代。每修订最多 200,000 个有效定位点，超限明确失败。
 
-可选 `/tiptap` 与 `/tiptap/react` 支持命名正文区域、文字排版、表格、题注、LaTeX 公式、交叉引用、数据字段和 Markdown 候选。公式生成附带固定 MiTeX 文本资源，不要求动态导包；完整生成文件仍由宿主加入私有模板树，原生 `#include` 与标签解析保持 Typst 自身语义。安装、生成、持久化与定位见 [Typst 区域编辑](./typst-editor.md)。根入口、`/template` 和 `/browser` 不要求安装 Tiptap/React。
+可选 `/source`、`/source/browser`、`/tiptap` 与 `/tiptap/react` 提供源码项目事务和结构化视图，支持文字排版、手工表格、题注、LaTeX 公式、原生交叉引用、模板参数和 JSON 数据绑定。普通 `.typ` 是正文权威，固定 MiTeX/helper 作为明确的普通项目文件持久化。完整用法见 [Typst 源码编辑](./typst-editor.md)。根入口、`/template` 和 `/browser` 不要求安装 Tiptap/React。
 
 ## 容量配置
 

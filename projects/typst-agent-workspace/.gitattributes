@@ -1,2 +1,5 @@
-evidence/*.pdf binary
-evidence/*.png binary
+evidence/**/*.pdf binary
+evidence/**/*.png binary
+# Patch context and migrated source retain the original authored whitespace.
+evidence/source/source.diff -whitespace
+workspace/sections/*.typ whitespace=-blank-at-eof

@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { generateTypstRegions, type TypstGeneratedMapping } from '@pluxel/plugin-typst/tiptap'
+import { isDeepStrictEqual } from 'node:util'
 import type { FontsPlugin, FontRegistration } from '@pluxel/plugin-fonts'
 import type { TypstPlugin, TypstSession, TypstCompiled, TypstPreview } from '@pluxel/plugin-typst'
 import type {
@@ -20,9 +20,8 @@ import type {
 } from '../shared/contracts.js'
 import { ArtifactStore } from './artifacts.js'
 import { TemplateCompiler } from './compiler.js'
-import { inputData, editorDraft } from './inputs.js'
-import { describeEditor, editorResult, validateEditorDraft } from './editor-config.js'
-import { studioEditorConfig } from '../shared/editor.js'
+import { inputData, inputPath } from './inputs.js'
+import { describeEditor, validateEditorDraft, editorDraft } from './editor-config.js'
 import { pathName, reportEntry } from './storage-validation.js'
 import { WorkspaceStore } from './store.js'
 import type { RuntimeOperation } from './template-runtime.js'
@@ -128,59 +127,61 @@ export class DocumentService {
 		if (!Number.isSafeInteger(clientRevision) || clientRevision < 0)
 			throw failure(
 				'INVALID_INPUT',
-				'clientRevision must be a nonnegative safe integer covering the captured data and regions',
+				'clientRevision must be a nonnegative safe integer covering the captured source and data',
 			)
 		return this.operate(document, true, async (record, options) => {
 			const snapshot = await this.borrowSnapshot(document.projectId, options)
 			let templateRoot: string | undefined
 			try {
 				const description = describeEditor(snapshot.document, document.entry)
+				const draft = validateEditorDraft(description, editor)
+				if (
+					draft &&
+					Object.keys(snapshot.document.files).some((path) => !Object.hasOwn(draft.files, path))
+				)
+					throw failure(
+						'INVALID_EDITOR_DRAFT',
+						'Source snapshot is incomplete; reload before compiling',
+					)
 				const evaluated = await record.compiler.evaluate(
 					snapshot.document,
 					document.entry,
 					data,
 					options,
 				)
-				const draft = validateEditorDraft(description, editor, evaluated.data)
-				const files = { ...evaluated.files }
-				let mapping: TypstGeneratedMapping[] | undefined
-				let generatedFiles: Record<string, string> | undefined
-				if (description && draft) {
-					for (const name of Object.keys(evaluated.files))
-						if (name === '/inputs/editor' || name.startsWith('/inputs/editor/'))
-							throw failure(
-								'EDITOR_RESOURCE_CONFLICT',
-								`createFiles uses the reserved editor namespace: ${name}`,
-							)
-					try {
-						await lstat(join(snapshot.root, '_editor'))
-						throw failure(
-							'EDITOR_RESOURCE_CONFLICT',
-							'Template sources use the reserved _editor/ namespace',
-						)
-					} catch (error) {
-						if (errorCode(error) !== 'ENOENT') throw error
-					}
-					const generated = editorResult(
-						generateTypstRegions({
-							regions: draft.regions,
-							config: studioEditorConfig(description),
-							data: evaluated.data,
-							snapshotRevision: clientRevision,
-						}),
-					)
-					generatedFiles = generated.templateFiles
-					mapping = generated.mapping
-					for (const [name, text] of Object.entries(generated.inputFiles))
-						files[name] = { kind: 'text', text }
+				const sourceFiles = { ...snapshot.document.files }
+				const writable = new Set(description?.sources.map((source) => source.path))
+				for (const [path, source] of Object.entries(draft?.files ?? {})) {
+					if (source === sourceFiles[path]) continue
+					if (!writable.has(path) && path !== inputPath(document.entry))
+						throw failure('REVISION_CONFLICT', `Source snapshot changed outside this body: ${path}`)
+					sourceFiles[path] = source
 				}
-				const templateRevision = generatedFiles
-					? createHash('sha256')
-							.update(
-								JSON.stringify([snapshot.document.revision, evaluated.template, generatedFiles]),
-							)
-							.digest('hex')
-					: snapshot.document.revision
+				const dataPath = inputPath(document.entry)
+				if (draft && sourceFiles[dataPath] !== undefined) {
+					let authored: unknown
+					try {
+						authored = JSON.parse(sourceFiles[dataPath]!)
+					} catch (cause) {
+						throw Object.assign(new Error(`Invalid JSON source: ${dataPath}`, { cause }), {
+							code: 'INVALID_INPUT',
+						})
+					}
+					if (!isDeepStrictEqual(inputData(authored), data))
+						throw failure(
+							'INVALID_INPUT',
+							'The JSON source and supplied form data differ; update the source snapshot before compiling',
+						)
+				} else sourceFiles[dataPath] = JSON.stringify(data, null, 2) + '\n'
+				const files = { ...evaluated.files }
+				const changedFiles = Object.fromEntries(
+					Object.entries(sourceFiles).filter(
+						([path, source]) => source !== snapshot.document.files[path],
+					),
+				)
+				const templateRevision = createHash('sha256')
+					.update(JSON.stringify([snapshot.document.revision, changedFiles]))
+					.digest('hex')
 				const fonts = await this.fontSignature(snapshot, options)
 				if (record.session && record.fonts !== fonts) {
 					this.typst.ctx.logger.info('Studio document fonts changed; rebuilding session', {
@@ -190,13 +191,13 @@ export class DocumentService {
 				}
 				const replaceTemplate =
 					record.templateRevision !== templateRevision || record.template !== evaluated.template
-				if (generatedFiles && (!record.session || replaceTemplate)) {
-					templateRoot = await mkdtemp(join(tmpdir(), 'pluxel-studio-editor-'))
+				if (Object.keys(changedFiles).length > 0 && (!record.session || replaceTemplate)) {
+					templateRoot = await mkdtemp(join(tmpdir(), 'pluxel-studio-source-'))
 					await cp(snapshot.root, templateRoot, { recursive: true, errorOnExist: true })
-					for (const [path, source] of Object.entries(generatedFiles)) {
+					for (const [path, source] of Object.entries(changedFiles)) {
 						const file = join(templateRoot, pathName(path))
 						await mkdir(dirname(file), { recursive: true })
-						await writeFile(file, source, { flag: 'wx' })
+						await writeFile(file, source)
 					}
 				}
 				if (!record.session)
@@ -252,7 +253,6 @@ export class DocumentService {
 					sourceRevision: snapshot.document.revision,
 					data: evaluated.data,
 					clientRevision,
-					...(mapping ? { generatedMapping: mapping } : {}),
 					pageCount: compiled.preview.navigation.pages.length,
 					pages: compiled.preview.navigation.pages,
 					outline: compiled.preview.navigation.outline,
@@ -261,7 +261,7 @@ export class DocumentService {
 				}
 				const receipt = structuredClone(result)
 				const sourceVersions = Object.fromEntries(
-					Object.entries(snapshot.document.files).map(([path, source]) => [
+					Object.entries(sourceFiles).map(([path, source]) => [
 						path,
 						createHash('sha256').update(source).digest('hex'),
 					]),
@@ -329,7 +329,7 @@ export class DocumentService {
 		return this.operate(document, true, async (record, operation) => {
 			validateEditorDraft(description, editor)
 			const parsed = await record.compiler.evaluate(source, document.entry, data, operation)
-			validateEditorDraft(description, editor, parsed.data)
+			validateEditorDraft(description, editor)
 			const currentSource = await this.store.snapshot(document.projectId)
 			if (currentSource.revision !== source.revision)
 				throw failure('REVISION_CONFLICT', 'Workspace changed while validating the document draft')
@@ -345,9 +345,6 @@ export class DocumentService {
 			const result = structuredClone({
 				...request,
 				clientRevision: current.result.clientRevision,
-				...(current.result.generatedMapping
-					? { generatedMapping: current.result.generatedMapping }
-					: {}),
 				sourceRevision: current.result.sourceRevision,
 				sourceVersions: current.sourceVersions,
 				preview: current.preview,

@@ -1,13 +1,13 @@
 import { useSyncExternalStore } from 'react'
-import type { Editor, JSONContent } from '@tiptap/core'
+import type { Editor } from '@tiptap/core'
 import { RpcStub, RpcTarget } from 'capnweb'
 import type { SourcePosition, TypstNavigationPoint } from '@pluxel/plugin-typst/browser'
 import {
-	validateTypstRegions,
-	findTypstRegionPosition,
-	findTypstGeneratedPosition,
-	applyTypstCandidate,
-} from '@pluxel/plugin-typst/tiptap'
+	findTypstSourcePosition,
+	findTypstEditorPosition,
+	type TypstSourceProject,
+} from '@pluxel/plugin-typst/source/browser'
+
 import {
 	isStudioError,
 	type CompileResult,
@@ -22,9 +22,11 @@ import {
 	type BodyEditorParticipant,
 	type BodyEditorAttachment,
 } from '../shared/contracts'
-import { studioEditorConfig } from '../shared/editor'
+import { sourceFiles } from '../shared/source-files'
 import { api, onDesktopConnectionChange } from './api'
 import { isPaneVisible } from './source-navigation'
+
+const disconnectedMessage = '后端连接已中断，等待恢复。'
 
 interface PreviewRegistration {
 	entry: string
@@ -43,9 +45,12 @@ export interface FileState extends TextFile {
 	missing?: boolean
 }
 export interface DocumentState {
+	assets?: DocumentInput['assets']
 	entry: string
 	result?: CompileResult
 	preview?: PreviewResult
+	/** Exact authored sources captured for the visible compile; never editable. */
+	compiledSources?: Readonly<Record<string, string>>
 	description?: DocumentDescription
 	fields: DocumentDescription['fields']
 	data: JsonObject
@@ -74,6 +79,22 @@ function inputContent({ data, editor }: Pick<DocumentInput, 'data' | 'editor'>):
 			: value,
 	)
 }
+function sameSourceFiles(
+	left: Readonly<Record<string, string | Uint8Array>>,
+	right: Readonly<Record<string, string | Uint8Array>>,
+): boolean {
+	return (
+		Object.keys(left).length === Object.keys(right).length &&
+		Object.entries(right).every(([path, value]) => {
+			const current = left[path]
+			return typeof value === 'string'
+				? current === value
+				: current instanceof Uint8Array &&
+						current.byteLength === value.byteLength &&
+						current.every((byte, index) => byte === value[index])
+		})
+	)
+}
 export interface AssistantDraft {
 	text: string
 	modelKey?: string | null
@@ -91,9 +112,9 @@ export class WorkspaceController {
 	error = ''
 	/** A user navigation request; object identity lets repeated searches reveal the same line. */
 	location?: SourcePosition & { endLine?: number; endColumn?: number }
-	regionLocation?: {
+	bodyLocation?: {
 		entry: string
-		regionId: string
+		path: string
 		from: number
 		to: number
 		serial: number
@@ -117,7 +138,11 @@ export class WorkspaceController {
 	private refreshing?: Promise<boolean>
 	private closed = false
 	private bodyAttachment?: BodyEditorAttachment
-	private bodyConnection = 0
+	private connectionGeneration = 0
+	readonly sourceProjects = new Map<string, TypstSourceProject>()
+	private sourceSubscriptions = new Map<string, () => void>()
+	private sourceLoads = new Map<string, { key: string; promise: Promise<TypstSourceProject> }>()
+	private syncingSource = new Set<string>()
 	private bodyEditors = new Map<string, Map<string, Set<Editor>>>()
 	private bodyLocks = new Map<
 		string,
@@ -139,7 +164,8 @@ export class WorkspaceController {
 	}
 	start() {
 		if (this.closed || this.polling) return
-		this.disconnectListener = onDesktopConnectionChange((connected) => {
+		this.disconnectListener = onDesktopConnectionChange(async (connected) => {
+			if (connected && this.error === disconnectedMessage) this.error = ''
 			for (const entry of this.bodyLocks.keys()) this.unlockBody(entry)
 			// Retain visible pages and drafts, but never export or navigate an old generation.
 			for (const [entry, document] of this.documents) {
@@ -148,13 +174,17 @@ export class WorkspaceController {
 					result: undefined,
 					busy: false,
 					generation: ++this.documentGeneration,
-					error: !connected ? '后端连接已中断，等待恢复。' : '后端已更新，正在恢复当前草稿的预览。',
+					error: !connected ? disconnectedMessage : '后端已更新，正在恢复当前草稿的预览。',
 				})
 			}
 			this.emit()
 			if (connected) {
 				void this.attachBodyEditor()
-				for (const entry of this.documentUsers.keys()) void this.compile(entry)
+				for (const entry of [...this.documentUsers.keys()].sort(
+					(left, right) =>
+						Number(left === this.preferredPreview) - Number(right === this.preferredPreview),
+				))
+					await this.compile(entry)
 			}
 		})
 		void this.attachBodyEditor()
@@ -165,13 +195,15 @@ export class WorkspaceController {
 	}
 	dispose() {
 		this.closed = true
-		++this.bodyConnection
+		++this.connectionGeneration
 		void this.bodyAttachment?.close().catch(() => {})
 		this.bodyAttachment = undefined
 		for (const entry of this.bodyLocks.keys()) this.unlockBody(entry)
 		this.disconnectListener?.()
 		clearInterval(this.polling)
 		for (const timer of this.timers.values()) clearTimeout(timer)
+		for (const release of this.sourceSubscriptions.values()) release()
+		this.sourceLoads.clear()
 		this.listeners.clear()
 		this.previews.clear()
 		this.documentUsers.clear()
@@ -181,17 +213,17 @@ export class WorkspaceController {
 		++this.navigationSerial
 	}
 	private async attachBodyEditor() {
-		const generation = ++this.bodyConnection
+		const generation = ++this.connectionGeneration
 		const participant = new RpcStub(new WorkspaceBodyParticipant(this))
 		try {
 			const attachment = await api.attachBodyEditor({ projectId: this.project.id }, participant)
-			if (this.closed || generation !== this.bodyConnection) {
+			if (this.closed || generation !== this.connectionGeneration) {
 				await attachment.close()
 				return
 			}
 			this.bodyAttachment = attachment
 		} catch (cause) {
-			if (!this.closed && generation === this.bodyConnection) {
+			if (!this.closed && generation === this.connectionGeneration) {
 				this.error = `正文 Agent 连接失败：${String(cause)}`
 				this.emit()
 			}
@@ -199,16 +231,16 @@ export class WorkspaceController {
 			participant[Symbol.dispose]()
 		}
 	}
-	registerBodyEditor(entry: string, regionId: string, editor: Editor): () => void {
-		let regions = this.bodyEditors.get(entry)
-		if (!regions) this.bodyEditors.set(entry, (regions = new Map()))
-		let editors = regions.get(regionId)
-		if (!editors) regions.set(regionId, (editors = new Set()))
+	registerBodyEditor(entry: string, path: string, editor: Editor): () => void {
+		let paths = this.bodyEditors.get(entry)
+		if (!paths) this.bodyEditors.set(entry, (paths = new Map()))
+		let editors = paths.get(path)
+		if (!editors) paths.set(path, (editors = new Set()))
 		editors.add(editor)
 		return () => {
 			editors.delete(editor)
-			if (editors.size === 0) regions.delete(regionId)
-			if (regions.size === 0) this.bodyEditors.delete(entry)
+			if (editors.size === 0) paths.delete(path)
+			if (paths.size === 0) this.bodyEditors.delete(entry)
 		}
 	}
 	async captureBody({ entry }: { entry: string }): ReturnType<BodyEditorParticipant['capture']> {
@@ -243,6 +275,7 @@ export class WorkspaceController {
 			const input = structuredClone({
 				data: current.data,
 				editor: current.editor,
+				assets: current.assets,
 				storageVersion: current.storageVersion ?? null,
 			})
 			const token = current.inputToken ?? 0
@@ -266,20 +299,29 @@ export class WorkspaceController {
 				(current.inputToken ?? 0) !== lock.token
 			)
 				throw new Error('当前正文已改变；保留本地草稿并重新载入已提交内容')
-			const description = current.description?.editor
-			if (!description) throw new Error('正文模板已失效')
-			for (const editor of this.bodyEditors.get(entry)?.get(commit.candidate.regionId) ?? []) {
-				const applied = applyTypstCandidate({
-					editor,
-					candidate: commit.candidate,
-					regionId: commit.candidate.regionId,
-					currentRevision: () => commit.candidate.baseRevision,
-					config: studioEditorConfig(description),
-					data: () => commit.data,
-					canEdit: () => !editor.view.composing,
-				})
-				if (!applied.ok) throw new Error(applied.issues.map((issue) => issue.message).join('\n'))
+			const sourceProject = this.sourceProjects.get(entry)
+			if (sourceProject && commit.input.editor) {
+				const before = sourceProject.snapshot().files
+				const patches = Object.entries(commit.input.editor.files)
+					.filter(([path, text]) => before[path] !== text)
+					.map(([path, text]) => ({
+						path,
+						from: 0,
+						to: new TextEncoder().encode(typeof before[path] === 'string' ? before[path] : '')
+							.length,
+						text,
+					}))
+				this.syncingSource.add(entry)
+				try {
+					const result = sourceProject.apply({ baseRevision: sourceProject.revision, patches })
+					if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join('\n'))
+				} finally {
+					this.syncingSource.delete(entry)
+				}
 			}
+			if (commit.input.editor)
+				this.syncInputFiles(entry, commit.input.editor.files, commit.input.editor.files)
+
 			this.documents.set(entry, {
 				...current,
 				...structuredClone(commit.input),
@@ -289,6 +331,7 @@ export class WorkspaceController {
 				inputConflict: undefined,
 				result: commit.compile ?? current.result,
 				preview: commit.preview ?? current.preview,
+				compiledSources: commit.preview ? commit.input.editor?.files : current.compiledSources,
 				diagnostics: commit.compile?.diagnostics ?? [],
 				error: commit.previewError,
 				busy: false,
@@ -349,6 +392,14 @@ export class WorkspaceController {
 			return false
 		return Object.entries(result.sourceVersions).every(([path, version]) => {
 			const file = this.files.get(path)
+			const captured = document.compiledSources?.[path]
+			if (
+				captured !== undefined &&
+				document.editor?.files[path] === captured &&
+				file?.content === captured
+			)
+				return !file.dirty && !file.saving && !file.missing && !file.error
+
 			if (file)
 				return (
 					!file.dirty && !file.saving && !file.missing && !file.error && file.version === version
@@ -373,36 +424,73 @@ export class WorkspaceController {
 			matching.length === 1 ? matching[0] : candidates.length === 1 ? candidates[0] : undefined
 		if (preview?.reveal(position)) this.preferredPreview = preview.entry
 	}
-	revealRegion(entry: string, regionId: string, position: number) {
-		const result = this.documents.get(entry)?.preview
-		if (!result || !this.isNavigationCurrent(result)) return
-		const source = findTypstGeneratedPosition({
-			mapping: result.generatedMapping ?? [],
-			navigation: result.preview.navigation,
-			regionId,
-			position,
-			snapshotRevision: result.clientRevision,
-		})
+	revealBodySource(entry: string, path: string, position: number) {
+		const result = this.documents.get(entry)?.preview,
+			project = this.sourceProjects.get(entry)
+		if (!result || !project || !this.isNavigationCurrent(result)) return
+		const source = findTypstSourcePosition({ projection: project.open(path), position })
 		if (source) {
 			this.preferredPreview = entry
 			this.revealPreview(source)
 		}
 	}
+	async revealReference(entry: string, path: string, position: number) {
+		const project = this.sourceProjects.get(entry)
+		if (!project) return
+		if (
+			this.documents.get(entry)?.description?.editor?.sources.some((source) => source.path === path)
+		) {
+			this.bodyLocation = {
+				entry,
+				path,
+				from: position,
+				to: position,
+				serial: ++this.navigationSerial,
+			}
+			this.emit()
+			return
+		}
+		const revision = project.revision
+		const source = findTypstSourcePosition({ projection: project.open(path), position })
+		if (!source || !this.openSource) return
+		try {
+			if (
+				!(await this.openSource(path)) ||
+				this.sourceProjects.get(entry) !== project ||
+				project.revision !== revision
+			)
+				return
+			this.location = source
+			this.emit()
+		} catch (cause) {
+			this.error = String(cause)
+			this.emit()
+		}
+	}
+
 	async revealSource(result: PreviewResult, point: TypstNavigationPoint) {
 		if (!this.isNavigationCurrent(result) || !point.path.endsWith('.typ')) return
 		const serial = ++this.navigationSerial
 		this.preferredPreview = result.entry
-		if (point.path.startsWith('_editor/')) {
-			const mapping = findTypstRegionPosition({
-				mapping: result.generatedMapping ?? [],
-				position: point,
-				snapshotRevision: result.clientRevision,
+		const project = this.sourceProjects.get(result.entry)
+		if (
+			project &&
+			this.documents
+				.get(result.entry)
+				?.description?.editor?.sources.some((source) => source.path === point.path)
+		) {
+			const position = findTypstEditorPosition({
+				projection: project.open(point.path),
+				sourcePosition: point,
 			})
-			if (mapping) {
-				this.regionLocation = {
+			if (position !== undefined) {
+				this.bodyLocation = {
 					entry: result.entry,
-					...mapping,
+					path: point.path,
+					from: position,
+					to: position,
 					serial,
+					source: { line: point.line, column: point.column },
 				}
 				this.emit()
 			}
@@ -426,13 +514,20 @@ export class WorkspaceController {
 			this.emit()
 		}
 	}
-	/** False means the tree was not refreshed; dependent filesystem operations must stop. */
+	/** Reads a snapshot started after this call; false stops dependent filesystem operations. */
 	async refresh(): Promise<boolean> {
 		if (this.closed) return false
-		if (this.refreshing) return this.refreshing
+		if (this.refreshing) {
+			// An existing read can predate the caller's write. Wait, then share the next read.
+			await this.refreshing
+			if (this.closed) return false
+			if (this.refreshing) return this.refreshing
+		}
+		const connection = api
+		const generation = this.connectionGeneration
 		this.refreshing = (async () => {
 			try {
-				const tree = await api.getTree({ projectId: this.project.id })
+				const tree = await connection.getTree({ projectId: this.project.id })
 				if (this.closed) return false
 				const changed = tree.revision !== this.tree?.revision
 				if (!changed) {
@@ -456,8 +551,12 @@ export class WorkspaceController {
 							}
 							const next = await api.readFile({ projectId: this.project.id, path: entry.path })
 							if (this.closed || this.files.get(entry.path) !== previous) return
+							const owner = this.inputOwner(entry.path)
+							const inputDraft = owner?.inputDirty || owner?.inputSaving ? owner : undefined
 							this.files.set(entry.path, {
 								...next,
+								// Body/data drafts retain their sole save owner and original workspace CAS.
+								content: inputDraft?.editor?.files[entry.path] ?? next.content,
 								saved: next.content,
 								dirty: false,
 								saving: false,
@@ -476,10 +575,22 @@ export class WorkspaceController {
 						})
 				this.tree = tree
 				this.emit()
-				for (const entry of this.documentUsers.keys()) void this.compile(entry)
+				// Respect the native session budget and leave the current report retained last.
+				for (const entry of [...this.documentUsers.keys()].sort(
+					(left, right) =>
+						Number(left === this.preferredPreview) - Number(right === this.preferredPreview),
+				))
+					await this.compile(entry)
 				return true
 			} catch (cause) {
-				this.error = cause instanceof Error ? cause.message : String(cause)
+				if (this.closed || connection !== api || generation !== this.connectionGeneration)
+					return false
+				if (
+					isStudioError(cause) &&
+					(cause.code === 'BACKEND_UNAVAILABLE' || cause.code === 'CLOSED')
+				) {
+					if (!this.error) this.error = disconnectedMessage
+				} else this.error = cause instanceof Error ? cause.message : String(cause)
 				this.emit()
 				return false
 			} finally {
@@ -495,20 +606,53 @@ export class WorkspaceController {
 				.map(([path, file]) => [path, file.content]),
 		)
 	}
-	/** Candidate identity includes unsaved source/resource edits as well as data and regions. */
+	/** The project revision owns body/data identity; these inputs cover host-owned source drafts and resources. */
 	draftRevision(entry: string): string {
+		const writable = new Set([
+			...(this.documents.get(entry)?.description?.editor?.sources.map((source) => source.path) ??
+				[]),
+			entry.slice(0, entry.lastIndexOf('/') + 1) + 'data.json',
+		])
 		return JSON.stringify([
-			this.documents.get(entry)?.inputToken ?? 0,
-			this.documents.get(entry)?.description?.sourceRevision,
-			this.tree?.revision,
+			this.sourceProjects.get(entry)?.revision,
+			this.tree?.entries
+				.filter((file) => file.kind === 'file' && !writable.has(file.path))
+				.map((file) => [file.path, file.version]),
 			[...this.files]
 				.filter(([, file]) => file.dirty || file.missing)
 				.map(([path, file]) => [path, file.token, file.missing]),
 		])
 	}
+	/** The loaded report owns all saves and replacements of its body and adjacent data file. */
+	inputOwner(path: string): DocumentState | undefined {
+		return [...this.documents.values()].find(
+			(document) =>
+				document.editor &&
+				(document.description?.editor?.sources.some((source) => source.path === path) ||
+					path === document.entry.slice(0, document.entry.lastIndexOf('/') + 1) + 'data.json'),
+		)
+	}
 	edit(path: string, content: string) {
 		const current = this.files.get(path)
 		if (!current || current.missing) return
+		const document = this.inputOwner(path)
+		if (document) {
+			const entry = document.entry
+			if (this.bodyLocks.has(entry)) return
+			const project = this.sourceProjects.get(entry)
+			if (project) {
+				const source = document.editor!.files[path] ?? ''
+				const result = project.apply({
+					baseRevision: project.revision,
+					patches: [{ path, from: 0, to: new TextEncoder().encode(source).length, text: content }],
+				})
+				if (!result.ok) {
+					this.error = result.issues.map((issue) => issue.message).join('\n')
+					this.emit()
+				}
+			} else this.writeSources(entry, { ...document.editor!.files, [path]: content })
+			return
+		}
 		this.files.set(path, {
 			...current,
 			content,
@@ -525,6 +669,8 @@ export class WorkspaceController {
 		)
 	}
 	async save(path: string): Promise<void> {
+		const owner = this.inputOwner(path)
+		if (owner) return this.saveInput(owner.entry)
 		const previous = this.saves.get(path)
 		if (previous) {
 			await previous
@@ -536,6 +682,7 @@ export class WorkspaceController {
 		const content = file.content
 		this.files.set(path, { ...file, saving: true, error: undefined })
 		this.emit()
+		let saved = false
 		const work = (async () => {
 			try {
 				const next = await api.writeFile({
@@ -553,7 +700,7 @@ export class WorkspaceController {
 					saving: false,
 				})
 				this.emit()
-				await this.refresh()
+				saved = true
 			} catch (cause) {
 				const current = this.files.get(path)!
 				this.files.set(path, {
@@ -571,9 +718,13 @@ export class WorkspaceController {
 		})()
 		this.saves.set(path, work)
 		await work
+		// The write queue must settle before refresh can compile a newly opened input owner.
+		if (saved) await this.refresh()
 	}
 	/** Explicitly discard this resource's shared draft, including an externally removed file. */
 	async discard(path: string) {
+		const owner = this.inputOwner(path)
+		if (owner) return this.reloadInput(owner.entry)
 		clearTimeout(this.timers.get(path))
 		await this.saves.get(path)
 		const file = this.files.get(path)
@@ -583,6 +734,8 @@ export class WorkspaceController {
 		this.emit()
 	}
 	async reload(path: string) {
+		const owner = this.inputOwner(path)
+		if (owner) return this.reloadInput(owner.entry)
 		clearTimeout(this.timers.get(path))
 		await this.saves.get(path)
 		const next = await api.readFile({ projectId: this.project.id, path })
@@ -635,7 +788,11 @@ export class WorkspaceController {
 			document?.inputSaving
 		)
 			return
-		if (this.documents.delete(entry)) this.emit()
+		if (this.documents.delete(entry)) {
+			this.sourceSubscriptions.get(entry)?.()
+			this.sourceLoads.delete(entry)
+			this.emit()
+		}
 	}
 	isDirty() {
 		return (
@@ -683,45 +840,130 @@ export class WorkspaceController {
 			let current = this.documents.get(entry)!
 			const templateChanged =
 				current.description && current.description.sourceRevision !== description.sourceRevision
-			this.documents.set(entry, {
+			if (
+				!current.inputLoaded ||
+				(templateChanged && !current.inputDirty && !current.inputSaving)
+			) {
+				const initial = !current.inputLoaded
+				const paths = [
+					...(description.editor?.sources.map((source) => source.path) ?? []),
+					entry.slice(0, entry.lastIndexOf('/') + 1) + 'data.json',
+				]
+				if (initial) {
+					for (const path of paths) clearTimeout(this.timers.get(path))
+					await Promise.all(paths.map((path) => this.saves.get(path)))
+					if (this.closed || this.documents.get(entry)?.generation !== generation) return
+				}
+				const versions = paths.map((path) => this.files.get(path)?.version)
+				const stored = await api.getInput(target)
+				if (this.closed || this.documents.get(entry)?.generation !== generation) return
+				if (
+					initial &&
+					paths.some(
+						(path, index) =>
+							this.saves.has(path) || this.files.get(path)?.version !== versions[index],
+					)
+				)
+					throw Object.assign(
+						new Error('文件在载入报表期间仍有保存变化；草稿已保留，请重新载入。'),
+						{ code: 'REVISION_CONFLICT' },
+					)
+				current = this.documents.get(entry)!
+				let editor =
+					current.inputDirty && stored.editor
+						? (current.editor ?? {
+								files: {
+									...stored.editor.files,
+									[entry.slice(0, entry.lastIndexOf('/') + 1) + 'data.json']:
+										JSON.stringify(current.data, null, 2) + '\n',
+								},
+							})
+						: stored.editor
+				let data = current.inputDirty
+					? current.data
+					: stored.storageVersion === null
+						? structuredClone(description.defaults)
+						: stored.data
+				const drafts = initial
+					? paths.flatMap((path) => {
+							const file = this.files.get(path)
+							return file?.dirty ? [file] : []
+						})
+					: []
+				const changed = drafts.filter((file) => file.content !== stored.editor?.files[file.path])
+				if (drafts.length > 0) {
+					if (!editor) throw new Error('报表尚无完整输入快照，文件草稿已保留。')
+					editor = {
+						files: {
+							...editor.files,
+							...Object.fromEntries(drafts.map((file) => [file.path, file.content])),
+						},
+					}
+					try {
+						data = JSON.parse(editor.files[paths.at(-1)!] ?? '{}')
+						if (!data || typeof data !== 'object' || Array.isArray(data))
+							throw new Error('Expected a JSON object')
+					} catch (cause) {
+						throw Object.assign(
+							new Error('data.json 草稿不是有效 JSON 对象；请在文件视图修复后重新载入报表。', {
+								cause,
+							}),
+							{ code: 'INVALID_INPUT' },
+						)
+					}
+				}
+				const conflict = changed.some((file) => file.saved !== stored.editor?.files[file.path])
+				const inputError = changed
+					.map((file) => file.error)
+					.filter(Boolean)
+					.join('\n')
+				this.documents.set(entry, {
+					...current,
+					data,
+					editor,
+					description,
+					fields: description.fields,
+					...(drafts.length > 0
+						? {
+								inputDirty: current.inputDirty || changed.length > 0,
+								inputToken: (current.inputToken ?? 0) + Number(changed.length > 0),
+								inputError:
+									inputError ||
+									(conflict
+										? '文件已在外部修改；原文件草稿已保留，请选择要保留的版本。'
+										: undefined),
+								inputConflict: conflict ? structuredClone(stored) : undefined,
+							}
+						: {}),
+					assets: current.inputLoaded && current.inputDirty ? current.assets : stored.assets,
+					storageVersion:
+						current.inputLoaded && current.inputDirty
+							? current.storageVersion
+							: stored.storageVersion,
+					inputLoaded: true,
+				})
+				for (const file of drafts) {
+					clearTimeout(this.timers.get(file.path))
+					this.files.set(file.path, { ...file, dirty: false, error: undefined })
+				}
+				this.replaceSourceProject(entry, this.documents.get(entry)!, stored.editor?.files)
+				this.emit()
+				// An edit made while the initial read was pending keeps its content, but only
+				// saves after the authoritative storage version and existing source files are known.
+				const adopted = this.documents.get(entry)!
+				if (adopted.inputDirty && !adopted.inputError && !adopted.inputConflict)
+					this.changedInput(entry)
+			}
+			current = this.documents.get(entry)!
+			// New fields become editable only after their matching input snapshot is accepted.
+			current = {
 				...current,
 				fields: description.fields,
 				description,
 				inputToken: (current.inputToken ?? 0) + (templateChanged ? 1 : 0),
-			})
-			this.emit()
-			if (!current.inputLoaded) {
-				const stored = await api.getInput(target)
-				if (this.closed || this.documents.get(entry)?.generation !== generation) return
-				current = this.documents.get(entry)!
-				// Defaults are explicit template-authored initial content, used only for a new draft.
-				const editor =
-					stored.editor ??
-					(stored.storageVersion === null && description.editor
-						? {
-								formatVersion: 1 as const,
-								templateId: description.editor.templateId,
-								templateRevision: description.editor.templateRevision,
-								regions: structuredClone(description.editor.defaults),
-							}
-						: undefined)
-				this.documents.set(entry, {
-					...current,
-					data: current.inputDirty
-						? current.data
-						: stored.storageVersion === null
-							? structuredClone(description.defaults)
-							: stored.data,
-					editor,
-					storageVersion: stored.storageVersion,
-					inputLoaded: true,
-				})
-				this.emit()
-				// An edit made while the initial read was pending keeps its content, but only
-				// saves after the authoritative storage version and existing regions are known.
-				if (current.inputDirty) this.changedInput(entry)
 			}
-			current = this.documents.get(entry)!
+			this.documents.set(entry, current)
+			this.emit()
 			clientRevision = current.inputToken ?? 0
 			const data = structuredClone(current.data)
 			const editor = current.editor && structuredClone(current.editor)
@@ -748,6 +990,7 @@ export class WorkspaceController {
 				...this.documents.get(entry)!,
 				result,
 				preview,
+				compiledSources: editor?.files,
 				diagnostics: result.diagnostics,
 				busy: false,
 				error: undefined,
@@ -792,81 +1035,154 @@ export class WorkspaceController {
 			}, 180),
 		)
 	}
-	async writeRegion(entry: string, regionId: string, content: JSONContent) {
-		if (this.bodyLocks.has(entry)) return
-		const current = this.documents.get(entry)
-		if (!current?.editor || !Object.hasOwn(current.editor.regions, regionId)) return
-		this.documents.set(entry, {
-			...current,
-			// ProseMirror emits null-prototype attrs. Snapshot JSON data into transport-compatible
-			// ordinary objects without dropping values or changing the native document shape.
-			editor: {
-				...current.editor,
-				regions: { ...current.editor.regions, [regionId]: structuredClone(content) },
-			},
-			inputDirty: true,
-			inputError: undefined,
-			inputToken: (current.inputToken ?? 0) + 1,
-		})
-		this.changedInput(entry)
+	/** Split views share the same asynchronously initialized source authority and history. */
+	loadSourceProject(
+		entry: string,
+		key: string,
+		create: () => Promise<TypstSourceProject>,
+	): Promise<TypstSourceProject> {
+		const pending = this.sourceLoads.get(entry)
+		if (pending?.key === key) return pending.promise
+		const promise = create()
+			.then((project) => {
+				if (this.closed || this.sourceLoads.get(entry)?.promise !== promise) return project
+				const latest = this.documents.get(entry)
+				if (latest?.editor) {
+					const files = sourceFiles(latest)
+					const snapshot = project.snapshot().files
+					if (!sameSourceFiles(snapshot, files)) {
+						const replaced = project.replace({
+							baseRevision: project.revision,
+							files,
+						})
+						if (!replaced.ok)
+							throw new Error(replaced.issues.map((issue) => issue.message).join('\n'))
+					}
+				}
+				this.registerSourceProject(entry, project)
+				return project
+			})
+			.catch((cause) => {
+				if (this.sourceLoads.get(entry)?.promise === promise) this.sourceLoads.delete(entry)
+				throw cause
+			})
+		this.sourceLoads.set(entry, { key, promise })
+		return promise
 	}
-	/** Adding a sidecar to an existing report never replaces its saved raw data. */
-	initializeEditorDraft(entry: string) {
+
+	registerSourceProject(entry: string, project: TypstSourceProject) {
+		this.sourceSubscriptions.get(entry)?.()
+		this.sourceProjects.set(entry, project)
+		const unsubscribe = project.subscribe(() => {
+			if (!this.syncingSource.has(entry))
+				this.writeSources(
+					entry,
+					Object.fromEntries(
+						Object.entries(project.snapshot().files).filter(
+							(file): file is [string, string] => typeof file[1] === 'string',
+						),
+					),
+				)
+		})
+		const release = () => {
+			unsubscribe()
+			if (this.sourceProjects.get(entry) === project) {
+				this.sourceProjects.delete(entry)
+				this.sourceSubscriptions.delete(entry)
+			}
+		}
+		this.sourceSubscriptions.set(entry, release)
+		return release
+	}
+
+	private replaceSourceProject(
+		entry: string,
+		input: Pick<DocumentInput, 'editor' | 'assets'>,
+		savedFiles?: Readonly<Record<string, string>>,
+	) {
+		if (!input.editor) return
+		const project = this.sourceProjects.get(entry)
+		if (project) {
+			const files = sourceFiles(input)
+			if (!sameSourceFiles(project.snapshot().files, files)) {
+				this.syncingSource.add(entry)
+				try {
+					const result = project.replace({ baseRevision: project.revision, files })
+					if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join('\n'))
+				} finally {
+					this.syncingSource.delete(entry)
+				}
+			}
+		}
+		this.syncInputFiles(entry, input.editor.files, savedFiles)
+	}
+	writeSources(entry: string, files: Record<string, string>) {
 		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
-		const description = current?.description?.editor
-		if (!current?.inputLoaded || current.editor || !description) return
+		if (!current?.editor) return
+		let data = current.data
+		try {
+			data = JSON.parse(files[entry.slice(0, entry.lastIndexOf('/') + 1) + 'data.json'] ?? '{}')
+		} catch {}
 		this.documents.set(entry, {
 			...current,
-			editor: {
-				formatVersion: 1,
-				templateId: description.templateId,
-				templateRevision: description.templateRevision,
-				regions: structuredClone(description.defaults),
-			},
-			inputToken: (current.inputToken ?? 0) + 1,
+			data,
+			editor: { files: { ...files } },
 			inputDirty: true,
 			inputError: undefined,
+			inputToken: (current.inputToken ?? 0) + 1,
 		})
+		this.syncInputFiles(entry, files)
 		this.changedInput(entry)
 	}
 
-	/** Explicit author-approved template adoption; invalid content stays in the old draft. */
-	async adoptEditorTemplate(entry: string) {
-		if (this.bodyLocks.has(entry)) return
-		const current = this.documents.get(entry)
-		const description = current?.description?.editor
-		if (!current?.editor || !description) return
-		const checked = validateTypstRegions({
-			regions: current.editor.regions,
-			config: studioEditorConfig(description),
-		})
-		if (!checked.ok) {
-			this.documents.set(entry, {
-				...current,
-				inputError: checked.issues.map((issue) => issue.message).join('\n'),
-			})
-			this.emit()
-			return
+	/** Monaco displays the same writable sources as the body's input owner. */
+	private syncInputFiles(
+		entry: string,
+		files: Readonly<Record<string, string>>,
+		savedFiles?: Readonly<Record<string, string>>,
+	) {
+		const paths = [
+			...(this.documents.get(entry)?.description?.editor?.sources.map((source) => source.path) ??
+				[]),
+			entry.slice(0, entry.lastIndexOf('/') + 1) + 'data.json',
+		]
+		for (const path of paths) {
+			const source = files[path]
+			const file = this.files.get(path)
+			if (!file || file.dirty || file.saving || source === undefined) continue
+			const saved = savedFiles?.[path] ?? file.saved
+			if (file.content !== source || file.saved !== saved)
+				this.files.set(path, {
+					...file,
+					content: source,
+					saved,
+					external: file.external + Number(file.content !== source),
+					token: file.token + Number(file.content !== source),
+				})
 		}
-		this.documents.set(entry, {
-			...current,
-			editor: {
-				...current.editor,
-				templateId: description.templateId,
-				templateRevision: description.templateRevision,
-			},
-			inputToken: (current.inputToken ?? 0) + 1,
-			inputDirty: true,
-			inputError: undefined,
-		})
-		this.changedInput(entry)
 	}
 
 	async writeData(entry: string, data: JsonObject) {
 		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
 		if (!current) return
+		const path = entry.slice(0, entry.lastIndexOf('/') + 1) + 'data.json',
+			text = JSON.stringify(data, null, 2) + '\n'
+		const project = this.sourceProjects.get(entry),
+			source = current.editor?.files[path]
+		if (project && source !== undefined) {
+			const applied = project.apply({
+				baseRevision: project.revision,
+				patches: [{ path, from: 0, to: new TextEncoder().encode(source).length, text }],
+			})
+			if (!applied.ok) throw new Error(applied.issues.map((issue) => issue.message).join('\n'))
+			return
+		}
+		if (current.editor) {
+			this.writeSources(entry, { ...current.editor.files, [path]: text })
+			return
+		}
 		this.documents.set(entry, {
 			...current,
 			data,
@@ -894,15 +1210,44 @@ export class WorkspaceController {
 	async resolveInputConflict(entry: string, choice: 'local' | 'saved'): Promise<void> {
 		const current = this.documents.get(entry)
 		const saved = current?.inputConflict
-		if (!current || !saved || current.inputSaving) return
+		if (!current || !saved || current.inputSaving || this.bodyLocks.has(entry)) return
 		if (choice === 'local') {
 			// Explicit replacement still uses CAS. A further writer requires a fresh decision.
 			return this.persistInput(entry, saved.storageVersion)
 		}
+		return this.acceptSavedInput(entry, saved)
+	}
+
+	/** A file action on body/data replaces the whole report input, never just its Monaco copy. */
+	private async reloadInput(entry: string): Promise<void> {
+		if (this.bodyLocks.has(entry)) throw new Error('正文操作正在进行，请稍后重新载入。')
+		const token = this.documents.get(entry)?.inputToken
+		clearTimeout(this.timers.get(`input:${entry}`))
+		clearTimeout(this.timers.get(`compile:${entry}`))
+		await this.inputSaves.get(entry)
+		const current = this.documents.get(entry)
+		if (this.closed || !current) return
+		if (this.bodyLocks.has(entry) || current.inputToken !== token)
+			throw new Error('重新载入期间报表草稿已改变；新修改已保留，请重新确认。')
+		const saved = await api.getInput({ projectId: this.project.id, entry })
+		const latest = this.documents.get(entry)
+		if (this.closed || !latest) return
+		if (
+			this.bodyLocks.has(entry) ||
+			latest.inputToken !== current.inputToken ||
+			latest.storageVersion !== current.storageVersion
+		)
+			throw new Error('重新载入期间报表草稿已改变；新修改已保留，请重新确认。')
+		await this.acceptSavedInput(entry, saved)
+	}
+
+	private async acceptSavedInput(entry: string, saved: DocumentInput): Promise<void> {
+		const current = this.documents.get(entry)!
 		clearTimeout(this.timers.get(`input:${entry}`))
 		clearTimeout(this.timers.get(`compile:${entry}`))
 		++this.navigationSerial
-		if (this.regionLocation?.entry === entry) this.regionLocation = undefined
+		if (this.bodyLocation?.entry === entry) this.bodyLocation = undefined
+		this.replaceSourceProject(entry, saved, saved.editor?.files)
 		this.documents.set(entry, {
 			...current,
 			...structuredClone(saved),
@@ -964,12 +1309,15 @@ export class WorkspaceController {
 				const next = this.documents.get(entry)!
 				this.documents.set(entry, {
 					...next,
+					...(next.inputToken === token ? { editor: saved.editor, data: saved.data } : {}),
 					inputSaving: false,
 					inputDirty: next.inputToken !== token,
 					storageVersion: saved.storageVersion,
+					assets: saved.assets,
 					inputConflict: undefined,
 					inputError: undefined,
 				})
+				this.replaceSourceProject(entry, this.documents.get(entry)!, saved.editor?.files)
 			} finally {
 				this.inputSaves.delete(entry)
 				this.emit()

@@ -1,7 +1,7 @@
 import { Editor, type JSONContent } from '@tiptap/core'
 import { CellSelection } from '@tiptap/pm/tables'
 import { describe, expect, it } from 'vitest'
-import { createTypstExtensions } from '../src/tiptap/index'
+import { createTypstExtensions } from '../src/tiptap/extensions'
 import {
 	selectionAlignment,
 	selectionBlockType,

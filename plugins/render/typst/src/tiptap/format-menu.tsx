@@ -15,6 +15,7 @@ import { EditorUi, Icon, ToolButton, allowedMark, allowedNode, canEdit } from '.
 import { blockTypes, convertBlock, type BlockType } from './insert-commands'
 import { ColorTools, FontTools, TypographyTools } from './typography'
 import { selectionAlignment, selectionBlockType } from './selection-format'
+import { sourceSync } from './source-editor'
 import { TypstTableStyleControls } from './table-style-controls'
 import { selectedTable, tableActions } from './table-menu'
 import { LinkMenu } from './link-menu'
@@ -493,6 +494,7 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 	)
 	const shouldShow = useCallback(() => active.current && canOpen(), [canOpen])
 	const showTrigger = useCallback(() => {
+		if (!canOpen()) return false
 		const document = editor.view.dom.ownerDocument
 		return (
 			!active.current &&
@@ -669,7 +671,10 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 				close()
 		}
 		const scroll = (event: Event) => {
-			if (!dialog.current?.contains(event.target as Node)) close()
+			const node = event.target as Node
+			// Sibling panes can scroll during compilation without moving this editor.
+			if (node.contains(dom) || dom.contains(node))
+				close(Boolean(dialog.current?.contains(document.activeElement)))
 		}
 		const blur = () => close()
 		const escape = (event: KeyboardEvent) => {
@@ -690,6 +695,9 @@ export function FormatContextMenu({ editor }: { editor: Editor }) {
 				return
 			}
 			if (!active.current) return
+			// The originating transaction below still owns whether this panel stays open.
+			// A local source normalization must not clear its selection/context first.
+			if (transaction.getMeta(sourceSync)?.local) return
 			if (transaction.getMeta(formatAction)) {
 				if (target.current) {
 					target.current.selection = editor.state.selection

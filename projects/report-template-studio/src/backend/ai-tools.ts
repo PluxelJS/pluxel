@@ -99,10 +99,10 @@ export function createWorkspaceTools(
 			name: 'read_body',
 			label: 'Read document body',
 			description:
-				'Read current editable body as lossless agent Markdown, including unsaved desktop input. Omit regionId to discover all regions. Preserve textStyle/dataField shortcodes and native JSON blocks. Keep baseRevision for apply_body_candidate. Optional range uses complete sibling block boundaries at this exact revision.',
+				'Read ordinary Typst source files, including unsaved desktop edits. Omit path to discover editable files. Preserve unknown source and comments. Keep baseRevision for apply_body_candidate. Optional range uses exact UTF-8 byte boundaries at this revision.',
 			parameters: Type.Object({
 				entry: Type.String(),
-				regionId: Type.Optional(Type.String()),
+				path: Type.Optional(Type.String()),
 				range: Type.Optional(
 					Type.Object({ from: Type.Integer({ minimum: 0 }), to: Type.Integer({ minimum: 1 }) }),
 				),
@@ -118,12 +118,12 @@ export function createWorkspaceTools(
 			name: 'apply_body_candidate',
 			label: 'Apply document body candidate',
 			description:
-				'Replace a region or the exact range returned by read_body using edited agent Markdown and its baseRevision. Rejects changed body/data/template, invalid fields and invalid styles. Commits to the same document input and updates an attached editor in one undo step. Returns persisted status and a native compile revision for read_preview_pages. A preview/editor failure does not roll back a committed input; inspect receipt before retrying.',
+				'Replace an ordinary Typst source file or exact UTF-8 range returned by read_body using source and baseRevision. Rejects stale revisions and read-only paths. Saves workspace sources and updates an attached editor. Returns persisted status and a native compile revision for read_preview_pages. A preview/editor failure does not roll back a committed input; inspect receipt before retrying.',
 			parameters: Type.Object({
 				entry: Type.String(),
-				regionId: Type.String(),
+				path: Type.String(),
 				baseRevision: Type.String(),
-				markdown: Type.String({ maxLength: 1024 * 1024 }),
+				source: Type.String({ maxLength: 1024 * 1024 }),
 				range: Type.Optional(
 					Type.Object({ from: Type.Integer({ minimum: 0 }), to: Type.Integer({ minimum: 1 }) }),
 				),

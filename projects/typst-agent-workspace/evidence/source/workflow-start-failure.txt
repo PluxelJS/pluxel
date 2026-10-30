@@ -1,0 +1,31 @@
+✔ the actual accepted report preserves every prose fragment, data value and figure location after migration (26.301304ms)
+✔ built public entries restore a report using only .typ, JSON and resources (84.262102ms)
+✔ no-op opening and saving preserve exact source bytes, comments and unknown expressions (69.80762ms)
+✔ Agent source edit, real Tiptap Chinese/caption/ref edit, source history, save and reopen (116.607134ms)
+✔ cross-file label rename and project undo/redo commit as one filesystem tree (71.818319ms)
+✔ static figure move preserves label and resource, subtree copy rebinds only copied references (92.374575ms)
+✔ invalid later path rejects a whole staged save without modifying the first file (19.225605ms)
+✔ external Agent changes reject both stale disk writes and old source projections (29.172043ms)
+✔ invalid Typst drafts remain exact on disk and become editable after explicit repair (101.665405ms)
+✔ duplicate and unresolved static labels remain locatable diagnostics (81.048468ms)
+✖ same native session recompiles JSON-driven chart, retains failed revision identity, then recovers (1986.610434ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 10
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2835.196838
+
+✖ failing tests:
+
+test at tests/workflow.test.mjs:325:1
+✖ same native session recompiles JSON-driven chart, retains failed revision identity, then recovers (1986.610434ms)
+  Error: Report consumer failed to start
+      at renderSnapshots (file:///home/ahdg/code/pluxel-code/pluxel/projects/typst-agent-workspace/dist/workspace-CcOBcDL7.mjs:267:128)
+      at async TestContext.<anonymous> (file:///home/ahdg/code/pluxel-code/pluxel/projects/typst-agent-workspace/tests/workflow.test.mjs:338:20)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    [cause]: { catalogRevision: 1, runtimeStateRevision: 0, reconciliation: [], core: { status: 'committed', summary: [Object] } }
+  }

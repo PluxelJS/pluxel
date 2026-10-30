@@ -62,10 +62,10 @@ async function exists(path: string) {
 function summary(scan: Scan): WorkspaceSnapshot {
 	if (scan.tree.configError) throw new Error(scan.tree.configError)
 	const files: Record<string, string> = Object.create(null)
-	const assets: { path: string; size: number }[] = []
+	const assets: WorkspaceSnapshot['assets'] = []
 	for (const [path, bytes] of scan.bytes) {
 		const text = decodeText(bytes)
-		if (text === undefined) assets.push({ path, size: bytes.length })
+		if (text === undefined) assets.push({ path, size: bytes.length, bytes })
 		else files[path] = text
 	}
 	return {
@@ -173,12 +173,6 @@ export class WorkspaceStore {
 		private readonly root: string,
 		private readonly assetsRoot: string,
 		private readonly seedInstructions: Record<string, string> = {},
-		private readonly renameInputs?: (
-			id: string,
-			entries: { from: string; to: string }[],
-			revisions: { before: string; after: string },
-		) => Promise<void>,
-		private readonly removeInputs?: (id: string, entries: string[]) => Promise<void>,
 	) {}
 	private serial<T>(operation: () => Promise<T>): Promise<T> {
 		const task = this.queue.then(operation)
@@ -440,6 +434,43 @@ export class WorkspaceStore {
 			version: await this.write(id, input.path, Buffer.from(input.content), input.expectedVersion),
 		}))
 	}
+	/** Validate one complete revision, then commit every changed source/data file on this IO queue. */
+	async writeFiles(id: string, input: { expectedRevision: string; files: Record<string, string> }) {
+		return this.serial(async () => {
+			const before = await this.scan(id)
+			if (before.tree.revision !== input.expectedRevision) throw conflict()
+			const entries = Object.entries(input.files).map(([path, content]) => {
+				pathName(path)
+				if (typeof content !== 'string' || Buffer.byteLength(content) > MAX_FILE)
+					throw new Error('Invalid source file size')
+				const previous = before.bytes.get(path)
+				return { path, content, previous, version: previous ? hash(previous) : null }
+			})
+			const written: typeof entries = []
+			try {
+				for (const entry of entries) {
+					await this.write(id, entry.path, Buffer.from(entry.content), entry.version)
+					written.push(entry)
+				}
+			} catch (cause) {
+				for (const entry of written.toReversed()) {
+					const path = await safePath(join(this.project(id).root, entry.path))
+					if (hash(await readFile(path)) !== hash(entry.content))
+						throw Object.assign(
+							new Error(
+								'A source transaction could not be rolled back because an external writer changed a committed file',
+								{ cause },
+							),
+							{ code: 'WRITE_UNSETTLED' },
+						)
+					if (entry.previous) await atomic(path, entry.previous)
+					else await rm(path)
+				}
+				throw cause
+			}
+			return summary(await this.scan(id))
+		})
+	}
 	async mkdir(id: string, path: string) {
 		return this.serial(async () => {
 			await this.check(id, path, null)
@@ -465,6 +496,7 @@ export class WorkspaceStore {
 					'#let data = json("/inputs/data.json")\n#set page(paper: "a4", margin: 24mm)\n#align(center)[#text(size: 20pt, weight: "bold")[#data.title]]\n#parbreak()\n#data.body\n',
 					{ flag: 'wx' },
 				)
+				await writeFile(join(target, 'data.json'), '{}\n', { flag: 'wx' })
 			} catch (error) {
 				await rm(target, { recursive: true, force: true })
 				throw error
@@ -492,15 +524,6 @@ export class WorkspaceStore {
 				)
 			if (renameEditor)
 				await this.check(id, `${input.path}/${basename(input.to)}.editor.json`, null)
-			const mappings = tree.documents
-				.filter((doc) => doc.entry === input.path || doc.entry.startsWith(input.path + '/'))
-				.map((doc) => ({
-					from: doc.entry,
-					to:
-						renameEntry && doc.entry === oldEntry
-							? `${input.to}/${basename(input.to)}.ts`
-							: input.to + doc.entry.slice(input.path.length),
-				}))
 			await rename(source, target)
 			let renamedEntry = false
 			let renamedEditor = false
@@ -520,7 +543,6 @@ export class WorkspaceStore {
 					renamedEditor = true
 				}
 				const after = await this.currentTree(id)
-				await this.renameInputs?.(id, mappings, { before: tree.revision, after: after.revision })
 				return after
 			} catch (error) {
 				if (renamedEditor)
@@ -543,17 +565,9 @@ export class WorkspaceStore {
 		return this.serial(async () => {
 			const entry = await this.check(id, input.path, input.expectedVersion)
 			if (!entry) throw conflict()
-			const tree = await this.currentTree(id)
-			const documents = tree.documents
-				.filter(
-					(document) =>
-						document.entry === input.path || document.entry.startsWith(input.path + '/'),
-				)
-				.map((document) => document.entry)
 			await rm(await safePath(join(this.project(id).root, input.path)), {
 				recursive: entry.kind === 'directory',
 			})
-			await this.removeInputs?.(id, documents)
 			return this.currentTree(id)
 		})
 	}

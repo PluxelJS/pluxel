@@ -1,19 +1,23 @@
 import { createContext } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
-import type { TypstDataField, TypstEditorConfig, TypstRegionDefinition } from './types'
-import type { TypstSlashCommand } from './insert-commands'
+import type { Transaction } from '@tiptap/pm/state'
+import type { TypstReferenceTarget } from './types'
+import type { InsertEntry, TypstSlashCommand } from './insert-commands'
 import { shortcutProps, type Shortcut } from './shortcuts'
 
 export interface EditorUiContext {
-	/** Current document snapshots; the active native editor always takes precedence. */
-	regions?: Record<string, JSONContent>
+	validateDocument?: (document: JSONContent) => boolean
+	prepareDuplicate?: (editor: Editor, position: number) => Transaction | undefined
+	onReference?: (path: string, position: number) => void
+	/** Source projects provide their static native-label index, including other files. */
+	referenceTargets?: () => TypstReferenceTarget[]
 	onReveal?: (position: number) => void
-	config?: TypstEditorConfig
-	region?: TypstRegionDefinition
 	composing: boolean
 	editable: boolean
 	fontFamilies: readonly string[]
 	slashCommands: readonly TypstSlashCommand[]
+	/** Derived source calls share the existing menu, slash and native admission path. */
+	sourceEntries?: (query: string) => readonly InsertEntry[]
 }
 
 const emptyFonts: readonly string[] = []
@@ -93,13 +97,11 @@ export function Icon({ name }: { name: IconName }) {
 }
 
 export function allowedNode(ui: EditorUiContext, editor: Editor, ...names: string[]) {
-	return names.every(
-		(name) => editor.schema.nodes[name] && (!ui.region?.nodes || ui.region.nodes.includes(name)),
-	)
+	return names.every((name) => Boolean(editor.schema.nodes[name]))
 }
 
 export function allowedMark(ui: EditorUiContext, editor: Editor, name: string) {
-	return Boolean(editor.schema.marks[name]) && (!ui.region?.marks || ui.region.marks.includes(name))
+	return Boolean(editor.schema.marks[name])
 }
 
 export function canEdit(editor: Editor, ui: EditorUiContext) {
@@ -109,19 +111,6 @@ export function canEdit(editor: Editor, ui: EditorUiContext) {
 		editor.isEditable &&
 		!ui.composing &&
 		!editor.view.composing
-	)
-}
-
-export function allowedFields(
-	ui: EditorUiContext,
-	editor: Editor,
-	fields: readonly TypstDataField[],
-) {
-	if (!allowedNode(ui, editor, 'dataField')) return []
-	return fields.filter(
-		(field) =>
-			!ui.region?.fields ||
-			ui.region.fields.some((path) => JSON.stringify(path) === JSON.stringify(field.path)),
 	)
 }
 

@@ -1,6 +1,8 @@
 # Report Template Studio 常驻服务与 Agent 接入重构设计
 
-状态：重构已实施，Linux 真实边界验收完成，待独立审核。日期：2026-10-12。最终实现位置、消费者迁移、检查结果和可复核证据见 [实施报告](IMPLEMENTATION_REPORT.md)；Windows/macOS、默认系统沙箱及真实模型调用的未验证范围也记录于该报告。评审者按文末验收矩阵检查最终 diff 与证据。当前公开用法由 [README](README.md#程序接入)、项目模板指引和相关包文档拥有。
+> 历史设计基线（2026-10-12）。本提案保留当时的常驻服务设计，不作为 2026-10-28 源码权威迁移后的正文/输入契约；现行文件与 API 见 [README](README.md)。
+
+当时状态：重构已实施，Linux 真实边界验收完成，待独立审核。日期：2026-10-12。最终实现位置、消费者迁移、检查结果和可复核证据见 [实施报告](IMPLEMENTATION_REPORT.md)；Windows/macOS、默认系统沙箱及真实模型调用的未验证范围也记录于该报告。评审者按文末验收矩阵检查最终 diff 与证据。当前公开用法由 [README](README.md#程序接入)、项目模板指引和相关包文档拥有。
 
 目标是让 Electron UI、内置 Pi 和外部 coding agent 共用常驻应用的模板求值、Typst 增量编译与产物生成能力。业务接口使用普通 TypeScript 方法；跨进程调用统一使用 Cap’n Web。Electron 接收向量二进制，agent 接收应用生成的 PNG/PDF 文件引用，Pi 在模型适配边界读取图片并生成 image content。agent 不创建、关闭或持有原生编译 session。
 

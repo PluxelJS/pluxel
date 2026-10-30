@@ -1,52 +1,24 @@
 import { useContext, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import { Extension, type Editor, type JSONContent } from '@tiptap/core'
+import { Extension, type Editor } from '@tiptap/core'
 import { NodeViewContent, NodeViewWrapper, useEditorState, type NodeViewProps } from '@tiptap/react'
 import { closeHistory } from '@tiptap/pm/history'
 import { PluginKey } from '@tiptap/pm/state'
 import { Suggestion, exitSuggestion, type SuggestionProps } from '@tiptap/suggestion'
 import { render } from 'katex'
 import { validReferenceLabel } from './document-nodes'
-import { referenceTargetsInDocument } from './reference-targets'
 import { EditorUi, allowedNode, canEdit, type EditorUiContext } from './editor-ui'
-import type { TypstEditorConfig, TypstReferenceTarget } from './types'
+import type { TypstReferenceTarget } from './types'
 import { editorShortcuts, matchesShortcut, shortcutProps, shortcutText } from './shortcuts'
 
 const kindNames = { figure: '图', table: '表', equation: '公式' } as const
 type Target = TypstReferenceTarget
-
-const targetCache = new WeakMap<
-	Editor,
-	{
-		doc: Editor['state']['doc']
-		regions?: Record<string, JSONContent>
-		regionId: string
-		items: Target[]
-	}
->()
-
-function targets(editor: Editor, regions?: Record<string, JSONContent>, regionId = 'body') {
-	const cached = targetCache.get(editor)
-	const doc = editor.state.doc
-	if (cached?.doc === doc && cached.regions === regions && cached.regionId === regionId)
-		return cached.items
-	const items = [...new Set([...Object.keys(regions ?? {}), regionId])].flatMap((id) =>
-		referenceTargetsInDocument(
-			id === regionId ? doc : editor.schema.nodeFromJSON(regions![id]!),
-			id,
-		),
-	)
-	targetCache.set(editor, { doc, regions, regionId, items })
-	return items
-}
 
 function labelProblem(editor: Editor, ui: EditorUiContext, id: string, label: string) {
 	if (!label) return ''
 	if (!validReferenceLabel(label))
 		return 'Label 最多 128 个字符，以字母或数字开头，只使用字母、数字、冒号、点、下划线或连字符。'
 	if (
-		targets(editor, ui.regions, ui.region?.id).some(
-			(target) => target.id !== id && target.label === label,
-		)
+		(ui.referenceTargets?.() ?? []).some((target) => target.label !== id && target.label === label)
 	)
 		return '报告中已有相同 label，请使用另一个名称。'
 	return ''
@@ -105,7 +77,7 @@ function useObjectAttribute(props: NodeViewProps, attribute: 'label' | 'latex') 
 			}
 			const problem =
 				attribute === 'label'
-					? labelProblem(props.editor, ui, props.node.attrs.id, draft.value)
+					? labelProblem(props.editor, ui, props.node.attrs.label, draft.value)
 					: ''
 			if (problem) {
 				setError(problem)
@@ -355,9 +327,7 @@ export function TypstReferenceView(props: NodeViewProps) {
 	const { editor, node, selected } = props
 	const ui = useContext(EditorUi)
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
-	const target = targets(editor, ui.regions, ui.region?.id).find(
-		(item) => item.id === node.attrs.target,
-	)
+	const target = (ui.referenceTargets?.() ?? []).find((item) => item.label === node.attrs.target)
 	const [error, setError] = useState('')
 	const caption =
 		node.attrs.showCaption === true && target?.kind !== 'equation' ? target?.title : ''
@@ -370,8 +340,10 @@ export function TypstReferenceView(props: NodeViewProps) {
 			data-missing={!target || undefined}
 			title={
 				target
-					? `${kindNames[target.kind]} · ${target.title} · ${target.regionId}`
-					: `引用目标不存在或尚未设置 label：${node.attrs.target}`
+					? `${kindNames[target.kind]} · ${target.title} · ${target.path}`
+					: ui.referenceTargets
+						? `静态索引未确认此引用；以编译结果为准：${node.attrs.target}`
+						: `引用目标不存在或尚未设置 label：${node.attrs.target}`
 			}
 		>
 			<button
@@ -390,8 +362,15 @@ export function TypstReferenceView(props: NodeViewProps) {
 			>
 				{target
 					? `@${target.label}${caption ? `「${caption}」` : ''}`
-					: `@目标缺失：${node.attrs.target}`}
+					: ui.referenceTargets
+						? `@${node.attrs.target}`
+						: `@目标缺失：${node.attrs.target}`}
 			</button>
+			{selected && target && ui.onReference && (
+				<button type="button" onClick={() => ui.onReference?.(target.path, target.position)}>
+					转到引用目标
+				</button>
+			)}
 			{selected && (
 				<select
 					className="typst-reference-display"
@@ -470,10 +449,8 @@ const referenceSuggestionKey = new PluginKey('typstReferenceSuggestion')
 /** Official Suggestion owns matching and decoration; this small view owns its menu lifecycle. */
 export function createReferenceSuggestion(
 	latest: () => {
-		regionId: string
-		regions?: Record<string, JSONContent>
-		config: TypstEditorConfig
 		editable?: boolean
+		referenceTargets?: () => Target[]
 	},
 ) {
 	return Extension.create({
@@ -489,23 +466,21 @@ export function createReferenceSuggestion(
 					allowSpaces: true,
 					allow: ({ state }) => {
 						const props = latest()
-						const region = props.config.regions.find((item) => item.id === props.regionId)
 						return (
 							props.editable !== false &&
 							editor.isEditable &&
 							!editor.view.composing &&
 							Boolean(state.schema.nodes.reference) &&
-							(!region?.nodes || region.nodes.includes('reference')) &&
 							!editor.isActive('codeBlock')
 						)
 					},
 					items: ({ query }) => {
 						const props = latest()
 						const terms = query.trim().toLocaleLowerCase().split(/\s+/)
-						return targets(editor, props.regions, props.regionId)
+						return (props.referenceTargets?.() ?? [])
 							.filter((target) =>
 								terms.every((term) =>
-									`${target.label} ${target.title} ${kindNames[target.kind]} ${target.kind} ${target.regionId}`
+									`${target.label} ${target.title} ${kindNames[target.kind]} ${target.kind} ${target.path}`
 										.toLocaleLowerCase()
 										.includes(term),
 								),
@@ -522,7 +497,7 @@ export function createReferenceSuggestion(
 								return true
 							})
 							.deleteRange(range)
-							.insertTypstReference(props.id)
+							.insertTypstReference(props.label)
 							.run()
 					},
 					render: () => {
@@ -551,7 +526,7 @@ export function createReferenceSuggestion(
 								button.setAttribute('role', 'option')
 								button.setAttribute('aria-selected', String(index === selected))
 								button.textContent = `${kindNames[target.kind]} · ${target.title || target.label}  @${target.label}`
-								button.title = `${target.regionId} · ${target.label}`
+								button.title = `${target.path} · ${target.label}`
 								button.onpointerdown = (event) => event.preventDefault()
 								button.onclick = () => current?.command(target)
 								popup!.append(button)

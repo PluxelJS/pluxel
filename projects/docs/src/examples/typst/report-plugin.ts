@@ -42,8 +42,8 @@ export class ReportPlugin extends BasePlugin {
 	private async compile(request: Extract<ExampleRequest, { type: 'compile' }>) {
 		try {
 			const started = performance.now()
-			const generated = generateExample(request)
-			const svg = await this.typst.renderSvg(`${this.theme.preamble()}\n${request.source}`, {
+			const generated = await generateExample(request)
+			const svg = await this.typst.renderSvg(`${this.theme.preamble()}\n${generated.source}`, {
 				files: generated.files,
 			})
 			const text = new TextDecoder().decode(svg)

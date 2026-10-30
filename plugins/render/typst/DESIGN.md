@@ -1,16 +1,56 @@
-# Typst 文档运行时设计
+# Typst 源码与文档运行时
 
-`@pluxel/plugin-typst` 是 workspace 内的 private 插件。公开调用、输入契约与预算由[用法文档](../../../docs/plugins/rendering/typst.md)维护。
+`@pluxel/plugin-typst` 是 workspace 内的 private 插件。编译契约由[Typst 用法](../../../docs/plugins/rendering/typst.md)维护，编辑契约由[源码编辑](../../../docs/plugins/rendering/typst-editor.md)维护。
 
-前端通过独立 `/browser`、`/tiptap`、`/tiptap/react` exports 消费共享能力，公开用法见[区域编辑](../../../docs/plugins/rendering/typst-editor.md)。Studio 是主要消费者，Monaco 及其 Vite 接线由应用持有；根入口和 `/template` 契约保持不变。
+## 权威与所有者
 
-默认接入由 `TypstRegionEditor` 完成编辑 UI、原生 Editor 与准入接线，宿主连接草稿快照、完整区域集合、业务数据和编译。已有 Tiptap 界面的调用方仍组合原生扩展工厂与 Editor；纯生成/预览调用方使用对应子入口，不引入第二套编辑 controller 或同义 API。公开文档先呈现单区域接入，再展开文档身份、多区域、业务扩展与格式规则；持久化的正文始终为同一份原生 JSON。
+普通 `.typ` 保存正文、排版、模板调用和原生 label/ref；JSON 保存业务数据，图片是普通资源。Tiptap JSON、CST/AST、映射和静态引用索引只属于某个源码修订，重新打开不需要它们。没有 Markdown 中转、隐藏正文 JSON 或生成区域恢复链。
 
-## 内容权威与模板边界
+包内 source 层拥有解析、投影和源码事务；Tiptap 适配器拥有原生编辑事务准入和重投影。宿主持有文件 IO、权限、外部更新、存储 CAS 及编译调度。`TypstPlugin` 拥有编译资源，原有 `open/update/exportPdf/renderPage` 继续接收完整文件输入，不参与编辑历史。
 
-正文只有一份 Tiptap JSON 权威。Agent Markdown 是可校验的编辑投影，生成的 Typst 区域是编译输入；模板源码由模板作者维护，不从编译结果反解正文。模板用原生 `#include` 组合 `_editor/regions/<id>.typ`，也可拆成普通章节文件；正文 AST 不复刻文件依赖图，当前没有物理 Markdown 镜像或独立 Markdown 持久化入口。
+## 编辑路径
 
-正文拥有基础文字样式、段落对齐、列表层级、图表内容、题注、公式源码与引用关系。页面尺寸、页眉页脚、分栏、首行缩进、行距、段间距、题注位置和编号由模板拥有；未设置的正文样式继续继承。模板组件和可选源码块保留既有契约，不为这次基础内容能力扩展 `allowedStyles` 或新增样式策略。
+```text
+普通文件快照 → project.open(path) → 修订内投影 → 原生 Tiptap Editor
+                                         ↓
+原生事务 → prepareEdit → 最小可保留源码补丁 → apply → 新源码修订
+                                               ↓
+                       同一项目 undo/redo ← 原子接纳 → 通知宿主持久化/编译
+```
+
+`prepareEdit` 不产生副作用；`apply` 先检查修订、路径、权限、Unicode 边界和补丁重叠，再一次修改全部文件。结构化 label 改名连同已确认跨文件引用一起提交。外部 `replace` 接纳完整快照并清空旧历史。源文件可以无效；保存草稿与成功编译是不同阶段。诊断含 path、UTF-8 范围、源码 revision 和稳定 code。
+
+编辑器的 `filterTransaction` 只预检，最终 `onTransaction` 接纳实际文档（含扩展追加事务）。只允许自身精确同步事务绕过准入；同步被其他扩展拒绝时保留源码、报告错误并阻止基于旧投影继续写。文件被外部删除同样明确停写。项目历史替代该视图内的独立 UndoRedo，复制和跨文件重构也是一笔项目历史。
+
+## 解析、保真与位置
+
+固定 `@r4ai/typst-ast-node/web` 0.3.0。Node 同步初始化，浏览器显式传入同版本 parser WASM；不会把 Node parser 打入浏览器。发布物部分 AST 字段与声明不同，`parse.ts` 在包内归一化。解析库不求值，也没有本实现承诺的增量 parser。
+
+AST 识别结构，CST 与原文范围承担保真。无操作不写；文字编辑保留注释、空白、计算参数与未触及语法。需要重建时以已支持的最小结构为界；无法证明未知内容保留的操作拒绝并报告源码入口。builtin 的识别考虑已知 lexical shadow/import；未知调用、环境语句和动态程序不当作可自由搬运的普通内容。
+
+结构化准入还检查回写后的投影：新生成的调用不能因当前位置的名称遮蔽而变成未请求的源码原子。作用域按声明顺序更新，嵌套内容不泄漏局部声明。已有语法错误只在拥有该错误的源码范围未受补丁影响时保留，偏移随前方 UTF-8 补丁换算；新的或被修改的语法错误拒绝接纳。直接源码编辑仍可保存无效草稿。
+
+| 单位                       | 所有者与用途                              |
+| -------------------------- | ----------------------------------------- |
+| UTF-8 byte                 | parser range、源码补丁、诊断与来源范围    |
+| JS UTF-16                  | 字符串切片；显式转换表拒绝 surrogate 中点 |
+| ProseMirror position       | 节点开闭 token 加 UTF-16 文本长度         |
+| 1-based UTF-16 line/column | native preview 源码定位                   |
+| 0-based UTF-16 range       | compiler 诊断                             |
+
+转义文字保留逐字符源跨度，emoji、组合字符、CRLF 与 `#` 前缀各自处理。公开 `findTypstEditorPosition` / `findTypstSourcePosition` 使用当前投影转换；未知源码取拥有者节点，不能宣称任意表达式都有精确字符投影。公开投影不泄漏 parser AST/CST 或可写回来源元数据。
+
+缓存按文件复用；普通修改只重解析受影响文件，实际 import 源变化使有关缓存失效。项目静态引用操作按需要读项目索引，不另存一份可写依赖图。快照中的字符串共享不可变值，字节资源在实际读取时给出独立副本，避免每次文字编辑复制所有资源。性能探针只说明代表性样本，不外推任意项目成本。
+
+## 报告结构与依赖
+
+支持段落/标题/列表、常见 mark、显式字体字号颜色/对齐、代码、手工表格、合并与多段单元格、表格样式、图片、figure/富文本题注、label/ref。模板负责最终排版；编辑器不模拟 `set/show` 的求值外观。未知内联留在原位，未知块提供源码卡片；错误范围可修复，仍可确认的其他结构继续编辑。
+
+静态 label 与确认目标的范围绑定，旁边的注释/空白保留。rename 只修改解析确认的声明与引用；动态 label、文献 key 等静态未命中只是未确认，真实编译裁决。移动检查环境依赖与相对资源路径；不能把“字节不变”当成语义不变。复制确认完整块时分配不冲突 label，仅重绑复制范围内的引用。隐藏 UUID 不作为项目的引用权威。
+
+`source/library` 提供待持久化的普通 `lib/pluxel.typ` 和固定 MiTeX 文件。模板显式 `#show: report.document` 安装 metadata 引用显示；LaTeX 使用 `report.latex`，原生数学保持原式。`report.reference` 的 `caption:auto/false/true` 复用短引用规则防止题注自引/互引展开无界。`false` 禁用题注，编号与 supplement 仍按 Typst 模板；不是强行剥掉“图/表”的数字。
+
+组件声明指向真实项目 module/export，只声明可控 literal 参数与 JSON 参数名。控件回写调用处，数据控件直接修改实际 JSON；动态图表重新求值，分析文字不自动改写。helper 识别校验真实 import 和固定库内容；用户修改 helper 定义后，不能继续假设原语义，调用退回源码编辑。源码修订与 helper provenance 共同决定投影。
 
 ## 边界
 
@@ -52,98 +92,26 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 固定范围是本地模板目录、动态文件与可移植字体。上游系统字体及 Typst 包加载仍是部署环境输入，不宣称完整可复现或安全沙箱。
 
-## 前端子入口与区域生成
+## 浏览器与宿主
 
 `/browser` 只依赖纯 preview/diagnostic 契约，拥有命中算法、SVG CTM、普通点击过滤、页面/目录跟随、滚动与高亮。固定 0.7.0 SVG 的内部引用携带 `handleTypstLocation(this, page, x, y)`；View 只解析这组数值，移除内联处理器并由实例自己的滚动容器完成跳转，不执行 renderer 脚本、不安装全局回调。链接优先于源码命中，键盘激活使用相同的当前修订检查；外部链接保留浏览器行为。View 只持有调用方提供的 renderer；销毁 View 不关闭共享 renderer。同步状态回调可以销毁 View，后续导航发布、高亮与计时器必须在同一调用中停止。宿主拥有源文件与客户端草稿当前性、可见 pane 选择及异步打开后的复核，不向 View 注入整个应用 controller。缩放也由 View 统一维护：只设置根 SVG 的尺寸，通过页内坐标保存阅读位置，视口 resize 或隐藏后重显时恢复。宿主提供滚动容器、目录与页码控件，不再自行按百分比拉伸 SVG；缩放单位与容器 CSS 约束见[浏览器预览](../../../docs/plugins/rendering/typst.md#浏览器预览)。
 
-`/tiptap` 无 DOM 导入，使用官方 Tiptap 3 schema 与 MarkdownManager；没有第二份正文 AST。`validation.ts` 先检查 raw JSON/属性/表格，再让 schema 检查内容结构；原始输入不能依赖规范化丢弃内容后通过校验。`serialize.ts` 显式覆盖持久化节点与 Mark，生成 `_editor/regions/*.typ`、`/inputs/editor/data.json` 与同客户端修订映射。字段路径按编译时的实际父值解释数组或字典访问，保证纯数据变化无需重新生成模板；重复表头不能覆盖正文单元格。业务扩展有属性时必须提供值 validator；无 serializer 不接纳。HTML 输入先检查原始标签和属性，避免浏览器修复或 ProseMirror 规范化导致静默丢内容。
+根入口、`/template` 和 `/browser` 不依赖 Tiptap/React/parser。`/source`、`/source/browser` 选择解析环境；`/tiptap` 可用于真实无 DOM Editor，`/tiptap/react` 持有控件和 NodeView。React 必须先挂载原生 view 再渲染读取 view.dom 的工具栏。CSS 独立导入；Monaco、工作区和通信由宿主维护。
 
-`prepareTypstValidation` 只在一次同步校验/生成内准备 schema、区域/字段索引和模板/表格定义，集合校验与生成复用同一上下文；它不从公共入口导出、不跨调用缓存、不产生调用方维护的校验凭证。原始 JSON 和 serializer 覆盖检查全部保留，下次调用重新准备新配置；候选 prepare/apply 分别校验，未知 callback 异常继续传播。
+文件工作区以磁盘文件快照和 CAS 提交为存储边界。浏览器示例保存普通文件表；Studio 将正文与数据存入工作区，保留捕获 lease 和保存/编译/preview 分阶段回执。它们共享 source 核心，不能用隔离 test host 证明在线状态。
 
-`base-extensions.ts` 的 `createEditorExtensions` 保留基础官方扩展组合；`extensions.ts` 的 `createTypstExtensions` 聚合字段、figure/caption、官方 Mathematics 的 inlineMath/blockMath、reference，再加入宿主扩展。`TypstTableStyle`、`TypstTemplateBlock` 和 `TypstSource` 分别显式安装，两个工厂均不隐式开放。卸载后不自动投影已有 JSON；属性或节点的转换由宿主明确处理，不能依赖 schema 丢弃内容。
+## 实现与回归入口
 
-### 题注、数学与引用
+| 路径                                                | 职责                                                |
+| --------------------------------------------------- | --------------------------------------------------- |
+| `src/source/parse.ts`, `project.ts`, `writeback.ts` | 解析、投影、最小保留式回写                          |
+| `src/source/project-state.ts`, `state-types.ts`     | 原子源码事务、索引、重构、历史与公开接口            |
+| `src/source/positions.ts`                           | 源码与编辑器位置转换                                |
+| `src/tiptap/source-editor.ts`, `source-react.tsx`   | 原生 Editor 准入、React 控件与修复入口              |
+| `src/session.ts`, `resources.ts`, `worker.ts`       | 编译队列、完整快照、native 资源与成功修订           |
+| `src/browser/`                                      | 预览、命中、滚动和当前性检查                        |
+| `tests/typst-source-*.test.ts`                      | 保真、真实 Editor、独立扩展准入、事务与 native 回归 |
+| `tests/consumer/source-check.mjs`                   | 现有 Playwright 服务上的真实浏览器操作              |
+| `projects/typst-agent-workspace`                    | 公开制品、普通磁盘项目、人/Agent 往返与 PDF 证据    |
 
-`document-nodes.ts` 持有图表结构、数学扩展、引用身份和复制命令；`reference-targets.ts` 从已准入区域 JSON 生成引用候选。figure 的一个 body（image/table 或已安装的 templateBlock/typstSource）与一个 figureCaption 保持同一原生子树，caption 是 inline 内容；表格继续由官方 TableKit 编辑。独立公式保存 LaTeX 与可选 id/label，行内公式只保存 LaTeX。题注文字、可编辑 label、内部 id 和 Typst 编号分别归属内容、引用名称、对象身份与排版，不合成一个可写字段。
-
-id/label 在整个区域集合内唯一。引用保存目标 id 与可选 `showCaption: null | boolean`，生成时解析为当前 label；`null` 继承模板，布尔值覆盖单条引用。题注从目标读取，不在引用中存副本；没有题注的目标继续显示编号。label 为空的图表/公式不编号，也不是可引用目标。编辑期间允许保留缺失目标以便修复，生成完整报告时返回 `INVALID_REFERENCE`。模板内手写 label/ref 不进入结构化索引，也不随 JSON label 自动改名；即使目标在 JSON 中存在，模板没有 include 该目标时仍由真实 Typst 编译报告缺失。移动保持身份；复制分配新身份并重绑复制子树内的引用，载入时不自动修复坏身份。
-
-生成器始终提供 `_editor/references.typ`，用 Typst `state` 持有模板默认值，避免跨 `#include` 复制词法变量。区域通过带私有标记的 metadata 和局部 show 规则生成原生 `ref`，按三态选择追加当前目标的真实 `figure.caption.body`；其余 metadata 保持原值。附加题注内部将结构化引用降为原生短引用，保留链接、字段与富文本并终止自引用或互引展开。编号、前缀和目标位置仍由 Typst 决定；浏览器编辑器只展示标识与显式题注，不解释任意模板代码。
-
-区域源码直接构造引用 metadata 和 `math.equation`，数学 body 仍来自 MiTeX。native 采集器复用 equation/ref/metadata 的 Tag 边界，将 helper 或引用副本的字形归属原子调用位置，保留调用范围内的字符精度。附加题注的坐标属于引用，原图题注不会被副本抢占；重复 include 继续按当前页选择出现位置。预览 View 同时处理纵向及必要的横向滚动；宿主负责显示目标区域、聚焦和等待选区相关控件布局，再滚动原生选区。
-
-`document-react.tsx` 为图表、KaTeX 公式和引用提供 NodeView。题注内容继续在原生 contentDOM 编辑；图表与独立公式复用常驻 label 输入，Enter 或失焦校验并提交，Escape 恢复。图表通过 CSS 将类型、原生题注与 label 排在内容下方同一行，保留 schema 中 body、caption 的顺序；外观不再另套设置卡片。figure 的整体移动统一复用块旁官方 DragHandle，类型文字不再提供第二个拖柄，避免内层组件选区被误当成整个图表。公式点击后在原位置展开 LaTeX 编辑框，草稿只更新局部 KaTeX 预览；Mod+Enter、“完成”或失焦提交并收起，Escape 或“取消”恢复。label 与 LaTeX 各自提交一个原生事务，互不覆盖，也不因逐键输入产生撤销步骤。
-
-提交复核最新节点身份、字段原值、只读与组合输入状态；冲突或校验失败保留本地输入并显示错误，不用旧表单覆盖新的正文。未提交输入保留 `data-typst-unapplied` 标记，供宿主保存和离开检查读取。只读时可查看公式源码。引用候选取宿主 `regions` 与当前活跃 Editor 的覆盖快照，官方 Suggestion 负责 `@` 匹配和 decoration；UI 展示当前 label 和目标说明，不保存或模拟 Typst 编号。单区域宿主不传完整集合时只索引自己。
-
-`serialize.ts` 映射 figure、MiTeX 的 mi/mitex 和 Typst ref，保留原有源码映射；仅有公式时加入 `mitex.ts` 提供的固定运行时文件。`mitex-files.json` 由 `vendor/mitex/generate.mjs` 从固定版本与归档摘要生成，包含 Apache 许可与 notice；只将 upstream 的 WASM 文件加载替换为 JSON bytes。静态资源不在每次编辑重新编码，不扩大同步 `Record<string,string>` 文件契约，不启用网络包 resolver。模板仍设置 math.equation 的编号与数学字体；KaTeX 和 MiTeX 的兼容性由实际公式与各端诊断确认，不承诺所有宏等价。
-
-`tests/tiptap-document.test.ts` 覆盖原生文档准入、身份和生成边界；`tests/mitex.test.ts` 用同一宿主数学字体在 native PDF/Vector 与 browser WASM SVG 验证跨 include 引用、模板编号、编译失败与恢复。后者通过 Fontconfig 读取 DejaVu Math TeX Gyre，并将 compiler/renderer/font 作为唯一允许的资源请求；不把有网络的包缓存当作成功前提。完整人类与 agent 操作需另外经过当前消费者界面验收。
-
-`blocks.ts` 持有组件定义、实例属性和源码块准入。宿主定义拥有模板源码、默认插入参数及属性 validator；草稿只保存实例 ID、模板引用、props 和 dataPath。`serialize.ts` 按原生 AST 顺序 include 每实例独立的 `_editor/blocks/<region>/<id>.typ`，参数与绑定位于输入 JSON，因此纯数据变化不改模板。区域内实例 ID 跨两种节点唯一，防止生成文件碰撞；移动保留 ID，复制分配新 ID。源码块显式授权用户编写 Typst，沿用宿主编译器资源与执行政策，不构成代码安全沙箱。普通 Markdown typst 围栏始终由官方 codeBlock 处理；两种原子节点的普通 Markdown 导出都明确有损；agent 格式通过原生节点块保留实例语义。
-
-新建/复制属于各节点扩展的原生 Tiptap 命令：统一身份分配、参数深复制、准入及 history 边界；React 插入器与菜单只选择输入并调用命令。React 区域通过 admission 插件提供最新 editable、节点规则及组合输入策略，独立 Editor 使用自身状态；`can()` 不创建身份或写事务。旧输入校验与新建默认值分开，复制也拒绝坏实例。
-
-`table-style.ts` 持有安装选项及连续完整表头判定，原始 JSON/HTML 准入、DOM decoration 和 Typst serializer 复用这些规则。扩展仅增加 table 属性、选项准入与 decoration，保留官方 TableKit 的结构、命令、选择和 resize NodeView。模板拥有默认样式和逐表覆盖范围，草稿只记录逐表选择；继承且无默认值时不生成额外 Typst stroke，编辑 DOM 回退网格。`grid-open-sides` 使用官方 `TableMap` 求合并单元格的真实左右边界，再标记 decoration；Typst 按网格坐标与 colspan 生成单元格各边 stroke，保留内部网格和上下外框。不能用 DOM first/last-child 判断 rowspan 下的边界。表头跨行合并穿过边界时不生成重复表头或三线表分隔线。JSON 保留显式样式，普通 Markdown 不能往返该属性，导出诊断和候选复杂内容检查必须反映损失；HTML 只承诺属性重入，不承诺 decoration 外观或最终分页交付。
-
-生成映射使用原生 ProseMirror UTF-16 位置，递归记录字符、原子与嵌套块。序列化过程的临时锚点在输出前移除，允许自定义 serializer 重排或重复 `context.children` 结果而保留来源；不会拆散字符串破坏排版塑形。native 将字面量解码后的 UTF-8 字形偏移还原为源码范围；计算表达式保留整体来源。代码块使用原生 raw 字面量以区分重复行。组件独立文件区分同模板的多个实例；源码块映射额外记录 `sourceStartLine`，反向查询去掉数据前缀后返回原始 source 行列。具体精度边界和宿主点击时序见[定位契约](../../../docs/plugins/rendering/typst-editor.md#预览与定位)。
-
-`/tiptap/react` 是同一契约的普通消费者，提供 dataField NodeView 与原生 Editor 控件。`TypstRegionEditor` 默认拥有完整编辑 UI：常驻撤销/重做、段落样式、字体/字号/颜色、常用文字 Mark、清除文字格式、对齐、列表、链接、更多格式和插入，字段及组件从已有配置和扩展产生可用操作，宿主不重复装配选择器或筛选区域字段。列表缩进和表格工具随当前原生选区出现。`toolbar={false}` 仅关闭常驻条，保留上下文与 slash；`children(editor)` 是常驻条后、正文前的业务控件插槽，也可在同一 EditorUi 内组合自定义常驻条。字体选项由 RegionEditor 传入同一个上下文。`blocks-react.tsx` 为已安装原子节点提供同一 NodeView；卡片只常驻名称、原生 drag handle 与块菜单。顺序使用官方 drag/drop，复制调用节点扩展命令，删除使用 `setNodeSelection().deleteSelection()`，均沿用原生 history，不添加并行排序或剪贴板协议。标题/空白点击经控件及拖选过滤后选中节点并调用宿主 `onReveal`。
-
-模板参数和绑定数据只读展示，绑定值读取已有 `TypstDataProvider`，不复制到节点属性；宿主参数表单直接组合官方 `updateAttributes`。仅源码保留局部编辑状态，显式应用才提交原生 transaction。源码导航通过当前节点及 `typst-navigation` 元数据展开源码；未应用修改与已编译源码不一致时保留修改并提示。
-
-宿主数据更新只影响 Context，不触发文档 transaction；每个区域保留独立 Editor/history。受控粘贴在同一原生 transaction 中设置 `closeHistory` 与 `paste` / `uiEvent`，一次撤销只移除本次粘贴。准入插件对最新规则与 editable 权限检查，外部 commands 也不能绕过。`candidate.ts` 在准备/提交时均严格检查版本与权限；可选 range 必须覆盖同一父节点中的完整、非空块；可直接编辑单元格、列表项和业务容器里的段落，跨单元格捕获则扩展到整表。普通格式在目标范围做 Markdown 往返检查，agent 格式不重复导出旧目标；两者都校验合并后的整个区域。一次 transaction 只替换目标范围，外围复杂节点原样保留；普通格式不能保真的目标明确拒绝，agent 格式可使用原生节点块；两种格式都不自动重定位过期范围。prepare 同时返回替换片段 `document` 和与实际原生事务结果一致的 `mergedDocument`；后者只是已验证结果，apply 仍重新验证当前快照。
-
-`tiptap/ui.tsx` 组合常驻入口、文字/段落/排版上下文和表格操作。高频格式直接可见，与格式面板复用 `PrimaryFormatTools` 使用的同一套控件和命令，不让宿主重复实现；按编辑容器宽度换行，420px 及以下将字体选择收至完整格式菜单，保留字号和颜色入口。“…”保留完整格式入口。常驻颜色浮层通过共享定位容器 portal 展示，不受宿主的正文滚动或 overflow 裁剪。文字和表格完整浮层复用官方 React `BubbleMenu`，由右键、键盘菜单键或“格式”按钮显式打开，不随文本选择自动出现；按钮提供触屏入口。文本右键命中原选区时保留范围，命中外部时移动 caret；光标处支持设置后续输入格式。只读、IME、源码输入与卡片数据文本保留原生菜单。表格菜单对文字、单元格及整表原生选区复用同一套文字、段落和排版控件；链接编辑仍要求 `TextSelection`，表格属性和结构操作同时保留；表边入口仍可用。内部 `TableTools` 根据原生表格选区在常驻条下展示尺寸和常用结构命令，通过“更多…”进入含可选外观控件的完整面板，不增加公共 API、plugin 或第二套监听/历史。表格结构命令属于官方 TableKit，`TypstTableStyleControls` 仅在样式扩展安装时贡献外观选项。
-
-`selection-format.ts` 从原生 Selection 的全部 ranges 汇总文字排版、段落样式与对齐，混合值属于界面读模型，不写回文档。空光标优先读取 `storedMarks`，包括显式空数组；非空选区计入未带排版的文字、字段和所选单元格。原生 select 保有键盘焦点，颜色应用或按钮操作只同步恢复当前 view 焦点，不排队恢复旧范围。“清除文字格式”沿用 `unsetAllMarks` 并在光标处保留 `nonClearableMarks`；“清除排版”仅移除 `textStyle`，二者都不清除段落结构或对齐。
-
-官方 TextAlign 在 `base-extensions.ts` 中作用于 paragraph/heading；同一 `textAlign` 属性贯通原始 JSON、严格 HTML 准入和 Typst 序列化。缺省/null 不覆盖模板；显式 left/center/right 局部关闭 justify，justify 使用段落两端对齐。它属于节点属性，不能用文字 Mark 清除逻辑处理。普通 Markdown 的 loss 诊断和候选准入同时反映非 null 对齐，避免从有损中间格式覆盖原生正文；公开值与 HTML 限制见区域编辑文档。
-
-常驻“插入”、块旁“＋”和 slash 消费同一命令集合，包括官方结构、数据字段、已安装模板/源码扩展和 `slashCommands` 提供的宿主操作。选择表格后共用一个行/列/首行表头表单，输入越界明确失败；确认才以原生 `insertTable` 提交，取消不删除 slash 查询或创建占位正文。先用官方 CommandManager 对借用的原生 state 构造事务并按同一准入规则预演，提交时再检查；slash 删除查询与插入共享一次事务，普通插入使用当前选区，就地插入固定顶层块后的边界；准备阶段不提交占位段落，外部文档变化使打开的目标失效。插入与块操作浮层不圈定 Tab 焦点，焦点移出时关闭；Escape 监听覆盖整个弹层而非单个搜索框，取消后返回入口，组合输入期间保留原生 Escape。宿主回调仅组合 chain，不再维护提示块按钮等第二条执行路径。UI 不维护另一份正文或历史，IME 期间不拦截插入键。`/tiptap/style.css` 是独立资源，由 tsdown 的 copy/customExports 同时维护开发和制品入口，JS 导入不附带 CSS 副作用。
-
-`block-menu.tsx` 使用官方 DragHandle React 的定位、顶层目标与原生拖放；不自行追踪鼠标或维护排序模型。普通块提供就地插入、类型转换、复制、删除和上下移动，键盘/触屏有当前块入口。菜单固定原生 doc/node/pos，打开后不借旧 caret 执行动作，文档变化取消旧目标。`block-actions.ts` 准备完整块的原生事务，通过现有区域校验后提交；不可完整保留内容的转换禁用。复制嵌套模板/源码节点复用 `blocks.ts` 的身份分配，移动保留身份。卡片继续使用已有 NodeView 入口，避免重叠操作柄。官方拖动扩展的 collaboration/Yjs peers 只属于 React 入口依赖，没有安装协作扩展或第二份 history。
-
-链接视图与格式视图共用 `format-menu.tsx` 的显式请求和 native Selection，Mod+K、格式按钮进入同一编辑过程；URL 草稿属于界面，`link-actions.ts` 只准备原生 transaction，不保存正文副本。链接复用 canonical `allowedLink`、原生 Link URI 检查和区域准入；点击提交时重查。清除 Mark 与列表缩进也用原生命令。React RegionEditor 安装官方 Selection extension，只用 decoration 保留控件失焦时的文字高亮，不改变 JSON/schema。
-
-`shortcuts.ts` 统一内部按键描述、平台化悬浮提示和 `aria-keyshortcuts`；基础格式执行仍属于官方 Tiptap keymap。只有链接、清除文字格式、菜单和公式完成等 UI 操作由各自界面处理器匹配同一描述，不安装文档级格式快捷键或另一套命令分发。清除格式的按钮与按键调用同一个原生事务，保留 `nonClearableMarks`、段落结构与对齐。
-
-`captureTypstCandidateTarget` 统一消费原生 Selection 的所有 ranges，捕获区域、修订与最近共同容器内的完整块；单单元格 CellSelection 取该格正文，跨单元格才包络整个表。两个宿主删除各自范围算法，固定目标后仅保留一份可编辑文字；文字变化使 prepare 结果失效，apply 仍读取最新事实。`TypstRegionEditor.content` 在原生 Editor 实例创建前准入并固定快照，后续 content prop 不替换或卸载已接纳正文；regionId/扩展集合身份和显式文档 key 决定实例与 history 归属。初始失败不创建 Editor，以 effect 调用宿主 onValidationError 或显示默认 alert；宿主提供回调时接管错误呈现。修正初始失败内容需新 key 重试，不在普通 render 中隐式重新接纳。
-
-`tiptap/table-style-controls.tsx` 独立读取已安装扩展的选项，只在选区属于同一张表时显示固定属性行。它在点击时再次检查权限、组合输入和允许值，使用原生 transaction 按精确位置修改当前表格属性并保留选区，避免对嵌套表格批量更新。样式通过官方 wrapper 的 decoration 标记生效，不依赖区域组件；只读与普通官方 Editor 使用同一外观规则，辅助虚线仅用于聚焦编辑。
-
-`tiptap/typography.tsx` 在同一格式上下文中组合官方 TextStyleKit 的字体、绝对字号、前景与背景颜色命令；选择控件时保持原生编辑目标，连续调整不关闭格式面板。宿主声明可用字体，不引入字体加载器或第二份格式状态。四项属性仍在原生 `textStyle` Mark 中，`text-style.ts` 共享原 JSON、HTML 原声明和 Typst 输出的值规则；HTML 仅投影官方 parser 对缺失属性产生的空值，显式无效声明先拒绝。生成器使用 `text` / `highlight`；普通 Markdown 导出和候选沿用复杂内容判定，agent 格式为四项属性提供标记并复用同一值校验。
-
-`agent-markdown.ts` 为显式 `format: 'agent'` 的 SDK 转换提供文字样式、字段、figure/caption、ref 和局部原生节点表示，不修改编辑器的默认 Markdown 扩展。数学沿用官方 `$` / `$$` Markdown，独立公式身份由 attrs 包装保存；caption 优先保留可编辑的行内 Markdown，复杂局部使用原生 fallback。加粗、斜体等仍使用官方 MarkdownManager；新标记的 JSON 语法错误在 token 阶段报告，原生子树在规范化前走同一准入。`markdown.ts` 与递归 codec 在一次转换中共享 schema/manager；标准语法、单节点 attrs 包装和局部原生表示按可表达性选择。不会因一个段落属性或相邻列表边界把整篇降为 JSON；最终整体回读比较确认语义。原生文档相等使用 ProseMirror 的语义比较，不要求 JSON 属性键顺序一致。候选携带同一 format，prepare/apply 都保留原版本、权限、完整区域校验和单次 history 事务。公开语法只维护在[Agent Markdown](../../../docs/plugins/rendering/typst-editor.md#agent-markdown)。
-
-Tiptap 系列统一为已验证的 3.32.0，身份通过 optional peers 共享；MarkdownManager 的直接 `marked` 依赖与该安装版本一致，避免私有类型及 tokenizer 实例混用。所有前端入口分别构建 JS 和声明，不靠 tree shaking 或 skipLibCheck 隔离；根、template、browser 不静态导入编辑器。包不包含 Monaco、Studio 或 Workbench 前端依赖。
-
-区域配置、原始业务数据、权限与存储均由宿主持有。Studio 的 `.editor.json` 绑定源码修订，可选顶层 `table` 与 SDK 扩展选项同名同义，由 `studioEditorConfig` 显式安装扩展；独立 consumer 也显式安装。InputStore 以同一带条件版本的草稿保存 raw data 与区域 JSON；parsed data 只属于编译结果。生成文件只写入文档私有临时树，不污染共享源码缓存；正文变更使用 update.template，纯数据变更复用模板。实现位于 Studio `backend/editor-config.ts`、`documents.ts`、`inputs.ts`；不扩展 QuickJS 模块白名单或文档定义对象。
-
-## 实现入口与验证
-
-| 文件                      | 职责                                                     |
-| ------------------------- | -------------------------------------------------------- |
-| src/index.ts              | Plugin、配置、依赖与 owner 归属                          |
-| src/session.ts            | 会话队列、修订、取消与文件寿命                           |
-| src/resources.ts          | 路径、编码、快照与输入预算                               |
-| src/native-client.ts      | 专用线程、取消及退出结算                                 |
-| src/worker.ts             | native 编译、同修订导出与诊断                            |
-| src/svg-worker.ts         | 每任务无状态源码编译与 SVG 导出                          |
-| src/operation.ts          | 会话与 SVG 共用取消/deadline 参数                        |
-| src/native-binding.ts     | 包内固定 NAPI 制品加载                                   |
-| native/                   | 原生补丁与可重复构建                                     |
-| src/browser/preview.ts    | 浏览器渲染、过期结果与释放                               |
-| src/browser/navigation.ts | 普通源码位置、页面命中与重复范围选择                     |
-| src/tiptap/               | 区域校验、官方扩展、Typst生成与映射、Markdown/HTML、候选 |
-| src/tiptap/react.tsx      | React字段显示、原生区域Editor与可组合控件                |
-
-验证覆盖资源边界、session 状态、真实 Plugin lowering/Worker artifact、浏览器 Renderer 和包入口。性能结论以代表性输入测量为准，不把资源字节上限作为 native 内存保证。
-
-`tests/tiptap-native.test.ts` 与 Studio `tests/editor-backend.test.ts` 使用真实 native 预览/PDF。`tests/tiptap-blocks.test.ts` 覆盖实例隔离、数据更新复用模板、重排及源码行列映射、编译失败恢复和局部候选保留原子节点；`tests/tiptap-table-style.test.ts` 用合并表格的 native PNG 对照验证无左右外框。Studio `tests/desktop.mjs` 验证正常应用消费路径。独立 `tests/consumer.mjs` 把实际构建制品移出工作区，分无可选依赖、Tiptap、React 三阶段安装/类型检查/构建，再用真实浏览器与会话编译验收；不安装 Monaco，不使用源码 alias。公开文档的首个完整 React 示例也参与严格类型检查。该测试显式安装 peers，使用 `npm --legacy-peer-deps --ignore-scripts` 隔离制品边界，不证明默认包管理器 peer 解析或 registry 发布路径；本包仍为 private。可选前端入口不依赖启动 Pluxel 应用，但包根的 native 资源及服务端 peer 元数据仍由同一个包携带。
-
-体验页的正文/数据/模板/候选四个标签、示例 schema 与报告组件定义属于 consumer；SDK 提供编辑与预览能力。标签切换保留已挂载 Editor，预览导航先打开所属标签再定位；Studio 仍拥有自己的工作区装配和源码编辑器。
-
-Worker 显式合并 native 的 `takeDiagnostics()` 与 `takeWarnings()` 回执；当前绑定前者只取 errors，不能依靠它取得成功 warning。统一 normalize 后沿现有会话结果传播，不改 native patch 或编译策略。
-
-Consumer 的失败 DTO 显式投影原生诊断与失败类别，绑定失败请求自己的修订/mapping；成功 warning 也到达界面，过期坐标停用。编译成功、实际 displayed 与存储 baseline 独立；本地单槽保存失败不推进 baseline，替换前检查正式草稿及未应用数据/源码/参数输入。业务标题表单复用 consumer validator 和原生 transaction，不扩展 SDK 表单协议。待确认参数按原生实例 ID 保留，选区只控制表单内容的可见性；实例删除或文档替换结束其生命周期。编辑面板中的未应用标记同时供保存/离开检查读取，MutationObserver 跟踪标记和挂载变化更新提示，取消与应用不依赖下一次 input 事件。窄屏编辑/预览只切换可见性，不重建资源。具体用法见 consumer README，SDK 对外契约见公开文档。
+迁移矩阵、验证结果与能力边界记录于[重构状态](../../../projects/typst-agent-workspace/REFACTOR_STATUS.md)；验收事实在工作区 `evidence/source/RESULTS.md`，历史 Markdown 证据只用于基线比较。

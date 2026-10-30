@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto'
 import { RpcTarget, type RpcStub } from 'capnweb'
-import { getSchema } from '@tiptap/core'
-import {
-	createTypstExtensions,
-	exportTypstMarkdown,
-	prepareTypstCandidate,
-} from '@pluxel/plugin-typst/tiptap'
+import { sourceFiles } from '../shared/source-files.js'
+import { createTypstSourceProject, type TypstSourcePatch } from '@pluxel/plugin-typst/source'
 import type {
 	BodyCandidate,
 	BodyCommit,
@@ -17,10 +13,8 @@ import type {
 	DocumentTarget,
 	InputWrite,
 } from '../shared/contracts.js'
-import { studioEditorConfig } from '../shared/editor.js'
 import { InputStore } from './inputs.js'
 import { DocumentService } from './documents.js'
-import { editorResult } from './editor-config.js'
 import { rpcError } from '../rpc/errors.js'
 
 function revision(sourceRevision: string, input: DocumentInput) {
@@ -134,17 +128,6 @@ export class BodyService {
 			if (!description.editor)
 				throw rpcError('EDITOR_NOT_CONFIGURED', 'This report has no editable body')
 			let input = captured?.input ?? (await this.inputs.get(target.projectId, target.entry))
-			if (!input.editor && input.storageVersion === null)
-				input = {
-					...input,
-					data: description.defaults,
-					editor: {
-						formatVersion: 1,
-						templateId: description.editor.templateId,
-						templateRevision: description.editor.templateRevision,
-						regions: description.editor.defaults,
-					},
-				}
 			const data = await this.documents.validateInput(
 				{ ...target, ...input },
 				description.sourceRevision,
@@ -170,63 +153,47 @@ export class BodyService {
 		return this.operate(input, async () => {
 			const snapshot = await this.capture(input)
 			try {
-				const config = studioEditorConfig(snapshot.description.editor!)
-				const definitions = snapshot.description.editor!.regions.filter(
-					(region) => !input.regionId || region.id === input.regionId,
+				const definitions = snapshot.description.editor!.sources.filter(
+					(source) => !input.path || source.path === input.path,
 				)
-				if (definitions.length === 0) throw rpcError('FORBIDDEN_REGION', 'Unknown body region')
-				if (input.range && !input.regionId)
-					throw rpcError('INVALID_INPUT', 'A range requires regionId')
-				const regions: BodySnapshot['regions'] = []
-				for (const region of definitions) {
-					const document = snapshot.input.editor!.regions[region.id]!
-					let selected = document
+				if (definitions.length === 0) throw rpcError('READ_ONLY', 'Unknown editable source path')
+				if (input.range && !input.path) throw rpcError('INVALID_INPUT', 'A range requires path')
+				const files = definitions.map((definition) => {
+					const source = snapshot.input.editor!.files[definition.path]!
+					const bytes = new TextEncoder().encode(source)
 					if (input.range) {
-						const native = getSchema(createTypstExtensions(config)).nodeFromJSON(document)
-						selected = {
-							type: 'doc',
-							content: native.slice(input.range.from, input.range.to).content.toJSON(),
+						const { from, to } = input.range
+						if (
+							!Number.isInteger(from) ||
+							!Number.isInteger(to) ||
+							from < 0 ||
+							to < from ||
+							to > bytes.length
+						)
+							throw rpcError('INVALID_INPUT', 'Invalid UTF-8 source range')
+						try {
+							new TextDecoder('utf-8', { fatal: true }).decode(bytes.slice(0, from))
+							new TextDecoder('utf-8', { fatal: true }).decode(bytes.slice(0, to))
+						} catch {
+							throw rpcError('INVALID_INPUT', 'Source range splits a UTF-8 character')
 						}
 					}
-					const exported = editorResult(
-						exportTypstMarkdown({
-							format: 'agent',
-							document: selected,
-							regionId: region.id,
-							config,
-							data: snapshot.data,
-						}),
-					)
-					if (input.range)
-						editorResult(
-							prepareTypstCandidate({
-								candidate: {
-									regionId: region.id,
-									baseRevision: snapshot.baseRevision,
-									markdown: exported.markdown,
-									format: 'agent',
-									range: input.range,
-								},
-								currentRevision: snapshot.baseRevision,
-								document,
-								config,
-								data: snapshot.data,
-								canEdit: () => true,
-							}),
-						)
-					regions.push({
-						regionId: region.id,
-						label: region.label ?? region.id,
-						markdown: exported.markdown,
-						...(input.range ? { range: input.range } : {}),
-					})
-				}
+					return {
+						path: definition.path,
+						label: definition.label ?? definition.path,
+						source: input.range
+							? new TextDecoder('utf-8', { fatal: true }).decode(
+									bytes.slice(input.range.from, input.range.to),
+								)
+							: source,
+						range: input.range,
+					}
+				})
 				return {
-					projectId: input.projectId,
-					entry: input.entry,
+					...input,
 					baseRevision: snapshot.baseRevision,
 					sourceRevision: snapshot.description.sourceRevision,
-					regions,
+					files,
 				}
 			} finally {
 				await snapshot.finish()
@@ -245,23 +212,33 @@ export class BodyService {
 							'The body, data or source changed; read_body again before applying',
 						)
 					const draft = snapshot.input.editor!
-					const document = draft.regions[input.regionId]
-					if (!document) throw rpcError('FORBIDDEN_REGION', 'Unknown body region')
-					const prepared = editorResult(
-						prepareTypstCandidate({
-							candidate: {
-								regionId: input.regionId,
-								baseRevision: input.baseRevision,
-								markdown: input.markdown,
-								format: 'agent',
-								...(input.range ? { range: input.range } : {}),
-							},
-							currentRevision: snapshot.baseRevision,
-							document,
-							config: studioEditorConfig(snapshot.description.editor!),
-							data: snapshot.data,
-							canEdit: () => true,
-						}),
+					const source = draft.files[input.path]
+					if (source === undefined) throw rpcError('NOT_FOUND', 'Unknown source file')
+					const project = createTypstSourceProject({
+						files: sourceFiles(snapshot.input),
+						writablePaths: snapshot.description.editor!.sources.map(
+							(definition) => definition.path,
+						),
+						components: snapshot.description.editor!.components,
+					})
+					const patches: TypstSourcePatch[] = [
+						{
+							path: input.path,
+							from: input.range?.from ?? 0,
+							to: input.range?.to ?? new TextEncoder().encode(source).length,
+							text: input.source,
+						},
+					]
+					const applied = project.apply({ baseRevision: project.revision, patches })
+					if (!applied.ok)
+						throw Object.assign(
+							new Error(applied.issues.map((issue) => issue.message).join('; ')),
+							{ code: applied.issues[0]?.code ?? 'INVALID_INPUT', issues: applied.issues },
+						)
+					const nextFiles = Object.fromEntries(
+						Object.entries(applied.value.files).filter(
+							(entry): entry is [string, string] => typeof entry[1] === 'string',
+						),
 					)
 					const saved = await this.persist(
 						{
@@ -269,8 +246,7 @@ export class BodyService {
 							entry: input.entry,
 							data: snapshot.input.data,
 							editor: {
-								...draft,
-								regions: { ...draft.regions, [input.regionId]: prepared.mergedDocument },
+								files: nextFiles,
 							},
 							expectedVersion: snapshot.input.storageVersion,
 						},
@@ -280,7 +256,7 @@ export class BodyService {
 						projectId: input.projectId,
 						entry: input.entry,
 						input: saved,
-						baseRevision: revision(snapshot.description.sourceRevision, saved),
+						baseRevision: revision(saved.storageVersion!, saved),
 						editorStatus: snapshot.attached ? 'applied' : 'headless',
 					}
 					let preview
@@ -299,7 +275,7 @@ export class BodyService {
 					try {
 						await snapshot.finish({
 							input: saved,
-							candidate: structuredClone(prepared),
+							patches,
 							data: snapshot.data,
 							compile: receipt.compile,
 							preview,

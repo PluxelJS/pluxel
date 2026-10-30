@@ -1,226 +1,67 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { expect, it, vi } from 'vitest'
-import { createTestHost } from '@pluxel/test'
-import { nodeModules } from '@pluxel/services/node'
-import { FontsPlugin } from '@pluxel/plugin-fonts'
-import { TypstPlugin } from '@pluxel/plugin-typst'
-import { findTypstGeneratedPosition, findTypstRegionPosition } from '@pluxel/plugin-typst/tiptap'
-import { DocumentSession } from '../../../plugins/render/typst/src/session.ts'
-import { StudioPlugin } from '../src/backend/plugin.js'
-import type { EditorDraft, JsonObject } from '../src/shared/contracts.js'
-
-it('compiles movable chart components and source blocks from external input without replacing editable analysis', async () => {
-	const root = await mkdtemp(join(tmpdir(), 'studio-chart-report-'))
-	const updates: Parameters<DocumentSession['update']>[0][] = []
-	const originalUpdate = DocumentSession.prototype.update
-	const update = vi.spyOn(DocumentSession.prototype, 'update').mockImplementation(function (
-		this: DocumentSession,
-		input,
-	) {
-		updates.push(input)
-		return originalUpdate.call(this, input)
+import { readFile } from 'node:fs/promises'
+import { expect, it } from 'vitest'
+import { createTypstSourceProject } from '@pluxel/plugin-typst/source'
+import { studioFixture } from './studio-fixture.js'
+it('retains chart parameters, data, equations, caption references and native table/source content in ordinary files', async () => {
+	await using fixture = await studioFixture('Chart source acceptance')
+	const { studio, project } = fixture,
+		target = { projectId: project.id, entry: '报表/图表分析报告/图表分析报告.ts' }
+	const input = await studio.getInput(target),
+		description = await studio.describeDocument(target),
+		path = '报表/图表分析报告/analysis.typ'
+	expect(description.editor?.components?.[0]).toMatchObject({
+		name: 'channels',
+		parameters: { title: { type: 'string' } },
 	})
-	try {
-		await using host = await createTestHost({ services: [nodeModules()] })
-		await host.commit((change) => {
-			change.catalog.add([FontsPlugin, TypstPlugin, StudioPlugin])
-			change.start(FontsPlugin, { initialConfig: { maxFontBytes: 32 * 1024 * 1024 } })
-			change.start(TypstPlugin, {
-				initialConfig: { maxTemplateBytes: 128 * 1024 * 1024, maxFontBytes: 96 * 1024 * 1024 },
-			})
-			change.start(StudioPlugin, {
-				initialConfig: { root, assetsRoot: resolve('financial-document-assets') },
-			})
-		})
-		const studio = host.require(StudioPlugin)
-		const project = await studio.createProject({ name: 'Chart report acceptance' })
-		const target = { projectId: project.id, entry: '报表/图表分析报告/图表分析报告.ts' }
-		const description = await studio.describeDocument(target)
-		expect(description.editor?.table).toEqual({
-			defaultStyle: 'three-line',
-			allowedStyles: ['grid', 'grid-open-sides', 'three-line', 'borderless'],
-		})
-		expect(description.editor?.templates?.map((template) => template.id)).toEqual([
-			'channel-performance',
-		])
-		expect(description.editor?.sourceBlocks).toBe(true)
-		const editor: EditorDraft = {
-			formatVersion: 1,
-			templateId: description.editor!.templateId,
-			templateRevision: description.editor!.templateRevision,
-			regions: structuredClone(description.editor!.defaults),
-		}
-		const defaults = await studio.compile({ ...target, data: {}, editor, clientRevision: 0 })
-		expect(defaults.data.channels).toHaveLength(4)
-		expect(defaults.diagnostics).toEqual([])
-		const sample = await studio.readFile({
-			projectId: project.id,
-			path: '报表/图表分析报告/示例输入.json',
-		})
-		const data = JSON.parse(sample.content) as JsonObject
-		const saved = await studio.setInput({ ...target, data, editor, expectedVersion: null })
-		const first = await studio.compile({ ...target, data, editor, clientRevision: 1 })
-		expect(first.data).toEqual(data)
-		expect(first.data.channels).toHaveLength(3)
-		const preview = await studio.getPreview(first)
-		const chartMapping = preview.generatedMapping!.find((mapping) =>
-			mapping.path.endsWith('/channel-chart.typ'),
-		)!
-		expect(chartMapping.kind).toBe('atom')
-		const chartPoint = preview.preview.navigation.points.find(
-			(point) => point.path === chartMapping.path,
-		)!
-		expect(chartPoint).toBeDefined()
-		expect(
-			findTypstRegionPosition({
-				mapping: preview.generatedMapping!,
-				position: chartPoint,
-				snapshotRevision: 1,
-			}),
-		).toMatchObject({ regionId: 'analysis', from: chartMapping.from, to: chartMapping.to })
-		expect(
-			findTypstGeneratedPosition({
-				mapping: preview.generatedMapping!,
-				navigation: preview.preview.navigation,
-				regionId: 'analysis',
-				position: chartMapping.from,
-				snapshotRevision: 1,
-			})?.path,
-		).toBe(chartMapping.path)
-		expect(
-			preview.generatedMapping!.some((mapping) => mapping.path.endsWith('/analysis-note.typ')),
-		).toBe(true)
-		expect(preview.generatedMapping?.some((mapping) => mapping.regionId === 'actions')).toBe(true)
-		expect(
-			preview.preview.navigation.points.some(
-				(point) => point.path === '报表/图表分析报告/排版.typ',
-			),
-		).toBe(true)
-		const firstPage = await studio.renderPage({ ...first, page: 1, scale: 1 })
-		const firstPng = await readFile(firstPage.path)
-		const output = resolve('test-results/chart-report')
-		await mkdir(output, { recursive: true })
-		await writeFile(join(output, 'external-input.png'), firstPng)
-		const dataOnly = structuredClone(data)
-		const channels = dataOnly.channels as JsonObject[]
-		channels[0]!.actual = 80
-		channels[1]!.target = 0
-		channels[2]!.actual = 0
-		const second = await studio.compile({ ...target, data: dataOnly, editor, clientRevision: 2 })
-		expect(second.diagnostics).toEqual([])
-		expect(updates.at(-1)?.template).toBeUndefined()
-		expect(updates.at(-1)?.files['/inputs/editor/data.json']).toMatchObject({
-			kind: 'text',
-			text: expect.stringContaining('"actual":80'),
-		})
-		const secondPreview = await studio.getPreview(second)
-		expect(secondPreview.preview.sessionId).toBe(preview.preview.sessionId)
-		const secondPage = await studio.renderPage({ ...second, page: 1, scale: 1 })
-		const secondPng = await readFile(secondPage.path)
-		await writeFile(join(output, 'data-update.png'), secondPng)
-		expect(secondPng.equals(firstPng)).toBe(false)
-		expect(editor.regions).toEqual(description.editor!.defaults)
-		expect(await studio.getInput(target)).toEqual(saved)
-
-		const styled = structuredClone(editor)
-		const actionTable = styled.regions.actions!.content!.find((node) => node.type === 'table')!
-		expect(actionTable.attrs?.tableStyle).toBe('three-line')
-		actionTable.attrs!.tableStyle = 'borderless'
-		const third = await studio.compile({
+	const core = createTypstSourceProject({
+		files: input.editor!.files,
+		components: description.editor!.components,
+	})
+	const projection = core.open(path)
+	expect(JSON.stringify(projection.document)).toContain('typstComponent')
+	expect(JSON.stringify(projection.document)).toContain('blockMath')
+	const first = await studio.compile({ ...target, ...input, clientRevision: 1 })
+	expect(first.diagnostics).toEqual([])
+	const page = await studio.renderPage({ ...first, page: 1 })
+	const png = await readFile(page.path)
+	expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+	const sample = await studio.readFile({
+		projectId: project.id,
+		path: '报表/图表分析报告/示例输入.json',
+	})
+	const data = JSON.parse(sample.content),
+		saved = await studio.setInput({
 			...target,
-			data: dataOnly,
-			editor: styled,
-			clientRevision: 3,
+			data,
+			editor: input.editor,
+			expectedVersion: input.storageVersion,
 		})
-		expect(third.diagnostics).toEqual([])
-		expect(updates.at(-1)?.template).toBeDefined()
-		expect(actionTable.content).toEqual(
-			editor.regions.actions!.content!.find((node) => node.type === 'table')!.content,
-		)
-		const thirdPage = await studio.renderPage({ ...third, page: 1, scale: 1 })
-		const thirdPng = await readFile(thirdPage.path)
-		expect(thirdPng.equals(secondPng)).toBe(false)
-		const reordered = structuredClone(styled)
-		const analysis = reordered.regions.analysis!.content!
-		const [chart] = analysis.splice(1, 1)
-		analysis.splice(2, 0, chart!)
-		const fourth = await studio.compile({
-			...target,
-			data: dataOnly,
-			editor: reordered,
-			clientRevision: 4,
-		})
-		expect(fourth.diagnostics).toEqual([])
-		const reorderedPreview = await studio.getPreview(fourth)
-		const reorderedChart = reorderedPreview.generatedMapping!.find(
-			(mapping) => mapping.path === chartMapping.path,
-		)!
-		expect(reorderedChart.from).toBeGreaterThan(chartMapping.from)
-		expect(analysis[2]).toEqual(editor.regions.analysis!.content![1])
-		expect(await studio.getInput(target)).toEqual(saved)
-		const pdf = await studio.exportPdf(fourth)
-		const pdfBytes = await readFile(pdf.path)
-		expect(pdfBytes.subarray(0, 5).toString()).toBe('%PDF-')
-		expect(pdf.revision).toBe(fourth.revision)
-		await expect(
-			studio.compile({
-				...target,
-				data: { ...dataOnly, channels: [] },
-				editor: styled,
-				clientRevision: 5,
-			}),
-		).rejects.toMatchObject({ code: 'INVALID_INPUT' })
-		expect(await studio.getInput(target)).toEqual(saved)
-
-		// The agent edits the same figure/LaTeX projection that the human editor saves.
-		// Renaming its public label must retain references in the other body file.
-		const body = await studio.readBody({ ...target, regionId: 'analysis' })
-		const markdown = body.regions[0]!.markdown
-		expect(markdown).toContain(':::figure')
-		expect(markdown).toContain(':::caption')
-		const revised = await studio.applyBodyCandidate({
-			...target,
-			regionId: 'analysis',
-			baseRevision: body.baseRevision,
-			markdown: markdown
-				.replace('fig:channels', 'fig:channel-results')
-				.replace('各渠道收入与目标对比', 'Agent 修订的渠道图题')
-				.replace('r = \\frac{A}{T}', 'r = \\frac{A-T}{T}'),
-		})
-		expect(revised.previewError).toBeUndefined()
-		expect(revised.compile?.pageCount).toBeGreaterThan(0)
-		const revisedFigure = revised.input.editor!.regions.analysis!.content!.find(
-			(node) => node.type === 'figure',
-		)!
-		expect(revisedFigure.attrs).toEqual({ id: 'channel-figure', label: 'fig:channel-results' })
-		expect(revisedFigure.content![1]!.content![0]!.text).toBe('Agent 修订的渠道图题')
-		expect(
-			revised.input.editor!.regions.analysis!.content!.find((node) => node.type === 'blockMath')!
-				.attrs!.latex,
-		).toBe('r = \\frac{A-T}{T} \\times 100\\%')
-		expect(revised.input.editor!.regions.actions).toEqual(saved.editor!.regions.actions)
-		const actionBody = await studio.readBody({ ...target, regionId: 'actions' })
-		expect(actionBody.regions[0]!.markdown).toContain('[ref {"target":"channel-figure"}]')
-		await expect(
-			studio.applyBodyCandidate({
-				...target,
-				regionId: 'actions',
-				baseRevision: actionBody.baseRevision,
-				markdown:
-					actionBody.regions[0]!.markdown +
-					'\n\n:::attrs {"id":"channel-figure","label":"eq:duplicate"}\n$$\nx=1\n$$\n:::',
-			}),
-		).rejects.toMatchObject({ code: 'INVALID_EDITOR_DRAFT' })
-		expect(await studio.getInput(target)).toEqual(revised.input)
-
-		await writeFile(join(output, 'external-input.png'), firstPng)
-		await writeFile(join(output, 'data-update.png'), secondPng)
-		await writeFile(join(output, 'borderless.png'), thirdPng)
-		await writeFile(join(output, 'report.pdf'), pdfBytes)
-	} finally {
-		update.mockRestore()
-		await rm(root, { recursive: true, force: true })
+	const second = await studio.compile({ ...target, ...saved, clientRevision: 2 })
+	expect(second.data.channels).toHaveLength(3)
+	expect(saved.editor!.files[path]).toBe(input.editor!.files[path])
+	expect(
+		core.renameLabel({ baseRevision: core.revision, from: 'fig:channels', to: 'fig:revenue' }).ok,
+	).toBe(true)
+	const renamed = core.snapshot().files as Record<string, string>
+	expect(renamed['报表/图表分析报告/actions.typ']).toContain('@fig:revenue')
+	// Merge the independently accepted JSON revision with the explicit label transaction.
+	const editor = {
+		files: {
+			...saved.editor!.files,
+			[path]: renamed[path]!,
+			'报表/图表分析报告/actions.typ': renamed['报表/图表分析报告/actions.typ']!,
+		},
 	}
-})
+	const renamedSaved = await studio.setInput({
+		...target,
+		data,
+		editor,
+		expectedVersion: saved.storageVersion,
+	})
+	const third = await studio.compile({ ...target, ...renamedSaved, clientRevision: 3 })
+	expect(third.diagnostics).toEqual([])
+	const preview = await studio.getPreview(third)
+	expect(
+		preview.preview.navigation.points.some((point) => point.path === '报表/图表分析报告/chart.typ'),
+	).toBe(true)
+}, 120000)

@@ -1,7 +1,8 @@
-import { generateTypstRegions, type JSONContent } from '@pluxel/plugin-typst/tiptap'
-import { documentData, editorConfig } from './document'
-import type { ExampleBlock } from './protocol'
+import { createTypstSourceProject } from '@pluxel/plugin-typst/source/browser'
+import parserWasm from '@pluxel/plugin-typst/source/parser.wasm?url'
+import type { ExampleBlock, ExampleDraft } from './protocol'
 
+const project = createTypstSourceProject({ files: { 'main.typ': '' }, parserWasm })
 const blockLabels: Readonly<Record<string, string>> = {
 	heading: '标题',
 	paragraph: '正文',
@@ -10,67 +11,49 @@ const blockLabels: Readonly<Record<string, string>> = {
 	table: '表格',
 	blockquote: '引用',
 	codeBlock: '代码',
-	horizontalRule: '分隔线',
 	image: '图片',
+	figure: '图表',
 }
 
-/** Keep the shared serializer intact; only this example adds clickable block links. */
-export function generateExample(options: {
-	document: JSONContent
-	source: string
-	revision: number
-}): { files: Record<string, string>; blocks: ExampleBlock[] } {
-	if (typeof options.source !== 'string') throw new Error('Typst 模板必须是字符串。')
-	if (options.source.length > 8_000)
-		throw new Error('此示例的模板与生成源码合计最多 8,000 个字符。')
-	const generated = generateTypstRegions({
-		regions: { body: options.document },
-		config: editorConfig,
-		data: documentData,
-		snapshotRevision: options.revision,
+/** Preview-only links use current source ranges; authored source is never regenerated. */
+export async function generateExample(
+	options: ExampleDraft,
+): Promise<{ source: string; files: Record<string, string>; blocks: ExampleBlock[] }> {
+	if (typeof options.source !== 'string' || options.source.length > 8_000)
+		throw new Error('此示例的 Typst 源码最多 8,000 个字符。')
+	const current = await project
+	const accepted = current.replace({
+		baseRevision: current.revision,
+		files: { 'main.typ': options.source },
 	})
-	if (!generated.ok) throw new Error(generated.issues.map((issue) => issue.message).join('\n'))
-	const { templateFiles, inputFiles, mapping } = generated.value
-	const sourceLength = [...Object.values(templateFiles), ...Object.values(inputFiles)].reduce(
-		(total, text) => total + text.length,
-		options.source.length,
-	)
-	if (sourceLength > 8_000) throw new Error('此示例的模板与生成源码合计最多 8,000 个字符。')
-
-	const path = '_editor/regions/body.typ'
-	const source = templateFiles[path]!
+	if (!accepted.ok) throw new Error(accepted.issues.map((issue) => issue.message).join('\n'))
+	const projection = current.open('main.typ')
+	if (!projection.editable) return { source: options.source, files: {}, blocks: [] }
 	const blocks: ExampleBlock[] = []
-	let wrapped = ''
+	const bytes = new TextEncoder().encode(options.source)
+	const decoder = new TextDecoder('utf-8', { fatal: true })
+	let source = ''
 	let cursor = 0
-	const ranges = mapping
-		.filter((entry) => entry.path === path && entry.kind !== 'text')
-		.sort((a, b) => a.startOffset - b.startOffset || b.endOffset - a.endOffset)
-	for (const entry of ranges) {
-		// Outermost ranges are the generator's top-level nodes. Nested paragraphs,
-		// table cells and inline atoms remain inside their original serialized block.
-		if (entry.startOffset < cursor) continue
-		const index = blocks.length
-		const id = `${options.revision}-${index}`
-		const kind = options.document.content?.[index]?.type ?? ''
+	for (const range of projection.mapping
+		.filter((entry) => entry.nodePath.length === 1 && entry.kind === 'node')
+		.sort((a, b) => a.from - b.from)) {
+		const index = range.nodePath[0]!
+		const kind = projection.document.content?.[index]?.type ?? ''
+		if (!blockLabels[kind]) continue
+		const from = range.from
+		const to = range.to
+		const id = `${options.revision}-${blocks.length}`
 		blocks.push({
 			id,
-			from: entry.from,
-			to: entry.to,
-			label: `${blockLabels[kind] ?? '内容块'} ${index + 1}`,
+			from: range.position,
+			to: range.endPosition,
+			label: `${blockLabels[kind]} ${blocks.length + 1}`,
 		})
-		wrapped += source.slice(cursor, entry.startOffset)
-		wrapped += `#link("pluxel:preview/${id}")[${source.slice(entry.startOffset, entry.endOffset)}]\n`
-		cursor = entry.endOffset
+		source +=
+			decoder.decode(bytes.subarray(cursor, from)) +
+			`#link("pluxel:preview/${id}")[${decoder.decode(bytes.subarray(from, to))}]`
+		cursor = to
 	}
-	wrapped += source.slice(cursor)
-	return {
-		files: {
-			...Object.fromEntries(
-				Object.entries(templateFiles).map(([name, text]) => [`/${name}`, text]),
-			),
-			...inputFiles,
-			[`/${path}`]: wrapped,
-		},
-		blocks,
-	}
+	source += decoder.decode(bytes.subarray(cursor))
+	return { source, files: {}, blocks }
 }

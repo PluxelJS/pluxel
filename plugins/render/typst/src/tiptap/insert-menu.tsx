@@ -154,6 +154,7 @@ function EntryList({
 function InsertHelp() {
 	return (
 		<div className="typst-slash-footer">
+			<span>组件和字段最多显示 100 项，可输入文件名或完整字段路径细化搜索。</span>
 			<span>
 				<kbd>↵</kbd> 插入
 			</span>
@@ -203,7 +204,7 @@ export function InsertMenu({
 	const entries = useMemo(
 		() =>
 			visible
-				? insertEntries(editor, ui, target.current).filter(
+				? insertEntries(editor, ui, target.current, query).filter(
 						(entry) =>
 							matchesInsertion(entry, query) && prepareInsertion(editor, ui, entry, target.current),
 					)
@@ -423,7 +424,7 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 	const entries = useMemo(
 		() =>
 			range
-				? insertEntries(editor, ui).filter(
+				? insertEntries(editor, ui, undefined, range.query).filter(
 						(entry) =>
 							matchesInsertion(entry, range.query) && prepareInsertion(editor, ui, entry, range),
 					)
@@ -509,7 +510,7 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 							return true
 						}
 						if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return false
-						const items = insertEntries(editor, current).filter(
+						const items = insertEntries(editor, current, undefined, target.query).filter(
 							(entry) =>
 								matchesInsertion(entry, target.query) &&
 								prepareInsertion(editor, current, entry, target),

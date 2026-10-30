@@ -1,0 +1,48 @@
+{
+  "measuredAt": "2026-10-30T02:42:38.748Z",
+  "node": "v24.22.0",
+  "fixture": "plugins/render/typst/tests/consumer/public/source-report",
+  "files": 14,
+  "typstFiles": 9,
+  "editedSourceBytes": 1335,
+  "warmup": 5,
+  "samples": 30,
+  "units": "milliseconds except prepareParseCalls (CST + AST calls)",
+  "stages": {
+    "parser": {
+      "median": 0.359,
+      "p95": 0.421,
+      "max": 0.423
+    },
+    "projectionRemainder": {
+      "median": 0.391,
+      "p95": 1.124,
+      "max": 1.126
+    },
+    "writeback": {
+      "median": 0.432,
+      "p95": 1.23,
+      "max": 1.543
+    },
+    "projectPrepare": {
+      "median": 1.771,
+      "p95": 2.359,
+      "max": 2.472
+    },
+    "projectApply": {
+      "median": 0.432,
+      "p95": 0.752,
+      "max": 0.916
+    },
+    "prepareParseCalls": {
+      "median": 2,
+      "p95": 2,
+      "max": 2
+    }
+  },
+  "notes": [
+    "Projection remainder includes source offset maps and AST normalization.",
+    "Writeback is pure local patch preparation. Project preparation includes validation and candidate projection.",
+    "Compilation/session.update is separately measured by artifact/native.json. No worker/cache layer was added from these bounded observations."
+  ]
+}

@@ -2,3 +2,13 @@ dist/
 node_modules/
 .state/
 .artifacts/
+
+# Authored report data and the reusable acceptance fixture are source files.
+!workspace/data/
+!workspace/data/**
+!tests/fixtures/report/data/
+!tests/fixtures/report/data/**
+
+# Data snapshots are part of the source-authority acceptance evidence.
+!evidence/source/*/data/
+!evidence/source/*/data/**

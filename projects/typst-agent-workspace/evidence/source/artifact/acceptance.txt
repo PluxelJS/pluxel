@@ -1,0 +1,9 @@
+note: You are running `vp test` as a Vite+ built-in command. If you meant to run the test npm script, use `vpr test` instead.
+
+ RUN  v5.0.5 /home/ahdg/code/pluxel-code/pluxel/plugins/render/typst
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:51:07
+   Duration  37.64s (tests 99%, import 1%)

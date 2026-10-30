@@ -1,5 +1,4 @@
 import type { SourcePosition, TypstDiagnostic } from '@pluxel/plugin-typst/browser'
-import type { TypstGeneratedMapping } from '@pluxel/plugin-typst/tiptap'
 
 /** Local HTTP boundary: project errors explicitly, never serialize an Error object. */
 export interface ConsumerFailure {
@@ -10,8 +9,6 @@ export interface ConsumerFailure {
 	path?: string
 	diagnostics: readonly TypstDiagnostic[]
 	clientRevision?: number
-	/** May be absent when failure occurs before region generation. */
-	mapping?: TypstGeneratedMapping[]
 }
 
 /** Diagnostics are zero-based UTF-16; native mapping/navigation is one-based UTF-16. */

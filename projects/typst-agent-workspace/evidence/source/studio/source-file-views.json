@@ -1,0 +1,20 @@
+{
+  "entry": "报表/草稿恢复验收/草稿恢复验收.ts",
+  "fileFirstBody": "先在源码文件页保存的正文",
+  "savedData": {
+    "title": "源码页保存的标题",
+    "body": "源码页保存的数据正文"
+  },
+  "storageVersion": "85dbdc36334c26224f1dc2bcd4c201ef2fb0022af1e861044ccef68e08dccb8d",
+  "sources": {
+    "报表/草稿恢复验收/workspace.typ": {
+      "text": "从已加载报表的源码页保存的正文",
+      "sha256": "21c4274fb32b49d6e203c6ffcd770dbce64c45ca81635188d72fdddb6d15e59f"
+    },
+    "报表/草稿恢复验收/data.json": {
+      "text": "{\n  \"title\": \"源码页保存的标题\",\n  \"body\": \"源码页保存的数据正文\"\n}\n",
+      "sha256": "e08a3df64878e636102d0f2e2d9d557bf6001c5854505f84fb7baded076aebc1"
+    }
+  },
+  "reloadPreservesSavedInput": true
+}

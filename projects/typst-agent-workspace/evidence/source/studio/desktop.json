@@ -1,0 +1,201 @@
+{
+  "executablePath": "/home/ahdg/code/pluxel-code/pluxel/node_modules/.pnpm/electron@44.9.0_supports-color@8.1.1/node_modules/electron/dist/electron",
+  "applicationRoot": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio",
+  "clientEntry": "/home/ahdg/code/pluxel-code/pluxel/projects/report-template-studio/dist/client.mjs",
+  "passed": [
+    "native sender validation, trusted artifact ids, save cancellation and narrow renderer capability",
+    "real Electron MessagePort Uint8Array and cached buffer preservation",
+    "structured input/schema/Typst/TypeScript/page/crop/revision errors over the real port",
+    "multi-page SVG, last-page navigation, outline, and two-way source navigation",
+    "opening ordinary body sources preserves saved data; conflict reload resets editor/candidates/history and explicit local replacement uses CAS",
+    "Monaco body/data shortcuts share report input and disk state; file-first saved content reaches the form, and the file menu reloads all failed report drafts",
+    "native body composition, formatting, lists, tables, source environment protection, shared data history, staged candidates and one undo",
+    "shared link editing and current-block duplication in the real desktop renderer, each reverted by one native undo",
+    "font family, 18pt, text and background colors, clear typography without clearing bold, persisted source marks and real PDF after desktop reopen",
+    "source drafts retained across file switches and desktop reopen, ordinary source navigation and real PDF",
+    "project creation and recent persistence",
+    "real filesystem explorer CRUD",
+    "Valibot defaults and schema recovery",
+    "separate tabs and ordinary data.json input preserved through ZIP export/import",
+    "Pi provider settings and company Responses preset",
+    "native assistant folder mentions",
+    "assistant draft survives native docking and close/reopen",
+    "TypeScript completion and hover",
+    "Typst diagnostics",
+    "filesystem polling and external edits",
+    "invalid workspace config editing and recovery",
+    "PDF and workspace ZIP native transport",
+    "native open directory reuses existing project",
+    "normal and repeated quit wait for backend cleanup without shutdown errors"
+  ],
+  "portEvidence": {
+    "binary": {
+      "revision": "aeeed0f3-765f-41b6-be24-768f32a5e6b4",
+      "byteLength": 218960,
+      "firstWasBinary": true,
+      "secondMatches": true,
+      "thirdMatches": true,
+      "sessionId": "6e65b355-d6e6-4071-b90a-803c87e9ca21",
+      "nativeRevision": 1,
+      "compilerVersion": "0.7.0",
+      "pageCount": 3,
+      "outline": [
+        {
+          "level": 1,
+          "page": 2,
+          "title": "经营概况",
+          "x": 70.86614173228347,
+          "y": 68.03149606299213
+        },
+        {
+          "level": 1,
+          "page": 2,
+          "title": "盈利测算",
+          "x": 70.86614173228347,
+          "y": 169.57149606299214
+        },
+        {
+          "level": 1,
+          "page": 2,
+          "title": "收入结构示意",
+          "x": 70.86614173228347,
+          "y": 296.4214960629921
+        },
+        {
+          "level": 1,
+          "page": 3,
+          "title": "项目执行明细",
+          "x": 70.86614173228347,
+          "y": 68.03149606299213
+        },
+        {
+          "level": 1,
+          "page": 3,
+          "title": "管理建议",
+          "x": 70.86614173228347,
+          "y": 695.1129960629922
+        }
+      ],
+      "point": {
+        "column": 3,
+        "endColumn": 4,
+        "endLine": 8,
+        "height": 11,
+        "line": 8,
+        "page": 2,
+        "path": "报表/季度经营分析/排版.typ",
+        "width": 11,
+        "x": 70.86614173228347,
+        "y": 65.05049606299212
+      }
+    },
+    "errors": {
+      "invalidJson": {
+        "code": "INVALID_INPUT",
+        "message": "Input data must be a JSON object",
+        "issues": [
+          {
+            "path": [
+              "data"
+            ],
+            "rule": "json",
+            "message": "Input data must be a JSON object"
+          }
+        ]
+      },
+      "schema": {
+        "code": "INVALID_INPUT",
+        "message": "模板输入未通过 schema 校验",
+        "issues": [
+          {
+            "path": [
+              "company"
+            ],
+            "rule": "string",
+            "message": "Invalid type: Expected string but received 42"
+          }
+        ]
+      },
+      "pageError": {
+        "code": "INVALID_INPUT",
+        "message": "revision and page must be positive safe integers",
+        "diagnostics": []
+      },
+      "cropError": {
+        "code": "INVALID_INPUT",
+        "message": "region must be a finite positive rectangle",
+        "diagnostics": []
+      },
+      "conflict": {
+        "code": "REVISION_CONFLICT",
+        "message": "Document revision is no longer retained; compile explicitly again"
+      },
+      "typst": {
+        "code": "COMPILE_FAILED",
+        "message": "Typst compilation failed",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "message": "unclosed delimiter",
+            "path": "报表/季度经营分析/排版.typ",
+            "range": {
+              "end": {
+                "character": 15,
+                "line": 0
+              },
+              "start": {
+                "character": 14,
+                "line": 0
+              }
+            }
+          }
+        ]
+      },
+      "typescript": {
+        "code": "COMPILE_FAILED",
+        "message": "模板执行失败：模板热更新失败：[\"Error: Transform failed with 1 error:\\n\\n\\u001b[31m[PARSE_ERROR] \\u001b[0mUnexpected token\\n   \\u001b[38;5;246m╭\\u001b[0m\\u001b[38;5;246m─\\u001b[0m\\u001b[38;5;246m[\\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-Gzy5L8/报表/季度经营分析/季度经营分析.ts:1:25 \\u001b[38;5;246m]\\u001b[0m\\n   \\u001b[38;5;246m│\\u001b[0m\\n \\u001b[38;5;246m1 │\\u001b[0m \\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mx\\u001b[0m\\u001b[38;5;249mp\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249md\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mf\\u001b[0m\\u001b[38;5;249ma\\u001b[0m\\u001b[38;5;249mu\\u001b[0m\\u001b[38;5;249ml\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249m{\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249mb\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mk\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mn\\u001b[0m\\u001b[38;5;249m:\\u001b[0m\\n \\u001b[38;5;240m  │\\u001b[0m                         │ \\n \\u001b[38;5;240m  │\\u001b[0m                         ╰─ \\n\\u001b[38;5;246m───╯\\u001b[0m\\n\",\"Failed to reload /报表/季度经营分析/季度经营分析.ts. This could be due to syntax errors or importing non-existent modules. (see errors above)\",\"Error: Transform failed with 1 error:\\n\\n\\u001b[31m[PARSE_ERROR] \\u001b[0mUnexpected token\\n   \\u001b[38;5;246m╭\\u001b[0m\\u001b[38;5;246m─\\u001b[0m\\u001b[38;5;246m[\\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-Gzy5L8/报表/季度经营分析/季度经营分析.ts:1:25 \\u001b[38;5;246m]\\u001b[0m\\n   \\u001b[38;5;246m│\\u001b[0m\\n \\u001b[38;5;246m1 │\\u001b[0m \\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mx\\u001b[0m\\u001b[38;5;249mp\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249md\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mf\\u001b[0m\\u001b[38;5;249ma\\u001b[0m\\u001b[38;5;249mu\\u001b[0m\\u001b[38;5;249ml\\u001b[0m\\u001b[38;5;249mt\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249m{\\u001b[0m\\u001b[38;5;249m \\u001b[0m\\u001b[38;5;249mb\\u001b[0m\\u001b[38;5;249mr\\u001b[0m\\u001b[38;5;249mo\\u001b[0m\\u001b[38;5;249mk\\u001b[0m\\u001b[38;5;249me\\u001b[0m\\u001b[38;5;249mn\\u001b[0m\\u001b[38;5;249m:\\u001b[0m\\n \\u001b[38;5;240m  │\\u001b[0m                         │ \\n \\u001b[38;5;240m  │\\u001b[0m                         ╰─ \\n\\u001b[38;5;246m───╯\\u001b[0m\\n\",\"Failed to reload /home/ahdg/.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-Gzy5L8/.studio-entry.ts. This could be due to syntax errors or importing non-existent modules. (see errors above)\"]",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "message": "\u001b[31m[PARSE_ERROR] \u001b[0mUnexpected token\n   \u001b[38;5;246m╭\u001b[0m\u001b[38;5;246m─\u001b[0m\u001b[38;5;246m[\u001b[0m ../../../../../.var/app/io.github.trumank.CodeStudio/tmp/studio-vite-Gzy5L8/报表/季度经营分析/季度经营分析.ts:1:25 \u001b[38;5;246m]\u001b[0m\n   \u001b[38;5;246m│\u001b[0m\n \u001b[38;5;246m1 │\u001b[0m \u001b[38;5;249me\u001b[0m\u001b[38;5;249mx\u001b[0m\u001b[38;5;249mp\u001b[0m\u001b[38;5;249mo\u001b[0m\u001b[38;5;249mr\u001b[0m\u001b[38;5;249mt\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249md\u001b[0m\u001b[38;5;249me\u001b[0m\u001b[38;5;249mf\u001b[0m\u001b[38;5;249ma\u001b[0m\u001b[38;5;249mu\u001b[0m\u001b[38;5;249ml\u001b[0m\u001b[38;5;249mt\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249m{\u001b[0m\u001b[38;5;249m \u001b[0m\u001b[38;5;249mb\u001b[0m\u001b[38;5;249mr\u001b[0m\u001b[38;5;249mo\u001b[0m\u001b[38;5;249mk\u001b[0m\u001b[38;5;249me\u001b[0m\u001b[38;5;249mn\u001b[0m\u001b[38;5;249m:\u001b[0m\n \u001b[38;5;240m  │\u001b[0m                         │ \n \u001b[38;5;240m  │\u001b[0m                         ╰─ \n\u001b[38;5;246m───╯\u001b[0m\n",
+            "path": "报表/季度经营分析/季度经营分析.ts",
+            "range": {
+              "start": {
+                "line": 0,
+                "character": 24
+              },
+              "end": {
+                "line": 0,
+                "character": 25
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "exportReceipts": [
+    {
+      "entry": "报表/客户服务报告/客户服务报告.ts",
+      "revision": "4d8d91b3-fccf-411f-8a2a-6342f7b0ff0c",
+      "sourceRevision": "7cd5939290c21d34e9cb77b0c1866098d11f3b003106a68ab19797451d0660d0",
+      "storageVersion": "7cd5939290c21d34e9cb77b0c1866098d11f3b003106a68ab19797451d0660d0"
+    },
+    {
+      "entry": "报表/银行询证函/银行询证函.ts",
+      "revision": "6fcb20dc-08a0-4154-a0cc-5463be7cdf5f",
+      "sourceRevision": "14624756ce20d5aa53bbd5beb2b6eeec97f23ef85f701c50dc13d335167290ac",
+      "storageVersion": "14624756ce20d5aa53bbd5beb2b6eeec97f23ef85f701c50dc13d335167290ac"
+    },
+    {
+      "entry": "报表/客户服务报告/客户服务报告.ts",
+      "revision": "e1b0c7aa-7add-4231-aff1-94e9e88b0732",
+      "sourceRevision": "14624756ce20d5aa53bbd5beb2b6eeec97f23ef85f701c50dc13d335167290ac",
+      "storageVersion": "14624756ce20d5aa53bbd5beb2b6eeec97f23ef85f701c50dc13d335167290ac"
+    }
+  ],
+  "viewport": {
+    "width": 1050,
+    "height": 994
+  }
+}

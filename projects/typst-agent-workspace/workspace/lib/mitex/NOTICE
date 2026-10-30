@@ -1,0 +1,4 @@
+MiTeX 0.2.7 by Myriad-Dreamin, OrangeX4, Enter-tainer, and Shichien.
+Source: https://github.com/mitex-rs/mitex
+Licensed under Apache-2.0; see LICENSE.
+Pluxel modification: load the unchanged WASM from a JSON byte array.

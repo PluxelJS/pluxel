@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { _electron as electron } from 'playwright'
 import electronExecutable from 'electron'
 import { rolldown } from 'rolldown'
+import { createTypstSourceProject } from '@pluxel/plugin-typst/source'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const applicationRoot = resolve(process.env.STUDIO_APP_ROOT ?? root)
@@ -21,6 +22,7 @@ const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 const errors = [],
 	logs = []
+const exportReceipts = []
 let instance, processClosed, page, project, documentConfig, connection, studio, portEvidence
 const executablePath = process.env.STUDIO_EXECUTABLE ?? electronExecutable
 const ozonePlatform =
@@ -65,28 +67,6 @@ async function start() {
 	})
 	page.on('console', (message) => {
 		if (message.type() === 'error') logs.push(`RENDERER ${message.text()}\n`)
-	})
-	await page.exposeFunction('studioFocusProbe', (event) =>
-		logs.push(`INPUT ${JSON.stringify(event)}\n`),
-	)
-	await page.evaluate(() => {
-		for (const type of ['focusin', 'pointerdown', 'keydown'])
-			document.addEventListener(
-				type,
-				(event) => {
-					void window.studioFocusProbe({
-						type,
-						tag: event.target?.tagName,
-						label: event.target?.getAttribute?.('aria-label'),
-						text:
-							event.type === 'pointerdown' ? event.target?.textContent?.slice(0, 100) : undefined,
-						key: event.key,
-						ctrl: event.ctrlKey,
-						trusted: event.isTrusted,
-					})
-				},
-				true,
-			)
 	})
 	page.on('dialog', (dialog) => {
 		void dialog.accept().catch((error) => {
@@ -157,6 +137,7 @@ async function until(check, reason) {
 }
 async function screenshot(name) {
 	await page.screenshot({ path: join(output, `${name}.png`), animations: 'disabled' })
+	console.log(`Desktop checkpoint: ${name}`)
 	if (name === '01-form-preview')
 		await writeFile(
 			join(output, 'scroll-layout.json'),
@@ -192,6 +173,40 @@ async function ready() {
 		'Preview did not recover to exportable revision',
 	)
 	await page.locator('.document-preview[data-preview-current="true"]:visible').waitFor()
+}
+async function savedPreview(entry) {
+	await ready()
+	let receipt
+	await until(async () => {
+		const shown = page.locator('.document-preview:visible')
+		const revision = await shown.getAttribute('data-preview-revision')
+		if (!revision) return false
+		const target = { projectId: project.id, entry }
+		const [input, sourceRevision] = await Promise.all([
+			studio.getInput(target),
+			page.evaluate(
+				async (request) => {
+					try {
+						const preview = await window.studioProbe.api.getPreview(request)
+						return preview.sourceRevision
+					} catch (cause) {
+						if (cause?.code === 'REVISION_CONFLICT') return null
+						throw cause
+					}
+				},
+				{ ...target, revision },
+			),
+		])
+		if (
+			!sourceRevision ||
+			sourceRevision !== input.storageVersion ||
+			(await shown.getAttribute('data-preview-revision')) !== revision
+		)
+			return false
+		receipt = { entry, revision, sourceRevision, storageVersion: input.storageVersion }
+		return true
+	}, 'Displayed preview did not match the saved workspace revision')
+	exportReceipts.push(receipt)
 }
 const treeItem = (path) =>
 	page.getByRole('treeitem').and(page.locator(`[data-path=${JSON.stringify(path)}]`))
@@ -474,6 +489,8 @@ async function verifyMultiPageUi(entry, binary) {
 		String(binary.pageCount),
 	)
 	await screenshot('01-quarterly-last-page')
+	if (!(await navigation.isVisible()))
+		await page.getByRole('button', { name: '目录与页面', exact: true }).click()
 	await navigation.getByRole('button').filter({ hasText: '经营概况' }).click()
 	assert.equal(
 		await page.getByLabel('跳转到页', { exact: true }).filter({ visible: true }).inputValue(),
@@ -548,8 +565,8 @@ const bodyTypographyText = '中文输入验收𠮷'
 const bodyTypography = {
 	fontFamily: 'Noto Serif CJK SC',
 	fontSize: '18pt',
-	color: '#dc2626',
-	backgroundColor: '#fef08a',
+	color: 'rgba(220, 38, 38, 1)',
+	backgroundColor: 'rgba(254, 240, 138, 1)',
 }
 
 function typographyTextNode(input) {
@@ -560,14 +577,17 @@ function typographyTextNode(input) {
 			if (found) return found
 		}
 	}
-	return find(input.editor?.regions.summary)
+	return find(
+		createTypstSourceProject({ files: input.editor.files }).open('报表/客户服务报告/summary.typ')
+			.document,
+	)
 }
 
 function assertBodyTypography(input) {
 	const node = typographyTextNode(input)
-	assert.ok(node, 'Saved raw region retains the native composition text')
+	assert.ok(node, 'Saved source retains the native composition text')
 	const style = node.marks?.find((mark) => mark.type === 'textStyle')
-	assert.ok(style, 'Saved raw region retains its textStyle mark')
+	assert.ok(style, 'Saved source retains its textStyle mark')
 	for (const [attribute, value] of Object.entries(bodyTypography))
 		assert.equal(style.attrs[attribute], value)
 	assert.ok(
@@ -621,18 +641,54 @@ async function assertBodyTypographyPreview() {
 }
 
 async function verifyBodyEditor(entry) {
+	const imagePath = '报表/客户服务报告/pixel.png'
+	const png = Buffer.from(
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+		'base64',
+	)
+	const pngFile = join(output, 'pixel.png')
+	await writeFile(pngFile, png)
+	await studio.importAssetFile({ projectId: project.id, path: imagePath, sourcePath: pngFile })
+	const initial = await studio.getInput({ projectId: project.id, entry })
+	const bodyPath = '报表/客户服务报告/summary.typ'
+	await studio.setInput({
+		projectId: project.id,
+		entry,
+		data: initial.data,
+		editor: {
+			files: {
+				...initial.editor.files,
+				[bodyPath]:
+					initial.editor.files[bodyPath] +
+					'\n#figure(image("pixel.png", width: 12pt), caption: [PNG image]) <fig:pixel>\n',
+			},
+		},
+		expectedVersion: initial.storageVersion,
+	})
 	await revealFile(entry)
 	await treeItem(entry).click()
 	await page
 		.locator('[aria-label="报表编辑模式"]:visible')
 		.getByText('正文', { exact: true })
 		.click()
-	const summary = page.getByRole('textbox', { name: '正文区域 summary', exact: true })
+	const summary = page.getByRole('textbox', {
+		name: '正文源码 报表/客户服务报告/summary.typ',
+		exact: true,
+	})
 	const recommendations = page.getByRole('textbox', {
-		name: '正文区域 recommendations',
+		name: '正文源码 报表/客户服务报告/recommendations.typ',
 		exact: true,
 	})
 	await summary.waitFor()
+	await until(
+		() =>
+			summary
+				.locator('img')
+				.evaluateAll((images) =>
+					images.some((image) => image.complete && image.naturalWidth === 1),
+				),
+		'PNG resource did not reach the source image view',
+	)
 	const toolbar = page.locator('.studio-region-editor:visible').getByRole('toolbar', {
 		name: '正文格式',
 		exact: true,
@@ -668,7 +724,7 @@ async function verifyBodyEditor(entry) {
 	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
 	assert.deepEqual(await summary.evaluate((element) => element.editor.getJSON()), originalBlocks)
 	await screenshot('07-body-table')
-	const region = page.getByRole('combobox', { name: '正文区域', exact: true })
+	const region = page.getByRole('combobox', { name: '正文文件', exact: true })
 	const switchRegion = async (label) => {
 		await region.focus()
 		await region.press('ArrowDown')
@@ -694,16 +750,21 @@ async function verifyBodyEditor(entry) {
 	assert.match(await summary.innerText(), /中文输入验收𠮷/)
 	await setCustomerName('青山有限公司')
 	await until(
-		async () => (await summary.locator('[data-data-field]').first().innerText()) === '青山有限公司',
+		async () =>
+			(await summary
+				.locator('.typst-source-field')
+				.first()
+				.locator(':scope > span')
+				.first()
+				.innerText()) === '青山有限公司',
 		'Data field NodeView did not receive parsed data',
 	)
 	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
-	assert.doesNotMatch(
+	assert.match(
 		await summary.innerText(),
 		/中文输入验收𠮷/,
-		'Data updates do not consume the native editor history',
+		'Project data undo preserves previous prose',
 	)
-	assert.equal(await summary.locator('[data-data-field]').first().innerText(), '青山有限公司')
 	await toolbar.getByRole('button', { name: '重做', exact: true }).click()
 	assert.match(await summary.innerText(), /中文输入验收𠮷/)
 	await selectEditorText(summary, '中文输入验收𠮷')
@@ -713,6 +774,23 @@ async function verifyBodyEditor(entry) {
 	const formatDialog = page.getByRole('dialog', { name: '文字格式', exact: true })
 	await formatDialog.getByRole('button', { name: '加粗', exact: true }).click()
 	assert.match(await summary.locator('strong').last().innerText(), /中文输入验收𠮷/)
+	const explorer = page.locator('.explorer-scroll:visible')
+	const explorerTop = await explorer.evaluate((element) => {
+		const previous = element.scrollTop
+		element.scrollTop = previous > 0 ? 0 : element.scrollHeight
+		return previous
+	})
+	await page.evaluate(
+		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+	)
+	assert.equal(
+		await formatDialog.isVisible(),
+		true,
+		'Unrelated Explorer scrolling preserves the format context',
+	)
+	await explorer.evaluate((element, top) => {
+		element.scrollTop = top
+	}, explorerTop)
 	const target = { projectId: project.id, entry }
 	await until(async () => {
 		const saved = await studio.getInput(target)
@@ -760,8 +838,11 @@ async function verifyBodyEditor(entry) {
 	const styledInput = await studio.getInput(target)
 	assertBodyTypography(styledInput)
 	assert.deepEqual(styledInput.data, beforeTypography.data, 'Typography commands preserve raw data')
+	await ready()
 	await screenshot('07c-body-typography')
-	await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
+	// Awaiting persistence/preview can scroll the pane, which normally dismisses its anchored menu.
+	if (await formatDialog.isVisible())
+		await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
 	// Cross the public RPC boundary while the native editor still owns an unsaved edit.
 	const bodyAgent = await summary.evaluate(async (element, bodyTarget) => {
 		const editor = element.editor
@@ -769,23 +850,31 @@ async function verifyBodyEditor(entry) {
 			type: 'paragraph',
 			content: [{ type: 'text', text: 'Unsaved human paragraph for agent.' }],
 		})
-		const reading = window.studioProbe.api.readBody({ ...bodyTarget, regionId: 'summary' })
+		const reading = window.studioProbe.api.readBody({
+			...bodyTarget,
+			path: '报表/客户服务报告/summary.typ',
+		})
 		const savedBefore = await window.studioProbe.api.getInput(bodyTarget)
 		const snapshot = await reading
-		return { savedBefore, snapshot, original: editor.getJSON() }
+		return {
+			savedBefore,
+			snapshot,
+			original: editor.getJSON(),
+			originalSource: snapshot.files[0].source,
+		}
 	}, target)
 	assert.doesNotMatch(
 		JSON.stringify(bodyAgent.savedBefore.editor),
 		/Unsaved human paragraph for agent/,
 	)
-	assert.match(bodyAgent.snapshot.regions[0].markdown, /Unsaved human paragraph for agent/)
+	assert.match(bodyAgent.snapshot.files[0].source, /Unsaved human paragraph for agent/)
 	const agentCandidate = {
 		...target,
-		regionId: 'summary',
+		path: '报表/客户服务报告/summary.typ',
 		baseRevision: bodyAgent.snapshot.baseRevision,
-		markdown: bodyAgent.snapshot.regions[0].markdown.replace(
+		source: bodyAgent.snapshot.files[0].source.replace(
 			'Unsaved human paragraph for agent.',
-			'[textStyle {"color":"#16a34a","backgroundColor":"#e0f2fe"}]Agent revised the unsaved paragraph.[/textStyle]',
+			'#highlight(fill: rgb("#e0f2fe"))[#text(fill: rgb("#16a34a"))[Agent revised the unsaved paragraph.]]',
 		),
 	}
 	const agentReceipt = await studio.applyBodyCandidate(agentCandidate)
@@ -802,6 +891,7 @@ async function verifyBodyEditor(entry) {
 	})
 	const agentPngBytes = await readFile(agentPng.path)
 	assert.deepEqual(agentPngBytes.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+	await writeFile(join(output, 'agent-body.png'), agentPngBytes)
 	await assert.rejects(async () => await studio.applyBodyCandidate(agentCandidate), {
 		code: 'STALE_CANDIDATE',
 	})
@@ -815,7 +905,7 @@ async function verifyBodyEditor(entry) {
 	)
 	await until(async () => {
 		const savedUndo = await studio.getInput(target)
-		return JSON.stringify(savedUndo.editor?.regions.summary) === JSON.stringify(bodyAgent.original)
+		return savedUndo.editor?.files['报表/客户服务报告/summary.typ'] === bodyAgent.originalSource
 	}, 'Undo did not persist through the shared input boundary')
 	await writeFile(
 		join(output, 'agent-body-evidence.json'),
@@ -844,8 +934,43 @@ async function verifyBodyEditor(entry) {
 	assert.match(await summary.innerText(), /中文输入验收𠮷/, 'Enter retains the IME paragraph')
 	await openFormat(toolbar)
 	await formatDialog.getByRole('button', { name: '列表', exact: true }).click()
-	await formatDialog.getByRole('button', { name: '关闭格式', exact: true }).click()
+	const listScroll = await page.locator('.body-editor-scroll:visible').evaluate((element) => {
+		const before = element.scrollTop
+		element.scrollTop = before > 0 ? before - 1 : 6
+		return { before, after: element.scrollTop }
+	})
+	assert.notEqual(
+		listScroll.after,
+		listScroll.before,
+		'The editor scrolls while the list menu closes',
+	)
+	await summary.evaluate(
+		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+	)
+	await page.keyboard.press('Escape')
+	await formatDialog.waitFor({ state: 'hidden' })
+	assert.equal(
+		await summary.evaluate((element) => {
+			const selection = element.ownerDocument.getSelection()
+			return (
+				element.ownerDocument.activeElement === element &&
+				selection?.isCollapsed &&
+				selection.anchorNode &&
+				element.contains(selection.anchorNode) &&
+				element.editor.view.posAtDOM(selection.anchorNode, selection.anchorOffset) ===
+					element.editor.state.selection.from &&
+				element.editor.state.selection.$from.parent.type.name === 'paragraph' &&
+				element.editor.state.selection.$from.node(-1).type.name === 'listItem'
+			)
+		}),
+		true,
+		'Scrolling closes the format menu and restores its current list caret before typing',
+	)
 	await page.keyboard.insertText('列表项保留')
+	assert.match(await summary.locator('ul').innerText(), /列表项保留/)
+	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+	assert.doesNotMatch(await summary.locator('ul').innerText(), /列表项保留/)
+	await toolbar.getByRole('button', { name: '重做', exact: true }).click()
 	assert.match(await summary.locator('ul').innerText(), /列表项保留/)
 	assert.match(
 		await summary.innerText(),
@@ -868,7 +993,7 @@ async function verifyBodyEditor(entry) {
 	assert.match(await summary.innerText(), /中文输入验收𠮷/, 'Table undo retains the IME paragraph')
 	await selectEditorText(summary, '本期服务已完成交付，详细情况如下。', true)
 	await insertBodyContent(toolbar, '提示块')
-	await summary.locator('aside[data-typst-notice]').waitFor()
+	await summary.locator('.typst-source-card').last().waitFor()
 	assert.match(
 		await summary.innerText(),
 		/中文输入验收𠮷/,
@@ -877,66 +1002,70 @@ async function verifyBodyEditor(entry) {
 	const details = page.locator('.studio-candidate:visible')
 	await details.locator('summary').click()
 	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
-	await details
-		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
-		.fill(':::tiptap\n{"type":"table","content":[]}\n:::')
+	await details.getByRole('textbox', { name: 'Typst 候选', exact: true }).fill('#let broken = (')
 	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	assert.equal(
 		await details.getByRole('button', { name: '接纳候选', exact: true }).isDisabled(),
-		true,
+		false,
+		'Raw source can be reviewed even before syntax repair',
 	)
-	await details.getByRole('alert').waitFor()
 	assert.match(await summary.innerText(), /交付与客户反馈/)
 	await switchRegion('后续建议')
-	await recommendations.click()
-	await page.keyboard.press('Control+Home')
-	await toolbar.getByRole('button', { name: '插入', exact: true }).click()
-	const insertDialog = page.getByRole('dialog', { name: '插入内容', exact: true })
-	await insertDialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).fill('表格')
-	const restrictedTable = insertDialog.getByRole('option', { name: '表格', exact: true })
-	assert.ok(
-		(await restrictedTable.count()) === 0 || (await restrictedTable.isDisabled()),
-		'Restricted regions do not offer table commands',
-	)
-	assert.equal(await recommendations.locator('table').count(), 0)
-	await insertDialog.getByRole('searchbox', { name: '搜索插入内容', exact: true }).press('Escape')
-	await openFormat(toolbar)
-	assert.equal(await typography.count(), 1, 'Node restrictions retain allowed typography commands')
 	assert.equal(
-		await typography.getByRole('combobox', { name: '字号', exact: true }).isDisabled(),
-		false,
+		await recommendations.locator('.typst-component').count(),
+		1,
+		'Service notice remains an ordinary source component',
 	)
-	await screenshot('08-body-restricted-region')
-	await recommendations.click()
-	await page.keyboard.press('Control+A')
+	await screenshot('08-body-component')
+	const originalImports = await recommendations.evaluate((element) =>
+		element.editor.getJSON().content.filter((node) => node.type === 'typstSource'),
+	)
+	await selectEditorText(recommendations, '安排下期服务计划。')
 	await page.keyboard.insertText('原始建议')
+	assert.match(await recommendations.innerText(), /原始建议/)
+	assert.equal(await recommendations.locator('.typst-component').count(), 1)
+	assert.deepEqual(
+		await recommendations.evaluate((element) =>
+			element.editor.getJSON().content.filter((node) => node.type === 'typstSource'),
+		),
+		originalImports,
+		'Editing prose retains the exact import environment nodes',
+	)
+	const originalRecommendations = await recommendations.evaluate((element) =>
+		element.editor.getJSON(),
+	)
 	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
-	await details
-		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
-		.fill('**接纳后的建议**')
+	await details.getByRole('textbox', { name: 'Typst 候选', exact: true }).fill('*接纳后的建议*')
 	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	await setCustomerName('海川工作室')
 	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
-	await details.getByRole('alert').waitFor()
-	assert.equal(
-		await recommendations.innerText(),
-		'原始建议',
-		'Data changes invalidate staged candidates',
+	await page
+		.locator('.body-editor-scroll:visible')
+		.getByRole('alert')
+		.filter({ hasText: '候选目标已过期' })
+		.waitFor()
+	assert.deepEqual(
+		await recommendations.evaluate((element) => element.editor.getJSON()),
+		originalRecommendations,
+		'Data changes invalidate staged candidates and preserve source content',
 	)
 	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
 	assert.equal(
-		await details.getByRole('textbox', { name: 'Markdown 候选', exact: true }).inputValue(),
-		'**接纳后的建议**',
+		await details.getByRole('textbox', { name: 'Typst 候选', exact: true }).inputValue(),
+		'*接纳后的建议*',
 		'Recapturing preserves the edited candidate until explicitly replaced',
 	)
+	const capturedOriginal = await details
+		.locator('.studio-candidate-comparison section')
+		.first()
+		.locator('pre')
+		.innerText()
 	await details.getByRole('button', { name: '用原文替换候选', exact: true }).click()
 	assert.equal(
-		await details.getByRole('textbox', { name: 'Markdown 候选', exact: true }).inputValue(),
-		'原始建议',
+		await details.getByRole('textbox', { name: 'Typst 候选', exact: true }).inputValue(),
+		capturedOriginal,
 	)
-	await details
-		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
-		.fill('**接纳后的建议**')
+	await details.getByRole('textbox', { name: 'Typst 候选', exact: true }).fill('*接纳后的建议*')
 	await details.getByRole('button', { name: '查看修改预览', exact: true }).click()
 	await details.getByRole('button', { name: '接纳候选', exact: true }).click()
 	await until(
@@ -945,10 +1074,10 @@ async function verifyBodyEditor(entry) {
 	)
 	assert.equal(await recommendations.innerText(), '接纳后的建议')
 	await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
-	assert.equal(
-		await recommendations.innerText(),
-		'原始建议',
-		'One undo restores the complete pre-candidate region',
+	assert.deepEqual(
+		await recommendations.evaluate((element) => element.editor.getJSON()),
+		originalRecommendations,
+		'One undo restores the complete source, including imports and component',
 	)
 	await toolbar.getByRole('button', { name: '重做', exact: true }).click()
 	await switchRegion('服务概况')
@@ -956,34 +1085,47 @@ async function verifyBodyEditor(entry) {
 	await until(async () => {
 		const input = await studio.getInput({ projectId: project.id, entry })
 		return (
-			JSON.stringify(input.editor?.regions).includes('接纳后的建议') &&
-			JSON.stringify(input.editor?.regions).includes('中文输入验收𠮷')
+			JSON.stringify(input.editor?.files).includes('接纳后的建议') &&
+			JSON.stringify(input.editor?.files).includes('中文输入验收𠮷')
 		)
 	}, 'Unified body draft was not persisted')
 	const input = await studio.getInput({ projectId: project.id, entry })
 	assertBodyTypography(input)
-	const { result, point, mapping } = await page.evaluate(
-		async (request) => {
-			const api = window.studioProbe.api
-			const compiled = await api.compile(request)
-			const preview = await api.getPreview({
-				projectId: request.projectId,
-				entry: request.entry,
-				revision: compiled.revision,
-			})
-			return {
-				result: compiled,
-				point: preview.preview.navigation.points.find(
-					(item) => item.path === '_editor/regions/summary.typ',
-				),
-				mapping: preview.generatedMapping,
-			}
-		},
-		{ projectId: project.id, entry, data: input.data, editor: input.editor, clientRevision: 1000 },
-	)
-	assert.ok(point, 'Real native navigation includes generated region spans')
-	await page.getByRole('button', { name: '刷新预览', exact: true }).click()
 	await ready()
+	const displayedPreview = page.locator('.document-preview[data-preview-current="true"]:visible')
+	let navigation
+	await until(async () => {
+		const revision = await displayedPreview.getAttribute('data-preview-revision')
+		if (!revision) return false
+		navigation = await page.evaluate(
+			async (request) => {
+				try {
+					const preview = await window.studioProbe.api.getPreview(request)
+					return {
+						result: {
+							revision: preview.revision,
+							clientRevision: preview.clientRevision,
+							sourceRevision: preview.sourceRevision,
+							pageCount: preview.preview.navigation.pages.length,
+						},
+						point: preview.preview.navigation.points.find(
+							(item) => item.path === '报表/客户服务报告/summary.typ',
+						),
+						mapping: preview.preview.navigation.points,
+					}
+				} catch (error) {
+					if (error.code === 'REVISION_CONFLICT') return null
+					throw error
+				}
+			},
+			{ projectId: project.id, entry, revision },
+		)
+		return Boolean(
+			navigation && (await displayedPreview.getAttribute('data-preview-revision')) === revision,
+		)
+	}, 'The current displayed revision did not expose its native source mapping')
+	const { result, point, mapping } = navigation
+	assert.ok(point, 'Real native navigation includes ordinary source spans')
 	await assertBodyTypographyPreview()
 	const svg = page.locator('.typst-pages:visible .typst-page').nth(point.page - 1)
 	const click = await svg.evaluate((element, hit) => {
@@ -998,13 +1140,40 @@ async function verifyBodyEditor(entry) {
 		await page.locator('.flexlayout__tab_button').filter({ hasText: '_editor' }).count(),
 		0,
 	)
-	await summary
-		.locator('p')
-		.first()
-		.click({ position: { x: 65, y: 8 } })
+	await until(
+		() =>
+			summary.evaluate(
+				(element) =>
+					element.editor.state.selection.toJSON().type === 'node' &&
+					element.editor.state.selection.node?.type.name === 'typstField',
+			),
+		'Preview navigation did not select the source field before the authored-text click',
+	)
+	const authoredParagraph = summary.locator('p').filter({ hasText: '本期服务已完成交付' }).first()
+	await authoredParagraph.scrollIntoViewIfNeeded()
+	const authoredGlyph = await authoredParagraph.evaluate((element) => {
+		const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+		while (walker.nextNode()) {
+			const text = walker.currentNode
+			const offset = text.textContent.indexOf('本期服务已完成交付')
+			if (offset < 0) continue
+			const range = document.createRange()
+			range.setStart(text, offset + 5)
+			range.setEnd(text, offset + 6)
+			const rect = range.getBoundingClientRect()
+			return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+		}
+		throw new Error('Authored source text has no rendered glyph')
+	})
+	await page.mouse.click(authoredGlyph.x, authoredGlyph.y)
+	await until(
+		() => summary.evaluate((element) => element.editor.state.selection.toJSON().type === 'text'),
+		'Clicking authored text settles the selection after preview selected the field',
+	)
 	await page.locator('.preview-source-highlight:visible').waitFor()
 	await screenshot('09-body-navigation')
 	const pdf = join(output, 'body.pdf')
+	await savedPreview(entry)
 	await savePicker(pdf)
 	await page.getByRole('button', { name: '导出 PDF', exact: true }).click()
 	await completeFile(
@@ -1025,60 +1194,73 @@ async function verifyDraftRecovery() {
 	const { entry } = await studio.createReport({ projectId: project.id, path: directory })
 	const target = { projectId: project.id, entry }
 	const data = { title: '已有填写数据', body: '保留这份原始输入' }
-	await studio.setInput({ ...target, data, expectedVersion: null })
-	const document = (text) => ({
-		type: 'doc',
-		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+	const initial = await studio.getInput(target)
+	await studio.setInput({ ...target, data, expectedVersion: initial.storageVersion })
+	const bodyPath = `${directory}/workspace.typ`
+	await studio.writeFile({
+		projectId: project.id,
+		path: bodyPath,
+		expectedVersion: null,
+		content: '初始正文',
 	})
 	await studio.writeFile({
 		projectId: project.id,
 		path: entry.replace(/\.ts$/, '.editor.json'),
 		expectedVersion: null,
-		content: JSON.stringify({
-			regions: [{ id: 'body', label: '正文' }],
-			fields: [],
-			defaults: { body: document('初始正文') },
-		}),
+		content: JSON.stringify({ sources: [{ path: 'workspace.typ', label: '正文' }] }),
 	})
 	const template = await studio.readFile({ projectId: project.id, path: `${directory}/排版.typ` })
 	await studio.writeFile({
 		projectId: project.id,
 		path: template.path,
 		expectedVersion: template.version,
-		content: `${template.content}\n#include "../../_editor/regions/body.typ"\n`,
+		content: template.content + '\n#include "workspace.typ"\n',
 	})
+
 	await until(
 		async () => (await treeItem(directory).count()) > 0,
 		'New report did not reach the tree',
 	)
+	const saveSource = () =>
+		page
+			.locator('.monaco-editor:visible textarea.inputarea')
+			.press(process.platform === 'darwin' ? 'Meta+S' : 'Control+S')
+	// Open the ordinary file before its report owner exists, without relying on
+	// whether autosave or the explicit shortcut reaches the backend first.
+	const fileFirstBody = '先在源码文件页保存的正文'
+	await openFile(bodyPath)
+	await replaceCode(fileFirstBody)
+	await saveSource()
+	await until(async () => {
+		const source = await readText(bodyPath)
+		return source.content === fileFirstBody
+	}, 'File-first Monaco source did not save before opening its report')
+	assert.equal(await readFile(join(project.root, bodyPath), 'utf8'), fileFirstBody)
 	await revealFile(entry)
 	await treeItem(entry).click()
 	await page
 		.locator('[aria-label="报表编辑模式"]:visible')
 		.getByText('正文', { exact: true })
 		.click()
-	await page.getByRole('button', { name: '初始化正文', exact: true }).click()
-	const body = page.getByRole('textbox', { name: '正文区域 body', exact: true })
+	const body = page.getByRole('textbox', { name: `正文源码 ${bodyPath}`, exact: true })
 	await until(async () => {
 		const input = await studio.getInput(target)
 		return input.editor !== undefined
-	}, 'Body initialization was not saved')
+	}, 'Existing source snapshot was not loaded')
 	const initialized = await studio.getInput(target)
-	assert.deepEqual(initialized.data, data, 'Initializing regions preserves existing input')
-	assert.equal(await body.innerText(), '初始正文')
+	assert.deepEqual(initialized.data, data, 'Opening source preserves existing input')
+	assert.equal(await body.innerText(), fileFirstBody, 'Opening the report adopts the saved file')
 	assert.equal(await page.getByRole('button', { name: '切换客户', exact: true }).count(), 0)
 	await ready()
 	await screenshot('10-draft-initialized')
 	const details = page.locator('.studio-candidate:visible')
 	await details.locator('summary').click()
 	await details.getByRole('button', { name: '固定候选目标', exact: true }).click()
-	await details
-		.getByRole('textbox', { name: 'Markdown 候选', exact: true })
-		.fill('旧草稿的未接纳候选')
+	await details.getByRole('textbox', { name: 'Typst 候选', exact: true }).fill('旧草稿的未接纳候选')
 	const remote = await studio.setInput({
 		...target,
 		data: { ...data, title: '其他写入者的标题' },
-		editor: { ...initialized.editor, regions: { body: document('远端正文') } },
+		editor: { files: { ...initialized.editor.files, [bodyPath]: '远端正文' } },
 		expectedVersion: initialized.storageVersion,
 	})
 	const replaceBody = async (text) => {
@@ -1087,7 +1269,10 @@ async function verifyDraftRecovery() {
 		await page.keyboard.insertText(text)
 	}
 	await replaceBody('本地冲突正文')
-	await page.getByText('填写数据与正文存在保存冲突', { exact: true }).waitFor()
+	await page
+		.locator('.workspace-pane:visible')
+		.getByText('填写数据与正文存在保存冲突', { exact: true })
+		.waitFor()
 	assert.deepEqual(
 		await studio.getInput(target),
 		remote,
@@ -1102,7 +1287,7 @@ async function verifyDraftRecovery() {
 	await ready()
 	await details.locator('summary').click()
 	assert.equal(
-		await details.getByRole('textbox', { name: 'Markdown 候选', exact: true }).inputValue(),
+		await details.getByRole('textbox', { name: 'Typst 候选', exact: true }).inputValue(),
 		'',
 	)
 	assert.equal(
@@ -1127,6 +1312,99 @@ async function verifyDraftRecovery() {
 	await writeFile(
 		join(output, 'draft-recovery.json'),
 		JSON.stringify({ initialized, remote, resolved: await studio.getInput(target) }, null, 2),
+	)
+
+	const dataPath = `${directory}/data.json`
+	const sharedBody = '从已加载报表的源码页保存的正文'
+	const sharedData = { title: '源码页保存的标题', body: '源码页保存的数据正文' }
+	const sharedDataSource = JSON.stringify(sharedData, null, 2) + '\n'
+	await openFile(bodyPath)
+	await replaceCode(sharedBody)
+	await saveSource()
+	await until(async () => {
+		const input = await studio.getInput(target)
+		return input.editor?.files[bodyPath] === sharedBody
+	}, 'Body file shortcut did not save through the loaded report input')
+	await openFile(dataPath)
+	await replaceCode(sharedDataSource)
+	await saveSource()
+	await until(async () => {
+		const input = await studio.getInput(target)
+		return (
+			input.data.title === sharedData.title && input.editor?.files[dataPath] === sharedDataSource
+		)
+	}, 'JSON file shortcut did not save through the loaded report input')
+	const saved = await studio.getInput(target)
+	assert.deepEqual(saved.data, sharedData)
+	assert.equal(saved.editor.files[bodyPath], sharedBody)
+	assert.equal(await readFile(join(project.root, bodyPath), 'utf8'), sharedBody)
+	assert.equal(await readFile(join(project.root, dataPath), 'utf8'), sharedDataSource)
+	const showSharedReport = async () => {
+		await treeItem(entry).click()
+		const modes = page.locator('[aria-label="报表编辑模式"]:visible')
+		await modes.getByText('表单', { exact: true }).click()
+		await until(
+			async () =>
+				(await page.getByRole('textbox', { name: '标题', exact: true }).inputValue()) ===
+				sharedData.title,
+			'The loaded form did not receive the JSON file title',
+		)
+		assert.equal(
+			await page.getByRole('textbox', { name: '正文', exact: true }).inputValue(),
+			sharedData.body,
+		)
+		await modes.getByText('正文', { exact: true }).click()
+		await until(
+			async () => (await body.innerText()) === sharedBody,
+			'The loaded body editor did not receive its source file content',
+		)
+		await ready()
+	}
+	await showSharedReport()
+	await screenshot('13-source-file-shared-save')
+
+	// Invalid JSON keeps the complete input draft unsaved. A subsequent body edit
+	// can therefore exercise the real whole-report reload without a timer race.
+	const sourcePane = () =>
+		page.locator('.workspace-pane:visible').filter({ has: page.locator('.monaco-editor:visible') })
+	await openFile(dataPath)
+	await replaceCode('{ invalid-json-draft')
+	await saveSource()
+	await sourcePane().getByRole('status').filter({ hasText: '保存失败' }).waitFor()
+	await openFile(bodyPath)
+	await replaceCode('等待整份报表重载放弃的正文草稿')
+	await saveSource()
+	await sourcePane().getByRole('status').filter({ hasText: '保存失败' }).waitFor()
+	assert.deepEqual(await studio.getInput(target), saved, 'Failed input save preserves storage')
+	await sourcePane().getByRole('button', { name: '文件操作', exact: true }).click()
+	const reload = page.getByRole('menuitem', { name: '从磁盘重新载入整份报表', exact: true })
+	assert.equal(await reload.isEnabled(), true)
+	const confirmation = page.waitForEvent('dialog')
+	await reload.click()
+	const dialog = await confirmation
+	assert.match(dialog.message(), /全部数据与正文草稿/)
+	await until(async () => {
+		const source = await page.locator('.monaco-editor:visible .view-lines').innerText()
+		return source.includes(sharedBody)
+	}, 'Whole-report reload did not restore the body file view')
+	await openFile(dataPath)
+	await until(async () => {
+		const source = await page.locator('.monaco-editor:visible .view-lines').innerText()
+		return source.includes(sharedData.title)
+	}, 'Whole-report reload did not restore the JSON file view')
+	assert.doesNotMatch(
+		await page.locator('.monaco-editor:visible .view-lines').innerText(),
+		/invalid-json-draft/,
+	)
+	await showSharedReport()
+	const reloaded = await studio.getInput(target)
+	assert.deepEqual(reloaded, saved, 'Reload reads the saved input without a replacement write')
+	assert.equal(await readFile(join(project.root, bodyPath), 'utf8'), sharedBody)
+	assert.equal(await readFile(join(project.root, dataPath), 'utf8'), sharedDataSource)
+	await screenshot('14-source-file-report-reloaded')
+	await writeFile(
+		join(output, 'source-file-views.json'),
+		JSON.stringify({ entry, bodyPath, dataPath, fileFirstBody, saved, reloaded }, null, 2),
 	)
 }
 
@@ -1162,7 +1440,7 @@ try {
 	documentConfig = tree.documents.find((document) => document.name === '银行询证函')
 	assert.ok(documentConfig?.entry.endsWith('.ts'))
 	assert.equal(tree.config.documents, undefined)
-	assert.ok(!tree.entries.some((entry) => entry.path.endsWith('/data.json')))
+	assert.ok(tree.entries.some((entry) => entry.path.endsWith('/data.json')))
 	const foreignPath = join(output, 'foreign-file.txt')
 	await writeFile(foreignPath, 'This file is outside the artifact store.')
 	await savePicker(join(output, 'denied-copy.txt'))
@@ -1235,6 +1513,10 @@ try {
 	await composer.fill('')
 	const bank = () => page.getByRole('textbox', { name: '银行名称', exact: false })
 	assert.equal(await bank().inputValue(), '示例银行', 'Valibot defaults populate a new form')
+	assert.ok(
+		(await page.locator('.document-preview').count()) >= 5,
+		'Bank input refresh and PDF export exercise more reports than the four native session slots',
+	)
 	await bank().fill('桌面验证银行')
 	await until(async () => {
 		const input = await studio.getInput({ projectId: project.id, entry: documentConfig.entry })
@@ -1243,6 +1525,7 @@ try {
 	await ready()
 	await screenshot('01-form-preview')
 	const pdf = join(output, 'workspace.pdf')
+	await savedPreview(documentConfig.entry)
 	await savePicker(pdf)
 	await page.getByRole('button', { name: '导出 PDF', exact: true }).click()
 	await completeFile(
@@ -1263,16 +1546,25 @@ try {
 		.locator('[aria-label="报表编辑模式"]:visible')
 		.getByText('正文', { exact: true })
 		.click()
-	const reopenedBody = page.getByRole('textbox', { name: '正文区域 summary', exact: true })
+	const reopenedBody = page.getByRole('textbox', {
+		name: '正文源码 报表/客户服务报告/summary.typ',
+		exact: true,
+	})
 	assert.match(await reopenedBody.innerText(), /中文输入验收𠮷/)
 	await assertBodyTypographyStyle(reopenedBody)
 	const reopenedInput = await studio.getInput({ projectId: project.id, entry: customer.entry })
-	assert.deepEqual(reopenedInput, bodyInput, 'Desktop reopen preserves the complete raw body draft')
+	assert.equal(
+		reopenedInput.editor.files['报表/客户服务报告/summary.typ'],
+		bodyInput.editor.files['报表/客户服务报告/summary.typ'],
+		'Desktop reopen preserves the authored source',
+	)
+	assert.deepEqual(reopenedInput.data, bodyInput.data)
 	assertBodyTypography(reopenedInput)
 	await ready()
 	await assertBodyTypographyPreview()
 	await screenshot('09b-body-typography-reopened')
 	const reopenedBodyPdf = join(output, 'body-reopened.pdf')
+	await savedPreview(customer.entry)
 	await savePicker(reopenedBodyPdf)
 	await page.getByRole('button', { name: '导出 PDF', exact: true }).click()
 	await completeFile(
@@ -1351,6 +1643,10 @@ try {
 	await extra.waitFor()
 	assert.equal(await page.getByRole('button', { name: '导出 PDF', exact: true }).isDisabled(), true)
 	await extra.fill('新增字段恢复')
+	await until(async () => {
+		const input = await studio.getInput({ projectId: project.id, entry: documentConfig.entry })
+		return input.data.extra === '新增字段恢复'
+	}, 'New schema field did not persist against its current source snapshot')
 	await ready()
 	await screenshot('05-schema-recovery')
 	await openFile(documentConfig.entry)
@@ -1365,7 +1661,7 @@ try {
 	assert.ok(
 		(await page.locator('.flexlayout__tab_button').filter({ hasText: '排版.typ' }).count()) > 0,
 	)
-	// External source changes still trigger HMR while input remains outside the workspace.
+	// External source changes still trigger HMR with data stored in the same workspace.
 	const shared = await readText('共享/主题/财务函件.typ')
 	await writeFile(
 		join(project.root, shared.path),
@@ -1464,7 +1760,7 @@ try {
 	assert.equal(
 		await bank().inputValue(),
 		'桌面验证银行',
-		'Reopening the same project retains private form input',
+		'Reopening the same project reads the saved data.json',
 	)
 	const reopened = await studio.listProjects()
 	assert.equal(reopened.filter((item) => item.root === project.root).length, 1)
@@ -1476,8 +1772,8 @@ try {
 	await selectDocument()
 	assert.equal(
 		await bank().inputValue(),
-		'示例银行',
-		'ZIP import uses schema defaults, not private form input',
+		'桌面验证银行',
+		'ZIP import preserves the ordinary data.json input',
 	)
 	await screenshot('06-imported-workspace')
 	assert.deepEqual(errors, [], 'Renderer has no uncaught errors')
@@ -1497,15 +1793,16 @@ try {
 					'real Electron MessagePort Uint8Array and cached buffer preservation',
 					'structured input/schema/Typst/TypeScript/page/crop/revision errors over the real port',
 					'multi-page SVG, last-page navigation, outline, and two-way source navigation',
-					'explicit body initialization preserves saved data; conflict reload resets editor/candidates/history and explicit local replacement uses CAS',
-					'native body composition, formatting, lists, table commands, restrictions, fields without history, staged candidates and one undo',
+					'opening ordinary body sources preserves saved data; conflict reload resets editor/candidates/history and explicit local replacement uses CAS',
+					'Monaco body/data shortcuts share report input and disk state; file-first saved content reaches the form, and the file menu reloads all failed report drafts',
+					'native body composition, formatting, lists, tables, source environment protection, shared data history, staged candidates and one undo',
 					'shared link editing and current-block duplication in the real desktop renderer, each reverted by one native undo',
-					'font family, 18pt, text and background colors, clear typography without clearing bold, persisted raw marks and real PDF after desktop reopen',
-					'body drafts retained across region switches and desktop reopen, generated navigation and real PDF',
+					'font family, 18pt, text and background colors, clear typography without clearing bold, persisted source marks and real PDF after desktop reopen',
+					'source drafts retained across file switches and desktop reopen, ordinary source navigation and real PDF',
 					'project creation and recent persistence',
 					'real filesystem explorer CRUD',
 					'Valibot defaults and schema recovery',
-					'separate tabs and persisted external input excluded from ZIP',
+					'separate tabs and ordinary data.json input preserved through ZIP export/import',
 					'Pi provider settings and company Responses preset',
 					'native assistant folder mentions',
 					'assistant draft survives native docking and close/reopen',
@@ -1518,6 +1815,7 @@ try {
 					'normal and repeated quit wait for backend cleanup without shutdown errors',
 				],
 				portEvidence,
+				exportReceipts,
 				viewport,
 			},
 			null,
@@ -1526,6 +1824,44 @@ try {
 	)
 	console.log(`Workspace desktop smoke passed: ${output}`)
 } catch (error) {
+	if (studio && project) {
+		try {
+			const saved = await studio.getInput({
+				projectId: project.id,
+				entry: '报表/客户服务报告/客户服务报告.ts',
+			})
+			await writeFile(
+				join(output, 'failure-source.json'),
+				JSON.stringify(
+					{
+						storageVersion: saved.storageVersion,
+						data: saved.data,
+						summary: saved.editor?.files['报表/客户服务报告/summary.typ'],
+						recommendations: saved.editor?.files['报表/客户服务报告/recommendations.typ'],
+					},
+					null,
+					2,
+				),
+			)
+		} catch {}
+	}
+	if (page && !page.isClosed()) {
+		try {
+			const editors = await page.locator('.tiptap').evaluateAll((elements) =>
+				elements.flatMap((element) => {
+					if (!element.editor) return []
+					return [
+						{
+							path: element.getAttribute('aria-label'),
+							document: element.editor.getJSON(),
+							selection: element.editor.state.selection.toJSON(),
+						},
+					]
+				}),
+			)
+			await writeFile(join(output, 'failure-editor.json'), JSON.stringify(editors, null, 2))
+		} catch {}
+	}
 	await writeFile(
 		join(output, 'failure.json'),
 		JSON.stringify(
