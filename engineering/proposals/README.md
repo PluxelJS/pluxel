@@ -13,6 +13,10 @@
 
 研究与必要决策记录：
 
+- [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：内置 TinyBase 作为 Plugin generation 临时状态，保留后端权威写入；SQL runtime、driver 与构建工具整体外置。包含与 Worksplit 页面资源提案的接入边界，尚未实现。
+
+- [Worksplit API 与资源生命周期精进提案](https://github.com/PluxelJS/split-like-vscode/blob/bd6ddfa3e5a9c866a412597e9001b530526e4250/refactor/API_REFINEMENT_PROPOSAL.md)：统一内容 hook 与资源 effect，直接迁移并移除旧入口；提案维护在独立子模块，尚未实现。
+
 - [`ZENFS_FS_REFACTOR.md`](ZENFS_FS_REFACTOR.md)：ZenFS FS 重构的实施决策与验收记录；当前用法和资源契约见正式 FS 文档。
 
 - [`TYPST_EDITOR_REFACTOR.md`](TYPST_EDITOR_REFACTOR.md)：旧 JSON 正文方案的 Typst 编辑器重构、独立验收及后续修正历史；当前 API 见正式用法与 Typst DESIGN。
@@ -38,6 +42,5 @@
   互操作版本、插件私有实现，以及可选的公共 Result 导入入口。
 - [`IDENTITY_PLATFORM.md`](IDENTITY_PLATFORM.md)：尚未实现的自托管身份产品架构，研究 protocol-neutral Authority、认证方式、
   OIDC/OAuth、实验性 GNAP 与独立管理面的所有权和信任边界。
-- [`PGLITE_LOCAL_BACKEND.md`](PGLITE_LOCAL_BACKEND.md)：PGlite 作为本机测试 backend 的收敛边界，以及未来移除 runtime-managed invalidation/outbox 前必须通过的 gate。
 
 已实施架构与用户行为分别从 [`../README.md`](../README.md) 与 [`../../docs/index.md`](../../docs/index.md) 进入。
