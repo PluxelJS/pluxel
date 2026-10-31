@@ -42,9 +42,9 @@ const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/hmr', 'development', '@pluxel/s
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
 	'node',
-	// `import` is a Node contract; `module` is only a bundler convention and may
-	// point at ESM that Node cannot execute without extension rewriting.
-	'import',
+	// Node and Vite select `import` / `require` for each resolution. Vitest also
+	// forwards this list as Node --conditions, where `import` would contaminate
+	// CommonJS require() calls and select their dependencies' ESM exports.
 	'production',
 	'default',
 ] as const
@@ -52,7 +52,7 @@ const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 // Externalized dependencies are executed directly by Node. Keep bundler-only
 // conditions such as `module` and `browser` out of this set: packages may map
 // them to ESM that intentionally relies on extension rewriting or bundling.
-const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
+const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'default'] as const
 
 // `*.typecheck.*` files are compile-only API probes. They intentionally use declarations that
 // are not executable Plugin source and therefore must stay out of the Vite source transforms.

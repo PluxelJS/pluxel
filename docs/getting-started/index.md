@@ -31,7 +31,7 @@ vp run dev
 
 打开同一日志中打印的 **Workbench** 地址，可以查看和管理插件。它位于同一应用地址的 `/__pluxel/workbench` 路径。
 
-示例的待办数据保存在内存中，重启后会重置。需要持久化时再接入[数据库](../plugin-development/database.md)。
+示例的待办数据由 Host 通过 [TinyBase](../plugin-development/tinybase.md) 保存，正常关闭并重启后恢复。初始待办仅在快照缺失时创建，清空后不会重新填入。
 
 项目默认启用固定 `8088` 端口的 HTTP 代理，无需项目外配置。已有 supervisor 的迁移和代理诊断见[工作区指南](../development/workspace-toolchain.md#端口与公开地址)。需要直接调试 Vite 时运行：
 

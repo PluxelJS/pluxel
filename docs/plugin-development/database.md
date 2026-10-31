@@ -3,7 +3,7 @@ title: 数据库与数据归属
 description: 根据数据归属选择 Plugin 数据库或应用数据库，并管理 Drizzle schema 与迁移。
 ---
 
-先判断数据是否必须跟随 Plugin 独立安装、替换和迁移，再选择数据库组织方式。不要仅因为代码写在 Plugin class 中，就默认使用 `ctx.database`。
+偏好和有界结构化状态使用 [TinyBase](./tinybase.md)，部署配置使用 [`configs.use()`](./configuration.md)。需要 SQL 查询、约束或事务时，可以选择 `@pluxel/services/database` 托管的 Plugin 数据库，也可以由应用直接使用 Drizzle 与 driver 并管理资源。先根据数据归属和生命周期选择，不要求所有 SQL 都采用托管方式。
 
 | 数据与生命周期要求                                             | 正确组织方式                                                                 |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -14,17 +14,17 @@ description: 根据数据归属选择 Plugin 数据库或应用数据库，并�
 | 只有部分内置 Plugin 依赖共享数据库，其他 Plugin 应继续运行     | application-private provider Plugin + constructor dependency                 |
 | 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务 | application-private database package                                         |
 
-Managed Plugin database 统一使用 PostgreSQL dialect 和 Drizzle。Plugin 作者只依赖 `drizzle-orm`，不选择 driver；部署宿主在 native PostgreSQL 与 PGlite 之间选择，同一份 schema、migration 和 query 不编写 driver 分支。
+Managed Plugin database 统一使用 PostgreSQL dialect 和 Drizzle。Plugin 作者使用 Services API 和 `drizzle-orm`，不选择 driver；部署宿主在 native PostgreSQL 与 PGlite 之间选择，同一份 schema、migration 和 query 不编写 driver 分支。
 
 Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和 migration 方案。它不是“多个 Plugin 共用一份 Plugin database”：使用它的 Plugin 是应用内部模块，不再拥有独立的数据可移植性，也不会自动获得 Pluxel 的 per-plugin lineage、隔离、旧 handle 撤销或 owner-scoped invalidation。
 
-发布与否只是常见线索，不是最终判断。私有 Plugin 如果仍要被独立启停、替换并保留自己的数据，应该使用 managed database；公开 Plugin 如果不拥有结构化数据，则不需要数据库。
+发布与否只是常见线索。需要框架管理 Plugin owner isolation、lineage 和旧 handle 撤销时选择 managed database；应用已经拥有自己的 schema、连接和迁移时可以继续完全自管。公开 Plugin 如果不拥有结构化数据，则不需要数据库。
 
 ## Managed Plugin database
 
 选择 managed database 后，正式部署使用 native PostgreSQL；本机开发和测试使用 PGlite。两者的能力与验证边界见[backend 选择](../host/configuration.md#选择-native-postgresql-或-pglite)。
 
-宿主通过 `database({ backend: pglite(...) })` 或 `database({ backend: postgres(...) })` 显式安装；默认服务组合不安装数据库，见 [宿主配置](../host/configuration.md)。插件包安装 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
+宿主通过 `database({ backend: pglite(...) })` 或 `database({ backend: postgres(...) })` 显式安装；默认服务组合不安装数据库，见 [Database 服务](../host/services.md#database)。插件包声明 `@pluxel/services` 与 `drizzle-orm`，driver 由宿主提供。下面的 schema 与插件文件放在同一个插件包内。
 
 ## 定义 Plugin schema
 
@@ -154,11 +154,63 @@ export const SearchDatabase = defineDatabase({
 
 不要通过猜测 physical schema、连接字符串或 owner prefix 跨界读另一个 Plugin 的表。Workbench target 也只能调用所属 Plugin 的领域 service，再返回 detached DTO；它不是跨 owner 数据库入口。
 
+## 应用完全自管 SQL
+
+应用可以直接使用 Drizzle、原生 driver 和自己的迁移工具，拥有 schema、连接池、repository 与部署流程。这条路径独立于托管 Database；需要哪些隔离、恢复和并发保证，由应用实现并验证。
+
+### 原生连接示例
+
+下面使用 PostgreSQL 与 `pg`。依赖声明在实际导入它们的 application-private package 中：
+
+```sh
+vp add drizzle-orm pg
+vp add -D @types/pg
+```
+
+使用原生 [`pgTable`](https://orm.drizzle.team/docs/sql-schema-declaration) 和 [node-postgres 连接](https://orm.drizzle.team/docs/get-started-postgresql)。以下是独立调用的示例函数，假设应用已创建表；调用失败向上传播，连接池在调用结束时关闭：
+
+```ts twoslash
+// @filename: schema.ts
+import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+
+export const notes = pgTable('notes', {
+	id: uuid('id').defaultRandom().primaryKey(),
+	title: text('title').notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// @filename: example.ts
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { Pool } from 'pg'
+import { notes } from './schema.ts'
+
+export async function runNotes(connectionString: string) {
+	const pool = new Pool({ connectionString })
+	pool.on('error', (error) => console.error('PostgreSQL pool error', error))
+
+	try {
+		const db = drizzle({ client: pool })
+		await db.transaction(async (tx) => {
+			await tx.insert(notes).values({ title: 'First note' })
+		})
+		return await db.select().from(notes).orderBy(notes.createdAt).limit(20)
+	} finally {
+		await pool.end()
+	}
+}
+```
+
+运行中的应用复用由应用持有的连接池，不在每次业务请求中创建连接池。把 schema、client 和 repository 留在服务端模块；Plugin 消费应用提供的 repository，只有确实需要构造查询时才取得原生 client。不要在模块导入时读取部署凭据或打开连接。
+
+查询与事务直接遵循 [Drizzle transaction API](https://orm.drizzle.team/docs/transactions)。事务内只做本次数据库操作，不等待网络服务、用户交互或 worker task。需要 join、foreign key 或原子更新的表由同一应用维护 schema 和迁移；独立 Plugin 之间通过公开的领域能力协作。
+
+应用自行选择 [Drizzle 迁移流程](https://orm.drizzle.team/docs/migrations)，发布 SQL 等资源，并决定在部署步骤还是启动时执行。整个应用依赖数据库时，在 Host `prepare()` 中完成连接、迁移与 preflight；只有部分 Plugin 依赖时，由 application-private provider Plugin 持有连接。成功获取资源后登记清理，并在关闭前排空业务操作，调用 driver 的关闭方法，例如 [`pool.end()`](https://node-postgres.com/apis/pool#poolend)。完整接线见 [Application-private database](../host/configuration.md#application-private-database)。
+
 ## Document 风格数据
 
 可以在稳定的 `id`、`version`、`jsonb data` 表中兼容多个 document version。JSON 字段内部变化不一定需要 SQL migration，但新增物理 index、constraint 或 column 仍是 schema evolution。
 
-如果数据只是少量加密 JSON 且不需要 query/index，先评估 [Vault](./vault.md)；不要为一个 token 建完整关系表，也不要拿 Vault documents 替代需要查询的数据库。
+偏好和有界结构化记录先评估 [TinyBase](./tinybase.md)；少量凭据和加密 JSON 使用 [Vault](./vault.md)。不要为一个 token 建完整关系表，也不要拿 Vault documents 替代需要查询的数据库。
 
 ## 在 Workbench 中读取数据库状态
 

@@ -25,7 +25,7 @@ import { NODE_MODULE_SOURCE_ARTIFACT_KEYS } from '../plugin-artifact/pluginArtif
 import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 import { staticElysiaSingletonPlugin } from './elysia-singleton'
 import { staticFrameworkSingletonPlugin } from './framework-singletons'
-import { staticWorkbenchCapnwebPlugin } from './static-workbench-capnweb'
+import { staticTinybasePlugin, staticWorkbenchCapnwebPlugin } from './static-workbench-capnweb'
 import {
 	renderStaticApplicationEnvironmentExample,
 	writeStaticConfigEnvironmentExample,
@@ -199,6 +199,7 @@ export function createStaticApplicationConfig(
 			staticFrameworkSingletonPlugin(entry, BundledFrameworkPackages),
 			...(launcher === 'host' ? [] : [staticElysiaSingletonPlugin(cwd)]),
 			staticWorkbenchCapnwebPlugin(entry),
+			staticTinybasePlugin(entry),
 			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({
 				cwd,

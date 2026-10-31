@@ -5,8 +5,9 @@ import { commands } from './commands'
 import { nodeModules, type NodeModuleArtifactHostOptions } from './node'
 import { workers } from './workers'
 import { fs, type FsServiceConfig } from './fs'
+import { tinybase } from './tinybase'
 
-/** The default server service list is explicit and fixed; optional Database, Vault, logging backends and Management are composed separately. */
+/** Fixed server services; Vault, logging backends and Management are composed separately. */
 export function standardServices(
 	options: Readonly<{
 		fs: FsServiceConfig
@@ -20,5 +21,6 @@ export function standardServices(
 		nodeModules(options.nodeModules),
 		workers(),
 		fs(options.fs),
+		tinybase(),
 	] as const
 }

@@ -1,65 +1,80 @@
 import { isAbsolute } from 'node:path'
-import type { Plugin, ResolvedId } from 'rolldown'
+import type { Plugin } from 'rolldown'
+import {
+	assertSharedRuntimeAdmission,
+	admitSharedRuntimeOwner,
+	assertSharedRuntimeHost,
+	installedSharedRuntimeVersion,
+	nearestPackageManifest,
+	participatesInSharedRuntime,
+	readSharedRuntimePackage,
+	sharedRuntimes,
+	type SharedRuntime,
+} from '@pluxel/host/internal/shared-runtime'
 
-const WORKBENCH_MANIFEST = '@pluxel/workbench/package.json'
-
-/** Keep Workbench target publishers on its RpcTarget constructor without changing private RPC. */
 export function staticWorkbenchCapnwebPlugin(entry: string): Plugin {
-	let supportedVersion = ''
-	let canonical: ResolvedId | undefined
-	let transport: typeof import('@pluxel/workbench/internal/transport') | undefined
-	const manifests = new Map<
-		string,
-		ReturnType<NonNullable<typeof transport>['readWorkbenchCapnwebPackage']>
-	>()
+	return staticSharedRuntimePlugin(entry, sharedRuntimes.workbenchCapnweb)
+}
+
+export function staticTinybasePlugin(entry: string): Plugin {
+	return staticSharedRuntimePlugin(entry, sharedRuntimes.tinybase)
+}
+
+/** Admission precedes binding. Private dependencies retain their own package and subpath. */
+function staticSharedRuntimePlugin(entry: string, runtime: SharedRuntime): Plugin {
 	return {
-		name: 'pluxel:static-workbench-capnweb',
-		async buildStart() {
-			manifests.clear()
-			canonical = undefined
-			supportedVersion = ''
-			const workbench = await this.resolve(WORKBENCH_MANIFEST, entry, { skipSelf: true })
-			if (!workbench?.id) return
-			const resolved = await this.resolve('capnweb', workbench.id, { skipSelf: true })
-			if (!resolved?.id || resolved.external)
-				this.error('[static-application] Cannot bundle Workbench capnweb')
-			transport = await import('@pluxel/workbench/internal/transport')
-			canonical = resolved
-			supportedVersion = await packageVersion(resolved.id, 'capnweb')
-		},
+		name: `pluxel:static-${runtime.marker}`,
 		async resolveId(id, importer, options) {
-			if (id !== 'capnweb' || !importer || !isAbsolute(importer) || !canonical || !transport)
+			const serviceConsumer = runtime.name === 'tinybase' && id === runtime.entry
+			if (
+				!importer ||
+				!isAbsolute(importer) ||
+				!(serviceConsumer || id === runtime.name || id.startsWith(`${runtime.name}/`))
+			)
 				return null
-			let marker = manifests.get(importer)
-			if (!marker) {
-				marker = transport.readWorkbenchCapnwebPackage(importer)
-				manifests.set(importer, marker)
-			}
-			const publisher = await marker
-			if (!publisher || (publisher.peer === undefined && publisher.marker === undefined))
+			const publisher = readSharedRuntimePackage(importer, runtime)
+			const application =
+				runtime.name === 'tinybase' && publisher?.manifestPath === nearestPackageManifest(entry)
+			if (
+				!publisher ||
+				(!application && !serviceConsumer && !participatesInSharedRuntime(publisher))
+			)
 				return null
-			const own = await this.resolve(id, importer, { ...options, skipSelf: true })
-			const actual = own?.id && !own.external ? await packageVersion(own.id, 'capnweb') : undefined
-			transport.assertWorkbenchCapnwebAdmission({
+			const owner = await this.resolve(`${runtime.owner}/package.json`, entry, { skipSelf: true })
+			if (!owner?.id) return null
+			const canonicalRoot = await this.resolve(runtime.name, owner.id, {
+				...options,
+				skipSelf: true,
+			})
+			if (!canonicalRoot?.id || canonicalRoot.external)
+				this.error(`[static-application] Cannot bundle Host ${runtime.name}`)
+			const own = await this.resolve(serviceConsumer ? runtime.name : id, importer, {
+				...options,
+				skipSelf: true,
+			})
+			const admission = {
+				runtime,
 				package: publisher,
-				supportedVersion,
-				actualVersion: actual,
+				supportedVersion: admitSharedRuntimeOwner(
+					owner.id,
+					canonicalRoot.id,
+					runtime,
+					'static-application',
+				),
+				actualVersion:
+					own?.id && !own.external ? installedSharedRuntimeVersion(own.id, runtime) : undefined,
 				actualEntry: own?.id,
 				development: false,
 				operation: 'static-application',
-			})
+			}
+			if (application)
+				assertSharedRuntimeHost({ ...admission, manifestPath: publisher.manifestPath })
+			else assertSharedRuntimeAdmission(admission)
+			if (serviceConsumer) return null
+			const canonical = await this.resolve(id, owner.id, { ...options, skipSelf: true })
+			if (!canonical?.id || canonical.external)
+				this.error(`[static-application] Cannot bundle Host ${id}`)
 			return canonical
 		},
 	}
-}
-
-export async function packageVersion(entry: string, name: string): Promise<string> {
-	const { nearestPackageManifest, readPackageManifest } =
-		await import('@pluxel/workbench/internal/transport')
-	const manifest = nearestPackageManifest(entry)
-	if (!manifest) throw new Error(`[static-application] Cannot identify ${name} from ${entry}`)
-	const value = await readPackageManifest(manifest)
-	if (value.name !== name || typeof value.version !== 'string' || value.version.length === 0)
-		throw new Error(`[static-application] Cannot identify ${name} from ${entry} (${manifest})`)
-	return value.version
 }

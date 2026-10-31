@@ -38,6 +38,11 @@ const serviceCompositionFiles = new Set(
 		resolve(root, 'packages/services/src', file),
 	),
 )
+// This metadata-only source entry is bundled into Rolldown, including declarations.
+// The toolchain needs Host at development time, without a runtime Host dependency.
+const inlinedFrameworkEntries = new Map([
+	['@pluxel/rolldown', new Set(['@pluxel/host/internal/shared-runtime'])],
+])
 
 const errors = []
 
@@ -388,6 +393,11 @@ for (const { packageRoot, kind, manifest, sources } of workspaceSources) {
 			if (name === manifest.name || !workspaceNames.has(name)) continue
 			// Core deliberately inlines the standalone kernel's JavaScript and declarations.
 			if (manifest.name === '@pluxel/core' && name === '@pluxel/context') continue
+			if (
+				inlinedFrameworkEntries.get(manifest.name)?.has(specifier) &&
+				manifest.devDependencies?.[name] === 'workspace:*'
+			)
+				continue
 			if (declaredDependencies?.has(name)) continue
 			errors.push(
 				`${relative(path)} imports ${specifier} without a ${kind === 'project' ? 'workspace dependency' : 'published dependency'} declaration in ${relative(resolve(packageRoot, 'package.json'))}`,

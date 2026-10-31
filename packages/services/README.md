@@ -2,7 +2,9 @@
 
 为 Pluxel Host 提供独立服务与官方组合。导入入口不会安装服务；资源由 Host 准备和关闭。
 
-根入口的 `standardServices()` 只组合 Elysia、Commands、Node artifacts、Workers 和 Fs，不加载 Management、Logging 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 附件组合使用 `@pluxel/services/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。开发控制台归 `@pluxel/host-vite/console`。
+根入口的 `standardServices()` 组合 Elysia、Commands、Node artifacts、Workers、FS 和 TinyBase，不加载 Management、Logging 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 附件组合使用 `@pluxel/services/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。开发控制台归 `@pluxel/host-vite/console`。
+
+使用 TinyBase 服务或默认组合的应用必须在 `dependencies` 直接声明 `tinybase: "10.0.1"`；使用托管 Store 的插件声明同版 peer 与 devDependency。原生 Store、Queries 等能力从 `tinybase` 及其子路径导入，版本接纳规则见[插件包](../../docs/development/plugin-package.md)。
 
 ```ts
 import { createHost } from '@pluxel/host'
@@ -26,7 +28,8 @@ try {
 - 插件与服务的隔离测试使用 `@pluxel/test`；本包 `/internal/test` 仅供框架测试集成。
 - `/elysia`：`ElysiaApp` 提供原生 Elysia Plugin 路由，`elysia()` 安装服务，`createElysiaHandler(host)` 创建 Fetch handler。
 - `/elysia/node`：`listenElysia(host, options?)` 用 srvx 启动 Node listener；返回句柄的 `close()` 同时关闭 Host 与 listener。
-- `/database`：owner 数据库 API；从 `/database/pglite` 或 `/database/postgres` 显式选择 backend。
+- `/database`：owner 数据库 API，使用原生 Drizzle schema/query；从 `/database/pglite` 或 `/database/postgres` 显式选择 backend，见[数据库](../../docs/plugin-development/database.md)。
+- `/tinybase`：`TinyBase`、`TinyBaseHost` 和 `tinybase()`；借用 FS 保存每个 Plugin node 的原生 Store 与 Host 私有文档，见[插件状态](../../docs/plugin-development/tinybase.md)。
 - `/fs`：`Fs`、`PluginFs`、显式安装器及原生异步文件操作，见[文件存储](../../docs/plugin-development/fs.md)。浏览器后端从 `/fs/browser` 导入。
 - `/vault`：加密 owner 存储 token、类型和安装器。需要显式安装 Fs。
 - `/node`：独立 Node module 声明、artifact 解析与 owner setup/cleanup。

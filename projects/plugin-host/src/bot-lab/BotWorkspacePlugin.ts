@@ -181,7 +181,7 @@ export class BotWorkspacePlugin extends BasePlugin {
 			identity.source,
 			identity.id,
 			operation === 'save'
-				? '已保存机器人指令'
+				? '已更新机器人指令'
 				: value.running
 					? '已启动机器人（模拟）'
 					: '已暂停机器人（模拟）',

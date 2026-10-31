@@ -5,6 +5,9 @@ import { defineHostApplication, type HostApplication } from '@pluxel/host'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { TypstPlugin } from '@pluxel/plugin-typst'
 import { nodeModules } from '@pluxel/services/node'
+import * as nativeFs from 'node:fs'
+import { fs, Passthrough } from '@pluxel/services/fs'
+import { tinybase, TinyBaseHost } from '@pluxel/services/tinybase'
 import { StudioPlugin } from '@report-template-studio/app/plugin'
 import { DOCUMENT_POLICY } from './documents.js'
 
@@ -18,6 +21,8 @@ export default defineHostApplication((startup): HostApplication => {
 		name: 'report-template-studio',
 		plugins: [FontsPlugin, TypstPlugin, StudioPlugin],
 		services: [
+			fs({ backend: Passthrough, fs: nativeFs, prefix: resolve(root, 'fs') }),
+			tinybase(),
 			nodeModules(
 				startup.mode === 'production'
 					? {
@@ -30,6 +35,7 @@ export default defineHostApplication((startup): HostApplication => {
 			),
 		],
 		configRecords: {
+			storage: (hostRoot) => hostRoot.require(TinyBaseHost).documents('config'),
 			initial: [
 				{ owner, config: { root, assetsRoot } },
 				{ owner: pluginNodeAddressOf(FontsPlugin), config: { maxFontBytes: 32 * 1024 * 1024 } },
@@ -44,6 +50,9 @@ export default defineHostApplication((startup): HostApplication => {
 				},
 			],
 		},
-		state: { initial: { autoStart: [owner] } },
+		state: {
+			storage: (hostRoot) => hostRoot.require(TinyBaseHost).documents('state'),
+			initial: { autoStart: [owner] },
+		},
 	}
 })

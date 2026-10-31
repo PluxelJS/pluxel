@@ -12,8 +12,7 @@
 consumer endpoint、headers、auth、retry、dedupe、addon 和 response resolver 都不是 provider 所有。它们由
 consumer 从 immutable base 派生，不注册 profile，也不复制 Wretch request/response API。
 
-普通 client 与宿主策略不需要 FS，`services: []` 仍可运行。受管设置是显式 opt-in；provider init 只捕获可选的 `ctx.fs` 访问函数，
-首次受管操作才等待目录就绪。缺少服务时明确拒绝启用、读取、保存、重置或打开设置 View。provider generation 借用 root 拥有的固定目录，并拥有自己的受管 dispatcher。
+普通 client 与宿主策略不需要额外服务，`services: []` 仍可运行。受管设置是显式 opt-in；provider init 只捕获可选的 TinyBase owner handle，首次受管操作才恢复 provider node 唯一 Store。缺少 TinyBase 时明确拒绝启用、读取、保存、重置或打开设置 View。持久化目录、恢复与 IO 队列归 Host；provider generation 只拥有领域提交协调器和受管 dispatcher。
 
 ## Wretch 组合顺序
 
@@ -57,14 +56,13 @@ server-only `consumer.node` 查找已经由 `enableManagedSettings()` 建立的 
 session ownership 约束。zero-props renderer 通过 descriptor-bound scope 的 query/mutation resources 取得 provider stub；
 Framework 在结果进入 React state 前完成 portable 校验、原地冻结和顶层 ownership 释放。
 
-managed settings 保存在 Wretch provider 的 `PluginFs` 目录内，以 caller `PluginNodeAddress` canonical bytes 的完整 SHA-256 作为物理文件名，并保留一个 caller Context state。
-文件 envelope 同时保存完整结构化 owner，加载时严格比对；display name 相同的 Plugin/fork 不会冲突。只读取
-`consumers/v3` 下的当前 v2 envelope，其他版本直接拒绝。
-cached client 的 deferred callback 每次请求重新解析 state，所以先创建 client、后启用或保存设置都会立即生效。consumer stop 会释放
-proxy dispatcher 和内存 state；replacement 从 persistence 重新加载。同一 caller 的并发
-`enableManagedSettings()` 共享一次初始化，不会重复读取文件或创建 proxy dispatcher。保存使用 `writeFileAtomic()`，提交后才替换 dispatcher；失败关闭新 dispatcher 并保留原状态。opened settings target
-同样绑定 caller/provider generation 与 View signal，stop、replacement 或 View close 后不能继续读写旧 state。managed state 同时登记 caller
-cleanup 和 provider-owned registry；即使宿主显式执行非级联 provider restart，ProxyAgent 也会由 provider effects 释放。
+managed settings 放在 Wretch provider node 的原生 Store `consumerSettings` 表。完整 caller `PluginNodeAddress` canonical bytes 的 SHA-256 是行 ID；每行保存 `version: 1`、完整 owner JSON 与 settings JSON，恢复时核对 owner 与行 ID。consumer 自己的业务 Store 不被占用，provider/fork 的持久隔离归 Host。
+
+表内全部变更由一个领域协调器串行执行：校验输入、准备新 Dispatcher、原生 transaction 更新目标行、`await tinybase.flush()`、同步切换该 consumer 的 `current`/Dispatcher、关闭旧 Dispatcher。cached client 与页面只读取已应用状态；其他 consumer 的命令不能把未确认候选一起提交。reset 经过相同协调删除该 consumer 行并 flush，不删除 Store/backing。
+
+保存失败保留原已应用状态、关闭候选 Dispatcher，并阻断该 provider Store 的后续提交；Host 的故障 writer 不在 autosave 或 shutdown 隐式重试候选。旧 Dispatcher 在提交后清理失败抛 `WretchSettingsCleanupError`（`code: 'SETTINGS_APPLIED_CLEANUP_FAILED'`、`applied: true`），新设置已经保存且生效。该清理错误不把已完成提交伪装为保存失败。
+
+consumer stop 释放 dispatcher 和内存 state、保留行；replacement 从持久化行重新加载。同一 caller 的并发 `enableManagedSettings()` 共享一次初始化。opened target 同时绑定 caller/provider generation 与 View signal；stop、replacement 或 View close 后不能使用旧 capability。managed state 同时登记 caller cleanup 和 provider registry；显式非级联 provider restart 也会释放 ProxyAgent。
 
 普通配置只接受非敏感 header 和无 credential 的 proxy URL。secret 不进入 browser contract 或普通
 persistence。Attachment 不提供任意请求控制台；领域测试请求和响应脱敏仍归 consumer。

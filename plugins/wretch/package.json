@@ -60,6 +60,7 @@
 		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
+		"tinybase": "catalog:prod",
 		"typescript": "catalog:dev",
 		"vite": "catalog:build",
 		"vite-plus": "catalog:build",
@@ -73,7 +74,8 @@
 		"@tabler/icons-react": "catalog:icons",
 		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
-		"react-dom": "catalog:frontend"
+		"react-dom": "catalog:frontend",
+		"tinybase": "catalog:prod"
 	},
 	"peerDependenciesMeta": {
 		"@mantine/core": {

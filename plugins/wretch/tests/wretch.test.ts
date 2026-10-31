@@ -1,21 +1,13 @@
-import * as nativeFs from 'node:fs'
-import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/services/fs'
-import {
-	encodePluginNodeAddressBytes,
-	pluginNodeAddressOf,
-	type PluginConstructor,
-} from '@pluxel/core'
+import { InMemory } from '@pluxel/services/fs'
+import { TinyBase } from '@pluxel/services/tinybase'
+import { pluginNodeAddressOf, type PluginConstructor } from '@pluxel/core'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import * as v from 'valibot'
 import { consumeWorkbenchValue } from '@pluxel/workbench/client'
 import { ProxyAgent } from 'undici'
 import wretch, { type FetchLike } from 'wretch'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchConfig } from '../src/config.ts'
 import { createOutboundPolicy } from '../src/outbound-policy.ts'
@@ -26,6 +18,7 @@ import {
 	setFixtureFetches,
 } from '../src/test-fixtures.ts'
 import { openWretchSettings } from './workbench-helpers.ts'
+import { ManagedSettingsStore } from '../src/managed-settings.ts'
 
 let fetchA: FetchLike
 let fetchB: FetchLike
@@ -55,88 +48,20 @@ async function settledCall(operation: () => unknown): Promise<{ ok: true } | { o
 	}
 }
 
-const directories: string[] = []
-afterEach(async () => {
-	await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
-})
-
-async function gatedSettingsFs() {
-	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-wretch-gated-'))
-	directories.push(prefix)
-	let settingsReads = 0
-	let releaseRead!: () => void
-	const readGate = new Promise<void>((resolve) => (releaseRead = resolve))
-	return {
-		reads: () => settingsReads,
-		release: () => releaseRead(),
-		config: {
-			backend: Passthrough,
-			prefix,
-			fs: {
-				...nativeFs,
-				promises: {
-					...nativeFs.promises,
-					async open(...args: Parameters<typeof nativeFs.promises.open>) {
-						if (args[1] === 'r' && String(args[0]).includes('/consumers/v3/')) {
-							settingsReads++
-							await readGate
-						}
-						return nativeFs.promises.open(...args)
-					},
-				},
-			},
-		},
-	}
-}
-
-async function seedSettings(host: TestHost<boolean>, owner: PluginConstructor) {
-	const address = pluginNodeAddressOf(owner)
-	const digest = createHash('sha256').update(encodePluginNodeAddressBytes(address)).digest('hex')
-	const storage = await host.require(WretchPlugin).ctx.fs!()
-	await writeFileAtomic(
-		storage,
-		`consumers/v3/${digest}.json`,
-		JSON.stringify({
-			format: 'pluxel-wretch-managed-settings',
-			version: 2,
-			owner: address,
-			settings: { headers: {} },
-		}),
-	)
-}
-
-async function trackedSettingsFs() {
-	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-wretch-tracked-'))
-	directories.push(prefix)
-	const writes = new Map<string, string>()
-	const locations = new Map<string, nativeFs.PathLike>()
-	return {
-		writes,
-		put: async (key: string, value: string) => {
-			const path = locations.get(key)
-			if (!path) throw new Error('Settings file has not been created')
-			await writeFile(path, value)
-			writes.set(key, value)
-		},
-		config: {
-			backend: Passthrough,
-			prefix,
-			fs: {
-				...nativeFs,
-				promises: {
-					...nativeFs.promises,
-					async rename(from: nativeFs.PathLike, to: nativeFs.PathLike) {
-						await nativeFs.promises.rename(from, to)
-						const match = /\/(consumers\/v3\/[a-f0-9]{64}\.json)$/.exec(String(to))
-						if (match) {
-							locations.set(match[1]!, to)
-							writes.set(match[1]!, await readFile(to, 'utf8'))
-						}
-					},
-				},
-			},
-		},
-	}
+function gatedSettingsLoad() {
+	let reads = 0
+	let release!: () => void
+	const gate = new Promise<void>((resolve) => (release = resolve))
+	const original = ManagedSettingsStore.prototype.load
+	const spy = vi.spyOn(ManagedSettingsStore.prototype, 'load').mockImplementation(async function (
+		this: ManagedSettingsStore,
+		owner,
+	) {
+		reads++
+		await gate
+		return original.call(this, owner)
+	})
+	return { reads: () => reads, release, dispose: () => spy.mockRestore() }
 }
 
 beforeEach(() => {
@@ -148,37 +73,30 @@ beforeEach(() => {
 })
 
 describe('WretchPlugin', () => {
-	it('separates same-display-name consumers by node address and persists the full owner', async () => {
-		const persistence = await trackedSettingsFs()
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: standardServices({
-					fs: persistence.config,
-				}),
-			})
-
-			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
-			const a = host.require(ConsumerA)
-			const late = host.require(ConsumerLateSettings)
-			using aSettings = await openWretchSettings(host, ConsumerA)
-			using lateSettings = await openWretchSettings(host, ConsumerLateSettings)
-			await aSettings.api.updateDto({ headers: { 'X-Owner': 'a' } })
-			await lateSettings.api.updateDto({ headers: { 'X-Owner': 'late' } })
-
-			expect([...persistence.writes.keys()]).toHaveLength(2)
-			for (const [key, text] of persistence.writes) {
-				expect(key).toMatch(/^consumers\/v3\/[a-f0-9]{64}\.json$/)
-				const stored = JSON.parse(text) as Record<string, unknown>
-				expect(stored).toMatchObject({
-					format: 'pluxel-wretch-managed-settings',
-					version: 2,
-				})
-				expect([a.ctx.pluginInfo.nodeAddress, late.ctx.pluginInfo.nodeAddress]).toContainEqual(
-					stored.owner,
-				)
-			}
+	it('separates same-display-name consumers by row in the provider Store', async () => {
+		await using host = await createTestHost({
+			workbench: true,
+			services: standardServices({ fs: { backend: InMemory } }),
+		})
+		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
+		using aSettings = await openWretchSettings(host, ConsumerA)
+		using lateSettings = await openWretchSettings(host, ConsumerLateSettings)
+		await aSettings.api.updateDto({ headers: { 'X-Owner': 'a' } })
+		await lateSettings.api.updateDto({ headers: { 'X-Owner': 'late' } })
+		const store = await host.require(WretchPlugin).ctx.require(TinyBase).open()
+		const rows = Object.entries(store.getTable('consumerSettings'))
+		expect(rows).toHaveLength(2)
+		for (const [id, row] of rows) {
+			expect(id).toMatch(/^[a-f0-9]{64}$/)
+			expect(row.version).toBe(1)
+			expect([
+				pluginNodeAddressOf(ConsumerA),
+				pluginNodeAddressOf(ConsumerLateSettings),
+			]).toContainEqual(JSON.parse(String(row.owner)))
 		}
+		// The provider owns this table; enabling it never opens either consumer's business Store.
+		const consumerStore = await host.require(ConsumerA).ctx.require(TinyBase).open()
+		expect(consumerStore.getContent()).toEqual([{}, {}])
 	})
 
 	it('emits portable settings snapshots without undefined optional fields', async () => {
@@ -218,45 +136,35 @@ describe('WretchPlugin', () => {
 		}
 	})
 
-	it('rejects persisted settings whose owner does not match the hashed filename', async () => {
-		const persistence = await trackedSettingsFs()
-		let key = ''
-		let wrongOwner: unknown
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: standardServices({
-					fs: persistence.config,
-				}),
-			})
-
-			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
-			using settings = await openWretchSettings(host, ConsumerA)
-			await settings.api.updateDto({ headers: {} })
-			key = [...persistence.writes.keys()][0]!
-			wrongOwner = host.require(ConsumerLateSettings).ctx.pluginInfo.nodeAddress
-		}
-		const stored = JSON.parse(persistence.writes.get(key)!) as Record<string, unknown>
-		for (const [value, message] of [
-			[JSON.stringify({ ...stored, owner: wrongOwner }), 'owner does not match'],
-			[JSON.stringify({ headers: {} }), 'unsupported format'],
-		] as const) {
-			await persistence.put(key, value)
-			await using host = await createTestHost({
-				services: standardServices({ fs: persistence.config }),
-			})
-			const failure = await host.commitExpectFail((change) => {
-				change.catalog.add([WretchPlugin, ConsumerA])
-				change.start([WretchPlugin, ConsumerA])
-			})
-			expect(failure.lifecycleReport.issues).toContainEqual(
-				expect.objectContaining({
-					plugin: pluginNodeAddressOf(ConsumerA),
-					kind: 'start-failed',
-					message: expect.stringContaining(message),
-				}),
-			)
-		}
+	it('rejects restored settings whose owner does not match its row ID', async () => {
+		await using host = await createTestHost({
+			workbench: true,
+			services: standardServices({ fs: { backend: InMemory } }),
+		})
+		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
+		using settings = await openWretchSettings(host, ConsumerA)
+		await settings.api.updateDto({ headers: {} })
+		const tinybase = host.require(WretchPlugin).ctx.require(TinyBase)
+		const store = await tinybase.open()
+		const id = store.getRowIds('consumerSettings')[0]!
+		store.setCell(
+			'consumerSettings',
+			id,
+			'owner',
+			JSON.stringify(pluginNodeAddressOf(ConsumerLateSettings)),
+		)
+		await tinybase.flush()
+		await host.stop(WretchPlugin)
+		const failure = await host.commitExpectFail((change) => {
+			change.start([WretchPlugin, ConsumerA])
+		})
+		expect(failure.lifecycleReport.issues).toContainEqual(
+			expect.objectContaining({
+				plugin: pluginNodeAddressOf(ConsumerA),
+				kind: 'start-failed',
+				message: expect.stringContaining('owner does not match'),
+			}),
+		)
 	})
 
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
@@ -391,62 +299,47 @@ describe('WretchPlugin', () => {
 	})
 
 	it('shares one managed-settings initialization across concurrent calls', async () => {
-		const persistence = await gatedSettingsFs()
-
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: standardServices({
-					fs: persistence.config,
-				}),
-			})
-
-			await startWretchFixture(host, [WretchPlugin, ConsumerB])
-			await seedSettings(host, ConsumerB)
-
+		await using host = await createTestHost({
+			workbench: true,
+			services: standardServices({ fs: { backend: InMemory } }),
+		})
+		await startWretchFixture(host, [WretchPlugin, ConsumerB])
+		const pending = gatedSettingsLoad()
+		try {
 			const http = host.require(ConsumerB).http
 			const first = http.enableManagedSettings()
 			const second = http.enableManagedSettings()
-			try {
-				await waitFor(() => expect(persistence.reads()).toBe(1))
-			} finally {
-				persistence.release()
-			}
+			await waitFor(() => expect(pending.reads()).toBe(1))
+			pending.release()
 			await Promise.all([first, second])
 			using settings = await openWretchSettings(host, ConsumerB)
-			const settingsSnapshot = await settings.api.snapshotDto()
-			expect(settingsSnapshot.settings.headers).toEqual({})
+			const snapshot = await settings.api.snapshotDto()
+			expect(snapshot.settings.headers).toEqual({})
+		} finally {
+			pending.release()
+			pending.dispose()
 		}
 	})
 
 	it('drains admitted settings initialization without reusing it across generations', async () => {
-		const persistence = await gatedSettingsFs()
-
-		{
-			await using host = await createTestHost({
-				services: standardServices({
-					fs: persistence.config,
-				}),
-			})
-
-			await startWretchFixture(host, [WretchPlugin, ConsumerB])
-			await seedSettings(host, ConsumerB)
-
-			const http = host.require(ConsumerB).http
-			const stale = http.enableManagedSettings()
-			try {
-				await waitFor(() => expect(persistence.reads()).toBe(1))
-				const restart = host.restart(WretchPlugin)
-				persistence.release()
-				await restart
-			} finally {
-				persistence.release()
-			}
-
+		await using host = await createTestHost({
+			services: standardServices({ fs: { backend: InMemory } }),
+		})
+		await startWretchFixture(host, [WretchPlugin, ConsumerB])
+		const pending = gatedSettingsLoad()
+		try {
+			const stale = host.require(ConsumerB).http.enableManagedSettings()
+			await waitFor(() => expect(pending.reads()).toBe(1))
+			const restart = host.restart(WretchPlugin)
+			pending.release()
+			await restart
 			await expect(stale).resolves.toBeUndefined()
 			await host.restart(WretchPlugin)
 			await expect(host.require(ConsumerB).http.enableManagedSettings()).resolves.toBeUndefined()
-			expect(persistence.reads()).toBe(2)
+			expect(pending.reads()).toBe(2)
+		} finally {
+			pending.release()
+			pending.dispose()
 		}
 	})
 

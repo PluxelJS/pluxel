@@ -111,8 +111,7 @@
 		"@module-federation/sdk": "catalog:prod",
 		"@tanstack/query-core": "catalog:frontend",
 		"pathe": "catalog:node",
-		"valibot": "catalog:validation",
-		"yaml": "catalog:prod"
+		"valibot": "catalog:validation"
 	},
 	"devDependencies": {
 		"@dagrejs/dagre": "catalog:prod",

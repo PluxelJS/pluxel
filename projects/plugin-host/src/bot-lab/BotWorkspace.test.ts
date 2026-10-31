@@ -1,4 +1,5 @@
 import { InMemory } from '@pluxel/services/fs'
+import { TinyBase } from '@pluxel/services/tinybase'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -130,6 +131,57 @@ describe('Bot workspace real plugin contributions', () => {
 		).resolves.toMatchObject({ ok: false, code: 'conflict' })
 		const restored = await list.api.snapshotDto()
 		expect(restored.bots).toHaveLength(6)
+	})
+
+	it('restores editable source preferences while keeping simulated observations out of the Store', async () => {
+		await using host = await start()
+		const workspace = host.require(BotWorkspacePlugin)
+		const identity = workspace.identity('telegram', 'support')
+		const before = workspace.detail(identity)
+		expect(
+			workspace.update(
+				identity,
+				{ instructions: 'Remember Telegram', expectedRevision: before.revision },
+				'save',
+			),
+		).toEqual({ ok: true })
+		const edited = workspace.detail(identity)
+		expect(
+			workspace.update(identity, { running: false, expectedRevision: edited.revision }, 'running'),
+		).toEqual({ ok: true })
+		const store = await host.require(TelegramBotPlugin).ctx.require(TinyBase).open()
+		expect(store.getTable('bots')).toEqual({
+			support: { instructions: 'Remember Telegram', running: false },
+		})
+		const discord = await host.require(DiscordBotPlugin).ctx.require(TinyBase).open()
+		expect(discord.getContent()).toEqual([{}, {}])
+		await host.restart(TelegramBotPlugin)
+		expect(workspace.detail(identity)).toMatchObject({
+			instructions: 'Remember Telegram',
+			running: false,
+			messages: 128,
+			unread: 3,
+		})
+		expect(workspace.detail(workspace.identity('discord', 'support'))).toMatchObject({
+			running: true,
+		})
+	})
+
+	it('fails a source with malformed saved preferences before publishing a replacement contribution', async () => {
+		await using host = await start()
+		const state = host.require(TelegramBotPlugin).ctx.require(TinyBase)
+		const store = await state.open()
+		store.setRow('bots', 'support', { instructions: 'valid instructions', running: 'invalid' })
+		await state.flush()
+		await host.stop(TelegramBotPlugin)
+		const failure = await host.commitExpectFail((change) => change.start(TelegramBotPlugin))
+		expect(failure.lifecycleReport.issues).toContainEqual(
+			expect.objectContaining({ kind: 'start-failed' }),
+		)
+		expect(
+			host.require(BotWorkspacePlugin).detail({ source: 'telegram', id: 'support' }).available,
+		).toBe(false)
+		expect(host.isRunning(DiscordBotPlugin)).toBe(true)
 	})
 
 	it('releases per-open view watches and Content subscriptions without closing sibling roots', async () => {

@@ -2,6 +2,7 @@ import type { PluginDependencyMode } from '../rolldown/plugins/pluginSemanticsPl
 import { relative, dirname } from 'node:path'
 import type { ResolvedConfig } from 'vite-plus/pack'
 import { runRules } from './rules'
+import { validateTinybasePeer } from './tinybase-peer'
 import { validateWorkbenchCapnwebPeer } from './workbench-peer'
 import type { BuildLogger, BuildSuccessHook } from './types'
 
@@ -10,6 +11,7 @@ export interface PluginDependencyMetadataOptions {
 	log: BuildLogger
 	collectPlugins: () => Map<string, PluginDependencyMode>
 	collectWorkbenchTargets: () => Promise<boolean>
+	collectTinybaseConsumers?: () => boolean
 	workbenchArtifacts: boolean
 }
 
@@ -24,11 +26,15 @@ export function createPluginDependencyMetadataHook(
 			version = await validateWorkbenchCapnwebPeer(options.packageJsonPath)
 			options.log(`[build] Workbench capnweb target boundary verified at ${version}`)
 		}
+		const tinybaseVersion = options.collectTinybaseConsumers?.()
+			? await validateTinybasePeer(options.packageJsonPath)
+			: undefined
 		if (signal.aborted) return
 		const updates = await runRules({
 			packageJsonPath: options.packageJsonPath,
 			pluginUsages: plugins,
 			workbenchCapnwebVersion: version,
+			tinybaseVersion,
 			workbenchArtifacts: options.workbenchArtifacts,
 			artifactRoot:
 				relative(dirname(options.packageJsonPath), config.outDir).replaceAll('\\', '/') || '.',

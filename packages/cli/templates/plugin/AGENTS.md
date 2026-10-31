@@ -17,3 +17,9 @@
 独立插件没有可运行应用，不声明空的 `pluxel.dev` 或启动临时 Host。在线调试时用 `--root` 从消费应用目录发现配置，显式 `--profile` 优先于应用 default，没有默认且多 profile 时必须指定；匹配实例仍有多个时使用 `--instance`。没有配置的手动 Vite 可用 `--root` 指定其真实根目录。操作与 receipt 恢复方式由 skill 和开发控制台指南维护。
 
 消费应用运行时，跨文件或连续修改按指南的「HMR 批次控制」使用 `dev hmr pause` → 修改与检查 → `dev hmr apply` → 验证。失败保持暂停；成功且原本 auto 才恢复，不为独立插件测试另起应用。
+
+## 持久状态与原生依赖
+
+配置继续使用 `configs.use()`。配置之外的有界状态通过 `@pluxel/services/tinybase` 的 `TinyBase` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件留在 FS。
+
+共享托管 Store 的包使用 catalog 所选的精确 `tinybase` peer 与同版 dev dependency；最终 Host 应用直接安装同版 dependency。`pluxel build` 生成 `pluxel.tinybase` 接纳事实，不手写标记或使用全局 override。仅使用配置的包不需要新增 TinyBase import。独立私有 Store 保留普通依赖与自身解析；开始交换宿主托管 Store 后再进入共享契约。完整用法见 `vp exec pluxel docs development/plugin-package.md`。

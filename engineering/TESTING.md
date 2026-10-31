@@ -23,7 +23,7 @@ carrier、browser 和 deployment 行为仍要在各自真实边界验证。
 
 `@pluxel/test` 根入口的异步 `createTestHost()` 组合生产 `createHost()`；业务符号从 `@pluxel/core` 导入，服务工厂从原领域入口导入。`services` 默认 `[]`，完整列表不隐式合并；`standardServices()` 由调用方显式选择。
 
-`workbench: true` 增加 Management、测试后端和本地 RPC driver，要求显式提供 HTTP 与 FS；`management: false` 与它冲突时拒绝创建。Workbench 禁用时不初始化后端。HTTP/commands driver 调用已安装的生产服务，缺服务时明确失败。
+`workbench: true` 增加 Management、测试后端和本地 RPC driver，要求显式提供 HTTP、FS 与 TinyBase；`management: false` 与它冲突时拒绝创建。Workbench 禁用时不初始化后端。HTTP/commands driver 调用已安装的生产服务，缺服务时明确失败。
 
 选择无显式制品来源的 Node 服务后，组合层接入正式按需源码编译器并拥有其关闭；显式制品来源保留制品消费路径。Vitest 插件只作用于 Vitest 模块图，不会隐式流入独立 Node 制品构建。领域 driver 与 compiler 仍由各自 package 维护，组合层负责接线和测试寿命。
 
@@ -44,6 +44,8 @@ Vitest/Vite 在 preset 能返回 `resolve.conditions` 之前先求值 `vitest.co
 `pluxel source build --package @pluxel/test`，再通过已发布 package export 载入 preset；不能用相对 `src` import 或 process-wide
 condition 绕过这一步。该命令只交给 `@pluxel/test` 自己的 build graph 处理 bootstrap artifact 与其真实前置，不预构建整个 source
 closure。统一测试组合依赖 Services/Workbench 的发布入口，因此这两者的构建属于真实前置；这不表示测试会初始化这些服务。config 已加载后，preset 为 test module graph 设置 `@pluxel/source` / `@pluxel/hmr` conditions。
+
+SSR 条件会进入 Vitest worker 的 Node `--conditions`。不能把 `import` 强制加入这组全局条件：Node 必须按每次 ESM import 或 CommonJS require 选择对应原生分支，否则 `pg` 等双格式依赖内部的 require 会误载 ESM namespace。原生子进程回归由 `packages/test/tests/vitest.test.ts` 维护。
 
 ## 回归取舍与验证所有权
 
@@ -68,7 +70,7 @@ closure。统一测试组合依赖 Services/Workbench 的发布入口，因此�
 
 消费本包发布制品的测试任务必须显式依赖本包 `build`，不能只依赖 依赖包的 `build` 或依赖暖缓存碰巧留下的文件。Package Manager 的不可变安装测试与维护者 Host 的 native/production-Vite smoke 都遵守这一顺序；测试子进程失败或超时也必须被回收。
 
-文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、Host、valibot-form 构建与 Playground 类型资源；Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。
+文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、Host、Services、valibot-form、Typst 浏览器库与 Playground 类型资源；Typst 只运行 `compile-lib`，Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。
 
 文档 `/examples` 在浏览器 Worker 中组合真实 Host 与 Typst WASM Plugin。`vp run pluxel-docs#test:examples --url <Examples URL>` 对已运行的文档开发服务或生产构建执行浏览器验收，通过 `ws://127.0.0.1:3000` 连接已有 Playwright 服务，开启 loopback 转发以访问本地文档。用户提供其他服务时可用 `--ws` 或 `PLAYWRIGHT_WS_ENDPOINT` 指定地址，`--artifacts` 指定截图目录；脚本不安装或启动浏览器，只清理自己的 context 并断开连接，不关闭共享服务。首次运行将真实 WASM 二进制请求延迟两秒，确认冷启动不会被原先的 1.5 秒默认预算中断，首次编译后移除拦截。页面验收检查顶栏 Examples 位于 Playground 后并带图标、桌面编辑区靠上且占主要视口、Typst 与插件热替换两个入口持续可见。通过真实入口切换示例，确认同一个 Worker、正文与撤销历史保留，预览点击会返回 Typst 编辑器；日志按需展开。验收覆盖打开页面与修改内容后的自动编译，离线修改 main.typ 页宽后确认 SVG 尺寸实际增大，通过真实点击和 DOM selection 检查共享编辑器的标题、格式与表格、正文/预览双向块定位，以及旧预览保留但跳转禁用、恢复后按新版本定位。断网切换简洁版 → 彩色版 → 简洁版时，检查真实 catalog 报告中 ThemePlugin 替换、ReportPlugin 重启、TypstPlugin 保留，SVG 随实现改变，同一个 Worker 不重复请求 WASM/字体，正文与撤销/重做历史保留；另检查中文 SVG、模板语法错误与恢复、停止/重启、手机切换与热替换操作、无页面横向溢出及无源码 POST。截图保留桌面和手机的实际视口、独立热替换视图及桌面深色主题。CI 的 `@pluxel/plugin-typst#check-wasm` 是更短的真实 WASM/lifecycle 回归，不能替代此页面验收。
 

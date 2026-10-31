@@ -22,6 +22,31 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 describe('pluginArtifactBuildPlugin', () => {
+	it('preserves native Drizzle schemas without generating SQL artifacts', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'drizzle-consumer', type: 'module' }),
+			'src/index.ts': `import { pgTable, text } from 'drizzle-orm/pg-core'
+export const items = pgTable('items', { id: text('id').primaryKey() })`,
+		})
+		const bundle = await rolldown({
+			input: join(fixture.path, 'src/index.ts'),
+			external: ['drizzle-orm/pg-core'],
+			plugins: [pluginArtifactBuildPlugin({ root: fixture.path, workbench: false })],
+		})
+		try {
+			await bundle.write({ dir: join(fixture.path, 'dist'), format: 'esm' })
+			const source = await readFile(join(fixture.path, 'dist/index.js'), 'utf8')
+			expect(source).toContain('drizzle-orm/pg-core')
+			expect(source).not.toContain('development')
+			expect(source).not.toContain('migrations')
+			await expect(readdir(join(fixture.path, 'dist/database'))).rejects.toMatchObject({
+				code: 'ENOENT',
+			})
+		} finally {
+			await bundle.close()
+		}
+	})
+
 	it('atomically emits the host-owned deployment inventory from canonical compilations', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: 'workbench-inventory-fixture', type: 'module' }),

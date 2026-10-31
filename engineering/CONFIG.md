@@ -40,9 +40,9 @@ Management 配置 RPC 与 Host-vite 开发控制台委托 Host；Management 负�
 
 Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` 与模式。`storage` 唯一形式是同步 `(root: RootContext) => HostDocumentStorage`，两项 factory 在 root 创建后、文档 IO 前各解析一次并校验，Core 的惰性 config factory 只消费已解析对象。factory 不执行 IO，也不能返回 Promise。
 
-`HostDocumentStorage` 是借用的目录文档接口，仅含 `getText(key)`、`put(key, text)`、`stat(key)`；put 无条件等待完整原子提交，不接收 atomic 选项。Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。无 storage 时为 memory，有 storage 时默认 writable，可显式 readonly。FS 的纯 `documents()` 适配与首次 IO 准备由 [FS](FS.md)维护，公开接线见 [Host 配置](../docs/host/configuration.md#保存配置和运行策略)。
+`HostDocumentStorage` 是借用的目录文档接口，仅含 `getText(key)`、`put(key, text)`、`stat(key)`；put 无条件等待完整原子提交，不接收 atomic 选项。Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。无 storage 时为 memory，有 storage 时默认 writable，可显式 readonly。官方组合通过 [TinyBase](TINYBASE.md) 的 Host 私有 `documents()` 适配保存 saved records，首次 IO 先等待 [FS](FS.md) 后端准备，公开接线见 [Host 配置](../docs/host/configuration.md#保存配置和运行策略)。
 
-`HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留 SuperJSON v3/v5 格式与 readonly 失败语义。Config debounce、digest 去重、写失败重试、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
+`HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留 SuperJSON v3/v5 格式与 readonly 失败语义。Config debounce、digest 去重、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
 
 Core 的 `createCoreContextHost({ createConfigService })` 只允许在固定 CONFIG_SERVICE descriptor 的严格惰性工厂位置创建 CoreConfigService；它不是任意 root factory，不暴露替换 Core token 的权限。Host 准备阶段等待两个 store.ready 后交付，关闭先排空已接纳操作，再等待 store 自己的写入并聚合 flush 错误。环境配置在 Host 应用启动阶段解析，存储 backend 由应用显式提供。
 
@@ -60,7 +60,7 @@ Config effective authority 为 `configRecords.initial < file base < saved < env`
 
 Vault 绑定由 Host 在服务准备后、插件 admission 前通过 root-only `HostVaultBindings` 安装；缺失服务 fail-fast。config 与 Vault 绑定以稳定 node address 为目标。动态候选在 admission 前检查 config metadata 与已声明环境路径兼容性，失败保留原 catalog。Vault 根 schema 是本次 Host 固定的部署输入契约，在首次解析时校验记录 key 与原始值，不能因 Plugin 热替换重新执行 transform 或更改已安装记录。修改 Vault schema 或来源需要重新创建 Host；插件仍负责私有 KV 的业务校验。
 
-持久配置继续使用 SuperJSON v3；file writer atomic replace 只写 saved layer，malformed/version error fail-fast。config 和 state 的 initial 语义不同：config initial 是永久 base，state initial 仍是创建策略 seed。
+持久配置继续使用 SuperJSON v3 文档文本，经 TinyBase Host namespace 完整提交；只保存 saved layer，malformed/version error fail-fast。config 和 state 的 initial 语义不同：config initial 是永久 base，state initial 仍是创建策略 seed。
 
 ## 保存与应用
 
@@ -104,7 +104,7 @@ RPC 输入先按 `unknown` 校验 owner address、patch object 与 field mutatio
 prototype mutation。unexpected schema/programming error 继续 reject，不能按 message 分类成 domain failure。
 
 内存 owner lookup 和 revision cache 为 O(1)。file backend 在 200 ms 内合并 mutation，随后原子重写 O(B) 的完整 snapshot，B 是
-serialized config bytes；当前契约不宣称适合无界 fork/config 基数。实测超出预算时在 backend 内升级 shard/journal/KV，不改变 identity。
+serialized config bytes；TinyBase backing 另有完整 envelope 容量预算，当前契约不适合无界 fork/config 基数。写入故障后 Host 文档 adapter 阻断后续候选，须关闭检查实际 backing 后恢复，不能借 Config flush 重试绕过失败边界。
 
 ## Toolchain metadata
 

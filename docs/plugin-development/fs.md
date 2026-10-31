@@ -5,6 +5,8 @@ description: 通过 PluginFs 访问插件目录，使用原生 promise 操作和
 
 Host 显式安装 [FS 服务](../host/configuration.md#选择文件后端)后，Plugin 和 Part 可以取得所属插件的文件目录。返回值是 ZenFS 的 Node 兼容 `fs.promises`；Pluxel 只负责目录归属、准备和关闭，不另建文件操作接口。
 
+用户偏好、开关与有界结构化记录使用 [TinyBase 状态](./tinybase.md)；部署配置仍用 `configs.use()`。这里处理文件、文档源码和二进制的原生操作。
+
 ## 取得目录并保存
 
 必需文件能力用 `PluginFs`。以下业务方法要求数据跨 Host 保留且可写；服务缺失、后端准备或写入失败直接拒绝调用：

@@ -6,6 +6,7 @@ import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils'
 import { pluginArtifactBuildPlugin } from '../plugin-artifact/pluginArtifactBuildPlugin'
 import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
+import { collectTinybaseConsumers } from './tinybase-peer'
 import { createPluginDependencyMetadataHook } from './plugin-metadata'
 import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
@@ -113,6 +114,8 @@ export function pluginPackage(
 		packageJsonPath: options.packageMetadata.packageJsonPath,
 	})
 	const { semantics: _collector, ...pipeline } = createPipeline(options, semantics)
+	const tinybase = collectTinybaseConsumers(options.packageMetadata.packageJsonPath)
+	pipeline.plugins.unshift(tinybase.plugin)
 	return {
 		exports: {
 			// Keep linked development packages on the HMR source condition without exposing raw TS
@@ -120,7 +123,7 @@ export function pluginPackage(
 			devExports: '@pluxel/hmr',
 		},
 		deps: {
-			neverBundle: [/^@pluxel\//],
+			neverBundle: [/^@pluxel\//, /^tinybase(?:\/|$)/],
 		},
 		...pipeline,
 		onSuccess: createPluginDependencyMetadataHook({
@@ -128,6 +131,7 @@ export function pluginPackage(
 			workbenchArtifacts: options.workbench !== false,
 			log: options.packageMetadata.log,
 			collectPlugins: () => semantics.snapshot(),
+			collectTinybaseConsumers: tinybase.usesTinybase,
 			collectWorkbenchTargets: async () => {
 				const targets = await semantics.workbenchCompilations()
 				return targets.length > 0

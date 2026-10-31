@@ -6,6 +6,7 @@ export interface RuleContext {
 	workbenchArtifacts?: boolean
 	artifactRoot?: string
 	workbenchCapnwebVersion?: string
+	tinybaseVersion?: string
 }
 
 export type RuleMessages = string[] | undefined

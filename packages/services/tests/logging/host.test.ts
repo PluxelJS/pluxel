@@ -5,6 +5,7 @@ import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { getContextLoggerRootId } from '@pluxel/core/host'
 import { createHost } from '@pluxel/host'
 import { fs, Fs, InMemory, Passthrough } from '@pluxel/services/fs'
+import { tinybase, TinyBaseHost } from '../../src/tinybase'
 import { expect, it } from 'vitest'
 import {
 	logging,
@@ -131,21 +132,25 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 	expect(manager.state).toBe('disposed')
 })
 
-it('prepares shared FS from Logging, flushes before final closure and keeps profile documents separate', async () => {
+it('restores TinyBase policy documents, flushes before FS final closure and keeps profiles separate', async () => {
 	const directory = await nativeFs.promises.mkdtemp(join(tmpdir(), 'pluxel-logging-fs-'))
 	let factoryCalls = 0
-	const services = (profile: string) => [
-		logging(
+	const services = (profile: string) => {
+		const logService = logging(
 			{ ...plan, root: { profile } },
 			{
 				policyStore(root) {
 					factoryCalls++
-					return createPluginLogPolicyStore(root.require(Fs).documents('services/logging'))
+					return createPluginLogPolicyStore(root.require(TinyBaseHost).documents('logging'))
 				},
 			},
-		),
-		fs({ backend: Passthrough, fs: nativeFs, prefix: directory }),
-	]
+		)
+		return [
+			{ ...logService, requires: { tinybase: TinyBaseHost } },
+			fs({ backend: Passthrough, fs: nativeFs, prefix: directory }),
+			tinybase(),
+		]
+	}
 	const owner = pluginNodeAddressOf(LoggedOwner)
 	try {
 		const first = await createHost({ plugins: [], services: services('first') })
@@ -154,13 +159,21 @@ it('prepares shared FS from Logging, flushes before final closure and keeps prof
 		} finally {
 			await first.close()
 		}
-		const firstDocument = await nativeFs.promises.readFile(
-			join(directory, 'services/logging/plugin-policy/first.json'),
-			'utf8',
-		)
-		expect(parsePluginLogPolicySnapshot(firstDocument).overrides).toEqual([
-			{ owner, level: 'debug' },
-		])
+		const inspect = await createHost({
+			plugins: [],
+			services: [fs({ backend: Passthrough, fs: nativeFs, prefix: directory }), tinybase()],
+		})
+		try {
+			const firstDocument = await inspect.ctx
+				.require(TinyBaseHost)
+				.documents('logging')
+				.getText('plugin-policy/first.json')
+			expect(parsePluginLogPolicySnapshot(firstDocument!).overrides).toEqual([
+				{ owner, level: 'debug' },
+			])
+		} finally {
+			await inspect.close()
+		}
 		const second = await createHost({ plugins: [], services: services('second') })
 		try {
 			expect(second.ctx.logging.policy.snapshot().overrides).toEqual([])

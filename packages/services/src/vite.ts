@@ -1,10 +1,15 @@
 import { serviceSharedPackages } from './sources'
-import { dirname } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import {
-	assertWorkbenchCapnwebAdmission,
-	installedWorkbenchCapnwebVersion,
-	readWorkbenchCapnwebPackage,
-} from '@pluxel/workbench/internal/transport'
+	assertSharedRuntimeAdmission,
+	admitSharedRuntimeOwner,
+	assertSharedRuntimeHost,
+	nearestPackageManifest,
+	installedSharedRuntimeVersion,
+	participatesInSharedRuntime,
+	readSharedRuntimePackage,
+	sharedRuntimeForImport,
+} from '@pluxel/host/internal/shared-runtime'
 import { resolveWithOxc } from '@pluxel/rolldown/resolver/oxc'
 import { host, hostSingletons } from '@pluxel/host-vite'
 import { HOST_VITE_ENVIRONMENT, registerHostSingleton } from '@pluxel/host-vite/internal'
@@ -20,8 +25,8 @@ export type PresetViteOptions = Readonly<{
 	bindings?: Readonly<Record<string, unknown>>
 }>
 
-/** Preserve official service token identity across the Vite and native module graphs. */
-export function serviceSingletons(): Plugin {
+/** Preserve service and admitted native runtime identity. Entry identifies the Host package when Vite root differs. */
+export function serviceSingletons(entry?: string): Plugin {
 	const singletons = hostSingletons({
 		packages: serviceSharedPackages,
 	})
@@ -29,9 +34,12 @@ export function serviceSingletons(): Plugin {
 	const configureSingleton = singletons.configResolved!
 	let root = ''
 	// Linked workspaces can install the same version at different native module paths.
-	// Resolve RpcTarget from the selected Workbench installation, not each publisher.
+	// Bind admitted native imports to the selected service installation.
 	return {
 		...singletons,
+		applyToEnvironment(environment) {
+			return environment.name === HOST_VITE_ENVIRONMENT || environment.config.consumer === 'client'
+		},
 		configResolved(config) {
 			root = config.root
 			const handler =
@@ -39,38 +47,69 @@ export function serviceSingletons(): Plugin {
 			return handler.call(this, config)
 		},
 		async resolveId(source, importer, options) {
+			const runtime = sharedRuntimeForImport(source)
 			if (
-				source === 'capnweb' &&
+				runtime &&
 				importer &&
-				options.ssr &&
-				this.environment.name === HOST_VITE_ENVIRONMENT
+				(!options.ssr || this.environment.name === HOST_VITE_ENVIRONMENT)
 			) {
-				const publisher = await readWorkbenchCapnwebPackage(importer)
-				// A source publisher has an explicit peer before build metadata exists. Private RPC has neither.
-				if (publisher && (publisher.peer !== undefined || publisher.marker !== undefined)) {
-					const conditions = { conditionNames: ['node', 'import', 'default'] }
-					const workbench = resolveWithOxc(root, '@pluxel/workbench', conditions)
-					if (!workbench)
+				const publisher = readSharedRuntimePackage(importer, runtime)
+				const serviceConsumer = runtime.name === 'tinybase' && source === runtime.entry
+				const application =
+					runtime.name === 'tinybase' &&
+					publisher?.manifestPath ===
+						nearestPackageManifest(resolve(root, entry ?? '__entry__.mjs'))
+				if (
+					publisher &&
+					(application || serviceConsumer || participatesInSharedRuntime(publisher))
+				) {
+					const conditions = {
+						conditionNames: [options.ssr ? 'node' : 'browser', 'import', 'default'],
+					}
+					const owner = resolveWithOxc(
+						root,
+						runtime.name === 'tinybase' ? `${runtime.owner}/package.json` : runtime.entry,
+						conditions,
+					)
+					if (!owner)
 						throw new Error(
-							`[services/vite] ${publisher.owner} imports shared capnweb, but @pluxel/workbench is unavailable from ${root}`,
+							`[services/vite] ${publisher.owner} imports shared ${runtime.name}, but ${runtime.owner} is unavailable from ${root}`,
 						)
-					const canonical = resolveWithOxc(dirname(workbench.path), 'capnweb', conditions)
+					const canonical = resolveWithOxc(dirname(owner.path), runtime.name, conditions)
 					if (!canonical)
 						throw new Error(
-							`[services/vite] Cannot resolve Workbench capnweb from ${workbench.path}`,
+							`[services/vite] Cannot resolve Host ${runtime.name} from ${owner.path}`,
 						)
-					const own = resolveWithOxc(dirname(importer), 'capnweb', conditions)
-					assertWorkbenchCapnwebAdmission({
+					const own = resolveWithOxc(
+						dirname(importer),
+						serviceConsumer ? runtime.name : source,
+						conditions,
+					)
+					const admission = {
+						runtime,
 						package: publisher,
-						supportedVersion: await installedWorkbenchCapnwebVersion(canonical.path),
-						actualVersion: own ? await installedWorkbenchCapnwebVersion(own.path) : undefined,
+						supportedVersion: admitSharedRuntimeOwner(
+							owner.path,
+							canonical.path,
+							runtime,
+							'services/vite',
+						),
+						actualVersion: own ? installedSharedRuntimeVersion(own.path, runtime) : undefined,
 						actualEntry: own?.path,
 						development: publisher.dev !== undefined || publisher.marker === undefined,
 						operation: 'services/vite',
-					})
-					if (this.environment.mode === 'dev')
-						registerHostSingleton(this.environment, canonical.path)
-					return { id: canonical.path, external: true }
+					}
+					if (application)
+						assertSharedRuntimeHost({ ...admission, manifestPath: publisher.manifestPath })
+					else assertSharedRuntimeAdmission(admission)
+					if (!serviceConsumer) {
+						const selected = resolveWithOxc(dirname(owner.path), source, conditions)
+						if (!selected)
+							throw new Error(`[services/vite] Cannot resolve Host ${source} from ${owner.path}`)
+						if (options.ssr && this.environment.mode === 'dev')
+							registerHostSingleton(this.environment, selected.path)
+						return { id: selected.path, external: !!options.ssr }
+					}
 				}
 			}
 			const handler =
@@ -85,7 +124,7 @@ export function vitePreset(options: PresetViteOptions): PluginOption[] {
 	if (options.devConsole !== undefined && typeof options.devConsole !== 'boolean')
 		throw new TypeError('[services/vite] devConsole must be a boolean')
 	return [
-		serviceSingletons(),
+		serviceSingletons(options.entry),
 		{
 			...perEnvironmentPlugin('pluxel:database-source', async (environment) => {
 				if (environment.name !== HOST_VITE_ENVIRONMENT) return false

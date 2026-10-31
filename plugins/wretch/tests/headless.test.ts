@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { fs, Passthrough } from '@pluxel/services/fs'
+import { tinybase } from '@pluxel/services/tinybase'
 import { expect, it } from 'vitest'
 import { WretchConfig, WretchPlugin } from '../src/index.ts'
 
@@ -20,12 +21,12 @@ class StatelessHttpConsumer extends BasePlugin {
 	async init() {
 		expect(this.ctx.fs).toBeUndefined()
 		expect(this.ctx.workbench).toBeUndefined()
-		await expect(this.http.enableManagedSettings()).rejects.toThrow('require the FS service')
+		await expect(this.http.enableManagedSettings()).rejects.toThrow('require the TinyBase service')
 		await expect(this.http.updateManagedSettings({ headers: {} })).rejects.toThrow(
-			'require the FS service',
+			'require the TinyBase service',
 		)
-		await expect(this.http.resetManagedSettings()).rejects.toThrow('require the FS service')
-		expect(() => this.http.managedSettings).toThrow('require the FS service')
+		await expect(this.http.resetManagedSettings()).rejects.toThrow('require the TinyBase service')
+		expect(() => this.http.managedSettings).toThrow('require the TinyBase service')
 		expect(await this.http.client.get(origin).text()).toBe('stateless')
 		await expect(this.http.client.get('https://not-allowed.example').text()).rejects.toThrow(
 			/origin/i,
@@ -146,7 +147,7 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 		origin = `http://127.0.0.1:${address.port}`
 		const application = defineHostApplication(() => ({
 			plugins: [WretchPlugin, HeadlessHttpConsumer, SecondManagedConsumer],
-			services: [fs({ backend: Passthrough, fs: nativeFs, prefix })],
+			services: [fs({ backend: Passthrough, fs: nativeFs, prefix }), tinybase()],
 			state: {
 				initial: {
 					autoStart: [
@@ -189,7 +190,7 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 				await host.close()
 			}
 		}
-		expect(await readdir(join(prefix, 'plugins'))).toHaveLength(1)
+		expect(await readdir(prefix)).not.toContain('plugins')
 		expect(requests).toEqual([
 			{ managed: 'saved', authorization: 'Bearer caller-owned' },
 			{ managed: 'saved', authorization: 'Bearer caller-owned' },

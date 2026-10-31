@@ -10,7 +10,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 ## 入口与职责
 
 - 在项目根调用 CLI：下游用 `vp exec pluxel …`，Pluxel 源码仓库用 `vp run pluxel …`。首次 checkout 或启动器报告 CLI 过期时，先运行 `vp run @pluxel/cli#compile`。
-- Plugin/Part 拥有业务与声明；Host 拥有装配、配置输入和服务安装；Vite 拥有开发期执行与 HMR。Core 自带 `events/logger/effects`，Database、Vault、Workbench 等服务需要应用安装。
+- Plugin/Part 拥有业务与声明；Host 拥有装配、配置输入和服务安装；Vite 拥有开发期执行与 HMR。Core 自带 `events/logger/effects`，TinyBase、Database、Vault、Workbench 等服务由应用安装；托管 SQL 从 Services 子入口接入并使用原生 Drizzle，应用也可自管连接。
 - 默认工作区由 mise 提供工具和环境，package scripts 提供操作入口，Vite+ 管任务与缓存，hk 管提交检查，Pitchfork 管托管进程；Pluxel 也支持前台命令和手动 Vite。
 
 正文优先读项目 `docs/pluxel/`，源码仓库则读 `docs/`；下表路径相对该目录。`pluxel docs <path>` 输出当前来源正文。入口缺失或源码来源不明时读 `development/source-workspaces.md`，按 Git/npm 接入方式修复，不复制另一版本文档。
@@ -21,6 +21,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 修改 Plugin/Part                        | `plugin-development/index.md` 选对应主题；公共契约、失败、并发或取消先读 `plugin-development/contracts.md`，可恢复失败再读 `plugin-development/better-result.md` |
 | 装配应用或服务                          | `host/configuration.md`；扩展服务读 `host/services.md`，不要混用生产应用、独立 Host 与 test host API                                                             |
+| 插件状态、偏好或有界结构化记录          | `plugin-development/tinybase.md`；使用原生 Store，Host 托管恢复与保存；部署配置继续使用 `configs.use()`                                                          |
 | 插件文件、后端或文档保存                | `plugin-development/fs.md`；Host 后端与 config/state 接线读 `host/configuration.md` 对应章节，保留原生 errno 和完整提交                                          |
 | 查声明、配置绑定与源码位置              | `development/inspection.md`；定向请求所需 sections，显式选择 application；先检查 complete/partial/unavailable，缺口不等于不存在                                  |
 | 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                       |

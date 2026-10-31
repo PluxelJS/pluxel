@@ -4,6 +4,8 @@ import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
 import { type Context, BasePlugin, Plugin } from '@pluxel/core'
 
 import { writeFileAtomic, type FsPromises } from '@pluxel/services/fs'
+import { TinyBase, type TinyBaseService } from '@pluxel/services/tinybase'
+import type { Store } from 'tinybase'
 import { RpcTarget } from 'capnweb'
 import { FontsConfig, type FontsPluginConfig } from './config.ts'
 import { FontsError, type FontsErrorCode } from './errors.ts'
@@ -28,7 +30,7 @@ import type {
 	ManagedFontSnapshot,
 } from './workbench-contracts.ts'
 
-const DEFAULT_FONT_KEY = 'settings/default-font.json'
+const DEFAULT_FAMILY_VALUE = 'defaultFamily'
 const MANAGED_ID = /^[A-Za-z0-9_-]{43}$/
 const MAX_FILE_NAME_LENGTH = 255
 const MAX_FAMILY_LENGTH = 128
@@ -198,9 +200,12 @@ type DefaultFontState = {
 	configuredFamily?: string
 	preferredFamily?: string
 	storage?: FsPromises
+	tinybase?: TinyBaseService
+	store?: Store
+	faulted: boolean
+	fault?: unknown
 	resolvedDefault?: Readonly<{ revision: number; snapshot: DefaultFontSnapshot }>
 	resolvedFamilies?: Readonly<{ revision: number; snapshot: readonly FontFamilySnapshot[] }>
-	tail: Promise<void>
 }
 
 @Plugin()
@@ -217,7 +222,7 @@ export class FontsPlugin extends BasePlugin {
 	private readonly nativeBudget: NativeRegistrationBudget = { bytes: 0 }
 	private readonly defaults: DefaultFontState = {
 		systemFamilies: new Set(),
-		tail: Promise.resolve(),
+		faulted: false,
 	}
 	private managed?: ManagedState
 	private generation?: FontsGeneration
@@ -238,12 +243,16 @@ export class FontsPlugin extends BasePlugin {
 			this.config.defaultFamily === undefined
 				? undefined
 				: normalizeFamily(this.config.defaultFamily)
-		const preferredFamily = storage ? await loadDefaultFamily(storage) : undefined
+		const tinybase = this.ctx.tinybase ? this.ctx.require(TinyBase) : undefined
+		const store = await tinybase?.open()
+		const preferredFamily = store ? loadDefaultFamily(store) : undefined
 		this.defaults.systemFamilies.clear()
 		for (const family of systemFamilies) this.defaults.systemFamilies.add(family)
 		this.defaults.configuredFamily = configuredDefaultFamily
 		this.defaults.preferredFamily = preferredFamily
 		this.defaults.storage = storage
+		this.defaults.tinybase = tinybase
+		this.defaults.store = store
 		this.defaults.resolvedDefault = undefined
 		this.defaults.resolvedFamilies = undefined
 		nativeRegistryRevision += 1
@@ -275,11 +284,12 @@ export class FontsPlugin extends BasePlugin {
 				await Promise.allSettled([
 					generation.scheduler.close(stopped),
 					managed?.tail ?? Promise.resolve(),
-					this.defaults.tail,
 				])
 				this.defaults.configuredFamily = undefined
 				this.defaults.preferredFamily = undefined
 				this.defaults.storage = undefined
+				this.defaults.tinybase = undefined
+				this.defaults.store = undefined
 				this.defaults.resolvedDefault = undefined
 				this.defaults.resolvedFamilies = undefined
 				this.defaults.systemFamilies.clear()
@@ -593,27 +603,36 @@ export class FontsPlugin extends BasePlugin {
 			if (requested && !selected) {
 				throw new FontsError('FONT_NOT_FOUND', `Font family "${requested}" is not available`)
 			}
-			await this.enqueueDefault(async () => {
-				this.assertManagedStateActive(state)
-				const storage = this.requireDefaultStorage()
-				const previous = this.defaults.preferredFamily
-				await persistDefaultFamily(storage, selected)
-				try {
-					this.assertManagedStateActive(state)
-				} catch (error) {
-					await persistDefaultFamily(storage, previous).catch((): void => undefined)
-					throw error
-				}
-				this.defaults.preferredFamily = selected
-				if (previous !== selected) nativeRegistryRevision += 1
+			const { tinybase, store } = this.defaults
+			if (!tinybase || !store) {
+				throw new FontsError(
+					'PERSISTENCE_REQUIRED',
+					'Install the TinyBase service to save font preferences',
+				)
+			}
+			if (this.defaults.faulted) throw this.defaults.fault
+			this.assertManagedStateActive(state)
+			const previous = this.defaults.preferredFamily
+			store.transaction(() => {
+				if (selected === undefined) store.delValue(DEFAULT_FAMILY_VALUE)
+				else store.setValue(DEFAULT_FAMILY_VALUE, selected)
 			})
+			try {
+				await tinybase.flush()
+			} catch (error) {
+				this.defaults.faulted = true
+				this.defaults.fault = error
+				throw error
+			}
+			this.defaults.preferredFamily = selected
+			if (previous !== selected) nativeRegistryRevision += 1
 			return this.resolveDefaultFont()
 		})
 	}
 
 	private installManagedFont(state: ManagedState, input: InstallManagedFontInput): Promise<void> {
 		return this.enqueueManaged(state, async () => {
-			const storage = this.requireDefaultStorage()
+			const storage = this.requireFontStorage()
 			const borrowed = normalizeManagedInput(input)
 			const normalized = Object.freeze({
 				...borrowed,
@@ -660,7 +679,7 @@ export class FontsPlugin extends BasePlugin {
 
 	private removeManagedFont(state: ManagedState, id: string): Promise<void> {
 		return this.enqueueManaged(state, async () => {
-			const storage = this.requireDefaultStorage()
+			const storage = this.requireFontStorage()
 			if (!MANAGED_ID.test(id)) throw new FontsError('INVALID_INPUT', 'Managed font ID is invalid')
 			const font = state.fonts.get(id)
 			if (!font) throw new FontsError('FONT_NOT_FOUND', `Managed font ${id} does not exist`)
@@ -695,18 +714,6 @@ export class FontsPlugin extends BasePlugin {
 			return undefined
 		}
 		state.tail = result.then(releasePending, releasePending)
-		return result
-	}
-
-	private enqueueDefault<T>(task: () => Promise<T>): Promise<T> {
-		const result = this.defaults.tail.then(async () => {
-			this.assertRunning()
-			return task()
-		})
-		this.defaults.tail = result.then(
-			(): void => undefined,
-			(): void => undefined,
-		)
 		return result
 	}
 
@@ -976,11 +983,11 @@ export class FontsPlugin extends BasePlugin {
 		}
 	}
 
-	private requireDefaultStorage(): FsPromises {
+	private requireFontStorage(): FsPromises {
 		if (!this.defaults.storage) {
 			throw new FontsError(
 				'PERSISTENCE_REQUIRED',
-				'Install the FS service to save font preferences or managed uploads',
+				'Install the FS service to save managed font uploads',
 			)
 		}
 		return this.defaults.storage
@@ -1241,42 +1248,17 @@ function isMissingFile(error: unknown): boolean {
 	return !!error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT'
 }
 
-async function loadDefaultFamily(storage: FsPromises): Promise<string | undefined> {
-	const value = await storage
-		.readFile(DEFAULT_FONT_KEY, 'utf8')
-		.catch((error: unknown): string | undefined => {
-			if (isMissingFile(error)) return undefined
-			throw error
-		})
-	if (value === undefined) return undefined
+function loadDefaultFamily(store: Store): string | undefined {
+	if (!store.hasValue(DEFAULT_FAMILY_VALUE)) return undefined
 	try {
-		const parsed = JSON.parse(value) as unknown
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-			throw new TypeError('Default font record must be an object')
+		const value = store.getValue(DEFAULT_FAMILY_VALUE)
+		if (typeof value !== 'string' || normalizeFamily(value) !== value) {
+			throw new TypeError('Default font preference must be a normalized family name')
 		}
-		const record = parsed as Record<string, unknown>
-		if (record.version !== 1) throw new Error('Default font record has an unsupported version')
-		if (typeof record.family !== 'string') {
-			throw new TypeError('Default font record family must be text')
-		}
-		return normalizeFamily(record.family)
+		return value
 	} catch (cause) {
-		if (cause instanceof FontsError && cause.code === 'CORRUPT_FONT_STORAGE') throw cause
-		throw new FontsError('CORRUPT_FONT_STORAGE', 'Default font preference is corrupt', {
-			cause,
-		})
+		throw new FontsError('CORRUPT_FONT_STORAGE', 'Default font preference is corrupt', { cause })
 	}
-}
-
-async function persistDefaultFamily(
-	storage: FsPromises,
-	family: string | undefined,
-): Promise<void> {
-	if (!family) {
-		await storage.rm(DEFAULT_FONT_KEY, { force: true })
-		return
-	}
-	await writeFileAtomic(storage, DEFAULT_FONT_KEY, `${JSON.stringify({ version: 1, family })}\n`)
 }
 
 function findAvailableFamily(requested: string): string | undefined {

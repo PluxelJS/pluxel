@@ -13,7 +13,7 @@
 
 研究与必要决策记录：
 
-- [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：内置 TinyBase 作为 Plugin generation 临时状态，保留后端权威写入；SQL runtime、driver 与构建工具整体外置。包含与 Worksplit 页面资源提案的接入边界，尚未实现。
+- [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：已实施状态重构的必要决策与剩余验收边界；当前契约见 [TinyBase](../TINYBASE.md) 与 [Database](../DATABASE.md)，逐包结论及实际验证见[迁移记录](../TINYBASE_MIGRATION.md)。
 
 - [Worksplit API 与资源生命周期精进提案](https://github.com/PluxelJS/split-like-vscode/blob/bd6ddfa3e5a9c866a412597e9001b530526e4250/refactor/API_REFINEMENT_PROPOSAL.md)：统一内容 hook 与资源 effect，直接迁移并移除旧入口；提案维护在独立子模块，尚未实现。
 

@@ -1,4 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { TinyBase } from '@pluxel/services/tinybase'
 import { BotWorkspacePlugin } from './BotWorkspacePlugin'
 import { BotStore, simulatedBots } from './BotStore'
 
@@ -7,12 +8,13 @@ export class TelegramBotPlugin extends BasePlugin {
 	constructor(private readonly workspace: BotWorkspacePlugin) {
 		super()
 	}
-	override init(): () => void {
+	override async init(): Promise<() => void> {
+		const store = await this.ctx.require(TinyBase).open()
 		return this.workspace.registerSource({
 			id: 'telegram',
 			label: 'Telegram',
 			capability: '模拟 Telegram 私聊与群组；不连接外部平台',
-			store: new BotStore(simulatedBots('telegram')),
+			store: new BotStore(simulatedBots('telegram'), store),
 		})
 	}
 }
@@ -22,12 +24,13 @@ export class DiscordBotPlugin extends BasePlugin {
 	constructor(private readonly workspace: BotWorkspacePlugin) {
 		super()
 	}
-	override init(): () => void {
+	override async init(): Promise<() => void> {
+		const store = await this.ctx.require(TinyBase).open()
 		return this.workspace.registerSource({
 			id: 'discord',
 			label: 'Discord',
 			capability: '模拟 Discord 社区频道；不连接外部平台',
-			store: new BotStore(simulatedBots('discord')),
+			store: new BotStore(simulatedBots('discord'), store),
 		})
 	}
 }
@@ -37,12 +40,13 @@ export class WeComBotPlugin extends BasePlugin {
 	constructor(private readonly workspace: BotWorkspacePlugin) {
 		super()
 	}
-	override init(): () => void {
+	override async init(): Promise<() => void> {
+		const store = await this.ctx.require(TinyBase).open()
 		return this.workspace.registerSource({
 			id: 'wecom',
 			label: '企业微信',
 			capability: '模拟企业微信内部通知；不连接外部平台',
-			store: new BotStore(simulatedBots('wecom')),
+			store: new BotStore(simulatedBots('wecom'), store),
 		})
 	}
 }

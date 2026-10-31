@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import type { Plugin } from 'vite'
 import {
@@ -30,11 +31,22 @@ export function databaseSourceVitePlugin(options: { root?: string } = {}): Plugi
 			if (declarations.length === 0) return null
 			const packageRoot = findDatabasePackageRoot(id, root)
 			if (!packageRoot) this.error(`[database] cannot locate package.json for ${id}`)
-			const existing = packages.get(packageRoot)
-			if (existing && existing !== id) {
-				this.error(
-					`[database] package ${packageRoot} declares databases in both ${existing} and ${id}`,
-				)
+			let existing = packages.get(packageRoot)
+			while (existing && existing !== id) {
+				const stillDeclared = await declaresDatabase(existing)
+				// Another transform may have replaced a stale owner while this file was read.
+				// Recheck before claiming so concurrent replacements cannot both succeed.
+				if (packages.get(packageRoot) !== existing) {
+					existing = packages.get(packageRoot)
+					continue
+				}
+				if (stillDeclared) {
+					this.error(
+						`[database] package ${packageRoot} declares databases in both ${existing} and ${id}`,
+					)
+				}
+				packages.delete(packageRoot)
+				existing = undefined
 			}
 			packages.set(packageRoot, id)
 
@@ -66,4 +78,19 @@ export function databaseSourceVitePlugin(options: { root?: string } = {}): Plugi
 			return { code: transformed, map: null }
 		},
 	}
+}
+
+async function declaresDatabase(id: string): Promise<boolean> {
+	let code: string
+	try {
+		code = await readFile(id, 'utf8')
+	} catch (error) {
+		if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+			return false
+		throw error
+	}
+	if (!DATABASE_CODE_HINT.test(code)) return false
+	const ast = parseStandaloneWithLang(code, id)
+	if (!ast) throw new Error(`[database] failed to parse database declaration module: ${id}`)
+	return extractDatabaseDeclarations(ast, code, id).length > 0
 }

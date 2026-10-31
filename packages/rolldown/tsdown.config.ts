@@ -7,6 +7,7 @@ const inlineRuntimeDeps = [
 	'fdir',
 	'pathe',
 	'@pluxel/workbench/internal/transport',
+	'@pluxel/host/internal/shared-runtime',
 ]
 
 export default defineConfig({

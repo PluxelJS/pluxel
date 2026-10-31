@@ -7,6 +7,8 @@ catalog:
   '@pluxel/core': ^1.1.0
   '@pluxel/rolldown': ^1.1.0
   '@pluxel/test': ^1.1.0
+  '@pluxel/services': ^1.1.0
+  tinybase: 10.0.1
   typescript: ^7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vitest: 5.0.5

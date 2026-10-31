@@ -5,6 +5,8 @@ import type { ProductDescriptor } from './management/product-contract'
 import type { FsServiceConfig } from './fs'
 import { standardServices } from './index'
 import { vault, type VaultServiceConfig } from './vault'
+import { TinyBaseHost } from './tinybase'
+import { createPluginLogPolicyStore } from './logging/storage'
 
 /** Official application services. Host owns preparation, rollback and shutdown. */
 export async function servicesPreset(
@@ -74,28 +76,33 @@ export async function servicesPreset(
 				}
 			: {},
 	)
-	return [
-		logging(
-			options.logging ?? {
-				root: { profile: 'pluxel' },
-				sinks: {
-					console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
-					store: { kind: 'store', streamId: 'default', caller: true },
-				},
-				routes: {
-					runtime: [
-						{ sink: 'console', minLevel: 'info' },
-						{ sink: 'store', minLevel: 'trace' },
-					],
-					plugins: [
-						{ sink: 'console', minLevel: 'info' },
-						{ sink: 'store', minLevel: 'trace' },
-					],
-					debug: [{ sink: 'store', minLevel: 'trace' }],
-					meta: [{ sink: 'console', minLevel: 'warning' }],
-				},
+	const loggingService = logging(
+		options.logging ?? {
+			root: { profile: 'pluxel' },
+			sinks: {
+				console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
+				store: { kind: 'store', streamId: 'default', caller: true },
 			},
-		),
+			routes: {
+				runtime: [
+					{ sink: 'console', minLevel: 'info' },
+					{ sink: 'store', minLevel: 'trace' },
+				],
+				plugins: [
+					{ sink: 'console', minLevel: 'info' },
+					{ sink: 'store', minLevel: 'trace' },
+				],
+				debug: [{ sink: 'store', minLevel: 'trace' }],
+				meta: [{ sink: 'console', minLevel: 'warning' }],
+			},
+		},
+		{
+			policyStore: (root) =>
+				createPluginLogPolicyStore(root.require(TinyBaseHost).documents('logging')),
+		},
+	)
+	return [
+		{ ...loggingService, requires: { tinybase: TinyBaseHost } },
 		...standardServices({
 			fs: options.fs,
 			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,

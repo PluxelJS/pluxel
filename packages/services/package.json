@@ -157,6 +157,10 @@
 			"@pluxel/source": "./src/sources.ts",
 			"default": "./dist/sources.mjs"
 		},
+		"./tinybase": {
+			"@pluxel/source": "./src/tinybase.ts",
+			"default": "./dist/tinybase.mjs"
+		},
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
 			"default": "./dist/vault.mjs"
@@ -210,6 +214,7 @@
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./sources": "./dist/sources.mjs",
+			"./tinybase": "./dist/tinybase.mjs",
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
@@ -222,9 +227,9 @@
 		"bench:worker-task": "vp test bench bench/worker-task.bench.ts",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
-		"test:zenfs-browser": "vp run check-zenfs-browser",
 		"test:installed": "vp test run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
 		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs",
+		"test:zenfs-browser": "vp run check-zenfs-browser",
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
@@ -272,6 +277,7 @@
 		"playwright-core": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
+		"tinybase": "catalog:prod",
 		"tsx": "catalog:dev",
 		"valibot": "catalog:validation",
 		"vite": "catalog:build",
@@ -292,6 +298,7 @@
 		"pg": "catalog:backend",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
+		"tinybase": "catalog:prod",
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
@@ -327,6 +334,9 @@
 		},
 		"react-dom": {
 			"optional": true
+		},
+		"tinybase": {
+			"optional": true
 		}
 	},
 	"engines": {
@@ -349,6 +359,7 @@
 		"workbenchCapnweb": "0.12.0",
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"tinybase": "10.0.1"
 	}
 }

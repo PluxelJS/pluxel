@@ -2,8 +2,8 @@ import { execFile as execFileCallback } from 'node:child_process'
 import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
+import { createRequire, findPackageJSON } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { chromium } from 'playwright-core'
 import { expect, it } from 'vitest'
@@ -13,8 +13,10 @@ const execFile = promisify(execFileCallback)
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const UNSELECTED_BACKEND_LOAD_PATTERN =
 	/\/node_modules\/(?:@logtape\/(?:file|pretty)|capnweb|@pluxel\/workbench)(?:\/|$)|\/(?:logging|management)(?:\/|[-.])/
+const UNSELECTED_SQL_LOAD_PATTERN =
+	/\/node_modules\/(?:drizzle-(?:orm|kit)|pg(?:-pool)?|@electric-sql\/pglite)(?:\/|$)/
 
-it('does not confuse a pnpm peer suffix with a loaded capnweb module', () => {
+it('does not confuse a pnpm peer suffix with a loaded optional module', () => {
 	const packageUrl =
 		'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_capnweb@0.12.0/node_modules/@pluxel/services/dist/vault.mjs'
 	expect(UNSELECTED_BACKEND_LOAD_PATTERN.test(packageUrl)).toBe(false)
@@ -23,6 +25,14 @@ it('does not confuse a pnpm peer suffix with a loaded capnweb module', () => {
 			'file:///tmp/node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.js',
 		),
 	).toBe(true)
+	expect(
+		UNSELECTED_SQL_LOAD_PATTERN.test(
+			'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_drizzle-orm@0.45.4_pg@8.23.1/node_modules/@pluxel/services/dist/tinybase.mjs',
+		),
+	).toBe(false)
+	for (const name of ['drizzle-orm', 'drizzle-kit', 'pg', 'pg-pool', '@electric-sql/pglite']) {
+		expect(UNSELECTED_SQL_LOAD_PATTERN.test(`file:///tmp/node_modules/${name}/index.js`)).toBe(true)
+	}
 })
 const run = async (file, args, cwd) => {
 	try {
@@ -146,6 +156,95 @@ const packBaseServices = async (root) => {
 	return dependencies
 }
 
+const tinybaseVersion = async () =>
+	JSON.parse(
+		await readFile(join(workspace, 'packages/services/node_modules/tinybase/package.json'), 'utf8'),
+	).version
+
+it('persists native TinyBase Stores through independent tarballs and keeps native browser imports isolated', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-tinybase-consumer-'))
+	try {
+		const dependencies = { ...(await packBaseServices(root)), tinybase: await tinybaseVersion() }
+		const nodeTypes = JSON.parse(
+			await readFile(
+				join(workspace, 'packages/services/node_modules/@types/node/package.json'),
+				'utf8',
+			),
+		).version
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: 'independent-tinybase-consumer',
+				private: true,
+				type: 'module',
+				dependencies,
+				devDependencies: { '@types/node': nodeTypes },
+			}),
+		)
+		await writeFile(
+			join(root, 'pnpm-workspace.yaml'),
+			JSON.stringify({ packages: ['.'], overrides: dependencies }),
+		)
+		await run('pnpm', ['--dir', root, 'install', '--prefer-offline', '--ignore-scripts'], workspace)
+		for (const name of Object.keys(dependencies))
+			expect(await realpath(join(root, 'node_modules', name))).not.toContain(workspace)
+		const installed = await readdir(join(root, 'node_modules/.pnpm'))
+		expect(installed.some((name) => /^(?:pg@|@electric-sql\+pglite)/.test(name))).toBe(false)
+		await writeFile(join(root, 'native.mjs'), tinybaseConsumer)
+		await writeFile(join(root, 'native-guard.mjs'), tinybaseNativeGuard)
+		const native = await run(process.execPath, ['native-guard.mjs'], root)
+		expect(native.stdout).toContain('ISOLATED_TINYBASE_STORE_REOPEN_FLUSH_OK')
+		await writeFile(join(root, 'consumer.ts'), tinybaseTypeConsumer)
+		await writeFile(
+			join(root, 'tsconfig.json'),
+			JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					skipLibCheck: false,
+					noEmit: true,
+					module: 'NodeNext',
+					target: 'ESNext',
+					types: ['node'],
+				},
+				files: ['consumer.ts'],
+			}),
+		)
+		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
+
+		const entry = join(root, 'native-browser.mjs')
+		await writeFile(entry, tinybaseBrowserConsumer)
+		const modules = []
+		const result = await build({
+			root,
+			configFile: false,
+			logLevel: 'error',
+			plugins: [
+				{
+					name: 'installed-tinybase-browser-boundary',
+					generateBundle() {
+						modules.push(...this.getModuleIds())
+					},
+				},
+			],
+			build: { write: false, target: 'esnext', minify: false, lib: { entry, formats: ['es'] } },
+		})
+		const output = (Array.isArray(result) ? result[0] : result).output
+		const chunk = output.find((item) => item.type === 'chunk' && item.isEntry)
+		expect(chunk).toBeDefined()
+		expect(
+			modules.some((id) =>
+				/@pluxel(?:\+|\/)(?:host|services)|(?:^|:)node:|browser-external/.test(id),
+			),
+		).toBe(false)
+		await writeFile(join(root, 'native-browser.bundle.mjs'), chunk.code)
+		await writeFile(join(root, 'browser-check.mjs'), tinybaseBrowserCheck)
+		const browser = await run(process.execPath, ['browser-check.mjs'], root)
+		expect(browser.stdout).toContain('ISOLATED_TINYBASE_NATIVE_BROWSER_OK')
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+}, 90_000)
+
 it('ships the patched filesystem to independent Node and browser consumers with its declarations and notices', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-fs-consumer-'))
 	try {
@@ -212,7 +311,7 @@ it('ships the patched filesystem to independent Node and browser consumers with 
 it('consumes real service tarballs outside the workspace with isolated declarations and lazy ESM imports', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-services-consumer-'))
 	try {
-		const dependencies = await packBaseServices(root)
+		const dependencies = { ...(await packBaseServices(root)), tinybase: await tinybaseVersion() }
 		const nodeTypes = JSON.parse(
 			await readFile(
 				join(workspace, 'packages/services/node_modules/@types/node/package.json'),
@@ -226,7 +325,9 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			await readFile(elysiaRequire.resolve('@types/bun/package.json'), 'utf8'),
 		).version
 		// Retain the existing optional HTTP fixture; the FS receiver test installs neither package.
-		const typeboxVersion = '1.3.23'
+		const typeboxVersion = JSON.parse(
+			await readFile(findPackageJSON(pathToFileURL(elysiaRequire.resolve('typebox'))), 'utf8'),
+		).version
 		const elysiaVersion = JSON.parse(
 			await readFile(join(workspace, 'packages/services/node_modules/elysia/package.json'), 'utf8'),
 		).version
@@ -282,11 +383,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		await writeFile(join(root, 'headless.mjs'), headlessManagementConsumer)
 		const headless = await run(process.execPath, ['headless.mjs'], root)
 		expect(headless.stdout).toContain('ISOLATED_MANAGEMENT_OK')
-		await writeFile(
-			join(root, 'consumer.ts'),
-			typeConsumer + headlessManagementConsumer + headlessManagementTypes,
-		)
-		await checkOptionalDeclarations(root)
+		await writeFile(join(root, 'headless.ts'), headlessManagementConsumer + headlessManagementTypes)
 		// Expand the same genuinely installed consumer to the optional UI/development plane.
 		for (const name of ['workbench', 'rolldown', 'test']) {
 			const tarball = join(root, `${name}.tgz`)
@@ -300,9 +397,13 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			),
 		).version
 
-		const viteVersion = JSON.parse(
+		const installedVite = JSON.parse(
 			await readFile(join(workspace, 'packages/host-vite/node_modules/vite/package.json'), 'utf8'),
-		).version
+		)
+		const viteSpecifier =
+			installedVite.name === 'vite'
+				? installedVite.version
+				: `npm:${installedVite.name}@${installedVite.version}`
 		await writeFile(
 			join(root, 'package.json'),
 			JSON.stringify({
@@ -315,7 +416,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 					'@types/bun': bunTypes,
 					typebox: typeboxVersion,
 					'@types/react': reactTypes,
-					vite: viteVersion,
+					vite: viteSpecifier,
 					elysia: elysiaVersion,
 				},
 			}),
@@ -348,11 +449,171 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 		const optionalResult = await run(process.execPath, ['optional.mjs'], root)
 		expect(optionalResult.stdout).toContain('ISOLATED_WORKBENCH_OK')
 		await writeFile(join(root, 'consumer.ts'), typeConsumer + optionalTypeConsumer)
+		const typeConfig = JSON.parse(await readFile(join(root, 'tsconfig.json'), 'utf8'))
+		await writeFile(
+			join(root, 'tsconfig.json'),
+			JSON.stringify({ ...typeConfig, files: ['consumer.ts', 'headless.ts'] }),
+		)
+		process.stdout.write('ISOLATED_OPTIONAL_SERVICE_RUNTIMES_OK\n')
 		await checkOptionalDeclarations(root)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
 }, 180_000)
+
+const tinybaseNativeGuard = `
+import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
+const loads = []
+const hooks = registerHooks({ load(url, context, next) {
+ loads.push(url)
+ return next(url, context)
+} })
+try {
+ await import('./native.mjs')
+ assert.equal(loads.some(url => url.endsWith('/native.mjs')), true, 'observe the actual consumer module graph')
+ assert.equal(loads.some(url => ${UNSELECTED_SQL_LOAD_PATTERN}.test(url)), false, 'TinyBase must not load Drizzle or unselected SQL drivers')
+} finally { hooks.deregister() }
+`
+
+const tinybaseConsumer = `
+import assert from 'node:assert/strict'
+import * as nativeFs from 'node:fs'
+import { readdir, readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
+import { createHost } from '@pluxel/host'
+import { fs, Passthrough } from '@pluxel/services/fs'
+import { TinyBase, TinyBaseHost, tinybase } from '@pluxel/services/tinybase'
+import { createStore } from 'tinybase/with-schemas'
+import { createQueries } from 'tinybase/queries'
+const prefix = fileURLToPath(new URL('./state/', import.meta.url))
+let owner
+class Owner extends BasePlugin {
+ async init() {
+  this.state = this.ctx.require(TinyBase)
+  assert.equal(this.state, this.ctx.tinybase)
+  this.supplied = createStore()
+   .setTablesSchema({ items: { name: { type: 'string' }, count: { type: 'number' } } })
+   .setValues({ seed: 'first-open' })
+  this.store = await this.state.open(this.supplied)
+  assert.equal(this.store, this.supplied)
+  assert.equal(await this.state.open(), this.store)
+  assert.deepEqual(await Promise.all([this.state.open(this.store), this.state.open()]), [this.store, this.store])
+  owner = this
+ }
+}
+Plugin()(Owner)
+__setPluginDefinition(Owner, {
+ abiVersion: PLUGIN_LOWERING_ABI_VERSION, kind: 'plugin',
+ definition: { entry: { kind: 'package-root', packageName: 'independent-tinybase-consumer' }, exportName: 'Owner' },
+})
+async function open() {
+ const host = await createHost({ plugins: [Owner], services: [fs({ backend: Passthrough, fs: nativeFs, prefix }), tinybase()] })
+ const started = await host.startNode(pluginNodeAddressOf(Owner))
+ assert.equal(started.core.status, 'committed')
+ assert.equal(started.core.summary.lifecycleReport.ok, true)
+ return host
+}
+let host = await open()
+const firstStore = owner.store
+try {
+ owner.store.transaction(() => {
+  owner.store.setRow('items', 'kept', { name: 'confirmed', count: 3 })
+  owner.store.setValue('enabled', true)
+ })
+ const queries = createQueries(owner.store).setQueryDefinition('names', 'items', ({ select }) => select('name'))
+ try { assert.equal(queries.getResultCell('names', 'kept', 'name'), 'confirmed') }
+ finally { queries.destroy() }
+ await owner.state.flush()
+ const manager = host.ctx.require(TinyBaseHost)
+ const status = manager.status().find((item) => item.identity.kind === 'plugin')
+ assert.equal(status.phase, 'active')
+ assert.equal(status.savedRevision, status.revision)
+ assert.equal(status.outcome, 'confirmed')
+ const files = await readdir(prefix + '/services/tinybase/nodes')
+ assert.equal(files.length, 1)
+ const snapshot = JSON.parse(await readFile(prefix + '/services/tinybase/nodes/' + files[0], 'utf8'))
+ assert.equal(snapshot.formatVersion, 1)
+ assert.equal(JSON.stringify(snapshot.content), JSON.stringify(owner.store.getContent()))
+ await manager.documents('private').put('config.json', '{"profile":"confirmed"}')
+} finally { await host.close() }
+await assert.rejects(owner.state.flush())
+firstStore.setValue('stale', 'must-not-persist')
+host = await open()
+try {
+ assert.notEqual(owner.store, firstStore)
+ assert.deepEqual({ ...owner.store.getRow('items', 'kept') }, { name: 'confirmed', count: 3 })
+ assert.equal(owner.store.getValue('enabled'), true)
+ assert.equal(owner.store.hasValue('stale'), false)
+ assert.equal(await host.ctx.require(TinyBaseHost).documents('private').getText('config.json'), '{"profile":"confirmed"}')
+ owner.store.setContent([{}, {}])
+ await owner.state.flush()
+} finally { await host.close() }
+host = await open()
+try {
+ assert.deepEqual(owner.store.getTableIds(), [])
+ assert.deepEqual(owner.store.getValueIds(), [])
+}
+finally { await host.close() }
+console.log('ISOLATED_TINYBASE_STORE_REOPEN_FLUSH_OK')
+`
+
+const tinybaseTypeConsumer = `
+import type { Context, RootContext } from '@pluxel/core'
+import { TinyBase, TinyBaseHost, tinybase, type TinyBaseStatus } from '@pluxel/services/tinybase'
+import { createStore, type Store } from 'tinybase'
+import { createStore as createSchemaStore } from 'tinybase/with-schemas'
+import { createQueries } from 'tinybase/queries/with-schemas'
+export async function consumer(ctx: Context) {
+ const state = ctx.require(TinyBase)
+ const ordinary: Store = await state.open()
+ const tagged = Object.assign(createStore(), { authorTag: 'preserved' as const })
+ const tag: 'preserved' = (await state.open(tagged)).authorTag
+ const supplied = createSchemaStore().setTablesSchema({ items: { name: { type: 'string' } } } as const)
+ const restored: typeof supplied = await state.open(supplied)
+ restored.setCell('items', 'first', 'name', 'typed')
+ // @ts-expect-error Native schema rejects a numeric name after open().
+ restored.setCell('items', 'first', 'name', 123)
+ // @ts-expect-error Native schema rejects an unknown table after open().
+ restored.setCell('unknown', 'first', 'name', 'typed')
+ const queries = createQueries(restored).setQueryDefinition('names', 'items', ({ select }) => select('name'))
+ queries.destroy()
+ await state.flush()
+ void [ordinary, tag, tinybase]
+}
+export function hostConsumer(ctx: RootContext) {
+ const statuses: readonly TinyBaseStatus[] = ctx.require(TinyBaseHost).status()
+ return statuses
+}
+`
+
+const tinybaseBrowserConsumer = `
+import { createStore } from 'tinybase'
+import { createQueries } from 'tinybase/queries'
+export function summary() {
+ const store = createStore().setRow('items', 'native', { name: 'browser-native' })
+ const queries = createQueries(store).setQueryDefinition('names', 'items', ({ select }) => select('name'))
+ try { return { ...queries.getResultRow('names', 'native') } }
+ finally { queries.destroy() }
+}
+`
+
+const tinybaseBrowserCheck = `
+import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
+const hook = registerHooks({ load(url, context, next) {
+ if (/^node:fs|@pluxel(?:\\+|\\/)(?:host|services)/.test(url))
+  throw new Error('Native TinyBase browser graph loaded a Host or filesystem implementation: ' + url)
+ return next(url, context)
+} })
+try {
+ const { summary } = await import('./native-browser.bundle.mjs')
+ assert.deepEqual(summary(), { name: 'browser-native' })
+} finally { hook.deregister() }
+console.log('ISOLATED_TINYBASE_NATIVE_BROWSER_OK')
+`
 
 const fsTypeConsumer = `
 import * as nativeFs from 'node:fs'
@@ -608,12 +869,13 @@ const { workbenchHttp } = await import('@pluxel/workbench/http')
 const { elysia } = await import('@pluxel/services/elysia')
 const { ElysiaRuntime } = await import('@pluxel/services/internal')
 const { fs, InMemory } = await import('@pluxel/services/fs')
+const { tinybase } = await import('@pluxel/services/tinybase')
 const { management } = await import('@pluxel/services/management/service')
 const { managementAccess } = await import('@pluxel/services/management/access')
 const { managementHttp } = await import('@pluxel/services/management/http')
 const { createWorkbenchArtifactHandler, WorkbenchHost } = await import('@pluxel/workbench/server')
 const transport = managementHttp({ bindings: (ctx) => ({ createWorkbench: (principal, invalidate) => requireWorkbench(ctx).createSession(principal, invalidate), artifacts: createWorkbenchArtifactHandler(ctx) }) })
-const host = await createHost({ plugins: [], services: [elysia(), fs({ backend: InMemory }), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
+const host = await createHost({ plugins: [], services: [elysia(), fs({ backend: InMemory }), tinybase(), management({ workbench: true }), managementAccess(), workbenchService(), { ...transport, requires: { ...transport.requires, workbench: WorkbenchHost } }, workbenchHttp({ uiBasePath: '/admin' })] })
 const server = resolveContextCapability(host.ctx, ElysiaRuntime)
 const page = await server.fetch(new Request('http://host.test/admin', { headers: { accept: 'text/html' } }))
 assert.equal(page.status, 200)
@@ -630,7 +892,7 @@ assert.equal(requireWorkbench(host.ctx).registry.revision, 0)
 await host.close()
 assert.equal(loads.some(url => /@pluxel[+/]runtime|pglite|\\/pg\\//.test(url)), false)
 hook.deregister()
-const workbenchTestHost = await createTestHost({ workbench: true, services: [elysia(), fs({ backend: InMemory })] })
+const workbenchTestHost = await createTestHost({ workbench: true, services: [elysia(), fs({ backend: InMemory }), tinybase()] })
 assert.equal(typeof workbenchTestHost.workbench.open, 'function')
 await workbenchTestHost.dispose()
 console.log('ISOLATED_WORKBENCH_OK')
@@ -713,16 +975,30 @@ const hook = registerHooks({ load(url, context, next) {
  return next(url, context)
 } })
 const { createTestHost } = await import('@pluxel/test')
+const { BasePlugin, Plugin } = await import('@pluxel/core')
+const { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } = await import('@pluxel/core/toolchain')
 const { nodeModules, defineNodeModule } = await import('@pluxel/services/node')
 const { workers, defineWorkerTask } = await import('@pluxel/services/workers')
 await writeFile(new URL('./test-task.ts', import.meta.url), 'export default (value: number): number => value * 2')
-let ctx
 let artifact
-const host = await createTestHost({ services: [nodeModules(), workers(), { name: 'capture test owner', capabilities: [], prepare(input) { ctx = input.ctx } }] })
+class Owner extends BasePlugin {
+ async runTask() {
+  return this.ctx.workers.run(defineWorkerTask(import.meta.url, './test-task.ts'), 21)
+ }
+ async inspectArtifact() {
+  await this.ctx.nodeModules.use(defineNodeModule(import.meta.url, './test-task.ts'), url => { artifact = url })
+ }
+}
+Plugin()(Owner)
+__setPluginDefinition(Owner, {
+ abiVersion: PLUGIN_LOWERING_ABI_VERSION, kind: 'plugin',
+ definition: { entry: { kind: 'package-root', packageName: 'independent-service-consumer' }, exportName: 'Owner' },
+})
+const host = await createTestHost({ services: [nodeModules(), workers()] })
 try {
- const task = defineWorkerTask(import.meta.url, './test-task.ts')
- assert.equal(await ctx.workers.run(task, 21), 42)
- await ctx.nodeModules.use(defineNodeModule(import.meta.url, './test-task.ts'), url => { artifact = url })
+ const owner = await host.start(Owner)
+ assert.equal(await owner.runTask(), 42)
+ await owner.inspectArtifact()
  await access(artifact)
 } finally { await host.dispose(); hook.deregister() }
 await assert.rejects(access(artifact), { code: 'ENOENT' })

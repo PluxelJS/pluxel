@@ -8,7 +8,7 @@ import {
 	type ServiceInternalTestHost,
 } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Fs } from '@pluxel/services/fs'
+import { TinyBaseHost } from '@pluxel/services/tinybase'
 import { PluginCatalogLayoutService } from '../../src/management/services/management/PluginCatalogLayoutService.ts'
 import {
 	automaticCatalogGroups,
@@ -45,7 +45,7 @@ async function setup() {
 	return {
 		host,
 		layout: host.ctx.root.pluginCatalogLayout!,
-		storage: host.ctx.require(Fs).documents('services/management'),
+		storage: host.ctx.require(TinyBaseHost).documents('management'),
 	}
 }
 const document = (
@@ -135,7 +135,7 @@ describe('editable group document', () => {
 		expect(await storage.getText('plugin-groups.json')).toBeUndefined()
 	})
 	it('reads human-editable groups live, honors ungrouped, and automatically groups unspecified plugins', async () => {
-		const { host, layout, storage } = await setup()
+		const { layout, storage } = await setup()
 		const entries = [entry('A'), entry('B'), entry('C', ['D']), entry('D')]
 		await storage.put(
 			'plugin-groups.json',
@@ -147,8 +147,7 @@ describe('editable group document', () => {
 		])
 		await storage.put('plugin-groups.json', JSON.stringify(document([], [ref('C')])))
 		expect(await layout.listSections(entries)).toEqual([])
-		const directory = await host.ctx.require(Fs).directory('services/management')
-		await directory.unlink('plugin-groups.json')
+		await storage.put('plugin-groups.json', JSON.stringify(document()))
 		expect(await layout.listSections(entries)).toMatchObject([{ name: 'C' }])
 	})
 	it('persists explicit groups and orders as formatted references and round-trips', async () => {
@@ -236,11 +235,12 @@ describe('editable group document', () => {
 			[{ sectionId: 'manual:one', name: 'One', nodes: [node('A')] }],
 			entries,
 		)
-		const filesystem = host.ctx.require(Fs)
-		const documents = filesystem.documents('services/management')
+		const manager = host.ctx.require(TinyBaseHost)
+		const documents = manager.documents('management')
 		const cause = new Error('disk full')
-		vi.spyOn(filesystem, 'documents').mockReturnValue({
-			...documents,
+		vi.spyOn(manager, 'documents').mockReturnValue({
+			getText: (key) => documents.getText(key),
+			stat: (key) => documents.stat(key),
 			put: async () => {
 				throw cause
 			},

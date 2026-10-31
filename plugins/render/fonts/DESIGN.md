@@ -25,7 +25,7 @@ caller/provider generation 与 capacity。最终
 
 caller-triggered register/path-read/portable-read 在任何 copy、文件 IO 或 hash 前进入 generation-local owner-fair scheduler，
 同时约束 active、global queue 与 per-owner queue。caller stop 会 abort active cooperative task 并 O(1) 撤销 queued item；
-provider stop 拒绝 queue、等待 active task 与 managed/default serialization tail，再清理 native keys，避免新旧 generation
+provider stop 拒绝 queue、等待 active task 与 managed serialization tail，再清理 native keys，避免新旧 generation
 的 registry mutation 重叠。
 Managed mutation 继续使用单独的 serialized tail，以保持 storage/registry transaction 顺序；该 tail 的 accepted
 operation 数受 `maxPendingManagedTasks` 限制，queue full 不先 snapshot upload bytes。
@@ -40,10 +40,11 @@ provider generation 启动时捕获 baseline，并在 `families[].source` 中区
 scanner/watcher；进程中后来安装的系统字体在 provider/process restart 后出现。
 
 默认 family 解析顺序为：显式 host `defaultFamily`、持久化 provider preference、操作系统已安装字体优先表、
-`sans-serif` generic。`defaultFont` 同时给出 raw family 与 CSS-safe family。选择 mutation 在 provider queue 中串行并
-原子持久化；选择暂时不可用时保留 preference、运行期降级，family 重现后自动恢复。
+`sans-serif` generic。`defaultFont` 同时给出 raw family 与 CSS-safe family。选择 mutation 在 provider queue 中串行，修改 provider node 唯一 Store 的 `defaultFamily` Value 并等待 `tinybase.flush()` 后发布；选择暂时不可用时保留 preference、运行期降级，family 重现后自动恢复。
 
-FS 只支撑上传与偏好保存。未安装时基础字体能力正常启动，持久化 mutation 明确报 `PERSISTENCE_REQUIRED`。记录通过 `writeFileAtomic()` 提交后才发布；缺失的 `managed/` 目录视为空集合，其他读取与损坏错误仍失败。配置文件注册跟随 provider cleanup，预算等配置在 restart 应用。
+默认偏好由 Host TinyBase 恢复与保存；缺少服务时基础能力仍运行，选择 mutation 明确报 `PERSISTENCE_REQUIRED`。偏好保存失败保留已应用选择，writer 故障后不再接纳新偏好提交，也不写补偿快照。
+
+FS 只保存 `managed/*.font` 二进制资源。文件内的 ID、文件名、family、长度与安装时间参与内容寻址校验及原子字体安装，不是独立可编辑偏好；保留单文件 envelope，避免把字体安装拆成跨 FS/Store 的两次提交。上传通过 `writeFileAtomic()` 提交后才发布；缺失的 `managed/` 目录视为空集合，其他读取与损坏错误仍失败。未安装 FS 时上传/删除报 `PERSISTENCE_REQUIRED`。配置文件注册跟随 provider cleanup，预算等配置在 restart 应用。
 
 默认选择放在 constructor 创建的稳定 state object，避免 caller-bound prototype view 的顶层 scalar assignment 变成
 caller-local shadow。`revision` 跟随 FontsPlugin 管理的 native registration/default selection 变化，并由包模块共享以

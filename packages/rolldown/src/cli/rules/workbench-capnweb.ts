@@ -11,12 +11,18 @@ export function workbenchCapnwebRule(
 		field && typeof field === 'object' && !Array.isArray(field)
 			? { ...(field as Record<string, unknown>) }
 			: {}
-	const previous = manifest.workbenchCapnweb
-	const next = context.workbenchCapnwebVersion
-	if (previous === next) return undefined
-	if (next) manifest.workbenchCapnweb = next
-	else delete manifest.workbenchCapnweb
+	const messages: string[] = []
+	for (const [key, next] of [
+		['workbenchCapnweb', context.workbenchCapnwebVersion],
+		['tinybase', context.tinybaseVersion],
+	] as const) {
+		if (manifest[key] === next) continue
+		if (next) manifest[key] = next
+		else delete manifest[key]
+		messages.push(`pluxel.${key} ${next ? `set to ${next}` : 'removed'}`)
+	}
+	if (messages.length === 0) return undefined
 	if (Object.keys(manifest).length > 0) pkg.pluxel = manifest
 	else delete pkg.pluxel
-	return [`pluxel.workbenchCapnweb ${next ? `set to ${next}` : 'removed'}`]
+	return messages
 }

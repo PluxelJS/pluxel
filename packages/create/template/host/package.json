@@ -23,6 +23,7 @@
 		"exact-mirror": "catalog:backend",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
+		"tinybase": "catalog:backend",
 		"typebox": "catalog:backend"
 	},
 	"devDependencies": {

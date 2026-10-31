@@ -48,7 +48,7 @@ function Bot() {
 			}
 			await query.refetch()
 			setDraft(undefined)
-			host.notify({ message: '机器人配置已保存', tone: 'success' })
+			host.notify({ message: '机器人指令已更新', tone: 'success' })
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause))
 		}

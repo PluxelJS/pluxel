@@ -39,6 +39,10 @@
 			"@pluxel/source": "./src/execution.ts",
 			"default": "./dist/internal/protocol.mjs"
 		},
+		"./internal/shared-runtime": {
+			"@pluxel/source": "./src/shared-runtime.ts",
+			"default": "./dist/internal/shared-runtime.mjs"
+		},
 		"./sources": {
 			"@pluxel/source": "./src/sources.ts",
 			"default": "./dist/sources.mjs"
@@ -53,6 +57,7 @@
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/protocol": "./dist/internal/protocol.mjs",
+			"./internal/shared-runtime": "./dist/internal/shared-runtime.mjs",
 			"./sources": "./dist/sources.mjs",
 			"./package.json": "./package.json"
 		},
@@ -71,7 +76,8 @@
 		"semver": "catalog:prod",
 		"std-env": "catalog:prod",
 		"superjson": "catalog:validation",
-		"valibot-form": "workspace:^"
+		"valibot-form": "workspace:^",
+		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/core": "workspace:*",

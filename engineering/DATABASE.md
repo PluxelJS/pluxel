@@ -2,6 +2,8 @@
 
 `@pluxel/services/database` 是显式安装的 capability；`standardServices()` 与 `servicesPreset()` 都不默认安装。PostgreSQL 是唯一 SQL dialect，Drizzle 是作者查询界面。用法见 [数据库指南](../docs/plugin-development/database.md)。
 
+配置、偏好与有界结构化状态由 [TinyBase](TINYBASE.md) 托管；官方插件的这类状态不依赖 Database。SQL 服务用于明确需要查询、约束与事务的业务，继续作为 Services 子入口交付，不单独发布数据库包。
+
 修改查询 handle 读 [Author boundary](#author-boundary)，修改安装/driver 读 [Backend ownership](#backend-ownership)，修改数据换代读 [Schema evolution](#schema-evolution)，修改通知/排空读 [Invalidation and outbox](#invalidation-and-outbox) 与 [Resource control](#resource-control)。
 
 ## Author boundary

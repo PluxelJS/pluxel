@@ -139,9 +139,10 @@ Workbench 的最小组合：
 ```ts no-twoslash
 import { elysia } from '@pluxel/services/elysia'
 import { fs, InMemory } from '@pluxel/services/fs'
+import { tinybase } from '@pluxel/services/tinybase'
 
 await using host = await createTestHost({
-	services: [elysia(), fs({ backend: InMemory })],
+	services: [elysia(), fs({ backend: InMemory }), tinybase()],
 	workbench: true,
 })
 await host.start(OrdersPlugin)
@@ -154,7 +155,7 @@ using snapshot = await opened.api.snapshotDto()
 expect(snapshot.openOrders).toBe(0)
 ```
 
-`workbench` 和 `management` 是测试交互平面的组合选项：它们选择测试 artifact、身份交接与资源跟踪，而不是业务服务快捷开关。HTTP 与 FS 仍是显式前置，不因启用选项而偷偷装入。生产应用继续使用生产 Workbench/Management 装配，不把测试后端传给生产 Host。
+`workbench` 和 `management` 是测试交互平面的组合选项：它们选择测试 artifact、身份交接与资源跟踪，而不是业务服务快捷开关。HTTP、FS 与 TinyBase 仍是显式前置，不因启用选项而偷偷装入。生产应用继续使用生产 Workbench/Management 装配，不把测试后端传给生产 Host。
 
 ## 一套生命周期词汇
 

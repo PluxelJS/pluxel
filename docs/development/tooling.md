@@ -15,7 +15,7 @@ description: 了解脚手架、插件构建、应用执行、HMR、源码联调�
 - 读取当前来源文档：`pluxel docs [path]`。
 - 在 workspace 生成 Plugin package：`pluxel new`。
 - 构建当前 Plugin package：`pluxel build`。
-- 生成/检查/rebase database migration（`migrations` 策略）：`pluxel database generate/check/rebase`。
+- 生成/检查/rebase 托管 SQL migration（`migrations` 策略）：`pluxel database generate/check/rebase`，见[数据库](../plugin-development/database.md)。
 - 创建/检查/验证应用发行物：`pluxel distribution create/inspect/verify`。
 - 写入/关联 delivery marker：`pluxel distribution mark/correlate`。
 - 发布 npm package 并通知 market：`pluxel publish`。

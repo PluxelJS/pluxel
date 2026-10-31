@@ -43,6 +43,7 @@
 		"elysia": "catalog:prod",
 		"exact-mirror": "catalog:prod",
 		"react": "catalog:frontend",
+		"tinybase": "catalog:prod",
 		"typebox": "catalog:dev",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^",

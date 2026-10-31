@@ -17,6 +17,7 @@
 		"---按需扩展---",
 		"http",
 		"commands",
+		"tinybase",
 		"fs",
 		"database",
 		"vault",

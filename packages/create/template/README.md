@@ -98,6 +98,9 @@ Native deployment keeps these tools in development dependencies. Development con
 - `packages/domain` provides framework-neutral Todo value rules with ordinary Vitest tests.
 - `plugins/todo` owns Todo state and one exported Valibot config schema. The host reuses that
   schema to validate the `EXAMPLE_TODO_MAX_ITEMS` first-start seed read by the application factory.
+  Todo rows and their next ID use the Plugin's native TinyBase Store. The seed title applies only
+  when no saved snapshot exists; an empty saved collection stays empty. Methods update memory
+  synchronously, and the Host saves changes and drains pending writes on close.
   Add application-specific environment variables to your deployment configuration explicitly.
 - `plugins/http` declares `TodoPlugin` as a required constructor dependency and validates HTTP input.
 - `plugins/todo` observes `AuditPlugin` through `definePluginRef()` as an optional integration.

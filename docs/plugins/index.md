@@ -4,7 +4,7 @@ description: 将官方插件加入应用清单、配置和启动策略，并按�
 icon: Blocks
 ---
 
-先用 [快速开始](../getting-started/index.md) 创建并跑通应用，再按业务任务添加插件。宿主可安装 [HTTP](../plugin-development/http.md)、[日志](../plugin-development/logging.md)、[数据库](../plugin-development/database.md) 与 [Worker](../plugin-development/node-artifacts.md) 等服务；本目录提供认证、出站请求、图像生成等可选能力。
+先用 [快速开始](../getting-started/index.md) 创建并跑通应用，再按业务任务添加插件。宿主可安装 [HTTP](../plugin-development/http.md)、[日志](../plugin-development/logging.md)、[TinyBase](../plugin-development/tinybase.md)、[SQL Database](../plugin-development/database.md) 与 [Worker](../plugin-development/node-artifacts.md) 等服务；SQL 也可由应用完全自管。本目录提供认证、出站请求、图像生成等可选能力。
 
 ## 把一个插件加入应用
 

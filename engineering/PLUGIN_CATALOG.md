@@ -1,14 +1,14 @@
 # Plugin Catalog Groups
 
 Management 拥有插件目录分组；它是管理布局，不是插件能力、生命周期、provider selection 或 Workbench placement。
-用户操作和文件格式见 [`docs/workbench/plugin-groups.md`](../docs/workbench/plugin-groups.md)。
+用户操作和文档格式见 [`docs/workbench/plugin-groups.md`](../docs/workbench/plugin-groups.md)。
 
 修改自动组规则读 [Automatic grouping](#automatic-grouping)，修改保存/恢复读 [Explicit document](#explicit-document)，修改客户端提交读 [Management protocol](#management-protocol)。所有排序与布局都以 committed definition facts 为输入，不改变运行图。
 
 ## Ownership and projection
 
 - `@Plugin` 和 host route 不声明分类规则。Native/Vite 共用 Management service。
-- Management disabled 不创建 service、不读取或写入分组文件。
+- Management disabled 不创建 service、不读取或写入分组文档。
 - coordinator 的一次 pinned committed view 同时投影 statuses、summary 和 declaration facts；不读取 unpublished HMR draft。
 - 分类以 definition family 为单位，所有 default/fork node 共用位置。读取 orphan reference 不 intern slot、不创建 Context 或资源。
 - `catalog-groups.ts` 只计算布局；`PluginCatalogLayoutService` 拥有文档校验、串行读写和 persistence IO。
@@ -32,16 +32,16 @@ Management 拥有插件目录分组；它是管理布局，不是插件能力、
 
 ## Explicit document
 
-唯一文件是 FS 的 `services/management/plugin-groups.json`，通过 root 的纯文档适配借用同一后端，严格 version 1，保存可读 canonical definition references。
+唯一文档是 `TinyBaseHost.documents('management')` 中的 `plugin-groups.json`，通过 root 私有适配借用同一 FS backing，严格 version 1，保存可读 canonical definition references。
 完整 shape、缺省行为和示例由用户文档定义。无文件与空文档等价；读取不写默认文件。旧布局文件不读取、不迁移。
 
 人工 group 的 ID、名称、成员顺序和空组独立于当前 catalog 存活。未知但语法有效的 reference 保持休眠；definition 回归时恢复。
 同一 reference 只能出现在一个 group 或 ungrouped 中；任何重复 membership、未知字段、非法 reference 或重复 ID 都拒绝。
 文件最多 2,000,000 个 UTF-16 code units、1000 groups、10000 references。输出格式化为带缩进和末尾换行的 JSON。
 
-service 每次操作读取文件文本，文本未变不重复 parse。读写在同一 host 内串行；修改校验成功才替换 active document。
+service 每次操作读取已确认文档文本，文本未变不重复 parse。读写在同一 host 内串行；修改校验成功才替换 active document。
 磁盘文件无效时请求明确失败，不覆盖文件；修复或恢复默认后下一次请求可成功，不把失败缓存为永久 rejected ready promise。
-文档 `put(key, text)` 通过同一 FS 原子提交，成功后才发布新内存状态。没有额外 watcher、timer 或平行文件后端。
+文档 `put(key, text)` 通过 [TinyBase](TINYBASE.md) 的串行 candidate/confirm 提交，成功后才发布新内存状态。没有额外 watcher、timer 或平行文件后端。
 外部文件作者应原子替换；多个进程/编辑器之间不承诺锁或 compare-and-swap，完整布局保存采用最后成功写入结果。
 
 ## Management protocol

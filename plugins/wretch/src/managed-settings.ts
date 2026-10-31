@@ -1,9 +1,11 @@
 import {
+	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { writeFileAtomic, type FsPromises } from '@pluxel/services/fs'
+import { createHash } from 'node:crypto'
+import type { Row, Store } from 'tinybase'
 import type { Dispatcher } from 'undici'
 import type { WretchManagedSettings } from './workbench.ts'
 
@@ -31,7 +33,7 @@ export type ManagedSettingsState = {
 	readonly owner: PluginNodeAddress
 	current: WretchManagedSettings
 	dispatcher?: Dispatcher
-	lock: AsyncLock
+	active: boolean
 }
 
 class AsyncLock {
@@ -48,6 +50,130 @@ class AsyncLock {
 			release()
 		}
 	}
+}
+
+const SETTINGS_TABLE = 'consumerSettings'
+
+/** A failure after this boundary leaves the new settings saved and applied. */
+export class WretchSettingsCleanupError extends Error {
+	readonly code = 'SETTINGS_APPLIED_CLEANUP_FAILED'
+	readonly applied = true
+
+	constructor(cause: unknown) {
+		super('Managed Wretch settings were saved and applied, but previous proxy cleanup failed', {
+			cause,
+		})
+		this.name = 'WretchSettingsCleanupError'
+	}
+}
+
+/** Serializes the whole provider table: one consumer cannot flush another's candidate. */
+export class ManagedSettingsStore {
+	private readonly commits = new AsyncLock()
+	private fault?: unknown
+	private faulted = false
+
+	constructor(
+		private readonly store: Store,
+		private readonly flush: () => Promise<void>,
+	) {
+		for (const [id, row] of Object.entries(store.getTable(SETTINGS_TABLE))) {
+			parseStoredSettings(row, undefined, id)
+		}
+	}
+
+	load(owner: PluginNodeAddress): Promise<ManagedSettingsState> {
+		return this.commits.run(async () => {
+			if (this.faulted) throw this.fault
+			const normalizedOwner = parsePluginNodeAddress(owner)
+			const id = settingsRowId(normalizedOwner)
+			const settings = this.store.hasRow(SETTINGS_TABLE, id)
+				? parseStoredSettings(this.store.getRow(SETTINGS_TABLE, id), normalizedOwner, id)
+				: emptySettings()
+			return {
+				owner: normalizedOwner,
+				current: settings,
+				dispatcher: await dispatcherFor(settings.proxyUrl),
+				active: true,
+			}
+		})
+	}
+
+	async replace(
+		state: ManagedSettingsState,
+		input: unknown,
+		maxTimeoutMs = 0,
+	): Promise<WretchManagedSettings> {
+		const next = normalizeManagedSettings(input)
+		if (maxTimeoutMs > 0 && next.timeoutMs !== undefined && next.timeoutMs > maxTimeoutMs) {
+			throw new RangeError(`timeoutMs cannot exceed the host limit (${maxTimeoutMs}ms)`)
+		}
+		return this.commit(state, next, false)
+	}
+
+	reset(state: ManagedSettingsState): Promise<WretchManagedSettings> {
+		return this.commit(state, emptySettings(), true)
+	}
+
+	async dispose(state: ManagedSettingsState): Promise<void> {
+		state.active = false
+		await this.commits.run(async () => {
+			const dispatcher = state.dispatcher
+			state.dispatcher = undefined
+			await dispatcher?.close()
+		})
+	}
+
+	private commit(
+		state: ManagedSettingsState,
+		next: WretchManagedSettings,
+		reset: boolean,
+	): Promise<WretchManagedSettings> {
+		return this.commits.run(async () => {
+			if (!state.active) throw new Error('Managed Wretch settings belong to a stopped generation')
+			if (this.faulted) throw this.fault
+			const dispatcher = await dispatcherFor(next.proxyUrl)
+			try {
+				this.store.transaction(() => {
+					const id = settingsRowId(state.owner)
+					if (reset) this.store.delRow(SETTINGS_TABLE, id)
+					else
+						this.store.setRow(SETTINGS_TABLE, id, {
+							version: 1,
+							owner: JSON.stringify(state.owner),
+							settings: JSON.stringify(next),
+						})
+				})
+				await this.flush()
+			} catch (error) {
+				// Host faults the writer and blocks autosave/close from retrying this candidate.
+				this.faulted = true
+				this.fault = error
+				const [cleanup] = await Promise.allSettled([dispatcher?.close()])
+				if (cleanup.status === 'rejected') {
+					throw new AggregateError(
+						[error, cleanup.reason],
+						'Wretch settings save and candidate cleanup failed',
+						{ cause: error },
+					)
+				}
+				throw error
+			}
+			const previous = state.dispatcher
+			state.current = next
+			state.dispatcher = dispatcher
+			try {
+				await previous?.close()
+			} catch (cause) {
+				throw new WretchSettingsCleanupError(cause)
+			}
+			return state.current
+		})
+	}
+}
+
+function settingsRowId(owner: PluginNodeAddress): string {
+	return createHash('sha256').update(encodePluginNodeAddressBytes(owner)).digest('hex')
 }
 
 function emptySettings(): WretchManagedSettings {
@@ -126,112 +252,29 @@ async function dispatcherFor(proxyUrl?: string): Promise<Dispatcher | undefined>
 	return new ProxyAgent(proxyUrl)
 }
 
-export async function loadManagedSettings(
-	storage: FsPromises,
-	key: string,
-	owner: PluginNodeAddress,
-): Promise<ManagedSettingsState> {
-	const normalizedOwner = parsePluginNodeAddress(owner)
-	const text = await storage.readFile(key, 'utf8').catch((error: unknown): string | undefined => {
-		if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
-			return undefined
-		throw error
-	})
-	const settings = text === undefined ? emptySettings() : parseStoredSettings(text, normalizedOwner)
-	return {
-		owner: normalizedOwner,
-		current: settings,
-		dispatcher: await dispatcherFor(settings.proxyUrl),
-		lock: new AsyncLock(),
-	}
-}
-
-export async function replaceManagedSettings(
-	state: ManagedSettingsState,
-	storage: FsPromises,
-	key: string,
-	input: unknown,
-	maxTimeoutMs = 0,
-): Promise<WretchManagedSettings> {
-	const next = normalizeManagedSettings(input)
-	if (maxTimeoutMs > 0 && next.timeoutMs !== undefined && next.timeoutMs > maxTimeoutMs) {
-		throw new RangeError(`timeoutMs cannot exceed the host limit (${maxTimeoutMs}ms)`)
-	}
-	return state.lock.run(async () => {
-		const dispatcher = await dispatcherFor(next.proxyUrl)
-		try {
-			await writeFileAtomic(storage, key, serializeStoredSettings(state.owner, next))
-		} catch (error) {
-			await dispatcher?.close()
-			throw error
-		}
-		const previous = state.dispatcher
-		state.current = next
-		state.dispatcher = dispatcher
-		await previous?.close()
-		return state.current
-	})
-}
-
 function parseStoredSettings(
-	text: string,
-	expectedOwner: PluginNodeAddress,
+	record: Row,
+	expectedOwner: PluginNodeAddress | undefined,
+	id: string,
 ): WretchManagedSettings {
-	const input = JSON.parse(text) as unknown
-	if (!input || typeof input !== 'object' || Array.isArray(input)) {
-		throw new TypeError('Managed Wretch settings file must be an object')
-	}
-	const record = input as Record<string, unknown>
 	const keys = Object.keys(record)
 	if (
-		keys.length !== 4 ||
-		!keys.includes('format') ||
+		keys.length !== 3 ||
 		!keys.includes('version') ||
 		!keys.includes('owner') ||
 		!keys.includes('settings') ||
-		record.format !== 'pluxel-wretch-managed-settings' ||
-		record.version !== 2
+		record.version !== 1 ||
+		typeof record.owner !== 'string' ||
+		typeof record.settings !== 'string'
 	) {
-		throw new TypeError('Managed Wretch settings file has an unsupported format')
+		throw new TypeError('Managed Wretch settings row has an unsupported format')
 	}
-	const owner = parsePluginNodeAddress(record.owner)
-	if (!pluginNodeAddressEqual(owner, expectedOwner)) {
-		throw new TypeError('Managed Wretch settings owner does not match its storage key')
+	const owner = parsePluginNodeAddress(JSON.parse(record.owner) as unknown)
+	if (
+		settingsRowId(owner) !== id ||
+		(expectedOwner && !pluginNodeAddressEqual(owner, expectedOwner))
+	) {
+		throw new TypeError('Managed Wretch settings owner does not match its row ID')
 	}
-	return normalizeManagedSettings(record.settings)
-}
-
-function serializeStoredSettings(
-	owner: PluginNodeAddress,
-	settings: WretchManagedSettings,
-): string {
-	return JSON.stringify({
-		format: 'pluxel-wretch-managed-settings',
-		version: 2,
-		owner,
-		settings,
-	})
-}
-
-export async function resetManagedSettings(
-	state: ManagedSettingsState,
-	storage: FsPromises,
-	key: string,
-): Promise<WretchManagedSettings> {
-	const next = emptySettings()
-	return state.lock.run(async () => {
-		await storage.rm(key, { force: true })
-		const previous = state.dispatcher
-		state.current = next
-		state.dispatcher = undefined
-		await previous?.close()
-		return state.current
-	})
-}
-
-export async function disposeManagedSettings(state: ManagedSettingsState): Promise<void> {
-	await state.lock.run(async () => {
-		await state.dispatcher?.close()
-		state.dispatcher = undefined
-	})
+	return normalizeManagedSettings(JSON.parse(record.settings) as unknown)
 }

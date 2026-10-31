@@ -21,6 +21,8 @@ export default defineConfig({
 				cache: {
 					input: [
 						'packages/workbench/package.json',
+						'packages/host/package.json',
+						'packages/host/src/shared-runtime.ts',
 						'packages/workbench/src/workbench/shared-transport.ts',
 						'packages/workbench/src/workbench/definition.ts',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),

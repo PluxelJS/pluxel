@@ -117,7 +117,12 @@ definition；从源码编译的定义以本次输出为权威，不再读取同�
 
 Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Application root 必须解析全部 Shell-provided peers；producer 的 React/Workbench/Mantine 与 winner 精确一致。开发显式选择源码 exports 与 development 条件；Plugin/package 和 application 的生产源码编译显式选择源码 exports 与 production 条件，包含 shared 导出分析与 DTS 解析。低层 builder 的 `packageMode: 'source'` 表达这条路径，默认仍要求完整 dynamic types；`distribution` 使用 built exports。不从目录或已有 dist 猜测，也不在缺少 built entry 时切换源码。Production builder 按同一 build contract 生成 Shell 与 producer，并用 canonical plan/compatibility set 校验全部候选。
 
-Rolldown 的发布制品从声明的源码入口内联 Workbench 的纯 transport 准入规则；规则仍由 Workbench 拥有，不加载其运行时或 Services。Vite Task 的 Rolldown compile inputs 显式包含该源码与 Workbench 清单，规则或导出变更会使内联产物失效。包构建以 Workbench 清单定位其 capnweb 安装，校验不要求 Workbench 的 JS 制品已经生成。
+Rolldown 的发布制品内联 Workbench 的纯 transport 规则与 Host 的 `internal/shared-runtime`
+metadata 叶子，不加载 Workbench／Services 运行时。共用叶子检查 manifest、catalog 与精确安装版；
+Workbench target 与 TinyBase 服务消费者分别产生自身的版本事实。Vite Task 的 Rolldown compile
+inputs 显式包含这两个源码入口及所属包清单，规则或导出变更会使内联产物失效。包构建以能力
+所有者的清单定位原生安装，不要求所有者的 JS 制品已经生成。共享原生 import 保留为外部依赖，
+应用装配在验证原安装后接到 Host copy；TinyBase 的上游子路径与运行环境条件不被改成根入口。
 
 固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 的 used-export facade 在真实 Mantine producer 中曾遗漏
 命名导出；升级到 1.23.3 后保留此回归边界，builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，

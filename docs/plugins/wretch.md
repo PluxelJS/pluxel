@@ -13,7 +13,7 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 vp exec pluxel pncat add @pluxel/plugin-wretch
 ```
 
-普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 [FS 服务](../plugin-development/fs.md)；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
+普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 Host TinyBase 服务（标准服务组合已包含）；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
 
 ## 第一个 HTTP consumer
 
@@ -197,7 +197,7 @@ protected override async init(): Promise<void> {
 
 managed settings 按 caller 的完整 Plugin node address 隔离并持久化。`client` 每次发送请求前读取最新状态，所以设置保存后，已缓存的 immutable client 也会自动生效。
 
-无管理界面时，consumer 在启用后通过同一依赖读取、保存或重置；失败继续抛出，调用方决定是否重试：
+无管理界面时，consumer 在启用后通过同一依赖读取、保存或重置；失败继续抛出：
 
 ```ts no-twoslash
 await this.http.enableManagedSettings()
@@ -209,7 +209,7 @@ const current = this.http.managedSettings
 await this.http.resetManagedSettings()
 ```
 
-保存是显式操作，不在每次启动时自动覆盖旧值。reset 删除 caller 保存值，恢复原生 client 的 headers/proxy 和 provider timeout。应用 endpoint、鉴权与重试仍属于 consumer 自身配置或 Vault；此文件不是第二份 provider 部署配置。后续启动若降低 provider timeout，已有 caller timeout 会按新上限截断。
+保存是显式操作，不在每次启动时自动覆盖旧值。reset 删除 caller 保存值，恢复原生 client 的 headers/proxy 和 provider timeout。应用 endpoint、鉴权与重试仍属于 consumer 自身配置或 Vault；这些设置不是第二份 provider 部署配置。后续启动若降低 provider timeout，已有 caller timeout 会按新上限截断。
 
 `WretchManagedSettings` 的真实形状是：
 
@@ -227,7 +227,9 @@ type WretchManagedSettings = Readonly<{
 - proxy 必须是无 credential、path、query 或 hash 的 HTTP(S) origin；authenticated proxy 不受支持；
 - consumer `timeoutMs` 必须是正整数，并且只能收紧 host timeout；host timeout 为 `0` 时，它成为有效 timeout。
 
-managed settings 保存于 Wretch provider 的 FS 目录，仍按完整 consumer owner 区分；它不是 secret store。不要把 access token、API key 或 cookie 放入该 contract。Workbench disabled 时不会创建 UI backend，但已显式启用的 persisted settings 仍会应用于核心 HTTP client。
+managed settings 保存于 Wretch provider node 的 TinyBase Store，`consumerSettings` 表按完整 consumer owner 分行；consumer 自己的业务 Store 独立可用。恢复、文件位置和保存队列由 Host 负责。不要把 access token、API key 或 cookie 放入该 contract。Workbench disabled 时不会创建 UI backend，但已显式启用的 persisted settings 仍会应用于核心 HTTP client。
+
+保存和 reset 会等待 Host 的 `flush()` 确认，之后才让请求和页面看到新设置；init 内也可保存或 reset。保存失败保留已应用设置，并阻断同一 provider Store 的后续提交，直到显式处理宿主存储故障。其他 consumer 仍可读取其已应用状态。提交后的旧 proxy 清理失败使用 `WretchSettingsCleanupError`，`code` 为 `SETTINGS_APPLIED_CLEANUP_FAILED`、`applied` 为 `true`；这时设置已经保存并生效。
 
 ## 放置 Workbench Attachment
 

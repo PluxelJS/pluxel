@@ -94,6 +94,7 @@ export default defineConfig({
 		node: './src/node.ts',
 		workers: './src/workers.ts',
 		commands: './src/commands.ts',
+		tinybase: './src/tinybase.ts',
 		fs: './src/fs.ts',
 		'fs/browser': './src/fs/browser.ts',
 		vault: './src/vault.ts',

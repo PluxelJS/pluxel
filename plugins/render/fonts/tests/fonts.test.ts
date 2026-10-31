@@ -1,4 +1,5 @@
-import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/services/fs'
+import { fs, InMemory, Passthrough, writeFileAtomic } from '@pluxel/services/fs'
+import { TinyBase, tinybase } from '@pluxel/services/tinybase'
 import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
@@ -441,7 +442,6 @@ describe('FontsPlugin', () => {
 	it('fails the provider instead of silently skipping corrupt persisted state', async () => {
 		for (const [key, value, message] of [
 			[`managed/${'a'.repeat(43)}.font`, new Uint8Array([1, 2, 3]), 'Managed font is corrupt'],
-			['settings/default-font.json', '{broken', 'Default font preference is corrupt'],
 		] as const) {
 			{
 				await using host = await createTestHost({
@@ -468,6 +468,85 @@ describe('FontsPlugin', () => {
 				expect(host.isRunning(FontsLazyConsumer)).toBe(false)
 			}
 		}
+	})
+
+	it('rejects malformed restored default preferences without rewriting them', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ fs: { backend: InMemory } }),
+		})
+		await host.start(FontsPlugin)
+		const state = host.require(FontsPlugin).ctx.require(TinyBase)
+		const store = await state.open()
+		store.setValue('defaultFamily', true)
+		await state.flush()
+		await host.stop(FontsPlugin)
+		const failure = await host.commitExpectFail((change) => change.start(FontsPlugin))
+		expect(failure.lifecycleReport.issues).toContainEqual(
+			expect.objectContaining({
+				plugin: pluginNodeAddressOf(FontsPlugin),
+				kind: 'start-failed',
+				message: expect.stringContaining('Default font preference is corrupt'),
+			}),
+		)
+		expect(store.getValue('defaultFamily')).toBe(true)
+	})
+
+	it('stores the default in the provider Store and persists reset across generations', async () => {
+		await using host = await createTestHost({
+			services: standardServices({ fs: { backend: InMemory } }),
+		})
+		await host.start(FontsPlugin)
+		let fonts = host.require(FontsPlugin)
+		await fonts.setPreferredFamily('monospace')
+		const store = await fonts.ctx.require(TinyBase).open()
+		expect(store.getValue('defaultFamily')).toBe('monospace')
+		await host.restart(FontsPlugin)
+		fonts = host.require(FontsPlugin)
+		expect(fonts.defaultFont).toMatchObject({ preferredFamily: 'monospace', source: 'preference' })
+		await fonts.setPreferredFamily(null)
+		await host.restart(FontsPlugin)
+		fonts = host.require(FontsPlugin)
+		expect(fonts.defaultFont.preferredFamily).toBeUndefined()
+		const restored = await fonts.ctx.require(TinyBase).open()
+		expect(restored.hasValue('defaultFamily')).toBe(false)
+	})
+
+	it('keeps the applied preference after a failed save and never retries the candidate', async () => {
+		const prefix = await mkdtemp(join(tmpdir(), 'pluxel-fonts-save-failure-'))
+		directories.push(prefix)
+		let fail = false
+		let attempts = 0
+		const native = {
+			...nativeFs,
+			promises: {
+				...nativeFs.promises,
+				async rename(
+					from: Parameters<typeof nativeFs.promises.rename>[0],
+					to: Parameters<typeof nativeFs.promises.rename>[1],
+				) {
+					if (fail) {
+						attempts += 1
+						throw new Error('Font preference backing rejected')
+					}
+					return nativeFs.promises.rename(from, to)
+				},
+			},
+		}
+		const host = await createTestHost({
+			services: [fs({ backend: Passthrough, fs: native, prefix }), tinybase()],
+		})
+		const fonts = await host.start(FontsPlugin)
+		await fonts.setPreferredFamily('serif')
+		const store = await fonts.ctx.require(TinyBase).open()
+		fail = true
+		await expect(fonts.setPreferredFamily('monospace')).rejects.toMatchObject({
+			code: 'SAVE_FAILED',
+		})
+		expect(fonts.defaultFont).toMatchObject({ preferredFamily: 'serif', source: 'preference' })
+		expect(store.getValue('defaultFamily')).toBe('monospace')
+		await expect(fonts.setPreferredFamily(null)).rejects.toMatchObject({ code: 'SAVE_FAILED' })
+		await expect(host.dispose()).rejects.toThrow(Error)
+		expect(attempts).toBe(1)
 	})
 
 	it('renders direct consumer and provider-owned Workbench views', async () => {

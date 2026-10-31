@@ -14,23 +14,21 @@
 
 ## 数据与目录所有者
 
-| 数据              | 固定目录                    | 领域责任                                    |
-| ----------------- | --------------------------- | ------------------------------------------- |
-| Host 配置、图策略 | `host/config`、`host/state` | Host 保留文档编码、revision、确认与 flush   |
-| Vault             | `services/vault`            | 加密、身份、key envelope、KV、blob 与事务锁 |
-| Logging policy    | `services/logging`          | profile 编码、pending flush 和错误状态      |
-| Management layout | `services/management`       | 校验、串行修改和 RPC 失败回执               |
-| Plugin node       | `plugins/<physicalKey>`     | 插件业务自己的文件格式、并发和发布顺序      |
+| 数据               | 固定目录                                            | 领域责任                                                         |
+| ------------------ | --------------------------------------------------- | ---------------------------------------------------------------- |
+| TinyBase snapshots | `services/tinybase/nodes`、`services/tinybase/host` | Store 与 Host namespace 的恢复、预算、保存和故障由 TinyBase 拥有 |
+| Vault              | `services/vault`                                    | 加密、身份、key envelope、KV、blob 与事务锁                      |
+| Plugin node        | `plugins/<physicalKey>`                             | 插件业务自己的文件格式、并发和发布顺序                           |
 
 physical key 使用唯一 `PluginNodeAddress` canonical bytes 的 SHA-256；包含 fork，排除 generation、display name、包版本和安装路径。Node 与浏览器使用同一可移植摘要实现。Part 共用所属 Plugin 目录，目录缓存不持有 Plugin、Part 或 generation Context。停止、HMR 和 fork 删除不隐式清理持久数据。
 
-文件目录固定绑定数据所有者；Wretch 的 consumer 设置仍存放在 provider 目录，并保留完整 consumer owner envelope。FS 不接管 Vault、Cache、Fonts 等领域的身份验证、预算和 revision。
+文件目录固定绑定数据所有者；Wretch 的 consumer 设置与 Fonts 偏好已由 [TinyBase](TINYBASE.md) 承载，不再属于 PluginFs 文件。FS 不接管 Vault、Cache、Fonts 等领域的身份验证、预算和 revision。
 
 ## Host 文档与关闭
 
-`configRecords.storage`、`state.storage` 唯一形式为同步 `(root: RootContext) => HostDocumentStorage`，在 root 创建后、任何文档 IO 前各解析一次并校验。FS 接线为 `root => root.require(Fs).documents('host/config')`；外部嵌入应用也可返回原有借用适配，不转交连接所有权。省略 storage 时仍为内存，不因安装 FS 自动持久化。
+`configRecords.storage`、`state.storage` 唯一形式为同步 `(root: RootContext) => HostDocumentStorage`，在 root 创建后、任何文档 IO 前各解析一次并校验。官方接线为 `root => root.require(TinyBaseHost).documents('config')`；TinyBase 的私有 backing 借用 FS `documents()`。外部嵌入应用可返回原有借用适配，不转交连接所有权。省略 storage 时仍为内存，不因安装服务自动持久化。
 
-`HostDocumentStorage` 仅含 `getText(key)`、`put(key, text)`、`stat(key)`。`put` 无条件要求完整原子提交后才 resolve，不接收可选 atomic 标记。只有确实缺失返回 `undefined`；损坏内容保留原文件并失败。Logging 的 `policyStore` 同样是同步 root factory，经 `createPluginLogPolicyStore(root.require(Fs).documents('services/logging'))` 借用文档接口。
+`HostDocumentStorage` 仅含 `getText(key)`、`put(key, text)`、`stat(key)`。`put` 无条件要求完整原子提交后才 resolve，不接收可选 atomic 标记。只有确实缺失返回 `undefined`；损坏内容保留原文件并失败。Logging 的 `policyStore` 同样是同步 root factory；官方 preset 经 TinyBase `documents('logging')` 借用文档接口。领域格式与完整确认不由 FS 解释。
 
 FS 清理注册到 `root.effects` 的 `final` 阶段；config/state 与领域服务先排空自己的写入，再关闭目录 context、卸载实例并关闭后端。构造或准备失败仍进入同一清理路径，多项清理失败聚合报告。调用方必须等待自己的文件操作并释放 FileHandle、watcher 和任务；不对裸 FS 引用施加 generation Proxy，不承诺关闭后仍可使用借用对象。
 

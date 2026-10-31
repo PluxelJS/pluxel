@@ -85,7 +85,7 @@ Host-vite 分离已提交应用图与失败候选的恢复依赖。候选解析�
 记录器限制 definition 与 node 保留数量，先验证整条记录再发布；同批次后续诊断可替换记录，但不得靠相同 sequence 复用旧节点错误。
 后续插件重试或运行状态变化不篡改更新历史。Workbench 的红色生命周期提示只来自节点 issue；批次异常和当前运行问题有独立展示位置。
 
-Database replacement 必须同时满足 generation 撤回与 active instance 切换；同 lineage 复用和新 lineage 原子激活规则由 [DATABASE](DATABASE.md#schema-evolution) 拥有。
+Database replacement 必须同时满足 generation 撤回与 active instance 切换；同 lineage 复用和新 lineage 原子激活规则由 [DATABASE](DATABASE.md#schema-evolution) 拥有。应用自管的 SQL 连接遵循自己声明的 root 或 provider Plugin 所有权。
 
 ## Workbench candidate inputs
 
@@ -108,7 +108,7 @@ source/package artifact inputs，以便补偿 Host 复用旧计划，而不是�
 只增加分类、invalidation、source anchor 和诊断，不创建第二个 Host cache。默认 `ssr` 与第三方 `ssrLoadModule`
 使用独立的 Vite 环境、执行缓存与生命周期，不接受 Host 的 source conditions、singleton 或语义 collector。
 
-Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons()` 另外固定 Services（含 Management、Logging）与 Workbench，并在确认 publisher 或基础库的精确 peer、开发副本与实际解析版本后，将其 `capnweb` import 接到所选 Workbench 安装的 native ESM 模块；私有 RPC 保留自身解析，仅 externalize 不能统一跨仓库的同版本副本。相应 public、internal 和 workspace source path 都必须解析到
+Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons(entry?)` 另外固定 Services（含 Management、Logging）与 Workbench，并在确认能力消费者／基础库的精确 peer、开发副本与实际解析版本后，将 `capnweb` 接到 Workbench、将 `tinybase` 及原生子路径接到 Services 所选安装。Host entry 确定应用 package owner，以 direct dependency 检查最终应用。私有 RPC／Store 保留自身解析，仅 externalize 不能统一跨仓库的同版本副本。共同 metadata 校验由 Host 的 `internal/shared-runtime` 叶子拥有；具体声明规则见[插件包](../docs/development/plugin-package.md)。相应 public、internal 和 workspace source path 都必须解析到
 host 安装的 ESM entry；解析使用 import conditions，不能通过 CJS path 冒充 ESM singleton。Standalone
 `@pluxel/context` 只有 host 直接安装时才进入 bridge。
 

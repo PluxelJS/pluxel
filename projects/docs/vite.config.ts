@@ -87,6 +87,9 @@ export default defineConfig({
 					'generate:playground-types',
 					'@pluxel/core#compile',
 					'@pluxel/host#compile',
+					'@pluxel/services#compile',
+					// Browser examples consume the source/parser WASM exports, without the native addon.
+					'@pluxel/plugin-typst#compile-lib',
 					'valibot-form#compile',
 				],
 				cache: false,

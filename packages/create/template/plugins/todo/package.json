@@ -22,14 +22,18 @@
 		"@example/audit-plugin": "workspace:*",
 		"@pluxel/cli": "catalog:pluxel",
 		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
+		"tinybase": "catalog:backend",
 		"typescript": "catalog:tooling",
 		"vite-plus": "catalog:tooling",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
 		"@example/audit-plugin": "*",
-		"@pluxel/core": "catalog:pluxel"
+		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/services": "catalog:pluxel",
+		"tinybase": "catalog:backend"
 	},
 	"peerDependenciesMeta": {
 		"@example/audit-plugin": {

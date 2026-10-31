@@ -141,8 +141,21 @@ Workbench fixed singleton set 由 host 直接安装并由 MF build contract 精�
 subpaths、`@mantine/core`、`@mantine/hooks`、MF React Bridge、`@pluxel/workbench`、`/client`、`/react` 与
 `@pluxel/workbench/internal/react`。插件 UI 把自己 import 的 React 和 Mantine 声明为 peer，并在需要独立开发时声明
 dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实现依赖，不进入 platform shared set。导入 Drizzle schema/query API 的每个 package 都直接声明
-`drizzle-orm`；它与 Pluxel 高度集成并不意味着能从工作区根或其他 framework 包 隐式继承。只有确实要求宿主
+`drizzle-orm`，不能从工作区根或其他 framework 包隐式继承。只有确实要求宿主
 共享 Drizzle 运行时身份的公开边界才改用 peer。
+
+Host 互操作依赖按能力事实接纳：Workbench target／基础库使用精确 `capnweb` peer，托管
+TinyBase Store 消费者／交换原生 Store 的基础库使用精确 `tinybase` peer；源码开发安装同版 dev
+副本。最终 Host 直接安装支持版本的 dependency。普通原生 import 不代表参加共享边界，独立
+私有库的版本与解析必须保持隔离。支持版本由官方 catalog 与能力实现的 peer 维护；目前
+TinyBase 为 `10.0.1`，升级时同步 Host、共享消费者、生成模板和制品事实。包作者仍直接导入
+上游 API，不增加框架镜像入口。
+
+`@pluxel/host/internal/shared-runtime` 是仅供框架协作的 Node metadata 叶子，拥有两个已知能力
+共用的 manifest、catalog、精确版本与接纳检查，不导入 Core、Services 或 Workbench 运行时。
+Workbench transport 保留自身语义入口并复用这些检查。构建生成 `pluxel.workbenchCapnweb`／
+`pluxel.tinybase`；Vite、静态应用和原生动态来源先验证原声明与实际安装，再绑定同版多路径。
+TinyBase 子路径保持原样解析；它不进入全局 shared-package 列表，也不重定向私有依赖。
 
 ### 治理与验证
 

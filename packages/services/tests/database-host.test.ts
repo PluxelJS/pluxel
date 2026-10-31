@@ -1,10 +1,15 @@
 import { createHash } from 'node:crypto'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
+import {
+	Database,
+	database,
+	defineDatabase,
+	type PluginDatabaseHandle,
+} from '@pluxel/services/database'
+import { pglite } from '@pluxel/services/database/pglite'
 import { pgTable, text } from 'drizzle-orm/pg-core'
 import { expect, it } from 'vitest'
-import { Database, database, defineDatabase, type PluginDatabaseHandle } from '../src/database'
-import { pglite } from '../src/database/pglite'
 import type { DatabaseArtifact } from '../src/database/artifact'
 
 const items = pgTable('items', { id: text('id').primaryKey() })

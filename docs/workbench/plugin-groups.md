@@ -1,6 +1,6 @@
 ---
 title: 插件分组
-description: 按依赖自动整理插件，并用界面或独立 JSON 文件维护人工分组。
+description: 按依赖自动整理插件，并用界面或受信任的 Host 文档操作维护人工分组。
 ---
 
 插件目录只维护一份分组、顺序和选择状态，位于“插件”入口的左侧。分组整理管理对象，不决定业务应用的导航，
@@ -24,7 +24,7 @@ description: 按依赖自动整理插件，并用界面或独立 JSON 文件维�
 点击“编辑分组”新增、改名或删除分组，再拖动或批量移动插件。提交编辑及拖动后会自动同步布局，无需另找全局保存按钮。
 等待同步完成后刷新目录，结果应保留。失败会显示通知；刷新以服务端读取结果为准，不把暂时的拖动结果当成已持久化。
 
-只有需要批量编辑或让 coding agent 操作时，才使用下文的 JSON 文件，无需新项目预先生成。
+需要批量编辑或让 coding agent 操作时，使用下文的 Host 文档格式，无需新项目预先生成。
 
 ## 没有分组配置时
 
@@ -48,11 +48,23 @@ description: 按依赖自动整理插件，并用界面或独立 JSON 文件维�
 
 “恢复自动分组”清除人工设置，立即按当前依赖重新整理。空人工组会保留，方便继续拖入插件。
 
-## 让 coding agent 编辑文件
+## 让 coding agent 编辑布局
 
-分组独立存放在 FS 的 `services/management/plugin-groups.json`。使用 Node Passthrough 且
-`prefix` 指向 `.pluxel/fs` 时，磁盘路径是 `.pluxel/fs/services/management/plugin-groups.json`。
-InMemory 不创建磁盘文件，浏览器 IndexedDB 使用相同逻辑路径；[后端选择](../host/configuration.md#选择文件后端)由 Host 显式配置。
+分组是 `TinyBaseHost.documents('management')` 中的 `plugin-groups.json` 文档，物理快照由 Host 管理。
+[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留；不再直接编辑旧的 FS JSON 路径。
+
+操作运行中的开发应用时，按[开发控制台流程](../development/dev-console.md)发现并固定实例，从当前 Host 读取文档：
+
+```ts no-twoslash
+import { defineDevConsole } from '@pluxel/host-vite/console'
+import { TinyBaseHost } from '@pluxel/services/tinybase'
+
+export default defineDevConsole(async (dev) => {
+	return dev.ctx.require(TinyBaseHost).documents('management').getText('plugin-groups.json')
+})
+```
+
+文档使用以下格式。修改后，通过同一目标上的受信任脚本调用 `documents.put('plugin-groups.json', text)`，等待保存完成，再刷新目录核对领域校验结果。原生 backing 快照包含其他 envelope 信息，不直接修改它。
 
 ```json
 {
@@ -76,11 +88,10 @@ InMemory 不创建磁盘文件，浏览器 IndexedDB 使用相同逻辑路径；
   `source:<sourceSpace>/<path>::<exportName>`，路径中的特殊字符遵循标准 Plugin reference 编码。
 - `ungrouped` 明确指定保持平铺的插件；没有列出的插件继续自动分类。
 - 暂时不在目录中的合法引用会保留，插件回来时恢复归属，不会因此安装或启动插件。
-- 空文档 `{ "version": 1, "groups": [], "ungrouped": [] }` 与文件不存在都表示完全自动。无需预先生成全量分组文件。
+- 空文档 `{ "version": 1, "groups": [], "ungrouped": [] }` 与文档不存在都表示完全自动。无需预先生成全量分组文档。
 
-文件需要包含这三个顶层字段；不接受重复组 key、重复插件归属、未知字段和非法引用。建议使用格式化 JSON，并原子替换文件。
-文件变化会在下一次目录刷新时读取，不必重启宿主。语法或内容错误会显示读取失败，修复文件后重新刷新即可。
-界面保存与文件编辑共用这份文档；避免同时编辑同一份布局，完整保存以最后成功写入为准。
+文档需要包含这三个顶层字段；不接受重复组 key、重复插件归属、未知字段和非法引用。使用格式化 JSON，Host adapter 在完整原子提交后才确认 put。
+文档变化会在下一次目录刷新时读取，不必重启宿主。语法或内容错误会显示读取失败，修复文档后重新刷新即可。
+界面保存与受信任文档编辑共用这份数据；避免同时编辑同一份布局，完整保存以最后成功写入为准。
 
-操作运行中的开发应用时，coding agent 应按照[开发控制台流程](../development/dev-console.md)发现并固定实例，提交普通 TypeScript
-操作，随后刷新目录检查结果。不要另建测试宿主来判断当前应用是否已更新。
+保存失败时保留此前确认的布局；若 Host 文档 writer 已故障，先检查故障与实际 backing，再恢复 Host。不要另建测试宿主来判断当前应用是否已更新。

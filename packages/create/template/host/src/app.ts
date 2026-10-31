@@ -3,6 +3,7 @@ import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
 import { Passthrough } from '@pluxel/services/fs'
+import { TinyBaseHost } from '@pluxel/services/tinybase'
 
 import { pluginSource } from '@pluxel/host/sources'
 import { resolve } from 'node:path'
@@ -30,7 +31,13 @@ export default defineHostApplication(async (startup) => {
 			product,
 			workbench: environment.workbench ?? true,
 		}),
-		configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
-		state: exampleHostState(),
+		configRecords: {
+			...exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
+			storage: (root) => root.require(TinyBaseHost).documents('config'),
+		},
+		state: {
+			...exampleHostState(),
+			storage: (root) => root.require(TinyBaseHost).documents('state'),
+		},
 	}
 })

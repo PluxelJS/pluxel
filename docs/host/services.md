@@ -25,7 +25,7 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 | `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件        |
 | `@pluxel/rolldown` 的 `pluxel()`                | 选择应用交付并编译 Shell 与制品 |
 
-`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、FS、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。`fs` 必须显式[选择后端](./configuration.md#选择文件后端)。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。数据库或不同管理面组合应使用下文的显式服务安装器。
+`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、FS、TinyBase、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。`fs` 必须显式[选择后端](./configuration.md#选择文件后端)。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。数据库或自定义管理面组合使用下文的显式服务安装器。
 
 `vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。Services 的官方组合分别拥有运行时服务和 Vite 附件；应用交付与配套制品统一由 `@pluxel/rolldown` 的 `pluxel()` 构建。`@pluxel/services` 根入口只提供 `standardServices()`，不加载 Management、Logging 或 Workbench 后端。
 
@@ -33,7 +33,7 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 
 standalone Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位；modules 从已加载模块所属输出的 inventory 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
-`fs(config)` 安装文件能力，不自动持久化 Host 的配置和启动策略；需要保存它们时配置 `configRecords.storage` 和 `state.storage` 的[同步 root factory](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+`fs(config)` 安装文件能力，不自动持久化 Host 的配置和启动策略；官方组合已包含 `tinybase()`；需要保存配置与策略时，将 `configRecords.storage` 和 `state.storage` 接到 `TinyBaseHost.documents()` 的[同步 root factory](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
 应用构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(startup, { fs: backendConfig, workbench: false })` 与 `pluxel({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
@@ -131,7 +131,7 @@ import { workbenchArtifacts } from '@pluxel/workbench/vite'
 
 export default defineConfig({
 	plugins: [
-		serviceSingletons(),
+		serviceSingletons('./src/app.ts'),
 		host({ entry: './src/app.ts' }),
 		elysiaDevelopment(),
 		nodeArtifacts(),
@@ -140,7 +140,7 @@ export default defineConfig({
 })
 ```
 
-`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。Workbench View 的开发源模块也共享所选 Workbench 安装中的 Cap’n Web，跨仓库链接无需应用配置额外 alias；模块接线不替代各包的依赖声明与兼容性检查。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
+`serviceSingletons(entry?)` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。`entry` 与 `host({ entry })` 相同，用于确认最终 Host 的 package owner；省略时按 Vite root 所属包确定，`vitePreset()` 自动传入。Workbench target 的 Cap’n Web 与托管状态消费者的 TinyBase 都先核对原声明及实际安装，再接到宿主模块。TinyBase 的原生子路径保留 Node／browser 条件，私有版本保留自身解析；版本契约见[插件包](../development/plugin-package.md)。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
 
 ## 自定义组合的开发和生产接入
 
@@ -169,7 +169,7 @@ export default defineHostApplication(({ env, deployment }) => {
 })
 ```
 
-`standardServices({ fs: backendConfig })` 明确提供 HTTP、Commands、NodeModules、Workers、FS。
+`standardServices({ fs: backendConfig })` 明确提供 HTTP、Commands、NodeModules、Workers、FS、TinyBase。
 Vault、Database、Logging、Management、Workbench 另行加入服务数组；它不加入任何 Plugin。
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
 生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
@@ -198,30 +198,36 @@ Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/stand
 
 原生固定 imports 与来源共享身份使用 `runHostApplication(..., { sharedPackages: serviceSharedPackages })`，清单来自 `@pluxel/services/sources`，包括 Services、Workbench、Commands 及其共享 token 依赖。Core/Host 始终由执行入口绑定；额外包从 startup.root 解析。需要自定义服务时追加 package name，并显式安装对应服务。
 
-该机制先验证实际安装版本与 importer 声明，再选择 canonical 安装。Workbench View/Attachment publisher 的 capnweb 使用 Workbench 所属的精确版本准入；私有 RPC 保留自身解析。`serviceSingletons()` 在 Vite 中使用同一共享包清单和版本原则。交付选择与完整启动示例见[Host 配置](./configuration.md#生产构建)。
+该机制先验证实际安装版本与 importer 声明，再选择 canonical 安装。Workbench target 与托管 TinyBase 消费者分别使用能力所有者的精确版本准入，私有 RPC／Store 保留自身解析。`capnweb` 与 `tinybase` 不直接加入 `sharedPackages`，以免绕过能力归属而重定向私有依赖。`serviceSingletons()` 在 Vite 中使用同一共享包清单和版本原则。交付选择与完整启动示例见[Host 配置](./configuration.md#生产构建)。
 
 开发更新状态见 `host.status().recentUpdate` 或 Management 更新订阅，恢复语义见[HMR 失败与自动恢复](../development/tooling.md#hmr-失败与自动恢复)。
 动态 watcher 或恢复通知失败同样记录原始错误；已有 Host 仍运行时可报告 `retained-previous`，但这不保证失效 watcher 自动重建。首次应用求值失败、尚无 Host 时，先修复 Vite 日志中的错误，不能使用控制台查询。
 
-官方 `vitePreset()` 包含 Database 声明转换；自定义开发组合使用 `databaseSourceVitePlugin()`。
+官方 `vitePreset()` 包含 Database 声明转换；自定义开发组合从 `@pluxel/rolldown/vite` 导入 `databaseSourceVitePlugin()`。
 
 ## Database
 
-Database 不在默认组合中，需要显式安装：
+托管 SQL 由 `@pluxel/services/database` 提供，不在默认服务组合中，按需选择 backend：
 
-```ts
+```ts twoslash
 import { createHost } from '@pluxel/host'
 import { database } from '@pluxel/services/database'
 import { pglite } from '@pluxel/services/database/pglite'
 
 const host = await createHost({
+	plugins: [],
 	services: [database({ backend: pglite({ dataDir: './data/database' }) })],
 })
+try {
+	// 添加并启动需要托管 SQL 的 Plugin。
+} finally {
+	await host.close()
+}
 ```
 
-正式部署从 `@pluxel/services/database/postgres` 导入 `postgres({ connectionString })`。schema、migration 和部署选择见[数据库](../plugin-development/database.md)。
+正式部署从 `@pluxel/services/database/postgres` 导入 `postgres({ connectionString })`。应用直接声明所选 driver：PGlite 使用 `@electric-sql/pglite`，PostgreSQL 使用 `pg`。服务工厂不打开数据库；第一次 Plugin 调用 `ctx.require(Database).use(definition)` 才加载 driver 并准备 owner migration。每个 Host 创建自己的 adapter，在已接纳操作排空后关闭。schema、迁移与生命周期见[数据库与数据归属](../plugin-development/database.md)，后端部署选择见[Host 配置](./configuration.md#选择-native-postgresql-或-pglite)。
 
-应用直接声明所选 driver：PGlite 使用 `@electric-sql/pglite`，PostgreSQL 使用 `pg`。服务工厂不打开数据库；第一次 Plugin 调用 `ctx.require(Database).use(definition)` 才加载 driver 并执行 owner migration。每个 Host 通过工厂创建自己的 adapter，在已接纳操作排空后关闭。省略 descriptor 不创建 capability、连接、目录或 driver 依赖，也不需要另设 driver 启用列表。
+应用也可以直接使用 Drizzle 与 driver 并拥有迁移、连接池和关闭流程，无需安装托管 Database，见[应用完全自管 SQL](../plugin-development/database.md#应用完全自管-sql)及[连接所有权](./configuration.md#application-private-database)。
 
 ## 编写服务安装器
 
@@ -264,7 +270,7 @@ export function clock() {
 
 每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
 
-HTTP、Database、FS、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。FS 的首次异步文档 IO 可先于服务 prepare 等待同一个准备任务，供 Host 启动读取配置；其他服务沿用自身 prepare 契约。
+HTTP、TinyBase、FS、Database、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。FS 的首次异步文档 IO 可先于服务 prepare 等待同一个准备任务，供 Host 启动读取配置；其他服务沿用自身 prepare 契约。
 
 ## 服务参与 Plugin 发布
 

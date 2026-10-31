@@ -10,6 +10,7 @@ export default defineConfig({
 		index: './src/index.ts',
 		internal: './src/internal.ts',
 		'internal/protocol': './src/execution.ts',
+		'internal/shared-runtime': './src/shared-runtime.ts',
 	},
 	format: ['esm'],
 	dts: { eager: true },

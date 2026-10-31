@@ -94,6 +94,7 @@
 		"react-dom": "catalog:frontend",
 		"rolldown": "catalog:build",
 		"streamdown": "catalog:frontend",
+		"tinybase": "catalog:prod",
 		"typebox": "catalog:dev",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:*",

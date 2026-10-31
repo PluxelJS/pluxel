@@ -13,6 +13,7 @@ catalogs:
     exact-mirror: ^1.2.6
     elysia: 2.0.0-rc.0
     typebox: ^1.4.3
+    tinybase: 10.0.1
   frontend:
     '@mantine/core': 9.7.3
     '@mantine/hooks': 9.7.3

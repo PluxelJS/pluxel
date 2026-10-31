@@ -17,7 +17,7 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 | 文件后端、只读或浏览器存储         | [FS](#选择文件后端)                                                                       |
 | Vault 后端、部署凭据与备份         | [后端](#选择后端)、[绑定](#部署凭据)、[备份](#密钥与备份)                                 |
 | 控制台、Workbench store 与远程日志 | [日志 plan](#host-logging-plan)、[OTLP](#远程输出原生-logtape-sink)                       |
-| 数据库后端与应用共享数据库         | [Backend](#选择-native-postgresql-或-pglite)、[应用数据库](#application-private-database) |
+| SQL 后端、应用自管连接与生命周期   | [Backend](#选择-native-postgresql-或-pglite)、[应用数据库](#application-private-database) |
 | 轻量独立 Host                      | [Logging](#独立-logging-host)、[HTTP listener](#独立-http-host)                           |
 | 浏览器与 Web Worker                | [浏览器 Host](#浏览器-host)                                                               |
 | 生产制品                           | [构建](#生产构建)                                                                         |
@@ -28,7 +28,7 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 
 - 自定义或轻量宿主：`@pluxel/host`，只安装显式列出的服务。
 - 浏览器与 Web Worker：`@pluxel/host/browser`，使用固定插件目录和浏览器可用的服务。
-- 官方服务器组合：`servicesPreset()`，包括 HTTP、Commands、Node artifacts、Workers、FS、Vault、Logging、Management 和默认启用的 Workbench。
+- 官方服务器组合：`servicesPreset()`，包括 HTTP、Commands、Node artifacts、Workers、FS、TinyBase、Vault、Logging、Management 和默认启用的 Workbench。托管 SQL Database 按需另行安装。
 - 无管理页面的常用基础组合：`standardServices()`，包括 HTTP、Commands、Node artifacts、Workers 和 FS。
 
 Database 单独安装；关闭 Workbench 不会关闭插件业务能力。详细服务列表与资源归属见[组合 Host 服务](./services.md)。
@@ -360,23 +360,37 @@ try {
 
 ## 保存配置和运行策略
 
-Host 分别通过 `configRecords` 与 `state` 指定启动值及可选文档存储。`storage` 唯一形式是同步 root factory，返回借用的 `HostDocumentStorage`。使用同一 FS 时：
+Host 分别通过 `configRecords` 与 `state` 指定启动值及可选文档存储。`storage` 唯一形式是同步 root factory，返回借用的 `HostDocumentStorage`。官方组合通过 TinyBase 私有命名空间保存文档；FS 负责底层文件。独立 Host 显式组合如下：
 
-```ts
+```ts twoslash
 import { createHost } from '@pluxel/host'
+import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import * as nativeFs from 'node:fs'
 import { resolve } from 'node:path'
-import { fs, Fs, Passthrough } from '@pluxel/services/fs'
+import { fs, Passthrough } from '@pluxel/services/fs'
+import { tinybase, TinyBaseHost } from '@pluxel/services/tinybase'
+import * as v from 'valibot'
+
+@Plugin()
+class MyPlugin extends BasePlugin {
+	private readonly config = this.configs.use(v.object({ endpoint: v.pipe(v.string(), v.url()) }))
+
+	endpoint(): string {
+		return this.config.endpoint
+	}
+}
+
+const owner = pluginNodeAddressOf(MyPlugin)
 
 const host = await createHost({
 	plugins: [MyPlugin],
-	services: [fs({ backend: Passthrough, fs: nativeFs, prefix: resolve('./data/fs') })],
+	services: [fs({ backend: Passthrough, fs: nativeFs, prefix: resolve('./data/fs') }), tinybase()],
 	configRecords: {
-		storage: (root) => root.require(Fs).documents('host/config'),
+		storage: (root) => root.require(TinyBaseHost).documents('config'),
 		initial: [{ owner, config: { endpoint: 'https://example.com' } }],
 	},
 	state: {
-		storage: (root) => root.require(Fs).documents('host/state'),
+		storage: (root) => root.require(TinyBaseHost).documents('state'),
 		initial: { autoStart: [owner] },
 	},
 })
@@ -389,9 +403,9 @@ try {
 
 省略 `storage` 时只用内存。提供 `storage` 时默认 `mode: 'writable'`；`mode: 'readonly'` 读取已有文档并拒绝写入，文档不存在时保留 `initial` 且不创建文件。已有文档优先于启动种子，Host 返回前会完成两个存储的准备。配置保留 v3、运行策略保留 v5 文档格式，不在应用重新打包时覆盖已有数据。
 
-两项 factory 在 root 创建后、文档 IO 前各调用一次，同步返回文档对象；异步 factory 和直接对象会被拒绝。`documents()` 本身无 IO，第一次读写和 FS prepare 等待同一个后端准备任务。factory 也可返回应用已有的文档适配；这种接线不要求安装 FS。
+两项 factory 在 root 创建后、文档 IO 前各调用一次，同步返回文档对象；异步 factory 和直接对象会被拒绝。`TinyBaseHost.documents()` 本身无 IO，第一次读写等待 FS 准备和该 namespace 的同一恢复任务。每次 put 先原子保存候选，再切换已确认读视图；同一 namespace 的并发写入串行处理。factory 也可返回应用已有的文档适配；这种接线不要求安装 FS。
 
-文档存储是借用的：Host 关闭时等待自己的写入、清理定时器并报告 flush 失败；不会调用外部 backend 的 close。后端由应用或 FS 服务拥有。`HostDocumentStorage` 仅需 `getText(key)`、`put(key, text)` 和 `stat(key)`；只有缺失返回 `undefined`，`put()` 无条件在完整原子提交后才 resolve，不接受 atomic 选项。不能用“请求已入队”冒充写入成功。
+文档存储是借用的：Host 关闭时等待自己的写入、清理定时器并报告 flush 失败；不会调用外部 backend 的 close。后端由应用或 FS 服务拥有；官方 TinyBase 服务先排空文档写入，再由 FS 关闭共享实例。`HostDocumentStorage` 仅需 `getText(key)`、`put(key, text)` 和 `stat(key)`；只有缺失返回 `undefined`，`put()` 无条件在完整原子提交后才 resolve，不接受 atomic 选项。不能用“请求已入队”冒充写入成功。
 
 Host 应用解析器从本次 `startup.env` 读取显式 `envBindings`，文件输入来自 `fileBindings`。普通配置优先级为基础对象/文件 < 管理保存值 < env，合并后由 schema 校验；env 控制的路径只读且不落盘。Vault env/file 绑定是整记录只读。底层 `createHost()` 不隐式读取进程环境。
 
@@ -627,16 +641,20 @@ await host.close()
 需要持久化 policy 时，`logging(plan, { policyStore })` 接收同步 root factory：
 
 ```ts
-import { Fs } from '@pluxel/services/fs'
+import { TinyBaseHost } from '@pluxel/services/tinybase'
 import { createPluginLogPolicyStore, logging } from '@pluxel/services/logging'
 
-logging(plan, {
-	policyStore: (root) => createPluginLogPolicyStore(root.require(Fs).documents('services/logging')),
-})
+const persistedLogging = {
+	...logging(plan, {
+		policyStore: (root) =>
+			createPluginLogPolicyStore(root.require(TinyBaseHost).documents('logging')),
+	}),
+	requires: { tinybase: TinyBaseHost },
+}
 ```
 
-factory 在 Logging prepare 中解析一次；返回的文档存储借用同一 FS，关闭仍由 FS 服务负责。未配置 factory 时 policy 保持内存模式。
-删除 fork 会在同一 Host 队列内清理日志 policy；写入失败时保留 fork，恢复存储后可重试。
+将 `persistedLogging` 与 FS、`tinybase()` 放入同一 `services` 数组。factory 在 Logging prepare 中解析一次；`requires` 声明 Logging 对 `TinyBaseHost` 的准备依赖。`servicesPreset()` 已完成这项接线。未配置 factory 的独立 `logging()` 保持内存模式。
+删除 fork 会在同一 Host 队列内清理日志 policy；写入失败时保留 fork。TinyBase 文档 writer 故障后阻断后续保存，关闭并检查实际 backing 后再恢复 Host。
 同一进程仍只允许一个活动日志 Host，第二个安装失败不会影响第一个。
 
 ### 宿主安装与访问
@@ -686,9 +704,9 @@ owner invocation 的 `Request` 传入会明确失败。
 
 ## Application-private database
 
-当 fixed catalog、schema 和部署都由同一团队维护时，把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。
+应用也可以完全自管 SQL：把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。与托管 Database 的选择及原生查询见[数据库与数据归属](../plugin-development/database.md)。
 
-应用服务列表不安装 `database()`，使误用 `ctx.require(Database)` 的 Plugin 直接启动失败；production freezer 同时设置 `managedDatabaseDrivers: []`，避免把未使用的 PGlite 与 `pg` package 复制进发行物。两处配置分别约束运行时 capability 与构建闭包，必须保持一致。
+只选择自管 SQL 时，应用服务列表不安装 `database()`；误用 `ctx.require(Database)` 会直接失败。standalone 构建设置 `managedDatabaseDrivers: []`，移除托管后端的 driver 闭包，再用 `residualDependencies` 声明应用实际需要交付的 driver 与动态资源，见[应用交付](../development/distribution.md)。迁移资源也由应用明确发布，开发与生产构建不执行 SQL 迁移。
 
 内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
 
@@ -787,7 +805,7 @@ SQLite path、DSN、TLS 和 pool options 从 `startup.env`、`bindings` 或部�
 
 如果数据库失败时无关 Plugin 仍应运行，把数据库建模为 application-private provider Plugin，并让 consumer 通过 constructor 声明 required dependency。provider 在 `init()` 打开和迁移数据库，并立即把关闭登记到自己的 effects；provider failure 只阻塞 dependents。不要同时保留 root `prepare()` 和 provider Plugin 两套所有权。
 
-这条路径可以使用 SQLite 或其他数据库，但应用必须自行负责 migration 并发、连接恢复、备份、durability 和 shutdown。不要把 application client 包装成 `ctx.database`，否则会让调用者误以为它具备 managed Plugin database 的 owner isolation 与 replacement 语义。
+应用自行负责 migration 并发、连接恢复、备份、durability 和 shutdown。provider 的替换会关闭它持有的连接；consumer 不能缓存该连接跨越 provider 的生命周期。原生 driver 与目标数据库的行为由应用验证。
 
 ## 选择 native PostgreSQL 或 PGlite
 
@@ -871,7 +889,7 @@ export const stop = listener.close
 
 必须由全新 Node 进程的 launcher 在应用及其业务依赖闭包首次求值之前调用；服务运行入口也延后 import。入口先建立共享绑定，再加载默认工厂、固定 imports 和来源。已在 scope 外求值的 entry 与受控缓存中的绑定冲突会明确拒绝；Node 没有公开的 ESM cache 查询，不能证明此前普通依赖的完整闭包。预先导入这些依赖违反启动前置条件，不能事后重新绑定 token。
 
-Core/Host 绑定启动器安装；`sharedPackages` 中的其他包相对 startup.root 解析，包括合法 exports，应用须声明所使用的共享包依赖。官方清单来自 `@pluxel/services/sources`，因此官方模板直接声明 Services、Workbench、Commands、Elysia、`@sinclair/typebox`、`typebox` 和 `exact-mirror`；不要依赖工作区 hoist 提供这些安装事实。实际安装版本及 importer 声明必须兼容，错误版本会拒绝；清单不安装服务。自定义服务可以追加包名。Workbench publisher 的 capnweb 由领域检查绑定到所选 Workbench，私有 RPC 保留自身解析。
+Core/Host 绑定启动器安装；`sharedPackages` 中的其他包相对 startup.root 解析，包括合法 exports，应用须声明所使用的共享包依赖。官方清单来自 `@pluxel/services/sources`，因此官方模板直接声明 Services、Workbench、Commands、Elysia、`@sinclair/typebox`、`typebox` 和 `exact-mirror`；不要依赖工作区 hoist 提供这些安装事实。实际安装版本及 importer 声明必须兼容，错误版本会拒绝；清单不安装服务。自定义服务可以追加包名。Workbench publisher 的 `capnweb` 和托管状态消费者的 `tinybase` 各自按领域精确版本接纳，不能放入全局 `sharedPackages`；私有库保留自身解析。依赖声明见[插件包](../development/plugin-package.md)。
 
 交付和搬离工作区验证见[发行物](../development/distribution.md)。Node 已有回归覆盖；其他平台需要独立验证网络与原生依赖，不能只凭 Fetch 类型兼容推定支持。
 

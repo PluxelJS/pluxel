@@ -9,14 +9,12 @@ const exampleAutoStartPlugins = [AuditPlugin, HttpPlugin, VaultAdminPlugin] as c
 
 export function exampleHostState() {
 	return {
-		mode: 'memory' as const,
 		initial: { autoStart: exampleAutoStartPlugins.map(pluginNodeAddressOf) },
 	}
 }
 
 export function exampleConfigRecords(rawMaxItems?: string) {
 	return {
-		mode: 'memory' as const,
 		initial: [
 			{
 				owner: pluginNodeAddressOf(TodoPlugin),

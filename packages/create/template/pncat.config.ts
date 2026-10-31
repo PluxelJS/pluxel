@@ -47,6 +47,7 @@ export default defineConfig({
 				'graphql-yoga',
 				'nanoid',
 				'qrcode',
+				'tinybase',
 				'valibot',
 				'wretch',
 			],

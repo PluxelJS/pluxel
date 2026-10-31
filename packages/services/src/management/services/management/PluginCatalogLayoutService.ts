@@ -9,7 +9,7 @@ import {
 	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { Fs } from '../../../fs'
+import { TinyBaseHost } from '../../../tinybase'
 import {
 	automaticCatalogGroups,
 	catalogFamilies,
@@ -60,7 +60,7 @@ export class PluginCatalogLayoutService {
 	private tail: Promise<unknown> = Promise.resolve()
 
 	constructor(root: Context) {
-		this.storage = resolveContextCapability(root.root, Fs).documents('services/management')
+		this.storage = resolveContextCapability(root.root, TinyBaseHost).documents('management')
 	}
 
 	listSections(

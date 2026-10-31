@@ -4,6 +4,7 @@ import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
 import { Passthrough } from '@pluxel/services/fs'
+import { TinyBaseHost } from '@pluxel/services/tinybase'
 
 import { resolve } from 'pathe'
 import { hostPlugins } from './showcase/catalog'
@@ -38,12 +39,15 @@ export default defineHostApplication(async (startup) => {
 			workbench: environment.workbench ?? true,
 		}),
 		configRecords: {
-			mode: 'memory',
+			storage: (root) => root.require(TinyBaseHost).documents('config'),
 			initial: [
 				...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
 				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
 			],
 		},
-		state: { mode: 'memory', initial: createHostRuntimeState() },
+		state: {
+			storage: (root) => root.require(TinyBaseHost).documents('state'),
+			initial: createHostRuntimeState(),
+		},
 	}
 })

@@ -1,7 +1,5 @@
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
-import { createHash } from 'node:crypto'
 import {
-	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
@@ -11,17 +9,11 @@ import {
 	Plugin,
 } from '@pluxel/core'
 
-import type { FsPromises } from '@pluxel/services/fs'
+import { TinyBase, type TinyBaseService } from '@pluxel/services/tinybase'
 import { RpcTarget } from 'capnweb'
 import wretch, { type Wretch } from 'wretch'
 import { WretchConfig } from './config.ts'
-import {
-	disposeManagedSettings,
-	loadManagedSettings,
-	replaceManagedSettings,
-	resetManagedSettings,
-	type ManagedSettingsState,
-} from './managed-settings.ts'
+import { ManagedSettingsStore, type ManagedSettingsState } from './managed-settings.ts'
 import { createOutboundPolicy, type OutboundPolicy } from './outbound-policy.ts'
 import {
 	WretchWorkbench,
@@ -50,28 +42,26 @@ export class WretchPlugin extends BasePlugin {
 	private readonly clients = new WeakMap<Context, ClientLease>()
 	private policy?: OutboundPolicy
 	private readonly storageState: {
-		access?: Context['fs']
-		prepared?: Promise<FsPromises>
-		fs?: FsPromises
+		service?: TinyBaseService
+		prepared?: Promise<ManagedSettingsStore>
+		store?: ManagedSettingsStore
 	} = {}
 
 	override init(): void {
 		const policy = createOutboundPolicy(this.config)
 		this.policy = policy
-		this.storageState.access = this.ctx.fs
+		this.storageState.service = this.ctx.tinybase ? this.ctx.require(TinyBase) : undefined
 		this.ctx.effects.defer(
 			async () => {
 				policy.dispose()
 				if (this.policy === policy) {
 					this.policy = undefined
-					this.storageState.access = undefined
-					this.storageState.prepared = undefined
-					this.storageState.fs = undefined
+					this.storageState.service = undefined
 				}
 				const states = [...this.managed.values()]
 				this.managed.clear()
 				this.managedByNode.clear()
-				await Promise.all(states.map(disposeManagedSettings))
+				await Promise.all(states.map((state) => this.storageState.store?.dispose(state)))
 			},
 			{ tag: 'wretch-policy' },
 		)
@@ -151,26 +141,23 @@ export class WretchPlugin extends BasePlugin {
 		settings: WretchManagedSettings,
 	): Promise<WretchManagedSettingsSnapshot> {
 		const state = this.requireManagedSettings()
-		await replaceManagedSettings(
-			state,
-			await this.requireStorage(),
-			settingsKey(state.owner),
-			settings,
-			this.config.timeoutMs,
-		)
+		const storage = await this.requireStorage()
+		await storage.replace(state, settings, this.config.timeoutMs)
 		return this.managedSettings
 	}
 
 	/** Deletes the caller's saved settings and restores its native client options. */
 	async resetManagedSettings(): Promise<WretchManagedSettingsSnapshot> {
 		const state = this.requireManagedSettings()
-		await resetManagedSettings(state, await this.requireStorage(), settingsKey(state.owner))
+		const storage = await this.requireStorage()
+		await storage.reset(state)
 		return this.managedSettings
 	}
 
 	private requireManagedSettings(): ManagedSettingsState {
 		this.requirePolicy()
-		if (!this.storageState.access) throw new Error('Managed Wretch settings require the FS service')
+		if (!this.storageState.service)
+			throw new Error('Managed Wretch settings require the TinyBase service')
 		const state = this.managed.get(this.requireCaller())
 		if (!state)
 			throw new Error('Call enableManagedSettings() before accessing managed Wretch settings')
@@ -218,7 +205,7 @@ export class WretchPlugin extends BasePlugin {
 					if (!state) return
 					if (managed.get(owner) === state) managed.delete(owner)
 					if (managedByNode.get(nodeKey) === state) managedByNode.delete(nodeKey)
-					await disposeManagedSettings(state)
+					await this.storageState.store?.dispose(state)
 				},
 				{ tag: 'wretch-managed-settings' },
 			)
@@ -227,17 +214,13 @@ export class WretchPlugin extends BasePlugin {
 		}
 		initialization = (async () => {
 			const storage = await this.requireStorage()
-			const state = await loadManagedSettings(
-				storage,
-				settingsKey(owner.pluginInfo.nodeAddress),
-				owner.pluginInfo.nodeAddress,
-			)
-			if (this.policy !== policy || this.storageState.fs !== storage) {
-				await disposeManagedSettings(state)
+			const state = await storage.load(owner.pluginInfo.nodeAddress)
+			if (this.policy !== policy || this.storageState.store !== storage) {
+				await this.storageState.store?.dispose(state)
 				throw stoppedClientError()
 			}
 			if (managedByNode.has(nodeKey)) {
-				await disposeManagedSettings(state)
+				await this.storageState.store?.dispose(state)
 				throw new Error('Managed Wretch settings already exist for this Plugin node')
 			}
 			managed.set(owner, state)
@@ -262,15 +245,16 @@ export class WretchPlugin extends BasePlugin {
 		return this.policy
 	}
 
-	private async requireStorage(): Promise<FsPromises> {
+	private async requireStorage(): Promise<ManagedSettingsStore> {
 		const policy = this.requirePolicy()
 		if (!this.storageState.prepared) {
-			const access = this.storageState.access
-			if (!access) throw new Error('Managed Wretch settings require the FS service')
-			this.storageState.prepared = access().then((storage) => {
+			const service = this.storageState.service
+			if (!service) throw new Error('Managed Wretch settings require the TinyBase service')
+			this.storageState.prepared = service.open().then((store) => {
 				if (this.policy !== policy) throw stoppedClientError()
-				this.storageState.fs = storage
-				return storage
+				const managed = new ManagedSettingsStore(store, () => service.flush())
+				this.storageState.store = managed
+				return managed
 			})
 		}
 		return this.storageState.prepared
@@ -294,15 +278,9 @@ function settingsSnapshot(
 	})
 }
 
-function settingsKey(owner: PluginNodeAddress): string {
-	const address = parsePluginNodeAddress(owner)
-	const digest = createHash('sha256').update(encodePluginNodeAddressBytes(address)).digest('hex')
-	return `consumers/v3/${digest}.json`
-}
-
 function createSettingsTarget(
 	managed: ReadonlyMap<string, ManagedSettingsState>,
-	storage: FsPromises,
+	storage: ManagedSettingsStore,
 	hostTimeoutMs: number,
 	consumerNode: PluginNodeAddress,
 	signal: AbortSignal,
@@ -313,23 +291,14 @@ function createSettingsTarget(
 	if (!state || !pluginNodeAddressEqual(state.owner, owner)) {
 		throw new Error('Call enableManagedSettings() before opening Wretch settings')
 	}
-	return new WretchSettingsTarget(
-		managed,
-		nodeKey,
-		state,
-		storage,
-		settingsKey(owner),
-		hostTimeoutMs,
-		signal,
-	)
+	return new WretchSettingsTarget(managed, nodeKey, state, storage, hostTimeoutMs, signal)
 }
 
 class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 	readonly #managed: ReadonlyMap<string, ManagedSettingsState>
 	readonly #nodeKey: string
 	readonly #state: ManagedSettingsState
-	readonly #storage: FsPromises
-	readonly #key: string
+	readonly #storage: ManagedSettingsStore
 	readonly #hostTimeoutMs: number
 	readonly #signal: AbortSignal
 
@@ -337,8 +306,7 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 		managed: ReadonlyMap<string, ManagedSettingsState>,
 		nodeKey: string,
 		state: ManagedSettingsState,
-		storage: FsPromises,
-		key: string,
+		storage: ManagedSettingsStore,
 		hostTimeoutMs: number,
 		signal: AbortSignal,
 	) {
@@ -347,7 +315,6 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 		this.#nodeKey = nodeKey
 		this.#state = state
 		this.#storage = storage
-		this.#key = key
 		this.#hostTimeoutMs = hostTimeoutMs
 		this.#signal = signal
 	}
@@ -361,19 +328,13 @@ class WretchSettingsTarget extends RpcTarget implements WretchSettingsApi {
 
 	async updateDto(settings: WretchManagedSettings): Promise<WretchManagedSettingsSnapshot> {
 		this.#assertActive()
-		await replaceManagedSettings(
-			this.#state,
-			this.#storage,
-			this.#key,
-			settings,
-			this.#hostTimeoutMs,
-		)
+		await this.#storage.replace(this.#state, settings, this.#hostTimeoutMs)
 		return this.snapshotDto()
 	}
 
 	async resetDto(): Promise<WretchManagedSettingsSnapshot> {
 		this.#assertActive()
-		await resetManagedSettings(this.#state, this.#storage, this.#key)
+		await this.#storage.reset(this.#state)
 		return this.snapshotDto()
 	}
 
@@ -388,3 +349,5 @@ export type { Wretch } from 'wretch'
 export { WretchConfig } from './config.ts'
 export type { WretchPluginConfig } from './config.ts'
 export type { WretchManagedSettings, WretchManagedSettingsSnapshot } from './workbench-contracts.ts'
+
+export { WretchSettingsCleanupError } from './managed-settings.ts'

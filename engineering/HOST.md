@@ -18,7 +18,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 能力 token 的 access 表达调用 Context 的所有权：`all` 通用，`owner` 需要真实插件/Part owner，`root` 需要真实 RootContext。宿主代码使用 `ctx.require(Token)`，缺失、访问越界和构造失败保留各自错误。
 `ctx.root` 返回真实根引用，持有它的受信任代码可访问 root 能力；这不是不可信代码沙箱。Core 内部图 authority 的 token 不进入普通作者入口。
 
-`@pluxel/services` 的 `standardServices({ fs })` 安装 HTTP、Commands、Node artifacts、Workers、FS。同包的 `@pluxel/services/preset` 入口的 `servicesPreset(startup, { fs })` 增加 Vault、Logging、Management、管理命令及可选 Workbench。FS 和 Database 显式选择 backend。
+`@pluxel/services` 的 `standardServices({ fs })` 安装 HTTP、Commands、Node artifacts、Workers、FS、TinyBase。同包的 `@pluxel/services/preset` 入口的 `servicesPreset(startup, { fs })` 增加 Vault、Logging、Management、管理命令及可选 Workbench。FS 和显式安装的 Database 各自选择 backend；Database 不加入默认组合，查询使用原生 Drizzle，见 [Database](DATABASE.md)。
 未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
 
 ## 应用、开发和部署
@@ -50,10 +50,10 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 ## 资源边界与验证入口
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
-- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。storage 使用同步 root factory 借用 document storage，不拥有后端；[FS](FS.md) 在 root final 关闭共享资源。已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
+- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。storage 使用同步 root factory 借用 document storage，不拥有后端；[TinyBase](TINYBASE.md) 的 Host 私有 adapter 保存普通配置文档，先于 [FS](FS.md) root final 关闭排空；嵌入宿主可提供自己的借用 adapter。已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
 - Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生启动使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
-- 数据库的 generation handle、迁移和 backend：[DATABASE.md](DATABASE.md)。
+- 数据库的 generation handle、迁移、backend 与应用自管边界：[DATABASE.md](DATABASE.md)。
 - 日志 root、策略与有界 store：[LOGGING.md](LOGGING.md)。
 - Node artifacts、Workers：`packages/services/src/node/`、`workers/`；compiler 属于 Rolldown 与服务开发附件。 Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 把公开结果发布推迟到线程可复用或已退出，为调用方持有的文件等资源提供清理边界。
 - Management 与 Workbench：[WORKBENCH.md](WORKBENCH.md)、[管理接入](../docs/host/management.md)。

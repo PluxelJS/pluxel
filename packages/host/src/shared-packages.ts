@@ -22,6 +22,10 @@ export function hostSharedPackages(options: {
 			!/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name)
 		)
 			throw new TypeError(`[host] sharedPackages requires package names: ${String(name)}`)
+		if (name === 'tinybase' || name === 'capnweb')
+			throw new TypeError(
+				`[host] ${name} uses capability-scoped exact-version admission; select ${name === 'tinybase' ? '@pluxel/services' : '@pluxel/workbench'} instead of sharing ${name} globally`,
+			)
 		if (!packages.has(name)) packages.set(name, options.root)
 	}
 	return packages
@@ -61,6 +65,7 @@ type InstalledPackageManifest = Readonly<{
 		nodeArtifacts?: unknown
 		workbenchArtifacts?: unknown
 		workbenchCapnweb?: unknown
+		tinybase?: unknown
 		modules?: Readonly<{ version?: unknown }>
 	}>
 }>

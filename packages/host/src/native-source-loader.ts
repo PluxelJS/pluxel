@@ -1,9 +1,19 @@
-import { createRequire, registerHooks } from 'node:module'
+import { registerHooks } from 'node:module'
 import { realpath } from 'node:fs/promises'
-import { dirname, extname } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { pluginDefinitionAddressOf, type PluginConstructor } from '@pluxel/core'
 import { collectPluginModuleExports } from './module'
+import {
+	assertSharedRuntimeAdmission,
+	admitSharedRuntimeOwner,
+	assertSharedRuntimeHost,
+	nearestPackageManifest,
+	installedSharedRuntimeVersion,
+	participatesInSharedRuntime,
+	readSharedRuntimePackage,
+	sharedRuntimeForImport,
+} from './shared-runtime'
 import type { HostApplicationFactory } from './application'
 import { recordLoadedPluginModule, readLoadedPluginModule } from './loaded-modules'
 import {
@@ -14,7 +24,6 @@ import {
 	resolveNativeImport,
 } from './shared-packages'
 
-type TransportAdmission = (input: unknown) => void
 type LoadedClosure = Readonly<{ modules: readonly string[]; length: number }>
 const closures = new Map<string, LoadedClosure>()
 const bindings = new Map<string, { key: string; users: number; cached: boolean }>()
@@ -24,15 +33,8 @@ export async function createNativeSourceLoader(options: {
 	root: string
 	sharedPackages?: readonly string[]
 }) {
+	let applicationManifest = nearestPackageManifest(join(options.root, '__entry__.mjs'))
 	const shared = hostSharedPackages({ root: options.root, packages: options.sharedPackages })
-	const workbenchBase = shared.get('@pluxel/workbench')
-	let transport:
-		| {
-				assertWorkbenchCapnwebAdmission: TransportAdmission
-				readWorkbenchCapnwebPackage(file: string): unknown
-		  }
-		| undefined
-	let canonicalCapnweb: string | undefined
 	const key = JSON.stringify([...shared].sort(([a], [b]) => a.localeCompare(b)))
 	const entries = new Set<string>()
 	const owned = new Set<string>()
@@ -76,30 +78,63 @@ export async function createNativeSourceLoader(options: {
 		resolve(specifier, context, next) {
 			if (!entries.has(specifier) && (!context.parentURL || !owned.has(context.parentURL)))
 				return next(specifier, context)
-			if (specifier === 'capnweb' && workbenchBase && context.parentURL?.startsWith('file:')) {
-				const importer = installedPackageFacts(fileURLToPath(context.parentURL))
-				const peer = importer?.manifest.peerDependencies?.capnweb
-				const marker = importer?.manifest.pluxel?.workbenchCapnweb
-				if (peer !== undefined || marker !== undefined) {
-					transport ??= createRequire(import.meta.url)(
-						resolveNativeImport(workbenchBase, '@pluxel/workbench/internal/transport'),
-					) as NonNullable<typeof transport>
-					canonicalCapnweb ??= resolveNativeImport(
-						dirname(resolveNativeImport(workbenchBase, '@pluxel/workbench')),
-						'capnweb',
-					)
-					const actual = next(specifier, context)
-					transport.assertWorkbenchCapnwebAdmission({
-						package: transport.readWorkbenchCapnwebPackage(fileURLToPath(context.parentURL)),
-						supportedVersion: installedPackageFacts(canonicalCapnweb)!.version!,
-						actualVersion: actual.url.startsWith('file:')
-							? installedPackageFacts(fileURLToPath(actual.url))?.version
+			const runtime = sharedRuntimeForImport(specifier)
+			const runtimeBase = runtime && shared.get(runtime.owner)
+			if (runtime && runtimeBase && context.parentURL?.startsWith('file:')) {
+				const publisher = readSharedRuntimePackage(fileURLToPath(context.parentURL), runtime)
+				const serviceConsumer = specifier === runtime.entry && runtime.name === 'tinybase'
+				const application =
+					runtime.name === 'tinybase' && publisher?.manifestPath === applicationManifest
+				if (
+					publisher &&
+					(application || serviceConsumer || participatesInSharedRuntime(publisher))
+				) {
+					const ownerEntry = resolveNativeImport(runtimeBase, runtime.entry)
+					const canonicalRoot = resolveNativeImport(dirname(ownerEntry), runtime.name)
+					let actual: { url: string } | undefined
+					try {
+						actual = serviceConsumer
+							? {
+									url: pathToFileURL(
+										resolveNativeImport(dirname(fileURLToPath(context.parentURL)), runtime.name),
+									).href,
+								}
+							: next(specifier, context)
+					} catch (cause) {
+						if (
+							!(
+								cause instanceof Error &&
+								'code' in cause &&
+								['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(String(cause.code))
+							)
+						)
+							throw cause
+					}
+					const admission = {
+						runtime,
+						package: publisher,
+						supportedVersion: admitSharedRuntimeOwner(
+							ownerEntry,
+							canonicalRoot,
+							runtime,
+							'host/native',
+						),
+						actualVersion: actual?.url.startsWith('file:')
+							? installedSharedRuntimeVersion(fileURLToPath(actual.url), runtime)
 							: undefined,
-						actualEntry: actual.url,
+						actualEntry: actual?.url,
 						development: false,
 						operation: 'host/native',
-					})
-					return { url: pathToFileURL(canonicalCapnweb).href, shortCircuit: true }
+					}
+					if (application)
+						assertSharedRuntimeHost({ ...admission, manifestPath: publisher.manifestPath })
+					else assertSharedRuntimeAdmission(admission)
+					if (!serviceConsumer) {
+						const canonical = resolveNativeImport(dirname(ownerEntry), specifier)
+						const url = pathToFileURL(canonical).href
+						admit(url)
+						return { url, shortCircuit: true }
+					}
 				}
 			}
 			const selected = shared.get(importPackageName(specifier))
@@ -173,6 +208,7 @@ export async function createNativeSourceLoader(options: {
 	}
 	return {
 		async loadApplication(path: string): Promise<HostApplicationFactory> {
+			applicationManifest = nearestPackageManifest(path)
 			const namespace = await importModule(path)
 			if (typeof namespace.default !== 'function')
 				throw new TypeError(`[host] native application must export a default factory: ${path}`)

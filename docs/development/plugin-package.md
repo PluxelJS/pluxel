@@ -127,6 +127,20 @@ peer、可用的制品事实和实际解析版；不匹配时报告 `PLUGIN_SOUR
 只使用独立私有 RPC 的包保留普通依赖和自身解析，不受该接线影响。绕过标准构建或其它加载器产生的
 第二份构造器仍会在 Workbench 打开 target 时被拒绝。
 
+使用 `@pluxel/services/tinybase` 托管 Store，或向托管消费者交换原生 Store 的基础库，声明
+精确的 `peerDependencies.tinybase`，源码开发另声明同版 `devDependencies.tinybase`。当前支持
+`10.0.1`；最终 Host 应用在 `dependencies` 直接安装此精确版本。框架服务从
+`@pluxel/services/tinybase` 导入，原生 Store、Queries、React hooks 与 Schematizer 直接从
+`tinybase`、`tinybase/queries`、`tinybase/ui-react`、`tinybase/schematizers/schematizer-valibot`
+导入，并声明真实依赖。
+
+标准构建从实际 TinyBase 服务导入或共享库的显式 peer 生成 `pluxel.tinybase` 版本事实，核对
+原声明和原安装，再保留外部原生 import。开发 Vite、静态应用与生产原生来源使用同一接纳规则，
+把通过检查的包绑定到 Host 选择的 TinyBase；上游子路径与 Node／browser 条件保持原义。
+同版安装在不同路径也会归一到 Host 模块。仅使用 `configs.use()` 的插件无需 TinyBase import
+或 peer。独立私有 Store 使用普通 dependency，保留自己的版本和解析；不要用全局 override
+或 shared-package 配置把所有 TinyBase import 强行合并。
+
 希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入完整上游命名导出；
 无需另设 `better-result` peer。用法见 [better-result 共享入口](../plugin-development/better-result.md)。
 发布包的 Core peer 下限须为首次发布此子入口的 Core 版本，宽泛的 `^1` 无法保证旧宿主存在该入口。
@@ -238,9 +252,9 @@ Content-only package 不加载 Federation builder、不生成 remote entry，也
 
 ## 数据库与 Node artifacts
 
-- `defineDatabase()` 的 migrations/check artifact 随 package 发布，见 [数据库](../plugin-development/database.md)。
+- 托管 SQL 的 `defineDatabase()` 由标准构建转换，migrations/check artifact 随 package 发布；应用完全自管时自行交付迁移资源，见[数据库与数据归属](../plugin-development/database.md)。
 - `defineNodeModule()`/`defineWorkerTask()` 生成独立 Node artifact，见 [Node module 与 worker task](../plugin-development/node-artifacts.md)。
-- 这些 declaration 必须能从 package source graph 静态提取，不能藏在动态 branch 中。
+- Database 和 Node artifact declaration 必须能从 package source graph 静态提取，不能藏在动态 branch 中。
 
 ## 构建与发布检查
 
