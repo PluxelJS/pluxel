@@ -1,12 +1,16 @@
 import { repositoryTasks } from '../../scripts/vite-tasks'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, lazyPlugins, type Plugin } from 'vite-plus'
 import { exampleThemeVariants } from './scripts/example-theme-variants'
 
-async function examplePlugins(): Promise<Plugin[]> {
-	// Task discovery must work before the workspace compiler has been built.
+const require = createRequire(import.meta.url)
+
+function examplePlugins(): Plugin[] {
+	// Task discovery precedes compiler artifacts. Fumapress invokes this factory after
+	// closing its config module runner, so use Node's ESM-capable loader here.
 	const { configSourcePlugin, createPluginSemanticsPlugin } =
-		await import('@pluxel/rolldown/plugins')
+		require('@pluxel/rolldown/plugins') as typeof import('@pluxel/rolldown/plugins')
 	return [
 		exampleThemeVariants(),
 		createPluginSemanticsPlugin({
@@ -105,7 +109,7 @@ export default defineConfig({
 	},
 	worker: {
 		format: 'es',
-		plugins: () => [bundleModernMonacoTypeScriptWorker(), examplePlugins()],
+		plugins: () => [bundleModernMonacoTypeScriptWorker(), ...examplePlugins()],
 	},
 	optimizeDeps: {
 		exclude: ['lucide-react', 'modern-monaco/lsp/typescript/setup', '@pluxel/plugin-typst/wasm'],
@@ -121,7 +125,7 @@ export default defineConfig({
 		])
 		return [
 			bundleModernMonacoTypeScriptWorker(),
-			examplePlugins(),
+			...examplePlugins(),
 			press(),
 			fumadocsMdx(),
 			tailwindcss(),
