@@ -15,7 +15,7 @@
 	align-items: stretch;
 	background: var(--plx-surface-strong);
 	border: 1px solid var(--plx-border);
-	border-radius: 10px;
+	border-radius: var(--mantine-radius-sm);
 	display: grid;
 	gap: clamp(20px, 3vw, 44px);
 	grid-template-columns: minmax(320px, 1fr) minmax(420px, 0.9fr);
@@ -30,7 +30,7 @@
 .plx-home__eyebrow,
 .plx-home__sectionKicker {
 	color: var(--plx-accent-strong);
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 800;
 	letter-spacing: 0.11em;
 	line-height: 1.2;
@@ -38,7 +38,7 @@
 }
 
 .plx-home__title {
-	font-size: clamp(26px, 3vw, 36px);
+	font-size: var(--mantine-h1-font-size);
 	font-weight: 720;
 	letter-spacing: -0.035em;
 	line-height: 1.1;
@@ -47,7 +47,7 @@
 
 .plx-home__description {
 	color: var(--plx-text-muted);
-	font-size: 15px;
+	font-size: var(--mantine-font-size-md);
 	line-height: 1.55;
 	margin-top: 9px;
 	max-width: 620px;
@@ -61,7 +61,7 @@
 }
 
 .plx-home__platformNotice {
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	line-height: 1.45;
 	max-width: 680px;
 	padding: 8px 10px;
@@ -80,7 +80,7 @@
 .plx-home__metric {
 	background: var(--plx-surface-muted);
 	border: 1px solid var(--plx-border);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	display: flex;
 	flex-direction: column;
 	justify-content: space-between;
@@ -98,12 +98,12 @@
 
 .plx-home__metricLabel {
 	color: var(--plx-text-muted);
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 650;
 }
 
 .plx-home__metricValue {
-	font-size: 25px;
+	font-size: var(--mantine-font-size-xl);
 	font-weight: 750;
 	letter-spacing: -0.03em;
 	line-height: 1;
@@ -117,7 +117,7 @@
 }
 
 .plx-home__sectionTitle {
-	font-size: 20px;
+	font-size: var(--mantine-font-size-xl);
 	letter-spacing: -0.02em;
 	line-height: 1.2;
 	margin-top: 4px;
@@ -151,7 +151,7 @@
 .plx-home__workspaceIcon {
 	align-items: center;
 	background: var(--plx-accent-soft);
-	border-radius: 10px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--plx-accent-strong);
 	display: flex;
 	flex: 0 0 40px;
@@ -185,7 +185,7 @@
 
 .plx-home__workspaceMeta {
 	color: var(--plx-text-muted);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 800;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
@@ -209,7 +209,7 @@
 .plx-home__queue {
 	background: var(--plx-surface-strong);
 	border: 1px solid var(--plx-border);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	display: flex;
 	flex-direction: column;
 	min-height: 176px;
@@ -234,7 +234,7 @@
 	align-items: center;
 	color: inherit;
 	display: grid;
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	gap: 9px;
 	grid-template-columns: 8px minmax(0, 1fr) auto 16px;
 	min-height: 34px;
@@ -254,7 +254,7 @@
 
 .plx-home__statusDot {
 	background: var(--plx-text-muted);
-	border-radius: 999px;
+	border-radius: var(--mantine-radius-sm);
 	height: 7px;
 	width: 7px;
 }
@@ -287,7 +287,7 @@
 	color: var(--plx-text-muted);
 	display: flex;
 	flex: 1;
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	justify-content: center;
 	padding: 24px;
 }
@@ -311,11 +311,11 @@
 	}
 
 	.plx-home__title {
-		font-size: 27px;
+		font-size: var(--mantine-font-size-xl);
 	}
 
 	.plx-home__description {
-		font-size: 14px;
+		font-size: var(--mantine-font-size-md);
 		line-height: 1.65;
 	}
 

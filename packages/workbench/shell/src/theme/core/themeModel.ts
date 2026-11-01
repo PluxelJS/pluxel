@@ -157,9 +157,9 @@ function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
 				borderStrong: neutral.borderStrong,
 				text: neutral.text,
 				textMuted: neutral.textMuted,
-				accent: mix(toneHex(a1, 68), '#8ea092', 0.12),
-				accentStrong: mix(toneHex(a1, 78), '#b1c1b5', 0.12),
-				accentSoft: alpha(mix(toneHex(a1, 58), '#7f8f84', 0.22), 0.1),
+				accent: mix(toneHex(a1, 68), '#a1a1a1', 0.08),
+				accentStrong: mix(toneHex(a1, 78), '#c4c4c4', 0.08),
+				accentSoft: alpha(mix(toneHex(a1, 58), '#7a7a7a', 0.15), 0.1),
 				shadow: PLX_APP_SHADOWS.dark,
 			}
 		: {
@@ -172,9 +172,9 @@ function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
 				borderStrong: neutral.borderStrong,
 				text: neutral.text,
 				textMuted: neutral.textMuted,
-				accent: mix(toneHex(a1, 42), '#5d7263', 0.12),
-				accentStrong: mix(toneHex(a1, 32), '#435746', 0.08),
-				accentSoft: alpha(mix(toneHex(a1, 68), '#9fb39f', 0.16), 0.09),
+				accent: mix(toneHex(a1, 42), '#666666', 0.08),
+				accentStrong: mix(toneHex(a1, 32), '#4a4a4a', 0.06),
+				accentSoft: alpha(mix(toneHex(a1, 68), '#a1a1a1', 0.12), 0.09),
 				shadow: PLX_APP_SHADOWS.light,
 			}
 
@@ -182,7 +182,7 @@ function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
 		hoverBg: mix(app.surface, app.text, isDark ? 0.07 : 0.05),
 		inactiveSelectedBg: mix(app.surfaceStrong, app.text, isDark ? 0.09 : 0.1),
 		selectedBg: isDark
-			? mix(neutral.surfaceStrong, toneHex(a1, 76), 0.26)
+			? mix(neutral.surfaceStrong, toneHex(a1, 76), 0.18)
 			: mix(neutral.surfaceStrong, toneHex(a1, 86), 0.7),
 		selectedBorder: isDark ? alpha(app.accentStrong, 0.5) : alpha(app.accent, 0.4),
 	}

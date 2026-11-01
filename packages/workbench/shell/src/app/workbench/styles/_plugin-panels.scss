@@ -9,7 +9,7 @@
 
 .plx-pluginWorkbench__summaryLabel {
 	color: var(--plx-text-muted);
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	line-height: 1.7;
 	white-space: nowrap;
@@ -37,7 +37,7 @@
 
 .plx-pluginWorkbench__diagnostics {
 	border-top: 1px solid var(--plx-border);
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	padding-top: 6px;
 }
 
@@ -55,7 +55,7 @@
 .plx-pluginWorkbench__statusIssues {
 	background: color-mix(in srgb, var(--mantine-color-yellow-1) 44%, transparent);
 	border: 1px solid color-mix(in srgb, var(--mantine-color-yellow-6) 34%, var(--plx-border));
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	padding: 7px;
 }
 
@@ -87,7 +87,7 @@
 .plx-pluginDependencyDetail__sectionTitle {
 	align-items: center;
 	display: flex;
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 650;
 	gap: 5px;
 	line-height: 1.35;
@@ -97,14 +97,14 @@
 
 .plx-pluginDependencyDetail__sectionCount {
 	color: var(--plx-text-muted);
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
 }
 
 .plx-pluginDependencyDetail__sectionSummary {
 	color: var(--plx-text-muted);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-variant-numeric: tabular-nums;
 	line-height: 1.35;
 	white-space: nowrap;
@@ -113,7 +113,7 @@
 .plx-pluginDependencyDetail__relations {
 	background: color-mix(in srgb, var(--plx-surface-muted) 72%, transparent);
 	border: 1px solid color-mix(in srgb, var(--plx-border) 84%, transparent);
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	margin-top: 4px;
 	overflow: hidden;
 }
@@ -139,7 +139,7 @@
 .plx-pluginDependencyDetail__endpointName,
 .plx-pluginDependencyDetail__endpointLink {
 	display: block;
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	line-height: 1.35;
 	max-width: 100%;
@@ -187,7 +187,7 @@
 
 .plx-pluginDependencyDetail__graphLink {
 	align-items: center;
-	border-radius: 4px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--plx-text-muted);
 	display: inline-flex;
 	flex: 0 0 auto;
@@ -210,7 +210,7 @@
 
 .plx-pluginPanel {
 	background: var(--plx-panel-bg);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	box-shadow: none;
 }
 
@@ -242,7 +242,7 @@
 }
 
 .plx-pluginPanel__title {
-	font-size: 18px;
+	font-size: var(--mantine-font-size-lg);
 	font-weight: 600;
 	line-height: 1.2;
 	overflow: hidden;
@@ -252,7 +252,7 @@
 
 .plx-pluginPanel__description {
 	color: var(--plx-text-muted);
-	font-size: 14px;
+	font-size: var(--mantine-font-size-md);
 	line-height: 1.35;
 }
 
@@ -376,7 +376,7 @@
 	appearance: none;
 	background: transparent;
 	border: 0;
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	box-sizing: border-box;
 	box-shadow: none;
 	color: inherit;
@@ -416,7 +416,7 @@
 
 .plx-pluginWorkbench__outlineDot {
 	background: var(--mantine-color-dimmed);
-	border-radius: 999px;
+	border-radius: var(--mantine-radius-sm);
 	flex: 0 0 auto;
 	height: 8px;
 	width: 8px;
@@ -452,7 +452,7 @@
 
 .plx-pluginWorkbench__actionPolicy .mantine-Switch-label {
 	color: var(--plx-text);
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	padding-inline-end: 7px;
 }

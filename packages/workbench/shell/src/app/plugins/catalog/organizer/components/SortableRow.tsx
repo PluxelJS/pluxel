@@ -146,7 +146,7 @@ const SortableRowComponent = ({
 				display: 'flex',
 				alignItems: 'center',
 				gap: rowGap,
-				borderRadius: 8,
+				borderRadius: 'var(--mantine-radius-sm)',
 				cursor: 'pointer',
 				userSelect: 'none',
 				background: rowBackground,

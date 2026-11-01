@@ -24,11 +24,11 @@
 	height: 24px;
 	padding: 0 4px;
 	border: 0;
-	border-radius: 3px;
+	border-radius: var(--mantine-radius-sm);
 	background: transparent;
 	color: var(--mantine-color-dimmed);
 	font: inherit;
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	text-align: start;
 	cursor: pointer;
@@ -65,10 +65,10 @@
 .plx-workspace-navigation[data-compact] .plx-workspace-navigation__link {
 	height: 26px;
 	padding: 0 5px;
-	border-radius: 3px;
+	border-radius: var(--mantine-radius-sm);
 }
 .plx-workspace-navigation[data-compact] .plx-workspace-navigation__link .mantine-Text-root {
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	line-height: 24px;
 }
 .plx-workspace-navigation[data-compact] .mantine-Button-section[data-position='left'] {
@@ -91,7 +91,7 @@
 }
 .plx-workspace-navigation__attention {
 	flex: 0 0 auto;
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	color: var(--mantine-color-yellow-7);
 }
 .plx-workspace-navigation__attention[data-tone='error'] {
@@ -117,7 +117,7 @@
 .plx-plugin-region__tabs .mantine-Tabs-tab {
 	flex: 1 0 auto;
 	padding: 8px 10px;
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 }
 .plx-plugin-region > .plx-plugin-region__content {
 	flex: 1;
@@ -133,22 +133,22 @@
 	}
 
 	.plx-workbenchContent__document {
-		font-size: 13px;
+		font-size: var(--mantine-font-size-sm);
 		line-height: 1.6;
 		max-width: none;
 		padding: 12px;
 	}
 
 	.plx-workbenchContent__document h1 {
-		font-size: 18px;
+		font-size: var(--mantine-font-size-lg);
 	}
 
 	.plx-workbenchContent__document h2 {
-		font-size: 16px;
+		font-size: var(--mantine-font-size-lg);
 	}
 
 	.plx-workbenchContent__document :is(h3, h4, h5, h6) {
-		font-size: 14px;
+		font-size: var(--mantine-font-size-md);
 	}
 
 	.plx-workbenchContent__dataCard,
@@ -162,4 +162,14 @@
 		grid-template-columns: minmax(0, 1fr);
 		gap: 2px;
 	}
+}
+
+/* Active entry: neutral selected surface plus an accent edge, per color-design.md. */
+.plx-workspace-navigation__link[data-variant='light'] {
+	background: var(--plx-selected-bg);
+	color: var(--mantine-color-text);
+	box-shadow: inset 2px 0 0 var(--plx-accent);
+}
+.plx-workspace-navigation__link[data-variant='light'] .mantine-Button-section {
+	color: var(--plx-accent);
 }

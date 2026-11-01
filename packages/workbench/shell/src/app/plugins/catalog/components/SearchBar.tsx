@@ -70,7 +70,7 @@ export function SearchBar({
 			) : null}
 			<ActionIcon
 				size={ACTION_SIZE}
-				variant={statusFilter.running ? 'filled' : 'subtle'}
+				variant={statusFilter.running ? 'light' : 'subtle'}
 				color={statusFilter.running ? 'green' : undefined}
 				onClick={() => onToggleStatus('running')}
 				title={`运行中 ${statusCounts.running} 个 · Alt+1`}
@@ -81,7 +81,7 @@ export function SearchBar({
 			</ActionIcon>
 			<ActionIcon
 				size={ACTION_SIZE}
-				variant={statusFilter.stopped ? 'filled' : 'subtle'}
+				variant={statusFilter.stopped ? 'light' : 'subtle'}
 				color={statusFilter.stopped ? 'gray' : undefined}
 				onClick={() => onToggleStatus('stopped')}
 				title={`已停止 ${statusCounts.stopped} 个 · Alt+2`}
@@ -92,7 +92,7 @@ export function SearchBar({
 			</ActionIcon>
 			<ActionIcon
 				size={ACTION_SIZE}
-				variant={statusFilter.unavailable ? 'filled' : 'subtle'}
+				variant={statusFilter.unavailable ? 'light' : 'subtle'}
 				color={statusFilter.unavailable ? 'red' : undefined}
 				onClick={() => onToggleStatus('unavailable')}
 				title={`不可用 ${statusCounts.unavailable} 个 · Alt+3`}

@@ -488,10 +488,11 @@ export function PluginOrganizer({
 				>
 					<div className="plx-pluginCatalog__sectionHeader">
 						<div className="plx-pluginCatalog__sectionHeading">
-							<Text className="plx-pluginCatalog__sectionTitle">
+							<Text size="xs" className="plx-pluginCatalog__sectionTitle">
 								{showFlatResults ? '筛选结果' : groups.length > 0 ? '未分组' : '全部插件'}
 							</Text>
 							<Text
+								size="xs"
 								className="plx-pluginCatalog__sectionMetric"
 								title={
 									showFlatResults
@@ -629,8 +630,10 @@ export function PluginOrganizer({
 						<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
 							<div className="plx-pluginCatalog__sectionHeader">
 								<div className="plx-pluginCatalog__sectionHeading">
-									<Text className="plx-pluginCatalog__sectionTitle">插件分类</Text>
-									<Text className="plx-pluginCatalog__sectionMetric">
+									<Text size="xs" className="plx-pluginCatalog__sectionTitle">
+										插件分类
+									</Text>
+									<Text size="xs" className="plx-pluginCatalog__sectionMetric">
 										{visibleGroups.length} 个
 									</Text>
 								</div>

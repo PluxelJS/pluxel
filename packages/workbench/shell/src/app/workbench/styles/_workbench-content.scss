@@ -10,7 +10,7 @@
 
 .plx-workbenchContent__document {
 	box-sizing: border-box;
-	font-size: 0.9375rem;
+	font-size: var(--mantine-font-size-md);
 	line-height: 1.65;
 	margin: 0 auto;
 	max-width: 920px;
@@ -43,23 +43,23 @@
 }
 
 .plx-workbenchContent__document h1 {
-	font-size: clamp(1.7rem, 3vw, 2.15rem);
+	font-size: var(--mantine-h1-font-size);
 }
 
 .plx-workbenchContent__document h2 {
 	border-bottom: 1px solid var(--plx-border);
-	font-size: 1.4rem;
+	font-size: var(--mantine-font-size-xl);
 	padding-bottom: 0.35em;
 }
 
 .plx-workbenchContent__document h3 {
-	font-size: 1.18rem;
+	font-size: var(--mantine-font-size-lg);
 }
 
 .plx-workbenchContent__document h4,
 .plx-workbenchContent__document h5,
 .plx-workbenchContent__document h6 {
-	font-size: 1rem;
+	font-size: var(--mantine-font-size-lg);
 }
 
 .plx-workbenchContent__document h1:focus,
@@ -122,7 +122,7 @@
 .plx-workbenchContent__document :not(pre) > code {
 	background: var(--plx-surface-muted);
 	border: 1px solid var(--plx-border);
-	border-radius: 4px;
+	border-radius: var(--mantine-radius-sm);
 	font-size: 0.88em;
 	padding: 0.1em 0.35em;
 }
@@ -130,14 +130,14 @@
 .plx-workbenchContent__document pre {
 	background: var(--plx-surface-muted);
 	border: 1px solid var(--plx-border);
-	border-radius: 7px;
+	border-radius: var(--mantine-radius-sm);
 	overflow: auto;
 	padding: 0.9rem 1rem;
 	tab-size: 4;
 }
 
 .plx-workbenchContent__document pre code {
-	font-size: 0.84rem;
+	font-size: var(--mantine-font-size-sm);
 	line-height: 1.55;
 	white-space: pre;
 }
@@ -154,7 +154,7 @@
 
 .plx-workbenchContent__document table {
 	border-collapse: collapse;
-	font-size: 0.875rem;
+	font-size: var(--mantine-font-size-md);
 	min-width: min(100%, 32rem);
 	width: 100%;
 }
@@ -234,7 +234,7 @@
 .plx-workbenchContent__actionForm {
 	background: var(--plx-surface);
 	border: 1px solid var(--plx-border);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	padding: 1rem;
 }
 
@@ -246,7 +246,7 @@
 
 .plx-workbenchContent__dataHeader > span {
 	color: var(--plx-text-muted);
-	font-size: 0.85rem;
+	font-size: var(--mantine-font-size-sm);
 }
 
 .plx-workbenchContent__scalar {
@@ -299,7 +299,7 @@
 
 @media (max-width: 47.99em) {
 	.plx-workbenchContent__document {
-		font-size: 0.9rem;
+		font-size: var(--mantine-font-size-md);
 		padding: 18px 16px 28px;
 	}
 

@@ -24,7 +24,7 @@ export function DroppableContainer({
 				outline: isOver ? '1px dashed var(--plx-accent)' : undefined,
 				outlineOffset: isOver ? -1 : undefined,
 				background: isOver ? 'var(--plx-accent-soft)' : undefined,
-				borderRadius: 8,
+				borderRadius: 'var(--mantine-radius-sm)',
 				minHeight: minDropHeight,
 				...style,
 			}}

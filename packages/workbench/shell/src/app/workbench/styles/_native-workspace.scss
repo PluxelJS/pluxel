@@ -35,7 +35,7 @@
 	--flexlayout-color-border-tab-selected-background: var(--plx-selected-bg);
 	--flexlayout-color-border-tab-unselected: var(--mantine-color-dimmed);
 	--flexlayout-color-border-tab-unselected-background: transparent;
-	--flexlayout-color-splitter: var(--mantine-color-default-border);
+	--flexlayout-color-splitter: var(--plx-border);
 	--flexlayout-color-splitter-hover: var(--mantine-primary-color-light-hover);
 	--flexlayout-color-splitter-drag: var(--mantine-primary-color-filled);
 	--flexlayout-color-drag1: var(--mantine-primary-color-filled);
@@ -123,12 +123,12 @@
 }
 .plx-workspace__tab-dirty {
 	color: var(--plx-dirty-dot);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	flex: 0 0 auto;
 }
 .plx-workspace__tab-preview {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-style: italic;
 }
 
@@ -208,7 +208,7 @@
 .plx-workspace .plx-native-menu-control__label {
 	display: block;
 	color: var(--mantine-color-dimmed);
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	margin-bottom: 5px;
 }
 .plx-workspace .plx-native-menu-control:has(input:focus) {
@@ -431,7 +431,7 @@
 	background: transparent;
 	color: var(--mantine-color-dimmed);
 	font: inherit;
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	cursor: pointer;
 }
 .plx-activity[data-mode='labels'] .plx-activity__item {

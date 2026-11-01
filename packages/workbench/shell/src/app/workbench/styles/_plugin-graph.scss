@@ -66,7 +66,7 @@
 .plx-pluginGraphRelations {
 	background: var(--plx-surface-canvas, var(--mantine-color-body));
 	border: 1px solid var(--plx-border, var(--mantine-color-default-border));
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	height: 100%;
 	min-width: 0;
 	display: flex;
@@ -100,7 +100,7 @@
 
 .plx-pluginGraphRelations__header span {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 }
 
 .plx-pluginGraphHeaderActions {
@@ -119,7 +119,7 @@
 .plx-pluginGraphLegend > span {
 	align-items: center;
 	display: inline-flex;
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	gap: 5px;
 	white-space: nowrap;
 }
@@ -139,12 +139,12 @@
 	appearance: none;
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	display: inline-flex;
 	font-family: inherit;
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	gap: 6px;
 	height: 30px;
@@ -171,7 +171,7 @@
 	align-items: center;
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	display: flex;
 	flex: 0 0 auto;
 	height: 30px;
@@ -280,7 +280,7 @@
 .plx-pluginGraphComponent {
 	background: color-mix(in srgb, var(--mantine-color-gray-0) 22%, transparent);
 	border: 1px dashed color-mix(in srgb, var(--mantine-color-default-border) 68%, transparent);
-	border-radius: 12px;
+	border-radius: var(--mantine-radius-sm);
 	box-sizing: border-box;
 	pointer-events: none;
 	position: absolute;
@@ -294,9 +294,9 @@
 .plx-pluginGraphComponent > span {
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 999px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	left: 14px;
 	line-height: 20px;
@@ -380,7 +380,7 @@
 .plx-pluginGraphEdge__label {
 	fill: var(--mantine-color-dimmed);
 	font-family: var(--mantine-font-family);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 650;
 	opacity: 0;
 	pointer-events: none;
@@ -411,7 +411,7 @@
 	appearance: none;
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 10px;
+	border-radius: var(--mantine-radius-sm);
 	box-sizing: border-box;
 	color: var(--mantine-color-text);
 	cursor: pointer;
@@ -433,7 +433,7 @@
 
 .plx-pluginGraphNode::before {
 	background: var(--mantine-color-gray-5);
-	border-radius: 999px;
+	border-radius: var(--mantine-radius-sm);
 	bottom: 10px;
 	content: '';
 	left: 5px;
@@ -501,7 +501,7 @@
 }
 
 .plx-pluginGraphNode__label {
-	font-size: 13px;
+	font-size: var(--mantine-font-size-sm);
 	font-weight: 700;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -518,7 +518,7 @@
 .plx-pluginGraphNode__reference {
 	color: var(--mantine-color-dimmed);
 	font-family: var(--mantine-font-family-monospace);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -526,7 +526,7 @@
 
 .plx-pluginGraphNode__state {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 }
 
 .plx-pluginGraphNode__state > span:first-child {
@@ -582,7 +582,7 @@
 .plx-pluginGraphUnconnectedPanel {
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	bottom: 12px;
 	box-shadow: var(--mantine-shadow-lg);
 	display: flex;
@@ -618,7 +618,7 @@
 
 .plx-pluginGraphUnconnectedPanel__heading span {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 }
 
 .plx-pluginGraphUnconnectedPanel__heading button {
@@ -626,7 +626,7 @@
 	appearance: none;
 	background: transparent;
 	border: 0;
-	border-radius: 5px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	display: inline-flex;
@@ -648,7 +648,7 @@
 .plx-pluginGraphUnconnectedPanel__search {
 	align-items: center;
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	display: flex;
 	flex: 0 0 auto;
@@ -667,7 +667,7 @@
 	border: 0;
 	color: var(--mantine-color-text);
 	font-family: inherit;
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	height: 34px;
 	min-width: 0;
 	outline: none;
