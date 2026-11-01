@@ -1,10 +1,12 @@
 import { repositoryTasks } from '../../scripts/vite-tasks'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, lazyPlugins, type Plugin } from 'vite-plus'
-import { configSourcePlugin, createPluginSemanticsPlugin } from '@pluxel/rolldown/plugins'
 import { exampleThemeVariants } from './scripts/example-theme-variants'
 
-function examplePlugins(): Plugin[] {
+async function examplePlugins(): Promise<Plugin[]> {
+	// Task discovery must work before the workspace compiler has been built.
+	const { configSourcePlugin, createPluginSemanticsPlugin } =
+		await import('@pluxel/rolldown/plugins')
 	return [
 		exampleThemeVariants(),
 		createPluginSemanticsPlugin({
@@ -103,7 +105,7 @@ export default defineConfig({
 	},
 	worker: {
 		format: 'es',
-		plugins: () => [bundleModernMonacoTypeScriptWorker(), ...examplePlugins()],
+		plugins: () => [bundleModernMonacoTypeScriptWorker(), examplePlugins()],
 	},
 	optimizeDeps: {
 		exclude: ['lucide-react', 'modern-monaco/lsp/typescript/setup', '@pluxel/plugin-typst/wasm'],
@@ -119,7 +121,7 @@ export default defineConfig({
 		])
 		return [
 			bundleModernMonacoTypeScriptWorker(),
-			...examplePlugins(),
+			examplePlugins(),
 			press(),
 			fumadocsMdx(),
 			tailwindcss(),

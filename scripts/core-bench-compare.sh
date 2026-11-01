@@ -21,7 +21,6 @@ fi
 
 BASE_SHA="$(git rev-parse "$BASE_REF")"
 HEAD_SHA="$(git rev-parse "$HEAD_REF")"
-CURRENT_SHA="$(git rev-parse HEAD)"
 
 NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
 if [ "$NODE_MAJOR" -lt 24 ]; then
@@ -31,8 +30,7 @@ fi
 
 WORK_ROOT="${PLUXEL_BENCH_WORKDIR:-${TMPDIR:-/tmp}/pluxel-core-bench-${USER:-user}}"
 BASE_DIR="${WORK_ROOT}/core-base"
-HEAD_DIR="$ROOT"
-HEAD_WORKTREE_DIR="${WORK_ROOT}/core-head"
+HEAD_DIR="${WORK_ROOT}/core-head"
 RESULT_ROOT="${PLUXEL_BENCH_RESULT_DIR:-${ROOT}/.bench-results/core}"
 BASE_RESULT_DIR="${RESULT_ROOT}/base"
 HEAD_RESULT_DIR="${RESULT_ROOT}/head"
@@ -41,14 +39,14 @@ REFERENCE_REPORT="${BASE_RESULT_DIR}/plugin-lifecycle.json"
 cleanup() {
 	if [ "${PLUXEL_BENCH_KEEP_WORKTREES:-0}" != "1" ]; then
 		git -C "$ROOT" worktree remove --force "$BASE_DIR" >/dev/null 2>&1 || true
-		git -C "$ROOT" worktree remove --force "$HEAD_WORKTREE_DIR" >/dev/null 2>&1 || true
+		git -C "$ROOT" worktree remove --force "$HEAD_DIR" >/dev/null 2>&1 || true
 	fi
 }
 trap cleanup EXIT
 
 rm -rf \
 	"$BASE_DIR" \
-	"$HEAD_WORKTREE_DIR" \
+	"$HEAD_DIR" \
 	"$BASE_RESULT_DIR" \
 	"$HEAD_RESULT_DIR"
 mkdir -p \
@@ -59,10 +57,7 @@ mkdir -p \
 echo "[bench] base: $BASE_SHA"
 echo "[bench] head: $HEAD_SHA"
 git worktree add --detach "$BASE_DIR" "$BASE_SHA" >/dev/null
-if [ "$HEAD_SHA" != "$CURRENT_SHA" ]; then
-	HEAD_DIR="$HEAD_WORKTREE_DIR"
-	git worktree add --detach "$HEAD_DIR" "$HEAD_SHA" >/dev/null
-fi
+git worktree add --detach "$HEAD_DIR" "$HEAD_SHA" >/dev/null
 
 run_bench() {
 	local label="$1"
@@ -86,12 +81,12 @@ run_bench() {
 		echo "[bench] ${label} install log: ${install_log}"
 	fi
 
-	# Run each revision's public build scripts without Vite loading unrelated historical
-	# workspace configs whose plugins have not been built. Current scripts delegate to Vite
-	# tasks. Select only the measured artifact owners; dependency-wide recursion also includes
-	# dev-only test helpers. Revisions using registry eventure already have its artifacts.
+	# Build with each revision's package-local Pack config. Its build scripts may discover
+	# unrelated historical Vite task configs before their workspace plugins exist.
+	# pnpm preserves dependency order for these measured owners; registry eventure revisions
+	# already have its artifact. Dependency-wide recursion would also build dev-only helpers.
 	if ! pnpm --recursive --filter eventure --filter @pluxel/context --filter @pluxel/core \
-		--fail-if-no-match run build >"$log_file" 2>&1; then
+		--fail-if-no-match exec vp pack >"$log_file" 2>&1; then
 		tail -200 "$log_file"
 		return 1
 	fi

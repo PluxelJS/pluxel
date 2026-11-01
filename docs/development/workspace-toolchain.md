@@ -79,6 +79,8 @@ export default defineConfig({
 
 Monorepo 用 `dependsOn: [{ task: 'build', from: ['dependencies', 'devDependencies', 'peerDependencies'] }]` 表达依赖包构建，或用 `@example/domain#build` 指定任务。引用必须指向实际原生任务；官方模板使用 `compile` / `check-tests`，不再经过外层 scripts。包依赖有环时使用明确构建边，不能依赖递归 package 排序。语法见 [Vite Task](https://viteplus.dev/guide/run)。
 
+任务发现会先加载各 workspace 的 Vite 配置，此时尚无本地包的构建产物。需要 workspace 编译器的插件在 `lazyPlugins` 工厂或 Worker 插件工厂内动态导入，实际构建任务再通过 `dependsOn` 准备编译器。不要在配置顶层导入这些插件，也不要依靠任务缓存预先恢复制品来启动任务图。
+
 标准 `vp build` 会自动报告输入、输出与相关环境变量，无需重复手写这些设置。组合 Pack、Pluxel 编译或自定义命令时，缓存需要覆盖真实契约：
 
 - `input: [{ auto: true }]` 保留自动文件追踪；跨包共享配置可补充 `{ pattern: 'tsconfig.base.json', base: 'workspace' }`。不要排除构建实际读取的模板、声明、测试夹具或文档资源。
