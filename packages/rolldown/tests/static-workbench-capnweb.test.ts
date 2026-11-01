@@ -26,6 +26,7 @@ async function fixture(installedVersion: string) {
 		JSON.stringify({
 			name: '@pluxel/workbench',
 			type: 'module',
+			peerDependencies: { capnweb: '0.12.0' },
 			exports: { './package.json': './package.json', './service': './service.mjs' },
 		}),
 	)

@@ -142,6 +142,8 @@ npm 消费项目用 `pluxel workspace doctor --root "{{config_root}}"`。显式 
 
 根 `vite.config.ts` 的同一份 native consumer 集合选择 CI 聚合范围与 typed lint 排除目录。`vp run ci:smoke` 可单独复现短测试，其中 `@pluxel/plugin-typst#check-wasm` 使用发布的 WASM 编译器验证编译、错误恢复和生命周期。`vp run verify` / `workspace:verify` 仍执行全工作区完整门禁，使用 native 的功能或桌面交付前在本地执行相应构建与验收。Release 保留公开包的标准构建；Takumi Markdown 只通过 Typst 的 `compile-lib` 获取 JavaScript 与声明，其 native 集成测试仍依赖完整 `compile`。hk 继续复用根检查器处理本地提交文件。
 
+Host 存储回归在真实 Chromium 页面和 Web Worker 中验证配置、TinyBase 与 IndexedDB 重开。CI 安装依赖后执行 `pnpm --filter @pluxel/host exec playwright-core install --with-deps --only-shell chromium`，使用锁文件对应的 headless shell 与系统依赖。本地可运行同一命令，或通过 `PLAYWRIGHT_WS_ENDPOINT` 接入已有的兼容 Playwright 服务；浏览器缺失会明确失败。
+
 ## 管理开发服务
 
 先读 `pitchfork.toml`，再用 `pitchfork list` 确认目录、namespace、完整服务 ID 和已有进程。模板默认服务是 `app`，框架仓库是 `plugin-host`，文档站是 `docs`。日常入口为 `vp run dev` / `vp run docs`；profile 的配置、默认选择、前台 `command` 模式和无控制台服务只在[项目入口与启动方式](./dev-console.md#项目入口与启动方式)维护。

@@ -79,6 +79,9 @@ jobs:
         id: install
         run: vp install --frozen-lockfile
 
+      - name: Install Chromium for browser and Worker storage tests
+        run: pnpm --filter @pluxel/host exec playwright-core install --with-deps --only-shell chromium
+
       - name: Restore Vite task cache
         id: task-cache
         uses: actions/cache/restore@v6

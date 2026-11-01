@@ -38,14 +38,6 @@ const packageNames = [
 const versions = Object.fromEntries(
 	await Promise.all(packageNames.map(async (name) => [name, await installedVersion(name)])),
 )
-const sdk = await rolldown({
-	input: resolve(root, 'sdk/src/index.ts'),
-	external: /^@pluxel\//,
-	resolve: { conditionNames: ['@pluxel/source', 'import', 'default'] },
-})
-await sdk.write({ file: resolve(root, 'sdk/dist/index.mjs'), format: 'esm' })
-await sdk.close()
-if (process.argv.includes('--sdk-only')) process.exit(0)
 const semantics = createPluginSemanticsPlugin({ root })
 const build = await rolldown({
 	input: {

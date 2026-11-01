@@ -50,6 +50,8 @@ cargo +1.99.1 test --locked --manifest-path projects/embedded-launcher/native/Ca
 
 这两项原生入口运行真实嵌入回归，不启动 LLRT CLI 子进程；它们尚不是原生窗口、开发 HMR 或最终发布命令。兼容矩阵和关闭验收仍以 IMPLEMENTATION 的实际结果为准。
 
+SDK 产物仅由 `@embedded-launcher/sdk#compile` 生成；插件与发布构建通过 Vite Task 等待 SDK 和框架产物，冷 checkout 无需先手动构建框架。
+
 ## 当前开发窗口与 CLI
 
 完成上述插件构建后，从项目目录执行：
@@ -74,7 +76,7 @@ node packages/cli/bin/pluxel.mjs dev instances --root "$PWD/projects/embedded-la
 从项目目录构建（`zip` 必须在构建机 PATH 中）：
 
 ```sh
-node build/release.mjs
+vp run build:release
 cargo +1.99.1 build --locked --manifest-path native/Cargo.toml --bin embedded-launcher
 cargo +1.99.1 run --locked --manifest-path native/Cargo.toml --bin embedded-launcher -- --plugins "$PWD/release/runtime" --profile "$PWD/.pluxel/production"
 ```
