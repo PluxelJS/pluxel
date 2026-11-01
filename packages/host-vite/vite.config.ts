@@ -16,6 +16,8 @@ export default defineConfig({
 					'compile',
 					'@pluxel/host#compile',
 					'@pluxel/test#compile',
+					// Workspace setup fixtures copy the CLI, including its development resources.
+					'@pluxel/cli#compile',
 				],
 			},
 			compile: {
