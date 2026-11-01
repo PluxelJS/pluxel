@@ -91,12 +91,17 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition: transition ?? 'opacity 120ms ease-out',
 				minWidth: 0,
-				padding: 0,
+				padding: '6px 0 0',
 			}}
 			role="group"
 			aria-label={`分组 ${g.name || '未命名'}`}
 		>
-			<Flex align="center" gap={2} justify="space-between" style={{ minWidth: 0 }}>
+			<Flex
+				align="center"
+				gap={2}
+				justify="space-between"
+				style={{ minWidth: 0, paddingInline: '10px 4px' }}
+			>
 				<Group gap={4} align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
 					<Box style={{ minWidth: 0, flex: 1 }}>
 						<CatalogTooltip label={g.name || '未命名分组'} withinPortal withArrow>

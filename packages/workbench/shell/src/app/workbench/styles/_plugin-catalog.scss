@@ -117,7 +117,10 @@
 	gap: 8px;
 	justify-content: space-between;
 	margin-bottom: 4px;
+	min-height: 28px;
 	min-width: 0;
+	/* Same inline inset as catalog rows, so headings line up with row content. */
+	padding: 2px 4px 0 10px;
 }
 
 .plx-pluginCatalog__sectionActions {

@@ -75,7 +75,8 @@ type Props = {
 }
 
 const COMPACT_UNGROUPED_MAX_ITEMS = 2
-const COMPACT_UNGROUPED_CHROME_HEIGHT = 38
+// Card border (2) + card padding (12) + section header with its margin (34), plus slack.
+const COMPACT_UNGROUPED_CHROME_HEIGHT = 50
 const MIN_SECTION_HEIGHT = 72
 
 const groupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
@@ -463,7 +464,7 @@ export function PluginOrganizer({
 				style={{
 					display: 'grid',
 					gridTemplateRows: organizerGridRows,
-					gap: 4,
+					gap: 8,
 					minHeight: 0,
 					height: '100%',
 					...style,
@@ -477,7 +478,7 @@ export function PluginOrganizer({
 					className="plx-pluginCatalog__sectionCard"
 					shadow="none"
 					radius="sm"
-					p={0}
+					p={6}
 					style={{
 						minWidth: 0,
 						minHeight: 0,
@@ -618,7 +619,7 @@ export function PluginOrganizer({
 						className="plx-pluginCatalog__sectionCard"
 						shadow="none"
 						radius="sm"
-						p={0}
+						p={6}
 						style={{
 							minHeight: 0,
 							minWidth: 0,
