@@ -3,9 +3,7 @@ import type { Plugin } from 'rolldown'
 import {
 	assertSharedRuntimeAdmission,
 	admitSharedRuntimeOwner,
-	assertSharedRuntimeHost,
 	installedSharedRuntimeVersion,
-	nearestPackageManifest,
 	participatesInSharedRuntime,
 	readSharedRuntimePackage,
 	sharedRuntimes,
@@ -25,30 +23,28 @@ function staticSharedRuntimePlugin(entry: string, runtime: SharedRuntime): Plugi
 	return {
 		name: `pluxel:static-${runtime.marker}`,
 		async resolveId(id, importer, options) {
-			const serviceConsumer = runtime.name === 'tinybase' && id === runtime.entry
 			if (
 				!importer ||
 				!isAbsolute(importer) ||
-				!(serviceConsumer || id === runtime.name || id.startsWith(`${runtime.name}/`))
+				!(id === runtime.name || id.startsWith(`${runtime.name}/`))
 			)
 				return null
 			const publisher = readSharedRuntimePackage(importer, runtime)
-			const application =
-				runtime.name === 'tinybase' && publisher?.manifestPath === nearestPackageManifest(entry)
 			if (
 				!publisher ||
-				(!application && !serviceConsumer && !participatesInSharedRuntime(publisher))
+				(publisher.owner !== runtime.owner && !participatesInSharedRuntime(publisher))
 			)
 				return null
 			const owner = await this.resolve(`${runtime.owner}/package.json`, entry, { skipSelf: true })
-			if (!owner?.id) return null
+			if (!owner?.id)
+				this.error(`[static-application] Cannot resolve ${runtime.owner} for ${publisher.owner}`)
 			const canonicalRoot = await this.resolve(runtime.name, owner.id, {
 				...options,
 				skipSelf: true,
 			})
 			if (!canonicalRoot?.id || canonicalRoot.external)
 				this.error(`[static-application] Cannot bundle Host ${runtime.name}`)
-			const own = await this.resolve(serviceConsumer ? runtime.name : id, importer, {
+			const own = await this.resolve(id, importer, {
 				...options,
 				skipSelf: true,
 			})
@@ -67,10 +63,7 @@ function staticSharedRuntimePlugin(entry: string, runtime: SharedRuntime): Plugi
 				development: false,
 				operation: 'static-application',
 			}
-			if (application)
-				assertSharedRuntimeHost({ ...admission, manifestPath: publisher.manifestPath })
-			else assertSharedRuntimeAdmission(admission)
-			if (serviceConsumer) return null
+			assertSharedRuntimeAdmission(admission)
 			const canonical = await this.resolve(id, owner.id, { ...options, skipSelf: true })
 			if (!canonical?.id || canonical.external)
 				this.error(`[static-application] Cannot bundle Host ${id}`)

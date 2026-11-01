@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { CanvasPlugin } from '@pluxel/plugin-canvas'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { pluginNodeAddressOf } from '@pluxel/core'
@@ -14,5 +13,5 @@ export default defineHostApplication(() => ({
 	plugins,
 	configRecords: { mode: 'memory' },
 	state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
-	services: standardServices({ fs: { backend: InMemory } }),
+	services: standardServices(),
 }))

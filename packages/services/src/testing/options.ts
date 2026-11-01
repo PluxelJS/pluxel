@@ -9,7 +9,7 @@ import {
 export type ServiceTestHostOptions = Readonly<{
 	/** Core lifecycle settings. Defaults to a root named `test`. */
 	config?: CoreHostConfig
-	/** Complete service list. Omitted installs HTTP, commands, Node artifacts, workers and an in-memory filesystem. */
+	/** Complete service list. Omitted installs HTTP, commands, Node artifacts and workers. */
 	services?: readonly HostService[]
 	/** Install Management without Workbench. Defaults to false. */
 	management?: boolean

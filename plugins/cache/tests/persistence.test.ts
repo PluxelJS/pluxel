@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
-import { InMemory, Passthrough, type FsServiceConfig } from '@pluxel/services/fs'
+import { Passthrough, type FsConfig } from '@pluxel/core/fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
 
@@ -24,7 +24,10 @@ class PersistentCacheConsumer extends BasePlugin {
 async function durableStorage() {
 	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-cache-fs-'))
 	directories.push(prefix)
-	return { backend: Passthrough, fs: nativeFs, prefix } satisfies FsServiceConfig
+	return {
+		mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+		durableMounts: ['/'],
+	} satisfies FsConfig
 }
 
 async function snapshotPath(prefix: string) {
@@ -34,7 +37,7 @@ async function snapshotPath(prefix: string) {
 }
 
 async function withPersistentCache(
-	storage: FsServiceConfig,
+	storage: FsConfig,
 	fn: (cache: Cache) => Promise<void>,
 	options: {
 		mode?: 'best-effort' | 'durable'
@@ -42,18 +45,27 @@ async function withPersistentCache(
 		flushIntervalMs?: number
 	} = {},
 ): Promise<void> {
-	await using host = await createTestHost({ services: standardServices({ fs: storage }) })
 	const persistence = {
 		mode: options.mode ?? 'durable',
 		...(options.flushIntervalMs === undefined ? {} : { flushIntervalMs: options.flushIntervalMs }),
 	}
+	await using host = await createTestHost({
+		config: { storage },
+		services: standardServices(),
+		configRecords: {
+			initial: [
+				{
+					owner: pluginNodeAddressOf(MemoryCacheBackendPlugin),
+					config: {
+						...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
+						persistence,
+					},
+				},
+			],
+		},
+	})
 	await host.commit((change) => {
-		change.start(MemoryCacheBackendPlugin, {
-			initialConfig: {
-				...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
-				persistence,
-			},
-		})
+		change.start(MemoryCacheBackendPlugin)
 		change.start(CachePlugin)
 		change.start(PersistentCacheConsumer)
 	})
@@ -122,16 +134,21 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		let snapshotWrites = 0
 		const instrumented = {
 			...storage,
-			fs: {
-				...nativeFs,
-				promises: {
-					...nativeFs.promises,
-					async rename(from: nativeFs.PathLike, to: nativeFs.PathLike) {
-						if (String(to).endsWith('/memory-backend.snapshot')) {
-							snapshotWrites++
-							if (snapshotWrites === 1) await firstWriteGate
-						}
-						await nativeFs.promises.rename(from, to)
+			mounts: {
+				'/': {
+					...storage.mounts['/'],
+					fs: {
+						...nativeFs,
+						promises: {
+							...nativeFs.promises,
+							async rename(from: nativeFs.PathLike, to: nativeFs.PathLike) {
+								if (String(to).endsWith('/memory-backend.snapshot')) {
+									snapshotWrites++
+									if (snapshotWrites === 1) await firstWriteGate
+								}
+								await nativeFs.promises.rename(from, to)
+							},
+						},
 					},
 				},
 			},
@@ -158,7 +175,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 
 	it('fails lifecycle honestly when durable storage is unavailable', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 		const failure = await host.commitExpectFail((change) => {
 			change.start(MemoryCacheBackendPlugin, {
@@ -181,19 +198,27 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		})
 		const instrumented = {
 			...storage,
-			fs: {
-				...nativeFs,
-				promises: {
-					...nativeFs.promises,
-					async open(...args: Parameters<typeof nativeFs.promises.open>) {
-						if (String(args[0]).endsWith('/memory-backend.snapshot'))
-							throw new Error('storage unavailable')
-						return nativeFs.promises.open(...args)
+			mounts: {
+				'/': {
+					...storage.mounts['/'],
+					fs: {
+						...nativeFs,
+						promises: {
+							...nativeFs.promises,
+							async open(...args: Parameters<typeof nativeFs.promises.open>) {
+								if (String(args[0]).endsWith('/memory-backend.snapshot'))
+									throw new Error('storage unavailable')
+								return nativeFs.promises.open(...args)
+							},
+						},
 					},
 				},
 			},
 		}
-		await using host = await createTestHost({ services: standardServices({ fs: instrumented }) })
+		await using host = await createTestHost({
+			config: { storage: instrumented },
+			services: standardServices(),
+		})
 		const failure = await host.commitExpectFail((change) => {
 			change.start(MemoryCacheBackendPlugin, {
 				initialConfig: { maxEntries: 10, persistence: { mode: 'durable', flushIntervalMs: 1_000 } },
@@ -213,7 +238,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		await withPersistentCache(storage, async (cache) => {
 			await cache.set('seed', true)
 		})
-		await writeFile(await snapshotPath(storage.prefix), new Uint8Array([1, 2, 3]))
+		await writeFile(await snapshotPath(storage.mounts['/'].prefix), new Uint8Array([1, 2, 3]))
 		await withPersistentCache(
 			storage,
 			async (cache) => {

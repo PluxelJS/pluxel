@@ -1,6 +1,6 @@
 # @pluxel/plugin-invoice
 
-Experimental VLM transcription and browser-assisted verification of Chinese fiscal tickets and twenty-digit digital tax invoices. `InvoicePlugin` uses `PlaywrightPlugin` for an externally operated browser and keeps both fiscal and tax portal adapters inside this package, sharing one configuration, admission limit, deadline and context lifecycle. It installs no browser and needs no Workbench or task database.
+Experimental VLM transcription and browser-assisted verification of Chinese fiscal tickets and twenty-digit digital tax invoices. `InvoicePlugin` depends on the abstract `Playwright` capability for an externally operated browser; applications register the default `PlaywrightPlugin` or their own native connection provider and keeps both fiscal and tax portal adapters inside this package, sharing one configuration, admission limit, deadline and context lifecycle. It installs no browser and needs no Workbench or task database.
 
 See the [invoice guide](../../../docs/plugins/invoice.md) for supported documents, configuration, credentials, results, cancellation and limitations. The [application](examples/application.ts) shows explicit environment/Vault bindings; the [consumer](examples/consumer.ts) handles review and human-interaction outcomes. [Design and evidence](DESIGN.md) distinguishes live observations from synthetic regression coverage.
 

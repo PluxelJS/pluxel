@@ -248,7 +248,15 @@ test('cleans up acquired exporters after partial initialization failure', async 
 				},
 			},
 		),
-		/logs exporter initialization failed/,
+		(error: unknown) => {
+			assert.ok(error instanceof AggregateError)
+			assert.equal((error.cause as Error).message, 'logs exporter initialization failed')
+			assert.equal((error.errors[0] as Error).message, 'logs exporter initialization failed')
+			const cleanup = error.errors[1] as AggregateError
+			assert.ok(cleanup instanceof AggregateError)
+			assert.equal(cleanup.errors.length, 1)
+			return true
+		},
 	)
 	assert.equal(spans.shutdownCalls, 1)
 })

@@ -1,29 +1,24 @@
 import {
+	InputBindingError,
+	declaredConfigBindings,
+	fail,
+	record,
+	schema,
+	configSchema,
+	type InputSchema,
+} from './input-binding-contract'
+import {
 	pluginNodeAddressOf,
 	pluginNodeIndexKey,
 	type PluginConstructor,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { projectRawInput, type Schema } from 'valibot-form'
-import type { HostApplication, HostRuntimeOptions } from './host'
+import type { HostApplication } from './host'
 import type { HostStartupContext } from './application'
 import type { HostVaultBindingRecord } from './bindings'
-
-export class InputBindingError extends Error {
-	constructor(
-		readonly code: 'INVALID_BINDING' | 'MISSING_INPUT' | 'INVALID_INPUT' | 'FILE_READ_FAILED',
-		message: string,
-	) {
-		super(message)
-		this.name = 'InputBindingError'
-	}
-}
-
-type InputSchema = StandardSchemaV1 & { readonly kind: 'schema'; readonly type: string }
-const declaredConfigBindings = new WeakSet<object>()
 
 type Source = Readonly<{ path: readonly string[]; kind: 'env'; name: string }>
 export type ResolvedInputBindings = Readonly<{
@@ -42,16 +37,6 @@ export type ResolvedInputBindings = Readonly<{
 	vaultBindings: readonly HostVaultBindingRecord[]
 }>
 
-function fail(message: string): never {
-	throw new InputBindingError('INVALID_BINDING', message)
-}
-function record(value: unknown): value is Record<string, unknown> {
-	return (
-		!!value &&
-		typeof value === 'object' &&
-		(Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
-	)
-}
 function envelope(
 	value: unknown,
 	fields: readonly string[],
@@ -84,23 +69,6 @@ function segment(key: string): void {
 		['__proto__', 'prototype', 'constructor'].includes(key)
 	)
 		fail('[host] Input binding contains an invalid field or record key')
-}
-function schema(value: unknown, label: string): InputSchema {
-	if (
-		!record(value) ||
-		value.kind !== 'schema' ||
-		!record(value['~standard']) ||
-		typeof value['~standard'].validate !== 'function'
-	)
-		fail(`[host] ${label} must declare a Valibot schema`)
-	return value as unknown as InputSchema
-}
-function configSchema(plugin: PluginConstructor, selected?: StandardSchemaV1): InputSchema {
-	const candidate = consumePluginDefinitionCandidate(plugin)
-	const declared = schema(candidate.declaration.config?.owner?.schema, 'configs.use()')
-	if (selected !== undefined && declared !== selected)
-		fail('[host] Config binding must reference the same schema as configs.use()')
-	return declared
 }
 function unwrap(input: InputSchema): InputSchema & Record<string, unknown> {
 	let current = input as InputSchema & Record<string, unknown>
@@ -392,28 +360,4 @@ export async function resolveInputBindings(
 	return { base, baseSources, overlays, vaultBindings }
 }
 
-/** Recheck config deployment paths against replacement metadata. Vault contracts belong to the Host binding. */
-export async function validateInputBindingCandidates(
-	plugins: readonly PluginConstructor[],
-	options: HostRuntimeOptions,
-): Promise<void> {
-	for (const plugin of plugins) {
-		const owner = pluginNodeIndexKey(pluginNodeAddressOf(plugin))
-		const overlays =
-			options.configRecords?.overlays?.filter(
-				(entry) => declaredConfigBindings.has(entry) && pluginNodeIndexKey(entry.owner) === owner,
-			) ?? []
-		const files =
-			options.configRecords?.baseSources?.filter(
-				(entry) => declaredConfigBindings.has(entry) && pluginNodeIndexKey(entry.owner) === owner,
-			) ?? []
-		if (overlays.length > 0 || files.length > 0) {
-			const declared = configSchema(plugin)
-			for (const overlay of overlays)
-				for (const source of overlay.sources) {
-					if (!projectRawInput(declared as unknown as Schema, source.path).ok)
-						fail('[host] Replacement config schema is incompatible with deployment bindings')
-				}
-		}
-	}
-}
+export { InputBindingError } from './input-binding-contract'

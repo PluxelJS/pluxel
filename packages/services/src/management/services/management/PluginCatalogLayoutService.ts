@@ -1,6 +1,6 @@
-import type { HostOperationOptions } from '@pluxel/host/internal'
-import type { HostDocumentStorage } from '@pluxel/host'
-import { resolveContextCapability } from '@pluxel/core/host'
+import { type HostOperationOptions } from '@pluxel/host/internal'
+import { type HostDocumentStorage } from '@pluxel/host'
+import { requireTinyBaseHost } from '@pluxel/core/internal'
 import {
 	formatPluginDefinitionReference,
 	parsePluginDefinitionReference,
@@ -9,7 +9,6 @@ import {
 	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { TinyBaseHost } from '../../../tinybase'
 import {
 	automaticCatalogGroups,
 	catalogFamilies,
@@ -17,7 +16,7 @@ import {
 	type CatalogGroup,
 	type PluginCatalogLayoutEntry,
 } from './catalog-groups'
-import type { PluginCatalogSectionBasis } from '../../web/protocol'
+import { type PluginCatalogSectionBasis } from '../../web/protocol'
 
 export type { PluginCatalogLayoutEntry, PluginCatalogSectionBasis }
 export type PluginCatalogSectionLayout = Readonly<CatalogGroup>
@@ -60,7 +59,7 @@ export class PluginCatalogLayoutService {
 	private tail: Promise<unknown> = Promise.resolve()
 
 	constructor(root: Context) {
-		this.storage = resolveContextCapability(root.root, TinyBaseHost).documents('management')
+		this.storage = requireTinyBaseHost(root.root).documents('management')
 	}
 
 	listSections(

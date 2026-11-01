@@ -50,48 +50,13 @@ description: 按依赖自动整理插件，并用界面或受信任的 Host 文�
 
 ## 让 coding agent 编辑布局
 
-分组是 `TinyBaseHost.documents('management')` 中的 `plugin-groups.json` 文档，物理快照由 Host 管理。
-[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留；不再直接编辑旧的 FS JSON 路径。
+分组保存在 Core 内建 TinyBase 的 Management 私有文档中，物理快照由 Host 管理。[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留。
 
-操作运行中的开发应用时，按[开发控制台流程](../development/dev-console.md)发现并固定实例，从当前 Host 读取文档：
+通过已有的认证 Management client 读取 `client.catalog.snapshot()`，再提交 `client.catalog.updateLayout({ sections })`。每个 section 包含稳定的 `sectionId`、名称和完整的 `PluginNodeAddress` 数组；将 `sections` 设为 `null` 可恢复自动分组。等待操作成功后重新读取目录，核对实际结果，不直接修改 backing envelope。
 
-```ts no-twoslash
-import { defineDevConsole } from '@pluxel/host-vite/console'
-import { TinyBaseHost } from '@pluxel/services/tinybase'
+- 修改同一组名称时保留 `sectionId`；数组顺序就是组和成员顺序。
+- 同一个 definition 的默认实例和 fork 必须留在同一组，不使用 display name 作为身份。
+- 更新不会安装或启动 Plugin；不存在的节点、重复分组与重复归属会被拒绝。
+- 保存失败保留此前确认的布局；Host 文档 writer 故障时检查实际 backing，再恢复 Host。
 
-export default defineDevConsole(async (dev) => {
-	return dev.ctx.require(TinyBaseHost).documents('management').getText('plugin-groups.json')
-})
-```
-
-文档使用以下格式。修改后，通过同一目标上的受信任脚本调用 `documents.put('plugin-groups.json', text)`，等待保存完成，再刷新目录核对领域校验结果。原生 backing 快照包含其他 envelope 信息，不直接修改它。
-
-```json
-{
-	"version": 1,
-	"groups": [
-		{
-			"id": "research",
-			"name": "研究与资料",
-			"plugins": [
-				"package:@example/research::ResearchPlugin",
-				"package:@example/documents::DocumentPlugin"
-			]
-		}
-	],
-	"ungrouped": ["package:@example/auth::AuthPlugin"]
-}
-```
-
-- `id` 是自选的稳定组 key；改名时保持它不变。数组顺序就是组和成员顺序。
-- `plugins` 使用 canonical definition reference，不使用 class display name 或 fork reference。包入口格式如上；源码入口使用
-  `source:<sourceSpace>/<path>::<exportName>`，路径中的特殊字符遵循标准 Plugin reference 编码。
-- `ungrouped` 明确指定保持平铺的插件；没有列出的插件继续自动分类。
-- 暂时不在目录中的合法引用会保留，插件回来时恢复归属，不会因此安装或启动插件。
-- 空文档 `{ "version": 1, "groups": [], "ungrouped": [] }` 与文档不存在都表示完全自动。无需预先生成全量分组文档。
-
-文档需要包含这三个顶层字段；不接受重复组 key、重复插件归属、未知字段和非法引用。使用格式化 JSON，Host adapter 在完整原子提交后才确认 put。
-文档变化会在下一次目录刷新时读取，不必重启宿主。语法或内容错误会显示读取失败，修复文档后重新刷新即可。
-界面保存与受信任文档编辑共用这份数据；避免同时编辑同一份布局，完整保存以最后成功写入为准。
-
-保存失败时保留此前确认的布局；若 Host 文档 writer 已故障，先检查故障与实际 backing，再恢复 Host。不要另建测试宿主来判断当前应用是否已更新。
+操作运行中的开发应用时使用[开发控制台流程](../development/dev-console.md)固定实例，并核对同一 Host 的结果。不要另建测试宿主来判断当前应用是否已更新。

@@ -1,11 +1,10 @@
 import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
-import { type Context, BasePlugin, Plugin } from '@pluxel/core'
+import { type Context, BasePlugin, Plugin, type TinyBaseService } from '@pluxel/core'
 
-import { writeFileAtomic, type FsPromises } from '@pluxel/services/fs'
-import { TinyBase, type TinyBaseService } from '@pluxel/services/tinybase'
-import type { Store } from 'tinybase'
+import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
+import { type Store } from 'tinybase'
 import { RpcTarget } from 'capnweb'
 import { FontsConfig, type FontsPluginConfig } from './config.ts'
 import { FontsError, type FontsErrorCode } from './errors.ts'
@@ -20,14 +19,14 @@ import {
 	type StoredManagedFont,
 } from './managed-record.ts'
 import { FontsWorkbench } from './workbench.ts'
-import type { DefaultFontSnapshot, FontFamilySnapshot } from './font-snapshots.ts'
-import type {
-	FontSelectionApi,
-	FontSelectionSnapshot,
-	FontsManagerApi,
-	FontsManagerSnapshot,
-	InstallManagedFontInput,
-	ManagedFontSnapshot,
+import { type DefaultFontSnapshot, type FontFamilySnapshot } from './font-snapshots.ts'
+import {
+	type FontSelectionApi,
+	type FontSelectionSnapshot,
+	type FontsManagerApi,
+	type FontsManagerSnapshot,
+	type InstallManagedFontInput,
+	type ManagedFontSnapshot,
 } from './workbench-contracts.ts'
 
 const DEFAULT_FAMILY_VALUE = 'defaultFamily'
@@ -237,15 +236,15 @@ export class FontsPlugin extends BasePlugin {
 			)
 		}
 		this.lifecycleRevision += 1
-		const storage = this.ctx.fs ? await this.ctx.fs() : undefined
+		const storage = await this.ctx.fs()
 		const systemFamilies = new Set(GlobalFonts.families.map(({ family }) => family))
 		const configuredDefaultFamily =
 			this.config.defaultFamily === undefined
 				? undefined
 				: normalizeFamily(this.config.defaultFamily)
-		const tinybase = this.ctx.tinybase ? this.ctx.require(TinyBase) : undefined
-		const store = await tinybase?.open()
-		const preferredFamily = store ? loadDefaultFamily(store) : undefined
+		const tinybase = this.ctx.tinybase
+		const store = await tinybase.open()
+		const preferredFamily = loadDefaultFamily(store)
 		this.defaults.systemFamilies.clear()
 		for (const family of systemFamilies) this.defaults.systemFamilies.add(family)
 		this.defaults.configuredFamily = configuredDefaultFamily
@@ -512,7 +511,7 @@ export class FontsPlugin extends BasePlugin {
 		return state
 	}
 
-	private async initializeManagedFonts(storage?: FsPromises): Promise<ManagedState> {
+	private async initializeManagedFonts(storage: FsPromises): Promise<ManagedState> {
 		const state: ManagedState = {
 			owner: this.ctx,
 			prefix: 'managed',
@@ -521,7 +520,6 @@ export class FontsPlugin extends BasePlugin {
 			pendingTasks: 0,
 			tail: Promise.resolve(),
 		}
-		if (!storage) return state
 		try {
 			const entries = await storage
 				.readdir(state.prefix, { withFileTypes: true })
@@ -605,10 +603,7 @@ export class FontsPlugin extends BasePlugin {
 			}
 			const { tinybase, store } = this.defaults
 			if (!tinybase || !store) {
-				throw new FontsError(
-					'PERSISTENCE_REQUIRED',
-					'Install the TinyBase service to save font preferences',
-				)
+				throw new FontsError('NOT_RUNNING', 'Font preferences belong to a stopped generation')
 			}
 			if (this.defaults.faulted) throw this.defaults.fault
 			this.assertManagedStateActive(state)
@@ -985,10 +980,7 @@ export class FontsPlugin extends BasePlugin {
 
 	private requireFontStorage(): FsPromises {
 		if (!this.defaults.storage) {
-			throw new FontsError(
-				'PERSISTENCE_REQUIRED',
-				'Install the FS service to save managed font uploads',
-			)
+			throw new FontsError('NOT_RUNNING', 'Font storage belongs to a stopped generation')
 		}
 		return this.defaults.storage
 	}

@@ -2,8 +2,8 @@
 
 ## 决策
 
-`@pluxel/plugin-otel` 是 OTel SDK 的 Pluxel 生命周期装配层。公开作者 contract 只有 concrete `OtelPlugin` 的三个 caller-scoped
-getter：
+`@pluxel/plugin-otel` 是 OTel SDK 的 Pluxel 生命周期装配层。业务 constructor 依赖 abstract `Otel`，读取三个 caller-scoped getter；
+concrete `@Plugin(Otel)` 通过 `createProviders(): Promise<OtelProviders>` 交付原生 SDK providers。`OtelPlugin` 是可选的默认预设：
 
 | Contract | 原生类型                           | instrumentation scope                 |
 | -------- | ---------------------------------- | ------------------------------------- |
@@ -11,10 +11,15 @@ getter：
 | `tracer` | `@opentelemetry/api` `Tracer`      | caller Plugin node address projection |
 | `logger` | `@opentelemetry/api-logs` `Logger` | caller Plugin node address projection |
 
-Plugin 不拥有 instrument/span/log 数据模型，不包装热路径，不猜测业务结果，也不提供 arbitrary provider mutation。events 使用原生
+Plugin 不拥有 instrument/span/log 数据模型，不包装热路径，不猜测业务结果。events 使用原生
 OTel Logger 的 `eventName`，而不是增加第四套 event API。
 
-配置直接描述输出 ownership：
+原生装配直接使用 `MeterProvider`、`BasicTracerProvider`、`LoggerProvider` 的完整构造参数和组合能力。`OtelProviders` 只接受对应
+provider 实例；不复制 sampler、views、readers、processors、limits、resource 或 exporter options。未交付的 signal 报 disabled，
+空 record 明确拒绝。hook 在本 generation 的配置注入后调用一次，交付前失败由 hook 清理；交付后全部 providers 归 generation，
+不可借用进程全局 provider。
+
+默认预设的普通 field `configs.use(OtelConfig)` 声明持久配置：
 
 ```ts
 type OtelPluginConfig = {
@@ -28,7 +33,8 @@ OTLP signal。
 
 ## 运行时结构
 
-每个 active `OtelPlugin` generation 共享一个 resource，并分别拥有 local provider：
+默认 `OtelPlugin` generation 共享一个 resource，并分别拥有 local provider；自定义 concrete provider 可以使用原生 resource、
+sampler、metric views 和多个 reader/processor/exporter：
 
 ```text
 caller.meter  -> MeterProvider  -> PeriodicMetricReader -> signal OTLP exporter
@@ -63,8 +69,9 @@ process-stable `AsyncLocalStorageContextManager`，以及组合的 W3C tracecont
 ## 生命周期与失败语义
 
 provider、reader、processor、queue、timer、exporter 与 pending scrape 都由一个 Plugin generation 拥有。初始化中途失败会并行
-best-effort 关闭全部已取得资源并保留原始错误；成功后只注册一次 owner effect。公开 runtime 在 stop 时先撤销，随后幂等 shutdown
-flush 三个 provider。一个 provider shutdown 失败不会跳过其他 provider。
+关闭全部已取得资源并保留原始错误；初始化与清理同时失败用 `AggregateError` 保留两者。成功后只注册一次 owner effect。
+公开 runtime 在 stop 时先撤销，随后幂等 shutdown/flush 三个 provider。一个 provider 失败不会跳过其他 provider，shutdown
+失败仍进入 lifecycle report，不能仅记录 warning 后伪装成功。
 
 metrics periodic reader、BSP 和 BLRP 都有有界 batch/queue/delay/export timeout。BLRP 上游当前不读取 `OTEL_BLRP_*`，因此本包显式
 解析后传入 SDK；BSP 也显式传入以统一限制与测试隔离。官方 exporter 自己实现 OTLP transient retry。
@@ -72,14 +79,20 @@ metrics periodic reader、BSP 和 BLRP 都有有界 batch/queue/delay/export tim
 export 诊断包装器保留原生 exporter 语义，只上报 `{ signal, ok }` 或 bounded `errorType`。首次失败、每分钟持续失败窗口和恢复按
 signal 分开记录；不会记录 endpoint、headers、payload、response 或任意业务 attributes。Prometheus collection error 返回 503。
 
-可选 Workbench Content 复用同一份 export state，只保留每个 signal 的 latest outcome。每个 opened Content 注册一个
+默认 SDK 工厂内部登记返回 record 的受管 OTLP/Prometheus 事实，adapter 按实际 provider 对象与该 receipt 匹配，
+不通过 hook 方法 identity 或保存配置推断实际输出。自定义 record 的 provider 状态是 `external`，只证明已安装，不声称 exporter
+健康；缺失 provider 为 disabled。Prometheus 仅在实际 reader 已挂载路由时显示 listening。
+
+可选 Workbench Content 由 concrete Plugin 在自己的 `init()` 中发布；abstract `Otel` 提供受保护的 `workbenchOperations()`，
+默认和自定义实现可复用公开 `OtelWorkbench` descriptor。Content 复用同一份 export state，只保留每个 signal 的 latest outcome。每个 opened Content 注册一个
 `dataChanged()` callback，并严格由其 lifetime signal 移除；状态变化只通知 Framework 重新执行完整 `load()`。手动 flush action
 调用 generation-local provider 的 `forceFlush()`，部分失败记录 bounded error type 并返回可展示的 expected failure。Content 不拥有
 provider 生命周期，不增加 exporter、timer、listener 或 transport，Workbench disabled 时也不会改变 telemetry 行为。
 
 ## 环境与安全
 
-`OtelConfig` 的导出值与 `configs.use()` 声明相同，Host 可用 env/file binding 选择 signal 和 Prometheus；Workbench 不提供另一份配置 authority。
+`OtelConfig` 只属于默认 `OtelPlugin` 预设，导出值与其普通 field `configs.use()` 声明相同。Host 可用 env/file binding 选择 signal
+和 Prometheus；Workbench 不提供另一份配置 authority。自定义 `@Plugin(Otel)` 不继承该 schema，可自行声明应用配置或直接装配 native providers。
 OTel 标准 `OTEL_*` 继续使用 SDK 的进程环境契约，不声称它们由 Host `startup.env` 自动接管；二者不能混作同一个配置来源。
 
 signal-specific OTLP 设置覆盖 generic 设置。HTTP generic endpoint 追加标准 `/v1/{signal}`，specific endpoint 视为完整 URL；gRPC
@@ -96,12 +109,14 @@ resource 是 `defaultResource()` 与显式环境 attributes 的 merge；`service
 - 不提供 `measure()`、decorator、RED wrapper、固定 instruments 或 attribute registry；
 - 不自动 instrument runtime、HTTP、database 或业务 Plugin；
 - 不把 `ctx.logger` 悄悄桥接到 logs signal；`RuntimeLogging` 仍由 Host 的 Logging 安装与配置拥有；
-- 不在应用内实现 durable queue、fan-out、backend routing、dashboard 或 alerting；
-- 不支持 OTLP Profiles：协议仍是 `v1development`，OTel JS 2.10/0.221 没有 profiles API、SDK/exporter package。
+- 默认预设不添加 durable queue、backend routing、dashboard 或 alerting；原生 hook 可组合多个 SDK readers/processors/exporters；
+- 不支持 OTLP Profiles：当前 SDK 依赖没有对应 profiles API、SDK/exporter package。
 
 ## 验证
 
 - Pluxel Host 测试覆盖 required graph、caller cache、disabled signal、Prometheus route 与 cascade replacement；
+- native providers Host 测试通过同一 abstract `Otel` 依赖选择默认/应用实现，验证原生 sampler、metric views/aggregation、
+  多 span processor、log severity、scope/correlation、Workbench external 状态与 flush/shutdown 失败、启动后续失败清理；
 - capturing exporters 覆盖三个 signal 的 resource/scope、原生数据、active async context、log trace correlation、幂等 shutdown 与
   partial-init cleanup；
 - 本地真实 receiver 覆盖三 signal 的 HTTP protobuf、HTTP JSON 与 gRPC wire request；

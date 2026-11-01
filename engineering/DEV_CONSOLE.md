@@ -64,7 +64,7 @@ full-host replacement 先 abort 旧 run、drain 已跟踪 Host 操作，再释�
 
 ## 日志
 
-Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 logging 配置拥有输出、过滤与 store；开启控制台不会安装 Logging 或自动增加 store。脚本显式解析已安装的 `Logging` 能力，调用既有 `RuntimeLogging`/store API，返回有界普通数据。`flushStores()` 只刷 store sink buffer，不依赖 policy persistence；正常 `flush()` 同时刷 store 和 policy。
+Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 logging 配置拥有输出、过滤与 store；开启控制台不会配置日志或自动增加 store。应用通过 `config.logger: logtape(...)` 选择输出；脚本从 `@pluxel/core/logging` 导入并解析当前 root 的 `Logging` 能力，调用既有 `RuntimeLogging`/store API，返回有界普通数据。`flushStores()` 只刷 store sink buffer，不依赖 policy persistence；正常 `flush()` 同时刷 store 和 policy。
 
 日志读取保留真实 epoch、sequence、retention 和 gap 契约，游标只是时间窗口，不提供因果隔离。控制台不提供另一条 HTTP/log follow 路由，也不在 run envelope 自动附加日志边界。
 

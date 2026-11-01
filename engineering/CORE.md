@@ -1,6 +1,6 @@
 # Core：图、Context 与 generation
 
-`@pluxel/core` 定义 Plugin definition/node、DI graph、Plugin Context projection 和 generation lifecycle，不拥有宿主能力。
+`@pluxel/core` 定义 Plugin definition/node、DI graph、Plugin Context projection 和 generation lifecycle，并固定提供可跨平台的 FS 与 TinyBase。
 通用 Context host kernel 由公开的 `@pluxel/context` 提供；Core 源码直接复用它，并在发布产物中完整内联。
 
 按修改对象选读：[Context kernel](#context-capability-kernel)、[identity/DI](#identity-与-di-不变量)、[record/graph 成本](#definitionnode-与-generation)、[caller facade](#生命周期与-caller-facade)、[Part/events](#内部组成与事件)。Commit 状态转换和失败证据由 [CORE_LIFECYCLE_SEMANTICS](CORE_LIFECYCLE_SEMANTICS.md) 单独维护。
@@ -16,12 +16,14 @@
 - pre-root、package-private generation finalization 与 commit publication authority；
 - PluginPart containment tree、Part constructor requirement lifting、owner-bound child Context/effects 与 children-before-owner startup；
 - Plugin/Part composite object config declaration、校验与 normalized aggregate snapshot；
-- init-time `PluginRef` optional resolution、slot-aware runtime reads 和明确的 internal commit subscription。
+- init-time `PluginRef` optional resolution、slot-aware runtime reads 和明确的 internal commit subscription；
+- 运行时数据 FS、原子写入、TinyBase writer/codec、confirmed documents 与 generation 保存屏障，见 [FS](FS.md) 与 [TinyBase](TINYBASE.md)；
+- 通过 `config.logger: logtape(...)` 选择的原生日志运行时、policy、store 与 query，见 [Logging](LOGGING.md)。
 
 ## 不负责
 
 - HTTP/WebSocket carrier、Cap’n Web RPC 与 Workbench Plane；
-- 配置或业务数据持久化；
+- Host 配置层的合并、应用与跨实例复制策略；
 - workspace scan、package install、Vite、HMR；
 - optional package import、安装、retry 或 absent-module protocol；
 - 进程退出、健康检查和部署策略。
@@ -32,7 +34,7 @@
 installation 编译成固定 shape；standalone host 可以在 root 创建前组合自己的能力，或用 `overrides` 替换基础集合中的同一
 descriptor。override 必须保持原 scope 与 projected property，host 编译完成后没有 install/mutate API。
 
-Core 只把这个通用 kernel 映射到 Plugin 生命周期。Runtime 与受信任 framework route 在 root 创建前组合固定 capabilities；
+Core 将这个通用 kernel 映射到 Plugin 生命周期，并在固定 plan 中提供 `ctx.fs()` 与 `ctx.tinybase`。Runtime 与受信任 framework route 在 root 创建前组合固定 capabilities；
 业务 Plugin 继续通过 Plugin graph 表达依赖，不能借助 module evaluation、Plugin `init()` 或 route side effect 修改既有
 Runtime Context。
 
@@ -57,8 +59,7 @@ plan-local prototype getter 直接调用预编译 resolver，再读取 dense arr
 稍后观察到的 mutable config object。caller-derived view 共享 provider root/generation backing，但拥有独立 owner-view cache 和
 readonly caller pin；它不是 containment parent，因此 caller A/B 并发冷访问不会互相污染 owner attribution。
 
-Core 不给 capability installation 增加第二套生命周期。Runtime 若需要在 Plugin lifecycle 前确认 IO/backend readiness，使用
-自己的显式 prepare 阶段主动读取所需 lazy capability，再调用该 service 的领域启动 API；失败与重试语义由 Runtime host 拥有。
+Core 不给 Context kernel 增加异步生命周期。固定 FS 与 TinyBase 由 Core 的 effects 和 commit hooks 管理：访问和文档操作才准备 IO，generation 发布后自动保存，最终先关闭 TinyBase 再关闭 FS。所选日志由 Core 准备并在 TinyBase/FS 前关闭。生产 Host 自动等待 `prepareCoreContext(root)`；Core-only 嵌入者在启动 Plugin 前显式等待该函数（`@pluxel/core/host`）。Host 配置/状态会在接纳 Plugin 前通过私有文档操作确认恢复；显式服务继续使用自己的 prepare 阶段。
 
 Core workspace 在源码层把 `@pluxel/context` 声明为 `devDependencies: workspace:*`，并由 tsdown 的 `alwaysBundle` 同时内联
 JavaScript 与 declarations。发布的 `@pluxel/core` 不要求消费者安装 `@pluxel/context`，也不留下对它的生产 import；需要直接

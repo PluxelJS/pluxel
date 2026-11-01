@@ -8,7 +8,7 @@ description: 发现、注册和管理服务端字体，并为 Canvas、ECharts �
 
 Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字体字节。需要一致的跨机器输出时，通过部署配置提供字体文件、随包提供字体或从 Workbench 上传；只安装 Fonts 不会替操作系统安装字体。
 
-系统发现、部署字体与程序化注册不要求额外 Host 服务。上传字体需要 [FS](../../plugin-development/fs.md)，保存默认偏好需要 Host TinyBase 服务（标准服务组合已包含）；Workbench 是可选编辑入口。
+系统发现、部署字体与程序化注册沿用原生字体 SDK 和文件路径。上传集合使用 Core 固定提供的 [FS](../../plugin-development/fs.md)，默认偏好使用 [TinyBase](../../plugin-development/tinybase.md)；Workbench 是可选编辑入口。跨启动恢复取决于 Host 选择的持久后端。
 
 `DefaultFontSnapshot`、`FontFamilySnapshot` 和 `FontStyleSnapshot` 从包根以 `type` 导入；它们只描述字体数据。Workbench definition 与 RPC API 从 `/workbench` 导入。
 
@@ -148,7 +148,7 @@ const revision = this.fonts.revision
 3. 当前平台的自动系统字体。
 4. generic `sans-serif`。
 
-`source` 表示是哪一层选中了默认值：`preference`、`config`、`system` 或 `generic`，不是字体资源的来源。`preferredFamily` 或 `configuredFamily` 可能存在但暂时不可用，此时解析会继续 fallback。preference 是 Fonts 自身的 provider-wide domain state；显式配置暂时遮盖它，取消配置后可重新生效。即使 Workbench 未启用，安装 TinyBase 后仍会恢复保存偏好。
+`source` 表示是哪一层选中了默认值：`preference`、`config`、`system` 或 `generic`，不是字体资源的来源。`preferredFamily` 或 `configuredFamily` 可能存在但暂时不可用，此时解析会继续 fallback。preference 是 Fonts 自身的 provider-wide domain state；显式配置暂时遮盖它，取消配置后可重新生效。即使 Workbench 未启用，仍会从 Core 后端恢复保存偏好。
 
 `revision` 是进程内字体注册与默认选择的变更信号。renderer 应把它纳入文字测量 cache key，或在其变化时清空缓存。直接操作 `GlobalFonts` 不会遵守这一契约。
 
@@ -195,7 +195,7 @@ protected override init() {
 `setPreferredFamily(family | null)`；传 `null` 恢复 host config / 自动选择。selection 修改 provider 统一默认值，
 不是 consumer 私有偏好。Consumer 不创建转发 target；Canvas、ECharts、Takumi 已放置该 selector，通常无需重复添加。
 
-Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。字体发现、配置文件与程序化注册可在没有额外服务时运行。缺少 TinyBase 时 `setPreferredFamily()` 报 `PERSISTENCE_REQUIRED`；缺少 FS 时 managed 上传/删除报同一错误。默认偏好保存在 Fonts provider node 唯一 Store 的 `defaultFamily` Value；保存与 reset 等待 Host `flush()` 确认后发布新选择，失败保留原已应用选择，并阻断故障 Store 的后续偏好提交。
+Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。字体发现、配置文件与程序化注册可在没有额外服务时运行。FS 与 TinyBase 无需额外安装；插件尚未运行时，managed 上传/删除与偏好修改报 `NOT_RUNNING`。默认偏好保存在 Fonts provider node 唯一 Store 的 `defaultFamily` Value；保存与 reset 等待 Host `flush()` 确认后发布新选择，失败保留原已应用选择，并阻断故障 Store 的后续偏好提交。
 
 ## 配置
 
@@ -228,7 +228,7 @@ Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程�
 - `FONT_BUSY`：全局或 caller 字体任务队列已满。
 - `FONT_NOT_FOUND`：选择或删除的字体不存在。
 - `CORRUPT_FONT_STORAGE`：持久化 managed font 或默认选择损坏。
-- `PERSISTENCE_REQUIRED`：当前 Host 未安装偏好所需的 TinyBase 服务或上传集合所需的 FS 服务。
+- `NOT_RUNNING`：当前插件尚未运行，无法修改 managed 字体或默认偏好。
 
 不要依赖错误 message 做分支；message 用于诊断，稳定分类在 `code`。
 

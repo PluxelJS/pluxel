@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { NodeModuleHost } from '../../src/node/token'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
@@ -245,7 +244,6 @@ describe('NodeModuleService', () => {
 		await using host = await createServiceInternalTestHost({
 			workbench: false,
 			services: standardServices({
-				fs: { backend: InMemory },
 				nodeModules: { root: artifactRoot },
 			}),
 		})

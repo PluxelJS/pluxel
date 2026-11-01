@@ -1,10 +1,14 @@
+import {
+	type HostConfigVersion,
+	type PluginApplyReportSnapshot as PluginApplyReport,
+} from '@pluxel/host'
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
-import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import type { HostApplicationMeta } from '../product-contract'
-import type { PluxelPlatformSnapshot } from '../platform'
-import type {
-	PluginExecutionSnapshot,
-	PluginRecentUpdateSnapshot,
+import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
+import { type HostApplicationMeta } from '../product-contract'
+import { type PluxelPlatformSnapshot } from '../platform'
+import {
+	type PluginExecutionSnapshot,
+	type PluginRecentUpdateSnapshot,
 } from '@pluxel/host/internal/protocol'
 export type {
 	PluginArtifactSnapshot,
@@ -182,7 +186,6 @@ export type {
 	PluginApplyCommitSummary,
 	PluginApplyReportSnapshot as PluginApplyReport,
 } from '@pluxel/host'
-import type { PluginApplyReportSnapshot as PluginApplyReport } from '@pluxel/host'
 
 export type ConfigResultOk = import('@pluxel/host').HostPluginConfigResultOk<PluginApplyReport>
 export type ConfigResultErr = import('@pluxel/host').HostPluginConfigResultErr
@@ -596,6 +599,13 @@ export type EnsureForkResult =
 
 export type RemoveForkResult =
 	| Readonly<{
+			ok: false
+			code: 'version_conflict'
+			state: 'unchanged'
+			error: string
+			version: HostConfigVersion | null
+	  }>
+	| Readonly<{
 			ok: true
 			status: 'removed' | 'removed-with-lifecycle-issues'
 			fork: PluginNodeAddress
@@ -609,7 +619,7 @@ export type RemoveForkResult =
 	| Readonly<
 			| {
 					ok: false
-					code: 'invalid_input' | 'invalid_fork_id' | 'graph_rejected'
+					code: 'invalid_input' | 'invalid_fork_id' | 'graph_rejected' | 'mutation_rejected'
 					state: 'unchanged'
 					error: string
 			  }

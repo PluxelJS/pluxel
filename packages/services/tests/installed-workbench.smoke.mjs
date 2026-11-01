@@ -81,7 +81,6 @@ try {
 import assert from 'node:assert/strict'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { standardServices } from '@pluxel/services'
-import { InMemory } from '@pluxel/services/fs'
 import { vault } from '@pluxel/services/vault'
 import { VaultAdminPlugin } from '@pluxel/services/plugins'
 import { WorkbenchHost } from '@pluxel/workbench/server'
@@ -92,7 +91,7 @@ import { once } from 'node:events'
 
 await using host = await createServiceInternalTestHost({
   workbench: true,
-  services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+  services: [...standardServices(), vault()],
 })
 await host.start(VaultAdminPlugin)
 const backend = host.require(VaultAdminPlugin).ctx.root.require(WorkbenchHost)

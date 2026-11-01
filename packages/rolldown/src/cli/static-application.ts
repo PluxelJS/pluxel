@@ -583,12 +583,14 @@ ${http ? "import 'pluxel:static-elysia-wiring'" : ''}
 import application from ${JSON.stringify(entry)}
 import { createHost, resolveHostApplication, prepareHostApplication } from '@pluxel/host'
 import { setHostCatalogProvenance } from '@pluxel/host/internal'
+import { readFile } from 'node:fs/promises'
 ${http ? "import { createElysiaHandler } from '@pluxel/services/elysia'" : ''}
 ${launcher === 'node' ? "import { listenElysia } from '@pluxel/services/elysia/node'" : ''}
-const resolved = await resolveHostApplication(application, {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',variant:${JSON.stringify(variant)}}})
+const deployment = JSON.parse(await readFile(new URL('./pluxel-deployment.json', import.meta.url), 'utf8'))
+const resolved = await resolveHostApplication(application, {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',variant:${JSON.stringify(variant)},application:deployment.application}})
 const host = await createHost({
  plugins:resolved.plugins,config:resolved.config,state:resolved.state,
- configRecords:resolved.configRecords,vaultBindings:resolved.vaultBindings,services:resolved.services,
+ configRecords:resolved.configRecords,configSync:resolved.configSync,vaultBindings:resolved.vaultBindings,services:resolved.services,
 })
 try {
  setHostCatalogProvenance(host.ctx, new Map(resolved.plugins.map(plugin => [plugin, {execution:{kind:'native',origin:'fixed',artifact:{kind:'application-bundle'},update:{kind:'next-start'}}}])))

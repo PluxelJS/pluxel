@@ -1,4 +1,5 @@
 import { removeHostNodeMetadata } from './services'
+import { clearLoggingPolicy } from '@pluxel/core/logging/internal'
 import { HostStateMutationRejectedError } from './mutation'
 import { hostStatePatch } from './state'
 import { requirePluginHostCoordinator } from './install'
@@ -17,10 +18,16 @@ import {
 } from './coordinator'
 import { listForkIds } from './state-helpers'
 import { ConfigMutationRejectedError } from './config'
+import type { HostConfigStore } from './config-store'
+import {
+	HostConfigVersionConflictError,
+	type HostConfigMutationOptions,
+	type HostConfigVersion,
+} from './config-sync-protocol'
 
 class ForkMetadataPersistenceError extends Error {
 	constructor(
-		public readonly backend: 'config' | 'services',
+		public readonly backend: 'config' | 'services' | 'logging',
 		cause: unknown,
 	) {
 		super(`[host:fork] failed to persist ${backend} metadata cleanup`, { cause })
@@ -57,6 +64,14 @@ export type ForkEnsureResult =
 	  }
 
 export type ForkRemoveResult =
+	| { ok: false; code: 'mutation_rejected'; state: 'unchanged'; message: string }
+	| {
+			ok: false
+			code: 'version_conflict'
+			state: 'unchanged'
+			message: string
+			version: HostConfigVersion | null
+	  }
 	| {
 			ok: true
 			status: 'removed' | 'removed-with-lifecycle-issues'
@@ -139,7 +154,7 @@ export async function removeFork(
 	ctx: Context,
 	base: PluginNodeAddress,
 	forkId: string,
-	options?: HostOperationOptions,
+	options?: HostConfigMutationOptions,
 ): Promise<ForkRemoveResult> {
 	const node = parseForkAddress(base, forkId)
 	if (!node) return invalidFork('Fork base or forkId is invalid')
@@ -154,6 +169,8 @@ export async function removeFork(
 				if (!listForkIds(state, node.definition).includes(node.forkId)) {
 					return { ok: true, status: 'already-absent', node }
 				}
+				// Reject a replica/stale editor before stopping a generation or deleting metadata.
+				;(requireConfigService(ctx) as HostConfigStore).assertManagedMutation(options?.expected)
 				const removalPatch = hostStatePatch(
 					{ type: 'remove-node-policy', node },
 					{ type: 'remove-fork', definition: node.definition, forkId: node.forkId },
@@ -166,11 +183,18 @@ export async function removeFork(
 					mode: 'live',
 				})
 				phase = 'metadata'
-				await deleteForkConfig(ctx, node)
+				await deleteForkConfig(ctx, node, options?.expected)
 				try {
 					await removeHostNodeMetadata(ctx.root, node)
 				} catch (error) {
 					throw new ForkMetadataPersistenceError('services', error)
+				}
+				if (ctx.root.logging) {
+					try {
+						await clearLoggingPolicy(ctx.root.logging, node)
+					} catch (error) {
+						throw new ForkMetadataPersistenceError('logging', error)
+					}
 				}
 				phase = 'remove'
 				const finalReport = await session.update({
@@ -261,6 +285,16 @@ function removeFailure(
 	state: 'retained' | 'stopped-retained' | 'unknown',
 	report?: PluginApplyReport,
 ): ForkRemoveResult {
+	if (error instanceof ConfigMutationRejectedError)
+		return { ok: false, code: 'mutation_rejected', state: 'unchanged', message: error.message }
+	if (error instanceof HostConfigVersionConflictError)
+		return {
+			ok: false,
+			code: 'version_conflict',
+			state: 'unchanged',
+			message: error.message,
+			version: error.version,
+		}
 	if (error instanceof HostStateMutationRejectedError && error.issue.code === 'fork_referenced') {
 		return {
 			ok: false,
@@ -307,18 +341,14 @@ function hasDrainIssues(report: PluginApplyReport | undefined): boolean {
 	return report.core.summary.lifecycleReport.issues.some((issue) => issue.phase === 'drain')
 }
 
-async function deleteForkConfig(ctx: Context, node: PluginNodeAddress): Promise<void> {
-	const configService = requireConfigService(ctx)
+async function deleteForkConfig(
+	ctx: Context,
+	node: PluginNodeAddress,
+	expected?: HostConfigVersion,
+): Promise<void> {
+	const configService = requireConfigService(ctx) as HostConfigStore
 	try {
-		configService.deleteConfig(node)
-	} catch (error) {
-		if (error instanceof ConfigMutationRejectedError) {
-			throw new ForkMetadataPersistenceError('config', error)
-		}
-		throw error
-	}
-	try {
-		await configService.flush()
+		await configService.deleteManagedConfig(node, expected)
 	} catch (error) {
 		throw new ForkMetadataPersistenceError('config', error)
 	}

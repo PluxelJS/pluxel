@@ -1,5 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
-import { TinyBase } from '@pluxel/services/tinybase'
 import { pluginNodeAddressOf, type PluginConstructor } from '@pluxel/core'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
@@ -76,14 +74,14 @@ describe('WretchPlugin', () => {
 	it('separates same-display-name consumers by row in the provider Store', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 		using aSettings = await openWretchSettings(host, ConsumerA)
 		using lateSettings = await openWretchSettings(host, ConsumerLateSettings)
 		await aSettings.api.updateDto({ headers: { 'X-Owner': 'a' } })
 		await lateSettings.api.updateDto({ headers: { 'X-Owner': 'late' } })
-		const store = await host.require(WretchPlugin).ctx.require(TinyBase).open()
+		const store = await host.require(WretchPlugin).ctx.tinybase.open()
 		const rows = Object.entries(store.getTable('consumerSettings'))
 		expect(rows).toHaveLength(2)
 		for (const [id, row] of rows) {
@@ -95,7 +93,7 @@ describe('WretchPlugin', () => {
 			]).toContainEqual(JSON.parse(String(row.owner)))
 		}
 		// The provider owns this table; enabling it never opens either consumer's business Store.
-		const consumerStore = await host.require(ConsumerA).ctx.require(TinyBase).open()
+		const consumerStore = await host.require(ConsumerA).ctx.tinybase.open()
 		expect(consumerStore.getContent()).toEqual([{}, {}])
 	})
 
@@ -103,7 +101,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -139,12 +137,12 @@ describe('WretchPlugin', () => {
 	it('rejects restored settings whose owner does not match its row ID', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 		using settings = await openWretchSettings(host, ConsumerA)
 		await settings.api.updateDto({ headers: {} })
-		const tinybase = host.require(WretchPlugin).ctx.require(TinyBase)
+		const tinybase = host.require(WretchPlugin).ctx.tinybase
 		const store = await tinybase.open()
 		const id = store.getRowIds('consumerSettings')[0]!
 		store.setCell(
@@ -170,7 +168,7 @@ describe('WretchPlugin', () => {
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerB])
@@ -203,7 +201,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -240,7 +238,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 1_000 })
@@ -281,7 +279,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
@@ -301,7 +299,7 @@ describe('WretchPlugin', () => {
 	it('shares one managed-settings initialization across concurrent calls', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
@@ -323,7 +321,7 @@ describe('WretchPlugin', () => {
 
 	it('drains admitted settings initialization without reusing it across generations', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
@@ -353,7 +351,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
@@ -377,7 +375,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
@@ -409,7 +407,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerB])
@@ -437,7 +435,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -457,7 +455,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -481,7 +479,7 @@ describe('WretchPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: standardServices({ fs: { backend: InMemory } }),
+					services: standardServices(),
 				})
 
 				await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -514,7 +512,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
@@ -584,7 +582,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 5 })

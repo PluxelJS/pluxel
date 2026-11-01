@@ -2,6 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import type { PluginNodeAddress } from '@pluxel/core'
+import type { HostConfigVersion } from '@pluxel/host'
 import { RuntimeManagementClientProvider } from '@pluxel/services/management/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, type ReactNode } from 'react'
@@ -60,10 +61,14 @@ function createFakeManagementClient(
 function ConfigHarness({
 	client = createFakeManagementClient(),
 	savedConfig = DEFAULT_SAVED_CONFIG,
+	version = null,
+	readonly = false,
 	sections,
 }: {
 	client?: ReturnType<typeof createFakeManagementClient>
 	savedConfig?: Record<string, unknown>
+	version?: HostConfigVersion | null
+	readonly?: boolean
 	sections?: Array<{
 		path: readonly string[]
 		fieldName: string
@@ -81,6 +86,8 @@ function ConfigHarness({
 						displayName="Config owner"
 						fields={rootFields}
 						savedConfig={savedConfig}
+						version={version}
+						readonly={readonly}
 						defaults={{ rootEnabled: false }}
 						sections={sections}
 					/>
@@ -136,6 +143,51 @@ afterEach(() => {
 })
 
 describe('config action dock', () => {
+	it('keeps the version read with a dirty draft when a background read advances', async () => {
+		const initial = { history: 'writer-history', seq: 4 }
+		const current = { history: 'writer-history', seq: 5 }
+		const patch = vi.fn().mockResolvedValue({
+			ok: false,
+			code: 'version_conflict',
+			state: 'unchanged',
+			message: 'Saved config changed',
+			version: current,
+		})
+		const client = createFakeManagementClient(patch)
+		const { container, root } = await mount(<ConfigHarness client={client} version={initial} />)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			await act(async () => input.click())
+			await act(async () => root.render(<ConfigHarness client={client} version={current} />))
+			await act(async () =>
+				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+			)
+			expect(patch).toHaveBeenCalledExactlyOnceWith(OWNER, { rootEnabled: true }, initial)
+			expect(input.checked).toBe(true)
+			expect(buttonWithText(container, '保存').disabled).toBe(false)
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('disables readonly configuration fields and rejects native submit', async () => {
+		const client = createFakeManagementClient()
+		const { container, root } = await mount(<ConfigHarness client={client} readonly />)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
+			expect(input.matches(':disabled')).toBe(true)
+			expect(container.textContent).toContain('当前宿主的配置只读')
+			await act(async () => {
+				input.click()
+				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+			})
+			expect(input.checked).toBe(false)
+			expect(client.config.patch).not.toHaveBeenCalled()
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
 	it('keeps an acknowledged save clean and reports success when read-model refresh fails', async () => {
 		const notify = vi.spyOn(notifyBridge, 'notifyAndRecord')
 		vi.mocked(refreshPluginReadModels).mockRejectedValueOnce(new Error('Read model unavailable'))

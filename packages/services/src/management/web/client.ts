@@ -1,40 +1,46 @@
+import { type HostConfigState, type HostConfigVersion } from '@pluxel/host'
 import {
 	cloneRuntimeUpdateSnapshot,
 	type RuntimeUpdateSnapshot,
 } from '@pluxel/host/internal/protocol'
-import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import type { RpcStub } from 'capnweb'
-import type {
-	ConfigFieldMutation,
-	ConfigPresentationResult,
-	ConfigResult,
-	EnsureForkResult,
-	LoggingHandleApi,
-	PluginAutoStartBatchItem,
-	PluginConsumerRequirementsInspectionResult,
-	PluginControlBatchResult,
-	PluginDependencyGraphSnapshot,
-	PluginDependencyMutationResult,
-	PluginCatalogLayoutInput,
-	PluginCatalogLayoutMutationResult,
-	PluginCatalogSnapshot,
-	PluginLifecycleCommandBatchItem,
-	PluginProviderPolicyInspectionResult,
-	PluginStatusQueryResult,
-	RemoveForkResult,
-	RuntimeMeta,
+import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
+import { type RpcStub } from 'capnweb'
+import {
+	type ConfigFieldMutation,
+	type ConfigPresentationResult,
+	type ConfigResult,
+	type EnsureForkResult,
+	type LoggingHandleApi,
+	type PluginAutoStartBatchItem,
+	type PluginConsumerRequirementsInspectionResult,
+	type PluginControlBatchResult,
+	type PluginDependencyGraphSnapshot,
+	type PluginDependencyMutationResult,
+	type PluginCatalogLayoutInput,
+	type PluginCatalogLayoutMutationResult,
+	type PluginCatalogSnapshot,
+	type PluginLifecycleCommandBatchItem,
+	type PluginProviderPolicyInspectionResult,
+	type PluginStatusQueryResult,
+	type RemoveForkResult,
+	type RuntimeMeta,
 } from './protocol'
-import type {
-	RuntimeLogFollowInput,
-	RuntimeLogRangeQuery,
-	RuntimeLogStreamsIndex,
-	RuntimeManagementTarget,
+import {
+	type RuntimeLogFollowInput,
+	type RuntimeLogRangeQuery,
+	type RuntimeLogStreamsIndex,
+	type RuntimeManagementTarget,
 } from './management-target'
-import type { LogRangeResult, LogStreamMeta, RuntimeLogEvent } from '../../logging/protocol'
-import type { RuntimeSecurityClient } from './security'
+import {
+	type LogRangeResult,
+	type LogStreamMeta,
+	type RuntimeLogEvent,
+} from '@pluxel/core/logging/protocol'
+import { type RuntimeSecurityClient } from './security'
 import {
 	parseConfigPresentationResult,
 	parseConfigResult,
+	parseConfigState,
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
@@ -92,10 +98,19 @@ export type RuntimeManagementClient = Readonly<{
 		): Promise<PluginControlBatchResult>
 	}>
 	config: Readonly<{
+		status(): Promise<HostConfigState>
 		presentation(owner: PluginNodeAddress): Promise<ConfigPresentationResult>
 		get(owner: PluginNodeAddress): Promise<ConfigResult>
-		patch(owner: PluginNodeAddress, patch: Record<string, unknown>): Promise<ConfigResult>
-		patchField(owner: PluginNodeAddress, input: ConfigFieldMutation): Promise<ConfigResult>
+		patch(
+			owner: PluginNodeAddress,
+			patch: Record<string, unknown>,
+			expected?: HostConfigVersion,
+		): Promise<ConfigResult>
+		patchField(
+			owner: PluginNodeAddress,
+			input: ConfigFieldMutation,
+			expected?: HostConfigVersion,
+		): Promise<ConfigResult>
 	}>
 	dependencies: Readonly<{
 		graph(): Promise<PluginDependencyGraphSnapshot>
@@ -125,7 +140,11 @@ export type RuntimeManagementClient = Readonly<{
 				requirement: PluginDefinitionAddress
 			}
 		}): Promise<EnsureForkResult>
-		remove(input: { base: PluginNodeAddress; forkId: string }): Promise<RemoveForkResult>
+		remove(input: {
+			base: PluginNodeAddress
+			forkId: string
+			expected?: HostConfigVersion
+		}): Promise<RemoveForkResult>
 	}>
 	logging: Readonly<LoggingHandleApi>
 	logs: RuntimeLogClient
@@ -185,13 +204,14 @@ export function createRuntimeManagementClient(
 				),
 		}),
 		config: Object.freeze({
+			status: () => call((root) => root.configStateDto(), parseConfigState),
 			presentation: (owner) =>
 				call((root) => root.pluginConfigPresentationDto(owner), parseConfigPresentationResult),
 			get: (owner) => call((root) => root.pluginConfigDto(owner), parseConfigResult),
-			patch: (owner, patch) =>
-				call((root) => root.patchPluginConfigDto(owner, patch), parseConfigResult),
-			patchField: (owner, input) =>
-				call((root) => root.patchPluginConfigFieldDto(owner, input), parseConfigResult),
+			patch: (owner, patch, expected) =>
+				call((root) => root.patchPluginConfigDto(owner, patch, expected), parseConfigResult),
+			patchField: (owner, input, expected) =>
+				call((root) => root.patchPluginConfigFieldDto(owner, input, expected), parseConfigResult),
 		}),
 		dependencies: Object.freeze({
 			graph: () =>

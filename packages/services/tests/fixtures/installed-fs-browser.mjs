@@ -1,15 +1,13 @@
 import { createHost } from '@pluxel/host/browser'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
-import { Fs, PluginFs, fs, InMemory, writeFileAtomic } from '@pluxel/services/fs'
+import { requireFs, requireTinyBaseHost } from '@pluxel/core/internal'
+import { writeFileAtomic } from '@pluxel/core/fs'
 
 const views = new Map()
 class Owner extends BasePlugin {
 	async init() {
-		views.set(
-			this.ctx.pluginInfo.nodeAddress.definition.exportName,
-			await this.ctx.require(PluginFs)(),
-		)
+		views.set(this.ctx.pluginInfo.nodeAddress.definition.exportName, await this.ctx.fs())
 	}
 }
 class First extends Owner {}
@@ -45,9 +43,9 @@ async function deleteDatabase(storeName) {
 }
 
 export async function memory() {
-	const host = await createHost({ plugins: [], services: [fs({ backend: InMemory })] })
+	const host = await createHost({ plugins: [] })
 	try {
-		const io = await host.ctx.require(Fs).directory('documents')
+		const io = await requireFs(host.ctx).directory('documents')
 		await io.writeFile('value', 'MEMORY')
 		return await io.readFile('value', 'utf8')
 	} finally {
@@ -56,7 +54,7 @@ export async function memory() {
 }
 
 export async function persisted() {
-	const { IndexedDB } = await import('@pluxel/services/fs/browser')
+	const { IndexedDB } = await import('@pluxel/core/fs/browser')
 	const storeName = `installed-fs-${crypto.randomUUID()}`
 	let host
 	try {
@@ -65,7 +63,9 @@ export async function persisted() {
 		for (let round = 0; round < 3; round++) {
 			host = await createHost({
 				plugins: [First, Second],
-				services: [fs({ backend: IndexedDB, storeName })],
+				config: {
+					storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+				},
 			})
 			const [first, second] = await startOwners(host)
 			if (round === 0) {
@@ -96,7 +96,13 @@ export async function persisted() {
 		}
 		host = await createHost({
 			plugins: [First, Second],
-			services: [fs({ backend: IndexedDB, storeName, readOnly: true })],
+			config: {
+				storage: {
+					mounts: { '/': { backend: IndexedDB, storeName } },
+					readOnly: true,
+					durableMounts: ['/'],
+				},
+			},
 		})
 		const [reopened] = await startOwners(host)
 		let readonly
@@ -121,13 +127,18 @@ export async function persisted() {
 }
 
 export async function corruptConfig() {
-	const { IndexedDB } = await import('@pluxel/services/fs/browser')
+	const { IndexedDB } = await import('@pluxel/core/fs/browser')
 	const storeName = `installed-fs-bootstrap-${crypto.randomUUID()}`
 	let host
 	try {
-		host = await createHost({ plugins: [], services: [fs({ backend: IndexedDB, storeName })] })
-		const directory = await host.ctx.require(Fs).directory('host/config')
-		await directory.writeFile('config.json', Uint8Array.of(123, 10, 0, 255))
+		host = await createHost({
+			plugins: [],
+			config: {
+				storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+			},
+		})
+		const original = '{broken'
+		await requireTinyBaseHost(host.ctx).documents('config').put('config.json', original)
 		await host.close()
 		host = undefined
 		let failure
@@ -135,9 +146,11 @@ export async function corruptConfig() {
 		try {
 			host = await createHost({
 				plugins: [],
-				services: [fs({ backend: IndexedDB, storeName })],
+				config: {
+					storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+				},
 				configRecords: {
-					storage: (root) => (documents = root.require(Fs).documents('host/config')),
+					storage: (root) => (documents = requireTinyBaseHost(root).documents('config')),
 				},
 			})
 		} catch (error) {
@@ -150,13 +163,20 @@ export async function corruptConfig() {
 			closed = error.code
 		}
 		await host?.close()
-		host = await createHost({ plugins: [], services: [fs({ backend: IndexedDB, storeName })] })
-		const reopened = await host.ctx.require(Fs).directory('host/config')
+		host = await createHost({
+			plugins: [],
+			config: {
+				storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+			},
+			configRecords: { mode: 'memory' },
+		})
+		const text = await requireTinyBaseHost(host.ctx).documents('config').getText('config.json')
 		return {
 			failure: failure?.message,
 			cause: failure?.cause?.name,
 			closed,
-			bytes: Array.from(await reopened.readFile('config.json')),
+			text,
+			unchanged: text === original,
 		}
 	} finally {
 		await host?.close()

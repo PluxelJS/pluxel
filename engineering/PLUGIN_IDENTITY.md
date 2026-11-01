@@ -223,7 +223,7 @@ generation/socket epoch。Plugin 在 `ctx.require(ElysiaApp)` 中声明的 path 
 - source canonicalization：`packages/rolldown/src/rolldown/plugins/pluginSemanticsPlugin.ts`
 - catalog projection/label：`packages/services/src/management/api/features/plugins/catalog-projection.ts`、`packages/core/src/plugins/runtime/plugin-label.ts`
 - Workbench route/browser ownership：`packages/workbench/shell/src/workbench/paths.ts`、`packages/workbench/shell/src/app/workbench/session.tsx`；文档身份由 Worksplit Router 协调，见 [Frontend](FRONTEND.md#原生工作区与文档路由)
-- HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/services/src/logging/` 与 `packages/services/src/management/`
+- HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/core/src/logging/` 与 `packages/services/src/management/`
 
 变更 identity 时至少验证 package/source、default/fork、reference/route round-trip、encoded separator 拒绝、native realpath containment、
 definition-wide HMR、fork config isolation、definition-family classification、logger structured owner、HTTP readable route 和全部当前版本 reader。

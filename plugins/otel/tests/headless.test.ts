@@ -2,11 +2,11 @@ import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { createElysiaHandler, elysia } from '@pluxel/services/elysia'
 import { expect, it } from 'vitest'
-import { OtelConfig, OtelPlugin } from '../src/index.ts'
+import { Otel, OtelConfig, OtelPlugin } from '../src/index.ts'
 
 @Plugin()
 class HeadlessMeter extends BasePlugin {
-	constructor(private readonly otel: OtelPlugin) {
+	constructor(private readonly otel: Otel) {
 		super()
 	}
 	init() {

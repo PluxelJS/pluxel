@@ -5,7 +5,7 @@ import { afterEach, expect, it } from 'vitest'
 import { createPluginDependencyMetadataHook } from '../src/cli/plugin-metadata'
 import { readWorkbenchCapnwebPackage } from '@pluxel/workbench/internal/transport'
 import { validateWorkbenchCapnwebPeer } from '../src/cli/workbench-peer'
-import { packageVersion } from '../src/cli/static-workbench-capnweb'
+import { installedSharedRuntimeVersion, sharedRuntimes } from '@pluxel/host/internal/shared-runtime'
 
 const roots: string[] = []
 
@@ -208,10 +208,15 @@ it('reports the selected static package manifest rather than searching an ancest
 	const manifest = join(root, 'plugin/node_modules/capnweb/package.json')
 	await rm(manifest)
 	await mkdir(manifest)
-	await expect(
-		packageVersion(join(root, 'plugin/node_modules/capnweb/index.js'), 'capnweb'),
-	).rejects.toMatchObject({
-		message: expect.stringContaining(`Cannot read package manifest ${manifest}`),
-		cause: expect.objectContaining({ code: 'EISDIR' }),
-	})
+	expect(() =>
+		installedSharedRuntimeVersion(
+			join(root, 'plugin/node_modules/capnweb/index.js'),
+			sharedRuntimes.workbenchCapnweb,
+		),
+	).toThrow(
+		expect.objectContaining({
+			message: expect.stringContaining(`Cannot read package manifest ${manifest}`),
+			cause: expect.objectContaining({ code: 'EISDIR' }),
+		}),
+	)
 })

@@ -1,6 +1,6 @@
 # 官方配置型状态迁移清单
 
-本页记录官方消费者的数据语义、存储所有者与回归入口。服务持久化契约由 [TinyBase](TINYBASE.md) 维护；部署配置仍由 [Config](CONFIG.md) 的 saved layer 管理，插件不得复制配置表。清单覆盖 `pnpm-workspace.yaml` 的 `plugins/*`、`plugins/*/*` 共 16 个包，以及 Services 官方插件、生成模板和演示应用；第三方 vendor 不算官方插件。
+本页记录官方消费者的数据语义、存储所有者与回归入口。Core 内建持久化契约由 [TinyBase](TINYBASE.md) 与 [FS](FS.md) 维护；部署配置及其复制仍由 [Config](CONFIG.md) 的 saved layer 管理，插件不得复制配置表。清单覆盖 `pnpm-workspace.yaml` 的 `plugins/*`、`plugins/*/*` 共 16 个包，以及 Services 官方插件、生成模板和演示应用；第三方 vendor 不算官方插件。2026-10-31 的验证记录对应原 Service 版本；2026-11-01 的内建与配置同步复验单独记录，不将历史 API 当作当前用法。
 
 ## 16 个官方插件包
 
@@ -34,14 +34,44 @@ Wretch 的 provider Store 在领域内部承载候选，consumer 的 `current` �
 | `packages/services/src/plugins/vault/VaultAdminPlugin` | 只发布 Vault 管理界面，没有独立普通状态                                                                                                                  | 秘密、revision 和 rotation 仍归 Vault；服务 Vault 测试与 Workbench 回归                                                                                     |
 | Host config/state                                      | saved config、自动启动/依赖选择等 Host 文档 → Host 私有 TinyBase namespace                                                                               | Core records、revision 和 validate/save/apply 继续是权威；Host config/state 测试                                                                            |
 | Services management layout                             | 原 `services/management/plugin-groups.json` → Host 私有文档 namespace                                                                                    | 分组与排序是普通管理偏好；保留候选保存后发布及 revision 检查；layout service 测试                                                                           |
-| Services logging policy                                | 原 `services/logging/plugin-policy/<profile>.json` → Host 私有文档 namespace                                                                             | 级别/owner override 是设置；日志记录、sink 与事件顺序继续归 logging 领域；policy/storage 测试                                                               |
+| Core logging policy                                    | 原 `services/logging/plugin-policy/<profile>.json` → Host 私有文档 namespace                                                                             | 级别/owner override 是设置；日志记录、sink 与事件顺序继续归 logging 领域；policy/storage 测试                                                               |
 | `@pluxel/create` Todo template                         | `TodoConfig` → Host 配置；有界 Todo items 使用示例 Plugin 的原生 `todos` 表和 `initialized`/`nextId` Values，缺失 backing 才使用初值                     | Audit 示例是事件记录；不伪装成最新状态快照。业务方法保持同步，Host autosave/关闭排空；初始 seed 不伪造 audit mutation                                       |
 | Plugin host Bot sources                                | 用户编辑的 instructions/running 属于 source Plugin 的有界业务状态，使用该 node 的原生 `bots` 表                                                          | 模拟 messages/unread、source availability 与统计为可重建观测数据；`BotWorkspace.test.ts`                                                                    |
 | Plugin host `PluginWithUI`                             | counter 为交互会话演示，不承诺重启恢复；无部署偏好                                                                                                       | `startedAt`、revision 与最多 80 条 events 是本 generation 观测历史；`PluginWithUI.test.ts`                                                                  |
 | Plugin host `ReportStudio`                             | `StudioConfig` → Host 配置；HTTP 设置归 Wretch，统一字体归 Fonts                                                                                         | 最多 8 个 artifacts 是本 generation 渲染结果摘要，源对象归 Storage；preview cache、last decision/outbound、font replay index 可重建；`ReportStudio.test.ts` |
 | 其他 demo 与配置 Part                                  | `PluginCompositionConfigDemo`、`PluginContributionFontDemo` 复用 Host 配置；Vault demo 仍操作 Vault；HTTP/worker/event/optional/fork demo 无额外持久偏好 | 不复制 config schema，不为没有恢复契约的临时计数/事件创建 Store；应用现有测试与构建                                                                         |
 
-Todo 和 Bot 来源均已切换原生状态；其余仅使用配置或临时资源的例子保持原模型。Bot 同步 mutation 的成功提示为“已更新”，不承诺该调用已确认持久化；关闭 Host 时由服务排空。
+Todo 和 Bot 来源均已切换原生状态；其余仅使用配置或临时资源的例子保持原模型。Bot 同步 mutation 的成功提示为“已更新”，不承诺该调用已确认持久化；关闭 Host 时由 Core 内建 writer 排空。
+
+## Core 内建与配置复制复验（2026-11-01）
+
+本轮在 `7b9b544d` 的状态迁移上调整实现所有者，删除 Services 的 FS/TinyBase 工厂、token、可选 Context augmentation 和发布子路径。Core、官方 Host 与隔离 test host 使用同一固定能力；Plugin、Part、fork 与依赖调用视图通过 `ctx.fs()`、`ctx.tinybase` 访问所属 Plugin generation。`@pluxel/context` 保留同步 kernel，不增加 IO 或异步关闭协议。
+
+运行时数据后端只通过 `CoreHostConfig.storage`（官方 Host 的 `config.storage`）选择一次，默认 InMemory，Node 选择 Passthrough，浏览器与 Web Worker 独立选择 IndexedDB。Core 拥有 FS、原子保存、TinyBase writer/codec、Host 私有确认文档与关闭排空。Host 默认保存 config/state，继续拥有配置合成、校验、saved-layer 提交与运行策略；Logging policy、Management layout 和 Vault 分别保留领域协议。源码发现、原生模块解析、包安装、build artifacts、SQL driver 与原生 SDK IO 仍使用其原接口。物理 `services/tinybase` key、owner 地址及 format 1 不因包迁移改变。
+
+TinyBase 精确 runtime 依赖归 Core。只使用配置或固定 `open()` 的插件不增加 TinyBase 依赖；与托管原生 Store/Queries 互操作的插件声明同版 peer/dev。原生 Node、Host-vite 和静态构建以同一 Core 版本事实接纳后绑定原模块；应用或库的私有副本保持独立。
+
+Host saved config 增加部署固定 writer 与鉴权 replica，版本与原始 SuperJSON v3 body 同存 v4 文档。管理 patch/reset 和 fork cleanup 检查草稿原先读取的 history/seq；副本先校验完整候选、一次保存，再发布 normalized output 与通知。缺失记录表示删除，initial/file/env 留在本地；未知 owner 原文保留到真实 admission，不创建节点。有效缓存支持离线启动，无缓存时首次同步必须先成功。业务 Store、Vault、运行策略、Logging 和 Management 布局均不参与复制。
+
+### 已完成的执行证据
+
+- Core 完整回归 41 文件、317 项通过，包含 Plugin/Part/fork/caller 归属、原生 Store、保存屏障、撤回、故障与显式恢复；Core 类型检查和相关 typed lint 通过。
+- 真实 Chromium 页面和 Web Worker 分别执行 Host 配置、原生 Store 与 FS 的 IndexedDB 保存、关闭和重开。配置在 Plugin 启动前恢复原始输入，真实 admission 后规范化；关闭后旧 FS 失效、旧 Store mutation 不再保存。浏览器构建闭包没有 Node 接入、内建模块、Vite external shim 或 Services；运行时不依赖 Node globals。
+- Core 的独立 ZenFS Chromium 验收通过，覆盖事务 abort、request/quota 错误、只读、根损坏保留、重复打开关闭及资源释放。独立 tarball 的 Node/浏览器 FS、严格声明和 notices 检查通过；接收方没有外部未打补丁的 ZenFS 依赖。
+- 独立 tarball 的 TinyBase 原生 Store/schema/Queries、flush、重开与公共类型检查通过；生产 Node 7 项、Host-vite singleton 5 项、Rolldown 5 套 45 项及 Workbench peer 12 项通过。只依赖 Core 的应用无需直接安装 TinyBase，共享异版拒绝、同版原生身份和私有副本隔离均有回归。
+- 最新产物的较大 Services 独立安装重新执行，基础服务、standard 组合、headless Management、Node test compiler、裸开发控制台和 Workbench 的真实运行期阶段全部通过，输出 `ISOLATED_OPTIONAL_SERVICE_RUNTIMES_OK`。Vault 与 preset 的后端类型使用整句 `import type`，实际 load guard 确认未选择的后端保持懒加载。最终严格声明阶段仍失败：Elysia 2.0.0-rc.0 / TypeBox 1.4.3 的 65 条 `TS2536`/`TS2344`，另有既有 capnweb 0.12.0 的两条 `TS2574`；没有 Pluxel 或消费者新增诊断，没有扩展错误白名单或放宽 `skipLibCheck`。
+- Host 完整回归 27 文件、214 项通过，Host 与 Host-vite 类型检查通过。完整候选的 schema 只校验一次；Date/undefined 原文和未知 owner 保留到实际 admission。循环结构、过深或展开超预算的候选在持久化前拒绝，既有文档与版本不变。
+- 默认 config/state 文档模式补齐后，4 个相关文件 58 项回归及 Host 类型检查通过：省略 factory 的 readonly 能读取持久值、拒绝领域写入，缺失文档只保留 initial 且不创建文件；memory 绕过文档保存。实际 Passthrough 的 Core `readOnly: true` 与文档模式分别生效，writer/replica 均拒绝以 readonly 文档启动配置同步。
+- 真实独立 Node/Passthrough 双进程 6 项通过：writer 保存前、保存后未发布、确认后广播响应前 SIGKILL 后重开，分别恢复对应完整正文与版本；副本保存后未应用时退出，离线缓存重开重建 applied 进度。真实 HTTP 管理提交后的 socket 响应丢失仍可查询当前版本，后续编辑覆盖后不承诺辨认原请求，也不重放旧草稿。重连、首次无缓存、缓存离线、慢副本、重复/乱序、错误历史、同版本不同正文、完整 reset/env、未知 owner、listener 失败与保存失败阻断另有定向回归。进程退出验收不代表断电或 fsync 保证。
+- 制品事实通过两条真实入口验收：modules 从实际编译入口所属制品读取 manifest，支持应用 root 与 dist 分离，启用同步缺 manifest 或身份不匹配时拒绝；standalone 搬离源码后在新 Node 进程使用实际 manifest identity，篡改 name/catalogHash 均在 prepare 和 Plugin 启动前拒绝。
+- Services 全部 64 文件、342 项通过；Auth 15 文件、53 项，`@pluxel/test` 4 文件、20 项，Create 生成器 7 项通过。Cache 34 项、Wretch 29 项、Fonts 22 项及 Workbench Shell 65 文件、393 项通过；Cache/Wretch/Fonts、Plugin Host、Report Template Studio 的类型检查通过。迁走的 FS/TinyBase 回归由 Core 执行，不将 Services 测试数量减少视为覆盖删除。
+- Vite 运行期与源码 replacement 回归通过：原生源码加载和 HMR 继续工作，稳定 owner 的数据跨 generation 保留，fork 数据隔离，应用 replacement 失败恢复仍可观察。
+- `smoke-starter.ts` 从真实 tarball 生成并独立安装工作区，14/14 个验收任务成功；distribution inspect 返回 INTACT，57 个条目无差异。原生 Node、生产 Vite、开发 Vite 的业务路由、页面、Workbench 和开发控制台冒烟通过。纯 Host 模板不再直接声明 TinyBase；Todo 的原生 Store 互操作保留同版 peer/dev。
+- 文档生产构建 5 个阶段及静态生成通过，生成 652 个文件。新固定能力、后端配置和 writer/replica 示例通过真实 Twoslash 编译；文档项目 tsc、playground 类型生成、typed lint 及真实 CLI 文档入口通过。19 个变更公开页面的 198 个相对文件链接有效。
+
+收尾统一执行 `vp check --no-error-on-unmatched-pattern`：239 个文件格式通过，170 个源码/测试文件无 lint 警告、错误或类型错误。36 个包根/22 个公开包治理、9 个显式源码声明及工作区依赖策略检查通过。默认只读模式修复后重新编译 CLI 依赖图，7/7 个任务成功；最终制品的独立 TinyBase、Node/浏览器 FS 与 peer-suffix guard 共 3 项复验通过，真实 Host 浏览器/Worker 保存与重开再次通过。
+
+下方保留前一轮有日期的验证历史；严格声明、真实 PostgreSQL、外部旧数据转换、跨格式升级及断电保证仍按各自边界报告，不由上述隔离或进程退出验收代替。
 
 ## 旧数据与验证记录
 

@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { Result } from '@pluxel/core/better-result'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
@@ -25,7 +24,7 @@ describe('WretchExamplePlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin, {
@@ -66,7 +65,7 @@ describe('WretchExamplePlugin', () => {
 		})
 
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 		await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
 		const customerPlugin = await host.start(WretchExamplePlugin, {
@@ -116,7 +115,7 @@ describe('WretchExamplePlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin)

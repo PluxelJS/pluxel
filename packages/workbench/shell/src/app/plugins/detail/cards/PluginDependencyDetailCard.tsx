@@ -20,15 +20,15 @@ import {
 	pluginNodeIndexKey,
 } from '@pluxel/core'
 import { IconPlus, IconRefresh, IconTopologyStar3, IconTrash } from '@tabler/icons-react'
-import type { ElementType, ReactNode } from 'react'
-import type {
-	PluginDependencyGraphEdge,
-	PluginDependencyGraphNode,
+import { type ElementType, type ReactNode } from 'react'
+import {
+	type PluginDependencyGraphEdge,
+	type PluginDependencyGraphNode,
 } from '@pluxel/services/management/client'
-import type {
-	PluginDependencyDetail,
-	PluginDependencyEndpoint,
-	PluginDependent,
+import {
+	type PluginDependencyDetail,
+	type PluginDependencyEndpoint,
+	type PluginDependent,
 } from '../../pluginDependencyGraphSelectors'
 import { usePluginDependencyDetail } from '../context'
 import { RouterLinkAdapter } from '../../../router/RouterLinkAdapter'
@@ -593,7 +593,7 @@ function DependencyImplementationControl({
 										size="xs"
 										variant="subtle"
 										color="red"
-										disabled={removePending}
+										disabled={removePending || !controls.canRemoveFork}
 										onClick={() => {
 											openConfirmModal({
 												title: '删除 Fork',

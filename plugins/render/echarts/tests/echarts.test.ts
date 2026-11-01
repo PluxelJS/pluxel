@@ -1,4 +1,3 @@
-import { fs, InMemory } from '@pluxel/services/fs'
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
@@ -48,7 +47,6 @@ describe('EChartsPlugin', () => {
 	it('demonstrates worker admission pressure as a Result while cancellation still rejects', async () => {
 		await using host = await createTestHost({
 			services: [
-				fs({ backend: InMemory }),
 				nodeModules(),
 				workers({ maxThreads: 1, maxQueuedTasks: 1, maxQueuedTasksPerPlugin: 1 }),
 			],
@@ -85,7 +83,7 @@ describe('EChartsPlugin', () => {
 
 	it('rejects invalid theme values before they become caller-owned state', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 
 		await startEChartsFixture(host, { config: { maxThemeNodes: 2 } })
@@ -109,7 +107,7 @@ describe('EChartsPlugin', () => {
 
 	it('bounds provider-wide retained theme count and returns capacity on dispose', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 
 		await startEChartsFixture(host, {
@@ -130,7 +128,7 @@ describe('EChartsPlugin', () => {
 
 	it('bounds aggregate retained theme bytes and reconciles caller cleanup', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 
 		await startEChartsFixture(host, {
@@ -158,7 +156,7 @@ describe('EChartsPlugin', () => {
 
 	it('keeps named themes caller-owned and revokes them with the caller generation', async () => {
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 
 		await startEChartsFixture(host, { otherConsumer: true })
@@ -195,7 +193,7 @@ describe('EChartsPlugin', () => {
 	it('places the provider-owned Fonts selection Attachment', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 
 		await host.start([FontsPlugin, CanvasPlugin, EChartsPlugin])

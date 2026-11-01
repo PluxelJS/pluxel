@@ -4,15 +4,13 @@ import { NodeElysiaApplicationCarrier } from '../../src/elysia/node'
 import { managementHttp } from '../../src/management/http'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import type { AddressInfo } from 'node:net'
+import { type AddressInfo } from 'node:net'
 import NodeWebSocket from 'crossws/websocket'
 import nodeAdapter from 'crossws/adapters/node'
 import { getWebSocketHooks, setWebSocketHooks } from 'crossws'
 import { newWebSocketRpcSession } from 'capnweb'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { fs, InMemory } from '@pluxel/services/fs'
-import { tinybase } from '@pluxel/services/tinybase'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { expect, it, vi } from 'vitest'
 import { requirePluginHostCoordinator } from '@pluxel/host/internal'
@@ -21,7 +19,7 @@ import { managementAccess, AdminAccess } from '../../src/management/access'
 import { management, createHostManagementTarget } from '../../src/management/service'
 import { createManagementEndpoint } from '../../src/management/index'
 import { createRuntimeManagementClient } from '../../src/management/client'
-import type { RuntimeSessionRoot } from '../../src/management/web/session/protocol'
+import { type RuntimeSessionRoot } from '../../src/management/web/session/protocol'
 
 // Crossws forwards the third argument to ws on Node, although its declaration only exposes WebSocket.
 const HeaderWebSocket = NodeWebSocket as typeof NodeWebSocket & {
@@ -34,7 +32,7 @@ class ManagedWorker extends BasePlugin {}
 it('serves a real authenticated socket for a Core Host and leaves it alive when the endpoint closes', async () => {
 	const host = await createHost({
 		plugins: [ManagedWorker],
-		services: [fs({ backend: InMemory }), tinybase(), managementAccess(), management()],
+		services: [managementAccess(), management()],
 	})
 	await host.start()
 	const endpoint = createManagementEndpoint({
@@ -154,14 +152,7 @@ it.each([undefined, 'http://bot-new-omni.localhost:1355', 'https://bot-new-omni.
 	async (publicOrigin) => {
 		const host = await createHost({
 			plugins: [ManagedWorker],
-			services: [
-				elysia(),
-				fs({ backend: InMemory }),
-				tinybase(),
-				managementAccess(),
-				management(),
-				managementHttp(),
-			],
+			services: [elysia(), managementAccess(), management(), managementHttp()],
 		})
 		await host.start()
 		const boundary = resolveContextCapability(host.ctx, ElysiaRuntime)

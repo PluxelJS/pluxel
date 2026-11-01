@@ -1,32 +1,36 @@
 ---
 title: 文件存储
-description: 通过 PluginFs 访问插件目录，使用原生 promise 操作和完整原子保存。
+description: 通过 ctx.fs() 访问插件目录，使用原生 promise 操作和完整原子保存。
 ---
 
-Host 显式安装 [FS 服务](../host/configuration.md#选择文件后端)后，Plugin 和 Part 可以取得所属插件的文件目录。返回值是 ZenFS 的 Node 兼容 `fs.promises`；Pluxel 只负责目录归属、准备和关闭，不另建文件操作接口。
+每个 Core 与 Host 都内建 FS。Plugin 和 Part 通过固定的 `ctx.fs()` 取得所属插件的文件目录；[后端选择](../host/configuration.md#选择文件后端)由 Host 统一配置，省略时使用 InMemory。返回值是 ZenFS 的 Node 兼容 `fs.promises`；Pluxel 只负责目录归属、准备和关闭，不另建文件操作接口。
+
+应用通过 `config.storage: zenfs(nativeConfig)`（`@pluxel/core/config`）声明后端。helper 验证并快照原生配置、正规化挂载路径，省略根挂载时补 InMemory；它不创建或准备文件系统。Backend、已打开 FileSystem 与不透明 options 保留原身份，后端特有参数在准备时由 ZenFS 校验。Core 也接受原生 `FsConfig`。
+
+装配支持原生自定义 Backend 和多个 mount。组合 backend 若校验 SDK 的 `FileSystem` 实例身份，子层应由同一份 SDK 创建，例如外部 `CopyOnWrite` 使用同一 `@zenfs/core` 的 `InMemory`；其他独立 mount 可以使用 Core 预设。
 
 用户偏好、开关与有界结构化记录使用 [TinyBase 状态](./tinybase.md)；部署配置仍用 `configs.use()`。这里处理文件、文档源码和二进制的原生操作。
 
 ## 取得目录并保存
 
-必需文件能力用 `PluginFs`。以下业务方法要求数据跨 Host 保留且可写；服务缺失、后端准备或写入失败直接拒绝调用：
+以下业务方法要求数据跨 Host 保留且可写；后端无法满足要求、准备或写入失败时直接拒绝调用：
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PluginFs, writeFileAtomic } from '@pluxel/services/fs'
+import { writeFileAtomic } from '@pluxel/core/fs'
 
 @Plugin()
 export class ReportsPlugin extends BasePlugin {
 	async saveReport(bytes: Uint8Array): Promise<void> {
-		const files = await this.ctx.require(PluginFs)({ durable: true, writable: true })
+		const files = await this.ctx.fs({ durable: true, writable: true })
 		await writeFileAtomic(files, 'reports/latest.bin', bytes)
 	}
 }
 ```
 
-解析 token 或取得 `ctx.fs` 访问函数不执行 IO；调用该函数才等待后端和目录就绪。可选功能先检查 `this.ctx.fs`，仅在需要保存时调用；未安装服务时是否允许继续由业务决定，不能把初始化失败当成可选缺失。
+取得 `ctx.fs` 访问函数不执行 IO；调用才等待后端和目录就绪。该能力始终存在，仅在业务需要文件时调用；后端初始化失败继续传播。
 
-`durable` 和 `writable` 分别表达需求。`InMemory` 无法满足 `durable: true`，以 `ENOTSUP` 失败；只读后端无法满足 `writable: true`，以 `EROFS` 失败。检查在获取资源前执行，实际写入仍执行只读约束。没有这些要求时使用 `await this.ctx.require(PluginFs)()`。
+`durable` 和 `writable` 分别表达需求。应用通过 Host 的 `storage.durableMounts` 对具体 mount 声明跨重开持久性；没有声明的 mount 以 `ENOTSUP` 拒绝 `durable: true`，不会根据后端名称猜测。目录内的子挂载覆盖也必须满足要求。实际 backend 的只读属性以 `EROFS` 拒绝 `writable: true`；准备完成后执行检查，原生写入继续受只读约束。没有这些要求时使用 `await this.ctx.fs()`。
 
 ## 使用文件操作
 
@@ -56,8 +60,8 @@ try {
 
 目录借用自 Host。不要关闭共享后端；自己打开的 FileHandle、watcher 和后台任务由当前 generation 通过 `ctx.effects` 或原生 `await using` 释放。等待自己发起的 IO 后再退出，Host final 清理不排空任意未等待的裸文件操作。裸 promises 对象也不自动随 generation 撤回；Host 关闭后不再使用借用引用。
 
-目录绑定表达数据归属，不是同进程恶意代码的安全沙箱。原生 driver 的数据库目录、日志 file sink、源码加载及其他需要宿主绝对路径的能力由各自部署入口配置，不从 `PluginFs` 推导原生磁盘路径。
+目录绑定表达数据归属，不是同进程恶意代码的安全沙箱。原生 driver 的数据库目录、日志 file sink、源码加载及其他需要宿主绝对路径的能力由各自部署入口配置，不从 `ctx.fs()` 推导原生磁盘路径。
 
 ## 验证
 
-普通隔离测试可安装 `fs({ backend: InMemory })`。要求跨 Host、进程或页面保留的数据，使用真实的 Passthrough 临时目录或浏览器 IndexedDB，关闭后重新创建 Host 再检查；不要给内存配置附加虚假的持久性标签。测试还应覆盖业务允许的缺失分支、损坏内容和保存失败后是否仍保留已确认状态。
+普通隔离测试直接使用默认 InMemory，无需安装服务。要求跨 Host、进程或页面保留的数据，使用真实的 Passthrough 临时目录或浏览器 IndexedDB，关闭后重新创建 Host 再检查；应用应对所用持久 mount 显式声明 `durableMounts`，不要把这一断言当作持久性检测或断电保证。测试还应覆盖业务允许的缺失分支、损坏内容和保存失败后是否仍保留已确认状态。

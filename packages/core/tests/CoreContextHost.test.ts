@@ -71,6 +71,33 @@ it('composes typed services with Core and preserves caller and Part capability o
 				installScopeCapability(service, { property: 'pluginInfo', create: (owner) => ({ owner }) }),
 			],
 		})
+		createCoreContextHost({
+			// @ts-expect-error The fixed Plugin filesystem cannot be replaced by an extension.
+			capabilities: [
+				installScopeCapability(service, { property: 'fs', create: (owner) => ({ owner }) }),
+			],
+		})
+		createCoreContextHost({
+			// @ts-expect-error The fixed Plugin state bridge cannot be replaced by an extension.
+			capabilities: [
+				installScopeCapability(service, { property: 'tinybase', create: (owner) => ({ owner }) }),
+			],
+		})
+		createCoreContextHost({
+			// @ts-expect-error Core reserves its logging runtime even when no logger is configured.
+			capabilities: [
+				installScopeCapability(service, { property: 'logging', create: (owner) => ({ owner }) }),
+			],
+		})
 	}
 	void typeChecks
+})
+
+it('reserves Core logging ownership when no logger is configured', () => {
+	const token = defineContextCapability('another.logging')
+	expect(() =>
+		createCoreContextHost({
+			capabilities: [installScopeCapability(token, { property: 'logging', create: () => ({}) })],
+		} as never),
+	).toThrow(/logging/)
 })

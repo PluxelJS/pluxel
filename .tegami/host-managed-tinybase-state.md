@@ -1,10 +1,14 @@
 ---
 packages:
+  '@pluxel/core': major
+  '@pluxel/host': minor
   '@pluxel/services': major
 ---
 
-# Host 托管原生 TinyBase 状态
+# Core 内建原生 TinyBase 状态
 
-新增 `/tinybase` 服务入口，每个 Plugin node 使用一份原生 Store，Host 负责恢复、publication 后自动保存、flush 屏障、关闭排空、容量与显式故障恢复。`standardServices()` 与 `servicesPreset()` 包含该服务，应用需直接安装 Services 接纳的精确 TinyBase 版本。
+每个 Core 固定提供 `ctx.tinybase` 和 `ctx.fs()`。Plugin、Part、fork 和 caller view 通过拥有者 generation 访问同一份原生 Store，Core 负责恢复、publication 后自动保存、flush 屏障、关闭排空、容量与显式故障恢复。删除 Services 的 `/tinybase` 工厂与 tokens，不保留兼容入口。
 
-官方 Host 配置、运行策略、日志 policy 和 Management 布局通过 TinyBase 私有文档保存，保留领域文档格式与保存后发布语义；Management 组合新增 TinyBase 服务依赖。旧 JSON 不在启动时迁移，已有部署需备份后显式转换。
+Host 默认将 config/state 接到 Core 私有文档。Logging policy 与 Management 布局也使用 Core 私有文档，保留领域格式和保存后发布语义；应用通过 `config.storage` 一次选择数据后端，省略时为 InMemory。SQL 继续通过 `@pluxel/services/database` 显式安装。
+
+保留现有 `services/tinybase` 物理路径和 format 1 快照。旧 JSON 不在启动时迁移，已有外部部署需备份后显式转换。

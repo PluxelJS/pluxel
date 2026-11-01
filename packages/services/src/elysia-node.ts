@@ -1,1 +1,1 @@
-export { listenElysia } from './elysia/listener'
+export { listenElysia, type ListenElysiaOptions } from './elysia/listener'

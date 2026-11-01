@@ -1,30 +1,35 @@
-import type { RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
-import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import type { RpcTarget } from 'capnweb'
-import type { SecurityAuditEvent, SecurityOverview } from './security'
-import type { LogFilter, LogRangeResult, LogStreamMeta } from '../../logging/protocol'
-import type {
-	ConfigFieldMutation,
-	ConfigPresentationResult,
-	ConfigResult,
-	EnsureForkResult,
-	LoggingHandleApi,
-	PluginDependencyGraphSnapshot,
-	PluginConsumerRequirementsInspectionResult,
-	PluginDependencyMutationResult,
-	PluginProviderPolicyInspectionResult,
-	PluginCatalogLayoutInput,
-	PluginCatalogLayoutMutationResult,
-	PluginCatalogSnapshot,
-	PluginAutoStartBatchItem,
-	PluginControlBatchResult,
-	PluginLifecycleCommandBatchItem,
-	PluginStatusQueryResult,
-	RemoveForkResult,
-	RuntimeMeta,
-	VaultKeyPair,
+import { type HostConfigState, type HostConfigVersion } from '@pluxel/host'
+import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
+import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
+import { type RpcTarget } from 'capnweb'
+import { type SecurityAuditEvent, type SecurityOverview } from './security'
+import {
+	type LogFilter,
+	type LogRangeResult,
+	type LogStreamMeta,
+} from '@pluxel/core/logging/protocol'
+import {
+	type ConfigFieldMutation,
+	type ConfigPresentationResult,
+	type ConfigResult,
+	type EnsureForkResult,
+	type LoggingHandleApi,
+	type PluginDependencyGraphSnapshot,
+	type PluginConsumerRequirementsInspectionResult,
+	type PluginDependencyMutationResult,
+	type PluginProviderPolicyInspectionResult,
+	type PluginCatalogLayoutInput,
+	type PluginCatalogLayoutMutationResult,
+	type PluginCatalogSnapshot,
+	type PluginAutoStartBatchItem,
+	type PluginControlBatchResult,
+	type PluginLifecycleCommandBatchItem,
+	type PluginStatusQueryResult,
+	type RemoveForkResult,
+	type RuntimeMeta,
+	type VaultKeyPair,
 } from './protocol'
-import type { VaultAdminState } from '../../vault'
+import { type VaultAdminState } from '../../vault'
 
 export type RuntimeLogStreamsIndex = Readonly<{ streams: readonly LogStreamMeta[] }>
 
@@ -62,14 +67,17 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	) => Promise<PluginCatalogLayoutMutationResult>
 	pluginStatusDto: (owner: PluginNodeAddress) => Promise<PluginStatusQueryResult>
 	pluginConfigPresentationDto: (owner: PluginNodeAddress) => Promise<ConfigPresentationResult>
+	configStateDto: () => HostConfigState
 	pluginConfigDto: (owner: PluginNodeAddress) => Promise<ConfigResult>
 	patchPluginConfigDto: (
 		owner: PluginNodeAddress,
 		patch: Record<string, unknown>,
+		expected?: HostConfigVersion,
 	) => Promise<ConfigResult>
 	patchPluginConfigFieldDto: (
 		owner: PluginNodeAddress,
 		input: ConfigFieldMutation,
+		expected?: HostConfigVersion,
 	) => Promise<ConfigResult>
 	pluginDependencyGraphDto: () => Promise<PluginDependencyGraphSnapshot>
 	inspectPluginConsumerRequirementsDto: (
@@ -99,6 +107,7 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	removePluginForkDto: (input: {
 		base: PluginNodeAddress
 		forkId: string
+		expected?: HostConfigVersion
 	}) => Promise<RemoveForkResult>
 	setPluginAutoStartDto: (items: PluginAutoStartBatchItem[]) => Promise<PluginControlBatchResult>
 	applyPluginLifecycleCommandsDto: (

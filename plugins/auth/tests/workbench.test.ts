@@ -1,8 +1,7 @@
-import { InMemory } from '@pluxel/services/fs'
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
-import type { WorkbenchPrincipal } from '@pluxel/workbench'
+import { type WorkbenchPrincipal } from '@pluxel/workbench'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
 import { generateTotpForTesting } from '../src/totp.ts'
@@ -25,7 +24,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -70,7 +69,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -95,7 +94,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -129,7 +128,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			})
 
 			await host.start(AuthPlugin, {
@@ -162,7 +161,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.start(AuthPlugin, {

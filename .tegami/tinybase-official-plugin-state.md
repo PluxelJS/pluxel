@@ -18,13 +18,13 @@ the selection after `flush()`. Font binaries and their atomic resource envelopes
 continue to use FS. Headless core font and HTTP capabilities still run without
 optional services.
 
-Managed HTTP settings and font preferences now require the TinyBase service and
-the exact shared TinyBase peer version. Host standard services include it. Remove
+Managed HTTP settings and font preferences use Core’s fixed TinyBase capability.
+Native Store consumers declare the exact shared TinyBase peer version. Remove
 the old per-consumer JSON settings and default-font JSON storage paths; existing
 data requires an explicit offline conversion, with no startup migration or dual
 reader.
 
 Generated Todo plugins use a native TinyBase table, validate restored data, keep
 empty collections empty across restart, and let Host autosave synchronous domain
-mutations. Their tests and the required HTTP consumer install the state service
-explicitly.
+mutations. Their tests use the fixed Core capability, and the HTTP consumer installs only
+its HTTP service.

@@ -1,9 +1,10 @@
+import { type HostConfigVersion } from '@pluxel/host'
 import { makePathArray } from '@tanstack/react-form'
-import { Box, ScrollArea } from '@mantine/core'
+import { Box, ScrollArea, Text } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
-import type { PluginNodeAddress } from '@pluxel/core'
+import { type PluginNodeAddress } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FieldNode } from 'valibot-form'
+import { type FieldNode } from 'valibot-form'
 
 import { useRuntimeManagementClient } from '../../../runtime'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
@@ -28,6 +29,8 @@ type ConfigFormProps = {
 	owner: PluginNodeAddress
 	displayName: string
 	fields: readonly FieldNode[]
+	version: HostConfigVersion | null
+	readonly: boolean
 	savedConfig: Record<string, unknown>
 	defaults: Record<string, unknown>
 	active?: boolean
@@ -61,6 +64,8 @@ function ConfigFormInstance({
 	displayName,
 	fields,
 	savedConfig,
+	version,
+	readonly: readOnly,
 	defaults,
 	active = true,
 	onDirtyChange,
@@ -71,6 +76,7 @@ function ConfigFormInstance({
 	const workspace = useOptionalWorkspaceSession()
 	const { mutateAsync: saveConfig, isPending: saving, variables } = useConfigSave({ owner })
 	const savingRef = useRef(false)
+	const versionRef = useRef(version)
 	const visibleSections = useMemo<readonly PluginConfigSection[]>(
 		() => (sections.length > 0 ? sections : [{ path: [], fields, defaults, fieldName: '' }]),
 		[defaults, fields, sections],
@@ -100,6 +106,10 @@ function ConfigFormInstance({
 	}, [activeKey, sectionItems])
 
 	const dirtySections = sectionItems.filter((section) => formStates[section.key]?.dirty)
+	useEffect(() => {
+		// Background reads must not silently attach a newer version to an older draft.
+		if (dirtySections.length === 0 && !saving) versionRef.current = version
+	}, [dirtySections.length, saving, version])
 	const dirtyLabels = dirtySections.map((section) => section.label)
 	const activeSection = sectionItems.find((section) => section.key === activeKey) ?? sectionItems[0]
 	const resolvedActiveKey = activeSection?.key ?? ''
@@ -114,9 +124,16 @@ function ConfigFormInstance({
 	}, [dirtySections.length, onDirtyChange])
 
 	const submitCurrent = useCallback(() => {
-		if (!activeState.dirty || !activeState.canSubmit || activeState.submitting || saving) return
+		if (
+			readOnly ||
+			!activeState.dirty ||
+			!activeState.canSubmit ||
+			activeState.submitting ||
+			saving
+		)
+			return
 		void forms.get()[resolvedActiveKey]?.form.handleSubmit()
-	}, [activeState, forms, resolvedActiveKey, saving])
+	}, [activeState, forms, readOnly, resolvedActiveKey, saving])
 
 	const resetCurrent = useCallback(() => {
 		if (activeState.submitting || saving) return
@@ -147,7 +164,7 @@ function ConfigFormInstance({
 	// Both native section submits and the save-all action enter the same transaction.
 	const save = useCallback(
 		async (key?: string) => {
-			if (savingRef.current) return
+			if (readOnly || savingRef.current) return
 			const submitted = sectionItems.flatMap((section) => {
 				const bridge = forms.get()[section.key]
 				return bridge ? [{ section, bridge, state: bridge.form.state }] : []
@@ -171,7 +188,11 @@ function ConfigFormInstance({
 						forms.get()[section.key]?.form === bridge.form &&
 						bridge.form.state.values === state.values,
 				)
-			const request = () => management.config.patch(owner, patch)
+			const expected = versionRef.current
+			const request = () =>
+				expected
+					? management.config.patch(owner, patch, expected)
+					: management.config.patch(owner, patch)
 			savingRef.current = true
 			for (const { bridge } of targets)
 				bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
@@ -191,7 +212,8 @@ function ConfigFormInstance({
 								),
 							} as never)
 					},
-					onSaved: () => {
+					onSaved: (savedVersion) => {
+						versionRef.current = savedVersion
 						for (const { section, bridge, state } of dirty) {
 							if (forms.get()[section.key]?.form === bridge.form) bridge.acceptSaved(state.values)
 						}
@@ -203,7 +225,7 @@ function ConfigFormInstance({
 				savingRef.current = false
 			}
 		},
-		[forms, management, owner, saveConfig, sectionItems],
+		[forms, management, owner, readOnly, saveConfig, sectionItems],
 	)
 	const saveAll = useCallback(() => save(), [save])
 	const saveRef = useRef(saveAll)
@@ -272,7 +294,17 @@ function ConfigFormInstance({
 	if (!activeSection) return null
 
 	return (
-		<Box className="plx-pluginWorkbench__configForm">
+		<Box
+			component="fieldset"
+			disabled={readOnly}
+			className="plx-pluginWorkbench__configForm"
+			style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+		>
+			{readOnly ? (
+				<Text size="sm" c="dimmed">
+					当前宿主的配置只读。
+				</Text>
+			) : null}
 			{active ? (
 				<Box className="plx-pluginWorkbench__configToolbar">
 					<ConfigActionDock

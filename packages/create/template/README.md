@@ -30,7 +30,9 @@ For continuous or multi-file edits while the application is running, use the con
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
 Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
 The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
-Logging, Vault, Management and optional Workbench. `host/web/` is an independent private workspace package
+Vault, Management and optional Workbench. Core logging is selected explicitly with `config.logger: logtape()`
+from `@pluxel/core/config`; storage uses `config.storage: zenfs(...)` from the same entry.
+The preset does not configure logging or storage. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
 configuration, installs the workspace Plugins and serves the page and Plugin routes on
 the application origin shown by the running Vite server (the proxy URL for `app`, or the local URL for `local`). See the [workspace guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/workspace-toolchain.md) for tool setup, proxy configuration and agent workflows.

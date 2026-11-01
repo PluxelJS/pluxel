@@ -1,6 +1,8 @@
 import './services/index'
 import { createCoreRootContext } from './context/core-plan'
-import type { CoreHostConfig } from './context/Context'
+import { prepareCoreContext } from './context/core-logging'
+import type { CoreHostConfig, RootContext } from './context/Context'
+import { closeOwnerInvocations } from './internal/owner-invocations'
 import { requireConfigService } from './internal/config-service'
 import { requirePluginService } from './internal/plugin-service'
 import { immutableConfigRecord } from './services/config/immutable'
@@ -131,7 +133,7 @@ export interface CoreTestHost extends AsyncDisposable {
  * Core-only test host configuration. `plugins` tunes the production lifecycle executor; it is not
  * a Plugin constructor catalog. Omitted fields use the same defaults as a Core root.
  */
-export type CoreTestHostConfig = Pick<CoreHostConfig, 'name' | 'logger' | 'events' | 'plugins'>
+export type CoreTestHostConfig = CoreHostConfig
 
 type AddCommand = Readonly<{
 	target: PluginTestTarget
@@ -184,6 +186,15 @@ type RawCommit = Readonly<{
 	summary: PluginTestCommitSummary
 	targets: readonly PluginTestTarget[]
 }>
+
+const coreTestRoots = new WeakMap<CoreTestHost, RootContext>()
+
+/** Framework diagnostics for a real Core test host; author-facing test handles stay opaque. */
+export function getCoreTestHostContext(host: CoreTestHost): RootContext {
+	const root = coreTestRoots.get(host)
+	if (!root) throw new TypeError('[pluxel/core/internal/test] Expected a Core test host')
+	return root
+}
 
 /** Create an isolated Core Plugin world without starting or materializing any Plugin. */
 export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHost {
@@ -473,6 +484,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 		finish: (commit: RawCommit) => T,
 	): Promise<T> =>
 		gate.runMutation(operation, async () => {
+			await prepareCoreContext(root)
 			const committed = await commitPlan(collect(build))
 			return finish(committed)
 		})
@@ -582,6 +594,11 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 		gate.dispose(async () => {
 			const failures: unknown[] = []
 			try {
+				await closeOwnerInvocations(root)
+			} catch (error) {
+				failures.push(error)
+			}
+			try {
 				const nodes = [...registry.graph.keys()].filter(
 					(value): value is import('./index').PluginNodeSlot =>
 						Boolean(value && typeof value === 'object' && 'definition' in value),
@@ -622,7 +639,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 			}
 		})
 
-	return Object.freeze({
+	const host: CoreTestHost = Object.freeze({
 		add,
 		remove,
 		restart,
@@ -634,6 +651,8 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 		dispose,
 		[Symbol.asyncDispose]: dispose,
 	})
+	coreTestRoots.set(host, root)
+	return host
 }
 
 function validatePlan(

@@ -22,13 +22,13 @@ async function fixture(
 		await writeFile(file, typeof value === 'string' ? value : JSON.stringify(value))
 	}
 	await put('pnpm-workspace.yaml', 'catalogs:\n  prod:\n    tinybase: 10.0.1\n')
-	await put('node_modules/@pluxel/services/package.json', {
-		name: '@pluxel/services',
-		peerDependencies: { tinybase: '10.0.1' },
+	await put('node_modules/@pluxel/core/package.json', {
+		name: '@pluxel/core',
+		dependencies: { tinybase: '10.0.1' },
 		exports: { './package.json': './package.json' },
 	})
 	for (const [path, version] of [
-		['node_modules/@pluxel/services/node_modules/tinybase', '10.0.1'],
+		['node_modules/@pluxel/core/node_modules/tinybase', '10.0.1'],
 		['plugin/node_modules/tinybase', options.installed ?? '10.0.1'],
 	]) {
 		await put(`${path}/package.json`, {
@@ -45,10 +45,7 @@ async function fixture(
 		peerDependencies: options.peer ? { tinybase: options.peer } : {},
 		devDependencies: options.dev ? { tinybase: options.dev } : {},
 	})
-	await put(
-		'plugin/index.ts',
-		options.source ?? "export { TinyBase } from '@pluxel/services/tinybase'",
-	)
+	await put('plugin/index.ts', options.source ?? "export { createStore } from 'tinybase'")
 	return {
 		root,
 		packageJsonPath: join(root, 'plugin/package.json'),
@@ -56,22 +53,22 @@ async function fixture(
 	}
 }
 
-it('accepts exact catalog declarations and an independent same-version install without requiring the Services runtime build', async () => {
+it('accepts exact catalog declarations and an independent same-version install without requiring a Core runtime build', async () => {
 	const { packageJsonPath } = await fixture({ peer: 'catalog:prod', dev: 'catalog:prod' })
 	await expect(validateTinybasePeer(packageJsonPath)).resolves.toBe('10.0.1')
 })
 
-it('rejects an unsupported service installation even when all consumers agree with that installed version', async () => {
+it('rejects an unsupported Core installation even when all consumers agree with that installed version', async () => {
 	const { root, packageJsonPath } = await fixture({
 		peer: '10.1.0',
 		dev: '10.1.0',
 		installed: '10.1.0',
 	})
-	const manifest = join(root, 'node_modules/@pluxel/services/node_modules/tinybase/package.json')
+	const manifest = join(root, 'node_modules/@pluxel/core/node_modules/tinybase/package.json')
 	const installed = JSON.parse(await readFile(manifest, 'utf8'))
 	await writeFile(manifest, JSON.stringify({ ...installed, version: '10.1.0' }))
 	await expect(validateTinybasePeer(packageJsonPath)).rejects.toThrow(
-		/@pluxel\/services.*peerDependencies.tinybase 10\.0\.1.*resolved 10\.1\.0.*Host TinyBase supports 10\.0\.1/,
+		/@pluxel\/core.*dependencies.tinybase 10\.0\.1.*resolved 10\.1\.0.*Host Core supports 10\.0\.1/,
 	)
 })
 
@@ -89,22 +86,40 @@ it.each([
 )
 
 it.each([
-	["export { TinyBase } from '@pluxel/services/tinybase'", true],
-	["export const service = import('@pluxel/services/tinybase')", true],
-	["import type { TinyBase } from '@pluxel/services/tinybase'; export const result = 1", false],
-	["import { type TinyBase } from '@pluxel/services/tinybase'; export const result = 1", false],
-	["export { createStore } from 'tinybase'", false],
-] as const)('derives capability use from actual runtime imports: %s', async (source, expected) => {
-	const { packageJsonPath, entry } = await fixture({ source })
+	"export { BasePlugin } from '@pluxel/core'",
+	'export const open = ctx => ctx.tinybase.open()',
+	"import type { TinyBaseService } from '@pluxel/core'; export const result = 1",
+	"export { createStore } from 'tinybase'",
+])(
+	'does not invent upstream interoperability from fixed Core APIs or private imports: %s',
+	async (source) => {
+		const { packageJsonPath, entry } = await fixture({ source })
+		const collector = collectTinybaseConsumers(packageJsonPath)
+		const bundle = await rolldown({
+			input: entry,
+			external: [/^@pluxel\//, /^tinybase/],
+			plugins: [collector.plugin],
+		})
+		try {
+			await bundle.generate({ format: 'esm' })
+			expect(collector.usesTinybase()).toBe(false)
+		} finally {
+			await bundle.close()
+		}
+	},
+)
+
+it('recognizes an explicit peer as the native interoperability contract', async () => {
+	const { packageJsonPath, entry } = await fixture({ peer: '10.0.1', dev: '10.0.1' })
 	const collector = collectTinybaseConsumers(packageJsonPath)
 	const bundle = await rolldown({
 		input: entry,
-		external: [/^@pluxel\//, /^tinybase/],
+		external: [/^tinybase/],
 		plugins: [collector.plugin],
 	})
 	try {
 		await bundle.generate({ format: 'esm' })
-		expect(collector.usesTinybase()).toBe(expected)
+		expect(collector.usesTinybase()).toBe(true)
 	} finally {
 		await bundle.close()
 	}

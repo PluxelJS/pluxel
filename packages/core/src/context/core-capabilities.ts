@@ -3,6 +3,9 @@ import type { ConfigService } from '../services/config/ConfigService'
 import type { EffectsScope } from '../services/effects/EffectsService'
 import type { EventsService } from '../services/events/EventsService'
 import { defineContextCapability, type ContextCapability } from '@pluxel/context'
+import type { FsPromises, FsRequirement, FsService } from '../fs/service'
+import type { TinyBaseRuntime } from '../tinybase/service'
+import type { TinyBaseService } from '../tinybase/types'
 
 export const LOGGER_CAPABILITY: ContextCapability<ContextLogger> =
 	defineContextCapability('core.logger')
@@ -12,6 +15,22 @@ export const EVENTS_CAPABILITY: ContextCapability<EventsService> =
 	defineContextCapability('core.events')
 export const CONFIG_SERVICE_CAPABILITY: ContextCapability<ConfigService> =
 	defineContextCapability('core.plugin-config')
+
+// Fixed platform resources remain internal descriptors; Plugin authors use their owner properties.
+export const FS_CAPABILITY = defineContextCapability<FsService>('core.fs', { access: 'root' })
+export const PLUGIN_FS_CAPABILITY = defineContextCapability<
+	(requirement?: FsRequirement) => Promise<FsPromises>
+>('core.plugin-fs', { access: 'owner', property: 'fs' })
+export const TINYBASE_HOST_CAPABILITY = defineContextCapability<TinyBaseRuntime>(
+	'core.tinybase.host',
+	{
+		access: 'root',
+	},
+)
+export const TINYBASE_CAPABILITY = defineContextCapability<TinyBaseService>('core.tinybase', {
+	access: 'owner',
+	property: 'tinybase',
+})
 
 // PluginService is intentionally represented only by its object identity here. Importing the
 // high-level graph coordinator into the low-level capability module would invert the dependency

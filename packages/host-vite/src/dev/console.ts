@@ -15,6 +15,7 @@ import {
 	pluginConfigValidate,
 	pluginConfigPatch,
 	pluginConfigReset,
+	readHostConfigState,
 	requirePluginHostCoordinator,
 	readHostPluginStatusOverview,
 } from '@pluxel/host/internal'
@@ -26,7 +27,11 @@ import {
 	type DevPluginInstance,
 } from './contracts'
 import { DevScope } from './scope'
-import type { HostPluginConfigResult, PluginApplyReportSnapshot } from '@pluxel/host'
+import type {
+	HostPluginConfigResult,
+	PluginApplyReportSnapshot,
+	HostConfigMutationOptions,
+} from '@pluxel/host'
 
 export interface DevConsoleScope {
 	readonly dev: DevConsole
@@ -132,6 +137,10 @@ export function createDevConsoleScope(
 			},
 		}),
 		config: Object.freeze({
+			status: () => {
+				scope.assertOpen()
+				return readHostConfigState(ctx)
+			},
 			get: (target: DevPluginTarget) =>
 				scope.run(async () =>
 					projectConfig(await pluginConfigGet(ctx, resolveTarget(target), admission)),
@@ -140,13 +149,31 @@ export function createDevConsoleScope(
 				scope.run(async () =>
 					projectConfig(await pluginConfigValidate(ctx, resolveTarget(target), patch, admission)),
 				),
-			patch: (target: DevPluginTarget, patch: Readonly<Record<string, unknown>>) =>
+			patch: (
+				target: DevPluginTarget,
+				patch: Readonly<Record<string, unknown>>,
+				mutation?: Pick<HostConfigMutationOptions, 'expected'>,
+			) =>
 				scope.run(async () =>
-					projectConfig(await pluginConfigPatch(ctx, resolveTarget(target), patch, admission)),
+					projectConfig(
+						await pluginConfigPatch(ctx, resolveTarget(target), patch, {
+							...mutation,
+							...admission,
+						}),
+					),
 				),
-			reset: (target: DevPluginTarget, keys?: readonly string[]) =>
+			reset: (
+				target: DevPluginTarget,
+				keys?: readonly string[],
+				mutation?: Pick<HostConfigMutationOptions, 'expected'>,
+			) =>
 				scope.run(async () =>
-					projectConfig(await pluginConfigReset(ctx, resolveTarget(target), keys, admission)),
+					projectConfig(
+						await pluginConfigReset(ctx, resolveTarget(target), keys, {
+							...mutation,
+							...admission,
+						}),
+					),
 				),
 		}),
 	})

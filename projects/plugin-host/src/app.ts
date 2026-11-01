@@ -3,8 +3,8 @@ import { pluginSource } from '@pluxel/host/sources'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
-import { Passthrough } from '@pluxel/services/fs'
-import { TinyBaseHost } from '@pluxel/services/tinybase'
+import { Passthrough } from '@pluxel/core/fs'
+import { logtape, zenfs } from '@pluxel/core/config'
 
 import { resolve } from 'pathe'
 import { hostPlugins } from './showcase/catalog'
@@ -21,11 +21,20 @@ export default defineHostApplication(async (startup) => {
 	const environment = resolveHostEnv(startup.env)
 	const dataRoot = resolve(startup.deployment?.root ?? startup.root, environment.dataRoot)
 	const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
+	const prefix = resolve(dataRoot, 'fs')
+	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'pluxel-architecture-lab',
 		plugins: hostPlugins,
 		// Development starts compile the official Node artifacts on the same lifecycle path.
-		config: { plugins: { startTimeoutMs: 30_000 } },
+		config: {
+			logger: logtape(),
+			plugins: { startTimeoutMs: 30_000 },
+			storage: zenfs({
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			}),
+		},
 		sources: [
 			pluginSource({
 				kind: 'directory',
@@ -34,19 +43,16 @@ export default defineHostApplication(async (startup) => {
 			}),
 		],
 		services: await servicesPreset(startup, {
-			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(dataRoot, 'fs') },
 			product,
 			workbench: environment.workbench ?? true,
 		}),
 		configRecords: {
-			storage: (root) => root.require(TinyBaseHost).documents('config'),
 			initial: [
 				...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
 				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
 			],
 		},
 		state: {
-			storage: (root) => root.require(TinyBaseHost).documents('state'),
 			initial: createHostRuntimeState(),
 		},
 	}

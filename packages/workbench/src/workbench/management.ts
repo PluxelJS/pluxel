@@ -32,6 +32,7 @@ export function bindWorkbenchManagement(
 			applyLifecycleCommands: method(input.plugins, 'applyLifecycleCommands'),
 		}),
 		config: Object.freeze({
+			status: method(input.config, 'status'),
 			presentation: method(input.config, 'presentation'),
 			get: method(input.config, 'get'),
 			patch: method(input.config, 'patch'),

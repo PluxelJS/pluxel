@@ -6,23 +6,28 @@ import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { TypstPlugin } from '@pluxel/plugin-typst'
 import { nodeModules } from '@pluxel/services/node'
 import * as nativeFs from 'node:fs'
-import { fs, Passthrough } from '@pluxel/services/fs'
-import { tinybase, TinyBaseHost } from '@pluxel/services/tinybase'
+import { Passthrough } from '@pluxel/core/fs'
 import { StudioPlugin } from '@report-template-studio/app/plugin'
 import { DOCUMENT_POLICY } from './documents.js'
 
 /** One application contract for the source development host and packaged Electron host. */
-export default defineHostApplication((startup): HostApplication => {
+export default defineHostApplication(async (startup): Promise<HostApplication> => {
 	const { root, assetsRoot } = startup.bindings
 	if (typeof root !== 'string' || typeof assetsRoot !== 'string')
 		throw new TypeError('Studio requires data and asset roots')
 	const owner = pluginNodeAddressOf(StudioPlugin)
+	const prefix = resolve(root, 'fs')
+	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'report-template-studio',
+		config: {
+			storage: {
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			},
+		},
 		plugins: [FontsPlugin, TypstPlugin, StudioPlugin],
 		services: [
-			fs({ backend: Passthrough, fs: nativeFs, prefix: resolve(root, 'fs') }),
-			tinybase(),
 			nodeModules(
 				startup.mode === 'production'
 					? {
@@ -35,7 +40,6 @@ export default defineHostApplication((startup): HostApplication => {
 			),
 		],
 		configRecords: {
-			storage: (hostRoot) => hostRoot.require(TinyBaseHost).documents('config'),
 			initial: [
 				{ owner, config: { root, assetsRoot } },
 				{ owner: pluginNodeAddressOf(FontsPlugin), config: { maxFontBytes: 32 * 1024 * 1024 } },
@@ -51,7 +55,6 @@ export default defineHostApplication((startup): HostApplication => {
 			],
 		},
 		state: {
-			storage: (hostRoot) => hostRoot.require(TinyBaseHost).documents('state'),
 			initial: { autoStart: [owner] },
 		},
 	}

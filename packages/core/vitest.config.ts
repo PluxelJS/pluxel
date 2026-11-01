@@ -5,15 +5,19 @@ import {
 } from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'vitest/config'
 
-const pluxelConditions = ['@pluxel/source', 'node', 'import', 'module', 'development', 'default']
+const pluxelConditions = ['@pluxel/source', 'node', 'development', 'default']
+// External modules run in Node; upstream bundler-only ESM exports may omit extensions.
+const externalConditions = ['node', 'default']
 
 export default defineConfig({
 	resolve: {
 		conditions: pluxelConditions,
+		externalConditions,
 	},
 	ssr: {
 		resolve: {
 			conditions: pluxelConditions,
+			externalConditions,
 		},
 	},
 	plugins: [

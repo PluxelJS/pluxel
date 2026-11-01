@@ -39,17 +39,17 @@ description: 按修改目标选择依赖、资源、配置、API、日志与验�
 
 默认服务器组合可能已经安装部分服务，但这不是任意 Plugin/Context 的保证。先确认当前 Host 的 services；只有新增需求才修改宿主。其他 Plugin 提供的业务能力则通过依赖图声明。
 
-| 增量需求                       | 入口                                  | 前提                                                  |
-| ------------------------------ | ------------------------------------- | ----------------------------------------------------- |
-| 对外 HTTP / WebSocket          | [HTTP](./http.md)                     | Host 安装 Elysia 服务并接入 carrier                   |
-| 命令目录、MCP tool、文本参数   | [Commands](./commands.md)             | 定义 Command 使用独立包；目录与载体另选安装           |
-| 偏好与有界业务状态             | [TinyBase 状态](./tinybase.md)        | Host 安装 TinyBase 与 FS；每个 Plugin node 一份 Store |
-| 插件文件与原子保存             | [文件存储](./fs.md)                   | Host 显式安装 FS，按需取得所属目录                    |
-| 数据库 schema、迁移和查询      | [Database](./database.md)             | Host 安装 Database 与 backend；也可由应用完全自管     |
-| 私有凭据与条件写入             | [Vault](./vault.md)                   | Host 安装 Vault，按记录判断是否可写                   |
-| Node module 与 worker task     | [Node artifacts](./node-artifacts.md) | 选择对应服务与构建产物                                |
-| 管理页面                       | [Workbench](../workbench/index.md)    | 可选 UI 能力；关闭时业务仍能独立运行                  |
-| 现成网络、认证、缓存、渲染能力 | [官方插件](../plugins/index.md)       | 核对公开状态，安装并声明 provider 依赖                |
+| 增量需求                       | 入口                                  | 前提                                              |
+| ------------------------------ | ------------------------------------- | ------------------------------------------------- |
+| 对外 HTTP / WebSocket          | [HTTP](./http.md)                     | Host 安装 Elysia 服务并接入 carrier               |
+| 命令目录、MCP tool、文本参数   | [Commands](./commands.md)             | 定义 Command 使用独立包；目录与载体另选安装       |
+| 偏好与有界业务状态             | [TinyBase 状态](./tinybase.md)        | Core 内建 TinyBase；每个 Plugin node 一份 Store   |
+| 插件文件与原子保存             | [文件存储](./fs.md)                   | Core 内建 FS，按需取得所属目录                    |
+| 数据库 schema、迁移和查询      | [Database](./database.md)             | Host 安装 Database 与 backend；也可由应用完全自管 |
+| 私有凭据与条件写入             | [Vault](./vault.md)                   | Host 安装 Vault，按记录判断是否可写               |
+| Node module 与 worker task     | [Node artifacts](./node-artifacts.md) | 选择对应服务与构建产物                            |
+| 管理页面                       | [Workbench](../workbench/index.md)    | 可选 UI 能力；关闭时业务仍能独立运行              |
+| 现成网络、认证、缓存、渲染能力 | [官方插件](../plugins/index.md)       | 核对公开状态，安装并声明 provider 依赖            |
 
 ## 什么时候转到其他文档
 

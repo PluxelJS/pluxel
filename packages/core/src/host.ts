@@ -12,6 +12,7 @@ export {
 	type ValidateContextInstallations,
 } from '@pluxel/context'
 export { createCoreContextHost } from './context/core-plan'
+export { prepareCoreContext } from './context/core-logging'
 export type { Context, RootContext, CoreHostConfig } from './context/Context'
 
 import {

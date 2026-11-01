@@ -1,10 +1,9 @@
-import { InMemory } from '@pluxel/services/fs'
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
-import type { WorkbenchPrincipal } from '@pluxel/workbench'
-import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
-import type { RpcStub } from 'capnweb'
+import { type WorkbenchPrincipal } from '@pluxel/workbench'
+import { type WorkbenchContentObserver } from '@pluxel/workbench/client'
+import { type RpcStub } from 'capnweb'
 import { describe, expect, it, vi } from 'vitest'
 import { S3Plugin } from '../src/index.ts'
 import { S3Workbench } from '../src/workbench.ts'
@@ -89,7 +88,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			})
 
 			await startVaultS3(host)
@@ -199,7 +198,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			})
 
 			await startVaultS3(host)
@@ -236,7 +235,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.start(S3Plugin)
@@ -266,7 +265,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.start(S3Plugin, {

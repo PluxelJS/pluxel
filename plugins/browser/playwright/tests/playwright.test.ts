@@ -3,10 +3,16 @@ import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { createTestHost } from '@pluxel/test'
-import type { Browser, BrowserContext, BrowserContextOptions } from 'playwright-core'
+import type {
+	Browser,
+	BrowserContext,
+	BrowserContextOptions,
+	ConnectOptions,
+} from 'playwright-core'
 import * as v from 'valibot'
 import { beforeEach, expect, it, vi } from 'vitest'
 import {
+	Playwright,
 	PlaywrightConfig,
 	PlaywrightNotRunningError,
 	PlaywrightPlugin,
@@ -44,11 +50,41 @@ class TestBrowser extends EventEmitter {
 
 @Plugin()
 class Consumer extends BasePlugin {
-	constructor(private readonly browser: PlaywrightPlugin) {
+	constructor(private readonly browser: Playwright) {
 		super()
 	}
 	open(signal?: AbortSignal) {
 		return this.browser.newContext({ locale: 'zh-CN' }, { signal })
+	}
+}
+
+const nativeOptions: ConnectOptions = {
+	exposeNetwork: '<loopback>',
+	slowMo: 17,
+	timeout: 1_234,
+	headers: { 'x-native-connect': 'example' },
+}
+let nativeAcquire: (signal: AbortSignal) => Promise<Browser>
+
+@Plugin(Playwright)
+class NativeConnector extends Playwright {
+	protected override async connect(signal: AbortSignal): Promise<Browser> {
+		return await nativeAcquire(signal)
+	}
+}
+
+@Plugin(Playwright, { startTimeoutMs: 25 })
+class SlowNativeConnector extends Playwright {
+	protected override async connect(signal: AbortSignal): Promise<Browser> {
+		return await nativeAcquire(signal)
+	}
+}
+
+@Plugin(Playwright)
+class DisposedConnector extends Playwright {
+	protected override async connect(signal: AbortSignal): Promise<Browser> {
+		await this.ctx.effects.dispose()
+		return await nativeAcquire(signal)
 	}
 }
 
@@ -57,8 +93,129 @@ beforeEach(() => {
 	browser = new TestBrowser()
 	sdk.connect.mockReset().mockResolvedValue(browser.native())
 	sdk.nativeConnect.mockReset().mockResolvedValue(browser.native())
+	nativeAcquire = async (signal) => {
+		signal.throwIfAborted()
+		return await sdk.nativeConnect('wss://native.invalid/browser', nativeOptions)
+	}
 })
 const initialConfig = { endpoint: 'ws://127.0.0.1:9222' }
+
+it('accepts native connection options through an inherited provider without a placeholder endpoint', async () => {
+	await using host = await createTestHost()
+	await host.start(NativeConnector)
+	const consumer = await host.start(Consumer)
+	const context = await consumer.open()
+	expect(sdk.nativeConnect).toHaveBeenCalledWith('wss://native.invalid/browser', nativeOptions)
+	expect(sdk.connect).not.toHaveBeenCalled()
+	expect(browser.newContext).toHaveBeenCalledWith({ locale: 'zh-CN' })
+	await host.stop(Consumer)
+	expect(context.close).toHaveBeenCalledOnce()
+	expect(browser.close).not.toHaveBeenCalled()
+	await host.stop(NativeConnector)
+	expect(browser.close).toHaveBeenCalledOnce()
+	expect(browser.defaultContext.close).not.toHaveBeenCalled()
+	expect(browser.listenerCount('disconnected')).toBe(0)
+})
+
+it('reports a custom connection failure without trying the default preset', async () => {
+	await using host = await createTestHost()
+	nativeAcquire = async () => {
+		throw new Error('Custom native connection failed')
+	}
+	const report = await host.commitExpectFail((change) => change.start(NativeConnector))
+	expect(JSON.stringify(report.lifecycleReport)).toContain('Custom native connection failed')
+	expect(host.isRunning(NativeConnector)).toBe(false)
+	expect(sdk.connect).not.toHaveBeenCalled()
+	expect(sdk.nativeConnect).not.toHaveBeenCalled()
+	expect(browser.close).not.toHaveBeenCalled()
+})
+
+it('releases its native connection after partial listener registration fails', async () => {
+	await using host = await createTestHost()
+	const failure = new Error('Listener registration failed')
+	const add = browser.on.bind(browser)
+	vi.spyOn(browser, 'on').mockImplementationOnce((event, listener) => {
+		add(event, listener)
+		throw failure
+	})
+	const report = await host.commitExpectFail((change) => change.start(NativeConnector))
+	expect(report.lifecycleReport).toMatchObject({
+		issues: [{ error: { name: 'Error', message: failure.message } }],
+	})
+	expect(browser.close).toHaveBeenCalledOnce()
+	expect(browser.listenerCount('disconnected')).toBe(0)
+	expect(host.isRunning(NativeConnector)).toBe(false)
+})
+
+it('attempts every setup rollback and preserves listener registration and cleanup failures', async () => {
+	await using host = await createTestHost()
+	const failure = new Error('Listener registration failed')
+	vi.spyOn(browser, 'on').mockImplementationOnce(() => {
+		throw failure
+	})
+	const detach = vi.spyOn(browser, 'off').mockImplementationOnce(() => {
+		throw new Error('Listener removal failed')
+	})
+	browser.close.mockRejectedValueOnce(new Error('Browser close failed'))
+	const report = await host.commitExpectFail((change) => change.start(NativeConnector))
+	expect(report.lifecycleReport).toMatchObject({
+		issues: [{ error: { name: 'AggregateError', cause: failure.message } }],
+	})
+	const message = report.lifecycleReport.issues[0]?.message
+	expect(message).toContain(failure.message)
+	expect(message).toContain('Listener removal failed')
+	expect(message).toContain('Browser close failed')
+	expect(detach).toHaveBeenCalledOnce()
+	expect(browser.close).toHaveBeenCalledOnce()
+	expect(host.isRunning(NativeConnector)).toBe(false)
+})
+
+it('preserves effects registration failure if closing its acquired native connection also fails', async () => {
+	await using host = await createTestHost()
+	browser.close.mockRejectedValueOnce(new Error('Browser close failed'))
+	const report = await host.commitExpectFail((change) => change.start(DisposedConnector))
+	expect(report.lifecycleReport).toMatchObject({
+		issues: [{ error: { name: 'AggregateError', cause: 'Effects service is disposed' } }],
+	})
+	expect(report.lifecycleReport.issues[0]?.message).toContain('Browser close failed')
+	expect(browser.close).toHaveBeenCalledOnce()
+	expect(browser.listenerCount('disconnected')).toBe(0)
+	expect(host.isRunning(DisposedConnector)).toBe(false)
+})
+
+it('closes a native connection that arrives after its generation timed out', async () => {
+	await using host = await createTestHost({ config: { plugins: { drainTimeoutMs: 20 } } })
+	const entered = Promise.withResolvers<AbortSignal>()
+	const connected = Promise.withResolvers<Browser>()
+	nativeAcquire = (signal) => {
+		entered.resolve(signal)
+		return connected.promise
+	}
+	const starting = host.commitExpectFail((change) => change.start(SlowNativeConnector))
+	try {
+		const signal = await entered.promise
+		const report = await starting
+		expect(JSON.stringify(report.lifecycleReport)).toContain('start timeout')
+		expect(signal.aborted).toBe(true)
+		connected.resolve(browser.native())
+		await vi.waitFor(() => expect(browser.close).toHaveBeenCalledOnce())
+		expect(host.isRunning(SlowNativeConnector)).toBe(false)
+		expect(browser.listenerCount('disconnected')).toBe(0)
+	} finally {
+		connected.resolve(browser.native())
+		await starting
+	}
+})
+
+it('requires a connection source before the default preset calls the SDK', async () => {
+	await using host = await createTestHost()
+	const report = await host.commitExpectFail((change) => change.start(PlaywrightPlugin))
+	expect(report.lifecycleReport).toMatchObject({
+		issues: [{ phase: 'config', kind: 'config-failed' }],
+	})
+	expect(sdk.connect).not.toHaveBeenCalled()
+	expect(sdk.nativeConnect).not.toHaveBeenCalled()
+})
 
 it.each(['cdp', 'playwright'] as const)(
 	'connects via %s and closes only owned contexts on caller stop',
@@ -182,7 +339,7 @@ it('reports initialization failure without the endpoint from the native error', 
 	expect(browser.newContext).not.toHaveBeenCalled()
 })
 
-it('validates the public configuration and keeps credentials outside ordinary config', () => {
+it('validates the serializable preset and keeps credentials outside ordinary config', () => {
 	expect(v.safeParse(PlaywrightConfig, {}).success).toBe(false)
 	expect(v.safeParse(PlaywrightConfig, { endpoint: 'not a URL' }).success).toBe(false)
 	expect(

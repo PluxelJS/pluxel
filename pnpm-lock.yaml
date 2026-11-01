@@ -1306,40 +1306,97 @@ importers:
       '@logtape/logtape':
         specifier: catalog:prod
         version: 2.4.2
+      '@logtape/pretty':
+        specifier: catalog:prod
+        version: 2.4.2(@logtape/logtape@2.4.2)
       '@standard-schema/spec':
         specifier: catalog:prod
         version: 1.1.0
+      '@types/node':
+        specifier: catalog:types
+        version: 26.6.5
       better-result:
         specifier: catalog:prod
         version: 3.0.1
+      pathe:
+        specifier: catalog:node
+        version: 2.0.3
       std-env:
         specifier: catalog:prod
         version: 4.3.0
+      tinybase:
+        specifier: catalog:prod
+        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(zod@4.6.7)
     devDependencies:
+      '@logtape/file':
+        specifier: catalog:prod
+        version: 2.4.2(@logtape/logtape@2.4.2)
+      '@logtape/otel':
+        specifier: catalog:dev
+        version: 2.4.2(@logtape/logtape@2.4.2)
+      '@noble/hashes':
+        specifier: catalog:prod
+        version: 2.4.0
+      '@opentelemetry/exporter-logs-otlp-http':
+        specifier: catalog:prod
+        version: 0.223.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/exporter-logs-otlp-proto':
+        specifier: catalog:prod
+        version: 0.223.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources':
+        specifier: catalog:prod
+        version: 2.12.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-logs':
+        specifier: catalog:prod
+        version: 0.223.0(@opentelemetry/api@1.9.1)
       '@pluxel/context':
         specifier: workspace:*
         version: link:../context
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
-      '@types/node':
-        specifier: catalog:types
-        version: 26.6.5
+      '@zenfs/core':
+        specifier: catalog:prod
+        version: 2.8.3(patch_hash=166d8c44fa85210b61d4b54d7e1ae881141bc066df122c2d81c40e08743f091c)
+      '@zenfs/dom':
+        specifier: catalog:prod
+        version: 1.2.14(patch_hash=38ee89e922d8fbb8a437e8307325d943130a7835fe700307d88d3b2fbcbb9a9b)(@zenfs/core@2.8.3(patch_hash=166d8c44fa85210b61d4b54d7e1ae881141bc066df122c2d81c40e08743f091c))(kerium@1.5.0)(utilium@3.10.0)
+      buffer:
+        specifier: catalog:prod
+        version: 6.0.3
       eventure:
         specifier: workspace:*
         version: link:../../vendor/eventure
+      kerium:
+        specifier: catalog:prod
+        version: 1.5.0
       option-t:
         specifier: catalog:validation
         version: 56.1.2
+      playwright-core:
+        specifier: catalog:prod
+        version: 1.64.1
       rolldown:
         specifier: catalog:build
         version: 1.2.14
       tinybench:
         specifier: catalog:dev
         version: 6.2.2
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.15
+      valibot:
+        specifier: catalog:validation
+        version: 1.5.0(typescript@7.0.2)
+      vite:
+        specifier: catalog:build
+        version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.106.1)(sass@1.106.1)(sugarss@5.0.1(postcss@8.5.31))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
         version: 1.4.0(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.106.1)(sass@1.106.1)(sugarss@5.0.1(postcss@8.5.31))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
@@ -1410,6 +1467,9 @@ importers:
       '@types/semver':
         specifier: catalog:types
         version: 7.8.0
+      playwright-core:
+        specifier: catalog:prod
+        version: 1.64.1
       valibot:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)
@@ -1565,18 +1625,12 @@ importers:
 
   packages/services:
     dependencies:
-      '@logtape/file':
-        specifier: catalog:prod
-        version: 2.4.2(@logtape/logtape@2.4.2)
-      '@logtape/logtape':
-        specifier: catalog:prod
-        version: 2.4.2
-      '@logtape/pretty':
-        specifier: catalog:prod
-        version: 2.4.2(@logtape/logtape@2.4.2)
       '@types/node':
         specifier: catalog:types
         version: 26.6.5
+      '@types/pg':
+        specifier: catalog:types
+        version: 8.23.1
       age-encryption:
         specifier: catalog:prod
         version: 0.3.1
@@ -1608,27 +1662,12 @@ importers:
       '@electric-sql/pglite':
         specifier: catalog:prod
         version: 0.5.10
-      '@logtape/otel':
-        specifier: catalog:dev
-        version: 2.4.2(@logtape/logtape@2.4.2)
+      '@logtape/logtape':
+        specifier: catalog:prod
+        version: 2.4.2
       '@mantine/core':
         specifier: catalog:frontend
         version: 9.7.3(@mantine/hooks@9.7.3(react@19.3.1))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@noble/hashes':
-        specifier: catalog:prod
-        version: 2.4.0
-      '@opentelemetry/exporter-logs-otlp-http':
-        specifier: catalog:prod
-        version: 0.223.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/exporter-logs-otlp-proto':
-        specifier: catalog:prod
-        version: 0.223.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources':
-        specifier: catalog:prod
-        version: 2.12.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-logs':
-        specifier: catalog:prod
-        version: 0.223.0(@opentelemetry/api@1.9.1)
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../commands
@@ -1653,24 +1692,12 @@ importers:
       '@tabler/icons-react':
         specifier: catalog:icons
         version: 3.49.0(react@19.3.1)
-      '@types/pg':
-        specifier: catalog:types
-        version: 8.23.1
       '@types/react':
         specifier: catalog:types
         version: 19.3.0
       '@types/react-dom':
         specifier: catalog:types
         version: 19.3.0(@types/react@19.3.0)
-      '@zenfs/core':
-        specifier: catalog:prod
-        version: 2.8.3(patch_hash=166d8c44fa85210b61d4b54d7e1ae881141bc066df122c2d81c40e08743f091c)
-      '@zenfs/dom':
-        specifier: catalog:prod
-        version: 1.2.14(patch_hash=38ee89e922d8fbb8a437e8307325d943130a7835fe700307d88d3b2fbcbb9a9b)(@zenfs/core@2.8.3(patch_hash=166d8c44fa85210b61d4b54d7e1ae881141bc066df122c2d81c40e08743f091c))(kerium@1.5.0)(utilium@3.10.0)
-      buffer:
-        specifier: catalog:prod
-        version: 6.0.3
       capnweb:
         specifier: catalog:prod
         version: 0.12.0
@@ -1680,9 +1707,6 @@ importers:
       fs-fixture:
         specifier: catalog:dev
         version: 2.16.0
-      kerium:
-        specifier: catalog:prod
-        version: 1.5.0
       pg:
         specifier: catalog:backend
         version: 8.23.1
@@ -1697,7 +1721,7 @@ importers:
         version: 19.3.1(react@19.3.1)
       tinybase:
         specifier: catalog:prod
-        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(yjs@13.6.27)(zod@4.6.7)
+        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(zod@4.6.7)
       tsx:
         specifier: catalog:dev
         version: 4.23.15
@@ -2539,7 +2563,7 @@ importers:
         version: 19.3.1(react@19.3.1)
       tinybase:
         specifier: catalog:prod
-        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(yjs@13.6.27)(zod@4.6.7)
+        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(zod@4.6.7)
       typescript:
         specifier: catalog:dev
         version: 7.0.2
@@ -2907,7 +2931,7 @@ importers:
         version: 19.3.1(react@19.3.1)
       tinybase:
         specifier: catalog:prod
-        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(yjs@13.6.27)(zod@4.6.7)
+        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(zod@4.6.7)
       typescript:
         specifier: catalog:dev
         version: 7.0.2
@@ -3112,7 +3136,7 @@ importers:
         version: 4.3.3
       tinybase:
         specifier: catalog:prod
-        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(yjs@13.6.27)(zod@4.6.7)
+        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(zod@4.6.7)
       typescript:
         specifier: catalog:dev
         version: 7.0.2
@@ -3324,7 +3348,7 @@ importers:
         version: 19.3.1
       tinybase:
         specifier: catalog:prod
-        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(yjs@13.6.27)(zod@4.6.7)
+        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(zod@4.6.7)
       typebox:
         specifier: ^1.4.3
         version: 1.4.3
@@ -3542,9 +3566,6 @@ importers:
       streamdown:
         specifier: catalog:frontend
         version: 2.7.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1)
-      tinybase:
-        specifier: catalog:prod
-        version: 10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(yjs@13.6.27)(zod@4.6.7)
       typebox:
         specifier: ^1.4.3
         version: 1.4.3
@@ -21962,7 +21983,7 @@ snapshots:
 
   tiny-emitter@2.1.0: {}
 
-  tinybase@10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(yjs@13.6.27)(zod@4.6.7):
+  tinybase@10.0.1(@electric-sql/pglite@0.5.10)(@sinclair/typebox@0.34.52)(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(valibot@1.5.0(typescript@7.0.2))(ws@8.22.0)(zod@4.6.7):
     optionalDependencies:
       '@electric-sql/pglite': 0.5.10
       '@sinclair/typebox': 0.34.52
@@ -21971,7 +21992,6 @@ snapshots:
       react-dom: 19.3.1(react@19.3.1)
       valibot: 1.5.0(typescript@7.0.2)
       ws: 8.22.0
-      yjs: 13.6.27
       zod: 4.6.7
 
   tinybench@6.2.2: {}

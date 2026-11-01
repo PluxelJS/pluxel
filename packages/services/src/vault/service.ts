@@ -1,28 +1,28 @@
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
-import type { HostVaultBindingRecord } from '@pluxel/host/bindings'
-import type { Context as PluxelContext } from '@pluxel/core'
+import { type HostVaultBindingRecord } from '@pluxel/host/bindings'
+import { type Context as PluxelContext } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { pinOwnerContext } from '../internal/owner-view'
 import { basename, join } from 'pathe'
-import { writeFileAtomic, type FsPromises } from '../fs'
-import { pluginNodePhysicalKey } from '../internal/plugin-address'
+import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
+import { pluginNodePhysicalKey } from '@pluxel/core/internal'
 import { recordSecurityEvent } from '../internal/security'
-import type {
-	VaultAdminState,
-	VaultBlobHandle,
-	VaultBlobsHandle,
-	VaultKeyPair,
-	VaultRecordSnapshot,
-	VaultWriteOptions,
-	VaultListOptions,
-	VaultKvHandle,
-	VaultKvTransaction,
-	VaultNamespace,
-	VaultNamespaceStats,
-	VaultNamespaceOptions,
-	VaultServiceConfig,
-	VaultStatusError,
-	VaultUnlockSource,
+import {
+	type VaultAdminState,
+	type VaultBlobHandle,
+	type VaultBlobsHandle,
+	type VaultKeyPair,
+	type VaultRecordSnapshot,
+	type VaultWriteOptions,
+	type VaultListOptions,
+	type VaultKvHandle,
+	type VaultKvTransaction,
+	type VaultNamespace,
+	type VaultNamespaceStats,
+	type VaultNamespaceOptions,
+	type VaultServiceConfig,
+	type VaultStatusError,
+	type VaultUnlockSource,
 } from './types'
 
 /** Keep the complete operation admitted through owner stop and Host resource shutdown. */

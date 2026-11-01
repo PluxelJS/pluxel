@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { HostConfigVersion } from '@pluxel/host'
 import type { PluginStatusSnapshot } from '../../../src/management/web/protocol'
 import {
 	parseConfigResult,
+	parseConfigState,
+	parseConfigVersion,
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
@@ -74,6 +77,28 @@ const section = {
 } as const
 
 describe('management protocol validation', () => {
+	it('validates config state and versions without invoking accessors', () => {
+		const version = { history: 'writer-history', seq: 7 }
+		const state = parseConfigState({ version, readonly: true })
+		expect(state).toEqual({ version, readonly: true })
+		expect(state.version).not.toBe(version)
+		expect(Object.isFrozen(state.version)).toBe(true)
+		const getter = vi.fn(() => version)
+		const borrowed = Object.defineProperty({ readonly: false }, 'version', {
+			enumerable: true,
+			get: getter,
+		})
+		expect(() => parseConfigState(borrowed)).toThrow(/data property/)
+		expect(getter).not.toHaveBeenCalled()
+		for (const invalid of [
+			{ history: 'writer', seq: -1 },
+			{ history: '', seq: 0 },
+			{ history: 'writer', seq: 1, extra: true },
+		]) {
+			expect(() => parseConfigVersion(invalid)).toThrow(RuntimeProtocolValidationError)
+		}
+	})
+
 	it('validates and deep-freezes every Level 1 RPC result family', () => {
 		const catalog = parsePluginCatalogSnapshot({
 			plugins: [plugin],
@@ -98,13 +123,21 @@ describe('management protocol validation', () => {
 		const config = parseConfigResult({
 			ok: true,
 			saved: true,
+			version: null as HostConfigVersion | null,
+			readonly: false,
 			application: 'applied',
 			desiredRevision: 4,
 			appliedRevision: 4,
 			config: { nested: { enabled: true } },
 			report,
 		})
-		expect(config).toMatchObject({ ok: true, saved: true, application: 'applied' })
+		expect(config).toMatchObject({
+			ok: true,
+			saved: true,
+			version: null as HostConfigVersion | null,
+			readonly: false,
+			application: 'applied',
+		})
 		expect(Object.isFrozen((Reflect.get(config, 'config') as { nested: unknown }).nested)).toBe(
 			true,
 		)
@@ -566,6 +599,8 @@ describe('management protocol validation', () => {
 		const input = {
 			ok: true,
 			saved: false,
+			version: null as HostConfigVersion | null,
+			readonly: false,
 			application: 'applied',
 			desiredRevision: 0,
 			appliedRevision: 0,
@@ -594,6 +629,8 @@ describe('management protocol validation', () => {
 			parseConfigResult({
 				ok: true,
 				saved: false,
+				version: null as HostConfigVersion | null,
+				readonly: false,
 				application: 'applied',
 				desiredRevision: 0,
 				appliedRevision: 0,

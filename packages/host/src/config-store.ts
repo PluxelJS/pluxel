@@ -6,11 +6,24 @@ import {
 } from '@pluxel/core'
 import {
 	ConfigService as CoreConfigService,
+	ConfigValidationError,
+	validateConfigRecord,
 	type PluginConfigRecordSnapshot,
 } from '@pluxel/core/services'
+import { immutableConfigRecord } from '@pluxel/core/internal'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import { ConfigMutationRejectedError } from './config'
+import {
+	configVersion,
+	createConfigSyncSnapshot,
+	decodeConfigSyncSnapshot,
+	HostConfigVersionConflictError,
+	sameConfigVersion,
+	type HostConfigVersion,
+	type HostConfigSyncOptions,
+	type HostConfigSyncSnapshot,
+} from './config-sync-protocol'
 import { coercePluginConfigRecords, mergeConfigRecords, mergeRecord } from './config-records'
 import {
 	configLeafPaths,
@@ -74,6 +87,14 @@ export class HostConfigStore extends CoreConfigService {
 	private readonly mode: HostStoreMode
 	private readonly readonlyMode: boolean
 	private readonly storage: HostDocumentStorage | undefined
+	private readonly syncOptions: HostConfigSyncOptions | undefined
+	private savedSnapshot: HostConfigSyncSnapshot | null = null
+	private pendingSnapshot: HostConfigSyncSnapshot | null = null
+	private syncFault: unknown
+	private syncFaulted = false
+	private internalMutation = false
+	private readonly savedListeners = new Set<() => void>()
+	private readonly deferredRecords = new Set<string>()
 
 	private readonly base: readonly PluginConfigRecordSnapshot[]
 	private readonly overlays: readonly HostConfigOverlay[]
@@ -83,6 +104,182 @@ export class HostConfigStore extends CoreConfigService {
 		string,
 		{ owner: PluginNodeAddress; config: Readonly<Record<string, unknown>> }
 	>()
+
+	get version(): HostConfigVersion | null {
+		return configVersion(this.savedSnapshot)
+	}
+	get isReadonly(): boolean {
+		return this.readonlyMode || this.syncOptions?.role === 'replica'
+	}
+	get synchronized(): boolean {
+		return this.syncOptions !== undefined
+	}
+	get snapshot(): HostConfigSyncSnapshot | null {
+		return this.savedSnapshot
+	}
+	get hasPersistenceFault(): boolean {
+		return this.syncFaulted
+	}
+	getManagedRecords(): readonly PluginConfigRecordSnapshot[] {
+		return coercePluginConfigRecords(this.managed)
+	}
+
+	override getRawConfig<T extends object = Record<string, unknown>>(
+		owner: PluginNodeAddress,
+	): Readonly<T> {
+		if (this.deferredRecords.has(pluginNodeIndexKey(owner)))
+			return SuperJSON.parse(SuperJSON.stringify(this.composeConfig(owner))) as Readonly<T>
+		return super.getRawConfig<T>(owner)
+	}
+
+	/** Unknown saved owners enter Core only when their real declaration is admitted. */
+	override async ensureValidated(
+		owner: PluginNodeAddress,
+		authority: Parameters<CoreConfigService['ensureValidated']>[1],
+		options: Parameters<CoreConfigService['ensureValidated']>[2] = {},
+	): Promise<Readonly<Record<string, unknown>>> {
+		await this.ready
+		const key = pluginNodeIndexKey(owner)
+		if (!this.deferredRecords.has(key)) return super.ensureValidated(owner, authority, options)
+		const expectedRevision = this.getConfigRevision(owner)
+		const raw = this.composeConfig(owner)
+		const input =
+			Object.keys(raw).length === 0 && options.missingObjectDefault !== undefined
+				? options.missingObjectDefault
+				: raw
+		const validation = await validateConfigRecord(
+			authority.schema,
+			input as Record<string, unknown>,
+		)
+		if (validation.ok === false)
+			throw new ConfigValidationError('Plugin config validation failed.', validation.errors)
+		const value = immutableConfigRecord(validation.output)
+		this.internalMutation = true
+		try {
+			const ticket = super.stageValidatedConfig({ owner, authority, expectedRevision, value })
+			const result = super.confirmValidatedConfig(ticket)
+			this.deferredRecords.delete(key)
+			return result
+		} finally {
+			this.internalMutation = false
+		}
+	}
+	subscribeSaved(listener: () => void): () => void {
+		this.savedListeners.add(listener)
+		return () => {
+			this.savedListeners.delete(listener)
+		}
+	}
+	assertManagedMutation(expected?: HostConfigVersion): void {
+		if (!this.isReady || this.disposed)
+			throw new Error('[host:config] Config document is unavailable')
+		if (this.isReadonly) throw new ConfigMutationRejectedError('config mutation')
+		if (this.syncFaulted) throw this.syncFault
+		if (this.syncOptions && !sameConfigVersion(expected, this.version))
+			throw new HostConfigVersionConflictError(this.version)
+	}
+
+	/** The only synchronized cleanup path; callers already hold the Host coordinator. */
+	async deleteManagedConfig(owner: PluginNodeAddress, expected?: HostConfigVersion): Promise<void> {
+		this.assertManagedMutation(expected)
+		if (!this.syncOptions) {
+			this.deleteConfig(owner)
+			await this.flush()
+			return
+		}
+		const records = mergeManagedRecord(this.managed, owner, {})
+		if (ohash(records) === ohash(this.managed)) return
+		const snapshot = this.nextSnapshot(records)
+		await this.persistSyncSnapshot(snapshot)
+		this.managed = records
+		this.internalMutation = true
+		try {
+			super.deleteConfig(owner)
+			this.deferredRecords.add(pluginNodeIndexKey(owner))
+		} finally {
+			this.internalMutation = false
+		}
+		this.publishSnapshot(snapshot)
+	}
+
+	/** Internal complete-document commit. Validation is pinned and completed by config.ts first. */
+	async acceptSyncSnapshot(
+		snapshot: HostConfigSyncSnapshot,
+		validated: readonly Parameters<CoreConfigService['stageValidatedConfig']>[0][],
+		options: Readonly<{ restored?: boolean; known?: readonly PluginNodeAddress[] }> = {},
+	): Promise<readonly ReturnType<CoreConfigService['stageValidatedConfig']>[]> {
+		if (this.syncOptions?.role !== 'replica') throw new Error('[host:config-sync] Not a replica')
+		if (this.syncFaulted) throw this.syncFault
+		const { records } = decodeConfigSyncSnapshot(snapshot, this.syncOptions)
+		this.internalMutation = true
+		let tickets: ReturnType<CoreConfigService['stageValidatedConfig']>[]
+		try {
+			tickets = validated.map((input) => super.stageValidatedConfig(input))
+		} finally {
+			this.internalMutation = false
+		}
+		if (!options.restored) await this.persistSyncSnapshot(snapshot)
+		const previous = this.managed
+		this.managed = records
+		const known = new Set(
+			(options.known ?? validated.map((input) => input.owner)).map(pluginNodeIndexKey),
+		)
+		const changed = new Map(
+			[...previous, ...records].map((record) => [pluginNodeIndexKey(record.owner), record.owner]),
+		)
+		this.internalMutation = true
+		try {
+			for (const [key, owner] of changed) {
+				if (known.has(key)) continue
+				const before =
+					previous.find((record) => pluginNodeAddressEqual(record.owner, owner))?.config ?? {}
+				const after = this.getManagedConfig(owner)
+				if (ohash(before) !== ohash(after)) {
+					super.deleteConfig(owner)
+					this.deferredRecords.add(key)
+				}
+			}
+			for (const ticket of tickets) {
+				super.confirmValidatedConfig(ticket)
+				this.deferredRecords.delete(pluginNodeIndexKey(ticket.owner))
+			}
+		} finally {
+			this.internalMutation = false
+		}
+		this.publishSnapshot(snapshot)
+		return tickets
+	}
+
+	private nextSnapshot(records: readonly PluginConfigRecordSnapshot[]): HostConfigSyncSnapshot {
+		if (!this.syncOptions || !this.savedSnapshot)
+			throw new Error('[host:config-sync] Writer is not initialized')
+		if (this.savedSnapshot.seq === Number.MAX_SAFE_INTEGER)
+			throw new Error('[host:config-sync] Sequence exhausted')
+		return createConfigSyncSnapshot(this.syncOptions, records, {
+			history: this.savedSnapshot.history,
+			seq: this.savedSnapshot.seq + 1,
+		})
+	}
+	private publishSnapshot(snapshot: HostConfigSyncSnapshot): void {
+		this.savedSnapshot = snapshot
+		this.pendingSnapshot = null
+		for (const listener of this.savedListeners) listener()
+	}
+	private async persistSyncSnapshot(snapshot: HostConfigSyncSnapshot): Promise<void> {
+		if (this.syncFaulted) throw this.syncFault
+		const text = SuperJSON.stringify(snapshot)
+		const task = Promise.resolve().then(() => this.storage!.put(this.file, text))
+		this.saveInFlight = task
+		try {
+			await task
+		} catch (error) {
+			this.syncFaulted = true
+			this.syncFault = error
+			throw error
+		} finally {
+			this.saveInFlight = null
+		}
+	}
 
 	getManagedConfig(owner: PluginNodeAddress): Record<string, unknown> {
 		return mergeRecord(
@@ -121,7 +318,7 @@ export class HostConfigStore extends CoreConfigService {
 					owner,
 					path: Object.freeze(path),
 					kind: fromSaved ? 'saved' : file ? 'file' : 'base',
-					readonly: this.readonlyMode,
+					readonly: this.isReadonly,
 					...(!fromSaved && file ? { name: file.name } : {}),
 				}),
 			)
@@ -134,7 +331,9 @@ export class HostConfigStore extends CoreConfigService {
 	}
 
 	assertPathsMutable(owner: PluginNodeAddress, paths: readonly (readonly string[])[]): void {
-		this.assertConfigMutable('config mutation')
+		if (this.syncOptions && !this.internalMutation)
+			this.assertManagedMutation(this.version ?? undefined)
+		else this.assertConfigMutable('config mutation')
 		for (const overlay of this.overlays) {
 			if (!pluginNodeAddressEqual(overlay.owner, owner)) continue
 			const blocked = overlay.sources.find((source) =>
@@ -152,14 +351,22 @@ export class HostConfigStore extends CoreConfigService {
 		input: Parameters<CoreConfigService['stageValidatedConfig']>[0] & {
 			managed: Readonly<Record<string, unknown>>
 			paths: readonly (readonly string[])[]
+			expected?: HostConfigVersion
 		},
 	): ReturnType<CoreConfigService['stageValidatedConfig']> {
-		this.assertPathsMutable(input.owner, input.paths)
-		this.assertPathsMutable(
-			input.owner,
-			changedConfigPaths(this.getManagedConfig(input.owner), input.managed),
-		)
-		const ticket = super.stageValidatedConfig(input)
+		this.assertManagedMutation(input.expected)
+		this.internalMutation = true
+		let ticket: ReturnType<CoreConfigService['stageValidatedConfig']>
+		try {
+			this.assertPathsMutable(input.owner, input.paths)
+			this.assertPathsMutable(
+				input.owner,
+				changedConfigPaths(this.getManagedConfig(input.owner), input.managed),
+			)
+			ticket = super.stageValidatedConfig(input)
+		} finally {
+			this.internalMutation = false
+		}
 		this.pendingManaged.set(pluginNodeIndexKey(input.owner), {
 			owner: input.owner,
 			config: mergeRecord(undefined, input.managed),
@@ -170,6 +377,7 @@ export class HostConfigStore extends CoreConfigService {
 	override stageValidatedConfig(
 		input: Parameters<CoreConfigService['stageValidatedConfig']>[0],
 	): ReturnType<CoreConfigService['stageValidatedConfig']> {
+		this.assertConfigMutable('stageValidatedConfig')
 		const current = this.getRawConfig(input.owner)
 		const paths = changedConfigPaths(current, input.value)
 		const managed = this.getManagedConfig(input.owner)
@@ -187,6 +395,8 @@ export class HostConfigStore extends CoreConfigService {
 			this.managed = mergeManagedRecord(this.managed, pending.owner, pending.config)
 			this.pendingManaged.delete(key)
 		}
+		this.deferredRecords.delete(key)
+		if (this.pendingSnapshot) this.publishSnapshot(this.pendingSnapshot)
 		return result
 	}
 
@@ -194,6 +404,7 @@ export class HostConfigStore extends CoreConfigService {
 		owner: PluginNodeAddress,
 		patch: Partial<T>,
 	): void {
+		this.assertConfigMutable('patchConfig')
 		this.assertPathsMutable(owner, configLeafPaths(patch as Record<string, unknown>))
 		this.commitManaged(
 			owner,
@@ -202,6 +413,7 @@ export class HostConfigStore extends CoreConfigService {
 	}
 
 	override unsetConfigKeys(owner: PluginNodeAddress, keys: readonly string[]): void {
+		this.assertConfigMutable('unsetConfigKeys')
 		this.assertPathsMutable(
 			owner,
 			keys.map((key) => [key]),
@@ -212,6 +424,7 @@ export class HostConfigStore extends CoreConfigService {
 	}
 
 	override deleteConfig(owner: PluginNodeAddress): boolean {
+		this.assertConfigMutable('deleteConfig')
 		this.assertPathsMutable(owner, [[]])
 		const existed = this.managed.some((record) => pluginNodeAddressEqual(record.owner, owner))
 		this.commitManaged(owner, {})
@@ -234,13 +447,19 @@ export class HostConfigStore extends CoreConfigService {
 	constructor(
 		ctx: PluxelContext,
 		options: Omit<HostConfigStoreOptions, 'storage' | 'mode'> &
-			ResolvedHostStoreStorageOptions = {},
+			ResolvedHostStoreStorageOptions &
+			Readonly<{ sync?: HostConfigSyncOptions }> = {},
 	) {
 		super(ctx)
 		assertResolvedHostStoreStorage(options)
 		this.mode = options.mode ?? (options.storage ? 'writable' : 'memory')
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = options.storage
+		this.syncOptions = options.sync
+		if (this.syncOptions && this.mode !== 'writable')
+			throw new TypeError(
+				'[host:config-sync] Synchronization requires writable local document storage',
+			)
 		if (this.mode !== 'memory' && !this.storage)
 			throw new TypeError('[host] persistent config requires document storage')
 		this.base = mergeConfigRecords(undefined, coercePluginConfigRecords(options.initial ?? []))
@@ -285,6 +504,10 @@ export class HostConfigStore extends CoreConfigService {
 		if (!this.isReady)
 			throw new Error(`[ConfigService] ${action} requires a successfully loaded config document.`)
 		if (this.disposed) throw new Error(`[ConfigService] ${action} is disabled after dispose.`)
+		if (this.syncOptions && !this.internalMutation)
+			throw new ConfigMutationRejectedError(
+				`${action}; synchronized saves require the Host coordinator`,
+			)
 		if (!this.readonlyMode) return
 		throw new ConfigMutationRejectedError(action)
 	}
@@ -307,6 +530,7 @@ export class HostConfigStore extends CoreConfigService {
 	}
 
 	private requestSave(): void {
+		if (this.syncOptions) return
 		if (this.mode !== 'writable' || this.disposed) return
 		if (this.batching > 0) {
 			this.pendingSave = true
@@ -339,6 +563,19 @@ export class HostConfigStore extends CoreConfigService {
 
 	/** Flush pending disk writes. Use force while disposing inside a batch. */
 	override async flush(options: { force?: boolean } = {}): Promise<void> {
+		if (this.syncOptions) {
+			if (this.saveInFlight) await this.saveInFlight
+			if (this.syncFaulted) throw this.syncFault
+			if (this.pendingSnapshot || this.pendingManaged.size === 0) return
+			const records = [...this.pendingManaged.values()].reduce(
+				(current, record) => mergeManagedRecord(current, record.owner, record.config),
+				this.managed,
+			)
+			const snapshot = this.nextSnapshot(records)
+			await this.persistSyncSnapshot(snapshot)
+			this.pendingSnapshot = snapshot
+			return
+		}
 		if (this.mode !== 'writable') return
 		try {
 			const hadScheduled = this.saveScheduled || this.saveTimer !== null
@@ -355,6 +592,23 @@ export class HostConfigStore extends CoreConfigService {
 
 	private async loadFromDisk(): Promise<void> {
 		const text = await this.storage!.getText(this.file)
+		if (this.syncOptions) {
+			if (text === undefined) {
+				if (this.syncOptions.role === 'replica') return
+				const snapshot = createConfigSyncSnapshot(this.syncOptions, [], {
+					history: crypto.randomUUID(),
+					seq: 0,
+				})
+				await this.persistSyncSnapshot(snapshot)
+				this.savedSnapshot = snapshot
+				return
+			}
+			const decoded = decodeConfigSyncSnapshot(SuperJSON.parse(text), this.syncOptions)
+			this.savedSnapshot = decoded.snapshot
+			this.managed = decoded.records
+			for (const record of this.managed) this.deferredRecords.add(pluginNodeIndexKey(record.owner))
+			return
+		}
 		if (text === undefined) {
 			if (!this.readonlyMode) await this.saveToDisk()
 			return

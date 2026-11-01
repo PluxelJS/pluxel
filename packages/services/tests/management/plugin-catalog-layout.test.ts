@@ -1,3 +1,4 @@
+import { requireTinyBaseHost } from '@pluxel/core/internal'
 import {
 	formatPluginDefinitionReference,
 	type PluginDefinitionAddress,
@@ -8,7 +9,6 @@ import {
 	type ServiceInternalTestHost,
 } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TinyBaseHost } from '@pluxel/services/tinybase'
 import { PluginCatalogLayoutService } from '../../src/management/services/management/PluginCatalogLayoutService.ts'
 import {
 	automaticCatalogGroups,
@@ -45,7 +45,7 @@ async function setup() {
 	return {
 		host,
 		layout: host.ctx.root.pluginCatalogLayout!,
-		storage: host.ctx.require(TinyBaseHost).documents('management'),
+		storage: requireTinyBaseHost(host.ctx).documents('management'),
 	}
 }
 const document = (
@@ -235,7 +235,7 @@ describe('editable group document', () => {
 			[{ sectionId: 'manual:one', name: 'One', nodes: [node('A')] }],
 			entries,
 		)
-		const manager = host.ctx.require(TinyBaseHost)
+		const manager = requireTinyBaseHost(host.ctx)
 		const documents = manager.documents('management')
 		const cause = new Error('disk full')
 		vi.spyOn(manager, 'documents').mockReturnValue({

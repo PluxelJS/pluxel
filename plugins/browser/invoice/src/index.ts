@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
+import { Playwright } from '@pluxel/plugin-playwright'
 import { Vault } from '@pluxel/services/vault'
 import type { BrowserContext } from 'playwright-core'
 import * as v from 'valibot'
@@ -45,7 +45,7 @@ export class InvoicePlugin extends BasePlugin {
 	private generation: Generation | undefined = undefined
 	private apiKey: string | undefined = undefined
 
-	constructor(private readonly playwright: PlaywrightPlugin) {
+	constructor(private readonly playwright: Playwright) {
 		super()
 	}
 

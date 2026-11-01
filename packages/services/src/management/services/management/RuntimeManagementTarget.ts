@@ -1,3 +1,4 @@
+import { type HostConfigVersion } from '@pluxel/host'
 import { validateRuntimePortableData } from '../../web/validation'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { Management } from '../../token'
@@ -6,11 +7,12 @@ import { optionalVaultAdmin } from '../../vault'
 import { readManagementHostOptions } from '../../host-options'
 import {
 	type PluginRecentUpdateRead,
+	readHostConfigState,
 	ensureFork,
 	removeFork,
 	projectPluginApplyReport,
 } from '@pluxel/host/internal'
-import type { RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
+import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
@@ -44,49 +46,50 @@ import { pluginDependencyGraph } from '../../api/usecases/pluginDependencyGraph'
 import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
 import { logsFollow, logsIndex, logsMeta, logsRange } from '../../api/usecases/logs'
 import { pluginStatus as readPluginStatus } from '../../api/usecases/plugins'
-import { requireContextRuntimeLogging } from '../../../logging/internal'
-import type {
-	PluginLogPolicyMutationResult,
-	PluginLogPolicySnapshot,
-	RuntimePluginLogLevel,
-	VersionedPluginLogPolicySnapshot,
-} from '../../../logging/index'
-import type {
-	LogFilter,
-	RuntimeLogEvent,
-	LogRangeResult,
-	LogStreamMeta,
-} from '../../../logging/protocol'
+import { requireContextRuntimeLogging } from '@pluxel/core/logging/internal'
+import {
+	type PluginLogPolicyMutationResult,
+	type PluginLogPolicySnapshot,
+	type RuntimePluginLogLevel,
+	type VersionedPluginLogPolicySnapshot,
+} from '@pluxel/core/logging'
+import {
+	type LogFilter,
+	type RuntimeLogEvent,
+	type LogRangeResult,
+	type LogStreamMeta,
+} from '@pluxel/core/logging/protocol'
 import { listSecurityEvents } from '../../../internal'
-import type { VaultAdminApi, VaultAdminState, VaultKeyPair } from '../../../vault'
-import type { SecurityOverview, SecurityAuditEvent } from '../../web/security'
+import { type VaultAdminApi, type VaultAdminState, type VaultKeyPair } from '../../../vault'
+import { type SecurityOverview, type SecurityAuditEvent } from '../../web/security'
 import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
-import type {
-	RuntimeLogFollowInput,
-	RuntimeLogStreamsIndex,
-	RuntimeLogObserver,
-	RuntimeSubscriptionTarget,
-	RuntimeManagementTarget,
+import {
+	type RuntimeLogFollowInput,
+	type RuntimeLogStreamsIndex,
+	type RuntimeLogObserver,
+	type RuntimeSubscriptionTarget,
+	type RuntimeManagementTarget,
 } from '../../web/management-target'
-import type {
-	ConfigResult,
-	ConfigPresentationResult,
-	RuntimeMeta,
-	EnsureForkResult,
-	RemoveForkResult,
-	PluginConsumerRequirementsInspectionResult,
-	PluginDependencyGraphSnapshot,
-	PluginDependencyMutationResult,
-	PluginProviderPolicyInspectionResult,
-	PluginCatalogLayoutInput,
-	PluginCatalogLayoutMutationResult,
-	PluginCatalogSnapshot,
-	PluginControlBatchResult,
-	PluginStatusQueryResult,
+import {
+	type ConfigResult,
+	type ConfigPresentationResult,
+	type RuntimeMeta,
+	type EnsureForkResult,
+	type RemoveForkResult,
+	type PluginConsumerRequirementsInspectionResult,
+	type PluginDependencyGraphSnapshot,
+	type PluginDependencyMutationResult,
+	type PluginProviderPolicyInspectionResult,
+	type PluginCatalogLayoutInput,
+	type PluginCatalogLayoutMutationResult,
+	type PluginCatalogSnapshot,
+	type PluginControlBatchResult,
+	type PluginStatusQueryResult,
 } from '../../web/protocol'
 import {
 	parseConfigPresentationResult,
 	parseConfigResult,
+	parseConfigVersion,
 	parsePluginControlBatchResult,
 } from '../../web/management-validation'
 import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
@@ -205,6 +208,11 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		)
 	}
 
+	configStateDto() {
+		this.signal?.throwIfAborted()
+		return checkedDto(readHostConfigState(this.ctx))
+	}
+
 	async pluginConfigDto(owner: unknown): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
@@ -212,23 +220,37 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return parseConfigResult(await pluginConfigGet(this.ctx, address, this.#admission))
 	}
 
-	async patchPluginConfigDto(owner: unknown, patch: unknown): Promise<ConfigResult> {
+	async patchPluginConfigDto(
+		owner: unknown,
+		patch: unknown,
+		expectedInput?: unknown,
+	): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
+		const expected = readRpcConfigVersion(expectedInput)
+		if (expected === null) return checkedDto(invalidConfigInput('Invalid expected config version'))
 		const address = parseRpcNode(owner)
 		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
 		const record = readRpcRecord(patch)
 		if (!record) return checkedDto(invalidConfigInput('Config patch must be an object'))
-		return parseConfigResult(await pluginConfigPatch(this.ctx, address, record, this.#admission))
+		return parseConfigResult(
+			await pluginConfigPatch(this.ctx, address, record, { ...this.#admission, expected }),
+		)
 	}
 
-	async patchPluginConfigFieldDto(owner: unknown, input: unknown): Promise<ConfigResult> {
+	async patchPluginConfigFieldDto(
+		owner: unknown,
+		input: unknown,
+		expectedInput?: unknown,
+	): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
+		const expected = readRpcConfigVersion(expectedInput)
+		if (expected === null) return checkedDto(invalidConfigInput('Invalid expected config version'))
 		const address = parseRpcNode(owner)
 		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
 		if (!readRpcRecord(input))
 			return checkedDto(invalidConfigInput('Config field mutation must be an object'))
 		return parseConfigResult(
-			await pluginConfigPatchField(this.ctx, address, input, this.#admission),
+			await pluginConfigPatchField(this.ctx, address, input, { ...this.#admission, expected }),
 		)
 	}
 
@@ -373,7 +395,11 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		const base = parseRpcNode(record?.base)
 		if (
 			!record ||
-			!hasExactKeys(record, ['base', 'forkId']) ||
+			!hasExactKeys(record, [
+				'base',
+				'forkId',
+				...(record.expected === undefined ? [] : ['expected']),
+			]) ||
 			!base ||
 			typeof record.forkId !== 'string'
 		) {
@@ -384,7 +410,16 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				error: 'Invalid fork removal input',
 			})
 		}
-		const result = await removeFork(this.ctx, base, record.forkId, this.#admission)
+		const expected = readRpcConfigVersion(record.expected)
+		if (expected === null) {
+			return checkedDto({
+				ok: false,
+				code: 'invalid_input',
+				state: 'unchanged',
+				error: 'Invalid expected config version',
+			})
+		}
+		const result = await removeFork(this.ctx, base, record.forkId, { ...this.#admission, expected })
 		if (result.ok === true) {
 			if (result.status === 'already-absent') {
 				return checkedDto({
@@ -398,6 +433,15 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				status: result.status,
 				fork: parsePluginNodeAddress(result.node),
 				report: projectPluginApplyReport(this.ctx, result.report),
+			})
+		}
+		if (result.code === 'version_conflict') {
+			return checkedDto({
+				ok: false,
+				code: result.code,
+				state: result.state,
+				error: result.message,
+				version: result.version,
 			})
 		}
 		if (result.code === 'fork_referenced') {
@@ -1069,5 +1113,14 @@ class RuntimeUpdateSubscription extends RpcTarget {
 		} finally {
 			this.draining = false
 		}
+	}
+}
+
+function readRpcConfigVersion(input: unknown): HostConfigVersion | undefined | null {
+	if (input === undefined) return undefined
+	try {
+		return parseConfigVersion(input)
+	} catch {
+		return null
 	}
 }

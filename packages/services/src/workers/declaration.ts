@@ -1,3 +1,4 @@
+import type { WorkerOptions } from 'node:worker_threads'
 import { createNodeModuleDeclaration } from '../node/declaration'
 
 declare const workerTaskBrand: unique symbol
@@ -83,6 +84,12 @@ export type WorkersConfig = Readonly<{
 	maxQueuedTasksPerPlugin?: number
 	/** Retires idle threads and their loaded module caches. @defaultValue 30000 */
 	idleTimeoutMs?: number
+	/**
+	 * Native thread options, snapshotted when workers() is called. Shared by all task threads;
+	 * not persisted. workerData retains its native value until Node clones it for each thread.
+	 * Pluxel owns the entry/message protocol, transfer and inherited stdio.
+	 */
+	worker?: Omit<WorkerOptions, 'eval' | 'transferList' | 'stdin' | 'stdout' | 'stderr'>
 }>
 
 /** Declare a module-level worker task for `ctx.workers.run()`. */

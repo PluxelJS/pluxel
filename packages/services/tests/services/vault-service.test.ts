@@ -1,3 +1,5 @@
+import { InMemory, Passthrough, type FsConfig } from '@pluxel/core/fs'
+import { requireFs } from '@pluxel/core/internal'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises'
@@ -6,7 +8,6 @@ import { join } from 'node:path'
 import { createHost } from '@pluxel/host'
 import { HostVaultBindings } from '@pluxel/host/bindings'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
-import { Fs, fs, InMemory, Passthrough, type FsServiceConfig } from '../../src/fs'
 import {
 	vault,
 	Vault,
@@ -25,14 +26,22 @@ afterEach(async () => {
 async function diskConfig() {
 	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-vault-'))
 	directories.push(prefix)
-	return { backend: Passthrough, fs: nativeFs, prefix } as const
+	return {
+		mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+		durableMounts: ['/'],
+	} as const
 }
 type DiskConfig = Awaited<ReturnType<typeof diskConfig>>
-const vaultPath = (config: DiskConfig, key: string) => join(config.prefix, 'services/vault', key)
-function setup(config: FsServiceConfig = { backend: InMemory }, vaultConfig?: VaultServiceConfig) {
+const vaultPath = (config: DiskConfig, key: string) =>
+	join(config.mounts['/'].prefix, 'services/vault', key)
+function setup(
+	config: FsConfig = { mounts: { '/': { backend: InMemory } } },
+	vaultConfig?: VaultServiceConfig,
+) {
 	return createHost({
 		plugins: [],
-		services: [fs(config), vault(vaultConfig)],
+		config: { storage: config },
+		services: [vault(vaultConfig)],
 	})
 }
 const owners = new Map<string, VaultStorageApi>()
@@ -128,7 +137,7 @@ describe('Vault structured records', () => {
 	it('does not publish values, revisions or notifications when persistent commit fails', async () => {
 		let reject = false
 		const host = await setup()
-		const directory = await host.ctx.require(Fs).directory('services/vault')
+		const directory = await requireFs(host.ctx).directory('services/vault')
 		const rename = directory.rename
 		vi.spyOn(directory, 'rename').mockImplementation(async (from, to) => {
 			if (reject && String(to).endsWith('state.enc')) throw new Error('commit rejected')
@@ -247,7 +256,7 @@ describe('Vault structured records', () => {
 			await host.startNode(pluginNodeAddressOf(Owner))
 			await host.startNode(pluginNodeAddressOf(OtherOwner))
 			const first = host.ctx.require(Vault).kv({
-				namespace: `plugin-${(await import('../../src/internal/plugin-address').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`,
+				namespace: `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`,
 			})
 			expect(await first.get('primary')).toMatchObject({
 				source: 'env',
@@ -273,7 +282,7 @@ describe('Vault structured records', () => {
 	it('overlays whole records without mixing or persisting deployment values', async () => {
 		const backend = await diskConfig()
 		const host = await setup(backend)
-		const namespace = `plugin-${(await import('../../src/internal/plugin-address').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`
+		const namespace = `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`
 		try {
 			const kv = host.ctx.require(Vault).kv({ namespace })
 			await kv.set('primary', { refreshToken: 'persisted' })
@@ -315,7 +324,7 @@ describe('Vault structured records', () => {
 	it('watches new keys and deletions in a prefix and never leaks another owner namespace', async () => {
 		const host = await createHost({
 			plugins: [Owner, OtherOwner],
-			services: [fs({ backend: InMemory }), vault()],
+			services: [vault()],
 		})
 		try {
 			await host.startNode(pluginNodeAddressOf(Owner))

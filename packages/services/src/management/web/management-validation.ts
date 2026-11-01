@@ -1,3 +1,4 @@
+import { type HostConfigState, type HostConfigVersion } from '@pluxel/host'
 import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,
@@ -9,57 +10,57 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import type {
-	AdminAccessOverview,
-	RuntimeSecurityClient,
-	SecurityAuditEvent,
-	SecurityOverview,
-	VaultAdminState,
+import {
+	type AdminAccessOverview,
+	type RuntimeSecurityClient,
+	type SecurityAuditEvent,
+	type SecurityOverview,
+	type VaultAdminState,
 } from './security'
-import type {
-	LogRangeResult,
-	LogStreamMeta,
-	RuntimeLogError,
-	RuntimeLogEvent,
-	RuntimeLogLine,
-} from '../../logging/protocol'
-import type {
-	ConfigPresentationResult,
-	ConfigResult,
-	ConfigValidationErrors,
-	EnsureForkResult,
-	PluginApplyCommitSummary,
-	PluginApplyLifecycleErrorInfo,
-	PluginApplyLifecycleIssue,
-	PluginApplyReport,
-	PluginControlBatchResult,
-	PluginControlMutationFailure,
-	PluginControlMutationResult,
-	PluginControlMutationSuccess,
-	PluginControlSnapshot,
-	PluginDependencyGraphEdge,
-	PluginDependencyGraphNode,
-	PluginDependencyGraphSnapshot,
-	PluginConsumerRequirementState,
-	PluginConsumerRequirementsInspectionResult,
-	PluginDependencyMutationResult,
-	PluginProviderOption,
-	PluginProviderPolicyInfo,
-	PluginProviderPolicyInspectionResult,
-	PluginCatalogLayoutMutationResult,
-	PluginCatalogSection,
-	PluginCatalogSectionBasis,
-	PluginCatalogSnapshot,
-	PluginLogPolicyMutationResult,
-	PluginReconciliationIssue,
-	PluginStatusIssue,
-	PluginStatusQueryResult,
-	PluginStatusSnapshot,
-	RemoveForkResult,
-	RuntimeJsonObject,
-	RuntimeJsonValue,
-	RuntimePluginLogLevel,
-	VersionedPluginLogPolicySnapshot,
+import {
+	type LogRangeResult,
+	type LogStreamMeta,
+	type RuntimeLogError,
+	type RuntimeLogEvent,
+	type RuntimeLogLine,
+} from '@pluxel/core/logging/protocol'
+import {
+	type ConfigPresentationResult,
+	type ConfigResult,
+	type ConfigValidationErrors,
+	type EnsureForkResult,
+	type PluginApplyCommitSummary,
+	type PluginApplyLifecycleErrorInfo,
+	type PluginApplyLifecycleIssue,
+	type PluginApplyReport,
+	type PluginControlBatchResult,
+	type PluginControlMutationFailure,
+	type PluginControlMutationResult,
+	type PluginControlMutationSuccess,
+	type PluginControlSnapshot,
+	type PluginDependencyGraphEdge,
+	type PluginDependencyGraphNode,
+	type PluginDependencyGraphSnapshot,
+	type PluginConsumerRequirementState,
+	type PluginConsumerRequirementsInspectionResult,
+	type PluginDependencyMutationResult,
+	type PluginProviderOption,
+	type PluginProviderPolicyInfo,
+	type PluginProviderPolicyInspectionResult,
+	type PluginCatalogLayoutMutationResult,
+	type PluginCatalogSection,
+	type PluginCatalogSectionBasis,
+	type PluginCatalogSnapshot,
+	type PluginLogPolicyMutationResult,
+	type PluginReconciliationIssue,
+	type PluginStatusIssue,
+	type PluginStatusQueryResult,
+	type PluginStatusSnapshot,
+	type RemoveForkResult,
+	type RuntimeJsonObject,
+	type RuntimeJsonValue,
+	type RuntimePluginLogLevel,
+	type VersionedPluginLogPolicySnapshot,
 } from './protocol'
 import {
 	clonePluginExecutionSnapshot,
@@ -900,7 +901,28 @@ function configSources(input: unknown): readonly import('@pluxel/host').HostConf
 	)
 }
 
+export function parseConfigState(input: unknown): HostConfigState {
+	const value = rootRecord(input, 'config state')
+	shape(value, ['version', 'readonly'], [], 'config state')
+	return Object.freeze({
+		version: parseConfigVersion(value.version),
+		readonly: boolean(value.readonly, 'config state.readonly'),
+	})
+}
+
+/** A saved-layer version is opaque to editors and must be returned unchanged. */
+export function parseConfigVersion(input: unknown): HostConfigVersion | null {
+	if (input === null) return null
+	const value = rootRecord(input, 'config version')
+	shape(value, ['history', 'seq'], [], 'config version')
+	const history = text(value.history, 'config version.history')
+	if (!history) fail('config version.history must not be empty')
+	return Object.freeze({ history, seq: nonNegativeInteger(value.seq, 'config version.seq') })
+}
+
 function configSuccess(value: Record<string, unknown>): ConfigResult {
+	const version = parseConfigVersion(value.version)
+	const readonly = boolean(value.readonly, 'config result.readonly')
 	const saved = boolean(value.saved, 'config result.saved')
 	const application = literal(
 		value.application,
@@ -917,12 +939,24 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 	if (!saved) {
 		shape(
 			value,
-			['ok', 'saved', 'application', 'desiredRevision', 'appliedRevision', 'config', 'defaults'],
+			[
+				'ok',
+				'version',
+				'readonly',
+				'saved',
+				'application',
+				'desiredRevision',
+				'appliedRevision',
+				'config',
+				'defaults',
+			],
 			['sources'],
 			'config result',
 		)
 		return Object.freeze({
 			ok: true,
+			version,
+			readonly,
 			saved: false,
 			application,
 			desiredRevision,
@@ -934,7 +968,17 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 	}
 	shape(
 		value,
-		['ok', 'saved', 'application', 'desiredRevision', 'appliedRevision', 'config', 'report'],
+		[
+			'ok',
+			'version',
+			'readonly',
+			'saved',
+			'application',
+			'desiredRevision',
+			'appliedRevision',
+			'config',
+			'report',
+		],
 		application === 'saved-not-applied' ? ['applyFailure', 'sources'] : ['sources'],
 		'config result',
 	)
@@ -945,6 +989,8 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 		}
 		return Object.freeze({
 			ok: true,
+			version,
+			readonly,
 			saved: true,
 			application,
 			desiredRevision,
@@ -966,6 +1012,8 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 	)
 	return Object.freeze({
 		ok: true,
+		version,
+		readonly,
 		saved: true,
 		application: 'saved-not-applied',
 		desiredRevision,
@@ -984,6 +1032,7 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 	const code = literal(
 		value.code,
 		[
+			'version_conflict',
 			'validation_failed',
 			'invalid_input',
 			'node_unavailable',
@@ -993,6 +1042,17 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 		],
 		'config result.code',
 	)
+	if (code === 'version_conflict') {
+		shape(value, ['ok', 'code', 'state', 'message', 'version'], [], 'config result')
+		literal(value.state, ['unchanged'], 'config result.state')
+		return Object.freeze({
+			ok: false,
+			code,
+			state: 'unchanged',
+			message: text(value.message, 'config result.message'),
+			version: parseConfigVersion(value.version),
+		})
+	}
 	if (code === 'validation_failed') {
 		shape(value, ['ok', 'code', 'state', 'message', 'errors'], ['defaults'], 'config result')
 		literal(value.state, ['unchanged'], 'config result.state')
@@ -1008,12 +1068,19 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 		})
 	}
 	if (code === 'persistence_failed') {
-		shape(value, ['ok', 'code', 'state', 'message', 'config'], ['sources'], 'config result')
+		shape(
+			value,
+			['ok', 'code', 'state', 'message', 'config', 'version', 'readonly'],
+			['sources'],
+			'config result',
+		)
 		literal(value.state, ['unknown'], 'config result.state')
 		return Object.freeze({
 			ok: false,
 			code,
 			state: 'unknown',
+			version: parseConfigVersion(value.version),
+			readonly: boolean(value.readonly, 'config result.readonly'),
 			message: text(value.message, 'config result.message'),
 			config: portableRecord(value.config, 'config result.config'),
 			sources: configSources(value.sources),
@@ -1387,9 +1454,28 @@ function removeForkSuccess(value: Record<string, unknown>): RemoveForkResult {
 function removeForkFailure(value: Record<string, unknown>): RemoveForkResult {
 	const code = literal(
 		value.code,
-		['invalid_input', 'invalid_fork_id', 'graph_rejected', 'fork_referenced', 'persistence_failed'],
+		[
+			'invalid_input',
+			'invalid_fork_id',
+			'graph_rejected',
+			'fork_referenced',
+			'mutation_rejected',
+			'version_conflict',
+			'persistence_failed',
+		],
 		'remove fork result.code',
 	)
+	if (code === 'version_conflict') {
+		shape(value, ['ok', 'code', 'state', 'error', 'version'], [], 'remove fork result')
+		literal(value.state, ['unchanged'], 'remove fork result.state')
+		return Object.freeze({
+			ok: false,
+			code,
+			state: 'unchanged',
+			error: text(value.error, 'remove fork result.error'),
+			version: parseConfigVersion(value.version),
+		})
+	}
 	if (code === 'fork_referenced') {
 		shape(value, ['ok', 'code', 'state', 'references', 'error'], [], 'remove fork result')
 		literal(value.state, ['unchanged'], 'remove fork result.state')

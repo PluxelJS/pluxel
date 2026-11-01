@@ -1,5 +1,6 @@
 import './services/index'
 import { createCoreRootContext } from './context/core-plan'
+import { prepareCoreContext } from './context/core-logging'
 import type { CoreHostConfig, RootContext } from './context/Context'
 import {
 	BasePlugin,
@@ -301,6 +302,7 @@ export function createCoreInternalTestHost(
 		allowFailure: boolean,
 		commitOptions?: PreparedRuntimeUpdateCommitOptions,
 	): Promise<CommitSummary> {
+		await prepareCoreContext(ctx)
 		await options.prepareCommit?.(ctx)
 		const current = update ?? registry.beginUpdate({ reason: 'core-test-retry' })
 		update = undefined
@@ -435,11 +437,13 @@ export function createCoreInternalTestContext(
 ): CoreInternalTestContext {
 	const resolvedConfig = { name: 'test', ...normalizeConfig(config) }
 	const ctx = options.createRootContext?.(resolvedConfig) ?? createCoreRootContext(resolvedConfig)
+	// Capture cleanup authority while the root is live; disposal must not lazily acquire resources.
+	const registry = requirePluginService(ctx)
 	return {
 		ctx,
 		root: ctx,
 		dispose: async () => {
-			requirePluginService(ctx).resetDraft()
+			registry.resetDraft()
 			await ctx.effects.dispose().catch((): undefined => undefined)
 		},
 	}
@@ -451,6 +455,7 @@ export async function withCoreInternalTestContext<T>(
 ): Promise<T> {
 	const value = createCoreInternalTestContext(config)
 	try {
+		await prepareCoreContext(value.ctx)
 		return await fn(value.ctx)
 	} finally {
 		await value.dispose()
@@ -460,6 +465,7 @@ export async function withCoreInternalTestContext<T>(
 // Internal graph harness and shared test contracts; author composition belongs to @pluxel/test.
 export {
 	createCoreTestHost,
+	getCoreTestHostContext,
 	definePluginFork,
 	PluginLifecycleAssertionError,
 } from './internal-test-host'

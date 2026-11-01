@@ -1,5 +1,6 @@
 ---
 packages:
+  '@pluxel/core': major
   '@pluxel/services': major
   '@pluxel/host': major
   '@pluxel/create': patch
@@ -7,22 +8,25 @@ packages:
   '@pluxel/plugin-fonts': major
 ---
 
-## Use Host-owned ZenFS directories for file storage
+## Use Core-owned ZenFS directories for runtime data
 
-Replace `@pluxel/services/persistence` with `@pluxel/services/fs`. Declare
-`fs({ backend: InMemory })`, Node `Passthrough`, or browser `IndexedDB` explicitly.
-Plugins obtain their stable owner directory with `ctx.require(PluginFs)()`; root
-services use `root.require(Fs)`. File operations preserve native errno values.
-`writeFileAtomic` commits a complete file through a closed temporary file and
-same-directory rename. Fixed ZenFS implementations and notices ship inside the
-Services artifact, including for independent installations.
+Every Plugin and Part obtains its stable owner directory through the fixed
+`ctx.fs()` capability. Compose native ZenFS mounts once through `config.storage`, using built-in or
+external backends, nested configurations and borrowed FileSystem instances.
+Backend declarations, native configuration types and `writeFileAtomic` are
+exported from `@pluxel/core/fs` and `/fs/browser`. Services no longer exports FS
+factories or tokens. Core ships the patched ZenFS runtime, declarations and notices.
 
-Host config/state storage and Logging policy stores now accept synchronous root
-factories. `HostDocumentStorage.put(key, text)` always requires an atomic commit;
-the optional atomic flag has been removed. Storage remains borrowed and optional.
+File operations preserve native errno and atomic temporary-file/rename commits.
+Host config/state documents use Core TinyBase by default, while explicit document
+factories still borrow their backend. FS closes after TinyBase and domain flushes. Native backend configurations are
+owned and released, while direct FileSystems are borrowed through isolated
+views. `durableMounts` explicitly declares persistence per mount; readonly
+requirements use actual backend attributes. Passthrough prefixes must be created
+by the application, and module-global ZenFS policy options are excluded from
+per-Core configuration.
+Vault, Cache, Fonts and Wretch retain their resource-specific data contracts.
+Source discovery, package installation and native artifacts retain their own IO.
 
-Vault, Management, Cache, Fonts and Wretch use their fixed service or provider
-directories. Ordinary stop, restart and fork removal preserve files. Existing
-deployments must explicitly copy known data to the new layout; startup does not
-read old paths or migrate data. Starter applications now select Passthrough under
-their data root's `fs` directory.
+Ordinary stop, restart and fork removal preserve files. Existing deployments must
+explicitly copy known old data; startup does not read old paths or migrate data.

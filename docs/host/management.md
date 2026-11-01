@@ -5,24 +5,15 @@ description: 在独立 Host 中组合认证、管理投影与所选 HTTP carrier
 
 ## 在独立 Host 中组合 Management
 
-Management 由 `@pluxel/services/management` 提供。`managementAccess()` 安装认证权威，`management()` 在已有 TinyBase 上安装管理投影，`managementHttp()` 将控制入口接入已选中的 HTTP carrier。三者都借用已存在的 Host，不创建物理 listener。
+Management 由 `@pluxel/services/management` 提供。`managementAccess()` 安装认证权威，`management()` 借用 Core 内建存储安装管理投影，`managementHttp()` 将控制入口接入已选中的 HTTP carrier。三者都借用已存在的 Host，不创建物理 listener。
 
 ```ts
 import { elysia } from '@pluxel/services/elysia'
-import { fs, InMemory } from '@pluxel/services/fs'
-import { tinybase } from '@pluxel/services/tinybase'
 import { managementAccess } from '@pluxel/services/management/access'
 import { management } from '@pluxel/services/management/service'
 import { managementHttp } from '@pluxel/services/management/http'
 
-const services = [
-	elysia(),
-	fs({ backend: InMemory }),
-	tinybase(),
-	managementAccess(),
-	management(),
-	managementHttp(),
-]
+const services = [elysia(), managementAccess(), management(), managementHttp()]
 ```
 
 自定义 carrier 可以借用 `createManagementEndpoint()`：HTTP 请求交给 `fetch()`，WebSocket 升级先调用 `prepareUpgrade()`，再将实际连接交给返回的 connection。可信地址、TLS 与 origin 来自 carrier；缺失时按未知处理，不从请求头推断。

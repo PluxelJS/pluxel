@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -193,7 +192,7 @@ describe('S3Plugin local backend', () => {
 		const root = await temporaryRoot()
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.start(S3Plugin, {
@@ -231,7 +230,7 @@ async function temporaryRoot(): Promise<string> {
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
 	{
 		await using host = await createTestHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 
 		await host.start(S3Plugin, {

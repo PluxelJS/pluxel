@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { Server } from 'srvx'
 
 afterEach(() => vi.unstubAllEnvs())
 import { elysia, ElysiaApp } from '../src/elysia'
@@ -245,5 +246,99 @@ it('exposes the trusted public origin without replacing physical listener metada
 		})
 	} finally {
 		await listener.close()
+	}
+})
+
+it('preserves native srvx plugins, middleware, proxy handling and Node server options', async () => {
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+		prefix: '/native',
+		matchesWebSocketRoute: () => false,
+		async fetch(request) {
+			return Response.json({ url: request.url })
+		},
+	})
+	const order: string[] = []
+	let native: Server | undefined
+	const listener = await listenElysia(host, {
+		hostname: '127.0.0.1',
+		port: '0',
+		trustProxy: 'loopback',
+		node: { maxHeaderSize: 8192, keepAliveTimeout: 1234 },
+		plugins: [
+			(server) => {
+				native = server
+				order.push('plugin')
+			},
+		],
+		middleware: [
+			async (_request, next) => {
+				order.push('before')
+				const response = await next()
+				response.headers.set('x-native-middleware', 'active')
+				order.push('after')
+				return response
+			},
+		],
+	})
+	try {
+		expect(native?.node?.server).toMatchObject({ maxHeaderSize: 8192, keepAliveTimeout: 1234 })
+		const response = await fetch(`http://127.0.0.1:${listener.address.port}/native`, {
+			headers: { 'x-forwarded-host': 'proxy.example.test', 'x-forwarded-proto': 'https' },
+		})
+		expect(response.headers.get('x-native-middleware')).toBe('active')
+		expect(await response.json()).toEqual({ url: 'https://proxy.example.test/native' })
+		expect(order).toEqual(['plugin', 'before', 'after'])
+	} finally {
+		await listener.close()
+	}
+})
+
+it('uses the native body limit and error handler without replacing their error contract', async () => {
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+		prefix: '/body',
+		matchesWebSocketRoute: () => false,
+		async fetch(request) {
+			return new Response(await request.text())
+		},
+	})
+	const errors: unknown[] = []
+	const listener = await listenElysia(host, {
+		hostname: '127.0.0.1',
+		port: 0,
+		maxRequestBodySize: 4,
+		error(error) {
+			errors.push(error)
+			return new Response('native limit', { status: 413 })
+		},
+	})
+	try {
+		const origin = `http://127.0.0.1:${listener.address.port}`
+		const accepted = await fetch(`${origin}/body`, { method: 'POST', body: '1234' })
+		expect(await accepted.text()).toBe('1234')
+		const rejected = await fetch(`${origin}/body`, { method: 'POST', body: '12345' })
+		expect(rejected.status).toBe(413)
+		expect(await rejected.text()).toBe('native limit')
+		expect(errors).toEqual([expect.objectContaining({ code: 'ERR_BODY_TOO_LARGE' })])
+	} finally {
+		await listener.close()
+	}
+})
+
+it('rejects options that replace the managed listener lifecycle before acquiring the carrier', async () => {
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	try {
+		for (const key of ['fetch', 'manual', 'gracefulShutdown'])
+			await expect(
+				Reflect.apply(listenElysia, undefined, [host, { [key]: false }]),
+			).rejects.toThrow(`listenElysia owns ${key}`)
+		await expect(
+			Reflect.apply(listenElysia, undefined, [host, { node: { path: '/unused.sock' } }]),
+		).rejects.toThrow('requires TCP')
+		const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 0 })
+		await listener.close()
+	} finally {
+		await host.close()
 	}
 })

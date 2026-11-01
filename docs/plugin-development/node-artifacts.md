@@ -108,6 +108,32 @@ caller Promise 可以立即结束，但 runtime 会等 worker 真正退出后才
 settle，调用方可随后释放这些资源；队列取消仍立即结束。默认 `'result'` 保留取消后立即结束等待的行为。
 此模式下线程终止本身失败会报告 `EXECUTION_UNSETTLED` 并保留 cause；调用方必须保留仍可能被使用的资源，不能把该失败当作已经确认退出。
 
+### 原生线程选项
+
+Host 的 `workers({ worker })` 接收 Node 原生 [WorkerOptions](https://nodejs.org/api/worker_threads.html#new-workerfilename-options)，保留 `resourceLimits`、`execArgv`、`env`、`argv`、`name`、`workerData` 与 `trackUnmanagedFds`。这些是只在应用代码中使用的启动参数，不保存为 Plugin 配置。把下列服务与现有 `nodeModules(...)` 一起加入 Host 的 `services`：
+
+```ts
+import { workers, type WorkersConfig } from '@pluxel/services/workers'
+
+const threadOptions = {
+	env: { ...process.env, TZ: 'UTC' },
+	execArgv: ['--no-warnings'],
+	name: 'report-worker',
+	workerData: { locale: 'zh-HK' },
+	resourceLimits: {
+		maxOldGenerationSizeMb: 128,
+		maxYoungGenerationSizeMb: 16,
+		stackSizeMb: 4,
+	},
+} satisfies NonNullable<WorkersConfig['worker']>
+
+export const workerService = workers({ maxThreads: 4, worker: threadOptions })
+```
+
+装配时复制选项容器、环境映射、参数数组和资源限制，后续修改这些输入不改变服务快照。`workerData` 保留原始值，由 Node 在每次创建线程时执行 structured clone，供任务入口读取启动数据。`env: SHARE_ENV` 也按 Node 原生语义保留；它让线程和父进程共享环境写入，应用须明确接受这一行为。其余 native 默认值与参数合法性由 Node 决定；非法 `execArgv` 等在线程首次创建时让任务以 `TASK_FAILED` 拒绝并保留 native cause，不伪装为启动成功或自动更改参数。
+
+Pluxel 拥有固定入口、每任务 message/transfer 协议和继承的父进程 stdio，因此 `eval`、`transferList`、`stdin`、`stdout`、`stderr` 不属于该输入；即使值是 `false` 或 `undefined`，出现这些字段也会在创建服务前明确拒绝。每次任务的数据继续通过 `run()`，buffer 转移继续使用每任务 `transfer`。原生线程选项不改变共享并发上限、owner 公平队列、取消和实际退出结算；`resourceLimits` 也不是进程内存或外部 ArrayBuffer 的总配额。
+
 ## 什么可以跨线程
 
 输入输出必须满足 structured clone：

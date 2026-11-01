@@ -2,8 +2,6 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 import { createTestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
-import { fs, InMemory } from '@pluxel/services/fs'
-import { tinybase } from '@pluxel/services/tinybase'
 import { WorkbenchOpenedContentHandle } from '@pluxel/workbench/internal'
 import { expect, it, vi } from 'vitest'
 
@@ -21,10 +19,10 @@ class WorkbenchLeaseFixture extends BasePlugin {
 	}
 }
 
-it('opens a Workbench entry with HTTP, Fs and TinyBase as base services', async () => {
+it('opens a Workbench entry with HTTP and fixed Core storage', async () => {
 	await using host = await createTestHost({
 		workbench: true,
-		services: [elysia(), fs({ backend: InMemory }), tinybase()],
+		services: [elysia()],
 	})
 	await host.start(WorkbenchLeaseFixture)
 	using opened = await host.workbench.open({
@@ -39,7 +37,7 @@ it('opens a Workbench entry with HTTP, Fs and TinyBase as base services', async 
 it('reports and closes a leaked public Workbench lease during host disposal', async () => {
 	const host = await createTestHost({
 		workbench: true,
-		services: [elysia(), fs({ backend: InMemory }), tinybase()],
+		services: [elysia()],
 	})
 	let disposalAttempted = false
 	try {

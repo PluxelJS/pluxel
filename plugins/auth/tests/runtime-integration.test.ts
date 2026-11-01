@@ -1,10 +1,9 @@
-import { InMemory } from '@pluxel/services/fs'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { type AddressInfo } from 'node:net'
 import { newWebSocketRpcSession, type RpcStub } from 'capnweb'
 import { ElysiaRuntime, type ElysiaApplicationCarrier } from '@pluxel/services/internal'
 import { resolveContextCapability } from '@pluxel/core/host'
@@ -36,7 +35,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using fixture = new AuthRuntimeSessionCarrierFixture(
 			await createServiceInternalTestHost({
 				management: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			}),
 		)
 
@@ -112,7 +111,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using host = await createServiceInternalTestHost(
 			{
 				management: true,
-				services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+				services: [...standardServices(), vault()],
 			},
 			{ requestAddress: peerAddress },
 		)

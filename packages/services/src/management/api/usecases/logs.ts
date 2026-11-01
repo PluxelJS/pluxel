@@ -6,10 +6,10 @@ import {
 	type LogStreamMeta,
 	type RuntimeLogEvent,
 	type RuntimeLogLine,
-} from '../../../logging/protocol'
+} from '@pluxel/core/logging/protocol'
 import { pluginNodeAddressEqual, type Context } from '@pluxel/core'
-import { requireContextRuntimeLogging } from '../../../logging/internal'
-import type { RuntimeLogStore } from '../../../logging/index'
+import { requireContextRuntimeLogging } from '@pluxel/core/logging/internal'
+import type { RuntimeLogStore } from '@pluxel/core/logging'
 
 export type LogsMetaInput = {
 	streamId?: string

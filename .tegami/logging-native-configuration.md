@@ -1,0 +1,41 @@
+---
+packages:
+  '@pluxel/core':
+    type: major
+  '@pluxel/host':
+    type: major
+  '@pluxel/services':
+    type: major
+  '@pluxel/host-vite':
+    type: patch
+  '@pluxel/create':
+    type: patch
+---
+
+## Declare native Core facilities through core/config
+
+Use `logtape(config, options)` and `zenfs(config)` from `@pluxel/core/config` in
+`config.logger` and `config.storage`. These declarations validate and snapshot
+configuration without acquiring resources. Native LogTape sinks, filters,
+formatters, logger inheritance and implicit contexts remain configurable;
+ZenFS retains native backends, nested mounts and borrowed filesystem handles.
+
+Core owns one optional LogTape runtime per root. Host explicitly awaits its
+installation before preparing services or starting Plugins, and closes it after
+their cleanup while policy storage is still available. Core-only hosts use
+`prepareCoreContext` from `@pluxel/core/host`. Omitting `logger` leaves the global
+LogTape configuration untouched. Failed installation rolls back owned resources;
+foreign configurations are never reset.
+
+Replace Services `logging()` and its `/logging`, `/logging/internal` and
+`/logging/protocol` imports with Core configuration and corresponding
+`@pluxel/core/logging` entries. `Logging` and Management share the same Core
+runtime, policy and bounded stores. `servicesPreset` no longer installs logging
+or accepts logging options. The application template opts in with `logtape()`.
+The default preset uses native console and bounded-store sinks; the optional
+Pluxel formatter is available from `@pluxel/core/logging/pretty`. Configure file
+rotation directly with `@logtape/file`.
+
+The replaced root-ID-only `config.logger` and sink `kind`/family `routes` DSL are
+removed. Declare native `sinks`/`filters`/`loggers`; independent Pluxel policy
+settings remain the second argument, with the default `pluxel` profile.

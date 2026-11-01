@@ -1,7 +1,7 @@
 # 外部浏览器连接
 
 该包拥有一代插件的外部浏览器连接，以及通过它创建的隔离 context。部署方拥有浏览器进程。
-仅提供 `PlaywrightPlugin.newContext(options?, { signal? }?)`；返回原生 SDK，不创建平行 Page/Locator API。
+消费端依赖抽象 `Playwright`，使用 `newContext(options?, { signal? }?)`；返回原生 SDK，不创建平行 Page/Locator API。
 不暴露默认 context，不接管其它客户端已有的页面，不内置任务队列、站点动作或浏览器安装器。
 
 ## 所有权与停止
@@ -21,16 +21,22 @@ caller 的停止等待它完成；不为单个 caller 杀死共享 transport。�
 
 ## 配置与凭据
 
-公开 `PlaywrightConfig` 与插件 `configs.use()` 使用同一个 schema；互斥 endpoint / connectionKey 在 schema 校验。
-`protocol` 默认 `cdp`，通过 `chromium.connectOverCDP` 连接；显式 `playwright` 使用 `chromium.connect`。同一 context API 与 lifecycle 沿用不变，不引入平行 provider。
+默认 `@Plugin(Playwright)` provider `PlaywrightPlugin` 通过普通字段调用 `configs.use(PlaywrightConfig)`；公开 schema 与默认 provider 使用同一校验；互斥 endpoint / connectionKey 在 schema 校验。
+`protocol` 默认 `cdp`，通过 `chromium.connectOverCDP` 连接；显式 `playwright` 使用 `chromium.connect`。同一 context API 与 lifecycle 沿用不变。
 CDP 接受 HTTP(S)/WS(S)，原生协议仅接受 WS(S)；普通配置在 schema 校验，Vault 记录在启动解析后复核所选协议。
 协议由部署方声明，不通过失败重试猜测；原生协议连接要求服务端与客户端 major.minor 匹配，依赖版本升级由宿主工作区管理。
 没有凭据时不需要 Vault 服务。凭据通过 `PlaywrightVaultSchema` 的 owner namespace 记录绑定，启动时校验；不观察自动轮换，更新后重启。
 普通 endpoint 拒绝 userinfo、query 和 fragment；路径可能也包含 secret，部署方必须把这样的 URL 放在 Vault。
 SDK 连接错误可能包含 endpoint / headers，初始化统一抛安全消息，不保留原始 cause。业务阶段原生 SDK 错误保持原样，调用方投影到日志/HTTP 时自行选择安全字段。
 
+## 原生连接扩展
+
+抽象 `Playwright` 统一持有连接、caller contexts 与清理逻辑，`protected connect(signal): Promise<Browser>` 是获取扩展点。默认 `PlaywrightPlugin` 仅拥有可保存 preset 与 Vault 读取；自定义 `@Plugin(Playwright)` 可直接使用 SDK 原生连接参数，不继承 preset schema。hook 返回连接归本 generation，中止后才到达的结果也须关闭。借用 Browser 不属于该扩展点；hook 失败前负责未交付资源及安全错误投影。
+
 ## 证据
 
 真实 test host 驱动 lowering、config、依赖 facade、caller stop 和 provider stop；SDK mock 仅控制 remote 资源时序。
-覆盖初始化失败/部分获取回滚、Vault部署绑定、不接管默认 context、手动关闭、晚到获取、取消、断开、原生异常与 secret-safe lifecycle report。
+覆盖原生 provider lowering/继承、严格默认 preset、连接获取失败及 generation 超时后的晚到连接关闭、初始化失败/部分获取回滚、Vault部署绑定、不接管默认 context、手动关闭、晚到获取、取消、断开、原生异常与 secret-safe lifecycle report。
 外部 Chromium / Lightpanda 协议兼容性仍需真实 endpoint 测试；不以 mock 宣称可在线查验票据。
+
+独立 `test:native` 使用现有 Chromium 启动本地 Playwright server，传入上游 `ConnectOptions`，验证两代自定义 provider、原生页面、caller 停止释放与断连后远程进程存活；server 由测试 finally 关闭。

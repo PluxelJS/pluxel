@@ -63,6 +63,8 @@ function ConfigHarness({
 				<MantineProvider>
 					<div data-dirty={dirty ? 'true' : 'false'}>
 						<ConfigForm
+							version={null}
+							readonly={false}
 							owner={OWNER}
 							displayName="Config owner"
 							fields={fields}

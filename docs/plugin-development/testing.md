@@ -100,9 +100,9 @@ it('runs a plugin without optional services', async () => {
 | `workbench`               | 默认 `false`；`true` 安装 Workbench 测试后端、Management 与打开 entry 的 driver                                             |
 | `management`              | 省略时随 `workbench` 启用，否则为 `false`；可单独设为 `true` 测管理面；与 `workbench: true` 同时显式设为 `false` 时拒绝配置 |
 | `config`                  | 复用 Core 配置，省略时采用测试 root 的默认配置；不是服务或插件 catalog 的容器                                               |
-| `state` / `configRecords` | 复用 Host 存储选项，省略时每个测试宿主独立使用内存，不写应用目录                                                            |
+| `state` / `configRecords` | 复用 Host 存储选项，默认借用 Core 文档；省略 `config.storage` 时每个测试宿主独立使用内存                                    |
 
-Host 自己的图策略、配置记录与 Plugin 可消费的 FS 服务是不同职责。内存 Host 存储不等于默认安装 `ctx.fs`；插件需要文件能力时仍显式选择 [FS 服务](./fs.md)。
+Host 自己的图策略、配置记录与 Plugin 业务文件是不同职责，但共用 Core 选择的文件后端。每个测试 Host 固定提供 `ctx.fs()` 与 `ctx.tinybase`，默认使用 InMemory；跨 Host 恢复测试在 `config.storage` 中选择持久[文件后端](./fs.md)。
 
 `createTestHost()` 返回 Promise，使用 `await using host = await createTestHost(...)` 管理关闭。
 
@@ -124,11 +124,10 @@ expect(await response.json()).toEqual({ ok: true })
 
 ```ts no-twoslash
 import { standardServices } from '@pluxel/services'
-import { InMemory } from '@pluxel/services/fs'
 import { vault } from '@pluxel/services/vault'
 
 await using host = await createTestHost({
-	services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+	services: [...standardServices(), vault()],
 })
 ```
 
@@ -138,11 +137,9 @@ Workbench 的最小组合：
 
 ```ts no-twoslash
 import { elysia } from '@pluxel/services/elysia'
-import { fs, InMemory } from '@pluxel/services/fs'
-import { tinybase } from '@pluxel/services/tinybase'
 
 await using host = await createTestHost({
-	services: [elysia(), fs({ backend: InMemory }), tinybase()],
+	services: [elysia()],
 	workbench: true,
 })
 await host.start(OrdersPlugin)
@@ -155,7 +152,7 @@ using snapshot = await opened.api.snapshotDto()
 expect(snapshot.openOrders).toBe(0)
 ```
 
-`workbench` 和 `management` 是测试交互平面的组合选项：它们选择测试 artifact、身份交接与资源跟踪，而不是业务服务快捷开关。HTTP、FS 与 TinyBase 仍是显式前置，不因启用选项而偷偷装入。生产应用继续使用生产 Workbench/Management 装配，不把测试后端传给生产 Host。
+`workbench` 和 `management` 是测试交互平面的组合选项：它们选择测试 artifact、身份交接与资源跟踪，而不是业务服务快捷开关。HTTP 仍需显式安装；FS 与 TinyBase 是每个 Core 的固定能力，默认使用 InMemory。生产应用继续使用生产 Workbench/Management 装配，不把测试后端传给生产 Host。
 
 ## 一套生命周期词汇
 
@@ -327,7 +324,7 @@ Vite/Rolldown semantic lowering。
 
 ## Driver 是测试访问方式，不是第二套服务
 
-使用 `host.http`、`host.commands`、`host.config`，避免另建通用 `getDriver(token)` registry。HTTP 和 commands driver 只调用已安装的生产服务；方法入口可以稳定存在，但没有选择对应服务时，调用必须给出明确的未安装错误。`config` 属于 Host 本身，不要求额外安装 FS 服务。
+使用 `host.http`、`host.commands`、`host.config`，避免另建通用 `getDriver(token)` registry。HTTP 和 commands driver 只调用已安装的生产服务；方法入口可以稳定存在，但没有选择对应服务时，调用必须给出明确的未安装错误。`config` 属于 Host 本身，默认复用 Core 文档。
 
 `host.workbench` 只在 `workbench: true` 时存在：literal `true` 提供确定的类型，省略或 `false` 不暴露该属性；动态 boolean 对应需要收窄的可选属性。不要从任意 `HostService[]` 静态推断所有第三方服务的 driver 类型，也不要给运行时未安装的能力制造空实现。
 
@@ -351,12 +348,11 @@ Vite/Rolldown semantic lowering。
 ```ts no-twoslash
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
-import { InMemory } from '@pluxel/services/fs'
 import { vault } from '@pluxel/services/vault'
 
 await using host = await createTestHost({
 	workbench: true,
-	services: [...standardServices({ fs: { backend: InMemory } }), vault()],
+	services: [...standardServices(), vault()],
 })
 
 await host.start(ConnectorPlugin)

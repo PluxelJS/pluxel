@@ -1,4 +1,4 @@
-import { validateInputBindingCandidates } from './input-bindings'
+import { validateInputBindingCandidates } from './input-binding-contract'
 import {
 	HostVaultBindings,
 	type HostVaultBindingRecord,
@@ -14,12 +14,14 @@ import {
 	pluginConfigValidate,
 	pluginConfigPatch,
 	pluginConfigReset,
+	readHostConfigState,
 	type HostPluginConfig,
 } from './config'
 import type {
 	CoreHostConfig,
 	Context,
 	ContextServices,
+	PluginContext,
 	PluginConstructor,
 	PluginNodeAddress,
 	PluginDefinitionAddress,
@@ -33,6 +35,7 @@ import {
 } from '@pluxel/core/internal'
 import {
 	createCoreContextHost,
+	prepareCoreContext,
 	type RootContextProjection,
 	type ContextCapabilityInstallation,
 	type ValidateContextInstallations,
@@ -51,6 +54,13 @@ import { assertHostStoreStorage, resolveHostStoreStorage } from './document-stor
 import { HostConfigStore, type HostConfigStoreOptions } from './config-store'
 import { coercePluginConfigRecords } from './config-records'
 import type { PluginSource } from './sources'
+import { HostConfigSyncConnection } from './config-sync'
+import {
+	snapshotConfigSyncOptions,
+	type HostConfigSyncOptions,
+	type HostConfigSync,
+	type HostConfigMutationOptions,
+} from './config-sync-protocol'
 
 type ServiceCapabilities<TServices extends readonly HostService[]> =
 	number extends TServices['length']
@@ -64,7 +74,7 @@ type ServiceCapabilities<TServices extends readonly HostService[]> =
 
 type ValidateHostServices<TServices extends readonly HostService[]> = ValidateContextInstallations<
 	ServiceCapabilities<TServices>,
-	Exclude<keyof Context, keyof ContextServices> | 'constructor' | '__proto__'
+	Exclude<keyof PluginContext, keyof ContextServices> | 'constructor' | '__proto__' | 'logging'
 >
 
 type HostBaseOptions<TServices extends readonly HostService[] = readonly HostService[]> = Readonly<{
@@ -74,10 +84,12 @@ type HostBaseOptions<TServices extends readonly HostService[] = readonly HostSer
 	plugins: readonly PluginConstructor[]
 	/** Core root settings; omitted values use Core defaults. */
 	config?: CoreHostConfig
-	/** Graph policy seed and optional borrowed document storage. Omitted means empty in-memory state. */
+	/** Graph policy seed and optional borrowed storage. Defaults to the built-in state documents. */
 	state?: HostStateStoreOptions
-	/** Plugin config seeds and optional borrowed document storage. Omitted means in-memory config. */
+	/** Plugin config seeds and optional borrowed storage. Defaults to the built-in config documents. */
 	configRecords?: HostConfigStoreOptions
+	/** Fixed deployment role and connection credentials. Omitted creates no sync connection. */
+	configSync?: HostConfigSyncOptions
 	/** Resolved deployment records installed before Plugin admission. */
 	vaultBindings?: readonly HostVaultBindingRecord[]
 }>
@@ -103,6 +115,7 @@ export type HostOptions<TServices extends readonly HostService[] = readonly Host
 export interface PluginHost<TServices extends readonly HostService[] = readonly HostService[]> {
 	readonly ctx: RootContext & RootContextProjection<ServiceCapabilities<TServices>>
 	readonly config: HostPluginConfig
+	readonly configSync?: HostConfigSync
 	/** A snapshot of availability, running intent and lifecycle outcomes from one committed graph. */
 	status(): Promise<HostPluginStatusOverview>
 	/** Persist startup intent and reconcile the same committed graph. */
@@ -122,7 +135,11 @@ export interface PluginHost<TServices extends readonly HostService[] = readonly 
 			forkId: string,
 			options?: Parameters<typeof ensureFork>[3],
 		): Promise<ForkEnsureResult>
-		remove(base: PluginNodeAddress, forkId: string): Promise<ForkRemoveResult>
+		remove(
+			base: PluginNodeAddress,
+			forkId: string,
+			options?: HostConfigMutationOptions,
+		): Promise<ForkRemoveResult>
 	}
 	/** Idempotently publishes the initial catalog and reconciles startup policy. */
 	start(): Promise<PluginApplyReport>
@@ -148,6 +165,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 		'config',
 		'state',
 		'configRecords',
+		'configSync',
 		'vaultBindings',
 	])
 	for (const key of Object.keys(options))
@@ -179,6 +197,8 @@ export async function createHost<const TServices extends readonly HostService[] 
 
 	assertHostStoreStorage(options.state ?? {})
 	assertHostStoreStorage(options.configRecords ?? {})
+	const configSync =
+		options.configSync !== undefined ? snapshotConfigSyncOptions(options.configSync) : undefined
 	const initialState = resolveHostStateInitial(options.state?.initial)
 	const initialConfig = coercePluginConfigRecords(options.configRecords?.initial ?? [])
 	const fixed = [...options.plugins]
@@ -198,13 +218,14 @@ export async function createHost<const TServices extends readonly HostService[] 
 	})
 	const ctx = shape.createRoot(options.config?.name)
 	try {
-		const configStorage = resolveHostStoreStorage(options.configRecords ?? {}, ctx)
-		const stateStorage = resolveHostStoreStorage(options.state ?? {}, ctx)
+		const configStorage = resolveHostStoreStorage(options.configRecords ?? {}, ctx, 'config')
+		const stateStorage = resolveHostStoreStorage(options.state ?? {}, ctx, 'state')
 		configStoreOptions = {
 			...configStorage,
 			initial: initialConfig,
 			overlays: options.configRecords?.overlays,
 			baseSources: options.configRecords?.baseSources,
+			sync: configSync,
 		}
 		const state = new HostStateStore(ctx, { ...stateStorage, initial: initialState })
 		hostStateStores.set(ctx, state)
@@ -215,11 +236,24 @@ export async function createHost<const TServices extends readonly HostService[] 
 			{ phase: 'shutdown' },
 		)
 		await Promise.all([state.ready, requireConfigService(ctx).ready])
+		await prepareCoreContext(ctx)
 		installPluginHostCoordinator(ctx, { state })
 		await prepareHostServices(ctx, services, fixed)
 		if (options.vaultBindings?.length)
 			await ctx.require(HostVaultBindings).install(options.vaultBindings)
-		return createPreparedHost(options, fixed, ctx) as PluginHost<TServices>
+		const sync = configSync
+			? new HostConfigSyncConnection(
+					ctx,
+					requireConfigService(ctx) as HostConfigStore,
+					configSync,
+					() => {
+						const current = requirePluginHostCoordinator(ctx).catalogSnapshot()
+						return current.revision === 0 ? catalog(0, fixed, ctx) : current
+					},
+				)
+			: undefined
+		await sync?.prepare()
+		return createPreparedHost(options, fixed, ctx, sync) as PluginHost<TServices>
 	} catch (error) {
 		const failures: unknown[] = [error]
 		try {
@@ -243,6 +277,7 @@ function createPreparedHost(
 	options: HostOptions,
 	fixed: readonly PluginConstructor[],
 	ctx: RootContext,
+	sync?: HostConfigSyncConnection,
 ): PluginHost {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	let start: Promise<PluginApplyReport> | undefined
@@ -294,6 +329,7 @@ function createPreparedHost(
 
 	return Object.freeze({
 		ctx,
+		...(sync ? { configSync: sync } : {}),
 		start: startHost,
 		async status() {
 			await startHost()
@@ -338,13 +374,14 @@ function createPreparedHost(
 				assertOpen()
 				return ensureFork(ctx, base, forkId, forkOptions)
 			},
-			async remove(base: PluginNodeAddress, forkId: string) {
+			async remove(base: PluginNodeAddress, forkId: string, mutation?: HostConfigMutationOptions) {
 				await startHost()
 				assertOpen()
-				return removeFork(ctx, base, forkId)
+				return removeFork(ctx, base, forkId, mutation)
 			},
 		}),
 		config: Object.freeze({
+			status: () => readHostConfigState(ctx),
 			async get(owner: PluginNodeAddress) {
 				await startHost()
 				assertOpen()
@@ -355,15 +392,23 @@ function createPreparedHost(
 				assertOpen()
 				return pluginConfigValidate(ctx, owner, patch)
 			},
-			async patch(owner: PluginNodeAddress, patch: Record<string, unknown>) {
+			async patch(
+				owner: PluginNodeAddress,
+				patch: Record<string, unknown>,
+				mutation?: HostConfigMutationOptions,
+			) {
 				await startHost()
 				assertOpen()
-				return pluginConfigPatch(ctx, owner, patch)
+				return pluginConfigPatch(ctx, owner, patch, mutation)
 			},
-			async reset(owner: PluginNodeAddress, keys?: readonly string[]) {
+			async reset(
+				owner: PluginNodeAddress,
+				keys?: readonly string[],
+				mutation?: HostConfigMutationOptions,
+			) {
 				await startHost()
 				assertOpen()
-				return pluginConfigReset(ctx, owner, keys)
+				return pluginConfigReset(ctx, owner, keys, mutation)
 			},
 		}),
 		catalog: () => coordinator.catalogSnapshot(),
@@ -390,6 +435,11 @@ function createPreparedHost(
 			return (closing ??= (async () => {
 				const rootDrain = closeOwnerInvocations(ctx)
 				const failures: unknown[] = []
+				try {
+					await sync?.close()
+				} catch (error) {
+					failures.push(error)
+				}
 				try {
 					await start
 				} catch {

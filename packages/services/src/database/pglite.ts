@@ -1,12 +1,12 @@
+import type { PGlite, PGliteOptions } from '@electric-sql/pglite'
 import type { DatabaseBackend } from './service'
-export type PgliteOptions = Readonly<{ dataDir: string }>
-/** Select only the PGlite backend. Loading and connection creation happen on first use. */
-export function pglite(options: PgliteOptions): DatabaseBackend {
-	if (!options || typeof options.dataDir !== 'string' || !options.dataDir.trim())
-		throw new TypeError('[pluxel/database] pglite requires dataDir')
-	const snapshot = Object.freeze({ ...options })
+
+/** Native PGlite configuration creates a Host-owned client on first use; an existing client is borrowed. */
+export function pglite(options: PGliteOptions | PGlite = {}): DatabaseBackend {
+	if (!options || typeof options !== 'object' || Array.isArray(options))
+		throw new TypeError('[pluxel/database] pglite requires PGliteOptions or PGlite')
 	return async () => {
 		const { createPgliteDatabaseAdapter } = await import('#pluxel/database-driver/pglite')
-		return createPgliteDatabaseAdapter(snapshot)
+		return createPgliteDatabaseAdapter(options)
 	}
 }

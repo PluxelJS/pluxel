@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import type { PluginNodeAddress } from '@pluxel/core'
-import type { FieldNode } from 'valibot-form'
+import { type PluginNodeAddress } from '@pluxel/core'
+import { type FieldNode } from 'valibot-form'
 
 import { useRuntimeManagementClient, type RuntimeManagementClient } from '../../../runtime'
 import { managementQueryKeys, refetchManagementQuery } from '../../managementQuery'
 import { adaptConfigPresentationFields, applyConfigSources } from './presentationAdapter'
-import type { HostConfigSource } from '@pluxel/host'
+import { type HostConfigSource, type HostConfigState } from '@pluxel/host'
 
-export type PluginConfigData = {
+export type PluginConfigData = HostConfigState & {
 	fieldName: string
 	fields: readonly FieldNode[]
 	defaults: Record<string, unknown>
@@ -30,7 +30,10 @@ export type PluginConfigState = {
 	refetch: () => Promise<void>
 }
 
-type PluginConfigPresentation = Omit<PluginConfigData, 'savedConfig' | 'sources'>
+type PluginConfigPresentation = Omit<
+	PluginConfigData,
+	'savedConfig' | 'sources' | keyof HostConfigState
+>
 
 async function readPresentation(
 	client: RuntimeManagementClient,
@@ -60,28 +63,39 @@ async function readPresentation(
 async function readSavedConfig(
 	client: RuntimeManagementClient,
 	owner: PluginNodeAddress,
-): Promise<{ config: Record<string, unknown>; sources: readonly HostConfigSource[] }> {
+): Promise<
+	HostConfigState & { config: Record<string, unknown>; sources: readonly HostConfigSource[] }
+> {
 	const result = await client.config.get(owner)
 	if (result.ok === false) {
 		// A Plugin without a config declaration has no persisted config to read. The
 		// presentation query reports that as an empty form, so keep both reads in
 		// agreement instead of turning the Config tab into a load failure.
-		if (result.code === 'config_not_found') return { config: {}, sources: [] }
+		if (result.code === 'config_not_found')
+			return { config: {}, sources: [], version: null, readonly: true }
 		throw new Error(result.message ?? result.code ?? '配置加载失败')
 	}
-	return { config: result.config ?? {}, sources: result.sources ?? [] }
+	return {
+		config: result.config,
+		sources: result.sources,
+		version: result.version,
+		readonly: result.readonly,
+	}
 }
 
 export function commitPluginConfig(
 	queryClient: QueryClient,
 	owner: PluginNodeAddress,
 	savedConfig: Record<string, unknown>,
-	sources: readonly HostConfigSource[] = [],
+	sources: readonly HostConfigSource[],
+	state: HostConfigState,
 ): void {
 	queryClient.setQueryData(managementQueryKeys.pluginSavedConfig(owner), {
 		config: savedConfig,
 		sources,
+		...state,
 	})
+	queryClient.setQueryData(managementQueryKeys.configState(), state)
 }
 
 export async function refreshPluginConfig(
@@ -116,6 +130,8 @@ export function usePluginConfig(owner: PluginNodeAddress | undefined): PluginCon
 					...presentation.data,
 					savedConfig: saved.data.config,
 					sources: saved.data.sources,
+					version: saved.data.version,
+					readonly: saved.data.readonly,
 					fields: applyConfigSources(presentation.data.fields, saved.data.sources),
 					sections: presentation.data.sections.map((section) => ({
 						...section,

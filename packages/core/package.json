@@ -27,10 +27,25 @@
 			"import": "./dist/better-result.mjs",
 			"require": "./dist/better-result.cjs"
 		},
+		"./config": {
+			"@pluxel/source": "./src/config.ts",
+			"import": "./dist/config.mjs",
+			"require": "./dist/config.cjs"
+		},
 		"./federation": {
 			"@pluxel/source": "./src/federation.ts",
 			"import": "./dist/federation.mjs",
 			"require": "./dist/federation.cjs"
+		},
+		"./fs": {
+			"@pluxel/source": "./src/fs.ts",
+			"import": "./dist/fs.mjs",
+			"require": "./dist/fs.cjs"
+		},
+		"./fs/browser": {
+			"@pluxel/source": "./src/fs/browser.ts",
+			"import": "./dist/fs/browser.mjs",
+			"require": "./dist/fs/browser.cjs"
 		},
 		"./host": {
 			"@pluxel/source": "./src/host.ts",
@@ -51,6 +66,26 @@
 			"@pluxel/source": "./src/logger/index.ts",
 			"import": "./dist/logger.mjs",
 			"require": "./dist/logger.cjs"
+		},
+		"./logging": {
+			"@pluxel/source": "./src/logging.ts",
+			"import": "./dist/logging.mjs",
+			"require": "./dist/logging.cjs"
+		},
+		"./logging/internal": {
+			"@pluxel/source": "./src/logging/internal.ts",
+			"import": "./dist/logging/internal.mjs",
+			"require": "./dist/logging/internal.cjs"
+		},
+		"./logging/pretty": {
+			"@pluxel/source": "./src/logging/pretty.ts",
+			"import": "./dist/logging/pretty.mjs",
+			"require": "./dist/logging/pretty.cjs"
+		},
+		"./logging/protocol": {
+			"@pluxel/source": "./src/logging/protocol.ts",
+			"import": "./dist/logging/protocol.mjs",
+			"require": "./dist/logging/protocol.cjs"
 		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
@@ -74,9 +109,21 @@
 				"import": "./dist/better-result.mjs",
 				"require": "./dist/better-result.cjs"
 			},
+			"./config": {
+				"import": "./dist/config.mjs",
+				"require": "./dist/config.cjs"
+			},
 			"./federation": {
 				"import": "./dist/federation.mjs",
 				"require": "./dist/federation.cjs"
+			},
+			"./fs": {
+				"import": "./dist/fs.mjs",
+				"require": "./dist/fs.cjs"
+			},
+			"./fs/browser": {
+				"import": "./dist/fs/browser.mjs",
+				"require": "./dist/fs/browser.cjs"
 			},
 			"./host": {
 				"import": "./dist/host.mjs",
@@ -93,6 +140,22 @@
 			"./logger": {
 				"import": "./dist/logger.mjs",
 				"require": "./dist/logger.cjs"
+			},
+			"./logging": {
+				"import": "./dist/logging.mjs",
+				"require": "./dist/logging.cjs"
+			},
+			"./logging/internal": {
+				"import": "./dist/logging/internal.mjs",
+				"require": "./dist/logging/internal.cjs"
+			},
+			"./logging/pretty": {
+				"import": "./dist/logging/pretty.mjs",
+				"require": "./dist/logging/pretty.cjs"
+			},
+			"./logging/protocol": {
+				"import": "./dist/logging/protocol.mjs",
+				"require": "./dist/logging/protocol.cjs"
 			},
 			"./services": {
 				"import": "./dist/services.mjs",
@@ -114,29 +177,64 @@
 		"bench:dist": "vp run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
 		"bench:caller-view": "vp run build && node --experimental-strip-types bench/pluginCallerView.bench.ts",
 		"bench:fork-cost": "vp run build && node --expose-gc --experimental-strip-types bench/pluginForkCost.bench.ts",
-		"bench:di": "vp pack bench/vendor/diod/src/index.ts --no-config --no-dts --format esm --out-dir bench/vendor/diod/dist --minify && vp pack src/internal/di/index.ts --no-config --no-dts --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
+		"bench:di": "vp pack bench/vendor/diod/src/index.ts --no-config --no-dts --format esm --out-dir bench/vendor/diod/dist --minify && vp pack src/internal/di/index.ts --no-config --no-dts --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts",
+		"test:zenfs-browser": "vp run check-zenfs-browser",
+		"bench:logger": "vp test bench bench/logger.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "catalog:prod",
+		"@logtape/pretty": "catalog:prod",
 		"@standard-schema/spec": "catalog:prod",
+		"@types/node": "catalog:types",
 		"better-result": "catalog:prod",
-		"std-env": "catalog:prod"
+		"pathe": "catalog:node",
+		"std-env": "catalog:prod",
+		"tinybase": "catalog:prod"
 	},
 	"devDependencies": {
+		"@logtape/file": "catalog:prod",
+		"@logtape/otel": "catalog:dev",
+		"@noble/hashes": "catalog:prod",
+		"@opentelemetry/exporter-logs-otlp-http": "catalog:prod",
+		"@opentelemetry/exporter-logs-otlp-proto": "catalog:prod",
+		"@opentelemetry/resources": "catalog:prod",
+		"@opentelemetry/sdk-logs": "catalog:prod",
 		"@pluxel/context": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/node": "catalog:types",
+		"@zenfs/core": "catalog:prod",
+		"@zenfs/dom": "catalog:prod",
+		"buffer": "catalog:prod",
 		"eventure": "workspace:*",
+		"kerium": "catalog:prod",
 		"option-t": "catalog:validation",
+		"playwright-core": "catalog:prod",
 		"rolldown": "catalog:build",
 		"tinybench": "catalog:dev",
+		"tsx": "catalog:dev",
+		"valibot": "catalog:validation",
+		"vite": "catalog:build",
 		"vite-plus": "catalog:build"
 	},
 	"engines": {
 		"node": ">=24"
 	},
 	"inlinedDependencies": {
-		"option-t": "56.1.2"
+		"@noble/hashes": "2.4.0",
+		"@zenfs/core": "2.8.3",
+		"@zenfs/dom": "1.2.14",
+		"@zenfs/streams": "1.0.2",
+		"base64-js": "1.5.1",
+		"buffer": "6.0.3",
+		"eventemitter3": "5.0.4",
+		"ieee754": "1.2.1",
+		"kerium": "1.5.0",
+		"memium": "1.1.1",
+		"option-t": "56.1.2",
+		"utilium": "3.10.0"
+	},
+	"pluxel": {
+		"tinybase": "10.0.1"
 	}
 }

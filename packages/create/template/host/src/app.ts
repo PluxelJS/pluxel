@@ -2,8 +2,8 @@ import * as nativeFs from 'node:fs'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
-import { Passthrough } from '@pluxel/services/fs'
-import { TinyBaseHost } from '@pluxel/services/tinybase'
+import { Passthrough } from '@pluxel/core/fs'
+import { logtape, zenfs } from '@pluxel/core/config'
 
 import { pluginSource } from '@pluxel/host/sources'
 import { resolve } from 'node:path'
@@ -16,8 +16,17 @@ export default defineHostApplication(async (startup) => {
 	const environment = resolveHostEnv(startup.env)
 	const dataRoot = resolve(startup.deployment?.root ?? startup.root, environment.dataRoot)
 	const { env } = startup
+	const prefix = resolve(dataRoot, 'fs')
+	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'pluxel-example',
+		config: {
+			logger: logtape(),
+			storage: zenfs({
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			}),
+		},
 		plugins: examplePlugins,
 		sources: [
 			pluginSource({
@@ -27,17 +36,14 @@ export default defineHostApplication(async (startup) => {
 			}),
 		],
 		services: await servicesPreset(startup, {
-			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(dataRoot, 'fs') },
 			product,
 			workbench: environment.workbench ?? true,
 		}),
 		configRecords: {
 			...exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
-			storage: (root) => root.require(TinyBaseHost).documents('config'),
 		},
 		state: {
 			...exampleHostState(),
-			storage: (root) => root.require(TinyBaseHost).documents('state'),
 		},
 	}
 })

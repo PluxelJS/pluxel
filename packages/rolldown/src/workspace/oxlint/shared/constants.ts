@@ -20,5 +20,6 @@ export const ALLOWED_TOP_LEVEL_CLASS_WRAPPERS = new Set([
 
 export const ALLOWED_GET_LOGGER_PATHS = [
 	'/packages/core/src/logger/',
-	'/packages/services/src/logging/',
+	'/packages/core/src/logging/',
+	'/packages/core/tests/logging/',
 ]

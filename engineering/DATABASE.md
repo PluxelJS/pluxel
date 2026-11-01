@@ -16,7 +16,7 @@ owner、完成 migration prepare，并返回只暴露 `read(callback)` 与 `tran
 以上边界只约束 Pluxel-managed plugin database。同一作者控制 fixed catalog、schema 与部署的应用 可以完全绕过
 该 capability，用 application-private package 统一拥有 Drizzle client、pool 与 migration。数据库是整个应用的硬前提时，它是
 host-owned root resource：应用 `prepare()` 在 Plugin graph 前打开并迁移，实例按 root Context 绑定，关闭登记到 root effects；
-Plugin 通过接收 Context 的 typed accessor 显式取得实例。它不读取 host config、不从 FsService 反推原生磁盘路径，也不投影为
+Plugin 通过接收 Context 的 typed accessor 显式取得实例。它不读取 host config、不从 Core FS 反推原生磁盘路径，也不投影为
 Runtime Context property。只有部分 Plugin 依赖时才改成 constructor-injected provider Plugin，让 graph 隔离失败和拥有 cleanup。
 runtime 不为 application-private database 提供 per-plugin role/instance、lineage、outbox 或 owner-scoped invalidation。
 
@@ -29,6 +29,8 @@ transaction 中确认 instance 仍 active，再设置 instance role、`search_pa
 ## Backend ownership
 
 `database({ backend })` 要求应用提供 backend factory：本机开发/测试选择 `/database/pglite`，部署选择 `/database/postgres`。两个 factory 彼此不引用，通用入口不加载 driver。未安装 descriptor 时，`ctx.require(Database)` 报标准 capability 缺失错误。
+
+内置 factory 直接使用 `pg.PoolConfig | Pool`、`PGliteOptions | PGlite`，不重命名或枚举 driver 配置。配置创建的资源归 Host；传入实例仅借用，关闭 adapter 时移除自身 PostgreSQL error listener，不关闭借用实例或其他 listener。应用必须保持借用资源可用，直到所有 Host 排空；不能在存活期间改变 pool 的并发上限。scheduler 的 PostgreSQL 并发取实际 `pool.options.max`，PGlite 固定为 1。需要自定义 Drizzle client 时，公开 `DatabaseBackend` / `DatabaseAdapter` 保留同一 migration、owner 与 drain 路径；backend factory 负责它返回的 adapter 及其 `close()` 资源语义。原生参数用法集中在 [Host 配置](../docs/host/configuration.md#选择-native-postgresql-或-pglite)。
 
 没有 Plugin 调用 `use()` 时不初始化 driver、migration 或 outbox。PGlite 使用单个 root-scoped instance，测试可用 `memory://`；持久目录只支持正常关闭后的便利重启，不是部署存储 contract。PostgreSQL 使用共享、有界 pool。
 

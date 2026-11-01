@@ -3,7 +3,7 @@ title: 浏览器连接
 description: 连接外部浏览器，在独立会话中执行自动化。
 ---
 
-`@pluxel/plugin-playwright` 提供外部 CDP / Playwright 协议连接和原生 Playwright `BrowserContext`。财政票据、税务发票的图片提取和查验统一由 [`@pluxel/plugin-invoice`](./invoice.md) 提供。
+`@pluxel/plugin-playwright` 的抽象 `Playwright` 提供原生 `BrowserContext`；默认 `PlaywrightPlugin` 连接外部 CDP / Playwright 服务。财政票据、税务发票的图片提取和查验统一由 [`@pluxel/plugin-invoice`](./invoice.md) 提供。
 
 浏览器由部署者独立运行。插件依赖 `playwright-core`，不下载、安装或启动 Chromium、Chrome、Lightpanda，也不管理它们的进程。连接地址必须来自可信的部署配置。
 
@@ -33,7 +33,7 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-`BROWSER_PROTOCOL=playwright` 连接原生服务，省略时采用 CDP。原生服务地址必须是 `ws://` 或 `wss://`。这是生产应用声明；宿主启动与源码装配见 [Host 配置](../host/configuration.md)。无凭据模式不需要 Vault、Workbench、数据库或 FS。
+`BROWSER_PROTOCOL=playwright` 连接原生服务，省略时采用 CDP。原生服务地址必须是 `ws://` 或 `wss://`。这是生产应用声明；宿主启动与源码装配见 [Host 配置](../host/configuration.md)。无凭据模式不需要 Vault、Workbench 或数据库，也不读取文件存储。
 
 有凭据时改用下面的绑定；`BROWSER_CONNECTION_KEY=primary`，`BROWSER_ENDPOINT` 可以包含供应商提供的 token。环境变量由 Host 显式绑定，插件不自行读取进程环境。
 
@@ -70,15 +70,55 @@ Vault 记录形状为 `{ endpoint: string, headers?: Record<string, string> }`�
 
 连接在插件初始化时建立，默认连接超时为 30 秒。配置或 Vault 凭据修改后显式重启插件；断线后新调用明确失败，不自动重连或重放业务操作。
 
+## 使用原生连接参数
+
+需要 `exposeNetwork`、`slowMo` 或其他原生连接设置时，声明 `Playwright` provider 并实现 `connect(signal)`。参数使用上游的 [ConnectOptions](https://playwright.dev/docs/api/class-browsertype#browser-type-connect)，不经过可保存配置的参数副本；也可直接调用 `connectOverCDP` 并使用它的原生选项。
+
+```ts no-twoslash
+import { Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { defineHostApplication } from '@pluxel/host'
+import { Playwright } from '@pluxel/plugin-playwright'
+import { chromium, type Browser, type ConnectOptions } from 'playwright-core'
+
+const options: ConnectOptions = {
+	exposeNetwork: '<loopback>',
+	headers: { 'x-application': 'page-title' },
+	slowMo: 0,
+	timeout: 15_000,
+}
+
+@Plugin(Playwright)
+export class NativeBrowser extends Playwright {
+	protected override async connect(signal: AbortSignal): Promise<Browser> {
+		signal.throwIfAborted()
+		try {
+			return await chromium.connect('wss://browser.example/playwright', options)
+		} catch {
+			throw new Error('Native browser connection failed; check deployment settings')
+		}
+	}
+}
+
+export default defineHostApplication(() => ({
+	plugins: [NativeBrowser],
+	services: [],
+	state: { initial: { autoStart: [pluginNodeAddressOf(NativeBrowser)] } },
+}))
+```
+
+应用注册一个 `Playwright` provider。使用此代码 provider 时无需安装 `PlaywrightPlugin` 或提供占位 endpoint；Invoice 和其他消费插件统一依赖 `Playwright`。默认 provider 的 `PlaywrightConfig` 与 Vault 绑定保持原有校验。
+
+`connect` 返回的原生 `Browser` 归本次 generation：基类负责停止、初始化回滚及中止后晚到结果的关闭，并继续管理 caller context。不要返回应用借用的共享连接，也不要重复基类的生命周期代码。自定义 hook 在拒绝前释放尚未交付的部分资源，连接错误自行脱敏；上例因此不保留可能包含凭据的原始错误。原生连接没有通用 AbortSignal 参数，基类会在获取完成后再次检查 generation 是否已中止。
+
 ## 在其他插件中使用原生会话
 
 ```ts no-twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
+import { Playwright } from '@pluxel/plugin-playwright'
 
 @Plugin()
 export class PageTitlePlugin extends BasePlugin {
-	constructor(private readonly browser: PlaywrightPlugin) {
+	constructor(private readonly browser: Playwright) {
 		super()
 	}
 
@@ -112,3 +152,5 @@ vp run @pluxel/plugin-playwright#test:external
 该命令通过 Vault 绑定地址，连续创建并关闭两个真实 Host generation，在独立页面中读取合成 HTML，检查第一次停止后仍可重新连接。它不访问财政网站、不提交票据、不启动浏览器，也不会被普通 `test` 命令执行。它能证明两次连接可用，不能证明供应商没有自动重建浏览器进程或全部 Web API 兼容。
 
 2026-10-14 已使用外部 Playwright 1.64 服务与 Chromium 完成上述两代 Host 检查。真实票据测试证据由 [Invoice 插件](./invoice.md) 维护。
+
+需要验证自定义 provider 的真实原生连接时，先在本机提供兼容的 Chromium，再运行 `vp run @pluxel/plugin-playwright#test:native`。可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指定已有 executable；测试不下载浏览器。它启动并最终关闭一个隔离的 Playwright server，连续连接两个 generation，验证完整 `ConnectOptions`、caller context 释放以及 provider 停止后服务进程仍存活。

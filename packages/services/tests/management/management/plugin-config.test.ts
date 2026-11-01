@@ -1,10 +1,11 @@
-import { standardServices } from '@pluxel/services'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import {
+	requireFs,
 	notifyRunningPluginConfigUpdate,
 	requireConfigService,
 	requirePluginService,
 } from '@pluxel/core/internal'
+import { standardServices } from '@pluxel/services'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -18,7 +19,6 @@ import {
 	pluginConfigPatchField,
 } from '../../../src/management/api/usecases/pluginConfig.ts'
 import { removeFork } from '@pluxel/host/internal'
-import { Fs, InMemory } from '@pluxel/services/fs'
 
 const ConfigSchema = v.object({
 	value: v.optional(v.string(), 'initial'),
@@ -722,10 +722,10 @@ describe('ConfigService persistence', () => {
 	it('reports a stable unknown persistence state without attempting application', async () => {
 		let rejectConfigWrite = false
 		const host = await runtimeHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 			configRecords: {
 				storage(root) {
-					const documents = root.require(Fs).documents('host/config')
+					const documents = requireFs(root).documents('host/config')
 					return {
 						...documents,
 						async put(key, value) {

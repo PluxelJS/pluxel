@@ -1,5 +1,4 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { TinyBase } from '@pluxel/services/tinybase'
 import { BotWorkspacePlugin } from './BotWorkspacePlugin'
 import { BotStore, simulatedBots } from './BotStore'
 
@@ -9,7 +8,7 @@ export class TelegramBotPlugin extends BasePlugin {
 		super()
 	}
 	override async init(): Promise<() => void> {
-		const store = await this.ctx.require(TinyBase).open()
+		const store = await this.ctx.tinybase.open()
 		return this.workspace.registerSource({
 			id: 'telegram',
 			label: 'Telegram',
@@ -25,7 +24,7 @@ export class DiscordBotPlugin extends BasePlugin {
 		super()
 	}
 	override async init(): Promise<() => void> {
-		const store = await this.ctx.require(TinyBase).open()
+		const store = await this.ctx.tinybase.open()
 		return this.workspace.registerSource({
 			id: 'discord',
 			label: 'Discord',
@@ -41,7 +40,7 @@ export class WeComBotPlugin extends BasePlugin {
 		super()
 	}
 	override async init(): Promise<() => void> {
-		const store = await this.ctx.require(TinyBase).open()
+		const store = await this.ctx.tinybase.open()
 		return this.workspace.registerSource({
 			id: 'wecom',
 			label: '企业微信',

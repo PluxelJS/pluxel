@@ -28,10 +28,19 @@ export {
 export {
 	ConfigMutationRejectedError,
 	type HostPluginConfig,
+	type HostConfigState,
 	type HostPluginConfigResult,
 	type HostPluginConfigResultOk,
 	type HostPluginConfigResultErr,
 } from './config'
+export type {
+	HostConfigArtifact,
+	HostConfigVersion,
+	HostConfigMutationOptions,
+	HostConfigSyncOptions,
+	HostConfigSyncStatus,
+	HostConfigSync,
+} from './config-sync-protocol'
 export type { HostDocumentStorage, HostStoreStorageOptions } from './document-storage'
 export type {
 	HostConfigStoreOptions,

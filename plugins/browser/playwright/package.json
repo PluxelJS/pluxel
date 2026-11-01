@@ -32,6 +32,7 @@
 		"build": "vp run compile",
 		"test": "vp run check-tests",
 		"test:external": "vp test run --config vitest.external.config.ts",
+		"test:native": "vp test run --config vitest.native.config.ts",
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {

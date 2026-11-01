@@ -1,6 +1,6 @@
 import type { Context } from '@pluxel/core'
-import { formatUiLogRecordsForLlm, type LlmLogFormatOptions } from '../../../logging/internal'
-import type { LogFilter } from '../../../logging/protocol'
+import { formatUiLogRecordsForLlm, type LlmLogFormatOptions } from '@pluxel/core/logging/internal'
+import type { LogFilter } from '@pluxel/core/logging/protocol'
 
 import { type LogsLatestOutput, type LogsWaitInput, logsLatest, logsWaitFor } from './logs'
 

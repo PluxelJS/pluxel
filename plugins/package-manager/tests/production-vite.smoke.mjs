@@ -255,8 +255,8 @@ try {
 					`${root}/app.mjs`,
 					"import {workbenchService} from '@pluxel/workbench/service'; import {workbenchHttp} from '@pluxel/workbench/http';\n" +
 						app.replace(
-							'services:standardServices({fs:{backend:InMemory}})',
-							"services:[...standardServices({fs:{backend:InMemory}}),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]",
+							'services:standardServices()',
+							"services:[...standardServices(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]",
 						),
 				)
 				const controller = new AbortController()

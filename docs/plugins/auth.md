@@ -18,21 +18,28 @@ vp exec pluxel pncat add @pluxel/plugin-auth
 先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用入口合入现有清单：
 
 ```ts no-twoslash
+import { zenfs } from '@pluxel/core/config'
 import { AuthPlugin } from '@pluxel/plugin-auth'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
-import { Passthrough } from '@pluxel/services/fs'
+import { Passthrough } from '@pluxel/core/fs'
 import * as nativeFs from 'node:fs'
 import { resolve } from 'node:path'
 
 export default defineHostApplication(async (startup) => {
+	const prefix = resolve(startup.root, '.pluxel/fs')
+	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'my-app',
 		plugins: [AuthPlugin],
-		services: await servicesPreset(startup, {
-			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(startup.root, '.pluxel/fs') },
-		}),
+		config: {
+			storage: zenfs({
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			}),
+		},
+		services: await servicesPreset(startup, {}),
 		state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
 		configRecords: {
 			initial: [{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } }],

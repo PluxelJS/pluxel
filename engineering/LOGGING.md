@@ -1,13 +1,13 @@
 # 日志：身份、策略与有界读取
 
 本文记录 Pluxel 当前日志模型、性能约束和实现入口。插件作者用法见
-[`docs/plugin-development/review.md`](../docs/plugin-development/review.md)；本文面向维护者和宿主实现。
+[`docs/plugin-development/logging.md`](../docs/plugin-development/logging.md)；本文面向维护者和宿主实现。
 
-修改身份/归属读 [Category identity](#category-identity) 与 [ContextLogger](#contextlogger)；修改安装或输出读 [RuntimeLogging lifecycle](#runtimelogging-lifecycle) 与 [Routes and sinks](#routes-and-sinks)；修改在线级别读 [Dynamic plugin policy](#dynamic-plugin-policy)；修改读取/游标读 [Runtime store](#runtime-store)。
+修改身份/归属读 [Category identity](#category-identity) 与 [ContextLogger](#contextlogger)；修改安装或输出读 [RuntimeLogging lifecycle](#runtimelogging-lifecycle) 与 [Native LogTape configuration](#native-logtape-configuration)；修改在线级别读 [Dynamic plugin policy](#dynamic-plugin-policy)；修改读取/游标读 [Runtime store](#runtime-store)。
 
 ## 模型
 
-`RuntimeLogging` 拥有唯一 active rootId、LogTape installation、routes/sinks、plugin policy、debug matcher、持久化与 stores。`ContextLogger` 只固定 Context identity、properties 并委托 LogTape。
+`RuntimeLogging` 拥有唯一 active rootId、LogTape installation、原生 configuration、plugin policy、debug matcher、持久化与 stores。`ContextLogger` 只固定 Context identity、properties 并委托 LogTape。
 
 一个进程只能有一个 active logging root。第二次 install 或已有 foreign LogTape config 都失败；失败候选清理不能 reset 原 owner。旧 Context/错误 rootId 的 record 被 active-root filter 拒绝。Host 关闭负责 flush/dispose，无额外 scope registry、config merge 或引用计数。
 
@@ -51,60 +51,53 @@ category builders/parser 位于：
 - 一个 `ContextLogger` 只创建一次 category 和 LogTape logger view；
 - `getDebugChannel()` 不维护 per-plugin topic cache，调用者需要长期复用时自行保存返回值；
 - caller 不在 author facade 捕获，避免 rejected record 产生 stack 成本；
-- unmanaged core Context 使用 WeakMap-backed local rootId，但不会被 managed runtime root 接受。
+- 每个 root 使用 WeakMap 保存稳定 identity，配置日志前创建的 logger 在配置后仍沿用同一 identity；当前 manager 的 guard 拒绝其它或已退役 root 的记录。
 
 ## RuntimeLogging lifecycle
 
-Host 使用 `@pluxel/services/logging` 的 `logging(plan, { policyStore })` descriptor。声明阶段不做 IO；Core 先创建 root，service capability 使用已有 root logger identity 创建 manager。Host prepare 顺序如下：
+应用在 `config.logger` 中使用 `@pluxel/core/config` 的 `logtape(nativeConfig, options)`。helper 只验证并捕获声明，不执行 IO；Core 用唯一 root identity 创建 manager。省略 logger 不安装 manager 或进程 LogTape 配置。
 
 ```text
-1. 安装 LogTape config，绑定已有 Context root
-2. 初始化持久化 plugin policy
-3. 后续服务准备完成，启动 plugin graph
-4. 关闭时先停止 plugin graph/effects
-5. 释放 root binding，flush policy 和 sinks，通过 LogTape reset 释放安装与其自有 process dispose hook
+1. 创建 root 与其固定 logger identity
+2. Core prepare 安装 LogTape config，绑定当前 root
+3. 初始化持久化 plugin policy
+4. Host 准备其余服务，再启动 plugin graph
+5. 关闭时先停止 plugin graph/effects
+6. Core flush stores/policy 与原生 drainable sinks，通过 LogTape reset 等待资源释放
+7. 关闭 TinyBase 与 FS
 ```
 
-Logging 的安装与关闭均归 Host service plan 所有。Core root 创建到 Logging prepare 之前的日志不承诺被此 sink 捕获。
+生产 Host 自动等待 Core 准备；直接通过 `@pluxel/core/host` 创建 root 的嵌入者，在启动 Plugin 前先 `await prepareCoreContext(root)`。日志安装、关闭和 policy 都归 Core，不再作为 Services descriptor 安装。Core root 创建到 prepare 完成之前的日志不承诺被此 sink 捕获。
 
-需要 silent logging 时显式安装无 sinks/routes 的 plan；省略 Logging 服务与安装 silent manager 是不同的资源选择。
+需要 silent manager 时显式配置 `logtape({ sinks: {}, loggers: [] })`；省略 `config.logger` 不安装该 manager，仍可调用 `ctx.logger`。
 
 `RuntimeLogging` 拒绝已有 foreign LogTape config，不静默复用或重置其他 owner 的配置。
 
-## Routes and sinks
+## Native LogTape configuration
 
-Logging plan 显式声明 root policy、physical sinks 与 runtime/plugins/debug/meta 四个 family routes；完整配置 shape 以[Host 日志配置](../docs/host/configuration.md#host-logging-plan)为准。
+`logtape(nativeConfig, options)` 直接接受固定版本 LogTape 的 `Config<string, string>`。`sinks`、`filters`、`loggers`、`contextLocalStorage` 以及 logger 的 `parentSinks`、`captureSourceLocation` 等字段按上游语义处理；sink/filter/formatter/context storage 保留原对象，不再经过 sink kind、family routes 或逐字段复制的配置语言。完整用法见 [Host 日志配置](../docs/host/configuration.md#host-logging)。
 
-内建 sink：
+Pluxel 的独立设置只位于 `LoggingOptions`：profile、初始 Plugin policy、debug topics、policy load failure 与可选借用的 policy store。同步 config factory 额外获得 `rootId` 和 `createRuntimeLogSink()`，其唯一职责是把有界 Workbench sink 绑定当前 manager 的 registry/flush 生命周期；factory 在 prepare 中求值一次，返回值仍是完整原生 Config。helper 不能在 factory 返回后继续创建 sink。
 
-- console：pretty/text/json；
-- file：daily rotating text/jsonl；
-- store：bounded in-memory runtime log stream；
-- logtape：host 提供的 raw `Sink`。
+`logtape()` 的可选默认预设提供易读 console 与有界 store，默认 profile 为 `pluxel`。应用在 `config.logger` 中选择它；`servicesPreset()` 只返回服务清单，不安装日志。自定义配置完整替换默认输出。Node file、JSON、OTel、redaction、stream 与异步组合均直接使用相应上游 sink/formatter。
 
-pretty console 对 trace/debug/info 保持单行；warning/error/fatal 会在下一行展开非保留 structured
-properties，因此插件启动失败的 `error`、`cause` 和 lifecycle diagnostics 会直接包含在终端输出中。`context`、
-plugin identity 和 caller 等宿主保留字段仍由 category/专用 caller 展示负责，不重复打印。
+### Identity guard and native inheritance
 
-等级属于 route，不属于 physical sink。同一 console 可以对 runtime 使用 `info`、对 plugins 使用 `trace`。
+框架只添加一个原生 filter。没有显式根 logger 时添加仅含此 filter 的根配置；已有根 logger 保留其字段并把 guard 放在 filters 首位。对于有非空 `filters` 的其他 logger，也只在原列表前补 guard。其他 logger 保持 `filters` 的省略/空数组状态，因此原生“最近非空祖先 filter”的继承与替换语义不变。guard id 避开用户已提供的 filter 名，不覆盖输入。
 
-固定处理顺序：
+此 guard 只对 `pluxel/runtime`、`pluxel/plugins`、`pluxel/debug` 管理类别检查身份、动态 policy 与 topic。普通应用类别与其他库类别原样通过。用户 filter 在 guard 之后执行；native logger 级别、sink 继承、`parentSinks: 'forward'` 以及可选 source location capture 仍由 LogTape 实现，不编译成另一套路由器。
 
-```text
-LogTape family lowestLevel
-  -> active root/plugin/debug filter
-  -> route minLevel
-  -> optional caller enrichment
-  -> sink formatting/serialization
-  -> physical output
-```
+Core 不主动捕获 caller。默认 store 的 caller 丰富化在 guard 与原生 filter 之后进行；用户显式选择 `captureSourceLocation` 时，上游会在其自身调用阶段取 stack，这项成本不承诺由 Plugin policy 提前消除。昂贵属性使用原生 `lazy()`；properties factory 按上游语义可能早于 filter 求值。
 
-physical sink 每个 id 只创建一次；family route wrapper 不拥有第二份资源。structural config 安装后不可热修改。
+### Resource ownership
 
-远程输出直接组合原生 LogTape sink 与 OTel SDK，官方装配见[远程输出](../docs/host/configuration.md#远程输出原生-logtape-sink)。不复制 exporter 参数或新增 pull 归档协议；OTel 依赖由选择该输出的应用安装。传入 sink 的 disposal 由 LogTape reset 调用，`RuntimeLogging.flush()` 只刷新 store/policy；原生 provider 的 `forceFlush()` 承担远程批次刷新。集成回归 `packages/services/tests/logging/otlp.test.ts` 覆盖 HTTP JSON/protobuf、插件关闭日志与 prepare rollback。
+安装仍拒绝 active RuntimeLogging 或 foreign LogTape owner。原生 `reset: true` 在当前 Host owner 模型下明确拒绝，不能借它接管另一个安装；无字段被静默删除或改成成功。传入原生配置的其他字段以对象展开保留，引用与重复 category 等错误由 LogTape 的原生 `ConfigError` 报告。
 
-`servicesPreset` 默认加入有界 store sink，Management 与控制台在关闭 Workbench 时仍可查询日志。自行组合 Host 时由显式 logging plan 选择是否存储。`RuntimeLogStoreRegistry` 自身也是惰性创建；没有 store
-route、日志 API 访问或显式 `logging.stores` 访问时不分配 registry/map。
+`RuntimeLogging.flush()` 刷新 bounded store/policy，并调用原生 `drain()`；只有实现 Drainable 的 sink 会参与 drain。dispose 先等待进行中的 install，包括同步 config factory 内重入关闭，再执行 flush/reset；flush/drain 失败后仍继续 reset，等待所有同步/异步 sink/filter 释放，合并失败后交给 Host。关闭期间持续持有 owner，并拒绝重新安装。只有当前全局配置仍是自身安装对象时才能 reset；外部替换会导致关闭报错并保留 foreign configuration。并发 dispose 共用同一 Promise。
+
+远程输出直接组合原生 LogTape sink 与 OTel SDK，官方装配见 [远程输出](../docs/host/configuration.md#远程输出原生-logtape-sink)。OTel sink 没有原生 drain，运行中立即发送批次仍使用 provider 的 `forceFlush()`；Host close 通过其 async disposal 等待 provider shutdown。`tests/logging/otlp.test.ts` 覆盖 HTTP JSON/protobuf、插件关闭日志与 prepare rollback。
+
+默认 preset 的 console 按 `info` 过滤，store 保留 `trace`，因而 Workbench 可独立调整 Plugin policy。未选择 store 的直接原生配置不会分配 registry；`RuntimeLogStoreRegistry` 仍惰性创建，显式访问 stores 也会创建它。
 
 ## Dynamic plugin policy
 
@@ -117,8 +110,8 @@ category 第一次进入 filter 时严格解析 route segments；同一个 immut
 对 frozen address 的 rank lookup 同样弱缓存。任何 policy mutation 都替换 rank cache，因此稳定流不重复 decode/hex encoding，缓存也
 不会保活 logger、Plugin 或 category。
 
-route threshold 是宿主硬下限，plugin policy 是动态下限。要让 Workbench 能完整调整
-`trace/debug/info/...`，plugins route 必须配置为 `trace`；`servicesPreset` 默认使用这一设置。
+原生 logger/filter threshold 是宿主静态下限，plugin policy 是动态下限。要让 Workbench 能完整调整
+`trace/debug/info/...`，接收 Plugin 日志的 logger/store 保持 `trace`；`logtape()` 的默认预设使用这一设置。
 
 mutation 规则：
 
@@ -130,7 +123,7 @@ mutation 规则：
 - 最多 100,000 个 overrides；每个 owner address 都经过严格 schema validation 和 canonical key 编码；
 - `off` 使用专用 numeric rank，不在热路径使用 nullable/string comparison。
 
-`logging(plan, { policyStore })` 接收同步 `(root: RootContext) => PluginLogPolicyStore` factory，在 Logging prepare 中解析一次；未提供时保持内存模式，不依赖 FS。官方 preset 返回 `createPluginLogPolicyStore(root.require(TinyBaseHost).documents('logging'))`，并声明 TinyBase 准备依赖；借用文档存储，不关闭后端，也没有 module-level singleton。confirmed read view、失败阻断与 final 排空由 [TinyBase](TINYBASE.md)维护，物理后端仍归 FS。Host 删除 fork 在同一 exclusive queue 中调用已安装服务的 metadata cleanup，policy flush 失败保留 fork；writer 故障须关闭检查实际 backing 后恢复。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
+`logtape(nativeConfig, { policyStore })` 的 policyStore 接收同步 `(root: RootContext) => PluginLogPolicyStore` factory，在 Core 日志准备中解析一次；省略时使用 `requireTinyBaseHost(root).documents('logging')`。Logging 借用文档存储，不关闭后端；confirmed read view、失败阻断与 final 排空由 [TinyBase](TINYBASE.md)维护，物理后端仍归 FS。Host 删除 fork 在同一 exclusive queue 中清理 Core 日志 policy，再清理服务元数据；policy flush 失败保留 fork。writer 故障须关闭检查实际 backing 后恢复。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
 
 ## Debug topics
 
@@ -174,9 +167,9 @@ error summary。它不是新的 author-facing LogRecord。
 
 ## 性能验证
 
-热路径不做 caller capture、properties 求值、snapshot、序列化或持久化；单 owner policy lookup 为 O(1)。Snapshot/reset/replace/persistence 是显式 O(N) 操作。Lazy logger、prototype methods、无 per-topic cache 与 bounded store 限制常驻成本。
+框架身份/policy guard 不做 caller capture、properties 求值、snapshot、序列化或持久化；单 owner policy lookup 为 O(1)。Snapshot/reset/replace/persistence 是显式 O(N) 操作。Lazy logger、prototype methods、无 per-topic cache 与 bounded store 限制常驻成本。
 
-`packages/services/bench/logger.bench.ts` 对比普通与 100,000 overrides hit，检查规模增长下的 lookup 趋势；单机绝对 ops/s 不是跨环境承诺。
+`packages/core/bench/logger.bench.ts` 对比普通与 100,000 overrides hit，检查规模增长下的 lookup 趋势；单机绝对 ops/s 不是跨环境承诺。
 
 ## Package boundaries
 
@@ -184,31 +177,36 @@ error summary。它不是新的 author-facing LogRecord。
 @pluxel/core
   ContextLogger, LoggerService, category identity, pure Plugin labels
 
-@pluxel/services/logging
-  HostService descriptor, RuntimeLogging manager, policy/stores/sinks
+@pluxel/core/config
+  logtape() and zenfs() code configuration declarations
 
-@pluxel/services/logging/protocol
+@pluxel/core/logging
+  Logging root token, RuntimeLogging manager, policy/stores/query
+
+@pluxel/core/logging/protocol
   Browser-safe log DTOs and filters
 
-@pluxel/services/logging/internal
-  RuntimeLogging installation and active owner binding
+@pluxel/core/logging/internal
+  RuntimeLogging installation, active owner binding and framework helpers
+
+@pluxel/core/logging/pretty
+  Optional console presentation with Plugin identity and Context labels
 
 @pluxel/host + @pluxel/services
-  Host shutdown ownership and official service defaults
+  Application lifecycle and optional Management projections
 ```
 
-core 不包含 log formatter、sink、policy persistence、host env resolution 或 LogTape installation。
-Logging 是 Services 包内的具体 Host 服务，通过 `/logging` 显式选择。它的 Host 依赖只用于服务声明与生命周期装配；formatter 直接使用 Core 的纯 Plugin label 投影，不读取 Host 内部实现。
-公共入口通过 `logging()` 安装、`Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于 `/logging/internal` 框架入口。
+Core 拥有日志安装、sink、policy 持久化、store 与 query；配置 helper 不依赖 Host 或 Services。Management 从 Core 读取同一个 manager，不能重新安装日志。浏览器协议入口只承载 DTO/filter，不加载 Node 文件 sink 或日志安装后端。pretty 是独立可选叶入口，不经 internal 引入；文件输出直接使用 `@logtape/file`，没有框架 file wrapper。
+公共输出通过 `config.logger: logtape(...)` 选择，宿主通过 `Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于 `/logging/internal` 框架入口。旧 Services 三个日志入口不保留兼容别名。
 
 关键实现入口：
 
 - `packages/core/src/logger/LoggerService.ts`
 - `packages/core/src/logger/categories.ts`
-- `packages/services/src/logging/logging.ts`
-- `packages/services/src/logging/policy.ts`
-- `packages/services/src/logging/sink.ts`
-- `packages/services/src/logging/store.ts`
+- `packages/core/src/logging/logging.ts`
+- `packages/core/src/logging/policy.ts`
+- `packages/core/src/logging/sink.ts`
+- `packages/core/src/logging/store.ts`
 - `packages/services/src/management/services/management/RuntimeManagementTarget.ts`
 - `packages/host/src/host.ts`
 - `packages/host-vite/src/host-vite.ts`
@@ -217,8 +215,8 @@ Logging 是 Services 包内的具体 Host 服务，通过 `/logging` 显式选�
 
 修改 category、Context service、Host prepare order 或 policy hot path 时，覆盖 active root/foreign root 拒绝、缓存 Context 归属、重复安装失败不 reset 原 owner、关闭 flush，以及过滤前不求值 properties/caller。Policy 测试验证 revision、并发写入与串行 persistence；store 测试验证 retention、gap、epoch 和 bounded follow。
 
-直接回归入口为 `packages/services/tests/logging/`；成本变化同时运行[性能验证](#性能验证)中的探针。Logging 不引入通用 policy language、processor chain 或 LogTape config merge framework。
+原生配置与继承、contexts、独立 Node 调用位置、drain/async disposal 和 foreign owner 由 `tests/logging/native-config.test.ts` 验证；类型示例由同目录 `native-config.typecheck.ts` 验证。直接回归入口为 `packages/core/tests/logging/`；成本变化同时运行[性能验证](#性能验证)中的探针。Logging 不引入通用 policy language、processor chain 或 LogTape config merge framework。
 
 ## Trusted development scripts
 
-`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/services/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.require(ElysiaApp)` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/core/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.require(ElysiaApp)` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

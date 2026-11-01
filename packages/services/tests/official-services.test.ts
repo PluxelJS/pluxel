@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -6,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { createHost, type HostStartupContext } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
+import { getContextRuntimeLogging } from '@pluxel/core/logging/internal'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { createWorkbenchFederationDeploymentInventory } from '@pluxel/core/federation'
 import { NodeModuleHost } from '../src/node/token'
@@ -45,9 +45,10 @@ test('deployment root supplies Node artifacts and the default Workbench shell', 
 					...startup,
 					deployment: { root, target: 'node', variant: 'workbench' },
 				},
-				{ fs: { backend: InMemory } },
+				{},
 			),
 		})
+		expect(getContextRuntimeLogging(host.ctx)).toBeUndefined()
 		const response = await resolveContextCapability(host.ctx, ElysiaRuntime).fetch(
 			new Request('http://localhost/__pluxel/workbench', { headers: { accept: 'text/html' } }),
 		)

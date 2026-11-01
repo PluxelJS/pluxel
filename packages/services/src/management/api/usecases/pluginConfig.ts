@@ -1,4 +1,4 @@
-import type { Context, PluginNodeAddress } from '@pluxel/core'
+import { type Context, type PluginNodeAddress } from '@pluxel/core'
 import { collectConfigDefaults } from '@pluxel/core/services'
 import {
 	type HostOperationOptions,
@@ -10,8 +10,8 @@ import {
 	pluginConfigReset as resetConfig,
 	projectPluginApplyReport,
 } from '@pluxel/host/internal'
-import type { HostPluginConfigResult } from '@pluxel/host'
-import type { ConfigPresentationResult, ConfigResult } from '../../web/protocol'
+import { type HostConfigMutationOptions, type HostPluginConfigResult } from '@pluxel/host'
+import { type ConfigPresentationResult, type ConfigResult } from '../../web/protocol'
 import { compileConfigPresentationPlanV1 } from '../presenters/configPresentation'
 import { parseConfigFieldPathSegments } from '../../web/validation'
 
@@ -39,7 +39,7 @@ export async function pluginConfigPatch(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
-	options?: HostOperationOptions,
+	options?: HostConfigMutationOptions,
 ): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await patchConfig(ctx, owner, patch, options))
 }
@@ -47,7 +47,7 @@ export async function pluginConfigReset(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	keys?: string[],
-	options?: HostOperationOptions,
+	options?: HostConfigMutationOptions,
 ): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await resetConfig(ctx, owner, keys, options))
 }
@@ -122,7 +122,7 @@ export async function pluginConfigPatchField(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	input: unknown,
-	options?: HostOperationOptions,
+	options?: HostConfigMutationOptions,
 ): Promise<ConfigResult> {
 	const parsed = parseConfigFieldMutation(input)
 	if (parsed.ok === false) {

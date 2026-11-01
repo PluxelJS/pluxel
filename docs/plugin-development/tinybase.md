@@ -5,7 +5,7 @@ description: 在每个 Plugin node 的原生 TinyBase Store 中保存偏好与�
 
 用户偏好、开关和小型结构化业务记录使用 Host 托管的 TinyBase。部署配置继续用 [`configs.use()`](./configuration.md)，凭据用 [Vault](./vault.md)，文件和二进制用 [FS](./fs.md)。大量记录、复杂 SQL 或多进程事务使用 [SQL 数据库](./database.md)，可选择 Services 托管或应用完全自管。
 
-Host 必须安装 FS 与 `tinybase()`；官方 `standardServices({ fs })` 和 `servicesPreset()` 已包含它们。[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留数据。插件不选择存储目录、driver 或持久策略。
+每个 Core 与 Host 都内建 FS 和 TinyBase；插件直接使用固定的 `ctx.tinybase`，无需安装服务。[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留数据。插件不选择存储目录、driver 或持久策略。
 
 ## 打开并使用原生 Store
 
@@ -14,7 +14,6 @@ Host 必须安装 FS 与 `tinybase()`；官方 `standardServices({ fs })` 和 `s
 ```ts twoslash
 // @filename: preferences.ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { TinyBase } from '@pluxel/services/tinybase'
 import { createStore, type Store } from 'tinybase'
 import * as v from 'valibot'
 
@@ -22,7 +21,7 @@ const Preference = v.object({ theme: v.picklist(['system', 'light', 'dark']) })
 
 @Plugin()
 export class PreferencesPlugin extends BasePlugin {
-	private readonly state = this.ctx.require(TinyBase)
+	private readonly state = this.ctx.tinybase
 	private store!: Store
 
 	protected override async init(): Promise<void> {
@@ -42,7 +41,7 @@ export class PreferencesPlugin extends BasePlugin {
 }
 ```
 
-`open()` 不传参数时由服务创建普通 Store；传入时返回同一 native 实例。也可在 open 前使用原生 `setTablesSchema()`、`setValuesSchema()` 或 [Valibot schematizer](https://tinybase.org/api/schematizers/schematizer-valibot/) 配置 schema。Valibot 仍从上游直接导入，不需要第二套 Pluxel 校验接口。
+`open()` 不传参数时由 Core 创建普通 Store；传入时返回同一 native 实例。也可在 open 前使用原生 `setTablesSchema()`、`setValuesSchema()` 或 [Valibot schematizer](https://tinybase.org/api/schematizers/schematizer-valibot/) 配置 schema。Valibot 仍从上游直接导入，不需要第二套 Pluxel 校验接口。
 
 open 完成前不使用或公开该 Store；成功后创建原生 Queries/listeners，并在 `ctx.effects` 中登记相应 `destroy()` 或 `delListener()`。不要给托管 Store 添加 Persister 或 Synchronizer。原生临时 Store 不需交给 Host。
 
@@ -60,27 +59,23 @@ open 完成前不使用或公开该 Store；成功后创建原生 Queries/listen
 
 ## 失败、容量与依赖
 
-快照只接受 string、boolean 和有限 number；嵌套记录可由领域编码为 string，不能把任意对象直接作为 cell。Host 默认每份完整快照最多 8 MiB，可通过 `tinybase({ maxSnapshotBytes })` 调整。超限或 IO 错误可从 `flush()`、启动和关闭报告观察，Host 还可通过 root-only `TinyBaseHost.status()` 查询 owner、revision 与失败状态。
+快照只接受 string、boolean 和有限 number；嵌套记录可由领域编码为 string，不能把任意对象直接作为 cell。Host 默认每份完整快照最多 8 MiB，可通过 Host 的 `config.tinybase.maxSnapshotBytes` 调整。超限或 IO 错误可从 `flush()`、启动和关闭报告观察，Host 内部诊断可查询 owner、revision 与失败状态。
 
 快照和 writer 失败使用公开的 `TinyBaseError`，例如 `SNAPSHOT_INVALID`、`BUDGET_EXCEEDED` 与 `SAVE_FAILED`；底层失败保留在 `cause`。插件的 Valibot 领域校验仍抛原生校验异常，不把无效数据改成默认值。
 
 保存失败后 writer 阻断后续保存，不在 shutdown 隐式重试。内存仍可能包含候选，后端结果也可能未知；调用方应保留失败状态，由 Host 停止并显式恢复 writer，再启动新代。FS 后端只读时无法打开托管 Store；InMemory 只能确认内存写入。停止不会删除已有数据。
 
-应用声明当前 Services 接纳的精确 `tinybase` runtime dependency。使用共享 Store 的插件声明同版 peer 与 devDependency；原生能力始终从 `tinybase` 或其子路径导入。只声明 `configs.use()` 的插件无需再打开 Store 或添加 TinyBase 依赖。[版本与打包约束](../development/plugin-package.md)包含实际版本接纳规则。
+Core 持有精确的 `tinybase` runtime dependency；应用直接使用原生 TinyBase 时声明自己的 dependency。使用共享 Store 的插件声明同版 peer 与 devDependency；原生能力始终从 `tinybase` 或其子路径导入。只声明 `configs.use()` 的插件无需再打开 Store 或添加 TinyBase 依赖。[版本与打包约束](../development/plugin-package.md)包含实际版本接纳规则。
 
 ## 隔离验证
 
-将上面的插件保存为 `preferences.ts`。测试通过真实 `createTestHost()` 显式安装服务，结束时释放 Host：
+将上面的插件保存为 `preferences.ts`。测试通过真实 `createTestHost()` 使用默认内存后端，结束时释放 Host：
 
 ```ts no-twoslash
 import { createTestHost } from '@pluxel/test'
-import { fs, InMemory } from '@pluxel/services/fs'
-import { tinybase } from '@pluxel/services/tinybase'
 import { PreferencesPlugin } from './preferences'
 
-await using host = await createTestHost({
-	services: [fs({ backend: InMemory }), tinybase()],
-})
+await using host = await createTestHost()
 const preferences = await host.start(PreferencesPlugin)
 await preferences.setTheme({ theme: 'dark' })
 ```

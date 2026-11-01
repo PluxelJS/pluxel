@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { createHash, randomUUID } from 'node:crypto'
@@ -28,7 +27,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.commit((change) => {

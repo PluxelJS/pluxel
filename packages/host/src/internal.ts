@@ -18,6 +18,7 @@ export {
 	pluginConfigValidate,
 	pluginConfigPatch,
 	pluginConfigReset,
+	readHostConfigState,
 } from './config'
 export { HostConfigStore, type PluginConfigFile } from './config-store'
 export { HostStateStore, canonicalHostStateSnapshot, type HostStateFile } from './state-store'

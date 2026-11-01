@@ -13,7 +13,7 @@ description: 从不可变的 Wretch 基础实例派生业务客户端，并统�
 vp exec pluxel pncat add @pluxel/plugin-wretch
 ```
 
-普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。只有显式启用受管出站设置时才需安装 Host TinyBase 服务（标准服务组合已包含）；未安装时，受管设置读写明确失败，不使用临时内存存储代替。
+普通 HTTP client 与宿主出站策略可在 `services: []` 的 Host 中运行。受管出站设置显式启用后使用 Core 内建 TinyBase，无需安装存储服务；是否跨 Host 保留取决于 `config.storage` 所选后端。
 
 ## 第一个 HTTP consumer
 

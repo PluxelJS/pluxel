@@ -11,7 +11,7 @@ import { useOptionalWorkbenchDocument, useDocumentPlugin } from '../../workbench
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { parsePluginDetailHref, buildPluginDetailHref } from '../../../workbench/paths'
 import { WorkbenchRouteRenderer } from '../../router/workbench/WorkbenchRouteRenderer'
-import type { PluginConfigState } from '../config/usePluginConfig'
+import { type PluginConfigState } from '../config/usePluginConfig'
 import { ConfigForm } from '../config/ConfigForm'
 import { ActionBar } from './controls/ActionBar'
 import { usePluginMeta } from './context'
@@ -136,6 +136,8 @@ function ConfigContent({
 			displayName={displayName}
 			fields={config.data.fields}
 			savedConfig={config.data.savedConfig}
+			version={config.data.version}
+			readonly={config.data.readonly}
 			defaults={config.data.defaults}
 			sections={config.data.sections}
 			active={active}

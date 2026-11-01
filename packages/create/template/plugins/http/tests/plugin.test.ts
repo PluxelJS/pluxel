@@ -1,8 +1,6 @@
 import { createHost } from '@pluxel/host'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { elysia, createElysiaHandler } from '@pluxel/services/elysia'
-import { fs, InMemory } from '@pluxel/services/fs'
-import { tinybase } from '@pluxel/services/tinybase'
 import { describe, expect, it } from 'vitest'
 import { HttpPlugin } from '@example/http-plugin'
 import { TodoPlugin } from '@example/todo-plugin'
@@ -11,7 +9,7 @@ describe('HttpPlugin', () => {
 	it('exposes a validated Todo API backed by a required Plugin dependency', async () => {
 		const host = await createHost({
 			plugins: [HttpPlugin, TodoPlugin],
-			services: [elysia(), fs({ backend: InMemory }), tinybase()],
+			services: [elysia()],
 			configRecords: {
 				initial: [
 					{

@@ -6,8 +6,8 @@ import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import * as v from 'valibot'
 import { expect, it } from 'vitest'
-import { fs, Passthrough } from '../src/fs'
-import { tinybase, TinyBaseHost } from '../src/tinybase'
+import { Passthrough } from '@pluxel/core/fs'
+import { requireTinyBaseHost } from '@pluxel/core/internal'
 
 let normalizations = 0
 const Config = v.object({
@@ -35,13 +35,16 @@ class ConfiguredOwner extends BasePlugin {
 it('keeps saved layer, env locks, single normalization and saved-not-applied through TinyBase across Hosts', async () => {
 	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-tinybase-config-'))
 	const owner = pluginNodeAddressOf(ConfiguredOwner)
-	const services = () => [fs({ backend: Passthrough, fs: nativeFs, prefix }), tinybase()]
 	try {
 		const host = await createHost({
 			plugins: [ConfiguredOwner],
-			services: services(),
+			config: {
+				storage: {
+					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+					durableMounts: ['/'],
+				},
+			},
 			configRecords: {
-				storage: (root) => root.require(TinyBaseHost).documents('config'),
 				initial: [{ owner, config: { text: 'initial', locked: 'base' } }],
 				overlays: [
 					{
@@ -52,7 +55,6 @@ it('keeps saved layer, env locks, single normalization and saved-not-applied thr
 				],
 			},
 			state: {
-				storage: (root) => root.require(TinyBaseHost).documents('state'),
 				initial: { autoStart: [owner] },
 			},
 		})
@@ -71,7 +73,7 @@ it('keeps saved layer, env locks, single normalization and saved-not-applied thr
 				ok: false,
 				code: 'mutation_rejected',
 			})
-			const text = await host.ctx.require(TinyBaseHost).documents('config').getText('config.json')
+			const text = await requireTinyBaseHost(host.ctx).documents('config').getText('config.json')
 			expect(JSON.parse(text!)).toMatchObject({
 				json: { version: 3, plugins: [{ owner, config: { text: ' saved ' } }] },
 			})
@@ -81,13 +83,16 @@ it('keeps saved layer, env locks, single normalization and saved-not-applied thr
 
 		const reopened = await createHost({
 			plugins: [ConfiguredOwner],
-			services: services(),
+			config: {
+				storage: {
+					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+					durableMounts: ['/'],
+				},
+			},
 			configRecords: {
-				storage: (root) => root.require(TinyBaseHost).documents('config'),
 				initial: [{ owner, config: { text: 'different base', locked: 'base after env removal' } }],
 			},
 			state: {
-				storage: (root) => root.require(TinyBaseHost).documents('state'),
 				initial: { autoStart: [] },
 			},
 		})
@@ -99,8 +104,7 @@ it('keeps saved layer, env locks, single normalization and saved-not-applied thr
 				config: { text: 'saved', locked: 'base after env removal' },
 			})
 			expect(applied).toEqual({ text: 'saved', locked: 'base after env removal' })
-			const persisted = await reopened.ctx
-				.require(TinyBaseHost)
+			const persisted = await requireTinyBaseHost(reopened.ctx)
 				.documents('config')
 				.getText('config.json')
 			expect(JSON.parse(persisted!)).toMatchObject({

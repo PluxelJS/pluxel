@@ -34,18 +34,18 @@ async function fixture(installed = '10.0.1', peer: string | undefined = '10.0.1'
 		type: 'module',
 		dependencies: { tinybase: '10.0.1' },
 	})
-	await put('node_modules/@pluxel/services/package.json', {
-		name: '@pluxel/services',
-		peerDependencies: { tinybase: '10.0.1' },
+	await put('node_modules/@pluxel/core/package.json', {
+		name: '@pluxel/core',
+		dependencies: { tinybase: '10.0.1' },
 		version: '1.0.0',
 		type: 'module',
-		exports: { './package.json': './package.json', './tinybase': './tinybase.mjs' },
+		exports: { './package.json': './package.json', '.': './index.mjs' },
 	})
 	await put(
-		'node_modules/@pluxel/services/tinybase.mjs',
+		'node_modules/@pluxel/core/index.mjs',
 		"export { createStore } from 'tinybase'; export { createQueries } from 'tinybase/queries'; export { Provider } from 'tinybase/ui-react'",
 	)
-	await tinybase('node_modules/@pluxel/services/node_modules/tinybase', '10.0.1')
+	await tinybase('node_modules/@pluxel/core/node_modules/tinybase', '10.0.1')
 	await tinybase('node_modules/tinybase', '10.0.1')
 	for (const [name, version, shared] of [
 		['consumer', installed, true],
@@ -73,7 +73,7 @@ async function fixture(installed = '10.0.1', peer: string | undefined = '10.0.1'
 	await put(
 		'app.mjs',
 		`
-import * as Host from '@pluxel/services/tinybase'
+import * as Host from '@pluxel/core'
 import * as Consumer from 'consumer'
 import * as Library from 'library'
 import * as Private from 'private-store'

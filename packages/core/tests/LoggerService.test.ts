@@ -1,6 +1,6 @@
 import { configureSync, lazy, type LogRecord, resetSync } from '@logtape/logtape'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { LoggerService } from '../src/logger/LoggerService'
+import { getContextLoggerRootId, LoggerService } from '../src/logger/LoggerService'
 import { readPluginLogIdentity } from '../src/logger/categories'
 import { withCoreInternalTestContext } from '../src/internal-test'
 import { parsePluginNodeAddress } from '../src/plugins'
@@ -43,10 +43,10 @@ describe('LoggerService', () => {
 			(ctx) => {
 				ctx.logger.info('hello', { id: 1 })
 				const record = records.find((item) => item.rawMessage === 'hello')
-				expect(record?.category).toEqual(['pluxel', 'runtime', 'root-test'])
+				expect(record?.category).toEqual(['pluxel', 'runtime', getContextLoggerRootId(ctx)])
 				expect(record?.properties).toMatchObject({ context: 'core-test', id: 1 })
 			},
-			{ name: 'core-test', logger: { rootId: 'root-test' } },
+			{ name: 'core-test' },
 		))
 
 	it('encodes plugin identity in the category instead of record properties', () =>
@@ -59,7 +59,7 @@ describe('LoggerService', () => {
 				expect(record?.category).toEqual([
 					'pluxel',
 					'plugins',
-					'root-test',
+					getContextLoggerRootId(root),
 					'v1',
 					'package',
 					'PluginX',
@@ -69,7 +69,7 @@ describe('LoggerService', () => {
 				expect(record?.properties.context).toBe('plugin-test')
 				expect(record?.properties.pluginId).toBeUndefined()
 			},
-			{ name: 'plugin-test', logger: { rootId: 'root-test' } },
+			{ name: 'plugin-test' },
 		))
 
 	it('reuses the validated identity projection for one immutable category', () => {
@@ -99,7 +99,7 @@ describe('LoggerService', () => {
 				expect(record?.category).toEqual([
 					'pluxel',
 					'debug',
-					'root-test',
+					getContextLoggerRootId(root),
 					'plugin',
 					'v1',
 					'package',
@@ -110,7 +110,7 @@ describe('LoggerService', () => {
 					'cache',
 				])
 			},
-			{ name: 'plugin-test', logger: { rootId: 'root-test' } },
+			{ name: 'plugin-test' },
 		))
 
 	it('preserves tagged values, named properties and lazy context through the facade', () => {

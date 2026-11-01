@@ -13,9 +13,27 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
 
 本页拥有配置的唯一事实链。声明与 UI schema 读[不变量](#不变量)及 [Toolchain metadata](#toolchain-metadata)；启动输入读 [Static startup config](#static-startup-config)；保存失败读[保存与应用](#保存与应用)；在线更新读 [Running generation notification](#running-generation-notification)。完整用法见[配置指南](../docs/plugin-development/configuration.md)。
 
+## 第三方代码配置
+
+应用工厂中的装配配置与 `configs.use()` 保存的领域记录有不同边界。装配直接使用上游类型与实例，默认值只是可选预设；插件记录保持可序列化、可验证和可管理。接入规则见 [API 设计](../.agents/rules/library-api-design.md#should第三方装配保留上游配置)。
+
+| 接入                | 配置权威与框架职责                                                                                                                                                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ZenFS               | `config.storage: zenfs(...)` 从 `@pluxel/core/config` 验证并快照原生挂载配置，保留 Backend、BackendConfiguration 和 FileSystem；Core 拥有独立 mount table、创建资源和文件能力撤回，借用实例仍归调用者。[FS](FS.md) 维护进程全局选项的隔离边界及持久挂载声明。                                        |
+| LogTape             | `config.logger: logtape(...)` 从 `@pluxel/core/config` 接收原生 Config 或绑定 root/store 的同步配置工厂；上游拥有 sink/filter/路由和原生资源，Core 负责安装、身份、动态 policy 和排空。[Logging](LOGGING.md)。                                                                                       |
+| PostgreSQL / PGlite | `postgres()` / `pglite()` 接收原生驱动配置或借用实例，不另造 TLS、pool、extensions 参数。[Database](DATABASE.md) 维护 owner schema、迁移、公平调度和关闭。                                                                                                                                           |
+| OpenTelemetry       | 抽象 `Otel` 接收原生 MeterProvider、TracerProvider 和 LoggerProvider，保留 sampler、views、processors 及 resource 配置；`OtelPlugin` 只提供可保存的 OTLP/Prometheus 预设。generation 拥有交付的 providers 与 flush/shutdown，观测状态区分预设管理的输出和外部输出。[OTel](../docs/plugins/otel.md)。 |
+| Playwright          | 抽象 `Playwright` 的原生连接 hook 保留完整 connect/connectOverCDP 配置；`PlaywrightPlugin` 是 endpoint/Vault 预设。generation 拥有返回的连接，caller 拥有其 BrowserContext，外部浏览器进程仍由部署者管理。[Browser](../docs/plugins/browser.md)。                                                    |
+| srvx / Elysia       | `listenElysia()` 保留原生 srvx TCP/TLS、middleware、plugin 和错误选项；Host 拥有 dispatch 与关闭。完全自管 transport 使用 `createElysiaHandler()` 与原生 srvx。[公开接线](../docs/host/configuration.md#独立-http-host)。                                                                            |
+| Vite / tsdown       | 使用真实 Vite/tsdown 配置文件及原生插件；Pluxel 插件只加入 lowering、共享身份与制品约束。production runner 固定自身执行模式，不复制一套 bundler 参数。[Artifact build](ARTIFACT_BUILD.md)。                                                                                                          |
+| Workers             | `workers({ worker })` 保留原生 Node WorkerOptions 的环境、参数、启动数据与资源限制；Services 只拥有固定入口、message/transfer、stdio、接纳和实际退出结算，不另建线程工厂 DSL。[Node artifacts](../docs/plugin-development/node-artifacts.md#原生线程选项)。                                          |
+| Wretch / Redis / S3 | HTTP client 和连接继续返回原生 SDK；可保存设置拥有预算、凭据引用和部署选择。高级装配通过原生 client 或既有 provider，不能将密钥或函数扩散到管理记录。[Wretch](../docs/plugins/wretch.md)、[Redis](../docs/plugins/redis.md)、[Storage](../docs/plugins/storage.md)。                                 |
+
+Vault 的 envelope/轮换与渲染的资源预算是独立领域契约，不作为 SDK 配置镜像。新增第三方能力时先明确代码配置与保存设置的所有者，再决定是否需要新的框架字段；不能用封闭实现白名单代替扩展点。
+
 ## Host 管理用例
 
-`@pluxel/host` 的 `host.config` 提供 get、validate、patch 和 reset。节点可用性与 fork 查询来自同一个 Host coordinator；配置记录、revision、validation ticket 与 generation notification 继续由 Core 拥有。读取和校验也经过协调器队列，异步 schema 处理不会跨越正在接受的配置/目录事务读取混合状态。
+`@pluxel/host` 的 `host.config` 提供 get、validate、patch、reset 与同步 status。节点可用性与 fork 查询来自同一个 Host coordinator；配置记录、revision、validation ticket 与 generation notification 继续由 Core 拥有。读取和校验也经过协调器队列，异步 schema 处理不会跨越正在接受的配置/目录事务读取混合状态。
 
 Management 配置 RPC 与 Host-vite 开发控制台委托 Host；Management 负责 fieldPath 输入解析和 presentation 编译，Host 的共享 report 投影将 Slot 转换为 Address。`ConfigMutationRejectedError` 是 Host 的存储策略拒绝信号，Host readonly adapter 使用同一类，不复制错误判别。
 
@@ -40,7 +58,7 @@ Management 配置 RPC 与 Host-vite 开发控制台委托 Host；Management 负�
 
 Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` 与模式。`storage` 唯一形式是同步 `(root: RootContext) => HostDocumentStorage`，两项 factory 在 root 创建后、文档 IO 前各解析一次并校验，Core 的惰性 config factory 只消费已解析对象。factory 不执行 IO，也不能返回 Promise。
 
-`HostDocumentStorage` 是借用的目录文档接口，仅含 `getText(key)`、`put(key, text)`、`stat(key)`；put 无条件等待完整原子提交，不接收 atomic 选项。Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。无 storage 时为 memory，有 storage 时默认 writable，可显式 readonly。官方组合通过 [TinyBase](TINYBASE.md) 的 Host 私有 `documents()` 适配保存 saved records，首次 IO 先等待 [FS](FS.md) 后端准备，公开接线见 [Host 配置](../docs/host/configuration.md#保存配置和运行策略)。
+`HostDocumentStorage` 是借用的目录文档接口，仅含 `getText(key)`、`put(key, text)`、`stat(key)`；put 无条件等待完整原子提交，不接收 atomic 选项。Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。默认使用 Core 内建私有文档，显式 memory 可选择临时状态，readonly 拒绝写入。普通应用只在 Core 的 `storage` 输入一次后端；[TinyBase](TINYBASE.md) 的 Host 私有 `documents()` 保存 saved records，首次 IO 等待 [FS](FS.md) 后端准备，公开接线见 [Host 配置](../docs/host/configuration.md#保存配置和运行策略)。
 
 `HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留 SuperJSON v3/v5 格式与 readonly 失败语义。Config debounce、digest 去重、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
 
@@ -60,7 +78,21 @@ Config effective authority 为 `configRecords.initial < file base < saved < env`
 
 Vault 绑定由 Host 在服务准备后、插件 admission 前通过 root-only `HostVaultBindings` 安装；缺失服务 fail-fast。config 与 Vault 绑定以稳定 node address 为目标。动态候选在 admission 前检查 config metadata 与已声明环境路径兼容性，失败保留原 catalog。Vault 根 schema 是本次 Host 固定的部署输入契约，在首次解析时校验记录 key 与原始值，不能因 Plugin 热替换重新执行 transform 或更改已安装记录。修改 Vault schema 或来源需要重新创建 Host；插件仍负责私有 KV 的业务校验。
 
-持久配置继续使用 SuperJSON v3 文档文本，经 TinyBase Host namespace 完整提交；只保存 saved layer，malformed/version error fail-fast。config 和 state 的 initial 语义不同：config initial 是永久 base，state initial 仍是创建策略 seed。
+单实例持久配置使用 SuperJSON v3 文档文本，经 Core TinyBase Host namespace 完整提交；只保存 saved layer，malformed/version error fail-fast。config 和 state 的 initial 语义不同：config initial 是永久 base，state initial 仍是创建策略 seed。
+
+## Saved config replication
+
+`HostApplication.configSync` 与 `HostOptions.configSync` 显式选择 writer 或 replica，共享 scope、writer identity 和真实 application artifact `{ name, catalogHash }`。静态与 Node modules 启动将 manifest 的 application 事实传入 startup，resolver 核对配置的 artifact；嵌入 `createHost` 由部署者提供事实。credentials、endpoint 与角色来自部署，不接受同步正文改写。writer 的 `host.configSync.fetch(request)` 只提供已认证的完整 snapshot/版本 long poll，HTTP/TLS listener 仍由宿主所有；replica 连接与取消归 Host，不挂在业务 Plugin ingress 或 generation 上。
+
+同步只替换 saved layer，base/env、Vault、Host policy 与 Plugin Stores 不复制。同步 config.json v4 把原 SuperJSON v3 saved body 与 history/seq 放在同一份原子文档；格式严格区分，旧 v3 需要显式转换，不启动自动迁移或默认空快照。writer 准备时初始化一次完整文档 history，seq 只在已确认内容变化时递增；失败候选不发布，未知结果的 writer 阻断后续保存，关闭不重试。
+
+成功 config result 与 `readHostConfigState(ctx)`/`host.config.status()` 包含顶层 version、readonly。单实例 version 为 null；writer mutation 使用 `HostConfigMutationOptions.expected`，要求匹配完整 `{ history, seq }`，不是单 owner revision。缺失或冲突在 mutation 前返回 `version_conflict / unchanged` 与当前版本。fork remove 同样先检查 policy/version，再停止 Plugin。replica 管理写只读，但本地 Core storage 必须可写以保存快照。
+
+replica 启动先校验缓存；有效缓存允许断线启动，没有缓存则获取、校验并原子保存首份 snapshot 后才允许首次 Plugin admission。接收新候选在 coordinator exclusive queue 内一次校验全部当前可用 owner 的完整 effective record，保留每个 normalized ticket，保存成功后再一次性替换 saved records、确认版本并通知 generation；raw body 不经 schema output 反写，删除语义为完整替换。未知 owner 原文保留、状态报告 unavailable，不创建 Slot/fork/generation；后续真正 admission 再核对当前 schema。监听失败沿 saved-not-applied 语义保留已确认 desired。
+
+status 分离 sourceVersion、savedVersion、connection、error、unavailable；连接不代表本地确认。Host 关闭取消 fetch、等待已接纳的候选与 IO 完整结算，再释放 writer、TinyBase 与 FS；已撤回任务不能晚到发布。协议、缓存与同步实现分别位于 `config-sync-protocol.ts`、`config-store.ts`、`config-sync.ts`，回归入口为 `packages/host/tests/config-sync.test.ts`。
+
+Management 的 `configStateDto`/`client.config.status()` 投影 HostConfigState，配置 patch/patchField 与 fork remove 透传原读 expected。Workbench 保存脏草稿的版本，后台 query 更新不能给旧草稿附上新版本；冲突不自动刷新版本重试，副本配置字段与 fork 删除禁用，后端仍独立拒绝。跨 RPC、版本冲突和停止前检查由 `packages/services/tests/management/management/config-version.test.ts` 与 Workbench shell config tests 覆盖。公开部署与恢复用法由 [Host 配置](../docs/host/configuration.md#跨实例同步保存配置)维护。
 
 ## 保存与应用
 

@@ -119,10 +119,10 @@ Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-
 
 Rolldown 的发布制品内联 Workbench 的纯 transport 规则与 Host 的 `internal/shared-runtime`
 metadata 叶子，不加载 Workbench／Services 运行时。共用叶子检查 manifest、catalog 与精确安装版；
-Workbench target 与 TinyBase 服务消费者分别产生自身的版本事实。Vite Task 的 Rolldown compile
+Workbench target 与显式声明 TinyBase peer 的原生 Store 消费者分别产生版本事实；只调用 Core 固定能力不标记为原生消费者。Vite Task 的 Rolldown compile
 inputs 显式包含这两个源码入口及所属包清单，规则或导出变更会使内联产物失效。包构建以能力
 所有者的清单定位原生安装，不要求所有者的 JS 制品已经生成。共享原生 import 保留为外部依赖，
-应用装配在验证原安装后接到 Host copy；TinyBase 的上游子路径与运行环境条件不被改成根入口。
+应用装配在验证原安装后接到能力所有者的 copy（TinyBase 由 Core 持有）；TinyBase 的上游子路径与运行环境条件不被改成根入口。
 
 固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 的 used-export facade 在真实 Mantine producer 中曾遗漏
 命名导出；升级到 1.23.3 后保留此回归边界，builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，

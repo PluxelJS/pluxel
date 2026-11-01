@@ -23,6 +23,7 @@ type ResolvedWorkersConfig = Readonly<{
 	maxQueuedTasks: number
 	maxQueuedTasksPerPlugin: number
 	idleTimeoutMs: number
+	worker?: WorkersConfig['worker']
 }>
 
 type TaskRoute = {
@@ -662,6 +663,7 @@ function createPool(config: ResolvedWorkersConfig): WorkerThreadPool {
 	return new WorkerThreadPool({
 		maxThreads: config.maxThreads,
 		idleTimeoutMs: config.idleTimeoutMs,
+		worker: config.worker,
 	})
 }
 
@@ -737,6 +739,7 @@ function resolveWorkersConfig(input: WorkersConfig | undefined): ResolvedWorkers
 		(typeof availableParallelism === 'function' ? availableParallelism() : cpus().length) || 1
 	const defaults = Math.max(1, Math.min(4, parallelism - 1 || 1))
 	return Object.freeze({
+		worker: input?.worker,
 		maxThreads: boundedInteger(input?.maxThreads, defaults, 1, 256, 'maxThreads'),
 		maxQueuedTasks: boundedInteger(
 			input?.maxQueuedTasks,

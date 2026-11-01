@@ -1,12 +1,12 @@
+import { requireFs, enterOwnerInvocation } from '@pluxel/core/internal'
 import { BasePlugin, Plugin, pluginNodeAddressOf, type Context } from '@pluxel/core'
-import { enterOwnerInvocation } from '@pluxel/core/internal'
 import { createHost } from '@pluxel/host'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Fs, fs, InMemory, Passthrough } from '../src/fs'
+import { Passthrough } from '@pluxel/core/fs'
 import { Vault, vault, type VaultStorageApi } from '../src/vault'
 
 const directories: string[] = []
@@ -39,7 +39,7 @@ function waitForClose(signal: AbortSignal): Promise<void> {
 it('drains an accepted transaction before generation stop and rejects retained KV and blob handles', async () => {
 	const host = await createHost({
 		plugins: [VaultOwner],
-		services: [fs({ backend: InMemory }), vault()],
+		services: [vault()],
 	})
 	const entered = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
@@ -94,9 +94,15 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 	const entered = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
 	const events: string[] = []
-	const services = [fs({ backend: Passthrough, fs: nativeFs, prefix }), vault()]
-	const host = await createHost({ plugins: [], services })
-	const directory = await host.ctx.require(Fs).directory('services/vault')
+	const config = {
+		storage: {
+			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+			durableMounts: ['/'],
+		},
+	}
+	const services = [vault()]
+	const host = await createHost({ plugins: [], config, services })
+	const directory = await requireFs(host.ctx).directory('services/vault')
 	const rename = directory.rename
 	vi.spyOn(directory, 'rename').mockImplementation(async (from, to) => {
 		if (String(to).endsWith('.blob')) {
@@ -133,7 +139,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 		release.resolve()
 		await host.close()
 	}
-	const reopened = await createHost({ plugins: [], services })
+	const reopened = await createHost({ plugins: [], config, services })
 	try {
 		const storage = reopened.ctx.require(Vault)
 		await expect(storage.kv().get('final')).resolves.toMatchObject({ value: 'persisted' })

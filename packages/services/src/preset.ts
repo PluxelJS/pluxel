@@ -1,51 +1,38 @@
 import { resolve } from 'node:path'
 import type { HostService, HostStartupContext } from '@pluxel/host'
-import type { RuntimeLoggingInput } from './logging/index'
 import type { ProductDescriptor } from './management/product-contract'
-import type { FsServiceConfig } from './fs'
 import { standardServices } from './index'
 import { vault, type VaultServiceConfig } from './vault'
-import { TinyBaseHost } from './tinybase'
-import { createPluginLogPolicyStore } from './logging/storage'
 
 /** Official application services. Host owns preparation, rollback and shutdown. */
 export async function servicesPreset(
 	startup: HostStartupContext,
 	options: Readonly<{
-		fs: FsServiceConfig
 		/** Explicit Vault backend and deployment identity. */
 		vault?: VaultServiceConfig
 		/** Omitted when the application has no product branding. */
 		product?: ProductDescriptor
 		/** Include the Workbench UI at /__pluxel/workbench. @default true */
 		workbench?: boolean
-		/** Complete logging plan override; defaults to a pretty console and bounded memory store. */
-		logging?: RuntimeLoggingInput
 	}>,
 ): Promise<HostService[]> {
 	if (!options || typeof options !== 'object' || Array.isArray(options))
 		throw new TypeError('[services/preset] options must be an object')
 	for (const key of Object.keys(options)) {
-		if (!['fs', 'vault', 'product', 'workbench', 'logging'].includes(key))
+		if (!['vault', 'product', 'workbench'].includes(key))
 			throw new TypeError(`[services/preset] Unknown option options.${key}`)
 	}
 	if (options.workbench !== undefined && typeof options.workbench !== 'boolean')
 		throw new TypeError('[services/preset] options.workbench must be a boolean')
 	const withWorkbench = options.workbench ?? true
 	const deployment = startup.deployment
-	const [
-		{ logging },
-		{ managementAccess },
-		{ management },
-		{ managementCommands },
-		{ managementHttp },
-	] = await Promise.all([
-		import('./logging/index'),
-		import('./management/access'),
-		import('./management/service'),
-		import('./management/commands'),
-		import('./management/http'),
-	])
+	const [{ managementAccess }, { management }, { managementCommands }, { managementHttp }] =
+		await Promise.all([
+			import('./management/access'),
+			import('./management/service'),
+			import('./management/commands'),
+			import('./management/http'),
+		])
 	const workbench = withWorkbench
 		? await Promise.all([
 				import('@pluxel/workbench/service'),
@@ -76,35 +63,8 @@ export async function servicesPreset(
 				}
 			: {},
 	)
-	const loggingService = logging(
-		options.logging ?? {
-			root: { profile: 'pluxel' },
-			sinks: {
-				console: { kind: 'console', format: 'pretty', caller: false, timezone: 'local' },
-				store: { kind: 'store', streamId: 'default', caller: true },
-			},
-			routes: {
-				runtime: [
-					{ sink: 'console', minLevel: 'info' },
-					{ sink: 'store', minLevel: 'trace' },
-				],
-				plugins: [
-					{ sink: 'console', minLevel: 'info' },
-					{ sink: 'store', minLevel: 'trace' },
-				],
-				debug: [{ sink: 'store', minLevel: 'trace' }],
-				meta: [{ sink: 'console', minLevel: 'warning' }],
-			},
-		},
-		{
-			policyStore: (root) =>
-				createPluginLogPolicyStore(root.require(TinyBaseHost).documents('logging')),
-		},
-	)
 	return [
-		{ ...loggingService, requires: { tinybase: TinyBaseHost } },
 		...standardServices({
-			fs: options.fs,
 			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
 		}),
 		vault({ deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY, ...options.vault }),

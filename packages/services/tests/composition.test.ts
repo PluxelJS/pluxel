@@ -1,3 +1,5 @@
+import { Passthrough } from '@pluxel/core/fs'
+import { logtape } from '@pluxel/core/config'
 import { servicesPreset } from '@pluxel/services/preset'
 import { createElysiaHandler } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
@@ -11,7 +13,7 @@ import {
 	resolveContextCapability,
 } from '@pluxel/core/host'
 import { createHost, defineHostService } from '@pluxel/host'
-import { Logging } from '@pluxel/services/logging'
+import { Logging } from '@pluxel/core/logging'
 import { Management } from '@pluxel/services/management/service'
 import { parseVaultAdminState } from '@pluxel/services/management/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -19,7 +21,6 @@ import * as nativeFs from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fs, InMemory, Passthrough } from '../src/fs'
 import { Vault, VaultAdmin, vault } from '../src/vault'
 
 const directories: string[] = []
@@ -58,12 +59,15 @@ describe('independently composed official and external services', () => {
 			const services = await servicesPreset(
 				{ root: process.cwd(), mode: 'development', env: {}, bindings: {} },
 				{
-					fs: { backend: InMemory },
 					workbench,
 				},
 			)
 			// Preparation order follows declared capabilities, not the preset's array order.
-			const host = await createHost({ plugins: [], services: services.toReversed() })
+			const host = await createHost({
+				plugins: [],
+				config: { logger: logtape() },
+				services: services.toReversed(),
+			})
 			const logging = resolveContextCapability(host.ctx, Logging)
 			try {
 				expect(logging.state).toBe('installed')
@@ -117,11 +121,17 @@ describe('independently composed official and external services', () => {
 				})
 			},
 		})
-		const storage = fs({ backend: Passthrough, fs: nativeFs, prefix })
+		const config = {
+			storage: {
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			},
+		}
 		const plugins = [Credentials, SearchConsumer]
 		const first = await createHost({
 			plugins,
-			services: [vault(), search, storage],
+			config,
+			services: [vault(), search],
 		})
 		try {
 			expect('database' in first.ctx).toBe(false)
@@ -133,7 +143,7 @@ describe('independently composed official and external services', () => {
 		}
 		expect(events).toEqual(['search closed'])
 		// Reopen the same encrypted storage after shutdown, before any debounce could have run.
-		const reopened = await createHost({ plugins: [], services: [storage, vault()] })
+		const reopened = await createHost({ plugins: [], config, services: [vault()] })
 		try {
 			const state = await reopened.ctx.vaultAdmin!.describe()
 			expect(state).toMatchObject({ present: true, unlocked: true })
@@ -142,7 +152,7 @@ describe('independently composed official and external services', () => {
 			await reopened.close()
 		}
 
-		const second = await createHost({ plugins, services: [storage, search] })
+		const second = await createHost({ plugins, config, services: [search] })
 		try {
 			expect(second.ctx.vault).toBeUndefined()
 			expect(() => second.ctx.require(Vault)).toThrowError(/vault/)

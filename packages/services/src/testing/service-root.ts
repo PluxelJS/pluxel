@@ -1,6 +1,6 @@
-import type { RootCapabilityInstallation } from '@pluxel/core/host'
+import { type RootCapabilityInstallation } from '@pluxel/core/host'
 import { createHost, defineHostService, type PluginHost, type HostService } from '@pluxel/host'
-import type { ServiceInternalTestHostOptions } from './options'
+import { type ServiceInternalTestHostOptions } from './options'
 
 export type ServiceInternalTestRootOptions = Readonly<{
 	/** Framework test-only installation of capabilities before the root is created. */
@@ -23,11 +23,8 @@ export async function createServiceTestApplication(
 	}
 	let selectedServices = options.services
 	if (selectedServices === undefined) {
-		const [{ standardServices }, { InMemory }] = await Promise.all([
-			import('../index'),
-			import('../fs'),
-		])
-		selectedServices = standardServices({ fs: { backend: InMemory } })
+		const { standardServices } = await import('../index')
+		selectedServices = standardServices()
 	}
 	const services: HostService[] = [...selectedServices]
 	if (withManagement) {

@@ -57,14 +57,6 @@
 			"@pluxel/source": "./src/development/elysia.ts",
 			"default": "./dist/elysia/vite.mjs"
 		},
-		"./fs": {
-			"@pluxel/source": "./src/fs.ts",
-			"default": "./dist/fs.mjs"
-		},
-		"./fs/browser": {
-			"@pluxel/source": "./src/fs/browser.ts",
-			"default": "./dist/fs/browser.mjs"
-		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
@@ -72,18 +64,6 @@
 		"./internal/test": {
 			"@pluxel/source": "./src/internal-test.ts",
 			"default": "./dist/internal/test.mjs"
-		},
-		"./logging": {
-			"@pluxel/source": "./src/logging/index.ts",
-			"default": "./dist/logging.mjs"
-		},
-		"./logging/internal": {
-			"@pluxel/source": "./src/logging/internal.ts",
-			"default": "./dist/logging/internal.mjs"
-		},
-		"./logging/protocol": {
-			"@pluxel/source": "./src/logging/protocol.ts",
-			"default": "./dist/logging/protocol.mjs"
 		},
 		"./management": {
 			"@pluxel/source": "./src/management/index.ts",
@@ -157,10 +137,6 @@
 			"@pluxel/source": "./src/sources.ts",
 			"default": "./dist/sources.mjs"
 		},
-		"./tinybase": {
-			"@pluxel/source": "./src/tinybase.ts",
-			"default": "./dist/tinybase.mjs"
-		},
 		"./vault": {
 			"@pluxel/source": "./src/vault.ts",
 			"default": "./dist/vault.mjs"
@@ -189,13 +165,8 @@
 			"./elysia": "./dist/elysia.mjs",
 			"./elysia/node": "./dist/elysia/node.mjs",
 			"./elysia/vite": "./dist/elysia/vite.mjs",
-			"./fs": "./dist/fs.mjs",
-			"./fs/browser": "./dist/fs/browser.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
-			"./logging": "./dist/logging.mjs",
-			"./logging/internal": "./dist/logging/internal.mjs",
-			"./logging/protocol": "./dist/logging/protocol.mjs",
 			"./management": "./dist/management.mjs",
 			"./management/access": "./dist/management/access.mjs",
 			"./management/client": "./dist/management/client.mjs",
@@ -214,7 +185,6 @@
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./sources": "./dist/sources.mjs",
-			"./tinybase": "./dist/tinybase.mjs",
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
@@ -223,20 +193,16 @@
 		"access": "public"
 	},
 	"scripts": {
-		"bench:logger": "vp test bench bench/logger.bench.ts",
 		"bench:worker-task": "vp test bench bench/worker-task.bench.ts",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
 		"test:installed": "vp test run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
 		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs",
-		"test:zenfs-browser": "vp run check-zenfs-browser",
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
-		"@logtape/file": "catalog:prod",
-		"@logtape/logtape": "catalog:prod",
-		"@logtape/pretty": "catalog:prod",
 		"@types/node": "catalog:types",
+		"@types/pg": "catalog:types",
 		"age-encryption": "catalog:prod",
 		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
@@ -248,13 +214,8 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
-		"@logtape/otel": "catalog:dev",
+		"@logtape/logtape": "catalog:prod",
 		"@mantine/core": "catalog:frontend",
-		"@noble/hashes": "catalog:prod",
-		"@opentelemetry/exporter-logs-otlp-http": "catalog:prod",
-		"@opentelemetry/exporter-logs-otlp-proto": "catalog:prod",
-		"@opentelemetry/resources": "catalog:prod",
-		"@opentelemetry/sdk-logs": "catalog:prod",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
@@ -263,16 +224,11 @@
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
-		"@types/pg": "catalog:types",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
-		"@zenfs/core": "catalog:prod",
-		"@zenfs/dom": "catalog:prod",
-		"buffer": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
 		"fs-fixture": "catalog:dev",
-		"kerium": "catalog:prod",
 		"pg": "catalog:backend",
 		"playwright-core": "catalog:prod",
 		"react": "catalog:frontend",
@@ -298,7 +254,6 @@
 		"pg": "catalog:backend",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"tinybase": "catalog:prod",
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
@@ -334,32 +289,15 @@
 		},
 		"react-dom": {
 			"optional": true
-		},
-		"tinybase": {
-			"optional": true
 		}
 	},
 	"engines": {
 		"node": ">=24"
 	},
-	"inlinedDependencies": {
-		"@noble/hashes": "2.4.0",
-		"@zenfs/core": "2.8.3",
-		"@zenfs/dom": "1.2.14",
-		"@zenfs/streams": "1.0.2",
-		"base64-js": "1.5.1",
-		"buffer": "6.0.3",
-		"eventemitter3": "5.0.4",
-		"ieee754": "1.2.1",
-		"kerium": "1.5.0",
-		"memium": "1.1.1",
-		"utilium": "3.10.0"
-	},
 	"pluxel": {
 		"workbenchCapnweb": "0.12.0",
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true,
-		"tinybase": "10.0.1"
+		"workbenchArtifacts": true
 	}
 }

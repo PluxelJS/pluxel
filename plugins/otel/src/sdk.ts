@@ -16,11 +16,30 @@ import type { PrometheusPullReader } from './prometheus.ts'
 
 const DEFAULT_PROVIDER_SHUTDOWN_TIMEOUT_MS = 30_000
 
+/** Native SDK providers transferred to one Otel generation. */
+export type OtelProviders = Readonly<{
+	meterProvider?: MeterProvider
+	tracerProvider?: BasicTracerProvider
+	loggerProvider?: LoggerProvider
+}>
+
+export type ManagedOtelProviders = Readonly<{
+	providers: OtelProviders
+	otlp: readonly OtelSignal[]
+	prometheus?: PrometheusPullReader
+	prometheusPath?: string
+	metricShutdownTimeoutMs: number
+}>
+
+const managedProviderSets = new WeakMap<OtelProviders, ManagedOtelProviders>()
+
 export type OtelRuntime = Readonly<{
 	getMeter(scopeName: string): Meter
 	getTracer(scopeName: string): Tracer
 	getLogger(scopeName: string): Logger
+	outputs: Readonly<Record<OtelSignal, 'disabled' | 'managed' | 'external'>>
 	prometheus?: PrometheusPullReader
+	prometheusPath?: string
 	forceFlush(): Promise<void>
 	shutdown(): Promise<void>
 }>
@@ -29,6 +48,7 @@ export type CreateOtelRuntimeInput = Readonly<{
 	rootName: string
 	otlp: readonly OtelSignal[]
 	prometheus: boolean
+	prometheusPath?: string
 	onOtlpExportState: (state: OtlpExportState) => void
 }>
 
@@ -39,16 +59,33 @@ export type CreateOtelRuntimeOptions = Readonly<{
 
 type ShutdownTask = () => Promise<void>
 
-async function shutdownAll(tasks: ShutdownTask[], errorMessage?: string): Promise<void> {
+async function shutdownAll(tasks: ShutdownTask[], errorMessage: string): Promise<void> {
 	const results = await Promise.allSettled(tasks.map(async (task) => task()))
 	const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
-	if (errors.length > 0 && errorMessage) throw new AggregateError(errors, errorMessage)
+	if (errors.length > 0) throw new AggregateError(errors, errorMessage)
 }
 
-export async function createOtelRuntime(
+async function failAfterCleanup(initialFailure: unknown, cleanup: ShutdownTask): Promise<never> {
+	const [result] = await Promise.allSettled([cleanup].map(async (task) => task()))
+	if (result.status === 'rejected') {
+		throw new AggregateError(
+			[initialFailure, result.reason],
+			'OpenTelemetry initialization and cleanup failed',
+			{
+				cause: initialFailure,
+			},
+		)
+	}
+	throw initialFailure
+}
+
+export async function createOtelProviders(
 	input: CreateOtelRuntimeInput,
 	options: CreateOtelRuntimeOptions = {},
-): Promise<OtelRuntime> {
+): Promise<ManagedOtelProviders> {
+	if (input.otlp.length === 0 && !input.prometheus) {
+		throw new Error('at least one OTLP signal or Prometheus output must be enabled')
+	}
 	const env = options.env ?? process.env
 	const resource = defaultResource().merge(
 		resourceFromAttributes(resolveResourceAttributes(env, input.rootName)),
@@ -94,12 +131,7 @@ export async function createOtelRuntime(
 			try {
 				traceProcessor = new BatchSpanProcessor(exporter, processorConfig)
 			} catch (error) {
-				try {
-					await exporter.shutdown()
-				} catch {
-					// Preserve the processor initialization failure.
-				}
-				throw error
+				return await failAfterCleanup(error, () => exporter.shutdown())
 			}
 			tracerProvider = new BasicTracerProvider({ resource, spanProcessors: [traceProcessor] })
 		}
@@ -115,62 +147,24 @@ export async function createOtelRuntime(
 			try {
 				logProcessor = new BatchLogRecordProcessor({ exporter, ...processorConfig })
 			} catch (error) {
-				try {
-					await exporter.shutdown()
-				} catch {
-					// Preserve the processor initialization failure.
-				}
-				throw error
+				return await failAfterCleanup(error, () => exporter.shutdown())
 			}
 			loggerProvider = new LoggerProvider({ resource, processors: [logProcessor] })
 		}
 
-		if (input.otlp.includes('traces') || input.otlp.includes('logs')) {
-			ensureOtelProcessContext()
-		}
-
-		const activeMetricProvider = metricProvider
-		const activeTracerProvider = tracerProvider
-		const activeLoggerProvider = loggerProvider
-		let shutdownPromise: Promise<void> | undefined
-		return {
-			getMeter(scopeName): Meter {
-				if (!activeMetricProvider) throw new Error('OpenTelemetry metrics signal is disabled')
-				return activeMetricProvider.getMeter(scopeName)
+		const managed: ManagedOtelProviders = {
+			providers: {
+				meterProvider: metricProvider,
+				tracerProvider,
+				loggerProvider,
 			},
-			getTracer(scopeName): Tracer {
-				if (!activeTracerProvider) throw new Error('OpenTelemetry traces signal is disabled')
-				return activeTracerProvider.getTracer(scopeName)
-			},
-			getLogger(scopeName): Logger {
-				if (!activeLoggerProvider) throw new Error('OpenTelemetry logs signal is disabled')
-				return activeLoggerProvider.getLogger(scopeName)
-			},
+			otlp: [...input.otlp],
 			prometheus,
-			forceFlush(): Promise<void> {
-				return shutdownAll(
-					[
-						...(activeMetricProvider ? [() => activeMetricProvider.forceFlush()] : []),
-						...(activeTracerProvider ? [() => activeTracerProvider.forceFlush()] : []),
-						...(activeLoggerProvider ? [() => activeLoggerProvider.forceFlush()] : []),
-					],
-					'OpenTelemetry provider flush failed',
-				)
-			},
-			shutdown(): Promise<void> {
-				shutdownPromise ??= shutdownAll(
-					[
-						...(activeMetricProvider
-							? [() => activeMetricProvider.shutdown({ timeoutMillis: metricShutdownTimeoutMs })]
-							: []),
-						...(activeTracerProvider ? [() => activeTracerProvider.shutdown()] : []),
-						...(activeLoggerProvider ? [() => activeLoggerProvider.shutdown()] : []),
-					],
-					'OpenTelemetry provider shutdown failed',
-				)
-				return shutdownPromise
-			},
+			prometheusPath: input.prometheusPath,
+			metricShutdownTimeoutMs,
 		}
+		managedProviderSets.set(managed.providers, managed)
+		return managed
 	} catch (error) {
 		const shutdowns: ShutdownTask[] = []
 		if (metricProvider) {
@@ -182,7 +176,92 @@ export async function createOtelRuntime(
 		else if (traceProcessor) shutdowns.push(() => traceProcessor.shutdown())
 		if (loggerProvider) shutdowns.push(() => loggerProvider.shutdown())
 		else if (logProcessor) shutdowns.push(() => logProcessor.shutdown())
-		await shutdownAll(shutdowns)
-		throw error
+		return failAfterCleanup(error, () =>
+			shutdownAll(shutdowns, 'OpenTelemetry initialization cleanup failed'),
+		)
 	}
+}
+
+export async function createRuntimeFromProviders(
+	providers: OtelProviders,
+	managed = managedProviderSets.get(providers),
+): Promise<OtelRuntime> {
+	const { meterProvider, tracerProvider, loggerProvider } = providers
+	if (!meterProvider && !tracerProvider && !loggerProvider) {
+		throw new Error('Otel.createProviders() must return at least one native provider')
+	}
+	const isManaged = {
+		metrics: meterProvider !== undefined && managed?.providers.meterProvider === meterProvider,
+		traces: tracerProvider !== undefined && managed?.providers.tracerProvider === tracerProvider,
+		logs: loggerProvider !== undefined && managed?.providers.loggerProvider === loggerProvider,
+	}
+	const output = (signal: OtelSignal, present: boolean): 'disabled' | 'managed' | 'external' => {
+		if (!present) return 'disabled'
+		if (!isManaged[signal]) return 'external'
+		return managed?.otlp.includes(signal) ? 'managed' : 'disabled'
+	}
+	let shutdownPromise: Promise<void> | undefined
+	const runtime: OtelRuntime = {
+		getMeter(scopeName): Meter {
+			if (!meterProvider) throw new Error('OpenTelemetry metrics signal is disabled')
+			return meterProvider.getMeter(scopeName)
+		},
+		getTracer(scopeName): Tracer {
+			if (!tracerProvider) throw new Error('OpenTelemetry traces signal is disabled')
+			return tracerProvider.getTracer(scopeName)
+		},
+		getLogger(scopeName): Logger {
+			if (!loggerProvider) throw new Error('OpenTelemetry logs signal is disabled')
+			return loggerProvider.getLogger(scopeName)
+		},
+		outputs: {
+			metrics: output('metrics', meterProvider !== undefined),
+			traces: output('traces', tracerProvider !== undefined),
+			logs: output('logs', loggerProvider !== undefined),
+		},
+		prometheus: isManaged.metrics ? managed?.prometheus : undefined,
+		prometheusPath: isManaged.metrics ? managed?.prometheusPath : undefined,
+		forceFlush(): Promise<void> {
+			return shutdownAll(
+				[
+					...(meterProvider ? [() => meterProvider.forceFlush()] : []),
+					...(tracerProvider ? [() => tracerProvider.forceFlush()] : []),
+					...(loggerProvider ? [() => loggerProvider.forceFlush()] : []),
+				],
+				'OpenTelemetry provider flush failed',
+			)
+		},
+		shutdown(): Promise<void> {
+			shutdownPromise ??= shutdownAll(
+				[
+					...(meterProvider
+						? [
+								() =>
+									isManaged.metrics && managed
+										? meterProvider.shutdown({ timeoutMillis: managed.metricShutdownTimeoutMs })
+										: meterProvider.shutdown(),
+							]
+						: []),
+					...(tracerProvider ? [() => tracerProvider.shutdown()] : []),
+					...(loggerProvider ? [() => loggerProvider.shutdown()] : []),
+				],
+				'OpenTelemetry provider shutdown failed',
+			)
+			return shutdownPromise
+		},
+	}
+	try {
+		if (tracerProvider || loggerProvider) ensureOtelProcessContext()
+		return runtime
+	} catch (error) {
+		return failAfterCleanup(error, () => runtime.shutdown())
+	}
+}
+
+export async function createOtelRuntime(
+	input: CreateOtelRuntimeInput,
+	options: CreateOtelRuntimeOptions = {},
+): Promise<OtelRuntime> {
+	const managed = await createOtelProviders(input, options)
+	return createRuntimeFromProviders(managed.providers, managed)
 }

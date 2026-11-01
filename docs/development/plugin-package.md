@@ -127,18 +127,17 @@ peer、可用的制品事实和实际解析版；不匹配时报告 `PLUGIN_SOUR
 只使用独立私有 RPC 的包保留普通依赖和自身解析，不受该接线影响。绕过标准构建或其它加载器产生的
 第二份构造器仍会在 Workbench 打开 target 时被拒绝。
 
-使用 `@pluxel/services/tinybase` 托管 Store，或向托管消费者交换原生 Store 的基础库，声明
+直接使用原生 TinyBase 并与 `ctx.tinybase` 托管 Store 互操作的插件或基础库，声明
 精确的 `peerDependencies.tinybase`，源码开发另声明同版 `devDependencies.tinybase`。当前支持
-`10.0.1`；最终 Host 应用在 `dependencies` 直接安装此精确版本。框架服务从
-`@pluxel/services/tinybase` 导入，原生 Store、Queries、React hooks 与 Schematizer 直接从
+`10.0.1`，由 Core 的精确 runtime dependency 提供；应用仅在直接使用原生 TinyBase 时声明自己的 dependency。
+固定能力使用 `ctx.tinybase`，桥接类型与错误从 `@pluxel/core` 导入；原生 Store、Queries、React hooks 与 Schematizer 直接从
 `tinybase`、`tinybase/queries`、`tinybase/ui-react`、`tinybase/schematizers/schematizer-valibot`
 导入，并声明真实依赖。
 
-标准构建从实际 TinyBase 服务导入或共享库的显式 peer 生成 `pluxel.tinybase` 版本事实，核对
+标准构建从原生 TinyBase imports 与共享消费者的显式 peer 生成 `pluxel.tinybase` 版本事实，核对
 原声明和原安装，再保留外部原生 import。开发 Vite、静态应用与生产原生来源使用同一接纳规则，
 把通过检查的包绑定到 Host 选择的 TinyBase；上游子路径与 Node／browser 条件保持原义。
-同版安装在不同路径也会归一到 Host 模块。仅使用 `configs.use()` 的插件无需 TinyBase import
-或 peer。独立私有 Store 使用普通 dependency，保留自己的版本和解析；不要用全局 override
+同版安装在不同路径也会归一到 Core 模块。仅使用 `configs.use()` 或 `ctx.tinybase.open()`、且不导入原生 TinyBase 的插件无需 TinyBase import 或 peer。独立私有 Store 使用普通 dependency，保留自己的版本和解析；不要用全局 override
 或 shared-package 配置把所有 TinyBase import 强行合并。
 
 希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入完整上游命名导出；

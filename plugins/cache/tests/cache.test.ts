@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost, type TestHost } from '@pluxel/test'
@@ -17,7 +16,7 @@ import {
 } from '../src/index.ts'
 
 async function createHost(): Promise<TestHost> {
-	return await createTestHost({ services: standardServices({ fs: { backend: InMemory } }) })
+	return await createTestHost({ services: standardServices() })
 }
 
 type User = { id: string; name: string }

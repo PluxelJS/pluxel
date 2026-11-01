@@ -8,7 +8,7 @@ import { FontsPlugin, type PortableFontsSnapshot } from '@pluxel/plugin-fonts'
 import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import { EChartsPlugin } from '@pluxel/plugin-echarts'
-import { OtelPlugin } from '@pluxel/plugin-otel'
+import { Otel } from '@pluxel/plugin-otel'
 import { Rates, type RateDecision, type RateLimiter } from '@pluxel/plugin-rates'
 import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/core'
 import * as f from 'valibot-form'
@@ -103,7 +103,7 @@ export class ReportStudioPlugin extends BasePlugin {
 
 	constructor(
 		private readonly http: WretchPlugin,
-		private readonly otel: OtelPlugin,
+		private readonly otel: Otel,
 		private readonly cacheProvider: Cache,
 		private readonly rates: Rates,
 		private readonly storage: S3,

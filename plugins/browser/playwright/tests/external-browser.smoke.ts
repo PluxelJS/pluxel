@@ -4,6 +4,7 @@ import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
 import {
 	PlaywrightConfig,
+	Playwright,
 	PlaywrightPlugin,
 	PlaywrightVaultSchema,
 } from '@pluxel/plugin-playwright'
@@ -12,7 +13,7 @@ const observations: string[] = []
 
 @Plugin()
 export class ExternalBrowserSmoke extends BasePlugin {
-	constructor(private readonly browser: PlaywrightPlugin) {
+	constructor(private readonly browser: Playwright) {
 		super()
 	}
 

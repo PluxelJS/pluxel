@@ -1,5 +1,5 @@
-import type { LogRangeResult, RuntimeLogError, RuntimeLogLine } from '../../../logging/protocol'
-import { normalizePortableLogValue } from '../../../logging/internal'
+import type { LogRangeResult, RuntimeLogError, RuntimeLogLine } from '@pluxel/core/logging/protocol'
+import { normalizePortableLogValue } from '@pluxel/core/logging/internal'
 import { parseLogRangeResult } from '../../web/management-validation'
 import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
 

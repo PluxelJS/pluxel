@@ -1,24 +1,18 @@
+import type { Pool, PoolConfig } from 'pg'
 import type { DatabaseBackend } from './service'
-export type PostgresOptions = Readonly<{
-	connectionString: string
-	pool?: Readonly<{ max?: number; idleTimeoutMs?: number; connectionTimeoutMs?: number }>
-	tls?: 'require' | 'verify-full'
-}>
-/** Select only the PostgreSQL backend. Loading and pool creation happen on first use. */
-export function postgres(options: PostgresOptions): DatabaseBackend {
-	if (!options || typeof options.connectionString !== 'string' || !options.connectionString.trim())
-		throw new TypeError('[pluxel/database] postgres requires connectionString')
+
+/** Native pg configuration creates a Host-owned pool on first use; an existing pool is borrowed. */
+export function postgres(options: PoolConfig | Pool = {}): DatabaseBackend {
+	if (!options || typeof options !== 'object' || Array.isArray(options))
+		throw new TypeError('[pluxel/database] postgres requires pg PoolConfig or Pool')
 	if (
-		options.pool?.max !== undefined &&
-		(!Number.isInteger(options.pool.max) || options.pool.max <= 0)
+		'max' in options &&
+		options.max !== undefined &&
+		(!Number.isInteger(options.max) || options.max <= 0)
 	)
-		throw new TypeError('[pluxel/database] pool.max must be a positive integer')
-	const snapshot = Object.freeze({
-		...options,
-		...(options.pool ? { pool: Object.freeze({ ...options.pool }) } : {}),
-	})
+		throw new TypeError('[pluxel/database] pg max must be a positive integer')
 	return async (onError) => {
 		const { createPostgresDatabaseAdapter } = await import('#pluxel/database-driver/postgres')
-		return createPostgresDatabaseAdapter(snapshot, onError)
+		return createPostgresDatabaseAdapter(options, onError)
 	}
 }

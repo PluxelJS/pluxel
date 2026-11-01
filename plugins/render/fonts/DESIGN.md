@@ -8,7 +8,7 @@
 - provider-owned configured files：`FontsConfig.files` 是绝对路径列表，启动有界读取、按路径去重、保留字体内嵌 family；不写入托管上传集合，不占 caller registration 配额。非法来源让启动失败并清理此前注册。Host config/env/file 与 Workbench 使用同一 schema，无插件自行读取环境变量的配置层。
 
 - provider-owned managed collection：字体、统一 preference 和持久化全部属于 FontsPlugin。provider
-  安装 FS 时启动从 provider 的 `PluginFs` 目录恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
+  启动从 provider 的 Core 内建 `ctx.fs()` 目录恢复 `managed/` 下的原子记录；损坏或无法注册会让 provider 启动失败，所有 renderer dependent 随正常
   graph 语义被阻塞。
 - caller-owned programmatic registration：业务包随代码携带的字体可调用 `register()` / `registerFromPath()`，但
   native key 仍封装在 FontsPlugin 内。caller stop/replacement 自动删除，handle 只提供幂等提前 `dispose()`。
@@ -42,9 +42,9 @@ scanner/watcher；进程中后来安装的系统字体在 provider/process resta
 默认 family 解析顺序为：显式 host `defaultFamily`、持久化 provider preference、操作系统已安装字体优先表、
 `sans-serif` generic。`defaultFont` 同时给出 raw family 与 CSS-safe family。选择 mutation 在 provider queue 中串行，修改 provider node 唯一 Store 的 `defaultFamily` Value 并等待 `tinybase.flush()` 后发布；选择暂时不可用时保留 preference、运行期降级，family 重现后自动恢复。
 
-默认偏好由 Host TinyBase 恢复与保存；缺少服务时基础能力仍运行，选择 mutation 明确报 `PERSISTENCE_REQUIRED`。偏好保存失败保留已应用选择，writer 故障后不再接纳新偏好提交，也不写补偿快照。
+默认偏好由 Core 内建 TinyBase 恢复与保存，无需服务安装。偏好保存失败保留已应用选择，writer 故障后不再接纳新偏好提交，也不写补偿快照。
 
-FS 只保存 `managed/*.font` 二进制资源。文件内的 ID、文件名、family、长度与安装时间参与内容寻址校验及原子字体安装，不是独立可编辑偏好；保留单文件 envelope，避免把字体安装拆成跨 FS/Store 的两次提交。上传通过 `writeFileAtomic()` 提交后才发布；缺失的 `managed/` 目录视为空集合，其他读取与损坏错误仍失败。未安装 FS 时上传/删除报 `PERSISTENCE_REQUIRED`。配置文件注册跟随 provider cleanup，预算等配置在 restart 应用。
+FS 只保存 `managed/*.font` 二进制资源。文件内的 ID、文件名、family、长度与安装时间参与内容寻址校验及原子字体安装，不是独立可编辑偏好；保留单文件 envelope，避免把字体安装拆成跨 FS/Store 的两次提交。上传通过 `writeFileAtomic()` 提交后才发布；缺失的 `managed/` 目录视为空集合，其他读取与损坏错误仍失败。文件后端准备或写入失败按原异常传播。配置文件注册跟随 provider cleanup，预算等配置在 restart 应用。
 
 默认选择放在 constructor 创建的稳定 state object，避免 caller-bound prototype view 的顶层 scalar assignment 变成
 caller-local shadow。`revision` 跟随 FontsPlugin 管理的 native registration/default selection 变化，并由包模块共享以

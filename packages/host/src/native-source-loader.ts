@@ -1,14 +1,12 @@
 import { registerHooks } from 'node:module'
 import { realpath } from 'node:fs/promises'
-import { dirname, extname, join } from 'node:path'
+import { dirname, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { pluginDefinitionAddressOf, type PluginConstructor } from '@pluxel/core'
 import { collectPluginModuleExports } from './module'
 import {
 	assertSharedRuntimeAdmission,
 	admitSharedRuntimeOwner,
-	assertSharedRuntimeHost,
-	nearestPackageManifest,
 	installedSharedRuntimeVersion,
 	participatesInSharedRuntime,
 	readSharedRuntimePackage,
@@ -33,7 +31,6 @@ export async function createNativeSourceLoader(options: {
 	root: string
 	sharedPackages?: readonly string[]
 }) {
-	let applicationManifest = nearestPackageManifest(join(options.root, '__entry__.mjs'))
 	const shared = hostSharedPackages({ root: options.root, packages: options.sharedPackages })
 	const key = JSON.stringify([...shared].sort(([a], [b]) => a.localeCompare(b)))
 	const entries = new Set<string>()
@@ -82,24 +79,15 @@ export async function createNativeSourceLoader(options: {
 			const runtimeBase = runtime && shared.get(runtime.owner)
 			if (runtime && runtimeBase && context.parentURL?.startsWith('file:')) {
 				const publisher = readSharedRuntimePackage(fileURLToPath(context.parentURL), runtime)
-				const serviceConsumer = specifier === runtime.entry && runtime.name === 'tinybase'
-				const application =
-					runtime.name === 'tinybase' && publisher?.manifestPath === applicationManifest
 				if (
 					publisher &&
-					(application || serviceConsumer || participatesInSharedRuntime(publisher))
+					(publisher.owner === runtime.owner || participatesInSharedRuntime(publisher))
 				) {
 					const ownerEntry = resolveNativeImport(runtimeBase, runtime.entry)
 					const canonicalRoot = resolveNativeImport(dirname(ownerEntry), runtime.name)
 					let actual: { url: string } | undefined
 					try {
-						actual = serviceConsumer
-							? {
-									url: pathToFileURL(
-										resolveNativeImport(dirname(fileURLToPath(context.parentURL)), runtime.name),
-									).href,
-								}
-							: next(specifier, context)
+						actual = next(specifier, context)
 					} catch (cause) {
 						if (
 							!(
@@ -126,15 +114,11 @@ export async function createNativeSourceLoader(options: {
 						development: false,
 						operation: 'host/native',
 					}
-					if (application)
-						assertSharedRuntimeHost({ ...admission, manifestPath: publisher.manifestPath })
-					else assertSharedRuntimeAdmission(admission)
-					if (!serviceConsumer) {
-						const canonical = resolveNativeImport(dirname(ownerEntry), specifier)
-						const url = pathToFileURL(canonical).href
-						admit(url)
-						return { url, shortCircuit: true }
-					}
+					assertSharedRuntimeAdmission(admission)
+					const canonical = resolveNativeImport(dirname(ownerEntry), specifier)
+					const url = pathToFileURL(canonical).href
+					admit(url)
+					return { url, shortCircuit: true }
 				}
 			}
 			const selected = shared.get(importPackageName(specifier))
@@ -208,7 +192,6 @@ export async function createNativeSourceLoader(options: {
 	}
 	return {
 		async loadApplication(path: string): Promise<HostApplicationFactory> {
-			applicationManifest = nearestPackageManifest(path)
 			const namespace = await importModule(path)
 			if (typeof namespace.default !== 'function')
 				throw new TypeError(`[host] native application must export a default factory: ${path}`)

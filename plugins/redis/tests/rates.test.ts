@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
@@ -93,7 +92,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.commit((change) => {
@@ -145,7 +144,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.start([
@@ -174,7 +173,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 
 			await host.start([

@@ -32,8 +32,8 @@ consumer 只依赖 `Cache` 抽象；host catalog 选择：
 `readPolicy: 'cache-first'`、`backendFailure: 'required'`。应用将 `CachePlugin`、所选 backend 和 consumer
 加入 catalog，配置记录与启动策略见 [添加插件](./index.md#把一个插件加入应用)。
 
-`MemoryCacheBackendPlugin` 默认 `maxEntries: 10000`，`persistence.mode: 'off'` 不需要 FS。
-启用 `best-effort` 或 `durable` 时，宿主必须安装 [FS](../plugin-development/fs.md)：`durable` 要求持久且可写的后端，快照恢复失败时拒绝启动；`best-effort` 在临时存储上告警，只读时仅恢复，快照恢复或保存失败按缓存策略告警并放弃这次恢复或保存。后端准备等其他失败不伪装为成功降级。`persistence.flushIntervalMs` 默认 1000，用于合并快照写入。
+`MemoryCacheBackendPlugin` 默认 `maxEntries: 10000`，`persistence.mode: 'off'` 不取得文件目录。
+启用 `best-effort` 或 `durable` 时，插件使用 Core 固定提供的 [FS](../plugin-development/fs.md)，宿主在 `config.storage` 中选择后端：`durable` 要求持久且可写的后端，快照恢复失败时拒绝启动；`best-effort` 在临时存储上告警，只读时仅恢复，快照恢复或保存失败按缓存策略告警并放弃这次恢复或保存。后端准备等其他失败不伪装为成功降级。`persistence.flushIntervalMs` 默认 1000，用于合并快照写入。
 快照只恢复异步 backend，停机时间计入 TTL；可写快照要求 value 能被 Node structured-clone codec 序列化。
 这是重启预热，不是数据库 durability。
 

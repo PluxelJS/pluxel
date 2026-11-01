@@ -1,11 +1,12 @@
+import { requireFs, requireConfigService, pluginNodePhysicalKey } from '@pluxel/core/internal'
 import { requireHostStateStore, isPluginAutoStartEnabled, listForkIds } from '@pluxel/host/internal'
 import { standardServices } from '@pluxel/services'
+import { logtape } from '@pluxel/core/config'
 import {
 	pluginDefinitionAddressOf,
 	pluginNodeAddressOf,
 	pluginNodeAddressEqual,
 } from '@pluxel/core'
-import { requireConfigService } from '@pluxel/core/internal'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -14,16 +15,13 @@ import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import {
-	logging as loggingService,
 	Logging,
 	createPluginLogPolicyStore,
 	parsePluginLogPolicySnapshot,
 	type PluginLogPolicySnapshot,
 	type RuntimeLoggingInput,
-} from '@pluxel/services/logging'
-import { Fs, InMemory } from '@pluxel/services/fs'
-import { pluginNodePhysicalKey } from '../../../src/internal/plugin-address.ts'
-import type { PluginApplyReport } from '../../../src/management/web/protocol.ts'
+} from '@pluxel/core/logging'
+import { type PluginApplyReport } from '../../../src/management/web/protocol.ts'
 
 @Plugin({ forkable: true })
 class ForkProvider extends BasePlugin {}
@@ -200,9 +198,9 @@ describe('Plugin fork control plane', () => {
 				provider: null,
 			}),
 		).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
-		const business = await host.ctx
-			.require(Fs)
-			.directory(`plugins/${pluginNodePhysicalKey(ensured.fork)}`)
+		const business = await requireFs(host.ctx).directory(
+			`plugins/${pluginNodePhysicalKey(ensured.fork)}`,
+		)
 		await business.mkdir('referenced', { recursive: true })
 		await business.writeFile('referenced/data.json', '{"retained":true}')
 
@@ -257,11 +255,11 @@ describe('Plugin fork control plane', () => {
 		}
 	})
 
-	it('returns stopped-retained when readonly Config metadata rejects removal', async () => {
+	it('rejects readonly Config metadata removal before stopping the fork', async () => {
 		const host = await runtimeHost({
 			configRecords: {
 				mode: 'readonly',
-				storage: (root) => root.require(Fs).documents('host/config'),
+				storage: (root) => requireFs(root).documents('host/config'),
 			},
 		})
 		host.add(ForkProvider)
@@ -270,26 +268,26 @@ describe('Plugin fork control plane', () => {
 		const base = pluginNodeAddressOf(ForkProvider)
 		const ensured = await rpc.ensurePluginForkDto({ base, forkId: 'readonly', autoStart: true })
 		if (ensured.ok === false) throw new Error(ensured.error)
+		await rpc.applyPluginLifecycleCommandsDto([{ address: ensured.fork, command: 'start' }])
 
 		await expect(rpc.removePluginForkDto({ base, forkId: 'readonly' })).resolves.toMatchObject({
 			ok: false,
-			code: 'persistence_failed',
-			state: 'stopped-retained',
-			fork: ensured.fork,
-			report: {},
+			code: 'mutation_rejected',
+			state: 'unchanged',
 		})
 		const state = requireHostStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).toContain('readonly')
 		expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
+		expect(host.isRunning(ensured.fork)).toBe(true)
 	})
 
 	it('retries a failed Config cleanup and never purges business persistence', async () => {
 		let rejectConfigWrite = false
 		const host = await runtimeHost({
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 			configRecords: {
 				storage(root) {
-					const documents = root.require(Fs).documents('host/config')
+					const documents = requireFs(root).documents('host/config')
 					return {
 						...documents,
 						async put(key, value) {
@@ -310,9 +308,9 @@ describe('Plugin fork control plane', () => {
 		const config = requireConfigService(host.ctx)
 		config.patchConfig(ensured.fork, { desired: true })
 		await config.flush()
-		const business = await host.ctx
-			.require(Fs)
-			.directory(`plugins/${pluginNodePhysicalKey(ensured.fork)}`)
+		const business = await requireFs(host.ctx).directory(
+			`plugins/${pluginNodePhysicalKey(ensured.fork)}`,
+		)
 		await business.mkdir('retry', { recursive: true })
 		await business.writeFile('retry/data.bin', 'business-state')
 
@@ -343,11 +341,10 @@ describe('Plugin fork control plane', () => {
 		const persisted: PluginLogPolicySnapshot[] = []
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [
-				...standardServices({ fs: { backend: InMemory } }),
-				loggingService(loggingPlan(), {
+			config: {
+				logger: logtape(loggingPlan(), {
 					policyStore(root) {
-						const documents = root.require(Fs).documents('services/logging')
+						const documents = requireFs(root).documents('services/logging')
 						return createPluginLogPolicyStore({
 							...documents,
 							async put(key, value) {
@@ -358,7 +355,8 @@ describe('Plugin fork control plane', () => {
 						})
 					},
 				}),
-			],
+			},
+			services: standardServices(),
 		})
 		const logging = host.ctx.require(Logging)
 		hosts.push(host)
@@ -426,22 +424,19 @@ function expectBrowserSafeReport(report: PluginApplyReport): void {
 }
 
 function loggingPlan(): RuntimeLoggingInput {
-	return {
-		root: { profile: 'fork-removal-test' },
+	return ({ createRuntimeLogSink }) => ({
 		sinks: {
-			store: {
-				kind: 'store',
+			store: createRuntimeLogSink({
 				streamId: 'fork-removal-test',
 				bufferSize: 1,
 				flushIntervalMs: 0,
 				caller: false,
-			},
+			}),
 		},
-		routes: {
-			runtime: [{ sink: 'store', minLevel: 'fatal' }],
-			plugins: [{ sink: 'store', minLevel: 'fatal' }],
-			debug: [],
-			meta: [],
-		},
-	}
+		loggers: [
+			{ category: ['pluxel', 'runtime'], sinks: ['store'], lowestLevel: 'fatal' },
+			{ category: ['pluxel', 'plugins'], sinks: ['store'], lowestLevel: 'fatal' },
+			{ category: ['logtape', 'meta'], lowestLevel: null },
+		],
+	})
 }

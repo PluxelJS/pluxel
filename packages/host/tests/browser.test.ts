@@ -25,9 +25,15 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { trace } from './trace'
 @Plugin()
 export class Provider extends BasePlugin {
-  protected override init() {
+  protected override async init() {
+    const fs = await this.ctx.fs()
+    await fs.writeFile('browser.txt', 'browser storage')
+    this.ctx.logger.info('provider started', { storage: await fs.readFile('browser.txt', 'utf8') })
     trace.push('provider started')
-    return () => { trace.push('provider closed') }
+    return () => {
+      this.ctx.logger.info('provider closed')
+      trace.push('provider closed')
+    }
   }
   greet() { return 'hello from dependency' }
 }
@@ -43,8 +49,12 @@ import { trace } from './trace'
 export class Consumer extends BasePlugin {
   constructor(private provider: Provider) { super() }
   protected override init() {
+    this.ctx.logger.info('consumer started')
     trace.push(this.provider.greet())
-    return () => { trace.push('consumer closed') }
+    return () => {
+      this.ctx.logger.info('consumer closed')
+      trace.push('consumer closed')
+    }
   }
 }
 `,
@@ -53,24 +63,62 @@ export class Consumer extends BasePlugin {
 			join(root, 'entry.ts'),
 			`
 import { pluginNodeAddressOf } from '@pluxel/core'
+import { logtape, zenfs } from '@pluxel/core/config'
 import { createHost } from '@pluxel/host/browser'
 import { Provider } from './provider'
 import { Consumer } from './consumer'
 import { trace } from './trace'
 export async function run() {
+  const records: { category: readonly string[]; message: string; storage?: unknown }[] = []
+  const sinkLifecycle: string[] = []
   const consumer = pluginNodeAddressOf(Consumer)
   const host = await createHost({
+    config: {
+      storage: zenfs(),
+      logger: logtape({
+        sinks: {
+          capture: Object.assign(
+            (record: {
+              category: readonly string[]
+              message: readonly unknown[]
+              properties: Readonly<Record<string, unknown>>
+            }) => {
+              records.push({
+                category: [...record.category],
+                message: record.message.join(''),
+                storage: record.properties.storage,
+              })
+            },
+            {
+              async drain() { sinkLifecycle.push('drained') },
+              async [Symbol.asyncDispose ?? Symbol.for('Symbol.asyncDispose')]() {
+                sinkLifecycle.push('disposed')
+              },
+            },
+          ),
+        },
+        loggers: [
+          { category: ['pluxel'], lowestLevel: 'trace', sinks: ['capture'] },
+          { category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: [] },
+        ],
+      }),
+    },
     plugins: [Provider, Consumer],
     state: { initial: { autoStart: [consumer] } },
   })
+  const rootId = host.ctx.logging?.resolved.root.id
+  const logging = { initial: host.ctx.logging?.state, final: host.ctx.logging?.state }
   try {
+    host.ctx.logger.info('host prepared')
     const started = await host.start()
     const running = await host.status()
     await host.stopNode(consumer)
     const stopped = await host.status()
-    return { started, running, stopped, trace }
+    return { started, running, stopped, trace, records, rootId, logging, sinkLifecycle }
   } finally {
+    host.ctx.logger.info('host closing')
     await host.close()
+    logging.final = host.ctx.logging?.state
   }
 }
 `,
@@ -98,12 +146,26 @@ export async function run() {
 		expect(chunks).toHaveLength(1)
 		const code = chunks[0]!.code
 		expect(code).not.toContain('__vite-browser-external')
+		const modules = chunks.flatMap((chunk) => Object.keys(chunk.modules))
+		for (const name of ['logtape', 'zenfs']) {
+			expect(modules.some((id) => id.endsWith(`/core/src/config/${name}.ts`))).toBe(true)
+		}
+		expect(
+			modules.filter((id) =>
+				/(?:^|\0)node:|\/@logtape\/(?:file|pretty)\/|\/@logtape\+(?:file|pretty)@|\/core\/src\/logging\/(?:file|pretty)\./.test(
+					id,
+				),
+			),
+		).toEqual([])
 		expect(chunks[0]!.imports).toEqual([])
-		expect(chunks[0]!.dynamicImports).toEqual([])
+		// The selected backend's lazy import is inlined into the same IIFE.
+		expect(chunks[0]!.dynamicImports.filter((id) => id !== chunks[0]!.fileName)).toEqual([])
 		const run = runInNewContext(`${code}\nbrowserHost.run`, {
 			console,
 			TextEncoder,
 			TextDecoder,
+			URL,
+			structuredClone,
 			AbortController,
 			AbortSignal,
 			setTimeout,
@@ -116,6 +178,10 @@ export async function run() {
 			running: { summary: { total: number; running: number } }
 			stopped: { summary: { running: number } }
 			trace: string[]
+			records: { category: string[]; message: string; storage?: unknown }[]
+			rootId: string
+			logging: { initial: string; final: string }
+			sinkLifecycle: string[]
 		}>
 		const result = await run()
 		expect(result.started.core).toMatchObject({
@@ -130,6 +196,31 @@ export async function run() {
 			'consumer closed',
 			'provider closed',
 		])
+		expect(result.logging).toEqual({ initial: 'installed', final: 'disposed' })
+		expect(result.sinkLifecycle).toEqual(['drained', 'disposed'])
+		expect(result.rootId).toEqual(expect.any(String))
+		const lifecycleMessages = [
+			'host prepared',
+			'provider started',
+			'consumer started',
+			'consumer closed',
+			'provider closed',
+			'host closing',
+		]
+		const lifecycleRecords = result.records.filter((record) =>
+			lifecycleMessages.includes(record.message),
+		)
+		expect(lifecycleRecords.map((record) => record.message)).toEqual(lifecycleMessages)
+		for (const record of lifecycleRecords) {
+			expect(record.category.slice(0, 3)).toEqual([
+				'pluxel',
+				record.message.startsWith('host ') ? 'runtime' : 'plugins',
+				result.rootId,
+			])
+		}
+		expect(lifecycleRecords.find((record) => record.message === 'provider started')?.storage).toBe(
+			'browser storage',
+		)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}

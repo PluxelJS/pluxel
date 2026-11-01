@@ -7,6 +7,7 @@ export default defineConfig({
 	run: {
 		tasks: repositoryTasks({
 			'check-tests': 'vp test run',
+			'check-zenfs-browser': { command: 'node tests/zenfs.browser.mjs', cache: false },
 			compile: {
 				command: 'vp pack',
 				dependsOn: ['@pluxel/context#compile', 'eventure#compile'],

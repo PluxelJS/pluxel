@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import {
 	database as installDatabase,
@@ -21,7 +20,7 @@ import {
 	type ServiceInternalTestHarness,
 } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
-import type { DatabaseArtifact } from '../../src/database/artifact'
+import { type DatabaseArtifact } from '../../src/database/artifact'
 import { attachPostgresPoolErrorHandler } from '../../src/database/adapters/shared'
 import { subscribeDatabaseHandle } from '../../src/database/service'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
@@ -171,7 +170,7 @@ describe('DatabaseService', () => {
 		databaseHost = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
-				...standardServices({ fs: { backend: InMemory } }),
+				...standardServices(),
 				installDatabase({ backend: pglite({ dataDir: 'memory://' }) }),
 			],
 		})
@@ -355,7 +354,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 
 		@Plugin({ displayName: 'DisabledDatabasePlugin' })
@@ -381,10 +380,7 @@ describe('DatabaseService', () => {
 			{
 				await using firstHost = await createServiceInternalTestHarness({
 					workbench: false,
-					services: [
-						...standardServices({ fs: { backend: InMemory } }),
-						installDatabase({ backend: pglite({ dataDir }) }),
-					],
+					services: [...standardServices(), installDatabase({ backend: pglite({ dataDir }) })],
 				})
 
 				@Plugin({ displayName: 'PersistentDatabasePlugin' })
@@ -407,10 +403,7 @@ describe('DatabaseService', () => {
 
 			await using secondHost = await createServiceInternalTestHarness({
 				workbench: false,
-				services: [
-					...standardServices({ fs: { backend: InMemory } }),
-					installDatabase({ backend: pglite({ dataDir }) }),
-				],
+				services: [...standardServices(), installDatabase({ backend: pglite({ dataDir }) })],
 			})
 
 			@Plugin({ displayName: 'PersistentDatabasePlugin' })
@@ -442,7 +435,7 @@ describe('DatabaseService', () => {
 		const host = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
-				...standardServices({ fs: { backend: InMemory } }),
+				...standardServices(),
 				installDatabase({ backend: pglite({ dataDir: join(persistence, 'database') }) }),
 			],
 		})

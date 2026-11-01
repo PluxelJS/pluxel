@@ -16,9 +16,9 @@ export const sharedRuntimes = {
 		name: 'tinybase',
 		marker: 'tinybase',
 		label: 'TinyBase',
-		host: 'TinyBase',
-		owner: '@pluxel/services',
-		entry: '@pluxel/services/tinybase',
+		host: 'Core',
+		owner: '@pluxel/core',
+		entry: '@pluxel/core',
 	},
 } as const
 
@@ -78,6 +78,13 @@ export function assertSharedRuntimeAdmission(input: {
 		development,
 		operation,
 	} = input
+	if (runtime.name === 'tinybase' && owner.owner === runtime.owner) {
+		assertSharedRuntimeHost({
+			...input,
+			manifestPath: owner.manifestPath,
+		})
+		return
+	}
 	if (
 		owner.peerVersion === supportedVersion &&
 		(!development || owner.devVersion === supportedVersion) &&
@@ -105,7 +112,7 @@ export function installedSharedRuntimeVersion(entry: string, runtime: SharedRunt
 	return version
 }
 
-/** The managed-state service's exact peer is its support policy, not an arbitrary installed copy. */
+/** Core owns the exact managed-state dependency; its installed copy must match that policy. */
 export function admitSharedRuntimeOwner(
 	ownerEntry: string,
 	runtimeEntry: string,
@@ -114,23 +121,30 @@ export function admitSharedRuntimeOwner(
 ): string {
 	const installed = installedSharedRuntimeVersion(runtimeEntry, runtime)
 	if (runtime.name !== 'tinybase') return installed
-	const owner = readSharedRuntimePackage(ownerEntry, runtime)
-	if (!owner)
-		throw new Error(`[${operation}] Cannot identify TinyBase service owner from ${ownerEntry}`)
-	const supportedVersion = owner.peerVersion ?? installed
-	assertSharedRuntimeAdmission({
+	const manifestPath = nearestPackageManifest(ownerEntry)
+	if (!manifestPath)
+		throw new Error(`[${operation}] Cannot identify Core TinyBase owner from ${ownerEntry}`)
+	const manifest = readPackageManifest(manifestPath)
+	if (manifest.name !== runtime.owner)
+		throw new Error(`[${operation}] Expected ${runtime.owner} at ${manifestPath}`)
+	const dependency = recordField(manifest, 'dependencies')?.[runtime.name]
+	const supportedVersion = declaredVersion(dependency, manifestPath, runtime.name)
+	if (!supportedVersion)
+		throw new Error(
+			`[${operation}] ${runtime.owner} must declare an exact dependencies.${runtime.name} at ${manifestPath}`,
+		)
+	assertSharedRuntimeHost({
 		runtime,
-		package: owner,
+		manifestPath,
 		supportedVersion,
 		actualVersion: installed,
 		actualEntry: runtimeEntry,
-		development: false,
 		operation,
 	})
 	return supportedVersion
 }
 
-/** The application chooses this runtime with a direct exact dependency, rather than a peer. */
+/** The runtime owner declares its exact ordinary dependency. */
 export function assertSharedRuntimeHost(input: {
 	runtime: SharedRuntime
 	manifestPath: string
@@ -150,19 +164,14 @@ export function assertSharedRuntimeHost(input: {
 	throw new Error(
 		`[${operation}] Host ${runtime.label} admission failed for ${String(manifest.name ?? manifestPath)} (${manifestPath}): ` +
 			`dependencies.${runtime.name} ${String(dependency ?? '<missing>')}; resolved ${actualVersion ?? '<missing>'} at ${actualEntry ?? '<missing>'}; ` +
-			`Host ${runtime.host} supports ${supportedVersion}. Install this exact version as a direct application dependency.`,
+			`Host ${runtime.host} supports ${supportedVersion}. Install this exact version as a direct dependency of ${runtime.owner}.`,
 	)
 }
 
-/** Preserve upstream subpaths; a service import is independent evidence of managed-state use. */
+/** Only native runtime imports need admission; importing Core alone adds no TinyBase peer. */
 export function sharedRuntimeForImport(specifier: string): SharedRuntime | undefined {
 	if (specifier === 'capnweb') return sharedRuntimes.workbenchCapnweb
-	if (
-		specifier === 'tinybase' ||
-		specifier.startsWith('tinybase/') ||
-		specifier === sharedRuntimes.tinybase.entry
-	)
-		return sharedRuntimes.tinybase
+	if (specifier === 'tinybase' || specifier.startsWith('tinybase/')) return sharedRuntimes.tinybase
 	return undefined
 }
 

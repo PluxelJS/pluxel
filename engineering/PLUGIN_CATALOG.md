@@ -32,7 +32,7 @@ Management 拥有插件目录分组；它是管理布局，不是插件能力、
 
 ## Explicit document
 
-唯一文档是 `TinyBaseHost.documents('management')` 中的 `plugin-groups.json`，通过 root 私有适配借用同一 FS backing，严格 version 1，保存可读 canonical definition references。
+唯一文档是 Core 内部 `requireTinyBaseHost(root).documents('management')` 中的 `plugin-groups.json`，通过 root 私有适配借用同一 FS backing，严格 version 1，保存可读 canonical definition references。
 完整 shape、缺省行为和示例由用户文档定义。无文件与空文档等价；读取不写默认文件。旧布局文件不读取、不迁移。
 
 人工 group 的 ID、名称、成员顺序和空组独立于当前 catalog 存活。未知但语法有效的 reference 保持休眠；definition 回归时恢复。

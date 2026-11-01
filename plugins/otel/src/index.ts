@@ -6,22 +6,22 @@ import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
 import type { PrometheusPullReader } from './prometheus.ts'
-import type { OtelRuntime } from './sdk.ts'
+import type { OtelProviders, OtelRuntime } from './sdk.ts'
 import { OtelWorkbench, type OtelWorkbenchStatus } from './workbench.ts'
 
 export { OtelConfig } from './config.ts'
 export type { OtelPluginConfig, OtelSignal } from './config.ts'
+export type { OtelProviders } from './sdk.ts'
+export { OtelWorkbench } from './workbench.ts'
 
 const DIAGNOSTIC_LOG_INTERVAL_MS = 60_000
 
 type FailureState = { failing: boolean; loggedAt: number }
 
 /**
- * Caller-scoped native OpenTelemetry access with host-owned OTLP push and Prometheus pull.
+ * Caller-scoped native OpenTelemetry access with generation-owned providers.
  */
-@Plugin()
-export class OtelPlugin extends BasePlugin {
-	private readonly config = this.configs.use(OtelConfig)
+export abstract class Otel extends BasePlugin {
 	private readonly meters = new WeakMap<object, Meter>()
 	private readonly tracers = new WeakMap<object, Tracer>()
 	private readonly loggers = new WeakMap<object, Logger>()
@@ -29,6 +29,7 @@ export class OtelPlugin extends BasePlugin {
 	private readonly otlpStates = new Map<OtelSignal, OtlpExportState>()
 	private readonly workbenchDataListeners = new Set<() => void>()
 	private runtime: OtelRuntime | undefined
+	private prometheusPath: string | undefined
 	private prometheusFailureLogAt = Number.NEGATIVE_INFINITY
 
 	/** Standard OTel Meter scoped to the caller Plugin node address. */
@@ -46,53 +47,69 @@ export class OtelPlugin extends BasePlugin {
 		return this.getCallerScoped(this.loggers, (runtime, scope) => runtime.getLogger(scope))
 	}
 
+	/**
+	 * Create native providers once per generation, after any declared config injection.
+	 * Returning transfers their flush/shutdown ownership to this generation.
+	 * Clean up partially created resources yourself if this hook rejects.
+	 */
+	protected abstract createProviders(): Promise<OtelProviders>
+
 	protected override async init(): Promise<void> {
-		const { createOtelRuntime } = await import('./sdk.ts')
-		const runtime = await createOtelRuntime({
-			rootName: this.ctx.root.name,
-			otlp: this.config.otlp,
-			prometheus: this.config.prometheus !== false,
-			onOtlpExportState: (state) => this.onOtlpExportState(state),
-		})
+		const { createRuntimeFromProviders } = await import('./sdk.ts')
+		const providers = await this.createProviders()
+		const runtime = await createRuntimeFromProviders(providers)
 		this.runtime = runtime
 		try {
-			this.ctx.effects.defer(() => this.disposeRuntime(runtime), { tag: 'OtelPlugin' })
-			if (runtime.prometheus && this.config.prometheus !== false) {
-				this.mountPrometheus(runtime.prometheus, this.config.prometheus.path)
+			this.ctx.effects.defer(() => this.disposeRuntime(runtime), { tag: 'Otel' })
+			if (runtime.prometheus && runtime.prometheusPath !== undefined) {
+				this.mountPrometheus(runtime.prometheus, runtime.prometheusPath)
+				this.prometheusPath = runtime.prometheusPath
 			}
 		} catch (error) {
-			if (this.runtime === runtime) this.runtime = undefined
-			try {
-				await runtime.shutdown()
-			} catch {
-				// Preserve the registration failure.
+			if (this.runtime === runtime) {
+				this.runtime = undefined
+				this.prometheusPath = undefined
+			}
+			const [cleanup] = await Promise.allSettled([runtime.shutdown()])
+			if (cleanup.status === 'rejected') {
+				throw new AggregateError(
+					[error, cleanup.reason],
+					'OpenTelemetry initialization and cleanup failed',
+					{ cause: error },
+				)
 			}
 			throw error
 		}
-		this.ctx.workbench?.publish(OtelWorkbench, {
-			operations: ({ signal, dataChanged }) => {
-				const release = () => this.workbenchDataListeners.delete(dataChanged)
-				this.workbenchDataListeners.add(dataChanged)
-				signal.addEventListener('abort', release, { once: true })
-				if (signal.aborted) release()
-				return {
-					load: () => ({ status: this.workbenchStatus() }),
-					actions: {
-						flush: async () => {
-							try {
-								await this.requireRuntime().forceFlush()
-								return { ok: true as const, message: '待处理 telemetry 已提交给 exporter' }
-							} catch (error) {
-								this.warn('OpenTelemetry manual flush failed', {
-									errorType: safeErrorType(error),
-								})
-								return { ok: false as const, message: '导出未完成，请查看 Plugin 日志' }
-							}
-						},
-					},
-				}
+	}
+
+	/** Bind OtelWorkbench.operations in the concrete Plugin's own init() publication. */
+	protected workbenchOperations({
+		signal,
+		dataChanged,
+	}: {
+		signal: AbortSignal
+		dataChanged(): void
+	}) {
+		const release = () => this.workbenchDataListeners.delete(dataChanged)
+		this.workbenchDataListeners.add(dataChanged)
+		signal.addEventListener('abort', release, { once: true })
+		if (signal.aborted) release()
+		return {
+			load: () => ({ status: this.workbenchStatus() }),
+			actions: {
+				flush: async () => {
+					try {
+						await this.requireRuntime().forceFlush()
+						return { ok: true as const, message: '待处理 telemetry 已提交给 exporter' }
+					} catch (error) {
+						this.warn('OpenTelemetry manual flush failed', {
+							errorType: safeErrorType(error),
+						})
+						return { ok: false as const, message: '导出未完成，请查看 Plugin 日志' }
+					}
+				},
 			},
-		})
+		}
 	}
 
 	private getCallerScoped<T>(
@@ -100,7 +117,7 @@ export class OtelPlugin extends BasePlugin {
 		create: (runtime: OtelRuntime, scopeName: string) => T,
 	): T {
 		const runtime = this.runtime
-		if (!runtime) throw new Error('OtelPlugin is not running')
+		if (!runtime) throw new Error('Otel is not running')
 		const owner = this.ctx.caller ?? this.ctx
 		const key = owner as object
 		const existing = cache.get(key)
@@ -112,14 +129,16 @@ export class OtelPlugin extends BasePlugin {
 
 	private requireRuntime(): OtelRuntime {
 		const runtime = this.runtime
-		if (!runtime) throw new Error('OtelPlugin is not running')
+		if (!runtime) throw new Error('Otel is not running')
 		return runtime
 	}
 
 	private workbenchStatus(): OtelWorkbenchStatus {
+		const runtime = this.requireRuntime()
 		const signal = (name: OtelSignal): OtelWorkbenchStatus['metrics'] => {
-			if (!this.config.otlp.includes(name)) {
-				return { state: 'disabled' as const, errorType: null }
+			const output = runtime.outputs[name]
+			if (output !== 'managed') {
+				return { state: output, errorType: null }
 			}
 			const state = this.otlpStates.get(name)
 			if (!state) return { state: 'waiting' as const, errorType: null }
@@ -127,15 +146,15 @@ export class OtelPlugin extends BasePlugin {
 				? { state: 'failing', errorType: state.errorType }
 				: { state: 'healthy', errorType: null }
 		}
-		const prometheus = this.config.prometheus
+		const prometheusPath = this.prometheusPath
 		return {
 			metrics: signal('metrics'),
 			traces: signal('traces'),
 			logs: signal('logs'),
 			prometheus:
-				prometheus === false
+				prometheusPath === undefined
 					? { state: 'disabled' as const, path: null }
-					: { state: 'listening' as const, path: prometheus.path },
+					: { state: 'listening' as const, path: prometheusPath },
 		}
 	}
 
@@ -164,15 +183,19 @@ export class OtelPlugin extends BasePlugin {
 	}
 
 	private async disposeRuntime(runtime: OtelRuntime): Promise<void> {
-		if (this.runtime === runtime) this.runtime = undefined
+		if (this.runtime === runtime) {
+			this.runtime = undefined
+			this.prometheusPath = undefined
+		}
 		try {
 			await runtime.shutdown()
 		} catch (error) {
 			this.warn('OpenTelemetry shutdown failed', { errorType: safeErrorType(error) })
+			throw error
 		}
 	}
 
-	private onOtlpExportState(state: OtlpExportState): void {
+	protected onOtlpExportState(state: OtlpExportState): void {
 		const previous = this.otlpStates.get(state.signal)
 		this.otlpStates.set(state.signal, state)
 		if (!sameExportState(previous, state)) {
@@ -221,6 +244,31 @@ export class OtelPlugin extends BasePlugin {
 		} catch {
 			// Diagnostics cannot affect telemetry or application code.
 		}
+	}
+}
+
+/** Optional OTLP/Prometheus preset configured through OtelConfig and standard OTEL_* inputs. */
+@Plugin(Otel)
+export class OtelPlugin extends Otel {
+	private readonly config = this.configs.use(OtelConfig)
+
+	protected override async init(): Promise<void> {
+		await super.init()
+		this.ctx.workbench?.publish(OtelWorkbench, {
+			operations: (context) => this.workbenchOperations(context),
+		})
+	}
+
+	protected override async createProviders(): Promise<OtelProviders> {
+		const { createOtelProviders } = await import('./sdk.ts')
+		const managed = await createOtelProviders({
+			rootName: this.ctx.root.name,
+			otlp: this.config.otlp,
+			prometheus: this.config.prometheus !== false,
+			prometheusPath: this.config.prometheus === false ? undefined : this.config.prometheus.path,
+			onOtlpExportState: (state) => this.onOtlpExportState(state),
+		})
+		return managed.providers
 	}
 }
 

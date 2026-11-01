@@ -1,11 +1,15 @@
-import { InMemory } from '@pluxel/services/fs'
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
-import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemetry/api'
+import {
+	type Counter,
+	type Histogram,
+	type Meter,
+	type ObservableCallback,
+} from '@opentelemetry/api'
 import * as v from 'valibot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OtelConfig, OtelPlugin } from '../src/index.ts'
+import { Otel, OtelConfig, OtelPlugin } from '../src/index.ts'
 
 @Plugin({ displayName: 'OtelConsumer' })
 class Consumer extends BasePlugin {
@@ -13,7 +17,7 @@ class Consumer extends BasePlugin {
 	private duration!: Histogram
 	readonly meters: Meter[] = []
 
-	constructor(readonly otel: OtelPlugin) {
+	constructor(readonly otel: Otel) {
 		super()
 	}
 
@@ -43,7 +47,7 @@ describe('OtelPlugin', () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
 			await using host = await createTestHost({
-				services: standardServices({ fs: { backend: InMemory } }),
+				services: standardServices(),
 			})
 			await host.start(OtelPlugin, {
 				catalog: [Consumer],

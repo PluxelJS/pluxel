@@ -7,6 +7,15 @@ export type {
 	RootContext,
 } from './context/Context'
 export type { ContextLogger } from './logger/LoggerService'
+export { TinyBaseError } from './tinybase/error'
+export type {
+	TinyBaseService,
+	TinyBaseHostService,
+	TinyBaseOptions,
+	TinyBaseIdentity,
+	TinyBaseStatus,
+} from './tinybase/types'
+export type { HostDocumentStorage } from './storage/documents'
 
 export {
 	ContextCapabilityMissingError,

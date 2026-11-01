@@ -24,7 +24,7 @@ export function hostSharedPackages(options: {
 			throw new TypeError(`[host] sharedPackages requires package names: ${String(name)}`)
 		if (name === 'tinybase' || name === 'capnweb')
 			throw new TypeError(
-				`[host] ${name} uses capability-scoped exact-version admission; select ${name === 'tinybase' ? '@pluxel/services' : '@pluxel/workbench'} instead of sharing ${name} globally`,
+				`[host] ${name} uses capability-scoped exact-version admission; its owner is ${name === 'tinybase' ? '@pluxel/core' : '@pluxel/workbench'}, not a global shared-package override`,
 			)
 		if (!packages.has(name)) packages.set(name, options.root)
 	}

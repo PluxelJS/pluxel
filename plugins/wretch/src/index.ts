@@ -1,6 +1,7 @@
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import {
 	parsePluginNodeAddress,
+	type TinyBaseService,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
 	type Context,
@@ -9,7 +10,6 @@ import {
 	Plugin,
 } from '@pluxel/core'
 
-import { TinyBase, type TinyBaseService } from '@pluxel/services/tinybase'
 import { RpcTarget } from 'capnweb'
 import wretch, { type Wretch } from 'wretch'
 import { WretchConfig } from './config.ts'
@@ -50,7 +50,7 @@ export class WretchPlugin extends BasePlugin {
 	override init(): void {
 		const policy = createOutboundPolicy(this.config)
 		this.policy = policy
-		this.storageState.service = this.ctx.tinybase ? this.ctx.require(TinyBase) : undefined
+		this.storageState.service = this.ctx.tinybase
 		this.ctx.effects.defer(
 			async () => {
 				policy.dispose()
@@ -156,8 +156,6 @@ export class WretchPlugin extends BasePlugin {
 
 	private requireManagedSettings(): ManagedSettingsState {
 		this.requirePolicy()
-		if (!this.storageState.service)
-			throw new Error('Managed Wretch settings require the TinyBase service')
 		const state = this.managed.get(this.requireCaller())
 		if (!state)
 			throw new Error('Call enableManagedSettings() before accessing managed Wretch settings')
@@ -249,7 +247,7 @@ export class WretchPlugin extends BasePlugin {
 		const policy = this.requirePolicy()
 		if (!this.storageState.prepared) {
 			const service = this.storageState.service
-			if (!service) throw new Error('Managed Wretch settings require the TinyBase service')
+			if (!service) throw stoppedClientError()
 			this.storageState.prepared = service.open().then((store) => {
 				if (this.policy !== policy) throw stoppedClientError()
 				const managed = new ManagedSettingsStore(store, () => service.flush())

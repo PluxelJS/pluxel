@@ -1,8 +1,16 @@
 import { ConfigService } from '../services/config/ConfigService'
 import { EffectsService } from '../services/effects/EffectsService'
 import { createEventsBackend, createEventsServiceView } from '../services/events/EventsService'
-import { LoggerService, type LoggerServiceConfig } from '../logger/LoggerService'
+import { LoggerService } from '../logger/LoggerService'
+import { resolveLogTapeConfig, type LogTapeConfig } from '../config/logtape'
+import { Logging } from '../logging/service'
+import { createCoreLoggingRuntime } from './core-logging'
 import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
+import { FsService, snapshotFsConfig } from '../fs/service'
+import { TinyBaseRuntime } from '../tinybase/service'
+import { resolveTinyBaseOptions } from '../tinybase/options'
+import type { TinyBaseOptions } from '../tinybase/types'
+import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import {
 	freezeCorePluginLifecycleHooks,
 	type CorePluginLifecycleHooks,
@@ -22,6 +30,10 @@ import {
 	EVENTS_CAPABILITY,
 	LOGGER_CAPABILITY,
 	PLUGIN_SERVICE_CAPABILITY_IDENTITY,
+	FS_CAPABILITY,
+	PLUGIN_FS_CAPABILITY,
+	TINYBASE_HOST_CAPABILITY,
+	TINYBASE_CAPABILITY,
 } from './core-capabilities'
 
 export const PLUGIN_SERVICE_CAPABILITY =
@@ -31,15 +43,19 @@ export { CONFIG_SERVICE_CAPABILITY, EFFECTS_CAPABILITY, EVENTS_CAPABILITY, LOGGE
 
 export type CoreRootInputs = Readonly<{
 	name: string
-	logger?: Readonly<LoggerServiceConfig>
+	logger?: LogTapeConfig
 	events?: Readonly<import('../services/events/EventsService').EventsServiceConfig>
 	plugins?: Readonly<PluginServiceConfig>
+	storage: ReturnType<typeof snapshotFsConfig>
+	tinybase: Required<TinyBaseOptions>
 }>
 
 export function resolveCoreRootInputs(config: CoreHostConfig = {}): CoreRootInputs {
 	return Object.freeze({
 		name: config.name ?? 'root',
-		...(config.logger ? { logger: Object.freeze({ ...config.logger }) } : {}),
+		storage: snapshotFsConfig(config.storage === undefined ? {} : config.storage),
+		tinybase: resolveTinyBaseOptions(config.tinybase),
+		logger: resolveLogTapeConfig(config.logger),
 		...(config.events
 			? {
 					events: Object.freeze({
@@ -64,7 +80,7 @@ export function createCoreContextInstallations(
 	return Object.freeze([
 		installScopeCapability(LOGGER_CAPABILITY, {
 			property: 'logger',
-			create: (ctx) => new LoggerService(ctx as Context, inputs.logger),
+			create: (ctx) => new LoggerService(ctx as Context),
 		}),
 		installScopeCapability(EFFECTS_CAPABILITY, {
 			property: 'effects',
@@ -78,15 +94,58 @@ export function createCoreContextInstallations(
 		installRootCapability(CONFIG_SERVICE_CAPABILITY, {
 			create: (ctx) => createConfigService(ctx as RootContext),
 		}),
+		installRootCapability(FS_CAPABILITY, {
+			create: (root) => new FsService(root as RootContext, inputs.storage),
+		}),
+		installOwnerViewCapability(PLUGIN_FS_CAPABILITY, {
+			property: 'fs',
+			createRoot: (root) => root.require(FS_CAPABILITY),
+			createView: (filesystem, owner) => {
+				const address = (owner as Context).pluginInfo?.nodeAddress
+				if (!address) throw new TypeError('[core.fs] A Plugin node address is required')
+				const directory = `plugins/${pluginNodePhysicalKey(address)}`
+				return (requirement) => filesystem.directory(directory, requirement)
+			},
+		}),
+		installRootCapability(TINYBASE_HOST_CAPABILITY, {
+			create: (root) =>
+				new TinyBaseRuntime(
+					root as RootContext,
+					root.require(FS_CAPABILITY),
+					inputs.tinybase.maxSnapshotBytes,
+				),
+		}),
+		...(inputs.logger
+			? [
+					installRootCapability(Logging, {
+						property: 'logging',
+						create: (root) => createCoreLoggingRuntime(root as RootContext, inputs.logger!),
+					}),
+				]
+			: []),
+		installScopeCapability(TINYBASE_CAPABILITY, {
+			property: 'tinybase',
+			create: (owner) => owner.root.require(TINYBASE_HOST_CAPABILITY).forOwner(owner as Context),
+		}),
 		installRootCapability(PLUGIN_SERVICE_CAPABILITY, {
-			create: (ctx) =>
-				new PluginService(
-					ctx as RootContext,
-					inputs.plugins,
+			create: (ctx) => {
+				const builtin = ctx.require(TINYBASE_HOST_CAPABILITY).lifecycle
+				const hooks =
 					typeof fixedLifecycleHooks === 'function'
 						? freezeCorePluginLifecycleHooks(fixedLifecycleHooks(ctx as RootContext))
-						: fixedLifecycleHooks,
-				),
+						: fixedLifecycleHooks
+				return new PluginService(ctx as RootContext, inputs.plugins, {
+					...hooks,
+					async prepareCommit(publication) {
+						await builtin.prepareCommit?.(publication)
+						await hooks.prepareCommit?.(publication)
+					},
+					publishCommit(publication) {
+						builtin.publishCommit?.(publication)
+						return hooks.publishCommit?.(publication)
+					},
+				})
+			},
 		}),
 	])
 }
@@ -112,9 +171,13 @@ export function createCoreContextHost<
 		readonly capabilities?: TCapabilities &
 			import('@pluxel/context').ValidateContextInstallations<
 				TCapabilities,
-				| Exclude<keyof Context, keyof import('./Context').ContextServices>
+				| Exclude<
+						keyof import('./Context').PluginContext,
+						keyof import('./Context').ContextServices
+				  >
 				| 'constructor'
 				| '__proto__'
+				| 'logging'
 			>
 	} = {},
 ) {
@@ -127,7 +190,7 @@ export function createCoreContextHost<
 	const inputs = resolveCoreRootInputs(config)
 	return createContextHost({
 		name: inputs.name,
-		reservedProperties: ['pluginInfo', 'caller'],
+		reservedProperties: ['pluginInfo', 'caller', ...(!inputs.logger ? ['logging'] : [])],
 		capabilities: [
 			...createCoreContextInstallations(
 				inputs,

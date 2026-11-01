@@ -5,8 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
-import { fs, Passthrough } from '@pluxel/services/fs'
-import { tinybase } from '@pluxel/services/tinybase'
+import { Passthrough } from '@pluxel/core/fs'
 import { expect, it } from 'vitest'
 import { WretchConfig, WretchPlugin } from '../src/index.ts'
 
@@ -19,14 +18,12 @@ class StatelessHttpConsumer extends BasePlugin {
 		super()
 	}
 	async init() {
-		expect(this.ctx.fs).toBeUndefined()
+		expect(this.ctx.fs).toBeTypeOf('function')
 		expect(this.ctx.workbench).toBeUndefined()
-		await expect(this.http.enableManagedSettings()).rejects.toThrow('require the TinyBase service')
-		await expect(this.http.updateManagedSettings({ headers: {} })).rejects.toThrow(
-			'require the TinyBase service',
-		)
-		await expect(this.http.resetManagedSettings()).rejects.toThrow('require the TinyBase service')
-		expect(() => this.http.managedSettings).toThrow('require the TinyBase service')
+		await this.http.enableManagedSettings()
+		await this.http.updateManagedSettings({ headers: {} })
+		await this.http.resetManagedSettings()
+		expect(this.http.managedSettings.settings.headers).toEqual({})
 		expect(await this.http.client.get(origin).text()).toBe('stateless')
 		await expect(this.http.client.get('https://not-allowed.example').text()).rejects.toThrow(
 			/origin/i,
@@ -34,7 +31,7 @@ class StatelessHttpConsumer extends BasePlugin {
 	}
 }
 
-it('runs native HTTP and env policy with services: [] while explicitly rejecting managed storage operations', async () => {
+it('runs native HTTP, env policy and managed settings with services: []', async () => {
 	let requests = 0
 	const server = createServer((_request, response) => {
 		requests++
@@ -147,7 +144,13 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 		origin = `http://127.0.0.1:${address.port}`
 		const application = defineHostApplication(() => ({
 			plugins: [WretchPlugin, HeadlessHttpConsumer, SecondManagedConsumer],
-			services: [fs({ backend: Passthrough, fs: nativeFs, prefix }), tinybase()],
+			config: {
+				storage: {
+					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+					durableMounts: ['/'],
+				},
+			},
+			services: [],
 			state: {
 				initial: {
 					autoStart: [

@@ -221,11 +221,11 @@ export const inspectWorkbench = defineDevConsole(async (dev) => {
 
 ## 有界操作日志与等待
 
-Core 的 `dev.ctx.logger` 可直接使用；输出、过滤和 store 由 [Host 日志配置](../host/configuration.md#host-logging-plan)决定。控制台不创建 store、不修改路由、不在结果中自动附加日志。在线读取使用既有 Logging 能力：
+Core 的 `dev.ctx.logger` 可直接使用；输出、过滤和 store 由 [Host 日志配置](../host/configuration.md#host-logging)决定。控制台不创建 store、不修改路由、不在结果中自动附加日志。应用先通过 `config.logger: logtape()` 配置日志；在线读取使用这个 Core root 的 Logging 能力：
 
 ```ts no-twoslash
 import { defineDevConsole } from '@pluxel/host-vite/console'
-import { Logging, markLogs, readLogs } from '@pluxel/services/logging'
+import { Logging, markLogs, readLogs } from '@pluxel/core/logging'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { TodoPlugin } from '@example/todo-plugin'
 

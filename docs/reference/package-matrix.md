@@ -38,7 +38,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 `@pluxel/services/management/client`、`/session` 和 `/protocol` 提供浏览器管理客户端、认证会话与 DTO；`/react` 只提供 React Context adapter。`@pluxel/workbench` 提供 browser-safe Content、Direct View 与 Attachment definition，`/client` 提供 Shell layout/opened-handle client，`/react` 提供 exact descriptor hook、host facade 与 per-open renderer resources。React 入口使用宿主提供的 singleton。RPC object model 直接从 `capnweb` 导入。
 
-`@pluxel/services/tinybase` 提供 Host 安装器、服务 token 与持久化契约；原生 Store、Queries、React 与 schematizer 直接从 `tinybase` 及子路径导入。应用安装 Services 精确接纳的版本，使用共享 Store 的插件声明同版 peer/dev；纯 config 或 DTO 消费者不新增依赖。用法见[插件状态](../plugin-development/tinybase.md)。
+`@pluxel/core` 固定提供 `ctx.tinybase`，`@pluxel/core/fs` 提供后端配置、FS 类型和原子保存；浏览器 IndexedDB 从 `/fs/browser` 导入。原生 Store、Queries、React 与 schematizer 直接从 `tinybase` 及子路径导入。Core 持有精确 TinyBase runtime，共享原生 Store 的插件声明同版 peer/dev；纯 config、open 或 DTO 消费者不新增依赖。用法见[插件状态](../plugin-development/tinybase.md)。
 
 `@pluxel/commands/capnweb` 与 `@pluxel/commands/mcp` 分别把选定 Command 投影为原生 Cap’n Web 方法与 MCP Tool；适配器不安装 server 或会话，协议依赖按入口隔离。
 
@@ -53,7 +53,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 ## 同包的可选入口
 
-`@pluxel/services/database`、`/database/pglite`、`/database/postgres`、`/logging`、`/management`、`/preset` 与 `/vite` 都属于 `@pluxel/services`；`@pluxel/host/sources` 属于 Host。安装包不等于启用所有领域：基础入口不加载未选择的 SQL driver、日志、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
+`@pluxel/services/database`、`/database/pglite`、`/database/postgres`、`/management`、`/preset` 与 `/vite` 都属于 `@pluxel/services`；`@pluxel/host/sources` 属于 Host。`@pluxel/core/config` 提供 `logtape()` 与 `zenfs()`，分别放入 `config.logger` 和 `config.storage`；日志 manager、policy/query 与浏览器 DTO 分别从 `@pluxel/core/logging` 及 `/logging/protocol` 读取。安装包不等于启用所有领域：省略 `config.logger` 不安装进程日志配置，基础服务入口不加载未选择的 SQL driver、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
 
 托管 SQL 的 schema 和 query 使用原生 Drizzle，应用安装所选 driver，见[数据库与数据归属](../plugin-development/database.md)。`@pluxel/rolldown/database` 提供迁移工具 API，命令使用 `pluxel database`；应用也可以完全自管 ORM、driver、迁移和连接。
 

@@ -5,6 +5,7 @@ import { SuperJSON } from 'superjson'
 import { describe, expect, it } from 'vitest'
 import { createHost, defineHostService } from '../src/index'
 import { createDocumentStorage } from './helpers/document-storage'
+import { assertResolvedHostStoreStorage } from '../src/document-storage'
 
 const owner: PluginNodeAddress = {
 	definition: {
@@ -63,9 +64,18 @@ function documentService(events: string[]) {
 }
 
 describe('Host root document factories', () => {
+	it.each(['writable', 'readonly'] as const)(
+		'requires an actual namespace after resolving %s storage',
+		(mode) => {
+			expect(() => {
+				// @ts-expect-error Persistent modes need an actual namespace after Host resolves defaults.
+				assertResolvedHostStoreStorage({ mode })
+			}).toThrow('requires resolved document storage')
+		},
+	)
 	it.each([
 		{ name: 'a storage object', options: { storage: createDocumentStorage() } },
-		{ name: 'a missing storage factory', options: { mode: 'readonly' } },
+		{ name: 'an unknown storage mode', options: { mode: 'unsupported' } },
 		{
 			name: 'a persistent factory in memory mode',
 			options: { storage: () => createDocumentStorage(), mode: 'memory' },

@@ -12,7 +12,7 @@
 consumer endpoint、headers、auth、retry、dedupe、addon 和 response resolver 都不是 provider 所有。它们由
 consumer 从 immutable base 派生，不注册 profile，也不复制 Wretch request/response API。
 
-普通 client 与宿主策略不需要额外服务，`services: []` 仍可运行。受管设置是显式 opt-in；provider init 只捕获可选的 TinyBase owner handle，首次受管操作才恢复 provider node 唯一 Store。缺少 TinyBase 时明确拒绝启用、读取、保存、重置或打开设置 View。持久化目录、恢复与 IO 队列归 Host；provider generation 只拥有领域提交协调器和受管 dispatcher。
+普通 client 与宿主策略不需要额外服务，`services: []` 仍可运行。受管设置是显式 opt-in；provider init 只捕获 Core 内建的 TinyBase owner handle，首次受管操作才恢复 provider node 唯一 Store。持久化目录、恢复与 IO 队列归 Host；provider generation 只拥有领域提交协调器和受管 dispatcher。
 
 ## Wretch 组合顺序
 

@@ -13,4 +13,4 @@ pnpm add @pluxel/plugin-wretch
 - [用法、配置与验证](../../docs/plugins/wretch.md)
 - [维护约束](DESIGN.md)
 
-普通 HTTP client 无需 FS 或 Workbench 服务；只有显式启用受管设置时才需要 Host 的 TinyBase 服务。
+普通 HTTP client 与受管设置都可在 `services: []` 中运行；受管设置显式启用后使用 Core 内建 TinyBase，文件后端由 Host 统一选择。

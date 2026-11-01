@@ -47,8 +47,7 @@
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "workspace:^",
-		"@pluxel/services": "workspace:^"
+		"@pluxel/core": "workspace:^"
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

@@ -4,6 +4,8 @@ import type {
 	HostPluginConfigResult,
 	PluginApplyReportSnapshot,
 	RuntimeUpdateSnapshot,
+	HostConfigMutationOptions,
+	HostConfigState,
 } from '@pluxel/host'
 
 /** Current concrete implementation; fork references do not create a fork. */
@@ -56,6 +58,7 @@ export interface DevConsole {
 		require<T extends DevTypedPluginTarget>(target: T): DevPluginInstance<T>
 	}
 	readonly config: {
+		status(): HostConfigState
 		get(target: DevPluginTarget): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 		validate(
 			target: DevPluginTarget,
@@ -64,11 +67,13 @@ export interface DevConsole {
 		patch(
 			target: DevPluginTarget,
 			patch: Readonly<Record<string, unknown>>,
+			options?: Pick<HostConfigMutationOptions, 'expected'>,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 		/** Omitted or empty keys resets every saved top-level field. */
 		reset(
 			target: DevPluginTarget,
 			keys?: readonly string[],
+			options?: Pick<HostConfigMutationOptions, 'expected'>,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 	}
 }

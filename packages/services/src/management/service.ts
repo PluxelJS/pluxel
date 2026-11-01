@@ -1,7 +1,6 @@
-import type { Context, RootContext } from '@pluxel/core'
+import { type Context, type RootContext } from '@pluxel/core'
 import { installRootCapability, installOwnerViewCapability } from '@pluxel/core/host'
 import { defineHostService } from '@pluxel/host'
-import { TinyBaseHost } from '../tinybase'
 import { AdminAccess } from './access'
 import { Management, CatalogLayout, ApiValidation } from './token'
 import { RuntimeManagementService } from './services/RuntimeManagementService'
@@ -29,7 +28,7 @@ export function management(options: ManagementServiceOptions = {}) {
 	const inputs = Object.freeze({ recentUpdate: options.recentUpdate })
 	return defineHostService({
 		name: 'Management',
-		requires: { authentication: AdminAccess, tinybase: TinyBaseHost },
+		requires: { authentication: AdminAccess },
 		capabilities: [
 			installRootCapability(Management, {
 				property: 'runtimeManagement',

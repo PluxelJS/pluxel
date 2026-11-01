@@ -111,11 +111,11 @@ class Page extends RpcTarget {released=false;value(){return 42}isReleased(){retu
 	)
 	await write(
 		'app.ts',
-		`import { defineHostApplication } from '@pluxel/host';import { pluginNodeAddressOf } from '@pluxel/core';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';import { logging } from '@pluxel/services/logging';
-export default defineHostApplication(({bindings}) => ({plugins:[Viewer],services:[logging({
- root:{profile:'fixture'},sinks:{console:{kind:'console',format:'pretty',caller:false,timezone:'utc'},capture:{kind:'logtape',label:'test diagnostics',sink:bindings.captureLog,caller:false}},
- routes:{runtime:[{sink:'console',minLevel:'error'},{sink:'capture',minLevel:'error'}],plugins:[],debug:[],meta:[]}
-}),elysia(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})],state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}))`,
+		`import { defineHostApplication } from '@pluxel/host';import { pluginNodeAddressOf } from '@pluxel/core';import { logtape } from '@pluxel/core/config';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';
+export default defineHostApplication(({bindings}) => ({plugins:[Viewer],config:{logger:logtape({
+ sinks:{capture:bindings.captureLog},
+ loggers:[{category:['pluxel','runtime'],sinks:['capture'],lowestLevel:'error'},{category:['logtape','meta'],lowestLevel:null}]
+},{profile:'fixture'})},services:[elysia(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})],state:{initial:{autoStart:[pluginNodeAddressOf(Viewer)]}}}))`,
 	)
 	server = await createServer({
 		root,

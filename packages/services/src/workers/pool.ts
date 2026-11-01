@@ -1,5 +1,6 @@
 import { Worker, type Transferable } from 'node:worker_threads'
 import { pathToFileURL } from 'node:url'
+import type { WorkersConfig } from './declaration'
 
 type WorkerRequest = Readonly<{
 	taskId: number
@@ -56,6 +57,7 @@ export type WorkerThreadPoolOptions = Readonly<{
 	/** Maximum slots that may execute tasks concurrently. */
 	maxThreads: number
 	idleTimeoutMs: number
+	worker?: WorkersConfig['worker']
 }>
 
 const WORKER_ENTRY_SOURCE = `
@@ -104,7 +106,7 @@ export class WorkerThreadPool {
 	constructor(
 		private readonly options: WorkerThreadPoolOptions,
 		private readonly createWorker: WorkerThreadFactory = () =>
-			new Worker(WORKER_ENTRY_URL) as WorkerHandle,
+			new Worker(WORKER_ENTRY_URL, options.worker) as WorkerHandle,
 	) {}
 
 	run(

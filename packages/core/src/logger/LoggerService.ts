@@ -7,8 +7,8 @@ import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
 const RESERVED_PROPERTY_KEYS = new Set(['context', 'pluginDisplayName'])
 const contextLoggerRootIds = new WeakMap<object, string>()
-const unmanagedRootIds = new WeakMap<object, string>()
-let unmanagedRootIdSequence = 0
+const defaultRootIds = new WeakMap<object, string>()
+let defaultRootIdSequence = 0
 
 export type LoggerServiceConfig = Readonly<{
 	/** @internal Core pins this identity to the root; Host logging uses the same identity. */
@@ -25,10 +25,10 @@ type ContextLoggerIdentity = Readonly<{
 
 function fallbackRootId(ctx: PluxelContext): string {
 	const root = (ctx.root ?? ctx) as unknown as object
-	let id = unmanagedRootIds.get(root)
+	let id = defaultRootIds.get(root)
 	if (!id) {
-		id = `unmanaged-${++unmanagedRootIdSequence}`
-		unmanagedRootIds.set(root, id)
+		id = `root-${++defaultRootIdSequence}`
+		defaultRootIds.set(root, id)
 	}
 	return id
 }

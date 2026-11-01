@@ -5,35 +5,26 @@ import {
 	createRuntimeLogging,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
-} from '@pluxel/services/logging/internal'
+} from '@pluxel/core/logging/internal'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseLogRangeResult } from '../../src/management/web/management-validation.ts'
 
-function storePlan(
-	initialPluginPolicy?: RuntimeLoggingInput['root']['initialPluginPolicy'],
-): RuntimeLoggingInput {
-	return {
-		root: {
-			profile: 'test',
-			initialPluginPolicy,
-			debugTopics: ['hmr:*'],
-		},
+const rootOptions = { profile: 'test', debugTopics: ['hmr:*'] }
+function storePlan(): RuntimeLoggingInput {
+	return ({ createRuntimeLogSink }) => ({
 		sinks: {
-			store: {
-				kind: 'store',
+			store: createRuntimeLogSink({
 				streamId: 'default',
 				bufferSize: 1,
 				flushIntervalMs: 0,
 				caller: true,
-			},
+			}),
 		},
-		routes: {
-			runtime: [{ sink: 'store', minLevel: 'trace' }],
-			plugins: [{ sink: 'store', minLevel: 'trace' }],
-			debug: [{ sink: 'store', minLevel: 'trace' }],
-			meta: [],
-		},
-	} satisfies RuntimeLoggingInput
+		loggers: [
+			{ category: ['pluxel'], sinks: ['store'], lowestLevel: 'trace' },
+			{ category: ['logtape', 'meta'], lowestLevel: null },
+		],
+	})
 }
 
 const pluginA = {
@@ -64,28 +55,31 @@ describe('RuntimeLogging', () => {
 		if (getConfig()) await reset()
 	})
 
-	it('rejects unknown logging fields at the construction boundary', () => {
-		const plan = storePlan()
+	it('rejects unknown Host logging options without narrowing native configuration', () => {
 		expect(() =>
-			createRuntimeLogging({
-				...plan,
-				root: { ...plan.root, legacy: true },
-			} as never),
-		).toThrow(/logging\.root includes unsupported "legacy"/i)
+			createRuntimeLogging(storePlan(), { ...rootOptions, legacy: true } as never),
+		).toThrow(/options includes unsupported "legacy"/i)
 	})
 
-	it('resolves an inspectable root plan without per-plugin logger config', () => {
-		logging = createRuntimeLogging(
-			storePlan({
+	it('describes native installation metadata and the independent policy', async () => {
+		logging = createRuntimeLogging(storePlan(), {
+			...rootOptions,
+			initialPluginPolicy: {
 				version: 3,
 				defaultLevel: 'info',
 				overrides: [{ owner: pluginA, level: 'debug' }],
-			}),
-		)
+			},
+		})
+		await logging.install()
 		const description = logging.describe()
-		expect(description.state).toBe('created')
+		expect(description.state).toBe('installed')
 		expect(description.plan.root.id).toBeTruthy()
-		expect(description.plan.routes.plugins).toEqual([{ sink: 'store', minLevel: 'trace' }])
+		expect(description.plan.sinks).toEqual(['store'])
+		expect(description.plan.loggers).toContainEqual({
+			category: ['pluxel'],
+			sinks: ['store'],
+			lowestLevel: 'trace',
+		})
 		expect(description.root.policy).toMatchObject({
 			version: 3,
 			defaultLevel: 'info',
@@ -94,7 +88,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('changes one plugin level without reconfiguring LogTape', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 		const config = getConfig()
@@ -114,7 +108,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('projects address, reference, and a readable standalone label into structured lines', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 
@@ -128,7 +122,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('stores exact portable log DTOs for range and follow transports', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 
@@ -159,7 +153,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('uses the stable plugin reference when display metadata is unavailable', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 		const logger = new LoggerService(
@@ -177,7 +171,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('preserves an error-like property in both structured log views', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 		const diagnostic = Object.assign(new Error('source unavailable'), {
@@ -204,7 +198,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('bounds Error fields and represents circular causes as portable data', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 		const diagnostic = new Error('m'.repeat(10_000), { cause: undefined })
@@ -236,7 +230,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('intersects plugin policy with the root debug topic matcher', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 		const logger = pluginLogger(logging, pluginA)
@@ -255,7 +249,7 @@ describe('RuntimeLogging', () => {
 	})
 
 	it('fails closed for records bound to another root', async () => {
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await logging.install()
 		await logging.initializePolicy()
 		const foreign = new LoggerService(
@@ -272,23 +266,20 @@ describe('RuntimeLogging', () => {
 
 	it('rejects installation when LogTape has a foreign owner', async () => {
 		configureSync({ sinks: {}, loggers: [] })
-		logging = createRuntimeLogging(storePlan())
+		logging = createRuntimeLogging(storePlan(), rootOptions)
 		await expect(logging.install()).rejects.toThrow('foreign owner')
 	})
 
 	it('bounds compiled debug topic patterns', () => {
 		expect(() =>
-			createRuntimeLogging({
-				...storePlan(),
-				root: { profile: 'test', debugTopics: ['x'.repeat(81)] },
-			}),
+			createRuntimeLogging(storePlan(), { profile: 'test', debugTopics: ['x'.repeat(81)] }),
 		).toThrow('Invalid debug topic pattern')
 	})
 
 	it('releases the LogTape process exit hook when disposed', async () => {
 		const before = process.listeners('exit')
 		for (let index = 0; index < 12; index++) {
-			logging = createRuntimeLogging(storePlan())
+			logging = createRuntimeLogging(storePlan(), rootOptions)
 			await logging.install()
 			await Promise.all([logging.dispose(), logging.dispose()])
 			expect(process.listeners('exit')).toEqual(before)

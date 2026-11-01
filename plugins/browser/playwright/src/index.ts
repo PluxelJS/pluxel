@@ -27,53 +27,23 @@ type Owner = {
 	closing?: Promise<void>
 }
 
-/** Connects to an externally managed browser without launching or installing one. */
-@Plugin({ displayName: 'Playwright' })
-export class PlaywrightPlugin extends BasePlugin {
-	private readonly config = this.configs.use(PlaywrightConfig)
+/** Owns a generation's native browser connection and caller-scoped contexts. */
+export abstract class Playwright extends BasePlugin {
 	private browser: Browser | undefined = undefined
 	private active = false
 	private readonly owners = new WeakMap<Context, Owner>()
 	private readonly activeOwners = new Set<Owner>()
 
 	protected override async init(signal: AbortSignal): Promise<void> {
-		let connection: v.InferOutput<typeof PlaywrightConnectionSchema>
-		if (this.config.connectionKey !== undefined) {
-			const record = await this.ctx.require(Vault).kv().get(this.config.connectionKey)
-			const parsed = v.safeParse(PlaywrightConnectionSchema, record.value)
-			if (!record.exists || !parsed.success)
-				throw new Error('Playwright Vault connection record is missing or invalid')
-			connection = parsed.output
-		} else {
-			connection = { endpoint: this.config.endpoint! }
-		}
-		if (!acceptsEndpoint(this.config.protocol, connection.endpoint)) {
-			throw new Error('Playwright protocol requires a WebSocket endpoint (ws or wss)')
-		}
 		signal.throwIfAborted()
-		let browser: Browser
-		try {
-			const options = { headers: connection.headers, timeout: this.config.connectTimeoutMs }
-			browser =
-				this.config.protocol === 'playwright'
-					? await chromium.connect(connection.endpoint, options)
-					: await chromium.connectOverCDP(connection.endpoint, { ...options, noDefaults: true })
-		} catch {
-			// Playwright embeds endpoint URLs and server responses in connection errors.
-			// Lifecycle reports must never retain a credential-bearing cause.
-			throw new Error(
-				this.config.protocol === 'playwright'
-					? 'Playwright protocol connection failed; check the endpoint, credentials and matching client/server major.minor versions'
-					: 'Playwright CDP connection failed; check the endpoint, credentials and remote browser availability',
-			)
-		}
+		const browser = await this.connect(signal)
 		this.browser = browser
 		const disconnected = () => {
 			this.active = false
 			for (const owner of this.activeOwners) owner.controller.abort(new PlaywrightNotRunningError())
 		}
-		browser.on('disconnected', disconnected)
 		try {
+			browser.on('disconnected', disconnected)
 			this.ctx.effects.defer(
 				async () => {
 					this.active = false
@@ -85,7 +55,7 @@ export class PlaywrightPlugin extends BasePlugin {
 					)
 					for (const close of closes) if (close.status === 'rejected') errors.push(close.reason)
 					try {
-						// Both connection APIs disconnect their transport without terminating the remote browser.
+						// Connected browsers disconnect their transport without stopping the remote process.
 						await browser.close()
 					} catch (error) {
 						errors.push(error)
@@ -94,23 +64,51 @@ export class PlaywrightPlugin extends BasePlugin {
 						[...this.activeOwners].map((owner) => this.closeOwner(owner)),
 					)
 					for (const owner of owners) if (owner.status === 'rejected') errors.push(owner.reason)
-					browser.off('disconnected', disconnected)
+					try {
+						browser.off('disconnected', disconnected)
+					} catch (error) {
+						errors.push(error)
+					}
 					this.browser = undefined
 					if (errors.length > 0)
 						throw new AggregateError(errors, 'Playwright connection cleanup failed')
 				},
 				{ tag: 'playwright-connection', phase: 'shutdown' },
 			)
-		} catch (error) {
-			browser.off('disconnected', disconnected)
-			await browser.close()
+		} catch (cause) {
+			this.active = false
+			const errors: unknown[] = []
+			try {
+				browser.off('disconnected', disconnected)
+			} catch (error) {
+				errors.push(error)
+			}
+			try {
+				await browser.close()
+			} catch (error) {
+				errors.push(error)
+			}
 			this.browser = undefined
-			throw error
+			if (errors.length > 0)
+				throw new AggregateError(
+					[cause, ...errors],
+					'Playwright connection setup and cleanup failed',
+					{ cause },
+				)
+			throw cause
 		}
 		signal.throwIfAborted()
 		if (!browser.isConnected()) throw new PlaywrightNotRunningError()
 		this.active = true
 	}
+
+	/**
+	 * Acquire one native connection for this generation. Override to call a native Playwright
+	 * connect method with its complete options. The returned Browser is owned here and will be
+	 * closed on rollback or stop, including a result arriving after signal aborts; do not return
+	 * a borrowed Browser. Clean up partial acquisition before rejecting and throw safe errors.
+	 */
+	protected abstract connect(signal: AbortSignal): Promise<Browser>
 
 	/**
 	 * Creates an isolated, native Playwright context. Close it in finally after use.
@@ -197,6 +195,43 @@ export class PlaywrightPlugin extends BasePlugin {
 			}
 		})()
 		return owner.closing
+	}
+}
+
+/** Connects to an externally managed browser using a serializable endpoint or Vault preset. */
+@Plugin(Playwright, { displayName: 'Playwright' })
+export class PlaywrightPlugin extends Playwright {
+	private readonly config = this.configs.use(PlaywrightConfig)
+
+	protected override async connect(signal: AbortSignal): Promise<Browser> {
+		let connection: v.InferOutput<typeof PlaywrightConnectionSchema>
+		if (this.config.connectionKey !== undefined) {
+			const record = await this.ctx.require(Vault).kv().get(this.config.connectionKey)
+			const parsed = v.safeParse(PlaywrightConnectionSchema, record.value)
+			if (!record.exists || !parsed.success)
+				throw new Error('Playwright Vault connection record is missing or invalid')
+			connection = parsed.output
+		} else {
+			connection = { endpoint: this.config.endpoint! }
+		}
+		if (!acceptsEndpoint(this.config.protocol, connection.endpoint)) {
+			throw new Error('Playwright protocol requires a WebSocket endpoint (ws or wss)')
+		}
+		signal.throwIfAborted()
+		try {
+			const options = { headers: connection.headers, timeout: this.config.connectTimeoutMs }
+			return await (this.config.protocol === 'playwright'
+				? chromium.connect(connection.endpoint, options)
+				: chromium.connectOverCDP(connection.endpoint, { ...options, noDefaults: true }))
+		} catch {
+			// Playwright embeds endpoint URLs and server responses in connection errors.
+			// Lifecycle reports must never retain a credential-bearing cause.
+			throw new Error(
+				this.config.protocol === 'playwright'
+					? 'Playwright protocol connection failed; check the endpoint, credentials and matching client/server major.minor versions'
+					: 'Playwright CDP connection failed; check the endpoint, credentials and remote browser availability',
+			)
+		}
 	}
 }
 

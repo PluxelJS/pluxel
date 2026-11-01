@@ -12,7 +12,11 @@ import {
 	type PluginConsumerRequirementState,
 } from '../../../runtime'
 import { usePluginScope } from './context'
-import { managementQueryKeys, refreshDependencyQueries } from '../../managementQuery'
+import {
+	managementQueryKeys,
+	refreshDependencyQueries,
+	refetchManagementQuery,
+} from '../../managementQuery'
 
 export const FOLLOW_DEFAULT_VALUE = 'follow-default'
 const PROVIDER_VALUE_PREFIX = 'provider:'
@@ -95,6 +99,10 @@ export function usePluginDependencyControls() {
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
 	const ownerKey = pluginNodeIndexKey(owner)
+	const configStateQuery = useQuery({
+		queryKey: managementQueryKeys.configState(),
+		queryFn: () => management.config.status(),
+	})
 	const requirementsQuery = useQuery<readonly PluginConsumerRequirementState[]>({
 		queryKey: managementQueryKeys.consumerRequirements(owner),
 		queryFn: async () => {
@@ -115,7 +123,11 @@ export function usePluginDependencyControls() {
 	}, [])
 
 	const refreshAll = useCallback(async () => {
-		await Promise.all([refreshDependencyQueries(queryClient), refetch()])
+		await Promise.all([
+			refreshDependencyQueries(queryClient),
+			refetchManagementQuery(queryClient, managementQueryKeys.configState()),
+			refetch(),
+		])
 	}, [refetch, queryClient])
 
 	const runPending = useCallback(
@@ -182,9 +194,12 @@ export function usePluginDependencyControls() {
 		async (fork: Extract<PluginNodeAddress, { variant: 'fork' }>) =>
 			await runPending(`${ownerKey}:fork-remove:${pluginNodeIndexKey(fork)}`, async () => {
 				try {
+					const state = configStateQuery.data
+					if (!state || state.readonly) throw new Error('当前宿主的配置只读或尚未加载')
 					const result = await management.forks.remove({
 						base: { definition: fork.definition, variant: 'default' },
 						forkId: fork.forkId,
+						...(state.version ? { expected: state.version } : {}),
 					})
 					if (result.ok || ('code' in result && result.code === 'persistence_failed')) {
 						await refreshAll()
@@ -195,7 +210,7 @@ export function usePluginDependencyControls() {
 					throw error
 				}
 			}),
-		[management.forks, ownerKey, refreshAll, runPending],
+		[configStateQuery.data, management.forks, ownerKey, refreshAll, runPending],
 	)
 
 	const requirements = requirementsQuery.data ?? null
@@ -211,6 +226,7 @@ export function usePluginDependencyControls() {
 	)
 
 	return {
+		canRemoveFork: configStateQuery.data !== undefined && !configStateQuery.data.readonly,
 		requirements,
 		byRequirement,
 		isLoading: requirementsQuery.isPending,

@@ -1,6 +1,6 @@
 # ZenFS FS 重构实施记录
 
-状态：已实现，2026-10-30。原审查基线：`e2c38f34f4e2c114688fc9cc1531f1568ed60d1e`。
+状态：2026-10-30 的 Service 版已实现；2026-11-01 已继续迁入 Core 固定能力，见 [TinyBase 状态重构](TINYBASE_PLUGIN_STATE.md)与[本轮迁移记录](../TINYBASE_MIGRATION.md)。原审查基线：`e2c38f34f4e2c114688fc9cc1531f1568ed60d1e`。下文的服务入口和计数保留为有日期的历史证据。
 
 当前用法见[插件文件存储](../../docs/plugin-development/fs.md)和 [Host 后端配置](../../docs/host/configuration.md#选择文件后端)，当前资源契约见 [Host 文件系统](../FS.md)。本文只保留必要决策、验收证据及尚未实现的边界，不作为另一份 API 定义。
 
@@ -12,7 +12,7 @@
 - FS 声明、构造和 capability factory 无 IO。首次异步操作与服务 prepare 共用一个准备任务，以支持更早发生的 Host 配置读取。Host 文档及 Logging policy 接线使用同步 root factory，不新增 early-prepare 阶段。
 - Host 借用文档存储；省略 storage 保持内存模式。`put(key, text)` 无条件等待完整原子提交。FS 清理位于 root effects 的 final 阶段，晚于领域 flush，构造失败也释放已获取资源。
 - `writeFileAtomic` 只承担同目录独占临时文件、完整写入、关闭和 rename。失败保留旧目标与原因；没有先删除目标的降级、全局写队列、业务 commit callback、深层 Proxy 或新的事务引擎。
-- 原版 ZenFS 的完整读写、回滚、IndexedDB 提交、只读及回收缺陷在依赖所有者处定向修复。根 pnpm patches 不会传递给独立安装者，因此 Services 发布包内联修复后的运行时闭包与声明，并携带原始来源、notices 和补丁；没有新增 fork 包。详见[依赖准入](../../patches/README.md)与[发布来源](../../packages/services/third-party/README.md)。
+- 原版 ZenFS 的完整读写、回滚、IndexedDB 提交、只读及回收缺陷在依赖所有者处定向修复。根 pnpm patches 不会传递给独立安装者，因此当时的 Services 发布包内联修复后的运行时闭包与声明，并携带原始来源、notices 和补丁；这些资产现归 Core，没有新增 fork 包。详见[依赖准入](../../patches/README.md)与[发布来源](../../packages/core/third-party/README.md)。
 - 数据转换显式执行，不在运行时猜测格式或静默重建坏数据。所有已知生产调用方、Host 接线、preset、测试设施、应用模板、导出和当前文档均已同步迁移。原生日志 sink、数据库 driver、制品加载及 Typst 磁盘 CAS 保留各自独立契约。
 
 上述取舍保留[工程原则](../DESIGN_PRINCIPLES.md)要求的明确输入、可观测失败和可审查修复；文件能力交给原生库，业务保存及身份约束仍由各领域拥有。

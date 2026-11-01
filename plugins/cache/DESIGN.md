@@ -68,12 +68,12 @@ owner envelope 由 coordinator 生成/校验，adapter 不解释它。序列化�
 
 ### Memory backend 快照恢复
 
-内存 backend 可以选择使用 provider 的 `PluginFs` 保存版本化快照；默认 `off`，因此未启用时不取得
+内存 backend 可以选择使用 provider 的 `ctx.fs()` 保存版本化快照；默认 `off`，因此未启用时不取得
 文件目录、创建 timer、序列化副本或持久状态：
 
 - `best-effort`：恢复或保存失败时告警并继续使用空/当前内存状态；ephemeral persistence 可以跨 plugin replacement
   恢复，但不能承诺跨进程重启；readonly persistence 只尝试恢复，不保存更新；
-- `durable`：init 通过 `ctx.require(PluginFs)({ durable: true, writable: true })` 检查要求，不满足时诚实启动失败；快照读取或解码失败同样使
+- `durable`：init 通过 `ctx.fs({ durable: true, writable: true })` 检查要求，不满足时诚实启动失败；快照读取或解码失败同样使
   provider 启动失败；
 - `flushIntervalMs`：合并连续 mutation 的快照写入；stop/replacement 取消 timer 并 flush 最新 revision。
 

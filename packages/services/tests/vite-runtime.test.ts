@@ -23,6 +23,7 @@ describe('static Vite runtime', () => {
 		const builtPluginRoot = fixture.getPath('packages/vite-built')
 		const builtPluginLink = fixture.getPath('node_modules/@fixture/vite-built')
 		await mkdir(fixture.getPath('packages/vite-static/src'), { recursive: true })
+		await mkdir(fixture.getPath('fs'), { recursive: true })
 		await mkdir(fixture.getPath('packages/vite-built/dist'), { recursive: true })
 		await fixture.writeFile(
 			'packages/vite-static/package.json',
@@ -63,7 +64,7 @@ describe('static Vite runtime', () => {
 				"import { defineHostApplication, envBinding } from '@pluxel/host'",
 				"import { pluginNodeAddressOf } from '@pluxel/core'",
 				"import { standardServices } from '@pluxel/services'",
-				"import { Passthrough } from '@pluxel/services/fs'",
+				"import { Passthrough } from '@pluxel/core/fs'",
 				"import * as nativeFs from 'node:fs'",
 				"import { ConfiguredPlugin, ConfiguredPluginConfig, PartOwner, PartProvider, runtimePlugins, ViteStatic } from '@fixture/vite-static'",
 				'export default defineHostApplication(() => {',
@@ -82,7 +83,8 @@ describe('static Vite runtime', () => {
 				"    envBinding(ConfiguredPlugin, { config: { schema: ConfiguredPluginConfig, mapping: { label: 'VITE_STATIC_LABEL' } } }),",
 				'  ],',
 
-				`      services: standardServices({ fs: { backend: Passthrough, fs: nativeFs, prefix: ${JSON.stringify(fixture.getPath('fs'))} } }),`,
+				`      config: { storage: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix: ${JSON.stringify(fixture.getPath('fs'))} } }, durableMounts: ['/'] } },`,
+				'      services: standardServices(),',
 				'      state: { initial: {',
 				'        autoStart: defaultNode && east && west ? [defaultNode, east, west, configuredNode, partProviderNode, partOwnerNode] : [configuredNode, partProviderNode, partOwnerNode],',
 				"        forks: definition ? [{ definition, forkIds: ['east', 'west'] }] : [],",
@@ -120,7 +122,7 @@ function pluginSource(version: string, available: boolean): string {
 	return [
 		"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; import * as v from 'valibot'; import { ElysiaApp } from '@pluxel/services/elysia'",
 		"import { websocket } from 'elysia/websocket'",
-		"import { PluginFs, writeFileAtomic } from '@pluxel/services/fs'",
+		"import { writeFileAtomic } from '@pluxel/core/fs'",
 		"import { BuiltStatic } from '@fixture/vite-built'",
 		"export const ViteStaticConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		"@Plugin({ displayName: 'Vite static', forkable: true })",
@@ -129,7 +131,7 @@ function pluginSource(version: string, available: boolean): string {
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
 		"  storedFsValue = ''",
-		`  protected override async init() { const files = await this.ctx.require(PluginFs)(); try { this.storedFsValue = await files.readFile('marker', 'utf8') } catch (error) { if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error; const address = this.ctx.pluginInfo.nodeAddress; this.storedFsValue = ${JSON.stringify(version)} + ':' + (address.variant === 'fork' ? address.forkId : 'default'); await writeFileAtomic(files, 'marker', this.storedFsValue) }; this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.require(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
+		`  protected override async init() { const files = await this.ctx.fs(); try { this.storedFsValue = await files.readFile('marker', 'utf8') } catch (error) { if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error; const address = this.ctx.pluginInfo.nodeAddress; this.storedFsValue = ${JSON.stringify(version)} + ':' + (address.variant === 'fork' ? address.forkId : 'default'); await writeFileAtomic(files, 'marker', this.storedFsValue) }; this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.require(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',

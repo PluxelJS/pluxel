@@ -1,4 +1,4 @@
-import { getContextRuntimeLogging } from '../../logging/internal'
+import { getContextRuntimeLogging } from '@pluxel/core/logging/internal'
 import type { Context } from '@pluxel/core'
 import type { HostApplicationMeta } from '../product-contract'
 import { describePluxelPlatform } from '../platform-host'

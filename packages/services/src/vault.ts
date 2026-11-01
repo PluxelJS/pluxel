@@ -1,18 +1,17 @@
-import type { RootContext } from '@pluxel/core'
+import { type RootContext } from '@pluxel/core'
 import { installOwnerViewCapability, installRootCapability } from '@pluxel/core/host'
-import { defineHostService, type HostServiceDependencies } from '@pluxel/host'
+import { requireFs } from '@pluxel/core/internal'
+import { defineHostService } from '@pluxel/host'
 import { HostVaultBindings } from '@pluxel/host/bindings'
-import { Fs } from './fs/token'
-import type { FsService } from './fs/service'
 import { Vault, VaultAdmin } from './vault/token'
 import type { VaultService, VaultAdminService } from './vault/service'
-import type { VaultServiceConfig } from './vault/types'
+import { type VaultServiceConfig } from './vault/types'
 
 export { Vault, VaultAdmin } from './vault/token'
 export { VaultError } from './vault/error'
 export type * from './vault/types'
 
-/** Install owner-scoped Vault. Bindings-only mode does not require Fs or create keys. */
+/** Install owner-scoped Vault. Bindings-only mode does not open storage or create keys. */
 export function vault(config: VaultServiceConfig = {}) {
 	const snapshot = Object.freeze({ ...config })
 	const prepared = new WeakMap<RootContext, { vault: VaultService; admin: VaultAdminService }>()
@@ -21,10 +20,8 @@ export function vault(config: VaultServiceConfig = {}) {
 		if (!value) throw new Error('[services.vault] Vault has not been prepared')
 		return value
 	}
-	const requires: HostServiceDependencies = snapshot.backend === 'bindings' ? {} : { fs: Fs }
 	return defineHostService({
 		name: 'Vault',
-		requires,
 		capabilities: [
 			installOwnerViewCapability(Vault, {
 				property: 'vault',
@@ -41,9 +38,9 @@ export function vault(config: VaultServiceConfig = {}) {
 				}),
 			}),
 		],
-		async prepare({ ctx, dependencies, effects }) {
+		async prepare({ ctx, effects }) {
 			const { VaultService, VaultAdminService } = await import('./vault/service')
-			const storage = snapshot.backend === 'bindings' ? undefined : (dependencies.fs as FsService)
+			const storage = snapshot.backend === 'bindings' ? undefined : requireFs(ctx)
 			const directory = await storage?.directory('services/vault', { writable: true })
 			const service = VaultService.create(ctx, snapshot, directory)
 			effects.defer(() => service.managedVault().flush(), { tag: 'VaultFlush', phase: 'shutdown' })

@@ -22,7 +22,6 @@
 		"@example/audit-plugin": "workspace:*",
 		"@pluxel/cli": "catalog:pluxel",
 		"@pluxel/core": "catalog:pluxel",
-		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
 		"tinybase": "catalog:backend",
 		"typescript": "catalog:tooling",
@@ -32,7 +31,6 @@
 	"peerDependencies": {
 		"@example/audit-plugin": "*",
 		"@pluxel/core": "catalog:pluxel",
-		"@pluxel/services": "catalog:pluxel",
 		"tinybase": "catalog:backend"
 	},
 	"peerDependenciesMeta": {

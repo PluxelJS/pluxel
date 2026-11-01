@@ -86,6 +86,7 @@
 		"@types/node": "catalog:types",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
+		"playwright-core": "catalog:prod",
 		"valibot": "catalog:validation",
 		"vite-plus": "catalog:build"
 	},

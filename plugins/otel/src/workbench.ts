@@ -4,7 +4,7 @@ import { workbench } from '@pluxel/workbench'
 
 const ExportStatus = v.object({
 	state: v.pipe(
-		v.picklist(['disabled', 'waiting', 'healthy', 'failing']),
+		v.picklist(['disabled', 'waiting', 'healthy', 'failing', 'external']),
 		f.formMeta({ title: '状态' }),
 	),
 	errorType: v.pipe(v.nullable(v.string()), f.formMeta({ title: '最近错误类型' })),

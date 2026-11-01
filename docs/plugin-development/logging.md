@@ -5,7 +5,32 @@ description: 使用 Context logger 和稳定属性记录结构化日志，由宿
 
 Plugin 使用 Core 自带的 `ctx.logger` 记录事件；Host 管理输出、路由、等级和关闭时的刷新。
 
-Plugin 作者从[写法选择](#写法选择)和[延迟计算](#延迟计算)开始；宿主输出见[Host 日志配置](../host/configuration.md#host-logging-plan)，在线读取见[开发控制台](../development/dev-console.md#有界操作日志与等待)。`ctx.logger` 是 Core 基础能力，输出和存储由宿主另外配置。
+Plugin 作者从[写法选择](#写法选择)和[延迟计算](#延迟计算)开始；宿主输出见[Host 日志配置](../host/configuration.md#host-logging)，在线读取见[开发控制台](../development/dev-console.md#有界操作日志与等待)。`ctx.logger` 是 Core 基础能力，输出和存储由宿主另外配置。
+
+Host 直接使用原生 LogTape `Config`：任意 sink、formatter、filter、logger 继承与 `contextLocalStorage` 都可由应用配置；Pluxel 只补充 Context 身份、插件 policy、有界诊断 store 和关闭所有权。`config.logger: logtape()`（`@pluxel/core/config`）提供可选的 console/store 预设，不要求把原生输出改写成 `kind`/route 描述。插件继续使用自己的 `ctx.logger`，无需安装日志服务。
+
+自定义输出若仍需 Pluxel 的插件身份与 Context 展示，可从可选的 pretty 叶入口取得 sink；把下面的声明放入应用 `config.logger`，资源由 Core 准备和关闭：
+
+```ts
+import { logtape } from '@pluxel/core/config'
+import { createRuntimePrettyConsoleSink } from '@pluxel/core/logging/pretty'
+
+export const logger = logtape({
+	sinks: {
+		console: createRuntimePrettyConsoleSink({
+			caller: false,
+			timezone: 'local',
+			nonBlocking: true,
+			pretty: { properties: true, wordWrap: 120 },
+		}),
+	},
+	loggers: [{ category: ['pluxel'], sinks: ['console'], lowestLevel: 'info' }],
+})
+```
+
+该函数保留原生 `ConsoleSinkOptions` 与 `pretty` 的完整 `PrettyFormatterOptions`；显式传 `formatter` 时使用原生 formatter。Pluxel 额外提供 `caller` 与 `timezone`，并展示插件和 Context 身份。
+
+普通 JSON、file 或远程输出直接组合上游 sink；完整装配与失败清理见[Host 日志配置](../host/configuration.md#host-logging)。
 
 ## 写法选择
 
@@ -78,7 +103,7 @@ logger.debug((message) => message`Queue summary: ${summarizeQueue(queue)}`)
 
 `lazy()` 是原生工具，可直接导入；不要因此改用独立 `getLogger()`。回调应同步、无副作用、结果有界；不能把业务写入、计数或清理放进日志回调。它读取的是求值时的数据，不是深拷贝快照，需要记录发生时的状态就提前保存必要的标量。
 
-整个 properties 对象也可用工厂：`logger.debug('queue snapshot', () => ({ size: queue.length }))`。它与 `lazy()` 的求值阶段不同：不要依赖“最终没有输出”来保证工厂绝不执行；插件 policy、topic 和 route 都可能继续过滤。对于昂贵字段，优先字段级 `lazy()`。
+整个 properties 对象也可用工厂：`logger.debug('queue snapshot', () => ({ size: queue.length }))`。它与 `lazy()` 的求值阶段不同：不要依赖“最终没有输出”来保证工厂绝不执行；插件 policy、topic 和原生 logger/filter 都可能继续过滤。对于昂贵字段，优先字段级 `lazy()`。
 
 原生异步 properties 工厂返回 Promise，必须等待并处理可能的失败：
 

@@ -30,6 +30,8 @@ export {
 } from './plugins/runtime/PluginDefinitions'
 export { requireConfigService } from './internal/config-service'
 export { requirePluginService } from './internal/plugin-service'
+export { requireFs, requireTinyBaseHost } from './internal/storage'
+export { pluginNodePhysicalKey } from './internal/plugin-address'
 export {
 	createContextHost,
 	defineContextCapability,
@@ -94,3 +96,4 @@ export {
 	type WorkbenchContentTableCell,
 	type WorkbenchContentTableRow,
 } from './internal/workbench-content-artifact'
+export { immutableConfigRecord } from './services/config/immutable'

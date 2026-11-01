@@ -1,5 +1,6 @@
 import {
 	pluginDefinitionAddressEqual,
+	pluginNodeIndexKey,
 	type CommitSummary,
 	type Context,
 	type PluginNodeAddress,
@@ -8,6 +9,7 @@ import {
 	notifyRunningPluginConfigUpdate,
 	requireConfigService,
 	requirePluginService,
+	immutableConfigRecord,
 } from '@pluxel/core/internal'
 import {
 	collectConfigDefaults,
@@ -25,6 +27,13 @@ import { requirePluginHostCoordinator } from './install'
 import type { HostConfigStore, HostConfigSource } from './config-store'
 import { mergeRecord } from './config-records'
 import { configLeafPaths, changedConfigPaths } from './config-paths'
+import { hash as ohash } from 'ohash'
+import {
+	HostConfigVersionConflictError,
+	type HostConfigMutationOptions,
+	type HostConfigVersion,
+	type HostConfigSyncSnapshot,
+} from './config-sync-protocol'
 
 type ReadonlyConfigValue<T> = T extends object
 	? { readonly [K in keyof T]: ReadonlyConfigValue<T[K]> }
@@ -44,12 +53,16 @@ export class ConfigMutationRejectedError extends Error {
 }
 
 type ConfigSnapshotResult = Readonly<{
+	version: HostConfigVersion | null
+	readonly: boolean
 	config: Readonly<Record<string, unknown>>
 	defaults: Readonly<Record<string, unknown>>
 	sources: readonly HostConfigSource[]
 }>
 
 type ConfigValueResult = Readonly<{
+	version: HostConfigVersion | null
+	readonly: boolean
 	config: Readonly<Record<string, unknown>>
 	sources: readonly HostConfigSource[]
 }>
@@ -89,6 +102,13 @@ export type HostPluginConfigResultOk<TReport = PluginApplyReport> =
 export type HostPluginConfigResultErr =
 	| Readonly<{
 			ok: false
+			code: 'version_conflict'
+			state: 'unchanged'
+			message: string
+			version: HostConfigVersion | null
+	  }>
+	| Readonly<{
+			ok: false
 			code: 'validation_failed'
 			state: 'unchanged'
 			message: string
@@ -114,13 +134,30 @@ export type HostPluginConfigResult<TReport = PluginApplyReport> =
 
 /** Trusted Host config operations. Mutations share the catalog/lifecycle queue and Core revision authority. */
 export interface HostPluginConfig {
+	/** Saved-layer version and write policy, available without a Plugin config declaration. */
+	status(): HostConfigState
 	get(owner: PluginNodeAddress): Promise<HostPluginConfigResult>
 	validate(
 		owner: PluginNodeAddress,
 		patch: Record<string, unknown>,
 	): Promise<HostPluginConfigResult>
-	patch(owner: PluginNodeAddress, patch: Record<string, unknown>): Promise<HostPluginConfigResult>
-	reset(owner: PluginNodeAddress, keys?: readonly string[]): Promise<HostPluginConfigResult>
+	patch(
+		owner: PluginNodeAddress,
+		patch: Record<string, unknown>,
+		options?: HostConfigMutationOptions,
+	): Promise<HostPluginConfigResult>
+	reset(
+		owner: PluginNodeAddress,
+		keys?: readonly string[],
+		options?: HostConfigMutationOptions,
+	): Promise<HostPluginConfigResult>
+}
+
+export type HostConfigState = Readonly<{ version: HostConfigVersion | null; readonly: boolean }>
+
+export function readHostConfigState(ctx: Context): HostConfigState {
+	const service = requireConfigService(ctx) as HostConfigStore
+	return Object.freeze({ version: service.version, readonly: service.isReadonly })
 }
 
 function plainRecord(value: unknown): Record<string, unknown> {
@@ -223,6 +260,8 @@ export async function pluginConfigGet(
 			return {
 				ok: true,
 				saved: false,
+				version: configService.version,
+				readonly: configService.isReadonly,
 				...configApplicationState(ctx, owner),
 				config: plainRecord(configService.getRawConfig(owner)),
 				sources: configService.getConfigSources(owner),
@@ -286,6 +325,8 @@ export async function pluginConfigValidate(
 			return {
 				ok: true,
 				saved: false,
+				version: configService.version,
+				readonly: configService.isReadonly,
 				...configApplicationState(ctx, owner),
 				config: validation.output,
 				sources: configService.getConfigSources(owner),
@@ -349,7 +390,7 @@ export async function mutatePluginConfig(
 	owner: PluginNodeAddress,
 	reason: string,
 	buildCandidate: (current: Record<string, unknown>) => Record<string, unknown>,
-	options?: HostOperationOptions,
+	options?: HostConfigMutationOptions,
 	requestedPaths?: readonly (readonly string[])[],
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
@@ -368,10 +409,19 @@ export async function mutatePluginConfig(
 			let managed: Record<string, unknown>
 			let paths: readonly (readonly string[])[]
 			try {
+				configService.assertManagedMutation(options?.expected)
 				managed = buildCandidate(current)
 				paths = requestedPaths ?? changedConfigPaths(current, managed)
 				configService.assertPathsMutable(owner, paths)
 			} catch (error) {
+				if (error instanceof HostConfigVersionConflictError)
+					return {
+						ok: false,
+						code: 'version_conflict',
+						state: 'unchanged',
+						message: error.message,
+						version: error.version,
+					}
 				if (error instanceof ConfigMutationRejectedError)
 					return {
 						ok: false,
@@ -380,6 +430,18 @@ export async function mutatePluginConfig(
 						message: error.message,
 					}
 				throw error
+			}
+			if (configService.synchronized && ohash(current) === ohash(managed)) {
+				return {
+					ok: true,
+					saved: false,
+					...configApplicationState(ctx, owner),
+					version: configService.version,
+					readonly: configService.isReadonly,
+					defaults: await collectConfigDefaults(lookup.config.schema, { missingObjectDefault: {} }),
+					config: plainRecord(configService.getRawConfig(owner)),
+					sources: configService.getConfigSources(owner),
+				}
 			}
 			const candidate = configService.composeConfig(owner, managed)
 			const validation = await validateConfigRecord(lookup.config.schema, candidate)
@@ -401,6 +463,7 @@ export async function mutatePluginConfig(
 					value: validation.output,
 					managed,
 					paths,
+					expected: options?.expected,
 				})
 			} catch (error) {
 				if (error instanceof ConfigMutationRejectedError) {
@@ -421,6 +484,8 @@ export async function mutatePluginConfig(
 					code: 'persistence_failed',
 					state: 'unknown',
 					message: errorText(error),
+					version: configService.version,
+					readonly: configService.isReadonly,
 					config: plainRecord(configService.getRawConfig(owner)),
 					sources: configService.getConfigSources(owner),
 				}
@@ -430,6 +495,8 @@ export async function mutatePluginConfig(
 			return {
 				ok: true,
 				saved: true,
+				version: configService.version,
+				readonly: configService.isReadonly,
 				...applied,
 				desiredRevision: configService.getConfigRevision(owner),
 				appliedRevision: configService.getAppliedConfigRevision(owner),
@@ -441,11 +508,119 @@ export async function mutatePluginConfig(
 	)
 }
 
+/** Host-owned replica admission, independent of management entry points and Plugin startup. */
+export async function acceptReplicatedConfig(
+	ctx: Context,
+	snapshot: HostConfigSyncSnapshot,
+	records: readonly import('@pluxel/core/services').PluginConfigRecordSnapshot[],
+	options: Readonly<{
+		catalog: () => PluginCatalogSnapshot
+		restored?: boolean
+		initial?: boolean
+		signal: AbortSignal
+	}>,
+): Promise<readonly PluginNodeAddress[]> {
+	const coordinator = requirePluginHostCoordinator(ctx)
+	return coordinator.runExclusive(
+		'config-sync-accept',
+		async (session) => {
+			const store = requireConfigService(ctx) as HostConfigStore
+			const current = store.snapshot
+			if (current && snapshot.history !== current.history)
+				throw new Error(
+					'[host:config-sync] Config history changed; explicit replica rebinding is required',
+				)
+			if (current && !options.restored) {
+				if (snapshot.seq < current.seq) return []
+				if (snapshot.seq === current.seq) {
+					if (snapshot.body !== current.body)
+						throw new Error(
+							'[host:config-sync] The same saved version has conflicting document bodies',
+						)
+					return []
+				}
+			}
+			const catalog = options.catalog()
+			const state = session.runtimeStateSnapshot()
+			const previous = store.getManagedRecords()
+			const owners = new Map(
+				[...previous, ...records].map((record) => [pluginNodeIndexKey(record.owner), record.owner]),
+			)
+			if (options.initial || options.restored) {
+				for (const entry of catalog.entries) {
+					const owner: PluginNodeAddress = { definition: entry.address, variant: 'default' }
+					owners.set(pluginNodeIndexKey(owner), owner)
+					for (const fork of state.forks) {
+						if (!pluginDefinitionAddressEqual(fork.definition, entry.address)) continue
+						for (const forkId of fork.forkIds) {
+							const node: PluginNodeAddress = { definition: entry.address, variant: 'fork', forkId }
+							owners.set(pluginNodeIndexKey(node), node)
+						}
+					}
+				}
+			}
+			const unavailable: PluginNodeAddress[] = []
+			const known: PluginNodeAddress[] = []
+			const validated: Parameters<HostConfigStore['acceptSyncSnapshot']>[1][number][] = []
+			for (const owner of owners.values()) {
+				const before =
+					previous.find((record) => pluginNodeIndexKey(record.owner) === pluginNodeIndexKey(owner))
+						?.config ?? {}
+				const after =
+					records.find((record) => pluginNodeIndexKey(record.owner) === pluginNodeIndexKey(owner))
+						?.config ?? {}
+				const lookup = configLookup(catalog, state, owner)
+				if (lookup.ok === false) {
+					if (
+						records.some((record) => pluginNodeIndexKey(record.owner) === pluginNodeIndexKey(owner))
+					)
+						unavailable.push(owner)
+					continue
+				}
+				known.push(owner)
+				if (!options.initial && !options.restored && ohash(before) === ohash(after)) continue
+				const result = await validateConfigRecord(
+					lookup.config.schema,
+					store.composeConfig(owner, mergeRecord(undefined, after)),
+				)
+				if (result.ok === false)
+					throw new Error(
+						'[host:config-sync] Complete saved document rejected by a Plugin config schema',
+						{ cause: result.errors },
+					)
+				if (
+					!options.initial &&
+					!options.restored &&
+					ohash(store.getRawConfig(owner)) === ohash(result.output) &&
+					store.tryGetValidatedConfig(owner, lookup.config)
+				)
+					continue
+				validated.push({
+					owner,
+					authority: lookup.config,
+					expectedRevision: store.getConfigRevision(owner),
+					value: immutableConfigRecord(result.output),
+				})
+			}
+			options.signal.throwIfAborted()
+			const tickets = await store.acceptSyncSnapshot(snapshot, validated, {
+				restored: options.restored,
+				known,
+			})
+			// Once saving is accepted it drains through confirmation/application even if the connection closes.
+			for (const ticket of tickets)
+				await applyDesiredConfig(ctx, ticket.owner, session, ticket.snapshot, ticket.revision)
+			return Object.freeze(unavailable)
+		},
+		{ signal: options.signal },
+	)
+}
+
 export async function pluginConfigPatch(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	patch: Record<string, unknown>,
-	options?: HostOperationOptions,
+	options?: HostConfigMutationOptions,
 ): Promise<HostPluginConfigResult> {
 	return await mutatePluginConfig(
 		ctx,
@@ -461,7 +636,7 @@ export async function pluginConfigReset(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	keys?: readonly string[],
-	options?: HostOperationOptions,
+	options?: HostConfigMutationOptions,
 ): Promise<HostPluginConfigResult> {
 	return await mutatePluginConfig(
 		ctx,

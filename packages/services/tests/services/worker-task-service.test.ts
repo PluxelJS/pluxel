@@ -1,6 +1,5 @@
 import { elysia } from '@pluxel/services/elysia'
 import { commands } from '@pluxel/services/commands'
-import { fs, InMemory } from '@pluxel/services/fs'
 import { nodeModules } from '@pluxel/services/node'
 import {
 	workers,
@@ -104,13 +103,7 @@ class WorkerTaskConsumerB extends BasePlugin {
 async function createWorkerHost(workerOptions: WorkersConfig = {}) {
 	return await createServiceInternalTestHarness({
 		workbench: false,
-		services: [
-			elysia(),
-			commands(),
-			fs({ backend: InMemory }),
-			nodeModules({ root: artifactRoot }),
-			workers(workerOptions),
-		],
+		services: [elysia(), commands(), nodeModules({ root: artifactRoot }), workers(workerOptions)],
 	})
 }
 

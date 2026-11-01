@@ -5,9 +5,9 @@ description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主
 
 > `@pluxel/plugin-otel` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/plugin-otel` 直接向业务 Plugin 提供标准 OpenTelemetry `Meter`、`Tracer` 和 `Logger`，不另造一套遥测 API。宿主统一管理 provider、resource、exporter、上下文传播和生命周期，并保留每个调用方的身份。
+`@pluxel/plugin-otel` 的抽象 `Otel` 向业务 Plugin 提供标准 OpenTelemetry `Meter`、`Tracer` 和 `Logger`。应用可以选择 `OtelPlugin` 的 OTLP/Prometheus 预设，也可以直接装配原生 SDK providers；两条路径共享调用方身份、上下文传播和 generation 生命周期。
 
-## 先选择输出
+## 默认预设选择输出
 
 `OtelConfig` 从根入口导出，部署环境可绑定输出选择；Workbench 只是可选状态与手动 flush 面板：
 
@@ -77,14 +77,14 @@ Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.require(ElysiaApp)` 
 ```ts twoslash
 import type { Counter } from '@opentelemetry/api'
 import { SeverityNumber } from '@opentelemetry/api-logs'
-import { OtelPlugin } from '@pluxel/plugin-otel'
+import { Otel } from '@pluxel/plugin-otel'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Catalog' })
 export class CatalogPlugin extends BasePlugin {
 	private refreshed!: Counter
 
-	constructor(private readonly otel: OtelPlugin) {
+	constructor(private readonly otel: Otel) {
 		super()
 	}
 
@@ -115,9 +115,56 @@ span、event、link、status、baggage、log body、severity、`eventName` 和 a
 
 上面的 `CatalogPlugin` 同时使用三种 signal：可使用默认 OTLP 配置，或 `otlp: ['traces', 'logs']` 加 `prometheus: {}`。调用 `refresh()` 后，Prometheus 输出应包含 `catalog_refreshes` 计数，Collector 中应出现 `catalog.refresh` span 和日志。若只开启 Prometheus，业务代码也只使用 `meter`，不调用关闭的 `tracer` 与 `logger`。
 
+## 直接装配原生 providers
+
+需要自定义 sampler、metric views、resource、readers、多个 processors 或 exporter 时，实现 `@Plugin(Otel)` 并覆盖 `createProviders()`。返回值 `OtelProviders` 只包含原生 `meterProvider`、`tracerProvider`、`loggerProvider`，SDK 参数直接交给各 provider 的构造函数。框架不复制这些参数，也不读取全局 providers。
+
+下面的最短实现只提供 traces；业务只使用 `otel.tracer`。`SimpleSpanProcessor` 在 provider 创建失败时由 hook 清理，成功交付后由 generation 关闭：
+
+```ts no-twoslash
+import { Plugin } from '@pluxel/core'
+import { Otel, type OtelProviders } from '@pluxel/plugin-otel'
+import {
+	BasicTracerProvider,
+	ConsoleSpanExporter,
+	SimpleSpanProcessor,
+	TraceIdRatioBasedSampler,
+} from '@opentelemetry/sdk-trace-base'
+
+@Plugin(Otel)
+export class ApplicationOtel extends Otel {
+	protected override async createProviders(): Promise<OtelProviders> {
+		const processor = new SimpleSpanProcessor(new ConsoleSpanExporter())
+		try {
+			return {
+				tracerProvider: new BasicTracerProvider({
+					sampler: new TraceIdRatioBasedSampler(0.25),
+					spanProcessors: [processor],
+				}),
+			}
+		} catch (error) {
+			try {
+				await processor.shutdown()
+			} catch (cleanupError) {
+				throw new AggregateError([error, cleanupError], 'Telemetry initialization failed', {
+					cause: error,
+				})
+			}
+			throw error
+		}
+	}
+}
+```
+
+部署清单选择 `ApplicationOtel`，业务 constructor 继续依赖 `Otel`。若同时登记多个实现，使用 [provider default](../plugin-development/testing.md#抽象-provider-与-consumer-override) 明确选择。自定义实现不继承 `OtelPlugin`，无需声明 `OtelConfig` 或填写假的 OTLP 输出。
+
+`createProviders()` 在本 generation 的配置注入后调用一次。缺失 provider 对应的 getter 报 signal disabled；空 record 会使启动失败。返回前发生失败时，hook 负责关闭已创建资源；返回后框架拥有所有 provider 的 flush/shutdown，不能交付借用的全局 provider。停止后旧调用方入口失效，SDK instruments 本身仍遵循上游停止契约。
+
+例如 metrics 原生 `MeterProvider({ readers, views })` 可控制 instrument 选择、名称、attributes、aggregation 和 histogram buckets；trace 的 `sampler`、`spanLimits`、`spanProcessors` 与 log 的 `processors`、`loggerConfigurator` 继续使用上游类型。参考 [原生 metric views](https://github.com/open-telemetry/opentelemetry-js/blob/main/doc/metrics.md#configuring-metric-views) 和 [原生 tracer 配置](https://open-telemetry.github.io/opentelemetry-js/modules/_opentelemetry_sdk-trace-base.html)。
+
 ## 配置 OTLP endpoint
 
-exporter 配置来自标准 OTel 环境变量，而不是 Plugin config：
+默认 `OtelPlugin` 的 exporter 配置来自标准 OTel 环境变量，而不是 Plugin config；自定义 hook 的配置由应用代码决定：
 
 这些 `OTEL_*` 由 SDK/插件从进程 `process.env` 读取；它们不是 Host `startup.env` 的自动映射。嵌入式宿主只传入自定义 `startup.env` 不会替换 SDK 的进程环境。部署应在启动 Node 前设置它们，认证仍使用标准 OTel headers/mTLS，不复制到普通 Plugin 配置或 Workbench。
 
@@ -141,9 +188,25 @@ TLS/mTLS 继续使用官方 exporter 的 `CERTIFICATE`、`CLIENT_KEY`、`CLIENT_
 
 ## Workbench 运维说明
 
-插件运行时提供只读输出状态和“立即导出待处理 telemetry”操作。页面显示 exporter / Prometheus 状态，
+默认预设提供只读输出状态和“立即导出待处理 telemetry”操作。页面显示 exporter / Prometheus 状态，
 不显示 endpoint、环境变量、header 或 credential；Plugin 未运行时从 Config、启动 diagnostics 和日志恢复。
 Workbench 关闭不影响 telemetry。
+
+自定义 provider 只显示 `external`，表示 provider 已安装、exporter 健康由应用观测；不会由预设配置推断为 healthy 或 waiting。缺失 provider 显示 disabled，Prometheus 只有实际挂载预设 reader 的路由才显示 listening。手动 flush 等待全部 providers；任一失败返回失败结果。
+
+自定义 concrete Plugin 若需要同一面板，在自己的 `init()` 中先调用 base，再用公开 `OtelWorkbench` 和受保护的 `workbenchOperations()` 发布：
+
+```ts no-twoslash
+import { OtelWorkbench } from '@pluxel/plugin-otel'
+
+// ApplicationOtel 内的方法；无需面板时省略。
+protected override async init(): Promise<void> {
+	await super.init()
+	this.ctx.workbench?.publish(OtelWorkbench, {
+		operations: (context) => this.workbenchOperations(context),
+	})
+}
+```
 
 ## resource、batch 与 sampling
 
@@ -151,7 +214,7 @@ runtime 用 host root name 作为默认 service name，并合并标准 OTel reso
 
 endpoint、headers、resource attributes、queue size、batch size、delay 和 timeout 都有启动期边界校验。非法环境变量会使 `OtelPlugin` lifecycle 失败，而不是悄悄退回另一套配置。
 
-trace sampler、span limits、metrics temporality/aggregation 等仍使用上游 OTel SDK/exporter 的标准环境变量。本包不实现 durable queue、fan-out、复杂 routing 或多 backend；这些应由 OpenTelemetry Collector 承担。
+默认预设保留上游 trace sampler 等标准环境变量；更完整的 SDK 选项与多 reader/processor/exporter 组合使用原生 provider hook。跨进程的 durable queue、routing 与后端治理可交给 OpenTelemetry Collector。
 
 ## 数据建模
 
@@ -180,7 +243,7 @@ this.ctx.effects.defer(() => workers.removeCallback(observe))
 
 当 traces 或 logs 启用时，runtime 会安装 process-stable `AsyncLocalStorageContextManager`，以及 W3C `tracecontext` + `baggage` propagator；已有 application-owned global coordinator 优先。本包不会注册 global meter/tracer/logger provider，constructor dependency 仍是 Plugin graph authority。
 
-provider stop/replacement 时会关闭 meter、tracer 和 logger providers，flush/shutdown 对应 readers 与 processors。OTLP 后端暂时不可达时，producer 热路径不会被反压；失败按 signal 限频写入 `ctx.logger`，恢复时记录 recovery。官方 exporter 负责其标准瞬时重试。
+provider stop/replacement 时会关闭 meter、tracer 和 logger providers，flush/shutdown 对应 readers 与 processors。关闭会尝试全部 providers 并等待结果，重复关闭复用同一结果；失败进入 lifecycle 报告，初始化与清理同时失败保留在 `AggregateError`。默认 OTLP 后端暂时不可达时，producer 热路径不会被反压；失败按 signal 限频写入 `ctx.logger`，恢复时记录 recovery。官方 exporter 负责其标准瞬时重试。
 
 需要导出 `ctx.logger` 时，在 Host 配置[原生 LogTape OTel sink](../host/configuration.md#远程输出原生-logtape-sink)，无需安装本 Plugin。
 

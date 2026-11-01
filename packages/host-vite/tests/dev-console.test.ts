@@ -100,6 +100,41 @@ it('validates and changes Host config without Management or persistence services
 	}
 })
 
+it('passes the observed complete-document version through console writes and preserves stale conflicts', async () => {
+	const host = await createHost({
+		plugins: [Counter],
+		configSync: {
+			role: 'writer',
+			scope: 'console',
+			identity: 'writer',
+			artifact: { name: 'console-fixture', catalogHash: 'e'.repeat(64) },
+			replicas: [],
+		},
+	})
+	await host.start()
+	const scope = createDevConsoleScope({ id: 'versioned-config', ctx: host.ctx })
+	try {
+		const initial = scope.dev.config.status()
+		expect(initial.readonly).toBe(false)
+		const first = await scope.dev.config.patch(
+			Counter,
+			{ label: 'first' },
+			{ expected: initial.version! },
+		)
+		expect(first).toMatchObject({ ok: true, version: { seq: 1 } })
+		expect(
+			await scope.dev.config.patch(Counter, { label: 'stale' }, { expected: initial.version! }),
+		).toMatchObject({ ok: false, code: 'version_conflict', version: { seq: 1 } })
+		const observed = scope.dev.config.status()
+		expect(
+			await scope.dev.config.reset(Counter, undefined, { expected: observed.version! }),
+		).toMatchObject({ ok: true, version: { seq: 2 } })
+	} finally {
+		await scope.dispose()
+		await host.close()
+	}
+})
+
 @Plugin({ forkable: true })
 class Forkable extends BasePlugin {}
 

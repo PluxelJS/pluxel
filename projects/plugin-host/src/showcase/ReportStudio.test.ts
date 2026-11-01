@@ -1,4 +1,3 @@
-import { InMemory } from '@pluxel/services/fs'
 import { standardServices } from '@pluxel/services'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -39,7 +38,7 @@ describe('ReportStudioPlugin', () => {
 		temporaryRoots.push(storageRoot)
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices({ fs: { backend: InMemory } }),
+			services: standardServices(),
 		})
 		await host.commit((change) => {
 			change.catalog.add([

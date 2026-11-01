@@ -7,7 +7,7 @@ description: 使用一个插件提取票据、访问对应官网，并分别返�
 
 ## 接入与方法
 
-应用注册 `PlaywrightPlugin`、`InvoicePlugin` 和消费插件，配置外部浏览器 CDP 服务。插件不安装或启动浏览器，无需 Workbench、数据库或任务队列。配置模型时需显式安装 Vault，见[完整应用示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/browser/invoice/examples/application.ts)和[浏览器连接](./browser.md)。
+Invoice 依赖抽象 `Playwright` 能力。应用注册默认 `PlaywrightPlugin`、`InvoicePlugin` 和消费插件，配置外部浏览器 CDP 服务；需要原生连接选项时，可替换为[自定义 `Playwright` provider](./browser.md#使用原生连接参数)。插件不安装或启动浏览器，无需 Workbench、数据库或任务队列。配置模型时需显式安装 Vault，见[完整应用示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/browser/invoice/examples/application.ts)和[浏览器连接](./browser.md)。
 
 | 示例环境变量           | 用途                            |
 | ---------------------- | ------------------------------- |

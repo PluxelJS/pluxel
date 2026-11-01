@@ -19,9 +19,9 @@
 
 ## 基础能力先于按需扩展
 
-导航和最小教程先呈现依赖、事件、日志、生命周期、配置、Part 与插件测试。测试是开发基本功，教程由 `docs/plugin-development/testing.md` 维护；它使用独立测试工具，不属于 Core 运行时内建服务。明确区分 Core 自带的 `ctx.events/logger/effects`、插件声明机制、独立工具包与 Host 显式安装的服务；preset 默认安装不等于任意 Context 保证存在。
+导航和最小教程先呈现依赖、事件、日志、生命周期、配置、Part 与插件测试。测试是开发基本功，教程由 `docs/plugin-development/testing.md` 维护；它使用独立测试工具，不属于 Core 运行时内建服务。明确区分 Core 自带的 `ctx.events/logger/effects/fs()/tinybase`、插件声明机制、独立工具包与 Host 显式安装的服务；preset 默认安装不等于任意 Context 保证存在。
 
-基础用法与测试集中在插件目录的第一组，HTTP、TinyBase、Database、Vault、worker、Workbench 属于按需扩展；数据库指南区分 Services 托管 SQL 与应用自管资源。第一个插件不依赖额外服务；可选页面不默认展开抢占基础导航。能力可用与输出、持久化等部署效果分开说明。事件和资源清理有独立入口，不埋在长模型页末尾。
+基础用法与测试集中在插件目录的第一组，FS 与 TinyBase 属于 Core 固定能力；HTTP、Database、Vault、worker、Workbench 属于按需扩展；数据库指南区分 Services 托管 SQL 与应用自管资源。第一个插件不依赖额外服务；可选页面不默认展开抢占基础导航。能力可用与输出、持久化等部署效果分开说明。事件和资源清理有独立入口，不埋在长模型页末尾。
 
 ## 写给正在完成任务的读者
 

@@ -8,7 +8,7 @@
 
 ## 服务与资源
 
-`createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源通常在 `prepare({ ctx, dependencies, effects })` 获取。[FS](FS.md) 为 Host 更早的配置读取提供明确例外：首个异步文件/文档操作和服务 prepare 共享同一个准备任务，capability 构造仍无 IO。
+`createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源通常在 `prepare({ ctx, dependencies, effects })` 获取。Core 内建 [FS](FS.md) 与 [TinyBase](TINYBASE.md) 提供 Host 配置文档；首个异步文件/文档操作共享准备任务，不依赖服务安装顺序。
 `@pluxel/host/browser` 从 `src/browser.ts` 只导出同一 Host 与服务组合实现，避免根 barrel 的 Node application/source loader 求值。它不提供另一套 runtime，也不为所选 Plugin 或服务补 Node polyfill；浏览器装配及 lowering 由[浏览器 Host 用法](../docs/host/configuration.md#浏览器-host)维护。
 每项服务的 effects scope 随服务准备失败或 Host 关闭释放。Plugin generation 的 effects 随该代停止释放，两者都使用 Core effects 契约，但 owner 与生命周期必须在调用位置清楚可见。
 关闭先停止接纳、排空协调操作和插件，再按依赖逆序释放服务；清理失败聚合，不能跳过其余清理。
@@ -18,7 +18,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 能力 token 的 access 表达调用 Context 的所有权：`all` 通用，`owner` 需要真实插件/Part owner，`root` 需要真实 RootContext。宿主代码使用 `ctx.require(Token)`，缺失、访问越界和构造失败保留各自错误。
 `ctx.root` 返回真实根引用，持有它的受信任代码可访问 root 能力；这不是不可信代码沙箱。Core 内部图 authority 的 token 不进入普通作者入口。
 
-`@pluxel/services` 的 `standardServices({ fs })` 安装 HTTP、Commands、Node artifacts、Workers、FS、TinyBase。同包的 `@pluxel/services/preset` 入口的 `servicesPreset(startup, { fs })` 增加 Vault、Logging、Management、管理命令及可选 Workbench。FS 和显式安装的 Database 各自选择 backend；Database 不加入默认组合，查询使用原生 Drizzle，见 [Database](DATABASE.md)。
+`@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers。同包的 `@pluxel/services/preset` 入口的 `servicesPreset(startup, options)` 增加 Vault、Management、管理命令及可选 Workbench。Core 日志通过 `config.logger: logtape(...)` 选择，FS 通过 `config.storage: zenfs(...)` 选择后端，所有 Host 文档与 Plugin 状态共用；显式安装的 Database 单独选择原生 backend；Database 不加入默认组合，查询使用原生 Drizzle，见 [Database](DATABASE.md)。
 未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
 
 ## 应用、开发和部署
@@ -50,7 +50,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 ## 资源边界与验证入口
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
-- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。storage 使用同步 root factory 借用 document storage，不拥有后端；[TinyBase](TINYBASE.md) 的 Host 私有 adapter 保存普通配置文档，先于 [FS](FS.md) root final 关闭排空；嵌入宿主可提供自己的借用 adapter。已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
+- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。默认借用 Core 私有文档；嵌入应用可通过同步 root factory 借用已有 document storage，不拥有外部后端；[TinyBase](TINYBASE.md) 的 Host 私有 adapter 保存普通配置文档，先于 [FS](FS.md) root final 关闭排空；嵌入宿主可提供自己的借用 adapter。已有 v3 配置或 v5 运行策略文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
 - Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生启动使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移、backend 与应用自管边界：[DATABASE.md](DATABASE.md)。
@@ -62,7 +62,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 代码、公开类型、文档必须描述同一所有权。不允许用测试宿主证明在线应用当前状态，或以 source-mode 测试代替独立安装和搬离工作区后的发行验证。
 Node srvx 与 Vite 接线已有覆盖，不提供 Bun/Deno/Worker adapter。Published Elysia peer admission 和工作区外下游迁移仍需独立验证，不由本分层自动保证。
 
-Services 包含基础服务、Logging、Management 与官方 preset；子入口按能力、可选 backend 和运行环境划分，不各自发布。基础入口不加载未选择的后端。Elysia application 与 Fetch handler 同属 `/elysia`，srvx listener 使用 `/elysia/node`，Vite 接线使用 `/elysia/vite`。框架跨包共享的 owner-view/security helpers 收敛到不加载 backend 的 `/internal`；白盒测试另用 `/internal/test`。仅包内测试使用的实现通过相对源码导入，数据库 driver 通过 package `imports` 私有加载，不成为导出子路径。
+Services 包含基础服务、Management 与官方 preset；子入口按能力、可选 backend 和运行环境划分，不各自发布。基础入口不加载未选择的后端。Elysia application 与 Fetch handler 同属 `/elysia`，srvx listener 使用 `/elysia/node`，Vite 接线使用 `/elysia/vite`。框架跨包共享的 owner-view/security helpers 收敛到不加载 backend 的 `/internal`；白盒测试另用 `/internal/test`。仅包内测试使用的实现通过相对源码导入，数据库 driver 通过 package `imports` 私有加载，不成为导出子路径。
 
 ### 可移植 execution 协议
 
@@ -72,8 +72,8 @@ Services 包含基础服务、Logging、Management 与官方 preset；子入口�
 
 ## Vault 记录与宿主输入
 
-Vault 只用结构化 KV 表达记录，blobs 保留独立文件语义。默认加密后端依赖 FS；bindings 后端只安装读取能力，
-不准备密钥、磁盘或 FS。Host 在服务准备后、插件启动前，通过 root-only `HostVaultBindings` 安装 schema 已验证的
+Vault 只用结构化 KV 表达记录，blobs 保留独立文件语义。默认加密后端借用 Core FS；bindings 后端只安装读取能力，
+不准备密钥、磁盘或文件目录。Host 在服务准备后、插件启动前，通过 root-only `HostVaultBindings` 安装 schema 已验证的
 owner/key/value/source 记录；缺少安装能力属于装配错误。Services 不反向拥有 Host 的环境解析。
 
 KV mutation 在唯一 backend lock 内 clone、检查 revision、加密并原子提交，然后才交换 snapshot 与发布通知；失败不推进

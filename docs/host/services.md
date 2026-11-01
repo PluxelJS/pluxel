@@ -25,31 +25,40 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 | `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件        |
 | `@pluxel/rolldown` 的 `pluxel()`                | 选择应用交付并编译 Shell 与制品 |
 
-`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、FS、TinyBase、Vault、Logging、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。`fs` 必须显式[选择后端](./configuration.md#选择文件后端)。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`logging` 替换日志方案，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。数据库或自定义管理面组合使用下文的显式服务安装器。
+`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Vault、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。FS 与 TinyBase 属于每个 Core 的固定能力，[后端](./configuration.md#选择文件后端)只在 Host 的 `config.storage` 中选择。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。日志由应用通过 `config.logger: logtape()`（`@pluxel/core/config`）配置，preset 不补装输出。数据库或自定义管理面组合使用下文的显式服务安装器。
 
-`vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。Services 的官方组合分别拥有运行时服务和 Vite 附件；应用交付与配套制品统一由 `@pluxel/rolldown` 的 `pluxel()` 构建。`@pluxel/services` 根入口只提供 `standardServices()`，不加载 Management、Logging 或 Workbench 后端。
+`vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。Services 的官方组合分别拥有运行时服务和 Vite 附件；应用交付与配套制品统一由 `@pluxel/rolldown` 的 `pluxel()` 构建。`@pluxel/services` 根入口只提供 `standardServices()`，不加载 Management 或 Workbench 后端。
 
 开发控制台归 `@pluxel/host-vite`，基础 `host({ entry, devConsole: true })` 即可启用；官方 `vitePreset()` 接受同样的开关。它不要求安装服务。脚本显式 import 服务 API，通过借用的 `dev.ctx` 访问已安装能力；见[开发控制台](../development/dev-console.md)。Core 始终提供 `ctx.logger`，Logging 配置负责输出与存储，不是插件使用 logger 的前提。
 
 standalone Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位；modules 从已加载模块所属输出的 inventory 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
-`fs(config)` 安装文件能力，不自动持久化 Host 的配置和启动策略；官方组合已包含 `tinybase()`；需要保存配置与策略时，将 `configRecords.storage` 和 `state.storage` 接到 `TinyBaseHost.documents()` 的[同步 root factory](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+Host 的配置和启动策略默认通过 Core 私有文档保存，沿用 `config.storage`；普通应用无需额外接线。嵌入应用可继续提供[借用文档适配](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
-应用构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(startup, { fs: backendConfig, workbench: false })` 与 `pluxel({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
+应用构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(startup, { workbench: false })` 与 `pluxel({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
 ## 创建宿主
 
 ```ts
+import { zenfs } from '@pluxel/core/config'
 import { createHost } from '@pluxel/host'
 import * as nativeFs from 'node:fs'
 import { resolve } from 'node:path'
-import { fs, Passthrough } from '@pluxel/services/fs'
+import { Passthrough } from '@pluxel/core/fs'
 import { vault } from '@pluxel/services/vault'
 import { MyPlugin } from './plugin.js'
 
+const prefix = resolve('./data/fs')
+await nativeFs.promises.mkdir(prefix, { recursive: true })
 const host = await createHost({
 	plugins: [MyPlugin],
-	services: [fs({ backend: Passthrough, fs: nativeFs, prefix: resolve('./data/fs') }), vault()],
+	config: {
+		storage: zenfs({
+			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+			durableMounts: ['/'],
+		}),
+	},
+	services: [vault()],
 })
 try {
 	await host.start()
@@ -58,7 +67,7 @@ try {
 }
 ```
 
-`plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端明确依赖 FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不依赖 FS。Host 不自动补装依赖。
+`plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端借用 Core FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不打开 Vault 加密目录。Host 不自动补装依赖。
 
 `createHost()` 只接受 Host 配置字段，未知字段在资源获取前拒绝；应用解析结果中的 `startup/sources/prepare/name` 属于执行入口，不能整对象传给它。服务选择和配置容器在异步准备前捕获；`updateCatalog()` 同样捕获调用时的插件数组。借用的 storage、callback 与服务 handle 保留原身份。
 
@@ -66,7 +75,7 @@ try {
 
 ## Plugin 读取能力
 
-`this.ctx.logger` 是 Core 始终提供的基础能力，插件无需 import `@pluxel/services/logging`，也无需 `ctx.require(Logging)`。宿主的 `logging(plan)` 配置输出 sink、过滤策略和日志存储；省略它不移除 logger，但不由 Host 安装这些输出和管理后端。`Logging` token 是宿主侧日志管理能力，与插件直接使用的 logger 不同。
+`this.ctx.logger` 是 Core 始终提供的基础能力，插件无需 import 日志包，也无需 `ctx.require(Logging)`。应用通过 `config.logger: logtape(nativeConfig, options)`（`@pluxel/core/config`）配置输出 sink、过滤策略和日志存储；省略 `logger` 不安装进程日志配置。`Logging` token 从 `@pluxel/core/logging` 导入，用于宿主侧读取已配置的 manager，见[日志配置](./configuration.md#host-logging)。
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -93,17 +102,24 @@ Token 的访问范围与 backend 生命周期不同：`owner` 只允许 Plugin�
 
 ```ts
 const snapshot = await host.config.get(owner)
+if (!snapshot.ok) throw new Error(snapshot.message)
+if (snapshot.readonly) throw new Error('Configuration is read-only')
 const checked = await host.config.validate(owner, { endpoint: 'https://example.com' })
-if (checked.ok) {
-	const result = await host.config.patch(owner, { endpoint: 'https://example.com' })
-	// result.application 区分 applied、deferred 和 saved-not-applied。
-}
-await host.config.reset(owner, ['endpoint'])
+if (!checked.ok) throw new Error(checked.message)
+const result = await host.config.patch(
+	owner,
+	{ endpoint: 'https://example.com' },
+	{ expected: snapshot.version ?? undefined },
+)
+if (!result.ok) throw new Error(result.message)
+// result.application 区分 applied、deferred 和 saved-not-applied。
 ```
 
 `owner` 是 `PluginNodeAddress`。方法会先完成 Host 初始目录接纳，然后与图更新共用一个队列；不存在的节点、未声明的 fork 或没有配置 schema 的节点以结构化失败返回。`validate()` 合并当前记录进行校验，不写入。`patch()` 顶层合并后校验完整对象；`reset()` 删除指定键再经 schema 标准化，省略键列表时重置整个对象。
 
-写入顺序为校验一次 → 暂存标准化快照 → 等待存储完成 → 确认 revision → 通知运行中的 generation。停止的节点返回 `deferred`，通知失败返回 `saved-not-applied`，不会把已经保存的值报告为未修改。省略存储时 Host 使用内存配置；Host 拥有唯一的存储实现，管理 RPC 和开发控制台也委托同一套用例。
+写入顺序为校验一次 → 暂存标准化快照 → 等待存储完成 → 确认 revision → 通知运行中的 generation。停止的节点返回 `deferred`，通知失败返回 `saved-not-applied`，不会把已经保存的值报告为未修改。默认文档使用 Core 的文件后端；Host 拥有唯一的配置存储实现，管理 RPC 和开发控制台也委托同一套用例。
+
+成功读取与写入同时返回 `version` 和 `readonly`。启用[跨实例同步](./configuration.md#跨实例同步保存配置)时，writer 要求 patch/reset 原样带回读取时的 `version`；过期或缺失返回 `version_conflict`，不自动重试覆盖其他编辑。单实例 `version` 为 `null`。Management 的 `client.config.patch(owner, patch, version)` 与 `patchField(owner, input, version)` 遵循同一规则；`client.config.status()` 可读取不依赖插件 schema 的版本与只读状态。删除 fork 也需要对应版本，并在停止插件前拒绝只读或冲突请求。
 
 关闭后所有配置方法拒绝新请求。Host 配置入口是受信任宿主 API，网络端点仍须通过既有认证和授权；它不会自动开放 RPC 或监听器。
 
@@ -131,7 +147,7 @@ import { workbenchArtifacts } from '@pluxel/workbench/vite'
 
 export default defineConfig({
 	plugins: [
-		serviceSingletons('./src/app.ts'),
+		serviceSingletons(),
 		host({ entry: './src/app.ts' }),
 		elysiaDevelopment(),
 		nodeArtifacts(),
@@ -140,7 +156,7 @@ export default defineConfig({
 })
 ```
 
-`serviceSingletons(entry?)` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。`entry` 与 `host({ entry })` 相同，用于确认最终 Host 的 package owner；省略时按 Vite root 所属包确定，`vitePreset()` 自动传入。Workbench target 的 Cap’n Web 与托管状态消费者的 TinyBase 都先核对原声明及实际安装，再接到宿主模块。TinyBase 的原生子路径保留 Node／browser 条件，私有版本保留自身解析；版本契约见[插件包](../development/plugin-package.md)。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
+`serviceSingletons()` 为官方包保持原生 ESM 模块身份，避免 Vite 与服务附件取得不同的 token 或 constructor。最终 Host 的 package owner 由 `host({ entry })` 确定。Workbench target 的 Cap’n Web 与托管状态消费者的 TinyBase 都先核对原声明及实际安装，再接到宿主模块。TinyBase 的原生子路径保留 Node／browser 条件，私有版本保留自身解析；版本契约见[插件包](../development/plugin-package.md)。完全自定义的包集合可使用 `hostSingletons({ packages: [...] })`（`@pluxel/host-vite`）显式选择共享身份的包。只选择应用所需的附件与对应服务；附件不安装运行时服务。第三方附件通过同一个 Host 开发附件接口接入。`vitePreset()` 是官方集合的快捷组合，自定义应用也可以使用它配合自己的服务清单。
 
 ## 自定义组合的开发和生产接入
 
@@ -152,25 +168,39 @@ Host 为每次装配浅复制并冻结 startup、env、bindings 和 deployment�
 `prepare({ host, startup })`，再启动 Plugin；失败由启动入口回滚整个 Host。
 
 ```ts
+import { zenfs } from '@pluxel/core/config'
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { resolve } from 'node:path'
 import * as nativeFs from 'node:fs'
-import { Passthrough } from '@pluxel/services/fs'
+import { Passthrough } from '@pluxel/core/fs'
 
-export default defineHostApplication(({ env, deployment }) => {
+export default defineHostApplication(async ({ env, deployment }) => {
+	const prefix = resolve(env.DATA_DIRECTORY ?? './data')
+	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		plugins: [],
+		config: {
+			storage: zenfs({
+				mounts: {
+					'/': {
+						backend: Passthrough,
+						fs: nativeFs,
+						prefix,
+					},
+				},
+				durableMounts: ['/'],
+			}),
+		},
 		services: standardServices({
-			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(env.DATA_DIRECTORY ?? './data') },
 			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
 		}),
 	}
 })
 ```
 
-`standardServices({ fs: backendConfig })` 明确提供 HTTP、Commands、NodeModules、Workers、FS、TinyBase。
-Vault、Database、Logging、Management、Workbench 另行加入服务数组；它不加入任何 Plugin。
+`standardServices()` 明确提供 HTTP、Commands、NodeModules 和 Workers；FS 与 TinyBase 固定由 Core 提供。
+Vault、Database、Management、Workbench 另行加入服务数组；日志通过 `config.logger` 选择。该组合不加入任何 Plugin。
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
 生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
 开发不配置该目录，使用 `vitePreset()` 接入已安装 NodeModules 的源码编译器，或在 `host()` 旁显式添加 `nodeArtifacts()`。自行组合服务时同样把生产制品配置传给 `nodeModules()`。
@@ -225,7 +255,7 @@ try {
 }
 ```
 
-正式部署从 `@pluxel/services/database/postgres` 导入 `postgres({ connectionString })`。应用直接声明所选 driver：PGlite 使用 `@electric-sql/pglite`，PostgreSQL 使用 `pg`。服务工厂不打开数据库；第一次 Plugin 调用 `ctx.require(Database).use(definition)` 才加载 driver 并准备 owner migration。每个 Host 创建自己的 adapter，在已接纳操作排空后关闭。schema、迁移与生命周期见[数据库与数据归属](../plugin-development/database.md)，后端部署选择见[Host 配置](./configuration.md#选择-native-postgresql-或-pglite)。
+正式部署从 `@pluxel/services/database/postgres` 导入 `postgres`。两个 backend 工厂直接接收所选 driver 的原生配置或实例；配置创建的连接由 Host 排空后关闭，传入的实例由应用拥有。应用直接声明所选 driver：PGlite 使用 `@electric-sql/pglite`，PostgreSQL 使用 `pg`。服务工厂不打开数据库；第一次 Plugin 调用 `ctx.require(Database).use(definition)` 才加载 driver 并准备 owner migration。schema、迁移与生命周期见[数据库与数据归属](../plugin-development/database.md)，原生选项、资源借用及后端部署选择见[Host 配置](./configuration.md#选择-native-postgresql-或-pglite)。
 
 应用也可以直接使用 Drizzle 与 driver 并拥有迁移、连接池和关闭流程，无需安装托管 Database，见[应用完全自管 SQL](../plugin-development/database.md#应用完全自管-sql)及[连接所有权](./configuration.md#application-private-database)。
 
@@ -270,7 +300,7 @@ export function clock() {
 
 每项服务取得独立的 effects scope，因此服务内部的 `shutdown`、`runtime`、`final` phase 不改变服务依赖之间的关闭顺序。
 
-HTTP、TinyBase、FS、Database、Vault、Commands、NodeModules、Workers、Logging、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。FS 的首次异步文档 IO 可先于服务 prepare 等待同一个准备任务，供 Host 启动读取配置；其他服务沿用自身 prepare 契约。
+HTTP、Database、Vault、Commands、NodeModules、Workers、Management 和 Workbench 均可显式组合到 Host；`servicesPreset()` 仅返回服务清单，准备、失败回滚和关闭统一由 Host 负责。Core FS 与 TinyBase 的首次异步 IO 等待同一个准备任务，Host 在服务 prepare 前通过它们恢复配置，并等待所选日志配置准备完成；其他服务沿用自身 prepare 契约。
 
 ## 服务参与 Plugin 发布
 
@@ -284,6 +314,6 @@ publish 只同步交换已准备好的状态且必须返回 `undefined`。不得
 
 应用显式提供使用到的 Core、Host、Services 等框架 peer，以保证能力 token、Context 和编译 ABI 使用同一实例。optional peer 仅在启用对应入口时需要，例如 Workbench、Vite 与构建工具。普通实现依赖由所属包安装。
 
-Core 拥有插件内核，Host 拥有应用与动态来源，Services 拥有官方服务及其组合，Workbench 拥有 UI 能力与 Shell。Logging、Management 和 preset 是 Services 的领域入口，不需要分别安装包。Services 的可选 Workbench 组合与 Workbench 使用的 Services 协议允许包级相互引用；具体模块不能依靠循环初始化，也不能从基础入口加载未选择的后端。插件集成测试宿主使用 `@pluxel/test`。
+Core 拥有插件内核，Host 拥有应用与动态来源，Services 拥有官方服务及其组合，Workbench 拥有 UI 能力与 Shell。日志运行时归 Core，Management 和 preset 是 Services 的领域入口，不需要分别安装包。Services 的可选 Workbench 组合与 Workbench 使用的 Services 协议允许包级相互引用；具体模块不能依靠循环初始化，也不能从基础入口加载未选择的后端。插件集成测试宿主使用 `@pluxel/test`。
 
 持久化路径及保存插件配置/运行策略，见[Host 配置](./configuration.md#保存配置和运行策略)。

@@ -13,6 +13,6 @@ pnpm add @pluxel/plugin-fonts
 - [用法、配置与验证](../../../docs/plugins/rendering/fonts.md)
 - [维护约束](DESIGN.md)
 
-核心字体发现、`FontsConfig.files` 部署文件与程序化注册无需 Workbench 或 FS。配置可用同一导出的 `FontsConfig` 绑定环境变量和 JSON 文件；保存默认偏好需要 Host TinyBase 服务，上传集合需要 FS。
+核心字体发现、`FontsConfig.files` 部署文件与程序化注册无需 Workbench 服务。配置可用同一导出的 `FontsConfig` 绑定环境变量和 JSON 文件；默认偏好使用 Core 内建 TinyBase，上传集合使用 `ctx.fs()`，两者共享 Host 选择的文件后端。部署文件仍由原生文件系统读取。
 
 跨 renderer 的调度、输入所有权与取消规则见 [执行架构](../ARCHITECTURE.md)。

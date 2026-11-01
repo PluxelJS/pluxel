@@ -13,7 +13,7 @@ import {
 } from '@pluxel/core'
 import * as v from 'valibot'
 
-import { PluginFs, writeFileAtomic, type FsPromises } from '@pluxel/services/fs'
+import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
 import { CacheBackend, type CacheBackendStore, type CacheValue } from './backend.ts'
 
 export { CacheBackend } from './backend.ts'
@@ -893,22 +893,21 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 			this.holder.persistenceMode = this.config.persistence.mode
 			if (this.holder.persistenceMode === 'off') return
 
-			const access = this.ctx.require(PluginFs)
 			if (this.holder.persistenceMode === 'durable') {
-				this.holder.storage = await access({ durable: true, writable: true })
+				this.holder.storage = await this.ctx.fs({ durable: true, writable: true })
 				this.holder.persistenceWritable = true
 			} else {
 				try {
-					this.holder.storage = await access({ durable: true })
+					this.holder.storage = await this.ctx.fs({ durable: true })
 				} catch (error) {
 					if (!hasErrno(error, 'ENOTSUP')) throw error
 					this.ctx.logger.warn(
 						'Memory cache best-effort persistence is using ephemeral storage and will not survive a process restart',
 					)
-					this.holder.storage = await access()
+					this.holder.storage = await this.ctx.fs()
 				}
 				try {
-					await access({ writable: true })
+					await this.ctx.fs({ writable: true })
 					this.holder.persistenceWritable = true
 				} catch (error) {
 					if (!hasErrno(error, 'EROFS')) throw error

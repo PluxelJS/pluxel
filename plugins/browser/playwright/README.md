@@ -7,11 +7,11 @@
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
+import { Playwright } from '@pluxel/plugin-playwright'
 
 @Plugin()
 export class PageTitlePlugin extends BasePlugin {
-	constructor(private readonly browser: PlaywrightPlugin) {
+	constructor(private readonly browser: Playwright) {
 		super()
 	}
 
@@ -27,6 +27,8 @@ export class PageTitlePlugin extends BasePlugin {
 	}
 }
 ```
+
+`Playwright` 是消费端的抽象能力；应用注册默认 `PlaywrightPlugin`，或以 `@Plugin(Playwright)` 实现 `protected connect(signal): Promise<Browser>`。自定义 hook 直接使用原生 `ConnectOptions` / `ConnectOverCDPOptions`；返回连接归本 generation，基类负责回滚、晚到资源和关闭，不能返回借用连接。完整原生 provider 示例见[浏览器插件指南](../../../docs/plugins/browser.md#使用原生连接参数)。
 
 `newContext()` 保留 Playwright 的原生 `BrowserContextOptions`、`BrowserContext` 和 SDK 异常。
 每次调用创建隔离 context；调用者应在 `finally` 关闭。插件和调用方停止时兜底关闭各自 context。
@@ -53,3 +55,5 @@ Playwright 的 `newContext()` 和 `context.close()` 没有 AbortSignal；取消�
 `PLUXEL_BROWSER_PROTOCOL` 选择 `cdp`（默认）或 `playwright`；`PLUXEL_BROWSER_HEADERS` 可提供 JSON 格式的连接 headers。
 测试通过 Vault 绑定读取连接，连续建立两个真实 Host generation，在隔离 context 中读取静态页面并清理；第二次连接同时验证前一代未停止外部浏览器。
 此命令不启动浏览器，也不访问财政网站。
+
+`vp run @pluxel/plugin-playwright#test:native` 使用已安装 Chromium 创建隔离 server，验证自定义 provider 的原生连接与两代资源释放。可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指定 executable；server 在 finally 中关闭。

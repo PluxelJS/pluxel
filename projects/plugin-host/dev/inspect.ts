@@ -1,5 +1,5 @@
 import { defineDevConsole } from '@pluxel/host-vite/console'
-import { Logging } from '@pluxel/services/logging'
+import { Logging } from '@pluxel/core/logging'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 

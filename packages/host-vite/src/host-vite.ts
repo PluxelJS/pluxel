@@ -155,6 +155,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			config: declaration.config,
 			state: declaration.state,
 			configRecords: declaration.configRecords,
+			configSync: declaration.configSync,
 			vaultBindings: declaration.vaultBindings,
 			services: declaration.services,
 		})

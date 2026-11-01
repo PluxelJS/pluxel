@@ -24,7 +24,7 @@ export type {
 	LogStreamMeta,
 	RuntimeLogError,
 	RuntimeLogLine,
-} from '../logging/protocol'
+} from '@pluxel/core/logging/protocol'
 export * from './web/protocol'
 export {
 	parseConfigFieldPathSegments,

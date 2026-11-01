@@ -12,12 +12,13 @@ description: 为 Native 与 Vite 应用管理和发布 pnpm 插件包。
 ## 装配宿主
 
 ```ts no-twoslash
+import { zenfs } from '@pluxel/core/config'
 import { resolve } from 'node:path'
 import * as nativeFs from 'node:fs'
 import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
-import { Passthrough } from '@pluxel/services/fs'
+import { Passthrough } from '@pluxel/core/fs'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 import { pluginSource } from '@pluxel/host/sources'
@@ -30,6 +31,8 @@ export default defineHostApplication(async (startup) => {
 		resolveHostEnv(startup.env).dataRoot,
 	)
 	const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')
+	const prefix = resolve(dataRoot, 'fs')
+	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'managed-plugins',
 		plugins: [PackageManagerPlugin],
@@ -40,9 +43,13 @@ export default defineHostApplication(async (startup) => {
 				include: ['*.mjs'],
 			}),
 		],
-		services: await servicesPreset(startup, {
-			fs: { backend: Passthrough, fs: nativeFs, prefix: resolve(dataRoot, 'fs') },
-		}),
+		config: {
+			storage: zenfs({
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			}),
+		},
+		services: await servicesPreset(startup, {}),
 		configRecords: {
 			initial: [
 				{

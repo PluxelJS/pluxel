@@ -1,6 +1,8 @@
 import { recordLoadedApplicationPlugins } from './loaded-modules'
 import { resolveHostStateInitial } from './state-store'
-import { isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
+import { readFile, realpath } from 'node:fs/promises'
+import { installedPackageFacts } from './shared-packages'
 import { mergeConfigRecords } from './config-records'
 import { resolveInputBindings } from './input-bindings'
 import { createNativeSourceLoader } from './native-source-loader'
@@ -11,6 +13,11 @@ import type { PluginCatalogProvenance } from './catalog'
 import type { PluginConstructor } from '@pluxel/core'
 import { defineHostService } from './services'
 import { createHost, type HostApplication, type HostRuntimeOptions, type PluginHost } from './host'
+import {
+	assertConfigArtifact,
+	snapshotConfigSyncOptions,
+	type HostConfigArtifact,
+} from './config-sync-protocol'
 
 export type HostStartupContext<
 	TBindings extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
@@ -19,7 +26,12 @@ export type HostStartupContext<
 	mode: 'development' | 'production' | 'test'
 	env: Readonly<Record<string, string | undefined>>
 	bindings: TBindings
-	deployment?: Readonly<{ root: string; target: 'node'; variant: 'headless' | 'workbench' }>
+	deployment?: Readonly<{
+		root: string
+		target: 'node'
+		variant: 'headless' | 'workbench'
+		application?: HostConfigArtifact
+	}>
 }>
 /** Complete application configuration evaluated once for each fresh Host. */
 export type HostApplicationFactory = (
@@ -56,6 +68,7 @@ const fields = new Set([
 	'config',
 	'state',
 	'configRecords',
+	'configSync',
 	'envBindings',
 	'fileBindings',
 	'prepare',
@@ -105,7 +118,12 @@ function snapshotStartup(input: HostStartupContext): HostStartupContext {
 	record(startup.bindings, '[host] startup.bindings')
 	if (startup.deployment !== undefined) {
 		const deployment = record(startup.deployment, '[host] startup.deployment')
-		assertFields(deployment, new Set(['root', 'target', 'variant']), '[host] startup.deployment')
+		assertFields(
+			deployment,
+			new Set(['root', 'target', 'variant', 'application']),
+			'[host] startup.deployment',
+		)
+		if (deployment.application !== undefined) assertConfigArtifact(deployment.application)
 		if (typeof deployment.root !== 'string' || !isAbsolute(deployment.root))
 			throw new TypeError('[host] startup.deployment.root must be absolute')
 		if (
@@ -120,7 +138,16 @@ function snapshotStartup(input: HostStartupContext): HostStartupContext {
 		...input,
 		env: Object.freeze({ ...input.env }),
 		bindings: Object.freeze({ ...input.bindings }),
-		...(input.deployment ? { deployment: Object.freeze({ ...input.deployment }) } : {}),
+		...(input.deployment
+			? {
+					deployment: Object.freeze({
+						...input.deployment,
+						...(input.deployment.application
+							? { application: Object.freeze({ ...input.deployment.application }) }
+							: {}),
+					}),
+				}
+			: {}),
 	})
 }
 
@@ -133,10 +160,26 @@ export async function resolveHostApplication(
 	const startup = snapshotStartup(input)
 	const application = await factory(startup)
 	assertHostApplication(application)
+	const configSync =
+		application.configSync !== undefined
+			? snapshotConfigSyncOptions(application.configSync)
+			: undefined
+	if (configSync && startup.deployment) {
+		const artifact = startup.deployment.application
+		if (
+			!artifact ||
+			artifact.name !== configSync.artifact.name ||
+			artifact.catalogHash !== configSync.artifact.catalogHash
+		)
+			throw new Error(
+				'[host:config-sync] Synchronization must match the deployed application artifact facts',
+			)
+	}
 	recordLoadedApplicationPlugins(factory, application.plugins)
 	const { envBindings, fileBindings, ...declaration } = application
 	const resolved = {
 		...declaration,
+		...(configSync ? { configSync } : {}),
 		plugins: [...application.plugins],
 		...(application.sources
 			? { sources: Object.freeze(application.sources.map(pluginSource)) }
@@ -211,7 +254,10 @@ export async function runHostApplication(
 	for (const key of Object.keys(options))
 		if (!['startup', 'sharedPackages'].includes(key))
 			throw new TypeError(`[host] native application unsupported ${key}`)
-	const startup = snapshotStartup(options.startup)
+	let startup = snapshotStartup(options.startup)
+	const applicationEntry = await realpath(resolve(startup.root, entry))
+	const deployment = await readModuleDeployment(applicationEntry)
+	if (deployment) startup = snapshotStartup({ ...startup, deployment })
 	if (options.sharedPackages !== undefined && !Array.isArray(options.sharedPackages))
 		throw new TypeError('[host] sharedPackages must be an array')
 	const sharedPackages = options.sharedPackages ? [...options.sharedPackages] : undefined
@@ -221,8 +267,12 @@ export async function runHostApplication(
 	})
 	let host: PluginHost | undefined
 	try {
-		const application = await loader.loadApplication(resolve(startup.root, entry))
+		const application = await loader.loadApplication(applicationEntry)
 		const resolved = await resolveHostApplication(application, startup)
+		if (resolved.configSync && !deployment)
+			throw new Error(
+				'[host:config-sync] Native synchronization requires the deployed application manifest',
+			)
 		const paths = await discoverPluginSources({
 			root: resolved.startup.root,
 			sources: resolved.sources ?? [],
@@ -267,6 +317,7 @@ export async function runHostApplication(
 			config: resolved.config,
 			state: resolved.state,
 			configRecords: resolved.configRecords,
+			configSync: resolved.configSync,
 			vaultBindings: resolved.vaultBindings,
 			services: resolved.services,
 		})
@@ -293,5 +344,45 @@ export async function runHostApplication(
 			loader.close()
 		}
 		throw error
+	}
+}
+
+/** Native module deliveries carry the same compiled application identity as static deliveries. */
+async function readModuleDeployment(entry: string): Promise<HostStartupContext['deployment']> {
+	const root = installedPackageFacts(entry)?.root ?? dirname(entry)
+	let text: string
+	try {
+		text = await readFile(resolve(root, 'pluxel-deployment.json'), 'utf8')
+	} catch (error) {
+		if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+			return undefined
+		throw error
+	}
+	const manifest = record(JSON.parse(text), '[host] module deployment')
+	if (manifest.version !== 1 || manifest.kind !== 'pluxel-modules-application')
+		throw new TypeError(
+			'[host] Native module startup requires a modules application deployment manifest',
+		)
+	const application = record(manifest.application, '[host] module deployment.application')
+	assertConfigArtifact(application)
+	const server = record(manifest.server, '[host] module deployment.server')
+	if (
+		server.target !== 'node' ||
+		typeof server.entry !== 'string' ||
+		resolve(root, server.entry) !== entry
+	)
+		throw new TypeError('[host] Module deployment entry does not match the loaded application')
+	const capabilities = record(manifest.capabilities, '[host] module deployment.capabilities')
+	const workbench = record(
+		capabilities.workbench,
+		'[host] module deployment.capabilities.workbench',
+	)
+	if (typeof workbench.included !== 'boolean')
+		throw new TypeError('[host] Module deployment must declare its workbench variant')
+	return {
+		root,
+		target: 'node',
+		variant: workbench.included ? 'workbench' : 'headless',
+		application,
 	}
 }

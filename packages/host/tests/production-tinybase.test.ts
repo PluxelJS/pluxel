@@ -1,11 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { hostSharedPackages } from '../src/shared-packages'
 
 const loader = new URL('../src/native-source-loader.ts', import.meta.url).href
+const coreTinybase = new URL('../../core/node_modules/tinybase/index.js', import.meta.url).href
 const tsx = new URL('../../rolldown/node_modules/tsx/dist/loader.mjs', import.meta.url).href
 
 it.each(['tinybase', 'capnweb'])(
@@ -44,19 +46,12 @@ function fixture(
 		type: 'module',
 		dependencies: { tinybase: hostDependency },
 	})
-	put('node_modules/@pluxel/services/package.json', {
-		name: '@pluxel/services',
-		peerDependencies: { tinybase: '10.0.1' },
-		version: '1.0.0',
-		type: 'module',
-		exports: { '.': './index.mjs', './tinybase': './tinybase.mjs' },
-	})
-	put('node_modules/@pluxel/services/index.mjs', 'export {}')
-	put(
-		'node_modules/@pluxel/services/tinybase.mjs',
-		"export const TinyBase = {}; export { createStore } from 'tinybase'; export { createQueries } from 'tinybase/queries'",
+	mkdirSync(join(root, 'node_modules/@pluxel'), { recursive: true })
+	symlinkSync(
+		fileURLToPath(new URL('../../core', import.meta.url)),
+		join(root, 'node_modules/@pluxel/core'),
+		'dir',
 	)
-	tinybase('node_modules/@pluxel/services/node_modules/tinybase', '10.0.1')
 	tinybase('node_modules/tinybase', '10.0.1')
 	for (const [name, version, shared] of [
 		['consumer', installed, true],
@@ -77,22 +72,23 @@ function fixture(
 		})
 		put(
 			`node_modules/${name}/index.mjs`,
-			`${name === 'consumer' ? "import { TinyBase } from '@pluxel/services/tinybase';" : ''} export { createStore } from 'tinybase'; export { createQueries } from 'tinybase/queries'`,
+			"export { createStore } from 'tinybase'; export { createQueries } from 'tinybase/queries'",
 		)
 		tinybase(`node_modules/${name}/node_modules/tinybase`, version)
 	}
 	put(
 		'entry.mjs',
 		`
-import * as Host from '@pluxel/services/tinybase'
 import * as Consumer from 'consumer'
 import * as Library from 'library'
 import * as Private from 'private-store'
 import { createStore as ApplicationStore } from 'tinybase'
 export default () => ({
- shared: Consumer.createStore === Host.createStore && Library.createStore === Host.createStore && ApplicationStore === Host.createStore,
- subpaths: Consumer.createQueries === Host.createQueries && Library.createQueries === Host.createQueries,
- privateIndependent: Private.createStore !== Host.createStore && Private.createQueries !== Host.createQueries,
+ shared: Consumer.createStore === Library.createStore,
+ appPrivate: ApplicationStore !== Consumer.createStore,
+ coreFactory: Consumer.createStore,
+ subpaths: Consumer.createQueries === Library.createQueries,
+ privateIndependent: Private.createStore !== Consumer.createStore && Private.createQueries !== Consumer.createQueries,
 })
 `,
 	)
@@ -110,8 +106,9 @@ function run(root: string, script: string) {
 			`
 import assert from 'node:assert/strict'
 import { createNativeSourceLoader } from ${JSON.stringify(loader)}
+import { createStore as coreCreateStore } from ${JSON.stringify(coreTinybase)}
 const root = ${JSON.stringify(root)}
-const source = await createNativeSourceLoader({ root, sharedPackages: ['@pluxel/services'] })
+const source = await createNativeSourceLoader({ root })
 try { ${script} } finally { source.close() }
 `,
 		],
@@ -119,12 +116,12 @@ try { ${script} } finally { source.close() }
 	)
 }
 
-it('binds installed managed consumers, peer libraries, app imports and upstream subpaths while isolating private TinyBase', () => {
+it('binds managed consumers and peer libraries to Core while preserving upstream subpaths and private application dependencies', () => {
 	const root = fixture()
 	try {
 		const output = run(
 			root,
-			`const app = await source.loadApplication(root + '/entry.mjs'); assert.deepEqual(app(), { shared: true, subpaths: true, privateIndependent: true }); console.log('TINYBASE_BOUND')`,
+			`const app = await source.loadApplication(root + '/entry.mjs'); const {coreFactory, ...facts} = app(); assert.equal(coreFactory, coreCreateStore); assert.deepEqual(facts, { shared: true, subpaths: true, privateIndependent: true, appPrivate: true }); console.log('TINYBASE_BOUND')`,
 		)
 		expect(output).toContain('TINYBASE_BOUND')
 	} finally {
@@ -135,13 +132,12 @@ it('binds installed managed consumers, peer libraries, app imports and upstream 
 it('interoperates with real independently installed upstream Store and Queries modules through native loading', () => {
 	const root = fixture()
 	try {
-		const upstream = new URL('../../services/node_modules/tinybase/', import.meta.url)
+		const upstream = new URL('../../core/node_modules/tinybase/', import.meta.url)
 		expect(JSON.parse(readFileSync(new URL('package.json', upstream), 'utf8')).version).toBe(
 			'10.0.1',
 		)
 		for (const path of [
 			'node_modules/tinybase',
-			'node_modules/@pluxel/services/node_modules/tinybase',
 			'node_modules/consumer/node_modules/tinybase',
 			'node_modules/library/node_modules/tinybase',
 		]) {
@@ -154,7 +150,6 @@ it('interoperates with real independently installed upstream Store and Queries m
 		writeFileSync(
 			join(root, 'entry.mjs'),
 			`
-import { createStore as HostStore } from '@pluxel/services/tinybase'
 import { createStore } from 'consumer'
 import { createQueries } from 'library'
 export default () => {
@@ -162,13 +157,13 @@ export default () => {
  const queries = createQueries(store).setQueryDefinition('names', 'items', ({ select }) => select('name'))
  const result = queries.getResultTable('names')
  queries.destroy()
- return { shared: createStore === HostStore, result }
+ return { createStore, result }
 }
 `,
 		)
 		const output = run(
 			root,
-			`const app = await source.loadApplication(root + '/entry.mjs'); const value = app(); assert.equal(value.shared, true); assert.equal(value.result.one.name, 'Ada'); assert.equal(Object.getPrototypeOf(value.result), null); assert.equal(Object.getPrototypeOf(value.result.one), null); console.log('NATIVE_UPSTREAM_INTEROP')`,
+			`const app = await source.loadApplication(root + '/entry.mjs'); const value = app(); assert.equal(value.createStore, coreCreateStore); assert.equal(value.result.one.name, 'Ada'); assert.equal(Object.getPrototypeOf(value.result), null); assert.equal(Object.getPrototypeOf(value.result.one), null); console.log('NATIVE_UPSTREAM_INTEROP')`,
 		)
 		expect(output).toContain('NATIVE_UPSTREAM_INTEROP')
 	} finally {
@@ -177,9 +172,8 @@ export default () => {
 }, 30_000)
 
 it.each([
-	['10.1.0', '10.0.1', '10.0.1', /consumer.*resolved 10\.1\.0.*Host TinyBase supports 10\.0\.1/],
+	['10.1.0', '10.0.1', '10.0.1', /consumer.*resolved 10\.1\.0.*Host Core supports 10\.0\.1/],
 	['10.0.1', undefined, '10.0.1', /consumer.*peerDependencies.tinybase <missing>/],
-	['10.0.1', '10.0.1', '^10.0.1', /application.*dependencies.tinybase \^10\.0\.1/],
 ] as const)(
 	'rejects unsupported native shared TinyBase declarations or installations (%s, %s, %s)',
 	(version, peer, hostDependency, diagnostic) => {
@@ -210,3 +204,24 @@ it.each([
 	},
 	30_000,
 )
+
+it('loads a Core-only plugin application without a direct TinyBase dependency', () => {
+	const root = fixture()
+	try {
+		writeFileSync(
+			join(root, 'package.json'),
+			JSON.stringify({ name: 'application', version: '1.0.0', type: 'module' }),
+		)
+		writeFileSync(
+			join(root, 'entry.mjs'),
+			"import {BasePlugin} from '@pluxel/core'; export default () => ({fixedCore:typeof BasePlugin === 'function'})",
+		)
+		const output = run(
+			root,
+			`const app = await source.loadApplication(root + '/entry.mjs'); assert.deepEqual(app(), {fixedCore:true}); console.log('CORE_ONLY')`,
+		)
+		expect(output).toContain('CORE_ONLY')
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+}, 30_000)

@@ -1,13 +1,11 @@
 import { AuditPlugin } from '@example/audit-plugin'
 import { TodoPlugin } from '@example/todo-plugin'
 import { createTestHost } from '@pluxel/test'
-import { fs, InMemory } from '@pluxel/services/fs'
-import { TinyBase, tinybase } from '@pluxel/services/tinybase'
 import { describe, expect, it } from 'vitest'
 
 describe('TodoPlugin', () => {
 	it('uses validated config and attaches an optional Plugin when available', async () => {
-		await using host = await createTestHost({ services: [fs({ backend: InMemory }), tinybase()] })
+		await using host = await createTestHost({ services: [] })
 		await host.commit((change) => {
 			change.start(AuditPlugin)
 			change.start(TodoPlugin, {
@@ -32,13 +30,13 @@ describe('TodoPlugin', () => {
 	})
 
 	it('keeps the optional integration absent-safe', async () => {
-		await using host = await createTestHost({ services: [fs({ backend: InMemory }), tinybase()] })
+		await using host = await createTestHost({ services: [] })
 
 		const todos = await host.start(TodoPlugin)
 		expect(todos.snapshot().auditEnabled).toBe(false)
 	})
 	it('restores changes and keeps an empty collection empty without replaying the seed', async () => {
-		await using host = await createTestHost({ services: [fs({ backend: InMemory }), tinybase()] })
+		await using host = await createTestHost({ services: [] })
 		let todos = await host.start(TodoPlugin)
 		expect(todos.add('Remember this task')).toMatchObject({ ok: true })
 		todos.setCompleted('todo-2', true)
@@ -56,9 +54,9 @@ describe('TodoPlugin', () => {
 	})
 
 	it('rejects corrupted restored rows before exposing Todo methods', async () => {
-		await using host = await createTestHost({ services: [fs({ backend: InMemory }), tinybase()] })
+		await using host = await createTestHost({ services: [] })
 		const todos = await host.start(TodoPlugin)
-		const state = todos.ctx.require(TinyBase)
+		const state = todos.ctx.tinybase
 		const store = await state.open()
 		store.setCell('todos', 'todo-1', 'completed', 'invalid')
 		await state.flush()
@@ -70,9 +68,9 @@ describe('TodoPlugin', () => {
 	})
 
 	it('does not replace a valid empty snapshot with its initial seed', async () => {
-		await using host = await createTestHost({ services: [fs({ backend: InMemory }), tinybase()] })
+		await using host = await createTestHost({ services: [] })
 		const todos = await host.start(TodoPlugin)
-		const state = todos.ctx.require(TinyBase)
+		const state = todos.ctx.tinybase
 		;(await state.open()).setContent([{}, {}])
 		await state.flush()
 		await host.restart(TodoPlugin)

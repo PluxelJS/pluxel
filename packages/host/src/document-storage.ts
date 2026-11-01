@@ -1,17 +1,13 @@
-import type { RootContext } from '@pluxel/core'
-
-/** Borrowed storage for Host-owned config/state documents. The provider owns backend closure. */
-export interface HostDocumentStorage {
-	/** Only a missing document returns undefined; other failures reject. */
-	getText(key: string): Promise<string | undefined>
-	/** Resolve after a complete atomic commit; readers observe the previous or complete new document. */
-	put(key: string, value: string): Promise<void>
-	/** Only existence is required; providers may return their existing file metadata. */
-	stat(key: string): Promise<object | undefined>
-}
+import type { RootContext, HostDocumentStorage } from '@pluxel/core'
+import { requireTinyBaseHost } from '@pluxel/core/internal'
+export type { HostDocumentStorage } from '@pluxel/core'
 
 export type HostStoreStorageOptions =
-	| Readonly<{ storage?: never; mode?: 'memory' }>
+	| Readonly<{
+			storage?: never
+			/** Omitted uses writable built-in documents. Memory bypasses document persistence. */
+			mode?: 'memory' | 'writable' | 'readonly'
+	  }>
 	| Readonly<{
 			/** Called once after root creation, before document IO or service prepare. Return a borrowed namespace synchronously. */
 			storage: (root: RootContext) => HostDocumentStorage
@@ -35,8 +31,15 @@ export function assertHostStoreStorage(options: HostStoreStorageOptions): void {
 export function resolveHostStoreStorage(
 	options: HostStoreStorageOptions,
 	root: RootContext,
+	namespace: 'config' | 'state',
 ): ResolvedHostStoreStorageOptions {
-	if (options.storage === undefined) return { mode: 'memory' }
+	if (options.storage === undefined) {
+		if (options.mode === 'memory') return { mode: 'memory' }
+		return {
+			storage: requireTinyBaseHost(root).documents(namespace),
+			mode: options.mode ?? 'writable',
+		}
+	}
 	const storage = options.storage(root)
 	assertDocumentStorage(storage)
 	return { storage, mode: options.mode === 'readonly' ? 'readonly' : 'writable' }
@@ -45,7 +48,11 @@ export function resolveHostStoreStorage(
 /** @internal Reject invalid namespaces before starting store IO. */
 export function assertResolvedHostStoreStorage(options: ResolvedHostStoreStorageOptions): void {
 	assertStorageMode(options)
-	if (options.storage === undefined) return
+	if (options.storage === undefined) {
+		if (options.mode !== undefined && options.mode !== 'memory')
+			throw new TypeError('[host] persistent store mode requires resolved document storage')
+		return
+	}
 	assertDocumentStorage(options.storage)
 }
 
@@ -59,11 +66,13 @@ function assertDocumentStorage(storage: unknown): asserts storage is HostDocumen
 }
 
 function assertStorageMode(options: { storage?: unknown; mode?: string }): void {
-	if (options.storage === undefined) {
-		if (options.mode !== undefined && options.mode !== 'memory')
-			throw new TypeError('[host] persistent store mode requires document storage')
-		return
-	}
-	if (options.mode !== undefined && options.mode !== 'writable' && options.mode !== 'readonly')
+	if (
+		options.mode !== undefined &&
+		options.mode !== 'writable' &&
+		options.mode !== 'readonly' &&
+		options.mode !== 'memory'
+	)
+		throw new TypeError('[host] document storage mode must be writable, readonly or memory')
+	if (options.storage !== undefined && options.mode === 'memory')
 		throw new TypeError('[host] supplied document storage requires writable or readonly mode')
 }

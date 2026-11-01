@@ -6,6 +6,7 @@ export const MANAGEMENT_QUERY_STALE_TIME = 30_000
 
 export const managementQueryKeys = {
 	all: ['management'] as const,
+	configState: () => [...managementQueryKeys.all, 'config-state'] as const,
 	runtimeMeta: () => [...managementQueryKeys.all, 'runtime-meta'] as const,
 	pluginOverview: () => [...managementQueryKeys.all, 'plugins', 'overview'] as const,
 	pluginDependencyGraph: () => [...managementQueryKeys.all, 'plugins', 'dependency-graph'] as const,

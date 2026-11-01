@@ -83,7 +83,13 @@ describe('plugin config queries', () => {
 			ok: true,
 			plan: { fieldName: 'config', fields: [], defaults: {}, sections: [] },
 		})
-		const get = vi.fn().mockResolvedValue({ ok: true, config: { enabled: true } })
+		const get = vi.fn().mockResolvedValue({
+			ok: true,
+			config: { enabled: true },
+			sources: [],
+			version: null,
+			readonly: false,
+		})
 		const client = { config: { presentation, get } } as unknown as RuntimeManagementClient
 		const queryClient = createManagementQueryClient()
 		const states: PluginConfigState[] = []
@@ -113,7 +119,10 @@ describe('plugin config queries', () => {
 		expect(presentation).toHaveBeenCalledOnce()
 		expect(get).toHaveBeenCalledOnce()
 		await act(async () => {
-			commitPluginConfig(queryClient, firstOwner, { enabled: false })
+			commitPluginConfig(queryClient, firstOwner, { enabled: false }, [], {
+				version: null,
+				readonly: false,
+			})
 			await vi.waitFor(() => expect(states.at(-1)?.data?.savedConfig).toEqual({ enabled: false }))
 		})
 	})
@@ -131,7 +140,13 @@ describe('plugin config queries', () => {
 				}),
 				get: vi
 					.fn()
-					.mockResolvedValueOnce({ ok: true, config: { owner: 'first' } })
+					.mockResolvedValueOnce({
+						ok: true,
+						config: { owner: 'first' },
+						sources: [],
+						version: null,
+						readonly: false,
+					})
 					.mockReturnValueOnce(secondConfig),
 			},
 		} as unknown as RuntimeManagementClient
